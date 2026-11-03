@@ -19,6 +19,30 @@
       "attribution": null
     },
     {
+      "id": "armory-armor-w1",
+      "paths": [
+        "public/models/armory/armor-*.glb"
+      ],
+      "title": "Armory: Pan Whites II, III and Ash Wraps I: re-cut MCO Peasant pieces (CC0) + procedural garment pieces, project-original paint",
+      "author": "CALIMA project, Quaternius (MCO Fantasy, CC0)",
+      "source_url": "https://quaternius.itch.io/",
+      "licence": "CC0-1.0",
+      "derived_from": "mco-fantasy-standard",
+      "modified": "re-cut, re-packed and re-painted by tools/build/recipes/armor/**"
+    },
+    {
+      "id": "armory-weapons-w1",
+      "paths": [
+        "public/models/armory/bow-*.glb",
+        "public/models/armory/lance-*.glb",
+        "public/models/armory/stowkit*.glb"
+      ],
+      "title": "Armory: the Sabina Bow, the Shepherd's Lance and the merged stow kit, on the shared weapon atlas (all procedural)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/recipes/weapons/,tools/build/recipes/armor/stowkit.mjs",
+      "licence": "project-original"
+    },
+    {
       "id": "brea-kit-v0",
       "paths": [
         "public/models/hero/kit/*.glb"

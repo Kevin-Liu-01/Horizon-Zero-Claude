@@ -49,9 +49,10 @@ const glowMats = {
 // pale ash shaft so arrows read against dark machine plating at combat range
 const shaftMat = new THREE.MeshStandardMaterial({ color: 0xc9a86b, roughness: 0.72 });
 const headMats = {
+  // the Reed's bronze head (bible §5.2), a little glint so it still reads in flight
   hunter: new THREE.MeshStandardMaterial({
-    color: 0xc4ced6, metalness: 0.9, roughness: 0.3,
-    emissive: 0xd8ecf4, emissiveIntensity: 0.85,
+    color: 0xb08a45, metalness: 0.9, roughness: 0.34,
+    emissive: 0x8a6a34, emissiveIntensity: 0.45,
   }),
   hardpoint: new THREE.MeshStandardMaterial({
     color: 0x8a4a20, metalness: 0.85, roughness: 0.35,
@@ -79,8 +80,9 @@ const headMats = {
   }),
 };
 const fletchMats = {
+  // gull feather
   hunter: new THREE.MeshStandardMaterial({
-    color: 0xf7ecd0, roughness: 0.85, emissive: 0x8a7a4e, emissiveIntensity: 0.45,
+    color: 0xf2eee6, roughness: 0.85, emissive: 0x6e6a60, emissiveIntensity: 0.25,
   }),
   hardpoint: new THREE.MeshStandardMaterial({
     color: 0xffb45e, roughness: 0.85, emissive: 0xc86a1e, emissiveIntensity: 0.6,

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ParticlePool, DecalPool } from './particles.js';
 import { ArrowPool, BombPool, disposeArrowAssets, arrowAssets } from './arrows.js';
 import { buildWeaponModel, weaponAssets, disposeWeaponAssets } from './bow.js';
+import { armoryAssets } from '../hero/weaponAtlas.js';
 import { AMMO, WEAPON_DEFS, DISC_LAUNCHER_DEF } from './weapons.js';
 import { Melee } from './melee.js';
 import { Traps } from './traps.js';
@@ -395,10 +396,11 @@ export class Combat {
       (ctx.player?.model ?? ctx.scene).add(node);
     }
     this._bowNode = node;
+    armoryAssets(ctx);
     this._models = {};
     for (const id of ['hunter-bow', 'sharpshot-bow', 'war-bow', 'blast-sling',
       'ropecaster', 'tripcaster', 'disc-launcher']) {
-      const model = buildWeaponModel(id);
+      const model = buildWeaponModel(id, { bow: ctx.player?.model?.userData?.rigProfile?.bow });
       model.group.visible = false;
       node.add(model.group);
       this._models[id] = model;

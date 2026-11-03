@@ -173,8 +173,8 @@ export const tieDownCount = (kind) => TIE_DOWN[kind] ?? TIE_DOWN.default;
  */
 export const WEAPON_DEFS = [
   {
-    id: 'hunter-bow', name: 'Hunter Bow', slot: 1,
-    drawTime: 0.7, nockTime: 0.42, aimFov: 44,
+    id: 'hunter-bow', name: 'Sabina Bow', slot: 1,
+    drawTime: 0.65, nockTime: 0.42, aimFov: 44,
     ammoTypes: ['hunter', 'hardpoint', 'fire'],
     stats: { damage: 0.42, speed: 0.72, range: 0.55, tear: 0.3 },
   },

@@ -32,7 +32,7 @@ import {
   newGeo, appendGeo, stripAlong, bun, hex, noise3, writeSkinned,
 } from './lib/face.mjs';
 import { CHAINS } from './brea.mjs';
-import { Field, V, clamp, conform, cutTris, emptyPart, mix, partFromPrim, recomputeNormals, sstep } from './armor/lib/part.mjs';
+import { Field, V, clamp, compact, conform, cutTris, emptyPart, mix, partFromPrim, recomputeNormals, sstep } from './armor/lib/part.mjs';
 import { Trim, fbm, loadRaw, packAtlas, paintAtlas } from './armor/lib/atlas.mjs';
 import { beltRing, boxInto, limbStrap, orientOut, ring, skirtPanels, smockBody, strapAlong } from './armor/lib/garment.mjs';
 import { outfitDoc, writeOutfit } from './armor/lib/output.mjs';
@@ -219,23 +219,35 @@ export function panTrim(W, H, trimH) {
   // cells Pan II / III map into (the sheet is shared by the three variants)
   T.cell('palm', 110, 90, (t, o) => strawCell(t, o, COL.palm));
   T.cell('capelet', 150, 90, (t, o) => {
-    t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0; t.d = Math.min(t.x, t.y, t.w - 1 - t.x, t.h - 1 - t.y) + 1;
-    cloth(t, o, sc(COL.smock, 0.92), { slub: 0.1, mottle: 0.1, seed: 11 });
-    seam(t, o, { thread: [206, 176, 110] });
+    // Orchil Deep, a guild band of undyed linen at the hem (v -> 1), brass-thread stitched
+    t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0; t.d = 99;
+    cloth(t, o, hex('#5A2E66'), { slub: 0.1, mottle: 0.1, seed: 11 });
+    const band = t.v > 0.82;
+    if (band) { cloth(t, o, sc(COL.linen, 0.94), { slub: 0.08, mottle: 0.06, seed: 12 }); }
+    const e = Math.abs(t.v - 0.82);
+    if (e < 0.018) { const q = 0.62; o.r *= q; o.g *= q; o.b *= q; o.h -= 0.0009; }
+    const st = Math.abs(t.v - 0.78);
+    if (st < 0.012 && ((t.x / 5) % 1) < 0.6) { over(o, [196, 160, 92], 0.85); o.h += 0.0006; }
+    if (t.v > 0.965) { const q = 0.78; o.r *= q; o.g *= q; o.b *= q; }
   });
   T.cell('celadon', 110, 60, (t, o) => {
     // salvaged float ceramic: glaze pooled pale in the centre, darker to the edge, crazed
     const e = Math.min(t.x, t.y, t.w - 1 - t.x, t.h - 1 - t.y) / 26;
     const m = fbm(t.ax * 0.04, t.ay * 0.04, 6.6, 3);
-    put(o, sc(COL.celadon, 0.78 + 0.28 * clamp(e) + 0.2 * (m - 0.5)));
+    // glaze pools thick and dark at the lower rim of each scute, thin and pale over the crown
+    put(o, sc(COL.celadon, 0.56 + 0.3 * clamp(e) + 0.2 * (m - 0.5)));
+    const rim = sstep(0.66, 1, t.v);
+    if (rim > 0) { const q = 1 - 0.55 * rim; o.r *= q; o.g *= q * 1.02; o.b *= q; }
     const craze = Math.abs(fbm(t.ax * 0.22, t.ay * 0.22, 9.9, 2) - 0.5);
     if (craze < 0.018) { const q = 0.72; o.r *= q; o.g *= q; o.b *= q; o.h -= 0.0005; }
     o.rough = 0.24 + 0.18 * m; o.metal = 0; o.det = 0; o.wear = 0.2;
   });
   T.cell('crust', 96, 60, (t, o) => {
-    const m = fbm(t.ax * 0.22, t.ay * 0.22, 3.3, 3);
-    put(o, sc(COL.salt, 0.82 + 0.3 * m));
-    o.h = 0.003 * m; o.rough = 0.97; o.det = 0;
+    // stiffened hide under dried brine: grey leather showing through the white
+    const m = fbm(t.ax * 0.16, t.ay * 0.16, 3.3, 3), m2 = fbm(t.ax * 0.5, t.ay * 0.5, 8.3, 2);
+    put(o, sc([96, 84, 70], 0.86 + 0.3 * m));
+    over(o, sc(COL.salt, 0.86 + 0.14 * m2), sstep(0.40, 0.62, m + 0.2 * (m2 - 0.5)));
+    o.h = 0.0035 * m; o.rough = 0.95; o.det = 0;
   });
   return T;
 }
@@ -342,6 +354,18 @@ function smockPaint(t, o) {
 
 /* ------------------------------------------------------------ the pieces */
 
+/** A copy of a part's cloud with each triangle's centroid added, so a coarse layer reads as a surface, not as points. */
+function densified(part) {
+  const q = { pos: part.pos.slice(), nrm: part.nrm.slice(), jnt: part.jnt.slice(), wgt: part.wgt.slice() };
+  const { pos, nrm, idx, jnt, wgt } = part;
+  for (let t = 0; t < idx.length; t += 3) {
+    const [a, b, c] = [idx[t], idx[t + 1], idx[t + 2]];
+    for (let k = 0; k < 3; k++) { q.pos.push((pos[a * 3 + k] + pos[b * 3 + k] + pos[c * 3 + k]) / 3); q.nrm.push((nrm[a * 3 + k] + nrm[b * 3 + k] + nrm[c * 3 + k]) / 3); }
+    for (let k = 0; k < 4; k++) { q.jnt.push(jnt[a * 4 + k]); q.wgt.push(wgt[a * 4 + k]); }
+  }
+  return q;
+}
+
 /** The body in bind space + its field (head and arms included). */
 export async function bodyField() {
   const SRC = srcRoot();
@@ -354,10 +378,10 @@ export async function bodyField() {
 
 const TRIM_H = 214;
 const BELT_Y = 1.122;
-const KEEP_TORSO = (q) => Math.abs(q.x) < 0.3;
+export const KEEP_TORSO = (q) => Math.abs(q.x) < 0.3;
 
 /** Everything of the set's base (shared by the variants): parts, trim, chains, joints. */
-export async function panBase() {
+export async function panBase(opt = {}) {
   const { doc, nodes } = await assemble();
   const { part: bodyPart, field: body } = await bodyField();
   const prim = (slot) => nodes.find((n) => n.getName() === slot).getMesh().listPrimitives()[0];
@@ -368,7 +392,7 @@ export async function panBase() {
   const yoke = cutTris(partFromPrim(prim('smock'), 'yoke', { axis: [0, 1, 0], density: 1.12, nScale: 0.55 }), (cx, cy) => cy > 1.226);
   conform(yoke, body, { margin: () => 0.005 });
   recomputeNormals(yoke);
-  const sleeves = partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85 });
+  const sleeves = compact(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85 }));
   sleeves.axis = [1, 0, 0];
   conform(sleeves, body, { margin: () => 0.0045 });
   recomputeNormals(sleeves);
@@ -391,19 +415,20 @@ export async function panBase() {
   const under = new Field([bodyPart, yoke, trousers], 0.04);
   const skinOf = new Field([bodyPart], 0.04);
   const W = 1024, H = 1024;
-  const trim = panTrim(W, H, TRIM_H);
+  const trim = (opt.trim || panTrim)(W, H, TRIM_H);
   const mk = (slot, extra = {}) => emptyPart(slot, extra);
 
   // the hanging body of the smock, from the yoke to the belt
   const sbody = smockBody(mk('smockbody'), under, skinOf, { yTop: 1.242, yBelt: 1.146, rBeltY: BELT_Y, rows: 6, keep: KEEP_TORSO, seed: 1, density: 1.12, fall: 0.5 });
   // the skirt, then the under-tunic inside it: four panels, four slits, offset from each other
   const slits = [-Math.PI / 2, 0.02, Math.PI / 2, Math.PI - 0.02];
-  const hemS = (th, y0) => y0 + 0.016 * Math.pow(Math.abs(Math.sin(th)), 3);
-  const skirt = skirtPanels(mk, under, joints, { slot: 'skirt', yTop: BELT_Y - 0.024, yHem: 0.748, off: 0.007, flare: 0.075, slits, rows: 7, colsPer: 16, ripA: 0.0085, seed: 3, density: 1.08, keep: KEEP_TORSO, hem: hemS, overlap: 0.055 });
+  const hemS = opt.skirtHem || ((th, y0) => y0 + 0.016 * Math.pow(Math.abs(Math.sin(th)), 3));
+  const skirt = skirtPanels(mk, under, joints, { slot: 'skirt', yTop: BELT_Y - 0.024, yHem: 0.748, off: 0.007, flare: 0.075, slits, rows: 7, colsPer: 16, ripA: 0.0085, seed: 3, density: 1.08, keep: KEEP_TORSO, hem: hemS, overlap: 0.055, ...opt.skirt });
   const skirtField = new Field(skirt, 0.04);
-  const undr = skirtPanels(mk, skirtField, joints, { slot: 'under', yTop: 0.835, yHem: 0.712, off: -0.024, flare: 0, slits: slits.map((a) => a + 0.45), rows: 2, colsPer: 10, ripA: 0, seed: 9, density: 0.7, hem: (th, y0) => y0 + 0.008 * Math.cos(3 * th), overlap: 0.12, floorY: 0.775, ringDth: 0.12 });
+  const underY = opt.skirt?.yHem ?? 0.748;
+  const undr = skirtPanels(mk, skirtField, joints, { slot: 'under', yTop: underY + 0.05, yHem: underY - 0.036, off: -0.034, flare: 0, slits: slits.map((a) => a + 0.45), rows: 2, colsPer: 10, ripA: 0, seed: 9, density: 0.7, hem: (th, y0) => y0 + 0.008 * Math.cos(3 * th), overlap: 0.3, floorY: underY + 0.03, ringDth: 0.12, ...opt.under });
 
-  const clothField = new Field([bodyPart, yoke, trousers, sbody, ...skirt], 0.04);
+  const clothField = new Field([bodyPart, densified(yoke), trousers, sbody, ...skirt], 0.04);
 
   // ---- the girdle: stiff leather at the waist, brass buckle, tongue end
   const beltY = BELT_Y, beltH = 0.058;
@@ -430,13 +455,13 @@ export async function panBase() {
   // ---- the sling strap: right shoulder, across the chest to the left hip, and round the back
   const sling = mk('sling', { trim: true });
   const slingCtl = [
-    [-0.105, 1.452, 0.04], [-0.07, 1.36, 0.115], [0.0, 1.27, 0.13], [0.07, 1.20, 0.112], [0.118, 1.145, 0.07],
+    [-0.105, 1.452, 0.04], [-0.06, 1.395, 0.09], [-0.012, 1.325, 0.105], [0.035, 1.25, 0.122], [0.082, 1.195, 0.106], [0.118, 1.15, 0.07],
   ];
-  strapAlong(sling, clothField, skinOf, slingCtl, { width: 0.027, margin: 0.0055, segs: 16, cols: 2, rect: trim.rect('strap'), tile: 0.42 });
+  strapAlong(sling, clothField, skinOf, slingCtl, { width: 0.027, margin: 0.0075, segs: 18, cols: 2, rect: trim.rect('strap'), tile: 0.42 });
   const slingBack = [
     [-0.105, 1.452, 0.04], [-0.12, 1.478, -0.03], [-0.10, 1.43, -0.125], [-0.03, 1.30, -0.118], [0.06, 1.20, -0.09], [0.118, 1.145, -0.08],
   ];
-  strapAlong(sling, clothField, skinOf, slingBack, { width: 0.027, margin: 0.0055, segs: 18, cols: 2, rect: trim.rect('strap'), tile: 0.42 });
+  strapAlong(sling, clothField, skinOf, slingBack, { width: 0.027, margin: 0.0075, segs: 18, cols: 2, rect: trim.rect('strap'), tile: 0.42 });
   orientOut(sling, 0, -0.02, 1.2);
 
   // ---- the salt pouch at the left front hip, rigid on the pelvis, hung off the belt
@@ -494,7 +519,7 @@ export async function panBase() {
   recomputeNormals(straps);
 
   const parts = [yoke, sbody, ...skirt, ...undr, sleeves, trousers, boots, girdle, sashBand, buckle, tongue, sling, pouch, sash, cuffs, straps];
-  return { doc, trim, parts, joints, body, bodyPart, clothField, skinOf, W, H, TRIM_H };
+  return { doc, trim, parts, joints, body, bodyPart, clothField, skinOf, W, H, TRIM_H, J };
 }
 
 /** A rolled sleeve cuff: fat linen roll around the sleeve's cut edge, carmine lining inside its lip. */
@@ -554,7 +579,7 @@ export async function build({ out = ROOT } = {}) {
   const SRC = srcRoot();
   const srcNormal = await loadRaw(path.join(MCO_DIR(SRC), 'T_Peasant_Normal.png'), 1024);
   const tex = await paintAtlas(parts, layout, {
-    painters: PAN_PAINTERS, srcNormal, trim, salt: COL.salt, curv: { crease: 1, ridge: 0.7 }, q: { base: 92, normal: 88, orm: 84 },
+    painters: PAN_PAINTERS, srcNormal, trim, salt: COL.salt, curv: { crease: 1, ridge: 0.7 }, q: { base: 95, normal: 88, orm: 84 },
   });
   void noise3;
   const { node, material } = outfitDoc(doc, parts, { name: 'Outfit_Pan_1', matName: 'MI_Pan_1', tex, texPrefix: 'pan' });
@@ -563,7 +588,7 @@ export async function build({ out = ROOT } = {}) {
   return writeOutfit(doc, file, {
     recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',
     r5Outfit: {
-      ...PAN_SET, variant: 'pan-1', name: "Pan Whites I — Raker's Whites", density: +layout.D.toFixed(1),
+      ...PAN_SET, variant: 'pan-1', name: "Pan Whites I — Raker's Whites", density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1),
       pieces: ['yoke', 'smockbody', 'skirt', 'under', 'sleeves', 'trousers', 'boots', 'girdle', 'sashband', 'buckle', 'tongue', 'sling', 'pouch', 'sash', 'cuffs', 'straps'],
     },
   });

@@ -3,7 +3,13 @@
  * (armory W1). The doc already holds the 65-joint skin (+ any dyn_ chain a piece
  * skins to); the source meshes are replaced by ONE node with ONE primitive.
  */
-import { writeSkinned, nodeByName } from '../../lib/face.mjs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { EXTMeshoptCompression } from '@gltf-transform/extensions';
+import { dedup, prune, quantize, reorder, unpartition } from '@gltf-transform/functions';
+import { MeshoptEncoder } from 'meshoptimizer';
+import { io, writeSkinned, nodeByName } from '../../lib/face.mjs';
+import { checkProvenance, GENERATOR } from '../../../lib/glb.mjs';
 import { mergeParts } from './part.mjs';
 
 /** Build the merged primitive. `tex` may be null: a variant that shares its set's sheet (material only). */
@@ -49,9 +55,25 @@ export function outfitDoc(doc, parts, { name, matName, tex = null, texPrefix = '
   return { node, material: mat, stats: m.ranges };
 }
 
-export function writeOutfit(doc, file, { recipe, sources, licence, r5Outfit }) {
-  return writeSkinned(doc, file, {
-    provenance: { recipe, sources, licence },
-    extras: { r5Outfit },
-  });
+export async function writeOutfit(doc, file, { recipe, sources, licence, r5Outfit, lean = false }) {
+  if (!lean) return writeSkinned(doc, file, { provenance: { recipe, sources, licence }, extras: { r5Outfit } });
+  // a geometry-only variant (<= 0.15 MB, plan §4.1): the same writer, a coarser quantiser
+  const prov = checkProvenance({ recipe, sources, licence });
+  await doc.transform(dedup(), prune({ keepLeaves: true, keepAttributes: true }), unpartition());
+  let tris = 0, verts = 0;
+  for (const mesh of doc.getRoot().listMeshes()) for (const p of mesh.listPrimitives()) { verts += p.getAttribute('POSITION').getCount(); tris += p.getIndices().getCount() / 3; }
+  await MeshoptEncoder.ready;
+  await doc.transform(
+    reorder({ encoder: MeshoptEncoder }),
+    quantize({ pattern: /^(POSITION|NORMAL|TEXCOORD_0|WEIGHTS_0)$/, quantizationVolume: 'scene', quantizePosition: 13, quantizeNormal: 8, quantizeTexcoord: 11, quantizeWeight: 8 }),
+  );
+  doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.QUANTIZE });
+  const stats = { tris, verts, materials: doc.getRoot().listMaterials().length, meshes: doc.getRoot().listMeshes().length, textures: doc.getRoot().listTextures().length, bones: doc.getRoot().listSkins().reduce((n, s) => n + s.listJoints().length, 0) };
+  const asset = doc.getRoot().getAsset();
+  asset.generator = GENERATOR;
+  asset.extras = { r5Outfit, provenance: prov, r5Stats: stats };
+  const bytes = await (await io()).writeBinary(doc);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, bytes);
+  return { bytes: bytes.byteLength, ...stats };
 }

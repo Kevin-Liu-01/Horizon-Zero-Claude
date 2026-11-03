@@ -107,16 +107,24 @@ export function packAtlas(parts, { W = 1024, H = 1024, pad = 4, trimH = 0 } = {}
     }
   }
   islands.sort((a, b) => (b.h * b.density) - (a.h * a.density) || (b.w - a.w));
+  // skyline bottom-left: tallest first, each island at the lowest place it fits
   const tryPack = (D) => {
-    let x = pad, y = pad, rowH = 0;
+    const HH = H - trimH;
+    const sky = new Int32Array(W);          // per column, the first free y
     for (const isl of islands) {
       const w = Math.ceil(isl.w * D * isl.density) + pad * 2, h = Math.ceil(isl.h * D * isl.density) + pad * 2;
-      if (x + w > W) { x = pad; y += rowH; rowH = 0; }
-      if (x + w > W) return false;
-      isl.x = x + pad; isl.y = y + pad;
-      x += w; rowH = Math.max(rowH, h);
+      if (w > W) return false;
+      let bestX = -1, bestY = 1e9;
+      for (let x = 0; x + w <= W; x += 4) {
+        let y = 0;
+        for (let k = x; k < x + w; k++) if (sky[k] > y) y = sky[k];
+        if (y < bestY) { bestY = y; bestX = x; }
+      }
+      if (bestX < 0 || bestY + h > HH) return false;
+      isl.x = bestX + pad; isl.y = bestY + pad;
+      for (let k = bestX; k < bestX + w; k++) sky[k] = bestY + h;
     }
-    return y + rowH <= H - trimH;
+    return true;
   };
   let lo = 50, hi = 4000;
   for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (tryPack(m)) lo = m; else hi = m; }

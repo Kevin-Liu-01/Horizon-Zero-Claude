@@ -1,0 +1,192 @@
+/**
+ * CALIMA — recipe: Ash Wraps I, Pit Wraps (armory W1; bible §4.3; plan §4.1 ≤ 17.5 k,
+ * ≤ 0.8 MB per set): black wool wrap-tunic over a rust under-layer, puttees, felt soles.
+ * Its own 1024² `ash` sheet. Same base pieces as the Pan set (so the same body hide bit)
+ * but it reads differently by SHAPE: a long diagonal wrap skirt (knee-high on her left,
+ * thigh on her right) over a longer rust hem, a thick wool cowl at the neck, two broad
+ * wrapped bands crossing the chest, a rope belt, wool puttees to the knee.
+ */
+import path from 'node:path';
+import { ROOT, MCO_DIR, hex, srcRoot } from '../lib/face.mjs';
+import { KEEP_TORSO, cloth, panBase, panLayout, PAN_SET, seam, salted } from '../outfit-pan-1.mjs';
+import { Trim, fbm, loadRaw, paintAtlas } from './lib/atlas.mjs';
+import { orientOut, ring, strapAlong, TAU } from './lib/garment.mjs';
+import { clamp, emptyPart, Field, gridInto, mix, recomputeNormals, sstep, V } from './lib/part.mjs';
+import { outfitDoc, writeOutfit } from './lib/output.mjs';
+
+export const LANE = 'armory';
+export const OUTPUTS = ['public/models/armory/armor-ash-1.glb'];
+const RECIPE = 'tools/build/recipes/armor/ash-1.mjs';
+const COL = { black: hex('#232126'), wool: hex('#2C2A30'), rust: hex('#7A3E22'), undyed: hex('#B8AC96'), leather: hex('#3A2C22'), mica: hex('#6E6A62'), felt: hex('#4C4842'), cord: hex('#8A7A5C') };
+const sc = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
+const put = (o, c) => { o.r = c[0]; o.g = c[1]; o.b = c[2]; };
+const over = (o, c, a) => { o.r += (c[0] - o.r) * a; o.g += (c[1] - o.g) * a; o.b += (c[2] - o.b) * a; };
+
+/** Wool: felted, no slubs, a soft nap; a knit detail class. */
+function wool(t, o, col, seed = 0) {
+  const m = fbm(t.X * 9, t.Y * 9, t.Z * 9 + seed, 3), f = fbm(t.x * 0.2, t.y * 0.2, seed + 3.3, 2);
+  put(o, sc(col, 0.88 + 0.34 * m + 0.14 * (f - 0.5)));
+  o.rough = 0.96; o.det = 0.66; o.h += 0.0012 * (f - 0.5);
+}
+
+function ashTrim(W, H, trimH) {
+  const T = new Trim(W, H, trimH);
+  const leather = (t, o, base) => {
+    const e = Math.min(t.y, t.h - 1 - t.y);
+    const m = fbm(t.ax * 0.05, t.ay * 0.09, 5.3, 3);
+    put(o, sc(base, 0.86 + 0.34 * m));
+    if (e < 3) { over(o, [80, 62, 48], (1 - e / 3) * 0.7); o.h = -0.0012 * (1 - e / 3); }
+    o.rough = 0.6 + 0.2 * m; o.det = 0.33;
+  };
+  // the same cell names and sizes as the Pan sheet, so the base pieces map unchanged
+  T.cell('girdle', 620, 46, (t, o) => {
+    // a rope belt: thick twist, undyed esparto gone grey
+    const f = (t.x * 0.07 + t.y * 0.1) % 1, r = Math.sin(f * Math.PI);
+    put(o, sc(COL.cord, 0.62 + 0.36 * r)); o.h = 0.003 * r; o.rough = 0.92; o.det = 0;
+  });
+  T.cell('strap', 404, 24, (t, o) => {
+    t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0;
+    wool(t, o, COL.rust, 2);
+    const e = Math.min(t.y, t.h - 1 - t.y);
+    if (e < 2.5) { const q = 0.72; o.r *= q; o.g *= q; o.b *= q; o.h -= 0.0008; }
+  });
+  T.cell('strapB', 200, 22, (t, o) => leather(t, o, COL.leather));
+  T.cell('pouch', 110, 90, (t, o) => leather(t, o, COL.leather));
+  T.cell('brass', 54, 54, (t, o) => {
+    // knapped basalt and smoked mica toggles, not brass
+    const m = fbm(t.ax * 0.14, t.ay * 0.14, 2.2, 3);
+    put(o, sc(COL.mica, 0.62 + 0.7 * m)); o.rough = 0.34 + 0.3 * m; o.metal = 0; o.det = 0;
+  });
+  T.cell('linen', 96, 90, (t, o) => {
+    t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0;
+    wool(t, o, COL.rust, 5);
+  });
+  T.cell('carmine', 54, 54, (t, o) => {
+    t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0;
+    wool(t, o, sc(COL.rust, 0.7), 6);
+  });
+  T.cell('rope', 96, 30, (t, o) => {
+    const f = (t.x * 0.28 + t.y * 0.42) % 1, r = Math.sin(f * Math.PI);
+    put(o, sc(COL.cord, 0.6 + 0.5 * r)); o.h = 0.0018 * r; o.rough = 0.9;
+  });
+  // reserved for Calima Veil / Lattice Quilt (W3)
+  T.cell('palm', 110, 90, (t, o) => { t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0; wool(t, o, COL.undyed, 8); });
+  T.cell('capelet', 150, 90, (t, o) => { t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0; wool(t, o, COL.wool, 9); });
+  T.cell('celadon', 110, 60, (t, o) => { const m = fbm(t.ax * 0.1, t.ay * 0.1, 6.6, 3); put(o, sc(COL.mica, 0.5 + 0.9 * m)); o.rough = 0.22; });
+  T.cell('crust', 96, 60, (t, o) => { const m = fbm(t.ax * 0.2, t.ay * 0.2, 3.3, 3); put(o, sc(COL.felt, 0.74 + 0.5 * m)); o.rough = 0.97; });
+  // the cowl and the chest wraps: thick black wool with a stitched edge
+  return T;
+}
+
+const ASH_PAINTERS = {
+  yoke(t, o) { wool(t, o, COL.black, 1); seam(t, o, { threads: false, groove: 0.82 }); },
+  smockbody(t, o) { wool(t, o, COL.black, 1); seam(t, o, { thread: [90, 62, 44], d0: 3.6, a: 0.5 }); const f1 = fbm(t.X * 19, t.Y * 2.4, t.Z * 19, 3); o.h += 0.0075 * (f1 - 0.5); o.ao *= 1 - 0.3 * sstep(1.178, 1.148, t.Y); },
+  skirt(t, o) {
+    wool(t, o, COL.black, 2);
+    seam(t, o, { thread: [120, 76, 48], d0: 3.6, line2: 3, a: 0.6 });
+    const f1 = fbm(t.X * 14, t.Y * 1.8, t.Z * 14, 3);
+    o.h += 0.009 * (f1 - 0.5);
+    o.ao *= 1 - 0.40 * sstep(1.05, 1.086, t.Y);
+    // ash settled in the nap, rising from the hem
+    const n = fbm(t.X * 12, t.Y * 4, t.Z * 12, 3);
+    over(o, [120, 114, 104], sstep(0.92, 0.62, t.Y) * (0.1 + 0.36 * n));
+    o.wear = 0.8;
+  },
+  under(t, o) { wool(t, o, COL.rust, 3); seam(t, o, { threads: false }); o.ao *= 0.86; const n = fbm(t.X * 12, t.Y * 4, t.Z * 12, 3); over(o, [120, 106, 92], 0.32 * n); },
+  sleeves(t, o) { wool(t, o, COL.rust, 4); seam(t, o, { threads: false }); o.ao *= 0.76 + 0.24 * sstep(0.17, 0.22, Math.abs(t.X)); },
+  trousers(t, o) {
+    wool(t, o, sc(COL.wool, 1.12), 7);
+    seam(t, o, { thread: [96, 86, 74], d0: 3.4, a: 0.36 });
+    const n = fbm(t.X * 11, t.Y * 3.5, t.Z * 11, 3);
+    over(o, [120, 112, 100], sstep(0.72, 0.42, t.Y) * (0.12 + 0.32 * n));
+  },
+  boots(t, o) {
+    const side = t.X >= 0 ? 1 : -1;
+    const cx = side * 0.111, cz = t.Y < 0.13 ? 0.0 : -0.042;
+    const th = Math.atan2(t.Z - cz, t.X - cx);
+    const n = fbm(t.X * 21, t.Y * 21, t.Z * 21, 3);
+    if (t.Y > 0.075) {
+      // puttees: a broad wool band wound in a steep overlapping spiral, the turns' edges shadowed
+      const band = t.Y / 0.042 + th / TAU;
+      const fb = band - Math.floor(band);
+      const crown = Math.sin(Math.min(1, fb / 0.82) * Math.PI);
+      put(o, sc(Math.floor(band) % 5 === 0 ? COL.rust : COL.wool, (0.78 + 0.34 * crown) * (0.92 + 0.2 * (n - 0.5))));
+      o.h = 0.0028 * Math.min(1, fb / 0.82);
+      o.rough = 0.95; o.det = 0.66;
+      if (fb > 0.9) { const q = 0.6; o.r *= q; o.g *= q; o.b *= q; }
+    } else {
+      // felt soles and foot wraps
+      put(o, sc(COL.felt, 0.72 + 0.5 * n)); o.rough = 0.97; o.det = 0.66;
+      if (t.Y < 0.022) { const q = 0.7; o.r *= q; o.g *= q; o.b *= q; }
+    }
+    seam(t, o, { threads: false });
+    over(o, [132, 124, 110], sstep(0.26, 0.0, t.Y) * (0.14 + 0.42 * n));
+  },
+  cowl(t, o) {
+    wool(t, o, sc(COL.wool, 1.05), 11);
+    seam(t, o, { thread: [120, 76, 48], d0: 3.2, a: 0.5 });
+    const f1 = fbm(t.X * 26, t.Y * 40, t.Z * 26, 3);
+    o.h += 0.006 * (f1 - 0.5);
+  },
+  wrap(t, o) {
+    wool(t, o, sc(COL.wool, 0.94), 12);
+    seam(t, o, { thread: [120, 76, 48], d0: 3.4, a: 0.56 });
+    const f1 = fbm(t.X * 22, t.Y * 22, t.Z * 22, 3);
+    o.h += 0.0045 * (f1 - 0.5);
+  },
+  default(t, o) { put(o, [200, 0, 200]); },
+};
+
+export async function build({ out = ROOT } = {}) {
+  const base = await panBase({
+    trim: ashTrim,
+    // a diagonal wrap: long at her left (+X), rising to her right, the front panel crossing
+    skirt: { yHem: 0.60, rows: 8, flare: 0.06, ripA: 0.006, colsPer: 16 },
+    skirtHem: (th, y0) => y0 + 0.085 * (1 - Math.cos(th - 0.2)) * 0.9,
+    under: { yTop: 0.76, yHem: 0.545, off: -0.034, floorY: 0.70 },
+  });
+  const { doc, parts, W, H, bodyPart, skinOf, clothField } = base;
+  const added = [];
+  // ---- the cowl: a thick wool roll around the neck, a loose second turn on the shoulders
+  const cowl = emptyPart('cowl', { density: 1 });
+  const neckF = new Field([bodyPart], 0.04);
+  const COLS = 40;
+  const rowsC = [[1.538, 0.012], [1.525, 0.03], [1.5, 0.04], [1.472, 0.042], [1.448, 0.05], [1.425, 0.062], [1.408, 0.064]];
+  const keepN = (q) => Math.abs(q.x) < 0.14 && q.y > 1.38;
+  const neck = rowsC.map(([y]) => ring(neckF, Math.max(y, 1.46), COLS, { cx: 0, cz: -0.035, keep: keepN, dy: 0.03, dth: 0.22, smooth: 3 }));
+  gridInto(cowl, rowsC.length - 1, COLS, (_a, _b, r, c) => {
+    const [y, off] = rowsC[r];
+    const th = -Math.PI / 2 + TAU * (c % COLS) / COLS;
+    const lump = 0.006 * Math.sin(th * 3 + y * 40);
+    const rad = neck[r][c] + off + lump;
+    const p = [Math.cos(th) * rad, y - 0.012 * Math.sin(th - 1.0) * (r / 6), -0.035 + Math.sin(th) * rad];
+    const w = Math.max(0, Math.min(1, (y - 1.42) / 0.09));
+    return { p, uv: [(c / COLS) * 0.72, (r / (rowsC.length - 1)) * 0.2], j: [base.J('neck_01'), base.J('spine_03'), 0, 0], w: [w, 1 - w, 0, 0] };
+  });
+  orientOut(cowl, 0, -0.035);
+  added.push(cowl);
+  // ---- two broad wool wraps crossing the chest and back (real bands over the yoke)
+  const wrapF = clothField;
+  for (const [ctl, tag] of [
+    [[[0.115, 1.455, 0.02], [0.075, 1.36, 0.12], [-0.02, 1.26, 0.135], [-0.10, 1.18, 0.105], [-0.135, 1.15, 0.03]], 'a'],
+    [[[-0.115, 1.455, 0.02], [-0.075, 1.36, 0.12], [0.02, 1.26, 0.135], [0.10, 1.18, 0.105], [0.135, 1.15, 0.03]], 'b'],
+    [[[0.115, 1.455, 0.02], [0.08, 1.38, -0.13], [-0.03, 1.27, -0.125], [-0.11, 1.17, -0.09], [-0.135, 1.15, 0.03]], 'c'],
+    [[[-0.115, 1.455, 0.02], [-0.08, 1.38, -0.13], [0.03, 1.27, -0.125], [0.11, 1.17, -0.09], [0.135, 1.15, 0.03]], 'd'],
+  ]) {
+    const w = emptyPart('wrap', { density: 0.9 });
+    strapAlong(w, wrapF, skinOf, ctl, { width: 0.088, margin: 0.012 + (tag === 'b' || tag === 'd' ? 0.005 : 0), segs: 12, cols: 4, crown: 0.0035 });
+    orientOut(w, 0, -0.02, 1.25);
+    added.push(w);
+  }
+  void KEEP_TORSO; void V; void mix; void clamp; void salted; void cloth;
+  const all = [...parts, ...added];
+  for (const p of added) recomputeNormals(p);
+  const layout = await panLayout(all, base.trim, W, H);
+  const srcNormal = await loadRaw(path.join(MCO_DIR(srcRoot()), 'T_Peasant_Normal.png'), 1024);
+  const tex = await paintAtlas(all, layout, { painters: ASH_PAINTERS, srcNormal, trim: base.trim, salt: [150, 144, 132], curv: { crease: 0.8, ridge: 0.5 }, q: { base: 90, normal: 88, orm: 84 } });
+  outfitDoc(doc, all, { name: 'Outfit_Ash_1', matName: 'MI_Ash_1', tex, texPrefix: 'ash' });
+  return writeOutfit(doc, path.join(out, OUTPUTS[0]), {
+    recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',
+    r5Outfit: { ...PAN_SET, set: 'ash', variant: 'ash-1', name: 'Ash Wraps I — Pit Wraps', density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), pieces: ['wrap skirt', 'rust under-layer', 'cowl', 'chest wraps', 'puttees'] },
+  });
+}

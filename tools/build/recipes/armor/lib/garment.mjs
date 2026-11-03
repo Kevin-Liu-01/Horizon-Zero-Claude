@@ -82,7 +82,7 @@ export function smockBody(part, surf, skin, { yTop = 1.215, yBelt = 1.095, rBelt
     const base = ring(surf, y, cols, { keep, smooth: 1, dth: 0.13 });
     const cur = new Float64Array(cols + 1);
     for (let c = 0; c <= cols; c++) {
-      let v = base[c] + (r === 0 ? 0.0015 : off);
+      let v = base[c] + (r === 0 ? 0.0015 : r === 1 ? 0.003 : r === 2 ? 0.0045 : off);
       if (prev) v = Math.max(v, prev[c] - fall * (yTop - yBelt) / rows);
       const toBelt = belt[c] + beltOff + blouse * Math.sin(Math.PI * sstep(0.45, 1, t));
       v = mix(v, Math.max(toBelt, belt[c] + beltOff), sstep(0.55, 1, t));
@@ -248,11 +248,12 @@ export function strapAlong(part, surf, skin, ctrl, { width = 0.026, margin = 0.0
 export function limbStrap(part, surf, skin, { cx, cz, y, h = 0.024, off = 0.004, cols = 16, rect, tilt = 0.0, tiltTh = 0, keep = null, thick = 0.004 } = {}) {
   const rows = [[-0.5, 0], [-0.32, thick], [0.32, thick], [0.5, 0]];
   const th0 = -Math.PI / 2;
-  const profs = rows.map(([f]) => ring(surf, y + f * h, cols, { cx, cz, keep, dy: 0.016 }));
+  const profs = rows.map(([f]) => ring(surf, y + f * h, cols, { cx, cz, keep, dy: 0.04 }));
   // a strap cinches: flaps and folds stick out past it, it does not follow them
-  for (const p of profs) {
-    const sorted = Array.from(p.slice(0, cols)).sort((a, b) => a - b), med = sorted[cols >> 1];
-    for (let c = 0; c <= cols; c++) p[c] = Math.min(p[c], med * 1.015);
+  for (let k = 0; k < profs.length; k++) {
+    const p = profs[k], o = p.slice();
+    for (let c = 0; c < cols; c++) p[c] = Math.min(o[(c - 1 + cols) % cols], o[c], o[(c + 1) % cols]);
+    p[cols] = p[0];
   }
   const base = part.pos.length / 3;
   for (let r = 0; r < rows.length; r++) for (let c = 0; c <= cols; c++) {
@@ -301,6 +302,45 @@ export function boxInto(part, center, half, basis, rect, joint) {
   }
   return part;
 }
+
+/**
+ * A cloth or plate draped between two loops of points: rows from `inner` to `outer`
+ * (same length), each sample pushed `margin` above `surf` (three relaxations), so
+ * it lies over whatever is there. `uvOf(r, c)` gives the uv, `skinOf(p)` the skin.
+ */
+export function drapeInto(part, surf, inner, outer, { rows = 4, margin = 0.008, uvOf, skinOf, closed = false, marginAt = null } = {}) {
+  const cols = inner.length - 1;
+  const base = part.pos.length / 3;
+  for (let r = 0; r <= rows; r++) {
+    const t = r / rows;
+    for (let c = 0; c <= cols; c++) {
+      let p = V.lerp(inner[c], outer[c], t);
+      for (let it = 0; it < 3; it++) {
+        const near = surf.nearest(p[0], p[1], p[2], 5);
+        let nx = 0, ny = 0, nz = 0, h = 0, f = 0;
+        for (const { p: q, d } of near) { const w = 1 / (d * d + 1e-4); nx += q.nx * w; ny += q.ny * w; nz += q.nz * w; h += ((p[0] - q.x) * q.nx + (p[1] - q.y) * q.ny + (p[2] - q.z) * q.nz) * w; f += w; }
+        const n = V.norm([nx, ny, nz]);
+        const m = marginAt ? marginAt(t, c / cols) : margin;
+        const lift = m - h / f;
+        if (lift > 0) p = V.add(p, V.mul(n, lift));
+      }
+      const uv = uvOf(t, c / cols);
+      const sk = skinOf(p);
+      part.pos.push(p[0], p[1], p[2]); part.nrm.push(0, 1, 0); part.uv.push(uv[0], uv[1]);
+      part.jnt.push(...sk.j); part.wgt.push(...sk.w);
+    }
+  }
+  const cc = cols + 1;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const a = base + r * cc + c, b = a + 1, d = a + cc, e = d + 1;
+    part.idx.push(a, d, b, b, d, e);
+  }
+  void closed;
+  return part;
+}
+
+/** Skin of a rigid piece: every vertex on one joint. */
+export const rigid = (j) => () => ({ j: [j, 0, 0, 0], w: [1, 0, 0, 0] });
 
 export { emptyPart };
 export const fieldOf = (parts, cell) => new Field(parts, cell);

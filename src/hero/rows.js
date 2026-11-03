@@ -24,7 +24,20 @@ export const BREA_URL = '/models/hero/brea.glb';
 export const HERO_ROWS = {
   hero: { url: BREA_URL, targetHeight: 1.77913, yaw: 0, required: true },
   heroOutfitPan1: { url: '/models/hero/outfit-pan-1.glb', targetHeight: 1.72, yaw: 0 },
-  heroStowKit: { url: '/models/hero/kit/stowkit-v0.glb', targetHeight: 1.72, yaw: 0 },
+  // armory W1: the art-pass kit (carries the shared weapon atlas), and the two final
+  // held weapons (no textures of their own; their geometry is read, never normalised)
+  heroStowKit: { url: '/models/armory/stowkit.glb', targetHeight: 1.72, yaw: 0 },
+  armoryBowSabina: { url: '/models/armory/bow-sabina.glb', targetHeight: 1.45, yaw: 0 },
+  armoryLanceShepherd: { url: '/models/armory/lance-shepherd.glb', targetHeight: 1.55, yaw: 0 },
+};
+/**
+ * Deferred armor rows (loaded on demand through `assets.loadExtra`, unloaded on swap
+ * by src/hero/loadout.js): never a boot cost.
+ */
+export const ARMOR_ROWS = {
+  armorPan2: { url: '/models/armory/armor-pan-2.glb', targetHeight: 1.72, yaw: 0 },
+  armorPan3: { url: '/models/armory/armor-pan-3.glb', targetHeight: 1.72, yaw: 0 },
+  armorAsh1: { url: '/models/armory/armor-ash-1.glb', targetHeight: 1.72, yaw: 0 },
 };
 /** Which outfit row is the default loadout (bible §3.9). */
 export const DEFAULT_OUTFIT = 'heroOutfitPan1';
@@ -32,7 +45,9 @@ export const DEFAULT_OUTFIT = 'heroOutfitPan1';
 /** Idempotent: point `hero` at Brea (unless pipeline already did) and add the part rows. */
 export function applyHeroRows(specs) {
   if (specs.hero?.url !== BREA_URL) specs.hero = { ...HERO_ROWS.hero };
-  for (const k of ['heroOutfitPan1', 'heroStowKit']) if (!specs[k]) specs[k] = { ...HERO_ROWS[k] };
+  for (const k of ['heroOutfitPan1', 'armoryBowSabina', 'armoryLanceShepherd']) if (!specs[k]) specs[k] = { ...HERO_ROWS[k] };
+  // the pipeline row still names the v0 kit: the art-pass kit replaces it (pipeline: data edit at merge)
+  specs.heroStowKit = { ...HERO_ROWS.heroStowKit };
   return specs;
 }
 // assets.js derives its own SPECS from assets.specs.js at ITS evaluation (it is

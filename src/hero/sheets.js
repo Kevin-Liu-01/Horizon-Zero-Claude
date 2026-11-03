@@ -471,3 +471,139 @@ export async function renderStockFace(ctx, url) {
   });
   return out;
 }
+
+
+/* ------------------------------------------------------------- armory W1 */
+
+const imgOf = (url) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error(`no image ${url}`)); i.src = url; });
+
+/** Fit an image into a box on the sheet, cropped to fill. */
+function fitInto(g, img, x, y, w, h, cropY = 0.5) {
+  const k = Math.max(w / img.width, h / img.height);
+  const sw = w / k, sh = h / k;
+  g.drawImage(img, (img.width - sw) / 2, (img.height - sh) * cropY, sw, sh, x, y, w, h);
+}
+
+/**
+ * V-pan-closeup: Pan Whites I at close range in the game's own material, neutral
+ * light, beside the licence-clean references: the torso, the girdle and pouch, the
+ * rolled sleeve, the wrapped shin, the back. Pass or fail on material separation,
+ * seams, wear and layered depth.
+ */
+export async function panCloseupOverlay(ctx, refs = []) {
+  const model = await poseIdle(ctx);
+  const W = 1600, H = 900;
+  const { c, g } = overlay(W, H, '#e9e4d8');
+  label(g, 'PAN WHITES I — close-up, in-engine material, neutral light (left) beside the references (right)', 20, 28, 16);
+  const shots = [
+    ['torso, 1.1 m', { pos: [0.34, 1.32, 0.92], target: [0.0, 1.14, 0], fov: 34 }, 0, 40, 560, 540],
+    ['girdle + pouch, 0.6 m', { pos: [0.24, 1.1, 0.48], target: [0.04, 1.02, 0.06], fov: 34 }, 570, 40, 380, 268],
+    ['sleeve + cuff', { pos: [-0.62, 1.24, 0.42], target: [-0.26, 1.2, 0.0], fov: 30 }, 570, 312, 380, 268],
+    ['hem + trousers', { pos: [0.3, 0.72, 0.72], target: [0.04, 0.68, 0.04], fov: 34 }, 960, 40, 300, 268],
+    ['shin wraps + boot', { pos: [0.34, 0.34, 0.66], target: [0.1, 0.24, 0.02], fov: 36 }, 960, 312, 300, 268],
+    ['back', { pos: [-0.36, 1.28, -1.08], target: [0, 1.12, 0], fov: 36 }, 1270, 40, 320, 540],
+  ];
+  for (const [name, cam, x, y, w, h] of shots) {
+    const shot = renderIsolated(ctx, model, { width: w * 2, height: h * 2, cam, background: '#b9b2a2' });
+    g.drawImage(canvasOf(shot), x + 8, y, w, h);
+    label(g, name, x + 14, y + 16, 12, '#1a1612');
+  }
+  let rx = 8;
+  for (const r of refs) {
+    try { const i = await imgOf(`/${r.file}`); fitInto(g, i, rx, 590, 390, 290, r.cropY ?? 0.5); label(g, r.note, rx + 6, 606, 11, '#fff'); } catch { label(g, `missing ${r.file}`, rx + 6, 606, 12); }
+    rx += 398;
+  }
+  return c.toDataURL('image/png');
+}
+
+/**
+ * V-variant-sheet: each armor variant front / side / back, flat-lit, then a true
+ * 20 m reading (FOV 55 at 1600 x 900: about 75 px tall). Swaps the outfit through
+ * `hero.loadout` (awaits the deferred rows) and leaves her in the default.
+ */
+export async function variantSheetOverlay(ctx, ids = ['pan-1', 'pan-2', 'pan-3', 'ash-1']) {
+  const hero = ctx.player.hero;
+  const W = 1600, H = 900;
+  const { c, g } = overlay(W, H);
+  label(g, 'ARMOR VARIANTS (W1) — front, side, back at flat light; lower row: the same at 20 m (FOV 55, 1600x900: about 75 px)', 16, 22, 15);
+  const views = [['front', 0], ['side', -Math.PI / 2], ['back', Math.PI]];
+  const cellW = 130, cellH = 300;
+  for (let v = 0; v < ids.length; v++) {
+    await hero.loadout.equipArmor(ids[v]);
+    await new Promise((r) => setTimeout(r, 400));
+    const model = await poseIdle(ctx, 0.5);
+    const x0 = 14 + v * 396;
+    label(g, ids[v] + ' — ' + (hero.loadout.info().perk || ''), x0, 44, 13);
+    views.forEach(([name, yaw], i) => {
+      const shot = renderIsolated(ctx, model, { width: cellW * 2, height: cellH * 2, cam: { ...around(yaw, 5.2, 0.95, 0.93), fov: 22 }, background: '#d9d4c8' });
+      g.drawImage(canvasOf(shot), x0 + i * (cellW - 4), 52, cellW - 4, cellH);
+      label(g, name, x0 + i * (cellW - 4) + 3, 66, 10, '#403830');
+      const fh = 900, far = renderIsolated(ctx, model, { width: 90, height: 96, cam: { ...around(yaw, 20, 0.95, 0.93), fov: 55 * (96 / fh) }, background: '#d9d4c8' });
+      g.imageSmoothingEnabled = false;
+      g.drawImage(canvasOf(far), x0 + i * (cellW - 4), 360, 90, 96);
+      g.drawImage(canvasOf(far), x0 + i * (cellW - 4), 470, 90 * 1.4, 96 * 4 * 0.7);
+      g.imageSmoothingEnabled = true;
+    });
+  }
+  await hero.loadout.equipArmor('pan-1');
+  label(g, 'each must read different at 20 m by shape, not only colour; no fur, no red hip sash, no braids; pauldrons sit on the clavicle', 16, 880, 13);
+  return c.toDataURL('image/png');
+}
+
+/** V-weapon-sheet: the bow and the lance on their own at scale, with their detail crops. */
+export async function weaponSheetOverlay(ctx, refs = []) {
+  const W = 1600, H = 900;
+  const { c, g } = overlay(W, H, '#e4dfd2');
+  label(g, "WEAPONS (W1) — Sabina Bow 1.45 m, Shepherd's Lance 1.55 m, on the shared atlas, at one scale (1 m bar)", 16, 22, 15);
+  const cmb = ctx.combat, bow = cmb.bow, sp = ctx.player.hero.heldLance();
+  const shoot = async (src, cam, w, h) => {
+    const parent = src.parent, p0 = src.position.clone(), q0 = src.quaternion.clone(), s0 = src.scale.clone(), vis = src.visible;
+    const grp = new THREE.Group();
+    grp.add(src); src.position.set(0, 0, 0); src.quaternion.identity(); src.scale.setScalar(1); src.visible = true;
+    src.traverse((o) => { o.userData.__v = o.visible; if (o.isMesh && o.userData.heroPart === 'held') o.visible = true; });
+    const shot = renderIsolated(ctx, grp, { width: w, height: h, cam, background: '#e4dfd2' });
+    src.traverse((o) => { o.visible = o.userData.__v; delete o.userData.__v; });
+    if (parent) parent.add(src); src.position.copy(p0); src.quaternion.copy(q0); src.scale.copy(s0); src.visible = vis;
+    return shot;
+  };
+  const rows = [];
+  bow.setDraw(0, true);
+  const bowG = bow.model, lanceG = sp.model;
+  const bm = 1.7;           // metres of frame height
+  const b1 = await shoot(bowG, { pos: [2.6, 0, 0.1], target: [0, 0, -0.08], ortho: { h: bm } }, 380, 760);
+  g.drawImage(canvasOf(b1), 20, 40, 190, 380 * 2);
+  label(g, 'bow, side, braced', 30, 56, 11);
+  bow.setDraw(1, true);
+  const b2 = await shoot(bowG, { pos: [2.6, 0, -0.1], target: [0, 0, -0.14], ortho: { h: bm } }, 380, 760);
+  g.drawImage(canvasOf(b2), 210, 40, 190, 380 * 2);
+  label(g, 'bow, side, full draw', 220, 56, 11);
+  bow.setDraw(0, false);
+  const b3 = await shoot(bowG, { pos: [0.34, 0.02, -0.44], target: [0, 0.0, 0.03], fov: 30 }, 460, 400);
+  g.drawImage(canvasOf(b3), 410, 40, 330, 287);
+  label(g, 'grip: esparto, carmine', 420, 56, 11);
+  const b4 = await shoot(bowG, { pos: [0.2, 0.62, -0.42], target: [0, 0.64, -0.12], fov: 28 }, 460, 400);
+  g.drawImage(canvasOf(b4), 410, 330, 330, 287);
+  label(g, 'upper limb, horn nock', 420, 346, 11);
+  const sc0 = lanceG.scale.clone();
+  lanceG.scale.setScalar(1);
+  const l1 = await shoot(lanceG, { pos: [2.8, 0, 0.775], target: [0, 0, 0.775], ortho: { h: bm }, }, 380, 760);
+  g.drawImage(canvasOf(l1), 750, 40, 190, 380 * 2);
+  label(g, 'lance, whole', 760, 56, 11);
+  const l2 = await shoot(lanceG, { pos: [0.22, 0.10, 1.40], target: [0, 0, 1.42], fov: 30 }, 460, 400);
+  g.drawImage(canvasOf(l2), 950, 40, 310, 270);
+  label(g, 'leaf blade, socket, graduations', 960, 56, 11);
+  const l3 = await shoot(lanceG, { pos: [0.22, 0.08, 0.10], target: [0, 0, 0.09], fov: 30 }, 460, 400);
+  g.drawImage(canvasOf(l3), 950, 314, 310, 270);
+  label(g, 'bob-shaped butt cap', 960, 330, 11);
+  const l4 = await shoot(lanceG, { pos: [0.16, 0.06, 0.32], target: [0, 0, 0.31], fov: 30 }, 460, 400);
+  g.drawImage(canvasOf(l4), 950, 588, 310, 270);
+  label(g, 'esparto wrap at the 20 % hand', 960, 604, 11);
+  lanceG.scale.copy(sc0);
+  void rows;
+  let ry = 40;
+  for (const r of refs) {
+    try { const i = await imgOf(`/${r.file}`); fitInto(g, i, 1270, ry, 320, 270, r.cropY ?? 0.5); label(g, r.note, 1276, ry + 16, 11, '#fff'); } catch { label(g, `missing ${r.file}`, 1276, ry + 16, 12); }
+    ry += 276;
+  }
+  return c.toDataURL('image/png');
+}

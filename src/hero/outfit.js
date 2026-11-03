@@ -10,6 +10,7 @@
  * Equip/unequip x N returns geometries, textures and skeletons to baseline.
  */
 import { bindPart, releasePart, HideMask } from './parts.js';
+import { installCloth } from './clothShader.js';
 
 export class HeroOutfit {
   constructor(player) {
@@ -30,11 +31,14 @@ export class HeroOutfit {
     if (!entry) throw new Error(`[hero] no outfit row "${row}" loaded`);
     if (this.row === row) return this.info();
     if (this.row) this.unequip();
+    const meta = entry.extras?.r5Outfit || {};
+    this._prepare(entry, meta);
     // the two hero casters (plan §4.1, <= 2 x 3 cascades): body skin + outfit
     this.meshes = bindPart(this.player.model, entry.root, `outfit:${row}`, { castShadow: true });
-    const meta = entry.extras?.r5Outfit || {};
     this.set = meta.set || row;
+    this.variant = meta.variant || row;
     this.row = row;
+    this.hasPieces = !!meta.hasPieces;
     this.body?.apply(meta.hideBit || 0);
     this.player._collectMaterials?.();
     return this.info();
@@ -47,14 +51,54 @@ export class HeroOutfit {
     this.body?.apply(0);
     this.row = null;
     this.set = null;
+    this.variant = null;
+    this.hasPieces = false;
     return r;
+  }
+
+  /**
+   * The set's material, once per row: a variant that shares its set's sheet takes the
+   * sheet's Texture objects (bible §4.1: three variants, one atlas), and every outfit
+   * gets the cloth shading (src/hero/clothShader.js).
+   */
+  _prepare(entry, meta) {
+    entry.root.traverse((o) => {
+      if (!o.isSkinnedMesh) return;
+      const mat = o.material;
+      if (meta.sharedAtlas && !mat.map) {
+        let src = null;
+        this.ctx.assets?.models?.[meta.sharedAtlas]?.root?.traverse((q) => { if (!src && q.isSkinnedMesh) src = q.material; });
+        if (src) {
+          mat.map = src.map; mat.normalMap = src.normalMap; mat.roughnessMap = src.roughnessMap; mat.metalnessMap = src.metalnessMap;
+          mat.normalScale.copy(src.normalScale);
+          mat.needsUpdate = true;
+          entry.sharedMaps = true;       // the maps are the sheet owner's: never disposed with this row
+        }
+      }
+      installCloth(mat, { rep: meta.detailRep ?? 60, pieces: !!meta.hasPieces, salt: !!meta.hasSalt });
+    });
+  }
+
+  /** PIECE-mask bits to hide on the outfit (Guild Whites' hat, head or back). */
+  setPieces(bits) {
+    if (!this.hasPieces) return;
+    for (const m of this.meshes) {
+      const u = m.material?.userData?.clothU || this._srcClothU(m);
+      if (u) u.uHidePiece.value = bits;
+    }
+  }
+
+  _srcClothU() {
+    let u = null;
+    this.ctx.assets?.models?.[this.row]?.root?.traverse((o) => { if (!u && o.isSkinnedMesh) u = o.material?.userData?.clothU || null; });
+    return u;
   }
 
   info() {
     let tris = 0;
     for (const m of this.meshes) tris += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
     return {
-      row: this.row, set: this.set, meshes: this.meshes.length, tris,
+      row: this.row, set: this.set, variant: this.variant ?? null, meshes: this.meshes.length, tris,
       bodyVisibleTris: this.body ? this.body.visibleTris() : null,
       bodyHiddenTris: this.body ? this.body.hiddenTris : 0,
     };
