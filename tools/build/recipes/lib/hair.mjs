@@ -24,6 +24,11 @@ const TAU = Math.PI * 2;
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const mix = (a, b, t) => a + (b - a) * t;
 const clampB = (v) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+/**
+ * Coiled hair is near-black and matte: at the dielectric 4 % reflectance a strong sun turns it
+ * grey. A partial metalness (the ORM's B) drops the reflectance toward its dark albedo.
+ */
+const HAIR_METAL = 90;
 
 /* ======================================================= the drawn coils */
 
@@ -83,7 +88,7 @@ const fieldNormal = (f, x, y, kN) => {
 };
 
 /** The repeating coil tile (period px both ways, drawn into a (period + margin) square rect). */
-export function paintCoilTile(buf, { rect, period, W = 512, hair = '#15110F', seed = 21, rough = 0.42 } = {}) {
+export function paintCoilTile(buf, { rect, period, W = 512, hair = '#15110F', seed = 21, rough = 0.8 } = {}) {
   const [x0, y0, w, h] = rect;
   const f = coilField(period, period, { count: 340, seed });
   const C = hex(hair);
@@ -97,15 +102,15 @@ export function paintCoilTile(buf, { rect, period, W = 512, hair = '#15110F', se
     // vertex alpha below 1 opens holes between the coils (a dissolving edge)
     buf.base[o + 3] = clampB((0.52 + 0.48 * smooth(0.18, 0.6, hv)) * 255);
     const q = ((y0 + y) * W + x0 + x) * 3;
-    const n = fieldNormal(f, sx, sy, 5.2);
+    const n = fieldNormal(f, sx, sy, 2.6);
     buf.normal[q] = clampB((n[0] * 0.5 + 0.5) * 255); buf.normal[q + 1] = clampB((n[1] * 0.5 + 0.5) * 255); buf.normal[q + 2] = clampB((n[2] * 0.5 + 0.5) * 255);
-    buf.orm[q] = 255; buf.orm[q + 1] = clampB((rough + 0.2 * (1 - hv)) * 255); buf.orm[q + 2] = 0;
+    buf.orm[q] = 255; buf.orm[q + 1] = clampB((rough + 0.2 * (1 - hv)) * 255); buf.orm[q + 2] = HAIR_METAL;
   }
   return f;
 }
 
 /** Tufts for cards: V = 1 (bottom of the rect) is the root, dense; V = 0 the loose tips. */
-export function paintCoilFringe(buf, { rect, W = 512, hair = '#15110F', seed = 33, rough = 0.44 } = {}) {
+export function paintCoilFringe(buf, { rect, W = 512, hair = '#15110F', seed = 33, rough = 0.8 } = {}) {
   const [x0, y0, w, h] = rect;
   const f = coilField(w, h, {
     count: 300, seed, wrapY: false, r: [3.6, 6.2], len: [12, 26], turns: [2.4, 4.0], strand: [0.95, 1.35], axisSpread: 0.9,
@@ -123,15 +128,15 @@ export function paintCoilFringe(buf, { rect, W = 512, hair = '#15110F', seed = 3
     const solid = hv > 0.1 || root > 0.92;
     buf.base[o + 3] = solid ? 255 : 2;
     const q = ((y0 + y) * W + x0 + x) * 3;
-    const n = fieldNormal(f, x, y, 4.6);
+    const n = fieldNormal(f, x, y, 2.4);
     buf.normal[q] = clampB((n[0] * 0.5 + 0.5) * 255); buf.normal[q + 1] = clampB((n[1] * 0.5 + 0.5) * 255); buf.normal[q + 2] = clampB((n[2] * 0.5 + 0.5) * 255);
-    buf.orm[q] = 255; buf.orm[q + 1] = clampB((rough + 0.18 * (1 - hv)) * 255); buf.orm[q + 2] = 0;
+    buf.orm[q] = 255; buf.orm[q + 1] = clampB((rough + 0.18 * (1 - hv)) * 255); buf.orm[q + 2] = HAIR_METAL;
   }
   return f;
 }
 
 /** The opaque coil surface of a lock, repeating; the flow runs along V. */
-export function paintLockTile(buf, { rect, period, W = 512, hair = '#15110F', seed = 47, rough = 0.40 } = {}) {
+export function paintLockTile(buf, { rect, period, W = 512, hair = '#15110F', seed = 47, rough = 0.84 } = {}) {
   const [x0, y0, w, h] = rect;
   const f = coilField(period, period, { count: 260, seed, r: [3.2, 5.4], len: [12, 26], axisSpread: 0.3, strand: [1, 1.4] });
   const C = hex(hair);
@@ -141,9 +146,9 @@ export function paintLockTile(buf, { rect, period, W = 512, hair = '#15110F', se
     const o = ((y0 + y) * W + x0 + x) * 4;
     buf.base[o] = clampB(col[0]); buf.base[o + 1] = clampB(col[1]); buf.base[o + 2] = clampB(col[2]); buf.base[o + 3] = 255;
     const q = ((y0 + y) * W + x0 + x) * 3;
-    const n = fieldNormal(f, sx, sy, 5);
+    const n = fieldNormal(f, sx, sy, 1.6);
     buf.normal[q] = clampB((n[0] * 0.5 + 0.5) * 255); buf.normal[q + 1] = clampB((n[1] * 0.5 + 0.5) * 255); buf.normal[q + 2] = clampB((n[2] * 0.5 + 0.5) * 255);
-    buf.orm[q] = 255; buf.orm[q + 1] = clampB((rough + 0.2 * (1 - f.h[s])) * 255); buf.orm[q + 2] = 0;
+    buf.orm[q] = 255; buf.orm[q + 1] = clampB((rough + 0.2 * (1 - f.h[s])) * 255); buf.orm[q + 2] = HAIR_METAL;
   }
 }
 
@@ -183,7 +188,7 @@ export function hairCoverage(pm, shellGrid, { W, want, maxD = 0.03, blur } = {})
  * The hairline paint layer. `coverage(T)` -> 0..1 (blurred shell); the edge dissolves through
  * the coil field itself, so the skin-to-hair transition is individual coils, not a stencil.
  */
-export function hairlineLayer({ coverage, sampler, flowUV, hair = '#15110F', skinShadow = 0.72, heightM = 0.00042 } = {}) {
+export function hairlineLayer({ coverage, sampler, flowUV, hair = '#15110F', skinShadow = 0.72, heightM = 0.00022 } = {}) {
   const C = hex(hair);
   const o = [0, 0];
   const uv = [0, 0];
@@ -197,12 +202,12 @@ export function hairlineLayer({ coverage, sampler, flowUV, hair = '#15110F', ski
     const under = smooth(0.1, 0.5, c);
     const dark = mix(1, skinShadow, under);
     T.r *= dark; T.g *= dark * 0.98; T.b *= dark * 0.96;
-    const edge = smooth(0.42, 0.64, c + (hv - 0.42) * 0.62);
+    const edge = smooth(0.36, 0.72, c + (hv - 0.42) * 0.85);
     if (edge <= 0) return;
     const col = coilColour(hv, tv, C);
     T.r = mix(T.r, col[0] * 1.05, edge); T.g = mix(T.g, col[1] * 1.05, edge); T.b = mix(T.b, col[2] * 1.05, edge);
     T.h += edge * hv * heightM;
-    T.rough = mix(T.rough, 0.42 + 0.2 * (1 - hv), edge);
+    T.rough = mix(T.rough, 0.8 + 0.12 * (1 - hv), edge);
   };
 }
 
@@ -249,8 +254,10 @@ export function coilCards(anchors, { flow, skinOf, length = [0.014, 0.024], widt
     const L = mix(length[0], length[1], R()), Wd = mix(width[0], width[1], R()) * (a.scale ?? 1), lift = mix(liftTip[0], liftTip[1], R());
     const roll = (R() - 0.5) * 0.7;                                   // a little rotation about the flow, so cards do not all face out
     const sd = norm(add(mul(s, Math.cos(roll)), mul(n, Math.sin(roll))));
-    const windowW = Wd / (0.078) * rect[2] * 0.5;                     // the fringe cell is ~7.8 cm wide
+    // the coil field's own scale (0.3 mm per texel), so a coil stays round on any card
+    const windowW = Wd / 0.0003, windowH = L / 0.0003;
     const u0 = rect[0] + R() * (rect[2] - windowW - 1);
+    const vTop = rect[1] + 14 + R() * Math.max(0, rect[3] - windowH - 16);
     const skin = skinOf(a.p);
     const rows = [0, 0.55, 1];
     const base = g.pos.length / 3;
@@ -262,7 +269,7 @@ export function coilCards(anchors, { flow, skinOf, length = [0.014, 0.024], widt
         const x = k ? 0.5 : -0.5;
         g.pos.push(...add(c, mul(sd, x * Wd * (1 - 0.18 * t))));
         g.nrm.push(...nn);
-        g.uv.push((u0 + k * windowW) / W, (rect[1] + (1 - t) * (rect[3] - 1)) / W);
+        g.uv.push((u0 + k * windowW) / W, (vTop + (1 - t) * windowH) / W);
         g.jnt.push(...skin.j); g.wgt.push(...skin.w);
         const shade = mix(0.55, 1, t);
         g.col.push(shade, shade, shade, 1);
@@ -281,42 +288,103 @@ export function coilCards(anchors, { flow, skinOf, length = [0.014, 0.024], widt
  * the chain's axis and tapers to its own tip. Skinned along `joints` exactly as a tube
  * would be (A33-hair-bounce reads the chain, not the mesh).
  */
-export function coilLocks(P, joints, { count = 5, ring = 4, along = 9, spread = 0.0105, radius = 0.0078, twist = 2.4, uv, W = 512, seed = 13, side = [1, 0, 0] } = {}) {
+export function coilLocks(P, joints, { count = 5, ring = 4, along = 9, spread = 0.0105, radius = 0.0078, twist = 2.4, uv, W = 512, seed = 13, side = [1, 0, 0], period = 96 } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const pl = polyline(P);
   const R = rng(seed * 16777619);
-  const [rx, ry, rw, rh] = uv.rect;
+  const [rx, ry] = uv.rect;
+  const ringAt = (c, a, ph, taper, rad, uOff, v) => {
+    const u = (a / along) * taper;
+    const { p, t, seg, f } = pl.at(u);
+    const sd = norm(sub(side, mul(t, dot(side, t))));
+    const up = cross(t, sd);
+    const ang = ph + twist * u * TAU;
+    const sprd = spread * (0.75 + 0.6 * u) * (1 - 0.35 * smooth(0.7, 1, u));
+    const cen = add(p, add(mul(sd, Math.cos(ang) * sprd), mul(up, Math.sin(ang) * sprd)));
+    const r0 = rad * (1 - 0.62 * smooth(0.25, 1, a / along)) + 0.0007;
+    const n1 = joints.length;
+    const ja = joints[Math.min(seg, n1 - 1)], jb = joints[Math.min(seg + 1, n1 - 1)];
+    const wb = seg + 1 >= n1 ? 0 : f;
+    for (let r = 0; r <= ring; r++) {
+      const th = (r / ring) * TAU;
+      const nn = add(mul(sd, Math.cos(th)), mul(up, Math.sin(th)));
+      g.pos.push(...add(cen, mul(nn, r0)));
+      g.nrm.push(...nn);
+      g.uv.push((rx + uOff + (r / ring) * period * 0.5) / W, (ry + v) / W);
+      g.jnt.push(ja, jb, 0, 0); g.wgt.push(1 - wb, wb, 0, 0);
+    }
+  };
   for (let c = 0; c < count; c++) {
     const ph = (c / count) * TAU + R() * 0.5;
     const taper = 0.72 + R() * 0.28;
     const rad = radius * (0.8 + 0.4 * R());
-    const sOff = R() * rw * 0.5, vOff = R() * rh * 0.3;
-    const base = g.pos.length / 3;
-    for (let a = 0; a <= along; a++) {
-      const u = (a / along) * taper;
-      const { p, t, seg, f } = pl.at(u);
-      const sd = norm(sub(side, mul(t, dot(side, t))));
-      const up = cross(t, sd);
-      const ang = ph + twist * u * TAU;
-      const sprd = spread * (0.75 + 0.6 * u) * (1 - 0.35 * smooth(0.7, 1, u));
-      const off = add(mul(sd, Math.cos(ang) * sprd), mul(up, Math.sin(ang) * sprd));
-      const cen = add(p, off);
-      const r0 = rad * (1 - 0.62 * smooth(0.25, 1, a / along)) + 0.0007;
-      const n1 = joints.length;
-      const ja = joints[Math.min(seg, n1 - 1)], jb = joints[Math.min(seg + 1, n1 - 1)];
-      const wb = seg + 1 >= n1 ? 0 : f;
-      for (let r = 0; r <= ring; r++) {
-        const th = (r / ring) * TAU;
-        const nn = add(mul(sd, Math.cos(th)), mul(up, Math.sin(th)));
-        g.pos.push(...add(cen, mul(nn, r0)));
-        g.nrm.push(...nn);
-        g.uv.push((rx + sOff + (r / ring) * rw * 0.5) / W, (ry + vOff + (a / along) * rh * 0.68) / W);
-        g.jnt.push(ja, jb, 0, 0); g.wgt.push(1 - wb, wb, 0, 0);
+    const uOff = R() * period * 0.45;
+    for (let a = 0; a < along; a++) {
+      // each segment re-reads the coil tile at its own scale, so coils stay round down the lock
+      const base = g.pos.length / 3;
+      const v0 = R() * (period * 0.2);
+      ringAt(c, a, ph, taper, rad, uOff, v0);
+      ringAt(c, a + 1, ph, taper, rad, uOff, v0 + period * 0.78);
+      for (let r = 0; r < ring; r++) {
+        const i0 = base + r, i1 = i0 + 1, i2 = base + ring + 1 + r, i3 = i2 + 1;
+        g.idx.push(i0, i1, i2, i1, i3, i2);
       }
     }
-    for (let a = 0; a < along; a++) for (let r = 0; r < ring; r++) {
-      const i0 = base + a * (ring + 1) + r, i1 = i0 + 1, i2 = i0 + ring + 1, i3 = i2 + 1;
-      g.idx.push(i0, i1, i2, i1, i3, i2);
+  }
+  return g;
+}
+
+/**
+ * A tuft of coils on a dyn_ chain: `count` strips crossing on the chain's axis (a star in
+ * section), UV'd at the coil field's own scale, repeating down the chain. The
+ * COLOR_0 alpha falls toward each strip's edges and tip, and the alpha cut opens between the
+ * coils there: the outline is individual coils, not a card edge. No rope, no braid.
+ * uv: { rect, period, W } (the coil tile); mPerPx = the tile's scale.
+ */
+export function coilTuft(P, joints, { count = 3, along = 7, width = 0.03, side = [1, 0, 0], uv, seed = 13, mPerPx = 0.0003, taper = 0.3 } = {}) {
+  const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [], col: [] };
+  const pl = polyline(P);
+  const R = rng(seed * 16777619);
+  const [rx, ry] = uv.rect, per = uv.period, W = uv.W;
+  const skinAt = (seg, f) => {
+    const n = joints.length;
+    const a = joints[Math.min(seg, n - 1)], b = joints[Math.min(seg + 1, n - 1)], wb = seg + 1 >= n ? 0 : f;
+    return { j: [a, b, 0, 0], w: [1 - wb, wb, 0, 0] };
+  };
+  for (let c = 0; c < count; c++) {
+    const rot0 = (c / count) * Math.PI + (R() - 0.5) * 0.3;
+    const u0 = R() * (per - 110), lenMul = 0.82 + 0.18 * R();
+    const segPx = pl.total * lenMul / along / mPerPx;
+    const emit = (a, v) => {
+      const u = (a / along) * lenMul;
+      const { p, t, seg, f } = pl.at(u);
+      const sd0 = norm(sub(side, mul(t, dot(side, t))));
+      const up0 = cross(t, sd0);
+      const rot = rot0 + 0.5 * u;
+      const sd = add(mul(sd0, Math.cos(rot)), mul(up0, Math.sin(rot)));
+      const nn = norm(cross(t, sd));
+      const lump = 1 + 0.22 * Math.sin(a * 2.3 + c * 2.1);
+      const w = width * lump * (0.62 + 0.38 * smooth(0, 0.18, u)) * (1 - taper * smooth(0.5, 1, u));
+      const sk = skinAt(seg, f);
+      for (let k = 0; k <= 2; k++) {
+        const x = k - 1;
+        const q = add(p, add(mul(sd, x * w * 0.5), mul(nn, 0.0028 * (1 - x * x))));
+        g.pos.push(...q);
+        g.nrm.push(...norm(add(nn, mul(sd, x * 0.7))));
+        g.uv.push((rx + u0 + (k / 2) * (w / mPerPx)) / W, (ry + v) / W);
+        g.jnt.push(...sk.j); g.wgt.push(...sk.w);
+        const edgeA = k === 1 ? 1 : 0.58;
+        const tipA = 1 - 0.44 * smooth(0.5, 1, a / along);
+        const sh = mix(0.5, 1, smooth(0, 0.3, a / along));
+        g.col.push(sh, sh, sh, edgeA * tipA);
+      }
+    };
+    for (let a = 0; a < along; a++) {
+      // each segment reads its own window of the coil tile
+      const base = g.pos.length / 3;
+      const v0 = R() * Math.max(0, 255 - segPx);
+      emit(a, v0); emit(a + 1, v0 + segPx);
+      for (let k = 0; k < 2; k++) g.idx.push(base + k, base + k + 1, base + 3 + k, base + k + 1, base + 3 + k + 1, base + 3 + k);
     }
   }
   return g;
@@ -330,7 +398,7 @@ export function coilLocks(P, joints, { count = 5, ring = 4, along = 9, spread = 
  * paint layer plus the strokes (`scar`, a segment, parts the hairs along it). Each stroke
  * only tests texels in its own box, so 90 strokes per brow cost little.
  */
-export function browLayer({ x0, x1, line, strokes = 110, seed = 17, hair = '#15110F', scar = null, side = 1, width = 0.00028, length = [0.0052, 0.0088] } = {}) {
+export function browLayer({ x0, x1, line, strokes = 150, seed = 17, hair = '#15110F', scar = null, side = 1, width = 0.00032, length = [0.0056, 0.0092] } = {}) {
   const R = rng(seed * 374761393);
   const list = [];
   const seg = (a, b, p) => {
@@ -344,7 +412,7 @@ export function browLayer({ x0, x1, line, strokes = 110, seed = 17, hair = '#151
     const { y, half } = line(x);
     const yy = y + (R() * 2 - 1) * half * 0.86;
     // inner hairs stand up, the outer ones lie along the brow
-    const ang = mix(1.25, 0.1, smooth(0.0, 0.62, f)) + (R() - 0.5) * 0.42;
+    const ang = mix(1.05, 0.16, smooth(0.0, 0.55, f)) + (R() - 0.5) * 0.3;
     const dirX = side * Math.cos(ang), dirY = Math.sin(ang);
     const L = mix(length[0], length[1], R()) * mix(0.72, 1, smooth(0, 0.3, f)) * mix(1, 0.72, smooth(0.8, 1, f));
     const a = [x - dirX * L * 0.5, yy - dirY * L * 0.5], b = [x + dirX * L * 0.5, yy + dirY * L * 0.5];
@@ -361,8 +429,8 @@ export function browLayer({ x0, x1, line, strokes = 110, seed = 17, hair = '#151
     // a soft under-tone, then the strokes
     const { y, half } = line(Math.max(Math.min(x0, x1), Math.min(Math.max(x0, x1), T.X)));
     const inX = 1 - smooth(0, 0.004, Math.max(Math.min(x0, x1) - T.X, T.X - Math.max(x0, x1)));
-    const shadow = (1 - smooth(half * 0.5, half * 1.25, Math.abs(T.Y - y))) * inX * 0.42;
-    const sk = 1 - shadow * 0.62;
+    const shadow = (1 - smooth(half * 0.25, half * 1.15, Math.abs(T.Y - y))) * inX;
+    const sk = 1 - shadow * 0.34;
     T.r *= sk; T.g *= sk * 0.97; T.b *= sk * 0.95;
     let best = 0;
     for (const s of list) {
@@ -380,4 +448,71 @@ export function browLayer({ x0, x1, line, strokes = 110, seed = 17, hair = '#151
       T.rough = mix(T.rough, 0.5, best);
     }
   };
+}
+
+/* ================================================================ lashes */
+
+/**
+ * Upper lash cards along a lid (open = lib/skin eyeOpening). `segments` quads following the
+ * margin, leaning up and forward, UVs running along the lash cell; `zAt(x, y)` gives the lid's
+ * surface depth. Rigid on `joint`. Returns a geometry bucket with COLOR_0.
+ */
+export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062, W = 512, rect, lean = 0.62 } = {}) {
+  const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [], col: [] };
+  const inner = side > 0 ? open.x0 : open.x1, outer = side > 0 ? open.x1 : open.x0;
+  for (let i = 0; i <= segments; i++) {
+    const f = 0.06 + 0.98 * (i / segments);
+    const x = inner + (outer - inner) * Math.min(1.02, f);
+    const y = open.upper(Math.max(Math.min(open.x0, open.x1), Math.min(Math.max(open.x0, open.x1), x)));
+    const z = zAt(x, y);
+    const L = length * mix(0.62, 1.08, smooth(0.0, 0.75, f));
+    const out = side * mix(0.02, 0.5, f);
+    const up = [out * 0.8, Math.cos(lean * 0.72), Math.sin(lean)];
+    const ul = Math.hypot(up[0], up[1], up[2]);
+    const a = [x, y + 0.0001, z + 0.0002], b = [x + up[0] / ul * L, y + up[1] / ul * L, z + up[2] / ul * L];
+    const n = norm([0, -0.35, 1]);
+    g.pos.push(...a, ...b); g.nrm.push(...n, ...n);
+    const u = rect[0] + (i / segments) * (rect[2] - 1);
+    g.uv.push(u / W, (rect[1] + rect[3] - 1) / W, u / W, rect[1] / W);
+    g.jnt.push(joint, 0, 0, 0, joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0, 1, 0, 0, 0);
+    g.col.push(1, 1, 1, 1, 1, 1, 1, 1);
+  }
+  for (let i = 0; i < segments; i++) {
+    const a = i * 2;
+    if (side > 0) g.idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); else g.idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+  return g;
+}
+
+/** The lash cell: tapered curved hairs, root at the bottom, near-black, a hard alpha. */
+export function paintLashes(buf, { rect, W = 512, hair = '#0E0A09', seed = 61, rough = 0.5 } = {}) {
+  const [x0, y0, w, h] = rect;
+  const R = rng(seed * 2654435761);
+  const cov = new Float32Array(w * h);
+  const n = Math.floor(w / 1.25);
+  for (let i = 0; i < n; i++) {
+    const xr = (i + R()) * w / n;
+    const lean = (R() - 0.5) * 7 + (xr / w - 0.5) * 8;
+    const L = h * (0.62 + 0.38 * R());
+    const steps = Math.ceil(L * 2);
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      const x = xr + lean * t * t, y = h - 1 - t * L;
+      const rad = mix(1.05, 0.34, t);
+      for (let yy = Math.floor(y - rad); yy <= Math.ceil(y + rad); yy++) for (let xx = Math.floor(x - rad); xx <= Math.ceil(x + rad); xx++) {
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+        const d = Math.hypot(xx + 0.5 - x, yy + 0.5 - y);
+        cov[yy * w + xx] = Math.max(cov[yy * w + xx], clamp01(1.2 - d / rad));
+      }
+    }
+  }
+  const C = hex(hair);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const o = ((y0 + y) * W + x0 + x) * 4;
+    buf.base[o] = C[0]; buf.base[o + 1] = C[1]; buf.base[o + 2] = C[2];
+    buf.base[o + 3] = cov[y * w + x] > 0.3 ? 255 : 2;
+    const q = ((y0 + y) * W + x0 + x) * 3;
+    buf.normal[q] = 128; buf.normal[q + 1] = 128; buf.normal[q + 2] = 255;
+    buf.orm[q] = 255; buf.orm[q + 1] = clampB(rough * 255); buf.orm[q + 2] = 0;
+  }
 }

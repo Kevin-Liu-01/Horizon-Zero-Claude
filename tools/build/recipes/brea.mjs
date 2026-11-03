@@ -1,16 +1,16 @@
 /**
- * CALIMA — recipe: Brea, the protagonist body (hero-body, W0b; bible §3.3–§3.5,
- * §3.8 step 1 + 4; plan §2 hero-body row, §4.1 "Brea body + head + hair + wrap +
- * eyes ≤ 10 k, ≤ 2 draws").
+ * CALIMA — recipe: Brea, the protagonist body (hero-body W0b; rebuilt for the close-up by
+ * character-art W1, R54 + R58; bible §3.3–§3.5, §3.8; plan §4.1 "Brea body + head + hair + wrap +
+ * eyes ≤ 10 k, ≤ 2 draws"). The construction NPCs reuse (R56): docs/ROUND5-CHARACTER-ART.md.
  *
  *   node tools/build/build-assets.mjs --only hero-body
  *
- * OUTPUT public/models/hero/brea.glb — ONE skeleton (UBC 65 joints + the dyn_
- * chains below) and exactly TWO skinned meshes:
- *   Brea_Skin      body + eyes, one material on a 1024² skin atlas (eyes packed
- *                  into the unused top-right strip of the UBC layout)
- *   Brea_HairWrap  coil shell, brows, topknot, headwrap band, wrap knot, wrap
- *                  tail, knot tail — one material on a 512² atlas
+ * OUTPUT public/models/hero/brea.glb — ONE skeleton (UBC 65 joints + the dyn_ chains below) and
+ * exactly TWO skinned meshes:
+ *   Brea_Skin      body + eyes on one 1024² skin atlas (lib/skin.mjs: islands re-packed by
+ *                  density, the face twice the source's texels, the eyes in their own patch)
+ *   Brea_HairWrap  wound cloth, coil cards, the coil tuft and lash cards on one alpha-cut,
+ *                  double-sided 512² atlas with COLOR_0 (lib/wrap.mjs, lib/hair.mjs)
  *
  * dyn_ chains (the kept spring solver discovers them by name, class by regex):
  *   dyn_hairKnotTail_01..04 + _end   Head      class hair   (A33-hair-bounce)
@@ -18,46 +18,47 @@
  *   dyn_sashEnd_01..03 + _end        pelvis    class cloth  (outfit sash, left hip)
  *   dyn_alidadeCord_01..02 + _end    spine_03  fallback     (alidade on the sternum)
  *
- * FACE (bible §3.5, gate A-face-delta): a displacement field (sum of Gaussian
- * bumps at the seven landmarks, found on the mesh) moves head, brows, eyes and
- * coil shell together; the eye sockets are held rigid (18 mm falloff). Then the
- * PAINT layer is composited onto the skin atlas from a bind-space position map:
- * warm olive-brown skin, sun creases, the salt-line (#EDEAE2 paste, 8 mm, cheek
- * to cheek across the nose bridge, crackled), a 3 cm scar through the left
- * brow (the brow hair is cut along it) and the ∴ on the back of the right hand.
- * Eyes dark brown #3B2A20; brows heavy and straight (×1.08).
+ * FACE (bible §3.5, gate A-face-delta): a displacement field (sum of Gaussian bumps at the seven
+ * landmarks, found on the mesh) moves head, eyes and the guide shell together; the eye sockets
+ * are held rigid. The vertex normals are softened on the open skin, so the terminator does not
+ * print the polygons. Then the PAINT layer is composited in 3-D from a bind-space position map:
+ * the seamless tone, ray-cast AO + convexity (form), colour zones, pores, creases, lids, brows
+ * hair by hair, the coil hairline, the salt paste (#EDEAE2, 8 mm, plates, cracks and thickness),
+ * the 3 cm scar through the left brow and the fine ∴ on the back of the right hand. Eyes dark
+ * brown #3B2A20; brows heavy and straight.
  *
- * HIDE MASK: every body vertex carries `_HIDEMASK` (uint8). Bit 0 = covered by
- * Pan Whites I (computed against that outfit's bind geometry: a ray along the
- * vertex normal meets the outfit within 8 cm). `src/hero/outfit.js` drops body
- * triangles whose three vertices carry the equipped set's bit, at equip time.
+ * HIDE MASK: every body vertex carries `_HIDEMASK` (uint8). Bit 0 = covered by Pan Whites I
+ * (computed against that outfit's bind geometry: a ray along the vertex normal meets the outfit
+ * within 8 cm). `src/hero/outfit.js` drops body triangles whose three vertices carry the equipped
+ * set's bit, at equip time.
  *
  * extras.r5Hero   { bodyHeight, totalHeight, targetHeight, chains }
- * extras.r5Face   { stock / displaced landmark positions, deltas (game mm),
- *                   profile window + stock profile mask (RLE), IoU }
+ * extras.r5Face   { stock / displaced landmark positions, deltas (game mm), profile window +
+ *                   stock profile mask (RLE), IoU }
  *
- * Sources (CC0): Quaternius Universal Base Characters [Standard]
- * (Superhero_Female_FullBody, Hair_BuzzedFemale, eye + hair textures).
+ * Sources (CC0): Quaternius Universal Base Characters [Standard] (Superhero_Female_FullBody; the
+ * Eyebrows and Hair_BuzzedFemale meshes are read as guides and not shipped). Everything else is
+ * procedural in this recipe and its libraries.
  */
-import sharp from 'sharp';
 import path from 'node:path';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { joinPrimitives } from '@gltf-transform/functions';
 import {
   ROOT, srcRoot, UBC_DIR, HAIR_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex,
   findLandmarks, GRADED, faceField, applyField,
-  recomputeNormals, positionMap, noise3, hex, smooth, profileMask, iou, rle, writeSkinned, v3,
+  recomputeNormals, refineEdges, smoothNormals, positionMap, smooth, profileMask, iou, rle, writeSkinned, v3,
 } from './lib/face.mjs';
 import {
-  relayoutSkinUV, uvIslands, TriGrid, triSoup, bakeAOTexels, blurMasked, convexity, scalarMap, paintSkinAtlas, decodeStockSkin, webp, blit, paintEye,
-  pores, colourZones, creases, saltPaste, scarSeam, inkDots, smoothSkin, eyeSocketClean, lipTone,
+  relayoutSkinUV, seamlessTone, TriGrid, triSoup, bakeAOTexels, blurMasked, convexity, scalarMap, paintSkinAtlas, decodeStockSkin, webp, blit, paintEye,
+  pores, colourZones, creases, saltPaste, scarSeam, inkDots, smoothSkin, eyeSocketClean, lipTone, eyeOpening, lidLines,
 } from './lib/skin.mjs';
+import { WRAP_ATLAS } from './lib/wrap.mjs';
+import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/wrap-head.mjs';
+import { coilField, coilSampler, hairCoverage, hairlineLayer, browLayer, lashCard } from './lib/hair.mjs';
 import {
-  rng, headForm, ellipsoidForm, ribbon, crownCap, cordRing, clothTail, vertexAO, WRAP_ATLAS, paintClothPanel, paintFrayEnd,
-} from './lib/wrap.mjs';
-import {
-  coilField, coilSampler, paintCoilTile, paintCoilFringe, paintLockTile, hairCoverage, hairlineLayer, scatterAnchors, coilCards, coilLocks, browLayer,
-} from './lib/hair.mjs';
+  humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, hairShape, browLines, remapEyeUV, EYE_SPAN,
+  cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards,
+} from './lib/skin-human.mjs';
 
 export const LANE = 'hero-body';
 export const OUTPUTS = ['public/models/hero/brea.glb', 'public/models/hero/brea-clips-ual2.glb'];
@@ -143,12 +144,12 @@ export const CHAINS = {
  */
 const FACE_MM = {
   noseBridge: { d: [0, 0.6, 6.2], s: 0.0125 },
-  noseTip: { d: [0, 3.0, 5.6], s: 0.0098 },
+  noseTip: { d: [0, 4.6, 3.9], s: 0.0098 },
   cheek: { d: [5.2, 1.4, 3.4], s: 0.0165 },     // mirrored for the right side
   jaw: { d: [6.2, -2.2, 0.6], s: 0.0235 },      // mirrored
-  chin: { d: [0, -1.6, 6.2], sx: 0.0215, sy: 0.0125, sz: 0.016 },
+  chin: { d: [0, -1.6, 6.2], sx: 0.0175, sy: 0.0125, sz: 0.016 },
   brow: { d: [0, 0.8, 4.4], s: 0.0165 },
-  upperLip: { d: [0, -0.4, -1.2], s: 0.0085 },
+  upperLip: { d: [0, 1.2, -1.0], s: 0.0085 },
 };
 
 export async function build({ out = ROOT } = {}) {
@@ -174,13 +175,15 @@ export async function build({ out = ROOT } = {}) {
 
   const joints = root.listSkins()[0].listJoints().map((j) => j.getName());
   const headSet = new Set(['Head', 'neck_01'].map((n) => joints.indexOf(n)));
-  const headW = vertexWeightOf(bodyPrim, headSet);
+  let headW = vertexWeightOf(bodyPrim, headSet);
   const headPts = [];
   {
     const P = bodyPrim.getAttribute('POSITION'), p = [0, 0, 0];
     for (let i = 0; i < P.getCount(); i++) { P.getElement(i, p); if (headW[i] > 0.5 && p[1] > 1.45) headPts.push([p[0], p[1], p[2], i]); }
   }
   const eyes = eyeCentres(eyesPrim);
+  const eyeSphereZ = eyeFrontZ(eyesPrim) - 0.0165;
+  const headW2 = (prim, i) => { const p = [0, 0, 0]; prim.getAttribute('POSITION').getElement(i, p); return p[1] > 1.6 && p[2] > 0 && Math.abs(p[0]) < 0.075; };
   const L = findLandmarks(headPts, eyes);
   for (const k of Object.keys(L)) if (!L[k]) throw new Error(`landmark ${k} not found`);
 
@@ -200,20 +203,20 @@ export async function build({ out = ROOT } = {}) {
   B([L.brow[0] + 0.032, L.brow[1] - 0.004, L.brow[2] - 0.016], [0.6, 0.4, 3.4], 0.014);
   B([L.brow[0] - 0.032, L.brow[1] - 0.004, L.brow[2] - 0.016], [-0.6, 0.4, 3.4], 0.014);
   B(L.upperLip, FM.upperLip.d, FM.upperLip.s);
-  // the alae come in and the columella lifts with the tip (no blunt ball nose)
+  // the alae come in with the tip (no blunt ball nose)
   const ty = L.noseTip[1], tz = L.noseTip[2];
-  B([0.0175, ty - 0.003, tz - 0.022], [-2.6, 1.2, -0.8], 0.0072);
-  B([-0.0175, ty - 0.003, tz - 0.022], [2.6, 1.2, -0.8], 0.0072);
-  B([0, ty - 0.012, tz - 0.012], [0, 1.6, -1.0], 0.0062);
+  B([0.0175, ty - 0.003, tz - 0.022], [-1.8, 1.0, -0.6], 0.0085);
+  B([-0.0175, ty - 0.003, tz - 0.022], [1.8, 1.0, -0.6], 0.0085);
   // the mandible: one line from the gonion to the chin, a little below the stock edge
   for (const sx of [1, -1]) {
-    B([sx * 0.040, L.chin[1] + 0.012, 0.030], [sx * 3.0, -2.4, 0.4], 0.0165);
-    B([sx * 0.024, L.chin[1] + 0.004, 0.066], [sx * 2.6, -1.2, 1.2], 0.0135);
+    B([sx * 0.040, L.chin[1] + 0.012, 0.030], [sx * 1.6, -2.4, 0.2], 0.0165);
+    B([sx * 0.024, L.chin[1] + 0.004, 0.066], [sx * 1.2, -1.2, 1.2], 0.0135);
   }
   // the neck takes a little more body under the jaw, so the head does not sit on a stalk
-  for (const sx of [1, -1]) B([sx * 0.036, 1.515, -0.010], [sx * 4.4, 0, 0.4], 0.021);
+  for (const sx of [1, -1]) B([sx * 0.038, 1.50, -0.012], [sx * 6.4, 0, 0.6], 0.026);
+  B([0, 1.495, 0.035], [0, 0, 3.2], 0.024);
   // head-only region: nothing below the jaw line or behind the ears moves
-  const region = (p) => smooth(1.47, 1.505, p[1]) * smooth(-0.075, -0.02, p[2]);
+  const region = (p) => smooth(1.425, 1.47, p[1]) * smooth(-0.10, -0.03, p[2]);
   const field = faceField(bumps, { rigid: eyes, r0: mm(15), r1: mm(33), region });   // the eye ball reaches ~14 mm from its centre: rigid to 15, 18 mm falloff
 
   // stock profile + landmarks BEFORE the field (the gate's reference)
@@ -224,8 +227,52 @@ export async function build({ out = ROOT } = {}) {
   const stockPos = new Float32Array(bodyPrim.getAttribute('POSITION').getArray());
 
   applyField(bodyPrim, field);
+  // her gaze measures: the upper lids come down a little over the iris, the lower ones up a touch
+  // (lids only, the sockets are the rigid eye mesh's: A-face-delta reads that)
+  {
+    const P = bodyPrim.getAttribute('POSITION'), a = P.getArray();
+    for (let i = 0; i < P.getCount(); i++) {
+      const x = a[i * 3], y = a[i * 3 + 1], z = a[i * 3 + 2];
+      const e = eyes[x > 0 ? 0 : 1];
+      const dx = (x - e[0]) / 0.0235, dy = y - e[1];
+      if (Math.abs(dx) > 1 || z < 0.05 || headW[i] < 0.5) continue;
+      const xk = 1 - dx * dx * dx * dx;
+      if (dy > 0.0015 && dy < 0.019) {
+        const k = xk * (1 - smooth(0.0055, 0.0165, dy));
+        a[i * 3 + 1] -= mm(1.25) * k; a[i * 3 + 2] += mm(0.22) * k;
+      } else if (dy < -0.0015 && dy > -0.014) {
+        const k = xk * (1 - smooth(0.005, 0.0125, -dy));
+        a[i * 3 + 1] += mm(0.5) * k;
+      }
+    }
+    P.setArray(a);
+  }
   const moved = movedMask(bodyPrim, stockPos);
   recomputeNormals(bodyPrim, moved);
+  // the jaw line and the chin are the silhouette a close-up reads: split their long edges on the curve
+  const stockN = bodyPrim.getAttribute('POSITION').getCount();
+  const refined = refineEdges(bodyPrim, {
+    minLen: 0.0072, maxEdges: 180,
+    want: (p) => {
+      const ax = Math.abs(p[0]);
+      if (p[1] < 1.515 || p[1] > 1.625 || ax > 0.082 || p[2] < -0.05) return false;
+      // not the mouth or the nose, which carry their own density
+      return !(p[1] > 1.565 && ax < 0.03 && p[2] > 0.07);
+    },
+  });
+  headW = vertexWeightOf(bodyPrim, headSet);
+  // the face stops printing its polygons on the terminator; lips, lids and nostrils keep their edge
+  smoothNormals(bodyPrim, {
+    iters: 2,
+    weight: (p) => {
+      if (p[1] < 1.47 || Math.abs(p[0]) > 0.11) return 0;
+      const lid = Math.min(Math.hypot((Math.abs(p[0]) - eyes[0][0]) / 0.024, (p[1] - eyes[0][1]) / 0.0125), 1.6);
+      const lip = Math.hypot(p[0] / 0.032, (p[1] - (L.upperLip[1] - 0.011)) / 0.017);
+      const nose = Math.hypot(p[0] / 0.022, (p[1] - (L.noseTip[1] - 0.012)) / 0.013);
+      const ear = Math.abs(p[0]) > 0.068 && p[2] < 0.03 && p[1] > 1.59 && p[1] < 1.71 ? 0 : 1;
+      return smooth(0.85, 1.25, lid) * smooth(0.8, 1.2, lip) * smooth(0.75, 1.15, nose) * ear;
+    },
+  });
   applyField(browPrim, field);
   const eyeStock = new Float32Array(eyesPrim.getAttribute('POSITION').getArray());
   applyField(eyesPrim, field);
@@ -240,7 +287,7 @@ export async function build({ out = ROOT } = {}) {
     for (const k of Object.keys(L)) {
       // the landmark vertex itself: nearest stock vertex to the landmark point
       let bi = -1, bd = 1e9;
-      for (let i = 0; i < P.getCount(); i++) {
+      for (let i = 0; i < stockN; i++) {
         const d = (stockPos[i * 3] - L[k][0]) ** 2 + (stockPos[i * 3 + 1] - L[k][1]) ** 2 + (stockPos[i * 3 + 2] - L[k][2]) ** 2;
         if (d < bd) { bd = d; bi = i; }
       }
@@ -260,133 +307,82 @@ export async function build({ out = ROOT } = {}) {
   faceRec.graded6mm = GRADED.filter((k) => disp[k] >= 6).length;
   faceRec.eyeSocketMaxMm = +(eyeMax * S * 1000).toFixed(3);   // the eye mesh's largest move (rigid socket mask)
 
-  // ---- brows: heavy and straight (×1.08 thicker, arch flattened 40 %), cut by the scar
-  const scar = { a: [0.041, 1.701], b: [0.031, 1.671] };        // left brow (+x), x/y, raw
-  shapeBrows(browPrim, scar);
-  // the pack's brows are 1,480 tris of hair cards; at Brea's budget (plan §4.1:
-  // body + head + hair + wrap + eyes <= 10 k) a third of that reads the same
-  await simplifyPrim(browPrim, 0.36, 0.004);
-
-  // ---- the coil shell (rigid on Head), moved by the same field
+  // ---- the guide meshes: the stock brows and the stock hair shell are read, not shipped
+  const scar = { a: [0.0405, 1.699], b: [0.0315, 1.671] };        // left brow (+x), x/y, raw
+  const brows = browLines(browPrim);
   const hairDoc = await readGltf(path.join(HAIR_DIR(SRC), 'Hair_BuzzedFemale.gltf'));
   cleanDoc(hairDoc);
   const hairNodes = graft(base, hairDoc, 'Hair_BuzzedFemale');
   const hairPrim = hairNodes[0].getMesh().listPrimitives()[0];
   applyField(hairPrim, field);
+  const shellGrid = new TriGrid(new Float32Array(triSoup(hairPrim)), 0.016);
 
   // ---- chains
   const chainIdx = {};
   for (const [k, c] of Object.entries(CHAINS)) chainIdx[k] = addChain(base, c.names, c.points, c.parent);
   const head = jointIndex(base, 'Head');
 
-  // ---- head surface radius (skull + coil shell) for the band
-  const shell = [];
-  {
-    const add = (prim, pred) => {
-      const P = prim.getAttribute('POSITION'), p = [0, 0, 0];
-      for (let i = 0; i < P.getCount(); i++) { P.getElement(i, p); if (pred(i, p)) shell.push([p[0], p[1], p[2]]); }
-    };
-    add(bodyPrim, (i, p) => headW[i] > 0.5 && p[1] > 1.6);
-    add(hairPrim, () => true);
-  }
-  const headC = [0, 0, -0.008];
-  const surfaceR = (th, y) => {
-    let best = 0;
-    const dx = Math.sin(th), dz = Math.cos(th);
-    for (const q of shell) {
-      if (Math.abs(q[1] - y) > 0.008) continue;
-      const rx = q[0] - headC[0], rz = q[2] - headC[2];
-      const r = Math.hypot(rx, rz);
-      if (r < 1e-4) continue;
-      if ((rx * dx + rz * dz) / r < 0.985) continue;
-      best = Math.max(best, r);
-    }
-    return best || 0.08;
-  };
+  // ---- the wrap: wound cloth on the measured head form (lib/wrap.mjs)
+  const skinJ = bodyPrim.getAttribute('JOINTS_0'), skinW = bodyPrim.getAttribute('WEIGHTS_0');
+  const isEar = (p) => Math.abs(p[0]) > 0.0735 && p[1] < 1.70 && p[2] < 0.03;
+  const headKeep = (() => {
+    const P = bodyPrim.getAttribute('POSITION'), p = [0, 0, 0], ear = new Uint8Array(P.getCount());
+    for (let i = 0; i < ear.length; i++) { P.getElement(i, p); ear[i] = isEar(p) ? 1 : 0; }
+    return (a, b, c) => (headW[a] > 0.5 || headW[b] > 0.5 || headW[c] > 0.5) && !(ear[a] || ear[b] || ear[c]);
+  })();
+  const headSoup = new Float32Array(triSoup(bodyPrim, headKeep));
+  const wrapped = woundHeadwrap({
+    headSoup, joint: head, center: [0, 1.672, -0.012],
+    // the hair and padding the cloth rides on: thin over the brow, fuller over the crown and the back
+    lift: (dx, dy, dz) => 0.0034 + 0.0052 * smooth(0.0, 0.75, dy) + 0.0032 * smooth(0.1, -0.85, dz),
+    // the base turn: low edge at +13 deg over the brow, +9 deg over the ears, -27 deg on the nape
+    base: { tiltDeg: 20, warpDeg: -7.5, lowDeg: 1.5, w: 0.232 },
+    // two turns crossing over the forehead
+    turns: [
+      { phiDeg: 82, tauDeg: 19, oDeg: 29, w: 0.215, along: 34, lift: 0.0052, pillow: 0.0026, creaseAmp: 0.0013, seed: 8, flip: true },
+      { phiDeg: -74, tauDeg: 17, oDeg: 39, w: 0.215, along: 30, lift: 0.0078, pillow: 0.0028, creaseAmp: 0.0014, seed: 15 },
+    ],
+    // the topknot; its top is the bbox top that assets.specs.js's targetHeight is computed from
+    bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, topY: 1.82756 },
+    knot: CHAINS.wrapSash.points[0],
+    // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
+    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.10, twist: Math.PI / 2, gather: 0.7, fold: 0.0052 },
+    tuft: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), count: 4, along: 6, width: 0.04, side: [1, 0, 0] },
+  });
 
-  // ---- hair+wrap atlas regions (u0, v0, du, dv), 512²
-  const R = {
-    coils: [0, 0, 0.5, 1],
-    brows: [0.5, 0, 0.5, 0.5],
-    violet: [0.5, 0.52, 0.375, 0.48],
-    carmine: [0.875, 0.52, 0.125, 0.23],
-    violetDeep: [0.875, 0.76, 0.125, 0.24],
-  };
-  const remapUV = (prim, rect) => {
-    const UV = prim.getAttribute('TEXCOORD_0'), u = [0, 0];
-    const arr = new Float32Array(UV.getCount() * 2);
-    for (let i = 0; i < UV.getCount(); i++) {
-      UV.getElement(i, u);
-      arr[i * 2] = rect[0] + Math.min(1, Math.max(0, u[0])) * rect[2];
-      arr[i * 2 + 1] = rect[1] + Math.min(1, Math.max(0, u[1])) * rect[3];
-    }
-    UV.setArray(arr);
-  };
-  // the coil shell only uses a small window of its 2048² texture: crop it into the atlas
-  {
-    const UV = hairPrim.getAttribute('TEXCOORD_0'), u = [0, 0];
-    const arr = new Float32Array(UV.getCount() * 2);
-    for (let i = 0; i < UV.getCount(); i++) {
-      UV.getElement(i, u);
-      arr[i * 2] = R.coils[0] + ((u[0] - COIL_CROP[0]) / COIL_CROP[2]) * R.coils[2];
-      arr[i * 2 + 1] = R.coils[1] + ((u[1] - COIL_CROP[1]) / COIL_CROP[3]) * R.coils[3];
-    }
-    UV.setArray(arr);
-  }
-  remapUV(browPrim, [0.5, 0, 0.5, 1]);   // brows use the top half of their texture: v 0..0.51 -> atlas 0..0.51
+  // ---- the skull under the wrap and the backs of the eyes are never seen: they pay for the cloth
+  const culled = cullUnderWrap(bodyPrim, wrapped.covers, isEar);
+  const eyesCulled = cullEyeBacks(eyesPrim, eyes);
+  const handsCut = await simplifyHands(bodyPrim);
+  compactPrim(bodyPrim);
 
-  // ---- procedural wrap pieces (all rigid on Head except the tails)
-  const geo = newGeo();
-  // the band: 6 cm, higher over the brow, lower at the back (over the occiput)
-  const yFront = L.brow[1] + 0.022, yBack = L.brow[1] - 0.038;
-  appendGeo(geo, band({
-    center: headC, surfaceR, height: 0.060, offset: 0.007, seg: 32, rows: 2, joint: head, uvRect: R.violet, lip: 0.003,
-    y0: (th) => yBack + (yFront - yBack) * (0.5 + 0.5 * Math.cos(th)),
-  }));
-  // a second, narrower band of the wrap crossing over the crown (the wrap's turn)
-  appendGeo(geo, band({
-    center: headC, surfaceR, height: 0.030, offset: 0.009, seg: 28, rows: 2, joint: head, uvRect: R.violetDeep, lip: 0.002,
-    y0: (th) => (yBack + 0.050) + (yFront + 0.016 - yBack - 0.050) * (0.5 + 0.5 * Math.cos(th)),
-  }));
-  // the topknot: a wrapped bun Ø 14 cm at the crown-back, axis leaning back
-  // Fix round 1 (V-brea-one-glance cue 1): Ø 15 cm and leaning back 45 deg, so it
-  // stands 6 cm proud of the crown-back in profile at the SAME top height (the
-  // row's targetHeight normalises the bbox; the body stays 1.72 m)
-  appendGeo(geo, bun([0, 1.7605, -0.100], { rx: 0.074, ry: 0.060, rz: 0.074, seg: 12, rings: 8, joint: head, uvRect: R.violet, ridges: 3, tilt: [0, 0.70, -0.71] }));
-  // its carmine binding where it meets the head
-  appendGeo(geo, bun([0, 1.738, -0.112], { rx: 0.054, ry: 0.016, rz: 0.052, seg: 12, rings: 3, joint: head, uvRect: R.carmine, ridges: 0, tilt: [0, 0.70, -0.71] }));
-  // the wrap knot the tail leaves from, back-left
-  const k0 = CHAINS.wrapSash.points[0];
-  appendGeo(geo, bun([k0[0] - 0.006, k0[1] + 0.012, k0[2] + 0.014], { rx: 0.026, ry: 0.022, rz: 0.020, seg: 8, rings: 5, joint: head, uvRect: R.violetDeep, ridges: 2 }));
-  // the wrap tail: 0.49 x 0.10 m cloth strip, violet out, carmine lining in.
-  // Fix round 5: the width leans UP across the level root (side vector half
-  // vertical) so the knotted root shows its face, not its edge, to a front or
-  // a side lens; down the hanging strip it spans left-rear (the vertical share
-  // drops out against a vertical tangent); and the strip TWISTS a quarter turn
-  // root to tip, with a deeper cup (curl 0.10), so whichever way the wind lays
-  // it no lens sees the whole tail edge-on (a 4 mm edge is under one pixel at
-  // the sheet's 64 px: judge r2 found it "a hairline")
-  appendGeo(geo, stripAlong(CHAINS.wrapSash.points, chainIdx.wrapSash.slice(0, -1), {
-    along: 16, width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], uvFront: R.violet, uvBack: R.carmine, thick: 0.004, curl: 0.10, twist: Math.PI / 2,
-  }));
-  // the knot tail: a short tuft of coils out of the topknot, lofted tube 0.22 m
-  appendGeo(geo, tubeAlong(CHAINS.hairKnotTail.points, chainIdx.hairKnotTail.slice(0, -1), {
-    ring: 7, along: 10, radius: (u) => 0.019 * (1 - 0.55 * u) + 0.003, side: [1, 0, 0], uvRect: [0.05, 0.1, 0.4, 0.8], lobes: 3, twist: 20,
-  }));
-  const wrapPrim = primFromGeo(base, geo);
-
-  // ---- materials + atlases
+  // ---- materials
   const skinMat = root.listMaterials().find((m) => m.getName() === 'MI_Superhero_Female').setName('MI_Brea_Skin');
   const eyeMat = root.listMaterials().find((m) => m.getName() === 'MI_Eyes');
   const browMat = root.listMaterials().find((m) => m.getName() === 'MI_Hair_2');
-  const hairMat = hairPrim.getMaterial();
   const wrapMat = browMat.setName('MI_Brea_HairWrap');
 
-  // eyes -> the skin atlas corner [0.75, 0] .. +0.0625
-  remapUV(eyesPrim, [0.75, 0, 0.0625, 0.0625]);
+  // ---- the skin atlas: a new layout (the face twice the texels), eyes in their own patch
+  const EYE_PX = 160;
+  const layout = relayoutSkinUV(bodyPrim, {
+    density: humanDensity,
+    reserve: [{ id: 'eye', w: EYE_PX / 1024, h: EYE_PX / 1024 }],
+    pad: 0.009, elastic: 0.7,
+  });
+  const eyeR = layout.reserved.eye;
+  remapEyeUV(eyesPrim, eyes, eyeR);
 
-  const painted = await paintSkin(bodyPrim, skinMat, eyeMat, { L, eyes, S, scar });
-  await hairAtlas(wrapMat, hairMat);
+  // the eye openings, read off the meshes; lash cards and lid lines follow them
+  const eyeTrue = eyes.map((e) => [e[0], e[1], eyeSphereZ]);
+  const faceGridSoup = triSoup(bodyPrim, (a, b, c) => headW2(bodyPrim, a) && headW2(bodyPrim, b) && headW2(bodyPrim, c));
+  triSoup(eyesPrim, null, faceGridSoup);
+  const faceGrid = new TriGrid(new Float32Array(faceGridSoup), 0.006);
+  const opens = eyeTrue.map((e) => eyeOpening(faceGrid, e, { eyeR: 0.0168 }));
+  const zAt = (x, y) => { const t = faceGrid.cast(x, y + 0.0004, 0.2, 0, 0, -1, 0.17, 0.0001); return t >= 0 ? 0.2 - t : eyeTrue[0][2] + 0.016; };
+  const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W }));
+
+  const skinImg = await paintBrea({ bodyPrim, skinMat, eyeMat, layout, eyeR, EYE_PX, L, eyes, S, scar, brows, shellGrid, wrapped, opens });
+  const wrapTex = await paintWrapAtlas(base, wrapMat);
 
   // ---- hide mask (Pan Whites I covers which body vertices)
   const { panBindTriangles } = await import('./outfit-pan-1.mjs');
@@ -398,17 +394,20 @@ export async function build({ out = ROOT } = {}) {
   bodyPrim.setAttribute('_HIDEMASK', base.createAccessor().setType('SCALAR').setArray(hideArr).setBuffer(buf));
   eyesPrim.setAttribute('_HIDEMASK', base.createAccessor().setType('SCALAR').setArray(new Uint8Array(eyesPrim.getAttribute('POSITION').getCount())).setBuffer(buf));
 
-  // ---- join: skin = body + eyes; hairwrap = coils + brows + wrap pieces
+  // ---- the hair + wrap primitive (cloth, cards, locks: one material on the 512² atlas)
+  const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW });
+  const hairGeo = joinGeos([wrapped.geo, cards, ...lashes]);
+  const wrapPrim = primFromGeo(base, hairGeo);
+
+  // ---- join: skin = body + eyes; hairwrap = one primitive
   eyesPrim.setMaterial(skinMat);
   const skinJoined = joinPrimitives([bodyPrim, eyesPrim]);
   skinJoined.setMaterial(skinMat);
-  for (const p of [hairPrim, browPrim, wrapPrim]) p.setMaterial(wrapMat);
-  const hairJoined = joinPrimitives([hairPrim, browPrim, wrapPrim]);
-  hairJoined.setMaterial(wrapMat);
+  wrapPrim.setMaterial(wrapMat);
   const skin = root.listSkins()[0];
   const arm = nodeByName(base, 'Armature');
   for (const n of [bodyNode, eyesNode, browNode, ...hairNodes]) { n.getMesh()?.dispose(); n.dispose(); }
-  for (const [name, prim] of [['Brea_Skin', skinJoined], ['Brea_HairWrap', hairJoined]]) {
+  for (const [name, prim] of [['Brea_Skin', skinJoined], ['Brea_HairWrap', wrapPrim]]) {
     const node = base.createNode(name).setMesh(base.createMesh(name).addPrimitive(prim)).setSkin(skin);
     arm.addChild(node);
   }
@@ -430,10 +429,11 @@ export async function build({ out = ROOT } = {}) {
         hideBits: { 'pan-1': 1 }, hiddenByPan1: hidden,
       },
       r5Face: faceRec,
-      r5Paint: painted,
+      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, handsCut } },
     },
   });
-  return { ...stats, face: { deltas: disp, iou: faceRec.iou, graded6mm: faceRec.graded6mm }, targetHeight: +(BODY_HEIGHT * totalH / rawBodyH).toFixed(5), hidden, clips };
+  void wrapTex;
+  return { ...stats, face: { deltas: disp, iou: faceRec.iou, graded6mm: faceRec.graded6mm }, targetHeight: +(BODY_HEIGHT * totalH / rawBodyH).toFixed(5), hidden, clips, refined, totalTop: +allBox.max[1].toFixed(5), parts: wrapped.parts, cardTris: cards.idx.length / 3, culled, eyesCulled, handsCut };
 }
 
 /** The native UAL2 clip pack (see UAL2_CLIPS). */
@@ -494,93 +494,6 @@ function bboxOfDoc(doc) {
   }
   return { min, max };
 }
-function vertexWeightOf(prim, set) {
-  const J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
-  const out = new Float32Array(J.getCount()); const j = [0, 0, 0, 0], w = [0, 0, 0, 0];
-  for (let i = 0; i < J.getCount(); i++) {
-    J.getElement(i, j); W.getElement(i, w);
-    let s = 0; for (let k = 0; k < 4; k++) if (set.has(j[k])) s += w[k];
-    out[i] = s;
-  }
-  return out;
-}
-function eyeCentres(prim) {
-  const P = prim.getAttribute('POSITION'), p = [0, 0, 0];
-  const Lc = [0, 0, 0, 0], Rc = [0, 0, 0, 0];
-  for (let i = 0; i < P.getCount(); i++) { P.getElement(i, p); const T = p[0] > 0 ? Lc : Rc; T[0] += p[0]; T[1] += p[1]; T[2] += p[2]; T[3]++; }
-  return [Lc, Rc].map((c) => [c[0] / c[3], c[1] / c[3], c[2] / c[3]]);
-}
-function movedMask(prim, before) {
-  const a = prim.getAttribute('POSITION').getArray();
-  const m = new Uint8Array(a.length / 3);
-  for (let i = 0; i < m.length; i++) {
-    m[i] = Math.abs(a[i * 3] - before[i * 3]) + Math.abs(a[i * 3 + 1] - before[i * 3 + 1]) + Math.abs(a[i * 3 + 2] - before[i * 3 + 2]) > 1e-6 ? 1 : 0;
-  }
-  return m;
-}
-
-/** meshoptimizer simplify on one primitive's index buffer (borders locked). */
-async function simplifyPrim(prim, ratio, error) {
-  await MeshoptSimplifier.ready;
-  const pos = Float32Array.from(prim.getAttribute('POSITION').getArray());
-  const idx = Uint32Array.from(prim.getIndices().getArray());
-  const target = Math.max(3, Math.floor(idx.length * ratio / 3) * 3);
-  const [out] = MeshoptSimplifier.simplify(idx, pos, 3, target, error, ['LockBorder']);
-  prim.getIndices().setArray(Uint32Array.from(out));
-}
-
-function primFromGeo(doc, g) {
-  const buf = doc.getRoot().listBuffers()[0];
-  const acc = (type, arr) => doc.createAccessor().setType(type).setArray(arr).setBuffer(buf);
-  const nrm = new Float32Array(g.nrm);
-  for (let i = 0; i < nrm.length; i += 3) { const l = Math.hypot(nrm[i], nrm[i + 1], nrm[i + 2]) || 1; nrm[i] /= l; nrm[i + 1] /= l; nrm[i + 2] /= l; }
-  return doc.createPrimitive()
-    .setAttribute('POSITION', acc('VEC3', new Float32Array(g.pos)))
-    .setAttribute('NORMAL', acc('VEC3', nrm))
-    .setAttribute('TEXCOORD_0', acc('VEC2', new Float32Array(g.uv)))
-    .setAttribute('JOINTS_0', acc('VEC4', new Uint16Array(g.jnt)))
-    .setAttribute('WEIGHTS_0', acc('VEC4', new Float32Array(g.wgt)))
-    .setIndices(acc('SCALAR', new Uint32Array(g.idx)));
-}
-
-/** Heavy straight brows: thicken ×1.08 about each brow's own centre line and flatten the arch 40 %; cut the scar. */
-function shapeBrows(prim, scar) {
-  const P = prim.getAttribute('POSITION'), p = [0, 0, 0];
-  const n = P.getCount();
-  const arr = new Float32Array(n * 3);
-  // centre line per side: mean y in 4 mm x-bins
-  const bins = new Map();
-  for (let i = 0; i < n; i++) { P.getElement(i, p); const k = `${Math.sign(p[0])}:${Math.round(p[0] / 0.004)}`; const b = bins.get(k) || [0, 0]; b[0] += p[1]; b[1]++; bins.set(k, b); }
-  let meanY = 0, cnt = 0;
-  for (const b of bins.values()) { meanY += b[0]; cnt += b[1]; }
-  meanY /= cnt;
-  for (let i = 0; i < n; i++) {
-    P.getElement(i, p);
-    const b = bins.get(`${Math.sign(p[0])}:${Math.round(p[0] / 0.004)}`);
-    const cy = b[0] / b[1];
-    const flatCy = cy + (meanY + 0.002 - cy) * 0.4;
-    arr[i * 3] = p[0];
-    arr[i * 3 + 1] = flatCy + (p[1] - cy) * 1.08;
-    arr[i * 3 + 2] = p[2] + 0.0006;
-  }
-  P.setArray(arr);
-  // the scar parts the left brow: drop triangles whose centroid is within 2.5 mm of the scar segment (x/y)
-  const idx = prim.getIndices().getArray();
-  const keep = [];
-  const dSeg = (x, y) => {
-    const ax = scar.a[0], ay = scar.a[1], bx = scar.b[0], by = scar.b[1];
-    const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / ((bx - ax) ** 2 + (by - ay) ** 2)));
-    return Math.hypot(x - (ax + t * (bx - ax)), y - (ay + t * (by - ay)));
-  };
-  for (let t = 0; t < idx.length; t += 3) {
-    const cx = (arr[idx[t] * 3] + arr[idx[t + 1] * 3] + arr[idx[t + 2] * 3]) / 3;
-    const cy = (arr[idx[t] * 3 + 1] + arr[idx[t + 1] * 3 + 1] + arr[idx[t + 2] * 3 + 1]) / 3;
-    if (cx > 0 && dSeg(cx, cy) < 0.0025) continue;
-    keep.push(idx[t], idx[t + 1], idx[t + 2]);
-  }
-  prim.getIndices().setArray(new Uint32Array(keep));
-}
-
 /**
  * Which body vertices sit under the outfit: a ray from the vertex along its
  * normal meets an outfit triangle within `maxD`. Brute force over a uniform
@@ -642,188 +555,121 @@ function rayTri(o, d, a, k) {
 /* ---------------------------------------------------------------- paint */
 
 /**
- * The skin atlas (1024² base, 512² normal + ORM): the UBC body texture, retoned
- * to Brea's warm olive-brown, with the paint layer composited from a bind-space
- * position map, and the eye texture packed into the free strip at u 0.75–0.81.
+ * Brea's paint: the skin atlas (1024² base, 512² normal + ORM), composited from the stock
+ * layout, baked form (ray-cast AO against skin + wrap + cards + collar), and the layers of
+ * lib/skin.mjs + lib/hair.mjs, with the eye patch blitted in.
  */
-const SCAR_RGB = [186, 146, 126];
-
-async function paintSkin(bodyPrim, skinMat, eyeMat, { L, eyes, S, scar }) {
-  const W = 1024;
-  const baseTex = skinMat.getBaseColorTexture();
-  const src = await sharp(Buffer.from(baseTex.getImage())).resize(W, W, { kernel: 'lanczos3' }).removeAlpha().raw().toBuffer();
+async function paintBrea({ bodyPrim, skinMat, eyeMat, layout, eyeR, EYE_PX, L, eyes, S, scar, brows, shellGrid, wrapped, opens }) {
+  const W = 1024, AOW = 512;
+  const baseTex = skinMat.getBaseColorTexture(), nTex = skinMat.getNormalTexture(), rTex = skinMat.getMetallicRoughnessTexture();
+  const stock = await decodeStockSkin(baseTex.getImage(), nTex.getImage(), rTex.getImage());
+  // the AO: skin (head, neck, shoulders), wrap, collar
+  const { panBindTriangles } = await import('./outfit-pan-1.mjs');
+  const pan = await panBindTriangles();
+  const soup = [];
+  triSoup(bodyPrim, null, soup);
+  const headOnly = soup.filter((_, i) => true);
+  for (let i = 0; i < wrapped.soup.length; i++) headOnly.push(wrapped.soup[i]);
+  for (let t = 0; t + 8 < pan.length; t += 9) if (pan[t + 1] > 1.3 && pan[t + 4] > 1.3 && pan[t + 7] > 1.3 && Math.abs(pan[t]) < 0.3) headOnly.push(pan[t], pan[t + 1], pan[t + 2], pan[t + 3], pan[t + 4], pan[t + 5], pan[t + 6], pan[t + 7], pan[t + 8]);
+  const grid = new TriGrid(new Float32Array(headOnly), 0.012);
+  const pmA = positionMap(bodyPrim, AOW, AOW);
+  const valid = (i) => !Number.isNaN(pmA.pos[i * 3]);
+  const headTexel = (i) => { const o = i * 3; return pmA.pos[o + 1] > 1.40 && Math.abs(pmA.pos[o]) < 0.26; };
+  const rawAO = bakeAOTexels(pmA, grid, { rays: 48, maxD: 0.07, lift: 0.0014, want: headTexel });
+  const ao = blurMasked(rawAO, AOW, AOW, valid, 3);
+  // the convexity, broad
+  const convMap = scalarMap(bodyPrim, convexity(bodyPrim), W, W, 0);
+  // the coil field (the same drawing the cards use)
+  const coilF = coilField(192, 192, { count: 340, seed: 21 });
+  const sampler = coilSampler(coilF, 0.058);
+  // the hair coverage, blurred: a texel array over the 1024 layout
   const pm = positionMap(bodyPrim, W, W);
-  const px = (x, y) => (y * W + x) * 3;
-  // retone: gain that takes the mid-cheek to #8A5A3C
-  const target = hex('#8A5A3C');
+  const headish = (i) => pm.pos[i * 3 + 1] > 1.52 && Math.abs(pm.pos[i * 3]) < 0.1;
+  const validT = (i) => !Number.isNaN(pm.pos[i * 3]);
+  const rawCov = hairCoverage(pm, shellGrid, { W, want: headish, maxD: 0.03 });
+  const cov = blurMasked(rawCov, W, W, validT, 5);
   const cheek = [L.cheekL[0] - 0.004, L.cheekL[1] - 0.004, L.cheekL[2] + 0.004];
-  let acc = [0, 0, 0], n = 0;
-  for (let i = 0; i < W * W; i++) {
-    const o = i * 3;
-    if (Number.isNaN(pm.pos[o])) continue;
-    if (Math.hypot(pm.pos[o] - cheek[0], pm.pos[o + 1] - cheek[1], pm.pos[o + 2] - cheek[2]) < 0.014) {
-      acc[0] += src[o]; acc[1] += src[o + 1]; acc[2] += src[o + 2]; n++;
-    }
-  }
-  const gain = n ? target.map((t, k) => t / Math.max(1, acc[k] / n)) : [1, 1, 1];
-  const out = Buffer.from(src);
-  for (let i = 0; i < W * W * 3; i++) out[i] = Math.min(255, Math.round(src[i] * gain[i % 3]));
-
-  const salt = hex('#EDEAE2');
   const eyeY = (eyes[0][1] + eyes[1][1]) / 2;
   const yS = eyeY - 0.024 / S * 0.98;           // a finger's width below the eyes, across the upper nose
-  const halfH = 0.004 / S;                      // 8 mm band
-  // x, z on the right hand's back (+y normal). Fix round 1 (V24 "∴ visible"):
-  // 1 cm dots in a 3.2 cm triangle, in a pale salt-white ink — the first cut's
-  // 6 mm dark dots (#2A2228 on #8A5A3C skin) did not read in any draw close-up
-  const handDots = [[-0.713, -0.044], [-0.687, -0.060], [-0.687, -0.028]];
-  const dotInk = hex('#E9E2D2');
-  const stats = { salt: 0, scar: 0, dots: 0, creases: 0 };
-  for (let y = 0; y < W; y++) {
-    for (let x = 0; x < W; x++) {
-      const o = px(x, y);
-      const X = pm.pos[o], Y = pm.pos[o + 1], Z = pm.pos[o + 2];
-      if (Number.isNaN(X)) continue;
-      const nx = pm.nrm[o], ny = pm.nrm[o + 1], nz = pm.nrm[o + 2];
-      // --- salt-line: cheek to cheek across the nose bridge, below the eyes; crackled paste
-      if (Y > 1.55 && Math.abs(X) < 0.064 && nz > 0.05 && Z > 0.02) {
-        const edge = 1 - smooth(halfH * 0.75, halfH * 1.15, Math.abs(Y - yS - 0.004 * (X * X) / 0.004));
-        const side = 1 - smooth(0.054, 0.064, Math.abs(X));
-        const crack = smooth(0.42, 0.6, noise3(X * 900, Y * 900, Z * 900)) * 0.55 + smooth(0.55, 0.75, noise3(X * 2600, Y * 2600, 3)) * 0.35;
-        const a = edge * side * (0.95 - crack * 0.7);
-        if (a > 0.01) {
-          for (let k = 0; k < 3; k++) out[o + k] = Math.round(out[o + k] * (1 - a) + salt[k] * a);
-          stats.salt++;
-        }
-      }
-      // --- brow scar: a pale seam through the left brow (3 cm)
-      if (X > 0.015 && Y > 1.64 && nz > 0.1) {
-        const t = Math.max(0, Math.min(1, ((X - scar.a[0]) * (scar.b[0] - scar.a[0]) + (Y - scar.a[1]) * (scar.b[1] - scar.a[1]))
-          / ((scar.b[0] - scar.a[0]) ** 2 + (scar.b[1] - scar.a[1]) ** 2)));
-        const d = Math.hypot(X - (scar.a[0] + t * (scar.b[0] - scar.a[0])), Y - (scar.a[1] + t * (scar.b[1] - scar.a[1])));
-        const a = (1 - smooth(0.0009, 0.0022, d)) * 0.85;
-        if (a > 0.01) {
-          // a pale, desaturated seam (#BA927E), not a red welt: the first cut
-          // (skin x1.3 + 18) read orange-red on the face sheet
-          const c = SCAR_RGB;
-          for (let k = 0; k < 3; k++) out[o + k] = Math.round(out[o + k] * (1 - a) + c[k] * a);
-          stats.scar++;
-        }
-      }
-      // --- sun creases at the outer eye corners
-      for (const e of eyes) {
-        const sx = Math.sign(e[0]);
-        const dx = (X - e[0]) * sx, dy = Y - e[1];
-        if (dx > 0.018 && dx < 0.034 && Math.abs(dy) < 0.012 && nz > -0.2) {
-          const ang = Math.atan2(dy, dx);
-          const lines = Math.abs(Math.sin(ang * 9 + 0.4));
-          const a = (1 - smooth(0.0, 0.18, lines)) * (1 - smooth(0.026, 0.034, dx)) * 0.28;
-          if (a > 0.01) { for (let k = 0; k < 3; k++) out[o + k] = Math.round(out[o + k] * (1 - a * 0.45)); stats.creases++; }
-        }
-      }
-      // --- ∴ on the back of the right hand (T-pose: right hand at -x, back of hand +y)
-      if (X < -0.66 && ny > 0.45) {
-        for (const [dx, dz] of handDots) {
-          const d = Math.hypot(X - dx, Z - dz);
-          const a = (1 - smooth(0.0042, 0.0054, d)) * 0.92;
-          if (a > 0.01) { for (let k = 0; k < 3; k++) out[o + k] = Math.round(out[o + k] * (1 - a) + dotInk[k] * a); stats.dots++; }
-        }
-      }
-    }
-  }
-  // --- eyes into the free strip: 64² at (768, 0); iris darkened to #3B2A20
-  const eyeImg = await sharp(Buffer.from(eyeMat.getBaseColorTexture().getImage())).resize(64, 64, { kernel: 'lanczos3' }).removeAlpha().raw().toBuffer();
-  const iris = hex('#3B2A20');
-  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
-    const s = (y * 64 + x) * 3, o = px(768 + x, y);
-    const r = eyeImg[s], g = eyeImg[s + 1], b = eyeImg[s + 2];
-    const lum = (r + g + b) / 765;
-    const sat = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
-    const k = sat > 0.12 && lum < 0.75 ? 1 : 0;
-    out[o] = k ? Math.round(iris[0] * (0.6 + lum)) : r;
-    out[o + 1] = k ? Math.round(iris[1] * (0.6 + lum)) : g;
-    out[o + 2] = k ? Math.round(iris[2] * (0.6 + lum)) : b;
-  }
-  const baseWebp = await sharp(out, { raw: { width: W, height: W, channels: 3 } }).webp({ quality: 86, effort: 4 }).toBuffer();
-  baseTex.setImage(baseWebp).setMimeType('image/webp').setURI('brea-skin-base.webp');
-
-  // normal 512² with the eye normal at (384, 0) 32²
-  const nTex = skinMat.getNormalTexture();
-  const nBody = await sharp(Buffer.from(nTex.getImage())).resize(512, 512, { kernel: 'lanczos3' }).removeAlpha().raw().toBuffer();
-  const nEye = await sharp(Buffer.from(eyeMat.getNormalTexture().getImage())).resize(32, 32).removeAlpha().raw().toBuffer();
-  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) for (let k = 0; k < 3; k++) nBody[((y) * 512 + 384 + x) * 3 + k] = nEye[(y * 32 + x) * 3 + k];
-  nTex.setImage(await sharp(nBody, { raw: { width: 512, height: 512, channels: 3 } }).webp({ quality: 90, effort: 4 }).toBuffer())
-    .setMimeType('image/webp').setURI('brea-skin-normal.webp');
-  // ORM 512²: R=1, G=roughness (eyes 0.35), B=0
-  const rTex = skinMat.getMetallicRoughnessTexture();
-  const rough = await sharp(Buffer.from(rTex.getImage())).resize(512, 512).greyscale().raw().toBuffer();
-  const orm = Buffer.alloc(512 * 512 * 3);
-  for (let i = 0; i < 512 * 512; i++) {
-    const x = i % 512, y = Math.floor(i / 512);
-    orm[i * 3] = 255;
-    orm[i * 3 + 1] = (x >= 384 && x < 416 && y < 32) ? 89 : rough[i];
-    orm[i * 3 + 2] = 0;
-  }
-  rTex.setImage(await sharp(orm, { raw: { width: 512, height: 512, channels: 3 } }).webp({ quality: 90, effort: 4 }).toBuffer())
-    .setMimeType('image/webp').setURI('brea-skin-orm.webp');
-  skinMat.setRoughnessFactor(1).setMetallicFactor(0).setDoubleSided(false);
-  return { gain: gain.map((g) => +g.toFixed(4)), ...stats };
-}
-
-/**
- * The hair+wrap atlas, 512²: coils (T_Hair_1, tinted #15110F) on the left half,
- * brows (T_Hair_2 top half, tinted) top-right, then woven orchil cloth
- * (#5A2E66 Orchil Deep), the carmine lining (#A3213A) and a deeper violet.
- */
-async function hairAtlas(wrapMat, hairMat) {
-  const W = 512;
-  const out = Buffer.alloc(W * W * 3);
-  const crop = async (img) => {
-    const meta = await sharp(Buffer.from(img)).metadata();
-    return sharp(Buffer.from(img)).extract({
-      left: Math.round(COIL_CROP[0] * meta.width), top: Math.round(COIL_CROP[1] * meta.height),
-      width: Math.round(COIL_CROP[2] * meta.width), height: Math.round(COIL_CROP[3] * meta.height),
-    }).resize(256, 512, { fit: 'fill' }).removeAlpha().raw().toBuffer();
+  const noseT = L.noseTip;
+  const handDots = [[-0.7075, -0.0445], [-0.6895, -0.0555], [-0.6895, -0.0335]];
+  // the layers, in paint order
+  const faceZone = (T) => (T.Y > 1.45 && Math.abs(T.X) < 0.1 ? 1 : 0);
+  const notFeature = (T) => {
+    // smooth the source's strokes on the open skin, not on the lips or inside the nostrils
+    const lip = Math.hypot((T.X) / 0.032, (T.Y - (L.upperLip[1] - 0.011)) / 0.02);
+    const nostril = Math.hypot(T.X / 0.024, (T.Y - (noseT[1] - 0.012)) / 0.012);
+    return faceZone(T) * smooth(0.95, 1.3, lip) * smooth(0.9, 1.25, nostril);
   };
-  const coils = await crop(hairMat.getBaseColorTexture().getImage());
-  const brows = await sharp(Buffer.from(wrapMat.getBaseColorTexture().getImage())).resize(256, 512, { fit: 'fill' }).removeAlpha().raw().toBuffer();
-  const coilC = hex('#15110F');
-  const mean = (buf) => { let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i]; return s / buf.length / 255; };
-  const mc = mean(coils), mb = mean(brows);
-  for (let y = 0; y < W; y++) for (let x = 0; x < 256; x++) {
-    const s = (y * 256 + x) * 3, o = (y * W + x) * 3;
-    const l = (coils[s] + coils[s + 1] + coils[s + 2]) / 765 / mc;
-    for (let k = 0; k < 3; k++) out[o + k] = Math.min(255, Math.round(coilC[k] * l * 1.2));
-  }
-  for (let y = 0; y < 264; y++) for (let x = 0; x < 256; x++) {
-    const s = (Math.min(511, y) * 256 + x) * 3, o = (y * W + 256 + x) * 3;
-    const l = (brows[s] + brows[s + 1] + brows[s + 2]) / 765 / mb;
-    for (let k = 0; k < 3; k++) out[o + k] = Math.min(255, Math.round(coilC[k] * l * 1.1));
-  }
-  const violet = hex('#5A2E66'), carmine = hex('#A3213A'), deep = hex('#4A2456');
-  for (let y = 264; y < W; y++) for (let x = 256; x < W; x++) {
-    const o = (y * W + x) * 3;
-    const u = (x - 256) / 256, v = (y - 264) / 248;
-    const c = u >= 0.75 ? (v < 0.48 ? carmine : deep) : violet;
-    // plain weave: warp/weft ridges + slub noise
-    const weave = 0.9 + 0.06 * Math.sin(x * 1.9) * Math.sin(y * 1.9) + 0.05 * (noise3(x * 0.15, y * 0.6, 7) - 0.5);
-    for (let k = 0; k < 3; k++) out[o + k] = Math.min(255, Math.max(0, Math.round(c[k] * weave)));
-  }
-  const baseTex = wrapMat.getBaseColorTexture();
-  baseTex.setImage(await sharp(out, { raw: { width: W, height: W, channels: 3 } }).webp({ quality: 88, effort: 4 }).toBuffer())
-    .setMimeType('image/webp').setURI('brea-hairwrap-base.webp');
-  // normals: coil normal left, brow normal top-right, flat weave for cloth
-  const nOut = Buffer.alloc(W * W * 3);
-  const nCoil = await crop(hairMat.getNormalTexture().getImage());
-  const nBrow = await sharp(Buffer.from(wrapMat.getNormalTexture().getImage())).resize(256, 512, { fit: 'fill' }).removeAlpha().raw().toBuffer();
-  for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
-    const o = (y * W + x) * 3;
-    if (x < 256) { const s = (y * 256 + x) * 3; nOut[o] = nCoil[s]; nOut[o + 1] = nCoil[s + 1]; nOut[o + 2] = nCoil[s + 2]; }
-    else if (y < 264) { const s = (y * 256 + x - 256) * 3; nOut[o] = nBrow[s]; nOut[o + 1] = nBrow[s + 1]; nOut[o + 2] = nBrow[s + 2]; }
-    else { nOut[o] = 128 + Math.round(10 * Math.sin(x * 1.9)); nOut[o + 1] = 128 + Math.round(10 * Math.sin(y * 1.9)); nOut[o + 2] = 250; }
-  }
-  const nTex = wrapMat.getNormalTexture();
-  nTex.setImage(await sharp(nOut, { raw: { width: W, height: W, channels: 3 } }).webp({ quality: 90, effort: 4 }).toBuffer())
-    .setMimeType('image/webp').setURI('brea-hairwrap-normal.webp');
-  wrapMat.setRoughnessFactor(0.84).setMetallicFactor(0).setDoubleSided(false).setBaseColorFactor([1, 1, 1, 1]);
+  const layers = [
+    smoothSkin({ zone: notFeature }),
+    eyeSocketClean({ eyes }),
+    lipTone({ center: [0, L.upperLip[1] - 0.011, L.upperLip[2] - 0.006], r: [0.036, 0.024, 0.03] }),
+    colourZones([
+      { at: [0, 1.70, 0.08], s: [0.05, 0.024, 0.05], gain: [1.03, 1.03, 0.98], rough: -0.12 },           // the forehead, warm and yellow, a soft sheen
+      { at: cheek, s: [0.024, 0.02, 0.03], gain: [1.05, 0.98, 0.95], rough: -0.16 },                     // the cheek, red through
+      { at: [-cheek[0], cheek[1], cheek[2]], s: [0.024, 0.02, 0.03], gain: [1.05, 0.98, 0.95], rough: -0.16 },
+      { at: noseT, s: [0.014, 0.02, 0.02], gain: [0.95, 0.95, 0.97], rough: -0.16 },                       // the nose, sun-reddened and oily
+      { at: L.noseBridge, s: [0.012, 0.022, 0.02], gain: [1.03, 0.99, 0.96], rough: -0.14 },
+      { at: [0, L.chin[1] + 0.024, L.chin[2]], s: [0.04, 0.02, 0.03], gain: [0.95, 0.94, 0.96] },         // the muzzle, cooler and greyer
+      { at: L.chin, s: [0.018, 0.012, 0.016], gain: [1.05, 0.97, 0.94], rough: -0.1 },
+      { at: [0.074, 1.635, -0.03], s: [0.016, 0.03, 0.028], gain: [1.05, 0.96, 0.93] },                     // the ears
+      { at: [-0.074, 1.635, -0.03], s: [0.016, 0.03, 0.028], gain: [1.05, 0.96, 0.93] },
+      { at: [eyes[0][0], eyes[0][1] - 0.0145, eyes[0][2] + 0.008], s: [0.017, 0.0065, 0.02], gain: [0.93, 0.9, 0.91] },   // under the eyes
+      { at: [eyes[1][0], eyes[1][1] - 0.0145, eyes[1][2] + 0.008], s: [0.017, 0.0065, 0.02], gain: [0.93, 0.9, 0.91] },
+      { at: [0, 1.50, 0.03], s: [0.05, 0.03, 0.06], gain: [0.94, 0.93, 0.93] },                           // under the jaw
+    ]),
+    pores({ zone: (T) => (T.Y > 1.42 && Math.abs(T.X) < 0.2 ? 1 : Math.abs(T.X) > 0.4 ? 0.6 : 0.4) }),
+    creases([
+      // sun creases at the outer eye corners: she squints for a living
+      ...[1, -1].flatMap((sx) => {
+        const e = eyes[sx > 0 ? 0 : 1];
+        const z = e[2] - 0.006;
+        return [
+          { pts: [[e[0] + sx * 0.0225, e[1] + 0.0025, z - 0.002], [e[0] + sx * 0.0305, e[1] + 0.0065, z - 0.012]], w: 0.0009, depth: 0.00016, dark: 0.13 },
+          { pts: [[e[0] + sx * 0.0235, e[1] - 0.0005, z - 0.002], [e[0] + sx * 0.0325, e[1] + 0.0005, z - 0.014]], w: 0.001, depth: 0.00018, dark: 0.15 },
+          { pts: [[e[0] + sx * 0.0225, e[1] - 0.004, z - 0.002], [e[0] + sx * 0.0305, e[1] - 0.0065, z - 0.012]], w: 0.0009, depth: 0.00016, dark: 0.12 },
+        ];
+      }),
+      // the fold from the wing of the nose toward the mouth corner
+      ...[1, -1].map((sx) => ({ pts: [[sx * 0.0215, noseT[1] - 0.006, noseT[2] - 0.034], [sx * 0.0315, noseT[1] - 0.024, noseT[2] - 0.044], [sx * 0.0375, noseT[1] - 0.041, noseT[2] - 0.050]], w: 0.0026, depth: 0.00022, dark: 0.1 })),
+      // two soft lines across the neck
+      { pts: [[-0.05, 1.525, 0.035], [0, 1.519, 0.062], [0.05, 1.525, 0.035]], w: 0.0022, depth: 0.00016, dark: 0.08 },
+    ]),
+    hairlineLayer({
+      sampler,
+      coverage: (T) => {
+        if (T.Y < 1.52 || Math.abs(T.X) > 0.1) return 0;
+        return cov[T.y * W + T.x] * hairShape(T.X, T.Y, T.Z);
+      },
+      flowUV: (T, uv) => { uv[0] = Math.atan2(T.X, -T.Z + 0.001) * 0.09; uv[1] = T.Y; },
+    }),
+    lidLines({ open: opens[0], side: 1 }),
+    lidLines({ open: opens[1], side: -1 }),
+    browLayer({ x0: brows[1].x0, x1: brows[1].x1, line: brows[1].line, side: 1, seed: 17, scar }),
+    browLayer({ x0: brows[-1].x1, x1: brows[-1].x0, line: brows[-1].line, side: -1, seed: 19 }),
+    saltPaste({
+      y: (X) => yS + 0.004 * (X * X) / 0.004,
+      half: (X) => (0.0041 / S) * (1 - 0.1 * smooth(0.02, 0.058, Math.abs(X))),
+      xMax: 0.059,
+    }),
+    scarSeam({ a: scar.a, b: scar.b }),
+    inkDots({ dots: handDots, r: 0.00265, where: (T) => T.X < -0.66 && T.ny > 0.4 }),
+  ];
+  const toneMaps = seamlessTone(bodyPrim, layout.islands, layout.islandOf, stock, W);
+  const painted = await paintSkinAtlas({ prim: bodyPrim, islands: layout.islands, stock, W, toneAt: cheek, ao, aoW: AOW, conv: convMap, layers, pm, toneMaps });
+  // the eye patch
+  const eyeP = paintEye(EYE_PX, { span: EYE_SPAN });
+  const ex = Math.round(eyeR.x * W), ey = Math.round(eyeR.y * W);
+  blit(painted.base, W, eyeP.base, EYE_PX, EYE_PX, ex, ey);
+  blit(painted.normal, W, eyeP.normal, EYE_PX, EYE_PX, ex, ey);
+  blit(painted.orm, W, eyeP.orm, EYE_PX, EYE_PX, ex, ey);
+  baseTex.setImage(await webp(painted.base, W, { quality: 93 })).setMimeType('image/webp').setURI('brea-skin-base.webp');
+  nTex.setImage(await webp(painted.normal, W, { to: 512, quality: 92, kernel: 'mitchell' })).setMimeType('image/webp').setURI('brea-skin-normal.webp');
+  rTex.setImage(await webp(painted.orm, W, { to: 512, quality: 84, kernel: 'mitchell' })).setMimeType('image/webp').setURI('brea-skin-orm.webp');
+  skinMat.setRoughnessFactor(1).setMetallicFactor(0).setDoubleSided(false);
+  skinMat.setOcclusionTexture(rTex);
+  skinMat.setOcclusionStrength(1);
+  return { stats: painted.stats };
 }
+

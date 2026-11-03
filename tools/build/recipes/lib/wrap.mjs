@@ -109,7 +109,7 @@ function pushV(g, p, n, u, v, joint, c = null) {
  * panel's U period so a repeating strip of atlas covers any length.
  *   uv: { rect: [x, y, w, h] px, period px, W atlas px, pxPerM, v: [bottom, top] in 0..1 of rect }
  */
-export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [-1, -0.93, -0.66, -0.3, 0.1, 0.5, 0.82, 1], lift = 0.003, pillow = 0.0022, hemDrop = 0.0035, creases = 3, creaseAmp = 0.0011, wander = 0.04, seed = 1, joint = 0, uv, flip = false }) {
+export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [-1, -0.93, -0.66, -0.3, 0.1, 0.5, 0.82, 1], warp = null, lift = 0.003, pillow = 0.0022, hemDrop = 0.0035, creases = 3, creaseAmp = 0.0011, wander = 0.04, seed = 1, joint = 0, uv, flip = false }) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const axis = norm(n);
   const fwd = Math.abs(axis[2]) > 0.95 ? [1, 0, 0] : [0, 0, 1];
@@ -124,7 +124,7 @@ export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [
   const c = form.center;
   const point = (s, t) => {
     const wob = wander * Math.sin(s * 2 + seed) + wander * 0.5 * Math.sin(s * 5 + seed * 2.1);
-    const o = o0 + wob + t * w * (1 + 0.06 * Math.sin(s * 3 + seed * 3.3));
+    const o = o0 + wob + (warp ? warp(s) : 0) + t * w * (1 + 0.06 * Math.sin(s * 3 + seed * 3.3));
     const co = Math.cos(o), so = Math.sin(o), cs = Math.cos(s), ss = Math.sin(s);
     const d = [co * (cs * e1[0] + ss * e2[0]) + so * axis[0], co * (cs * e1[1] + ss * e2[1]) + so * axis[1], co * (cs * e1[2] + ss * e2[2]) + so * axis[2]];
     let off = lift;
@@ -160,7 +160,8 @@ export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [
     for (let i = 0; i < rows; i++) {
       const t = rowsT[i];
       const vv = mix(vr[0], vr[1], (t + 1) / 2);
-      const nn = normalAt(j, i);
+      // the turned-under hem rows take the outer row's normal: a worn thread is lit like its cloth
+      const nn = normalAt(j, i === 0 ? 1 : i === rows - 1 ? rows - 2 : i);
       pushV(g, at(j, i), nn, (rect[0] + uPx) / W, (rect[1] + vv * rect[3]) / W, joint);
     }
   };
@@ -178,6 +179,7 @@ export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [
     if (u > period && j < along) { offs += period; emitCol(j, u - period); col++; }
   }
   void base;
+  g.rows = rows;
   return g;
 }
 
@@ -329,6 +331,24 @@ function chainW(joints, seg, f) {
 
 /* ================================================================== bake */
 
+/**
+ * Make every triangle's winding agree with its vertex normals. A double-sided material flips
+ * the shading normal of a back face, so a card wound against its normals is lit from the wrong
+ * side: a near-black coil card under a sun at its back reads grey.
+ */
+export function fixWinding(g) {
+  for (let t = 0; t < g.idx.length; t += 3) {
+    const a = g.idx[t], b = g.idx[t + 1], c = g.idx[t + 2];
+    const ax = g.pos[a * 3], ay = g.pos[a * 3 + 1], az = g.pos[a * 3 + 2];
+    const e1 = [g.pos[b * 3] - ax, g.pos[b * 3 + 1] - ay, g.pos[b * 3 + 2] - az];
+    const e2 = [g.pos[c * 3] - ax, g.pos[c * 3 + 1] - ay, g.pos[c * 3 + 2] - az];
+    const n = cross(e1, e2);
+    const m = [g.nrm[a * 3] + g.nrm[b * 3] + g.nrm[c * 3], g.nrm[a * 3 + 1] + g.nrm[b * 3 + 1] + g.nrm[c * 3 + 1], g.nrm[a * 3 + 2] + g.nrm[b * 3 + 2] + g.nrm[c * 3 + 2]];
+    if (dot(n, m) < 0) { g.idx[t + 1] = c; g.idx[t + 2] = b; }
+  }
+  return g;
+}
+
 /** Per-vertex contact shadow against `grid`; writes g.col as linear RGBA (a warm, not grey, darkening). */
 export function vertexAO(g, grid, { rays = 40, maxD = 0.035, floor = 0.32, tint = [1, 0.94, 1], alpha = null } = {}) {
   const ao = bakeAOPoints(g.pos, g.nrm, grid, { rays, maxD, lift: 0.002 });
@@ -338,6 +358,14 @@ export function vertexAO(g, grid, { rays = 40, maxD = 0.035, floor = 0.32, tint 
     const k = mix(floor, 1, Math.min(1, ao[i] * 1.12));
     g.col[i * 4] = k * tint[0]; g.col[i * 4 + 1] = k * tint[1]; g.col[i * 4 + 2] = k * tint[2];
     g.col[i * 4 + 3] = alpha ? alpha(i) : 1;
+  }
+  // a ribbon's hem rows turn under, so they are always occluded: they read their neighbour instead
+  if (g.rows) {
+    const R = g.rows, cols = n / R;
+    for (let c = 0; c < cols; c++) for (const [e, nb] of [[0, 2], [1, 2], [R - 1, R - 3], [R - 2, R - 3]]) {
+      const a = (c * R + e) * 4, b = (c * R + nb) * 4;
+      for (let k = 0; k < 3; k++) g.col[a + k] = Math.max(g.col[a + k], g.col[b + k] * 0.92);
+    }
   }
   return g;
 }
@@ -360,14 +388,15 @@ export const WRAP_ATLAS = {
   coilTile: { rect: [0, 256, 256, 256], period: 192 },  // short coils, repeating both ways
   coilFringe: { rect: [256, 256, 256, 128] },           // short coil tufts for cards: dense roots, loose tips
   lockTile: { rect: [256, 384, 128, 128], period: 96 }, // the knot tail's locks
-  spare: { rect: [384, 384, 128, 128] },
+  lashes: { rect: [384, 384, 128, 32] },                // upper lash cards
+  spare: { rect: [384, 416, 128, 96] },
 };
 
 /** Periodic crease set for a cloth panel. */
 function creaseSet(seed, count, { sigma = [0.03, 0.09], amp = [0.0003, 0.0009] } = {}) {
   const R = rng(seed * 2246822519);
   const out = [];
-  for (let k = 0; k < count; k++) out.push({ c: 0.08 + 0.84 * R(), a: 0.02 + 0.09 * R(), k: 1 + Math.floor(R() * 3), ph: R(), s: mix(sigma[0], sigma[1], R()), amp: mix(amp[0], amp[1], R()) * (R() < 0.34 ? 1 : -1), k2: 1 + Math.floor(R() * 4), ph2: R() });
+  for (let k = 0; k < count; k++) out.push({ c: 0.08 + 0.84 * R(), a: 0.02 + 0.09 * R(), k: 1 + Math.floor(R() * 3), ph: R(), s: mix(sigma[0], sigma[1], R()), amp: mix(amp[0], amp[1], R()) * (R() < 0.34 ? 1 : -1), k2: 1 + Math.floor(R() * 2), ph2: R() });
   return out;
 }
 
@@ -377,7 +406,7 @@ function creaseSet(seed, count, { sigma = [0.03, 0.09], amp = [0.0003, 0.0009] }
  * Plain weave (warp period 3 px, weft 4 px, per-thread slub), long tension creases, drag
  * folds, a soft frayed selvedge in the alpha at both V edges, optionally a selvedge stripe.
  */
-export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, seed = 1, creases = 6, sigma, amp, mmU = 0.83, mmV = 0.47, fringe = 5, stripe = null, stripeAt = 9, rough = 0.9, shadeK = 1, foldK = 1 } = {}) {
+export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, seed = 1, creases = 6, sigma, amp, mmU = 0.65, mmV = 0.47, fringe = 3, stripe = null, stripeAt = 9, rough = 0.93, shadeK = 1, foldK = 1.5, weave = 1 } = {}) {
   const [x0, y0, w, h] = rect;
   const P = period || w;
   const D = hex(dye), D2 = hex(dye2 || dye), D3 = hex(dye3 || dye);
@@ -388,11 +417,12 @@ export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, s
     let f = 0;
     for (const c of list) {
       const x = (v - c.c - c.a * Math.sin(TAU * (c.k * u + c.ph))) / c.s;
-      if (x > -2.6 && x < 2.6) f += c.amp * Math.exp(-x * x) * (0.5 + 0.5 * Math.sin(TAU * (c.k2 * u + c.ph2)));
+      if (x > -2.6 && x < 2.6) f += c.amp * Math.exp(-x * x) * (0.72 + 0.28 * Math.sin(TAU * (c.k2 * u + c.ph2)));
     }
     // drag folds: short diagonals where the cloth was pulled round the skull
-    const dd = pnoise2(u * 9 + v * 3, v * 5 - u * 2 + seed, 9, 1000) - 0.5;
-    f += dd * 0.00034;
+    const ws = Math.sin(TAU * (2 * u + v * 0.7 + seed * 0.13));
+    const dd = Math.sin(TAU * (3 * u + v * 1.6 + 0.22 * ws + seed * 0.37)) * 0.55 + Math.sin(TAU * (5 * u - v * 2.3 + 0.3 * ws + seed * 0.71)) * 0.45;
+    f += dd * 0.00017;
     return f * foldK;
   };
   // the fold height, once, for the whole panel (periodic in U)
@@ -403,33 +433,34 @@ export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, s
   for (const v of H) { minH = Math.min(minH, v); maxH = Math.max(maxH, v); }
   const R = rng(seed * 3266489917);
   const warpTone = new Float32Array(P), weftTone = new Float32Array(h), warpEnd = new Float32Array(P), warpEnd2 = new Float32Array(P);
-  // periodic thread tones: every warp thread (3 px) and weft thread (4 px) has its own weight
-  const nWarp = Math.floor(P / 3);
+  // periodic thread tones: every warp thread (2 px) and weft thread (3 px) has its own weight
+  const WP = 2, WF = 3;
+  const nWarp = Math.floor(P / WP);
   const tones = []; for (let i = 0; i < nWarp; i++) tones.push(R());
   const ends = []; for (let i = 0; i < nWarp; i++) ends.push(R());
   const ends2 = []; for (let i = 0; i < nWarp; i++) ends2.push(R());
-  for (let x = 0; x < P; x++) { const i = Math.floor(x / 3) % nWarp; warpTone[x] = tones[i]; warpEnd[x] = ends[i]; warpEnd2[x] = ends2[i]; }
-  for (let y = 0; y < h; y++) weftTone[y] = rng(seed + Math.floor(y / 4) * 7)();
+  for (let x = 0; x < P; x++) { const i = Math.floor(x / WP) % nWarp; warpTone[x] = tones[i]; warpEnd[x] = ends[i]; warpEnd2[x] = ends2[i]; }
+  for (let y = 0; y < h; y++) weftTone[y] = rng(seed + Math.floor(y / WF) * 7)();
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const px = x % P;
     const f = hAt(px, y);
     const lift = (f - minH) / Math.max(1e-6, maxH - minH);
     // weave
-    const wx = px % 3, wy = y % 4;
-    const over = ((Math.floor(px / 3) + Math.floor(y / 4)) & 1) === 0;
-    const warpRound = 1 - Math.abs(wx - 1) * 0.7, weftRound = 1 - Math.abs(wy - 1.5) / 2;
+    const wx = px % WP, wy = y % WF;
+    const over = ((Math.floor(px / WP) + Math.floor(y / WF)) & 1) === 0;
+    const warpRound = 1 - Math.abs(wx - 0.5) * 0.6, weftRound = 1 - Math.abs(wy - 1) * 0.5;
     const thread = over ? warpRound : weftRound;
     const tt = over ? warpTone[px] : weftTone[y];
     const weaveH = (over ? 1 : 0.55) * thread * 0.00011;
     const drift = pnoise2(px / P * 5, y / h * 3 + seed, 5, 1000), drift2 = pnoise2(px / P * 11 + 3, y / h * 7, 11, 1000);
     let r = mix(D[0], D2[0], smooth(0.3, 0.75, drift)), g = mix(D[1], D2[1], smooth(0.3, 0.75, drift)), b = mix(D[2], D2[2], smooth(0.3, 0.75, drift));
     r = mix(r, D3[0], smooth(0.55, 0.9, drift2) * 0.55); g = mix(g, D3[1], smooth(0.55, 0.9, drift2) * 0.55); b = mix(b, D3[2], smooth(0.55, 0.9, drift2) * 0.55);
-    const shade = (0.70 + 0.42 * lift * shadeK + (1 - shadeK) * 0.2) * (0.86 + 0.2 * thread) * (0.93 + 0.14 * tt);
+    const shade = (0.72 + 0.3 * lift * shadeK + (1 - shadeK) * 0.2) * (1 + weave * (0.1 * thread - 0.07)) * (1 + weave * (0.1 * tt - 0.05));
     r *= shade; g *= shade; b *= shade;
     // hems: slightly darker and denser, then the stripe
     const dEdge = Math.min(y, h - 1 - y);
-    if (S && h - 1 - y > stripeAt - 2 && h - 1 - y < stripeAt + 2) {
-      const breakK = 0.75 + 0.25 * warpTone[px];
+    if (S && h - 1 - y >= stripeAt - 1 && h - 1 - y <= stripeAt + 1) {
+      const breakK = 0.45 + 0.55 * warpTone[px];
       r = mix(r, S[0] * shade, breakK); g = mix(g, S[1] * shade, breakK); b = mix(b, S[2] * shade, breakK);
     }
     const hemK = 1 - 0.18 * (1 - smooth(fringe, fringe + 5, dEdge));
@@ -438,19 +469,21 @@ export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, s
     let alpha = 1;
     if (fringe > 0) {
       const lim = y < h / 2 ? warpEnd[px] : warpEnd2[px];
-      const reach = fringe * (0.25 + 0.75 * lim);
+      // the edge itself wanders (a hand-cut, slightly unravelled hem), most threads run to it, a few stop short
+      const wander2 = pnoise2(px / P * 24, y < h / 2 ? 0.5 : 7.5, 24, 1000);
+      const stray = lim > 0.9;                                  // one thread in ten runs past the worn edge
+      const reach = stray ? 0.4 : fringe * (0.45 + 0.55 * wander2);
       if (dEdge < reach) alpha = 0;
-      else if (dEdge < fringe * 1.05) alpha = wx === 1 ? 1 : (dEdge > reach + 1.1 ? 1 : 0.35);
     }
     const o = ((y0 + y) * W + x0 + x) * 4;
     buf.base[o] = clampB(r); buf.base[o + 1] = clampB(g); buf.base[o + 2] = clampB(b); buf.base[o + 3] = alpha > 0.5 ? 255 : alpha > 0 ? 110 : 2;
     // normal: fold slope + weave, in metres
     const dx = (hAt(px + 1, y) - hAt(px - 1, y)) / (2 * mmU * 1e-3), dy = (hAt(px, y + 1) - hAt(px, y - 1)) / (2 * mmV * 1e-3);
-    const wxs = (over ? -1 : 0.25) * (wx - 1) * 0.42, wys = (over ? 0.25 : -1) * (wy - 1.5) * 0.3;
+    const wxs = (over ? -1 : 0.2) * (wx - 0.5) * 0.3 * weave, wys = (over ? 0.2 : -1) * (wy - 1) * 0.16 * weave;
     const nx = -dx + wxs, ny = dy + wys, nl = Math.hypot(nx, ny, 1);
     const q = ((y0 + y) * W + x0 + x) * 3;
     buf.normal[q] = clampB((nx / nl * 0.5 + 0.5) * 255); buf.normal[q + 1] = clampB((ny / nl * 0.5 + 0.5) * 255); buf.normal[q + 2] = clampB((1 / nl * 0.5 + 0.5) * 255);
-    buf.orm[q] = clampB((0.55 + 0.45 * lift) * 255); buf.orm[q + 1] = clampB((rough - 0.08 * thread) * 255); buf.orm[q + 2] = 0;
+    buf.orm[q] = clampB((0.55 + 0.45 * lift) * 255); buf.orm[q + 1] = clampB((rough - 0.05 * thread) * 255); buf.orm[q + 2] = 0;
     void weaveH;
   }
 }
@@ -461,23 +494,23 @@ export function paintFrayEnd(buf, { rect, W = 512, dye, seed = 3, rough = 0.92, 
   const D = hex(dye);
   const S = stripe ? hex(stripe) : null;
   const R = rng(seed * 7919);
-  const nThreads = Math.floor(w / 3);
+  const nThreads = Math.floor(w / 2);
   const ends = []; for (let i = 0; i < nThreads; i++) ends.push(0.48 + 0.52 * R());
   const tones = []; for (let i = 0; i < nThreads; i++) tones.push(R());
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const v = y / h, ti = Math.min(nThreads - 1, Math.floor(x / 3));
-    const wx = x % 3;
-    const over = ((ti + Math.floor(y / 4)) & 1) === 0;
-    const weaveOn = v < 0.42;                                  // the weft stops; only warp threads run on
-    const on = v < ends[ti] && (weaveOn || wx === 1);
-    const thread = wx === 1 ? 1 : 0.7;
+    const v = y / h, ti = Math.min(nThreads - 1, Math.floor(x / 2));
+    const wx = x % 2;
+    const over = ((ti + Math.floor(y / 3)) & 1) === 0;
+    const weaveOn = v < 0.46;                                  // the weft stops; only warp threads run on
+    const on = v < ends[ti] && (weaveOn || wx === 1 || tones[ti] > 0.72);
+    const thread = wx === 1 ? 1 : 0.8;
     let k = (0.82 + 0.3 * tones[ti]) * thread * (over ? 1.02 : 0.92) * (1 - 0.2 * smooth(0.45, 1, v));
     let r = D[0] * k, g = D[1] * k, b = D[2] * k;
     if (S && Math.abs(x - w * 0.5) > w * 0.5 - 4) { r = S[0] * k; g = S[1] * k; b = S[2] * k; }
     const o = ((y0 + y) * W + x0 + x) * 4;
     buf.base[o] = clampB(r); buf.base[o + 1] = clampB(g); buf.base[o + 2] = clampB(b); buf.base[o + 3] = on ? 255 : 2;
     const q = ((y0 + y) * W + x0 + x) * 3;
-    const nx = (wx - 1) * 0.45, nl = Math.hypot(nx, 1);
+    const nx = (wx - 0.5) * 0.3, nl = Math.hypot(nx, 1);
     buf.normal[q] = clampB((nx / nl * 0.5 + 0.5) * 255); buf.normal[q + 1] = 128; buf.normal[q + 2] = clampB((1 / nl * 0.5 + 0.5) * 255);
     buf.orm[q] = 255; buf.orm[q + 1] = clampB(rough * 255); buf.orm[q + 2] = 0;
   }
