@@ -544,44 +544,6 @@
       "attribution": null
     },
     {
-      "id": "r5-poc-ground-generated",
-      "paths": [
-        "public/textures/r5-poc/{sand,salt,rockp}_{a,n}.webp",
-        "public/textures/r5-poc/MANIFEST.json"
-      ],
-      "title": "Round-5 proof ground layers (procedural)",
-      "author": "CALIMA project (tools/r5-poc/gen-ground.mjs)",
-      "source_url": "tools/r5-poc/gen-ground.mjs",
-      "licence": "project-original",
-      "licence_text": null,
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": null,
-      "legacy": "r5-poc",
-      "delete_at": "W1 exit",
-      "delete_owner": "world-ground"
-    },
-    {
-      "id": "r5-poc-rock-scan",
-      "paths": [
-        "public/textures/r5-poc/rock_{a,n}.webp"
-      ],
-      "title": "Rock Face (1K scan, repacked)",
-      "author": "Poly Haven",
-      "source_url": "https://polyhaven.com/a/rock_face",
-      "licence": "CC0-1.0",
-      "licence_text": null,
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": "diff + nor_gl + arm repacked to 2 x RGBA WebP (tools/r5-poc/gen-ground.mjs)",
-      "attribution": null,
-      "legacy": "r5-poc",
-      "delete_at": "W1 exit",
-      "delete_owner": "world-ground",
-      "pending": "archive_sha256 + retrieved: recorded by the W0b re-fetch (Poly Haven scans are on the re-fetch list, plan section 10.1)"
-    },
-    {
       "id": "ual1",
       "paths": [
         "public/anims/**"

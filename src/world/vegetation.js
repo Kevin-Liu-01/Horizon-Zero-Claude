@@ -87,7 +87,7 @@ function marramGeo(blades, segs, seed) {
     const dx = Math.cos(a), dz = Math.sin(a), r0 = 0.02 + R() * 0.09;
     c0.copy(base).multiplyScalar(0.8 + R() * 0.3);
     c1.copy(tip).lerp(tip2, R() * 0.55).multiplyScalar(0.82 + R() * 0.3);
-    blade(P, C, N, dx * r0, dz * r0, dx, dz, 0.62 + R() * 0.5, 0.017 + R() * 0.011, segs, c0, c1, 0.5 + R() * 0.45);
+    blade(P, C, N, dx * r0, dz * r0, dx, dz, 0.62 + R() * 0.5, 0.009 + R() * 0.009, segs, c0, c1, 0.5 + R() * 0.45);
   }
   return geoFrom(P, C, N);
 }
@@ -123,12 +123,12 @@ function lavenderGeo(seed) {
     c0.set('#6a7656'); c1.set('#8a8a68');
     blade(P, C, N, dx * r0, dz * r0, dx, dz, h, 0.007, 1, c0, c1, lean);
     const tx = dx * r0 + dx * lean * h, tz = dz * r0 + dz * lean * h;
-    c1.set(R() > 0.25 ? '#8d5fb6' : '#ae8ad0').multiplyScalar(0.95 + R() * 0.3);
-    for (let k = 0; k < 3; k++) {          // three small leaning petals of colour: 2 tris each
-      const ka = a + (k - 1) * 0.9;
-      c0.copy(c1).multiplyScalar(0.72);
-      blade(P, C, N, tx, tz, Math.cos(ka), Math.sin(ka), 0.075, 0.03, 1, c0, c1, 0.9);
-      for (let i = P.length - 18; i < P.length; i += 3) P[i + 1] += h - 0.02;
+    c1.set(R() > 0.3 ? '#8a68a8' : '#a48cc0').multiplyScalar(0.92 + R() * 0.26);
+    for (let k = 0; k < 3; k++) {          // a spray of three tiny flower heads: 2 tris each
+      const ka = a + (k - 1) * 0.8;
+      c0.copy(c1).multiplyScalar(0.78);
+      blade(P, C, N, tx, tz, Math.cos(ka), Math.sin(ka), 0.05 + k * 0.012, 0.011, 1, c0, c1, 1.2);
+      for (let i = P.length - 18; i < P.length; i += 3) P[i + 1] += h - 0.015;
     }
   }
   return geoFrom(P, C, N);
@@ -206,20 +206,31 @@ function wallGeo() {
 }
 
 function saltGeo() {
-  // a raked heap: an irregular soft cone, 60 triangles; stretched in the instance it is a windrow
-  const g = new THREE.ConeGeometry(1, 1, 12, 3, true);
-  g.translate(0, 0.5, 0);
-  const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const a = Math.atan2(z, x);
-    const k = 1 + 0.07 * Math.sin(a * 3 + 1.1) + 0.05 * Math.sin(a * 5 + 2.3);
-    // slumped: the profile bellies out near the foot, as loose salt does
-    const r = (1 - y) * (1 + 0.32 * y) * k;
-    const l = Math.hypot(x, z) > 1e-5 ? 1 : 0;
-    p.setXYZ(i, Math.cos(a) * r * l, y, Math.sin(a) * r * l);
+  /* A raked heap: a soft cone welded all the way round, 80 triangles: 16 sides, a tip and three
+   * rings. Loose salt slumps: the profile bellies out near the foot. Stretched in the instance
+   * it is a windrow. y 0..1, radius 1 at the foot. */
+  const NR = 16, RINGS = [0, 0.34, 0.68], P = [], idx = [];
+  for (const y of RINGS) {
+    for (let i = 0; i < NR; i++) {
+      const a = (i / NR) * Math.PI * 2;
+      const k = 1 + 0.06 * Math.sin(a * 3 + 1.1) + 0.04 * Math.sin(a * 5 + 2.3);
+      const r = Math.pow(1 - y, 0.84) * k;
+      P.push(Math.cos(a) * r, y * (0.97 + 0.03 * k), Math.sin(a) * r);
+    }
   }
-  g.deleteAttribute('uv');
+  const tip = P.length / 3;
+  P.push(0, 1, 0);
+  for (let j = 0; j < RINGS.length - 1; j++) {
+    for (let i = 0; i < NR; i++) {
+      const a = j * NR + i, b = j * NR + (i + 1) % NR, c = a + NR, d = b + NR;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  const last = (RINGS.length - 1) * NR;
+  for (let i = 0; i < NR; i++) idx.push(last + i, tip, last + (i + 1) % NR);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setIndex(idx);
   g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;
@@ -561,7 +572,7 @@ export class Vegetation {
     const S = this._bake.static;
     this.rocks = this._staticMesh('rocks-basalt', rockGeo(), this._rockMaterial('rock', 0.3, false, 2.2), S.rocks, true);
     this.columns = this._staticMesh('rocks-columns', columnGeo(), this._rockMaterial('col', 0.2, false), S.columns, true);
-    this.dykes = this._staticMesh('pan-dykes', wallGeo(), this._rockMaterial('wall', 0.4, false, 3.6), S.walls, true);
+    this.dykes = this._staticMesh('pan-dykes', wallGeo(), this._rockMaterial('wall', 0.32, false, 4.1), S.walls, true);
     this.rakes = this._staticMesh('salt-rakes', saltGeo(), this._rockMaterial('salt', 0, true), S.heaps, true);
     this._columnData = S.columns;
   }

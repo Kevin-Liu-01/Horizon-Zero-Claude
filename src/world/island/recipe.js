@@ -206,6 +206,28 @@ function polySigned(e, n) {
   return inside ? d : -d;
 }
 
+let _coastLen = null;
+/** Metres along the coast polygon of the nearest point (authored frame), for the surf's coordinates. */
+function coastArc(e, n) {
+  const P = COAST, L = P.length;
+  if (!_coastLen) {
+    _coastLen = new Float64Array(L + 1);
+    for (let i = 0; i < L; i++) {
+      const a = P[i], b = P[(i + 1) % L];
+      _coastLen[i + 1] = _coastLen[i] + Math.hypot(b[0] - a[0], b[1] - a[1]);
+    }
+  }
+  let best = 1e12, arc = 0;
+  for (let i = 0; i < L; i++) {
+    const a = P[i], b = P[(i + 1) % L];
+    const dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz;
+    const t = clamp01(((e - a[0]) * dx + (n - a[1]) * dz) / l2);
+    const ex = e - (a[0] + dx * t), ez = n - (a[1] + dz * t), d2 = ex * ex + ez * ez;
+    if (d2 < best) { best = d2; arc = _coastLen[i] + t * (_coastLen[i + 1] - _coastLen[i]); }
+  }
+  return arc;
+}
+
 /** Biome cores [e, n, σ, weight]. Soft-partitioned on the 8 m grid, boundary-warped by noise. */
 const CORES = [
   [[-300, -260, 120], [-200, -350, 90], [-400, -170, 90], [-135, -340, 62], [-280, -160, 78], [-90, -420, 44]],
@@ -541,7 +563,7 @@ export function panAt(e, n) {
   const wV0 = MAIN_DYKE.has(ri) ? DYKE : WALL, wV1 = MAIN_DYKE.has(ri + 1) ? DYKE : WALL;
   const d = Math.min(u - c.u0 - WALL, c.u1 - u - WALL, vw - c.v0 - wV0, c.v1 - vw - wV1);
   P.edge = d;
-  P.inside = ss(-0.1, 0.4, d);
+  P.inside = ss(-0.06, 0.2, d);
   const f = FILL[c.kind];
   // inside a cell the crust is never one flat value: wet patches, sand blown in, drag marks
   const wob = fbm(e * 0.09 + c.seed * 0.01, n * 0.09, 3) - 0.5;
@@ -660,7 +682,7 @@ function trackAt(e, n) {
     const t = clamp01(((e - s.ax) * dx + (n - s.az) * dz) / (dx * dx + dz * dz));
     const d = Math.hypot(e - (s.ax + dx * t), n - (s.az + dz * t));
     const wob = (vnoise(e * 0.07, n * 0.07) - 0.5) * 1.4;
-    const v = 1 - ss(0.9, 2.6, d + wob);
+    const v = 1 - ss(0.6, 1.9, d + wob);
     if (v > f) f = v;
   }
   return f;
@@ -669,7 +691,7 @@ function trackAt(e, n) {
 /* ---------------------------------------------------------- stamps (authored) ---- */
 /** The Organ Shelf's plan: overlapping lobes [e, n, r], warped below (a lava flow's front, not a box). */
 const SHELF_LOBES = [[-188, -351, 23], [-168, -346, 35], [-132, -362, 34], [-156, -386, 20], [-104, -338, 20], [-214, -372, 15]];
-const CRATER = { e: -398, n: -158, R: 66, H: 58 };
+const CRATER = { e: -388, n: -160, R: 72, H: 45, squash: 1.5 };
 const CONE = { e: 283, n: -101, r: 98, h: 146 };
 
 /** Organ Shelf: signed distance inside its lobed plan, m (+ inside). */
@@ -697,40 +719,43 @@ const _cr = { h: 0, k: 0, ti: 0 };
 function craterField(e, n) {
   const C = _cr;
   C.h = 0; C.k = 0; C.ti = 0;
-  const dx = e - CRATER.e, dz = n - CRATER.n;
+  // an ellipse in plan, long E-W: from the pans it is a wall across the frame, not a peak
+  const dx = (e - CRATER.e) / CRATER.squash, dz = n - CRATER.n;
   const d = Math.hypot(dx, dz);
-  if (d > CRATER.R + 78 || d < 1) return C;
+  if (d > CRATER.R + 74 || d < 1) return C;
   const cs = dx / d, sn = dz / d;
   const cosN = cs * -0.32 + sn * 0.947;                   // 1 facing the wall's high side, N by W
-  const open = ss(-0.42, 0.26, cosN + (fbm(e * 0.016, n * 0.016, 2) - 0.5) * 0.6);
+  const open = ss(-0.46, 0.2, cosN + (fbm(e * 0.014, n * 0.014, 2) - 0.5) * 0.55);
   if (open <= 0) return C;
-  const Rr = CRATER.R + (fbm(cs * 1.4 + 4, sn * 1.4, 3) - 0.5) * 26;
-  const Hr = CRATER.H * (0.74 + 0.5 * fbm(cs * 2.1 + 9, sn * 2.1 + 2, 2)) * open;
-  const ti = clamp01((d - (Rr - 44)) / 44), to = clamp01((d - Rr) / 62);
-  // inner: talus to a third of the height, then the cliff; outer: the long back
+  const Rr = CRATER.R + (fbm(cs * 1.2 + 4, sn * 1.2, 3) - 0.5) * 18;
+  // the crest runs nearly level, with the odd notch where a gully has eaten back
+  const notch = ss(0.16, 0.36, ridged(cs * 5 + 7, sn * 5 + 2, 2));
+  const Hr = CRATER.H * (0.84 + 0.26 * fbm(cs * 3.3 + 9, sn * 3.3 + 2, 2)) * (0.8 + 0.2 * notch) * open;
+  // the talus reaches out in fans
+  const fan = (ridged(cs * 7 + 1, sn * 7 + 5, 2) - 0.3) * 0.16;
+  const ti = clamp01((d - (Rr - 40)) / 40 + fan), to = clamp01((d - (Rr + 7)) / 52);
   let p;
-  if (d <= Rr) {
-    const a = ti * ti;
-    p = 0.3 * ss(0, 0.62, ti) * (0.6 + 0.4 * a) + 0.7 * Math.pow(ss(0.46, 1, ti), 1.15);
-  } else p = Math.pow(1 - to, 1.7);
+  if (d <= Rr) p = 0.26 * ss(0, 0.66, ti) * (0.62 + 0.38 * ti * ti) + 0.74 * Math.pow(ss(0.5, 1, ti), 1.1);
+  else if (d <= Rr + 7) p = 1 - 0.03 * (d - Rr) / 7;      // the flat cap
+  else p = 0.97 * Math.pow(1 - to, 1.5);
   let hc = Hr * p;
   // gullies: V cuts down the wall, deepest mid-height, fainter on the back
-  const g = ridged(cs * 11 + 11 + d * 0.012, sn * 11 + 3 + d * 0.012, 2);
-  const cut = (g - 0.42) * (d <= Rr ? ss(0.12, 0.55, ti) * (1 - ss(0.82, 1, ti)) * 13 : ss(0.02, 0.3, to) * (1 - ss(0.6, 1, to)) * 7);
+  const g = ridged(cs * 13 + 11 + d * 0.012, sn * 13 + 3 + d * 0.012, 2);
+  const cut = (g - 0.42) * (d <= Rr ? ss(0.1, 0.5, ti) * (1 - ss(0.86, 1, ti)) * 11 : ss(0.02, 0.3, to) * (1 - ss(0.6, 1, to)) * 6);
   hc = Math.max(0, hc + cut * open);
   // the beds: benches on the cliff that dip seaward
-  const K = ss(0.42, 0.72, ti) * (d <= Rr ? 1 : 0);
+  const K = ss(0.46, 0.74, ti) * (d <= Rr ? 1 : 0);
   if (K > 0.01 && hc > 2) {
-    const dip = dx * 0.06 + (fbm(e * 0.05, n * 0.05, 2) - 0.5) * 3, stepH = 5.4;
-    const t = (hc + dip) / stepH, fl = Math.floor(t), f = ss(0.24, 0.76, t - fl);
-    hc += ((fl + f) * stepH - dip - hc) * 0.62 * K;
+    const dip = dx * 0.07 + (fbm(e * 0.05, n * 0.05, 2) - 0.5) * 2.4, stepH = 4.6;
+    const t = (hc + dip) / stepH, fl = Math.floor(t), f = ss(0.22, 0.78, t - fl);
+    hc += ((fl + f) * stepH - dip - hc) * 0.66 * K;
   }
   // the Boilers' cove bites into the back of the ring
   const db = Math.hypot(e + 368, n + 59);
-  if (db < 52) hc *= ss(16, 50, db);
+  if (db < 44) hc *= ss(12, 42, db);
   C.h = hc;
   C.ti = ti;
-  C.k = open * ss(Rr - 50, Rr - 40, d) * (1 - ss(Rr + 42, Rr + 64, d));
+  C.k = open * ss(Rr - 46, Rr - 36, d) * (1 - ss(Rr + 40, Rr + 62, d));
   return C;
 }
 /** The ring's weight at a point, for the tint and the mask bake. */
@@ -809,7 +834,7 @@ function heightAuthored(e, n) {
     }
   }
   // holds: long terraces, gentle (pit-cups and walls are instances at W2)
-  if (holds > 0.02) h += (fbm(e * 0.021 - 7, n * 0.021, 2) - 0.5) * 4.5 * holds * quiet;
+  if (holds > 0.02) h += ((fbm(e * 0.021 - 7, n * 0.021, 2) - 0.5) * 4.5 + (ridged(e * 0.017 + 3, n * 0.017 - 9, 3) - 0.34) * 9) * holds * quiet;
   // caldera floor: pumice swells
   if (cald > 0.02) h += (fbm(e * 0.02 + 2, n * 0.02 + 8, 2) - 0.5) * 3.2 * cald * quiet;
   if (h < 0.2) h = 0.2;
@@ -914,6 +939,7 @@ export function biomesAt(x, z, out) {
 /** Engine-point wrappers, for the mask bake and the scatter. */
 export const authored = Object.freeze({
   coast: (x, z) => coastD(x / S, -z / S),
+  coastArc: (x, z) => coastArc(x / S, -z / S),
   pan: (x, z) => panAt(x / S, -z / S),
   track: (x, z) => trackAt(x / S, -z / S),
   crater: (x, z) => craterAt(x / S, -z / S),

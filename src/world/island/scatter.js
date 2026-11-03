@@ -116,15 +116,25 @@ export function scatterStatic(R) {
     rocks.push(x, F.h - s * 0.2, z, u2 * 6.2832, s * (0.9 + u3 * 0.4), s * (0.62 + u1 * 0.4), s * (0.8 + u2 * 0.4), (u3 - 0.5) * 0.4, 0.8 + u3 * 0.35);
     if (rocks.length / STRIDE > 950) break;
   }
-  // basalt column stubs on the Shelf's table edge
-  for (let t = 0; t < 9000 && columns.length / STRIDE < 340; t++) {
-    const x = -240 + r() * 150, z = 290 + r() * 140;
-    const F = R.at(x, z);
-    if (F.rock < 0.4 || F.h < 0.8 || F.coast < 5) continue;
-    if (F.slope < 0.25 && r() > 0.25) continue;
-    const u1 = r(), u2 = r(), u3 = r();
-    const w = 0.42 + u1 * 0.34, hh = 0.5 + u2 * u2 * 2.6;
-    columns.push(x, F.h - hh * 0.35, z, Math.floor(u3 * 6) * 1.0472 + 0.2, w, hh, w, (u1 - 0.5) * 0.12, 0.78 + u3 * 0.4);
+  // basalt pavements: tight hex-packed columns where the Shelf's edge breaks down (the Causeway look)
+  for (let t = 0; t < 400 && columns.length / STRIDE < 340; t++) {
+    const cx = -230 + r() * 150, cz = 300 + r() * 110;
+    const F0 = R.at(cx, cz);
+    if (F0.rock < 0.35 || F0.coast < 6) continue;
+    const rad = 2.6 + r() * 3.2, pitch = 0.92 + r() * 0.2, w = pitch * 0.56, ph = r() * 6.28, topH = 0.5 + r() * 1.1;
+    for (let j = -8; j <= 8; j++) {
+      for (let i = -8; i <= 8; i++) {
+        const x = cx + (i + (j & 1) * 0.5) * pitch, z = cz + j * pitch * 0.866;
+        const d = Math.hypot(x - cx, z - cz) / rad;
+        if (d > 1) continue;
+        const F = R.at(x, z);
+        if (F.h < 0.5 || F.slope > 1.3) continue;
+        const u1 = r(), u2 = r();
+        // heights fall away from the cluster's core, with a step or two: a broken pavement
+        const hh = (topH * (1 - d * d * 0.75) + Math.sin(x * 1.3 + ph) * 0.14 + (u1 - 0.5) * 0.34) * 0.9 + 0.32;
+        columns.push(x, F.h - 0.25, z, 0.2 + (u2 - 0.5) * 0.06, w, hh, w, (u1 - 0.5) * 0.05, 0.84 + u2 * 0.3);
+      }
+    }
   }
   // the dykes: one stone run per 1.7 m of every wall of the field
   const seg = 1.7, P = { x: 0, z: 0 }, Q = { x: 0, z: 0 };
@@ -140,9 +150,9 @@ export function scatterStatic(R) {
       const dx = Q.x - P.x, dz = Q.z - P.z;
       const hBase = R.hAt(cx, cz);
       const main = W.main ? 1 : 0;
-      walls.push(cx + (v - 0.5) * 0.12, hBase - 0.03, cz + (w - 0.5) * 0.12, Math.atan2(dx, dz) + (u - 0.5) * 0.1,
-        (0.9 + w * 0.22) * (main ? 1.9 : 1), (0.78 + v * 0.5) * (main ? 0.72 : 1), Math.hypot(dx, dz) / seg * 1.06,
-        main, 0.72 + u * 0.5);
+      walls.push(cx + (v - 0.5) * 0.14, hBase - 0.03, cz + (w - 0.5) * 0.14, Math.atan2(dx, dz) + (u - 0.5) * 0.14 + (v > 0.5 ? Math.PI : 0),
+        (0.82 + w * 0.42) * (main ? 1.9 : 1), (0.66 + v * 0.74) * (main ? 0.72 : 1), Math.hypot(dx, dz) / seg * 1.08,
+        main, 0.8 + u * 0.62);
     }
   }
   // raked salt: long low windrows and small heaps in the crust cells nearest the town
@@ -167,15 +177,15 @@ export function scatterStatic(R) {
       }
     }
   }
-  // the cones: the harvest piled beside the main dykes near the town, the Pans' white silhouette
-  const CONES = [[-58, 37.2, 3], [24, 37.2, 3], [62, 3, 2]];
+  // the cones: the harvest piled at the field's town edge, the Pans' white silhouette
+  const CONES = [[-60, 50.8, 3], [-7, 48.4, 2], [58, 52, 3]];
   for (const [cu, cv, count] of CONES) {
     let u = cu;
     for (let k = 0; k < count; k++) {
-      const s = 2.0 + r() * 0.8;
-      fieldToWorld(u, cv + (r() - 0.5) * 0.5, P);
-      heaps.push(P.x, R.hAt(P.x, P.z) - 0.05, P.z, r() * 6.28, s, s * (1.0 + r() * 0.14), s, 0, 1.0);
-      u += s * 2.1 + 0.6 + r() * 2.2;
+      const s = 2.1 + r() * 0.9;
+      fieldToWorld(u, cv + (r() - 0.5) * 0.6, P);
+      heaps.push(P.x, R.hAt(P.x, P.z) - 0.05, P.z, r() * 6.28, s, s * (0.72 + r() * 0.1), s, 0, 1.0);
+      u += s * 2.3 + 0.5 + r() * 1.6;
     }
   }
   return {

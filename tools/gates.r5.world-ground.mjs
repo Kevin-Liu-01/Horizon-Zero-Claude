@@ -798,6 +798,25 @@ const ROWS = [
     })()`,
   },
 
+  /* ------------------------------------------------- nothing of the old valley stands ---- */
+  {
+    id: 'A-round4-gone-from-view', kind: 'action', lane: LANE, timeout: 30000, settle: 1500,
+    title: 'Task order: the player never sees a Round-4 spire or prop in the Pans. Every old-valley group is hidden (or world-props has deleted it), no old prop collider or ledge is live, and the render lists at the Pans vista hold nothing from them',
+    assert: `(async () => {
+      const ctx = __CTX__, P = ctx.props, C = ctx.collision;
+      const old = P?.megaMeshes ? [P.group, P.tallneck?.group, P.rockworks?.group, P.activities?.group].filter(Boolean) : [];
+      const shown = old.filter((g) => g.visible).map((g) => g.name);
+      const inOld = new Set();
+      for (const g of old) g.traverse((o) => { if (o.isMesh) inOld.add(o); });
+      const liveColliders = (C?.colliders || []).filter((c) => (c.ref && inOld.has(c.ref)) || (c.object && inOld.has(c.object))).length;
+      const ledges = (P?.rockworks?.ledges?.length || 0) + (P?.placeSystem?.ledges?.length || 0);
+      const camp = ctx.camp?.group ? ctx.camp.group.visible : false;
+      const ridges = ctx.environment?.ridges ? ctx.environment.ridges.visible : false;
+      const pass = !shown.length && !liveColliders && !ledges && !camp && !ridges;
+      return { pass, detail: { signature: !!P?.megaMeshes, groupsHidden: old.length, shown, liveColliders, ledges, campVisible: camp, ridgesVisible: ridges, oldSite: ctx.terrain.oldSiteRetired } };
+    })()`,
+  },
+
   /* --------------------------------------------------------------- A-poc-biome-removed ---- */
   {
     id: 'A-poc-biome-removed', kind: 'runner', lane: LANE,

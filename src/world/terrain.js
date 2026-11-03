@@ -157,13 +157,14 @@ const SURFACES = Object.freeze([...new Set(Object.values(SURFACE_EMIT))]);
 export const GROUND_AO = /* glsl */ `
 #include <aomap_fragment>
 reflectedLight.directDiffuse *= gSunVis;
-reflectedLight.directSpecular *= gSunVis;
+/* Black sand and crust are full of micro-shadow: the Schlick lobe at a low sun would paint them tan. */
+reflectedLight.directSpecular *= gSunVis * mix(0.2, 1.0, gLiquid);
 reflectedLight.indirectDiffuse *= gAO * 2.3;   // open ground sees the whole sky: shade reads, black sand keeps its grain
 reflectedLight.indirectSpecular *= mix(1.0, gAO, 0.6);
 #ifdef USE_FOG
 if (gLiquid > 0.004) {
   vec3 gV = normalize(cameraPosition - vWPos);
-  vec3 gW = normalize(vWNorm + gN * 0.14);
+  vec3 gW = normalize(vWNorm + gN * 0.34);
   vec3 gR = reflect(-gV, gW);
   float gUp = clamp(gR.y * 1.8 + 0.08, 0.0, 1.0);
   vec3 gSky = mix(calFogHorizon, calFogZenith, gUp * gUp);
@@ -529,10 +530,10 @@ export class Terrain {
           let h;
           if (I.crater) {
             // a stratovolcano's concave flank, with gullies, a notched summit
-            const g = 1 + Math.abs(n.noise2D(ang * 3.3 + I.seed, t * 4)) * 0.16 * t;
+            const g = 1 + Math.abs(n.noise2D(cs * 2.2 + I.seed, sn * 2.2 + t)) * 0.1 * t;
             h = I.h * Math.pow(1 - t, 1.9) * g - (t < 0.05 ? (0.05 - t) * 900 : 0);
           } else {
-            h = I.h * Math.pow(1 - t, 0.8) * (0.55 + 0.45 * (n.fbm(rr * cs * 0.004 + I.seed, rr * sn * 0.004, 3) + 0.5));
+            h = I.h * Math.pow(1 - t, 0.8) * (0.62 + 0.38 * (n.fbm(cs * 1.3 + I.seed, sn * 1.3, 2) + 0.5));
           }
           h -= t > 0.96 ? (t - 0.96) * 300 : 0;
           const o = base + r * NA + a;

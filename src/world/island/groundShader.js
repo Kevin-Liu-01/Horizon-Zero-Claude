@@ -223,7 +223,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     vec2 wv = vec2(dot(xz, vec2(0.7071, -0.7071)), dot(xz, vec2(0.7071, 0.7071)));
     float streak = gNoise(vec2(wv.x * 0.085, wv.y * 0.011)) * 0.6 + gNoise(vec2(wv.x * 0.31, wv.y * 0.04) + 9.0) * 0.4;
     float ash = smoothstep(0.42, 0.78, gNoise(xz * 0.0093 + 31.0) * 0.7 + gNoise(xz * 0.041) * 0.3);
-    vec3 sandTone = mix(vec3(1.0), vec3(1.7, 1.52, 1.3), ash) * (0.7 + 0.66 * streak);
+    vec3 sandTone = mix(vec3(1.0), vec3(1.42, 1.3, 1.16), ash) * (0.72 + 0.6 * streak);
     float farK = smoothstep(40.0, 170.0, dCam);
     float scrub = smoothstep(0.54, 0.8, gNoise(xz * 0.29 + 3.0) * 0.6 + gNoise(xz * 0.083 + 17.0) * 0.4);
     vec3 sandCol = col * sandTone;
@@ -234,7 +234,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   // packed tracks: pale, smooth, salt-dusted
   if (mB.g > 0.01) {
     float tr = smoothstep(0.1, 0.8, mB.g) * (0.6 + 0.4 * macA);
-    col = mix(col, vec3(0.32, 0.29, 0.25) * (0.55 + 0.55 * gNoise(xz * 2.1)), tr * 0.82);
+    col = mix(col, vec3(0.135, 0.122, 0.104) * (0.6 + 0.6 * gNoise(xz * 2.1)), tr * 0.8);
     pert *= 1.0 - 0.6 * tr;
     rSum = mix(rSum, 0.82, tr);
   }

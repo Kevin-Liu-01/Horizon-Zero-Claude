@@ -390,19 +390,7 @@ class Game {
   }
 }
 
-/**
- * ROUND 5 PIPELINE PROOF (docs/research/round5-pipeline-creatures-world.md):
- * `?poc=biome` replaces the boot with a standalone biome patch. Dev-only
- * modules under tools/r5-poc/, never bundled; with no flag nothing changes.
- */
-const POC = ['biome'].includes(params.get('poc')) ? params.get('poc') : null;
-if (POC) {
-  import(/* @vite-ignore */ `/tools/r5-poc/poc-${POC}.js`)
-    .then((m) => m.default(params))
-    .catch((err) => console.error('[r5-poc] failed:', err));
-}
-
-if (POC !== 'biome') new Game().boot().catch((err) => {
+new Game().boot().catch((err) => {
   console.error('[CAL] boot failed:', err);
   const label = document.getElementById('load-label');
   if (label) {

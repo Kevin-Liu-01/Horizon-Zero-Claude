@@ -140,7 +140,7 @@ export const GROUND = Object.freeze({
   vistas: Object.freeze({
     /* The hero frame: from the red crater's rim over the Glass, the salt grid and the coast
      * run away south-east with the surf on the right. `eye` is metres above the ground there. */
-    pans: Object.freeze({ x: -405, z: 96, eye: 1.8, look: Object.freeze({ x: -300, y: -10, z: 360 }), fov: 46,
+    pans: Object.freeze({ x: -405, z: 86, eye: 1.8, look: Object.freeze({ x: -300, y: -6, z: 360 }), fov: 46,
       note: 'the crater rim: the Glass below, salt grid, black beach, white surf, the Ring on the beach' }),
     /** The same ground from a walker's eye on Saltrow's rise, over the pans to the sea. */
     pansRise: Object.freeze({ x: -226, z: 186, eye: 1.8, look: Object.freeze({ x: -350, y: -2, z: 345 }), fov: 46,

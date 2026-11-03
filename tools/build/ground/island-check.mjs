@@ -79,6 +79,48 @@ for (let a = 0; a < 360; a += 3) {
 }
 console.log(`outermost 1.1 m contour r = ${worstR} (bearing ${worstB}); PLAY_RADIUS ${PLAY_RADIUS}`);
 
+// offline A-reach-all-sites: the same slope rule as frozen nav.js (2 m cells, |grad| > 1 blocked, dry land only)
+{
+  const C = 2, R = PLAY_RADIUS + 2, N = Math.ceil(R * 2 / C) + 1;
+  const g = new Float32Array(N * N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) g[j * N + i] = heightAt(-R + i * C, -R + j * C);
+  const open = new Uint8Array(N * N);
+  for (let j = 0; j < N - 1; j++) for (let i = 0; i < N - 1; i++) {
+    const o = j * N + i, h = g[o];
+    const sl = Math.hypot((g[o + 1] - h) / C, (g[o + N] - h) / C);
+    const r = Math.hypot(-R + i * C, -R + j * C);
+    open[o] = sl <= 1 && h > -1.0 && r <= PLAY_RADIUS - 6 ? 1 : 0;
+  }
+  const seen = new Int32Array(N * N).fill(-1);
+  const idx = (x, z) => Math.round((z + R) / C) * N + Math.round((x + R) / C);
+  const s0 = idx(-283.4, 246.3);
+  seen[s0] = 0;
+  let q = [s0];
+  while (q.length) {
+    const nx = [];
+    for (const o of q) for (const d of [1, -1, N, -N, N + 1, N - 1, -N + 1, -N - 1]) {
+      const p = o + d;
+      if (p < 0 || p >= N * N || !open[p] || seen[p] >= 0) continue;
+      seen[p] = seen[o] + 1;
+      nx.push(p);
+    }
+    q = nx;
+  }
+  const near = (x, z) => {
+    const c = idx(x, z);
+    for (let rad = 0; rad < 40; rad++) for (let b = -rad; b <= rad; b++) for (let a = -rad; a <= rad; a++) {
+      if (Math.max(Math.abs(a), Math.abs(b)) !== rad) continue;
+      if (seen[c + b * N + a] >= 0) return rad * C;
+    }
+    return 99;
+  };
+  for (const s of [...SITES, ...TRIG]) {
+    const d = near(s.x, s.z);
+    console.log(`${d === 0 ? 'ok ' : 'BAD'} reach ${s.id.padEnd(18)} nearest reachable cell ${d} m`);
+    if (d) bad++;
+  }
+}
+
 const pngAt = process.argv.indexOf('--png');
 if (pngAt > 0) {
   const dir = process.argv[pngAt + 1];
