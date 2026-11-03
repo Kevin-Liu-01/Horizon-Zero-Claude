@@ -278,8 +278,8 @@ const BEATS = [
   {
     id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.20,
     cock: { hand: [-0.24, 1.12, -0.22], shaft: [0.40, 0.42, 0.81], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.44, yaw: -0.50, pitch: 0.04, roll: 0.05 },
-    contact: { hand: [-0.13, 1.10, 0.33], shaft: [0.10, -0.04, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.12, pitch: 0.46, roll: -0.04 },
-    follow: { hand: [-0.18, 1.02, 0.30], shaft: [0.24, -0.42, 0.87], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.06, pitch: 0.36, roll: -0.08 },
+    contact: { hand: [-0.13, 1.04, 0.33], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.12, pitch: 0.46, roll: -0.04 },
+    follow: { hand: [-0.18, 0.98, 0.30], shaft: [0.24, -0.42, 0.87], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.06, pitch: 0.36, roll: -0.08 },
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.20,
@@ -297,9 +297,9 @@ const BEATS = [
 ];
 const HEAVY = {
   id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.24,
-  cock: { hand: [-0.27, 1.20, -0.12], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.58, pitch: -0.16, roll: 0.08 },
-  contact: { hand: [-0.22, 1.20, 0.36], shaft: [0.12, -0.03, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.32, yaw: -0.10, pitch: 0.58, roll: -0.05 },
-  follow: { hand: [-0.20, 1.04, 0.32], shaft: [0.26, -0.46, 0.85], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.04, pitch: 0.56, roll: -0.08 },
+  cock: { hand: [-0.27, 1.27, -0.12], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.58, pitch: -0.16, roll: 0.08 },
+  contact: { hand: [-0.22, 1.31, 0.36], shaft: [0.12, -0.03, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.32, yaw: -0.10, pitch: 0.58, roll: -0.05 },
+  follow: { hand: [-0.20, 1.10, 0.32], shaft: [0.26, -0.46, 0.85], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.04, pitch: 0.56, roll: -0.08 },
 };
 /** How far before `CONTACT_K` the contact key is reached; it is then HELD for
  *  the rest of the strike window. See `_blend`. 0.16 -> 0.10 in fix pass 1: the

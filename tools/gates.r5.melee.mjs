@@ -151,7 +151,7 @@ const SWING = `
     if (!strike.length) return null;
     const c = strike.reduce((best, x) => (Math.abs(x.k - 0.70) < Math.abs(best.k - 0.70) ? x : best), strike[0]);
     return { hand: c.hand.map((v) => +v.toFixed(3)), shaft: c.shaft.map((v) => +v.toFixed(3)),
-      two: typeof c.lh === 'number' && c.lh <= 0.05,
+      two: typeof c.lp === 'number' && c.lp <= 0.05,
       yaw: +(Math.atan2(c.shaft[0], c.shaft[2]) * 180 / Math.PI).toFixed(1),
       pitch: +(Math.asin(Math.max(-1, Math.min(1, c.shaft[1]))) * 180 / Math.PI).toFixed(1) };
   };
