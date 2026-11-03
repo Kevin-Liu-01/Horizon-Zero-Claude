@@ -159,7 +159,8 @@ export function ribbon(form, { n, o0, w, along = 32, s0 = 0, s1 = TAU, rowsT = [
   const emitCol = (j, uPx) => {
     for (let i = 0; i < rows; i++) {
       const t = rowsT[i];
-      const vv = mix(vr[0], vr[1], (t + 1) / 2);
+      // the panel's outermost texels stay out of reach: bilinear there reads the next panel's alpha, a hairline along the hem
+      const vv = 0.014 + 0.972 * mix(vr[0], vr[1], (t + 1) / 2);
       // the turned-under hem rows take the outer row's normal: a worn thread is lit like its cloth
       const nn = normalAt(j, i === 0 ? 1 : i === rows - 1 ? rows - 2 : i);
       pushV(g, at(j, i), nn, (rect[0] + uPx) / W, (rect[1] + vv * rect[3]) / W, joint);
@@ -293,7 +294,7 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
           vv = (uvEnd[1] + end.v * uvEnd[3]) / W;
         } else {
           uu = (rect[0] + uPx) / W;
-          vv = (rect[1] + mix(vr[0], vr[1], k / across) * rect[3]) / W;
+          vv = (rect[1] + (0.014 + 0.972 * mix(vr[0], vr[1], k / across)) * rect[3]) / W;
         }
         g.pos.push(...at(a, k)); g.nrm.push(...n); g.uv.push(uu, vv); g.jnt.push(...fr.weights.j); g.wgt.push(...fr.weights.w);
       }
@@ -396,10 +397,10 @@ export const WRAP_ATLAS = {
 };
 
 /** Periodic crease set for a cloth panel. */
-function creaseSet(seed, count, { sigma = [0.03, 0.09], amp = [0.0003, 0.0009] } = {}) {
+function creaseSet(seed, count, { sigma = [0.03, 0.09], amp = [0.0003, 0.0009], wander = 1 } = {}) {
   const R = rng(seed * 2246822519);
   const out = [];
-  for (let k = 0; k < count; k++) out.push({ c: 0.08 + 0.84 * R(), a: 0.02 + 0.09 * R(), k: 1 + Math.floor(R() * 3), ph: R(), s: mix(sigma[0], sigma[1], R()), amp: mix(amp[0], amp[1], R()) * (R() < 0.34 ? 1 : -1), k2: 1 + Math.floor(R() * 2), ph2: R() });
+  for (let k = 0; k < count; k++) out.push({ c: 0.08 + 0.84 * R(), a: (0.02 + 0.09 * R()) * wander, k: 1 + Math.floor(R() * 3), ph: R(), s: mix(sigma[0], sigma[1], R()), amp: mix(amp[0], amp[1], R()) * (R() < 0.34 ? 1 : -1), k2: 1 + Math.floor(R() * 2), ph2: R() });
   return out;
 }
 
@@ -409,12 +410,12 @@ function creaseSet(seed, count, { sigma = [0.03, 0.09], amp = [0.0003, 0.0009] }
  * Plain weave (warp period 3 px, weft 4 px, per-thread slub), long tension creases, drag
  * folds, a soft frayed selvedge in the alpha at both V edges, optionally a selvedge stripe.
  */
-export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, seed = 1, creases = 6, sigma, amp, mmU = 0.65, mmV = 0.47, fringe = 3, stripe = null, stripeAt = 9, rough = 0.93, shadeK = 1, foldK = 1.5, weave = 1 } = {}) {
+export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, seed = 1, creases = 6, sigma, amp, mmU = 0.65, mmV = 0.47, fringe = 3, stripe = null, stripeAt = 9, rough = 0.93, shadeK = 1, foldK = 1.5, weave = 1, creaseWander = 1, drag = 1 } = {}) {
   const [x0, y0, w, h] = rect;
   const P = period || w;
   const D = hex(dye), D2 = hex(dye2 || dye), D3 = hex(dye3 || dye);
   const S = stripe ? hex(stripe) : null;
-  const list = creaseSet(seed, creases, { sigma, amp });
+  const list = creaseSet(seed, creases, { sigma, amp, wander: creaseWander });
   const heightAt = (px, py) => {
     const u = px / P, v = py / h;
     let f = 0;
@@ -425,7 +426,7 @@ export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, s
     // drag folds: short diagonals where the cloth was pulled round the skull
     const ws = Math.sin(TAU * (2 * u + v * 0.7 + seed * 0.13));
     const dd = Math.sin(TAU * (3 * u + v * 1.6 + 0.22 * ws + seed * 0.37)) * 0.55 + Math.sin(TAU * (5 * u - v * 2.3 + 0.3 * ws + seed * 0.71)) * 0.45;
-    f += dd * 0.00017;
+    f += dd * 0.00017 * drag;
     return f * foldK;
   };
   // the fold height, once, for the whole panel (periodic in U)

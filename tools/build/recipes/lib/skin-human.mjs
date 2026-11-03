@@ -81,15 +81,15 @@ export function hairShape(X, Y, Z) {
   // the sideburn: from under the wrap down in front of the ear, tapering to a point
   const t = smooth(1.654, 1.705, Y);
   const zf = -0.001 + t * 0.026 + wob, zb = -0.008 - t * 0.016 + wob * 0.8;
-  const burn = 0.62 * (1 - smooth(zf - 0.008, zf + 0.004, Z)) * smooth(zb - 0.006, zb + 0.005, Z) * smooth(1.652, 1.682, Y);
+  const burn = 0.92 * (1 - smooth(zf - 0.008, zf + 0.004, Z)) * smooth(zb - 0.006, zb + 0.005, Z) * smooth(1.646, 1.676, Y);
   // behind the ear and down to the nape, whose low edge comes to a soft point
   const yLow = 1.572 + 0.036 * smooth(0.0, 0.058, ax) + 0.012 * smooth(0.05, 0.075, ax) + wob;
   // its front edge leaves the back of the ear and sweeps down and back
   const zBehind = -0.052 - 0.030 * smooth(1.668, 1.585, Y) + wob;
   const behind = (1 - smooth(zBehind - 0.006, zBehind + 0.001, Z)) * smooth(yLow - 0.003, yLow + 0.004, Y);
   // above the ear, a low band joining the two under the cloth
-  const over = smooth(1.684, 1.694, Y) * smooth(-0.056, -0.05, Z) * (1 - smooth(zf - 0.006, zf + 0.004, Z));
-  const onEar = ax > 0.0715 && Z > -0.052 && Z < 0.006 && Y < 1.688 ? 0 : 1;
+  const over = smooth(1.664, 1.676, Y + wob * 0.6) * smooth(-0.056, -0.05, Z) * (1 - smooth(zf - 0.006, zf + 0.004, Z));
+  const onEar = ax > 0.0715 && Z > -0.052 && Z < 0.006 && Y < 1.671 ? 0 : 1;
   return Math.max(burn, behind, over) * onEar;
 }
 
@@ -243,7 +243,7 @@ export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, 
       const t = grid.cast(center[0] + d[0] * far, center[1] + d[1] * far, center[2] + d[2] * far, -d[0], -d[1], -d[2], far, 0.0001);
       if (t < 0) continue;
       const q = [center[0] + d[0] * (far - t), center[1] + d[1] * (far - t), center[2] + d[2] * (far - t)];
-      if (wrapped.lowEdge(q) < 0.018 - i * 0.002) { found = { p: q, n: d, az, el, scale: 0.62 + R0() * 0.25 }; break; }
+      if (wrapped.lowEdge(q) < 0.018 - i * 0.002) { found = { p: q, n: d, az, el, scale: 0.46 + R0() * 0.22 }; break; }
     }
     if (found && Math.abs(found.p[0]) < 0.0735) anchors.push(found);
   }
@@ -275,8 +275,18 @@ export function faceLayers({ L, eyes, cheek }) {
     const nostril = Math.hypot(T.X / 0.024, (T.Y - (noseT[1] - 0.012)) / 0.012);
     return faceZone(T) * smooth(0.95, 1.3, lip) * smooth(0.9, 1.25, nostril);
   };
+  // the inside of a nostril is dark: it faces down and back, and the sun must not find pink there
+  const nostrils = (T) => {
+    if (Math.abs(T.X) > 0.02 || T.Y > noseT[1] + 0.004 || T.Y < noseT[1] - 0.026 || T.Z < noseT[2] - 0.05) return;
+    const k = smooth(-0.15, -0.65, T.ny);
+    if (k <= 0) return;
+    const m = 1 - 0.68 * k;
+    T.r *= m; T.g *= m * 0.96; T.b *= m * 0.96;
+    T.ao *= 1 - 0.5 * k;
+  };
   return [
     smoothSkin({ zone: notFeature }),
+    nostrils,
     eyeSocketClean({ eyes }),
     lipTone({ center: [0, L.upperLip[1] - 0.011, L.upperLip[2] - 0.006], r: [0.036, 0.024, 0.03] }),
     colourZones([
@@ -293,7 +303,7 @@ export function faceLayers({ L, eyes, cheek }) {
       { at: [eyes[1][0], eyes[1][1] - 0.0145, eyes[1][2] + 0.008], s: [0.017, 0.0065, 0.02], gain: [0.93, 0.9, 0.91] },
       { at: [0, 1.50, 0.03], s: [0.05, 0.03, 0.06], gain: [0.94, 0.93, 0.93] },                           // under the jaw
     ]),
-    pores({ depth: 0.00011, zone: (T) => (T.Y > 1.42 && Math.abs(T.X) < 0.2 ? 1 : Math.abs(T.X) > 0.4 ? 0.6 : 0.4) }),
+    pores({ depth: 0.00009, poreFreq: 820, zone: (T) => (T.Y > 1.42 && Math.abs(T.X) < 0.2 ? 1 : Math.abs(T.X) > 0.4 ? 0.6 : 0.4) }),
     creases([
       // sun creases at the outer eye corners: she squints for a living
       ...[1, -1].flatMap((sx) => {
@@ -389,9 +399,9 @@ export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, 
   blit(painted.base, W, eyeP.base, EYE_PX, EYE_PX, ex, ey);
   blit(painted.normal, W, eyeP.normal, EYE_PX, EYE_PX, ex, ey);
   blit(painted.orm, W, eyeP.orm, EYE_PX, EYE_PX, ex, ey);
-  baseTex.setImage(await webp(painted.base, W, { quality: 93 })).setMimeType('image/webp').setURI(`${names}-skin-base.webp`);
+  baseTex.setImage(await webp(painted.base, W, { quality: 96 })).setMimeType('image/webp').setURI(`${names}-skin-base.webp`);
   nTex.setImage(await webp(painted.normal, W, { to: 512, quality: 96, kernel: 'lanczos3' })).setMimeType('image/webp').setURI(`${names}-skin-normal.webp`);
-  rTex.setImage(await webp(painted.orm, W, { to: 512, quality: 84, kernel: 'mitchell' })).setMimeType('image/webp').setURI(`${names}-skin-orm.webp`);
+  rTex.setImage(await webp(painted.orm, W, { to: 512, quality: 90, kernel: 'mitchell' })).setMimeType('image/webp').setURI(`${names}-skin-orm.webp`);
   skinMat.setRoughnessFactor(1).setMetallicFactor(0).setDoubleSided(false);
   skinMat.setOcclusionTexture(rTex);
   skinMat.setOcclusionStrength(1);

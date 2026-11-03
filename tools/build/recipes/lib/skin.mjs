@@ -952,9 +952,9 @@ export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris =
     const shade = 1 - lidS * 0.74 - 0.14 * smooth(0.0035, 0.0075, -my);
     R *= shade; G *= shade * 0.985; B *= shade * 0.975;
     // catch-lights: a tight sun glint and a soft sky window, up and to one side
-    const gl = Math.hypot(mx + 0.00205, my - 0.00205);
-    const glint = 1 - smooth(0.00042, 0.00072, gl);
-    const wnd = (1 - smooth(0.0012, 0.0024, Math.hypot(mx + 0.0014, (my - 0.0021) * 1.4))) * 0.11;
+    const gl = Math.hypot(mx + 0.00165, my - 0.00105);
+    const glint = 1 - smooth(0.00036, 0.00066, gl);
+    const wnd = (1 - smooth(0.0009, 0.0021, Math.hypot(mx + 0.0012, (my - 0.0008) * 1.3))) * 0.14;
     const low = (1 - smooth(0.0003, 0.0011, Math.hypot(mx - 0.0022, my + 0.0029))) * 0.2;
     R = mix(R, 255, Math.min(1, glint * 0.92 + wnd + low)); G = mix(G, 252, Math.min(1, glint * 0.92 + wnd + low)); B = mix(B, 244, Math.min(1, glint * 0.92 + wnd + low));
     const o = (y * N + x) * 3;

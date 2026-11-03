@@ -198,7 +198,7 @@
         "ubc-standard"
       ],
       "retrieved": "2026-10-22",
-      "modified": "tools/build/recipes/brea.mjs + lib/{face,skin,skin-human,wrap,wrap-head,hair}.mjs: face displacement field, lids and jaw refined; UV islands re-packed by density; skin re-painted in 3-D from the source (seamless tone, baked AO, pores, salt paste, brow scar, the therefore-mark, brows and hairline hair by hair, procedural eye patch); procedural wound headwrap, topknot, knot, tail, coil cards, coil tuft and lash cards with dyn_ chains; outfit hide mask; two materials, WebP + meshopt",
+      "modified": "tools/build/recipes/brea.mjs + lib/{face,skin,skin-human,wrap,wrap-head,hair}.mjs: face displacement field, lids, nose and jaw refined; UV islands re-packed by density; skin re-painted in 3-D from the source (seamless tone, baked AO, pores, finger-wiped salt paste, brow scar, the therefore-mark, brows and hairline hair by hair, procedural eye patch); procedural wound headwrap, topknot, knot, two cloth ends on dyn_ chains, coil cards and lash cards; outfit hide mask; two materials, WebP + meshopt",
       "attribution": null
     },
     {

@@ -28,7 +28,7 @@ const clampB = (v) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
  * Coiled hair is near-black and matte: at the dielectric 4 % reflectance a strong sun turns it
  * grey. A partial metalness (the ORM's B) drops the reflectance toward its dark albedo.
  */
-const HAIR_METAL = 90;
+const HAIR_METAL = 165;
 
 /* ======================================================= the drawn coils */
 
@@ -102,7 +102,7 @@ export function paintCoilTile(buf, { rect, period, W = 512, hair = '#15110F', se
     // vertex alpha below 1 opens holes between the coils (a dissolving edge)
     buf.base[o + 3] = clampB((0.52 + 0.48 * smooth(0.18, 0.6, hv)) * 255);
     const q = ((y0 + y) * W + x0 + x) * 3;
-    const n = fieldNormal(f, sx, sy, 2.6);
+    const n = fieldNormal(f, sx, sy, 1.5);
     buf.normal[q] = clampB((n[0] * 0.5 + 0.5) * 255); buf.normal[q + 1] = clampB((n[1] * 0.5 + 0.5) * 255); buf.normal[q + 2] = clampB((n[2] * 0.5 + 0.5) * 255);
     buf.orm[q] = 255; buf.orm[q + 1] = clampB((rough + 0.2 * (1 - hv)) * 255); buf.orm[q + 2] = HAIR_METAL;
   }
@@ -128,7 +128,7 @@ export function paintCoilFringe(buf, { rect, W = 512, hair = '#15110F', seed = 3
     const solid = hv > 0.1 || root > 0.92;
     buf.base[o + 3] = solid ? 255 : 2;
     const q = ((y0 + y) * W + x0 + x) * 3;
-    const n = fieldNormal(f, x, y, 2.4);
+    const n = fieldNormal(f, x, y, 1.3);
     buf.normal[q] = clampB((n[0] * 0.5 + 0.5) * 255); buf.normal[q + 1] = clampB((n[1] * 0.5 + 0.5) * 255); buf.normal[q + 2] = clampB((n[2] * 0.5 + 0.5) * 255);
     buf.orm[q] = 255; buf.orm[q + 1] = clampB((rough + 0.18 * (1 - hv)) * 255); buf.orm[q + 2] = HAIR_METAL;
   }

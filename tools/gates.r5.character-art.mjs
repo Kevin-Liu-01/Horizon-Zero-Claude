@@ -74,7 +74,7 @@ const STAGE = (hour, weather, sunOffDeg) => `
 
 /** The three angles at 0.8 m, full height, at DPR 1.25 like the game: all on her left, the sun's side. */
 const CLOSEUP = (name, hour, weather, sunOff) => `(async () => {${STAGE(hour, weather, sunOff)}
-      const cen = brow.clone().add(chin).multiplyScalar(0.5).add(U1.clone().multiplyScalar(0.055)).sub(F0.clone().multiplyScalar(0.03));
+      const cen = brow.clone().add(chin).multiplyScalar(0.5).add(U1.clone().multiplyScalar(0.078)).sub(F0.clone().multiplyScalar(0.075));
       const W = 1600, H = 900, PW = Math.floor(W / 3);
       const c = overlay(W, H), g = c.getContext('2d');
       const views = [['FRONT', 0], ['3/4', Math.PI / 5], ['PROFILE (HER LEFT)', Math.PI / 2]];
@@ -167,10 +167,10 @@ export const GATES = [
       const templeT = brow.clone().add(R0.clone().multiplyScalar(0.066)).add(U1.clone().multiplyScalar(0.012)).sub(F0.clone().multiplyScalar(0.055));
       shot(1, 0, templeT, 0.34, 1.0, 24, 'WRAP HEM + TEMPLE');
       const kit = p.hero?.kit, hid = kit?.hidden ?? 0;
+      // the stow kit's mask is re-applied every update: set it and render in the same task, no frame between
       kit?.setHidden(31);
-      await new Promise((r) => requestAnimationFrame(r));
       const napeT = chin.clone().sub(F0.clone().multiplyScalar(0.175)).add(U1.clone().multiplyScalar(0.03));
-      shot(0, 1, napeT, 0.44, Math.PI * 0.9, 27, 'NAPE + KNOT TAIL');
+      shot(0, 1, napeT, 0.44, Math.PI * 0.86, 27, 'NAPE + KNOT TAIL');
       const hand = an.b.handR.bone.getWorldPosition(new T3()), knk = (an.bones.middle_01_r || an.b.handR.bone).getWorldPosition(new T3());
       const m = hand.clone().lerp(knk, 0.5);
       const fx = Math.sin(h), fz = Math.cos(h), rx = -Math.cos(h), rz = Math.sin(h);

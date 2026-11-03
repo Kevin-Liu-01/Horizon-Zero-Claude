@@ -45,7 +45,7 @@ export function woundHeadwrap({ headSoup, joint, center, lift, base: B, turns, b
   const baseW = B.w;
   const baseO = (B.lowDeg * DEG) + baseW;
   const baseWarp = (s) => B.warpDeg * DEG * Math.cos(2 * s);
-  add('cap', crownCap(form, { elMin: 18 * DEG, rings: 3, seg: 14, lift: 0.0046, joint: head, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: [0, 0.94, -0.34] }));
+  add('cap', crownCap(form, { elMin: 18 * DEG, rings: 3, seg: 14, lift: 0.0074, joint: head, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: [0, 0.94, -0.34] }));
   add('turn1', ribbon(form, { n: baseN, o0: baseO, w: baseW, warp: baseWarp, along: 36, rowsT: rowsBase, lift: 0.0026, pillow: 0.0024, creases: 3, creaseAmp: 0.0012, seed: 3, joint: head, uv: uvA([0, 1]) }));
   // the crossing turns: each rises across the forehead toward its own side
   turns.forEach((t, i) => add(`turn${i + 2}`, ribbon(form, { n: rising(t.phiDeg * DEG, t.tauDeg * DEG), o0: t.oDeg * DEG, w: t.w, along: t.along ?? 32, rowsT: rowsBase, lift: t.lift, pillow: t.pillow ?? 0.0026, hemDrop: t.hemDrop ?? 0.0024, hemDropUp: t.hemDropUp ?? (t.lift + 0.002), creases: 3, creaseAmp: t.creaseAmp ?? 0.0013, seed: t.seed, joint: head, uv: uvA(t.flip ? [1, 0] : [0, 1]) })));
@@ -163,7 +163,7 @@ export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = 
   const buf = { base: Buffer.alloc(W * W * 4), normal: Buffer.alloc(W * W * 3), orm: Buffer.alloc(W * W * 3) };
   for (let i = 0; i < W * W; i++) { buf.base[i * 4] = 40; buf.base[i * 4 + 1] = 22; buf.base[i * 4 + 2] = 48; buf.base[i * 4 + 3] = 2; buf.normal[i * 3] = 128; buf.normal[i * 3 + 1] = 128; buf.normal[i * 3 + 2] = 255; buf.orm[i * 3] = 255; buf.orm[i * 3 + 1] = 230; }
   paintClothPanel(buf, { ...A.clothA, W, dye: deep, dye2: mid, dye3: dark, seed: 2, creases: 7, stripe, stripeAt: 8, fringe: 2 });
-  paintClothPanel(buf, { ...A.clothB, W, dye: deep, dye2: dark, dye3: mid, seed: 5, creases: 11, sigma: [0.018, 0.05], amp: [0.0003, 0.0008], fringe: 2 });
+  paintClothPanel(buf, { ...A.clothB, W, dye: deep, dye2: dark, dye3: mid, seed: 5, creases: 9, sigma: [0.022, 0.06], amp: [0.00022, 0.00055], fringe: 2, creaseWander: 0.28, drag: 0.35 });
   paintClothPanel(buf, { ...A.tailA, W, dye: deep, dye2: mid, dye3: violet, seed: 9, creases: 5, mmU: 0.9, mmV: 1.56, sigma: [0.05, 0.16], amp: [0.0006, 0.0014], fringe: 2, stripe, stripeAt: 5 });
   paintClothPanel(buf, { ...A.lining, W, dye: lining[0], dye2: lining[1], dye3: lining[2], seed: 13, creases: 3, mmU: 1.2, mmV: 1.56, fringe: 0, weave: 0.25 });
   paintClothPanel(buf, { ...A.knotFold, W, dye: deep, dye2: dark, dye3: dark, seed: 17, creases: 9, sigma: [0.03, 0.07], amp: [0.0005, 0.0011], mmU: 1.2, mmV: 0.7, fringe: 3 });

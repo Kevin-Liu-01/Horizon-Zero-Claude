@@ -212,8 +212,16 @@ export async function build({ out = ROOT } = {}) {
     B([sx * 0.024, L.chin[1] + 0.004, 0.066], [sx * 1.2, -1.2, 1.2], 0.0135);
   }
   // the neck takes a little more body under the jaw, so the head does not sit on a stalk
-  for (const sx of [1, -1]) B([sx * 0.038, 1.50, -0.012], [sx * 6.4, 0, 0.6], 0.026);
-  B([0, 1.495, 0.035], [0, 0, 3.2], 0.024);
+  for (const sx of [1, -1]) B([sx * 0.038, 1.495, -0.012], [sx * 10.5, 0, 0.8], 0.027);
+  B([0, 1.495, 0.035], [0, 0, 3.8], 0.024);
+  B([0, 1.50, -0.052], [0, 0, -3.0], 0.026);
+  // a face is never quite symmetric, and hers is dry: the left corner of the mouth a touch up, the right a touch in,
+  // the nose a hair off the midline, the left brow a hair higher (over the scar)
+  { const my = L.upperLip[1] - 0.012, mz = L.upperLip[2] - 0.022;
+    B([0.0285, my, mz], [0.2, 0.9, 0.3], 0.0058);
+    B([-0.0285, my, mz], [0.35, 0.15, -0.1], 0.0058);
+    B([0, ty - 0.004, tz - 0.006], [0.35, 0, 0], 0.012);
+    B([0.036, L.brow[1] + 0.006, L.brow[2] - 0.02], [0, 0.5, 0], 0.012); }
   // the ears lie closer to the skull, the lobe rounded up (stock stands off and comes to a point)
   for (const sx of [1, -1]) {
     B([sx * 0.0795, 1.655, -0.04], [-sx * 3.2, 0, 0], 0.017);
@@ -243,7 +251,7 @@ export async function build({ out = ROOT } = {}) {
       const xk = 1 - dx * dx * dx * dx;
       if (dy > 0.0015 && dy < 0.019) {
         const k = xk * (1 - smooth(0.0055, 0.0165, dy));
-        a[i * 3 + 1] -= mm(1.25) * k; a[i * 3 + 2] += mm(0.22) * k;
+        a[i * 3 + 1] -= mm(0.72) * k; a[i * 3 + 2] += mm(0.22) * k;
       } else if (dy < -0.0015 && dy > -0.014) {
         const k = xk * (1 - smooth(0.005, 0.0125, -dy));
         a[i * 3 + 1] += mm(0.5) * k;
@@ -273,7 +281,7 @@ export async function build({ out = ROOT } = {}) {
       const lid = Math.min(Math.hypot((Math.abs(p[0]) - eyes[0][0]) / 0.024, (p[1] - eyes[0][1]) / 0.0125), 1.6);
       const lip = Math.hypot(p[0] / 0.032, (p[1] - (L.upperLip[1] - 0.011)) / 0.017);
       const nose = Math.hypot(p[0] / 0.022, (p[1] - (L.noseTip[1] - 0.012)) / 0.013);
-      const ear = Math.abs(p[0]) > 0.068 && p[2] < 0.03 && p[1] > 1.59 && p[1] < 1.71 ? 0 : 1;
+      const ear = Math.abs(p[0]) > 0.068 && p[2] < 0.03 && p[1] > 1.59 && p[1] < 1.71 ? 0.55 : 1;
       return smooth(0.85, 1.25, lid) * smooth(0.8, 1.2, lip) * smooth(0.75, 1.15, nose) * ear;
     },
   });
@@ -338,19 +346,20 @@ export async function build({ out = ROOT } = {}) {
   const wrapped = woundHeadwrap({
     headSoup, joint: head, center: [0, 1.672, -0.012],
     // the hair and padding the cloth rides on: thin over the brow, fuller over the crown and the back
-    lift: (dx, dy, dz) => 0.0034 + 0.0052 * smooth(0.0, 0.75, dy) + 0.0032 * smooth(0.1, -0.85, dz),
+    // and it is pulled in hard at the temple, where the form bridges the cut-out ear and would otherwise stand off the skull
+    lift: (dx, dy, dz) => 0.0034 + 0.0052 * smooth(0.0, 0.75, dy) + 0.0032 * smooth(0.1, -0.85, dz) - 0.0042 * smooth(0.7, 0.95, Math.abs(dx)) * (1 - smooth(0.02, 0.3, dy)),
     // the base turn: low edge at +13 deg over the brow, +9 deg over the ears, -27 deg on the nape
-    base: { tiltDeg: 20, warpDeg: -7.5, lowDeg: 1.5, w: 0.232 },
+    base: { tiltDeg: 20, warpDeg: -7.5, lowDeg: -0.8, w: 0.232 },
     // two turns crossing over the forehead
     turns: [
-      { phiDeg: 82, tauDeg: 19, oDeg: 29, w: 0.215, along: 34, lift: 0.0064, pillow: 0.0026, creaseAmp: 0.0012, seed: 8, flip: true },
-      { phiDeg: -74, tauDeg: 17, oDeg: 39, w: 0.215, along: 30, lift: 0.0102, pillow: 0.0028, creaseAmp: 0.0012, seed: 15 },
+      { phiDeg: 82, tauDeg: 19, oDeg: 27.5, w: 0.215, along: 34, lift: 0.0064, pillow: 0.0026, creaseAmp: 0.0012, seed: 8, flip: true },
+      { phiDeg: -74, tauDeg: 17, oDeg: 37.5, w: 0.215, along: 30, lift: 0.0092, pillow: 0.0028, creaseAmp: 0.0012, seed: 15 },
     ],
     // the topknot; its top is the bbox top that assets.specs.js's targetHeight is computed from
     bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, topY: 1.82756 },
     knot: CHAINS.wrapSash.points[0],
     // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
-    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.42, gatherTo: 0.44, roll: 0.55, fold: 0.0072, along: 18, across: 5 },
+    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.42, gatherTo: 0.44, roll: 0.55, fold: 0.0105, along: 18, across: 5 },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
     tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5 },
   });
@@ -421,7 +430,7 @@ export async function build({ out = ROOT } = {}) {
   eyesPrim.setAttribute('_HIDEMASK', base.createAccessor().setType('SCALAR').setArray(new Uint8Array(eyesPrim.getAttribute('POSITION').getCount())).setBuffer(buf));
 
   // ---- the hair + wrap primitive (cloth, cards, locks: one material on the 512² atlas)
-  const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW });
+  const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, temples: false });
   const hairGeo = joinGeos([wrapped.geo, cards, ...lashes]);
   const wrapPrim = primFromGeo(base, hairGeo);
 
