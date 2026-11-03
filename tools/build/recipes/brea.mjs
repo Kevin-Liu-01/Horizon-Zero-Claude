@@ -9,7 +9,7 @@
  * exactly TWO skinned meshes:
  *   Brea_Skin      body + eyes on one 1024² skin atlas (lib/skin.mjs: islands re-packed by
  *                  density, the face twice the source's texels, the eyes in their own patch)
- *   Brea_HairWrap  wound cloth, coil cards, the coil tuft and lash cards on one alpha-cut,
+ *   Brea_HairWrap  wound cloth, coil cards and lash cards on one alpha-cut,
  *                  double-sided 512² atlas with COLOR_0 (lib/wrap.mjs, lib/hair.mjs)
  *
  * dyn_ chains (the kept spring solver discovers them by name, class by regex):
@@ -140,8 +140,8 @@ export const CHAINS = {
  * still moves >= 6 mm (A-face-delta); the eye sockets stay rigid.
  */
 const FACE_MM = {
-  noseBridge: { d: [0, 0.6, 6.2], s: 0.0125 },
-  noseTip: { d: [0, 4.6, 3.9], s: 0.0098 },
+  noseBridge: { d: [0, 0.6, 6.4], s: 0.0125 },
+  noseTip: { d: [0, 3.2, -3.4], s: 0.0098 },
   cheek: { d: [5.2, 1.4, 3.4], s: 0.0165 },     // mirrored for the right side
   jaw: { d: [6.2, -2.2, 0.6], s: 0.0235 },      // mirrored
   chin: { d: [0, -1.6, 6.2], sx: 0.0175, sy: 0.0125, sz: 0.016 },
@@ -188,8 +188,8 @@ export async function build({ out = ROOT } = {}) {
   const bumps = [];
   const B = (at, d, s, ax = null) => bumps.push({ at, d: d.map(mm), s: s / S, ...(ax ? { sx: ax[0] / S, sy: ax[1] / S, sz: ax[2] / S } : {}) });
   const FM = FACE_MM;
-  B(L.noseBridge, FM.noseBridge.d, FM.noseBridge.s, [0.0095, 0.019, 0.016]);
-  B(L.noseTip, FM.noseTip.d, FM.noseTip.s, [0.0105, 0.0088, 0.012]);
+  B(L.noseBridge, FM.noseBridge.d, FM.noseBridge.s, [0.0088, 0.019, 0.016]);
+  B(L.noseTip, FM.noseTip.d, FM.noseTip.s, [0.0125, 0.0095, 0.012]);
   B(L.cheekL, FM.cheek.d, FM.cheek.s);
   B(L.cheekR, [-FM.cheek.d[0], FM.cheek.d[1], FM.cheek.d[2]], FM.cheek.s);
   B(L.jawL, FM.jaw.d, FM.jaw.s);
@@ -200,10 +200,12 @@ export async function build({ out = ROOT } = {}) {
   B([L.brow[0] + 0.032, L.brow[1] - 0.004, L.brow[2] - 0.016], [0.6, 0.4, 3.4], 0.014);
   B([L.brow[0] - 0.032, L.brow[1] - 0.004, L.brow[2] - 0.016], [-0.6, 0.4, 3.4], 0.014);
   B(L.upperLip, FM.upperLip.d, FM.upperLip.s);
-  // the alae come in with the tip (no blunt ball nose)
+  // the alae come in with the tip (no blunt ball nose), and the side walls slim toward the bridge
   const ty = L.noseTip[1], tz = L.noseTip[2];
-  B([0.0175, ty - 0.003, tz - 0.022], [-1.8, 1.0, -0.6], 0.0085);
-  B([-0.0175, ty - 0.003, tz - 0.022], [1.8, 1.0, -0.6], 0.0085);
+  B([0.0175, ty - 0.003, tz - 0.022], [-3.0, 1.3, -1.0], 0.0088);
+  B([-0.0175, ty - 0.003, tz - 0.022], [3.0, 1.3, -1.0], 0.0088);
+  B([0.0105, ty + 0.018, tz - 0.024], [-1.2, 0, -0.4], 0.0085);
+  B([-0.0105, ty + 0.018, tz - 0.024], [1.2, 0, -0.4], 0.0085);
   // the mandible: one line from the gonion to the chin, a little below the stock edge
   for (const sx of [1, -1]) {
     B([sx * 0.040, L.chin[1] + 0.012, 0.030], [sx * 1.6, -2.4, 0.2], 0.0165);
@@ -212,6 +214,11 @@ export async function build({ out = ROOT } = {}) {
   // the neck takes a little more body under the jaw, so the head does not sit on a stalk
   for (const sx of [1, -1]) B([sx * 0.038, 1.50, -0.012], [sx * 6.4, 0, 0.6], 0.026);
   B([0, 1.495, 0.035], [0, 0, 3.2], 0.024);
+  // the ears lie closer to the skull, the lobe rounded up (stock stands off and comes to a point)
+  for (const sx of [1, -1]) {
+    B([sx * 0.0795, 1.655, -0.04], [-sx * 3.2, 0, 0], 0.017);
+    B([sx * 0.0735, 1.598, -0.012], [-sx * 3.0, 3.0, 0.4], 0.0075);
+  }
   // head-only region: nothing below the jaw line or behind the ears moves
   const region = (p) => smooth(1.425, 1.47, p[1]) * smooth(-0.10, -0.03, p[2]);
   const field = faceField(bumps, { rigid: eyes, r0: mm(15), r1: mm(33), region });   // the eye ball reaches ~14 mm from its centre: rigid to 15, 18 mm falloff
@@ -249,7 +256,7 @@ export async function build({ out = ROOT } = {}) {
   // the jaw line and the chin are the silhouette a close-up reads: split their long edges on the curve
   const stockN = bodyPrim.getAttribute('POSITION').getCount();
   const refined = refineEdges(bodyPrim, {
-    minLen: 0.0072, maxEdges: 180,
+    minLen: 0.0066, maxEdges: 260,
     want: (p) => {
       const ax = Math.abs(p[0]);
       if (p[1] < 1.515 || p[1] > 1.625 || ax > 0.082 || p[2] < -0.05) return false;
@@ -260,7 +267,7 @@ export async function build({ out = ROOT } = {}) {
   headW = vertexWeightOf(bodyPrim, headSet);
   // the face stops printing its polygons on the terminator; lips, lids and nostrils keep their edge
   smoothNormals(bodyPrim, {
-    iters: 2,
+    iters: 6,
     weight: (p) => {
       if (p[1] < 1.47 || Math.abs(p[0]) > 0.11) return 0;
       const lid = Math.min(Math.hypot((Math.abs(p[0]) - eyes[0][0]) / 0.024, (p[1] - eyes[0][1]) / 0.0125), 1.6);
@@ -343,8 +350,9 @@ export async function build({ out = ROOT } = {}) {
     bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, topY: 1.82756 },
     knot: CHAINS.wrapSash.points[0],
     // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
-    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.10, twist: Math.PI / 2, gather: 0.7, fold: 0.0052 },
-    tuft: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), count: 4, along: 6, width: 0.04, side: [1, 0, 0] },
+    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.42, gatherTo: 0.44, roll: 0.55, fold: 0.0072, along: 18, across: 5 },
+    // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
+    tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5 },
   });
 
   // ---- the skull under the wrap and the backs of the eyes are never seen: they pay for the cloth
@@ -372,9 +380,9 @@ export async function build({ out = ROOT } = {}) {
   // the eye openings, read off the meshes; lash cards and lid lines follow them
   const eyeTrue = eyes.map((e) => [e[0], e[1], eyeSphereZ]);
   const faceGridSoup = triSoup(bodyPrim, (a, b, c) => headW2(bodyPrim, a) && headW2(bodyPrim, b) && headW2(bodyPrim, c));
-  triSoup(eyesPrim, null, faceGridSoup);
   const faceGrid = new TriGrid(new Float32Array(faceGridSoup), 0.006);
-  const opens = eyeTrue.map((e) => eyeOpening(faceGrid, e, { eyeR: 0.0168 }));
+  const ballGrid = new TriGrid(new Float32Array(triSoup(eyesPrim)), 0.006);
+  const opens = eyeTrue.map((e) => eyeOpening(faceGrid, e, { eyeR: 0.0168, ballGrid }));
   const zAt = (x, y) => { const t = faceGrid.cast(x, y + 0.0004, 0.2, 0, 0, -1, 0.17, 0.0001); return t >= 0 ? 0.2 - t : eyeTrue[0][2] + 0.016; };
   const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W }));
 
@@ -401,7 +409,13 @@ export async function build({ out = ROOT } = {}) {
   // ---- hide mask (Pan Whites I covers which body vertices)
   const hide = coverageMask(bodyPrim, panTris, 0.08);
   const hideArr = new Uint8Array(bodyPrim.getAttribute('POSITION').getCount());
-  for (let i = 0; i < hideArr.length; i++) hideArr[i] = hide[i] ? 1 : 0;
+  // the collar stands off the neck: a look down inside it meets skin, never a hole through her, so
+  // the neck and the top of the chest stay whatever the normal-ray test says
+  const insideCollar = (x, y) => y > 1.385 && Math.abs(x) < 0.115;
+  {
+    const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0];
+    for (let i = 0; i < hideArr.length; i++) { P.getElement(i, q); hideArr[i] = hide[i] && !insideCollar(q[0], q[1]) ? 1 : 0; }
+  }
   const buf = root.listBuffers()[0];
   bodyPrim.setAttribute('_HIDEMASK', base.createAccessor().setType('SCALAR').setArray(hideArr).setBuffer(buf));
   eyesPrim.setAttribute('_HIDEMASK', base.createAccessor().setType('SCALAR').setArray(new Uint8Array(eyesPrim.getAttribute('POSITION').getCount())).setBuffer(buf));

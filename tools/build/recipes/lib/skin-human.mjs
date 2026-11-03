@@ -110,7 +110,7 @@ export function browLines(prim) {
     }
     meanY /= cnt;
     const keys = [...bins.keys()].sort((a, b) => a - b);
-    const pts = keys.map((k) => { const b = bins.get(k); const cy = b.s / b.n; return { x: k * 0.004, y: cy + (meanY + 0.002 - cy) * 0.74, half: (b.y1 - b.y0) * 0.5 * 1.08 }; });
+    const pts = keys.map((k) => { const b = bins.get(k); const cy = b.s / b.n; return { x: k * 0.004, y: cy + (meanY + 0.0038 - cy) * 0.74, half: (b.y1 - b.y0) * 0.5 * 1.08 }; });
     const x0 = pts[0].x, x1 = pts[pts.length - 1].x;
     // the painted brow stops short of the stock card's long outer tail
     const inner = side > 0 ? x0 : x1, outer = side > 0 ? x1 : x0;
@@ -120,7 +120,7 @@ export function browLines(prim) {
       line: (x) => {
         const f = Math.max(0, Math.min(pts.length - 1.0001, (x - x0) / (x1 - x0) * (pts.length - 1)));
         const i = Math.floor(f), t = f - i;
-        return { y: pts[i].y + (pts[i + 1].y - pts[i].y) * t, half: Math.max(0.0014, (pts[i].half + (pts[i + 1].half - pts[i].half) * t) * 0.6) };
+        return { y: pts[i].y + (pts[i + 1].y - pts[i].y) * t, half: Math.max(0.0014, (pts[i].half + (pts[i + 1].half - pts[i].half) * t) * 0.54) };
       },
     };
   }
@@ -186,7 +186,7 @@ export async function simplifyHands(prim) {
   const ids = [...groups.keys()].sort((a, b) => a - b);
   for (const id of ids) {
     const g = groups.get(id);
-    const target = Math.floor(g.length * 0.64 / 3) * 3;
+    const target = Math.floor(g.length * 0.5 / 3) * 3;
     const [out] = MeshoptSimplifier.simplify(Uint32Array.from(g), pos, 3, target, 0.012, ['LockBorder']);
     cut += (g.length - out.length) / 3;
     for (let i = 0; i < out.length; i++) rest.push(out[i]);
@@ -283,8 +283,8 @@ export function faceLayers({ L, eyes, cheek }) {
       { at: [0, 1.70, 0.08], s: [0.05, 0.024, 0.05], gain: [1.03, 1.03, 0.98], rough: -0.12 },           // the forehead, warm and yellow, a soft sheen
       { at: cheek, s: [0.024, 0.02, 0.03], gain: [1.05, 0.98, 0.95], rough: -0.16 },                     // the cheek, red through
       { at: [-cheek[0], cheek[1], cheek[2]], s: [0.024, 0.02, 0.03], gain: [1.05, 0.98, 0.95], rough: -0.16 },
-      { at: noseT, s: [0.014, 0.02, 0.02], gain: [0.95, 0.95, 0.97], rough: -0.16 },                       // the nose, sun-reddened and oily
-      { at: L.noseBridge, s: [0.012, 0.022, 0.02], gain: [1.03, 0.99, 0.96], rough: -0.14 },
+      { at: noseT, s: [0.014, 0.02, 0.02], gain: [1.0, 1.01, 1.02], rough: -0.16 },                       // the nose, sun-reddened and oily
+      { at: L.noseBridge, s: [0.012, 0.022, 0.02], gain: [1.02, 1.0, 0.98], rough: -0.14 },
       { at: [0, L.chin[1] + 0.024, L.chin[2]], s: [0.04, 0.02, 0.03], gain: [0.95, 0.94, 0.96] },         // the muzzle, cooler and greyer
       { at: L.chin, s: [0.018, 0.012, 0.016], gain: [1.05, 0.97, 0.94], rough: -0.1 },
       { at: [0.074, 1.635, -0.03], s: [0.016, 0.03, 0.028], gain: [1.05, 0.96, 0.93] },                     // the ears
@@ -293,7 +293,7 @@ export function faceLayers({ L, eyes, cheek }) {
       { at: [eyes[1][0], eyes[1][1] - 0.0145, eyes[1][2] + 0.008], s: [0.017, 0.0065, 0.02], gain: [0.93, 0.9, 0.91] },
       { at: [0, 1.50, 0.03], s: [0.05, 0.03, 0.06], gain: [0.94, 0.93, 0.93] },                           // under the jaw
     ]),
-    pores({ zone: (T) => (T.Y > 1.42 && Math.abs(T.X) < 0.2 ? 1 : Math.abs(T.X) > 0.4 ? 0.6 : 0.4) }),
+    pores({ depth: 0.00011, zone: (T) => (T.Y > 1.42 && Math.abs(T.X) < 0.2 ? 1 : Math.abs(T.X) > 0.4 ? 0.6 : 0.4) }),
     creases([
       // sun creases at the outer eye corners: she squints for a living
       ...[1, -1].flatMap((sx) => {
@@ -390,7 +390,7 @@ export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, 
   blit(painted.normal, W, eyeP.normal, EYE_PX, EYE_PX, ex, ey);
   blit(painted.orm, W, eyeP.orm, EYE_PX, EYE_PX, ex, ey);
   baseTex.setImage(await webp(painted.base, W, { quality: 93 })).setMimeType('image/webp').setURI(`${names}-skin-base.webp`);
-  nTex.setImage(await webp(painted.normal, W, { to: 512, quality: 92, kernel: 'mitchell' })).setMimeType('image/webp').setURI(`${names}-skin-normal.webp`);
+  nTex.setImage(await webp(painted.normal, W, { to: 512, quality: 96, kernel: 'lanczos3' })).setMimeType('image/webp').setURI(`${names}-skin-normal.webp`);
   rTex.setImage(await webp(painted.orm, W, { to: 512, quality: 84, kernel: 'mitchell' })).setMimeType('image/webp').setURI(`${names}-skin-orm.webp`);
   skinMat.setRoughnessFactor(1).setMetallicFactor(0).setDoubleSided(false);
   skinMat.setOcclusionTexture(rTex);

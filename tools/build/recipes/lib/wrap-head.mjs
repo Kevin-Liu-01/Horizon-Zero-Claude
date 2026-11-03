@@ -25,10 +25,12 @@ export const DEG = Math.PI / 180;
  *   bun          { c: [x,y,z], axis, r, topY } or null (topY fixes the bbox top)
  *   knot         [x,y,z] or null
  *   tail         { points, joints, width, side, curl, twist, gather, fold } or null
- *   tuft         { points, joints, count, along, width, side } or null
+ *   tail2        { points, joints, width, side, curl, twist, gather, fold, along, across } or null: a second,
+ *                narrower cloth end (the other end of the knot) on its own chain
+ *   tuft         { points, joints, count, along, width, side } or null (a coil tuft on a chain)
  * Returns { geo, parts, covers(p), lowEdge(p), soup, center }.
  */
-export function woundHeadwrap({ headSoup, joint, center, lift, base: B, turns, bun: bunSpec = null, knot: knotAt = null, tail = null, tuft = null }) {
+export function woundHeadwrap({ headSoup, joint, center, lift, base: B, turns, bun: bunSpec = null, knot: knotAt = null, tail = null, tail2 = null, tuft = null }) {
   const A = WRAP_ATLAS, W = A.W;
   const head = joint;
   const form = headForm(headSoup, { center, lift, blur: 2 });
@@ -43,7 +45,7 @@ export function woundHeadwrap({ headSoup, joint, center, lift, base: B, turns, b
   const baseW = B.w;
   const baseO = (B.lowDeg * DEG) + baseW;
   const baseWarp = (s) => B.warpDeg * DEG * Math.cos(2 * s);
-  add('cap', crownCap(form, { elMin: 18 * DEG, rings: 4, seg: 20, lift: 0.0016, joint: head, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: [0, 0.94, -0.34] }));
+  add('cap', crownCap(form, { elMin: 18 * DEG, rings: 4, seg: 20, lift: 0.0046, joint: head, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: [0, 0.94, -0.34] }));
   add('turn1', ribbon(form, { n: baseN, o0: baseO, w: baseW, warp: baseWarp, along: 36, rowsT: rowsBase, lift: 0.0026, pillow: 0.0024, creases: 3, creaseAmp: 0.0012, seed: 3, joint: head, uv: uvA([0, 1]) }));
   // the crossing turns: each rises across the forehead toward its own side
   turns.forEach((t, i) => add(`turn${i + 2}`, ribbon(form, { n: rising(t.phiDeg * DEG, t.tauDeg * DEG), o0: t.oDeg * DEG, w: t.w, along: t.along ?? 32, rowsT: rowsBase, lift: t.lift, pillow: t.pillow ?? 0.0026, creases: 3, creaseAmp: t.creaseAmp ?? 0.0013, seed: t.seed, joint: head, uv: uvA(t.flip ? [1, 0] : [0, 1]) })));
@@ -57,10 +59,10 @@ export function woundHeadwrap({ headSoup, joint, center, lift, base: B, turns, b
       const rows = [-1, -0.9, -0.5, 0, 0.5, 0.9, 1];
       const gs = [
         crownCap(f, { elMin: -80 * DEG, rings: 6, seg: 12, lift: -0.0012, gather: 0, joint: head, uv: { rect: [A.knotFold.rect[0], A.knotFold.rect[1] + 8, 64, 48], W }, tiltAxis: tilt }),
-        ribbon(f, { n: rotAbout(tilt, [1, 0, 0], 0.16), o0: -36 * DEG, w: 0.44, along: 16, rowsT: rows, lift: 0, pillow: 0.0028, hemDrop: 0.004, creases: 2, creaseAmp: 0.001, seed: 21, joint: head, uv: uvB([0, 1]), wander: 0.05 }),
-        ribbon(f, { n: rotAbout(tilt, [0.5, 0, 0.8], -0.22), o0: 4 * DEG, w: 0.46, along: 16, rowsT: rows, lift: 0.0022, pillow: 0.003, hemDrop: 0.0045, creases: 2, creaseAmp: 0.0011, seed: 27, joint: head, uv: uvA([1, 0]), wander: 0.05 }),
-        ribbon(f, { n: rotAbout(tilt, [-0.7, 0, 0.6], 0.2), o0: 42 * DEG, w: 0.46, along: 14, rowsT: rows, lift: 0.0044, pillow: 0.003, hemDrop: 0.0045, creases: 2, creaseAmp: 0.001, seed: 34, joint: head, uv: uvB([1, 0]), wander: 0.05 }),
-        crownCap(f, { elMin: 58 * DEG, rings: 2, seg: 12, lift: 0.0036, gather: 0.0012, joint: head, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: tilt }),
+        ribbon(f, { n: rotAbout(tilt, [1, 0, 0], 0.16), o0: -36 * DEG, w: 0.44, along: 20, rowsT: rows, lift: 0, pillow: 0.0028, hemDrop: 0.004, creases: 2, creaseAmp: 0.001, seed: 21, joint: head, uv: uvB([0, 1]), wander: 0.05 }),
+        ribbon(f, { n: rotAbout(tilt, [0.5, 0, 0.8], -0.22), o0: 4 * DEG, w: 0.46, along: 20, rowsT: rows, lift: 0.0022, pillow: 0.003, hemDrop: 0.0045, creases: 2, creaseAmp: 0.0011, seed: 27, joint: head, uv: uvA([1, 0]), wander: 0.05 }),
+        ribbon(f, { n: rotAbout(tilt, [-0.7, 0, 0.6], 0.2), o0: 42 * DEG, w: 0.5, along: 18, rowsT: rows, lift: 0.0044, pillow: 0.003, hemDrop: 0.0045, creases: 2, creaseAmp: 0.001, seed: 34, joint: head, uv: uvB([1, 0]), wander: 0.05 }),
+        crownCap(f, { elMin: 46 * DEG, rings: 3, seg: 16, lift: 0.0022, gather: 0, joint: head, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: tilt }),
       ];
       return { gs, c };
     };
@@ -85,10 +87,19 @@ export function woundHeadwrap({ headSoup, joint, center, lift, base: B, turns, b
   // the free tail on its chain, with a real section
   if (tail) {
     add('tail', clothTail(tail.points, tail.joints, {
-      along: 16, across: 4, width: tail.width, side: tail.side, thick: 0.004, curl: tail.curl ?? 0.10, twist: tail.twist ?? 0, gather: tail.gather ?? 0.7, fold: tail.fold ?? 0.0052,
+      along: tail.along ?? 16, across: tail.across ?? 4, width: tail.width, side: tail.side, thick: 0.004, curl: tail.curl ?? 0.10, twist: tail.twist ?? 0, gather: tail.gather ?? 0.7, gatherTo: tail.gatherTo ?? 0.16, roll: tail.roll ?? 0, fold: tail.fold ?? 0.0052,
       uvFront: { rect: A.clothA.rect, period: A.clothA.period, W, pxPerM: 1 / 0.00065, v: [1, 0] },
       uvBack: { rect: A.lining.rect, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0, 1] },
       uvEnd: A.frayEnd.rect, fray: 0.1,
+    }));
+  }
+  // the other end of the knot: a narrow cloth end, the carmine lining showing where it twists
+  if (tail2) {
+    add('tail2', clothTail(tail2.points, tail2.joints, {
+      along: tail2.along ?? 8, across: tail2.across ?? 2, width: tail2.width, side: tail2.side, thick: 0.003, curl: tail2.curl ?? 0.12, twist: tail2.twist ?? 0, gather: tail2.gather ?? 0.55, fold: tail2.fold ?? 0.0022, seed: 19,
+      uvFront: { rect: A.tailA.rect, period: A.tailA.period, W, pxPerM: 1 / 0.0009, v: [1, 0] },
+      uvBack: { rect: A.lining.rect, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0, 1] },
+      uvEnd: A.frayEnd.rect, fray: 0.14,
     }));
   }
   // a tuft of coils on its own chain

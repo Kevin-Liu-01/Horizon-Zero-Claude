@@ -393,12 +393,13 @@ export function coilTuft(P, joints, { count = 3, along = 7, width = 0.03, side =
 /* ================================================================= brows */
 
 /**
- * Brows painted hair by hair. `line(x)` -> { y, half } gives the brow's centre and half
- * height along x (bind metres); a stroke grows up and out from the lower edge. Returns a
- * paint layer plus the strokes (`scar`, a segment, parts the hairs along it). Each stroke
- * only tests texels in its own box, so 90 strokes per brow cost little.
+ * Brows painted hair by hair over a soft mass. `line(x)` -> { y, half } gives the brow's centre and
+ * half height along x (bind metres). Hairs grow from the lower edge up and out, herringbone: the
+ * lower ones lean up, the upper ones lie down onto them, so the brow has a combed top edge and no
+ * scratches. The inner end stands up and feathers; the outer third lies along the brow and tapers
+ * to a point. `scar` (a segment) parts the hairs along it. Each hair only tests texels in its box.
  */
-export function browLayer({ x0, x1, line, strokes = 150, seed = 17, hair = '#15110F', scar = null, side = 1, width = 0.00032, length = [0.0056, 0.0092] } = {}) {
+export function browLayer({ x0, x1, line, strokes = 260, seed = 17, hair = '#15110F', scar = null, side = 1, width = 0.00029, length = [0.0032, 0.0052], mass = 0.5 } = {}) {
   const R = rng(seed * 374761393);
   const list = [];
   const seg = (a, b, p) => {
@@ -406,46 +407,60 @@ export function browLayer({ x0, x1, line, strokes = 150, seed = 17, hair = '#151
     const t = clamp01(((p[0] - a[0]) * ax + (p[1] - a[1]) * ay) / (ax * ax + ay * ay));
     return Math.hypot(p[0] - (a[0] + ax * t), p[1] - (a[1] + ay * t));
   };
+  // f: 0 inner end, 1 outer tail. The brow's own height tapers along it
+  const fOf = (x) => clamp01((x - x0) / (x1 - x0));
+  const taper = (f) => mix(0.84, 0.98, smooth(0, 0.18, f)) * mix(1, 0.32, smooth(0.5, 1, f));
+  const scarD = 0.0017;
   for (let n = 0; n < strokes; n++) {
-    const f = R();
+    const f = Math.pow(R(), 0.86);                       // a little denser toward the inner two thirds
     const x = mix(x0, x1, f);
     const { y, half } = line(x);
-    const yy = y + (R() * 2 - 1) * half * 0.86;
-    // inner hairs stand up, the outer ones lie along the brow
-    const ang = mix(1.05, 0.16, smooth(0.0, 0.55, f)) + (R() - 0.5) * 0.3;
+    const hh = half * taper(f);
+    const v = R() * 2 - 1;                                // -1 lower edge, +1 top edge
+    const yy = y + v * hh * 0.8;
+    // the inner hairs stand, the outer ones lie along the brow; the top rows comb down onto the rest
+    const base = mix(1.02, 0.1, smooth(0.04, 0.5, f));
+    const ang = base + (v > 0 ? -0.42 * v : 0.12 * -v) + (R() - 0.5) * 0.22;
     const dirX = side * Math.cos(ang), dirY = Math.sin(ang);
-    const L = mix(length[0], length[1], R()) * mix(0.72, 1, smooth(0, 0.3, f)) * mix(1, 0.72, smooth(0.8, 1, f));
+    const L = mix(length[0], length[1], R()) * mix(0.74, 1, smooth(0, 0.22, f)) * mix(1, 0.7, smooth(0.78, 1, f));
     const a = [x - dirX * L * 0.5, yy - dirY * L * 0.5], b = [x + dirX * L * 0.5, yy + dirY * L * 0.5];
-    if (scar && Math.min(seg(scar.a, scar.b, a), seg(scar.a, scar.b, b), seg(scar.a, scar.b, [x, yy])) < 0.0021) continue;
-    list.push({ a, b, w: width * (0.8 + 0.5 * R()), d: 0.82 + 0.18 * R() });
+    if (scar && Math.min(seg(scar.a, scar.b, a), seg(scar.a, scar.b, b), seg(scar.a, scar.b, [x, yy])) < scarD) continue;
+    list.push({ a, b, w: width * (0.82 + 0.44 * R()), d: 0.7 + 0.3 * R(), warm: R() });
   }
   const C = hex(hair);
+  const W0 = [C[0] + 34, C[1] + 22, C[2] + 15];
   const bx0 = Math.min(x0, x1) - 0.008, bx1 = Math.max(x0, x1) + 0.008;
   let by0 = 9, by1 = -9;
   for (const s of list) { by0 = Math.min(by0, s.a[1], s.b[1]); by1 = Math.max(by1, s.a[1], s.b[1]); }
   by0 -= 0.002; by1 += 0.002;
+  const xLo = Math.min(x0, x1), xHi = Math.max(x0, x1);
   return (T) => {
     if (T.X < bx0 || T.X > bx1 || T.Y < by0 || T.Y > by1 || T.nz < 0.05) return;
-    // a soft under-tone, then the strokes
-    const { y, half } = line(Math.max(Math.min(x0, x1), Math.min(Math.max(x0, x1), T.X)));
-    const inX = 1 - smooth(0, 0.004, Math.max(Math.min(x0, x1) - T.X, T.X - Math.max(x0, x1)));
-    const shadow = (1 - smooth(half * 0.25, half * 1.15, Math.abs(T.Y - y))) * inX;
-    const sk = 1 - shadow * 0.34;
-    T.r *= sk; T.g *= sk * 0.97; T.b *= sk * 0.95;
-    let best = 0;
+    // the soft mass: darkest along the brow's middle, gone before the hair tips
+    const f = fOf(Math.max(xLo, Math.min(xHi, T.X)));
+    const { y, half } = line(Math.max(xLo, Math.min(xHi, T.X)));
+    const hh = half * taper(f);
+    const inX = 1 - smooth(0, 0.0032, Math.max(xLo - T.X, T.X - xHi));
+    const nearScar = scar ? 1 - smooth(scarD * 0.5, scarD * 1.3, seg(scar.a, scar.b, [T.X, T.Y])) : 0;
+    const body = (1 - smooth(hh * 0.3, hh * 1.05, Math.abs(T.Y - y + 0.00025))) * inX * (1 - nearScar) * mix(0.85, 1, noise3(T.X * 900, T.Y * 900, 1.3));
+    const sk = 1 - body * mass;
+    T.r = mix(T.r, C[0] * 1.9, body * mass); T.g = mix(T.g, C[1] * 1.9, body * mass); T.b = mix(T.b, C[2] * 1.9, body * mass);
+    void sk;
+    let best = 0, warm = 0;
     for (const s of list) {
       if (T.X < Math.min(s.a[0], s.b[0]) - s.w * 2 || T.X > Math.max(s.a[0], s.b[0]) + s.w * 2 || T.Y < Math.min(s.a[1], s.b[1]) - s.w * 2 || T.Y > Math.max(s.a[1], s.b[1]) + s.w * 2) continue;
       const ax = s.b[0] - s.a[0], ay = s.b[1] - s.a[1];
       const t = clamp01(((T.X - s.a[0]) * ax + (T.Y - s.a[1]) * ay) / (ax * ax + ay * ay));
       const d = Math.hypot(T.X - (s.a[0] + ax * t), T.Y - (s.a[1] + ay * t));
-      const tip = mix(1, 0.45, t);
-      const k = (1 - smooth(s.w * 0.55 * tip, s.w * 1.45 * tip, d)) * s.d;
-      if (k > best) best = k;
+      const tip = mix(1, 0.5, t);
+      const k = (1 - smooth(s.w * 0.45 * tip, s.w * 1.5 * tip, d)) * s.d;
+      if (k > best) { best = k; warm = s.warm; }
     }
     if (best > 0) {
-      T.r = mix(T.r, C[0] * 1.2, best); T.g = mix(T.g, C[1] * 1.2, best); T.b = mix(T.b, C[2] * 1.2, best);
-      T.h += best * 0.00016;
-      T.rough = mix(T.rough, 0.5, best);
+      const cr = mix(C[0], W0[0], warm), cg = mix(C[1], W0[1], warm), cb = mix(C[2], W0[2], warm);
+      T.r = mix(T.r, cr, best); T.g = mix(T.g, cg, best); T.b = mix(T.b, cb, best);
+      T.h += best * 0.00014;
+      T.rough = mix(T.rough, 0.58, best);
     }
   };
 }

@@ -243,7 +243,7 @@ export function cordRing(center, axis, R, r, { seg = 14, sides = 4, joint = 0, u
  * in), and the last `fray` of its length mapped to a frayed end cell.
  *   uvFront / uvBack: { rect, period, W, pxPerM, v:[a,b] }, uvEnd: [x, y, w, h] px
  */
-export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7 } = {}) {
+export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, gatherTo = 0.16, roll = 0, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7 } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const pl = polyline(P);
   const R = rng(seed * 40503);
@@ -258,14 +258,17 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
       let sd = norm(sub(side, mul(t, dot(side, t))));
       if (twist) { const n0 = norm(cross(sd, t)), a2 = twist * u; sd = norm(add(mul(sd, Math.cos(a2)), mul(n0, Math.sin(a2)))); }
       const nrm = norm(cross(sd, t));
-      const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(0, 0.16, u));
+      const rootK = 1 - smooth(gatherTo * 0.55, gatherTo, u);        // 1 at the knot, 0 on the free strip
+      const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(gatherTo * 0.5, gatherTo, u));
       const weights = chainW(joints, seg, f);
       for (let k = 0; k <= across; k++) {
         const x = (k / across) * 2 - 1;
-        const cup = curl * (1 - x * x) * hw;
+        // the root is gathered and rolled into a half tube (`roll`), its pleats running along it; the free strip is flat, with folds
+        const cup = (curl + roll * rootK) * (1 - x * x) * hw;
         let w = 0;
         for (const q of waves) w += q.a * Math.sin(x * q.f * Math.PI + q.ph + u * q.m) * (0.5 + 0.5 * Math.sin(u * q.m * 2 + q.ph2));
-        const off = sgn * thick * 0.5 + cup + w * (0.45 + 0.55 * smooth(0, 0.25, 1 - Math.abs(x)));
+        const pleat = rootK * hw * 0.2 * Math.sin(x * 7.3 + u * 9 + 1.1);
+        const off = sgn * thick * 0.5 + cup + pleat + w * (0.45 + 0.55 * smooth(0, 0.25, 1 - Math.abs(x)));
         pts.push(add(add(p, mul(sd, x * hw)), mul(nrm, off)));
         frames.push({ u, x, sd, t, nrm, weights });
       }
@@ -455,7 +458,7 @@ export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, s
     const drift = pnoise2(px / P * 5, y / h * 3 + seed, 5, 1000), drift2 = pnoise2(px / P * 11 + 3, y / h * 7, 11, 1000);
     let r = mix(D[0], D2[0], smooth(0.3, 0.75, drift)), g = mix(D[1], D2[1], smooth(0.3, 0.75, drift)), b = mix(D[2], D2[2], smooth(0.3, 0.75, drift));
     r = mix(r, D3[0], smooth(0.55, 0.9, drift2) * 0.55); g = mix(g, D3[1], smooth(0.55, 0.9, drift2) * 0.55); b = mix(b, D3[2], smooth(0.55, 0.9, drift2) * 0.55);
-    const shade = (0.72 + 0.3 * lift * shadeK + (1 - shadeK) * 0.2) * (1 + weave * (0.1 * thread - 0.07)) * (1 + weave * (0.1 * tt - 0.05));
+    const shade = (0.8 + 0.22 * lift * shadeK + (1 - shadeK) * 0.2) * (1 + weave * (0.1 * thread - 0.07)) * (1 + weave * (0.1 * tt - 0.05));
     r *= shade; g *= shade; b *= shade;
     // hems: slightly darker and denser, then the stripe
     const dEdge = Math.min(y, h - 1 - y);
@@ -465,14 +468,14 @@ export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, s
     }
     const hemK = 1 - 0.18 * (1 - smooth(fringe, fringe + 5, dEdge));
     r *= hemK; g *= hemK; b *= hemK;
-    // the woven alpha edge: warp threads end at their own length, weft thread gone first
+    // the woven alpha edge: a hem worn soft, not a comb. The edge wanders slowly (the hand-cut hem),
+    // and only a loose thread here and there stands a single texel proud of it
     let alpha = 1;
     if (fringe > 0) {
       const lim = y < h / 2 ? warpEnd[px] : warpEnd2[px];
-      // the edge itself wanders (a hand-cut, slightly unravelled hem), most threads run to it, a few stop short
-      const wander2 = pnoise2(px / P * 24, y < h / 2 ? 0.5 : 7.5, 24, 1000);
-      const stray = lim > 0.9;                                  // one thread in ten runs past the worn edge
-      const reach = stray ? 0.4 : fringe * (0.45 + 0.55 * wander2);
+      const wander2 = pnoise2(px / P * 11, y < h / 2 ? 0.5 : 7.5, 11, 1000), wander3 = pnoise2(px / P * 37, y < h / 2 ? 2.5 : 5.5, 37, 1000);
+      const stray = lim > 0.965 ? 0.45 : 0;
+      const reach = fringe * (0.3 + 0.5 * wander2 + 0.2 * wander3) - stray;
       if (dEdge < reach) alpha = 0;
     }
     const o = ((y0 + y) * W + x0 + x) * 4;
