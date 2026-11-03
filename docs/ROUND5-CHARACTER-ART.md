@@ -20,6 +20,56 @@ from the CC0 UBC sources only. Nothing was downloaded.
 
 The wrap tail's root is gathered and rolled into a half tube, so its stiff first third no longer reads as a flat plate; its chain rig and points are hero-body's and are untouched.
 
+## 2. Gates (`tools/gates.r5.character-art.mjs`; `node tools/gates.mjs --port 5266 --lane character-art`)
+
+Runs on port 5266, Nov 3, final build `brea.glb` 589,120 bytes. Visual rows are the builder's own reading (R29: the independent judge grades them).
+
+| gate | result | measured |
+|---|---|---|
+| **A-brea-budget** | PASS | 9,804 tris live (skin 6,252 + hair/wrap 3,552; ≤ 10 k), 2 draws, 1 skeleton, skin 1024² + 512² normal + 512² ORM, hair/wrap 512² x 3, 589,120 bytes (≤ 0.7 MB); alpha cut 0.5, per-vertex shadow, face normal energy 2.51 (≥ 0.6), AO range 35..255 (≥ 90) |
+| A-face-delta | PASS | ≥ 6 mm on 5 of 7 (bridge 7.88, cheek 6.38, jaw 6.63, chin 6.75, brow 7.39; tip 4.46 and upper lip 1.57 are below it on purpose: the blunt tip came from pushing it out), eye socket 0.211 mm, profile IoU 0.8909 (≤ 0.92) |
+| A-human-bind | PASS | 52 / 52 pairs, hipScale 0.994 |
+| A-hero-draws | PASS | hero 4 draws, 2 casters, 19,860 tris (body 9,804, outfit 7,876, kit 2,180) |
+| A33-hair-bounce | PASS | `dyn_hairKnotTail_04`: detrended 0.077 m (≥ 0.04), 3.73 Hz vs footfall 3.73 Hz |
+| A-tail-legible | PASS, 3 of 4 runs | 0 of 24 failing moments in r1, r5, r6. r4 had 1 of 24 (reach 3 in both side views at +4.20 s). This is hero-body's open tail-margin finding (known flake about 3.5 % per run); it owns the fix |
+| A-wrap-clear | PASS | min clearance 0.055 m (≥ 0.05) |
+| A-brea-contrast | PASS | salt 6.03:1, sand ΔE 21.5, 22.7 % of pixels at 3:1 |
+| A-outfit-merge-dispose | PASS | geometries 152 → 152, textures 115 → 115, skeletons 3 → 3 |
+| A90b-memory-attribution | PASS | 0 offenders |
+| A90-memory-stability | PASS | heap -1.2 %, geometries +17, textures -3, objects -33 |
+| A1, A20b, A-assets-tracked, A-build-deterministic, A-no-horizon-terms-player / -code, A-alloc-rate and A-vram-ledger (instruments) | PASS | namecheck `--code` 1365 of 1365 |
+| A-licence-manifest | PENDING | third-party PENDING on another lane's row (`r5-poc-rock-scan`: `archive_sha256`, `retrieved`); every other term PASS |
+| A-port-guard | PENDING | a lane run has no sealed carried run: the orchestrator's row |
+| A-ID-ip-assets-gone | FAIL in this tree | The scan passes (`ipHits` 0). Only a negative control fails; main's 2b4c9b6 fixes that control, and this tree has not merged it yet. Not this lane's content |
+| A21-real-draw-calls | FAIL, timing term only | Draws 275 of 350, triangles 3.93 M of 6.5 M pass. medianGpuMs 21.7 / 29.4 / 20.6 (vista / herd / fight) against 14. W0b's runs on main read 22-23 / 43-45 / 22-26 on a loud box, so nothing here points at this lane, though the boxes differ. R58 grades the timing at the W1 exit |
+| V-brea-closeup (day) | reads well | Front, 3/4, profile on her left, sun on her left front |
+| V-brea-closeup-dusk | reads well | The best of the set: warm key, the shadow side keeps its form |
+| V-brea-closeup-calima | reads, on a stand-in | `overcast`, because this tree has no calima state; re-film when world-sky lands. Skin is a little dark and dull in flat light |
+| V-brea-closeup-detail | reads well | Paste, eyes and hem hold at 0.3 m. The nape panel is half hidden by the wrap tail in the wind |
+| V-brea-face, V-brea-one-glance, V23-secondary-motion, V22-chase-framing | green to my reading | V22 PASS on its action term (fill 0.677). 5 of 5 silhouette cues; both cloth ends move |
+
+Staging, which a judge should know: the close-up rows take their camera from the face's own axes (read off the live skin), because the idle carries the head bowed; the sun is on her left, the side of the scar; the stow kit is hidden so the lance does not cross the lens.
+
+Offline previewing: a CPU renderer of the GLB is how most of this was iterated, because the Chrome slot was often busy. It lived in scratch and is not part of the tree.
+
+Before and after sheets: `reference/r5/character-art/` (`brea-face-before-w0b.jpg`, `brea-closeup-before-relaunch.jpg`, `brea-closeup-*.jpg`, `brea-face-after.jpg`).
+
+### Still weak, next to the reference
+
+1. It reads as a strong stylised game heroine, not as the photo. There is no subsurface pass, so the terminator is a hard line on the nose in low sun.
+2. At 3x zoom the jaw and the bun outline still show a few polygon corners, and two crossing turns intersect with a small step at the selvedge.
+3. The wrap tail's lining is a broad carmine strip in the front view when the wind brings it round. It is cloth now, but it is the least finished part of the head.
+4. Her right temple shows almost no hair, because the hem sits lower on that side.
+5. The hands are correct but plain.
+
+### What others need to do
+
+- **hero-body:** the idle carries her head visibly bowed in every close frame (about 15° by eye, not measured); levelling it would help every dialogue-range shot. The tail-margin finding stays yours. `CHAINS.wrapSash` and `CHAINS.hairKnotTail` were not touched, and the chain names and landmarks are unchanged. The knot tail is cloth now (`tail2`), still on `dyn_hairKnotTail`. `reference/r5/hero/brea-face-sheet.png` is now stale; it is in your folder.
+- **armory:** the alidade neck cord is thick, white and low-poly at the collar in V-brea-face, and it is the cheapest thing near the new head. The flat pink-violet smock now reads a tier below the wrap.
+- **settlements:** §3 is current. Leave `scalpCards`' `temples` false (the default now), pass both grids to `eyeOpening`, and give the hide mask an inside-collar exemption.
+- **world-sky:** when the calima state lands, re-film `V-brea-closeup-calima`; the gate picks it up by name.
+- **orchestrator:** merge main into this tree (the IP control). An independent judge is needed for the V rows. `src/core/assets.js:420` forces every model to FrontSide; the cloth is built for that, and the look clause of A-brea-budget says so.
+
 ## 3. API (reusable: `tools/build/recipes/lib/**`, Node only, deterministic, no clocks or `Math.random`)
 
 ### `lib/face.mjs` (kept from hero-body, one addition)

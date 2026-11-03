@@ -23,7 +23,7 @@
  * are held rigid. The vertex normals are softened on the open skin, so the terminator does not
  * print the polygons. Then the PAINT layer is composited in 3-D from a bind-space position map:
  * the seamless tone, ray-cast AO + convexity (form), colour zones, pores, creases, lids, brows
- * hair by hair, the coil hairline, the salt paste (#EDEAE2, 8 mm, plates, cracks and thickness),
+ * hair by hair, the coil hairline, the salt paste (#EDEAE2, 8 mm, a finger-wiped stroke with thickness and a slight crackle),
  * the 3 cm scar through the left brow and the fine ∴ on the back of the right hand. Eyes dark
  * brown #3B2A20; brows heavy and straight.
  *
