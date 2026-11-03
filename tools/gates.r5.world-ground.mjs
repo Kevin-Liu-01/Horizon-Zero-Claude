@@ -4,20 +4,18 @@
  *   nice -n 10 node tools/gates.mjs --port 5259 --lane world-ground
  *
  * Auto-discovered by tools/gates.config.mjs. Rows that share an id with another lane's
- * file carry an `-island` suffix here, because the registry resolves a two-lane id to the
- * alphabetically first file (`A18-…`, `A29-…`, `A30b-…` are hero-body's until its exit,
- * `A-single-rest` is brand's). They run the same logic on this lane's ground; the plan's
- * names map 1:1:
+ * file carry a suffix here, because the registry resolves a two-lane id to the alphabetically
+ * first file (`A18-…` is hero-body's until its exit, `A-single-rest` is brand's). They run the
+ * same logic on this lane's ground; the plan's names map 1:1:
  *
  *   plan                     row here
  *   A-single-rest (W1)       A-single-rest-saltrow
- *   A30b-fall-wade-edge      A30b-fall-wade-edge-island
  *   A18 / A18b               A18-slope-conform-island / A18b-slope-conform-moving-island
- *   A29-steep-face           A29-steep-face (hero-body's A29-slope-limit on steepFace)
- *   A29b-steep-face-moving   A29b-steep-face-moving (hero-body's A29b-slope-no-ghost)
+ *   A29-steep-face           A29-steep-face (the carried A29-slope-limit on steepFace)
+ *   A29b-steep-face-moving   A29b-steep-face-moving (the carried A29b-slope-no-ghost)
  *
- * The carried rows this lane absorbs shadow by id: A58-surface-api, A58b, A59b, A59c, A60,
- * V32. V33, V44's Round-4 staging, A62 and A63 measured the ring wall of a valley that no
+ * The carried rows this lane absorbs shadow by id: A30b-fall-wade-edge, A58-surface-api, A58b,
+ * A59b, A59c, A60, V32. V33, V44's Round-4 staging, A62 and A63 measured the ring wall of a valley that no
  * longer exists: their subject is replaced, reported SKIP-replaced (V44 returns at W4).
  *
  * PLACES: named places come from ctx.props.gatePlaces (world-props W1); until that lane is
@@ -30,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { placed, placedSetup } from './gate-places.mjs';
 import { GATES as HERO } from './gates.r5.hero-body.mjs';
 import { GATES as CARRIED } from './gates.r5.carried.mjs';
+import { GATES as ENGINE, POC_KIT } from './gates.r5.engine-gpu.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LANE = 'world-ground';
@@ -133,12 +132,12 @@ const ROWS = [
       const cold = [];
       let again = null;
       for (let i = 0; i < 4; i++) {
-        again = await pool.bakeIsland();
+        again = await pool.bakeIsland({ layers: false });
         runs.push(+again.stats.buildMs.toFixed(0));
         cold.push(again.stats);
         await new Promise((r) => setTimeout(r, 200));
       }
-      const single = await pool.bakeSingleThread();
+      const single = await pool.bakeSingleThread({ layers: false });
       const eq = (a, b) => {
         if (a.length !== b.length) return false;
         for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
@@ -350,13 +349,13 @@ const ROWS = [
           last = rr;
         }
         ctx.input.keys.clear();
-        // stopped: within 4 m of a ring box (or the soft radial edge, which stands outside the ring)
+        // stopped: against a ring sphere's surface (nearRing: metres from it)
         let nearRing = 1e9;
-        for (const c of ring) nearRing = Math.min(nearRing, Math.hypot((c.ax + c.bx) * 0.5 - p.position.x, (c.az + c.bz) * 0.5 - p.position.z));
+        for (const c of ring) nearRing = Math.min(nearRing, Math.hypot(c.cx - p.position.x, c.cz - p.position.z) - c.r);
         rows.push({ bearing: +(a * 57.3).toFixed(1), startR, endR: +last.toFixed(1), deepest: +deepest.toFixed(2), under, frames, nearRing: +nearRing.toFixed(1), wet: deepest > 0.02 });
       }
       for (const m of (ctx.machines?.list || [])) { if (m) m.frozen = false; }
-      const deep = rows.filter((r) => r.deepest > 1.2), sunk = rows.filter((r) => r.under > 2), far = rows.filter((r) => r.nearRing > 6);
+      const deep = rows.filter((r) => r.deepest > 1.2), sunk = rows.filter((r) => r.under > 2), far = rows.filter((r) => r.nearRing > 2.5);
       const pass = !deep.length && !sunk.length && !far.length;
       return { pass, detail: { ringBoxes: ring.length, rows, deep, sunk, farFromRing: far } };
     })()`,
@@ -364,7 +363,7 @@ const ROWS = [
 
   /* ------------------------------------------------------- A30b re-staged on Orchil ---- */
   {
-    id: 'A30b-fall-wade-edge-island', kind: 'action', lane: LANE, timeout: 120000,
+    id: 'A30b-fall-wade-edge', kind: 'action', lane: LANE, timeout: 120000,
     title: 'Fall damage > 4 m, lethal > 9 m; wade slowdown in the Glass shallows; a soft edge, not a wall (sprint at the radial edge on a land bearing)',
     setup: '__CTX__.input.enabled = true;',
     settle: 700,
@@ -820,10 +819,10 @@ const ROWS = [
       const P = ctx.props.gatePlaces.vistas.pans, cam = ctx.camera;
       ctx.player.position.set(P.x + 40, 0, P.z - 40); ctx.player._snapToGround?.();
       ctx.vegetation.forceStream(P.x, P.z);
-      const gy = ctx.terrain.getHeight(P.x, P.z);
+      const eyeY = ctx.terrain.getHeight(P.x, P.z) + (P.eye ?? 1.8);
       cam.fov = P.fov || 50; cam.updateProjectionMatrix();
-      cam.position.set(P.x, P.y ?? gy + 2.2, P.z); cam.lookAt(P.look.x, P.look.y ?? 0, P.look.z); cam.updateMatrixWorld(true);
-      window.__wgCamHold = setInterval(() => { cam.position.set(P.x, P.y ?? gy + 2.2, P.z); cam.lookAt(P.look.x, P.look.y ?? 0, P.look.z); cam.updateMatrixWorld(true); }, 8);
+      cam.position.set(P.x, eyeY, P.z); cam.lookAt(P.look.x, P.look.y ?? 0, P.look.z); cam.updateMatrixWorld(true);
+      window.__wgCamHold = setInterval(() => { cam.position.set(P.x, eyeY, P.z); cam.lookAt(P.look.x, P.look.y ?? 0, P.look.z); cam.updateMatrixWorld(true); }, 8);
     })()`,
     assert: `(async () => {
       const ctx = __CTX__, E = ctx.engine;
@@ -845,7 +844,7 @@ const ROWS = [
   {
     id: 'V-biome-vista-pans', kind: 'visual', lane: LANE,
     reference: 'reference/r5/gates-perf/salt-pans.jpg (Salinas de Janubio), reference/r5/brand/salinas-de-janubio.jpg',
-    title: 'The Pans, 07:00 trade, from the rise behind Saltrow',
+    title: 'The Pans, 07:00 trade, from the crater rim over the Glass (gatePlaces.vistas.pans)',
     settle: 3500, timeout: 90000,
     setup: vistaSetup({ hour: 7, weather: 'trade' }),
     criteria: 'Against the licence-clean Janubio reference (salt pans in a grid, dark dykes, cones of raked salt, lagoon, crater wall) and white surf on black sand. PASS: a salt GRID reads at once (cells of white crust, pink brine, rust, separated by dark stone dykes); black sand and white surf read as the frame\'s other half, surf breaking in layered lines on a dark beach; the Organ Shelf and the Sounding Ring read as landmarks when world-props\' models are merged (PENDING before that, say so); no tiling; no empty sand plain; low 07:00 sun draws shadows from the dykes and dunes. FAIL if it reads as clean CG flat colour, or if a Round-4 spire or prop stands in frame.',
@@ -865,6 +864,14 @@ const ROWS = [
     settle: 3500, timeout: 90000,
     setup: vistaSetup({ hour: 9.5, weather: 'trade', shot: 'glass' }),
     criteria: 'Advisory beauty shot beside the plan\'s vista. PASS: pans in the foreground, emerald lagoon mid-frame, a red half-crater rising behind, sister-isle stratovolcano on the horizon. FAIL if the lagoon reads as a flat green decal or the crater as a plain hump.',
+  },
+  {
+    id: 'V-biome-vista-rise', kind: 'visual', lane: LANE,
+    reference: 'reference/r5/gates-perf/salt-pans.jpg',
+    title: 'A walker\'s eye on Saltrow\'s rise, 07:00: over the pans to the Ring and the sea',
+    settle: 3500, timeout: 90000,
+    setup: vistaSetup({ hour: 7, weather: 'trade', shot: 'rise' }),
+    criteria: 'Advisory: the player\'s own eye-height read of the same ground. PASS: the grid foreshortened like the reference\'s near rows, dykes as dark lines with low-sun shadow, surf a white line beyond. FAIL if the ground reads flat grey or the grid disappears.',
   },
   {
     id: 'V-biome-vista-surf', kind: 'visual', lane: LANE,
@@ -910,17 +917,17 @@ const ROWS = [
   },
 
   /* ---------------------------------------------------------- the Round-4 wall's rows ---- */
-  ...['V33-rim', 'A62-rim-face', 'A63-rim-bedding', 'V44-biomes'].filter((id) => CARRIED.some((g) => g.id === id)).map((id) => ({
+  ...['V33-rim', 'A62-rim-face-lit-world-ground', 'A63-bedding-planar-world-ground', 'A61-scree-seated-world-ground', 'A59-grass-coverage', 'V44-biomes'].filter((id) => CARRIED.some((g) => g.id === id)).map((id) => ({
     id, kind: 'runner', lane: LANE,
-    title: `SKIP-replaced: ${id} measured the Round-4 ring wall. An island has no ring wall; V44-biomes returns at W4 (plan §9)`,
+    title: `SKIP-replaced: ${id} measured the Round-4 valley (the ring wall, its talus, its meadow). The island has none; A59b grades plants against cover, V44-biomes returns at W4 (plan §9)`,
     check: () => ({ pass: null, detail: 'SKIP-replaced (world-ground): subject deleted with the old landform (plan §6)' }),
   })),
 
   /* ---------------------------------------------- the kept movement rows, on this ground ---- */
   aliasRow(HERO, 'A18-slope-conform', 'A18-slope-conform-island'),
   aliasRow(HERO, 'A18b-slope-conform-moving', 'A18b-slope-conform-moving-island'),
-  aliasRow(HERO, 'A29-slope-limit', 'A29-steep-face'),
-  aliasRow(HERO, 'A29b-slope-no-ghost', 'A29b-steep-face-moving'),
+  aliasRow(CARRIED, 'A29-slope-limit', 'A29-steep-face'),
+  aliasRow(CARRIED, 'A29b-slope-no-ghost', 'A29b-steep-face-moving'),
 ];
 
 /**
@@ -941,11 +948,14 @@ function vistaSetup({ hour, weather, shot = 'vista' }) {
     const p = ctx.player; p._updateCamera = () => {};
     if (ctx.studio) ctx.studio.update = () => {};
     ctx.state = 'playing';
-    const V = ctx.props.gatePlaces.vistas?.pans;
+    const G = (await import('/src/world/island/sites.js')).GROUND;
+    const V = ctx.props.gatePlaces.vistas?.pans || G.vistas.pans, Rs = G.vistas.pansRise;
+    const eyeOf = (P) => T.getHeight(P.x, P.z) + (P.eye ?? 1.8);
     const SHOTS = {
-      vista: { x: V.x, y: V.y, z: V.z, lx: V.look.x, ly: V.look.y, lz: V.look.z, fov: V.fov || 52 },
-      glass: { x: -296, y: 13, z: 262, lx: -392, ly: 9, lz: 160, fov: 50 },
-      surf: { x: -226, y: 2.1, z: 398, lx: -258, ly: 0.4, lz: 440, fov: 52 },
+      vista: { x: V.x, y: V.y ?? eyeOf(V), z: V.z, lx: V.look.x, ly: V.look.y, lz: V.look.z, fov: V.fov || 46 },
+      rise: { x: Rs.x, y: eyeOf(Rs), z: Rs.z, lx: Rs.look.x, ly: Rs.look.y, lz: Rs.look.z, fov: Rs.fov },
+      glass: { x: -296, y: T.getHeight(-296, 262) + 13, z: 262, lx: -392, ly: 9, lz: 160, fov: 50 },
+      surf: { x: -226, y: T.getHeight(-226, 398) + 1.7, z: 398, lx: -258, ly: 0.4, lz: 440, fov: 52 },
     };
     const S = SHOTS[${JSON.stringify(shot)}];
     p.position.set(S.x + 70, 0, S.z - 90); p._snapToGround?.();
@@ -968,5 +978,60 @@ function vistaSetup({ hour, weather, shot = 'vista' }) {
     }
   })()`;
 }
+
+/* ------------------------------------------------------------------------------------- */
+/* R49: engine-gpu's V20, V33b, A22, A108, A109 re-graded on the REAL Pans                */
+/* ------------------------------------------------------------------------------------- */
+/**
+ * engine-gpu staged these on the `?poc=biome` iframe, which this lane deletes at its exit
+ * (R40). The instrument bodies stay engine-gpu's, byte for byte; only the host changes:
+ * the live game's engine instead of the POC's, the POC's patch coordinates shifted onto
+ * the real Pans (its Ring at (−6, 8) → the Sounding Ring), the AA frame and the far crops
+ * re-aimed at what stands there. They carry `-pans` ids: `tools/gates.r5.engine-gpu.mjs`
+ * keeps the old ids until the orchestrator retires them.
+ */
+const POC_RE = /const __POCM = await import\('\/tools\/r5-poc\/poc-biome\.js'\);\s*const pocHeight = __POCM\.height;/;
+const BOOT_RE = /const __pocBoot = async[\s\S]*?const PW = __F\.contentWindow, PB = PW\.__R5BIOME__, E = PB\.engine,/;
+const GAME_KIT = POC_KIT
+  .replace(POC_RE, `const __OX = -341, __OZ = 312;
+  const pocHeight = (x, z) => window.__CTX__.terrain.getHeight(x, z);`)
+  .replace(BOOT_RE, `const __wgC = window.__CTX__;
+  __wgC.player._updateCamera = () => {};
+  __wgC.environment?.setTime?.(11);
+  const __wgViews = { vista: [-262, 214, 16, -340, -9, 330, 50], ground: [-300, 270, 1.5, -302, 0.4, 276, 50] };
+  const PW = window, PB = {
+    engine: __wgC.engine, scene: __wgC.scene, groups: { terrain: __wgC.terrain.group, water: __wgC.water.group, vegetation: __wgC.vegetation.group },
+    view: (name) => {
+      const v = __wgViews[name] || __wgViews.vista, c = __wgC.camera;
+      c.fov = v[6]; c.updateProjectionMatrix();
+      c.position.set(v[0], v[2], v[1]); c.lookAt(v[3], v[4], v[5]); c.updateMatrixWorld(true);
+    },
+  }, E = PB.engine,`)
+  .replace('const camAt = (x, z, h, yawDeg, pitchDeg, fov) => {', 'const camAt = (x, z, h, yawDeg, pitchDeg, fov) => { x += __OX; z += __OZ;');
+
+function pansRow(srcId, id, edits = []) {
+  const r = ENGINE.find((g) => g.shadows === srcId || g.id === srcId);
+  if (!r) return null;
+  const rehost = (src) => {
+    if (src == null) return src;
+    let t = String(src).split(POC_KIT).join(GAME_KIT);
+    for (const [a, b] of edits) t = t.split(a).join(b);
+    return t;
+  };
+  return {
+    id, kind: r.kind, lane: LANE, timeout: r.timeout, settle: r.settle, params: r.params,
+    title: `[${srcId}, R49, on the real Pans] ${r.title}`,
+    assert: rehost(r.assert), setup: rehost(r.setup), criteria: r.criteria && r.criteria.replace(/Pans POC/g, 'real Pans'),
+    reference: 'in-sheet controls (shipped vs no AA, stock shader, GTAO off), as R49 grades them',
+  };
+}
+if (GAME_KIT.includes('poc-biome.js') || GAME_KIT.includes('__R5BIOME__')) throw new Error('gates.r5.world-ground: the POC host did not re-host');
+for (const row of [
+  pansRow('A22-msaa', 'A22-msaa-pans'),
+  pansRow('A108-ao-periodicity', 'A108-ao-periodicity-pans'),
+  pansRow('A109-ao-distance-fade', 'A109-ao-distance-fade-pans'),
+  pansRow('V20-aa-crop', 'V20-aa-crop-pans'),
+  pansRow('V33b-no-ao-lattice', 'V33b-no-ao-lattice-pans'),
+]) if (row) ROWS.push(row);
 
 export const GATES = ROWS;

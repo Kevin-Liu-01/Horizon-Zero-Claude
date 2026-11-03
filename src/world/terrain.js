@@ -559,18 +559,19 @@ export class Terrain {
     const C = this.ctx.collision;
     if (!C || this._colliderIds) return;
     const ids = [];
-    const N = 240;
+    /* Spheres, not boxes: frozen nav.js stamps a sphere's disc into the grid, so the ring
+     * also closes the sea to every path. 7 m apart at radius 7: no gap a capsule can pass. */
+    const N = 420;
     this.currentRing = [];
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2;
       const cs = Math.cos(a), sn = Math.sin(a);
       let r = GHALF - 4;
       while (r > 60 && gridHeight(cs * r, sn * r) < -CURRENT_DEPTH) r -= 0.5;
-      const cx = cs * (r + 1.5), cz = sn * (r + 1.5);
-      const half = (Math.PI * 2 * r) / N * 0.74;
+      const cx = cs * (r + 5.6), cz = sn * (r + 5.6);
       const id = C.register({
         kind: 'current',
-        shape: { type: 'box', c: [cx, 2, cz], half: [half, 7, 1.6], yaw: -a + Math.PI / 2 },
+        shape: { type: 'sphere', c: [cx, -0.5, cz], radius: 7 },
         blocking: true, occluder: false, camera: false, ref: this,
       });
       if (id >= 0) ids.push(id);

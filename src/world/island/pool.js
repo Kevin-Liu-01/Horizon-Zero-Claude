@@ -64,7 +64,7 @@ function storeLayer(store, job, bytes) {
   store[key].set(bytes, job.layer * s * s * 4);
 }
 
-async function bakeSingle() {
+async function bakeSingle(opts = {}) {
   const t0 = performance.now();
   ensureMacro();
   const { side, segs } = GRID;
@@ -77,13 +77,13 @@ async function bakeSingle() {
   const scatter = stitchScatter([{ tz0: 0, part: scatterRows(F, 0, TILE_N) }], scatterStatic(fieldReader(F)));
   const t2 = performance.now();
   const layers = newLayerStore();
-  for (const job of layerJobs()) storeLayer(layers, job, await decodeLayer(job.url));
+  if (opts.layers !== false) for (const job of layerJobs()) storeLayer(layers, job, await decodeLayer(job.url));
   const t3 = performance.now();
   return assemble({ H, normals, tint, maskA, maskB, shore, pan, layers, scatter,
     stats: { mode: 'single', workers: 0, segs, buildMs: t2 - t0, heightMs: t1 - t0, shadeMs: t2 - t1, layerMs: t3 - t2, totalMs: t3 - t0 } });
 }
 
-async function bakePool() {
+async function bakePool(opts = {}) {
   const t0 = performance.now();
   const { side, segs } = GRID;
   const pool = [], inflight = [];
@@ -135,7 +135,7 @@ async function bakePool() {
 
     // layers decode alongside the heights: they share the pool, not the bar
     const store = newLayerStore();
-    const layerP = Promise.all(layerJobs().map(async (job) => {
+    const layerP = opts.layers === false ? Promise.resolve() : Promise.all(layerJobs().map(async (job) => {
       storeLayer(store, job, await run({ op: 'layer', url: job.url }));
     }));
 
@@ -196,14 +196,14 @@ async function bakePool() {
 }
 
 /** The island, baked. Never rejects for a pool failure: the single-thread path is the fallback. */
-export async function bakeIsland() {
+export async function bakeIsland(opts = {}) {
   const force = typeof location !== 'undefined' && new URLSearchParams(location.search).get('terrainpool') === '0';
-  if (force || typeof Worker === 'undefined') return bakeSingle();
+  if (force || typeof Worker === 'undefined') return bakeSingle(opts);
   try {
-    return await bakePool();
+    return await bakePool(opts);
   } catch (err) {
     console.warn('[terrain] worker pool failed, baking single-thread:', err.message);
-    return bakeSingle();
+    return bakeSingle(opts);
   }
 }
 

@@ -138,7 +138,12 @@ export const GROUND = Object.freeze({
   rockShelf: Object.freeze({ x: -170, z: 352, note: 'the Organ Shelf table' }),
   waterFeature: Object.freeze({ x: -340, z: 208, yaw: 4.2, pitch: 0.12, note: 'the Glass, framed from its landward shore' }),
   vistas: Object.freeze({
-    pans: Object.freeze({ x: -238, z: 196, y: 16.5, look: Object.freeze({ x: -340, y: -9, z: 330 }), fov: 50,
-      note: 'from Saltrow\'s rise: salt grid below, the Ring and the surf beyond' }),
+    /* The hero frame: from the red crater's rim over the Glass, the salt grid and the coast
+     * run away south-east with the surf on the right. `eye` is metres above the ground there. */
+    pans: Object.freeze({ x: -405, z: 96, eye: 1.8, look: Object.freeze({ x: -300, y: -10, z: 360 }), fov: 46,
+      note: 'the crater rim: the Glass below, salt grid, black beach, white surf, the Ring on the beach' }),
+    /** The same ground from a walker's eye on Saltrow's rise, over the pans to the sea. */
+    pansRise: Object.freeze({ x: -240, z: 200, eye: 1.8, look: Object.freeze({ x: -350, y: -2, z: 345 }), fov: 46,
+      note: 'Saltrow\'s rise, eye height' }),
   }),
 });
