@@ -929,8 +929,8 @@ export class PlayerAnimator {
       }
     });
 
-    /* ------------------ Round 4 · lane player-melee (spear) --------------- */
-    // How Aloy HOLDS and SWINGS the spear. Built last: it reads the rest pose
+    /* ------------------ Round 4 · lane player-melee (lance) --------------- */
+    // How she HOLDS and SWINGS the lance. Built last: it reads the rest pose
     // through `this.b` / `this.space` and adds its own masked additive layers
     // to the mixer above. `melee.js` publishes the state; this owns the pose.
     this.melee = new MeleeLayer(this);
@@ -1363,7 +1363,7 @@ export class PlayerAnimator {
   }
 
   /**
-   * Spear/melee measurements for the `player-melee` gates (A100-A105). Cold
+   * Lance/melee measurements for the `player-melee` gates (A100-A105). Cold
    * path — it walks the rig and re-reads world matrices; never call per frame.
    */
   debugMelee() { return this.melee?.ok ? this.melee.debug() : null; }
@@ -2018,14 +2018,14 @@ export class PlayerAnimator {
       if (rw > 0.01) this._runArmClamp(rw);
     }
 
-    /* ============ OVERLAY 4b: the spear — carry, draw, swing ============= */
+    /* ============ OVERLAY 4b: the lance — carry, draw, swing ============= */
     // `melee.js` owns the state machine and publishes it; this layer owns the
-    // pose. It runs AFTER aim (aim wins: a drawn bow holsters the spear) and
+    // pose. It runs AFTER aim (aim wins: a drawn bow holsters the lance) and
     // BEFORE the react layer, so a hit still folds the torso over the swing.
     if (this.melee?.ok) {
       this.melee.step(dt);
       this.melee.update(dt, this.ctx.combat?.melee?.poseState?.() ?? null);
-      /* THE SPEAR'S OWN STANCE ASKS FOR A PELVIS OFFSET (fix pass 2, melee
+      /* THE LANCE'S OWN STANCE ASKS FOR A PELVIS OFFSET (fix pass 2, melee
        * `STANCE`). The melee layer bends the knees for the beat it is playing;
        * a bent knee with the hips held up lifts the foot off the floor, so the
        * hips have to come down with it. Adding it to `pdx`/`pdy` here rather
@@ -2084,7 +2084,7 @@ export class PlayerAnimator {
     // avoiding LAST frame's ponytail; this is the same check on the pose the
     // renderer will actually draw, in both directions — the hand gives way to
     // the skull and the spine, and the BRAID gives way to the haft (a stowed
-    // spear during a dodge roll is the case no placement can dodge). Costs one
+    // lance during a dodge roll is the case no placement can dodge). Costs one
     // scan of 32 hair bones and does nothing unless a strand is inside 0.078 m
     // of the haft, which at idle/walk/run/sprint it never is.
     this.melee?.postFix?.();
