@@ -66,7 +66,7 @@
 }
 
 :root {
-  /* ---- CALIMA palette (bible §9.1 "Brand / UI" + the field-book swatches) ---- */
+  /* ---- the bible's palette (§9.1 "Brand / UI", §7.2 lamps, §5.8 elements) ---- */
   --cal-spark: #DA7756;          /* the Claude spark: logo and the calima sun ONLY */
   --cal-sun: #F2A27E;            /* the calima disc (bible §9.4) */
   --cal-ochre: #C98B4E;          /* calima dust */
@@ -77,50 +77,106 @@
   --cal-staff: #F1EEE6;          /* staff white */
   --cal-salt: #EDEAE2;
   --cal-lapilli: #1C1B1E;
-  --cal-violet: #6B3F73;         /* Orchil violet */
-  --cal-carmine: #A3213A;
+  --cal-violet: #6B3F73;         /* Orchil violet: people's cloth, never the UI */
+  --cal-carmine: #A3213A;        /* Pry */
   --cal-brass: #B08A45;
   --cal-linen: #D9CFBA;
+  --cal-verdigris: #4F8F7E;
+  --cal-lamp-calm: #F2EAD3;
+  --cal-lamp-wary: #B5E61D;
+  --cal-lamp-hostile: #FF2D8C;
+  --cal-lamp-dark: #3B3A36;
+  --cal-cinder: #FF7A1A;
+  --cal-brine: #BDE6E3;
+  --cal-dust: #C98B4E;
   --cal-scrim-dust: rgba(28, 27, 30, 0.72);   /* bible §9.1 scrim */
+
+  /* ---- surfaces (bible §9.7): paper at 92 % over the scrim, 1 px rules, right angles ---- */
+  --cal-paper-92: rgba(226, 211, 176, 0.92);
+  --cal-paper-deep: #D3C29A;     /* the page edge, a chip's foot */
+  --cal-ink-80: rgba(38, 52, 63, 0.80);
+  --cal-ink-62: rgba(38, 52, 63, 0.62);
+  --cal-ink-40: rgba(38, 52, 63, 0.40);
+  --cal-ink-22: rgba(38, 52, 63, 0.22);
+  --cal-ink-10: rgba(38, 52, 63, 0.10);
+  --cal-rule: rgba(38, 52, 63, 0.34);          /* a hairline on paper */
+  --cal-rule-ruled: rgba(44, 79, 138, 0.085);  /* the book's own ruling */
+  --cal-staff-80: rgba(241, 238, 230, 0.80);
+  --cal-staff-55: rgba(241, 238, 230, 0.55);
+  --cal-staff-30: rgba(241, 238, 230, 0.30);
+  --cal-engrave: 0 1px 0 rgba(20, 22, 26, 0.85), 0 0 3px rgba(20, 22, 26, 0.55);  /* staff white on salt AND on black sand */
+
+  /* ---- semantic colours: the ONLY colours the accessibility palettes re-point ---- */
+  --cal-c-staff: var(--cal-vermilion);         /* the levelling staff, the margin rule, full draw */
+  --cal-c-weak: var(--cal-cobalt);             /* weak-point rings, weak damage chips */
+  --cal-c-pry: var(--cal-carmine);             /* Pry */
+  --cal-c-wary: var(--cal-lamp-wary);          /* a wary pip */
+  --cal-c-hostile: var(--cal-lamp-hostile);    /* a hostile pip */
+  --cal-c-good: var(--cal-verdigris);          /* a gain, a hidden Brea */
+
+  /* ---- rarity, as ink on paper ---- */
+  --cal-r-common: var(--cal-ink-62);
+  --cal-r-uncommon: var(--cal-verdigris);
+  --cal-r-rare: var(--cal-cobalt);
+  --cal-r-veryRare: var(--cal-carmine);
+  --cal-r-legendary: var(--cal-brass);
+
+  /* ---- the two families (R55) ---- */
   --cal-font-display: 'Chakra Petch', 'Arial Narrow', sans-serif;
   --cal-font-ui: 'Chakra Petch', 'Arial Narrow', sans-serif;
   --cal-font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
 
-  /* ---- Round-4 HUD palette, kept by value until shell-ui's field-book HUD (W2) ---- */
-  --cal-accent: #59c1c6;
-  --cal-warn: #f2c230;           /* weak-point / gauge yellow */
-  --cal-danger: #b03a2e;         /* health red */
-  --cal-med: #7fb069;            /* gourd green */
-  --cal-focus: #7b5cd6;          /* Sighting violet (retired by shell-ui W2, bible §9.7) */
-  --cal-hostile: #e8762c;        /* hostile orange */
-  --cal-text: #efe6d5;           /* parchment */
-  --cal-scrim: rgba(8, 14, 18, 0.55);
+  /* ---- the type scale. Chakra Petch: labels, headers, place names.
+          IBM Plex Mono: numerals, bearings, running text. 11 px is the floor. ---- */
+  --cal-type-display: 46px;      /* a page event: BREA IS DOWN */
+  --cal-type-title: 30px;        /* a hub page's name */
+  --cal-type-head: 18px;         /* a card's name, a section */
+  --cal-type-label: 13px;        /* a control's label, a tab */
+  --cal-type-micro: 11px;        /* the smallest caps */
+  --cal-type-body: 14px;         /* running text */
+  --cal-type-note: 12px;         /* marginal notes */
+  --cal-type-num-l: 24px;        /* a reading: 040 */
+  --cal-type-num: 16px;          /* a count */
+  --cal-type-num-s: 12px;        /* a tick numeral */
+  --cal-track-caps: 0.12em;      /* Chakra caps at label size */
+  --cal-track-wide: 0.22em;      /* Chakra caps as a kicker */
+  --cal-lead-body: 1.5;
 
-  /* ---- family tokens every lane's CSS already reads, re-pointed at W0b ---- */
+  /* ---- motion: one curve for a graduated tick settling, one for a chip arriving ---- */
+  --cal-ease-settle: cubic-bezier(0.22, 1.42, 0.42, 1);
+  --cal-ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* ---- paper: noise grain + foxing, one inline SVG, painted once per page size ---- */
+  --cal-paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='g' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='3' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .22 0 0 0 0 .19 0 0 0 0 .13 0 0 0 .62 -.2'/%3E%3C/filter%3E%3Crect width='320' height='320' filter='url(%23g)' opacity='.34'/%3E%3C/svg%3E");
+  --cal-paper-foxing:
+    radial-gradient(ellipse 34% 26% at 12% 8%, rgba(137, 96, 44, 0.10), transparent 70%),
+    radial-gradient(ellipse 22% 30% at 92% 86%, rgba(137, 96, 44, 0.12), transparent 72%),
+    radial-gradient(ellipse 120% 110% at 50% 46%, transparent 62%, rgba(110, 82, 44, 0.16) 100%);
+
+  /* ---- family tokens other lanes' CSS already reads ---- */
   --font: var(--cal-font-ui);
   --font-display: var(--cal-font-display);
   --font-stinger: var(--cal-font-display);
   --font-focus: var(--cal-font-mono);
+
+  /* ---- what other lanes' stylesheets read by name (wheel.css, feedback.css) ---- */
+  --cal-text: var(--cal-staff);
+  --cal-danger: var(--cal-vermilion);
+
+  /* ---- menu geometry, shared by the hub and the panels it hosts ---- */
+  --ui-z: 1;                     /* written by menu.js: viewport / 1600x900, clamped */
+  --hud-scale: 1;                /* hud.js writes its own on #hud; this is the token floor */
+  --hud-scale-pref: 1;           /* the player's multiplier, written by settings.js */
+  --mn-inset-x: 34px;
+  --mn-inset-y: 26px;
+  --mn-margin-w: 208px;
+  --mn-head-h: 74px;
+  --mn-foot-h: 52px;
+  --mn-z: 70;
 }
 
 /* the families ship 400-700 (Chakra Petch) and 400-600 (Plex Mono): never fake a weight */
 html { font-synthesis-weight: none; }
-
-/* W0b bridge (brand owns the --cal-* token values). The HUD's own sheet still
-   sets --cal-display inside #hud with a retired display face first, whose file
-   brand deleted (plan §6); left alone, every HUD kicker makes the browser fetch
-   that missing file before falling back. One step more specific, the token
-   resolves to the display family directly: the same face the HUD already falls
-   back to, and no request. Remove together with the retired-font patch
-   (tools/lint/patches/w0b-retired-font-refs.patch) once it is applied. */
-body #hud { --cal-display: var(--cal-font-display); }
-/* The same bridge for the photo studio's two kickers (studio.css puts the
-   retired display face FIRST in their stacks, and hud.css still declares it
-   over the deleted file): one step more specific, they resolve to the display
-   family with no request. Brand owns src/studio/** from W4; remove with the
-   patch. */
-body #studio-ui .studio-title,
-body #studio-ui .studio-head { font-family: var(--cal-font-display); }
 
 html, body {
   width: 100%; height: 100%;
@@ -312,87 +368,32 @@ body.cal-calima-live #cal-calima { display: none; }   /* the renderer draws cali
 
 .load-inner, .title-inner { text-align: center; }
 
-/* The Field Manual panel (index.html; menu.js lends it to its FIELD MANUAL modal). */
-.keybinds-panel {
-  position: relative;
-  margin: 42px auto 0;
-  padding: 18px 28px 20px;
-  background: rgba(28, 27, 30, 0.80);
-  border: 1px solid rgba(241, 238, 230, 0.16);
-  display: inline-block;
-}
-.keybinds-title {
-  font-family: var(--cal-font-ui);
-  font-weight: 600;
-  font-size: 11px; letter-spacing: 0.32em; text-indent: 0.32em;
-  color: var(--cal-paper);
-  margin-bottom: 16px;
-}
-.controls-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(200px, auto));
-  gap: 7px 34px;
-  font-family: var(--cal-font-ui);
-  font-size: 13px; letter-spacing: 0.04em;
-  color: rgba(241, 238, 230, 0.72);
-  text-align: left;
-}
-.controls-grid > div { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
-.controls-grid kbd {
-  font-family: var(--cal-font-mono);
-  font-weight: 500; font-size: 11px; letter-spacing: 0.02em;
-  color: var(--cal-staff);
-  background: rgba(241, 238, 230, 0.08);
-  border: 1px solid rgba(241, 238, 230, 0.34);
-  border-bottom-width: 2px;
-  padding: 1px 7px 0;
-  min-width: 24px;
-  text-align: center;
-}
-.controls-grid .sep { color: rgba(241, 238, 230, 0.3); margin: 0 -4px; }
-@media (max-width: 1100px) {
-  .controls-grid { grid-template-columns: repeat(2, minmax(200px, auto)); }
-}
-
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
 
 /* ===========================================================================
-   SHELL / MENUS  —  lane `shell-menus`
-   Title flow, tabbed pause hub, world map, death + victory cards, settings,
-   credits. Everything below is scoped under `.cal-menus-root`, `#title` or a
-   `body.cal-*` class this lane sets, so no other lane's selector is touched.
+   THE FIELD BOOK  —  lane `shell-ui` (bible §9.7, plan R55, R57)
+   Hub, map page, settings, modals, death and victory, the Field Manual, and the
+   panel treatment other lanes' screens read through shared tokens. A menu is a
+   page of the book: field-book paper over the scrim, a red margin rule, 1 px ink
+   rules, right angles, entries numbered as stations. Nothing here is rounded,
+   smoked or chamfered.
    =========================================================================== */
 
-:root {
-  --hud-scale: 1;               /* shell-hud writes its own on #hud; this is the token floor */
-  --hud-scale-pref: 1;          /* the player's multiplier, written by settings.js */
-  --mn-ink: #efe6d5;
-  --mn-dim: rgba(239, 230, 213, 0.62);
-  --mn-faint: rgba(239, 230, 213, 0.34);
-  --mn-line: rgba(239, 230, 213, 0.18);
-  --mn-gold: #c8a24b;
-  --mn-spark: #da7756;
-  --mn-panel: linear-gradient(165deg, rgba(13, 18, 22, 0.94), rgba(8, 11, 14, 0.97));
-  --mn-z: 70;
-}
+/* Every menu surface scales as one with the viewport (`--ui-z`, menu.js), so a
+   4K screen shows the same page at the same proportions, not a postage stamp. */
+.cal-menus-root, .cal-inv, #cal-prog .pg-overlay, #cal-prog .sk-overlay, #cal-dlg .dlg-stage,
+#title .title-inner, #loading .load-inner { zoom: var(--ui-z); }
 
-/* The Round-3 HUD keeps its own pause/death/victory cards as a bridge and
-   already returns early from all three when `ctx.menus` exists. This is the
-   belt to that brace: while this lane is installed, those cards never paint. */
-body.cal-menus .cal-pause,
-body.cal-menus .cal-death { display: none !important; }
-
-/* Under the death card the gameplay HUD is noise — the player is not reading
-   their ammo count, they are choosing how to come back. Keyed on a body class
-   only THIS lane sets, so `shell-hud` keeps every rule it wrote; drop the
-   install and the HUD never dims. */
+/* Under the death card the gameplay HUD is noise. */
 body.cal-dead #hud {
   opacity: 0.14;
   transition: opacity 0.7s ease;
 }
 
 body.cal-reduced-motion .cal-menus-root *,
-body.cal-reduced-motion #title * {
+body.cal-reduced-motion #title *,
+body.cal-reduced-motion #hud *,
+body.cal-reduced-motion .cal-inv * {
   animation: none !important;
   transition: none !important;
 }
@@ -403,40 +404,70 @@ body.cal-reduced-motion #title * {
   position: fixed; inset: 0;
   z-index: var(--mn-z);
   pointer-events: none;
-  font-family: var(--font);
-  color: var(--mn-ink);
+  font-family: var(--cal-font-mono);
+  color: var(--cal-ink);
 }
-.cal-menus-root button { font-family: var(--font); color: inherit; cursor: pointer; }
+.cal-menus-root button { font-family: var(--cal-font-ui); color: inherit; cursor: pointer; }
+
+/* A page of the book: paper, grain, foxing, the book's blue ruling. */
+.cal-page {
+  background-color: var(--cal-paper);
+  background-image:
+    var(--cal-paper-grain),
+    var(--cal-paper-foxing),
+    repeating-linear-gradient(180deg, transparent 0 27px, var(--cal-rule-ruled) 27px 28px);
+  color: var(--cal-ink);
+}
+
+/* ink keycap, on paper */
+.cal-menus-root kbd, .cal-inv kbd, #cal-prog kbd, #cal-dlg kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px 0;
+  font-family: var(--cal-font-mono);
+  font-weight: 500;
+  font-size: var(--cal-type-micro);
+  line-height: 1.32;
+  letter-spacing: 0;
+  text-align: center;
+  color: var(--cal-ink);
+  background: rgba(241, 238, 230, 0.52);
+  border: 1px solid var(--cal-ink-62);
+  border-bottom-width: 2px;
+}
 
 /* --------------------------------------------------------------- buttons */
 
 .mn-btn {
-  background: rgba(12, 16, 20, 0.6);
-  border: 1px solid var(--mn-line);
-  color: var(--mn-ink);
-  font-size: 12px; letter-spacing: 0.18em;
-  padding: 9px 18px 8px;
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: var(--cal-type-label);
+  letter-spacing: var(--cal-track-caps);
+  padding: 8px 16px 7px;
   text-transform: uppercase;
-  transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
-  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  color: var(--cal-ink);
+  background: transparent;
+  border: 1px solid var(--cal-ink-62);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-.mn-btn:hover { background: rgba(89, 193, 198, 0.14); border-color: var(--cal-accent); }
-.mn-btn.small { font-size: 10.5px; letter-spacing: 0.16em; padding: 7px 13px 6px; }
-.mn-btn.primary { border-color: var(--cal-accent); color: #dff6f7; }
-.mn-btn.danger:hover { background: rgba(176, 58, 46, 0.22); border-color: var(--cal-danger); }
-/* a control that exists but is not available yet — it PRINTS THE REASON, so it
-   must still be readable, not a ghost (missing-systems-accessibility). */
+.mn-btn:hover, .mn-btn:focus-visible { background: var(--cal-ink); color: var(--cal-staff); border-color: var(--cal-ink); outline: none; }
+.mn-btn.small { font-size: var(--cal-type-micro); padding: 6px 11px 5px; }
+.mn-btn.primary { background: var(--cal-ink); color: var(--cal-staff); border-color: var(--cal-ink); }
+.mn-btn.primary:hover { background: var(--cal-c-staff); border-color: var(--cal-c-staff); }
+.mn-btn.danger:hover { background: var(--cal-c-staff); border-color: var(--cal-c-staff); color: var(--cal-staff); }
+/* a control that exists but is not available yet: it PRINTS THE REASON, so it
+   must still be readable, not a ghost */
 .mn-btn.off {
-  color: var(--mn-faint);
-  border-color: rgba(239, 230, 213, 0.16);
+  color: var(--cal-ink-62);
+  border-color: var(--cal-ink-40);
   border-style: dashed;
   cursor: not-allowed;
 }
-.mn-btn.off:hover { background: rgba(12, 16, 20, 0.6); border-color: rgba(239, 230, 213, 0.16); }
+.mn-btn.off:hover { background: transparent; color: var(--cal-ink-62); border-color: var(--cal-ink-40); }
 
 /* =========================================================== title screen */
 
-/* Fix round 2: the whole title block (lockup + menu) stands 10vh higher, so the
+/* Fix round 2 (brand): the whole title block (lockup + menu) stands 10vh higher, so the
    spark, the dot of the I and "the calima sun" (bible §9.8), sits in clear sky over
    the rim instead of in front of it; src/ui/menu.js's framing chooser reads where it lands. */
 #title { --cal-title-lift: 10vh; }
@@ -444,29 +475,15 @@ body.cal-reduced-motion #title * {
 body.cal-title-live #loading { display: none !important; }
 
 /**
- * THE SCRIM IS PART OF THE SHOT (V38).
- *
- * index.html ships a flat radial wash (0.44 → 0.88) built for a title screen
- * that had no moving vista behind it, and it turned the new aerial into brown
- * soup: every value in the frame arrived within a few percent of every other
- * one. This lane owns the title flow, so it owns the veil over it — and
- * `body.cal-title-live #title.overlay` outranks that rule without touching
- * another lane's file or deleting anything (drop the install and the Round-3
- * wash comes straight back).
- *
- * Three layers, each with a job. An ellipse sits behind the lockup only (its
- * 330 px half-width is the lockup's 221 px plus a fade, so it never reaches the
- * calima disc: the sun stands 0.855 x half the frame height off-centre, about
- * 385 px at 900 px, whatever the aspect). The linear one is clear across the
- * sky (fix round 2: its old dark top band sat over the disc and capped it),
- * opens across the middle band so the ground keeps its colour, and closes at
- * the bottom for the tip and the save line. The radial one is a soft column
- * down the centre, behind the menu column only, so the text never has to fight
- * a tree while the edges of the frame stay bright.
+ * THE SCRIM IS PART OF THE SHOT (V38, brand). Three layers, each with a job. An
+ * ellipse sits behind the lockup only (its 330 px half-width is the lockup's 221 px
+ * plus a fade, so it never reaches the calima disc). The linear one is clear across
+ * the sky, opens across the middle band so the ground keeps its colour, and closes at
+ * the bottom for the tip and the save line. The radial one is a soft column down the
+ * centre, behind the menu column only, so the text never has to fight the terrain
+ * while the edges of the frame stay bright.
  */
 body.cal-title-live #title.overlay {
-  /* brand W0b: the bible's lapilli scrim: behind the lockup, clear in the sky
-     so the calima disc reads as the light, darker at the foot for the text */
   background:
     radial-gradient(ellipse 330px 19% at 50% calc(34% - var(--cal-title-lift, 0px)),
       rgba(28, 27, 30, 0.22) 0%,
@@ -488,77 +505,93 @@ body.cal-title-live #title.overlay {
 .mn-title { margin-top: 26px; }
 .mn-title-press {
   font-family: var(--cal-font-ui);
-  font-size: 13px; letter-spacing: 0.42em; text-indent: 0.42em;
-  color: var(--mn-dim);
+  font-weight: 500;
+  font-size: var(--cal-type-label);
+  letter-spacing: 0.42em; text-indent: 0.42em;
+  color: var(--cal-staff-80);
+  text-shadow: var(--cal-engrave);
   text-transform: uppercase;
   animation: mn-pulse 2.1s ease-in-out infinite;
   height: 22px;
 }
 .mn-title.lit .mn-title-press { display: none; }
-@keyframes mn-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes mn-pulse { 0%, 100% { opacity: 0.42; } 50% { opacity: 1; } }
 
 .mn-title-menu {
   display: none;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  align-items: stretch;
+  width: 330px;
   margin: 4px auto 0;
+  border-top: 1px solid var(--cal-staff-30);
 }
 .mn-title.lit .mn-title-menu { display: flex; }
-.mn-title.menu-in .mn-title-menu { animation: mn-rise 0.5s ease both; }
-@keyframes mn-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.mn-title.menu-in .mn-title-menu { animation: mn-rise 0.42s var(--cal-ease-out) both; }
+@keyframes mn-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
 .mn-title-item {
   position: relative;
+  display: flex; align-items: baseline;
   background: none; border: 0;
+  border-bottom: 1px solid var(--cal-staff-30);
   font-family: var(--cal-font-ui);
-  font-weight: 500;
-  font-size: 17px; letter-spacing: 0.30em; text-indent: 0.30em;
-  padding: 8px 34px 7px 30px;
-  color: rgba(241, 238, 230, 0.74);
+  font-weight: 600;
+  font-size: 17px; letter-spacing: 0.20em;
+  padding: 9px 12px 8px 12px;
+  color: var(--cal-staff);
+  text-shadow: var(--cal-engrave);
   text-transform: uppercase;
-  transition: color 0.16s ease;
+  text-align: left;
+  transition: color 0.12s ease, padding-left 0.16s var(--cal-ease-out), background 0.12s ease;
 }
 /* field-book stations (bible §9.7): STN numbers in Plex Mono */
 .mn-title-item .cal-stn {
   font-family: var(--cal-font-mono);
   font-weight: 500;
-  font-size: 11px; letter-spacing: 0.04em; text-indent: 0;
-  color: rgba(241, 238, 230, 0.46);
-  margin-right: 14px;
-  vertical-align: 2px;
+  font-size: var(--cal-type-micro); letter-spacing: 0.02em;
+  color: var(--cal-staff-55);
+  width: 62px;
+  flex: none;
 }
-/* hover: a survey-vermilion tick on the margin (the spark coral is the logo's alone) */
+/* hover: a survey-vermilion graduation on the margin (the spark coral is the logo's alone) */
 .mn-title-item::before {
-  content: ''; position: absolute; left: 6px; top: 50%;
-  width: 14px; height: 2px; margin-top: -1px;
-  transform: scaleX(0); transform-origin: 0 50%;
-  background: var(--cal-vermilion);
-  transition: transform 0.16s ease;
+  content: ''; position: absolute; left: 0; top: -1px; bottom: -1px;
+  width: 3px;
+  transform: scaleY(0); transform-origin: 50% 100%;
+  background: var(--cal-c-staff);
+  transition: transform 0.16s var(--cal-ease-out);
 }
-.mn-title-item:hover, .mn-title-item:focus-visible { color: var(--cal-staff); outline: none; }
-.mn-title-item:hover::before, .mn-title-item:focus-visible::before { transform: scaleX(1); }
-.mn-title-item:hover .cal-stn, .mn-title-item:focus-visible .cal-stn { color: var(--cal-vermilion); }
-.mn-title-item.disabled { color: rgba(241, 238, 230, 0.26); cursor: not-allowed; }
-.mn-title-item.disabled .cal-stn { color: rgba(241, 238, 230, 0.18); }
+.mn-title-item:hover, .mn-title-item:focus-visible { padding-left: 18px; background: rgba(28, 27, 30, 0.30); outline: none; }
+.mn-title-item:hover::before, .mn-title-item:focus-visible::before { transform: scaleY(1); }
+.mn-title-item:hover .cal-stn, .mn-title-item:focus-visible .cal-stn { color: var(--cal-staff); }
+.mn-title-item.disabled { color: var(--cal-staff-30); cursor: not-allowed; }
+.mn-title-item.disabled:hover { padding-left: 12px; background: none; }
+.mn-title-item.disabled::before { display: none; }
+.mn-title-item.disabled .cal-stn { color: var(--cal-staff-30); }
 
 .mn-title-save {
-  margin-top: 16px;
-  font-size: 10.5px; letter-spacing: 0.26em;
-  color: var(--mn-faint);
-  text-transform: uppercase;
+  margin-top: 14px;
+  font-family: var(--cal-font-mono);
+  font-size: var(--cal-type-micro); letter-spacing: 0.04em;
+  color: var(--cal-staff-80);
+  text-shadow: var(--cal-engrave);
 }
 .mn-title-tip {
-  margin: 22px auto 0;
+  margin: 16px auto 0;
   max-width: 560px;
-  font-size: 12px; letter-spacing: 0.06em; line-height: 1.55;
-  color: var(--mn-dim);
+  font-family: var(--cal-font-mono);
+  font-size: var(--cal-type-note); line-height: 1.55;
+  color: var(--cal-staff-80);
+  text-shadow: var(--cal-engrave);
 }
-.mn-title-tip kbd, .mn-death-tip kbd, .mn-tip kbd {
-  font-family: var(--font); font-weight: 600; font-size: 11px;
-  border: 1px solid var(--mn-line); border-bottom-width: 2px;
-  background: rgba(239, 230, 213, 0.08);
-  padding: 0 6px; margin: 0 2px;
+.mn-title-tip kbd {
+  display: inline-block;
+  font-family: var(--cal-font-mono); font-weight: 500; font-size: var(--cal-type-micro);
+  color: var(--cal-staff);
+  border: 1px solid var(--cal-staff-55); border-bottom-width: 2px;
+  background: rgba(28, 27, 30, 0.42);
+  padding: 0 5px; margin: 0 1px;
+  text-shadow: none;
 }
 
 /* ============================================================== pause hub */
@@ -567,122 +600,194 @@ body.cal-title-live #title.overlay {
 .mn-hub.show { display: block; }
 .mn-hub-scrim {
   position: absolute; inset: 0;
-  background: radial-gradient(ellipse at 50% 42%, rgba(6, 10, 14, 0.72), rgba(4, 6, 9, 0.93));
-  backdrop-filter: blur(2px);
+  background: var(--cal-scrim-dust);
 }
-.mn-hub.delegated .mn-hub-scrim { opacity: 0; }
+/* a lane's panel has the page: the scrim and the book's own page body step aside,
+   and clicks reach the panel underneath */
+.mn-hub.delegated { pointer-events: none; }
+.mn-hub.delegated .mn-hub-scrim { opacity: 0; pointer-events: none; }
+
+/* the book: [ margin column | page ] */
 .mn-hub-shell {
-  position: absolute; inset: 0;
+  position: absolute;
+  inset: var(--mn-inset-y) var(--mn-inset-x);
+  display: grid;
+  grid-template-columns: var(--mn-margin-w) 1fr;
+  grid-template-rows: var(--mn-head-h) 1fr var(--mn-foot-h);
+  grid-template-areas: 'margin head' 'margin body' 'margin foot';
+  animation: mn-page-in 0.22s var(--cal-ease-out) both;
+}
+@keyframes mn-page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* the margin column carries the index of stations; the red rule is its right edge */
+.mn-hub-margin {
+  grid-area: margin;
+  position: relative;
   display: flex; flex-direction: column;
-  padding: 22px clamp(18px, 4vw, 64px) 16px;
+  padding: 18px 16px 14px 18px;
+  border-right: 3px double var(--cal-c-staff);
+  pointer-events: auto;
+}
+.mn-hub-brand { padding-bottom: 12px; border-bottom: 1px solid var(--cal-rule); margin-bottom: 8px; }
+.mn-hub-kicker {
+  font-family: var(--cal-font-display);
+  font-weight: 600;
+  font-size: 20px; letter-spacing: 0.18em;
+  color: var(--cal-ink);
+}
+.mn-hub-sheet {
+  margin-top: 4px;
+  font-family: var(--cal-font-mono);
+  font-size: var(--cal-type-micro);
+  color: var(--cal-ink-62);
+}
+.mn-tabs { display: flex; flex-direction: column; flex: 1; }
+.mn-tab {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: baseline;
+  background: transparent; border: 0;
+  border-bottom: 1px solid var(--cal-ink-10);
+  padding: 9px 4px 8px 6px;
+  text-align: left;
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: var(--cal-type-label);
+  letter-spacing: var(--cal-track-caps);
+  color: var(--cal-ink-80);
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.mn-tab .cal-stn {
+  font-family: var(--cal-font-mono);
+  font-weight: 400;
+  font-size: var(--cal-type-micro);
+  letter-spacing: 0;
+  color: var(--cal-ink-62);
+}
+.mn-tab kbd { background: transparent; border-color: var(--cal-ink-40); color: var(--cal-ink-62); }
+.mn-tab:hover { background: var(--cal-ink-10); color: var(--cal-ink); }
+/* the open page: a staff graduation runs into the margin rule */
+.mn-tab.on { background: var(--cal-ink); color: var(--cal-staff); }
+.mn-tab.on .cal-stn { color: var(--cal-staff-80); }
+.mn-tab.on kbd { border-color: var(--cal-staff-55); color: var(--cal-staff); }
+.mn-tab.on::after {
+  content: ''; position: absolute; right: -19px; top: 0; bottom: 0; width: 16px;
+  background: var(--cal-ink);
 }
 
 .mn-hub-head {
-  display: flex; align-items: flex-end; gap: 26px;
-  border-bottom: 1px solid var(--mn-line);
-  padding-bottom: 12px;
-  background: linear-gradient(180deg, rgba(6, 9, 12, 0.96), rgba(6, 9, 12, 0.72));
+  grid-area: head;
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 26px;
+  padding: 0 26px 10px 28px;
+  border-bottom: 1px solid var(--cal-ink);
+  pointer-events: auto;
 }
-.mn-hub-brand { min-width: 210px; }
-.mn-hub-kicker { font-size: 9.5px; letter-spacing: 0.46em; color: var(--mn-gold); }
 .mn-hub-title {
-  font-family: var(--font-display);
-  font-size: 22px; letter-spacing: 0.20em;
-  margin-top: 6px;
+  font-family: var(--cal-font-display);
+  font-weight: 600;
+  font-size: var(--cal-type-title);
+  line-height: 1;
+  letter-spacing: 0.08em;
+  color: var(--cal-ink);
 }
-.mn-tabs { display: flex; gap: 2px; flex: 1; flex-wrap: wrap; }
-.mn-tab {
-  position: relative;
-  background: transparent; border: 0;
-  border-bottom: 2px solid transparent;
-  padding: 8px 14px 7px;
-  font-size: 11.5px; letter-spacing: 0.2em;
-  color: var(--mn-faint);
-  display: flex; align-items: center; gap: 8px;
-  transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
-}
-.mn-tab kbd {
-  font-family: var(--font); font-size: 9.5px; font-weight: 600;
-  border: 1px solid var(--mn-line); padding: 0 5px;
-  color: var(--mn-faint);
-}
-.mn-tab:hover { color: var(--mn-ink); background: rgba(239, 230, 213, 0.05); }
-.mn-tab.on { color: #dff6f7; border-bottom-color: var(--cal-accent); }
-.mn-tab.on kbd { border-color: var(--cal-accent); color: var(--cal-accent); }
 .mn-hub-status {
-  font-size: 11px; letter-spacing: 0.14em; color: var(--mn-dim);
-  display: flex; gap: 8px; align-items: center; white-space: nowrap;
+  display: flex; gap: 18px; align-items: baseline; white-space: nowrap;
+  font-family: var(--cal-font-mono);
+  font-size: var(--cal-type-note);
+  color: var(--cal-ink-80);
 }
-.mn-hub-status b { color: var(--cal-warn); font-weight: 600; }
-.mn-hub-status i { color: var(--mn-faint); font-style: normal; }
+.mn-hub-status b { font-weight: 600; color: var(--cal-ink); }
+.mn-hub-status span { color: var(--cal-ink-62); }
 
-.mn-hub-body { flex: 1; min-height: 0; padding: 16px 0 12px; overflow: hidden; }
-.mn-hub.delegated .mn-hub-body { visibility: hidden; }
+.mn-hub-body { grid-area: body; min-height: 0; padding: 14px 26px 10px 28px; overflow: hidden; pointer-events: auto; }
+.mn-hub.delegated .mn-hub-body { visibility: hidden; pointer-events: none; background: none; }
 
 .mn-hub-foot {
+  grid-area: foot;
   display: flex; align-items: center; gap: 18px;
-  border-top: 1px solid var(--mn-line);
-  padding-top: 11px;
-  background: linear-gradient(0deg, rgba(6, 9, 12, 0.96), rgba(6, 9, 12, 0.72));
+  padding: 0 26px 0 28px;
+  border-top: 1px solid var(--cal-rule);
+  pointer-events: auto;
 }
-.mn-tip { flex: 1; font-size: 12px; color: var(--mn-dim); line-height: 1.5; }
-.mn-hub-acts { display: flex; gap: 7px; }
+.mn-tip {
+  flex: 1;
+  font-family: var(--cal-font-mono);
+  font-size: var(--cal-type-note);
+  font-style: italic;
+  color: var(--cal-ink-80);
+  line-height: 1.4;
+}
+.mn-tip em { font-style: normal; font-weight: 500; }
+.mn-tip kbd { font-style: normal; }
+.mn-hub-acts { display: flex; gap: 6px; }
 
 .mn-empty {
   height: 100%; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 10px;
-  color: var(--mn-faint);
+  color: var(--cal-ink-62);
 }
-.mn-empty b { font-family: var(--font-display); font-size: 16px; letter-spacing: 0.24em; }
-.mn-empty span { font-size: 12px; letter-spacing: 0.08em; }
+.mn-empty b { font-family: var(--cal-font-display); font-weight: 600; font-size: var(--cal-type-head); letter-spacing: 0.16em; }
+.mn-empty span { font-size: var(--cal-type-note); }
 
 /* ================================================================== map */
 
-.mn-map { display: flex; gap: 22px; height: 100%; }
+.mn-map { display: flex; gap: 24px; height: 100%; }
 .mn-map-frame {
   position: relative;
   flex: 0 0 auto;
   height: 100%;
   aspect-ratio: 1 / 1;
-  border: 1px solid var(--mn-line);
-  background: #070b0f;
-  box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--cal-ink);
+  outline: 1px solid var(--cal-ink-22);
+  outline-offset: 3px;
 }
 .mn-map-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
 .mn-map-tip {
-  position: absolute; transform: translate(-50%, calc(-100% - 14px));
-  background: rgba(8, 12, 16, 0.94);
-  border: 1px solid var(--mn-line);
-  padding: 5px 9px 4px;
-  font-size: 10.5px; letter-spacing: 0.14em;
+  position: absolute; transform: translate(-50%, calc(-100% - 12px));
+  background: var(--cal-ink);
+  color: var(--cal-staff);
+  padding: 4px 8px 3px;
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps);
   white-space: nowrap; pointer-events: none;
 }
-.mn-map-tip b { color: var(--mn-ink); font-weight: 600; }
-.mn-map-tip i { color: var(--cal-accent); font-style: normal; margin-left: 8px; }
-.mn-map-tip u { color: var(--mn-faint); text-decoration: none; margin-left: 8px; }
+.mn-map-tip b { font-weight: 600; }
+.mn-map-tip i { font-family: var(--cal-font-mono); font-style: normal; font-weight: 400; letter-spacing: 0; margin-left: 8px; }
+.mn-map-tip u { text-decoration: none; margin-left: 8px; color: var(--cal-staff-80); }
 
-.mn-map-side { flex: 1; min-width: 210px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+.mn-map-side { flex: 1; min-width: 210px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
 .mn-map-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
-.mn-map-stats div { display: flex; flex-direction: column; gap: 2px; }
-.mn-map-stats b { font-family: var(--font-display); font-size: 16px; letter-spacing: 0.08em; color: var(--cal-accent); }
-.mn-map-stats span { font-size: 9.5px; letter-spacing: 0.24em; color: var(--mn-faint); }
-
-.mn-map-wp { border: 1px solid var(--mn-line); padding: 10px 12px; display: flex; flex-direction: column; gap: 9px; }
-.mn-map-wp-empty { font-size: 10.5px; letter-spacing: 0.24em; color: var(--mn-faint); }
-.mn-map-wp-live { display: flex; align-items: center; gap: 9px; font-size: 11.5px; letter-spacing: 0.18em; }
-.mn-map-wp-live b { font-weight: 600; }
-.mn-map-wp-live i { margin-left: auto; font-style: normal; color: var(--cal-accent); }
-.mn-map-wp-dot { width: 8px; height: 8px; background: var(--cal-accent); transform: rotate(45deg); }
-.mn-map-wp-site {
-  font-size: 10px; letter-spacing: 0.22em; color: var(--mn-faint);
-  border-top: 1px solid var(--mn-line); padding-top: 9px;
+.mn-map-stats div { display: flex; flex-direction: column; gap: 1px; }
+.mn-map-stats b {
+  font-family: var(--cal-font-mono);
+  font-weight: 500;
+  font-size: var(--cal-type-num-l);
+  line-height: 1.1;
+  color: var(--cal-ink);
 }
-.mn-map-wp-site b { color: var(--mn-ink); font-weight: 600; }
+.mn-map-stats span {
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps);
+  color: var(--cal-ink-62);
+}
 
-.mn-map-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
-.mn-map-leg-row { display: flex; align-items: center; gap: 8px; }
-.mn-map-leg-icon { font-size: 14px; width: 16px; text-align: center; }
-.mn-map-leg-text { font-size: 9.5px; letter-spacing: 0.18em; color: var(--mn-faint); }
+.mn-map-wp { border-top: 1px solid var(--cal-rule); border-bottom: 1px solid var(--cal-rule); padding: 10px 0; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.mn-map-wp-empty { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps); color: var(--cal-ink-62); }
+.mn-map-wp-live { width: 100%; display: flex; align-items: baseline; gap: 8px; font-family: var(--cal-font-ui); font-size: var(--cal-type-label); letter-spacing: var(--cal-track-caps); }
+.mn-map-wp-live b { font-weight: 600; }
+.mn-map-wp-live i { margin-left: auto; font-family: var(--cal-font-mono); font-style: normal; font-size: var(--cal-type-note); letter-spacing: 0; }
+.mn-map-wp-dot { width: 8px; height: 8px; background: var(--cal-c-weak); align-self: center; }
+.mn-map-wp-site { font-family: var(--cal-font-ui); font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps); color: var(--cal-ink-80); }
+.mn-map-wp-site b { font-weight: 600; }
+
+.mn-map-legend { display: grid; grid-template-columns: 1fr; gap: 5px; }
+.mn-map-leg-row { display: flex; align-items: center; gap: 10px; }
+.mn-map-leg-icon { width: 16px; height: 14px; flex: none; }
+.mn-map-leg-icon svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.mn-map-leg-text { font-family: var(--cal-font-ui); font-weight: 500; font-size: var(--cal-type-micro); letter-spacing: 0.08em; color: var(--cal-ink-80); }
 
 /* ---------------------------------------------------- waypoint beacon */
 
@@ -692,8 +797,8 @@ body.cal-title-live #title.overlay {
   z-index: 44;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.25s ease;
-  font-family: var(--font);
+  transition: opacity 0.2s ease;
+  font-family: var(--cal-font-mono);
 }
 .mn-wp-beacon.show { opacity: 1; }
 .mn-wp-caret {
@@ -701,115 +806,160 @@ body.cal-title-live #title.overlay {
   width: 0; height: 0; margin-bottom: 3px;
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
-  border-top: 7px solid var(--cal-accent);
+  border-top: 7px solid var(--cal-staff);
 }
-.mn-wp-caret.edge { border-top-color: var(--cal-warn); }
+.mn-wp-caret.edge { border-top-color: var(--cal-c-staff); }
 .mn-wp-body {
   display: flex; justify-content: center; gap: 9px;
-  font-size: 10.5px; letter-spacing: 0.2em;
-  color: var(--mn-ink);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+  font-size: var(--cal-type-micro);
+  color: var(--cal-staff);
+  text-shadow: var(--cal-engrave);
 }
-.mn-wp-dist { color: var(--cal-accent); }
 
 /* ============================================================== settings */
 
-.mn-settings { height: 100%; overflow-y: auto; padding-right: 12px; columns: 2; column-gap: 42px; }
-.mn-set-group { break-inside: avoid; margin-bottom: 22px; }
+.mn-settings { height: 100%; overflow-y: auto; padding-right: 12px; columns: 2; column-gap: 44px; }
+.mn-set-group { break-inside: avoid; margin-bottom: 20px; }
 .mn-set-title {
-  font-size: 10px; letter-spacing: 0.42em; color: var(--mn-gold);
-  border-bottom: 1px solid var(--mn-line);
-  padding-bottom: 6px; margin-bottom: 10px; font-weight: 400;
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: var(--cal-type-label); letter-spacing: var(--cal-track-wide);
+  color: var(--cal-ink);
+  border-bottom: 1px solid var(--cal-ink);
+  padding-bottom: 5px; margin-bottom: 4px;
 }
-.mn-set-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 5px 0; }
-.mn-set-label { font-size: 12px; letter-spacing: 0.1em; color: var(--mn-dim); }
+.mn-set-row {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 10px;
+  padding: 5px 0 4px;
+  border-bottom: 1px solid var(--cal-ink-10);
+}
+.mn-set-label { font-family: var(--cal-font-ui); font-weight: 500; font-size: var(--cal-type-label); letter-spacing: 0.04em; color: var(--cal-ink); }
 .mn-set-pending {
-  font-size: 8.5px; letter-spacing: 0.18em; color: var(--mn-gold);
-  border: 1px solid rgba(200, 162, 75, 0.5); padding: 0 4px; margin-left: 8px;
+  font-family: var(--cal-font-mono);
+  font-size: var(--cal-type-micro); color: var(--cal-ink-62);
+  border: 1px solid var(--cal-ink-40); padding: 0 4px; margin-left: 8px;
 }
 .mn-set-ctrl { display: flex; align-items: center; gap: 10px; }
-.mn-set-val { font-size: 11px; letter-spacing: 0.1em; color: var(--cal-accent); min-width: 46px; text-align: right; }
-.mn-set-hint { grid-column: 1 / -1; font-size: 10px; letter-spacing: 0.06em; color: var(--mn-faint); }
-.mn-set-note { font-size: 10.5px; letter-spacing: 0.08em; color: var(--mn-faint); line-height: 1.6; }
-.mn-set-note code { font-family: var(--font-focus); color: var(--mn-dim); }
+.mn-set-val { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); color: var(--cal-ink); min-width: 46px; text-align: right; }
+.mn-set-hint { grid-column: 1 / -1; font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); color: var(--cal-ink-62); }
+.mn-set-note { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); color: var(--cal-ink-62); line-height: 1.55; }
+.mn-set-note code { font-family: var(--cal-font-mono); color: var(--cal-ink); }
 .mn-set-foot { break-inside: avoid; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 
-.mn-range { -webkit-appearance: none; appearance: none; width: 150px; height: 3px; background: rgba(239, 230, 213, 0.18); outline: none; }
-.mn-range::-webkit-slider-thumb {
+/* a slider is a graduated rule: ticks every tenth, a vermilion index */
+.mn-range {
   -webkit-appearance: none; appearance: none;
-  width: 11px; height: 15px; background: var(--cal-accent);
-  clip-path: polygon(50% 0, 100% 28%, 100% 100%, 0 100%, 0 28%);
+  width: 164px; height: 14px;
+  outline: none;
+  background:
+    linear-gradient(90deg, var(--cal-ink) 0 var(--k, 0%), var(--cal-ink-40) var(--k, 0%) 100%) 0 100% / 100% 2px no-repeat,
+    repeating-linear-gradient(90deg, var(--cal-ink-62) 0 1px, transparent 1px 10%) 0 100% / 100% 7px no-repeat;
   cursor: pointer;
 }
-.mn-range::-moz-range-thumb { width: 11px; height: 15px; background: var(--cal-accent); border: 0; cursor: pointer; }
+.mn-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 7px; height: 14px;
+  background: var(--cal-c-staff);
+  border: 1px solid var(--cal-ink);
+  cursor: pointer;
+}
+.mn-range::-moz-range-thumb { width: 7px; height: 14px; background: var(--cal-c-staff); border: 1px solid var(--cal-ink); cursor: pointer; }
+.mn-range:focus-visible { outline: 1px solid var(--cal-c-weak); outline-offset: 2px; }
 
 .mn-toggle {
-  min-width: 54px;
-  background: rgba(12, 16, 20, 0.6);
-  border: 1px solid var(--mn-line);
-  font-size: 10.5px; letter-spacing: 0.18em;
-  padding: 5px 10px 4px; color: var(--mn-faint);
+  min-width: 56px;
+  background: transparent;
+  border: 1px solid var(--cal-ink-62);
+  font-family: var(--cal-font-mono);
+  font-size: var(--cal-type-micro);
+  padding: 3px 10px 2px; color: var(--cal-ink-80);
 }
-.mn-toggle.on { border-color: var(--cal-accent); color: #dff6f7; background: rgba(89, 193, 198, 0.14); }
+.mn-toggle.on { border-color: var(--cal-ink); color: var(--cal-staff); background: var(--cal-ink); }
 
-.mn-seg { display: flex; border: 1px solid var(--mn-line); }
+.mn-seg { display: flex; border: 1px solid var(--cal-ink-62); }
 .mn-seg-btn {
   background: transparent; border: 0;
-  font-size: 10px; letter-spacing: 0.16em;
-  padding: 5px 11px 4px; color: var(--mn-faint);
+  border-right: 1px solid var(--cal-ink-22);
+  font-family: var(--cal-font-ui); font-weight: 600;
+  font-size: var(--cal-type-micro); letter-spacing: 0.08em;
+  padding: 3px 9px 2px; color: var(--cal-ink-80);
 }
-.mn-seg-btn.on { background: rgba(89, 193, 198, 0.16); color: #dff6f7; }
+.mn-seg-btn:last-child { border-right: 0; }
+.mn-seg-btn.on { background: var(--cal-ink); color: var(--cal-staff); }
 
 /* ================================================================= modal */
 
 .mn-modal {
   position: fixed; inset: 0; display: none;
   align-items: center; justify-content: center;
-  background: rgba(4, 6, 9, 0.82);
+  background: var(--cal-scrim-dust);
   pointer-events: auto;
   z-index: 6;
 }
 .mn-modal.show { display: flex; }
 .mn-modal-shell {
-  width: min(880px, 88vw); max-height: 82vh;
+  position: relative;
+  width: min(900px, 88%); max-height: 84%;
   display: flex; flex-direction: column;
-  background: var(--mn-panel);
-  border: 1px solid var(--mn-line);
-  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.7);
+  padding-left: 54px;
+  animation: mn-page-in 0.2s var(--cal-ease-out) both;
+}
+.mn-modal-shell::before {   /* the red margin rule */
+  content: ''; position: absolute; left: 38px; top: 0; bottom: 0; width: 3px;
+  border-left: 3px double var(--cal-c-staff);
 }
 .mn-modal-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px 12px;
-  border-bottom: 1px solid var(--mn-line);
+  display: flex; align-items: flex-end; justify-content: space-between;
+  padding: 18px 20px 10px 12px;
+  border-bottom: 1px solid var(--cal-ink);
 }
-.mn-modal-title { font-family: var(--font-display); font-size: 14px; letter-spacing: 0.3em; }
-.mn-x { background: none; border: 0; font-size: 15px; color: var(--mn-faint); }
-.mn-x:hover { color: var(--cal-danger); }
-.mn-modal-body { padding: 18px 22px 24px; overflow-y: auto; }
-.mn-modal-lead { font-size: 12px; color: var(--mn-dim); line-height: 1.6; margin-bottom: 14px; max-width: 62ch; }
+.mn-modal-title { font-family: var(--cal-font-display); font-weight: 600; font-size: 22px; line-height: 1; letter-spacing: 0.10em; }
+.mn-x {
+  background: none; border: 1px solid var(--cal-ink-40);
+  font-family: var(--cal-font-mono); font-size: var(--cal-type-micro);
+  padding: 2px 7px 1px; color: var(--cal-ink-80);
+}
+.mn-x:hover { background: var(--cal-ink); color: var(--cal-staff); }
+.mn-modal-body { padding: 14px 20px 22px 12px; overflow-y: auto; }
+.mn-modal-lead { font-size: var(--cal-type-body); color: var(--cal-ink-80); line-height: var(--cal-lead-body); margin-bottom: 14px; max-width: 62ch; }
 
-.mn-cred-sec { margin-bottom: 18px; }
+.mn-cred-sec { margin-bottom: 16px; }
 .mn-cred-sec h4 {
-  font-size: 9.5px; letter-spacing: 0.4em; color: var(--mn-gold);
-  font-weight: 400; margin-bottom: 7px;
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-wide); color: var(--cal-ink);
+  border-bottom: 1px solid var(--cal-rule);
+  padding-bottom: 3px; margin-bottom: 5px;
 }
-.mn-cred-row { display: grid; grid-template-columns: minmax(220px, 1fr) 1.3fr; gap: 16px; padding: 3px 0; }
-.mn-cred-a { font-size: 12px; color: var(--mn-ink); }
-.mn-cred-b { font-size: 11px; color: var(--mn-faint); }
+.mn-cred-row { display: grid; grid-template-columns: minmax(220px, 1fr) 1fr; gap: 16px; padding: 2px 0; }
+.mn-cred-a { font-size: var(--cal-type-note); color: var(--cal-ink); }
+.mn-cred-b { font-size: var(--cal-type-micro); color: var(--cal-ink-62); }
 
 .mn-diff {
-  display: flex; flex-direction: column; gap: 3px; width: 100%;
+  display: flex; flex-direction: column; gap: 2px; width: 100%;
   text-align: left;
-  background: rgba(12, 16, 20, 0.55);
-  border: 1px solid var(--mn-line);
-  padding: 10px 14px; margin-bottom: 7px;
+  background: transparent;
+  border: 0; border-bottom: 1px solid var(--cal-rule);
+  padding: 10px 8px 9px;
 }
-.mn-diff:hover { border-color: var(--cal-accent); background: rgba(89, 193, 198, 0.12); }
-.mn-diff b { font-size: 13px; letter-spacing: 0.22em; }
-.mn-diff span { font-size: 10px; letter-spacing: 0.1em; color: var(--mn-faint); }
+.mn-diff:hover { background: var(--cal-ink); color: var(--cal-staff); }
+.mn-diff b { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-head); letter-spacing: 0.12em; }
+.mn-diff span { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); opacity: 0.8; }
 
-/* the Field Manual keeps the title screen's own panel styling */
-.mn-modal-body .keybinds-panel { margin: 0; display: block; width: 100%; }
+/* The Field Manual: the keybinds panel lives in index.html and menu.js lends it here. */
+.keybinds-panel { position: relative; margin: 0; padding: 0; display: block; width: 100%; }
+.keybinds-title { display: none; }
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 0 34px;
+  font-family: var(--cal-font-mono);
+  font-size: var(--cal-type-note);
+  color: var(--cal-ink);
+  text-align: left;
+}
+.controls-grid > div { display: flex; align-items: center; gap: 9px; padding: 5px 0 4px; border-bottom: 1px solid var(--cal-ink-10); }
+.controls-grid .sep { color: var(--cal-ink-40); margin: 0 -4px; }
 
 /* ========================================================== death screen */
 
@@ -819,87 +969,172 @@ body.cal-title-live #title.overlay {
   pointer-events: auto;
 }
 .mn-death.show, .mn-victory.show { display: flex; }
-.mn-death {
-  background: radial-gradient(ellipse at 50% 45%, rgba(28, 6, 6, 0.55), rgba(3, 4, 6, 0.93));
-  animation: mn-fade 0.8s ease both;
-}
+.mn-death { background: rgba(28, 27, 30, 0.42); animation: mn-fade 0.7s ease both; }
 @keyframes mn-fade { from { opacity: 0; } to { opacity: 1; } }
-.mn-death-inner, .mn-victory-inner { text-align: center; max-width: 720px; padding: 0 22px; }
+/* a torn-out page of the book, the red margin down its left */
+.mn-death-inner {
+  position: relative;
+  width: 620px;
+  padding: 26px 34px 24px 66px;
+  text-align: left;
+  animation: mn-page-in 0.34s var(--cal-ease-out) 0.16s both;
+}
+.mn-death-inner::before {
+  content: ''; position: absolute; left: 46px; top: 0; bottom: 0;
+  border-left: 3px double var(--cal-c-staff);
+}
 .mn-death-kicker, .mn-victory-kicker {
-  font-size: 10px; letter-spacing: 0.5em; color: var(--mn-gold);
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-wide);
+  color: var(--cal-ink-62);
 }
 .mn-death-title {
-  font-family: var(--font-display);
-  font-size: 56px; letter-spacing: 0.24em; text-indent: 0.24em;
-  margin: 12px 0 6px;
-  color: #e7dccb;
-  text-shadow: 0 0 40px rgba(176, 58, 46, 0.55);
+  font-family: var(--cal-font-display);
+  font-weight: 700;
+  font-size: var(--cal-type-display); line-height: 1.05; letter-spacing: 0.04em;
+  margin: 6px 0 4px;
+  color: var(--cal-ink);
 }
-.mn-death-killer { font-size: 12.5px; letter-spacing: 0.24em; color: var(--mn-dim); }
-.mn-death-killer b { color: var(--cal-danger); font-weight: 600; }
-.mn-death-rule {
-  width: 320px; height: 1px; margin: 18px auto;
-  background: linear-gradient(90deg, transparent, var(--mn-line), transparent);
-  position: relative;
-}
-.mn-death-rule::after {
-  content: ''; position: absolute; left: 50%; top: -3px;
-  width: 7px; height: 7px; transform: translateX(-50%) rotate(45deg);
-  background: var(--mn-gold);
-}
+.mn-death-killer { font-family: var(--cal-font-mono); font-size: var(--cal-type-body); color: var(--cal-ink-80); }
+.mn-death-killer b { font-family: var(--cal-font-ui); font-weight: 600; letter-spacing: var(--cal-track-caps); color: var(--cal-c-staff); }
+.mn-death-rule { height: 1px; margin: 14px 0; background: var(--cal-ink); }
 .mn-death-tip {
-  font-size: 12px; line-height: 1.6; color: var(--mn-dim);
-  max-width: 560px; margin: 0 auto 22px;
+  font-family: var(--cal-font-mono);
+  font-style: italic;
+  font-size: var(--cal-type-note); line-height: 1.55; color: var(--cal-ink-80);
+  margin: 0 0 16px;
 }
-.mn-death-opts { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.mn-death-tip em { font-style: normal; font-weight: 500; }
+.mn-death-tip kbd { font-style: normal; }
+.mn-death-opts { display: flex; flex-direction: column; border-top: 1px solid var(--cal-rule); }
 .mn-death-opt {
-  background: rgba(12, 16, 20, 0.62);
-  border: 1px solid var(--mn-line);
-  padding: 11px 18px 10px;
-  display: flex; flex-direction: column; gap: 3px; text-align: left;
-  transition: background 0.15s ease, border-color 0.15s ease;
-  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  grid-template-areas: 'stn label' 'stn sub';
+  column-gap: 0;
+  background: transparent;
+  border: 0; border-bottom: 1px solid var(--cal-rule);
+  padding: 9px 8px 8px;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
 }
-.mn-death-opt:hover { background: rgba(89, 193, 198, 0.14); border-color: var(--cal-accent); }
-.mn-death-opt b { font-size: 13px; letter-spacing: 0.22em; font-weight: 600; }
-.mn-death-opt span { font-size: 10px; letter-spacing: 0.14em; color: var(--mn-faint); }
+.mn-death-opt .cal-stn { grid-area: stn; font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); color: var(--cal-ink-62); padding-top: 3px; }
+.mn-death-opt:hover { background: var(--cal-ink); color: var(--cal-staff); }
+.mn-death-opt:hover .cal-stn, .mn-death-opt:hover span { color: var(--cal-staff-80); }
+.mn-death-opt b { grid-area: label; font-family: var(--cal-font-ui); font-size: 15px; letter-spacing: var(--cal-track-caps); font-weight: 600; }
+.mn-death-opt span:not(.cal-stn) { grid-area: sub; font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); color: var(--cal-ink-62); }
 
 /* ======================================================== victory banner */
 
-/**
- * VICTORY IS ONE CARD, NOT THREE (filmed at `shots/sm-victory.png`).
- *
- * `progression` raises its own two victory banners through `shell-hud`'s banner
- * queue, and both land in the top third — so the shipped endgame was the same
- * two words printed three times, overlapping. Neither of those lanes can be
- * edited from here, and neither is wrong on its own. So this card stops being
- * a transparent overlay and becomes the cinematic: an opaque upper letterbox
- * that covers the banner zone (#hud is z-index 40, this root is 70), fading
- * out over the lower third so the valley she just won is still on screen.
- */
-.mn-victory {
-  background: linear-gradient(180deg,
-    rgba(6, 10, 14, 0.975) 0%,
-    rgba(6, 10, 14, 0.965) 40%,
-    rgba(6, 10, 14, 0.82) 54%,
-    rgba(6, 10, 14, 0.36) 74%,
-    rgba(6, 10, 14, 0.10) 100%);
-  align-items: center;
-  animation: mn-fade 0.5s ease both;
-}
+/* One card, not three: an opaque paper band over the banner zone, fading into
+   the vista she just surveyed (#hud is z-index 40, this root is 70). */
+.mn-victory { background: var(--cal-scrim-dust); animation: mn-fade 0.4s ease both; }
+.mn-victory-inner { position: relative; width: 620px; padding: 24px 34px 22px 66px; text-align: left; }
+.mn-victory-inner::before { content: ''; position: absolute; left: 46px; top: 0; bottom: 0; border-left: 3px double var(--cal-c-staff); }
 .mn-victory-title {
-  font-family: var(--font-display);
-  font-size: 44px; letter-spacing: 0.24em; text-indent: 0.24em;
-  margin: 10px 0 4px;
-  color: #f6efe0;
-  text-shadow: 0 0 42px rgba(200, 162, 75, 0.5);
+  font-family: var(--cal-font-display);
+  font-weight: 700;
+  font-size: 38px; line-height: 1.05; letter-spacing: 0.04em;
+  margin: 6px 0 2px;
+  color: var(--cal-ink);
 }
-.mn-victory-sub { font-size: 11.5px; letter-spacing: 0.28em; color: var(--mn-dim); }
-.mn-victory-bar { width: 260px; height: 2px; margin: 20px auto 0; background: rgba(239, 230, 213, 0.16); }
-.mn-victory-bar i { display: block; height: 100%; width: 0%; background: var(--mn-gold); }
+.mn-victory-sub { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); color: var(--cal-ink-80); }
+.mn-victory-bar { height: 3px; margin: 14px 0 0; background: var(--cal-ink-22); }
+.mn-victory-bar i { display: block; height: 100%; width: 0%; background: var(--cal-c-staff); }
 
 @media (max-width: 1180px) {
   .mn-settings { columns: 1; }
   .mn-map { flex-direction: column; }
   .mn-map-frame { height: auto; width: min(100%, 60vh); }
 }
+
+/* ===========================================================================
+   OTHER LANES' SCREENS, THROUGH SHARED TOKENS (plan R57: dialogue.js is
+   settlements', quests.js and skills.js progression's, wheel.* combat-kit's).
+   They inject their own <style> (`#cal-dlg .x`), so every rule here is one step
+   more specific (`body #cal-dlg .x`). Nothing below changes their structure or
+   logic; it re-points their tokens and gives them the book's paper and type.
+   =========================================================================== */
+
+/* -------------------------------------------- the dialogue panel (V45) */
+body #cal-dlg {
+  font-family: var(--cal-font-mono);
+  color: var(--cal-ink);
+  --dlg-gold: var(--cal-c-staff);
+  --dlg-teal: var(--cal-c-weak);
+}
+body #cal-dlg .dlg-name { font-family: var(--cal-font-display); font-weight: 600; font-size: var(--cal-type-head); letter-spacing: 0.14em; text-indent: 0; color: var(--cal-staff); text-shadow: var(--cal-engrave); }
+body #cal-dlg .dlg-role { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0.02em; text-indent: 0; text-transform: none; color: var(--cal-staff-80); text-shadow: var(--cal-engrave); }
+body #cal-dlg .dlg-mark { filter: none; }
+body #cal-dlg .dlg-card {
+  position: relative;
+  padding-left: 40px;
+  background-color: var(--cal-paper);
+  background-image:
+    var(--cal-paper-grain),
+    repeating-linear-gradient(180deg, transparent 0 27px, var(--cal-rule-ruled) 27px 28px);
+  border: 1px solid var(--cal-ink);
+  box-shadow: none;
+  clip-path: none;
+  color: var(--cal-ink);
+}
+body #cal-dlg .dlg-card::before {
+  content: ''; position: absolute; left: 22px; top: 0; bottom: 0; right: auto; width: 0; height: auto;
+  background: none;
+  border-left: 3px double var(--cal-c-staff);
+}
+body #cal-dlg .dlg-line { font-family: var(--cal-font-mono); font-size: 15px; line-height: 1.55; letter-spacing: 0; color: var(--cal-ink); }
+body #cal-dlg .dlg-rule { background: var(--cal-rule); }
+body #cal-dlg .dlg-choice { font-family: var(--cal-font-mono); font-size: var(--cal-type-body); letter-spacing: 0; color: var(--cal-ink); background: transparent; border-color: transparent; border-bottom: 1px solid var(--cal-ink-10); }
+body #cal-dlg .dlg-choice:hover, body #cal-dlg .dlg-choice.sel { background: var(--cal-ink); color: var(--cal-staff); }
+body #cal-dlg .dlg-key { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); border-color: var(--cal-ink-62); color: var(--cal-ink); }
+body #cal-dlg .dlg-choice:hover .dlg-key, body #cal-dlg .dlg-choice.sel .dlg-key { background: var(--cal-staff); color: var(--cal-ink); border-color: var(--cal-staff); }
+body #cal-dlg .dlg-hint { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps); text-indent: 0; color: var(--cal-ink-62); }
+body #cal-dlg .dlg-foot { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0; text-indent: 0; text-transform: none; color: var(--cal-staff-80); text-shadow: var(--cal-engrave); }
+
+/* ---------------------------------- the log and the skill pages (hub panels) */
+body #cal-prog { font-family: var(--cal-font-mono); --pg-gold: var(--cal-ink); --pg-teal: var(--cal-c-weak); --pg-panel: var(--cal-paper); }
+body #cal-prog .pg-overlay, body #cal-prog .sk-overlay { background: var(--cal-scrim-dust); }
+body #cal-prog .pg-panel, body #cal-prog .sk-panel {
+  background-color: var(--cal-paper);
+  background-image:
+    var(--cal-paper-grain),
+    var(--cal-paper-foxing),
+    repeating-linear-gradient(180deg, transparent 0 27px, var(--cal-rule-ruled) 27px 28px);
+  border: 1px solid var(--cal-ink);
+  box-shadow: none;
+  clip-path: none;
+  color: var(--cal-ink);
+}
+/* in the hub the panel IS the page body (the margin, head and foot are the hub's) */
+body.cal-hub-open #cal-prog .pg-overlay, body.cal-hub-open #cal-prog .sk-overlay { background: none; align-items: stretch; justify-content: stretch; }
+body.cal-hub-open #cal-prog .pg-panel, body.cal-hub-open #cal-prog .sk-panel {
+  position: absolute;
+  left: calc(var(--mn-inset-x) + var(--mn-margin-w)); right: var(--mn-inset-x);
+  top: calc(var(--mn-inset-y) + var(--mn-head-h)); bottom: calc(var(--mn-inset-y) + var(--mn-foot-h));
+  width: auto; max-width: none; max-height: none;
+  border: 0;
+  padding: 14px 26px 10px 28px;
+}
+body #cal-prog .pg-head, body #cal-prog .sk-title { font-family: var(--cal-font-display); font-weight: 600; font-size: var(--cal-type-head); letter-spacing: 0.14em; text-indent: 0; color: var(--cal-ink); border-bottom-color: var(--cal-ink); }
+body #cal-prog .sk-head { border-bottom-color: var(--cal-ink); }
+body #cal-prog .pg-sub, body #cal-prog .sk-points { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); letter-spacing: 0; text-transform: none; color: var(--cal-ink-80); }
+body #cal-prog .pg-foot, body #cal-prog .sk-foot { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0; text-transform: none; color: var(--cal-ink-62); border-top-color: var(--cal-rule); }
+body #cal-prog .pg-body::-webkit-scrollbar-thumb, body #cal-prog .sk-cols::-webkit-scrollbar-thumb { background: var(--cal-ink-40); }
+body #cal-prog .sk-col h3 { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-label); letter-spacing: var(--cal-track-caps); color: var(--cal-ink) !important; border-bottom-color: var(--cal-ink); }
+body #cal-prog .sk-node { background: transparent; border-color: var(--cal-rule); }
+body #cal-prog .sk-node.available { border-color: var(--cal-ink); }
+body #cal-prog .sk-node.available:hover { background: var(--cal-ink-10); }
+body #cal-prog .sk-node.unlocked { background: var(--cal-ink-10); border-color: var(--cal-c-weak); }
+body #cal-prog .sk-node .sk-dot { border-radius: 0; border-color: var(--cal-ink); }
+body #cal-prog .sk-node.unlocked .sk-dot { border-color: var(--cal-c-weak); }
+body #cal-prog .sk-node.unlocked .sk-dot::after { background: var(--cal-c-weak); border-radius: 0; }
+body #cal-prog .sk-name { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-label); letter-spacing: 0.06em; color: var(--cal-ink); }
+body #cal-prog .sk-cost { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); letter-spacing: 0; color: var(--cal-ink); }
+body #cal-prog .sk-desc { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); color: var(--cal-ink-80); }
+body #cal-prog .sk-req { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0; text-transform: none; color: var(--cal-c-staff); }
+body #cal-prog .sk-hook { font-family: var(--cal-font-mono); color: var(--cal-ink-62); }
+
+/* -------------------------------------------- the Kit Rack: tokens only */
+body #cal-wheel { --ac: var(--cal-staff); }

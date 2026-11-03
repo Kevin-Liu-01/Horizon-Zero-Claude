@@ -1,127 +1,86 @@
 import * as THREE from 'three';
 import './focus.css';
 import { itemDef, rarityDef } from '../items/items.js';
+import { fieldWord, cardParts } from './tips.js';
+import { itemIcon } from './inventory.js';
 
 /**
- * Focus v3 — lane `focus-items` (port 5212). Round 4 closes on this file:
- *   ui-10                      component ROWS with part names + their loot,
- *                              in-world yellow part labels, lighter tint
- *   ui-16 (focus half)         reveals are projected onto the world thing
- *   missing-systems-focus-…    datapoint reveals feeding the Notebook
- *   stealth-focus-path-fidelity splined patrol ribbons, non-route movers
- *                              skipped instead of drawn a loop they ignore
- *   onboarding-loop-loot-feel  LOOT reveals carry the source name + rarity
+ * THE ALIDADE — the Sighting overlay (lane `shell-ui`, bible §9.7, §10.3; replaces
+ * the Round-4 scan). Raising the alidade does not change the world: a sepia paper
+ * vignette at most 20 % at the corners, a crosshair with stadia hairlines, bearing
+ * and distance readouts, weak points as cobalt-ink rings, components as dashed ink
+ * outlines with leader lines to named chips, transects as white dashes on the
+ * ground. Not violet, not teal, not holographic. `A-sighting`, `V36-sighting-scan`.
  *
  * PUBLISHED — `ctx.sighting`
- *   on · toggle(force?) · tags (Map machine -> marker el)
- *   scanTarget      -> the machine under the crosshair, or null
+ *   on · toggle(force?) · tags (Map machine -> marker el)   Flagged Instruments
+ *   scanTarget      -> the Instrument under the crosshair, or null
  *   components(m)   -> [{ name, weak, tearable, torn, elemental, loot[] }]
  *   audit()         -> one flat object every gate in this lane reads
  * EVENTS  'sighting-on' · 'sighting-off' · 'sighting-pulse' · 'machine-tagged'
+ * CONSUMES 'player-died', 'machine-killed'.
  *
- * Focus v2 behaviour (kept): V TOGGLES Focus — no time limit.
- * While on: activation pulse (ground ring + wave), persistent violet
- * through-wall machine silhouettes, cool purple screen tint, YELLOW additive
- * shells on weak/tearable machine.parts (linger 6s after Focus off, canon),
- * glowing ground-hugging patrol path lines with flowing dashes, a Plex Mono
- * holo info card after 0.4s crosshair dwell (name / LV / elemental
- * weakness glyphs / component count), T tags the crosshair machine with a
- * persistent screen-projected yellow diamond marker (edge-clamped, distance
- * in meters) until that machine dies, and green-cyan glow points over GATHER
- * interactables (pooled, 40 nearest).
+ * V toggles the alidade, with no time limit. T Flags the Instrument under the
+ * crosshair; a Flagged Instrument keeps its screen-projected mark (edge-clamped,
+ * metres) until it dies, and its bearing on the circle. Component shells linger 6 s
+ * after the alidade comes down.
  *
- * Cross-builder reads are all defensive: machine.parts / route / kind,
- * ctx.interactables.list, terrain.getHeight may land in any order.
- * Emits: 'sighting-on', 'sighting-off' (+ legacy 'sighting-pulse' on activation).
- * Consumes: 'player-died', 'machine-killed'.
+ * Cross-lane reads are all defensive: machine.parts / weakPoints / route / kind,
+ * ctx.interactables.list and terrain.getHeight may land in any order.
  */
 
-const WAVE_SPEED = 130;  // m/s expansion of the activation scan wave
-const WAVE_LIFE = 1.5;   // seconds the activation wave stays visible
+const RING_LIFE = 0.7;     // seconds the raising sweep stays visible
+const RING_SPEED = 90;     // m/s the sweep expands
 const RING_SEGS = 96;
-const RING_WIDTH = 3.2;
+const RING_WIDTH = 0.42;   // metres: a surveyor's chain, not a wall of light
 
-const PART_LINGER = 6.0;   // canon: component highlight persists ~6s after Focus
+const PART_LINGER = 6.0;   // component outlines persist ~6 s after the alidade comes down
 const PART_FADE = 1.2;     // tail of the linger window spent fading
-const PART_CAP = 40;       // max yellow overlay meshes alive at once
-const PART_RANGE = 150;    // only shell parts on machines within this range
+const PART_CAP = 40;       // max outline meshes alive at once
+const PART_RANGE = 150;    // only outline parts on Instruments within this range
 
-const PATH_RANGE = 220;    // patrol lines drawn for machines within this range
-const VIOLET_RANGE = 180;  // through-wall silhouettes only within Focus range (canon-ish)
-const PATH_STEP = 2.4;     // meters between terrain samples along the line
-const PATH_WIDTH = 1.15;   // ribbon width in meters (reads through grass cards)
+const PATH_RANGE = 220;    // transects drawn for Instruments within this range
+const HULL_RANGE = 180;    // through-terrain hull rims only within this range
+const PATH_WIDTH = 0.34;   // transect width in metres
 
-const GATHER_CAP = 40;     // pooled glow points over GATHER nodes
+const GATHER_CAP = 40;     // pooled survey marks over gather nodes
 const GATHER_TICK = 0.25;  // seconds between gather/parts registry polls
 
-const CARD_DWELL = 0.4;    // crosshair-on-machine seconds before the card shows
+const CARD_DWELL = 0.4;    // crosshair-on-Instrument seconds before the card shows
 const CARD_GRACE = 0.35;   // off-target seconds before the card fades
 
-// --- ui-10: in-world component labels -------------------------------------
-const LABEL_CAP = 10;      // pooled yellow part labels on screen at once
-const LABEL_RANGE = 70;    // only label parts on machines this close
-// --- ui-16 / A63: loot + datapoint reveals ---------------------------------
-const REVEAL_CAP = 12;     // pooled reveal labels ON SCREEN at once
+const LABEL_CAP = 10;      // pooled component chips on screen at once
+const LABEL_RANGE = 70;    // only label parts on Instruments this close
+const RING_CAP = 12;       // pooled weak-point rings
+const REVEAL_CAP = 12;     // pooled reveal chips ON SCREEN at once
 /**
- * Candidates kept per poll. Round 1 cut this list to REVEAL_CAP by DISTANCE
- * before anything knew what was visible, so a near pickup 80° off-axis burned
- * a slot the player could never see while a farther one in front of them was
- * never considered. Visibility now decides which twelve draw; distance only
+ * Candidates kept per poll. Visibility decides which twelve draw; distance only
  * decides the order they are tried in.
  */
 const REVEAL_SRC_CAP = 48;
-const REVEAL_RANGE = 85;   // metres Focus reads a lootable / record at
+const REVEAL_RANGE = 85;   // metres the alidade reads a lootable / Field Book at
 const REVEAL_TICK = 0.2;   // seconds between interactable registry polls
 
-/* --- on-screen placement (round 2) ---------------------------------------
- * A label is only "drawn" if the player can read it. `_updateTags()` clamps
- * its markers to the frame edge because a marker is an arrow to something
- * off screen; a component label or a reveal points AT a thing, so it cannot
- * be clamped without lying — it is skipped instead, and the pool slot goes to
- * the next candidate. These are the box extents the placement solve uses.  */
+/* on-screen placement: a chip points AT a thing, so it cannot be clamped without
+ * lying; one that cannot fit is skipped and the slot goes to the next candidate. */
 const VIEW_MARGIN = 8;     // px a label box must reach inside the frame
 const VIEW_FRAC = 0.6;     // ...and this much of its width must be inside
-const PLABEL_GAP = 10;     // .calf-plabel translate(10px) off its anchor
-const PLABEL_W = 190;      // widest name + loot chip at 10px/0.14em
+const PLABEL_GAP = 34;     // the leader's run from anchor to chip
+const PLABEL_W = 190;      // widest name + loot text
 const PLABEL_H = 11;       // half-height
 const PLABEL_MID = PLABEL_GAP + PLABEL_W * 0.5;  // anchor -> box centre
 const REVEAL_HW = 105;     // .calf-reveal is centred: half its widest box
 const REVEAL_H = 22;       // ...and it sits fully ABOVE its anchor
-// --- stealth-focus-path-fidelity ------------------------------------------
 const SPLINE_STEP = 1.1;   // metres between Catmull-Rom samples on the ribbon
 /**
- * AI states in which a machine is actually walking its route. `machine-ai`
- * publishes patrol · return · suspicious · search · alert · attack · stagger ·
- * downed · dead; only the first two follow the route, so those
- * are the two that get a ribbon. (`idle`/`graze` are accepted as forward
- * compatibility for a herd state that lane may add.) Everything else is a
- * non-route mover — `stealth-focus-path-fidelity`: drawing it a tidy loop it
- * is not walking is a lie the player will act on.
+ * AI states in which an Instrument is actually walking its route. Everything else is
+ * a non-route mover, and drawing it a tidy loop it is not walking is a lie the
+ * player will act on.
  */
 const ROUTE_STATES = new Set(['patrol', 'return', 'idle', 'graze']);
 
-// Canon HZD data (docs/research/machines.md)
-const LEVELS = { watcher: 5, redeye: 10, sawtooth: 15, behemoth: 25, thunderjaw: 27 };
-const CLASSES = {
-  watcher: 'RECON', redeye: 'RECON', sawtooth: 'COMBAT',
-  behemoth: 'TRANSPORT', thunderjaw: 'COMBAT',
-};
-// Elemental weaknesses: sawtooth burns (fire-weak body + chest Blaze canister),
-// behemoth's haunch freeze sacs make freeze the intended accelerator,
-// thunderjaw carries both blaze + freeze canisters. Watchers have none.
-const WEAKNESS = {
-  watcher: [], redeye: [],
-  sawtooth: ['fire'],
-  behemoth: ['freeze'],
-  thunderjaw: ['fire', 'freeze'],
-};
-const RESIST = { behemoth: ['shock'], thunderjaw: ['shock'] };
-
-const GLYPH_SVG = {
-  fire: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c1.1 4.2-4 6.4-4 10.4a4 4 0 0 0 8 0c0-1.6-.9-2.7-1.3-4.2C17.6 9.8 19 12.2 19 14.8A7 7 0 0 1 5 14.8C5 9.4 10.6 7.3 12 2z"/></svg>',
-  freeze: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2v20M3.3 7l17.4 10M20.7 7L3.3 17M12 2l-2.4 2.4M12 2l2.4 2.4M12 22l-2.4-2.4M12 22l2.4-2.4M3.3 7l3.3.9M3.3 7l.9-3.3M20.7 17l-3.3-.9M20.7 17l-.9 3.3M20.7 7l-.9-3.3M20.7 7l-3.3.9M3.3 17l.9 3.3M3.3 17l3.3-.9"/></svg>',
-  shock: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 2 4.5 14h5.2l-1.9 8 9.7-12.6h-5.4L13.5 2z"/></svg>',
-};
+/** Bible §5.8: the element words on a card. Engine channel -> player word. */
+const ELEM_WORD = { blaze: 'CINDER', fire: 'CINDER', freeze: 'BRINE', chill: 'BRINE', shock: 'DUST', spark: 'DUST' };
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -129,61 +88,81 @@ const _dir = new THREE.Vector3();
 /** Reused projection result — the label loops must not allocate. */
 const _screen = { x: 0, y: 0 };
 
-let _dotTex = null;
-function dotTexture() {
-  if (_dotTex) return _dotTex;
+let _markTex = null;
+/** A gather node's mark through the alidade: a small survey cross. */
+function markTexture() {
+  if (_markTex) return _markTex;
   const c = document.createElement('canvas');
-  c.width = c.height = 64;
+  c.width = c.height = 32;
   const g = c.getContext('2d');
-  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.3, 'rgba(255,255,255,0.7)');
-  grad.addColorStop(0.65, 'rgba(255,255,255,0.18)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 64, 64);
-  _dotTex = new THREE.CanvasTexture(c);
-  return _dotTex;
+  g.clearRect(0, 0, 32, 32);
+  g.fillStyle = 'rgba(38,52,63,0.9)';
+  g.fillRect(14, 4, 4, 24); g.fillRect(4, 14, 24, 4);
+  g.fillStyle = '#fff';
+  g.fillRect(15, 5, 2, 22); g.fillRect(5, 15, 22, 2);
+  _markTex = new THREE.CanvasTexture(c);
+  _markTex.minFilter = THREE.LinearFilter;
+  _markTex.generateMipmaps = false;
+  return _markTex;
 }
 
-/** Nearest-first order for the component-shell budget (see `_refreshParts`). */
-const _byFocusD2 = (a, b) => a.__focusD2 - b.__focusD2;
+/** The overlay shell's vertex stage (skinning chunks are no-ops on static meshes). */
+const SHELL_VS = /* glsl */ `
+  #include <common>
+  #include <skinning_pars_vertex>
+  varying vec3 vN;
+  varying vec3 vV;
+  void main() {
+    #include <skinbase_vertex>
+    #include <beginnormal_vertex>
+    #include <skinnormal_vertex>
+    vec3 transformed = vec3(position);
+    #include <skinning_vertex>
+    vec4 mv = modelViewMatrix * vec4(transformed, 1.0);
+    vN = normalize(normalMatrix * objectNormal);
+    vV = normalize(-mv.xyz);
+    gl_Position = projectionMatrix * mv;
+  }`;
 
-export class FocusSystem {
+/** Nearest-first order for the component-shell budget (see `_refreshParts`). */
+const _byNearest = (a, b) => a.__sightD2 - b.__sightD2;
+
+export class SightingSystem {
   constructor(ctx) {
     this.ctx = ctx;
-    this.on = false;        // Focus mode toggle state
-    this.active = false;    // legacy alias (round-1 consumers) — mirrors .on
-    this._waveT = 99;       // time since activation (drives pulse anim)
+    this.on = false;        // the alidade is raised
+    this.active = false;    // legacy alias: mirrors .on
+    this._waveT = 99;       // time since raising (drives the sweep)
     this._origin = new THREE.Vector3();
 
-    // violet through-wall shells: Map machine -> { mat, meshes[], delay, boost }
-    this._violet = new Map();
-    this._violetK = 0;      // master fade 0..1 for the violet layer
-    this._violetPoll = 0;
+    // through-terrain hull rims: Map machine -> { mat, meshes[], delay, boost }
+    this._hulls = new Map();
+    this._hullK = 0;        // master fade 0..1 for the hull layer
+    this._hullPoll = 0;
 
-    // yellow part shells: Map part -> { meshes[], machine }
+    // component outlines: Map part -> { meshes[], machine }
     this._parts = new Map();
-    this._partMat = this._yellowMat();
+    this._partMat = this._outlineMat();
     this._partCount = 0;
-    this._offT = Infinity;  // time since Focus turned off (drives linger)
+    this._offT = Infinity;  // time since the alidade came down (drives the linger)
     this._partPoll = 0;
 
-    // patrol path ribbons: Map machine -> { mesh, mat }
+    // transects: Map machine -> { mesh, mat }
     this._paths = new Map();
     this._pathSamples = 0;   // samples on the most recently splined ribbon
     this._pathWaypoints = 0; // waypoints that ribbon was built from
     this._pathSkipped = 0;   // machines skipped because they left their route
-    this.hoverPart = null;   // component name nearest the crosshair (A62)
+    this.hoverPart = null;   // component name nearest the crosshair
+    this._rangeT = 0;        // 5 Hz: the range under the crosshair
+    this._rangeM = -1;
+    this._lastBrg = -1;
+    this._lastDst = -2;
     this._compCache = { machine: null, t: 0, rows: [] };
     this._cardRect = null;
 
     // tagged machines: Map machine -> marker element
     this._tags = new Map();
 
-    this._wave = this._buildWave();
-    this._wave.visible = false;
-    ctx.scene.add(this._wave);
     this._ring = this._buildRing();
     this._ring.visible = false;
     ctx.scene.add(this._ring);
@@ -202,11 +181,11 @@ export class FocusSystem {
     this._cardM = null;     // machine the card is populated for
     this._graceT = 0;
 
-    // V toggles Focus (Q is the medicine pouch now — owned by player.js)
+    // V raises the alidade
     ctx.input.onDown('KeyV', () => {
       if (ctx.state === 'playing' || ctx.params?.has('shot')) this.toggle();
     });
-    // T tags the machine under the crosshair while Focus is active
+    // T Flags the Instrument under the crosshair while the alidade is up
     ctx.input.onDown('KeyT', () => {
       if (!(ctx.state === 'playing' || ctx.params?.has('shot'))) return;
       if (this.on) this.tagTarget();
@@ -218,11 +197,10 @@ export class FocusSystem {
 
   /* ------------------------------- public API ------------------------------ */
 
-  /** Tagged machines (Map machine -> marker el). HUD reads this to hang
-   *  distance labels on tagged-machine compass pips. Read-only. */
+  /** Flagged Instruments (Map machine -> marker el). The HUD and the map read this. */
   get tags() { return this._tags; }
 
-  /** Toggle Focus mode. Pass true/false to force a state. */
+  /** Raise or lower the alidade. Pass true/false to force a state. */
   toggle(force) {
     const want = force === undefined ? !this.on : !!force;
     if (want === this.on) return;
@@ -232,7 +210,7 @@ export class FocusSystem {
     else this._deactivate();
   }
 
-  /** Legacy round-1 surface: a pulse now just switches Focus on. */
+  /** Legacy surface: a pulse raises the alidade. */
   pulse() {
     if (this.on) { this._firePulse(); return; }
     this.toggle(true);
@@ -247,17 +225,17 @@ export class FocusSystem {
     }
     this._tint.classList.remove('on');
     this._reticle.classList.remove('on');
+    document.body.classList.remove('cal-sighting');
     this._hideCard(true);
-    this._wave.visible = false;
     this._ring.visible = false;
     this._gather.visible = false;
-    this._disposeViolet();
+    this._disposeHulls();
     this._disposeParts();
     this._disposePaths();
     this._offT = Infinity;
   }
 
-  /** Tag/untag the machine under the crosshair (T while Focus on). */
+  /** Flag / un-Flag the Instrument under the crosshair (T with the alidade up). */
   tagTarget() {
     const m = this._target ?? this._pickTarget();
     if (!m) return;
@@ -268,7 +246,7 @@ export class FocusSystem {
     }
     const el = document.createElement('div');
     el.className = 'calf-tag';
-    el.innerHTML = '<div class="calf-diamond"></div><div class="calf-dist"></div>';
+    el.innerHTML = '<div class="calf-pennant"></div><div class="calf-dist"></div>';
     this._layer.appendChild(el);
     this._tags.set(m, el);
     this.ctx.events.emit('machine-tagged', { machine: m });
@@ -281,21 +259,25 @@ export class FocusSystem {
     this._firePulse();
     this._tint.classList.add('on');
     this._reticle.classList.add('on');
-    this._buildViolet();
+    document.body.classList.add('cal-sighting');
+    this._lastBrg = -1;
+    this._lastDst = -2;
+    this._rangeT = 0;
+    this._buildHulls();
     this._buildPaths();
     this._gather.visible = true;
     this._gatherPoll = 0;   // refresh immediately
     this._partPoll = 0;
     this.ctx.events.emit('sighting-on');
-    this.ctx.events.emit('sighting-pulse'); // legacy: round-1 audio hook
+    this.ctx.events.emit('sighting-pulse');
   }
 
   _deactivate() {
-    this._offT = 0;         // parts linger from this moment
+    this._offT = 0;         // outlines linger from this moment
     this._tint.classList.remove('on');
     this._reticle.classList.remove('on');
+    document.body.classList.remove('cal-sighting');
     this._hideCard();
-    this._wave.visible = false;
     this._ring.visible = false;
     this._gather.visible = false;
     this._disposePaths();
@@ -306,9 +288,6 @@ export class FocusSystem {
     const p = this.ctx.player;
     if (p?.position) this._origin.copy(p.position);
     this._waveT = 0;
-    this._wave.position.copy(this._origin);
-    this._wave.scale.set(2, 1, 2);
-    this._wave.visible = true;
     this._ring.visible = true;
     this._updateRing(2.5);
   }
@@ -316,32 +295,64 @@ export class FocusSystem {
   /* ------------------------------- DOM layer ------------------------------- */
 
   _buildDom() {
-    // cool/purple fullscreen tint — first #hud child so HUD text sits above it
+    // the sepia paper vignette: first #hud child so HUD text sits above it
     this._tint = document.createElement('div');
     this._tint.className = 'calf-tint';
     (document.getElementById('hud') ?? document.body).prepend(this._tint);
 
-    // card + markers live in their own fixed layer UNDER #hud
+    // card + marks live in their own fixed layer UNDER #hud
     this._layer = document.createElement('div');
     this._layer.id = 'calf-layer';
     document.body.appendChild(this._layer);
 
+    // the ink layer: weak-point rings and leader lines, one SVG, pooled shapes
+    const NS = 'http://www.w3.org/2000/svg';
+    this._ink = document.createElementNS(NS, 'svg');
+    this._ink.setAttribute('class', 'calf-ink');
+    this._layer.appendChild(this._ink);
+    const pool = (cls, tag, n) => Array.from({ length: n }, () => {
+      const e = document.createElementNS(NS, tag);
+      e.setAttribute('class', cls);
+      e.style.display = 'none';
+      this._ink.appendChild(e);
+      return e;
+    });
+    this._leaderU = pool('calf-leader-u', 'polyline', LABEL_CAP + 1);
+    this._leaders = pool('calf-leader', 'polyline', LABEL_CAP + 1);
+    this._ringsU = pool('calf-ring-u', 'circle', RING_CAP);
+    this._rings = pool('calf-ring', 'circle', RING_CAP);
+    this._ringsLive = 0;
+    this._ringRec = Array.from({ length: RING_CAP }, () => ({ x: 0, y: 0, r: 0, name: '' }));
+
+    // the alidade's crosshair: stadia hairlines, graduated, engraved
     this._reticle = document.createElement('div');
     this._reticle.className = 'calf-reticle';
+    let ticks = '';
+    for (let i = 1; i <= 8; i++) {
+      const x = 40 + i * 28, h = i % 4 === 0 ? 9 : 5;
+      ticks += `M${x} ${-h}V${h}M${-x} ${-h}V${h}`;
+    }
+    const d = 'M-264 0H-26M26 0H264M0 26V180M0 -26V-180'                // the hairs, broken at the centre
+      + 'M-34 -74H34M-34 74H34M-16 -38H16M-16 38H16'                    // the stadia, two pairs
+      + 'M-6 0H6M0 -6V6' + ticks;                                       // the centre cross + the graduated limb
+    this._reticle.innerHTML =
+      `<svg viewBox="-280 -190 560 380" aria-hidden="true"><path class="u" d="${d}"/><path class="t" d="${d}"/></svg>`
+      + '<div class="calf-read"><div class="calf-read-row"><span>BRG</span><b class="calf-brg">000</b></div>'
+      + '<div class="calf-read-row"><span>DST</span><b class="calf-dst">---</b><i>m</i></div></div>';
     this._layer.appendChild(this._reticle);
+    this._brgEl = this._reticle.querySelector('.calf-brg');
+    this._dstEl = this._reticle.querySelector('.calf-dst');
 
     this._card = document.createElement('div');
     this._card.className = 'calf-card';
     this._layer.appendChild(this._card);
 
-    // ui-10 — pooled in-world component labels (yellow, named). Pooled and
-    // reused: no element churn while the scan sweeps across a herd.
+    // pooled component chips: no element churn while the alidade sweeps across a herd
     this._labelPool = [];
     for (let i = 0; i < LABEL_CAP; i++) {
       const el = document.createElement('div');
       el.className = 'calf-plabel';
-      el.innerHTML = '<i class="calf-pdot"></i><span class="calf-pname"></span>'
-        + '<span class="calf-ploot"></span>';
+      el.innerHTML = '<span class="calf-pname"></span><span class="calf-ploot"></span>';
       this._layer.appendChild(el);
       this._labelPool.push({
         el, name: el.querySelector('.calf-pname'), loot: el.querySelector('.calf-ploot'),
@@ -351,14 +362,13 @@ export class FocusSystem {
     this._labelsLive = [];
     this._labelRec = [];
     for (let i = 0; i < LABEL_CAP; i++) {
-      this._labelRec.push({ name: '', x: 0, y: 0, loot: 0, weak: false, tearable: false, machine: '', slot: null });
+      this._labelRec.push({ name: '', x: 0, y: 0, ax: 0, ay: 0, flip: false, loot: 0, weak: false, tearable: false, machine: '', slot: null });
     }
     this._partOrder = [];   // scratch: machines sorted nearest-first per poll
     this._labelSlots = [];
     for (let i = 0; i < LABEL_CAP; i++) this._labelSlots.push({ x: 0, y: 0 });
 
-    // A63 — pooled LOOT / DATAPOINT / GATHER reveals, projected onto the
-    // interactable itself (ui-16), never pinned to a screen corner.
+    // pooled LOOT / FIELD BOOK / GATHER chips, projected onto the interactable itself
     this._revealPool = [];
     for (let i = 0; i < REVEAL_CAP; i++) {
       const el = document.createElement('div');
@@ -383,38 +393,7 @@ export class FocusSystem {
     this._revealPoll = 0;
   }
 
-  /* --------------------------- activation wave/ring ------------------------ */
-
-  _buildWave() {
-    const geo = new THREE.CylinderGeometry(1, 1, 6.5, 96, 1, true);
-    geo.translate(0, 1.6, 0);
-    this._waveMat = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, depthTest: false,
-      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
-      uniforms: {
-        uFade: { value: 0 },
-        uColor: { value: new THREE.Color('#7b5cff') }, // reference pulse hex
-      },
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: /* glsl */ `
-        varying vec2 vUv;
-        uniform float uFade;
-        uniform vec3 uColor;
-        void main() {
-          float band = pow(max(0.0, 1.0 - vUv.y), 3.8);
-          gl_FragColor = vec4(uColor * (0.6 + 1.1 * band), band * uFade);
-        }`,
-    });
-    const mesh = new THREE.Mesh(geo, this._waveMat);
-    mesh.renderOrder = 9989;
-    mesh.frustumCulled = false;
-    return mesh;
-  }
+  /* ------------------------------ the raising sweep ------------------------ */
 
   _buildRing() {
     const verts = (RING_SEGS + 1) * 2;
@@ -435,13 +414,11 @@ export class FocusSystem {
     geo.setIndex(idx);
     this._ringPos = geo.getAttribute('position');
 
+    // one white dashed hairline running out over the ground, like a chain being paid out
     this._ringMat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, depthTest: false,
-      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
-      uniforms: {
-        uFade: { value: 0 },
-        uColor: { value: new THREE.Color('#7b5cff') },
-      },
+      side: THREE.DoubleSide, fog: false,
+      uniforms: { uFade: { value: 0 }, uColor: { value: new THREE.Color('#F1EEE6') } },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
         void main() {
@@ -453,10 +430,8 @@ export class FocusSystem {
         uniform float uFade;
         uniform vec3 uColor;
         void main() {
-          // reference pulse gradient: #7B5CFF base -> #4AC8FF at the crest
-          float k = pow(max(0.0, vUv.y), 2.2);
-          vec3 col = mix(uColor, vec3(0.29, 0.784, 1.0), k * 0.6);
-          gl_FragColor = vec4(col * (0.3 + 1.1 * k), k * uFade);
+          float dash = step(0.5, fract(vUv.x * 96.0));
+          gl_FragColor = vec4(uColor, dash * uFade);
         }`,
     });
     const mesh = new THREE.Mesh(geo, this._ringMat);
@@ -488,40 +463,21 @@ export class FocusSystem {
     this._ringPos.needsUpdate = true;
   }
 
-  /* --------------------- violet through-wall silhouettes ------------------- */
+  /* ------------------------- through-terrain hull rims ---------------------- */
 
-  _fresnelMat(colorHex) {
+  /** A thin paper rim, so an Instrument behind cover still reads as a shape. Ink, not light. */
+  _rimMat(colorHex) {
     // Skinning chunks are no-ops on static meshes; SkinnedMesh overlays get
     // USE_SKINNING from the renderer so the shell follows bones.
     return new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, depthTest: false,
-      // NORMAL, not additive. Up to 6 shells stack on one machine and the
-      // Wave-0 bloom pass smears whatever they sum to: additive drove the
-      // hull to flat white (38 % near-white pixels over the Sawtooth) and
-      // the silhouette read as a blob. Normal blending converges on the
-      // violet instead of on white however many shells overlap.
       blending: THREE.NormalBlending, side: THREE.FrontSide, fog: false,
       uniforms: {
         uOpacity: { value: 0 },
-        uBoost: { value: 1 },   // distance punch — rim/alpha ONLY, never colour
+        uBoost: { value: 1 },
         uColor: { value: new THREE.Color(colorHex) },
       },
-      vertexShader: /* glsl */ `
-        #include <common>
-        #include <skinning_pars_vertex>
-        varying vec3 vN;
-        varying vec3 vV;
-        void main() {
-          #include <skinbase_vertex>
-          #include <beginnormal_vertex>
-          #include <skinnormal_vertex>
-          vec3 transformed = vec3(position);
-          #include <skinning_vertex>
-          vec4 mv = modelViewMatrix * vec4(transformed, 1.0);
-          vN = normalize(normalMatrix * objectNormal);
-          vV = normalize(-mv.xyz);
-          gl_Position = projectionMatrix * mv;
-        }`,
+      vertexShader: SHELL_VS,
       fragmentShader: /* glsl */ `
         varying vec3 vN;
         varying vec3 vV;
@@ -529,18 +485,10 @@ export class FocusSystem {
         uniform float uBoost;
         uniform vec3 uColor;
         void main() {
-          float f = pow(max(0.0, 1.0 - abs(dot(normalize(vN), normalize(vV)))), 1.6);
-          // fill stays UNDER 1.0 so the tone-mapped bloom cannot clip it to
-          // white; the rim is what the distance boost brightens.
-          vec3 col = uColor * (0.50 + 0.50 * min(1.0, f * uBoost));
-          // A machine wears up to SIX of these shells and they all draw with
-          // depthTest off, so a per-shell alpha of a is really 1-(1-a)^6 on
-          // screen: 0.4 each reads as 0.95 and the hull turns into a flat
-          // blob. Keep the FILL near-zero (6 x 0.02 ~= 0.12 tint, the hull
-          // stays legible) and put the light in the RIM, which is what draws
-          // the silhouette through terrain anyway.
-          float a = (0.02 + 0.46 * pow(f, 1.9) * uBoost) * uOpacity;
-          gl_FragColor = vec4(col, clamp(a, 0.0, 0.80));
+          float f = pow(max(0.0, 1.0 - abs(dot(normalize(vN), normalize(vV)))), 2.2);
+          // an Instrument wears up to six of these, all depth-test off: keep the fill at zero
+          float a = smoothstep(0.34, 0.8, f * uBoost) * 0.5 * uOpacity;
+          gl_FragColor = vec4(uColor, a);
         }`,
     });
   }
@@ -550,14 +498,10 @@ export class FocusSystem {
    *   from the source instead of hanging it under the source.
    *
    *   Component shells have to detach. `machine.parts[].mesh` is a holder
-   *   Group that `entities/machines/rig/lod.js` hides by LOD tier (all parts
-   *   past ~H*14 m, decorative ones past ~H*6), and a hidden ancestor takes
-   *   the whole subtree out of the render — so a shell parented to the part
-   *   silently stopped drawing at exactly the 15 m the scan gate films from.
-   *   That is machine-rig's call to make about its own geometry; the Focus
-   *   highlight just must not depend on it. Reparenting keeps the shell alive
-   *   and, because the real part is hidden, it reads as the solid yellow
-   *   component HZD draws.
+   *   Group that `entities/machines/rig/lod.js` hides by LOD tier, and a hidden
+   *   ancestor takes the whole subtree out of the render, so a shell parented to
+   *   the part stops drawing at exactly the range the alidade reads from.
+   *   Reparenting keeps the shell alive.
    */
   _overlayFor(src, mat, order, detach = false) {
     let overlay;
@@ -568,7 +512,7 @@ export class FocusSystem {
     } else {
       overlay = new THREE.Mesh(src.geometry, mat);
     }
-    overlay.userData.__focusOverlay = true;
+    overlay.userData.__sightOverlay = true;
     overlay.raycast = () => {}; // FX shell, not a hitbox — combat rays must hit the real part
     overlay.frustumCulled = false;
     overlay.castShadow = false;
@@ -590,7 +534,7 @@ export class FocusSystem {
 
   /**
    * Detached component shells ride their source's world matrix. ~40 meshes
-   * at most (PART_CAP), only while Focus is up or lingering, and the copy is
+   * at most (PART_CAP), only while the alidade is up or lingering, and the copy is
    * into a preallocated Matrix4 — no per-frame allocation.
    */
   _syncDetached() {
@@ -605,43 +549,38 @@ export class FocusSystem {
     }
   }
 
-  _buildViolet() {
+  _buildHulls() {
     const list = this.ctx.machines?.list;
     if (!Array.isArray(list)) return;
     const p = this.ctx.player;
-    // prune silhouettes on machines that left Focus range (draw-call budget)
+    // prune rims on Instruments that left range (draw-call budget)
     if (p?.position) {
-      for (const [m, e] of this._violet) {
+      for (const [m, e] of this._hulls) {
         if (m?.position
-          && m.position.distanceToSquared(p.position) > (VIOLET_RANGE * 1.2) ** 2) {
+          && m.position.distanceToSquared(p.position) > (HULL_RANGE * 1.2) ** 2) {
           for (const mesh of e.meshes) mesh.parent?.remove(mesh);
           e.mat.dispose();
-          this._violet.delete(m);
+          this._hulls.delete(m);
         }
       }
     }
-    for (const m of list) this._addVioletEntry(m);
+    for (const m of list) this._addHull(m);
   }
 
-  _addVioletEntry(m) {
-    if (!m || m.alive === false || !m.root || this._violet.has(m)) return;
+  _addHull(m) {
+    if (!m || m.alive === false || !m.root || this._hulls.has(m)) return;
     const p = this.ctx.player;
     if (p?.position && m.position
-      && m.position.distanceToSquared(p.position) > VIOLET_RANGE * VIOLET_RANGE) return;
-    // violet, not the pure blue of the machine-glow hex: docs/research/ui.md
-    // calls for a VIOLET holographic silhouette and #5a7bff read as blue.
-    const mat = this._fresnelMat('#8b7bff');
+      && m.position.distanceToSquared(p.position) > HULL_RANGE * HULL_RANGE) return;
+    const mat = this._rimMat('#F1EEE6');
     const meshes = [];
     let sources = [];
     m.root.traverse((o) => {
-      // skip other overlays AND component add-ons: parts glow YELLOW, and
-      // additive violet underneath would wash them out to white
-      if ((o.isMesh || o.isSkinnedMesh) && !o.userData.__focusOverlay
+      // skip other overlays AND component add-ons: parts carry their own outline
+      if ((o.isMesh || o.isSkinnedMesh) && !o.userData.__sightOverlay
         && !o.userData.part) sources.push(o);
     });
-    // Draw-call budget: shell only the largest parts — the hull carries the
-    // silhouette; rivets/cables aren't worth a draw call each. Far machines
-    // read as a blob anyway, so they get fewer shells.
+    // Draw-call budget: shell only the largest parts; far Instruments get fewer.
     const pos0 = m.position ?? m.root.position;
     const distNow = p?.position ? Math.hypot(
       pos0.x - p.position.x, pos0.z - p.position.z) : 0;
@@ -658,44 +597,53 @@ export class FocusSystem {
     if (!meshes.length) { mat.dispose(); return; }
     const pos = m.position ?? m.root.position;
     const dist = _v.copy(pos).sub(this._origin).length();
-    // Distant machines need a denser shell or the glow washes out in fog.
-    // This is a RIM/ALPHA punch only (uBoost, clamped in the shader): scaling
-    // the colour or the opacity by it is what blew the hull out to white.
-    const boost = 1 + Math.min(0.8, dist / 90);
+    const boost = 1 + Math.min(0.6, dist / 90);
     mat.uniforms.uBoost.value = boost;
-    this._violet.set(m, {
-      mat, meshes,
-      delay: Math.min(dist / WAVE_SPEED, 1.6),
-      boost,
-    });
+    this._hulls.set(m, { mat, meshes, delay: Math.min(dist / RING_SPEED, 0.6), boost });
   }
 
-  _disposeViolet() {
-    for (const e of this._violet.values()) {
+  _disposeHulls() {
+    for (const e of this._hulls.values()) {
       for (const mesh of e.meshes) mesh.parent?.remove(mesh);
       e.mat.dispose();
     }
-    this._violet.clear();
-    this._violetK = 0;
+    this._hulls.clear();
+    this._hullK = 0;
   }
 
-  /* ----------------------- yellow component highlights --------------------- */
+  /* ------------------------------ component outlines ------------------------ */
 
-  _yellowMat() {
-    const mat = this._fresnelMat('#ffd34d'); // reference component hex
-    // NORMAL blending (not additive): components must read SOLID YELLOW even
-    // over the violet hull shell / emissive canisters — additive washes white
-    mat.blending = THREE.NormalBlending;
-    mat.fragmentShader = /* glsl */ `
-      varying vec3 vN;
-      varying vec3 vV;
-      uniform float uOpacity;
-      uniform vec3 uColor;
-      void main() {
-        float f = pow(max(0.0, 1.0 - abs(dot(normalize(vN), normalize(vV)))), 1.2);
-        gl_FragColor = vec4(uColor * (0.85 + 0.65 * f), (0.62 + 0.38 * f) * uOpacity);
-      }`;
-    return mat;
+  /**
+   * Bible §9.7: "components as dashed ink outlines". The rim of each component in
+   * survey ink, cut into dashes in screen space, over a faint ink wash, so a part
+   * reads as a drawn figure on the hull whatever its shape. One shared material.
+   */
+  _outlineMat() {
+    return new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, depthTest: false,
+      blending: THREE.NormalBlending, side: THREE.FrontSide, fog: false,
+      uniforms: {
+        uOpacity: { value: 0 },
+        uInk: { value: new THREE.Color('#26343F') },
+        uPaper: { value: new THREE.Color('#F1EEE6') },
+      },
+      vertexShader: SHELL_VS,
+      fragmentShader: /* glsl */ `
+        varying vec3 vN;
+        varying vec3 vV;
+        uniform float uOpacity;
+        uniform vec3 uInk;
+        uniform vec3 uPaper;
+        void main() {
+          float f = pow(max(0.0, 1.0 - abs(dot(normalize(vN), normalize(vV)))), 1.3);
+          float rim = smoothstep(0.44, 0.62, f);
+          float dash = step(0.46, fract((gl_FragCoord.x + gl_FragCoord.y) / 11.0));
+          // the dash in ink, with a paper tooth between dashes so it holds on a dark hull
+          vec3 col = mix(uPaper, uInk, dash);
+          float a = max(0.13, rim * (dash > 0.5 ? 0.96 : 0.72));
+          gl_FragColor = vec4(mix(uInk, col, rim), a * uOpacity);
+        }`,
+    });
   }
 
   /** Poll machine.parts (lands from the machines builder in any order). */
@@ -705,10 +653,8 @@ export class FocusSystem {
 
     // drop shells whose part detached / machine died
     for (const [part, e] of this._parts) {
-      // `_disposed` matters now that the shells hang off the SCENE, not off
-      // the part: a machine that is torn out of the world no longer takes its
-      // overlays with it, so they have to be reaped explicitly or they stay
-      // floating in the meadow.
+      // `_disposed` matters because the shells hang off the SCENE, not off the part:
+      // an Instrument torn out of the world does not take its overlays with it.
       const gone = p?.position && e.machine?.position
         && e.machine.position.distanceToSquared(p.position) > PART_RANGE * PART_RANGE;
       if (part?.attached === false || e.machine?.alive === false || gone
@@ -720,10 +666,8 @@ export class FocusSystem {
     }
     if (!this.on || !Array.isArray(list)) return;
 
-    // NEAREST FIRST. The shells are a fixed 40-mesh budget and the machine
-    // list is in spawn order, so a Watcher 140 m away used to eat the slots
-    // the Sawtooth under the crosshair needed. Sorted into a scratch array
-    // reused across polls — this runs on GATHER_TICK, never per frame.
+    // NEAREST FIRST: the shells are a fixed 40-mesh budget and the list is in spawn
+    // order. Sorted into a scratch array reused across polls (GATHER_TICK, not per frame).
     const near = this._partOrder;
     near.length = 0;
     for (const m of list) {
@@ -732,9 +676,9 @@ export class FocusSystem {
         ? m.position.distanceToSquared(p.position) : 0;
       if (d2 > PART_RANGE * PART_RANGE) continue;
       near.push(m);
-      m.__focusD2 = d2;
+      m.__sightD2 = d2;
     }
-    near.sort(_byFocusD2);
+    near.sort(_byNearest);
 
     for (const m of near) {
       const parts = m.parts;
@@ -752,7 +696,7 @@ export class FocusSystem {
         } else if (node.traverse) {
           let n = 0;
           node.traverse((o) => {
-            if (n >= 3 || !(o.isMesh || o.isSkinnedMesh) || o.userData.__focusOverlay) return;
+            if (n >= 3 || !(o.isMesh || o.isSkinnedMesh) || o.userData.__sightOverlay) return;
             meshes.push(this._overlayFor(o, this._partMat, 9992, true));
             n++;
           });
@@ -774,31 +718,24 @@ export class FocusSystem {
     this._partMat.uniforms.uOpacity.value = 0;
   }
 
-  /* ----------------------------- patrol path lines ------------------------- */
+  /* ------------------------------- the transects ---------------------------- */
 
+  /** Bible §9.7: "transects as white dashes on the ground". Paper white, an ink edge, no glow. */
   _pathMat() {
-    // Round 3 depth-tested these so terrain could occlude them. That was right
-    // for terrain and wrong for everything else: once world-ground shipped
-    // real grass cards the ribbon vanished under them completely, which is the
-    // opposite of what `stealth-focus-path-fidelity` is for — the route is the
-    // information the player is turning Focus ON to get. It is a hologram now,
-    // like the machine shells: depthTest:false, with the distance dim and the
-    // hard cut past ~120 m carrying the "no x-ray streaks at vista angles"
-    // half of the original concern.
     return new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, depthTest: false,
-      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+      blending: THREE.NormalBlending, side: THREE.DoubleSide, fog: false,
       uniforms: {
         uTime: { value: 0 },
         uFade: { value: 0 },
-        uColorA: { value: new THREE.Color('#9b6bff') }, // reference path hex
-        uColorB: { value: new THREE.Color('#a980ff') },
+        uPaper: { value: new THREE.Color('#F1EEE6') },
+        uInk: { value: new THREE.Color('#26343F') },
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
         varying vec3 vWorld;
         void main() {
-          vUv = uv; // uv.x = meters along the loop, uv.y = 0..1 across
+          vUv = uv; // uv.x = metres along the loop, uv.y = 0..1 across
           vWorld = position; // ribbon geometry is authored in world space
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
@@ -807,38 +744,25 @@ export class FocusSystem {
         varying vec3 vWorld;
         uniform float uTime;
         uniform float uFade;
-        uniform vec3 uColorA;
-        uniform vec3 uColorB;
+        uniform vec3 uPaper;
+        uniform vec3 uInk;
         void main() {
-          // flowing ARROWED dashes: ~3.4m cycle marching along the route.
-          // The across-offset skews each dash into a chevron whose apex leads
-          // in the direction of travel (arrowheads, not plain ticks).
+          // dashes 1.6 m long on a 2.6 m pace, walking slowly along the route
+          float m = fract((vUv.x - uTime * 0.35) / 2.6);
+          float dash = step(m, 0.62);
           float edge = abs(vUv.y * 2.0 - 1.0);
-          float m = fract((vUv.x - edge * 0.85) / 3.4 - uTime * 0.5);
-          float dash = smoothstep(0.50, 0.32, abs(m - 0.42));
-          float across = 1.0 - edge;
-          float soft = across * across;
+          float core = 1.0 - smoothstep(0.52, 0.7, edge);
           float dCam = distance(vWorld, cameraPosition);
-          float dim = mix(1.0, 0.62, smoothstep(20.0, 110.0, dCam)); // legible near, quiet far
-          float far = 1.0 - smoothstep(95.0, 125.0, dCam);          // gone past ~120m
-          // Grazing-angle fade. The ribbon lies flat on the ground; seen
-          // almost edge-on, several loops stack into a violet haze band across
-          // the horizon -- which is the full-screen wash ui-10 exists to kill.
-          // Fade it as the view direction flattens toward the ground plane.
-          float graze = abs(normalize(cameraPosition - vWorld).y);
-          float tilt = smoothstep(0.03, 0.16, graze);
-          vec3 col = mix(uColorA, uColorB, dash) * (0.9 + 1.5 * dash);
-          gl_FragColor = vec4(col * 1.35, (0.30 + 0.85 * dash) * soft * uFade * dim * far * tilt);
+          float far = 1.0 - smoothstep(95.0, 125.0, dCam);          // gone past ~120 m
+          // seen almost edge-on several loops stack into a band: fade with the grazing angle
+          float tilt = smoothstep(0.03, 0.14, abs(normalize(cameraPosition - vWorld).y));
+          vec3 col = mix(uInk, uPaper, core);
+          gl_FragColor = vec4(col, dash * 0.92 * uFade * far * tilt);
         }`,
     });
   }
 
-  /**
-   * `stealth-focus-path-fidelity` — is this machine actually walking its
-   * route? A Sawtooth mid-fight is not, and drawing it a tidy patrol loop is
-   * a lie the player will act on. Anything alerted / attacking / searching
-   * is skipped, and the ribbon fades out from under it.
-   */
+  /** Is this Instrument actually walking its route? A fighting one is not: no line for it. */
   _walksRoute(m) {
     if (!m || m.alive === false) return false;
     if (m.downed) return false;
@@ -848,9 +772,8 @@ export class FocusSystem {
   }
 
   /**
-   * Centripetal Catmull-Rom through the waypoints — the finding was that a
-   * route drawn as raw segments reads as a polygon nothing could walk. The
-   * loop is closed, so every sample has real neighbours on both sides.
+   * Catmull-Rom through the waypoints: a route drawn as raw segments reads as a
+   * polygon nothing could walk. The loop is closed, so every sample has neighbours.
    */
   _splineRoute(route) {
     const n = route.length;
@@ -890,11 +813,10 @@ export class FocusSystem {
       if (!Array.isArray(route) || route.length < 2) continue;
       if (p?.position && m.position
         && m.position.distanceToSquared(p.position) > PATH_RANGE * PATH_RANGE) continue;
-      // skip non-route movers: a machine that has left its patrol gets no
-      // ribbon at all rather than a ribbon it is not following
+      // skip non-route movers: no ribbon rather than one it is not following
       if (!this._walksRoute(m)) { this._pathSkipped++; continue; }
 
-      // spline the closed waypoint loop (stealth-focus-path-fidelity)
+      // spline the closed waypoint loop
       const pts = this._splineRoute(route);
       let total = 0;
       if (pts.length < 4) continue;
@@ -922,8 +844,7 @@ export class FocusSystem {
         const dl = Math.hypot(dx, dz) || 1;
         dx /= dl; dz /= dl;
         const px = -dz, pz = dx; // XZ perpendicular
-        // 0.3m above ground: segments depth-test now, so keep them clear of
-        // terrain curvature between samples without looking like they float
+        // just above the ground, clear of its curvature between samples
         const y = (terrain?.getHeight?.(cur.x, cur.z) ?? 0) + 0.14;
         const d = i < pts.length ? cur.d : cur.d + total; // wrap distance
         const j = i * 6;
@@ -968,12 +889,11 @@ export class FocusSystem {
       new THREE.BufferAttribute(new Float32Array(GATHER_CAP * 3), 3));
     geo.setDrawRange(0, 0);
     this._gatherMat = new THREE.PointsMaterial({
-      map: dotTexture(),
-      color: new THREE.Color('#4ec9b0'),
-      size: 1.5,
+      map: markTexture(),
+      color: new THREE.Color('#F1EEE6'),
+      size: 0.9,
       transparent: true,
-      opacity: 0.7,
-      blending: THREE.AdditiveBlending,
+      opacity: 0.86,
       depthWrite: false,
       depthTest: false,
       sizeAttenuation: true,
@@ -1043,82 +963,74 @@ export class FocusSystem {
     return best;
   }
 
-  /* -------------------------------- info card ------------------------------ */
+  /* ----------------------------------- the card ----------------------------- */
 
+  /**
+   * `TILLER · SOIL CORE · TRANSECT 14` in Chakra Petch caps with a graduated bar
+   * (bible §9.7), then what the alidade reads off it: lamp, elements, and the named
+   * component list with what each one drops. A page of the book, pinned to the right
+   * of the frame, with a leader to the Instrument.
+   */
   _cardHTML(m) {
-    const kind = m.kind ?? '';
-    const name = String(m.displayName ?? kind ?? 'MACHINE').toUpperCase();
-    const lv = LEVELS[kind] ?? '?';
-    const cls = CLASSES[kind] ?? 'UNKNOWN CLASS';
-
-    // canon weaknesses + any elemental canisters the parts contract exposes
-    const weak = new Set(WEAKNESS[kind] ?? []);
-    if (Array.isArray(m.parts)) {
-      for (const p of m.parts) {
-        if (!p || p.attached === false) continue;
-        if (p.elemental === 'blaze') weak.add('fire');
-        else if (p.elemental === 'freeze') weak.add('freeze');
-      }
-    }
-    const glyphs = [...weak].map((w) =>
-      `<span class="calf-glyph calf-g-${w}" title="${w}">${GLYPH_SVG[w] ?? ''}</span>`
-    ).join('') || '<span class="calf-g-none">—</span>';
-
-    const resist = (RESIST[kind] ?? []).map((w) =>
-      `<span class="calf-glyph calf-g-${w}">${GLYPH_SVG[w] ?? ''}</span>`
-    ).join('');
-
-    // ui-10 — the component LIST. This is the whole finding: a count told the
-    // player nothing, so every component now names itself, says what it is
-    // (weak point / tearable / elemental) and says what it drops.
+    const c = cardParts(m);
     const comps = this.componentRows(m);
-    const rows = comps.map((c) => {
+    const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    const rows = comps.map((r) => {
       const tags = [];
-      if (c.weak) tags.push('<i class="calf-tag-weak">WEAK</i>');
-      if (c.tearable) tags.push('<i class="calf-tag-tear">TEAR</i>');
-      if (c.elemental) tags.push(`<i class="calf-tag-el calf-g-${c.elemental === 'blaze' ? 'fire' : 'freeze'}">${c.elemental === 'blaze' ? 'BLAZE' : 'FREEZE'}</i>`);
-      const loot = c.loot.map((l) =>
-        `<span class="calf-loot-chip" style="--chip:${l.color}">`
-        + `<i>${l.glyph}</i>${l.name.toUpperCase()}${l.n > 1 ? ` ×${l.n}` : ''}</span>`
+      if (r.weak) tags.push('<i class="calf-tag-weak">WEAK</i>');
+      if (r.tearable) tags.push('<i class="calf-tag-pry">PRY</i>');
+      if (r.elemental) tags.push(`<i class="calf-tag-el">${ELEM_WORD[r.elemental] ?? String(r.elemental).toUpperCase()}</i>`);
+      const loot = r.loot.map((l) =>
+        `<span class="calf-loot-chip"><i>${itemIcon(l.id)}</i>${esc(fieldWord(l.name).toUpperCase())}${l.n > 1 ? ` ×${l.n}` : ''}</span>`,
       ).join('');
-      return `<div class="calf-comp-row${c.torn ? ' torn' : ''}">
-          <span class="calf-comp-name">${c.name}${c.count > 1 ? `<em>×${c.count}</em>` : ''}</span>
+      return `<div class="calf-comp-row${r.torn ? ' torn' : ''}">
+          <span class="calf-comp-name">${esc(r.name)}${r.count > 1 ? `<em>×${r.count}</em>` : ''}</span>
           <span class="calf-comp-tags">${tags.join('')}</span>
           ${loot ? `<span class="calf-comp-loot">${loot}</span>` : ''}
         </div>`;
     }).join('');
-    const intact = comps.reduce((n, c) => n + (c.count - c.tornCount), 0);
-    const total = comps.reduce((n, c) => n + c.count, 0);
-
+    const intact = comps.reduce((n, r) => n + (r.count - r.tornCount), 0);
+    const total = comps.reduce((n, r) => n + r.count, 0);
+    const word = (e) => ELEM_WORD[e] ?? String(e).toUpperCase();
+    const carried = Array.isArray(m.lootTable) && m.lootTable.length
+      ? m.lootTable.map((l) => `<span class="calf-loot-chip"><i>${itemIcon(l.id)}</i>${esc(fieldWord(itemDef(l.id).name).toUpperCase())}${l.n > 1 ? ` ×${l.n}` : ''}</span>`).join('')
+      : '';
     return `
-      <div class="calf-card-accent"></div>
-      <div class="calf-card-head">
-        <span class="calf-name">${name}</span>
-        <span class="calf-lv">LV ${lv}</span>
-      </div>
-      <div class="calf-class">${cls}</div>
-      <div class="calf-div"></div>
-      <div class="calf-row"><span class="calf-lbl">WEAK</span>${glyphs}</div>
-      ${resist ? `<div class="calf-row"><span class="calf-lbl">RESIST</span>${resist}</div>` : ''}
+      <div class="calf-name">${esc(c.name)}</div>
+      <div class="calf-class"><span>${esc(c.work)}</span><span>${esc(c.line)}</span></div>
+      <div class="calf-bar"><i class="calf-bar-fill"></i><i class="calf-bar-ticks"></i></div>
+      <div class="calf-row"><span class="calf-lbl">LAMP</span><span class="calf-lamp"><span class="cal-iris"><i></i></span><b class="calf-lamp-w"></b></span></div>
+      ${m.elemWeak ? `<div class="calf-row"><span class="calf-lbl">WEAK TO</span><b>${word(m.elemWeak)}</b></div>` : ''}
+      ${m.elemResist ? `<div class="calf-row"><span class="calf-lbl">RESISTS</span><b>${word(m.elemResist)}</b></div>` : ''}
       ${comps.length ? `
-        <div class="calf-div"></div>
         <div class="calf-comp-head">
           <span class="calf-lbl">COMPONENTS</span>
           <span class="calf-comp-n">${intact} / ${total}</span>
         </div>
         <div class="calf-comp-list">${rows}</div>` : ''}
+      ${carried ? `<div class="calf-comp-head"><span class="calf-lbl">CARRIES</span></div><div class="calf-comp-loot">${carried}</div>` : ''}
     `;
   }
 
   /**
-   * Named component rows for one machine — the data behind the card AND the
-   * in-world labels. Reads only the published parts contract, so a species
-   * that ships new parts is described correctly with no change here.
+   * Named component rows for one Instrument: the data behind the card AND the
+   * in-world chips. Reads the published parts contract, plus any weak point no part
+   * already accounts for (the lamp), so a kind that ships new parts is described
+   * correctly with no change here.
    */
   components(m) {
-    const parts = Array.isArray(m?.parts) ? m.parts : null;
-    if (!parts) return [];
     const out = [];
+    const parts = Array.isArray(m?.parts) ? m.parts : [];
+    const wps = Array.isArray(m?.weakPoints) ? m.weakPoints : [];
+    for (const w of wps) {
+      if (!w?.obj || w.enabled === false) continue;
+      const taken = parts.some((p) => p && (p.weakPoint === w || p.name === w.name));
+      if (taken) continue;
+      out.push({
+        part: { mesh: w.obj, radius: w.radius }, name: fieldWord(String(w.name ?? 'WEAK POINT').replace(/[-_]/g, ' ')).toUpperCase(),
+        weak: true, tearable: false, torn: false, elemental: null, loot: [], lootText: '',
+      });
+    }
     for (const p of parts) {
       if (!p) continue;
       const tearable = typeof p.tearable === 'boolean' ? p.tearable : (p.tearHp ?? 0) > 0;
@@ -1136,23 +1048,22 @@ export class FocusSystem {
       }
       out.push({
         part: p,
-        name: String(p.displayName ?? p.name ?? 'COMPONENT').replace(/[-_]/g, ' ').toUpperCase(),
+        name: fieldWord(String(p.displayName ?? p.name ?? 'COMPONENT').replace(/[-_]/g, ' ')).toUpperCase(),
         weak: !!p.weak,
         tearable,
         torn: p.attached === false,
         elemental: p.elemental ?? null,
         loot,
         // precomputed so the per-frame label pass never maps/joins
-        lootText: loot.map((l) => l.name.toUpperCase()).join(' · '),
+        lootText: loot.map((l) => fieldWord(l.name).toUpperCase()).join(' · '),
       });
     }
     return out;
   }
 
   /**
-   * The same components collapsed by name for the card. A Sawtooth carries
-   * three identical antennae; three identical rows is a list that scrolls off
-   * the panel instead of a list that reads, so they become "ANTENNA ×3".
+   * The same components collapsed by name for the card: three identical rows is a
+   * list that scrolls off the page instead of a list that reads, so "BLADE ×3".
    */
   componentRows(m) {
     const rows = [];
@@ -1175,6 +1086,8 @@ export class FocusSystem {
   _showCard(m) {
     if (this._cardM !== m) {
       this._cardM = m;
+      this._cardBarM = null;
+      this._cardLamp = null;
       this._card.innerHTML = this._cardHTML(m);
     }
     this._card.classList.add('show');
@@ -1182,6 +1095,8 @@ export class FocusSystem {
 
   _hideCard(instant = false) {
     this._card.classList.remove('show');
+    this._leaders[LABEL_CAP].style.display = 'none';
+    this._leaderU[LABEL_CAP].style.display = 'none';
     this._cardM = null;
     this._dwellM = null;
     this._dwellT = 0;
@@ -1205,37 +1120,60 @@ export class FocusSystem {
     const show = this._dwellM && (this._dwellT >= CARD_DWELL || this._cardM === this._dwellM);
     if (show) {
       this._showCard(this._dwellM);
-      // pin the card beside the machine on screen
+      this._syncCardLive(this._dwellM);
+      // the page stays pinned to the right of the frame (stable to read); a leader runs to the Instrument
       const m = this._dwellM;
-      const cam = this.ctx.camera;
+      const leader = this._leaders[LABEL_CAP], under = this._leaderU[LABEL_CAP];
       _v.copy(m.position);
-      _v.y += (m.height ?? 2.4) * 0.8;
-      _v.project(cam);
-      if (_v.z < 1) {
-        const w = window.innerWidth, h = window.innerHeight;
+      _v.y += (m.height ?? 2.4) * 0.72;
+      _v.project(this.ctx.camera);
+      const w = window.innerWidth, h = window.innerHeight;
+      const rect = this._cardRect;
+      if (_v.z < 1 && rect) {
         const sx = (_v.x * 0.5 + 0.5) * w;
         const sy = (-_v.y * 0.5 + 0.5) * h;
-        // clamp against the card's MEASURED height: the component list made it
-        // tall enough to run off the bottom of the frame on a Thunderjaw
-        const cw = this._card.offsetWidth || 252;
-        const ch = this._card.offsetHeight || 200;
-        const left = Math.min(Math.max(sx + 46, 12), w - cw - 14);
-        const top = Math.min(Math.max(sy - 70, 12), h - ch - 14);
-        this._card.style.left = `${left}px`;
-        this._card.style.top = `${top}px`;
-      }
-    } else if (this._cardM && this._graceT > CARD_GRACE) {
-      this._hideCard();
+        const x1 = rect.left, y1 = rect.top + 14;
+        if (sx > 0 && sx < x1 - 8 && sy > 0 && sy < h) {
+          const pts = `${x1.toFixed(0)},${y1.toFixed(0)} ${(x1 - 22).toFixed(0)},${y1.toFixed(0)} ${sx.toFixed(0)},${sy.toFixed(0)}`;
+          leader.setAttribute('points', pts); under.setAttribute('points', pts);
+          leader.style.display = ''; under.style.display = '';
+        } else { leader.style.display = 'none'; under.style.display = 'none'; }
+      } else { leader.style.display = 'none'; under.style.display = 'none'; }
+    } else {
+      this._leaders[LABEL_CAP].style.display = 'none';
+      this._leaderU[LABEL_CAP].style.display = 'none';
+      if (this._cardM && this._graceT > CARD_GRACE) this._hideCard();
     }
   }
 
-  /* -------------------------------- tag markers ---------------------------- */
+  /** The two live values on the card: its bar and its lamp. Numeric dirty checks, no strings per frame. */
+  _syncCardLive(m) {
+    const frac = Math.max(0, Math.min(1, (m.health ?? 0) / (m.maxHealth || 1)));
+    const q = Math.round(frac * 100);
+    if (this._cardBarQ !== q || this._cardBarM !== m) {
+      this._cardBarQ = q; this._cardBarM = m;
+      const fill = this._card.querySelector('.calf-bar-fill');
+      if (fill) fill.style.transform = `scaleX(${(q / 100).toFixed(2)})`;
+    }
+    const s = m.lampState ?? 'calm';
+    if (this._cardLamp !== s) {
+      this._cardLamp = s;
+      const lamp = this._card.querySelector('.calf-lamp');
+      if (lamp) {
+        lamp.dataset.s = s;
+        const w = lamp.querySelector('.calf-lamp-w');
+        if (w) w.textContent = s.toUpperCase();
+      }
+    }
+  }
+
+  /* ------------------------------- Flagged marks ---------------------------- */
 
   _onMachineKilled(m) {
     if (!m) return;
     const el = this._tags.get(m);
     if (el) { el.remove(); this._tags.delete(m); }
-    // violet shells dim via alive check; drop its patrol line outright
+    // the rims dim via the alive check; drop its transect outright
     const path = this._paths.get(m);
     if (path) {
       this.ctx.scene.remove(path.mesh);
@@ -1275,24 +1213,18 @@ export class FocusSystem {
       el.classList.toggle('clamped', clamped);
       const distEl = el.lastElementChild;
       if (distEl && p?.position) {
-        distEl.textContent = `${Math.round(m.position.distanceTo(p.position))}m`;
+        const di = Math.round(m.position.distanceTo(p.position));
+        if (el.__di !== di) { el.__di = di; distEl.textContent = `${String(di).padStart(3, '0')} m`; }
       }
     }
   }
 
-  /* --------------------- in-world component labels (ui-10) ----------------- */
+  /* ------------------------- in-world component chips ----------------------- */
 
   /**
-   * Project a world point to an ANCHOR the placement solve may use. Returns
-   * false when the point is behind the camera OR when the anchor falls
-   * outside the viewport.
-   *
-   * Round 1 tested only "behind the camera", so a pickup ~75° off-axis
-   * projected to x = 2407 in a 1600 px frame, was styled, positioned, counted
-   * by `audit()` and ate one of the twelve reveal slots — invisible, but paid
-   * for three times over. A perspective projection is only meaningful inside
-   * the frustum; outside it the numbers are noise, and feeding noise into the
-   * de-overlap solve moves labels the player CAN see.
+   * Project a world point to an ANCHOR the placement solve may use. false when the
+   * point is behind the camera OR outside the viewport: a perspective projection is
+   * only meaningful inside the frustum, and noise would move chips the player CAN see.
    */
   _project(v, out) {
     const cam = this.ctx.camera;
@@ -1310,13 +1242,7 @@ export class FocusSystem {
     return true;
   }
 
-  /**
-   * Would a label box drawn at these screen bounds actually be readable?
-   * Mostly-inside, not merely touching: half a label hanging past the edge
-   * reads as a glitch. Vertically it has to fit almost entirely, because the
-   * de-overlap passes stack labels along Y and that is the axis they can walk
-   * off.
-   */
+  /** Would a chip at these bounds be readable? Mostly inside, nearly all of it in y (chips stack along y). */
   _boxOnScreen(left, top, right, bottom) {
     const w = window.innerWidth, h = window.innerHeight;
     const vx = Math.min(right, w - VIEW_MARGIN) - Math.max(left, VIEW_MARGIN);
@@ -1324,8 +1250,7 @@ export class FocusSystem {
     return vx >= (right - left) * VIEW_FRAC && vy >= (bottom - top) * 0.9;
   }
 
-  /** The machine whose components get labelled: the crosshair target, else
-   *  the nearest living machine inside label range. */
+  /** The Instrument whose components get chips: the crosshair target, else the nearest in range. */
   _labelSubject() {
     if (this._target) return this._target;
     const list = this.ctx.machines?.list;
@@ -1341,12 +1266,7 @@ export class FocusSystem {
     return best;
   }
 
-  /**
-   * `components()` builds fresh rows, and the label pass runs every frame —
-   * so it reads through a small cache instead (re-derived when the subject
-   * changes or 0.3 s has passed, which is also when a part can have been torn
-   * off). Keeps the 60 fps path allocation-free.
-   */
+  /** `components()` allocates and the chip pass is per frame, so it reads a 0.3 s cache. */
   _cachedComponents(m, dt) {
     const c = this._compCache;
     c.t -= dt;
@@ -1361,6 +1281,7 @@ export class FocusSystem {
   _updatePartLabels(dt) {
     const live = this._labelsLive;
     live.length = 0;
+    let nRings = 0;
     const m = this.on ? this._labelSubject() : null;
     const p = this.ctx.player;
     if (m && p?.position && m.position
@@ -1369,17 +1290,12 @@ export class FocusSystem {
       const cy = window.innerHeight * 0.5;
       let hoverBest = Infinity;
       let hoverIdx = -1;
-      // ui-10: components cluster on a machine, so raw projection stacked
-      // three antenna labels on top of each other. Nudge each new label clear
-      // of the ones already placed (12 tries, then drop it) — HZD does the
-      // same: labels never overlap, and the ones that cannot fit do not draw.
+      // components cluster, so each chip is nudged clear of the ones already placed
+      // (12 tries, then it does not draw). The leader keeps it tied to its anchor.
       const placed = this._labelSlots;   // preallocated seats, count below
       let nPlaced = 0;
-      // ...and keep them out from under the scan card, which parks on the
-      // same machine: a label that would land inside the card flips to the
-      // machine's other side instead of being read through holo glass.
-      // `_cardRect` is sampled once per frame BEFORE any DOM writes, so this
-      // never forces a synchronous layout.
+      // a chip that would land inside the card flips to the Instrument's other side.
+      // `_cardRect` is sampled once per frame BEFORE any DOM writes.
       const cardRect = this._cardRect;
       for (const c of this._cachedComponents(m, dt)) {
         if (live.length >= LABEL_CAP) break;
@@ -1388,11 +1304,24 @@ export class FocusSystem {
         if (!node) continue;
         node.getWorldPosition(_v);
         if (!this._project(_v, _screen)) continue;
-        // The label hangs to ONE side of its anchor, so the side is chosen
-        // before the de-overlap solve: off the card, and off the right edge
-        // when there is room on the left. A candidate whose box cannot fit
-        // either way is skipped — `continue`, not `break`, so its pool slot
-        // goes to a component that IS on screen.
+        const ax = _screen.x, ay = _screen.y;
+        // weak points wear a cobalt ring, sized by what the shot has to hit
+        if (c.weak && nRings < RING_CAP) {
+          const rWorld = c.part.radius ?? 0.25;
+          const pxPerM = window.innerHeight / (2 * Math.tan(this.ctx.camera.fov * 0.5 * Math.PI / 180))
+            / Math.max(1, _v.distanceTo(this.ctx.camera.position));
+          const r = Math.min(64, Math.max(8, rWorld * pxPerM));
+          const rec = this._ringRec[nRings];
+          rec.x = ax; rec.y = ay; rec.r = r; rec.name = c.name;
+          const cr = this._rings[nRings], cu = this._ringsU[nRings];
+          const xs = ax.toFixed(1), ys = ay.toFixed(1), rs = r.toFixed(1);
+          cr.setAttribute('cx', xs); cr.setAttribute('cy', ys); cr.setAttribute('r', rs);
+          cu.setAttribute('cx', xs); cu.setAttribute('cy', ys); cu.setAttribute('r', rs);
+          cr.style.display = ''; cu.style.display = '';
+          nRings++;
+        }
+        // The chip hangs to ONE side of its anchor, chosen before the de-overlap
+        // solve: off the card, and off the right edge when there is room on the left.
         let flip = !!cardRect
           && _screen.x > cardRect.left - 210 && _screen.x < cardRect.right
           && _screen.y > cardRect.top - 16 && _screen.y < cardRect.bottom + 16;
@@ -1426,6 +1355,14 @@ export class FocusSystem {
         seat.x = _screen.x; seat.y = _screen.y;
         const slot = this._labelPool[live.length];
         slot.el.classList.toggle('flip', flip);
+        // the leader: anchor, out to the chip's edge
+        {
+          const lx = _screen.x + (flip ? -PLABEL_GAP : PLABEL_GAP);
+          const pts = `${ax.toFixed(0)},${ay.toFixed(0)} ${lx.toFixed(0)},${_screen.y.toFixed(0)}`;
+          const li = this._leaders[live.length], lu = this._leaderU[live.length];
+          li.setAttribute('points', pts); lu.setAttribute('points', pts);
+          li.style.display = ''; lu.style.display = '';
+        }
         if (slot.lastName !== c.name) { slot.name.textContent = c.name; slot.lastName = c.name; }
         const n = c.loot.length;
         if (slot.lastLoot !== c.lootText) {
@@ -1440,7 +1377,7 @@ export class FocusSystem {
         const d = Math.hypot(_screen.x - cx, _screen.y - cy);
         if (d < hoverBest) { hoverBest = d; hoverIdx = live.length; }
         const rec = this._labelRec[live.length];
-        rec.name = c.name; rec.x = _screen.x; rec.y = _screen.y;
+        rec.name = c.name; rec.x = _screen.x; rec.y = _screen.y; rec.ax = ax; rec.ay = ay; rec.flip = flip;
         rec.loot = c.loot.length; rec.weak = c.weak; rec.tearable = c.tearable;
         rec.machine = m.kind ?? ''; rec.slot = slot;
         live.push(rec);
@@ -1456,10 +1393,21 @@ export class FocusSystem {
     }
     for (let i = live.length; i < this._labelPool.length; i++) {
       this._labelPool[i].el.style.display = 'none';
+      if (this._leaders[i].style.display !== 'none') {
+        this._leaders[i].style.display = 'none';
+        this._leaderU[i].style.display = 'none';
+      }
     }
+    for (let i = nRings; i < RING_CAP; i++) {
+      if (this._rings[i].style.display !== 'none') {
+        this._rings[i].style.display = 'none';
+        this._ringsU[i].style.display = 'none';
+      }
+    }
+    this._ringsLive = nRings;
   }
 
-  /* --------------------- LOOT / DATAPOINT reveals (A63) -------------------- */
+  /* ---------------------- LOOT / FIELD BOOK reveals (A63) ------------------- */
 
   /** Rebuild the candidate list from the interactable registry (polled). */
   _refreshReveals() {
@@ -1478,7 +1426,7 @@ export class FocusSystem {
       const d2 = dx * dx + dz * dz;
       if (d2 > REVEAL_RANGE * REVEAL_RANGE) continue;
       let kind = null;
-      if (e.datapoint) kind = 'DATAPOINT';
+      if (e.datapoint) kind = 'FIELD BOOK';
       else if (e.pickupWeapon) kind = 'PICK UP';
       else if (Array.isArray(e.loot) && e.loot.length) kind = 'LOOT';
       else if (e.label === 'GATHER') kind = 'GATHER';
@@ -1496,16 +1444,14 @@ export class FocusSystem {
       if (kind === 'PICK UP') rarity = 'legendary';
       src.push({
         entry: e, kind, d2, rarity,
-        name: inter.sourceName ? inter.sourceName(e) : (e.label ?? ''),
+        name: fieldWord(inter.sourceName ? inter.sourceName(e) : (e.label ?? '')),
         // derived once per poll, not once per frame
         cls: `calf-reveal k-${kind.replace(/\s+/g, '-').toLowerCase()}`,
-        rarColor: rarityDef(rarity).color,
+        rarColor: `var(--cal-r-${rarity})`,
       });
     }
-    // Sorted by distance, but NOT cut to the twelve that draw: `_updateReveals`
-    // fills the pool from the nearest candidate that is actually on screen, so
-    // a near-but-off-frame pickup no longer costs a farther visible one its
-    // slot. The list is capped only to bound the per-frame walk.
+    // Sorted by distance, NOT cut to the twelve that draw: `_updateReveals` fills the
+    // pool from the nearest candidate actually on screen.
     src.sort((a, b) => a.d2 - b.d2);
     if (src.length > REVEAL_SRC_CAP) src.length = REVEAL_SRC_CAP;
   }
@@ -1514,30 +1460,20 @@ export class FocusSystem {
     const live = this._revealsLive;
     live.length = 0;
     if (this.on) {
-      // a reveal that lands on the scan card is unreadable through it and
-      // hides the component list underneath — drop it, the world is full of
-      // other things to reveal
+      // a reveal that lands on the card is dropped; every reveal takes a SEAT, nudged
+      // clear of the seats already taken (the component-chip pass seeds the list), and
+      // one that cannot find a seat in 12 tries does not draw.
       const cardRect = this._cardRect;
-      // V36 fails on "labels stacked on top of each other". Two herbs a metre
-      // apart project a couple of pixels apart, so every reveal takes a SEAT
-      // and is nudged clear of the seats already taken — the part-label pass
-      // (which ran first) seeds the list, so a reveal never lands under a
-      // component label either. A reveal that cannot find a seat in 12 tries
-      // does not draw: HZD never renders one label through another.
       const placed = this._revealSlots;
       let nPlaced = 0;
       for (const l of this._labelsLive) {
         if (nPlaced >= placed.length) break;
         const seat = placed[nPlaced++];
-        // a component label hangs to ONE side of its anchor (or the other
-        // when it flips clear of the card), so seat its rough CENTRE — the
-        // anchor itself is an edge. classList is a cheap read; offsetWidth
-        // would force a synchronous layout in the middle of the frame.
-        seat.x = l.x + (l.slot?.el.classList.contains('flip') ? -PLABEL_MID : PLABEL_MID);
+        // a chip hangs to ONE side of its anchor, so seat its rough CENTRE
+        seat.x = l.x + (l.flip ? -PLABEL_MID : PLABEL_MID);
         seat.y = l.y;
       }
-      // card bounds unrolled into plain numbers: this runs every frame, and a
-      // closure per frame is a closure per frame
+      // card bounds unrolled into plain numbers (no closure per frame)
       const cL = cardRect ? cardRect.left - 90 : 1, cR = cardRect ? cardRect.right + 90 : -1;
       const cT = cardRect ? cardRect.top - 14 : 1, cB = cardRect ? cardRect.bottom + 14 : -1;
       for (const c of this._revealSrc) {
@@ -1558,9 +1494,7 @@ export class FocusSystem {
           if (ok) {
             for (let i = 0; i < nPlaced; i++) {
               const q = placed[i];
-              // a reveal box is kind + name: up to ~190 px wide, ~20 px tall,
-              // and both are centred on the anchor, so this is the real
-              // half-width sum, not a guess
+              // kind + name: up to ~190 px wide, ~20 px tall, both centred on the anchor
               if (Math.abs(_screen.y - q.y) < 22 && Math.abs(_screen.x - q.x) < 190) {
                 ok = false;
                 break;
@@ -1569,8 +1503,7 @@ export class FocusSystem {
           }
           if (ok) break;
           _screen.y -= 22;             // stack upward, away from the pickup
-          // off the top of the frame: this one does not draw, and the slot
-          // stays free for the next candidate
+          // off the top of the frame: this one does not draw
           if (_screen.y - REVEAL_H < VIEW_MARGIN) { ok = false; break; }
         }
         if (!ok) continue;
@@ -1579,8 +1512,7 @@ export class FocusSystem {
           seat.x = _screen.x; seat.y = _screen.y;
         }
         const slot = this._revealPool[live.length];
-        // only touch the DOM when the value actually changed: position moves
-        // every frame, text and colour almost never do
+        // only touch the DOM when the value changed: position moves every frame
         if (slot.lastKind !== c.kind) { slot.kind.textContent = c.kind; slot.lastKind = c.kind; }
         if (slot.lastName !== c.name) { slot.name.textContent = c.name; slot.lastName = c.name; }
         if (slot.lastCls !== c.cls) { slot.el.className = c.cls; slot.lastCls = c.cls; }
@@ -1604,7 +1536,7 @@ export class FocusSystem {
 
   /* --------------------------------- audit --------------------------------- */
 
-  /** The machine currently under the crosshair (null when Focus is off). */
+  /** The Instrument currently under the crosshair (null when the alidade is down). */
   get scanTarget() { return this.on ? this._target : null; }
 
   /** One flat object every gate in this lane reads. Never throws. */
@@ -1639,12 +1571,13 @@ export class FocusSystem {
       // `_boxOnScreen`); these two let a gate prove it rather than trust it
       revealCandidates: this._revealSrc.length,
       viewport: { w: window.innerWidth, h: window.innerHeight },
-      shells: { parts: this._parts.size, machines: this._violet.size },
+      shells: { parts: this._parts.size, machines: this._hulls.size },
+      rings: this._ringRec.slice(0, this._ringsLive).map((r) => ({ name: r.name, x: Math.round(r.x), y: Math.round(r.y), r: +r.r.toFixed(1) })),
+      leaders: this._leaders.filter((l) => l.style.display !== 'none').length,
+      readouts: { bearing: this._brgEl.textContent, distance: this._dstEl.textContent },
       paths: {
         count: this._paths.size,
-        // derived, not asserted: a splined ribbon carries many more samples
-        // than the route has waypoints (a raw polyline would carry exactly as
-        // many corners as waypoints)
+        // derived: a splined ribbon carries many more samples than waypoints
         splined: this._pathSamples > this._pathWaypoints * 3,
         samples: this._pathSamples,
         waypoints: this._pathWaypoints,
@@ -1655,8 +1588,8 @@ export class FocusSystem {
   }
 
   /**
-   * Measured tint strength (V36 asks for ≤20 %). Reads the live computed
-   * style so the number can never drift from the CSS that ships.
+   * Measured vignette strength (bible §9.7: at most 20 %). Reads the live computed
+   * style, so the number can never drift from the CSS that ships.
    */
   _vignette() {
     let center = 0;
@@ -1676,6 +1609,41 @@ export class FocusSystem {
     return { centerAlpha: +center.toFixed(3), maxAlpha: +edge.toFixed(3) };
   }
 
+  /* -------------------------------- readouts -------------------------------- */
+
+  /**
+   * Bearing and range under the crosshair. The bearing is integer-checked; the range
+   * marches the camera ray over the heightfield at 5 Hz (or reads the target's), and
+   * only touches the DOM when the metre changes.
+   */
+  _updateReadouts(dt) {
+    const p = this.ctx.player;
+    if (!p) return;
+    const b = Math.round((((-p.camYaw * 180 / Math.PI) % 360) + 360) % 360) % 360;
+    if (b !== this._lastBrg) {
+      this._lastBrg = b;
+      this._brgEl.textContent = String(b).padStart(3, '0');
+    }
+    this._rangeT -= dt;
+    if (this._rangeT > 0) return;
+    this._rangeT = 0.2;
+    const cam = this.ctx.camera, T = this.ctx.terrain;
+    let range = -1;
+    if (this._target?.position) range = this._target.position.distanceTo(cam.position);
+    else if (cam && T?.getHeight) {
+      cam.getWorldDirection(_dir);
+      const ox = cam.position.x, oy = cam.position.y, oz = cam.position.z;
+      for (let d = 4; d <= 400; d += 4) {
+        if (oy + _dir.y * d < T.getHeight(ox + _dir.x * d, oz + _dir.z * d)) { range = d; break; }
+      }
+    }
+    const q = Math.round(range);
+    if (q !== this._lastDst) {
+      this._lastDst = q;
+      this._dstEl.textContent = q < 0 ? '---' : String(q).padStart(3, '0');
+    }
+  }
+
   /* ---------------------------------- frame -------------------------------- */
 
   update(dt, t) {
@@ -1685,57 +1653,46 @@ export class FocusSystem {
     const domVisible = live || (ctx.state === 'title' && inShot);
     this._layer.style.display = domVisible ? '' : 'none';
 
-    // --- activation pulse (wave + ground ring) ---
-    if (this._waveT < WAVE_LIFE) {
+    // --- the raising sweep: one dashed hairline over the ground ---
+    if (this._waveT < RING_LIFE) {
       this._waveT += dt;
       const tt = this._waveT;
-      if (tt < WAVE_LIFE) {
-        const r = 2 + WAVE_SPEED * tt;
-        const fade = Math.max(0, 1 - tt / WAVE_LIFE);
-        this._wave.scale.set(r, 1, r);
-        // ui-10: the wall was reading as a purple slab across the frame.
-        // Keep the sweep legible without draining the world's colour.
-        this._waveMat.uniforms.uFade.value = 0.26 * fade;
-        this._updateRing(r);
-        this._ringMat.uniforms.uFade.value = 0.85 * fade;
+      if (tt < RING_LIFE) {
+        this._updateRing(2 + RING_SPEED * tt);
+        this._ringMat.uniforms.uFade.value = 0.8 * (1 - tt / RING_LIFE);
       } else {
-        this._wave.visible = false;
         this._ring.visible = false;
       }
-    } else if (this._wave.visible) {
-      this._wave.visible = false;
+    } else if (this._ring.visible) {
       this._ring.visible = false;
     }
 
-    // --- violet through-wall layer ---
+    // --- through-terrain hull rims ---
     const wantK = this.on ? 1 : 0;
-    if (this._violetK !== wantK || this._violet.size) {
-      this._violetK = THREE.MathUtils.clamp(
-        this._violetK + (wantK ? dt / 0.3 : -dt / 0.35), 0, 1);
-      if (this._violetK <= 0 && !this.on) {
-        this._disposeViolet();
+    if (this._hullK !== wantK || this._hulls.size) {
+      this._hullK = THREE.MathUtils.clamp(
+        this._hullK + (wantK ? dt / 0.3 : -dt / 0.35), 0, 1);
+      if (this._hullK <= 0 && !this.on) {
+        this._disposeHulls();
       } else {
-        const pulse = 0.85 + 0.15 * Math.sin(t * 6);
-        for (const [m, e] of this._violet) {
+        for (const [m, e] of this._hulls) {
           const k = this._waveT - e.delay;
           const fadeIn = k > 0 ? Math.min(1, k / 0.25) : 0;
           const dim = m.alive === false ? 0.28 : 1;
-          // clamped: alpha is an alpha, not a brightness knob
-          e.mat.uniforms.uOpacity.value =
-            Math.min(1, fadeIn * this._violetK * dim * pulse);
+          e.mat.uniforms.uOpacity.value = Math.min(1, fadeIn * this._hullK * dim);
         }
       }
     }
     if (this.on) {
-      this._violetPoll -= dt;
-      if (this._violetPoll <= 0) {
-        this._violetPoll = 1.0;
-        this._buildViolet(); // pick up machines that spawned after activation
-        this._buildPaths();  // ... and their patrol routes
+      this._hullPoll -= dt;
+      if (this._hullPoll <= 0) {
+        this._hullPoll = 1.0;
+        this._buildHulls(); // pick up Instruments that spawned after raising
+        this._buildPaths(); // ... and their transects
       }
     }
 
-    // --- yellow component shells (+ canon 6s linger after Focus off) ---
+    // --- component outlines (+ a 6 s linger after the alidade comes down) ---
     this._partPoll -= dt;
     if (this._partPoll <= 0 && (this.on || this._parts.size)) {
       this._partPoll = GATHER_TICK;
@@ -1743,17 +1700,14 @@ export class FocusSystem {
     }
     if (this._parts.size) this._syncDetached();
     if (this.on) {
-      this._partMat.uniforms.uOpacity.value = 0.92 + 0.08 * Math.sin(t * 5);
+      this._partMat.uniforms.uOpacity.value = 1;
     } else if (this._parts.size) {
       this._offT += dt;
       if (this._offT >= PART_LINGER) this._disposeParts();
-      else {
-        const fade = Math.min(1, (PART_LINGER - this._offT) / PART_FADE);
-        this._partMat.uniforms.uOpacity.value = fade * (0.92 + 0.08 * Math.sin(t * 5));
-      }
+      else this._partMat.uniforms.uOpacity.value = Math.min(1, (PART_LINGER - this._offT) / PART_FADE);
     }
 
-    // --- patrol path flow (fades out from under a machine that leaves it) ---
+    // --- transects (fade out from under an Instrument that leaves one) ---
     if (this._paths.size) {
       for (const [m, e] of this._paths) {
         e.mat.uniforms.uTime.value = t;
@@ -1762,8 +1716,7 @@ export class FocusSystem {
           e.mat.uniforms.uFade.value + (want ? dt / 0.4 : -dt / 0.25), 0, 1);
         e.mat.uniforms.uFade.value = f;
         e.mesh.visible = f > 0.01 && m.alive !== false;
-        // fully faded and off-route: drop it so it rebuilds when the machine
-        // goes back to patrolling (and so a corpse never keeps a loop)
+        // fully faded and off-route: drop it, it rebuilds when the Instrument walks again
         if (f <= 0 && !want) {
           this.ctx.scene.remove(e.mesh);
           e.mesh.geometry.dispose();
@@ -1773,15 +1726,14 @@ export class FocusSystem {
       }
     }
 
-    // --- gather-node glow ---
+    // --- gather marks ---
     if (this.on) {
       this._gatherPoll -= dt;
       if (this._gatherPoll <= 0) {
         this._gatherPoll = GATHER_TICK;
         this._refreshGather();
       }
-      this._gatherMat.opacity = 0.55 + 0.22 * Math.sin(t * 3.2);
-      this._gatherMat.size = 1.35 + 0.25 * Math.sin(t * 3.2);
+      this._updateReadouts(dt);
     }
 
     // --- reveals: poll the interactable registry, project every frame ---
@@ -1795,9 +1747,8 @@ export class FocusSystem {
       this._revealSrc.length = 0;
     }
 
-    // --- DOM: info card + component labels + reveals + tag markers ---
-    // one rect read per frame, taken BEFORE anything writes a style this
-    // frame, so the label/reveal passes never trigger a forced reflow
+    // --- DOM: the card + component chips + reveals + Flagged marks ---
+    // one rect read per frame, BEFORE anything writes a style, so the passes never reflow
     this._cardRect = this._card.classList.contains('show')
       ? this._card.getBoundingClientRect() : null;
     this._updateCard(dt);
@@ -1806,3 +1757,6 @@ export class FocusSystem {
     this._updateTags();
   }
 }
+
+/** main.js imports this name (one line for the orchestrator at W2; the class is `SightingSystem`). */
+export { SightingSystem as FocusSystem };
