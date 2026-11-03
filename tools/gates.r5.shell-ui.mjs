@@ -849,6 +849,25 @@ const hud4k = (id, title, dx, dy) => ({
   })()`,
 });
 
+/** The book at 4K, at true pixels: laid out as 1600x900 under a 2.4 zoom (what --ui-z does on a 3840x2160 window), shifted so the corner falls in the frame. */
+const hub4k = (id, title, tab, dx, dy) => ({
+  id, kind: 'visual', lane: LANE, settle: 700, timeout: 180000,
+  reference: 'reference/r5/gates-perf/field-book',
+  title: '4K crop at true pixels: ' + title,
+  criteria: 'A crop at true pixels of a hub page at 3840x2160. Every label and numeral crisp and in proportion, the same page as at 1600x900, no rule thinner than a device pixel, nothing clipped.' + INCREDIBLE,
+  setup: `(async () => {${FRAMES}
+    __CTX__.input.enabled = true;
+    ${MAP_OPEN.replace("m.openHub('map')", `m.openHub('${tab}')`).replace('while (!m.map.bake.ready', `while ('${tab}' === 'map' && !m.map.bake.ready`)}
+    m.map.setTriangles([['T1', 'T2', 'T6'], ['T2', 'T3', 'T6']]);
+    localStorage.removeItem('cal.map.v5');
+    m.map.draw?.();
+    document.documentElement.style.setProperty('--ui-z', '2.4');
+    const hub = document.querySelector('.mn-hub');
+    hub.style.cssText += ';position:fixed;left:${dx / 2.4}px;top:${dy / 2.4}px;right:auto;bottom:auto;width:1600px;height:900px;';
+    await frames(6);
+  })()`,
+});
+
 const V_UI_SHEET = {
   id: 'V-ui-sheet', kind: 'runner', lane: LANE, timeout: 120000,
   title: 'The contact sheet: title, play HUD (40 % HP, aiming, Instrument engaged), Sighting, satchel, map, settings, pause, tip card, death choice, judged for coherence as one system',
@@ -914,5 +933,7 @@ export const GATES = [
   hud4k('V-hud-4k-b', 'the theodolite circle and the vial (top-centre)', -1120, 0),
   hud4k('V-hud-4k-c', 'the plate, the reticle and the breath meter (centre)', -1120, -630),
   hud4k('V-hud-4k-d', 'the kit tag and the tool chips (bottom-right)', -2240, -1260),
+  hub4k('V-ui-4k-a', 'the book, map page, top-left: the fore-edge, the station index, the title, the sheet', 'map', 0, 0),
+  hub4k('V-ui-4k-b', 'the book, settings page, bottom-right: the foot, the actions', 'settings', -2240, -1260),
   V_UI_SHEET,
 ];
