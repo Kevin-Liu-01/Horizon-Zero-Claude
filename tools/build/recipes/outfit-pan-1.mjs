@@ -524,8 +524,8 @@ export async function panBase(opt = {}) {
       underYoke.jnt.splice(i * 4, 4, jS, jN, 0, 0); underYoke.wgt.splice(i * 4, 4, 1 - w, w, 0, 0);
     }
   }
-  // (its inner end, past the armhole's rim, lies under the smock where arm and ribs share the space: gone)
-  const sleeves = cutTris(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85, nScale: 0.5 }), (cx, cy, cz) => !(Math.abs(cx) < 0.2 && Math.hypot((cy - ARMHOLE.y) / ARMHOLE.ry, (cz - ARMHOLE.z) / ARMHOLE.rz) > 1.2));
+  // (its inner end low under the arm, past the armhole's rim, lies under the smock where arm and ribs share the space: gone)
+  const sleeves = cutTris(partFromPrim(prim('sleeves'), 'sleeves', { density: 0.85, nScale: 0.5 }), (cx, cy, cz) => !(Math.abs(cx) < 0.158 && cy < 1.35 && Math.hypot((cy - ARMHOLE.y) / ARMHOLE.ry, (cz - ARMHOLE.z) / ARMHOLE.rz) > 1.2));
   sleeves.axis = [1, 0, 0];
   conform(sleeves, body, { margin: () => 0.012 });
   recomputeNormals(sleeves);
@@ -785,7 +785,7 @@ export async function panBase(opt = {}) {
   // the bones stay where brea.mjs put them; the cloth lies on the skirt that now covers them
   const outOnSkirt = (q) => {
     // turned toward her side: the bones hang at the front of the hip, right where the thigh lifts
-    const th = Math.atan2(q[2] + 0.02, q[0]) - 0.34;
+    const th = Math.atan2(q[2] + 0.02, q[0]) - 0.46;
     const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.14), Math.hypot(q[0], q[2] + 0.02)) + 0.011;
     return [Math.cos(th) * rr, q[1], -0.02 + Math.sin(th) * rr];
   };
@@ -879,10 +879,52 @@ export async function panBase(opt = {}) {
   }
   recomputeNormals(tab);
 
+  // ---- shoulder lining: the body's own triangles, a hair out, with the body's own skin. The hide bit culls the skin under
+  // the armhole; when the arm drops, the sleeve's cap swings away from the rim and would leave a window through her
+  const lining = mk('lining', { trim: true });
+  {
+    const r = trim.rect('sash');
+    const { pos, nrm, idx, jnt, wgt } = bodyPart;
+    const map = new Map();
+    const N = vertexNormalsOf(bodyPart);
+    const vert = (v) => {
+      let o = map.get(v);
+      if (o != null) return o;
+      o = lining.pos.length / 3;
+      map.set(v, o);
+      lining.pos.push(pos[v * 3] + N[v * 3] * 0.0016, pos[v * 3 + 1] + N[v * 3 + 1] * 0.0016, pos[v * 3 + 2] + N[v * 3 + 2] * 0.0016);
+      lining.nrm.push(N[v * 3], N[v * 3 + 1], N[v * 3 + 2]);
+      lining.uv.push(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
+      for (let c = 0; c < 4; c++) { lining.jnt.push(jnt[v * 4 + c]); lining.wgt.push(wgt[v * 4 + c]); }
+      return o;
+    };
+    void nrm;
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = idx[t], b = idx[t + 1], c = idx[t + 2];
+      const cx = Math.abs(pos[a * 3] + pos[b * 3] + pos[c * 3]) / 3, cy = (pos[a * 3 + 1] + pos[b * 3 + 1] + pos[c * 3 + 1]) / 3;
+      if (cx < 0.125 || cx > 0.25 || cy < 1.29 || cy > 1.5) continue;
+      lining.idx.push(vert(a), vert(b), vert(c));
+    }
+    lining.keepNormals = true;
+  }
   // (the lofts above read the whole garment; its top, hip-high under the skirt's yoke and always covered, need not ship)
   const trousersCut = cutTris(trousers, (cx, cy) => cy < 0.94 && cy > 0.42);
-  const parts = [underYoke, smock, binds, ...skirt, ...undr, sleeves, trousersCut, boots, girdle, sashBand, ...(buckle.pos.length ? [buckle, tongue] : []), sling, sling.extra, pouch, sash, tie, cuffs, straps, tab];
+  const parts = [underYoke, lining, smock, binds, ...skirt, ...undr, sleeves, trousersCut, boots, girdle, sashBand, ...(buckle.pos.length ? [buckle, tongue] : []), sling, sling.extra, pouch, sash, tie, cuffs, straps, tab];
   return { doc, trim, parts, joints, body, bodyPart, clothField, skinOf, W, H, TRIM_H, J, drape };
+}
+
+/** Area-weighted vertex normals of a part, as the part's own winding has them. */
+function vertexNormalsOf(part) {
+  const { pos, idx } = part;
+  const N = new Float64Array(pos.length);
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+    const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2], vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    for (const q of [a, b, c]) { N[q] += nx; N[q + 1] += ny; N[q + 2] += nz; }
+  }
+  for (let i = 0; i < N.length; i += 3) { const l = Math.hypot(N[i], N[i + 1], N[i + 2]) || 1; N[i] /= l; N[i + 1] /= l; N[i + 2] /= l; }
+  return N;
 }
 
 /** A rolled sleeve cuff: fat linen roll around the sleeve's cut edge, carmine lining inside its lip. */
@@ -949,7 +991,7 @@ export async function build({ out = ROOT } = {}) {
     recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',
     r5Outfit: {
       ...PAN_SET, variant: 'pan-1', name: "Pan Whites I — Raker's Whites", density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1),
-      pieces: ['underyoke', 'smock', 'binds', 'skirt', 'under', 'sleeves', 'trousers', 'boots', 'girdle', 'sashband', 'buckle', 'tongue', 'sling', 'slider', 'pouch', 'sash', 'tie', 'cuffs', 'straps', 'tab'],
+      pieces: ['underyoke', 'lining', 'smock', 'binds', 'skirt', 'under', 'sleeves', 'trousers', 'boots', 'girdle', 'sashband', 'buckle', 'tongue', 'sling', 'slider', 'pouch', 'sash', 'tie', 'cuffs', 'straps', 'tab'],
     },
   });
 }

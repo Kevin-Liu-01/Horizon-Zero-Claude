@@ -157,10 +157,10 @@ export function measurePose(ctx, snap, opts = {}) {
     const a = E[e], b = E[e + 1], L = E[e + 2];
     const s = Math.hypot(P[a * 3] - P[b * 3], P[a * 3 + 1] - P[b * 3 + 1], P[a * 3 + 2] - P[b * 3 + 2]) / L;
     if (s > maxS) maxS = s;
-    if (s > 1.6) { over++; if (opts.offenders) badEdges.push([s, a, b, L]); }
+    if (s > 1.6) { over++; badEdges.push([s, a, b, L]); }
   }
   row.stretch = +maxS.toFixed(3); row.stretchOver = over;
-  if (opts.offenders) {
+  if (opts.offenders || badEdges.length) {
     const SIo = outfit.geometry.getAttribute('skinIndex'), SWo = outfit.geometry.getAttribute('skinWeight'), bn = outfit.skeleton.bones.map((b) => b.name);
     const sk = (i) => [0, 1, 2, 3].filter((k) => SWo.getComponent(i, k) > 0.02).map((k) => bn[SIo.getComponent(i, k)] + ':' + SWo.getComponent(i, k).toFixed(2)).join(' ');
     row.edgeOffenders = badEdges.sort((x, y) => y[0] - x[0]).filter((_, i) => i % Math.max(1, Math.floor(badEdges.length / 40)) === 0).slice(0, 40).map(([q, a, b, L]) => ({ s: +q.toFixed(2), a: at(a), b: at(b), L: +L.toFixed(4), ja: sk(a), jb: sk(b) }));
@@ -207,12 +207,12 @@ export function measurePose(ctx, snap, opts = {}) {
       const q = OG.height(KP[i * 3], KP[i * 3 + 1], KP[i * 3 + 2]);
       if (q && q.dist < 0.05 && q.h < 0) {
         stowDeep = Math.min(stowDeep, q.h);
-        if (q.h < -0.005) { stowOver++; if (opts.offenders) stowOff.push([+q.h.toFixed(3), bit, ...at(q.i)]); }
+        if (q.h < -0.005) { stowOver++; stowOff.push([+q.h.toFixed(3), bit, ...at(q.i)]); }
       }
     }
   }
   row.stowDeep = +stowDeep.toFixed(4); row.stowOver = stowOver;
-  if (opts.offenders) row.stowOffenders = stowOff.sort((x, y) => x[0] - y[0]).slice(0, 24);
+  if (stowOff.length) row.stowOffenders = stowOff.sort((x, y) => x[0] - y[0]).slice(0, opts.offenders ? 24 : 3);
   let heldDeep = 0, heldOver = 0;
   const heldOff = [];
   const heldMesh = [];

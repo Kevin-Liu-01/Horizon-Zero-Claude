@@ -150,7 +150,8 @@ function edgesOf(part, weld) {
 export function romFit(parts, base, {
   target = 1.46, targetShort = 1.34, shortL = 0.012, relaxIts = 14,
   easeIts = 12, deepTo = -0.0022, slack = 0.0014, radius = 0.032, maxPush = 0.014, giveUp = 0.016,
-  skip = new Set(['hat']), stiff = new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes']), rom = null,
+  skip = new Set(['hat', 'lining']), stiff = new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes']), rom = null,
+  easeTags = /^(idle|sprint|jog|draw|light|heavy)/, smoothPasses = 2,
   over = { sling: ['smock', 'binds'], slider: ['smock', 'binds'], sashband: ['skirt'], girdle: ['smock', 'skirt'], straps: ['boots'], tie: ['underyoke'], sash: ['skirt'], capelet: ['smock', 'sling', 'binds'], ropebelt: ['smock', 'skirt', 'wrap', 'sashband'] },
 } = {}) {
   const R = rom || ROM();
@@ -163,11 +164,16 @@ export function romFit(parts, base, {
     const i = nameIdx.get(n);
     return i == null ? null : mul4x3(p.rows[i], ibm, j * 16);
   }));
+  // a crouch folds the thigh right through the skirt, whatever the skirt does: those poses relax the weights, they do not get room
+  const easePoses = poses.filter((_, i) => easeTags.test(R.poses[i].tag));
   const soft = parts.filter((p) => !skip.has(p.slot) && p.pos.length);
   const info = soft.map((p) => {
     const { weld, members } = weldOf(p);
     const n = p.pos.length / 3;
-    return { p, weld, members, n, E: edgesOf(p, weld), Q: new Float64Array(n * 3) };
+    const E = edgesOf(p, weld);
+    const nb = members.map(() => []);
+    for (let e = 0; e < E.length; e += 2) { const a = weld[E[e]], b = weld[E[e + 1]]; nb[a].push(b); nb[b].push(a); }
+    return { p, weld, members, n, E, nb, Q: new Float64Array(n * 3) };
   });
 
   // ---- relax
@@ -250,7 +256,7 @@ export function romFit(parts, base, {
     let count = 0, worstCount = 0;
     const need = info.map((f) => new Float64Array(f.n));
     const dirs = info.map((f) => new Float64Array(f.n * 3));
-    for (const M of poses) {
+    for (const M of easePoses) {
       posed(body, M, BQ);
       vertexNormals(BQ, body.idx, bn, BN);
       const G = new Grid(BQ, BN, bn);
@@ -325,12 +331,29 @@ export function romFit(parts, base, {
         const l = Math.hypot(dx, dy, dz) || 1;
         for (let i = 0; i < f.n; i++) { dir[i * 3] = dx / l; dir[i * 3 + 1] = dy / l; dir[i * 3 + 2] = dz / l; }
       }
-      for (let i = 0; i < f.n; i++) {
-        if (off[i] <= 0) continue;
-        pos[i * 3] += dir[i * 3] * off[i];
-        pos[i * 3 + 1] += dir[i * 3 + 1] * off[i];
-        pos[i * 3 + 2] += dir[i * 3 + 2] * off[i];
-        P[i] += off[i];
+      // the room is one soft field: two neighbours pushed from different sides must not tear the cloth
+      const m = f.members.length;
+      let D = new Float64Array(m * 3);
+      for (let o = 0; o < m; o++) { const i = f.members[o][0]; D[o * 3] = dir[i * 3] * off[i]; D[o * 3 + 1] = dir[i * 3 + 1] * off[i]; D[o * 3 + 2] = dir[i * 3 + 2] * off[i]; }
+      if (!stiff.has(f.p.slot)) {
+        for (let pass = 0; pass < smoothPasses; pass++) {
+          const next = D.slice();
+          for (let o = 0; o < m; o++) {
+            const L = f.nb[o];
+            if (!L.length) continue;
+            let ax = 0, ay = 0, az = 0;
+            for (let q = 0; q < L.length; q++) { ax += D[L[q] * 3]; ay += D[L[q] * 3 + 1]; az += D[L[q] * 3 + 2]; }
+            const k = 0.5 / L.length;
+            next[o * 3] = D[o * 3] * 0.5 + ax * k; next[o * 3 + 1] = D[o * 3 + 1] * 0.5 + ay * k; next[o * 3 + 2] = D[o * 3 + 2] * 0.5 + az * k;
+          }
+          D = next;
+        }
+      }
+      for (let o = 0; o < m; o++) {
+        const dx = D[o * 3], dy = D[o * 3 + 1], dz = D[o * 3 + 2];
+        const l = Math.hypot(dx, dy, dz);
+        if (l <= 0) continue;
+        for (const i of f.members[o]) { pos[i * 3] += dx; pos[i * 3 + 1] += dy; pos[i * 3 + 2] += dz; P[i] += l; }
       }
     }
     return { verts: count, worstPose: worstCount };
