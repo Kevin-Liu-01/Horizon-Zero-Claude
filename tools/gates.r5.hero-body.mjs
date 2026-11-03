@@ -7872,7 +7872,7 @@ const NEW_GATES = [
    * knuckle <= 0.06 m from the bow's nock whenever the draw is > 0.9. */
   {
     id: 'A-draw-arm-continuity', kind: 'action', lane: 'hero-body', timeout: 1500000,
-    title: 'The draw arm across every aim-weight transition, as a matrix: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, strafe right, strafe left, crouched} x one timeline per cell (raise; draw; loose; RMB up 0.05 s after the loose; re-aim 0.05-0.2 s after the lower; again with RMB up at +0.12 and +0.25 s; a draw cancelled by RMB at full draw; the raise after the cancel; crouch->stand and stand->crouch at full draw; a loose and a rapid re-fire 0.12 s after it; a dodge with RMB+LMB held at full draw and the draw completing after it; the last loose and lower). Every sim step from the first RMB: draw elbow and wrist travel <= 0.06 m (character space AND relative to the draw shoulder; through the roll itself in the chest\'s frame, on a step her clip moves her whole body > 0.03 m relative to the draw shoulder and to spine_01, each reading printed with its kind); wrist / middle knuckle / middle fingertip in front of the back of the skull wherever they are at skull height (head-ellipsoid unit y >= -1), and within the head\'s width (|x| < 1) from the neck (y >= -2.4) up; never over the crown (y > 1 within the skull\'s footprint, |x| < 1.3, -1.4 < z < 1.3); middle knuckle <= 0.06 m from the bow nock whenever the draw is > 0.9 (the pair the frame renders: read after combat\'s update of the same tick)',
+    title: 'The draw arm across every aim-weight transition, as a matrix: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, strafe right, strafe left, crouched} x one timeline per cell (raise; draw; loose; RMB up 0.05 s after the loose; re-aim 0.05-0.2 s after the lower; again with RMB up at +0.12 and +0.25 s; a draw cancelled by RMB at full draw; the raise after the cancel; crouch->stand and stand->crouch at full draw; a loose and a rapid re-fire 0.12 s after it; a dodge with RMB+LMB held at full draw and the draw completing after it; the last loose and lower). Every sim step from the first RMB: draw elbow and wrist travel <= 0.06 m (character space AND relative to the draw shoulder; through the roll itself in the chest\'s frame, on a step her clip moves her whole body > 0.03 m relative to the draw shoulder and to spine_01, once the limiter has handed the arm to a lance drawn by RMB up with LMB down the lance\'s own swing printed not graded, each reading printed with its kind); wrist / middle knuckle / middle fingertip in front of the back of the skull wherever they are at skull height (head-ellipsoid unit y >= -1), and within the head\'s width (|x| < 1) from the neck (y >= -2.4) up; never over the crown (y > 1 within the skull\'s footprint, |x| < 1.3, -1.4 < z < 1.3); middle knuckle <= 0.06 m from the bow nock whenever the draw is > 0.9 (the pair the frame renders: read after combat\'s update of the same tick)',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${FLAT_STRIP}
       freeze();
@@ -7965,11 +7965,16 @@ const NEW_GATES = [
             const dS = s.distanceTo(prev.s);
             if (dS > M.shoulderStepMax) { M.shoulderStepMax = dS; M.shoulderAt = lab + (p.dodging ? ' dodging' : '') + ' aimW ' + this.aimWeight.toFixed(2); }
             M.bodyStepMax = Math.max(M.bodyStepMax || 0, dB);
-            const kind = roll ? 'roll' : body ? 'body' : !inf ? 'clip' : 'aim';
+            /* (cancelHeld only, RMB up with LMB down, which melee.js reads as a spear press: once
+             * the limiter has handed the arm over — its tail run out, the limit open — the arm's
+             * pace is the lance's own swing: the melee lane's, printed as lanceStepMax. The hand-over
+             * itself, every step until then, is graded as an aim step) */
+            const lanceOwns = lanceArm && label === 'cancelHeld' && (!this._afEng || this._afLimK > 1.001);
+            const kind = lanceOwns ? 'lance' : roll ? 'roll' : body ? 'body' : !inf ? 'clip' : 'aim';
             M.kinds[kind] = (M.kinds[kind] || 0) + 1;
             // graded measure(s) per kind
-            const gTr = kind === 'aim' || kind === 'clip' ? tr : kind === 'body' ? bo : ch;
-            const gRl = kind === 'roll' ? 0 : rl;
+            const gTr = kind === 'lance' ? 0 : kind === 'aim' || kind === 'clip' ? tr : kind === 'body' ? bo : ch;
+            const gRl = kind === 'roll' || kind === 'lance' ? 0 : rl;
             if (kind === 'clip') M.clipTravelMax = Math.max(M.clipTravelMax || 0, r4(tr));
             if (lanceArm && tr > M.lanceStepMax) { M.lanceStepMax = r4(tr); M.lanceStepAt = lab; }
             if (gTr > M.travel) { M.travel = gTr; M.travelAt = lab + ' ' + kind + ' ' + ((kind === 'aim' || kind === 'clip' ? dE >= dW : kind === 'body' ? bE >= bW : cE >= cW) ? 'elbow' : 'wrist'); }
