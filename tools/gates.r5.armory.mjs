@@ -514,25 +514,14 @@ const V_ROWS = [
     criteria: 'Plan §9: silhouettes per spec, real proportions; the bob cap reads. Bible: 1.45 m juniper self-bow, pale sapwood face, dark heartwood stripe, esparto grip, horn nocks; 1.55 m resin-dark pine lance, 22 cm bronze leaf, esparto wraps at both hand positions, vermilion/white graduations on the upper third, the bob-shaped butt cap. R54: it must not look cheap next to the references (no flat colour, no pipe-section stave).',
   },
   {
-    id: 'V-gear-in-hand', kind: 'visual', lane: LANE, settle: 900, timeout: 60000,
-    title: "Brea at full draw from her right with the Sabina (the flexed limbs, the string at the nock), 1600x900 in the world",
-    reference: 'reference/r5/gates-perf/draw-side.jpg',
+    id: 'V-gear-in-hand', kind: 'visual', lane: LANE, settle: 1200, timeout: 90000,
+    title: 'The gear on Brea in the world: full draw with the Sabina from three sides (flexed limbs, the string at the nock), the lance in her hands',
+    reference: 'reference/r5/gates-perf/draw-side.jpg, reference/r5/gates-perf/lance-ready-side.jpg',
     setup: placedSetup(['openGround'], `(async () => {${FILM_PRE}
       C.input.enabled = true; C.state = 'playing';
-      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-      const frame = () => new Promise((r) => requestAnimationFrame(r));
       standAt(p, 'openGround'); p.camPitch = 0;
-      C.input.mouse.buttons |= 4; await wait(800);
-      C.input.mouse.buttons |= 1; await wait(2300);
-      C.combat._updateAimPoint = () => {};
-      C.engine.timeScale = 0; await frame(); await frame();
-      const T3 = p.position.constructor;
-      const m = p.model.matrixWorld.clone();
-      const toW = (x, y, z) => new T3(x, y, z).applyMatrix4(m);
-      const c = C.camera, eye = toW(-2.0, 1.38, 0.42), at = toW(0, 1.26, 0.2);
-      const mv = (o) => { o.position.copy(eye); o.lookAt(at); };
-      p._updateCamera = () => { mv(c); };
-      c.fov = 34; c.updateProjectionMatrix(); mv(c);
+      const s = await import('/src/hero/sheets.js');
+      await s.gearInHandOverlay(C);
     })()`),
     criteria: 'Kevin: bow draw hand at the cheek outside the hair, elbow level/back, bow arm clear of the chest, never an arm behind the head. Plus this lane: the limbs are visibly flexed, the string runs tip to nock to tip straight, the arrow lies on the string at the hand, the grip sits in the bow hand, the stowed bow is gone from her back and the stowed lance and quiver are in place.',
   },

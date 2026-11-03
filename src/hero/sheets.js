@@ -607,3 +607,46 @@ export async function weaponSheetOverlay(ctx, refs = []) {
   }
   return c.toDataURL('image/png');
 }
+
+
+/**
+ * V-gear-in-hand: the gear on her, in the world's own light. Full draw from her right
+ * and from her front-right; the lance in her hands from the side; the kit from behind.
+ * Stages through the real input path; freezes the sim while it films.
+ */
+export async function gearInHandOverlay(ctx) {
+  const p = ctx.player, an = p.animator, E = ctx.engine, cmb = ctx.combat, T3 = p.position.constructor;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  const W = 1600, H = 900;
+  const { c, g } = overlay(W, H, '#14120f');
+  const live = (pos, tgt, x, y, w, h, fov = 30) => {
+    const img = liveView(ctx, [pos.x, pos.y, pos.z], [tgt.x, tgt.y, tgt.z], { width: w, height: h, fov });
+    g.drawImage(canvasOf(img), x, y, w, h);
+  };
+  const toW = (x, y, z) => p.model.localToWorld(new T3(x, y, z));
+  // --- full draw
+  ctx.input.mouse.buttons |= 4; await wait(800);
+  ctx.input.mouse.buttons |= 1; await wait(2200);
+  cmb._updateAimPoint = () => {};
+  const ts0 = E.timeScale;
+  E.timeScale = 0; await frame(); await frame();
+  const tgtD = toW(0, 1.28, 0.22);
+  live(toW(-2.1, 1.36, 0.28), tgtD, 0, 30, 620, 860, 34);
+  live(toW(-1.05, 1.42, 1.5), tgtD, 620, 30, 490, 430, 34);
+  live(toW(0.1, 1.5, -1.6), toW(0, 1.2, 0.05), 620, 460, 490, 430, 34);
+  label(g, 'full draw: from her right, front-right, behind', 10, 20, 13, '#efe8da');
+  E.timeScale = ts0;
+  ctx.input.mouse.buttons = 0; await wait(400);
+  delete cmb._updateAimPoint;
+  // --- the lance in her hands
+  cmb.melee.swing({});
+  await wait(900);
+  E.timeScale = 0; await frame(); await frame();
+  live(toW(-1.7, 1.15, 0.7), toW(0, 1.0, 0.4), 1110, 30, 490, 430, 36);
+  live(toW(1.2, 1.25, 1.5), toW(0, 1.05, 0.3), 1110, 460, 490, 430, 36);
+  label(g, 'the lance in her hands', 1120, 20, 13, '#efe8da');
+  E.timeScale = ts0;
+  void an;
+  return c.toDataURL('image/png');
+}
