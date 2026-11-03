@@ -1,48 +1,43 @@
 import * as THREE from 'three';
-import { buildSpear } from './bow.js';
+import { createHeldLance } from './lanceStow.js';
 import { MELEE } from './weapons.js';
 
 /**
- * THE SPEAR — `combat-melee-missing` (audit §1 #4, a blocker in four
- * independent audits), plus `stealth-silent-strike-missing` and the melee half
- * of `machine-ai-10`'s Critical Hit.
+ * THE LANCE (melee W1, on Brea; the state machine is Round 4's, kept).
  *
- * Before this file, LMB outside aim was dead input: Aloy carried a spear she
- * could not swing, so every stealth approach, every shock-stun and every
- * downed machine had no payoff. Three moves live here:
- *
- *   LIGHT   tap LMB (unaimed) — a three-hit chain, 26 / 30 / 42 impact, the
- *           third one wide and staggering. Chains inside `comboWindow`.
- *   HEAVY   hold LMB past `heavy.chargeTime` — one committed overhead,
- *           78 impact / 46 tear, wide arc, always a flinch.
- *   SILENT  E on an UNAWARE machine within 2 m, from behind or crouched.
- *   STRIKE  Instant kill on the small classes, 55 % of max health otherwise.
- *
- * A swing landing on a machine in `downed` (published by `machine-ai`) is a
- * CRITICAL HIT: `crit.frac` of max health and a `critical-hit` event.
+ *   LIGHT    tap LMB (unaimed): a three-beat chain (thrust, sweep, the
+ *            one-handed long stab), 26 / 30 / 42, chaining inside `comboWindow`.
+ *   HEAVY    hold LMB past `heavy.chargeTime`: the two-handed drive, 78 / 46.
+ *   UNDERCUT E on an UNAWARE Instrument within 2 m, from behind or crouched: the
+ *            lance comes out, then the stab lands (M11). Kills the small classes.
+ *   A swing landing on a machine in `downed` is a FELLING BLOW (`crit.frac` of
+ *   max health, the `felling-blow` event).
  *
  * Published on `ctx.combat.melee`:
- *   active / phase ('idle'|'windup'|'strike'|'recover') / heavy / combo
- *   silentTarget            the machine the prompt is offered on, or null
+ *   active / phase ('idle'|'windup'|'strike'|'recover') / heavy / combo / stance
+ *   lance { group, length, grip, grip2, setUrl(url) }   (lanceStow.js)
+ *   lanceInHand             physically in her right hand (the layer's re-parent)
+ *   drawLance(hold) / holsterLance(fast)
+ *   undercutTarget          the machine the prompt is offered on, or null
  *   swing({ heavy })        fire a swing (gates + scripted beats)
- *   silentStrike()          execute the prompt right now; -> result | null
+ *   undercut()              the prompt's action: draw, stab, hit at the contact
  *   audit()                 { swings, hits, silent, crits, outOfReach }
  * Events: 'melee-hit' { machine, damage, heavy, combo, point, killed },
  *         'undercut' { machine, killed, damage },
- *         'critical-hit'  { machine, damage }   (shared with machine-ai)
+ *         'felling-blow'  { machine, damage }
  *
- * Cost: ONE `ctx.hitHulls.raycast` per strike frame (not per frame), plus
+ `ctx.hitHulls.raycast` per strike frame (not per frame), plus
  * O(roster) distance/dot arithmetic. Nothing allocates in the hot path.
  *
  * ---------------------------------------------------------------------------
- * ROUND 4, lane `player-melee` (Kevin: "melee and how spear is held needs to
- * be fixed too"). This file used to own a `_poseSpear` that slid the spear
+ * ROUND 4, lane `player-melee` (Kevin: "melee and how lance is held needs to
+ * be fixed too"). This file used to own a `_poseLance` that slid the lance
  * MESH around the camera plane on a hand-tuned Euler while Aloy's body did
  * nothing, and a rest carry that only existed for 2.2 s after a swing. It now
  * owns the STATE and `src/entities/anim/meleeLayer.js` owns the POSE:
  *
  *   stance   'holstered' -> 'draw' -> 'ready' -> 'swing' -> 'ready' ->
- *            'holster' -> 'holstered'. The spear lives on a spine socket until
+ *            'holster' -> 'holstered'. The lance lives on a spine socket until
  *            she draws it, and re-holsters `READY_HOLD` s after the last swing.
  *   poseState()  the published read the animator poses from, time-stamped so a
  *            slow frame does not desync the swing from the phase clock (the
@@ -51,7 +46,7 @@ import { MELEE } from './weapons.js';
  *            on its first frame, so `melee-hit` fires while the blade is
  *            forward (gate A103). Phase durations are untouched.
  *   WINDUP_K   the canon's filmed cock is 0.30-0.45 s and `MELEE.light.windup`
- *            is 0.09-0.12 s — "the windup is ~40 % too short" (spear-canon.md).
+ *            is 0.09-0.12 s — "the windup is ~40 % too short" (lance-canon.md).
  *            `weapons.js` belongs to the combat lane, so the correction lives
  *            here as a local scale on the windup phase only.
  */
@@ -82,7 +77,7 @@ const _m4 = new THREE.Matrix4();
  * `combat.impactFeedback`, which uses it as the emission axis for all three
  * spark bursts and the plate chips. Round 1's `_flashTrail` ran BEFORE that
  * call and overwrote `_n` with the world-space grip->tip SHAFT direction, so
- * every melee impact fired its sparks along the spear, INTO the machine's
+ * every melee impact fired its sparks along the lance, INTO the machine's
  * hull, instead of off its surface: measured at heading 0 against a Watcher
  * parked at +Z, the normal handed over was [0.133, -0.04, 0.99] on a light and
  * [0.272, -0.006, 0.962] on a heavy, where a surface normal is about
@@ -136,7 +131,7 @@ const NO_SNEAK_STATES = new Set(['dead', 'downed', 'stagger']);
  * top. Measured on port 5208, a crouched Aloy pressed against the BACK of a
  * Watcher stands 3.35 m from its centre — the collider will not let her any
  * closer — while `MELEE.silent.range` is 2.0 m centre-to-centre. The Silent
- * Strike prompt could therefore never appear on any machine, and the spear
+ * Strike prompt could therefore never appear on any machine, and the lance
  * could not reach a Thunderjaw at all (its standoff segment is far longer).
  *
  * This returns the gap between `(x, z)` and the machine's OUTER SHELL: the
@@ -191,10 +186,10 @@ function segSegDist(p1x, p1y, p1z, q1x, q1y, q1z, p2x, p2y, p2z, q2x, q2y, q2z) 
  * WHERE IN THE STRIKE PHASE THE BLADE ARRIVES.
  *
  * `_advance` used to call `_resolve()` on the FRAME THE STRIKE PHASE BEGAN —
- * i.e. at the end of the cock, with the spear still drawn back. Nothing was
+ * i.e. at the end of the cock, with the lance still drawn back. Nothing was
  * wrong with that while the swing was a mesh sliding through the camera plane,
  * but the moment the blade follows the hand it is the difference between
- * "she hit it" and "the damage number appeared 0.1 s before the spear got
+ * "she hit it" and "the damage number appeared 0.1 s before the lance got
  * there". Gate A103 measures exactly this: `melee-hit` must fire inside the
  * strike phase with the TIP within 1.2 m of the impact point.
  *
@@ -204,9 +199,9 @@ function segSegDist(p1x, p1y, p1z, q1x, q1y, q1z, p2x, p2y, p2z, q2x, q2y, q2z) 
  * 0.70, not 0.55. The canon films cocked->contact at 0.15 s; `MELEE.light.strike`
  * is 0.10 s, so the swing has to spend as much of that window as it can on the
  * approach or the blade covers its 2.6 m of arc in 55 ms — a 48 m/s tip, which
- * is not a spear, it is a bullet. At 0.70 the approach is 0.07 s and the
+ * is not a lance, it is a bullet. At 0.70 the approach is 0.07 s and the
  * follow-through 0.03 s, which is the split the stills show
- * (`spear-light-strike.jpg` -> `spear-light-follow.jpg` is 0.20 s of a much
+ * (`lance-light-strike.jpg` -> `lance-light-follow.jpg` is 0.20 s of a much
  * slower arc, and that belongs to `recover`).
  */
 const CONTACT_K = 0.70;
@@ -225,55 +220,24 @@ const CONTACT_K = 0.70;
  * and still chains.
  */
 const WINDUP_K = 1.5;
+/** A combo may cut in once this share of a recover has played (a buffered
+ *  press does not wait out the whole return to guard). */
+const CUT_IN = 0.42;
+/** At a sprint (m/s), for this long (s), a guard goes back on her back. */
+const SPRINT_STOW = 5.7;
+const SPRINT_STOW_T = 0.30;
+/** What is left of the heavy's cock when a held light turns into it: the hold
+ *  (`MELEE.heavy.chargeTime`) already spent the rest of the wind-up. */
+const HEAVY_AFTER_HOLD = 0.62;
+/** Hit-stop floors (s): the blade stops on the machine, the world with it. */
+const HITSTOP_LIGHT = 0.050;
+const HITSTOP_HEAVY = 0.085;
+/** The prompt, and who an Undercut kills outright: the small classes, by role. */
+const UNDERCUT_LABEL = 'UNDERCUT';
+const UNDERCUT_KILLS = ['sentry', 'swarm', 'flanker', 'spotter'];
 
-/**
- * THE HAFT IS 1.85 m AND THAT IS THE WRONG LENGTH (fix round 2).
- *
- * `buildSpear()` (`src/combat/bow.js:672`, the COMBAT lane's file) hard-codes
- * `L = 1.85`, which is taller than Aloy is. HZD's spear reads ~1.5 m, and the
- * extra 35 cm is most of why the judge read the stowed carry as "a 1.85 m pole
- * floating off her back in an X with the bow": at §4's minimum 30 deg of tilt
- * a 1.85 m haft spans 0.95 m laterally and 1.57 m vertically against a back
- * that is about 0.55 m tall, so the butt ends up out beside her thigh and the
- * blade 0.73 m over her shoulder no matter where the socket is placed.
- *
- * `bow.js` is not in this lane's §4 grant, so the geometry is not edited — the
- * PROP IS SCALED, in the one place this lane already writes the prop's scale
- * (`meleeLayer._poseHolstered` / `_poseHeld` both set it to undo the rig's own
- * bone scale). Everything this lane measures — grip fraction, blade-ahead,
- * butt-to-wrist, the socket, the carry bounds, A100/A101's bars — is derived
- * from `length`, so the whole lane moves together.
- *
- * CROSS-LANE REQUEST, documented rather than silently patched: `buildSpear()`
- * should be rebuilt at L = 1.59 so the mesh's detail (wraps, ferrule, blade)
- * scales as art rather than as a uniform shrink.
- *
- * WHY 0.86 AND NOT THE 0.81 THE JUDGE'S ~1.5 m IMPLIES: A103 measures the
- * blade tip against the impact point, and a Watcher's blocking collider holds
- * her 3.19 m from its centre while its hull starts ~2.8 m out. Every 10 cm off
- * the haft is 10 cm added to that reading. At 1.52 m it sat at 1.20-1.40 m
- * against §4's 1.2 m bar; at 1.59 m it clears with margin and the carry still
- * loses 0.26 m of the overhang that made the stowed pose read as a flagpole.
- * The honest statement is that this length is the largest of the two
- * constraints, not a free choice.
- */
-const SPEAR_SCALE = 0.80;
-/* FIX ROUND 4: 0.86 -> 0.80, i.e. a 1.48 m haft, which is the ~1.5 m the film
- * judge asked for in round 2 and the length HZD reads at.
- *
- * Round 2 wrote, honestly, that 0.86 was "the largest of two constraints, not
- * a free choice": A103 measured the blade against the impact point and every
- * centimetre off the haft was a centimetre added to that reading, so the carry
- * had to stay longer than it wanted to be. **That constraint is gone.** The
- * melee approach term (collision._meleePad / _meleeStandoff) closed 0.9 m of
- * standoff, and A103's reach clause now reads -0.02 to -0.21 m with the blade
- * INSIDE the hull; giving 0.089 m of it back still leaves the row green.
- *
- * What the 0.089 m buys is the carry. A100's midpoint ball, its blade-above
- * ceiling and its bow clearance all compete for the same geometry, and the
- * haft's half-length is the term in all three: at 0.86 the dodge row's bow
- * clearance was bimodal at 0.054-0.156 m against a 0.10 m bar with the
- * midpoint pinned on its ceiling in every failure. */
+/** The arc fallback's reach is authored for a 1.48 m haft (`MELEE.*.reach`). */
+const ARC_REACH_K = 0.80;
 
 /**
  * Draw from the back / return to it, in seconds (§4: 0.2-0.3 s draw).
@@ -347,7 +311,7 @@ const GRAB_HOLD_MAX = 0.10;
  *  what it normally costs — see `_advanceStance`). */
 const DRAW_WAIT_MAX = 0.12;
 const HOLSTER_T = 0.42;
-/** The stow an AIM asks for (round 6): the bow waits for the spear's
+/** The stow an AIM asks for (round 6): the bow waits for the lance's
  *  re-parent, so this is how long the left hand is empty after RMB. */
 const HOLSTER_T_AIM = 0.30;
 /** How long the ready stance persists after the last swing. */
@@ -358,7 +322,7 @@ const READY_HOLD = 3.6;
  * FIX ROUND 1: this was `KeyR`, with a comment claiming R was unbound. It is
  * not. `combat.js:996` reads `input.isDown('KeyR')` to drive hold-to-craft,
  * and `core/input.js:35` maps gamepad button 12 (D-pad up) onto the same code
- * — so every hip craft also drew or holstered the spear, and every stance
+ * — so every hip craft also drew or holstered the lance, and every stance
  * toggle also started a craft (verified live: 40 frames of `KeyR` took
  * `melee.stance` holstered -> ready AND `combat.craft` to progress 0.69 on
  * hunter arrows). `KeyB` is genuinely free: it appears nowhere in `src/`,
@@ -413,7 +377,7 @@ const TRAIL_PEAK = 0.32;
  * `collision._meleePad`, and fix pass 1 corrected it: at 0.20 the collider and
  * `machines/index.js`'s own push were the SAME radius, which is an equilibrium
  * and not a margin — a moving player penetrates by a frame of travel first, so
- * every forward frame fired the manager's push and a drawn spear bulldozed a
+ * every forward frame fired the manager's push and a drawn lance bulldozed a
  * frozen Watcher 2.38 m across the field (measured by the round-4 film judge;
  * gated now by `A106-melee-approach-immovable`). 0.32 is that equality plus a
  * 0.12 m loaded-box frame of travel, and the 0.12 m of reach is handed back on
@@ -459,7 +423,7 @@ const STRIKE_EARLY = 0.30;
  */
 const AIM_RANGE = 1.2;
 const AIM_SINK = 0.15;
-/** The cone a spear can be pointed through (radians): at most `AIM_SIDE` off
+/** The cone a lance can be pointed through (radians): at most `AIM_SIDE` off
  *  the swing's bearing, between `AIM_DOWN` below and `AIM_ABS_UP` above the
  *  horizontal, from her shoulder; and what a radian off the beat's own contact
  *  line (and a metre the blade cannot reach) cost when picking the target. */
@@ -496,7 +460,10 @@ export class Melee {
     this.phase = 'idle';
     this.heavy = false;
     this.combo = 0;
-    this.silentTarget = null;
+    this.undercutTarget = null;
+    this._undercutM = null;     // the stab on its way (see `undercut`)
+    this._lmbWas = false;
+    this._chargeHold = false;
     this.lastSwingT = -99;
 
     /* THE MELEE APPROACH (fix round 4, finding F3). Published for
@@ -553,7 +520,7 @@ export class Melee {
     this._driveBuf = { t: 0, dur: 0, want: 0, went: 0, px0: 0, pz0: 0, v: 0, x: 0, z: 1, pre: 0,
       lastWent: 0, lastTarget: 0, blocked: 0 };
     this._readyT = 0;         // seconds of ready left before it re-holsters
-    this._queued = null;      // a swing asked for while the spear was on her back
+    this._queued = null;      // a swing asked for while the lance was on her back
     this._drawLunged = false; // the draw's step-in has been started (round 6)
     this._keyWas = false;     // melee-key edge
     this._aimYaw = 0;         // swing bearing relative to her facing (rad)
@@ -576,12 +543,16 @@ export class Melee {
     };
 
     /* ------------------------------ the model ---------------------------- */
-    this.spear = buildSpear();
-    this._attachSpear();
-    // The spear is now ALWAYS on screen: stowed across her back when she is
-    // not fighting, in her hand when she is. Kevin's complaint was a spear he
+    this.lance = createHeldLance(ctx);
+    this._attachLance();
+    this.lance.onChange = () => {
+      this.layer?.attachLance(this.lance.group, this.lance.length, 1, { grip: this.lance.grip, grip2: this.lance.grip2 });
+      ctx.player?._collectMaterials?.();
+    };
+    // The lance is now ALWAYS on screen: stowed across her back when she is
+    // not fighting, in her hand when she is. Kevin's complaint was a lance he
     // could not see; `visible = false` was half of why.
-    this.spear.group.visible = true;
+
 
     /* THE SWING TRAIL — a thin arc BEHIND THE EDGE, not a fan on her chest.
      *
@@ -614,11 +585,11 @@ export class Melee {
     this._sneak = {
       position: new THREE.Vector3(),
       radius: MELEE.silent.range + 0.6,
-      label: MELEE.silent.label,
+      label: UNDERCUT_LABEL,
       hold: MELEE.silent.hold,
       disabled: true,
       priority: 2,
-      onInteract: () => this.silentStrike(),
+      onInteract: () => this.undercut(),
     };
     ctx.interactables?.register?.(this._sneak);
     this._sneakRegistered = !!ctx.interactables;
@@ -633,17 +604,14 @@ export class Melee {
    * it will ever have (the back socket and the grip are both derived from the
    * rest pose there). The fallback below is the no-rig path — a boot where the
    * animator or the hand bone is missing — and is deliberately crude: it
-   * parents to whatever node exists so the spear is never orphaned in the
-   * scene, and `_poseSpearFallback` keeps it in the hand.
+   * parents to whatever node exists so the lance is never orphaned in the
+   * scene, and `_poseLanceFallback` keeps it in the hand.
    */
-  _attachSpear() {
+  _attachLance() {
     const anim = this.ctx.player?.animator;
     this.layer = anim?.melee?.ok ? anim.melee : null;
     if (this.layer) {
-      // SPEAR_SCALE: the prop is carried and held at 1.52 m, not bow.js's
-      // 1.85 m. `length` is the scaled length, so every socket, bound, grip
-      // fraction and gate bar downstream is expressed in the same metres.
-      this.layer.attachSpear(this.spear.group, this.spear.length * SPEAR_SCALE, SPEAR_SCALE);
+      this.layer.attachLance(this.lance.group, this.lance.length, 1, { grip: this.lance.grip, grip2: this.lance.grip2 });
       this._hand = anim.handAttach?.('r') ?? null;
       return;
     }
@@ -656,7 +624,7 @@ export class Melee {
       (this.ctx.player?.model ?? this.ctx.scene).add(node);
     }
     this._hand = node;
-    node.add(this.spear.group);
+    node.add(this.lance.group);
   }
 
   audit() { return { ...this._stats }; }
@@ -703,20 +671,24 @@ export class Melee {
     return typeof t === 'number' && Number.isFinite(t) ? Math.max(0, Math.min(1, t)) : 1;
   }
 
-  /** True once the spear is in her hand and the guard is up. */
+  /** True once the lance is in her hand and the guard is up. */
   get ready() { return this.stance === 'ready' || this.stance === 'swing'; }
 
-  /** True while the spear is physically in her right hand (the layer's
+  /** True while the lance is physically in her right hand (the layer's
    *  re-parent, not the stance clock) — combat.js keeps the bow on her back
    *  while it is (round 6: never both in hand). */
-  get spearInHand() {
+  get lanceInHand() {
     const lay = this.layer;
     if (lay && lay.ok) return !!lay._held;
     return this.stance !== 'holstered';
   }
 
-  /** Ask for the spear. Returns the seconds until it is swingable. */
-  drawSpear(hold = READY_HOLD) {
+  /** Until armory calls `lanceStow.js` from `combat.js` (plan §1.2). */
+  get spearInHand() { return this.lanceInHand; }
+  get spear() { return this.lance; }
+
+  /** Ask for the lance. Returns the seconds until it is swingable. */
+  drawLance(hold = READY_HOLD) {
     this._readyT = Math.max(this._readyT, hold);
     if (this.stance === 'ready' || this.stance === 'swing') return 0;
     if (this.stance === 'draw') return DRAW_T - this._drawT;
@@ -732,7 +704,7 @@ export class Melee {
   }
 
   /** Put it back. `fast` = the bow is coming up (aim): the quick stow. */
-  holsterSpear(fast = false) {
+  holsterLance(fast = false) {
     if (this.stance === 'holstered' || this.stance === 'holster') return;
     if (this.active) return;
     this._holsterDur = fast ? HOLSTER_T_AIM : HOLSTER_T;
@@ -746,13 +718,13 @@ export class Melee {
   /** Advance draw/holster/ready, on the GAME clock (`update` scales it by the
    *  engine time scale — round 6). */
   _advanceStance(realDt, p, aiming) {
-    // aim wins, always (§4.6): a bow coming up puts the spear back on her back
+    // aim wins, always (§4.6): a bow coming up puts the lance back on her back
     /* ...and it does not wait out a follow-through (round 6): the recover is
      * cut and the stow is the quick one, so the bow is in her left hand ~0.2 s
      * after the aim instead of the ~0.6 s the r5 skeptic filmed with the bow
-     * and the spear BOTH in her hands. A windup or a strike still lands. */
+     * and the lance BOTH in her hands. A windup or a strike still lands. */
     if (aiming && this.active && this.phase === 'recover') this._cancel();
-    if (aiming && this.stance !== 'holstered' && !this.active) this.holsterSpear(true);
+    if (aiming && this.stance !== 'holstered' && !this.active) this.holsterLance(true);
 
     const stanceDt = this._stanceTick(realDt);
     if (this.stance === 'draw') {
@@ -796,7 +768,7 @@ export class Melee {
          * and the queued strike starts on the first frame it reports done.
          * The layer poses one frame behind this clock (the animator runs
          * before combat), so this normally costs exactly one frame; the wait
-         * is bounded so a missing rig can never hold the spear hostage. */
+         * is bounded so a missing rig can never hold the lance hostage. */
         const lay = this.layer;
         const done = !lay || !lay.ok || lay.handoverDone;
         this._drawWait = done ? 0 : (this._drawWait || 0) + realDt;
@@ -818,7 +790,11 @@ export class Melee {
       }
     } else if (this.stance === 'ready') {
       this._readyT -= realDt;
-      if (this._readyT <= 0) this.holsterSpear();
+      /* a sprint does not carry a guard: the arms go back to running beside her
+       * body (Kevin's bar) unless a caller asked to hold it */
+      const running = (p?.moveSpeed ?? 0) > SPRINT_STOW && !this._charging && !this._queued && this._readyT <= READY_HOLD;
+      this._sprintT = running ? (this._sprintT || 0) + realDt : 0;
+      if (this._readyT <= 0 || this._sprintT > SPRINT_STOW_T) this.holsterLance();
     } else if (this.stance === 'swing') {
       this._readyT = Math.max(this._readyT, READY_HOLD);
       if (!this.active) this.stance = 'ready';
@@ -1033,7 +1009,7 @@ export class Melee {
         let dyaw = Math.atan2(dx, dz) - ya;
         dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
         const dp = pb - pa;
-        /* the cone is ABSOLUTE — where on her a spear can be pointed — not
+        /* the cone is ABSOLUTE — where on her a lance can be pointed — not
          * relative to each beat's own contact line, so a return sweep can
          * still be turned up onto a jaw that a first sweep reaches */
         let off = Math.atan2(dx, dz) - fwdYaw;
@@ -1189,7 +1165,7 @@ export class Melee {
   /**
    * The hulls her ARMS must stay out of (round 6, S5 — the r5 skeptic's hand
    * 0.03-0.10 m inside a Behemoth's head and a Glinthawk's body, which A106's
-   * body capsule never reached): the machine the spear is on, and for a
+   * body capsule never reached): the machine the lance is on, and for a
    * couple of seconds after the wedge lets it go (a holster, a turn) so the
    * stow cannot put a forearm through the head she was just fighting.
    * Returns the machine's live hull capsule list, or null.
@@ -1472,10 +1448,10 @@ export class Melee {
 
   /**
    * Driven from `Combat.update` so there is exactly one owner of the LMB
-   * meaning: aiming -> draw/loose, not aiming -> spear.
+   * meaning: aiming -> draw/loose, not aiming -> lance.
    */
   update(realDt, playing) {
-    /* THE SPEAR RUNS ON THE GAME'S CLOCK (round 6, the r5 skeptic's photo
+    /* THE LANCE RUNS ON THE GAME'S CLOCK (round 6, the r5 skeptic's photo
      * mode and hitstop). `combat` hands this its REAL dt, and every clock
      * below used to run on it, while the animator that poses the swing runs
      * on the engine's SCALED time: photo mode at 0 froze the pose while the
@@ -1486,7 +1462,7 @@ export class Melee {
      * concentration) is the single time authority, so the state clocks are
      * scaled by it here: a hitstop now HOLDS the blade on the machine it hit,
      * which is what a hitstop is for. Concentration and the wheel never reach
-     * a swing (aim holsters the spear; the wheel blocks LMB). The LMB charge
+     * a swing (aim holsters the lance; the wheel blocks LMB). The LMB charge
      * stays on real time — it measures a thumb, not the world. */
     const ts = this._timeScale();
     const dt = realDt * ts;
@@ -1503,42 +1479,18 @@ export class Melee {
 
     // --- charge / release
     const lmb = canSwing && ctx.input.mouseDown(0);
-    if (lmb) {
-      // the draw starts on the PRESS, not on the swing: 0.26 s of reach is
-      // exactly the window a click spends deciding light-vs-heavy, so the
-      // spear is in her hand by the time the release resolves
-      if (!this._charging && !this.active) {
-        this._charging = true; this._chargeT = 0;
-        this._chargeT0 = performance.now();
-        this.drawSpear();
-      }
-      if (this._charging) {
-        /* THE CHARGE IS THE THUMB'S, ON THE WALL CLOCK (round 6). It was
-         * summed from `realDt`, which main.js caps at 0.05 s a frame: on a box
-         * drawing 11 fps a 0.42 s hold summed to 0.23 s, under the 0.28 s
-         * heavy threshold, and the held LMB played a LIGHT (A101's
-         * from-holstered jog/sprint hold rows, Oct 2). How long a button has
-         * been down is not game time. */
-        this._chargeT = (performance.now() - this._chargeT0) / 1000;
-        // committed heavies fire on their own so a held button is never lost
-        if (this._chargeT > 0.9) { this._charging = false; this.swing({ heavy: true }); }
-      } else if (this.active && this.phase === 'recover' && !this._buffered) {
-        this._buffered = true;                    // buffered chain input
-      }
-    } else if (this._charging) {
-      const heavy = this._chargeT >= MELEE.heavy.chargeTime;
-      this._charging = false;
-      if (this.active) this._buffered = true;
-      else this.swing({ heavy });
-    }
+    if (lmb && !this._lmbWas) this._press();
+    if (lmb) this._hold();
+    else if (this._charging) this._release();
+    this._lmbWas = lmb;
 
     // melee-ready toggle. Polled on the EDGE rather than hung off
     // `input.onDown`, so a gate that does `input.keys.add(MELEE_KEY)` drives the
     // same path a real key press does (only `input.press()` fires handlers).
     const keyNow = playing && !wheelOpen && !!ctx.input?.keys?.has?.(MELEE_KEY);
     if (keyNow && !this._keyWas && !aiming && (p?.health ?? 1) > 0) {
-      if (this.stance === 'holstered' || this.stance === 'holster') this.drawSpear();
-      else this.holsterSpear();
+      if (this.stance === 'holstered' || this.stance === 'holster') this.drawLance();
+      else this.holsterLance();
     }
     this._keyWas = keyNow;
 
@@ -1559,7 +1511,7 @@ export class Melee {
     }
     if (this.active) this._advance(dt);
     this._updateTrail(dt);
-    if (!this.layer) this._poseSpearFallback();
+    if (!this.layer) this._poseLanceFallback();
 
     // --- Silent Strike offer (10 Hz; it gates a prompt, not a hit)
     this._scanT -= realDt;
@@ -1574,23 +1526,84 @@ export class Melee {
   /**
    * Public: fire a swing now.
    *
-   * A swing asked for while the spear is still on her back is QUEUED behind
-   * the draw rather than dropped or teleported into her fist: `drawSpear()`
+   * A swing asked for while the lance is still on her back is QUEUED behind
+   * the draw rather than dropped or teleported into her fist: `drawLance()`
    * returns how long that is (<= 0.26 s) and `_advanceStance` fires the queued
    * swing the frame the guard comes up. That is the one thing the old code
    * could not do — it had no state between "on her back" and "mid-swing", so
-   * the spear simply appeared.
+   * the lance simply appeared.
    *
    * @returns {boolean} false only when a swing is already committed.
    */
   swing({ heavy = false } = {}) {
     if (this.active && this.phase !== 'recover') return false;
     if (!this.ready) {
-      this.drawSpear();
+      this.drawLance();
       this._queued = { heavy };
       return true;
     }
     return this._fire(heavy);
+  }
+
+  /**
+   * THE PRESS STARTS THE SWING (melee W1, A-melee-latency: Round 4 waited for
+   * the release, because a held button was a heavy). With the lance in her
+   * hands the cock opens on the press and holds at its end while the button
+   * stays down; a release lets the strike go, and a hold past
+   * `MELEE.heavy.chargeTime` turns it into the heavy from where the body is.
+   * From holstered the press plays the draw and the swing fires when the grip
+   * is rigid (R5). Pressed mid-swing, it is buffered.
+   */
+  _press() {
+    if (this.active) {
+      if (this.phase === 'recover' && this._t >= this._phaseEnd * CUT_IN) this._endSwing();
+      else { this._buffered = true; return; }
+    }
+    this._charging = true;
+    this._chargeT = 0;
+    this._chargeT0 = performance.now();
+    this.drawLance();
+  }
+
+  _hold() {
+    if (!this._charging) return;
+    /* the charge is the thumb's, on the wall clock: `realDt` is capped per
+     * frame, and how long a button has been down is not game time */
+    this._chargeT = (performance.now() - this._chargeT0) / 1000;
+    const late = this._chargeT >= MELEE.heavy.chargeTime;
+    if (!this.active) {
+      if (this.ready) {
+        this._chargeHold = !late;
+        this._fire(late);
+        if (late) this._charging = false;
+      }
+    } else if (this._chargeHold && late && !this.heavy && this.phase === 'windup') {
+      this._toHeavy();
+    }
+  }
+
+  _release() {
+    const held = this._chargeHold;
+    const heavy = this._chargeT >= MELEE.heavy.chargeTime;
+    this._charging = false;
+    this._chargeHold = false;
+    if (this.active) {
+      if (held) { this._aimAt(); this._lungeIn(); }
+    } else if (this.ready) this._fire(heavy);
+    else this._queued = { heavy };
+  }
+
+  /** The held light becomes the heavy: `meleeLayer` opens its cock from the pose. */
+  _toHeavy() {
+    this.heavy = true;
+    this._i = 0;
+    this._t = 0;
+    this._phaseEnd = MELEE.heavy.windup * WINDUP_K * HEAVY_AFTER_HOLD;
+    this._struck = false;
+    this._charging = false;
+    this._chargeHold = false;
+    this._aimAt();
+    this._lungeIn();
   }
 
   _fire(heavy) {
@@ -1617,6 +1630,7 @@ export class Melee {
     this.lastSwingT = performance.now() / 1000;
     // where on the target this beat's blade is going (round 6, R7)
     this._aimAt();
+    /* (a press that may still become a heavy keeps its feet until the release) */
     /* THE LUNGE STARTS WITH THE COCK, NOT WITH THE BLADE (fix round 4, F3).
      * §4's grant asks for a lunge that "carries the root forward up to the
      * hull distance DURING WINDUP", and the reason is measurable: the beat
@@ -1626,7 +1640,7 @@ export class Melee {
      * from 3.06 m — the same swing, 0.33 m apart, because only the first one
      * had not been carried in yet. The boundary step-in still fires; by then
      * `_lungeFor` re-reads the distance and returns the beat's own number. */
-    this._lungeIn();
+    if (!this._chargeHold) this._lungeIn();
     this.combat?.noteCombatAction?.();
     return true;
   }
@@ -1652,6 +1666,8 @@ export class Melee {
     this.active = false;
     this.phase = 'idle';
     this._charging = false;
+    this._chargeHold = false;
+    this._undercutM = null;
     this._buffered = false;
     this.combo = 0;
     this._queued = null;
@@ -1665,6 +1681,19 @@ export class Melee {
     // per-RENDERED-frame, not per update: see `_phaseTick`
     realDt = this._phaseTick(realDt);
     this._t += realDt;
+
+    /* cocked and waiting for the thumb */
+    if (this._chargeHold && this.phase === 'windup' && this._t >= this._phaseEnd) {
+      this._t = this._phaseEnd - 1e-3;
+      return;
+    }
+    /* a buffered press cuts in on the recover */
+    if (this._buffered && this.phase === 'recover' && this._t >= this._phaseEnd * CUT_IN) {
+      this._endSwing();
+      this._buffered = false;
+      this.swing({ heavy: false });
+      return;
+    }
 
     // THE HIT LANDS WHERE THE BLADE IS. Checked before the phase-end test so
     // a frame long enough to cross the whole strike window still resolves it
@@ -1727,7 +1756,7 @@ export class Melee {
       /* FIX ROUND 4 (F4): light-2's step was 0.36 m and measured 0.235-0.277 m
        * against A102's 0.25 m floor — inside its own sampling noise. It is
        * 0.55 m now, which is also what the canon gives the return sweep
-       * (spear-canon.md M22: 0.25-0.4 m authored, but the drive only delivers
+       * (lance-canon.md M22: 0.25-0.4 m authored, but the drive only delivers
        * 70-80 % of what it is asked for once the foot-lock throttle has had
        * its say). (F3): and when the wedge has a target the step becomes the
        * distance that puts the blade ON it — see `_lungeFor`. */
@@ -1744,17 +1773,21 @@ export class Melee {
       return;
     }
     // recover done
+    this._endSwing();
+    if (this._buffered) {
+      this._buffered = false;
+      this.swing({ heavy: false });
+    }
+  }
+
+  _endSwing() {
     this.active = false;
     this.phase = 'idle';
-    if (!heavy) {
+    if (!this.heavy) {
       this.combo = (this.combo + 1) % MELEE.light.damage.length;
       this._comboT = MELEE.light.comboWindow;
     } else {
       this.combo = 0;
-    }
-    if (this._buffered) {
-      this._buffered = false;
-      this.swing({ heavy: false });
     }
   }
 
@@ -1792,13 +1825,18 @@ export class Melee {
   /**
    * ONE hull ray down the swing line plus a cheap arc test on the roster.
    * The ray gives an exact surface point for sparks and part attribution; the
-   * arc is what makes a spear feel like a spear and not a laser pointer.
+   * arc is what makes a lance feel like a lance and not a laser pointer.
    */
   _resolve() {
     const ctx = this.ctx;
     const p = ctx.player;
     if (!p) return;
     this.lastContactGap = null;
+    if (this._undercutM) {
+      const um = this._undercutM;
+      this._undercutM = null;
+      if (this._undercutHit(um)) return;
+    }
     const heavy = this.heavy;
     const c = heavy ? MELEE.heavy : MELEE.light;
     const i = this._i;
@@ -1806,14 +1844,14 @@ export class Melee {
      *
      * `weapons.js` is the combat lane's file and its 2.7 / 3.1 m reaches were
      * written for bow.js's 1.85 m haft. This lane now carries a 1.52 m one
-     * (SPEAR_SCALE), and leaving the reach alone made the hull ray return
+     * (LANCE_SCALE), and leaving the reach alone made the hull ray return
      * impact points the blade could not get near: A103 measures the tip
      * against that point and read 1.29-1.94 m against its 1.2 m bar. Scaling
      * the reach by exactly the same factor as the prop keeps "the hit lands
      * where the blade is" true, and is the same kind of local correction this
      * file already applies to the windup (see WINDUP_K), for the same reason —
      * the constant lives in someone else's file. */
-    const reach = c.reach * SPEAR_SCALE;
+    const reach = c.reach * ARC_REACH_K;
     const cosArc = Math.cos((c.arcDeg * 0.5) * Math.PI / 180);
     this._aimBasis();
 
@@ -1867,7 +1905,7 @@ export class Melee {
       if (list) {
         for (const m of list) {
           if (!m || m.alive === false || !m.root || m._disposed) continue;
-          // gap to the SHELL (see surfaceGap): a spear that measured to the
+          // gap to the SHELL (see surfaceGap): a lance that measured to the
           // navel could not touch anything bigger than a Strider
           const d = surfaceGap(m, _chest.x, _chest.z);
           if (d > reach || d > best) continue;
@@ -2093,7 +2131,7 @@ export class Melee {
         tear,
         element: 'none',
         elementAmount: 0,
-        type: heavy ? 'spear-heavy' : 'spear',
+        type: heavy ? 'lance-heavy' : 'lance',
         baseDamage: impact,
         draw: 1,
         // melee is by definition seen — machine-ai keys its escalation on this
@@ -2104,7 +2142,7 @@ export class Melee {
     this._stats.hits++;
     if (crit) {
       this._stats.crits++;
-      ctx.events.emit('critical-hit', { machine, damage: res?.damage ?? impact });
+      ctx.events.emit('felling-blow', { machine, damage: res?.damage ?? impact });
     }
 
     // 4. feedback — sparks scaled by what actually landed, hitstop, kick
@@ -2116,6 +2154,9 @@ export class Melee {
       maxHealth: machine.maxHealth ?? 100,
       colors: SPARK_STEEL,
     });
+    /* the blade stopped: longer than an arrow's plink, the haft rides back */
+    this.combat?._startHitstop?.(0, heavy ? HITSTOP_HEAVY : HITSTOP_LIGHT);
+    this.layer?.onHit?.(heavy);
 
     ctx.events.emit('melee-hit', {
       machine, damage: dealt, heavy, combo: i, crit,
@@ -2169,7 +2210,7 @@ export class Melee {
         }
       }
     }
-    this.silentTarget = target;
+    this.undercutTarget = target;
     const s = this._sneak;
     if (!this._sneakRegistered && ctx.interactables?.register) {
       ctx.interactables.register(s);
@@ -2203,11 +2244,35 @@ export class Melee {
    * takes `heavyFrac` of max health and a stagger, which is the HZD behaviour
    * of "you hurt it badly and it now knows exactly where you are".
    */
-  silentStrike() {
-    const m = this.silentTarget;
+  /**
+   * The prompt's action (M11: the lance is in her hand before the contact). It
+   * goes through the swing path, so it obeys R5: from holstered the draw plays
+   * and the long stab fires when the grip is rigid; the hit lands at that
+   * stab's contact (`_resolve`), on a target still legal then.
+   */
+  undercut() {
+    const m = this.undercutTarget;
     if (!m || !this._sneakOk(m)) return null;
+    this._undercutM = m;
+    this.combo = 2;
+    this.drawLance(2.4);
+    this.swing({ heavy: false });
+    this.undercutTarget = null;
+    this._sneak.disabled = true;
+    return { machine: m, pending: true };
+  }
+
+  /** The carried rows still call these two (see docs/ROUND5-MELEE.md §6). */
+  silentStrike() { const m = this.undercutTarget; return m && this._sneakOk(m) ? this._undercutHit(m) : null; }
+  get silentTarget() { return this.undercutTarget; }
+  set silentTarget(m) { this.undercutTarget = m; }
+
+  /** The Undercut's hit (a kill on the small classes, `heavyFrac` otherwise). */
+  _undercutHit(m) {
+    if (!m || m.alive === false || m._disposed) return null;
     const cfg = MELEE.silent;
-    const instant = cfg.instant.includes(m.kind);
+    const roles = this.ctx.machines?.roles;
+    const instant = cfg.instant.includes(m.kind) || UNDERCUT_KILLS.some((r) => roles?.[r] === m.kind);
     const dmg = instant
       ? (m.health ?? 1) * 4 + 1000
       : (m.maxHealth ?? 100) * cfg.heavyFrac;
@@ -2228,18 +2293,15 @@ export class Melee {
 
     this._stats.silent++;
     this._visT = 2.2;
-    // she stabs with the spear, so she is holding it a beat later. The draw is
-    // 0.26 s and the strike is instantaneous, so the motion reads as the
-    // follow-through of the kill rather than as the wind-up to it — an honest
-    // gap, listed in docs/ROUND4-PLAYER-MELEE.md §gaps.
-    this.drawSpear(2.4);
+    this.drawLance(2.4);
+    this.layer?.onHit?.(true);
     this.combat?.noteCombatAction?.();
     this.combat?.impactFeedback?.({
       point: _pt, normal: _n, machine: m, damage: res?.damage ?? dmg,
       weak: true, tear: cfg.tear, kind: 'silent',
       maxHealth: m.maxHealth ?? 100, colors: SPARK_STEEL,
     });
-    this.silentTarget = null;
+    this.undercutTarget = null;
     this._sneak.disabled = true;
 
     const out = { machine: m, killed: !!res?.killed || m.alive === false, damage: res?.damage ?? dmg };
@@ -2254,16 +2316,16 @@ export class Melee {
   /**
    * NO-RIG FALLBACK ONLY. When `MeleeLayer` could not build (no animator, no
    * hand bone, a rig without the finger bones the grip axis is derived from)
-   * the spear still has to be somewhere sane, so it is parked in the fist at
+   * the lance still has to be somewhere sane, so it is parked in the fist at
    * the canon grip fraction. Every rigged build takes the other path and this
    * function never runs — the pose lives in `anim/meleeLayer.js`.
    *
-   * What used to be here (`_poseSpear`) is the thing Kevin was complaining
+   * What used to be here (`_poseLance`) is the thing Kevin was complaining
    * about: three Euler angles keyed off the phase clock that slid the MESH
    * through the camera plane while her arm never moved.
    */
-  _poseSpearFallback() {
-    const g = this.spear.group;
+  _poseLanceFallback() {
+    const g = this.lance.group;
     if (!this._hand) return;
     this._hand.updateWorldMatrix(true, false);
     _v.setFromMatrixScale(this._hand.matrixWorld);
@@ -2272,7 +2334,7 @@ export class Melee {
     _e.set(-0.25, 0.1, 0, 'YXZ');
     _q.setFromEuler(_e);
     g.quaternion.copy(_q);
-    _v2.set(0, 0, -this.spear.length * 0.20).applyQuaternion(_q);
+    _v2.set(0, 0, -this.lance.length * 0.20).applyQuaternion(_q);
     g.position.copy(_v2).multiplyScalar(inv);
   }
 
@@ -2281,7 +2343,7 @@ export class Melee {
    *
    * It used to be pinned 1.25-1.5 m down the CAMERA ray and rolled by a
    * constant — a smear in front of the lens that had nothing to do with where
-   * the spear was. Now it is placed on the live blade: centred at the grip,
+   * the lance was. Now it is placed on the live blade: centred at the grip,
    * oriented so the ring's plane contains the haft and the swing direction, and
    * scaled to the blade's own reach. When the rig is missing it falls back to
    * the old camera-ray placement so a no-rig build still reads as a swing.
@@ -2291,7 +2353,7 @@ export class Melee {
     t.visible = true;
     this._trailT = 0;
     this._trailDur = heavy ? 0.15 : 0.10;
-    const L = this.spear.length;
+    const L = this.lance.length;
     const layer = this.layer;
     let placed = false;
     if (layer && layer.gripWorld(_tA) && layer.tipWorld(_tB)) {
