@@ -770,6 +770,9 @@ body.cal-title-live #title.overlay {
   background-attachment: scroll, fixed, fixed, fixed, fixed, fixed;
 }
 .mn-hub[data-tab='settings'] .mn-hub-body, body.cal-hub-open #cal-prog .sk-panel { --cal-plate: none; }
+/* a page settling as it turns: the ink arrives, the paper stays */
+.mn-hub-body > * { animation: mn-body-in 0.18s var(--cal-ease-out) both; }
+@keyframes mn-body-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 .mn-hub[data-tab='map'] .mn-hub-body { --cal-plate-w: 176px; }
 .mn-hub.delegated .mn-hub-body { visibility: hidden; pointer-events: none; background: none; }
 
