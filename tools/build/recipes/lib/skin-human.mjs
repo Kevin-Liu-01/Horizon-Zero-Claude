@@ -13,6 +13,8 @@ import {
 import { rng, WRAP_ATLAS } from './wrap.mjs';
 import { scatterAnchors, coilCards, coilField, coilSampler, hairCoverage, hairlineLayer, browLayer } from './hair.mjs';
 
+const mix = (a, b, t) => a + (b - a) * t;
+
 /** The texel density a human body wants (against the source layout): the face first, hidden body last. */
 export function humanDensity(s) {
   const c = [(s.min[0] + s.max[0]) / 2, (s.min[1] + s.max[1]) / 2];
@@ -275,14 +277,17 @@ export function faceLayers({ L, eyes, cheek }) {
     const nostril = Math.hypot(T.X / 0.024, (T.Y - (noseT[1] - 0.012)) / 0.012);
     return faceZone(T) * smooth(0.95, 1.3, lip) * smooth(0.9, 1.25, nostril);
   };
-  // the inside of a nostril is dark: it faces down and back, and the sun must not find pink there
+  // the inside of a nostril is dark: it faces down and back, and its inner wall must not catch a pink highlight
   const nostrils = (T) => {
-    if (Math.abs(T.X) > 0.02 || T.Y > noseT[1] + 0.004 || T.Y < noseT[1] - 0.026 || T.Z < noseT[2] - 0.05) return;
-    const k = smooth(-0.15, -0.65, T.ny);
-    if (k <= 0) return;
-    const m = 1 - 0.4 * k;
+    if (Math.abs(T.X) > 0.02 || T.Y > noseT[1] + 0.006 || T.Y < noseT[1] - 0.026 || T.Z < noseT[2] - 0.05) return;
+    const under = smooth(-0.15, -0.65, T.ny);
+    const d = Math.hypot((Math.abs(T.X) - 0.0088) / 0.0072, (T.Y - (noseT[1] - 0.0087)) / 0.0062, (T.Z - (noseT[2] - 0.0076)) / 0.011);
+    const inner = 1 - smooth(0.55, 1.05, d);
+    if (under <= 0 && inner <= 0) return;
+    const m = (1 - 0.3 * under) * (1 - 0.66 * inner);
     T.r *= m; T.g *= m * 0.96; T.b *= m * 0.96;
-    T.ao *= 1 - 0.3 * k;
+    T.ao *= 1 - 0.3 * Math.max(under, inner);
+    T.rough = mix(T.rough, 0.85, inner);
   };
   return [
     smoothSkin({ zone: notFeature }),
