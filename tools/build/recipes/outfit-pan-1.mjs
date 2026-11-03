@@ -243,10 +243,12 @@ export function panTrim(W, H, trimH) {
     o.rough = 0.24 + 0.18 * m; o.metal = 0; o.det = 0; o.wear = 0.2;
   });
   T.cell('crust', 96, 60, (t, o) => {
-    // stiffened hide under dried brine: grey leather showing through the white
-    const m = fbm(t.ax * 0.16, t.ay * 0.16, 3.3, 3), m2 = fbm(t.ax * 0.5, t.ay * 0.5, 8.3, 2);
-    put(o, sc([96, 84, 70], 0.86 + 0.3 * m));
-    over(o, sc(COL.salt, 0.86 + 0.14 * m2), sstep(0.40, 0.62, m + 0.2 * (m2 - 0.5)));
+    // stiffened hide under dried brine: a fine pale crust, grey leather only at the low spots
+    const m = fbm(t.ax * 0.34, t.ay * 0.34, 3.3, 3), m2 = fbm(t.ax * 0.9, t.ay * 0.9, 8.3, 2);
+    put(o, sc(COL.salt, 0.70 + 0.2 * m + 0.1 * m2));
+    over(o, [104, 94, 80], sstep(0.46, 0.30, m) * 0.7);
+    const e = Math.min(t.x, t.y, t.w - 1 - t.x, t.h - 1 - t.y);
+    if (e < 4) { const q = 0.72 + 0.07 * e; o.r *= q; o.g *= q; o.b *= q; }
     o.h = 0.0035 * m; o.rough = 0.95; o.det = 0;
   });
   return T;

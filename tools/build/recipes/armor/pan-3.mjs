@@ -71,7 +71,7 @@ export async function build({ out = ROOT } = {}) {
           outer.push([cx + Math.cos(a) * 0.062, 0.175, cz + Math.sin(a) * 0.09]);
         }
         drapeInto(guards, bootF, inner, outer, {
-          rows: 4, margin: 0.012,
+          rows: 4, margin: 0.017,
           uvOf: (t, c) => [rg[0] + rg[2] * c, rg[1] + rg[3] * t],
           skinOf: rigid(J(side > 0 ? 'calf_l' : 'calf_r')),
         });
