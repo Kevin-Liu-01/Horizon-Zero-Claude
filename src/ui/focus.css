@@ -57,10 +57,11 @@ body.cal-sighting .cal-cross { opacity: 0; }
 .calf-reticle .u { stroke: rgba(20, 22, 26, 0.58); stroke-width: 2.8; }
 .calf-reticle .t { stroke: var(--cal-staff); stroke-width: 1; }
 
-/* the readouts: a paper chip hung under the limb's right end, clear of what she is reading */
+/* the readouts: a paper chip hung on the upper hair, above the stadia, where a reading sits on a
+   real reticle plate. World chips hang off the ground and the Instrument, so nothing lands on it. */
 .calf-read {
   position: absolute;
-  left: calc(50% + 196px * var(--s)); top: calc(50% + 12px * var(--s));
+  left: calc(50% + 12px * var(--s)); top: calc(50% - 172px * var(--s));
   padding: calc(3px * var(--s)) calc(7px * var(--s)) calc(2px * var(--s));
   color: var(--cal-ink);
   background: var(--cal-paper-92);

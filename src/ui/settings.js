@@ -108,7 +108,7 @@ export const SCHEMA = [
       apply: (v, ctx) => { ctx.settings.menuTips = !!v; } },
   ] },
   { group: 'AUDIO', rows: AUDIO_BUSES.map((bus) => ({
-    id: `vol_${bus}`, kind: 'slider', label: bus === 'ui' ? 'Interface' : bus[0].toUpperCase() + bus.slice(1),
+    id: `vol_${bus}`, kind: 'slider', label: bus === 'ui' ? 'Interface' : bus === 'sfx' ? 'Effects' : bus[0].toUpperCase() + bus.slice(1),
     // defaults mirror audio/buses.js DEFAULT_VOLUMES exactly
     min: 0, max: 1, step: 0.02,
     dflt: { master: 0.85, music: 0.8, sfx: 1.0, ambience: 0.9, voice: 1.0, ui: 0.8 }[bus],

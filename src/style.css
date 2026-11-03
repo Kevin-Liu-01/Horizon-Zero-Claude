@@ -766,10 +766,11 @@ body.cal-title-live #title.overlay {
     repeating-linear-gradient(180deg, transparent 0 27px, var(--cal-rule-ruled) 27px 28px);
   background-repeat: no-repeat, repeat, no-repeat, no-repeat, no-repeat, repeat;
   background-position: right 30px bottom 8px, 0 0, 0 0, 0 0, 0 0, 0 0;
-  background-size: 268px auto, auto, auto, auto, auto, auto;
+  background-size: var(--cal-plate-w, 268px) auto, auto, auto, auto, auto, auto;
   background-attachment: scroll, fixed, fixed, fixed, fixed, fixed;
 }
-.mn-hub[data-tab='settings'] .mn-hub-body { --cal-plate: none; }
+.mn-hub[data-tab='settings'] .mn-hub-body, body.cal-hub-open #cal-prog .sk-panel { --cal-plate: none; }
+.mn-hub[data-tab='map'] .mn-hub-body { --cal-plate-w: 176px; }
 .mn-hub.delegated .mn-hub-body { visibility: hidden; pointer-events: none; background: none; }
 
 .mn-hub-foot {
@@ -957,6 +958,8 @@ body.cal-title-live #title.overlay {
 .mn-range::-moz-range-thumb { width: 7px; height: 14px; background: var(--cal-c-staff); border: 1px solid var(--cal-ink); cursor: pointer; }
 .mn-range:focus-visible { outline: 1px solid var(--cal-c-weak); outline-offset: 2px; }
 
+/* numerals and key words are Plex even inside a menu button (R55) */
+.cal-menus-root .mn-bind, .cal-menus-root .mn-toggle, .cal-menus-root .mn-x { font-family: var(--cal-font-mono); }
 .mn-toggle {
   min-width: 56px;
   background: transparent;
@@ -1237,7 +1240,7 @@ body #cal-prog .pg-quest { background: transparent; border: 0; border-bottom: 1p
 body #cal-prog .pg-quest.tracked, body #cal-prog .pg-quest.sel { background: var(--cal-ink-10); }
 body #cal-prog .pg-q-title { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-label); letter-spacing: 0.06em; color: var(--cal-ink); }
 body #cal-prog .pg-q-tag { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-micro); letter-spacing: var(--cal-track-caps); color: var(--cal-staff); background: var(--cal-ink); border-color: var(--cal-ink); }
-body #cal-prog .pg-q-tag:empty { display: none; }
+body #cal-prog .pg-q-tag, body #cal-prog .pg-q-tag.main { color: var(--cal-staff); }
 body #cal-prog .pg-foot kbd, body #cal-prog .sk-foot kbd { color: var(--cal-ink); background: rgba(241, 238, 230, 0.52); border: 1px solid var(--cal-ink-62); border-bottom-width: 2px; }
 body #cal-prog .pg-trial-time { font-family: var(--cal-font-mono); }
 body #cal-prog .pg-q-sum { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); line-height: 1.5; color: var(--cal-ink-80); }
@@ -1270,4 +1273,4 @@ body #cal-prog .sk-name { font-family: var(--cal-font-ui); font-weight: 600; fon
 body #cal-prog .sk-cost { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); letter-spacing: 0; color: var(--cal-ink); }
 body #cal-prog .sk-desc { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); color: var(--cal-ink-80); }
 body #cal-prog .sk-req { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0; text-transform: none; color: var(--cal-c-staff); }
-body #cal-prog .sk-hook { font-family: var(--cal-font-mono); color: var(--cal-ink-62); }
+body #cal-prog .sk-hook { display: none; }   /* a build note, not a player's words */

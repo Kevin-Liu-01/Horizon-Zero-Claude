@@ -500,9 +500,7 @@ export class FogOfWar {
   }
 
   encode() {
-    let s = '';
-    for (let i = 0; i < this.cells.length; i++) s += String.fromCharCode(this.cells[i]);
-    return btoa(s);
+    return btoa(String.fromCharCode.apply(null, this.cells));
   }
 
   save() { this._store?.save?.(); }
@@ -745,14 +743,8 @@ export class WorldMap {
     for (const s of siteTable()) {
       out.push({ kind: SETTLEMENTS.has(s.id) ? 'settlement' : 'site', x: s.x, z: s.z, name: s.name, done: false });
     }
-    for (const l of (ctx.props?.landmarks || [])) {
-      out.push({ kind: 'landmark', x: l.x, z: l.z, name: fieldWord(l.name || l.id), done: false });
-    }
-    try {
-      for (const s of (ctx.props?.sites?.() || [])) {
-        out.push({ kind: s.kind, x: s.x, z: s.z, name: fieldWord(s.name), done: !!s.done });
-      }
-    } catch { /* activities not built yet */ }
+    // `sites.js` is the sheet's gazetteer (bible §8.4). The Round-4 props' landmarks and activity
+    // marks stay off it: their names are retired words until world-props and progression replace them.
 
     try {
       for (const m of (ctx.progression?.getMarkers?.() || [])) {

@@ -910,9 +910,9 @@ export const GATES = [
   alias(V36, 'V36-focus-scan'),
   V_MAP,
   ...V_UI,
-  V_UI_SHEET,
   hud4k('V-hud-4k-a', 'the staff, the gourd, the field note (top-left)', 0, 0),
   hud4k('V-hud-4k-b', 'the theodolite circle and the vial (top-centre)', -1120, 0),
   hud4k('V-hud-4k-c', 'the plate, the reticle and the breath meter (centre)', -1120, -630),
   hud4k('V-hud-4k-d', 'the kit tag and the tool chips (bottom-right)', -2240, -1260),
+  V_UI_SHEET,
 ];

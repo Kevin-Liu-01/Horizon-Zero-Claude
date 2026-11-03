@@ -159,7 +159,10 @@ const FIGURE_FS = /* glsl */ `
   uniform vec3 uPaper;
   void main() {
     vec2 uv = gl_FragCoord.xy / uRes;
-    vec2 c = texture2D(uMask, uv).rg;
+    vec3 c3 = texture2D(uMask, uv).rgb;
+    float her = smoothstep(0.3, 0.7, c3.b);      // she stands in front of what she reads
+    if (her > 0.995) discard;
+    vec2 c = c3.rg;
     vec2 l = texture2D(uMask, uv - vec2(uTexel.x, 0.0)).rg;
     vec2 r = texture2D(uMask, uv + vec2(uTexel.x, 0.0)).rg;
     vec2 d = texture2D(uMask, uv - vec2(0.0, uTexel.y)).rg;
@@ -190,6 +193,7 @@ const FIGURE_FS = /* glsl */ `
       col = mix(col, tooth, lineP);
       a = max(a, max(caseP * 0.72, lineP * 0.98) * part);
     }
+    a *= 1.0 - her;
     if (a <= 0.003) discard;
     gl_FragColor = vec4(col, a);
   }`;
@@ -335,6 +339,8 @@ export class SightingSystem {
     this._lastBrg = -1;
     this._lastDst = -2;
     this._rangeT = 0;
+    this._figure.visible = true;
+    this._buildHeroShells();
     this._buildHulls();
     this._buildPaths();
     this._gather.visible = true;
@@ -546,15 +552,17 @@ export class SightingSystem {
   _buildFigure() {
     this._maskScene = new THREE.Scene();
     this._maskScene.name = 'sighting-figure-mask';
-    const maskMat = (part) => new THREE.ShaderMaterial({
+    const maskMat = (rgb) => new THREE.ShaderMaterial({
       vertexShader: MASK_VS,
-      fragmentShader: `void main() { gl_FragColor = vec4(1.0, ${part ? '1.0' : '0.0'}, 0.0, 1.0); }`,
+      fragmentShader: `void main() { gl_FragColor = vec4(${rgb}, 1.0); }`,
       depthTest: false, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, fog: false,
       blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation,
       blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
     });
-    this._hullMaskMat = maskMat(false);
-    this._partMaskMat = maskMat(true);
+    this._hullMaskMat = maskMat('1.0, 0.0, 0.0');
+    this._partMaskMat = maskMat('1.0, 1.0, 0.0');
+    this._heroMaskMat = maskMat('0.0, 0.0, 1.0');   // Brea: nothing the alidade draws goes over her
+    this._heroShells = [];
 
     this._figureRT = new THREE.WebGLRenderTarget(2, 2, {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
@@ -588,7 +596,7 @@ export class SightingSystem {
     this._figure = new THREE.Mesh(geo, this._figureMat);
     this._figure.name = 'sighting-figure';
     this._figure.frustumCulled = false;
-    this._figure.renderOrder = 9990;
+    this._figure.renderOrder = 9984;   // first of the alidade's layers: the transects read its mask
     this._figure.visible = false;
     this._figureDone = false;
     this._figure.onBeforeRender = (renderer, _scene, camera) => this._renderFigureMask(renderer, camera);
@@ -609,8 +617,8 @@ export class SightingSystem {
     u.uTexel.value.set(1 / mw, 1 / mh);
     u.uScale.value = w / mw;
     const dpr = renderer.domElement.clientWidth > 0 ? w / renderer.domElement.clientWidth : 1;
-    u.uDash.value = 9 * dpr;
-    u.uLine.value = 0.5 * dpr;
+    u.uDash.value = 11 * dpr;
+    u.uLine.value = 0.8 * dpr;
 
     // the source's world matrix is current here: the main pass has already updated the graph
     for (const e of this._hulls.values()) {
@@ -627,6 +635,12 @@ export class SightingSystem {
         if (mesh.visible) { mesh.matrix.copy(src.matrixWorld); mesh.matrixWorldNeedsUpdate = true; }
       }
     }
+    const model = this.ctx.player?.model;
+    for (const mesh of this._heroShells) {
+      const src = mesh.userData.__src;
+      mesh.visible = !!src?.parent && src.visible && model?.visible !== false;
+      if (mesh.visible) { mesh.matrix.copy(src.matrixWorld); mesh.matrixWorldNeedsUpdate = true; }
+    }
 
     renderer.getClearColor(_clear);
     const clearA = renderer.getClearAlpha();
@@ -641,9 +655,27 @@ export class SightingSystem {
     renderer.setRenderTarget(cur);
   }
 
+  /** Brea's own meshes (kit included), rebuilt each time the alidade comes up: she may have changed what she carries. */
+  _buildHeroShells() {
+    this._clearHeroShells();
+    const model = this.ctx.player?.model;
+    if (!model) return;
+    model.traverse((o) => {
+      if (this._heroShells.length >= 12) return;
+      if (!(o.isMesh || o.isSkinnedMesh) || o.isInstancedMesh || o.userData.__sightOverlay) return;
+      this._heroShells.push(this._overlayFor(o, this._heroMaskMat));
+    });
+  }
+
+  _clearHeroShells() {
+    for (const mesh of this._heroShells) mesh.parent?.remove(mesh);
+    this._heroShells.length = 0;
+  }
+
   /** Nothing on the sheet: the pass stops and the mask's memory goes back. */
   _releaseFigure() {
-    if (this._hulls.size || this._parts.size) return;
+    if (this.on || this._hulls.size || this._parts.size) return;
+    this._clearHeroShells();
     this._figure.visible = false;
     this._figureRT.dispose();
   }
@@ -821,6 +853,8 @@ export class SightingSystem {
         uFade: { value: 0 },
         uPaper: { value: new THREE.Color('#F1EEE6') },
         uInk: { value: new THREE.Color('#26343F') },
+        uMask: { value: this._figureRT.texture },
+        uRes: this._figureMat.uniforms.uRes,       // shared: written once a frame by the mask pass
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
@@ -837,6 +871,8 @@ export class SightingSystem {
         uniform float uFade;
         uniform vec3 uPaper;
         uniform vec3 uInk;
+        uniform sampler2D uMask;
+        uniform vec2 uRes;
         void main() {
           // a surveyor's chain line: fine dashes 0.9 m long on a 1.5 m pace, walking slowly,
           // and a station tick across the ribbon every 7.5 m, which stays put as a chainage does
@@ -850,7 +886,7 @@ export class SightingSystem {
           float core = 1.0 - smoothstep(lineW, lineW + fw, edge);
           float halo = 1.0 - smoothstep(lineW + fw, lineW + fw * 2.6, edge);
           float st = fract(vUv.x / 7.5);
-          float stw = max(0.012, fwidth(vUv.x) * 0.9 / 7.5);
+          float stw = max(0.0045, fwidth(vUv.x) * 0.9 / 7.5);
           float tick = (1.0 - smoothstep(stw, stw * 1.6, min(st, 1.0 - st))) * (1.0 - smoothstep(0.86, 0.98, edge));
           float far = 1.0 - smoothstep(95.0, 125.0, dCam);          // gone past ~120 m
           float nearK = smoothstep(2.0, 6.0, dCam);                 // never a slab across the foreground
@@ -859,8 +895,10 @@ export class SightingSystem {
           float line = max(core * dash, tick);
           float a = max(line * 0.96, max(halo * dash, tick) * 0.42);
           vec3 col = mix(uInk, uPaper, line);
-          if (a * uFade * far * tilt * nearK <= 0.003) discard;
-          gl_FragColor = vec4(col, a * uFade * far * tilt * nearK);
+          float her = texture2D(uMask, gl_FragCoord.xy / uRes).b;   // the line passes behind her
+          float total = a * uFade * far * tilt * nearK * (1.0 - smoothstep(0.3, 0.7, her));
+          if (total <= 0.003) discard;
+          gl_FragColor = vec4(col, total);
         }`,
     });
   }
@@ -1800,6 +1838,8 @@ export class SightingSystem {
       this._offT += dt;
       if (this._offT >= PART_LINGER) this._disposeParts();
       else this._figureMat.uniforms.uPart.value = Math.min(1, (PART_LINGER - this._offT) / PART_FADE);
+    } else if (this._figure.visible && !this._hulls.size) {
+      this._releaseFigure();
     }
 
     // --- transects (fade out from under an Instrument that leaves one) ---
@@ -1862,6 +1902,7 @@ export class SightingSystem {
     this._figureMat.dispose();
     this._hullMaskMat.dispose();
     this._partMaskMat.dispose();
+    this._heroMaskMat.dispose();
     this.ctx.engine?.unregisterRenderTarget?.(this._figureRT);
     this._figureRT.dispose();
     this.ctx.scene.remove(this._ring);

@@ -125,6 +125,39 @@ const BEARING_STR = Array.from({ length: 360 }, (_, i) => String(i).padStart(3, 
  * strip's width in half-pixels, and cleared when the HUD scale changes.
  */
 const TX_MEMO = new Map();
+/**
+ * A projected element moves by two transforms: X on a zero-size wrapper (`txString`), Y on the
+ * element itself, by whole pixel, built once per y and cleared with TX_MEMO when the scale changes.
+ * So a plate, a mark or a damage number in flight writes strings it already has. Whole pixels
+ * also keep their type crisp.
+ */
+const PLATE_Y = new Map(), CENTRE_Y = new Map(), AWARE_Y = new Map(), DMG_Y = new Map();
+function plateY(y, ws) {
+  let v = PLATE_Y.get(y);
+  if (v === undefined) { v = `translateY(${y}px) scale(${ws.toFixed(3)}) translate(-50%, -100%)`; PLATE_Y.set(y, v); }
+  return v;
+}
+function centreY(y, ws) {
+  let v = CENTRE_Y.get(y);
+  if (v === undefined) { v = `translateY(${y}px) translate(-50%,-50%) scale(${ws.toFixed(3)})`; CENTRE_Y.set(y, v); }
+  return v;
+}
+function awareY(y, sc) {
+  let v = AWARE_Y.get(y);
+  if (v === undefined) { v = `translateY(${y}px) scale(${sc.toFixed(2)})`; AWARE_Y.set(y, v); }
+  return v;
+}
+function dmgY(y) {
+  let v = DMG_Y.get(y);
+  if (v === undefined) { v = `translateY(${y}px) translate(-50%,-100%)`; DMG_Y.set(y, v); }
+  return v;
+}
+/** Math.hypot takes rest arguments and allocates for them; this runs per Instrument per frame. */
+const len2 = (a, b) => Math.sqrt(a * a + b * b);
+/** Number strings for the two per-element style values a damage number animates. */
+const OPACITY_STR = Array.from({ length: 21 }, (_, i) => (i / 20).toFixed(2));
+const POP_STR = Array.from({ length: 11 }, (_, i) => (0.82 + 0.018 * i).toFixed(3));
+const ELEM_KEYS = ['fire', 'freeze', 'shock'];
 function txString(x) {
   const k = Math.round(x * 2);
   let v = TX_MEMO.get(k);
@@ -331,6 +364,23 @@ export class HUD {
     this._mhbY = [0, 0, 0];
     this._mhbC = [0, 0, 0];
     this._pipVis = [];             // the marks on the circle this frame (reused)
+    this._scanDt = 0;
+    this._decayFlash = (ttl, m) => {
+      const left = ttl - this._scanDt;
+      if (left <= 0) this._attackFlash.delete(m);
+      else this._attackFlash.set(m, left);
+    };
+    this._decayTrig = (rec, mm) => {
+      let any = false;
+      for (let i = 0; i < ELEM_KEYS.length; i++) {
+        const k = ELEM_KEYS[i], v = rec[k];
+        if (v === undefined) continue;
+        if (v - this._scanDt <= 0) rec[k] = undefined;
+        else { rec[k] = v - this._scanDt; any = true; }
+      }
+      if (!any || mm.alive === false) this._elemTrigs.delete(mm);
+    };
+    this._objQx = NaN; this._objQy = NaN; this._intQx = NaN; this._intQy = NaN;
     this._anyHostile = false;      // any Instrument alert/attack this frame
     this._nearestHostileDist = Infinity;
     this._nearestInstrumentDist = Infinity;
@@ -480,7 +530,8 @@ export class HUD {
     for (let i = 0; i < MHB_CAP; i++) this._mhbSlots.push(this._makeMhb());
 
     // the objective's broad arrow, with metres
-    this._objDiamond = div('cal-objmark', this._worldLayer,
+    this._objWrap = div('cal-px', this._worldLayer);
+    this._objDiamond = div('cal-objmark', this._objWrap,
       '<div class="cal-objmark-d"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="u" d="M12 22 V3 M12 22 L4 8 M12 22 L20 8"/><path class="t" d="M12 22 V3 M12 22 L4 8 M12 22 L20 8"/></svg></div>'
       + '<div class="cal-objmark-dist">0m</div>'
       + '<div class="cal-objmark-label"></div>');
@@ -510,7 +561,8 @@ export class HUD {
     this._concFill = this._concEl.querySelector('i');
 
     /* ------------------------- interaction prompt ------------------------- */
-    this._intEl = div('cal-interact', this._worldLayer);
+    this._intWrap = div('cal-px', this._worldLayer);
+    this._intEl = div('cal-interact', this._intWrap);
     const intKey = document.createElement('kbd');
     intKey.className = 'cal-int-key';
     intKey.textContent = 'E';
@@ -555,9 +607,10 @@ export class HUD {
     const dl = div('cal-dmglayer', root);
     this._dmgPool = [];
     for (let i = 0; i < 24; i++) {
+      const wrap = div('cal-px', dl);
       this._dmgPool.push({
-        el: div('cal-dmg', dl),
-        active: false, age: 0, dur: 1, drift: 0,
+        wrap, el: div('cal-dmg', wrap),
+        active: false, age: 0, dur: 1, drift: 0, qx: NaN, qy: NaN,
         world: new THREE.Vector3(),
       });
     }
@@ -588,7 +641,9 @@ export class HUD {
 
   /** One pooled projected plate: `NAME · WORK · TRANSECT nn`, a graduated bar, status gauges, a leader. */
   _makeMhb() {
-    const el = div('cal-mhb', this._worldLayer);
+    // two transforms, so a moving plate writes memoized strings (X on the wrapper, Y + scale on the plate)
+    const wrap = div('cal-px', this._worldLayer);
+    const el = div('cal-mhb', wrap);
     const plate = div('cal-mhb-plate', el);
     const head = div('cal-mhb-head', plate);
     const aware = div('cal-iris', head, '<i></i>');
@@ -606,8 +661,8 @@ export class HUD {
     }
     div('cal-mhb-leader', el);
     return {
-      el, plate, aware, name, ghost, fill, elemEls,
-      m: null, vis: null, w: -1, ghostW: -1, clamped: null, awareS: '', h: 0,
+      wrap, el, plate, aware, name, ghost, fill, elemEls,
+      m: null, vis: null, w: -1, ghostW: -1, clamped: null, nolead: null, awareS: '', h: 0, qx: NaN, qy: NaN, atk: false,
     };
   }
 
@@ -625,6 +680,10 @@ export class HUD {
     this._wscale = Math.max(WORLD_SCALE_MIN, v);
     this.rootEl.style.setProperty('--hud-scale', v.toFixed(3));
     TX_MEMO.clear();
+    PLATE_Y.clear(); CENTRE_Y.clear(); AWARE_Y.clear();
+    for (const slot of this._mhbSlots) { slot.qx = NaN; slot.qy = NaN; }
+    for (const a of this._awares.values()) { a.qx = NaN; a.qy = NaN; }
+    this._objQx = this._objQy = this._intQx = this._intQy = NaN;
     this._lastStripX = NaN;
   }
 
@@ -670,7 +729,7 @@ export class HUD {
       const t = getComputedStyle(n).transform;
       if (!t || t === 'none') continue;
       const nums = t.slice(t.indexOf('(') + 1, -1).split(',').map((v) => parseFloat(v));
-      const f = Math.hypot(nums[0], nums[1]);
+      const f = len2(nums[0], nums[1]);
       if (Number.isFinite(f) && f > 0) { k *= f; if (Math.abs(f - 1) > 1e-3) seen = true; }
     }
     return { k, seen };
@@ -1029,7 +1088,8 @@ export class HUD {
   _updateDamageNumbers(dt) {
     const cam = this.ctx.camera;
     const v = this._v;
-    for (const d of this._dmgPool) {
+    for (let i = 0; i < this._dmgPool.length; i++) {
+      const d = this._dmgPool[i];
       if (!d.active) continue;
       d.age += dt;
       if (d.age >= d.dur) {
@@ -1047,11 +1107,12 @@ export class HUD {
       const rise = 1 - (1 - k) * (1 - k);
       const x = (v.x * 0.5 + 0.5) * this._vw + d.drift * rise;
       const y = (-v.y * 0.5 + 0.5) * this._vh - 44 * rise;
-      const s = k < 0.14 ? 0.82 + 0.18 * (k / 0.14) : 1;
-      d.el.style.transform =
-        `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-100%) scale(${s.toFixed(3)})`;
+      const qx = Math.round(x), qy = Math.round(y);
+      if (qx !== d.qx) { d.qx = qx; d.wrap.style.transform = txString(qx); }
+      if (qy !== d.qy) { d.qy = qy; d.el.style.transform = dmgY(qy); }
+      d.el.style.scale = POP_STR[k < 0.14 ? Math.round((k / 0.14) * 10) : 10];
       const o = k < 0.1 ? k / 0.1 : k > 0.62 ? (1 - k) / 0.38 : 1;
-      d.el.style.opacity = o.toFixed(2);
+      d.el.style.opacity = OPACITY_STR[Math.round(o * 20)];
     }
   }
 
@@ -1114,25 +1175,10 @@ export class HUD {
     this._nearestInstrumentDist = Infinity;
     for (let i = 0; i < MHB_CAP; i++) { this._mhbPick[i] = null; this._mhbPickW[i] = -1; }
 
-    // decay attack-flash + status countdowns
-    if (this._attackFlash.size) {
-      for (const [m, ttl] of this._attackFlash) {
-        const left = ttl - dt;
-        if (left <= 0) this._attackFlash.delete(m);
-        else this._attackFlash.set(m, left);
-      }
-    }
-    if (this._elemTrigs.size) {
-      for (const [mm, rec] of this._elemTrigs) {
-        let any = false;
-        for (const k in rec) {
-          rec[k] -= dt;
-          if (rec[k] <= 0) delete rec[k];
-          else any = true;
-        }
-        if (!any || mm.alive === false) this._elemTrigs.delete(mm);
-      }
-    }
+    // decay attack-flash + status countdowns (prebuilt callbacks: no iterator, no key list)
+    this._scanDt = dt;
+    if (this._attackFlash.size) this._attackFlash.forEach(this._decayFlash);
+    if (this._elemTrigs.size) this._elemTrigs.forEach(this._decayTrig);
 
     const list = this.ctx.machines?.list;
     if (!Array.isArray(list)) return;
@@ -1145,7 +1191,7 @@ export class HUD {
       const alive = m.alive !== false;
       const hostile = alive && (m.state === 'alert' || m.state === 'attack');
       const dx = pos.x - px, dz = pos.z - pz;
-      const dist = Math.hypot(dx, dz);
+      const dist = len2(dx, dz);
       if (alive && dist < this._nearestInstrumentDist) this._nearestInstrumentDist = dist;
       if (hostile) {
         this._anyHostile = true;
@@ -1206,7 +1252,7 @@ export class HUD {
     if (!m?.position || !p?.position) return;
     const dx = m.position.x - p.position.x;
     const dz = m.position.z - p.position.z;
-    const dist = Math.hypot(dx, dz);
+    const dist = len2(dx, dz);
     if (dist > 12) return;
     const inv = dist > 0.001 ? 1 / dist : 0;
     const facing = (dx * -Math.sin(p.camYaw) + dz * -Math.cos(p.camYaw)) * inv;
@@ -1439,7 +1485,7 @@ export class HUD {
         }
         const dx = pos.x - p.position.x;
         const dz = pos.z - p.position.z;
-        const dist = Math.hypot(dx, dz);
+        const dist = len2(dx, dz);
         const d = wrap180(Math.atan2(dx, -dz) * RAD2DEG - this._cAngle);
         if (dist > 320 || Math.abs(d) > this._halfWinDeg) {
           if (pip.vis !== false) { pip.el.style.visibility = 'hidden'; pip.vis = false; }
@@ -1516,7 +1562,7 @@ export class HUD {
         continue;
       }
       const dx = mk.x - p.position.x, dz = mk.z - p.position.z;
-      const dist = Math.hypot(dx, dz);
+      const dist = len2(dx, dz);
       const d = wrap180(Math.atan2(dx, -dz) * RAD2DEG - this._cAngle);
       if (Math.abs(d) > this._halfWinDeg) {
         if (q.vis !== false) { q.el.style.visibility = 'hidden'; q.vis = false; }
@@ -1546,7 +1592,7 @@ export class HUD {
     const clamped = Math.max(-this._halfWinDeg, Math.min(this._halfWinDeg, d));
     if (q.vis !== true) { q.el.style.visibility = 'visible'; q.vis = true; }
     q.el.style.transform = txString(clamped * PX_PER_DEG * this._scale);
-    const di = Math.round(Math.hypot(dx, dz));
+    const di = Math.round(len2(dx, dz));
     if (di !== q.dist) { q.dist = di; q.lab.textContent = String(di); }
   }
 
@@ -1632,10 +1678,11 @@ export class HUD {
   _awareEntry(m) {
     let a = this._awares.get(m);
     if (!a) {
-      const el = div('cal-aware', this._awareLayer);
+      const wrap = div('cal-px', this._awareLayer);
+      const el = div('cal-aware', wrap);
       const rod = div('cal-aware-rod', el, '<i></i>');
       div('cal-iris', el, '<i></i>');
-      a = { el, fill: rod.firstChild, mode: null, frac: -1, vis: null, edge: null, chirped: false, s: '' };
+      a = { wrap, el, fill: rod.firstChild, mode: null, frac: -1, vis: null, edge: null, chirped: false, s: '', qx: NaN, qy: NaN };
       this._awares.set(m, a);
     }
     return a;
@@ -1709,7 +1756,9 @@ export class HUD {
         if (!a.chirped) { a.chirped = true; this._emitUi('ui-nav'); }
       }
       if (a.edge !== edge) { a.edge = edge; a.el.classList.toggle('edge', edge); }
-      a.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${this._scale.toFixed(2)})`;
+      const qx = Math.round(x), qy = Math.round(y);
+      if (qx !== a.qx) { a.qx = qx; a.wrap.style.transform = txString(qx); }
+      if (qy !== a.qy) { a.qy = qy; a.el.style.transform = awareY(qy, this._scale); }
       if (a.mode !== mode) { a.mode = mode; a.el.dataset.m = mode; a.frac = -1; }
       const s = lampStateOf(m);
       if (a.s !== s) { a.s = s; a.el.dataset.s = s; }
@@ -1762,22 +1811,22 @@ export class HUD {
       if (!slot.h) slot.h = slot.el.offsetHeight || MHB_PLATE_H;
       const plateH = slot.h * ws;
       const topFloor = MHB_TOP_BASE * sc + plateH;
-      let moved = y < topFloor;
+      // bit 1: off its Instrument's axis or above the frame (the row's "clamped"); bit 2: stepped down its axis
+      let moved = y < topFloor ? 1 : 0;
       if (moved) y = topFloor;
       // the fixed instruments keep their place: the column (the staff, the gourd, the note)...
       const colB = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc;
       const colR = MHB_SAFE_L * sc;
       if (x - halfW < colR && y - plateH < colB) {
         const toRight = colR + halfW - x, toBelow = colB + plateH - y;
-        if (toRight <= toBelow) x += toRight; else y += toBelow;
-        moved = true;
+        if (toRight <= toBelow) { x += toRight; moved |= 1; } else { y += toBelow; moved |= 2; }
       }
       // ...and the circle with its vial
       if (Math.abs(x - this._vw * 0.5) < halfW + MHB_EYE_HALF * sc && y - plateH < MHB_EYE_BASE * sc) {
         y = MHB_EYE_BASE * sc + plateH;
-        moved = true;
+        moved |= 2;
       }
-      X[i] = x; Y[i] = y; C[i] = moved ? 1 : 0;
+      X[i] = x; Y[i] = y; C[i] = moved;
       any = true;
     }
     if (!any) return;
@@ -1792,7 +1841,7 @@ export class HUD {
         const hj = (this._mhbSlots[j].h || MHB_PLATE_H) * ws;
         const overlapX = Math.abs(X[i] - X[j]) < halfW * 2 + gap;
         const overlapY = Y[i] > Y[j] - hj - gap && Y[i] - hi - gap < Y[j];
-        if (overlapX && overlapY) { Y[i] = Y[j] + hi + gap; C[i] = 1; }
+        if (overlapX && overlapY) { Y[i] = Y[j] + hi + gap; C[i] |= 2; }
       }
     }
 
@@ -1801,14 +1850,17 @@ export class HUD {
       if (X[i] !== X[i]) continue;
       const slot = this._mhbSlots[i];
       const m = this._mhbPick[i];
-      const clamped = C[i] === 1;
-      if (clamped !== slot.clamped) {
-        slot.clamped = clamped;
-        slot.el.classList.toggle('clamped', clamped);
+      const clamped = (C[i] & 1) !== 0;
+      if (clamped !== slot.clamped) slot.clamped = clamped;
+      const nolead = C[i] !== 0;       // a plate that has left its anchor has no leader to draw
+      if (nolead !== slot.nolead) {
+        slot.nolead = nolead;
+        slot.el.classList.toggle('clamped', nolead);
       }
       if (slot.vis !== true) { slot.el.style.visibility = 'visible'; slot.vis = true; }
-      slot.el.style.transform =
-        `translate(${X[i].toFixed(1)}px, ${Y[i].toFixed(1)}px) scale(${ws.toFixed(3)}) translate(-50%, -100%)`;
+      const qx = Math.round(X[i]), qy = Math.round(Y[i]);
+      if (qx !== slot.qx) { slot.qx = qx; slot.wrap.style.transform = txString(qx); }
+      if (qy !== slot.qy) { slot.qy = qy; slot.el.style.transform = plateY(qy, ws); }
 
       if (slot.m !== m) {
         slot.m = m;
@@ -1842,7 +1894,8 @@ export class HUD {
   _renderElems(slot, m) {
     const el = m.elemental;
     const trigRec = this._elemTrigs.get(m);
-    for (const k in slot.elemEls) {
+    for (let ei = 0; ei < ELEM_KEYS.length; ei++) {
+      const k = ELEM_KEYS[ei];
       const raw = el ? el[k] : null;
       let val = typeof raw === 'number' ? raw : raw?.value ?? raw?.buildup ?? 0;
       if (val > 1.5) val /= 100; // 0..100 scale -> 0..1
@@ -2097,16 +2150,13 @@ export class HUD {
         const x = (this._v.x * 0.5 + 0.5) * this._vw;
         const y = (-this._v.y * 0.5 + 0.5) * this._vh;
         if (x > -60 && x < this._vw + 60 && y > -40 && y < this._vh + 40) {
-          this._intEl.style.transform =
-            `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-50%) scale(${this._wscale.toFixed(3)})`;
+          this._placeInteract(x, y);
           placed = true;
         }
       }
     }
     if (!placed) {
-      this._intEl.style.transform =
-        `translate(${(this._vw * 0.5).toFixed(1)}px, ${(this._vh * 0.66).toFixed(1)}px) `
-        + `translate(-50%,-50%) scale(${this._wscale.toFixed(3)})`;
+      this._placeInteract(this._vw * 0.5, this._vh * 0.66);
     }
     if (this._lastIntOn !== true) {
       this._lastIntOn = true;
@@ -2122,6 +2172,12 @@ export class HUD {
       this._lastIntHold = prog;
       this._intHold.style.transform = SCALE_X[prog];
     }
+  }
+
+  _placeInteract(x, y) {
+    const qx = Math.round(x), qy = Math.round(y);
+    if (qx !== this._intQx) { this._intQx = qx; this._intWrap.style.transform = txString(qx); }
+    if (qy !== this._intQy) { this._intQy = qy; this._intEl.style.transform = centreY(qy, this._wscale); }
   }
 
   /* ---------------------- the objective's broad arrow ------------------------ */
@@ -2150,7 +2206,7 @@ export class HUD {
       return;
     }
 
-    const dist = Math.hypot(wx - p.position.x, wz - p.position.z);
+    const dist = len2(wx - p.position.x, wz - p.position.z);
     this._v.set(wx, wy, wz).project(this.ctx.camera);
     const behind = this._v.z > 1;
     let x = (this._v.x * 0.5 + 0.5) * this._vw;
@@ -2174,8 +2230,9 @@ export class HUD {
     }
     if (!this._lastObjOn) { this._lastObjOn = true; this._objDiamond.classList.add('show'); }
     if (off !== this._lastObjOff) { this._lastObjOff = off; this._objDiamond.classList.toggle('edge', off); }
-    this._objDiamond.style.transform =
-      `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-50%) scale(${this._wscale.toFixed(3)})`;
+    const qx = Math.round(x), qy = Math.round(y);
+    if (qx !== this._objQx) { this._objQx = qx; this._objWrap.style.transform = txString(qx); }
+    if (qy !== this._objQy) { this._objQy = qy; this._objDiamond.style.transform = centreY(qy, this._wscale); }
     const di = Math.round(dist);
     if (di !== this._lastObjDist) { this._lastObjDist = di; this._objDiamondDist.textContent = di + ' m'; }
     if (label !== this._lastObjLabel) {
@@ -2327,7 +2384,7 @@ export class HUD {
         const cx = r.left + r.width * 0.5, cy = r.top + r.height * 0.5;
         out.world = [Math.round(sx), Math.round(sy)];
         out.painted = [Math.round(cx), Math.round(cy)];
-        out.offsetPx = +Math.hypot(cx - sx, cy - sy).toFixed(1);
+        out.offsetPx = +len2(cx - sx, cy - sy).toFixed(1);
         out.anchored = shown && out.offsetPx < 24;
         return out;
       })(),

@@ -1263,6 +1263,7 @@ export class Menus {
         'Full manifest: <code>public/LICENSES.json</code> · licence texts: <code>public/licences/</code> and <code>public/fonts/*-OFL.txt</code>');
     } else if (kind === 'manual') {
       this._modalTitle.textContent = 'FIELD MANUAL';
+      this._manualNode ??= document.querySelector('.keybinds-panel');
       if (this._manualNode) this.modalBody.appendChild(this._manualNode);
       else el('div', 'mn-empty', this.modalBody, '<b>FIELD MANUAL</b><span>Controls are listed on the title screen.</span>');
     } else if (kind === 'settings') {

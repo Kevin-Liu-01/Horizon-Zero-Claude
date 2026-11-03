@@ -3,6 +3,11 @@ import './inventory.css';
 import { itemDef, ammoDef, rarityDef, POCKETS } from '../items/items.js';
 import { fieldWord } from './tips.js';
 
+/** The catalogue's lines the bridge cannot word-swap, until combat-kit renames `items.js` (W2). By item id. */
+const ITEM_DESC = {
+  'metal-shards': 'Torn Instrument plating, cut down to trading weight. Every Guild deal is counted in salt.',
+};
+
 /* Reused vectors for the loot-popup projection — no per-frame allocation. */
 const _lootV = new THREE.Vector3();
 const _lootD = new THREE.Vector3();
@@ -385,7 +390,7 @@ export class InventoryScreen {
     const head = el('div', 'cal-det-head', d);
     el('i', 'cal-det-glyph', head, itemIcon(id));
     el('span', 'cal-det-name', head, esc(fieldWord(def.name).toUpperCase()));
-    el('p', 'cal-det-desc', d, esc(fieldWord(def.desc ?? '')));
+    el('p', 'cal-det-desc', d, esc(ITEM_DESC[id] ?? fieldWord(def.desc ?? '')));
 
     const cap = items?.capacity ? items.capacity(id) : (def.cap ?? 0);
     const have = inv?.count?.(id) ?? 0;

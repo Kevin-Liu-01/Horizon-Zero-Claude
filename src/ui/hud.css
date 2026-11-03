@@ -499,6 +499,8 @@
 /* The plate is anchored by its BOTTOM CENTRE (the leader's foot) on the head point:
    `transform-origin: 0 0` plus `translate(x,y) scale(s) translate(-50%,-100%)`. There
    is deliberately no margin: a half-width margin ON TOP OF the -50% centres it twice. */
+/* the X half of a projected element's transform (hud.js: two transforms, memoized strings) */
+.cal-px { position: absolute; left: 0; top: 0; width: 0; height: 0; }
 .cal-mhb {
   position: absolute; left: 0; top: 0;
   width: 280px;

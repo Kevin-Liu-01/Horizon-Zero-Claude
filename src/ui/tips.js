@@ -66,7 +66,6 @@ const WORD_ROWS = [
   ['tallneck', 'Trig Pillar'],
   ['hunting grounds?', 'Salt Trial'],
   ['override', 'Pry'],
-  ['nora', 'Guild'],
 ].map(([w, rep]) => [new RegExp(`\\b(?:${w})\\b`, 'gi'), rep]);
 
 /** Keep the case of the source: an upper-case label stays upper-case. */
@@ -74,12 +73,19 @@ function caseLike(src, rep) {
   return src === src.toUpperCase() && /[A-Z]/.test(src) ? rep.toUpperCase() : rep;
 }
 
-/** Engine name -> the bible's player word (§10.3). Pure; cheap; never per frame. */
+const WORD_MEMO = new Map();
+
+/** Engine name -> the bible's player word (§10.3). Pure, so memoized: a label is worded once. */
 export function fieldWord(text) {
-  let s = String(text ?? '');
+  const raw = String(text ?? '');
+  let s = WORD_MEMO.get(raw);
+  if (s !== undefined) return s;
+  s = raw;
   for (const [re, rep] of WORD_ROWS) {
     s = s.replace(re, (m, g1) => caseLike(m, g1 ? rep.replace('$1', g1) : rep));
   }
+  if (WORD_MEMO.size > 1024) WORD_MEMO.clear();
+  WORD_MEMO.set(raw, s);
   return s;
 }
 
