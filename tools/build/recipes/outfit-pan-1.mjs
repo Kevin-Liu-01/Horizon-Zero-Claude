@@ -966,7 +966,7 @@ export async function panLayout(parts, trim, W, H) {
 }
 
 /** The fit's limits for this cut: the yoke lies flat on the collarbones and shows; it takes little room, whatever a draw asks of it. */
-export const PAN_FIT = { capAt: (x, y, z, slot, max) => (y > 1.385 && Math.abs(x) < 0.21 && !(slot === 'wrap' || slot === 'cowl') ? (z < -0.02 ? 0.01 : 0.005) : max) };
+export const PAN_FIT = { capAt: (x, y, z, slot, max) => (y > 1.385 && Math.abs(x) < 0.21 && !(slot === 'wrap' || slot === 'cowl' || slot === 'scutes' || slot === 'capelet') ? (z < -0.02 ? 0.01 : 0.005) : max) };
 
 export const PAN_SET = { set: 'pan', hideBit: HIDE_BIT, chains: ['dyn_sashEnd'] };
 
