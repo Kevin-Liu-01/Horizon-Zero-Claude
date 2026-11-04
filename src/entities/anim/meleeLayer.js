@@ -233,8 +233,10 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
  * in metres ahead of the right grip (authored on the 1.55 m lance and scaled
  * by the live length), and the left hand slides there: a two-handed thrust
  * runs the haft through the front hand. `yaw/pitch/roll` are the procedural
- * torso rotations split across the three spine joints, so the PELVIS never
- * yaws (a yawed pelvis swings the planted feet; A105 allows 0.08 m of drift).
+ * torso rotations split across the three spine joints; `py` is the pelvis's own
+ * turn and `dz` its travel forward, on a standing body only (a stride owns its
+ * hips): the feet are planted by the conform, so the hips load the legs instead
+ * of skating them (A105 reads 0.02 m of drift through it).
  *
  * Numbers are for her 0.474 m arm and were read off the offline rig solve
  * (docs/ROUND5-MELEE.md §2): the left shoulder only reaches the 55 % mark of a
@@ -291,8 +293,8 @@ const STANCE = {
   ready: { thighL: -0.50, thighR: 0.14, calfL: 0.66, calfR: 0.30, footL: -0.16, footR: -0.30, abd: 0.15, dx: 0.0, dy: -0.105 },
   'light-1': { thighL: -0.62, thighR: 0.26, calfL: 0.74, calfR: 0.14, footL: -0.12, footR: -0.26, abd: 0.11, dx: 0.02, dy: -0.125 },
   'light-2': { thighL: -0.30, thighR: -0.42, calfL: 0.46, calfR: 0.62, footL: -0.16, footR: -0.20, abd: 0.20, dx: -0.09, dy: -0.15 },
-  'light-3': { thighL: -0.66, thighR: 0.30, calfL: 0.70, calfR: 0.10, footL: -0.04, footR: -0.26, abd: 0.11, dx: 0.05, dy: -0.155 },
-  heavy: { thighL: -0.78, thighR: 0.28, calfL: 1.02, calfR: 0.34, footL: -0.24, footR: -0.40, abd: 0.18, dx: -0.03, dy: -0.215 },
+  'light-3': { thighL: -0.66, thighR: 0.30, calfL: 0.70, calfR: 0.10, footL: -0.04, footR: -0.26, abd: 0.11, dx: 0.05, dy: -0.135 },
+  heavy: { thighL: -0.78, thighR: 0.28, calfL: 1.02, calfR: 0.34, footL: -0.24, footR: -0.40, abd: 0.18, dx: -0.03, dy: -0.235 },
 };
 /** How much of a beat's stance is on at clip progress `cu` (0 cock .. 1 end). */
 const STANCE_ENV = (cu) => (
@@ -310,7 +312,7 @@ const BEATS = [
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
-    cock: { hand: [-0.33, 1.28, -0.10], shaft: [0.60, 0.22, 0.77], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
+    cock: { hand: [-0.35, 1.30, -0.13], shaft: [0.60, 0.22, 0.77], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
     contact: { hand: [-0.21, 1.19, 0.22], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.18, py: -0.08, pitch: 0.18, roll: 0.04, dz: 0.07 },
     follow: { hand: [-0.23, 1.05, 0.22], shaft: [-0.46, -0.22, 0.86], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.40, py: -0.28, pitch: 0.20, roll: 0.06, dz: 0.06 },
   },
@@ -1428,9 +1430,8 @@ export class MeleeLayer {
     this._stance(dt, w, u, beat, stance);
 
     /* --------------------- procedural torso rotation ------------------ */
-    // NOT the pelvis: yawing the pelvis swings the planted feet and A105 only
-    // allows 0.08 m of drift. spine_01..03 carry the whole excursion, which is
-    // also the axis A102 measures (pelvis -> spine_03).
+    // spine_01..03 carry the twist over the hips, which is the axis A102 measures
+    // (pelvis -> spine_03); the pelvis's own turn is `_stance`'s, above.
     const yaw = u.yaw * w, roll = u.roll * w;
     // budgeted against the stride's own lean while she is moving (JOG_TORSO_CAP)
     /* ...plus the LEAN INTO a target the blade cannot otherwise reach (round
@@ -3193,7 +3194,7 @@ export class MeleeLayer {
     D.lhOnNow = sOn;
     _d.copy(_grip).addScaledVector(_a, sOn);          // the palm goal
     _eT.copy(_lh);                                    // the free goal (world of the blend)
-    for (let pass = 0; pass < 2; pass++) {
+    for (let pass = 0; pass < 3; pass++) {
       an._liveW(b.handL.bone, _q1);
       _c.copy(this.palmOffLL).applyQuaternion(_q1);
       _eC.subVectors(_d, _c);                         // the wrist goal on the haft
