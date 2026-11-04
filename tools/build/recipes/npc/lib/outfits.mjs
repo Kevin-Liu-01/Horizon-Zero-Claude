@@ -77,6 +77,20 @@ function apron(ctx, { y0, y1, wTop, wBot, dye, swatch = 'panelA', lift = 0.01, c
   ctx.add(twoSide ? P.twoSided(sheet) : sheet, { dye, hide: true });
 }
 
+/** A small pouch on the belt, rigid on the pelvis, with its flap as a second lobe. */
+function pouch(ctx, { x, y = 0.97, z = 0.06, r = [0.042, 0.052, 0.03], dye, swatch = 'leather' }) {
+  const j = ctx.J.pelvis;
+  ctx.add(P.sack({ c: [x, y, z], r, uv: ctx.uvOf(swatch), skin: P.rigid(j), seg: 8, rows: 6 }), { dye });
+  ctx.add(P.sack({ c: [x, y + r[1] * 0.62, z + r[2] * 0.42], r: [r[0] * 0.92, r[1] * 0.42, r[2] * 0.62], uv: ctx.uvOf(swatch), skin: P.rigid(j), seg: 8, rows: 4 }), { dye, shade: 0.8 });
+}
+
+/** A squat pot on a rope at the hip (the caulker's tar). */
+function pot(ctx, { x, y, z, dye, rim }) {
+  const j = ctx.J.pelvis;
+  ctx.add(P.lathe({ c: [x, y, z], prof: [[0.002, -0.06], [0.04, -0.058], [0.052, -0.02], [0.05, 0.02], [0.042, 0.04], [0.046, 0.046], [0.03, 0.04], [0.002, 0.03]], seg: 10, skin: P.rigid(j), uv: ctx.uvOf('iron') }), { dye });
+  ctx.add(P.tube([[x, y + 0.045, z + 0.044], [x + 0.03, y + 0.1, z + 0.01], [x, y + 0.11, z - 0.02], [x - 0.03, y + 0.1, z + 0.01], [x, y + 0.045, z - 0.044]], { r: () => 0.0035, ring: 4, along: 6, skin: P.rigid(j), uv: (u, v) => ctx.uvOf('rope')([u, v]) }), { dye: rim });
+}
+
 /** An apron string round the waist, tied behind. */
 function waistTie(ctx, { y, dye, h = 0.022 }) {
   const trunk = P.trunkSkin(ctx.J);
@@ -106,6 +120,7 @@ export const OUTFITS = {
       belt(ctx, { y: 1.05, dye: PAN.orchilDeep, swatch: 'linen', buckle: false, h: 0.05 });
       sashEnd(ctx, { dye: PAN.orchilDeep, y: 1.03 });
       apron(ctx, { y0: 1.02, y1: 0.58, wTop: 0.15, wBot: 0.2, dye: PAN.salt, swatch: 'panelC', chainKey: 'apron', rows: 8, cols: 6 });
+      pouch(ctx, { x: -0.185, y: 0.985, z: 0.04, dye: PAN.leather });
       const head = ctx.J.Head;
       const [top, under] = P.palmHat({ joint: head, uv: ctx.uvOf('palm') });
       ctx.add(top, { dye: PAN.palm, noHide: true }); ctx.add(under, { dye: PAN.palm, noHide: true });
@@ -149,6 +164,7 @@ export const OUTFITS = {
 
   /* 3 — Salt Porter: rolled sleeves, an open vest, the salt basket on his shoulder */
   porter: {
+    vNeck: true,
     parts: [
       { part: 'Male_Peasant_Body', dye: PAN.linen, target: 3400, cutX: 0.345, collar: { y0: 1.44, push: 0.012 } },
       { part: 'Male_Peasant_Arms', dye: PAN.linenDirty, target: 900, cutX: 0.36, cuff: PAN.linenDirty, dropMat: /Regular/ },
@@ -158,6 +174,7 @@ export const OUTFITS = {
     pieces(ctx) {
       belt(ctx, { y: 1.025, dye: PAN.leather });
       sashEnd(ctx, { dye: PAN.carmine, x: 0.17, y: 1.0, z: 0.05 });
+      pouch(ctx, { x: -0.19, y: 0.965, z: 0.03, r: [0.05, 0.06, 0.034], dye: PAN.leather });
       // the basket rides his right shoulder; the arm comes up and steadies it (the pose: extras.r5Npc.armPose)
       const sh = ctx.prop('prop_shoulder', 'clavicle_r', [-0.17, 1.45, -0.03], [-0.17, 1.6, -0.03]);
       const parts = P.basket({ c: [-0.245, 1.487, -0.045], axis: [-0.2, 1, -0.06], rBot: 0.085, rTop: 0.135, h: 0.19, joint: sh, uvWicker: ctx.uvOf('wicker'), uvRim: ctx.uvOf('rope'), uvFill: ctx.uvOf('salt'), fillH: 0.05 });
@@ -168,6 +185,7 @@ export const OUTFITS = {
 
   /* 4 — Boat-Caulker: tar on everything, a short leather apron, the mallet */
   caulker: {
+    vNeck: true,
     parts: [
       { part: 'Male_Peasant_Body', dye: PAN.linenDirty, target: 3400, shade: 0.72, cutX: 0.345, collar: { y0: 1.44, push: 0.012 } },
       { part: 'Male_Peasant_Arms', dye: PAN.basalt, target: 900, cutX: 0.36, cuff: PAN.basalt, dropMat: /Regular/ },
@@ -178,6 +196,7 @@ export const OUTFITS = {
       belt(ctx, { y: 1.03, dye: PAN.lapilli, swatch: 'rope', buckle: false });
       apron(ctx, { y0: 1.06, y1: 0.62, wTop: 0.17, wBot: 0.22, dye: PAN.leather, swatch: 'leather', lift: 0.012, chainKey: 'apron', foldAmp: 0.003, hemWave: 0.004, rows: 8, cols: 6 });
       waistTie(ctx, { y: 1.065, dye: PAN.lapilli });
+      pot(ctx, { x: -0.215, y: 0.93, z: 0.0, dye: PAN.tar, rim: PAN.esparto });
       const hip = ctx.prop('prop_hip', 'pelvis', [0.2, 0.98, 0.0], [0.2, 0.8, 0.0]);
       for (const g of P.hammer({ at: [0.205, 0.98, 0.01], dir: [0, -1, 0.03], joint: hip, uvWood: ctx.uvOf('wood'), uvHead: ctx.uvOf('wood'), L: 0.3, headW: 0.1, headH: 0.07 })) ctx.add(g, { dye: PAN.wood, noHide: true, prop: 'prop_hip' });
       const pr = ctx.palm('r');
@@ -198,6 +217,7 @@ export const OUTFITS = {
     pieces(ctx) {
       ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.1, y1: 0.08, rHem: 0.29, uv: ctx.rectUV('panelA'), rows: 8, seg: 28, rFloor: 0.18, amp: 0.009 }), { dye: PAN.lapilli, hide: true, shade: 1.3 });
       belt(ctx, { y: 1.08, dye: PAN.lapilli, swatch: 'rope', buckle: false, h: 0.024 });
+      pouch(ctx, { x: 0.19, y: 1.0, z: 0.05, r: [0.036, 0.046, 0.026], dye: PAN.leather });
       // the cloak: two chains from the shoulder blades, cloth between them
       const trunk = P.trunkSkin(ctx.J);
       const yTop = 1.42, yHem = 0.2, zb = -0.16;
@@ -300,6 +320,7 @@ export const OUTFITS = {
     pieces(ctx) {
       apron(ctx, { y0: 1.41, y1: 0.4, wTop: 0.15, wBot: 0.25, dye: HOLDS.leather, swatch: 'leather', lift: 0.016, chainKey: 'apron', foldAmp: 0.004, hemWave: 0.005, rows: 12, cols: 7 });
       waistTie(ctx, { y: 1.05, dye: HOLDS.leatherDark, h: 0.03 });
+      pouch(ctx, { x: -0.25, y: 0.97, z: 0.0, r: [0.05, 0.065, 0.036], dye: HOLDS.leatherDark });
       for (const s of [1, -1]) ctx.add(P.strap([[s * 0.1, 1.4, 0.13], [s * 0.1, 1.5, 0.05], [s * 0.06, 1.53, -0.04], [-s * 0.05, 1.42, -0.13]], { grid: ctx.grid(), width: 0.026, lift: 0.006, uv: ctx.rectUV('leather'), skinNear: ctx.skinNear, along: 9 }), { dye: HOLDS.leatherDark });
       const hip = ctx.prop('prop_hip', 'pelvis', [0.22, 1.0, 0.0], [0.22, 0.8, 0.0]);
       for (const g of P.hammer({ at: [0.225, 0.98, 0.02], dir: [0, -1, 0.02], joint: hip, uvWood: ctx.uvOf('wood'), uvHead: ctx.uvOf('iron') })) ctx.add(g, { dye: HOLDS.iron, noHide: true, prop: 'prop_hip' });

@@ -616,14 +616,14 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   if (wrapped && !bareHair) { tuckUnderCloth(bodyPrim, wrapped.stack, isEar); culled = cullUnderWrap(bodyPrim, wrapped.covers, isEar); }
   const eyesCulled = cullEyeBacks(eyesPrim, eyes);
   const hide = coverageMask(bodyPrim, outfitBodyTris(), 0.08, spec.sex === 'M' ? 0.075 : 0.04, spec.sex === 'M' ? 0.1 : 0.05);
-  const insideCollar = spec.sex === 'M' ? (x, y) => y > 1.452 && Math.abs(x) < 0.1 : (x, y) => y > 1.40 && Math.abs(x) < 0.112;
+  const insideCollar = spec.sex === 'M' ? (x, y, z) => (y > 1.452 && Math.abs(x) < 0.1) || (OUT.vNeck && y > 1.37 && Math.abs(x) < 0.05 && z > 0) : (x, y) => y > 1.40 && Math.abs(x) < 0.112;
   const hiddenLegsFrom = OUT.legsHidden ?? (OUT.legsHiddenFrom ?? null);
   {
     const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0], idx = bodyPrim.getIndices().getArray(), n = P.getCount();
     const h = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
       P.getElement(i, q);
-      h[i] = hide[i] && !insideCollar(q[0], q[1]) ? 1 : 0;
+      h[i] = hide[i] && !insideCollar(q[0], q[1], q[2]) ? 1 : 0;
       if (hiddenLegsFrom && q[1] < hiddenLegsFrom && q[1] > 0.02) h[i] = 1;
     }
     const keep = [];

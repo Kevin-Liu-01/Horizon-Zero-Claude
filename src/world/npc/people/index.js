@@ -29,6 +29,8 @@ import { Person } from './person.js';
  * goes, a faction atlas when its last archetype goes (A-npc-dispose, A-npc-atlas-resident).
  */
 const NEAR_R = 18, MID_R = 35, HIDE_R = 90, MAX_NEAR = 6, MAX_CAST = 4, HYST = 1;
+/** The group loads when she comes within STREAM_IN of it and goes, atlases and all, past STREAM_OUT (plan §4.4: streamed, disposed). */
+const STREAM_IN = 130, STREAM_OUT = 170;
 export const ARCHETYPE_IDS = ['salt-raker', 'guild-matron', 'salt-porter', 'boat-caulker', 'lantern-keeper', 'pit-farmer', 'tiller-follower', 'cochineal-picker', 'tube-smith'];
 const PAN_IDS = ARCHETYPE_IDS.slice(0, 5), HOLDS_IDS = ARCHETYPE_IDS.slice(5);
 
@@ -49,15 +51,14 @@ export class PeopleSystem {
     this.stagePlace = null;
     this.order = [];
     this.autoStage = true;
-    this._wantStage = false;
-    this._tick = 0;
-    this._starting = false;
     this.windFallback = { x: -3.9, z: 3.9, gust: 0.35, flutter: 0.32 };
     this._forced = new Map();
+    this._streamT = 2;
+    this._loading = false;
     // the fetches start with the camp, so the group stands before the game's first frame on any box that can run it
     if (this.autoStage && ctx.terrain) {
-      this._starting = true;
-      this.stage().catch((e) => console.warn('[people] staging failed', e));
+      this._loading = true;
+      this.stage().catch((e) => console.warn('[people] staging failed', e)).finally(() => { this._loading = false; });
     }
   }
 
@@ -199,7 +200,23 @@ export class PeopleSystem {
   /** Force a tier for a gate (null: back to distance). */
   tierAt(p, tier) { if (tier === null) this._forced.delete(p); else this._forced.set(p, tier); }
 
+  /** The staged group follows her: nothing of it is resident while she is far from it. */
+  _stream(dt) {
+    this._streamT -= dt;
+    if (this._streamT > 0 || !this.autoStage || !this.stagePlace || this._loading) return;
+    this._streamT = 1;
+    const pl = this.ctx.player;
+    if (!pl) return;
+    const d = Math.hypot(pl.position.x - this.stagePlace.x, pl.position.z - this.stagePlace.z);
+    if (this.ready && d > STREAM_OUT) this.clearStage();
+    else if (!this.ready && d < STREAM_IN) {
+      this._loading = true;
+      this.stage().catch((e) => console.warn('[people] staging failed', e)).finally(() => { this._loading = false; });
+    }
+  }
+
   update(dt, t) {
+    this._stream(dt);
     const list = this.order;
     const n = list.length;
     if (!n) return;
