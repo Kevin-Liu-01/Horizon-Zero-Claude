@@ -2563,16 +2563,18 @@ export class PlayerAnimator {
     this._caLift = 0;
     const pc = this.ctx.player?.camPitch ?? 0;
     /* (...and at a steep aim, crouched or not, she stands up off the crosshair's ground hit
-     * as the bow's hand comes within `nearBow` of it: combat stops aiming the bow at a point
-     * nearer than 0.5 m (it takes the camera's direction, 0.3 rad off, in one step: the nock
-     * 0.2 m off the hand), and at the down clamp a strafe's dip, a crouch's blend or the end
-     * of a roll brought it to 0.50-0.55 m. Read off this step's pose before the lift, so it
-     * is no feedback loop.) */
+     * just far enough to hold the bow's hand `nearBow` from it: combat stops aiming the bow at
+     * a point nearer than 0.5 m (it takes the camera's direction, 0.3 rad off, in one step: the
+     * nock 0.17-0.21 m off the hand), and at the down clamp a strafe's dip with a crouch's blend
+     * brought it to 0.49 m. Closed form on this step's pose before the lift, so no feedback
+     * loop. A leg may be straight for those steps: the reach limit below does not hold this.) */
     let near = 0;
     const cmbN = this.ctx.combat, nodeN = cmbN?.bow?.group?.parent;
     if (CA?.nearBow && this._aimHold && pc > 0.6 && dodgeW < 0.5 && nodeN && cmbN.aimPoint) {
       nodeN.updateWorldMatrix(true, false);
-      near = Math.max(0, CA.nearBow - _afG.setFromMatrixPosition(nodeN.matrixWorld).distanceTo(cmbN.aimPoint)) * (CA.nearGain ?? 1) * (1 - dodgeW);
+      _afG.setFromMatrixPosition(nodeN.matrixWorld).sub(cmbN.aimPoint);
+      const nb2 = CA.nearBow * CA.nearBow - _afG.x * _afG.x - _afG.z * _afG.z;
+      if (nb2 > 0) near = Math.max(0, Math.sqrt(nb2) - _afG.y) * (1 - dodgeW);
     }
     if ((w < 1e-3 && near <= 0) || !pe || !b.thighL || !b.thighR) { this._caYOk = false; return; }
     pe.bone.updateMatrixWorld(true);
@@ -2596,7 +2598,7 @@ export class PlayerAnimator {
       const vx = _rbT[s].x - _rbH.x, vy = _rbT[s].y - _rbH.y, vz = _rbT[s].z - _rbH.z;
       const h2 = Lmax * Lmax - vx * vx - vz * vz;
       const dyMax = h2 > 0 ? vy + Math.sqrt(h2) : 0;
-      if (dy > dyMax) dy = Math.max(0, dyMax);
+      if (dy > dyMax) dy = Math.max(near, dyMax);
     }
     /* (...and her height moves at most `liftStep` per 1/60 s, wherever that reach limit
      * or the clip underneath puts it: a stance step's foot swinging out cut the reach
