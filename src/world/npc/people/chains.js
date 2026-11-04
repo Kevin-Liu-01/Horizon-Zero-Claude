@@ -1,0 +1,166 @@
+import * as THREE from 'three';
+
+/**
+ * CALIMA · live dyn_ chains on a near-tier person (settlements; R56; gate A-npc-fidelity). The same physics
+ * as the kept hero solver (`playerAnimator._springs`: an inextensible Verlet chain in world space,
+ * pulled to its animated rest, thrown by what the attachment does, dragged by the air), cut down to
+ * what a person who walks needs. Everything is preallocated at build; a frame allocates nothing.
+ *
+ * A chain's bones are authored +Y along the chain (lib/face.mjs addChain).
+ */
+const CLASSES = {
+  hair: { k: 95, damp: 0.965, grav: 0.3, air: 0.55, maxAng: 0.95 },
+  cloth: { k: 48, damp: 0.955, grav: 0.34, air: 2.6, maxAng: 0.9 },
+  wrap: { k: 30, damp: 0.955, grav: 0.3, air: 4.4, maxAng: 1.2, rootK: 8 },
+  gear: { k: 110, damp: 0.93, grav: 0.2, air: 0, maxAng: 0.5 },
+};
+export const classOfChain = (key) => (/^hair/.test(key) ? 'hair' : /^wrap|^hairTail/.test(key) ? 'wrap' : /medal|bag/.test(key) ? 'gear' : 'cloth');
+/** A strip's tail on a head and a wrapped tail behave the same. */
+const klass = (key) => {
+  if (key === 'hairLock') return CLASSES.hair;
+  if (key === 'hairTail' || key === 'wrapSash') return CLASSES.wrap;
+  if (/medal|bag/.test(key)) return CLASSES.gear;
+  return CLASSES.cloth;
+};
+
+const SUB_DT = 1 / 45;
+const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _s = new THREE.Vector3();
+const _qp = new THREE.Quaternion(), _qw = new THREE.Quaternion(), _qr = new THREE.Quaternion(), _qi = new THREE.Quaternion();
+const _y = new THREE.Vector3(), _d = new THREE.Vector3(), _a = new THREE.Vector3();
+const _m = new THREE.Matrix4();
+const UP = new THREE.Vector3(0, 1, 0);
+const clamp = THREE.MathUtils.clamp;
+
+export class PersonChains {
+  /** @param bones name -> Bone of this person. @param rows extras.r5Npc.chains */
+  constructor(bones, rows, { worldScale = 1 } = {}) {
+    this.chains = [];
+    for (const row of rows) {
+      const links = [];
+      let b = bones[row.root];
+      while (b && b.name.startsWith('dyn_') && !b.name.endsWith('_end')) {
+        links.push(b);
+        b = b.children.find((c) => c.isBone && c.name.startsWith('dyn_')) || null;
+      }
+      if (!links.length) continue;
+      const tip = b;
+      const N = links.length;
+      const c = {
+        key: row.key, cls: klass(row.key), links, tip, N,
+        seg: new Float32Array(N), rest: new Float32Array((N + 1) * 3), pos: new Float32Array((N + 1) * 3), prev: new Float32Array((N + 1) * 3),
+        bindQ: links.map((l) => l.quaternion.clone()), seeded: false, seed: hash(row.key), tipPos: new THREE.Vector3(),
+      };
+      for (let i = 0; i < N; i++) {
+        const child = i + 1 < N ? links[i + 1] : tip;
+        c.seg[i] = (child ? child.position.length() : 0.05) * worldScale;
+      }
+      this.chains.push(c);
+    }
+    this.acc = 0;
+    this.t = 0;
+    this.active = false;
+  }
+
+  /** Off the near tier: the bones go back to their bind pose once (A-npc-fidelity: frozen). */
+  freeze() {
+    if (!this.active) return;
+    this.active = false;
+    for (const c of this.chains) { for (let i = 0; i < c.N; i++) c.links[i].quaternion.copy(c.bindQ[i]); c.seeded = false; }
+  }
+
+  /**
+   * After the mixer, with the person's world matrices current up to the chain roots.
+   * `wind` { x, z, gust, flutter } (m/s, the hero animator's) or null.
+   */
+  update(dt, wind) {
+    this.active = true;
+    this.acc += Math.min(dt, 0.05);
+    let steps = 0;
+    while (this.acc >= SUB_DT && steps < 3) { this.acc -= SUB_DT; steps++; }
+    this.t += dt;
+    for (const c of this.chains) {
+      this._rest(c);
+      if (!c.seeded) { c.pos.set(c.rest); c.prev.set(c.rest); c.seeded = true; }
+      for (let s = 0; s < steps; s++) this._step(c, SUB_DT, wind);
+      this._write(c);
+    }
+  }
+
+  /** The animated rest: bind offsets from the chain's first link's current world frame. */
+  _rest(c) {
+    const first = c.links[0];
+    const parent = first.parent;
+    parent.matrixWorld.decompose(_p, _qp, _s);
+    // the link's bind local, walked down the chain with no solve
+    _q.copy(first.position).applyQuaternion(_qp).multiply(_s).add(_p);
+    _qw.copy(_qp);
+    c.rest[0] = _q.x; c.rest[1] = _q.y; c.rest[2] = _q.z;
+    for (let i = 0; i < c.N; i++) {
+      _qw.multiply(c.bindQ[i]);
+      _y.copy(UP).applyQuaternion(_qw).multiplyScalar(c.seg[i]);
+      _q.add(_y);
+      c.rest[(i + 1) * 3] = _q.x; c.rest[(i + 1) * 3 + 1] = _q.y; c.rest[(i + 1) * 3 + 2] = _q.z;
+    }
+  }
+
+  _step(c, dt, wind) {
+    const { cls, pos, prev, rest, seg, N } = c;
+    const n = N + 1;
+    const windX = wind ? wind.x : 0, windZ = wind ? wind.z : 0;
+    // slow gusts and a flutter across the wind, per chain; the same shape as the hero's air
+    const gust = 1 + 0.35 * Math.sin(this.t * 0.73 + c.seed) * Math.sin(this.t * 0.31 + c.seed * 2);
+    const fl = 0.32 * Math.sin(this.t * 6.1 + c.seed * 3) + 0.2 * Math.sin(this.t * 11.7 + c.seed);
+    const dt2 = dt * dt;
+    for (let i = 1; i < n; i++) {
+      const o = i * 3;
+      const depth = i / N;
+      const k = cls.k * (1 + (cls.rootK || 0) * (1 - i / n) * (1 - i / n));
+      const x = pos[o], y = pos[o + 1], z = pos[o + 2];
+      const vx = (x - prev[o]) * cls.damp, vy = (y - prev[o + 1]) * cls.damp, vz = (z - prev[o + 2]) * cls.damp;
+      let ax = (rest[o] - x) * k, ay = (rest[o + 1] - y) * k - 9.81 * cls.grav, az = (rest[o + 2] - z) * k;
+      if (cls.air > 0 && (windX || windZ)) {
+        const ux = windX * gust - windZ * fl, uz = windZ * gust + windX * fl;
+        ax += cls.air * depth * (ux - vx / dt); az += cls.air * depth * (uz - vz / dt);
+      }
+      prev[o] = x; prev[o + 1] = y; prev[o + 2] = z;
+      pos[o] = x + vx + ax * dt2; pos[o + 1] = y + vy + ay * dt2; pos[o + 2] = z + vz + az * dt2;
+    }
+    pos[0] = rest[0]; pos[1] = rest[1]; pos[2] = rest[2];
+    // inextensible, root to tip
+    for (let i = 0; i < N; i++) {
+      const a = i * 3, b = a + 3;
+      let dx = pos[b] - pos[a], dy = pos[b + 1] - pos[a + 1], dz = pos[b + 2] - pos[a + 2];
+      const l = Math.hypot(dx, dy, dz);
+      if (l < 1e-6) { dx = rest[b] - rest[a]; dy = rest[b + 1] - rest[a + 1]; dz = rest[b + 2] - rest[a + 2]; const q = Math.hypot(dx, dy, dz) || 1; dx /= q; dy /= q; dz /= q; } else { dx /= l; dy /= l; dz /= l; }
+      pos[b] = pos[a] + dx * seg[i]; pos[b + 1] = pos[a + 1] + dy * seg[i]; pos[b + 2] = pos[a + 2] + dz * seg[i];
+    }
+  }
+
+  /** Bone rotations from the particles: each link turned from its animated direction onto its segment, limited. */
+  _write(c) {
+    const first = c.links[0];
+    first.parent.matrixWorld.decompose(_p, _qp, _s);
+    const pos = c.pos;
+    for (let i = 0; i < c.N; i++) {
+      _qw.copy(_qp).multiply(c.bindQ[i]);
+      _y.copy(UP).applyQuaternion(_qw);
+      _d.set(pos[(i + 1) * 3] - pos[i * 3], pos[(i + 1) * 3 + 1] - pos[i * 3 + 1], pos[(i + 1) * 3 + 2] - pos[i * 3 + 2]);
+      const l = _d.length();
+      if (l > 1e-5) {
+        _d.multiplyScalar(1 / l);
+        _qr.setFromUnitVectors(_y, _d);
+        // the bend limit, relative to the parent's achieved rotation
+        const w = clamp(_qr.w, -1, 1), ang = 2 * Math.acos(Math.abs(w));
+        if (ang > c.cls.maxAng) { _qi.identity(); _qr.copy(_qi.slerp(_qr, c.cls.maxAng / ang)); }
+        _qw.premultiply(_qr);
+      }
+      // local = parentWorld^-1 * world
+      c.links[i].quaternion.copy(_qi.copy(_qp).invert()).multiply(_qw);
+      _qp.copy(_qw);
+    }
+    c.tipPos.set(pos[c.N * 3], pos[c.N * 3 + 1], pos[c.N * 3 + 2]);
+    void _a; void _m;
+  }
+}
+
+function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0x7fffffff; return (h % 1000) / 1000 * Math.PI * 2; }

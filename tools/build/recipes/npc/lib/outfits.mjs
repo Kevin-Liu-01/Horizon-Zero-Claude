@@ -118,16 +118,14 @@ export const OUTFITS = {
     legsHidden: 1.0,
     parts: [
       { part: 'Female_Peasant_Body', dye: PAN.orchil, target: 1900 },
-      { part: 'Female_Peasant_Arms', dye: PAN.orchilDeep, target: 2200 },
-      { part: 'Female_Peasant_Feet', dye: PAN.leather, target: 1100 },
+      { part: 'Female_Peasant_Arms', dye: PAN.orchilDeep, target: 3000 },
+      { part: 'Female_Peasant_Feet', dye: PAN.leather, target: 1500 },
     ],
     pieces(ctx) {
       ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.1, y1: 0.09, rHem: 0.3, uv: ctx.rectUV('panelA'), rows: 8, seg: 24, rFloor: 0.175, amp: 0.012 }), { dye: PAN.orchilNight, hide: true, shade: 0.9 });
       belt(ctx, { y: 1.09, dye: PAN.leather, h: 0.05 });
       const shawl = P.capelet({ grid: ctx.grid(), skinNear: ctx.skinNear, uv: ctx.rectUV('panelC'), rows: 7, seg: 28, phiFB: -36, phiSide: 22 });
       ctx.add(shawl, { dye: PAN.orchilDeep, hide: true });
-      // the edge: a carmine band on the shawl's last rows
-      ctx.add(P.capelet({ grid: ctx.grid(), skinNear: ctx.skinNear, uv: ctx.rectUV('linen'), rows: 1, seg: 28, phi0: -30, phiFB: -40, phiSide: 20, lift: 0.004 }), { dye: PAN.carmine });
       // the two shawl ends hang down her front on chains
       for (const [key, s] of [['shawlEndL', 1], ['shawlEndR', -1]]) {
         const x = s * 0.09, y = 1.34, z = frontZ(ctx, x, y) + 0.022;
@@ -156,7 +154,7 @@ export const OUTFITS = {
       belt(ctx, { y: 1.025, dye: PAN.leather });
       sashEnd(ctx, { dye: PAN.carmine, x: 0.17, y: 1.0, z: 0.05 });
       const sh = ctx.prop('prop_shoulder', 'clavicle_l', [0.17, 1.45, -0.03], [0.17, 1.6, -0.03]);
-      const parts = P.basket({ c: [0.2, 1.475, -0.04], axis: [0.1, 1, -0.05], rBot: 0.12, rTop: 0.2, h: 0.27, joint: sh, uvWicker: ctx.uvOf('wicker'), uvRim: ctx.uvOf('rope'), uvFill: ctx.uvOf('salt') });
+      const parts = P.basket({ c: [0.235, 1.49, -0.05], axis: [0.22, 1, -0.08], rBot: 0.085, rTop: 0.135, h: 0.19, joint: sh, uvWicker: ctx.uvOf('wicker'), uvRim: ctx.uvOf('rope'), uvFill: ctx.uvOf('salt'), fillH: 0.05 });
       ctx.add(parts[0], { dye: PAN.esparto, noHide: true }); ctx.add(parts[1], { dye: PAN.esparto, noHide: true }); ctx.add(parts[2], { dye: PAN.esparto, noHide: true }); ctx.add(parts[3], { dye: PAN.salt, noHide: true });
     },
   },
@@ -164,7 +162,7 @@ export const OUTFITS = {
   /* 4 — Boat-Caulker: tar on everything, a short leather apron, the mallet */
   caulker: {
     parts: [
-      { part: 'Male_Peasant_Body', dye: PAN.linenDirty, target: 2300, shade: 0.72 },
+      { part: 'Male_Peasant_Body', dye: PAN.linenDirty, target: 2800, shade: 0.72 },
       { part: 'Male_Peasant_Arms', dye: PAN.basalt, target: 900, cutX: 0.36, cuff: PAN.basalt, dropMat: /Regular/ },
       { part: 'Male_Peasant_Legs', dye: PAN.tar, target: 1000, shade: 1.6 },
       { part: 'Male_Peasant_Feet', dye: PAN.leather, target: 1400 },
@@ -186,8 +184,8 @@ export const OUTFITS = {
     legsHidden: 1.0,
     parts: [
       { part: 'Female_Peasant_Body', dye: PAN.orchilDeep, target: 1700, shade: 0.8 },
-      { part: 'Female_Peasant_Arms', dye: PAN.orchilNight, target: 2100 },
-      { part: 'Female_Peasant_Feet', dye: PAN.leather, target: 1000 },
+      { part: 'Female_Peasant_Arms', dye: PAN.orchilNight, target: 3400 },
+      { part: 'Female_Peasant_Feet', dye: PAN.leather, target: 1500 },
       { part: 'Female_Ranger_Head_Hood', dye: PAN.orchilNight, target: 1050, swatch: 'felt', noHideOnBody: true, shade: 1.2 },
     ],
     pieces(ctx) {
@@ -254,7 +252,7 @@ export const OUTFITS = {
     pieces(ctx) {
       // the tunic: shoulders to mid-thigh, full, no form
       ctx.add(P.capelet({ grid: ctx.grid(), skinNear: ctx.skinNear, uv: ctx.rectUV('panelC'), rows: 6, seg: 26, phi0: 66, phiFB: 8, phiSide: 24, lift: 0.012 }), { dye: HOLDS.wool, hide: true });
-      ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.42, y1: 0.66, rHem: 0.26, uv: ctx.rectUV('panelA'), rows: 9, seg: 24, rFloor: 0.2, amp: 0.008, lift: 0.015, follow: 0.28, cz: -0.015 }), { dye: HOLDS.wool, hide: true });
+      ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.37, y1: 0.68, rHem: 0.25, uv: ctx.rectUV('panelA'), rows: 10, seg: 26, rFloor: 0.17, rMax: 0.235, amp: 0.008, lift: 0.015, follow: 0.26, cz: -0.015, pleats: 6 }), { dye: HOLDS.wool, hide: true });
       belt(ctx, { y: 1.02, dye: HOLDS.rust, swatch: 'rope', buckle: false, h: 0.03 });
       // the bag at the left hip on a chain, its strap over the right shoulder
       const pts = [[0.2, 0.98, 0.05], [0.215, 0.9, 0.06], [0.22, 0.82, 0.06]];

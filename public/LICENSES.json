@@ -514,6 +514,75 @@
       "attribution": null
     },
     {
+      "id": "npc-clips",
+      "paths": [
+        "public/models/npc/clips.glb"
+      ],
+      "title": "Universal Animation Library 1 + 2 [Standard] -> the NPC clip pack",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/universal-animation-library-2",
+      "licence": "CC0-1.0",
+      "licence_text": "public/models/hero/licences/quaternius-ual2-License.txt",
+      "archive_sha256": "4008ea208a604773a2b2177d965f0f5d3195498b5bf838c3f5785d68e95f2a68",
+      "archive_bytes": 18735003,
+      "derived_from": [
+        "ual1-standard",
+        "ual2-standard"
+      ],
+      "retrieved": "2026-10-22",
+      "modified": "tools/build/recipes/npc/lib/clips.mjs: 13 UAL2 clips native, 13 UAL1 clips baked onto each body by the kept retargeter, rotation tracks + pelvis translation only, mesh removed, resampled, gait tables added",
+      "attribution": null
+    },
+    {
+      "id": "npc-faction-atlases",
+      "paths": [
+        "public/models/npc/atlas-pan.glb",
+        "public/models/npc/atlas-holds.glb",
+        "public/models/npc/atlas-hair.glb"
+      ],
+      "title": "Modular Character Outfits [Standard] (T_Peasant, T_Ranger) + procedural swatches -> the NPC faction atlases",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/modular-character-outfits-fantasy",
+      "licence": "CC0-1.0",
+      "licence_text": "public/models/hero/licences/quaternius-mco-License_Standard.txt",
+      "archive_sha256": "c3468b18871cc8c8f05ab14df7712baf22cb9f389cbd870babf130e595187f70",
+      "archive_bytes": 294347394,
+      "derived_from": [
+        "mco-fantasy-standard"
+      ],
+      "retrieved": "2026-10-22",
+      "modified": "tools/build/recipes/npc/lib/atlas.mjs: source textures neutralised per island, procedural linen, wool, felt, leather, palm, wicker, wood, rope, brass, iron and salt swatches added; the hair atlas is wholly procedural",
+      "attribution": null
+    },
+    {
+      "id": "npc-people-bodies",
+      "paths": [
+        "public/models/npc/salt-raker.glb",
+        "public/models/npc/guild-matron.glb",
+        "public/models/npc/salt-porter.glb",
+        "public/models/npc/boat-caulker.glb",
+        "public/models/npc/lantern-keeper.glb",
+        "public/models/npc/pit-farmer.glb",
+        "public/models/npc/tiller-follower.glb",
+        "public/models/npc/cochineal-picker.glb",
+        "public/models/npc/tube-smith.glb"
+      ],
+      "title": "Universal Base Characters + Modular Character Outfits [Standard] -> the NPC archetypes 1-9",
+      "author": "Quaternius",
+      "source_url": "https://quaternius.itch.io/universal-base-characters",
+      "licence": "CC0-1.0",
+      "licence_text": "public/models/hero/licences/quaternius-ubc-License_Standard.txt",
+      "archive_sha256": "fdbf1804c90dfc1ea03e992bff7da2dfd1a79318e13270a660180f9308455f40",
+      "archive_bytes": 128968391,
+      "derived_from": [
+        "ubc-standard",
+        "mco-fantasy-standard"
+      ],
+      "retrieved": "2026-10-22",
+      "modified": "tools/build/recipes/npc/**: per-archetype face displacement field + age, beard and work paint, wound headwraps and coil hair (character-art kit), procedural faction pieces, MCO parts retinted by vertex colour, tiers, dyn_ chains and prop joints, WebP + meshopt",
+      "attribution": null
+    },
+    {
       "id": "pipeline-probe",
       "paths": [
         "public/models/pipeline/probe.glb"

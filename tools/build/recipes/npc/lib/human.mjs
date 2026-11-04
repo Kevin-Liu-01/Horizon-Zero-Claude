@@ -31,7 +31,7 @@ import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, browLines, remapEyeUV, primFromGeo,
   cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt, hairShape,
 } from './kit/skin-human.mjs';
-import { emptyGeo, primToGeo, compact, join, filterTris, soupOf, simplify, nearestSkin, dye, lin, tris, recomputeGeoNormals } from './geo.mjs';
+import { emptyGeo, primToGeo, compact, join, filterTris, soupOf, simplify, simplifySloppy, nearestSkin, dye, lin, tris, recomputeGeoNormals } from './geo.mjs';
 import { ATLAS, uvRect, mcoUV, NEUTRAL, HAIR_NEUTRAL } from './atlas.mjs';
 import { OUTFITS } from './outfits.mjs';
 
@@ -190,8 +190,8 @@ function ageLayers({ L, eyes, age }) {
   if (age >= 50) {
     layers.push((T) => {
       if (T.Y < 1.45 && Math.abs(T.X) < 0.4) return;
-      const n = noise3(T.X * 150, T.Y * 150, T.Z * 150), b = noise3(T.X * 40, T.Y * 40, T.Z * 40 + 7);
-      const k = smooth(0.74, 0.8, n) * smooth(0.45, 0.65, b) * 0.26 * old;
+      const n = noise3(T.X * 310, T.Y * 310, T.Z * 310), b = noise3(T.X * 46, T.Y * 46, T.Z * 46 + 7);
+      const k = smooth(0.8, 0.9, n) * smooth(0.5, 0.72, b) * 0.13 * old;
       if (k <= 0) return;
       T.r *= 1 - k * 0.85; T.g *= 1 - k; T.b *= 1 - k * 1.05;
     });
@@ -232,7 +232,25 @@ function beardLayer({ L, eyes, hair, kind }) {
       T.r *= 1 - k; T.g *= 1 - k * 1.02; T.b *= 1 - k * 1.02;
     };
   }
-  return hairlineLayer({ sampler, hair, coverage: cov, flowUV: (T, uv) => { uv[0] = T.X; uv[1] = T.Y + T.Z * 0.5; }, skinShadow: 0.62, heightM: 0.0003 });
+  const C = [parseInt(hair.slice(1, 3), 16), parseInt(hair.slice(3, 5), 16), parseInt(hair.slice(5, 7), 16)];
+  const o = [0, 0], uv = [0, 0];
+  return (T) => {
+    const c = cov(T);
+    if (c <= 0.01) return;
+    uv[0] = T.X; uv[1] = T.Y + T.Z * 0.5;
+    sampler(uv[0], uv[1], o);
+    const hv = o[0], fine = noise3(T.X * 2400, T.Y * 2400, T.Z * 2400);
+    // the shadow of the beard on the skin comes first, then the hair, dissolving through the coil field at its edge
+    const under = smooth(0.05, 0.45, c), dark = mix(1, 0.56, under);
+    T.r *= dark; T.g *= dark * 0.98; T.b *= dark * 0.96;
+    const edge = smooth(0.3, 0.74, c + (hv - 0.42) * 0.7 + (fine - 0.5) * 0.25);
+    if (edge <= 0) return;
+    const k = 0.72 + 0.62 * hv + 0.16 * (fine - 0.5);
+    T.r = mix(T.r, C[0] * k + 6 * hv, edge); T.g = mix(T.g, C[1] * k + 4 * hv, edge); T.b = mix(T.b, C[2] * k + 3 * hv, edge);
+    T.h += edge * hv * 0.00028;
+    T.rough = mix(T.rough, 0.86 + 0.1 * (1 - hv), edge);
+    T.ao = mix(T.ao, Math.max(T.ao, 0.6), edge);
+  };
 }
 
 const mix = (a, b, t) => a + (b - a) * t;
@@ -569,12 +587,21 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     bareHair = true;
   }
 
+  if (H.goggles && wrapped) {
+    const P2 = await import('./pieces.mjs');
+    const gridW = new TriGrid(new Float32Array(wrapped.soup), 0.012);
+    const y = 1.742, front = (x) => { const t = gridW.cast(x, y, 0.5, 0, 0, -1, 0.8, 0.0001); return t >= 0 ? 0.5 - t : 0.1; };
+    const z = Math.max(front(0.034), front(-0.034)) + 0.004;
+    const gg = P2.goggles({ joint: head, y, z, dx: 0.034, uvBrass: uvOf('brass'), uvMica: uvOf('brass'), tilt: 0.42 });
+    gg.forEach((g, i) => pieces.push({ geo: g, dye: i % 2 === 1 && i < 4 ? '#6F6A58' : '#8A6A3A', hide: false, noHide: true, shade: 1 }));
+  }
+
   // ---- the skull under the wrap and the backs of the eyes are never seen; neither is the body under the clothes
   let culled = 0;
   if (wrapped && !bareHair) { tuckUnderCloth(bodyPrim, wrapped.stack, isEar); culled = cullUnderWrap(bodyPrim, wrapped.covers, isEar); }
   const eyesCulled = cullEyeBacks(eyesPrim, eyes);
-  const hide = coverageMask(bodyPrim, outfitBodyTris(), 0.08);
-  const insideCollar = (x, y) => y > 1.40 && Math.abs(x) < 0.112;
+  const hide = coverageMask(bodyPrim, outfitBodyTris(), 0.08, spec.sex === 'M' ? 0.075 : 0.04);
+  const insideCollar = spec.sex === 'M' ? (x, y) => y > 1.452 && Math.abs(x) < 0.1 : (x, y) => y > 1.40 && Math.abs(x) < 0.112;
   const hiddenLegsFrom = OUT.legsHidden ?? (OUT.legsHiddenFrom ?? null);
   {
     const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0], idx = bodyPrim.getIndices().getArray(), n = P.getCount();
@@ -669,7 +696,13 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     const skinOf = nearestSkin(verts, J2, W2);
     const keep = (p, d) => {
       const hit = shellGrid.cast(p[0] - d[0] * 0.002, p[1] - d[1] * 0.002, p[2] - d[2] * 0.002, d[0], d[1], d[2], 0.03, 0.0001);
-      return hit >= 0 && shape(p[0], p[1] - 0.002, p[2]) > 0.6;
+      if (hit < 0 || shape(p[0], p[1] - 0.002, p[2]) <= 0.6) return false;
+      if (wrapped?.stack) {
+        // not under the band, and not just above it, where a card's tip would lie on the cloth
+        const x = p[0] - skinCenter[0], y = p[1] - skinCenter[1], z = p[2] - skinCenter[2], l = Math.hypot(x, y, z) || 1;
+        for (const drop of [0, 0.02, 0.04]) { const yy = y - drop; const q = Math.hypot(x, yy, z) || 1; if (wrapped.stack.coveredAt(x / q, yy / q, z / q)) return false; }
+      }
+      return true;
     };
     const anchors = scatterAnchors(grid, { center: [0, 1.66, -0.02], step: H.kind === 'hood' ? 0.2 : 0.1, seed: 5 + spec.n, keep, elMin: -1.2, elMax: 1.45 });
     const cards = coilCards(anchors, { flow: (a, Rr) => { const x = a.p[0], z = a.p[2]; return [Math.sign(x) * 0.25 + (Rr() - 0.5) * 0.8, -0.55, (z > 0 ? 0.3 : -0.8) + (Rr() - 0.5) * 0.7]; }, skinOf, rect: WRAP_ATLAS.coilFringe.rect, W: WRAP_ATLAS.W, length: [0.012, 0.02], width: [0.012, 0.02], liftTip: [0.002, 0.0055] });
@@ -688,14 +721,15 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   // tint by what the texel is: cloth takes the dye, coils the hair colour; lashes are painted as they are
   const A = WRAP_ATLAS;
   const inRect = (u, v, R) => { const x = u * A.W, y = v * A.W; return x >= R[0] && x < R[0] + R[2] && y >= R[1] && y < R[1] + R[3]; };
-  const clothD = lin(H.dye).map((v) => Math.min(1, v / NEUTRAL)), liningD = lin(H.lining || H.dye).map((v) => Math.min(1, v / NEUTRAL));
+  const clothD = lin(H.dye).map((v) => Math.min(1, v / NEUTRAL)), liningD = lin(H.lining || H.dye).map((v) => Math.min(1, v / NEUTRAL)), tailBackD = clothD.map((v, k) => v * 0.62 + liningD[k] * 0.1);
   {
     const n = hairBase.pos.length / 3;
     for (let i = 0; i < n; i++) {
       const u = hairBase.uv[i * 2], v = hairBase.uv[i * 2 + 1];
       const hair = inRect(u, v, A.coilTile.rect) || inRect(u, v, A.coilFringe.rect) || inRect(u, v, A.lockTile.rect);
       const lining = inRect(u, v, A.lining.rect);
-      const c = hair ? hairTint : lining ? liningD : clothD;
+      const onHead = hairBase.wgt[i * 4] > 0.99 && hairBase.jnt[i * 4] === head;
+      const c = hair ? hairTint : lining ? (onHead ? liningD : tailBackD) : clothD;
       for (let k = 0; k < 3; k++) hairBase.col[i * 4 + k] *= c[k];
     }
   }
@@ -744,18 +778,51 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     for (let i = 0; i < n; i++) { c.uv[i * 2] = sw[0] + sw[2] * (0.5 + 0.5 * Math.sin(c.pos[i * 3] * 11)); c.uv[i * 2 + 1] = sw[1] + sw[3] * (0.5 + 0.5 * Math.sin(c.pos[i * 3 + 1] * 13)); c.col[i * 4 + 3] = 1; }
     return compact(c);
   })();
-  const noProps = { ...outfitGeo };
-  void noProps;
+  // the cloth below near: a shell cast onto the wound cloth from outside (no gaps, no cards), the tails as they are, simplified
+  const shellOf = (rows, seg) => {
+    if (!wrapped || !clothLod) return [];
+    const soup = [];
+    const headIdx = [];
+    for (let t = 0; t < clothLod.idx.length; t += 3) { const a = clothLod.idx[t]; if (clothLod.jnt[a * 4] === head && clothLod.wgt[a * 4] > 0.99) headIdx.push(clothLod.idx[t], clothLod.idx[t + 1], clothLod.idx[t + 2]); }
+    for (const i of headIdx) soup.push(clothLod.pos[i * 3], clothLod.pos[i * 3 + 1], clothLod.pos[i * 3 + 2]);
+    if (!soup.length) return [];
+    const grid = new TriGrid(new Float32Array(soup), 0.016);
+    const c = [skinCenter[0], skinCenter[1] + dy, skinCenter[2]];
+    const far = 0.4;
+    const g = emptyGeo();
+    const map = new Int32Array((rows + 1) * seg).fill(-1);
+    for (let r = 0; r <= rows; r++) for (let s = 0; s < seg; s++) {
+      const el = Math.PI / 2 - (r / rows) * Math.PI * 0.72, az = (s / seg) * Math.PI * 2;
+      const d = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
+      const t = grid.cast(c[0] + d[0] * far, c[1] + d[1] * far, c[2] + d[2] * far, -d[0], -d[1], -d[2], far, 0.0001);
+      if (t < 0) continue;
+      map[r * seg + s] = g.pos.length / 3;
+      g.pos.push(c[0] + d[0] * (far - t + 0.0015), c[1] + d[1] * (far - t + 0.0015), c[2] + d[2] * (far - t + 0.0015));
+      g.nrm.push(d[0], d[1], d[2]);
+      g.uv.push(sw[0] + sw[2] * 0.5, sw[1] + sw[3] * 0.5);
+      g.jnt.push(head, 0, 0, 0); g.wgt.push(1, 0, 0, 0);
+      const k = 0.8 + 0.2 * smooth(-0.3, 0.8, d[1]);
+      g.col.push(clothD[0] * k, clothD[1] * k, clothD[2] * k, 1);
+    }
+    for (let r = 0; r < rows; r++) for (let s = 0; s < seg; s++) {
+      const a = map[r * seg + s], b = map[r * seg + (s + 1) % seg], e = map[(r + 1) * seg + s], f = map[(r + 1) * seg + (s + 1) % seg];
+      if (a >= 0 && b >= 0 && e >= 0) g.idx.push(a, e, b);
+      if (b >= 0 && e >= 0 && f >= 0) g.idx.push(b, e, f);
+    }
+    recomputeGeoNormals(g);
+    const tails = compact({ ...clothLod, pos: clothLod.pos.slice(), nrm: clothLod.nrm.slice(), uv: clothLod.uv.slice(), jnt: clothLod.jnt.slice(), wgt: clothLod.wgt.slice(), col: clothLod.col.slice(), idx: (() => { const o = []; for (let t = 0; t < clothLod.idx.length; t += 3) { const a = clothLod.idx[t]; if (!(clothLod.jnt[a * 4] === head && clothLod.wgt[a * 4] > 0.99)) o.push(clothLod.idx[t], clothLod.idx[t + 1], clothLod.idx[t + 2]); } return o; })() });
+    return [g, tails];
+  };
   const skinEyes = skinGeo;
   const L1 = {
     skin: await simplify(skinEyes, Math.min(3200, Math.floor(tris(skinEyes) * 0.55)), { err: 0.03 }),
-    outfit: await simplify(join([outfitGeo, ...(clothLod ? [await simplify(clothLod, 700, { err: 0.03 })] : [])]), 4400, { err: 0.03 }),
+    outfit: await simplifyTo(join([outfitGeo, ...shellOf(10, 22)]), 4500, 0.03),
   };
   const L2 = {
-    skin: await simplify(skinEyes, 1350, { err: 0.08 }),
-    outfit: await simplify(join([outfitGeo, ...(clothLod ? [await simplify(clothLod, 260, { err: 0.08 })] : [])]), 2400, { err: 0.08 }),
+    skin: await simplifyTo(skinEyes, 1350, 0.08),
+    outfit: await simplifyTo(join([outfitGeo, ...shellOf(6, 14)]), 2400, 0.08),
   };
-  const caster = await simplify(join([L2.skin, L2.outfit]), 1800, { err: 0.12 });
+  const caster = await simplifyTo(join([L2.skin, L2.outfit]), 1800, 0.12);
 
   // ---- nodes
   const skin = root.listSkins()[0];
@@ -807,6 +874,14 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   return { ...stats, tiers: tierTris, face: faceRec.landmarks, iou: faceRec.iou };
 }
 
+/** Simplify to a triangle target, loosening the error until it is met. */
+async function simplifyTo(g, target, err) {
+  let e = err, out = await simplify(g, target, { err: e });
+  for (let k = 0; k < 5 && tris(out) > target * 1.02; k++) { e *= 1.8; out = await simplify(g, target, { err: e, prune: true }); }
+  if (tris(out) > target * 1.02) out = await simplifySloppy(out, target, 0.3);
+  return out;
+}
+
 function fixMale(g, dy) {
   if (!dy) return;
   for (let i = 1; i < g.pos.length; i += 3) g.pos[i] += dy;
@@ -838,7 +913,7 @@ function geoPrim(doc, buf, g, mat, { color = true, uv = true, normal = true } = 
  * Which body vertices sit under the outfit: a ray from the vertex along its normal meets an outfit
  * triangle within `maxD` (the same test as Brea's hide mask; here the triangles go at build time).
  */
-function coverageMask(prim, tris9, maxD) {
+function coverageMask(prim, tris9, maxD, inset = 0.03) {
   const P = prim.getAttribute('POSITION'), N = prim.getAttribute('NORMAL');
   const n = P.getCount();
   const grid = new TriGrid(tris9, 0.04);
@@ -848,7 +923,7 @@ function coverageMask(prim, tris9, maxD) {
     P.getElement(i, p); N.getElement(i, d);
     const l = Math.hypot(d[0], d[1], d[2]) || 1; d[0] /= l; d[1] /= l; d[2] /= l;
     // from 3 cm inside: a body vertex up to 3 cm outside the cloth is the skin poking through it, and is covered too
-    const t = grid.cast(p[0] - d[0] * 0.03, p[1] - d[1] * 0.03, p[2] - d[2] * 0.03, d[0], d[1], d[2], maxD + 0.03, 0.0001);
+    const t = grid.cast(p[0] - d[0] * inset, p[1] - d[1] * inset, p[2] - d[2] * inset, d[0], d[1], d[2], maxD + inset, 0.0001);
     if (t >= 0) out[i] = 1;
   }
   return out;

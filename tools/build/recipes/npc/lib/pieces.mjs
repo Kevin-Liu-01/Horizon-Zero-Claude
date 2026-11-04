@@ -179,8 +179,11 @@ export function hangingSheet({ grid, rows = 10, cols = 8, y0, y1, halfW, side = 
     let prev = -Infinity;
     for (let r = 0; r <= rows; r++) {
       const u = c / cols, v = r / rows;
-      const t = grid.cast(X(u, v), Y(u, v), side * far, 0, 0, -side, far * 2, 0.0001);
-      let z = t >= 0 ? (far - t) : -far;
+      let z = -far;
+      for (const off of [-0.5, -0.17, 0.17, 0.5]) {
+        const t = grid.cast(X(u, v), Y(u, v) + off * (y1 - y0) / rows, side * far, 0, 0, -side, far * 2, 0.0001);
+        if (t >= 0) z = Math.max(z, far - t);
+      }
       // falls no faster than `cling` per metre
       if (prev > -Infinity) z = Math.max(z, prev - cling * (Math.abs(y1 - y0) / rows));
       prev = z;
@@ -210,7 +213,7 @@ export function hangingSheet({ grid, rows = 10, cols = 8, y0, y1, halfW, side = 
  * of the walking legs, pleats keep it cloth. Weighted on the pelvis, the lower rows part on the
  * thighs by side, so the hem follows the stride.
  */
-export function skirt({ grid, J, y0 = 1.08, y1 = 0.1, rHem = 0.31, rows = 9, seg = 26, lift = 0.012, pleats = 7, amp = 0.012, uv, seed = 3, follow = 0.42, rFloor = 0.15, cz = -0.012 }) {
+export function skirt({ grid, J, y0 = 1.08, y1 = 0.1, rHem = 0.31, rows = 9, seg = 26, lift = 0.012, pleats = 7, amp = 0.012, uv, seed = 3, follow = 0.42, rFloor = 0.15, cz = -0.012, rMax = 0.4 }) {
   const far = 0.7;
   const R = new Float32Array((rows + 1) * seg);
   for (let s = 0; s < seg; s++) {
@@ -219,7 +222,7 @@ export function skirt({ grid, J, y0 = 1.08, y1 = 0.1, rHem = 0.31, rows = 9, seg
     for (let r = 0; r <= rows; r++) {
       const v = r / rows, y = mix(y0, y1, v);
       const t = grid.cast(dx * far, y, cz + dz * far, -dx, 0, -dz, far, 0.0001);
-      const surf = t >= 0 ? far - t : 0;
+      const surf = Math.min(rMax, t >= 0 ? far - t : 0);
       const line = mix(rFloor, rHem, Math.pow(v, 0.85));
       const q = Math.max(surf + lift, line * (0.9 + 0.1 * Math.abs(dx)), prev - 0.004);
       R[r * seg + s] = q;

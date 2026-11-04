@@ -30,7 +30,7 @@ export const ARCHETYPES = [
   },
   {
     id: 'guild-matron', n: 2, name: 'Guild Matron', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.64, age: 63,
-    tone: '#8E6547', iris: '#3A2A1E', amber: '#6A4A2C', hair: '#4F4A46',
+    tone: '#8E6547', iris: '#3A2A1E', amber: '#6A4A2C', hair: '#5A5652',
     face: { noseBridge: [0, -1.0, 1.5], noseTip: [0, -5.0, 6.0], cheek: [7.0, -3.5, 1.0], jaw: [7.0, -1.5, 2.5], chin: [0, -8.0, 0.5], brow: [0, -2.0, -1.5], upperLip: [0, -3.0, -3.5] },
     head: { kind: 'wrap', dye: PAN.orchilDeep, lining: PAN.carmine, seed: 22, bun: true, tail: 'left' },
     outfit: { key: 'matron' },
@@ -46,7 +46,7 @@ export const ARCHETYPES = [
   },
   {
     id: 'boat-caulker', n: 4, name: 'Boat-Caulker', faction: 'pan', family: 'Peasant', sex: 'M', height: 1.74, age: 52,
-    tone: '#6F4830', iris: '#2E2219', amber: '#5A3C22', hair: '#2E2A28',
+    tone: '#6F4830', iris: '#2E2219', amber: '#5A3C22', hair: '#231F1D',
     face: { noseBridge: [0, -2.0, -1.5], noseTip: [0, -3.5, 3.5], cheek: [7.5, -2.0, -0.5], jaw: [3.0, -1.0, -2.5], chin: [0, -6.5, -1.0], brow: [0, -2.5, 7.5], upperLip: [0, -3.5, 2.5] },
     head: { kind: 'rag', dye: PAN.basalt, lining: PAN.lapilli, seed: 44, tail: 'right', beard: 'full' },
     marks: { tar: true },
@@ -55,7 +55,7 @@ export const ARCHETYPES = [
   },
   {
     id: 'lantern-keeper', n: 5, name: 'Lantern-Keeper', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.68, age: 68,
-    tone: '#92694B', iris: '#3F3024', amber: '#6F5233', hair: '#8D8A84',
+    tone: '#92694B', iris: '#3F3024', amber: '#6F5233', hair: '#6A6762',
     face: { noseBridge: [0, 1.2, 8.0], noseTip: [0, -2.0, 8.5], cheek: [-4.0, 0.5, -3.0], jaw: [-4.0, -3.0, -3.5], chin: [0, -2.0, 8.0], brow: [0, -1.0, 7.5], upperLip: [0, -1.0, -6.0] },
     head: { kind: 'hood', hair: 'grey', dye: PAN.orchilNight, lining: PAN.orchilNight, seed: 55 },
     outfit: { key: 'keeper' },
