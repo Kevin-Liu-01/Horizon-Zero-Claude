@@ -187,7 +187,7 @@ function salt(N) {
     const drag = (0.5 + 0.5 * Math.sin(dragPh)) * sm(0.15, 0.6, fbm(u, v, 3, 2, 73));
     const pit = sm(0.2, 0.0, worley(u, v, 22, 29).f1) * sm(0.2, 0.6, fbm(u, v, 5, 2, 79));
     const dome = (1 - w.f1) * 0.14;
-    const h = 0.34 + ridgeK * 0.34 - crack * 0.3 + crystal * 0.24 + dome + drag * 0.05 - pit * 0.24 + fbm(u, v, 8, 3, 83) * 0.12;
+    const h = 0.34 + ridgeK * 0.34 - crack * 0.3 + crystal * 0.24 + dome + drag * 0.03 - pit * 0.24 + fbm(u, v, 8, 3, 83) * 0.12;
     H[i] = h;
     const tone = fbm(u, v, 3, 4, 51);
     let c = mix3(crust, cream, sm(-0.25, 0.4, tone));

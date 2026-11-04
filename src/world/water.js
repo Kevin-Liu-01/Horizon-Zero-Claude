@@ -104,7 +104,7 @@ const SEA_COLOR = /* glsl */ `
   float cover = max(crest1 * 1.25, max(crest2 * 1.15, crest3)) * brk;
   cover = max(cover, trail * brk * 0.62);
   // spent bores lie on the shallows, thinning seaward in fingers
-  float carpet = (1.0 - smoothstep(0.0, 5.0 + 17.0 * blot, off)) * (0.26 + 0.44 * exp(-s * 1.6)) * (0.55 + 0.75 * blot);
+  float carpet = (1.0 - smoothstep(0.0, 3.5 + 13.0 * blot, off)) * (0.2 + 0.36 * exp(-s * 1.6)) * (0.5 + 0.8 * blot);
   cover = max(cover, carpet);
   // the leading lip of the swash, a bright thin line
   float lipLine = (1.0 - smoothstep(0.0, 0.035 + 0.07 * n2, depth)) * (0.4 + 0.6 * exp(-s * 2.6));

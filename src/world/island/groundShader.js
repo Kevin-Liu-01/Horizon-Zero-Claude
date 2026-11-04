@@ -251,7 +251,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   /* -- liquid: brine mirrors, the swash zone is wet black glass -------------- */
   float coast = sh.r * 64.0 - 48.0;
   float tide = uSea + 0.26 + 0.09 * sin(uTime * 0.42 + xz.x * 0.03 + xz.y * 0.021);
-  float wetSea = (1.0 - smoothstep(tide, tide + 0.34, vWPos.y)) * (1.0 - smoothstep(7.0, 17.0, coast));
+  float wetSea = (1.0 - smoothstep(tide, tide + 0.34, vWPos.y)) * (1.0 - smoothstep(2.5, 8.5, coast));
   float wetGlass = sh.b * (1.0 - smoothstep(0.34, 0.78, vWPos.y));
   float wet = max(wetSea, wetGlass);
   // a wet ground is dark and flat; brine is thin water on crust, pink where it evaporates

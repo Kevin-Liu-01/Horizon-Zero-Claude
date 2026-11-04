@@ -224,7 +224,8 @@ export function maskTexel(H, x, z, out) {
   out[1] = clamp255(rock * 255);
   out[2] = clamp255(shingle * (1 - rock) * 255);
   out[3] = clamp255(silt * 255);
-  out[4] = clamp255(coverAt(x, z) * 255);
+  // cover only where the marram can stand (the scatter's own rule: A59b)
+  out[4] = slope > 0.88 || rock > 0.48 ? 0 : clamp255(coverAt(x, z) * 255);
   out[5] = clamp255(track * 255);
   out[6] = clamp255(damp * 255);
   out[7] = clamp255(pale * 255);

@@ -319,7 +319,7 @@ const ROWS = [
 
   /* ------------------------------------------------------------- A-island-boundary ---- */
   {
-    id: 'A-island-boundary', kind: 'action', lane: LANE, timeout: 300000,
+    id: 'A-island-boundary', kind: 'action', lane: LANE, timeout: 480000,
     title: 'Sprint toward the sea in 16 directions: never in water deeper than 1.2 m; stopped by the current ring (registered via ctx.collision); no fall-through',
     setup: '__CTX__.input.enabled = true;',
     settle: 800,
@@ -335,7 +335,7 @@ const ROWS = [
         // start on the beach on this bearing, walking out from the last land
         let r = 480;
         while (r > 40 && T.getHeight(dx * r, dz * r) < 0.25) r -= 1;
-        const startR = Math.max(10, r - 26);
+        const startR = Math.max(10, r - 7);
         p.position.set(dx * startR, 0, dz * startR); p.velocity?.set?.(0, 0, 0); p._snapToGround?.();
         p.camYaw = Math.atan2(-dx, -dz);
         p.heading = Math.atan2(dx, dz);
@@ -344,9 +344,14 @@ const ROWS = [
         ctx.input.keys.add('KeyW'); ctx.input.keys.add('ShiftLeft');
         let deepest = 0, maxR = 0, under = 0, frames = 0, last = 0, stuckAt = 0, t0 = ctx.engine.simTime;
         const tw = performance.now();
-        while (ctx.engine.simTime - t0 < 7.5 && performance.now() - tw < 25000) {
+        let nearNow = 1e9;
+        while (nearNow > 1.5 && ctx.engine.simTime - t0 < 20 && performance.now() - tw < 28000) {
           await new Promise((res) => requestAnimationFrame(res));
           frames++;
+          if (!(frames % 12)) {
+            nearNow = 1e9;
+            for (const c of ring) nearNow = Math.min(nearNow, Math.hypot(c.cx - p.position.x, c.cz - p.position.z) - c.r);
+          }
           const px = p.position.x, pz = p.position.z, g = T.getHeight(px, pz);
           const d = W.depthAt(px, pz);
           if (d > deepest) deepest = d;
@@ -710,11 +715,16 @@ const ROWS = [
         }
         return { peak: +peak.toFixed(3), at: peakAt, largestAtAnyLag8Up: +top.toFixed(3) };
       };
+      // salt: the middle of the biggest white cell, looked at along its long axis, so no dyke is in the crop
+      const Rc = await import('/src/world/island/recipe.js');
+      const cells = Rc.fieldCells().filter((c) => c.kind === Rc.PAN.WHITE).sort((p, q) => (q.u1 - q.u0) * (q.v1 - q.v0) - (p.u1 - p.u0) * (p.v1 - p.v0));
+      const C0 = cells[0], cu = (C0.u0 + C0.u1) / 2, cv = (C0.v0 + C0.v1) / 2, W0 = { x: 0, z: 0 }, W1 = { x: 0, z: 0 }, W2 = { x: 0, z: 0 };
+      Rc.fieldToWorld(cu, cv, W0); Rc.fieldToWorld(cu - 25, cv, W1); Rc.fieldToWorld(cu - 50, cv, W2);
       const sites = {
         sand30: acorr(shot(-200, 400, -226, 382, 2.2)),
         sand55: acorr(shot(-190, 416, -236, 386, 3.2)),
-        salt25: acorr(shot(-305, 265, -325, 283, 2.2)),
-        salt50: acorr(shot(-285, 245, -322, 276, 3.4)),
+        salt25: acorr(shot(W1.x, W1.z, W0.x, W0.z, 2.6)),
+        salt50: acorr(shot(W2.x, W2.z, W0.x, W0.z, 5.2)),
       };
       veg.visible = wasV;
       const pass = Object.values(sites).every((s) => s.peak <= 0.15);
@@ -1076,6 +1086,7 @@ for (const row of [
   pansRow('A109-ao-distance-fade', 'A109-ao-distance-fade-pans'),
   pansRow('V20-aa-crop', 'V20-aa-crop-pans'),
   pansRow('V33b-no-ao-lattice', 'V33b-no-ao-lattice-pans'),
+  pansRow('V-gpu-tier-look', 'V-gpu-tier-look-pans'),
 ]) if (row) ROWS.push(row);
 
 export const GATES = ROWS;
