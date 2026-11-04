@@ -103,6 +103,16 @@ export function scatterTile(kind, tx, tz, R, out) {
   }
 }
 
+/** Field walls round Saltrow, engine (x, z): hand-laid lines between the tracks. */
+const ENCLOSURES = [
+  [[-262, 196], [-232, 208], [-206, 204], [-190, 232], [-212, 262], [-226, 272]],
+  [[-232, 208], [-226, 236], [-212, 262]],
+  [[-300, 176], [-262, 196], [-250, 168], [-214, 160], [-206, 204]],
+  [[-214, 160], [-176, 170], [-168, 206], [-190, 232]],
+  [[-168, 206], [-132, 214], [-128, 250], [-160, 262]],
+  [[-250, 168], [-258, 142], [-222, 128], [-214, 160]],
+];
+
 /** Static instanced kinds for the whole Pans. */
 export function scatterStatic(R) {
   const r = rng(0x0b5a17);
@@ -160,6 +170,23 @@ export function scatterStatic(R) {
       walls.push(cx + (v - 0.5) * 0.14, hBase - 0.03, cz + (w - 0.5) * 0.14, Math.atan2(dx, dz) + (u - 0.5) * 0.14 + (v > 0.5 ? Math.PI : 0),
         (0.82 + w * 0.42) * (main ? 1.9 : 1), (0.66 + v * 0.74) * (main ? 0.72 : 1), Math.hypot(dx, dz) / seg * 1.08,
         main, 0.8 + u * 0.62);
+    }
+  }
+  // the old enclosures round the town: long field walls on the plain behind the pans (worked land,
+  // the same lava stone), in the same kind and the same draw
+  for (const line of ENCLOSURES) {
+    for (let k = 0; k < line.length - 1; k++) {
+      const [ax, az] = line[k], [bx, bz] = line[k + 1];
+      const len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(len / seg));
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n, wob = Math.sin(t * len * 0.09 + k) * 0.5;
+        const cx = ax + (bx - ax) * t + (bz - az) / len * wob, cz = az + (bz - az) * t - (bx - ax) / len * wob;
+        const u = r(), v = r(), w = r();
+        const F = R.at(cx, cz);
+        if (u < 0.05 || F.track > 0.3 || F.rock > 0.5 || F.coast < 8) continue;     // gaps, gateways
+        walls.push(cx + (v - 0.5) * 0.14, F.h - 0.05, cz + (w - 0.5) * 0.14, Math.atan2(bx - ax, bz - az) + (u - 0.5) * 0.14 + (v > 0.5 ? Math.PI : 0),
+          0.74 + w * 0.36, 0.5 + v * 0.46, len / n / seg * 1.08, 0, 0.8 + u * 0.62);
+      }
     }
   }
   // raked salt: long low windrows and small heaps in the crust cells nearest the town
