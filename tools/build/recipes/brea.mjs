@@ -48,13 +48,13 @@ import {
   findLandmarks, GRADED, faceField, applyField,
   recomputeNormals, refineEdges, smoothNormals, smoothPositions, smooth, profileMask, iou, rle, writeSkinned, v3,
 } from './lib/face.mjs';
-import { relayoutSkinUV, saltPaste, scarSeam, inkDots, eyeOpening, TriGrid, triSoup, bakeAOPoints } from './lib/skin.mjs';
+import { relayoutSkinUV, saltPaste, scarSeam, inkDots, eyeOpening, TriGrid, triSoup } from './lib/skin.mjs';
 import { WRAP_ATLAS } from './lib/wrap.mjs';
 import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/wrap-head.mjs';
 import { lashCard } from './lib/hair.mjs';
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, browLines, remapEyeUV,
-  cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem,
+  cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals,
 } from './lib/skin-human.mjs';
 
 export const LANE = 'hero-body';
@@ -309,22 +309,8 @@ export async function build({ out = ROOT } = {}) {
   let eyeMax = 0;
   { const a = eyesPrim.getAttribute('POSITION').getArray(); for (let i = 0; i < a.length; i += 3) eyeMax = Math.max(eyeMax, Math.hypot(a[i] - eyeStock[i], a[i + 1] - eyeStock[i + 1], a[i + 2] - eyeStock[i + 2])); }
 
-  // the cornea stands proud of the ball: from the side the iris and a wet dome read, not a flat grey wedge
-  // (after the socket's measure above: the ball itself stays rigid, this is the eye's own form)
-  {
-    const P = eyesPrim.getAttribute('POSITION'), a = P.getArray(), cz = eyeSphereZ;
-    let n25 = 0;
-    for (let i = 0; i < P.getCount(); i++) {
-      const e = eyes[a[i * 3] > 0 ? 0 : 1];
-      const dx = a[i * 3] - e[0], dy = a[i * 3 + 1] - e[1], dz = a[i * 3 + 2] - cz;
-      if (dz <= 0) continue;
-      const r = Math.hypot(dx, dy), k = 1 - smooth(0.0035, 0.0095, r);
-      if (r < 0.0095) n25++;
-      a[i * 3 + 2] += 0.0021 * k;
-    }
-    P.setArray(a);
-    if (process.env.WRAP_DEBUG) console.log('eye verts', P.getCount(), 'in the cornea', n25);
-  }
+  // the ball's socket was measured above and stays rigid; the cornea is the eye's own form
+  corneaDome(eyesPrim, eyes, eyeSphereZ);
   // measure what the field did at each landmark (game mm), and the profile IoU
   const disp = {};
   const faceRec = { landmarks: {}, graded: GRADED };
@@ -359,7 +345,7 @@ export async function build({ out = ROOT } = {}) {
   const scar = (() => {
     const xc = 0.0355, l = brows[1].line(xc);
     const tiltX = 0.27;               // it leans toward the nose as it comes down
-    const below = l.half * 1.1 + 0.0026, above = 0.0300 / S - below;
+    const below = l.half * 1.1 + 0.0014, above = 0.0300 / S - below;
     return { a: [xc + tiltX * above, l.y + above], b: [xc - tiltX * below, l.y - below] };
   })();
   const hairDoc = await readGltf(path.join(HAIR_DIR(SRC), 'Hair_BuzzedFemale.gltf'));
@@ -399,7 +385,7 @@ export async function build({ out = ROOT } = {}) {
       { phiDeg: -74, tauDeg: 17, oDeg: 39, w: 0.215, along: 30, lift: 0.0009, pillow: 0.0028, creaseAmp: 0.0012, seed: 15 },
     ],
     // the topknot; its top is the bbox top that assets.specs.js's targetHeight is computed from
-    bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, topY: 1.82756 },
+    bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, rAxis: 0.0685, topY: 1.82756 },
     knot: CHAINS.wrapSash.points[0],
     // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
     tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.25, gatherTo: 0.44, roll: 0.6, fold: 0.0085, along: 18, across: 5, rootBack: 0.014 },
@@ -452,61 +438,21 @@ export async function build({ out = ROOT } = {}) {
         half: (X) => (0.0041 / S) * (1 - 0.1 * smooth(0.02, 0.058, Math.abs(X))),
         xMax: 0.059,
       }),
-      scarSeam({ a: scar.a, b: scar.b, color: [156, 110, 90], w: 0.00078, depth: 0.0005 }),
+      scarSeam({ a: scar.a, b: scar.b, color: [150, 106, 86], w: 0.00064, depth: 0.0005 }),
       inkDots({ dots: [[-0.7075, -0.0445], [-0.6895, -0.0555], [-0.6895, -0.0335]], r: 0.00265, where: (T) => T.X < -0.66 && T.ny > 0.4 }),
     ],
   });
   const wrapTex = await paintWrapAtlas(base, wrapMat);
 
-  // what faces INTO the head never sees the sun: the shadow pass renders back faces, so an inner wall facing a sun behind her
-  // has no caster in front of it and lights up inside the nose and along the lips. Its normal now points straight down,
-  // where no sun ever is. Read from a baked sky visibility, after the paint (which reads the true normals)
-  {
-    const P = bodyPrim.getAttribute('POSITION'), N = bodyPrim.getAttribute('NORMAL');
-    const pos = P.getArray(), nrm = Float32Array.from(N.getArray());
-    const pick = [];
-    for (let i = 0; i < P.getCount(); i++) { const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2]; if (y > 1.53 && y < 1.72 && Math.abs(x) < 0.075 && z > 0.03) pick.push(i); }
-    const pts = new Float32Array(pick.length * 3), ns = new Float32Array(pick.length * 3);
-    pick.forEach((v, i) => { for (let k = 0; k < 3; k++) { pts[i * 3 + k] = pos[v * 3 + k]; ns[i * 3 + k] = nrm[v * 3 + k]; } });
-    const soup = triSoup(bodyPrim);
-    for (const v of triSoup(eyesPrim)) soup.push(v);
-    const ao = bakeAOPoints(pts, ns, new TriGrid(new Float32Array(soup), 0.012), { rays: 64, maxD: 0.03, lift: 0.0006 });
-    let bent = 0;
-    pick.forEach((v, i) => {
-      const inward = ns[i * 3 + 2] < 0.45 ? 1 : 0.35;
-      // on the front of the face, a surface facing back at all is one of these, whatever the rays found
-      const x = pts[i * 3], y = pts[i * 3 + 1];
-      const onLip = Math.abs(x) < 0.04 && y < L.upperLip[1] + 0.002 && y > L.upperLip[1] - 0.04;
-      const k = onLip ? 1 - smooth(0.1, 0.2, ao[i]) : Math.max((1 - smooth(0.16, 0.42, ao[i])) * inward, Math.abs(x) < 0.05 ? 1 - smooth(-0.04, 0.2, ns[i * 3 + 2]) : 0);
-      if (k <= 0.01) return;
-      const nx = nrm[v * 3] * (1 - k), ny = nrm[v * 3 + 1] * (1 - k) - k, nz = nrm[v * 3 + 2] * (1 - k) + 0.12 * k, l = Math.hypot(nx, ny, nz) || 1;
-      nrm[v * 3] = nx / l; nrm[v * 3 + 1] = ny / l; nrm[v * 3 + 2] = nz / l;
-      bent++;
-    });
-    // the rim of the lower lid and the top of the lower lip face up: with the sun behind her nothing in front of them casts, and
-    // they burn white in a face in shade. Their normals lean forward enough to stay out of any sun behind the head
-    pick.forEach((v) => {
-      const x = pos[v * 3], y = pos[v * 3 + 1];
-      const e = eyes[x > 0 ? 0 : 1];
-      const lid = Math.abs(x - e[0]) < 0.027 && y < e[1] - 0.001 && y > e[1] - 0.017;
-      const lip = Math.abs(x) < 0.04 && y < L.noseTip[1] - 0.003 && y > L.upperLip[1] - 0.04;
-      if (!lid && !lip) return;
-      const ny = nrm[v * 3 + 1], nz = nrm[v * 3 + 2];
-      if (ny <= 0.3 * Math.max(nz, 0.01)) return;
-      const yz = Math.hypot(ny, nz), a = Math.atan2(0.3, 1), sc = Math.sign(nz) >= 0 ? 1 : -1;
-      nrm[v * 3 + 1] = yz * Math.sin(a) * sc; nrm[v * 3 + 2] = yz * Math.cos(a);
-      bent++;
-    });
-    N.setArray(nrm);
-    if (process.env.WRAP_DEBUG) console.log('inward normals bent', bent, 'of', pick.length);
-  }
+  // what faces into the head stays out of a sun behind her (after the paint, which reads the true normals)
+  leanInwardNormals(bodyPrim, eyesPrim, { L, eyes });
 
   // ---- hide mask (Pan Whites I covers which body vertices)
   const hide = coverageMask(bodyPrim, panTris, 0.08);
   const hideArr = new Uint8Array(bodyPrim.getAttribute('POSITION').getCount());
   // the collar stands off the neck: a look down inside it meets skin, never a hole through her, so
   // the neck and the top of the chest stay whatever the normal-ray test says
-  const insideCollar = (x, y) => y > 1.40 && Math.abs(x) < 0.112;
+  const insideCollar = (x, y) => y > 1.355 && Math.abs(x) < 0.145;
   {
     const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0];
     for (let i = 0; i < hideArr.length; i++) { P.getElement(i, q); hideArr[i] = hide[i] && !insideCollar(q[0], q[1]) ? 1 : 0; }

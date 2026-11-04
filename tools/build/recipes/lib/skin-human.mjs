@@ -5,9 +5,9 @@
  * API: docs/ROUND5-CHARACTER-ART.md §3.
  */
 import { MeshoptSimplifier } from 'meshoptimizer';
-import { noise3, smooth, positionMap } from './face.mjs';
+import { noise3, smooth, positionMap, recomputeNormals } from './face.mjs';
 import {
-  uvIslands, TriGrid, triSoup, bakeAOTexels, blurMasked, convexity, scalarMap, seamlessTone, paintSkinAtlas, decodeStockSkin, webp, blit, paintEye,
+  uvIslands, TriGrid, triSoup, bakeAOTexels, bakeAOPoints, blurMasked, convexity, scalarMap, seamlessTone, paintSkinAtlas, decodeStockSkin, webp, blit, paintEye,
   pores, colourZones, creases, smoothSkin, eyeSocketClean, lipTone, lidLines,
 } from './skin.mjs';
 import { rng, WRAP_ATLAS } from './wrap.mjs';
@@ -93,6 +93,73 @@ export function hairShape(X, Y, Z) {
   const over = smooth(1.664, 1.676, Y + wob * 0.6) * smooth(-0.056, -0.05, Z) * (1 - smooth(zf - 0.006, zf + 0.004, Z));
   const onEar = ax > 0.0715 && Z > -0.052 && Z < 0.006 && Y < 1.671 ? 0 : 1;
   return Math.max(burn, behind, over) * onEar;
+}
+
+/**
+ * The cornea stands proud of the ball, a tight dome over the iris: from the side the iris and a wet form read, not a flat grey
+ * wedge. `sphereZ` is the balls' centre depth. After A-face-delta's socket measure: the ball stays rigid, this is the eye's own form.
+ */
+export function corneaDome(eyesPrim, eyes, sphereZ, { height = 0.0033, r0 = 0.0018, r1 = 0.0074 } = {}) {
+  const P = eyesPrim.getAttribute('POSITION'), a = P.getArray();
+  for (let i = 0; i < P.getCount(); i++) {
+    const e = eyes[a[i * 3] > 0 ? 0 : 1];
+    const dx = a[i * 3] - e[0], dy = a[i * 3 + 1] - e[1], dz = a[i * 3 + 2] - sphereZ;
+    if (dz <= 0) continue;
+    a[i * 3 + 2] += height * (1 - smooth(r0, r1, Math.hypot(dx, dy)));
+  }
+  P.setArray(a);
+  recomputeNormals(eyesPrim, null);
+}
+
+/**
+ * What faces INTO the head never sees the sun, but the shadow pass renders back faces, so an inner wall facing a sun behind her has
+ * no caster in front of it and lights up inside the nose, along the lips and on the lower lid. Read from a baked sky visibility,
+ * after the paint (which reads the true normals): the deep ones point straight down, where no sun ever is; a nostril's floor, the
+ * lower lid's rim and the top of the lower lip lean forward, out of any sun behind the head.
+ */
+export function leanInwardNormals(bodyPrim, eyesPrim, { L, eyes }) {
+  const P = bodyPrim.getAttribute('POSITION'), N = bodyPrim.getAttribute('NORMAL');
+  const pos = P.getArray(), nrm = Float32Array.from(N.getArray());
+  const pick = [];
+  for (let i = 0; i < P.getCount(); i++) { const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2]; if (y > 1.53 && y < 1.72 && Math.abs(x) < 0.075 && z > 0.03) pick.push(i); }
+  const pts = new Float32Array(pick.length * 3), ns = new Float32Array(pick.length * 3);
+  pick.forEach((v, i) => { for (let k = 0; k < 3; k++) { pts[i * 3 + k] = pos[v * 3 + k]; ns[i * 3 + k] = nrm[v * 3 + k]; } });
+  const soup = triSoup(bodyPrim);
+  for (const v of triSoup(eyesPrim)) soup.push(v);
+  const ao = bakeAOPoints(pts, ns, new TriGrid(new Float32Array(soup), 0.012), { rays: 64, maxD: 0.03, lift: 0.0006 });
+  let bent = 0;
+  pick.forEach((v, i) => {
+    const inward = ns[i * 3 + 2] < 0.45 ? 1 : 0.35;
+    const x = pts[i * 3], y = pts[i * 3 + 1];
+    const onLip = Math.abs(x) < 0.04 && y < L.upperLip[1] + 0.002 && y > L.upperLip[1] - 0.04;
+    // on the front of the mid-face, a surface facing back at all is one of these, whatever the rays found; the lips only lean (below)
+    const k = onLip ? 1 - smooth(0.1, 0.2, ao[i]) : Math.max((1 - smooth(0.16, 0.42, ao[i])) * inward, Math.abs(x) < 0.05 ? 1 - smooth(-0.04, 0.2, ns[i * 3 + 2]) : 0);
+    if (k <= 0.01) return;
+    const nx = nrm[v * 3] * (1 - k), ny = nrm[v * 3 + 1] * (1 - k) - k, nz = nrm[v * 3 + 2] * (1 - k) + 0.12 * k, l = Math.hypot(nx, ny, nz) || 1;
+    nrm[v * 3] = nx / l; nrm[v * 3 + 1] = ny / l; nrm[v * 3 + 2] = nz / l;
+    bent++;
+  });
+  pick.forEach((v) => {
+    const x = pos[v * 3], y = pos[v * 3 + 1];
+    const e = eyes[x > 0 ? 0 : 1];
+    const lid = Math.abs(x - e[0]) < 0.027 && y < e[1] - 0.001 && y > e[1] - 0.017;
+    const lip = Math.abs(x) < 0.04 && y < L.noseTip[1] - 0.003 && y > L.upperLip[1] - 0.04;
+    // under the tip nothing outside the nose faces up: whatever does is a nostril's floor
+    if (Math.abs(x) < 0.028 && y < L.noseTip[1] - 0.002 && y > L.upperLip[1] + 0.004 && nrm[v * 3 + 1] > -0.25) {
+      const nx = nrm[v * 3], nz = Math.max(nrm[v * 3 + 2], 0.35), l = Math.hypot(nx, 0.25, nz);
+      nrm[v * 3] = nx / l; nrm[v * 3 + 1] = -0.25 / l; nrm[v * 3 + 2] = nz / l;
+      bent++;
+      return;
+    }
+    if (!lid && !lip) return;
+    const ny = nrm[v * 3 + 1], nz = nrm[v * 3 + 2];
+    if (ny <= 0.3 * Math.max(nz, 0.01)) return;
+    const yz = Math.hypot(ny, nz), a = Math.atan2(0.3, 1), sc = Math.sign(nz) >= 0 ? 1 : -1;
+    nrm[v * 3 + 1] = yz * Math.sin(a) * sc; nrm[v * 3 + 2] = yz * Math.cos(a);
+    bent++;
+  });
+  N.setArray(nrm);
+  return bent;
 }
 
 /**

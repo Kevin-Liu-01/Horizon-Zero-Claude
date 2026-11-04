@@ -71,7 +71,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
     const liningMid = [lr[0], lr[1] + Math.round(lr[3] * 0.42), lr[2], Math.round(lr[3] * 0.16)];
     const bunAt = (dy) => {
       const c = [bunSpec.c[0], bunSpec.c[1] + dy, bunSpec.c[2]];
-      const f = ellipsoidForm(c, { r: bunSpec.r, rAxis: bunSpec.r, axis: tilt, egg: 0.13, bump: 0.002, seed: 4 });
+      const f = ellipsoidForm(c, { r: bunSpec.r, rAxis: bunSpec.rAxis ?? bunSpec.r, axis: tilt, egg: 0.13, bump: 0.002, seed: 4 });
       const st = clothStack(f, { azN: 240, elN: 120 });
       const rows = [-1, -0.9, -0.5, 0, 0.5, 0.9, 1];
       const gs = [];
@@ -81,7 +81,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
       // the crown: the cloth's end pulled down into the centre in radial pleats
       gs.push(crownCap(f, { elMin: 46 * DEG, rings: 3, seg: 18, lift: 0.0008, gather: 0.0017, pleats: 9, hem: 0.002, uvRadial: true, joint: head, stack: st, tiltAxis: tilt, uv: { rect: [A.knotFold.rect[0], A.knotFold.rect[1] + 6, A.knotFold.period, A.knotFold.rect[3] - 12], W } }));
       // nothing shows through under the turns: a closed dark egg inside them
-      gs.push(underShell(f, { axis: tilt, oMin: () => -82 * DEG, seg: 12, rings: 5, joint: head, W, uv: [A.clothB.rect[0], A.clothB.rect[1] + 40, 40, 40], at: (dx, dy, dz) => f.R(dx, dy, dz) - 0.0012 }));
+      gs.push(underShell(f, { axis: tilt, oMin: () => -84 * DEG, seg: 14, rings: 5, joint: head, W, cloth: true, uv: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], at: (dx, dy, dz) => f.R(dx, dy, dz) - 0.0006 }));
       // the carmine binding where it meets the head: two turns of cord seated in the cloth
       const bindUV = { rect: liningMid, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0.1, 0.9] };
       gs.push(ribbon(f, { n: tilt, o0: -35 * DEG, w: 0.052, along: 30, rowsT: [-1, 0, 1], lift: 0.0004, pillow: 0.0024, stack: st, bridge: 0, creases: 0, seed: 51, joint: head, uv: bindUV, wander: 0.012, hemStart: 0.55 }));
@@ -168,12 +168,10 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
   const grid = new TriGrid(new Float32Array(soup), 0.012);
   for (const g of parts) {
     if (g.part === 'locks') continue;                  // the tuft carries its own root shade and edge alpha
-    if (g.part === 'shell' || g.part === 'bunShell') { const n = g.pos.length / 3; g.col = []; for (let i = 0; i < n; i++) g.col.push(0.2, 0.15, 0.2, 1); continue; }
+    if (g.part === 'shell') { const n = g.pos.length / 3; g.col = []; for (let i = 0; i < n; i++) g.col.push(0.2, 0.15, 0.2, 1); continue; }
     vertexAO(g, grid, { rays: 48, maxD: 0.028, floor: 0.4 });
   }
-  if (process.env.WRAP_DROP) for (const g of parts) if (process.env.WRAP_DROP.split(',').includes(g.part)) g.idx = [];
   for (const g of parts) compactGeo(g);
-  if (process.env.WRAP_DEBUG) for (const g of parts) { const n = g.pos.length / 3; let mi = [9, 9, 9], ma = [-9, -9, -9]; for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) { mi[k] = Math.min(mi[k], g.pos[i * 3 + k]); ma[k] = Math.max(ma[k], g.pos[i * 3 + k]); } console.log(g.part, n, mi.map((v) => v.toFixed(3)).join(','), ma.map((v) => v.toFixed(3)).join(','), g.uv.some((v) => !(v >= 0 && v <= 1))); }
   const geo = joinGeos(parts);
   const covers = (p) => {
     // a skull vertex well inside the cloth: above the base turn's low edge by a margin

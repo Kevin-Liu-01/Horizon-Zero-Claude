@@ -11,8 +11,9 @@
  *   V-brea-closeup-back      day: the back at 0.8 m, back-high from the chase and aim cameras' angle, back 3/4
  *   V-brea-closeup-backlit   the sun behind her: front, 3/4, back (the light that finds every inward-facing surface)
  *   V-brea-closeup-calima    PENDING until world-sky's calima state is on main (R59 b); no stand-in can pass it
- *   V-brea-closeup-detail    the fine marks: eyes + paste, brow + scar, the eye in profile, the ∴; both temples, the nape in
- *                            still air, the knot and the tail's root
+ *   V-brea-closeup-detail    the fine marks: eyes + paste, brow + scar, the eye in profile, the ∴; both temples, nose + lips, the ear
+ *   V-brea-closeup-detail-back  the sun behind her, still air: the nape from both sides, the knot + tail root, the topknot's crown
+ *   V-brea-closeup-night     01:00: the hero fill has fallen away (R59 c)
  *   A-wrap-closed            no see-through: 96 views on a key colour, 0 enclosed background pixels
  *   A-brea-fill              R59 c: the hero fill falls away with the scene's ambient at night
  *   A-brea-budget            plan §4.1 Brea row, measured live: <= 10 k tris, <= 2 draws, skin 1024²
@@ -102,8 +103,7 @@ const CLOSEUP = (name, hour, weather, sunOff, views = [FRONT, L34, LPROF], windO
         label(g, nm, i * PW + 14, 28);
       });
       const tag = ${JSON.stringify(name)} + ' · ' + env.time.toFixed(1) + ' h · ' + weatherUsed + ' · 0.8 m';
-      g.font = '500 15px "IBM Plex Mono", ui-monospace, Menlo, monospace';
-      label(g, tag, W - g.measureText(tag).width - 22, 28);
+      label(g, tag, 14, 56);
     })()`;
 
 const COMMON = 'Reference: reference/r5/gates-perf/portrait-bokeh.jpg (CC0; the form shading, eye depth and lip structure a real face has). Pass: at 1600 x 900, at 0.8 m, front, 3/4 and profile read as a DESIGNED game heroine next to that reference. The headwrap is wound cloth: overlapping turns with hems and folds, soft woven edges, no paper band, no torn alpha, no blocky edge. No helmet hair: close coils at BOTH temples and the nape with a broken edge; the topknot is wound cloth with a carmine binding. Skin has form (socket, nose wing, under-lip and under-jaw shading), visible grain, no flat or plastic areas, no stubble. The nose is refined in profile, not blunt or oversized; the jaw runs in one line to a defined chin. The eyes are wet and deep: a highlight on the cornea, lid shadow on the ball, lashes. The salt-line is cracked paste with thickness over its whole length, not a flat stripe. The brows are hair, heavy and straight, the left one cut clean through by the scar. There is no hole at the collar: skin runs down inside it. The stowed lance and bow are hidden, nothing else: the alidade cord is graded in frame. FAIL on any of these, and (R54) FAIL if the frame passes the words and still looks cheap next to its reference.';
@@ -220,7 +220,7 @@ export const GATES = [
   },
   {
     id: 'V-brea-closeup-detail', kind: 'visual', lane: 'character-art', settle: 800, timeout: 120000,
-    title: 'Brea detail in the day light, still air: eyes + salt paste, brow + scar, the eye in profile, the ∴ on the right hand; both temples, the nape, the knot and the tail\'s root',
+    title: 'Brea detail in the day light, still air: eyes + salt paste, brow + scar, the eye in profile, the ∴ on the right hand; both temples, the nose and lips, the ear',
     reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -30, true)}
       const W = 1600, H = 900, PW = 400, PH = 450;
@@ -239,16 +239,40 @@ export const GATES = [
       const hand = an.b.handR.bone.getWorldPosition(new T3()), knk = (an.bones.middle_01_r || an.b.handR.bone).getWorldPosition(new T3());
       const m = hand.clone().lerp(knk, 0.5);
       const fx = Math.sin(h), fz = Math.cos(h), rx = -Math.cos(h), rz = Math.sin(h);
-      // the back of the hand: from outside the right hip, a little in front
+      // the back of the hand, from outside the right hip, a little in front: the kit hangs across this one lens, so it alone hides all of it
+      p.hero?.kit?.setHidden(31);
       const himg = S.liveView(C, [m.x + rx * 0.26 + fx * 0.10, m.y + 0.05, m.z + rz * 0.26 + fz * 0.10], [m.x, m.y, m.z], { width: Math.round(PW * 1.25), height: Math.round(PH * 1.25), fov: 26 });
+      p.hero?.kit?.setHidden(3);
       paste(g, himg, 3 * PW, 0, PW, PH);
       label(g, 'RIGHT HAND (∴)', 3 * PW + 14, 28);
       shot(0, 1, off(brow, 0.066, 0.02, -0.055), 0.34, 1.0, 24, 'HEM + TEMPLE, HER LEFT');
       shot(1, 1, off(brow, -0.066, 0.02, -0.055), 0.34, -1.0, 24, 'HEM + TEMPLE, HER RIGHT');
-      shot(2, 1, off(chin, -0.012, 0.042, -0.15), 0.42, -Math.PI * 0.8, 26, 'THE NAPE, STILL AIR');
-      shot(3, 1, off(brow, 0.05, 0.0, -0.205), 0.44, Math.PI * 0.7, 28, 'THE KNOT + TAIL ROOT', 0.15);
+      shot(2, 1, off(bridge, 0, -0.045, 0.0), 0.26, 0.5, 24, 'NOSE + LIPS');
+      shot(3, 1, off(chin, 0.075, 0.075, -0.1), 0.26, 1.35, 24, 'THE EAR');
     })()`),
-    criteria: 'Pass: the salt paste is a finger-wiped chalky paste with thickness, cracked across its whole length, uneven in width, thinning at its edges; the eye has a wet highlight, a lid shadow, a fibred dark iris and lashes, and in profile it shows an iris and a cornea, with lashes that are hair and not a slab; the left brow is cut clean through by a scar with relief; both wraps\' edges are soft woven hems with folds, not cuts; both temples and the nape are coils with a broken outline, with real value, not a shell; the tail leaves the knot as a gathered roll and its other end is a cloth end with a frayed fringe; the ∴ is a small fine dark tattoo, three separate dots, not white blobs. FAIL if any of them looks like a flat decal.',
+    criteria: 'Pass: the salt paste is a finger-wiped chalky paste with thickness, cracked across its whole length, uneven in width, thinning at its edges; the eye has a wet highlight, a lid shadow, a fibred dark iris and lashes, and in profile it shows an iris and a cornea, with lashes that are hair and not a slab; the left brow is cut clean through by a scar with relief; the wrap\'s edges on both sides are soft woven hems with folds, not cuts; both temples are coils with a broken outline, with real value, not a shell; the nostrils are graded dark brown, not black holes, with no pale shard; the ear is rounded, not faceted; the ∴ is a small fine dark tattoo, three separate dots, not white blobs. FAIL if any of them looks like a flat decal.',
+  },
+  {
+    id: 'V-brea-closeup-detail-back', kind: 'visual', lane: 'character-art', settle: 800, timeout: 120000,
+    title: 'The back of the head in detail, the sun behind her, still air: the nape from both sides, the knot and the tail\'s root, the topknot\'s crown and binding',
+    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    setup: placedSetup(['openGround'], `(async () => {\${STAGE(11, 'clear', 165, true)}
+      const W = 1600, H = 900, PW = 800, PH = 450;
+      const c = overlay(W, H), g = c.getContext('2d');
+      const shot = (i, j, tgt, dist, yaw, fov, lbl, el = 0) => {
+        const d = view(yaw, el);
+        const img = S.liveView(C, [tgt.x + d.x * dist, tgt.y + d.y * dist, tgt.z + d.z * dist], [tgt.x, tgt.y, tgt.z], { width: Math.round(PW * 1.25), height: Math.round(PH * 1.25), fov });
+        paste(g, img, i * PW, j * PH, PW, PH);
+        label(g, lbl, i * PW + 14, j * PH + 28);
+      };
+      const off = (o, r, u, f) => o.clone().add(R0.clone().multiplyScalar(r)).add(U1.clone().multiplyScalar(u)).add(F0.clone().multiplyScalar(f));
+      p.hero?.kit?.setHidden(3);
+      shot(0, 0, off(chin, -0.02, 0.05, -0.15), 0.42, -Math.PI * 0.8, 24, 'THE NAPE, HER RIGHT, STILL AIR');
+      shot(1, 0, off(chin, 0.03, 0.05, -0.15), 0.42, Math.PI * 0.72, 24, 'THE NAPE, HER LEFT, STILL AIR');
+      shot(0, 1, off(brow, 0.05, 0.0, -0.205), 0.44, Math.PI * 0.7, 26, 'THE KNOT + TAIL ROOT', 0.15);
+      shot(1, 1, off(brow, 0.0, 0.085, -0.17), 0.46, Math.PI * 0.86, 26, 'THE TOPKNOT: CROWN + BINDING', 0.55);
+    })()`),
+    criteria: 'Pass: the nape is coils with a broken outline, with real value, not a shell; the tail leaves the knot as a gathered roll, not a square-cut plate standing off it; the knot is cloth all round, with no dark hollow; the topknot\'s crown is gathered radial pleats with no rectangular tone blocks; its carmine binding is seated in the cloth with no saw-teeth; its other end is a cloth end with a frayed fringe. FAIL if any of them looks like a flat decal, and (R54) FAIL if it looks cheap.',
   },
   {
     id: 'A-wrap-closed', kind: 'action', lane: 'character-art', settle: 800, timeout: 180000,

@@ -958,7 +958,7 @@ export function blit(dst, W, patch, pw, ph, x, y) {
  * shadow painted from above, and a small window catch-light; the cornea's bulge goes in
  * the normal and its wetness in the roughness.
  */
-export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris = 0.0064, rPupil = 0.0024, lidY = 0.0048, sclera = [182, 168, 150] } = {}) {
+export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris = 0.0064, rPupil = 0.0024, lidY = 0.0048, sclera = [176, 162, 144] } = {}) {
   const base = Buffer.alloc(N * N * 3), normal = Buffer.alloc(N * N * 3), orm = Buffer.alloc(N * N * 3);
   const Ic = hex(iris), Am = hex(amber);
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
@@ -966,7 +966,7 @@ export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris =
     const r = Math.hypot(mx, my), ang = Math.atan2(my, mx);
     let R, G, B;
     // sclera
-    const dimEdge = (1 - 0.56 * smooth(0.0064, 0.0112, Math.abs(mx))) * (1 - 0.55 * smooth(0.0112, 0.0165, Math.abs(mx))) - 0.26 * smooth(0.0052, 0.0115, Math.abs(my));
+    const dimEdge = (1 - 0.48 * smooth(0.0074, 0.0108, Math.abs(mx))) * (1 - 0.5 * smooth(0.0108, 0.0150, Math.abs(mx))) - 0.26 * smooth(0.0052, 0.0115, Math.abs(my));
     const vein = smooth(0.62, 0.9, noise3(ang * 7, r * 300, 1.5)) * smooth(0.0075, 0.0145, r) * 0.1;
     // toward the corners the white goes warm and low: from the side the ball is a wet warm form, not a flat grey wedge
     const pink = smooth(0.0072, 0.0142, Math.abs(mx));
@@ -993,8 +993,8 @@ export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris =
     const shade = 1 - lidS * 0.74 - 0.14 * smooth(0.0035, 0.0075, -my);
     R *= shade; G *= shade * 0.985; B *= shade * 0.975;
     // a wet line along the white, under the upper lid, that a side view catches
-    const wet = (1 - smooth(0.0004, 0.0014, Math.abs(my - 0.0009 - 0.00004 * Math.abs(mx) * 1000 * 0.2))) * smooth(0.0078, 0.0102, Math.abs(mx)) * (1 - smooth(0.0135, 0.0165, Math.abs(mx)));
-    R = mix(R, 222, wet * 0.42); G = mix(G, 208, wet * 0.42); B = mix(B, 190, wet * 0.42);
+    const wet = (1 - smooth(0.0003, 0.0011, Math.abs(my - 0.0009))) * smooth(0.0078, 0.0098, Math.abs(mx)) * (1 - smooth(0.0118, 0.0142, Math.abs(mx)));
+    R = mix(R, 214, wet * 0.5); G = mix(G, 198, wet * 0.5); B = mix(B, 178, wet * 0.5);
     // catch-lights: a tight sun glint and a soft sky window, up and to one side
     const gl = Math.hypot(mx + 0.00165, my - 0.00105);
     const glint = 1 - smooth(0.00036, 0.00066, gl);
