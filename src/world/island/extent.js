@@ -17,7 +17,8 @@
  *   navOuter        -6    core/nav.js OUTER  (hard edge of walkable cells)
  *   machineRim     -12    machines/machine.js WORLD_LIMIT (root clamp)
  *   gatherRim      -15    items/gather.js    (no gather node beyond)
- *   routeRim       -20    machines/index.js _route (patrol waypoint clamp)
+ *   routeRim       -12    machines/index.js _route (patrol waypoint clamp; the machine rim: the Sounding
+ *                         Ring stands at r 472, and -20 pulled its patrol 6 m off the request)
  *   searchRim      -20    machines/ai/search.js (search candidate cut)
  *   anchorRim      -34    machines/ai/doctrine.js siteAnchor (site clamp)
  *   fleeRim        -45    machines/ai/squad.js stepFlee (flee turns tangential)
@@ -43,7 +44,7 @@ export const EXTENT = Object.freeze({
   navOuter: -6,
   machineRim: -12,
   gatherRim: -15,
-  routeRim: -20,
+  routeRim: -12,
   searchRim: -20,
   anchorRim: -34,
   fleeRim: -45,

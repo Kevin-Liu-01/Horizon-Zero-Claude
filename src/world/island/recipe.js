@@ -1022,6 +1022,7 @@ export function coverAt(x, z) {
   if (k <= 0.01) return 0;
   const fk = fieldK(e, n);
   if (fk > 0.9) return 0;
+  if (heightAuthored(e, n) < 0.3) return 0;              // marram stands on dry ground, never in the Glass's margin
   let out = k * (1 - fk * 0.95) * (1 - trackAt(e, n)) * ss(-9, -2, -shelfD(e, n) - 2);
   for (let i = 0; i < SITES.length; i++) {
     const s = SITES[i];

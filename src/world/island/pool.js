@@ -71,7 +71,7 @@ async function bakeSingle(opts = {}) {
   const H = bakeHeights(0, side);
   const t1 = performance.now();
   const { normals, tint } = bakeShade(H, 0, side);
-  const [maskA, maskB, shore] = bakeMasks(H, 0, MASK_N);
+  const [maskA, maskB, shore, coastF] = bakeMasks(H, 0, MASK_N);
   const pan = bakePan();
   const [horizonA, horizonB] = bakeHorizon(H, 0, HORIZON_N);
   const F = { H, maskA, maskB, shore };
@@ -80,7 +80,7 @@ async function bakeSingle(opts = {}) {
   const layers = newLayerStore();
   if (opts.layers !== false) for (const job of layerJobs()) storeLayer(layers, job, await decodeLayer(job.url));
   const t3 = performance.now();
-  return assemble({ H, normals, tint, maskA, maskB, shore, pan, horizonA, horizonB, layers, scatter,
+  return assemble({ H, normals, tint, maskA, maskB, shore, coastF, pan, horizonA, horizonB, layers, scatter,
     stats: { mode: 'single', workers: 0, segs, buildMs: t2 - t0, heightMs: t1 - t0, shadeMs: t2 - t1, layerMs: t3 - t2, totalMs: t3 - t0 } });
 }
 
@@ -153,6 +153,7 @@ async function bakePool(opts = {}) {
     const normals = new Int16Array(side * side * 4), tint = new Uint8Array(side * side * 4);
     const N = MASK_N;
     const maskA = new Uint8Array(N * N * 4), maskB = new Uint8Array(N * N * 4), shore = new Uint8Array(N * N * 4);
+    const coastF = new Uint16Array(N * N * 2);
     const jobs = [];
     for (let r = 0; r < side; r += POOL.rowsPerJob) {
       const r1 = Math.min(side, r + POOL.rowsPerJob);
@@ -160,9 +161,9 @@ async function bakePool(opts = {}) {
     }
     for (let r = 0; r < N; r += POOL.maskRowsPerJob) {
       const r1 = Math.min(N, r + POOL.maskRowsPerJob);
-      jobs.push(run({ op: 'masks', r0: r, r1 }).then(([a, b, s]) => {
+      jobs.push(run({ op: 'masks', r0: r, r1 }).then(([a, b, s, f]) => {
         const o = r * N * 4;
-        maskA.set(a, o); maskB.set(b, o); shore.set(s, o);
+        maskA.set(a, o); maskB.set(b, o); shore.set(s, o); coastF.set(f, r * N * 2);
       }));
     }
     let pan = null;
@@ -194,7 +195,7 @@ async function bakePool(opts = {}) {
     await layerP;
     const tLayers = performance.now();
     done();
-    return assemble({ H, normals, tint, maskA, maskB, shore, pan, horizonA, horizonB, layers: store, scatter,
+    return assemble({ H, normals, tint, maskA, maskB, shore, coastF, pan, horizonA, horizonB, layers: store, scatter,
       stats: { mode: 'pool', workers: POOL.workers, segs, macroMs: tMacro - t0, spawnMs: tReady - tMacro,
         heightMs: tH - tReady, shadeMs: tBuild - tH, buildMs: tBuild - t0, scatterMs: tScatter - tBuild,
         layerWaitMs: tLayers - tScatter, totalMs: tLayers - t0 } });

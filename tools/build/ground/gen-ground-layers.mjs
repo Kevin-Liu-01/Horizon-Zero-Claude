@@ -183,11 +183,11 @@ function salt(N) {
     const c1 = worley(u, v, 150, 13), c2 = worley(u, v, 54, 17);
     const crystal = (1 - c1.f1) * 0.42 + (1 - c2.f1) * 0.32 + hash2(x, y, 19) * 0.26;
     // the rake: long shallow parallel drags, broken up
-    const dragPh = (v * 34 + fbm(u, v, 2, 2, 71) * 2.2) * Math.PI * 2;
-    const drag = (0.5 + 0.5 * Math.sin(dragPh)) * sm(0.05, 0.5, fbm(u, v, 3, 2, 73));
+    const dragPh = (v * 34 + fbm(u, v, 2, 3, 71) * 7.5) * Math.PI * 2;
+    const drag = (0.5 + 0.5 * Math.sin(dragPh)) * sm(0.15, 0.6, fbm(u, v, 3, 2, 73));
     const pit = sm(0.2, 0.0, worley(u, v, 22, 29).f1) * sm(0.2, 0.6, fbm(u, v, 5, 2, 79));
     const dome = (1 - w.f1) * 0.14;
-    const h = 0.34 + ridgeK * 0.34 - crack * 0.3 + crystal * 0.24 + dome + drag * 0.09 - pit * 0.24 + fbm(u, v, 8, 3, 83) * 0.12;
+    const h = 0.34 + ridgeK * 0.34 - crack * 0.3 + crystal * 0.24 + dome + drag * 0.05 - pit * 0.24 + fbm(u, v, 8, 3, 83) * 0.12;
     H[i] = h;
     const tone = fbm(u, v, 3, 4, 51);
     let c = mix3(crust, cream, sm(-0.25, 0.4, tone));

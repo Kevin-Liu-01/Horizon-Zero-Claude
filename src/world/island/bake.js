@@ -8,7 +8,9 @@
  *   masks          Uint8 RGBA ×3 at 512² over the world square
  *                    maskA  R salt beyond the field  G basalt  B shingle  A wet silt
  *                    maskB  R marram cover  G packed track  B damp ground  A wind-pale sand
- *                    shore  R signed coast distance, saturating 16 m inland (¼ m steps)  G ground height near the water (2 cm steps)  B the Glass  A free
+ *                    shore  R signed coast distance, saturating 16 m inland  G ground height near the water  B the Glass  A free
+ *   coast          half-float RG at 512²: signed coast distance and ground height in metres, for the
+ *                    surf: its coordinates are read per pixel, and 8-bit steps sheared every foam line
  *   pan            Uint8 RGBA at 512² over PAN_BOX
  *                    R salt crust  G brine (mirror)  B hue (white..pink..rust)  A cell interior
  *   horizon        Uint8 RGBA ×2 at 512²: the terrain's horizon toward 8 bearings, so the sun
@@ -104,7 +106,7 @@ export function bakeShade(H, r0, r1) {
         // pale talus at the foot, a dark flat cap on the crest
         const foot = (1 - ss(5, 24, hv)) * (0.55 + 0.45 * nz1);
         cR += (CRATER_TALUS[0] - cR) * foot; cG += (CRATER_TALUS[1] - cG) * foot; cB += (CRATER_TALUS[2] - cB) * foot;
-        const cap = ss(38, 52, hv) * 0.72;
+        const cap = ss(29, 36, hv) * 0.82;
         cR += (CRATER_CAP[0] - cR) * cap; cG += (CRATER_CAP[1] - cG) * cap; cB += (CRATER_CAP[2] - cB) * cap;
         const t = ss(0.02, 0.5, cr);
         r += (cR - r) * t; g += (cG - g) * t; b += (cB - b) * t;
@@ -128,6 +130,18 @@ function sampleH(H, x, z) {
 }
 
 const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v | 0);
+
+/** IEEE half from a float (no THREE here: this file also runs in node and the workers). */
+const _f32 = new Float32Array(1), _i32 = new Int32Array(_f32.buffer);
+function toHalf(v) {
+  _f32[0] = v;
+  const x = _i32[0], sign = (x >> 16) & 0x8000;
+  const e = ((x >> 23) & 0xff) - 112, m = x & 0x7fffff;
+  if (e <= 0) return sign;                                   // under 6e-5: zero is close enough for metres
+  if (e >= 31) return sign | 0x7c00;
+  return sign | (e << 10) | ((m + 0x1000) >> 13 > 0x3ff ? 0x3ff : (m + 0x1000) >> 13);
+}
+let _texC = 0, _texH = 0;
 
 /* ------------------------------------------------------------ the horizon map ---- */
 export const HORIZON_N = 512;
@@ -176,6 +190,7 @@ export function bakeHorizon(H, r0, r1) {
 export function maskTexel(H, x, z, out) {
   const c = authored.coast(x, z);
   const h = sampleH(H, x, z);
+  _texC = c; _texH = h;
   const e = 2;
   const gx = (sampleH(H, x + e, z) - sampleH(H, x - e, z)) / (2 * e);
   const gz = (sampleH(H, x, z + e) - sampleH(H, x, z - e)) / (2 * e);
@@ -225,6 +240,7 @@ const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 export function bakeMasks(H, r0, r1) {
   const N = MASK_N, scale = WORLD_SIZE / N, n = (r1 - r0) * N * 4, v = new Uint8Array(12);
   const a = new Uint8Array(n), b = new Uint8Array(n), s = new Uint8Array(n);
+  const f = new Uint16Array((r1 - r0) * N * 2);
   for (let iz = r0; iz < r1; iz++) {
     const z = (iz + 0.5) * scale - WORLD_SIZE / 2;
     for (let ix = 0; ix < N; ix++) {
@@ -234,9 +250,11 @@ export function bakeMasks(H, r0, r1) {
       a[o] = v[0]; a[o + 1] = v[1]; a[o + 2] = v[2]; a[o + 3] = v[3];
       b[o] = v[4]; b[o + 1] = v[5]; b[o + 2] = v[6]; b[o + 3] = v[7];
       s[o] = v[8]; s[o + 1] = v[9]; s[o + 2] = v[10]; s[o + 3] = v[11];
+      const q = ((iz - r0) * N + ix) * 2;
+      f[q] = toHalf(_texC); f[q + 1] = toHalf(_texH);
     }
   }
-  return [a, b, s];
+  return [a, b, s, f];
 }
 
 /** The salt field, cell by cell, at ≈ 1 m. */

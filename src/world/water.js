@@ -28,6 +28,7 @@ const SEA_PARS = /* glsl */ `
 #include <common>
 varying vec3 vWPos;
 uniform sampler2D tShore;
+uniform sampler2D tCoastF;
 uniform sampler2D tRipple;
 uniform float uTime;
 uniform float uLevel;
@@ -48,17 +49,17 @@ const SEA_COLOR = /* glsl */ `
   float dCam = length(vWPos - cameraPosition);
   vec2 muv = p * uWorldInv + 0.5;
   float inMap = step(max(abs(muv.x - 0.5), abs(muv.y - 0.5)), 0.4985);
-  vec4 sh = texture2D(tShore, clamp(muv, 0.0, 1.0));
+  vec2 cf = texture2D(tCoastF, clamp(muv, 0.0, 1.0)).rg;
   // signed coast distance (+ inland), ground height, metres along the shore (the island is
   // near enough round for its bearing to serve, and that needs no texture and has no steps)
-  float coast = mix(-48.0, sh.r * 64.0 - 48.0, inMap);
+  float coast = mix(-200.0, cf.r, inMap);
   if (coast > 9.0) discard;                 // the sea never stands inland: the Glass has its own surface
-  float off = max(-coast, 0.0);
-  float ground = mix(-2.0, sh.g * 4.5 - 2.0, inMap);
+  float off = max(-coast, 0.0), cst = -coast;
+  float ground = mix(-9.0, cf.g, inMap);
   float sA = abs(atan(p.x, p.y)) * 460.0;
 
   /* the set: three trains of fronts with their own speed, wandering along the shore */
-  float along = texture2D(tRipple, vec2(sA * 0.0066, 0.31)).a * 3.6 + texture2D(tRipple, vec2(sA * 0.027, 0.77)).a * 1.0;
+  float along = sin(sA * 0.0173 + 1.3) * 0.62 + sin(sA * 0.0411 + 4.1) * 0.3 + sin(sA * 0.0971 + 2.2) * 0.1;
   float ph1 = off * 0.052 + uTime * 0.150 + along;
   float ph2 = off * 0.083 + uTime * 0.205 + along * 1.7 + 2.3;
   float ph3 = off * 0.137 + uTime * 0.262 + along * 2.3 + 5.1;
@@ -79,7 +80,7 @@ const SEA_COLOR = /* glsl */ `
   float s = fract(along * 0.5 + uTime * 0.125);
   float big = 0.62 + 0.38 * sin(floor(along * 0.5 + uTime * 0.125) * 2.4 + 1.3);
   float runup = 0.26 * exp(-s * 3.4) * (1.0 - smoothstep(0.92, 1.0, s)) * big;
-  float level = uLevel + 0.02 + runup + (texture2D(tRipple, vec2(sA * 0.11, off * 0.09 + 0.5)).a - 0.5) * 0.05;
+  float level = uLevel + 0.02 + runup + (texture2D(tRipple, vec2(sA * 0.11, cst * 0.09 + 0.5)).a - 0.5) * 0.05;
   float depth = level - ground;
   float alphaK = smoothstep(0.0, 0.03, depth);
   if (alphaK <= 0.0 && inMap > 0.5) discard;
@@ -88,12 +89,12 @@ const SEA_COLOR = /* glsl */ `
   float laceFar = 1.0 - smoothstep(90.0, 300.0, dCam);
   float nearK = 1.0 - smoothstep(8.0, 40.0, dCam);
   float rush = uTime * 0.55 + along * 2.0;
-  vec2 wob = (texture2D(tRipple, vec2(sA * 0.021, off * 0.043 + rush * 0.05)).xy - 0.5) * 0.09;
-  float n1 = texture2D(tRipple, vec2(sA * 0.052, (off + rush) * 0.13) + wob).b;
-  float n2 = texture2D(tRipple, vec2(sA * 0.137, (off + rush * 1.3) * 0.37) - wob * 1.7).b;
-  float n3 = nearK > 0.0 ? texture2D(tRipple, vec2(sA * 0.41, (off + rush * 1.6) * 0.97) + wob * 3.0).b : 0.5;
+  vec2 wob = (texture2D(tRipple, vec2(sA * 0.021, cst * 0.043 + rush * 0.05)).xy - 0.5) * 0.09;
+  float n1 = texture2D(tRipple, vec2(sA * 0.052, (cst + rush) * 0.13) + wob).b;
+  float n2 = texture2D(tRipple, vec2(sA * 0.137, (cst + rush * 1.3) * 0.37) - wob * 1.7).b;
+  float n3 = nearK > 0.0 ? texture2D(tRipple, vec2(sA * 0.41, (cst + rush * 1.6) * 0.97) + wob * 3.0).b : 0.5;
   float lace = mix(n1 * 0.62 + n2 * 0.38, n1 * 0.46 + n2 * 0.3 + n3 * 0.24, nearK);
-  float blot = texture2D(tRipple, vec2(sA * 0.014, off * 0.041 - uTime * 0.012)).a;
+  float blot = texture2D(tRipple, vec2(sA * 0.014, cst * 0.041 - uTime * 0.012)).a;
 
   /* how much of the surface is white: a crest is nearly solid, what it leaves behind is lace */
   float crest1 = exp(-w1 * 7.5) * smoothstep(0.0, 0.012, w1) * (0.42 + 0.58 * set1) * seg1;
@@ -114,13 +115,13 @@ const SEA_COLOR = /* glsl */ `
   // far out the odd whitecap: small, sparse, drawn out by the trade wind
   vec2 capP = vec2(dot(p, vec2(0.7071, -0.7071)) * 0.21, dot(p, vec2(0.7071, 0.7071)) * 0.07);
   float capK = smoothstep(0.86, 0.95, texture2D(tRipple, capP + vec2(0.024, 0.016) * uTime).a)
-            * smoothstep(0.6, 0.85, wNoise(p * 0.023 + uTime * 0.04)) * smoothstep(38.0, 48.0, off) * laceFar * 0.5;
+            * smoothstep(0.6, 0.85, wNoise(p * 0.023 + uTime * 0.04)) * smoothstep(40.0, 70.0, off) * laceFar * 0.5;
   foam = max(foam, capK);
 
   /* water colour: Atlantic #1F4E66, dark over black sand, lit through the back of a wave */
   vec3 deep = vec3(0.0137, 0.0762, 0.1329);
   vec3 turbid = vec3(0.0095, 0.0430, 0.0560);
-  vec3 body = mix(turbid, deep, smoothstep(6.0, 46.0, off));
+  vec3 body = mix(turbid, deep, smoothstep(6.0, 60.0, off));
   float wall = smoothstep(0.70, 0.985, w1) * brk * (0.3 + 0.7 * set1);
   body = mix(body, vec3(0.035, 0.205, 0.195), wall * 0.82);
   float wall2 = smoothstep(0.76, 0.99, w2) * brk * (0.2 + 0.5 * set2);
@@ -138,11 +139,13 @@ const SEA_COLOR = /* glsl */ `
   // three trains from the W-NW, 90, 55 and 34 m; each fades out as it nears a pixel a wave
   float a1 = dot(p, vec2(0.0604, 0.0349)) - uTime * 0.42, a2 = dot(p, vec2(0.1050, 0.0439)) - uTime * 0.53, a3 = dot(p, vec2(0.1604, 0.0918)) - uTime * 0.71;
   float aa1 = 1.0 - smoothstep(0.25, 0.9, fwidth(a1)), aa2 = 1.0 - smoothstep(0.25, 0.9, fwidth(a2)), aa3 = 1.0 - smoothstep(0.25, 0.9, fwidth(a3));
-  rip += vec2(0.866, 0.5) * cos(a1) * 0.05 * aa1 + vec2(0.92, 0.385) * cos(a2) * 0.036 * aa2 + vec2(0.868, 0.497) * cos(a3) * 0.024 * aa3;
-  vec2 slopeDir = normalize(vec2(sh.r - texture2D(tShore, clamp(muv + vec2(0.004, 0.0), 0.0, 1.0)).r,
-                                 sh.r - texture2D(tShore, clamp(muv + vec2(0.0, 0.004), 0.0, 1.0)).r) + vec2(1e-4));
+  float swMod = 0.45 + 0.9 * wNoise(p * 0.0061 + vec2(uTime * 0.01, 3.0));
+  rip += (vec2(0.866, 0.5) * cos(a1) * 0.02 * aa1 + vec2(0.92, 0.385) * cos(a2) * 0.015 * aa2 + vec2(0.868, 0.497) * cos(a3) * 0.011 * aa3) * swMod;
+  // shoreward: the coast field's gradient
+  vec2 slopeDir = normalize(vec2(texture2D(tCoastF, clamp(muv + vec2(0.004, 0.0), 0.0, 1.0)).r - cf.r,
+                                 texture2D(tCoastF, clamp(muv + vec2(0.0, 0.004), 0.0, 1.0)).r - cf.r) + vec2(1e-4));
   float waveS = (exp(-w1 * 4.0) - 0.42 * wall) * swellK * (0.4 + 0.6 * set1) + (exp(-w2 * 5.0) - 0.3 * wall2) * swellK * 0.32;
-  wN = vec3(rip.x + slopeDir.x * waveS * 0.6, 0.0, rip.y + slopeDir.y * waveS * 0.6) * (1.0 - foam * 0.75);
+  wN = vec3(rip.x + slopeDir.x * waveS * 0.3, 0.0, rip.y + slopeDir.y * waveS * 0.3) * (1.0 - foam * 0.75);
 
   vec3 foamC = vec3(0.86, 0.87, 0.85) * (0.8 + 0.2 * lace);
   diffuseColor.rgb = mix(body, foamC, foam);
@@ -160,7 +163,7 @@ const GLASS_COLOR = /* glsl */ `
   vec2 muv = p * uWorldInv + 0.5;
   vec4 sh = texture2D(tShore, clamp(muv, 0.0, 1.0));
   if (sh.b < 0.25) discard;            // only the lagoon: the waterline itself is the mesh's intersection
-  float ground = sh.g * 4.5 - 2.0;
+  float ground = texture2D(tCoastF, clamp(muv, 0.0, 1.0)).g;
   float depth = uLevel - ground;
   vec2 drift = vec2(0.004, 0.003) * uTime;
   vec2 r1 = texture2D(tRipple, p * 0.11 + drift).xy * 2.0 - 1.0;
@@ -282,11 +285,12 @@ export class IslandWater {
     this._glass = { x: GLASS.e * S, z: -GLASS.n * S, rx: GLASS.re * S, rz: GLASS.rn * S };
     this.pools = this._buildPools();
 
-    const shore = terrain._maskTextures.shore;
+    const shore = terrain._maskTextures.shore, coastF = terrain._maskTextures.coastF;
     const mk = (colorChunk, levelU, planeY, key) => {
       const mat = new THREE.MeshStandardMaterial({ roughness: 0.1, metalness: 0, transparent: true, depthWrite: false });
       mat.onBeforeCompile = (shader) => {
         shader.uniforms.tShore = { value: shore };
+        shader.uniforms.tCoastF = { value: coastF };
         shader.uniforms.tRipple = { value: this._ripple };
         shader.uniforms.uTime = this._uTime;
         shader.uniforms.uLevel = levelU;

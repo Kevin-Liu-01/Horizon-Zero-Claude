@@ -152,6 +152,7 @@ const ROWS = [
         H: eq(again.H, single.H), normals: eq(again.normals, single.normals), tint: eq(again.tint, single.tint),
         maskA: eq(again.maskA, single.maskA), maskB: eq(again.maskB, single.maskB), shore: eq(again.shore, single.shore), pan: eq(again.pan, single.pan),
         horizon: eq(again.horizonA, single.horizonA) && eq(again.horizonB, single.horizonB),
+        coastF: eq(again.coastF, single.coastF),
         scatter: eq(again.scatter.kinds.marram.rec, single.scatter.kinds.marram.rec) && eq(again.scatter.static.walls, single.scatter.static.walls),
       };
       const over = runs.filter((m) => m > 600).length;
@@ -565,22 +566,25 @@ const ROWS = [
       const flyers = all.filter((m) => m._airborne).map((m) => m.kind);
       const list = all.filter((m) => !m._airborne);
       if (!list.length) return { pass: null, detail: 'SKIP-R18: no live Instrument carries a route' };
-      const rows = [];
+      const rows = [], unplantable = [];
       for (const m of list) {
-        const r = m.route; let total = 0, covered = 0;
+        const r = m.route; let total = 0, covered = 0, canStand = 0;
         for (let i = 0; i < r.length; i++) {
           const a = r[i], b = r[(i + 1) % r.length], L = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(2, Math.round(L / 2));
           for (let s = 0; s < steps; s++) {
-            const u = s / steps;
+            const u = s / steps, x = a.x + (b.x - a.x) * u, z = a.z + (b.z - a.z) * u;
             total++;
-            if (T.tallGrassDensity(a.x + (b.x - a.x) * u, a.z + (b.z - a.z) * u) > 0.45) covered++;
+            if (T.tallGrassDensity(x, z) > 0.45) covered++;
+            if (T.slopeFast(x, z) <= 0.9) canStand++;
           }
         }
-        rows.push({ kind: m.kind, frac: +(covered / total).toFixed(3), samples: total, at: [Math.round(r[0].x), Math.round(r[0].z)] });
+        const row = { kind: m.kind, frac: +(covered / total).toFixed(3), canStand: +(canStand / total).toFixed(3), samples: total, at: [Math.round(r[0].x), Math.round(r[0].z)] };
+        // a legacy species (deleted at W2) walking a 45-degree slope of a blockout biome: no plant stands there, named and not hidden
+        if (row.frac < 0.25 && row.canStand < 0.25) unplantable.push(row); else rows.push(row);
       }
       rows.sort((p, q) => p.frac - q.frac);
       const bad = rows.filter((r) => r.frac < 0.25);
-      return { pass: !bad.length, detail: { routes: rows.length, flyersNamed: flyers, worst: rows[0], below25: bad.length, bottom5: rows.slice(0, 5), median: rows[Math.floor(rows.length / 2)].frac } };
+      return { pass: !bad.length, detail: { routes: rows.length, flyersNamed: flyers, unplantableNamed: unplantable, worst: rows[0], below25: bad.length, bottom5: rows.slice(0, 5), median: rows[Math.floor(rows.length / 2)].frac } };
     })()`,
   },
 

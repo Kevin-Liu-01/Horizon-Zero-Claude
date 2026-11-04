@@ -78,7 +78,7 @@ function geoFrom(P, C, N) {
   return g;
 }
 
-function marramGeo(blades, segs, seed) {
+function marramGeo(blades, segs, seed, widthK = 1) {
   const R = rng(seed), P = [], C = [], N = [];
   const base = new THREE.Color('#5a6236'), tip = new THREE.Color('#cdbf8b'), tip2 = new THREE.Color('#9aa35c');
   const c0 = new THREE.Color(), c1 = new THREE.Color();
@@ -87,7 +87,7 @@ function marramGeo(blades, segs, seed) {
     const dx = Math.cos(a), dz = Math.sin(a), r0 = 0.02 + R() * 0.09;
     c0.copy(base).multiplyScalar(0.8 + R() * 0.3);
     c1.copy(tip).lerp(tip2, R() * 0.55).multiplyScalar(0.82 + R() * 0.3);
-    blade(P, C, N, dx * r0, dz * r0, dx, dz, 0.62 + R() * 0.5, 0.009 + R() * 0.009, segs, c0, c1, 0.5 + R() * 0.45);
+    blade(P, C, N, dx * r0, dz * r0, dx, dz, 0.62 + R() * 0.5, (0.011 + R() * 0.01) * widthK, segs, c0, c1, 0.5 + R() * 0.45);
   }
   return geoFrom(P, C, N);
 }
@@ -198,14 +198,15 @@ function columnGeo() {
 }
 
 function wallGeo() {
-  // one 1.7 m run of a dry-stone dyke: six stones, two courses, 120 triangles
+  // one 1.7 m run of a dry-stone dyke: six lava stones of very different sizes, 120 triangles
   const R = rng(31), parts = [];
-  const lay = [[-0.17, 0.13, -0.56, 0.31, 0.2, 0.42], [0.15, 0.15, -0.2, 0.3, 0.22, 0.34], [-0.13, 0.14, 0.22, 0.32, 0.21, 0.38],
-    [0.16, 0.13, 0.62, 0.3, 0.19, 0.3], [0.0, 0.34, -0.34, 0.27, 0.17, 0.36], [-0.03, 0.33, 0.38, 0.28, 0.16, 0.42]];
+  const lay = [[-0.2, 0.15, -0.5, 0.34, 0.22, 0.46], [0.2, 0.12, -0.42, 0.22, 0.15, 0.24], [0.04, 0.13, 0.12, 0.38, 0.2, 0.3],
+    [-0.16, 0.1, 0.66, 0.24, 0.15, 0.2], [-0.02, 0.36, -0.24, 0.24, 0.13, 0.34], [0.08, 0.31, 0.44, 0.27, 0.16, 0.3]];
   for (const [x, y, z, sx, sy, sz] of lay) {
-    const g = displaced(weldedIco(0), (R() * 1e6) | 0, 0.13);
+    const g = displaced(weldedIco(0), (R() * 1e6) | 0, 0.3);
     g.scale(sx, sy, sz);
-    g.rotateY((R() - 0.5) * 0.6);
+    g.rotateY((R() - 0.5) * 1.5);
+    g.rotateX((R() - 0.5) * 0.5);
     g.translate(x, y, z);
     parts.push(g);
   }
@@ -402,14 +403,14 @@ export class Vegetation {
   _buildFlora() {
     const geos = {
       marramNear: marramGeo(16, 3, 101),                // 16 straps x 3 quads = 96 tris
-      marramFar: marramGeo(3, 3, 202),                  // 3 straps x 3 quads = 18 tris (wider below)
+      marramFar: marramGeo(3, 3, 202, 3.4),                  // 3 straps x 3 quads = 18 tris (wider below)
       glasswort: glasswortGeo(303),
       lavender: lavenderGeo(404),
     };
     // the far tuft carries a whole tuft's width on three straps
     {
       const p = geos.marramFar.attributes.position;
-      for (let i = 0; i < p.count; i++) { p.setX(i, p.getX(i) * 2.6); p.setZ(i, p.getZ(i) * 2.6); }
+      for (let i = 0; i < p.count; i++) { p.setX(i, p.getX(i) * 1.7); p.setZ(i, p.getZ(i) * 1.7); }
     }
     for (const key of this._streamKeys) {
       const cfg = STREAM[key];

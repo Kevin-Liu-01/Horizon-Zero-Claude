@@ -5,6 +5,7 @@ import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './
 import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, HORIZON_N, bakeShade, maskTexel } from './island/bake.js';
 import { bakeIsland } from './island/pool.js';
 import { LAYER_FILES, LAYER_SIZE } from './island/layers.js';
+import { fieldReader } from './island/scatter.js';
 import {
   GROUND_VERT_PARS, GROUND_VERT_WORLD, TERRAIN_FRAG_PARS, TERRAIN_COLOR,
   GROUND_ROUGH, GROUND_NORMAL,
@@ -141,6 +142,10 @@ const SURFACE_AUDIO = Object.freeze({
   cinder: 'foot/gravel',
   dirt: 'foot/dirt',
   grass: 'foot/grass',
+  // what salt, shingle and cinder emit to audio's closed table: the same foley set each
+  shale: 'foot/gravel',
+  cobble: 'foot/cobble',
+  scree: 'foot/gravel',
 });
 const MATERIALS = Object.freeze(Object.keys(SURFACE_AUDIO));
 /**
@@ -150,6 +155,7 @@ const MATERIALS = Object.freeze(Object.keys(SURFACE_AUDIO));
 const SURFACE_EMIT = Object.freeze({
   water: 'water', sand: 'sand', salt: 'shale', silt: 'silt', shingle: 'cobble',
   rock: 'rock', cinder: 'scree', dirt: 'dirt', grass: 'grass',
+  shale: 'shale', cobble: 'cobble', scree: 'scree',
 });
 const SURFACES = Object.freeze([...new Set(Object.values(SURFACE_EMIT))]);
 
@@ -169,7 +175,7 @@ if (gLiquid > 0.004) {
   float gUp = clamp(gR.y * 1.8 + 0.08, 0.0, 1.0);
   vec3 gSky = mix(calFogHorizon, calFogZenith, gUp * gUp);
   float gSd = max(dot(gR, calSunDir), 0.0);
-  gSky += calFogSun * pow(gSd, 6.0) * 0.55;
+  gSky += calFogSun * pow(gSd, 6.0) * 0.55 * smoothstep(0.1, 0.34, gLiquid);
   float gF = 0.02 + 0.98 * pow(1.0 - max(dot(gV, gW), 0.0), 5.0);
   reflectedLight.indirectSpecular += gSky * gF * gLiquid * 0.95;
 }
@@ -218,15 +224,12 @@ const _stamps = new Uint8Array(MASK_N * MASK_N);
 const _stampPending = [];
 
 /** Cover may only be stamped where the marram scatter can stand: the field never claims plants it cannot have. */
+let _stampR = null;
 function stampable(x, z) {
-  const c = (WORLD_HALF + z) / MCELL | 0, i = (WORLD_HALF + x) / MCELL | 0, o = (c * MASK_N + i) * 4;
-  if (BAKE.shore[o + 2] > 12) return false;                       // the Glass and its margin
-  if (BAKE.maskA[o + 1] > 120 || BAKE.maskB[o + 1] > 90) return false;   // rock, tracks
-  const h = gridHeight(x, z);
-  if (h < 0.1) return false;
-  const gx = (gridHeight(x + 2, z) - gridHeight(x - 2, z)) / 4, gzz = (gridHeight(x, z + 2) - gridHeight(x, z - 2)) / 4;
-  if (gx * gx + gzz * gzz > 0.7) return false;                    // steeper than the scatter's limit
-  return authored.pan(x, z).kind < 0 && SHORE_ENC.dMin + (BAKE.shore[o] / 255) * (SHORE_ENC.dMax - SHORE_ENC.dMin) > 2;
+  _stampR = _stampR || fieldReader({ H, maskA: BAKE.maskA, maskB: BAKE.maskB, shore: BAKE.shore });
+  const F = _stampR.at(x, z);
+  if (F.glass > 0.05 || F.h < 0.3 || F.coast < 1 || F.slope > 0.9 || F.rock > 0.5 || F.track > 0.4) return false;
+  return authored.pan(x, z).kind < 0;
 }
 
 export function stampStealthDisc(x, z, r) {
@@ -429,6 +432,13 @@ export class Terrain {
     };
     this._maskTextures.hzA = mkHz(BAKE.horizonA);
     this._maskTextures.hzB = mkHz(BAKE.horizonB);
+    const cf = new THREE.DataTexture(BAKE.coastF, MASK_N, MASK_N, THREE.RGFormat, THREE.HalfFloatType);
+    cf.internalFormat = 'RG16F';
+    cf.minFilter = THREE.LinearFilter; cf.magFilter = THREE.LinearFilter;
+    cf.wrapS = cf.wrapT = THREE.ClampToEdgeWrapping;
+    cf.generateMipmaps = false;
+    cf.needsUpdate = true;
+    this._maskTextures.coastF = cf;
     /* Layers as texture arrays: every layer of the wave costs two samplers per size. They
      * stay NoColorSpace on purpose (the shader decodes sRGB): engine.js's anisotropy sweep
      * caps colour-role textures through TEXTURE_2D, and these are arrays. */

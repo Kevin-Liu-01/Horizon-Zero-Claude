@@ -119,7 +119,7 @@ export function scatterStatic(R) {
   const rocks = [], columns = [], walls = [], heaps = [];
   // boulders: reef in the surf, the Shelf's foot, sparse on the beach and dunes, a fan at the crater
   for (let t = 0; t < 26000; t++) {
-    const x = -HALF + r() * WORLD_SIZE * 0.6, z = -40 + r() * (HALF + 40);
+    const x = -HALF + r() * WORLD_SIZE * 0.6, z = -20 + r() * (HALF + 20);
     if (x > -60) continue;
     const F = R.at(x, z);
     const u0 = r(), u1 = r(), u2 = r(), u3 = r();
@@ -127,11 +127,12 @@ export function scatterStatic(R) {
     if (F.coast < 3 && F.coast > -14 && F.rock > 0.3) { keep = 0.5; sMin = 0.5; sMax = 2.1; }            // reef
     else if (F.rock > 0.55 && F.slope < 1.2) { keep = 0.05; sMin = 0.3; sMax = 1.5; }                    // table, crags
     else if (F.shingle > 0.2) { keep = 0.09; sMin = 0.14; sMax = 0.62; }
+    else if (authored.crater(x, z) > 0.25 && F.slope > 0.2 && F.slope < 1.0) { keep = 0.34; sMin = 0.25; sMax = 1.9; }   // the ring's rockfall
     else if (F.coast > 8 && F.h > 0.1 && F.salt < 0.2 && F.track < 0.3) { keep = 0.012; sMin = 0.16; sMax = 0.7; }
     if (!keep || u0 > keep) continue;
     const s = sMin + u1 * u1 * (sMax - sMin);
     rocks.push(x, F.h - s * 0.2, z, u2 * 6.2832, s * (0.9 + u3 * 0.4), s * (0.62 + u1 * 0.4), s * (0.8 + u2 * 0.4), (u3 - 0.5) * 0.4, 0.8 + u3 * 0.35);
-    if (rocks.length / STRIDE > 950) break;
+    if (rocks.length / STRIDE > 1100) break;
   }
   // basalt pavements: tight hex-packed columns where the Shelf's edge breaks down (the Causeway look)
   for (let t = 0; t < 400 && columns.length / STRIDE < 340; t++) {
