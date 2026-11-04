@@ -27,7 +27,11 @@
       "author": "CALIMA project, Quaternius (MCO Fantasy, CC0)",
       "source_url": "https://quaternius.itch.io/",
       "licence": "CC0-1.0",
+      "licence_text": "public/models/hero/licences/quaternius-mco-License_Standard.txt",
+      "archive_sha256": "c3468b18871cc8c8f05ab14df7712baf22cb9f389cbd870babf130e595187f70",
+      "archive_bytes": 294347394,
       "derived_from": "mco-fantasy-standard",
+      "retrieved": "2026-10-22",
       "modified": "re-cut, re-packed and re-painted by tools/build/recipes/armor/**"
     },
     {

@@ -356,10 +356,11 @@ const motionPage = (id) => ({
     // A-run-arms, its bars (hero-body row): sprint 4 s, wrist off the midline, below the shoulder, fore-aft range; no prance
     release(); await wait(300);
     standAt(p, 'openGround', { dx: 2 });
-    keys.add('KeyW'); keys.add('ShiftLeft'); await simWait(0.8, 4000);
+    keys.add('KeyW'); keys.add('ShiftLeft'); await simWait(1.5, 8000);
+    const py = [];
     const b = an.b, CHP = (bone, out) => an._charOf(bone, out);
     const T3 = p.position.constructor, wL = new T3(), wR = new T3(), s = new T3(), pel = new T3(), kn = new T3(), hp = new T3();
-    let minLat = 9, maxOver = -9, zL0 = 9, zL1 = -9, yP0 = 9, yP1 = -9, kneeOver = -9, frames2 = 0;
+    let minLat = 9, maxOver = -9, zL0 = 9, zL1 = -9, kneeOver = -9, frames2 = 0;
     const s0 = E.simTime, w0 = performance.now();
     while (E.simTime - s0 < 4 && performance.now() - w0 < 26000) {
       await frame();
@@ -368,13 +369,17 @@ const motionPage = (id) => ({
       minLat = Math.min(minLat, Math.abs(wL.x), Math.abs(wR.x));
       maxOver = Math.max(maxOver, wL.y - (s.y - 0.25), wR.y - (s.y - 0.25));
       zL0 = Math.min(zL0, wL.z); zL1 = Math.max(zL1, wL.z);
-      yP0 = Math.min(yP0, pel.y); yP1 = Math.max(yP1, pel.y);
+      py.push(pel.y);
       kneeOver = Math.max(kneeOver, kn.y - hp.y);
       frames2++;
     }
     release();
-    const arms = { minLat: +minLat.toFixed(3), wristBelowShoulderBy: +(-maxOver).toFixed(3), foreAft: +(zL1 - zL0).toFixed(3), pelvisOsc: +(yP1 - yP0).toFixed(3), kneeOverHip: +kneeOver.toFixed(3), frames: frames2 };
-    arms.ok = minLat >= 0.10 && maxOver <= 0 && (zL1 - zL0) >= 0.25 && (yP1 - yP0) <= 0.08 && kneeOver <= 0;
+    // the pelvis's bob, per stride, as A-run-arms measures it
+    const cyc = Math.max(4, Math.round(frames2 / Math.max(1, 4.0 * (an.loco?.freq || 1.6))));
+    let bob = 0;
+    for (let i = 0; i + cyc <= py.length; i += cyc) { let lo = 9, hi = -9; for (let k = i; k < i + cyc; k++) { lo = Math.min(lo, py[k]); hi = Math.max(hi, py[k]); } bob = Math.max(bob, hi - lo); }
+    const arms = { minLat: +minLat.toFixed(3), wristBelowShoulderBy: +(-maxOver).toFixed(3), foreAft: +(zL1 - zL0).toFixed(3), pelvisOsc: +bob.toFixed(3), kneeOverHip: +kneeOver.toFixed(3), frames: frames2 };
+    arms.ok = minLat >= 0.10 && maxOver <= 0 && (zL1 - zL0) >= 0.25 && bob <= 0.08 && kneeOver <= 0;
     // A-wrap-clear, its bar: every dyn_ chain >= 0.05 m from the draw hand through a draw cycle at the four pitches
     const chains = [];
     p.model.traverse((o) => { if (/^dyn_/.test(o.name)) chains.push(o); });

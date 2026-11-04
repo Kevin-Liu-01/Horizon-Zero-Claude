@@ -107,10 +107,17 @@ const _laL = new THREE.Vector3(), _laR = new THREE.Vector3();
 const _sp0 = new THREE.Vector3(), _sp1 = new THREE.Vector3(), _bT = new THREE.Vector3(), _tT = new THREE.Vector3();
 const _q0 = new THREE.Vector3(), _dd = new THREE.Vector3(), _z0 = new THREE.Vector3(), _z1 = new THREE.Vector3();
 const _SPINE = [_P, _sp0, _sp1, _O, _N];   // pelvis, spine_01, spine_02, spine_03, neck (filled per climb frame)
+// Doubles cross function boundaries through these slots: a returned or passed double is a heap number per
+// call, and the search below evaluates some 300 poses a frame (A-alloc-rate, R48 c).
+const _R = new Float64Array(1);      // segSeg / ptSeg
+const _RG = new Float64Array(3);     // _viol, _tailGap, _camGap
+const _ARG = new Float64Array(3);    // _placeS: alpha, beta, slide
+const _FR = new Float64Array(2);     // this frame: the head's radius, the ground under the lance's butt
+const _CAMK = new Float64Array([0.45, 0.45 + 0.55 / 3, 0.45 + 1.1 / 3, 1]);
 const _SEG = [0, 1, 2, 3].map(() => ({ ax: new THREE.Vector3(), l1: new THREE.Vector3(), l2: new THREE.Vector3(), len: 0 }));
 const _fp = new Float64Array(5), _fp0 = new Float64Array(5), _fpc = new Float64Array(5), _fpn = new Float64Array(5);
 
-/** Closest distance between segments [p0,p1] and [q0,q1] (Sunday's clamp). */
+/** Closest distance between segments [p0,p1] and [q0,q1] (Sunday's clamp), into `_R[0]`. */
 function segSeg(p0, p1, q0, q1) {
   const ux = p1.x - p0.x, uy = p1.y - p0.y, uz = p1.z - p0.z;
   const vx = q1.x - q0.x, vy = q1.y - q0.y, vz = q1.z - q0.z;
@@ -133,18 +140,18 @@ function segSeg(p0, p1, q0, q1) {
   }
   const sc = Math.abs(sN) < 1e-9 ? 0 : sN / sD, tc = Math.abs(tN) < 1e-9 ? 0 : tN / tD;
   const dx = wx + sc * ux - tc * vx, dy = wy + sc * uy - tc * vy, dz = wz + sc * uz - tc * vz;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  _R[0] = Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 /** A bone's character-space position (`_mi` = the model's inverse world, set per solve). */
 function _cp(bone, out) { bone.updateWorldMatrix(true, false); return out.setFromMatrixPosition(bone.matrixWorld).applyMatrix4(_mi); }
-/** Closest distance from point p to segment [a,b]. */
+/** Closest distance from point p to segment [a,b], into `_R[0]`. */
 function ptSeg(p, a, b) {
   const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
   const l2 = ux * ux + uy * uy + uz * uz;
   let t = l2 > 1e-12 ? ((p.x - a.x) * ux + (p.y - a.y) * uy + (p.z - a.z) * uz) / l2 : 0;
   t = t < 0 ? 0 : t > 1 ? 1 : t;
   const dx = a.x + ux * t - p.x, dy = a.y + uy * t - p.y, dz = a.z + uz * t - p.z;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  _R[0] = Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 export class LanceCarry {
@@ -221,6 +228,24 @@ export class LanceCarry {
     tip.copy(_piv).addScaledVector(_d, (1 - this.pivotS()) * this.len + sl);
   }
 
+  /** `_place` for the search: (alpha, beta, slide) in `_ARG`, no double crossing a call. Same arithmetic. */
+  _placeS(butt, tip) {
+    const alpha = _ARG[0], beta = _ARG[1], sl = _ARG[2], pv = R10.pivot, len = this.len, dF = this.dF0;
+    const ca = Math.cos(alpha), sa = Math.sin(alpha);
+    let ix = _U.x * ca - _X.x * sa + _F.x * dF, iy = _U.y * ca - _X.y * sa + _F.y * dF, iz = _U.z * ca - _X.z * sa + _F.z * dF;
+    const il = Math.sqrt(ix * ix + iy * iy + iz * iz) || 1;
+    ix /= il; iy /= il; iz /= il;
+    const ps = (pv - this.strapS) * len;
+    const px = _strap.x + ix * ps, py = _strap.y + iy * ps, pz = _strap.z + iz * ps;
+    const cb = Math.cos(beta), sb = Math.sin(beta);
+    let dx = ix * cb - _F.x * sb, dy = iy * cb - _F.y * sb, dz = iz * cb - _F.z * sb;
+    const dl = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    dx /= dl; dy /= dl; dz /= dl;
+    const kb = -pv * len + sl, kt = (1 - pv) * len + sl;
+    butt.x = px + dx * kb; butt.y = py + dy * kb; butt.z = pz + dz * kb;
+    tip.x = px + dx * kt; tip.y = py + dy * kt; tip.z = pz + dz * kt;
+  }
+
   pivotS() { return R10.pivot; }
 
   /**
@@ -250,6 +275,7 @@ export class LanceCarry {
     const R = an.skull(_hc, _hf);
     const headR = Math.max(R.x, R.y, R.z);
     this._headR = headR; this._armOn = armOn;
+    _FR[0] = headR;
     if (armOn) { _cp(an.b.upArmR.bone, _a0); _cp(an.b.loArmR.bone, _a1); _cp(an.b.handR.bone, _a2); }
     // V4: while aiming, the over-the-shoulder camera looks past her head at the
     // anchor; the upper shaft keeps out of that part of the screen
@@ -279,6 +305,8 @@ export class LanceCarry {
       }
     }
     this._terr = this.player.ctx?.terrain?.getHeight ? this.player.ctx.terrain : null;
+    // the ground under the butt, once a frame: every pose of the search lies within a hand of it
+    if (this._terr) { _w0.copy(this.butt).applyMatrix4(model.matrixWorld); _FR[1] = this._terr.getHeight(_w0.x, _w0.z); }
     if (this._climb && this.out.active) {
       // the climb: the free search round the folded trunk (see the header)
       const feas = this._updateFree(an, headR, dt);
@@ -294,8 +322,10 @@ export class LanceCarry {
       const alpha = R10.alphaMin + (R10.alphaMax - R10.alphaMin) * ia / 15;
       for (let ib = 0; ib <= 13; ib++) {
         const beta = R10.betaMax * ib / 13;
-        this._place(alpha, beta, _b, _t, this.sl);
-        const viol = this._viol(_b, _t, headR, armOn);
+        _ARG[0] = alpha; _ARG[1] = beta; _ARG[2] = this.sl;
+        this._placeS(_b, _t);
+        this._viol(_b, _t, armOn);
+        const viol = _RG[0];
         const cost = viol * 100 + Math.abs(alpha - this.alpha0) + 1.5 * beta + R10.slCost * Math.abs(this.sl);
         if (cost < best) { best = cost; bA = alpha; bB = beta; bFeas = viol === 0; }
       }
@@ -323,8 +353,10 @@ export class LanceCarry {
           const a = bA + (k === 0 ? sa : k === 1 ? -sa : 0), bb = bB + (k === 2 ? sb : k === 3 ? -sb : 0);
           const sl = bS + (k === 4 ? ss : k === 5 ? -ss : 0);
           if (a < R10.alphaMin || a > R10.alphaMax || bb < 0 || bb > R10.betaMax || sl < R10.slLo || sl > R10.slHi) continue;
-          this._place(a, bb, _b, _t, sl);
-          const viol = this._viol(_b, _t, headR, armOn);
+          _ARG[0] = a; _ARG[1] = bb; _ARG[2] = sl;
+          this._placeS(_b, _t);
+          this._viol(_b, _t, armOn);
+          const viol = _RG[0];
           const cost = viol * 100 + Math.abs(a - this.alpha0) + 1.5 * bb + R10.slCost * Math.abs(sl);
           if (cost < best - 1e-9) { best = cost; bA = a; bB = bb; bS = sl; bFeas = viol === 0; moved = true; }
         }
@@ -340,7 +372,8 @@ export class LanceCarry {
     // the ease never carries the pose out of a bound the target holds: if the
     // eased pose breaks one (the frame moved faster than the ease), take the
     // target this frame
-    if (bFeas && this._viol(_bT, _tT, headR, armOn) > 0) {
+    this._viol(_bT, _tT, armOn);
+    if (bFeas && _RG[0] > 0) {
       this.alpha = bA; this.beta = bB; this.sl = bS;
       this._place(this.alpha, this.beta, _bT, _tT, this.sl);
     }
@@ -366,10 +399,16 @@ export class LanceCarry {
     _tmp.copy(this.tip).sub(_hc);
     o.tipBehindHeadPlane = -Math.max(_tmp.dot(_hf), _tmp.z);
     _tmp2.copy(this.butt).lerp(this.tip, 0.45);
-    o.headGap = ptSeg(_hc, _tmp2, this.tip) - headR;
-    o.armGap = armOn ? Math.min(segSeg(this.butt, this.tip, _a0, _a1), segSeg(this.butt, this.tip, _a1, _a2)) - 0.05 : null;
-    o.camGap = this._camOn ? this._camGap(this.butt, this.tip) : null;
-    o.tailGap = this._nTail > 0 ? this._tailGap(this.butt, this.tip) : null;
+    ptSeg(_hc, _tmp2, this.tip);
+    o.headGap = _R[0] - headR;
+    if (armOn) {
+      segSeg(this.butt, this.tip, _a0, _a1);
+      const g0 = _R[0];
+      segSeg(this.butt, this.tip, _a1, _a2);
+      o.armGap = Math.min(g0, _R[0]) - 0.05;
+    } else o.armGap = null;
+    if (this._camOn) { this._camGap(this.butt, this.tip); o.camGap = _RG[2]; } else o.camGap = null;
+    if (this._nTail > 0) { this._tailGap(this.butt, this.tip); o.tailGap = _RG[1]; } else o.tailGap = null;
   }
 
   /** Keep the shaft its length about its midpoint (after a character-space ease). */
@@ -482,14 +521,21 @@ export class LanceCarry {
     const md = Math.sqrt(mx * mx + my * my + mz * mz);
     if (md > F.midBall) v += md - F.midBall;
     _tmp2.copy(b).lerp(t, 0.45);
-    const hg = ptSeg(_hc, _tmp2, t) - headR;
+    ptSeg(_hc, _tmp2, t);
+    const hg = _R[0] - headR;
     if (hg < R10.headGap) v += R10.headGap - hg;
-    if (this._nTail > 0) { const tg = this._tailGap(b, t); if (tg < R10.tailGap) v += R10.tailGap - tg; }
+    if (this._nTail > 0) { this._tailGap(b, t); const tg = _RG[1]; if (tg < R10.tailGap) v += R10.tailGap - tg; }
     const e = this._torsoE(b, t, F.torsoA, F.torsoB);
     if (e < 1) v += (1 - e) * 0.3;
-    const lg = Math.min(segSeg(b, t, _thL, _cfL), segSeg(b, t, _thR, _cfR));
+    segSeg(b, t, _thL, _cfL);
+    const lg0 = _R[0];
+    segSeg(b, t, _thR, _cfR);
+    const lg = Math.min(lg0, _R[0]);
     if (lg < F.legAxis) v += F.legAxis - lg;
-    const ag = Math.min(segSeg(b, t, _shL, _laL), segSeg(b, t, _shR, _laR));
+    segSeg(b, t, _shL, _laL);
+    const ag0 = _R[0];
+    segSeg(b, t, _shR, _laR);
+    const ag = Math.min(ag0, _R[0]);
     if (ag < F.armAxis) v += F.armAxis - ag;
     if (this._terr) {
       _w0.copy(b).applyMatrix4(this.player.model.matrixWorld);
@@ -538,9 +584,10 @@ export class LanceCarry {
    * character's: a head pitched down tilts its plane back at the top), the
    * skull clearance along the upper shaft, the draw arm while aiming.
    */
-  _viol(b, t, headR, armOn, parts = null) {
-    _s.copy(t).sub(b).normalize();
-    const deg = Math.acos(Math.min(1, Math.max(-1, _s.y)));
+  _viol(b, t, armOn, parts = null) {
+    const headR = _FR[0];
+    const sx = t.x - b.x, sy = t.y - b.y, sz = t.z - b.z;
+    const deg = Math.acos(Math.min(1, Math.max(-1, sy / (Math.sqrt(sx * sx + sy * sy + sz * sz) || 1))));
     let viol = 0, v;
     if (deg < R10.degLo) viol += R10.degLo - deg;
     if (deg > R10.degHi) viol += (deg - R10.degHi) * R10.degW;
@@ -558,77 +605,91 @@ export class LanceCarry {
     v = viol;
     if (md > R10.midBall) viol += (md - R10.midBall) * 3;
     if (parts) parts.mid = viol - v;
-    _tmp.copy(t).sub(_hc);
-    const plane = Math.max(_tmp.dot(_hf), _tmp.z) + R10.planeGap;
+    const px = t.x - _hc.x, py = t.y - _hc.y, pz = t.z - _hc.z;
+    const plane = Math.max(px * _hf.x + py * _hf.y + pz * _hf.z, pz) + R10.planeGap;
     v = viol;
     if (plane > 0) viol += plane * 3;
     if (parts) parts.plane = viol - v;
-    _tmp2.copy(b).lerp(t, 0.45);
-    const hg = ptSeg(_hc, _tmp2, t) - headR;
+    _tmp2.x = b.x + sx * 0.45; _tmp2.y = b.y + sy * 0.45; _tmp2.z = b.z + sz * 0.45;
+    ptSeg(_hc, _tmp2, t);
+    const hg = _R[0] - headR;
     v = viol;
     if (hg < R10.headGap) viol += (R10.headGap - hg) * 3;
     if (parts) parts.head = viol - v;
     v = viol;
     if (armOn) {
-      const ag = Math.min(segSeg(b, t, _a0, _a1), segSeg(b, t, _a1, _a2)) - 0.05;
+      segSeg(b, t, _a0, _a1);
+      const g0 = _R[0];
+      segSeg(b, t, _a1, _a2);
+      const ag = Math.min(g0, _R[0]) - 0.05;
       if (ag < R10.armGap) viol += (R10.armGap - ag) * 3;
     }
     if (parts) parts.arm = viol - v;
     v = viol;
     if (this._camOn) {
-      const cg = this._camGap(b, t);
+      this._camGap(b, t);
+      const cg = _RG[2];
       if (cg < R10.camGap) viol += (R10.camGap - cg) * 0.5;
     }
     if (parts) parts.cam = viol - v;
     v = viol;
     if (this._nTail > 0) {
-      const tg = this._tailGap(b, t);
+      this._tailGap(b, t);
+      const tg = _RG[1];
       if (tg < R10.tailGap) viol += (R10.tailGap - tg) * 3;
     }
     if (parts) parts.tail = viol - v;
     v = viol;
     if (this._terr) {
-      _w0.copy(b).applyMatrix4(this.player.model.matrixWorld);
-      const gg = _w0.y - this._terr.getHeight(_w0.x, _w0.z) - 0.05;
+      const e = this.player.model.matrixWorld.elements;
+      const gg = e[1] * b.x + e[5] * b.y + e[9] * b.z + e[13] - _FR[1] - 0.05;
       if (gg < R10.groundGap) viol += (R10.groundGap - gg) * 3;
       if (parts) parts.groundGapM = gg;
     }
     if (parts) parts.ground = viol - v;
-    return viol;
+    _RG[0] = viol;
   }
 
   /** Cold path (probes / gates): the last solved pose's violation, term by term. */
   debugViol() {
     const parts = {};
-    parts.total = this._viol(this.butt, this.tip, this._headR ?? 0.1, !!this._armOn, parts);
+    _FR[0] = this._headR ?? 0.1;
+    this._viol(this.butt, this.tip, !!this._armOn, parts);
+    parts.total = _RG[0];
     return parts;
   }
 
-  /** Smallest distance from the shaft to the knot-tail / wrap-tail segments (char), less the shaft's radius. */
+  /** Smallest distance from the shaft to the knot-tail / wrap-tail segments (char), less the shaft's radius: `_RG[1]`. */
   _tailGap(b, t) {
     let g = Infinity;
     const P = this._tailPts;
     for (let i = 0; i < this._nTail; i++) {
       const k = i * 6;
-      _ta.set(P[k], P[k + 1], P[k + 2]); _tb.set(P[k + 3], P[k + 4], P[k + 5]);
-      const d = segSeg(b, t, _ta, _tb) - 0.0145;
+      _ta.x = P[k]; _ta.y = P[k + 1]; _ta.z = P[k + 2]; _tb.x = P[k + 3]; _tb.y = P[k + 4]; _tb.z = P[k + 5];
+      segSeg(b, t, _ta, _tb);
+      const d = _R[0] - 0.0145;
       if (d < g) g = d;
     }
-    return g;
+    _RG[1] = g;
   }
 
-  /** Screen distance (NDC, x scaled by aspect) of the upper shaft from the head and the anchor hand. */
+  /** Screen distance (NDC, x scaled by aspect) of the upper shaft from the head and the anchor hand: `_RG[2]`. */
   _camGap(b, t) {
     let g = Infinity;
+    const e = _vp.elements, asp = this._aspect;
     for (let k = 0; k < 4; k++) {
-      _sc.copy(b).lerp(t, 0.45 + 0.55 * k / 3).applyMatrix4(_vp);
-      if (_sc.z < -1 || _sc.z > 1) continue;            // behind the lens / past far
-      const d1 = Math.hypot((_sc.x - _sh.x) * this._aspect, _sc.y - _sh.y);
-      const d2 = Math.hypot((_sc.x - _sa.x) * this._aspect, _sc.y - _sa.y);
+      const f = _CAMK[k];
+      const x = b.x + (t.x - b.x) * f, y = b.y + (t.y - b.y) * f, z = b.z + (t.z - b.z) * f;
+      const w = 1 / (e[3] * x + e[7] * y + e[11] * z + e[15]);
+      const cz = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w;
+      if (cz < -1 || cz > 1) continue;                  // behind the lens / past far
+      const cx = (e[0] * x + e[4] * y + e[8] * z + e[12]) * w, cy = (e[1] * x + e[5] * y + e[9] * z + e[13]) * w;
+      const ax = (cx - _sh.x) * asp, ay = cy - _sh.y, bx = (cx - _sa.x) * asp, by = cy - _sa.y;
+      const d1 = Math.sqrt(ax * ax + ay * ay), d2 = Math.sqrt(bx * bx + by * by);
       if (d1 < g) g = d1;
       if (d2 < g) g = d2;
     }
-    return g;
+    _RG[2] = g;
   }
 
   /**

@@ -606,7 +606,7 @@ export async function panBase(opt = {}) {
   recomputeNormals(boots);
   // (the top at the back of the calf and the ankle's front fold shut with the joint: fewer points there)
   collapseShort(boots, 0.0085, null, (x, y, z) => ((y > 0.4 && z < -0.12) || (y > 0.11 && y < 0.2 && z > -0.03) ? 0.015 : 0.0085));
-  smoothSkin(boots, { its: 18, k: 0.5 });
+  smoothSkin(boots, { its: 30, k: 0.5 });
 
   // ---- surfaces the lofts read
   const under = new Field([bodyPart, trousers], 0.04);

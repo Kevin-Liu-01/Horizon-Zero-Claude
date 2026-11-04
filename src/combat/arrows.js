@@ -596,7 +596,8 @@ export class ArrowPool {
    */
   releaseOrphans() {
     let freed = 0;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       if (a.fuseM && (a.fuseM._disposed || !a.fuseM.root)) { a.fuseM = null; a.fuseObj = null; }
       const m = a.stuckTo;
       if (!m) continue;
@@ -613,7 +614,8 @@ export class ArrowPool {
   /** Public: drop every arrow riding `machine` (called on corpse reclaim). */
   releaseFrom(machine) {
     let freed = 0;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       if (a.stuckTo === machine) { this._recycle(a); freed++; }
       if (a.fuseM === machine) { a.fuseM = null; a.fuseObj = null; }
     }
@@ -690,7 +692,8 @@ export class ArrowPool {
   _capStuck(machine, keep) {
     if (!machine) return;
     let n = 0, oldest = null;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       if (a.mode !== 'stuck' || a.stuckTo !== machine) continue;
       n++;
       if (a === keep) continue;
@@ -706,7 +709,8 @@ export class ArrowPool {
   audit() {
     let idle = 0, fly = 0, stuck = 0, riding = 0, orphaned = 0, detached = 0, inScene = 0;
     let hosted = 0, overdue = 0, maxAge = 0;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       if (a.mode === 'idle') idle++;
       else if (a.mode === 'fly') fly++;
       else stuck++;
@@ -757,7 +761,8 @@ export class ArrowPool {
   dispose() {
     this._offDisposed?.();
     this._offDisposed = null;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       a.group.parent?.remove(a.group);
       // no-op today (every arrow part is a module singleton) — it is here so a
       // future per-arrow buffer cannot repeat the BombPool leak silently.
@@ -771,7 +776,8 @@ export class ArrowPool {
 
   _alloc() {
     let best = null, bestScore = -1;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       // prefer idle, then oldest stuck, then oldest flying
       const score = a.mode === 'idle' ? 1e9 : (a.mode === 'stuck' ? 1e5 : 0) + a.age;
       if (score > bestScore) { bestScore = score; best = a; }
@@ -860,7 +866,8 @@ export class ArrowPool {
      */
     this._sweepClock -= dt;
     if (this._sweepClock <= 0) { this._sweepClock = 0.5; this.releaseOrphans(); }
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       if (a.mode === 'idle') continue;
       if (a.mode === 'fly') this._stepFly(a, dt, machines);
       else {
@@ -1061,7 +1068,8 @@ export class BombPool {
 
   fire(origin, dir, speed, type) {
     let best = this.list[0];
-    for (const b of this.list) {
+    for (let bi = 0; bi < this.list.length; bi++) {
+      const b = this.list[bi];
       if (b.mode === 'idle') { best = b; break; }
       if (b.age > best.age) best = b;
     }
@@ -1079,7 +1087,8 @@ export class BombPool {
 
   update(dt, t) {
     const machines = this.ctx.machines?.list;
-    for (const b of this.list) {
+    for (let bi = 0; bi < this.list.length; bi++) {
+      const b = this.list[bi];
       if (b.mode !== 'fly') continue;
       b.age += dt;
       if (b.age > BOMB_LIFE || b.pos.y < -80) { b.mode = 'idle'; b.group.visible = false; continue; }
@@ -1150,7 +1159,8 @@ export class BombPool {
 
   /** Park every projectile and hand the whole pool back to the free list. */
   recycleAll() {
-    for (const b of this.list) { b.mode = 'idle'; b.group.visible = false; }
+    for (let bi = 0; bi < this.list.length; bi++) {
+      const b = this.list[bi]; b.mode = 'idle'; b.group.visible = false; }
   }
 
   /**
@@ -1165,7 +1175,8 @@ export class BombPool {
    */
   audit() {
     let fly = 0, inScene = 0, overdue = 0, maxAge = 0;
-    for (const b of this.list) {
+    for (let bi = 0; bi < this.list.length; bi++) {
+      const b = this.list[bi];
       if (b.mode === 'fly') {
         fly++;
         if (b.age > maxAge) maxAge = b.age;
@@ -1185,7 +1196,8 @@ export class BombPool {
    * of the projectile visuals, survived `Combat.dispose()` (judge finding 2).
    */
   dispose() {
-    for (const b of this.list) {
+    for (let bi = 0; bi < this.list.length; bi++) {
+      const b = this.list[bi];
       b.group.parent?.remove(b.group);
       disposeOwnedUnder(b.group);
       b.mode = 'idle';

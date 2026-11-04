@@ -1050,7 +1050,8 @@ export class Combat {
     const list = this.ctx.machines?.list;
     if (playing && p && list) {
       const r2 = THREAT_RANGE * THREAT_RANGE;
-      for (const m of list) {
+      for (let i = 0; i < list.length; i++) {
+        const m = list[i];
         if (!m || m.alive === false || m._disposed) continue;
         const st = m.state;
         if (st !== 'alert' && st !== 'attack' && st !== 'search') continue;
@@ -2353,7 +2354,8 @@ export class Combat {
     this._pickupClock = 0.3;
     const list = this.ctx.interactables?.list;
     if (!Array.isArray(list)) return;
-    for (const e of list) {
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
       if (!e || e.__calWeaponWrapped) continue;
       const wid = e.pickupWeapon ?? e.part?.pickupWeapon ?? e.userData?.pickupWeapon;
       if (wid !== 'disc-launcher') continue;
