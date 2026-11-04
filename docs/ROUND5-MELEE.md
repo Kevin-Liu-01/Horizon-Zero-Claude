@@ -16,8 +16,8 @@ knees straightened at the top of every swing. So most of this round went into th
 | **Her eyes stay on what she is fighting.** The neck and skull take out the trunk's turn and lean (`HEAD_LEAD` 0.14, `HEAD_LEVEL` 0.92). The old code added pitch to the head | `meleeLayer.update` | the guard read as a woman looking at her feet |
 | **The hips turn and travel with the beat.** Every pose key carries `py` (pelvis yaw) and `dz` (pelvis travel forward), interpolated with the key, standing only (`_stanceW`, not in a crouch or a roll). The animator's `pdz` now carries it | `meleeLayer._stance`, `playerAnimator` melee block | "limbs do the work"; the thrust is hip-driven (bible §5.3) |
 | **The legs live in the guard and load into the beat.** `_stanceMix` goes from the guard's stance to the beat's and back. It replaces an envelope on one key, which straightened the knees at each cock | `meleeLayer._stance`, `STANCE_ENV` | she stays low through the windup, as in the reference |
-| **A real guard.** Left foot forward, rear leg back, knees bent, hips bladed 15 deg, chest 21 deg more, right hand at the hip at 20 %, left on the wrap at about 53 %, tip 0.47 m | `READY`, `STANCE.ready` | V46 |
-| **Keys re-tabled** on her real arm (0.475 m + 0.075 palm): the left hand spacing on a thrust is now 0.24-0.27 m, not 0.14 m | `BEATS`, `HEAVY` | two hands read as two hands |
+| **A real guard.** Left foot forward, rear leg back, knees bent, hips bladed 15 deg, chest 21 deg more, right hand at the hip at 20 %, left on the wrap at 52-53 %, tip 0.40-0.48 m | `READY`, `STANCE.ready` | V46 |
+| **Keys re-tabled** on her real arm (0.475 m + 0.075 palm): the hands stand 0.23-0.27 m apart on a contact, not 0.14 m | `BEATS`, `HEAVY` | two hands read as two hands |
 | The right elbow goes back beside the ribs at a low hand, opens outward only as the hand rises | `_solveRight` pole | at the guard the upper arm stood level with her shoulder |
 | The left forearm keeps off her belly: the elbow rolls out, the wrist does not move | `_leftElbowOut` (`LEFT_FORE_CLEAR` 0.13) | A104, Kevin's "arms crossing into her body" |
 | The swing smear fades along the sweep and toward the haft | `melee.js`, trail vertex colours | it read as a strip of card |
@@ -132,6 +132,7 @@ the same file, hero-body's `_aimLayer`, `_efCost` and `_elbowFlow` are 70-145 KB
 ### For the orchestrator
 
 - `tools/gates.r5.carried.mjs`: fold these rows at my exit (R47: A100-A107).
-- Chrome slots: at 22:14Z and 23:45Z two gate Chromes ran at once, because a run's cleanup removed a slot another lane
-  had by then taken. My `run.sh` trap did this kind of removal until I made it check `owner.txt` first. Other lanes'
-  wrappers may do the same.
+- Chrome slots: at 22:14Z I saw my gate run and hero-body's alive together, with `slot1` owned by hero-body and my
+  own mkdir having succeeded a minute earlier. My guess, not verified, is that a finishing run's `rm -r` removed a slot
+  someone had just re-taken. My wrapper's cleanup would have removed hero-body's slot in turn, so I killed the wrapper
+  (the run itself finished) and made its cleanup check `owner.txt` first. Other lanes' wrappers may have the same hole.
