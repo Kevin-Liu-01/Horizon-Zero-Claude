@@ -1128,12 +1128,17 @@ export class HUD {
     const sc = this._scale, gap = MHB_GAP * sc;
     // (x, y) is the number's bottom centre (`dmgY`)
     const h = hh * 2;
+    // the whole circle across the top of the frame, and under its middle the vial
+    if (y - h < MHB_TOP_BASE * sc) y = MHB_TOP_BASE * sc + h + gap;
     if (Math.abs(x - this._vw * 0.5) < MHB_EYE_HALF * sc + hw && y - h < MHB_EYE_BASE * sc) {
       y = MHB_EYE_BASE * sc + h + gap;
     }
     const colB = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc;
     const colR = MHB_SAFE_L * sc;
-    if (x - hw < colR && y - h < colB) x = colR + hw + gap;
+    if (x - hw < colR && y - h < colB) {
+      const toRight = colR + hw + gap - x, toBelow = colB + h + gap - y;
+      if (toRight <= toBelow) x += toRight; else y += toBelow;
+    }
     // a plate can sit under the circle, so the plates are tried after it, twice: stepping below one can land on the next
     const ws = this._wscale, halfW = MHB_W * 0.5 * ws;
     for (let pass = 0; pass < 2; pass++) {

@@ -249,12 +249,13 @@ const A_DMG_CLEAR = {
       hud._popNumber(at(sx, sy), '340', 'weak', 1.0, 30 * hud._scale);
       const d = hud._dmgPool.find((q) => q.active);
       const hits = [];
+      let first = null;
       for (const w of [3, 14, 24]) {
         await frames(w === 3 ? 3 : 11);
         const r = d.el.getBoundingClientRect();
-        for (const f of fixed()) if (hit(r, f.r)) hits.push(f.sel + '@' + w);
+        for (const f of fixed()) if (hit(r, f.r)) { hits.push(f.sel + '@' + w); first ??= { chip: [r.left, r.top, r.right, r.bottom].map(Math.round), other: [f.r.left, f.r.top, f.r.right, f.r.bottom].map(Math.round) }; }
       }
-      rows.push({ name, hits: [...new Set(hits)] });
+      rows.push({ name, hits: [...new Set(hits)], first });
     }
     /* in the open it stays with what was hit */
     hud._dmgPool.forEach((d) => { d.active = false; d.el.style.visibility = 'hidden'; });
@@ -263,7 +264,10 @@ const A_DMG_CLEAR = {
     const od = hud._dmgPool.find((q) => q.active);
     await frames(3);
     const orect = od.el.getBoundingClientRect();
-    const openOk = Math.abs((orect.left + orect.right) / 2 - ox) < 34 && Math.abs(orect.bottom - oy) < 50;
+    /* against where its point projects now: the stage's camera is still settling onto the aim */
+    const op = od.world.clone().project(cam);
+    const px = (op.x * 0.5 + 0.5) * innerWidth, py = (-op.y * 0.5 + 0.5) * innerHeight;
+    const openOk = Math.abs((orect.left + orect.right) / 2 - px) < 34 && Math.abs(orect.bottom - py) < 50;
     const failed = rows.filter((x) => x.hits.length).map((x) => x.name);
     return { pass: failed.length === 0 && openOk && !!plateEl, detail: { failed, rows, openOk, open: [Math.round(orect.left), Math.round(orect.bottom)], plateUp: !!plateEl } };
   })()`,
@@ -430,6 +434,7 @@ const A_SIGHTING = {
       transectsWhite: !a.paths.count || [...S._paths.values()].every((e) => e.mat.uniforms.uPaper.value.getHexString() === 'dbd3c5' || e.mat.uniforms.uPaper.value.r > 0.8),
       figureDrawn: figure.pass === true,
       oneSightedInFull: [...S._hulls.values()].filter((e) => !e.quiet).length === 1 && a.figure.subject === m.kind,
+      revealsOffTheSubject: (() => { const b = S._hideBox, o = [...document.querySelectorAll('.calf-reveal')].filter((e) => e.style.display !== 'none' && e.offsetParent !== null).map((e) => e.getBoundingClientRect()); return o.every((r) => r.right <= b[4] || r.left >= b[6] || r.bottom <= b[5] || r.top >= b[7]); })(),
       transectsFew: a.paths.count <= 2,
     };
     const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
@@ -544,6 +549,7 @@ const A_OVER_BREA = {
   id: 'A-sighting-over-brea', kind: 'action', lane: LANE, timeout: 150000, settle: 600,
   title: 'With Brea visible and an Instrument and a transect straight behind her, the raised alidade adds 0 pixels inside her silhouette; with the knock-out off the same stage adds them',
   assert: staged(['herd'], `(async () => {
+    ${FRAMES}
     const m = await (async () => { ${SIGHT_STAGE(true, false, 0)} })();
     if (!m) return { pass: null, detail: 'SKIP-R18: no herd kind stands' };
     ${OVERLAY_DIFF}${HER_SILHOUETTE}
@@ -590,6 +596,19 @@ const A_OVER_BREA = {
     };
     const shot = await overlayFrame(() => herSilhouette());
     const on = count(shot, shot.more.px);
+    /* the DOM half of the overlay: no reveal chip lies on her */
+    let chipPx = 0;
+    {
+      const sil = shot.more.px, cssK = shot.w / innerWidth;
+      for (const el of document.querySelectorAll('.calf-reveal')) {
+        if (el.style.display === 'none' || el.offsetParent === null) continue;
+        const r = el.getBoundingClientRect();
+        for (let y = Math.round(r.top); y < r.bottom; y += 2) for (let x = Math.round(r.left); x < r.right; x += 2) {
+          const px = Math.round(x * cssK), py = shot.h - 1 - Math.round(y * cssK);
+          if (px >= 0 && px < shot.w && py >= 0 && py < shot.h && sil[(py * shot.w + px) * 4] > 127) chipPx += 4;
+        }
+      }
+    }
     S.debugOcclusion(false);
     await frames(2);
     const shot2 = await overlayFrame(() => herSilhouette());
@@ -602,9 +621,10 @@ const A_OVER_BREA = {
       noPixelOverHer: on.addedPx === 0,
       noPaperOverHer: on.paperPx === 0,
       controlCatchesIt: off.addedPx > 150,
+      noRevealOnHer: chipPx === 0,
     };
     const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
-    return { pass: failed.length === 0, detail: { failed, on, control: off, meshesInSilhouette: shot.more.meshes, paths: S._paths.size } };
+    return { pass: failed.length === 0, detail: { failed, on, control: off, chipPx, meshesInSilhouette: shot.more.meshes, heroShells: S._heroShells.size, paths: S._paths.size } };
   })()`),
 };
 

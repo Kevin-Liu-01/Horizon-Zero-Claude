@@ -13,13 +13,13 @@ graduated ticks. Lane gates: `nice -n 10 node tools/gates.mjs --port 5265 --lane
 | tokens | `src/style.css` | bible palette as `--cal-*`; a real type scale (`--cal-type-*`: 10 steps, 11 px floor); paper grain + foxing; two motion curves; semantic colours `--cal-c-*` (the only ones the accessibility palettes re-point). Round-4 teal, Sighting violet and parchment tokens are gone (`A-ui-language-static`) |
 | HUD | `src/ui/hud.{js,css}` | levelling staff (10 graduations, E-pattern, damage eats from the right, reading index settles on a spring), gourd hairline + paper chip, field-note tracker, theodolite circle (ticks 5°, numerals 30°, cardinals above the limb, 3-digit bearing chip, inertia on one transform), spirit-level exposure vial (dark glass, only the bubble wears the state), Instrument plates `TILLER · SOIL CORE · TRANSECT 14` with a graduated bar and a leader, stadia reticle, draw scale, breath meter, kit tag, tool chips, Plex damage numbers, Flagged pennant |
 | plate layout | `hud.js _updateMachineBars` | plates resolve against the fixed instruments (column, circle + vial) and against each other: the most recently hit holds its place, the others step down. An Instrument with a plate no longer also wears an awareness mark; its attack flash moves to the plate's iris. Marks on the circle that crowd share one distance reading (the nearest's) |
-| Sighting | `src/ui/focus.{js,css}` | the Alidade: sepia vignette ≤ 20 %, stadia crosshair, BRG / DST chip on the upper hair, cobalt rings, leaders to named chips, a paper card pinned right. **The drawn figure** replaces the Fresnel rim shells (R54: they read as white static): a half-res coverage mask (Instruments R, components G, Brea B) and one contour pass give a clean dashed outline at sub-texel accuracy; nothing the alidade draws goes over Brea. **Transects** are a surveyor's chain line: fine dashes, a station tick every 7.5 m, a floor of about a pixel at range, faded inside 6 m of the camera, behind Brea |
-| map | `src/ui/map.js` | survey sheet: paper, graticule, coast + waterlines + soundings; triangles open a wash + contours every 5 m + names; Datum Line in vermilion; names placed on whichever side of a mark is free, a site with no free side reads on hover. `sites.js` is the sheet's gazetteer: the Round-4 props' landmarks stay off it |
+| Sighting | `src/ui/focus.{js,css}` | the Alidade: sepia vignette ≤ 20 %, stadia crosshair, BRG / DST chip on the upper hair, cobalt rings, leaders to named chips, a paper card pinned right. **Everything 3D is drawn after the composer** (`engine.onAfterRender`), on the finished frame: no grade, bloom or AO touches a hairline, and the scene's depth texture is free to read. **The figure:** one Instrument is drawn in full, the one under the crosshair (else the nearest): a half-res 4x MSAA mask, dilated into a paper core on a lapilli casing, so a strut one pixel wide is a line and never a row of flecks. The dash is anchored on the Instrument (polar angle round its projected centre plus radius), not on the screen. The three nearest others get a quiet solid hairline; nobody else gets anything. **Behind her:** the depth says what stands in front of the overlay, so every mesh she carries knocks it out with no draw of her own; a trunk leaves the figure at a quiet 38 %. **Transects** are a fat line in screen space, 1.5 px on a 3.6 px casing at every distance: dashes in metres, a station tick every 7.5 m, steady past where a dash can be drawn, the sighted Instrument's and the nearest other's only |
+| map | `src/ui/map.js` | survey sheet: paper, graticule, coast + waterlines + soundings; triangles open a wash + contours every 5 m + names; Datum Line in vermilion; names placed on whichever side of a mark is free, a site with no free side reads on hover. Her broad arrow points where she looks (`A-map-arrow-heading`); an objective on her own spot steps aside on a leader. `sites.js` is the sheet's gazetteer: the Round-4 props' landmarks stay off it |
 | hub | `src/ui/menu.js`, `style.css` | a book: margin column with a levelling-staff fore-edge, station index, field data (hour, sky, E, N, BRG), red margin rule, graduated head rule, page block edges, an engraved theodolite plate drawn from arithmetic at the foot of a page (no asset), page-turn settle. The HUD rests under an open book |
 | title, death | `menu.js`, `style.css` | title stations over the live vista (disabled row is a ghost, not a smudge); death page, Field Manual modal in every boot path |
 | settings | `src/ui/settings.js`, `style.css` | three columns: controls + camera + interface, audio + restore, keys. Every row and every rebind on the page with no scroll (`A-settings-rows-visible`: the KEYS list used to be clipped off the right of a two-column layout) |
 | tips | `src/ui/tips.js` | tutorial cards verbatim from bible §8.9; `fieldWord` now memoized |
-| satchel | `src/ui/inventory.{js,css}` | pockets, specimen cards with engraved marks, detail column, take-all chip |
+| satchel | `src/ui/inventory.{js,css}` | pockets, specimen cards with engraved marks, detail column, take-all chip. Field Books headings come from the page's own table by category id (`bookHeading`), so no catalogue label reaches the page: the lint forbids spelling the retired one in a word row |
 | other lanes' panels | `style.css` (`body #cal-dlg …`, `body #cal-prog …`) | dialogue gets a speaker tab, paper card, legible keys; log and skills get the page (no empty-looking tags, no build notes). No edit to `dialogue.js`, `quests.js`, `skills.js`, `wheel.*` |
 
 ## 2. Contracts published
@@ -41,10 +41,14 @@ ctx.menus.map.draw({ washOnly }?)                       // washOnly: the triangl
 src/ui/tips.js:      fieldWord(text) · cardLine(m) · cardParts(m) · TUTORIAL_CARDS · TIPS
 src/ui/inventory.js: itemIcon(id) -> svg string · itemPlayerName(id, fallback) · LOOT_POPUP
 machine.cardWork / machine.cardLine (optional, a kind may publish them; else CARD_WORK in tips.js)
-engine ledger row:   'shell-ui sighting figure mask' (RGBA8, half the scene target, no depth; allocated only while the alidade is up or a component outline lingers; ctx.sighting.dispose() unregisters it)
+engine ledger row:   'shell-ui sighting figure mask' (RGBA8, half the drawing buffer, 4x MSAA, no depth; allocated only while the alidade is up or a component outline lingers; ctx.sighting.dispose() unregisters it)
+engine hook:         engine.onAfterRender holds ctx.sighting._afterComposer (one branch while nothing is up; dispose() removes it)
+ctx.sighting.overlayDraws() -> { mask, own, total }     // what the raised alidade adds to the frame right now (R61 d)
+ctx.sighting.audit().figure -> { subject, quiet, draws } // who is drawn
+ctx.sighting.debugOcclusion(on)                          // the negative control of A-sighting-over-brea
 ```
 
-Consumed: `ctx.water.seaLevel`, `ctx.terrain.getHeight`, `island/sites.js` (`TRIG`, `SITES`, `SCAR`, `REST`), `ctx.datum.regions()/regionTrue()` when W2 lands, `combat.steady`, `ctx.machines.list`, `ctx.progression.*`.
+Consumed: `engine.depthTexture`, `ctx.water.seaLevel`, `ctx.terrain.getHeight`, `island/sites.js` (`TRIG`, `SITES`, `SCAR`, `REST`), `ctx.datum.regions()/regionTrue()` when W2 lands, `combat.steady`, `ctx.machines.list`, `ctx.progression.*`.
 
 ## 3. Gates
 
@@ -98,8 +102,6 @@ Global green list on this tree (5265, one Chrome):
 - **The Kit Rack** still reads its Round-4 smoked-glass sheet (`wheel.css`): combat-kit W2, as ordered. Not filmed as a surface here.
 - **Steady:** the meter is right, the mechanic under it is not yet (0.35 time scale, 6 s drain).
 - **Aim and Sprint hold/toggle** are stored but not applied: `player.js` is frozen. The rows say NOT LIVE YET.
-- **The drawn figure on a bright background.** Paper dashes with an ink casing read well on dark ground and through cover; over sunlit grass they are thinner. A close herd overlaps into a busy patch of dashes. Brea is now knocked out of it, so it never crosses her.
-- **Damage numbers** are world-anchored and can land on the vial or a plate for their 1 s life. Left on purpose: they belong to the part that was hit.
 - **Bow wording:** TIPS say what the bow does today (RMB aims, LMB draws, release looses); the bible's card says `RMB draw, LMB loose`. They reconcile when the bow control changes.
 - **Independent judges have not seen any of this.** Every V row above is the builder's own reading, which R29 makes advisory.
 - **World under the UI.** Tree shadows, the Round-4 camp and the valley are what the frames sit on; every world lane's work changes how these frames read.
@@ -108,7 +110,7 @@ Global green list on this tree (5265, one Chrome):
 
 - **Orchestrator:** `V-ui-sheet` needs its other rows in the same run (it composes the shots); it is registered last because the first page after it has twice hit a 90 s `Waiting failed` retry in the harness, whichever row follows.
 - **Orchestrator:** `tools/gates.r5.shell-ui.mjs` shadows the carried rows it re-stages; `A-sighting` now reads `S._figureMat` and `S._figureRT`, and `A-map-triangles` reads `draw({washOnly:true})`.
-- **engine-gpu / A-rt-ledger:** a new registered target, `shell-ui sighting figure mask`, half the scene target, RGBA8, no depth (about 1.8 MB at 1000x562), only while the alidade is up. The pass adds ≤ 8 mask draws per Instrument within 50 m, ≤ 3 out to 120 m, ≤ 12 for Brea, and one full-frame triangle.
+- **engine-gpu / A-rt-ledger:** a registered target, `shell-ui sighting figure mask`, half the drawing buffer, RGBA8, 4x MSAA, no depth (about 7.2 MB at 800x450), only while the alidade is up. **A21 / the timer query:** the overlay runs in `onAfterRender`, after the engine's timer query ends, so `medianGpuMs` does not see it; `A-sighting-draws` times it on its own and `renderer.info` still counts its draws.
 - **combat-kit W2:** Steady's breath-hold (`timeScale` 1.0, 4 s), `wheel.*`, item renames; then delete `ITEM_DESC` and the matching `WORD_ROWS`.
 - **instruments-a:** named parts turn `A62-*` and the "components with loot" clause of `A-sighting` on; `machine.cardWork` / `cardLine` are optional.
 - **progression W3:** quest and skill text, `ctx.menus.map.revealTriangle`, `triangles()`, `setTriangles()`.

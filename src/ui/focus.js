@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import './focus.css';
 import { itemDef, rarityDef } from '../items/items.js';
 import { fieldWord, cardParts } from './tips.js';
-import { itemIcon } from './inventory.js';
+import { itemIcon, bookHeading } from './inventory.js';
 
 /**
  * THE ALIDADE — the Sighting overlay (lane `shell-ui`, bible §9.7, §10.3; replaces
@@ -27,10 +27,9 @@ import { itemIcon } from './inventory.js';
  *
  * THE OVERLAY IS DRAWN AFTER THE COMPOSER (`engine.onAfterRender`), on the finished frame at
  * display resolution: no grade, bloom or AO touches a hairline, and the scene's depth texture
- * is free to read. That depth is how nothing the alidade draws goes over Brea, whatever she
- * carries and with no draw of her own (`lineClear`, `FIGURE_FS`). Draw budget raised (R61 d, at
- * most 30, `A-sighting-draws`): figure 1, the sighted Instrument <= 8 + <= 6 components, the
- * nearest others <= 3 x 2, transects <= 2, gather marks 1, the raising sweep 1.
+ * is free to read. Draw budget raised (R61 d, at most 30, `A-sighting-draws`): figure 1, the
+ * sighted Instrument <= 6 + <= 6 components, the nearest others <= 3 x 2, Brea <= 6, transects
+ * <= 2, gather marks 1, the raising sweep 1: 29 at the very worst.
  *
  * Cross-lane reads are all defensive: machine.parts / weakPoints / route / kind,
  * ctx.interactables.list and terrain.getHeight may land in any order.
@@ -51,7 +50,8 @@ const PATH_CAP = 2;        // the sighted Instrument's transect and the nearest 
 const PATH_OTHER = 0.5;    // the other transect's weight against the sighted one's
 
 const HULL_RANGE = 120;    // the sighted Instrument's figure: only inside this range
-const HULL_MESHES = 8;     // mask draws for the sighted Instrument
+const HULL_MESHES = 6;     // mask draws for the sighted Instrument
+const HERO_MESHES = 6;     // ...and for Brea: every skinned mesh first, then what she holds, largest first
 const QUIET_CAP = 3;       // the others drawn at all: the nearest, as a quiet solid hairline
 const QUIET_MESHES = 2;    // ...their largest meshes only
 const QUIET_RANGE = 70;
@@ -66,13 +66,13 @@ const CARD_GRACE = 0.35;   // off-target seconds before the card fades
 const LABEL_CAP = 10;      // pooled component chips on screen at once
 const LABEL_RANGE = 70;    // only label parts on Instruments this close
 const RING_CAP = 12;       // pooled weak-point rings
-const REVEAL_CAP = 12;     // pooled reveal chips ON SCREEN at once
+const REVEAL_CAP = 8;      // pooled reveal chips ON SCREEN at once
 /**
  * Candidates kept per poll. Visibility decides which twelve draw; distance only
  * decides the order they are tried in.
  */
 const REVEAL_SRC_CAP = 48;
-const REVEAL_RANGE = 85;   // metres the alidade reads a lootable / Field Book at
+const REVEAL_RANGE = 60;   // metres the alidade reads a lootable / Field Book at
 const REVEAL_TICK = 0.2;   // seconds between interactable registry polls
 
 /* on-screen placement: a chip points AT a thing, so it cannot be clamped without
@@ -132,34 +132,23 @@ const MASK_VS = /* glsl */ `
   }`;
 
 /**
- * What stands in front of the overlay, read off the scene's own depth: Brea and everything she
- * carries, a trunk, a ridge. `uHeroZ` is her view depth; `uKnock` is 0 only for the negative
- * control of `A-sighting-over-brea`.
+ * She stands in front of what she reads: her real meshes hold the mask's blue channel, and nothing
+ * the alidade draws goes over them. `uKnock` is 0 only for the negative control of
+ * `A-sighting-over-brea`.
  */
-const DEPTH_GLSL = /* glsl */ `
-  uniform sampler2D uDepth;
+const HER_GLSL = /* glsl */ `
+  uniform sampler2D uMask;
   uniform vec2 uRes;
-  uniform float uNear;
-  uniform float uFar;
-  uniform float uHeroZ;
   uniform float uKnock;
-  float sceneZ(vec2 uv) {
-    float d = texture2D(uDepth, uv).r * 2.0 - 1.0;
-    return 2.0 * uNear * uFar / (uFar + uNear - d * (uFar - uNear));
-  }
-  /* A line on the ground at view depth z: grass and stones at its own foot do not cut it (no
-     crumbs), anything taller does, and in her plane anything does: she stands in front of it. */
-  float lineClear(float z, vec2 uv) {
+  float notHer(vec2 uv) {
     if (uKnock < 0.5) return 1.0;
-    float s = sceneZ(uv);
-    float m = s < uHeroZ + 0.9 ? 0.04 : 0.7 + z * 0.012;
-    return 1.0 - smoothstep(m, m + 0.3, z - s);
+    return 1.0 - smoothstep(0.2, 0.55, texture2D(uMask, uv).b);
   }`;
 
 /**
  * THE DRAWN FIGURE (R54: Fresnel rims and a screen-space dash pattern read as static and
  * crumbs on small geometry). The mask is half-resolution with 4x MSAA, so a thin strut carries
- * real coverage; R is the sighted Instrument, G its components, A the quiet others.
+ * real coverage; R is the sighted Instrument, G its components, A the quiet others, B Brea.
  *
  * A band is a dilation, not an iso-line: `d1`, `d2`, `d3` are the mask dilated by rings of radius
  * 0.8, 2.2 and 3.4 px, so a strut one pixel wide is a solid line and never a row of flecks. The
@@ -168,22 +157,29 @@ const DEPTH_GLSL = /* glsl */ `
  *
  * The dash is anchored on the Instrument, not on the screen: polar angle around its projected
  * centre plus radius, in target pixels (`uCentre`, `uDashN`, `uDash`), so a long contour and a
- * radial one both cut at the same pace and the pattern travels with the Instrument.
+ * radial one both cut at the same pace and the pattern travels with the Instrument. A raise pays
+ * the dashes out from nothing; lowering takes them back in.
+ *
+ * Cover, off the scene's own depth (`uFrontZ`): something standing between the lens and the
+ * Instrument leaves the line at a quiet 38 %, so the figure still reads through grass and trunks.
  */
 const FIGURE_FS = /* glsl */ `
-  uniform sampler2D uMask;
+  uniform sampler2D uDepth;
+  uniform float uNear;
+  uniform float uFar;
   uniform vec2 uPx;       // one target pixel in uv
   uniform float uK;       // target px per 1600x900 px
   uniform vec2 uCentre;   // the sighted Instrument's centre, target px, y up
   uniform float uDash;    // dash period, target px
   uniform float uDashN;   // whole dashes around it, so the angle closes without a seam
   uniform float uFrontZ;  // anything nearer than this stands in front of the sighted Instrument
+  uniform float uHerFront; // 1 while she is nearer than it
   uniform float uHull;
   uniform float uPart;
   uniform float uQuiet;
   uniform vec3 uInk;
   uniform vec3 uPaper;
-  ${DEPTH_GLSL}
+  ${HER_GLSL}
   const vec2 D8[8] = vec2[8](vec2(1.0, 0.0), vec2(0.7071, 0.7071), vec2(0.0, 1.0), vec2(-0.7071, 0.7071),
                              vec2(-1.0, 0.0), vec2(-0.7071, -0.7071), vec2(0.0, -1.0), vec2(0.7071, -0.7071));
   vec4 ring(vec2 uv, float r) {
@@ -208,26 +204,27 @@ const FIGURE_FS = /* glsl */ `
     float ph = atan(q.y, q.x) / 6.28318530718 * uDashN + length(q) / uDash;
     float f = fract(ph);
     float soft = 1.1 / uDash;
-    float dash = smoothstep(0.0, soft, f) * (1.0 - smoothstep(0.64, 0.64 + soft, f));
+    float on = 0.64 * uHull;
+    float dash = smoothstep(0.0, soft, f) * (1.0 - smoothstep(on, on + soft, f));
 
     // what stands in front of it
-    float s = sceneZ(uv);
+    float her = notHer(uv);
+    float zd = texture2D(uDepth, uv).r * 2.0 - 1.0;
+    float s = 2.0 * uNear * uFar / (uFar + uNear - zd * (uFar - uNear));
     float covered = uKnock < 0.5 ? 0.0 : 1.0 - smoothstep(uFrontZ - 0.12, uFrontZ + 0.12, s);
-    float herPlane = 1.0 - smoothstep(uHeroZ + 0.65, uHeroZ + 0.95, s);
-    float clear = (1.0 - covered * herPlane) * (1.0 - covered * 0.62);   // gone behind her; a quiet read through cover
+    float clear = mix(1.0, her, uHerFront) * (1.0 - covered * 0.62);
 
     // the sighted Instrument: paper on an ink casing
     float hullIn = cov(c0.r);
-    float inkH = cov(d3.r) * (1.0 - hullIn) * dash * uHull * clear;
-    float papH = (cov(d2.r) - cov(d1.r)) * dash * uHull * clear;
+    float inkH = cov(d3.r) * (1.0 - hullIn) * dash * clear;
+    float papH = (cov(d2.r) - cov(d1.r)) * dash * clear;
     // its components: ink with a paper tooth, inside the figure
     float partIn = cov(c0.g);
     float papP = cov(d3.g) * (1.0 - partIn) * uPart * clear;
     float inkP = cov(d2.g) * (1.0 - partIn) * dash * uPart * clear;
-    // the others: a solid hairline, quiet, never in her plane
-    float quietClear = uKnock < 0.5 ? 1.0 : 1.0 - herPlane;
-    float inkQ = cov(d3.a) * (1.0 - cov(c0.a)) * uQuiet * quietClear * 0.34;
-    float papQ = (cov(d2.a) - cov(d1.a)) * uQuiet * quietClear * 0.46;
+    // the others: a solid hairline, quiet, never over her
+    float inkQ = cov(d3.a) * (1.0 - cov(c0.a)) * uQuiet * her * 0.34;
+    float papQ = (cov(d2.a) - cov(d1.a)) * uQuiet * her * 0.46;
 
     float aInk = max(inkH * 0.8, max(inkQ, inkP * 0.96));
     float aPap = max(papH * 0.98, max(papQ, papP * 0.5 * (1.0 - inkP)));
@@ -280,7 +277,7 @@ const PATH_FS = /* glsl */ `
   varying float vE;
   varying float vZ;
   varying float vTilt;
-  ${DEPTH_GLSL}
+  ${HER_GLSL}
   void main() {
     float e = abs(vE) * 5.0 * uK;                     // target px from the centre line
     float core = 1.0 - smoothstep(0.75 * uK - 0.45, 0.75 * uK + 0.45, e);
@@ -299,7 +296,7 @@ const PATH_FS = /* glsl */ `
     float ink = max(cas * dash, tickCase) * 0.62;
     float far = 1.0 - smoothstep(95.0, 125.0, vZ);    // gone past ~120 m
     float nearK = smoothstep(3.0, 7.5, vZ);           // never a slab across the foreground
-    float k = uFade * uWeight * far * nearK * vTilt * lineClear(vZ, gl_FragCoord.xy / uRes);
+    float k = uFade * uWeight * far * nearK * vTilt * notHer(gl_FragCoord.xy / uRes);
     float a = (paper * 0.96 + ink * (1.0 - paper * 0.96)) * k;
     if (a <= 0.003) discard;
     gl_FragColor = vec4(mix(uInk, uPaper, paper), a);
@@ -308,8 +305,18 @@ const PATH_FS = /* glsl */ `
 
 const _clear = new THREE.Color();
 
-/** Nearest-first order for the component-shell budget (see `_refreshParts`). */
+/** Nearest-first order for the quiet others (see `_refreshFigure`). */
 const _byNearest = (a, b) => a.__sightD2 - b.__sightD2;
+
+const _trisOf = (o) => (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+/** Her mask's order: every skinned mesh, then the largest of the rest. */
+const _heroRank = (a, b) => (b.isSkinnedMesh ? 1 : 0) - (a.isSkinnedMesh ? 1 : 0) || _trisOf(b) - _trisOf(a);
+
+/** Really in the world: this object and every ancestor. `visible` alone says nothing about a hidden holder. */
+function shownInWorld(o) {
+  for (let a = o; a; a = a.parent) if (!a.visible) return false;
+  return !!o?.parent;
+}
 
 export class SightingSystem {
   constructor(ctx) {
@@ -325,10 +332,7 @@ export class SightingSystem {
     this._shared = {
       uRes: { value: new THREE.Vector2(1, 1) },
       uK: { value: 1 },
-      uDepth: { value: null },
-      uNear: { value: 0.1 },
-      uFar: { value: 1000 },
-      uHeroZ: { value: -1000 },
+      uMask: { value: null },   // the figure's mask (`_buildFigure`)
       uKnock: { value: 1 },
       uTime: { value: 0 },
       uInk: { value: new THREE.Color('#1C1B1E') },     // lapilli: mixes with green ground into nothing teal
@@ -597,6 +601,7 @@ export class SightingSystem {
     this._revealSlots = [];
     for (let i = 0; i < REVEAL_CAP + LABEL_CAP; i++) this._revealSlots.push({ x: 0, y: 0 });
     this._revealSrc = [];   // polled candidate entries (rebuilt on REVEAL_TICK)
+    this._hideBox = new Float32Array(8);
     this._revealPoll = 0;
   }
 
@@ -628,22 +633,18 @@ export class SightingSystem {
       uniforms: { ...this._shared, uFade: { value: 0 }, uColor: this._shared.uPaper },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
-        varying float vZ;
         void main() {
           vUv = uv;
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vZ = -mv.z;
-          gl_Position = projectionMatrix * mv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: /* glsl */ `
         varying vec2 vUv;
-        varying float vZ;
         uniform float uFade;
         uniform vec3 uColor;
-        ${DEPTH_GLSL}
+        ${HER_GLSL}
         void main() {
           float dash = step(0.5, fract(vUv.x * 96.0));
-          float a = dash * uFade * lineClear(vZ, gl_FragCoord.xy / uRes);
+          float a = dash * uFade * notHer(gl_FragCoord.xy / uRes);
           if (a <= 0.003) discard;
           gl_FragColor = vec4(uColor, a);
           #include <colorspace_fragment>
@@ -698,6 +699,12 @@ export class SightingSystem {
     this._hullMaskMat = maskMat('1.0, 0.0, 0.0, 0.0');
     this._partMaskMat = maskMat('1.0, 1.0, 0.0, 0.0');
     this._quietMaskMat = maskMat('0.0, 0.0, 0.0, 1.0');
+    this._heroMaskMat = maskMat('0.0, 0.0, 1.0, 0.0');
+    this._heroShells = new Map();   // her mesh -> its shell
+    this._heroWant = [];            // scratch
+    this._heroVisit = (o) => {
+      if (o.isMesh && !o.isInstancedMesh && !o.userData.__sightOverlay && shownInWorld(o)) this._heroWant.push(o);
+    };
 
     this._figureRT = new THREE.WebGLRenderTarget(2, 2, {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
@@ -705,18 +712,22 @@ export class SightingSystem {
     });
     this._figureRT.texture.name = 'sighting-figure-mask';
     this.ctx.engine?.registerRenderTarget?.('shell-ui sighting figure mask', this._figureRT);
+    this._shared.uMask.value = this._figureRT.texture;
 
     this._figureMat = new THREE.ShaderMaterial({
       transparent: true, depthTest: false, depthWrite: false, toneMapped: false, fog: false,
       blending: THREE.NormalBlending,
       uniforms: {
         ...this._shared,
-        uMask: { value: this._figureRT.texture },
+        uDepth: { value: null },
+        uNear: { value: 0.1 },
+        uFar: { value: 1000 },
         uPx: { value: new THREE.Vector2(1, 1) },
         uCentre: { value: new THREE.Vector2(0, 0) },
         uDash: { value: 11 },
         uDashN: { value: 12 },
         uFrontZ: { value: -1000 },
+        uHerFront: { value: 1 },
         uHull: { value: 0 },
         uPart: { value: 0 },
         uQuiet: { value: 0 },
@@ -724,10 +735,14 @@ export class SightingSystem {
       vertexShader: 'void main() { gl_Position = vec4(uv, 0.0, 1.0); }',
       fragmentShader: FIGURE_FS,
     });
-    // `position` is all zeros: a full-frame triangle, in the vertex stage above
+    // a quad in clip space (the vertex stage reads `uv`), rewritten each frame round the figures on
+    // screen: the pass is nine taps a pixel, and most of a frame holds nothing to draw
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([-1, -1, 3, -1, -1, 3]), 2));
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(8), 2));
+    geo.setIndex([0, 1, 2, 2, 1, 3]);
+    this._figureQuad = geo.getAttribute('uv');
+    this._quadBox = new Float32Array(4);
     this._figure = new THREE.Mesh(geo, this._figureMat);
     this._figure.name = 'sighting-figure';
     this._figure.frustumCulled = false;
@@ -745,26 +760,22 @@ export class SightingSystem {
     const U = this._shared;
     U.uRes.value.set(w, h);
     U.uK.value = Math.max(0.75, h / 900);
-    U.uDepth.value = engine.depthTexture;
-    U.uNear.value = cam.near;
-    U.uFar.value = cam.far;
     cam.getWorldDirection(_dir);
-    const model = this.ctx.player?.model, her = this.ctx.player?.position;
-    if (her && model?.visible !== false) {
-      U.uHeroZ.value = (her.x - cam.position.x) * _dir.x + (her.y + 1 - cam.position.y) * _dir.y + (her.z - cam.position.z) * _dir.z;
-    } else {
-      U.uHeroZ.value = -1000;
-    }
 
     const clearA = r.getClearAlpha();
     const autoClear = r.autoClear;
     r.autoClear = false;
+    r.getClearColor(_clear);
     if (fig) {
-      r.getClearColor(_clear);
+      const uF = this._figureMat.uniforms;
+      uF.uDepth.value = engine.depthTexture;
+      uF.uNear.value = cam.near;
+      uF.uFar.value = cam.far;
       this._syncSubject(w, h, cam);
-      this._renderFigureMask(r, cam, w, h);
-      r.setClearColor(_clear, clearA);
+      this._fitFigureQuad(w, h, cam);
     }
+    this._renderFigureMask(r, cam, w, h);
+    r.setClearColor(_clear, clearA);
     r.setRenderTarget(null);
     r.render(this._overlayScene, cam);
     r.autoClear = autoClear;
@@ -773,10 +784,10 @@ export class SightingSystem {
   /** The dash's anchor and what counts as in front of the sighted Instrument, for this frame's camera. */
   _syncSubject(w, h, cam) {
     const u = this._figureMat.uniforms, k = this._shared.uK.value;
-    const hero = this._shared.uHeroZ.value;
     u.uPx.value.set(1 / w, 1 / h);
     u.uDash.value = 11 * k;
-    u.uFrontZ.value = hero + 0.95;      // no sighted Instrument: only her plane knocks out
+    u.uFrontZ.value = -1000;
+    u.uHerFront.value = 1;
     const m = this._subject;
     const pos = m?.position ?? m?.root?.position;
     if (!pos) return;
@@ -786,6 +797,11 @@ export class SightingSystem {
     if (z <= 0.5) return;
     const bound = Math.max(mh * 0.6, (m.bodyRadius ?? 1.4) * 1.3);
     u.uFrontZ.value = z - bound;
+    const her = this.ctx.player?.position;
+    if (her) {
+      const hz = (her.x - cam.position.x) * _dir.x + (her.y + 1 - cam.position.y) * _dir.y + (her.z - cam.position.z) * _dir.z;
+      u.uHerFront.value = hz < z ? 1 : 0;   // an Instrument on top of her is drawn over her
+    }
     _v.project(cam);
     u.uCentre.value.set((_v.x * 0.5 + 0.5) * w, (_v.y * 0.5 + 0.5) * h);
     // whole dashes around it, so the angle closes; held steady while the Instrument's size wobbles by less than a dash
@@ -795,6 +811,43 @@ export class SightingSystem {
     u.uDashN.value = this._dashN;
   }
 
+  /** The figure pass's quad: the union of what is drawn, projected, with a line's width to spare. */
+  _fitFigureQuad(w, h, cam) {
+    const q = this._quadBox;
+    q[0] = 2; q[1] = 2; q[2] = -2; q[3] = -2;
+    for (const m of this._hulls.keys()) this._takeBounds(m, w, h, cam);
+    for (const e of this._parts.values()) this._takeBounds(e.machine, w, h, cam);
+    const x0 = Math.max(-1, q[0]), y0 = Math.max(-1, q[1]), x1 = Math.min(1, q[2]), y1 = Math.min(1, q[3]);
+    const none = x1 <= x0 || y1 <= y0;                      // nothing on screen: an empty quad
+    const a = this._figureQuad.array;
+    a[0] = none ? 0 : x0; a[1] = none ? 0 : y0;
+    a[2] = none ? 0 : x1; a[3] = none ? 0 : y0;
+    a[4] = none ? 0 : x0; a[5] = none ? 0 : y1;
+    a[6] = none ? 0 : x1; a[7] = none ? 0 : y1;
+    this._figureQuad.needsUpdate = true;
+  }
+
+  _takeBounds(m, w, h, cam) {
+    const pos = m?.position ?? m?.root?.position;
+    if (!pos) return;
+    const q = this._quadBox;
+    const mh = m.height ?? 2.4;
+    const rad = Math.max(mh, (m.bodyRadius ?? 1.4) * 3);    // every kind's whole body, a stride included
+    _v.set(pos.x, pos.y + mh * 0.5, pos.z);
+    const z = (_v.x - cam.position.x) * _dir.x + (_v.y - cam.position.y) * _dir.y + (_v.z - cam.position.z) * _dir.z;
+    if (z < rad + 0.5) {                                    // at the lens: the whole frame
+      if (z > -rad) { q[0] = -1; q[1] = -1; q[2] = 1; q[3] = 1; }
+      return;
+    }
+    const px = rad * (h * 0.5 / Math.tan(cam.fov * Math.PI / 360)) / z + 8 * this._shared.uK.value;
+    const rx = px * 2 / w, ry = px * 2 / h;
+    _v.project(cam);
+    if (_v.x - rx < q[0]) q[0] = _v.x - rx;
+    if (_v.x + rx > q[2]) q[2] = _v.x + rx;
+    if (_v.y - ry < q[1]) q[1] = _v.y - ry;
+    if (_v.y + ry > q[3]) q[3] = _v.y + ry;
+  }
+
   _renderFigureMask(r, cam, w, h) {
     const mw = Math.max(2, w >> 1), mh = Math.max(2, h >> 1);
     const rt = this._figureRT;
@@ -802,6 +855,11 @@ export class SightingSystem {
     // the source's world matrix is current here: the main pass has already updated the graph
     for (const e of this._hulls.values()) this._rideSources(e.meshes);
     for (const e of this._parts.values()) this._rideSources(e.meshes);
+    for (const mesh of this._heroShells.values()) {
+      const src = mesh.userData.__src;
+      mesh.visible = shownInWorld(src);   // through every ancestor: hidden kit knocks out no air
+      if (mesh.visible) { mesh.matrix.copy(src.matrixWorld); mesh.matrixWorldNeedsUpdate = true; }
+    }
     r.setRenderTarget(rt);
     r.setClearColor(0x000000, 0);
     r.clear(true, false, false);
@@ -827,9 +885,35 @@ export class SightingSystem {
     return { mask, own, total: mask + own };
   }
 
+  /**
+   * Brea's real meshes for the mask: every skinned one first, then what she holds, largest first.
+   * Polled while the alidade is up: she can unstow or swap what she carries.
+   */
+  _refreshHero() {
+    const want = this._heroWant;
+    want.length = 0;
+    this.ctx.player?.model?.traverse(this._heroVisit);
+    want.sort(_heroRank);
+    if (want.length > HERO_MESHES) want.length = HERO_MESHES;
+    for (const [src, mesh] of this._heroShells) {
+      if (want.includes(src)) continue;
+      mesh.parent?.remove(mesh);
+      this._heroShells.delete(src);
+    }
+    for (let i = 0; i < want.length; i++) {
+      if (!this._heroShells.has(want[i])) this._heroShells.set(want[i], this._overlayFor(want[i], this._heroMaskMat));
+    }
+  }
+
+  _clearHero() {
+    for (const mesh of this._heroShells.values()) mesh.parent?.remove(mesh);
+    this._heroShells.clear();
+  }
+
   /** Nothing on the sheet: the pass stops and the mask's memory goes back. */
   _releaseFigure() {
     if (this.on || this._hulls.size || this._parts.size) return;
+    this._clearHero();
     this._figure.visible = false;
     this._figureRT.dispose();
   }
@@ -868,6 +952,7 @@ export class SightingSystem {
    * Polled, reconciled in place: a shell is only built when the cast changes.
    */
   _refreshFigure() {
+    this._refreshHero();
     const list = this.ctx.machines?.list;
     const p = this.ctx.player;
     if (!Array.isArray(list) || !p?.position) return;
@@ -1171,20 +1256,17 @@ export class SightingSystem {
       uniforms: { ...this._shared, uMap: { value: markTexture() }, uColor: this._shared.uPaper },
       vertexShader: /* glsl */ `
         uniform float uK;
-        varying float vZ;
         void main() {
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vZ = -mv.z;
           gl_Position = projectionMatrix * mv;
-          gl_PointSize = clamp(0.9 * 900.0 * uK / max(vZ, 1.0), 9.0 * uK, 22.0 * uK);
+          gl_PointSize = clamp(0.9 * 900.0 * uK / max(-mv.z, 1.0), 9.0 * uK, 22.0 * uK);
         }`,
       fragmentShader: /* glsl */ `
         uniform sampler2D uMap;
-        varying float vZ;
-        ${DEPTH_GLSL}
+        ${HER_GLSL}
         void main() {
           vec4 t = texture2D(uMap, gl_PointCoord);
-          float a = t.a * 0.86 * lineClear(vZ, gl_FragCoord.xy / uRes);
+          float a = t.a * 0.86 * notHer(gl_FragCoord.xy / uRes);
           if (a <= 0.003) discard;
           gl_FragColor = vec4(t.rgb, a);
         }`,
@@ -1734,7 +1816,9 @@ export class SightingSystem {
       if (kind === 'PICK UP') rarity = 'legendary';
       src.push({
         entry: e, kind, d2, rarity,
-        name: fieldWord(inter.sourceName ? inter.sourceName(e) : (e.label ?? '')),
+        // a Field Book she has not read keeps its title: the alidade only sees what kind of record lies there
+        name: e.datapoint ? bookHeading(e.datapoint.category)
+          : fieldWord(inter.sourceName ? inter.sourceName(e) : (e.label ?? '')),
         // derived once per poll, not once per frame
         cls: `calf-reveal k-${kind.replace(/\s+/g, '-').toLowerCase()}`,
         rarColor: `var(--cal-r-${rarity})`,
@@ -1746,10 +1830,42 @@ export class SightingSystem {
     if (src.length > REVEAL_SRC_CAP) src.length = REVEAL_SRC_CAP;
   }
 
+  /**
+   * Two screen boxes reveals keep off this frame, as [left, top, right, bottom] x 2: Brea and the
+   * sighted Instrument. A box that is not on screen is empty. No allocation: this runs every frame.
+   */
+  _fitHideBoxes() {
+    this._hideBox.fill(0);
+    const her = this.ctx.player?.position;
+    if (her && this.ctx.player.model?.visible !== false) this._hideBoxFor(0, her, 1.8, 0.62);
+    const m = this._subject, pos = m?.position;
+    if (pos) this._hideBoxFor(4, pos, m.height ?? 2.4, Math.max((m.height ?? 2.4) * 0.9, (m.bodyRadius ?? 1.4) * 2.2));
+  }
+
+  _hideBoxFor(i, pos, height, halfW) {
+    const b = this._hideBox, cam = this.ctx.camera, h = window.innerHeight, w = window.innerWidth;
+    _v2.set(pos.x, pos.y, pos.z).project(cam);
+    if (_v2.z >= 1) return;
+    const fx = (_v2.x * 0.5 + 0.5) * w, fy = (-_v2.y * 0.5 + 0.5) * h;
+    _v2.set(pos.x, pos.y + height, pos.z).project(cam);
+    if (_v2.z >= 1) return;
+    const ty = (-_v2.y * 0.5 + 0.5) * h, px = (fy - ty) / height;
+    b[i] = fx - halfW * px; b[i + 1] = ty; b[i + 2] = fx + halfW * px; b[i + 3] = fy;
+  }
+
+  /** A reveal (centred on `s`, above it) that lies on box `n` moves to the box's nearer side. */
+  _stepClear(s, b, n) {
+    const i = n * 4, l = b[i], t = b[i + 1], r = b[i + 2], bt = b[i + 3];
+    if (r <= l) return;
+    if (s.x + REVEAL_HW * 0.9 < l || s.x - REVEAL_HW * 0.9 > r || s.y < t || s.y - REVEAL_H > bt) return;
+    s.x = s.x - l < r - s.x ? l - REVEAL_HW * 0.92 : r + REVEAL_HW * 0.92;
+  }
+
   _updateReveals() {
     const live = this._revealsLive;
     live.length = 0;
     if (this.on) {
+      this._fitHideBoxes();
       // a reveal that lands on the card is dropped; every reveal takes a SEAT, nudged
       // clear of the seats already taken (the component-chip pass seeds the list), and
       // one that cannot find a seat in 12 tries does not draw.
@@ -1774,6 +1890,11 @@ export class SightingSystem {
         if (!pos) continue;
         _v.set(pos.x ?? 0, (pos.y ?? 0) + (e.datapoint ? 1.7 : 0.75), pos.z ?? 0);
         if (!this._project(_v, _screen)) continue;
+        // she and the sighted Instrument keep their place: a chip behind either steps out to the nearer side
+        for (let b = 0; b < 2; b++) {
+          this._stepClear(_screen, this._hideBox, 0);
+          this._stepClear(_screen, this._hideBox, 1);
+        }
         // the box is centred on the anchor and sits above it: horizontal fit
         // is decided once, and only Y moves in the solve below
         if (!this._boxOnScreen(_screen.x - REVEAL_HW, _screen.y - REVEAL_H,
@@ -2061,6 +2182,7 @@ export class SightingSystem {
     this._hullMaskMat.dispose();
     this._partMaskMat.dispose();
     this._quietMaskMat.dispose();
+    this._heroMaskMat.dispose();
     this.ctx.engine?.unregisterRenderTarget?.(this._figureRT);
     this._figureRT.dispose();
     this._overlayScene.remove(this._ring);
