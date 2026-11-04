@@ -160,7 +160,10 @@ export const UBC_TUNE = {
   // (fix round 3: 0.020 -> 0.026, the wrist a little further out of the face:
   // A35's hand-to-Head-joint read 0.1035 at the level aim with the draw no
   // longer sliding back, 3.5 mm over its 0.10 floor)
-  anchorNock: true, handOut: 0.04,
+  // (W0b targeted fix 4: 0.026 -> 0.046, the fist a little further out of the arrow's vertical plane
+  // and the elbow's sideways offset off it down by as much: the forearm against the REAL arrow read
+  // 20.6-21.7 deg with the elbow 0.09 m outside that plane; now <= 19 at every graded row)
+  anchorNock: true, handOut: 0.046,
   // ...and the wrist bent back this much (radians) at full draw, so the
   // knuckles ride outside the jaw and the hooked fingers curl in to the string
   drawWristExt: 0.35,
