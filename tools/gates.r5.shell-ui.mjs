@@ -628,6 +628,57 @@ const A_OVER_BREA = {
   })()`),
 };
 
+/**
+ * R54: a transect is a chain line at every distance, not road paint. The overlay's own paper pixels, with the
+ * figure off, in every column: how thick the line is across the screen, measured.
+ */
+const A_TRANSECT_FINE = {
+  id: 'A-transect-fine', kind: 'action', lane: LANE, timeout: 150000, settle: 600,
+  title: 'A transect is at most 3 px of paper across at any distance (95th percentile, station ticks aside), and no more than two are up',
+  assert: staged(['herd'], `(async () => {
+    ${FRAMES}
+    const m = await (async () => { ${SIGHT_STAGE(true, false)} })();
+    if (!m) return { pass: null, detail: 'SKIP-R18: no herd kind stands' };
+    ${OVERLAY_DIFF}
+    const c = __CTX__, S = c.sighting, p = c.player;
+    /* a loop in front of the lens, near to far, whatever route the fixture carries */
+    const f = { x: -Math.sin(p.camYaw), z: -Math.cos(p.camYaw) }, sd = { x: f.z, z: -f.x };
+    const loop = [];
+    for (let i = 0; i < 16; i++) {
+      const a = i / 16 * 6.2832;
+      loop.push({ x: p.position.x + f.x * (24 + 18 * Math.cos(a)) + sd.x * 16 * Math.sin(a), z: p.position.z + f.z * (24 + 18 * Math.cos(a)) + sd.z * 16 * Math.sin(a) });
+    }
+    S._disposePaths();
+    m.route = loop;
+    S._walksRoute = () => true;
+    S._buildPath(m, 1);
+    for (const e of S._paths.values()) e.mat.uniforms.uFade.value = 1;
+    const count = S._paths.size;
+    S._figure.visible = false;
+    await frames(3);
+    const shot = await overlayFrame();
+    S._figure.visible = true;
+    delete S._walksRoute;
+    const { before, after, w, h } = shot;
+    const runs = [];
+    let paper = 0;
+    for (let x = 0; x < w; x += 2) {
+      let run = 0;
+      for (let y = 0; y < h; y++) {
+        const i = (y * w + x) * 4;
+        const on = Math.abs(after[i] - before[i]) > 10 && Math.min(after[i], after[i + 1], after[i + 2]) > 150;
+        if (on) { run++; paper++; } else if (run) { runs.push(run); run = 0; }
+      }
+      if (run) runs.push(run);
+    }
+    runs.sort((a, b) => a - b);
+    const q = (t) => runs.length ? runs[Math.min(runs.length - 1, Math.floor(runs.length * t))] : 0;
+    const checks = { lineDrew: paper > 400, atMostTwoUp: S._paths.size <= 2 && count <= 2, fine: q(0.95) <= 3 };
+    const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+    return { pass: failed.length === 0, detail: { failed, paperPx: paper, runs: runs.length, p50: q(0.5), p95: q(0.95), max: runs[runs.length - 1] ?? 0, paths: S._paths.size } };
+  })()`),
+};
+
 /** R61 (d), on the worst frame the shell can stage: a herd in range, one sighted, a component on it. */
 const A_SIGHT_DRAWS = {
   id: 'A-sighting-draws', kind: 'action', lane: LANE, timeout: 150000, settle: 600,
@@ -1374,6 +1425,7 @@ export const GATES = [
   A_SIGHTING,
   A_SIGHTING_HUE,
   A_OVER_BREA,
+  A_TRANSECT_FINE,
   A_SIGHT_DRAWS,
   A62,
   alias(A62, 'A62-focus-components'),
