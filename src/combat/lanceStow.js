@@ -7,7 +7,7 @@
  *                                           (`combat.js`: the bow stays on her back; R8)
  *   lanceObjects(melee, out) -> out         the held prop's scene objects (memory counts)
  *   createHeldLance(ctx, url?) -> HeldLance the held prop, loaded from a weapon GLB
- *   HeldLance.setVariant('shepherd'|'obsidian'|'counterweight') the family (LANCE_VARIANTS)
+ *   HeldLance.setVariant('shepherd'|'obsidian'|'counterweight', url?) the family (LANCE_VARIANTS)
  *
  * The stowed copy is NOT here: it is the stow kit's skinned piece on the R10
  * diagonal (`src/hero/stowkit.js`, `src/hero/carry.js`); the kit collapses it on
@@ -27,13 +27,14 @@ export const HELD_LANCE_URL = '/models/hero/kit/lance-shepherd-v0.glb';
 const DEFAULTS = { length: 1.55, grip: 0.20, grip2: 0.55 };
 /**
  * The lance family as the swing reads it (bible §5.3). The models are armory's
- * (W1 Shepherd's, W3 the other two), the numbers are melee's: `heavyTime` scales
- * the heavy's cock and recover, `knockdown` staggers what a heavy lands on.
+ * (W1 Shepherd's, W3 the other two: armory fills their `url`, or passes one to
+ * `setVariant`), the numbers are melee's: `heavyTime` scales the heavy's cock and
+ * recover, `knockdown` staggers what a heavy lands on.
  */
 export const LANCE_VARIANTS = {
   shepherd: { url: HELD_LANCE_URL, heavyTime: 1, knockdown: false },
-  obsidian: { url: '/models/armory/lance-obsidian.glb', heavyTime: 1, knockdown: false },
-  counterweight: { url: '/models/armory/lance-counter.glb', heavyTime: 1.2, knockdown: true },
+  obsidian: { url: null, heavyTime: 1, knockdown: false },
+  counterweight: { url: null, heavyTime: 1.2, knockdown: true },
 };
 
 export function lanceOut(melee) { return !!melee && !!melee.lanceInHand; }
@@ -62,12 +63,13 @@ class HeldLance {
   }
 
   /** Equip a lance of the family by id (`LANCE_VARIANTS`); resolves once it is in her hand. */
-  setVariant(id) {
+  setVariant(id, url = null) {
     const t = LANCE_VARIANTS[id];
     if (!t) return Promise.resolve(this);
     this.variant = id;
     this.tuning = t;
-    return this.setUrl(t.url);
+    const u = url || t.url;
+    return u ? this.setUrl(u) : Promise.resolve(this);
   }
 
   /** Load a lance variant; resolves once it replaces the one in her hand. */
