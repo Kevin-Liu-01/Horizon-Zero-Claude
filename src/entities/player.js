@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { decimalFields } from './anim/meleeLayer.js';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { PlayerAnimator } from './playerAnimator.js';
 import { attachRigProfile } from './anim/rigs/index.js';
@@ -1333,6 +1334,7 @@ export class Player {
     ctx.events.on('player-damage', ({ amount, from }) => this.takeDamage(amount, from));
 
     this._snapToGround();
+    decimalFields(this);   // R46: per-frame fields born as decimals (melee W1 grant)
   }
 
   /**

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ClipLibrary } from './anim/clipLibrary.js';
 import { LocomotionBlend } from './anim/locomotion.js';
-import { MeleeLayer } from './anim/meleeLayer.js';
+import { MeleeLayer, decimalFields } from './anim/meleeLayer.js';
 import { BoneSpace, RestPose, RigDebug, register } from './anim/index.js';
 
 /**
@@ -953,6 +953,12 @@ export class PlayerAnimator {
       status: 'migrated', bones: this.space.size,
       chains: this._chains.length, twists: this._twists.length,
     });
+    /* R46: the per-frame fields are born as decimals (see `decimalFields`) */
+    decimalFields(this);
+    for (let i = 0; i < this._chains.length; i++) decimalFields(this._chains[i]);
+    for (let i = 0; i < this._twists.length; i++) decimalFields(this._twists[i]);
+    for (let i = 0; i < this._locks.length; i++) decimalFields(this._locks[i]);
+    if (this.wind) decimalFields(this.wind);
   }
 
   /* --------------- Round 4: reactions, traversal, interaction ------------- */

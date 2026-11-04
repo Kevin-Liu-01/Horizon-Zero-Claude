@@ -149,6 +149,26 @@ const _hOff = new THREE.Vector3();
 const _hOffD = new THREE.Vector3();
 /** The identity, as a value (never mutated). */
 function _qi() { return _ident; }
+/**
+ * Per-frame number fields are born as decimals (R46, melee W1). A field created as
+ * `0` has the small-integer representation; its first fractional value (her first
+ * step, for most of them, since she stands through the opening) changes the object's
+ * map and throws away every optimised function that read it, in every lane, and the
+ * next seconds run in the baseline tier where each double is a HeapNumber: measured
+ * 0.76 KB/frame standing, 28 KB/frame in the first sprint. The same write also takes
+ * a field out of "never changed" tracking, for numbers and booleans.
+ */
+export function decimalFields(o) {
+  const keys = Object.keys(o);
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    const d = Object.getOwnPropertyDescriptor(o, k);
+    if (!d || !('value' in d) || !d.writable) continue;
+    const v = d.value;
+    if (typeof v === 'number') { if (Number.isFinite(v)) { o[k] = v + 0.25; o[k] = v; } } else if (typeof v === 'boolean') { o[k] = !v; o[k] = v; }
+  }
+  return o;
+}
 
 /**
  * THE GRIP FRACTION. `lance-grip-closeup.jpg`: the right hand wraps the rear
@@ -246,6 +266,8 @@ const READY = {
  * foot; `dx/dy` the pelvis offset. Read with STANCE_ENV: nothing in a windup's
  * opening, full at the contact, gone by the end of the recover.
  */
+/** The left forearm's axis off her pelvis->neck axis (a forearm is 0.05 thick, her belly 0.12 out). */
+const LEFT_FORE_CLEAR = 0.13;
 /** How much of the trunk's turn the head keeps, and how much of its lean the
  *  neck and skull take out (see `update`). */
 const HEAD_LEAD = 0.14;
@@ -282,15 +304,15 @@ const STANCE_ENV = (cu) => (
 const BEATS = [
   {
     id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.16,
-    cock: { hand: [-0.29, 1.24, -0.24], shaft: [0.38, 0.40, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.50, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
+    cock: { hand: [-0.29, 1.24, -0.24], shaft: [0.40, 0.47, 0.79], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.50, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
     contact: { hand: [-0.15, 1.13, 0.23], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: 0.02, pitch: 0.20, roll: -0.04, dz: 0.10 },
     follow: { hand: [-0.19, 1.09, 0.22], shaft: [0.24, -0.34, 0.91], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.22, py: 0.0, pitch: 0.14, roll: -0.08, dz: 0.05 },
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
-    cock: { hand: [-0.27, 1.25, 0.00], shaft: [0.60, 0.22, 0.77], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.36, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
+    cock: { hand: [-0.33, 1.28, -0.10], shaft: [0.60, 0.22, 0.77], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
     contact: { hand: [-0.21, 1.19, 0.22], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: -0.06, pitch: 0.18, roll: 0.04, dz: 0.07 },
-    follow: { hand: [-0.28, 1.03, 0.20], shaft: [-0.54, -0.22, 0.81], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.34, py: -0.24, pitch: 0.20, roll: 0.06, dz: 0.06 },
+    follow: { hand: [-0.25, 1.03, 0.20], shaft: [-0.54, -0.22, 0.81], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.40, py: -0.28, pitch: 0.20, roll: 0.06, dz: 0.06 },
   },
   {
     id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.20,
@@ -910,6 +932,8 @@ export class MeleeLayer {
       status: 'migrated', layers: this.set ? this.set.order.length : 0,
       gripFrac: GRIP_FRAC,
     });
+    decimalFields(this);
+    decimalFields(this._dbg);
   }
 
   /* ========================== clip plumbing ============================== */
@@ -3176,6 +3200,7 @@ export class MeleeLayer {
       _lh.copy(_eT).lerp(_eC, on);
       an._ikArm('l', _lh, _pole, w, null);
       an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
+      this._leftElbowOut();
       /* the knuckle line along the haft, index toward the blade */
       an._liveW(b.handL.bone, _q1);
       _b.copy(this.gripDirLL).applyQuaternion(_q1);
@@ -3191,6 +3216,38 @@ export class MeleeLayer {
     an._liveW(b.handL.bone, _q1);
     _b.copy(this.palmOffLL).applyQuaternion(_q1).add(_c);
     D.lhPalmErr = _b.distanceTo(_d);
+  }
+
+  /**
+   * A LOW TWO-HANDED GRIP MAY NOT LAY THE LEFT FOREARM ON HER BELLY (A104; Kevin's
+   * "arms crossing into her body"): when the forearm is within `LEFT_FORE_CLEAR` of
+   * the pelvis->neck axis, the upper arm rolls about shoulder->wrist so the elbow goes
+   * out, away from the axis. The wrist does not move, so the grip stays on the haft.
+   */
+  _leftElbowOut() {
+    const an = this.an, b = an.b;
+    an._charOf(b.loArmL.bone, _lbE);
+    an._charOf(b.handL.bone, _lbH);
+    an._charOf(b.pelvis.bone, _lbA);
+    an._charOf(b.neck1.bone, _lbB);
+    segSegN(_lbE, _lbH, _lbA, _lbB); const g = _sgNum[0];
+    if (!(g < LEFT_FORE_CLEAR)) return;
+    an._charOf(b.upArmL.bone, _lbS);
+    _lbU.subVectors(_lbH, _lbS);
+    const ul = _lbU.length();
+    if (ul < 1e-4) return;
+    _lbU.multiplyScalar(1 / ul);
+    /* the elbow's radius about shoulder->wrist, and which way round is away from the axis */
+    _lbF.subVectors(_lbE, _lbS);
+    _lbF.addScaledVector(_lbU, -_lbF.dot(_lbU));
+    const r = _lbF.length();
+    if (r < 1e-3) return;
+    _lbV.crossVectors(_lbU, _lbF).multiplyScalar(1 / r);   // the elbow's tangent
+    const away = _lbV.x * (_ss.x - _segNear.x) + _lbV.y * (_ss.y - _segNear.y) + _lbV.z * (_ss.z - _segNear.z);
+    const sign = away >= 0 ? 1 : -1;
+    const ang = Math.min(0.9, (LEFT_FORE_CLEAR - g) / r * 1.6) * sign;
+    _eQ.setFromAxisAngle(_lbU, ang);
+    an._rotQL(b.upArmL, _eQ);
   }
 
   /**

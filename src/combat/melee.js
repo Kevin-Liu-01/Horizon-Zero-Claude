@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createHeldLance } from './lanceStow.js';
+import { decimalFields } from '../entities/anim/meleeLayer.js';
 import { MELEE } from './weapons.js';
 
 /**
@@ -608,6 +609,9 @@ export class Melee {
     this._sneakRegistered = !!ctx.interactables;
 
     ctx.events.on('player-died', () => this._cancel());
+    decimalFields(this);
+    decimalFields(this._pose);
+    decimalFields(this._driveBuf);
   }
 
   /* ------------------------------- plumbing ------------------------------- */
