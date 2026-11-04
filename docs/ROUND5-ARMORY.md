@@ -50,4 +50,13 @@ buildSpear({ propScale = 0.8 })                  // bow.js; until melee's lanceS
 
 Recipes: `panBindTriangles()` (brea.mjs, kit-v0) is unchanged and still returns the as-cut MCO pieces, so `brea.glb`'s hide bit needs no rebuild. `panBase(opt)` returns `{ doc, trim, parts, joints, body, bodyPart, clothField, skinOf, W, H, TRIM_H, J, drape }`; `clothField` no longer contains the body (straps must lie on the cloth). Slots renamed: `yoke` + `smockbody` → `smock`, new `underyoke`, `binds`, `slider`, `tie`, `tab`.
 
+```
+romFit(parts, base, { capAt, target, maxPush, ... }) -> log     // armor/lib/romfit.mjs; last step of every outfit recipe, after the atlas is laid out
+PAN_FIT                                                          // outfit-pan-1.mjs: the Pan cut's limits (the yoke takes little room)
+bow.getGripWorld(out: THREE.Vector3) -> out                      // bow.js: the stave's grip, world; published for hero-body's solve
+player.hero.kit.quiverHold                                       // override of how much of the pelvis's turn the strap takes out (gates)
+```
+
+`armor/rom-poses.json` is the fit's input: 53 poses (idle, 12 sprint frames with each weapon, jog, crouch, dodge, jump, three draws, melee). Regenerate with `armor/rom-dump.gates.mjs` + `armor/rom-dump.mjs` when the clips change; crouch, dodge and jump relax weights only, they get no room.
+
 GATE_TABLE_PLACEHOLDER
