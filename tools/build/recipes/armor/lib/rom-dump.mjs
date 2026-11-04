@@ -11,5 +11,5 @@ const out = {
   scale: +D.scale.toFixed(5),
   poses: D.poses.map((p) => ({ tag: p.tag, rows: p.rows.map((m) => [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10], m[12], m[13], m[14]].map(rnd)) })),
 };
-writeFileSync(new URL('./rom-poses.json', import.meta.url), JSON.stringify(out));
+writeFileSync(new URL('../rom-poses.json', import.meta.url), JSON.stringify(out));
 console.log(`${D.poses.length} poses`);

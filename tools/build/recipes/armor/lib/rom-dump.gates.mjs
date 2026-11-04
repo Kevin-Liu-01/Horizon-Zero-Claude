@@ -1,12 +1,12 @@
 /**
  * CALIMA — the pose dump behind armor/rom-poses.json (armory W1; a tool, not a gate of the block).
  *
- *   node tools/gates.mjs --port <lane port> --only P-dump-poses --extra tools/build/recipes/armor/rom-dump.gates.mjs
- *   node tools/build/recipes/armor/rom-dump.mjs <that run's cwd>
+ *   node tools/gates.mjs --port <lane port> --only P-dump-poses --extra tools/build/recipes/armor/lib/rom-dump.gates.mjs
+ *   node tools/build/recipes/armor/lib/rom-dump.mjs <that run's cwd>
  *
  * Re-dump when the clips or the rig change; the outfit recipes fit themselves to the file (lib/romfit.mjs).
  */
-import { placed } from '../../../gate-places.mjs';
+import { placed } from '../../../../gate-places.mjs';
 const PRE = `
   const C = __CTX__, p = C.player, an = p.animator, cmb = C.combat, E = C.engine, H = p.hero;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
