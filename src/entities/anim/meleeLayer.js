@@ -311,8 +311,8 @@ const BEATS = [
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
     cock: { hand: [-0.33, 1.28, -0.10], shaft: [0.60, 0.22, 0.77], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
-    contact: { hand: [-0.21, 1.19, 0.22], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: -0.06, pitch: 0.18, roll: 0.04, dz: 0.07 },
-    follow: { hand: [-0.25, 1.03, 0.20], shaft: [-0.54, -0.22, 0.81], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.40, py: -0.28, pitch: 0.20, roll: 0.06, dz: 0.06 },
+    contact: { hand: [-0.21, 1.19, 0.22], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.18, py: -0.08, pitch: 0.18, roll: 0.04, dz: 0.07 },
+    follow: { hand: [-0.23, 1.05, 0.22], shaft: [-0.46, -0.22, 0.86], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.40, py: -0.28, pitch: 0.20, roll: 0.06, dz: 0.06 },
   },
   {
     id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.20,
