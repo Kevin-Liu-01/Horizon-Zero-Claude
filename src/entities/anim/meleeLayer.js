@@ -269,7 +269,7 @@ const READY = {
  * opening, full at the contact, gone by the end of the recover.
  */
 /** The left forearm's axis off her pelvis->neck axis (a forearm is 0.05 thick, her belly 0.12 out). */
-const LEFT_FORE_CLEAR = 0.15;
+const LEFT_FORE_CLEAR = 0.13;
 /** How much of the trunk's turn the head keeps, and how much of its lean the
  *  neck and skull take out (see `update`). */
 const HEAD_LEAD = 0.14;
@@ -312,9 +312,9 @@ const BEATS = [
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
-    cock: { hand: [-0.35, 1.30, -0.13], shaft: [0.60, 0.22, 0.77], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
+    cock: { hand: [-0.35, 1.30, -0.09], shaft: [0.60, 0.22, 0.77], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.40, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
     contact: { hand: [-0.21, 1.19, 0.22], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.18, py: -0.08, pitch: 0.18, roll: 0.04, dz: 0.07 },
-    follow: { hand: [-0.23, 1.05, 0.22], shaft: [-0.46, -0.22, 0.86], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.40, py: -0.28, pitch: 0.20, roll: 0.06, dz: 0.06 },
+    follow: { hand: [-0.23, 1.01, 0.22], shaft: [-0.46, -0.22, 0.86], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.40, py: -0.28, pitch: 0.20, roll: 0.06, dz: 0.06 },
   },
   {
     id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.20,
@@ -3201,7 +3201,7 @@ export class MeleeLayer {
       _lh.copy(_eT).lerp(_eC, on);
       an._ikArm('l', _lh, _pole, w, null);
       an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
-      this._leftElbowOut();
+      if (pass < 2) this._leftElbowOut();   // turns the pole: the next pass solves with it, and the palm is re-seated
       /* the knuckle line along the haft, index toward the blade */
       an._liveW(b.handL.bone, _q1);
       _b.copy(this.gripDirLL).applyQuaternion(_q1);
@@ -3222,8 +3222,9 @@ export class MeleeLayer {
   /**
    * A LOW TWO-HANDED GRIP MAY NOT LAY THE LEFT FOREARM ON HER BELLY (A104; Kevin's
    * "arms crossing into her body"): when the forearm is within `LEFT_FORE_CLEAR` of
-   * the pelvis->neck axis, the upper arm rolls about shoulder->wrist so the elbow goes
-   * out, away from the axis. The wrist does not move, so the grip stays on the haft.
+   * the pelvis->neck axis, the elbow pole turns about shoulder->wrist, away from the
+   * axis, for the next pass of the solve. (Rolling the solved arm instead left the palm
+   * off the haft: the hand turned with it, and A101 read 0.08 m.)
    */
   _leftElbowOut() {
     const an = this.an, b = an.b;
@@ -3247,8 +3248,7 @@ export class MeleeLayer {
     const away = _lbV.x * (_ss.x - _segNear.x) + _lbV.y * (_ss.y - _segNear.y) + _lbV.z * (_ss.z - _segNear.z);
     const sign = away >= 0 ? 1 : -1;
     const ang = Math.min(0.9, (LEFT_FORE_CLEAR - g) / r * 1.6) * sign;
-    _eQ.setFromAxisAngle(_lbU, ang);
-    an._rotQL(b.upArmL, _eQ);
+    _pole.applyAxisAngle(_lbU, ang);
   }
 
   /**
