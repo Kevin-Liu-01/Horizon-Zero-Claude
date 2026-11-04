@@ -872,7 +872,7 @@ export class PlayerAnimator {
     this._armCapN = 0; this._afEng = false; this._afLimK = 1; this._mlHush = false; this._wDA = 0; this._afFull = false; this._tW = 0;
     this._aimHold = false; this._atW = 0; this._bcS = 0; this._afTail = 0; this._afViol = 0; this._afInHd = false;
     this._knW0 = 0; this._caT = 0; this._caLift = 0; this._caY = 0; this._caYOk = false; this._qbF = 1; this._hcHit = 0; this._hcHitLast = 0;
-    this._wrRef = new THREE.Vector3(); this._wrRefA = new THREE.Vector3(); this._wrRefOk = false;
+    this._wrRef = new THREE.Vector3(); this._wrRefA = new THREE.Vector3(); this._wrRefOk = false; this._s1P = new THREE.Vector3();
     this._clipWr = new THREE.Vector3(); this._clipEl = new THREE.Vector3();   // (`armFlow.lowerByTarget`)
     this._elbC = new THREE.Vector3(); this._wrC = new THREE.Vector3(); this._armCapC = false;   // (the arm in the chest's frame)
     // ...and crouched, the rest hold's and the hip quiver's live places (`armFlow.crouchBody`)
@@ -4952,9 +4952,17 @@ export class PlayerAnimator {
        * bars (`armStepChar` in character space, `armStep` against the shoulder). */
       const s = _afH.subVectors(_afS, this._shP).length();
       const limC = (AF.armStepChar ?? 9) * (this._afLimK || 1) * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
-      const be = s > 1e-5 ? clamp((limC - lim + s) / (2 * s), 0, 1) : 1;
-      lim = Math.max(lim - (1 - be) * s, 0.2 * lim);
-      _afH.multiplyScalar(be);
+      /* (...and on a step her whole body moves more than 0.03 m, a clip's own crossfade under
+       * a strafe's cancel, about the body itself, spine_01, and the shoulder: the arm against
+       * her, not against a character origin that has just been left behind) */
+      if (b.spine1 && this._charOf(b.spine1.bone, _afC).sub(this._s1P).lengthSq() > 0.0009) {
+        lim = Math.max(Math.min(limC, lim - _afC.distanceTo(_afH)), 0.2 * lim);
+        _afH.copy(_afC);
+      } else {
+        const be = s > 1e-5 ? clamp((limC - lim + s) / (2 * s), 0, 1) : 1;
+        lim = Math.max(lim - (1 - be) * s, 0.2 * lim);
+        _afH.multiplyScalar(be);
+      }
       _afJ.copy(this._elbP).add(_afH);
       _afK.copy(this._wrP).add(_afH);
     }
@@ -5140,6 +5148,7 @@ export class PlayerAnimator {
     this._charOf(b.upArmR.bone, this._shP);
     this._charOf(b.loArmR.bone, this._elbP);
     this._charOf(b.handR.bone, this._wrP);
+    if (b.spine1) this._charOf(b.spine1.bone, this._s1P);
     // ...and in the chest's frame (spine_03, char), for a roll (see `_armRate`)
     if (b.spine3) {
       this._liveW(b.spine3.bone, _afQ); _afQ.invert();
