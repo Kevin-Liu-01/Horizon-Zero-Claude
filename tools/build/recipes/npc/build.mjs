@@ -9,7 +9,7 @@
  *   atlas-pan.glb      the Pan Houses' faction atlas (1024² base, 512² normal + ORM)
  *   atlas-holds.glb    the Crescent Holds' faction atlas
  *   atlas-hair.glb     the shared hair + wrap atlas (512² x 3)
- *   clips.glb          the clip pack, on the UBC skeleton (clips.mjs)
+ *   npc-clips.glb      the clip pack, on the UBC skeleton (clips.mjs)
  *
  * Sources (CC0): Quaternius Universal Base Characters + Modular Character Outfits [Standard], Universal
  * Animation Library 1 + 2. Everything else is procedural. Deterministic: no clocks, no Math.random.
@@ -23,7 +23,7 @@ import { buildClipPack } from './lib/clips.mjs';
 
 export const LANE = 'settlements';
 const DIR = 'public/models/npc';
-export const OUTPUTS = [...ARCHETYPES.map((a) => `${DIR}/${a.id}.glb`), `${DIR}/atlas-pan.glb`, `${DIR}/atlas-holds.glb`, `${DIR}/atlas-hair.glb`, `${DIR}/clips.glb`];
+export const OUTPUTS = [...ARCHETYPES.map((a) => `${DIR}/${a.id}.glb`), `${DIR}/atlas-pan.glb`, `${DIR}/atlas-holds.glb`, `${DIR}/atlas-hair.glb`, `${DIR}/npc-clips.glb`];
 const RECIPE = 'tools/build/recipes/npc/build.mjs';
 
 export async function build({ out = ROOT } = {}) {
@@ -35,7 +35,7 @@ export async function build({ out = ROOT } = {}) {
   if (want('atlas-pan')) res['atlas-pan'] = await buildFactionAtlas(path.join(out, DIR, 'atlas-pan.glb'), { faction: 'pan', family: 'Peasant', provenance: prov(['mco-fantasy-standard', 'npc-generated']) });
   if (want('atlas-holds')) res['atlas-holds'] = await buildFactionAtlas(path.join(out, DIR, 'atlas-holds.glb'), { faction: 'holds', family: 'Ranger', provenance: prov(['mco-fantasy-standard', 'npc-generated']) });
   if (want('atlas-hair')) res['atlas-hair'] = await buildHairAtlas(path.join(out, DIR, 'atlas-hair.glb'), { provenance: prov(['npc-generated']) });
-  if (want('clips')) res.clips = await buildClipPack(path.join(out, DIR, 'clips.glb'), { provenance: prov(['ual1-standard', 'ual2-standard']) });
+  if (want('clips')) res.clips = await buildClipPack(path.join(out, DIR, 'npc-clips.glb'), { provenance: prov(['ual1-standard', 'ual2-standard']) });
   for (const a of ARCHETYPES) {
     if (!want(a.id)) continue;
     const t0 = Date.now();

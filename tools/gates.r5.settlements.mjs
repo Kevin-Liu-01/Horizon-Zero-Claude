@@ -16,7 +16,6 @@
  *
  * Settlement-kit rows (A-settlement-*, A61, V35, V40, V45, A95, A97b, A99, A-lookout-call) stay PENDING: W2.
  */
-import { placed, placedSetup, PLACES } from './gate-places.mjs';
 
 const REFS = 'reference/r5/gates-perf/portrait-bokeh.jpg';
 const IDS = ['salt-raker', 'guild-matron', 'salt-porter', 'boat-caulker', 'lantern-keeper', 'pit-farmer', 'tiller-follower', 'cochineal-picker', 'tube-smith'];
@@ -82,21 +81,73 @@ const SIDE = (archetype) => `
       p.hero?.kit?.setHidden(3);
       if (E) E.timeScale = 0;
       await frame();
+      const an = p.animator;
 `;
 
-/** Three views at 2 m, both of them in frame, from the front, 3/4 and profile. */
+/**
+ * Three views at 2 m: for each, the two of them in frame (same lens, same distance), and below it each head alone
+ * at the same magnification, Brea's on the left: what the bar compares is skin, eye, hair and cloth, so it has to be seen.
+ */
 const SIDE_SHEET = (archetype, name) => `(async () => {${READY}${SHEET}${SIDE(archetype)}
-      const W = 1600, H = 900, PW = Math.floor(W / 3);
+      const W = 1600, H = 900, PW = Math.floor(W / 3), H1 = 520, H2 = H - H1;
       const c = overlay(W, H), g = c.getContext('2d');
-      const midX = (p.position.x + who.group.position.x) / 2, midZ = (p.position.z + who.group.position.z) / 2, top = Math.max(p.position.y, who.group.position.y);
-      const cy = top + 1.28;
-      [['FRONT', 0], ['3/4', Math.PI / 5], ['PROFILE', Math.PI / 2]].forEach(([nm, yaw], i) => {
+      const midX = (p.position.x + who.group.position.x) / 2, midZ = (p.position.z + who.group.position.z) / 2, y0 = Math.max(p.position.y, who.group.position.y);
+      const heads = [an.b.head.bone.getWorldPosition(new T3()), who.head.getWorldPosition(new T3())];
+      const tall = heads[1].y - who.group.position.y;
+      [['FRONT', 0], ['3/4', Math.PI / 5], ['PROFILE', Math.PI / 2 * 0.86]].forEach(([nm, yaw], i) => {
         const dx = Math.sin(face + yaw), dz = Math.cos(face + yaw);
-        const img = S.liveView(C, [midX + dx * 2.15, cy + 0.02, midZ + dz * 2.15], [midX, cy, midZ], { width: Math.round(PW * 1.25), height: Math.round(H * 1.25), fov: 32 });
-        paste(g, img, i * PW, 0, PW, H);
-        label(g, nm, i * PW + 14, 28);
+        const cy = y0 + 0.95;
+        const img = S.liveView(C, [midX + dx * 2.0, cy + 0.08, midZ + dz * 2.0], [midX, cy, midZ], { width: Math.round(PW * 1.25), height: Math.round(H1 * 1.25), fov: 52 });
+        paste(g, img, i * PW, 0, PW, H1);
+        label(g, nm + ' · 2 m', i * PW + 14, 28);
+        heads.forEach((h, k) => {
+          const cz = h.y + 0.1;
+          const v = S.liveView(C, [h.x + dx * 2.0, cz + 0.02, h.z + dz * 2.0], [h.x, cz, h.z], { width: Math.round(PW / 2 * 1.25), height: Math.round(H2 * 1.25), fov: 11.5 });
+          paste(g, v, i * PW + k * PW / 2, H1, PW / 2, H2);
+        });
+        label(g, 'BREA', i * PW + 14, H1 + 24);
+        label(g, ${JSON.stringify(name)}, i * PW + PW / 2 + 14, H1 + 24);
       });
-      label(g, 'BREA (her left) + ' + ${JSON.stringify(name)} + ' (her right) · 11 h · 2 m', 14, 56);
+      label(g, 'BREA (her left) + ' + ${JSON.stringify(name)} + ' (her right) · 11 h · same light', 14, 56);
+    })()`;
+
+/** Every clip an archetype plays, in the real scene, its props as they are played: the poses the judge and the builder read. */
+const CLIP_SHEET = (ids) => `(async () => {${READY}${SHEET}
+      PP.autoStage = false;
+      PP.clearStage();
+      const p = C.player, env = C.environment;
+      C.input.keys.clear(); C.input.mouse.buttons = 0;
+      const pl = PP.stagePlace || PP.findStage();
+      p.position.set(pl.x + 30, p.position.y, pl.z + 30); p._snapToGround?.();
+      env.timeFrozen = true; env.setTime(10.5); env.setWeather('clear', 0);
+      const sun = env.sunDir, face = Math.atan2(sun.x, sun.z) - 30 * Math.PI / 180;
+      const fw = [Math.sin(face), Math.cos(face)], rt = [Math.cos(face), -Math.sin(face)];
+      const ids = ${JSON.stringify(ids)};
+      const c = overlay(1600, 900), g = c.getContext('2d');
+      const rows = ids.length, RH = Math.floor(900 / rows);
+      for (let r = 0; r < rows; r++) {
+        const who = await PP.spawn(ids[r], { x: pl.x, z: pl.z, yaw: face, seed: 3 });
+        PP.tierAt(who, 0);
+        const W = who.spec.clips.walk;
+        const list = [...who.spec.clips.idle, W.clip];
+        const CW = Math.floor(1600 / 5);
+        for (let k = 0; k < Math.min(5, list.length + 1); k++) {
+          const nm = k < list.length ? list[k] : list[list.length - 1];
+          const isWalk = k >= list.length - 1;
+          who.showProps(PP._propsFor(who, isWalk ? 'walk' : nm));
+          who.play(nm, { fade: 0, offset: k === list.length ? 0.25 : 0 });
+          who.lean = isWalk ? (W.lean || 0) : 0; who.leanK = 1;
+          who.swing = isWalk ? (W.swing ?? 1) : 1;
+          await simWait(k === list.length ? 0.62 : 0.95);
+          who.root.updateWorldMatrix(true, true);
+          const y = who.group.position.y + 0.92;
+          const img = S.liveView(C, [pl.x + fw[0] * 3.2 + rt[0] * 1.1, y + 0.2, pl.z + fw[1] * 3.2 + rt[1] * 1.1], [pl.x, y, pl.z], { width: Math.round(CW * 1.25), height: Math.round(RH * 1.25), fov: 34 });
+          paste(g, img, k * CW, r * RH, CW, RH);
+          label(g, nm, k * CW + 12, r * RH + 22);
+        }
+        PP.despawn(who);
+        await frames(2);
+      }
     })()`;
 
 const VS_CRITERIA = 'R56, R54. Brea and this near-tier NPC side by side, front, 3/4 and profile at 2 m, same light. Pass: an independent judge cannot tell from detail alone which is the hero: same skin, eye, hair and cloth treatment, same outfit depth. FAIL if the NPC reads a tier below her (flat skin, stock face, single-mesh clothes, no secondary motion). A frame that passes the words and looks cheap is a major finding.';
@@ -151,8 +202,7 @@ export const GATES = [
       // Brea, walking, as the yardstick: a chain tip's detrended travel per second against the head
       const an = p.animator;
       const tipOf = (b) => { let q = b; while (q.children.find((c) => c.isBone && c.name.startsWith('dyn_'))) q = q.children.find((c) => c.isBone && c.name.startsWith('dyn_')); return q; };
-      const heroTip = an?.chainOf?.('hair');
-      const heroBone = heroTip ? (heroTip.links ? tipOf(heroTip.links[0].bone) : (heroTip.bone ? tipOf(heroTip.bone) : null)) : null;
+      const heroBone = (() => { let q = null; p.model.traverse((o) => { if (o.isBone && !q && /^dyn_hairKnotTail_01/.test(o.name)) q = o; }); return q ? tipOf(q) : null; })();
       let heroTravel = null;
       if (heroBone) {
         C.input.keys.add('KeyW');
@@ -204,23 +254,37 @@ export const GATES = [
         const jump = (() => {
           who.root.updateWorldMatrix(true, true);
           const q = new T3();
-          const slice = 0.1, map = [{}, {}];
+          const slice = 0.05;
           const camR = new T3(Math.cos(who.yaw), 0, -Math.sin(who.yaw));
-          [who.tierMeshes[0], who.tierMeshes[1]].forEach((list, ti) => {
+          const camF = new T3(Math.sin(who.yaw), 0, Math.cos(who.yaw));
+          const extents = (list, axis) => {
+            const map = {};
             for (const m of list) {
-              const n = m.geometry.attributes.position.count;
-              const stride = Math.max(1, Math.floor(n / 6000));
-              for (let i = 0; i < n; i += stride) {
-                m.getVertexPosition(i, q); m.localToWorld(q);
-                const k = Math.round((q.y - who.group.position.y) / slice);
-                const s = q.x * camR.x + q.z * camR.z;
-                const e = map[ti][k] || (map[ti][k] = [1e9, -1e9]);
-                e[0] = Math.min(e[0], s); e[1] = Math.max(e[1], s);
+              const pos = m.geometry.attributes.position, n = pos.count, idx = m.geometry.index;
+              const S_ = new Float32Array(n), Y_ = new Float32Array(n);
+              for (let i = 0; i < n; i++) { m.getVertexPosition(i, q); m.localToWorld(q); S_[i] = q.x * axis.x + q.z * axis.z; Y_[i] = q.y - who.group.position.y; }
+              const tri = idx ? idx.count : n;
+              for (let t = 0; t + 2 < tri; t += 3) {
+                const a = idx ? idx.getX(t) : t, b = idx ? idx.getX(t + 1) : t + 1, c = idx ? idx.getX(t + 2) : t + 2;
+                const y0 = Math.min(Y_[a], Y_[b], Y_[c]), y1 = Math.max(Y_[a], Y_[b], Y_[c]);
+                for (let k = Math.ceil(y0 / slice); k <= Math.floor(y1 / slice); k++) {
+                  const yy = k * slice;
+                  const e = map[k] || (map[k] = [1e9, -1e9]);
+                  for (let g = 0; g < 3; g++) {
+                    const u = g === 0 ? a : g === 1 ? b : c, v = g === 0 ? b : g === 1 ? c : a;
+                    const du = Y_[u] - yy, dv = Y_[v] - yy;
+                    if ((du <= 0 && dv >= 0) || (du >= 0 && dv <= 0)) { if (Math.abs(du - dv) < 1e-9) continue; const f = du / (du - dv), xx = S_[u] + (S_[v] - S_[u]) * f; e[0] = Math.min(e[0], xx); e[1] = Math.max(e[1], xx); }
+                  }
+                }
               }
             }
-          });
+            return map;
+          };
           let mx = 0;
-          for (const k in map[0]) { const a = map[0][k], b = map[1][k]; if (!b) continue; mx = Math.max(mx, Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])); }
+          for (const axis of [camR, camF]) {
+            const A = extents(who.tierMeshes[0], axis), B = extents(who.tierMeshes[1], axis);
+            for (const k in A) { const a = A[k], b = B[k]; if (!b) continue; mx = Math.max(mx, Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])); }
+          }
           return +mx.toFixed(4);
         })();
         // a tier change, watched: both tiers are on through the fade, on complementary dither, and it ends clean
@@ -228,7 +292,7 @@ export const GATES = [
         await frame();
         const during = who.info().draws;
         const fadeMat = who.meshes.Outfit_L1.material;
-        const fadeU = fadeMat.userData.npcFade?.value;
+        const fadeU = PP.bank.fadeU.get(fadeMat)?.value;
         await simWait(0.5);
         const after = who.info();
         PP.tierAt(who, null);
@@ -457,7 +521,9 @@ export const GATES = [
     assert: `(async () => {${READY}
       const p = C.player, pl = PP.stagePlace;
       C.input.keys.clear(); C.input.mouse.buttons = 0;
-      p.position.set(pl.x, p.position.y, pl.z); p._snapToGround?.();
+      // from the edge, the whole group in frame: the worst case for this owner
+      p.position.set(pl.x, p.position.y, pl.z + 13); p._snapToGround?.();
+      p.camYaw = 0; p.camPitch = 0.02;
       if (PP.list.length !== 10) return { pass: false, detail: 'expected the group of 10, got ' + PP.list.length };
       await simWait(1.5);
       const R = E.renderer;
@@ -520,14 +586,28 @@ export const GATES = [
       if (E) E.timeScale = 0;
       await frame();
       const c = overlay(1600, 900), g = c.getContext('2d');
-      const mx = p.position.x - rt[0] * 4.3, mz = p.position.z - rt[1] * 4.3, y = p.position.y + 0.95;
-      const front = S.liveView(C, [mx + fw[0] * 9.2, y + 0.1, mz + fw[1] * 9.2], [mx, y, mz], { width: 2000, height: 562, fov: 13 });
-      paste(g, front, 0, 0, 1600, 450);
-      const hd = S.liveView(C, [mx + fw[0] * 9.2, y + 0.75, mz + fw[1] * 9.2], [mx, y + 0.72, mz], { width: 2000, height: 562, fov: 6.2 });
-      paste(g, hd, 0, 450, 1600, 450);
+      const mx = p.position.x - rt[0] * 3.87, mz = p.position.z - rt[1] * 3.87, y = p.position.y;
+      const front = S.liveView(C, [mx + fw[0] * 9.2, y + 1.0, mz + fw[1] * 9.2], [mx, y + 0.95, mz], { width: 2000, height: 700, fov: 15 });
+      paste(g, front, 0, 0, 1600, 560);
+      const hd = S.liveView(C, [mx + fw[0] * 9.2, y + 1.62, mz + fw[1] * 9.2], [mx, y + 1.5, mz], { width: 2000, height: 425, fov: 5.6 });
+      paste(g, hd, 0, 560, 1600, 340);
       label(g, 'BREA, then ARCHETYPES 1-9, left to right · 11 h · 9 m lens', 14, 28);
     })()`,
     criteria: VS_CRITERIA,
+  },
+  {
+    id: 'V-npc-clips-pan', kind: 'visual', lane: 'settlements', settle: 700, timeout: 180000,
+    title: 'Each Pan archetype in each of its clips, in the real scene, its props as they are played',
+    reference: 'reference/r5/gates-perf/conversation.jpg',
+    setup: CLIP_SHEET(IDS.slice(0, 5)),
+    criteria: 'Bible §6.3, Kevin\'s body bars on any character: arms beside the body, never through it; a tool held in the hand, never floating; no T-pose; the clip reads as the work it names.',
+  },
+  {
+    id: 'V-npc-clips-holds', kind: 'visual', lane: 'settlements', settle: 700, timeout: 180000,
+    title: 'Each Holds archetype in each of its clips, in the real scene, its props as they are played',
+    reference: 'reference/r5/gates-perf/conversation.jpg',
+    setup: CLIP_SHEET(IDS.slice(5)),
+    criteria: 'Bible §6.3, Kevin\'s body bars on any character: arms beside the body, never through it; a tool held in the hand, never floating; no T-pose; the clip reads as the work it names.',
   },
   {
     id: 'V41-npc-closeup', kind: 'visual', lane: 'settlements', settle: 700, timeout: 120000,

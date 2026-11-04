@@ -54,10 +54,15 @@ export class PeopleSystem {
     this._starting = false;
     this.windFallback = { x: -3.9, z: 3.9, gust: 0.35, flutter: 0.32 };
     this._forced = new Map();
+    // the fetches start with the camp, so the group stands before the game's first frame on any box that can run it
+    if (this.autoStage && ctx.terrain) {
+      this._starting = true;
+      this.stage().catch((e) => console.warn('[people] staging failed', e));
+    }
   }
 
   /** The flattest clear patch in a ring around REST_SITE: neutral ground, nothing Saltrow or Ninewalls owns. */
-  findStage({ r0 = 22, r1 = 60, radius = 9 } = {}) {
+  findStage({ r0 = REST_SITE.r + 12, r1 = REST_SITE.r + 60, radius = 9 } = {}) {
     const T = this.ctx.terrain;
     const cx = REST_SITE.x, cz = REST_SITE.z;
     let best = null;
@@ -80,7 +85,10 @@ export class PeopleSystem {
             if (Cl.resolveCapsule(_probe, 1.1, 1.7, { passes: 1, filter: (c) => c.blocking })?.hit) blocked++;
           }
         }
-        const score = (hi - lo) + blocked * 1.5 + r * 0.002;
+        // never in the sea, whatever island this is
+        const sea = this.ctx.water?.seaLevel ?? T.seaLevel;
+        const wet = sea != null && lo < sea + 0.3 ? 20 : 0;
+        const score = (hi - lo) + blocked * 1.5 + wet + r * 0.002;
         if (!best || score < best.score) best = { x, z, r: radius, y: T.getHeight(x, z), score, spread: hi - lo };
       }
     }
@@ -142,32 +150,32 @@ export class PeopleSystem {
   }
 
   _startScript(p) {
-    const clips = p.spec.clips?.idle || ['Idle_Loop'];
+    const clips = p.spec.clips?.stage || p.spec.clips?.idle || ['Idle_Loop'];
     p.scriptI = p.seed % clips.length;
     this._nextBeat(p);
   }
 
   _nextBeat(p) {
-    const clips = p.spec.clips?.idle || ['Idle_Loop'];
+    const clips = p.spec.clips?.stage || p.spec.clips?.idle || ['Idle_Loop'];
     const name = clips[p.scriptI % clips.length];
     p.scriptI++;
     p.stopWalk();
     const dur = p.play(name, { offset: ((p.seed * 0.137) % 1), fade: 0.4 }) || 2.5;
-    p.showProps(p.spec.clips?.carry || /Harvest|Chopping|Fixing|Lantern/.test(name) ? this._propsFor(p, name) : null);
+    p.showProps(this._propsFor(p, name));
     p._beatEnd = Math.max(6, Math.ceil(7 / dur) * dur);
     p._beatT = 0;
     p.lean = 0;
     p._beatKind = 'idle';
   }
 
+  /** What a person has out for a clip: a tool in the hand for the work it is for, otherwise stowed. `name` 'walk' = walking. */
   _propsFor(p, name) {
-    const has = p.props;
+    const has = p.props, carry = p.spec.clips?.carry;
+    const work = /Harvest|Chopping|Fixing|Push/.test(name);
     const list = [];
-    if (has.prop_hand) {
-      if (/Harvest|Chopping|Fixing|Push/.test(name) || p.spec.clips?.carry === 'cane') list.push('prop_hand');
-    }
-    if (has.prop_back && !list.includes('prop_hand')) list.push('prop_back');
-    if (has.prop_hip && !list.includes('prop_hand')) list.push('prop_hip');
+    if (has.prop_hand && (carry === 'cane' ? name === 'walk' : work)) list.push('prop_hand');
+    if (has.prop_back && !(carry === 'rake' && work)) list.push('prop_back');
+    if (has.prop_hip && !work) list.push('prop_hip');
     if (has.prop_shoulder) list.push('prop_shoulder');
     if (has.prop_lamp && /Lantern/.test(name)) list.push('prop_lamp');
     return list;
@@ -192,11 +200,6 @@ export class PeopleSystem {
   tierAt(p, tier) { if (tier === null) this._forced.delete(p); else this._forced.set(p, tier); }
 
   update(dt, t) {
-    if (this.autoStage && !this._starting && this.ctx.player && this.ctx.terrain) {
-      this._starting = true;
-      // deferred: boot is not held up, and the group stands a beat after the game starts
-      this.stage().catch((e) => console.warn('[people] staging failed', e));
-    }
     const list = this.order;
     const n = list.length;
     if (!n) return;

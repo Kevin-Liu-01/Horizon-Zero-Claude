@@ -5,7 +5,7 @@ import { disposeObjectTree } from '../../../core/assets.js';
  * CALIMA · the NPC bank (settlements; R56; plan §4.1, §4.4, gates A-npc-atlas-resident, A-npc-dispose).
  *
  * What people share, loaded on demand, reference counted, disposed at zero:
- *   the clip pack             public/models/npc/clips.glb (kept while the system lives)
+ *   the clip pack             public/models/npc/npc-clips.glb (kept while the system lives)
  *   an archetype              public/models/npc/<id>.glb  (geometry for every tier + its own skin maps)
  *   a faction atlas           public/models/npc/atlas-<faction>.glb (<= 4 resident)
  *   the hair + wrap atlas     public/models/npc/atlas-hair.glb
@@ -49,6 +49,9 @@ export class NpcBank {
     this.clipPromise = null;
     /** Every live material (base + fade pool), for the fill's once-per-tick write. */
     this.liveMats = new Set();
+    /** base material -> its fade pool; any material -> its fade uniform (userData is JSON-cloned by Material.copy: not there). */
+    this.pools = new Map();
+    this.fadeU = new WeakMap();
     this.casterMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false });
     this.casterMat.name = 'npc-caster';
     this._fillT = 0;
@@ -60,8 +63,7 @@ export class NpcBank {
   /** The one patched program + a fade uniform; registered with the sky's cascades and fog. */
   _own(mat) {
     const fadeU = { value: 1 };
-    mat.userData.npcFade = fadeU;
-    mat.userData.npcPool = null;
+    this.fadeU.set(mat, fadeU);
     mat.side = THREE.FrontSide;
     patch(mat, fadeU);
     this.ctx.environment?.registerMaterial?.(mat);
@@ -72,16 +74,16 @@ export class NpcBank {
 
   /** The base material at fade `level` (1..FADE_LEVELS-1, `dir` 1 fading in, -1 fading out). */
   fadeOf(base, level, dir) {
-    const pool = base.userData.npcPool || (base.userData.npcPool = new Array(FADE_LEVELS * 2).fill(null));
+    let pool = this.pools.get(base);
+    if (!pool) { pool = new Array(FADE_LEVELS * 2).fill(null); this.pools.set(base, pool); }
     const k = (dir > 0 ? 0 : FADE_LEVELS) + level;
     let m = pool[k];
     if (m) return m;
     m = base.clone();
     m.name = `${base.name}-fade`;
-    const u = { value: dir > 0 ? level / FADE_LEVELS : -(1 - (FADE_LEVELS - level) / FADE_LEVELS) };
     // fading in shows the first `level / N` of the dither; fading out hides the same share (the two never overlap)
-    u.value = dir > 0 ? level / FADE_LEVELS : -(level / FADE_LEVELS);
-    m.userData = { npcFade: u, npcBase: base };
+    const u = { value: dir > 0 ? level / FADE_LEVELS : -(level / FADE_LEVELS) };
+    this.fadeU.set(m, u);
     patch(m, u);
     this.ctx.environment?.registerMaterial?.(m);
     m.needsUpdate = true;
@@ -91,8 +93,9 @@ export class NpcBank {
   }
 
   _disposeMat(mat) {
-    const pool = mat.userData?.npcPool;
+    const pool = this.pools.get(mat);
     if (pool) for (const m of pool) if (m) { this.liveMats.delete(m); m.dispose(); }
+    this.pools.delete(mat);
     this.liveMats.delete(mat);
     mat.dispose();
   }
@@ -116,7 +119,7 @@ export class NpcBank {
   loadClips() {
     if (this.clipPack) return Promise.resolve(this.clipPack);
     if (this.clipPromise) return this.clipPromise;
-    this.clipPromise = this.ctx.assets.loader.loadAsync(NPC_URL('clips')).then((gltf) => {
+    this.clipPromise = this.ctx.assets.loader.loadAsync(NPC_URL('npc-clips')).then((gltf) => {
       const ex = gltf.parser?.json?.asset?.extras?.r5Clips || {};
       const byName = new Map();
       for (const c of gltf.animations) byName.set(c.name, c);

@@ -24,6 +24,14 @@ const LOOK_MAX = 0.75, LOOK_R = 5.5, LOOK_RATE = 2.2;
 const _sphere = new THREE.Sphere(new THREE.Vector3(0, 0.95, 0), 1.75);
 const wrapPi = (a) => { while (a > Math.PI) a -= TAU; while (a < -Math.PI) a += TAU; return a; };
 
+/** The stride table at a clip time. */
+function gaitAt(g, t) {
+  const n = g.frames;
+  const f = Math.max(0, Math.min(n - 1e-4, t * n / g.dur));
+  const i = Math.floor(f);
+  return g.cum[i] + (g.cum[i + 1] - g.cum[i]) * (f - i);
+}
+
 /** No main-pass draw: count -1 makes three return before gl.drawElements; the shadow pass (which skips these hooks) sees the full range. */
 function skipMain(geo) {
   return {
@@ -97,7 +105,7 @@ export class Person {
     this.fadeT = 0;
     this.casting = false;
 
-    this.chains = new PersonChains(this.bones, npc.chains || [], { worldScale: S });
+    this.chains = new PersonChains(this.bones, npc.chains || [], { worldScale: S, scale: S });
 
     // the mixer
     this.mixer = new THREE.AnimationMixer(root);
@@ -123,22 +131,38 @@ export class Person {
     this.spine1 = this.bones.spine_01;
     this.upL = this.bones.upperarm_l;
     this.upR = this.bones.upperarm_r;
+    // a held arm (the porter's on his basket): local rotations written over the clip
+    this.armPose = [];
+    if (npc.armPose) for (const k of Object.keys(npc.armPose)) {
+      if (k === 'side' || !this.bones[k]) continue;
+      this.armPose.push({ bone: this.bones[k], q: new THREE.Quaternion().fromArray(npc.armPose[k]) });
+    }
     this.props = {};
     for (const p of npc.props || []) this.props[p.name] = this.bones[p.name] || null;
     this.showProps(null);
     this.setPosition(x, z);
+    // she walks round a person, not through them (the crowd's capsule, the same kind)
+    this.colliderId = -1;
+    this.collider = null;
+    const Cl = sys.ctx.collision;
+    if (Cl?.register) {
+      const y = this.group.position.y;
+      this.colliderId = Cl.register({
+        kind: 'npc', dynamic: true, ref: this, blocking: true, occluder: false, camera: false,
+        shape: { type: 'capsule', a: [x, y + 0.25, z], b: [x, y + 1.45 * (npc.height / 1.75), z], radius: 0.3 },
+      });
+      this.collider = Cl.byId?.get?.(this.colliderId) || null;
+    }
   }
 
   /** Prop joints: a tool is collapsed by scaling its joint to nothing (no draw, no allocation). */
   showProps(list) {
-    const carry = this.spec.clips?.carry;
     for (const name in this.props) {
       const b = this.props[name];
       if (!b) continue;
       const on = list ? list.includes(name) : (name !== 'prop_hand' && name !== 'prop_lamp');
       b.scale.setScalar(on ? 1 : 0.0005);
     }
-    void carry;
   }
 
   setPosition(x, z) {
@@ -198,15 +222,9 @@ export class Person {
 
   /** The stride table: distance a planted foot carries the body between two clip times (raw metres). */
   _gaitDist(g, a, b) {
-    const n = g.frames, k = n / g.dur;
-    const at = (t) => {
-      const f = Math.max(0, Math.min(n - 1e-4, t * k));
-      const i = Math.floor(f);
-      return g.cum[i] + (g.cum[i + 1] - g.cum[i]) * (f - i);
-    };
-    let d = b >= a ? at(b) - at(a) : (g.dist - at(a)) + at(b);
-    if (d < 0) d = 0;
-    return d;
+    const ca = gaitAt(g, a), cb = gaitAt(g, b);
+    const d = b >= a ? cb - ca : (g.dist - ca) + cb;
+    return d < 0 ? 0 : d;
   }
 
   update(dt, tier, wind) {
@@ -214,7 +232,7 @@ export class Person {
     this.stateT += dt;
     this._applyTier(tier, dt);
     // the mixer's rate falls with distance (bible §6.2)
-    const hz = tier === 0 ? 0 : tier === 1 ? 1 / 30 : 1 / 15;
+    const hz = tier === 0 ? 0 : tier === 1 ? 1 / 30 : tier === 2 ? 1 / 15 : 1 / 4;
     this.mixAcc += dt;
     if (this.mixAcc < hz) return false;
     const step = this.mixAcc;
@@ -227,7 +245,6 @@ export class Person {
       const g = this.walking.gait;
       const t1 = a.time;
       let d = g ? this._gaitDist(g, t0, t1) * this.scale : 0.9 * step * this.walking.ts;
-      if (step > 0 && d === 0 && g) d = 0;
       this.speed = step > 0 ? d / step : 0;
       const T = this.walkTarget;
       if (T) {
@@ -242,6 +259,12 @@ export class Person {
         this.travelled += d;
         const Tn = this.sys.ctx.terrain;
         if (Tn && d > 0) this.group.position.y = Tn.getHeight(px, pz);
+        const cc = this.collider;
+        if (cc) {
+          const gy = this.group.position.y;
+          cc.ax = px; cc.az = pz; cc.ay = gy + 0.25; cc.bx = px; cc.bz = pz; cc.by = gy + 1.45 * (this.spec.height / 1.75);
+          this.sys.ctx.collision._bounds(cc);
+        }
         if (dx * dx + dz * dz < 0.09) {
           const then = T.then;
           this.stopWalk();
@@ -284,6 +307,7 @@ export class Person {
 
   /** The walk style's posture (bible §6.2): a lean from the hips and an arm-swing gain, preallocated. */
   _overlay() {
+    for (let i = 0; i < this.armPose.length; i++) this.armPose[i].bone.quaternion.copy(this.armPose[i].q);
     const k = this.walking ? 1 : 0;
     this.leanK += (k - this.leanK) * 0.08;
     if (this.lean !== 0 && this.spine1) {
@@ -292,11 +316,9 @@ export class Person {
     }
     if (this.swing < 0.999 && this.leanK > 0.01) {
       const s = (1 - this.swing) * this.leanK;
-      for (const b of [this.upL, this.upR]) {
-        if (!b) continue;
-        if (!this.armMean) continue;
-        _q2.copy(b === this.upL ? this.armMean.l : this.armMean.r);
-        b.quaternion.slerp(_q2, s);
+      if (this.armMean && this.upL && this.upR && !this.armPose.length) {
+        this.upL.quaternion.slerp(this.armMean.l, s);
+        this.upR.quaternion.slerp(this.armMean.r, s);
       }
     }
   }
@@ -353,6 +375,7 @@ export class Person {
   }
 
   dispose() {
+    if (this.colliderId >= 0) { try { this.sys.ctx.collision?.unregister(this.colliderId); } catch { /* gone */ } this.colliderId = -1; this.collider = null; }
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this.root);
     this.skeleton.dispose();

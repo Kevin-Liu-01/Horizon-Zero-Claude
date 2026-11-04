@@ -516,7 +516,7 @@
     {
       "id": "npc-clips",
       "paths": [
-        "public/models/npc/clips.glb"
+        "public/models/npc/npc-clips.glb"
       ],
       "title": "Universal Animation Library 1 + 2 [Standard] -> the NPC clip pack",
       "author": "Quaternius",

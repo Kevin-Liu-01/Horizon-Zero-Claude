@@ -14,7 +14,6 @@ const CLASSES = {
   wrap: { k: 30, damp: 0.955, grav: 0.3, air: 4.4, maxAng: 1.2, rootK: 8 },
   gear: { k: 110, damp: 0.93, grav: 0.2, air: 0, maxAng: 0.5 },
 };
-export const classOfChain = (key) => (/^hair/.test(key) ? 'hair' : /^wrap|^hairTail/.test(key) ? 'wrap' : /medal|bag/.test(key) ? 'gear' : 'cloth');
 /** A strip's tail on a head and a wrapped tail behave the same. */
 const klass = (key) => {
   if (key === 'hairLock') return CLASSES.hair;
@@ -26,8 +25,7 @@ const klass = (key) => {
 const SUB_DT = 1 / 45;
 const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _s = new THREE.Vector3();
 const _qp = new THREE.Quaternion(), _qw = new THREE.Quaternion(), _qr = new THREE.Quaternion(), _qi = new THREE.Quaternion();
-const _y = new THREE.Vector3(), _d = new THREE.Vector3(), _a = new THREE.Vector3();
-const _m = new THREE.Matrix4();
+const _y = new THREE.Vector3(), _d = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 const clamp = THREE.MathUtils.clamp;
 
@@ -48,7 +46,7 @@ export class PersonChains {
       const c = {
         key: row.key, cls: klass(row.key), links, tip, N,
         seg: new Float32Array(N), rest: new Float32Array((N + 1) * 3), pos: new Float32Array((N + 1) * 3), prev: new Float32Array((N + 1) * 3),
-        bindQ: links.map((l) => l.quaternion.clone()), seeded: false, seed: hash(row.key), tipPos: new THREE.Vector3(),
+        bindQ: links.map((l) => l.quaternion.clone()), seeded: false, seed: hash(row.key), tipPos: new THREE.Vector3(), hangs: row.parent === 'pelvis' || /^cloak/.test(row.key),
       };
       for (let i = 0; i < N; i++) {
         const child = i + 1 < N ? links[i + 1] : tip;
@@ -59,6 +57,10 @@ export class PersonChains {
     this.acc = 0;
     this.t = 0;
     this.active = false;
+    // the legs a hanging cloth must go round: thigh -> knee -> ankle of each side, world, once per update
+    this.legBones = ['thigh_l', 'calf_l', 'foot_l', 'thigh_r', 'calf_r', 'foot_r'].map((n) => bones[n] || null);
+    this.legPos = new Float32Array(18);
+    this.legR = 0.082 * worldScale;
   }
 
   /** Off the near tier: the bones go back to their bind pose once (A-npc-fidelity: frozen). */
@@ -78,6 +80,7 @@ export class PersonChains {
     let steps = 0;
     while (this.acc >= SUB_DT && steps < 3) { this.acc -= SUB_DT; steps++; }
     this.t += dt;
+    for (let i = 0; i < 6; i++) { const b = this.legBones[i]; if (!b) continue; const e = b.matrixWorld.elements; this.legPos[i * 3] = e[12]; this.legPos[i * 3 + 1] = e[13]; this.legPos[i * 3 + 2] = e[14]; }
     for (const c of this.chains) {
       this._rest(c);
       if (!c.seeded) { c.pos.set(c.rest); c.prev.set(c.rest); c.seeded = true; }
@@ -126,6 +129,7 @@ export class PersonChains {
       pos[o] = x + vx + ax * dt2; pos[o + 1] = y + vy + ay * dt2; pos[o + 2] = z + vz + az * dt2;
     }
     pos[0] = rest[0]; pos[1] = rest[1]; pos[2] = rest[2];
+    if (c.hangs) this._pushOffLegs(c);
     // inextensible, root to tip
     for (let i = 0; i < N; i++) {
       const a = i * 3, b = a + 3;
@@ -133,6 +137,23 @@ export class PersonChains {
       const l = Math.hypot(dx, dy, dz);
       if (l < 1e-6) { dx = rest[b] - rest[a]; dy = rest[b + 1] - rest[a + 1]; dz = rest[b + 2] - rest[a + 2]; const q = Math.hypot(dx, dy, dz) || 1; dx /= q; dy /= q; dz /= q; } else { dx /= l; dy /= l; dz /= l; }
       pos[b] = pos[a] + dx * seg[i]; pos[b + 1] = pos[a + 1] + dy * seg[i]; pos[b + 2] = pos[a + 2] + dz * seg[i];
+    }
+  }
+
+  /** A particle inside a leg capsule goes to its surface, straight out from the bone (a thigh lifts an apron, it does not pierce it). */
+  _pushOffLegs(c) {
+    const L = this.legPos, r = this.legR, pos = c.pos;
+    for (let i = 1; i <= c.N; i++) {
+      const o = i * 3;
+      for (let s = 0; s < 4; s++) {
+        const a = (s < 2 ? s : s + 1) * 3, b = a + 3;
+        const ax = L[a], ay = L[a + 1], az = L[a + 2], bx = L[b] - ax, by = L[b + 1] - ay, bz = L[b + 2] - az;
+        const px = pos[o] - ax, py = pos[o + 1] - ay, pz = pos[o + 2] - az;
+        const t = clamp((px * bx + py * by + pz * bz) / (bx * bx + by * by + bz * bz || 1), 0, 1);
+        const dx = px - bx * t, dy = py - by * t, dz = pz - bz * t;
+        const d = Math.hypot(dx, dy, dz);
+        if (d < r && d > 1e-5) { const k = r / d; pos[o] = ax + bx * t + dx * k; pos[o + 1] = ay + by * t + dy * k; pos[o + 2] = az + bz * t + dz * k; }
+      }
     }
   }
 
@@ -159,7 +180,6 @@ export class PersonChains {
       _qp.copy(_qw);
     }
     c.tipPos.set(pos[c.N * 3], pos[c.N * 3 + 1], pos[c.N * 3 + 2]);
-    void _a; void _m;
   }
 }
 

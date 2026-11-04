@@ -50,23 +50,28 @@ function belt(ctx, { y = 1.03, h = 0.042, dye, buckle = true, swatch = 'leather'
 
 const frontZ = (ctx, x, y) => { const t = ctx.grid().cast(x, y, 0.6, 0, 0, -1, 1.2, 0.0001); return t >= 0 ? 0.6 - t : 0.1; };
 
-/** A bib or waist apron hanging off the trunk; the lower part on a dyn_ chain. */
+/** A bib or waist apron hanging off the trunk; the part below the waist on two dyn_ chains, so each leg moves its own side. */
 function apron(ctx, { y0, y1, wTop, wBot, dye, swatch = 'panelA', lift = 0.01, chainKey = 'apron', foldAmp = 0.006, rows = 11, cols = 8, hemWave = 0.008, twoSide = true }) {
   const yHang = Math.min(0.98, y0 - 0.04);
-  const midX = 0;
-  const z0 = frontZ(ctx, midX, yHang) + lift;
-  const pts = [[midX, yHang, z0], [midX, mix(yHang, y1, 0.33), z0 + 0.006], [midX, mix(yHang, y1, 0.66), z0 + 0.008], [midX, y1, z0 + 0.006]];
-  const j = ctx.chain(chainKey, 'pelvis', pts);
+  const zAt = (x, y) => frontZ(ctx, x, y) + lift;
+  const X = wBot * 0.55;
+  const mk = (s) => {
+    const x = s * X * 0.8, z0 = Math.max(zAt(x, yHang), zAt(0, yHang));
+    return [[x, yHang, z0], [s * X * 0.9, mix(yHang, y1, 0.33), z0 + 0.006], [s * X, mix(yHang, y1, 0.66), z0 + 0.008], [s * X, y1, z0 + 0.006]];
+  };
+  const jL = ctx.chain(`${chainKey}L`, 'pelvis', mk(1));
+  const jR = ctx.chain(`${chainKey}R`, 'pelvis', mk(-1));
   const trunk = P.trunkSkin(ctx.J);
   const sheet = P.hangingSheet({
     grid: ctx.grid(), rows, cols, y0, y1, halfW: (v) => mix(wTop, wBot, Math.pow(v, 0.7)), side: 1, lift, foldAmp, hemWave, uv: ctx.rectUV(swatch), seed: 3,
-    skin: (p, u, v) => {
+    skin: (p, u) => {
       const y = p[1];
       if (y >= yHang) return trunk(y);
       const t = (yHang - y) / Math.max(1e-3, yHang - y1);
-      const c = P.chainSkin(j, t);
-      const k = Math.min(1, t * 2.4);
-      return P.blendSkin(trunk(yHang), c, k);
+      const L = P.chainSkin(jL, t), R = P.chainSkin(jR, t);
+      // the sheet's u runs from her right (-x) to her left (+x)
+      const c = P.blendSkin(R, L, Math.max(0, Math.min(1, (u - 0.25) * 2)));
+      return P.blendSkin(trunk(yHang), c, Math.min(1, t * 2.6));
     },
   });
   ctx.add(twoSide ? P.twoSided(sheet) : sheet, { dye, hide: true });
@@ -118,8 +123,8 @@ export const OUTFITS = {
     legsHidden: 1.0,
     parts: [
       { part: 'Female_Peasant_Body', dye: PAN.orchil, target: 1900 },
-      { part: 'Female_Peasant_Arms', dye: PAN.orchilDeep, target: 3000 },
-      { part: 'Female_Peasant_Feet', dye: PAN.leather, target: 1500 },
+      { part: 'Female_Peasant_Arms', dye: PAN.orchilDeep, target: 3000, cutX: 0.615, cuff: PAN.carmine },
+      { part: 'Female_Peasant_Feet', dye: PAN.leather, target: 1500, cutTop: 0.2 },
     ],
     pieces(ctx) {
       ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.1, y1: 0.09, rHem: 0.3, uv: ctx.rectUV('panelA'), rows: 8, seg: 24, rFloor: 0.175, amp: 0.012 }), { dye: PAN.orchilNight, hide: true, shade: 0.9 });
@@ -145,7 +150,7 @@ export const OUTFITS = {
   /* 3 — Salt Porter: rolled sleeves, an open vest, the salt basket on his shoulder */
   porter: {
     parts: [
-      { part: 'Male_Peasant_Body', dye: PAN.linen, target: 2300 },
+      { part: 'Male_Peasant_Body', dye: PAN.linen, target: 3400, cutX: 0.345, collar: { y0: 1.44, push: 0.012 } },
       { part: 'Male_Peasant_Arms', dye: PAN.linenDirty, target: 900, cutX: 0.36, cuff: PAN.linenDirty, dropMat: /Regular/ },
       { part: 'Male_Peasant_Legs', dye: PAN.basalt, target: 1000 },
       { part: 'Male_Peasant_Feet', dye: PAN.esparto, target: 1400 },
@@ -153,8 +158,10 @@ export const OUTFITS = {
     pieces(ctx) {
       belt(ctx, { y: 1.025, dye: PAN.leather });
       sashEnd(ctx, { dye: PAN.carmine, x: 0.17, y: 1.0, z: 0.05 });
-      const sh = ctx.prop('prop_shoulder', 'clavicle_l', [0.17, 1.45, -0.03], [0.17, 1.6, -0.03]);
-      const parts = P.basket({ c: [0.235, 1.49, -0.05], axis: [0.22, 1, -0.08], rBot: 0.085, rTop: 0.135, h: 0.19, joint: sh, uvWicker: ctx.uvOf('wicker'), uvRim: ctx.uvOf('rope'), uvFill: ctx.uvOf('salt'), fillH: 0.05 });
+      // the basket rides his right shoulder; the arm comes up and steadies it (the pose: extras.r5Npc.armPose)
+      const sh = ctx.prop('prop_shoulder', 'clavicle_r', [-0.17, 1.45, -0.03], [-0.17, 1.6, -0.03]);
+      const parts = P.basket({ c: [-0.245, 1.487, -0.045], axis: [-0.2, 1, -0.06], rBot: 0.085, rTop: 0.135, h: 0.19, joint: sh, uvWicker: ctx.uvOf('wicker'), uvRim: ctx.uvOf('rope'), uvFill: ctx.uvOf('salt'), fillH: 0.05 });
+      ctx.armPose({ side: 'r', hand: [-0.325, 1.545, 0.075], pole: [-0.55, -1, 0.1] });
       ctx.add(parts[0], { dye: PAN.esparto, noHide: true }); ctx.add(parts[1], { dye: PAN.esparto, noHide: true }); ctx.add(parts[2], { dye: PAN.esparto, noHide: true }); ctx.add(parts[3], { dye: PAN.salt, noHide: true });
     },
   },
@@ -162,7 +169,7 @@ export const OUTFITS = {
   /* 4 — Boat-Caulker: tar on everything, a short leather apron, the mallet */
   caulker: {
     parts: [
-      { part: 'Male_Peasant_Body', dye: PAN.linenDirty, target: 2800, shade: 0.72 },
+      { part: 'Male_Peasant_Body', dye: PAN.linenDirty, target: 3400, shade: 0.72, cutX: 0.345, collar: { y0: 1.44, push: 0.012 } },
       { part: 'Male_Peasant_Arms', dye: PAN.basalt, target: 900, cutX: 0.36, cuff: PAN.basalt, dropMat: /Regular/ },
       { part: 'Male_Peasant_Legs', dye: PAN.tar, target: 1000, shade: 1.6 },
       { part: 'Male_Peasant_Feet', dye: PAN.leather, target: 1400 },
@@ -184,18 +191,18 @@ export const OUTFITS = {
     legsHidden: 1.0,
     parts: [
       { part: 'Female_Peasant_Body', dye: PAN.orchilDeep, target: 1700, shade: 0.8 },
-      { part: 'Female_Peasant_Arms', dye: PAN.orchilNight, target: 3400 },
-      { part: 'Female_Peasant_Feet', dye: PAN.leather, target: 1500 },
-      { part: 'Female_Ranger_Head_Hood', dye: PAN.orchilNight, target: 1050, swatch: 'felt', noHideOnBody: true, shade: 1.2 },
+      { part: 'Female_Peasant_Arms', dye: PAN.orchilNight, target: 3400, cutX: 0.615, cuff: PAN.orchilDeep },
+      { part: 'Female_Peasant_Feet', dye: PAN.leather, target: 1500, cutTop: 0.2 },
+      { part: 'Female_Ranger_Head_Hood', dye: PAN.orchilNight, target: 1500, swatch: 'felt', noHideOnBody: true, shade: 1.2 },
     ],
     pieces(ctx) {
-      ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.1, y1: 0.08, rHem: 0.27, uv: ctx.rectUV('panelA'), rows: 8, seg: 22, rFloor: 0.17, amp: 0.009 }), { dye: PAN.lapilli, hide: true, shade: 1.3 });
+      ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.1, y1: 0.08, rHem: 0.29, uv: ctx.rectUV('panelA'), rows: 8, seg: 28, rFloor: 0.18, amp: 0.009 }), { dye: PAN.lapilli, hide: true, shade: 1.3 });
       belt(ctx, { y: 1.08, dye: PAN.lapilli, swatch: 'rope', buckle: false, h: 0.024 });
       // the cloak: two chains from the shoulder blades, cloth between them
       const trunk = P.trunkSkin(ctx.J);
       const yTop = 1.42, yHem = 0.2, zb = -0.16;
-      const chainL = ctx.chain('cloakL', 'spine_03', [[0.13, 1.36, zb], [0.15, 1.07, zb - 0.03], [0.17, 0.74, zb - 0.05], [0.18, 0.42, zb - 0.055], [0.19, yHem, zb - 0.05]]);
-      const chainR = ctx.chain('cloakR', 'spine_03', [[-0.13, 1.36, zb], [-0.15, 1.07, zb - 0.03], [-0.17, 0.74, zb - 0.05], [-0.18, 0.42, zb - 0.055], [-0.19, yHem, zb - 0.05]]);
+      const chainL = ctx.chain('cloakL', 'pelvis', [[0.13, 1.36, zb], [0.15, 1.07, zb - 0.03], [0.17, 0.74, zb - 0.05], [0.18, 0.42, zb - 0.055], [0.19, yHem, zb - 0.05]]);
+      const chainR = ctx.chain('cloakR', 'pelvis', [[-0.13, 1.36, zb], [-0.15, 1.07, zb - 0.03], [-0.17, 0.74, zb - 0.05], [-0.18, 0.42, zb - 0.055], [-0.19, yHem, zb - 0.05]]);
       const sheet = P.hangingSheet({
         grid: ctx.grid(), rows: 12, cols: 8, y0: yTop, y1: yHem, side: -1, lift: 0.018, halfW: (v) => mix(0.21, 0.36, Math.pow(v, 0.8)), uv: ctx.rectUV('panelC'), foldAmp: 0.012, foldN: 2.6, seed: 9, cling: 0.05,
         skin: (p, u, v) => {
@@ -212,10 +219,11 @@ export const OUTFITS = {
       // the cane in her right hand; the lantern, shown at night or while she keeps watch
       const pr = ctx.palm('r');
       const hand = ctx.prop('prop_hand', 'hand_r', pr, [pr[0] - 0.08, pr[1], pr[2]]);
-      for (const g of P.cane({ at: pr, dir: [-1, -0.04, -0.02], joint: hand, uvWood: ctx.uvOf('wood'), uvTip: ctx.uvOf('brass') })) ctx.add(g, { dye: PAN.wood, noHide: true, prop: 'prop_hand' });
-      const pl = ctx.palm('l');
-      const lamp = ctx.prop('prop_lamp', 'hand_l', pl, [pl[0], pl[1] - 0.19, pl[2]]);
-      const L = P.lantern({ at: pl, joint: lamp, uvBrass: ctx.uvOf('brass'), uvGlass: ctx.uvOf('salt') });
+      // the cane's axis: straight down at the middle of the walk's arm swing (read off the clip: F|Walk_Loop, hand_r)
+      for (const g of P.cane({ at: pr, dir: [-0.817, -0.176, -0.548], joint: hand, uvWood: ctx.uvOf('wood'), uvTip: ctx.uvOf('brass'), L: 0.86 })) ctx.add(g, { dye: PAN.wood, noHide: true, prop: 'prop_hand' });
+      // the lantern: hangs from the right fist in Idle_Lantern_Loop (its axis read off the clip)
+      const lamp = ctx.prop('prop_lamp', 'hand_r', pr, [pr[0] + 0.015, pr[1] - 0.19, pr[2] - 0.006]);
+      const L = P.lantern({ at: [pr[0], pr[1] - 0.02, pr[2]], axis: [0.074, -0.997, -0.032], joint: lamp, uvBrass: ctx.uvOf('brass'), uvGlass: ctx.uvOf('salt') });
       L.forEach((g, i) => ctx.add(g, { dye: i === 1 ? '#D8C690' : PAN.brass, noHide: true, prop: 'prop_lamp' }));
     },
   },
@@ -223,9 +231,9 @@ export const OUTFITS = {
   /* 6 — Pit Farmer: ash wool, a leather belt with pouches, the back basket */
   farmer: {
     parts: [
-      { part: 'Male_Ranger_Body', dye: HOLDS.rust, target: 1700 },
+      { part: 'Male_Ranger_Body', dye: HOLDS.rust, target: 2900, collar: { y0: 1.44, push: 0.014 } },
       { part: 'Male_Ranger_Body_Belt', from: 'Male_Ranger_Body', meshes: /Belt/, dye: HOLDS.leather, target: 600 },
-      { part: 'Male_Ranger_Arms', dye: HOLDS.woolDark, target: 1300, dropMat: /Regular/ },
+      { part: 'Male_Ranger_Arms', dye: HOLDS.woolDark, target: 1300, dropMat: /Regular/, cutX: 0.665, cuff: HOLDS.rustDeep },
       { part: 'Male_Ranger_Legs', dye: HOLDS.lapilli, target: 900, shade: 1.5 },
       { part: 'Male_Ranger_Feet_Boots', dye: HOLDS.leather, target: 1500 },
     ],
@@ -244,7 +252,7 @@ export const OUTFITS = {
   /* 7 — Tiller-Follower: a long loose wool tunic over trousers, light wraps, the seed bag on its strap */
   follower: {
     parts: [
-      { part: 'Male_Ranger_Arms', dye: HOLDS.wool, target: 1500, dropMat: /Regular/ },
+      { part: 'Male_Ranger_Arms', dye: HOLDS.wool, target: 1500, dropMat: /Regular/, cutX: 0.665, cuff: HOLDS.wool },
       { part: 'Male_Ranger_Legs', dye: HOLDS.woolDark, target: 900 },
       { part: 'Male_Ranger_Feet_Boots', dye: HOLDS.leather, target: 1500 },
     ],
@@ -268,12 +276,12 @@ export const OUTFITS = {
       { part: 'Female_Ranger_Body', dye: HOLDS.wool, target: 1600 },
       { part: 'Female_Ranger_Body_Belt', from: 'Female_Ranger_Body', meshes: /Belt/, dye: HOLDS.leatherDark, target: 500 },
       { part: 'Female_Ranger_Arms', dye: HOLDS.woolDark, target: 1300, cutX: 0.40, cuff: HOLDS.woolDark, dropMat: /Regular/ },
-      { part: 'Female_Ranger_Feet', dye: HOLDS.leather, target: 1500 },
+      { part: 'Female_Ranger_Feet', dye: HOLDS.leather, target: 1500, cutTop: 0.3 },
     ],
     legsHidden: 1.0,
     pieces(ctx) {
-      ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.0, y1: 0.28, rHem: 0.26, uv: ctx.rectUV('panelA'), rows: 7, seg: 22, rFloor: 0.17, amp: 0.012 }), { dye: HOLDS.lapilli, hide: true, shade: 1.5 });
-      apron(ctx, { y0: 1.25, y1: 0.46, wTop: 0.13, wBot: 0.2, dye: HOLDS.carmineStain, swatch: 'panelC', chainKey: 'apron', lift: 0.012, rows: 11, cols: 6 });
+      ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.0, y1: 0.28, rHem: 0.26, uv: ctx.rectUV('panelA'), rows: 7, seg: 22, rFloor: 0.17, amp: 0.012, follow: 0.3 }), { dye: HOLDS.lapilli, hide: true, shade: 1.5 });
+      apron(ctx, { y0: 1.25, y1: 0.46, wTop: 0.13, wBot: 0.2, dye: HOLDS.carmineStain, swatch: 'panelC', chainKey: 'apron', lift: 0.022, rows: 11, cols: 6 });
       waistTie(ctx, { y: 1.04, dye: HOLDS.carmine });
       // a stain gourd on her hip
       const h = ctx.J.pelvis;
@@ -284,7 +292,7 @@ export const OUTFITS = {
   /* 9 — Tube Smith: a leather bib apron to the shin, bare forearms, a belt with a hammer */
   smith: {
     parts: [
-      { part: 'Male_Ranger_Body', dye: HOLDS.woolDark, target: 1500, shade: 0.8 },
+      { part: 'Male_Ranger_Body', dye: HOLDS.woolDark, target: 2900, shade: 0.8, collar: { y0: 1.44, push: 0.014 } },
       { part: 'Male_Ranger_Arms', dye: HOLDS.leather, target: 900, cutX: 0.40, dropMat: /Regular/ },
       { part: 'Male_Ranger_Legs', dye: HOLDS.leatherDark, target: 900, shade: 1.5 },
       { part: 'Male_Ranger_Feet_Boots', dye: HOLDS.leatherDark, target: 1500, shade: 1.4 },

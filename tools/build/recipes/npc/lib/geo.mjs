@@ -160,3 +160,47 @@ export async function simplifySloppy(g, target, err = 0.2) {
   const [out] = MeshoptSimplifier.simplifySloppy(Uint32Array.from(g.idx), Float32Array.from(g.pos), 3, null, target * 3, err);
   return compact({ pos: g.pos.slice(), nrm: g.nrm.slice(), uv: g.uv.slice(), jnt: g.jnt.slice(), wgt: g.wgt.slice(), col: g.col?.slice(), idx: Array.from(out) });
 }
+
+/**
+ * Clip a bucket by a plane: `side(i)` is the signed distance of vertex i (keep >= 0). Triangles crossing the plane are cut on
+ * it, so a rolled sleeve has a straight edge and not the source's triangle teeth. A new vertex's skin comes from the kept end of its edge.
+ */
+function clipBy(g, dist) {
+  const o = emptyGeo();
+  const hasCol = g.col && g.col.length === (g.pos.length / 3) * 4;
+  const put = (i) => {
+    const k = o.pos.length / 3;
+    o.pos.push(g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]); o.nrm.push(g.nrm[i * 3], g.nrm[i * 3 + 1], g.nrm[i * 3 + 2]); o.uv.push(g.uv[i * 2], g.uv[i * 2 + 1]);
+    for (let q = 0; q < 4; q++) { o.jnt.push(g.jnt[i * 4 + q]); o.wgt.push(g.wgt[i * 4 + q]); if (hasCol) o.col.push(g.col[i * 4 + q]); }
+    return k;
+  };
+  const cross = (a, b) => {
+    const da = dist(a), db = dist(b), t = da / (da - db);
+    const k = o.pos.length / 3;
+    for (let q = 0; q < 3; q++) { o.pos.push(g.pos[a * 3 + q] + (g.pos[b * 3 + q] - g.pos[a * 3 + q]) * t); o.nrm.push(g.nrm[a * 3 + q] + (g.nrm[b * 3 + q] - g.nrm[a * 3 + q]) * t); }
+    for (let q = 0; q < 2; q++) o.uv.push(g.uv[a * 2 + q] + (g.uv[b * 2 + q] - g.uv[a * 2 + q]) * t);
+    for (let q = 0; q < 4; q++) { o.jnt.push(g.jnt[a * 4 + q]); o.wgt.push(g.wgt[a * 4 + q]); if (hasCol) o.col.push(g.col[a * 4 + q]); }
+    return k;
+  };
+  const map = new Map();
+  const keep = (i) => { let k = map.get(i); if (k === undefined) { k = put(i); map.set(i, k); } return k; };
+  const inside = (i) => dist(i) >= 0;
+  for (let t = 0; t < g.idx.length; t += 3) {
+    const v = [g.idx[t], g.idx[t + 1], g.idx[t + 2]];
+    const n = v.filter(inside).length;
+    if (n === 3) { o.idx.push(keep(v[0]), keep(v[1]), keep(v[2])); continue; }
+    if (n === 0) continue;
+    let r = 0;
+    if (n === 1) { while (!inside(v[r])) r++; } else { while (inside(v[r])) r++; }
+    const a = v[r], b = v[(r + 1) % 3], c = v[(r + 2) % 3];
+    if (n === 1) {
+      o.idx.push(keep(a), cross(a, b), cross(a, c));
+    } else {
+      const ab = cross(b, a), ac = cross(c, a);
+      o.idx.push(keep(b), keep(c), ac, keep(b), ac, ab);
+    }
+  }
+  return o;
+}
+export const clipAbsX = (g, X) => clipBy(g, (i) => X - Math.abs(g.pos[i * 3]));
+export const clipTopY = (g, Y) => clipBy(g, (i) => Y - g.pos[i * 3 + 1]);

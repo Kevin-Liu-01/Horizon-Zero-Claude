@@ -2,7 +2,7 @@
  * CALIMA — the NPC clip pack (settlements; bible §6.2 "UAL2 clips play natively on UBC; UAL1 clips via one
  * baked library per body type"; plan §4.5 "UAL2 trimmed to the ~22 clips used").
  *
- * OUTPUT public/models/npc/clips.glb: a mesh-less skeleton + animations on the UBC joint names.
+ * OUTPUT public/models/npc/npc-clips.glb: a mesh-less skeleton + animations on the UBC joint names.
  *   <name>       a UAL2 clip, native on both bodies (rotations + pelvis translation)
  *   F|<name>     a UAL1 clip baked onto the female body by the kept Retargeter, offline
  *   M|<name>     the same, on the male body
@@ -29,6 +29,11 @@ export const UAL1_CLIPS = ['Idle_Loop', 'Walk_Loop', 'Walk_Formal_Loop', 'Jog_Fw
 /** Native on UBC (UAL2). */
 export const UAL2_CLIPS = ['Farm_Harvest', 'Farm_PlantSeed', 'Farm_Watering', 'Consume', 'Idle_FoldArms_Loop', 'Idle_No_Loop', 'Idle_Lantern_Loop', 'Idle_Rail_Call', 'Idle_Rail_Loop', 'Walk_Carry_Loop', 'Yes', 'TreeChopping_Loop', 'Chest_Open'];
 const GAITS = ['Walk_Loop', 'Walk_Formal_Loop', 'Jog_Fwd_Loop', 'Walk_Carry_Loop'];
+/**
+ * The pack's walk lifts the swing knee like a march (thigh 45 deg forward on these longer bodies): the kept retargeter's
+ * amplitude warp brings a working person's stride down to a walk, as it does for the hero's jog. The stride tables read the warped clip.
+ */
+const BAKE_AMP = { Walk_Loop: 0.72, Walk_Formal_Loop: 0.8, Jog_Fwd_Loop: 0.55 };
 
 const san = (n) => THREE.PropertyBinding.sanitizeNodeName(n);
 
@@ -77,28 +82,30 @@ function gaitTable(rig, clip, { fps = 30 } = {}) {
   const action = mixer.clipAction(clip);
   action.play();
   const dur = clip.duration, n = Math.max(2, Math.round(dur * fps));
-  const zL = new Float64Array(n + 1), zR = new Float64Array(n + 1), yL = new Float64Array(n + 1), yR = new Float64Array(n + 1);
+  // per frame: heel and ball of each foot, world y + z
+  const F = ['foot_l', 'ball_l', 'foot_r', 'ball_r'].map((k) => ({ b: bones[k], y: new Float64Array(n + 1), z: new Float64Array(n + 1) }));
   const v = new THREE.Vector3();
-  const lowY = (a, b) => { a.getWorldPosition(v); const ay = v.y, az = v.z; b.getWorldPosition(v); return { y: Math.min(ay, v.y), z: (ay < v.y ? az : v.z), z2: v.z }; };
   for (let i = 0; i <= n; i++) {
     mixer.setTime(Math.min(dur - 1e-4, i / n * dur));
     rig.updateMatrixWorld(true);
-    const l = lowY(bones.foot_l, bones.ball_l), r = lowY(bones.foot_r, bones.ball_r);
-    bones.ball_l.getWorldPosition(v); zL[i] = v.z; yL[i] = l.y;
-    bones.ball_r.getWorldPosition(v); zR[i] = v.z; yR[i] = r.y;
+    for (const f of F) { f.b.getWorldPosition(v); f.y[i] = v.y; f.z[i] = v.z; }
   }
   mixer.stopAllAction(); mixer.uncacheRoot(rig);
+  // heel and ball sit at different heights above the sole: relative to their own lows
+  const low = F.map((f) => Math.min(...f.y));
+  const rel = (k, i) => F[k].y[i] - low[k];
   const cum = [0];
-  let sup = yL[0] < yR[0] ? 0 : 1, total = 0, lastV = 0;
+  let total = 0, lastV = 0, sup = rel(0, 0) < rel(2, 0) ? 0 : 1;
   for (let i = 0; i < n; i++) {
+    const ml = Math.min(rel(0, i), rel(1, i)), mr = Math.min(rel(2, i), rel(3, i));
     // hysteresis: the support foot changes when the other is clearly the lower one
-    if (sup === 0 && yR[i] < yL[i] - 0.006) sup = 1; else if (sup === 1 && yL[i] < yR[i] - 0.006) sup = 0;
-    const low = Math.min(yL[i], yR[i]);
-    const dz = sup === 0 ? zL[i + 1] - zL[i] : zR[i + 1] - zR[i];
-    let step = -dz;
+    if (sup === 0 && mr < ml - 0.006) sup = 1; else if (sup === 1 && ml < mr - 0.006) sup = 0;
+    const a = sup === 0 ? 0 : 2;
+    // the bone that is down: the heel at strike, the ball at push-off
+    const k = rel(a, i) < rel(a + 1, i) ? a : a + 1;
+    let step = -(F[k].z[i + 1] - F[k].z[i]);
     // both feet in the air (a jog's flight): the body keeps the last stance's speed
-    const air = low > 0.05 + Math.min(...yL, ...yR);
-    if (air) step = lastV; else lastV = step;
+    if (Math.min(ml, mr) > 0.05) step = lastV; else lastV = step;
     step = Math.max(0, step);
     total += step;
     cum.push(+total.toFixed(5));
@@ -153,7 +160,7 @@ export async function buildClipPack(file, { provenance }) {
     for (const name of UAL1_CLIPS) {
       const c = sourceClips.get(name);
       if (!c) throw new Error(`[npc clips] ${name} not in UAL1`);
-      const { clip: baked } = rt.bake(c, { fps: 30 });
+      const { clip: baked } = rt.bake(c, { fps: 30, amp: BAKE_AMP[name] ?? 1 });
       const anim = doc.createAnimation(`${sex}|${name}`);
       for (const tr of baked.tracks) {
         const [bone, prop] = tr.name.split('.');

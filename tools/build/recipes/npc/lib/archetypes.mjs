@@ -13,6 +13,8 @@
  * `clips` carry the clip names the runtime plays (UAL2 native, UAL1 baked onto UBC by clips.mjs); `walk`
  * is the walk style of bible §6.2: clip, time scale, posture overlay (rad), arm-swing gain.
  *
+ * `clips.stage` is what the W1 staging plays where the bible's clip needs a place that stands at W2 (a bench, a rail, a boat).
+ *
  * Archetype 7 is an adolescent, so its body is male at the bible's uniform 0.90, and its clothes
  * are loose and full (a long tunic): the younger read comes from the face (bible §6.2).
  */
@@ -42,7 +44,7 @@ export const ARCHETYPES = [
     face: { noseBridge: [0, 0.5, 5.5], noseTip: [0, 3.0, -1.0], cheek: [3.0, 3.0, 4.0], jaw: [5.5, -4.5, 1.0], chin: [0, -3.0, 6.5], brow: [0, 1.0, 4.0], upperLip: [0, 1.0, -1.0] },
     head: { kind: 'band', dye: PAN.carmine, lining: PAN.carmine, seed: 33, hair: 'crop', tail: 'left' },
     outfit: { key: 'porter' },
-    clips: { idle: ['Consume', 'Yes', 'Idle_Loop'], walk: { clip: 'Walk_Carry_Loop', ts: 1.0, lean: 0.02, swing: 1 } },
+    clips: { idle: ['Consume', 'Yes', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 1.0, lean: 0.03, swing: 1 } },
   },
   {
     id: 'boat-caulker', n: 4, name: 'Boat-Caulker', faction: 'pan', family: 'Peasant', sex: 'M', height: 1.74, age: 52,
@@ -51,15 +53,15 @@ export const ARCHETYPES = [
     head: { kind: 'rag', dye: PAN.basalt, lining: PAN.lapilli, seed: 44, tail: 'right', beard: 'full' },
     marks: { tar: true },
     outfit: { key: 'caulker' },
-    clips: { idle: ['Fixing_Kneeling', 'Push_Loop', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.9, lean: 0.03, swing: 0.9, stance: 0.06 } },
+    clips: { idle: ['Fixing_Kneeling', 'Push_Loop', 'Idle_Loop'], stage: ['Fixing_Kneeling', 'Interact', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.9, lean: 0.03, swing: 0.9, stance: 0.06 } },
   },
   {
     id: 'lantern-keeper', n: 5, name: 'Lantern-Keeper', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.68, age: 68,
-    tone: '#92694B', iris: '#3F3024', amber: '#6F5233', hair: '#6A6762',
+    tone: '#92694B', iris: '#3F3024', amber: '#6F5233', hair: '#55524E',
     face: { noseBridge: [0, 1.2, 8.0], noseTip: [0, -2.0, 8.5], cheek: [-4.0, 0.5, -3.0], jaw: [-4.0, -3.0, -3.5], chin: [0, -2.0, 8.0], brow: [0, -1.0, 7.5], upperLip: [0, -1.0, -6.0] },
     head: { kind: 'hood', hair: 'grey', dye: PAN.orchilNight, lining: PAN.orchilNight, seed: 55 },
     outfit: { key: 'keeper' },
-    clips: { idle: ['Idle_Lantern_Loop', 'Sitting_Idle_Loop', 'Idle_Rail_Call'], walk: { clip: 'Walk_Loop', ts: 0.75, lean: 0.175, swing: 0.55 }, carry: 'cane' },
+    clips: { idle: ['Idle_Lantern_Loop', 'Sitting_Idle_Loop', 'Idle_Rail_Call'], stage: ['Idle_Lantern_Loop', 'Idle_Rail_Call', 'Idle_Talking_Loop'], walk: { clip: 'Walk_Loop', ts: 0.75, lean: 0.175, swing: 0.55 }, carry: 'cane' },
   },
   {
     id: 'pit-farmer', n: 6, name: 'Pit Farmer', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.78, age: 41,
@@ -72,15 +74,15 @@ export const ARCHETYPES = [
   {
     id: 'tiller-follower', n: 7, name: 'Tiller-Follower', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.60, age: 15, adolescent: true,
     tone: '#83573A', iris: '#2C1F16', amber: '#5A3A1F', hair: '#181210',
-    face: { noseBridge: [0, 0, -3.5], noseTip: [0, 5.0, -6.0], cheek: [4.5, 0, 6.5], jaw: [-5.0, 4.0, 0.5], chin: [0, 4.5, -4.5], brow: [0, 1.5, -4.0], upperLip: [0, 2.5, 2.5] },
+    face: { noseBridge: [0, 0, -3.5], noseTip: [0, 5.0, -6.0], cheek: [4.0, 0, 5.2], cheekS: 0.027, jaw: [-5.0, 4.0, 0.5], chin: [0, 4.5, -4.5], brow: [0, 1.5, -4.0], upperLip: [0, 2.5, 2.5] },
     head: { kind: 'band', dye: HOLDS.wool, lining: HOLDS.woolDark, seed: 77, hair: 'crop', tail: 'left', thin: true },
     outfit: { key: 'follower' },
-    clips: { idle: ['Idle_Rail_Loop', 'Farm_PlantSeed', 'Idle_Loop'], walk: { clip: 'Jog_Fwd_Loop', ts: 0.72, lean: 0.05, swing: 1, also: 'Walk_Loop' } },
+    clips: { idle: ['Idle_Rail_Loop', 'Farm_PlantSeed', 'Idle_Loop'], stage: ['Farm_PlantSeed', 'Idle_Loop', 'Idle_Talking_Loop'], walk: { clip: 'Jog_Fwd_Loop', ts: 0.72, lean: 0.05, swing: 1, also: 'Walk_Loop' } },
   },
   {
     id: 'cochineal-picker', n: 8, name: 'Cochineal Picker', faction: 'holds', family: 'Ranger', sex: 'F', height: 1.70, age: 27,
     tone: '#865B3E', iris: '#2B1E17', amber: '#5A3A22', hair: '#1A1411',
-    face: { noseBridge: [0, -0.5, -3.0], noseTip: [0, 4.5, -5.5], cheek: [6.0, 0.5, 7.5], jaw: [-2.5, 3.5, 2.0], chin: [0, 4.0, -5.0], brow: [0, 1.0, -3.5], upperLip: [0, 2.0, 3.5] },
+    face: { noseBridge: [0, -0.5, -3.0], noseTip: [0, 4.5, -5.5], cheek: [5.0, 0.5, 5.6], cheekS: 0.025, jaw: [-3.6, 4.6, 2.4], chin: [0, 4.6, -5.2], brow: [0, 1.0, -3.5], upperLip: [0, 2.0, 3.5] },
     head: { kind: 'scarf', dye: HOLDS.carmine, lining: HOLDS.rustDeep, seed: 88, tail: 'left', knot: true },
     marks: { carmine: true },
     outfit: { key: 'picker' },

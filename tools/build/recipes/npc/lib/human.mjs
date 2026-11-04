@@ -18,6 +18,7 @@
  *   Caster                          the one shadow proxy (no main pass, one draw per cascade)
  */
 import path from 'node:path';
+import * as THREE from 'three';
 import { joinPrimitives } from '@gltf-transform/functions';
 import {
   srcRoot, UBC_DIR, HAIR_DIR, MCO_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex,
@@ -31,7 +32,7 @@ import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, browLines, remapEyeUV, primFromGeo,
   cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt, hairShape,
 } from './kit/skin-human.mjs';
-import { emptyGeo, primToGeo, compact, join, filterTris, soupOf, simplify, simplifySloppy, nearestSkin, dye, lin, tris, recomputeGeoNormals } from './geo.mjs';
+import { emptyGeo, primToGeo, compact, join, filterTris, clipAbsX, clipTopY, soupOf, simplify, simplifySloppy, nearestSkin, dye, lin, tris, recomputeGeoNormals } from './geo.mjs';
 import { ATLAS, uvRect, mcoUV, NEUTRAL, HAIR_NEUTRAL } from './atlas.mjs';
 import { OUTFITS } from './outfits.mjs';
 
@@ -67,7 +68,8 @@ function faceBumps(spec, L, mm, S, R) {
   const mir = (v) => [-v[0], v[1], v[2]];
   B(L.noseBridge, F.noseBridge, 0.0125, [0.0088, 0.019, 0.016]);
   B(L.noseTip, F.noseTip, 0.0098, [0.0125, 0.0095, 0.012]);
-  B(L.cheekL, F.cheek, 0.0165); B(L.cheekR, mir(F.cheek), 0.0165);
+  const cs = F.cheekS ?? 0.0165;
+  B(L.cheekL, F.cheek, cs); B(L.cheekR, mir(F.cheek), cs);
   B(L.jawL, F.jaw, 0.0235); B(L.jawR, mir(F.jaw), 0.0235);
   B(L.chin, F.chin, 0.016, [0.0175, 0.0125, 0.016]);
   B(L.brow, F.brow, 0.0165);
@@ -88,7 +90,7 @@ function faceBumps(spec, L, mm, S, R) {
     B([sx * 0.040, L.chin[1] + 0.012, 0.030], [sx * 1.6, -2.4, 0.2], 0.0165);
     B([sx * 0.024, L.chin[1] + 0.004, 0.066], [sx * 1.2, -1.2, 1.2], 0.0135);
   }
-  const neck = spec.sex === 'M' ? 6 : 10.5;
+  const neck = spec.adolescent ? -5 : spec.sex === 'M' ? 6 : 10.5;
   for (const sx of [1, -1]) B([sx * 0.038, 1.495, -0.012], [sx * neck, 0, 0.8], 0.027);
   B([0, 1.495, 0.035], [0, 0, 3.8], 0.024);
   B([0, 1.50, -0.052], [0, 0, -3.0], 0.026);
@@ -208,20 +210,22 @@ function beardLayer({ L, eyes, hair, kind }) {
   const cov = (T) => {
     if (T.Y < 1.44 || T.Y > tip[1] + 0.02 || Math.abs(T.X) > 0.088 || T.Z < -0.03 || T.nz < -0.5) return 0;
     const ax = Math.abs(T.X);
-    const wob = (noise3(T.X * 120, T.Y * 120, T.Z * 120) - 0.5) * 0.008;
-    // the upper edge: from the sideburn across the cheek down to the mouth corner
-    const top = mix(mouthY + 0.03, tip[1] - 0.004, smooth(0.02, 0.07, ax)) + wob;
-    const upper = 1 - smooth(top - 0.006, top + 0.002, T.Y);
-    // the lower edge: under the jaw on the neck
-    const low = chin[1] - 0.024 + 0.02 * smooth(0.03, 0.08, ax) + wob;
-    const lower = smooth(low - 0.008, low + 0.002, T.Y);
+    const wob = (noise3(T.X * 120, T.Y * 120, T.Z * 120) - 0.5) * 0.011 + (noise3(T.X * 300, T.Y * 300, T.Z * 300) - 0.5) * 0.004;
+    // the upper edge: from the sideburn, in a curve under the cheekbone, down to the mouth corner
+    const k = smooth(0.026, 0.075, ax);
+    const top = mix(mouthY + 0.018, tip[1] - 0.006, k * k) + wob;
+    const upper = 1 - smooth(top - 0.017, top + 0.003, T.Y);
+    // the lower edge: under the jaw on the neck, rising toward the ear
+    const low = chin[1] - 0.02 + 0.06 * smooth(0.03, 0.082, ax) + wob;
+    const lower = smooth(low - 0.012, low + 0.003, T.Y);
+    // it thins behind the jaw angle and stops short of the ear
+    const back = smooth(-0.022, 0.012, T.Z + wob);
     // lips stay clear
     const lipD = Math.hypot(T.X / 0.031, (T.Y - mouthY) / 0.0145);
     const clear = smooth(0.92, 1.18, lipD);
     // a moustache band above the lip
     const moust = (1 - smooth(0.012, 0.026, Math.abs(T.Y - (mouthY + 0.022)))) * (1 - smooth(0.02, 0.05, ax)) * smooth(0.002, 0.006, tip[1] - 0.012 - T.Y);
-    const under = T.Z > 0.02 || ax > 0.04 ? 1 : 0;
-    return Math.max(upper * lower * clear * under, moust);
+    return Math.max(upper * lower * clear * back, moust);
   };
   if (kind === 'stubble') {
     return (T) => {
@@ -504,12 +508,11 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   // ---- the outfit: MCO parts, then the faction pieces on top
   const OUT = OUTFITS[spec.outfit.key];
   const pieces = [];   // { geo, dye, hide, noHide, shade, prop }
+  let armPose = null;
   for (const ps of OUT.parts) {
     let g = await loadPart(base, ps, SRC, dy);
-    if (ps.cutX) {
-      const X = ps.cutX;
-      g = filterTris(g, (ax, ay, az, bx, by, bz, cx) => Math.abs(ax) <= X && Math.abs(bx) <= X && Math.abs(cx) <= X);
-    }
+    if (ps.cutX) g = clipAbsX(g, ps.cutX);
+    if (ps.cutTop) g = clipTopY(g, ps.cutTop);
     // the source UV -> the faction block, or a swatch for a part from another family
     if (ps.swatch) {
       const r = uvRect(ps.swatch);
@@ -518,6 +521,17 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     } else {
       const n = g.pos.length / 3;
       for (let i = 0; i < n; i++) { const q = mcoUV(g.uv[i * 2], g.uv[i * 2 + 1]); g.uv[i * 2] = q[0]; g.uv[i * 2 + 1] = q[1]; }
+    }
+    // a superhero neck in a regular collar: the collar stands off it
+    if (ps.collar) {
+      const n = g.pos.length / 3;
+      for (let i = 0; i < n; i++) {
+        const x = g.pos[i * 3], y = g.pos[i * 3 + 1], z = g.pos[i * 3 + 2];
+        const k = smooth(ps.collar.y0, ps.collar.y0 + 0.035, y);
+        if (k <= 0) continue;
+        const dx = x, dz = z + 0.012, l = Math.hypot(dx, dz) || 1;
+        g.pos[i * 3] = x + dx / l * ps.collar.push * k; g.pos[i * 3 + 2] = z + dz / l * ps.collar.push * k;
+      }
     }
     const before = tris(g);
     if (ps.target && before > ps.target) g = await simplify(g, ps.target, { err: 0.018, lock: true });
@@ -540,7 +554,8 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     add(g, o = {}) { const list = Array.isArray(g) ? g : [g]; for (const q of list) pieces.push({ geo: q, dye: o.dye, hide: !!o.hide, noHide: !!o.noHide, shade: o.shade ?? 1, prop: o.prop || null }); invalidate(); },
     uvOf,
     rectUV: (name) => { const r = uvRect(name); return (u, v) => [r[0] + u * r[2], r[1] + v * r[3]]; },
-    palm: (side) => { const c = side === 'r' ? base.getRoot().listSkins()[0].listJoints()[J.hand_r] : base.getRoot().listSkins()[0].listJoints()[J.hand_l]; const w = c.getWorldMatrix(); return [w[12] + (side === 'r' ? -0.055 : 0.055), w[13] - dy - 0.022, w[14] + 0.012]; },
+    palm: (side) => { const c = side === 'r' ? base.getRoot().listSkins()[0].listJoints()[J.hand_r] : base.getRoot().listSkins()[0].listJoints()[J.hand_l]; const w = c.getWorldMatrix(); return [w[12] + (side === 'r' ? -0.072 : 0.072), w[13] - dy - 0.024, w[14] + 0.02]; },
+    armPose(o) { armPose = solveArmPose(base, o, dy); },
   };
   OUT.pieces(ctx);
   // the cuffs need the cut geometry
@@ -600,7 +615,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   let culled = 0;
   if (wrapped && !bareHair) { tuckUnderCloth(bodyPrim, wrapped.stack, isEar); culled = cullUnderWrap(bodyPrim, wrapped.covers, isEar); }
   const eyesCulled = cullEyeBacks(eyesPrim, eyes);
-  const hide = coverageMask(bodyPrim, outfitBodyTris(), 0.08, spec.sex === 'M' ? 0.075 : 0.04);
+  const hide = coverageMask(bodyPrim, outfitBodyTris(), 0.08, spec.sex === 'M' ? 0.075 : 0.04, spec.sex === 'M' ? 0.1 : 0.05);
   const insideCollar = spec.sex === 'M' ? (x, y) => y > 1.452 && Math.abs(x) < 0.1 : (x, y) => y > 1.40 && Math.abs(x) < 0.112;
   const hiddenLegsFrom = OUT.legsHidden ?? (OUT.legsHiddenFrom ?? null);
   {
@@ -612,7 +627,12 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
       if (hiddenLegsFrom && q[1] < hiddenLegsFrom && q[1] > 0.02) h[i] = 1;
     }
     const keep = [];
-    for (let t = 0; t < idx.length; t += 3) if (!(h[idx[t]] && h[idx[t + 1]] && h[idx[t + 2]])) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+    for (let t = 0; t < idx.length; t += 3) {
+      // on the trunk two hidden corners are enough (a superhero chest pokes through a regular shirt); on an arm all three, so a sleeve's end has skin under it
+      P.getElement(idx[t], q);
+      const need = Math.abs(q[0]) > 0.28 ? 3 : 2;
+      if (h[idx[t]] + h[idx[t + 1]] + h[idx[t + 2]] < need) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+    }
     bodyPrim.getIndices().setArray(new Uint32Array(keep));
   }
   await simplifyHands(bodyPrim);
@@ -650,6 +670,11 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   if (spec.marks?.tar) marks.push(tarLayer());
   if (spec.marks?.carmine) marks.push(carmineLayer());
   if (spec.marks?.burn) marks.push(burnLayer([{ at: [-0.46, 1.42, 0.02], r: [0.05, 0.035, 0.04] }, { at: [0.52, 1.40, 0.0], r: [0.035, 0.03, 0.04] }, { at: [-0.05, 1.615, 0.058], r: [0.016, 0.013, 0.02] }]));
+  // the source's forehead reads olive once the cheek is on tone; the forehead comes back to the same skin
+  marks.push(colourZones([{ at: [0, 1.71, 0.075], s: [0.06, 0.032, 0.06], gain: [1.05, 0.93, 0.9] }, { at: [0, L.brow[1], L.brow[2]], s: [0.05, 0.016, 0.03], gain: [1.02, 0.96, 0.94] }]));
+  // the adolescent: the source's adult muscle and bone relief goes from the head and neck (the younger read comes from the face)
+  if (spec.adolescent) marks.push((T) => { if (T.Y > 1.42 && Math.abs(T.X) < 0.12) T.nflat = Math.max(T.nflat ?? 0, 0.72); });
+  if (spec.age < 20) marks.push(colourZones([{ at: [eyes[0][0], eyes[0][1] - 0.016, eyes[0][2] + 0.008], s: [0.02, 0.009, 0.022], gain: [1.12, 1.12, 1.1] }, { at: [eyes[1][0], eyes[1][1] - 0.016, eyes[1][2] + 0.008], s: [0.02, 0.009, 0.022], gain: [1.12, 1.12, 1.1] }, { at: [eyes[0][0], eyes[0][1] + 0.012, eyes[0][2] + 0.002], s: [0.02, 0.008, 0.02], gain: [1.1, 1.08, 1.07] }, { at: [eyes[1][0], eyes[1][1] + 0.012, eyes[1][2] + 0.002], s: [0.02, 0.008, 0.02], gain: [1.1, 1.08, 1.07] }, { at: [0.03, L.noseTip[1] - 0.03, L.noseTip[2] - 0.042], s: [0.012, 0.018, 0.018], gain: [1.1, 1.09, 1.08] }, { at: [-0.03, L.noseTip[1] - 0.03, L.noseTip[2] - 0.042], s: [0.012, 0.018, 0.018], gain: [1.1, 1.09, 1.08] }]));
   if (spec.age < 20) marks.push(colourZones([{ at: [L.cheekL[0], L.cheekL[1] - 0.006, L.cheekL[2]], s: [0.022, 0.018, 0.024], gain: [1.05, 1.0, 0.98] }, { at: [L.cheekR[0], L.cheekR[1] - 0.006, L.cheekR[2]], s: [0.022, 0.018, 0.024], gain: [1.05, 1.0, 0.98] }]));
 
   // the hairline: wrapped heads keep the kit's shape, bare heads the whole shell
@@ -710,10 +735,10 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     hairParts.push(cards);
     if (H.kind === 'hood') {
       // a grey lock escapes the hood on her left, on a chain
-      const pts = [[0.058, 1.665, 0.062], [0.066, 1.62, 0.07], [0.07, 1.57, 0.066], [0.071, 1.515, 0.058], [0.07, 1.47, 0.05]];
+      const pts = [[0.074, 1.668, 0.03], [0.083, 1.625, 0.034], [0.086, 1.58, 0.034], [0.085, 1.535, 0.03], [0.082, 1.495, 0.024]];
       const j = chain('hairLock', 'Head', pts);
       const A = WRAP_ATLAS;
-      hairParts.push(coilTuft(pts, j, { count: 3, along: 7, width: 0.02, uv: { rect: A.coilTile.rect, period: A.coilTile.period, W: A.W }, side: [1, 0, 0.3], seed: 13 + spec.n }));
+      hairParts.push(coilTuft(pts, j, { count: 3, along: 7, width: 0.014, uv: { rect: A.coilTile.rect, period: A.coilTile.period, W: A.W }, side: [1, 0, 0.3], seed: 13 + spec.n }));
     }
   }
   const hairBase = joinGeos([...hairParts]);
@@ -776,6 +801,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     }
     const n = c.pos.length / 3;
     for (let i = 0; i < n; i++) { c.uv[i * 2] = sw[0] + sw[2] * (0.5 + 0.5 * Math.sin(c.pos[i * 3] * 11)); c.uv[i * 2 + 1] = sw[1] + sw[3] * (0.5 + 0.5 * Math.sin(c.pos[i * 3 + 1] * 13)); c.col[i * 4 + 3] = 1; }
+    fixMale(c, dy);
     return compact(c);
   })();
   // the cloth below near: a shell cast onto the wound cloth from outside (no gaps, no cards), the tails as they are, simplified
@@ -816,13 +842,13 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   const skinEyes = skinGeo;
   const L1 = {
     skin: await simplify(skinEyes, Math.min(3200, Math.floor(tris(skinEyes) * 0.55)), { err: 0.03 }),
-    outfit: await simplifyTo(join([outfitGeo, ...shellOf(10, 22)]), 4500, 0.03),
+    outfit: await simplifyTo(join([outfitGeo, ...shellOf(10, 22)]), 4750, 0.03),
   };
   const L2 = {
     skin: await simplifyTo(skinEyes, 1350, 0.08),
-    outfit: await simplifyTo(join([outfitGeo, ...shellOf(6, 14)]), 2400, 0.08),
+    outfit: await simplifyTo(join([outfitGeo, ...shellOf(6, 14)]), 2400, 0.08, 1.08, 0.9),
   };
-  const caster = await simplifyTo(join([L2.skin, L2.outfit]), 1800, 0.12);
+  const caster = await simplifyTo(join([L2.skin, L2.outfit]), 2000, 0.12, 2);
 
   // ---- nodes
   const skin = root.listSkins()[0];
@@ -860,7 +886,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
       r5Npc: {
         id: spec.id, n: spec.n, name: spec.name, faction: spec.faction, sex: spec.sex, age: spec.age, adolescent: !!spec.adolescent,
         height: spec.height, scale: +S.toFixed(6), rawBodyH: +rawBodyH.toFixed(5), footY: +(box0.min[1] + dy).toFixed(5),
-        chains: chainTable, props: propTable, tiers: tierTris, clips: spec.clips,
+        chains: chainTable, props: propTable, tiers: tierTris, clips: spec.clips, armPose,
         pieces: pieces.map((p) => p.part || (p.prop ? `prop:${p.prop}` : 'procedural')).reduce((m, k) => { m[k] = (m[k] || 0) + 1; return m; }, {}),
         layers: pieces.filter((p) => !p.prop && !p.noHide).length,
         procedural: pieces.filter((p) => !p.part).length,
@@ -874,11 +900,44 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   return { ...stats, tiers: tierTris, face: faceRec.landmarks, iou: faceRec.iou };
 }
 
+/**
+ * A held arm: the two-bone solve from the bind pose to a hand point (female frame) in the shoulder's own frame, as
+ * local rotations the runtime writes over the clip. The hand stays rigid to whatever hangs on the clavicle.
+ */
+function solveArmPose(base, { side, hand, pole }, dy) {
+  const joints = base.getRoot().listSkins()[0].listJoints();
+  const by = (n) => joints.find((j) => j.getName() === `${n}_${side}`);
+  const dec = (j) => { const m = new THREE.Matrix4().fromArray(j.getWorldMatrix()); const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3(); m.decompose(p, q, s); return { p, q }; };
+  const cl = dec(by('clavicle')), up = dec(by('upperarm')), lo = dec(by('lowerarm')), ha = dec(by('hand'));
+  const S = up.p, E = lo.p, H = ha.p;
+  const L1 = S.distanceTo(E), L2 = E.distanceTo(H);
+  const T = new THREE.Vector3(hand[0], hand[1] + dy, hand[2]);
+  const dir = T.clone().sub(S);
+  const dist = Math.min(dir.length(), (L1 + L2) * 0.985);
+  dir.normalize();
+  const a = (L1 * L1 - L2 * L2 + dist * dist) / (2 * dist), h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+  const pd = new THREE.Vector3(...pole);
+  pd.sub(dir.clone().multiplyScalar(pd.dot(dir))).normalize();
+  const E2 = S.clone().add(dir.clone().multiplyScalar(a)).add(pd.multiplyScalar(h));
+  const T2 = S.clone().add(dir.clone().multiplyScalar(dist));
+  const R1 = new THREE.Quaternion().setFromUnitVectors(E.clone().sub(S).normalize(), E2.clone().sub(S).normalize());
+  const upW = R1.clone().multiply(up.q);
+  const upLocal = cl.q.clone().invert().multiply(upW);
+  const loLocal0 = up.q.clone().invert().multiply(lo.q);
+  const loW0 = upW.clone().multiply(loLocal0);
+  const d2 = H.clone().sub(E).normalize().applyQuaternion(R1);
+  const R2 = new THREE.Quaternion().setFromUnitVectors(d2, T2.clone().sub(E2).normalize());
+  const loW = R2.clone().multiply(loW0);
+  const loLocal = upW.clone().invert().multiply(loW);
+  const row = (q) => [q.x, q.y, q.z, q.w].map((v) => +v.toFixed(5));
+  return { side, [`upperarm_${side}`]: row(upLocal), [`lowerarm_${side}`]: row(loLocal) };
+}
+
 /** Simplify to a triangle target, loosening the error until it is met. */
-async function simplifyTo(g, target, err) {
+async function simplifyTo(g, target, err, slack = 1.25, maxE = 0.28) {
   let e = err, out = await simplify(g, target, { err: e });
-  for (let k = 0; k < 5 && tris(out) > target * 1.02; k++) { e *= 1.8; out = await simplify(g, target, { err: e, prune: true }); }
-  if (tris(out) > target * 1.02) out = await simplifySloppy(out, target, 0.3);
+  for (let k = 0; k < 7 && tris(out) > target * 1.02 && e < maxE; k++) { e *= 1.6; out = await simplify(g, target, { err: Math.min(maxE, e) }); }
+  if (tris(out) > target * slack) out = await simplifySloppy(out, target, 0.3);
   return out;
 }
 
@@ -913,7 +972,7 @@ function geoPrim(doc, buf, g, mat, { color = true, uv = true, normal = true } = 
  * Which body vertices sit under the outfit: a ray from the vertex along its normal meets an outfit
  * triangle within `maxD` (the same test as Brea's hide mask; here the triangles go at build time).
  */
-function coverageMask(prim, tris9, maxD, inset = 0.03) {
+function coverageMask(prim, tris9, maxD, inset = 0.03, trunkInset = 0) {
   const P = prim.getAttribute('POSITION'), N = prim.getAttribute('NORMAL');
   const n = P.getCount();
   const grid = new TriGrid(tris9, 0.04);
@@ -923,7 +982,9 @@ function coverageMask(prim, tris9, maxD, inset = 0.03) {
     P.getElement(i, p); N.getElement(i, d);
     const l = Math.hypot(d[0], d[1], d[2]) || 1; d[0] /= l; d[1] /= l; d[2] /= l;
     // from 3 cm inside: a body vertex up to 3 cm outside the cloth is the skin poking through it, and is covered too
-    const t = grid.cast(p[0] - d[0] * inset, p[1] - d[1] * inset, p[2] - d[2] * inset, d[0], d[1], d[2], maxD + inset, 0.0001);
+    // a male trunk bulges further out of the regular-body cloth than anything else
+    const ins = Math.abs(p[0]) < 0.3 && p[1] < 1.45 ? Math.max(inset, trunkInset) : inset;
+    const t = grid.cast(p[0] - d[0] * ins, p[1] - d[1] * ins, p[2] - d[2] * ins, d[0], d[1], d[2], maxD + ins, 0.0001);
     if (t >= 0) out[i] = 1;
   }
   return out;
