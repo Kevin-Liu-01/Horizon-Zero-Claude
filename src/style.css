@@ -1267,6 +1267,7 @@ body #cal-prog .pg-purse, body #cal-prog .pg-msg { font-family: var(--cal-font-m
 body #cal-prog .pg-trial { font-family: var(--cal-font-mono); color: var(--cal-ink); background: var(--cal-paper-92); border: 1px solid var(--cal-ink); clip-path: none; }
 body #cal-prog .sk-col h3 { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-label); letter-spacing: var(--cal-track-caps); color: var(--cal-ink) !important; border-bottom-color: var(--cal-ink); }
 body #cal-prog .sk-node { background: transparent; border-color: var(--cal-rule); }
+body #cal-prog .sk-node.locked { opacity: 0.78; }   /* locked is a state of the page, not a reason to make it unreadable */
 body #cal-prog .sk-node.available { border-color: var(--cal-ink); }
 body #cal-prog .sk-node.available:hover { background: var(--cal-ink-10); }
 body #cal-prog .sk-node.unlocked { background: var(--cal-ink-10); border-color: var(--cal-c-weak); }
@@ -1276,5 +1277,5 @@ body #cal-prog .sk-node.unlocked .sk-dot::after { background: var(--cal-c-weak);
 body #cal-prog .sk-name { font-family: var(--cal-font-ui); font-weight: 600; font-size: var(--cal-type-label); letter-spacing: 0.06em; color: var(--cal-ink); }
 body #cal-prog .sk-cost { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); letter-spacing: 0; color: var(--cal-ink); }
 body #cal-prog .sk-desc { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); color: var(--cal-ink-80); }
-body #cal-prog .sk-req { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0; text-transform: none; color: var(--cal-c-staff); }
+body #cal-prog .sk-req { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0; text-transform: none; color: var(--cal-carmine); }
 body #cal-prog .sk-hook { display: none; }   /* a build note, not a player's words */
