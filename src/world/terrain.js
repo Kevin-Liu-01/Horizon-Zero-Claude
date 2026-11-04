@@ -372,7 +372,6 @@ export class Terrain {
     if (rock > 0.5) return 'rock';
     const P = this._panRead(x, z);
     if (P.inside > 0.5) return P.brine > 0.55 ? 'silt' : 'salt';
-    if (maskRead(A, 0, x, z) > 0.55) return 'salt';
     if (maskRead(A, 3, x, z) > 0.5) return 'silt';
     if (maskRead(A, 2, x, z) > 0.42) return 'shingle';
     if (maskRead(BAKE.maskB, 1, x, z) > 0.42) return 'dirt';

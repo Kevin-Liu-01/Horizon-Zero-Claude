@@ -126,7 +126,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   float macA = gNoise(xz * 0.031) * 0.6 + gNoise(xz * 0.097 + 7.0) * 0.4;
 
   /* -- the five weights, then the three that survive ----------------------- */
-  float crust = max(mA.r * (1.0 - pan.a), pan.r);
+  float crust = pan.r;
   float brine = pan.g;
   float wRock = max(mA.g, smoothstep(0.62, 1.05, slope));
   float wSalt = crust * (1.0 - wRock) * (1.0 - brine * 0.4);
@@ -229,6 +229,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     vec3 sandCol = col * sandTone;
     sandCol = mix(sandCol, vec3(0.05, 0.046, 0.03), scrub * 0.6 * farK);
     sandCol = mix(sandCol, vec3(0.17, 0.15, 0.078), mB.r * farK * 0.8);
+    sandCol = mix(sandCol, vec3(0.135, 0.09, 0.185), mA.r * farK * (0.3 + 0.45 * gNoise(xz * 0.21)));
     col = mix(col, sandCol, smoothstep(0.02, 0.5, w[0]));
   }
   // packed tracks: pale, smooth, salt-dusted

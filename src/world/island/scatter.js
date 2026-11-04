@@ -29,7 +29,7 @@ export const KINDS = Object.freeze({
 export function fieldReader(F) {
   const { H, maskA, maskB, shore } = F;
   const { side, step, half } = GRID, N = MASK_N, cell = WORLD_SIZE / N;
-  const R = { h: 0, slope: 0, salt: 0, rock: 0, shingle: 0, silt: 0, cover: 0, track: 0, damp: 0, coast: 0, glass: 0 };
+  const R = { h: 0, slope: 0, rock: 0, shingle: 0, silt: 0, cover: 0, track: 0, damp: 0, coast: 0, glass: 0 };
   const hAt = (x, z) => {
     const fx = (x + half) / step, fz = (z + half) / step;
     const ix = fx < 0 ? 0 : fx >= side - 1 ? side - 2 : fx | 0;
@@ -47,7 +47,7 @@ export function fieldReader(F) {
     const ix = fx < 0 ? 0 : fx >= N - 1 ? N - 1 : fx + 0.5 | 0;
     const iz = fz < 0 ? 0 : fz >= N - 1 ? N - 1 : fz + 0.5 | 0;
     const o = (iz * N + ix) * 4;
-    R.salt = maskA[o] / 255; R.rock = maskA[o + 1] / 255; R.shingle = maskA[o + 2] / 255; R.silt = maskA[o + 3] / 255;
+    R.rock = maskA[o + 1] / 255; R.shingle = maskA[o + 2] / 255; R.silt = maskA[o + 3] / 255;
     R.track = maskB[o + 1] / 255; R.damp = maskB[o + 2] / 255;
     // cover bilinear: the same read as terrain.tallGrassDensity, so the field and the plants agree
     {
@@ -92,7 +92,7 @@ export function scatterTile(kind, tx, tz, R, out) {
       d = margin * 1.5 * ss(0.38, 0.62, fbm(x * 0.05 + 2, z * 0.05, 3));
       sc = 0.7 + c0 * 1.1; sy = 0.7 + c1 * 0.9;
     } else { // lavender
-      if (F.slope > 0.45 || F.rock > 0.2 || F.track > 0.25 || F.coast < 14 || F.h > 7 || F.silt > 0.6 || F.salt > 0.6) continue;
+      if (F.slope > 0.45 || F.rock > 0.2 || F.track > 0.25 || F.coast < 14 || F.h > 7 || F.silt > 0.6) continue;
       if (authored.pan(x, z).kind >= 0) continue;
       const patch = ss(0.5, 0.68, fbm(x * 0.032 + 40, z * 0.032 - 8, 3));
       d = patch * 0.62 * (1 - F.cover * 0.7);
@@ -128,7 +128,7 @@ export function scatterStatic(R) {
     else if (F.rock > 0.55 && F.slope < 1.2) { keep = 0.05; sMin = 0.3; sMax = 1.5; }                    // table, crags
     else if (F.shingle > 0.2) { keep = 0.09; sMin = 0.14; sMax = 0.62; }
     else if (authored.crater(x, z) > 0.25 && F.slope > 0.2 && F.slope < 1.0) { keep = 0.34; sMin = 0.25; sMax = 1.9; }   // the ring's rockfall
-    else if (F.coast > 8 && F.h > 0.1 && F.salt < 0.2 && F.track < 0.3) { keep = 0.012; sMin = 0.16; sMax = 0.7; }
+    else if (F.coast > 8 && F.h > 0.1 && F.track < 0.3) { keep = 0.012; sMin = 0.16; sMax = 0.7; }
     if (!keep || u0 > keep) continue;
     const s = sMin + u1 * u1 * (sMax - sMin);
     rocks.push(x, F.h - s * 0.2, z, u2 * 6.2832, s * (0.9 + u3 * 0.4), s * (0.62 + u1 * 0.4), s * (0.8 + u2 * 0.4), (u3 - 0.5) * 0.4, 0.8 + u3 * 0.35);

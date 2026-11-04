@@ -6,7 +6,7 @@
  *   heights        Float32  H[n²], the render grid; gameplay reads it bilinear
  *   shade          Int16 normals (xyz + pad), Uint8 aTint (sRGB rgb + blockout amount)
  *   masks          Uint8 RGBA ×3 at 512² over the world square
- *                    maskA  R salt beyond the field  G basalt  B shingle  A wet silt
+ *                    maskA  R sea-lavender colonies  G basalt  B shingle  A wet silt
  *                    maskB  R marram cover  G packed track  B damp ground  A wind-pale sand
  *                    shore  R signed coast distance, saturating 16 m inland  G ground height near the water  B the Glass  A free
  *   coast          half-float RG at 512²: signed coast distance and ground height in metres, for the
@@ -204,7 +204,8 @@ export function maskTexel(H, x, z, out) {
   const track = authored.track(x, z);
   const nA = fbm(x * 0.06 + 3, z * 0.06, 3), nB = fbm(x * 0.19, z * 0.19 + 5, 2);
 
-  const rime = 0;
+  // sea-lavender colonies, as the far ground reads them past the plants' range (same patches as the scatter)
+  const lav = pans * ss(0.5, 0.68, fbm(x * 0.032 + 40, z * 0.032 - 8, 3)) * ss(14, 22, c) * (1 - ss(5, 8, h));
   // basalt: the Shelf's table, steep ground, the reef at the tide line, the crater's crags
   const shelf = ss(-3, 4, sd);
   const reef = pans * (1 - ss(-1.5, 4, Math.abs(c + 3))) * ss(0.56, 0.68, fbm(x * 0.035 + 21, z * 0.035, 3));
@@ -220,7 +221,7 @@ export function maskTexel(H, x, z, out) {
   const damp = pans * clamp01(1 - h / 2.2) * ss(8, 40, c) * 0.7;
   const pale = pans * ss(0.46, 0.7, nA) * ss(0.2, 2.6, h);
 
-  out[0] = clamp255(rime * 255);
+  out[0] = clamp255(lav * (1 - fk) * 255);
   out[1] = clamp255(rock * 255);
   out[2] = clamp255(shingle * (1 - rock) * 255);
   out[3] = clamp255(silt * 255);
