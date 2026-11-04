@@ -13,7 +13,7 @@
  *                    surf: its coordinates are read per pixel, and 8-bit steps sheared every foam line
  *   pan            Uint8 RGBA at 512² over PAN_BOX
  *                    R salt crust  G brine (mirror)  B hue (white..pink..rust)  A cell interior
- *   horizon        Uint8 RGBA ×2 at 512²: the terrain's horizon toward 8 bearings, so the sun
+ *   skyline        Uint8 RGBA ×2 at 512²: the terrain's skyline toward 8 bearings, so the sun
  *                    and moon cast long soft shadows at any hour for one lookup (the cascades
  *                    end at 120 m and the heightfield is not a caster)
  */
@@ -143,21 +143,21 @@ function toHalf(v) {
 }
 let _texC = 0, _texH = 0;
 
-/* ------------------------------------------------------------ the horizon map ---- */
-export const HORIZON_N = 512;
+/* ------------------------------------------------------------ the skyline map ---- */
+export const SKYLINE_N = 512;
 /** tan(elevation) range of the encoding; bytes are sqrt-encoded (the low sun needs the bits). */
-export const HORIZON_TAN = 0.9;
+export const SKYLINE_TAN = 0.9;
 const HZ_DIRS = Array.from({ length: 8 }, (_, i) => {
   const b = i * Math.PI / 4;                       // bearing i × 45° from north: x = sin b, z = −cos b
   return [Math.sin(b), -Math.cos(b)];
 });
 
 /**
- * Rows [r0, r1) of the horizon map: for each texel and bearing, the steepest rise of the
+ * Rows [r0, r1) of the skyline map: for each texel and bearing, the steepest rise of the
  * ground along that bearing out to 460 m (march at 2.5 m, growing 17 % a step).
  */
-export function bakeHorizon(H, r0, r1) {
-  const N = HORIZON_N, cell = WORLD_SIZE / N, half = WORLD_SIZE / 2;
+export function bakeSkyline(H, r0, r1) {
+  const N = SKYLINE_N, cell = WORLD_SIZE / N, half = WORLD_SIZE / 2;
   const a = new Uint8Array((r1 - r0) * N * 4), b = new Uint8Array((r1 - r0) * N * 4);
   for (let j = r0; j < r1; j++) {
     const z = (j + 0.5) * cell - half;
@@ -175,7 +175,7 @@ export function bakeHorizon(H, r0, r1) {
           if ((250 - h0) / d < best) break;
           d *= 1.17;
         }
-        const v = clamp255(Math.sqrt(Math.min(best, HORIZON_TAN) / HORIZON_TAN) * 255);
+        const v = clamp255(Math.sqrt(Math.min(best, SKYLINE_TAN) / SKYLINE_TAN) * 255);
         if (k < 4) a[o + k] = v; else b[o + k - 4] = v;
       }
     }

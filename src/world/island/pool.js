@@ -11,7 +11,7 @@
  * falls back to the single-thread path (never a half-baked island).
  */
 import { ensureMacro, macroShared } from './recipe.js';
-import { GRID, MASK_N, PAN_N, HORIZON_N, bakeHeights, bakeShade, bakeMasks, bakePan, bakeHorizon } from './bake.js';
+import { GRID, MASK_N, PAN_N, SKYLINE_N, bakeHeights, bakeShade, bakeMasks, bakePan, bakeSkyline } from './bake.js';
 import { LAYER_FILES, LAYER_SIZE, decodeLayer } from './layers.js';
 import { KINDS, STRIDE, TILE_N, fieldReader, scatterRows, scatterStatic } from './scatter.js';
 
@@ -73,14 +73,14 @@ async function bakeSingle(opts = {}) {
   const { normals, tint } = bakeShade(H, 0, side);
   const [maskA, maskB, shore, coastF] = bakeMasks(H, 0, MASK_N);
   const pan = bakePan();
-  const [horizonA, horizonB] = bakeHorizon(H, 0, HORIZON_N);
+  const [skylineA, skylineB] = bakeSkyline(H, 0, SKYLINE_N);
   const F = { H, maskA, maskB, shore };
   const scatter = stitchScatter([{ tz0: 0, part: scatterRows(F, 0, TILE_N) }], scatterStatic(fieldReader(F)));
   const t2 = performance.now();
   const layers = newLayerStore();
   if (opts.layers !== false) for (const job of layerJobs()) storeLayer(layers, job, await decodeLayer(job.url));
   const t3 = performance.now();
-  return assemble({ H, normals, tint, maskA, maskB, shore, coastF, pan, horizonA, horizonB, layers, scatter,
+  return assemble({ H, normals, tint, maskA, maskB, shore, coastF, pan, skylineA, skylineB, layers, scatter,
     stats: { mode: 'single', workers: 0, segs, buildMs: t2 - t0, heightMs: t1 - t0, shadeMs: t2 - t1, layerMs: t3 - t2, totalMs: t3 - t0 } });
 }
 
@@ -168,12 +168,12 @@ async function bakePool(opts = {}) {
     }
     let pan = null;
     jobs.push(run({ op: 'pan' }).then((out) => { pan = out; }));
-    const horizonA = new Uint8Array(HORIZON_N * HORIZON_N * 4), horizonB = new Uint8Array(HORIZON_N * HORIZON_N * 4);
-    for (let r = 0; r < HORIZON_N; r += POOL.maskRowsPerJob) {
-      const r1 = Math.min(HORIZON_N, r + POOL.maskRowsPerJob);
-      jobs.push(run({ op: 'horizon', r0: r, r1 }).then(([a, b]) => {
-        const o = r * HORIZON_N * 4;
-        horizonA.set(a, o); horizonB.set(b, o);
+    const skylineA = new Uint8Array(SKYLINE_N * SKYLINE_N * 4), skylineB = new Uint8Array(SKYLINE_N * SKYLINE_N * 4);
+    for (let r = 0; r < SKYLINE_N; r += POOL.maskRowsPerJob) {
+      const r1 = Math.min(SKYLINE_N, r + POOL.maskRowsPerJob);
+      jobs.push(run({ op: 'skyline', r0: r, r1 }).then(([a, b]) => {
+        const o = r * SKYLINE_N * 4;
+        skylineA.set(a, o); skylineB.set(b, o);
       }));
     }
     await Promise.all(jobs);
@@ -195,7 +195,7 @@ async function bakePool(opts = {}) {
     await layerP;
     const tLayers = performance.now();
     done();
-    return assemble({ H, normals, tint, maskA, maskB, shore, coastF, pan, horizonA, horizonB, layers: store, scatter,
+    return assemble({ H, normals, tint, maskA, maskB, shore, coastF, pan, skylineA, skylineB, layers: store, scatter,
       stats: { mode: 'pool', workers: POOL.workers, segs, macroMs: tMacro - t0, spawnMs: tReady - tMacro,
         heightMs: tH - tReady, shadeMs: tBuild - tH, buildMs: tBuild - t0, scatterMs: tScatter - tBuild,
         layerWaitMs: tLayers - tScatter, totalMs: tLayers - t0 } });

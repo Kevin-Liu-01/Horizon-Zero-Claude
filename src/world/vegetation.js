@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { WORLD_SIZE } from './island/extent.js';
+import { GROUND } from './island/sites.js';
 import { rng } from './island/recipe.js';
 import { STRIDE, TILE, TILE_N, fieldReader, marramTile, marramDensity } from './island/scatter.js';
 import {
@@ -266,7 +267,7 @@ uniform float uSunTan;
 uniform float uHzWorldInv;
 uniform float uHzK;
 `;
-/** The land's long shadow falls on the plants too (groundShader.js gHorizonVis). */
+/** The land's long shadow falls on the plants too (groundShader.js gSkylineVis). */
 const FLORA_AO = /* glsl */ `
 #include <aomap_fragment>
 {
@@ -348,6 +349,8 @@ export class Vegetation {
     /* The world's props (world-props). Built after the scatter: their keepouts thin it. */
     this.props = new Props(ctx);
     this._retireRound4Props();
+    /* The place table the gates stage by name, until world-props publishes its own. */
+    if (!this.props.gatePlaces) this.props.gatePlaces = { ...GROUND, __fallback: true };
     this._applyKeepouts();
     const st = ctx.props || this.props;
     this.forceStream(st?.spawnX ?? -284, st?.spawnZ ?? 247);
@@ -366,7 +369,7 @@ export class Vegetation {
     if (!P?.megaMeshes) return;
     P.group.visible = false;
     P.group.name = 'world-props-retired';
-    for (const part of [P.tallneck, P.rockworks, P.activities]) if (part?.group) part.group.visible = false;
+    for (const part of Object.values(P)) if (part && part !== P.fauna && part.group?.isObject3D) part.group.visible = false;
     P.registerColliders = () => 0;
     if (P.rockworks?.ledges) P.rockworks.ledges.length = 0;
     if (P.placeSystem?.ledges) P.placeSystem.ledges.length = 0;

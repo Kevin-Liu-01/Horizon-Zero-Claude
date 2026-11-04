@@ -66,24 +66,20 @@ uniform vec3 uScale1;   // 1/tile: sand, salt, basalt
 uniform vec2 uScale2;   // 1/tile: silt, shingle
 uniform sampler2D tHzA;
 uniform sampler2D tHzB;
-uniform vec4 uHzW0;     // the light's bearing as weights over the 8 horizon channels
+uniform vec4 uHzW0;     // the light's bearing as weights over the 8 skyline channels
 uniform vec4 uHzW1;
 uniform float uSunTan;  // tan(elevation) of the sun or moon
 uniform float uHzWorldInv;
 uniform float uHzK;     // shadow strength: 1, or the calima's 0.45
 vec3 gN; float gRough; float gAO; float gLiquid; float gSunVis = 1.0;
-/** Is the light above the terrain's horizon here? Long soft shadows from one lookup. */
-float gHorizonVis(vec2 xz) {
+/** Is the light above the terrain's skyline here? Long soft shadows from one lookup. */
+float gSkylineVis(vec2 xz) {
   vec2 uv = xz * uHzWorldInv + 0.5;
   float a = dot(texture2D(tHzA, uv), uHzW0) + dot(texture2D(tHzB, uv), uHzW1);
   a = a * a * 0.9;
   return mix(1.0, smoothstep(a - 0.016, a + 0.034, uSunTan), uHzK);
 }
-float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float gNoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(gHash(i), gHash(i + vec2(1, 0)), f.x), mix(gHash(i + vec2(0, 1)), gHash(i + vec2(1, 1)), f.x), f.y);
-}
+uniform sampler2D tNoiseG;   // four octaves of periodic noise in one fetch: R 8, G 16, B 32, A 64 cells a tile
 float gScale(int i) { return i == 0 ? uScale1.x : i == 1 ? uScale1.y : i == 2 ? uScale1.z : i == 3 ? uScale2.x : uScale2.y; }
 vec4 gA(int i, vec2 uv, vec2 gx, vec2 gy) {
   return i < 3 ? textureGrad(tA1, vec3(uv, float(i)), gx, gy) : textureGrad(tA2, vec3(uv, float(i - 3)), gx, gy);
@@ -123,7 +119,8 @@ export const TERRAIN_COLOR = /* glsl */ `
   if (puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0) pan = texture2D(tPan, puv);
 
   float slope = sqrt(max(1.0 - wn.y * wn.y, 0.0)) / max(wn.y, 0.05);
-  float macA = gNoise(xz * 0.031) * 0.6 + gNoise(xz * 0.097 + 7.0) * 0.4;
+  vec4 nMac = texture2D(tNoiseG, xz * 0.0039);                 // cells 32, 16, 8, 4 m
+  float macA = nMac.r * 0.6 + nMac.b * 0.4;
 
   /* -- the five weights, then the three that survive ----------------------- */
   float crust = pan.r;
@@ -146,7 +143,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   }
 
   /* -- anti-tile: one of 8 offsets per region, seams blended on contrast ---- */
-  float tk = gNoise(xz * 0.043) * 8.0;
+  float tk = nMac.g * 8.0;
   float tia = floor(tk), tf = fract(tk);
   vec2 offA = sin(vec2(3.0, 7.0) * tia), offB = sin(vec2(3.0, 7.0) * (tia + 1.0));
   vec2 dpx = dFdx(xz), dpy = dFdy(xz);
@@ -221,21 +218,23 @@ export const TERRAIN_COLOR = /* glsl */ `
     /* the black sand from far off: fabric drawn out along the trade wind, warmer ash in broad
      * patches, and past the plants' range the colonies and the scrub as tone in the ground */
     vec2 wv = vec2(dot(xz, vec2(0.7071, -0.7071)), dot(xz, vec2(0.7071, 0.7071)));
-    float streak = gNoise(vec2(wv.x * 0.085, wv.y * 0.011)) * 0.6 + gNoise(vec2(wv.x * 0.31, wv.y * 0.04) + 9.0) * 0.4;
-    float ash = smoothstep(0.42, 0.78, gNoise(xz * 0.0093 + 31.0) * 0.7 + gNoise(xz * 0.041) * 0.3);
+    vec4 nStreak = texture2D(tNoiseG, vec2(wv.x * 0.0106, wv.y * 0.00137));
+    float streak = nStreak.r * 0.6 + nStreak.b * 0.4;
+    vec4 nAsh = texture2D(tNoiseG, xz * 0.00116 + 0.31);
+    float ash = smoothstep(0.42, 0.78, nAsh.r * 0.7 + nAsh.b * 0.3);
     vec3 sandTone = mix(vec3(1.0), vec3(1.42, 1.3, 1.16), ash) * (0.72 + 0.6 * streak);
     float farK = smoothstep(40.0, 170.0, dCam);
-    float scrub = smoothstep(0.54, 0.8, gNoise(xz * 0.29 + 3.0) * 0.6 + gNoise(xz * 0.083 + 17.0) * 0.4);
+    float scrub = smoothstep(0.54, 0.8, nMac.a * 0.6 + nMac.b * 0.4);
     vec3 sandCol = col * sandTone;
     sandCol = mix(sandCol, vec3(0.05, 0.046, 0.03), scrub * 0.6 * farK);
     sandCol = mix(sandCol, vec3(0.17, 0.15, 0.078), mB.r * farK * 0.8);
-    sandCol = mix(sandCol, vec3(0.135, 0.09, 0.185), mA.r * farK * (0.3 + 0.45 * gNoise(xz * 0.21)));
+    sandCol = mix(sandCol, vec3(0.135, 0.09, 0.185), mA.r * farK * (0.3 + 0.45 * nMac.a));
     col = mix(col, sandCol, smoothstep(0.02, 0.5, w[0]));
   }
   // packed tracks: pale, smooth, salt-dusted
   if (mB.g > 0.01) {
     float tr = smoothstep(0.1, 0.8, mB.g) * (0.6 + 0.4 * macA);
-    col = mix(col, vec3(0.135, 0.122, 0.104) * (0.6 + 0.6 * gNoise(xz * 2.1)), tr * 0.8);
+    col = mix(col, vec3(0.135, 0.122, 0.104) * (0.6 + 0.6 * texture2D(tNoiseG, xz * 0.031).b), tr * 0.8);
     pert *= 1.0 - 0.6 * tr;
     rSum = mix(rSum, 0.82, tr);
   }
@@ -272,7 +271,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   col *= mix(1.0, clamp(aoSum * 1.08, 0.0, 1.0), 0.4);
 
   /* -- the long shadows: the land's own, and past the cascades the dykes' ------ */
-  gSunVis = gHorizonVis(xz);
+  gSunVis = gSkylineVis(xz);
   if (pan.a > 0.01 && dCam > 70.0) {
     // a dyke is ≈ 0.55 m tall: a band of shadow on the side away from the light
     float L = min(0.55 / max(uSunTan, 0.08), 5.5);
@@ -311,14 +310,14 @@ export const ROCK_COLOR = /* glsl */ `
   vec4 nx = gNm(2, ux, dx.zy, dy.zy), ny = gNm(2, uy, dx.xz, dy.xz), nz = gNm(2, uz, dx.xy, dy.xy);
   vec2 tx = nx.xy * 2.0 - 1.0, ty = ny.xy * 2.0 - 1.0, tz = nz.xy * 2.0 - 1.0;
   vec3 c = pow(a.rgb, vec3(2.2));
-  float mac = gNoise(vWPos.xz * 0.37 + vWPos.y * 0.21);
+  float mac = texture2D(tNoiseG, vWPos.xz * 0.012 + vWPos.y * 0.007).b;
   c *= (0.78 + 0.5 * mac) * uRockLift;
   // salt rime settles on what faces up; the foot in the swash is wet and black
   float rime = smoothstep(0.78, 0.99, wn.y) * uRime * smoothstep(0.42, 0.72, mac);
   c = mix(c, vec3(0.5, 0.48, 0.44), rime);
   float wetK = 1.0 - smoothstep(0.02, 0.36, vWPos.y);
   c *= mix(1.0, 0.42, wetK);
-  gSunVis = gHorizonVis(vWPos.xz);
+  gSunVis = gSkylineVis(vWPos.xz);
   diffuseColor.rgb = c * diffuseColor.rgb;
   gN = (vec3(0.0, tx.y, tx.x) * bw.x + vec3(ty.x, 0.0, ty.y) * bw.y + vec3(tz.x, tz.y, 0.0) * bw.z) * 1.1;
   gRough = mix(nx.z * bw.x + ny.z * bw.y + nz.z * bw.z, 0.22, wetK * 0.8);

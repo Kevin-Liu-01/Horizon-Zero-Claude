@@ -220,15 +220,15 @@ function basalt(N) {
     const crazy = ridge(u, v, 7, 4, 33);
     const ves = worley(u, v, 72, 31), ves2 = worley(u, v, 30, 35);
     const pitZone = sm(-0.1, 0.35, fbm(u, v, 4, 2, 44));
-    const pit = (sm(0.24, 0.05, ves.f1) * (ves.id > 0.72 ? 1 : 0) + sm(0.16, 0.03, ves2.f1) * (ves2.id > 0.86 ? 1 : 0)) * pitZone;
+    const pit = (sm(0.2, 0.05, ves.f1) * (ves.id > 0.86 ? 1 : 0) + sm(0.14, 0.03, ves2.f1) * (ves2.id > 0.94 ? 1 : 0)) * pitZone;
     const n = fbm(u, v, 6, 5, 37);
     const facet = (w.id - 0.5) * 0.22 + (blocks.id - 0.5) * 0.14;
-    const h = 0.52 + n * 0.3 + crazy * 0.16 + facet - joint * 0.2 - frac * 0.1 - pit * 0.2;
+    const h = 0.52 + n * 0.34 + crazy * 0.2 + facet * 0.5 - joint * 0.08 - frac * 0.03 - pit * 0.14;
     H[i] = clamp01(h);
     let c = mix3(base, light, clamp01(0.32 + n * 0.72 + facet * 1.3));
     c = mix3(c, rust, sm(0.22, 0.55, fbm(u, v, 4, 3, 71)) * 0.34);
     c = mix3(c, saltS, sm(0.3, 0.62, fbm(u, v, 5, 4, 75)) * 0.28 * (1 - pit));
-    const d = 1 - joint * 0.22 - frac * 0.12 - clamp01(pit) * 0.42;
+    const d = 1 - joint * 0.1 - frac * 0.04 - clamp01(pit) * 0.3;
     A[i * 3] = c[0] * d; A[i * 3 + 1] = c[1] * d; A[i * 3 + 2] = c[2] * d;
     R[i] = clamp01(0.8 + joint * 0.1 + (n * 0.5) * 0.12);
   }

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { WORLD_SIZE, WORLD_HALF, PLAY_RADIUS, MESH_SPAN, MESH_SEGS } from './island/extent.js';
 import { REST_SITE, TUBES } from './island/sites.js';
 import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './island/recipe.js';
-import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, HORIZON_N, bakeShade, maskTexel } from './island/bake.js';
+import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, SKYLINE_N, bakeShade, maskTexel } from './island/bake.js';
 import { bakeIsland } from './island/pool.js';
 import { LAYER_FILES, LAYER_SIZE } from './island/layers.js';
 import { fieldReader } from './island/scatter.js';
@@ -424,13 +424,13 @@ export class Terrain {
     };
     this._maskData.tex = [this._maskTextures.a, this._maskTextures.b, this._maskTextures.shore];
     const mkHz = (data) => {
-      const t = mkMask(data, HORIZON_N);
+      const t = mkMask(data, SKYLINE_N);
       t.minFilter = THREE.LinearMipmapLinearFilter;
       t.generateMipmaps = true;
       return t;
     };
-    this._maskTextures.hzA = mkHz(BAKE.horizonA);
-    this._maskTextures.hzB = mkHz(BAKE.horizonB);
+    this._maskTextures.hzA = mkHz(BAKE.skylineA);
+    this._maskTextures.hzB = mkHz(BAKE.skylineB);
     const cf = new THREE.DataTexture(BAKE.coastF, MASK_N, MASK_N, THREE.RGFormat, THREE.HalfFloatType);
     cf.internalFormat = 'RG16F';
     cf.minFilter = THREE.LinearFilter; cf.magFilter = THREE.LinearFilter;
@@ -457,6 +457,31 @@ export class Terrain {
       a1: mkArr(L.aBig, sB, nB), n1: mkArr(L.nBig, sB, nB),
       a2: mkArr(L.aSmall, sS, nS), n2: mkArr(L.nSmall, sS, nS),
     };
+    /* Four octaves of periodic value noise in one texture: the ground's macro read costs a few
+     * fetches, where sin-hash noise cost forty sines a pixel. */
+    {
+      const N = 128, data = new Uint8Array(N * N * 4), oct = [8, 16, 32, 64];
+      let sd = 90127;
+      const rnd = () => { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return sd / 4294967296; };
+      for (let c = 0; c < 4; c++) {
+        const P = oct[c], lat = new Float32Array(P * P);
+        for (let i = 0; i < lat.length; i++) lat[i] = rnd();
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+          const fx = (x / N) * P, fy = (y / N) * P, ix = fx | 0, iy = fy | 0;
+          let tx = fx - ix, ty = fy - iy;
+          tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
+          const a = lat[iy * P + ix], b = lat[iy * P + (ix + 1) % P], d = lat[((iy + 1) % P) * P + ix], e = lat[((iy + 1) % P) * P + (ix + 1) % P];
+          const v = a + (b - a) * tx, w = d + (e - d) * tx;
+          data[(y * N + x) * 4 + c] = (v + (w - v) * ty) * 255;
+        }
+      }
+      const t = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+      t.generateMipmaps = true;
+      t.needsUpdate = true;
+      this._maskTextures.noiseG = t;
+    }
     /** Shared uniform holders: terrain, rocks and salt all read one set. */
     this.groundUniforms = {
       tA1: { value: this._layerTextures.a1 }, tN1: { value: this._layerTextures.n1 },
@@ -464,6 +489,7 @@ export class Terrain {
       uScale1: { value: new THREE.Vector3(1 / 3.0, 1 / 6.0, 1 / 7.0) },
       uScale2: { value: new THREE.Vector2(1 / 3.5, 1 / 2.6) },
       tHzA: { value: this._maskTextures.hzA }, tHzB: { value: this._maskTextures.hzB },
+      tNoiseG: { value: this._maskTextures.noiseG },
       uHzW0: { value: new THREE.Vector4(0, 1, 0, 0) }, uHzW1: { value: new THREE.Vector4() },
       uSunTan: { value: 1 }, uSunXZ: { value: new THREE.Vector2(0, -1) },
       uHzWorldInv: { value: 1 / WORLD_SIZE }, uHzK: { value: 1 },
@@ -753,7 +779,7 @@ export class Terrain {
     return true;
   }
 
-  /** The light (sun or moon) as the horizon map reads it: bearing weights + elevation. No allocation. */
+  /** The light (sun or moon) as the skyline map reads it: bearing weights + elevation. No allocation. */
   _updateSunUniforms() {
     const env = this.ctx.environment, L = env?.lightDir;
     if (!L) return;

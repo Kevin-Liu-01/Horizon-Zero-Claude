@@ -15,7 +15,7 @@ removal grant), §3.1 (W1 exit), §3.2 (contracts), §4 (budgets), §6 (delete r
 | Terrain API on the baked grid | `src/world/terrain.js` | `A-terrain-api`; `riverFactor` still exported, returns 0 |
 | The Pans at full fidelity | `recipe.js` (salt field, Glass, red tuff ring, Organ Shelf table, storm beach, dunes), `groundShader.js`, `water.js`, `vegetation.js`, `scatter.js` | see §2 |
 | Five procedural ground layers | `tools/build/ground/gen-ground-layers.mjs` → `public/textures/ground/*` | project-original (R41), all `LICENSES.json` rows through `tools/licences/add.mjs` |
-| Horizon map: long soft terrain shadows at any hour | `bake.js` `bakeHorizon`, `groundShader.js` `gHorizonVis` | new; see §2.5 |
+| Skyline map: long soft terrain shadows at any hour | `bake.js` `bakeSkyline`, `groundShader.js` `gSkylineVis` | new; see §2.5 |
 | R48 owner bar | `terrain.js` `noise2D` | the destructured `[i1, j1]` is two integers now |
 | POC closure | `src/main.js` block removed, `public/textures/r5-poc/**`, `tools/r5-poc/poc-biome.js` deleted | `public/models/r5-poc/*` stays until its two generators are re-pointed by their owners (§5) |
 
@@ -53,9 +53,9 @@ Eight kinds, one draw each (+3 for a caster): marram near/far, glasswort, sea-la
 boulders, hex-packed basalt pavements, dyke runs, salt heaps/windrows/cones. Nothing grows in a cell.
 Plants use their authored up-biased normal and are never flipped for the back face (that painted them black).
 
-### 2.5 Long shadows without a caster (`bakeHorizon`, `gHorizonVis`)
+### 2.5 Long shadows without a caster (`bakeSkyline`, `gSkylineVis`)
 
-The cascades end at 120 m and the heightfield does not cast. The bake stores the terrain's horizon toward
+The cascades end at 120 m and the heightfield does not cast. The bake stores the terrain's skyline toward
 eight bearings (2 RGBA8 at 512², 2.8 MB with mips, ≈ 100 ms in the pool); each frame sets the light's bearing as
 weights over the eight channels. Ground, rock and plants read it with two texture lookups, so the crater, the
 rise and the dunes throw long soft shadows at any hour, for sun and moon, at no CPU cost. In calima the

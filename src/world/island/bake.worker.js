@@ -5,7 +5,7 @@
  * single-thread build.
  */
 import { ensureMacro } from './recipe.js';
-import { bakeHeights, bakeShade, bakeMasks, bakePan, bakeHorizon } from './bake.js';
+import { bakeHeights, bakeShade, bakeMasks, bakePan, bakeSkyline } from './bake.js';
 import { decodeLayer } from './layers.js';
 import { KINDS, fieldReader, scatterRows, scatterStatic } from './scatter.js';
 
@@ -30,8 +30,8 @@ self.onmessage = async (ev) => {
     } else if (m.op === 'masks') {
       const out = bakeMasks(H, m.r0, m.r1);
       self.postMessage({ id: m.id, out }, out.map((d) => d.buffer));
-    } else if (m.op === 'horizon') {
-      const out = bakeHorizon(H, m.r0, m.r1);
+    } else if (m.op === 'skyline') {
+      const out = bakeSkyline(H, m.r0, m.r1);
       self.postMessage({ id: m.id, out }, out.map((d) => d.buffer));
     } else if (m.op === 'pan') {
       const out = bakePan();

@@ -151,7 +151,7 @@ const ROWS = [
       const identical = {
         H: eq(again.H, single.H), normals: eq(again.normals, single.normals), tint: eq(again.tint, single.tint),
         maskA: eq(again.maskA, single.maskA), maskB: eq(again.maskB, single.maskB), shore: eq(again.shore, single.shore), pan: eq(again.pan, single.pan),
-        horizon: eq(again.horizonA, single.horizonA) && eq(again.horizonB, single.horizonB),
+        skyline: eq(again.skylineA, single.skylineA) && eq(again.skylineB, single.skylineB),
         coastF: eq(again.coastF, single.coastF),
         scatter: eq(again.scatter.kinds.marram.rec, single.scatter.kinds.marram.rec) && eq(again.scatter.static.walls, single.scatter.static.walls),
       };
@@ -817,7 +817,7 @@ const ROWS = [
     title: 'Task order: the player never sees a Round-4 spire or prop in the Pans. Every old-valley group is hidden (or world-props has deleted it), no old prop collider or ledge is live, and the render lists at the Pans vista hold nothing from them',
     assert: `(async () => {
       const ctx = __CTX__, P = ctx.props, C = ctx.collision;
-      const old = P?.megaMeshes ? [P.group, P.tallneck?.group, P.rockworks?.group, P.activities?.group].filter(Boolean) : [];
+      const old = P?.megaMeshes ? [P.group, ...Object.values(P).filter((v) => v && v !== P.fauna && v.group?.isObject3D && v.group !== P.group).map((v) => v.group)] : [];
       const shown = old.filter((g) => g.visible).map((g) => g.name);
       const inOld = new Set();
       for (const g of old) g.traverse((o) => { if (o.isMesh) inOld.add(o); });
@@ -923,6 +923,8 @@ const ROWS = [
       const R = await import('/src/world/island/recipe.js');
       const S = await import('/src/world/island/sites.js');
       const ctx = __CTX__, cam = ctx.camera, T = ctx.terrain;
+      const hud = document.getElementById('hud'); if (hud) hud.style.display = 'none';
+      for (const m of (ctx.machines?.list || [])) { if (m.root) m.root.visible = false; m.frozen = true; }
       ctx.environment?.setWeather?.(ctx.environment.weatherStates?.includes('trade') ? 'trade' : 'clear', 0);
       ctx.environment?.setTime?.(9.2);
       const p = ctx.player; p._updateCamera = () => {};
@@ -978,24 +980,6 @@ function vistaSetup({ hour, weather, shot = 'vista' }) {
     env?.setWeather?.(states.includes(want) ? want : fb, 0);
     env?.setTime?.(${hour});
     if (env) env.timeFrozen = true;
-    /* Until world-sky's calima merges: its bible values forced over the old 'overcast' each
-     * frame, so the ground can be read under the right light. Named in the caption below. */
-    if (want === 'calima' && !states.includes(want) && env) {
-      const orig = env._applyTime.bind(env);
-      const C = (h) => new (env.u.calFogHorizon.value.constructor)(h);
-      const fogH = C('#C98B4E'), fogZ = C('#A9713F'), fogS = C('#E8A06A'), sunC = C('#F2C09A'), mid = C('#B98450'), zen = C('#9A6A3E');
-      env._applyTime = (dt) => {
-        orig(dt);
-        const u = env.u, su = env.sky.material.uniforms;
-        u.calFogA.value.x = 0.00133 * 3.2;
-        u.calFogHorizon.value.copy(fogH); u.calFogZenith.value.copy(fogZ); u.calFogSun.value.copy(fogS);
-        su.uHorizon.value.copy(fogH); su.uMid.value.copy(mid); su.uZenith.value.copy(zen); su.uCloud.value.set(0, 0, 0, 0);
-        env.sun.color.copy(sunC); env.sun.intensity = 2.3;
-        for (const L of (env.csm?.lights || [])) { L.color.copy(sunC); L.intensity = 2.3; }
-        env.hemi.color.set('#D9B48A'); env.hemi.groundColor.set('#6B5236'); env.hemi.intensity = 0.62;
-        ctx.scene.fog.color.copy(fogH); ctx.scene.fog.density = u.calFogA.value.x;
-      };
-    }
     const p = ctx.player; p._updateCamera = () => {};
     if (ctx.studio) ctx.studio.update = () => {};
     ctx.state = 'playing';
@@ -1069,23 +1053,53 @@ function pansRow(srcId, id, edits = []) {
   const rehost = (src) => {
     if (src == null) return src;
     let t = String(src).split(POC_KIT).join(GAME_KIT);
-    for (const [a, b] of edits) t = t.split(a).join(b);
+    for (const [a, b] of edits) {
+      if (a instanceof RegExp ? !a.test(t) : !t.includes(a)) throw new Error(`gates.r5.world-ground: ${srcId}: the re-aim edit ${a} found nothing`);
+      t = a instanceof RegExp ? t.replace(a, b) : t.split(a).join(b);
+    }
     return t;
   };
   return {
     id, kind: r.kind, lane: LANE, timeout: r.timeout, settle: r.settle, params: r.params,
     title: `[${srcId}, R49, on the real Pans] ${r.title}`,
-    assert: rehost(r.assert), setup: rehost(r.setup), criteria: r.criteria && r.criteria.replace(/Pans POC/g, 'real Pans'),
+    assert: r.assert ? rehost(r.assert) : undefined, setup: r.setup ? rehost(r.setup) : undefined, criteria: r.criteria && r.criteria.replace(/Pans POC/g, 'real Pans'),
     reference: 'in-sheet controls (shipped vs no AA, stock shader, GTAO off), as R49 grades them',
   };
 }
+
+/**
+ * THE REAL PANS' FRAMES. The POC frames were aimed at the POC's mesas and shelf; on the island
+ * they look at open sea or empty sky. A frame here is the same tuple camAt takes, with world
+ * coordinates shifted by the kit's (__OX, __OZ), and the same crop lists and bars.
+ */
+const P = (x, z, h, yaw, pitch, fov) => [x + 341, z - 312, h, yaw, pitch, fov];
+const AA_CAM = P(-405, 170, 2.2, 180, 3, 50);          // the tuff ring's crest against the sky
+const A108_REAL = [
+  { name: 'the plain and the Holds from the back of the ring', cam: P(-300, 120, 2.6, 120, -3, 46), crops: { far147m: [0.5, 0.42], far128m: [0.4, 0.5], mid87m: [0.5, 0.6], mid47m: [0.5, 0.68], mid32m: [0.8, 0.68] }, far: ['far147m', 'far128m'] },
+  { name: 'the Holds from 14 m', cam: P(-100, 250, 14, 60, -14, 40), crops: { far129m: [0.4, 0.25], far108m: [0.5, 0.35], mid87m: [0.5, 0.4], mid62m: [0.4, 0.5], mid46m: [0.1, 0.6], mid41m: [0.8, 0.65] }, far: ['far129m', 'far108m'] },
+  { name: 'the Shelf from 6 m', cam: P(-170, 352, 6, 100, -6, 46), crops: { mid68m: [0.6, 0.5], near23m: [0.5, 0.75] }, far: [] },
+];
+const A108_WITNESS_REAL = [
+  { name: 'sand + marram on the plain, 2 m up', cam: P(-92, 342, 2, 200, 3, 46), crop: [0.2, 0.8] },
+  { name: 'sand + marram behind the Glass, 2 m up', cam: P(-422, 198, 2, 60, 3, 46), crop: [0.2, 0.8] },
+  { name: 'sand + marram at the dunes, 2 m up', cam: P(-98, 420, 2, 300, 3, 46), crop: [0.6, 0.8] },
+];
+const A109_REAL = { near: P(-195, 350, 2.0, 40, -10, 55), far: P(-300, 120, 2.6, 120, 3, 46), farBand: [0.12, 0.22, 0.88, 0.42] };
+const AA_EDIT = ['camAt(16, 22, 2.2, 53, 14, 50)', `camAt(${AA_CAM.join(', ')})`];
 if (GAME_KIT.includes('poc-biome.js') || GAME_KIT.includes('__R5BIOME__')) throw new Error('gates.r5.world-ground: the POC host did not re-host');
 for (const row of [
-  pansRow('A22-msaa', 'A22-msaa-pans'),
-  pansRow('A108-ao-periodicity', 'A108-ao-periodicity-pans'),
-  pansRow('A109-ao-distance-fade', 'A109-ao-distance-fade-pans'),
-  pansRow('V20-aa-crop', 'V20-aa-crop-pans'),
-  pansRow('V33b-no-ao-lattice', 'V33b-no-ao-lattice-pans'),
+  pansRow('A22-msaa', 'A22-msaa-pans', [AA_EDIT]),
+  pansRow('A108-ao-periodicity', 'A108-ao-periodicity-pans', [
+    [/const FRAMES = \[\{"name":"mesas.*?\];/s, `const FRAMES = ${JSON.stringify(A108_REAL)};`],
+    [/const W_ = \[\{"name":"sand.*?\];/s, `const W_ = ${JSON.stringify(A108_WITNESS_REAL)};`],
+  ]),
+  pansRow('A109-ao-distance-fade', 'A109-ao-distance-fade-pans', [
+    [/const F = \{"near":.*?\};/s, `const F = ${JSON.stringify(A109_REAL)};`],
+  ]),
+  pansRow('V20-aa-crop', 'V20-aa-crop-pans', [AA_EDIT]),
+  pansRow('V33b-no-ao-lattice', 'V33b-no-ao-lattice-pans', [
+    [/"spot":\[-82,0,2\.6\]/, `"spot":${JSON.stringify(P(-222, 183, 2.6).slice(0, 3))}`],
+  ]),
   pansRow('V-gpu-tier-look', 'V-gpu-tier-look-pans'),
 ]) if (row) ROWS.push(row);
 

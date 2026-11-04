@@ -93,7 +93,7 @@ const SEA_COLOR = /* glsl */ `
   float n1 = texture2D(tRipple, vec2(sA * 0.052, (cst + rush) * 0.13) + wob).b;
   float n2 = texture2D(tRipple, vec2(sA * 0.137, (cst + rush * 1.3) * 0.37) - wob * 1.7).b;
   float n3 = nearK > 0.0 ? texture2D(tRipple, vec2(sA * 0.41, (cst + rush * 1.6) * 0.97) + wob * 3.0).b : 0.5;
-  float lace = mix(n1 * 0.62 + n2 * 0.38, n1 * 0.46 + n2 * 0.3 + n3 * 0.24, nearK);
+  float lace = mix(n1 * 0.62 + n2 * 0.38, n1 * 0.5 + n2 * 0.34 + n3 * 0.16, nearK);
   float blot = texture2D(tRipple, vec2(sA * 0.014, cst * 0.041 - uTime * 0.012)).a;
 
   /* how much of the surface is white: a crest is nearly solid, what it leaves behind is lace */
@@ -110,7 +110,7 @@ const SEA_COLOR = /* glsl */ `
   float lipLine = (1.0 - smoothstep(0.0, 0.035 + 0.07 * n2, depth)) * (0.4 + 0.6 * exp(-s * 2.6));
   cover = max(cover, lipLine * 1.1);
   float foamTex = mix(0.5, lace, laceFar);
-  float foam = smoothstep(1.0 - cover * 1.05, 1.16 - cover * 1.0, foamTex + 0.2);
+  float foam = smoothstep(0.97 - cover * 1.05, 1.2 - cover * 1.0, foamTex + 0.2);
 
   // far out the odd whitecap: small, sparse, drawn out by the trade wind
   vec2 capP = vec2(dot(p, vec2(0.7071, -0.7071)) * 0.21, dot(p, vec2(0.7071, 0.7071)) * 0.07);
