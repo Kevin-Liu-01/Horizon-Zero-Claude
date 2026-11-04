@@ -39,7 +39,7 @@ export async function build({ out = ROOT } = {}) {
         const j = J(side > 0 ? 'clavicle_l' : 'clavicle_r');
         // three tiles along the shoulder, the outer lapping the inner, each a curved plate (a fourth stood in the bow's and the lance's way)
         for (let i = 0; i < 3; i++) {
-          const x0 = 0.116 + i * 0.034, x1 = x0 + 0.05;
+          const x0 = 0.13 + i * 0.034, x1 = x0 + 0.05;
           const COLS = 5;
           const inner = [], outer = [];
           for (let c = 0; c <= COLS; c++) {

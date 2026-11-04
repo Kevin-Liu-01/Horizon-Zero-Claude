@@ -204,6 +204,7 @@ export class LanceCarry {
     this.alpha = this.alpha0; this.beta = 0; this.sl = 0;
     this.k3 = 0.25;                       // spine_03's share of the lateral axis (run)
     this.bounds = R10;                    // (probes / gates read the live bounds)
+    this._gridAge = 8; this._lastFeas = false; this._tA = 0; this._tB = 0; this._tS = 0;
     this.out = { deg: 0, alpha: 0, beta: 0, tipBehindHeadPlane: 0, headGap: 0, armGap: null, feasible: true, active: false, mode: 'strap' };
     this._freeT = Infinity;               // s since the free (climb) search last ran
     this.butt = new THREE.Vector3(); this.tip = new THREE.Vector3();   // last solved (char space)
@@ -318,7 +319,18 @@ export class LanceCarry {
     this._fpOn = false;
     // the search: the feasible (alpha, beta) nearest the authored pose
     let best = Infinity, bA = this.alpha0, bB = 0, bS = this.sl, bFeas = false;
-    for (let ia = 0; ia <= 15; ia++) {
+    // the whole grid while there is no feasible pose to start from, and every eighth frame so the search cannot stay
+    // in a local minimum; in between the last answer is the start, and the pattern search below follows the body
+    const warm = this.out.active && this._lastFeas === true && this._gridAge < 8;
+    this._gridAge = warm ? this._gridAge + 1 : 0;
+    if (warm) {
+      bA = this._tA; bB = this._tB; bS = this._tS;
+      _ARG[0] = bA; _ARG[1] = bB; _ARG[2] = bS;
+      this._placeS(_b, _t);
+      this._viol(_b, _t, armOn);
+      best = _RG[0] * 100 + Math.abs(bA - this.alpha0) + 1.5 * bB + R10.slCost * Math.abs(bS);
+      bFeas = _RG[0] === 0;
+    } else for (let ia = 0; ia <= 15; ia++) {
       const alpha = R10.alphaMin + (R10.alphaMax - R10.alphaMin) * ia / 15;
       for (let ib = 0; ib <= 13; ib++) {
         const beta = R10.betaMax * ib / 13;
@@ -346,7 +358,8 @@ export class LanceCarry {
       // shoulder against the solve's 0.65 (A100: 0.70) and only a steeper
       // lance could lower it — sliding it down its sling lowers the blade at
       // the same angle (the bob still clears the ground: `groundGap`)
-      let sa = (R10.alphaMax - R10.alphaMin) / 30, sb = R10.betaMax / 26, ss = 0.02;
+      const st0 = warm ? 0.25 : 1;
+      let sa = st0 * (R10.alphaMax - R10.alphaMin) / 30, sb = st0 * R10.betaMax / 26, ss = st0 * 0.02;
       for (let it = 0; it < 14 && best > 0; it++) {
         let moved = false;
         for (let k = 0; k < 6; k++) {
@@ -363,6 +376,7 @@ export class LanceCarry {
         if (!moved) { sa *= 0.5; sb *= 0.5; ss *= 0.5; if (sa < 0.002) break; }
       }
     }
+    this._tA = bA; this._tB = bB; this._tS = bS; this._lastFeas = bFeas;
     // ease (first frame: snap)
     const e = this.out.active ? 1 - Math.exp(-R10.rate * Math.min(dt, 0.05)) : 1;
     this.alpha += (bA - this.alpha) * e;
