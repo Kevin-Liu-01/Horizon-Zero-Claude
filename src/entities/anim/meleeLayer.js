@@ -269,7 +269,7 @@ const READY = {
  * opening, full at the contact, gone by the end of the recover.
  */
 /** The left forearm's axis off her pelvis->neck axis (a forearm is 0.05 thick, her belly 0.12 out). */
-const LEFT_FORE_CLEAR = 0.13;
+const LEFT_FORE_CLEAR = 0.15;
 /** How much of the trunk's turn the head keeps, and how much of its lean the
  *  neck and skull take out (see `update`). */
 const HEAD_LEAD = 0.14;
@@ -328,7 +328,7 @@ const HEAVY = {
   id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.18,
   cock: { hand: [-0.28, 1.31, -0.12], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.46, py: -0.36, pitch: -0.10, roll: 0.08, dz: -0.10 },
   contact: { hand: [-0.22, 1.35, 0.27], shaft: [0.12, -0.05, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.14, py: 0.04, pitch: 0.30, roll: -0.05, dz: 0.13 },
-  follow: { hand: [-0.21, 1.12, 0.24], shaft: [0.26, -0.46, 0.85], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.10, py: 0.10, pitch: 0.32, roll: -0.08, dz: 0.10 },
+  follow: { hand: [-0.21, 1.17, 0.24], shaft: [0.26, -0.42, 0.87], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.10, py: 0.10, pitch: 0.32, roll: -0.08, dz: 0.10 },
 };
 /** How far before `CONTACT_K` the contact key is reached; it is then HELD for
  *  the rest of the strike window. See `_blend`. 0.16 -> 0.10 in fix pass 1: the
