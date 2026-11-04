@@ -1,9 +1,17 @@
 # ROUND 5 — lane `hero-body` report (W0b): Brea on the kept rig
 
 Lane: hero-body · port 5252 · wave W0b · Oct 18–19 2026, fix round 2 Oct 22, fix round 3 Oct 22 (evening),
-fix round 4 Oct 22–23 (night), fix round 5 Oct 23, **W0b targeted fix round 1 Oct 30 (§T)**, **targeted fix round 2 Oct 30 (§T2)**. Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2
+fix round 4 Oct 22–23 (night), fix round 5 Oct 23, **W0b targeted fix round 1 Oct 30 (§T)**, **targeted fix round 2 Oct 30 (§T2)**, targeted fix round 3 Oct 31 (§T3), **targeted fix round 4 Nov 3 (§T4)**. Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2
 (contracts), §4.1 (budgets), §6 (aloy.glb), §8 (rulings, incl. §8.3 R33 g, R35–R39, R46, R47), §9 (gate block).
 Canon: `docs/ROUND5-BIBLE.md` §2.2 (the trade wind), §3 (Brea), §3.8 (build order), §5.2 (bow poses), §5.9 (controls).
+
+**Status (Nov 3, targeted fix round 4, §T4).** The draw arm is continuous in every state the game reaches. New row
+**A-draw-arm-continuity** (5 pitches × 5 gaits, every aim-weight transition, every sim step): **PASS 3 / 3** on the final code,
+travel ≤ 0.0564 m, against the shoulder ≤ 0.0510 m, the hand in front of the back of the skull and under the crown on every
+step, knuckle ≤ 0.0573 m at drawS > 0.9. The crouched draw meets the standing bars at every pitch (knuckle 0.046 m, forearm
+≤ 18.0° off the real arrow, ≤ 0.026 m body step). Both clamps graded, the forearm ≤ 18.2° against the REAL arrow on every row.
+A-tail-legible: 0 of 216 moments failing, median reach ≥ 6 px per view. Lane run `w8/L5` + final verification `w8/G1`: only A31c
+fails (R36 / R51 listed). A1 / A20b / A90 / A90b PASS. Gaps and requests: §6, §7.
 
 **Status (Oct 31, targeted fix round 3, §T3).** The draw arm is continuous and the loose goes straight to the quiver:
 **A-draw-elbow-level 10 / 10 PASS, the 0.75 loose elbow 0.158–0.176 m behind the head plane** (R35 0.20; round 2
@@ -44,6 +52,96 @@ clock, max 0.044 m); **A-lance-stow** — a pattern search with the lance slidin
 4 / 4 PASS, one on a loaded clock). Global list (`f5final`): A1, A20b, **A9 (fps 59.3, PASS)**, A90 ×4,
 A-no-override PASS; A21 FAIL on median GPU (77–96 ms against 20; listed under R33 b, R45's quiet run); A81 /
 A-ID-ip-assets-gone / A-licence-manifest / A-assets-tracked fail on other lanes' unmerged rows (R39, R47; §4.5).
+
+## T4. W0b targeted fix round 4 (Oct 30 – Nov 3) — the draw arm in every state, the crouched draw, both clamps
+
+Fifteen findings (r1–r3 judges, binding for W1's exit under R57). The root cause the judges kept finding: continuity
+and head clearance held only in the states a gate staged. So the first thing built was the state MATRIX, and it drove
+the fixes. An earlier builder of this lane (cut off Oct 30, and again by the Mac's freeze at 02:15 on Nov 3) left most
+of the solve in checkpoints `8f7290f` … `64877eb`; this round read it, re-measured all of it from a wiped scratchpad
+and finished it. Every number below is from this tree on port 5252, `nice -n 10` (R53), one gate Chrome inside a
+machine slot after the memory / pressure / load / disk checks (`scratchpad/r5/hero-body/w8/`, `run8.sh`).
+
+*State at the start of this session* (`w8/b0`, the checkpoint as left): A-draw-arm-continuity FAIL in 10 of 25 cells
+(the knuckle 0.10–0.18 m off the string at every crouch toggle at 0.75 and 1.02), A-draw-elbow-level FAIL on one clause
+(crouched 1.02, head 0.0317 m in a step), A16, A-wrap-clear, A-tail-legible, A26 PASS. Found and fixed this session:
+
+- **The crouch stepped the camera.** `player.pivotHeight` jumped 0.39 m in a step; the delivered cap passed 0.25 m of
+  it straight on and standing up the damp's lead read it as 23 m/s. The lens moved 0.25 m in one frame, the crosshair's
+  ground hit 0.27 m, combat's bow 0.15 rad, the nock 0.12 m off the hand (`w8/p1`). It is a visible camera pop on any
+  crouch too. Now eased (`player.js` `PIVOT_CROUCH_RATE` 2 m/s, under the aim 1.1 m/s; the cap rides it).
+- **The bow flicked when its hand came within 0.5 m of a near ground hit.** `combat.js:1106` takes the camera's
+  direction instead (0.3 rad off in one step) at that range, and at the down clamp a crouch's blend or a strafe's dip
+  crossed it: 0.17–0.21 m off the string, every other step (`w8/p8`, the matrix's 1.02 strafes, 1–2 cells a run). The
+  lift holds her through the whole crouch toggle now (`_caT`), the pivot stands at A31's bar crouch-aiming steeply
+  (`PIVOT_CROUCH_STEEP`), and `_crouchAimLift` stands her up in closed form to hold the hand `crouchAim.nearBow` 0.57 m
+  off the hit. The matrix now prints it: **0.5495 m worst**. §7 asks armory to replace the flip with a blend.
+- **A stale aim point seeded the bent T.** The animator runs before combat, so on the layer's first step the aim point
+  is the LAST aim's, and it seeded the low-passed T ray: the first aim after a turn leaned 0.3 rad off the arrow for a
+  second (`w8/p7`: 1.43 rad against 1.15 at −1.15, the shoulder pushing the boom out 0.15 m; A31e's aim control then read
+  in frame and failed the row, `L1`). The first step's ray is now the camera's own pitch (`_aimLayer`). A31e PASS,
+  `aimControl` back to onFrac 0.07, head off the frame.
+- **The lift popped.** A stance step's foot swinging out cut the leg's reach and the whole body dropped 0.04–0.08 m and
+  came back in 3 steps (`w8/p2`). Her height now moves ≤ `liftStep` 0.022 m per 1/60 s.
+
+*The solve the checkpoints carried, verified and kept:* the limiters live whenever the aim layer runs and on the arm's
+FINAL pose (`_armContinuity`, `_armRate` on positions, not directions; seeded from the arm as last rendered,
+`_armCapture`, never the clip); `_wDA` eases and the arm is lowered by its target, not its IK weight (`lowerByTarget`);
+`_rnHold` is never cleared mid follow-through; the aim holds for the step combat still renders the full draw
+(`aimHold`); the hand rides its anchor on the head as the draw builds; the aim's trunk starts upright (`tune.aimTrunk`) and
+the crouch-aim pose stands her up (`tune.crouchAim`); the bent T reaches both clamps (`tune.tClamp`); `_handInFront`;
+A-wrap-clear on every tick, on segments and per root.
+
+| # | Finding | What changed (file:line) | Measured |
+|---|---|---|---|
+| 1 | Blocker: continuity at every aim-weight transition | `playerAnimator.js`: `aimHold` l. 1589, `_afOn` seeded from the render l. 4411, `_wDA` l. 4437, `lowerT` l. 4449, `_rnHold` l. 1636, `_armContinuity` l. 5119, `_armRate` l. 4934, `_armCapture` l. 5145; `player.js` pivot l. 178, 3983. New row **A-draw-arm-continuity** (`gates.r5.hero-body.mjs` l. 7874): 5 pitches × 5 gaits, 25 cells, 18.5–18.8 s each, ~1100 graded steps | **PASS 3 / 3 on the final code (`w8/G1`), 2 / 2 on `F1`**. Worst over the 25 cells: travel 0.0564 m, against the shoulder 0.0510 m (bar 0.06); skull −0.0208, nape −0.0134 m (bar < 0); crown −0.368 (bar ≤ 1); knuckle at drawS > 0.9 0.0573 m (bar 0.06). r3: 0.29–0.42 m snaps. Per transition: `byTransition` in the row |
+| 2 | Blocker: crouched raise, ramp and re-nock behind the head | `tune.crouchAim`, `tune.aimTrunk` (`ubc.js` l. 273 / l. 280), `_crouchAimLayer` l. 2519, `_crouchAimLift` l. 2560, rest hold / quiver riding the body (`bodyRef`), FLOW_TAIL 0.85 s, the whole row graded every step (gate l. 7565) | crouched −1.15, −0.55, −0.4, 0, 0.75, 1.02: hand −0.058 … −0.089 m behind the skull's back plane (i.e. in front), nape and crown clear on every step through 0.85 s after the release; A-wrap-clear's crouched rows pass with 0 unmet head keeps. `_armRate`'s bail is gone: it keeps the best limited pose. Films read: `V-crouched-draw` |
+| 3 | Dodge while drawing: bow overhead, 0.45–0.78 m off the string | The lance layer hushed through a roll that began with the lance stowed and RMB down (`_mlHush` l. 2133; a held LMB read to `melee.js` as a spear press: the bow arm thrown overhead by a swing, the real cause), `_tOff` / stale-grip reset l. 2084, the first step's ray l. 3957, `knotRound` l. 4649 | matrix `dodgeDrawn` / `looseAfterDodge` cells at all 5 pitches: PASS. Films `V-draw-dodge-aim` (0.75), `V-draw-dodge-aim0` (0): the bow comes up in front; +1.78 s draw 0.89–0.98, knuckle 0.045–0.046 m |
+| 4 | Crouched 0.75 off the string | `tune.aimTrunk`, `tune.crouchAim`: the trunk is unfolded to the standing form before the T turns it, i.e. the T turns the aim pitch net of the crouch's lean | knuckle 0.046 m on all six crouched rows (r3 0.18); forearm 12.7–18.0 deg off the real arrow; head over the shoulders' line 0.024–0.065 m; A16 and A-draw-elbow-level grade every clause on those rows, none report-only |
+| 5 | Crouch-aim pop | `_caT` smootherstep over `rampS` 0.7 s (l. 2066), `liftStep` (l. 2607) | pelvis / head step per 1/60 s 0.024–0.026 m on the six crouched rows (bar 0.03; r3 0.08–0.10) |
+| 6 | Forearm vs the real arrow | Gate reads the bow's own draw axis, prints the wrist-bone axis beside it (`forearmToWristBoneAxisDeg`) (l. 7723); `handOut` 0.046 (`ubc.js` l. 166), `knuckleNock` 0.046 | the graded rows 11.8–18.2 deg (bar 20; r1 20.6–21.7). Four pitches 15.45 / 11.8 / 14.96 / 15.42 at −0.55 / −0.4 / 0 / 0.75; old axis there 11.34 / 8.42 / 11.63 / 11.27 |
+| 7 | Clamps and down-aim strafes | `tune.tClamp` (`ubc.js` l. 283), `_aimLayer` T caps l. 4038; rows added to A16 (20 rows now) and A-draw-elbow-level (22) | 0.75 strafing: wrist→nock 0.075–0.078 m (A16's 0.09; r1 0.087 / 0.0998). 1.02 / −1.15 standing and strafing: forearm 14.0–18.2 deg, knuckle ≤ 0.046 m, elbow 0.122–0.153 m behind the head plane (R35 0.20). Film `V-draw-clamps` |
+| 8 | A26 under the Round-4 runner | Gate-file header + §2.3 corrected; no `aloy` identifier | registry: PASS (`w8/L5`). `--extra tools/gates/archive/gates.round4.anim-core.mjs --only A26-one-convention`: PASS (`w8/A26x`; the archive row is dropped by id). **See the note below the table** |
+| 9 | Tail at the bar's edge | `kit-v0.mjs` l. 547: stowed bow 28 → 20 deg off vertical (rebuilt `stowkit-v0.glb`); `brea.mjs` l. 106: the free strip 0.052 m longer (rebuilt `brea.glb`, the chain rig only); gate grades median reach ≥ 6 per view | ≥ 200 moments (`w8/p4`, 9 runs, 216 moments × 4 views): **0 failing**. Median reach F 6, side R 6, B 7, side L 6; min F 5, B 5, sides 4 (2 of 216 each, at the bar, not under it). Flake rate 0 / 9 runs |
+| 10 | Keep-out envelope | `_rootKeepAudit` l. 6195, `debugHandCollider().rootKeep.perRoot`, `resetRootKeep` per row; A-wrap-clear fails by name on an unmet head root | §T2's correction below. Unmet head roots: **0** on all 15 rows, topknot and wrap roots ≥ 0.20 / 0.165 m |
+| 11 | Collider read once per rAF | `minSinceRead` / `segSinceRead` reset by the read (l. 6177); a forced 27 fps repeat in the row | every tick graded; 27 fps rows: 2.96 ticks a frame, particle ≥ 0.055 m |
+| 12 | Strand segments | `_hcSegMin` l. 6672, M10 turns the child out at `segR` 0.087 axis (l. 646) | segment minimum 0.052 m (bar 0.05; r2 0.0494), particle 0.055 m. The fixed first link off a root is reported (0.009–0.014 m): no particle can move it; the arm's keep-out owns it |
+| 13 | Knot keep-out 8–20 frames | Documented (§T2's correction) | 7–12 frames a cycle, standing or crouched, up to drawS 0.52 on the ramp; never at full draw |
+| 14 | "below" cannot tell nape from throat | `V-loose-renock` / the films print `below lat … neck …`; `napeMaxBehindSkull` graded on every row of A-draw-elbow-level | nape −0.076 m (bar < 0) on all rows |
+| 15 | Stale doc lines | §6 and §2 below | — |
+
+**Finding 8, what could not be done literally.** The Round-4 runner copies a `gates.round4.*` row by value (`{...g}`) before
+`--extra` loads, so a row in `tools/gates/archive/gates.round4.anim-core.mjs` cannot be shadowed in place from this lane's
+file, and that file (other lane's, "nothing loads them", archive README) still reads `a.aloy.animatorProbe` on lines 66,
+84, 100. In a literal Round-4 layout that row would still throw and `A26-one-convention@hero` would pass beside it. No
+tool in this tree loads that layout any more: `tools/gates.config.mjs` is the registry. With no `aloy` alias allowed, the
+two options left are the archive file's owner editing or deleting it, which is the orchestrator's call (§7).
+
+*Lane and globals on the final code.* `w8/L5` (literal `--extra tools/gates.r5.hero-body.mjs --lane hero-body`): **69 rows, 48 PASS · 2 FAIL · 19 NEEDS-JUDGE. The FAILs: A31c (listed) and A-draw-arm-continuity on one cell, 0.75 strafing right, travel 0.0619 m against spine_01 on a step her clip moved her whole body. That was fixed after it (`_armRate`, l. 4955: on such a step the arm is limited about the body, not the character origin)**.
+`w8/G1` and repeats: **A-draw-arm-continuity 3 / 3, A-draw-elbow-level 2 / 2, A16 2 / 2, A-wrap-clear 2 / 2, A17, A32-draw-ramp, A35, A1, A20b, A90, A90b all PASS** on the final code, the draw films re-filmed there. A1 boot clean. A20b 0 system errors, 360 frames. A90 heap −1.6 %, geometries +16, textures −3, 30 kills. A90b 0 offenders, heap +3.2 % after a forced GC. The other 52 rows of `L5` predate only that one `_armRate` branch. A31c is the listed failure (R36 / R51): jog-toward onFrac 0.378, sprint-away head seen
+0.85; the same family as every run since fix round 5.
+
+*Films read* (`w8/G1`, the final code; `L5` for V4), each against its criteria: `V-draw-lower-reaim` (the arm comes down in front; max step 0.05 /
+0.046; hand beside the neck 0.20–0.25 m to her right, never at the nape), `V-draw-dodge-aim` and `-aim0` (hands low in front
+at +1.24 s, the bow in front, never overhead; at +1.55 s the string hand passes her collar at draw 0.6; +1.78 s fist at the
+cheek, knuckle 0.046 m), `V-crouched-draw` (the −0.4 raise and the 0 ramp from her chest side and along the arrow: the hand
+in front of the face and chest; full draws at 0 and 0.75: fist at the cheek, knuckle 0.046 m, forearm 15–17 deg, elbow
+back), `V-draw-clamps` (1.02 and −1.15 from her right: fist at the cheek, forearm 14–18 deg; in the game camera at −1.15 only
+the sky, the bow and the fist: the aim's framing contract is the reticle, as A31e's control records), `V-loose-renock`, V24,
+V24-draw-down, V4, V-brea-one-glance (the sheets re-committed). Advisory: the R29 judge grades these.
+
+*Gate changes, none a bar moved:* A-draw-arm-continuity's `lanceOwns` kind (RMB up with LMB down, which melee.js reads as a
+spear press: once the limiter has handed the arm over, the arm's pace is the lance's swing, printed as `lanceStepMax`, not
+graded; the hand-over itself is graded); its cell start waits for the lance's weight to fade; `bowToHitMinReported`.
+A-tail-legible grades the median. New film `V-draw-dodge-aim0`. A-wrap-clear reports `rootKeepMaxDrawS` /
+`rootKeepMaxDeficitM` per row.
+
+*Thin margins, stated:* forearm vs the real arrow 18.2 deg against 20; the knuckle at the draw ramp's end 0.0573 m
+against 0.06; A-wrap-clear's segment 0.052 m against 0.05; the bow's hand to a near ground hit 0.5495 m against
+combat's 0.5.
+
+*Seen, not fixed, not in these findings* (§6, §7): a moving roll's end steps her whole body 0.32 m in one sim step; the
+lance's reach from a lowered bow.
 
 ## T3. W0b targeted fix round 3 (Oct 30–31) — the loose, the re-nock and the crouched raise
 
@@ -224,6 +322,14 @@ worst run, i.e. the bound. The spread between runs is the frame clock sampling d
   always at draw strength ≤ 0.093 (the aim raise from the sprint-stop and the re-nock). It never acts at full draw,
   so A16 / A35 / A-draw-elbow-level's full-draw rows and V24 / V24-draw-down / V4 are untouched. No allocation
   (module scratch).
+  **Corrected in targeted fix round 4 (§T4; r2 eng judge: "these claims hold only for the gate staging").** That
+  envelope was the staged standing draw on round 2's solve. Measured now, per A-wrap-clear row (`w8/G1`, the sprint-stop
+  staging; `rootKeepFrames`, `rootKeepMaxDrawS`, `rootKeepMaxDeficitM`, cleared at each row's start): 7–11 frames a cycle standing or strafing, 8–10 crouched, 10–14 on the forced 27 fps clock; up to drawS 0.47–0.52; deficit ≤ 0.029 m. It fires
+  on the draw ramp as the forearm passes the cord's knot, never at full draw. Before this round, unstaged: strafing left
+  at drawS 0.47, crouched 6 frames up to drawS 0.59, the crouched head root 0.0257 m from the axis against a keep of 0.0538.
+  `debugHandCollider().rootKeep.perRoot` reports each root's minimum, frames inside the keep and frames unmet (inside
+  keep − `rootGive`), and A-wrap-clear fails by name on an unmet head root (0 on every row: topknot and wrap roots ≥ 0.20 /
+  0.165 m off the axis). The alidade cord's knot, not a head root, reports 0–1 unmet frames crouched (reported).
 - **M10's last resort** (`_springs`, l. 5815): when four passes leave a particle inside, the candidates are straight
   away from each segment's nearest point and from their mean, and the one farthest from both axes wins. The old
   fallback used the nearer segment only, which could lay the cord against the other one at the wrist.
@@ -392,7 +498,9 @@ V-brea-one-glance / V-brea-face films (§5; MANIFEST rows and SHA-256 updated).
   `heroRows` / the `hero` section (l. 390–443), the non-enumerable `aloy` alias deleted, `resolveRig` / `debug` /
   `overlay` take 'hero' | 'player' only (l. 522); `boneMap.js` `UAL_TO_HERO` (+ `clipLibrary.js`, `index.js`);
   `locomotion.js` label strings `hero-locomotion`, `rig: 'hero'` (its row now joins the hero section, A26 PASS).
-  Nothing outside these files imports the old names; carried A26 finds the section by shape. **Main's
+  Nothing that runs imports the old names; carried A26 finds the section by shape. **(Corrected, targeted fix 4: one file
+  still reads them: `tools/gates/archive/gates.round4.anim-core.mjs` l. 66, 84, 100, `a.aloy.*`. Nothing loads it; loaded by
+  `--extra` its row is dropped by id; §T4, finding 8.)** **Main's
   `tools/lint/namecheck.mjs --code` on a copy of this tree: 0 Aloy pairs in any hero-body-owned file** (26 remain, all
   in other lanes' files); the tree-wide FAIL (1452 vs ratchet 1435) is other lanes' unmerged rows and caps — this
   round's diff adds no lexicon token.
@@ -1380,7 +1488,7 @@ comparison: 46 PASS · 1 FAIL (A31c) · 13 NEEDS-JUDGE of 60.
 | A12-clip-driven | PASS | `Sprint_Loop` weight 1.0 at 6.71 m/s |
 | **A13-no-skate (R27)** | **PASS 5/5** | worst stance windows 0.0071 / 0.0039 / 0.0031 / 0.0067 / 0.0024 m (bar 0.06), 6.8 m/s |
 | A15-foot-flat | PASS | 1.91° idle, 1.90° aim |
-| **A16-draw-anchor** | **PASS under R52 (targeted fix §T.1: `F1` 6 / 6, the R52 reading −0.017…−0.006 m; the row below is fix round 5's)** — fix round 5: FAIL, the 0.75 row only | 6 rows: nock-to-wrist 0.064–0.069 m (bar 0.09); knuckle 0.052–0.054, fingertip 0.044–0.050 m from the bow's nock; headClear 1.83–1.95; launch 0.0°; elbow over the shoulder joint (character height) −0.006 / −0.064 / −0.067 / −0.007 / −0.008 m at level / −0.4 / −0.55 / strafing — and **+0.093 m at 0.75** (aim frame: **+0.006**, reported as `elbowAboveShoulderAimFrame`) |
+| **A16-draw-anchor** | **targeted fix 4 (§T4): PASS 2 / 2 (`w8/G1`), 20 rows (+ 0.75 strafes, both clamps standing and strafing, six crouched): nock-to-wrist 0.074–0.078 m (0.09), R52 elbow −0.022…−0.006 m, knuckle 0.046 m, headClear ≥ 2.0, launch 0.0°; character-height elbow at 0.75 +0.086 m (reported, R52).** **PASS under R52 (targeted fix §T.1: `F1` 6 / 6, the R52 reading −0.017…−0.006 m; the row below is fix round 5's)** — fix round 5: FAIL, the 0.75 row only | 6 rows: nock-to-wrist 0.064–0.069 m (bar 0.09); knuckle 0.052–0.054, fingertip 0.044–0.050 m from the bow's nock; headClear 1.83–1.95; launch 0.0°; elbow over the shoulder joint (character height) −0.006 / −0.064 / −0.067 / −0.007 / −0.008 m at level / −0.4 / −0.55 / strafing — and **+0.093 m at 0.75** (aim frame: **+0.006**, reported as `elbowAboveShoulderAimFrame`) |
 | A17-draw-beats (R11) | PASS | targeted fix 3 (`w7/L1`): hand-to-quiver 0.053 m, 36 SIM frames (the beat is 0.5 s), loose 0.0705 m rearward. Fix round 5: hand-to-quiver 0.080 m, flourish 22 SIM frames (9 rendered), loose 0.054 m rearward |
 | A18-slope-conform / A18b@hero | PASS / PASS | ball clear ≤ 0.0001 m at 10/20/30°; moving p90 0.0023 m |
 | A19-secondary-motion | PASS | hair 48°, cloth 43°, gear 42° range at a sprint |
@@ -1398,12 +1506,13 @@ comparison: 46 PASS · 1 FAIL (A31c) · 13 NEEDS-JUDGE of 60.
 | A36-hit-react-visible@hero | PASS | 17.8° lean, decay 0.58 s, hit clip 0.82 |
 | A26-one-convention@hero | PASS | identical to BoneSpace |
 | A-lmax-solve | PASS | Lmax 0.527 / 0.520 / 0.530 / 0.527 m; bows 0.582 vs solution 0.585 (±0.01) |
-| **A-draw-elbow-level (R35 + on-the-string + fix round 5 + targeted fix 3)** | **targeted fix 3 (§T3): PASS 10 / 10** (`w7/L1` ×6, `i1`–`i4`): 10 rows (+ crouched 0 / 0.75), the 0.75 loose elbow 0.158–0.176 m, the arm's step at the four pitches 0.052–0.056 m (bar 0.06), the raise clause on every row. Fix round 5: **PASS** | 8 rows; **forearm 17.5 / 15.2 / 18.3 / 17.7° off the arrow at −0.55 / −0.4 / 0 / 0.75 (bar 20)**; **the wrist ≤ 0.021 m from the level row's height over the Head joint and ≤ 0.010 m from its place in the head's frame (bars 0.03)**; elbow aim-frame height −0.013…+0.005 m, 0.226–0.232 m behind the hand; hand ≤ −0.061 m; elbow ≤ 0.149 m behind the head plane; loose hand ≤ −0.012, loose elbow ≤ 0.189 m; knuckle ≤ 0.056 / fingertip ≤ 0.050 m from the nock |
-| **A-wrap-clear (M10)** | **targeted fix 3 (§T3): PASS 7 / 7 with the crouched rows** (`w7/L1` ×3, `i1`–`i4`), every row ≥ 0.0550 m. Targeted fix round 2 (§T2): **PASS 16 / 16** (`w6/L1` ×6, `i1`–`i5` ×2) | every chain ≥ 0.0550 m from the draw hand/forearm at every row of every run (bar 0.05); the 0.75 loose minimum 0.0550–0.0555 m; the draw arm keeps off the cord knot (keep 0.0588 m, 1–4 frames per cycle, draw strength ≤ 0.093); hand capsule active. Round 1's "≥ 0.055" held on the builder's runs only (judges 0.0494 / 0.0512 / 0.0514) |
+| **A-draw-arm-continuity (new, targeted fix 4)** | **PASS 3 / 3 (`w8/G1`), 2 / 2 (`F1`)** | 25 cells, 18.5–18.8 s of one input timeline each, 1109–1141 graded steps a cell: travel ≤ 0.0564, against the shoulder ≤ 0.0510 m (bar 0.06); skull ≤ −0.0208, nape ≤ −0.0134 m (bar < 0); crown ≤ −0.368 (bar 1); knuckle ≤ 0.0573 m at drawS > 0.9 (bar 0.06). Reported: the bow hand to a near ground hit ≥ 0.5495 m; the lance from a lowered bow 0.35–0.39 m behind the skull's back plane |
+| **A-draw-elbow-level (R35 + on-the-string + fix round 5 + targeted fix 3)** | **targeted fix 4 (§T4): PASS 2 / 2 (`w8/G1`), 22 rows (both clamps, strafes at 0 / 0.75 / clamps, six crouched), every clause graded on every crouched and clamp row, the forearm 11.8–18.2° against the real arrow, the hand in front of the skull on every step through 0.85 s after the release (≤ −0.030 m), nape ≤ −0.076, crown ≤ −0.396, crouched body step ≤ 0.026 m per 1/60 s.** **targeted fix 3 (§T3): PASS 10 / 10** (`w7/L1` ×6, `i1`–`i4`): 10 rows (+ crouched 0 / 0.75), the 0.75 loose elbow 0.158–0.176 m, the arm's step at the four pitches 0.052–0.056 m (bar 0.06), the raise clause on every row. Fix round 5: **PASS** | 8 rows; **forearm 17.5 / 15.2 / 18.3 / 17.7° off the arrow at −0.55 / −0.4 / 0 / 0.75 (bar 20)**; **the wrist ≤ 0.021 m from the level row's height over the Head joint and ≤ 0.010 m from its place in the head's frame (bars 0.03)**; elbow aim-frame height −0.013…+0.005 m, 0.226–0.232 m behind the hand; hand ≤ −0.061 m; elbow ≤ 0.149 m behind the head plane; loose hand ≤ −0.012, loose elbow ≤ 0.189 m; knuckle ≤ 0.056 / fingertip ≤ 0.050 m from the nock |
+| **A-wrap-clear (M10)** | **targeted fix 4 (§T4): PASS 2 / 2 (`w8/G1`), 15 rows (+ crouched −0.55 / −0.4, strafes at 0 / 0.75, a forced 27 fps clock), graded on every tick: particle ≥ 0.0550, segment ≥ 0.0520 m, 0 unmet head roots.** **targeted fix 3 (§T3): PASS 7 / 7 with the crouched rows** (`w7/L1` ×3, `i1`–`i4`), every row ≥ 0.0550 m. Targeted fix round 2 (§T2): **PASS 16 / 16** (`w6/L1` ×6, `i1`–`i5` ×2) | every chain ≥ 0.0550 m from the draw hand/forearm at every row of every run (bar 0.05); the 0.75 loose minimum 0.0550–0.0555 m; the draw arm keeps off the cord knot (keep 0.0588 m, 1–4 frames per cycle, draw strength ≤ 0.093); hand capsule active. Round 1's "≥ 0.055" held on the builder's runs only (judges 0.0494 / 0.0512 / 0.0514) |
 | A-alidade-pose | PASS | tube 0.015 m from the right eye (idle / jog / crouch), elbow under and ahead, lowered in 0.20–0.21 s |
 | A-run-arms | PASS | wrists ≥ 0.229 m off the midline, ≥ 0.27 m under the shoulder, fore-aft 0.488 m/cycle, pelvis 0.072 m p-p, knee never above hip, 6.80 m/s |
 | **A-lance-stow** | **PASS 4/4** (`f5lane2`: plain ×3, a loaded 19 fps clock ×1) | crouch-walk ≤ 38.82°; every state but the climb ≤ 39.14° (R10 32–40); the climb 36.6–58.1° (A100 in motion 30–60); midpoint ≤ 0.281 m (0.30); tails ≥ 0.086 m from the shaft (0.06); blade ≤ 0.651 m over the shoulder (0.70) |
-| **A-tail-legible (new, cue 2's twin)** | **targeted fix §T.2: the draft bar restored (sheet instant + 23 gust moments, clear3 ≥ 4 and reach ≥ 4) — PASS 3 / 3 in `F1` (72 / 72 moments)**; fix round 5: PASS 3/3 (`f5tail`) under the relaxed bar | at the sheet's instant ≥ 7 tail-only px ≥ 3 px clear in each of front / side R / back / side L (bar 4); 12 runs in all: ≥ 5. Gust and still-air rows reported (§0000.3) |
+| **A-tail-legible (new, cue 2's twin)** | **targeted fix 4: PASS, 0 of 216 moments failing in 9 runs, the median reach of each view ≥ 6 px, now graded (§T4).** **targeted fix §T.2: the draft bar restored (sheet instant + 23 gust moments, clear3 ≥ 4 and reach ≥ 4) — PASS 3 / 3 in `F1` (72 / 72 moments)**; fix round 5: PASS 3/3 (`f5tail`) under the relaxed bar | at the sheet's instant ≥ 7 tail-only px ≥ 3 px clear in each of front / side R / back / side L (bar 4); 12 runs in all: ≥ 5. Gust and still-air rows reported (§0000.3) |
 
 ### 4.2 Traversal, surface, identity, R47
 
@@ -1492,7 +1601,7 @@ A21 PENDING.
 nearest and true size — and full colour, default loadout) and `reference/r5/hero/brea-face-sheet.png` (front /
 profile / 3/4 at 1.2 m beside the stock UBC front / profile, and the right-hand ∴ inset); the stock comparison
 renders `ubc-stock-front.png` / `ubc-stock-profile.png`; rows and SHA-256s in `reference/r5/hero/MANIFEST.md`.
-**Re-committed in the targeted fix (Oct 30)** from `w5/F1`'s V-brea-one-glance / V-brea-face films (the neutral idle,
+**Re-committed in targeted fix 4 (Nov 3)** from `w8/G1`'s films (the stowed bow at 20°, the tail 0.054 m longer; SHA-256 `5f024565…0620bc` and `e6a7776f…e54829`, MANIFEST rows updated). **Re-committed in the targeted fix (Oct 30)** from `w5/F1`'s V-brea-one-glance / V-brea-face films (the neutral idle,
 the retuned wrap cloth; SHA-256 `00756951…62b976` and `3e71a513…59472d`, MANIFEST rows updated). Fix round 5 had
 re-committed them from `f5lane2`'s V-brea-one-glance / V-brea-face films (the new wrap-tail root line,
 twist and wind coupling; SHA-256 `054dcafb…87af70` and `133aa579…e77934`, MANIFEST rows updated). Fix round 4 had
@@ -1505,6 +1614,18 @@ exactly these overlays; standalone:
       return { sil: await S.silhouetteSheetOverlay(__CTX__) }; })()"
 
 ## 6. Honest gaps and W0 bridges
+
+- **Targeted fix round 4 (Nov 3): seen, not this round's findings.**
+  - **A moving roll's end steps her whole body 0.27–0.33 m in one sim step** (spine_01, character space; the matrix's
+    `bodyStepMax`, jog and strafe cells, `dodgeDrawn` +0.55 s; 0.11–0.14 m standing or crouched). The draw arm rides it
+    in the body's frame. It is the roll clip's hand-over to the gait, not the arm.
+  - **A lance drawn from a lowered bow** (RMB up with LMB still down, read by `melee.js` as a spear press): the arm is
+    limited across the hand-over and then the lance's, and the hand reaches 0.35–0.39 m behind the skull's back plane at
+    the stow (printed as `lanceHeadReported`). The melee lane's (R57, §7).
+  - **`-1.15` in the game camera shows only the sky, the bow and the fist**: A31e's aim control records it (head off
+    the frame, onFrac 0.07), the aim's framing contract is the reticle; unchanged by this round.
+- **Targeted fix round 3's two gaps below are closed in round 4 (§T4):** crouched at 0.75 the knuckle is 0.046 m from the
+  nock, and the crouch-aim pose moves the pelvis and head ≤ 0.026 m per 1/60 s.
 
 - **Targeted fix round 3 (Oct 31): seen, not this round's findings** (§T3, numbers there).
   - **Crouched at 0.75 the full draw is off the string**: the bow arm cannot reach the draw (Lmax 0.46 m against the
@@ -1532,7 +1653,8 @@ exactly these overlays; standalone:
 - **The re-nock reach (round 2: "still sweeps the fist across her sternum")** — re-routed in targeted fix round 3
   (§T3): the hand goes from where the loose's kick leaves it straight down her right side to the quiver, and back up
   in front on a bow that follows the hand.
-- **Targeted fix (Oct 30) — the wrap tail's residuals, measured, not graded away.** (a) On the final cloth 1 trade-wind
+- **Targeted fix (Oct 30) — the wrap tail's residuals, measured, not graded away.** (Item (a) closed in targeted fix 4,
+  §T4: 0 of 216 moments under the bar, 0 of 9 runs.) (a) On the final cloth 1 trade-wind
   moment in 680 fell under A-tail-legible's bar (`c1`: front reach 3) — ≈ 3.5 % per 24-moment run; the front / back
   reach is 4–6 px because the tail's end crosses the stowed bow's upper limb, and no cloth knob moved it (§T.2); the
   levers left are the tail's length or the bow's stow line (`brea.mjs` / the stow kit: the armory stow-kit art pass at
@@ -1553,7 +1675,7 @@ exactly these overlays; standalone:
 - **A31c** — failed at the Round-4 baseline (R36: listed). Against the Aloy runs (§000.4): better on head-seen,
   view-off, aim entry and the turns; worse on moving framing (onFrac ratio). Not retuned this round.
 - **A16 at pitched aims is graded under R52** (targeted fix, §T.1): perpendicular to the arrow, every row PASSES; the
-  character-height reading at 0.75 (+0.09 m, the bent T) is reported, not graded. **The pitched aims' loose** (the re-nock reach to the hip
+  character-height reading at 0.75 (+0.086 m, `w8/G1`; the bent T) is reported, not graded. **The pitched aims' loose** (the re-nock reach to the hip
   quiver from a bent T) carries the hand ~0.28 m back in character space and the elbow to 0.19 m behind the head
   plane (R35's 0.20): round 1 read that as ~1 cm of room; targeted fix round 2 measured 0.185–0.203 m
   (4 of 8 probe samples over the bar, §T2). **The T turn's ray is low-passed (0.35 s)**: the trunk
@@ -1562,9 +1684,10 @@ exactly these overlays; standalone:
   in the palm; probe `dh3`): the knuckle turn now targets the rendered nock, but the arm solve's anchor and Lmax are
   still expressed about the estimate — armory's W1 bow (Sabina in `bow.js`) should publish its grip node so the
   solve can use the real one.
-- **The wrap tail in still air stands only 3 px off the silhouette at 64 px** (A-tail-legible grades still air at a
-  lower "distinct shape" bar, §0000.3): the sheet — the plan's bar — is staged in the trade wind, where it reads at
-  ≥ 7 px clear / reach ≥ 4 in every view. It is 0.49 × 0.10 m (the bible says 0.40 × 0.07); W1's art pass owns it.
+- **The wrap tail in still air** reaches 3–5 px off the silhouette at 64 px (A-tail-legible reports still air, it does not
+  grade it). In the trade wind the row grades the sheet instant and 23 gust moments: clear3 ≥ 4, reach ≥ 4 and, since
+  targeted fix 4, the median reach of each view ≥ 6 px (§T4, finding 9). It is 0.54 × 0.10 m (the bible says 0.40 × 0.07);
+  the strip's art is character-art's (R58), its chain rig this lane's.
 - **R47 handover (melee W1):** A100's visible-spear clause, A101's back-socket bone (`spine_02` vs
   `animator.b.spine3`) and A105's planted-ball literal (0.012 m, Aloy's ball joint) are written up in §000.3.
 - **W0 bridge — `SPECS.hero`**: `src/hero/rows.js` points the `hero` row at Brea at runtime; `assets.specs.js`
@@ -1584,6 +1707,25 @@ exactly these overlays; standalone:
 
 ## 7. Requests to other lanes and the orchestrator
 
+- **Targeted fix round 4 (Nov 3).**
+  - **armory (W1, `src/combat/combat.js` l. 1106):** the bow's fall-back to the camera's direction inside 0.5 m of the aim
+    point is a 0.3 rad step in one frame. Please blend it over, say, 0.5–0.8 m, or lower it to ~0.3 m. This lane holds her
+    hand ≥ 0.55 m from a ground hit (`crouchAim.nearBow`), but a rock in front of her lens at a steep aim can still cross it.
+  - **melee (W1, R57):** (a) `update()` now hushes the lance layer through a roll that began with the lance stowed and RMB
+    down (`_mlHush`; the pose only, `playerAnimator.js` `update`, not your state machine): a held LMB through a roll reads
+    to `melee.js` as a spear press, and its swing threw the bow arm overhead. Please take the input edge in `melee.js` (LMB
+    held from before the roll is no press) and remove `_mlHush`. (b) RMB up with LMB still down at full draw: the same
+    press, the hand 0.35–0.39 m behind the skull's back plane drawing the lance (`lanceHeadReported`, Kevin's "never an arm
+    behind the head" is yours to judge there). (c) `_armContinuity` carries the arm for 0.6 s after a lowered bow; a lance
+    drawn in that window is limited, then the limit opens (`armFlow.lanceOpen`).
+  - **character-art (R58):** `tools/build/recipes/brea.mjs` `CHAINS.wrapSash` changed (the free strip 0.052 m longer, the
+    chain rig this lane keeps), and `public/models/hero/brea.glb` was rebuilt from it. On a merge conflict in the GLB take
+    your own and rebuild from the merged recipe; A-tail-legible grades the result.
+  - **orchestrator:** (a) `tools/gates/archive/gates.round4.anim-core.mjs` reads `a.aloy.*` (§T4, finding 8): delete or
+    edit it if the archive is ever loaded. (b) A moving roll's end pops her whole body (§6): no lane owns it today.
+    (c) Slots: at 23:51 UTC `chrome-slots/slot1` was re-created by character-art while this lane's run (pid 93311, created
+    23:16) was still alive and its `owner.txt` gone; this lane's exit trap then removed that dir at 23:56 not knowing.
+    The trap now removes only a slot whose `owner.txt` is its own. R60's harness semaphore covers the rest.
 - **Targeted fix round 3 (Oct 31), for the orchestrator / the crouch-aim pose's next owner** (§6): crouched at the
   0.75 down aim the full draw is off the string (Lmax 0.46 m, the reach clamp's radial fallback; pre-existing, better
   than before this round). The bent T should turn by the aim pitch net of the crouch's own trunk lean. The crouched
@@ -1631,8 +1773,8 @@ exactly these overlays; standalone:
 - the Round-4 runner on main and in this tree: load it with `--extra tools/gates.r5.hero-body.mjs`; base
   `gates.config.mjs` rows of the same id (A2–A19, A28, A31, A32-draw-ramp, A33-rig-finite, V1–V4, V12–V14) are
   replaced IN PLACE (the runner shares those objects), and rows that live in a `gates.round4.*` file are exported
-  as `<id>@hero` (`shadowOf` names the row), so `--lane hero-body` runs exactly this lane's 62 (fix round 5 added
-  A-strafe-feet and A-tail-legible).
+  as `<id>@hero` (`shadowOf` names the row), so `--lane hero-body` runs exactly this lane's rows (69 since targeted fix 4:
+  A-draw-arm-continuity, V-draw-lower-reaim, V-draw-dodge-aim, V-draw-dodge-aim0, V-crouched-draw, V-draw-clamps new).
 
 `--extra` takes ONE file; to add another lane's file in the same run, a combiner module that re-exports the
 `GATES` arrays works (this lane's global-list run used one in scratch: hero-body + pipeline + instruments-core,
@@ -1641,6 +1783,16 @@ exactly these overlays; standalone:
 Fix round 4 changes in the file: §000.11. Fix round 5: §0000.6.
 
 ## 9. Files changed
+
+Targeted fix round 4 (Oct 30 – Nov 3; `git diff 6bc7226`, the orchestrator's checkpoints committing parts as they went):
+`src/entities/playerAnimator.js` (the draw arm's continuity and limiters, the aim's trunk, the T at the clamps, `_crouchAimLift`,
+`_crouchAimLayer`, `_handInFront`, `_rootKeepAudit`, the first step's ray, `_mlHush`, M10's segments and running minima),
+`src/entities/player.js` (the crouch's pivot: `PIVOT_CROUCH_RATE`, `_AIM`, `_STEEP`), `src/entities/anim/rigs/ubc.js` (`armFlow`,
+`aimTrunk`, `crouchAim`, `tClamp`, `handOut`, `knuckleNock`, `downTRoll`, `rootMargin`), `tools/build/recipes/brea.mjs`
+(`CHAINS.wrapSash`), `public/models/hero/brea.glb` (rebuilt), `tools/build/recipes/weapons/kit-v0.mjs` (the stowed bow 20 deg),
+`public/models/hero/kit/stowkit-v0.glb` (rebuilt; the other kit files and `outfit-pan-1.glb` rebuild byte-identical),
+`tools/gates.r5.hero-body.mjs` (§T4), `reference/r5/hero/{brea-silhouette-sheet,brea-face-sheet}.png` + `MANIFEST.md`,
+`docs/ROUND5-HERO-BODY.md`.
 
 Targeted fix round 3 (Oct 30–31; vs checkpoint `538bc3d`, the orchestrator's later checkpoints committing parts as
 they went): `src/entities/playerAnimator.js` (`armFlow`: the full draw-arm solve and the wrist limiter, `_elbowFlow`,
@@ -1700,6 +1852,12 @@ the sheets staged in the trade wind), `tools/build/recipes/brea.mjs` (the alidad
 The orchestrator's checkpoints committed parts as they went; `git -C <tree> diff --stat d019db8` lists the set.
 
 ## 10. Process hygiene
+
+Targeted fix round 4 (Nov 3–4): `w8/run8.sh`: every Vite and gate run under `nice -n 10` (never `taskpolicy -b`), one Chrome
+in one machine slot after the memory (≥ 50 % free), pressure level 1, load (< 12) and disk checks; at least 30 s between one run
+ending and the next starting; Vite and this lane's Chrome killed at the end of every run; 0 Chrome profiles left; probes, films
+and logs under `scratchpad/r5/hero-body/w8/`, never in the tree. One slot incident: §7. The run `L4`'s repeats were stopped
+with SIGTERM once their failing cell was understood (its 73 rows had reported; the log is the record).
 
 Targeted fix round 3 (Oct 30–31): `w7/run7.sh` — every Vite and gate run under `nice -n 10` (never `taskpolicy -b`),
 each Chrome run in one machine slot after the memory (≥ 40 % free, pressure level 1), load (< 12) and disk (≥ 3 GB)
