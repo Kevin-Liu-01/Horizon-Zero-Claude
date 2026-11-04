@@ -256,7 +256,7 @@ export const GATES = [
     id: 'V-brea-closeup-detail-back', kind: 'visual', lane: 'character-art', settle: 800, timeout: 120000,
     title: 'The back of the head in detail, the sun behind her, still air: the nape from both sides, the knot and the tail\'s root, the topknot\'s crown and binding',
     reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
-    setup: placedSetup(['openGround'], `(async () => {\${STAGE(11, 'clear', 165, true)}
+    setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', 165, true)}
       const W = 1600, H = 900, PW = 800, PH = 450;
       const c = overlay(W, H), g = c.getContext('2d');
       const shot = (i, j, tgt, dist, yaw, fov, lbl, el = 0) => {
@@ -329,13 +329,31 @@ export const GATES = [
         const near = comps.filter((c) => c.area >= 6 && c.w >= 3 && c.h >= 2 && Math.hypot(c.x - 450, c.y - 400) < 300).sort((a, b) => b.area - a.area);
         res.push({ az, el, area: near.reduce((s, c) => s + c.area, 0), top: near.slice(0, 2) });
       }
+      res.sort((a, b) => b.area - a.area);
+      const total = res.reduce((s, r) => s + r.area, 0);
+      // the row's shot: the four worst views on the key colour, 2x around their largest hole (or the head, if clean)
+      for (const o of Array.from(document.body.children)) if (o.tagName !== 'CANVAS' && !o.querySelector('canvas')) o.style.visibility = 'hidden';
+      const sheet = document.createElement('canvas'); sheet.width = 1600; sheet.height = 900;
+      sheet.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#000';
+      document.body.appendChild(sheet);
+      const g = sheet.getContext('2d');
+      res.slice(0, 4).forEach((r, i) => {
+        const yaw = r.az * Math.PI / 180;
+        const d = F0.clone().multiplyScalar(Math.cos(yaw) * Math.cos(r.el)).add(R0.clone().multiplyScalar(Math.sin(yaw) * Math.cos(r.el))).add(U1.clone().multiplyScalar(Math.sin(r.el)));
+        const img = S.liveView(C, cen.clone().add(d.multiplyScalar(0.8)).toArray(), cen.toArray(), { width: W, height: H, fov: 29 });
+        const k = document.createElement('canvas'); k.width = W; k.height = H; k.getContext('2d').putImageData(img, 0, 0);
+        const t = r.top[0] || { x: 450, y: 400 };
+        const cw = 400, ch = 225, sx = Math.max(0, Math.min(W - cw, t.x - cw / 2)), sy = Math.max(0, Math.min(H - ch, t.y - ch / 2));
+        const x = (i % 2) * 800, y = (i >> 1) * 450;
+        g.imageSmoothingEnabled = false; g.drawImage(k, sx, sy, cw, ch, x, y, 800, 450);
+        const lb = 'az ' + r.az + ' el ' + r.el + ' · 2x · enclosed px ' + r.area;
+        g.font = '500 15px ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(x + 8, y + 8, g.measureText(lb).width + 12, 22); g.fillStyle = '#fff'; g.fillText(lb, x + 14, y + 24);
+      });
       R.setClearColor(cc, ca);
       for (const o of hidden) o.visible = true;
       scene.background = bg0; scene.fog = fog0;
       for (const b of bones) b.scale.setScalar(1);
       p.model.updateMatrixWorld(true);
-      res.sort((a, b) => b.area - a.area);
-      const total = res.reduce((s, r) => s + r.area, 0);
       return { pass: total === 0, detail: { views: res.length, withHoles: res.filter((r) => r.area > 0).length, totalPx: total, worst: res.slice(0, 6) } };
     })()`,
   },

@@ -163,6 +163,46 @@ export function leanInwardNormals(bodyPrim, eyesPrim, { L, eyes }) {
 }
 
 /**
+ * Whatever a collar's opening could show that is not skin: a closed skirt from inside the neck out under the collar and the shoulders,
+ * lying under the outfit's bind surface (`outfitTris`, flat), so a look down inside the collar never meets the ground through her.
+ * Skinned like the nearest body vertex; one dark texel (the UV of `darkUV`). Call after the paint. Returns the first new vertex index.
+ */
+export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, y1 = 1.372, rx0 = 0.042, rz0 = 0.05, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 3, gap = 0.006, darkUV } = {}) {
+  const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
+  const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
+  const n0 = P.getCount();
+  const near = [];
+  { const q = [0, 0, 0]; for (let i = 0; i < n0; i++) { P.getElement(i, q); if (q[1] > 1.28 && q[1] < 1.56 && Math.abs(q[0]) < 0.28) near.push([q[0], q[1], q[2], i]); } }
+  const pos = [], nrm = [], uv = [], jnt = [], wgt = [], idx = [];
+  const j = [0, 0, 0, 0], w = [0, 0, 0, 0];
+  for (let r = 0; r <= rings; r++) for (let k = 0; k < seg; k++) {
+    const t = r / rings, a = (k / seg) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
+    let y = mix(y0, y1, t);
+    // it stays inside the outfit's wall at its own height, and under its roof
+    const wall = grid.cast(0, y, centerZ, sa, 0, ca, 0.4, 0.0001);
+    const lim = wall >= 0 ? Math.max(0, wall - 0.009) : 1;
+    const rr = Math.min(1, lim / Math.max(1e-6, Math.hypot(sa * mix(rx0, rx1, t), ca * mix(rz0, rz1, t))));
+    const x = sa * mix(rx0, rx1, t) * rr, z = centerZ + ca * mix(rz0, rz1, t) * rr;
+    const hit = grid.cast(x, 1.62, z, 0, -1, 0, 0.34, 0.0001);
+    if (hit >= 0) y = Math.min(y, 1.62 - hit - gap);
+    pos.push(x, y, z); nrm.push(0, 1, 0); uv.push(darkUV[0], darkUV[1]);
+    let best = -1, bd = 9;
+    for (const v of near) { const d = (v[0] - x) ** 2 + (v[1] - y) ** 2 + (v[2] - z) ** 2; if (d < bd) { bd = d; best = v[3]; } }
+    J.getElement(best, j); W.getElement(best, w);
+    jnt.push(...j); wgt.push(...w);
+  }
+  for (let r = 0; r < rings; r++) for (let k = 0; k < seg; k++) {
+    const kn = (k + 1) % seg, a = n0 + r * seg + k, b = n0 + r * seg + kn, c = n0 + (r + 1) * seg + k, d = n0 + (r + 1) * seg + kn;
+    // wound so its upper face is the front one
+    idx.push(a, c, b, b, c, d);
+  }
+  const grow = (A, add) => { const src = A.getArray(), dst = new src.constructor(src.length + add.length); dst.set(src); dst.set(add, src.length); A.setArray(dst); };
+  grow(P, pos); grow(prim.getAttribute('NORMAL'), nrm); grow(prim.getAttribute('TEXCOORD_0'), uv); grow(J, jnt); grow(W, wgt);
+  grow(prim.getIndices(), idx);
+  return n0;
+}
+
+/**
  * The close coils a wrap leaves showing at the temples: a band under the first hem above a point, as wide as
  * `width(az)` by azimuth (0 at the forehead corner, widest before the ear), both sides alike, clear of the ear.
  * `hemGap(p, max)` comes from woundHeadwrap. The coil field itself breaks the band's lower edge.
@@ -233,6 +273,24 @@ export function remapEyeUV(prim, eyes, rect) {
 }
 /** The metres the eye patch spans. */
 export const EYE_SPAN = 0.0345;
+
+/** An ear's tip that would pierce the cloth lies under it instead: the hem crosses the ear, the ear does not poke through the wrap. */
+export function tuckUnderCloth(prim, stack, isEar, { clear = 0.0016 } = {}) {
+  const P = prim.getAttribute('POSITION'), a = P.getArray(), c = stack.center;
+  let n = 0;
+  for (let i = 0; i < P.getCount(); i++) {
+    const p = [a[i * 3], a[i * 3 + 1], a[i * 3 + 2]];
+    if (!isEar(p)) continue;
+    const x = p[0] - c[0], y = p[1] - c[1], z = p[2] - c[2], r = Math.hypot(x, y, z) || 1;
+    if (!stack.coveredAt(x / r, y / r, z / r)) continue;
+    const top = stack.clothAt(x / r, y / r, z / r) - clear;
+    if (r <= top) continue;
+    a[i * 3] = c[0] + x / r * top; a[i * 3 + 1] = c[1] + y / r * top; a[i * 3 + 2] = c[2] + z / r * top;
+    n++;
+  }
+  P.setArray(a);
+  return n;
+}
 
 /** Drop skull triangles the wrap fully covers (ears stay). Returns the count. */
 export function cullUnderWrap(prim, covers, isEar) {
@@ -373,8 +431,11 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
     const inner = 1 - smooth(0.42, 1.12, d), core = 1 - smooth(0.14, 0.52, d);
     const under = smooth(-0.3, -0.85, T.ny) * (1 - smooth(1.0, 1.7, d));
     if (under <= 0 && inner <= 0) return;
-    const m = (1 - 0.16 * under) * (1 - 0.42 * inner) * (1 - 0.6 * core);
+    // what faces up in there is the nostril's floor: never lit in life, and no pale shard in a frame
+    const floor = smooth(-0.15, 0.35, T.ny) * (1 - smooth(0.9, 1.5, d));
+    const m = (1 - 0.16 * under) * (1 - 0.42 * inner) * (1 - 0.6 * core) * (1 - 0.8 * floor);
     T.r *= m; T.g *= m * 0.95; T.b *= m * 0.93;
+    T.nflat = Math.max(T.nflat, Math.max(inner, floor));
     T.ao = mix(T.ao, Math.max(T.ao, 0.5), inner);      // the hollow's shade is painted, soft: the baked AO would crush it to black
     T.rough = mix(T.rough, 0.9, inner);
   };

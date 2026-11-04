@@ -54,7 +54,7 @@ import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/wrap-head.mjs';
 import { lashCard } from './lib/hair.mjs';
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, browLines, remapEyeUV,
-  cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals,
+  cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
 } from './lib/skin-human.mjs';
 
 export const LANE = 'hero-body';
@@ -381,19 +381,20 @@ export async function build({ out = ROOT } = {}) {
     base: { tiltDeg: 18, warpDeg: -9.5, lowDeg: -2.2, w: 0.25, lift: 0.0012 },
     // two turns crossing over the forehead, each lying on what is under it
     turns: [
-      { phiDeg: 82, tauDeg: 14.5, oDeg: 34, w: 0.2, along: 34, lift: 0.0009, pillow: 0.0026, creaseAmp: 0.0012, seed: 8, flip: true },
-      { phiDeg: -74, tauDeg: 17, oDeg: 39, w: 0.215, along: 30, lift: 0.0009, pillow: 0.0028, creaseAmp: 0.0012, seed: 15 },
+      { phiDeg: 82, tauDeg: 14.5, oDeg: 34, w: 0.225, along: 34, lift: 0.0009, pillow: 0.0026, creaseAmp: 0.0012, seed: 8, flip: true },
+      { phiDeg: -74, tauDeg: 17, oDeg: 36.5, w: 0.235, along: 30, lift: 0.0009, pillow: 0.0028, creaseAmp: 0.0012, seed: 15 },
     ],
     // the topknot; its top is the bbox top that assets.specs.js's targetHeight is computed from
     bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, rAxis: 0.0685, topY: 1.82756 },
     knot: CHAINS.wrapSash.points[0],
     // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
-    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.25, gatherTo: 0.44, roll: 0.6, fold: 0.0085, along: 18, across: 5, rootBack: 0.014 },
+    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 18, across: 5, rootBack: 0.014 },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
     tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012 },
   });
 
   // ---- the skull under the wrap and the backs of the eyes are never seen: they pay for the cloth
+  const earTucked = tuckUnderCloth(bodyPrim, wrapped.stack, isEar);
   const culled = cullUnderWrap(bodyPrim, wrapped.covers, isEar);
   const eyesCulled = cullEyeBacks(eyesPrim, eyes);
   const handsCut = await simplifyHands(bodyPrim);
@@ -446,16 +447,26 @@ export async function build({ out = ROOT } = {}) {
 
   // what faces into the head stays out of a sun behind her (after the paint, which reads the true normals)
   leanInwardNormals(bodyPrim, eyesPrim, { L, eyes });
+  // a look down the collar stops at a dark skirt under the outfit, one dark texel: the mouth's deep inside
+  const darkUV = (() => {
+    const Q = bodyPrim.getAttribute('POSITION'), U = bodyPrim.getAttribute('TEXCOORD_0'), q = [0, 0, 0], u = [0, 0];
+    let best = -1, bz = 9;
+    for (let i = 0; i < Q.getCount(); i++) { Q.getElement(i, q); if (q[1] > 1.565 && q[1] < 1.6 && Math.abs(q[0]) < 0.025 && q[2] > 0 && q[2] < bz) { bz = q[2]; best = i; } }
+    if (best < 0) throw new Error('[brea] no texel inside the mouth for the collar skirt');
+    U.getElement(best, u);
+    return [u[0], u[1]];
+  })();
+  const skirtFrom = appendCollarSkirt(bodyPrim, panTris, { darkUV });
 
   // ---- hide mask (Pan Whites I covers which body vertices)
   const hide = coverageMask(bodyPrim, panTris, 0.08);
   const hideArr = new Uint8Array(bodyPrim.getAttribute('POSITION').getCount());
   // the collar stands off the neck: a look down inside it meets skin, never a hole through her, so
   // the neck and the top of the chest stay whatever the normal-ray test says
-  const insideCollar = (x, y) => y > 1.355 && Math.abs(x) < 0.145;
+  const insideCollar = (x, y) => y > 1.40 && Math.abs(x) < 0.112;
   {
     const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0];
-    for (let i = 0; i < hideArr.length; i++) { P.getElement(i, q); hideArr[i] = hide[i] && !insideCollar(q[0], q[1]) ? 1 : 0; }
+    for (let i = 0; i < hideArr.length; i++) { P.getElement(i, q); hideArr[i] = i < skirtFrom && hide[i] && !insideCollar(q[0], q[1]) ? 1 : 0; }
   }
   const buf = root.listBuffers()[0];
   bodyPrim.setAttribute('_HIDEMASK', base.createAccessor().setType('SCALAR').setArray(hideArr).setBuffer(buf));
@@ -496,7 +507,7 @@ export async function build({ out = ROOT } = {}) {
         hideBits: { 'pan-1': 1 }, hiddenByPan1: hidden,
       },
       r5Face: faceRec,
-      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, handsCut } },
+      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, handsCut, earTucked } },
     },
   });
   void wrapTex;

@@ -416,7 +416,7 @@ export const fbm3 = (x, y, z, f) => (noise3(x * f, y * f, z * f) * 0.57 + noise3
 /* ================================================================ layers */
 
 /** The one record every paint layer sees per texel (reused, never reallocated). */
-class Texel { constructor() { this.br = 0; this.bg = 0; this.bb = 0; this.sr = 0; this.sg = 0; this.sb = 0; this.conv = 0; this.X = 0; this.Y = 0; this.Z = 0; this.nx = 0; this.ny = 0; this.nz = 0; this.r = 0; this.g = 0; this.b = 0; this.h = 0; this.rough = 0.6; this.metal = 0; this.ao = 1; this.island = -1; this.mPerPx = 0.001; this.x = 0; this.y = 0; this.lum = 0; } }
+class Texel { constructor() { this.nflat = 0; this.br = 0; this.bg = 0; this.bb = 0; this.sr = 0; this.sg = 0; this.sb = 0; this.conv = 0; this.X = 0; this.Y = 0; this.Z = 0; this.nx = 0; this.ny = 0; this.nz = 0; this.r = 0; this.g = 0; this.b = 0; this.h = 0; this.rough = 0.6; this.metal = 0; this.ao = 1; this.island = -1; this.mPerPx = 0.001; this.x = 0; this.y = 0; this.lum = 0; } }
 
 /**
  * Pores, fine creasing and pigment mottling, weighted by `zone(T)` (0..1). Skin is never
@@ -586,6 +586,9 @@ export function eyeSocketClean({ eyes, rx = 0.0285, ry = 0.0175, lid = [1.0, 0.9
       const cr = T.br * mix(1, lid[0], lidK), cg = T.bg * mix(1, lid[1], lidK), cb = T.bb * mix(1, lid[2], lidK);
       const m = k * (1 - lashEdge * keepLiner);
       T.r = mix(T.r, cr, m); T.g = mix(T.g, cg, m); T.b = mix(T.b, cb, m);
+      // the upper lid is a lit plane under the brow: lifted a little, so that in the shade the brow stays a separate shape
+      const upLid = smooth(0.0015, 0.006, T.Y - e[1]) * (1 - smooth(0.011, 0.0175, T.Y - e[1])) * k;
+      if (upLid > 0) { T.r *= 1 + 0.26 * upLid; T.g *= 1 + 0.22 * upLid; T.b *= 1 + 0.2 * upLid; }
       // the socket's shade comes from the sun and the brow, not from a painted smudge
       T.ao = mix(T.ao, Math.max(T.ao, aoFloor), k * 0.9);
     }
@@ -874,6 +877,7 @@ export async function paintSkinAtlas({ prim, islands, stock, W = 1024, tone = '#
       T.br = s3[0] * gain[0]; T.bg = s3[1] * gain[1]; T.bb = s3[2] * gain[2];
     }
     T.h = 0;
+    T.nflat = 0;
     T.metal = 0;
     T.rough = baseRough * (0.55 + 0.45 * (s2[0] / 255) / 0.72);
     // the baked form: AO (a reddened multiply, light through skin is warm) + convexity
@@ -900,7 +904,8 @@ export async function paintSkinAtlas({ prim, islands, stock, W = 1024, tone = '#
     }
     out[o] = T.r; out[o + 1] = T.g; out[o + 2] = T.b;
     rough[i] = T.rough; aoOut[i] = T.ao; height[i] = T.h; metalOut[i] = T.metal;
-    nrm[i * 2] = s1[0] / 127.5 - 1; nrm[i * 2 + 1] = s1[1] / 127.5 - 1;
+    // a layer can flatten the source's normal (T.nflat): its relief inside a nostril tips the shading back up into the sun
+    nrm[i * 2] = (s1[0] / 127.5 - 1) * (1 - T.nflat); nrm[i * 2 + 1] = (s1[1] / 127.5 - 1) * (1 - T.nflat);
     filled[i] = 1;
     stats.texels++;
   }
