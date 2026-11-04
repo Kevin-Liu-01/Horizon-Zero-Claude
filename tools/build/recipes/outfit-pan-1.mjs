@@ -760,7 +760,7 @@ export async function panBase(opt = {}) {
   // on the side of the hip, just behind the seam: out of the thigh's swing and of the arm's
   const pouchThA = -1.75;
   const POUCH_Y = BELT_Y - 0.092;
-  const pr = ring(clothField, POUCH_Y, 64, { keep: KEEP_TORSO, dth: 0.14 })[Math.round(64 * (((pouchThA + Math.PI / 2 + TAU) % TAU) / TAU)) % 64] + 0.016;
+  const pr = ring(skirtField, POUCH_Y, 64, { keep: () => true, dth: 0.14 })[Math.round(64 * (((pouchThA + Math.PI / 2 + TAU) % TAU) / TAU)) % 64] + 0.009;
   const pc = [Math.cos(pouchThA) * pr, POUCH_Y, -0.02 + Math.sin(pouchThA) * pr];
   const pX = V.norm([Math.sin(pouchThA), 0, -Math.cos(pouchThA)]), pZ = V.norm([Math.cos(pouchThA), 0, Math.sin(pouchThA)]);
   const pY = [0, 1, 0];
