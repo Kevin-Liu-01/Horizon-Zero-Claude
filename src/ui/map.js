@@ -861,6 +861,10 @@ export class WorldMap {
     }
 
     // 5-7: sites, objectives, Flags
+    const her = this.ctx.player;
+    this._herPt = her ? this.worldToMap(her.position.x, her.position.z) : null;
+    this._herYaw = her?.camYaw ?? 0;
+    this._gaveWay = 0;
     const marks = this.bake.ready ? this.visibleMarkers() : [];
     // every glyph claims its ground first, so no name can land on a mark
     for (const m of marks) { const pt = this.worldToMap(m.x, m.z); this._claim(pt.x - 8 * K, pt.y - 8 * K, pt.x + 8 * K, pt.y + 8 * K); }
@@ -876,7 +880,7 @@ export class WorldMap {
       const yaw = p.camYaw ?? 0;
       g.save();
       g.translate(pt.x, pt.y);
-      g.rotate(-yaw + Math.PI);   // world +Z maps to screen +Y; the chase camera looks along -forward
+      g.rotate(-yaw);   // world +Z maps to screen +Y and she looks along (-sin yaw, -cos yaw); the tip is drawn at local -Y
       g.lineCap = 'square';
       g.strokeStyle = PAPER; g.lineWidth = 4.4 * K;
       g.beginPath(); g.moveTo(0, 8 * K); g.lineTo(0, -10 * K); g.moveTo(-6.5 * K, 3 * K); g.lineTo(0, -10 * K); g.lineTo(6.5 * K, 3 * K); g.stroke();
@@ -1016,12 +1020,24 @@ export class WorldMap {
       g.fillRect(pt.x - r, pt.y - r, r * 2, r * 2);
       this._name(g, String(m.name).toUpperCase(), pt, r + 5 * K, 12.5, 700, INK, true);
     } else if (m.kind === 'quest') {
+      // on her own spot an objective steps aside on a leader, square to her arrow, so both read
+      let x = pt.x, y = pt.y;
+      const her = this._herPt;
+      if (her && Math.hypot(x - her.x, y - her.y) < 24 * K) {
+        const c = Math.cos(this._herYaw), s = Math.sin(this._herYaw);
+        const side = c >= 0 ? 1 : -1;       // the side of her arrow that faces the sheet's right
+        x = her.x + c * side * 30 * K;
+        y = her.y - s * side * 30 * K;
+        this._gaveWay++;
+        g.strokeStyle = INK; g.lineWidth = 1 * K;
+        g.beginPath(); g.moveTo(her.x, her.y); g.lineTo(x, y); g.stroke();
+      }
       g.lineCap = 'square';
       g.strokeStyle = PAPER; g.lineWidth = 4.2 * K;
-      g.beginPath(); g.moveTo(pt.x, pt.y + 9 * K); g.lineTo(pt.x, pt.y - 9 * K); g.moveTo(pt.x - 6 * K, pt.y); g.lineTo(pt.x, pt.y + 9 * K); g.lineTo(pt.x + 6 * K, pt.y); g.stroke();
+      g.beginPath(); g.moveTo(x, y + 9 * K); g.lineTo(x, y - 9 * K); g.moveTo(x - 6 * K, y); g.lineTo(x, y + 9 * K); g.lineTo(x + 6 * K, y); g.stroke();
       g.strokeStyle = VERMILION; g.lineWidth = 2 * K;
-      g.beginPath(); g.moveTo(pt.x, pt.y + 9 * K); g.lineTo(pt.x, pt.y - 9 * K); g.moveTo(pt.x - 6 * K, pt.y); g.lineTo(pt.x, pt.y + 9 * K); g.lineTo(pt.x + 6 * K, pt.y); g.stroke();
-      if (m.tracked) { g.lineWidth = 1 * K; g.strokeStyle = VERMILION; g.strokeRect(pt.x - 12 * K, pt.y - 12 * K, 24 * K, 24 * K); }
+      g.beginPath(); g.moveTo(x, y + 9 * K); g.lineTo(x, y - 9 * K); g.moveTo(x - 6 * K, y); g.lineTo(x, y + 9 * K); g.lineTo(x + 6 * K, y); g.stroke();
+      if (m.tracked) { g.lineWidth = 1 * K; g.strokeStyle = VERMILION; g.strokeRect(x - 12 * K, y - 12 * K, 24 * K, 24 * K); }
     } else if (m.kind === 'machine') {
       const s = m.m?.lampState ?? 'calm';
       const col = { calm: '#F2EAD3', wary: '#B5E61D', hostile: '#FF2D8C', dark: '#3B3A36' }[s] ?? '#F2EAD3';
@@ -1215,6 +1231,7 @@ export class WorldMap {
       markers: this.markers().length,
       triangles: this.triangles(),
       painted: this._lastPainted,
+      gaveWay: this._gaveWay ?? 0,
       waypoint: this.waypoint ? { ...this.waypoint, distance: this.distanceToWaypoint() } : null,
       selected: this._selected ? { kind: this._selected.kind, name: this._selected.name } : null,
       travel: this._selected ? this.canFastTravel(this._selected) : null,

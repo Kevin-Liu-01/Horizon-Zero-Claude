@@ -82,11 +82,19 @@ const iconSvg = (key) => `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000
 export function itemIcon(id) { return iconSvg(markKey(id)); }
 
 /** An item's name in the player's words. */
+/**
+ * The Field Books page's headings, by category id: the catalogue's own labels are Round-4 words
+ * until the catalogue is renamed. A category this table does not know is a keeper's record
+ * (bible §6: the Fogcatchers keep the paper field books), so no catalogue label reaches the page.
+ */
+const BOOK_HEADS = { world: 'WORLD', vessels: 'GLAZED VESSELS', machine: 'INSTRUMENT STUDIES' };
+export function bookHeading(id) { return BOOK_HEADS[id] ?? 'FOGCATCHER RECORDS'; }
+
 export function itemPlayerName(id, fallback) { return fieldWord(fallback ?? itemDef(id).name); }
 
 /** Rarity, as an ink on paper (the catalogue's colours were chosen for a dark panel). */
 const RAR_INK = {
-  common: 'var(--cal-ink-62)', uncommon: 'var(--cal-verdigris)', rare: 'var(--cal-cobalt)',
+  common: 'var(--cal-ink-62)', uncommon: 'var(--cal-moss)', rare: 'var(--cal-cobalt)',
   veryRare: 'var(--cal-carmine)', legendary: 'var(--cal-brass)',
 };
 const rarInk = (rar) => RAR_INK[rar?.id] ?? RAR_INK.common;
@@ -639,7 +647,7 @@ export class InventoryScreen {
 
     let first = null;
     for (const cat of dp.categories()) {
-      el('div', 'cal-inv-group', this._bodyEl, `${esc(fieldWord(cat.label))} · ${cat.have}/${cat.total}`);
+      el('div', 'cal-inv-group', this._bodyEl, `${esc(bookHeading(cat.id))} · ${cat.have}/${cat.total}`);
       const list = el('div', 'cal-notes', this._bodyEl);
       for (const rec of dp.list.filter((r) => r.category === cat.id)) {
         const had = dp.collected.has(rec.id);
@@ -673,7 +681,7 @@ export class InventoryScreen {
     if (!rec) { this._detailHint(); return; }
     const d = this._detailEl;
     d.style.setProperty('--rar', 'var(--cal-cobalt)');
-    el('div', 'cal-det-rar', d, esc(fieldWord(rec.categoryLabel ?? 'FIELD BOOK')));
+    el('div', 'cal-det-rar', d, esc(bookHeading(rec.category)));
     const head = el('div', 'cal-det-head', d);
     el('i', 'cal-det-glyph', head, iconSvg('book'));
     el('span', 'cal-det-name', head, esc(fieldWord(rec.title).toUpperCase()));

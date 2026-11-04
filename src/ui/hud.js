@@ -610,7 +610,7 @@ export class HUD {
       const wrap = div('cal-px', dl);
       this._dmgPool.push({
         wrap, el: div('cal-dmg', wrap),
-        active: false, age: 0, dur: 1, drift: 0, qx: NaN, qy: NaN,
+        active: false, age: 0, dur: 1, drift: 0, qx: NaN, qy: NaN, hw: 0, hh: 0,
         world: new THREE.Vector3(),
       });
     }
@@ -1051,6 +1051,9 @@ export class HUD {
     slot.el.className = 'cal-dmg' + (cls ? ' ' + cls : '');
     slot.el.style.fontSize = px.toFixed(1) + 'px';
     slot.el.style.visibility = 'visible';
+    // the painted box, from Plex Mono's advance (0.6 em) and the chip's padding: read every frame, never measured
+    slot.hw = (String(text).length * px * 0.6 + 12) * 0.5;
+    slot.hh = (px + 6) * 0.5;
   }
 
   /**
@@ -1105,15 +1108,45 @@ export class HUD {
       d.el.style.visibility = 'visible';
       const k = d.age / d.dur;
       const rise = 1 - (1 - k) * (1 - k);
-      const x = (v.x * 0.5 + 0.5) * this._vw + d.drift * rise;
-      const y = (-v.y * 0.5 + 0.5) * this._vh - 44 * rise;
-      const qx = Math.round(x), qy = Math.round(y);
+      this._dmgClear((v.x * 0.5 + 0.5) * this._vw + d.drift * rise, (-v.y * 0.5 + 0.5) * this._vh - 44 * rise, d.hw, d.hh);
+      const qx = Math.round(this._dmgX), qy = Math.round(this._dmgY);
       if (qx !== d.qx) { d.qx = qx; d.wrap.style.transform = txString(qx); }
       if (qy !== d.qy) { d.qy = qy; d.el.style.transform = dmgY(qy); }
       d.el.style.scale = POP_STR[k < 0.14 ? Math.round((k / 0.14) * 10) : 10];
       const o = k < 0.1 ? k / 0.1 : k > 0.62 ? (1 - k) / 0.38 : 1;
       d.el.style.opacity = OPACITY_STR[Math.round(o * 20)];
     }
+  }
+
+  /**
+   * A number belongs to the part that was hit, but what she reads keeps its place: the circle with
+   * the vial's word, the column and every plate. A number that would land on one steps clear of it,
+   * by the same bounds the plates resolve against (`_updateMachineBars`, which runs first this frame).
+   * Writes `_dmgX` and `_dmgY`: this runs per number per frame.
+   */
+  _dmgClear(x, y, hw, hh) {
+    const sc = this._scale, gap = MHB_GAP * sc;
+    // (x, y) is the number's bottom centre (`dmgY`)
+    const h = hh * 2;
+    if (Math.abs(x - this._vw * 0.5) < MHB_EYE_HALF * sc + hw && y - h < MHB_EYE_BASE * sc) {
+      y = MHB_EYE_BASE * sc + h + gap;
+    }
+    const colB = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc;
+    const colR = MHB_SAFE_L * sc;
+    if (x - hw < colR && y - h < colB) x = colR + hw + gap;
+    // a plate can sit under the circle, so the plates are tried after it, twice: stepping below one can land on the next
+    const ws = this._wscale, halfW = MHB_W * 0.5 * ws;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < MHB_CAP; i++) {
+        const px = this._mhbX[i];
+        if (px !== px) continue;
+        const py = this._mhbY[i];
+        const ph = (this._mhbSlots[i].h || MHB_PLATE_H) * ws;
+        if (Math.abs(x - px) < halfW + hw && y > py - ph && y - h < py) y = py + h + gap;
+      }
+    }
+    this._dmgX = x;
+    this._dmgY = y;
   }
 
   /* ------------------------------ frame update ----------------------------- */

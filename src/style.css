@@ -81,7 +81,7 @@
   --cal-carmine: #A3213A;        /* Pry */
   --cal-brass: #B08A45;
   --cal-linen: #D9CFBA;
-  --cal-verdigris: #4F8F7E;
+  --cal-moss: #56603F;           /* felt moss (bible §9.1): a gain, an uncommon find; never teal */
   --cal-lamp-calm: #F2EAD3;
   --cal-lamp-wary: #B5E61D;
   --cal-lamp-hostile: #FF2D8C;
@@ -115,11 +115,11 @@
   --cal-c-pry: var(--cal-carmine);             /* Pry */
   --cal-c-wary: var(--cal-lamp-wary);          /* a wary pip */
   --cal-c-hostile: var(--cal-lamp-hostile);    /* a hostile pip */
-  --cal-c-good: var(--cal-verdigris);          /* a gain, a hidden Brea */
+  --cal-c-good: var(--cal-moss);               /* a gain */
 
   /* ---- rarity, as ink on paper ---- */
   --cal-r-common: var(--cal-ink-62);
-  --cal-r-uncommon: var(--cal-verdigris);
+  --cal-r-uncommon: var(--cal-moss);
   --cal-r-rare: var(--cal-cobalt);
   --cal-r-veryRare: var(--cal-carmine);
   --cal-r-legendary: var(--cal-brass);

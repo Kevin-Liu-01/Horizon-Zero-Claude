@@ -32,7 +32,7 @@ export const PALETTES = {
   off: null,
   protanopia: {
     '--cal-c-staff': '#E69F00', '--cal-c-weak': '#0072B2', '--cal-c-pry': '#56B4E9',
-    '--cal-c-wary': '#F0E442', '--cal-c-hostile': '#CC79A7', '--cal-c-good': '#009E73',
+    '--cal-c-wary': '#F0E442', '--cal-c-hostile': '#CC79A7', '--cal-c-good': '#6FCE8E',
   },
   deuteranopia: {
     '--cal-c-staff': '#E08A00', '--cal-c-weak': '#0072B2', '--cal-c-pry': '#4FA8DD',

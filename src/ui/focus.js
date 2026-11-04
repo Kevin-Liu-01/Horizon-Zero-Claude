@@ -25,6 +25,13 @@ import { itemIcon } from './inventory.js';
  * metres) until it dies, and its bearing on the circle. Component shells linger 6 s
  * after the alidade comes down.
  *
+ * THE OVERLAY IS DRAWN AFTER THE COMPOSER (`engine.onAfterRender`), on the finished frame at
+ * display resolution: no grade, bloom or AO touches a hairline, and the scene's depth texture
+ * is free to read. That depth is how nothing the alidade draws goes over Brea, whatever she
+ * carries and with no draw of her own (`lineClear`, `FIGURE_FS`). Draw budget raised (R61 d, at
+ * most 30, `A-sighting-draws`): figure 1, the sighted Instrument <= 8 + <= 6 components, the
+ * nearest others <= 3 x 2, transects <= 2, gather marks 1, the raising sweep 1.
+ *
  * Cross-lane reads are all defensive: machine.parts / weakPoints / route / kind,
  * ctx.interactables.list and terrain.getHeight may land in any order.
  */
@@ -36,15 +43,19 @@ const RING_WIDTH = 0.42;   // metres: a surveyor's chain, not a wall of light
 
 const PART_LINGER = 6.0;   // component outlines persist ~6 s after the alidade comes down
 const PART_FADE = 1.2;     // tail of the linger window spent fading
-const PART_CAP = 40;       // max outline meshes alive at once
+const PART_CAP = 6;        // component outlines alive at once: the sighted Instrument's, never a herd's (R61 d)
 const PART_RANGE = 150;    // only outline parts on Instruments within this range
 
-const PATH_RANGE = 220;    // transects drawn for Instruments within this range
-const HULL_RANGE = 120;    // the drawn figure: only Instruments within this range
-const HULL_MESHES_NEAR = 8;  // mask draws per Instrument inside HULL_NEAR metres
-const HULL_MESHES_FAR = 3;   // ...and beyond it
-const HULL_NEAR = 50;
-const PATH_WIDTH = 0.5;    // the transect's ribbon in metres: a fine chain line and its station ticks
+const PATH_RANGE = 180;    // transects drawn for Instruments within this range
+const PATH_CAP = 2;        // the sighted Instrument's transect and the nearest other's: a herd's thirteen read as road paint
+const PATH_OTHER = 0.5;    // the other transect's weight against the sighted one's
+
+const HULL_RANGE = 120;    // the sighted Instrument's figure: only inside this range
+const HULL_MESHES = 8;     // mask draws for the sighted Instrument
+const QUIET_CAP = 3;       // the others drawn at all: the nearest, as a quiet solid hairline
+const QUIET_MESHES = 2;    // ...their largest meshes only
+const QUIET_RANGE = 70;
+const SUBJECT_HOLD = 0.75; // seconds the figure stays on its Instrument before it may change
 
 const GATHER_CAP = 40;     // pooled survey marks over gather nodes
 const GATHER_TICK = 0.25;  // seconds between gather/parts registry polls
@@ -109,24 +120,6 @@ function markTexture() {
   return _markTex;
 }
 
-/** The overlay shell's vertex stage (skinning chunks are no-ops on static meshes). */
-const SHELL_VS = /* glsl */ `
-  #include <common>
-  #include <skinning_pars_vertex>
-  varying vec3 vN;
-  varying vec3 vV;
-  void main() {
-    #include <skinbase_vertex>
-    #include <beginnormal_vertex>
-    #include <skinnormal_vertex>
-    vec3 transformed = vec3(position);
-    #include <skinning_vertex>
-    vec4 mv = modelViewMatrix * vec4(transformed, 1.0);
-    vN = normalize(normalMatrix * objectNormal);
-    vV = normalize(-mv.xyz);
-    gl_Position = projectionMatrix * mv;
-  }`;
-
 /** The figure mask's vertex stage: position only, through the bones when there are bones. */
 const MASK_VS = /* glsl */ `
   #include <common>
@@ -139,63 +132,178 @@ const MASK_VS = /* glsl */ `
   }`;
 
 /**
- * THE DRAWN FIGURE (R54: the Fresnel shells read as white static on small geometry).
- * The mask holds coverage, R the whole Instrument, G its components, filtered: the 0.5
- * iso-line of a bilinear mask is a smooth contour at sub-texel accuracy. `abs(cov - 0.5) /
- * |grad cov|` is the distance to it, so the line is the same width whatever the Instrument's
- * shape. The Instrument is a dashed paper hairline on an ink casing; a component is ink with
- * a paper tooth between the dashes. No glow, no fill but a trace of ink.
+ * What stands in front of the overlay, read off the scene's own depth: Brea and everything she
+ * carries, a trunk, a ridge. `uHeroZ` is her view depth; `uKnock` is 0 only for the negative
+ * control of `A-sighting-over-brea`.
+ */
+const DEPTH_GLSL = /* glsl */ `
+  uniform sampler2D uDepth;
+  uniform vec2 uRes;
+  uniform float uNear;
+  uniform float uFar;
+  uniform float uHeroZ;
+  uniform float uKnock;
+  float sceneZ(vec2 uv) {
+    float d = texture2D(uDepth, uv).r * 2.0 - 1.0;
+    return 2.0 * uNear * uFar / (uFar + uNear - d * (uFar - uNear));
+  }
+  /* A line on the ground at view depth z: grass and stones at its own foot do not cut it (no
+     crumbs), anything taller does, and in her plane anything does: she stands in front of it. */
+  float lineClear(float z, vec2 uv) {
+    if (uKnock < 0.5) return 1.0;
+    float s = sceneZ(uv);
+    float m = s < uHeroZ + 0.9 ? 0.04 : 0.7 + z * 0.012;
+    return 1.0 - smoothstep(m, m + 0.3, z - s);
+  }`;
+
+/**
+ * THE DRAWN FIGURE (R54: Fresnel rims and a screen-space dash pattern read as static and
+ * crumbs on small geometry). The mask is half-resolution with 4x MSAA, so a thin strut carries
+ * real coverage; R is the sighted Instrument, G its components, A the quiet others.
+ *
+ * A band is a dilation, not an iso-line: `d1`, `d2`, `d3` are the mask dilated by rings of radius
+ * 0.8, 2.2 and 3.4 px, so a strut one pixel wide is a solid line and never a row of flecks. The
+ * paper core lies between d1 and d2, the ink casing runs from the edge out to d3, so the
+ * line holds on sunlit grass as it does on dark ground.
+ *
+ * The dash is anchored on the Instrument, not on the screen: polar angle around its projected
+ * centre plus radius, in target pixels (`uCentre`, `uDashN`, `uDash`), so a long contour and a
+ * radial one both cut at the same pace and the pattern travels with the Instrument.
  */
 const FIGURE_FS = /* glsl */ `
   uniform sampler2D uMask;
-  uniform vec2 uRes;
-  uniform vec2 uTexel;
-  uniform float uScale;   // target px per mask texel
-  uniform float uDash;    // dash period in target px
-  uniform float uLine;    // half line width in target px
+  uniform vec2 uPx;       // one target pixel in uv
+  uniform float uK;       // target px per 1600x900 px
+  uniform vec2 uCentre;   // the sighted Instrument's centre, target px, y up
+  uniform float uDash;    // dash period, target px
+  uniform float uDashN;   // whole dashes around it, so the angle closes without a seam
+  uniform float uFrontZ;  // anything nearer than this stands in front of the sighted Instrument
   uniform float uHull;
   uniform float uPart;
+  uniform float uQuiet;
   uniform vec3 uInk;
   uniform vec3 uPaper;
+  ${DEPTH_GLSL}
+  const vec2 D8[8] = vec2[8](vec2(1.0, 0.0), vec2(0.7071, 0.7071), vec2(0.0, 1.0), vec2(-0.7071, 0.7071),
+                             vec2(-1.0, 0.0), vec2(-0.7071, -0.7071), vec2(0.0, -1.0), vec2(0.7071, -0.7071));
+  vec4 ring(vec2 uv, float r) {
+    vec4 m = vec4(0.0);
+    for (int i = 0; i < 8; i++) m = max(m, texture2D(uMask, uv + D8[i] * r * uPx));
+    return m;
+  }
+  float cov(float x) { return smoothstep(0.32, 0.62, x); }
   void main() {
-    vec2 uv = gl_FragCoord.xy / uRes;
-    vec3 c3 = texture2D(uMask, uv).rgb;
-    float her = smoothstep(0.3, 0.7, c3.b);      // she stands in front of what she reads
-    if (her > 0.995) discard;
-    vec2 c = c3.rg;
-    vec2 l = texture2D(uMask, uv - vec2(uTexel.x, 0.0)).rg;
-    vec2 r = texture2D(uMask, uv + vec2(uTexel.x, 0.0)).rg;
-    vec2 d = texture2D(uMask, uv - vec2(0.0, uTexel.y)).rg;
-    vec2 u = texture2D(uMask, uv + vec2(0.0, uTexel.y)).rg;
-    vec2 gH = vec2(r.r - l.r, u.r - d.r) * 0.5;
-    vec2 gP = vec2(r.g - l.g, u.g - d.g) * 0.5;
-    float aH = length(gH), aP = length(gP);
-    float dH = aH > 0.02 ? abs(c.r - 0.5) / aH * uScale : 1e4;
-    float dP = aP > 0.02 ? abs(c.g - 0.5) / aP * uScale : 1e4;
-    float lineH = 1.0 - smoothstep(uLine, uLine + 1.0, dH);
-    float caseH = 1.0 - smoothstep(uLine + 0.8, uLine + 2.0, dH);
-    float lineP = 1.0 - smoothstep(uLine + 0.3, uLine + 1.3, dP);
-    float caseP = 1.0 - smoothstep(uLine + 1.1, uLine + 2.3, dP);
-    // a checker turned 22.5 degrees cuts a contour into dashes in every direction
-    vec2 q = gl_FragCoord.xy / uDash;
-    q = vec2(q.x * 0.924 + q.y * 0.383, q.y * 0.924 - q.x * 0.383);
-    float dash = (fract(q.x) < 0.5) == (fract(q.y) < 0.5) ? 1.0 : 0.0;
+    vec2 uv = gl_FragCoord.xy * uPx;
+    float r3 = 3.4 * uK;
+    vec4 d3 = ring(uv, r3);
+    vec4 c0 = texture2D(uMask, uv);
+    d3 = max(d3, c0);
+    if (d3.r + d3.g + d3.a < 0.03) discard;             // most of the frame: nine taps and out
+    vec4 d1 = max(c0, ring(uv, 0.8 * uK));
+    vec4 d2 = max(d1, ring(uv, 2.2 * uK));
+    d3 = max(d3, d2);
 
-    vec3 col = uInk;
-    float a = step(0.5, c.r) * 0.07 * uHull;                       // a trace of ink inside the figure
-    float hull = dash * uHull;
-    if (caseH * hull > 0.0) { a = max(a, caseH * hull * 0.66); }
-    if (lineH * hull > 0.0) { col = mix(col, uPaper, lineH); a = max(a, lineH * hull * 0.96); }
-    float part = uPart;
-    if (caseP * part > 0.0) {
-      vec3 tooth = mix(uPaper, uInk, dash);                        // ink, the paper between
-      col = mix(col, uPaper, caseP);
-      col = mix(col, tooth, lineP);
-      a = max(a, max(caseP * 0.72, lineP * 0.98) * part);
-    }
-    a *= 1.0 - her;
+    // the dash, on the Instrument
+    vec2 q = gl_FragCoord.xy - uCentre;
+    float ph = atan(q.y, q.x) / 6.28318530718 * uDashN + length(q) / uDash;
+    float f = fract(ph);
+    float soft = 1.1 / uDash;
+    float dash = smoothstep(0.0, soft, f) * (1.0 - smoothstep(0.64, 0.64 + soft, f));
+
+    // what stands in front of it
+    float s = sceneZ(uv);
+    float covered = uKnock < 0.5 ? 0.0 : 1.0 - smoothstep(uFrontZ - 0.12, uFrontZ + 0.12, s);
+    float herPlane = 1.0 - smoothstep(uHeroZ + 0.65, uHeroZ + 0.95, s);
+    float clear = (1.0 - covered * herPlane) * (1.0 - covered * 0.62);   // gone behind her; a quiet read through cover
+
+    // the sighted Instrument: paper on an ink casing
+    float hullIn = cov(c0.r);
+    float inkH = cov(d3.r) * (1.0 - hullIn) * dash * uHull * clear;
+    float papH = (cov(d2.r) - cov(d1.r)) * dash * uHull * clear;
+    // its components: ink with a paper tooth, inside the figure
+    float partIn = cov(c0.g);
+    float papP = cov(d3.g) * (1.0 - partIn) * uPart * clear;
+    float inkP = cov(d2.g) * (1.0 - partIn) * dash * uPart * clear;
+    // the others: a solid hairline, quiet, never in her plane
+    float quietClear = uKnock < 0.5 ? 1.0 : 1.0 - herPlane;
+    float inkQ = cov(d3.a) * (1.0 - cov(c0.a)) * uQuiet * quietClear * 0.34;
+    float papQ = (cov(d2.a) - cov(d1.a)) * uQuiet * quietClear * 0.46;
+
+    float aInk = max(inkH * 0.8, max(inkQ, inkP * 0.96));
+    float aPap = max(papH * 0.98, max(papQ, papP * 0.5 * (1.0 - inkP)));
+    float a = aPap + aInk * (1.0 - aPap);
     if (a <= 0.003) discard;
+    vec3 col = mix(uInk, uPaper, aPap / a);
     gl_FragColor = vec4(col, a);
+    #include <colorspace_fragment>
+  }`;
+
+/** A transect: a fat line in screen space, so no camera distance turns it into a slab. */
+const PATH_VS = /* glsl */ `
+  attribute vec3 aPrev;
+  attribute vec3 aNext;
+  uniform vec2 uRes;
+  uniform float uK;
+  varying float vD;
+  varying float vE;
+  varying float vZ;
+  varying float vTilt;
+  void main() {
+    vD = uv.x;                      // metres along the loop
+    vE = uv.y * 2.0 - 1.0;          // across it
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vZ = -mv.z;
+    vec4 c = projectionMatrix * mv;
+    vec4 a = projectionMatrix * modelViewMatrix * vec4(aPrev, 1.0);
+    vec4 b = projectionMatrix * modelViewMatrix * vec4(aNext, 1.0);
+    vTilt = 0.0;
+    if (c.w < 0.5 || a.w < 0.5 || b.w < 0.5) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }  // at the camera: the near fade has it
+    vec2 d = (b.xy / b.w - a.xy / a.w) * uRes;
+    vec2 n = vec2(-d.y, d.x) / max(length(d), 1e-3);
+    gl_Position = vec4(c.xy / c.w + n * vE * 5.0 * uK * 2.0 / uRes, 0.0, 1.0);
+    // seen almost edge-on, the far side of a loop stacks on the near side: fade with the grazing angle
+    vTilt = smoothstep(0.012, 0.06, abs(normalize(cameraPosition - position).y));
+  }`;
+
+/**
+ * A surveyor's chain line: a 1.5 px paper core on an ink casing, dashes 0.9 m long on a 1.5 m pace
+ * walking slowly, and a station tick every 7.5 m, which stays put as a chainage does.
+ */
+const PATH_FS = /* glsl */ `
+  uniform float uTime;
+  uniform float uFade;
+  uniform float uWeight;
+  uniform float uK;
+  uniform vec3 uPaper;
+  uniform vec3 uInk;
+  varying float vD;
+  varying float vE;
+  varying float vZ;
+  varying float vTilt;
+  ${DEPTH_GLSL}
+  void main() {
+    float e = abs(vE) * 5.0 * uK;                     // target px from the centre line
+    float core = 1.0 - smoothstep(0.75 * uK - 0.45, 0.75 * uK + 0.45, e);
+    float cas = 1.0 - smoothstep(1.8 * uK - 0.45, 1.8 * uK + 0.45, e);
+    float fw = max(fwidth(vD), 1e-4);                 // metres per target px
+    float m = fract((vD - uTime * 0.35) / 1.5);
+    float soft = fw / 1.5;
+    float dash = smoothstep(0.0, soft, m) * (1.0 - smoothstep(0.6, 0.6 + soft, m));
+    // a pace under 6 px cannot carry a dash: the line goes steady and lighter, never sparkle
+    dash = mix(0.6, dash, smoothstep(6.0, 11.0, 1.5 / fw));
+    float st = abs(fract(vD / 7.5 + 0.5) - 0.5) * 7.5;  // metres to the nearest station
+    float tickK = 1.0 - smoothstep(40.0, 60.0, vZ);
+    float tick = (1.0 - smoothstep(fw * uK * 0.5, fw * uK * 1.1, st)) * tickK;
+    float tickCase = (1.0 - smoothstep(fw * uK * 1.3, fw * uK * 2.1, st)) * tickK;
+    float paper = max(core * dash, tick);
+    float ink = max(cas * dash, tickCase) * 0.62;
+    float far = 1.0 - smoothstep(95.0, 125.0, vZ);    // gone past ~120 m
+    float nearK = smoothstep(3.0, 7.5, vZ);           // never a slab across the foreground
+    float k = uFade * uWeight * far * nearK * vTilt * lineClear(vZ, gl_FragCoord.xy / uRes);
+    float a = (paper * 0.96 + ink * (1.0 - paper * 0.96)) * k;
+    if (a <= 0.003) discard;
+    gl_FragColor = vec4(mix(uInk, uPaper, paper), a);
+    #include <colorspace_fragment>
   }`;
 
 const _clear = new THREE.Color();
@@ -211,10 +319,31 @@ export class SightingSystem {
     this._waveT = 99;       // time since raising (drives the sweep)
     this._origin = new THREE.Vector3();
 
-    // the drawn figure: Map machine -> { meshes[] }, in a mask of their own
+    // the overlay's own scene: drawn on the finished frame (`_afterComposer`)
+    this._overlayScene = new THREE.Scene();
+    this._overlayScene.name = 'sighting-overlay';
+    this._shared = {
+      uRes: { value: new THREE.Vector2(1, 1) },
+      uK: { value: 1 },
+      uDepth: { value: null },
+      uNear: { value: 0.1 },
+      uFar: { value: 1000 },
+      uHeroZ: { value: -1000 },
+      uKnock: { value: 1 },
+      uTime: { value: 0 },
+      uInk: { value: new THREE.Color('#1C1B1E') },     // lapilli: mixes with green ground into nothing teal
+      uPaper: { value: new THREE.Color('#F1EEE6') },
+    };
+
+    // the drawn figure: Map machine -> { meshes[], quiet }, in a mask of their own
     this._hulls = new Map();
+    this._subject = null;   // the one Instrument drawn in full
+    this._subjectHold = 0;
+    this._quiet = [];       // scratch: the others drawn quietly, nearest first
     this._hullK = 0;        // master fade 0..1 for the figure
     this._hullPoll = 0;
+    this._pathPoll = 0;
+    this._dashN = 0;
     this._buildFigure();
 
     // component outlines: Map part -> { meshes[], machine }
@@ -241,12 +370,15 @@ export class SightingSystem {
 
     this._ring = this._buildRing();
     this._ring.visible = false;
-    ctx.scene.add(this._ring);
+    this._overlayScene.add(this._ring);
 
     this._gather = this._buildGatherPoints();
     this._gather.visible = false;
-    ctx.scene.add(this._gather);
+    this._overlayScene.add(this._gather);
     this._gatherPoll = 0;
+
+    this._afterComposer = (engine) => this._drawOverlay(engine);
+    ctx.engine?.onAfterRender?.push(this._afterComposer);
 
     this._buildDom();
 
@@ -339,9 +471,7 @@ export class SightingSystem {
     this._lastBrg = -1;
     this._lastDst = -2;
     this._rangeT = 0;
-    this._figure.visible = true;
-    this._buildHeroShells();
-    this._buildHulls();
+    this._refreshFigure();
     this._buildPaths();
     this._gather.visible = true;
     this._gatherPoll = 0;   // refresh immediately
@@ -442,7 +572,6 @@ export class SightingSystem {
     for (let i = 0; i < LABEL_CAP; i++) {
       this._labelRec.push({ name: '', x: 0, y: 0, ax: 0, ay: 0, flip: false, loot: 0, weak: false, tearable: false, machine: '', slot: null });
     }
-    this._partOrder = [];   // scratch: machines sorted nearest-first per poll
     this._labelSlots = [];
     for (let i = 0; i < LABEL_CAP; i++) this._labelSlots.push({ x: 0, y: 0 });
 
@@ -496,20 +625,28 @@ export class SightingSystem {
     this._ringMat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, depthTest: false,
       side: THREE.DoubleSide, fog: false,
-      uniforms: { uFade: { value: 0 }, uColor: { value: new THREE.Color('#F1EEE6') } },
+      uniforms: { ...this._shared, uFade: { value: 0 }, uColor: this._shared.uPaper },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
+        varying float vZ;
         void main() {
           vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vZ = -mv.z;
+          gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */ `
         varying vec2 vUv;
+        varying float vZ;
         uniform float uFade;
         uniform vec3 uColor;
+        ${DEPTH_GLSL}
         void main() {
           float dash = step(0.5, fract(vUv.x * 96.0));
-          gl_FragColor = vec4(uColor, dash * uFade);
+          float a = dash * uFade * lineClear(vZ, gl_FragCoord.xy / uRes);
+          if (a <= 0.003) discard;
+          gl_FragColor = vec4(uColor, a);
+          #include <colorspace_fragment>
         }`,
     });
     const mesh = new THREE.Mesh(geo, this._ringMat);
@@ -544,29 +681,27 @@ export class SightingSystem {
   /* ----------------------------- the drawn figure --------------------------- */
 
   /**
-   * One half-resolution coverage mask and one full-frame contour pass (`FIGURE_FS`). The
-   * mask is drawn from inside the pass's own `onBeforeRender`, as a Reflector does, so it
-   * uses this frame's camera and bones. The target exists while a figure is on the sheet:
-   * `_releaseFigure()` frees it when the alidade is down and its linger has run out.
+   * One half-resolution coverage mask and one contour pass (`FIGURE_FS`), both on the finished
+   * frame. The target exists while a figure is on the sheet: `_releaseFigure()` frees it when the
+   * alidade is down and its linger has run out.
    */
   _buildFigure() {
     this._maskScene = new THREE.Scene();
     this._maskScene.name = 'sighting-figure-mask';
-    const maskMat = (rgb) => new THREE.ShaderMaterial({
+    const maskMat = (rgba) => new THREE.ShaderMaterial({
       vertexShader: MASK_VS,
-      fragmentShader: `void main() { gl_FragColor = vec4(${rgb}, 1.0); }`,
+      fragmentShader: `void main() { gl_FragColor = vec4(${rgba}); }`,
       depthTest: false, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, fog: false,
       blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation,
       blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
     });
-    this._hullMaskMat = maskMat('1.0, 0.0, 0.0');
-    this._partMaskMat = maskMat('1.0, 1.0, 0.0');
-    this._heroMaskMat = maskMat('0.0, 0.0, 1.0');   // Brea: nothing the alidade draws goes over her
-    this._heroShells = [];
+    this._hullMaskMat = maskMat('1.0, 0.0, 0.0, 0.0');
+    this._partMaskMat = maskMat('1.0, 1.0, 0.0, 0.0');
+    this._quietMaskMat = maskMat('0.0, 0.0, 0.0, 1.0');
 
     this._figureRT = new THREE.WebGLRenderTarget(2, 2, {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
-      depthBuffer: false, stencilBuffer: false, generateMipmaps: false, samples: 0,
+      depthBuffer: false, stencilBuffer: false, generateMipmaps: false, samples: 4,
     });
     this._figureRT.texture.name = 'sighting-figure-mask';
     this.ctx.engine?.registerRenderTarget?.('shell-ui sighting figure mask', this._figureRT);
@@ -575,114 +710,133 @@ export class SightingSystem {
       transparent: true, depthTest: false, depthWrite: false, toneMapped: false, fog: false,
       blending: THREE.NormalBlending,
       uniforms: {
+        ...this._shared,
         uMask: { value: this._figureRT.texture },
-        uRes: { value: new THREE.Vector2(1, 1) },
-        uTexel: { value: new THREE.Vector2(1, 1) },
-        uScale: { value: 2 },
-        uDash: { value: 9 },
-        uLine: { value: 0.55 },
+        uPx: { value: new THREE.Vector2(1, 1) },
+        uCentre: { value: new THREE.Vector2(0, 0) },
+        uDash: { value: 11 },
+        uDashN: { value: 12 },
+        uFrontZ: { value: -1000 },
         uHull: { value: 0 },
         uPart: { value: 0 },
-        uInk: { value: new THREE.Color('#26343F') },
-        uPaper: { value: new THREE.Color('#F1EEE6') },
+        uQuiet: { value: 0 },
       },
       vertexShader: 'void main() { gl_Position = vec4(uv, 0.0, 1.0); }',
       fragmentShader: FIGURE_FS,
     });
-    // `position` is all zeros, so anything but this material (a normal pass) draws nothing
+    // `position` is all zeros: a full-frame triangle, in the vertex stage above
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([-1, -1, 3, -1, -1, 3]), 2));
     this._figure = new THREE.Mesh(geo, this._figureMat);
     this._figure.name = 'sighting-figure';
     this._figure.frustumCulled = false;
-    this._figure.renderOrder = 9984;   // first of the alidade's layers: the transects read its mask
+    this._figure.renderOrder = 9990;   // last: its contour lies over the transects
     this._figure.visible = false;
-    this._figureDone = false;
-    this._figure.onBeforeRender = (renderer, _scene, camera) => this._renderFigureMask(renderer, camera);
-    this.ctx.scene.add(this._figure);
+    this._overlayScene.add(this._figure);
   }
 
-  _renderFigureMask(renderer, camera) {
-    if (this._figureDone) return;
-    this._figureDone = true;
-    const cur = renderer.getRenderTarget();
-    const w = cur ? cur.width : renderer.domElement.width;
-    const h = cur ? cur.height : renderer.domElement.height;
+  /** `engine.onAfterRender`: the overlay, on the frame the composer just finished. Nothing up: one branch. */
+  _drawOverlay(engine) {
+    const fig = this._figure.visible;
+    if (!fig && !this._paths.size && !this._ring.visible && !this._gather.visible) return;
+    const r = engine.renderer, cam = this.ctx.camera;
+    const w = r.domElement.width, h = r.domElement.height;
+    const U = this._shared;
+    U.uRes.value.set(w, h);
+    U.uK.value = Math.max(0.75, h / 900);
+    U.uDepth.value = engine.depthTexture;
+    U.uNear.value = cam.near;
+    U.uFar.value = cam.far;
+    cam.getWorldDirection(_dir);
+    const model = this.ctx.player?.model, her = this.ctx.player?.position;
+    if (her && model?.visible !== false) {
+      U.uHeroZ.value = (her.x - cam.position.x) * _dir.x + (her.y + 1 - cam.position.y) * _dir.y + (her.z - cam.position.z) * _dir.z;
+    } else {
+      U.uHeroZ.value = -1000;
+    }
+
+    const clearA = r.getClearAlpha();
+    const autoClear = r.autoClear;
+    r.autoClear = false;
+    if (fig) {
+      r.getClearColor(_clear);
+      this._syncSubject(w, h, cam);
+      this._renderFigureMask(r, cam, w, h);
+      r.setClearColor(_clear, clearA);
+    }
+    r.setRenderTarget(null);
+    r.render(this._overlayScene, cam);
+    r.autoClear = autoClear;
+  }
+
+  /** The dash's anchor and what counts as in front of the sighted Instrument, for this frame's camera. */
+  _syncSubject(w, h, cam) {
+    const u = this._figureMat.uniforms, k = this._shared.uK.value;
+    const hero = this._shared.uHeroZ.value;
+    u.uPx.value.set(1 / w, 1 / h);
+    u.uDash.value = 11 * k;
+    u.uFrontZ.value = hero + 0.95;      // no sighted Instrument: only her plane knocks out
+    const m = this._subject;
+    const pos = m?.position ?? m?.root?.position;
+    if (!pos) return;
+    const mh = m.height ?? 2.4;
+    _v.set(pos.x, pos.y + mh * 0.5, pos.z);
+    const z = (_v.x - cam.position.x) * _dir.x + (_v.y - cam.position.y) * _dir.y + (_v.z - cam.position.z) * _dir.z;
+    if (z <= 0.5) return;
+    const bound = Math.max(mh * 0.6, (m.bodyRadius ?? 1.4) * 1.3);
+    u.uFrontZ.value = z - bound;
+    _v.project(cam);
+    u.uCentre.value.set((_v.x * 0.5 + 0.5) * w, (_v.y * 0.5 + 0.5) * h);
+    // whole dashes around it, so the angle closes; held steady while the Instrument's size wobbles by less than a dash
+    const rPx = bound * (h * 0.5 / Math.tan(cam.fov * Math.PI / 360)) / z;
+    const n = Math.max(6, Math.round(6.2832 * rPx / u.uDash.value));
+    if (Math.abs(n - this._dashN) > 1) this._dashN = n;
+    u.uDashN.value = this._dashN;
+  }
+
+  _renderFigureMask(r, cam, w, h) {
     const mw = Math.max(2, w >> 1), mh = Math.max(2, h >> 1);
     const rt = this._figureRT;
     if (rt.width !== mw || rt.height !== mh) rt.setSize(mw, mh);
-    const u = this._figureMat.uniforms;
-    u.uRes.value.set(w, h);
-    u.uTexel.value.set(1 / mw, 1 / mh);
-    u.uScale.value = w / mw;
-    const dpr = renderer.domElement.clientWidth > 0 ? w / renderer.domElement.clientWidth : 1;
-    u.uDash.value = 11 * dpr;
-    u.uLine.value = 0.8 * dpr;
-
     // the source's world matrix is current here: the main pass has already updated the graph
-    for (const e of this._hulls.values()) {
-      for (const mesh of e.meshes) {
-        const src = mesh.userData.__src;
-        mesh.visible = !!src?.parent;
-        if (mesh.visible) { mesh.matrix.copy(src.matrixWorld); mesh.matrixWorldNeedsUpdate = true; }
-      }
-    }
-    for (const e of this._parts.values()) {
-      for (const mesh of e.meshes) {
-        const src = mesh.userData.__src;
-        mesh.visible = !!src?.parent;
-        if (mesh.visible) { mesh.matrix.copy(src.matrixWorld); mesh.matrixWorldNeedsUpdate = true; }
-      }
-    }
-    const model = this.ctx.player?.model;
-    for (const mesh of this._heroShells) {
-      const src = mesh.userData.__src;
-      mesh.visible = !!src?.parent && src.visible && model?.visible !== false;
+    for (const e of this._hulls.values()) this._rideSources(e.meshes);
+    for (const e of this._parts.values()) this._rideSources(e.meshes);
+    r.setRenderTarget(rt);
+    r.setClearColor(0x000000, 0);
+    r.clear(true, false, false);
+    r.render(this._maskScene, cam);
+  }
+
+  _rideSources(meshes) {
+    for (let i = 0; i < meshes.length; i++) {
+      const mesh = meshes[i], src = mesh.userData.__src;
+      mesh.visible = !!src?.parent;
       if (mesh.visible) { mesh.matrix.copy(src.matrixWorld); mesh.matrixWorldNeedsUpdate = true; }
     }
-
-    renderer.getClearColor(_clear);
-    const clearA = renderer.getClearAlpha();
-    const autoClear = renderer.autoClear;
-    renderer.setRenderTarget(rt);
-    renderer.setClearColor(0x000000, 0);
-    renderer.clear(true, false, false);
-    renderer.autoClear = false;
-    renderer.render(this._maskScene, camera);
-    renderer.autoClear = autoClear;
-    renderer.setClearColor(_clear, clearA);
-    renderer.setRenderTarget(cur);
   }
 
-  /** Brea's own meshes (kit included), rebuilt each time the alidade comes up: she may have changed what she carries. */
-  _buildHeroShells() {
-    this._clearHeroShells();
-    const model = this.ctx.player?.model;
-    if (!model) return;
-    model.traverse((o) => {
-      if (this._heroShells.length >= 12) return;
-      if (!(o.isMesh || o.isSkinnedMesh) || o.isInstancedMesh || o.userData.__sightOverlay) return;
-      this._heroShells.push(this._overlayFor(o, this._heroMaskMat));
-    });
-  }
+  /** The negative control of `A-sighting-over-brea`: false lets the overlay draw through her. */
+  debugOcclusion(on) { this._shared.uKnock.value = on ? 1 : 0; }
 
-  _clearHeroShells() {
-    for (const mesh of this._heroShells) mesh.parent?.remove(mesh);
-    this._heroShells.length = 0;
+  /** Draws the raised alidade adds to the frame right now: the mask's, and the overlay's own. */
+  overlayDraws() {
+    let mask = 0, own = 0;
+    for (const c of this._maskScene.children) if (c.visible) mask++;
+    for (const c of this._overlayScene.children) if (c.visible) own++;
+    return { mask, own, total: mask + own };
   }
 
   /** Nothing on the sheet: the pass stops and the mask's memory goes back. */
   _releaseFigure() {
     if (this.on || this._hulls.size || this._parts.size) return;
-    this._clearHeroShells();
     this._figure.visible = false;
     this._figureRT.dispose();
   }
 
   /**
    * A shell in the figure's mask, on its source's geometry and bones. It rides the source's
-   * world matrix (`_renderFigureMask`) because the source can sit under a holder group that
+   * world matrix (`_rideSources`) because the source can sit under a holder group that
    * `rig/lod.js` hides by tier, and a figure must not vanish at the range the alidade reads from.
    */
   _overlayFor(src, mat) {
@@ -708,39 +862,56 @@ export class SightingSystem {
     return overlay;
   }
 
-  _buildHulls() {
+  /**
+   * Who is drawn. The Instrument under the crosshair (else the nearest) in full; the nearest
+   * others as a quiet hairline; nobody else: a herd of outlines is what read as static.
+   * Polled, reconciled in place: a shell is only built when the cast changes.
+   */
+  _refreshFigure() {
     const list = this.ctx.machines?.list;
-    if (!Array.isArray(list)) return;
     const p = this.ctx.player;
-    // prune the figures of Instruments that left range or are gone
-    if (p?.position) {
-      for (const [m, e] of this._hulls) {
-        if (m?._disposed || m?.alive === false || (m?.position
-          && m.position.distanceToSquared(p.position) > (HULL_RANGE * 1.2) ** 2)) {
-          for (const mesh of e.meshes) mesh.parent?.remove(mesh);
-          this._hulls.delete(m);
-        }
-      }
+    if (!Array.isArray(list) || !p?.position) return;
+    this._subjectHold -= GATHER_TICK;
+    let want = this._labelSubject();
+    if (want && want.position.distanceToSquared(p.position) > HULL_RANGE * HULL_RANGE) want = null;
+    const cur = this._subject;
+    if (cur?._disposed || cur?.alive === false) { this._subject = want; this._subjectHold = SUBJECT_HOLD; }
+    else if (want !== cur && (!cur || this._subjectHold <= 0)) { this._subject = want; this._subjectHold = SUBJECT_HOLD; }
+    const subject = this._subject;
+
+    const quiet = this._quiet;
+    quiet.length = 0;
+    for (const m of list) {
+      if (!m || m === subject || m.alive === false || !m.root || !m.position) continue;
+      const d2 = m.position.distanceToSquared(p.position);
+      if (d2 > QUIET_RANGE * QUIET_RANGE) continue;
+      m.__sightD2 = d2;
+      quiet.push(m);
     }
-    for (const m of list) this._addHull(m);
+    quiet.sort(_byNearest);
+    if (quiet.length > QUIET_CAP) quiet.length = QUIET_CAP;
+
+    for (const [m, e] of this._hulls) {
+      const stays = e.quiet ? quiet.includes(m) : m === subject;
+      if (stays && !m._disposed && m.alive !== false) continue;
+      for (const mesh of e.meshes) mesh.parent?.remove(mesh);
+      this._hulls.delete(m);
+    }
+    if (subject) this._addHull(subject, false);
+    for (let i = 0; i < quiet.length; i++) this._addHull(quiet[i], true);
+    this._figure.visible = this._hulls.size > 0 || this._parts.size > 0;
   }
 
-  _addHull(m) {
+  _addHull(m, quiet) {
     if (!m || m.alive === false || !m.root || this._hulls.has(m)) return;
-    const p = this.ctx.player;
-    if (p?.position && m.position
-      && m.position.distanceToSquared(p.position) > HULL_RANGE * HULL_RANGE) return;
     let sources = [];
     m.root.traverse((o) => {
       // skip other shells and instanced kit; components keep their own outline
       if ((o.isMesh || o.isSkinnedMesh) && !o.isInstancedMesh && !o.userData.__sightOverlay
         && !o.userData.part) sources.push(o);
     });
-    // Draw-call budget: the largest meshes make the silhouette; far Instruments get fewer.
-    const pos0 = m.position ?? m.root.position;
-    const distNow = p?.position ? Math.hypot(
-      pos0.x - p.position.x, pos0.z - p.position.z) : 0;
-    const cap = distNow > HULL_NEAR ? HULL_MESHES_FAR : HULL_MESHES_NEAR;
+    // Draw-call budget: the largest meshes make the silhouette
+    const cap = quiet ? QUIET_MESHES : HULL_MESHES;
     if (sources.length > cap) {
       for (const o of sources) {
         if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
@@ -749,11 +920,10 @@ export class SightingSystem {
         b.geometry.boundingSphere.radius - a.geometry.boundingSphere.radius);
       sources = sources.slice(0, cap);
     }
+    const mat = quiet ? this._quietMaskMat : this._hullMaskMat;
     const meshes = [];
-    for (const o of sources) meshes.push(this._overlayFor(o, this._hullMaskMat));
-    if (!meshes.length) return;
-    this._hulls.set(m, { meshes });
-    this._figure.visible = true;
+    for (const o of sources) meshes.push(this._overlayFor(o, mat));
+    if (meshes.length) this._hulls.set(m, { meshes, quiet });
   }
 
   _disposeHulls() {
@@ -761,7 +931,11 @@ export class SightingSystem {
       for (const mesh of e.meshes) mesh.parent?.remove(mesh);
     }
     this._hulls.clear();
+    this._subject = null;
+    this._quiet.length = 0;
     this._hullK = 0;
+    this._figureMat.uniforms.uHull.value = 0;
+    this._figureMat.uniforms.uQuiet.value = 0;
     this._releaseFigure();
   }
 
@@ -787,46 +961,40 @@ export class SightingSystem {
     }
     if (!this.on || !Array.isArray(list)) return;
 
-    // NEAREST FIRST: the shells are a fixed 40-mesh budget and the list is in spawn
-    // order. Sorted into a scratch array reused across polls (GATHER_TICK, not per frame).
-    const near = this._partOrder;
-    near.length = 0;
-    for (const m of list) {
-      if (!m || m.alive === false || !Array.isArray(m.parts)) continue;
-      const d2 = p?.position && m.position
-        ? m.position.distanceToSquared(p.position) : 0;
-      if (d2 > PART_RANGE * PART_RANGE) continue;
-      near.push(m);
-      m.__sightD2 = d2;
+    // the sighted Instrument's components, nothing else's (R61 d): a raised alidade is at most six
+    const m = this._subject;
+    for (const [part, e] of this._parts) {
+      if (e.machine === m) continue;
+      for (const mesh of e.meshes) mesh.parent?.remove(mesh);
+      this._partCount -= e.meshes.length;
+      this._parts.delete(part);
     }
-    near.sort(_byNearest);
-
-    for (const m of near) {
-      const parts = m.parts;
-      for (const part of parts) {
-        if (!part || part.attached === false || this._parts.has(part)) continue;
-        const tearable = typeof part.tearable === 'boolean'
-          ? part.tearable : (part.tearHp ?? 0) > 0;
-        if (!part.weak && !tearable) continue;
-        const node = part.mesh;
-        if (!node) continue;
-        if (this._partCount >= PART_CAP) return;
-        const meshes = [];
-        if (node.isMesh || node.isSkinnedMesh) {
-          meshes.push(this._overlayFor(node, this._partMaskMat));
-        } else if (node.traverse) {
-          let n = 0;
-          node.traverse((o) => {
-            if (n >= 3 || !(o.isMesh || o.isSkinnedMesh) || o.userData.__sightOverlay) return;
-            meshes.push(this._overlayFor(o, this._partMaskMat));
-            n++;
-          });
-        }
-        if (meshes.length) {
-          this._parts.set(part, { meshes, machine: m });
-          this._partCount += meshes.length;
-          this._figure.visible = true;
-        }
+    if (!m || m.alive === false || !Array.isArray(m.parts)) return;
+    if (p?.position && m.position
+      && m.position.distanceToSquared(p.position) > PART_RANGE * PART_RANGE) return;
+    for (const part of m.parts) {
+      if (!part || part.attached === false || this._parts.has(part)) continue;
+      const tearable = typeof part.tearable === 'boolean'
+        ? part.tearable : (part.tearHp ?? 0) > 0;
+      if (!part.weak && !tearable) continue;
+      const node = part.mesh;
+      if (!node) continue;
+      if (this._partCount >= PART_CAP) return;
+      const meshes = [];
+      if (node.isMesh || node.isSkinnedMesh) {
+        meshes.push(this._overlayFor(node, this._partMaskMat));
+      } else if (node.traverse) {
+        let n = 0;
+        node.traverse((o) => {
+          if (n >= 2 || !(o.isMesh || o.isSkinnedMesh) || o.userData.__sightOverlay) return;
+          meshes.push(this._overlayFor(o, this._partMaskMat));
+          n++;
+        });
+      }
+      if (meshes.length) {
+        this._parts.set(part, { meshes, machine: m });
+        this._partCount += meshes.length;
+        this._figure.visible = true;
       }
     }
   }
@@ -848,58 +1016,9 @@ export class SightingSystem {
     return new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, depthTest: false,
       blending: THREE.NormalBlending, side: THREE.DoubleSide, fog: false,
-      uniforms: {
-        uTime: { value: 0 },
-        uFade: { value: 0 },
-        uPaper: { value: new THREE.Color('#F1EEE6') },
-        uInk: { value: new THREE.Color('#26343F') },
-        uMask: { value: this._figureRT.texture },
-        uRes: this._figureMat.uniforms.uRes,       // shared: written once a frame by the mask pass
-      },
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        varying vec3 vWorld;
-        void main() {
-          vUv = uv; // uv.x = metres along the loop, uv.y = 0..1 across
-          vWorld = position; // ribbon geometry is authored in world space
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: /* glsl */ `
-        varying vec2 vUv;
-        varying vec3 vWorld;
-        uniform float uTime;
-        uniform float uFade;
-        uniform vec3 uPaper;
-        uniform vec3 uInk;
-        uniform sampler2D uMask;
-        uniform vec2 uRes;
-        void main() {
-          // a surveyor's chain line: fine dashes 0.9 m long on a 1.5 m pace, walking slowly,
-          // and a station tick across the ribbon every 7.5 m, which stays put as a chainage does
-          float m = fract((vUv.x - uTime * 0.35) / 1.5);
-          float dash = step(m, 0.6);
-          float edge = abs(vUv.y * 2.0 - 1.0);
-          float fw = max(fwidth(edge), 0.001);
-          float dCam = distance(vWorld, cameraPosition);
-          // the line holds about a pixel at range instead of breaking into sparkle
-          float lineW = max(0.17, fw * 0.8);
-          float core = 1.0 - smoothstep(lineW, lineW + fw, edge);
-          float halo = 1.0 - smoothstep(lineW + fw, lineW + fw * 2.6, edge);
-          float st = fract(vUv.x / 7.5);
-          float stw = max(0.0045, fwidth(vUv.x) * 0.9 / 7.5);
-          float tick = (1.0 - smoothstep(stw, stw * 1.6, min(st, 1.0 - st))) * (1.0 - smoothstep(0.86, 0.98, edge));
-          float far = 1.0 - smoothstep(95.0, 125.0, dCam);          // gone past ~120 m
-          float nearK = smoothstep(2.0, 6.0, dCam);                 // never a slab across the foreground
-          // seen almost edge-on several loops stack into a band: fade with the grazing angle
-          float tilt = smoothstep(0.03, 0.14, abs(normalize(cameraPosition - vWorld).y));
-          float line = max(core * dash, tick);
-          float a = max(line * 0.96, max(halo * dash, tick) * 0.42);
-          vec3 col = mix(uInk, uPaper, line);
-          float her = texture2D(uMask, gl_FragCoord.xy / uRes).b;   // the line passes behind her
-          float total = a * uFade * far * tilt * nearK * (1.0 - smoothstep(0.3, 0.7, her));
-          if (total <= 0.003) discard;
-          gl_FragColor = vec4(col, total);
-        }`,
+      uniforms: { ...this._shared, uFade: { value: 0 }, uWeight: { value: 1 } },
+      vertexShader: PATH_VS,
+      fragmentShader: PATH_FS,
     });
   }
 
@@ -942,80 +1061,98 @@ export class SightingSystem {
     return pts;
   }
 
+  /**
+   * Who gets a transect: the sighted Instrument, then the nearest other walking its route.
+   * Anyone else's line fades out and is freed (`update`).
+   */
   _buildPaths() {
     const list = this.ctx.machines?.list;
     if (!Array.isArray(list)) return;
-    const terrain = this.ctx.terrain;
     const p = this.ctx.player;
     this._pathSkipped = 0;
+    const carries = (m) => m && m.alive !== false && Array.isArray(m.route) && m.route.length >= 2
+      && !(p?.position && m.position && m.position.distanceToSquared(p.position) > PATH_RANGE * PATH_RANGE);
+    const first = carries(this._subject) && this._walksRoute(this._subject) ? this._subject : null;
+    let other = null, otherD = Infinity;
     for (const m of list) {
-      if (!m || m.alive === false || this._paths.has(m)) continue;
-      const route = m.route;
-      if (!Array.isArray(route) || route.length < 2) continue;
-      if (p?.position && m.position
-        && m.position.distanceToSquared(p.position) > PATH_RANGE * PATH_RANGE) continue;
+      if (m === first || !carries(m)) continue;
       // skip non-route movers: no ribbon rather than one it is not following
       if (!this._walksRoute(m)) { this._pathSkipped++; continue; }
-
-      // spline the closed waypoint loop
-      const pts = this._splineRoute(route);
-      let total = 0;
-      if (pts.length < 4) continue;
-      // cumulative distance for the dash flow
-      for (let i = 1; i < pts.length; i++) {
-        pts[i].d = pts[i - 1].d
-          + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
-      }
-      total = pts[pts.length - 1].d
-        + Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].z - pts[pts.length - 1].z);
-      if (total < 4) continue;
-      this._pathSamples = pts.length;
-      this._pathWaypoints = route.length;
-
-      const n = pts.length + 1; // + closing segment back to pts[0]
-      const pos = new Float32Array(n * 2 * 3);
-      const uv = new Float32Array(n * 2 * 2);
-      const idx = [];
-      const hw = PATH_WIDTH / 2;
-      for (let i = 0; i < n; i++) {
-        const cur = pts[i % pts.length];
-        const nxt = pts[(i + 1) % pts.length];
-        const prv = pts[(i - 1 + pts.length) % pts.length];
-        let dx = nxt.x - prv.x, dz = nxt.z - prv.z;
-        const dl = Math.hypot(dx, dz) || 1;
-        dx /= dl; dz /= dl;
-        const px = -dz, pz = dx; // XZ perpendicular
-        // just above the ground, clear of its curvature between samples
-        const y = (terrain?.getHeight?.(cur.x, cur.z) ?? 0) + 0.14;
-        const d = i < pts.length ? cur.d : cur.d + total; // wrap distance
-        const j = i * 6;
-        pos[j] = cur.x + px * hw;     pos[j + 1] = y; pos[j + 2] = cur.z + pz * hw;
-        pos[j + 3] = cur.x - px * hw; pos[j + 4] = y; pos[j + 5] = cur.z - pz * hw;
-        const k = i * 4;
-        uv[k] = d;     uv[k + 1] = 0;
-        uv[k + 2] = d; uv[k + 3] = 1;
-        if (i < n - 1) {
-          const a = i * 2, b = i * 2 + 1, c = i * 2 + 2, e = i * 2 + 3;
-          idx.push(a, b, c, b, e, c);
-        }
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-      geo.setIndex(idx);
-      const mat = this._pathMat();
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.renderOrder = 9985;
-      mesh.frustumCulled = false;
-      mesh.matrixAutoUpdate = false; // vertices are world-space
-      this.ctx.scene.add(mesh);
-      this._paths.set(m, { mesh, mat });
+      const d = p?.position && m.position ? m.position.distanceToSquared(p.position) : 0;
+      if (d < otherD) { otherD = d; other = m; }
     }
+    const a = first ?? other, b = first ? other : null;
+    for (const [m, e] of this._paths) {
+      e.want = m === a || (PATH_CAP > 1 && m === b);
+      e.mat.uniforms.uWeight.value = m === a && first ? 1 : PATH_OTHER;
+    }
+    if (a && !this._paths.has(a)) this._buildPath(a, first ? 1 : PATH_OTHER);
+    if (b && PATH_CAP > 1 && !this._paths.has(b)) this._buildPath(b, PATH_OTHER);
+  }
+
+  /** One closed loop as a strip of quads. The strip is expanded in screen space by `PATH_VS`. */
+  _buildPath(m, weight) {
+    const terrain = this.ctx.terrain;
+    const pts = this._splineRoute(m.route);
+    if (pts.length < 4) return;
+    // cumulative distance for the dash flow
+    for (let i = 1; i < pts.length; i++) {
+      pts[i].d = pts[i - 1].d
+        + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
+    }
+    const total = pts[pts.length - 1].d
+      + Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].z - pts[pts.length - 1].z);
+    if (total < 4) return;
+    this._pathSamples = pts.length;
+    this._pathWaypoints = m.route.length;
+    // just above the ground, clear of its curvature between samples
+    for (const q of pts) q.y = (terrain?.getHeight?.(q.x, q.z) ?? 0) + 0.14;
+
+    const n = pts.length + 1; // + closing segment back to pts[0]
+    const pos = new Float32Array(n * 6);
+    const prev = new Float32Array(n * 6);
+    const next = new Float32Array(n * 6);
+    const uv = new Float32Array(n * 4);
+    const idx = [];
+    for (let i = 0; i < n; i++) {
+      const cur = pts[i % pts.length];
+      const nxt = pts[(i + 1) % pts.length];
+      const prv = pts[(i - 1 + pts.length) % pts.length];
+      const d = i < pts.length ? cur.d : cur.d + total; // wrap distance
+      const j = i * 6;
+      for (let side = 0; side < 2; side++) {
+        const o = j + side * 3;
+        pos[o] = cur.x; pos[o + 1] = cur.y; pos[o + 2] = cur.z;
+        prev[o] = prv.x; prev[o + 1] = prv.y; prev[o + 2] = prv.z;
+        next[o] = nxt.x; next[o + 1] = nxt.y; next[o + 2] = nxt.z;
+      }
+      const k = i * 4;
+      uv[k] = d;     uv[k + 1] = 0;
+      uv[k + 2] = d; uv[k + 3] = 1;
+      if (i < n - 1) {
+        const a = i * 2, b = i * 2 + 1, c = i * 2 + 2, e = i * 2 + 3;
+        idx.push(a, b, c, b, e, c);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aPrev', new THREE.BufferAttribute(prev, 3));
+    geo.setAttribute('aNext', new THREE.BufferAttribute(next, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    const mat = this._pathMat();
+    mat.uniforms.uWeight.value = weight;
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 9985;
+    mesh.frustumCulled = false;
+    mesh.matrixAutoUpdate = false; // vertices are world-space
+    this._overlayScene.add(mesh);
+    this._paths.set(m, { mesh, mat, want: true });
   }
 
   _disposePaths() {
     for (const e of this._paths.values()) {
-      this.ctx.scene.remove(e.mesh);
+      this._overlayScene.remove(e.mesh);
       e.mesh.geometry.dispose();
       e.mat.dispose();
     }
@@ -1029,19 +1166,31 @@ export class SightingSystem {
     geo.setAttribute('position',
       new THREE.BufferAttribute(new Float32Array(GATHER_CAP * 3), 3));
     geo.setDrawRange(0, 0);
-    this._gatherMat = new THREE.PointsMaterial({
-      map: markTexture(),
-      color: new THREE.Color('#F1EEE6'),
-      size: 0.9,
-      transparent: true,
-      opacity: 0.86,
-      depthWrite: false,
-      depthTest: false,
-      sizeAttenuation: true,
-      toneMapped: false,
+    this._gatherMat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, depthTest: false, toneMapped: false, fog: false,
+      uniforms: { ...this._shared, uMap: { value: markTexture() }, uColor: this._shared.uPaper },
+      vertexShader: /* glsl */ `
+        uniform float uK;
+        varying float vZ;
+        void main() {
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vZ = -mv.z;
+          gl_Position = projectionMatrix * mv;
+          gl_PointSize = clamp(0.9 * 900.0 * uK / max(vZ, 1.0), 9.0 * uK, 22.0 * uK);
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uMap;
+        varying float vZ;
+        ${DEPTH_GLSL}
+        void main() {
+          vec4 t = texture2D(uMap, gl_PointCoord);
+          float a = t.a * 0.86 * lineClear(vZ, gl_FragCoord.xy / uRes);
+          if (a <= 0.003) discard;
+          gl_FragColor = vec4(t.rgb, a);
+        }`,
     });
     const pts = new THREE.Points(geo, this._gatherMat);
-    pts.renderOrder = 9984;
+    pts.renderOrder = 9986;
     pts.frustumCulled = false;
     return pts;
   }
@@ -1317,7 +1466,7 @@ export class SightingSystem {
     // the rims dim via the alive check; drop its transect outright
     const path = this._paths.get(m);
     if (path) {
-      this.ctx.scene.remove(path.mesh);
+      this._overlayScene.remove(path.mesh);
       path.mesh.geometry.dispose();
       path.mat.dispose();
       this._paths.delete(m);
@@ -1713,6 +1862,7 @@ export class SightingSystem {
       revealCandidates: this._revealSrc.length,
       viewport: { w: window.innerWidth, h: window.innerHeight },
       shells: { parts: this._parts.size, machines: this._hulls.size },
+      figure: { subject: this._subject?.kind ?? null, quiet: this._quiet.length, draws: this.overlayDraws() },
       rings: this._ringRec.slice(0, this._ringsLive).map((r) => ({ name: r.name, x: Math.round(r.x), y: Math.round(r.y), r: +r.r.toFixed(1) })),
       leaders: this._leaders.filter((l) => l.style.display !== 'none').length,
       readouts: { bearing: this._brgEl.textContent, distance: this._dstEl.textContent },
@@ -1809,20 +1959,26 @@ export class SightingSystem {
     }
 
     // --- the drawn figure ---
-    this._figureDone = false;
+    this._shared.uTime.value = t;
     const wantK = this.on ? 1 : 0;
     if (this._hullK !== wantK || this._hulls.size) {
       this._hullK = THREE.MathUtils.clamp(
         this._hullK + (wantK ? dt / 0.3 : -dt / 0.35), 0, 1);
-      this._figureMat.uniforms.uHull.value = this._hullK;
+      const uF = this._figureMat.uniforms;
+      uF.uHull.value = this._hullK;
+      uF.uQuiet.value = this._hullK;
       if (this._hullK <= 0 && !this.on) this._disposeHulls();
     }
     if (this.on) {
       this._hullPoll -= dt;
       if (this._hullPoll <= 0) {
-        this._hullPoll = 1.0;
-        this._buildHulls(); // pick up Instruments that spawned after raising
-        this._buildPaths(); // ... and their transects
+        this._hullPoll = GATHER_TICK;
+        this._refreshFigure(); // who is drawn, and Instruments that spawned after raising
+      }
+      this._pathPoll -= dt;
+      if (this._pathPoll <= 0) {
+        this._pathPoll = 1.0;
+        this._buildPaths();    // who carries a transect
       }
     }
 
@@ -1845,15 +2001,14 @@ export class SightingSystem {
     // --- transects (fade out from under an Instrument that leaves one) ---
     if (this._paths.size) {
       for (const [m, e] of this._paths) {
-        e.mat.uniforms.uTime.value = t;
-        const want = this.on && this._walksRoute(m);
+        const want = this.on && e.want && this._walksRoute(m);
         const f = THREE.MathUtils.clamp(
           e.mat.uniforms.uFade.value + (want ? dt / 0.4 : -dt / 0.25), 0, 1);
         e.mat.uniforms.uFade.value = f;
         e.mesh.visible = f > 0.01 && m.alive !== false;
         // fully faded and off-route: drop it, it rebuilds when the Instrument walks again
         if (f <= 0 && !want) {
-          this.ctx.scene.remove(e.mesh);
+          this._overlayScene.remove(e.mesh);
           e.mesh.geometry.dispose();
           e.mat.dispose();
           this._paths.delete(m);
@@ -1897,18 +2052,25 @@ export class SightingSystem {
     this.abort();
     for (const el of this._tags.values()) el.remove();
     this._tags.clear();
-    this.ctx.scene.remove(this._figure);
+    const hooks = this.ctx.engine?.onAfterRender;
+    const hook = hooks ? hooks.indexOf(this._afterComposer) : -1;
+    if (hook >= 0) hooks.splice(hook, 1);
+    this._overlayScene.remove(this._figure);
     this._figure.geometry.dispose();
     this._figureMat.dispose();
     this._hullMaskMat.dispose();
     this._partMaskMat.dispose();
-    this._heroMaskMat.dispose();
+    this._quietMaskMat.dispose();
     this.ctx.engine?.unregisterRenderTarget?.(this._figureRT);
     this._figureRT.dispose();
-    this.ctx.scene.remove(this._ring);
+    this._overlayScene.remove(this._ring);
     this._ring.geometry.dispose();
     this._ringMat.dispose();
-    this.ctx.scene.remove(this._gather);
+    this._overlayScene.remove(this._gather);
+    this._gather.geometry.dispose();
+    this._gatherMat.dispose();
+    _markTex?.dispose();
+    _markTex = null;
     this._tint.remove();
     this._layer.remove();
   }

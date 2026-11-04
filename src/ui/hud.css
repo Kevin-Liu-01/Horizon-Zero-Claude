@@ -479,7 +479,7 @@
 .cal-eye-bars i:nth-child(3) { height: 100%; }
 .cal-eye-bars i.on { background: var(--cal-staff); }
 .cal-vial[data-m='clear'] { opacity: 0.78; }
-.cal-vial[data-m='hidden'] { --bubble: #7FC4B2; }
+.cal-vial[data-m='hidden'] { --bubble: #A9C4B0; }
 .cal-vial[data-m='watch'] { --bubble: var(--cal-c-wary); }
 .cal-vial[data-m='seen'] { --bubble: var(--cal-c-hostile); }
 .cal-vial[data-m='seen'] .cal-vial-tube { animation: calVialSeen 0.6s steps(2, jump-none) infinite; }

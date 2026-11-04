@@ -115,18 +115,72 @@ const FACE = `
     p.heading = ang + Math.PI;
   };`;
 
-/** Sighting on the herd kind at 15 m: frozen, composed, the card up. */
-const SIGHT_STAGE = (on, hideHero = false) => `
-  ${FRAMES}${FACE}
+/**
+ * Where to stand, found by occlusion and named by no coordinate: outward from where she spawned, the
+ * first open ground (no trunk or crown within 9 m of the subject) with a bearing whose whole sight line,
+ * from behind the camera to the subject, is free of trunks and crowns, the sun over the shoulder.
+ */
+const CLEAR_BEARING = `
+  const clearBearing = () => {
+    const c = __CTX__, col = c.collision, T = c.terrain, sun = c.environment?.sunDir;
+    const sea = c.water?.seaLevel ?? -1e9;
+    const isCover = (e) => e.kind === 'tree' || e.kind === 'canopy' || e.occluder === true;
+    const buf = [];
+    const coverAt = (x, z, r) => {
+      const y = T.getHeight(x, z);
+      return col.sphereQuery(x, y + 1.5, z, r, buf, isCover).length + col.sphereQuery(x, y + 6, z, r, buf, isCover).length;
+    };
+    const pp = c.player.position;
+    let best = null;
+    for (let ring = 1; ring <= 9 && !(best && best.score <= -1); ring++) {
+      const R = ring * 22, steps = ring * 8;
+      for (let s = 0; s < steps; s++) {
+        const a0 = s / steps * 6.2832;
+        const x = pp.x + Math.sin(a0) * R, z = pp.z + Math.cos(a0) * R;
+        const y = T.getHeight(x, z);
+        if (y < sea + 1 || coverAt(x, z, 9) > 0) continue;
+        for (let b = 0; b < 16; b++) {
+          const ang = b / 16 * 6.2832;
+          const sx = Math.sin(ang), cz = Math.cos(ang);
+          let cover = 0, rough = 0;
+          for (let d = 3; d <= 24; d += 3) {
+            const qx = x + sx * d, qz = z + cz * d;
+            cover += coverAt(qx, qz, 5);
+            rough += Math.abs(T.getHeight(qx, qz) - y);
+          }
+          if (cover > 0) continue;
+          const sunK = sun ? Math.min(0.7, sx * sun.x + cz * sun.z) : 0;
+          const score = rough * 0.05 - sunK * 2 + R * 0.002;
+          if (!best || score < best.score) best = { x, z, ang, score, sunK: +sunK.toFixed(2), R };
+        }
+      }
+    }
+    return best;
+  };`;
+
+/**
+ * Sighting on the herd kind at 15 m: frozen, composed, the card up, on a clear bearing. `yawK` turns
+ * the camera off the Instrument so it stands clear of her and still under the crosshair's reading.
+ */
+const SIGHT_STAGE = (on, hideHero = false, yawK = 0.15) => `
+  ${FRAMES}${FACE}${CLEAR_BEARING}
   const ctx = __CTX__;
   ctx.input.enabled = true;
   ${hideHero ? 'if (ctx.player.model) ctx.player.model.visible = false;   /* her violet cloth is the people\'s colour, not the overlay\'s: bible §9.1 */' : ''}
-  const m = (await stageRole('herd')) || stagedPicks()[0] || null;
+  const spot = clearBearing();
+  if (!spot) return null;
+  let m = null, mate = null;
+  try {
+    m = spawnRole('herd', spot.x, spot.z);
+    /* a second of the herd, off the sight line: the others are drawn quietly */
+    mate = spawnRole('herd', spot.x - Math.cos(spot.ang) * 13 - Math.sin(spot.ang) * 9, spot.z + Math.sin(spot.ang) * 13 - Math.cos(spot.ang) * 9);
+  } catch (e) { /* the null below names it */ }
   if (!m) return null;
-  m.update = () => {};
-  for (const x of ctx.machines.list) if (x !== m && x.alive !== false && Math.hypot(x.position.x - m.position.x, x.position.z - m.position.z) < 30) x.update = () => {};
-  const ang = 0.8;
-  const aim = () => { faceTarget(m.position, 15, ang, -0.08); ctx.player.camYaw = ang + 0.10; };
+  await wait(700);
+  /* r5-all-machines: freeze */
+  for (const x of ctx.machines.list) if (x.alive !== false) x.update = () => {};
+  const ang = spot.ang;
+  const aim = () => { faceTarget(m.position, 15, ang, -0.08); ctx.player.camYaw = ang + ${yawK}; };
   aim();
   await frames(10);
   ${on ? `ctx.sighting.toggle(true);
@@ -159,6 +213,61 @@ const r37 = re('V37-hud-language', {
   criteria: V37_CRITERIA,
   setupPatch: [["const STAGE_DIST = 20;", `const STAGE_DIST = 20; ${TOOLS_FULL}`]],
 });
+
+/** A damage number gives way to what she reads: thrown at the vial's word, at a plate and at the column. */
+const A_DMG_CLEAR = {
+  id: 'A-dmg-chip-clear', kind: 'action', lane: LANE, timeout: 180000, settle: 900,
+  title: 'A damage number anchored on the circle and the vial, on a plate or on the column lands clear of all of them; in the open it stays on its anchor',
+  setup: r37.setup,
+  assert: `(async () => {${FRAMES}
+    const c = __CTX__, hud = c.hud, cam = c.camera;
+    const V3 = cam.position.constructor;
+    const at = (sx, sy) => {
+      const d = new V3(sx / innerWidth * 2 - 1, -(sy / innerHeight) * 2 + 1, 0.5).unproject(cam).sub(cam.position).normalize();
+      return cam.position.clone().addScaledVector(d, 12);
+    };
+    const hit = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    const seen = (e) => { const cs = getComputedStyle(e); return cs.visibility !== 'hidden' && cs.display !== 'none' && e.getBoundingClientRect().width > 0; };
+    const fixed = () => {
+      const out = [];
+      for (const sel of ['.cal-vial', '.cal-compass', '.cal-topleft']) { const e = document.querySelector(sel); if (e && seen(e)) out.push({ sel, r: e.getBoundingClientRect() }); }
+      for (const e of document.querySelectorAll('.cal-mhb-plate')) if (seen(e)) out.push({ sel: 'plate', r: e.getBoundingClientRect() });
+      return out;
+    };
+    const centre = (r) => [(r.left + r.right) / 2, (r.top + r.bottom) / 2];
+    const word = document.querySelector('.cal-eye-label').getBoundingClientRect();
+    const plateEl = fixed().find((f) => f.sel === 'plate');
+    const anchors = [
+      ['vial word', ...centre(word)],
+      ['circle', innerWidth / 2, 60],
+      ['column', ...centre(document.querySelector('.cal-staff').getBoundingClientRect())],
+    ];
+    if (plateEl) anchors.push(['plate', ...centre(plateEl.r)]);
+    const rows = [];
+    for (const [name, sx, sy] of anchors) {
+      hud._dmgPool.forEach((d) => { d.active = false; d.el.style.visibility = 'hidden'; });
+      hud._popNumber(at(sx, sy), '340', 'weak', 1.0, 30 * hud._scale);
+      const d = hud._dmgPool.find((q) => q.active);
+      const hits = [];
+      for (const w of [3, 14, 24]) {
+        await frames(w === 3 ? 3 : 11);
+        const r = d.el.getBoundingClientRect();
+        for (const f of fixed()) if (hit(r, f.r)) hits.push(f.sel + '@' + w);
+      }
+      rows.push({ name, hits: [...new Set(hits)] });
+    }
+    /* in the open it stays with what was hit */
+    hud._dmgPool.forEach((d) => { d.active = false; d.el.style.visibility = 'hidden'; });
+    const ox = innerWidth * 0.72, oy = innerHeight * 0.66;
+    hud._popNumber(at(ox, oy), '34', 'weak', 1.0, 22 * hud._scale);
+    const od = hud._dmgPool.find((q) => q.active);
+    await frames(3);
+    const orect = od.el.getBoundingClientRect();
+    const openOk = Math.abs((orect.left + orect.right) / 2 - ox) < 34 && Math.abs(orect.bottom - oy) < 50;
+    const failed = rows.filter((x) => x.hits.length).map((x) => x.name);
+    return { pass: failed.length === 0 && openOk && !!plateEl, detail: { failed, rows, openOk, open: [Math.round(orect.left), Math.round(orect.bottom)], plateUp: !!plateEl } };
+  })()`,
+};
 
 /** A row's assert, shadowing a carried id it replaces: same body, the old name. */
 const alias = (row, carriedId) => Object.defineProperties({}, {
@@ -285,7 +394,7 @@ const A_SIGHTING = {
     const pick = (mat, names) => { for (const nm of names) { const u = mat?.uniforms?.[nm]?.value; if (u?.isColor) col3d.push({ nm, hex: u.getHexString() }); } };
     pick(S._figureMat, ['uInk', 'uPaper']); pick(S._ringMat, ['uColor']);
     for (const e of S._paths.values()) pick(e.mat, ['uPaper', 'uInk']);
-    if (S._gatherMat?.color) col3d.push({ nm: 'gather', hex: S._gatherMat.color.getHexString() });
+    pick(S._gatherMat, ['uColor']);
     const hits3d = col3d.filter((c) => { const v = parseInt(c.hex, 16); return banned(v >> 16, (v >> 8) & 255, v & 255); });
     const ring = getComputedStyle(document.querySelector('.calf-ring'));
     const rings = a.rings || [];
@@ -320,17 +429,24 @@ const A_SIGHTING = {
       readouts: /^\\d{3}$/.test(a.readouts.bearing) && /^(\\d{3,}|---)$/.test(a.readouts.distance),
       transectsWhite: !a.paths.count || [...S._paths.values()].every((e) => e.mat.uniforms.uPaper.value.getHexString() === 'dbd3c5' || e.mat.uniforms.uPaper.value.r > 0.8),
       figureDrawn: figure.pass === true,
+      oneSightedInFull: [...S._hulls.values()].filter((e) => !e.quiet).length === 1 && a.figure.subject === m.kind,
+      transectsFew: a.paths.count <= 2,
     };
     const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
-    return { pass: failed.length === 0, detail: { failed, figure, kind: m.kind, components: comps.map((c) => c.name), rings, leaders: a.leaders, vignette: a.vignette, paths: a.paths, readouts: a.readouts, domHits: domHits.slice(0, 8), col3d, pendingClauses } };
+    return { pass: failed.length === 0, detail: { failed, figure, kind: m.kind, components: comps.map((c) => c.name), rings, leaders: a.leaders, vignette: a.vignette, paths: a.paths, readouts: a.readouts, figureCast: a.figure, domHits: domHits.slice(0, 8), col3d, pendingClauses } };
   })()`),
 };
 
-/** The overlay's hue histogram, literally: the ON frame's pixels in the banned hues, minus the control frame's. */
+/**
+ * The overlay's hue histogram, literally: the ON frame's pixels in the banned hues, minus the control
+ * frame's. R61 (c): a pixel whose largest channel is under 24 has no visible hue and is not counted;
+ * above that floor the bar is 0 %, with no tolerance.
+ */
+const HUE_FLOOR = 24;
 const hueCount = async (file) => {
   const { default: sharp } = await import('sharp');
   const { data, info } = await sharp(file).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-  let violet = 0, teal = 0;
+  let violet = 0, teal = 0, belowFloor = 0;
   for (let i = 0; i < data.length; i += 3) {
     const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
@@ -339,24 +455,234 @@ const hueCount = async (file) => {
     if (s <= 0.4) continue;
     let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
     h *= 60; if (h < 0) h += 360;
-    if (h >= 250 && h <= 290) violet++;
-    else if (h >= 160 && h <= 185) teal++;
+    const banned = (h >= 250 && h <= 290) || (h >= 160 && h <= 185);
+    if (!banned) continue;
+    if (mx * 255 < HUE_FLOOR) { belowFloor++; continue; }
+    if (h >= 250) violet++; else teal++;
   }
   const n = info.width * info.height;
-  return { pixels: n, violet, teal, violetPct: +(violet / n * 100).toFixed(4), tealPct: +(teal / n * 100).toFixed(4) };
+  return { pixels: n, violet, teal, belowFloor, violetPct: +(violet / n * 100).toFixed(4), tealPct: +(teal / n * 100).toFixed(4) };
 };
 const A_SIGHTING_HUE = {
   id: 'A-sighting-hue', kind: 'runner', lane: LANE, timeout: 60000,
-  title: 'The Sighting frame adds 0 % of pixels in 250-290 deg (violet) or 160-185 deg (teal) above 0.4 saturation against the control frame of the same stage',
+  title: 'The Sighting frame adds 0 % of pixels in 250-290 deg (violet) or 160-185 deg (teal) above 0.4 saturation against the control frame of the same stage, counting no pixel whose largest channel is under 24 (R61 c)',
   async check() {
     const dir = path.join(process.cwd(), 'shots/gates');
     const on = path.join(dir, 'A-sighting.png'), off = path.join(dir, 'A-sighting-off.png');
     if (!existsSync(on) || !existsSync(off)) return { pass: null, detail: { why: 'run A-sighting-off and A-sighting first, in the same run', dir } };
     if (Date.now() - statSync(on).mtimeMs > 1500000) return { pass: null, detail: 'frames are stale: run all three in one run' };
     const a = await hueCount(on), b = await hueCount(off);
-    const addV = a.violetPct - b.violetPct, addT = a.tealPct - b.tealPct;
-    return { pass: addV <= 0.02 && addT <= 0.02, detail: { on: a, off: b, addedVioletPct: +addV.toFixed(4), addedTealPct: +addT.toFixed(4), tolerancePct: 0.02, note: 'the two frames are two boots of one stage, so a few hundred pixels of the world differ; 0.02 % is 288 px at 1600x900' } };
+    const addV = Math.max(0, a.violet - b.violet), addT = Math.max(0, a.teal - b.teal);
+    return { pass: addV === 0 && addT === 0, detail: { on: a, off: b, addedVioletPx: addV, addedTealPx: addT, floor: HUE_FLOOR } };
   },
+};
+
+/**
+ * The frame the composer finished, and the same frame with the overlay on it: read in one task, either
+ * side of the overlay's own hook, so no animation or camera lies between the two.
+ */
+const OVERLAY_DIFF = `
+  const overlayFrame = (extra) => new Promise((res) => {
+    const c = __CTX__, r = c.renderer, gl = r.getContext(), S = c.sighting;
+    const hooks = c.engine.onAfterRender;
+    const w = r.domElement.width, h = r.domElement.height;
+    const read = () => { r.setRenderTarget(null); const b = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, b); return b; };
+    let before = null;
+    const pre = () => { before = read(); };
+    const post = () => {
+      const after = read();
+      const more = extra ? extra() : null;
+      hooks.splice(hooks.indexOf(pre), 1);
+      hooks.splice(hooks.indexOf(post), 1);
+      res({ before, after, more, w, h });
+    };
+    hooks.splice(hooks.indexOf(S._afterComposer), 0, pre);
+    hooks.splice(hooks.indexOf(S._afterComposer) + 1, 0, post);
+  });`;
+
+/** Her silhouette, independent of how the overlay knows it: every mesh under her that is really visible, drawn into a private target. */
+const HER_SILHOUETTE = `
+  const herSilhouette = () => {
+    const c = __CTX__, r = c.renderer, S = c.sighting;
+    const w = r.domElement.width, h = r.domElement.height;
+    const scene = new S._maskScene.constructor();     /* three's classes, through objects already live */
+    const rt = S._figureRT.clone();
+    rt.samples = 0;
+    rt.setSize(w, h);
+    let meshes = 0;
+    const shown = (o) => { for (let a = o; a; a = a.parent) if (!a.visible) return false; return true; };
+    c.player.model.traverse((o) => {
+      if (!o.isMesh || !shown(o)) return;
+      const ov = S._overlayFor(o, S._hullMaskMat);
+      S._maskScene.remove(ov);
+      scene.add(ov);
+      meshes++;
+    });
+    const clearA = r.getClearAlpha();
+    const clearC = r.getClearColor(new S._shared.uInk.value.constructor());
+    const auto = r.autoClear;
+    r.setRenderTarget(rt);
+    r.setClearColor(0x000000, 0);
+    r.clear(true, false, false);
+    r.autoClear = false;
+    r.render(scene, c.camera);
+    r.autoClear = auto;
+    r.setClearColor(clearC, clearA);
+    const px = new Uint8Array(w * h * 4);
+    r.readRenderTargetPixels(rt, 0, 0, w, h, px);
+    r.setRenderTarget(null);
+    rt.dispose();
+    return { px, meshes };
+  };`;
+
+/**
+ * R54, the row that keeps Brea in the frame: the alidade up, an Instrument and a transect staged straight
+ * behind her, and the overlay's own pixels counted inside her silhouette. Its control turns the knock-out
+ * off on the same stage, so the row is seen to catch the failure it exists for.
+ */
+const A_OVER_BREA = {
+  id: 'A-sighting-over-brea', kind: 'action', lane: LANE, timeout: 150000, settle: 600,
+  title: 'With Brea visible and an Instrument and a transect straight behind her, the raised alidade adds 0 pixels inside her silhouette; with the knock-out off the same stage adds them',
+  assert: staged(['herd'], `(async () => {
+    const m = await (async () => { ${SIGHT_STAGE(true, false, 0)} })();
+    if (!m) return { pass: null, detail: 'SKIP-R18: no herd kind stands' };
+    ${OVERLAY_DIFF}${HER_SILHOUETTE}
+    const c = __CTX__, S = c.sighting;
+    /* a transect loop right through where she stands, and the sighted Instrument straight behind her */
+    const hp = c.player.position;
+    const loop = [];
+    for (let i = 0; i < 12; i++) { const a = i / 12 * 6.2832; loop.push({ x: hp.x + Math.sin(a) * 5, z: hp.z + Math.cos(a) * 5 }); }
+    S._disposePaths();
+    m.route = loop;
+    S._buildPath(m, 1);
+    for (const e of S._paths.values()) { e.mat.uniforms.uFade.value = 1; }
+    const aimBehind = async () => {
+      /* one-pixel-true: turn the camera until the Instrument's centre stands on her chest */
+      for (let i = 0; i < 6; i++) {
+        const v = m.position.clone(); v.y += (m.height ?? 2.4) * 0.5;
+        const q = hp.clone(); q.y += 1.1;
+        const pv = v.project(c.camera), pq = q.project(c.camera);
+        c.player.camYaw -= (pv.x - pq.x) * 0.9;     /* a larger yaw moves the Instrument right on the screen */
+        await frames(4);
+      }
+    };
+    await aimBehind();
+    /* the sheet's own fade logic would free a route it did not choose: hold it */
+    for (const e of S._paths.values()) e.want = true;
+    S._walksRoute = () => true;
+    await frames(4);
+    const count = (shot, sil) => {
+      const { before, after, w, h } = shot;
+      let inside = 0, added = 0, paper = 0, outside = 0, silPx = 0;
+      const on = (x, y) => sil[(y * w + x) * 4] > 127;
+      for (let y = 3; y < h - 3; y++) for (let x = 3; x < w - 3; x++) {
+        const i = (y * w + x) * 4;
+        const diff = Math.abs(after[i] - before[i]) > 2 || Math.abs(after[i + 1] - before[i + 1]) > 2 || Math.abs(after[i + 2] - before[i + 2]) > 2;
+        const inHer = on(x, y);
+        if (inHer) silPx++;
+        /* eroded by 2 px: the depth is one sample per pixel and MSAA softens her edge */
+        if (inHer && on(x - 2, y) && on(x + 2, y) && on(x, y - 2) && on(x, y + 2)) {
+          inside++;
+          if (diff) { added++; if (Math.min(after[i], after[i + 1], after[i + 2]) > 170) paper++; }
+        } else if (!inHer && diff) outside++;
+      }
+      return { silPx, insidePx: inside, addedPx: added, paperPx: paper, outsidePx: outside };
+    };
+    const shot = await overlayFrame(() => herSilhouette());
+    const on = count(shot, shot.more.px);
+    S.debugOcclusion(false);
+    await frames(2);
+    const shot2 = await overlayFrame(() => herSilhouette());
+    const off = count(shot2, shot2.more.px);
+    S.debugOcclusion(true);
+    delete S._walksRoute;
+    const checks = {
+      herVisibleInFrame: on.insidePx > 4000,
+      overlayDrew: on.outsidePx > 300,
+      noPixelOverHer: on.addedPx === 0,
+      noPaperOverHer: on.paperPx === 0,
+      controlCatchesIt: off.addedPx > 150,
+    };
+    const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+    return { pass: failed.length === 0, detail: { failed, on, control: off, meshesInSilhouette: shot.more.meshes, paths: S._paths.size } };
+  })()`),
+};
+
+/** R61 (d), on the worst frame the shell can stage: a herd in range, one sighted, a component on it. */
+const A_SIGHT_DRAWS = {
+  id: 'A-sighting-draws', kind: 'action', lane: LANE, timeout: 150000, settle: 600,
+  title: 'Raising the alidade adds at most 30 draws on the worst staged frame (R61 d): the same frozen frame with the alidade down and up',
+  assert: staged(['herd'], `(async () => {
+    ${FRAMES}${FACE}${CLEAR_BEARING}
+    const c = __CTX__, S = c.sighting;
+    c.input.enabled = true;
+    const spot = clearBearing();
+    if (!spot) return { pass: null, detail: 'no clear ground' };
+    const herd = [];
+    for (let i = 0; i < 8; i++) {
+      const a = spot.ang + Math.PI + (i - 3.5) * 0.28;
+      try { const q = spawnRole('herd', spot.x + Math.sin(a) * (6 + i * 3), spot.z + Math.cos(a) * (6 + i * 3)); if (q) herd.push(q); } catch (e) { /* counted below */ }
+    }
+    await wait(900);
+    /* r5-all-machines: freeze */
+    for (const x of c.machines.list) if (x.alive !== false) x.update = () => {};
+    const m = herd[0];
+    if (!m) return { pass: null, detail: 'SKIP-R18: no herd kind stands' };
+    faceTarget(m.position, 15, spot.ang, -0.08);
+    c.player.update = () => {};
+    await frames(20);
+    const hooks = c.engine.onAfterRender;
+    const sample = async (n) => {
+      const rows = [];
+      const hook = () => { rows.push(c.renderer.info.render.calls); };
+      hooks.push(hook);
+      await frames(n);
+      hooks.splice(hooks.indexOf(hook), 1);
+      rows.sort((a, b) => a - b);
+      return { median: rows[rows.length >> 1], min: rows[0], max: rows[rows.length - 1], frames: rows.length };
+    };
+    const down = await sample(40);
+    S.toggle(true);
+    await wait(1700);          /* the sweep has run out; the figure and the paths have polled */
+    const up = await sample(40);
+    const held = S.overlayDraws();
+    /* the sweep's own frame: everything at once, the worst instant of the raise */
+    S.toggle(false);
+    await wait(900);
+    const down2 = await sample(20);
+    S.toggle(true);
+    await frames(3);
+    const sweepFrame = S.overlayDraws();
+    /* what the overlay costs on the GPU: the engine's timer query ends before the hooks */
+    let gpu = null;
+    try {
+      const gl = c.renderer.getContext(), ext = c.engine._gpuExt || gl.getExtension('EXT_disjoint_timer_query_webgl2');
+      if (ext) {
+        const qs = [];
+        const pre = () => { const q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); qs.push(q); };
+        const post = () => { gl.endQuery(ext.TIME_ELAPSED_EXT); };
+        hooks.splice(hooks.indexOf(S._afterComposer), 0, pre);
+        hooks.splice(hooks.indexOf(S._afterComposer) + 1, 0, post);
+        await wait(1200);
+        await frames(40);
+        hooks.splice(hooks.indexOf(pre), 1); hooks.splice(hooks.indexOf(post), 1);
+        await wait(400);
+        const ms = [];
+        for (const q of qs) { if (gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) ms.push(gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6); gl.deleteQuery(q); }
+        ms.sort((a, b) => a - b);
+        gpu = ms.length ? { medianMs: +ms[ms.length >> 1].toFixed(2), maxMs: +ms[ms.length - 1].toFixed(2), n: ms.length } : null;
+      }
+    } catch (e) { gpu = String(e); }
+    const added = up.median - down.median;
+    const checks = {
+      staged: herd.length >= 6 && S.audit().shells.machines >= 2,
+      addedAtMost30: added <= 30,
+      ledgerAtMost30: held.total <= 30 && sweepFrame.total <= 30,
+    };
+    const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+    return { pass: failed.length === 0, detail: { failed, down, up, down2, added, held, sweepFrame, herd: herd.length, cast: S.audit().figure, overlayGpu: gpu,
+      pendingClauses: ['the Screed fight at <= 350 draws with the alidade up: A21 from the W2 exit (R61 d), no Screed yet'] } };
+  })()`),
 };
 
 const A71 = re('A71-compass-truth', {
@@ -532,11 +858,83 @@ const A_MAP_RELOAD = {
   })()`,
 };
 
+/** Her arrow on the sheet points where she looks: the drawn pixels, at four headings. */
+const A_MAP_ARROW = {
+  id: 'A-map-arrow-heading', kind: 'action', lane: LANE, timeout: 180000, settle: 800,
+  title: 'Her arrow on the survey sheet points where the camera looks, at four headings, measured off the drawn pixels; an objective on her own spot steps aside',
+  assert: `(async () => {${FRAMES}
+    __CTX__.input.enabled = true;
+    const c = __CTX__;
+    ${MAP_OPEN}
+    const M = m.map, p = c.player;
+    M.setTriangles([]);
+    M.fog.clear();
+    M.clearWaypoint();
+    const home = { x: p.position.x, z: p.position.z, yaw: p.camYaw };
+    /* a spot on the sheet with nothing else vermilion near it */
+    const marks = M.visibleMarkers();
+    let spot = null;
+    for (let i = 0; i < 40 && !spot; i++) {
+      const x = home.x + Math.sin(i * 2.4) * (40 + i * 9), z = home.z + Math.cos(i * 2.4) * (40 + i * 9);
+      if (marks.every((q) => Math.hypot(q.x - x, q.z - z) > 40)) spot = { x, z };
+    }
+    p.position.x = spot.x; p.position.z = spot.z;
+    const W = M.canvas.width;
+    const g = M.canvas.getContext('2d', { willReadFrequently: true });
+    const rows = [];
+    for (const yaw of [0.4, 0.4 + Math.PI / 2, 0.4 + Math.PI, 0.4 + Math.PI * 1.5]) {
+      p.camYaw = yaw;
+      M.draw();
+      await frames(1);
+      const pt = M.worldToMap(spot.x, spot.z);
+      /* where the sheet puts a point along her camera's forward: no assumption about the sheet's axes */
+      const pf = M.worldToMap(spot.x - Math.sin(yaw) * 50, spot.z - Math.cos(yaw) * 50);
+      const fl = Math.hypot(pf.x - pt.x, pf.y - pt.y) || 1;
+      const ux = (pf.x - pt.x) / fl, uy = (pf.y - pt.y) / fl;
+      const R = Math.round(W * 0.03);
+      const x0 = Math.max(0, Math.round(pt.x) - R), y0 = Math.max(0, Math.round(pt.y) - R);
+      const d = g.getImageData(x0, y0, R * 2, R * 2);
+      let far = 0, tipX = 0, tipY = 0, n = 0;
+      for (let y = 0; y < R * 2; y++) for (let x = 0; x < R * 2; x++) {
+        const i = (y * R * 2 + x) * 4;
+        if (Math.abs(d.data[i] - 210) > 26 || Math.abs(d.data[i + 1] - 69) > 34 || Math.abs(d.data[i + 2] - 46) > 34) continue;
+        const dx = x + x0 - pt.x, dy = y + y0 - pt.y, dl = Math.hypot(dx, dy);
+        n++;
+        if (dl > far) { far = dl; tipX = dx; tipY = dy; }
+      }
+      rows.push({ yaw: +yaw.toFixed(2), px: n, tipDot: +((tipX * ux + tipY * uy) / (far || 1)).toFixed(3), far: +far.toFixed(1) });
+    }
+    /* an objective on her own spot steps aside: her arrow's pixels are the same with it as without it */
+    const nearHer = () => {
+      const pt = M.worldToMap(spot.x, spot.z), R = Math.round(W * 14 / 690);
+      const d = g.getImageData(Math.round(pt.x) - R, Math.round(pt.y) - R, R * 2, R * 2);
+      let n = 0;
+      for (let i = 0; i < d.data.length; i += 4) if (Math.abs(d.data[i] - 210) < 26 && Math.abs(d.data[i + 1] - 69) < 34 && Math.abs(d.data[i + 2] - 46) < 34) n++;
+      return n;
+    };
+    p.camYaw = 0.4;
+    M.draw();
+    await frames(1);
+    const alone = nearHer();
+    const prog = c.progression, orig = prog.getMarkers;
+    prog.getMarkers = () => [{ x: spot.x, z: spot.z, label: 'Objective', tracked: true }];
+    M.draw();
+    await frames(1);
+    const withObjective = nearHer(), gaveWay = M.audit().gaveWay;
+    prog.getMarkers = orig;
+    p.position.x = home.x; p.position.z = home.z; p.camYaw = home.yaw;
+    M.draw();
+    m.closeHub(true);
+    const giveWay = gaveWay === 1 && Math.abs(withObjective - alone) <= alone * 0.1;
+    return { pass: rows.every((r) => r.px > 20 && r.tipDot >= 0.97) && giveWay, detail: { rows, giveWay, alone, withObjective, gaveWay } };
+  })()`,
+};
+
 const V_MAP = {
   id: 'V-map', kind: 'visual', lane: LANE, settle: 900, timeout: 180000,
   reference: 'reference/r5/gates-perf/field-book (paper) and the plan words: inked contours, soundings, revealed triangles',
   title: 'The survey sheet with T1 + T2 + T6 + T2 + T3 + T6 opened',
-  criteria: planBullet('V-map') + INCREDIBLE,
+  criteria: planBullet('V-map') + ' || R61 (a): the "soundings offshore" clause is PENDING until world-ground\'s island merges; the orchestrator re-films it then. Every other clause is graded now.' + INCREDIBLE,
   setup: `(async () => {${FRAMES}
     __CTX__.input.enabled = true;
     ${MAP_OPEN}
@@ -654,7 +1052,7 @@ const A_UI_STATIC = {
     const files = ['src/style.css', 'src/ui/hud.css', 'src/ui/focus.css', 'src/ui/inventory.css'];
     const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '');
     const offenders = [];
-    const RETIRED = /--cal-(accent|focus|warn|med|hostile|gold|yellow|terra|parch-dim)\b|--mn-(ink|dim|faint|line|gold|spark|panel)\b/;
+    const RETIRED = /--cal-(accent|focus|warn|med|hostile|gold|yellow|terra|parch-dim|verdigris)\b|--mn-(ink|dim|faint|line|gold|spark|panel)\b/;
     const ROUND_OK = /(\.cal-iris i|cal-vial-bubble|data-shape='site')/;
     for (const f of files) {
       const lines = strip(readFileSync(path.join(ROOT, f), 'utf8')).split('\n');
@@ -670,10 +1068,25 @@ const A_UI_STATIC = {
         if (/clip-path:\s*polygon\(\s*\d+px\s+0/.test(ln)) offenders.push('chamfer: ' + at);
       });
     }
+    /* bible §9.1 bans teal UI at any strength: every colour this lane writes, in its sheets and its code,
+       outside 160-185 deg above 0.12 saturation. Only the Brine element swatch (bible §9.1 Elements) stands there by name. */
+    const teal = [];
+    const hueOf = (r, g, b) => { r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, l = (mx + mn) / 2; if (!d) return [0, 0]; const sat = d / (1 - Math.abs(2 * l - 1)); let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; return [h < 0 ? h + 360 : h, sat]; };
+    for (const f of [...files, 'src/ui/hud.js', 'src/ui/focus.js', 'src/ui/map.js', 'src/ui/menu.js', 'src/ui/settings.js', 'src/ui/tips.js', 'src/ui/inventory.js', 'index.html']) {
+      readFileSync(path.join(ROOT, f), 'utf8').split('\n').forEach((ln, i) => {
+        if (/--cal-brine:/.test(ln)) return;
+        for (const m of ln.matchAll(/#([0-9a-fA-F]{6})\b|rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g)) {
+          let r, g, b;
+          if (m[1]) { const v = parseInt(m[1], 16); r = v >> 16; g = (v >> 8) & 255; b = v & 255; } else { r = +m[2]; g = +m[3]; b = +m[4]; }
+          const [h, sat] = hueOf(r, g, b);
+          if (h >= 160 && h <= 185 && sat > 0.12) teal.push(f + ':' + (i + 1) + ' ' + m[0]);
+        }
+      });
+    }
     const style = strip(readFileSync(path.join(ROOT, 'src/style.css'), 'utf8'));
     const scale = ['--cal-type-display', '--cal-type-title', '--cal-type-head', '--cal-type-label', '--cal-type-micro', '--cal-type-body', '--cal-type-note', '--cal-type-num-l', '--cal-type-num', '--cal-type-num-s'];
     const missing = scale.filter((t) => !new RegExp(t + ':\\s*\\d+px').test(style));
-    return { pass: offenders.length === 0 && missing.length === 0, detail: { offenders: offenders.slice(0, 30), typeScale: scale.length, missing } };
+    return { pass: offenders.length === 0 && missing.length === 0 && teal.length === 0, detail: { offenders: offenders.slice(0, 30), teal: teal.slice(0, 20), typeScale: scale.length, missing } };
   },
 };
 
@@ -763,11 +1176,11 @@ const A_UI_TYPE = {
 
 /* --------------------------------------------------- the contact sheet rows */
 
-const UI_ROW = (id, title, setup, extra = {}) => ({
+const UI_ROW = (id, title, setup, { pendingWords = '', ...extra } = {}) => ({
   id, kind: 'visual', lane: LANE, settle: 900, timeout: 180000,
   reference: 'reference/r5/gates-perf/field-book',
   title,
-  criteria: 'A surface of V-ui-sheet (one system: Chakra Petch labels, Plex Mono numerals and text, field-book paper, 1 px ink rules, red margin, right angles). FAIL on any other typeface, a pill, a hexagon, smoked glass, teal, violet, a word the bible retired, or anything illegible at 1600x900.' + INCREDIBLE,
+  criteria: 'A surface of V-ui-sheet (one system: Chakra Petch labels, Plex Mono numerals and text, field-book paper, 1 px ink rules, red margin, right angles). FAIL on any other typeface, a pill, a hexagon, smoked glass, teal, violet, a word the bible retired, or anything illegible at 1600x900.' + (pendingWords ? ' || ' + pendingWords : '') + INCREDIBLE,
   setup, ...extra,
 });
 
@@ -804,7 +1217,7 @@ const V_UI = [
     await frames(8);
     __CTX__.menus.setTab('quests');
     await frames(10);
-  })()`),
+  })()`, { pendingWords: 'R61 (b): retired words in quest text are PENDING until progression W3 (plan §7.3); that text is in its files. Every other clause is graded now.' }),
   UI_ROW('V-ui-tip', 'A tutorial card in play', `(async () => {${FRAMES}
     __CTX__.input.enabled = true;
     window.__HUD_DEBUG__.resetTips();
@@ -830,7 +1243,36 @@ const V_UI = [
     const prog = __CTX__.progression;
     prog.dialogueUI.open(Object.keys(prog.NPCS)[0]);
     await frames(10);
-  })()`),
+  })()`, { pendingWords: 'R61 (b): retired words in dialogue text are PENDING until settlements W2, because that text is in its files. Every other clause is graded now.' }),
+  UI_ROW('V-ui-books', 'The Field Books page, with records found', `(async () => {${FRAMES}
+    __CTX__.input.enabled = true;
+    const dp = __CTX__.items.datapoints;
+    for (const r of dp.list.slice(0, 7)) dp.collect(r.id);
+    await frames(4);
+    __CTX__.menus.openHub('notebook');
+    await frames(10);
+  })()`, { pendingWords: 'The catalogue\'s record titles and bodies are progression W3 text, as the log\'s are (R61 b names that page; orchestrator: rule this row likewise). The headings and every other clause are graded now.' }),
+  UI_ROW('V-ui-making', 'The Making page, with a full satchel', `(async () => {${FRAMES}
+    __CTX__.input.enabled = true;
+    ${SEED_SATCHEL}
+    await frames(6);
+    __CTX__.menus.openHub('crafting');
+    await frames(10);
+  })()`, { pendingWords: 'Item names that fieldWord cannot reach are combat-kit W2 (R61 b applies the same logic; orchestrator: rule this row likewise).' }),
+  UI_ROW('V-ui-skills', 'The Skills page', `(async () => {${FRAMES}
+    __CTX__.input.enabled = true;
+    __CTX__.menus.openHub('skills');
+    await frames(10);
+  })()`, { pendingWords: 'Skill names and text are progression W3 (certifications replace them, A-certifications; R61 b applies the same logic; orchestrator: rule this row likewise).' }),
+  UI_ROW('V-ui-trade', 'The Trade page', `(async () => {${FRAMES}
+    __CTX__.input.enabled = true;
+    ${SEED_SATCHEL}
+    await frames(6);
+    __CTX__.menus.openHub('inventory');
+    await frames(4);
+    __CTX__.items.screen.open('trade');
+    await frames(10);
+  })()`, { pendingWords: 'Item names that fieldWord cannot reach are combat-kit W2; merchant lines are settlements W2 (R61 b applies the same logic; orchestrator: rule this row likewise).' }),
 ];
 
 /** 4K, at true pixels: the HUD laid out for 3840x2160, shifted so each corner falls in the 1600x900 frame. */
@@ -889,6 +1331,9 @@ const V_UI_SHEET = {
   },
 };
 
+/** For a builder's or judge's extra rows at other angles (`--extra`). */
+export { SIGHT_STAGE };
+
 export const GATES = [
   /* actions */
   A_UI_STATIC,
@@ -908,6 +1353,8 @@ export const GATES = [
   A_SIGHTING_OFF,
   A_SIGHTING,
   A_SIGHTING_HUE,
+  A_OVER_BREA,
+  A_SIGHT_DRAWS,
   A62,
   alias(A62, 'A62-focus-components'),
   A63,
@@ -920,6 +1367,8 @@ export const GATES = [
   A72B,
   A_MAP,
   A_MAP_RELOAD,
+  A_MAP_ARROW,
+  A_DMG_CLEAR,
   /* the absorbed carried row (hud half) */
   re('A10-loot-single-render'),
   /* visuals */

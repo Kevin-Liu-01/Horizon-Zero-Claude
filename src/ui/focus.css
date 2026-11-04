@@ -304,4 +304,4 @@ body.cal-sighting .cal-cross { opacity: 0; }
 }
 .calf-reveal .calf-rname:not(:empty)::before { content: '· '; }
 .calf-reveal.k-field-book { border-left-color: var(--cal-c-weak); }
-.calf-reveal.k-gather { border-left-color: var(--cal-verdigris); }
+.calf-reveal.k-gather { border-left-color: var(--cal-moss); }
