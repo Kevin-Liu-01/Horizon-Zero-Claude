@@ -820,7 +820,7 @@ export async function panBase(opt = {}) {
   // the bones stay where brea.mjs put them; the cloth lies on the skirt that now covers them
   const outOnSkirt = (q) => {
     // turned toward her side: the bones hang at the front of the hip, right where the thigh lifts
-    const th = Math.atan2(q[2] + 0.02, q[0]) - 0.46;
+    const th = Math.atan2(q[2] + 0.02, q[0]) - 0.62;
     const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.14), Math.hypot(q[0], q[2] + 0.02)) + 0.011;
     return [Math.cos(th) * rr, q[1], -0.02 + Math.sin(th) * rr];
   };

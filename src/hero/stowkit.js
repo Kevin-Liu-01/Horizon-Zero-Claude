@@ -34,7 +34,6 @@ const _vA = new THREE.Vector3();
 const _qS = new THREE.Quaternion(), _qD = new THREE.Quaternion();
 const QUIVER_LANCE_SWING = 0.52;       // radians: the right elbow, lance in hand, pushes the mouth back past upright
 const QUIVER_LANCE_ROLL = 0.22;        // ... and its foot, coming forward, out past her thigh
-const QUIVER_RUN_SWING = 0.35;
 const QUIVER_SWING_RATE = 7;           // per second, toward that hold
 
 /** Install the piece mask on a (source) material, once. Returns the shared uniform. */
@@ -148,8 +147,7 @@ export class HeroStowKit {
     const crouch = this.player.animator?._crouchW ?? 0;
     sock.quaternion.copy(_qId).slerp(_qB, (this.quiverHold ?? QUIVER_HOLD) * (1 - Math.min(1, crouch)));
     // lance in hand she leads with that hip, and the elbow would stand in the arrows: it shoves the mouth back
-    // and at a run the strap gives a little, or the pumping elbow catches it
-    const swingTo = (this.hidden & PIECE.lance) ? 1 : QUIVER_RUN_SWING * Math.min(1, (this.player.moveSpeed || 0) / 6);
+    const swingTo = (this.hidden & PIECE.lance) ? 1 : 0;
     this._quiverSwing += (swingTo - this._quiverSwing) * Math.min(1, dt * QUIVER_SWING_RATE);
     if (this._quiverSwing > 0.001) {
       _vA.set(1, 0, 0).applyQuaternion(_qD.copy(bind).invert());   // character X, in the pelvis's bind frame
