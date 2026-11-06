@@ -821,7 +821,8 @@ export class PlayerAnimator {
     this._flightPool = [{ t: 0, dur: 0, fx: 0, fz: 0, hx: 0, hz: 0 },
                         { t: 0, dur: 0, fx: 0, fz: 0, hx: 0, hz: 0 }];
     this._stepCd = [0, 0];
-    this._stepDbg = { armed: 0, steps: 0, side: -1, lift: 0, len: 0, err: 0, slip: 0 };
+    this._stepDbg = { armed: 0, steps: 0, side: -1, lift: 0, len: 0, err: 0, slip: 0,
+      lockErr: 0, rekeys: 0, locoSteps: 0, frames: 0, dead: 0, deadMove: 0, deadOff: 0 };   // (every field it gets, declared: R48 c)
     this._stepErrs = [0, 0];        // _stanceStep scratch — never reallocated
     this._stepLoads = [0, 0];
     this._strideT = 0;              // seconds since either foot last lifted
@@ -986,6 +987,7 @@ export class PlayerAnimator {
     this.lastHitClass = 'light';
     /* R46: the per-frame fields are born as decimals (see `decimalFields`) */
     decimalFields(this);
+    decimalFields(this._stepDbg);
     for (let i = 0; i < this._chains.length; i++) decimalFields(this._chains[i]);
     for (let i = 0; i < this._twists.length; i++) decimalFields(this._twists[i]);
     for (let i = 0; i < this._locks.length; i++) decimalFields(this._locks[i]);
@@ -2575,6 +2577,13 @@ export class PlayerAnimator {
 
   /* -------------------------- ground conforming --------------------------- */
 
+  /** The conform's pelvis drop to ground height `g` (was a closure made every frame: R48 c). */
+  _applyPelvis(pe, g) {
+    _v2.set(0, g - this._grnd, 0).applyMatrix3(this._pelvisM3);
+    pe.bone.position.add(_v2);
+    this._grnd = g;
+  }
+
   /**
    * Post-pose pass on the clip pose: samples the terrain under each foot,
    * pitches planted feet to the slope, clamps the pelvis so the planted
@@ -2592,14 +2601,9 @@ export class PlayerAnimator {
     // pulled the climbing body 0.33 m down and the hands off the ledge)
     const N = this._nat?.ok ? this._nat.by : null;
     const offW = Math.max(dodgeW, this._deadW, N?.climb?.w ?? 0, N?.sit?.w ?? 0);
-    const applyPelvis = (g) => {
-      _v2.set(0, g - this._grnd, 0).applyMatrix3(this._pelvisM3);
-      pe.bone.position.add(_v2);
-      this._grnd = g;
-    };
     if (offW > 0.25) {
       // rolling / dying: release the conform smoothly and leave the pose alone
-      applyPelvis(damp(this._grnd, 0, 8, dt));
+      this._applyPelvis(pe, damp(this._grnd, 0, 8, dt));
       // and forget the ramp state, so the frame she stands up again does not
       // see a whole roll's worth of offset as one frame of "slope"
       this._grndWant = null; this._grndRate = 0;
@@ -2768,7 +2772,7 @@ export class PlayerAnimator {
     const ff = clamp(this._grndRate / rate, -0.07, 0.07);
     const g = clamp(damp(g0, clamp(want + ff, -0.5, 0.5), rate, dt), -0.38, 0.32);
     const dg = g - g0;
-    applyPelvis(g);
+    this._applyPelvis(pe, g);
 
     // Per-foot clamp. Raise any planted foot still underground — and LOWER a
     // planted one still in the air, which the first drop had no term for at
@@ -3143,6 +3147,14 @@ export class PlayerAnimator {
    *
    * @returns {void} state lands in `this._flight[side]`
    */
+  /** A ball where its lock holds it (char space, in `_v5`; `_m4` = inverse model matrix). Was a per-call closure (R48 c). */
+  _ballC(side) {
+    const L = this._locks[side];
+    if (L.on && L.w > 0.5) return _v5.set(L.x, 0, L.z).applyMatrix4(_m4);
+    const b = this.b;
+    return this._charOf(side === 0 ? b.ballL.bone : b.ballR.bone, _v5);
+  }
+
   _stanceStep(dt, moveW, offW) {
     const b = this.b;
     this._mStepT = Math.max(0, this._mStepT - dt);
@@ -3217,11 +3229,6 @@ export class PlayerAnimator {
      * world position; when the lock is off, the bone is. */
     this.model.updateWorldMatrix(true, false);
     _m4.copy(this.model.matrixWorld).invert();
-    const ballC = (side) => {
-      const L = this._locks[side];
-      if (L.on && L.w > 0.5) return _v5.set(L.x, 0, L.z).applyMatrix4(_m4);
-      return this._charOf(side === 0 ? b.ballL.bone : b.ballR.bone, _v5);
-    };
     // the stance she is standing in, captured once per armed window
     for (let s = 0; s < 2; s++) {
       if (this._stepHome[s]) continue;
@@ -3283,15 +3290,15 @@ export class PlayerAnimator {
     let worst = -1, worstLoad = 0;
     for (let s = 0; s < 2; s++) {
       const home = this._stepHome[s];
-      const c = ballC(s);
+      const c = this._ballC(s);
       errs[s] = Math.hypot(home[0] - c.x, home[1] - c.z);
       const L = this._locks[s];
       loads[s] = L.on && !this._flight[s] ? Math.hypot(L.cx, L.cz) : 0;
       if (errs[s] > worst) worst = errs[s];
       if (loads[s] > worstLoad) worstLoad = loads[s];
     }
-    this._stepDbg.err = +worst.toFixed(3);
-    this._stepDbg.lockErr = +worstLoad.toFixed(3);
+    this._stepDbg.err = Math.round(worst * 1e3) / 1e3;          // (no toFixed: a string a frame, R48 c)
+    this._stepDbg.lockErr = Math.round(worstLoad * 1e3) / 1e3;
     const lead = Math.max(errs[0], loads[0]) >= Math.max(errs[1], loads[1]) ? 0 : 1;
     this._tryStep(lead, errs[lead], vx, vz);
     this._tryStep(1 - lead, errs[1 - lead], vx, vz);
@@ -3418,7 +3425,7 @@ export class PlayerAnimator {
      * inside a stance window can exceed STEP_SLIP plus the settle of the frame
      * that detects it. */
     const slip = L.on ? Math.hypot(L.wx - L.sx, L.wz - L.sz) : 0;
-    if (slip > this._stepDbg.slip) this._stepDbg.slip = +slip.toFixed(4);
+    if (slip > this._stepDbg.slip) this._stepDbg.slip = Math.round(slip * 1e4) / 1e4;
     const slipping = slip > STEP_SLIP;
     const urgent = err > URGENT || myLock > MAX_LOCK * 0.5 || slipping;
     /* ...AND PAST THIS, NOT EVEN THE OVERLAP RULE HOLDS IT (fix round 3).
@@ -3455,7 +3462,7 @@ export class PlayerAnimator {
     this._flight[side] = F;
     this._stepDbg.steps++;
     this._stepDbg.side = side;
-    this._stepDbg.len = +err.toFixed(3);
+    this._stepDbg.len = Math.round(err * 1e3) / 1e3;
   }
 
   /**

@@ -2451,7 +2451,7 @@ export class MeleeLayer {
     const sc = this._boneScale(g.parent || this.socketBone);
     _a.set(0, 0, this._localLen * g.scale.z).applyQuaternion(g.quaternion)
       .add(g.position).multiplyScalar(sc);
-    D.carrySlide = (changing || !this._tipLocalOk) ? 0 : +_a.distanceTo(this._tipLocal).toFixed(4);
+    D.carrySlide = (changing || !this._tipLocalOk) ? 0 : Math.round(_a.distanceTo(this._tipLocal) * 1e4) / 1e4;   // (no toFixed: a string a frame)
     this._tipLocal.copy(_a);
     this._tipLocalOk = true;
 
@@ -3451,7 +3451,7 @@ export class MeleeLayer {
     // holstered: the BOUNDED socket's butt point — the same one `_poseHolstered`
     // writes, so this is the gap the hand-over would actually see
     this._liveSocket(_c, _rgDir);
-    return +_a.distanceTo(_c).toFixed(4);
+    return Math.round(_a.distanceTo(_c) * 1e4) / 1e4;
   }
 
   /**

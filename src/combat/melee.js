@@ -1094,7 +1094,7 @@ export class Melee {
     this.aimPoint.set(B[o + 1], B[o + 2], B[o + 3]);
     this.aimOk = true;
     // how far the blade will still be short of it once bent there (<= 0: it lands)
-    this.aimGap = +(B[o + 4] - reach).toFixed(3);
+    this.aimGap = Math.round((B[o + 4] - reach) * 1e3) / 1e3;
   }
 
   /**
@@ -2077,7 +2077,7 @@ export class Melee {
          * right. This is the number that cannot be satisfied by moving the
          * point: it only falls when she actually gets closer or reaches
          * further. Both clauses are gated now. */
-        this.lastContactGap = +bestD.toFixed(4);
+        this.lastContactGap = Math.round(bestD * 1e4) / 1e4;
         _pt.copy(_tC);
         _n.copy(_tD);
         // one short confirming ray, purely to recover a real `object` node
