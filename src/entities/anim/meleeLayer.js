@@ -270,12 +270,6 @@ const READY = {
  */
 /** The left forearm's axis off her pelvis->neck axis (a forearm is 0.05 thick, her belly 0.12 out). */
 const LEFT_FORE_CLEAR = 0.13;
-/** The closed loop after the left solve (see `_solveLeft`): past this far off the haft line the palm
- *  slides back along it by 1.5x the excess; closer than this to the spine axis the forearm slides out
- *  toward the blade, up to this much at 0.04 m inside it (A101 bar 0.05, A104 bar 0.10). */
-const LEFT_PALM_SLIP = 0.015;
-const LEFT_FORE_KEEP = 0.125;
-const LEFT_FORE_SLIDE = 0.06;
 /** How much of the trunk's turn the head keeps, and how much of its lean the
  *  neck and skull take out (see `update`). */
 const HEAD_LEAD = 0.14;
@@ -297,7 +291,7 @@ const RECOIL_RATE = 11;
 const STANCE_STEP_MAX = 0.10;
 const STANCE = {
   ready: { thighL: -0.50, thighR: 0.14, calfL: 0.66, calfR: 0.30, footL: -0.16, footR: -0.30, abd: 0.15, dx: 0.0, dy: -0.105 },
-  'light-1': { thighL: -0.62, thighR: 0.26, calfL: 0.74, calfR: 0.14, footL: -0.12, footR: -0.26, abd: 0.11, dx: 0.02, dy: -0.125 },
+  'light-1': { thighL: -0.70, thighR: 0.34, calfL: 0.84, calfR: 0.06, footL: -0.12, footR: -0.26, abd: 0.11, dx: 0.02, dy: -0.15 },
   'light-2': { thighL: -0.30, thighR: -0.42, calfL: 0.46, calfR: 0.62, footL: -0.16, footR: -0.20, abd: 0.20, dx: -0.09, dy: -0.15 },
   'light-3': { thighL: -0.66, thighR: 0.30, calfL: 0.70, calfR: 0.10, footL: -0.04, footR: -0.26, abd: 0.11, dx: 0.05, dy: -0.12 },
   /* the heavy sinks deepest (V47: "a low committed drive with the hips lowest"; A102 pins it 0.04 m under
@@ -316,13 +310,19 @@ const BEATS = [
   {
     id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.16,
     cock: { hand: [-0.29, 1.24, -0.24], shaft: [0.40, 0.47, 0.79], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.50, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
-    contact: { hand: [-0.15, 1.13, 0.23], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: 0.02, pitch: 0.20, roll: -0.04, dz: 0.10 },
+    /* the thrust lands with the arms OUT and the trunk over the lead foot (melee W1, Nov 6: the earlier key held
+     * the wrist 0.23 m in front of the pelvis and read as holding, not thrusting; filmed side by side with
+     * candidates on the live tables, scratch r3, this one measured palm 0.005 m, forearms 0.21 / 0.22 m off the spine) */
+    contact: { hand: [-0.12, 1.18, 0.40], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.23, yaw: -0.20, py: -0.04, pitch: 0.34, roll: -0.04, dz: 0.18 },
     follow: { hand: [-0.19, 1.09, 0.22], shaft: [0.24, -0.34, 0.91], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.22, py: 0.0, pitch: 0.14, roll: -0.08, dz: 0.05 },
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
     cock: { hand: [-0.35, 1.30, -0.09], shaft: [0.60, 0.22, 0.77], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.40, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
-    contact: { hand: [-0.21, 1.19, 0.22], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.18, py: -0.08, pitch: 0.18, roll: 0.04, dz: 0.07 },
+    /* (melee W1, Nov 6) the sweep's contact CROSSES her front: the blade 25 deg to her right of the line with
+     * the hands centred and forward and the shoulders turned into it; the earlier key pointed the haft 8 deg
+     * right and read as light-1's thrust from the 3/4 lens (scratch r3: palm 0.015 m, shaft 0.150 m clear) */
+    contact: { hand: [-0.06, 1.22, 0.28], shaft: [-0.42, 0.04, 0.91], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.26, yaw: -0.30, py: -0.16, pitch: 0.20, roll: 0.04, dz: 0.09 },
     follow: { hand: [-0.23, 1.01, 0.22], shaft: [-0.46, -0.22, 0.86], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.40, py: -0.28, pitch: 0.20, roll: 0.06, dz: 0.06 },
   },
   {
@@ -336,7 +336,9 @@ const BEATS = [
 const HEAVY = {
   id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.18,
   cock: { hand: [-0.28, 1.31, -0.12], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.46, py: -0.36, pitch: -0.10, roll: 0.08, dz: -0.10 },
-  contact: { hand: [-0.22, 1.35, 0.27], shaft: [0.12, -0.05, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.14, py: 0.04, pitch: 0.30, roll: -0.05, dz: 0.13 },
+  /* (melee W1, Nov 6) the drive reaches 0.11 m further from spine pitch and the lunge (R3), the fist still at
+   * shoulder height: filmed and measured with candidates on the live tables, scratch r3, palm 0.012 m */
+  contact: { hand: [-0.22, 1.30, 0.38], shaft: [0.12, -0.05, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.14, py: 0.04, pitch: 0.38, roll: -0.05, dz: 0.17 },
   follow: { hand: [-0.21, 1.17, 0.24], shaft: [0.26, -0.42, 0.87], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.10, py: 0.10, pitch: 0.32, roll: -0.08, dz: 0.10 },
 };
 /** How far before `CONTACT_K` the contact key is reached; it is then HELD for
@@ -3221,53 +3223,6 @@ export class MeleeLayer {
     D.lhOnNow = sOn;
     _d.copy(_grip).addScaledVector(_a, sOn);          // the palm goal
     _eT.copy(_lh);                                    // the free goal (world of the blend)
-    this._leftPasses(w, on);
-    /* CLOSED LOOP ON A TWO-HANDED FRAME (melee W1, Nov 6). The reach sphere above
-     * is an estimate (the palm sits off the wrist, not along the arm), and the
-     * elbow-out pass turns the elbow but cannot move the hand: measured on the
-     * drawn pose, light-2's contact left the palm 0.058-0.061 m off the haft (A101,
-     * bar 0.05) and light-1's return to guard laid the left forearm 0.077 m from
-     * the spine (A104, bar 0.10), the same frames in two runs. So the solved arm is
-     * read back: a palm off the haft LINE slides the hand back along it toward the
-     * right hand by that much; a forearm on the belly slides it out toward the
-     * blade, within reach. At most two corrections; no allocation. */
-    if (on >= 0.99) {
-      for (let fix = 0; fix < 2; fix++) {
-        an._charOf(b.handL.bone, _c);
-        an._liveW(b.handL.bone, _q1);
-        _b.copy(this.palmOffLL).applyQuaternion(_q1).add(_c);      // the palm
-        _b.sub(_grip);
-        const along = _b.dot(_a);
-        _b.addScaledVector(_a, -along);
-        const off = _b.length();                                   // palm to the haft line
-        an._charOf(b.loArmL.bone, _lbE); an._charOf(b.handL.bone, _lbH);
-        an._charOf(b.pelvis.bone, _lbA); an._charOf(b.neck1.bone, _lbB);
-        segSegN(_lbE, _lbH, _lbA, _lbB); const fs = _sgNum[0];   // forearm to the spine axis
-        /* both slides grow from zero at their thresholds, so the hand never jumps
-         * along the haft from one frame to the next as a reading crosses one */
-        let next = sOn;
-        if (off > LEFT_PALM_SLIP) next -= (off - LEFT_PALM_SLIP) * 1.5;
-        else if (fs < LEFT_FORE_KEEP) next += LEFT_FORE_SLIDE * Math.min(1, (LEFT_FORE_KEEP - fs) / 0.04);
-        if (next > sFar) next = sFar;
-        if (next < LH_ON_MIN) next = LH_ON_MIN;
-        if (Math.abs(next - sOn) < 0.004) break;
-        sOn = next;
-        D.lhOnNow = sOn;
-        _d.copy(_grip).addScaledVector(_a, sOn);
-        this._leftPasses(w, on);
-      }
-    }
-    /* one last small correction: whatever the turn moved the palm by */
-    an._charOf(b.handL.bone, _c);
-    an._liveW(b.handL.bone, _q1);
-    _b.copy(this.palmOffLL).applyQuaternion(_q1).add(_c);
-    D.lhPalmErr = _b.distanceTo(_d);
-  }
-
-  /** The left arm onto the palm goal `_d` (char; `_eT` the free goal, `_a` the haft): three IK passes, the
-   *  elbow turned off the belly between them, the knuckle line laid along the haft. Was `_solveLeft`'s loop. */
-  _leftPasses(w, on) {
-    const an = this.an, b = an.b;
     for (let pass = 0; pass < 3; pass++) {
       an._liveW(b.handL.bone, _q1);
       _c.copy(this.palmOffLL).applyQuaternion(_q1);
@@ -3286,6 +3241,11 @@ export class MeleeLayer {
       if (k < 0.999) _q2.slerp(_qi(), 1 - k);
       an._rotQL(b.handL, _q2);
     }
+    /* one last small correction: whatever the turn moved the palm by */
+    an._charOf(b.handL.bone, _c);
+    an._liveW(b.handL.bone, _q1);
+    _b.copy(this.palmOffLL).applyQuaternion(_q1).add(_c);
+    D.lhPalmErr = _b.distanceTo(_d);
   }
 
   /**
@@ -3845,19 +3805,6 @@ export class MeleeLayer {
     const an = this.an, e = an.b.handR;
     if (e && this._held && this._guardOn && this.w >= 0.2) this._handOffSelf(an, e);
     if (e && this._held && this.w >= 0.2) this._armHullFinal(an);
-    /* THE LEFT HAND FOLLOWS THE HAFT THE RIGHT HAND MOVED (melee W1). The two
-     * corrections above turn or pull the right hand on the final matrices and the
-     * haft rides it, but the left hand, solved in the pose pass, stayed where the
-     * haft WAS (A101 read its palm 0.061 m off on one light-2 frame); and its
-     * forearm was cleared off a spine that the stance's pelvis offset and the
-     * conform moved after the pose pass (A104 read 0.077 m at a recover's end).
-     * A two-handed frame re-seats the left hand here, on the matrices that get
-     * drawn: the palm goes back on the haft and the elbow-out pass reads the real
-     * spine. The free hand (light-3, a draw) is left alone. */
-    if (e && this._held && this.w >= 0.2 && (this._dbg.stance === 'swing' || this._dbg.stance === 'ready')) {
-      const u = this._u;
-      if ((u.lhW || 0) * this.w >= 0.99) { an._charOf(an.b.handL.bone, _lh); this._solveLeft(this.w, u); }
-    }
     /* THE BRAID GIVES WAY LAST, because the hand moved the haft above it.
      * Filmed with the order the other way round: `_hairOffHaft` pushed the
      * braid clear, then the hand guard rotated the haft back into it, and
