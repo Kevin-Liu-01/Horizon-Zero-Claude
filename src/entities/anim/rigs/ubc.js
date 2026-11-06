@@ -264,7 +264,7 @@ export const UBC_TUNE = {
     // T's ray is low-passed only relative to the camera's, its cap adds the camera's rate, and at a held
     // full draw the arm's limiter carries last step's arm rigidly with the chest; `crouchOut`: crouched, the T
     // goes out at its crouched pace and the aim layer runs on until it is out)
-    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.6, tailMin: 0.35, lanceOpen: 30, knotRound: 0.035, violStep: 0.002, camAim: true, crouchOut: true,
+    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.6, tailMin: 0.35, lanceOpen: 30, knotRound: 0.035, violStep: 0.002, camAim: true, crouchOut: true, camTau: 0.05,
     bodyRef: { chest: [-0.006, -0.032, -0.063], pelvis: [0.002, -0.035, -0.036] } },
   // W0b targeted fix 4: the aim's trunk starts upright — the pelvis -> neck
   // line's forward pitch under the aim (radians, character space), standing /
@@ -281,7 +281,9 @@ export const UBC_TUNE = {
   // under the aim moves at most `toggleRate` /s, her height at most `liftStep` m per 1/60 s;
   // at a steep aim she stands up to hold the bow's hand `nearBow` m from the crosshair's ground
   // hit (see `_crouchAimLayer`, `_crouchAimLift`)
-  crouchAim: { pelvisY: 0.52, pelvisDown: 0.31, pelvisTilt: 0.10, rampS: 0.7, toggleRate: 2.5, liftStep: 0.022, nearBow: 0.57 },
+  // (hero-body targeted fix round 2: crouched, the aim weight goes out at most `outRate` per second, and a
+  // crouch toggled under the aim moves at most `toggleRate` per second, 2.5 before: 0.036 m head steps)
+  crouchAim: { pelvisY: 0.52, pelvisDown: 0.31, pelvisTilt: 0.10, rampS: 0.7, toggleRate: 1.8, liftStep: 0.022, nearBow: 0.57, outRate: 2.5 },
   // W0b targeted fix 4: the bent T's reach at the pitch clamps (rad): the turn's
   // caps, and how much of its pitch the hips carry, the upper back the rest
   tClamp: { up: 1.2, down: 1.25, yaw: 0.9, hipUp: 0.6, hipDown: 0.95, hipBack: 1.5 },
@@ -290,7 +292,9 @@ export const UBC_TUNE = {
   // her root, over `minS`..`maxS` s; a jump under `minM` m is left alone (see `_rollExit`)
   // ...and the roll's root follows the pelvis's own travel (`dodgeDist`: player.js DODGE_DIST, the root's
   // whole roll, m; see the animator's constructor and `rollProgress`)
-  rollExit: { stepM: 0.02, minM: 0.02, minS: 0.2, maxS: 0.8, dodgeDist: 3.4 },
+  // ...and the governor: through a roll, 0.6 s (`window`) after one or a landing, and whenever she aims or
+  // crouches, the pelvis's world step is held to her root's own step + `govM` per 1/60 s
+  rollExit: { stepM: 0.02, minM: 0.02, minS: 0.2, maxS: 0.8, dodgeDist: 3.4, govM: 0.026, window: 0.6 },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)
