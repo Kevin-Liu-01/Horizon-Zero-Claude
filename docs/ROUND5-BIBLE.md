@@ -14,6 +14,21 @@ costume is Sony/Guerrilla IP, so **Brea** fills that role on the same rig and mo
 decision for Kevin to confirm (PLAN §11, decision 1); her silhouette and face sheets are shown to him
 before wave 0 exits.
 
+**Nov 6 amendments (Kevin's look target, PLAN R66; the spec is `docs/ROUND5-LOOK.md`).** Where any
+section below disagrees with this list, this list wins.
+- **Light (§9.8).** A golden-weighted clock: the title opens at 18:40 golden, with calima kept as weather. A New Game still starts at 07:00, and the 0:55 "calima at noon" beat stays at noon. Warm light is split from violet-rose shadow and distance.
+- **Logo (§9.8).** The lockup carries one tagline, THE ISLAND REMEMBERS. It is set in IBM Plex Mono under the datum rule, flush left with the C, with no flanking rules and no star (R66 p).
+- **UI.** Every menu is dark violet glass, as specified in ROUND5-LOOK §3.6. The field HUD is thin and has no minimap.
+- **Armour (§4).** Eight rungs replace "4 sets × 3 variants": Starter, Scout, Reckoner, Veil, Pioneer, Vanguard, Arcane, Celestial. They are expressed in the island's survey language: Arcane is Oxblood Lamellar, "Read the old marks"; Celestial is the Datum Plate, "Fix by the stars". Fog Felts and Calima Veil leave the ladder, and the Dust-sight, Sure-foot, Fog-mend and Thrown-whistle perks retire (the base whistle stays). Brea's starter look is a sleeveless violet top under a crossed leather harness, with forearm wraps under bracers, sash panels and dark laced boots.
+- **Instruments (§7.4).** The Screed is 3.8 m and the Kiln 5.5 m, with footprints unchanged. Weak points glow in their own bible colour (lamp, vial, firebox, hot hub). There are no animal bodies, no red eyes and no HUD glyph over them.
+- **Malpaís (§2).** It stays cold. Only the man-made wellheads and kilns glow.
+- **New features.**
+  - The Brazier: rest and save at the cisterns.
+  - The Making ledger: ammo crafting, called MAKE.
+  - The Survey Kite: a cane-and-sailcloth box kite flown on the trade wind.
+  - Reed cover: carrizo, salt rush and marram that hide Brea while the wind moves them. The golden meadow never hides her.
+- **Brea.** Her age (31) and the Pan Houses guild stand. The concept boards' "Age 20, Affiliation None" does not apply.
+
 ---
 
 ## 0. The decision
