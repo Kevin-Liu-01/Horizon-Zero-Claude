@@ -39,7 +39,8 @@ export async function build({ out = ROOT } = {}) {
         const j = J(side > 0 ? 'clavicle_l' : 'clavicle_r');
         // three tiles along the shoulder, the outer lapping the inner, each a curved plate (a fourth stood in the bow's and the lance's way)
         for (let i = 0; i < 3; i++) {
-          const x0 = 0.13 + i * 0.034, x1 = x0 + 0.05;
+          // (Nov 6: 6 mm further out: at full draw her head came 2.6 cm from the inner tile, A-variant-swap-matrix (d) asks 3)
+          const x0 = 0.136 + i * 0.034, x1 = x0 + 0.05;
           const COLS = 5;
           const inner = [], outer = [];
           for (let c = 0; c <= COLS; c++) {

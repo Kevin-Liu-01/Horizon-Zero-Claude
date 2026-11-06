@@ -103,8 +103,9 @@ export const addPieces = async (base) => {
       // her right shoulder). Armory W1: with the LANCE out the bow stays stowed, and its grip (the strung bow's
       // brace, 0.34 m behind the spine) stood 39 mm through the brim. So two copies: lance out, the hat rides OVER
       // the stowed bow (its brim's rolled edge clear of the grip); bow in hand, it lies in close where the bow was,
-      // 0.12 m off the stowed lance
-      const hat2 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, -0.12, -1]), V.norm([0, 1, -0.12]), [0.15, 1.31, -0.362], palm, jS3, HAT_ON_BACK);
+      // 0.12 m off the stowed lance. (Nov 6: the over-the-bow copy 28 mm further out: in the lance's light attack
+      // her twist still brought the stowed bow 24 mm into its brim)
+      const hat2 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, -0.12, -1]), V.norm([0, 1, -0.12]), [0.15, 1.31, -0.39], palm, jS3, HAT_ON_BACK);
       const hat3 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, -0.12, -1]), V.norm([0, 1, -0.12]), [0.15, 1.31, -0.305], palm, jS3, HAT_ON_BACK_LOW);
       void clothField;
       return [cap, clasp, hat1, hat2, hat3];

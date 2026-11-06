@@ -502,7 +502,8 @@ export async function panCloseupOverlay(ctx, refs = []) {
     ['neck: bound keyhole, linen collar, tie', { pos: [0.1, 1.47, 0.5], target: [0.0, 1.41, 0.04], fov: 30 }, 402, 40, 296, 268],
     ['girdle, buckle, keeper, tongue', { pos: [0.14, 1.12, 0.56], target: [-0.01, 1.06, 0.08], fov: 30 }, 402, 312, 296, 268],
     ['sleeve, armhole, cuff', { pos: [-0.66, 1.34, 0.5], target: [-0.2, 1.2, 0.0], fov: 26 }, 700, 40, 296, 268],
-    ['sash knot, tails', { pos: [0.86, 1.04, -0.62], target: [0.2, 0.94, -0.08], fov: 24 }, 700, 312, 296, 268],
+    // (Nov 6: the knot is tied behind the left hip now, clear of the bow hand)
+    ['sash knot, tails', { pos: [0.8, 1.04, -0.66], target: [0.13, 0.93, -0.18], fov: 24 }, 700, 312, 296, 268],
     ['hem, under-tunic, trousers', { pos: [0.3, 0.72, 0.72], target: [0.04, 0.68, 0.04], fov: 34 }, 998, 40, 296, 268],
     ['shin wraps, sole', { pos: [0.34, 0.3, 0.66], target: [0.1, 0.2, 0.02], fov: 36 }, 998, 312, 296, 268],
     ['back, salt pouch', { pos: [-0.36, 1.28, -1.08], target: [0, 1.12, 0], fov: 36 }, 1296, 40, 300, 540],

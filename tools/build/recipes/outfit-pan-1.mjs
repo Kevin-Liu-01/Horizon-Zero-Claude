@@ -707,9 +707,10 @@ export async function panBase(opt = {}) {
     if (cy < 1.2) continue;     // the bottom row: under the belt
     if (Math.abs(cx) > 0.1) {
       const c = [Math.sign(cx) * 0.19, ARMHOLE.y, ARMHOLE.z];
-      // (under the arm a rim point every few cm is plenty: the crease closes over it)
-      let lastU = -1e9;
-      const rim = run.filter((q, i) => { if (q.p[1] > 1.375) return i % 2 === 0; if (i - lastU < 4) return false; lastU = i; return true; });
+      // (armory W1, Nov 6: every rim point. Thinned to every 2nd over the shoulder and every 4th under the arm, the tape
+      // was a 12-gon: its straight runs cut chords across the curved rim and stood off the cloth, a purple hook over
+      // each shoulder in the close-up and tabs on the sleeve)
+      const rim = run;
       bindingAlong(binds, rim, smockSkin, { rect: bindRect, closed: true, center: () => c, w: 0.0095, lift: 0.0026 });
       // the armhole's own linen, on the rim's points alone (no vertex that could end up inside her): raise the arm, and
       // what shows through the hole is the under-tunic, not the far side of the smock
@@ -876,8 +877,11 @@ export async function panBase(opt = {}) {
   const lin = trim.rect('sash');
   // the bones stay where brea.mjs put them; the cloth lies on the skirt that now covers them
   const outOnSkirt = (q) => {
-    // turned toward her side: the bones hang at the front of the hip, right where the thigh lifts
-    const th = Math.atan2(q[2] + 0.02, q[0]) - 0.62;
+    // (armory W1, Nov 6: turned round to the back of her left hip. At the side it hung exactly where her left hand
+    // carries the bow: the stave went through the knot and the tails at every step of a jog (A-variant-swap-matrix's
+    // held clause read 4.6 cm in a sprint, the knot alone was half of the outfit's penetration at idle), and her
+    // thigh came up through it in the lance's light attack. Behind the hip it is clear of the hand, the bow and the stride)
+    const th = Math.atan2(q[2] + 0.02, q[0]) - 1.35;
     const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.2), Math.hypot(q[0], q[2] + 0.02)) + 0.015;
     return [Math.cos(th) * rr, q[1], -0.02 + Math.sin(th) * rr];
   };
@@ -890,8 +894,12 @@ export async function panBase(opt = {}) {
   const upW = [0, 1, 0];
   // (compact: her left forearm sweeps past it in the lance's light attack)
   appendGeo(g, sashKnot(V.add(k1, [0, 0.016, 0]), { side: tang, up: upW, out: outW }, { joint: pelvis, rect: lin, rx: 0.023, rz: 0.012, ringW: 0.028, ear: 0.027, earW: 0.019 }));
-  // the tail ends above the skirt's hem: a stride swings the skirt out and would swallow a longer one
-  appendGeo(g, sashTail(sashPts.slice(0, 3), sashJ.slice(0, 2), { along: 10, across: 6, width: (u) => 0.058 - 0.012 * u, side: tang, out: outW, rect: lin, uLen: 0.42, twist: 0.3 }));
+  // the tail ends above the skirt's hem: a stride swings the skirt out and would swallow a longer one.
+  // (armory W1, Nov 6: on the pelvis, its lower half easing onto the thigh, as the second tail: dyn_sashEnd's bones
+  // stand at the FRONT of the hip, where brea.mjs put them, and a tail behind the hip skinned to them would swing
+  // round a pivot 24 cm away and leave its knot. The chain stays in the skeleton; see docs/ROUND5-ARMORY.md §5)
+  void sashJ;
+  appendGeo(g, sashTail(sashPts.slice(0, 3), [pelvis, pelvis, joints.thigh_l], { along: 10, across: 6, width: (u) => 0.058 - 0.012 * u, side: tang, out: outW, rect: lin, uLen: 0.42, twist: 0.3 }));
   // the second tail, shorter, behind the first and a little forward (never on the chain)
   {
     const p2 = [V.add(k1, V.add(V.mul(tang, 0.016), [0, 0.012, 0])), V.add(k1, V.add(V.mul(tang, 0.03), [0, -0.05, 0.002])), V.add(k1, V.add(V.mul(tang, 0.036), [0, -0.105, 0.004]))];
