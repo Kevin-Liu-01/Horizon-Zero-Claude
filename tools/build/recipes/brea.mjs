@@ -54,7 +54,7 @@ import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/wrap-head.mjs';
 import { lashCard } from './lib/hair.mjs';
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, browLines, remapEyeUV,
-  cullUnderWrap, cullEyeBacks, cullEyeUnderLids, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
+  cullUnderWrap, cullEyeBacks, cullEyeUnderLids, reshapeEars, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
 } from './lib/skin-human.mjs';
 
 export const LANE = 'hero-body';
@@ -628,44 +628,6 @@ async function buildClips(SRC, out) {
 }
 
 /* ------------------------------------------------------------- helpers */
-
-/**
- * The ears, smaller, lower and round-topped (fix round 2). `skull(y, z)` is the side of the head under the ear (fitted to the
- * stock's lateral profile in front of and behind it); a vertex's protrusion over it selects the ear, softly. The ear scales about
- * its attachment, then the ear and the skin round its root go down together, so it is lowered, not tilted.
- */
-function reshapeEars(prim, headW, { mm, scale = 0.85, drop = 5, c = [0.0735, 1.636, -0.024] } = {}) {
-  const P = prim.getAttribute('POSITION'), a = P.getArray();
-  const skull = (z) => 0.0705 + 0.2 * (z + 0.006);
-  const top = c[1] + 0.012;
-  let n = 0;
-  for (let i = 0; i < P.getCount(); i++) {
-    if (headW[i] < 0.3) continue;
-    const x = a[i * 3], y = a[i * 3 + 1], z = a[i * 3 + 2], ax = Math.abs(x), sx = Math.sign(x) || 1;
-    if (ax < 0.055 || y < 1.57 || y > 1.71 || z > 0.03 || z < -0.09) continue;
-    const box = smooth(1.596, 1.606, y) * (1 - smooth(1.668, 1.678, y)) * smooth(-0.054, -0.044, z) * (1 - smooth(-0.004, 0.004, z));
-    const w = box * smooth(0.0012, 0.0042, ax - skull(z));
-    // the root and the skin about it travel with the ear (a broad, soft patch), so the ear is lowered, not sheared
-    const wT = Math.exp(-0.5 * (((y - c[1]) / 0.026) ** 2 + ((z - c[2]) / 0.024) ** 2)) * smooth(0.06, 0.068, ax);
-    if (w <= 0 && wT <= 0.002) continue;
-    let px = c[0] + (ax - c[0]) * scale, py = c[1] + (y - c[1]) * scale, pz = c[2] + (z - c[2]) * scale;
-    // the outline rounds: in the ear's own (y, z) plane every point past an upright ellipse (half 0.030 x 0.018, scaled) in the
-    // upper half comes softly back toward it, so the helix is an arc, with no point at its top-back; the lobe's tip rounds up
-    {
-      const ey = (py - c[1]) / (0.030 * scale), ez = (pz - c[2]) / (0.018 * scale), r = Math.hypot(ey, ez);
-      const k = smooth(-0.15, 0.35, ey);
-      if (r > 0.9) { const f = 1 + ((0.9 + (r - 0.9) * 0.35) / r - 1) * k; py = c[1] + (py - c[1]) * f; pz = c[2] + (pz - c[2]) * f; }
-      const lobe = smooth(-0.62, -0.95, ey);
-      if (lobe > 0) { py += lobe * 0.0016; pz += (c[2] - 0.003 - pz) * lobe * 0.42; px -= lobe * 0.0008; }
-    }
-    void top;
-    const nx = ax + (px - ax) * w, ny = y + (py - y) * w - mm(drop) * Math.max(w, wT), nz = z + (pz - z) * w;
-    a[i * 3] = sx * nx; a[i * 3 + 1] = ny; a[i * 3 + 2] = nz;
-    n++;
-  }
-  P.setArray(a);
-  return n;
-}
 
 function bboxOf(prim) {
   const P = prim.getAttribute('POSITION'), p = [0, 0, 0];

@@ -22,7 +22,9 @@ export function humanDensity(s) {
   // culled, so the face fell to the skull's 1.5 (0.56 mm a texel: an 8 mm paste stroke was 14 texels tall). It is the frontmost
   // island that runs from the chin to the brow, at 2.1 (0.40 mm a texel; 2.3 does not pack)
   if (s.max[2] > 0.09 && s.min[1] < 1.6 && s.max[1] > 1.65) return 2.1;
-  if (s.min[1] > 1.45 && s.max[1] > 1.70) return 1.5;                      // skull sides + ears
+  // skull sides + ears (fix round 2: the same culling dropped them to the neck's 1.05, 1.1 mm a texel on the ear and the temple
+  // coils; the source gives them few texels, so 2.6 is what brings them to 0.64 mm. The arms, elastic, give 14 % of theirs for it)
+  if (s.min[1] > 1.45 && s.max[1] > 1.66 && s.max[2] < 0.05) return 2.6;
   if (s.min[1] > 1.56 && s.max[1] < 1.6) return 0.7;                       // the mouth bag
   if (s.min[1] > 1.42) return 1.05;                                         // the neck
   if (Math.abs(c[0]) > 0.6) return c[0] < 0 ? 1.34 : 1.12;                  // hands: the right (∴) hand a little denser
@@ -100,7 +102,44 @@ export function hairShape(X, Y, Z) {
   return Math.max(burn, behind, over, templeHair(X, Y, Z)) * earClear(X, Y, Z);
 }
 
-/** Brea's ear after `reshapeEars` (brea.mjs): its outline in the side (y, z) plane, an upright ellipse. */
+/**
+ * The ears, smaller, lower and round-topped (fix round 2). `skull(z)` is the side of the head under the ear (UBC female: fitted to the
+ * stock's lateral profile in front of and behind it); `c` the ear's attachment (+x side, mirrored); `mm(v)` game mm to model units; a vertex's protrusion over it selects the ear, softly. The ear scales about
+ * its attachment, then the ear and the skin round its root go down together, so it is lowered, not tilted.
+ */
+export function reshapeEars(prim, headW, { mm, scale = 0.85, drop = 5, c = [0.0735, 1.636, -0.024], skull = (z) => 0.0705 + 0.2 * (z + 0.006) } = {}) {
+  const P = prim.getAttribute('POSITION'), a = P.getArray();
+  const top = c[1] + 0.012;
+  let n = 0;
+  for (let i = 0; i < P.getCount(); i++) {
+    if (headW[i] < 0.3) continue;
+    const x = a[i * 3], y = a[i * 3 + 1], z = a[i * 3 + 2], ax = Math.abs(x), sx = Math.sign(x) || 1;
+    if (ax < 0.055 || y < 1.57 || y > 1.71 || z > 0.03 || z < -0.09) continue;
+    const box = smooth(1.596, 1.606, y) * (1 - smooth(1.668, 1.678, y)) * smooth(-0.054, -0.044, z) * (1 - smooth(-0.004, 0.004, z));
+    const w = box * smooth(0.0012, 0.0042, ax - skull(z));
+    // the root and the skin about it travel with the ear (a broad, soft patch), so the ear is lowered, not sheared
+    const wT = Math.exp(-0.5 * (((y - c[1]) / 0.026) ** 2 + ((z - c[2]) / 0.024) ** 2)) * smooth(0.06, 0.068, ax);
+    if (w <= 0 && wT <= 0.002) continue;
+    let px = c[0] + (ax - c[0]) * scale, py = c[1] + (y - c[1]) * scale, pz = c[2] + (z - c[2]) * scale;
+    // the outline rounds: in the ear's own (y, z) plane every point past an upright ellipse (half 0.030 x 0.018, scaled) in the
+    // upper half comes softly back toward it, so the helix is an arc, with no point at its top-back; the lobe's tip rounds up
+    {
+      const ey = (py - c[1]) / (0.030 * scale), ez = (pz - c[2]) / (0.018 * scale), r = Math.hypot(ey, ez);
+      const k = smooth(-0.15, 0.35, ey);
+      if (r > 0.9) { const f = 1 + ((0.9 + (r - 0.9) * 0.35) / r - 1) * k; py = c[1] + (py - c[1]) * f; pz = c[2] + (pz - c[2]) * f; }
+      const lobe = smooth(-0.62, -0.95, ey);
+      if (lobe > 0) { py += lobe * 0.0016; pz += (c[2] - 0.003 - pz) * lobe * 0.42; px -= lobe * 0.0008; }
+    }
+    void top;
+    const nx = ax + (px - ax) * w, ny = y + (py - y) * w - mm(drop) * Math.max(w, wT), nz = z + (pz - z) * w;
+    a[i * 3] = sx * nx; a[i * 3 + 1] = ny; a[i * 3 + 2] = nz;
+    n++;
+  }
+  P.setArray(a);
+  return n;
+}
+
+/** Brea's ear after `reshapeEars`: its outline in the side (y, z) plane, an upright ellipse. */
 export const EAR = { c: [0.0735, 1.6312, -0.024], ry: 0.0255, rz: 0.0153 };
 
 /** 0 on and near the ear, 1 a wandering 3-6 mm off its outline: the hairline goes round the ear, never in a box. */
@@ -631,7 +670,10 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
     // the inside of the mouth, teeth and all: she keeps it shut (the lips share that island: only what faces away from the light is inside)
     if (mouthBag && mouthBag.has(T.island) && (T.nz < 0.05 || T.ao < 0.22)) { T.r = 8; T.g = 5; T.b = 5; T.rough = 0.98; T.ao = Math.min(T.ao, 0.3); return; }
     if (T.Y < 1.45 || Math.abs(T.X) > 0.05 || T.Z < 0.02) return;
-    const k = (1 - smooth(0.12, 0.3, T.ao)) * (T.nz < 0.25 ? 1 : 0.6);
+    // (fix round 2: a texel that faces forward is darkened this way only round the nostrils; at the mouth's corners the deep fold's
+    // low AO took the forward skin toward near-black too, and a low sun read it as stubble or grime)
+    const nose = Math.hypot(T.X / 0.024, (T.Y - (noseT[1] - 0.012)) / 0.014) < 1;
+    const k = (1 - smooth(0.12, 0.3, T.ao)) * (T.nz < 0.25 ? 1 : nose ? 0.6 : 0.12);
     if (k <= 0) return;
     T.r = mix(T.r, 26, k); T.g = mix(T.g, 14, k); T.b = mix(T.b, 11, k);
     T.rough = mix(T.rough, 0.95, k);
@@ -686,6 +728,16 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
     ]),
     pores({ depth: 0.00009, poreFreq: 820, zone: (T) => (T.Y > 1.42 && Math.abs(T.X) < 0.2 ? 1 : Math.abs(T.X) > 0.4 ? 0.6 : 0.4) }),
     planes,
+    // (fix round 2, the judges: "remove the mouth-corner and philtrum darkening from the crease and AO layers"): the baked AO's floor
+    // is raised over the philtrum and round the mouth's corners, where it painted a grey moustache and two dark spots; the slit stays
+    (T) => {
+      if (Math.abs(T.X) > 0.04 || T.Y < L.upperLip[1] - 0.03 || T.Y > noseT[1] - 0.004 || T.nz < 0.3) return;
+      const ph = (1 - smooth(0.006, 0.011, Math.abs(T.X))) * smooth(L.upperLip[1] + 0.0015, L.upperLip[1] + 0.004, T.Y) * (1 - smooth(noseT[1] - 0.016, noseT[1] - 0.01, T.Y));
+      const cy = L.upperLip[1] - 0.0085;
+      const cn = Math.max(...[1, -1].map((sx) => 1 - smooth(0.004, 0.009, Math.hypot(T.X - sx * 0.027, (T.Y - cy) * 1.2))));
+      const k = Math.max(ph * 0.8, cn * 0.7);
+      if (k > 0) T.ao = mix(T.ao, Math.max(T.ao, 0.78), k);
+    },
     creases([
       // sun creases at the outer eye corners: she squints for a living
       ...[1, -1].flatMap((sx) => {
