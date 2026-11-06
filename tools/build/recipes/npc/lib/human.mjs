@@ -874,9 +874,16 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     return [g, tails];
   };
   const skinEyes = skinGeo;
+  // LOD1 keeps every vertex of what stands off the body and moves on its own (dyn_ tails, aprons, sashes, the tools and baskets
+  // on prop joints): those are the silhouette at 18 m, and a 16-triangle apron or a 56-triangle tail popped 3-7 cm at the change
+  // (A-npc-fidelity's jump clause). The rest of the outfit pays for them.
+  const silJ = new Set();
+  root.listSkins()[0].listJoints().forEach((jn, i) => { if (/^(dyn_|prop_)/.test(jn.getName())) silJ.add(i); });
+  const onSil = (g) => (i) => { for (let k = 0; k < 4; k++) if (g.wgt[i * 4 + k] >= 0.25 && silJ.has(g.jnt[i * 4 + k])) return true; return false; };
+  const l1Src = join([outfitGeo, ...shellOf(10, 22)]);
   const L1 = {
     skin: await simplify(skinEyes, Math.min(3200, Math.floor(tris(skinEyes) * 0.55)), { err: 0.03 }),
-    outfit: await simplifyTo(join([outfitGeo, ...shellOf(10, 22)]), 4750, 0.03),
+    outfit: await simplifyTo(l1Src, 4750, 0.03, 1.25, 0.28, onSil(l1Src)),
   };
   const L2 = {
     skin: await simplifyTo(skinEyes, 1350, 0.08),
@@ -968,9 +975,9 @@ function solveArmPose(base, { side, hand, pole }, dy) {
 }
 
 /** Simplify to a triangle target, loosening the error until it is met. */
-async function simplifyTo(g, target, err, slack = 1.25, maxE = 0.28) {
-  let e = err, out = await simplify(g, target, { err: e });
-  for (let k = 0; k < 7 && tris(out) > target * 1.02 && e < maxE; k++) { e *= 1.6; out = await simplify(g, target, { err: Math.min(maxE, e) }); }
+async function simplifyTo(g, target, err, slack = 1.25, maxE = 0.28, vlock = null) {
+  let e = err, out = await simplify(g, target, { err: e, vlock });
+  for (let k = 0; k < 7 && tris(out) > target * 1.02 && e < maxE; k++) { e *= 1.6; out = await simplify(g, target, { err: Math.min(maxE, e), vlock }); }
   if (tris(out) > target * slack) out = await simplifySloppy(out, target, 0.3);
   return out;
 }

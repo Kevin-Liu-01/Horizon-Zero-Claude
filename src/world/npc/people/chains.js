@@ -68,11 +68,27 @@ export class PersonChains {
     this.legR = 0.082 * worldScale;
   }
 
-  /** Off the near tier: the bones go back to their bind pose once (A-npc-fidelity: frozen). */
+  /**
+   * Off the near tier the solve stops and the cloth holds the pose it had (A-npc-fidelity: frozen). Snapping it back to bind at
+   * the end of the 18 m cross-fade was a second pop; holding it is none. Coming back near, the solve starts from the held pose.
+   */
   freeze() {
     if (!this.active) return;
     this.active = false;
-    for (const c of this.chains) { for (let i = 0; i < c.N; i++) c.links[i].quaternion.copy(c.bindQ[i]); c.seeded = false; }
+    for (const c of this.chains) c.seeded = false;
+  }
+
+  /** The particles from the links' current world positions (a held pose), so a solve that restarts does not jump. */
+  _seed(c) {
+    for (let i = 0; i <= c.N; i++) {
+      const b = i < c.N ? c.links[i] : c.tip;
+      if (!b) { const o = i * 3; c.pos[o] = c.rest[o]; c.pos[o + 1] = c.rest[o + 1]; c.pos[o + 2] = c.rest[o + 2]; continue; }
+      b.updateWorldMatrix(false, false);
+      const e = b.matrixWorld.elements, o = i * 3;
+      c.pos[o] = e[12]; c.pos[o + 1] = e[13]; c.pos[o + 2] = e[14];
+    }
+    c.prev.set(c.pos);
+    c.seeded = true;
   }
 
   /**
@@ -88,7 +104,7 @@ export class PersonChains {
     for (let i = 0; i < 6; i++) { const b = this.legBones[i]; if (!b) continue; const e = b.matrixWorld.elements; this.legPos[i * 3] = e[12]; this.legPos[i * 3 + 1] = e[13]; this.legPos[i * 3 + 2] = e[14]; }
     for (const c of this.chains) {
       this._rest(c);
-      if (!c.seeded) { c.pos.set(c.rest); c.prev.set(c.rest); c.seeded = true; }
+      if (!c.seeded) this._seed(c);
       for (let s = 0; s < steps; s++) this._step(c, SUB_DT, wind);
       this._write(c);
     }

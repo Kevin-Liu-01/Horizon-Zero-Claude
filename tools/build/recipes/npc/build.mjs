@@ -35,7 +35,7 @@ export async function build({ out = ROOT } = {}) {
   if (want('atlas-pan')) res['atlas-pan'] = await buildFactionAtlas(path.join(out, DIR, 'atlas-pan.glb'), { faction: 'pan', family: 'Peasant', provenance: prov(['mco-fantasy-standard', 'npc-generated']) });
   if (want('atlas-holds')) res['atlas-holds'] = await buildFactionAtlas(path.join(out, DIR, 'atlas-holds.glb'), { faction: 'holds', family: 'Ranger', provenance: prov(['mco-fantasy-standard', 'npc-generated']) });
   if (want('atlas-hair')) res['atlas-hair'] = await buildHairAtlas(path.join(out, DIR, 'atlas-hair.glb'), { provenance: prov(['npc-generated']) });
-  if (want('clips')) res.clips = await buildClipPack(path.join(out, DIR, 'npc-clips.glb'), { provenance: prov(['ual1-standard', 'ual2-standard']) });
+  if (want('clips')) res.clips = await buildClipPack(path.join(out, DIR, 'npc-clips.glb'), { provenance: prov(['ual1', 'ual2-standard']) });
   for (const a of ARCHETYPES) {
     if (!want(a.id)) continue;
     const t0 = Date.now();

@@ -526,7 +526,7 @@
       "archive_sha256": "4008ea208a604773a2b2177d965f0f5d3195498b5bf838c3f5785d68e95f2a68",
       "archive_bytes": 18735003,
       "derived_from": [
-        "ual1-standard",
+        "ual1",
         "ual2-standard"
       ],
       "retrieved": "2026-10-22",
