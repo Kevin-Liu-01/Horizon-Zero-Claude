@@ -3342,8 +3342,8 @@ export class MeleeLayer {
     _butt.copy(_grip).addScaledVector(_c, -this.gripFrac * this.length);
     _tip.copy(_grip).addScaledVector(_c, (1 - this.gripFrac) * this.length);
     let best = 9;
-    for (const name of CLEAR_BONES) {
-      const e = an.b[name];
+    for (let ci = 0; ci < CLEAR_BONES.length; ci++) {
+      const e = an.b[CLEAR_BONES[ci]];
       if (!e) continue;
       an._charOf(e.bone, _d);
       segPointN(_butt, _tip, _d); const g = _sgNum[0];
@@ -3703,7 +3703,9 @@ export class MeleeLayer {
 
   _clipWeights(active, weight, t, idleName, idleW) {
     if (!this.set) return;
-    for (const layer of this.set.order) {
+    const order = this.set.order;
+    for (let li = 0; li < order.length; li++) {
+      const layer = order[li];
       const on = layer.name === active;
       const onIdle = idleName && layer.name === idleName;
       const wv = on ? weight : (onIdle ? idleW : 0);
