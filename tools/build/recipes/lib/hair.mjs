@@ -530,9 +530,11 @@ export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062
     const z = zAt(x, y);
     // longest at two thirds, short and thin into the outer corner: from the side a lash is hair, not a slab
     // (fix round 1: the outer corner splays less and ends shorter, so the far eye's lashes do not stand past the cheek against the sky)
-    const L = length * mix(0.62, 1.04, smooth(0.0, 0.62, f)) * mix(1, 0.46, smooth(0.72, 1.02, f));
-    const out = side * mix(0.02, 0.42, f);
-    const up = [out * 0.8, Math.cos(lean * 0.72), Math.sin(lean) + curl];
+    // (fix round 2: with the lashes now curling forward on a two-sided card, the outer third shortens sooner and splays less, and its
+    // curl fades: the far eye's outer lashes stand at the temple's outline from a 3/4, and must not shut pockets of sky against it)
+    const L = length * mix(0.62, 1.04, smooth(0.0, 0.5, f)) * mix(1, 0.34, smooth(0.55, 1.0, f));
+    const out = side * mix(0.02, 0.3, f);
+    const up = [out * 0.8, Math.cos(lean * 0.72), Math.sin(lean) + curl * (1 - 0.7 * smooth(0.5, 1, f))];
     const ul = Math.hypot(up[0], up[1], up[2]);
     const a = [x, y + 0.0001, z + 0.0002], b = [x + up[0] / ul * L, y + up[1] / ul * L, z + up[2] / ul * L];
     const n = norm([0, -0.35, 1]);
@@ -627,6 +629,9 @@ export function paintLashes(buf, { rect, W = 512, hair = '#0E0A09', seed = 61, r
       }
     }
   }
+  // (fix round 2: the roots are a solid band, the lid's lash line: every gap between two lashes is open at the tips, so no view of
+  // the card shuts a pocket of sky between the lashes and the lid)
+  for (let y = h - 4; y < h; y++) for (let x = 0; x < w; x++) cov[y * w + x] = 1;
   const C = hex(hair);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const o = ((y0 + y) * W + x0 + x) * 4;

@@ -490,7 +490,7 @@ export async function build({ out = ROOT } = {}) {
     const want = RB + dome + 0.00025;
     return [c[0] + v[0] / d * want, c[1] + v[1] / d * want, c[2] + v[2] / d * want];
   };
-  const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W, length: 0.0074, curl: 0.22, twoSided: true, rim: { h: 0.00085, rect: WRAP_ATLAS.lidRim.rect, onBall: onBall(i) } }));
+  const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W, length: 0.0068, curl: 0.14, twoSided: true, rim: { h: 0.00085, rect: WRAP_ATLAS.lidRim.rect, onBall: onBall(i) } }));
   // the ball the lids always cover is never seen: it pays for the lid rims and the lashes' backs
   const eyeUnderLids = cullEyeUnderLids(eyesPrim, eyes, opens);
 
