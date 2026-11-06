@@ -579,7 +579,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   const uvOf = (name) => { const r = uvRect(name); return (q) => [r[0] + Math.max(0, Math.min(1, q[0])) * r[2], r[1] + Math.max(0, Math.min(1, q[1])) * r[3]]; };
   const ctx = {
     J, grid: gridOf, skinNear, chain, prop,
-    add(g, o = {}) { const list = Array.isArray(g) ? g : [g]; for (const q of list) pieces.push({ geo: q, dye: o.dye, hide: !!o.hide, noHide: !!o.noHide, shade: o.shade ?? 1, prop: o.prop || null }); invalidate(); },
+    add(g, o = {}) { const list = Array.isArray(g) ? g : [g]; for (const q of list) pieces.push({ geo: q, dye: o.dye, hide: !!o.hide, noHide: !!o.noHide, shade: o.shade ?? 1, prop: o.prop || null, sil: !!o.sil }); invalidate(); },
     uvOf,
     rectUV: (name) => { const r = uvRect(name); return (u, v) => [r[0] + u * r[2], r[1] + v * r[3]]; },
     palm: (side) => { const c = side === 'r' ? base.getRoot().listSkins()[0].listJoints()[J.hand_r] : base.getRoot().listSkins()[0].listJoints()[J.hand_l]; const w = c.getWorldMatrix(); return [w[12] + (side === 'r' ? -0.072 : 0.072), w[13] - dy - 0.024, w[14] + 0.02]; },
@@ -812,6 +812,10 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     }
   }
   const outfitGeo = join(pieces.map((p) => p.geo));
+  // the vertex ranges of the pieces that ARE the outline at 18 m and are not on a dyn_ or prop_ joint (a long skirt's hem):
+  // LOD1 keeps them whole (A-npc-fidelity: the picker's skirt hem popped 3.3 cm)
+  const silRanges = [];
+  { let at = 0; for (const p of pieces) { const n = p.geo.pos.length / 3; if (p.sil) silRanges.push(at, at + n); at += n; } }
   fixMale(outfitGeo, dy);
 
   // ---- the skin: body + eyes
@@ -879,8 +883,16 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   // (A-npc-fidelity's jump clause). The rest of the outfit pays for them.
   const silJ = new Set();
   root.listSkins()[0].listJoints().forEach((jn, i) => { if (/^(dyn_|prop_)/.test(jn.getName())) silJ.add(i); });
-  const onSil = (g) => (i) => { for (let k = 0; k < 4; k++) if (g.wgt[i * 4 + k] >= 0.25 && silJ.has(g.jnt[i * 4 + k])) return true; return false; };
-  const l1Src = join([outfitGeo, ...shellOf(10, 22)]);
+  // the LOD1 head shell is denser (14 x 32: the cap's crown and a rag's knot popped 2.5 cm at 10 x 22) and kept whole
+  const shell1 = shellOf(14, 32);
+  const nOut = outfitGeo.pos.length / 3, nShell = shell1.length ? shell1[0].pos.length / 3 : 0;
+  const onSil = (g) => (i) => {
+    if (i >= nOut && i < nOut + nShell) return true;
+    for (let r = 0; r < silRanges.length; r += 2) if (i >= silRanges[r] && i < silRanges[r + 1]) return true;
+    for (let k = 0; k < 4; k++) if (g.wgt[i * 4 + k] >= 0.25 && silJ.has(g.jnt[i * 4 + k])) return true;
+    return false;
+  };
+  const l1Src = join([outfitGeo, ...shell1]);
   const l1Outfit = await simplifyTo(l1Src, 4750, 0.03, 1.25, 0.28, onSil(l1Src));
   // the skin gives back what the locked pieces cost over the outfit's share: LOD1 stays <= 8 k (plan §4.1)
   const L1 = {

@@ -63,8 +63,9 @@ stands apart from it on neutral ground near REST (`ctx.people.stagePlace`, the f
 10. **The group stays once it stands.** It streamed out past 170 m, which changed the scene's object count in the middle of
    `A90-memory-stability-expansion`'s workload (-932 objects outside every machine root: the row demands exactly 0). At W1 it is
    one group of ten, hidden past 90 m (no draw); load and unload per settlement is W2's, with `A-settlement-dispose`.
-11. **LOD1 keeps its silhouette.** Every vertex weighted to a `dyn_` or `prop_` joint (tails, aprons, sashes, tools, baskets) is
-   locked in the LOD1 simplification (meshopt `vertex_lock`), and the skin gives back what that costs, so LOD1 stays ≤ 8 k.
+11. **LOD1 keeps its silhouette.** Every vertex weighted to a `dyn_` or `prop_` joint (tails, aprons, sashes, tools, baskets),
+   every long skirt (pieces added with `sil: true`) and the head shell (now 14 × 32, from 10 × 22) is locked in the LOD1
+   simplification (meshopt `vertex_lock`), and the skin gives back what that costs, so LOD1 stays ≤ 8 k (7.95–7.99 k).
    r3 had the tube smith's apron at 16 triangles in LOD1 (153 near) and a 7.2 cm pop at the change. Chains no longer snap to
    bind when the near tier fades out: the solve stops and the cloth holds its pose, and a solve that restarts seeds from it.
 12. **The licence row of the clip pack** named a source row that does not exist (`ual1-standard`); it is `ual1` (in the row and
@@ -91,7 +92,7 @@ stands apart from it on neutral ground near REST (`ctx.people.stagePlace`, the f
 | tier | meshes | tris (all nine) | draws | distance |
 |---|---|---|---|---|
 | near | `Skin_L0` (body + eyes), `Hair_L0`, `Outfit_L0` | 15.9–18.9 k | 3 | the 6 nearest within 18 m |
-| LOD1 | `Skin_L1`, `Outfit_L1` (wrap folded in as a shell cast onto the cloth) | 7.95 k | 2 | 18–35 m |
+| LOD1 | `Skin_L1`, `Outfit_L1` (wrap folded in as a 14 × 32 shell cast onto the cloth; tails, aprons, sashes, tools, skirts and the shell kept whole) | 7.95–7.99 k | 2 | 18–35 m |
 | LOD2 | `Skin_L2`, `Outfit_L2` | 3.70–3.75 k | 2 | beyond; hidden past 90 m |
 | caster | `Caster` (merged, about 2.0 k) | | 1 per cascade | the 4 nearest; no main pass |
 
