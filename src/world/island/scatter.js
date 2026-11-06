@@ -169,7 +169,7 @@ export function scatterStatic(R) {
       const hBase = R.hAt(cx, cz);
       const main = W.main ? 1 : 0;
       walls.push(cx + (v - 0.5) * 0.14, hBase - 0.03, cz + (w - 0.5) * 0.14, Math.atan2(dx, dz) + (u - 0.5) * 0.14 + (v > 0.5 ? Math.PI : 0),
-        (0.82 + w * 0.42) * (main ? 1.9 : 1), (0.66 + v * 0.74) * (main ? 0.72 : 1), Math.hypot(dx, dz) / seg * 1.08,
+        (0.84 + w * 0.36) * (main ? 1.9 : 1), (0.72 + v * 0.36) * (main ? 0.8 : 1), Math.hypot(dx, dz) / seg * 1.08,
         main, 0.8 + u * 0.62);
     }
   }
@@ -186,7 +186,7 @@ export function scatterStatic(R) {
         const F = R.at(cx, cz);
         if (u < 0.05 || F.track > 0.3 || F.rock > 0.5 || F.coast < 8) continue;     // gaps, gateways
         walls.push(cx + (v - 0.5) * 0.14, F.h - 0.05, cz + (w - 0.5) * 0.14, Math.atan2(bx - ax, bz - az) + (u - 0.5) * 0.14 + (v > 0.5 ? Math.PI : 0),
-          0.74 + w * 0.36, 0.5 + v * 0.46, len / n / seg * 1.08, 0, 0.8 + u * 0.62);
+          0.78 + w * 0.3, 0.8 + v * 0.5, len / n / seg * 1.08, 0, 0.8 + u * 0.62);
       }
     }
   }

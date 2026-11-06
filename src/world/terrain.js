@@ -228,7 +228,9 @@ let _stampR = null;
 function stampable(x, z) {
   _stampR = _stampR || fieldReader({ H, maskA: BAKE.maskA, maskB: BAKE.maskB, shore: BAKE.shore });
   const F = _stampR.at(x, z);
-  if (F.glass > 0.05 || F.h < 0.3 || F.coast < 1 || F.slope > 0.9 || F.rock > 0.5 || F.track > 0.4) return false;
+  /* With a margin under every limit of `marramDensity`: the cover is read bilinearly between
+   * texels, so a stamped texel next to one the scatter cannot plant must still be plantable. */
+  if (F.glass > 0.05 || F.h < 0.4 || F.coast < 2 || F.slope > 0.66 || F.rock > 0.3 || F.track > 0.25) return false;
   return authored.pan(x, z).kind < 0;
 }
 
@@ -285,11 +287,17 @@ export function biomeAt(x, z) {
 export function biomeGrassDamp(w) { return w && w.pans > 0.5 ? 1 : 0.6; }
 
 /* ---------------------------------- the skirt ---------------------------------- */
-/** Bible §8.1: two sister islands on the horizon, one a NW stratovolcano. */
+/**
+ * Bible §8.1: two sister islands on the horizon, one a NW stratovolcano. They stand in a
+ * group that rides along with the camera at ISLE_CARRY, so they keep the near-still parallax
+ * of land 10 km off while every vertex stays inside the far plane (2,400 m) and the sky dome
+ * (1,900 m). Positions are relative to that group.
+ */
 const ISLES = [
-  { x: -1320, z: -1560, r: 780, h: 690, seed: 4.1, crater: true },   // NW: the stratovolcano
-  { x: -2020, z: 640, r: 560, h: 150, seed: 9.7, crater: false },    // WSW: a long low isle
+  { x: -1010, z: -1080, r: 340, h: 128, seed: 4.1, crater: true },   // NW: the stratovolcano
+  { x: -1440, z: 420, r: 250, h: 34, seed: 9.7, crater: false },     // WSW: a long low isle
 ];
+const ISLE_CARRY = 0.8;
 
 const clampByte = (v) => (v < 0 ? 0 : v > 255 ? 255 : v | 0);
 
@@ -486,7 +494,7 @@ export class Terrain {
     this.groundUniforms = {
       tA1: { value: this._layerTextures.a1 }, tN1: { value: this._layerTextures.n1 },
       tA2: { value: this._layerTextures.a2 }, tN2: { value: this._layerTextures.n2 },
-      uScale1: { value: new THREE.Vector3(1 / 3.0, 1 / 6.0, 1 / 7.0) },
+      uScale1: { value: new THREE.Vector3(1 / 3.0, 1 / 10.0, 1 / 7.0) },
       uScale2: { value: new THREE.Vector2(1 / 3.5, 1 / 2.6) },
       tHzA: { value: this._maskTextures.hzA }, tHzB: { value: this._maskTextures.hzB },
       tNoiseG: { value: this._maskTextures.noiseG },
@@ -559,14 +567,19 @@ export class Terrain {
   }
 
   /* -------------------------------- the skirt -------------------------------- */
-  /** Sister islands, one merged draw, hazed by the same aerial fog as everything else. */
+  /**
+   * Sister islands, one merged draw. Their haze is their own: the scene fog at 1.5 km is
+   * opaque, and a far plane cutting a fogged mesh left ghost edges in the sky. Each frame
+   * `_updateIsles` sets one visibility from world-sky's own transmittance (clear air shows a
+   * blue-grey silhouette, calima nearly hides it) and the colour fades to the fog's horizon.
+   */
   _buildSkirt() {
     const NR = 28, NA = 88;
     const verts = (NR + 1) * NA * ISLES.length;
     const pos = new Float32Array(verts * 3), col = new Float32Array(verts * 3), index = [];
     const n = this.noise;
     let base = 0;
-    const cA = new THREE.Color('#2e2c2c'), cB = new THREE.Color('#4a453f'), cT = new THREE.Color();
+    const cA = new THREE.Color('#2a2b30'), cB = new THREE.Color('#47443f'), cT = new THREE.Color();
     for (const I of ISLES) {
       for (let r = 0; r <= NR; r++) {
         const t = r / NR;
@@ -579,11 +592,11 @@ export class Terrain {
           if (I.crater) {
             // a stratovolcano's concave flank, with gullies, a notched summit
             const g = 1 + Math.abs(n.noise2D(cs * 2.2 + I.seed, sn * 2.2 + t)) * 0.1 * t;
-            h = I.h * Math.pow(1 - t, 1.9) * g - (t < 0.05 ? (0.05 - t) * 900 : 0);
+            h = I.h * Math.pow(1 - t, 1.9) * g - (t < 0.05 ? (0.05 - t) * 160 : 0);
           } else {
             h = I.h * Math.pow(1 - t, 0.8) * (0.62 + 0.38 * (n.fbm(cs * 1.3 + I.seed, sn * 1.3, 2) + 0.5));
           }
-          h -= t > 0.96 ? (t - 0.96) * 300 : 0;
+          h -= t > 0.96 ? (t - 0.96) * 60 : 0;
           const o = base + r * NA + a;
           const px = I.x + cs * rr * (I.crater ? 1 : 1.65), pz = I.z + sn * rr;
           pos[o * 3] = px; pos[o * 3 + 1] = h - 2; pos[o * 3 + 2] = pz;
@@ -604,11 +617,34 @@ export class Terrain {
     geo.setIndex(index);
     geo.computeVertexNormals();
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 });
+    const uVis = this._isleVis = { value: 0.3 };
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uIsleVis = uVis;
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uIsleVis;')
+        .replace('#include <fog_fragment>', `#ifdef USE_FOG
+  gl_FragColor.rgb = mix(calFogHorizon, gl_FragColor.rgb, uIsleVis);
+#endif`);
+    };
+    mat.customProgramCacheKey = () => 'cal-sister-isles';
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = 'sister-isles';
     mesh.frustumCulled = false;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     this.group.add(mesh);
     this.isles = mesh;
+  }
+
+  /** Per frame, no allocation: the isles ride with the camera and take the air's haze. */
+  _updateIsles() {
+    const m = this.isles, cam = this.ctx.camera;
+    if (!m || !cam) return;
+    m.position.set(cam.position.x * ISLE_CARRY, 0, cam.position.z * ISLE_CARRY);
+    const fp = this.ctx.environment?.fogParams;
+    // the air's own transmittance over 300 m, as a measure of how far one sees today
+    const T = fp?.transmittance ? fp.transmittance(300, 6, 6) : 0.6;
+    this._isleVis.value = Math.max(0, Math.min(0.62, (T - 0.12) * 0.9));
   }
 
   /* -------------------------------- the current -------------------------------- */
@@ -813,6 +849,7 @@ export class Terrain {
     }
     if (_stampPending.length) this._drainStamps();
     this._updateSunUniforms();
+    this._updateIsles();
     const env = this.ctx.environment;
     if (env) {
       /* world-sky's mainland ridges are from the old valley: an island's horizon is the

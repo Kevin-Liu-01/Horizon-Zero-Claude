@@ -125,6 +125,15 @@ export const TERRAIN_COLOR = /* glsl */ `
   /* -- the five weights, then the three that survive ----------------------- */
   float crust = pan.r;
   float brine = pan.g;
+  float fineN = 0.0;
+  if (pan.a > 0.01) {
+    /* the crust's fine grain: wet patches, sand blown in, drag marks at 1-3 m. Baked at
+     * 0.48 m a texel it read as a lattice (A-anti-tile); two rotated lookups here do not */
+    vec2 fr = vec2(dot(xz, vec2(0.8, 0.6)), dot(xz, vec2(-0.6, 0.8)));
+    fineN = texture2D(tNoiseG, xz * 0.0625 + 0.17).r * 0.55 + texture2D(tNoiseG, fr * 0.0371 + 0.53).g * 0.45 - 0.5;
+    crust = clamp(crust + fineN * 0.26 * pan.a, 0.0, 1.0);
+    brine = clamp(brine + fineN * 0.34 * pan.a, 0.0, 1.0);
+  }
   float wRock = max(mA.g, smoothstep(0.62, 1.05, slope));
   float wSalt = crust * (1.0 - wRock) * (1.0 - brine * 0.4);
   float wSilt = max(mA.a, brine * 0.85 * (1.0 - crust)) * (1.0 - wRock);
@@ -199,6 +208,8 @@ export const TERRAIN_COLOR = /* glsl */ `
       vec3 tintC = hue < 0.5 ? mix(vec3(1.0), vec3(0.93, 0.62, 0.52), hue * 2.0)
                              : mix(vec3(0.93, 0.62, 0.52), vec3(0.42, 0.13, 0.08), (hue - 0.5) * 2.0);
       c *= tintC;
+      // and the grain in the crust's own tone: the texture repeats, this does not
+      c *= 1.0 + fineN * 0.34;
     }
     col += c * b;
     if (!(keepI[k] == 2 && slopeT > 0.0)) {
@@ -222,7 +233,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     float streak = nStreak.r * 0.6 + nStreak.b * 0.4;
     vec4 nAsh = texture2D(tNoiseG, xz * 0.00116 + 0.31);
     float ash = smoothstep(0.42, 0.78, nAsh.r * 0.7 + nAsh.b * 0.3);
-    vec3 sandTone = mix(vec3(1.0), vec3(1.42, 1.3, 1.16), ash) * (0.72 + 0.6 * streak);
+    vec3 sandTone = mix(vec3(1.0), vec3(1.26, 1.17, 1.07), ash) * (0.8 + 0.42 * streak);
     float farK = smoothstep(40.0, 170.0, dCam);
     float scrub = smoothstep(0.54, 0.8, nMac.a * 0.6 + nMac.b * 0.4);
     vec3 sandCol = col * sandTone;
@@ -265,7 +276,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   }
   pert *= 1.0 - gLiquid * 0.86;
   // fine black sand has a sheen at a low angle: the sky in it, and the ripples through it
-  gLiquid = max(gLiquid, 0.085 * smoothstep(0.1, 0.7, w[0]));
+  gLiquid = max(gLiquid, 0.04 * smoothstep(0.1, 0.7, w[0]));
   gRough = mix(clamp(rSum, 0.25, 1.0), mix(0.3, 0.07, smoothstep(0.3, 0.9, brine)), gLiquid);
   gAO = mix(1.0, clamp(aoSum, 0.0, 1.0), 0.78);
   col *= mix(1.0, clamp(aoSum * 1.08, 0.0, 1.0), 0.4);

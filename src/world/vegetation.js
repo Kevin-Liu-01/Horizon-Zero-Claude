@@ -199,15 +199,28 @@ function columnGeo() {
 }
 
 function wallGeo() {
-  // one 1.7 m run of a dry-stone dyke: six lava stones of very different sizes, 120 triangles
+  /* One 1.7 m run of a dry-stone dyke, 120 triangles: two courses of flat lava slabs laid
+   * along the run and overlapping it at both ends, so runs butt into one unbroken low wall
+   * with a ragged top. From the rim it is a thin dark line (Janubio); up close, stacked stone,
+   * never a row of beads. x is across the run (≈ 0.62 m), y up (≈ 0.42 m), z along it. */
   const R = rng(31), parts = [];
-  const lay = [[-0.2, 0.15, -0.5, 0.34, 0.22, 0.46], [0.2, 0.12, -0.42, 0.22, 0.15, 0.24], [0.04, 0.13, 0.12, 0.38, 0.2, 0.3],
-    [-0.16, 0.1, 0.66, 0.24, 0.15, 0.2], [-0.02, 0.36, -0.24, 0.24, 0.13, 0.34], [0.08, 0.31, 0.44, 0.27, 0.16, 0.3]];
+  const lay = [
+    // bottom course: three long footing slabs, wide and flat
+    [-0.05, 0.11, -0.6, 0.33, 0.15, 0.42], [0.06, 0.1, 0.0, 0.31, 0.14, 0.4], [-0.03, 0.11, 0.6, 0.32, 0.15, 0.42],
+    // top course: three narrower capstones, breaking joint with the course below
+    [0.02, 0.28, -0.32, 0.24, 0.11, 0.36], [-0.04, 0.29, 0.3, 0.23, 0.12, 0.38], [0.05, 0.27, 0.86, 0.21, 0.1, 0.24],
+  ];
   for (const [x, y, z, sx, sy, sz] of lay) {
-    const g = displaced(weldedIco(0), (R() * 1e6) | 0, 0.3);
+    const g = displaced(weldedIco(0), (R() * 1e6) | 0, 0.22);
+    // a slab: flatten the top and bottom faces so the course reads as laid stone
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const v = p.getY(i);
+      p.setY(i, Math.sign(v) * Math.min(Math.abs(v), 0.62 + R() * 0.12));
+    }
     g.scale(sx, sy, sz);
-    g.rotateY((R() - 0.5) * 1.5);
-    g.rotateX((R() - 0.5) * 0.5);
+    g.rotateY((R() - 0.5) * 0.36);
+    g.rotateZ((R() - 0.5) * 0.18);
     g.translate(x, y, z);
     parts.push(g);
   }
@@ -588,7 +601,7 @@ export class Vegetation {
     const S = this._bake.static;
     this.rocks = this._staticMesh('rocks-basalt', rockGeo(), this._rockMaterial('rock', 0.3, false, 2.2, 1.5), S.rocks, true);
     this.columns = this._staticMesh('rocks-columns', columnGeo(), this._rockMaterial('col', 0.2, false), S.columns, true);
-    this.dykes = this._staticMesh('pan-dykes', wallGeo(), this._rockMaterial('wall', 0.32, false, 4.1, 1.9), S.walls, true);
+    this.dykes = this._staticMesh('pan-dykes', wallGeo(), this._rockMaterial('wall', 0.4, false, 4.1, 1.12), S.walls, true);
     this.rakes = this._staticMesh('salt-rakes', saltGeo(), this._rockMaterial('salt', 0, true), S.heaps, true);
     this._columnData = S.columns;
   }

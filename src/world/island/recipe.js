@@ -460,9 +460,14 @@ function fieldInv(U, W) {
 const FIELD_APRON = 42;  // metres over which the country falls to the field's floor
 const WALL = 0.42;       // half width of an ordinary stone dyke, m
 const DYKE = 1.25;       // half width of a walkable main dyke, m
-const ROW_V = [-28, -14, 1, 15, 27, 39, 50, 59, 67, 75, 84];
-/** Which row boundaries are main dykes (a raised walkable path). */
-const MAIN_DYKE = new Set([2, 5]);
+/**
+ * Row boundaries across the field (v, m). The sea rows are the big evaporating ponds; from
+ * v 39 inland the crystallisers run in long narrow strips, 4-6 m deep, as Janubio's do: from
+ * the rim that is what makes the far field a fine grain of white, pink and rust lines.
+ */
+const ROW_V = [-28, -14, 1, 15, 27, 39, 45, 50, 55, 59, 63, 67, 71, 75, 79.5, 84];
+/** Which row boundaries are main dykes (a raised walkable path); 50 is the cones' raking floor. */
+const MAIN_DYKE = new Set([2, 5, 7]);
 
 /** Cell fill kinds: the salt-pan ladder from sea water to raked crust. */
 export const PAN = Object.freeze({ BRINE: 0, PINK: 1, WHITE: 2, CREAM: 3, RUST: 4, MUD: 5 });
@@ -482,13 +487,19 @@ const ROW_ODDS = [
   [0.10, 0.30, 0.32, 0.22, 0.00, 0.06],
   [0.03, 0.14, 0.52, 0.27, 0.00, 0.04],
   [0.02, 0.12, 0.58, 0.24, 0.02, 0.02],
-  [0.02, 0.12, 0.48, 0.26, 0.10, 0.02],
-  [0.00, 0.10, 0.34, 0.24, 0.26, 0.06],
-  [0.00, 0.08, 0.24, 0.22, 0.40, 0.06],
-  [0.00, 0.06, 0.20, 0.20, 0.48, 0.06],
+  [0.02, 0.14, 0.46, 0.26, 0.10, 0.02],
+  [0.02, 0.14, 0.46, 0.26, 0.10, 0.02],
+  [0.00, 0.12, 0.36, 0.24, 0.22, 0.06],
+  [0.00, 0.12, 0.36, 0.24, 0.22, 0.06],
+  [0.00, 0.08, 0.26, 0.22, 0.38, 0.06],
+  [0.00, 0.08, 0.26, 0.22, 0.38, 0.06],
+  [0.00, 0.06, 0.24, 0.20, 0.44, 0.06],
+  [0.00, 0.06, 0.24, 0.20, 0.44, 0.06],
+  [0.00, 0.06, 0.26, 0.20, 0.42, 0.06],
   [0.00, 0.06, 0.26, 0.20, 0.42, 0.06],
 ];
-const ROW_W = [[26, 42], [24, 38], [22, 34], [20, 32], [18, 28], [16, 24], [12, 20], [10, 15], [9, 14], [9, 14]];
+const ROW_W = [[26, 42], [24, 38], [22, 34], [20, 32], [18, 28], [12, 19], [12, 19], [11, 17], [11, 17],
+  [9, 14], [9, 14], [8, 13], [8, 13], [8, 12], [8, 12]];
 
 let _rows = null;
 let _walls = null;
@@ -504,7 +515,8 @@ function buildField() {
   for (let r = 0; r < ROW_V.length - 1; r++) {
     const v0 = ROW_V[r], v1 = ROW_V[r + 1];
     const startJ = (R() - 0.5) * 16, endJ = (R() - 0.5) * 16;
-    const uStart = SF.uMin + 4 + Math.abs(startJ) + r * 3.5, uEnd = SF.uMax - 4 - Math.abs(endJ) - r * 2.5;
+    const rr = (r * 9) / (ROW_V.length - 2);    // the field's outline narrows toward the town as before
+    const uStart = SF.uMin + 4 + Math.abs(startJ) + rr * 3.5, uEnd = SF.uMax - 4 - Math.abs(endJ) - rr * 2.5;
     const cells = [];
     let u = uStart;
     while (u < uEnd - 6) {
@@ -523,7 +535,7 @@ function buildField() {
         && dry(u, v0) && dry(u + w, v0) && dry(u, v1) && dry(u + w, v1);
       cells.push({
         u0: u, u1: u + w, v0, v1, kind, keep, seed: (R() * 65535) | 0,
-        level: 0.62 + (r / 9) * 0.3 + (R() - 0.5) * 0.08,
+        level: 0.62 + (r / (ROW_V.length - 2)) * 0.3 + (R() - 0.5) * 0.08,
       });
       u += w;
     }
@@ -566,9 +578,9 @@ export function panAt(e, n) {
   P.inside = ss(-0.06, 0.2, d);
   const f = FILL[c.kind];
   // inside a cell the crust is never one flat value: wet patches, sand blown in, drag marks
+  // (the fine grain is the shader's: baked at 0.48 m a texel it read as a lattice, A-anti-tile)
   const wob = fbm(e * 0.09 + c.seed * 0.01, n * 0.09, 3) - 0.5;
-  const fine = fbm(e * 0.42, n * 0.42 + c.seed * 0.02, 2) - 0.5;
-  P.salt = clamp01(f[0] + wob * 0.5 + fine * 0.22);
+  P.salt = clamp01(f[0] + wob * 0.5);
   P.brine = clamp01(f[1] + wob * 1.05 - ss(0, 1.8, 2.2 - d) * 0.38);
   P.hue = clamp01(f[2] + wob * 0.34);
   P.level = c.level;

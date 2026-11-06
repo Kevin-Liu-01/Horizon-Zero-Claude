@@ -1085,7 +1085,26 @@ const A108_WITNESS_REAL = [
   { name: 'sand + marram at the dunes, 2 m up', cam: P(-98, 420, 2, 300, 3, 46), crop: [0.6, 0.8] },
 ];
 const A109_REAL = { near: P(-195, 350, 2.0, 40, -10, 55), far: P(-300, 120, 2.6, 120, 3, 46), farBand: [0.12, 0.22, 0.88, 0.42] };
-const AA_EDIT = ['camAt(16, 22, 2.2, 53, 14, 50)', `camAt(${AA_CAM.join(', ')})`];
+/**
+ * The AA crop (CSS px 860..1060 x 62..174 of 1600 x 900) must hold a silhouette against the sky.
+ * The ring's crest height varies along its arc, so the pitch is solved on the page: march the
+ * heightfield along the crop centre's bearing, find the skyline's elevation, and pitch the camera
+ * so that the skyline crosses the crop's middle row.
+ */
+const AA_SOLVE = `...(() => {
+  const __T = window.__CTX__.terrain, c = ${JSON.stringify(AA_CAM)};
+  const wx = c[0] - 341, wz = c[1] + 312, fov = c[5], tv = Math.tan(fov * Math.PI / 360), asp = 16 / 9;
+  const dYaw = Math.atan((160 / 800) * tv * asp), yaw = c[3] * Math.PI / 180 - dYaw;
+  const camY = __T.getHeight(wx, wz) + c[2];
+  let best = -1;
+  for (let d = 4; d < 420; d += 1.5) {
+    const e = Math.atan2(__T.getHeight(wx + Math.sin(yaw) * d, wz + Math.cos(yaw) * d) - camY, d);
+    if (e > best) best = e;
+  }
+  const rowOff = Math.atan(((450 - 118) / 450) * tv);
+  return [c[0], c[1], c[2], c[3], +((best - rowOff) * 180 / Math.PI).toFixed(2), fov];
+})()`;
+const AA_EDIT = ['camAt(16, 22, 2.2, 53, 14, 50)', `camAt(${AA_SOLVE})`];
 if (GAME_KIT.includes('poc-biome.js') || GAME_KIT.includes('__R5BIOME__')) throw new Error('gates.r5.world-ground: the POC host did not re-host');
 for (const row of [
   pansRow('A22-msaa', 'A22-msaa-pans', [AA_EDIT]),
@@ -1094,7 +1113,35 @@ for (const row of [
     [/const W_ = \[\{"name":"sand.*?\];/s, `const W_ = ${JSON.stringify(A108_WITNESS_REAL)};`],
   ]),
   pansRow('A109-ao-distance-fade', 'A109-ao-distance-fade-pans', [
-    [/const F = \{"near":.*?\};/s, `const F = ${JSON.stringify(A109_REAL)};`],
+    /* The near bins need contact AO at 4-6 m: the frame is solved on the page around the densest
+     * cluster of basalt columns (or boulders), 5.2 m off it on its most open side. */
+    [/const F = \{"near":.*?\};/s, `const F = (() => {
+      const F0 = ${JSON.stringify(A109_REAL)}, V = window.__CTX__.vegetation, T = window.__CTX__.terrain;
+      const M = V.columns || V.rocks;
+      if (!M) return F0;
+      const n = M.count, P = [], m4 = new M.matrixWorld.constructor(), v3 = M.position.clone();
+      for (let i = 0; i < n; i++) { M.getMatrixAt(i, m4); v3.setFromMatrixPosition(m4); P.push(v3.x + M.position.x, v3.z + M.position.z); }
+      let bi = 0, bn = -1;
+      for (let i = 0; i < n; i += 3) {
+        let k = 0;
+        for (let j = 0; j < n; j++) { const dx = P[2 * j] - P[2 * i], dz = P[2 * j + 1] - P[2 * i + 1]; if (dx * dx + dz * dz < 9) k++; }
+        if (k > bn) { bn = k; bi = i; }
+      }
+      const cx = P[2 * bi], cz = P[2 * bi + 1];
+      let bb = 0, bc = 1e9;
+      for (let b = 0; b < 16; b++) {
+        const a = b * Math.PI / 8, x = cx + Math.sin(a) * 5.2, z = cz + Math.cos(a) * 5.2;
+        let k = 0;
+        for (let j = 0; j < n; j++) { const dx = P[2 * j] - x, dz = P[2 * j + 1] - z; if (dx * dx + dz * dz < 6.25) k++; }
+        const cost = k * 10 + Math.abs(T.getHeight(x, z) - T.getHeight(cx, cz));
+        if (cost < bc) { bc = cost; bb = a; }
+      }
+      const x = cx + Math.sin(bb) * 5.2, z = cz + Math.cos(bb) * 5.2;
+      const yaw = Math.atan2(cx - x, cz - z) * 180 / Math.PI;
+      F0.near = [x + 341, z - 312, 2.0, +yaw.toFixed(1), -16, 55];
+      F0.nearCluster = { at: [+cx.toFixed(1), +cz.toFixed(1)], neighbours: bn, kind: M.name };
+      return F0;
+    })();`],
   ]),
   pansRow('V20-aa-crop', 'V20-aa-crop-pans', [AA_EDIT]),
   pansRow('V33b-no-ao-lattice', 'V33b-no-ao-lattice-pans', [

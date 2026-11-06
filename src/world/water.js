@@ -72,9 +72,6 @@ const SEA_COLOR = /* glsl */ `
   float breakW = 15.0 + 26.0 * texture2D(tRipple, vec2(sA * 0.0041, 0.13)).a;
   float brk = 1.0 - smoothstep(breakW * 0.62, breakW, off);
   float swellK = smoothstep(0.0, 6.0, off) * (1.0 - smoothstep(breakW * 1.3, breakW * 2.8, off));
-  // a crest breaks in sections: each wave has its own gaps
-  float seg1 = smoothstep(0.26, 0.58, texture2D(tRipple, vec2(sA * 0.019 + id1 * 0.37, id1 * 0.211)).a);
-  float seg2 = smoothstep(0.3, 0.62, texture2D(tRipple, vec2(sA * 0.031 + id2 * 0.53, id2 * 0.173)).a);
 
   /* the run-up: the waterline itself moves. s is the bore's age at this bit of shore */
   float s = fract(along * 0.5 + uTime * 0.125);
@@ -85,32 +82,44 @@ const SEA_COLOR = /* glsl */ `
   float alphaK = smoothstep(0.0, 0.03, depth);
   if (alphaK <= 0.0 && inMap > 0.5) discard;
 
-  /* the foam's own structure in shore coordinates: filaments drawn out along the coast */
+  /* The surf zone only: past 130 m off the coast every term below is multiplied by zero
+   * (no break, no swell face, no carpet, no lip), so open water skips its eight fetches. */
   float laceFar = 1.0 - smoothstep(90.0, 300.0, dCam);
-  float nearK = 1.0 - smoothstep(8.0, 40.0, dCam);
-  float rush = uTime * 0.55 + along * 2.0;
-  vec2 wob = (texture2D(tRipple, vec2(sA * 0.021, cst * 0.043 + rush * 0.05)).xy - 0.5) * 0.09;
-  float n1 = texture2D(tRipple, vec2(sA * 0.052, (cst + rush) * 0.13) + wob).b;
-  float n2 = texture2D(tRipple, vec2(sA * 0.137, (cst + rush * 1.3) * 0.37) - wob * 1.7).b;
-  float n3 = nearK > 0.0 ? texture2D(tRipple, vec2(sA * 0.41, (cst + rush * 1.6) * 0.97) + wob * 3.0).b : 0.5;
-  float lace = mix(n1 * 0.62 + n2 * 0.38, n1 * 0.5 + n2 * 0.34 + n3 * 0.16, nearK);
-  float blot = texture2D(tRipple, vec2(sA * 0.014, cst * 0.041 - uTime * 0.012)).a;
+  float foam = 0.0, lace = 0.5;
+  if (off < 130.0) {
+    // a crest breaks in sections: each wave has its own gaps
+    float seg1 = smoothstep(0.26, 0.58, texture2D(tRipple, vec2(sA * 0.019 + id1 * 0.37, id1 * 0.211)).a);
+    float seg2 = smoothstep(0.3, 0.62, texture2D(tRipple, vec2(sA * 0.031 + id2 * 0.53, id2 * 0.173)).a);
+    /* the foam's own structure in shore coordinates: filaments drawn out along the coast */
+    float nearK = 1.0 - smoothstep(8.0, 40.0, dCam);
+    float rush = uTime * 0.55 + along * 2.0;
+    vec2 wob = (texture2D(tRipple, vec2(sA * 0.021, cst * 0.043 + rush * 0.05)).xy - 0.5) * 0.09;
+    float n1 = texture2D(tRipple, vec2(sA * 0.052, (cst + rush) * 0.13) + wob).b;
+    float n2 = texture2D(tRipple, vec2(sA * 0.137, (cst + rush * 1.3) * 0.37) - wob * 1.7).b;
+    float n3 = nearK > 0.0 ? texture2D(tRipple, vec2(sA * 0.41, (cst + rush * 1.6) * 0.97) + wob * 3.0).b : 0.5;
+    lace = mix(n1 * 0.62 + n2 * 0.38, n1 * 0.5 + n2 * 0.34 + n3 * 0.16, nearK);
+    float blot = texture2D(tRipple, vec2(sA * 0.014, cst * 0.041 - uTime * 0.012)).a;
 
-  /* how much of the surface is white: a crest is nearly solid, what it leaves behind is lace */
-  float crest1 = exp(-w1 * 7.5) * smoothstep(0.0, 0.012, w1) * (0.42 + 0.58 * set1) * seg1;
-  float crest2 = exp(-w2 * 9.5) * smoothstep(0.0, 0.016, w2) * (0.3 + 0.5 * set2) * seg2;
-  float crest3 = exp(-w3 * 12.0) * smoothstep(0.0, 0.02, w3) * 0.42;
-  float trail = exp(-w1 * 2.6) * (0.42 + 0.58 * set1) * seg1 * 0.7 + exp(-w2 * 3.4) * (0.3 + 0.5 * set2) * seg2 * 0.45;
-  float cover = max(crest1 * 1.25, max(crest2 * 1.15, crest3)) * brk;
-  cover = max(cover, trail * brk * 0.62);
-  // spent bores lie on the shallows, thinning seaward in fingers
-  float carpet = (1.0 - smoothstep(0.0, 3.5 + 13.0 * blot, off)) * (0.2 + 0.36 * exp(-s * 1.6)) * (0.5 + 0.8 * blot);
-  cover = max(cover, carpet);
-  // the leading lip of the swash, a bright thin line
-  float lipLine = (1.0 - smoothstep(0.0, 0.035 + 0.07 * n2, depth)) * (0.4 + 0.6 * exp(-s * 2.6));
-  cover = max(cover, lipLine * 1.1);
-  float foamTex = mix(0.5, lace, laceFar);
-  float foam = smoothstep(0.97 - cover * 1.05, 1.2 - cover * 1.0, foamTex + 0.2);
+    /* how much of the surface is white: a crest is nearly solid, what it leaves behind is lace */
+    float crest1 = exp(-w1 * 7.5) * smoothstep(0.0, 0.012, w1) * (0.42 + 0.58 * set1) * seg1;
+    float crest2 = exp(-w2 * 9.5) * smoothstep(0.0, 0.016, w2) * (0.3 + 0.5 * set2) * seg2;
+    float crest3 = exp(-w3 * 12.0) * smoothstep(0.0, 0.02, w3) * 0.42;
+    float trail = exp(-w1 * 2.6) * (0.42 + 0.58 * set1) * seg1 * 0.7 + exp(-w2 * 3.4) * (0.3 + 0.5 * set2) * seg2 * 0.45;
+    float cover = max(crest1 * 1.25, max(crest2 * 1.15, crest3)) * brk;
+    /* Behind a crest the foam is marbling, not a sheet: cover stays under ≈ 0.4, where the lace
+     * only lets its bright filaments through (dark water between them). A high cover here
+     * read as snow with dark holes in it. */
+    cover = max(cover, min(trail * brk * 0.5, 0.42));
+    // spent bores lie on the shallows as thinning streaks, wider off the points
+    float carpet = (1.0 - smoothstep(0.0, 3.5 + 13.0 * blot, off)) * (0.12 + 0.2 * exp(-s * 1.6)) * (0.55 + 0.6 * blot);
+    cover = max(cover, carpet);
+    // the leading lip of the swash, a bright thin line
+    float lipLine = (1.0 - smoothstep(0.0, 0.035 + 0.07 * n2, depth)) * (0.4 + 0.6 * exp(-s * 2.6));
+    cover = max(cover, lipLine * 1.1);
+    float foamTex = mix(0.5, lace, laceFar);
+    // no cover, no foam: the lace alone must never speckle open water
+    foam = smoothstep(0.97 - cover * 1.05, 1.2 - cover * 1.0, foamTex + 0.2) * smoothstep(0.0, 0.04, cover);
+  }
 
   // far out the odd whitecap: small, sparse, drawn out by the trade wind
   vec2 capP = vec2(dot(p, vec2(0.7071, -0.7071)) * 0.21, dot(p, vec2(0.7071, 0.7071)) * 0.07);
@@ -142,7 +151,8 @@ const SEA_COLOR = /* glsl */ `
   float swMod = 0.45 + 0.9 * wNoise(p * 0.0061 + vec2(uTime * 0.01, 3.0));
   rip += (vec2(0.866, 0.5) * cos(a1) * 0.02 * aa1 + vec2(0.92, 0.385) * cos(a2) * 0.015 * aa2 + vec2(0.868, 0.497) * cos(a3) * 0.011 * aa3) * swMod;
   // shoreward: the coast field's gradient
-  vec2 slopeDir = normalize(vec2(texture2D(tCoastF, clamp(muv + vec2(0.004, 0.0), 0.0, 1.0)).r - cf.r,
+  vec2 slopeDir = vec2(0.0);
+  if (swellK > 0.0) slopeDir = normalize(vec2(texture2D(tCoastF, clamp(muv + vec2(0.004, 0.0), 0.0, 1.0)).r - cf.r,
                                  texture2D(tCoastF, clamp(muv + vec2(0.0, 0.004), 0.0, 1.0)).r - cf.r) + vec2(1e-4));
   float waveS = (exp(-w1 * 4.0) - 0.42 * wall) * swellK * (0.4 + 0.6 * set1) + (exp(-w2 * 5.0) - 0.3 * wall2) * swellK * 0.32;
   wN = vec3(rip.x + slopeDir.x * waveS * 0.3, 0.0, rip.y + slopeDir.y * waveS * 0.3) * (1.0 - foam * 0.75);
@@ -169,16 +179,17 @@ const GLASS_COLOR = /* glsl */ `
   vec2 r1 = texture2D(tRipple, p * 0.11 + drift).xy * 2.0 - 1.0;
   vec2 r2 = texture2D(tRipple, p * 0.31 - drift * 1.7).xy * 2.0 - 1.0;
   wN = vec3(r1.x * 0.012 + r2.x * 0.007, 0.0, r1.y * 0.012 + r2.y * 0.007);
-  // the Glass: emerald #2F8F6F over a pale bed, shallows turquoise, darkening fast with depth
-  vec3 emerald = vec3(0.022, 0.215, 0.125);
-  vec3 shallow = vec3(0.13, 0.36, 0.25);
+  // the Glass: emerald #2F8F6F over a pale bed, shallows turquoise, darkening fast with depth.
+  // El Golfo's green holds at any angle: the sky is a sheen on it, never a wash over it
+  vec3 emerald = vec3(0.016, 0.235, 0.118);
+  vec3 shallow = vec3(0.09, 0.40, 0.25);
   float dk = smoothstep(0.02, 0.62, depth);
   // the bed shows through in long patches
   float bed = texture2D(tRipple, p * 0.019).a;
   diffuseColor.rgb = mix(shallow, emerald, dk) * (0.82 + 0.34 * bed);
   diffuseColor.a = 0.985;
   wRough = 0.05;
-  wMirror = 1.0;
+  wMirror = 0.62;
   wSkyBias = 0.06;
   wFresnelMax = 1.0;
   wSunPow = 400.0;
