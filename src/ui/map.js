@@ -1021,16 +1021,17 @@ export class WorldMap {
     const pt = this.worldToMap(m.x, m.z);
     g.save();
     const r = 4.5 * K;
+    // where she stands her dart is wider than the mark: its name keeps a clear gap from her
+    const her = this._herPt, herOn = her && Math.hypot(pt.x - her.x, pt.y - her.y) < 8 * K ? 5 * K : 0;
     if (m.kind === 'settlement') {
       g.strokeStyle = 'rgba(232,221,192,0.94)'; g.lineWidth = 2.4 * K;
       g.strokeRect(pt.x - r, pt.y - r, r * 2, r * 2);
       g.fillStyle = m.done ? 'rgba(38,52,63,0.5)' : INK;
       g.fillRect(pt.x - r, pt.y - r, r * 2, r * 2);
-      this._name(g, String(m.name).toUpperCase(), pt, r + 5 * K, 12.5, 700, INK, true);
+      this._name(g, String(m.name).toUpperCase(), pt, r + 5 * K + herOn, 12.5, 700, INK, true);
     } else if (m.kind === 'quest') {
       // on her own spot an objective steps aside on a leader, square to her arrow, so both read
       let x = pt.x, y = pt.y;
-      const her = this._herPt;
       if (her && Math.hypot(x - her.x, y - her.y) < 24 * K) {
         const c = Math.cos(this._herYaw), s = Math.sin(this._herYaw);
         const side = c >= 0 ? 1 : -1;       // the side of her arrow that faces the sheet's right
@@ -1064,7 +1065,7 @@ export class WorldMap {
       g.beginPath(); g.arc(pt.x, pt.y, r * 0.86, 0, Math.PI * 2);
       g.lineWidth = 3.4 * K; g.strokeStyle = 'rgba(232,221,192,0.94)'; g.stroke();
       g.lineWidth = 1.5 * K; g.strokeStyle = m.done ? 'rgba(38,52,63,0.5)' : INK; g.stroke();
-      this._name(g, String(m.name).toUpperCase(), pt, r + 4 * K, 11, 500);
+      this._name(g, String(m.name).toUpperCase(), pt, r + 4 * K + herOn, 11, 500);
     }
     g.restore();
   }

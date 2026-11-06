@@ -162,7 +162,7 @@ const CLEAR_BEARING = `
  * Sighting on the herd kind at 15 m: frozen, composed, the card up, on a clear bearing. `yawK` turns
  * the camera off the Instrument so it stands clear of her and still under the crosshair's reading.
  */
-const SIGHT_STAGE = (on, hideHero = false, yawK = 0.15) => `
+const SIGHT_STAGE = (on, hideHero = false, yawK = 0.22) => `
   ${FRAMES}${FACE}${CLEAR_BEARING}
   const ctx = __CTX__;
   ctx.input.enabled = true;

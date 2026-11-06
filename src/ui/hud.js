@@ -147,9 +147,15 @@ function awareY(y, sc) {
   if (v === undefined) { v = `translateY(${y}px) scale(${sc.toFixed(2)})`; AWARE_Y.set(y, v); }
   return v;
 }
-function dmgY(y) {
-  let v = DMG_Y.get(y);
-  if (v === undefined) { v = `translateY(${y}px) translate(-50%,-100%)`; DMG_Y.set(y, v); }
+/**
+ * A damage number's Y and its pop-in, in ONE transform: the pop scales about the number's own
+ * bottom centre (`transform-origin: 50% 100%` in hud.css), never about the layer's corner, so a
+ * number that is still popping already stands where `_dmgClear` put it.
+ */
+function dmgY(y, si) {
+  const key = y * 16 + si;
+  let v = DMG_Y.get(key);
+  if (v === undefined) { v = `translateY(${y}px) translate(-50%,-100%) scale(${POP_STR[si]})`; DMG_Y.set(key, v); }
   return v;
 }
 /** Math.hypot takes rest arguments and allocates for them; this runs per Instrument per frame. */
@@ -610,7 +616,7 @@ export class HUD {
       const wrap = div('cal-px', dl);
       this._dmgPool.push({
         wrap, el: div('cal-dmg', wrap),
-        active: false, age: 0, dur: 1, drift: 0, qx: NaN, qy: NaN, hw: 0, hh: 0,
+        active: false, age: 0, dur: 1, drift: 0, qx: NaN, qy: NaN, si: -1, hw: 0, hh: 0,
         world: new THREE.Vector3(),
       });
     }
@@ -1111,8 +1117,8 @@ export class HUD {
       this._dmgClear((v.x * 0.5 + 0.5) * this._vw + d.drift * rise, (-v.y * 0.5 + 0.5) * this._vh - 44 * rise, d.hw, d.hh);
       const qx = Math.round(this._dmgX), qy = Math.round(this._dmgY);
       if (qx !== d.qx) { d.qx = qx; d.wrap.style.transform = txString(qx); }
-      if (qy !== d.qy) { d.qy = qy; d.el.style.transform = dmgY(qy); }
-      d.el.style.scale = POP_STR[k < 0.14 ? Math.round((k / 0.14) * 10) : 10];
+      const si = k < 0.14 ? Math.round((k / 0.14) * 10) : 10;
+      if (qy !== d.qy || si !== d.si) { d.qy = qy; d.si = si; d.el.style.transform = dmgY(qy, si); }
       const o = k < 0.1 ? k / 0.1 : k > 0.62 ? (1 - k) / 0.38 : 1;
       d.el.style.opacity = OPACITY_STR[Math.round(o * 20)];
     }

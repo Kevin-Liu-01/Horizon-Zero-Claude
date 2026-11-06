@@ -905,6 +905,7 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
 .cal-dmglayer { position: absolute; inset: 0; overflow: hidden; --s: 1; }
 .cal-dmg {
   position: absolute; left: 0; top: 0;
+  transform-origin: 50% 100%;
   visibility: hidden;
   font-family: var(--cal-font-mono);
   font-weight: 600;

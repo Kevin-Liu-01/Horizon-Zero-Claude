@@ -83,6 +83,8 @@ const PLABEL_GAP = 34;     // the leader's run from anchor to chip
 const PLABEL_W = 190;      // widest name + loot text
 const PLABEL_H = 11;       // half-height
 const PLABEL_MID = PLABEL_GAP + PLABEL_W * 0.5;  // anchor -> box centre
+const OBJ_HW = 30;          // the HUD's objective mark (arrow over its metres): half its box, CSS px
+const OBJ_HH = 22;
 const REVEAL_HW = 105;     // .calf-reveal is centred: half its widest box
 const REVEAL_H = 22;       // ...and it sits fully ABOVE its anchor
 const SPLINE_STEP = 1.1;   // metres between Catmull-Rom samples on the ribbon
@@ -601,7 +603,7 @@ export class SightingSystem {
     this._revealSlots = [];
     for (let i = 0; i < REVEAL_CAP + LABEL_CAP; i++) this._revealSlots.push({ x: 0, y: 0 });
     this._revealSrc = [];   // polled candidate entries (rebuilt on REVEAL_TICK)
-    this._hideBox = new Float32Array(8);
+    this._hideBox = new Float32Array(12);
     this._revealPoll = 0;
   }
 
@@ -1743,9 +1745,11 @@ export class SightingSystem {
         }
         slot.el.classList.toggle('has-loot', n > 0);
         slot.el.classList.toggle('is-weak', c.weak);
-        slot.el.style.left = `${Math.round(_screen.x)}px`;
-        slot.el.style.top = `${Math.round(_screen.y)}px`;
-        slot.el.style.display = '';
+        // a string only when the pixel changes: a still frame allocates nothing here
+        const lx = Math.round(_screen.x), ly = Math.round(_screen.y);
+        if (slot.lx !== lx) { slot.lx = lx; slot.el.style.left = lx + 'px'; }
+        if (slot.ly !== ly) { slot.ly = ly; slot.el.style.top = ly + 'px'; }
+        if (slot.shown !== true) { slot.shown = true; slot.el.style.display = ''; }
         const d = Math.hypot(_screen.x - cx, _screen.y - cy);
         if (d < hoverBest) { hoverBest = d; hoverIdx = live.length; }
         const rec = this._labelRec[live.length];
@@ -1764,7 +1768,7 @@ export class SightingSystem {
       this.hoverPart = null;
     }
     for (let i = live.length; i < this._labelPool.length; i++) {
-      this._labelPool[i].el.style.display = 'none';
+      if (this._labelPool[i].shown !== false) { this._labelPool[i].shown = false; this._labelPool[i].el.style.display = 'none'; }
       if (this._leaders[i].style.display !== 'none') {
         this._leaders[i].style.display = 'none';
         this._leaderU[i].style.display = 'none';
@@ -1831,15 +1835,24 @@ export class SightingSystem {
   }
 
   /**
-   * Two screen boxes reveals keep off this frame, as [left, top, right, bottom] x 2: Brea and the
-   * sighted Instrument. A box that is not on screen is empty. No allocation: this runs every frame.
+   * Three screen boxes reveals keep off this frame, as [left, top, right, bottom] x 3: Brea, the
+   * sighted Instrument, and the HUD's objective mark with its metres (a chip must never print over
+   * the distance she is walking to). A box that is not on screen is empty. No allocation: this runs
+   * every frame.
    */
   _fitHideBoxes() {
-    this._hideBox.fill(0);
+    const b = this._hideBox;
+    b.fill(0);
     const her = this.ctx.player?.position;
     if (her && this.ctx.player.model?.visible !== false) this._hideBoxFor(0, her, 1.8, 0.62);
     const m = this._subject, pos = m?.position;
     if (pos) this._hideBoxFor(4, pos, m.height ?? 2.4, Math.max((m.height ?? 2.4) * 0.9, (m.bodyRadius ?? 1.4) * 2.2));
+    const hud = this.ctx.hud;
+    if (hud?._lastObjOn && hud._objQx === hud._objQx) {
+      // the arrow over its metres, centred on (_objQx, _objQy), at the world layer's scale
+      const ws = hud._wscale || 1, hw = OBJ_HW * ws, hh = OBJ_HH * ws;
+      b[8] = hud._objQx - hw; b[9] = hud._objQy - hh; b[10] = hud._objQx + hw; b[11] = hud._objQy + hh;
+    }
   }
 
   _hideBoxFor(i, pos, height, halfW) {
@@ -1894,6 +1907,7 @@ export class SightingSystem {
         for (let b = 0; b < 2; b++) {
           this._stepClear(_screen, this._hideBox, 0);
           this._stepClear(_screen, this._hideBox, 1);
+          this._stepClear(_screen, this._hideBox, 2);
         }
         // the box is centred on the anchor and sits above it: horizontal fit
         // is decided once, and only Y moves in the solve below
@@ -1931,9 +1945,10 @@ export class SightingSystem {
           slot.el.style.setProperty('--rar', c.rarColor);
           slot.lastRar = c.rarColor;
         }
-        slot.el.style.left = `${Math.round(_screen.x)}px`;
-        slot.el.style.top = `${Math.round(_screen.y)}px`;
-        slot.el.style.display = '';
+        const lx = Math.round(_screen.x), ly = Math.round(_screen.y);
+        if (slot.lx !== lx) { slot.lx = lx; slot.el.style.left = lx + 'px'; }
+        if (slot.ly !== ly) { slot.ly = ly; slot.el.style.top = ly + 'px'; }
+        if (slot.shown !== true) { slot.shown = true; slot.el.style.display = ''; }
         const rec = this._revealRec[live.length];
         rec.kind = c.kind; rec.name = c.name; rec.rarity = c.rarity;
         rec.x = _screen.x; rec.y = _screen.y; rec.dist = Math.sqrt(c.d2);
@@ -1941,7 +1956,8 @@ export class SightingSystem {
       }
     }
     for (let i = live.length; i < this._revealPool.length; i++) {
-      this._revealPool[i].el.style.display = 'none';
+      const slot = this._revealPool[i];
+      if (slot.shown !== false) { slot.shown = false; slot.el.style.display = 'none'; }
     }
   }
 
