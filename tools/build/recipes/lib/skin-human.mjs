@@ -246,47 +246,68 @@ export function leanInwardNormals(bodyPrim, eyesPrim, { L, eyes }) {
 }
 
 /**
- * Whatever a collar's opening could show that is not skin: a closed skirt from inside the neck out under the collar and the shoulders,
- * lying under the outfit's bind surface (`outfitTris`, flat), so a look down inside the collar never meets the ground through her.
- * Skinned like the nearest body vertex; one dark texel (the UV of `darkUV`); both faces (fix round 1). Call after the paint. Returns the first new vertex index.
+ * Whatever a collar's opening could show that is not skin: a closed dark lid inside the collar, from inside the neck out to the
+ * collar's own wall, a hand's width under its rim (higher at the back, where the collar stands highest; inside the body at the
+ * front, where the skin shows down to the V), with a hem hanging down the inside of the wall, then under the outfit's shoulders
+ * (`outfitTris`, flat, bind). A look down inside the collar, past the neck, over the shoulder and down the back, where the
+ * single-sided smock shows no inside, meets the lid, never the ground. Fix round 1 (A-wrap-closed): the first version lay under
+ * the skin, so a steep look past a bowed head slid down the gap between the back and the smock and out through it.
+ * Skinned like the torso under the collar (never the neck); one dark texel (the UV of `darkUV`); both faces. Call after the paint.
+ * Returns the first new vertex index.
  */
-export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, y1 = 1.372, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 3, gap = 0.006, darkUV } = {}) {
+export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, y1 = 1.372, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 2, gap = 0.006, backLift = 0.035, margin = 0.003, hang = 0.06, darkUV } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
   const n0 = P.getCount();
   const near = [];
-  { const q = [0, 0, 0]; for (let i = 0; i < n0; i++) { P.getElement(i, q); if (q[1] > 1.28 && q[1] < 1.56 && Math.abs(q[0]) < 0.28) near.push([q[0], q[1], q[2], i]); } }
+  // skinned like the torso under the collar, never like the neck: with the head bowed the neck leans forward off a skirt that
+  // followed it and the opening behind it showed the ground
+  { const q = [0, 0, 0]; for (let i = 0; i < n0; i++) { P.getElement(i, q); if (q[1] > 1.28 && q[1] < 1.43 && Math.abs(q[0]) < 0.28) near.push([q[0], q[1], q[2], i]); } }
   const pos = [], nrm = [], uv = [], jnt = [], wgt = [], idx = [];
   const j = [0, 0, 0, 0], w = [0, 0, 0, 0];
-  for (let r = 0; r <= rings; r++) for (let k = 0; k < seg; k++) {
-    const t = r / rings, a = (k / seg) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
-    let y = mix(y0, y1, t);
-    // it stays inside the outfit's wall at its own height, and under its roof
-    const wall = grid.cast(0, y, centerZ, sa, 0, ca, 0.4, 0.0001);
-    const lim = wall >= 0 ? Math.max(0, wall - 0.009) : 1;
-    const rr = Math.min(1, lim / Math.max(1e-6, Math.hypot(sa * mix(rx0, rx1, t), ca * mix(rz0, rz1, t))));
-    const x = sa * mix(rx0, rx1, t) * rr, z = centerZ + ca * mix(rz0, rz1, t) * rr;
-    const hit = grid.cast(x, 1.62, z, 0, -1, 0, 0.34, 0.0001);
-    if (hit >= 0) y = Math.min(y, 1.62 - hit - gap);
+  const put = (x, y, z) => {
     pos.push(x, y, z); nrm.push(0, 1, 0); uv.push(darkUV[0], darkUV[1]);
     let best = -1, bd = 9;
     for (const v of near) { const d = (v[0] - x) ** 2 + (v[1] - y) ** 2 + (v[2] - z) ** 2; if (d < bd) { bd = d; best = v[3]; } }
     J.getElement(best, j); W.getElement(best, w);
     jnt.push(...j); wgt.push(...w);
+  };
+  // rings 0..rings: the lid out to the wall; rings+1, rings+2: its hem, a curtain down the inside of the wall at the wall's own
+  // radius at each height (a look past the neck slides down along the inside of the back and crosses the wall lower down)
+  const ringsAll = rings + 2;
+  const hem = [];
+  for (let r = 0; r <= rings; r++) for (let k = 0; k < seg; k++) {
+    const t = r / rings, a = (k / seg) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
+    const lift = backLift * 0.5 * (1 - ca);                    // 0 at the front, half at the sides, all of it at the back
+    let y = mix(y0 + lift, y1 + lift * 0.35, Math.pow(t, 1.6));
+    // it stays inside the outfit's wall at its own height, and under its roof
+    const wall = grid.cast(0, y, centerZ, sa, 0, ca, 0.4, 0.0001);
+    const lim = wall >= 0 ? Math.max(0, wall - margin) : 1;
+    const rr = Math.min(1, lim / Math.max(1e-6, Math.hypot(sa * mix(rx0, rx1, t), ca * mix(rz0, rz1, t))));
+    const x = sa * mix(rx0, rx1, t) * rr, z = centerZ + ca * mix(rz0, rz1, t) * rr;
+    const hit = grid.cast(x, 1.62, z, 0, -1, 0, 0.34, 0.0001);
+    if (hit >= 0) y = Math.min(y, 1.62 - hit - gap);
+    put(x, y, z);
+    if (r === rings) hem.push([sa, ca, y]);
   }
-  for (let r = 0; r < rings; r++) for (let k = 0; k < seg; k++) {
+  for (const f of [0.5, 1]) for (const [sa, ca, y] of hem) {
+    const yh = y - hang * f;
+    const wall = grid.cast(0, yh, centerZ, sa, 0, ca, 0.4, 0.0001);
+    const rr = wall >= 0 ? Math.max(0, wall - margin) : Math.hypot(sa * rx1, ca * rz1);
+    put(sa * rr, yh, centerZ + ca * rr);
+  }
+  for (let r = 0; r < ringsAll; r++) for (let k = 0; k < seg; k++) {
     const kn = (k + 1) % seg, a = n0 + r * seg + k, b = n0 + r * seg + kn, c = n0 + (r + 1) * seg + k, d = n0 + (r + 1) * seg + kn;
-    // wound so its upper face is the front one
+    // wound so its upper (inner, for the hem) face is the front one
     idx.push(a, c, b, b, c, d);
   }
-  // and its lower face too (fix round 1, A-wrap-closed): with the head bowed and the arms down the inner ring rides up with the neck
-  // and the skirt's far side turns its back to a camera above her, which the runtime's FrontSide culls; both faces close the opening
-  const nRing = (rings + 1) * seg, m0 = n0 + nRing;
+  // and its other face too: from a camera above her the far side of a bowed lid turns its back, which FrontSide would cull
+  const nRing = (ringsAll + 1) * seg, m0 = n0 + nRing;
   for (let i = 0; i < nRing; i++) {
     pos.push(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]); nrm.push(0, -1, 0); uv.push(uv[i * 2], uv[i * 2 + 1]);
     jnt.push(jnt[i * 4], jnt[i * 4 + 1], jnt[i * 4 + 2], jnt[i * 4 + 3]); wgt.push(wgt[i * 4], wgt[i * 4 + 1], wgt[i * 4 + 2], wgt[i * 4 + 3]);
   }
-  for (let r = 0; r < rings; r++) for (let k = 0; k < seg; k++) {
+  for (let r = 0; r < ringsAll; r++) for (let k = 0; k < seg; k++) {
     const kn = (k + 1) % seg, a = m0 + r * seg + k, b = m0 + r * seg + kn, c = m0 + (r + 1) * seg + k, d = m0 + (r + 1) * seg + kn;
     idx.push(a, b, c, b, d, c);
   }
