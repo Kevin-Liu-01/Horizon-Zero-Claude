@@ -18,7 +18,10 @@ const mix = (a, b, t) => a + (b - a) * t;
 /** The texel density a human body wants (against the source layout): the face first, hidden body last. */
 export function humanDensity(s) {
   const c = [(s.min[0] + s.max[0]) / 2, (s.min[1] + s.max[1]) / 2];
-  if (s.max[1] > 1.72 && s.max[2] > 0.09) return 1.92;                     // the face
+  // the face. Fix round 2: the rule read `max y > 1.72`, which the face island stopped meeting once the forehead under the wrap was
+  // culled, so the face fell to the skull's 1.5 (0.56 mm a texel: an 8 mm paste stroke was 14 texels tall). It is the frontmost
+  // island that runs from the chin to the brow, at 2.1 (0.40 mm a texel; 2.3 does not pack)
+  if (s.max[2] > 0.09 && s.min[1] < 1.6 && s.max[1] > 1.65) return 2.1;
   if (s.min[1] > 1.45 && s.max[1] > 1.70) return 1.5;                      // skull sides + ears
   if (s.min[1] > 1.56 && s.max[1] < 1.6) return 0.7;                       // the mouth bag
   if (s.min[1] > 1.42) return 1.05;                                         // the neck
@@ -92,8 +95,38 @@ export function hairShape(X, Y, Z) {
   const behind = (1 - smooth(zBehind - 0.006, zBehind + 0.001, Z)) * smooth(yLow - 0.003, yLow + 0.004, Y);
   // above the ear, a low band joining the two under the cloth
   const over = smooth(1.664, 1.676, Y + wob) * smooth(-0.056, -0.05, Z) * (1 - smooth(zf - 0.006, zf + 0.004, Z));
-  const onEar = ax > 0.0715 && Z > -0.052 && Z < 0.006 && Y < 1.671 ? 0 : 1;
-  return Math.max(burn, behind, over) * onEar;
+  // fix round 2: no rectangle cut round the ear (it printed a clipper's right angle): the hair keeps a wandering clearance off the
+  // ear's own outline (`earClear`), and the temple runs down into a tapered sideburn (`templeHair`)
+  return Math.max(burn, behind, over, templeHair(X, Y, Z)) * earClear(X, Y, Z);
+}
+
+/** Brea's ear after `reshapeEars` (brea.mjs): its outline in the side (y, z) plane, an upright ellipse. */
+export const EAR = { c: [0.0735, 1.6312, -0.024], ry: 0.0255, rz: 0.0153 };
+
+/** 0 on and near the ear, 1 a wandering 3-6 mm off its outline: the hairline goes round the ear, never in a box. */
+export function earClear(X, Y, Z, { gap = 0.0042, ear = EAR } = {}) {
+  if (Math.abs(X) < 0.05) return 1;
+  const wob = (noise3(X * 150 + 3, Y * 150, Z * 150) - 0.5) * 0.0045 + (noise3(X * 420, Y * 420 + 5, Z * 420) - 0.5) * 0.0016;
+  const r = Math.hypot((Y - ear.c[1]) / (ear.ry + gap + wob), (Z - ear.c[2]) / (ear.rz + gap + wob));
+  return smooth(0.94, 1.06, r);
+}
+
+/**
+ * The close coils from the temple down in front of the ear (fix round 2, the judges: "the temple coil patches end in a hard
+ * right-angle step in front of both ears"): the front edge comes down and back from under the hem to a soft point at the tragus'
+ * height, the bottom edge rises toward the face to meet it, and over the ear the hair runs on to the nape. Both edges wander.
+ */
+export function templeHair(X, Y, Z) {
+  const ax = Math.abs(X);
+  if (ax < 0.05 || Y < 1.6 || Y > 1.725 || Z < -0.06 || Z > 0.045) return 0;
+  const wob = (noise3(X * 90, Y * 90, Z * 90) - 0.5) * 0.0065 + (noise3(X * 260 + 7, Y * 260, Z * 260) - 0.5) * 0.0032;
+  const t = smooth(1.62, 1.705, Y);
+  const zf = mix(-0.0045, 0.025, Math.pow(t, 0.85)) + wob;
+  const front = 1 - smooth(zf - 0.003, zf + 0.0035, Z);
+  const tipY = 1.6235 + wob * 0.7;
+  const bottom = smooth(tipY - 0.002, tipY + 0.007, Y - Math.max(0, Z + 0.006) * 0.75);
+  const back = smooth(-0.062, -0.05, Z);
+  return 0.95 * front * bottom * back * smooth(0.05, 0.058, ax);
 }
 
 /**
@@ -327,7 +360,8 @@ export function hairBandUnderHem(hemGap, { center = [0, 1.672, -0.012], az0 = 0.
   return (X, Y, Z) => {
     if (Y < 1.6) return 0;
     const ax = Math.abs(X);
-    if (ax > 0.0715 && Z > -0.052 && Z < 0.006 && Y < 1.671) return 0;       // not on the ear
+    const clear = earClear(X, Y, Z);                                            // round the ear's own outline (fix round 2: no box)
+    if (clear <= 0) return 0;
     const az = Math.atan2(ax, Z - center[2]);
     if (az < az0 || az > azEnd) return 0;
     const wob = (noise3(X * 170, Y * 170, Z * 170) - 0.5) * 0.0065 + (noise3(X * 60, Y * 60, Z * 60) - 0.5) * 0.006;
@@ -335,7 +369,7 @@ export function hairBandUnderHem(hemGap, { center = [0, 1.672, -0.012], az0 = 0.
     if (w <= 0) return 0;
     q[0] = X; q[1] = Y; q[2] = Z;
     const g = hemGap(q, max);
-    return 1 - smooth(w * 0.5, w * 1.25, g);
+    return (1 - smooth(w * 0.5, w * 1.25, g)) * clear;
   };
 }
 
@@ -439,6 +473,30 @@ export function cullEyeBacks(prim, eyes) {
   return n;
 }
 
+/**
+ * The ball under the lids is never seen (fix round 2, paying for the lid rims, the lashes' backs and the tail's hems): a ball
+ * triangle with no vertex inside the eye's opening grown by `margin` (front-projected; the lids lie on the ball, so any view sees
+ * the ball only through that opening) is dropped. `opens` from eyeOpening, one per eye ([left, right]). Returns the count.
+ */
+export function cullEyeUnderLids(prim, eyes, opens, { margin = 0.0026 } = {}) {
+  const P = prim.getAttribute('POSITION'), idx = prim.getIndices().getArray(), p = [0, 0, 0];
+  const seen = new Uint8Array(P.getCount());
+  for (let i = 0; i < seen.length; i++) {
+    P.getElement(i, p);
+    const o = opens[p[0] > 0 ? 0 : 1];
+    const lo = Math.min(o.x0, o.x1), hi = Math.max(o.x0, o.x1);
+    if (p[0] < lo - margin || p[0] > hi + margin) continue;
+    const X = Math.max(lo, Math.min(hi, p[0]));
+    seen[i] = p[1] <= o.upper(X) + margin && p[1] >= o.lower(X) - margin ? 1 : 0;
+  }
+  const keep = [];
+  let n = 0;
+  for (let t = 0; t < idx.length; t += 3) { if (seen[idx[t]] || seen[idx[t + 1]] || seen[idx[t + 2]]) keep.push(idx[t], idx[t + 1], idx[t + 2]); else n++; }
+  prim.getIndices().setArray(new Uint32Array(keep));
+  compactPrim(prim);
+  return n;
+}
+
 /** Hands at a game's density: the palm and back islands simplified with their borders locked (the fingers keep their silhouette). */
 export async function simplifyHands(prim) {
   await MeshoptSimplifier.ready;
@@ -499,13 +557,17 @@ export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, 
     if (hit < 0) return false;
     if (shape(p[0], p[1] - 0.002, p[2]) < 0.6) return false;
     if (p[2] > -0.05) return false;                                 // in front of the ear the coils are painted
+    // (fix round 2, A-wrap-closed: a card whose tip could close against the top of the ear left a pinhole of sky between them)
+    if (earClear(p[0], p[1], p[2], { gap: 0.011 }) < 0.5) return false;
     return wrapped.lowEdge(p) < 0.10;
   };
   const anchors = scatterAnchors(grid, { center, step: 0.118, seed: 5, keep, elMin: -1.2, elMax: 0.75 });
   // a few coils escape under the hem at the temples: the wrap sits on hair, not on a mannequin
   const R0 = rng(77);
   const far = 0.3;
-  if (temples) for (const side of [1, -1]) for (let i = 0; i < 9; i++) {
+  // (fix round 2: six a side, from the forehead corner to above the sideburn; the last three stood over the ear's top, where their
+  // tips closed against it (A-wrap-closed), and the painted coils carry that stretch now)
+  if (temples) for (const side of [1, -1]) for (let i = 0; i < 6; i++) {
     const az = side * (0.62 + i * 0.105 + (R0() - 0.5) * 0.06);
     let found = null;
     for (let el = 0.5; el > -0.3; el -= 0.006) {
@@ -515,7 +577,7 @@ export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, 
       const q = [center[0] + d[0] * (far - t), center[1] + d[1] * (far - t), center[2] + d[2] * (far - t)];
       if (wrapped.hemGap(q, 0.006) < 0.004) { found = { p: q, n: d, az, el, scale: 0.42 + R0() * 0.2 }; break; }
     }
-    if (found && Math.abs(found.p[0]) < 0.0735) anchors.push(found);
+    if (found && Math.abs(found.p[0]) < 0.0735 && earClear(found.p[0], found.p[1], found.p[2], { gap: 0.011 }) >= 0.5) anchors.push(found);
   }
   const skinOf = (p) => {
     let best = null, bd = 9;
@@ -542,9 +604,10 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
   const faceZone = (T) => (T.Y > 1.45 && Math.abs(T.X) < 0.1 ? 1 : 0);
   const notFeature = (T) => {
     // smooth the source's strokes on the open skin, not on the lips or inside the nostrils
-    const lip = Math.hypot((T.X) / 0.032, (T.Y - (L.upperLip[1] - 0.011)) / 0.02);
+    // (fix round 2: the ring round the mouth is open skin too: the source's strokes there read as stubble in a low sun)
+    const lip = Math.hypot((T.X) / 0.028, (T.Y - (L.upperLip[1] - 0.009)) / 0.0145);
     const nostril = Math.hypot(T.X / 0.024, (T.Y - (noseT[1] - 0.012)) / 0.012);
-    return faceZone(T) * smooth(0.95, 1.3, lip) * smooth(0.9, 1.25, nostril);
+    return faceZone(T) * smooth(0.9, 1.12, lip) * smooth(0.9, 1.25, nostril);
   };
   // a nostril is a graded dark brown with a small dark core: never a black hole, never a pale wall in it
   const nostrils = (T) => {
@@ -582,21 +645,39 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
     const k = smooth(0.058, 0.066, ax) * smooth(1.575, 1.59, T.Y) * (1 - smooth(1.70, 1.715, T.Y)) * smooth(-0.08, -0.07, T.Z) * (1 - smooth(0.022, 0.035, T.Z));
     T.nflat = Math.max(T.nflat, k * 0.5);
   };
+  // fix round 2 (the judges: "large smooth planes on the cheek and forehead with little micro-form"): a skin's broad planes are never
+  // quite flat: a slow undulation in the height (a centimetre across, a tenth of a millimetre deep), a matching drift in tone and a
+  // finer one in the sheen, so a highlight breaks up along the cheek instead of sliding over a plastic plane
+  const planes = (T) => {
+    if (T.Y < 1.5 || Math.abs(T.X) > 0.1) return;
+    const n1 = noise3(T.X * 70, T.Y * 70, T.Z * 70) - 0.5, n2 = noise3(T.X * 170 + 11, T.Y * 170, T.Z * 170) - 0.5;
+    T.h += n1 * 0.00013 + n2 * 0.00005;
+    T.r *= 1 + n1 * 0.05; T.g *= 1 + n1 * 0.042; T.b *= 1 + n1 * 0.035;
+    T.rough += n2 * 0.08 - n1 * 0.03;
+  };
   return [
     smoothSkin({ zone: notFeature }),
     inward,
     nostrils,
     ears,
     eyeSocketClean({ eyes }),
-    lipTone({ center: [0, L.upperLip[1] - 0.011, L.upperLip[2] - 0.006], r: [0.036, 0.024, 0.03] }),
+    // (fix round 2: moist lips, the lower one smoothest, so the sun finds its crest; the reference's lower lip carries a highlight)
+    lipTone({ center: [0, L.upperLip[1] - 0.011, L.upperLip[2] - 0.006], r: [0.036, 0.024, 0.03], rough: 0.34 }),
     colourZones([
-      { at: [0, 1.70, 0.08], s: [0.05, 0.024, 0.05], gain: [1.03, 1.03, 0.98], rough: -0.12 },           // the forehead, warm and yellow, a soft sheen
-      { at: cheek, s: [0.024, 0.02, 0.03], gain: [1.13, 1.05, 1.01], rough: -0.16 },                     // the cheek, red through, the bone catching light
-      { at: [-cheek[0], cheek[1], cheek[2]], s: [0.024, 0.02, 0.03], gain: [1.13, 1.05, 1.01], rough: -0.16 },
-      { at: noseT, s: [0.014, 0.02, 0.02], gain: [1.0, 1.01, 1.02], rough: -0.16 },                       // the nose, sun-reddened and oily
-      { at: L.noseBridge, s: [0.012, 0.022, 0.02], gain: [1.02, 1.0, 0.98], rough: -0.14 },
-      { at: [0, L.chin[1] + 0.024, L.chin[2]], s: [0.04, 0.02, 0.03], gain: [0.95, 0.94, 0.96] },         // the muzzle, cooler and greyer
-      { at: L.chin, s: [0.018, 0.012, 0.016], gain: [1.1, 1.03, 0.99], rough: -0.1 },
+      // fix round 2 (the judges: "matte, no specular breakup; the reference's highlights on the cheekbone, nose bridge and lips are
+      // missing"): the T-zone, the nose, the cheekbone's crest and the chin carry a real sheen (roughness about 0.34 to 0.42 against
+      // 0.55 on the cheek's fall and the jaw), so a sun draws its highlight along the forms
+      { at: [0, 1.70, 0.08], s: [0.05, 0.024, 0.05], gain: [1.03, 1.03, 0.98], rough: -0.17 },           // the forehead, warm and yellow, a soft sheen
+      { at: [0, 1.695, 0.095], s: [0.016, 0.02, 0.03], gain: [1, 1, 1], rough: -0.06 },                    // the brow's centre, the T's top
+      { at: cheek, s: [0.024, 0.02, 0.03], gain: [1.13, 1.05, 1.01], rough: -0.12 },                     // the cheek, red through, the bone catching light
+      { at: [-cheek[0], cheek[1], cheek[2]], s: [0.024, 0.02, 0.03], gain: [1.13, 1.05, 1.01], rough: -0.12 },
+      { at: [cheek[0] + 0.004, cheek[1] + 0.009, cheek[2] - 0.004], s: [0.016, 0.006, 0.02], gain: [1.03, 1.02, 1.0], rough: -0.1 },   // the cheekbone's crest
+      { at: [-cheek[0] - 0.004, cheek[1] + 0.009, cheek[2] - 0.004], s: [0.016, 0.006, 0.02], gain: [1.03, 1.02, 1.0], rough: -0.1 },
+      { at: noseT, s: [0.014, 0.02, 0.02], gain: [1.0, 1.01, 1.02], rough: -0.24 },                       // the nose, sun-reddened and oily
+      { at: L.noseBridge, s: [0.012, 0.022, 0.02], gain: [1.02, 1.0, 0.98], rough: -0.2 },
+      // (fix round 2: the muzzle is no longer cooler and greyer: in a low sun that grey read as stubble round the mouth)
+      { at: [0, L.chin[1] + 0.024, L.chin[2]], s: [0.04, 0.02, 0.03], gain: [1.01, 0.99, 0.97] },
+      { at: L.chin, s: [0.018, 0.012, 0.016], gain: [1.1, 1.03, 0.99], rough: -0.14 },
       { at: [0.074, 1.635, -0.03], s: [0.016, 0.03, 0.028], gain: [1.05, 0.96, 0.93] },                     // the ears
       { at: [-0.074, 1.635, -0.03], s: [0.016, 0.03, 0.028], gain: [1.05, 0.96, 0.93] },
       { at: [eyes[0][0], eyes[0][1] - 0.0145, eyes[0][2] + 0.008], s: [0.017, 0.0065, 0.02], gain: [0.93, 0.9, 0.91] },   // under the eyes
@@ -604,6 +685,7 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
       { at: [0, 1.50, 0.03], s: [0.05, 0.03, 0.06], gain: [0.94, 0.93, 0.93] },                           // under the jaw
     ]),
     pores({ depth: 0.00009, poreFreq: 820, zone: (T) => (T.Y > 1.42 && Math.abs(T.X) < 0.2 ? 1 : Math.abs(T.X) > 0.4 ? 0.6 : 0.4) }),
+    planes,
     creases([
       // sun creases at the outer eye corners: she squints for a living
       ...[1, -1].flatMap((sx) => {
@@ -615,8 +697,18 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
           { pts: [[e[0] + sx * 0.0225, e[1] - 0.004, z - 0.002], [e[0] + sx * 0.0305, e[1] - 0.0065, z - 0.012]], w: 0.0009, depth: 0.00016, dark: 0.12 },
         ];
       }),
-      // the fold from the wing of the nose toward the mouth corner
-      ...[1, -1].map((sx) => ({ pts: [[sx * 0.0215, noseT[1] - 0.006, noseT[2] - 0.034], [sx * 0.0315, noseT[1] - 0.024, noseT[2] - 0.044], [sx * 0.0375, noseT[1] - 0.041, noseT[2] - 0.050]], w: 0.0026, depth: 0.00022, dark: 0.1 })),
+      // the fold from the wing of the nose toward the mouth corner (fix round 2: it stops above the corner, soft: its old end printed a
+      // dark spot beside the mouth that a low sun read as grime)
+      ...[1, -1].map((sx) => ({ pts: [[sx * 0.0215, noseT[1] - 0.006, noseT[2] - 0.034], [sx * 0.0305, noseT[1] - 0.024, noseT[2] - 0.044]], w: 0.0026, depth: 0.0002, dark: 0.075 })),
+      // fix round 2 (the judges: "add sub-lid micro-shading"): the soft fold where the lower lid meets the cheek, from the inner corner
+      // down and out, and a faint line under it
+      ...[1, -1].flatMap((sx) => {
+        const e = eyes[sx > 0 ? 0 : 1], z = e[2] + 0.004;
+        return [
+          { pts: [[e[0] - sx * 0.0135, e[1] - 0.0055, z], [e[0] - sx * 0.002, e[1] - 0.0098, z + 0.001], [e[0] + sx * 0.012, e[1] - 0.0092, z - 0.004]], w: 0.0026, depth: 0.00012, dark: 0.06 },
+          { pts: [[e[0] - sx * 0.008, e[1] - 0.0128, z], [e[0] + sx * 0.008, e[1] - 0.0142, z - 0.002]], w: 0.0018, depth: 0.00006, dark: 0.03 },
+        ];
+      }),
       // two soft lines across the neck
       { pts: [[-0.05, 1.525, 0.035], [0, 1.519, 0.062], [0.05, 1.525, 0.035]], w: 0.0022, depth: 0.00016, dark: 0.08 },
     ]),
@@ -629,7 +721,7 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
  * lib/hair.mjs, with the eye patch blitted in. `marks` are the character's own layers (a salt
  * line, a scar, a tattoo), painted last. `collar` = flat triangles of the outfit near the neck.
  */
-export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, hairBand = null, names = 'human', fill = [0.15, 0.108, 0.09], sclera = [166, 148, 130], eyeSkin = [118, 80, 60] }) {
+export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, hairBand = null, temple = templeHair, names = 'human', fill = [0.15, 0.108, 0.09], sclera = [166, 148, 130], eyeSkin = [118, 80, 60] }) {
   const W = 1024, AOW = 512;
   const baseTex = skinMat.getBaseColorTexture(), nTex = skinMat.getNormalTexture(), rTex = skinMat.getMetallicRoughnessTexture();
   const stock = await decodeStockSkin(baseTex.getImage(), nTex.getImage(), rTex.getImage());
@@ -664,7 +756,7 @@ export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, 
       sampler, hair: hairColor,
       coverage: (T) => {
         if (T.Y < 1.52 || Math.abs(T.X) > 0.1) return 0;
-        const c = cov[T.y * W + T.x] * shape(T.X, T.Y, T.Z);
+        const c = Math.max(cov[T.y * W + T.x] * shape(T.X, T.Y, T.Z), temple ? temple(T.X, T.Y, T.Z) * earClear(T.X, T.Y, T.Z) : 0);
         return hairBand ? Math.max(c, hairBand(T.X, T.Y, T.Z)) : c;
       },
       flowUV: (T, uv) => { uv[0] = Math.atan2(T.X, -T.Z + 0.001) * 0.09; uv[1] = T.Y; },

@@ -6,6 +6,7 @@
  *
  *   V-brea-closeup           day, sun on her left: front, 3/4 and profile on her left, 0.8 m, 1600 x 900, through the LIVE scene
  *   V-brea-closeup-right     day, sun on her right: front, 3/4 and profile on her right
+ *   V-brea-closeup-low       08:00, the low sun on her left: front, 3/4 on both sides (fix round 2)
  *   V-brea-closeup-shade     day, sun on her left: 3/4 and profile on her right, the shadow side, and the front
  *   V-brea-closeup-dusk      dusk, her left; V-brea-closeup-dusk-right, dusk, her right
  *   V-brea-closeup-back      day: the back at 0.8 m, back-high from the chase and aim cameras' angle, back 3/4
@@ -14,7 +15,7 @@
  *   V-brea-closeup-detail    the fine marks: eyes + paste, brow + scar, the eye in profile, the ∴; both temples, nose + lips, the ear
  *   V-brea-closeup-detail-back  the sun behind her, still air: the nape from both sides, the knot + tail root, the topknot's crown
  *   V-brea-closeup-night     01:00: the hero fill has fallen away (R59 c)
- *   A-wrap-closed            no see-through: 96 views on a key colour, 0 enclosed background pixels
+ *   A-wrap-closed            no see-through: 3 idle phases x (96 head views + 96 collar views, R64 d) on a key colour, 0 enclosed background px
  *   A-brea-fill              R59 c: the hero fill falls away with the scene's ambient at night
  *   A-brea-budget            plan §4.1 Brea row, measured live: <= 10 k tris, <= 2 draws, skin 1024²
  *                            + 512² normal/ORM, hair+wrap <= 512², <= 0.7 MB; and that the look's
@@ -162,6 +163,14 @@ export const GATES = [
     criteria: COMMON + ' Her right temple carries close coils the same as her left. The wrap holds on this side too: no flat lens or zigzag where the turns cross.',
   },
   {
+    // fix round 2 (the engineering + film judge's 08:00 frame: smudges at the mouth corners and under the nose in a low sun)
+    id: 'V-brea-closeup-low', kind: 'visual', lane: 'character-art', settle: 800, timeout: 90000,
+    title: 'Brea at 0.8 m in the live scene, the low morning sun (08:00) on her left: front, 3/4 on her left and on her right, 1600 x 900',
+    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    setup: placedSetup(['openGround'], CLOSEUP('LOW SUN, 08:00', 8, 'clear', -38, [FRONT, L34, R34])),
+    criteria: COMMON + ' Low sun: the raking light models the cheek, the lips and the lids; nothing round the mouth or under the nose reads as stubble, grime or a smudge, and the skin carries a sheen on the cheekbone, the nose and the lower lip.',
+  },
+  {
     id: 'V-brea-closeup-shade', kind: 'visual', lane: 'character-art', settle: 800, timeout: 90000,
     title: 'The shadow side at 0.8 m, the day light, the sun on her left: front, 3/4 and profile on her right, 1600 x 900',
     reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
@@ -220,7 +229,7 @@ export const GATES = [
   },
   {
     id: 'V-brea-closeup-detail', kind: 'visual', lane: 'character-art', settle: 800, timeout: 120000,
-    title: 'Brea detail in the day light, still air: eyes + salt paste, brow + scar, the eye in profile, the ∴ on the right hand; both temples, the nose and lips, the ear',
+    title: 'Brea detail in the day light, still air: eyes + salt paste, brow + scar, both eyes in profile, the ∴ on the right hand; both temples, the nose and lips, the ear',
     reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -30, true)}
       const W = 1600, H = 900, PW = 400, PH = 450;
@@ -235,7 +244,15 @@ export const GATES = [
       p.hero?.kit?.setHidden(3);
       shot(0, 0, off(bridge, 0.012, -0.012, 0), 0.30, 0.2, 24, 'EYES + SALT PASTE');
       shot(1, 0, off(brow, 0.034, 0.006, -0.01), 0.24, 0.42, 21, 'LEFT BROW + SCAR');
-      shot(2, 0, off(brow, 0.036, -0.02, -0.022), 0.24, Math.PI / 2, 20, 'THE EYE IN PROFILE');
+      // fix round 2 (the judge: "refilm the detail sheet with both eyes in profile"): the panel holds both, her left over her right
+      const half = (j2, tgt, dist, yaw, fov, lbl) => {
+        const d = view(yaw, 0);
+        const img = S.liveView(C, [tgt.x + d.x * dist, tgt.y + d.y * dist, tgt.z + d.z * dist], [tgt.x, tgt.y, tgt.z], { width: Math.round(PW * 1.25), height: Math.round(PH / 2 * 1.25), fov });
+        paste(g, img, 2 * PW, j2 * PH / 2, PW, PH / 2);
+        label(g, lbl, 2 * PW + 14, j2 * PH / 2 + 28);
+      };
+      half(0, off(brow, 0.036, -0.024, -0.022), 0.24, Math.PI / 2, 11, 'HER LEFT EYE IN PROFILE');
+      half(1, off(brow, -0.036, -0.024, -0.022), 0.24, -Math.PI / 2, 11, 'HER RIGHT EYE IN PROFILE');
       const hand = an.b.handR.bone.getWorldPosition(new T3()), knk = (an.bones.middle_01_r || an.b.handR.bone).getWorldPosition(new T3());
       const m = hand.clone().lerp(knk, 0.5);
       const fx = Math.sin(h), fz = Math.cos(h), rx = -Math.cos(h), rz = Math.sin(h);
@@ -250,7 +267,7 @@ export const GATES = [
       shot(2, 1, off(bridge, 0, -0.045, 0.0), 0.26, 0.5, 24, 'NOSE + LIPS');
       shot(3, 1, off(chin, 0.075, 0.075, -0.1), 0.26, 1.35, 24, 'THE EAR');
     })()`),
-    criteria: 'Pass: the salt paste is a finger-wiped chalky paste with thickness, cracked across its whole length, uneven in width, thinning at its edges; the eye has a wet highlight, a lid shadow, a fibred dark iris and lashes, and in profile it shows an iris and a cornea, with lashes that are hair and not a slab; the left brow is cut clean through by a scar with relief; the wrap\'s edges on both sides are soft woven hems with folds, not cuts; both temples are coils with a broken outline, with real value, not a shell; the nostrils are graded dark brown, not black holes, with no pale shard; the ear is rounded, not faceted; the ∴ is a small fine dark tattoo, three separate dots, not white blobs. FAIL if any of them looks like a flat decal.',
+    criteria: 'Pass: the salt paste is a finger-wiped chalky paste with thickness, cracked across its whole length, uneven in width, thinning at its edges; the eye has a wet highlight, a lid shadow, a fibred dark iris and lashes, and in profile (both eyes) it shows an iris and a cornea, a lid with thickness and lashes that are hair, not a slab or a pale wedge; the left brow is cut clean through by a scar with relief; the wrap\'s edges on both sides are soft woven hems with folds, not cuts; both temples are coils with a broken outline, with real value, not a shell; the nostrils are graded dark brown, not black holes, with no pale shard; the ear is rounded, not faceted, a real ear's size and height (its top near the brow line, not at the hem), no point; the ∴ is a small fine dark tattoo, three separate dots, not white blobs. FAIL if any of them looks like a flat decal.',
   },
   {
     id: 'V-brea-closeup-detail-back', kind: 'visual', lane: 'character-art', settle: 800, timeout: 120000,
@@ -275,41 +292,28 @@ export const GATES = [
     criteria: 'Pass: the nape is coils with a broken outline, with real value, not a shell; the tail leaves the knot as a gathered roll, not a square-cut plate standing off it; the knot is cloth all round, with no dark hollow; the topknot\'s crown is gathered radial pleats with no rectangular tone blocks; its carmine binding is seated in the cloth with no saw-teeth; its other end is a cloth end with a frayed fringe. FAIL if any of them looks like a flat decal, and (R54) FAIL if it looks cheap.',
   },
   {
-    id: 'A-wrap-closed', kind: 'action', lane: 'character-art', settle: 800, timeout: 180000,
-    title: 'No see-through (plan §9 "no see-through", the scan the engineering judge ran): only the player drawn on a key colour, still air, the stow kit and both free cloth ends collapsed: over 96 views at 0.8 m (24 azimuths x 4 elevations) 0 enclosed background pixels near the head, neck and collar (a speck of coil-card alpha, under 6 px or 3 x 2 px, is hair)',
+    id: 'A-wrap-closed', kind: 'action', lane: 'character-art', settle: 800, timeout: 600000,
+    title: 'No see-through (plan §9 "no see-through"; R64 d): only the player drawn on a key colour, still air, the stow kit and both free cloth ends collapsed, at THREE idle phases in the same run (fix round 2: a pinhole that comes and goes with the idle is not closed). Each phase scans two view sets at 0.8 m: the HEAD (24 azimuths x 4 elevations round the face) and the COLLAR (24 azimuths x 4 elevations up to 1.2 rad, centred on neck_01 minus 0.06 m). 0 enclosed background pixels within 300 px of each view\'s centre (a speck of coil-card alpha, under 6 px or 3 x 2 px, is hair)',
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
     })()`),
     assert: `(async () => {
       const C = __CTX__, p = C.player, scene = C.scene, R = C.renderer, an = p.animator;
       const S = await import('/src/hero/sheets.js');
       const T3 = p.position.constructor, A = C.assets.models.hero, LM = A.extras.r5Face.landmarks;
-      let tpl = null, live = null;
+      let tpl = null, live = null, neck = null;
       A.root.traverse((o) => { if (!tpl && o.isSkinnedMesh && o.geometry.getAttribute('_hidemask')) tpl = o; });
-      p.model.traverse((o) => { if (!live && o.isSkinnedMesh && o.geometry.getAttribute('_hidemask')) live = o; });
+      p.model.traverse((o) => { if (!live && o.isSkinnedMesh && o.geometry.getAttribute('_hidemask')) live = o; if (!neck && o.isBone && /^neck_01/.test(o.name)) neck = o; });
       A.root.updateMatrixWorld(true);
       const idxOf = (q) => { const v = new T3(), n = tpl.geometry.attributes.position.count; let b = -1, bd = 1e9; for (let i = 0; i < n; i++) { tpl.getVertexPosition(i, v); const d = (v.x - q[0]) ** 2 + (v.y - q[1]) ** 2 + (v.z - q[2]) ** 2; if (d < bd) { bd = d; b = i; } } return b; };
-      const face = (k) => { const v = new T3(); live.getVertexPosition(idxOf(LM[k].now), v); return live.localToWorld(v); };
-      const brow = face('brow'), chin = face('chin'), jL = face('jawL'), jR = face('jawR');
-      const R0 = jL.clone().sub(jR).normalize(), U0 = brow.clone().sub(chin).normalize();
-      const F0 = R0.clone().cross(U0).normalize(), U1 = F0.clone().cross(R0).normalize();
-      const cen = brow.clone().add(chin).multiplyScalar(0.5).add(U1.clone().multiplyScalar(0.05)).sub(F0.clone().multiplyScalar(0.07));
-      p.hero?.kit?.setHidden(31);
-      // the free cloth ends collapse to their roots: what hangs behind the neck encloses real background, which is not a hole
+      const lmI = {}; for (const k of ['brow', 'chin', 'jawL', 'jawR']) lmI[k] = idxOf(LM[k].now);
+      const face = (k) => { const v = new T3(); live.getVertexPosition(lmI[k], v); return live.localToWorld(v); };
       const bones = [];
       p.model.traverse((o) => { if (o.isBone && /^dyn_(wrapSash|hairKnotTail)_01$/.test(o.name)) bones.push(o); });
-      for (const b of bones) b.scale.setScalar(1e-4);
-      p.model.updateMatrixWorld(true);
-      const hidden = [];
-      for (const o of scene.children) if (o !== p.model && !o.isLight && o.visible) { o.visible = false; hidden.push(o); }
-      const bg0 = scene.background, fog0 = scene.fog; scene.background = null; scene.fog = null;
-      const cc = R.getClearColor(live.material.color.clone()), ca = R.getClearAlpha();
-      R.setClearColor(0x00ff00, 1);
-      const W = 900, H = 900, res = [];
-      for (const el of [-0.35, 0, 0.35, 0.8]) for (let az = 0; az < 360; az += 15) {
-        const yaw = az * Math.PI / 180;
-        const d = F0.clone().multiplyScalar(Math.cos(yaw) * Math.cos(el)).add(R0.clone().multiplyScalar(Math.sin(yaw) * Math.cos(el))).add(U1.clone().multiplyScalar(Math.sin(el)));
-        const pos = cen.clone().add(d.multiplyScalar(0.8));
-        const img = S.liveView(C, pos.toArray(), cen.toArray(), { width: W, height: H, fov: 29 });
+      const frames = (n) => new Promise((r) => { let i = 0; const f = () => { if (++i >= n) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      const W = 900, H = 900;
+      // one view: the enclosed key-colour components within 300 px of (cx, cy)
+      const scanView = (pos, tgt, cx, cy) => {
+        const img = S.liveView(C, pos.toArray(), tgt.toArray(), { width: W, height: H, fov: 29 });
         const px = img.data;
         const k = [px[0], px[1], px[2]];
         const bg = new Uint8Array(W * H), seen = new Uint8Array(W * H);
@@ -326,35 +330,66 @@ export const GATES = [
             for (const q of [x > 0 ? j - 1 : -1, x < W - 1 ? j + 1 : -1, y > 0 ? j - W : -1, y < H - 1 ? j + W : -1]) if (q >= 0 && bg[q] && !seen[q]) { seen[q] = 1; s2.push(q); } }
           comps.push({ area, w: x1 - x0 + 1, h: y1 - y0 + 1, x: Math.round(sx / area), y: Math.round(sy / area) });
         }
-        const near = comps.filter((c) => c.area >= 6 && c.w >= 3 && c.h >= 2 && Math.hypot(c.x - 450, c.y - 400) < 300).sort((a, b) => b.area - a.area);
-        res.push({ az, el, area: near.reduce((s, c) => s + c.area, 0), top: near.slice(0, 2) });
+        return comps.filter((c) => c.area >= 6 && c.w >= 3 && c.h >= 2 && Math.hypot(c.x - cx, c.y - cy) < 300).sort((a, b) => b.area - a.area);
+      };
+      // freeze the scene to the player on the key colour (restored at the end)
+      const hidden = [];
+      for (const o of scene.children) if (o !== p.model && !o.isLight && o.visible) { o.visible = false; hidden.push(o); }
+      const bg0 = scene.background, fog0 = scene.fog; scene.background = null; scene.fog = null;
+      const cc = R.getClearColor(live.material.color.clone()), ca = R.getClearAlpha();
+      R.setClearColor(0x00ff00, 1);
+      const res = [], phases = [];
+      // three idle phases: now, then the idle run on 1.3 s and 2.9 s further (the engine clock runs only between phases)
+      for (const [ph, adv] of [[0, 0], [1, 78], [2, 96]]) {
+        if (adv) { for (const b of bones) b.scale.setScalar(1); if (C.engine) C.engine.timeScale = 1; await frames(adv); if (C.engine) C.engine.timeScale = 0; await frames(2); }
+        p.hero?.kit?.setHidden(31);
+        // the free cloth ends collapse to their roots: what hangs behind the neck encloses real background, which is not a hole
+        for (const b of bones) b.scale.setScalar(1e-4);
+        p.model.updateMatrixWorld(true);
+        const brow = face('brow'), chin = face('chin'), jL = face('jawL'), jR = face('jawR');
+        const R0 = jL.clone().sub(jR).normalize(), U0 = brow.clone().sub(chin).normalize();
+        const F0 = R0.clone().cross(U0).normalize(), U1 = F0.clone().cross(R0).normalize();
+        const cen = brow.clone().add(chin).multiplyScalar(0.5).add(U1.clone().multiplyScalar(0.05)).sub(F0.clone().multiplyScalar(0.07));
+        // the collar: neck_01 less 6 cm, orbited in the body's own level frame
+        const nk = neck.getWorldPosition(new T3()), col = nk.clone(); col.y -= 0.06;
+        const Up = new T3(0, 1, 0), Fh = F0.clone(); Fh.y = 0; Fh.normalize(); const Rh = Up.clone().cross(Fh).normalize();
+        phases.push({ phase: ph, head: cen.toArray().map((v) => +v.toFixed(3)), collar: col.toArray().map((v) => +v.toFixed(3)) });
+        const sets = [['head', cen, F0, R0, U1, [-0.35, 0, 0.35, 0.8], 450, 400], ['collar', col, Fh, Rh, Up, [0, 0.4, 0.8, 1.2], 450, 450]];
+        for (const [region, c0, Fv, Rv, Uv, els, cx, cy] of sets) for (const el of els) for (let az = 0; az < 360; az += 15) {
+          const yaw = az * Math.PI / 180;
+          const d = Fv.clone().multiplyScalar(Math.cos(yaw) * Math.cos(el)).add(Rv.clone().multiplyScalar(Math.sin(yaw) * Math.cos(el))).add(Uv.clone().multiplyScalar(Math.sin(el)));
+          const pos = c0.clone().add(d.multiplyScalar(0.8));
+          const near = scanView(pos, c0, cx, cy);
+          res.push({ phase: ph, region, az, el, area: near.reduce((s, c) => s + c.area, 0), top: near.slice(0, 2), pos: pos.toArray(), tgt: c0.toArray(), cx, cy });
+        }
       }
-      res.sort((a, b) => b.area - a.area);
       const total = res.reduce((s, r) => s + r.area, 0);
-      // the row's shot: the four worst views on the key colour, 2x around their largest hole (or the head, if clean)
+      const by = (k) => { const o = {}; for (const r of res) { const key = r[k]; o[key] = o[key] || { views: 0, withHoles: 0, px: 0 }; o[key].views++; if (r.area) { o[key].withHoles++; o[key].px += r.area; } } return o; };
+      // the row's shot: the four worst views on the key colour, 2x round their largest hole (or the centre, if clean)
+      res.sort((a, b) => b.area - a.area);
       for (const o of Array.from(document.body.children)) if (o.tagName !== 'CANVAS' && !o.querySelector('canvas')) o.style.visibility = 'hidden';
       const sheet = document.createElement('canvas'); sheet.width = 1600; sheet.height = 900;
       sheet.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#000';
       document.body.appendChild(sheet);
       const g = sheet.getContext('2d');
-      res.slice(0, 4).forEach((r, i) => {
-        const yaw = r.az * Math.PI / 180;
-        const d = F0.clone().multiplyScalar(Math.cos(yaw) * Math.cos(r.el)).add(R0.clone().multiplyScalar(Math.sin(yaw) * Math.cos(r.el))).add(U1.clone().multiplyScalar(Math.sin(r.el)));
-        const img = S.liveView(C, cen.clone().add(d.multiplyScalar(0.8)).toArray(), cen.toArray(), { width: W, height: H, fov: 29 });
+      const worst = res.slice(0, 2).concat(res.filter((r) => r.region === 'collar').slice(0, 2));
+      worst.forEach((r, i) => {
+        const img = S.liveView(C, r.pos, r.tgt, { width: W, height: H, fov: 29 });
         const k = document.createElement('canvas'); k.width = W; k.height = H; k.getContext('2d').putImageData(img, 0, 0);
-        const t = r.top[0] || { x: 450, y: 400 };
+        const t = r.top[0] || { x: r.cx, y: r.cy };
         const cw = 400, ch = 225, sx = Math.max(0, Math.min(W - cw, t.x - cw / 2)), sy = Math.max(0, Math.min(H - ch, t.y - ch / 2));
         const x = (i % 2) * 800, y = (i >> 1) * 450;
         g.imageSmoothingEnabled = false; g.drawImage(k, sx, sy, cw, ch, x, y, 800, 450);
-        const lb = 'az ' + r.az + ' el ' + r.el + ' · 2x · enclosed px ' + r.area;
-        g.font = '500 15px ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(x + 8, y + 8, g.measureText(lb).width + 12, 22); g.fillStyle = '#fff'; g.fillText(lb, x + 14, y + 24);
+        const lb = r.region + ' · phase ' + r.phase + ' · az ' + r.az + ' el ' + r.el + ' · 2x · enclosed px ' + r.area;
+        g.font = '500 15px "IBM Plex Mono", ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(x + 8, y + 8, g.measureText(lb).width + 12, 22); g.fillStyle = '#fff'; g.fillText(lb, x + 14, y + 24);
       });
       R.setClearColor(cc, ca);
       for (const o of hidden) o.visible = true;
       scene.background = bg0; scene.fog = fog0;
       for (const b of bones) b.scale.setScalar(1);
       p.model.updateMatrixWorld(true);
-      return { pass: total === 0, detail: { views: res.length, withHoles: res.filter((r) => r.area > 0).length, totalPx: total, worst: res.slice(0, 6) } };
+      const pass = total === 0;
+      return { pass, detail: { views: res.length, totalPx: total, byPhase: by('phase'), byRegion: by('region'), phases, worst: res.slice(0, 6).map(({ pos, tgt, ...r }) => r) } };
     })()`,
   },
   {

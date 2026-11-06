@@ -54,7 +54,7 @@ import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/wrap-head.mjs';
 import { lashCard } from './lib/hair.mjs';
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, browLines, remapEyeUV,
-  cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
+  cullUnderWrap, cullEyeBacks, cullEyeUnderLids, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
 } from './lib/skin-human.mjs';
 
 export const LANE = 'hero-body';
@@ -143,8 +143,12 @@ const FACE_MM = {
   noseBridge: { d: [0, 0.6, 6.4], s: 0.0125 },
   noseTip: { d: [0, 3.2, -3.4], s: 0.0098 },
   cheek: { d: [2.6, 3.0, 5.0], s: 0.0165 },     // mirrored for the right side: the bone comes up and forward, not out
-  jaw: { d: [-1.3, -6.0, 1.4], s: 0.0235 },     // mirrored: the angle comes down and a touch IN, so the face reads longer and tapers to the chin (fix round 1, R54: it read wide)
-  chin: { d: [0, -1.6, 6.2], sx: 0.0175, sy: 0.0125, sz: 0.016 },
+  // mirrored: the angle comes a touch IN and down, so the face tapers to the chin (fix round 1, R54: it read wide). Fix round 2 (the
+  // judges: "the lower face is long and heavy in every 3/4"): less of it is DOWN and more is in and forward, so the jaw keeps its
+  // defined angle without lengthening the face
+  jaw: { d: [-2.6, -4.4, 3.4], s: 0.0235 },
+  // fix round 2: the chin comes UP 3.4 mm against fix round 1 (-1.6 -> +1.8): a shorter lower face, its point kept forward
+  chin: { d: [0, 1.8, 6.0], sx: 0.0175, sy: 0.0125, sz: 0.016 },
   brow: { d: [0, 0.8, 4.4], s: 0.0165 },
   upperLip: { d: [0, 1.2, -1.0], s: 0.0085 },
 };
@@ -220,10 +224,30 @@ export async function build({ out = ROOT } = {}) {
   // and in profile a defined tip: a small point at the front of the lobule and its round underside tucked up and back
   B([0, ty + 0.0012, tz + 0.0008], [0, 0.25, 0.55], 0.0042);
   B([0, ty - 0.0058, tz - 0.0028], [0, 0.55, -0.5], 0.0048);
-  // the mandible: one line from the gonion to the chin, a little below the stock edge
+  // the mandible: one line from the gonion to the chin, a little below the stock edge (fix round 2: half as far down, the face shorter)
   for (const sx of [1, -1]) {
-    B([sx * 0.040, L.chin[1] + 0.012, 0.030], [-sx * 0.9, -2.4, 0.2], 0.0165);
-    B([sx * 0.024, L.chin[1] + 0.004, 0.066], [sx * 1.2, -1.2, 1.2], 0.0135);
+    B([sx * 0.040, L.chin[1] + 0.012, 0.030], [-sx * 1.1, -1.2, 0.2], 0.0165);
+    B([sx * 0.024, L.chin[1] + 0.004, 0.066], [sx * 1.0, -0.5, 1.0], 0.0135);
+  }
+  // fix round 2 (the judges: "the lips have no volume: no cupid's bow, no philtrum columns, no lower-lip fullness"): the lips are
+  // sculpted in the field. Measured on the stock midline: subnasale y 1.6045, the philtrum's deepest point 1.6005, the upper
+  // vermilion's crest 1.592, the stomion 1.584, the lower lip's crest 1.578, the mentolabial fold 1.5655
+  {
+    const lc = 1.5845;
+    // the upper lip's white roll: a crisp border that catches light, the bow's two peaks lifted, its notch held
+    B([0, 1.5925, 0.095], [0, 0, 0.55], 0.0016, [0.013, 0.0016, 0.004]);
+    for (const sx of [1, -1]) B([sx * 0.0046, 1.5932, 0.095], [0, 0.45, 0.35], 0.0022);
+    B([0, 1.5934, 0.0955], [0, -0.35, -0.15], 0.0016);
+    // the tubercle: the upper lip's centre full and a little down over the lower
+    B([0, 1.5875, 0.0935], [0, -0.25, 0.75], 0.004, [0.0055, 0.0028, 0.005]);
+    // the philtrum: a groove between two columns from the bow's peaks up to the nose
+    B([0, 1.599, 0.0925], [0, 0, -0.38], 0.002, [0.0022, 0.0042, 0.004]);
+    for (const sx of [1, -1]) B([sx * 0.0052, 1.5985, 0.0932], [0, 0, 0.32], 0.002, [0.0017, 0.0045, 0.004]);
+    // the lower lip: fuller, rolled forward and down, two soft lobes, with a real fold under it
+    for (const sx of [1, -1]) B([sx * 0.0068, 1.5778, 0.0905], [0, -0.35, 1.0], 0.005, [0.0075, 0.0042, 0.006]);
+    B([0, 1.5655, 0.0828], [0, 0.2, -0.75], 0.004, [0.012, 0.003, 0.006]);
+    // the corners tuck in and lift a hair: a closed mouth that rests, not a slot
+    for (const sx of [1, -1]) B([sx * 0.0255, lc, 0.0755], [-sx * 0.25, 0.25, -0.55], 0.0038);
   }
   // fix round 1 (R54, "the face reads wide and flat"): a soft hollow under each cheekbone, so the bone reads as a plane catching
   // the light over a shaded fall to the jaw, and the lower face narrows
@@ -274,7 +298,7 @@ export async function build({ out = ROOT } = {}) {
       const before = Math.hypot(x - c[0], y - c[1], z - c[2]);
       if (dy > 0.0015 && dy < 0.019) {
         const k = xk * (1 - smooth(0.0055, 0.0165, dy));
-        a[i * 3 + 1] -= mm(1.45) * k; a[i * 3 + 2] += mm(0.3) * k;
+        a[i * 3 + 1] -= mm(1.2) * k; a[i * 3 + 2] += mm(0.28) * k;
       } else if (dy < -0.0015 && dy > -0.014) {
         const k = xk * (1 - smooth(0.005, 0.0125, -dy));
         a[i * 3 + 1] += mm(0.95) * k; a[i * 3 + 2] += mm(0.12) * k;
@@ -287,6 +311,11 @@ export async function build({ out = ROOT } = {}) {
     }
     P.setArray(a);
   }
+  // fix round 2 (the judges: "the ear is large, set high, its helix at the wrap's hem, an elfin point"): each ear is taken down
+  // 5 mm with the skin round its root, scaled to 0.85 about its attachment (it stands off the skull less, too), and the top third
+  // of the helix is rounded down and back. Measured on the stock: the ear stands proud of the skull over y 1.606..1.667,
+  // z -0.042..-0.006, up to 13 mm out; the skull's side runs x 0.072 at z -0.006 to 0.063 at z -0.048
+  const earMoved = reshapeEars(bodyPrim, headW, { mm });
   const moved = movedMask(bodyPrim, stockPos);
   recomputeNormals(bodyPrim, moved);
   // the jaw line and the chin are the silhouette a close-up reads: split their long edges on the curve
@@ -413,7 +442,10 @@ export async function build({ out = ROOT } = {}) {
     bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, rAxis: 0.0685, topY: 1.82756 },
     knot: CHAINS.wrapSash.points[0],
     // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
-    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 18, across: 5, rootBack: 0.014 },
+    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 21, across: 5, rootBack: 0.014,
+      // fix round 2 (R54, R66 c: soft, thick, rippling cloth, no paper edge; the length and width stay): the rows go to the free strip,
+      // each row is skinned smoothly across the joints, the selvedges are rolled hems 3.4 mm thick, the strip sags and ripples
+      rootRows: 5, smoothSkin: true, hem: 0.0034, ripple: 0.0042 },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
     tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012 },
   });
@@ -459,6 +491,8 @@ export async function build({ out = ROOT } = {}) {
     return [c[0] + v[0] / d * want, c[1] + v[1] / d * want, c[2] + v[2] / d * want];
   };
   const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W, length: 0.0074, curl: 0.22, twoSided: true, rim: { h: 0.00085, rect: WRAP_ATLAS.lidRim.rect, onBall: onBall(i) } }));
+  // the ball the lids always cover is never seen: it pays for the lid rims and the lashes' backs
+  const eyeUnderLids = cullEyeUnderLids(eyesPrim, eyes, opens);
 
   // her own marks: the salt-line, the scar, the ∴
   const eyeY = (eyes[0][1] + eyes[1][1]) / 2;
@@ -544,7 +578,7 @@ export async function build({ out = ROOT } = {}) {
         hideBits: { 'pan-1': 1 }, hiddenByPan1: hidden,
       },
       r5Face: faceRec,
-      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, handsCut, earTucked } },
+      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, eyeUnderLids, handsCut, earTucked, earMoved } },
     },
   });
   void wrapTex;
@@ -594,6 +628,44 @@ async function buildClips(SRC, out) {
 }
 
 /* ------------------------------------------------------------- helpers */
+
+/**
+ * The ears, smaller, lower and round-topped (fix round 2). `skull(y, z)` is the side of the head under the ear (fitted to the
+ * stock's lateral profile in front of and behind it); a vertex's protrusion over it selects the ear, softly. The ear scales about
+ * its attachment, then the ear and the skin round its root go down together, so it is lowered, not tilted.
+ */
+function reshapeEars(prim, headW, { mm, scale = 0.85, drop = 5, c = [0.0735, 1.636, -0.024] } = {}) {
+  const P = prim.getAttribute('POSITION'), a = P.getArray();
+  const skull = (z) => 0.0705 + 0.2 * (z + 0.006);
+  const top = c[1] + 0.012;
+  let n = 0;
+  for (let i = 0; i < P.getCount(); i++) {
+    if (headW[i] < 0.3) continue;
+    const x = a[i * 3], y = a[i * 3 + 1], z = a[i * 3 + 2], ax = Math.abs(x), sx = Math.sign(x) || 1;
+    if (ax < 0.055 || y < 1.57 || y > 1.71 || z > 0.03 || z < -0.09) continue;
+    const box = smooth(1.596, 1.606, y) * (1 - smooth(1.668, 1.678, y)) * smooth(-0.054, -0.044, z) * (1 - smooth(-0.004, 0.004, z));
+    const w = box * smooth(0.0012, 0.0042, ax - skull(z));
+    // the root and the skin about it travel with the ear (a broad, soft patch), so the ear is lowered, not sheared
+    const wT = Math.exp(-0.5 * (((y - c[1]) / 0.026) ** 2 + ((z - c[2]) / 0.024) ** 2)) * smooth(0.06, 0.068, ax);
+    if (w <= 0 && wT <= 0.002) continue;
+    let px = c[0] + (ax - c[0]) * scale, py = c[1] + (y - c[1]) * scale, pz = c[2] + (z - c[2]) * scale;
+    // the outline rounds: in the ear's own (y, z) plane every point past an upright ellipse (half 0.030 x 0.018, scaled) in the
+    // upper half comes softly back toward it, so the helix is an arc, with no point at its top-back; the lobe's tip rounds up
+    {
+      const ey = (py - c[1]) / (0.030 * scale), ez = (pz - c[2]) / (0.018 * scale), r = Math.hypot(ey, ez);
+      const k = smooth(-0.15, 0.35, ey);
+      if (r > 0.9) { const f = 1 + ((0.9 + (r - 0.9) * 0.35) / r - 1) * k; py = c[1] + (py - c[1]) * f; pz = c[2] + (pz - c[2]) * f; }
+      const lobe = smooth(-0.62, -0.95, ey);
+      if (lobe > 0) { py += lobe * 0.0016; pz += (c[2] - 0.003 - pz) * lobe * 0.42; px -= lobe * 0.0008; }
+    }
+    void top;
+    const nx = ax + (px - ax) * w, ny = y + (py - y) * w - mm(drop) * Math.max(w, wT), nz = z + (pz - z) * w;
+    a[i * 3] = sx * nx; a[i * 3 + 1] = ny; a[i * 3 + 2] = nz;
+    n++;
+  }
+  P.setArray(a);
+  return n;
+}
 
 function bboxOf(prim) {
   const P = prim.getAttribute('POSITION'), p = [0, 0, 0];
