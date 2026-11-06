@@ -869,7 +869,7 @@ export class PlayerAnimator {
      * `_afFull`: the aim is held this step; `_wrRef`: the point the wrist
      * target rides between steps (the draw shoulder, blended to the hand's
      * anchor on the head as the draw builds — body motion carries the hand) */
-    this._armCapN = 0; this._afEng = false; this._afLimK = 1; this._mlHush = false; this._wDA = 0; this._afFull = false; this._tW = 0;
+    this._armCapN = 0; this._afEng = false; this._afLimK = 1; this._wDA = 0; this._afFull = false; this._tW = 0;
     this._aimHold = false; this._atW = 0; this._bcS = 0; this._afTail = 0; this._afViol = 0; this._afInHd = false;
     this._knW0 = 0; this._caT = 0; this._caLift = 0; this._caY = 0; this._caYOk = false; this._qbF = 1; this._hcHit = 0; this._hcHitLast = 0;
     this._wrRef = new THREE.Vector3(); this._wrRefA = new THREE.Vector3(); this._wrRefOk = false; this._s1P = new THREE.Vector3();
@@ -2118,19 +2118,7 @@ export class PlayerAnimator {
     // BEFORE the react layer, so a hit still folds the torso over the swing.
     if (this.melee?.ok) {
       this.melee.step(dt);
-      /* AIM WINS THROUGH A ROLL TOO (W0b targeted fix 4, finding 3). A roll drops
-       * `player.aiming` for its length, so an LMB held on a drawn bow reads to
-       * `melee.js` as a spear press: draw, charge, and a swing fired on the step
-       * the aim comes back — the bow arm thrown overhead with the string being
-       * drawn under it (the 0.45-0.78 m off the string). RMB never left: the lance
-       * is not posed from a roll that began with it stowed and RMB down until
-       * melee has stowed it again or RMB comes up. (The state machine is the melee
-       * lane's: ROUND5-HERO-BODY.md section 7 asks for the input edge there.) */
-      const mlSt = this.ctx.combat?.melee?.poseState?.() ?? null;
-      const mlRmb = !!this.ctx.input?.mouseDown?.(2), mlAway = (mlSt?.stance ?? 'holstered') === 'holstered';
-      if (this._mlHush) { if (!mlRmb || (mlAway && !p?.dodging)) this._mlHush = false; }
-      else if (mlRmb && mlAway && p?.dodging) this._mlHush = true;
-      this.melee.update(dt, this._mlHush ? null : mlSt);
+      this.melee.update(dt, this.ctx.combat?.melee?.poseState?.() ?? null);
       /* THE SPEAR'S OWN STANCE ASKS FOR A PELVIS OFFSET (fix pass 2, melee
        * `STANCE`). The melee layer bends the knees for the beat it is playing;
        * a bent knee with the hips held up lifts the foot off the floor, so the
