@@ -75,13 +75,18 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
       const st = clothStack(f, { azN: 240, elN: 120 });
       const rows = [-1, -0.9, -0.5, 0, 0.5, 0.9, 1];
       const gs = [];
-      gs.push(ribbon(f, { n: rotAbout(tilt, [1, 0, 0], 0.16), o0: -36 * DEG, w: 0.44, along: 20, rowsT: rows, lift: 0.0006, pillow: 0.0028, stack: st, bridge: 0, creases: 2, creaseAmp: 0.001, seed: 21, joint: head, uv: uvB([0, 1]), wander: 0.05 }));
-      gs.push(ribbon(f, { n: rotAbout(tilt, [0.5, 0, 0.8], -0.22), o0: 4 * DEG, w: 0.46, along: 20, rowsT: rows, lift: 0.0008, pillow: 0.003, stack: st, bridge: 0.07, creases: 2, creaseAmp: 0.0011, seed: 27, joint: head, uv: uvA([1, 0]), wander: 0.05 }));
-      gs.push(ribbon(f, { n: rotAbout(tilt, [-0.7, 0, 0.6], 0.2), o0: 40 * DEG, w: 0.46, along: 18, rowsT: rows, lift: 0.0008, pillow: 0.003, stack: st, bridge: 0.07, creases: 2, creaseAmp: 0.001, seed: 34, joint: head, uv: uvB([1, 0]), wander: 0.05 }));
-      // the crown: the cloth's end pulled down into the centre in radial pleats
-      gs.push(crownCap(f, { elMin: 46 * DEG, rings: 3, seg: 18, lift: 0.0008, gather: 0.0017, pleats: 9, hem: 0.002, uvRadial: true, joint: head, stack: st, tiltAxis: tilt, uv: { rect: [A.knotFold.rect[0], A.knotFold.rect[1] + 6, A.knotFold.period, A.knotFold.rect[3] - 12], W } }));
+      gs.push(ribbon(f, { n: rotAbout(tilt, [1, 0, 0], 0.16), o0: -36 * DEG, w: 0.44, along: 22, rowsT: rows, lift: 0.0006, pillow: 0.0028, stack: st, bridge: 0, creases: 2, creaseAmp: 0.001, seed: 21, joint: head, uv: uvB([0, 1]), wander: 0.05 }));
+      gs.push(ribbon(f, { n: rotAbout(tilt, [0.5, 0, 0.8], -0.22), o0: 4 * DEG, w: 0.46, along: 26, rowsT: rows, lift: 0.0008, pillow: 0.003, stack: st, bridge: 0.07, creases: 2, creaseAmp: 0.0011, seed: 27, joint: head, uv: uvA([1, 0]), wander: 0.05 }));
+      gs.push(ribbon(f, { n: rotAbout(tilt, [-0.7, 0, 0.6], 0.2), o0: 40 * DEG, w: 0.46, along: 24, rowsT: rows, lift: 0.0008, pillow: 0.003, stack: st, bridge: 0.07, creases: 2, creaseAmp: 0.001, seed: 34, joint: head, uv: uvB([1, 0]), wander: 0.05 }));
+      // the crown: the cloth's end pulled down into the centre in radial pleats (fix round 1: down to 31 deg, so no concentric turn
+      // edges show from above; the turns and the cap carry more segments, so the bun's outline has no corners; the cap rides 3 mm
+      // over the turns, so none pokes through it, its hem dives 6 mm under them, and it reads only 56 px of the panel's length, so its folds
+      // run to the centre, not round it)
+      gs.push(crownCap(f, { elMin: 31 * DEG, rings: 5, seg: 24, lift: 0.003, gather: 0.0019, pleats: 10, hem: 0.006, uvRadial: true, joint: head, stack: st, tiltAxis: tilt, uv: { rect: [A.knotFold.rect[0] + 40, A.knotFold.rect[1] + 6, 56, A.knotFold.rect[3] - 12], W } }));
       // nothing shows through under the turns: a closed dark egg inside them
-      gs.push(underShell(f, { axis: tilt, oMin: () => -84 * DEG, seg: 14, rings: 5, joint: head, W, cloth: true, uv: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], at: (dx, dy, dz) => f.R(dx, dy, dz) - 0.0006 }));
+      // fix round 1 (A-wrap-closed): below its waist the egg swells out into the head wrap, so the crease where the bun meets the wrap
+      // is filled with cloth and no look along it sees the sky between them
+      gs.push(underShell(f, { axis: tilt, oMin: () => -84 * DEG, seg: 14, rings: 5, joint: head, W, cloth: true, uv: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], at: (dx, dy, dz) => f.R(dx, dy, dz) - 0.0006 + (+(process.env.BUN_SWELL ?? 0.012)) * smooth(-0.1, -0.6, dx * tilt[0] + dy * tilt[1] + dz * tilt[2]) }));
       // the carmine binding where it meets the head: two turns of cord seated in the cloth
       const bindUV = { rect: liningMid, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0.1, 0.9] };
       gs.push(ribbon(f, { n: tilt, o0: -35 * DEG, w: 0.052, along: 30, rowsT: [-1, 0, 1], lift: 0.0004, pillow: 0.0024, stack: st, bridge: 0, creases: 0, seed: 51, joint: head, uv: bindUV, wander: 0.012, hemStart: 0.55 }));
@@ -103,11 +108,13 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
     knotForm = ellipsoidForm([k0[0] - 0.009, k0[1] + 0.011, k0[2] + 0.021], { r: 0.0265, rAxis: 0.024, axis: [0.3, 0.8, -0.5], egg: 0.05 });
     const kst = clothStack(knotForm, { azN: 120, elN: 60 });
     const rows = [-1, -0.85, -0.3, 0.3, 0.85, 1];
-    // a closed egg inside it: from behind, the far hems would otherwise hang in the air like wires
-    add('knotShell', underShell(knotForm, { axis: [0.3, 0.8, -0.5], oMin: () => -82 * DEG, seg: 12, rings: 5, joint: head, W, cloth: true, uv: [A.knotFold.rect[0], A.knotFold.rect[1], A.knotFold.period, A.knotFold.rect[3]], at: (dx, dy, dz) => knotForm.R(dx, dy, dz) - 0.0003 }));
+    // a closed egg inside it: from behind, the far hems would otherwise hang in the air like wires. Fix round 1 (A-wrap-closed): the
+    // knot's two turns sink their hems 1.6 mm, and the egg stands 1.2 mm proud of the knot form, so no lip stands off its side with
+    // the background behind it
+    add('knotShell', underShell(knotForm, { axis: [0.3, 0.8, -0.5], oMin: () => -82 * DEG, seg: 12, rings: 5, joint: head, W, cloth: true, uv: [A.knotFold.rect[0], A.knotFold.rect[1], A.knotFold.period, A.knotFold.rect[3]], at: (dx, dy, dz) => knotForm.R(dx, dy, dz) + 0.0012 }));
     knotParts = [
-      add('knot', ribbon(knotForm, { n: [0.5, 0.6, -0.6], o0: -14 * DEG, w: 0.86, along: 12, rowsT: rows, lift: 0, pillow: 0.0011, hemSink: 0.0002, stack: kst, bridge: 0, creases: 2, creaseAmp: 0.0007, seed: 41, joint: head, uv: { rect: A.knotFold.rect, period: A.knotFold.period, W, pxPerM: 1 / 0.0012, v: [0, 1] }, wander: 0.04 })),
-      add('knot2', ribbon(knotForm, { n: [-0.6, 0.7, 0.3], o0: 14 * DEG, w: 0.8, along: 12, rowsT: rows, lift: 0.0003, pillow: 0.0011, hemSink: 0.0002, stack: kst, bridge: 0.1, creases: 2, creaseAmp: 0.0007, seed: 47, joint: head, uv: { rect: A.knotFold.rect, period: A.knotFold.period, W, pxPerM: 1 / 0.0012, v: [1, 0] }, wander: 0.04 })),
+      add('knot', ribbon(knotForm, { n: [0.5, 0.6, -0.6], o0: -14 * DEG, w: 0.86, along: 12, rowsT: rows, lift: 0, pillow: 0.0011, hemSink: 0.0016, stack: kst, bridge: 0, creases: 2, creaseAmp: 0.0007, seed: 41, joint: head, uv: { rect: A.knotFold.rect, period: A.knotFold.period, W, pxPerM: 1 / 0.0012, v: [0, 1] }, wander: 0.04 })),
+      add('knot2', ribbon(knotForm, { n: [-0.6, 0.7, 0.3], o0: 14 * DEG, w: 0.8, along: 12, rowsT: rows, lift: 0.0003, pillow: 0.0011, hemSink: 0.0016, stack: kst, bridge: 0.1, creases: 2, creaseAmp: 0.0007, seed: 47, joint: head, uv: { rect: A.knotFold.rect, period: A.knotFold.period, W, pxPerM: 1 / 0.0012, v: [1, 0] }, wander: 0.04 })),
     ];
   }
   // the free tail on its chain, with a real section

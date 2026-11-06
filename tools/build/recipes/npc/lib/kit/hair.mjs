@@ -134,6 +134,29 @@ export function paintCoilFringe(buf, { rect, W = 512, hair = '#15110F', seed = 3
     buf.normal[q] = clampB((n[0] * 0.5 + 0.5) * 255); buf.normal[q + 1] = clampB((n[1] * 0.5 + 0.5) * 255); buf.normal[q + 2] = clampB((n[2] * 0.5 + 0.5) * 255);
     buf.orm[q] = 255; buf.orm[q + 1] = clampB((rough + 0.18 * (1 - hv)) * 255); buf.orm[q + 2] = HAIR_METAL;
   }
+  // fix round 1 (A-wrap-closed): below the tips every strand is a texel fatter (the runtime's mipmaps average a thin strand's alpha
+  // under the 0.5 cut at 0.8 m, which opened pinholes the full-size texture does not have); then a pocket of air shut inside the coil
+  // mass (not open to the tips) is filled with shaded hair, so a card against the sky shows a broken outline but no pinhole of sky
+  {
+    const clear = (x, y) => buf.base[((y0 + y) * W + x0 + x) * 4 + 3] < 128;
+    const solidAt = (x, y) => x >= 0 && y >= 0 && x < w && y < h && !clear(x, y);
+    const fillAt = (x, y) => {
+      const o = ((y0 + y) * W + x0 + x) * 4, shade = mix(0.6, 0.45, smooth(0.55, 1, y / h));
+      buf.base[o] = clampB(C[0] * shade + 6); buf.base[o + 1] = clampB(C[1] * shade + 4); buf.base[o + 2] = clampB(C[2] * shade + 3); buf.base[o + 3] = 255;
+    };
+    const fat = [];
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      if (!clear(x, y) || y < h * 0.22) continue;
+      if (solidAt(x - 1, y) || solidAt(x + 1, y) || solidAt(x, y - 1) || solidAt(x, y + 1)) fat.push(x, y);
+    }
+    for (let i = 0; i < fat.length; i += 2) fillAt(fat[i], fat[i + 1]);
+    // open only to the tips: a card's window is a narrower slice of this rect, so a pocket open only to the rect's side is shut in it
+    const open = new Uint8Array(w * h), st = [];
+    const push = (x, y) => { const s = y * w + x; if (!open[s] && clear(x, y)) { open[s] = 1; st.push(s); } };
+    for (let x = 0; x < w; x++) push(x, 0);
+    while (st.length) { const s = st.pop(), x = s % w, y = (s / w) | 0; if (x > 0) push(x - 1, y); if (x < w - 1) push(x + 1, y); if (y > 0) push(x, y - 1); if (y < h - 1) push(x, y + 1); }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!open[y * w + x] && clear(x, y)) fillAt(x, y);
+  }
   return f;
 }
 
@@ -247,7 +270,7 @@ export function scatterAnchors(grid, { center, step = 0.14, seed = 5, keep, elMi
  * body vertex's weights, so nape cards follow the neck. UVs are random windows of the
  * fringe cell (root at its bottom edge).
  */
-export function coilCards(anchors, { flow, skinOf, length = [0.014, 0.024], width = [0.012, 0.02], liftTip = [0.003, 0.0075], rect, W = 512, seed = 9 } = {}) {
+export function coilCards(anchors, { flow, skinOf, length = [0.014, 0.024], width = [0.012, 0.02], liftTip = [0.003, 0.0075], rect, W = 512, seed = 9, twoSided = false } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [], col: [] };
   const R = rng(seed * 2166136261);
   for (const a of anchors) {
@@ -282,6 +305,17 @@ export function coilCards(anchors, { flow, skinOf, length = [0.014, 0.024], widt
     for (let r = 0; r < 2; r++) {
       const a0 = base + r * 2;
       g.idx.push(a0, a0 + 1, a0 + 2, a0 + 1, a0 + 3, a0 + 2);
+    }
+    // `twoSided`: the card's back as well (its own vertices, the normal turned): a card standing off the scalp is seen from behind
+    // through another card's air, and FrontSide would cull it, leaving a pinhole of sky in the hair
+    if (twoSided) {
+      const b2 = g.pos.length / 3;
+      for (let i = 0; i < 6; i++) {
+        const v = base + i;
+        g.pos.push(g.pos[v * 3], g.pos[v * 3 + 1], g.pos[v * 3 + 2]); g.nrm.push(-g.nrm[v * 3], -g.nrm[v * 3 + 1], -g.nrm[v * 3 + 2]);
+        g.uv.push(g.uv[v * 2], g.uv[v * 2 + 1]); g.jnt.push(...g.jnt.slice(v * 4, v * 4 + 4)); g.wgt.push(...g.wgt.slice(v * 4, v * 4 + 4)); g.col.push(...g.col.slice(v * 4, v * 4 + 4));
+      }
+      for (let r = 0; r < 2; r++) { const a0 = b2 + r * 2; g.idx.push(a0, a0 + 2, a0 + 1, a0 + 1, a0 + 2, a0 + 3); }
     }
   }
   return g;
@@ -490,8 +524,9 @@ export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062
     const y = open.upper(Math.max(Math.min(open.x0, open.x1), Math.min(Math.max(open.x0, open.x1), x)));
     const z = zAt(x, y);
     // longest at two thirds, short and thin into the outer corner: from the side a lash is hair, not a slab
-    const L = length * mix(0.62, 1.04, smooth(0.0, 0.62, f)) * mix(1, 0.56, smooth(0.72, 1.02, f));
-    const out = side * mix(0.02, 0.62, f);
+    // (fix round 1: the outer corner splays less and ends shorter, so the far eye's lashes do not stand past the cheek against the sky)
+    const L = length * mix(0.62, 1.04, smooth(0.0, 0.62, f)) * mix(1, 0.46, smooth(0.72, 1.02, f));
+    const out = side * mix(0.02, 0.42, f);
     const up = [out * 0.8, Math.cos(lean * 0.72), Math.sin(lean)];
     const ul = Math.hypot(up[0], up[1], up[2]);
     const a = [x, y + 0.0001, z + 0.0002], b = [x + up[0] / ul * L, y + up[1] / ul * L, z + up[2] / ul * L];
@@ -543,4 +578,13 @@ export function paintLashes(buf, { rect, W = 512, hair = '#0E0A09', seed = 61, r
     buf.normal[q] = 128; buf.normal[q + 1] = 128; buf.normal[q + 2] = 255;
     buf.orm[q] = 255; buf.orm[q + 1] = clampB(rough * 255); buf.orm[q + 2] = 0;
   }
+  // fix round 1 (A-wrap-closed): where two lashes cross, the air they shut in is lash too (from the side the far eye's lashes stand
+  // against the sky, and a pocket between them read as a pinhole of background)
+  const open = new Uint8Array(w * h), st = [];
+  const clear = (x, y) => cov[y * w + x] <= 0.3;
+  const push = (x, y) => { const s2 = y * w + x; if (!open[s2] && clear(x, y)) { open[s2] = 1; st.push(s2); } };
+  for (let x = 0; x < w; x++) push(x, 0);
+  for (let y = 0; y < h; y++) { push(0, y); push(w - 1, y); }
+  while (st.length) { const s2 = st.pop(), x = s2 % w, y = (s2 / w) | 0; if (x > 0) push(x - 1, y); if (x < w - 1) push(x + 1, y); if (y > 0) push(x, y - 1); if (y < h - 1) push(x, y + 1); }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!open[y * w + x] && clear(x, y)) buf.base[((y0 + y) * W + x0 + x) * 4 + 3] = 255;
 }

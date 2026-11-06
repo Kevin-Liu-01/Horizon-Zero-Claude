@@ -7,7 +7,7 @@
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { noise3, smooth, positionMap, recomputeNormals } from './face.mjs';
 import {
-  uvIslands, TriGrid, triSoup, bakeAOTexels, bakeAOPoints, blurMasked, convexity, scalarMap, seamlessTone, paintSkinAtlas, decodeStockSkin, webp, blit, paintEye,
+  uvIslands, TriGrid, triSoup, hemisphereSet, bakeAOTexels, bakeAOPoints, blurMasked, convexity, scalarMap, seamlessTone, paintSkinAtlas, decodeStockSkin, webp, blit, paintEye,
   pores, colourZones, creases, smoothSkin, eyeSocketClean, lipTone, lidLines,
 } from './skin.mjs';
 import { rng, WRAP_ATLAS } from './wrap.mjs';
@@ -79,7 +79,8 @@ export function primFromGeo(doc, g) {
  */
 export function hairShape(X, Y, Z) {
   const ax = Math.abs(X);
-  const wob = (noise3(X * 90, Y * 90, Z * 90) - 0.5) * 0.009;
+  // the edge wanders at two scales, so it breaks into coils, not a clipper's line (fix round 1: the low edge over the ear read straight)
+  const wob = (noise3(X * 90, Y * 90, Z * 90) - 0.5) * 0.009 + (noise3(X * 260 + 7, Y * 260, Z * 260) - 0.5) * 0.0042;
   // the sideburn: from under the wrap down in front of the ear, tapering to a point
   const t = smooth(1.654, 1.705, Y);
   const zf = -0.001 + t * 0.026 + wob, zb = -0.008 - t * 0.016 + wob * 0.8;
@@ -90,7 +91,7 @@ export function hairShape(X, Y, Z) {
   const zBehind = -0.052 - 0.030 * smooth(1.668, 1.585, Y) + wob;
   const behind = (1 - smooth(zBehind - 0.006, zBehind + 0.001, Z)) * smooth(yLow - 0.003, yLow + 0.004, Y);
   // above the ear, a low band joining the two under the cloth
-  const over = smooth(1.664, 1.676, Y + wob * 0.6) * smooth(-0.056, -0.05, Z) * (1 - smooth(zf - 0.006, zf + 0.004, Z));
+  const over = smooth(1.664, 1.676, Y + wob) * smooth(-0.056, -0.05, Z) * (1 - smooth(zf - 0.006, zf + 0.004, Z));
   const onEar = ax > 0.0715 && Z > -0.052 && Z < 0.006 && Y < 1.671 ? 0 : 1;
   return Math.max(burn, behind, over) * onEar;
 }
@@ -158,43 +159,157 @@ export function leanInwardNormals(bodyPrim, eyesPrim, { L, eyes }) {
     nrm[v * 3 + 1] = yz * Math.sin(a) * sc; nrm[v * 3 + 2] = yz * Math.cos(a);
     bent++;
   });
+  // Then the rays decide what the rules above missed (fix round 1: the judges' backlit and side-lit frames).
+  const grid = new TriGrid(new Float32Array(soup), 0.012);
+  // A deep fold (a nostril's walls, the corner of the mouth, the alar groove) shades by the way out of it, its bent normal, not by
+  // its own facing: a wall inside the nostril that faces a sun on her left is shut off from it by the ala 5 mm away, but the
+  // shadow's 3.5 cm normal offset steps over the ala and the wall burns pale through the opening
+  const hemi = hemisphereSet(96);
+  const yLo = L.upperLip[1] - 0.04, yHi = eyes[0][1] + 0.012;
+  const openA = new Float32Array(pick.length).fill(1);
+  pick.forEach((v, i) => {
+    const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
+    if (y < yLo || y > yHi || Math.abs(x) > 0.052) return;
+    let gx = ns[i * 3], gy = ns[i * 3 + 1], gz = ns[i * 3 + 2];
+    const gl = Math.hypot(gx, gy, gz) || 1; gx /= gl; gy /= gl; gz /= gl;
+    let tx, ty, tz;
+    if (Math.abs(gx) < 0.8) { tx = 0; ty = -gz; tz = gy; } else { tx = -gz; ty = 0; tz = gx; }
+    const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+    const bx = gy * tz - gz * ty, by = gz * tx - gx * tz, bz = gx * ty - gy * tx;
+    let ox = 0, oy = 0, oz = 0, open = 0;
+    for (let r = 0; r < 96; r++) {
+      const a = hemi[r * 3], b = hemi[r * 3 + 1], c = hemi[r * 3 + 2];
+      const dx = tx * a + bx * b + gx * c, dy = ty * a + by * b + gy * c, dz = tz * a + bz * b + gz * c;
+      if (grid.cast(x + gx * 0.0005, y + gy * 0.0005, z + gz * 0.0005, dx, dy, dz, 0.03, 0.0003) >= 0) continue;
+      ox += dx; oy += dy; oz += dz; open++;
+    }
+    const a = open / 96, k = 1 - smooth(0.3, 0.62, a);
+    openA[i] = a;
+    if (k <= 0.01 || open === 0) return;
+    const ol = Math.hypot(ox, oy, oz) || 1;
+    let nx = nrm[v * 3] * (1 - k) + (ox / ol) * k, ny = nrm[v * 3 + 1] * (1 - k) + (oy / ol) * k, nz = nrm[v * 3 + 2] * (1 - k) + (oz / ol) * k;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    nrm[v * 3] = nx / l; nrm[v * 3 + 1] = ny / l; nrm[v * 3 + 2] = nz / l;
+    bent++;
+  });
+  // The nose's underside faces the ground, which the game's light barely fills: by its own facing it went black round the nostrils,
+  // with the lit columella a pale shard between them. It takes the light the upper lip throws back up into it, as a forward lean of
+  // the shading normal (safe in a back light: forward is away from any sun behind her); the slit itself keeps its dark.
+  const tip = L.noseTip;
+  pick.forEach((v, i) => {
+    const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
+    if (Math.abs(x) > 0.027 || y > tip[1] + 0.003 || y < L.upperLip[1] + 0.003 || z < tip[2] - 0.042) return;
+    const ny = nrm[v * 3 + 1];
+    const k = 0.7 * smooth(-0.12, -0.42, ny) * smooth(0.32, 0.58, openA[i]) * (1 - smooth(0.022, 0.027, Math.abs(x)));
+    if (k <= 0.01) return;
+    const tx = nrm[v * 3] * 0.45, ty = -0.42, tz = 0.9, tl = Math.hypot(tx, ty, tz);
+    const nx = mix(nrm[v * 3], tx / tl, k), my = mix(ny, ty / tl, k), nz = mix(nrm[v * 3 + 2], tz / tl, k), l = Math.hypot(nx, my, nz) || 1;
+    nrm[v * 3] = nx / l; nrm[v * 3 + 1] = my / l; nrm[v * 3 + 2] = nz / l;
+    bent++;
+  });
+  // Last, the back suns (an ala's groove, a lip's corner, a pale shard inside a nostril): the game's
+  // sun shadow samples 3.5 cm out along the vertex normal (environment.js normalBias), so a surface that faces a sun BEHIND the
+  // head while the head itself stands between them lights up anyway. For every back sun the game can give her face (azimuth
+  // 100..260 deg off her front, up to 52 deg high), a vertex in the mid-face that faces it and is shut off from it by her own
+  // skin turns away from it, by the least turn that does (a projection, so a front or top light barely changes).
+  const suns = [];
+  for (let A = 100; A <= 260; A += 20) for (const E of [4, 18, 34, 52]) {
+    const a = A * Math.PI / 180, e = E * Math.PI / 180;
+    suns.push([Math.sin(a) * Math.cos(e), Math.sin(e), Math.cos(a) * Math.cos(e)]);
+  }
+  pick.forEach((v) => {
+    const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
+    if (y < yLo || y > yHi || Math.abs(x) > 0.052) return;
+    let nx = nrm[v * 3], ny = nrm[v * 3 + 1], nz = nrm[v * 3 + 2];
+    const shut = [];
+    for (const s of suns) {
+      if (nx * s[0] + ny * s[1] + nz * s[2] <= -0.02) continue;
+      if (grid.cast(x + nx * 0.0006, y + ny * 0.0006, z + nz * 0.0006, s[0], s[1], s[2], 0.25, 0.0004) >= 0) shut.push(s);
+    }
+    if (!shut.length) return;
+    for (let it = 0; it < 8; it++) {
+      let moved = false;
+      for (const s of shut) {
+        const d = nx * s[0] + ny * s[1] + nz * s[2] + 0.03;
+        if (d <= 0) continue;
+        nx -= d * s[0]; ny -= d * s[1]; nz -= d * s[2];
+        const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+        moved = true;
+      }
+      if (!moved) break;
+    }
+    nrm[v * 3] = nx; nrm[v * 3 + 1] = ny; nrm[v * 3 + 2] = nz;
+    bent++;
+  });
   N.setArray(nrm);
   return bent;
 }
 
 /**
- * Whatever a collar's opening could show that is not skin: a closed skirt from inside the neck out under the collar and the shoulders,
- * lying under the outfit's bind surface (`outfitTris`, flat), so a look down inside the collar never meets the ground through her.
- * Skinned like the nearest body vertex; one dark texel (the UV of `darkUV`). Call after the paint. Returns the first new vertex index.
+ * Whatever a collar's opening could show that is not skin: a closed dark lid inside the collar, from inside the neck out toward the
+ * collar's own wall (`margin` short of it) a hand's width under its rim at the BACK, where the collar stands off the neck; at the
+ * front and the sides it stays inside the neck (the V shows skin down to the smock). A look down inside the collar, past a bowed
+ * head, over the shoulder and down the back, where the single-sided smock shows no inside, meets the lid, never the ground.
+ * Fix round 1 (A-wrap-closed): the first version lay under the skin, so such a look slid down the gap between the back and the
+ * smock and out through it; a lid nearer the wall than 12 mm poked through the smock's back once the arms were down.
+ * Skinned like the torso under the collar (never the neck); one dark texel (the UV of `darkUV`); both faces. Call after the paint.
+ * Returns the first new vertex index.
  */
-export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, y1 = 1.372, rx0 = 0.042, rz0 = 0.05, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 3, gap = 0.006, darkUV } = {}) {
+export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 2, gap = 0.006, backLift = 0.035, margin = 0.012, lip = 0.006, darkUV } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
   const n0 = P.getCount();
   const near = [];
-  { const q = [0, 0, 0]; for (let i = 0; i < n0; i++) { P.getElement(i, q); if (q[1] > 1.28 && q[1] < 1.56 && Math.abs(q[0]) < 0.28) near.push([q[0], q[1], q[2], i]); } }
+  // skinned like the torso under the collar, never like the neck: with the head bowed the neck leans forward off a lid that
+  // followed it and the opening behind it showed the ground
+  { const q = [0, 0, 0]; for (let i = 0; i < n0; i++) { P.getElement(i, q); if (q[1] > 1.28 && q[1] < 1.43 && Math.abs(q[0]) < 0.28) near.push([q[0], q[1], q[2], i]); } }
   const pos = [], nrm = [], uv = [], jnt = [], wgt = [], idx = [];
   const j = [0, 0, 0, 0], w = [0, 0, 0, 0];
-  for (let r = 0; r <= rings; r++) for (let k = 0; k < seg; k++) {
-    const t = r / rings, a = (k / seg) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
-    let y = mix(y0, y1, t);
-    // it stays inside the outfit's wall at its own height, and under its roof
-    const wall = grid.cast(0, y, centerZ, sa, 0, ca, 0.4, 0.0001);
-    const lim = wall >= 0 ? Math.max(0, wall - 0.009) : 1;
-    const rr = Math.min(1, lim / Math.max(1e-6, Math.hypot(sa * mix(rx0, rx1, t), ca * mix(rz0, rz1, t))));
-    const x = sa * mix(rx0, rx1, t) * rr, z = centerZ + ca * mix(rz0, rz1, t) * rr;
-    const hit = grid.cast(x, 1.62, z, 0, -1, 0, 0.34, 0.0001);
-    if (hit >= 0) y = Math.min(y, 1.62 - hit - gap);
+  const put = (x, y, z) => {
     pos.push(x, y, z); nrm.push(0, 1, 0); uv.push(darkUV[0], darkUV[1]);
     let best = -1, bd = 9;
     for (const v of near) { const d = (v[0] - x) ** 2 + (v[1] - y) ** 2 + (v[2] - z) ** 2; if (d < bd) { bd = d; best = v[3]; } }
     J.getElement(best, j); W.getElement(best, w);
     jnt.push(...j); wgt.push(...w);
+  };
+  // rings 0..rings: the lid; rings+1: its lip, out to `lip` from the wall at the back, folding back to the lid's edge (rings+2), so
+  // a look grazing down the inside of the back wall meets it (fix round 1: measured on the live pose, 0 enclosed px over 96 views)
+  const ringsAll = rings + 2;
+  const edge = [];
+  for (let r = 0; r <= rings; r++) for (let k = 0; k < seg; k++) {
+    const t0 = r / rings, a = (k / seg) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
+    const back = smooth(-0.1, -0.5, ca), t = t0 * back;      // out to the wall only at the back
+    const lift = backLift * 0.5 * (1 - ca);                    // 0 at the front, half at the sides, all of it at the back
+    let y = y0 + lift - 0.004 * t;                             // flat out to the wall: a look past the neck meets it before the wall
+    // it stays inside the outfit's wall at its own height, and under its roof
+    const wall = grid.cast(0, y, centerZ, sa, 0, ca, 0.4, 0.0001);
+    const lim = wall >= 0 ? Math.max(0, wall - margin) : 1;
+    const rr = Math.min(1, lim / Math.max(1e-6, Math.hypot(sa * mix(rx0, rx1, t), ca * mix(rz0, rz1, t))));
+    const x = sa * mix(rx0, rx1, t) * rr, z = centerZ + ca * mix(rz0, rz1, t) * rr;
+    const hit = grid.cast(x, 1.62, z, 0, -1, 0, 0.34, 0.0001);
+    if (hit >= 0) y = Math.min(y, 1.62 - hit - gap);
+    put(x, y, z);
+    if (r === rings) edge.push([sa, ca, y, Math.hypot(x, z - centerZ), back]);
   }
-  for (let r = 0; r < rings; r++) for (let k = 0; k < seg; k++) {
+  for (const out of [true, false]) for (const [sa, ca, y, r0, back] of edge) {
+    const wall = grid.cast(0, y, centerZ, sa, 0, ca, 0.4, 0.0001);
+    const rr = out && back >= 0.5 && wall >= 0 ? Math.min(r0 + 0.03, Math.max(0, wall - lip)) : out ? r0 * 0.975 : r0;
+    put(sa * rr, y, centerZ + ca * rr);
+  }
+  for (let r = 0; r < ringsAll; r++) for (let k = 0; k < seg; k++) {
     const kn = (k + 1) % seg, a = n0 + r * seg + k, b = n0 + r * seg + kn, c = n0 + (r + 1) * seg + k, d = n0 + (r + 1) * seg + kn;
-    // wound so its upper face is the front one
+    // wound so its upper (inner, for the hem) face is the front one
     idx.push(a, c, b, b, c, d);
+  }
+  // and its other face too: from a camera above her the far side of a bowed lid turns its back, which FrontSide would cull
+  const nRing = (ringsAll + 1) * seg, m0 = n0 + nRing;
+  for (let i = 0; i < nRing; i++) {
+    pos.push(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]); nrm.push(0, -1, 0); uv.push(uv[i * 2], uv[i * 2 + 1]);
+    jnt.push(jnt[i * 4], jnt[i * 4 + 1], jnt[i * 4 + 2], jnt[i * 4 + 3]); wgt.push(wgt[i * 4], wgt[i * 4 + 1], wgt[i * 4 + 2], wgt[i * 4 + 3]);
+  }
+  for (let r = 0; r < ringsAll; r++) for (let k = 0; k < seg; k++) {
+    const kn = (k + 1) % seg, a = m0 + r * seg + k, b = m0 + r * seg + kn, c = m0 + (r + 1) * seg + k, d = m0 + (r + 1) * seg + kn;
+    idx.push(a, b, c, b, d, c);
   }
   const grow = (A, add) => { const src = A.getArray(), dst = new src.constructor(src.length + add.length); dst.set(src); dst.set(add, src.length); A.setArray(dst); };
   grow(P, pos); grow(prim.getAttribute('NORMAL'), nrm); grow(prim.getAttribute('TEXCOORD_0'), uv); grow(J, jnt); grow(W, wgt);
@@ -364,7 +479,7 @@ export function compactPrim(prim) {
   prim.getIndices().setArray(out);
 }
 /** Coil cards on the scalp below the wrap, around the ears and down the nape. */
-export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape: shape = hairShape, temples = false }) {
+export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape: shape = hairShape, temples = false, twoSided = false }) {
   const A = WRAP_ATLAS;
   const P = bodyPrim.getAttribute('POSITION');
   const verts = [];
@@ -408,7 +523,8 @@ export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, 
     const f = [Math.sign(x) * 0.12 + (R() - 0.5) * 0.7, -1, (z > -0.01 ? -0.85 : -0.2) + (R() - 0.5) * 0.7];
     return f;
   };
-  return coilCards(anchors, { flow, skinOf, rect: A.coilFringe.rect, W: A.W, length: [0.012, 0.02], width: [0.011, 0.018], liftTip: [0.0016, 0.0042] });
+  // (fix round 1, A-wrap-closed: the cards hug the scalp, so their tips break the hairline over skin, not against the sky)
+  return coilCards(anchors, { flow, skinOf, rect: A.coilFringe.rect, W: A.W, length: [0.012, 0.02], width: [0.011, 0.018], liftTip: [0.0004, 0.0016], twoSided });
 }
 
 /**
@@ -451,10 +567,20 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
     T.r = mix(T.r, 26, k); T.g = mix(T.g, 14, k); T.b = mix(T.b, 11, k);
     T.rough = mix(T.rough, 0.95, k);
   };
+  // the source's normal map was baked against the stock ear's own vertex normals: on the moved, re-split and softened ear it printed
+  // flat planes across the helix and the concha (fix round 1, "faceted ears"). The recipe keeps the ear's normals unsoftened, and the
+  // map's relief goes in at half: the folds read, the planes do not
+  const ears = (T) => {
+    const ax = Math.abs(T.X);
+    if (ax < 0.058 || T.Y < 1.575 || T.Y > 1.715 || T.Z < -0.08 || T.Z > 0.035) return;
+    const k = smooth(0.058, 0.066, ax) * smooth(1.575, 1.59, T.Y) * (1 - smooth(1.70, 1.715, T.Y)) * smooth(-0.08, -0.07, T.Z) * (1 - smooth(0.022, 0.035, T.Z));
+    T.nflat = Math.max(T.nflat, k * 0.5);
+  };
   return [
     smoothSkin({ zone: notFeature }),
     inward,
     nostrils,
+    ears,
     eyeSocketClean({ eyes }),
     lipTone({ center: [0, L.upperLip[1] - 0.011, L.upperLip[2] - 0.006], r: [0.036, 0.024, 0.03] }),
     colourZones([

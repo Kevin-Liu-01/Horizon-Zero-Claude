@@ -329,6 +329,7 @@ export class Person {
       this.fromTier = from;
       this.tier = tier;
       this.fadeT = from === -1 || tier === -1 ? 0 : FADE_T;
+      this._lv = 0;   // a new fade starts its pool at the first level, whatever the last fade ended on
       if (from === -1 || tier === -1) this.fromTier = -1;
       for (let i = 0; i < 3; i++) {
         const on = i === tier || i === this.fromTier;

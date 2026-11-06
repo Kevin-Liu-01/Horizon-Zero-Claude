@@ -470,7 +470,7 @@ export const GATES = [
   /* ------------------------------------------------------------------ A97-npc-no-skate */
   {
     id: 'A97-npc-no-skate', kind: 'action', lane: 'settlements', timeout: 240000, settle: 300,
-    title: 'Planted drift <= 0.08 m on a walking NPC: a foot within 3 cm of its loop\'s low point, its world position over that stance window (shadows the Round-4 row)',
+    title: 'Planted drift <= 0.08 m on a walking NPC: a foot within 3 cm of its lowest height over the ground, its world position over that stance window (shadows the Round-4 row)',
     assert: `(async () => {${READY}
       PP.autoStage = false;
       PP.clearStage();
@@ -491,7 +491,9 @@ export const GATES = [
         const trace = [];
         while (E.simTime - t0 < 7 && who.walking) {
           who.root.updateWorldMatrix(true, true);
-          for (const f of feet) { f.b.getWorldPosition(v); trace.push(f.n, v.x, v.y, v.z); f.min = Math.min(f.min, v.y); }
+          // the foot's height over the ground under it: the stage is the flattest place near REST, not a floor, and a walk
+          // across a 20 cm rise would otherwise count only the stance phases at its lowest end
+          for (const f of feet) { f.b.getWorldPosition(v); const gy = v.y - (C.terrain ? C.terrain.getHeight(v.x, v.z) : 0); trace.push(f.n, v.x, gy, v.z); f.min = Math.min(f.min, gy); }
           await frame();
         }
         // the stance windows: below min + 3 cm, runs of >= 4 frames, drift = the largest horizontal range in the run

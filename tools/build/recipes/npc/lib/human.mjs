@@ -86,6 +86,18 @@ function faceBumps(spec, L, mm, S, R) {
   for (const sx of [1, -1]) B([sx * 0.0165, ty - 0.006, tz - 0.02], [-sx * 1.1, 0.4, -0.2], 0.0062);
   B([0, ty + 0.0105, tz - 0.004], [0, 0, -0.8], 0.0058);
   B([0, ty - 0.0085, tz - 0.009], [0, 1.1, -0.7], 0.0058);
+  // Brea's fix round 1 (R54, "the nose is a ball"), the same on every stock nose: the lobule narrows to a defined tip and the
+  // alar lobules slim, across only, then a small point at the front of the lobule and its round underside tucked up and back
+  for (const sx of [1, -1]) {
+    B([sx * 0.0074, ty - 0.0015, tz - 0.0035], [-sx * 1.25, 0, 0], 0.0052);
+    B([sx * 0.0185, ty - 0.0075, tz - 0.023], [-sx * 1.5, 0, 0], 0.0072);
+  }
+  B([0, ty + 0.0012, tz + 0.0008], [0, 0.25, 0.55], 0.0042);
+  B([0, ty - 0.0058, tz - 0.0028], [0, 0.55, -0.5], 0.0048);
+  // and her soft hollow under each cheekbone (R54, "wide and flat"): the bone reads as a plane over a shaded fall to the jaw. A
+  // young face keeps its fullness (the adolescent's read is round cheeks), the years take more
+  const hollow = spec.adolescent ? 0.15 : 0.7 + 0.5 * smooth(35, 70, spec.age);
+  for (const sx of [1, -1]) B([sx * 0.052, 1.597, 0.036], [-sx * 3.4 * hollow, 0.2 * hollow, -1.4 * hollow], 0.0135);
   for (const sx of [1, -1]) {
     B([sx * 0.040, L.chin[1] + 0.012, 0.030], [sx * 1.6, -2.4, 0.2], 0.0165);
     B([sx * 0.024, L.chin[1] + 0.004, 0.066], [sx * 1.2, -1.2, 1.2], 0.0135);
@@ -116,7 +128,7 @@ function faceBumps(spec, L, mm, S, R) {
 }
 
 /** Lid droop by age; the lower lid rises a touch (the same pass Brea's recipe does at a fixed amount). */
-function shapeLids(prim, { eyes, headW, mm, drop }) {
+function shapeLids(prim, { eyes, headW, mm, drop, lower = 0.5 }) {
   const P = prim.getAttribute('POSITION'), a = Float32Array.from(P.getArray());
   for (let i = 0; i < P.getCount(); i++) {
     const x = a[i * 3], y = a[i * 3 + 1], z = a[i * 3 + 2];
@@ -129,7 +141,7 @@ function shapeLids(prim, { eyes, headW, mm, drop }) {
       a[i * 3 + 1] -= mm(drop) * k; a[i * 3 + 2] += mm(0.22) * k;
     } else if (dy < -0.0015 && dy > -0.014) {
       const k = xk * (1 - smooth(0.005, 0.0125, -dy));
-      a[i * 3 + 1] += mm(0.5) * k;
+      a[i * 3 + 1] += mm(lower) * k;
     }
   }
   P.setArray(a);
@@ -414,7 +426,8 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   const headTri = (a, b, c) => headW[a] > 0.5 || headW[b] > 0.5 || headW[c] > 0.5;
   const stockProfile = profileMask(bodyPrim, WIN, 0.0005, headTri);
   applyField(bodyPrim, field);
-  shapeLids(bodyPrim, { eyes, headW, mm, drop: 0.72 + 1.4 * smooth(40, 70, spec.age) });
+  // a young face has the open eye of its age: the upper lid barely comes down and the lower one does not rise
+  shapeLids(bodyPrim, { eyes, headW, mm, drop: spec.adolescent ? 0.2 : 0.72 + 1.4 * smooth(40, 70, spec.age), lower: spec.adolescent ? 0 : 0.5 });
   const moved = movedMask(bodyPrim, stockPos);
   recomputeNormals(bodyPrim, moved);
   refineEdges(bodyPrim, {
@@ -445,7 +458,9 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
       const lid = Math.min(Math.hypot((Math.abs(p[0]) - eyes[0][0]) / 0.024, (p[1] - eyes[0][1]) / 0.0125), 1.6);
       const lip = Math.hypot(p[0] / 0.032, (p[1] - (L.upperLip[1] - 0.011)) / 0.017);
       const nose = Math.hypot(p[0] / 0.022, (p[1] - (L.noseTip[1] - 0.012)) / 0.013);
-      return smooth(0.85, 1.25, lid) * smooth(0.8, 1.2, lip) * smooth(0.75, 1.15, nose);
+      // the ear keeps the normals the source's map was baked against (Brea's fix round 1: softened, the map printed its planes)
+      const ear = smooth(0.058, 0.066, Math.abs(p[0])) * smooth(1.575, 1.59, p[1]) * (1 - smooth(1.70, 1.715, p[1])) * smooth(-0.08, -0.07, p[2]) * (1 - smooth(0.022, 0.035, p[2]));
+      return smooth(0.85, 1.25, lid) * smooth(0.8, 1.2, lip) * smooth(0.75, 1.15, nose) * (1 - ear);
     },
   });
   applyField(browPrim, field);
@@ -700,14 +715,14 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     U.getElement(Math.max(0, best), u);
     return [u[0], u[1]];
   })();
-  appendCollarSkirt(bodyPrim, collarSoup, { darkUV, y1: 1.40, rx1: 0.135, rz1: 0.095, rings: 2, seg: 16 });
+  appendCollarSkirt(bodyPrim, collarSoup, { darkUV, rx1: 0.135, rz1: 0.095, seg: 16 });
 
   // ---- hair + wrap
   const hairParts = [];
   const hairTint = lin(spec.hair).map((v) => Math.min(1, v / HAIR_NEUTRAL));
   let cardCount = 0;
   if (wrapped && !bareHair) {
-    const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ: bodyPrim.getAttribute('JOINTS_0'), skinW: bodyPrim.getAttribute('WEIGHTS_0') });
+    const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ: bodyPrim.getAttribute('JOINTS_0'), skinW: bodyPrim.getAttribute('WEIGHTS_0'), twoSided: true });
     cardCount = cards.idx.length / 3;
     hairParts.push(wrapped.geo, cards);
   } else if (bareHair) {
@@ -725,13 +740,18 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
       if (knotAt && Math.hypot(p[0] - knotAt[0], p[1] - knotAt[1], p[2] - knotAt[2]) < 0.045) return false;
       if (wrapped?.stack) {
         // not under the band, and not just above it, where a card's tip would lie on the cloth
-        const x = p[0] - skinCenter[0], y = p[1] - skinCenter[1], z = p[2] - skinCenter[2], l = Math.hypot(x, y, z) || 1;
-        for (const drop of [0, 0.02, 0.04]) { const yy = y - drop; const q = Math.hypot(x, yy, z) || 1; if (wrapped.stack.coveredAt(x / q, yy / q, z / q)) return false; }
+        // (a card is up to 2 cm long, flows down and back or forward, and its tip stands up to 5 mm off the scalp: wherever it
+        // could lie must be clear of the band, or its tip comes through the cloth)
+        const x = p[0] - skinCenter[0], y = p[1] - skinCenter[1], z = p[2] - skinCenter[2];
+        for (const drop of [0, 0.01, 0.02, 0.03, 0.04]) for (const dx of [-0.012, 0, 0.012]) for (const dz of [-0.018, 0, 0.012]) {
+          const xx = x + dx, yy = y - drop, zz = z + dz, q = Math.hypot(xx, yy, zz) || 1;
+          if (wrapped.stack.coveredAt(xx / q, yy / q, zz / q)) return false;
+        }
       }
       return true;
     };
     const anchors = scatterAnchors(grid, { center: [0, 1.66, -0.02], step: H.kind === 'hood' ? 0.2 : 0.1, seed: 5 + spec.n, keep, elMin: -1.2, elMax: 1.45 });
-    const cards = coilCards(anchors, { flow: (a, Rr) => { const x = a.p[0], z = a.p[2]; return [Math.sign(x) * 0.25 + (Rr() - 0.5) * 0.8, -0.55, (z > 0 ? 0.3 : -0.8) + (Rr() - 0.5) * 0.7]; }, skinOf, rect: WRAP_ATLAS.coilFringe.rect, W: WRAP_ATLAS.W, length: [0.012, 0.02], width: [0.012, 0.02], liftTip: [0.002, 0.0055] });
+    const cards = coilCards(anchors, { flow: (a, Rr) => { const x = a.p[0], z = a.p[2]; return [Math.sign(x) * 0.25 + (Rr() - 0.5) * 0.8, -0.55, (z > 0 ? 0.3 : -0.8) + (Rr() - 0.5) * 0.7]; }, skinOf, rect: WRAP_ATLAS.coilFringe.rect, W: WRAP_ATLAS.W, length: [0.012, 0.02], width: [0.012, 0.02], liftTip: [0.002, 0.0055], twoSided: true });
     cardCount = cards.idx.length / 3;
     hairParts.push(cards);
     if (H.kind === 'hood') {
