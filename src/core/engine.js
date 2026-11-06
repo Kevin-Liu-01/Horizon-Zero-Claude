@@ -257,14 +257,14 @@ export const LOOK_W0 = Object.freeze({
 });
 /**
  * L-07 bloom retune: only true highlights glow, with a wide soft halo. Under AgX the threshold is
- * keyed to DISPLAY brightness (look.hdrForLstar): bloom starts at the grey that shows at L* 93 and is
- * full by L* 96, at the hour's exposure. ROUND5-LOOK's 1.30 / 0.35 were ACES-scale numbers: under the
+ * keyed to DISPLAY brightness (look.hdrForLstar): bloom starts at the grey that shows at L* 93 at the
+ * hour's exposure, with ROUND5-LOOK's knee kept in proportion (0.35 / 1.30 of the threshold). ROUND5-LOOK's 1.30 / 0.35 were ACES-scale numbers: under the
  * CALIMA look HDR 1.30 shows at L* ~84, so sunlit cloth, rock and salt (L* 85-92: A-look-bloom a,
  * V-look-glow) and the calm lamp ring (#F2EAD3, L* 93.6, HDR lum 2.47) would all glow. `threshold` /
  * `smoothWidth` stay the fallbacks (ACES output, or before the look is built).
  */
 export const LOOK_BLOOM = Object.freeze({ strength: 0.48, radius: 0.72, threshold: 1.30, smoothWidth: 0.35,
-  thresholdLstar: 93, fullLstar: 96,
+  thresholdLstar: 93, kneeRatio: 0.35 / 1.30,
   factors: Object.freeze([0.55, 0.65, 0.85, 1.05, 1.25]), tint: Object.freeze([1.0, 0.97, 0.93]) });
 
 const OutputGradeShader = {
@@ -1358,7 +1358,7 @@ export class Engine {
     b.strength = B.strength * L.bloomScale;
     b.radius = B.radius;
     let thr = B.threshold, sw = B.smoothWidth;
-    if (agx && B.thresholdLstar) { thr = L.hdrForLstar(B.thresholdLstar); sw = Math.max(0.05, L.hdrForLstar(B.fullLstar) - thr); }
+    if (agx && B.thresholdLstar) { thr = L.hdrForLstar(B.thresholdLstar); sw = thr * B.kneeRatio; }
     b.threshold = thr;
     if (b.highPassUniforms?.smoothWidth) b.highPassUniforms.smoothWidth.value = sw;
     const cu = b.compositeMaterial?.uniforms;

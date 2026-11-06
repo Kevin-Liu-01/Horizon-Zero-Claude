@@ -763,7 +763,7 @@ const GLOW_FILM = lookJob(`
     unstage();
   }
   s = await stageLook('field', { hour: 13, sunRel: 180, pitch: -0.2 });
-  if (!s.skip) { const c = await grabCanvas(); cells.push({ cap: c, label: 'noon, lit ground: nothing diffuse may glow (bloom threshold 1.30, width 0.35)' }); unstage(); }
+  if (!s.skip) { const c = await grabCanvas(); const bl = __E.bloom; cells.push({ cap: c, label: 'noon, lit ground: nothing diffuse may glow (bloom from HDR ' + bl.threshold.toFixed(2) + ' = display L* 93, knee ' + bl.highPassUniforms.smoothWidth.value.toFixed(2) + ')' }); unstage(); }
   sheet(cells, 'V-look-glow: only true highlights glow (L-07)', 1);
 `);
 
