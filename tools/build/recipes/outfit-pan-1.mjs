@@ -43,6 +43,7 @@ import { bindingAlong, draftSmock, drapeTable, openEdges, radialTable, roundRect
 import { outfitDoc, writeOutfit } from './armor/lib/output.mjs';
 import { romFit } from './armor/lib/romfit.mjs';
 import { sashKnot, sashTail } from './armor/lib/sash.mjs';
+import { bakeVertexAO } from './armor/lib/vertexao.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/hero/outfit-pan-1.glb'];
@@ -268,11 +269,12 @@ export function panTrim(W, H, trimH) {
     const e = Math.min(t.x, t.y, t.w - 1 - t.x, t.h - 1 - t.y) / 26;
     const m = fbm(t.ax * 0.04, t.ay * 0.04, 6.6, 3);
     // glaze pools thick and dark at the lower rim of each scute, thin and pale over the crown
-    put(o, sc(COL.celadon, 0.56 + 0.3 * clamp(e) + 0.2 * (m - 0.5)));
+    // (armory W1: lighter: celadon is a pale jade glaze, and at 0.56 it read as dark bottle green)
+    put(o, sc(COL.celadon, 0.8 + 0.22 * clamp(e) + 0.16 * (m - 0.5)));
     const rim = sstep(0.66, 1, t.v);
-    if (rim > 0) { const q = 1 - 0.55 * rim; o.r *= q; o.g *= q * 1.02; o.b *= q; }
+    if (rim > 0) { const q = 1 - 0.32 * rim; o.r *= q; o.g *= q * 1.02; o.b *= q; }
     const craze = Math.abs(fbm(t.ax * 0.22, t.ay * 0.22, 9.9, 2) - 0.5);
-    if (craze < 0.018) { const q = 0.72; o.r *= q; o.g *= q; o.b *= q; o.h -= 0.0005; }
+    if (craze < 0.012) { const q = 0.86; o.r *= q; o.g *= q; o.b *= q; o.h -= 0.0003; }
     o.rough = 0.24 + 0.18 * m; o.metal = 0; o.det = 0; o.wear = 0.2;
   });
   T.cell('crust', 96, 60, (t, o) => {
@@ -414,7 +416,7 @@ export const PAN_PAINTERS = {
     o.wear = 1.1;
   },
   under(t, o) {
-    cloth(t, o, sc(COL.linen, 0.92), { slub: 0.1, mottle: 0.14, seed: 2 });
+    cloth(t, o, sc(COL.linen, 0.92), { slub: 0.06, mottle: 0.14, seed: 2, thread: 0.05 });
     const f = hangFolds(t, { belt: 0.95, hem: 0.68, seed: 5 });
     o.h += 0.005 * (f - 0.55);
     o.ao *= 0.72 + 0.28 * sstep(0.775, 0.725, t.Y);
@@ -425,14 +427,15 @@ export const PAN_PAINTERS = {
   },
   /** The linen under-tunic's stand collar and yoke, seen in the neck opening. */
   underyoke(t, o) {
-    cloth(t, o, sc(COL.linen, 0.97), { slub: 0.1, mottle: 0.1, seed: 16 });
+    cloth(t, o, sc(COL.linen, 0.97), { slub: 0.06, mottle: 0.1, seed: 16, thread: 0.05 });
     // shaded by the smock over it, brighter up the collar
     o.ao *= 0.62 + 0.38 * sstep(1.40, 1.49, t.Y);
     seam(t, o, { threads: false, groove: 0.9 });
     o.wear = 0.7; o.crease = 0.4;
   },
   sleeves(t, o) {
-    cloth(t, o, COL.linen, { slub: 0.09, mottle: 0.09, seed: 5 });
+    // (armory W1: slubs and single threads quieter: at 0.09 the warp and weft bands crossed into a plaid on the arm)
+    cloth(t, o, COL.linen, { slub: 0.05, mottle: 0.09, seed: 5, thread: 0.045 });
     // the shoulder, shaded under the smock's edge, sweat-yellowed
     const ax = Math.abs(t.X);
     o.ao *= 0.7 + 0.3 * sstep(0.165, 0.215, ax);
@@ -489,7 +492,7 @@ export const PAN_PAINTERS = {
       const groove = sstep(0.16, 0.0, sf) + sstep(0.84, 1.0, sf);          // the shade between two strands
       const lot = 0.9 + 0.2 * noise3(si * 1.37 + hs * 9.1, k * 2.11, 3.3);  // grass from different cuts, strand by strand
       const spine = 1 - clamp(half / 0.07);                                 // where the halves interleave
-      const v = (0.7 + 0.3 * edge) * (0.84 + 0.2 * strand) * (1 - 0.22 * groove) * (1 - 0.1 * spine) * lot * (0.95 + 0.1 * (n - 0.5));
+      const v = (0.72 + 0.28 * edge) * (0.87 + 0.16 * strand) * (1 - 0.15 * groove) * (1 - 0.08 * spine) * lot * (0.95 + 0.1 * (n - 0.5));
       put(o, sc(COL.esparto, v));
       o.h = 0.0011 * edge + 0.00055 * strand * edge - 0.0002 * groove;
       // the turn above lies over this one's top edge
@@ -762,7 +765,7 @@ export async function panBase(opt = {}) {
   // (armory W1: its top takes the girdle's skin, its foot the skirt's: at full draw the girdle rode up with her
   // trunk and the 4 mm they shared opened to a band of skin; moved whole with the girdle, the skirt's top stood
   // through its foot instead)
-  const sashBand = beltRing(mk('sashband', { trim: true }), skirtField, skinOf, { skinY: [BELT_Y - 0.055, BELT_Y], y: BELT_Y - 0.040, h: 0.03, off: 0.0034, cols: 26, rect: trim.rect('sash'), thick: 0.003, lip: 0.002, tilt: 0.003, dy: 0.02 });
+  const sashBand = beltRing(mk('sashband', { trim: true }), skirtField, skinOf, { skinY: [BELT_Y - 0.055, BELT_Y], y: BELT_Y - 0.043, h: 0.026, off: 0.0016, cols: 26, rect: trim.rect('sash'), thick: 0.003, lip: 0.002, tilt: 0.003, dy: 0.02 });
   // the buckle stands on the belt, front and a touch to her left, rigid on spine_01
   const fr = new Field([girdle], 0.04).radial(beltY, Math.PI / 2 - 0.12, 0, -0.02, 0.03, 0.14) + 0.0035;
   const bk = [Math.cos(Math.PI / 2 - 0.12) * fr, beltY, -0.02 + Math.sin(Math.PI / 2 - 0.12) * fr];
@@ -1034,13 +1037,16 @@ export async function build({ out = ROOT } = {}) {
     painters: PAN_PAINTERS, srcNormal, trim, salt: COL.salt, curv: { crease: 1, ridge: 0.7 }, q: { base: 95, normal: 88, orm: 84 },
   });
   romFit(parts, base, PAN_FIT);
-  const { node, material } = outfitDoc(doc, parts, { name: 'Outfit_Pan_1', matName: 'MI_Pan_1', tex, texPrefix: 'pan' });
+  // the contact shadow every layer casts on the one under it (armor/lib/vertexao.mjs)
+  const ao = bakeVertexAO(parts, { body: base.bodyPart });
+  const { node, material } = outfitDoc(doc, parts, { name: 'Outfit_Pan_1', matName: 'MI_Pan_1', tex, texPrefix: 'pan', extra: { _AO: ['SCALAR', ao] } });
   void node; void material;
+  for (const m of doc.getRoot().listMeshes()) for (const pr of m.listPrimitives()) pr.getAttribute('_AO')?.setNormalized(true);
   const file = path.join(out, OUTPUTS[0]);
   return writeOutfit(doc, file, {
     recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',
     r5Outfit: {
-      ...PAN_SET, variant: 'pan-1', name: "Pan Whites I — Raker's Whites", density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1),
+      ...PAN_SET, variant: 'pan-1', name: "Pan Whites I — Raker's Whites", density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), hasAo: true,
       pieces: ['underyoke', 'smock', 'binds', 'skirt', 'under', 'sleeves', 'trousers', 'boots', 'girdle', 'sashband', 'buckle', 'tongue', 'sling', 'slider', 'pouch', 'sash', 'tie', 'cuffs', 'straps', 'tab'],
     },
   });

@@ -11,6 +11,9 @@
  *   - a little micro-albedo from the same tile (threads catch light)
  *   - a soft cloth rim (fuzz at grazing angles), scaled by the light that is there
  *   - optional per-vertex salt crust (`_salt`, Pan Whites III), broken up by the tile
+ *   - optional per-vertex contact shadow (`_ao`, armory W1: baked by the recipe off the layers and the body,
+ *     where a strap, the girdle, a fold or the knot lies on cloth): it dims the bounce light fully, the sun
+ *     by half
  * and the optional `_piece` mask (the hat's two hidden meshes, Pan Whites II).
  *
  * The hook sits on `material.userData.vertexHook`, which the Player's fade clone
@@ -68,7 +71,7 @@ function buildDetail() {
 }
 
 /** Install the hook on an outfit's (source) material, once. `rep`: tiles per atlas uv. Returns the piece uniform. */
-export function installCloth(material, { rep = 48, pieces = false, salt = false } = {}) {
+export function installCloth(material, { rep = 48, pieces = false, salt = false, ao = false } = {}) {
   if (material.userData.clothU) return material.userData.clothU;
   if (!detailTex) detailTex = buildDetail();
   users++;
@@ -78,7 +81,7 @@ export function installCloth(material, { rep = 48, pieces = false, salt = false 
   };
   // not enumerable: Material.clone() JSON-copies userData, and this holds a Texture
   Object.defineProperty(material.userData, 'clothU', { value: U, enumerable: false, writable: true, configurable: true });
-  const key = `hero-cloth${pieces ? '-p' : ''}${salt ? '-s' : ''}`;
+  const key = `hero-cloth${pieces ? '-p' : ''}${salt ? '-s' : ''}${ao ? '-a' : ''}`;
   material.userData.cacheKey = key;
   material.userData.vertexHook = (shader) => {
     Object.assign(shader.uniforms, U);
@@ -86,9 +89,11 @@ export function installCloth(material, { rep = 48, pieces = false, salt = false 
     let head = '#include <common>\nvarying vec3 vClothView;';
     if (salt) head += '\nattribute float _salt;\nvarying float vSaltV;';
     if (pieces) head += '\nattribute float _piece;\nuniform float uHidePiece;';
+    if (ao) head += '\nattribute float _ao;\nvarying float vAoV;';
     v = v.replace('#include <common>', head);
     let begin = '#include <begin_vertex>';
     if (salt) begin += '\n  vSaltV = _salt;';
+    if (ao) begin += '\n  vAoV = _ao;';
     if (pieces) begin += '\n  if ( ( int( _piece + 0.5 ) & int( uHidePiece + 0.5 ) ) != 0 ) transformed = vec3( 0.0 );';
     v = v.replace('#include <begin_vertex>', begin);
     v = v.replace('#include <project_vertex>', '#include <project_vertex>\n  vClothView = -mvPosition.xyz;');
@@ -96,7 +101,7 @@ export function installCloth(material, { rep = 48, pieces = false, salt = false 
     let f = shader.fragmentShader;
     f = f.replace('#include <common>', `#include <common>
 uniform sampler2D uDetail; uniform float uDetailRep; uniform vec3 uSalt;
-varying vec3 vClothView;${salt ? '\nvarying float vSaltV;' : ''}
+varying vec3 vClothView;${salt ? '\nvarying float vSaltV;' : ''}${ao ? '\nvarying float vAoV;' : ''}
 float clothK = 0.0; float clothCav = 0.0; float saltK = 0.0;`);
     // what the texel is (ORM.r), the tile, and the normal
     f = f.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -125,6 +130,11 @@ float clothK = 0.0; float clothCav = 0.0; float saltK = 0.0;`);
     f = f.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
   diffuseColor.rgb *= 1.0 + clothCav * 0.55;
   diffuseColor.rgb = mix( diffuseColor.rgb, uSalt, saltK * 0.92 );`);
+    // the contact shadow: all of the bounce light, half of the sun
+    if (ao) f = f.replace('#include <aomap_fragment>', `#include <aomap_fragment>
+  reflectedLight.indirectDiffuse *= vAoV;
+  reflectedLight.indirectSpecular *= vAoV;
+  reflectedLight.directDiffuse *= 0.5 + 0.5 * vAoV;`);
     // the rim: cloth is fuzz at grazing angles, as bright as the light on it
     f = f.replace('#include <opaque_fragment>', `{
     float nv = saturate( dot( normal, normalize( vClothView ) ) );

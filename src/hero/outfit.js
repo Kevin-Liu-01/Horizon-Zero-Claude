@@ -75,7 +75,7 @@ export class HeroOutfit {
           entry.sharedMaps = true;       // the maps are the sheet owner's: never disposed with this row
         }
       }
-      installCloth(mat, { rep: meta.detailRep ?? 60, pieces: !!meta.hasPieces, salt: !!meta.hasSalt });
+      installCloth(mat, { rep: meta.detailRep ?? 60, pieces: !!meta.hasPieces, salt: !!meta.hasSalt, ao: !!meta.hasAo });
     });
   }
 

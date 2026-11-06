@@ -45,7 +45,12 @@ function hatInto(part, X, Y, Z, T, rect, joint, bit) {
 export async function build({ out = ROOT } = {}) {
   return panVariant({
     out, file: OUTPUTS[0], recipe: RECIPE, variant: 'pan-2', name: 'Pan Whites II — Guild Whites', pieces: ['capelet', 'clasp', 'hat'],
-    add: async (base) => {
+    add: addPieces,
+  });
+}
+
+/** Pan II's pieces on Pan I's base (exported for the offline checks). */
+export const addPieces = async (base) => {
       const { trim, J, bodyPart, clothField } = base;
       const surf = new Field(base.parts.filter((p) => p.slot === 'smock' || p.slot === 'sling'), 0.04);
       const jS3 = J('spine_03'), jCl = J('clavicle_l'), jCr = J('clavicle_r');
@@ -103,6 +108,4 @@ export async function build({ out = ROOT } = {}) {
       const hat3 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, -0.12, -1]), V.norm([0, 1, -0.12]), [0.15, 1.31, -0.305], palm, jS3, HAT_ON_BACK_LOW);
       void clothField;
       return [cap, clasp, hat1, hat2, hat3];
-    },
-  });
-}
+};

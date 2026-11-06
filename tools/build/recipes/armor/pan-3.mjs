@@ -43,11 +43,14 @@ export async function build({ out = ROOT } = {}) {
           const COLS = 5;
           const inner = [], outer = [];
           for (let c = 0; c <= COLS; c++) {
-            const a = -1.05 + 2.1 * (c / COLS);       // around the shoulder's top, front to back
+            // (armory W1: a little shorter round the shoulder, and its outer corners rounded back: the ends of the
+            // outermost tile stood out as claws)
+            const u = 2 * c / COLS - 1, round = 1 - 0.5 * u ** 4;
+            const a = 0.92 * u;                        // around the shoulder's top, front to back
             const yy = 1.464 - i * 0.004, r = 0.062 - i * 0.002;
             const zc = -0.03;
             inner.push([side * x0, yy - r * (1 - Math.cos(a)), zc + r * Math.sin(a)]);
-            outer.push([side * x1, yy - r * (1 - Math.cos(a)) - 0.008, zc + (r + 0.004) * Math.sin(a)]);
+            outer.push([side * (x0 + (x1 - x0) * round), yy - r * (1 - Math.cos(a)) - 0.008 * round, zc + (r + 0.004 * round) * Math.sin(a)]);
           }
           drapeInto(scutes, surf, inner, outer, {
             rows: 2, margin: 0.012, marginAt: (t) => mix(0.011, 0.017, t) + i * 0.0012,

@@ -15,6 +15,7 @@ import { tubeInto } from './lib/smock.mjs';
 import { clamp, emptyPart, Field, gridInto, mix, recomputeNormals, sstep, V, cutTris } from './lib/part.mjs';
 import { outfitDoc, writeOutfit } from './lib/output.mjs';
 import { romFit } from './lib/romfit.mjs';
+import { bakeVertexAO } from './lib/vertexao.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/armory/armor-ash-1.glb'];
@@ -179,7 +180,8 @@ export async function ashParts() {
     trim: ashTrim,
     buckle: false,
     // a diagonal wrap: long at her left (+X), rising to her right, the front panel crossing
-    skirt: { yHem: 0.60, rows: 8, flare: 0.06, ripA: 0.006, colsPer: 16 },
+    // (its own soft drape: Pan I's modelled folds are cut for Pan's 34 columns and Pan's under-tunic)
+    skirt: { yHem: 0.60, rows: 8, flare: 0.06, ripA: 0.006, colsPer: 16, fold: null },
     skirtHem: (th, y0) => y0 + 0.085 * (1 - Math.cos(th - 0.2)) * 0.9,
     under: { yTop: 0.76, yHem: 0.545, off: -0.024, floorY: 0.70 },
   });
@@ -200,7 +202,10 @@ export async function ashParts() {
     // her shoulders are wider than she is deep: the loose turn lies on them and falls against the chest and the back,
     // it is no brim standing out in front of her
     const kz = 1 - 0.36 * (r / (rowsC.length - 1));
-    const p = [Math.cos(th) * rad, y - 0.012 * Math.sin(th - 1.0) * (r / 6), -0.035 + Math.sin(th) * rad * kz];
+    // (armory W1: the loose turn stands a little higher off the tops of her shoulders: at full draw the raised arms'
+    // shoulders came up 2-3 cm through it)
+    const lift = 0.014 * Math.max(0, Math.min(1, (Math.abs(Math.cos(th)) - 0.35) / 0.4)) * (r / (rowsC.length - 1));
+    const p = [Math.cos(th) * (rad + lift), y - 0.012 * Math.sin(th - 1.0) * (r / 6) + lift * 0.8, -0.035 + Math.sin(th) * rad * kz];
     const w = Math.max(0, Math.min(1, (y - 1.42) / 0.09));
     return { p, uv: [(c / COLS) * 0.72, (r / (rowsC.length - 1)) * 0.2], j: [base.J('neck_01'), base.J('spine_03'), 0, 0], w: [w, 1 - w, 0, 0] };
   });
@@ -264,9 +269,10 @@ export async function build({ out = ROOT } = {}) {
   const srcNormal = await loadRaw(path.join(MCO_DIR(srcRoot()), 'T_Peasant_Normal.png'), 1024);
   const tex = await paintAtlas(all, layout, { painters: ASH_PAINTERS, srcNormal, trim: base.trim, salt: [150, 144, 132], curv: { crease: 0.8, ridge: 0.5 }, q: { base: 90, normal: 88, orm: 84 } });
   romFit(all, base, PAN_FIT);
-  outfitDoc(doc, all, { name: 'Outfit_Ash_1', matName: 'MI_Ash_1', tex, texPrefix: 'ash' });
+  outfitDoc(doc, all, { name: 'Outfit_Ash_1', matName: 'MI_Ash_1', tex, texPrefix: 'ash', extra: { _AO: ['SCALAR', bakeVertexAO(all, { body: base.bodyPart })] } });
+  for (const m of doc.getRoot().listMeshes()) for (const pr of m.listPrimitives()) pr.getAttribute('_AO')?.setNormalized(true);
   return writeOutfit(doc, path.join(out, OUTPUTS[0]), {
     recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',
-    r5Outfit: { ...PAN_SET, set: 'ash', variant: 'ash-1', name: 'Ash Wraps I — Pit Wraps', density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), pieces: ['wrap skirt', 'rust under-layer', 'cowl', 'chest wraps', 'rope belt', 'puttees'] },
+    r5Outfit: { ...PAN_SET, set: 'ash', variant: 'ash-1', name: 'Ash Wraps I — Pit Wraps', density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), pieces: ['wrap skirt', 'rust under-layer', 'cowl', 'chest wraps', 'rope belt', 'puttees'], hasAo: true },
   });
 }

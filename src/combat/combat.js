@@ -1131,7 +1131,7 @@ export class Combat {
       // (a 1.45 m stave: carried in the left hand at the trail, top limb forward, clear of her legs)
       // standing the lower limb leans out past her hip; at a run the bow turns off the pumping arm's line
       let run = 0, h = 0;
-      if (pl) { h = pl.heading; run = pl.moveSpeed / 6; if (!(run > 0)) run = 0; else if (run > 1) run = 1; }
+      if (pl) { h = +pl.heading || 0; run = pl.moveSpeed / 6; if (!(run > 0)) run = 0; else if (run > 1) run = 1; }
       // the Euler's own fields (its `set` takes the doubles as arguments)
       _carry._x = 0.92; _carry._y = h + 0.12 + 0.18 * run; _carry._z = 0.16 - 0.32 * run; _carry._order = 'YXZ';
       _qDes.setFromEuler(_carry);

@@ -320,6 +320,12 @@ function distPointSeg(p, a, b) {
 /** Reusable ray for the hull query — never allocated in the hot path. */
 const _hullRay = { origin: new THREE.Vector3(), direction: new THREE.Vector3() };
 const _hullNormal = new THREE.Vector3();
+/**
+ * The hull raycast's options, reused (A-alloc-rate, R48 c: an object literal per flying arrow per frame). The
+ * terrain march below reads the ground at whole metres first (Smi coordinates cost the call nothing) and walks
+ * the segment with exact reads only when either end is within 1.5 m of the ground: most of a flight is far above it.
+ */
+const _sweepOpts = { far: 1.5, exact: true };
 
 /**
  * Sweep a segment [a -> a + dir*len] against machines + terrain.
@@ -343,7 +349,8 @@ function sweepSegment(ctx, machines, a, dir, len, out) {
   if (hulls && hulls.raycast) {
     _hullRay.origin.copy(a);
     _hullRay.direction.copy(dir);
-    const h = hulls.raycast(_hullRay, { far: len, exact: true });
+    _sweepOpts.far = len;
+    const h = hulls.raycast(_hullRay, _sweepOpts);
     if (h && h.hit) {
       out.dist = h.distance;
       out.object = h.object || null;
@@ -372,7 +379,15 @@ function sweepSegment(ctx, machines, a, dir, len, out) {
     }
   }
   const terr = ctx.terrain;
+  let near = !!terr;
   if (terr) {
+    const lim = len < out.dist ? len : out.dist;
+    const ex = a.x + dir.x * lim, ey = a.y + dir.y * lim, ez = a.z + dir.z * lim;
+    const gA = terr.getHeight(Math.floor(a.x + 0.5) | 0, Math.floor(a.z + 0.5) | 0);
+    const gE = terr.getHeight(Math.floor(ex + 0.5) | 0, Math.floor(ez + 0.5) | 0);
+    near = a.y - gA < 1.5 || ey - gE < 1.5;
+  }
+  if (terr && near) {
     const step = 0.3;
     let sPrev = 0;
     const above0 = a.y > terr.getHeight(a.x, a.z);
@@ -915,7 +930,8 @@ export class ArrowPool {
     a.fresh = false;
 
     a.vel.y -= this.gravity * dt;
-    a.vel.multiplyScalar(Math.max(0, 1 - this.drag * dt)); // slight drag
+    const dk = 1 - this.drag * dt;                          // slight drag (no Math.max: V8's mid tier boxes it)
+    a.vel.multiplyScalar(dk > 0 ? dk : 0);
     a.pos.addScaledVector(a.vel, dt);
     _dir.copy(a.vel).normalize();
     _newTip.copy(a.pos).addScaledVector(_dir, ARROW_LEN);
@@ -941,8 +957,8 @@ export class ArrowPool {
     // --- tracer trail breadcrumbs
     if (this.trailFx) {
       const col = TRAIL_COLORS[a.type] ?? TRAIL_COLORS.hunter;
-      const n = Math.min(5, Math.max(1, Math.ceil(segLen / 0.4)));
-      const end = Number.isFinite(hitDist) ? hitDist : segLen;
+      let n = Math.ceil(segLen / 0.4) | 0; if (n < 1) n = 1; else if (n > 5) n = 5;
+      const end = hitDist < 1e30 ? hitDist : segLen;
       for (let i = 0; i < n; i++) {
         const s = end * ((i + 0.5) / n);
         _s.copy(_oldTip).addScaledVector(_segDir, s);
@@ -957,7 +973,7 @@ export class ArrowPool {
       }
     }
 
-    if (!Number.isFinite(hitDist)) return;
+    if (!(hitDist < 1e30)) return;
 
     // --- impact
     _hitP.copy(_oldTip).addScaledVector(_segDir, hitDist);

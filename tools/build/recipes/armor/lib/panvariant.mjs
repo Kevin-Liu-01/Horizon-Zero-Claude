@@ -11,6 +11,7 @@ import { panBase, panLayout, PAN_SET, PAN_FIT } from '../../outfit-pan-1.mjs';
 import { outfitDoc, writeOutfit } from './output.mjs';
 import { recomputeNormals } from './part.mjs';
 import { romFit } from './romfit.mjs';
+import { bakeVertexAO } from './vertexao.mjs';
 
 export async function panVariant({ out = ROOT, file, recipe, variant, name, add, pieces = [], salt = null }) {
   const base = await panBase();
@@ -26,6 +27,7 @@ export async function panVariant({ out = ROOT, file, recipe, variant, name, add,
     extra = { _SALT: ['SCALAR', new Uint8Array(arr)] };
   }
   romFit(all, base, PAN_FIT);
+  extra = { ...(extra || {}), _AO: ['SCALAR', bakeVertexAO(all, { body: base.bodyPart })] };
   const hasPieces = added.some((p) => p.pieceBit);
   const { material } = outfitDoc(doc, all, { name: `Outfit_${variant.replace('-', '_')}`, matName: `MI_${variant}`, tex: null, pieces: hasPieces, extra });
   void material;
@@ -33,8 +35,9 @@ export async function panVariant({ out = ROOT, file, recipe, variant, name, add,
   if (salt) {
     for (const m of doc.getRoot().listMeshes()) for (const pr of m.listPrimitives()) pr.getAttribute('_SALT')?.setNormalized(true);
   }
+  for (const m of doc.getRoot().listMeshes()) for (const pr of m.listPrimitives()) pr.getAttribute('_AO')?.setNormalized(true);
   return writeOutfit(doc, path.join(out, file), {
     lean: true, recipe, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',
-    r5Outfit: { ...PAN_SET, variant, name, density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), sharedAtlas: 'heroOutfitPan1', pieces, hasPieces, hasSalt: !!salt },
+    r5Outfit: { ...PAN_SET, variant, name, density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), sharedAtlas: 'heroOutfitPan1', pieces, hasPieces, hasSalt: !!salt, hasAo: true },
   });
 }
