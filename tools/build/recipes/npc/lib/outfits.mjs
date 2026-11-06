@@ -114,7 +114,7 @@ export const OUTFITS = {
       { part: 'Female_Peasant_Body', dye: PAN.linen, target: 1900 },
       { part: 'Female_Peasant_Arms', dye: PAN.linenDirty, cutX: 0.40, target: 1000, cuff: PAN.linenDirty },
       { part: 'Female_Peasant_Legs', dye: PAN.basalt, target: 1500 },
-      { part: 'Female_Peasant_Feet', dye: PAN.esparto, target: 1500 },
+      { part: 'Female_Peasant_Feet', dye: '#9A8559', target: 1500, shade: 0.92 },   // esparto worn in the pans: greyed by salt and mud, never new straw
     ],
     pieces(ctx) {
       belt(ctx, { y: 1.05, dye: PAN.orchilDeep, swatch: 'linen', buckle: false, h: 0.05 });
@@ -169,7 +169,7 @@ export const OUTFITS = {
       { part: 'Male_Peasant_Body', dye: PAN.linen, target: 3400, cutX: 0.345, collar: { y0: 1.44, push: 0.012 } },
       { part: 'Male_Peasant_Arms', dye: PAN.linenDirty, target: 900, cutX: 0.36, cuff: PAN.linenDirty, dropMat: /Regular/ },
       { part: 'Male_Peasant_Legs', dye: PAN.basalt, target: 1000 },
-      { part: 'Male_Peasant_Feet', dye: PAN.esparto, target: 1400 },
+      { part: 'Male_Peasant_Feet', dye: '#9A8559', target: 1400, shade: 0.92 },
     ],
     pieces(ctx) {
       belt(ctx, { y: 1.025, dye: PAN.leather });
@@ -301,7 +301,7 @@ export const OUTFITS = {
     legsHidden: 1.0,
     pieces(ctx) {
       ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.0, y1: 0.28, rHem: 0.26, uv: ctx.rectUV('panelA'), rows: 7, seg: 22, rFloor: 0.17, amp: 0.012, follow: 0.3 }), { dye: HOLDS.lapilli, hide: true, shade: 1.5 });
-      apron(ctx, { y0: 1.25, y1: 0.46, wTop: 0.13, wBot: 0.2, dye: HOLDS.carmineStain, swatch: 'panelC', chainKey: 'apron', lift: 0.022, rows: 12, cols: 11, foldAmp: 0.009 });
+      apron(ctx, { y0: 1.25, y1: 0.46, wTop: 0.13, wBot: 0.2, dye: HOLDS.carmineStain, swatch: 'panelC', chainKey: 'apron', lift: 0.022, rows: 12, cols: 11, foldAmp: 0.013, hemWave: 0.012 });
       waistTie(ctx, { y: 1.04, dye: HOLDS.carmine });
       // a stain gourd on her hip
       const h = ctx.J.pelvis;
