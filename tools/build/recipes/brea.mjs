@@ -217,6 +217,9 @@ export async function build({ out = ROOT } = {}) {
     B([sx * 0.0074, ty - 0.0015, tz - 0.0035], [-sx * 1.25, 0, 0], 0.0052);
     B([sx * 0.0185, ty - 0.0075, tz - 0.023], [-sx * 1.5, 0, 0], 0.0072);
   }
+  // and in profile a defined tip: a small point at the front of the lobule and its round underside tucked up and back
+  B([0, ty + 0.0012, tz + 0.0008], [0, 0.25, 0.55], 0.0042);
+  B([0, ty - 0.0058, tz - 0.0028], [0, 0.55, -0.5], 0.0048);
   // the mandible: one line from the gonion to the chin, a little below the stock edge
   for (const sx of [1, -1]) {
     B([sx * 0.040, L.chin[1] + 0.012, 0.030], [-sx * 0.9, -2.4, 0.2], 0.0165);
