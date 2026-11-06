@@ -457,7 +457,9 @@ export async function build({ out = ROOT } = {}) {
       inkDots({ dots: [[-0.7075, -0.0445], [-0.6895, -0.0555], [-0.6895, -0.0335]], r: 0.00265, where: (T) => T.X < -0.66 && T.ny > 0.4 }),
     ],
   });
-  const wrapTex = await paintWrapAtlas(base, wrapMat);
+  // fix round 1 (R54: in the wind the carmine lining was the loudest thing on her; the bible keeps carmine an accent): the violet
+  // facing turns back over 38 % of the lining at each selvedge, so a quarter of its width shows carmine
+  const wrapTex = await paintWrapAtlas(base, wrapMat, { facing: 0.38 });
 
   // what faces into the head stays out of a sun behind her (after the paint, which reads the true normals)
   leanInwardNormals(bodyPrim, eyesPrim, { L, eyes });

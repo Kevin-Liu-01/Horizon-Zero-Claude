@@ -971,7 +971,8 @@ export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris =
     const r = Math.hypot(mx, my), ang = Math.atan2(my, mx);
     let R, G, B;
     // sclera
-    const dimEdge = (1 - 0.48 * smooth(0.0074, 0.0108, Math.abs(mx))) * (1 - 0.5 * smooth(0.0108, 0.0150, Math.abs(mx))) - 0.26 * smooth(0.0052, 0.0115, Math.abs(my));
+    // (fix round 1: from the side the white still read as a flat pale plate: it falls off sooner and further toward the corners)
+    const dimEdge = (1 - 0.58 * smooth(0.0066, 0.0108, Math.abs(mx))) * (1 - 0.5 * smooth(0.0108, 0.0150, Math.abs(mx))) - 0.26 * smooth(0.0052, 0.0115, Math.abs(my));
     const vein = smooth(0.62, 0.9, noise3(ang * 7, r * 300, 1.5)) * smooth(0.0075, 0.0145, r) * 0.1;
     // toward the corners the white goes warm and low: from the side the ball is a wet warm form, not a flat grey wedge
     const pink = smooth(0.0072, 0.0142, Math.abs(mx));

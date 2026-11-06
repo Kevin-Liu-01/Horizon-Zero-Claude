@@ -248,9 +248,9 @@ export function leanInwardNormals(bodyPrim, eyesPrim, { L, eyes }) {
 /**
  * Whatever a collar's opening could show that is not skin: a closed skirt from inside the neck out under the collar and the shoulders,
  * lying under the outfit's bind surface (`outfitTris`, flat), so a look down inside the collar never meets the ground through her.
- * Skinned like the nearest body vertex; one dark texel (the UV of `darkUV`). Call after the paint. Returns the first new vertex index.
+ * Skinned like the nearest body vertex; one dark texel (the UV of `darkUV`); both faces (fix round 1). Call after the paint. Returns the first new vertex index.
  */
-export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, y1 = 1.372, rx0 = 0.042, rz0 = 0.05, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 3, gap = 0.006, darkUV } = {}) {
+export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, y1 = 1.372, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 3, gap = 0.006, darkUV } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
   const n0 = P.getCount();
@@ -278,6 +278,17 @@ export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
     const kn = (k + 1) % seg, a = n0 + r * seg + k, b = n0 + r * seg + kn, c = n0 + (r + 1) * seg + k, d = n0 + (r + 1) * seg + kn;
     // wound so its upper face is the front one
     idx.push(a, c, b, b, c, d);
+  }
+  // and its lower face too (fix round 1, A-wrap-closed): with the head bowed and the arms down the inner ring rides up with the neck
+  // and the skirt's far side turns its back to a camera above her, which the runtime's FrontSide culls; both faces close the opening
+  const nRing = (rings + 1) * seg, m0 = n0 + nRing;
+  for (let i = 0; i < nRing; i++) {
+    pos.push(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]); nrm.push(0, -1, 0); uv.push(uv[i * 2], uv[i * 2 + 1]);
+    jnt.push(jnt[i * 4], jnt[i * 4 + 1], jnt[i * 4 + 2], jnt[i * 4 + 3]); wgt.push(wgt[i * 4], wgt[i * 4 + 1], wgt[i * 4 + 2], wgt[i * 4 + 3]);
+  }
+  for (let r = 0; r < rings; r++) for (let k = 0; k < seg; k++) {
+    const kn = (k + 1) % seg, a = m0 + r * seg + k, b = m0 + r * seg + kn, c = m0 + (r + 1) * seg + k, d = m0 + (r + 1) * seg + kn;
+    idx.push(a, b, c, b, d, c);
   }
   const grow = (A, add) => { const src = A.getArray(), dst = new src.constructor(src.length + add.length); dst.set(src); dst.set(add, src.length); A.setArray(dst); };
   grow(P, pos); grow(prim.getAttribute('NORMAL'), nrm); grow(prim.getAttribute('TEXCOORD_0'), uv); grow(J, jnt); grow(W, wgt);
