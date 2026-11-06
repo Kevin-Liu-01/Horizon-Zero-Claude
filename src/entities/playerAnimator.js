@@ -650,6 +650,7 @@ export class PlayerAnimator {
         { a: new THREE.Vector3(), b: new THREE.Vector3(), r: hc.r },
         { a: new THREE.Vector3(), b: new THREE.Vector3(), r: hc.r },
       ], active: false, pushes: 0, minAxis: Infinity,
+      minCi: -1, minJ: -1,      // R48 c (melee W1): written by `_springs` at the first push, so declared (a new field re-shapes the record)
     } : null;
     this._hairChainRoot = prof?.hairChain || null;
     /* E5: the alidade rides `dyn_alidadeCord_02`; the raise moves that bone so
@@ -953,6 +954,36 @@ export class PlayerAnimator {
       status: 'migrated', bones: this.space.size,
       chains: this._chains.length, twists: this._twists.length,
     });
+    /* R48 c (melee W1): THE FIELDS THE FRAME USED TO ADD LATER, DECLARED HERE.
+     * Each of these was first written inside a branch that runs only once she
+     * moves, strafes while aiming, sprints, carries the bow or draws it. The
+     * first write added a property, i.e. gave the animator a new hidden class,
+     * and every optimised function holding the old one (this file's `update` and
+     * `_springs` among them) was thrown away at her first sprint or first draw
+     * and re-ran in the baseline tier, where each double is a HeapNumber. Each
+     * initial value is the one the lazy code would have produced, or one its
+     * readers treat the same (`|| 0`, `?? 0`, `|| 0.985`, `== null || !finite`). */
+    this._dtA = 1 / 60;               // set at the top of every update
+    this._slideW = 0.5; this._slideW = 0;
+    this._trunkErr = 0; this._trunkPitch0 = 0;
+    this._latK = 0; this._latMove = 0; this._fyHold = [0.5, 0.5]; this._fyHold[0] = 0; this._fyHold[1] = 0;
+    this._mStepRekey = 0;
+    this._ikMaxK = 0.985;             // `_ikArm` reads `this._ikMaxK || 0.985`
+    this._efS = decimalFields({ r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0, r52: 1, out: 0, shL: 0 });
+    this._bobMean = NaN;              // `_runBob`: `== null || !Number.isFinite` -> the first sample
+    this._bobW = 0;
+    this._bobKeep = this.T.runBob ? this.T.runBob.keep : 0.5;   // what `?? this.T.runBob.keep` read
+    this._rbPlanted = [false, false];
+    {
+      const b = this.b;
+      this._bowCarryArm = [b.upArmL, b.loArmL, b.handL];
+      this._footLatLoc = [b.footL, b.footR].map((f) => (f?.W
+        ? new THREE.Vector3(1, 0, 0).applyQuaternion(f.W.clone().invert())
+        : new THREE.Vector3(1, 0, 0)));
+      const tip = (e) => (e?.bone?.children || []).find((o) => o.isBone) || null;
+      this._toeTips = [tip(b.ballL), tip(b.ballR)];
+    }
+    this.lastHitClass = 'light';
     /* R46: the per-frame fields are born as decimals (see `decimalFields`) */
     decimalFields(this);
     for (let i = 0; i < this._chains.length; i++) decimalFields(this._chains[i]);

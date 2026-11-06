@@ -776,6 +776,13 @@ export class MeleeLayer {
       hairClearGuard: 9, hairArgmin: null, hairPreFix: 9, hairFixed: 0,
       carrySlide: 0, carrySpan: 0, carryDur: 0,
       elbowGuard: 0, elbowGuardFail: 0, gripFracNow: GRIP_FRAC, handoverDone: true,
+      /* R48 c: every field a frame writes is declared (an added field is a new hidden class) */
+      drawK: 0, aimLean: 0, aimPitchDeg: 0, aimYawDeg: 0, aimResidDeg: 0, aimW: 0,
+      armHullBack: 0, armHullDeficit: 0, armHullFinal: 0, armHullFinalLeft: 0, armHullFull: 0, armHullLeft: 0,
+      armHullPush: 0, armHullRetract: 0, armHullRoll: 0, armHullT: 0, foreGuard: 0, forearmToSpineL: 9,
+      leftArmToBow: null, legAmp: 0, legBeat: null, legW: 0, lhOnNow: null, lhPalmErr: 0, reachSeen: 0,
+      skullGap: 0, strideHandCut: 0, strideLeanDeg: null, stridePitchCut: 0, strideW: 0,
+      tipGroundLack: 0, tipGroundLift: 0, tipGroundResid: 0,
     };
 
     const b = an.b;
@@ -923,9 +930,22 @@ export class MeleeLayer {
     this._grabFrac = GRAB_FRAC;
     this._recoil = 0;
     this._guardOff = new THREE.Vector3();
-    this._windFrom = null;
     this._windOn = false;
     this._prevBeat = null;
+    /* R48 c: every field the frame writes, declared here with the value the lazy
+     * code would have made (an added property is a new hidden class, and every
+     * optimised reader of the old one is thrown away on the frame it appears);
+     * the pose records are born decimal like the rest (`decimalFields`). */
+    this._windFrom = decimalFields({ hand: [0.5, 0, 0], shaft: [0.5, 0, 1], lh: [0.5, 0, 0], lhOn: 0, lhW: 0, yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0 });
+    this._u = decimalFields({ yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0, lhOn: 0, lhW: 0, clipU: 0, armLift: 0 });
+    this._lastDt = 1 / 60;
+    this._prevPhase = null;
+    this._prevSwing = false;
+    this._guardOn = false;
+    this._strideW = 0;
+    this._ahT = 1;
+    this._pfN = 0;
+    this._idleT = 0;
 
     this.ok = true;
     register({
@@ -1377,7 +1397,7 @@ export class MeleeLayer {
       if (this._prevBeat !== id || this._prevPhase !== 'windup') {
         const was = this._prevSwing;
         if (was) {
-          const f = this._windFrom || (this._windFrom = { hand: [0, 0, 0], shaft: [0, 0, 1], lh: [0, 0, 0], lhOn: 0, lhW: 0, yaw: 0, pitch: 0, roll: 0 });
+          const f = this._windFrom;
           const so = this._swingOut;
           for (let i = 0; i < 3; i++) { f.hand[i] = so.hand[i]; f.shaft[i] = so.shaft[i]; f.lh[i] = so.lh[i]; }
           f.lhOn = so.lhOn; f.lhW = so.lhW; f.yaw = so.yaw; f.pitch = so.pitch; f.roll = so.roll; f.py = so.py; f.dz = so.dz;
@@ -2506,9 +2526,7 @@ export class MeleeLayer {
 
   /** Interpolate the beat into `_hand` / `_shaft` / `_lh` + torso scalars. */
   _blend(stance, st, beat) {
-    const out = this._u || (this._u = {
-      yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0, lhOn: 0, lhW: 0, clipU: 0, armLift: 0,
-    });
+    const out = this._u;
     const phase = st.phase || 'idle';
     const k = clamp(st.k ?? 0, 0, 1);
     const cK = clamp(st.contactK ?? 0.55, 0.05, 0.95);
@@ -2658,10 +2676,10 @@ export class MeleeLayer {
    * swing frame: one object, one module scratch.
    */
   _snapPose(A, B, t) {
-    const s = this._swingOut || (this._swingOut = {
-      hand: [0, 0, 0], shaft: [0, 0, 1], lh: [0.30, 0.98, 0.04], lhOn: 0, lhW: 0,
+    const s = this._swingOut || (this._swingOut = decimalFields({
+      hand: [0.5, 0, 0], shaft: [0.5, 0, 1], lh: [0.30, 0.98, 0.04], lhOn: 0, lhW: 0,
       yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0,
-    });
+    }));
     const q = 1 - t;
     const la = A.lh || B.lh || READY.lh, lb = B.lh || A.lh || READY.lh;
     for (let i = 0; i < 3; i++) {
@@ -2698,10 +2716,10 @@ export class MeleeLayer {
     /* ROUND 6: the chest turns TOWARD the drawing hand (`DRAW_YAW`, right
      * shoulder forward) — round 5 turned it -0.16 rad, away, which is half of
      * why the elbow had to go up behind her head to reach the haft. */
-    const p = this._reach || (this._reach = {
-      hand: [0, 0, 0], shaft: [0, 0, 1], lh: [0.30, 0.98, 0.04], lhOn: 0.54, lhW: 0,
+    const p = this._reach || (this._reach = decimalFields({
+      hand: [0.5, 0, 0], shaft: [0.5, 0, 1], lh: [0.30, 0.98, 0.04], lhOn: 0.54, lhW: 0,
       yaw: DRAW_YAW, pitch: -0.04, roll: 0.06,
-    });
+    }));
     this._liveSocket(_grip, _c);           // butt, dir (char)
     /* WHERE ON THE HAFT SHE TAKES IT — the point the hand can actually reach.
      *
