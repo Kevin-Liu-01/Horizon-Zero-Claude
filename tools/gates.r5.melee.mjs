@@ -3154,12 +3154,12 @@ export const GATES = [
   {
     id: 'A-heavy-two-hand', kind: 'action', lane: 'melee',
     timeout: 60000, settle: 500,
-    title: 'The heavy, windup / contact / follow: both hands <= 0.05 m from the shaft (knuckle-line centres off the live bones vs the prop\'s own matrix) and no two-handed clip track from the banned combo clip anywhere in the layer',
+    title: 'The heavy, windup / contact / follow: both hands <= 0.05 m from the shaft (knuckle-line centres off the live bones vs the prop\'s own matrix) and no two-handed clip track from the banned combo clip anywhere in the layer; the Counterweight\'s on its 1.50 m marks and a cock >= 8 % longer; and its knockdown (bible §5.3): a real held-LMB heavy with the Counterweight on a staged machine lands and staggers it from melee.js, the same heavy with the Shepherd\'s Lance does not (negative control)',
     setup: `__CTX__.input.enabled = true;`,
-    assert: placed(['openGround'], `(async () => {${HERO}
+    assert: staged([], placed(['openGround'], `(async () => {${HERO}
       const C = __CTX__, p = C.player, an = p.animator;
       if (!an?.debugMelee) return { pass: null, detail: 'SKIP: no animator.debugMelee' };
-      ${FREEZE} ${STAGE} ${AIMLOCK} ${SWING} ${READY}
+      ${FREEZE} ${STAGE} ${AIMLOCK} ${SWING} ${READY} ${PLACE}
       if (await toReady(C) !== 'ready') return { pass: null, detail: 'SKIP: the guard never came up' };
       const k = (x) => (x.phase === 'windup' ? 'windup' : x.phase === 'strike' ? 'contact' : (x.k <= 0.62 ? 'follow' : 'return'));
       const bad = [];
@@ -3203,8 +3203,53 @@ export const GATES = [
       if (!(w1 > w0 * 1.08)) bad.push('the counterweight heavy is not slower: cock ' + w1.toFixed(3) + ' s against ' + w0.toFixed(3) + ' s');
       const banned = (an.melee?.set?.order || []).filter((l) => /Heavy_Combo/i.test(l.action?.getClip?.()?.__maskedFrom || l.action?.getClip?.()?.name || ''));
       if (banned.length) bad.push('the banned combo clip is in the layer: ' + banned.map((l) => l.name).join(','));
-      return { pass: bad.length === 0, detail: { bad, rows, counterRows, clips: (an.melee?.set?.order || []).map((l) => l.action?.getClip?.()?.__maskedFrom || l.name) } };
-    })()`),
+      /* THE KNOCKDOWN (melee W1, Nov 6): a real held LMB, the heavy landing on a staged machine. Every
+       * forceState call is recorded with whether melee.js made it, so the machine's own reactions do not count */
+      const knock = [];
+      const prevState = C.state; C.state = 'playing';
+      for (const variant of ['shepherd', 'counterweight']) {
+        const m = await place('sentry', 2.6);
+        if (!m) { knock.push({ variant, staged: false }); continue; }
+        m.maxHealth = Math.max(m.maxHealth || 0, 5000); m.health = m.maxHealth;
+        const calls = [], f0 = m.forceState;
+        m.forceState = function (name) { calls.push({ name, fromMelee: /combat\\/melee\\.js/.test(String(new Error().stack)) }); return f0.call(this, name); };
+        if (variant === 'counterweight') { M.lance.tuning = VAR.LANCE_VARIANTS.counterweight; lay.attachLance(M.lance.group, 1.50, 1, { grip: 0.20, grip2: 0.55 }); }
+        await toReady(C);
+        for (let i = 0; i < 20; i++) await frame();
+        let hit = null;
+        const onHit = (e) => { if (!hit && e.machine === m) hit = e; };
+        C.events.on('melee-hit', onHit);
+        const t0 = performance.now();
+        let sawHeavy = false;
+        C.input.mouse.buttons |= 1;
+        while (performance.now() - t0 < 4000) {
+          await frame();
+          if (M.heavy && M.active) sawHeavy = true;
+          if (performance.now() - t0 > 700) C.input.mouse.buttons &= ~1;
+          if (hit && !M.active) break;
+        }
+        C.input.mouse.buttons &= ~1;
+        C.events.off?.('melee-hit', onHit);
+        for (let i = 0; i < 6; i++) await frame();
+        m.forceState = f0; delete m.forceState;
+        const stag = calls.filter((c) => c.name === 'stagger' && c.fromMelee).length;
+        knock.push({ variant, staged: true, kind: m.kind, sawHeavy, hit: !!hit, heavyHit: !!hit?.heavy, killed: !!hit?.killed, meleeStaggers: stag, otherCalls: calls.filter((c) => !c.fromMelee).map((c) => c.name) });
+        if (variant === 'counterweight') { await backToBack(); M.lance.tuning = T0; lay.attachLance(M.lance.group, M.lance.length, 1, { grip: M.lance.grip, grip2: M.lance.grip2 }); }
+        m.health = m.maxHealth;
+        /* out of the way of the next variant's machine (place() stands each one at the same spot) */
+        m.position.x += 200; if (m.root) m.root.position.x = m.position.x;
+      }
+      C.state = prevState;
+      const kS = knock.find((x) => x.variant === 'shepherd'), kC = knock.find((x) => x.variant === 'counterweight');
+      if (!kC?.staged) bad.push('knockdown: no machine could be staged');
+      else {
+        if (!(kC.heavyHit)) bad.push('knockdown: the Counterweight heavy did not land (' + JSON.stringify(kC) + ')');
+        else if (!(kC.meleeStaggers === 1)) bad.push('knockdown: the Counterweight heavy staggered ' + kC.meleeStaggers + ' times from melee.js');
+        if (kS?.heavyHit && kS.meleeStaggers !== 0) bad.push('knockdown: the Shepherd\\'s heavy also staggered from melee.js (' + kS.meleeStaggers + ')');
+        if (!kS?.heavyHit) bad.push('knockdown: the negative control (Shepherd\\'s heavy) did not land, so it proves nothing');
+      }
+      return { pass: bad.length === 0, detail: { bad, rows, counterRows, knock, clips: (an.melee?.set?.order || []).map((l) => l.action?.getClip?.()?.__maskedFrom || l.name) } };
+    })()`)),
   },
 
   /* -------------------------------------------------------- A-melee-latency */
