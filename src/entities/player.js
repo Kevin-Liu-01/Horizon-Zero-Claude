@@ -1334,6 +1334,8 @@ export class Player {
     ctx.events.on('player-damage', ({ amount, from }) => this.takeDamage(amount, from));
 
     this._snapToGround();
+    // R48 c (melee W1 grant): the camera fields first written at her first sprint / aim / turn, declared with what their readers read for undefined
+    for (const [k, v] of Object.entries({ _keepDrop: 0, camKeepDrop: 0, _turnFrame: -1, _hijStep: 0, _viewFrame: NaN, _viewStepAcc: 0, _preCut: 0, _rotLenCap: Infinity, mantleK: 0, _orbitFrame: 0, _orderTries: 0 })) if (!(k in this)) this[k] = v;
     decimalFields(this);   // R46: per-frame fields born as decimals (melee W1 grant)
   }
 

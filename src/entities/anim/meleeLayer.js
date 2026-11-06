@@ -3794,6 +3794,19 @@ export class MeleeLayer {
     const an = this.an, e = an.b.handR;
     if (e && this._held && this._guardOn && this.w >= 0.2) this._handOffSelf(an, e);
     if (e && this._held && this.w >= 0.2) this._armHullFinal(an);
+    /* THE LEFT HAND FOLLOWS THE HAFT THE RIGHT HAND MOVED (melee W1). The two
+     * corrections above turn or pull the right hand on the final matrices and the
+     * haft rides it, but the left hand, solved in the pose pass, stayed where the
+     * haft WAS (A101 read its palm 0.061 m off on one light-2 frame); and its
+     * forearm was cleared off a spine that the stance's pelvis offset and the
+     * conform moved after the pose pass (A104 read 0.077 m at a recover's end).
+     * A two-handed frame re-seats the left hand here, on the matrices that get
+     * drawn: the palm goes back on the haft and the elbow-out pass reads the real
+     * spine. The free hand (light-3, a draw) is left alone. */
+    if (e && this._held && this.w >= 0.2 && (this._dbg.stance === 'swing' || this._dbg.stance === 'ready')) {
+      const u = this._u;
+      if ((u.lhW || 0) * this.w >= 0.99) { an._charOf(an.b.handL.bone, _lh); this._solveLeft(this.w, u); }
+    }
     /* THE BRAID GIVES WAY LAST, because the hand moved the haft above it.
      * Filmed with the order the other way round: `_hairOffHaft` pushed the
      * braid clear, then the hand guard rotated the haft back into it, and
