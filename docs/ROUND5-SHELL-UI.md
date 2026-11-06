@@ -52,7 +52,7 @@ Consumed: `engine.depthTexture`, `ctx.water.seaLevel`, `ctx.terrain.getHeight`, 
 
 ## 3. Gates
 
-Measured on 5265, `nice -n 10`, machine care per R53, one Chrome. Fix round 1, Nov 6: the full lane block (58 rows) plus the global list in one run (`fix2/l2`), then the Sighting, map and sheet rows again after the last changes (`fix2/l3`). Lane block: 0 FAIL; 4 PENDING (A10, A62 x2, V-ui-sheet's runner waits for a judge); every V row needs its judge.
+Measured on 5265, `nice -n 10`, machine care per R53, one Chrome. Fix round 1, Nov 6: the full lane block (58 rows) plus the global list in one run (`fix2/l2`), then the Sighting, map and sheet rows again after the last changes (`fix2/l3`, `fix2/l4`; the Sighting numbers below are `l4`'s, the last run on the final code). Lane block: 0 FAIL; 4 PENDING (A10, A62 x2, V-ui-sheet's runner waits for a judge); every V row needs its judge.
 
 | row | result | numbers |
 |---|---|---|
@@ -67,17 +67,17 @@ Measured on 5265, `nice -n 10`, machine care per R53, one Chrome. Fix round 1, N
 | A71d-steady-breath-meter, A71d-conc-veil | PASS | hairline 2 px, 50 px under the reticle, fill tracks the gauge (0.56 at 2.6 s), 0 overlays, 0 filter. Pending clause: `timeScale` 0.35 and the 6 s drain are combat-kit W2's |
 | A71e-tutorial-cards | PASS | 18 of 18 cards in the bible's order and text, one-shot |
 | A71f, A71g, A71h, A68, A69, A70, A70b, A70c, A72, A72b, A63 | PASS | Round-4 bars (A63: 3 reveals, 0 overlaps, 0 off screen) |
-| A-sighting-off, A-sighting | PASS | card up (TILLER, component LAMP, CARRIES), cobalt ring `rgb(44,79,138)`, 2 leaders, vignette centre 0 / max 0.20, figure mask 0.55 % of the 800x450 target, 1 subject + 1 quiet, 2 transects, readouts `126` / `018`, reveals off the subject, 0 banned hues in DOM or shaders. Pending clause: components with loot (R18, no named parts until instruments-a) |
+| A-sighting-off, A-sighting | PASS | card up (TILLER, component LAMP, CARRIES), cobalt ring `rgb(44,79,138)`, 2 leaders, vignette centre 0 / max 0.20, figure mask 0.65 % of the 800x450 target, 1 subject + 1 quiet, 2 transects, readouts `126` / `018`, reveals off the subject, 0 banned hues in DOM or shaders. Pending clause: components with loot (R18, no named parts until instruments-a) |
 | A-sighting-hue | PASS | added violet 0 px, added teal 0 px (R61 c floor 24, no tolerance) |
-| A-sighting-over-brea (new) | PASS | 0 px added inside her 52 669 px; control 2 437 px; 0 chip px on her |
-| A-transect-fine (new) | PASS | p95 2 px, p50 1 px, max 13 px (a station tick) |
+| A-sighting-over-brea (new) | PASS | 0 px added inside her 53 108 px; control (knock-out off) 2 936 px; 0 chip px on her |
+| A-transect-fine (new) | PASS | p95 2 px, p50 1 px, max 14 px (a station tick) |
 | A-sighting-draws (new, R61 d) | PASS | +16 draws held, +17 on the sweep frame (cap 30). Pending clause: the Screed fight <= 350 with the alidade up, A21 from the W2 exit |
 | A-map-triangles, -reload | PASS | 0 px before; T1+T2+T6 paints 90 268 px against 89 750 of geometry (0.58 %); survives a real reload |
 | A-map-arrow-heading (new) | PASS | tip dot 1.000 / 1.000 / 1.000 / 0.999 at four yaws; objective gives way, her pixels 163 / 163 |
 | A-dmg-chip-clear (new) | PASS | 0 hits on vial word, circle, column, plate at 3 / 14 / 24 frames; open-ground number stays on its anchor |
 | A10-loot-single-render | PENDING | no sentry kind yet: Plumb, instruments-a W1 |
 | A62-sighting-components, A62-focus-components | PENDING | R18: the Tiller fixture has no named parts until instruments-a merges |
-| V-ui-sheet | NEEDS JUDGE | `fix2/l3/shots/gates/V-ui-sheet.png`, nine surfaces from one run |
+| V-ui-sheet | NEEDS JUDGE | `fix2/l4/shots/gates/V-ui-sheet.png`, nine surfaces from one run on the final code |
 | V10, V37, V36, V36-focus-scan, V-map, V-ui-title, -inventory, -settings, -pause, -tip, -death, -dialogue, -books, -making, -skills, -trade, V-hud-4k-a..d, V-ui-4k-a, -b | NEEDS JUDGE | filmed at 1600x900 and read by the builder (R29: advisory) |
 
 Global green list on this tree (`fix2/l2`, 5265, quiet box: load 2.7, one Chrome):
@@ -137,7 +137,7 @@ Every finding below was re-run on 5265 and the cited frames re-filmed and read. 
 | V10 / V37: damage chip on the vial word and a plate | `_dmgClear` keeps a number off the circle band, the vial and its word, the column and every plate, as plates already resolve. The remaining collision was the pop-in: `style.scale` scaled the number's whole translation about the layer's corner, so a popping number stood up to 18 % higher than placed. The pop now lives in the same transform about its own bottom centre (`dmgY(y, si)`, `transform-origin: 50% 100%`) | `A-dmg-chip-clear` (new): vial word, circle, column and plate anchors 0 hits at 3, 14 and 24 frames; in the open it stays on its anchor (575 vs the projected 594 minus its rise). V37: vial reads SPOTTED, plate names clear |
 | Verdigris on GATHER chips and uncommon cards | `--cal-c-good`, `--cal-r-uncommon` and `.calf-reveal.k-gather` point at Felt Moss `#56603F` (bible §9.1 faction colour), hue 78 deg | A-ui-language-static 0 teal; A-sighting DOM scan 0 hits |
 | Quest and dialogue words on V-ui-pause / V-ui-dialogue | R61 (b): PENDING until progression W3 and settlements W2, in those rows' criteria. The same quest text prints on V-ui-tip (field note and objective mark), so that row names the same pending clause and asks the orchestrator to rule it likewise | A-ui-words-all 0 hits over 58 surfaces; pending list names the quest/skill strings |
-| The alidade drew over Brea | Her mask holds every skinned mesh first, then the largest of what she holds (6 at most), each frame through every ancestor's `visible`. Transects and the figure knock out on the mask's blue channel | `A-sighting-over-brea` (new, keeps her visible, its own silhouette from all her visible meshes): 0 added px inside her (52 669 px), control with the knock-out off adds 2 437; 0 reveal chip px on her |
+| The alidade drew over Brea | Her mask holds every skinned mesh first, then the largest of what she holds (6 at most), each frame through every ancestor's `visible`. Transects and the figure knock out on the mask's blue channel | `A-sighting-over-brea` (new, keeps her visible, its own silhouette from all her visible meshes): 0 added px inside her (53 108 px), control with the knock-out off adds 2 936; 0 reveal chip px on her |
 | Her map arrow pointed backwards | `g.rotate(-yaw)`; her mark is now a solid dart with an ink station point, not the objective's open arrow; an objective on her spot steps aside on a leader; both claim ground before names | `A-map-arrow-heading` (new): tip dot 1.000 / 1.000 / 1.000 / 0.999 at four yaws, objective gives way with her pixels unchanged (163 vs 163) |
 | A Round-4 proper noun as a Field Books heading | Headings come from `bookHeading(category id)`; an unknown category is a Fogcatcher record. V rows added for Field Books, Making, Skills and Trade | V-ui-books reads FOGCATCHER RECORDS · 3/6 |
 
