@@ -489,7 +489,7 @@ export async function build({ out = ROOT } = {}) {
   eyesPrim.setAttribute('_HIDEMASK', base.createAccessor().setType('SCALAR').setArray(new Uint8Array(eyesPrim.getAttribute('POSITION').getCount())).setBuffer(buf));
 
   // ---- the hair + wrap primitive (cloth, cards, locks: one material on the 512² atlas)
-  const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, temples: true });
+  const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, temples: true, twoSided: true });
   const hairGeo = joinGeos([wrapped.geo, cards, ...lashes]);
   const wrapPrim = primFromGeo(base, hairGeo);
 

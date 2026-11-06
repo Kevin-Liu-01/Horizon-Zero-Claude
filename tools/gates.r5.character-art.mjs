@@ -358,30 +358,6 @@ export const GATES = [
     })()`,
   },
   {
-    // TEMPORARY (fix round 1 diagnosis, removed before the report): the live pose of A-wrap-closed's staging, so the builder can
-    // pose a rebuilt GLB offline exactly as the runtime skins it
-    id: 'A-diag-pose-dump', kind: 'action', lane: 'character-art', settle: 800, timeout: 60000,
-    setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
-    })()`),
-    assert: `(async () => {
-      const C = __CTX__, p = C.player;
-      p.model.updateMatrixWorld(true);
-      const r = (a) => Array.from(a).map((v) => +v.toFixed(6));
-      const meshes = [];
-      p.model.traverse((o) => {
-        if (!o.isSkinnedMesh) return;
-        const sk = o.skeleton;
-        const probe = [];
-        const n = o.geometry.attributes.position.count, T3 = o.position.constructor;
-        for (const i of [0, Math.floor(n / 3), Math.floor(n / 2), n - 1]) { const v = new T3(); o.getVertexPosition(i, v); o.localToWorld(v); const raw = o.geometry.attributes.position; probe.push({ i, world: r(v.toArray()), local: [raw.getX(i), raw.getY(i), raw.getZ(i)].map((x) => +x.toFixed(6)) }); }
-        meshes.push({ name: o.name, visible: o.visible, matrixWorld: r(o.matrixWorld.elements), bindMatrix: r(o.bindMatrix.elements), bindMatrixInverse: r(o.bindMatrixInverse.elements), bindMode: o.bindMode,
-          bones: sk.bones.map((b, k) => ({ name: b.name, world: r(b.matrixWorld.elements), inv: r(sk.boneInverses[k].elements) })), probe });
-      });
-      const A = C.assets.models.hero, LM = A.extras.r5Face.landmarks;
-      return { pass: null, detail: { note: 'diagnostic dump, not a gate', landmarks: LM, meshes } };
-    })()`,
-  },
-  {
     id: 'A-brea-fill', kind: 'action', lane: 'character-art', settle: 600, timeout: 60000,
     title: 'R59 c: the hero fill (the emissive slot on the skin and wrap) follows the scene\'s ambient: full by day, at most 15 % of it at 01:00, no new map and no new draw; the material stays the one the outfit and the fade clone already use',
     setup: placedSetup(['openGround'], `(async () => {

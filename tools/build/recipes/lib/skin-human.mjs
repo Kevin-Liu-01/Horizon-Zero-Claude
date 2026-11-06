@@ -255,7 +255,7 @@ export function leanInwardNormals(bodyPrim, eyesPrim, { L, eyes }) {
  * Skinned like the torso under the collar (never the neck); one dark texel (the UV of `darkUV`); both faces. Call after the paint.
  * Returns the first new vertex index.
  */
-export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, y1 = 1.372, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 2, gap = 0.006, backLift = 0.035, margin = 0.003, hang = 0.06, darkUV } = {}) {
+export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 2, gap = 0.006, backLift = 0.035, margin = 0.003, hang = 0.08, darkUV } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
   const n0 = P.getCount();
@@ -279,7 +279,7 @@ export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
   for (let r = 0; r <= rings; r++) for (let k = 0; k < seg; k++) {
     const t = r / rings, a = (k / seg) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
     const lift = backLift * 0.5 * (1 - ca);                    // 0 at the front, half at the sides, all of it at the back
-    let y = mix(y0 + lift, y1 + lift * 0.35, Math.pow(t, 1.6));
+    let y = y0 + lift - 0.004 * t;                             // flat out to the wall: a look past the neck meets it before the wall
     // it stays inside the outfit's wall at its own height, and under its roof
     const wall = grid.cast(0, y, centerZ, sa, 0, ca, 0.4, 0.0001);
     const lim = wall >= 0 ? Math.max(0, wall - margin) : 1;
@@ -479,7 +479,7 @@ export function compactPrim(prim) {
   prim.getIndices().setArray(out);
 }
 /** Coil cards on the scalp below the wrap, around the ears and down the nape. */
-export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape: shape = hairShape, temples = false }) {
+export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape: shape = hairShape, temples = false, twoSided = false }) {
   const A = WRAP_ATLAS;
   const P = bodyPrim.getAttribute('POSITION');
   const verts = [];
@@ -523,7 +523,8 @@ export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, 
     const f = [Math.sign(x) * 0.12 + (R() - 0.5) * 0.7, -1, (z > -0.01 ? -0.85 : -0.2) + (R() - 0.5) * 0.7];
     return f;
   };
-  return coilCards(anchors, { flow, skinOf, rect: A.coilFringe.rect, W: A.W, length: [0.012, 0.02], width: [0.011, 0.018], liftTip: [0.0016, 0.0042] });
+  // (fix round 1, A-wrap-closed: the cards hug the scalp, so their tips break the hairline over skin, not against the sky)
+  return coilCards(anchors, { flow, skinOf, rect: A.coilFringe.rect, W: A.W, length: [0.012, 0.02], width: [0.011, 0.018], liftTip: [0.0004, 0.0016], twoSided });
 }
 
 /**
