@@ -209,7 +209,7 @@ export const OUTFITS = {
   keeper: {
     legsHidden: 1.0,
     parts: [
-      { part: 'Female_Peasant_Body', dye: PAN.orchilDeep, target: 1700, shade: 0.8 },
+      { part: 'Female_Peasant_Body', dye: '#3A3638', target: 1700, shade: 1.0 },   // a worn charcoal bodice: the night cloak and hood carry the orchil, and she never wears Brea's colours
       { part: 'Female_Peasant_Arms', dye: PAN.orchilNight, target: 3400, cutX: 0.615, cuff: PAN.orchilDeep },
       { part: 'Female_Peasant_Feet', dye: PAN.leather, target: 1500, cutTop: 0.2 },
       { part: 'Female_Ranger_Head_Hood', dye: PAN.orchilNight, target: 1500, swatch: 'felt', noHideOnBody: true, shade: 1.2 },

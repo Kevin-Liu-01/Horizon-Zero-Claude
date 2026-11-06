@@ -21,6 +21,17 @@ const _v = new THREE.Vector3(), _sc = new THREE.Vector3();
 const _mq = new THREE.Quaternion();
 /** Head turn toward the player (rad, m): a person near her looks up from what they are doing. */
 const LOOK_MAX = 0.75, LOOK_R = 5.5, LOOK_RATE = 2.2;
+/**
+ * The head's carriage (rad, + lifts the face). The library's idles, talks and walks carry the head 11-15 deg down (measured off
+ * the pack: Idle_Loop -12.7, Walk_Loop -14.8, Idle_Talking_Loop -12.8; R64 b on Brea's idle), which reads as a crowd that will
+ * not meet her eye. Those clips get it back to level, split neck 40 % / head 60 %; the work clips keep their gaze on the work.
+ */
+const LIFT = {
+  Idle_Loop: 0.2, Walk_Loop: 0.22, Walk_Formal_Loop: 0.2, Jog_Fwd_Loop: 0.3, Idle_Talking_Loop: 0.18, Sitting_Talking_Loop: 0.2,
+  Sitting_Idle_Loop: 0.14, Idle_FoldArms_Loop: 0.16, Idle_Lantern_Loop: 0.18, Interact: 0.16, Push_Loop: 0.12, Yes: 0.16,
+  Consume: 0.08, Idle_No_Loop: 0.3, Idle_Rail_Loop: 0.3, Idle_Rail_Call: 0.36,
+};
+const LIFT_RATE = 3;
 const _sphere = new THREE.Sphere(new THREE.Vector3(0, 0.95, 0), 1.75);
 const wrapPi = (a) => { while (a > Math.PI) a -= TAU; while (a < -Math.PI) a += TAU; return a; };
 
@@ -130,6 +141,8 @@ export class Person {
     this.lookYaw = 0;
     /** false: the head stays on the clip (a staged sheet, a cutscene); true: a near person looks up at her. */
     this.look = true;
+    this.lift = 0;
+    this.liftTarget = 0;
     this.spine1 = this.bones.spine_01;
     this.upL = this.bones.upperarm_l;
     this.upR = this.bones.upperarm_r;
@@ -206,6 +219,7 @@ export class Person {
     if (this.current) this.current.crossFadeTo(a, fade, false);
     this.current = a;
     this.clipCount.add(name);
+    this.liftTarget = LIFT[name] ?? 0;
     return a.getClip().duration;
   }
 
@@ -286,6 +300,7 @@ export class Person {
       }
     }
     this._overlay();
+    if (tier <= 1 && tier >= 0) this._carry(step);
     if (tier === 0) this._look(step);
     return true;
   }
@@ -313,6 +328,22 @@ export class Person {
       _q3.copy(_mq).invert();
       _q.setFromAxisAngle(_up, this.lookYaw * share);
       // q_local' = parent^-1 * R * parent * q_local
+      _q2.copy(_q3).multiply(_q).multiply(_mq).multiply(b.quaternion);
+      b.quaternion.copy(_q2);
+    }
+  }
+
+  /** The head's carriage: a pitch about the person's own lateral axis, split between neck and head, over the clip (no allocation). */
+  _carry(dt) {
+    this.lift += (this.liftTarget - this.lift) * Math.min(1, LIFT_RATE * dt);
+    if (Math.abs(this.lift) < 0.002 || !this.neck || !this.head) return;
+    // her right in the world: (-cos yaw, 0, sin yaw); a positive turn about it raises the face
+    _v.set(-Math.cos(this.yaw), 0, Math.sin(this.yaw));
+    for (let i = 0; i < 2; i++) {
+      const b = i ? this.head : this.neck, share = i ? 0.6 : 0.4;
+      b.parent.matrixWorld.decompose(_sc, _mq, _sc);
+      _q3.copy(_mq).invert();
+      _q.setFromAxisAngle(_v, this.lift * share);
       _q2.copy(_q3).multiply(_q).multiply(_mq).multiply(b.quaternion);
       b.quaternion.copy(_q2);
     }

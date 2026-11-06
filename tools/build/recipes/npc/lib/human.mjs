@@ -177,9 +177,11 @@ function ageLayers({ L, eyes, age }) {
       list.push({ pts: [[e[0] + sx * 0.0255, e[1] - 0.0035, z], [e[0] + sx * 0.0355, e[1] - 0.0095, z - 0.012]], w: 0.001, depth: 0.00026, dark: 0.14 * old + 0.04 });
       // the fold deepens, a marionette line opens under the mouth corner
       const t = L.noseTip;
-      list.push({ pts: [[sx * 0.0215, t[1] - 0.006, t[2] - 0.034], [sx * 0.0335, t[1] - 0.028, t[2] - 0.044], [sx * 0.0395, t[1] - 0.05, t[2] - 0.052]], w: 0.0026, depth: 0.0003 + 0.0003 * old, dark: 0.12 + 0.12 * old });
+      // (both are folds, not lines: wide and soft, so they read as a shaded fall of the cheek and never as two scratches at the
+      // mouth; the marionette fold starts under the corner, on the line the nasolabial fold would continue on)
+      list.push({ pts: [[sx * 0.0215, t[1] - 0.006, t[2] - 0.034], [sx * 0.0335, t[1] - 0.028, t[2] - 0.044], [sx * 0.0385, t[1] - 0.047, t[2] - 0.052]], w: 0.0046, depth: 0.00034 + 0.00034 * old, dark: 0.07 + 0.08 * old });
       const m = L.upperLip;
-      list.push({ pts: [[sx * 0.0325, m[1] - 0.018, m[2] - 0.028], [sx * 0.0365, m[1] - 0.04, m[2] - 0.034]], w: 0.0019, depth: 0.00022 + 0.0003 * old, dark: 0.08 + 0.12 * old });
+      list.push({ pts: [[sx * 0.0372, m[1] - 0.02, m[2] - 0.03], [sx * 0.0392, m[1] - 0.042, m[2] - 0.036]], w: 0.0044, depth: 0.00026 + 0.00032 * old, dark: 0.04 + 0.07 * old });
     }
   }
   if (age >= 55) {
