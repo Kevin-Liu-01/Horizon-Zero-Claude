@@ -202,6 +202,9 @@ export const TERRAIN_COLOR = /* glsl */ `
   for (int k = 0; k < nKeep; k++) {
     float b = bl[k] / bs;
     vec3 c = pow(keepA[k].rgb, vec3(2.2));
+    // the storm-beach cobbles and the pan silt are the island's basalt too: dark, never a grey beach
+    if (keepI[k] == 4) c *= 0.5;
+    else if (keepI[k] == 3) c *= 0.78;
     if (keepI[k] == 1) {
       /* salt runs white → brine pink → crystalliser rust, by cell */
       float hue = pan.b;
