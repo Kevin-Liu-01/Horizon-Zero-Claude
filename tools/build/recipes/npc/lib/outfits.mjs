@@ -119,7 +119,7 @@ export const OUTFITS = {
     pieces(ctx) {
       belt(ctx, { y: 1.05, dye: PAN.orchilDeep, swatch: 'linen', buckle: false, h: 0.05 });
       sashEnd(ctx, { dye: PAN.orchilDeep, y: 1.03 });
-      apron(ctx, { y0: 1.02, y1: 0.58, wTop: 0.15, wBot: 0.2, dye: PAN.salt, swatch: 'panelC', chainKey: 'apron', rows: 8, cols: 6 });
+      apron(ctx, { y0: 1.02, y1: 0.58, wTop: 0.15, wBot: 0.2, dye: PAN.salt, swatch: 'panelC', chainKey: 'apron', rows: 9, cols: 11, foldAmp: 0.0085 });
       pouch(ctx, { x: -0.185, y: 0.985, z: 0.04, dye: PAN.leather });
       const head = ctx.J.Head;
       const [top, under] = P.palmHat({ joint: head, uv: ctx.uvOf('palm') });
@@ -301,7 +301,7 @@ export const OUTFITS = {
     legsHidden: 1.0,
     pieces(ctx) {
       ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.0, y1: 0.28, rHem: 0.26, uv: ctx.rectUV('panelA'), rows: 7, seg: 22, rFloor: 0.17, amp: 0.012, follow: 0.3 }), { dye: HOLDS.lapilli, hide: true, shade: 1.5 });
-      apron(ctx, { y0: 1.25, y1: 0.46, wTop: 0.13, wBot: 0.2, dye: HOLDS.carmineStain, swatch: 'panelC', chainKey: 'apron', lift: 0.022, rows: 11, cols: 6 });
+      apron(ctx, { y0: 1.25, y1: 0.46, wTop: 0.13, wBot: 0.2, dye: HOLDS.carmineStain, swatch: 'panelC', chainKey: 'apron', lift: 0.022, rows: 12, cols: 11, foldAmp: 0.009 });
       waistTie(ctx, { y: 1.04, dye: HOLDS.carmine });
       // a stain gourd on her hip
       const h = ctx.J.pelvis;
