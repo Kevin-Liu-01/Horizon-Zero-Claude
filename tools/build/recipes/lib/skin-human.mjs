@@ -79,7 +79,8 @@ export function primFromGeo(doc, g) {
  */
 export function hairShape(X, Y, Z) {
   const ax = Math.abs(X);
-  const wob = (noise3(X * 90, Y * 90, Z * 90) - 0.5) * 0.009;
+  // the edge wanders at two scales, so it breaks into coils, not a clipper's line (fix round 1: the low edge over the ear read straight)
+  const wob = (noise3(X * 90, Y * 90, Z * 90) - 0.5) * 0.009 + (noise3(X * 260 + 7, Y * 260, Z * 260) - 0.5) * 0.0042;
   // the sideburn: from under the wrap down in front of the ear, tapering to a point
   const t = smooth(1.654, 1.705, Y);
   const zf = -0.001 + t * 0.026 + wob, zb = -0.008 - t * 0.016 + wob * 0.8;
@@ -90,7 +91,7 @@ export function hairShape(X, Y, Z) {
   const zBehind = -0.052 - 0.030 * smooth(1.668, 1.585, Y) + wob;
   const behind = (1 - smooth(zBehind - 0.006, zBehind + 0.001, Z)) * smooth(yLow - 0.003, yLow + 0.004, Y);
   // above the ear, a low band joining the two under the cloth
-  const over = smooth(1.664, 1.676, Y + wob * 0.6) * smooth(-0.056, -0.05, Z) * (1 - smooth(zf - 0.006, zf + 0.004, Z));
+  const over = smooth(1.664, 1.676, Y + wob) * smooth(-0.056, -0.05, Z) * (1 - smooth(zf - 0.006, zf + 0.004, Z));
   const onEar = ax > 0.0715 && Z > -0.052 && Z < 0.006 && Y < 1.671 ? 0 : 1;
   return Math.max(burn, behind, over) * onEar;
 }
