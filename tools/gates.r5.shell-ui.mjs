@@ -1299,7 +1299,7 @@ const V_UI = [
     while (!__CTX__.hud._tipEl.classList.contains('show') && performance.now() - t0 < 6000) await wait(100);
     __CTX__.hud._tipT = 30;
     await wait(500);
-  })()`),
+  })()`, { pendingWords: 'The field note and the objective mark print the tracked quest\'s own text, which is progression W3\'s (plan §7.3; R61 b rules the same text PENDING on V-ui-pause; orchestrator: rule this row likewise). The card, the type and every other clause are graded now.' }),
   UI_ROW('V-ui-death', 'The death choice', `(async () => {${FRAMES}
     __CTX__.input.enabled = true;
     const c = __CTX__;
