@@ -162,7 +162,8 @@ const SEA_COLOR = /* glsl */ `
   diffuseColor.rgb = mix(body, foamC, foam);
   diffuseColor.a = alphaK * mix(0.94 + 0.06 * smoothstep(0.05, 0.8, depth), 1.0, foam);
   wRough = mix(0.08 + 0.1 * (1.0 - nFade), 0.92, foam);
-  wMirror = (1.0 - foam);
+  // the thinnest backwash glistens, but a full mirror on it painted soft white blots
+  wMirror = (1.0 - foam) * mix(0.62, 1.0, smoothstep(0.02, 0.3, depth));
   wSunPow = 24.0;
 }
 `;
@@ -182,9 +183,10 @@ const GLASS_COLOR = /* glsl */ `
   wN = vec3(r1.x * 0.012 + r2.x * 0.007, 0.0, r1.y * 0.012 + r2.y * 0.007);
   // the Glass: emerald #2F8F6F over a pale bed, shallows turquoise, darkening fast with depth.
   // El Golfo's green holds at any angle: the sky is a sheen on it, never a wash over it
-  vec3 emerald = vec3(0.010, 0.150, 0.080);
-  vec3 shallow = vec3(0.075, 0.30, 0.185);
-  float dk = smoothstep(0.02, 0.72, depth);
+  // El Golfo's green is emerald leaning to olive, not a pool's mint
+  vec3 emerald = vec3(0.012, 0.115, 0.040);
+  vec3 shallow = vec3(0.065, 0.27, 0.10);
+  float dk = smoothstep(0.02, 0.45, depth);
   // the bed shows through in long patches
   float bed = texture2D(tRipple, p * 0.019).a;
   // wind slicks: calm streaks mirror the sky, rippled ones break it up (never one flat sheet)
@@ -344,26 +346,26 @@ export class IslandWater {
     this.glassMesh.renderOrder = 1;
     this.group.add(this.glassMesh);
 
-    /* The horizon. The far plane (2,400 m) cuts the sea short of the true horizon and the gap
-     * showed the sky dome's underside as a hard band over the sea. A ring of open water stands
-     * 2,250 m round the camera, from the sea up to eye height, so its top edge IS the horizon;
-     * it is fogged like the far sea it continues. Placed in onBeforeRender from the camera the
-     * frame is drawn with (a gate's or the title's camera as much as the player's). */
+    /* The offing. The far plane (2,400 m) cuts the sea short of where it meets the sky, and the
+     * gap showed the sky dome's underside as a hard band over the water. A ring of open water
+     * stands 2,250 m round the camera, from the sea up to eye height, so its top edge is that
+     * meeting line; it is fogged like the far sea it continues. Placed in onBeforeRender from
+     * the camera the frame is drawn with (a gate's or the title's camera as much as the player's). */
     const ringGeo = new THREE.CylinderGeometry(2250, 2250, 1, 120, 1, true).translate(0, 0.5, 0);
-    this.horizon = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x07192a, side: THREE.BackSide, fog: true }));
-    this.horizon.name = 'sea-horizon';
-    this.horizon.frustumCulled = false;
+    this.offing = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x07192a, side: THREE.BackSide, fog: true }));
+    this.offing.name = 'sea-offing';
+    this.offing.frustumCulled = false;
     // after the sky dome (radius 1,900 m round the player, no depth write): it must not paint over the ring
-    this.horizon.renderOrder = 0.5;
-    this.horizon.castShadow = false;
-    this.horizon.receiveShadow = false;
-    this.horizon.onBeforeRender = (renderer, scene, camera) => {
-      const h = this.horizon, c = camera.position;
+    this.offing.renderOrder = 0.5;
+    this.offing.castShadow = false;
+    this.offing.receiveShadow = false;
+    this.offing.onBeforeRender = (renderer, scene, camera) => {
+      const h = this.offing, c = camera.position;
       h.position.set(c.x, this.seaLevel, c.z);
       h.scale.y = Math.max(0.5, c.y - this.seaLevel);
       h.updateMatrixWorld(true);
     };
-    this.group.add(this.horizon);
+    this.group.add(this.offing);
 
     ctx.scene.add(this.group);
   }
@@ -436,7 +438,7 @@ export class IslandWater {
   update(dt, t) { this.tick(dt, t); }
 
   dispose() {
-    for (const m of [this.sea, this.glassMesh, this.horizon]) {
+    for (const m of [this.sea, this.glassMesh, this.offing]) {
       m.geometry.dispose();
       m.material.dispose();
     }

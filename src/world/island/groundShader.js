@@ -194,7 +194,19 @@ export const TERRAIN_COLOR = /* glsl */ `
       a = gA(i, uv + offA, gx, gy);
       nn = vec4(0.5, 0.5, i == 0 ? 0.877 : i == 1 ? 0.686 : i == 2 ? 0.801 : i == 3 ? 0.539 : 0.631, 0.905);
       if (farN < 1.0) nn = mix(gNm(i, uv + offA, gx, gy), nn, farN);
-      if (w[i] > 0.18 && dCam < 240.0) {     // past 240 m the mips are a few texels: the seam blend buys nothing
+      if (i == 1 && dCam < 240.0) {
+        /* salt: the crust fills whole 20-40 m cells, so any one tile's repeat lines up along a
+         * cell (A-anti-tile). A second lookup, rotated 37 degrees at 0.61 of the scale, is always
+         * half the read: two incommensurate repeats, neither strong. Its normal is turned back. */
+        mat2 Mr = mat2(0.8, 0.6, -0.6, 0.8);
+        vec2 uvR = Mr * uv * 0.61 + offB, gxR = Mr * gx * 0.61, gyR = Mr * gy * 0.61;
+        a = mix(a, gA(1, uvR, gxR, gyR), 0.5);
+        if (farN < 1.0) {
+          vec4 n2 = gNm(1, uvR, gxR, gyR);
+          n2.xy = (vec2(dot(n2.xy * 2.0 - 1.0, Mr[0]), dot(n2.xy * 2.0 - 1.0, Mr[1]))) * 0.5 + 0.5;
+          nn = mix(nn, mix(n2, vec4(0.5, 0.5, 0.686, 0.905), farN), 0.5);
+        }
+      } else if (w[i] > 0.18 && dCam < 240.0) {     // past 240 m the mips are a few texels: the seam blend buys nothing
         vec4 a2 = gA(i, uv + offB, gx, gy);
         float cdiff = dot(a.rgb - a2.rgb, vec3(0.33));
         float bl = smoothstep(0.22, 0.78, tf - 0.12 * cdiff);

@@ -38,11 +38,15 @@ fine grain (1–3 m) is the shader's, from two rotated lookups of the periodic n
 0.48 m a texel it read as a lattice. The cells' floors are planed flat, and a 42 m apron lets the country fall
 to them without a scarp.
 
-The dykes are instanced (`pan-dykes`, one draw + its caster): each 1.7 m run is two courses of flat lava
-slabs (a footing course and capstones breaking joint, 120 triangles) that overlap the next run at both ends,
-so the runs butt into one unbroken low wall, ≈ 0.6 m wide and 0.3–0.45 m tall, dark basalt with salt on its
-top. From the rim a dyke is a thin dark line; up close it is laid stone. Past the cascades a one-lookup shadow
-keeps a dark band on the side of every dyke away from the light, so the grid reads at any distance.
+The dykes are instanced (`pan-dykes`, one draw + its caster, ≈ 2,600 runs): each 1.1 m run is six angular
+lava stones in two courses (three footings, three capstones breaking joint, 120 triangles, faceted: welded
+normals made pillows of them at 1.5 m) that overlap the next run at both ends, so the runs butt into one
+unbroken low wall ≈ 0.6 m wide and 0.3–0.45 m tall, dark basalt with salt on its top. From the rim a dyke is
+a thin dark line; up close it is stacked stone. A cell is cut at the 0.5 contour of its baked interior (used
+raw, the 0.48 m ramp drew zigzag teeth along every diagonal edge), and its floor is pan silt wherever it is not
+crust, never dune sand with ripples. Past the cascades a one-lookup shadow keeps a dark band on the side of
+every dyke away from the light, so the grid reads at any distance. The salt layer is read twice (rotated 37°,
+0.61 of the scale, half each) so no single tile's repeat lines up along a 30 m cell.
 
 ### 2.2 The red tuff ring and the Glass
 
@@ -96,6 +100,31 @@ range) lifts it by at most ×1.4, the dry-sand sky sheen is 0.04 (it was 0.085 a
 low sun), the storm-beach cobbles and the pan silt are darkened (×0.5, ×0.78) so no grey beach band runs along
 the coast. Wet sand in the swash is dark and mirrors the sky.
 
+### 2.8 The offing (`water.js`)
+
+The camera's far plane (2,400 m, engine.js) cuts the sea plane short of the line where it meets the sky, and
+the gap showed the sky dome's underside as a hard band over the water in every sea frame. A ring of open
+water 2,250 m round the camera, from sea level up to eye height (one draw, placed in `onBeforeRender` from
+the camera the frame is drawn with, drawn after the sky dome), continues the far sea to that line. What is
+left at the line is a tonal step between the fog colour and the sky dome's horizon colour: world-sky's (§6).
+
+### 2.9 GPU work this lane did (A-gpu-tier at the Pans vista)
+
+Past 190 m the ground shader replaces every normal-map fetch with that layer's measured mean (faded in over
+150–190 m, so no seam), past 240 m it drops the anti-tile seam's second sample; the sea skips eight surf
+fetches past 130 m off the coast; the near marram hands over to the far tufts at 44 m (was 52) and the small
+kinds stop where they fall under two pixels. The vista is still over its bar (§4); the rest of the frame is
+the post chain, the shadows and the cascades (engine.js, no lane after W0b).
+
+### 2.10 Allocation (R48 c)
+
+`terrain.js` allocates 3.8 KB/frame against the W0b baseline's 601 KB/frame (the one-line `noise2D` fix and
+the island recipe replacing the per-frame landform). `getHeight`/`heightFast` are written out, not calls;
+uniform stores are skipped when the light has not moved (a uniform's `value` is a tagged field, so every
+stored double is a heap number); the isles' haze and the gust are read a few times a second. What remains
+is the double that `getHeight` hands back to a caller that is not inlined (§4, §7): for those callers
+`terrain.heightInto(x, z, out, i)` writes the same read into an array and returns nothing new.
+
 ## 3. APIs and contracts published (exact signatures)
 
 `src/world/island/extent.js` (plain data, no imports; owned by world-ground from W1, §3.2):
@@ -131,7 +160,8 @@ export const GROUND       // named ground for ctx.props.gatePlaces (world-props 
 `src/world/terrain.js` — `ctx.terrain` (`A-terrain-api`, frozen names):
 
 ```js
-getHeight(x, z) → m            heightFast(x, z) → m        getNormal(x, z, out?) → Vector3
+getHeight(x, z) → m            heightFast(x, z) → m        heightInto(x, z, out, i = 0) → out (out[i] = m)
+getNormal(x, z, out?) → Vector3
 slopeFast(x, z) → |∇h|         surfaceAt(x, z) → one of Terrain.SURFACES
 materialAt(x, z) → one of Terrain.MATERIALS             biomeAt(x, z) → one of Terrain.BIOMES
 biomeWeights(x, z, out?) → { pans, holds, malpais, cloudline, flank, caldera }  (Σ = 1)

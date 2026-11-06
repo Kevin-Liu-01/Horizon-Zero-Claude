@@ -23,6 +23,7 @@ import { IslandWater } from './water.js';
  * PUBLISHED API (`A-terrain-api`, frozen names):
  *   terrain.getHeight(x, z)          metres; the drawn surface, bilinear off the 1.94 m grid
  *   terrain.heightFast(x, z)         the same read
+ *   terrain.heightInto(x, z, out, i) the same read into out[i] (no heap number per call; returns out)
  *   terrain.getNormal(x, z, out)     unit normal
  *   terrain.slopeFast(x, z)          |grad h| (0 flat, 1 = 45°)
  *   terrain.surfaceAt(x, z)          the audible vocabulary, one of Terrain.SURFACES
@@ -230,7 +231,7 @@ function stampable(x, z) {
   const F = _stampR.at(x, z);
   /* With a margin under every limit of `marramDensity`: the cover is read bilinearly between
    * texels, so a stamped texel next to one the scatter cannot plant must still be plantable. */
-  if (F.glass > 0.05 || F.h < 0.35 || F.coast < 1.5 || F.slope > 0.78 || F.rock > 0.4 || F.track > 0.32) return false;
+  if (F.glass > 0.05 || F.h < 0.35 || F.coast < 1.5 || F.slope > 0.82 || F.rock > 0.42 || F.track > 0.32) return false;
   return authored.pan(x, z).kind < 0;
 }
 
@@ -352,6 +353,18 @@ export class Terrain {
     const ix = fx | 0, iz = fz | 0, tx = fx - ix, tz = fz - iz, o = iz * GS + ix;
     const a = H[o] + (H[o + 1] - H[o]) * tx;
     return a + (H[o + GS] + (H[o + GS + 1] - H[o + GS]) * tx - a) * tz;
+  }
+  /**
+   * The same read, written into `out[i]` (any typed or plain array) instead of returned: a
+   * caller in a hot loop that is not inlined gets no heap number per call (R48 c). Returns `out`.
+   */
+  heightInto(x, z, out, i = 0) {
+    const fx = (x + GHALF) / GSTEP, fz = (z + GHALF) / GSTEP;
+    if (fx < 0 || fz < 0 || fx >= GS - 1 || fz >= GS - 1) { out[i] = -30; return out; }
+    const ix = fx | 0, iz = fz | 0, tx = fx - ix, tz = fz - iz, o = iz * GS + ix;
+    const a = H[o] + (H[o + 1] - H[o]) * tx;
+    out[i] = a + (H[o + GS] + (H[o + GS + 1] - H[o + GS]) * tx - a) * tz;
+    return out;
   }
   heightFast(x, z) {
     const fx = (x + GHALF) / GSTEP, fz = (z + GHALF) / GSTEP;
@@ -585,7 +598,7 @@ export class Terrain {
    * Sister islands, one merged draw. Their haze is their own: the scene fog at 1.5 km is
    * opaque, and a far plane cutting a fogged mesh left ghost edges in the sky. Each frame
    * `_updateIsles` sets one visibility from world-sky's own transmittance (clear air shows a
-   * blue-grey silhouette, calima nearly hides it) and the colour fades to the fog's horizon.
+   * blue-grey silhouette, calima nearly hides it) and the colour fades to the fog's own colour.
    */
   _buildSkirt() {
     const NR = 28, NA = 88;
@@ -640,7 +653,7 @@ export class Terrain {
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform float uIsleVis;')
         .replace('#include <fog_fragment>', `#ifdef USE_FOG
-  gl_FragColor.rgb = mix(calFogHorizon, gl_FragColor.rgb, uIsleVis);
+  gl_FragColor.rgb = mix(fogColor, gl_FragColor.rgb, uIsleVis);
 #endif`);
     };
     mat.customProgramCacheKey = () => 'cal-sister-isles';
@@ -739,7 +752,7 @@ export class Terrain {
       const phase = Math.abs(Math.round(r[0].x * 7 + r[0].z * 3)) % L;
       for (let k = 0; k < arcs; k++) {
         const start = (phase + Math.floor((k / arcs) * L)) % L;
-        const span = Math.floor((0.62 / arcs) * L);
+        const span = Math.floor((0.85 / arcs) * L);     // a route on broken ground only plants where it can: stamp most of it
         for (let s = 0; s < span; s += 2) {
           const p = line[(start + s) % L];
           if (gridHeight(p[0], p[1]) < 0.05) continue;

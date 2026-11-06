@@ -740,6 +740,8 @@ const ROWS = [
       const ctx = __CTX__, E = ctx.engine, R = ctx.renderer, cam = ctx.camera, gl = R.getContext();
       ctx.player._updateCamera = () => {};
       ctx.environment?.setTime?.(11);
+      // the subject is the ground and the sea: a legacy flyer (deleted at W2) crossing a sample is not
+      for (const m of (ctx.machines?.list || [])) { if (m.root) m.root.visible = false; else if (m.group) m.group.visible = false; m.frozen = true; }
       cam.fov = 45; cam.updateProjectionMatrix();
       const H0 = 300;
       const X = -Ex.WORLD_HALF - 40, Z = 120;
