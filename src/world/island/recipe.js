@@ -501,6 +501,22 @@ const ROW_ODDS = [
 const ROW_W = [[26, 42], [24, 38], [22, 34], [20, 32], [18, 28], [12, 19], [12, 19], [11, 17], [11, 17],
   [9, 14], [9, 14], [8, 13], [8, 13], [8, 12], [8, 12]];
 
+/**
+ * The field's floor: one gentle incline, 0.3 m from the sea rows up to the town's, the same for a
+ * cell and for the dyke strip beside it. Steps and crowns at the cell edges were drawn by the
+ * 1.94 m mesh as sawtooth teeth along every diagonal dyke (A-anti-tile, ground alone); the relief
+ * at a dyke is the stone's.
+ */
+function rowLevel(vw) {
+  const t = (vw - ROW_V[0]) / (ROW_V[ROW_V.length - 1] - ROW_V[0]);
+  return 0.62 + (t < 0 ? 0 : t > 1 ? 1 : t) * 0.3;
+}
+/** The floor level at an authored point inside the field's frame. */
+function fieldLevel(e, n) {
+  const u0 = FU(e, n), v0 = FV(e, n);
+  return rowLevel(v0 + skewV(u0, v0));
+}
+
 let _rows = null;
 let _walls = null;
 function buildField() {
@@ -535,7 +551,7 @@ function buildField() {
         && dry(u, v0) && dry(u + w, v0) && dry(u, v1) && dry(u + w, v1);
       cells.push({
         u0: u, u1: u + w, v0, v1, kind, keep, seed: (R() * 65535) | 0,
-        level: 0.62 + (r / (ROW_V.length - 2)) * 0.3 + (R() - 0.5) * 0.08,
+        level: (R(), rowLevel((v0 + v1) * 0.5)),     // (the draw keeps the layout's random sequence)
       });
       u += w;
     }
@@ -947,8 +963,8 @@ function heightAuthored(e, n) {
   const fd = fieldDist(e, n, FIELD_APRON);
   if (fd < FIELD_APRON) {
     const P = panAt(e, n);
-    const floor = P.kind >= 0 ? P.level - 0.12 * P.inside : 0.72;
-    const crown = P.kind >= 0 ? (1 - P.inside) * 0.24 : 0.2;
+    const floor = P.kind >= 0 ? P.level : fieldLevel(e, n);
+    const crown = 0;
     // planed flat in the field and its first metres, then a long apron up to the country
     const fk = 1 - ss(0.6, FIELD_APRON, fd);
     h += (floor + crown - h) * (fd < 1.2 ? 1 : fk * fk * (3 - 2 * fk) * 0.35 + fk * 0.65);

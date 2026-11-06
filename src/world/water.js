@@ -48,14 +48,18 @@ const SEA_COLOR = /* glsl */ `
   vec2 p = vWPos.xz;
   float dCam = length(vWPos - cameraPosition);
   vec2 muv = p * uWorldInv + 0.5;
-  float inMap = step(max(abs(muv.x - 0.5), abs(muv.y - 0.5)), 0.4985);
+  float edge = max(abs(muv.x - 0.5), abs(muv.y - 0.5));
+  float inMap = step(edge, 0.4985);
   vec2 cf = texture2D(tCoastF, clamp(muv, 0.0, 1.0)).rg;
   // signed coast distance (+ inland), ground height, metres along the shore (the island is
-  // near enough round for its bearing to serve, and that needs no texture and has no steps)
-  float coast = mix(-200.0, cf.r, inMap);
+  // near enough round for its bearing to serve, and that needs no texture and has no steps).
+  // The last 45 m of the map ease into the open sea's values: a hard switch at the map's edge
+  // stepped the water's tone across it (A-skirt-masked)
+  float outK = smoothstep(0.455, 0.4985, edge);
+  float coast = mix(cf.r, -200.0, outK);
   if (coast > 9.0) discard;                 // the sea never stands inland: the Glass has its own surface
   float off = max(-coast, 0.0), cst = -coast;
-  float ground = mix(-9.0, cf.g, inMap);
+  float ground = mix(cf.g, -9.0, outK);
   float sA = abs(atan(p.x, p.y)) * 460.0;
 
   /* the set: three trains of fronts with their own speed, wandering along the shore */

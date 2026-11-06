@@ -106,7 +106,7 @@ The camera's far plane (2,400 m, engine.js) cuts the sea plane short of the line
 the gap showed the sky dome's underside as a hard band over the water in every sea frame. A ring of open
 water 2,250 m round the camera, from sea level up to eye height (one draw, placed in `onBeforeRender` from
 the camera the frame is drawn with, drawn after the sky dome), continues the far sea to that line. What is
-left at the line is a tonal step between the fog colour and the sky dome's horizon colour: world-sky's (§6).
+left at the line is a tonal step between the fog colour and the sky dome's horizon colour: world-sky's (§7).
 
 ### 2.9 GPU work this lane did (A-gpu-tier at the Pans vista)
 
@@ -122,7 +122,7 @@ the post chain, the shadows and the cascades (engine.js, no lane after W0b).
 the island recipe replacing the per-frame landform). `getHeight`/`heightFast` are written out, not calls;
 uniform stores are skipped when the light has not moved (a uniform's `value` is a tagged field, so every
 stored double is a heap number); the isles' haze and the gust are read a few times a second. What remains
-is the double that `getHeight` hands back to a caller that is not inlined (§4, §7): for those callers
+is the double that `getHeight` hands back to a caller that is not inlined (§4, §6): for those callers
 `terrain.heightInto(x, z, out, i)` writes the same read into an array and returns nothing new.
 
 ## 3. APIs and contracts published (exact signatures)
@@ -187,7 +187,88 @@ Consumed from other lanes: `ctx.props.gatePlaces` (world-props W1). Until it mer
 measured ground; world-props can adopt or replace any row. `ctx.environment.fogParams` (world-sky's aerial
 contract) for the isles and the mirrors.
 
-<!-- GATES -->
+## 4. Gates (port 5259, `nice -n 10`, one Chrome under the slot protocol)
+
+Final full run `run-j` (66 rows, Nov 6 15:45–16:19 UTC, 1-min load 2.8–3.0): the lane block, the global
+list and the films in one Chrome. The rows that changed after it are re-run in `run-k` (§4.3).
+
+### 4.1 The world-ground W1 block
+
+| row | result | measured |
+|---|---|---|
+| `A-terrain-api` | PASS | 9025 samples, bad 0, riverFactor max 0, shelf 0 |
+| `A-world-size` | PASS | WORLD_SIZE 1024, node 1.941 m, build 428/498/332/334/328 ms (median 0.708 µs/vertex, pool ×4), single-thread 992 ms, byte-identical true, sites off 0 |
+| `A-play-extent` | PASS | PLAY_RADIUS 490 (from size 490), clamp → r 490 |
+| `A-play-extent-grep` | PASS | own 0; others src/entities/machines/strider.js, src/hero/sheets.js |
+| `A-single-rest-saltrow` | PASS | cistern err 0.92 m, spawn 0 m, respawn 0 m, ring centred true |
+| `A-reach-all-sites` | PASS | 25 sites, bad 0, routes off 0, nav 19.2 ms (N 493) |
+| `A-island-boundary` | PASS | 16 bearings, deepest 0.92 m, under 0 |
+| `A30b-fall-wade-edge` | PASS | {"safe":{"h":3,"fall":3,"health":100,"state":"playing"},"hurt":{"h":6,"fall":6,"health":75.2,"state":"playing" |
+| `A-biomes` | PASS | six biomes, worst Σ error 0 |
+| `A58-surface-api` | PASS | Pans surfaces 7: rock, sand, water, silt, shale, cobble, dirt |
+| `A58b-surface-audio-world-ground` | PASS | 12 materials routed 12, unrouted 0 |
+| `A59b-cover-honesty-world-ground` | PASS | under-planted 0.0199 (bar 0.04) of 956; measured 2.11 tufts/m² |
+| `A59c-mask-coherence-world-ground` | PASS | mismatched 0/0, sensitivity red 1 |
+| `A60-stealth-lanes` | PASS | 20 routes, below 25 %: 0, worst 0.362, median 0.74; named unplantable 4, flyers 4 |
+| `A-layers-budget` | PASS | 1024² 3, 512² 2 |
+| `A-scatter-draws` | PASS | 7 kinds, 69 calls in frame |
+| `A-anti-tile` | FAIL | sand30 0.092, sand55 0.019, salt25 0.239, salt50 0.101 |
+| `A-skirt-masked` | FAIL | worst step 0.0984 (bar 0.08), land sd 15.04 |
+| `A-columns-normals` | PASS | 397 columns, worst 0° |
+| `A-biome-stream-memory` | PASS | Δgeo 3, Δtex 0, heap -1.91 % |
+| `A18-slope-conform-island` | PASS | {"rows":[{"band":10,"slopeDeg":10,"ballClearM":[0.0001,0],"soleTiltDeg":[0,0]},{"band":20,"slopeDeg":20,"ballClearM":[0.0001,0],"soleTiltDeg |
+| `A18b-slope-conform-moving-island` | PASS | {"at":{"x":-200,"z":-10},"rows":[{"tag":"downhill","worstClearM":0.008,"p90ClearM":0.0062,"worstSoleTiltDeg":21.22,"p90SoleTiltDeg":14.15,"s |
+| `A29-steep-face` | PASS | {"faceDeg":55.8,"samples":279,"onFace":279,"maxSpeedMs":2.6,"maxFootErrM":0,"climbedM":0,"climbsPerRep":[0,0,0,0,0,0,0,0],"airborneFrames":0 |
+| `A29b-steep-face-moving` | PASS | {"filmSolid":true,"slopeBands":[8.2,10.4,15.6,23.1,31.3,36.8,43.8,52.1],"rows":16,"clearRows":16,"ghostedOnClearSlopes":0,"lensInsideHer":0, |
+| `A-round4-gone-from-view` | PASS | groups hidden 5, shown 0, live colliders 0 |
+| `A-poc-biome-removed` | PASS | {"hookInMain":false,"gone":{"textures":true,"tools":true,"models":false},"note":"public/models/r5-poc awaits its two generators (gen-tiller  |
+| `A-gpu-tier-pans` | PENDING | GPU median 20.17 ms (bar 13), 59.8 fps, p95 17.8 ms, 70 calls, 2390186 tris |
+| `A22-msaa-pans` | PASS | SMAA ramp 0.3074 vs off 0.1273 (×2.415) |
+| `A108-ao-periodicity-pans` | FAIL | worst 0.132; 10 fails (first: high@1 far147m: CONTROL peaks 0.171 on a far crop: the defect region is unmeasurable) |
+| `A109-ao-distance-fade-pans` | PASS | high: 5 m 0.0923, >150 m 0; ultra: 5 m 0.0929, >150 m 0 |
+| `V-biome-vista-pans` | NEEDS-JUDGE | "" |
+| `V-biome-vista-pans-calima` | NEEDS-JUDGE | "" |
+| `V-biome-vista-glass` | NEEDS-JUDGE | "" |
+| `V-biome-vista-rise` | NEEDS-JUDGE | "" |
+| `V-biome-vista-surf` | NEEDS-JUDGE | "" |
+| `V32-ground-detail` | NEEDS-JUDGE | "" |
+| `V20-aa-crop-pans` | NEEDS-JUDGE | "" |
+| `V33b-no-ao-lattice-pans` | NEEDS-JUDGE | "" |
+| `V-gpu-tier-look-pans` | NEEDS-JUDGE | "" |
+| `V33-rim` | PENDING | SKIP-replaced (world-ground): subject deleted with the old landform (plan §6) |
+| `A62-rim-face-lit-world-ground` | PENDING | SKIP-replaced (world-ground): subject deleted with the old landform (plan §6) |
+| `A63-bedding-planar-world-ground` | PENDING | SKIP-replaced (world-ground): subject deleted with the old landform (plan §6) |
+| `A61-scree-seated-world-ground` | PENDING | SKIP-replaced (world-ground): subject deleted with the old landform (plan §6) |
+| `A59-grass-coverage` | PENDING | SKIP-replaced (world-ground): subject deleted with the old landform (plan §6) |
+| `V44-biomes` | PENDING | SKIP-replaced (world-ground): subject deleted with the old landform (plan §6) |
+
+### 4.2 The global green list (items that exist at W1)
+
+| row | result | measured |
+|---|---|---|
+| `A1-boot-clean` | PASS | state=playing |
+| `A9-perf-budget` | not run | not run in the lane batch (quiet-box term, R45/R58 b) |
+| `A20b-no-system-errors` | PASS | {"systemErrors":[],"hookErrors":0,"framesAdvanced":368,"quality":"high","stepMode":"substep"} |
+| `A21-real-draw-calls` | FAIL | draws 77 / 120 / 110 (bar 350), tris 2.33 / 3.10 / 3.11 M (bar 6.5 M) PASS; median GPU vista 21.19, herd 20.10, staged fight 19.74 ms (bar 14) FAIL, p95 frame 18.4 / 30.8 / 18.1 ms; load 2.99, 0 other Chrome (the box was quiet enough for the row to grade it) |
+| `A90-memory-stability` | PASS | {"kills":30,"workload":{"kills":30,"respawned":30,"respawnFailed":0,"kinds":{"tiller":30},"sources":{"role":30}},"before":{"heap":267670462, |
+| `A90-memory-stability-expansion` | PASS | {"kills":30,"workload":{"kills":30,"respawned":30,"respawnFailed":0,"kinds":{"tiller":30},"sources":{"role":30}},"before":{"total":2653,"mac |
+| `A90b-memory-attribution` | PASS | {"kills":30,"selfTest":{"ok":true,"texturesSeen":1,"geometriesSeen":1,"materialsSeen":1,"objectsSeen":1,"texturesDisposedSeen":1,"uploadCoun |
+| `A90-rig-reclaim` | PASS | {"cycles":30,"roster":["tiller"],"budget":{"geometries":40,"textures":30,"perLiveGeo":1,"perLiveTex":1},"afterCycles":{"geoGrowth":0,"texGro |
+| `A90-abs` | PASS | post-GC heap 76.98 MB (≤ 450), GPU process 1005 MB (≤ 1500), instrument PASS |
+| `A-alloc-rate` | FAIL | instrument PASS; owner rows: terrain 3.8 KB/frame against its W0b baseline 601 (×0.006), world-ground 0.24 against 37.3 (×0.006); the run FAILs on other owners' baseline guards (engine.js 5.1 MB/s, hud.js, carry.js, playerAnimator.js); world-ground functions over 4 KB/s: getHeight 250, gridHeight 17, getNormal 12.5, slopeFast 11.3 KB/s (§2.10, §6) |
+| `A-vram-ledger` | PASS | textures 104.4 MB (≤ 160), render targets 127.3 MB (≤ 170), geometry 23.2 MB (≤ 120), total 254.8 MB (≤ 450) |
+| `A-ID-ip-assets-gone` | PASS | {"pass":true,"glbs":24,"filesThroughRows":225,"ipHits":[],"rowIpUnflagged":[],"noProvenance":[],"unreadable":[],"scheduledExceptions":[],"st |
+| `A-licence-manifest` | PASS | {"summary":{"files-matched":"PASS","row-schema":"PASS","third-party":"PASS","legacy-source":"PASS","code-rows":"PASS","licence-texts":"PASS" |
+| `A-assets-tracked` | PASS | {"referenced":229,"ignoredRefs":[],"missing":[],"deletedR30":["public/models/behemoth.glb","public/models/sawtooth.glb","public/models/thund |
+| `A-no-horizon-terms-player` | PASS | PASS 1502 <= 1508 (W0b ratchet, plan §9 reading) |
+| `A-no-horizon-terms-code` | PASS | {"filesScanned":263,"distinctPairs":831,"occurrences":10893,"total":1368,"ratchetTotal":1371,"byKind":{"engine":402,"guard":181,"scheduled": |
+| `A-reach-all-sites` | PASS | 25 sites, bad 0, routes off 0, nav 19.2 ms (N 493) |
+| `A-port-guard` | PENDING | refusals, cache, monitor PASS; PENDING because this is not a full --lane run |
+| `A-carried-suite` | FAIL | refused by design inside a run that executes carried rows; graded by the orchestrator in its own invocation (R48 d, R53 b): PENDING-orchestrator |
+| `V38-title` | NEEDS-JUDGE | filmed: the title frame is the Pans under the calima stand-in (brand's row; my reading §5) |
+
+<!-- RUNK -->
+
 
 ## 5. My reading of the frames (advisory; the R29 judge grades)
 
@@ -210,7 +291,30 @@ Filmed at 1600×900 and read frame by frame against `reference/r5/gates-perf/sal
   brighter than Janubio's trampled crust. (5) The sister isle is a soft grey cone with little shading.
   (6) Surf from the beach: at grazing angles the thin backwash still throws soft white sky blots.
 
-## 6. For other lanes and the orchestrator
+## 6. Honest gaps (what is not done or not passing)
+
+- **GPU at the Pans vista.** `A-gpu-tier-pans` 19.5–20.2 ms median (bar 13) and `A21`'s GPU term 19.7–21.2 ms
+  (bar 14) on a box at load 2.6–3.0 with no other gate Chrome. Hiding the ground, water and flora together
+  leaves 7.6 ms (post chain, sky, shadows); the island's ground + flora + sea add 10–12 ms and do not add up
+  when hidden one at a time (shadow and AO passes share them). This lane's levers (§2.9) took the flora from
+  ≈ 4.6 to ≈ 2.3 ms; the rest needs the §11 engine follow-up (per-pass costs of the cascades, GTAO and the
+  depth/normal prepass on 0.9 M ground triangles at 1.94 m) or a ground mesh LOD, which is a W2 item here.
+  These terms are graded on the orchestrator's quiet box (R58 b); I expect them to fail there too.
+- **`A-alloc-rate` per-function bars (R48 c).** The terrain owner is 0.6 % of its W0b baseline, but
+  `getHeight` still shows ≈ 190–250 KB/s against the 4 KB/s per-function bar: the double it returns is boxed
+  for every caller that is not inlined (the callers are the kept movement, gait, collision and animator code).
+  `heightInto(x, z, out, i)` is published for those callers; until they use it this row fails on my function.
+- **`A108-ao-periodicity-pans`.** The re-hosted crops are content-limited on the real Pans (haze-flat far
+  ground, periodic salt grid, dune crests); a survey of crops on the Holds' scored slopes got one far crop under
+  the bar (0.148 / 0.082) and the rest content-limited. The instrument is engine-gpu's; its re-grade on the real
+  Pans needs a crop survey on this island's content (R49), not done.
+- **`A-anti-tile` salt25** (0.24, bar 0.15) and **`A-skirt-masked`** (0.098, bar 0.08) failed in `run-j`; both
+  are fixed at the cause (§2.1 the field floor, §2.3 the map edge) and re-run in `run-k` (§4.3).
+- **The look against the reference**, as §5 lists: the stand-in weather, no landmarks, the Glass without the
+  crater's reflection, the near crust smoother than Janubio's, the soft grey sister isle.
+- **`public/models/r5-poc/`** stays (not this lane's path, §7).
+
+## 7. For other lanes and the orchestrator
 
 - **world-sky** (W1): the 07:00 and calima frames are filmed under stand-ins (`clear`, `overcast`), named on
   the frame. Two things only that lane can do: (1) the scene fog's horizon colour is not the sky dome's
