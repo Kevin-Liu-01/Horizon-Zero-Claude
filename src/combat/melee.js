@@ -609,6 +609,14 @@ export class Melee {
     this._sneakRegistered = !!ctx.interactables;
 
     ctx.events.on('player-died', () => this._cancel());
+    /* R48 c: the fields the frame and the first swing used to add, declared (a
+     * field added later is a new hidden class for every optimised reader) */
+    if (!('layer' in this)) this.layer = null;
+    if (!('_hand' in this)) this._hand = null;
+    this._keyGuard = false; this._holsterDur = HOLSTER_T; this._drawWait = 0; this._sprintT = 0;
+    this._aimReach = 0; this._armM = null; this._armT = 0; this._frameCap = 0.5;
+    if (!('_drive' in this)) this._drive = null;
+    this._i = 0; this._trailDur = 0.12; this._trailScale = 1;
     decimalFields(this);
     decimalFields(this._pose);
     decimalFields(this._driveBuf);
