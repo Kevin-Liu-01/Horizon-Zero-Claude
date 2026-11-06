@@ -1924,7 +1924,8 @@ export class Melee {
       const list = ctx.machines?.list;
       let best = Infinity;
       if (list) {
-        for (const m of list) {
+        for (let li = 0; li < list.length; li++) {
+          const m = list[li];
           if (!m || m.alive === false || !m.root || m._disposed) continue;
           // gap to the SHELL (see surfaceGap): a lance that measured to the
           // navel could not touch anything bigger than a Strider
@@ -2227,7 +2228,8 @@ export class Melee {
       const list = ctx.machines?.list;
       let best = Infinity;
       if (list) {
-        for (const m of list) {
+        for (let i = 0; i < list.length; i++) {
+          const m = list[i];
           if (!this._sneakOk(m)) continue;
           const d = m.position.distanceToSquared(p.position);
           if (d < best) { best = d; target = m; }

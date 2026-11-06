@@ -2992,7 +2992,7 @@ export const GATES = [
   {
     id: 'A-stow-clearance', kind: 'action', lane: 'melee',
     timeout: 150000, settle: 500,
-    title: 'Sprint 4 s, crouch-walk, dodge and a 24-yaw chase sweep: every stowed piece\'s lowest point >= 0.05 m from both calf/heel capsules every frame, >= 0.05 m above the terrain crouched, no stowed piece on the boom (pivot -> lens) by > 0.02 m, <= 8 % of the head\'s screen box covered',
+    title: 'Sprint 4 s, crouch-walk, dodge and a 24-yaw chase sweep: every stowed piece\'s lowest point >= 0.05 m from both calf/heel capsules every frame, >= 0.05 m above the terrain crouched, no stowed piece on the boom (pivot -> lens) by > 0.02 m; the head\'s screen box covered: median over the 24 yaws <= 8 %, worst single yaw <= 20 % (R62 b), standing and running sweeps each',
     setup: `__CTX__.input.enabled = true;`,
     assert: placed(['openGround'], `(async () => {${HERO}
       const C = __CTX__, p = C.player, an = p.animator, E = C.engine;
@@ -3133,9 +3133,20 @@ export const GATES = [
       const worstBoom = Math.max(...camRows.map((x) => x.boomPen));
       const worstCover = Math.max(...camRows.map((x) => x.headCover));
       if (!(worstBoom <= 0.02)) bad.push('a stowed piece crosses the boom by ' + worstBoom.toFixed(3) + ' m');
-      if (!(worstCover <= 0.08)) bad.push('stowed gear covers ' + (worstCover * 100).toFixed(1) + ' % of the head box');
+      /* R62 (b): the cover clause is the MEDIAN over the 24 yaws <= 8 % and the worst single yaw <= 20 %,
+       * read on each sweep (standing, running) on its own */
+      const cover = {};
+      for (const moving of [false, true]) {
+        const xs = camRows.filter((x) => x.moving === moving).map((x) => x.headCover).sort((u, v) => u - v);
+        const n = xs.length, med = n ? (n % 2 ? xs[(n - 1) / 2] : (xs[n / 2 - 1] + xs[n / 2]) / 2) : NaN;
+        const tag = moving ? 'running' : 'standing';
+        cover[tag] = { yaws: n, median: +med.toFixed(3), worst: n ? xs[n - 1] : NaN };
+        if (!(n === 24)) bad.push(tag + ' sweep: ' + n + ' yaws');
+        if (!(med <= 0.08)) bad.push(tag + ' sweep: stowed gear covers a median ' + (med * 100).toFixed(1) + ' % of the head box');
+        if (!(xs[n - 1] <= 0.20)) bad.push(tag + ' sweep: stowed gear covers ' + (xs[n - 1] * 100).toFixed(1) + ' % of the head box at its worst yaw');
+      }
       for (const r of Object.values(rows)) { r.legGap = +r.legGap.toFixed(3); r.groundGap = +r.groundGap.toFixed(3); }
-      return { pass: bad.length === 0, detail: { bad, rows, worstBoomPen: worstBoom, worstHeadCover: worstCover, camRows } };
+      return { pass: bad.length === 0, detail: { bad, rows, worstBoomPen: worstBoom, worstHeadCover: worstCover, cover, camRows } };
     })()`),
   },
 
