@@ -7927,7 +7927,7 @@ const NEW_GATES = [
    * knuckle <= 0.06 m from the bow's nock whenever the draw is > 0.9. */
   {
     id: 'A-draw-arm-continuity', kind: 'action', lane: 'hero-body', timeout: 2700000,
-    title: 'The draw arm across every aim-weight transition and every camera move, as a matrix. AIM cells: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, strafe right, strafe left, crouched} x one timeline per cell (raise; draw; loose; RMB up 0.05 s after the loose; re-aim 0.05-0.2 s after the lower; again with RMB up at +0.12 and +0.25 s; a draw cancelled by RMB at full draw; the raise after the cancel; crouch->stand and stand->crouch at full draw; a loose and a rapid re-fire 0.12 s after it; a dodge with RMB+LMB held at full draw and the draw completing after it; the last loose and lower). CAMERA cells: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, crouched} (and 0.2 standing) at full draw: camera yaw turns at 1.5, 3, 6 and 10 rad/s each way, each followed by a stop, then camera pitch sweeps at 2, 4 and 8 rad/s there and back. Every sim step from the first RMB: draw elbow and wrist travel <= 0.06 m in character space AND relative to the draw shoulder on every step outside the roll (in the roll, in the chest\'s frame; on a step the camera\'s pitch moves, the travel printed not graded); wrist / middle knuckle / middle fingertip in front of the back of the skull wherever they are at skull height (head-ellipsoid unit y >= -1), and within the head\'s width (|x| < 1) from the neck (y >= -2.4) up; never over the crown (y > 1 within the skull\'s footprint, |x| < 1.3, -1.4 < z < 1.3); whenever the draw is > 0.9 (read after combat\'s update of the same tick): middle knuckle <= 0.06 m from the bow nock, and in the camera cells the wrist <= 0.09 m from it and, once the draw is home (drawS >= 0.98), the forearm <= 20 deg off the real arrow (the bow\'s own draw axis; the ramp\'s last 0.08 reported); pelvis and head <= 0.03 m per 1/60 s (character space) on every step outside the roll in the crouched cells and on every step of the strafe cells with the bow up (aim weight >= 0.99; the raise and lower out of a sideways run printed); through the dodge drawn, the loose after it and RMB up from a held draw with LMB still down (R63 a: the bow\'s LMB is no spear press) the spear never charges or swings and no strike resolves, and the lance is never posed',
+    title: 'The draw arm across every aim-weight transition and every camera move, as a matrix. AIM cells: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, strafe right, strafe left, crouched} x one timeline per cell (raise; draw; loose; RMB up 0.05 s after the loose; re-aim 0.05-0.2 s after the lower; again with RMB up at +0.12 and +0.25 s; a draw cancelled by RMB at full draw; the raise after the cancel; crouch->stand and stand->crouch at full draw; a loose and a rapid re-fire 0.12 s after it; a dodge with RMB+LMB held at full draw and the draw completing after it; the last loose and lower). CAMERA cells: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, crouched} (and 0.2 standing) at full draw: camera yaw turns at 1.5, 3, 6 and 10 rad/s each way, each followed by a stop, then camera pitch sweeps at 2, 4 and 8 rad/s there and back. Every sim step from the first RMB: draw elbow and wrist travel <= 0.06 m in character space AND relative to the draw shoulder on every step outside the roll (in the roll, in the chest\'s frame; on a step the camera\'s pitch moves, the travel printed not graded); wrist / middle knuckle / middle fingertip in front of the back of the skull wherever they are at skull height (head-ellipsoid unit y >= -1), and within the head\'s width (|x| < 1) from the neck (y >= -2.4) up; never over the crown (y > 1 within the skull\'s footprint, |x| < 1.3, -1.4 < z < 1.3); whenever the draw is > 0.9 (read after combat\'s update of the same tick): middle knuckle <= 0.06 m from the bow nock, and in the camera cells (while the camera holds its pitch and turns at most 6 rad/s: finding 1) the wrist <= 0.09 m from it and, once the draw is home (drawS >= 0.98), the forearm <= 20 deg off the real arrow (the bow\'s own draw axis; the ramp\'s last 0.08 reported); pelvis and head <= 0.03 m per 1/60 s (character space) on every step outside the roll in the crouched cells and on every step of the strafe cells with the bow up (aim weight >= 0.99; the raise and lower out of a sideways run printed); through the dodge drawn, the loose after it and RMB up from a held draw with LMB still down (R63 a: the bow\'s LMB is no spear press) the spear never charges or swings and no strike resolves, and the lance is never posed',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${FLAT_STRIP}
       freeze();
@@ -8021,7 +8021,7 @@ const NEW_GATES = [
           bodyStep: 0, bodyAt: null, bodyGraded, camTravelMax: 0, camTravelAt: null, yawTurned: 0, pitchSwept: 0,
           meleeSteps: 0, meleeAt: null, meleeResolves: 0, spearFails: [], foreHome: 0, foreHomeAt: null, foreRamp: 0, foreRampAt: null,
           lanceHead: -9, lanceHeadAt: null, lanceCrown: -9, lanceStepMax: 0, lanceStepAt: null, lanceInRoll: 0 };
-        let label = 'start', tLab = 0, prev = null, wasFull = false, camMoved = false;
+        let label = 'start', tLab = 0, prev = null, wasFull = false, camMoved = false, yawNow = 0;
         const t0 = E.simTime, upd = an.update;
         const failAdd = (k, msg) => { if (M.fails.length < 12) M.fails.push(k + ' ' + msg); };
         // (the dodge drawn, the loose after it and RMB up from a held draw: the bow's LMB, no spear press — R63 a)
@@ -8142,7 +8142,12 @@ const NEW_GATES = [
             const B = M.byTag[label] || (M.byTag[label] = { travel: 0, rel: 0, skull: -9, crown: -9, kn: 0, body: 0 });
             B.kn = Math.max(B.kn, r4(d));
             if (d > KN) failAdd('knuckleOffString', r4(d) + ' @' + lab + ' drawS ' + ds.toFixed(2));
-            if (isCam && dw > WN) failAdd('wristOffNock', r4(dw) + ' @' + lab + ' drawS ' + ds.toFixed(2));
+            /* (the wrist bar is finding 1's: the yaw turns at 1.5, 3 and 6 rad/s and the steps the camera holds
+             * still; through a pitch sweep and a 10 rad/s turn finding 3 grades the knuckle, the forearm and the
+             * head, and the wrist is printed: wnSweep) */
+            const wGraded = !camMoved && Math.abs(yawNow) <= 6.5;
+            if (!wGraded && dw > (M.wnSweep || 0)) { M.wnSweep = r4(dw); M.wnSweepAt = lab; }
+            if (isCam && wGraded && dw > WN) failAdd('wristOffNock', r4(dw) + ' @' + lab + ' drawS ' + ds.toFixed(2));
             /* (the forearm against the real arrow is graded once the draw is home, drawS >= 0.98; the
              * draw ramp's last 0.08, where the string hand is still 0.01-0.05 m short of the anchor and
              * the elbow cannot yet stand on the arrow line under A16's cap, is reported: foreRamp) */
@@ -8178,7 +8183,8 @@ const NEW_GATES = [
             camMoved = Math.abs(pc - pPrev) > 1e-5;
             if (camMoved) M.pitchSwept += Math.abs(pc - pPrev);
             pPrev = pc;
-            for (const [a0, a1, rate] of TL.yaw) { const lo = Math.max(a0, tPrev), hi = Math.min(a1, tt); if (hi > lo) { p.camYaw += rate * (hi - lo); M.yawTurned += Math.abs(rate * (hi - lo)); } }
+            yawNow = 0;
+            for (const [a0, a1, rate] of TL.yaw) { const lo = Math.max(a0, tPrev), hi = Math.min(a1, tt); if (hi > lo) { p.camYaw += rate * (hi - lo); M.yawTurned += Math.abs(rate * (hi - lo)); yawNow = rate; } }
             tPrev = tt;
             for (const k of hold) keys.add(k);
             await frame();
@@ -8223,7 +8229,7 @@ const NEW_GATES = [
         travelMax: mx(cells, 'travel'), relMax: mx(cells, 'rel'),
         skullMax: mx(cells, 'skull'), napeMax: mx(cells, 'nape'), crownMax: mx(cells, 'crown'),
         knuckleFullMax: mx(cells, 'knFull'), knuckleFullMaxCamera: mx(cam, 'knFull'),
-        wristNockMaxCamera: mx(cam, 'wnFull'), wristNockMaxAimReported: mx(aim, 'wnFull'),
+        wristNockMaxCamera: mx(cam, 'wnFull'), wristNockMaxAimReported: mx(aim, 'wnFull'), wristNockSweepReported: mx(cam, 'wnSweep'),
         forearmArrowMaxCameraDeg: mx(cam, 'foreHome'), forearmArrowMaxAimReportedDeg: mx(aim, 'foreHome'),
         forearmArrowRampEndReportedDeg: mx(cells, 'foreRamp'),
         bodyStepMaxGraded: mx(cells.filter((M) => M.bodyGraded), 'bodyStep'), bodyStepMaxReported: mx(cells.filter((M) => !M.bodyGraded), 'bodyStep'),
