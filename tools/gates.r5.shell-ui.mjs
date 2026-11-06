@@ -160,9 +160,11 @@ const CLEAR_BEARING = `
 
 /**
  * Sighting on the herd kind at 15 m: frozen, composed, the card up, on a clear bearing. `yawK` turns
- * the camera off the Instrument so it stands clear of her and still under the crosshair's reading.
+ * the camera off the Instrument so it stands clear of her and still under the crosshair's reading:
+ * 0.15 is close to the most it can be at 15 m (`_pickTarget` reads an Instrument within about 2.9 m
+ * of the line of sight, about 0.16 rad at this range); 0.22 loses the card.
  */
-const SIGHT_STAGE = (on, hideHero = false, yawK = 0.22) => `
+const SIGHT_STAGE = (on, hideHero = false, yawK = 0.15) => `
   ${FRAMES}${FACE}${CLEAR_BEARING}
   const ctx = __CTX__;
   ctx.input.enabled = true;

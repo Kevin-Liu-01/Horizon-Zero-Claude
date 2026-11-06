@@ -578,6 +578,7 @@ export class WorldMap {
     this.pillars = pillarTable();
     this._pillarById = new Map(this.pillars.map((p) => [p.id, p]));
     this._labelBoxes = [];      // x0,y0,x1,y1 of everything lettered on the sheet this draw
+    this._aside = { x: 0, y: 0 }; // where an objective on her spot stands aside (`_questAside`)
     this.waypoint = null;
     this.root = null;
     this.canvas = null;
@@ -868,8 +869,17 @@ export class WorldMap {
     this._herYaw = her?.camYaw ?? 0;
     this._gaveWay = 0;
     const marks = this.bake.ready ? this.visibleMarkers() : [];
-    // every glyph claims its ground first, so no name can land on a mark
-    for (const m of marks) { const pt = this.worldToMap(m.x, m.z); this._claim(pt.x - 8 * K, pt.y - 8 * K, pt.x + 8 * K, pt.y + 8 * K); }
+    // every glyph claims its ground first, so no name can land on a mark: her dart, and an objective
+    // where it will stand once it has stepped aside from her (its leader included)
+    if (this._herPt) this._claim(this._herPt.x - 10 * K, this._herPt.y - 12 * K, this._herPt.x + 10 * K, this._herPt.y + 12 * K);
+    for (const m of marks) {
+      const pt = this.worldToMap(m.x, m.z);
+      this._claim(pt.x - 8 * K, pt.y - 8 * K, pt.x + 8 * K, pt.y + 8 * K);
+      if (m.kind === 'quest' && this._questAside(pt)) {
+        const q = this._aside;
+        this._claim(Math.min(q.x, pt.x) - 13 * K, Math.min(q.y, pt.y) - 13 * K, Math.max(q.x, pt.x) + 13 * K, Math.max(q.y, pt.y) + 13 * K);
+      }
+    }
     // settlements are named first: a site gives way to them
     const named = marks.slice().sort((a, b) => (a.kind === 'settlement' ? 0 : 1) - (b.kind === 'settlement' ? 0 : 1));
     for (const m of named) { this._drawMarker(g, m); painted.sites += (m.kind !== 'quest' && m.kind !== 'machine') ? 1 : 0; }
@@ -969,6 +979,17 @@ export class WorldMap {
 
   _claim(x0, y0, x1, y1) { this._labelBoxes.push(x0, y0, x1, y1); }
 
+  /** An objective on her own spot steps aside, square to her heading: true and `_aside` set when it does. */
+  _questAside(pt) {
+    const her = this._herPt;
+    if (!her || Math.hypot(pt.x - her.x, pt.y - her.y) >= 24 * K) return false;
+    const c = Math.cos(this._herYaw), s = Math.sin(this._herYaw);
+    const side = c >= 0 ? 1 : -1;       // the side of her arrow that faces the sheet's right
+    this._aside.x = her.x + c * side * 30 * K;
+    this._aside.y = her.y - s * side * 30 * K;
+    return true;
+  }
+
   _free(x0, y0, x1, y1) {
     const b = this._labelBoxes;
     if (x0 < 26 * K || y0 < 4 * K || x1 > MAP_PX - 4 * K || y1 > MAP_PX - 14 * K) return false;
@@ -1022,7 +1043,7 @@ export class WorldMap {
     g.save();
     const r = 4.5 * K;
     // where she stands her dart is wider than the mark: its name keeps a clear gap from her
-    const her = this._herPt, herOn = her && Math.hypot(pt.x - her.x, pt.y - her.y) < 8 * K ? 5 * K : 0;
+    const her = this._herPt, herOn = her && Math.hypot(pt.x - her.x, pt.y - her.y) < 8 * K ? 3 * K : 0;
     if (m.kind === 'settlement') {
       g.strokeStyle = 'rgba(232,221,192,0.94)'; g.lineWidth = 2.4 * K;
       g.strokeRect(pt.x - r, pt.y - r, r * 2, r * 2);
@@ -1032,11 +1053,8 @@ export class WorldMap {
     } else if (m.kind === 'quest') {
       // on her own spot an objective steps aside on a leader, square to her arrow, so both read
       let x = pt.x, y = pt.y;
-      if (her && Math.hypot(x - her.x, y - her.y) < 24 * K) {
-        const c = Math.cos(this._herYaw), s = Math.sin(this._herYaw);
-        const side = c >= 0 ? 1 : -1;       // the side of her arrow that faces the sheet's right
-        x = her.x + c * side * 30 * K;
-        y = her.y - s * side * 30 * K;
+      if (this._questAside(pt)) {
+        x = this._aside.x; y = this._aside.y;
         this._gaveWay++;
         g.strokeStyle = INK; g.lineWidth = 1 * K;
         g.beginPath(); g.moveTo(her.x, her.y); g.lineTo(x, y); g.stroke();
