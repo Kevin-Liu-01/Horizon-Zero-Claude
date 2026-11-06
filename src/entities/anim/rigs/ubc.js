@@ -283,10 +283,12 @@ export const UBC_TUNE = {
   // hit (see `_crouchAimLayer`, `_crouchAimLift`)
   // (hero-body targeted fix round 2: crouched, the aim weight goes out at most `outRate` per second, and a
   // crouch toggled under the aim moves at most `toggleRate` per second, 2.5 before: 0.036 m head steps)
-  crouchAim: { pelvisY: 0.52, pelvisDown: 0.31, pelvisTilt: 0.10, rampS: 0.7, toggleRate: 1.8, liftStep: 0.022, nearBow: 0.57, outRate: 2.5 },
+  crouchAim: { pelvisY: 0.52, pelvisDown: 0.31, pelvisTilt: 0.10, rampS: 0.8, toggleRate: 1.8, liftStep: 0.022, nearBow: 0.57, outRate: 2.0 },
   // W0b targeted fix 4: the bent T's reach at the pitch clamps (rad): the turn's
   // caps, and how much of its pitch the hips carry, the upper back the rest
   tClamp: { up: 1.2, down: 1.25, yaw: 0.9, hipUp: 0.6, hipDown: 0.95, hipBack: 1.5 },
+  // hero-body targeted fix round 2: the bent T's share of a pitched aim ramps in over these pitches (rad)
+  tRamp: [0.02, 0.2],
   // hero-body targeted fix round 2: the roll's hand-over to the gait — the pelvis held where it was
   // rendered on the step the roll ends and handed to the gait's at most `stepM` m per 1/60 s against
   // her root, over `minS`..`maxS` s; a jump under `minM` m is left alone (see `_rollExit`)
