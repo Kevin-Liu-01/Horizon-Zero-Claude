@@ -29,8 +29,14 @@ import { Person } from './person.js';
  * goes, a faction atlas when its last archetype goes (A-npc-dispose, A-npc-atlas-resident).
  */
 const NEAR_R = 18, MID_R = 35, HIDE_R = 90, MAX_NEAR = 6, MAX_CAST = 4, HYST = 1;
-/** The group loads when she comes within STREAM_IN of it and goes, atlases and all, past STREAM_OUT (plan §4.4: streamed, disposed). */
-const STREAM_IN = 130, STREAM_OUT = 170;
+/**
+ * The W1 group loads when she comes within STREAM_IN of it and then stays for the session: it is one group of ten at a neutral
+ * place, hidden past 90 m (no draw), and a group that came and went as she crossed the island changed the scene's object count
+ * in the middle of the A90 family's workloads (A90-memory-stability-expansion: nothing outside a machine root may change).
+ * Load and unload per settlement, atlases and all, is W2's (`A-settlement-dispose`, `A-npc-atlas-resident`'s walk form);
+ * `stage()` / `clearStage()` already dispose everything (`A-npc-dispose`, `A-npc-atlas-resident`).
+ */
+const STREAM_IN = 130;
 export const ARCHETYPE_IDS = ['salt-raker', 'guild-matron', 'salt-porter', 'boat-caulker', 'lantern-keeper', 'pit-farmer', 'tiller-follower', 'cochineal-picker', 'tube-smith'];
 const PAN_IDS = ARCHETYPE_IDS.slice(0, 5), HOLDS_IDS = ARCHETYPE_IDS.slice(5);
 
@@ -200,7 +206,7 @@ export class PeopleSystem {
   /** Force a tier for a gate (null: back to distance). */
   tierAt(p, tier) { if (tier === null) this._forced.delete(p); else this._forced.set(p, tier); }
 
-  /** The staged group follows her: nothing of it is resident while she is far from it. */
+  /** The staged group stands once she comes near it (see STREAM_IN). */
   _stream(dt) {
     this._streamT -= dt;
     if (this._streamT > 0 || !this.autoStage || !this.stagePlace || this._loading) return;
@@ -208,8 +214,7 @@ export class PeopleSystem {
     const pl = this.ctx.player;
     if (!pl) return;
     const d = Math.hypot(pl.position.x - this.stagePlace.x, pl.position.z - this.stagePlace.z);
-    if (this.ready && d > STREAM_OUT) this.clearStage();
-    else if (!this.ready && d < STREAM_IN) {
+    if (!this.ready && d < STREAM_IN) {
       this._loading = true;
       this.stage().catch((e) => console.warn('[people] staging failed', e)).finally(() => { this._loading = false; });
     }
