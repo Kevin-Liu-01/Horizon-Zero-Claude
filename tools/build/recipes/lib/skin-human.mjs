@@ -7,7 +7,7 @@
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { noise3, smooth, positionMap, recomputeNormals } from './face.mjs';
 import {
-  uvIslands, TriGrid, triSoup, bakeAOTexels, bakeAOPoints, blurMasked, convexity, scalarMap, seamlessTone, paintSkinAtlas, decodeStockSkin, webp, blit, paintEye,
+  uvIslands, TriGrid, triSoup, hemisphereSet, bakeAOTexels, bakeAOPoints, blurMasked, convexity, scalarMap, seamlessTone, paintSkinAtlas, decodeStockSkin, webp, blit, paintEye,
   pores, colourZones, creases, smoothSkin, eyeSocketClean, lipTone, lidLines,
 } from './skin.mjs';
 import { rng, WRAP_ATLAS } from './wrap.mjs';
@@ -156,6 +156,88 @@ export function leanInwardNormals(bodyPrim, eyesPrim, { L, eyes }) {
     if (ny <= 0.3 * Math.max(nz, 0.01)) return;
     const yz = Math.hypot(ny, nz), a = Math.atan2(0.3, 1), sc = Math.sign(nz) >= 0 ? 1 : -1;
     nrm[v * 3 + 1] = yz * Math.sin(a) * sc; nrm[v * 3 + 2] = yz * Math.cos(a);
+    bent++;
+  });
+  // Then the rays decide what the rules above missed (fix round 1: the judges' backlit and side-lit frames).
+  const grid = new TriGrid(new Float32Array(soup), 0.012);
+  // A deep fold (a nostril's walls, the corner of the mouth, the alar groove) shades by the way out of it, its bent normal, not by
+  // its own facing: a wall inside the nostril that faces a sun on her left is shut off from it by the ala 5 mm away, but the
+  // shadow's 3.5 cm normal offset steps over the ala and the wall burns pale through the opening
+  const hemi = hemisphereSet(96);
+  const yLo = L.upperLip[1] - 0.04, yHi = eyes[0][1] + 0.012;
+  const openA = new Float32Array(pick.length).fill(1);
+  pick.forEach((v, i) => {
+    const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
+    if (y < yLo || y > yHi || Math.abs(x) > 0.052) return;
+    let gx = ns[i * 3], gy = ns[i * 3 + 1], gz = ns[i * 3 + 2];
+    const gl = Math.hypot(gx, gy, gz) || 1; gx /= gl; gy /= gl; gz /= gl;
+    let tx, ty, tz;
+    if (Math.abs(gx) < 0.8) { tx = 0; ty = -gz; tz = gy; } else { tx = -gz; ty = 0; tz = gx; }
+    const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+    const bx = gy * tz - gz * ty, by = gz * tx - gx * tz, bz = gx * ty - gy * tx;
+    let ox = 0, oy = 0, oz = 0, open = 0;
+    for (let r = 0; r < 96; r++) {
+      const a = hemi[r * 3], b = hemi[r * 3 + 1], c = hemi[r * 3 + 2];
+      const dx = tx * a + bx * b + gx * c, dy = ty * a + by * b + gy * c, dz = tz * a + bz * b + gz * c;
+      if (grid.cast(x + gx * 0.0005, y + gy * 0.0005, z + gz * 0.0005, dx, dy, dz, 0.03, 0.0003) >= 0) continue;
+      ox += dx; oy += dy; oz += dz; open++;
+    }
+    const a = open / 96, k = 1 - smooth(0.3, 0.62, a);
+    openA[i] = a;
+    if (k <= 0.01 || open === 0) return;
+    const ol = Math.hypot(ox, oy, oz) || 1;
+    let nx = nrm[v * 3] * (1 - k) + (ox / ol) * k, ny = nrm[v * 3 + 1] * (1 - k) + (oy / ol) * k, nz = nrm[v * 3 + 2] * (1 - k) + (oz / ol) * k;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    nrm[v * 3] = nx / l; nrm[v * 3 + 1] = ny / l; nrm[v * 3 + 2] = nz / l;
+    bent++;
+  });
+  // The nose's underside faces the ground, which the game's light barely fills: by its own facing it went black round the nostrils,
+  // with the lit columella a pale shard between them. It takes the light the upper lip throws back up into it, as a forward lean of
+  // the shading normal (safe in a back light: forward is away from any sun behind her); the slit itself keeps its dark.
+  const tip = L.noseTip;
+  pick.forEach((v, i) => {
+    const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
+    if (Math.abs(x) > 0.027 || y > tip[1] + 0.003 || y < L.upperLip[1] + 0.003 || z < tip[2] - 0.042) return;
+    const ny = nrm[v * 3 + 1];
+    const k = 0.7 * smooth(-0.12, -0.42, ny) * smooth(0.32, 0.58, openA[i]) * (1 - smooth(0.022, 0.027, Math.abs(x)));
+    if (k <= 0.01) return;
+    const tx = nrm[v * 3] * 0.45, ty = -0.42, tz = 0.9, tl = Math.hypot(tx, ty, tz);
+    const nx = mix(nrm[v * 3], tx / tl, k), my = mix(ny, ty / tl, k), nz = mix(nrm[v * 3 + 2], tz / tl, k), l = Math.hypot(nx, my, nz) || 1;
+    nrm[v * 3] = nx / l; nrm[v * 3 + 1] = my / l; nrm[v * 3 + 2] = nz / l;
+    bent++;
+  });
+  // Last, the back suns (an ala's groove, a lip's corner, a pale shard inside a nostril): the game's
+  // sun shadow samples 3.5 cm out along the vertex normal (environment.js normalBias), so a surface that faces a sun BEHIND the
+  // head while the head itself stands between them lights up anyway. For every back sun the game can give her face (azimuth
+  // 100..260 deg off her front, up to 52 deg high), a vertex in the mid-face that faces it and is shut off from it by her own
+  // skin turns away from it, by the least turn that does (a projection, so a front or top light barely changes).
+  const suns = [];
+  for (let A = 100; A <= 260; A += 20) for (const E of [4, 18, 34, 52]) {
+    const a = A * Math.PI / 180, e = E * Math.PI / 180;
+    suns.push([Math.sin(a) * Math.cos(e), Math.sin(e), Math.cos(a) * Math.cos(e)]);
+  }
+  pick.forEach((v) => {
+    const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
+    if (y < yLo || y > yHi || Math.abs(x) > 0.052) return;
+    let nx = nrm[v * 3], ny = nrm[v * 3 + 1], nz = nrm[v * 3 + 2];
+    const shut = [];
+    for (const s of suns) {
+      if (nx * s[0] + ny * s[1] + nz * s[2] <= -0.02) continue;
+      if (grid.cast(x + nx * 0.0006, y + ny * 0.0006, z + nz * 0.0006, s[0], s[1], s[2], 0.25, 0.0004) >= 0) shut.push(s);
+    }
+    if (!shut.length) return;
+    for (let it = 0; it < 8; it++) {
+      let moved = false;
+      for (const s of shut) {
+        const d = nx * s[0] + ny * s[1] + nz * s[2] + 0.03;
+        if (d <= 0) continue;
+        nx -= d * s[0]; ny -= d * s[1]; nz -= d * s[2];
+        const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+        moved = true;
+      }
+      if (!moved) break;
+    }
+    nrm[v * 3] = nx; nrm[v * 3 + 1] = ny; nrm[v * 3 + 2] = nz;
     bent++;
   });
   N.setArray(nrm);
@@ -451,10 +533,20 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
     T.r = mix(T.r, 26, k); T.g = mix(T.g, 14, k); T.b = mix(T.b, 11, k);
     T.rough = mix(T.rough, 0.95, k);
   };
+  // the source's normal map was baked against the stock ear's own vertex normals: on the moved, re-split and softened ear it printed
+  // flat planes across the helix and the concha (fix round 1, "faceted ears"). The recipe keeps the ear's normals unsoftened, and the
+  // map's relief goes in at half: the folds read, the planes do not
+  const ears = (T) => {
+    const ax = Math.abs(T.X);
+    if (ax < 0.058 || T.Y < 1.575 || T.Y > 1.715 || T.Z < -0.08 || T.Z > 0.035) return;
+    const k = smooth(0.058, 0.066, ax) * smooth(1.575, 1.59, T.Y) * (1 - smooth(1.70, 1.715, T.Y)) * smooth(-0.08, -0.07, T.Z) * (1 - smooth(0.022, 0.035, T.Z));
+    T.nflat = Math.max(T.nflat, k * 0.5);
+  };
   return [
     smoothSkin({ zone: notFeature }),
     inward,
     nostrils,
+    ears,
     eyeSocketClean({ eyes }),
     lipTone({ center: [0, L.upperLip[1] - 0.011, L.upperLip[2] - 0.006], r: [0.036, 0.024, 0.03] }),
     colourZones([

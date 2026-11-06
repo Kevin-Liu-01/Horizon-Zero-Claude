@@ -143,7 +143,7 @@ const FACE_MM = {
   noseBridge: { d: [0, 0.6, 6.4], s: 0.0125 },
   noseTip: { d: [0, 3.2, -3.4], s: 0.0098 },
   cheek: { d: [2.6, 3.0, 5.0], s: 0.0165 },     // mirrored for the right side: the bone comes up and forward, not out
-  jaw: { d: [1.7, -5.9, 1.4], s: 0.0235 },      // mirrored: the angle comes down, so the face reads longer and not wider
+  jaw: { d: [-1.3, -6.0, 1.4], s: 0.0235 },     // mirrored: the angle comes down and a touch IN, so the face reads longer and tapers to the chin (fix round 1, R54: it read wide)
   chin: { d: [0, -1.6, 6.2], sx: 0.0175, sy: 0.0125, sz: 0.016 },
   brow: { d: [0, 0.8, 4.4], s: 0.0165 },
   upperLip: { d: [0, 1.2, -1.0], s: 0.0085 },
@@ -211,11 +211,20 @@ export async function build({ out = ROOT } = {}) {
   for (const sx of [1, -1]) B([sx * 0.0165, ty - 0.006, tz - 0.02], [-sx * 1.1, 0.4, -0.2], 0.0062);
   B([0, ty + 0.0105, tz - 0.004], [0, 0, -0.8], 0.0058);
   B([0, ty - 0.0085, tz - 0.009], [0, 1.1, -0.7], 0.0058);
+  // fix round 1 (R54, "the nose is a ball"): the lobule narrows to a defined tip and the alar lobules slim, across only, so the
+  // profile (and A-face-delta's IoU) does not move
+  for (const sx of [1, -1]) {
+    B([sx * 0.0074, ty - 0.0015, tz - 0.0035], [-sx * 1.25, 0, 0], 0.0052);
+    B([sx * 0.0185, ty - 0.0075, tz - 0.023], [-sx * 1.5, 0, 0], 0.0072);
+  }
   // the mandible: one line from the gonion to the chin, a little below the stock edge
   for (const sx of [1, -1]) {
-    B([sx * 0.040, L.chin[1] + 0.012, 0.030], [sx * 1.6, -2.4, 0.2], 0.0165);
+    B([sx * 0.040, L.chin[1] + 0.012, 0.030], [-sx * 0.9, -2.4, 0.2], 0.0165);
     B([sx * 0.024, L.chin[1] + 0.004, 0.066], [sx * 1.2, -1.2, 1.2], 0.0135);
   }
+  // fix round 1 (R54, "the face reads wide and flat"): a soft hollow under each cheekbone, so the bone reads as a plane catching
+  // the light over a shaded fall to the jaw, and the lower face narrows
+  for (const sx of [1, -1]) B([sx * 0.052, 1.597, 0.036], [-sx * 3.4, 0.2, -1.4], 0.0135);
   // the neck takes a little more body under the jaw, so the head does not sit on a stalk
   for (const sx of [1, -1]) B([sx * 0.038, 1.495, -0.012], [sx * 10.5, 0, 0.8], 0.027);
   B([0, 1.495, 0.035], [0, 0, 3.8], 0.024);
@@ -300,7 +309,9 @@ export async function build({ out = ROOT } = {}) {
       const lid = Math.min(Math.hypot((Math.abs(p[0]) - eyes[0][0]) / 0.024, (p[1] - eyes[0][1]) / 0.0125), 1.6);
       const lip = Math.hypot(p[0] / 0.032, (p[1] - (L.upperLip[1] - 0.011)) / 0.017);
       const nose = Math.hypot(p[0] / 0.022, (p[1] - (L.noseTip[1] - 0.012)) / 0.013);
-      return smooth(0.85, 1.25, lid) * smooth(0.8, 1.2, lip) * smooth(0.75, 1.15, nose);
+      // the ear keeps the normals the source's map was baked against (fix round 1: softened, the map printed its planes)
+      const ear = smooth(0.058, 0.066, Math.abs(p[0])) * smooth(1.575, 1.59, p[1]) * (1 - smooth(1.70, 1.715, p[1])) * smooth(-0.08, -0.07, p[2]) * (1 - smooth(0.022, 0.035, p[2]));
+      return smooth(0.85, 1.25, lid) * smooth(0.8, 1.2, lip) * smooth(0.75, 1.15, nose) * (1 - ear);
     },
   });
   applyField(browPrim, field);

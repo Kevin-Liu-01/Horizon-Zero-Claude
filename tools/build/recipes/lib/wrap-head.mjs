@@ -79,7 +79,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
       gs.push(ribbon(f, { n: rotAbout(tilt, [0.5, 0, 0.8], -0.22), o0: 4 * DEG, w: 0.46, along: 20, rowsT: rows, lift: 0.0008, pillow: 0.003, stack: st, bridge: 0.07, creases: 2, creaseAmp: 0.0011, seed: 27, joint: head, uv: uvA([1, 0]), wander: 0.05 }));
       gs.push(ribbon(f, { n: rotAbout(tilt, [-0.7, 0, 0.6], 0.2), o0: 40 * DEG, w: 0.46, along: 18, rowsT: rows, lift: 0.0008, pillow: 0.003, stack: st, bridge: 0.07, creases: 2, creaseAmp: 0.001, seed: 34, joint: head, uv: uvB([1, 0]), wander: 0.05 }));
       // the crown: the cloth's end pulled down into the centre in radial pleats
-      gs.push(crownCap(f, { elMin: 46 * DEG, rings: 3, seg: 18, lift: 0.0008, gather: 0.0017, pleats: 9, hem: 0.002, uvRadial: true, joint: head, stack: st, tiltAxis: tilt, uv: { rect: [A.knotFold.rect[0], A.knotFold.rect[1] + 6, A.knotFold.period, A.knotFold.rect[3] - 12], W } }));
+      gs.push(crownCap(f, { elMin: 31 * DEG, rings: 4, seg: 20, lift: 0.0008, gather: 0.0019, pleats: 10, hem: 0.002, uvRadial: true, joint: head, stack: st, tiltAxis: tilt, uv: { rect: [A.knotFold.rect[0], A.knotFold.rect[1] + 6, A.knotFold.period, A.knotFold.rect[3] - 12], W } }));
       // nothing shows through under the turns: a closed dark egg inside them
       gs.push(underShell(f, { axis: tilt, oMin: () => -84 * DEG, seg: 14, rings: 5, joint: head, W, cloth: true, uv: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], at: (dx, dy, dz) => f.R(dx, dy, dz) - 0.0006 }));
       // the carmine binding where it meets the head: two turns of cord seated in the cloth
