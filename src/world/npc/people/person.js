@@ -137,6 +137,13 @@ export class Person {
       if (k === 'side' || !this.bones[k]) continue;
       this.armPose.push({ bone: this.bones[k], q: new THREE.Quaternion().fromArray(npc.armPose[k]) });
     }
+    // What the overlays write on top of the clip (lean, arm swing, held arm, look). three's mixer writes a bone only when the
+    // clip's value CHANGED since its last write, so on a constant track (a walk whose spine is still, a held idle, a frozen person)
+    // an overlay composed onto the bone's own value would compound every frame and fold the body over. Each update puts these
+    // bones back to what the mixer last left them before it runs, and keeps that copy after it runs (no allocation).
+    this._ovBones = [...new Set([this.spine1, this.upL, this.upR, this.neck, this.head, ...this.armPose.map((a) => a.bone)].filter(Boolean))];
+    this._ovPre = new Float32Array(this._ovBones.length * 4);
+    this._ovSaved = false;
     this.props = {};
     for (const p of npc.props || []) this.props[p.name] = this.bones[p.name] || null;
     this.showProps(null);
@@ -239,7 +246,11 @@ export class Person {
     this.mixAcc = 0;
     const a = this.current;
     const t0 = a ? a.time : 0;
+    const ov = this._ovBones, pre = this._ovPre;
+    if (this._ovSaved) for (let i = 0; i < ov.length; i++) ov[i].quaternion.fromArray(pre, i * 4);
     this.mixer.update(step);
+    for (let i = 0; i < ov.length; i++) ov[i].quaternion.toArray(pre, i * 4);
+    this._ovSaved = true;
     this.mixerClock += step;
     if (this.walking && a) {
       const g = this.walking.gait;

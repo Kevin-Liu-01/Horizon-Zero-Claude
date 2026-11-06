@@ -449,7 +449,15 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
       return Math.max(ear, cheek);
     },
   });
-  { const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0], m = new Uint8Array(P.getCount()); for (let i = 0; i < m.length; i++) { P.getElement(i, q); m[i] = q[1] > 1.5 ? 1 : 0; } recomputeNormals(bodyPrim, m); }
+  // the adolescent's neck: the source is a grown man's, corded with muscle; a boy's is a smooth column (the face carries the age,
+  // the neck must not contradict it)
+  if (spec.adolescent) {
+    smoothPositions(bodyPrim, {
+      iters: 8,
+      weight: (p) => smooth(1.37, 1.41, p[1]) * (1 - smooth(1.495, 1.525, p[1])) * (1 - smooth(0.085, 0.11, Math.abs(p[0]))),
+    });
+  }
+  { const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0], m = new Uint8Array(P.getCount()); for (let i = 0; i < m.length; i++) { P.getElement(i, q); m[i] = q[1] > (spec.adolescent ? 1.36 : 1.5) ? 1 : 0; } recomputeNormals(bodyPrim, m); }
   headW = vertexWeightOf(bodyPrim, headSet);
   smoothNormals(bodyPrim, {
     iters: 6,
@@ -488,6 +496,9 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
 
   // ---- guides: the stock brows and hair shell are read, not shipped
   const brows = browLines(browPrim);
+  // each person's own brow weight (the stock card is one heavy brow for every face): a thinner line for the young and the old
+  const browK = spec.browK ?? 1;
+  if (browK !== 1) for (const sd of [1, -1]) { const f = brows[sd].line; brows[sd].line = (x) => { const r = f(x); return { y: r.y + (1 - browK) * 0.0012, half: Math.max(0.0012, r.half * browK) }; }; }
   const hairDoc = await readGltf(path.join(HAIR_DIR(SRC), SX.guide));
   cleanDoc(hairDoc);
   const hairNodes = graft(base, hairDoc, 'guide');
