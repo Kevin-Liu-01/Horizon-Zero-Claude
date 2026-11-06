@@ -61,6 +61,7 @@ const _caP = new THREE.Vector3(), _caD = new THREE.Vector3(), _caC = new THREE.V
 const _caQ = new THREE.Quaternion();
 const _caG = new THREE.Vector3();   // last step's grip carried with her step and her turn (`armFlow.camAim`)
 const _caX = new THREE.Vector3(1, 0, 0);
+const _caN = new THREE.Vector3();   // the bow's node (her bow hand) predicted for this step, world
 const _a16U = new THREE.Vector3();  // the A16 elbow cap's up: the aim frame's (R52)
 const _gvW = new THREE.Vector3(), _gvT = new THREE.Vector3(); // the body-step governor (`_rollExit`): world pelvis, governed
 const _reU = new THREE.Vector3();  // elbow roll: elbow offset, perpendicular
@@ -947,7 +948,7 @@ export class PlayerAnimator {
     // hero-body targeted fix round 2 (`armFlow.camAim`): the aim point this step's camera will give, the camera's
     // last position (world), the T ray relative to the camera ray (low-passed), the camera ray last step (char)
     this._aimPred = new THREE.Vector3(); this._camP = new THREE.Vector3(); this._camPOk = false;
-    this._gripCh = new THREE.Vector3(); this._pivCh = new THREE.Vector3(); this._gripE = 0;
+    this._gripCh = new THREE.Vector3(); this._pivCh = new THREE.Vector3(); this._gripE = 0; this._nodeCh = new THREE.Vector3(); this._nodeOk = false;
     this._dTl = new THREE.Vector3(0, 0, 1); this._camC = new THREE.Vector3(0, 0, 1); this._camW = new THREE.Vector3(0, 0, 1); this._camRate = 0; this._camCOk = false;
     this._gripValid = false;
     // hero-body targeted fix round 2: the roll's hand-over (`_rollExit`)
@@ -1652,7 +1653,7 @@ export class PlayerAnimator {
     // (crouched the aim comes in a little slower: its first steps turn and settle the whole
     // body, <= 0.03 m per 1/60 s with the crouch-aim pose's own ramp)
     const aw0 = this._aimW;
-    this._aimW = damp(this._aimW, aimHold && !dead ? 1 : 0, this.T.crouchAim && aimHold ? 13 - 6.5 * this._crouchW : 13, dt);
+    this._aimW = damp(this._aimW, aimHold && !dead ? 1 : 0, this.T.crouchAim && aimHold ? 13 - 7.5 * this._crouchW : 13, dt);
     /* (hero-body targeted fix round 2, eng judge finding 5: crouched, the aim's way OUT is at most
      * `crouchAim.outRate` of it per second. At 13/s its first step after RMB up or a both-button cancel took
      * a fifth of the stance's hip turn, the chest blade and the head's counter-turn out at once, the head
@@ -2178,7 +2179,7 @@ export class PlayerAnimator {
       // (hero-body targeted fix round 2: the aim's trunk keeps going out on its own pace once this
       // layer has stopped — crouched, the crouch-aim pose's ramp, 0.7 s; see `_aimTrunk`)
       if ((this._atW ?? 0) > 1e-3) this._aimTrunk(aimW); else this._atW = 0;
-      this._tOff = true; this._tW = 0; this._tAimW = 0; this._qTs.identity(); this._bcS = 0; this._afOn = false; this._afFull = false; this._gripValid = false; this._aimPrevOk = false; this._camPOk = false; this._camCOk = false; this._camRate = 0;
+      this._tOff = true; this._tW = 0; this._tAimW = 0; this._qTs.identity(); this._bcS = 0; this._afOn = false; this._afFull = false; this._gripValid = false; this._aimPrevOk = false; this._camPOk = false; this._camCOk = false; this._camRate = 0; this._nodeOk = false;
     }
     if (!cbFirst && this._crouchAimW > 0.01) this._crouchAimLayer(this._caPoseW, p);
     if (carryW > 0.01) this._carryLayer(carryW, p, t);
@@ -2301,6 +2302,7 @@ export class PlayerAnimator {
         const node = this.ctx.combat?.bow?.group?.parent;
         if (node) {
           node.getWorldPosition(_afG);
+          if (this.T.armFlow.camAim) { this._nodeCh.copy(_afG); this.model.worldToLocal(this._nodeCh); this._nodeOk = true; }
           _afG.sub(this._gripW);
           _afH.copy(_dA).transformDirection(this.model.matrixWorld);
           this._gripW.add(_afG.addScaledVector(_afH, -_afG.dot(_afH)));
@@ -2699,21 +2701,29 @@ export class PlayerAnimator {
       const on = (dodging || air || this._rxWin > 0 || this._aimW > 0.01 || this._crouchW > 0.5) && !p.mantling && !p.riding
         && this._deadW < 0.02 && !((this._nat?.ok) && ((this._nat.by.climb?.w ?? 0) > 0.02 || (this._nat.by.sit?.w ?? 0) > 0.02));
       if (on && this._gvOk) {
-        const k60 = Math.min(1, Math.max(1e-3, dt * 60));
-        /* (in a roll and in the air against her root's own step — the dive and the jump arc are hers to
-         * make; otherwise in character space, against where it was rendered: under the aim or crouched a
-         * 1.3 m/s strafe or backpedal is 0.02 m a step of root, and against the root the pelvis could still
-         * step 0.04 m on her, F1) */
+        const k60 = Math.min(1, Math.max(1e-3, dt * 60)), cap = RX.govM * k60;
+        /* (two bounds. Outside a roll and the air, in character space against where it was rendered: under the
+         * aim or crouched a 1.3 m/s strafe or backpedal is 0.02 m a step of root, and against the root alone the
+         * pelvis could still step 0.04 m on her (F1). And always against her root's own world step: a dodge out
+         * of an aimed strafe hands over with her heading swinging back to the camera, which swings the pelvis's
+         * world place 0.06 m that no character-space bound sees (F2)) */
         const worldMode = dodging || air;
         const r = p.position.distanceTo(this._gvRoot);
-        const step = worldMode ? _gvW.distanceTo(this._gvPel) : (this._rxPeOk ? _rxV.distanceTo(this._rxPe) : 0);
-        const lim = (worldMode ? r : 0) + RX.govM * k60;
-        if (step > lim && step < 1.5 && (worldMode || r < 1.5)) {
-          if (worldMode) {
-            _gvT.subVectors(_gvW, this._gvPel).multiplyScalar(lim / step).add(this._gvPel);
-            _m4.copy(this.model.matrixWorld).invert();
-            _gvT.applyMatrix4(_m4).sub(_rxV);                  // the correction, character space
-          } else _gvT.subVectors(_rxV, this._rxPe).multiplyScalar(lim / step - 1);
+        for (let pass = 0; pass < 2; pass++) {
+          let corr = false;
+          if (pass === 0 && !worldMode && this._rxPeOk) {
+            const step = _rxV.distanceTo(this._rxPe);
+            if (step > cap && step < 1.5) { _gvT.subVectors(_rxV, this._rxPe).multiplyScalar(cap / step - 1); corr = true; }
+          } else if (pass === 1) {
+            const step = _gvW.distanceTo(this._gvPel), lim = r + cap;
+            if (step > lim && step < 1.5) {
+              _gvT.subVectors(_gvW, this._gvPel).multiplyScalar(lim / step).add(this._gvPel);
+              _m4.copy(this.model.matrixWorld).invert();
+              _gvT.applyMatrix4(_m4).sub(_rxV);                  // the correction, character space
+              corr = true;
+            }
+          }
+          if (!corr) continue;
           this._charOf(b.footL.bone, _rbT[0]); this._charOf(b.footR.bone, _rbT[1]);
           _v2.copy(_gvT).applyMatrix3(this._pelvisM3);
           pe.bone.position.add(_v2);
@@ -4189,7 +4199,14 @@ export class PlayerAnimator {
           this.model.localToWorld(_caG);
           _v7.subVectors(this._aimPred, _caG);
           // (...and combat's own fall-back: from nearer than 0.5 m it aims the bow along the camera)
-          if (_v7.lengthSq() < 0.25) _v7.copy(_caD).multiplyScalar(2);
+          // (read from the bow's own node — her bow hand, 0.5 m up the ray from the anchor — carried the same way)
+          if (this._nodeOk) {
+            _caN.subVectors(this._nodeCh, this._pivCh);
+            if (Math.abs(dE) > 1e-5) _caN.applyAxisAngle(_caX, -dE * clamp(this._tW ?? 0, 0, 1));
+            _caN.add(this._pivCh);
+            this.model.localToWorld(_caN);
+            if (_caN.distanceToSquared(this._aimPred) < 0.25) _v7.copy(_caD).multiplyScalar(2);
+          } else if (_v7.lengthSq() < 0.25) _v7.copy(_caD).multiplyScalar(2);
           this._aimPrev.copy(cmb.aimPoint); this._aimPrevOk = true;
         } else if (this.T.armFlow) {
           // (a look near the level moves a far ground hit metres a step: nothing to extrapolate)
@@ -5490,8 +5507,13 @@ export class PlayerAnimator {
     _afA.subVectors(_afW, _afS);
     const len = _afA.length();
     const step = (AF.elbowStep ?? 0.05) * Math.min(1, Math.max(1e-3, (this._dtA || 0) * 60));
-    // (W0b targeted fix 4: last step's elbow as rendered, rebuilt on this step's shoulder)
-    _afL.copy(this._elbP).sub(this._shP).add(_afS);
+    // (hero-body targeted fix round 2, `armFlow.camAim`: at a held full draw while the camera pitches, last step's
+    // elbow is carried with the chest, as the arm's limiter carries the arm: the drawn form turns as one piece,
+    // and held to its own place in character space the elbow trailed the turn, the forearm 20-22 deg off, F2)
+    if (AF.camAim && this._armCapC && b.spine3 && this._aimHold && this._afFull && this._drawS > 0.9 && this._looseT >= 1 && this._camRate > 0.5) {
+      this._liveW(b.spine3.bone, _afQ);
+      _afL.copy(this._elbC).applyQuaternion(_afQ).add(_afS);
+    } else _afL.copy(this._elbP).sub(this._shP).add(_afS);   // (W0b targeted fix 4: last step's elbow as rendered, rebuilt on this step's shoulder)
     if (len < 0.08) {
       // folded (the wrist at the shoulder: crouched, the quiver sits there):
       // no circle to speak of, the elbow can be anywhere round the shoulder —
