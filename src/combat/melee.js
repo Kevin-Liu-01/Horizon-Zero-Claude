@@ -145,7 +145,10 @@ function surfaceGap(m, x, z) {
   const dx = x - m.position.x, dz = z - m.position.z;
   let d;
   if (L > 1e-3) {
-    const fx = Math.sin(m.heading ?? 0), fz = Math.cos(m.heading ?? 0);
+    /* the machine's own scalar, not its `heading` getter: the getter hands back a boxed
+     * copy per change and this runs per machine per frame (instruments-core's ask, W1) */
+    const sc = m.sc, h = sc ? sc.heading : (m.heading ?? 0);
+    const fx = Math.sin(h), fz = Math.cos(h);
     const t = Math.max(-L, Math.min(L, dx * fx + dz * fz));
     _axis.set(m.position.x + fx * t, 0, m.position.z + fz * t);
     d = Math.hypot(x - _axis.x, z - _axis.z);
@@ -2216,14 +2219,16 @@ export class Melee {
     if (!m || m.alive === false || !m.root || m._disposed) return false;
     if (NO_SNEAK_STATES.has(m.state)) return false;
     if (AWARE_STATES.has(m.state)) return false;
-    if ((m.suspicion ?? 0) >= 0.85) return false;
+    const sc = m.sc;
+    if ((sc ? sc.suspicion : (m.suspicion ?? 0)) >= 0.85) return false;
     // gap to the SHELL, not to the navel — the collider makes the second
     // measurement unsatisfiable (see surfaceGap)
     const d = surfaceGap(m, p.position.x, p.position.z);
     if (d > MELEE.silent.range) return false;
     // from BEHIND, or crouched (the two canon ways in)
     _v2.subVectors(p.position, m.position).setY(0).normalize();
-    _dir.set(Math.sin(m.heading ?? 0), 0, Math.cos(m.heading ?? 0));
+    const h = sc ? sc.heading : (m.heading ?? 0);
+    _dir.set(Math.sin(h), 0, Math.cos(h));
     const behind = _v2.dot(_dir) < MELEE.silent.rearDot;
     return behind || !!p.crouching;
   }
