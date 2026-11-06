@@ -123,12 +123,26 @@ merging.
 | brand | W4 | comments in frozen files | comment-only scrub of HZD terms; esbuild-minified output byte-identical before and after (`A-comment-scrub`) |
 | brand | W0b exit (orchestrator applies) | `src/ui/{hud.css,focus.css,focus.js,inventory.css,wheel.css,map.js,quests.js,skills.js,dialogue.js}`, `src/combat/feedback.css`, `src/studio/studio.css`, `tools/r5-direction/**` | rename/remove only: the retired family names (Julius, Rajdhani, Chakra Petch, Michroma, Orbitron) in fallback stacks, comments and one canvas font string, as `tools/lint/patches/w0b-retired-font-refs.patch`; delete `tools/r5-direction/` (its lexicon lives in `tools/lint/lexicon/direction-b.json`). No selector, property, value or logic change |
 | orchestrator | W1–W4 (standing) | `tools/gates.r5.carried.mjs`, `tools/gates.r5.kind-block.mjs`, `tools/gate-roster.mjs`, `tools/gate-places.mjs` | gate-fix passes after gates-perf and instruments-core leave; each pass counts as one agent and runs only in a free slot (≤ 6) |
+| look-post (**G-post**) | W1 exit, ending at its W1-exit merge (W3 re-open for L-13 only) | `src/core/engine.js` | post chain only: tone map (AgX + look), grade pass and LUT slots, AO tint, `tShaft` fold, DOF fold, bloom parameters, `onAfterScene` hook, contact pass, `holdFrame(tex)`, adaptation, per-cascade layer masks CASTER_ONLY / CASCADE0_ONLY (≤ 15 lines in `enableCSM`), `QUALITY_TIERS.<tier>.look` rows. New `src/core/look.{js,grade.json}`, `tools/look/**`. Must stay green: A-gpu-tier, A-rt-ledger, A22, A108, A109, V20, V33b, V-gpu-tier-look |
+| look-post | W1 exit | `src/instruments/lamps.js` (instruments-core's; lane done) | ≤ 25 lines: `OutputInverse` calls `engine.look.invert` in place of its ACES branch. A-lamp-states, A-lamp-canon-distance and A-weak40 pass at unchanged bars |
+| look-post | W1 exit | `src/hero/sheets.js` (armory's) | ≤ 10 lines: `screenPixels` calls `engine.look.evaluate` in place of its ACES branch. A-brea-contrast and the one-glance sheets pass at unchanged bars |
+| world-sky (**G-post**, W2 holder) | W2 | `src/core/engine.js` | G-post's allowance for look-post's W2 items only: `onAfterScene` hook + L-08 fold, L-12 AO tint and contact, the L-14 dusk grade set, L-17 DOF fold, U-03 `holdFrame` if not done. Same must-stay-green rows |
+| character-art | W1 exit–W2 | `src/hero/**` (armory's) | new `skinLook.js`, `heroShadow.js`; ≤ 10 lines in `src/hero/index.js` |
+| instruments-a | W1 | `src/instruments/lib/**`, `src/instruments/{lamps,registry}.js`, `src/entities/machines/machine.js` (instruments-core's; lane done) | the shared core-glow chunk; `lamp.telegraph(t)` ≤ 30 lines; registry `height` ≤ 6 lines; `flashPart(part, k)` ≤ 12 lines |
+| instruments-a | W1 | `src/entities/machines/rig/lod.js` (frozen) | ≤ 20 lines: LOD1 caster-only (I-04); A45–A48 and A-sil40 unchanged |
+| hero-body (**G-camera**) | W1 | `src/entities/player.js` | ≤ 160 lines: P-01/02/03 camera, `fovPunch`, trauma shake, dodge events, the F-4 `inTallGrass` rule (≤ 10 of them). Guarded by A31b/d/e/f, A32b and V22 |
+| traversal (**G-kite**) | W3–W4 | `src/entities/player.js`, `src/entities/playerAnimator.js`, `src/core/input.js` | ≤ 90 / ≤ 40 / ≤ 4 lines: the `kite` airborne state, a hang-pose layer from kept UAL clips, reuse of the jump action; P-11 camera lines. `A-kite-inert` must pass: with the kite never opened, the movement suite is unchanged |
+| combat-kit | W2 | `src/combat/particles.js` (frozen UI engine) | ≤ 60 lines: flame and ember pools |
+| world-sky | W2 | `src/world/environment.js` | extension of its W1 row through W2 (R66 i) |
+| world-props | W1 | `tools/build/landmarks/gen-sounding-ring.mjs` (pipeline's area; lane closed) | move into `tools/build/landmarks/recipes/**` (W-05) |
+| orchestrator | W2 | `tools/gates.mjs` | ≤ 30 lines: CDP trace wrapper (viz, gpu, cc) |
+| orchestrator | W1 now | `tools/lint/**` (brand's), `tools/licences/**` (pipeline's), `tools/r5-refs/licence.mjs` (gates-perf's) | IP-04 additions only (lexicon terms, A-ui-words alternatives, direction hashes and panel dHashes, refused-source pattern) |
 
 ---
 
 ## 2. Lanes
 
-20 lanes on ports 5250–5269 (one per lane, never shared); the orchestrator uses 5270 and the judges
+22 lanes on ports 5250–5269 (one per active lane, never shared between active lanes; R66(i) reuses 5250 and 5251 after their lanes exited, and character-art (W1) and progression (W3) share 5266 in different waves); the orchestrator uses 5270 and the judges
 5271. "W" = the waves the lane is active in.
 
 | lane | port | W | owns (exact) | deliverables |
@@ -141,19 +155,21 @@ merging.
 | **instruments-core** | 5254 | 0a, 0b | `src/entities/machines/**` per grant (incl. new `legacy.js`); the W0a removal-only grant; new `src/instruments/{lamps,roles,registry}.js`, `src/instruments/lib/**`, **`src/instruments/kinds/tiller.js` as the W0 fixture** (handed to instruments-a at W1), `tools/gates.r5.kind-block.mjs` (handed to the orchestrator at W1), `tools/gates.r5.instruments-core.mjs` | delete Override + corruption; legacy collapse; IP kinds deleted (R30); `LAMP_STATES` (iris + beam, one instanced draw); kind auto-registration; per-kind tables; perception weather + perk hooks; `ctx.machines.roles`; `uv1` through the fold; VFX palette; A90-rig-reclaim 5/5 |
 | **gates-perf** | 5255 | 0a, 0b | `tools/gates.config.mjs`, `tools/gates.round4.*.mjs` (re-stage, then archive to `tools/gates/archive/`), new `tools/gates.r5.carried.mjs` (handed to the orchestrator at W1), `tools/gate-roster.mjs`, `tools/gate-places.mjs`, `tools/budgets.mjs`, `tools/r5-refs/**` (Commons fetcher), `reference/MANIFEST.md` (top level) + deletion of `reference/*.jpg`, the harness grant, `tools/gates.r5.gates-perf.mjs` | role- and place-based preludes; the carried Round-4 suite; auto-discovery of `tools/gates.r5.*.mjs`; port guard, Chrome semaphore, preflight; `A-alloc-rate`, `A-vram-ledger`, `A90-abs`; unattributed-draw cap; licence-clean reference set |
 | **melee** | 5256 | 1, 2 | `anim/meleeLayer.js`, new `anim/{clipMelee,castLayer}.js`, `combat/melee.js`, `combat/lanceStow.js`, `playerAnimator.js` (W1–W2), grant lines in `collision.js`/`player.js`, `reference/r5/melee/**`, `tools/gates.r5.melee.mjs` (absorbs `gates.round4.player-melee.mjs`) | W1: lance tables on Brea, A100–A107 + R1–R32, stow clearance, Counterweight heavy, melee latency. W2: gaff, Windwall, pendulum + spin cast, per-clip elbow audit |
-| **armory** | 5257 | 1, 3 | `src/hero/**` (from W1 day 1: loadout, variant data), `src/combat/bow.js`, `src/combat/weapons.js` (W1, W3), `src/combat/arrows.js` (W1), `src/combat/combat.js` (W1, W3), `tools/build/recipes/outfit-pan-1.mjs` (from W1 day 1), `tools/build/recipes/weapons/{bow,lance}*.mjs`, `tools/build/recipes/armor/**`, `public/models/armory/{bow-*,lance-*,armor-*,stowkit*}`, W3: `src/ui/inventory.{js,css}` (grant), `tools/gates.r5.armory.mjs` | W1: Sabina Bow, Shepherd's Lance final, Pan Whites II/III, Ash Wraps I, stow kit art pass. W3: all 12 armor variants, the 6 bow and lance variants (of the 18), the swap matrix over all 18, the equip panel and acquisition |
+| **armory** | 5257 | 1, 3 | `src/hero/**` (from W1 day 1: loadout, variant data), `src/combat/bow.js`, `src/combat/weapons.js` (W1, W3), `src/combat/arrows.js` (W1), `src/combat/combat.js` (W1, W3), `tools/build/recipes/outfit-pan-1.mjs` (from W1 day 1), `tools/build/recipes/weapons/{bow,lance}*.mjs`, `tools/build/recipes/armor/**`, `public/models/armory/{bow-*,lance-*,armor-*,stowkit*}`, W3: `src/ui/inventory.{js,css}` (grant), `tools/gates.r5.armory.mjs` | W1: Sabina Bow, Shepherd's Lance final, Pan Whites II/III, Ash Wraps I, stow kit art pass. W3: all 8 armor rungs (R66 f), the 6 bow and lance variants (of the 18), the swap matrix over all 18, the equip panel and acquisition |
 | **instruments-a** | 5258 | 1 | `src/instruments/kinds/{tiller,plumb,peg}*.js`, `tools/build/instruments/gen-{tiller,plumb,peg}.mjs`, `tools/build/instruments/parts/**`, `public/models/instruments/{tiller,plumb,peg}.glb`, `tools/gates.r5.instruments-a.mjs` | Tiller (proven → fidelity pass), Plumb (+ `scale` param, topple), Peg (+ instanced transects) |
 | **world-ground** | 5259 | 1–4 | `src/world/{terrain,vegetation,water}.js`, `src/world/island/**` (recipe, masks, `sites.js`, `extent.js`, trench polylines), new `src/world/datum/**` (the `ctx.datum` service and shader chunk), `tools/build/ground/**` (layer recipes), `public/textures/ground/**`, `public/textures/r5-poc/**` (delete at W1 exit), `tools/gates.r5.world-ground.mjs` | W1: whole-island heightfield + masks at blockout, extents and REST, the Pans at full fidelity. W2: Holds (pit-cups, crescent walls, Scar, Datum Line, `walls.cut`, `ctx.datum`, tide E19). W3: Malpaís + Cloudline, tube trenches. W4: Flank (cliff kit) + Caldera |
 | **world-props** | 5260 | 1, 3, 4 | `src/world/props.js`, `src/world/props/**` except `settlement.js`/`npcs.js`, `src/world/fauna.js`, new `src/world/sites/**`, `tools/build/landmarks/recipes/**`, `public/models/landmarks/**`, `tools/gates.r5.world-props.mjs` | W1: Sounding Ring, Organ Shelf clusters, wind pumps, red crater, all 6 trig pillars + 12 benchmark pads, `ctx.props.gatePlaces`, static scripted Gauge. W3: Kiln Yards, Fog Harp, Jameo + tube shells, hornitos, **island fauna**. W4: Calibration Yard, Fundamental, Pinned Cliff, Boilers sea-cave shells, Roques |
-| **world-sky** | 5261 | 1, 4 | `src/world/environment.js`, `tools/gates.r5.world-sky.mjs` | W1: hour keys, weather `trade/calima/fogbank/squall`, `perceptionScale`, per-biome fog/exposure for all six biomes, cloud sea, calima disc; remove `RiverWater`. W4: per-biome tuning against the vista gates |
+| **world-sky** | 5261 | 1, 2, 4 | `src/world/environment.js`, `tools/build/recipes/sky/**`, `public/textures/sky/**`, `src/core/engine.js` under G-post in W2 only (§1.2), `tools/gates.r5.world-sky.mjs` | W1: hour keys, weather `trade/calima/fogbank/squall`, `perceptionScale`, per-biome fog/exposure for all six biomes, cloud sea, calima disc; remove `RiverWater`; plus the ROUND5-LOOK §5.2 W1 items. W2 (R66 i, starting after look-post's W1-exit merge): L-08 gather + fold, L-09 cumulus, L-14 dusk keys + set, L-12, L-17, U-03 `holdFrame` if not done. W4: per-biome tuning against the vista gates |
 | **instruments-b** | 5262 | 2 | `src/instruments/kinds/{sickle,screed,gauge}*.js`, `tools/build/instruments/gen-{sickle,screed,gauge}.mjs`, `public/models/instruments/{sickle,screed,gauge}.glb`, the W2-exit legacy deletion grant, `tools/gates.r5.instruments-b.mjs` | Sickle, Screed (+ self-stun, `screed.followLine`, reads `ctx.datum.regionTrue`), Gauge (+ tide clock hook); deletes the remaining legacy kinds |
-| **combat-kit** | 5263 | 2 | `src/combat/{combat,weapons,arrows,traps,feedback}.js`, `feedback.css`, new `src/combat/kit/**` (pots, net, gaff, windwall logic, perk filters), `src/items/{items,crafting,gather,tools}.js`, `src/ui/wheel.{js,css}`, `core/save.js` (grant), `tools/build/recipes/weapons/{gaff,windwall,pot,net}*.mjs`, `public/models/armory/{gaff-*,windwall-*,pot-*,net-*}`, `tools/gates.r5.combat-kit.mjs` (absorbs `gates.round4.{combat,combat-memory}.mjs`) | weapon catalog, elements + statuses (Seized without a multiplier), pots, net foul, Kit Rack in real time + quick slots, Steady breath-hold, item renames; contracts `combat.onArrowHit`, `combat.whistle(at)`, the perk filters |
+| **combat-kit** | 5263 | 2 | `src/combat/{combat,weapons,arrows,traps,feedback}.js`, `feedback.css`, new `src/combat/kit/**` (pots, net, gaff, windwall logic, perk filters), new `src/combat/fx/**` (P-08 `groundFx.js`), `src/items/{items,crafting,gather,tools}.js`, `src/ui/wheel.{js,css}`, `core/save.js` (grant), `tools/build/recipes/weapons/{gaff,windwall,pot,net}*.mjs`, `public/models/armory/{gaff-*,windwall-*,pot-*,net-*}`, `tools/gates.r5.combat-kit.mjs` (absorbs `gates.round4.{combat,combat-memory}.mjs`) | weapon catalog, elements + statuses (Seized without a multiplier), pots, net foul, Kit Rack in real time + quick slots, Steady breath-hold, item renames; contracts `combat.onArrowHit`, `combat.whistle(at)`, the perk filters |
 | **settlements** | 5264 | 2, 4 | new `src/world/settlements/**`, `src/world/npc/**`, `src/world/camp.js` (delete), `src/world/props/{settlement,npcs}.js` (delete), `src/main.js` grant, `tools/build/recipes/npc/**`, **`tools/build/settlements/**`, `public/models/settlements/**`**, `public/models/npc/**`, `tools/gates.r5.settlements.mjs` (absorbs `gates.round4.npc.mjs`) | W2: NPC atlas + LOD + tint shader + per-archetype faces; Saltrow + Ninewalls kits; archetypes 1–9. W4: Mistfold kit, minor sites, Leveler Muster, archetypes 10–13, cable baskets, Fog Harp growth hook |
 | **shell-ui** | 5265 | 2 | `src/ui/{hud,focus,inventory,map,menu,settings,tips}.{js,css}`, `src/style.css`, `index.html`, `tools/gates.r5.shell-ui.mjs` (absorbs `gates.round4.{shell-hud,shell-menus,focus-items}.mjs`) | field-book HUD (breath meter for Steady), Sighting overlay (replaces Focus), map with triangles, menus, tips |
 | **progression** | 5266 | 3 | `src/core/{progression,save}.js`, `src/ui/{quests,skills}.js`, `src/items/datapoints.js` → `src/items/fieldbooks.js`, `tools/gates.r5.progression.mjs` (absorbs `gates.round4.progression*.mjs`) | first-hour quest chain, Field Books, benchmarks (`ctx.datum.setTrue`), triangulation state, **Field Book certifications** in place of XP skill trees, save v6 + schema hash, `A-first-hour` (provisional) |
 | **audio** | 5267 | 3 | `src/audio/{audio,manifest}.js`, `tools/{audio-bank,audio-recipes}.*`, `public/audio/**`, `tools/gates.r5.audio.mjs` | regenerated banks under new set names; Instrument voices; biome beds; **regenerated music** in the bible palette |
 | **instruments-c** | 5268 | 3 | `src/instruments/kinds/{spindle,kiln,davit,sonde}*.js`, `src/instruments/lib/tether.js`, gens + GLBs for those, grant in `rig/components.js`, `tools/gates.r5.instruments-c.mjs` | Sonde spike first; Spindle (deflect via `combat.onArrowHit`), Kiln, Davit (un-tear), Sonde |
 | **instruments-d** | 5269 | 4 | `src/instruments/kinds/{dredge,transit}*.js`, `src/instruments/lib/followLeader.js`, gens + GLBs, grant in `gait.js`, `tools/gates.r5.instruments-d.mjs` | Transit grey box → art; Dredge follow-the-leader + burrow |
+| **look-post** | 5251 (engine-gpu's, retired; judge 5281; R66 i) | 1 (W1 exit; ends at its W1-exit merge, before world-sky starts W2 work) | `src/core/engine.js` under G-post (post chain only, §1.2), new `src/core/look.js`, new `src/core/look.grade.json`, `tools/look/**`, the W1-exit grants on `src/instruments/lamps.js` (≤ 25 lines) and `src/hero/sheets.js` (≤ 10 lines), `tools/gates.r5.look-post.mjs` | L-00 look shot suite, `tools/look/look-stats.mjs` and `refs.json` (numbers only); L-01 AgX + CALIMA look, `engine.look.evaluate`/`invert`, and the lamps.js and sheets.js ports; L-02 grade with two blended LUT slots; L-07 bloom; L-14 calima grade set; L-16 `ab-time.mjs` and the `QUALITY_TIERS.<tier>.look` rows; L-18 `gpu-attrib.mjs`; G-post's per-cascade layer masks; U-03 `holdFrame` if done by the W1 exit. Inherits engine-gpu's must-stay-green rows (A-gpu-tier, A-rt-ledger, A22, A108, A109, V20, V33b, V-gpu-tier-look) and closes R48(c). Its W2 items pass with G-post to world-sky (ROUND5-LOOK §5.1) |
+| **traversal** | 5250 (pipeline's, retired; judge 5280; R66 i) | 3, 4 (W3 in audio's slot after audio exits; W4 in brand's slot until brand's scrub) | new `src/traversal/**`, `tools/build/recipes/kite/**`, `public/models/traversal/**`, the G-kite lines in `src/entities/player.js`, `src/entities/playerAnimator.js` and `src/core/input.js` (§1.2), `reference/r5/traversal/**`, `tools/gates.r5.traversal.mjs` | F-3 Survey Kite: the `kite` airborne state, wind and ridge lift, calima and squall grounding, the landing hook, a hang-pose layer from kept UAL clips, and one `perception.detectMul` ×2 filter keyed by the `sentry` and `spotter` roles; P-11 vista idle + kite camera; `A-kite-inert` green. W4: ridge-lift tuning on the Flank and Caldera |
 
 Every lane also owns `docs/ROUND5-<LANE>.md` (its report) and `reference/r5/<lane>/**` (+ that
 folder's `MANIFEST.md`).
@@ -170,8 +186,8 @@ folder's `MANIFEST.md`).
 | **W0a — foundations (1–2 days)** | pipeline, gates-perf, instruments-core, engine-gpu (probes only) | W0-day1 | data-driven SPECS + `SPECS.hero`; `legacy.js` collapse; removal-only Override + corruption pass; **IP/NC + `npc.glb` deleted (R30)**; `.gitignore` fixed; port guard, semaphore, preflight; carried Round-4 suite live; Tiller fixture registered. Gates: `A1`, `A20b`, `A-no-override`, `A-no-corruption`, `A-legacy-collapse`, `A-specs-data-driven`, `A-port-guard`, `A-chrome-semaphore`, `A-assets-tracked`, `A-ID-ip-assets-gone`, `A-carried-suite` |
 | **W0b — protagonist on the kept rig** | pipeline, engine-gpu, hero-body, brand, instruments-core, gates-perf | W0a | Brea passes the kept movement + draw gates on the real v0 loadout; GPU tier chosen and render targets measured; lamps + roles + perk hooks live; licence manifest complete with SHA-256s; `aloy.glb`, anim duplicates, labs spikes, HZD reference stills, old fonts and the `?poc=human` and `?poc=creature` hooks deleted; **Brea's silhouette and face sheets shown to Kevin** (§11, decision 1) |
 | **W1 — vertical slice: The Pans** | melee, armory, instruments-a, world-ground, world-props, world-sky, **shell-ui, hero-body, settlements (NPC half)** (R57) | W0 | the Pans vista passes against real reference; `REST` at Saltrow and the 1024 m extents live (`A-reach-all-sites`); Tiller/Plumb/Peg pass per-species gates; lance melee passes A100–A107; `?poc=biome` removed |
-| **W2 — the first hour's content** | instruments-b, melee, combat-kit, settlements, shell-ui, world-ground | W1 | Ninewalls + Saltrow alive; Sickle/Screed/Gauge pass; gaff, Windwall, pots, net pass; field-book UI passes; remaining legacy species, camp and `legacy.js` gone (`A-legacy-gone`); W0-era saves load clean |
-| **W3 — breadth** | progression, audio, instruments-c, world-ground, world-props, armory | W2 | `A-first-hour` passes **provisionally** (Plumb generator at `scale` 6.5 for the 0:55 walker); 4 biomes at fidelity; 10 kinds; all 12 armor variants pass the swap matrix; `A-weapon-role` passes; save v6; fauna; music; A21 at each biome vista + the Kiln Yard fight |
+| **W2 — the first hour's content** | instruments-b, melee, combat-kit, settlements, shell-ui, world-ground; world-sky's W2 extension (R66 i) takes the first slot freed, so at most 6 run at once | W1 | Ninewalls + Saltrow alive; Sickle/Screed/Gauge pass; gaff, Windwall, pots, net pass; field-book UI passes; remaining legacy species, camp and `legacy.js` gone (`A-legacy-gone`); W0-era saves load clean |
+| **W3 — breadth** | progression, audio, instruments-c, world-ground, world-props, armory | W2 | `A-first-hour` passes **provisionally** (Plumb generator at `scale` 6.5 for the 0:55 walker); 4 biomes at fidelity; 10 kinds; all 8 armor rungs pass the swap matrix (R66 f); `A-weapon-role` passes; save v6; fauna; music; A21 at each biome vista + the Kiln Yard fight |
 | **W4 — apex + final** | instruments-d, world-ground, world-props, settlements, world-sky, brand | W3 | 6 biomes; 12 kinds (or 11 with the Dredge cut, named); 13 archetypes; **final `A-first-hour` with the Transit** (orchestrator run); `A-no-horizon-terms-player` = 0; code allowlist at its cap; comment scrub; credits match the manifest |
 
 Dependency notes:
@@ -238,8 +254,8 @@ where `ctx.datum.regionTrue` is true (`A-screed-reads-datum`).
 
 | asset | LOD0 tris | LOD1 | bones | main draws | shadow | materials / textures | file |
 |---|---|---|---|---|---|---|---|
-| Brea body + head + hair + wrap + eyes (body faces hidden under the outfit culled at merge) | **≤ 10 k** | caster proxy | 65 (UBC) + dyn chains | ≤ 2 | via proxy | skin 1024² base + 512² normal/ORM; hair+wrap 512² | ≤ 0.7 MB |
-| Brea outfit variant (merged) | **≤ 17.5 k** | caster proxy | — | 1 | via proxy | set atlas 1024² base + 512² normal/ORM | ≤ 0.8 MB / set, ≤ 0.15 MB / extra variant |
+| Brea body + head + hair + wrap + eyes (body faces hidden under the outfit culled at merge) | **≤ 11.5 k** (R66 f) | caster proxy | 65 (UBC) + dyn chains | ≤ 2 | via proxy | skin 1024² base + 512² normal/ORM; hair+wrap 512² | ≤ 0.7 MB |
+| Brea outfit variant (merged) | **≤ 16.0 k** (R66 f; the sleeves' ≈ 2.5 k pays for the harness) | caster proxy | — | 1 | via proxy | set atlas 1024² base + 512² normal/ORM | ≤ 0.8 MB / set, ≤ 0.15 MB / extra variant |
 | armor piece (procedural) | ≤ 3 k | — | — | merged | — | set atlas | ≤ 0.15 MB |
 | stow kit (all stowed gear) | **≤ 9 k** | — | — | **1** (`pieceId` mask) | 1 caster | weapon atlas 1024² | ≤ 0.6 MB |
 | held weapon | **≤ 3 k** (bow ≤ 3 k, lance ≤ 1.5 k, gaff ≤ 1.1 k, Windwall ≤ 2.5 k, pot ≤ 0.3 k, net ≤ 1.2 k) | — | Windwall 9 slats | 1–2 | — | weapon atlas | ≤ 0.15 MB each |
@@ -649,7 +665,130 @@ Blunt, Charred, Seized, Clouded, Field Book, Gourd, Kit Rack, salt, certificatio
 
 - **R65 — `V-ui-tip`'s quest words (Nov 6, shell-ui's fix round 1 asked).** R61(b) covers `V-ui-tip` too. Its field note and objective mark show the same quest text, which lives in progression's and settlements' files, so retired words there ("Varl", "Lessons of the Valley") are PENDING until settlements W2 and progression W3. Every other clause of the row is graded now. The words remain on the scheduled-IP list, and no lane may add new ones.
 
-- **R66 — Kevin's Nov 6 look target (interim; the full spec follows as `docs/ROUND5-LOOK.md`).** Kevin, Nov 6: "the game needs to look a lot better and new. check image 1 for inspiration. also check image 2". The three references live OUTSIDE this public repo, at `/Users/kevinliu/.calima-r5/direction/`: `kevin-nov6-keyart.jpg` (image 1, the key-art collage, where several panels are our own frames repainted), `kevin-nov6-board.jpg` (image 2, a design board), `kevin-nov6-board2.md` (image 3, a second board), `kevin-nov6-armor.md` (image 4, eight armour sets) and `kevin-nov6-stills.md` (image 5, eleven gameplay stills). Images 3–5 are described in words. Never copy any of them into the repo. (a) From now on, every lane reads all five before building or fixing; the gameplay stills weigh most for light, framing and combat readability, and R54's "incredible" bar is graded against the panels they show: golden-hour light with haze and god rays, layered spire and mesa silhouettes, dense golden grass with violet flowers, soft skin and cloth, a long flowing wrap tail. (b) **IP.** The images carry Horizon text ("A Horizon Zero Dawn spinoff", "a new chapter in the Horizon"), Horizon names ("Watchers", "Varl", "corrupted machines") and red-eyed robot-creature designs. None of these may appear in CALIMA. Translate the mood, never the names or designs; the Instruments stay in the bible's survey-instrument language. (c) R63(c)'s narrowing of the wrap tail toward 0.40 × 0.07 m is **suspended**. The references show a long, flowing tail, so it keeps its current length, and the work goes into soft, thick, rippling cloth with no paper edge. (d) Image 2's NINEWALLS-as-a-tree is the image model's error; Ninewalls stays the walled settlement of the bible.
+- **R66 — Kevin's Nov 6 look target (final; the spec is `docs/ROUND5-LOOK.md`).** Kevin, Nov 6: "the game needs to
+  look a lot better and new. check image 1 for inspiration. also check image 2", followed by an armour board ("armor:"),
+  gameplay stills, and three decisions: dark-glass UI, all eight armour sets, and four new features.
+
+  **(a) References.** The five references live **outside** this public repo, at `/Users/kevinliu/.calima-r5/direction/`:
+  - `kevin-nov6-keyart.jpg` (image 1, sha256 860d7e9f…), with `kevin-nov6-keyart.webp` (aa1c880d…) beside it;
+  - `kevin-nov6-board.jpg` (image 2, f2694e04…), with `kevin-nov6-board.webp` (b5c48125…) beside it;
+  - `kevin-nov6-board2.md` (image 3);
+  - `kevin-nov6-armor.md` (image 4);
+  - `kevin-nov6-stills.md` (image 5).
+
+  Images 3–5 are described in words; until Kevin saves them as images, their panel clauses are written criteria, not
+  likeness. None of the files is ever committed, stored in LFS, release assets, gists, PRs, issues or artifacts. Panel
+  statistics (L\*a\*b\*, ≤ 8 swatches per panel) may be stored as numbers in refs.json. No pixels may go to generative,
+  tracing, image-to-3D or style-transfer tools. Docs cite them as `ext:<file>@<sha8>#<panel>` (ROUND5-LOOK §0.2) and
+  never embed pixels. Crops live only in a session scratchpad.
+
+  **(b) Judging.** From now on every lane reads all five before building or fixing. The stills weigh most for light,
+  camera framing, combat readability and HUD. **R54's "incredible" bar is graded against the cited panels.** A frame
+  that passes its words but looks cheap beside its panel is a major finding. The judge sees the Nov 6 WIP frame of the
+  same staging, the new frame and the panel. FAIL unless the judge, shown the two frames unlabelled, picks the new one
+  as closer to the panel on light, haze, palette, composition, density and material.
+  - Every V-row that cites a panel also names ≥ 1 licence-clean stored reference under `reference/r5/**` and carries the **IP-clause**, which outranks every likeness clause.
+  - Panels are gradeable for: light, haze, colour temperature, camera height, FOV and placement, density, skin and cloth response, and HUD placement and legibility.
+  - Panels are **never** a target for: creature or machine bodies, eyes or cores, text, names, logos, icon glyphs, chrome geometry, or glows.
+
+  **(c) IP translation.**
+  - Nothing from Horizon, Sony, Guerrilla, Epic or Fortnite: no names, logos, taglines, machine designs, silhouettes or UI trade dress.
+  - The images' "A Horizon Zero Dawn spinoff" and "a new chapter in the Horizon" never appear anywhere.
+  - Their words translate as ROUND5-LOOK §8: Watchers → Sonde, Corruption/blight → the Datum Line, Shock Arrow → Dust-Puff, Specter → VEIL, Camp/campfire → Brazier, Obsidian Spire → the Roques, Ember → Cinder, Varl/Vazi/Vavi and "Lessons of the Valley" → canon quests (PENDING under R61 b and R65).
+  - Instruments keep bible §7: no heads, jaws, tails or eyes; no red eye or glowing heart.
+  - Lamp tokens (calm 24.7, wary 27.8, hostile 26.6), UI selection/focus/glow tokens and armour emissives are ≥ 20 ΔE2000 from the five (#ff2413, #38c6ff, #ffb31f, #19ffd0, #9B6BFF). Named exemptions: the bible element colours; survey vermilion as flat ink only, never emissive; the spark on the logo and calima sun only; fire tagged `ipExempt:'fire'`. A-ip-emissive's ≤ 0.5 % area cap guards the rest.
+  - Violet is a dye and a glass tint, never a glow wash.
+  - No live lava (pending Q5).
+  - No large walker against a low sun in title, menu, loading or marketing frames.
+  - The wordmark stays the §9.8 lockup; its one tagline is THE ISLAND REMEMBERS in the R66(p) treatment, and no other.
+  - The image model's provenance makes the images class "refused" for references, and any asset whose provenance names an image generator is listed for Kevin.
+
+  **(d) The wrap tail.** R63(c)'s narrowing is **withdrawn**, not only suspended.
+  - The tail is 0.53–0.62 m long, 0.09 m wide at the root, 0.06 m before a 2.5 cm frayed fringe, two-ply with rolled hems, ≤ 900 tris, on 7 links (`dyn_wrapSash_01..07`) driven by `environment.windAt`, with colliders on the stowed lance and bow.
+  - hero-body does not shorten it to 0.49 m. character-art builds the cloth.
+  - `A-tail-flow` replaces the size clause of R63(c), and `A-tail-legible`, `A-wrap-clear` and `A-stow-clearance` stand.
+  - Bible §3.5's row becomes these numbers.
+
+  **(e) UI (Kevin's decision 1).**
+  - Every menu, including pause, is **dark violet glass** (`--cal-glass` #1E1A28 at 0.90; 0.70 in the HUD). The title is key art: its station column sits on U-08's left glass scrim (rgba(14,12,18,0.50) to 0 at 0.48 W), not a 0.90 panel. The field HUD is thin and minimal: theodolite compass strip, small tool icons, levelling-staff health, field note, weapon and ammo.
+  - Options A and C are closed. shell-ui keeps its W1 logic and redoes its skin.
+  - Bible §9.7's paper surfaces and §9.1's "violet never in the UI" are amended. The limits that keep the glass from reading as Horizon's: right angles with registration ticks; no notches, cut corners, hexagons, holograms, teal or Focus-violet glows; no `backdrop-filter` in play; a Kit Rack in real time (a half-ring at the right edge); one currency; no level or XP readout.
+  - V10, V37, V36, V-map, V-ui-* and A-ui-language-static take the new criteria of ROUND5-LOOK §7. The levelling staff, theodolite strip, stadia hairs and graduated tick stay.
+  - The UI restyle's visual rows are graded on frames from after the world look pass.
+
+  **(f) Armour (Kevin's decision 2).**
+  - The bible's 4 × 3 becomes **eight rungs**: Starter, Scout, Reckoner, VEIL (the board's "Specter", renamed because "Specter" is a Horizon enemy; Q4), Pioneer, Vanguard, Arcane, Celestial. The ROUND5-LOOK §3.3 C-09 table maps them onto the bible sets and perks.
+  - The four outfits armory has built fill rungs 1–4 (Pan I → Starter, Pan II → Scout, Pan III → Reckoner, Ash I → VEIL). Each rung is one bible variant with its own perk: VEIL is Pit Wraps (Ash I, Ash-step) re-cut with hood, veil and goggles; Ash II (Calima Veil) leaves the ladder.
+  - Arcane is the instrument-maker's craft (vernier-engraved oxblood plate, "Read the old marks"). Celestial is the surveyor's star-fix (the Datum Plate, an ephemeris engraving, "Fix by the stars"). Its calm lampglass is the only armour emissive. There are no runes and no crystal glow.
+  - Each rung: 1 merged draw, ≤ 3 added pieces. Rungs built from the same bible set share its atlas (pan, ash, glaze; 1024² + 512², ≤ 0.8 MB) plus ≤ 0.15 MB of extras each; only the worn set's atlas is resident. Plan §4.5's armour row stays ≈ 4.0 MB.
+  - The ladder index rises with acquisition. Bible §4.6 is amended: Vanguard is crafted at Oro after "The Scar"; the other rungs keep their bible routes.
+  - **The Starter is sleeveless** (bible §3.9 amended), with a cap shift inside Brea's 40 k: body ≤ 11.5 k, outfit ≤ 16.0 k (the sleeves' ≈ 2.5 k pays for the harness), stow ≤ 9.0 k, held ≤ 3.0 k; sum 39.5 k; ≤ 5 main draws and ≤ 2 casters. R64(a)'s smock art pass (weave, seams, folds, armhole binding) transfers to the sleeveless top at the same bar.
+  - Fog Felts leave the ladder as ✂ (Q4). Retired: Dust-sight, Sure-foot, Fog-mend, Thrown whistle. The base whistle stays. shell-ui drops the Dust-sight outline.
+  - The plan's §2 armory row and §3.1 W3 exit read "8 rungs" in place of "12 variants".
+  - Brea stays 31 and a Pan Houses Reckoner.
+
+  **(g) New features (Kevin's decision 3), each in CALIMA's form:**
+  - the **Brazier** (rest chooses the light and saves; never a travel node; "camp" and "campfire" banned);
+  - the **Making ledger** (MAKE in the hub, quick-make in the Kit Rack at timeScale 1.0; bible §5.2 ammo names);
+  - the **Survey Kite** (a cane-and-sailcloth box kite flown on the trade wind; ridge lift; grounded by calima; seen by Sondes);
+  - **Reed cover** (carrizo and salt rush hide her while the wind moves them, and today's marram colonies stay cover; the golden meadow never does; Pegs cut lanes). The frozen `tallGrassDensity` / `isInTallGrass` names stay (A-terrain-api), and hero-body sets `inTallGrass = cover > 0.45 && (moveSpeed < 0.2 || windAt ≥ 4)`.
+
+  Bible §8.7 now reads "no mounts, grapples, swimming or pole-vault this round; the survey kite (R66 g)", and §11.1's stealth and traversal rows are amended to match. The kept movement stack is touched only through **G-kite** (traversal lane, W3–W4) and **G-camera** (hero-body, W1, ≤ 160 lines), each with its line budget and `A-kite-inert` / the A31 family (A31b/d/e/f, A32b, V22) green.
+
+  **(h) The look never spends the GPU recovery.**
+  - `A-gpu-attrib` (L-18) runs inside the W1-exit global run (R45), before any positive-cost look item is enabled on `high`. It first names the build it times.
+  - Recovery wins (W-01, I-04, L-10, L-15, deleting the post-SMAA shaft pass) are booked to A21, never to the look ledger (`A-look-ledger`). A positive-cost look item is enabled on `high` at an exit only when A21's quiet-box median with the item on meets that exit's bar, and the median `renderScale` in shipped (non-`?shot`) mode is ≥ 0.95 on each A21 scenario. Bars: W1 exit vista ≤ 17.0, herd ≤ 20.0, fight ≤ 17.0 ms; from the W2 exit 14.0 ms on all three, and A-gpu-tier-pans ≤ 13.0. An item that misses stays off on `high` and its V-row reads FAIL-deferred. `ultra` is never a graded tier. The interim W1 bars are a proposal; Q2 still decides the fallback.
+  - ≤ 0.45 ms per ledger row on A21 frames. W-06 is three rows (R0 + backlight, R1, R2/R3). Bursts (P-04, P-06) and the close-up DOF are outside A21 and capped by their own rows.
+  - At the switch to AgX (L-01) and the sky IBL (L-04), every colour-measured row (the lamp ΔE rows, A-lamp-canon-distance, A-sighting-hue, A-hour-keys) is **re-measured once with its bar unchanged**, and every affected visual row is re-judged in the same wave. A row that fails on re-measure is a finding for look-post, not a rebaseline. look-post ports the ACES copies in `src/instruments/lamps.js` and `src/hero/sheets.js` to `engine.look` by grant at the W1 exit; shell-ui refits `CALIMA_DISC` in W2.
+
+  **(i) Lanes.**
+  - A new lane **look-post** (port 5251, judge 5281; from the first free W1 slot to its W1-exit merge, before world-sky starts W2 work) owns the post chain under G-post, inherits engine-gpu's must-stay-green rows, and closes R48(c). Its W2 items pass with G-post to world-sky.
+  - **world-sky stays active through W2.**
+  - A new lane **traversal** (port 5250, judge 5280; W3–W4) builds the kite. It takes audio's W3 slot after audio exits, then brand's W4 slot until brand's scrub.
+  - Ports: look-post reuses engine-gpu's 5251 and traversal reuses pipeline's 5250. Both earlier owners have exited, and this line is the explicit exception to the plan's §2 rule that ports are never shared.
+  - L-18 then L-16 run inside the W1-exit global run. L-16 A/Bs only items estimated ≥ 0.10 ms; the rest are timed as one group.
+  - Not-started lanes (world-sky, world-props, instruments-a) take their ROUND5-LOOK §5.2 items in their day-1 briefs; running lanes take theirs at their next fix round.
+
+  **(j) The light.**
+  - The sun's bearing is corrected so noon stands in the south (28° N).
+  - Pending Q1, world-sky ships the golden-weighted clock behind `env.clock` (default `golden`). New Game starts at 07:00. 17:45 is only for the title, a Continue with no saved hour, and the look places. The golden-weighted clock keeps the 0:55 beat at 12:00 ± 0:30 (an A-first-hour clause).
+  - V-sky-trade's "not golden-hour drama" is graded at trade noon only.
+  - Crepuscular shafts are allowed **only** at occluder and cloud gaps (A-look-shafts' spoke test); radial spokes stay banned (bible §9.4).
+
+  **(k) Bible amendments** (applied by the orchestrator):
+  - §2.4: the ROUND5-LOOK L-03 keys, with violet-rose shadows and a 18:45 zenith of #555079; the 05:30 key and the hand-over troughs at 05:24 and 19:54 (sunI ≤ 0.15) stay.
+  - §3.5: the tail (d). §3.9: the Starter (f). §4: the ladder (f); §4.6: Vanguard is crafted at Oro after "The Scar".
+  - §8.3 flora: cerrillo, viborina, tamarisk groves in the Pans, bougainvillea in villages, carrizo and junco.
+  - §8.7 and §11.1 (g).
+  - §9.1: the flora carries gold and violet while the ground stays black and white; glass tokens added.
+  - §9.4 (j). §9.7 (e).
+  - §7.4's heights and §9.8's title light wait for Q3 and Q1.
+
+  **(l) Hit-stop** is a capped freeze, not time dilation: ≤ 120 ms per hit and ≤ 180 ms in any 1 s (`A-play-hitweight`). R32 stands for Steady, aiming and the Kit Rack.
+
+  **(m) World scope.**
+  - The Sounding Ring stands 15–25° off vertical at 34 m on a 5–6 m rise (`sites.js` height 0.5 → 6, world-ground's file; `A-landmark-bearing` re-run). world-props moves `tools/build/landmarks/gen-sounding-ring.mjs` (pipeline's area; lane closed) into its `recipes/**` by grant.
+  - Six offshore stacks and a sea arch beyond `PLAY_RADIUS` + 20 m are new W1 scope for world-props.
+  - One 55–60 m Roque plug moves from W4 to W1.
+  - The Round-4 far ridge rings go; the sister isles stay carried inside the sky dome and the far plane (ISLE_CARRY 0.8).
+
+  **(n) Storage.** The references are never committed anywhere.
+
+  **(o) Ninewalls stays walled.** Image 2's NINEWALLS-as-a-tree is the image model's error; Ninewalls stays the walled settlement of the bible. The tree informs only the dragon tree's silhouette (W-10).
+
+  **(p) The tagline (Kevin, Nov 6).** "THE ISLAND REMEMBERS" appears in the game, under the wordmark, in a lockup that is not Horizon's. It is set in IBM Plex Mono 500 caps with tracking ≤ 0.08 em, at 0.30× the wordmark's cap height, under the §9.8 datum rule. It is left-aligned flush with the C of CALIMA, with no rule on either side, no star and nothing centred. `V-logo`'s "any second line of text, tagline" FAIL clause is amended to allow exactly this line in exactly this treatment. The name lint allows the phrase only in the title lockup's string, and "REMEMBERS" is excepted from the "Ember" substring hit there. brand owns it at W4, and shell-ui places it in W2 (U-08).
+
+  **(q) Kevin's answers to §9.1 (Nov 6) are binding:**
+  - golden-weighted light (Q1);
+  - a 16.7 ms fallback bar (Q2);
+  - Screed 3.8 m and Kiln 5.5 m (Q3);
+  - VEIL at rung 4, with Fog Felts and Calima Veil off the ladder (Q4);
+  - a cold Malpaís (Q5);
+  - no minimap (Q6);
+  - the tagline kept, per (p) (Q7);
+  - PD/CC0 reference fetches allowed (Q8).
+
+  The bible amendments these imply land with this ruling: §9.8 title light, §7.4 heights, the §4 ladder and retired perks, and the §9.8 lockup's tagline.
 - **R30 completion.** The orchestrator deleted the four IP machine GLBs (`watcher`, `sawtooth`, `behemoth`, `thunderjaw`) on main after instruments-core's code removal and pipeline's loader rows merged; `aloy.glb` goes at hero-body's W0b exit as planned.
 
 ## 9. GATE SPEC — the literal acceptance bar per lane
@@ -747,7 +886,7 @@ W0b:
 - **A-fonts-licensed** — pass: `public/fonts/` holds only Chakra Petch and IBM Plex Mono (woff2) and one `OFL.txt` per family; each has a `LICENSES.json` row `OFL-1.1`; computed styles of the wordmark, a HUD label and a numeral resolve to those families; 0 references to Julius, Rajdhani, Michroma, Orbitron, Bodoni Moda, IBM Plex Sans Condensed in CSS/JS.
 - **A-storage-keys** — `save, change settings, open the map, dismiss a tip, reload` → pass: every localStorage key written matches `/^cal\..*\.v5$/` (v6 for the save after W3); a planted `hzc.save.v4` is ignored (fresh start, 0 console errors). The W0-era v5 plant is re-run by `A-items-ids` (W2: loads, unknown ids dropped) and `A-save-schema` (W3: refused).
 - **A-ui-words** (brand surfaces at W0; all surfaces at W2 via shell-ui) — pass: rendered strings contain none of `/\b(tear|impact|brittle|focus|override|concentration|silent strike|critical (strike|hit)|datapoints?|shards?|medicine|tallneck|cauldron|hunting grounds?|tag(ged)?|machines?|camp)\b/i` (the word "machine" is replaced by "Instrument" in UI).
-- **V-logo** — shot: title screen after settle at 1600×900, plus a 4K crop of the lockup. Pass: CALIMA in Chakra Petch caps (R55); the I is a plumb line whose dot is the **full, unclipped** spark above the word; one hairline datum rule under the word with a small coral broad-arrow under the I; FAIL on any second line of text, tagline, "A CLAUDE GAME", spark on/under/clipped by a rule, reflection dashes, thin wide-tracked caps, or the words HORIZON / ZERO.
+- **V-logo** — shot: title screen after settle at 1600×900, plus a 4K crop of the lockup. Pass: CALIMA in Chakra Petch caps (R55); the I is a plumb line whose dot is the **full, unclipped** spark above the word; one hairline datum rule under the word with a small coral broad-arrow under the I; FAIL on any second line of text or tagline other than R66(p)'s THE ISLAND REMEMBERS in R66(p)'s treatment, "A CLAUDE GAME", spark on/under/clipped by a rule, reflection dashes, thin wide-tracked caps, or the words HORIZON / ZERO.
 - **V38-title** (re-staged) — shot: title screen after settle. Pass: one logo over a live **Pans vista in calima** (salt grid, white surf on black sand, coral disc sun), vertical menu; FAIL on a double logo, a tall walker silhouette on a low-sun skyline, or live lava in frame.
 - **V-loading** — shot: loading screen at 40 % and 100 %. Pass: the datum rule fills as progress; copy "Reading the benchmarks…"; no "Waking the machines".
 W4:
@@ -890,7 +1029,7 @@ W2 — gaff, Windwall, casts:
 - **A-equip-each-variant** (W3) — equip every armor and weapon variant through the panel in `ui/inventory.js` → pass: each equips and renders; its acquisition route (bible §4.6) is registered (craft recipe, merchant stock or quest reward); the equipped loadout survives save + reload (`A65`).
 - **A4-draw-strength / A5-arrow-fired-event / A51-nock-gap / A52-arrow-drop** (`sentry` target) — pass: Round-4 bars (≥ 0.95 draw; event fires; nock interval 1.05–1.40 s; 2.5–5 m drop at 55 m, launch within 0.3° of the crosshair ray, **also at camPitch −0.55**).
 - **A-weapon-role** — the six bible §5.1 scenarios, reported every wave → pass **from the W3 exit**: each named weapon's metric beats the median of the other five by ≥ 30 %.
-- **V-variant-sheet** — 12 armor variants front/side/back on one sheet, flat-lit. Pass: each variant reads different at 20 m by shape, not only colour; no fur, no red hip sash, no braids; pauldrons sit on the clavicle.
+- **V-variant-sheet** — 8 armor rungs front/side/back on one sheet, flat-lit. Pass: each variant reads different at 20 m by shape, not only colour; no fur, no red hip sash, no braids; pauldrons sit on the clavicle.
 - **V-weapon-sheet** — all bow and lance variants in hand. Pass: silhouettes per spec, real proportions; the bob cap and the Counterweight bob read.
 - **V29-wielded-carry** — jog toward an alert `sentry`. Pass: bow low in the LEFT hand, left-arm swing damped; FAIL if on her back.
 - must stay green: global list, A35, A100, A101, A-stow-clearance.
