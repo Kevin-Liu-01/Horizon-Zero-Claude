@@ -121,12 +121,25 @@ export function drapeTable(T, { apex = [1.24, 1.40], fall = 0.32, margin = () =>
     }
   }
   for (let y = 0; y < nY; y++) { const m = margin(y0 + y * dy); for (let t = 0; t < nTh; t++) R[y * nTh + t] += m; }
-  for (let p = 0; p < passes; p++) {
+  // Armory W1: the body under the cloth is read row by row (the outermost sample in each 5 mm band), a staircase
+  // where the surface leans; the ease's floor used to be that staircase itself, so every row re-imposed it and the
+  // smock showed contour rings round the bust under a low light. The floor is now the body smoothed down its
+  // height, and the cloth over it twice as smooth
+  const srcS = src.slice();
+  for (let p = 0; p < 4; p++) {
+    const O = srcS.slice();
+    for (let y = 0; y < nY; y++) for (let t = 0; t < nTh; t++) {
+      const c = O[y * nTh + t]; if (c <= 0) continue;
+      const u = O[Math.max(0, y - 1) * nTh + t] || c, d = O[Math.min(nY - 1, y + 1) * nTh + t] || c;
+      srcS[y * nTh + t] = (2 * c + u + d) / 4;
+    }
+  }
+  for (let p = 0; p < passes * 2; p++) {
     const O = R.slice();
     for (let y = 0; y < nY; y++) for (let t = 0; t < nTh; t++) {
       const yu = Math.max(0, y - 1), yd = Math.min(nY - 1, y + 1), tl = (t - 1 + nTh) % nTh, tr = (t + 1) % nTh;
       const v = (2 * O[y * nTh + t] + O[yu * nTh + t] + O[yd * nTh + t] + O[y * nTh + tl] + O[y * nTh + tr]) / 6;
-      R[y * nTh + t] = Math.max(v, src[y * nTh + t] + minEase);
+      R[y * nTh + t] = Math.max(v, srcS[y * nTh + t] + minEase);
     }
   }
   return { ...T, R, src };
@@ -201,8 +214,12 @@ export function draftSmock(part, T, skin, {
     acc = 0;
     for (let c = midC - 1; c >= 0; c--) { acc -= V.len(V.sub(P[id(c, i)], P[id(c + 1, i)])); U[id(c, i)] = acc; }
   }
+  // (armory W1: v used to start at 0 on the neckline, so every weft thread and slub the painters draw along v ran
+  // parallel to the scooped neck: rings round her bust. It now starts at the neckline's height under a level line,
+  // so the weft runs level across the cloth, as woven)
+  const yRef = Math.max(...Array.from({ length: cols + 1 }, (_, c) => P[id(c, 0)][1]));
   for (let c = 0; c <= cols; c++) {
-    let vv = 0;
+    let vv = yRef - P[id(c, 0)][1];
     for (let i = 0; i <= rows; i++) {
       if (i) vv += V.len(V.sub(P[id(c, i)], P[id(c, i - 1)]));
       const p = P[id(c, i)];

@@ -42,6 +42,7 @@ import { TAU, beltRing, boxInto, limbStrap, orientOut, ring, ripple, skirtPanels
 import { bindingAlong, draftSmock, drapeTable, openEdges, radialTable, roundRect, softSheet, tableAt, tubeInto } from './armor/lib/smock.mjs';
 import { outfitDoc, writeOutfit } from './armor/lib/output.mjs';
 import { romFit } from './armor/lib/romfit.mjs';
+import { sashKnot, sashTail } from './armor/lib/sash.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/hero/outfit-pan-1.glb'];
@@ -158,15 +159,20 @@ export function salted(t, o, { hem = 0, hemY = 0.8, tide = 1 } = {}) {
 /** Sharp in the valley, round on the crest: how cloth folds. 0 in a pinch, 1 on a crest. */
 const fold01 = (n) => Math.abs(2 * n - 1);
 
-/** Folds hanging from a gathered line: tight at the belt, merging into a few deep ones low down. */
+/**
+ * Folds hanging from a gathered line: tight at the belt, merging into a few deep ones low down. Armory W1: each
+ * layer keeps ONE bearing frequency (a fold hangs straight down); it used to scale the bearing by height, which
+ * fanned every fold out sideways from the +x side, so the skirt's folds ran diagonally. Now the fine gathers fade
+ * with depth and the few deep folds, there from the belt down, take over.
+ */
 export function hangFolds(t, { belt = 1.1, hem = 0.75, seed = 0 } = {}) {
   const th = Math.atan2(t.Z + 0.02, t.X);
   const d = clamp((belt - t.Y) / (belt - hem));
-  const wob = 0.11 * (noise3(th * 3.1 + seed, t.Y * 4.0, 3.7) - 0.5);
-  const a = fold01(noise3((th + wob) * mix(6.6, 3.0, d), t.Y * 0.7, 1.3 + seed));
-  const b = fold01(noise3((th + wob * 1.5) * mix(13, 6.2, d), t.Y * 1.1, 5.1 + seed));
-  const c = fold01(noise3((th + wob * 2.2) * mix(26, 11, d), t.Y * 1.8, 8.7 + seed));
-  return a * 0.7 + b * 0.24 * (1 - 0.35 * d) + c * 0.06 * (1 - 0.6 * d) + 0.05 * d;
+  const wob = 0.05 * (noise3(th * 3.1 + seed, t.Y * 4.0, 3.7) - 0.5);
+  const deep = fold01(noise3((th + wob) * 3.4, t.Y * 0.55, 1.3 + seed));
+  const mid = fold01(noise3((th + wob * 1.5) * 7.4, t.Y * 0.9, 5.1 + seed));
+  const fine = fold01(noise3((th + wob * 2.2) * 16, t.Y * 1.6, 8.7 + seed));
+  return deep * (0.42 + 0.36 * d) + mid * (0.36 - 0.14 * d) + fine * (0.22 - 0.19 * d) + 0.04 * d;
 }
 
 function strawCell(t, o, col, { strand = 7, rough = 0.88 } = {}) {
@@ -288,27 +294,24 @@ export function panTrim(W, H, trimH) {
   });
   T.cell('sash', 300, 44, (t, o) => {
     // linen wound round: long creases along the band, deep where it goes under the belt. Armory W1: it read flat and
-    // pale in sun (one bright tone, shallow creases). Unbleached now, a shade under the sleeves; creases twice as deep
-    // with their valleys shaded; both long edges rolled and hemmed; a tone-on-tone band of heavier weft near each edge
+    // pale in sun (one bright tone, shallow creases). Unbleached now, a shade under the sleeves; the creases deeper,
+    // their valleys a little shaded; both long edges rolled and hemmed (a soft lip, a stitch inside it): no stripes,
+    // the knot's tails run the cell's length
     t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0; t.d = 99;
-    cloth(t, o, [mix(COL.linen[0], 176, 0.38), mix(COL.linen[1], 160, 0.38), mix(COL.linen[2], 128, 0.38)], { slub: 0.08, mottle: 0.12, seed: 13, thread: 0.05 });
+    cloth(t, o, [mix(COL.linen[0], 182, 0.32), mix(COL.linen[1], 166, 0.32), mix(COL.linen[2], 134, 0.32)], { slub: 0.07, mottle: 0.1, seed: 13, thread: 0.04 });
     const c = fold01(noise3(t.ax * 0.018, t.y * 0.16, 2.9)), c2 = fold01(noise3(t.ax * 0.04, t.y * 0.34, 7.3));
     const f = c * 0.7 + c2 * 0.3;
-    o.h += 0.0042 * (f - 0.6);
-    const q = 0.84 + 0.2 * sstep(0.16, 0.7, f); o.r *= q; o.g *= q; o.b *= q;
-    o.ao *= 1 - 0.28 * sstep(0.34, 0.04, f);
-    // the heavier weft: two bands of thicker, slightly darker threads
-    const wb = Math.min(Math.abs(t.v - 0.2), Math.abs(t.v - 0.8));
-    if (wb < 0.05) { const k = 1 - wb / 0.05; const th = Math.sin((t.x / 1.6) * Math.PI); o.r *= 1 - 0.1 * k; o.g *= 1 - 0.1 * k; o.b *= 1 - 0.12 * k; o.h += 0.00035 * k * th; }
-    // the rolled hems: a round lip at each long edge, its fold line shaded, one running stitch inside it
+    o.h += 0.0032 * (f - 0.6);
+    const q = 0.92 + 0.1 * sstep(0.16, 0.7, f); o.r *= q; o.g *= q; o.b *= q;
+    o.ao *= 1 - 0.14 * sstep(0.3, 0.04, f);
+    // the rolled hems: a round lip at each long edge, its fold line a touch darker, a running stitch inside it
     const e = Math.min(t.v, 1 - t.v);
-    if (e < 0.12) {
-      const lip = Math.sin(Math.PI * clamp(e / 0.09));
-      o.h += 0.0009 * lip;
-      if (e > 0.085 && e < 0.115) { o.r *= 0.8; o.g *= 0.8; o.b *= 0.8; o.ao *= 0.86; }
-      if (e < 0.02) { o.r *= 0.88; o.g *= 0.88; o.b *= 0.88; }
-      const st = Math.abs(e - 0.06);
-      if (st < 0.016 && ((t.x / 3.6) % 1) < 0.55) over(o, [o.r * 1.18 + 6, o.g * 1.18 + 6, o.b * 1.14 + 4], 0.5);
+    if (e < 0.1) {
+      const lip = Math.sin(Math.PI * clamp(e / 0.08));
+      o.h += 0.0008 * lip;
+      if (e > 0.075 && e < 0.1) { o.r *= 0.92; o.g *= 0.92; o.b *= 0.92; }
+      const st = Math.abs(e - 0.055);
+      if (st < 0.014 && ((t.x / 3.6) % 1) < 0.55) over(o, [o.r * 1.12 + 6, o.g * 1.12 + 6, o.b * 1.1 + 4], 0.4);
     }
   });
   T.cell('bind', 240, 18, (t, o) => {
@@ -329,7 +332,7 @@ function smockDye(t, o, seed = 1) {
   const fade = sun + 0.16 * sstep(0.46, 0.68, blot);
   const c = [mix(COL.smock[0], 142, fade), mix(COL.smock[1], 108, fade), mix(COL.smock[2], 136, fade)];
   // (armory W1: the Museo Egizio linen beside it has slubs you can count and dye that took along the warp)
-  cloth(t, o, c, { slub: 0.11, mottle: 0.12, seed, thread: 0.085 });
+  cloth(t, o, c, { slub: 0.08, mottle: 0.12, seed, thread: 0.07 });
   const d = fbm(t.X * 4.2, t.Y * 1.2, t.Z * 4.2 + 17, 2);
   const k = 0.9 + 0.2 * d; o.r *= k; o.g *= k; o.b *= k;
   // the dye took unevenly along the warp: long faint streaks down the cloth, a little browner where it is thin
@@ -405,8 +408,8 @@ export const PAN_PAINTERS = {
     // the slit edges are turned too: stitched, never a comb
     if (t.Y > 0.79) seam(t, o, { d0: 3.2, a: 0.24, groove: 0.9 });
     salted(t, o, { hem: 0.5, hemY: 0.83, tide: 0 });
-    // brine-darkened and dusty low down
-    const n = fbm(t.X * 9, t.Y * 3, t.Z * 9, 3);
+    // brine-darkened and dusty low down (soft blots, not bands: stretched across they crossed the folds as plaid)
+    const n = fbm(t.X * 7, t.Y * 7, t.Z * 7, 3);
     over(o, [120, 100, 110], sstep(0.92, 0.76, t.Y) * 0.2 * (0.4 + n));
     o.wear = 1.1;
   },
@@ -656,7 +659,7 @@ export async function panBase(opt = {}) {
   const drape = drapeTable(raw, { apex: [1.26, 1.4], fall: 0.34, minEase: 0.007, margin: (y) => 0.009 + 0.004 * sstep(1.3, 1.22, y) + 0.003 * sstep(1.47, 1.51, y) });
   const neckY = (d) => mix(1.432, 1.504, sstep(0.0, 1.3, d)) + 0.011 * sstep(1.7, 3.0, d);
   const smock = draftSmock(mk('smock'), drape, skinOf, {
-    rows: 21, cols: 60, neckY, yBelt: 1.144, seed: 1, density: 1.08,
+    rows: 21, cols: 60, neckY, yBelt: 1.128, seed: 1, density: 1.08,
     gather: (y, th) => tableAt(drape, BELT_Y, th) + 0.003 + 0.0075 * sstep(1.148, 1.178, y),
     slit: { yBottom: 1.356, half: 0.0105, round: 0.012 },
     armholes: [{ side: 1, ...ARMHOLE }, { side: -1, ...ARMHOLE }],
@@ -740,7 +743,8 @@ export async function panBase(opt = {}) {
   // Sharp in the valley, round on the crest; mostly outward (a valley dips 0.3 of the depth, a crest stands 0.7)
   const skirtFold = (th, y, t) => {
     const f = hangFolds({ X: Math.cos(th) * 0.25, Y: y, Z: Math.sin(th) * 0.25 - 0.02 }, { belt: 1.1, hem: 0.75, seed: 0 });
-    return mix(0.005, SKIRT_FOLD, sstep(0.0, 0.9, t)) * (f - 0.3);
+    // (none under the sash band: its crests stood through the band)
+    return SKIRT_FOLD * sstep(0.12, 0.9, t) * (f - 0.3);
   };
   const skirt = skirtPanels(mk, under, joints, { slot: 'skirt', yTop: BELT_Y - 0.024, yHem: 0.748, off: 0.024, offTop: 0.006, easeFront: 0.014, flare: 0.078, slits, rows: 10, colsPer: 34, fold: skirtFold, seed: 3, density: 1.08, keep: KEEP_TORSO, hem: hemS, overlap: 0.055, lip: 0.0035, ...opt.skirt });
   const skirtField = new Field(skirt, 0.04);
@@ -752,9 +756,13 @@ export async function panBase(opt = {}) {
 
   // ---- the girdle: stiff leather at the waist, brass buckle, keeper, pierced tongue
   const beltY = BELT_Y, beltH = 0.058;
-  const girdle = beltRing(mk('girdle', { trim: true }), under, skinOf, { y: beltY, h: beltH, off: 0.0135, cols: 48, rect: trim.rect('girdle'), keep: KEEP_TORSO, thick: 0.0042, lip: 0.003 });
+  // (armory W1: 8 mm deeper at its lower edge, so it still laps the sash band when a draw lifts her trunk)
+  const girdle = beltRing(mk('girdle', { trim: true }), under, skinOf, { y: beltY - 0.004, h: beltH + 0.008, off: 0.017, cols: 48, rect: trim.rect('girdle'), keep: KEEP_TORSO, thick: 0.0042, lip: 0.003 });
   // the linen sash under it: a creased band showing just below the belt
-  const sashBand = beltRing(mk('sashband', { trim: true }), skirtField, skinOf, { y: BELT_Y - 0.040, h: 0.03, off: 0.0034, cols: 26, rect: trim.rect('sash'), thick: 0.003, lip: 0.002, tilt: 0.003, dy: 0.02 });
+  // (armory W1: its top takes the girdle's skin, its foot the skirt's: at full draw the girdle rode up with her
+  // trunk and the 4 mm they shared opened to a band of skin; moved whole with the girdle, the skirt's top stood
+  // through its foot instead)
+  const sashBand = beltRing(mk('sashband', { trim: true }), skirtField, skinOf, { skinY: [BELT_Y - 0.055, BELT_Y], y: BELT_Y - 0.040, h: 0.03, off: 0.0034, cols: 26, rect: trim.rect('sash'), thick: 0.003, lip: 0.002, tilt: 0.003, dy: 0.02 });
   // the buckle stands on the belt, front and a touch to her left, rigid on spine_01
   const fr = new Field([girdle], 0.04).radial(beltY, Math.PI / 2 - 0.12, 0, -0.02, 0.03, 0.14) + 0.0035;
   const bk = [Math.cos(Math.PI / 2 - 0.12) * fr, beltY, -0.02 + Math.sin(Math.PI / 2 - 0.12) * fr];
@@ -867,25 +875,25 @@ export async function panBase(opt = {}) {
   const outOnSkirt = (q) => {
     // turned toward her side: the bones hang at the front of the hip, right where the thigh lifts
     const th = Math.atan2(q[2] + 0.02, q[0]) - 0.62;
-    const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.14), Math.hypot(q[0], q[2] + 0.02)) + 0.011;
+    const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.2), Math.hypot(q[0], q[2] + 0.02)) + 0.015;
     return [Math.cos(th) * rr, q[1], -0.02 + Math.sin(th) * rr];
   };
   const sashPts = CHAINS.sashEnd.points.map(outOnSkirt);
   const k1 = sashPts[0];
   const sashTh = Math.atan2(k1[2] + 0.02, k1[0]);
   const tang = [-Math.sin(sashTh), 0, Math.cos(sashTh)], outW = [Math.cos(sashTh), 0, Math.sin(sashTh)];
-  // a tied knot: the wrap of the band over itself
-  appendGeo(g, bun(V.add(k1, [0, 0.02, 0]), { rx: 0.021, ry: 0.024, rz: 0.015, seg: 8, rings: 5, joint: pelvis, uvRect: lin, ridges: 2, tilt: [0.3, 1, 0.1] }));
-  // the strip maps across u, along v; the sash cell runs along u: turn it
-  const along = (geo, k = 1) => { for (let i = 0; i < geo.uv.length; i += 2) { const fu = (geo.uv[i] - lin[0]) / lin[2], fv = (geo.uv[i + 1] - lin[1]) / lin[3]; geo.uv[i] = lin[0] + lin[2] * fv * k; geo.uv[i + 1] = lin[1] + lin[3] * fu; } return geo; };
+  // armory W1: the knot and its tails as cloth (armor/lib/sash.mjs). They were a ball and two flat 3-column strips,
+  // which read as planks at her hip from every side and back view
+  const upW = [0, 1, 0];
+  // (compact: her left forearm sweeps past it in the lance's light attack)
+  appendGeo(g, sashKnot(V.add(k1, [0, 0.016, 0]), { side: tang, up: upW, out: outW }, { joint: pelvis, rect: lin, rx: 0.023, rz: 0.012, ringW: 0.028, ear: 0.027, earW: 0.019 }));
   // the tail ends above the skirt's hem: a stride swings the skirt out and would swallow a longer one
-  appendGeo(g, along(stripAlong(sashPts.slice(0, 3), sashJ.slice(0, 2), { along: 4, width: (u) => 0.056 - 0.012 * u, side: tang, uvFront: lin, uvBack: lin, thick: 0.004, curl: 0.045 })));
+  appendGeo(g, sashTail(sashPts.slice(0, 3), sashJ.slice(0, 2), { along: 10, across: 6, width: (u) => 0.058 - 0.012 * u, side: tang, out: outW, rect: lin, uLen: 0.42, twist: 0.3 }));
   // the second tail, shorter, behind the first and a little forward (never on the chain)
   {
     const p2 = [V.add(k1, V.add(V.mul(tang, 0.016), [0, 0.012, 0])), V.add(k1, V.add(V.mul(tang, 0.03), [0, -0.05, 0.002])), V.add(k1, V.add(V.mul(tang, 0.036), [0, -0.105, 0.004]))];
-    const pts = p2.map((q) => { const th = Math.atan2(q[2] + 0.02, q[0]); const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.14), Math.hypot(q[0], q[2] + 0.02)) + 0.0065; return [Math.cos(th) * rr, q[1], -0.02 + Math.sin(th) * rr]; });
-    const tail = stripAlong(pts, [pelvis, joints.thigh_l], { along: 3, width: (u) => 0.044 - 0.01 * u, side: tang, uvFront: lin, uvBack: lin, thick: 0.003, curl: 0.04 });
-    appendGeo(g, along(tail, 0.6));
+    const pts = p2.map((q) => { const th = Math.atan2(q[2] + 0.02, q[0]); const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.2), Math.hypot(q[0], q[2] + 0.02)) + 0.0105; return [Math.cos(th) * rr, q[1], -0.02 + Math.sin(th) * rr]; });
+    appendGeo(g, sashTail(pts, [pelvis, joints.thigh_l], { along: 8, across: 5, width: (u) => 0.046 - 0.01 * u, side: tang, out: outW, rect: lin, uLen: 0.3, u0: 0.5, twist: -0.25, pleat: (u) => 0.006 * (1 - u) ** 1.5 }));
   }
   const sash = mk('sash', { trim: true });
   Object.assign(sash, { pos: g.pos, nrm: g.nrm, uv: g.uv, jnt: g.jnt, wgt: g.wgt, idx: g.idx });

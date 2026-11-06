@@ -86,10 +86,13 @@ export function weaponTrim() {
   });
   T.cell('esparto', 128, 64, (t, o) => {
     // cord wound round: rows across v, a twist in each
-    const f = (t.y / 4.2) % 1, r = Math.sin(f * Math.PI), tw = Math.abs(Math.sin((t.x * 0.42 + t.y * 0.9)));
-    const row = noise3(Math.floor(t.y / 4.2) * 1.37, t.ax * 0.03, 4.2);
-    put(o, WOOD.esparto, (0.58 + 0.5 * r) * (0.88 + 0.16 * tw) * (0.86 + 0.28 * row));
-    o.h = 0.0012 * r; o.rough = 0.92; o.det = 0;
+    // (armory W1: the turns read as a black-and-yellow coil spring: the groove between turns is a shade, not a gap,
+    // each turn's two plies show, and the cord rises a little round the wrap: a helix, not rings)
+    const yy = t.y + t.x * 0.035;
+    const f = (yy / 4.2) % 1, r = Math.sin(f * Math.PI), tw = Math.abs(Math.sin((t.x * 0.42 + yy * 0.9)));
+    const row = noise3(Math.floor(yy / 4.2) * 1.37, t.ax * 0.03, 4.2);
+    put(o, WOOD.esparto, (0.76 + 0.3 * r) * (0.9 + 0.12 * tw) * (0.88 + 0.24 * row));
+    o.h = 0.0008 * r; o.rough = 0.92; o.det = 0;
   });
   T.cell('bronzeBlade', 128, 128, (t, o) => {
     // v across the blade (0 midrib, 1 edge), u along. The cell is 8x denser across than along, so the

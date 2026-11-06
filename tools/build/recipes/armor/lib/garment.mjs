@@ -168,7 +168,7 @@ export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off =
 }
 
 /** A band hugging the surface around the torso at height y; maps into a trim rect (u along). */
-export function beltRing(part, surf, skin, { y = 1.06, h = 0.07, off = 0.013, cols = 64, rect, lip = 0.004, thick = 0.006, keep = null, tilt = 0, dy = 0.01 } = {}) {
+export function beltRing(part, surf, skin, { y = 1.06, h = 0.07, off = 0.013, cols = 64, rect, lip = 0.004, thick = 0.006, keep = null, tilt = 0, dy = 0.01, skinY = null } = {}) {
   const th0 = -Math.PI / 2;
   const cz = -0.02;
   // profile of the widest of the belt's rows, so it reads as one stiff strap
@@ -185,8 +185,18 @@ export function beltRing(part, surf, skin, { y = 1.06, h = 0.07, off = 0.013, co
     const rad = mix(rBot[c], rTop[c], f + 0.5) + off + o;
     const yy = y + f * h + tilt * Math.sin(th);
     const p = [Math.cos(th) * rad, yy, cz + Math.sin(th) * rad];
-    const s = colSkin[c % cols] || (colSkin[c % cols] = skin.skin(Math.cos(th) * (mix(rBot[c], rTop[c], 0.5) + off), y, cz + Math.sin(th) * (mix(rBot[c], rTop[c], 0.5) + off), 4));
+    // (`skinY`: read the skin at another height, so a band can move with the one above it; `[yBot, yTop]` reads it
+    // at both edges and blends down the band, so its top moves with what laps it and its foot with what it laps)
+    const sAt = (yS) => skin.skin(Math.cos(th) * (mix(rBot[c], rTop[c], 0.5) + off), yS, cz + Math.sin(th) * (mix(rBot[c], rTop[c], 0.5) + off), 4);
     const v = 1 - (f + 0.5);
+    if (Array.isArray(skinY)) {
+      const k = c % cols, cs = colSkin[k] || (colSkin[k] = [sAt(skinY[0]), sAt(skinY[1])]);
+      const t = f + 0.5, m = new Map();
+      for (const [S, wt] of [[cs[0], 1 - t], [cs[1], t]]) for (let q = 0; q < 4; q++) if (S.w[q] > 0) m.set(S.j[q], (m.get(S.j[q]) || 0) + S.w[q] * wt);
+      const top = [...m.entries()].sort((u, z) => z[1] - u[1] || u[0] - z[0]).slice(0, 4), sum = top.reduce((acc, e) => acc + e[1], 0);
+      return { p, uv: [rect[0] + rect[2] * (c / cols), rect[1] + rect[3] * clamp(v)], j: [0, 1, 2, 3].map((q) => (top[q] ? top[q][0] : 0)), w: [0, 1, 2, 3].map((q) => (top[q] ? top[q][1] / sum : 0)) };
+    }
+    const s = colSkin[c % cols] || (colSkin[c % cols] = sAt(skinY ?? y));
     return { p, uv: [rect[0] + rect[2] * (c / cols), rect[1] + rect[3] * clamp(v)], j: s.j, w: s.w };
   });
   orientOut(part);
