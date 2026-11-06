@@ -128,6 +128,8 @@ export class Person {
     this.head = this.bones.Head;
     this.neck = this.bones.neck_01;
     this.lookYaw = 0;
+    /** false: the head stays on the clip (a staged sheet, a cutscene); true: a near person looks up at her. */
+    this.look = true;
     this.spine1 = this.bones.spine_01;
     this.upL = this.bones.upperarm_l;
     this.upR = this.bones.upperarm_r;
@@ -295,7 +297,7 @@ export class Person {
   _look(dt) {
     const pl = this.sys.ctx.player;
     let want = 0;
-    if (pl && !this.frozen) {
+    if (pl && !this.frozen && this.look) {
       const dx = pl.position.x - this.group.position.x, dz = pl.position.z - this.group.position.z;
       const d2 = dx * dx + dz * dz;
       if (d2 < LOOK_R * LOOK_R && d2 > 0.25) {

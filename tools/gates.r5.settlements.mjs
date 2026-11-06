@@ -56,6 +56,10 @@ const SHEET = `
       const paste = (g, img, x, y, w, h) => { const k = document.createElement('canvas'); k.width = img.width; k.height = img.height; k.getContext('2d').putImageData(img, 0, 0); g.imageSmoothingQuality = 'high'; g.drawImage(k, x, y, w, h); };
       const label = (g, t, x, y) => { g.font = '500 15px "IBM Plex Mono", ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(x - 6, y - 16, g.measureText(t).width + 12, 22); g.fillStyle = '#efe9dc'; g.fillText(t, x, y); };
       for (const el of Array.from(document.body.children)) if (el.tagName !== 'CANVAS' && !el.querySelector('canvas')) el.style.visibility = 'hidden';
+      // a sheet is a look at the people: the tall grass, the scatter props and the Round-4 camp are hidden while it is filmed (the
+      // terrain, the sky, the light and its shadows stay), and the sheet says so
+      const studio = (on) => { for (const o of [C.vegetation?.group, C.props?.group, C.camp?.group]) if (o) o.visible = !on; };
+      studio(true);
 `;
 
 /** Clear the stage, stand Brea and one person side by side on flat ground, same light, in the same facing. */
@@ -74,6 +78,7 @@ const SIDE = (archetype) => `
       const nx = p.position.x - rt[0] * 0.95, nz = p.position.z - rt[1] * 0.95;
       const who = await PP.spawn(${JSON.stringify(archetype)}, { x: nx, z: nz, yaw: face, seed: 7 });
       who.frozen = false;
+      who.look = false;   // both face the lens the same way: the head stays on the idle
       who.play('Idle_Loop', { fade: 0 });
       who.showProps(['prop_back', 'prop_hip', 'prop_shoulder'].filter((k) => who.props[k]));
       PP.tierAt(who, 0);
@@ -92,8 +97,12 @@ const SIDE_SHEET = (archetype, name) => `(async () => {${READY}${SHEET}${SIDE(ar
       const W = 1600, H = 900, PW = Math.floor(W / 3), H1 = 520, H2 = H - H1;
       const c = overlay(W, H), g = c.getContext('2d');
       const midX = (p.position.x + who.group.position.x) / 2, midZ = (p.position.z + who.group.position.z) / 2, y0 = Math.max(p.position.y, who.group.position.y);
-      const heads = [an.b.head.bone.getWorldPosition(new T3()), who.head.getWorldPosition(new T3())];
+      // each head alone: the face's middle (the head joint is at the skull's base: 7 cm up, 3 cm forward), the other body hidden,
+      // so in profile Brea's head does not stand in front of theirs
+      const fwd = [Math.sin(face), Math.cos(face)];
+      const heads = [an.b.head.bone.getWorldPosition(new T3()), who.head.getWorldPosition(new T3())].map((h) => new T3(h.x + fwd[0] * 0.03, h.y + 0.07, h.z + fwd[1] * 0.03));
       const tall = heads[1].y - who.group.position.y;
+      const only = (k) => { p.model.visible = k !== 1; who.group.visible = k !== 0; };
       [['FRONT', 0], ['3/4', Math.PI / 5], ['PROFILE', Math.PI / 2 * 0.86]].forEach(([nm, yaw], i) => {
         const dx = Math.sin(face + yaw), dz = Math.cos(face + yaw);
         const cy = y0 + 0.95;
@@ -101,14 +110,15 @@ const SIDE_SHEET = (archetype, name) => `(async () => {${READY}${SHEET}${SIDE(ar
         paste(g, img, i * PW, 0, PW, H1);
         label(g, nm + ' · 2 m', i * PW + 14, 28);
         heads.forEach((h, k) => {
-          const cz = h.y + 0.1;
-          const v = S.liveView(C, [h.x + dx * 2.0, cz + 0.02, h.z + dz * 2.0], [h.x, cz, h.z], { width: Math.round(PW / 2 * 1.25), height: Math.round(H2 * 1.25), fov: 11.5 });
+          only(k);
+          const v = S.liveView(C, [h.x + dx * 2.0, h.y + 0.02, h.z + dz * 2.0], [h.x, h.y, h.z], { width: Math.round(PW / 2 * 1.25), height: Math.round(H2 * 1.25), fov: 11 });
+          only(-1);
           paste(g, v, i * PW + k * PW / 2, H1, PW / 2, H2);
         });
         label(g, 'BREA', i * PW + 14, H1 + 24);
         label(g, ${JSON.stringify(name)}, i * PW + PW / 2 + 14, H1 + 24);
       });
-      label(g, 'BREA (her left) + ' + ${JSON.stringify(name)} + ' (her right) · 11 h · same light', 14, 56);
+      label(g, 'BREA (her left) + ' + ${JSON.stringify(name)} + ' (her right) · 11 h · same light · grass + props hidden', 14, 56);
     })()`;
 
 /** Every clip an archetype plays, in the real scene, its props as they are played: the poses the judge and the builder read. */
@@ -141,7 +151,7 @@ const CLIP_SHEET = (ids) => `(async () => {${READY}${SHEET}
           await simWait(k === list.length ? 0.62 : 0.95);
           who.root.updateWorldMatrix(true, true);
           const y = who.group.position.y + 0.92;
-          const img = S.liveView(C, [pl.x + fw[0] * 3.2 + rt[0] * 1.1, y + 0.2, pl.z + fw[1] * 3.2 + rt[1] * 1.1], [pl.x, y, pl.z], { width: Math.round(CW * 1.25), height: Math.round(RH * 1.25), fov: 34 });
+          const img = S.liveView(C, [pl.x + fw[0] * 2.5 + rt[0] * 0.9, y + 0.15, pl.z + fw[1] * 2.5 + rt[1] * 0.9], [pl.x, y, pl.z], { width: Math.round(CW * 1.25), height: Math.round(RH * 1.25), fov: 34 });
           paste(g, img, k * CW, r * RH, CW, RH);
           label(g, nm, k * CW + 12, r * RH + 22);
         }
@@ -392,6 +402,8 @@ export const GATES = [
     assert: `(async () => {${READY}
       PP.autoStage = false;
       PP.clearStage();
+      // she stands at the edge of the group, facing it, so what stands is drawn and its atlases are on the GPU when counted
+      { const pl = PP.stagePlace || PP.findStage(), p = C.player; C.input.keys.clear(); C.input.mouse.buttons = 0; p.position.set(pl.x, p.position.y, pl.z + 13); p._snapToGround?.(); p.camYaw = 0; p.camPitch = 0.02; }
       await frames(10);
       const mem = () => ({ textures: E.renderer.info.memory.textures, geometries: E.renderer.info.memory.geometries });
       const base = mem();
@@ -425,9 +437,11 @@ export const GATES = [
       const ids = ${JSON.stringify(IDS)};
       const mem = () => ({ textures: E.renderer.info.memory.textures, geometries: E.renderer.info.memory.geometries });
       const countSkel = () => { const s = new Set(); C.scene.traverse((o) => { if (o.isSkinnedMesh && o.skeleton) s.add(o.skeleton); }); return s.size; };
+      const pl = PP.stagePlace || PP.findStage();
+      { const p = C.player; C.input.keys.clear(); C.input.mouse.buttons = 0; p.position.set(pl.x, p.position.y, pl.z + 13); p._snapToGround?.(); p.camYaw = 0; p.camPitch = 0.02; }
+      await frames(10);
       const base = { ...mem(), skeletons: countSkel() };
       const rows = [];
-      const pl = PP.stagePlace || PP.findStage();
       for (let round = 0; round < 3; round++) {
         const made = [];
         for (let i = 0; i < 20; i++) {
@@ -578,6 +592,7 @@ export const GATES = [
       for (let i = 0; i < ids.length; i++) {
         const s = (i + 1) * 0.86;
         const who = await PP.spawn(ids[i], { x: p.position.x - rt[0] * s, z: p.position.z - rt[1] * s, yaw: face, seed: 7 + i });
+        who.look = false;
         who.play('Idle_Loop', { fade: 0 });
         who.showProps(['prop_back', 'prop_hip', 'prop_shoulder'].filter((k) => who.props[k]));
         PP.tierAt(who, 0);
@@ -593,7 +608,7 @@ export const GATES = [
       paste(g, front, 0, 0, 1600, 560);
       const hd = S.liveView(C, [mx + fw[0] * 9.2, y + 1.62, mz + fw[1] * 9.2], [mx, y + 1.5, mz], { width: 2000, height: 425, fov: 5.6 });
       paste(g, hd, 0, 560, 1600, 340);
-      label(g, 'BREA, then ARCHETYPES 1-9, left to right · 11 h · 9 m lens', 14, 28);
+      label(g, 'BREA, then ARCHETYPES 1-9, left to right · 11 h · 9 m lens · grass + props hidden', 14, 28);
     })()`,
     criteria: VS_CRITERIA,
   },
@@ -626,6 +641,7 @@ export const GATES = [
       const a = await PP.spawn('salt-porter', { x: pl.x - 7, z: pl.z - 0.5, yaw: Math.PI / 2, seed: 3 });
       const b = await PP.spawn('cochineal-picker', { x: pl.x - 7, z: pl.z + 0.5, yaw: Math.PI / 2, seed: 4 });
       for (const w of [a, b]) { PP.tierAt(w, 0); w.showProps(['prop_back', 'prop_hip', 'prop_shoulder'].filter((k) => w.props[k])); }
+      for (const w of [a, b]) w.look = false;
       a.walkTo(pl.x + 12, pl.z - 0.5);
       b.walkTo(pl.x + 12, pl.z + 0.5);
       await simWait(2.6);
@@ -633,11 +649,12 @@ export const GATES = [
       const PW = 533;
       for (let i = 0; i < 3; i++) {
         const mx = (a.group.position.x + b.group.position.x) / 2, mz = (a.group.position.z + b.group.position.z) / 2, y = a.group.position.y + 0.92;
-        const img = S.liveView(C, [mx + 2.0, y + 0.12, mz + 3.1], [mx, y, mz], { width: 666, height: 1125, fov: 38 });
+        const img = S.liveView(C, [mx + 2.9, y + 0.1, mz + 2.4], [mx, y - 0.05, mz], { width: 666, height: 1125, fov: 42 });
         paste(g, img, i * PW, 0, PW, 900);
         label(g, 'FRAME ' + (i + 1), i * PW + 14, 28);
         await simWait(0.27);
       }
+      label(g, 'SALT PORTER (far) + COCHINEAL PICKER (near), walking · 0.27 s apart · grass + props hidden', 14, 884);
       a.frozen = true; b.frozen = true;
       if (E) E.timeScale = 0;
     })()`,
@@ -659,7 +676,7 @@ export const GATES = [
       const rt = [Math.cos(face), -Math.sin(face)], fw = [Math.sin(face), Math.cos(face)];
       const a = await PP.spawn('tiller-follower', { x: pl.x - rt[0] * 0.5, z: pl.z - rt[1] * 0.5, yaw: face, seed: 3 });
       const b = await PP.spawn('pit-farmer', { x: pl.x + rt[0] * 0.5, z: pl.z + rt[1] * 0.5, yaw: face, seed: 4 });
-      for (const w of [a, b]) { PP.tierAt(w, 0); w.play('Idle_Loop', { fade: 0 }); w.showProps(['prop_back', 'prop_hip', 'prop_shoulder'].filter((k) => w.props[k])); }
+      for (const w of [a, b]) { PP.tierAt(w, 0); w.look = false; w.play('Idle_Loop', { fade: 0 }); w.showProps(['prop_back', 'prop_hip', 'prop_shoulder'].filter((k) => w.props[k])); }
       await simWait(0.9);
       if (E) E.timeScale = 0;
       await frame();
@@ -667,7 +684,7 @@ export const GATES = [
       const c = overlay(1600, 900), g = c.getContext('2d');
       const full = S.liveView(C, [pl.x + fw[0] * 4.4, y0 + 1.0, pl.z + fw[1] * 4.4], [pl.x, y0 + 0.92, pl.z], { width: 666, height: 1125, fov: 30 });
       paste(g, full, 0, 0, 533, 900);
-      label(g, 'ADOLESCENT 0.90 + ADULT', 14, 28);
+      label(g, 'ADOLESCENT 0.90 + ADULT · grass + props hidden', 14, 28);
       const close = (w, top, x0, nm) => {
         const px = w.group.position.x, pz = w.group.position.z;
         const img = S.liveView(C, [px + fw[0] * 1.15 + rt[0] * 0.32, y0 + top, pz + fw[1] * 1.15 + rt[1] * 0.32], [px, y0 + top - 0.02, pz], { width: 666, height: 1125, fov: 30 });
