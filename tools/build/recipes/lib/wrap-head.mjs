@@ -86,7 +86,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
       // nothing shows through under the turns: a closed dark egg inside them
       // fix round 1 (A-wrap-closed): below its waist the egg swells out into the head wrap, so the crease where the bun meets the wrap
       // is filled with cloth and no look along it sees the sky between them
-      gs.push(underShell(f, { axis: tilt, oMin: () => -84 * DEG, seg: 14, rings: 5, joint: head, W, cloth: true, uv: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], at: (dx, dy, dz) => f.R(dx, dy, dz) - 0.0006 + 0.012 * smooth(-0.1, -0.6, dx * tilt[0] + dy * tilt[1] + dz * tilt[2]) }));
+      gs.push(underShell(f, { axis: tilt, oMin: () => -84 * DEG, seg: 14, rings: 5, joint: head, W, cloth: true, uv: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], at: (dx, dy, dz) => f.R(dx, dy, dz) - 0.0006 + (+(process.env.BUN_SWELL ?? 0.012)) * smooth(-0.1, -0.6, dx * tilt[0] + dy * tilt[1] + dz * tilt[2]) }));
       // the carmine binding where it meets the head: two turns of cord seated in the cloth
       const bindUV = { rect: liningMid, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0.1, 0.9] };
       gs.push(ribbon(f, { n: tilt, o0: -35 * DEG, w: 0.052, along: 30, rowsT: [-1, 0, 1], lift: 0.0004, pillow: 0.0024, stack: st, bridge: 0, creases: 0, seed: 51, joint: head, uv: bindUV, wander: 0.012, hemStart: 0.55 }));
