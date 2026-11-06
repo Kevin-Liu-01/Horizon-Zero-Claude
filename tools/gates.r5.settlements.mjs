@@ -139,7 +139,7 @@ const CLIP_SHEET = (ids) => `(async () => {${READY}${SHEET}
         const who = await PP.spawn(ids[r], { x: pl.x, z: pl.z, yaw: face, seed: 3 });
         PP.tierAt(who, 0);
         const W = who.spec.clips.walk;
-        // what the W1 stage plays (a bench, a rail, a boat stand at W2: `clips.stage` swaps those clips out until then)
+        // what the W1 stage plays (a bench, a rail, a boat stand at W2: clips.stage swaps those clips out until then)
         const list = [...(who.spec.clips.stage || who.spec.clips.idle), W.clip];
         const CW = Math.floor(1600 / 5);
         for (let k = 0; k < Math.min(5, list.length + 1); k++) {
@@ -389,13 +389,14 @@ export const GATES = [
         if (set.length > bestSet.length) bestSet = set;
       }
       const capsOk = Object.values(tiers).every((t) => t.near.draws <= 4 && t.near.tris <= 20000 && t.lod1.draws <= 2 && t.lod1.tris <= 8000 && t.lod2.tris <= 4000 && t.procedural >= 1);
-      // only the nearest 4 cast: re-stand the group and read it
+      // only the nearest 4 cast: re-stand the group, stand her at its edge (all ten within 35 m, so all could cast), and read it
       await PP.stage({});
-      await frames(6);
+      { const p = C.player; C.input.keys.clear(); C.input.mouse.buttons = 0; p.position.set(pl.x, p.position.y, pl.z + 13); p._snapToGround?.(); p.camYaw = 0; p.camPitch = 0.02; }
+      await frames(12);
       const I = PP.info();
       const casters = I.people.filter((r) => r.casting);
       const dist = I.people.map((r) => r.distance).sort((a, b) => a - b);
-      const castOk = casters.length <= 4 && casters.every((r) => r.distance <= dist[3] + 1e-3);
+      const castOk = casters.length === Math.min(4, I.people.length) && casters.every((r) => r.distance <= dist[3] + 1e-3);
       return { pass: bestSet.length >= 3 && capsOk && castOk, detail: { distinctSilhouettes: bestSet, iou: pairs, tiers, capsOk, casters: casters.map((r) => r.id + '@' + r.distance), castOk, pending: 'W2: >= 10 archetypes; >= 8 archetypes in one Saltrow frame' } };
     })()`,
   },
