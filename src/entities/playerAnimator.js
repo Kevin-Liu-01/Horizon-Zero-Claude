@@ -4144,8 +4144,13 @@ export class PlayerAnimator {
      * 0.1-0.23 m at a re-aim, d1) */
     if (this.T.armFlow?.camAim && this.ctx.camera) {
       this.ctx.camera.getWorldDirection(_caD);
-      this._camRate = this._camCOk ? Math.acos(clamp(_caD.dot(this._camW), -1, 1)) / Math.max(1e-3, this._dtA || 0.016) : 0;
-      this._camW.copy(_caD);
+      // (the PLAYER's turn of the camera — her look input, camPitch / camYaw — not the lens's own framing moves:
+      // the aim's framing pulled the view a few degrees in the step a crouched re-aim began, and read as a camera
+      // turn it let the T jump 0.09 rad, the head 0.05-0.12 m, F3)
+      const cpN = p.camPitch ?? 0, cyN = p.camYaw ?? 0;
+      let dYw = cyN - this._camW.y; dYw -= Math.round(dYw / (2 * Math.PI)) * 2 * Math.PI;
+      this._camRate = this._camCOk ? Math.hypot(cpN - this._camW.x, dYw * Math.cos(cpN)) / Math.max(1e-3, this._dtA || 0.016) : 0;
+      this._camW.set(cpN, cyN, 0);
       // (the frame is the camera's ELEVATION in her forward plane: a turn of her own — her heading snapping to
       // the camera as the aim comes up out of a sideways run — still comes through the low-pass)
       _caC.set(0, clamp(_caD.y, -0.999, 0.999), 0); _caC.z = Math.sqrt(1 - _caC.y * _caC.y);
@@ -4199,14 +4204,7 @@ export class PlayerAnimator {
           this.model.localToWorld(_caG);
           _v7.subVectors(this._aimPred, _caG);
           // (...and combat's own fall-back: from nearer than 0.5 m it aims the bow along the camera)
-          // (read from the bow's own node — her bow hand, 0.5 m up the ray from the anchor — carried the same way)
-          if (this._nodeOk) {
-            _caN.subVectors(this._nodeCh, this._pivCh);
-            if (Math.abs(dE) > 1e-5) _caN.applyAxisAngle(_caX, -dE * clamp(this._tW ?? 0, 0, 1));
-            _caN.add(this._pivCh);
-            this.model.localToWorld(_caN);
-            if (_caN.distanceToSquared(this._aimPred) < 0.25) _v7.copy(_caD).multiplyScalar(2);
-          } else if (_v7.lengthSq() < 0.25) _v7.copy(_caD).multiplyScalar(2);
+          if (_v7.lengthSq() < 0.25) _v7.copy(_caD).multiplyScalar(2);
           this._aimPrev.copy(cmb.aimPoint); this._aimPrevOk = true;
         } else if (this.T.armFlow) {
           // (a look near the level moves a far ground hit metres a step: nothing to extrapolate)
