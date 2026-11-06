@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "about": "CALIMA grade sets (look-post, docs/ROUND5-LOOK.md L-01/L-02/L-14). Display-space grade baked per set into a 32^3 RGBA8 LUT by src/core/look.js; two slots blend on the GPU. Hues are CIE LCh degrees (D65).",
+  "lutSize": 32,
+  "look": { "exposure": "calibrate", "slope": [1.0, 0.99, 0.97], "power": 1.22, "sat": 1.12 },
+  "vignette": 0.28,
+  "default": "golden",
+  "sets": {
+    "golden": {
+      "shadowTint": [1.03, 0.93, 1.08], "shadowRange": [0.05, 0.45],
+      "highlightTint": [1.04, 1.0, 0.93], "highlightRange": [0.55, 0.95],
+      "contrast": 1.06, "pivot": 0.45,
+      "satLuma": [0.92, 1.05, 0.85], "satRange": [0.04, 0.3, 0.62, 0.98],
+      "hue": [
+        { "name": "olive to amber", "from": 75, "to": 110, "feather": 14, "rotate": -12, "chroma": 0.85, "minChroma": 6 },
+        { "name": "greens", "from": 110, "to": 175, "feather": 12, "rotate": 0, "chroma": 0.9, "minChroma": 4 },
+        { "name": "Orchil violets", "from": 290, "to": 340, "feather": 14, "rotate": 0, "chroma": 1.08, "minChroma": 6 }
+      ]
+    },
+    "noon": {
+      "shadowTint": [1.015, 0.96, 1.05], "shadowRange": [0.05, 0.45],
+      "highlightTint": [1.02, 1.0, 0.97], "highlightRange": [0.55, 0.95],
+      "contrast": 1.04, "pivot": 0.45,
+      "satLuma": [0.94, 1.02, 0.88], "satRange": [0.04, 0.3, 0.62, 0.98],
+      "hue": [
+        { "name": "olive to amber", "from": 75, "to": 110, "feather": 14, "rotate": -8, "chroma": 0.88, "minChroma": 6 },
+        { "name": "greens", "from": 110, "to": 175, "feather": 12, "rotate": 0, "chroma": 0.92, "minChroma": 4 },
+        { "name": "Orchil violets", "from": 290, "to": 340, "feather": 14, "rotate": 0, "chroma": 1.06, "minChroma": 6 }
+      ]
+    },
+    "dusk": {
+      "shadowTint": [1.02, 0.92, 1.12], "shadowRange": [0.05, 0.5],
+      "highlightTint": [1.06, 0.98, 0.95], "highlightRange": [0.5, 0.95],
+      "contrast": 1.05, "pivot": 0.42,
+      "satLuma": [0.9, 1.04, 0.88], "satRange": [0.04, 0.3, 0.62, 0.98],
+      "hue": [
+        { "name": "olive to amber", "from": 75, "to": 110, "feather": 14, "rotate": -14, "chroma": 0.8, "minChroma": 6 },
+        { "name": "greens", "from": 110, "to": 175, "feather": 12, "rotate": 0, "chroma": 0.85, "minChroma": 4 },
+        { "name": "Orchil violets", "from": 285, "to": 345, "feather": 14, "rotate": 0, "chroma": 1.1, "minChroma": 6 }
+      ]
+    },
+    "calima": {
+      "shadowTint": [1.04, 0.95, 0.98], "shadowRange": [0.05, 0.45],
+      "highlightTint": [1.03, 0.99, 0.94], "highlightRange": [0.55, 0.95],
+      "contrast": 1.0, "pivot": 0.45,
+      "satLuma": [0.95, 0.95, 0.9], "satRange": [0.04, 0.3, 0.62, 0.98],
+      "hue": [
+        { "name": "olive to amber", "from": 75, "to": 110, "feather": 14, "rotate": -10, "chroma": 0.9, "minChroma": 6 },
+        { "name": "greens", "from": 110, "to": 175, "feather": 12, "rotate": 0, "chroma": 0.9, "minChroma": 4 }
+      ]
+    }
+  },
+  "hours": [[5.5, "dusk"], [7.0, "golden"], [9.5, "noon"], [15.5, "noon"], [16.5, "golden"], [19.2, "golden"], [19.75, "dusk"], [23.0, "dusk"]]
+}

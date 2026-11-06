@@ -81,6 +81,7 @@ export function screenPixels(R, buf, width, height, float, { background = null, 
   const n = width * height * 4;
   const k = float ? 1 : 1 / 255;
   const aces = R.toneMapping === THREE.ACESFilmicToneMapping;
+  const look = R.calLook?.lookActive ? R.calLook.look : null, _lk = [0, 0, 0];
   const expo = (R.toneMappingExposure ?? 1) / 0.6;
   const fit = (v) => (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081);
   const enc = (c) => { c = c < 0 ? 0 : c > 1 ? 1 : c; return 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055); };
@@ -98,7 +99,9 @@ export function screenPixels(R, buf, width, height, float, { background = null, 
       if (a > 1e-4) {
         if (flS) { r = flS[0]; g = flS[1]; b = flS[2]; } else {
           let lr = buf[i] * k / a, lg = buf[i + 1] * k / a, lb = buf[i + 2] * k / a;   // un-premultiply
-          if (aces) {
+          if (look) {   // look-post (L-01, grant): the engine's AgX + look, display linear
+            _lk[0] = lr; _lk[1] = lg; _lk[2] = lb; look.toneMap(_lk, _lk); lr = _lk[0]; lg = _lk[1]; lb = _lk[2];
+          } else if (aces) {
             lr *= expo; lg *= expo; lb *= expo;
             const ir = 0.59719 * lr + 0.35458 * lg + 0.04823 * lb;
             const ig = 0.07600 * lr + 0.90834 * lg + 0.01566 * lb;

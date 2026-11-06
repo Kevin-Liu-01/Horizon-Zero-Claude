@@ -392,13 +392,17 @@ function readOutputParams(engine, P) {
   P.shadow[0] = S?.r ?? 1; P.shadow[1] = S?.g ?? 1; P.shadow[2] = S?.b ?? 1;
   P.highlight[0] = H?.r ?? 1; P.highlight[1] = H?.g ?? 1; P.highlight[2] = H?.b ?? 1;
   P.bloomThr = engine?.bloom?.threshold ?? 1.08;
+  // look-post (L-01, grant): under AgX the engine's own exact inverse (engine.look) replaces the ACES branch
+  P.look = engine?.lookActive ? engine.look : null;
+  P.lookVer = P.look ? P.look.version : 0;
   return P;
 }
 
 function paramSig(P) {
   return P.exposure + P.contrast * 3 + P.saturation * 7 + P.mix * 11 + (P.aces ? 13 : 0)
     + P.lift[0] * 17 + P.lift[1] * 19 + P.lift[2] * 23 + P.shadow[0] * 29 + P.shadow[1] * 31
-    + P.shadow[2] * 37 + P.highlight[0] * 41 + P.highlight[1] * 43 + P.highlight[2] * 47 + P.bloomThr * 53;
+    + P.shadow[2] * 37 + P.highlight[0] * 41 + P.highlight[1] * 43 + P.highlight[2] * 47 + P.bloomThr * 53
+    + P.lookVer * 59 + (P.look ? 61 : 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -575,7 +579,7 @@ export class LampSystem {
     this.capacity = opts.capacity ?? BEAM.capacity;
     this.records = [];
     this._P = { exposure: 1, aces: true, contrast: 1, saturation: 1, mix: 1,
-      lift: [0, 0, 0], shadow: [1, 1, 1], highlight: [1, 1, 1], bloomThr: 1.08 };
+      lift: [0, 0, 0], shadow: [1, 1, 1], highlight: [1, 1, 1], bloomThr: 1.08, look: null, lookVer: 0 };
     this._sig = NaN;
     this.solves = 0;
     /** The tokens as sRGB triples, and the solver's output scratch (a re-solve allocates nothing). */
@@ -721,7 +725,7 @@ export class LampSystem {
     const x = this._x;
     for (let i = 0; i < LAMP_ORDER.length; i++) {
       const id = LAMP_ORDER[i];
-      outputInverse(this._tokRgb[id], P, x);
+      if (P.look) P.look.invert(this._tokRgb[id], x); else outputInverse(this._tokRgb[id], P, x);
       const h = this.hdr[id];
       h.r = x[0]; h.g = x[1]; h.b = x[2];
       // the core: x2.5, raised until its HDR luminance clears the bloom threshold by CORE_OVER
@@ -827,9 +831,9 @@ export class LampSystem {
     const rr = E ? E.renderer : null, gu = E && E.grade ? E.grade.uniforms : null;
     if (rr && gu) {
       const e = rr.toneMappingExposure, c = gu.uContrast.value, sa = gu.uSaturation.value, mx = gu.uGradeMix.value;
-      const bt = E.bloom ? E.bloom.threshold : 1.08, tm = rr.toneMapping;
-      if (e !== this._pe || c !== this._pc || sa !== this._ps || mx !== this._pm || bt !== this._pb || tm !== this._pt) {
-        this._pe = e; this._pc = c; this._ps = sa; this._pm = mx; this._pb = bt; this._pt = tm;
+      const bt = E.bloom ? E.bloom.threshold : 1.08, tm = rr.toneMapping, lv = E.look ? E.look.version : 0;
+      if (e !== this._pe || c !== this._pc || sa !== this._ps || mx !== this._pm || bt !== this._pb || tm !== this._pt || lv !== this._plv) {
+        this._pe = e; this._pc = c; this._ps = sa; this._pm = mx; this._pb = bt; this._pt = tm; this._plv = lv;
         this._solve(false);
       }
       // the lift / tint vectors change in place: the full signature is checked every 64 frames
