@@ -669,8 +669,9 @@ export function lidLines({ open, side, ink = '#1A100C', w = 0.00092, crease = 0.
     // the rim of the lower lid is wet skin in shade, a low warm tone: a pale band there makes her stare
     if (f > 0.0 && f < 1.04) {
       const dr = lo - T.Y;
-      if (dr > -0.0006 && dr < 0.0026) {
-        const k = (1 - smooth(0.0012, 0.0026, dr)) * smooth(-0.0006, -0.0001, dr) * 0.38;
+      // (fix round 2: still read as a pale line under the iris in the sun: darker, and a little wider)
+      if (dr > -0.0008 && dr < 0.0032) {
+        const k = (1 - smooth(0.0014, 0.0032, dr)) * smooth(-0.0008, -0.0001, dr) * 0.55;
         T.r *= 1 - k * 0.9; T.g *= 1 - k; T.b *= 1 - k;
       }
     }
@@ -987,7 +988,7 @@ export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris =
       const dUp = lid(mx, 1) - my, dLo = my - lid(mx, 0);
       // the upper lid, its thickness and its lashes shade the top of the ball; the lower lid a narrow band
       upShade = mix(0.3, 1, smooth(0.0002, 0.0034, dUp)) * mix(0.86, 1, smooth(0.0034, 0.0065, dUp));
-      loShade = mix(0.58, 1, smooth(0.00035, 0.0016, dLo));
+      loShade = mix(0.46, 1, smooth(0.0003, 0.0024, dLo));
       tear = (1 - smooth(0.00008, 0.0003, Math.abs(dLo - 0.00045))) * smooth(0.3, 0.6, 1 - Math.abs(q * 0.9));
       // the caruncle and the plica at the inner corner: a soft pink-red mound, never a white wedge
       const qi = mx * side < 0 ? q : 0;
