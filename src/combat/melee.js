@@ -556,6 +556,7 @@ export class Melee {
     this._queued = null;      // a swing asked for while the spear was on her back
     this._drawLunged = false; // the draw's step-in has been started (round 6)
     this._keyWas = false;     // melee-key edge
+    this._lmbBow = false; this._rollWas = false;   // R63 (a): an LMB held for the bow, and the roll's start edge
     this._aimYaw = 0;         // swing bearing relative to her facing (rad)
     /**
      * Gate/film override for the swing bearing. `_advanceStance` derives the
@@ -1502,7 +1503,20 @@ export class Melee {
     const canSwing = playing && !aiming && !wheelOpen && (p?.health ?? 1) > 0;
 
     // --- charge / release
-    const lmb = canSwing && ctx.input.mouseDown(0);
+    /* R63 (a) — the bow's LMB is not a spear press (hero-body targeted fix round 2; the one edit R63
+     * grants hero-body in this file, the press detection). An LMB already down when a roll begins, or
+     * down while RMB is held (which covers RMB coming up from a draw with LMB still held), belongs to the
+     * bow until it is released: no charge, no swing, no strike. Read as a press, it charged through a
+     * drawn dodge and swung on the step the aim came back (a strike resolved that the body never
+     * performed), and RMB up from a held draw drew the lance over her shoulder. */
+    const lmbDown = !!ctx.input.mouseDown(0), rolling = !!p?.dodging;
+    if (!lmbDown) this._lmbBow = false;
+    else if (ctx.input.mouseDown(2) || (rolling && !this._rollWas)) {
+      if (!this._lmbBow && this._charging) this._charging = false;   // (dropped, not swung)
+      this._lmbBow = true;
+    }
+    this._rollWas = rolling;
+    const lmb = canSwing && lmbDown && !this._lmbBow;
     if (lmb) {
       // the draw starts on the PRESS, not on the swing: 0.26 s of reach is
       // exactly the window a click spends deciding light-vs-heavy, so the

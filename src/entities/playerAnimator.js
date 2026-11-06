@@ -801,6 +801,38 @@ export class PlayerAnimator {
     const roll = this.lib?.get('roll');
     this.rollDuration = roll?.info.duration ?? 0;
     this._rollProg = roll?.root?.rootProgress ?? null;
+    /* hero-body targeted fix round 2 (R63 b; gate judge finding 2): the roll's root follows the PELVIS.
+     * `rootProgress` is the clip's root bone's travel; Roll_RM's root bone runs ahead of its hips and
+     * stops (the curve reaches 1 at about two thirds of the roll) while the hips catch up, 0.07 m a step
+     * against a still root, and a moving roll cancelled there handed over to the gait with the pelvis
+     * 0.3 m short of where the clip's last frame stands it: the whole body jumped. The clip's own pelvis
+     * travel along the roll (its hip track, character metres) is read here once: `_rollProgEff` is the
+     * root's progress with that travel folded in (monotone), and the rendered pelvis is held over the
+     * root by the same amount (`update`, the roll's correction), so the body's path in the world is the
+     * clip's exactly and the root moves under it. `rollExit.dodgeDist` mirrors player.js DODGE_DIST. */
+    this._rollProgEff = null; this._rollAx = 0; this._rollAz = 1;
+    {
+      const RX = this.T.rollExit, P = this._rollProg, info = roll?.info;
+      const tr = roll?.clip?.tracks?.find((x) => x.name === this.b.pelvis.bone.name + '.position');
+      if (RX?.dodgeDist && P && tr && info?.rootTrack && info.frames > 1) {
+        const RT = info.rootTrack, nF = info.frames, ex = RT[(nF - 1) * 3], ez = RT[(nF - 1) * 3 + 2], el = Math.hypot(ex, ez);
+        if (el > 1e-3) {
+          this._rollAx = ex / el; this._rollAz = ez / el;
+          const M = new THREE.Matrix3().setFromMatrix4(pelvisParent.matrixWorld);   // pelvis-parent local -> character
+          const it = tr.createInterpolant(), n = P.length, eff = new Float32Array(n), pv = new THREE.Vector3();
+          let f0 = 0, run = 0;
+          for (let i = 0; i < n; i++) {
+            const v = it.evaluate((i / (n - 1)) * roll.clip.duration);
+            pv.set(v[0], v[1], v[2]).applyMatrix3(M);
+            const f = pv.x * this._rollAx + pv.z * this._rollAz;
+            if (i === 0) f0 = f;
+            run = Math.max(run, P[i] + (f - f0) / RX.dodgeDist);
+            eff[i] = run;
+          }
+          if (Number.isFinite(run) && run > 0.5 && run < 1.6) this._rollProgEff = eff;
+        }
+      }
+    }
 
     /* ------------------------------ state ------------------------------- */
     this._moveW = 0; this._runW = 0; this._crouchW = 0; this._aimW = 0;
@@ -913,7 +945,7 @@ export class PlayerAnimator {
     this._gripValid = false;
     // hero-body targeted fix round 2: the roll's hand-over (`_rollExit`)
     this._rxPe = new THREE.Vector3(); this._rxD = new THREE.Vector3(); this._rxPeOk = false;
-    this._rxOn = false; this._rxT = 0; this._rxDur = 0; this._rxWas = false;
+    this._rxOn = false; this._rxT = 0; this._rxDur = 0; this._rxWas = false; this._rxAirWas = false;
     // aim diagnostics (written by _aimLayer, read by debugAim()/the gates)
     this._aimDbg = {
       idealGripDist: 0, reach: 0, slide: 0, nockToAnchor: 0, anchorDrop: 0, lmax: 0, pull: 0, restZ: 0,
@@ -1482,7 +1514,14 @@ export class PlayerAnimator {
    * clip time k — the dodge velocity curve. null when no roll clip is baked.
    */
   rollProgress(k) {
-    const P = this._rollProg;
+    // (hero-body targeted fix round 2: the root's curve with the pelvis's own travel folded in, see the constructor)
+    return this._rollCurve(this._rollProgEff || this._rollProg, k);
+  }
+
+  /** The roll's root-bone progress at k (the clip's own, before the pelvis is folded in), or null. */
+  rollRootProgress(k) { return this._rollCurve(this._rollProg, k); }
+
+  _rollCurve(P, k) {
     if (!P) return null;
     const x = clamp(k, 0, 1) * (P.length - 1);
     const i = Math.floor(x), f = x - i;
@@ -1814,6 +1853,16 @@ export class PlayerAnimator {
       this._charOf(b.pelvis.bone, _v1);
       const rise = _v1.y - this._pelvisRestY;
       if (rise > 0) pdy -= Math.min(rise * 0.6, 0.24) * this._dodgeW;
+    }
+    /* (hero-body targeted fix round 2, R63 b: ...and the pelvis's travel the root now carries is taken back
+     * off the pose, by the roll clip's weight, at the k the clip is scrubbed to — so the body's path is the
+     * clip's and the pelvis stays over the root: through the roll, and across a cancel, where the clip
+     * jumps to its last frame) */
+    const rollA = this.loco?.actions.roll;
+    if (this._rollProgEff && rollA && rollA.weight > 1e-3) {
+      const kR = clamp(rollA.time / Math.max(1e-3, rollA.getClip().duration), 0, 1);
+      const c = this.T.rollExit.dodgeDist * (this._rollCurve(this._rollProgEff, kR) - this._rollCurve(this._rollProg, kR)) * rollA.weight;
+      pdx -= c * this._rollAx; pdz -= c * this._rollAz;
     }
 
     /* ================ OVERLAY 1: locomotion additives ================ */
@@ -2583,14 +2632,20 @@ export class PlayerAnimator {
    * gait's on a smootherstep long enough that the hand-over moves it at most `rollExit.stepM` per
    * 1/60 s against her root; both legs are re-solved to the ankles the pose put down. On the final
    * pose (after the ground conform and the crouch-aim lift), before the arm's continuity reads it.
-   * No allocation.
+   * R63 (b): the landing is the same kind of hand-over (the air channel swaps the jump loop's pose for
+   * the landing clip's in one step): held and handed over the same way. No allocation.
    */
   _rollExit(p, dt) {
     const RX = this.T.rollExit, b = this.b, pe = b.pelvis;
     if (!RX || !pe || !b.thighL || !b.thighR || !b.footL || !b.footR) return;
     const dodging = !!p.dodging;
-    if (dodging || this._deadW > 0.02 || p.mantling) this._rxOn = false;
-    else if (this._rxWas && this._rxPeOk) {
+    // (R63 b: ...and the landing: the air channel swaps the jump loop's pose for the landing's in one step,
+    // the pelvis 0.18-0.22 m at full draw; the same hold on the step she is grounded again)
+    const air = !p.grounded && !dodging && !p.mantling;
+    const landed = this._rxAirWas && !air && !dodging;
+    this._rxAirWas = air;
+    if (dodging || air || this._deadW > 0.02 || p.mantling) this._rxOn = false;
+    else if ((this._rxWas || landed) && this._rxPeOk) {
       this._charOf(pe.bone, _rxV);
       this._rxD.subVectors(this._rxPe, _rxV);
       const L = this._rxD.length();

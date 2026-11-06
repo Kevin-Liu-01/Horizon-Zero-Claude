@@ -288,7 +288,9 @@ export const UBC_TUNE = {
   // hero-body targeted fix round 2: the roll's hand-over to the gait — the pelvis held where it was
   // rendered on the step the roll ends and handed to the gait's at most `stepM` m per 1/60 s against
   // her root, over `minS`..`maxS` s; a jump under `minM` m is left alone (see `_rollExit`)
-  rollExit: { stepM: 0.02, minM: 0.02, minS: 0.2, maxS: 0.8 },
+  // ...and the roll's root follows the pelvis's own travel (`dodgeDist`: player.js DODGE_DIST, the root's
+  // whole roll, m; see the animator's constructor and `rollProgress`)
+  rollExit: { stepM: 0.02, minM: 0.02, minS: 0.2, maxS: 0.8, dodgeDist: 3.4 },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)
