@@ -73,6 +73,26 @@ class Grid {
         if (d < best[2][0]) { best[2] = [d, i]; best.sort((u, w) => u[0] - w[0]); }
       }
     }
+    return this._blend(best, x, y, z);
+  }
+  /** `height`, over the points `skip(i)` does not reject (the other body parts' skin, R62 c). */
+  heightWhere(x, y, z, skip) {
+    const { cell, P } = this;
+    const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell);
+    let best = [[1e9, -1], [1e9, -1], [1e9, -1]];
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
+      const L = this.m.get(`${cx + a},${cy + b},${cz + c}`);
+      if (!L) continue;
+      for (const i of L) {
+        if (skip(i)) continue;
+        const d = (P[i * 3] - x) ** 2 + (P[i * 3 + 1] - y) ** 2 + (P[i * 3 + 2] - z) ** 2;
+        if (d < best[2][0]) { best[2] = [d, i]; best.sort((u, w) => u[0] - w[0]); }
+      }
+    }
+    return this._blend(best, x, y, z);
+  }
+  _blend(best, x, y, z) {
+    const { P, N } = this;
     if (best[0][1] < 0) return null;
     let nx = 0, ny = 0, nz = 0, h = 0, f = 0;
     for (const [d, i] of best) {
@@ -135,6 +155,31 @@ export function bindSnapshot(ctx, opts = {}) {
   return { edges, n, weightSumErr: +worst.toFixed(4), bindL, flip, piece: piece ? Array.from({ length: piece.count }, (_, i) => Math.round(piece.getX(i))) : null };
 }
 
+/** Each body vertex's part (R62 c), by its heaviest bone: 0 trunk, 1/2 upper arm L/R, 3/4 forearm + hand, 5/6 thigh, 7/8 shin + foot. */
+function bodyGroups(body) {
+  if (body.userData.__grp) return body.userData.__grp;
+  const names = body.skeleton.bones.map((b) => b.name);
+  const ofBone = names.map((nm) => {
+    const m = /_(l|r)$/.exec(nm);
+    if (!m) return 0;
+    const s = m[1] === 'l' ? 0 : 1;
+    if (/^upperarm/.test(nm)) return 1 + s;
+    if (/^(lowerarm|hand|index|middle|ring|pinky|thumb)/.test(nm)) return 3 + s;
+    if (/^thigh/.test(nm)) return 5 + s;
+    if (/^(calf|foot|ball)/.test(nm)) return 7 + s;
+    return 0;
+  });
+  const SI = body.geometry.getAttribute('skinIndex'), SW = body.geometry.getAttribute('skinWeight');
+  const g = new Int8Array(SI.count);
+  for (let i = 0; i < SI.count; i++) {
+    let bk = 0, bw = -1;
+    for (let k = 0; k < 4; k++) { const w = SW.getComponent(i, k); if (w > bw) { bw = w; bk = SI.getComponent(i, k); } }
+    g[i] = ofBone[bk] ?? 0;
+  }
+  Object.defineProperty(body.userData, '__grp', { value: g, enumerable: false });
+  return g;
+}
+
 const segDist = (x, y, z, a, b) => {
   const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
   const t = Math.max(0, Math.min(1, ((x - a.x) * abx + (y - a.y) * aby + (z - a.z) * abz) / (abx * abx + aby * aby + abz * abz || 1)));
@@ -173,19 +218,33 @@ export function measurePose(ctx, snap, opts = {}) {
   const headJ = body.skeleton.bones.findIndex((b) => b.name === 'Head');
   const SI = body.geometry.getAttribute('skinIndex'), SW = body.geometry.getAttribute('skinWeight');
   const G = new Grid(BP, BN, bn);
-  let inside = 0, headIn = 0, deepest = 0;
+  // R62 (c): a vertex whose nearest skin is itself under another body part, in this pose, cannot be seen: it is
+  // excluded and counted. A body part is a limb segment (upper arm, forearm + hand, thigh, shin + foot, each side)
+  // or the trunk (pelvis to head, clavicles); "under" = more than 4 mm inside the other parts' skin, within 3 cm.
+  const grp = bodyGroups(body);
+  const under = new Int8Array(bn).fill(-1);
+  const underOther = (j) => {
+    if (under[j] >= 0) return under[j] === 1;
+    const g = grp[j];
+    const q = G.heightWhere(BP[j * 3], BP[j * 3 + 1], BP[j * 3 + 2], (k) => grp[k] === g);
+    const u = !!q && q.dist < 0.03 && q.h < -0.004;
+    under[j] = u ? 1 : 0;
+    return u;
+  };
+  let inside = 0, headIn = 0, deepest = 0, creaseExcluded = 0;
   const inOff = [];
   for (let i = 0; i < n; i++) {
     const q = G.height(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
     if (!q) continue;
     if (q.h < -0.004 && q.dist < 0.05) {
+      if (underOther(q.i)) { creaseExcluded++; continue; }
       inside++;
       deepest = Math.min(deepest, q.h);
       if (SI.getX(q.i) === headJ && SW.getX(q.i) > 0.5) headIn++;
       if (opts.offenders) inOff.push([q.h, i]);
     }
   }
-  row.insideFrac = +(inside / n).toFixed(4); row.inside = inside; row.headIn = headIn; row.deepest = +deepest.toFixed(4);
+  row.insideFrac = +(inside / Math.max(1, n - creaseExcluded)).toFixed(4); row.inside = inside; row.creaseExcluded = creaseExcluded; row.headIn = headIn; row.deepest = +deepest.toFixed(4);
   if (opts.offenders) row.insideOffenders = inOff.sort((x, y) => x[0] - y[0]).filter((_, i) => i % Math.max(1, Math.floor(inOff.length / 60)) === 0).slice(0, 60).map(([h, i]) => [...at(i), +h.toFixed(3)]);
   // (c) stow kit and the held weapon vs the outfit
   const ON = vertexNormals(P, triList(outfit.geometry), n);

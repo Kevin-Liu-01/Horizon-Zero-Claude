@@ -228,7 +228,7 @@ const A_WEAPON_SWAP = {
 /* ------------------------------------------------------ A-variant-swap-matrix */
 const A_MATRIX = {
   id: 'A-variant-swap-matrix', kind: 'action', lane: LANE, timeout: 900000, settle: 400,
-  title: 'Pan I-III, Ash I x Sabina, Shepherd\'s x the poses that exist at W1 (idle, sprint, full draw at 0 and -0.55, lance light-1 and heavy contact), CPU-skinned: stretch <= 1.6, weights ok; <= 0.5 % of outfit vertices > 4 mm inside the skinned body, 0 in the head; stow and weapon vs outfit <= 5 mm; pieces >= 0.03 from the draw hand and head; the hat in its back socket >= 0.03 from the lance. Gaff, Windwall, pendulum poses PENDING (W2)',
+  title: 'Pan I-III, Ash I x Sabina, Shepherd\'s x the poses that exist at W1 (idle, sprint, full draw at 0 and -0.55, lance light-1 and heavy contact), CPU-skinned: stretch <= 1.6, weights ok; <= 0.5 % of outfit vertices > 4 mm inside the skinned body, 0 in the head (R62 c: a vertex whose nearest skin is itself under another body part is excluded and counted); stow and weapon vs outfit <= 5 mm; pieces >= 0.03 from the draw hand and head; the hat in its back socket >= 0.03 from the lance. Gaff, Windwall, pendulum poses PENDING (W2)',
   setup: `__CTX__.input.enabled = true;`,
   assert: placed(['openGround'], `(async () => {${PRE}
     freeze(); standAt(p, 'openGround'); await wait(300);
@@ -285,7 +285,7 @@ const A_MATRIX = {
     const fails = rows.filter((r) => r.stretch > 1.6 || r.weightSumErr > 0.01 || r.insideFrac > 0.005 || r.headIn > 0 || r.stowDeep < -0.005 || r.heldDeep < -0.005 || (r.pieceToHand != null && r.pieceToHand < 0.03) || (r.pieceToHead != null && r.pieceToHead < 0.03) || (r.hatToLance != null && r.hatToLance < 0.03));
     const pending = ['gaff hook-rip', 'Windwall guard', 'pendulum release'];
     return { pass: fails.length === 0, detail: { rows: rows.length, fails: fails.slice(0, 24), worst: {
-      stretch: Math.max(...rows.map((r) => r.stretch)), insideFrac: Math.max(...rows.map((r) => r.insideFrac)), stowDeep: Math.min(...rows.map((r) => r.stowDeep)), heldDeep: Math.min(...rows.map((r) => r.heldDeep)),
+      stretch: Math.max(...rows.map((r) => r.stretch)), insideFrac: Math.max(...rows.map((r) => r.insideFrac)), creaseExcludedMax: Math.max(...rows.map((r) => r.creaseExcluded ?? 0)), stowDeep: Math.min(...rows.map((r) => r.stowDeep)), heldDeep: Math.min(...rows.map((r) => r.heldDeep)),
       pieceToHand: Math.min(...rows.map((r) => r.pieceToHand ?? 9)), pieceToHead: Math.min(...rows.map((r) => r.pieceToHead ?? 9)), hatToLance: Math.min(...rows.map((r) => r.hatToLance ?? 9)) }, pendingPoses: pending, all: rows } };
   })()`),
 };
@@ -322,15 +322,21 @@ const STOW_BODY = `
     p.camYaw = y0;
     const cover = Math.max(...coverRows.map((r) => r.cover));
     const coverAt = coverRows.find((r) => r.cover === cover);
+    // R62 (b): the median over the 24 yaws <= 8 % of the head's box (each sweep, standing and moving; the larger
+    // median is graded), and the worst single yaw <= 20 %
+    const sweep = (mv) => coverRows.filter((r) => r.moving === mv).map((r) => r.cover).sort((a, b) => a - b);
+    const med = (L) => (L.length ? (L[(L.length - 1) >> 1] + L[L.length >> 1]) / 2 : 9);
+    const coverMedian = +Math.max(med(sweep(false)), med(sweep(true))).toFixed(3);
+    const coverOk = coverMedian <= 0.08 && cover <= 0.20;
 `;
 const A_STOW = {
   id: 'A-stow-clearance@armory', kind: 'action', lane: LANE, timeout: 120000, settle: 400,
-  title: 'Sprint 4 s, crouch-walk, dodge, a 24-yaw chase-camera sweep: every stowed item >= 0.05 m from the calf capsules, >= 0.05 m above terrain crouched, <= 8 % of the head\'s screen box covered (melee owns the row at its W1 exit; armory reads it on the art-pass kit)',
+  title: 'Sprint 4 s, crouch-walk, dodge, a 24-yaw chase-camera sweep: every stowed item >= 0.05 m from the calf capsules, >= 0.05 m above terrain crouched, the head\'s screen box covered <= 8 % at the median yaw and <= 20 % at the worst (R62 b; melee owns the row at its W1 exit; armory reads it on the art-pass kit)',
   setup: `__CTX__.input.enabled = true;`,
   assert: placed(['openGround'], `(async () => {${PRE}
     freeze(); standAt(p, 'openGround'); await wait(300);${STOW_BODY}
-    const pass = dCalf >= 0.05 && crouchLow >= 0.05 && cover <= 0.08 && frames_ > 60;
-    return { pass, detail: { dCalf, dPiece, crouchLow, crouchPiece, cover, coverAt, frames: frames_ } };
+    const pass = dCalf >= 0.05 && crouchLow >= 0.05 && coverOk && frames_ > 60;
+    return { pass, detail: { dCalf, dPiece, crouchLow, crouchPiece, coverMedian, coverWorst: cover, coverAt, frames: frames_, r62: 'cover: median of the 24 yaws <= 0.08, worst yaw <= 0.20' } };
   })()`),
 };
 
@@ -352,7 +358,7 @@ const motionPage = (id) => ({
   assert: placed(['openGround'], `(async () => {${PRE}
     freeze(); standAt(p, 'openGround'); await wait(300);
     await H.loadout.equipArmor(${JSON.stringify(id)}); await frames(6);${STOW_BODY}
-    const stow = { dCalf, dPiece, crouchLow, crouchPiece, cover, coverAt, frames: frames_, ok: dCalf >= 0.05 && crouchLow >= 0.05 && cover <= 0.08 };
+    const stow = { dCalf, dPiece, crouchLow, crouchPiece, coverMedian, coverWorst: cover, coverAt, frames: frames_, ok: dCalf >= 0.05 && crouchLow >= 0.05 && coverOk };
     // A-run-arms, its bars (hero-body row): sprint 4 s, wrist off the midline, below the shoulder, fore-aft range; no prance
     release(); await wait(300);
     standAt(p, 'openGround', { dx: 2 });
