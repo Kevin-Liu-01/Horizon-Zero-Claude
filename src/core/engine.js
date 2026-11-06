@@ -1324,7 +1324,7 @@ export class Engine {
     u.tLutB.value = this._lutTex[1];
     u.uLutMix.value = L.setB !== L.setA ? L.lutMix : 0;
     // grade: the LUT path under AgX (T.grade); the W0 grade under ACES follows the same mix
-    u.uGradeMix.value = agx ? (T.grade !== false ? L.gradeMix : 0) : L.gradeMix;
+    u.uGradeMix.value = agx ? (T.grade !== false && T.lut !== false ? L.gradeMix : 0) : L.gradeMix;
     u.uVignette.value = agx ? L.vignette : LOOK_W0.vignette;
     // bloom (L-07), scaled per weather (look.bloomScale: calima x1.25, overcast x0.6)
     const B = this.lookEnabled && T.bloomRetune !== false ? LOOK_BLOOM : LOOK_W0.bloom;
@@ -1355,6 +1355,11 @@ export class Engine {
    * calls this when the hour or the weather moves. Allocation-free.
    */
   setLookHour(h, weather = null, calimaWeight = null) {
+    this._lookOwned = true;   // world-sky drives the sets from here on: the bridge below stands down
+    return this._lookHour(h, weather, calimaWeight);
+  }
+
+  _lookHour(h, weather, calimaWeight) {
     const o = this._lookHourOut || (this._lookHourOut = { a: 'golden', b: 'golden', mix: 0 });
     setsForHourInto(this.look.grade, h, weather, calimaWeight, o);
     this.look.set(o);
@@ -1363,6 +1368,20 @@ export class Engine {
 
   /** Whether engine.look.evaluate() describes the screen (AgX on); false under setLookEnabled(false) or L-01 off. */
   get lookActive() { this._syncLook(); return this._agxOn === true; }
+
+  /**
+   * THE HOUR BRIDGE (W1 only; stands down the first time anyone calls setLookHour). Until
+   * world-sky calls engine.setLookHour per hour and weather, the engine reads the hour and the
+   * weather of the environment the automation harness publishes (window.__CTX__.environment)
+   * every 30 frames and picks the grade sets itself. Allocation-free; no EV (the L-03 EV offsets
+   * are world-sky's).
+   */
+  _lookBridge() {
+    if (this._lookOwned || (this._lookBridgeN = ((this._lookBridgeN | 0) + 1) % 30) !== 1) return;
+    const env = typeof window !== 'undefined' ? window.__CTX__?.environment : null;
+    if (!env || typeof env.time !== 'number') return;
+    this._lookHour(env.time, env.weather, null);
+  }
 
   /** false: the Round-5 W0 output (ACES 0.94, the W0 grade and bloom), for before/after shots and A/B. */
   setLookEnabled(on) {
@@ -2332,7 +2351,10 @@ export class Engine {
     // hysteresis is applied inline as limit * 1.3: never flicker on the boundary
     let sizeCulled = 0;
 
-    this.scene.traverse((o) => {
+    // R48 (c), look-post: the visit is built once (it used to be a fresh closure on every pass)
+    const C = this._cullState || (this._cullState = { cam: null, pool: null, dists: null, fovK: 0, cullPx: 0, sizeCulled: 0 });
+    C.cam = cam; C.pool = pool; C.dists = dists; C.fovK = fovK; C.cullPx = cullPx; C.sizeCulled = 0;
+    if (!this._cullVisit) this._cullVisit = (o) => {
       if (!o.isMesh) return;
       // Read the matrix the LAST render left behind instead of calling
       // getWorldPosition(), which walks the parent chain and recomputes
@@ -2354,20 +2376,21 @@ export class Engine {
         r = o.geometry?.boundingSphere?.radius ?? 0;
       }
       r *= scl;
+      const cam = C.cam, pool = C.pool, dists = C.dists;
       const dx = _wp.x - cam.x, dy = _wp.y - cam.y, dz = _wp.z - cam.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
       // ---- 2. screen-space small-mesh cull ----
       const wasCulled = o.userData.__sizeCulled === true;
-      if (cullPx > 0 && !o.userData.noSizeCull && !o.isInstancedMesh && r > 0) {
+      if (C.cullPx > 0 && !o.userData.noSizeCull && !o.isInstancedMesh && r > 0) {
         // Anything that glows keeps a far lower threshold: bloom turns a 4-pixel
         // emissive lens into a 200-pixel flare, so culling one by its geometry
         // size deletes something the player can see across the valley — and the
         // red eye / orange canister read IS the machine's tell. Measured on
         // film: hiding them at 7 px removed the strider's chest glare entirely.
         const glow = _glows(o.material);
-        const limit = glow ? cullPx * this.sizeCullGlowFactor : cullPx;
-        const px = 2 * r * fovK / Math.max(0.05, dist);
+        const limit = glow ? C.cullPx * this.sizeCullGlowFactor : C.cullPx;
+        const px = 2 * r * C.fovK / Math.max(0.05, dist);
         if (limit <= 0) {
           if (wasCulled) { o.visible = true; o.userData.__sizeCulled = false; }
           if (o.castShadow || o.userData.__shadowCulled === true) {
@@ -2377,7 +2400,7 @@ export class Engine {
         }
         if (px < limit || (wasCulled && px < limit * 1.3)) {
           if (!wasCulled && o.visible) { o.visible = false; o.userData.__sizeCulled = true; }
-          if (o.userData.__sizeCulled === true) sizeCulled++;
+          if (o.userData.__sizeCulled === true) C.sizeCulled++;
         } else if (wasCulled) {
           o.visible = true;
           o.userData.__sizeCulled = false;
@@ -2393,7 +2416,9 @@ export class Engine {
       if (!off && !o.castShadow) return; // never a caster: nothing to do
       pool.push(o);
       dists.push(Math.max(0, dist - r));
-    });
+    };
+    this.scene.traverse(this._cullVisit);
+    sizeCulled = C.sizeCulled;
     this.sizeCulled = sizeCulled;
     // Distance cull first, then a hard caster budget: in a staged eight-machine
     // fight everything is inside 30 m and distance alone saves nothing, so the
@@ -2762,6 +2787,7 @@ export class Engine {
     if (this._hold && this._holdFrames > 0 && this._holdW === this.renderer.domElement.width
       && this._holdH === this.renderer.domElement.height) { this._holdFrames++; return 0; }
     const t0 = performance.now();
+    this._lookBridge();
     this._syncLook();
     this._cullPass(realDt);
     this._csmUpdate();

@@ -160,9 +160,12 @@ const LOOK = `
   const statsOf = (cap) => LS.frameStats(cap.px, cap.W, cap.H, { step: 2 });
   /** camYaw that faces the sun (camera forward = (-sin yaw, -cos yaw)). */
   const sunYaw = () => { const s = __C.environment.sunDir; return Math.atan2(-s.x, -s.z); };
-  const __camSaved = { fn: null };
+  const __camSaved = { fn: null, delta: null };
+  /** Freeze the presentation clock too (wind, water, fire and the camera damping read wall time): engine.clock reads 0 s. */
+  const freezeWall = () => { if (!__camSaved.delta) { __camSaved.delta = __E.clock.getDelta; __E.clock.getDelta = () => 0; } };
   const unstage = () => {
     const p = __C.player;
+    if (__camSaved.delta) { __E.clock.getDelta = __camSaved.delta; __camSaved.delta = null; __E.clock.getDelta(); }
     if (__camSaved.fn) { p._updateCamera = __camSaved.fn; __camSaved.fn = null; }
     __E.requestTimeScale('studio', null);
   };
@@ -205,6 +208,8 @@ const LOOK = `
       cam.lookAt(hp.x, hp.y - 0.02, hp.z); cam.updateMatrixWorld();
     }
     await frames(o.frames ?? 24);
+    // wind and time frozen (ROUND5-LOOK L-00): the sim is at timeScale 0 and the wall clock now reads 0 s per frame
+    if (o.freeze !== false) { freezeWall(); await frames(3); }
     return { P, source, weather, hour: env.time };
   };
   /** A sheet of captured frames over the page (for the visual rows; the judge reads this screenshot). */
@@ -260,7 +265,8 @@ const TONEMAP = look(`
   const W = 64, H = 4;
   const inData = new Uint16Array(W * H * 4);
   const vals = [];
-  const put = (i, r, g, b) => { inData[i * 4] = THREE.DataUtils.toHalfFloat(r); inData[i * 4 + 1] = THREE.DataUtils.toHalfFloat(g); inData[i * 4 + 2] = THREE.DataUtils.toHalfFloat(b); inData[i * 4 + 3] = THREE.DataUtils.toHalfFloat(1); vals[i] = [r, g, b]; };
+  const H16 = THREE.DataUtils;
+  const put = (i, r, g, b) => { const q = [r, g, b].map((v) => H16.toHalfFloat(v)); inData[i * 4] = q[0]; inData[i * 4 + 1] = q[1]; inData[i * 4 + 2] = q[2]; inData[i * 4 + 3] = H16.toHalfFloat(1); vals[i] = q.map((h) => H16.fromHalfFloat(h)); };
   // row 0: the 64-step grey ramp 0.001 .. 32; row 1: (a) greys, (c) skew probes, the lamp tokens' HDR;
   // rows 2-3: 128 random HDR colours (seeded) for (b)
   for (let i = 0; i < 64; i++) { const v = 0.001 * Math.pow(32000, i / 63); put(i, v, v, v); }
@@ -381,8 +387,22 @@ const FRAME_STATS = look(`
   }
   L.set({ a: 'golden', b: 'golden', mix: 0 });
   const lutOk = Object.values(lutCheck).every((w) => w <= 1);
-  const pass = places.every((n) => rows[n].pass === true) && lutOk;
-  return { pass, detail: { places: rows, lutTexelWorst255: lutCheck, lutOk } };
+  // ROUND5-LOOK L-00: each look gate re-runs look.field at low and medium (the look is on at every tier)
+  const tiers = {};
+  const q0 = __E.quality;
+  for (const tq of ['medium', 'low']) {
+    __E.setQuality(tq); await frames(6);
+    const s = await stageLook('field');
+    if (s.skip) { tiers[tq] = { skip: s.skip }; continue; }
+    const cap = await grabCanvas(); const st = statsOf(cap); const g = gradeBars(st, 'field');
+    tiers[tq] = { lookOn: __E.lookActive && __E.tier.look.grade !== false && __E.grade.uniforms.uGradeMix.value > 0, met: g.met,
+      miss: g.miss.map((m) => m.key + '=' + m.v), lo20hue: st.lo20.hue, midB: st.mid.b, chroma: st.chroma };
+    unstage();
+  }
+  __E.setQuality(q0); await frames(4);
+  const tiersOk = Object.values(tiers).every((t) => t.lookOn === true);
+  const pass = places.every((n) => rows[n].pass === true) && lutOk && tiersOk;
+  return { pass, detail: { places: rows, lutTexelWorst255: lutCheck, lutOk, fieldAtTiers: tiers, tiersLookOn: tiersOk } };
 `);
 
 /* ------------------------------------------------------------------ A-look-suite */
@@ -419,11 +439,11 @@ const SUITE = look(`
     fragmentShader: 'varying float vD; void main(){ gl_FragColor = vec4(vD, 0.0, 0.0, 1.0); }',
   });
   const drt = new THREE.WebGLRenderTarget(160, 90, { type: THREE.FloatType });
-  const sky = __C.scene.background;
   const probeMats = boxes.map(({ m }) => { const k = m.material; m.material = depthMat; return k; });
   const hidden = [];
   __C.scene.children.forEach((o) => { if (o.name !== 'look-depth-probe' && o.visible && !o.isLight) { hidden.push(o); o.visible = false; } });
-  __R.setRenderTarget(drt); __R.setClearColor(0x000000, 1); __R.clear(); __R.render(__C.scene, cam);
+  const cc0 = new THREE.Color(); __R.getClearColor(cc0); const ca0 = __R.getClearAlpha();
+  __R.setRenderTarget(drt); __R.setClearColor(0x000000, 1); __R.clear(); __R.render(__C.scene, cam); __R.setClearColor(cc0, ca0);
   const dpx = new Float32Array(160 * 90 * 4); __R.readRenderTargetPixels(drt, 0, 0, 160, 90, dpx); __R.setRenderTarget(null);
   boxes.forEach(({ m }, k) => { m.material = probeMats[k]; }); hidden.forEach((o) => { o.visible = true; });
   const BINS = [15, 60, 200, 600, Infinity];
@@ -552,7 +572,7 @@ const BLOOM = look(`
     const cam2 = __C.camera, dir = new THREE.Vector3(); cam2.getWorldDirection(dir);
     const pos = cam2.position.clone().addScaledVector(dir, 40);
     const coreR = 0.12, ringR = 0.3;
-    const mk = (r, c, z) => { const m = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(c.r, c.g, c.b), toneMapped: true }));
+    const mk = (r, c, z) => { const m = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(c.r, c.g, c.b), fog: false }));
       m.position.copy(pos).addScaledVector(dir, -z); m.lookAt(cam2.position); m.name = 'look-lamp-probe'; __C.scene.add(m); return m; };
     const mRing = mk(ringR, ring, 0), mCore = mk(coreR, core, 0.01);
     await frames(4);
@@ -711,7 +731,7 @@ const GLOW_FILM = lookJob(`
     const core = lamps?.coreHdr?.('hostile'), ring = lamps?.lampHdr?.('hostile'), calm = lamps?.coreHdr?.('calm'), calmR = lamps?.lampHdr?.('calm');
     const cam = __C.camera, dir = new THREE.Vector3(); cam.getWorldDirection(dir);
     const made = [];
-    const disc = (c, r, d, side, z) => { if (!c) return; const m = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(c.r, c.g, c.b) }));
+    const disc = (c, r, d, side, z) => { if (!c) return; const m = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(c.r, c.g, c.b), fog: false }));
       const right = new THREE.Vector3().crossVectors(dir, cam.up).normalize();
       m.position.copy(cam.position).addScaledVector(dir, d).addScaledVector(right, side).addScaledVector(dir, -z); m.lookAt(cam.position); m.name = 'look-lamp-probe'; __C.scene.add(m); made.push(m); };
     disc(ring, 0.3, 18, -3, 0); disc(core, 0.12, 18, -3, 0.01); disc(calmR, 0.3, 18, 3, 0); disc(calm, 0.12, 18, 3, 0.01);
@@ -754,7 +774,9 @@ async function aliases() {
       if (row.kind === 'runner' && typeof g.check === 'function' && want === 'A-gpu-tier-box') {
         // the box witness rewrites A-gpu-tier's assert by id: point it at the alias
         const chk = g.check;
-        row.check = (ctx) => chk({ ...ctx, GATES: ctx.GATES.map((r) => (r.id === 'A-gpu-tier@look-post' ? Object.defineProperty(Object.defineProperties({}, Object.getOwnPropertyDescriptors(r)), 'id', { value: 'A-gpu-tier' }) : r)) });
+        // (a Proxy that answers to the target's id and writes the assert through to the alias row)
+        row.check = (ctx) => chk({ ...ctx, GATES: ctx.GATES.filter((r) => r.id !== 'A-gpu-tier')
+          .map((r) => (r.id === 'A-gpu-tier@look-post' ? new Proxy(r, { get: (t, k) => (k === 'id' ? 'A-gpu-tier' : t[k]), set: (t, k, v) => { t[k] = v; return true; } }) : r)) });
       }
       out.push(row);
     }
