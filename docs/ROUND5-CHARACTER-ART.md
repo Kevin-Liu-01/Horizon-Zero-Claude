@@ -1,6 +1,8 @@
-# ROUND 5 — character-art (W1; R54, R56, R58)
+# ROUND 5 — character-art (W1; R54, R56, R58, R59)
 
-Brea's close-up, rebuilt in the recipe, and the kit settlements builds NPCs on (R56, R57 c). Budgets did not move.
+Brea's close-up, rebuilt in the recipe, and the kit settlements builds NPCs on (R56, R57 c). Budgets did not move. Fix round 1
+(Nov 6) answers the gate judge's and the engineering + film judge's findings; §1 marks what it changed, §2 measures it, §3 is the
+reusable API, §4 maps every finding to what was done.
 
 ## 1. What was built
 
@@ -9,70 +11,86 @@ from the CC0 UBC sources only. Nothing was downloaded.
 
 | brief | now |
 |---|---|
-| blocky paper band, torn alpha, no folds | Wound cloth on the measured head form (`woundHeadwrap`): a base turn, two crossing turns, a gathered crown, a wound topknot with a seated carmine binding, a wrap knot. Each layer lies on the ones under it (`clothStack`, a radial height field of everything wound so far) and sends both hems under them, so no hem stands in the air and two turns meet on the upper one's hem. Whatever a later layer wholly covers is dropped (`cullCovered`, about 1 k tris), which pays for a closed shell inside the head wrap, the bun and the knot: models render FrontSide and the skull is culled, so a lifted hem used to be a slit straight through her head |
-| dark helmet shell | Coil cards at the nape and temples with a broken outline, with real value now (crowns of dark warm brown over the bible's near-black, little metal). Close coils painted at BOTH temples under the real hem (`hairBandUnderHem`, which reads the wrap's `hemGap`), so the two sides match whatever the turns do. The knot tail is a frayed cloth end on the same `dyn_hairKnotTail` chain |
-| blunt, oversized nose; weak jaw | Tip lifted, narrowed and given a plane, alae in, bridge straightened; the cheekbone comes up and forward rather than out and the jaw angle down rather than out, so the face reads longer and not wide; the far cheek's outline and the ear's rim are refined and smoothed (`refineEdges`, `smoothPositions`). Fix round 1 (R54 "wide and flat", "a ball nose"): the lobule narrows to a defined tip and the alar lobules slim (across only, so the profile and its IoU do not move); the jaw angle now comes down and 1.3 mm IN (its 6 mm delta kept), the mandible's line 0.9 mm in; a soft hollow under each cheekbone (3.4 mm), so the bone reads as a lit plane over a shaded fall to the jaw |
-| faceted ears (fix round 1) | The source's normal map was baked against the stock ear's own vertex normals; on the moved, re-split and softened ear it printed flat planes across the helix and the concha. The ear's normals are no longer softened, and the map's relief goes in at half (`ears` layer, `T.nflat` 0.5): the folds read, the planes do not |
-| black nostrils, pale shard, lit lines in a back light (fix round 1) | The game's sun shadow samples 3.5 cm out along the vertex normal (`environment.js` `normalBias 0.035`), so anything facing a sun that a few millimetres of her own skin hides from it lit up anyway. `leanInwardNormals` now ends with three ray passes on the mid-face: a deep fold shades by its bent normal (the way out of it, 96 rays, 3 cm); the nose's underside takes the light the upper lip throws up into it (a forward lean, safe in a back light); and for 36 back suns (azimuth 100..260 deg, up to 52 deg high) a vertex that faces one its own skin shuts it off from turns away from it by the least projection. The nostrils are graded dark brown round a dark slit, the columella no longer a pale shard between two black holes, and the alar groove, lip corners and lower lids stay dark with the sun behind her |
-| concentric rings on the topknot's crown (fix round 1) | The crown cap's radial pleats reach down to 31 deg on the bun (was 46), 10 pleats over 4 rings: the turns' edges under it are culled, so from above and behind the crown reads as gathered pleats |
-| flat skin | Ray-cast AO (head, wrap and collar occlude) baked into albedo and ORM, convexity shading, seamless tone across UV seams, colour zones, pores in height and ORM, creases. A hero fill through the emissive slot (same image, no new map or draw), which follows the scene's ambient (R59 c: full by day, 7.5 % at 01:00) |
-| flat salt stripe | A finger-wiped stroke of uneven width, cracked over its whole length in the albedo as well as the height (full sun clips the paste, so a crack in the normal alone vanished on the lit cheek), with a painted light top edge, a shaded bottom edge and a contact line on the skin |
-| scar | 3 cm, down from under the wrap and THROUGH the left brow, out of its lower edge. The hairs and the soft mass part over the brow's full height. A sunk pale channel with raised, darker lips, so it has relief |
+| blocky paper band, torn alpha, no folds | Wound cloth on the measured head form (`woundHeadwrap`): a base turn, two crossing turns, a gathered crown, a wound topknot with a seated carmine binding, a wrap knot. Each layer lies on the ones under it (`clothStack`) and sends both hems under them. Whatever a later layer wholly covers is dropped (`cullCovered`), which pays for closed shells inside the head wrap, the bun and the knot |
+| see-through (fix round 1, `A-wrap-closed`) | Measured on the LIVE pose (the head bowed about 20 deg, the arms down): 3,397 enclosed background px over 18 of 96 views became 0 offline and 8 px in 1 view live (b3), then the last fix (§2). Causes and cures: a look down the collar past the bowed head slid between her back and the single-sided smock and out through it (a dark lid inside the collar, `appendCollarSkirt`, §3 step 8); the crease where the bun meets the head wrap (the bun's shell swells into it); slits at the knot's side (the knot's shell stands proud, its turns sink their hems); the crown cap's hem (dives 6 mm under the turns); pinholes in the hair and lashes (two-sided scalp cards that hug the scalp, coil strands a texel fatter below the tips, shut pockets filled, the outer lashes splay less) |
+| dark helmet shell | Coil cards at the nape and temples with a broken outline, with real value (crowns of dark warm brown over the bible's near-black). Close coils painted at BOTH temples under the real hem (`hairBandUnderHem`). The hairline's edge wanders at two scales (fix round 1), so it breaks into coils, not a clipper's line. The knot tail is a frayed cloth end on the same `dyn_hairKnotTail` chain |
+| blunt, oversized nose; weak jaw | Tip lifted, narrowed and given a plane, alae in, bridge straightened; cheekbone up and forward, jaw angle down; the far cheek's outline and the ear's rim refined (`refineEdges`, `smoothPositions`). Fix round 1 (R54 "wide and flat", "a ball nose"): the lobule narrows to a defined tip and the alar lobules slim (across only, so the profile does not move), a small tip-defining point with its underside tucked up; the jaw angle comes down and 1.3 mm IN (its 6 mm delta kept), the mandible's line 0.9 mm in; a soft 3.4 mm hollow under each cheekbone, so the bone reads as a lit plane over a shaded fall to the jaw |
+| faceted ears (fix round 1) | The source's normal map was baked against the stock ear's own vertex normals; on the moved, re-split and softened ear it printed flat planes across the helix and the concha. The ear keeps its unsoftened normals and the map's relief goes in at half (`ears` layer): the folds read, the planes do not |
+| black nostrils, a pale shard, lit lines in a back light (fix round 1) | The game's sun shadow samples 3.5 cm out along the vertex normal (`environment.js` `normalBias 0.035`), so a surface that a few millimetres of her own skin hide from the sun lit up anyway. `leanInwardNormals` ends with three ray passes on the mid-face: a deep fold shades by its bent normal; the nose's underside takes the light the upper lip throws into it (a forward lean, safe in a back light); and for 36 back suns a vertex its own skin shuts off turns away from it by the least projection. The nostrils are graded dark brown round a dark slit; no pale columella shard; the alar groove, the lip corners and the lower lids stay dark with the sun behind her |
+| topknot crown (fix round 1) | The crown cap's radial pleats reach down to 31 deg (was 46), 10 pleats over 5 rings and 24 segments, 3 mm over the turns (none pokes through as a tone block), reading only 56 px of the panel's length (no concentric rings); more segments on the bun's turns, so its outline has no corners |
+| flat skin | Ray-cast AO baked into albedo and ORM, convexity shading, seamless tone, colour zones, pores, creases. A hero fill through the emissive slot (same image, no new map or draw) that follows the scene's ambient (R59 c: 0.963 at noon, 0.511 at dusk, 0.075 at 01:00; `A-brea-fill`) |
+| flat salt stripe | A finger-wiped stroke of uneven width, cracked over its whole length in the albedo as well as the height, a painted light top edge, a shaded bottom edge |
+| scar | 3 cm, down from under the wrap THROUGH the left brow and out of its lower edge; the hairs and the soft mass part over the brow's full height; a sunk pale channel with raised darker lips |
 | ∴ as three white blobs | Three small dark ink dots on the back of the right hand |
-| eyes without depth | 160 px procedural eye patch: fibred iris, limbal ring, catch-lights, sclera that goes warm and low to the corners with a wet line. A cornea dome in the geometry (`corneaDome`), so the iris and a wet form read from the side. Lash cards on the true margin, thin at the outer corner, so from the side they are hair and not a slab |
-| (backlit) | What faces into the head is near-black in the albedo with its normal bent or leaned out of any sun behind her (`leanInwardNormals`, `inward`, `nostrils`, including the source's normal inside the nostril through `T.nflat`): the shadow pass renders back faces, so those walls had no caster in front of them and burned white |
-| (collar) | A closed dark skirt under the outfit (`appendCollarSkirt`, 120 tris), so a look down the collar never meets the ground through her |
-| wrap tail | The root starts inside the knot and is a closed gathered roll, reading from both faces, opening to the flat strip. The inner face is mostly orchil with a carmine centre (`facing`), so carmine stays the accent the bible's 6 % asks for. The chain rig and points are hero-body's and are untouched |
+| eyes without depth | 160 px procedural eye patch: fibred iris, limbal ring, catch-lights, a wet line; a cornea dome in the geometry, so the iris reads from the side. Fix round 1: the white falls off sooner and further toward the corners, so in profile it is a warm shaded wedge, not a pale plate |
+| wrap tail | The root starts inside the knot as a closed gathered roll. Fix round 1 (R54, "the carmine lining is the loudest thing on her"): the violet facing turns back over 38 % of the lining at each selvedge (was 30 %), so a quarter of its width is carmine. The chain rig and points are hero-body's and are untouched |
 
 ## 2. Gates (`tools/gates.r5.character-art.mjs`; `node tools/gates.mjs --port 5266 --lane character-art`)
 
-Runs on port 5266, Nov 3, final build `brea.glb` 589,120 bytes. Visual rows are the builder's own reading (R29: the independent judge grades them).
+Fix round 1, Nov 6, port 5266. Final build: `brea.glb` 580,848 bytes, sha256 `a68b33ec1c6c…` (`build-assets --only hero-body`, byte-identical on
+rebuild). Runs: **b4** = the final build (every lane row, the must-stay-green rows, the code-side global rows); **b3** = the build one step
+earlier (only the collar lid, the bun's segments and the coil fringe differ), which carried the slow global rows. Visual rows are my
+own reading: the independent judge grades them (R29).
 
 | gate | result | measured |
 |---|---|---|
-| **A-brea-budget** | PASS | 9,804 tris live (skin 6,252 + hair/wrap 3,552; ≤ 10 k), 2 draws, 1 skeleton, skin 1024² + 512² normal + 512² ORM, hair/wrap 512² x 3, 589,120 bytes (≤ 0.7 MB); alpha cut 0.5, per-vertex shadow, face normal energy 2.51 (≥ 0.6), AO range 35..255 (≥ 90) |
-| A-face-delta | PASS | ≥ 6 mm on 5 of 7 (bridge 7.88, cheek 6.38, jaw 6.63, chin 6.75, brow 7.39; tip 4.46 and upper lip 1.57 are below it on purpose: the blunt tip came from pushing it out), eye socket 0.211 mm, profile IoU 0.8909 (≤ 0.92) |
-| A-human-bind | PASS | 52 / 52 pairs, hipScale 0.994 |
-| A-hero-draws | PASS | hero 4 draws, 2 casters, 19,860 tris (body 9,804, outfit 7,876, kit 2,180) |
-| A33-hair-bounce | PASS | `dyn_hairKnotTail_04`: detrended 0.077 m (≥ 0.04), 3.73 Hz vs footfall 3.73 Hz |
-| A-tail-legible | PASS, 3 of 4 runs | 0 of 24 failing moments in r1, r5, r6. r4 had 1 of 24 (reach 3 in both side views at +4.20 s). This is hero-body's open tail-margin finding (known flake about 3.5 % per run); it owns the fix |
-| A-wrap-clear | PASS | min clearance 0.055 m (≥ 0.05) |
-| A-brea-contrast | PASS | salt 6.03:1, sand ΔE 21.5, 22.7 % of pixels at 3:1 |
-| A-outfit-merge-dispose | PASS | geometries 152 → 152, textures 115 → 115, skeletons 3 → 3 |
-| A90b-memory-attribution | PASS | 0 offenders |
-| A90-memory-stability | PASS | heap -1.2 %, geometries +17, textures -3, objects -33 |
-| A1, A20b, A-assets-tracked, A-build-deterministic, A-no-horizon-terms-player / -code, A-alloc-rate and A-vram-ledger (instruments) | PASS | namecheck `--code` 1365 of 1365 |
-| A-licence-manifest | PENDING | third-party PENDING on another lane's row (`r5-poc-rock-scan`: `archive_sha256`, `retrieved`); every other term PASS |
-| A-port-guard | PENDING | a lane run has no sealed carried run: the orchestrator's row |
-| A-ID-ip-assets-gone | FAIL in this tree | The scan passes (`ipHits` 0). Only a negative control fails; main's 2b4c9b6 fixes that control, and this tree has not merged it yet. Not this lane's content |
-| A21-real-draw-calls | FAIL, timing term only | Draws 275 of 350, triangles 3.93 M of 6.5 M pass. medianGpuMs 21.7 / 29.4 / 20.6 (vista / herd / fight) against 14. W0b's runs on main read 22-23 / 43-45 / 22-26 on a loud box, so nothing here points at this lane, though the boxes differ. R58 grades the timing at the W1 exit |
-| V-brea-closeup (day) | reads well | Front, 3/4, profile on her left, sun on her left front |
-| V-brea-closeup-dusk | reads well | The best of the set: warm key, the shadow side keeps its form |
-| V-brea-closeup-calima | reads, on a stand-in | `overcast`, because this tree has no calima state; re-film when world-sky lands. Skin is a little dark and dull in flat light |
-| V-brea-closeup-detail | reads well | Paste, eyes and hem hold at 0.3 m. The nape panel is half hidden by the wrap tail in the wind |
-| V-brea-face, V-brea-one-glance, V23-secondary-motion, V22-chase-framing | green to my reading | V22 PASS on its action term (fill 0.677). 5 of 5 silhouette cues; both cloth ends move |
+| **A-brea-budget** | PASS (b4) | 9,940 tris live (skin 6,897 + hair/wrap 3,043; ≤ 10 k), 2 draws, 1 skeleton, skin 1024² + 512² normal / ORM / AO, hair/wrap 512² x 3, 580,848 bytes (≤ 0.7 MB); alpha cut 0.5, per-vertex shadow, face normal energy 1.99 (≥ 0.6), AO range 52..255 (≥ 90) |
+| **A-wrap-closed** (new) | PASS (b4) | 0 enclosed background px over 96 views (24 azimuths x 4 elevations, 0.8 m, the live idle pose). Before: b1 3,296 px / 15 views, b2 3,397 / 18, b3 8 / 1 (a coil-card pinhole at the nape) |
+| **A-brea-fill** (new, R59 c) | PASS (b4) | emissive intensity 0.963 noon, 0.511 dusk, 1.0 overcast, 0.075 at 01:00 (bar ≤ 0.15) |
+| A-face-delta | PASS (b4) | ≥ 6 mm on 5 of 7 (bridge 7.88, cheek 6.30 / 6.31, jaw 6.29, chin 6.75, brow 7.39; tip 5.05 and upper lip 1.58 below on purpose), eye socket 0.213 mm (≤ 0.5), profile IoU 0.8618 live / 0.9113 recipe (≤ 0.92) |
+| A-human-bind | PASS (b4) | 52 / 52 pairs, hipScale 0.994 |
+| A-hero-draws | PASS (b4) | her own 4 draws, 2 casters, 19,996 tris (body 9,940, outfit 7,876, kit 2,180; ≤ 20 k under R38). In b3 the 9,948-tri body made 20,004 and the row failed; two bun ribbon segments paid it back |
+| A33-hair-bounce | PASS (b4) | `dyn_hairKnotTail_04` detrended 0.077 m (≥ 0.04), 3.73 Hz vs footfall 3.73 Hz |
+| A-wrap-clear | PASS (b4) | min clearance 0.055 m (≥ 0.05) |
+| A-brea-contrast | PASS (b4) | salt 6.11:1, sand ΔE 21.3, 21.7 % of pixels at 3:1 |
+| A-outfit-merge-dispose | PASS (b4) | geometries 152 → 152, textures 115 → 115, skeletons 3 → 3 |
+| A-tail-legible | FAIL in b3 and b4, PASS in b1 and b2 | 1 of 24 gust moments each time at reach 3 (bar 4): b3 +4.20 s both sides, b4 +1.05 s front and back. The tail's mesh and chain did not change this round (only the lining's paint); the silhouette changes this round's cloth made measure ≤ 106 px at 2,175 px/m, about 0.1 px at the gate's 2.8 cm/px lens. It is hero-body's open tail-margin finding (R63 c: hero-body meets it this round with the stowed bow's line) |
+| V-brea-closeup, -right, -shade, -dusk, -dusk-right, -back, -backlit, -night, -detail, -detail-back | NEEDS-JUDGE; filmed and read | §2.1 |
+| V-brea-closeup-calima | PENDING (R59 b) | this tree has no calima state; the row says so and cannot pass on a stand-in |
+| V-brea-face, V-brea-one-glance, V23-secondary-motion | NEEDS-JUDGE; read | the face sheet shows the new nose, ears and the scar through the brow; 5 cues read at 64 px; both cloth ends move |
+| V22-chase-framing | PASS (b4) | fill 0.671 |
+| A90b-memory-attribution | PASS (b4) | 0 offenders |
+| A90-memory-stability | PASS (b3) | heap -3.8 %, geometries +15, textures -3, objects -35 |
+| A90-memory-stability-expansion, A90-rig-reclaim | PASS (b3) | rig-reclaim geo +1, tex 0; expansion nonMachineGrowth within bar (it failed once in b1 with 1 non-machine object, then passed in b2 and b3) |
+| A90-abs | PASS (b3) | instrument PASS; bars graded at the 5270 run |
+| A-vram-ledger | PASS (b3) | textures 64.81 MB; bars graded at the 5270 run |
+| A-alloc-rate | FAIL (b3), not this lane | the baseline guard flags `world-sky` (3.16 vs 2.70 KB/frame) and the worst function is `noise2D` in `src/world/terrain.js:78` at 14.45 MB/s; no `src/hero` or recipe owner appears. R58 (c) re-reads it at the W1 exit after world-ground's fix |
+| A1, A20b, A-ID-ip-assets-gone, A-assets-tracked, A-build-deterministic, A-no-horizon-terms-code | PASS (b4) | namecheck `--code` 1371 of 1371; A-build-deterministic: 19 outputs, 0 differ, 15.1 s, 1.43 GB peak |
+| A-no-horizon-terms-player | PASS (b3) | 1504 ≤ 1508 |
+| A9-perf-budget, A21-real-draw-calls | PENDING (b3) | the box was not quiet (1-min load 4.19); draws 241 and triangles pass. R58 (b): timing at the W1 exit |
+| A-licence-manifest | PENDING (b3) | third-party term PENDING on another lane's row (`r5-poc-rock-scan`); every other term PASS |
+| A-port-guard, A-carried-suite | PENDING / refused | a lane run has no sealed carried run: the orchestrator's rows |
 
-Staging, which a judge should know: the close-up rows take their camera from the face's own axes (read off the live skin), because the idle carries the head bowed; the sun is on her left, the side of the scar; the stow kit is hidden so the lance does not cross the lens.
+How the see-through was found and closed: the live pose was dumped once from the game (every bone's world matrix, a probe that matched
+the offline skinning to 0.01 mm), and the 96 views were then rasterised offline against each rebuilt GLB, with a ray trace through any
+enclosed pixel to name the triangle and part that let it through. That tool and the dump lived in scratch, not in the tree.
 
-Offline previewing: a CPU renderer of the GLB is how most of this was iterated, because the Chrome slot was often busy. It lived in scratch and is not part of the tree.
+### 2.1 Still weak, next to the reference (read on b4's frames)
 
-Before and after sheets: `reference/r5/character-art/` (`brea-face-before-w0b.jpg`, `brea-closeup-before-relaunch.jpg`, `brea-closeup-*.jpg`, `brea-face-after.jpg`).
+1. **Overall (R54).** Side by side with `portrait-bokeh.jpg` she reads as a well-made stylised game heroine, not as the photo: no
+   subsurface, so a low sun still draws a hard terminator down the nose; the skin's grain is right at 0.8 m but the micro-shading of a
+   real face (under the lower lid, the philtrum) is shallower. The day close-up is better than W1's first pass, not "incredible".
+2. **Face shape.** The jaw tapers now and the cheek has a plane, but the lower face is still a touch long and square in the 3/4.
+3. **Ears.** The planes are gone; the rim is still a little thick and the lobe small next to a real ear.
+4. **Eyes in profile.** The iris reads at the front of the wedge; the white is still flatter than a wet ball at 0.3 m.
+5. **Night.** The face sits in the night now; the salt line, being paste, still reads brightest, which is right but strong.
+6. **Wrap tail.** R63 (c) wants the bible's 0.40 x 0.07 m strip; the tail is still 0.10 m wide on hero-body's 0.53 m chain. Not done
+   this round: hero-body is changing the chain this round, and a narrower strip has to be graded with `A-tail-legible` on that chain,
+   which is already at its 1-px margin.
+7. **Calima** is not graded (R59 b).
 
-### Still weak, next to the reference
+### 2.2 What others need to do
 
-1. It reads as a strong stylised game heroine, not as the photo. There is no subsurface pass, so the terminator is a hard line on the nose in low sun.
-2. At 3x zoom the jaw and the bun outline still show a few polygon corners, and two crossing turns intersect with a small step at the selvedge.
-3. The wrap tail's lining is a broad carmine strip in the front view when the wind brings it round. It is cloth now, but it is the least finished part of the head.
-4. Her right temple shows almost no hair, because the hem sits lower on that side.
-5. The hands are correct but plain.
-
-### What others need to do
-
-- **hero-body:** the idle carries her head visibly bowed in every close frame (about 15° by eye, not measured); levelling it would help every dialogue-range shot. The tail-margin finding stays yours. `CHAINS.wrapSash` and `CHAINS.hairKnotTail` were not touched, and the chain names and landmarks are unchanged. The knot tail is cloth now (`tail2`), still on `dyn_hairKnotTail`. `reference/r5/hero/brea-face-sheet.png` is now stale; it is in your folder.
-- **armory:** the alidade neck cord is thick, white and low-poly at the collar in V-brea-face, and it is the cheapest thing near the new head. The flat pink-violet smock now reads a tier below the wrap.
-- **settlements:** §3 is current. Leave `scalpCards`' `temples` false (the default now), pass both grids to `eyeOpening`, and give the hide mask an inside-collar exemption.
-- **world-sky:** when the calima state lands, re-film `V-brea-closeup-calima`; the gate picks it up by name.
-- **orchestrator:** merge main into this tree (the IP control). An independent judge is needed for the V rows. `src/core/assets.js:420` forces every model to FrontSide; the cloth is built for that, and the look clause of A-brea-budget says so.
+- **hero-body:** `A-tail-legible` failed 1 of 24 moments in two of four runs this round at reach 3 (the tail did not change); R63 (c)
+  is yours this round. Tell me when the chain lands and I narrow the strip to 0.07 m on it. The idle head is still bowed: the face's forward axis points
+  20 deg below level in the live idle (measured from the landmarks); levelling it would help every dialogue shot. Chain names, joint names and A-face-delta landmarks are unchanged.
+- **armory:** the alidade cord is in every close-up row now (R59 d): a thick white low-poly V at the collar, the cheapest thing near the
+  head. The smock's single-sided back is why the collar needed a lid; a closed inner collar in the outfit would be the clean fix.
+- **settlements:** new in §3: `appendCollarSkirt` (step 8), `coilCards({ twoSided })`, `scalpCards({ twoSided })`, the fringe and lash
+  pocket fills, and the three ray passes in `leanInwardNormals`. Any human head needs the last one in this engine (shadow `normalBias`).
+- **world-ground / world-sky:** `A-alloc-rate` names `terrain.js:78` and `world-sky`, not this lane.
+- **orchestrator:** the independent judge for the V rows; `A-port-guard` / `A-carried-suite` on a sealed run; re-film
+  `V-brea-closeup-calima` when world-sky's state merges (R59 b).
 
 ## 3. API (reusable: `tools/build/recipes/lib/**`, Node only, deterministic, no clocks or `Math.random`)
 
@@ -117,8 +135,11 @@ Before and after sheets: `reference/r5/character-art/` (`brea-face-before-w0b.jp
   height), `bridge` the angle over which it rides across a step in the layers under it, and both hems go `hemSink` under the cloth below
   them, so no hem stands in the air and two turns meet on the upper one's hem. Exposes `g.radiusAt(dx,dy,dz)` (null where it does not reach).
 - `crownCap(form, { elMin, rings, seg, lift, gather, pleats, hem, uvRadial, stack, tiltAxis, uv })`: `uvRadial` runs the panel's creases up to the crown as
-  pleats, never round it in rings. `cordRing(c, axis, R, r, opts)` is kept; a seated binding is a narrow `ribbon` with rows `[-1, 0, 1]` on the stack.
+  pleats, never round it in rings; give it a narrow `uv.rect` width (Brea: 56 px) so the panel's length does not print rings either, and a `lift` (3 mm) that
+  clears the bumps of the turns under it, or they poke through as tone blocks. `cordRing(c, axis, R, r, opts)` is kept; a seated binding is a narrow `ribbon` with rows `[-1, 0, 1]` on the stack.
 - `underShell(form, { axis, oMin(s), seg, rings, at(dx,dy,dz), joint, uv, W, cloth })`: a closed low-poly shell. `cloth: true` maps a panel on it where it can be seen.
+  Brea's bun shell swells 12 mm below its waist (`at` grows with the downward axis), filling the crease where the bun meets the head wrap; the
+  knot's shell stands 1.2 mm proud of the knot form and the knot's two turns sink their hems 1.6 mm into it (`lib/wrap-head.mjs`).
 - `cullCovered(g, depth(p), margin)`: drops every triangle wholly under what covers it; `compactGeo(g)` (lib/wrap-head.mjs) then drops the vertices. This is what pays for the shells.
 - `clothTail(points, joints, { along, across, width(u), side, curl, twist, gather, gatherTo, roll, fold, rootBack, uvFront, uvBack, uvEnd })`: `roll` bulges the root's
   two faces apart into a closed rope that reads from both sides under FrontSide, `rootBack` starts the cloth that far inside the knot, and the faces meet at the selvedges.
@@ -132,10 +153,15 @@ Before and after sheets: `reference/r5/character-art/` (`brea-face-before-w0b.jp
 - `hairCoverage(pm, shellGrid, { W, want })`, `hairlineLayer({ coverage(T), sampler, flowUV(T, uv) })`:
   close hair painted into the skin atlas, dissolving through the coils at its edge. Coil crowns carry a dark warm brown over the bible's near-black, with a small metalness:
   more metal than that and the diffuse goes with it, and the nape reads as a black shell.
-- `scatterAnchors(grid, { center, step, keep(p, d) })`, `coilCards(anchors, { flow(a, R), skinOf(p), rect, length, width, liftTip })`.
+- `scatterAnchors(grid, { center, step, keep(p, d) })`, `coilCards(anchors, { flow(a, R), skinOf(p), rect, length, width, liftTip, twoSided })`.
+  `twoSided` (fix round 1) gives each card its back as its own triangles: a card standing off the scalp is seen from behind through another
+  card's air, and FrontSide culled it, leaving a pinhole of sky. `paintCoilFringe` fattens every strand by a texel below the tips (the
+  runtime's mipmaps thin a strand under the 0.5 cut) and fills every pocket of air not open to the tips; `paintLashes` fills the pockets
+  crossed lashes shut in. Both keep the broken outline at the tips.
 - `coilTuft(points, joints, { count, along, width, uv })` a tuft on a dyn_ chain (kept for NPCs; Brea's knot tail is cloth now).
 - `browLayer({ x0, x1, line(x), side, strokes, scar, mass })` a soft mass with hairs combed over it, herringbone, tapering to the tail (a paint layer).
-- `lashCard(open, { side, joint, zAt, rect })` upper lash cards.
+- `lashCard(open, { side, joint, zAt, rect })` upper lash cards (fix round 1: the outer corner splays 0.42, not 0.62, and ends at 46 % length, so
+  the far eye's lashes do not stand past the cheek against the sky).
 
 ### `lib/wrap-head.mjs` (a whole headwrap from a spec)
 - `woundHeadwrap({ headSoup, skin(dx,dy,dz), joint, center, lift(dx,dy,dz), base: { tiltDeg, warpDeg, lowDeg, w, lift }, turns: [{ phiDeg, tauDeg, oDeg, w, lift, pillow, bridge, creaseAmp, seed, along, flip }], bun: { c, axis, r, rAxis, topY } | null, knot: [x,y,z] | null, tail: { points, joints, width(u), side, curl, twist, gather, gatherTo, roll, fold, rootBack, along, across } | null, tail2: { points, joints, width(u), side, curl, twist, gather, fold, rootBack, along, across } | null, tuft: { points, joints, count, along, width, side } | null, shell: { seg, rings } | null })`
@@ -163,12 +189,20 @@ Before and after sheets: `reference/r5/character-art/` (`brea-face-before-w0b.jp
    (fix round 1) three ray passes on the mid-face (from under the lower lip to just over the eyes, |x| < 0.052): bent normals in deep folds (open < 0.62 of 96 rays within 3 cm),
    a forward lean of the nose's underside, and a least-turn projection away from every back sun (azimuth 100..260 deg, 4..52 deg high) that her own skin shuts off. The
    reason is the game's shadow `normalBias` (0.035 m): a surface a few millimetres of skin hide from the sun is lit unless its normal turns away. Any human head needs it.
-7. `scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape, temples })` (`temples: true` for a wrapped head), `primFromGeo(doc, joinGeos([...]))`.
+7. `scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape, temples, twoSided })` (`temples: true` for a wrapped head; Brea passes
+   `twoSided: true`; the cards now hug the scalp, tip lift 0.4..1.6 mm, so their tips break the hairline over skin, not against the sky),
+   `primFromGeo(doc, joinGeos([...]))`.
+8. `appendCollarSkirt(bodyPrim, outfitTris, { centerZ, y0, rx0, rz0, rx1, rz1, seg, rings, gap, backLift, margin, lip, darkUV }) -> firstVertex` after the paint:
+   a closed dark lid inside the collar, both faces, skinned like the torso under it (never the neck). It runs from inside the neck to
+   `margin` (12 mm) short of the collar's wall at the BACK, a hand's width under the rim there (`y0 + backLift`), with a lip to `lip` (6 mm)
+   from the wall; at the front and sides it stays inside the neck. A look past a bowed head into the collar meets it, never the ground
+   behind her back through the single-sided smock. 6 mm was the closest that never poked through the smock with the arms down, measured
+   on the live pose. Exempt the lid's vertices from the hide mask (Brea: `i < skirtFrom`).
 - `faceLayers({ L, eyes, cheek })` the standard layers; `hairShape(X, Y, Z)` the default hairline (pass your own for
   another head); `vertexWeightOf`, `eyeCentres`, `eyeFrontZ`, `movedMask`, `compactPrim`, `primFromGeo`, `EYE_SPAN`.
 - A skin tone other than Brea's: `tone` (`#rrggbb` at the mid-cheek). The source layout and the stock tone stay; all paint is 3-D.
 - The landmarks' rigid sockets are unchanged from W0b (the cornea dome is applied after that measure). The `_HIDEMASK` rule changed in one way: a body vertex
-  inside and under the collar's opening (`insideCollar`, brea.mjs: y > 1.355, |x| < 0.145) is never hidden, or a look down the collar meets the ground through her.
+  inside and under the collar's opening (`insideCollar`, brea.mjs: y > 1.40, |x| < 0.112) is never hidden, or a look down the collar meets the ground through her.
 
 ### The material contract
 - Skin: opaque, 1024² base, 512² normal, 512² ORM used as both occlusion and metallic-roughness (R AO,
@@ -180,3 +214,36 @@ Before and after sheets: `reference/r5/character-art/` (`brea-face-before-w0b.jp
 - Hair + wrap: `alphaMode MASK` cutoff 0.5, FrontSide at runtime (`src/core/assets.js` forces every model's material to it, whatever the glTF says: geometry must carry both faces of anything seen from both sides, and `fixWinding` must have run), `COLOR_0` (u8 RGBA, linear: RGB contact shade,
   A multiplies the alpha cut), `metallicFactor 1` with the ORM's B channel (0 on cloth, 0.19 on hair, so
   near-black coils do not go grey in a strong sun, and keep their diffuse in the shade). The ORM is a third 512² map; §4.4's "hair 512²" counted one.
+
+## 4. Fix round 1, finding by finding
+
+The 23 findings of the gate judge (`character-art/W1/gate-judge`) and the engineering + film judge (r0). "Frame" names the row whose
+final sheet shows it; every frame was filmed at 1600 x 900 on port 5266 and read by me, side by side with the previous sheet. Several
+of these were first fixed by the previous builder of this round (cut off on Nov 3, its work checkpointed); I verified them on the
+live frames and kept them.
+
+| # | finding | what was done | measured / frame |
+|---|---|---|---|
+| 1 | no coils at her right temple | coils painted under the real hem at both temples (`hairBandUnderHem`), temple cards; the right side is now filmed | `V-brea-closeup-right`, `-shade`: close coils at the right temple with a broken edge |
+| 2 | the scar stops at the brow's top edge | the 3 cm scar runs through the brow and out of its lower edge; the hairs and the soft mass part over the full height; a sunk channel with raised lips | `V-brea-closeup-detail` LEFT BROW + SCAR: a clean gap through the brow |
+| 3 | see-through slits and a wire strap at the hems | hems go under the layers below (`clothStack`, `hemSink`); the slits closed by the A-wrap-closed work (row 15) | `A-wrap-closed` (§2); no strap in any 3/4 |
+| 4 | profile eye a grey wedge, a lash slab | cornea dome; the white falls off sooner toward the corners; lashes thin at the outer corner | detail THE EYE IN PROFILE: brown iris at the front, a shaded wedge, hair-thin lashes |
+| 5 | nape panel unreadable (tail across it, black shell) | new `V-brea-closeup-detail-back` films both napes in still air; coil crowns carry warm brown | detail-back: both napes are coils with value and a broken outline |
+| 6 | calima not gradeable | R59 (b): PENDING until world-sky's state is on main; the row says so and cannot pass on a stand-in | `V-brea-closeup-calima` PENDING |
+| 7 | R54: the day close-up looks cheap | nose, nostrils, cheek, jaw, ears, sockets, lining (rows 8-11, 23, 24) | still weak: §2.1 |
+| 8 | nostrils black with a pale shard; ball tip | graded nostril paint, bent normals and the underside lean; narrower lobule, defined tip | front/3/4: dark brown nostrils round a dark slit, no shard |
+| 9 | sockets near-black, right brow lost | the hero fill (R59 c); lid shadow painted, not baked black | `-shade`: socket, brow, nose wing, cheek separate in the shade |
+| 10 | the salt line's lit half a smooth stripe | cracked in the albedo as well as the height over its whole length | detail EYES + SALT PASTE |
+| 11 | far-cheek polygon outline; faceted ears | edges refined on the cheek and temple outline; the ear's facets came from the normal map, now at half on the ear with its own normals | detail THE EAR: rounded, folds read, no planes |
+| 12 | zigzag where the turns cross on her right | each turn lies on the stack under it | `-right` profile: one cloth over another |
+| 13 | staging hid the cord, filmed one side | close-up rows hide only the lance and bow (`setHidden(3)`), film both sides, the back and back-high, backlit, night | every sheet shows the alidade cord |
+| 14 | a sliver inside the collar | the collar lid (row 15) | `A-wrap-closed` |
+| 15 | the back of the wrap open; no scan | `A-wrap-closed`: 96 views on a key colour; closed by the lid, the bun swell, the knot shell, the cap hem, the hair fixes | 3,397 px / 18 views (b2) -> 8 px / 1 view (b3) -> §2 |
+| 16 | only her left filmed | 8 close-up rows: both sides, shade, dusk both sides, back, backlit, night, two detail sheets | §2 |
+| 17 | (= 1) | | |
+| 18 | (= 2) | | |
+| 19 | R59 c: the fill constant at night | `src/hero/index.js` scales `emissiveIntensity` by the scene's ambient every frame (9 lines, allocation-free); `A-brea-fill` | 0.963 noon, 0.511 dusk, 0.075 at 01:00 |
+| 20 | polygon artifacts where wrap layers cross; bun rings; saw-teeth; wire loops | binding as a seated ribbon; cap radial, lifted, narrow UV; more bun segments | back / back-high / detail-back: pleated crown, seated binding |
+| 21 | the tail root a flat plate | closed gathered roll from inside the knot | detail-back KNOT + TAIL ROOT |
+| 22 | backlit: bright nostril, white lines at lips and lids | the three ray passes in `leanInwardNormals` (§1) | `V-brea-closeup-backlit`: none |
+| 23 | ears and nostrils the cheapest things | rows 8 and 11 | |
