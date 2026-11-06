@@ -373,16 +373,22 @@ export function browLines(prim) {
   return out;
 }
 
-/** The eyeball gets a planar projection along +Z into its patch, a hair converged, so the iris sits in the patch centre. */
+/**
+ * The eyeball gets a planar projection along +Z into its patch, a hair converged, so the iris sits in the patch centre.
+ * `rect` is one patch both eyes share, or (fix round 2) `[rectLeft, rectRight]`, one per eye, so each eye's lids, corners and
+ * caruncle are painted where that eye's own opening puts them (`paintHumanSkin` paints them from the openings).
+ */
+export const EYE_CONV = 0.00045;
 export function remapEyeUV(prim, eyes, rect) {
   const P = prim.getAttribute('POSITION'), UV = prim.getAttribute('TEXCOORD_0'), p = [0, 0, 0];
   const arr = new Float32Array(UV.getCount() * 2);
   for (let i = 0; i < P.getCount(); i++) {
     P.getElement(i, p);
     const e = p[0] > 0 ? eyes[0] : eyes[1];
-    const conv = p[0] > 0 ? -0.00045 : 0.00045;
-    arr[i * 2] = rect.x + (0.5 + (p[0] - e[0] + conv) / EYE_SPAN) * rect.w;
-    arr[i * 2 + 1] = rect.y + (0.5 - (p[1] - e[1]) / EYE_SPAN) * rect.h;
+    const conv = p[0] > 0 ? -EYE_CONV : EYE_CONV;
+    const r = Array.isArray(rect) ? rect[p[0] > 0 ? 0 : 1] : rect;
+    arr[i * 2] = r.x + (0.5 + (p[0] - e[0] + conv) / EYE_SPAN) * r.w;
+    arr[i * 2 + 1] = r.y + (0.5 - (p[1] - e[1]) / EYE_SPAN) * r.h;
   }
   UV.setArray(arr);
 }
@@ -623,7 +629,7 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
  * lib/hair.mjs, with the eye patch blitted in. `marks` are the character's own layers (a salt
  * line, a scar, a tattoo), painted last. `collar` = flat triangles of the outfit near the neck.
  */
-export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, hairBand = null, names = 'human', fill = [0.15, 0.108, 0.09] }) {
+export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, hairBand = null, names = 'human', fill = [0.15, 0.108, 0.09], sclera = [166, 148, 130], eyeSkin = [118, 80, 60] }) {
   const W = 1024, AOW = 512;
   const baseTex = skinMat.getBaseColorTexture(), nTex = skinMat.getNormalTexture(), rTex = skinMat.getMetallicRoughnessTexture();
   const stock = await decodeStockSkin(baseTex.getImage(), nTex.getImage(), rTex.getImage());
@@ -688,12 +694,17 @@ export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, 
   const m0 = cheekMean(first);
   const painted = await paintSkinAtlas({ ...args, toneK: want.map((t, k) => t / Math.max(1, m0[k])) });
   painted.stats.cheekPainted = '#' + cheekMean(painted).map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
-  // the eye patch
-  const eyeP = paintEye(EYE_PX, { span: EYE_SPAN, iris, amber });
-  const ex = Math.round(eyeR.x * W), ey = Math.round(eyeR.y * W);
-  blit(painted.base, W, eyeP.base, EYE_PX, EYE_PX, ex, ey);
-  blit(painted.normal, W, eyeP.normal, EYE_PX, EYE_PX, ex, ey);
-  blit(painted.orm, W, eyeP.orm, EYE_PX, EYE_PX, ex, ey);
+  // the eye patch: one per eye (fix round 2), painted from that eye's own opening, or one shared patch as before
+  const rects = Array.isArray(eyeR) ? eyeR : [eyeR];
+  rects.forEach((rc, k) => {
+    const eyeP = paintEye(EYE_PX, Array.isArray(eyeR)
+      ? { span: EYE_SPAN, iris, amber, sclera, open: opens[k], centre: eyes[k], side: k ? -1 : 1, conv: k ? EYE_CONV : -EYE_CONV, skin: eyeSkin }
+      : { span: EYE_SPAN, iris, amber });
+    const ex = Math.round(rc.x * W), ey = Math.round(rc.y * W);
+    blit(painted.base, W, eyeP.base, EYE_PX, EYE_PX, ex, ey);
+    blit(painted.normal, W, eyeP.normal, EYE_PX, EYE_PX, ex, ey);
+    blit(painted.orm, W, eyeP.orm, EYE_PX, EYE_PX, ex, ey);
+  });
   baseTex.setImage(await webp(painted.base, W, { quality: 96 })).setMimeType('image/webp').setURI(`${names}-skin-base.webp`);
   nTex.setImage(await webp(painted.normal, W, { to: 512, quality: 96, kernel: 'lanczos3' })).setMimeType('image/webp').setURI(`${names}-skin-normal.webp`);
   rTex.setImage(await webp(painted.orm, W, { to: 512, quality: 90, kernel: 'mitchell' })).setMimeType('image/webp').setURI(`${names}-skin-orm.webp`);

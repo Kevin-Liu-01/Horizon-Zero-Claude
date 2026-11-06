@@ -6,7 +6,7 @@
 import { smooth, v3 } from './face.mjs';
 import { TriGrid, webp } from './skin.mjs';
 import { headForm, ellipsoidForm, clothStack, ribbon, crownCap, underShell, cullCovered, clothTail, vertexAO, fixWinding, WRAP_ATLAS, paintClothPanel, paintFrayEnd } from './wrap.mjs';
-import { paintCoilTile, paintCoilFringe, paintLockTile, paintLashes, coilTuft } from './hair.mjs';
+import { paintCoilTile, paintCoilFringe, paintLockTile, paintLashes, paintLidRim, coilTuft } from './hair.mjs';
 
 /** rising(φ, τ): the normal of a small circle whose height is o + τ·cos(az - φ) (az: 0 forward, + her left). */
 export const rising = (phi, tau) => { const t = Math.tan(tau); return v3.norm([-t * Math.sin(phi), 1, -t * Math.cos(phi)]); };
@@ -284,6 +284,7 @@ export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = 
   paintCoilFringe(buf, { ...A.coilFringe, W });
   paintLockTile(buf, { ...A.lockTile, W });
   paintLashes(buf, { ...A.lashes, W });
+  paintLidRim(buf, { ...A.lidRim, W });
   const make = async (name, bytes) => doc.createTexture(name).setImage(bytes).setMimeType('image/webp').setURI(`${name}.webp`);
   const baseTex = wrapMat.getBaseColorTexture(), nTex = wrapMat.getNormalTexture();
   baseTex.setImage(await webp(buf.base, W, { channels: 4, quality: 88, alphaQuality: 100 })).setMimeType('image/webp').setURI('brea-hairwrap-base.webp');

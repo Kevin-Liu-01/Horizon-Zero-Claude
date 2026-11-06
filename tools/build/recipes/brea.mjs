@@ -258,21 +258,32 @@ export async function build({ out = ROOT } = {}) {
   applyField(bodyPrim, field);
   // her gaze measures: the upper lids come down a little over the iris, the lower ones up a touch
   // (lids only, the sockets are the rigid eye mesh's: A-face-delta reads that)
+  // fix round 2 (the judges: "inset glass balls", "a bright even white all round the iris"): the upper lid comes down over a fifth
+  // of the iris and the lower one meets the iris' foot, the way a relaxed eye sits (the key-art's face panels). A lid that lay on
+  // the ball stays on it: it is held clear of the ball and of the cornea dome added below, never through them
   {
     const P = bodyPrim.getAttribute('POSITION'), a = P.getArray();
+    const Rb = eyeFrontZ(eyesPrim) - eyeSphereZ;
     for (let i = 0; i < P.getCount(); i++) {
       const x = a[i * 3], y = a[i * 3 + 1], z = a[i * 3 + 2];
       const e = eyes[x > 0 ? 0 : 1];
       const dx = (x - e[0]) / 0.0235, dy = y - e[1];
       if (Math.abs(dx) > 1 || z < 0.05 || headW[i] < 0.5) continue;
       const xk = 1 - dx * dx * dx * dx;
+      const c = [e[0], e[1], eyeSphereZ];
+      const before = Math.hypot(x - c[0], y - c[1], z - c[2]);
       if (dy > 0.0015 && dy < 0.019) {
         const k = xk * (1 - smooth(0.0055, 0.0165, dy));
-        a[i * 3 + 1] -= mm(0.72) * k; a[i * 3 + 2] += mm(0.22) * k;
+        a[i * 3 + 1] -= mm(1.45) * k; a[i * 3 + 2] += mm(0.3) * k;
       } else if (dy < -0.0015 && dy > -0.014) {
         const k = xk * (1 - smooth(0.005, 0.0125, -dy));
-        a[i * 3 + 1] += mm(0.5) * k;
-      }
+        a[i * 3 + 1] += mm(0.95) * k; a[i * 3 + 2] += mm(0.12) * k;
+      } else continue;
+      if (before < Rb - 0.0002) continue;              // a lid's inner wall behind the ball stays behind it
+      const vx = a[i * 3] - c[0], vy = a[i * 3 + 1] - c[1], vz = a[i * 3 + 2] - c[2], d = Math.hypot(vx, vy, vz);
+      const dome = vz > 0 ? 0.0033 * (1 - smooth(0.0018, 0.0074, Math.hypot(vx, vy))) : 0;
+      const need = Rb + dome + 0.00045;
+      if (d < need) { a[i * 3] = c[0] + vx / d * need; a[i * 3 + 1] = c[1] + vy / d * need; a[i * 3 + 2] = c[2] + vz / d * need; }
     }
     P.setArray(a);
   }
@@ -422,12 +433,13 @@ export async function build({ out = ROOT } = {}) {
 
   // ---- the skin atlas: a new layout (the face twice the texels), eyes in their own patch
   const EYE_PX = 160;
+  // fix round 2: a patch per eye, so each eye's lids, corners and caruncle are painted from its own opening
   const layout = relayoutSkinUV(bodyPrim, {
     density: humanDensity,
-    reserve: [{ id: 'eye', w: EYE_PX / 1024, h: EYE_PX / 1024 }],
+    reserve: [{ id: 'eyeL', w: EYE_PX / 1024, h: EYE_PX / 1024 }, { id: 'eyeR', w: EYE_PX / 1024, h: EYE_PX / 1024 }],
     pad: 0.009, elastic: 0.7,
   });
-  const eyeR = layout.reserved.eye;
+  const eyeR = [layout.reserved.eyeL, layout.reserved.eyeR];
   remapEyeUV(eyesPrim, eyes, eyeR);
 
   // the eye openings, read off the meshes; lash cards and lid lines follow them
@@ -437,7 +449,16 @@ export async function build({ out = ROOT } = {}) {
   const ballGrid = new TriGrid(new Float32Array(triSoup(eyesPrim)), 0.006);
   const opens = eyeTrue.map((e) => eyeOpening(faceGrid, e, { eyeR: 0.0168, ballGrid }));
   const zAt = (x, y) => { const t = faceGrid.cast(x, y + 0.0004, 0.2, 0, 0, -1, 0.17, 0.0001); return t >= 0 ? 0.2 - t : eyeTrue[0][2] + 0.016; };
-  const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W }));
+  // fix round 2: each upper lid gets its margin's thickness over the ball (a row lying on the ball under the lash root) and the
+  // lashes curl forward past the lid on a two-sided card, so a profile reads hair and a lid, not a bare wedge of white
+  const RB = 0.0165;                              // the ball's radius (eyeSphereZ above); the cornea dome stands on it
+  const onBall = (k) => (q) => {
+    const c = [eyes[k][0], eyes[k][1], eyeSphereZ], v = [q[0] - c[0], q[1] - c[1], q[2] - c[2]], d = Math.hypot(...v) || 1;
+    const dome = v[2] > 0 ? 0.0033 * (1 - smooth(0.0018, 0.0074, Math.hypot(v[0], v[1]))) : 0;
+    const want = RB + dome + 0.00025;
+    return [c[0] + v[0] / d * want, c[1] + v[1] / d * want, c[2] + v[2] / d * want];
+  };
+  const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W, length: 0.0074, curl: 0.22, twoSided: true, rim: { h: 0.00085, rect: WRAP_ATLAS.lidRim.rect, onBall: onBall(i) } }));
 
   // her own marks: the salt-line, the scar, the ∴
   const eyeY = (eyes[0][1] + eyes[1][1]) / 2;

@@ -569,7 +569,8 @@ export const WRAP_ATLAS = {
   coilFringe: { rect: [256, 256, 256, 128] },           // short coil tufts for cards: dense roots, loose tips
   lockTile: { rect: [256, 384, 128, 128], period: 96 }, // the knot tail's locks
   lashes: { rect: [384, 384, 128, 32] },                // upper lash cards
-  spare: { rect: [384, 416, 128, 96] },
+  lidRim: { rect: [384, 416, 128, 16] },                // the upper lid's margin over the ball (fix round 2)
+  spare: { rect: [384, 432, 128, 80] },
 };
 
 /** Periodic crease set for a cloth panel. */

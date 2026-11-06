@@ -515,9 +515,14 @@ export function browLayer({ x0, x1, line, strokes = 260, seed = 17, hair = '#151
  * margin, leaning up and forward, UVs running along the lash cell; `zAt(x, y)` gives the lid's
  * surface depth. Rigid on `joint`. Returns a geometry bucket with COLOR_0.
  */
-export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062, W = 512, rect, lean = 0.62 } = {}) {
+export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062, W = 512, rect, lean = 0.62, rim = null, twoSided = false, curl = 0 } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [], col: [] };
   const inner = side > 0 ? open.x0 : open.x1, outer = side > 0 ? open.x1 : open.x0;
+  // fix round 2 (the judges: "no lash hairs in profile, only a dark lid line"; "no upper-lid thickness"): `rim` adds a row BELOW
+  // the margin, lying on the ball (`rim.onBall(p)` puts a point on it) and mapped to the lid-margin cell `rim.rect`: the upper lid's
+  // thickness and its dark lash line over the white, tapering into both corners. `curl` bends the lashes forward past the lid, so
+  // a profile finds them as a fringe of hair; `twoSided` gives the card its back, so they read from behind the eye's plane too.
+  const rows = rim ? 3 : 2;
   for (let i = 0; i <= segments; i++) {
     const f = 0.06 + 0.98 * (i / segments);
     const x = inner + (outer - inner) * Math.min(1.02, f);
@@ -527,21 +532,73 @@ export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062
     // (fix round 1: the outer corner splays less and ends shorter, so the far eye's lashes do not stand past the cheek against the sky)
     const L = length * mix(0.62, 1.04, smooth(0.0, 0.62, f)) * mix(1, 0.46, smooth(0.72, 1.02, f));
     const out = side * mix(0.02, 0.42, f);
-    const up = [out * 0.8, Math.cos(lean * 0.72), Math.sin(lean)];
+    const up = [out * 0.8, Math.cos(lean * 0.72), Math.sin(lean) + curl];
     const ul = Math.hypot(up[0], up[1], up[2]);
     const a = [x, y + 0.0001, z + 0.0002], b = [x + up[0] / ul * L, y + up[1] / ul * L, z + up[2] / ul * L];
     const n = norm([0, -0.35, 1]);
-    g.pos.push(...a, ...b); g.nrm.push(...n, ...n);
     const u = rect[0] + (i / segments) * (rect[2] - 1);
+    if (rim) {
+      const taper = smooth(0.0, 0.2, f) * (1 - smooth(0.86, 1.04, f));
+      const r = rim.onBall([x, y - rim.h * mix(0.35, 1, taper), z - rim.h * 0.2]);
+      const ur = rim.rect[0] + (i / segments) * (rim.rect[2] - 1);
+      g.pos.push(...r); g.nrm.push(...norm([0, 0.2, 1])); g.uv.push(ur / W, (rim.rect[1] + rim.rect[3] - 1) / W);
+      g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0); g.col.push(0.82, 0.82, 0.82, 1);
+      // the margin row carries the rim cell's top edge: a duplicate of the lash root with the rim's UV
+      g.pos.push(...a); g.nrm.push(...norm([0, 0.2, 1])); g.uv.push(ur / W, rim.rect[1] / W);
+      g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0); g.col.push(1, 1, 1, 1);
+    }
+    g.pos.push(...a, ...b); g.nrm.push(...n, ...n);
     g.uv.push(u / W, (rect[1] + rect[3] - 1) / W, u / W, rect[1] / W);
     g.jnt.push(joint, 0, 0, 0, joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0, 1, 0, 0, 0);
     g.col.push(1, 1, 1, 1, 1, 1, 1, 1);
   }
+  const stride = rim ? 4 : 2;
+  const quad = (a, b, c, d, back) => { if ((side > 0) !== back) g.idx.push(a, c, b, b, c, d); else g.idx.push(a, b, c, b, d, c); };
   for (let i = 0; i < segments; i++) {
-    const a = i * 2;
-    if (side > 0) g.idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); else g.idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    const o = i * stride, p = o + stride;
+    const lr = rim ? 2 : 0;
+    quad(o + lr, o + lr + 1, p + lr, p + lr + 1, false);
+    if (rim) quad(o, o + 1, p, p + 1, false);
+  }
+  void rows;
+  if (twoSided) {
+    // the lashes' back faces (their own vertices, the normals turned); the rim lies on the ball and is only ever seen from the front
+    const nV = g.pos.length / 3, map = new Int32Array(nV).fill(-1);
+    for (let i = 0; i <= segments; i++) for (const k of [rim ? 2 : 0, rim ? 3 : 1]) {
+      const v = i * stride + k;
+      map[v] = g.pos.length / 3;
+      g.pos.push(g.pos[v * 3], g.pos[v * 3 + 1], g.pos[v * 3 + 2]); g.nrm.push(-g.nrm[v * 3], -g.nrm[v * 3 + 1], -g.nrm[v * 3 + 2]);
+      g.uv.push(g.uv[v * 2], g.uv[v * 2 + 1]); g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0); g.col.push(1, 1, 1, 1);
+    }
+    const lr = rim ? 2 : 0;
+    for (let i = 0; i < segments; i++) { const o = i * stride + lr, p = o + stride; quad(map[o], map[o + 1], map[p], map[p + 1], true); }
   }
   return g;
+}
+
+/**
+ * The upper lid's margin cell (fix round 2): the lid's thickness seen over the ball. Top row (at the margin): the lash line, a
+ * near-black warm brown; down to a warm dark brown where it lies on the white; its lower edge wavers by a texel (lash roots, not a
+ * ruled liner) and its last row is wet, a little lighter and smooth.
+ */
+export function paintLidRim(buf, { rect, W = 512, ink = '#1C120E', lid = '#3E271D', seed = 71 } = {}) {
+  const [x0, y0, w, h] = rect;
+  const I = hex(ink), Ld = hex(lid);
+  const R = rng(seed * 2246822519);
+  const jag = []; for (let x = 0; x < w; x++) jag.push(R());
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const t = y / (h - 1);
+    const edge = h - 1 - (jag[x] > 0.7 ? 1 : 0);
+    const k = smooth(0.15, 0.85, t);
+    let r = mix(I[0], Ld[0], k), g = mix(I[1], Ld[1], k), b = mix(I[2], Ld[2], k);
+    const wet = y >= edge - 1 ? 1.22 : 1;
+    r *= wet; g *= wet; b *= wet;
+    const o = ((y0 + y) * W + x0 + x) * 4;
+    buf.base[o] = clampB(r); buf.base[o + 1] = clampB(g); buf.base[o + 2] = clampB(b); buf.base[o + 3] = y <= edge ? 255 : 2;
+    const q = ((y0 + y) * W + x0 + x) * 3;
+    buf.normal[q] = 128; buf.normal[q + 1] = clampB(128 + 40 * (t - 0.5)); buf.normal[q + 2] = 250;
+    buf.orm[q] = 255; buf.orm[q + 1] = clampB(mix(0.5, 0.22, t) * 255); buf.orm[q + 2] = 0;
+  }
 }
 
 /** The lash cell: tapered curved hairs, root at the bottom, near-black, a hard alpha. */
