@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { rotOf } from './pose.js';
 
 /**
  * CALIMA · live dyn_ chains on a near-tier person (settlements; R56; gate A-npc-fidelity). The same physics
@@ -9,13 +10,13 @@ import * as THREE from 'three';
  * A chain's bones are authored +Y along the chain (lib/face.mjs addChain).
  */
 const CLASSES = {
-  hair: { k: 95, damp: 0.965, grav: 0.3, air: 0.55, maxAng: 0.95 },
-  cloth: { k: 48, damp: 0.955, grav: 0.34, air: 2.6, maxAng: 0.9 },
+  hair: { k: 95, damp: 0.965, grav: 0.3, air: 0.55, maxAng: 0.95, rootK: 0 },
+  cloth: { k: 48, damp: 0.955, grav: 0.34, air: 2.6, maxAng: 0.9, rootK: 0 },
   wrap: { k: 30, damp: 0.955, grav: 0.3, air: 4.4, maxAng: 1.2, rootK: 8 },
-  gear: { k: 110, damp: 0.93, grav: 0.2, air: 0, maxAng: 0.5 },
+  gear: { k: 110, damp: 0.93, grav: 0.2, air: 0, maxAng: 0.5, rootK: 0 },
   // an apron is heavy and tied: the legs move it, the wind hardly does. A cloak is long and hangs from the shoulders
-  apron: { k: 62, damp: 0.945, grav: 0.55, air: 0.5, maxAng: 0.55 },
-  cloak: { k: 22, damp: 0.955, grav: 0.7, air: 1.1, maxAng: 0.7 },
+  apron: { k: 62, damp: 0.945, grav: 0.55, air: 0.5, maxAng: 0.55, rootK: 0 },
+  cloak: { k: 22, damp: 0.955, grav: 0.7, air: 1.1, maxAng: 0.7, rootK: 0 },
 };
 /** A strip's tail on a head and a wrapped tail behave the same. */
 const klass = (key) => {
@@ -61,6 +62,8 @@ export class PersonChains {
     this.acc = 0;
     this.t = 0;
     this.dt = 0;
+    this.wx = 0.5;   // the frame's wind (m/s), read once per update: the solve reads numbers off this object, not the caller's
+    this.wz = 0.5;
     this.active = false;
     // the legs a hanging cloth must go round: thigh -> knee -> ankle of each side, world, once per update
     this.legBones = ['thigh_l', 'calf_l', 'foot_l', 'thigh_r', 'calf_r', 'foot_r'].map((n) => bones[n] || null);
@@ -98,6 +101,8 @@ export class PersonChains {
   /** `this.dt` is the tick's length, set by the caller (a field: no boxed number per call). */
   update(wind) {
     const dt = this.dt;
+    this.wx = wind ? +wind.x || 0 : 0;
+    this.wz = wind ? +wind.z || 0 : 0;
     this.active = true;
     this.acc += Math.min(dt, 0.05);
     let steps = 0;
@@ -107,7 +112,7 @@ export class PersonChains {
     for (const c of this.chains) {
       this._rest(c);
       if (!c.seeded) this._seed(c);
-      for (let s = 0; s < steps; s++) this._step(c, SUB_DT, wind);
+      for (let s = 0; s < steps; s++) this._step(c, SUB_DT);
       this._write(c);
     }
   }
@@ -116,7 +121,7 @@ export class PersonChains {
   _rest(c) {
     const first = c.links[0];
     const parent = first.parent;
-    parent.matrixWorld.decompose(_p, _qp, _s);
+    rotOf(parent.matrixWorld.elements, _qp, _p, _s);
     // the link's bind local, walked down the chain with no solve
     _q.copy(first.position).applyQuaternion(_qp).multiply(_s).add(_p);
     _qw.copy(_qp);
@@ -129,10 +134,10 @@ export class PersonChains {
     }
   }
 
-  _step(c, dt, wind) {
+  _step(c, dt) {
     const { cls, pos, prev, rest, seg, N } = c;
     const n = N + 1;
-    const windX = wind ? wind.x : 0, windZ = wind ? wind.z : 0;
+    const windX = this.wx, windZ = this.wz;
     // slow gusts and a flutter across the wind, per chain; the same shape as the hero's air
     const gust = 1 + 0.35 * Math.sin(this.t * 0.73 + c.seed) * Math.sin(this.t * 0.31 + c.seed * 2);
     const fl = 0.32 * Math.sin(this.t * 6.1 + c.seed * 3) + 0.2 * Math.sin(this.t * 11.7 + c.seed);
@@ -140,7 +145,7 @@ export class PersonChains {
     for (let i = 1; i < n; i++) {
       const o = i * 3;
       const depth = i / N;
-      const k = cls.k * (1 + (cls.rootK || 0) * (1 - i / n) * (1 - i / n));
+      const k = cls.k * (1 + cls.rootK * (1 - i / n) * (1 - i / n));
       const x = pos[o], y = pos[o + 1], z = pos[o + 2];
       const vx = (x - prev[o]) * cls.damp, vy = (y - prev[o + 1]) * cls.damp, vz = (z - prev[o + 2]) * cls.damp;
       let ax = (rest[o] - x) * k, ay = (rest[o + 1] - y) * k - 9.81 * cls.grav, az = (rest[o + 2] - z) * k;
@@ -185,7 +190,7 @@ export class PersonChains {
   /** Bone rotations from the particles: each link turned from its animated direction onto its segment, limited. */
   _write(c) {
     const first = c.links[0];
-    first.parent.matrixWorld.decompose(_p, _qp, _s);
+    rotOf(first.parent.matrixWorld.elements, _qp);
     const pos = c.pos;
     for (let i = 0; i < c.N; i++) {
       _qw.copy(_qp).multiply(c.bindQ[i]);
@@ -196,8 +201,12 @@ export class PersonChains {
         _d.multiplyScalar(1 / l);
         _qr.setFromUnitVectors(_y, _d);
         // the bend limit, relative to the parent's achieved rotation
-        const w = _qr.w > 1 ? 1 : _qr.w < -1 ? -1 : _qr.w, ang = 2 * Math.acos(w < 0 ? -w : w);
-        if (ang > c.cls.maxAng) { _qi.identity(); _qr.copy(_qi.slerp(_qr, c.cls.maxAng / ang)); }
+        const qw = _qr._w, w = qw > 1 ? 1 : qw < -1 ? -1 : qw, ang = 2 * Math.acos(w < 0 ? -w : w);
+        if (ang > c.cls.maxAng) {
+          // back toward identity on the same axis, to the limit (sin/cos of the half angles: no slerp call)
+          const lim = c.cls.maxAng * 0.5, sh = Math.sqrt(1 - w * w), f = sh > 1e-6 ? Math.sin(lim) / sh * (qw < 0 ? -1 : 1) : 0;
+          _qr._x *= f; _qr._y *= f; _qr._z *= f; _qr._w = Math.cos(lim);
+        }
         _qw.premultiply(_qr);
       }
       // local = parentWorld^-1 * world

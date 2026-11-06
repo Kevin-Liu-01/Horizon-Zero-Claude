@@ -158,3 +158,23 @@ export class PosePlayer {
     this.bones = [];
   }
 }
+
+/**
+ * The rotation (and uniform-scale-free position) of a world matrix into `q` (and `p`, `s` when given), with no call that takes or
+ * returns a number: `Matrix4.decompose` calls `determinant()`, whose returned number is boxed (about 130 B per person per frame in
+ * the chain solve and the head overlays, measured). The bones here have positive scale, so no reflection check is needed.
+ */
+export function rotOf(e, q, p = null, s = null) {
+  const sx = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]), sy = Math.sqrt(e[4] * e[4] + e[5] * e[5] + e[6] * e[6]), sz = Math.sqrt(e[8] * e[8] + e[9] * e[9] + e[10] * e[10]);
+  const ix = sx > 0 ? 1 / sx : 0, iy = sy > 0 ? 1 / sy : 0, iz = sz > 0 ? 1 / sz : 0;
+  const m11 = e[0] * ix, m12 = e[4] * iy, m13 = e[8] * iz, m21 = e[1] * ix, m22 = e[5] * iy, m23 = e[9] * iz, m31 = e[2] * ix, m32 = e[6] * iy, m33 = e[10] * iz;
+  const tr = m11 + m22 + m33;
+  let x, y, z, w;
+  if (tr > 0) { const k = 0.5 / Math.sqrt(tr + 1); w = 0.25 / k; x = (m32 - m23) * k; y = (m13 - m31) * k; z = (m21 - m12) * k; }
+  else if (m11 > m22 && m11 > m33) { const k = 2 * Math.sqrt(1 + m11 - m22 - m33); w = (m32 - m23) / k; x = 0.25 * k; y = (m12 + m21) / k; z = (m13 + m31) / k; }
+  else if (m22 > m33) { const k = 2 * Math.sqrt(1 + m22 - m11 - m33); w = (m13 - m31) / k; x = (m12 + m21) / k; y = 0.25 * k; z = (m23 + m32) / k; }
+  else { const k = 2 * Math.sqrt(1 + m33 - m11 - m22); w = (m21 - m12) / k; x = (m13 + m31) / k; y = (m23 + m32) / k; z = 0.25 * k; }
+  q._x = x; q._y = y; q._z = z; q._w = w;
+  if (p) { p.x = e[12]; p.y = e[13]; p.z = e[14]; }
+  if (s) { s.x = sx; s.y = sy; s.z = sz; }
+}

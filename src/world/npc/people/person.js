@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { PersonChains } from './chains.js';
 import { FADE_LEVELS } from './bank.js';
-import { PosePlayer } from './pose.js';
+import { PosePlayer, rotOf } from './pose.js';
 
 /**
  * CALIMA · one person on the street (settlements; R56; bible §6.2). A clone of an archetype's GLB: ONE
@@ -308,7 +308,7 @@ export class Person {
     if (Math.abs(this.lookYaw) < 0.002 || !this.neck || !this.head) return;
     for (let i = 0; i < 2; i++) {
       const b = i ? this.head : this.neck, share = i ? 0.55 : 0.45;
-      b.parent.matrixWorld.decompose(_v, _mq, _sc);
+      rotOf(b.parent.matrixWorld.elements, _mq);
       _q3.copy(_mq).invert();
       { const h = this.lookYaw * share * 0.5, sn = Math.sin(h); _q._x = 0; _q._y = sn; _q._z = 0; _q._w = Math.cos(h); }
       // q_local' = parent^-1 * R * parent * q_local
@@ -326,7 +326,7 @@ export class Person {
     _v.set(-Math.cos(this.yaw), 0, Math.sin(this.yaw));
     for (let i = 0; i < 2; i++) {
       const b = i ? this.head : this.neck, share = i ? 0.6 : 0.4;
-      b.parent.matrixWorld.decompose(_sc, _mq, _sc);
+      rotOf(b.parent.matrixWorld.elements, _mq);
       _q3.copy(_mq).invert();
       { const h = this.lift * share * 0.5, sn = Math.sin(h); _q._x = _v.x * sn; _q._y = 0; _q._z = _v.z * sn; _q._w = Math.cos(h); }
       _q2.copy(_q3).multiply(_q).multiply(_mq).multiply(b.quaternion);
@@ -346,8 +346,15 @@ export class Person {
     if (this.swing < 0.999 && this.leanK > 0.01) {
       const s = (1 - this.swing) * this.leanK;
       if (this.armMean && this.upL && this.upR && !this.armPose.length) {
-        this.upL.quaternion.slerp(this.armMean.l, s);
-        this.upR.quaternion.slerp(this.armMean.r, s);
+        // toward the clip's mean arm by s (nlerp on the shorter arc: no slerp call with a number argument)
+        for (let i = 0; i < 2; i++) {
+          const q = i ? this.upR.quaternion : this.upL.quaternion, m = i ? this.armMean.r : this.armMean.l;
+          let mx = m._x, my = m._y, mz = m._z, mw = m._w;
+          if (q._x * mx + q._y * my + q._z * mz + q._w * mw < 0) { mx = -mx; my = -my; mz = -mz; mw = -mw; }
+          const x = q._x + (mx - q._x) * s, y = q._y + (my - q._y) * s, z = q._z + (mz - q._z) * s, w = q._w + (mw - q._w) * s;
+          const l = Math.sqrt(x * x + y * y + z * z + w * w) || 1;
+          q._x = x / l; q._y = y / l; q._z = z / l; q._w = w / l;
+        }
       }
     }
   }

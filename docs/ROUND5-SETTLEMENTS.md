@@ -14,7 +14,7 @@ independent judge grades them.
 | Procedural pieces | `lib/pieces.mjs`: palm hat, apron and bib, long skirt and tunic, capelet, cloak, belt, strap, basket, sack, rake, cane, lantern, hammer, goggles, guild chain, cuffs |
 | Atlases | `lib/atlas.mjs`: 1024² faction atlas + 512² normal/ORM (neutral: hue is per vertex), the shared 512² hair + wrap atlas |
 | Clip pack | `lib/clips.mjs`: 13 UAL2 clips native, 13 UAL1 clips baked per body offline by the kept Retargeter, stride tables |
-| The kit | `lib/kit/`: a snapshot of character-art's `tools/build/recipes/lib/{face,skin,skin-human,hair,wrap,wrap-head}.mjs` at **46296b6** (its fix round 1, Nov 6), byte copies except two relative paths in `face.mjs` (see §6) |
+| The kit | `lib/kit/`: a snapshot of character-art's `tools/build/recipes/lib/{face,skin,skin-human,hair,wrap,wrap-head}.mjs` at **46296b6** (its fix round 1, Nov 6), byte copies except two relative paths in `face.mjs` (see §7) |
 | Runtime | `src/world/npc/people/{index,person,pose,bank,chains}.js`, installed from `src/world/camp.js` (3 lines; camp.js is this lane's file, §2); publishes `ctx.people` |
 | Gates | `tools/gates.r5.settlements.mjs` (`nice -n 10 node tools/gates.mjs --port 5264 --lane settlements`) |
 | Assets | `public/models/npc/*.glb` (9 archetypes, 3 atlases, the clip pack), licence rows `npc-people-bodies`, `npc-faction-atlases`, `npc-clips` |
@@ -27,9 +27,9 @@ stands apart from it on neutral ground near REST (`ctx.people.stagePlace`, the f
 1. **The body folded over (runtime, major).** three's `PropertyMixer` writes a bone only when the clip's value CHANGED since
    its last write. The walk lean, the arm-swing gain, the held arm and the look-at were composed onto the bone's own value,
    so on any constant track (a walk whose spine is still, a held idle, a frozen person) they compounded every frame: the
-   r2 frames show a porter lying horizontal in his walk and a raker bent double. `Person` now puts its overlay bones back to
-   what the mixer last left them before each mixer update (a preallocated `Float32Array`, no allocation). This also explains
-   the old `A-npc-fidelity` chain-travel readings of 1.4-1.7 m.
+   r2 frames show a porter lying horizontal in his walk and a raker bent double. The clip player of item 9 writes every bone
+   on every update, so every overlay starts from the clip's value. This also explains the old `A-npc-fidelity` chain-travel
+   readings of 1.4-1.7 m (now 0.44-0.63 m).
 2. **Level eyes.** Measured off the pack, the library's idles and walks carry the head 11-15° down (Idle_Loop -12.7°,
    Walk_Loop -14.8°; R64 b says the same of Brea's idle). A per-clip carriage overlay (`LIFT` in `person.js`) brings idles,
    talks and walks back to level, split neck 40 % / head 60 %; work clips keep their gaze on the work.
@@ -54,6 +54,12 @@ stands apart from it on neutral ground near REST (`ctx.people.stagePlace`, the f
    Against three's mixer on the same clip it agrees to 1 - |q·q'| ≤ 7.5e-8 over 200 frames and through a 0.4 s cross-fade, and
    allocates 0 B per update. `Math.hypot` and `THREE.MathUtils.clamp` calls in the chain solve and the tier sort are inlined
    (a call boxes its number arguments). Writing every bone every update also retires the overlay-restore of item 1.
+   r6 measured the owner row at 16.86 KB/frame (1.099x: under the bar) but 961.6 KB/s against 827.0 (1.163x: over, at a higher
+   frame rate). The rest was `Matrix4.decompose` in the chain solve and the head overlays (its `determinant()` returns a boxed
+   number: about 130 B per person per frame in node's sampling profiler), quaternion getters, a `slerp` with a number argument,
+   and tick lengths passed as arguments. `rotOf` (pose.js) reads a world rotation straight off the matrix (agrees with
+   `decompose` to 4e-8), the bend limit and the arm-swing gain are written inline, tick lengths and the wind ride in fields, and
+   every chain class has one shape. In node the chain solve plus the pose player now allocate 0 B per tick (from about 140).
 10. **The group stays once it stands.** It streamed out past 170 m, which changed the scene's object count in the middle of
    `A90-memory-stability-expansion`'s workload (-932 objects outside every machine root: the row demands exactly 0). At W1 it is
    one group of ten, hidden past 90 m (no draw); load and unload per settlement is W2's, with `A-settlement-dispose`.
@@ -143,7 +149,7 @@ rows r5's Chrome wedged on), offline checks in node where noted. Visual rows are
 | A-npc-dispose | PASS | spawn + despawn 20 × 3: textures 115 → 171 → 115, geometries 186 → 235 → 186, skeletons 44 → 64 → 44, every round; 0 archetypes and 0 atlases left |
 | A96-npc-animated | PASS | 10 people, every clock advanced 60 s, 4–5 distinct clips each, 5 walkers over 16–22 m |
 | A97-npc-no-skate | PASS | planted drift 0.065–0.077 m (bar 0.08) over 8–11 stance windows each, six walkers |
-| A-npc-draws | PASS | the staged ten seen from its edge: 33 draws per frame (25 main, 8 shadow: 4 casters × 2 cascades in frame), bar 44 |
+| A-npc-draws | PASS | the staged ten seen from its edge: 33 draws per frame (25 main, 8 shadow from the 4 casters), bar 44 |
 | V-npc-vs-brea (+ 9 per archetype) | NEEDS-JUDGE | §5 |
 | V41-npc-closeup | NEEDS-JUDGE | §5 |
 | V-npc-builds | NEEDS-JUDGE | §5 |
@@ -162,9 +168,9 @@ rows r5's Chrome wedged on), offline checks in node where noted. Visual rows are
 | A90-memory-stability-expansion | PASS | objects outside every machine root **0** (r3: −932 before the group stopped streaming out), machine nodes +70 (population), heap −5.6 % |
 | A90b-memory-attribution | PASS | 0 offenders |
 | A90-rig-reclaim | PASS | geo +0, tex +0 over 30 cycles |
-| A90-abs | @@ABS@@ |
+| A90-abs | PASS | r6 (r5's Chrome wedged in this row and took the next two with it; nothing in their output pointed at the page): post-GC JS heap 86.4 MB (ceiling 450), Chrome GPU-process footprint 1220.6 MB (ceiling 1500) at the staged fight after the A90 workload, with the group resident |
 | A-alloc-rate | @@ALLOC@@ |
-| A-vram-ledger | @@VRAM@@ |
+| A-vram-ledger | PASS | r6: textures 63.4 MB (bar 160), render targets 127.3 (170), geometry 79.3 (120), total 269.9 (450) |
 | A-licence-manifest | PENDING | every clause PASS except third-party, PENDING only on another lane's row (`r5-poc-rock-scan`); this lane's `npc-clips` row now derives from `ual1` (r3: FAIL on `ual1-standard`) |
 | A-ID-ip-assets-gone, A-assets-tracked, A-no-horizon-terms-player | PASS | r3 (no change since that touches them): 0 IP hits; 241 referenced, 0 missing; 1507 ≤ 1508 |
 | A-no-horizon-terms-code | PASS | `node tools/lint/namecheck.mjs --code`: 1371 of 1371 (ratchet), 0 uncovered (re-run after the last code change) |
@@ -173,7 +179,55 @@ rows r5's Chrome wedged on), offline checks in node where noted. Visual rows are
 | A-reach-all-sites | absent | not in this tree (world-ground) |
 
 
-## 6. What another lane or the orchestrator must do
+## 5. The frames, read by me against their criteria and references (advisory; R29's judge grades)
+
+Frames: `run-r5/shots/gates/` under this lane's scratch (1600 × 900). Brea in this tree is the W0b body.
+
+- **V-npc-vs-brea (line-up) and the nine side-by-side sheets.** All ten in one frame, then each archetype at 2 m beside Brea
+  in front, 3/4 and profile, with each head alone at the same lens. Every NPC has the kit's skin (pores, AO, tone zones, painted
+  brows, wet eyes with a cornea dome, lashes), a face of its own (age folds on the matron and the keeper, beards dissolving at
+  the edge on the caulker and the smith, the adolescent's open eyes), wound cloth or hair cards with live tails, and three to
+  thirteen layered pieces. Against this tree's Brea none reads a tier below her; several read above (the W0b wrap is a flat
+  paper band). **Weak next to the references (R54, R66):** the clothes are recoloured MCO bodies plus procedural sheets, and
+  they look it at 2 m: the aprons are flat panels with little fold (the picker's carmine apron is the cheapest thing in V41,
+  and in V41's third frame its dark back face shows through as a small diamond at the hip), the long skirts are smooth
+  cones, the esparto boots read as pale suede, and the Peasant bodice is the same sculpted bodice Brea wears. None has the
+  board's layered leather harness, buckles and soft cloth. The grey hair at the elders' temples is noisy at 2 m. The light is
+  this tree's 11 h light, not R66's golden hour.
+- **V41-npc-closeup.** Porter and picker walk side by side, upright, arms swinging fore-aft beside the body, the porter's
+  basket held on his shoulder, feet planted (A97's 0.073 m on both). Different faces, outfits and builds. Reads natural; the
+  picker's apron (above) is the weak part.
+- **V-npc-builds.** The adolescent at 0.90 beside an adult of the same body: no LBS artefact at the neck, head or shoulders
+  (uniform scale only). His face reads younger than the adult's (open eyes, full cheeks, a short nose and a small chin, a
+  smooth neck, a light brow), but closer to eighteen than to fifteen. If the judge reads him as an adult, the bible's
+  fallback (cut the variant) stands.
+- **V-npc-clips-pan / -holds.** Every clip the W1 stage plays, per archetype, with its props: no T-pose, arms beside the body,
+  tools in the hand (the rake in the harvest, the hammer in the chop, the cane in the walk), every walk upright since the
+  overlay fix (r2 showed walks folded flat). Heads are level in idles and walks (`LIFT`), down at the work.
+
+## 6. Still open, honestly
+
+1. **`A-npc-fidelity` fails on three archetypes' silhouette jump at the 18 m change** (pit farmer 0.026 m at the cap's crown,
+   tube smith 0.025 m at the rag knot, cochineal picker 0.033 m at the skirt's back hem; bar 0.02). LOD1 now locks every tail,
+   apron, sash and tool, which took the smith from 0.072; what is left is the LOD1 head shell (a 10 × 22 ray-cast shell over the
+   wound cloth) and the simplified skirt hem. Next: a denser shell on the cap and the rag (14 × 32), and the skirt's lowest row
+   locked like the tails. The cross-fade itself (0.32 s, both tiers drawn) is in place.
+2. **The clothes are the weakest part of every frame** (§5): recoloured MCO bodies, flat apron panels, smooth skirt cones,
+   pale boots, no leather harness or buckle work like Kevin's Nov 6 boards. This is where an NPC can still read cheap next
+   to the new Brea once she merges. The next pass is a strap-and-buckle kit (procedural) and folded, layered aprons and skirts.
+3. **The adolescent reads about eighteen, not fifteen.** The face does what the bible allows (no bone scale); if that is not
+   enough for the judge, the bible's fallback (cut the variant) applies.
+4. **The Round-4 crowd still runs** (`npc.js`, `npcAnim.js`) and allocates about 10 KB/frame inside this lane's owner row in
+   `A-alloc-rate`; it goes with the W2 exit (plan §6). The new people are measured beside it.
+5. **Grey hair** at the elders' temples is a noisy coil texture at 2 m.
+6. **Seated, rail and boat clips** (the keeper's `Sitting_Idle_Loop`, the follower's `Idle_Rail_Loop`, the caulker's
+   `Fixing_Kneeling` boat) have nothing to sit on or lean on until W2 places them; the W1 stage plays `clips.stage` instead.
+7. **LOD1 → LOD2 at 35 m** is cross-faded but not graded for pop.
+8. **`A21`'s GPU term** fails on a quiet box (19.5 / 32.7 / 20.5 ms against 14), as it did on W0b main; nothing here points at
+   this lane (the fight frame's draws equal character-art's tree), but this lane did not prove it either.
+9. The CPU previewer I iterated faces on (`scratchpad/r5/settlements/preview.mjs`) is outside the tree; it is not a gate.
+
+## 7. What another lane or the orchestrator must do
 
 1. **The kit is a snapshot.** character-art's kit is not on main, and R58 says settlements builds on it. `tools/build/recipes/npc/lib/kit/` is a byte copy of character-art's committed 46296b6 (its fix round 1) except for two relative paths in `face.mjs`. Once character-art merges: delete `lib/kit/`, replace `./kit/` with `../../lib/` in `lib/*.mjs`, and rebuild (`node tools/build/build-assets.mjs --only settlements`). If the kit changed again, the frames change; character-art's uncommitted `wrap-head.mjs` work is not in this snapshot.
 2. **`V-npc-vs-brea-*` must be re-filmed once character-art's Brea is on main.** In this tree she is still the W0b body (bowed idle, paper-edged wrap), which reads a tier below her own NPCs. The bar is against the new Brea. The orchestrator's merge run picks the rows up by name.
