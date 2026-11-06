@@ -42,9 +42,9 @@
  *   look.version              bumps on every change a CPU copy must follow
  *                             (exposure, look, sets, slot mix, grade mix)
  *   look.exposure             the exposure in force (LOOK_EXPOSURE x 2^ev)
- *   setsForHour(h, weather)   the pair of grade sets and the mix for an hour
- *                             and a weather, for world-sky's per-hour call to
- *                             engine.setLook() (no allocation with `out`)
+ *   setsForHour(grade, h, weather, calimaWeight, out)   the pair of grade sets,
+ *                             their mix and the hour's EV offset (hourEv) for an
+ *                             hour and a weather (no allocation with `out`)
  */
 
 /* ------------------------------------------------------------------ */
@@ -292,6 +292,17 @@ function bandWeight(h, from, to, feather) {
   return feather > 0 ? Math.max(0, 1 - k / feather) : 0;
 }
 
+/** h(t) = t k / (1 + (k - 1) t) on each side of the pivot: h(0) = 0, h'(0) = k, h(1) = 1. */
+function softContrast(c, p, k) {
+  if (k === 1) return c;
+  if (c >= p) {
+    const t = Math.min(1, (c - p) / (1 - p));
+    return p + (1 - p) * (t * k / (1 + (k - 1) * t)) + Math.max(0, c - 1);
+  }
+  const t = Math.min(1, (p - c) / p);
+  return p - p * (t * k / (1 + (k - 1) * t)) - Math.max(0, -c);
+}
+
 /**
  * One grade set applied to a display sRGB triple (0..1) -> graded display
  * sRGB (0..1). The LUT is this function sampled on the 32^3 grid.
@@ -313,10 +324,12 @@ export function gradeSet(c, s, out) {
   r *= 1 + (s.shadowTint[0] - 1) * ws + (s.highlightTint[0] - 1) * wh;
   g *= 1 + (s.shadowTint[1] - 1) * ws + (s.highlightTint[1] - 1) * wh;
   b *= 1 + (s.shadowTint[2] - 1) * ws + (s.highlightTint[2] - 1) * wh;
-  // 2. contrast about the pivot
-  r = (r - s.pivot) * s.contrast + s.pivot;
-  g = (g - s.pivot) * s.contrast + s.pivot;
-  b = (b - s.pivot) * s.contrast + s.pivot;
+  // 2. contrast about the pivot: slope `contrast` at the pivot, rolling off so 0 stays 0 and 1 stays 1
+  // (a linear contrast clips every value above pivot + (1 - pivot) / contrast to white and flattens the
+  // top of the ramp; this keeps the highlights' gradation for AgX's shoulder)
+  r = softContrast(r, s.pivot, s.contrast);
+  g = softContrast(g, s.pivot, s.contrast);
+  b = softContrast(b, s.pivot, s.contrast);
   // 3. saturation by luma (shadow / mid / highlight); never below 1 at the gamut edge
   l = LW[0] * r + LW[1] * g + LW[2] * b;
   const sl = s.satLuma;
@@ -402,9 +415,19 @@ export function sampleLut(data, size, c, out) {
  * wrapping at 24. Calima weather (weight `calima` 0..1, default 1 when the
  * weather is 'calima') takes slot B. Allocation-free with `out`.
  */
-export function setsForHour(grade, h, weather = null, calimaWeight = null, out = { a: 'golden', b: 'golden', mix: 0 }) {
+export function setsForHour(grade, h, weather = null, calimaWeight = null, out = { a: 'golden', b: 'golden', mix: 0, ev: 0 }) {
   const H = grade.hours;
   const hh = ((h % 24) + 24) % 24;
+  // the EV offset for the hour (look.grade.json hourEv, linear between keys, wrapping)
+  const E = grade.hourEv;
+  if (E && E.length) {
+    let k = E.length - 1;
+    for (let q = 0; q < E.length; q++) if (E[q][0] <= hh) k = q;
+    const n = (k + 1) % E.length;
+    const e0 = E[k][0], e1 = n === 0 ? E[0][0] + 24 : E[n][0];
+    const u = e1 > e0 ? clamp01(((hh < e0 ? hh + 24 : hh) - e0) / (e1 - e0)) : 0;
+    out.ev = E[k][1] + (E[n][1] - E[k][1]) * u;
+  } else out.ev = 0;
   let i = H.length - 1;
   for (let k = 0; k < H.length; k++) if (H[k][0] <= hh) i = k;
   const j = (i + 1) % H.length;
@@ -424,6 +447,8 @@ export function setsForHour(grade, h, weather = null, calimaWeight = null, out =
 /* ------------------------------------------------------------------ */
 /* Look: the live state, mirrored by engine.js's shader uniforms        */
 /* ------------------------------------------------------------------ */
+
+const RESTARTS = Object.freeze([0.8, 0.6, 0.4, 0.25, 0.12]);
 
 export class Look {
   /**
@@ -452,7 +477,7 @@ export class Look {
     this.bloomScale = 1;
     this.version = 1;
     this._x = [0, 0, 0]; this._y = [0, 0, 0]; this._la = [0, 0, 0]; this._lb = [0, 0, 0];
-    this._d = [0, 0, 0]; this._f = [0, 0, 0]; this._r = [0, 0, 0]; this._xs = [0, 0, 0]; this._fh = [0, 0, 0];
+    this._d = [0, 0, 0]; this._f = [0, 0, 0]; this._r = [0, 0, 0]; this._rr = [0, 0, 0]; this._xs = [0, 0, 0]; this._fh = [0, 0, 0];
     this._J = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
   }
 
@@ -506,27 +531,69 @@ export class Look {
     agxLookInv(f, this.look, out);
     const k = 1 / this.exposure;
     out[0] *= k; out[1] *= k; out[2] *= k;
-    // 4. Newton on the exact forward
+    // 4. Newton on the exact forward, with backtracking (a step is taken only if it lowers the
+    // residual): the shoulder and the gamut clamps make the Jacobian steep or singular near the
+    // display's floor and ceiling, where a full step overshoots
     const xs = this._xs, fh = this._fh, J = this._J;
-    for (let it = 0; it < 10; it++) {
-      this.evaluate(out, f);
+    // a step that parks a channel on a clamped plateau (output exactly 0 or 1 where the target is
+    // not) has zero slope there and Newton can never leave it: such a step is refused (Infinity)
+    const resid = (x, rr) => {
+      this.evaluate(x, f);
       let e = 0;
-      for (let i = 0; i < 3; i++) { r[i] = (t[i] >= 0.999 && f[i] >= 0.9995) ? 0 : f[i] - t[i]; e += Math.abs(r[i]); }
-      if (e < 2e-6) break;
-      for (let j = 0; j < 3; j++) {
-        const h = 1e-4 * Math.max(0.01, Math.abs(out[j]));
-        xs[0] = out[0]; xs[1] = out[1]; xs[2] = out[2];
-        xs[j] += h;
-        this.evaluate(xs, fh);
-        for (let i = 0; i < 3; i++) J[i][j] = (fh[i] - f[i]) / h;
+      for (let i = 0; i < 3; i++) {
+        const pinned = (t[i] >= 0.999 && f[i] >= 0.9995) || (t[i] <= 0.0005 && f[i] <= 0.001);
+        if (!pinned && ((f[i] <= 0 && t[i] > 0.0005) || (f[i] >= 1 && t[i] < 0.999))) return Infinity;
+        rr[i] = pinned ? 0 : f[i] - t[i];
+        e += Math.abs(rr[i]);
       }
-      for (let i = 0; i < 3; i++) if (r[i] === 0) { J[i][0] = i === 0 ? 1 : 0; J[i][1] = i === 1 ? 1 : 0; J[i][2] = i === 2 ? 1 : 0; }
-      const Ji = inv3(J);
-      if (!Number.isFinite(Ji[0][0] + Ji[1][1] + Ji[2][2] + Ji[0][1] + Ji[1][2] + Ji[2][0])) break;
-      mul3(Ji, r, xs);
-      // a channel may go negative (an emitter pre-compensating AgX's inset, which mixes the
-      // channels): the transform clamps only in AgX space, after the inset
-      for (let i = 0; i < 3; i++) out[i] -= xs[i];
+      return e;
+    };
+    const newton = () => {
+      let e = resid(out, r);
+      if (e === Infinity) { this.evaluate(out, f); for (let i = 0; i < 3; i++) r[i] = f[i] - t[i]; return Infinity; }
+      for (let it = 0; it < 16 && e > 2e-6; it++) {
+        for (let j = 0; j < 3; j++) {
+          const h = 1e-4 * Math.max(0.01, Math.abs(out[j]));
+          xs[0] = out[0]; xs[1] = out[1]; xs[2] = out[2];
+          xs[j] += h;
+          this.evaluate(xs, fh);
+          for (let i = 0; i < 3; i++) J[i][j] = (fh[i] - f[i]) / h;
+        }
+        for (let i = 0; i < 3; i++) if (r[i] === 0) { J[i][0] = i === 0 ? 1 : 0; J[i][1] = i === 1 ? 1 : 0; J[i][2] = i === 2 ? 1 : 0; }
+        const Ji = inv3(J);
+        if (!Number.isFinite(Ji[0][0] + Ji[1][1] + Ji[2][2] + Ji[0][1] + Ji[1][2] + Ji[2][0])) break;
+        mul3(Ji, r, xs);
+        const d0 = xs[0], d1 = xs[1], d2 = xs[2];
+        const o0 = out[0], o1 = out[1], o2 = out[2];
+        // a channel may go negative (an emitter pre-compensating AgX's inset, which mixes the
+        // channels): the transform clamps only in AgX space, after the inset
+        let a = 1, ok = false;
+        for (let k = 0; k < 12; k++, a *= 0.5) {
+          out[0] = o0 - a * d0; out[1] = o1 - a * d1; out[2] = o2 - a * d2;
+          const e2 = resid(out, this._rr);
+          if (e2 < e) { e = e2; r[0] = this._rr[0]; r[1] = this._rr[1]; r[2] = this._rr[2]; ok = true; break; }
+        }
+        if (!ok) { out[0] = o0; out[1] = o1; out[2] = o2; this.evaluate(out, f); break; }
+      }
+
+      return e;
+    };
+    let e = newton();
+    // a target near the display's ceiling can start Newton on a clamped plateau (zero slope): restart
+    // from a dimmer guess and keep the best (rare; the lamp tokens and the gate's samples land first time)
+    if (e > 0.5 / 255) {
+      const b0 = out[0], b1 = out[1], b2 = out[2];
+      let best = e, k0 = b0, k1 = b1, k2 = b2;
+      const m = (b0 + b1 + b2) / 3;
+      for (let q = 0; q < RESTARTS.length * 2; q++) {
+        const s = RESTARTS[q % RESTARTS.length];
+        if (q < RESTARTS.length) { out[0] = b0 * s; out[1] = b1 * s; out[2] = b2 * s; }
+        else { out[0] = m + (b0 - m) * s; out[1] = m + (b1 - m) * s; out[2] = m + (b2 - m) * s; }   // toward grey
+        const e2 = newton();
+        if (e2 < best) { best = e2; k0 = out[0]; k1 = out[1]; k2 = out[2]; }
+        if (best <= 0.5 / 255) break;
+      }
+      out[0] = k0; out[1] = k1; out[2] = k2;
     }
     return out;
   }
@@ -536,6 +603,18 @@ export class Look {
    * (set names for the two slots), mix (slot B weight 0..1), gradeMix (0..1),
    * bloomScale. Returns whether a LUT slot changed (the engine re-uploads it).
    */
+  /** Allocation-free form of set() for the per-hour path: the two slots, their mix and the EV offset. */
+  setSlots(a, b, mix, ev) {
+    let changed = false;
+    if (ev !== this.ev) { this.ev = ev; this.exposure = this.baseExposure * Math.pow(2, ev); changed = true; }
+    if (a !== this.setA && this.luts[a]) { this.setA = a; changed = true; }
+    if (b !== this.setB && this.luts[b]) { this.setB = b; changed = true; }
+    const m = clamp01(mix);
+    if (m !== this.lutMix) { this.lutMix = m; changed = true; }
+    if (changed) this.version++;
+    return changed;
+  }
+
   set({ ev, a, b, mix, gradeMix, bloomScale } = {}) {
     let slots = 0, changed = false;
     if (ev !== undefined && ev !== this.ev) { this.ev = ev; this.exposure = this.baseExposure * Math.pow(2, ev); changed = true; }

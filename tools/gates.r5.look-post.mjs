@@ -194,6 +194,8 @@ const LOOK = `
     await frames(3);
     p.camYaw = sunYaw() + (P.sunRel || 0) * Math.PI / 180;
     p.camPitch = P.pitch ?? 0;
+    // the hero faces away from the lens (1-TR, 1-MR, 1-BL: we stand behind her), unless the place says otherwise
+    p.heading = p.camYaw + Math.PI + (P.heroRel || 0) * Math.PI / 180;
     if (P.cam === 'close') {
       await frames(4);
       const head = p.animator?.b?.head?.bone;
@@ -261,6 +263,8 @@ const lookJob = (body) => `window.__lookJob = (async () => {${LOOK}
 const TONEMAP = look(`
   const L = __E.look, u = __E.grade.uniforms;
   if (!L || !__E.lookActive) return { pass: false, detail: 'engine.look missing or AgX not in force' };
+  // the tone map is graded at the base exposure: the hour bridge stands down and the hour EV is 0
+  __E._lookOwned = true; L.set({ ev: 0 }); __E._syncLook();
   // the live grade pass, read into a float target: a 64 x 4 HalfFloat input
   const W = 64, H = 4;
   const inData = new Uint16Array(W * H * 4);
@@ -411,14 +415,19 @@ const SUITE = look(`
   const places = ${JSON.stringify(Object.keys(LOOK_CORE))};
   const rows = {};
   for (const name of places) {
-    const s = await stageLook(name);
+    const s = await stageLook(name, { frames: 40 });
     if (s.skip) { rows[name] = { skip: s.skip }; continue; }
-    const c1 = await grabCanvas();
-    await frames(6);
-    const c2 = await grabCanvas();
-    const h1 = await sha(c1.px), h2 = await sha(c2.px);
-    let diff = 0; for (let i = 0; i < c1.px.length; i += 4) if (c1.px[i] !== c2.px[i] || c1.px[i + 1] !== c2.px[i + 1] || c1.px[i + 2] !== c2.px[i + 2]) diff++;
-    rows[name] = { source: s.source, identical: h1 === h2, sha: h1.slice(0, 16), diffPx: diff, diffPct: +(100 * diff / (c1.W * c1.H)).toFixed(3), size: [c1.W, c1.H], captureSource: c1.source };
+    // two consecutive captures 6 frames apart; a place still streaming in gets up to 3 pairs (reported)
+    let c1, c2, h1, h2, diff = 0, pairs = 0;
+    for (; pairs < 3; ) {
+      pairs++;
+      c1 = await grabCanvas(); await frames(6); c2 = await grabCanvas();
+      h1 = await sha(c1.px); h2 = await sha(c2.px);
+      diff = 0; for (let i = 0; i < c1.px.length; i += 4) if (c1.px[i] !== c2.px[i] || c1.px[i + 1] !== c2.px[i + 1] || c1.px[i + 2] !== c2.px[i + 2]) diff++;
+      if (h1 === h2) break;
+      await frames(30);
+    }
+    rows[name] = { source: s.source, identical: h1 === h2, pairs, sha: h1.slice(0, 16), diffPx: diff, diffPct: +(100 * diff / (c1.W * c1.H)).toFixed(3), size: [c1.W, c1.H], captureSource: c1.source };
     unstage();
   }
   // (d) depth bins: planted boxes at 30/120/400/900 m in front of the lens, rendered with a gate-only
@@ -468,7 +477,8 @@ const SUITE = look(`
 const RANDOM_BODY = (forSheet) => `
   const poses = ${JSON.stringify(randomPoses())};
   // anchors: every published gate place of the map in the tree
-  const names = Object.keys(${JSON.stringify(LOOK_STANDINS)}).map((k) => ${JSON.stringify(LOOK_STANDINS)}[k].base);
+  const __S = ${JSON.stringify(LOOK_STANDINS)};
+  const names = Object.keys(__S).map((k) => __S[k].base);
   const anchors = [...new Set(names)].map((k) => PLACE(k)).filter(Boolean);
   if (!anchors.length) return ${forSheet ? "sheet([], 'no places')" : "{ pass: null, detail: 'SKIP-R18 (place): no gate places on this map' }"};
   const T = __C.terrain;
@@ -582,13 +592,22 @@ const BLOOM = look(`
     const coreRpx = coreR * pxPerM, ringRpx = ringR * pxPerM;
     // the halo: how far out from the disc edge the frame stays >= 3 L* above the same ray with bloom off
     const ray = (cc) => { const o = []; for (let k = 0; k < 60; k++) { const x = Math.round(cx + ringRpx + k), y = Math.round(cy); if (x >= cc.W) break; const i = (y * cc.W + x) * 4; o.push(LS.srgb8ToLab(cc.px[i], cc.px[i + 1], cc.px[i + 2])); } return o; };
+    const rayRgb = (cc) => { const o = []; for (let k = 0; k < 60; k++) { const x = Math.round(cx + ringRpx + k), y = Math.round(cy); if (x >= cc.W) break; const i = (y * cc.W + x) * 4; o.push([cc.px[i], cc.px[i + 1], cc.px[i + 2]]); } return o; };
     const rOn = ray(c);
-    b.enabled = false; await frames(3); const rOff = ray(await grabCanvas()); b.enabled = __E.tier.bloom;
+    b.enabled = false; await frames(3); const cOff = await grabCanvas(); const rOff = ray(cOff); b.enabled = __E.tier.bloom;
     let reach = 0; for (let k = 0; k < Math.min(rOn.length, rOff.length); k++) if (rOn[k][0] - rOff[k][0] >= 3) reach = k + 1;
     const haloR = ringRpx + reach;
     const hueOf = (l) => { let h = Math.atan2(l[2], l[1]) * 180 / Math.PI; return h < 0 ? h + 360 : h; };
     const tokHue = hueOf(LK.srgbToLab([1, 0x2D / 255, 0x8C / 255], [0, 0, 0]));
-    const haloLab = rOn[Math.min(rOn.length - 1, Math.max(0, Math.floor(reach / 2)))];
+    // the halo's hue is the hue of the light bloom adds (on - off in linear sRGB over the halo), not of the
+    // frame (which is mostly the background behind the lamp)
+    const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const addL = [0, 0, 0];
+    const rawOn = rayRgb(c), rawOff = rayRgb(cOff);
+    for (let k = 0; k < Math.max(1, reach); k++) for (let q = 0; q < 3; q++) addL[q] += Math.max(0, lin(rawOn[k][q]) - lin(rawOff[k][q]));
+    const mx = Math.max(addL[0], addL[1], addL[2], 1e-9);
+    const enc = (v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+    const haloLab = LK.srgbToLab([enc(addL[0] / mx), enc(addL[1] / mx), enc(addL[2] / mx)], [0, 0, 0]);
     let dh = hueOf(haloLab) - tokHue; if (dh > 180) dh -= 360; if (dh < -180) dh += 360;
     out.c = { coreRpx: +coreRpx.toFixed(1), ringRpx: +ringRpx.toFixed(1), haloRpx: +haloR.toFixed(1), haloOverCore: +(haloR / coreRpx).toFixed(2), haloHueDelta: +dh.toFixed(1),
       ok: haloR >= 2.5 * coreRpx && Math.abs(dh) <= 15, note: 'probe discs at the lamp system\\'s solved hostile ring and core HDR (lamps.coreHdr / lampHdr), 40 m on the lens axis' };
@@ -687,21 +706,21 @@ const LEDGER = (box) => `(async () => {
 
 /* -------------------------------------------------------------- visual rows */
 
-const BEFORE_AFTER = lookJob(`
+const BEFORE_AFTER = (places, title) => lookJob(`
   const cells = [];
-  for (const name of ${JSON.stringify(Object.keys(LOOK_CORE))}) {
-    const s = await stageLook(name);
+  for (const [name, o] of ${JSON.stringify(places)}) {
+    const s = await stageLook(name, o || {});
     if (s.skip) continue;
     __E.setLookEnabled(false); await frames(4); const a = await grabCanvas();
     __E.setLookEnabled(true); await frames(4); const b = await grabCanvas();
     const sa = statsOf(a), sb = statsOf(b);
     const tag = (st) => 'lo20 ' + st.lo20.hue + 'deg  mid b ' + st.mid.b + '  C ' + st.chroma + '  p99 ' + st.L.p99;
-    cells.push({ cap: a, label: name + '  W0 (ACES)  ' + tag(sa) });
-    cells.push({ cap: b, label: name + '  CALIMA (AgX+grade)  ' + tag(sb) });
+    cells.push({ cap: a, label: name + ' ' + s.hour.toFixed(2) + ' h  W0 (ACES)  ' + tag(sa) });
+    cells.push({ cap: b, label: name + ' ' + s.hour.toFixed(2) + ' h  CALIMA  ' + tag(sb) });
     unstage();
   }
   window.__lookCells = cells.length;
-  sheet(cells, 'V-look-before-after: Round-5 W0 output (left) vs the CALIMA look (right), same frame, same build (look-post W1)', 2);
+  sheet(cells, ${JSON.stringify(title)}, 2);
 `);
 
 const GRADE_FILM = lookJob(`
@@ -734,7 +753,7 @@ const GLOW_FILM = lookJob(`
     const disc = (c, r, d, side, z) => { if (!c) return; const m = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(c.r, c.g, c.b), fog: false }));
       const right = new THREE.Vector3().crossVectors(dir, cam.up).normalize();
       m.position.copy(cam.position).addScaledVector(dir, d).addScaledVector(right, side).addScaledVector(dir, -z); m.lookAt(cam.position); m.name = 'look-lamp-probe'; __C.scene.add(m); made.push(m); };
-    disc(ring, 0.3, 18, -3, 0); disc(core, 0.12, 18, -3, 0.01); disc(calmR, 0.3, 18, 3, 0); disc(calm, 0.12, 18, 3, 0.01);
+    disc(ring, 0.3, 18, -4.5, 0); disc(core, 0.12, 18, -4.5, 0.01); disc(calmR, 0.3, 18, 4.5, 0); disc(calm, 0.12, 18, 4.5, 0.01);
     await frames(4);
     const c = await grabCanvas();
     cells.push({ cap: c, label: 'look.aim, 17:45: hostile (left) and calm (right) lamp discs at the lamp system\\'s solved HDR, 18 m; sunlit cloth and rock must not glow' });
@@ -820,8 +839,11 @@ export const GATES = [
     title: 'L-16: every registered look item A/B-timed on the A21 frames (>= 0.10 ms alone, the rest as one group), 4 interleaved rounds; each row <= 0.45 ms; draws <= 350. ' + QUIET_NOTE,
     assert: LEDGER(BOX) },
   { id: 'V-look-before-after', kind: 'visual', lane: LANE, wave: 'W1', timeout: 300000, settle: 150000,
-    setup: BEFORE_AFTER,
+    setup: BEFORE_AFTER([['field'], ['vista'], ['aim']], 'V-look-before-after (1/2): Round-5 W0 output (left) vs the CALIMA look (right), same frame, same build'),
     criteria: 'The same five frames (field, vista, aim, close, dusk), Round-5 W0 output (ACES 0.94, left) beside the CALIMA look (AgX + grade, right). Against ext:kevin-nov6-keyart.jpg@860d7e9f#1-TR, #1-MR, #1-TL and ext:kevin-nov6-stills.md@bf79cdc9#5-1: the right column reads warmer in the light and rose-violet in the shadows, highlights cream not lemon, grass amber not olive, no crushed blacks, no banding; it must not look cheaper or muddier than the left. ' + IP_CLAUSE },
+  { id: 'V-look-before-after-2', kind: 'visual', lane: LANE, wave: 'W1', timeout: 300000, settle: 120000,
+    setup: BEFORE_AFTER([['close'], ['dusk'], ['field', { hour: 12.5, sunRel: 140, pitch: 0.02 }]], 'V-look-before-after (2/2): close 18:45, dusk 19:45, noon (the noon set): W0 (left) vs CALIMA (right)'),
+    criteria: 'As V-look-before-after, for the close-up (ext:kevin-nov6-keyart.jpg@860d7e9f#1-MC: skin warm with readable shadow side, no crushed face), dusk (ext:kevin-nov6-board.jpg@f2694e04#2-MR: violet-rose dusk, not brown) and noon (the noon set: neutral, no golden-hour cast forced on midday). ' + IP_CLAUSE },
   { id: 'V-look-grade', kind: 'visual', lane: LANE, wave: 'W1', timeout: 240000, settle: 90000,
     setup: GRADE_FILM,
     criteria: 'look.field and look.aim against ext:kevin-nov6-keyart.jpg@860d7e9f#1-TR, #1-BL and reference/r5/gates-perf/long-shadows.jpg. Pass: 1. rock and cloth shadows read violet-rose, not olive or brown; 2. sunlit grass reads amber-gold, not mustard; 3. Brea\'s violet is the most saturated hue; 4. no crushed black outside the vignette. ' + IP_CLAUSE },

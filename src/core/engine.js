@@ -1354,16 +1354,17 @@ export class Engine {
    * The grade sets for an hour and a weather (look.grade.json `hours`): world-sky
    * calls this when the hour or the weather moves. Allocation-free.
    */
-  setLookHour(h, weather = null, calimaWeight = null) {
+  setLookHour(h, weather = null, calimaWeight = null, opts = null) {
     this._lookOwned = true;   // world-sky drives the sets from here on: the bridge below stands down
-    return this._lookHour(h, weather, calimaWeight);
+    return this._lookHour(h, weather, calimaWeight, !(opts && opts.ev === false));
   }
 
-  _lookHour(h, weather, calimaWeight) {
-    const o = this._lookHourOut || (this._lookHourOut = { a: 'golden', b: 'golden', mix: 0 });
+  _lookHour(h, weather, calimaWeight, withEv = true) {
+    const o = this._lookHourOut || (this._lookHourOut = { a: 'golden', b: 'golden', mix: 0, ev: 0 });
     setsForHourInto(this.look.grade, h, weather, calimaWeight, o);
-    this.look.set(o);
-    return this.look;
+    const L = this.look;
+    L.setSlots(o.a, o.b, o.mix, withEv ? o.ev : L.ev);
+    return L;
   }
 
   /** Whether engine.look.evaluate() describes the screen (AgX on); false under setLookEnabled(false) or L-01 off. */
