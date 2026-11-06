@@ -246,21 +246,21 @@ export function leanInwardNormals(bodyPrim, eyesPrim, { L, eyes }) {
 }
 
 /**
- * Whatever a collar's opening could show that is not skin: a closed dark lid inside the collar, from inside the neck out to the
- * collar's own wall, a hand's width under its rim (higher at the back, where the collar stands highest; inside the body at the
- * front, where the skin shows down to the V), with a hem hanging down the inside of the wall, then under the outfit's shoulders
- * (`outfitTris`, flat, bind). A look down inside the collar, past the neck, over the shoulder and down the back, where the
- * single-sided smock shows no inside, meets the lid, never the ground. Fix round 1 (A-wrap-closed): the first version lay under
- * the skin, so a steep look past a bowed head slid down the gap between the back and the smock and out through it.
+ * Whatever a collar's opening could show that is not skin: a closed dark lid inside the collar, from inside the neck out toward the
+ * collar's own wall (`margin` short of it) a hand's width under its rim at the BACK, where the collar stands off the neck; at the
+ * front and the sides it stays inside the neck (the V shows skin down to the smock). A look down inside the collar, past a bowed
+ * head, over the shoulder and down the back, where the single-sided smock shows no inside, meets the lid, never the ground.
+ * Fix round 1 (A-wrap-closed): the first version lay under the skin, so such a look slid down the gap between the back and the
+ * smock and out through it; a lid nearer the wall than 12 mm poked through the smock's back once the arms were down.
  * Skinned like the torso under the collar (never the neck); one dark texel (the UV of `darkUV`); both faces. Call after the paint.
  * Returns the first new vertex index.
  */
-export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 2, gap = 0.006, backLift = 0.035, margin = 0.003, hang = 0.08, darkUV } = {}) {
+export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 2, gap = 0.006, backLift = 0.035, margin = 0.012, lip = 0.006, darkUV } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
   const n0 = P.getCount();
   const near = [];
-  // skinned like the torso under the collar, never like the neck: with the head bowed the neck leans forward off a skirt that
+  // skinned like the torso under the collar, never like the neck: with the head bowed the neck leans forward off a lid that
   // followed it and the opening behind it showed the ground
   { const q = [0, 0, 0]; for (let i = 0; i < n0; i++) { P.getElement(i, q); if (q[1] > 1.28 && q[1] < 1.43 && Math.abs(q[0]) < 0.28) near.push([q[0], q[1], q[2], i]); } }
   const pos = [], nrm = [], uv = [], jnt = [], wgt = [], idx = [];
@@ -272,12 +272,13 @@ export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
     J.getElement(best, j); W.getElement(best, w);
     jnt.push(...j); wgt.push(...w);
   };
-  // rings 0..rings: the lid out to the wall; rings+1, rings+2: its hem, a curtain down the inside of the wall at the wall's own
-  // radius at each height (a look past the neck slides down along the inside of the back and crosses the wall lower down)
+  // rings 0..rings: the lid; rings+1: its lip, out to `lip` from the wall at the back, folding back to the lid's edge (rings+2), so
+  // a look grazing down the inside of the back wall meets it (fix round 1: measured on the live pose, 0 enclosed px over 96 views)
   const ringsAll = rings + 2;
-  const hem = [];
+  const edge = [];
   for (let r = 0; r <= rings; r++) for (let k = 0; k < seg; k++) {
-    const t = r / rings, a = (k / seg) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
+    const t0 = r / rings, a = (k / seg) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
+    const back = smooth(-0.1, -0.5, ca), t = t0 * back;      // out to the wall only at the back
     const lift = backLift * 0.5 * (1 - ca);                    // 0 at the front, half at the sides, all of it at the back
     let y = y0 + lift - 0.004 * t;                             // flat out to the wall: a look past the neck meets it before the wall
     // it stays inside the outfit's wall at its own height, and under its roof
@@ -288,13 +289,12 @@ export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
     const hit = grid.cast(x, 1.62, z, 0, -1, 0, 0.34, 0.0001);
     if (hit >= 0) y = Math.min(y, 1.62 - hit - gap);
     put(x, y, z);
-    if (r === rings) hem.push([sa, ca, y]);
+    if (r === rings) edge.push([sa, ca, y, Math.hypot(x, z - centerZ), back]);
   }
-  for (const f of [0.5, 1]) for (const [sa, ca, y] of hem) {
-    const yh = y - hang * f;
-    const wall = grid.cast(0, yh, centerZ, sa, 0, ca, 0.4, 0.0001);
-    const rr = wall >= 0 ? Math.max(0, wall - margin) : Math.hypot(sa * rx1, ca * rz1);
-    put(sa * rr, yh, centerZ + ca * rr);
+  for (const out of [true, false]) for (const [sa, ca, y, r0, back] of edge) {
+    const wall = grid.cast(0, y, centerZ, sa, 0, ca, 0.4, 0.0001);
+    const rr = out && back >= 0.5 && wall >= 0 ? Math.min(r0 + 0.03, Math.max(0, wall - lip)) : out ? r0 * 0.975 : r0;
+    put(sa * rr, y, centerZ + ca * rr);
   }
   for (let r = 0; r < ringsAll; r++) for (let k = 0; k < seg; k++) {
     const kn = (k + 1) % seg, a = n0 + r * seg + k, b = n0 + r * seg + kn, c = n0 + (r + 1) * seg + k, d = n0 + (r + 1) * seg + kn;

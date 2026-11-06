@@ -75,7 +75,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
       const st = clothStack(f, { azN: 240, elN: 120 });
       const rows = [-1, -0.9, -0.5, 0, 0.5, 0.9, 1];
       const gs = [];
-      gs.push(ribbon(f, { n: rotAbout(tilt, [1, 0, 0], 0.16), o0: -36 * DEG, w: 0.44, along: 26, rowsT: rows, lift: 0.0006, pillow: 0.0028, stack: st, bridge: 0, creases: 2, creaseAmp: 0.001, seed: 21, joint: head, uv: uvB([0, 1]), wander: 0.05 }));
+      gs.push(ribbon(f, { n: rotAbout(tilt, [1, 0, 0], 0.16), o0: -36 * DEG, w: 0.44, along: 22, rowsT: rows, lift: 0.0006, pillow: 0.0028, stack: st, bridge: 0, creases: 2, creaseAmp: 0.001, seed: 21, joint: head, uv: uvB([0, 1]), wander: 0.05 }));
       gs.push(ribbon(f, { n: rotAbout(tilt, [0.5, 0, 0.8], -0.22), o0: 4 * DEG, w: 0.46, along: 26, rowsT: rows, lift: 0.0008, pillow: 0.003, stack: st, bridge: 0.07, creases: 2, creaseAmp: 0.0011, seed: 27, joint: head, uv: uvA([1, 0]), wander: 0.05 }));
       gs.push(ribbon(f, { n: rotAbout(tilt, [-0.7, 0, 0.6], 0.2), o0: 40 * DEG, w: 0.46, along: 24, rowsT: rows, lift: 0.0008, pillow: 0.003, stack: st, bridge: 0.07, creases: 2, creaseAmp: 0.001, seed: 34, joint: head, uv: uvB([1, 0]), wander: 0.05 }));
       // the crown: the cloth's end pulled down into the centre in radial pleats (fix round 1: down to 31 deg, so no concentric turn

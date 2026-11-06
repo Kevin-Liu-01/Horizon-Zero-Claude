@@ -134,27 +134,28 @@ export function paintCoilFringe(buf, { rect, W = 512, hair = '#15110F', seed = 3
     buf.normal[q] = clampB((n[0] * 0.5 + 0.5) * 255); buf.normal[q + 1] = clampB((n[1] * 0.5 + 0.5) * 255); buf.normal[q + 2] = clampB((n[2] * 0.5 + 0.5) * 255);
     buf.orm[q] = 255; buf.orm[q + 1] = clampB((rough + 0.18 * (1 - hv)) * 255); buf.orm[q + 2] = HAIR_METAL;
   }
-  // fix round 1 (A-wrap-closed): a pocket of air shut inside the coil mass (not open to the tips) is filled
-  // with shaded hair, so a card against the sky shows a broken outline but no pinholes of background through it
+  // fix round 1 (A-wrap-closed): below the tips every strand is a texel fatter (the runtime's mipmaps average a thin strand's alpha
+  // under the 0.5 cut at 0.8 m, which opened pinholes the full-size texture does not have); then a pocket of air shut inside the coil
+  // mass (not open to the tips) is filled with shaded hair, so a card against the sky shows a broken outline but no pinhole of sky
   {
-    const open = new Uint8Array(w * h), st = [];
     const clear = (x, y) => buf.base[((y0 + y) * W + x0 + x) * 4 + 3] < 128;
-    const push = (x, y) => { const s = y * w + x; if (!open[s] && clear(x, y)) { open[s] = 1; st.push(s); } };
-    // open only to the tips: a card's window is a narrower slice of this rect, so a pocket open only to the rect's side is shut in it
-    for (let x = 0; x < w; x++) push(x, 0);
-    while (st.length) { const s = st.pop(), x = s % w, y = (s / w) | 0; if (x > 0) push(x - 1, y); if (x < w - 1) push(x + 1, y); if (y > 0) push(x, y - 1); if (y < h - 1) push(x, y + 1); }
-    // and a gap a texel wide between two strands below the tips closes (a hair's width: at 0.8 m it read as a pinhole of sky)
     const solidAt = (x, y) => x >= 0 && y >= 0 && x < w && y < h && !clear(x, y);
-    const thin = new Uint8Array(w * h);
-    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
-      if (!clear(x, y) || y < h * 0.22) continue;
-      if ((solidAt(x - 1, y) && solidAt(x + 1, y)) || (solidAt(x, y - 1) && solidAt(x, y + 1))) thin[y * w + x] = 1;
-    }
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      if ((open[y * w + x] && !thin[y * w + x]) || !clear(x, y)) continue;
+    const fillAt = (x, y) => {
       const o = ((y0 + y) * W + x0 + x) * 4, shade = mix(0.6, 0.45, smooth(0.55, 1, y / h));
       buf.base[o] = clampB(C[0] * shade + 6); buf.base[o + 1] = clampB(C[1] * shade + 4); buf.base[o + 2] = clampB(C[2] * shade + 3); buf.base[o + 3] = 255;
+    };
+    const fat = [];
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      if (!clear(x, y) || y < h * 0.22) continue;
+      if (solidAt(x - 1, y) || solidAt(x + 1, y) || solidAt(x, y - 1) || solidAt(x, y + 1)) fat.push(x, y);
     }
+    for (let i = 0; i < fat.length; i += 2) fillAt(fat[i], fat[i + 1]);
+    // open only to the tips: a card's window is a narrower slice of this rect, so a pocket open only to the rect's side is shut in it
+    const open = new Uint8Array(w * h), st = [];
+    const push = (x, y) => { const s = y * w + x; if (!open[s] && clear(x, y)) { open[s] = 1; st.push(s); } };
+    for (let x = 0; x < w; x++) push(x, 0);
+    while (st.length) { const s = st.pop(), x = s % w, y = (s / w) | 0; if (x > 0) push(x - 1, y); if (x < w - 1) push(x + 1, y); if (y > 0) push(x, y - 1); if (y < h - 1) push(x, y + 1); }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!open[y * w + x] && clear(x, y)) fillAt(x, y);
   }
   return f;
 }
