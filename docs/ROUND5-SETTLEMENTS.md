@@ -63,9 +63,11 @@ stands apart from it on neutral ground near REST (`ctx.people.stagePlace`, the f
 10. **The group stays once it stands.** It streamed out past 170 m, which changed the scene's object count in the middle of
    `A90-memory-stability-expansion`'s workload (-932 objects outside every machine root: the row demands exactly 0). At W1 it is
    one group of ten, hidden past 90 m (no draw); load and unload per settlement is W2's, with `A-settlement-dispose`.
-11. **LOD1 keeps its silhouette.** Every vertex weighted to a `dyn_` or `prop_` joint (tails, aprons, sashes, tools, baskets),
-   every long skirt (pieces added with `sil: true`) and the head shell (now 14 × 32, from 10 × 22) is locked in the LOD1
-   simplification (meshopt `vertex_lock`), and the skin gives back what that costs, so LOD1 stays ≤ 8 k (7.95–7.99 k).
+11. **LOD1 keeps its silhouette.** Every vertex weighted to a `dyn_` or `prop_` joint (tails, aprons, sashes, tools, baskets)
+   is locked in the LOD1 simplification (meshopt `vertex_lock`), and the skin gives back what that costs, so LOD1 stays ≤ 8 k
+   (7.95–7.99 k). I also tried locking the long skirts and a denser 14 × 32 head shell (r7): the error moved to the shoulders
+   and arms and three archetypes got worse (pit farmer 0.048 m), so that is reverted and the shipped build is r5's,
+   byte-identical (the recipe is deterministic).
    r3 had the tube smith's apron at 16 triangles in LOD1 (153 near) and a 7.2 cm pop at the change. Chains no longer snap to
    bind when the near tier fades out: the solve stops and the cloth holds its pose, and a solve that restarts seeds from it.
 12. **The licence row of the clip pack** named a source row that does not exist (`ual1-standard`); it is `ual1` (in the row and
@@ -92,7 +94,7 @@ stands apart from it on neutral ground near REST (`ctx.people.stagePlace`, the f
 | tier | meshes | tris (all nine) | draws | distance |
 |---|---|---|---|---|
 | near | `Skin_L0` (body + eyes), `Hair_L0`, `Outfit_L0` | 15.9–18.9 k | 3 | the 6 nearest within 18 m |
-| LOD1 | `Skin_L1`, `Outfit_L1` (wrap folded in as a 14 × 32 shell cast onto the cloth; tails, aprons, sashes, tools, skirts and the shell kept whole) | 7.95–7.99 k | 2 | 18–35 m |
+| LOD1 | `Skin_L1`, `Outfit_L1` (wrap folded in as a 10 × 22 shell cast onto the cloth; tails, aprons, sashes and tools kept whole) | 7.95–7.99 k | 2 | 18–35 m |
 | LOD2 | `Skin_L2`, `Outfit_L2` | 3.70–3.75 k | 2 | beyond; hidden past 90 m |
 | caster | `Caster` (merged, about 2.0 k) | | 1 per cascade | the 4 nearest; no main pass |
 
@@ -136,8 +138,10 @@ GLB contract (`extras.r5Npc`): `{ id, n, name, faction, sex, age, adolescent, he
 
 ## 4. Gates (port 5264, this tree)
 
-Runs: r5 (Nov 6, 21:18-21:40 UTC, `--only` the lane block + the global list rows that exist here), r6 (the three instrument
-rows r5's Chrome wedged on), offline checks in node where noted. Visual rows are my reading (§5); R29's judge grades them.
+Runs: r5 (Nov 6, 21:18-21:40 UTC, `--only` the lane block + the global list rows that exist here) on the shipped build, r6 (the
+three instrument rows r5's Chrome wedged on), r7 and r8 (the allocation work; r8 is the shipped runtime: A1, A20b, A96, A97,
+A-alloc-rate and V41 PASS / FAIL as in r5 there), offline checks in node where noted. r7 and r8 also measured a LOD1 experiment
+that was reverted (§1 item 11); the fidelity numbers below are r5's, on the build that ships. Visual rows are my reading (§5); R29's judge grades them.
 
 ### The W1 block (R56, R57 c)
 
@@ -170,7 +174,7 @@ rows r5's Chrome wedged on), offline checks in node where noted. Visual rows are
 | A90b-memory-attribution | PASS | 0 offenders |
 | A90-rig-reclaim | PASS | geo +0, tex +0 over 30 cycles |
 | A90-abs | PASS | r6 (r5's Chrome wedged in this row and took the next two with it; nothing in their output pointed at the page): post-GC JS heap 86.4 MB (ceiling 450), Chrome GPU-process footprint 1220.6 MB (ceiling 1500) at the staged fight after the A90 workload, with the group resident |
-| A-alloc-rate | @@ALLOC@@ |
+| **A-alloc-rate** | **FAIL (baseline guard, this lane's row)** | instrument PASS; scheduled absolute bars PASS; the binding guard (any owner > 1.1x its W0b baseline) fails on `settlements`: r3 26.8 KB/frame (1.75x), r6 16.86 KB/frame / 961.6 KB/s (1.10x / 1.16x), r7 17.5 / 1000 (1.14x / 1.21x), r8 18.3 / 1036 (1.19x / 1.25x) against 15.34 / 827.0. The new people's own functions fell r6 795 → r7 719 → r8 688 KB/s (graded peaks); the rest of the row is the Round-4 crowd (`npc.js`, `npcAnim.js`, about 700-740 KB/s), whose share moves from run to run. Also over in this run: world-sky (1.23x), progression, instruments-core: not this lane's. See §6 item 4 |
 | A-vram-ledger | PASS | r6: textures 63.4 MB (bar 160), render targets 127.3 (170), geometry 79.3 (120), total 269.9 (450) |
 | A-licence-manifest | PENDING | every clause PASS except third-party, PENDING only on another lane's row (`r5-poc-rock-scan`); this lane's `npc-clips` row now derives from `ual1` (r3: FAIL on `ual1-standard`) |
 | A-ID-ip-assets-gone, A-assets-tracked, A-no-horizon-terms-player | PASS | r3 (no change since that touches them): 0 IP hits; 241 referenced, 0 missing; 1507 ≤ 1508 |
@@ -211,15 +215,24 @@ Frames: `run-r5/shots/gates/` under this lane's scratch (1600 × 900). Brea in t
 1. **`A-npc-fidelity` fails on three archetypes' silhouette jump at the 18 m change** (pit farmer 0.026 m at the cap's crown,
    tube smith 0.025 m at the rag knot, cochineal picker 0.033 m at the skirt's back hem; bar 0.02). LOD1 now locks every tail,
    apron, sash and tool, which took the smith from 0.072; what is left is the LOD1 head shell (a 10 × 22 ray-cast shell over the
-   wound cloth) and the simplified skirt hem. Next: a denser shell on the cap and the rag (14 × 32), and the skirt's lowest row
-   locked like the tails. The cross-fade itself (0.32 s, both tiers drawn) is in place.
+   wound cloth) and the simplified skirt hem. Locking the skirts and a denser shell only moved the error to the shoulders
+   (r7, reverted). The next step is a separate LOD1 budget per region (head, trunk, skirt) rather than one simplification over
+   the whole outfit, and a measuring tool that poses the GLB offline so this does not cost a Chrome run per try. The
+   cross-fade itself (0.32 s, both tiers drawn) is in place, and at 18 m a 2.5-3.3 cm step lasts the fade.
 2. **The clothes are the weakest part of every frame** (§5): recoloured MCO bodies, flat apron panels, smooth skirt cones,
    pale boots, no leather harness or buckle work like Kevin's Nov 6 boards. This is where an NPC can still read cheap next
    to the new Brea once she merges. The next pass is a strap-and-buckle kit (procedural) and folded, layered aprons and skirts.
 3. **The adolescent reads about eighteen, not fifteen.** The face does what the bible allows (no bone scale); if that is not
    enough for the judge, the bible's fallback (cut the variant) applies.
-4. **The Round-4 crowd still runs** (`npc.js`, `npcAnim.js`) and allocates about 10 KB/frame inside this lane's owner row in
-   `A-alloc-rate`; it goes with the W2 exit (plan §6). The new people are measured beside it.
+4. **`A-alloc-rate`'s baseline guard fails on this lane's row** (1.16-1.25x on KB/s across r6-r8). The W0b baseline (15.34
+   KB/frame, 827 KB/s) was recorded with the Round-4 crowd alone; R56 then added ten Brea-fidelity people beside it. Their
+   own allocation is down from about 1.4 MB/s through three's mixer (r3) to about 0.69 MB/s (r8, graded peaks per function):
+   `pose.js` replaces the mixer, `rotOf` replaces `decompose`, the chain solve and overlays take no number arguments, and
+   past 8 m the near tier ticks at 30 Hz. In node, V8's sampling profiler measures the pose player and the chain solve at
+   0 B per tick; in the game's Chrome they still allocate (pose.update about 170 KB/s, person.update about 136 KB/s), so the
+   game's V8 is not running them fully optimised and boxes numbers; I could not find which statements from outside the page.
+   Two ways out, both the orchestrator's: re-record the settlements baseline for R56's people (they did not exist at W0b),
+   or hold the row until W2, when the Round-4 crowd (`npc.js`, `npcAnim.js`, about 0.7 MB/s of this row) is deleted.
 5. **Grey hair** at the elders' temples is a noisy coil texture at 2 m.
 6. **Seated, rail and boat clips** (the keeper's `Sitting_Idle_Loop`, the follower's `Idle_Rail_Loop`, the caulker's
    `Fixing_Kneeling` boat) have nothing to sit on or lean on until W2 places them; the W1 stage plays `clips.stage` instead.
