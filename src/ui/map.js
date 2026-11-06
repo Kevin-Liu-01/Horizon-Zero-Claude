@@ -550,6 +550,7 @@ const LEGEND = [
   ['site', 'SITE'],
   ['benchmark', 'BENCHMARK'],
   ['pillar', 'TRIG PILLAR'],
+  ['position', 'POSITION'],
   ['objective', 'OBJECTIVE'],
   ['machine', 'FLAGGED INSTRUMENT'],
   ['datum', 'DATUM LINE'],
@@ -561,6 +562,7 @@ const legendSvg = (k) => {
   if (k === 'site') return s('M8 2.500a4.500 4.500 0 1 1 0 9 4.500 4.500 0 0 1 0-9Z', line);
   if (k === 'benchmark') return s('M8 2 13 12H3Z', ink);
   if (k === 'pillar') return s('M8 13V2M8 2 3.500 10M8 2l4.500 8', line);
+  if (k === 'position') return s('M8 1 13.500 13 8 9.500 2.500 13Z', 'fill="#D2452E" stroke="#26343F" stroke-width="0.8" stroke-linejoin="miter"');
   if (k === 'objective') return s('M8 13V2M8 13 3.500 5M8 13l4.500-8', 'fill="none" stroke="#D2452E" stroke-width="1.8"');
   if (k === 'machine') return s('M8 1.500 14.500 7 8 12.500 1.500 7Z', 'fill="#2B2C30" stroke="#26343F" stroke-width="1"');
   return s('M1 7h14', 'fill="none" stroke="#D2452E" stroke-width="2.4"');
@@ -881,12 +883,18 @@ export class WorldMap {
       g.save();
       g.translate(pt.x, pt.y);
       g.rotate(-yaw);   // world +Z maps to screen +Y and she looks along (-sin yaw, -cos yaw); the tip is drawn at local -Y
-      g.lineCap = 'square';
-      g.strokeStyle = PAPER; g.lineWidth = 4.4 * K;
-      g.beginPath(); g.moveTo(0, 8 * K); g.lineTo(0, -10 * K); g.moveTo(-6.5 * K, 3 * K); g.lineTo(0, -10 * K); g.lineTo(6.5 * K, 3 * K); g.stroke();
-      g.strokeStyle = VERMILION; g.lineWidth = 2.1 * K;
-      g.beginPath(); g.moveTo(0, 8 * K); g.lineTo(0, -10 * K); g.moveTo(-6.5 * K, 3 * K); g.lineTo(0, -10 * K); g.lineTo(6.5 * K, 3 * K); g.stroke();
+      // a solid dart, not the objective's open arrow: the two never read alike, whatever her heading
+      g.lineJoin = 'miter';
+      g.beginPath();
+      g.moveTo(0, -11 * K); g.lineTo(7 * K, 7 * K); g.lineTo(0, 2.5 * K); g.lineTo(-7 * K, 7 * K); g.closePath();
+      g.strokeStyle = PAPER; g.lineWidth = 3 * K; g.stroke();
+      g.fillStyle = VERMILION; g.fill();
+      g.strokeStyle = INK; g.lineWidth = 0.8 * K; g.stroke();
       g.restore();
+      // her station: an ink point on a paper ring, where she stands
+      g.beginPath(); g.arc(pt.x, pt.y, 2.2 * K, 0, Math.PI * 2);
+      g.fillStyle = INK; g.fill();
+      g.lineWidth = 1.2 * K; g.strokeStyle = PAPER; g.stroke();
     }
 
     // the waypoint: a cobalt survey cross
