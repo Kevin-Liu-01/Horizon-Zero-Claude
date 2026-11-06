@@ -260,7 +260,11 @@ export const UBC_TUNE = {
     // of that); a hand stalled under the cord's knot goes round it (`knotRound` m a
     // step); the rest hold and the quiver ride the chest and the pelvis, read against
     // the standing aim's own offsets (`bodyRef`)
-    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.6, tailMin: 0.35, lanceOpen: 30, knotRound: 0.035, violStep: 0.002,
+    // (hero-body targeted fix round 2, `camAim`: the aim point is predicted on this step's camera ray, the
+    // T's ray is low-passed only relative to the camera's, its cap adds the camera's rate, and at a held
+    // full draw the arm's limiter carries last step's arm rigidly with the chest; `crouchOut`: crouched, the T
+    // goes out at its crouched pace and the aim layer runs on until it is out)
+    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.6, tailMin: 0.35, lanceOpen: 30, knotRound: 0.035, violStep: 0.002, camAim: true, crouchOut: true,
     bodyRef: { chest: [-0.006, -0.032, -0.063], pelvis: [0.002, -0.035, -0.036] } },
   // W0b targeted fix 4: the aim's trunk starts upright — the pelvis -> neck
   // line's forward pitch under the aim (radians, character space), standing /
@@ -281,6 +285,10 @@ export const UBC_TUNE = {
   // W0b targeted fix 4: the bent T's reach at the pitch clamps (rad): the turn's
   // caps, and how much of its pitch the hips carry, the upper back the rest
   tClamp: { up: 1.2, down: 1.25, yaw: 0.9, hipUp: 0.6, hipDown: 0.95, hipBack: 1.5 },
+  // hero-body targeted fix round 2: the roll's hand-over to the gait — the pelvis held where it was
+  // rendered on the step the roll ends and handed to the gait's at most `stepM` m per 1/60 s against
+  // her root, over `minS`..`maxS` s; a jump under `minM` m is left alone (see `_rollExit`)
+  rollExit: { stepM: 0.02, minM: 0.02, minS: 0.2, maxS: 0.8 },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)

@@ -55,6 +55,10 @@ const _v6 = new THREE.Vector3();
 const _v7 = new THREE.Vector3();
 const _v8 = new THREE.Vector3();   // foot lock: ball world read-back (pass 2)
 const _reAx = new THREE.Vector3(); // elbow roll: shoulder -> wrist axis (char)
+const _rxV = new THREE.Vector3();  // the roll's hand-over: this step's pelvis (char), `_rollExit`
+// hero-body targeted fix round 2 (`armFlow.camAim`): the camera this step (world), its ray in character space, its frame
+const _caP = new THREE.Vector3(), _caD = new THREE.Vector3(), _caC = new THREE.Vector3(), _caL = new THREE.Vector3();
+const _caQ = new THREE.Quaternion();
 const _reU = new THREE.Vector3();  // elbow roll: elbow offset, perpendicular
 const _reV = new THREE.Vector3();  // elbow roll: axis x U, completes the frame
 const _reW = new THREE.Vector3();  // elbow roll: the measured height axis (char Y, or the aim frame's up)
@@ -637,6 +641,8 @@ export class PlayerAnimator {
       crouchAim: tn?.crouchAim ?? null,
       // ...and the turn's reach at the pitch clamps (null = its caps before it)
       tClamp: tn?.tClamp ?? null,
+      // hero-body targeted fix round 2: the roll's hand-over to the gait (null = the pop; see `_rollExit`)
+      rollExit: tn?.rollExit ?? null,
     };
     this.bowSolve = prof?.bow || null;
     /* M10 (E3): the spring-side capsule on the DRAW hand + forearm. */
@@ -900,7 +906,14 @@ export class PlayerAnimator {
     this._stowCap = { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.11, on: false };
     this._latT = new THREE.Vector3(1, 0, 0); this._restGripT = new THREE.Vector3();
     this._dTs = new THREE.Vector3(0, 0, 1); this._tOff = true;   // the T ray, low-passed (snapped when the turn starts)
+    // hero-body targeted fix round 2 (`armFlow.camAim`): the aim point this step's camera will give, the camera's
+    // last position (world), the T ray relative to the camera ray (low-passed), the camera ray last step (char)
+    this._aimPred = new THREE.Vector3(); this._camP = new THREE.Vector3(); this._camPOk = false;
+    this._dTl = new THREE.Vector3(0, 0, 1); this._camC = new THREE.Vector3(0, 0, 1); this._camRate = 0; this._camCOk = false;
     this._gripValid = false;
+    // hero-body targeted fix round 2: the roll's hand-over (`_rollExit`)
+    this._rxPe = new THREE.Vector3(); this._rxD = new THREE.Vector3(); this._rxPeOk = false;
+    this._rxOn = false; this._rxT = 0; this._rxDur = 0; this._rxWas = false;
     // aim diagnostics (written by _aimLayer, read by debugAim()/the gates)
     this._aimDbg = {
       idealGripDist: 0, reach: 0, slide: 0, nockToAnchor: 0, anchorDrop: 0, lmax: 0, pull: 0, restZ: 0,
@@ -2067,6 +2080,15 @@ export class PlayerAnimator {
       else if (CA && !p.crouching && this._aimHold) this._caT = Math.min(this._caT, Math.min(1, this._crouchW * 4));
       const ct = this._caT;
       this._crouchAimW = CA ? ct * ct * ct * (ct * (ct * 6 - 15) + 10) : damp(this._crouchAimW, want, 9, dt);
+      /* hero-body targeted fix round 2 (Nov 6; eng judge finding 5: "lowering the crouched aim snaps
+       * her head about 5.5 cm in one sim step"): the pose came in on its ramp but went out with the aim
+       * weight (13/s: a fifth of it on the first step after RMB up). Now it comes in as before (the
+       * ramp times the aim weight) and goes OUT on the ramp alone: from the step the aim begins to
+       * end, the aim weight's share holds where it was, and only a roll, a death or a heavy carry
+       * takes it faster. */
+      const gA = (1 - this._dodgeW) * (1 - this._deadW) * (1 - carryW);
+      this._caA = this._caT > 1e-4 ? Math.max(aimW, Math.min(this._caA ?? 0, gA)) : aimW;
+      this._caPoseW = CA ? this._crouchAimW * this._caA : this._crouchAimW * aimW;
     }
     /* W0b targeted fix 3 (judge: the crouched 0.75 aim raise put the draw hand
      * over the top and back of her head). The crouch-aim pose pitches the
@@ -2075,14 +2097,26 @@ export class PlayerAnimator {
      * back of the skull through the crouched raise and loose, probe `w7/T1b`).
      * With `armFlow.crouchBody` the pose comes first and the arms solve on it. */
     const cbFirst = !!this.T.armFlow?.crouchBody;
-    if (cbFirst && this._crouchAimW > 0.01) this._crouchAimLayer(this._crouchAimW * aimW, p);
-    if (aimW > 0.01) this._aimLayer(aimW, this._drawS, p, moveW, t);
+    if (cbFirst && this._crouchAimW > 0.01) this._crouchAimLayer(this._caPoseW, p);
+    /* (hero-body targeted fix round 2, eng judge finding 5: crouched, the bent T goes out at the crouched
+     * turn's own pace (`tSpeed` less `tSpeedCrouch`, as it came in), not 5 rad/s — and the layer runs on
+     * at a vanishing aim weight until it is out: at 5 rad/s the head moved 0.05 m a step at RMB up +0.017 s;
+     * stopping the layer with the T still bent would drop the rest of it in one step) */
+    const tTail = aimW <= 0.01 && !!this.T.armFlow?.crouchOut && this._afOn && this._crouchW > 0.3 && this._qTs.w < 1 - 1e-6
+      && !p.dodging && this._dodgeW < 0.05 && !dead && this._carryW < 0.02;
+    this._aimRan = aimW > 0.01 || tTail;
+    if (this._aimRan) this._aimLayer(aimW, this._drawS, p, moveW, t);
     // fix round 5: the next aim's T ray starts from its own ray. W0b targeted
     // fix 4: ...and from a ray off HER, not off the grip she had when the layer
     // stopped (a dodge rolls her 3 m on: that stale world grip aimed the
     // restarted ray and the bent T up behind her — the bow held overhead)
-    else { this._tOff = true; this._tW = 0; this._qTs.identity(); this._atW = 0; this._bcS = 0; this._afOn = false; this._afFull = false; this._gripValid = false; this._aimPrevOk = false; }
-    if (!cbFirst && this._crouchAimW > 0.01) this._crouchAimLayer(this._crouchAimW * aimW, p);
+    else {
+      // (hero-body targeted fix round 2: the aim's trunk keeps going out on its own pace once this
+      // layer has stopped — crouched, the crouch-aim pose's ramp, 0.7 s; see `_aimTrunk`)
+      if ((this._atW ?? 0) > 1e-3) this._aimTrunk(aimW); else this._atW = 0;
+      this._tOff = true; this._tW = 0; this._tAimW = 0; this._qTs.identity(); this._bcS = 0; this._afOn = false; this._afFull = false; this._gripValid = false; this._aimPrevOk = false; this._camPOk = false; this._camCOk = false; this._camRate = 0;
+    }
+    if (!cbFirst && this._crouchAimW > 0.01) this._crouchAimLayer(this._caPoseW, p);
     if (carryW > 0.01) this._carryLayer(carryW, p, t);
     // wielded-but-not-aiming: the bow rides LOW in the LEFT hand and the left
     // arm's clip swing is damped down (player-anim-14; combat publishes the
@@ -2162,6 +2196,7 @@ export class PlayerAnimator {
     /* ---- R5: the run's pelvis bounce, compressed (A-run-arms, no prance) -- */
     if (this.T.runBob) this._runBob(dt, speed, dodgeW, aimW);
     this._crouchAimLift(dodgeW);
+    this._rollExit(p, dt);
     this._lateCapture();
 
     /* --- W0b targeted fix 4: the draw arm's continuity, on its final pose --- */
@@ -2169,7 +2204,7 @@ export class PlayerAnimator {
     // before the chains hang off it: the arm moves at most `armStep` per step
     // relative to the draw shoulder from where it was RENDERED last step, and
     // the arm as it ends this step is captured for the next
-    if (this._afEng) this._armContinuity(aimW > 0.01);
+    if (this._afEng) this._armContinuity(this._aimRan);
     this._armCapture();
     if (aimW > 0.01 && this._knW0 > 0.01 && this.T.armFlow) { _knZ.set(0, 0, 0); this._knuckleTurn(this._knW0, this._drawS, _knZ); }
     if (this._afEng && this.T.armFlow) this._handInFront();
@@ -2534,6 +2569,47 @@ export class PlayerAnimator {
     // elbows in: a crouched archer is compact
     this._rot(b.clavL, Z_AXIS, 0.05 * w);
     this._rot(b.clavR, Z_AXIS, -0.05 * w);
+  }
+
+  /**
+   * hero-body targeted fix round 2 (Nov 6; gate judge finding 2: "a moving dodge's end pops her whole
+   * body about 0.32 m in one sim step, with or without the aim") — THE ROLL HANDS OVER TO THE GAIT.
+   * A moving roll is cancelled into the gait 0.55 s in (`player.js` DODGE_CANCEL) and the roll clip
+   * is then scrubbed to its last frame on the step it still carries ~0.8 of the pose. Late in the
+   * roll the root's progress curve has run out while the clip's pelvis is still catching up with it
+   * (0.07 m a step against a still root), so that last frame stood the pelvis ~0.3 m on: the whole
+   * body jumped 0.28-0.33 m relative to her root in one step. On the hand-over step the pelvis is
+   * held where it was rendered (character space: it travels with her root) and handed to the
+   * gait's on a smootherstep long enough that the hand-over moves it at most `rollExit.stepM` per
+   * 1/60 s against her root; both legs are re-solved to the ankles the pose put down. On the final
+   * pose (after the ground conform and the crouch-aim lift), before the arm's continuity reads it.
+   * No allocation.
+   */
+  _rollExit(p, dt) {
+    const RX = this.T.rollExit, b = this.b, pe = b.pelvis;
+    if (!RX || !pe || !b.thighL || !b.thighR || !b.footL || !b.footR) return;
+    const dodging = !!p.dodging;
+    if (dodging || this._deadW > 0.02 || p.mantling) this._rxOn = false;
+    else if (this._rxWas && this._rxPeOk) {
+      this._charOf(pe.bone, _rxV);
+      this._rxD.subVectors(this._rxPe, _rxV);
+      const L = this._rxD.length();
+      if (L > RX.minM) { this._rxOn = true; this._rxT = 0; this._rxDur = clamp(L * 1.875 / (60 * RX.stepM), RX.minS, RX.maxS); }
+    }
+    this._rxWas = dodging;
+    if (this._rxOn) {
+      this._rxT += dt;
+      const u = clamp(this._rxT / Math.max(1e-3, this._rxDur), 0, 1), k = 1 - u * u * u * (u * (u * 6 - 15) + 10);
+      if (k < 1e-4) this._rxOn = false;
+      else {
+        this._charOf(b.footL.bone, _rbT[0]); this._charOf(b.footR.bone, _rbT[1]);
+        _v2.copy(this._rxD).multiplyScalar(k).applyMatrix3(this._pelvisM3);
+        pe.bone.position.add(_v2);
+        for (let s = 0; s < 2; s++) this._legTo(s, _rbT[s], 0);
+        pe.bone.updateMatrixWorld(true);
+      }
+    }
+    this._charOf(pe.bone, this._rxPe); this._rxPeOk = true;
   }
 
   /**
@@ -3654,27 +3730,13 @@ export class PlayerAnimator {
 
   /* ----------------------------- aim overlay ------------------------------ */
 
-  _aimLayer(aimW, drawS, p, moveW, t) {
+  /**
+   * W0b targeted fix 4 — the aim's trunk starts upright (see the note inside). hero-body targeted
+   * fix round 2: a method of its own, so the crouched trunk's way out runs on after the aim layer
+   * has stopped (the aim weight is under 0.01 0.35 s after RMB up; the crouch-aim ramp takes 0.7 s).
+   */
+  _aimTrunk(aimW) {
     const b = this.b;
-    const pitch = clamp(p.camPitch ?? 0, -0.6, 1.05);
-    const stanceW = aimW * (1 - moveW * 0.85);
-
-    /*
-     * R5 fix round 3 — THE CLOSED-LOOP BLADE (profile `tune.bladeLock`). The
-     * stance + chest blade below are open loop: they add a fixed yaw to whatever the clip and
-     * the locomotion overlays left the shoulders at. Standing, that is square
-     * and the blade lands the shoulder line side-on; in the aim side-step and
-     * the aim walk the strafe loop's own trunk twist survived it, and the
-     * shoulder line sat ~23 deg short of side-on (measured Oct 22: the bow
-     * shoulder 4 cm further back of the anchor and the draw shoulder 10 cm
-     * out to her right of it), so the bow arm could not reach the nock to the
-     * anchor — the reach clamp slid the whole draw 8.6-9.0 cm back, which put
-     * the draw hand 2 cm off the back of the skull and the elbow 0.19 m behind
-     * it while strafing (A-draw-elbow-level). The shoulder line's yaw is
-     * measured here, before the stance and the blade, and the trunk (spine_03)
-     * is turned so it starts from `ref`, as it does standing; the neck turns
-     * back by the same amount so the head keeps its own facing.
-     */
     /* W0b targeted fix 4 — THE AIM'S TRUNK STARTS UPRIGHT (profile
      * `tune.aimTrunk`). The trunk posture correction (`tune.trunk`) stands
      * down while aiming, so every aim inherited whatever forward fold the clip
@@ -3695,8 +3757,12 @@ export class PlayerAnimator {
       // crouched trunk swung the shoulders 0.05 m in the first step of a raise)
       // (crouched it unfolds over the crouch-aim pose's own ramp: the two together are the
       // body's whole move from the crouch to the aim, <= 0.03 m per 1/60 s)
+      // (hero-body targeted fix round 2, eng judge finding 5: ...and crouched it goes OUT on that ramp
+      // too, not capped at three times the aim weight: the cap took the trunk's unfold out at the aim
+      // weight's 13/s, the head 0.05 m a step at RMB up +0.13-0.15 s. Standing, as before)
       const tR = (this.T.armFlow?.tRate ?? 99) * (this._dtA || 0.016), w0 = this._atW ?? 0;
-      this._atW = Math.min(aimW > w0 ? Math.min(aimW, w0 + tR) : Math.max(aimW, w0 - tR), 3 * aimW);
+      const caOut = this.T.crouchAim ? this._crouchW * (this._caPoseW ?? 0) : 0, aimT = Math.max(aimW, caOut);
+      this._atW = Math.min(aimT > w0 ? Math.min(aimT, w0 + tR) : Math.max(aimT, w0 - tR), Math.max(3 * aimW, caOut));
       if (this.T.crouchAim) this._atW = Math.min(this._atW, 1 - this._crouchW * 0.9 * (1 - this._crouchAimW));
       const want = ATK.up + ((ATK.crouch ?? ATK.up) - ATK.up) * this._crouchW;
       const S = this._crouchW > 0.5 && ATK.shareCrouch ? ATK.shareCrouch : ATK.share;
@@ -3733,6 +3799,30 @@ export class PlayerAnimator {
         this._rotL(b.head, X_AXIS, eH * 0.5);
       }
     }
+  }
+
+  _aimLayer(aimW, drawS, p, moveW, t) {
+    const b = this.b;
+    const pitch = clamp(p.camPitch ?? 0, -0.6, 1.05);
+    const stanceW = aimW * (1 - moveW * 0.85);
+
+    /*
+     * R5 fix round 3 — THE CLOSED-LOOP BLADE (profile `tune.bladeLock`). The
+     * stance + chest blade below are open loop: they add a fixed yaw to whatever the clip and
+     * the locomotion overlays left the shoulders at. Standing, that is square
+     * and the blade lands the shoulder line side-on; in the aim side-step and
+     * the aim walk the strafe loop's own trunk twist survived it, and the
+     * shoulder line sat ~23 deg short of side-on (measured Oct 22: the bow
+     * shoulder 4 cm further back of the anchor and the draw shoulder 10 cm
+     * out to her right of it), so the bow arm could not reach the nock to the
+     * anchor — the reach clamp slid the whole draw 8.6-9.0 cm back, which put
+     * the draw hand 2 cm off the back of the skull and the elbow 0.19 m behind
+     * it while strafing (A-draw-elbow-level). The shoulder line's yaw is
+     * measured here, before the stance and the blade, and the trunk (spine_03)
+     * is turned so it starts from `ref`, as it does standing; the neck turns
+     * back by the same amount so the head keeps its own facing.
+     */
+    this._aimTrunk(aimW);
     let bladeCorr = 0;
     const BL = this.T.bladeLock;
     if (BL && b.upArmL && b.upArmR && b.spine3) {
@@ -3917,6 +4007,15 @@ export class PlayerAnimator {
     const pull = bow?.pull ?? 0.52;
     const restZ = bow?.restZ ?? 0.055;
 
+    /* (hero-body targeted fix round 2, `armFlow.camAim`: the camera's ray this step in character space and
+     * how fast it turns there — her heading follows the camera's yaw while she aims, so this is its pitch) */
+    if (this.T.armFlow?.camAim && this.ctx.camera) {
+      this.ctx.camera.getWorldDirection(_caD);
+      const hy2 = p.heading ?? 0, sy2 = Math.sin(hy2), cy2 = Math.cos(hy2);
+      _caC.set(_caD.x * cy2 - _caD.z * sy2, _caD.y, _caD.x * sy2 + _caD.z * cy2).normalize();
+      this._camRate = this._camCOk ? Math.acos(clamp(_caC.dot(this._camC), -1, 1)) / Math.max(1e-3, this._dtA || 0.016) : 0;
+      this._camC.copy(_caC); this._camCOk = true;
+    }
     // aim ray in character space. The bow is oriented by combat toward the
     // crosshair-true aimPoint, so the string/nock line must follow the SAME
     // ray or the string hand drifts off the nock when aiming at near ground.
@@ -3936,7 +4035,24 @@ export class PlayerAnimator {
          * aim point (it moves with the camera) one step on, the origin carried with
          * her. Strafing at a near ground hit that step is 0.02-0.05 m in about a
          * metre, 0.03-0.04 m at the nock. */
-        if (this.T.armFlow) {
+        /* hero-body targeted fix round 2 (`armFlow.camAim`; gate judge finding 1, eng judge finding
+         * 3: a camera turn or sweep at full draw left the fingers 0.06-0.19 m off the nock): the aim
+         * point extrapolated from the last two was a whole step behind the camera at the start and the
+         * stop of every turn, and past 0.5 m a step (any far hit, any look near the level) it was not
+         * extrapolated at all: one step of the camera's turn, 0.05-0.17 rad, between the ray the arms
+         * solved on and the arrow combat drew. Combat finds its hit on THIS step's camera ray, and the
+         * camera has already moved (player.js runs it before the animator): the hit is predicted at the
+         * distance along the camera ray it was found at last step. */
+        const cam = this.ctx.camera;
+        if (this.T.armFlow?.camAim && cam) {
+          cam.getWorldPosition(_caP); cam.getWorldDirection(_caD);
+          const dPrev = this._camPOk ? cmb.aimPoint.distanceTo(this._camP) : -1;
+          if (dPrev > 0.3) this._aimPred.copy(_caP).addScaledVector(_caD, dPrev); else this._aimPred.copy(cmb.aimPoint);
+          this._camP.copy(_caP); this._camPOk = true;
+          this._aimDp.subVectors(this._aimPred, cmb.aimPoint);
+          _v7.subVectors(this._aimPred, this._gripW).sub(_afG.subVectors(p.position, this._gripP));
+          this._aimPrev.copy(cmb.aimPoint); this._aimPrevOk = true;
+        } else if (this.T.armFlow) {
           // (a look near the level moves a far ground hit metres a step: nothing to extrapolate)
           if (this._aimPrevOk && _afG.subVectors(cmb.aimPoint, this._aimPrev).lengthSq() < 0.25) { _v7.add(_afG); this._aimDp.copy(_afG); } else this._aimDp.set(0, 0, 0);
           _v7.sub(_afG.subVectors(p.position, this._gripP));
@@ -3951,6 +4067,7 @@ export class PlayerAnimator {
          * the ray is the camera's own pitch (not the form's clamped one). */
         const pr = p.camPitch ?? 0;
         _v7.set(sy * Math.cos(pr), -Math.sin(pr), cy * Math.cos(pr));
+        if (this.T.armFlow.camAim && this.ctx.camera) { this.ctx.camera.getWorldPosition(this._camP); this._camPOk = true; }
       } else {
         _v7.copy(cmb.aimPoint);
         _v7.x -= p.position.x + sy * this.T.rayFwd;
@@ -4014,7 +4131,21 @@ export class PlayerAnimator {
       // with it (the hand 0.30 m back in 0.3 s at the 0.75 aim, the loose
       // elbow 0.19 m behind the head plane against R35's 0.20, run f5t2); the
       // arms still solve on the live ray
-      if (this._tOff) this._dTs.copy(_dT);
+      /* (hero-body targeted fix round 2, `armFlow.camAim`: ...but only the part of the ray that is
+       * NOT the camera's own turn: the ray is read in the camera ray's frame, low-passed there, and
+       * turned back by this step's camera. A mouse sweep or a turn at full draw carries the whole
+       * drawn form with it, rigidly, the step it happens (the 0.35 s lag swung the anchor 0.1-0.6 rad
+       * off the arrow at 4-8 rad/s: the forearm up to 106 deg off the real arrow); the bow arm's
+       * relaxing through a loose, a strafe's start at a near ground hit, still come through filtered) */
+      const camT = !!this.T.armFlow?.camAim && this._camCOk;
+      if (camT) {
+        _caQ.setFromUnitVectors(Z_AXIS, this._camC).invert();
+        _caL.copy(_dT).applyQuaternion(_caQ);
+        if (this._tOff) this._dTl.copy(_caL);
+        else this._dTl.lerp(_caL, 1 - Math.exp(-(this._dtA || 0.016) / 0.35)).normalize();
+        _caQ.invert();
+        this._dTs.copy(this._dTl).applyQuaternion(_caQ);
+      } else if (this._tOff) this._dTs.copy(_dT);
       else this._dTs.lerp(_dT, 1 - Math.exp(-(this._dtA || 0.016) / 0.35)).normalize();
       _dT.copy(this._dTs);
       /* W0b targeted fix 4 (r1 eng judge: the bars broke at both pitch clamps: at 1.02
@@ -4049,7 +4180,15 @@ export class PlayerAnimator {
        * with it); never more than three times the weight, so a layer that
        * stops fast (a dodge: 9 steps) stops with no bend left. */
       const tWant = tS * aimW, tR = (this.T.armFlow?.tRate ?? 99) * (this._dtA || 0.016);
-      this._tW = Math.min(tWant > (this._tW ?? 0) ? Math.min(tWant, (this._tW ?? 0) + tR) : Math.max(tWant, (this._tW ?? 0) - tR), Math.max(tWant, 3 * aimW));
+      if (this.T.armFlow?.camAim) {
+        /* (hero-body targeted fix round 2, `camAim`: the rate limit is the AIM WEIGHT's: the raise and the
+         * lower, as before; the share of the turn the pitch asks for, `tS`, moves with the camera. A
+         * mouse sweep through 0.1-0.5 rad brought `tS` in at the limit's 3/s, the form a third of a second
+         * behind a sweep: the hand 0.06-0.13 m off the string) */
+        const wA0 = this._tAimW ?? 0;
+        this._tAimW = Math.min(aimW > wA0 ? Math.min(aimW, wA0 + tR) : Math.max(aimW, wA0 - tR), 3 * aimW);
+        this._tW = tS * this._tAimW;
+      } else this._tW = Math.min(tWant > (this._tW ?? 0) ? Math.min(tWant, (this._tW ?? 0) + tR) : Math.max(tWant, (this._tW ?? 0) - tR), Math.max(tWant, 3 * aimW));
       this._qT.slerpQuaternions(Q_IDENT, _tq, this._tW);
       // (...and the turn itself moves at most `tSpeed` rad/s, whatever its ray does:
       // a strafe's start swings a near ground hit's yaw 0.1 rad a step)
@@ -4060,8 +4199,11 @@ export class PlayerAnimator {
         // (...and once the string is coming back it hurries to the arrow: coming out of a
         // roll the draw starts at once, and an upright T under a steep arrow runs the
         // string back through her throat)
-        const AFt = this.T.armFlow, tSp = this._aimHold ? Math.max(AFt.tSpeed * (1 - (AFt.tSpeedCrouch ?? 0) * this._crouchW), 6 * smoothstep(drawS, 0.03, 0.3)) : Math.max(AFt.tSpeed, 5);
-        this._qT.copy(this._qTs.rotateTowards(this._qT, tSp * (this._dtA || 0.016)));
+        const AFt = this.T.armFlow, tSp = this._aimHold ? Math.max(AFt.tSpeed * (1 - (AFt.tSpeedCrouch ?? 0) * this._crouchW), 6 * smoothstep(drawS, 0.03, 0.3))
+          : AFt.crouchOut ? Math.max(AFt.tSpeed, 5) + (AFt.tSpeed * (1 - (AFt.tSpeedCrouch ?? 0)) - Math.max(AFt.tSpeed, 5)) * this._crouchW : Math.max(AFt.tSpeed, 5);
+        // (hero-body targeted fix round 2: the cap bounds the ray's noise, not the camera: its own turn on top)
+        const tSpC = AFt.camAim && this._aimHold ? tSp + 1.25 * this._camRate : tSp;
+        this._qT.copy(this._qTs.rotateTowards(this._qT, tSpC * (this._dtA || 0.016)));
       }
       this._charOf(b.spine1.bone, _v7);            // the turn's pivot (spine_01 does not move)
       // ...the hips carry `hipUp` / `hipDown` of the pitch, the upper back (spine_03) the rest
@@ -4088,7 +4230,7 @@ export class PlayerAnimator {
       this._fwdT.copy(Z_AXIS).applyQuaternion(this._qT);
       this._latT.set(1, 0, 0).applyQuaternion(this._qT);
       this._tOff = false;
-    } else { this._tOff = true; this._tW = 0; this._qTs.identity(); }
+    } else { this._tOff = true; this._tW = 0; this._qTs.identity(); this._tAimW = aimW; }
     this._aimDbg.tBend = 2 * Math.acos(Math.min(1, Math.abs(this._qT.w)));
 
     // breathing sway (steadier under Concentration) + draw-hold tremble
@@ -4929,7 +5071,12 @@ export class PlayerAnimator {
     // in the chest's frame: the roll turns her whole trunk 0.1-0.2 rad a step,
     // and an arm held still in character axes against it was left sticking out
     // of a tumbling body (and let go with a jump when the limit ran out)
-    if (this._armCapC && b.spine3 && (this.ctx.player?.dodging || this._dodgeW > 0.05)) {
+    /* (hero-body targeted fix round 2, `armFlow.camAim`: ...and at a held full draw while the camera's pitch
+     * moves (> 0.5 rad/s): the drawn form turns with the camera as one piece, the arm with it, and against a
+     * character-space reference the limiter held the arm back 0.03-0.1 m from the turning head and string
+     * at 4-8 rad/s. The arm's own step against the chest is still limited) */
+    const heldFull = !!AF.camAim && this._aimHold && this._afFull && this._drawS > 0.9 && this._looseT >= 1 && this._camRate > 0.5;
+    if (this._armCapC && b.spine3 && (this.ctx.player?.dodging || this._dodgeW > 0.05 || heldFull)) {
       this._liveW(b.spine3.bone, _afQ);
       _afJ.copy(this._elbC).applyQuaternion(_afQ).add(_afS);
       _afK.copy(this._wrC).applyQuaternion(_afQ).add(_afS);
