@@ -496,6 +496,24 @@ export class Look {
     return out;
   }
 
+  /**
+   * The HDR grey (scene-linear, before exposure) that shows at display L* `Ls` through the look in
+   * force (exposure, slots, grade). The bloom threshold is keyed to it (L-07), so "only true
+   * highlights glow" means the same display brightness at every hour and EV. Bisection; no allocation.
+   */
+  hdrForLstar(Ls) {
+    const y = this._y, o = this._la2 || (this._la2 = [0, 0, 0]);
+    let lo = 1e-3, hi = 200;
+    for (let i = 0; i < 48; i++) {
+      const m = Math.sqrt(lo * hi);
+      y[0] = y[1] = y[2] = m;
+      this.evaluate(y, o);
+      srgbToLab(o, _lab);
+      if (_lab[0] < Ls) lo = m; else hi = m;
+    }
+    return Math.sqrt(lo * hi);
+  }
+
   /** HDR linear -> display LINEAR (AgX + look at the exposure in force; no OETF, no grade). */
   toneMap(rgb, out = [0, 0, 0]) {
     const x = this._x;

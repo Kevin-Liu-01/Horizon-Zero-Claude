@@ -255,8 +255,16 @@ export const LOOK_W0 = Object.freeze({
   bloom: Object.freeze({ strength: 0.35, radius: 0.5, threshold: 1.08, smoothWidth: 0.01,
     factors: Object.freeze([1.0, 0.8, 0.6, 0.4, 0.2]), tint: Object.freeze([1, 1, 1]) }),
 });
-/** L-07 bloom retune: only true highlights glow, with a wide soft halo. */
+/**
+ * L-07 bloom retune: only true highlights glow, with a wide soft halo. Under AgX the threshold is
+ * keyed to DISPLAY brightness (look.hdrForLstar): bloom starts at the grey that shows at L* 93 and is
+ * full by L* 96, at the hour's exposure. ROUND5-LOOK's 1.30 / 0.35 were ACES-scale numbers: under the
+ * CALIMA look HDR 1.30 shows at L* ~84, so sunlit cloth, rock and salt (L* 85-92: A-look-bloom a,
+ * V-look-glow) and the calm lamp ring (#F2EAD3, L* 93.6, HDR lum 2.47) would all glow. `threshold` /
+ * `smoothWidth` stay the fallbacks (ACES output, or before the look is built).
+ */
 export const LOOK_BLOOM = Object.freeze({ strength: 0.48, radius: 0.72, threshold: 1.30, smoothWidth: 0.35,
+  thresholdLstar: 93, fullLstar: 96,
   factors: Object.freeze([0.55, 0.65, 0.85, 1.05, 1.25]), tint: Object.freeze([1.0, 0.97, 0.93]) });
 
 const OutputGradeShader = {
@@ -285,6 +293,7 @@ const OutputGradeShader = {
     tLutA: { value: null },
     tLutB: { value: null },
     uLutMix: { value: 0 },
+    uDither: { value: 1 / 255 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -314,6 +323,16 @@ const OutputGradeShader = {
     uniform highp sampler3D tLutA;
     uniform highp sampler3D tLutB;
     uniform float uLutMix;
+    uniform float uDither;
+    // white-noise dither for the 8-bit output (a PCG-style integer hash of the pixel: no lattice, no
+    // time dependence, so shots stay bit-identical). AgX's gentler haze and sky gradients step in 8 bits
+    // every 5-30 px; +-0.5 LSB breaks those stairs into noise (and A108's autocorrelation sees content, not stairs)
+    float calHash( vec2 p ) {
+      uvec2 q = uvec2( ivec2( p ) );
+      uint h = q.x * 1664525u + q.y * 1013904223u;
+      h ^= h >> 16u; h *= 0x7feb352du; h ^= h >> 15u; h *= 0x846ca68bu; h ^= h >> 16u;
+      return float( h ) * ( 1.0 / 4294967295.0 );
+    }
     vec3 calSigmoid( vec3 x ) {
       vec3 o = max( x - 1.0, 0.0 );
       return agxDefaultContrastApprox( min( x, 1.0 ) ) + CAL_SH_A * ( 1.0 - exp( - o * CAL_SH_K ) );
@@ -378,6 +397,7 @@ const OutputGradeShader = {
           vec2 dv = (vUv - 0.5) * vec2(uAspect, 1.0);
           float rv = length(dv) / (0.5 * sqrt(uAspect * uAspect + 1.0));
           g *= 1.0 - uVignette * smoothstep(uVigInner, uVigOuter, rv);
+          g += ( calHash( gl_FragCoord.xy ) - 0.5 ) * uDither;
         }
         gl_FragColor = vec4(clamp(mix(src.rgb, g, uGradeMix), 0.0, 1.0), src.a);
         return;
@@ -1099,6 +1119,12 @@ export class Engine {
     this.grade.uniforms.uAspect.value = window.innerWidth / Math.max(1, window.innerHeight);
     this.composer.addPass(this.grade);
     this._buildLook();
+    // diagnostic: `?look=w0` (on this page or the page hosting it, e.g. the Pans POC iframe) boots on the
+    // Round-5 W0 output, for before/after comparisons of any gate
+    try {
+      const q = (w) => new URLSearchParams(w.location.search).get('look');
+      if (q(window) === 'w0' || (window.top !== window && q(window.top) === 'w0')) this.setLookEnabled(false);
+    } catch (e) { /* cross-origin host: no switch */ }
 
     this.smaa = new SMAAPass(w, h);
     this.smaa.enabled = this.tier.smaa;
@@ -1331,8 +1357,10 @@ export class Engine {
     const b = this.bloom;
     b.strength = B.strength * L.bloomScale;
     b.radius = B.radius;
-    b.threshold = B.threshold;
-    if (b.highPassUniforms?.smoothWidth) b.highPassUniforms.smoothWidth.value = B.smoothWidth;
+    let thr = B.threshold, sw = B.smoothWidth;
+    if (agx && B.thresholdLstar) { thr = L.hdrForLstar(B.thresholdLstar); sw = Math.max(0.05, L.hdrForLstar(B.fullLstar) - thr); }
+    b.threshold = thr;
+    if (b.highPassUniforms?.smoothWidth) b.highPassUniforms.smoothWidth.value = sw;
     const cu = b.compositeMaterial?.uniforms;
     if (cu?.bloomFactors) for (let i = 0; i < cu.bloomFactors.value.length; i++) cu.bloomFactors.value[i] = B.factors[i] ?? B.factors[B.factors.length - 1];
     if (b.bloomTintColors) for (let i = 0; i < b.bloomTintColors.length; i++) b.bloomTintColors[i].set(B.tint[0], B.tint[1], B.tint[2]);
@@ -2597,6 +2625,9 @@ export class Engine {
     if (!A || !A.on && label !== null) return;
     const gl = this.renderer.getContext(), ext = this._attribExt;
     if (A.q) { gl.endQuery(ext.TIME_ELAPSED_EXT); A.pending.push({ q: A.q, label: A.cur, frame: A.frame }); A.q = null; }
+    // ANGLE on Metal times a query by the command buffers it spans: without a flush every segment of a frame
+    // shares one command buffer and the first query takes the whole frame (measured: scene:opaque 95 ms, grade 0)
+    gl.flush();
     A.cur = label;
     if (label !== null) { A.q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, A.q); }
   }

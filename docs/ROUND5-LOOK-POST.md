@@ -30,10 +30,19 @@ References are cited `ext:<file>@<sha8>#<panel>` (ROUND5-LOOK §0.2); none is co
 - **Gamut-edge guard** in the grade: colours at Lab chroma ≥ 58 keep their chroma and hue (identity by 82).
   No scene colour lives there (panels and frames sit at chroma 18–55); the lamp tokens do, and without the guard
   the wary token #B5E61D fell outside what the output can show (ΔE 9.9 after invert).
-- Ports by grant: `src/instruments/lamps.js` (16 changed lines: `readOutputParams` reads `engine.look` when
-  AgX is in force, `_solve` calls `look.invert` in place of the ACES branch, the per-frame change test and the
-  signature include `look.version`) and `src/hero/sheets.js` (5 changed lines: `screenPixels` tone-maps through
-  `engine.look.toneMap` under AgX). Both keep their ACES branches for `setLookEnabled(false)`.
+- Ports by grant: `src/instruments/lamps.js` (18 lines added, 7 removed: `readOutputParams` reads `engine.look`
+  when AgX is in force, `_solve` calls `look.invert` in place of the ACES branch, the per-frame change test and
+  the signature include `look.version`, and the wary trough is re-solved for the ACES-era on-screen depth: under
+  AgX the wary core sits in the shoulder, where the HDR trough 0.55 read as 0.88 of the peak on screen against
+  0.84 under ACES, and A-lamp-states' rhythm term fell to rel. std 0.0375 against > 0.05; the trough is now
+  solved so the screen reads 0.84 again, ≈ 0.46 in HDR) and `src/hero/sheets.js` (4 added, 1 removed:
+  `screenPixels` tone-maps through `engine.look.toneMap` under AgX). Both keep their ACES branches for
+  `setLookEnabled(false)`.
+- **Output dither** (±0.5 LSB, a PCG-style integer hash of the pixel: no lattice, no time dependence, so shots
+  stay bit-identical): AgX's gentler haze and sky gradients step in 8 bits every 5–30 px; the dither breaks the
+  stairs (and A108's autocorrelation then reads content, not quantisation stairs).
+- **Diagnostic** `?look=w0` (on the page, or on the page hosting the Pans POC iframe) boots on the Round-5 W0
+  output; the gate block carries `<id>@look-post-w0` twins of A108, A-weak40 and A-lamp-states for that reason.
 
 ### 1.2 L-02 / L-14 — the grade (`src/core/look.grade.json`)
 
@@ -45,11 +54,36 @@ shadow (1.04, 0.95, 0.98), saturation 0.95). The four LUTs are baked once at boo
 the GPU holds **two slots** (`CAL.lookLutA/B`, 2 × 128 KB) blended by `uLutMix`, refilled by one 128 KB upload
 only when a slot's set changes (never per hour). Vignette 0.28 in the pass.
 
+**Tuned against the frames, not the first numbers.** The first build used ROUND5-LOOK's numbers as written
+(linear contrast 1.06 about 0.45, saturation by luma 0.92 / 1.05 / 0.85, the olive band's chroma × 0.85). On the
+HDR dump of the look places (`tools/look/hdr-dump.gates.mjs` → `hdr-look.mjs`, the same eight frames through the
+W0 output and through the look) it read flatter and greyer than the W0 output it replaces: p99 −6…−10 L\*, the
+brightest tenth's chroma 43 → 33, the grass tan instead of amber, faces in shadow flat. Shipped instead:
+
+| set | contrast (soft, about pivot) | sat by luma (shadow / mid / high) | shadow tint (range) | olive band | violets |
+|---|---|---|---|---|---|
+| golden | 1.25 @ 0.40 | 0.95 / 1.08 / 0.95 | (1.05, 0.92, 1.10) (0.05–0.50) | −12°, chroma × 0.95 | × 1.10 |
+| noon | 1.15 @ 0.40 | 0.96 / 1.05 / 0.95 | (1.02, 0.96, 1.05) | −8°, × 0.95 | × 1.06 |
+| dusk | 1.15 @ 0.40 | 0.92 / 1.06 / 0.95 | (1.03, 0.90, 1.14) (0.05–0.55) | −14°, × 0.90 | × 1.12 |
+| calima | 1.06 @ 0.42 | 0.95 / 0.97 / 0.92 | (1.04, 0.95, 0.98) | −10°, × 0.90 | — |
+
+The contrast is a **soft-shoulder curve** (slope `contrast` at the pivot, 0 and 1 fixed: h(t) = tk / (1 + (k−1)t)
+on each side): a linear contrast above 1 clipped every value above pivot + (1 − pivot)/k to white, flattened the top
+103 of 400 steps of the grey ramp, and made `invert` ill-posed on the plateau. The hour table `hourEv` carries
+ROUND5-LOOK L-03's EV offsets (noon 0, 16:30 +0.10, 17:45 +0.15, 18:45 +0.25, 19:20 +0.40, 19:45 +0.70, night
++1.30; the morning mirrors them) and `setLookHour` applies them unless called with `{ ev: false }`.
+
 ### 1.3 L-07 — bloom retune
 
-Threshold 1.30, smoothWidth 0.35, strength 0.48, radius 0.72, mip factors [0.55, 0.65, 0.85, 1.05, 1.25], tint
-(1.00, 0.97, 0.93); `look.bloomScale` multiplies the strength per weather (world-sky: calima ×1.25, overcast ×0.6).
-The W0 values are kept as `LOOK_W0.bloom` for the before/after control.
+Strength 0.48, radius 0.72, mip factors [0.55, 0.65, 0.85, 1.05, 1.25], tint (1.00, 0.97, 0.93);
+`look.bloomScale` multiplies the strength per weather (world-sky: calima ×1.25, overcast ×0.6).
+**The threshold is keyed to display brightness** (`look.hdrForLstar`): bloom starts at the grey that shows at
+L\* 93 and is full by L\* 96, at the hour's exposure (≈ 2.8 / 5.4 scene-linear at EV 0 on the golden set).
+ROUND5-LOOK's 1.30 / 0.35 were ACES-scale numbers: under the CALIMA look HDR 1.30 shows at L\* ≈ 84, so
+sunlit cloth, rock and salt at L\* 85–92 (A-look-bloom a, V-look-glow) and the calm lamp ring (#F2EAD3 needs HDR
+luminance 2.47 under AgX) would all glow; measured in r2, the calm ring's own bloom brightened the lamp drum
+face to 0.40 and A-weak40's glass-vs-face contrast fell to 2.02:1. The lamp cores still clear the threshold by
+CORE_OVER (the lamp system re-solves on any threshold change). The W0 values are kept as `LOOK_W0.bloom`.
 
 ### 1.4 L-16 / L-18 — the ledger and the attribution tools
 
@@ -172,3 +206,15 @@ panel (vista 11/11 on 1-MR, aim 9/9 on 1-BL, close 7/7 on 1-MC, dusk 4/4 on 2-MR
 can meet them only with a warmer, higher-contrast sky than the panel's own (a question for the orchestrator).
 The clip threshold (largest channel ≥ 254) was chosen because it is the one at which every panel sits inside its
 own clip bar (at ≥ 250, 1-MR reads 7.6 % against 1–5 %).
+
+## 4. Gate results (port 5251, this tree; `node tools/gates.mjs --port 5251 --lane look-post`)
+
+GATE_TABLE_PLACEHOLDER
+
+## 5. Honest gaps
+
+GAPS_PLACEHOLDER
+
+## 6. What other lanes and the orchestrator must do
+
+ACTIONS_PLACEHOLDER

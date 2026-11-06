@@ -673,7 +673,7 @@ const HOLD = look(`
 
 const QUIET_NOTE = 'quiet-box timing (R45): graded at the orchestrator\'s W1-exit global run; a lane run on a busy box reports PENDING-quiet-box with its numbers';
 
-const GPU_ATTRIB = (box) => `(async () => {
+const GPU_ATTRIB = (box, build) => `(async () => {
   ${STAGE_PRELUDE}
   const __C = window.__CTX__, __E = __C.engine;
   const A = await import('/tools/look/gpu-attrib-page.mjs');
@@ -683,13 +683,14 @@ const GPU_ATTRIB = (box) => `(async () => {
     return r;
   }, owners: ${JSON.stringify(DRAW_OWNERS.map((o) => ({ id: o.id, re: o.re.source, flags: o.re.flags, lanes: o.lanes })))} });
   const box = ${JSON.stringify(box)};
-  res.build = ${JSON.stringify(gitWitness())};
+  res.build = ${JSON.stringify(build)};
   res.box = box;
   if (!res.ok) return { pass: false, detail: res };
+  if (!box) return { pass: null, detail: { verdict: 'PENDING: box not sampled (run A-gpu-attrib-box with it: --lane look-post or --only A-gpu-attrib-box,A-gpu-attrib)', ...res } };
   return { pass: box.quiet ? res.sumWithin10 : null, detail: { verdict: box.quiet ? (res.sumWithin10 ? 'PASS' : 'FAIL: per-pass rows do not sum to the frame within 10 %') : 'PENDING-quiet-box (R45)', ...res } };
 })()`;
 
-const LEDGER = (box) => `(async () => {
+const LEDGER = (box, build) => `(async () => {
   ${STAGE_PRELUDE}
   const __C = window.__CTX__, __E = __C.engine;
   const AB = await import('/tools/look/ab-time-page.mjs');
@@ -698,9 +699,10 @@ const LEDGER = (box) => `(async () => {
     return eval(SC[name]);
   }, rounds: 4, frames: 40 });
   const box = ${JSON.stringify(box)};
-  res.build = ${JSON.stringify(gitWitness())};
+  res.build = ${JSON.stringify(build)};
   res.box = box;
   if (!res.ok) return { pass: false, detail: res };
+  if (!box) return { pass: null, detail: { verdict: 'PENDING: box not sampled (run A-look-ledger-box with it)', ...res } };
   return { pass: box.quiet ? res.allRowsOk : null, detail: { verdict: box.quiet ? (res.allRowsOk ? 'PASS' : 'FAIL') : 'PENDING-quiet-box (R45)', ...res } };
 })()`;
 
@@ -798,14 +800,38 @@ async function aliases() {
           .map((r) => (r.id === 'A-gpu-tier@look-post' ? new Proxy(r, { get: (t, k) => (k === 'id' ? 'A-gpu-tier' : t[k]), set: (t, k, v) => { t[k] = v; return true; } }) : r)) });
       }
       out.push(row);
+      // the same row on the Round-5 W0 output in the same run (`?look=w0`), so a re-measured row that moves
+      // under the look says whether the look moved it (diagnostic, not graded)
+      if (W0_TWINS.includes(want)) {
+        const tw = Object.defineProperties({}, Object.getOwnPropertyDescriptors(row));
+        Object.defineProperty(tw, 'id', { value: want + '@look-post-w0', enumerable: true, writable: true, configurable: true });
+        Object.defineProperty(tw, 'lane', { value: LANE + '-diag', enumerable: true, writable: true, configurable: true });
+        Object.defineProperty(tw, 'params', { value: (g.params ? g.params + '&' : '') + 'look=w0', enumerable: true, writable: true, configurable: true });
+        out.push(tw);
+      }
     }
   }
   return out;
 }
+const W0_TWINS = ['A108-ao-periodicity', 'A-weak40', 'A-lamp-states'];
 
 /* ------------------------------------------------------------------- the rows */
 
-const BOX = boxSample();
+/**
+ * Quiet-box rows: the box is sampled in node right before the row runs (a runner row placed first
+ * rewrites the target's assert with the sample, as engine-gpu's A-gpu-tier-box does). Nothing here
+ * spawns a process at import (A-port-guard).
+ */
+const boxRow = (id, targetId, build) => ({
+  id, kind: 'runner', lane: LANE, wave: 'W1', timeout: 20000,
+  title: `Box witness for ${targetId}: 1-min load average < 3 and 0 other headless Chromes, sampled in node and handed to it (R45); its clocks are graded only on a quiet box`,
+  check({ GATES: all }) {
+    const box = boxSample();
+    const target = (all || []).find((g) => g.id === targetId);
+    if (target) target.assert = build(box, gitWitness());
+    return { pass: box.quiet ? true : null, detail: { ...box, handedTo: target ? target.id : null } };
+  },
+});
 
 export const GATES = [
   { id: 'A-look-suite-files', kind: 'runner', lane: LANE, wave: 'W1', timeout: 240000,
@@ -832,12 +858,14 @@ export const GATES = [
   { id: 'A-hold-frame', kind: 'action', lane: LANE, wave: 'W1', timeout: 90000, settle: 1500,
     title: 'U-03 engine half: engine.holdFrame(true) submits 0 draws per frame while held; the frame resumes unchanged',
     assert: HOLD },
+  boxRow('A-gpu-attrib-box', 'A-gpu-attrib', GPU_ATTRIB),
   { id: 'A-gpu-attrib', kind: 'action', lane: LANE, wave: 'W1', timeout: 600000, settle: 2500,
     title: 'L-18: records the build it times; vista, herd and staged fight each give a per-pass table (shadow, opaque, transparent, GTAO, bloom, grade, SMAA, after-render hooks) summing to the frame median within 10 %; per-owner hide-one marginals plus residual. ' + QUIET_NOTE,
-    assert: GPU_ATTRIB(BOX) },
+    assert: GPU_ATTRIB(null, null) },
+  boxRow('A-look-ledger-box', 'A-look-ledger', LEDGER),
   { id: 'A-look-ledger', kind: 'action', lane: LANE, wave: 'W1', timeout: 600000, settle: 2500,
     title: 'L-16: every registered look item A/B-timed on the A21 frames (>= 0.10 ms alone, the rest as one group), 4 interleaved rounds; each row <= 0.45 ms; draws <= 350. ' + QUIET_NOTE,
-    assert: LEDGER(BOX) },
+    assert: LEDGER(null, null) },
   { id: 'V-look-before-after', kind: 'visual', lane: LANE, wave: 'W1', timeout: 300000, settle: 150000,
     setup: BEFORE_AFTER([['field'], ['vista'], ['aim']], 'V-look-before-after (1/2): Round-5 W0 output (left) vs the CALIMA look (right), same frame, same build'),
     criteria: 'The same five frames (field, vista, aim, close, dusk), Round-5 W0 output (ACES 0.94, left) beside the CALIMA look (AgX + grade, right). Against ext:kevin-nov6-keyart.jpg@860d7e9f#1-TR, #1-MR, #1-TL and ext:kevin-nov6-stills.md@bf79cdc9#5-1: the right column reads warmer in the light and rose-violet in the shadows, highlights cream not lemon, grass amber not olive, no crushed blacks, no banding; it must not look cheaper or muddier than the left. ' + IP_CLAUSE },
