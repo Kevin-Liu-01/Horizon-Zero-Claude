@@ -428,7 +428,14 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
     const frames = [];
     for (let a = 0; a <= along; a++) {
       const u = uOf(a);
-      const { p, t, seg, f } = pl.at(u);
+      let { p, t, seg, f } = pl.at(u);
+      // with `smoothSkin` the rest shape follows a Catmull-Rom curve through the chain's points, not their polyline: no corner at a joint
+      if (smoothSkin) {
+        const n = P.length - 1, q0 = P[Math.max(0, seg - 1)], q1 = P[seg], q2 = P[Math.min(n, seg + 1)], q3 = P[Math.min(n, seg + 2)];
+        const f2 = f * f, f3 = f2 * f;
+        p = [0, 1, 2].map((k) => 0.5 * (2 * q1[k] + (-q0[k] + q2[k]) * f + (2 * q0[k] - 5 * q1[k] + 4 * q2[k] - q3[k]) * f2 + (-q0[k] + 3 * q1[k] - 3 * q2[k] + q3[k]) * f3));
+        t = norm([0, 1, 2].map((k) => 0.5 * ((-q0[k] + q2[k]) + 2 * (2 * q0[k] - 5 * q1[k] + 4 * q2[k] - q3[k]) * f + 3 * (-q0[k] + 3 * q1[k] - 3 * q2[k] + q3[k]) * f2)));
+      }
       let sd = norm(sub(side, mul(t, dot(side, t))));
       if (twist) { const n0 = norm(cross(sd, t)), a2 = twist * u; sd = norm(add(mul(sd, Math.cos(a2)), mul(n0, Math.sin(a2)))); }
       const nrm = norm(cross(sd, t));

@@ -612,7 +612,8 @@ export function paintLashes(buf, { rect, W = 512, hair = '#0E0A09', seed = 61, r
     const xf = xr / w;
     // the lash thins toward its ends: a soft fan at the inner corner, separate hairs at the outer one
     if (R() > mix(0.5, 1, smooth(0, 0.22, xf)) * mix(1, 0.34, smooth(0.62, 1, xf))) continue;
-    const lean = (R() - 0.5) * 6 + (xf - 0.5) * 10;
+    // (fix round 2: the strands fan but never cross, so no view of a card closes a pocket of sky between two of them: A-wrap-closed)
+    const lean = (R() - 0.5) * 0.9 + (xf - 0.5) * 9;
     const L = h * (0.58 + 0.42 * R());
     const steps = Math.ceil(L * 2);
     for (let s = 0; s <= steps; s++) {

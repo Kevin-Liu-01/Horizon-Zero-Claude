@@ -538,10 +538,11 @@ export function saltPaste({ y, half, xMax, salt = '#EDEAE2', thick = 0.00085, ce
     const lump = noise3(X * 240, Y * 380, 5.5), grain = noise3(X * 700, Y * 700, 6.1);
     const curl = smooth(0.00025, 0.0011, edgeD) * (1 - smooth(0.0011, 0.0024, edgeD));
     const dH = thickAt(X, Y + 0.0009, y(X), hh) - thickAt(X, Y - 0.0009, y(X), hh);
-    const tone = (0.62 + 0.15 * lump + 0.025 * grain + 0.13 * thickK + 0.07 * plate + 0.05 * curl * smooth(0.4, 0.7, thickK)) * (1 + 0.3 * Math.max(-0.6, Math.min(0.6, dH)));
+    // the finger's drag stays in it as faint striations along the stroke
+    const tone = (0.62 + 0.14 * lump + 0.025 * grain + 0.13 * thickK + 0.06 * plate + 0.07 * streak2 + 0.05 * curl * smooth(0.4, 0.7, thickK)) * (1 + 0.3 * Math.max(-0.6, Math.min(0.6, dH)));
     const warm = mix(0.88, 1, thickK);
     let cr = S[0] * tone, cg = S[1] * tone * warm, cb = S[2] * tone * warm * warm;
-    const dk = crack * 0.72;
+    const dk = crack * 0.58;
     cr = mix(cr, T.r * 0.62, dk); cg = mix(cg, T.g * 0.58, dk); cb = mix(cb, T.b * 0.56, dk);
     const a = cov;
     T.r = mix(T.r, cr, a); T.g = mix(T.g, cg, a); T.b = mix(T.b, cb, a);
