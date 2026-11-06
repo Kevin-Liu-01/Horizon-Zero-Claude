@@ -707,10 +707,9 @@ export async function panBase(opt = {}) {
     if (cy < 1.2) continue;     // the bottom row: under the belt
     if (Math.abs(cx) > 0.1) {
       const c = [Math.sign(cx) * 0.19, ARMHOLE.y, ARMHOLE.z];
-      // (armory W1, Nov 6: every rim point. Thinned to every 2nd over the shoulder and every 4th under the arm, the tape
-      // was a 12-gon: its straight runs cut chords across the curved rim and stood off the cloth, a purple hook over
-      // each shoulder in the close-up and tabs on the sleeve)
-      const rim = run;
+      // (under the arm a rim point every few cm is plenty: the crease closes over it)
+      let lastU = -1e9;
+      const rim = run.filter((q, i) => { if (q.p[1] > 1.375) return i % 2 === 0; if (i - lastU < 4) return false; lastU = i; return true; });
       bindingAlong(binds, rim, smockSkin, { rect: bindRect, closed: true, center: () => c, w: 0.0095, lift: 0.0026 });
       // the armhole's own linen, on the rim's points alone (no vertex that could end up inside her): raise the arm, and
       // what shows through the hole is the under-tunic, not the far side of the smock
