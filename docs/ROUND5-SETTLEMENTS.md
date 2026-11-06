@@ -127,7 +127,51 @@ Scene child name: `people` (the draw ledger's `npcs` owner, `tools/gates/gates-p
 
 GLB contract (`extras.r5Npc`): `{ id, n, name, faction, sex, age, adolescent, height, scale, footY, chains: [{ key, root, parent, links }], props, tiers, clips, armPose, layers, procedural, head }`. `extras.r5Face`: `{ landmarks: { k: { v: [x,y,z] mm, deltaMm } }, graded, scale, iou, eyeSocketMaxMm }`. Clip pack `extras.r5Clips`: `{ native, baked, gaits: { 'F|Walk_Loop': { dur, dist, frames, cum } }, pelvisScale }`.
 
-@@GATES@@
+## 4. Gates (port 5264, this tree)
+
+Runs: r5 (Nov 6, 21:18-21:40 UTC, `--only` the lane block + the global list rows that exist here), r6 (the three instrument
+rows r5's Chrome wedged on), offline checks in node where noted. Visual rows are my reading (§5); R29's judge grades them.
+
+### The W1 block (R56, R57 c)
+
+| gate | result | measured |
+|---|---|---|
+| **A-npc-fidelity** | **FAIL (6 of 9 archetypes pass every clause)** | every archetype: near tier 16.1–18.9 k tris (bar 15–20 k), 3 draws (≤ 4), face field ≥ 6 mm on 3–5 landmarks, skin 1024² + 512² normal, separate hair or headwrap mesh, 10–13 layered pieces with the faction atlas's normal + ORM, live chains whose tips travel 0.44–0.63 m against the head over 2.5 s of walk (Brea's knot tail 0.248 m in the same measure), a cross-fade with both tiers drawn and a clean end. **Silhouette jump at the 18 m change (≤ 0.02 m):** raker 0.016, matron 0.007, porter 0.009, caulker 0.006, keeper 0.010, follower 0.012 pass; **pit farmer 0.026 (across, y 1.75: the cap's crown), tube smith 0.025 (across, y 1.50: the rag knot), cochineal picker 0.033 (along, y 0.25: the skirt's back hem)** fail. r3 read 0.026 / 0.072 / 0.032 before LOD1 locked the tails, aprons and tools |
+| A-npc-face-delta | PASS | every same-sex pair differs by ≥ 4 mm on ≥ 4 of the 7 graded landmarks (worst pair: raker / keeper, 4 of 7); every face is ≥ 6 mm from stock on ≥ 3 landmarks (3–5); eye sockets move ≤ 0.23 mm |
+| A-npc-variety (W1 clauses) | PASS | 9 of 9 pairwise-distinct silhouettes (front-mask IoU 0.14–0.63, bar ≤ 0.85); every archetype wears 6–28 procedural faction pieces; near ≤ 3 draws / ≤ 18.9 k, LOD1 2 draws / 7.95–7.99 k, LOD2 3.70–3.75 k; casting: exactly the nearest 4 (14.0, 10.2, 12.3, 13.5 m) with all ten inside 35 m. PENDING W2: ≥ 10 archetypes (9 at W1), ≥ 8 archetypes in one Saltrow frame |
+| A-npc-atlas-resident (W1 form) | PASS | Pan group → Holds group → Pan group: ≤ 1 faction atlas resident at every sample; textures 115 → 141 (stood) → 115 (left) → 137 → 115 → 141 → 115. The walk form (Saltrow → Ninewalls → Saltrow) is W2 |
+| A-npc-dispose | PASS | spawn + despawn 20 × 3: textures 115 → 171 → 115, geometries 186 → 235 → 186, skeletons 44 → 64 → 44, every round; 0 archetypes and 0 atlases left |
+| A96-npc-animated | PASS | 10 people, every clock advanced 60 s, 4–5 distinct clips each, 5 walkers over 16–22 m |
+| A97-npc-no-skate | PASS | planted drift 0.065–0.077 m (bar 0.08) over 8–11 stance windows each, six walkers |
+| A-npc-draws | PASS | the staged ten seen from its edge: 33 draws per frame (25 main, 8 shadow: 4 casters × 2 cascades in frame), bar 44 |
+| V-npc-vs-brea (+ 9 per archetype) | NEEDS-JUDGE | §5 |
+| V41-npc-closeup | NEEDS-JUDGE | §5 |
+| V-npc-builds | NEEDS-JUDGE | §5 |
+| V-npc-clips-pan / -holds (lane extras) | NEEDS-JUDGE | §5 |
+| A-npc-variety (≥ 10, Saltrow frame), the settlement-kit rows (A-settlement-*, A61, V35, V40, V45, A95, A97b, A99, A-lookout-call) | PENDING | W2 |
+
+### The global green list (rows that exist in this tree)
+
+| gate | result | measured |
+|---|---|---|
+| A1-boot-clean | PASS | state=playing |
+| A20b-no-system-errors | PASS | 0 system errors, 359 frames |
+| A9-perf-budget | PASS | quiet box (load 2.6, no other gate Chrome): median 59.9 fps, 241 draw calls |
+| A21-real-draw-calls | FAIL (GPU term only) | quiet box: draws 248 / 183 / 275 (vista / herd / fight, bar 350) and triangles 3.66 / 3.87 / 3.93 M PASS; **medianGpuMs 19.5 / 32.7 / 20.5 against 14** FAIL; p95 frame and JS PENDING. The fight frame's 275 draws equal character-art's tree (no NPC in it: the group is hidden past 90 m); character-art read 21.7 / 29.4 / 20.6 ms and W0b main 22–23 / 43–45 / 22–26. Not attributable to this lane on this evidence; R58 b grades the timing at the W1 exit |
+| A90-memory-stability | PASS | heap −3.2 %, geometries +14, textures −3, objects −35 |
+| A90-memory-stability-expansion | PASS | objects outside every machine root **0** (r3: −932 before the group stopped streaming out), machine nodes +70 (population), heap −5.6 % |
+| A90b-memory-attribution | PASS | 0 offenders |
+| A90-rig-reclaim | PASS | geo +0, tex +0 over 30 cycles |
+| A90-abs | @@ABS@@ |
+| A-alloc-rate | @@ALLOC@@ |
+| A-vram-ledger | @@VRAM@@ |
+| A-licence-manifest | PENDING | every clause PASS except third-party, PENDING only on another lane's row (`r5-poc-rock-scan`); this lane's `npc-clips` row now derives from `ual1` (r3: FAIL on `ual1-standard`) |
+| A-ID-ip-assets-gone, A-assets-tracked, A-no-horizon-terms-player | PASS | r3 (no change since that touches them): 0 IP hits; 241 referenced, 0 missing; 1507 ≤ 1508 |
+| A-no-horizon-terms-code | PASS | `node tools/lint/namecheck.mjs --code`: 1371 of 1371 (ratchet), 0 uncovered (re-run after the last code change) |
+| A-port-guard | PENDING | a lane run has no sealed carried run to vouch for it (the orchestrator's row) |
+| A-carried-suite | not run | it refuses an invocation that also runs carried rows, and grades sealed full carried runs: the orchestrator's 5270 row |
+| A-reach-all-sites | absent | not in this tree (world-ground) |
+
 
 ## 6. What another lane or the orchestrator must do
 
