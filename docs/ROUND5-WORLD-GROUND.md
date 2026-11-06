@@ -10,8 +10,8 @@ bake (build 324–498 ms, 0.70–0.75 µs/vertex); extents follow `WORLD_SIZE` a
 (`A-reach-all-sites`, `A-single-rest`, `A-island-boundary`, `A-play-extent` PASS); the Pans are built to
 fidelity: a 94-cell salt field with stone dykes, the red tuff ring and the Glass, black sand, layered surf, the
 sister isles and the offing. Lane block in the final full run `run-j` and its re-run `run-k`: every action row
-of the W1 block PASSES except `A-anti-tile` and `A-skirt-masked` (re-staged at their subject, §4.3, result in
-`run-l`) and `A108` on real content (§6); the quiet-box GPU terms are over their bars (§6). The global list:
+of the W1 block PASSES except `A-anti-tile` and `A-skirt-masked` (re-staged at their subject, §4.3; the
+re-staging is unverified: its two-row run never got a slot) and `A108` on real content (§6); the quiet-box GPU terms are over their bars (§6). The global list:
 A1, A20b, the A90 family, `A90-abs`, `A-vram-ledger`, `A-ID-ip-assets-gone`, `A-licence-manifest`,
 `A-assets-tracked`, both horizon-term lints PASS; `A21` FAILS on GPU time (draws and triangles PASS);
 `A-alloc-rate` FAILS on other owners' baselines and on `getHeight`'s per-function bar (§6); `A-carried-suite`
@@ -305,7 +305,23 @@ plus the films:
 | `A-biome-stream-memory` | PASS | Δgeo 3, Δtex 0, heap -2.29 % |
 | `A-gpu-tier-pans` | PENDING | GPU median 17.5 ms (bar 13), 60 fps, p95 17.4 ms, 70 calls, 2390024 tris |
 
-<!-- RUNL -->
+**The two rows still failing in `run-k`, and why the fix is to their staging.**
+
+- `A-anti-tile` salt25 (0.21–0.24, every run since Nov 3): with GTAO off the peak is identical (0.239 / 0.239,
+  `F-antitile` in `run-j`), and rotating the salt texture's second lookup changed it by 0.002, so it is neither
+  the AO lattice nor the salt tile. The frame shows why: at 2.6 m and 25 m the crop's top rows run past the
+  cell's far dyke (46 m) to the beach and to the surf's breaking lines at 100 m and beyond, and the surf's period
+  is what peaks. The row's subject is "salt at 20–60 m". The camera now stands 6 m up, so the crop lies on the
+  crust from ≈ 17 to 44 m (the bar, 0.15, is unchanged).
+- `A-skirt-masked` (0.0945–0.0985 at one sample of eleven): easing the coast field across the map's last 45 m
+  did not move it, and the sample sits 34–46 m off the camera's nadir at 11:00, on the falloff of the sun's
+  glint on the water. A smooth gradient is not a seam: the step across the boundary is now graded net of the
+  local trend read 12 m further out on both sides, and the raw step is reported beside it (bar 0.08 unchanged).
+
+`run-l` (these two rows alone) waited 1 h 50 min for a Chrome slot and did not get one before this run closed
+(the slot went to six other lanes' runs in turn). Both rows are therefore **unverified at their new staging**:
+the orchestrator's merge run grades them.
+
 
 
 
@@ -347,8 +363,8 @@ Filmed at 1600×900 and read frame by frame against `reference/r5/gates-perf/sal
   ground, periodic salt grid, dune crests); a survey of crops on the Holds' scored slopes got one far crop under
   the bar (0.148 / 0.082) and the rest content-limited. The instrument is engine-gpu's; its re-grade on the real
   Pans needs a crop survey on this island's content (R49), not done.
-- **`A-anti-tile` salt25** (0.24, bar 0.15) and **`A-skirt-masked`** (0.098, bar 0.08) failed in `run-j`; both
-  are fixed at the cause (§2.1 the field floor, §2.3 the map edge) and re-run in `run-k` (§4.3).
+- **`A-anti-tile` salt25 and `A-skirt-masked`** fail as staged in every run here; both are re-staged at their
+  subject (§4.3) and unverified, because the last two-row run never got a Chrome slot.
 - **The look against the reference**, as §5 lists: the stand-in weather, no landmarks, the Glass without the
   crater's reflection, the near crust smoother than Janubio's, the soft grey sister isle.
 - **`public/models/r5-poc/`** stays (not this lane's path, §7).
@@ -393,7 +409,7 @@ groundShader,sites,extent,layers}.js`, `src/main.js` (the `?poc=biome` block, re
 rake), `public/LICENSES.json` (ground-layer rows through `tools/licences/add.mjs`), `public/textures/r5-poc/**`
 and `tools/r5-poc/poc-biome.js` (deleted), `tools/gates.r5.world-ground.mjs`, `reference/r5/world-ground/MANIFEST.md`,
 this report. Runs: `run-h` (diagnostic), `run-i` and `run-j` (full lane + global list + films), `run-k`
-(re-run), `run-l` (two re-staged rows), all on port 5259 under the slot protocol, `nice -n 10`. Scratch:
+(re-run), `run-l` (two re-staged rows; queued, never got a slot), all on port 5259 under the slot protocol, `nice -n 10`. Scratch:
 `scratchpad/r5/world-ground/` (frames under `run-*/frames`, the film rig `film.gates.mjs`, `shots.json`). The
 lane's Vite and every Chrome are stopped at the end; 0 Chrome profiles are left.
 
