@@ -898,12 +898,26 @@ export async function panBase(opt = {}) {
   // stand at the FRONT of the hip, where brea.mjs put them, and a tail behind the hip skinned to them would swing
   // round a pivot 24 cm away and leave its knot. The chain stays in the skeleton; see docs/ROUND5-ARMORY.md §5)
   void sashJ;
+  const tail0 = g.pos.length / 3;
   appendGeo(g, sashTail(sashPts.slice(0, 3), [pelvis, pelvis, joints.thigh_l], { along: 10, across: 6, width: (u) => 0.058 - 0.012 * u, side: tang, out: outW, rect: lin, uLen: 0.42, twist: 0.3 }));
   // the second tail, shorter, behind the first and a little forward (never on the chain)
   {
     const p2 = [V.add(k1, V.add(V.mul(tang, 0.016), [0, 0.012, 0])), V.add(k1, V.add(V.mul(tang, 0.03), [0, -0.05, 0.002])), V.add(k1, V.add(V.mul(tang, 0.036), [0, -0.105, 0.004]))];
     const pts = p2.map((q) => { const th = Math.atan2(q[2] + 0.02, q[0]); const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.2), Math.hypot(q[0], q[2] + 0.02)) + 0.0105; return [Math.cos(th) * rr, q[1], -0.02 + Math.sin(th) * rr]; });
     appendGeo(g, sashTail(pts, [pelvis, joints.thigh_l], { along: 8, across: 5, width: (u) => 0.046 - 0.01 * u, side: tang, out: outW, rect: lin, uLen: 0.3, u0: 0.5, twist: -0.25, pleat: (u) => 0.006 * (1 - u) ** 1.5 }));
+  }
+  // (Nov 6: both tails ride the pelvis and take at most a quarter of the thigh, evenly from the knot to the end. Half
+  // the thigh over half the tail stretched its short edges 1.7-2.4 x in a sprint, where the thigh swings furthest
+  // from the pelvis; a gentle ramp over the whole length still lets the stride lift the end)
+  {
+    let yTop = -9, yBot = 9;
+    for (let i = tail0; i < g.pos.length / 3; i++) { const y = g.pos[i * 3 + 1]; if (y > yTop) yTop = y; if (y < yBot) yBot = y; }
+    const TH = 0.25;
+    for (let i = tail0; i < g.pos.length / 3; i++) {
+      const t = Math.max(0, Math.min(1, (yTop - g.pos[i * 3 + 1]) / (yTop - yBot)));
+      g.jnt[i * 4] = pelvis; g.jnt[i * 4 + 1] = joints.thigh_l; g.jnt[i * 4 + 2] = 0; g.jnt[i * 4 + 3] = 0;
+      g.wgt[i * 4] = 1 - TH * t; g.wgt[i * 4 + 1] = TH * t; g.wgt[i * 4 + 2] = 0; g.wgt[i * 4 + 3] = 0;
+    }
   }
   const sash = mk('sash', { trim: true });
   Object.assign(sash, { pos: g.pos, nrm: g.nrm, uv: g.uv, jnt: g.jnt, wgt: g.wgt, idx: g.idx });
