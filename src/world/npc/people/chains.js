@@ -32,7 +32,6 @@ const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _s = new THREE.Vector3
 const _qp = new THREE.Quaternion(), _qw = new THREE.Quaternion(), _qr = new THREE.Quaternion(), _qi = new THREE.Quaternion();
 const _y = new THREE.Vector3(), _d = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
-const clamp = THREE.MathUtils.clamp;
 
 export class PersonChains {
   /** @param bones name -> Bone of this person. @param rows extras.r5Npc.chains */
@@ -155,8 +154,9 @@ export class PersonChains {
     for (let i = 0; i < N; i++) {
       const a = i * 3, b = a + 3;
       let dx = pos[b] - pos[a], dy = pos[b + 1] - pos[a + 1], dz = pos[b + 2] - pos[a + 2];
-      const l = Math.hypot(dx, dy, dz);
-      if (l < 1e-6) { dx = rest[b] - rest[a]; dy = rest[b + 1] - rest[a + 1]; dz = rest[b + 2] - rest[a + 2]; const q = Math.hypot(dx, dy, dz) || 1; dx /= q; dy /= q; dz /= q; } else { dx /= l; dy /= l; dz /= l; }
+      // (Math.sqrt, not Math.hypot: hypot is a call that boxes its arguments, A-alloc-rate)
+      const l = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (l < 1e-6) { dx = rest[b] - rest[a]; dy = rest[b + 1] - rest[a + 1]; dz = rest[b + 2] - rest[a + 2]; const q = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1; dx /= q; dy /= q; dz /= q; } else { dx /= l; dy /= l; dz /= l; }
       pos[b] = pos[a] + dx * seg[i]; pos[b + 1] = pos[a + 1] + dy * seg[i]; pos[b + 2] = pos[a + 2] + dz * seg[i];
     }
   }
@@ -170,9 +170,10 @@ export class PersonChains {
         const a = (s < 2 ? s : s + 1) * 3, b = a + 3;
         const ax = L[a], ay = L[a + 1], az = L[a + 2], bx = L[b] - ax, by = L[b + 1] - ay, bz = L[b + 2] - az;
         const px = pos[o] - ax, py = pos[o + 1] - ay, pz = pos[o + 2] - az;
-        const t = clamp((px * bx + py * by + pz * bz) / (bx * bx + by * by + bz * bz || 1), 0, 1);
+        let t = (px * bx + py * by + pz * bz) / (bx * bx + by * by + bz * bz || 1);
+        if (t < 0) t = 0; else if (t > 1) t = 1;
         const dx = px - bx * t, dy = py - by * t, dz = pz - bz * t;
-        const d = Math.hypot(dx, dy, dz);
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (d < r && d > 1e-5) { const k = r / d; pos[o] = ax + bx * t + dx * k; pos[o + 1] = ay + by * t + dy * k; pos[o + 2] = az + bz * t + dz * k; }
       }
     }
@@ -192,7 +193,7 @@ export class PersonChains {
         _d.multiplyScalar(1 / l);
         _qr.setFromUnitVectors(_y, _d);
         // the bend limit, relative to the parent's achieved rotation
-        const w = clamp(_qr.w, -1, 1), ang = 2 * Math.acos(Math.abs(w));
+        const w = _qr.w > 1 ? 1 : _qr.w < -1 ? -1 : _qr.w, ang = 2 * Math.acos(w < 0 ? -w : w);
         if (ang > c.cls.maxAng) { _qi.identity(); _qr.copy(_qi.slerp(_qr, c.cls.maxAng / ang)); }
         _qw.premultiply(_qr);
       }

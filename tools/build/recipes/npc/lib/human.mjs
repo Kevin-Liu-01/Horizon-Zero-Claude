@@ -881,9 +881,11 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   root.listSkins()[0].listJoints().forEach((jn, i) => { if (/^(dyn_|prop_)/.test(jn.getName())) silJ.add(i); });
   const onSil = (g) => (i) => { for (let k = 0; k < 4; k++) if (g.wgt[i * 4 + k] >= 0.25 && silJ.has(g.jnt[i * 4 + k])) return true; return false; };
   const l1Src = join([outfitGeo, ...shellOf(10, 22)]);
+  const l1Outfit = await simplifyTo(l1Src, 4750, 0.03, 1.25, 0.28, onSil(l1Src));
+  // the skin gives back what the locked pieces cost over the outfit's share: LOD1 stays <= 8 k (plan §4.1)
   const L1 = {
-    skin: await simplify(skinEyes, Math.min(3200, Math.floor(tris(skinEyes) * 0.55)), { err: 0.03 }),
-    outfit: await simplifyTo(l1Src, 4750, 0.03, 1.25, 0.28, onSil(l1Src)),
+    skin: await simplify(skinEyes, Math.min(3200, Math.floor(tris(skinEyes) * 0.55), 7990 - tris(l1Outfit)), { err: 0.03 }),
+    outfit: l1Outfit,
   };
   const L2 = {
     skin: await simplifyTo(skinEyes, 1350, 0.08),

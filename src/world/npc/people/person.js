@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { PersonChains } from './chains.js';
 import { FADE_LEVELS } from './bank.js';
+import { PosePlayer } from './pose.js';
 
 /**
  * CALIMA · one person on the street (settlements; R56; bible §6.2). A clone of an archetype's GLB: ONE
@@ -118,11 +119,9 @@ export class Person {
 
     this.chains = new PersonChains(this.bones, npc.chains || [], { worldScale: S, scale: S });
 
-    // the mixer
-    this.mixer = new THREE.AnimationMixer(root);
-    this.actions = new Map();
+    // the clip player (pose.js: three's mixer allocated about 2.5 KB per person per update)
+    this.pose = new PosePlayer(this.bones);
     this.clipCount = new Set();
-    this.current = null;
     this.mixAcc = 0;
     this.mixerClock = 0;
     this.distance = 0;
@@ -152,13 +151,9 @@ export class Person {
       if (k === 'side' || !this.bones[k]) continue;
       this.armPose.push({ bone: this.bones[k], q: new THREE.Quaternion().fromArray(npc.armPose[k]) });
     }
-    // What the overlays write on top of the clip (lean, arm swing, held arm, look). three's mixer writes a bone only when the
-    // clip's value CHANGED since its last write, so on a constant track (a walk whose spine is still, a held idle, a frozen person)
-    // an overlay composed onto the bone's own value would compound every frame and fold the body over. Each update puts these
-    // bones back to what the mixer last left them before it runs, and keeps that copy after it runs (no allocation).
-    this._ovBones = [...new Set([this.spine1, this.upL, this.upR, this.neck, this.head, ...this.armPose.map((a) => a.bone)].filter(Boolean))];
-    this._ovPre = new Float32Array(this._ovBones.length * 4);
-    this._ovSaved = false;
+    // The overlays (lean, arm swing, held arm, carriage, look) compose onto the clip's value. three's mixer wrote a bone only when
+    // the clip's value CHANGED since its last write, so on a constant track an overlay compounded every frame and folded the body
+    // over (r2: a porter lying flat in his walk). PosePlayer writes every bone on every update, so each overlay starts clean.
     this.props = {};
     for (const p of npc.props || []) this.props[p.name] = this.bones[p.name] || null;
     this.showProps(null);
@@ -193,34 +188,19 @@ export class Person {
     if (T) this.group.position.y = T.getHeight(x, z);
   }
 
-  action(name) {
-    let a = this.actions.get(name);
-    if (a) return a;
-    const clip = this.sys.bank.clipPack.of(this.spec.sex, name);
-    if (!clip) return null;
-    a = this.mixer.clipAction(clip);
-    a.enabled = true;
-    this.actions.set(name, a);
-    return a;
-  }
+  /** The clip playing now: `{ time, ts, loop, duration, getClip() }` (null before the first play). */
+  get current() { return this.pose.current; }
 
   /** Cross-fade to a clip; returns its duration. */
   play(name, { fade = 0.35, ts = 1, loop = true, offset = null } = {}) {
-    const a = this.action(name);
-    if (!a) return 0;
-    if (this.current === a) { a.setEffectiveTimeScale(ts); return a.getClip().duration; }
-    a.reset();
-    a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
-    a.clampWhenFinished = !loop;
-    a.setEffectiveTimeScale(ts);
-    a.setEffectiveWeight(1);
-    if (offset !== null) a.time = offset * a.getClip().duration;
-    a.play();
-    if (this.current) this.current.crossFadeTo(a, fade, false);
-    this.current = a;
+    const clip = this.sys.bank.clipPack.of(this.spec.sex, name);
+    if (!clip) return 0;
+    const was = this.pose.current;
+    const a = this.pose.play(clip, { fade, ts, loop, offset });
+    if (a === was) return a.duration;
     this.clipCount.add(name);
     this.liftTarget = LIFT[name] ?? 0;
-    return a.getClip().duration;
+    return a.duration;
   }
 
   /** Walk to a point in this person's walk style; `then` when there. */
@@ -260,13 +240,9 @@ export class Person {
     if (this.mixAcc < hz) return false;
     const step = this.mixAcc;
     this.mixAcc = 0;
-    const a = this.current;
+    const a = this.pose.current;
     const t0 = a ? a.time : 0;
-    const ov = this._ovBones, pre = this._ovPre;
-    if (this._ovSaved) for (let i = 0; i < ov.length; i++) ov[i].quaternion.fromArray(pre, i * 4);
-    this.mixer.update(step);
-    for (let i = 0; i < ov.length; i++) ov[i].quaternion.toArray(pre, i * 4);
-    this._ovSaved = true;
+    this.pose.update(step);
     this.mixerClock += step;
     if (this.walking && a) {
       const g = this.walking.gait;
@@ -326,7 +302,7 @@ export class Person {
       const b = i ? this.head : this.neck, share = i ? 0.55 : 0.45;
       b.parent.matrixWorld.decompose(_v, _mq, _sc);
       _q3.copy(_mq).invert();
-      _q.setFromAxisAngle(_up, this.lookYaw * share);
+      { const h = this.lookYaw * share * 0.5, sn = Math.sin(h); _q._x = 0; _q._y = sn; _q._z = 0; _q._w = Math.cos(h); }
       // q_local' = parent^-1 * R * parent * q_local
       _q2.copy(_q3).multiply(_q).multiply(_mq).multiply(b.quaternion);
       b.quaternion.copy(_q2);
@@ -343,7 +319,7 @@ export class Person {
       const b = i ? this.head : this.neck, share = i ? 0.6 : 0.4;
       b.parent.matrixWorld.decompose(_sc, _mq, _sc);
       _q3.copy(_mq).invert();
-      _q.setFromAxisAngle(_v, this.lift * share);
+      { const h = this.lift * share * 0.5, sn = Math.sin(h); _q._x = _v.x * sn; _q._y = 0; _q._z = _v.z * sn; _q._w = Math.cos(h); }
       _q2.copy(_q3).multiply(_q).multiply(_mq).multiply(b.quaternion);
       b.quaternion.copy(_q2);
     }
@@ -355,7 +331,7 @@ export class Person {
     const k = this.walking ? 1 : 0;
     this.leanK += (k - this.leanK) * 0.08;
     if (this.lean !== 0 && this.spine1) {
-      _q.setFromAxisAngle(_ax, this.lean * this.leanK);
+      { const h = this.lean * this.leanK * 0.5; _q._x = Math.sin(h); _q._y = 0; _q._z = 0; _q._w = Math.cos(h); }
       this.spine1.quaternion.multiply(_q);
     }
     if (this.swing < 0.999 && this.leanK > 0.01) {
@@ -421,10 +397,8 @@ export class Person {
 
   dispose() {
     if (this.colliderId >= 0) { try { this.sys.ctx.collision?.unregister(this.colliderId); } catch { /* gone */ } this.colliderId = -1; this.collider = null; }
-    this.mixer.stopAllAction();
-    this.mixer.uncacheRoot(this.root);
+    this.pose.dispose();
     this.skeleton.dispose();
     this.group.removeFromParent();
-    this.actions.clear();
   }
 }

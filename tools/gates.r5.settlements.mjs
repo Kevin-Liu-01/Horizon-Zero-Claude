@@ -139,7 +139,8 @@ const CLIP_SHEET = (ids) => `(async () => {${READY}${SHEET}
         const who = await PP.spawn(ids[r], { x: pl.x, z: pl.z, yaw: face, seed: 3 });
         PP.tierAt(who, 0);
         const W = who.spec.clips.walk;
-        const list = [...who.spec.clips.idle, W.clip];
+        // what the W1 stage plays (a bench, a rail, a boat stand at W2: `clips.stage` swaps those clips out until then)
+        const list = [...(who.spec.clips.stage || who.spec.clips.idle), W.clip];
         const CW = Math.floor(1600 / 5);
         for (let k = 0; k < Math.min(5, list.length + 1); k++) {
           const nm = k < list.length ? list[k] : list[list.length - 1];
@@ -151,7 +152,7 @@ const CLIP_SHEET = (ids) => `(async () => {${READY}${SHEET}
           await simWait(k === list.length ? 0.62 : 0.95);
           who.root.updateWorldMatrix(true, true);
           const y = who.group.position.y + 0.92;
-          const img = S.liveView(C, [pl.x + fw[0] * 2.5 + rt[0] * 0.9, y + 0.15, pl.z + fw[1] * 2.5 + rt[1] * 0.9], [pl.x, y, pl.z], { width: Math.round(CW * 1.25), height: Math.round(RH * 1.25), fov: 34 });
+          const img = S.liveView(C, [pl.x + fw[0] * 2.6 + rt[0] * 0.9, y + 0.1, pl.z + fw[1] * 2.6 + rt[1] * 0.9], [pl.x, y, pl.z], { width: Math.round(CW * 1.25), height: Math.round(RH * 1.25), fov: 46 });
           paste(g, img, k * CW, r * RH, CW, RH);
           label(g, nm, k * CW + 12, r * RH + 22);
         }
@@ -261,6 +262,7 @@ export const GATES = [
         // the head chain itself, on hair or wrap
         const headChain = (npc.chains || []).find((c) => c.parent === 'Head');
         // the tier change: silhouette extents, L0 against L1, same pose, against the camera's plane
+        let jumpAt = null;
         const jump = (() => {
           who.root.updateWorldMatrix(true, true);
           const q = new T3();
@@ -293,7 +295,10 @@ export const GATES = [
           let mx = 0;
           for (const axis of [camR, camF]) {
             const A = extents(who.tierMeshes[0], axis), B = extents(who.tierMeshes[1], axis);
-            for (const k in A) { const a = A[k], b = B[k]; if (!b) continue; mx = Math.max(mx, Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])); }
+            for (const k in A) {
+              const a = A[k], b = B[k]; if (!b) continue;
+              for (let e = 0; e < 2; e++) { const d = Math.abs(a[e] - b[e]); if (d > mx) { mx = d; jumpAt = { axis: axis === camR ? 'across' : 'along', y: +(k * slice).toFixed(2), end: e ? 'max' : 'min' }; } }
+            }
           }
           return +mx.toFixed(4);
         })();
@@ -313,7 +318,7 @@ export const GATES = [
         };
         const pass = Object.values(clauses).every(Boolean);
         if (!pass) ok = false;
-        rows.push({ id, pass, tris: near, draws: I.draws, tiers: npc.tiers, over6mm: over6, skinMap: size(skinM.map), normalMap: size(skinM.normalMap), layers: npc.layers, procedural: npc.procedural, chains: chainRows, bestTip: best, heroTip: heroTravel, drawsDuringFade: during, fadeUniform: fadeU, drawsAfter: after.draws, silhouetteJumpM: jump, clauses });
+        rows.push({ id, pass, tris: near, draws: I.draws, tiers: npc.tiers, over6mm: over6, skinMap: size(skinM.map), normalMap: size(skinM.normalMap), layers: npc.layers, procedural: npc.procedural, chains: chainRows, bestTip: best, heroTip: heroTravel, drawsDuringFade: during, fadeUniform: fadeU, drawsAfter: after.draws, silhouetteJumpM: jump, jumpAt, clauses });
         PP.despawn(who);
         await frames(2);
       }
@@ -604,11 +609,12 @@ export const GATES = [
       await frame();
       const c = overlay(1600, 900), g = c.getContext('2d');
       const mx = p.position.x - rt[0] * 3.87, mz = p.position.z - rt[1] * 3.87, y = p.position.y;
-      const front = S.liveView(C, [mx + fw[0] * 9.2, y + 1.0, mz + fw[1] * 9.2], [mx, y + 0.95, mz], { width: 2000, height: 700, fov: 15 });
-      paste(g, front, 0, 0, 1600, 560);
-      const hd = S.liveView(C, [mx + fw[0] * 9.2, y + 1.62, mz + fw[1] * 9.2], [mx, y + 1.5, mz], { width: 2000, height: 425, fov: 5.6 });
-      paste(g, hd, 0, 560, 1600, 340);
-      label(g, 'BREA, then ARCHETYPES 1-9, left to right · 11 h · 9 m lens · grass + props hidden', 14, 28);
+      // all ten in full (the lens frames 8.7 m across at 12 m), then all ten heads in a strip at the same lens distance
+      const front = S.liveView(C, [mx + fw[0] * 12, y + 1.0, mz + fw[1] * 12], [mx, y + 0.92, mz], { width: 2000, height: 750, fov: 15.5 });
+      paste(g, front, 0, 0, 1600, 600);
+      const hd = S.liveView(C, [mx + fw[0] * 12, y + 1.6, mz + fw[1] * 12], [mx, y + 1.56, mz], { width: 2000, height: 375, fov: 7.6 });
+      paste(g, hd, 0, 600, 1600, 300);
+      label(g, 'ARCHETYPES 9 to 1, then BREA on the right (front view: her right is our left) · 11 h · 12 m lens · grass + props hidden', 14, 28);
     })()`,
     criteria: VS_CRITERIA,
   },
@@ -682,7 +688,7 @@ export const GATES = [
       await frame();
       const y0 = a.group.position.y;
       const c = overlay(1600, 900), g = c.getContext('2d');
-      const full = S.liveView(C, [pl.x + fw[0] * 4.4, y0 + 1.0, pl.z + fw[1] * 4.4], [pl.x, y0 + 0.92, pl.z], { width: 666, height: 1125, fov: 30 });
+      const full = S.liveView(C, [pl.x + fw[0] * 5.6, y0 + 1.0, pl.z + fw[1] * 5.6], [pl.x, y0 + 0.9, pl.z], { width: 666, height: 1125, fov: 30 });
       paste(g, full, 0, 0, 533, 900);
       label(g, 'ADOLESCENT 0.90 + ADULT · grass + props hidden', 14, 28);
       const close = (w, top, x0, nm) => {

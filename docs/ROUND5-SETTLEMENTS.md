@@ -15,7 +15,7 @@ independent judge grades them.
 | Atlases | `lib/atlas.mjs`: 1024² faction atlas + 512² normal/ORM (neutral: hue is per vertex), the shared 512² hair + wrap atlas |
 | Clip pack | `lib/clips.mjs`: 13 UAL2 clips native, 13 UAL1 clips baked per body offline by the kept Retargeter, stride tables |
 | The kit | `lib/kit/`: a snapshot of character-art's `tools/build/recipes/lib/{face,skin,skin-human,hair,wrap,wrap-head}.mjs` at **46296b6** (its fix round 1, Nov 6), byte copies except two relative paths in `face.mjs` (see §6) |
-| Runtime | `src/world/npc/people/{index,person,bank,chains}.js`, installed from `src/world/camp.js` (3 lines; camp.js is this lane's file, §2); publishes `ctx.people` |
+| Runtime | `src/world/npc/people/{index,person,pose,bank,chains}.js`, installed from `src/world/camp.js` (3 lines; camp.js is this lane's file, §2); publishes `ctx.people` |
 | Gates | `tools/gates.r5.settlements.mjs` (`nice -n 10 node tools/gates.mjs --port 5264 --lane settlements`) |
 | Assets | `public/models/npc/*.glb` (9 archetypes, 3 atlases, the clip pack), licence rows `npc-people-bodies`, `npc-faction-atlases`, `npc-clips` |
 
@@ -46,7 +46,24 @@ stands apart from it on neutral ground near REST (`ctx.people.stagePlace`, the f
 7. **The Lantern-Keeper no longer wears Brea's colours:** her bodice was the same orchil Peasant bodice as Brea's; it is a
    worn charcoal now and the night cloak and hood carry the orchil.
 8. **Aprons fold:** the raker's and the picker's aprons had 6 columns for 3.3 folds (aliased into a board); 11 columns now.
-9. **Gates:** `A97` measures a foot's height over the ground under it (the stage is the flattest place, not a floor);
+9. **No allocation per frame (A-alloc-rate).** The r3 run put this lane's owner row at 26.8 KB/frame against its 15.3 W0b
+   baseline (the guard is binding at 1.1x). 9.8 KB/frame of it was three's `AnimationMixer`: `Interpolant.evaluate` boxes a
+   double per track per update (about 40 B a track, 2.5 KB per person per update; measured again with V8's sampling heap profiler
+   in node). `src/world/npc/people/pose.js` (`PosePlayer`) now plays the same clips from the same pack into a preallocated pose:
+   a cached key per track, nlerp between keys, a cross-fade from a snapshot of the last pose, every bone written every update.
+   Against three's mixer on the same clip it agrees to 1 - |q·q'| ≤ 7.5e-8 over 200 frames and through a 0.4 s cross-fade, and
+   allocates 0 B per update. `Math.hypot` and `THREE.MathUtils.clamp` calls in the chain solve and the tier sort are inlined
+   (a call boxes its number arguments). Writing every bone every update also retires the overlay-restore of item 1.
+10. **The group stays once it stands.** It streamed out past 170 m, which changed the scene's object count in the middle of
+   `A90-memory-stability-expansion`'s workload (-932 objects outside every machine root: the row demands exactly 0). At W1 it is
+   one group of ten, hidden past 90 m (no draw); load and unload per settlement is W2's, with `A-settlement-dispose`.
+11. **LOD1 keeps its silhouette.** Every vertex weighted to a `dyn_` or `prop_` joint (tails, aprons, sashes, tools, baskets) is
+   locked in the LOD1 simplification (meshopt `vertex_lock`), and the skin gives back what that costs, so LOD1 stays ≤ 8 k.
+   r3 had the tube smith's apron at 16 triangles in LOD1 (153 near) and a 7.2 cm pop at the change. Chains no longer snap to
+   bind when the near tier fades out: the solve stops and the cloth holds its pose, and a solve that restarts seeds from it.
+12. **The licence row of the clip pack** named a source row that does not exist (`ual1-standard`); it is `ual1` (in the row and
+   in the recipe's provenance).
+13. **Gates:** `A97` measures a foot's height over the ground under it (the stage is the flattest place, not a floor);
    `A-npc-atlas-resident` and `A-npc-dispose` stand her facing the group, so the atlases are on the GPU when counted
    (before, the textures never uploaded and the counts proved nothing); the sheets hide grass, scatter props and the
    Round-4 camp while they film (labelled on the sheet), turn off the look-at, frame each head crop on the face's middle
@@ -61,7 +78,7 @@ stands apart from it on neutral ground near REST (`ctx.people.stagePlace`, the f
 - **Hair and headwrap.** `woundHeadwrap` for scarf, wrap with topknot, rag and cap; a one-ribbon band with a knot for bare heads; two-sided coil cards over the scalp under a band; a hood from the MCO part plus an escaped lock on a chain.
 - **Outfit.** MCO Peasant (Pan Houses) or Ranger (Crescent Holds) parts, simplified with locked borders, plus procedural pieces. Hue and contact shade ride in `COLOR_0` (u16), so one neutral atlas dresses every person of a faction. Body triangles under cloth go at build time (an inside-collar exemption keeps the neck), which pays for the cloth and gives the face the atlas.
 - **Tools.** A tool hangs on a prop joint. The runtime collapses a joint it does not want (`scale` ~0), so a rake moves from back to hand with no draw and no allocation.
-- **Motion.** One mixer per person on the shared clip pack; a walk moves by the clip's own stride table (the planted foot is the fixed point); overlays after the mixer: the walk style's lean and arm-swing gain, a held arm (the porter's basket), the head's carriage (`LIFT`), and the look-at toward her within 5.5 m. Each overlay is undone before the next mixer update (§1, item 1). Live `dyn_` chains (hair tail, wrap sash, apron halves, sash ends, shawl ends, cloak halves, a medal, a seed bag) run a Verlet solve from the kept hero solver's physics on the near tier only, with leg capsules so an apron goes round a thigh.
+- **Motion.** One `PosePlayer` per person (`pose.js`, allocation-free) on the shared clip pack; a walk moves by the clip's own stride table (the planted foot is the fixed point); overlays after the mixer: the walk style's lean and arm-swing gain, a held arm (the porter's basket), the head's carriage (`LIFT`), and the look-at toward her within 5.5 m. The player writes every bone on every update, so no overlay compounds (§1, items 1 and 9). Live `dyn_` chains (hair tail, wrap sash, apron halves, sash ends, shawl ends, cloak halves, a medal, a seed bag) run a Verlet solve from the kept hero solver's physics on the near tier only, with leg capsules so an apron goes round a thigh.
 
 ### Tiers (measured from the GLBs of this build)
 
@@ -85,7 +102,7 @@ ctx.people                                      src/world/npc/people/index.js
   .despawn(person)                              disposes collider, mixer + skeleton, releases archetype and atlases
   .stage({ ids, place, faction }) -> Promise<Person[]>   the group; default nine + a second raker
   .clearStage()
-  .autoStage : boolean                          true: the group streams in at 130 m from her, out (atlases and all) at 170 m
+  .autoStage : boolean                          true: the group stands once she comes within 130 m of it, and stays (W1)
   .stagePlace : { x, z, r, y }                  the neutral place (flattest clear ring spot round REST_SITE)
   .findStage(opts)
   .tierAt(person, tier | null)                  force a tier for a gate
@@ -95,6 +112,8 @@ ctx.people                                      src/world/npc/people/index.js
 
 Person
   .play(name, { fade, ts, loop, offset }) -> duration
+  .current : { name, time, ts, loop, duration, getClip() }   the clip playing (pose.js)
+  .pose : PosePlayer                            bind(clip), play(clip, opts), update(step), dispose()
   .walkTo(x, z, then)  .stopWalk()              walks by the clip's stride table
   .showProps(names | null)                      prop joints: prop_hand, prop_back, prop_hip, prop_shoulder, prop_lamp
   .look : boolean                               the look-at toward her (default true; sheets and cutscenes turn it off)

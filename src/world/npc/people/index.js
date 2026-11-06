@@ -213,7 +213,7 @@ export class PeopleSystem {
     this._streamT = 1;
     const pl = this.ctx.player;
     if (!pl) return;
-    const d = Math.hypot(pl.position.x - this.stagePlace.x, pl.position.z - this.stagePlace.z);
+    const ddx = pl.position.x - this.stagePlace.x, ddz = pl.position.z - this.stagePlace.z, d = Math.sqrt(ddx * ddx + ddz * ddz);
     if (!this.ready && d < STREAM_IN) {
       this._loading = true;
       this.stage().catch((e) => console.warn('[people] staging failed', e)).finally(() => { this._loading = false; });
@@ -232,7 +232,7 @@ export class PeopleSystem {
     for (let i = 0; i < n; i++) {
       const p = list[i];
       const dx = p.group.position.x - _cam.x, dy = p.group.position.y - _cam.y, dz = p.group.position.z - _cam.z;
-      p.distance = Math.hypot(dx, dy, dz);
+      p.distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
     for (let i = 1; i < n; i++) {
       const p = list[i];
