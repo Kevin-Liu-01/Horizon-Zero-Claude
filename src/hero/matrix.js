@@ -210,6 +210,11 @@ export function measurePose(ctx, snap, opts = {}) {
     const sk = (i) => [0, 1, 2, 3].filter((k) => SWo.getComponent(i, k) > 0.02).map((k) => bn[SIo.getComponent(i, k)] + ':' + SWo.getComponent(i, k).toFixed(2)).join(' ');
     row.edgeOffenders = badEdges.sort((x, y) => y[0] - x[0]).filter((_, i) => i % Math.max(1, Math.floor(badEdges.length / 40)) === 0).slice(0, 40).map(([q, a, b, L]) => ({ s: +q.toFixed(2), a: at(a), b: at(b), L: +L.toFixed(4), ja: sk(a), jb: sk(b) }));
   }
+  // the outfit's hidden pieces (Guild Whites' hat copies not worn now) collapse in the vertex stage: they cannot
+  // tear, clip or be clipped, so no clause reads them
+  const pb = hero.loadout?._pieceBits ?? -1;
+  const hideBits = (hero.outfit?.hasPieces && snap.piece && pb > 0) ? pb & ~1 : 0;
+  const hiddenV = (i) => hideBits !== 0 && (snap.piece[i] & hideBits) !== 0;
   // (b) body penetration (all body triangles, hidden ones too)
   const BP = worldPositions(body);
   const bTri = triList(body.geometry);
@@ -234,6 +239,7 @@ export function measurePose(ctx, snap, opts = {}) {
   let inside = 0, headIn = 0, deepest = 0, creaseExcluded = 0;
   const inOff = [];
   for (let i = 0; i < n; i++) {
+    if (hiddenV(i)) continue;
     const q = G.height(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
     if (!q) continue;
     if (q.h < -0.004 && q.dist < 0.05) {
@@ -250,7 +256,7 @@ export function measurePose(ctx, snap, opts = {}) {
   const ON = vertexNormals(P, triList(outfit.geometry), n);
   for (let i = 0; i < n; i++) if (snap.flip[i] < 0) { ON[i * 3] *= -1; ON[i * 3 + 1] *= -1; ON[i * 3 + 2] *= -1; }
   // the finger tab is held against the shaft by the hand itself: it is not a garment a weapon can clip
-  const OG = new Grid(P, ON, n, (i) => Math.abs(snap.bindL[i * 3]) < 0.55);
+  const OG = new Grid(P, ON, n, (i) => Math.abs(snap.bindL[i * 3]) < 0.55 && !hiddenV(i));
   let stowDeep = 0, stowOver = 0, kitN = 0;
   const stowOff = [];
   const PIECE = kit?.geometry.getAttribute('_piece');
@@ -305,7 +311,7 @@ export function measurePose(ctx, snap, opts = {}) {
       const isPiece = snap.piece ? (snap.piece[i] & 1) !== 0 : false;
       const isCollar = snap.bindL[i * 3 + 1] > 1.44 && Math.abs(snap.bindL[i * 3]) < 0.2;
       if (!isPiece && !isCollar) continue;
-      if (snap.piece && (snap.piece[i] & 96)) continue;
+      if (snap.piece && (snap.piece[i] & 224)) continue;
       const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
       const d = segDist(x, y, z, a, b);
       if (d < toHand) { toHand = d; handAt = i; }
@@ -315,11 +321,13 @@ export function measurePose(ctx, snap, opts = {}) {
     if (opts.offenders) { row.handAt = handAt != null ? at(handAt) : null; row.headAt = headAt != null ? at(headAt) : null; }
   }
   // (e) the Guild Whites hat in its back socket vs the lance
-  if (snap.piece && snap.piece.some((b) => b & 64) && KP && !(hidden & 1)) {
+  // (the back copy worn now: 64 over the stowed bow, 128 close in)
+  const backBits = 192 & ~hideBits;
+  if (snap.piece && backBits && snap.piece.some((b) => b & backBits) && KP && !(hidden & 1)) {
     let m = 9;
     const A = new THREE.Vector3().fromArray(hero.kit.carry ? hero.kit.carry.butt.toArray() : [0, 0, 0]).applyMatrix4(ctx.player.model.matrixWorld);
     const B = new THREE.Vector3().fromArray(hero.kit.carry ? hero.kit.carry.tip.toArray() : [0, 0, 0]).applyMatrix4(ctx.player.model.matrixWorld);
-    for (let i = 0; i < n; i++) if (snap.piece[i] & 64) m = Math.min(m, segDist(P[i * 3], P[i * 3 + 1], P[i * 3 + 2], A, B));
+    for (let i = 0; i < n; i++) if (snap.piece[i] & backBits) m = Math.min(m, segDist(P[i * 3], P[i * 3 + 1], P[i * 3 + 2], A, B));
     row.hatToLance = +m.toFixed(3);
   }
   return row;

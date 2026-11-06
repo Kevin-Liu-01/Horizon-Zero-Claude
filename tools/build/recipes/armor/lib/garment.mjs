@@ -113,7 +113,7 @@ export function smockBody(part, surf, skin, { yTop = 1.215, yBelt = 1.095, rBelt
  * the skirt opens. Panels follow pelvis near the belt and their thigh toward the
  * hem, each panel its own side, so the legs never stretch a panel across them.
  */
-export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off = 0.008, flare = 0.14, slits, rows = 6, colsPer = 16, ripA = 0.007, seed = 3, density = 1, overlap = 0.05, thighW = 0.92, keep = null, slot = 'skirt', hem = null, floorY = null, ringDth = null, lip = 0, weightY = null, offTop = null, easeFront = 0 } = {}) {
+export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off = 0.008, flare = 0.14, slits, rows = 6, colsPer = 16, ripA = 0.007, seed = 3, density = 1, overlap = 0.05, thighW = 0.92, keep = null, slot = 'skirt', hem = null, floorY = null, ringDth = null, lip = 0, weightY = null, offTop = null, easeFront = 0, fold = null } = {}) {
   const cz = -0.02;
   const n = slits.length;
   const made = [];
@@ -150,7 +150,10 @@ export function skirtPanels(mk, surf, joints, { yTop = 1.025, yHem = 0.74, off =
       const y = mix(yTop, hemY, t) + (isLip ? 0.004 : 0);
       // deeper folds low on the skirt: the hem's outline is what reads from across a pan
       // outward only: a fold never dips back through what it hangs over
-      const rad = profs[r][c] + ripA * sstep(0.05, 0.9, t) * (0.5 + 0.5 * ripple(th, seed + i, [7, 11, 17])) + (isLip ? -lip : 0) + (easeFront ? easeFront * Math.max(0, Math.sin(th)) * sstep(0, 0.4, t) : 0);
+      // `fold(th, y, t, panel)`: modelled folds (the caller's own profile, so painted shading can follow the same
+      // folds); otherwise the drape ripple
+      const fz = fold ? fold(th, y, t, i) : ripA * sstep(0.05, 0.9, t) * (0.5 + 0.5 * ripple(th, seed + i, [7, 11, 17]));
+      const rad = profs[r][c] + fz + (isLip ? -lip : 0) + (easeFront ? easeFront * Math.max(0, Math.sin(th)) * sstep(0, 0.4, t) : 0);
       const p = [Math.cos(th) * rad, y, cz + Math.sin(th) * rad];
       // by height when asked: a short layer under a long one must move with the long one, not shear across its own span
       const w = weightY ? weightY(y) : thighW * Math.min(1, t / 0.95);      // an even ramp: the stride's pull shared by every row

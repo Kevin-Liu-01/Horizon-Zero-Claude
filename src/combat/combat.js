@@ -122,6 +122,14 @@ const _ray = new THREE.Raycaster();
 const _hand = new THREE.Vector3();
 const _carry = new THREE.Euler();
 const _hullRay = { origin: new THREE.Vector3(), direction: new THREE.Vector3() };
+/**
+ * A-alloc-rate (R48 c, 4 KB/s per function from W1). V8's mid tier boxes a double handed to a call it did not
+ * inline (an argument, a field read again for each call, Math.min / Math.max / Math.sqrt), so the per-frame path
+ * reads a double once into a local before handing it on, does its own small arithmetic, and passes the terrain
+ * whole-metre (Smi) coordinates for the aim march. `_hullOpts` is the hull raycast's options, reused.
+ */
+const _hullOpts = { far: 220.5 };
+const _AP = new Float64Array(4);      // the aim march's bracket: a, b, f(a), f(b)
 
 /**
  * Detach a list of scene roots and release every GPU resource under them.
@@ -787,16 +795,19 @@ export class Combat {
      * The 0.05 clamp survives so a stalled tab cannot teleport a draw.
      */
     const now = performance.now() / 1000;
-    const realDt = this._lastT ? Math.min(0.05, Math.max(0, now - this._lastT)) : 0;
+    let realDt = 0;
+    if (this._lastT) { realDt = now - this._lastT; if (realDt < 0) realDt = 0; else if (realDt > 0.05) realDt = 0.05; }
     this._lastT = now;
 
-    // FX clock is SCALED time: slow-mo slows sparks, hitstop freezes them
+    // FX clock is SCALED time: slow-mo slows sparks, hitstop freezes them (read once: a field read per call is a
+    // heap number per call)
     this._fxT += dt;
-    this.sparks.update(this._fxT);
-    this.trail.update(this._fxT);
-    this.dirt.update(this._fxT);
-    this.smoke.update(this._fxT);
-    this.chips.update(this._fxT);
+    const fx = this._fxT;
+    this.sparks.update(fx);
+    this.trail.update(fx);
+    this.dirt.update(fx);
+    this.smoke.update(fx);
+    this.chips.update(fx);
     this.blastFx.update(dt);
     this.decals.update(realDt);
     this.feedback.update(realDt);
@@ -812,14 +823,14 @@ export class Combat {
 
     // --- time scale: `engine.requestTimeScale` is the single authority
     //     (SPEC v4 §4.2 — studio > wheel > hitstop > concentration > legacy)
-    this._updateTimeScale(realDt, now);   // hitstop deadlines are on OUR clock
+    this._updateTimeScale(realDt);   // hitstop deadlines are on OUR clock (`_lastT`, set above)
 
     // --- aim FOV zoom per weapon (real dt so hitstop doesn't freeze the ease)
     const cam = ctx.camera;
     const aimFov = (w?.noZoom) ? FOV_HIP : (w?.aimFov ?? 44);
     const targetFov = aiming ? aimFov : FOV_HIP;
-    const f = THREE.MathUtils.damp(cam.fov, targetFov, 9, realDt);
-    if (Math.abs(f - cam.fov) > 0.0005) {
+    const fov0 = cam.fov, f = fov0 + (targetFov - fov0) * (1 - Math.exp(-9 * realDt));   // MathUtils.damp, inline
+    if (Math.abs(f - fov0) > 0.0005) {
       cam.fov = f;
       cam.updateProjectionMatrix();
     }
@@ -836,7 +847,7 @@ export class Combat {
     if (isDisc) {
       this._drawing = false;
       this.drawStrength = 0;
-      this._discCd = Math.max(0, this._discCd - realDt);
+      this._discCd -= realDt; if (this._discCd < 0) this._discCd = 0;
       if (aiming && lmb && !this._lmbPrev && this._discCd <= 0 && this._hasAmmo('disc')) {
         this._fireDisc();
       }
@@ -846,7 +857,8 @@ export class Combat {
         if (this._discDropT > 1.1) this._dropDisc(true);
       }
     } else {
-      const drawTime = Math.max(0.2, w?.drawTime ?? 0.7);
+      let drawTime = w?.drawTime ?? 0.7;
+      if (drawTime < 0.2) drawTime = 0.2;
       if (aiming && lmb) {
         /**
          * The string cannot start bending before the arrow is ON it — and the
@@ -868,7 +880,8 @@ export class Combat {
         } else if (this._drawing) {
           // draw builds in REAL time — drawing at full speed inside
           // Concentration slow-mo is the signature HZD moment
-          this.drawStrength = Math.min(1, this.drawStrength + realDt / drawTime);
+          this.drawStrength += realDt / drawTime;
+          if (this.drawStrength > 1) this.drawStrength = 1;
         }
       } else {
         // opening the wheel mid-draw CANCELS the shot instead of loosing it
@@ -896,11 +909,11 @@ export class Combat {
      */
     this._updateWield(realDt, playing, aiming);
     const wield = this.weaponDrawn || (isDisc && playing);
-    this._bowVis = THREE.MathUtils.damp(this._bowVis, wield ? 1 : 0, 14, realDt);
+    this._bowVis += ((wield ? 1 : 0) - this._bowVis) * (1 - Math.exp(-14 * realDt));     // MathUtils.damp, inline
     const vis = this._bowVis;
     const model = this.bow;
     if (wield || vis > 0.5) {
-      this._placeInHand(model, vis, aiming, ammoId, cam);
+      this._placeInHand(model, aiming, ammoId, cam);      // (reads `_bowVis`)
     } else {
       this._placeOnBack(model, 1 - vis, isDisc);
     }
@@ -913,9 +926,9 @@ export class Combat {
       this._landRing.visible = showTraj;
     }
 
-    this.arrows.update(dt, this._fxT);
-    this.bombs.update(dt, this._fxT);
-    this.discs.update(dt, this._fxT);
+    this.arrows.update(dt, fx);
+    this.bombs.update(dt, fx);
+    this.discs.update(dt, fx);
 
     // --- ropes + tripwires (combat-roster-missing)
     this.traps.update(realDt, aiming ? this.aimPoint : null, ammoId);
@@ -971,9 +984,9 @@ export class Combat {
    * `engine.requestTimeScale` so studio and the wheel can outrank it
    * (`machine-rig-19`: a single timeScale authority).
    */
-  _updateTimeScale(realDt, now) {
+  _updateTimeScale(realDt) {
     const e = this.ctx.engine;
-    if (this._hsActive && now >= this._hsEnd) {
+    if (this._hsActive && this._lastT >= this._hsEnd) {
       this._hsActive = false;
       e.requestTimeScale('hitstop', null);
     }
@@ -1087,7 +1100,8 @@ export class Combat {
    * pose is expressed as a rotation off her heading, not off the camera, so it
    * does not swing about when the player looks around.
    */
-  _placeInHand(model, vis, aiming, ammoId, cam) {
+  _placeInHand(model, aiming, ammoId, cam) {
+    const vis = this._bowVis;
     const node = this._bowNode;
     if (model.group.parent !== node) {
       node.add(model.group);
@@ -1113,21 +1127,22 @@ export class Combat {
       _qDes.setFromRotationMatrix(_m);
     } else {
       // low carry: point the arrow line down and across, off HER heading
-      const h = this.ctx.player?.heading ?? 0;
+      const pl = this.ctx.player;
       // (a 1.45 m stave: carried in the left hand at the trail, top limb forward, clear of her legs)
       // standing the lower limb leans out past her hip; at a run the bow turns off the pumping arm's line
-      const run = Math.min(1, (this.ctx.player?.moveSpeed || 0) / 6);
-      _carry.set(0.92, h + 0.12 + 0.18 * run, 0.16 - 0.32 * run, 'YXZ');
+      let run = 0, h = 0;
+      if (pl) { h = pl.heading; run = pl.moveSpeed / 6; if (!(run > 0)) run = 0; else if (run > 1) run = 1; }
+      // the Euler's own fields (its `set` takes the doubles as arguments)
+      _carry._x = 0.92; _carry._y = h + 0.12 + 0.18 * run; _carry._z = 0.16 - 0.32 * run; _carry._order = 'YXZ';
       _qDes.setFromEuler(_carry);
     }
     _wq.invert();
     model.group.quaternion.copy(_wq.multiply(_qDes));
     // cancel skeleton scale so the weapon stays in meters; vis = scale-in
-    model.group.scale.set(
-      vis / Math.max(1e-6, _ws.x),
-      vis / Math.max(1e-6, _ws.y),
-      vis / Math.max(1e-6, _ws.z),
-    );
+    const S = model.group.scale;
+    S.x = vis / (_ws.x > 1e-6 ? _ws.x : 1e-6);
+    S.y = vis / (_ws.y > 1e-6 ? _ws.y : 1e-6);
+    S.z = vis / (_ws.z > 1e-6 ? _ws.z : 1e-6);
   }
 
   /** Unwielded: ride the spine bone, diagonal across the back (HZD carry). */
@@ -1214,35 +1229,50 @@ export class Combat {
   _updateAimPoint() {
     const ctx = this.ctx;
     const cam = ctx.camera;
-    cam.getWorldDirection(_camDir);
-    let best = 220;
+    // the camera's forward (getWorldDirection, read off its world matrix: no double crosses a call)
+    cam.updateWorldMatrix(true, false);
+    const ce = cam.matrixWorld.elements;
+    let dx = -ce[8], dy = -ce[9], dz = -ce[10];
+    const dl = (dx * dx + dy * dy + dz * dz) ** 0.5;
+    if (dl > 0) { dx /= dl; dy /= dl; dz /= dl; }
+    _camDir.x = dx; _camDir.y = dy; _camDir.z = dz;
+    const ox = cam.position.x, oy = cam.position.y, oz = cam.position.z;
+    const A = _AP;
+    A[1] = 220;                       // the hit distance (220: none)
 
     const terr = ctx.terrain;
     if (terr) {
-      const step = 3;
-      let prev = 0;
-      for (let s = step; s <= 220; s += step) {
-        _p.copy(cam.position).addScaledVector(_camDir, s);
-        if (_p.y <= terr.getHeight(_p.x, _p.z)) {
-          let lo = prev, hi = s;
-          for (let i = 0; i < 7; i++) {
-            const mid = (lo + hi) / 2;
-            _p.copy(cam.position).addScaledVector(_camDir, mid);
-            if (_p.y > terr.getHeight(_p.x, _p.z)) lo = mid; else hi = mid;
+      // The march, every 3 m, reads the ground at the nearest whole metre: Smi coordinates cost the call nothing,
+      // where two doubles were two heap numbers a read (146 a frame aimed at the sky). The crossing it brackets is
+      // then refined with exact reads, by regula falsi from the bracket's two heights: two reads at most, to a few
+      // cm (a hit's error lies along the camera ray, which moves the bow's aim by microradians).
+      A[0] = 0; A[2] = 1;
+      for (let s = 3; s <= 220; s += 3) {
+        const px = ox + dx * s, pz = oz + dz * s;
+        const f = oy + dy * s - terr.getHeight(Math.floor(px + 0.5) | 0, Math.floor(pz + 0.5) | 0);
+        if (f <= 0) {
+          A[1] = s; A[3] = f;
+          for (let it = 0; it < 2; it++) {
+            const m = A[0] + (A[1] - A[0]) * A[2] / (A[2] - A[3]);
+            const fm = oy + dy * m - terr.getHeight(ox + dx * m, oz + dz * m);
+            if (fm > 0) { A[0] = m; A[2] = fm; } else { A[1] = m; A[3] = fm; }
+            if (fm < 0.03 && fm > -0.03) break;
           }
-          best = hi;
+          A[1] = A[0] + (A[1] - A[0]) * A[2] / (A[2] - A[3]);
           break;
         }
-        prev = s;
+        A[0] = s; A[2] = f;
       }
     }
+    let best = A[1];
 
     const hulls = ctx.hitHulls;
     if (hulls && hulls.raycast) {
       _hullRay.origin.copy(cam.position);
       _hullRay.direction.copy(_camDir);
-      const h = hulls.raycast(_hullRay, { far: best });
-      if (h && h.hit) { this.aimPoint.set(h.x, h.y, h.z); return; }
+      _hullOpts.far = best;
+      const h = hulls.raycast(_hullRay, _hullOpts);
+      if (h && h.hit) { const P = this.aimPoint; P.x = h.x; P.y = h.y; P.z = h.z; return; }
     } else {
       // spatial not installed (a bare unit test / an old save of the page):
       // fall back to the Round 3 path so aiming still resolves
@@ -1266,7 +1296,8 @@ export class Combat {
       }
     }
 
-    this.aimPoint.copy(cam.position).addScaledVector(_camDir, best);
+    const P = this.aimPoint;
+    P.x = ox + dx * best; P.y = oy + dy * best; P.z = oz + dz * best;
   }
 
   /* ------------------------------- firing -------------------------------- */

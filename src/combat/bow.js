@@ -461,9 +461,13 @@ class SabinaBow extends WeaponModel {
     this.lengthM = X.length;
     this._tip0Z = X.braceZ;         // the tips' z at brace, mesh space
     this._tipK = X.tipK; this._tipC = X.tipC;
+    // the per-frame state is ONE vec4 (flex, string z, nocking point y, arrow on): a three.js uniform's `value`
+    // slot holds objects elsewhere, so a number written there is a fresh heap number every frame; a Vector4's
+    // fields take the write in place (A-alloc-rate, R48 c)
     const U = {
-      uFlex: { value: 0 }, uStrZ: { value: X.braceZ }, uTip0Z: { value: X.braceZ }, uTipK: { value: X.tipK }, uTipC: { value: X.tipC },
-      uNockY: { value: NOCK_Y - GRIP_Y }, uArrowOn: { value: 1 }, uArrowPos: { value: new THREE.Vector3(0, NOCK_Y - GRIP_Y, X.braceZ) },
+      uBow: { value: new THREE.Vector4(0, X.braceZ, NOCK_Y - GRIP_Y, 1) },
+      uTip0Z: { value: X.braceZ }, uTipK: { value: X.tipK }, uTipC: { value: X.tipC },
+      uArrowPos: { value: new THREE.Vector3(0, NOCK_Y - GRIP_Y, X.braceZ) },
       uHeadT: { value: new THREE.Color(0xffffff) }, uFletchT: { value: new THREE.Color(0xffffff) },
     };
     this.U = U;
@@ -473,8 +477,13 @@ class SabinaBow extends WeaponModel {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>
 attribute vec2 _bw;
-uniform float uFlex, uStrZ, uTip0Z, uTipK, uTipC, uNockY, uArrowOn;
+uniform vec4 uBow;
+uniform float uTip0Z, uTipK, uTipC;
 uniform vec3 uArrowPos, uHeadT, uFletchT;
+#define uFlex uBow.x
+#define uStrZ uBow.y
+#define uNockY uBow.z
+#define uArrowOn uBow.w
 varying vec3 vBwTint;`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>
   vBwTint = vec3( 1.0 );
@@ -537,28 +546,30 @@ varying vec3 vBwTint;`)
   }
 
   setDraw(draw, showArrow) {
-    const U = this.U;
+    const B = this.U.uBow.value, A = this.U.uArrowPos.value;
     const nz = this.restZ - draw * this.pull;          // model space (the contract)
     const full = this.restZ - this.pull;
     const rest = this._tip0Z + GRIP_Z;                 // the braced string, model space
-    const flex = nz < rest ? Math.min(1, (rest - nz) / (rest - full)) : 0;
-    U.uFlex.value = flex;
-    U.uStrZ.value = Math.min(rest, nz) - GRIP_Z;
-    U.uNockY.value = NOCK_Y - GRIP_Y;                   // the string's nocking point, mesh space
-    U.uArrowOn.value = showArrow ? 1 : 0;
+    // (no Math.min / Math.max and no double through a ternary: V8's mid tier boxes them; fields take writes in place)
+    B.x = 0;
+    if (nz < rest) { B.x = (rest - nz) / (rest - full); if (B.x > 1) B.x = 1; }
+    B.y = rest - GRIP_Z; if (nz < rest) B.y = nz - GRIP_Z;
+    B.z = NOCK_Y - GRIP_Y;                              // the string's nocking point, mesh space
+    B.w = showArrow ? 1 : 0;
     const G = this.nockArrow.group;
     G.visible = !!showArrow;
-    if (!showArrow) { U.uArrowPos.value.set(0, 0, 0); return; }
-    let x = 0, y = NOCK_Y, z = nz;
+    if (!showArrow) { A.x = 0; A.y = 0; A.z = 0; return; }
+    const P = G.position;
+    P.x = 0; P.y = NOCK_Y; P.z = nz;
     if (this._ride) {
       _rideL.copy(this._ride);
       this.model.updateWorldMatrix(true, false);
       this.model.worldToLocal(_rideL);
-      if (Number.isFinite(_rideL.x) && _rideL.lengthSq() < 4) { x = _rideL.x; y = _rideL.y; z = _rideL.z; }
+      const r = _rideL, l2 = r.x * r.x + r.y * r.y + r.z * r.z;
+      if (l2 === l2 && l2 < 4) { P.x = r.x; P.y = r.y; P.z = r.z; }
     }
-    G.position.set(x, y, z);
-    U.uArrowPos.value.set(x, y - GRIP_Y, z - GRIP_Z);
-    U.uNockY.value = y - GRIP_Y;
+    A.x = P.x; A.y = P.y - GRIP_Y; A.z = P.z - GRIP_Z;
+    B.z = P.y - GRIP_Y;
   }
 
   setArrowType(type) {

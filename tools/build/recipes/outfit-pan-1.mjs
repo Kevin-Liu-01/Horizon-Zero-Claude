@@ -38,7 +38,7 @@ import {
 import { CHAINS } from './brea.mjs';
 import { Field, V, clamp, collapseShort, compact, conform, cutTris, emptyPart, mix, partFromPrim, recomputeNormals, smoothSkin, sstep } from './armor/lib/part.mjs';
 import { Trim, fbm, loadRaw, packAtlas, paintAtlas } from './armor/lib/atlas.mjs';
-import { TAU, beltRing, boxInto, limbStrap, orientOut, ring, skirtPanels, strapAlong } from './armor/lib/garment.mjs';
+import { TAU, beltRing, boxInto, limbStrap, orientOut, ring, ripple, skirtPanels, strapAlong } from './armor/lib/garment.mjs';
 import { bindingAlong, draftSmock, drapeTable, openEdges, radialTable, roundRect, softSheet, tableAt, tubeInto } from './armor/lib/smock.mjs';
 import { outfitDoc, writeOutfit } from './armor/lib/output.mjs';
 import { romFit } from './armor/lib/romfit.mjs';
@@ -287,13 +287,29 @@ export function panTrim(W, H, trimH) {
     }
   });
   T.cell('sash', 300, 44, (t, o) => {
-    // linen wound round: long creases along the band, deep where it goes under the belt
+    // linen wound round: long creases along the band, deep where it goes under the belt. Armory W1: it read flat and
+    // pale in sun (one bright tone, shallow creases). Unbleached now, a shade under the sleeves; creases twice as deep
+    // with their valleys shaded; both long edges rolled and hemmed; a tone-on-tone band of heavier weft near each edge
     t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0; t.d = 99;
-    cloth(t, o, sc(COL.linen, 0.98), { slub: 0.05, mottle: 0.08, seed: 13, thread: 0.03 });
+    cloth(t, o, [mix(COL.linen[0], 176, 0.38), mix(COL.linen[1], 160, 0.38), mix(COL.linen[2], 128, 0.38)], { slub: 0.08, mottle: 0.12, seed: 13, thread: 0.05 });
     const c = fold01(noise3(t.ax * 0.018, t.y * 0.16, 2.9)), c2 = fold01(noise3(t.ax * 0.04, t.y * 0.34, 7.3));
     const f = c * 0.7 + c2 * 0.3;
-    o.h += 0.0022 * (f - 0.6);
-    const q = 0.9 + 0.13 * sstep(0.16, 0.7, f); o.r *= q; o.g *= q; o.b *= q;
+    o.h += 0.0042 * (f - 0.6);
+    const q = 0.84 + 0.2 * sstep(0.16, 0.7, f); o.r *= q; o.g *= q; o.b *= q;
+    o.ao *= 1 - 0.28 * sstep(0.34, 0.04, f);
+    // the heavier weft: two bands of thicker, slightly darker threads
+    const wb = Math.min(Math.abs(t.v - 0.2), Math.abs(t.v - 0.8));
+    if (wb < 0.05) { const k = 1 - wb / 0.05; const th = Math.sin((t.x / 1.6) * Math.PI); o.r *= 1 - 0.1 * k; o.g *= 1 - 0.1 * k; o.b *= 1 - 0.12 * k; o.h += 0.00035 * k * th; }
+    // the rolled hems: a round lip at each long edge, its fold line shaded, one running stitch inside it
+    const e = Math.min(t.v, 1 - t.v);
+    if (e < 0.12) {
+      const lip = Math.sin(Math.PI * clamp(e / 0.09));
+      o.h += 0.0009 * lip;
+      if (e > 0.085 && e < 0.115) { o.r *= 0.8; o.g *= 0.8; o.b *= 0.8; o.ao *= 0.86; }
+      if (e < 0.02) { o.r *= 0.88; o.g *= 0.88; o.b *= 0.88; }
+      const st = Math.abs(e - 0.06);
+      if (st < 0.016 && ((t.x / 3.6) % 1) < 0.55) over(o, [o.r * 1.18 + 6, o.g * 1.18 + 6, o.b * 1.14 + 4], 0.5);
+    }
   });
   T.cell('bind', 240, 18, (t, o) => {
     // bias tape in the deep dye, one running stitch
@@ -312,9 +328,13 @@ function smockDye(t, o, seed = 1) {
   const blot = fbm(t.X * 3.6, t.Y * 1.1, t.Z * 3.6 + 7, 3);
   const fade = sun + 0.16 * sstep(0.46, 0.68, blot);
   const c = [mix(COL.smock[0], 142, fade), mix(COL.smock[1], 108, fade), mix(COL.smock[2], 136, fade)];
-  cloth(t, o, c, { slub: 0.07, mottle: 0.1, seed, thread: 0.075 });
+  // (armory W1: the Museo Egizio linen beside it has slubs you can count and dye that took along the warp)
+  cloth(t, o, c, { slub: 0.11, mottle: 0.12, seed, thread: 0.085 });
   const d = fbm(t.X * 4.2, t.Y * 1.2, t.Z * 4.2 + 17, 2);
   const k = 0.9 + 0.2 * d; o.r *= k; o.g *= k; o.b *= k;
+  // the dye took unevenly along the warp: long faint streaks down the cloth, a little browner where it is thin
+  const st = fbm(Math.atan2(t.Z + 0.02, t.X) * 38, t.Y * 1.6, 23.1 + seed, 2) - 0.5;
+  const q = 1 + 0.12 * st; o.r *= q * (st < 0 ? 1.02 : 1); o.g *= q; o.b *= q * (st < 0 ? 0.96 : 1);
 }
 
 export const PAN_PAINTERS = {
@@ -338,15 +358,19 @@ export const PAN_PAINTERS = {
       const w = sstep(1.42, 1.3, t.Y);
       h += 0.0026 * (f - 0.55) * w; sh *= 1 + 0.06 * Math.min(0, (f - 0.45) * w * 1.5);
     }
-    // gathers above the belt
-    const gw = sstep(1.26, 1.165, t.Y);
+    // gathers above the belt and the long drops under the bust: the SAME ripples the mesh is cut with
+    // (draftSmock, seed 1: [5, 8] low, seed 4: [13, 17, 21] gathered), so the map's shade lies in the mesh's own
+    // valleys (armory W1: the painted gathers had their own pattern and crossed the modelled ones), sharpened there
+    const thS = Math.atan2(t.Z + 0.02, t.X);
+    const gw = sstep(1.215, 1.16, t.Y);
     if (gw > 0) {
-      const f = hangFolds(t, { belt: 1.0, hem: 1.3, seed: 2 });
-      h += 0.0062 * gw * (f - 0.6); sh *= 1 - 0.24 * gw * sstep(0.48, 0.12, f);
+      const f = 0.5 + 0.5 * ripple(thS, 4, [13, 17, 21]);
+      h += 0.0024 * gw * (f - 0.5); sh *= 1 - 0.3 * gw * sstep(0.45, 0.05, f);
     }
-    // long soft drops under the bust and at the sides
-    const dw = sstep(1.3, 1.24, t.Y) * (1 - gw);
-    if (dw > 0) { const f = fold01(noise3(Math.atan2(t.Z + 0.02, t.X) * 4.0, t.Y * 1.1, 2.6)); h += 0.0044 * dw * (f - 0.55); sh *= 1 + 0.16 * dw * Math.min(0, f - 0.4); }
+    const dw = sstep(1.29, 1.2, t.Y) * (1 - gw);
+    if (dw > 0) { const f = 0.5 + 0.5 * ripple(thS, 1, [5, 8]); h += 0.0018 * dw * (f - 0.5); sh *= 1 - 0.14 * dw * sstep(0.4, 0.05, f); }
+    // the fine crush of the gathers, a second scale the mesh cannot carry
+    if (gw > 0) { const f2 = hangFolds(t, { belt: 1.0, hem: 1.3, seed: 2 }); h += 0.0016 * gw * (f2 - 0.6); }
     o.h += h;
     o.ao *= sh;
     // shaded under the belt's top edge, and where the arm presses
@@ -364,8 +388,9 @@ export const PAN_PAINTERS = {
   skirt(t, o) {
     smockDye(t, o, 3);
     const f = hangFolds(t, { belt: 1.1, hem: 0.75, seed: 0 });
-    o.h += 0.0082 * (f - 0.58);
-    o.ao *= 1 - 0.2 * sstep(0.42, 0.06, f);
+    // (the geometry carries the fold now: the map keeps its crease, sharpened in the valley, and the valley's shade)
+    o.h += 0.0034 * (f - 0.58);
+    o.ao *= 1 - 0.26 * sstep(0.42, 0.04, f);
     o.ao *= 1 - 0.42 * sstep(1.05, 1.088, t.Y);
     // the turned hem: a second layer 14 mm deep, its fold line and one row of stitches
     const hemD = t.Y - 0.748 - 0.016 * Math.pow(Math.abs(Math.sin(Math.atan2(t.Z + 0.02, t.X))), 3);
@@ -446,19 +471,27 @@ export const PAN_PAINTERS = {
     const th = Math.atan2(t.Z - cz, t.X - cx);
     const n = fbm(t.X * 21, t.Y * 21, t.Z * 21, 3);
     if (t.Y > 0.075) {
-      // a flat plait of esparto wound up the shin, each turn lapping the one below it
-      const turn = t.Y / 0.027 + th / TAU * side;
+      // A FLAT plait of esparto (a pleita) wound up the shin, each turn lapping the one below it. Armory W1: it read
+      // as stacked rope, because its height was one round crown per turn. Now the band is flat across with rounded
+      // edges, and its face is the plait: strands at 45 degrees from either edge meeting at the middle (chevrons),
+      // each strand its own lot of grass, a groove between strands, the two halves' strands interleaved at the spine
+      const turn = t.Y / 0.03 + th / TAU * side;
       const k = Math.floor(turn), fb = turn - k;
       const arc = th * 0.058 * side;
-      const across = Math.sin(Math.PI * Math.pow(fb, 0.78));              // the band's crown
-      const ch = Math.abs(((arc / 0.0105 + Math.abs(fb - 0.5) * 1.5) % 1 + 1) % 1 - 0.5) * 2;   // the plait's chevrons
-      const lot = 0.92 + 0.16 * noise3(k * 1.73, 3.3, 1.1);                // grass from different cuts
-      const v = (0.76 + 0.24 * across) * (0.92 + 0.12 * ch) * lot * (0.95 + 0.12 * (n - 0.5));
+      const edge = sstep(0.0, 0.15, fb) * sstep(1.0, 0.86, fb);            // flat across, rounded at both edges
+      const half = Math.abs(fb - 0.5) * 2, hs = fb < 0.5 ? 0 : 1;
+      const sp = arc / 0.0105 + half * 1.15 + hs * 0.5;                    // strand coordinate (period 10.5 mm)
+      const si = Math.floor(sp), sf = sp - si;
+      const strand = Math.sin(Math.PI * sf);                               // each strand's own round crown
+      const groove = sstep(0.16, 0.0, sf) + sstep(0.84, 1.0, sf);          // the shade between two strands
+      const lot = 0.9 + 0.2 * noise3(si * 1.37 + hs * 9.1, k * 2.11, 3.3);  // grass from different cuts, strand by strand
+      const spine = 1 - clamp(half / 0.07);                                 // where the halves interleave
+      const v = (0.7 + 0.3 * edge) * (0.84 + 0.2 * strand) * (1 - 0.22 * groove) * (1 - 0.1 * spine) * lot * (0.95 + 0.1 * (n - 0.5));
       put(o, sc(COL.esparto, v));
-      o.h = 0.0015 * across + 0.00025 * ch;
+      o.h = 0.0011 * edge + 0.00055 * strand * edge - 0.0002 * groove;
       // the turn above lies over this one's top edge
-      if (fb > 0.88) { const q = mix(1, 0.6, (fb - 0.88) / 0.12); o.r *= q; o.g *= q; o.b *= q; }
-      o.rough = 0.92;
+      if (fb > 0.9) { const q = mix(1, 0.62, (fb - 0.9) / 0.1); o.r *= q; o.g *= q; o.b *= q; }
+      o.rough = 0.9;
       o.ao *= 1 - 0.3 * sstep(0.435, 0.455, t.Y);
     } else if (t.Y < 0.027) {
       // the rope sole: a coil seen from the side, twisted strands, whipped to the upper
@@ -496,6 +529,8 @@ export async function bodyField() {
 }
 
 const TRIM_H = 214;
+/** The skirt's modelled fold depth at the hem (m): crest to valley. */
+const SKIRT_FOLD = 0.026;
 const BELT_Y = 1.122;
 export const KEEP_TORSO = (q) => Math.abs(q.x) < 0.3;
 /** Where the smock's armholes are cut (bind space): just outside the sleeve at the shoulder joint. */
@@ -597,7 +632,7 @@ export async function panBase(opt = {}) {
     }
   }
   // (cut lower behind the knee: at a stride the calf folds shut against the hamstring there)
-  const boots = cutTris(partFromPrim(prim('boots'), 'boots', { density: 0.98, nScale: 0.2 }), (cx, cy, cz) => !(cy > 0.452 && cz < -0.11));
+  const boots = cutTris(partFromPrim(prim('boots'), 'boots', { density: 1.15, nScale: 0.2 }), (cx, cy, cz) => !(cy > 0.452 && cz < -0.11));
   conform(boots, body, {
     margin: () => 0.016,
     field: (x, y) => 0.014 * sstep(0.28, 0.45, y) + 0.006 * sstep(0.06, 0.12, y) * sstep(0.26, 0.18, y),
@@ -677,14 +712,18 @@ export async function panBase(opt = {}) {
         const step = Math.max(1, Math.floor(run.length / 14));
         const hoop = run.filter((_, i) => i % step === 0);
         const b0 = binds.pos.length / 3;
-        for (const q of hoop) {
+        // (armory W1: it read as one flat pale polygon. Its rim normals now lean in toward the hole's middle, so it
+        // shades like cloth falling away into the hole, and its texels span the linen's creases instead of one point)
+        let mx = 0, my = 0, mz = 0;
+        for (const q of hoop) { mx += q.p[0] / hoop.length; my += q.p[1] / hoop.length; mz += q.p[2] / hoop.length; }
+        hoop.forEach((q, k) => {
           const n = V.norm(q.n);
           binds.pos.push(q.p[0] - n[0] * 0.003, q.p[1] - n[1] * 0.003, q.p[2] - n[2] * 0.003);
-          binds.nrm.push(Math.sign(cx), 0, 0);
-          binds.uv.push(lin[0] + lin[2] * 0.5, lin[1] + lin[3] * 0.5);
+          binds.nrm.push(...V.norm(V.add([Math.sign(cx), 0, 0], V.mul([mx - q.p[0], my - q.p[1], mz - q.p[2]], 14))));
+          binds.uv.push(lin[0] + lin[2] * (0.15 + 0.7 * k / Math.max(1, hoop.length - 1)), lin[1] + lin[3] * (0.3 + 0.4 * (k % 2)));
           const sk = smockSkin.skin(q.p[0], q.p[1], q.p[2], 4);
           binds.jnt.push(...sk.j); binds.wgt.push(...sk.w);
-        }
+        });
         for (let k = 1; k < hoop.length - 1; k++) binds.idx.push(b0, b0 + k, b0 + k + 1);
       }
     } else {
@@ -696,7 +735,14 @@ export async function panBase(opt = {}) {
   // the skirt, then the under-tunic inside it: four panels, four slits, offset from each other
   const slits = [-Math.PI / 2, 0.02, Math.PI / 2, Math.PI - 0.02];
   const hemS = opt.skirtHem || ((th, y0) => y0 + 0.016 * Math.pow(Math.abs(Math.sin(th)), 3));
-  const skirt = skirtPanels(mk, under, joints, { slot: 'skirt', yTop: BELT_Y - 0.024, yHem: 0.748, off: 0.024, offTop: 0.006, easeFront: 0.014, flare: 0.078, slits, rows: 8, colsPer: 20, ripA: 0.0115, seed: 3, density: 1.08, keep: KEEP_TORSO, hem: hemS, overlap: 0.055, lip: 0.0035, ...opt.skirt });
+  // armory W1: the folds are MODELLED, on the painter's own fold field (`hangFolds`, the same bearing and height), so the
+  // shading the atlas bakes lies in the geometry's valleys: tight gathers under the belt, a few deep ones at the hem.
+  // Sharp in the valley, round on the crest; mostly outward (a valley dips 0.3 of the depth, a crest stands 0.7)
+  const skirtFold = (th, y, t) => {
+    const f = hangFolds({ X: Math.cos(th) * 0.25, Y: y, Z: Math.sin(th) * 0.25 - 0.02 }, { belt: 1.1, hem: 0.75, seed: 0 });
+    return mix(0.005, SKIRT_FOLD, sstep(0.0, 0.9, t)) * (f - 0.3);
+  };
+  const skirt = skirtPanels(mk, under, joints, { slot: 'skirt', yTop: BELT_Y - 0.024, yHem: 0.748, off: 0.024, offTop: 0.006, easeFront: 0.014, flare: 0.078, slits, rows: 10, colsPer: 34, fold: skirtFold, seed: 3, density: 1.08, keep: KEEP_TORSO, hem: hemS, overlap: 0.055, lip: 0.0035, ...opt.skirt });
   const skirtField = new Field(skirt, 0.04);
   const underY = opt.skirt?.yHem ?? 0.748;
   const undr = skirtPanels(mk, skirtField, joints, { slot: 'under', yTop: underY + 0.05, yHem: underY - 0.04, off: -0.024, flare: 0, slits: slits.map((a) => a + 0.2), rows: 2, colsPer: 12, ripA: 0.004, seed: 9, density: 0.72, hem: (th, y0) => y0 + 0.008 * Math.cos(3 * th) + 0.003 * Math.cos(11 * th + 1.3), overlap: 0.22, floorY: underY + 0.03, ringDth: 0.12, lip: 0.002, weightY: (y) => 0.92 * sstep(1.068, 0.75, y), ...opt.under });

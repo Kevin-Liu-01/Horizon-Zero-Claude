@@ -189,14 +189,21 @@ function bracerGeo(cell, r = 0.036, len = 0.17, skinR = null) {
 }
 
 const CORD_R = 0.0022;
-function cordGeo(P, skins, r, cell, per = 1, ring = 4) {
+/**
+ * A cord through the points P (armory W1: the alidade's neck cord read a tier below the new wrap; it was a square
+ * tube on a polygon). The path is a Catmull-Rom curve through P (`per` samples a span), the section a hexagon, and
+ * the texture runs along it every 9 mm (mirrored), so the three plies' twist reads on the trim cell.
+ */
+function cordGeo(P, skins, r, cell, per = 1, ring = 6) {
   const g = G(), skin = [];
   const rect = cell('cord');
   const pts = [], sk = [];
+  const cr = (i) => P[Math.max(0, Math.min(P.length - 1, i))];
   for (let i = 0; i < P.length - 1; i++) {
     for (let k = 0; k < per; k++) {
-      const f = k / per, a = P[i], b = P[i + 1];
-      pts.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]);
+      const f = k / per, p0 = cr(i - 1), a = P[i], b = P[i + 1], p3 = cr(i + 2);
+      const f2 = f * f, f3 = f2 * f;
+      pts.push([0, 1, 2].map((c) => 0.5 * (2 * a[c] + (-p0[c] + b[c]) * f + (2 * p0[c] - 5 * a[c] + 4 * b[c] - p3[c]) * f2 + (-p0[c] + 3 * a[c] - 3 * b[c] + p3[c]) * f3)));
       const m = new Map();
       for (const [n, w] of skins[i]) m.set(n, (m.get(n) || 0) + w * (1 - f));
       for (const [n, w] of skins[i + 1]) m.set(n, (m.get(n) || 0) + w * f);
@@ -205,7 +212,10 @@ function cordGeo(P, skins, r, cell, per = 1, ring = 4) {
   }
   pts.push(P[P.length - 1]); sk.push(skins[skins.length - 1]);
   const n = pts.length;
+  let arc = 0;
   for (let i = 0; i < n; i++) {
+    if (i > 0) arc += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]);
+    const vv = Math.abs(((arc / 0.009) % 2) - 1);
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
     const t = v3.norm(v3.sub(b, a));
     const ref = Math.abs(t[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
@@ -215,7 +225,7 @@ function cordGeo(P, skins, r, cell, per = 1, ring = 4) {
       const nr = [sd[0] * c + up[0] * s, sd[1] * c + up[1] * s, sd[2] * c + up[2] * s];
       g.pos.push(pts[i][0] + nr[0] * r, pts[i][1] + nr[1] * r, pts[i][2] + nr[2] * r);
       g.nrm.push(...nr);
-      g.uv.push(rect[0] + (k / ring) * rect[2], rect[1] + (i / (n - 1)) * rect[3]);
+      g.uv.push(rect[0] + (k / ring) * rect[2], rect[1] + vv * rect[3]);
       skin.push(sk[i]);
     }
   }
@@ -227,7 +237,7 @@ function cordGeo(P, skins, r, cell, per = 1, ring = 4) {
 }
 /** The alidade: a 6 cm brass sighting tube with collars, local +X along it. */
 function alidadeGeo(cell) {
-  const tube = lathe([[0.0085, -0.03], [0.0098, -0.028], [0.0098, -0.024], [0.0080, -0.022], [0.0080, 0.022], [0.0098, 0.024], [0.0098, 0.028], [0.0085, 0.03]], { sides: 8, rect: cell('brass'), cap0: true, cap1: true });
+  const tube = lathe([[0.0085, -0.03], [0.0098, -0.028], [0.0098, -0.024], [0.0080, -0.022], [0.0080, 0.022], [0.0098, 0.024], [0.0098, 0.028], [0.0085, 0.03]], { sides: 12, rect: cell('brass'), cap0: true, cap1: true });
   return place(tube, [0, -1, 0], [1, 0, 0], [0, 0, 1], [0, 0, 0]);
 }
 
@@ -365,10 +375,10 @@ export async function build({ out = ROOT } = {}) {
     const loop = [[0, 1.517, -0.121], [0.060, 1.512, -0.098], [0.080, 1.503, -0.042], [0.062, 1.490, 0.012], [0.030, 1.470, 0.052], R,
       [-0.030, 1.470, 0.052], [-0.062, 1.490, 0.012], [-0.080, 1.503, -0.042], [-0.060, 1.512, -0.098], [0, 1.517, -0.121]];
     const loopSkin = loop.map((q) => { const w = Math.max(0, Math.min(1, (1.500 - q[1]) / 0.045)); return [['neck_01', 1 - w], ['spine_03', w]]; });
-    pieces.push({ ...cordGeo(loop, loopSkin, CORD_R, cell, 1, 4), bit: PIECE.alidade });
+    pieces.push({ ...cordGeo(loop, loopSkin, CORD_R, cell, 4, 6), bit: PIECE.alidade });
     const hang = [R, M, top];
     const hangSkin = [[['dyn_alidadeCord_01', 1]], [['dyn_alidadeCord_01', 0.5], ['dyn_alidadeCord_02', 0.5]], [['dyn_alidadeCord_02', 1]]];
-    pieces.push({ ...cordGeo(hang, hangSkin, CORD_R, cell, 2, 4), bit: PIECE.alidade });
+    pieces.push({ ...cordGeo(hang, hangSkin, CORD_R, cell, 4, 6), bit: PIECE.alidade });
     stowInfo.alidadeCord = { loop: loop.length, hang: hang.length, r: CORD_R };
   }
   const all = G();

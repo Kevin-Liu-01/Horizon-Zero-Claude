@@ -177,7 +177,8 @@ export function draftSmock(part, T, skin, {
     const q = gridP[c][i];
     const y = q.y;
     const low = sstep(1.27, 1.2, y), gth = sstep(1.205, 1.16, y);
-    const a = 0.0028 * low * (1 - 0.5 * gth) * ripple(q.th, seed, [5, 8]) + 0.0032 * gth * ripple(q.th, seed + 3, [13, 17, 21]);
+    // (armory W1: the gathers a little deeper, 5.5 mm, and the outfit's painter shades these same ripples)
+    const a = 0.0034 * low * (1 - 0.5 * gth) * ripple(q.th, seed, [5, 8]) + 0.0055 * gth * ripple(q.th, seed + 3, [13, 17, 21]);
     const g = gather ? gather(y, q.th) : null;
     let r = (g != null ? mix(q.r, g, sstep(1.205, 1.152, y)) : q.r) + a;
     // the keyhole: the two edges part above its bottom

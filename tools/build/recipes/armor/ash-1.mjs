@@ -19,7 +19,8 @@ import { romFit } from './lib/romfit.mjs';
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/armory/armor-ash-1.glb'];
 const RECIPE = 'tools/build/recipes/armor/ash-1.mjs';
-const COL = { black: hex('#232126'), wool: hex('#2C2A30'), rust: hex('#7A3E22'), undyed: hex('#B8AC96'), leather: hex('#3A2C22'), mica: hex('#6E6A62'), felt: hex('#4C4842'), cord: hex('#8A7A5C') };
+// (armory W1: black and charcoal lifted to real dyed wool's albedo: at #232126 the tunic read as a hole under flat light)
+const COL = { black: hex('#35323A'), wool: hex('#3D3A41'), rust: hex('#7A3E22'), undyed: hex('#B8AC96'), leather: hex('#3A2C22'), mica: hex('#6E6A62'), felt: hex('#4C4842'), cord: hex('#8A7A5C') };
 const sc = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
 const put = (o, c) => { o.r = c[0]; o.g = c[1]; o.b = c[2]; };
 const over = (o, c, a) => { o.r += (c[0] - o.r) * a; o.g += (c[1] - o.g) * a; o.b += (c[2] - o.b) * a; };
@@ -27,8 +28,11 @@ const over = (o, c, a) => { o.r += (c[0] - o.r) * a; o.g += (c[1] - o.g) * a; o.
 /** Wool: felted, no slubs, a soft nap; a knit detail class. */
 function wool(t, o, col, seed = 0) {
   const m = fbm(t.X * 9, t.Y * 9, t.Z * 9 + seed, 3), f = fbm(t.x * 0.2, t.y * 0.2, seed + 3.3, 2);
-  put(o, sc(col, 0.88 + 0.34 * m + 0.14 * (f - 0.5)));
-  o.rough = 0.96; o.det = 0.66; o.h += 0.0012 * (f - 0.5);
+  put(o, sc(col, 0.86 + 0.4 * m + 0.18 * (f - 0.5)));
+  // the nap: a fine pale fuzz caught on the surface (dust and the fibre tips), so a black cloth still has a texture
+  const fz = fbm(t.x * 0.9, t.y * 0.9, seed + 7.7, 2);
+  over(o, [108, 104, 100], 0.07 * sstep(0.55, 0.8, fz));
+  o.rough = 0.96; o.det = 0.66; o.h += 0.0016 * (f - 0.5);
 }
 
 function ashTrim(W, H, trimH) {
@@ -204,14 +208,14 @@ export async function ashParts() {
   added.push(cowl);
   // ---- two broad wool wraps crossing the chest and back (real bands over the yoke)
   const wrapF = clothField;
+  // (armory W1: each band was cut at the top of the shoulder, front and back apart, and the two cut ends showed
+  // there. Each is now ONE band: up the back from the hip, over the shoulder, down the front to the other hip)
   for (const [ctl, tag] of [
-    [[[0.115, 1.455, 0.02], [0.075, 1.36, 0.12], [-0.02, 1.26, 0.135], [-0.10, 1.18, 0.105], [-0.135, 1.15, 0.03]], 'a'],
-    [[[-0.115, 1.455, 0.02], [-0.075, 1.36, 0.12], [0.02, 1.26, 0.135], [0.10, 1.18, 0.105], [0.135, 1.15, 0.03]], 'b'],
-    [[[0.115, 1.455, 0.02], [0.08, 1.38, -0.13], [-0.03, 1.27, -0.125], [-0.11, 1.17, -0.09], [-0.135, 1.15, 0.03]], 'c'],
-    [[[-0.115, 1.455, 0.02], [-0.08, 1.38, -0.13], [0.03, 1.27, -0.125], [0.11, 1.17, -0.09], [0.135, 1.15, 0.03]], 'd'],
+    [[[-0.135, 1.15, 0.03], [-0.11, 1.17, -0.09], [-0.03, 1.27, -0.125], [0.08, 1.38, -0.13], [0.118, 1.462, -0.03], [0.112, 1.458, 0.05], [0.075, 1.36, 0.12], [-0.02, 1.26, 0.135], [-0.10, 1.18, 0.105], [-0.135, 1.15, 0.03]], 'a'],
+    [[[0.135, 1.15, 0.03], [0.11, 1.17, -0.09], [0.03, 1.27, -0.125], [-0.08, 1.38, -0.13], [-0.118, 1.462, -0.03], [-0.112, 1.458, 0.05], [-0.075, 1.36, 0.12], [0.02, 1.26, 0.135], [0.10, 1.18, 0.105], [0.135, 1.15, 0.03]], 'b'],
   ]) {
     const w = emptyPart('wrap', { density: 0.9 });
-    strapAlong(w, wrapF, skinOf, ctl, { width: 0.088, margin: 0.012 + (tag === 'b' || tag === 'd' ? 0.005 : 0), segs: 12, cols: 4, crown: 0.0035 });
+    strapAlong(w, wrapF, skinOf, ctl, { width: 0.088, margin: 0.012 + (tag === 'b' ? 0.005 : 0), segs: 26, cols: 4, crown: 0.0035 });
     orientOut(w, 0, -0.02, 1.25);
     added.push(w);
   }

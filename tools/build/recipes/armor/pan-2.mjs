@@ -1,7 +1,8 @@
 /**
  * CALIMA — recipe: Pan Whites II, Guild Whites (armory W1; bible §4.2): variant I +
- * a woven-palm wide hat (0.42 m brim) that flips to a back socket in combat (both
- * copies in the merged mesh, `_PIECE` 32 on her head, 64 on her back: 0 extra draws)
+ * a woven-palm wide hat (0.42 m brim) that flips to a back socket in combat (every
+ * copy in the merged mesh, `_PIECE` 32 on her head, 64 on her back over the stowed bow,
+ * 128 on her back with the bow in her hand: 0 extra draws)
  * + an orchil capelet with a brass guild clasp. Geometry only: shares the Pan sheet.
  */
 import { panVariant } from './lib/panvariant.mjs';
@@ -12,7 +13,7 @@ import { ROOT } from '../lib/face.mjs';
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/armory/armor-pan-2.glb'];
 const RECIPE = 'tools/build/recipes/armor/pan-2.mjs';
-export const HAT_ON_HEAD = 32, HAT_ON_BACK = 64;
+export const HAT_ON_HEAD = 32, HAT_ON_BACK = 64, HAT_ON_BACK_LOW = 128;
 export const HAT = { brimR: 0.21, brimY: 1.722, tiltX: -0.10, crown: 0.105, topY: 0.178 };
 
 /** The hat, local: brim plane y = 0, crown up. Two faces come from the double-sided material. */
@@ -93,12 +94,15 @@ export async function build({ out = ROOT } = {}) {
       // the hat: on her head (rigid `Head`), and its twin hanging behind her shoulders (rigid spine_03)
       const palm = trim.rect('palm');
       const hat1 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, Math.cos(HAT.tiltX), Math.sin(HAT.tiltX)]), V.norm([0, -Math.sin(HAT.tiltX), Math.cos(HAT.tiltX)]), [0, HAT.brimY, -0.02], palm, J('Head'), HAT_ON_HEAD);
-      // back socket: crown OUT, the brim's plane 0.145 m behind the spine: past the lance and bow on the diagonal
-      // ... and on the shoulder-blade the lance leaves free: its diagonal runs from her left hip to her right shoulder
-      const backZ = -0.305;
-      const hat2 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, -0.12, -1]), V.norm([0, 1, -0.12]), [0.15, 1.31, backZ], palm, jS3, HAT_ON_BACK);
+      // back socket: crown OUT, on the shoulder-blade the lance leaves free (its diagonal runs from her left hip to
+      // her right shoulder). Armory W1: with the LANCE out the bow stays stowed, and its grip (the strung bow's
+      // brace, 0.34 m behind the spine) stood 39 mm through the brim. So two copies: lance out, the hat rides OVER
+      // the stowed bow (its brim's rolled edge clear of the grip); bow in hand, it lies in close where the bow was,
+      // 0.12 m off the stowed lance
+      const hat2 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, -0.12, -1]), V.norm([0, 1, -0.12]), [0.15, 1.31, -0.362], palm, jS3, HAT_ON_BACK);
+      const hat3 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, -0.12, -1]), V.norm([0, 1, -0.12]), [0.15, 1.31, -0.305], palm, jS3, HAT_ON_BACK_LOW);
       void clothField;
-      return [cap, clasp, hat1, hat2];
+      return [cap, clasp, hat1, hat2, hat3];
     },
   });
 }

@@ -34,8 +34,21 @@ function grain(t, o, base, { stretch = 0.02, cross = 0.55, seed = 0, ring = 0.32
   o.h = 0.0005 * r;
 }
 
+/**
+ * Armory W1: the cells were laid out at a third of the sheet (the stave's grain was the V-weapon-sheet's weakest
+ * read: 441 px/m along a 1.45 m stave). Every cell is now SCALE times larger in both directions on the same 1024²
+ * sheet (no new texture, the same VRAM): the painters still see their own cell size (texel coordinates come back
+ * divided by SCALE), so each one looks as it was designed, sampled SCALE times finer; heights turn to normals at
+ * the matching density (`D`).
+ */
+export const WEAPON_TRIM_SCALE = 1.6;
 export function weaponTrim() {
   const T = new Trim(W, W, W);
+  const S = WEAPON_TRIM_SCALE, cell0 = T.cell.bind(T);
+  T.cell = (name, w, h, painter, opt) => cell0(name, Math.round(w * S), Math.round(h * S), (t, o) => {
+    t.x /= S; t.y /= S; t.w /= S; t.h /= S; t.ax /= S; t.ay /= S;
+    painter(t, o);
+  }, opt);
   /* ---- row 1: the long woods ---- */
   // Sabina stave: u along the stave, v around. Pale sapwood; the dark heart stripe down the belly (v 0.75)
   T.cell('juniper', 640, 72, (t, o) => {
@@ -177,14 +190,19 @@ export function weaponTrim() {
     o.rough = 0.5; o.det = 0;
   });
   // the plain 2-texel-safe swatches other pieces want
-  T.cell('cord', 32, 32, (t, o) => { put(o, [226, 216, 190], 0.86 + 0.2 * noise3(t.ax * 0.5, t.ay * 0.5, 9.1)); o.rough = 0.8; o.det = 0; });
+  // three plies of hemp, twisted: diagonal strands round the cord (u around, v along, mirrored every 9 mm)
+  T.cell('cord', 32, 32, (t, o) => {
+    const ply = ((t.u * 3 + t.v * 1.6) % 1 + 1) % 1, crown = Math.sin(Math.PI * ply);
+    put(o, [200, 180, 142], (0.66 + 0.4 * crown) * (0.9 + 0.2 * noise3(t.ax * 0.5, t.ay * 0.5, 9.1)));
+    o.h = 0.0004 * crown; o.rough = 0.86; o.det = 0;
+  });
   return T;
 }
 
 /** Paint the sheet. Returns { base, normal, orm } WebP buffers. */
 export async function paintWeaponAtlas() {
   const T = weaponTrim();
-  const layout = { W, H: W, D: 900, islands: [], trimH: W };
+  const layout = { W, H: W, D: 900 * WEAPON_TRIM_SCALE, islands: [], trimH: W };
   const tex = await paintAtlas([], layout, { painters: {}, trim: T, curv: { crease: 0.7, ridge: 0.5 }, q: { base: 90, normal: 88, orm: 86 } });
   return { tex, T };
 }

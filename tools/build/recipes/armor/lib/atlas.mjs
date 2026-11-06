@@ -106,19 +106,30 @@ export function packAtlas(parts, { W = 1024, H = 1024, pad = 4, trimH = 0 } = {}
       islands.push({ part, tris, verts, ...f, c, s, u0, v0, w: u1 - u0, h: v1 - v0, density: part.density || 1 });
     }
   }
-  islands.sort((a, b) => (b.h * b.density) - (a.h * a.density) || (b.w - a.w));
-  // skyline bottom-left: tallest first, each island at the lowest place it fits
+  // skyline bottom-left: each island at the lowest place it fits. Armory W1: the order is the one of four (tallest,
+  // widest, largest, longest side first) that packs densest, and among equally low places the one that buries the
+  // least sky under it, so the sheet's texel density is not lost to holes (islands never rotate: the painters lay
+  // the warp down the garment)
+  const ORDERS = [
+    (a, b) => (b.h * b.density) - (a.h * a.density) || (b.w - a.w),
+    (a, b) => (b.w * b.density) - (a.w * a.density) || (b.h - a.h),
+    (a, b) => (b.w * b.h * b.density * b.density) - (a.w * a.h * a.density * a.density) || (b.h - a.h),
+    (a, b) => (Math.max(b.w, b.h) * b.density) - (Math.max(a.w, a.h) * a.density) || (b.h - a.h),
+  ];
   const tryPack = (D) => {
     const HH = H - trimH;
     const sky = new Int32Array(W);          // per column, the first free y
     for (const isl of islands) {
       const w = Math.ceil(isl.w * D * isl.density) + pad * 2, h = Math.ceil(isl.h * D * isl.density) + pad * 2;
       if (w > W) return false;
-      let bestX = -1, bestY = 1e9;
+      let bestX = -1, bestY = 1e9, bestWaste = 1e18;
       for (let x = 0; x + w <= W; x += 4) {
         let y = 0;
         for (let k = x; k < x + w; k++) if (sky[k] > y) y = sky[k];
-        if (y < bestY) { bestY = y; bestX = x; }
+        if (y > bestY) continue;
+        let waste = 0;
+        for (let k = x; k < x + w; k++) waste += y - sky[k];
+        if (y < bestY || waste < bestWaste) { bestY = y; bestX = x; bestWaste = waste; }
       }
       if (bestX < 0 || bestY + h > HH) return false;
       isl.x = bestX + pad; isl.y = bestY + pad;
@@ -126,9 +137,10 @@ export function packAtlas(parts, { W = 1024, H = 1024, pad = 4, trimH = 0 } = {}
     }
     return true;
   };
-  let lo = 50, hi = 4000;
-  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (tryPack(m)) lo = m; else hi = m; }
-  const D = lo;
+  const search = () => { let lo = 50, hi = 4000; for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (tryPack(m)) lo = m; else hi = m; } return lo; };
+  let bestOrder = 0, D = -1;
+  ORDERS.forEach((cmp, i) => { islands.sort(cmp); const d = search(); if (d > D + 1e-9) { D = d; bestOrder = i; } });
+  islands.sort(ORDERS[bestOrder]);
   tryPack(D);
   for (const part of parts) if (!part.trim) part.uvNew = part.uv.slice();
   for (const isl of islands) {

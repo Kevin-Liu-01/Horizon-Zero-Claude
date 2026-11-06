@@ -36,6 +36,33 @@ const QUIVER_LANCE_SWING = 0.52;       // radians: the right elbow, lance in han
 const QUIVER_LANCE_ROLL = 0.22;        // ... and its foot, coming forward, out past her thigh
 const QUIVER_SWING_RATE = 7;           // per second, toward that hold
 
+const _W1 = new Float64Array(1);
+/** out = slerp(identity, q, t), into its fields (three.js's Quaternion.slerp from the identity). */
+function _slerpFromId(out, q, t) {
+  let x = q._x, y = q._y, z = q._z, w = q._w;
+  if (w < 0) { x = -x; y = -y; z = -z; w = -w; }           // the short way round
+  if (t <= 0) { out._x = 0; out._y = 0; out._z = 0; out._w = 1; return; }
+  if (t >= 1) { out._x = x; out._y = y; out._z = z; out._w = w; return; }
+  if (w >= 1) { out._x = 0; out._y = 0; out._z = 0; out._w = 1; return; }
+  const s2 = 1 - w * w;
+  if (s2 <= 1e-12) {
+    // (near the identity: lerp and renormalise)
+    const a = 1 - t, nx = t * x, ny = t * y, nz = t * z, nw = a + t * w;
+    const l = (nx * nx + ny * ny + nz * nz + nw * nw) ** 0.5;
+    out._x = nx / l; out._y = ny / l; out._z = nz / l; out._w = nw / l;
+    return;
+  }
+  _W1[0] = w;                                  // (through a typed slot: a phi feeding a Math call boxes in V8's mid tier)
+  const sinH = s2 ** 0.5, half = Math.acos(_W1[0]);   // = atan2(sinH, w), w in (0, 1)
+  const ra = Math.sin((1 - t) * half) / sinH, rb = Math.sin(t * half) / sinH;
+  out._x = x * rb; out._y = y * rb; out._z = z * rb; out._w = ra + w * rb;
+}
+/** out = the turn by `angle` about the unit `axis`, into its fields (Quaternion.setFromAxisAngle). */
+function _axisAngle(out, axis, angle) {
+  const s = Math.sin(angle / 2);
+  out._x = axis.x * s; out._y = axis.y * s; out._z = axis.z * s; out._w = Math.cos(angle / 2);
+}
+
 /** Install the piece mask on a (source) material, once. Returns the shared uniform. */
 export function installPieceMask(material) {
   if (material.userData.kitHide) return material.userData.kitHide;
@@ -132,7 +159,12 @@ export class HeroStowKit {
     this._pelvisBindQ = par.getWorldQuaternion(new THREE.Quaternion()).premultiply(Qm);
   }
 
-  /** Per frame, no allocation: turn the hanger back by QUIVER_HOLD of what the pelvis turned, about the band. */
+  /**
+   * Per frame, no allocation: turn the hanger back by QUIVER_HOLD of what the pelvis turned, about the band.
+   * (A-alloc-rate: three.js is called only with objects; the slerp and the axis turns are written into the
+   * quaternions' own fields, because a double handed to a call boxes in V8's mid tier. A bone's Euler `rotation`
+   * is not re-derived: nothing reads it.)
+   */
   _solveQuiver(dt = 0) {
     const sock = this.quiverSocket, h = this._quiverHang, bind = this._pelvisBindQ;
     if (!sock || !h || !bind) return;
@@ -144,16 +176,24 @@ export class HeroStowKit {
     _qC.copy(bind).invert().multiply(_qA);
     _qB.copy(_qC).invert();                            // undo it
     // crouched, the pelvis's tilt is what lifts the foot off the ground: let her fold over it
-    const crouch = this.player.animator?._crouchW ?? 0;
-    sock.quaternion.copy(_qId).slerp(_qB, (this.quiverHold ?? QUIVER_HOLD) * (1 - Math.min(1, crouch)));
+    const an = this.player.animator;
+    let crouch = 0;
+    if (an) { crouch = an._crouchW; if (!(crouch > 0)) crouch = 0; else if (crouch > 1) crouch = 1; }
+    let hold = this.quiverHold;
+    if (!(hold >= 0)) hold = QUIVER_HOLD;
+    _slerpFromId(sock.quaternion, _qB, hold * (1 - crouch));
     // lance in hand she leads with that hip, and the elbow would stand in the arrows: it shoves the mouth back
     const swingTo = (this.hidden & PIECE.lance) ? 1 : 0;
-    this._quiverSwing += (swingTo - this._quiverSwing) * Math.min(1, dt * QUIVER_SWING_RATE);
+    let k = dt * QUIVER_SWING_RATE;
+    if (!(k > 0)) k = 0; else if (k > 1) k = 1;
+    this._quiverSwing += (swingTo - this._quiverSwing) * k;
     if (this._quiverSwing > 0.001) {
       _vA.set(1, 0, 0).applyQuaternion(_qD.copy(bind).invert());   // character X, in the pelvis's bind frame
-      sock.quaternion.multiply(_qS.setFromAxisAngle(_vA, -QUIVER_LANCE_SWING * this._quiverSwing));
+      _axisAngle(_qS, _vA, -QUIVER_LANCE_SWING * this._quiverSwing);
+      sock.quaternion.multiply(_qS);
       _vA.set(0, 0, 1).applyQuaternion(_qD);                        // character Z, likewise
-      sock.quaternion.multiply(_qS.setFromAxisAngle(_vA, -QUIVER_LANCE_ROLL * this._quiverSwing));
+      _axisAngle(_qS, _vA, -QUIVER_LANCE_ROLL * this._quiverSwing);
+      sock.quaternion.multiply(_qS);
     }
     // about the band: p' = q p + t, with t = h - q h
     _vA.copy(h).applyQuaternion(sock.quaternion);
@@ -233,7 +273,8 @@ export class HeroStowKit {
   carryInfo() {
     if (!this.carry) return null;
     const c = this.carry, o = c.out;
-    return { ...o, butt: c.butt.toArray(), tip: c.tip.toArray(), len: c.len, alpha0: c.alpha0 * 180 / Math.PI };
+    const nul = (v) => (v === v ? v : null);      // (the solve writes NaN for "not measured this frame")
+    return { ...o, armGap: nul(o.armGap), camGap: nul(o.camGap), tailGap: nul(o.tailGap), butt: c.butt.toArray(), tip: c.tip.toArray(), len: c.len, alpha0: c.alpha0 * 180 / Math.PI };
   }
 
   /** Remove the socket bone too (HeroRig.dispose). */

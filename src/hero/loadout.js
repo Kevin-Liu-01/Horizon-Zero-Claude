@@ -162,9 +162,12 @@ export class HeroLoadout {
     if (!this._perkArmed) this._armPerk();
     const O = this.hero.outfit;
     if (!O?.hasPieces) return;
-    // Guild Whites: on her head at rest, on her back the moment a weapon is out (no draw changes)
-    const combat = lanceOut || bowOut || this.player.aiming;
-    const bits = combat ? 32 : 64;
+    // Guild Whites: on her head at rest, on her back the moment a weapon is out (no draw changes). The bits are the
+    // copies HIDDEN: 32 on her head, 64 on her back over the stowed bow (the lance out), 128 on her back close in
+    // (the bow in her hand: nothing stowed under it)
+    const aiming = this.player.aiming;
+    const combat = lanceOut || bowOut || aiming;
+    const bits = !combat ? (64 | 128) : (lanceOut && !bowOut && !aiming) ? (32 | 128) : (32 | 64);
     if (bits !== this._pieceBits) { this._pieceBits = bits; O.setPieces(bits); }
   }
 
