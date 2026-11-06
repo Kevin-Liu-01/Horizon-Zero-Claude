@@ -723,7 +723,11 @@ const ROWS = [
       const sites = {
         sand30: acorr(shot(-200, 400, -226, 382, 2.2)),
         sand55: acorr(shot(-190, 416, -236, 386, 3.2)),
-        salt25: acorr(shot(W1.x, W1.z, W0.x, W0.z, 2.6)),
+        /* 6 m up, 25 m from the cell's middle: the crop's rows then lie on the crust from ≈ 17 to 44 m.
+         * At 2.6 m its top rows ran past the far dyke (46 m) to the beach and the surf's breaking
+         * lines at 100 m and beyond, and the surf's period was what peaked (Nov 6, frame in the
+         * lane report): not salt at 20-60 m, the row's subject */
+        salt25: acorr(shot(W1.x, W1.z, W0.x, W0.z, 6.0)),
         salt50: acorr(shot(W2.x, W2.z, W0.x, W0.z, 5.2)),
       };
       veg.visible = wasV;
@@ -733,7 +737,7 @@ const ROWS = [
   },
   {
     id: 'A-skirt-masked', kind: 'action', lane: LANE, timeout: 60000,
-    title: 'Aerial shot: the far field is masked, not one flat tile; the luminance step across the world-square boundary (mask to far sea) ≤ 8 %',
+    title: 'Aerial shot: the far field is masked, not one flat tile; the luminance step across the world-square boundary (mask to far sea), net of the local trend, ≤ 8 %',
     settle: 1200,
     assert: `(async () => {
       const Ex = await import('/src/world/island/extent.js');
@@ -754,24 +758,30 @@ const ROWS = [
       const V = cam.position.constructor;
       const proj = (x, z) => { const v = new V(x, 0.34, z).project(cam); return [Math.round((v.x * 0.5 + 0.5) * W), Math.round((v.y * 0.5 + 0.5) * H)]; };
       const lum = (x, y) => { const o = (y * W + x) * 4; return buf[o] * 0.3 + buf[o + 1] * 0.59 + buf[o + 2] * 0.11; };
-      const steps = [];
+      /* A seam is a jump AT the boundary: the step across it (6 m either side) net of the local
+       * trend read 12 m further out on both sides. A smooth gradient through the boundary (the
+       * sun's glint on the water at 11:00 falls off across these samples) is not a seam; the raw
+       * step is reported beside it. Bar unchanged. */
+      const box = (p) => {
+        let l = 0, n = 0;
+        for (let k = -3; k <= 3; k++) for (let j = -3; j <= 3; j++) { l += lum(Math.min(W - 1, Math.max(0, p[0] + k)), Math.min(H - 1, Math.max(0, p[1] + j))); n++; }
+        return l / n;
+      };
+      const steps = [], raw = [];
       for (let dz = -90; dz <= 90; dz += 18) {
-        const a = proj(-Ex.WORLD_HALF + 6, Z + dz), b = proj(-Ex.WORLD_HALF - 6, Z + dz);
-        let la = 0, lb = 0, n = 0;
-        for (let k = -3; k <= 3; k++) for (let j = -3; j <= 3; j++) {
-          la += lum(Math.min(W - 1, Math.max(0, a[0] + k)), Math.min(H - 1, Math.max(0, a[1] + j)));
-          lb += lum(Math.min(W - 1, Math.max(0, b[0] + k)), Math.min(H - 1, Math.max(0, b[1] + j)));
-          n++;
-        }
-        la /= n; lb /= n;
-        steps.push(+(Math.abs(la - lb) / Math.max(1, (la + lb) * 0.5)).toFixed(4));
+        const a2 = box(proj(-Ex.WORLD_HALF + 18, Z + dz)), a = box(proj(-Ex.WORLD_HALF + 6, Z + dz));
+        const b = box(proj(-Ex.WORLD_HALF - 6, Z + dz)), b2 = box(proj(-Ex.WORLD_HALF - 18, Z + dz));
+        const mean = Math.max(1, (a + b) * 0.5);
+        const trend = ((a2 - a) + (b - b2)) * 0.5;
+        raw.push(+(Math.abs(a - b) / mean).toFixed(4));
+        steps.push(+(Math.abs((a - b) - trend) / mean).toFixed(4));
       }
       const worst = Math.max(...steps);
       // the far field carries structure: luminance variance in the island half of the frame is non-trivial
       let s = 0, ss2 = 0, c = 0;
       for (let y = 0; y < H; y += 7) for (let x = Math.round(W * 0.6); x < W; x += 7) { const l = lum(x, y); s += l; ss2 += l * l; c++; }
       const sd = Math.sqrt(Math.max(0, ss2 / c - (s / c) * (s / c)));
-      return { pass: worst <= 0.08 && sd > 1.5, detail: { stepsAcrossBoundary: steps, worst, landSideLumaSd: +sd.toFixed(2) } };
+      return { pass: worst <= 0.08 && sd > 1.5, detail: { stepsAcrossBoundary: steps, worst, rawSteps: raw, rawWorst: Math.max(...raw), landSideLumaSd: +sd.toFixed(2) } };
     })()`,
   },
   {

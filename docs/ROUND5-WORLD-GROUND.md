@@ -65,7 +65,8 @@ baked coast distance (¼ m steps), and `sA`, metres along the shore from the bea
 trains of fronts break in sections with their own gaps; behind a crest the foam is marbling, not a sheet (its
 cover stays under ≈ 0.4, where the lace lets only its bright filaments through), the spent bores lie on the
 shallows as thinning streaks, and the swash ends in a bright lip. A pixel with no cover has no foam (the lace
-alone never speckles open water). Past 130 m off the coast the surf terms are skipped outright (eight texture
+alone never speckles open water). Over the map's last 45 m the coast field eases into the open sea's values, so
+nothing in the water's tone switches at the world square's edge. Past 130 m off the coast the surf terms are skipped outright (eight texture
 fetches a pixel). Out at sea the normals are three analytic swell trains, each anti-aliased by its own `fwidth`.
 
 ### 2.4 Scatter (`scatter.js`, `vegetation.js`)
@@ -267,7 +268,33 @@ list and the films in one Chrome. The rows that changed after it are re-run in `
 | `A-carried-suite` | FAIL | refused by design inside a run that executes carried rows; graded by the orchestrator in its own invocation (R48 d, R53 b): PENDING-orchestrator |
 | `V38-title` | NEEDS-JUDGE | filmed: the title frame is the Pans under the calima stand-in (brand's row; my reading §5) |
 
-<!-- RUNK -->
+### 4.3 After `run-j`: the re-run (`run-k`, 17:34–17:38 UTC) and the last two rows (`run-l`)
+
+Changes after `run-j`: the field's floor is one incline with no crown or dish at the cell edges (§2.1), and the
+sea eases into its open-water values over the map's last 45 m (§2.3). `run-k` re-ran every row these touch,
+plus the films:
+
+| row | result | measured |
+|---|---|---|
+| `A1-boot-clean` | PASS | state=playing |
+| `A20b-no-system-errors` | PASS | {"systemErrors":[],"hookErrors":0,"framesAdvanced":368,"quality":"high","stepMode":"substep"} |
+| `A30b-fall-wade-edge` | PASS | {"safe":{"h":3,"fall":3,"health":100,"state":"playing"},"hurt":{"h":6,"fall":6,"health":75.2,"state":"playing" |
+| `A58-surface-api` | PASS | Pans surfaces 7: rock, sand, water, silt, shale, cobble, dirt |
+| `A60-stealth-lanes` | PASS | 20 routes, below 25 %: 0, worst 0.362, median 0.74; named unplantable 4, flyers 4 |
+| `A59b-cover-honesty-world-ground` | PASS | under-planted 0.0199 (bar 0.04) of 956; measured 2.11 tufts/m² |
+| `A59c-mask-coherence-world-ground` | PASS | mismatched 0/0, sensitivity red 1 |
+| `A-terrain-api` | PASS | 9025 samples, bad 0, riverFactor max 0, shelf 0 |
+| `A-world-size` | PASS | WORLD_SIZE 1024, node 1.941 m, build 454/457/350/352/337 ms (median 0.746 µs/vertex, pool ×4), single-thread 1000 ms, byte-identical true, sites off 0 |
+| `A-single-rest-saltrow` | PASS | cistern err 0.92 m, spawn 0 m, respawn 0 m, ring centred true |
+| `A-reach-all-sites` | PASS | 25 sites, bad 0, routes off 0, nav 19.3 ms (N 493) |
+| `A-scatter-draws` | PASS | 7 kinds, 69 calls in frame |
+| `A-anti-tile` | FAIL | sand30 0.091, sand55 0.042, salt25 0.21, salt50 0.09 |
+| `A-skirt-masked` | FAIL | worst step 0.0945 (bar 0.08), land sd 15.15 |
+| `A-biome-stream-memory` | PASS | Δgeo 3, Δtex 0, heap -2.29 % |
+| `A-gpu-tier-pans` | PENDING | GPU median 17.5 ms (bar 13), 60 fps, p95 17.4 ms, 70 calls, 2390024 tris |
+
+<!-- RUNL -->
+
 
 
 ## 5. My reading of the frames (advisory; the R29 judge grades)
@@ -313,6 +340,13 @@ Filmed at 1600×900 and read frame by frame against `reference/r5/gates-perf/sal
 - **The look against the reference**, as §5 lists: the stand-in weather, no landmarks, the Glass without the
   crater's reflection, the near crust smoother than Janubio's, the soft grey sister isle.
 - **`public/models/r5-poc/`** stays (not this lane's path, §7).
+- **R66 (Kevin's Nov 6 look target) arrived while this run was closing.** I read the five references. What
+  they ask of the Pans that is this lane's: golden-hour haze light over salt flats with standing water, denser
+  golden grass with violet flowers (the marram and sea-lavender: density and the violet are scatter values in
+  `scatter.js`/`vegetation.js`), dramatic silhouettes (landmarks: world-props; the tuff ring and the sister isle
+  are mine). The light, haze and god rays are world-sky's. None of it is built in this run; the frames here are
+  graded against the bible and Janubio. `docs/ROUND5-LOOK.md` will set the bar.
+
 
 ## 7. For other lanes and the orchestrator
 
