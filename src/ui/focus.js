@@ -1866,6 +1866,13 @@ export class SightingSystem {
     b[i] = fx - halfW * px; b[i + 1] = ty; b[i + 2] = fx + halfW * px; b[i + 3] = fy;
   }
 
+  /** True when a reveal centred on `s` (above it) lies on hide box `n`. */
+  _onHideBox(s, n) {
+    const b = this._hideBox, i = n * 4, l = b[i], t = b[i + 1], r = b[i + 2], bt = b[i + 3];
+    if (r <= l) return false;
+    return !(s.x + REVEAL_HW * 0.9 < l || s.x - REVEAL_HW * 0.9 > r || s.y < t || s.y - REVEAL_H > bt);
+  }
+
   /** A reveal (centred on `s`, above it) that lies on box `n` moves to the box's nearer side. */
   _stepClear(s, b, n) {
     const i = n * 4, l = b[i], t = b[i + 1], r = b[i + 2], bt = b[i + 3];
@@ -1909,8 +1916,17 @@ export class SightingSystem {
           this._stepClear(_screen, this._hideBox, 1);
           this._stepClear(_screen, this._hideBox, 2);
         }
-        // the box is centred on the anchor and sits above it: horizontal fit
-        // is decided once, and only Y moves in the solve below
+        // the box is centred on the anchor and sits above it: horizontal fit is decided once, and
+        // only Y moves in the solve below. A chip whose anchor is in the frame is held wholly inside
+        // it, never cut by the edge; one whose anchor has left the frame does not draw
+        const vw = window.innerWidth;
+        if (_screen.x < 0 || _screen.x > vw) continue;
+        const held = Math.min(vw - VIEW_MARGIN - REVEAL_HW, Math.max(VIEW_MARGIN + REVEAL_HW, _screen.x));
+        // held in from the edge, it must not land back on her, the subject or the objective mark
+        if (held !== _screen.x) {
+          _screen.x = held;
+          if (this._onHideBox(_screen, 0) || this._onHideBox(_screen, 1) || this._onHideBox(_screen, 2)) continue;
+        }
         if (!this._boxOnScreen(_screen.x - REVEAL_HW, _screen.y - REVEAL_H,
           _screen.x + REVEAL_HW, _screen.y)) continue;
         let ok = true;
