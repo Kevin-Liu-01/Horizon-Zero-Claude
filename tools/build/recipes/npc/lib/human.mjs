@@ -585,8 +585,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   const headSoup = new Float32Array(triSoup(bodyPrim, headKeep));
   const skinGridAll = new TriGrid(new Float32Array(triSoup(bodyPrim, (a, b, c) => headW[a] > 0.5 || headW[b] > 0.5 || headW[c] > 0.5)), 0.016);
   const skinFrom = (dx, dy2, dz) => { const t = skinGridAll.cast(skinCenter[0], skinCenter[1], skinCenter[2], dx, dy2, dz, 0.2, 0.01); return t >= 0 ? t : null; };
-  let wrapped = null;
-  const hairExtra = [];
+  let wrapped = null, knotAt = null;
   let bareHair = false;
   if (H.kind === 'scarf' || H.kind === 'wrap' || H.kind === 'rag' || H.kind === 'cap') {
     const pts = headTailPoints(H.tail || 'left', H.kind === 'rag' ? 0.28 : H.kind === 'cap' ? 0.24 : 0.46);
@@ -595,6 +594,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     wrapped = woundHeadwrap({ headSoup, skin: skinFrom, joint: head, center: skinCenter, ...ws });
   } else if (H.kind === 'band') {
     const pts = headTailPoints(H.tail || 'left', 0.3);
+    knotAt = pts[0];
     const j = chain('hairTail', 'Head', pts);
     wrapped = bandHead({ headSoup, skin: skinFrom, joint: head, center: skinCenter, lift: (dx, dy2) => 0.0022 + 0.002 * smooth(0, 0.7, dy2), tailPts: pts, tailJ: j, width: H.thin ? 0.1 : 0.14, seed: H.seed });
     bareHair = true;
@@ -722,6 +722,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     const keep = (p, d) => {
       const hit = shellGrid.cast(p[0] - d[0] * 0.002, p[1] - d[1] * 0.002, p[2] - d[2] * 0.002, d[0], d[1], d[2], 0.03, 0.0001);
       if (hit < 0 || shape(p[0], p[1] - 0.002, p[2]) <= 0.6) return false;
+      if (knotAt && Math.hypot(p[0] - knotAt[0], p[1] - knotAt[1], p[2] - knotAt[2]) < 0.045) return false;
       if (wrapped?.stack) {
         // not under the band, and not just above it, where a card's tip would lie on the cloth
         const x = p[0] - skinCenter[0], y = p[1] - skinCenter[1], z = p[2] - skinCenter[2], l = Math.hypot(x, y, z) || 1;

@@ -13,12 +13,17 @@ const CLASSES = {
   cloth: { k: 48, damp: 0.955, grav: 0.34, air: 2.6, maxAng: 0.9 },
   wrap: { k: 30, damp: 0.955, grav: 0.3, air: 4.4, maxAng: 1.2, rootK: 8 },
   gear: { k: 110, damp: 0.93, grav: 0.2, air: 0, maxAng: 0.5 },
+  // an apron is heavy and tied: the legs move it, the wind hardly does. A cloak is long and hangs from the shoulders
+  apron: { k: 62, damp: 0.945, grav: 0.55, air: 0.5, maxAng: 0.55 },
+  cloak: { k: 22, damp: 0.955, grav: 0.7, air: 1.1, maxAng: 0.7 },
 };
 /** A strip's tail on a head and a wrapped tail behave the same. */
 const klass = (key) => {
   if (key === 'hairLock') return CLASSES.hair;
   if (key === 'hairTail' || key === 'wrapSash') return CLASSES.wrap;
   if (/medal|bag/.test(key)) return CLASSES.gear;
+  if (/^apron/.test(key)) return CLASSES.apron;
+  if (/^cloak/.test(key)) return CLASSES.cloak;
   return CLASSES.cloth;
 };
 

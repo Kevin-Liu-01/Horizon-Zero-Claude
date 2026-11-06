@@ -57,7 +57,7 @@ export const ARCHETYPES = [
   },
   {
     id: 'lantern-keeper', n: 5, name: 'Lantern-Keeper', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.68, age: 68,
-    tone: '#92694B', iris: '#3F3024', amber: '#6F5233', hair: '#55524E',
+    tone: '#92694B', iris: '#3F3024', amber: '#6F5233', hair: '#4C4945',
     face: { noseBridge: [0, 1.2, 8.0], noseTip: [0, -2.0, 8.5], cheek: [-4.0, 0.5, -3.0], jaw: [-4.0, -3.0, -3.5], chin: [0, -2.0, 8.0], brow: [0, -1.0, 7.5], upperLip: [0, -1.0, -6.0] },
     head: { kind: 'hood', hair: 'grey', dye: PAN.orchilNight, lining: PAN.orchilNight, seed: 55 },
     outfit: { key: 'keeper' },
