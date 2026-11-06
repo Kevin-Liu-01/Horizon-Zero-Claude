@@ -264,7 +264,7 @@ export const UBC_TUNE = {
     // T's ray is low-passed only relative to the camera's, its cap adds the camera's rate, and at a held
     // full draw the arm's limiter carries last step's arm rigidly with the chest; `crouchOut`: crouched, the T
     // goes out at its crouched pace and the aim layer runs on until it is out)
-    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.6, tailMin: 0.35, lanceOpen: 30, knotRound: 0.035, violStep: 0.002, camAim: true, crouchOut: true, camTau: 0.05,
+    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.6, tailMin: 0.35, lanceOpen: 30, knotRound: 0.035, violStep: 0.002, camAim: true, crouchOut: true, camTau: 0.05, bodyChar: true,
     bodyRef: { chest: [-0.006, -0.032, -0.063], pelvis: [0.002, -0.035, -0.036] } },
   // W0b targeted fix 4: the aim's trunk starts upright — the pelvis -> neck
   // line's forward pitch under the aim (radians, character space), standing /

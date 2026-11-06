@@ -5204,7 +5204,10 @@ export class PlayerAnimator {
       /* (...and on a step her whole body moves more than 0.03 m, a clip's own crossfade under
        * a strafe's cancel, about the body itself, spine_01, and the shoulder: the arm against
        * her, not against a character origin that has just been left behind) */
-      if (b.spine1 && this._charOf(b.spine1.bone, _afC).sub(this._s1P).lengthSq() > 0.0009) {
+      /* (hero-body targeted fix round 2, `armFlow.bodyChar`, eng judge finding 6: "grade character space on
+       * every step outside the roll" — with the body's own steps governed (`_rollExit`, `rollExit.govM`), the
+       * arm is held to `armStepChar` in character space on those steps too) */
+      if (!AF.bodyChar && b.spine1 && this._charOf(b.spine1.bone, _afC).sub(this._s1P).lengthSq() > 0.0009) {
         lim = Math.max(Math.min(limC, lim - _afC.distanceTo(_afH)), 0.2 * lim);
         _afH.copy(_afC);
       } else {
