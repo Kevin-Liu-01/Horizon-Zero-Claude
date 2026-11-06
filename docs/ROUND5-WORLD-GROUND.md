@@ -189,6 +189,27 @@ contract) for the isles and the mirrors.
 
 <!-- GATES -->
 
+## 5. My reading of the frames (advisory; the R29 judge grades)
+
+Filmed at 1600×900 and read frame by frame against `reference/r5/gates-perf/salt-pans.jpg` and
+`reference/r5/brand/salinas-de-janubio.jpg` (Janubio), the bible's El Golfo description and black-sand surf.
+
+- **What now reads.** From the rim the salt grid reads at once: big pale evaporating ponds by the sea,
+  fine crystalliser strips round the town, rust and pink cells among the white, dark dyke lines, the cones on
+  the raking floor. The beach is black, the surf breaks in layered white lines with a turquoise wave face,
+  and the backwash is a dark mirror with a thin lacy lip. The tuff ring is red, bedded, gullied and scored,
+  with pale talus at its foot. The sister stratovolcano stands on the sea line NW (Janubio composition). Up
+  close (V32) a pink cell is cracked wet pan silt mirroring the sky, the dyke is stacked angular basalt, the
+  crust has grit and drag. The title frame is the Pans (salt grid, the Glass, the ring, the sister isle) in
+  the calima stand-in: no Round-4 spire or prop anywhere.
+- **What still looks weak next to the reference (honest).** (1) Every 07:00 / calima frame is the world-sky
+  stand-in: a pink haze where the reference has a hard blue Atlantic, and a tonal step where the fog meets
+  the sky. (2) The vista has no landmarks (Organ Shelf columns, the Ring, the wind pumps are world-props').
+  (3) The Glass is a flat emerald sheet: it has a depth gradient, a bed and wind slicks, but no reflection of
+  the crater wall, which is what makes El Golfo's lagoon. (4) The near white crust is still smoother and
+  brighter than Janubio's trampled crust. (5) The sister isle is a soft grey cone with little shading.
+  (6) Surf from the beach: at grazing angles the thin backwash still throws soft white sky blots.
+
 ## 6. For other lanes and the orchestrator
 
 - **world-sky** (W1): the 07:00 and calima frames are filmed under stand-ins (`clear`, `overcast`), named on
