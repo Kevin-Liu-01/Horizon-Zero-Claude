@@ -52,58 +52,65 @@ Consumed: `engine.depthTexture`, `ctx.water.seaLevel`, `ctx.terrain.getHeight`, 
 
 ## 3. Gates
 
-Measured on 5265, `nice -n 10`, machine care per R53. Lane run (49 rows): 27 PASS, 0 FAIL, 4 PENDING, 18 for the judge.
+Measured on 5265, `nice -n 10`, machine care per R53, one Chrome. Fix round 1, Nov 6: the full lane block (58 rows) plus the global list in one run (`fix2/l2`), then the Sighting, map and sheet rows again after the last changes (`fix2/l3`). Lane block: 0 FAIL; 4 PENDING (A10, A62 x2, V-ui-sheet's runner waits for a judge); every V row needs its judge.
 
 | row | result | numbers |
 |---|---|---|
-| A-ui-language-static | PASS | 0 offenders over 4 sheets, 10-step type scale in tokens, retired tokens 0 |
-| A-ui-type-only (new) | PASS | 12 surfaces walked (hud 47, map 79, settings 155, satchel 93, making 116, books 118, log 68, skills 103, Sighting 82, dialogue 85, tip 49, death 50 text nodes); 0 outside the two families; 0 numerals outside Plex; only Chakra Petch 400-700 and Plex Mono 400-600 + italic loaded |
-| A-ui-words-all | PASS | 58 surfaces, 0 hits; log and skills text is a pending clause (progression W3) |
-| A-settings-rows-visible (new) | PASS | 40 rows, 19 of 19 rebinds on the page, 0 clipped, scroll overflow 0 px |
-| A-lamp-canon-distance-ui | PASS | 32 tokens graded, 0 offenders |
-| A71-compass-truth | PASS | 0 pips at spawn, +1 on a Flag; pip wears lamp colour + iris aperture; bearing reads `022` |
-| A71b-hud-scale-floor | PASS | min font 11 / 11 / 13.2 / 17.6 / 20.8 px at 720p / 900p / 1080p / 1440p / 4K; plate 280 to 672 px |
-| A71c-hud-surfaces | PASS | 10 graduations, vermilion + staff white, clip eats from the right at 40 %, gourd, plates cap 3, vial, tools, kit tag, stadia |
-| A71d-steady-breath-meter, A71d-conc-veil | PASS | hairline 2 px, 50 px under the reticle, fill tracks the gauge (0.56 of the rule at 2.6 s), 0 full-screen overlays, 0 canvas filter. **Pending clause:** `timeScale` still reads 0.35 and the drain still runs 6 s: the breath-hold is combat-kit W2 |
-| A71e-tutorial-cards | PASS | 18 of 18 cards in the bible's order and text, one-shot, kbd glyphs, paper, Plex body |
-| A71f, A71g, A71h, A68, A69, A70, A70b, A70c, A72, A72b, A63 | PASS | Round-4 bars |
-| A-sighting | PASS | ring stroke `rgb(44,79,138)`, 2 leaders, vignette centre 0 / max 0.20, figure mask 1.06 % coverage over 6 hulls at 800x450, 13 transects, readouts 308 / 018 |
-| A-sighting-hue (+ A-sighting-off) | PASS | added violet 0.000 %, added teal 0.0044 % (tolerance 0.02 %). Brea is hidden in both frames: her violet cloth is the people's colour, not the overlay's |
-| A-map-triangles, -reload | PASS | coastline only before (0 px of paint); T1+T2+T6 paints 90 268 px against 89 750 of geometry, 0.58 %; survives a real reload |
+| A-ui-language-static | PASS | 0 offenders, 0 teal, 10-step type scale in tokens, retired tokens 0 |
+| A-ui-type-only | PASS | 12 surfaces (hud 47, map 80, settings 155, satchel 93, making 116, books 118, log 68, skills 103, Sighting 79, dialogue 90, tip 74, death 49 text nodes); 0 outside the two families; 0 numerals outside Plex |
+| A-ui-words-all | PASS | 58 surfaces, 0 hits; quest and skill text is a named pending clause (progression W3) |
+| A-settings-rows-visible | PASS | 40 rows, 19 of 19 rebinds, 0 clipped, overflow 0 px |
+| A-lamp-canon-distance-ui | PASS | 32 tokens, 0 offenders |
+| A71-compass-truth | PASS | 0 pips at spawn, +1 on a Flag, lamp colour + iris aperture, 3-digit bearing |
+| A71b-hud-scale-floor | PASS | min font 11 px at 720p and 900p, 20.8 px at 4K; plate 280 px at 1x |
+| A71c-hud-surfaces | PASS | 10 graduations, vermilion + staff white, `inset(0 60% 0 0)` at 40 %, gourd, plates, vial, tools, kit tag, stadia |
+| A71d-steady-breath-meter, A71d-conc-veil | PASS | hairline 2 px, 50 px under the reticle, fill tracks the gauge (0.56 at 2.6 s), 0 overlays, 0 filter. Pending clause: `timeScale` 0.35 and the 6 s drain are combat-kit W2's |
+| A71e-tutorial-cards | PASS | 18 of 18 cards in the bible's order and text, one-shot |
+| A71f, A71g, A71h, A68, A69, A70, A70b, A70c, A72, A72b, A63 | PASS | Round-4 bars (A63: 3 reveals, 0 overlaps, 0 off screen) |
+| A-sighting-off, A-sighting | PASS (l3) | see §6; cobalt ring `rgb(44,79,138)`, leaders, vignette centre 0 / max 0.20, figure drawn, one subject in full, <= 2 transects, reveals off the subject. Pending clause: components with loot (R18, no named parts until instruments-a) |
+| A-sighting-hue | PASS | added violet 0 px, added teal 0 px (R61 c floor 24, no tolerance) |
+| A-sighting-over-brea (new) | PASS | 0 px added inside her 52 669 px; control 2 437 px; 0 chip px on her |
+| A-transect-fine (new) | PASS | p95 2 px, p50 1 px, max 13 px (a station tick) |
+| A-sighting-draws (new, R61 d) | PASS | +16 draws held, +17 on the sweep frame (cap 30). Pending clause: the Screed fight <= 350 with the alidade up, A21 from the W2 exit |
+| A-map-triangles, -reload | PASS | 0 px before; T1+T2+T6 paints 90 268 px against 89 750 of geometry (0.58 %); survives a real reload |
+| A-map-arrow-heading (new) | PASS | tip dot 1.000 / 1.000 / 1.000 / 0.999 at four yaws; objective gives way, her pixels 163 / 163 |
+| A-dmg-chip-clear (new) | PASS | 0 hits on vial word, circle, column, plate at 3 / 14 / 24 frames; open-ground number stays on its anchor |
 | A10-loot-single-render | PENDING | no sentry kind yet: Plumb, instruments-a W1 |
 | A62-sighting-components, A62-focus-components | PENDING | R18: the Tiller fixture has no named parts until instruments-a merges |
-| V-ui-sheet | NEEDS JUDGE | `shots/gates/V-ui-sheet.png`, nine surfaces |
-| V10, V37, V36, V36-focus-scan, V-map, V-ui-title, -inventory, -settings, -pause, -tip, -death, -dialogue, V-hud-4k-a..d, V-ui-4k-a, -b | NEEDS JUDGE | filmed at 1600x900 and read by the builder (R29: advisory); §4 says what still looks weak |
+| V-ui-sheet | NEEDS JUDGE | `fix2/l3/shots/gates/V-ui-sheet.png`, nine surfaces from one run |
+| V10, V37, V36, V36-focus-scan, V-map, V-ui-title, -inventory, -settings, -pause, -tip, -death, -dialogue, -books, -making, -skills, -trade, V-hud-4k-a..d, V-ui-4k-a, -b | NEEDS JUDGE | filmed at 1600x900 and read by the builder (R29: advisory) |
 
-Global green list on this tree (5265, one Chrome):
+Global green list on this tree (`fix2/l2`, 5265, quiet box: load 2.7, one Chrome):
 
 | row | result | numbers |
 |---|---|---|
-| A1, A20b | PASS | boot clean; 359 frames, 0 system errors |
+| A1, A20b | PASS | boot clean; 358 frames, 0 system errors |
 | A9 | PASS | 59.9 fps median, 241 draws, quiet box |
-| A21 | counters PASS, timing not graded here | 275 draws worst of 350, 3.93 M triangles of 6.5 M. medianGpuMs 19.6 / 38.6 / 20.5 against 14 reads FAIL; R58 moves that term to the W1 exit and nothing in the shell draws in the world except while the alidade is up |
-| A90-memory-stability, A90b, A90-rig-reclaim | PASS | objects -33, heap -2.8 %, 30 kills; rig 0 geo / 0 tex growth over 30 cycles |
-| A90-memory-stability-expansion | PASS, intermittent | PASS on the last run: `nonMachineGrowth` 0, heap +2 %. **Intermittent:** 2 of 5 runs on this tree read +1, one `Sprite` directly under the Scene, unnamed, with no Instrument root above it. No file under `src/ui` makes a sprite, and the three diagnostic runs that wrapped `scene.add` to catch its stack came back clean, so its owner is not identified. The orchestrator's W0b run on main read 0 in its one run |
-| A90-abs | PASS | post-GC heap 82.35 MB (450), GPU process 1220.94 MB (1500) |
-| A-alloc-rate | scheduled bars PASS; baseline guard offenders are not this lane's | shell-ui row 208.75 KB/s against a baseline of 588.51 (0.355x). Offenders: combat-kit 1.12x, instruments-a 1.69x (src of neither changed in this tree) |
+| A21 | counters PASS, timing FAIL (graded at the W1 exit, R58) | draws 248 / 183 / 275 of 350; triangles 3.66 / 3.87 / 3.93 M; medianGpuMs 20.6 / 41.8 / 20.7 against 14. The shell draws nothing in the world unless the alidade is up |
+| A90-memory-stability, A90b, A90-rig-reclaim | PASS | objects -34, heap -2.4 %, 30 kills; rig 0 geo / 0 tex growth over 30 cycles |
+| A90-memory-stability-expansion | PASS | `nonMachineGrowth` 0, objects +70 (machines), heap -5.2 % |
+| A90-abs | PASS | post-GC heap 82.5 MB (450), GPU process 1202.88 MB (1500) |
+| A-alloc-rate | baseline guard FAIL on other owners; shell-ui row not an offender | shell-ui 198.68 KB/s against its baseline 588.51 (0.338x). Offender: world-sky 1.18x. srcTotal is terrain's `noise2D` / `getHeight` (world-ground's W1 fix, R58 c) |
 | A-vram-ledger | PASS | textures 63.39, targets 127.27, geometry 79.25, total 269.91 MB of 450; 0 unattributed |
 | A-ID-ip-assets-gone, A-assets-tracked | PASS | |
-| A-no-horizon-terms-player | PASS | 1452 of the 1508 ratchet |
-| A-no-horizon-terms-code | PASS | total 1311 of 1371, 0 uncovered, 0 over cap |
-| A-licence-manifest | PENDING | third-party clause, no new asset here |
-| A-port-guard, A-carried-suite | PENDING-orchestrator | need a full run or a sealed carried run |
-| A-reach-all-sites | not registered yet | world-ground W1 |
+| A-no-horizon-terms-player | PASS | 1451 of the 1508 ratchet |
+| A-no-horizon-terms-code | PASS | 1311 of 1371, 0 uncovered, 0 over cap |
+| A-licence-manifest | PENDING | third-party clause only; no asset added by this lane |
+| A-port-guard, A-carried-suite | orchestrator | need a full or sealed run |
+| A-reach-all-sites | not registered on this tree | world-ground W1 |
 
 ## 4. Honest gaps
 
-- **Per-function allocation.** The shell's row fell to 0.355x of its baseline, but 12 functions are still over the 4 KB/s bar that binds at the W2 exit (`_updateCompass` 36, `_updateQuestPips` 34, `_scanMachines` 27, `Menus._raf` 27, `_updateObjectiveMark` 21, `_updateMachineBars` 18 KB/s). The `fieldWord`, damage-number, plate and awareness strings are gone; what is left is double boxing and the menus' own rAF. Second pass due at W2.
+- **Per-function allocation.** The shell's row is 0.338x of its baseline (198.68 KB/s), but functions are still over the 4 KB/s bar that binds at the W2 exit: `Menus._raf` 37.8, `_updateQuestPips` 34.5, `_updateMachineBars` 31.5, `_updateCompass` 27.8 KB/s and smaller ones. Second pass due at W2.
+- **The overlay's GPU time is outside A21's timer.** About 1.6 ms while the alidade is up (`J-overlay-gpu`, §6). `A-sighting-draws`' `overlayGpu` bracket over-reads it (it absorbs the composer's deferred pass on Metal/ANGLE); a cleaner instrument belongs with A21's alidade-up clause at W2.
+- **V36's composition.** At the yaw where the card stays up (0.15 rad, `_pickTarget`'s reach at 15 m) the tip of her lance crosses the LAMP ring; the Tiller's body stands clear of her. 0.22 rad clears the lance and loses the card.
 - **Soundings read inland on this tree.** The Round-4 terrain's basin sits below sea level, so V-map shows soundings inside the outline. The bake reads `ctx.water.seaLevel`, which world-ground's island publishes; re-film V-map when it merges, and judge "soundings offshore" then.
-- **Round-4 words the shell cannot reach:** log and skills text (progression W3), item names such as FIRE ARROW, TRIPWIRE, BLAST BOMB and VIGOUR DRAUGHT (combat-kit W2), `Varl`, `the campfire`, `Lessons of the Valley` (progression W3). `ITEM_DESC` in `inventory.js` holds the one catalogue line `fieldWord` cannot word-swap without spelling a forbidden word. Round-4 prop landmarks and activity marks are off the sheet, so the sheet shows `sites.js` only.
+- **Round-4 words the shell cannot reach:** log and skills text (progression W3), item names such as FIRE ARROW, TRIPWIRE, BLAST BOMB and VIGOUR DRAUGHT (combat-kit W2), `Varl`, `the campfire`, `Lessons of the Valley` (progression W3), and Field Book record titles such as one naming a Round-4 machine (the catalogue is progression W3's; the code lint forbids spelling it in a word row, so it is not word-swapped here). `ITEM_DESC` in `inventory.js` holds the one catalogue line `fieldWord` cannot word-swap without spelling a forbidden word. Round-4 prop landmarks and activity marks are off the sheet, so the sheet shows `sites.js` only.
 - **The Kit Rack** still reads its Round-4 smoked-glass sheet (`wheel.css`): combat-kit W2, as ordered. Not filmed as a surface here.
 - **Steady:** the meter is right, the mechanic under it is not yet (0.35 time scale, 6 s drain).
 - **Aim and Sprint hold/toggle** are stored but not applied: `player.js` is frozen. The rows say NOT LIVE YET.
 - **Bow wording:** TIPS say what the bow does today (RMB aims, LMB draws, release looses); the bible's card says `RMB draw, LMB loose`. They reconcile when the bow control changes.
-- **Independent judges have not seen any of this.** Every V row above is the builder's own reading, which R29 makes advisory.
+- **Independent judges have not seen this round's frames.** The r0 judges saw the previous build; every V row above is the builder's own reading, which R29 makes advisory.
 - **World under the UI.** Tree shadows, the Round-4 camp and the valley are what the frames sit on; every world lane's work changes how these frames read.
 
 ## 5. For other lanes and the orchestrator
@@ -132,7 +139,7 @@ Every finding below was re-run on 5265 and the cited frames re-filmed and read. 
 | Quest and dialogue words on V-ui-pause / V-ui-dialogue | R61 (b): PENDING until progression W3 and settlements W2, in those rows' criteria. The same quest text prints on V-ui-tip (field note and objective mark), so that row names the same pending clause and asks the orchestrator to rule it likewise | A-ui-words-all 0 hits over 58 surfaces; pending list names the quest/skill strings |
 | The alidade drew over Brea | Her mask holds every skinned mesh first, then the largest of what she holds (6 at most), each frame through every ancestor's `visible`. Transects and the figure knock out on the mask's blue channel | `A-sighting-over-brea` (new, keeps her visible, its own silhouette from all her visible meshes): 0 added px inside her (52 669 px), control with the knock-out off adds 2 437; 0 reveal chip px on her |
 | Her map arrow pointed backwards | `g.rotate(-yaw)`; her mark is now a solid dart with an ink station point, not the objective's open arrow; an objective on her spot steps aside on a leader; both claim ground before names | `A-map-arrow-heading` (new): tip dot 1.000 / 1.000 / 1.000 / 0.999 at four yaws, objective gives way with her pixels unchanged (163 vs 163) |
-| NORA RECORDS on Field Books | Headings come from `bookHeading(category id)`; an unknown category is a Fogcatcher record. V rows added for Field Books, Making, Skills and Trade | V-ui-books reads FOGCATCHER RECORDS · 3/6 |
+| A Round-4 proper noun as a Field Books heading | Headings come from `bookHeading(category id)`; an unknown category is a Fogcatcher record. V rows added for Field Books, Making, Skills and Trade | V-ui-books reads FOGCATCHER RECORDS · 3/6 |
 
 Also this round: the Sighting reveal chips step off the HUD's objective mark (a LOOT chip printed over `62 m` in V36), and the label and reveal pools write `left` / `top` only when the pixel changes.
 
