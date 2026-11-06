@@ -4,7 +4,7 @@
  * textures), deterministic, tileable.
  *
  *   1024²  sand    basalt black sand: ripples, grain, olivine and shell glints   (3.0 m tile)
- *   1024²  salt    salt crust: crystal grit, low plate ridges, drag marks, grit  (6.0 m tile)
+ *   1024²  salt    salt crust: crystal grit, low plate ridges, drag marks, grit  (10 m tile in the shader)
  *   1024²  basalt  vesicular basalt: fracture joints, vesicles, salt stain       (7.0 m tile)
  *    512²  mud     wet pan silt: fine desiccation, algal film                    (3.5 m tile)
  *    512²  pebble  storm-beach shingle: rounded basalt cobbles packed in sand    (2.6 m tile)

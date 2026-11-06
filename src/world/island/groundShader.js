@@ -181,7 +181,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     } else {
       a = gA(i, uv + offA, gx, gy);
       nn = gNm(i, uv + offA, gx, gy);
-      if (w[i] > 0.18) {
+      if (w[i] > 0.18 && dCam < 240.0) {     // past 240 m the mips are a few texels: the seam blend buys nothing
         vec4 a2 = gA(i, uv + offB, gx, gy);
         float cdiff = dot(a.rgb - a2.rgb, vec3(0.33));
         float bl = smoothstep(0.22, 0.78, tf - 0.12 * cdiff);
@@ -259,6 +259,16 @@ export const TERRAIN_COLOR = /* glsl */ `
     col = mix(col, vTint.rgb * g * (0.82 + 0.36 * macA), tk0 * (1.0 - 0.6 * wRock));
   }
 
+  /* -- rills: every real slope is scored down its fall line (gullies on the ring, wash on the
+   *    knolls); from 300 m a smooth tinted hill is what reads as CG, a scored one does not -- */
+  float rillK = smoothstep(0.16, 0.55, slope) * (1.0 - wSalt);
+  if (rillK > 0.01) {
+    vec2 fall = normalize(wn.xz + vec2(1e-5));
+    vec2 q = vec2(dot(xz, vec2(-fall.y, fall.x)), dot(xz, fall));
+    float rill = texture2D(tNoiseG, vec2(q.x * 0.0131, q.y * 0.0019)).b * 0.7 + texture2D(tNoiseG, vec2(q.x * 0.031, q.y * 0.0047) + 0.37).a * 0.3;
+    col *= mix(1.0, 0.66 + 0.62 * rill, rillK * 0.85);
+  }
+
   /* -- liquid: brine mirrors, the swash zone is wet black glass -------------- */
   float coast = sh.r * 64.0 - 48.0;
   float tide = uSea + 0.26 + 0.09 * sin(uTime * 0.42 + xz.x * 0.03 + xz.y * 0.021);
@@ -284,8 +294,8 @@ export const TERRAIN_COLOR = /* glsl */ `
   /* -- the long shadows: the land's own, and past the cascades the dykes' ------ */
   gSunVis = gSkylineVis(xz);
   if (pan.a > 0.01 && dCam > 70.0) {
-    // a dyke is ≈ 0.55 m tall: a band of shadow on the side away from the light
-    float L = min(0.55 / max(uSunTan, 0.08), 5.5);
+    // a dyke is ≈ 0.4 m tall: a band of shadow on the side away from the light
+    float L = min(0.42 / max(uSunTan, 0.08), 4.5);
     vec2 toSun = uSunXZ * L * uPanBox.z;
     float behind = min(texture2D(tPan, puv + toSun).a, texture2D(tPan, puv + toSun * 0.5).a);
     gSunVis *= mix(1.0, smoothstep(0.1, 0.72, behind), smoothstep(70.0, 110.0, dCam));
