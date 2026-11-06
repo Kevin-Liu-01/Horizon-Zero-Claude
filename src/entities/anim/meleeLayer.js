@@ -291,7 +291,7 @@ const RECOIL_RATE = 11;
 const STANCE_STEP_MAX = 0.10;
 const STANCE = {
   ready: { thighL: -0.50, thighR: 0.14, calfL: 0.66, calfR: 0.30, footL: -0.16, footR: -0.30, abd: 0.15, dx: 0.0, dy: -0.105 },
-  'light-1': { thighL: -0.70, thighR: 0.34, calfL: 0.84, calfR: 0.06, footL: -0.12, footR: -0.26, abd: 0.11, dx: 0.02, dy: -0.15 },
+  'light-1': { thighL: -0.62, thighR: 0.26, calfL: 0.74, calfR: 0.14, footL: -0.12, footR: -0.26, abd: 0.11, dx: 0.02, dy: -0.125 },
   'light-2': { thighL: -0.30, thighR: -0.42, calfL: 0.46, calfR: 0.62, footL: -0.16, footR: -0.20, abd: 0.20, dx: -0.09, dy: -0.15 },
   'light-3': { thighL: -0.66, thighR: 0.30, calfL: 0.70, calfR: 0.10, footL: -0.04, footR: -0.26, abd: 0.11, dx: 0.05, dy: -0.12 },
   /* the heavy sinks deepest (V47: "a low committed drive with the hips lowest"; A102 pins it 0.04 m under
@@ -310,19 +310,13 @@ const BEATS = [
   {
     id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.16,
     cock: { hand: [-0.29, 1.24, -0.24], shaft: [0.40, 0.47, 0.79], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.50, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
-    /* the thrust lands with the arms OUT and the trunk over the lead foot (melee W1, Nov 6: the earlier key held
-     * the wrist 0.23 m in front of the pelvis and read as holding, not thrusting; filmed side by side with
-     * candidates on the live tables, scratch r3, this one measured palm 0.005 m, forearms 0.21 / 0.22 m off the spine) */
-    contact: { hand: [-0.12, 1.18, 0.40], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.23, yaw: -0.20, py: -0.04, pitch: 0.34, roll: -0.04, dz: 0.18 },
+    contact: { hand: [-0.15, 1.13, 0.23], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: 0.02, pitch: 0.20, roll: -0.04, dz: 0.10 },
     follow: { hand: [-0.19, 1.09, 0.22], shaft: [0.24, -0.34, 0.91], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.22, py: 0.0, pitch: 0.14, roll: -0.08, dz: 0.05 },
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
     cock: { hand: [-0.35, 1.30, -0.09], shaft: [0.60, 0.22, 0.77], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.40, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
-    /* (melee W1, Nov 6) the sweep's contact CROSSES her front: the blade 25 deg to her right of the line with
-     * the hands centred and forward and the shoulders turned into it; the earlier key pointed the haft 8 deg
-     * right and read as light-1's thrust from the 3/4 lens (scratch r3: palm 0.015 m, shaft 0.150 m clear) */
-    contact: { hand: [-0.06, 1.22, 0.28], shaft: [-0.42, 0.04, 0.91], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.26, yaw: -0.30, py: -0.16, pitch: 0.20, roll: 0.04, dz: 0.09 },
+    contact: { hand: [-0.21, 1.19, 0.22], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.18, py: -0.08, pitch: 0.18, roll: 0.04, dz: 0.07 },
     follow: { hand: [-0.23, 1.01, 0.22], shaft: [-0.46, -0.22, 0.86], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.40, py: -0.28, pitch: 0.20, roll: 0.06, dz: 0.06 },
   },
   {
@@ -336,9 +330,7 @@ const BEATS = [
 const HEAVY = {
   id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.18,
   cock: { hand: [-0.28, 1.31, -0.12], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.46, py: -0.36, pitch: -0.10, roll: 0.08, dz: -0.10 },
-  /* (melee W1, Nov 6) the drive reaches 0.11 m further from spine pitch and the lunge (R3), the fist still at
-   * shoulder height: filmed and measured with candidates on the live tables, scratch r3, palm 0.012 m */
-  contact: { hand: [-0.22, 1.30, 0.38], shaft: [0.12, -0.05, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.14, py: 0.04, pitch: 0.38, roll: -0.05, dz: 0.17 },
+  contact: { hand: [-0.22, 1.35, 0.27], shaft: [0.12, -0.05, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.14, py: 0.04, pitch: 0.30, roll: -0.05, dz: 0.13 },
   follow: { hand: [-0.21, 1.17, 0.24], shaft: [0.26, -0.42, 0.87], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.10, py: 0.10, pitch: 0.32, roll: -0.08, dz: 0.10 },
 };
 /** How far before `CONTACT_K` the contact key is reached; it is then HELD for
