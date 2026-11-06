@@ -96,7 +96,6 @@ range) lifts it by at most ×1.4, the dry-sand sky sheen is 0.04 (it was 0.085 a
 low sun), the storm-beach cobbles and the pan silt are darkened (×0.5, ×0.78) so no grey beach band runs along
 the coast. Wet sand in the swash is dark and mirrors the sky.
 
-<!-- REST -->
 ## 3. APIs and contracts published (exact signatures)
 
 `src/world/island/extent.js` (plain data, no imports; owned by world-ground from W1, §3.2):
@@ -157,4 +156,30 @@ Consumed from other lanes: `ctx.props.gatePlaces` (world-props W1). Until it mer
 `gatePlaces = { ...GROUND, __fallback: true }` when world-props has not published one, so every gate stages on
 measured ground; world-props can adopt or replace any row. `ctx.environment.fogParams` (world-sky's aerial
 contract) for the isles and the mirrors.
+
+<!-- GATES -->
+
+## 6. For other lanes and the orchestrator
+
+- **world-sky** (W1): the 07:00 and calima frames are filmed under stand-ins (`clear`, `overcast`), named on
+  the frame. Two things only that lane can do: (1) the scene fog's horizon colour is not the sky dome's
+  horizon colour, so the far sea meets the sky in a hard tonal step even now that the geometric gap is
+  closed (§2.8); (2) `environment.js` still does `new RiverWater(ctx)`; once that import goes (`A-no-river`)
+  delete the alias class at the end of `water.js` (one line, world-ground). The isles and the mirrors read
+  `fogParams.horizon`, `fogParams.zenith`, `fogParams.transmittance()`: keep those names.
+- **world-props** (W1): `ctx.props.gatePlaces` may adopt `GROUND` from `sites.js` row for row (every row is
+  measured on this bake); the Organ Shelf table (`SHELF_LOBES`, top ≈ 9.4 m), the Sounding Ring's beach
+  (r 472) and the salt field's frame (`SALT_FIELD`) are where the landmarks stand. The vistas are filmed
+  without the landmarks (named on the frame); V-biome-vista-pans's "Organ Shelf and Ring read" clause is
+  PENDING on that merge.
+- **`public/models/r5-poc/`** is not this lane's path (§2 row: `public/textures/r5-poc/**`, deleted). Its two
+  files are outputs of `tools/build/landmarks/gen-sounding-ring.mjs` and `tools/build/instruments/gen-tiller.mjs`
+  and are listed in pipeline's `A-assets-tracked` mustTrack and in `LICENSES.json`. Deleting them needs their
+  owners to re-point the outputs (world-props, instruments-a) and pipeline to drop the two rows.
+- **settlements** (W2): Saltrow's ellipse in the field frame (u 2 ± 54, v 84 ± 34) is kept clear of cells;
+  `REST` is the cistern at (−284, 247).
+- **brand**: V38's vista clause can be graded now: the title camera stands on REST, so the title frame is
+  the Pans (salt grid, the Glass, the tuff ring, the sister isle) under the calima stand-in; no Round-4 spire
+  or prop is in it (`A-round4-gone-from-view`).
+- **engine follow-up (§11)**: the Pans vista's GPU time (§4), and A108 on real content (§4).
 
