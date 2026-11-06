@@ -123,20 +123,25 @@ export const TERRAIN_COLOR = /* glsl */ `
   float macA = nMac.r * 0.6 + nMac.b * 0.4;
 
   /* -- the five weights, then the three that survive ----------------------- */
-  float crust = pan.r;
-  float brine = pan.g;
+  /* The cell's own crust and brine, un-premultiplied, cut by the iso-line of its interior: the
+   * interior ramp baked at 0.48 m a texel, used raw, drew zigzag teeth along every diagonal
+   * cell edge under the dykes; its 0.5 contour is a clean line. */
+  float inK = smoothstep(0.38, 0.62, pan.a);
+  float crust = pan.a > 0.004 ? clamp(pan.r / pan.a, 0.0, 1.0) * inK : 0.0;
+  float brine = pan.a > 0.004 ? clamp(pan.g / pan.a, 0.0, 1.0) * inK : 0.0;
   float fineN = 0.0;
   if (pan.a > 0.01) {
     /* the crust's fine grain: wet patches, sand blown in, drag marks at 1-3 m. Baked at
      * 0.48 m a texel it read as a lattice (A-anti-tile); two rotated lookups here do not */
     vec2 fr = vec2(dot(xz, vec2(0.8, 0.6)), dot(xz, vec2(-0.6, 0.8)));
     fineN = texture2D(tNoiseG, xz * 0.0625 + 0.17).r * 0.55 + texture2D(tNoiseG, fr * 0.0371 + 0.53).g * 0.45 - 0.5;
-    crust = clamp(crust + fineN * 0.26 * pan.a, 0.0, 1.0);
-    brine = clamp(brine + fineN * 0.34 * pan.a, 0.0, 1.0);
+    crust = clamp(crust + fineN * 0.26 * inK, 0.0, 1.0);
+    brine = clamp(brine + fineN * 0.34 * inK, 0.0, 1.0);
   }
   float wRock = max(mA.g, smoothstep(0.62, 1.05, slope));
   float wSalt = crust * (1.0 - wRock) * (1.0 - brine * 0.4);
-  float wSilt = max(mA.a, brine * 0.85 * (1.0 - crust)) * (1.0 - wRock);
+  // a cell's floor is pan silt wherever it is not crust: never dune sand with its ripples
+  float wSilt = max(max(mA.a, brine * 0.85 * (1.0 - crust)), (1.0 - wSalt) * inK) * (1.0 - wRock);
   float wPeb = mA.b * (1.0 - wSalt) * (1.0 - wRock);
   float wSand = clamp(1.0 - wSalt - wRock - wSilt - wPeb, 0.0, 1.0);
   float w[5];
@@ -158,6 +163,10 @@ export const TERRAIN_COLOR = /* glsl */ `
   vec2 dpx = dFdx(xz), dpy = dFdy(xz);
   float nearK = 1.0 - smoothstep(55.0, 140.0, dCam);
   float slopeT = smoothstep(0.35, 0.55, slope);
+  /* past 190 m a normal map's mips are its own mean: the per-layer mean (measured off the
+   * shipped _n textures) stands in for the fetch, faded in over 150-190 m so no seam shows.
+   * At the Pans vista that is most of the frame: it is the ground's largest GPU saving. */
+  float farN = smoothstep(150.0, 190.0, dCam);
 
   vec3 col = vec3(0.0), pert = vec3(0.0);
   float hMax = -9.0, wTot = 0.0, rSum = 0.0, aoSum = 0.0;
@@ -174,13 +183,17 @@ export const TERRAIN_COLOR = /* glsl */ `
       vec2 ux = vWPos.zy * sc, uz = vWPos.xy * sc;
       vec4 ax = gA(2, ux, dpxz.zy * sc, dpyz.zy * sc), ay = gA(2, uv + offA, gx, gy), az = gA(2, uz, dpxz.xy * sc, dpyz.xy * sc);
       a = ax * bw.x + ay * bw.y + az * bw.z;
-      vec4 nx = gNm(2, ux, dpxz.zy * sc, dpyz.zy * sc), ny = gNm(2, uv + offA, gx, gy), nz = gNm(2, uz, dpxz.xy * sc, dpyz.xy * sc);
-      vec2 tx = nx.xy * 2.0 - 1.0, ty = ny.xy * 2.0 - 1.0, tz = nz.xy * 2.0 - 1.0;
-      pert += (vec3(0.0, tx.y, tx.x) * bw.x + vec3(ty.x, 0.0, ty.y) * bw.y + vec3(tz.x, tz.y, 0.0) * bw.z) * w[i] * 0.95;
-      nn = vec4(0.0, 0.0, nx.z * bw.x + ny.z * bw.y + nz.z * bw.z, nx.a * bw.x + ny.a * bw.y + nz.a * bw.z);
+      nn = vec4(0.0, 0.0, 0.801, 0.905);
+      if (farN < 1.0) {
+        vec4 nx = gNm(2, ux, dpxz.zy * sc, dpyz.zy * sc), ny = gNm(2, uv + offA, gx, gy), nz = gNm(2, uz, dpxz.xy * sc, dpyz.xy * sc);
+        vec2 tx = nx.xy * 2.0 - 1.0, ty = ny.xy * 2.0 - 1.0, tz = nz.xy * 2.0 - 1.0;
+        pert += (vec3(0.0, tx.y, tx.x) * bw.x + vec3(ty.x, 0.0, ty.y) * bw.y + vec3(tz.x, tz.y, 0.0) * bw.z) * w[i] * 0.95 * (1.0 - farN);
+        nn = mix(vec4(0.0, 0.0, nx.z * bw.x + ny.z * bw.y + nz.z * bw.z, nx.a * bw.x + ny.a * bw.y + nz.a * bw.z), nn, farN);
+      }
     } else {
       a = gA(i, uv + offA, gx, gy);
-      nn = gNm(i, uv + offA, gx, gy);
+      nn = vec4(0.5, 0.5, i == 0 ? 0.877 : i == 1 ? 0.686 : i == 2 ? 0.801 : i == 3 ? 0.539 : 0.631, 0.905);
+      if (farN < 1.0) nn = mix(gNm(i, uv + offA, gx, gy), nn, farN);
       if (w[i] > 0.18 && dCam < 240.0) {     // past 240 m the mips are a few texels: the seam blend buys nothing
         vec4 a2 = gA(i, uv + offB, gx, gy);
         float cdiff = dot(a.rgb - a2.rgb, vec3(0.33));
@@ -242,7 +255,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     vec3 sandCol = col * sandTone;
     sandCol = mix(sandCol, vec3(0.05, 0.046, 0.03), scrub * 0.6 * farK);
     sandCol = mix(sandCol, vec3(0.17, 0.15, 0.078), mB.r * farK * 0.8);
-    sandCol = mix(sandCol, vec3(0.135, 0.09, 0.185), mA.r * farK * (0.3 + 0.45 * nMac.a));
+    sandCol = mix(sandCol, vec3(0.12, 0.095, 0.15), mA.r * farK * (0.18 + 0.3 * nMac.a));
     col = mix(col, sandCol, smoothstep(0.02, 0.5, w[0]));
   }
   // packed tracks: pale, smooth, salt-dusted

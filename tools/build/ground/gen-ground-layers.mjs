@@ -182,12 +182,15 @@ function salt(N) {
     // crystals at three scales, Worley domes so they catch a low sun
     const c1 = worley(u, v, 150, 13), c2 = worley(u, v, 54, 17);
     const crystal = (1 - c1.f1) * 0.42 + (1 - c2.f1) * 0.32 + hash2(x, y, 19) * 0.26;
-    // the rake: long shallow parallel drags, broken up
-    const dragPh = (v * 34 + fbm(u, v, 2, 3, 71) * 7.5) * Math.PI * 2;
-    const drag = (0.5 + 0.5 * Math.sin(dragPh)) * sm(0.15, 0.6, fbm(u, v, 3, 2, 73));
+    // the rake: long shallow drags, broken up. Two families at different pitches, picked by a
+    // slow field and strongly warped, so the furrows wander and no one spacing repeats (A-anti-tile)
+    const dw = fbm(u, v, 2, 3, 71) * 13 + fbm(u, v, 5, 2, 77) * 2.5;
+    const dA = 0.5 + 0.5 * Math.sin((v * 27 + u * 3 + dw) * Math.PI * 2);
+    const dB = 0.5 + 0.5 * Math.sin((v * 41 - u * 5 + dw * 1.3) * Math.PI * 2);
+    const drag = mix(dA, dB, sm(-0.2, 0.2, fbm(u, v, 2, 2, 75))) * sm(0.2, 0.65, fbm(u, v, 3, 2, 73));
     const pit = sm(0.2, 0.0, worley(u, v, 22, 29).f1) * sm(0.2, 0.6, fbm(u, v, 5, 2, 79));
     const dome = (1 - w.f1) * 0.14;
-    const h = 0.34 + ridgeK * 0.34 - crack * 0.3 + crystal * 0.24 + dome + drag * 0.03 - pit * 0.24 + fbm(u, v, 8, 3, 83) * 0.12;
+    const h = 0.34 + ridgeK * 0.34 - crack * 0.3 + crystal * 0.24 + dome + drag * 0.02 - pit * 0.24 + fbm(u, v, 8, 3, 83) * 0.12;
     H[i] = h;
     const tone = fbm(u, v, 3, 4, 51);
     let c = mix3(crust, cream, sm(-0.25, 0.4, tone));
@@ -195,8 +198,9 @@ function salt(N) {
     c = mix3(c, pink, sm(0.3, 0.6, fbm(u, v, 2, 3, 57)) * 0.3);
     const dirty = clamp01(crack * 1.3 + pit * 0.9 + sm(0.22, 0.5, fbm(u, v, 4, 3, 59)) * 0.32);
     c = mix3(c, dirt, dirty);
-    const g = hash2(Math.floor(u * 400), Math.floor(v * 400), 37);
-    if (g > 0.9955) c = mix3(c, grit, 0.86);
+    // blown black grit: round grains with soft edges (a one-texel speck magnified to a square at 1.5 m)
+    const gw = worley(u, v, 150, 37);
+    if (gw.id > 0.965) c = mix3(c, grit, 0.82 * sm(0.3, 0.1, gw.f1));
     const t = 0.9 + crystal * 0.16;
     A[i * 3] = c[0] * t; A[i * 3 + 1] = c[1] * t; A[i * 3 + 2] = c[2] * t;
     R[i] = clamp01(0.58 + crystal * 0.2 + crack * 0.16 - ridgeK * 0.08);

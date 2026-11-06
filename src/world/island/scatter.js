@@ -154,8 +154,8 @@ export function scatterStatic(R) {
       }
     }
   }
-  // the dykes: one stone run per 1.7 m of every wall of the field
-  const seg = 1.7, P = { x: 0, z: 0 }, Q = { x: 0, z: 0 };
+  // the dykes: one stone run per 1.1 m of every wall of the field (and of the town's field walls)
+  const seg = 1.1, P = { x: 0, z: 0 }, Q = { x: 0, z: 0 };
   for (const W of fieldWalls()) {
     const len = Math.hypot(W.u1 - W.u0, W.v1 - W.v0), n = Math.max(1, Math.round(len / seg));
     for (let i = 0; i < n; i++) {

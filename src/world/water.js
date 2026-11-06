@@ -113,9 +113,10 @@ const SEA_COLOR = /* glsl */ `
     // spent bores lie on the shallows as thinning streaks, wider off the points
     float carpet = (1.0 - smoothstep(0.0, 3.5 + 13.0 * blot, off)) * (0.12 + 0.2 * exp(-s * 1.6)) * (0.55 + 0.6 * blot);
     cover = max(cover, carpet);
-    // the leading lip of the swash, a bright thin line
-    float lipLine = (1.0 - smoothstep(0.0, 0.035 + 0.07 * n2, depth)) * (0.4 + 0.6 * exp(-s * 2.6));
-    cover = max(cover, lipLine * 1.1);
+    // the leading lip of the swash, a bright thin lacy line. On a flat beach 3.5 cm of water is
+    // metres wide: the lip is the first centimetre or two, or it becomes a white field
+    float lipLine = (1.0 - smoothstep(0.0, 0.01 + 0.022 * n2, depth)) * (0.4 + 0.6 * exp(-s * 2.6));
+    cover = max(cover, lipLine * 0.9);
     float foamTex = mix(0.5, lace, laceFar);
     // no cover, no foam: the lace alone must never speckle open water
     foam = smoothstep(0.97 - cover * 1.05, 1.2 - cover * 1.0, foamTex + 0.2) * smoothstep(0.0, 0.04, cover);
@@ -181,12 +182,15 @@ const GLASS_COLOR = /* glsl */ `
   wN = vec3(r1.x * 0.012 + r2.x * 0.007, 0.0, r1.y * 0.012 + r2.y * 0.007);
   // the Glass: emerald #2F8F6F over a pale bed, shallows turquoise, darkening fast with depth.
   // El Golfo's green holds at any angle: the sky is a sheen on it, never a wash over it
-  vec3 emerald = vec3(0.016, 0.235, 0.118);
-  vec3 shallow = vec3(0.09, 0.40, 0.25);
-  float dk = smoothstep(0.02, 0.62, depth);
+  vec3 emerald = vec3(0.010, 0.150, 0.080);
+  vec3 shallow = vec3(0.075, 0.30, 0.185);
+  float dk = smoothstep(0.02, 0.72, depth);
   // the bed shows through in long patches
   float bed = texture2D(tRipple, p * 0.019).a;
-  diffuseColor.rgb = mix(shallow, emerald, dk) * (0.82 + 0.34 * bed);
+  // wind slicks: calm streaks mirror the sky, rippled ones break it up (never one flat sheet)
+  float slick = smoothstep(0.38, 0.66, texture2D(tRipple, vec2(p.x * 0.0083 - p.y * 0.0031, p.y * 0.0062) + drift * 0.4).a);
+  wN *= mix(1.7, 0.3, slick);
+  diffuseColor.rgb = mix(shallow, emerald, dk) * (0.8 + 0.38 * bed);
   diffuseColor.a = 0.985;
   wRough = 0.05;
   wMirror = 0.62;
@@ -340,6 +344,27 @@ export class IslandWater {
     this.glassMesh.renderOrder = 1;
     this.group.add(this.glassMesh);
 
+    /* The horizon. The far plane (2,400 m) cuts the sea short of the true horizon and the gap
+     * showed the sky dome's underside as a hard band over the sea. A ring of open water stands
+     * 2,250 m round the camera, from the sea up to eye height, so its top edge IS the horizon;
+     * it is fogged like the far sea it continues. Placed in onBeforeRender from the camera the
+     * frame is drawn with (a gate's or the title's camera as much as the player's). */
+    const ringGeo = new THREE.CylinderGeometry(2250, 2250, 1, 120, 1, true).translate(0, 0.5, 0);
+    this.horizon = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x07192a, side: THREE.BackSide, fog: true }));
+    this.horizon.name = 'sea-horizon';
+    this.horizon.frustumCulled = false;
+    // after the sky dome (radius 1,900 m round the player, no depth write): it must not paint over the ring
+    this.horizon.renderOrder = 0.5;
+    this.horizon.castShadow = false;
+    this.horizon.receiveShadow = false;
+    this.horizon.onBeforeRender = (renderer, scene, camera) => {
+      const h = this.horizon, c = camera.position;
+      h.position.set(c.x, this.seaLevel, c.z);
+      h.scale.y = Math.max(0.5, c.y - this.seaLevel);
+      h.updateMatrixWorld(true);
+    };
+    this.group.add(this.horizon);
+
     ctx.scene.add(this.group);
   }
 
@@ -411,7 +436,7 @@ export class IslandWater {
   update(dt, t) { this.tick(dt, t); }
 
   dispose() {
-    for (const m of [this.sea, this.glassMesh]) {
+    for (const m of [this.sea, this.glassMesh, this.horizon]) {
       m.geometry.dispose();
       m.material.dispose();
     }

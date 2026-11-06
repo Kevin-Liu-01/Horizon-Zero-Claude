@@ -35,11 +35,15 @@ import { Props } from './props.js';
 const HALF = WORLD_SIZE / 2;
 
 /** Streamed draw settings: radius (m), buffer capacity, fade band, source kind, stride thinning. */
+/* GPU (A-gpu-tier at the Pans vista): flora was 4.6 of the frame's 18 ms, nearly all of it
+ * sub-pixel triangles. The near tufts hand over to the 18-tri far tufts at 44 m (it was 52),
+ * the small kinds stop where they fall under two pixels; the cover the stalker reads is the
+ * field, not the draw, so A59b / A60 are untouched. */
 const STREAM = {
-  marramNear: { src: 'marram', name: 'marram-near', r: 52, cap: 9000, fade: [40, 52], every: 1, sway: 1.0 },
-  marramFar: { src: 'marram', name: 'marram-far', r: 190, cap: 14000, fade: [150, 190], every: 2, inner: 44, sway: 0.7 },
-  glasswort: { src: 'glasswort', name: 'glasswort', r: 74, cap: 7000, fade: [56, 74], every: 1, sway: 0.15 },
-  lavender: { src: 'lavender', name: 'lavender', r: 128, cap: 5000, fade: [100, 128], every: 1, sway: 0.5 },
+  marramNear: { src: 'marram', name: 'marram-near', r: 44, cap: 7000, fade: [34, 44], every: 1, sway: 1.0 },
+  marramFar: { src: 'marram', name: 'marram-far', r: 175, cap: 14000, fade: [140, 175], every: 2, inner: 36, sway: 0.7 },
+  glasswort: { src: 'glasswort', name: 'glasswort', r: 60, cap: 5600, fade: [46, 60], every: 1, sway: 0.15 },
+  lavender: { src: 'lavender', name: 'lavender', r: 104, cap: 4000, fade: [82, 104], every: 1, sway: 0.5 },
 };
 
 const _m = new THREE.Matrix4();
@@ -199,30 +203,35 @@ function columnGeo() {
 }
 
 function wallGeo() {
-  /* One 1.7 m run of a dry-stone dyke, 120 triangles: two courses of flat lava slabs laid
-   * along the run and overlapping it at both ends, so runs butt into one unbroken low wall
-   * with a ragged top. From the rim it is a thin dark line (Janubio); up close, stacked stone,
-   * never a row of beads. x is across the run (≈ 0.62 m), y up (≈ 0.42 m), z along it. */
+  /* One 1.1 m run of a dry-stone dyke, 120 triangles: six angular lava stones in two courses
+   * (three footings, three capstones breaking joint), overlapping the next run at both ends so
+   * the runs butt into one unbroken low wall ≈ 0.6 m wide and 0.3-0.45 m tall. Faceted, not
+   * smooth: welded normals turned flat slabs into pillows at 1.5 m (V32). From the rim a dyke
+   * is a thin dark line; up close it is stacked stone. x across, y up, z along the run. */
   const R = rng(31), parts = [];
   const lay = [
-    // bottom course: three long footing slabs, wide and flat
-    [-0.05, 0.11, -0.6, 0.33, 0.15, 0.42], [0.06, 0.1, 0.0, 0.31, 0.14, 0.4], [-0.03, 0.11, 0.6, 0.32, 0.15, 0.42],
-    // top course: three narrower capstones, breaking joint with the course below
-    [0.02, 0.28, -0.32, 0.24, 0.11, 0.36], [-0.04, 0.29, 0.3, 0.23, 0.12, 0.38], [0.05, 0.27, 0.86, 0.21, 0.1, 0.24],
+    [-0.06, 0.1, -0.4, 0.3, 0.13, 0.27], [0.07, 0.1, 0.02, 0.29, 0.14, 0.25], [-0.04, 0.11, 0.42, 0.31, 0.13, 0.26],
+    [0.03, 0.27, -0.2, 0.22, 0.11, 0.23], [-0.05, 0.28, 0.2, 0.21, 0.12, 0.24], [0.04, 0.26, 0.58, 0.2, 0.1, 0.17],
   ];
   for (const [x, y, z, sx, sy, sz] of lay) {
-    const g = displaced(weldedIco(0), (R() * 1e6) | 0, 0.22);
-    // a slab: flatten the top and bottom faces so the course reads as laid stone
+    const g = displaced(weldedIco(0), (R() * 1e6) | 0, 0.3);
+    // a broken slab: flatten the top and bottom, then saw one corner off at a random plane
     const p = g.attributes.position;
+    const cz = R() * 2 - 1, ca = R() * 6.2832, cxy = Math.sqrt(1 - cz * cz);
+    const nx = cxy * Math.cos(ca), ny = cz * 0.4, nz = cxy * Math.sin(ca), d = 0.55 + R() * 0.2;
     for (let i = 0; i < p.count; i++) {
-      const v = p.getY(i);
-      p.setY(i, Math.sign(v) * Math.min(Math.abs(v), 0.62 + R() * 0.12));
+      let X = p.getX(i), Y = p.getY(i), Z = p.getZ(i);
+      Y = Math.sign(Y) * Math.min(Math.abs(Y), 0.6 + R() * 0.15);
+      const v = X * nx + Y * ny + Z * nz - d;
+      if (v > 0) { X -= nx * v; Y -= ny * v; Z -= nz * v; }
+      p.setXYZ(i, X, Y, Z);
     }
     g.scale(sx, sy, sz);
-    g.rotateY((R() - 0.5) * 0.36);
-    g.rotateZ((R() - 0.5) * 0.18);
+    g.rotateY((R() - 0.5) * 0.5);
+    g.rotateZ((R() - 0.5) * 0.22);
     g.translate(x, y, z);
-    parts.push(g);
+    parts.push(g.toNonIndexed());
+    g.dispose();
   }
   const m = mergeGeometries(parts, false);
   for (const g of parts) g.dispose();
@@ -337,6 +346,7 @@ export class Vegetation {
     this._uTime = { value: 0 };
     this._uWind = { value: this.windDir };
     this.gustLevel = 0;
+    this._gustTick = 0;
     this._uActors = { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] };
     this.displacers = [];
     for (let i = 0; i < 4; i++) this.displacers.push({ x: 0, z: 0, r: 1.3, s: 0, live: false });
@@ -755,8 +765,13 @@ export class Vegetation {
   update(dt, t) {
     this._uTime.value = t;
     this._armCasterRadii();
-    const p = this.ctx.player;
-    if (p) this.gustLevel = this.windAt(p.position.x, p.position.z, t);
+    /* the gust at the player, a few times a second: windAt's double return is a heap number
+     * when it is not inlined (R48 c, 4 KB/s per function) and nothing needs it every step */
+    if (++this._gustTick >= 8) {
+      this._gustTick = 0;
+      const p = this.ctx.player;
+      if (p) this.gustLevel = this.windAt(p.position.x, p.position.z, t);
+    }
   }
 
   /** Once per rendered frame: follow the camera, one streamed kind per frame. */

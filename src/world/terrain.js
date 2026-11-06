@@ -230,7 +230,7 @@ function stampable(x, z) {
   const F = _stampR.at(x, z);
   /* With a margin under every limit of `marramDensity`: the cover is read bilinearly between
    * texels, so a stamped texel next to one the scatter cannot plant must still be plantable. */
-  if (F.glass > 0.05 || F.h < 0.4 || F.coast < 2 || F.slope > 0.66 || F.rock > 0.3 || F.track > 0.25) return false;
+  if (F.glass > 0.05 || F.h < 0.35 || F.coast < 1.5 || F.slope > 0.78 || F.rock > 0.4 || F.track > 0.32) return false;
   return authored.pan(x, z).kind < 0;
 }
 
@@ -344,8 +344,22 @@ export class Terrain {
   static get SURFACE_AUDIO() { return SURFACE_AUDIO; }
 
   /* -------------------------------- heights -------------------------------- */
-  getHeight(x, z) { return gridHeight(x, z); }
-  heightFast(x, z) { return gridHeight(x, z); }
+  /* R48 (c): the bilinear read is written out here rather than called: a double handed back
+   * from a call that is not inlined is boxed on the heap, and the per-function bar is 4 KB/s. */
+  getHeight(x, z) {
+    const fx = (x + GHALF) / GSTEP, fz = (z + GHALF) / GSTEP;
+    if (fx < 0 || fz < 0 || fx >= GS - 1 || fz >= GS - 1) return -30;
+    const ix = fx | 0, iz = fz | 0, tx = fx - ix, tz = fz - iz, o = iz * GS + ix;
+    const a = H[o] + (H[o + 1] - H[o]) * tx;
+    return a + (H[o + GS] + (H[o + GS + 1] - H[o + GS]) * tx - a) * tz;
+  }
+  heightFast(x, z) {
+    const fx = (x + GHALF) / GSTEP, fz = (z + GHALF) / GSTEP;
+    if (fx < 0 || fz < 0 || fx >= GS - 1 || fz >= GS - 1) return -30;
+    const ix = fx | 0, iz = fz | 0, tx = fx - ix, tz = fz - iz, o = iz * GS + ix;
+    const a = H[o] + (H[o + 1] - H[o]) * tx;
+    return a + (H[o + GS] + (H[o + GS + 1] - H[o + GS]) * tx - a) * tz;
+  }
 
   /** The recipe's own height at a point: what the grid was baked from (gates only). */
   recipeHeight(x, z) { return heightAt(x, z); }
@@ -579,7 +593,8 @@ export class Terrain {
     const pos = new Float32Array(verts * 3), col = new Float32Array(verts * 3), index = [];
     const n = this.noise;
     let base = 0;
-    const cA = new THREE.Color('#2a2b30'), cB = new THREE.Color('#47443f'), cT = new THREE.Color();
+    // lighter than the island's own basalt: at 1.5 km a flank is read by its lit and shaded sides, not its albedo
+    const cA = new THREE.Color('#4a4a4e'), cB = new THREE.Color('#6e675e'), cT = new THREE.Color();
     for (const I of ISLES) {
       for (let r = 0; r <= NR; r++) {
         const t = r / NR;
@@ -591,7 +606,8 @@ export class Terrain {
           let h;
           if (I.crater) {
             // a stratovolcano's concave flank, with gullies, a notched summit
-            const g = 1 + Math.abs(n.noise2D(cs * 2.2 + I.seed, sn * 2.2 + t)) * 0.1 * t;
+            const g = 1 + Math.abs(n.noise2D(cs * 2.2 + I.seed, sn * 2.2 + t)) * 0.1 * t
+              + n.noise2D(cs * 7 + I.seed, sn * 7 + t * 2.5) * 0.16 * t * (1 - t);   // gullies down the flanks
             h = I.h * Math.pow(1 - t, 1.9) * g - (t < 0.05 ? (0.05 - t) * 160 : 0);
           } else {
             h = I.h * Math.pow(1 - t, 0.8) * (0.62 + 0.38 * (n.fbm(cs * 1.3 + I.seed, sn * 1.3, 2) + 0.5));
@@ -618,6 +634,7 @@ export class Terrain {
     geo.computeVertexNormals();
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 });
     const uVis = this._isleVis = { value: 0.3 };
+    this._isleTick = 29;
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uIsleVis = uVis;
       shader.fragmentShader = shader.fragmentShader
@@ -630,21 +647,30 @@ export class Terrain {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = 'sister-isles';
     mesh.frustumCulled = false;
+    mesh.renderOrder = 0.5;     // after the sky dome, which would paint over anything past its 1,900 m
     mesh.castShadow = false;
     mesh.receiveShadow = false;
+    // carried by the camera the frame is drawn with (the player's, a gate's, the title's)
+    mesh.onBeforeRender = (renderer, scene, camera) => {
+      mesh.position.set(camera.position.x * ISLE_CARRY, 0, camera.position.z * ISLE_CARRY);
+      mesh.updateMatrixWorld(true);
+    };
     this.group.add(mesh);
     this.isles = mesh;
   }
 
   /** Per frame, no allocation: the isles ride with the camera and take the air's haze. */
   _updateIsles() {
-    const m = this.isles, cam = this.ctx.camera;
-    if (!m || !cam) return;
-    m.position.set(cam.position.x * ISLE_CARRY, 0, cam.position.z * ISLE_CARRY);
+    const m = this.isles;
+    if (!m) return;
+    // twice a second is plenty for a haze (and keeps world-sky's double return off every frame)
+    if (++this._isleTick < 30) return;
+    this._isleTick = 0;
     const fp = this.ctx.environment?.fogParams;
     // the air's own transmittance over 300 m, as a measure of how far one sees today
     const T = fp?.transmittance ? fp.transmittance(300, 6, 6) : 0.6;
-    this._isleVis.value = Math.max(0, Math.min(0.62, (T - 0.12) * 0.9));
+    const vis = Math.max(0, Math.min(0.46, (T - 0.12) * 0.75));
+    if (Math.abs(this._isleVis.value - vis) > 0.002) this._isleVis.value = vis;
   }
 
   /* -------------------------------- the current -------------------------------- */
@@ -820,8 +846,13 @@ export class Terrain {
     const env = this.ctx.environment, L = env?.lightDir;
     if (!L) return;
     const U = this.groundUniforms, hyp = Math.hypot(L.x, L.z) || 1e-3;
-    U.uHzK.value = env.weather === 'calima' ? 0.45 : 1;
-    U.uSunTan.value = L.y / hyp;
+    /* A uniform's `value` is a tagged field (three's uniform objects share one map), so every
+     * double stored there is a fresh heap number: store only when the light has really moved. */
+    const k = env.weather === 'calima' ? 0.45 : 1;
+    if (U.uHzK.value !== k) U.uHzK.value = k;
+    const tan = L.y / hyp;
+    if (Math.abs(U.uSunTan.value - tan) < 2e-4 && Math.abs(U.uSunXZ.value.x * hyp - L.x) < 2e-4 * hyp) return;
+    U.uSunTan.value = tan;
     U.uSunXZ.value.set(L.x / hyp, L.z / hyp);
     let b = Math.atan2(L.x, -L.z) / (Math.PI / 4);
     if (b < 0) b += 8;
