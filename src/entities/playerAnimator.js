@@ -61,7 +61,6 @@ const _caP = new THREE.Vector3(), _caD = new THREE.Vector3(), _caC = new THREE.V
 const _caQ = new THREE.Quaternion();
 const _caG = new THREE.Vector3();   // last step's grip carried with her step and her turn (`armFlow.camAim`)
 const _caX = new THREE.Vector3(1, 0, 0);
-const _caN = new THREE.Vector3();   // the bow's node (her bow hand) predicted for this step, world
 const _a16U = new THREE.Vector3();  // the A16 elbow cap's up: the aim frame's (R52)
 const _gvW = new THREE.Vector3(), _gvT = new THREE.Vector3(); // the body-step governor (`_rollExit`): world pelvis, governed
 const _reU = new THREE.Vector3();  // elbow roll: elbow offset, perpendicular
@@ -948,7 +947,7 @@ export class PlayerAnimator {
     // hero-body targeted fix round 2 (`armFlow.camAim`): the aim point this step's camera will give, the camera's
     // last position (world), the T ray relative to the camera ray (low-passed), the camera ray last step (char)
     this._aimPred = new THREE.Vector3(); this._camP = new THREE.Vector3(); this._camPOk = false;
-    this._gripCh = new THREE.Vector3(); this._pivCh = new THREE.Vector3(); this._gripE = 0; this._nodeCh = new THREE.Vector3(); this._nodeOk = false;
+    this._gripCh = new THREE.Vector3(); this._pivCh = new THREE.Vector3(); this._gripE = 0;
     this._dTl = new THREE.Vector3(0, 0, 1); this._camC = new THREE.Vector3(0, 0, 1); this._camW = new THREE.Vector3(0, 0, 1); this._camRate = 0; this._camCOk = false;
     this._gripValid = false;
     // hero-body targeted fix round 2: the roll's hand-over (`_rollExit`)
@@ -2179,7 +2178,7 @@ export class PlayerAnimator {
       // (hero-body targeted fix round 2: the aim's trunk keeps going out on its own pace once this
       // layer has stopped — crouched, the crouch-aim pose's ramp, 0.7 s; see `_aimTrunk`)
       if ((this._atW ?? 0) > 1e-3) this._aimTrunk(aimW); else this._atW = 0;
-      this._tOff = true; this._tW = 0; this._tAimW = 0; this._qTs.identity(); this._bcS = 0; this._afOn = false; this._afFull = false; this._gripValid = false; this._aimPrevOk = false; this._camPOk = false; this._camCOk = false; this._camRate = 0; this._nodeOk = false;
+      this._tOff = true; this._tW = 0; this._tAimW = 0; this._qTs.identity(); this._bcS = 0; this._afOn = false; this._afFull = false; this._gripValid = false; this._aimPrevOk = false; this._camPOk = false; this._camCOk = false; this._camRate = 0;
     }
     if (!cbFirst && this._crouchAimW > 0.01) this._crouchAimLayer(this._caPoseW, p);
     if (carryW > 0.01) this._carryLayer(carryW, p, t);
@@ -2302,7 +2301,6 @@ export class PlayerAnimator {
         const node = this.ctx.combat?.bow?.group?.parent;
         if (node) {
           node.getWorldPosition(_afG);
-          if (this.T.armFlow.camAim) { this._nodeCh.copy(_afG); this.model.worldToLocal(this._nodeCh); this._nodeOk = true; }
           _afG.sub(this._gripW);
           _afH.copy(_dA).transformDirection(this.model.matrixWorld);
           this._gripW.add(_afG.addScaledVector(_afH, -_afG.dot(_afH)));

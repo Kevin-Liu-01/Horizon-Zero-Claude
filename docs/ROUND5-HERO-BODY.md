@@ -5,17 +5,18 @@ fix round 4 Oct 22–23 (night), fix round 5 Oct 23, **W0b targeted fix round 1 
 (contracts), §4.1 (budgets), §6 (aloy.glb), §8 (rulings, incl. §8.3 R33 g, R35–R39, R46, R47), §9 (gate block).
 Canon: `docs/ROUND5-BIBLE.md` §2.2 (the trade wind), §3 (Brea), §3.8 (build order), §5.2 (bow poses), §5.9 (controls).
 
-**Status (Nov 6, targeted fix round 2 after the merge, §T5).** The six r1 findings: the camera's yaw and pitch at full draw
-(the aim point predicted on this step's camera, the grip carried with her turn and the T's pitch, the T's ray low-passed only
-off the camera's elevation; knuckle ≤ 0.0585 m in the standing and jog camera cells, 0.047 m in the 3 and 6 rad/s yaw diag
-against the judge's 0.077–0.082); the roll's end (the root follows the pelvis, the hand-over and the landing held, a body-step
-governor: A-dodge-exit-continuity ≤ 0.026 m over her root on every step in `F1`, the hand-over pop 0.32 → 0); `_mlHush` deleted
-and R63 (a)'s input edge in `melee.js` (0 spear steps, 0 strikes in every drawn-dodge and held-cancel cell); the crouched way
-out on its ramp (≤ 0.0287 m a step against the judge's 0.051–0.055); the strafe hitch (the conform's flip under the governor,
-pelvis ≤ 0.026 m against 0.057–0.066). New gate clauses per the findings (camera cells, the spear, the body step, the roll's end).
-**Still failing, stated in §T5.2 and §6:** the forearm 20–24° off the arrow while the camera moves, the knuckle in two crouched
-camera cells at combat's bow flip, 0.031–0.037 m head steps in the strafe cells, the −1.15 crouched cell's re-entries. A1 / A20b /
-A90 / A90b PASS.
+**Status (Nov 6, targeted fix round 2 after the merge, §T5).** Final run `w9/F3` (the literal lane command + A1 / A20b /
+A90 / A90b, port 5252): lane **49 PASS · 2 FAIL · 20 NEEDS-JUDGE** (F2: 47 · 4 · 20; nothing that passed fails), the FAILs A31c
+(listed, R36 / R51) and A-draw-arm-continuity (its new clauses). **A-dodge-exit-continuity PASS** (every row ≤ 0.026 m over her
+root, bar 0.03; the moving dodge's hand-over pop 0.32 m → 0.026); **A-draw-elbow-level PASS** (crouched way out every step
+≤ 0.0287 m against the judge's 0.051–0.055; the −1.15 crouched raise 0.0248); `_mlHush` deleted and R63 (a)'s input edge in
+`melee.js` (0 spear steps, 0 strikes, lance never posed in every drawn-dodge / held-cancel cell). Camera at full draw: the aim
+point predicted on this step's camera, the grip carried with her turn and the T's pitch, the T's ray low-passed only off the
+camera's elevation: knuckle 0.047–0.050 m and wrist 0.077–0.080 m at 3 and 6 rad/s yaw (judge 0.063–0.082 / 0.091–0.112);
+camera cells' knuckle ≤ 0.0577 m in 11 of 16. **Still failing (A-draw-arm-continuity, §T5.2 and §6):** the forearm 20.0–24.0°
+off the arrow while the camera moves (31.3° in the 1.02 jog cell; bar 20, held still 14–19°); the knuckle 0.062–0.115 m at
+the 8 rad/s pitch sweeps in four crouched cells and the −0.55 jog (combat's 0.5 m bow flip at the down clamp, §7); head steps
+0.030–0.044 m at cancels / looses / crouch toggles in four strafe-right and two crouched aim cells. A1 / A20b / A90 / A90b PASS.
 
 **Status (Nov 3, targeted fix round 4, §T4).** The draw arm is continuous in every state the game reaches. New row
 **A-draw-arm-continuity** (5 pitches × 5 gaits, every aim-weight transition, every sim step): **PASS 3 / 3** on the final code,
@@ -75,16 +76,16 @@ where a gate staged it. So the gates came first (§T5.1), and a diagnostic probe
 weight, the ray, the T, the conform and the roll) found each cause before anything changed (run `w9/d1`). Every number
 below is from this tree on port 5252, `nice -n 10` (R53), one gate Chrome in one machine slot after the memory /
 pressure / load / disk checks: `w9/F2` (diagnostics, the literal lane command, the global items, one slot) and
-`w9/F3` (the same, on the final code).
+`w9/F3` (the same, on the final code; after it only the reverted bow-node prediction's unused fields were deleted).
 
 | # | Finding | Cause found (d1) | What changed (file:line) | Measured |
 |---|---|---|---|---|
-| 1 | Camera yaw at full draw, pitched: fingers 3–4 cm off the nock | The animator's ray started at LAST step's grip: a turning bent T swings that anchor 0.04 m a step about her (6 rad/s at 0.75: the animator's ray 11° of yaw, the bow's 16°). The aim point was extrapolated from the last two, a step late at a turn's start and stop, and not at all past 0.5 m a step | `playerAnimator.js`: the aim point predicted on THIS step's camera ray at last step's hit distance, a ground hit on its own plane (l. 4182); last step's grip and bow node carried in character space with her step, her turn and the T's pitch (l. 4182–4210); `armFlow.camAim` (`ubc.js` l. 267) | Yaw at 3 rad/s, full draw (diag `F1`/`F2`, judge's staging): knuckle 0.0469–0.0495 m, wrist 0.0771–0.0778 m at −0.55, 0, 0.2, 0.75 (judge J3: 0.063–0.082 / 0.091–0.112); 6 rad/s at 0.75: 0.0471 / 0.0795. Matrix yaw cells (±1.5, ±3, ±6, ±10 rad/s): knuckle ≤ 0.0585 m in every standing and jog camera cell; wrist at home ≤ 0.0907 m except where the down-clamp sweep below is |
-| 2 | A moving dodge's end popped her ~0.32 m in a step | `Roll_RM`'s root bone runs ahead of its hips and stops (the root curve reaches 1 at ~0.6 of the roll) while the hips catch up 0.07 m a step over a still root; a moving cancel at 0.55 s scrubbed the clip to its last frame while it still held ~0.8 of the pose. The dive drops the hips 0.13 m a step (7.8 m/s); the landing's air channel swaps the jump loop for the landing clip in one step (0.15 m at full draw) | The roll's root follows the pelvis: the clip's hip track folded into the root curve (`_rollProgEff`, constructor l. 820; `rollProgress` l. 1525) and the rendered pelvis held over the root by the same amount (l. 1877); the hand-over and the landing held and handed over (`_rollExit` l. 2660); the body-step governor (l. 2697; `rollExit` `ubc.js` l. 299) | `A-dodge-exit-continuity` (`F1`): **PASS**, every row ≤ 0.026 m over her root (bar 0.03), aimed and not, both jumps at full draw; the hand-over itself 0.0 m (judge: 0.32 m). `F2`: the aimed strafe dodges' hand-over 0.057 / 0.062 m — the governor's character-space bound (added for finding 6) missed her heading swinging back to the camera; both bounds now (`F3`). Diag: in-roll pelvis-over-root ≤ 0.026 m; jog / strafe / walk / sprint dodges' exits ≤ 0.026 m in character space (d1: 0.32) |
-| 3 | Mouse look at full draw: hand 0.06–0.19 m off the nock, arrow 106° off the forearm | The bent T's ray was low-passed 0.35 s in character space and its turn capped at 3.6–6 rad/s while combat aims the bow along the camera at once; its share `tS` came in at 3/s as a sweep crossed 0.1–0.5 rad, where the trunk took the pitch by spine shares (the forearm 26–28° off even held still at 0.2); the arm's and the elbow's limiters held them 0.03–0.1 m behind a turning chest | The T's ray low-passed only relative to the camera's elevation (l. 4296), its parallax at a held full draw within `camTau` 0.05 s (l. 4302); its cap adds the camera's own world rate (l. 4364, the rate l. 4147); its rate limit is the aim weight's share only (l. 4348); its share ramps in over `tRamp` 0.02–0.2 rad (l. 4048); A16's elbow cap read in the aim frame, R52's (l. 5035); at a held full draw while the camera pitches, the arm's and the elbow's limiters carry last step's arm with the chest (l. 5244, l. 5513) | Camera cells (`F2`): knuckle ≤ 0.0585 m in 14 of 16 cells (the crouched 0 and 1.02 sweeps 0.11 m: combat's 0.5 m bow flip, §6); forearm at home 18.3–24.2° (1.02 jog 30.5°), over 20° in 13 of 16 cells, mid-sweep (judge: 105.8°); 0.2 held still 18.4° (was 25.7–28.2°). Diag flick 1.0 → −1.0 at 8 rad/s: knuckle ≤ 0.054 m (judge 0.194), the arrow on the view at once after it (d1: the form 5–9° behind for 0.3 s). Film `V-draw-camera-sweep` read: knuckle 0.045–0.047, forearm 14.4–20.1°, fist at the cheek, the arrow where the view looks |
-| 4 | `_mlHush` hid a lance swing that still fired and resolved | A held LMB read as a spear press through a roll, and from RMB up at full draw | `_mlHush` deleted (`update`, melee's lines as on main); R63 (a), `melee.js` l. 1512: an LMB down when a roll begins, or while RMB is held, is the bow's until released — no charge, no swing, no strike | Matrix spear clause, every aim cell, `F1` and `F2`: 0 steps charging or swinging, 0 strikes, lance never posed; head clauses graded through `cancelHeld` (skull ≤ −0.0297 m, nape ≤ −0.0122 m). Film `V-draw-dodge-aim` re-filmed and read: the bow in front after the roll, the lance on her back, the draw at 0.91 with the knuckle 0.046 m |
-| 5 | Lowering the crouched aim snapped her head ~5.5 cm | The crouch-aim pose went out with the aim weight (13/s), the trunk's unfold capped at 3 × the aim weight, the bent T out at 5 rad/s and the aim weight's first step took a fifth of the hip turn, the blade and the head's counter-turn; after the lower, a crouched backpedal's conform let go 0.04–0.07 m in a step | The pose's way out on its own ramp (`_caPoseW` l. 2155); the trunk (`_aimTrunk` l. 3865, its weight l. 3891) and the T (`crouchOut`, the layer's tail l. 2170) out on the same; crouched the aim weight goes out ≤ `crouchAim.outRate` 2/s and in at 13 − 7.5 × crouch (l. 1655); `rampS` 0.8, a crouch toggled under the aim ≤ 1.8/s (`ubc.js` l. 286); the conform's flips under the governor | A-draw-elbow-level crouched rows' way out, every step (`F2`): ≤ 0.0287 m (RMB up ≤ 0.0236, both-button cancel ≤ 0.0287, toggles ≤ 0.0277; judge 0.0513–0.0555). Diag 0.75 lower 0.0292 (d1 0.0451), crouched backpedal lower 0.027 (0.066). Open: −1.15 crouched raise 0.0301 m (bar 0.03, `F2`; in-rate lowered for `F3`), and the matrix's −1.15 crouched cell's re-entries 0.05–0.12 m (§6) |
-| 6 | Strafing right under the aim, 6–7 cm whole-body steps | The ground conform's pelvis clamp: in double support the yawed strafe-right stride flags a foot planted 0.15–0.18 m off the ground, the clamp sinks the hips onto it and lets go 0.03–0.07 m in a step when the flag flips | The governor holds the pelvis's step to `govM` 0.026 m per 1/60 s in character space (and against her root's step in the world) whenever she aims or crouches, the legs re-solved to the planted ankles; the matrix grades character space on every step outside the roll (the 'body' exemption gone), the arm held to `armStepChar` on whole-body steps (`armFlow.bodyChar`, l. 5262) | Diag aim strafe right 0.75: pelvis ≤ 0.026 m per 1/60 s (judge 0.057–0.066, d1 0.0415), head 0.041 at the raise only. Matrix strafe cells (`F2`): arm travel ≤ 0.0556 m in character space on every step outside the roll (no exemption); steady-aim body steps 0.031–0.037 m (head) at a crouch toggled while strafing, a re-nock, a cancel's first step: over 0.03, open (§6); the raise / lower out of a sideways run 0.032–0.058 m, printed |
+| 1 | Camera yaw at full draw, pitched: fingers 3–4 cm off the nock | The animator's ray started at LAST step's grip: a turning bent T swings that anchor 0.04 m a step about her (6 rad/s at 0.75: the animator's ray 11° of yaw, the bow's 16°). The aim point was extrapolated from the last two, a step late at a turn's start and stop, and not at all past 0.5 m a step | `playerAnimator.js`: the aim point predicted on THIS step's camera ray at last step's hit distance, a ground hit on its own plane (l. 4187–4191); last step's grip carried in character space with her step, her turn and the T's pitch (l. 4196–4205; captured l. 2292–2308); combat's own < 0.5 m fall-back mirrored (l. 4205, the knuckle turn l. 5176); `armFlow.camAim` (`ubc.js` l. 263–267) | Yaw at 3 rad/s, full draw (diag `F1`/`F2`, the judge's staging): knuckle 0.0469–0.0495 m, wrist 0.0771–0.0778 m at −0.55, 0, 0.2, 0.75 (judge J3: 0.063–0.082 / 0.091–0.112); 6 rad/s at 0.75: 0.0471 / 0.0795. Matrix camera cells (`F3`, ±1.5/±3/±6/±10 rad/s yaw then pitch sweeps): knuckle ≤ 0.0577 m in 11 of 16 cells; every knuckle / wrist failure the gate printed, and each failing cell's maximum, sits in a pitch sweep or the stop after it (finding 3's rows), none in a yaw phase (the 1.02 crouched and −0.55 jog cells' lists stop at 12 entries, so a yaw-phase value there between 0.06 and the cell's maximum is not excluded); the forearm in the jog cells' yaw turns 20.0–21.4° (fails, row 3) |
+| 2 | A moving dodge's end popped her ~0.32 m in a step | `Roll_RM`'s root bone runs ahead of its hips and stops (the root curve reaches 1 at ~0.6 of the roll) while the hips catch up 0.07 m a step over a still root; a moving cancel at 0.55 s scrubbed the clip to its last frame while it still held ~0.8 of the pose. The dive drops the hips 0.13 m a step (7.8 m/s); the landing's air channel swaps the jump loop for the landing clip in one step (0.15 m at full draw) | The roll's root follows the pelvis: the clip's hip track folded into the root curve (`_rollProgEff`, constructor l. 819–839; `rollProgress` l. 1524) and the rendered pelvis held over the root by the same amount (l. 1880); the hand-over and the landing held and handed over (`_rollExit` l. 2658, called l. 2263); the body-step governor, two bounds (l. 2699–2734; `rollExit` `ubc.js` l. 299) | `A-dodge-exit-continuity` (`F3`): **PASS**, 14 rows (walk / jog / sprint / strafe R / strafe L / standstill, aimed and not; jumps at full draw standing and jogging; a jog jump): every step ≤ 0.026 m over her root's step (bar 0.03); the aimed strafe dodges' hand-over 0.026 (F2 0.057 / 0.062, before the world bound); the judge's pop 0.32 m. In-roll pelvis-over-root ≤ 0.026 m |
+| 3 | Mouse look at full draw: hand 0.06–0.19 m off the nock, arrow 106° off the forearm | The bent T's ray was low-passed 0.35 s in character space and its turn capped at 3.6–6 rad/s while combat aims the bow along the camera at once; its share `tS` came in at 3/s as a sweep crossed 0.1–0.5 rad, where the trunk took the pitch by spine shares (the forearm 26–28° off even held still at 0.2); the arm's and the elbow's limiters held them 0.03–0.1 m behind a turning chest | The T's ray low-passed only relative to the camera's elevation (l. 4286–4300), its parallax at a held full draw within `camTau` 0.05 s (l. 4298); its cap adds the player's own look rate (l. 4360, the rate from `camPitch` / `camYaw` l. 4150); its rate limit is the aim weight's share only (l. 4344); its share ramps in over `tRamp` 0.02–0.2 rad (l. 4046); A16's elbow cap read in the aim frame, R52's (l. 5031); at a held full draw while the camera pitches, the arm's and the elbow's limiters carry last step's arm with the chest (l. 5243, l. 5511) | Camera cells (`F3`, 2/4/8 rad/s pitch, 3/6/10 rad/s yaw; standing, jog, crouched): knuckle ≤ 0.0577 m in 11 of 16 cells; 0.062–0.115 m at the 8 rad/s sweeps in the crouched −0.55 / 0 / 0.75 / 1.02 cells and the −0.55 jog (combat's 0.5 m bow flip, §6 / §7); forearm at home 18.5–24.0° (1.02 jog 31.3°), over 20° in 14 of 16 (judge: 105.8°); held still 0.2 18.4° (was 25.7–28.2°). Diag flick 1.0 → −1.0 at 8 rad/s: knuckle ≤ 0.054 m (judge 0.194). Film `V-draw-camera-sweep` (`F3`, read): knuckle 0.045–0.046 m, forearm 14.0–20.7°, fist at the cheek in both views, the arrow where the view looks |
+| 4 | `_mlHush` hid a lance swing that still fired and resolved | A held LMB read as a spear press through a roll, and from RMB up at full draw | `_mlHush` deleted (`update` l. 2219, melee's line as on main); R63 (a), `melee.js` l. 1512–1519 (init l. 559): an LMB down when a roll begins, or while RMB is held, is the bow's until released — no charge, no swing, no strike | Matrix spear clause, every aim cell, `F1`–`F3`: 0 steps charging or swinging, 0 strikes resolved, lance never posed (`spearCells` 0); head clauses graded through `cancelHeld` (`F3` skull ≤ −0.0285 m, nape ≤ −0.0125 m). Film `V-draw-dodge-aim` re-filmed (`F3`) and read: the bow in front after the roll, the lance on her back, no swing; the draw at 0.92 with the knuckle 0.046 m |
+| 5 | Lowering the crouched aim snapped her head ~5.5 cm | The crouch-aim pose went out with the aim weight (13/s), the trunk's unfold capped at 3 × the aim weight, the bent T out at 5 rad/s and the aim weight's first step took a fifth of the hip turn, the blade and the head's counter-turn; after the lower, a crouched backpedal's conform let go 0.04–0.07 m in a step | The pose's way out on its own ramp (`_caPoseW` l. 2155); the trunk (`_aimTrunk` l. 3863, its weight l. 3889–3891) and the T (`crouchOut`, the layer's tail l. 2169–2180) out on the same; crouched the aim weight goes out ≤ `crouchAim.outRate` 2/s and in at 13 − 7.5 × crouch (l. 1655); `rampS` 0.8, a crouch toggled under the aim ≤ 1.8/s (`ubc.js` l. 286); the conform's flips under the governor | **A-draw-elbow-level PASS** (`F3`): crouched rows every step ≤ 0.0287 m (RMB up ≤ 0.0222, re-aim ≤ 0.0279, both-button cancel ≤ 0.0287, stand / crouch toggles ≤ 0.0274, loose ≤ 0.0241; judge 0.0513–0.0555); −1.15 crouched raise 0.0248 (F2 0.0301). Matrix crouched aim cells: −1.15 0.0284 (F2's re-entries 0.12 gone), 0 0.0271, 0.75 0.0292; −0.55 0.0327 (after the drawn dodge, RMB up) and 1.02 0.0301 (raise) fail (§6) |
+| 6 | Strafing right under the aim, 6–7 cm whole-body steps | The ground conform's pelvis clamp: in double support the yawed strafe-right stride flags a foot planted 0.15–0.18 m off the ground, the clamp sinks the hips onto it and lets go 0.03–0.07 m in a step when the flag flips | The governor (l. 2699–2734) holds the pelvis's step to `govM` 0.026 m per 1/60 s in character space and against her root's step in the world whenever she aims or crouches, the legs re-solved to the planted ankles; the matrix grades character space on every step outside the roll (the 'body' exemption gone), the arm held to `armStepChar` on whole-body steps (`armFlow.bodyChar`, l. 5258) | Diag aim strafe right 0.75: pelvis ≤ 0.026 m per 1/60 s (judge 0.057–0.066, d1 0.0415). Matrix strafe cells (`F3`): arm travel ≤ 0.0556 m in character space on every step outside the roll (no exemption); strafe-left cells pass; strafe-right head steps 0.030–0.044 m with the bow up at a cancel's first step, a loose, a crouch toggled (−0.55, 0, 0.75, 1.02): fail, open (§6); −1.15 strafe right passes; the raise / lower out of a sideways run 0.036–0.059 m, printed |
 
 ### T5.1 The gates (`tools/gates.r5.hero-body.mjs`)
 
@@ -124,8 +125,34 @@ the crown, the knuckle ≤ 0.0506 m at full draw, the spear clause clean; 8 aim 
 the 1.02 jog) and, in the crouched 0 and 1.02 cells, the knuckle (0.11 m) where a fast sweep to the down clamp brings the bow's
 hand inside combat's 0.5 m flip.
 
-`F3` (final code: the governor's two bounds, the bow's node for combat's flip, the elbow carried with the chest at a held
-full draw, the crouched in-rate, the wrist graded once the draw is home): F3_RESULTS
+`F3` (final code: the governor's two bounds, the elbow carried with the chest at a held full draw, the crouched in-rate 13 −
+7.5 × crouch, the look rate read from the player's `camPitch` / `camYaw` (the camera's own direction counted a crouched
+re-aim's framing change as a 3 rad/s turn: the T jumped, the −1.15 crouched re-aim's head 0.0485 m in `F3`'s diag); the wrist
+graded once the draw is home. A prediction of combat's flip from the bow's own node was tried and reverted: in `F3`'s diag it
+put the crouched 0 sweep's knuckle at 0.445 m, the arrow 43° off the ray). The literal lane command, 71 rows: **49 PASS · 2 FAIL
+· 20 NEEDS-JUDGE**. Every row that passed in `F2` passes; A-draw-elbow-level and A-dodge-exit-continuity now PASS (above). The
+FAILs: A31c (listed, R36 / R51) and A-draw-arm-continuity. Global items (`F3`): **A1 PASS** (state playing); **A20b PASS** (0
+system errors, 0 hook errors, 361 frames); **A90 PASS** (heap −2.9 %, geometries +16, textures −3, objects −35, 30 kills);
+**A90b PASS** (0 offenders, 30 kills).
+
+A-draw-arm-continuity (`F3`, 725 s): every clause the Nov 3 row graded holds in all 25 aim cells — travel ≤ 0.0556 m in
+character space and ≤ 0.051 m against the shoulder on every step outside the roll, the hand in front of the skull (≤ −0.0285
+m) and the nape (≤ −0.0125 m) and under the crown, the knuckle ≤ 0.0507 m at full draw, the spear clause clean (0 cells). 6 aim
+cells fail on the new body clause only: the head 0.0301–0.0439 m in a step (strafe right at −0.55, 0, 0.75, 1.02 at a cancel's
+first step, a loose, a crouch toggle; crouched −0.55 0.0327, crouched 1.02 0.0301; F2: 8 cells, the −1.15 crouched re-entries
+0.123 m now 0.0284). The 16 camera cells: 2 pass (−1.15 standing and crouched); 14 fail on the forearm (20.0–24.0° while the
+camera moves, 31.3° at the 1.02 jog); five of them also on the knuckle at the 8 rad/s sweeps (−0.55 jog 0.066; crouched −0.55
+0.063, 0 0.081, 0.75 0.062, 1.02 0.115: the flip); the wrist (graded with the draw home and the camera not pitching) reads
+0.129–0.165 m in the crouched 0 cell and 0.185 m in the crouched 1.02 cell on the steps after a sweep stops (the flip), and
+0.100–0.118 m on the first steps of the 8 rad/s sweeps in the 0.2 / 1.02 standing and 1.02 jog cells. Body steps in the camera cells ≤ 0.0316 m (1.02 crouched, the draw).
+
+Films read (`F3`): `V-draw-camera-sweep`: the 6 rad/s turn at 0.75 and the step after it stops, the 4 rad/s sweep, the 8 rad/s
+flick, in the game camera and from her right: knuckle 0.045–0.046 m, forearm 14.0–20.7° (the flick's frame 20.7°), the fist at
+the cheek, the arrow where the view looks. `V-draw-dodge-aim`: the roll, the re-draw from 0 to 0.92 with the bow in front of her
+and the lance on her back the whole way, no swing; knuckle 0.046 m at 0.92 (forearm 24.7° on the ramp). `V-crouched-draw`:
+the −0.4 raise and the 0 ramp with the hand in front of the face and chest; full draws at 0 and 0.75: fist at the cheek,
+knuckle 0.046 m, forearm 18.2 / 15.4°. `V-draw-clamps`: 1.02 and −1.15, standing and strafing left: knuckle 0.046 m, forearm
+15.3–17.6°.
 
 Films read (`F2`, against their criteria): `V-draw-camera-sweep` (above), `V-draw-dodge-aim` (above), `V-crouched-draw` (the
 −0.4 raise and the 0 ramp with the hand in front of the face and chest; full draws at 0 and 0.75: fist at the cheek, knuckle
@@ -133,8 +160,8 @@ Films read (`F2`, against their criteria): `V-draw-camera-sweep` (above), `V-dra
 fist at the cheek, knuckle 0.046 m, forearm 14.1–17.7°; in the game camera at −1.15 only the sky and the bow, A31e's
 contract). Advisory: the R29 judge grades the visual rows.
 
-*Thin margins, stated:* A-dodge-exit-continuity's rows sit at the governor's 0.026 m against 0.03; the forearm while the camera
-moves 20.0–24.2° against 20 (failing); A-draw-elbow-level's crouched −1.15 raise 0.0301 against 0.03 (`F2`).
+*Thin margins, stated:* A-dodge-exit-continuity's rows sit at the governor's 0.026 m against 0.03; A-draw-elbow-level's
+crouched way out 0.0287 against 0.03; the forearm while the camera moves 20.0–24.0° against 20 (failing).
 
 *Not done this round, though R63 / R64 name hero-body (outside the six computed findings):* R63 (c), the wrap tail back to
 ≤ 0.49 m with `A-tail-legible` met against the stowed bow's line; R63 (d), `rootMargin` 0.015 / `rootGive` 0.012 restored and
@@ -1704,20 +1731,23 @@ exactly these overlays; standalone:
 
 - **Targeted fix round 2 after the merge (Nov 6), open (§T5.2).**
   - **The forearm while the camera moves.** Held still the form keeps 14–19° at every pitch (0.2 now 18.4°); while the
-    camera turns or sweeps it reads 20.0–24.2° off the real arrow (30.5° in the 1.02 jog cell), against finding 3's 20°.
+    camera turns or sweeps it reads 20.0–24.0° off the real arrow (31.3° in the 1.02 jog cell, `F3`), against finding 3's 20°.
     The arm and the elbow now ride the chest while the camera pitches; the remaining lag is the elbow's own form scan.
   - **The draw ramp's last 0.08.** At drawS 0.90–0.98 the string hand is still 0.01–0.05 m short of the anchor and the
     elbow cannot stand on the arrow line under A16's cap: the forearm reads 23–38°, the wrist 0.09–0.10 m from the nock for
     up to 4 steps. The camera cells grade the forearm and the wrist once the draw is home (≥ 0.98) and print the ramp.
   - **Combat's bow flip at the down clamp.** `combat.js` turns the bow onto the camera's direction (17° in one step) when
     its hand comes inside 0.5 m of the ground hit. A fast sweep to the clamp crouched outruns the stand-up that holds the
-    hand at `crouchAim.nearBow` (its pace is the body-step bar's), and the knuckle reads 0.11 m for ~4 steps. The animator
-    now reads the flip from the bow's own node; the fix that removes it is armory's (§7, a blend).
-  - **Head steps in the strafe cells.** The pelvis is governed (≤ 0.026 m a step); the head still steps 0.031–0.037 m with
-    the bow up at a crouch toggled while strafing, a re-nock and a cancel's first step, and 0.032–0.058 m on the raise and
-    lower out of a sideways run (her heading swings 90° onto the camera and the run's pose hands over to the aim walk's).
-  - **The −1.15 crouched aim cell's re-entries**: the head 0.05–0.12 m in the first step of the cell's raises and re-aims,
-    seen only in the matrix's order of cells (a fresh crouched raise at −1.15 reads 0.028 m). Not found this round.
+    hand at `crouchAim.nearBow` (its pace is the body-step bar's), and the knuckle reads 0.06–0.115 m and the wrist
+    0.13–0.185 m for ~4 steps at the 8 rad/s sweeps (`F3`). Predicting the flip from the bow's own node made it worse
+    (0.445 m) and was reverted; the fix that removes it is armory's (§7, a blend).
+  - **Head steps in the strafe cells.** The pelvis is governed (≤ 0.026 m a step); the head still steps 0.030–0.044 m with
+    the bow up in the strafe-right cells at a cancel's first step, a loose and a crouch toggled while strafing (`F3`), and
+    0.036–0.059 m on the raise and lower out of a sideways run (her heading swings 90° onto the camera and the run's pose
+    hands over to the aim walk's; printed). The two crouched aim cells at −0.55 (0.0327, after the drawn dodge) and 1.02
+    (0.0301, the raise) are the same clause.
+  - **The −1.15 crouched aim cell's re-entries** (F2: the head 0.05–0.12 m in the first step of the cell's raises and
+    re-aims): gone in `F3` (0.0284 m), with the look rate read from the player's input.
   - **The jump's take-off** at full draw moves the pelvis 0.10 m a step in character space (in the air, against a root
     rising with the jump: A-dodge-exit-continuity's world bar holds, 0.017 m).
 
