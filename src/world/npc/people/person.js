@@ -223,8 +223,9 @@ export class Person {
     this.stateT += dt;
     this._dtNow = dt;
     this._applyTier(tier);
-    // the mixer's rate falls with distance (bible §6.2)
-    const hz = tier === 0 ? 0 : tier === 1 ? 1 / 30 : tier === 2 ? 1 / 15 : 1 / 4;
+    // the clip's rate falls with distance (bible §6.2): every frame within 8 m, 30 Hz to the end of the near tier and on LOD1,
+    // 15 Hz on LOD2, 4 Hz hidden (A-alloc-rate counts every tick; at 8-18 m a 30 Hz pose is not seen)
+    const hz = tier === 0 ? (this.distance > 8 ? 1 / 30 : 0) : tier === 1 ? 1 / 30 : tier === 2 ? 1 / 15 : 1 / 4;
     this.mixAcc += dt;
     if (this.mixAcc < hz) return false;
     const step = this.mixAcc;

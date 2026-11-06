@@ -265,7 +265,7 @@ export class PeopleSystem {
       p.setCasting(tier >= 0 && cast < MAX_CAST && p.distance < MID_R && ++cast > 0);
       if (tier === 0 && moved) {
         p.root.updateWorldMatrix(true, true);
-        p.chains.dt = dt;
+        p.chains.dt = p._stepNow;   // the pose's own tick (every frame near, 30 Hz past 8 m), so the cloth keeps time
         p.chains.update(wind);
       }
     }
