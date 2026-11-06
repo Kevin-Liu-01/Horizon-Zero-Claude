@@ -5,7 +5,19 @@ Port 5259, worktree `~/.calima-r5/trees/world-ground`, Nov 3–6 2026. Plan sect
 removal grant), §3.1 (W1 exit), §3.2 (contracts), §4 (budgets), §6 (delete rows), §8.3 (R48, R49, R54–R58),
 §9 (the world-ground block and the global list). Numbers and the gate table are in §4.
 
-<!-- STATUS -->
+**Status (Nov 6, end of this run).** The whole island stands at blockout on a pool-built, byte-identical 1024 m
+bake (build 324–498 ms, 0.70–0.75 µs/vertex); extents follow `WORLD_SIZE` and REST is Brea's cistern at Saltrow
+(`A-reach-all-sites`, `A-single-rest`, `A-island-boundary`, `A-play-extent` PASS); the Pans are built to
+fidelity: a 94-cell salt field with stone dykes, the red tuff ring and the Glass, black sand, layered surf, the
+sister isles and the offing. Lane block in the final full run `run-j` and its re-run `run-k`: every action row
+of the W1 block PASSES except `A-anti-tile` and `A-skirt-masked` (re-staged at their subject, §4.3, result in
+`run-l`) and `A108` on real content (§6); the quiet-box GPU terms are over their bars (§6). The global list:
+A1, A20b, the A90 family, `A90-abs`, `A-vram-ledger`, `A-ID-ip-assets-gone`, `A-licence-manifest`,
+`A-assets-tracked`, both horizon-term lints PASS; `A21` FAILS on GPU time (draws and triangles PASS);
+`A-alloc-rate` FAILS on other owners' baselines and on `getHeight`'s per-function bar (§6); `A-carried-suite`
+and `A-port-guard` are the orchestrator's (PENDING). Ten visual rows are filmed for the R29 judge; my reading is
+§5. The title frame is now the Pans: no Round-4 spire or prop is anywhere in view.
+
 
 ## 1. What this lane built
 
@@ -371,4 +383,17 @@ Filmed at 1600×900 and read frame by frame against `reference/r5/gates-perf/sal
   the Pans (salt grid, the Glass, the tuff ring, the sister isle) under the calima stand-in; no Round-4 spire
   or prop is in it (`A-round4-gone-from-view`).
 - **engine follow-up (§11)**: the Pans vista's GPU time (§4), and A108 on real content (§4).
+
+## 8. Files, processes, scratch
+
+Files this lane changed against main (the orchestrator's WIP checkpoints hold them): `src/world/terrain.js`,
+`src/world/water.js`, `src/world/vegetation.js`, `src/world/island/{recipe,bake,bake.worker,pool,scatter,
+groundShader,sites,extent,layers}.js`, `src/main.js` (the `?poc=biome` block, removal only, §1.2 grant),
+`tools/build/ground/{gen-ground-layers,island-check}.mjs`, `public/textures/ground/*` (rebuilt: salt grit and
+rake), `public/LICENSES.json` (ground-layer rows through `tools/licences/add.mjs`), `public/textures/r5-poc/**`
+and `tools/r5-poc/poc-biome.js` (deleted), `tools/gates.r5.world-ground.mjs`, `reference/r5/world-ground/MANIFEST.md`,
+this report. Runs: `run-h` (diagnostic), `run-i` and `run-j` (full lane + global list + films), `run-k`
+(re-run), `run-l` (two re-staged rows), all on port 5259 under the slot protocol, `nice -n 10`. Scratch:
+`scratchpad/r5/world-ground/` (frames under `run-*/frames`, the film rig `film.gates.mjs`, `shots.json`). The
+lane's Vite and every Chrome are stopped at the end; 0 Chrome profiles are left.
 
