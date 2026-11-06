@@ -270,6 +270,12 @@ const READY = {
  */
 /** The left forearm's axis off her pelvis->neck axis (a forearm is 0.05 thick, her belly 0.12 out). */
 const LEFT_FORE_CLEAR = 0.13;
+/** The closed loop after the left solve (see `_solveLeft`): past this far off the haft line the palm
+ *  slides back along it by 1.5x the excess; closer than this to the spine axis the forearm slides out
+ *  toward the blade, up to this much at 0.04 m inside it (A101 bar 0.05, A104 bar 0.10). */
+const LEFT_PALM_SLIP = 0.015;
+const LEFT_FORE_KEEP = 0.125;
+const LEFT_FORE_SLIDE = 0.06;
 /** How much of the trunk's turn the head keeps, and how much of its lean the
  *  neck and skull take out (see `update`). */
 const HEAD_LEAD = 0.14;
@@ -293,8 +299,11 @@ const STANCE = {
   ready: { thighL: -0.50, thighR: 0.14, calfL: 0.66, calfR: 0.30, footL: -0.16, footR: -0.30, abd: 0.15, dx: 0.0, dy: -0.105 },
   'light-1': { thighL: -0.62, thighR: 0.26, calfL: 0.74, calfR: 0.14, footL: -0.12, footR: -0.26, abd: 0.11, dx: 0.02, dy: -0.125 },
   'light-2': { thighL: -0.30, thighR: -0.42, calfL: 0.46, calfR: 0.62, footL: -0.16, footR: -0.20, abd: 0.20, dx: -0.09, dy: -0.15 },
-  'light-3': { thighL: -0.66, thighR: 0.30, calfL: 0.70, calfR: 0.10, footL: -0.04, footR: -0.26, abd: 0.11, dx: 0.05, dy: -0.135 },
-  heavy: { thighL: -0.78, thighR: 0.28, calfL: 1.02, calfR: 0.34, footL: -0.24, footR: -0.40, abd: 0.18, dx: -0.03, dy: -0.235 },
+  'light-3': { thighL: -0.66, thighR: 0.30, calfL: 0.70, calfR: 0.10, footL: -0.04, footR: -0.26, abd: 0.11, dx: 0.05, dy: -0.12 },
+  /* the heavy sinks deepest (V47: "a low committed drive with the hips lowest"; A102 pins it 0.04 m under
+   * every light): r1/r2b read its pinned hips 0.643 / 0.669 m against light-3's 0.722 / 0.701, so the
+   * margin was the run's noise. Both knees bend further and the long stab stands 0.015 m taller. */
+  heavy: { thighL: -0.82, thighR: 0.30, calfL: 1.08, calfR: 0.40, footL: -0.26, footR: -0.43, abd: 0.18, dx: -0.03, dy: -0.26 },
 };
 /** How much of a beat's stance is on at clip progress `cu` (0 cock .. 1 end). */
 const STANCE_ENV = (cu) => (
@@ -3212,6 +3221,53 @@ export class MeleeLayer {
     D.lhOnNow = sOn;
     _d.copy(_grip).addScaledVector(_a, sOn);          // the palm goal
     _eT.copy(_lh);                                    // the free goal (world of the blend)
+    this._leftPasses(w, on);
+    /* CLOSED LOOP ON A TWO-HANDED FRAME (melee W1, Nov 6). The reach sphere above
+     * is an estimate (the palm sits off the wrist, not along the arm), and the
+     * elbow-out pass turns the elbow but cannot move the hand: measured on the
+     * drawn pose, light-2's contact left the palm 0.058-0.061 m off the haft (A101,
+     * bar 0.05) and light-1's return to guard laid the left forearm 0.077 m from
+     * the spine (A104, bar 0.10), the same frames in two runs. So the solved arm is
+     * read back: a palm off the haft LINE slides the hand back along it toward the
+     * right hand by that much; a forearm on the belly slides it out toward the
+     * blade, within reach. At most two corrections; no allocation. */
+    if (on >= 0.99) {
+      for (let fix = 0; fix < 2; fix++) {
+        an._charOf(b.handL.bone, _c);
+        an._liveW(b.handL.bone, _q1);
+        _b.copy(this.palmOffLL).applyQuaternion(_q1).add(_c);      // the palm
+        _b.sub(_grip);
+        const along = _b.dot(_a);
+        _b.addScaledVector(_a, -along);
+        const off = _b.length();                                   // palm to the haft line
+        an._charOf(b.loArmL.bone, _lbE); an._charOf(b.handL.bone, _lbH);
+        an._charOf(b.pelvis.bone, _lbA); an._charOf(b.neck1.bone, _lbB);
+        segSegN(_lbE, _lbH, _lbA, _lbB); const fs = _sgNum[0];   // forearm to the spine axis
+        /* both slides grow from zero at their thresholds, so the hand never jumps
+         * along the haft from one frame to the next as a reading crosses one */
+        let next = sOn;
+        if (off > LEFT_PALM_SLIP) next -= (off - LEFT_PALM_SLIP) * 1.5;
+        else if (fs < LEFT_FORE_KEEP) next += LEFT_FORE_SLIDE * Math.min(1, (LEFT_FORE_KEEP - fs) / 0.04);
+        if (next > sFar) next = sFar;
+        if (next < LH_ON_MIN) next = LH_ON_MIN;
+        if (Math.abs(next - sOn) < 0.004) break;
+        sOn = next;
+        D.lhOnNow = sOn;
+        _d.copy(_grip).addScaledVector(_a, sOn);
+        this._leftPasses(w, on);
+      }
+    }
+    /* one last small correction: whatever the turn moved the palm by */
+    an._charOf(b.handL.bone, _c);
+    an._liveW(b.handL.bone, _q1);
+    _b.copy(this.palmOffLL).applyQuaternion(_q1).add(_c);
+    D.lhPalmErr = _b.distanceTo(_d);
+  }
+
+  /** The left arm onto the palm goal `_d` (char; `_eT` the free goal, `_a` the haft): three IK passes, the
+   *  elbow turned off the belly between them, the knuckle line laid along the haft. Was `_solveLeft`'s loop. */
+  _leftPasses(w, on) {
+    const an = this.an, b = an.b;
     for (let pass = 0; pass < 3; pass++) {
       an._liveW(b.handL.bone, _q1);
       _c.copy(this.palmOffLL).applyQuaternion(_q1);
@@ -3230,11 +3286,6 @@ export class MeleeLayer {
       if (k < 0.999) _q2.slerp(_qi(), 1 - k);
       an._rotQL(b.handL, _q2);
     }
-    /* one last small correction: whatever the turn moved the palm by */
-    an._charOf(b.handL.bone, _c);
-    an._liveW(b.handL.bone, _q1);
-    _b.copy(this.palmOffLL).applyQuaternion(_q1).add(_c);
-    D.lhPalmErr = _b.distanceTo(_d);
   }
 
   /**
