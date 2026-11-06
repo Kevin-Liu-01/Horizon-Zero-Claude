@@ -60,6 +60,7 @@ export class PeopleSystem {
     this.windFallback = { x: -3.9, z: 3.9, gust: 0.35, flutter: 0.32 };
     this._forced = new Map();
     this._streamT = 2;
+    this._dt = 0;
     this._loading = false;
     // the fetches start with the camp, so the group stands before the game's first frame on any box that can run it
     if (this.autoStage && ctx.terrain) {
@@ -188,9 +189,10 @@ export class PeopleSystem {
     return list;
   }
 
-  _beat(p, dt) {
+  _beat(p) {
+    const dt = this._dt;
     if (p.frozen || p.walking) return;
-    p._beatT = (p._beatT || 0) + dt;
+    p._beatT += dt;
     if (p._beatT < (p._beatEnd || 8)) return;
     const S = p.script;
     if (S?.walker && S.stops.length) {
@@ -221,6 +223,8 @@ export class PeopleSystem {
   }
 
   update(dt, t) {
+    // (the frame's dt rides in a field the people read: a number passed to a call that is not inlined is boxed, A-alloc-rate)
+    this._dt = dt;
     this._stream(dt);
     const list = this.order;
     const n = list.length;
@@ -256,12 +260,13 @@ export class PeopleSystem {
         else tier = 2;
       }
       if (tier === 0) nearCount++;
-      this._beat(p, dt);
-      const moved = p.update(dt, tier, wind);
+      this._beat(p);
+      const moved = p.update(tier, wind);
       p.setCasting(tier >= 0 && cast < MAX_CAST && p.distance < MID_R && ++cast > 0);
       if (tier === 0 && moved) {
         p.root.updateWorldMatrix(true, true);
-        p.chains.update(dt, wind);
+        p.chains.dt = dt;
+        p.chains.update(wind);
       }
     }
     void t;

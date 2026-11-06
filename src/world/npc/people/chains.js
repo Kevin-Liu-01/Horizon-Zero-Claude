@@ -60,6 +60,7 @@ export class PersonChains {
     }
     this.acc = 0;
     this.t = 0;
+    this.dt = 0;
     this.active = false;
     // the legs a hanging cloth must go round: thigh -> knee -> ankle of each side, world, once per update
     this.legBones = ['thigh_l', 'calf_l', 'foot_l', 'thigh_r', 'calf_r', 'foot_r'].map((n) => bones[n] || null);
@@ -94,7 +95,9 @@ export class PersonChains {
    * After the mixer, with the person's world matrices current up to the chain roots.
    * `wind` { x, z, gust, flutter } (m/s, the hero animator's) or null.
    */
-  update(dt, wind) {
+  /** `this.dt` is the tick's length, set by the caller (a field: no boxed number per call). */
+  update(wind) {
+    const dt = this.dt;
     this.active = true;
     this.acc += Math.min(dt, 0.05);
     let steps = 0;

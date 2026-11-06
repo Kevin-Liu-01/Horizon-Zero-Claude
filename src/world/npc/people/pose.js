@@ -36,6 +36,8 @@ export class PosePlayer {
     this.current = null;
     this.fade = 0;
     this.fadeDur = 0;
+    /** the tick's length (s): set before `update()` (a field, not an argument: no boxed number per call) */
+    this.step = 0;
   }
 
   /** A clip bound to these bones (once per clip per person). The object is also the "playing" record: `time`, `getClip()`. */
@@ -77,8 +79,9 @@ export class PosePlayer {
     return b;
   }
 
-  /** Advance the clip by `step` s (scaled by its time scale), blend, and write every bone. */
-  update(step) {
+  /** Advance the clip by `this.step` s (scaled by its time scale), blend, and write every bone. */
+  update() {
+    const step = this.step;
     const b = this.current;
     if (!b) return;
     const D = b.duration;

@@ -17,7 +17,6 @@ import { PosePlayer } from './pose.js';
 const FADE_T = 0.32;
 const TAU = Math.PI * 2;
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
-const _ax = new THREE.Vector3(1, 0, 0), _up = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _sc = new THREE.Vector3();
 const _mq = new THREE.Quaternion();
 /** Head turn toward the player (rad, m): a person near her looks up from what they are doing. */
@@ -34,15 +33,6 @@ const LIFT = {
 };
 const LIFT_RATE = 3;
 const _sphere = new THREE.Sphere(new THREE.Vector3(0, 0.95, 0), 1.75);
-const wrapPi = (a) => { while (a > Math.PI) a -= TAU; while (a < -Math.PI) a += TAU; return a; };
-
-/** The stride table at a clip time. */
-function gaitAt(g, t) {
-  const n = g.frames;
-  const f = Math.max(0, Math.min(n - 1e-4, t * n / g.dur));
-  const i = Math.floor(f);
-  return g.cum[i] + (g.cum[i + 1] - g.cum[i]) * (f - i);
-}
 
 /** No main-pass draw: count -1 makes three return before gl.drawElements; the shadow pass (which skips these hooks) sees the full range. */
 function skipMain(geo) {
@@ -124,6 +114,10 @@ export class Person {
     this.clipCount = new Set();
     this.mixAcc = 0;
     this.mixerClock = 0;
+    this._dtNow = 0;
+    this._stepNow = 0;
+    this._beatT = 0;
+    this._beatEnd = 8;
     this.distance = 0;
     this.walking = null;     // { clip, gait, ts, lean, swing }
     this.walkTarget = null;
@@ -223,37 +217,48 @@ export class Person {
     this.speed = 0;
   }
 
-  /** The stride table: distance a planted foot carries the body between two clip times (raw metres). */
-  _gaitDist(g, a, b) {
-    const ca = gaitAt(g, a), cb = gaitAt(g, b);
-    const d = b >= a ? cb - ca : (g.dist - ca) + cb;
-    return d < 0 ? 0 : d;
-  }
-
-  update(dt, tier, wind) {
-    if (this.frozen) dt = 0;
+  /** One tick (the system's `_dt`): tier, clip, walk, overlays. Returns whether the pose moved this tick. */
+  update(tier, wind) {
+    const dt = this.frozen ? 0 : this.sys._dt;
     this.stateT += dt;
-    this._applyTier(tier, dt);
+    this._dtNow = dt;
+    this._applyTier(tier);
     // the mixer's rate falls with distance (bible §6.2)
     const hz = tier === 0 ? 0 : tier === 1 ? 1 / 30 : tier === 2 ? 1 / 15 : 1 / 4;
     this.mixAcc += dt;
     if (this.mixAcc < hz) return false;
     const step = this.mixAcc;
     this.mixAcc = 0;
+    this._stepNow = step;
     const a = this.pose.current;
     const t0 = a ? a.time : 0;
-    this.pose.update(step);
+    this.pose.step = step;
+    this.pose.update();
     this.mixerClock += step;
     if (this.walking && a) {
       const g = this.walking.gait;
       const t1 = a.time;
-      let d = g ? this._gaitDist(g, t0, t1) * this.scale : 0.9 * step * this.walking.ts;
+      let d = 0.9 * step * this.walking.ts;
+      if (g) {
+        // the stride table between the two clip times (inline: no number-argument calls in the tick)
+        const n = g.frames, cum = g.cum;
+        let fa = t0 * n / g.dur, fb = t1 * n / g.dur;
+        if (fa < 0) fa = 0; else if (fa > n - 1e-4) fa = n - 1e-4;
+        if (fb < 0) fb = 0; else if (fb > n - 1e-4) fb = n - 1e-4;
+        const ia = Math.floor(fa), ib = Math.floor(fb);
+        const ca = cum[ia] + (cum[ia + 1] - cum[ia]) * (fa - ia), cb = cum[ib] + (cum[ib + 1] - cum[ib]) * (fb - ib);
+        let dd = t1 >= t0 ? cb - ca : (g.dist - ca) + cb;
+        if (dd < 0) dd = 0;
+        d = dd * this.scale;
+      }
       this.speed = step > 0 ? d / step : 0;
       const T = this.walkTarget;
       if (T) {
         const dx = T.x - this.group.position.x, dz = T.z - this.group.position.z;
         const want = Math.atan2(dx, dz);
-        const turn = wrapPi(want - this.yaw);
+        let turn = want - this.yaw;
+        while (turn > Math.PI) turn -= TAU;
+        while (turn < -Math.PI) turn += TAU;
         const maxTurn = 1.5 * step;
         this.yaw += Math.max(-maxTurn, Math.min(maxTurn, turn));
         this.group.rotation.y = this.yaw;
@@ -276,8 +281,8 @@ export class Person {
       }
     }
     this._overlay();
-    if (tier <= 1 && tier >= 0) this._carry(step);
-    if (tier === 0) this._look(step);
+    if (tier <= 1 && tier >= 0) this._carry();
+    if (tier === 0) this._look();
     return true;
   }
 
@@ -285,14 +290,17 @@ export class Person {
    * The head turns toward the player when she is close and in front, split between neck and head,
    * written over the clip. World-axis yaw in each bone's parent frame, from last frame's matrices (no allocation).
    */
-  _look(dt) {
+  _look() {
+    const dt = this._stepNow;
     const pl = this.sys.ctx.player;
     let want = 0;
     if (pl && !this.frozen && this.look) {
       const dx = pl.position.x - this.group.position.x, dz = pl.position.z - this.group.position.z;
       const d2 = dx * dx + dz * dz;
       if (d2 < LOOK_R * LOOK_R && d2 > 0.25) {
-        const off = wrapPi(Math.atan2(dx, dz) - this.yaw);
+        let off = Math.atan2(dx, dz) - this.yaw;
+        while (off > Math.PI) off -= TAU;
+        while (off < -Math.PI) off += TAU;
         if (Math.abs(off) < 1.9) want = Math.max(-LOOK_MAX, Math.min(LOOK_MAX, off));
       }
     }
@@ -310,7 +318,8 @@ export class Person {
   }
 
   /** The head's carriage: a pitch about the person's own lateral axis, split between neck and head, over the clip (no allocation). */
-  _carry(dt) {
+  _carry() {
+    const dt = this._stepNow;
     this.lift += (this.liftTarget - this.lift) * Math.min(1, LIFT_RATE * dt);
     if (Math.abs(this.lift) < 0.002 || !this.neck || !this.head) return;
     // her right in the world: (-cos yaw, 0, sin yaw); a positive turn about it raises the face
@@ -343,7 +352,8 @@ export class Person {
     }
   }
 
-  _applyTier(tier, dt) {
+  _applyTier(tier) {
+    const dt = this._dtNow;
     if (tier !== this.tier) {
       const from = this.tier;
       this.fromTier = from;
