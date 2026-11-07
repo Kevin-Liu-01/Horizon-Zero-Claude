@@ -39,15 +39,21 @@ import { CHAINS } from './brea.mjs';
 import { Field, V, clamp, collapseShort, compact, conform, cutTris, emptyPart, mix, partFromPrim, recomputeNormals, smoothSkin, sstep } from './armor/lib/part.mjs';
 import { Trim, fbm, loadRaw, packAtlas, paintAtlas } from './armor/lib/atlas.mjs';
 import { TAU, beltRing, boxInto, limbStrap, orientOut, ring, ripple, skirtPanels, strapAlong } from './armor/lib/garment.mjs';
-import { bindingAlong, draftSmock, drapeTable, openEdges, radialTable, roundRect, softSheet, tableAt, tubeInto } from './armor/lib/smock.mjs';
-import { outfitDoc, writeOutfit } from './armor/lib/output.mjs';
+import { bindingOn, draftSmock, drapeTable, openEdges, radialTable, roundRect, softSheet, tableAt, tubeInto } from './armor/lib/smock.mjs';
+import { addSocketJoint, outfitDoc, writeOutfit } from './armor/lib/output.mjs';
 import { romFit } from './armor/lib/romfit.mjs';
-import { sashKnot, sashTail } from './armor/lib/sash.mjs';
+import { sashKnotTied, sashTail } from './armor/lib/sash.mjs';
 import { bakeVertexAO } from './armor/lib/vertexao.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/hero/outfit-pan-1.glb'];
 const RECIPE = 'tools/build/recipes/outfit-pan-1.mjs';
+
+/**
+ * The sash tails' hang (fix round 1): the joint, and (filled by panBase) the knot and the left hip joint in bind space.
+ * Written into `extras.r5Outfit.sashSwing`; src/hero/outfit.js poses the joint (SashSwing).
+ */
+export const SASH_SWING = { joint: 'sash_swing', parent: 'pelvis', thighShare: 0.25, knot: null, hip: null };
 
 /** Bit of `_HIDEMASK` this set owns (brea.mjs computes it against `panBindTriangles`). */
 export const HIDE_BIT = 1;
@@ -553,7 +559,10 @@ export async function panBase(opt = {}) {
   // ---- the MCO pieces, re-cut and pushed out of THIS body
   // the bodice survives only as the linen under-tunic's stand collar and yoke: everything
   // the smock hangs over, kept so nothing shows the skin the body's hide bit culled
-  const underYoke = cutTris(partFromPrim(prim('smock'), 'underyoke', { axis: [0, 1, 0], density: 0.62, nScale: 0.3 }), (cx, cy, cz) => (cy > 1.462 && Math.abs(cx) < 0.1 && (cz > -0.07 || cy > 1.53)) || (cz > 0 && ((cy > 1.42 && Math.abs(cx) < 0.09) || (cy > 1.345 && Math.abs(cx) < 0.04))));
+  // (fix round 1, judges: "a see-through window between the neck and the stand collar": the back of the collar stood
+  // only above 1.53, and between it and the smock's back neckline (1.515) the skin the hide bit culls showed the world
+  // through her. The collar's back now comes down to 1.492, under the smock's neckline)
+  const underYoke = cutTris(partFromPrim(prim('smock'), 'underyoke', { axis: [0, 1, 0], density: 0.62, nScale: 0.3 }), (cx, cy, cz) => (cy > 1.462 && Math.abs(cx) < 0.1 && (cz > -0.07 || cy > 1.492)) || (cz > 0 && ((cy > 1.42 && Math.abs(cx) < 0.09) || (cy > 1.345 && Math.abs(cx) < 0.04))));
   conform(underYoke, body, { margin: () => 0.0085, smooth: 4 });
   recomputeNormals(underYoke);
   // the collar rides the trunk and eases onto the neck by height, not by whichever body vertex is nearest
@@ -706,11 +715,9 @@ export async function panBase(opt = {}) {
     const cy = run.reduce((s, q) => s + q.p[1], 0) / run.length, cx = run.reduce((s, q) => s + q.p[0], 0) / run.length;
     if (cy < 1.2) continue;     // the bottom row: under the belt
     if (Math.abs(cx) > 0.1) {
-      const c = [Math.sign(cx) * 0.19, ARMHOLE.y, ARMHOLE.z];
-      // (under the arm a rim point every few cm is plenty: the crease closes over it)
-      let lastU = -1e9;
-      const rim = run.filter((q, i) => { if (q.p[1] > 1.375) return i % 2 === 0; if (i - lastU < 4) return false; lastU = i; return true; });
-      bindingAlong(binds, rim, smockSkin, { rect: bindRect, closed: true, center: () => c, w: 0.0095, lift: 0.0026 });
+      // fix round 1 (judges: the purple "hook" over each shoulder): EVERY rim point, the strip snapped onto the cloth
+      // (armor/lib/smock.mjs bindingOn), no longer offset along the one-sided rim normals or chorded every 2nd / 4th point
+      bindingOn(binds, run, smockSkin, smockSkin, { rect: bindRect, w: 0.0088, lift: 0.0015, under: 0.35 });
       // the armhole's own linen, on the rim's points alone (no vertex that could end up inside her): raise the arm, and
       // what shows through the hole is the under-tunic, not the far side of the smock
       {
@@ -735,7 +742,7 @@ export async function panBase(opt = {}) {
     } else {
       // neckline and keyhole: the cloth lies away from the slit below the scoop, down and out above it
       const center = (q) => (q[1] < 1.43 && Math.abs(q[0]) < 0.03 ? [0, q[1], q[2]] : [0, 1.57, -0.02]);
-      bindingAlong(binds, run, smockSkin, { rect: bindRect, closed: true, center, w: 0.0095, lift: 0.0026 });
+      bindingOn(binds, run, smockSkin, smockSkin, { rect: bindRect, center, w: 0.0092, lift: 0.0016, smooth: 1 });
     }
   }
   // the skirt, then the under-tunic inside it: four panels, four slits, offset from each other
@@ -869,58 +876,53 @@ export async function panBase(opt = {}) {
     }
   }
 
-  // ---- sash knot + hanging end on dyn_sashEnd
+  // ---- sash knot + hanging ends, behind the left hip
   const sashJ = addChain(doc, CHAINS.sashEnd.names, CHAINS.sashEnd.points, CHAINS.sashEnd.parent);
   const pelvis = jointIndex(doc, 'pelvis');
+  // the tails' hang (fix round 1): a joint under the pelvis standing at the knot, posed per frame by src/hero/outfit.js
+  // (`SashSwing`): it carries a quarter of her left thigh's swing about the hip joint (what the tails' skin took from
+  // the thigh before) and a damped pendulum about the knot driven by her pelvis's motion, so the tails have secondary
+  // motion again. dyn_sashEnd's bones stand at the FRONT of the hip (brea.mjs), 24 cm from the knot behind it
   const g = newGeo();
   const lin = trim.rect('sash');
-  // the bones stay where brea.mjs put them; the cloth lies on the skirt that now covers them
-  const outOnSkirt = (q) => {
-    // (armory W1, Nov 6: turned round to the back of her left hip. At the side it hung exactly where her left hand
-    // carries the bow: the stave went through the knot and the tails at every step of a jog (A-variant-swap-matrix's
-    // held clause read 4.6 cm in a sprint, the knot alone was half of the outfit's penetration at idle), and her
-    // thigh came up through it in the lance's light attack. Behind the hip it is clear of the hand, the bow and the stride)
-    const th = Math.atan2(q[2] + 0.02, q[0]) - 1.35;
-    const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.2), Math.hypot(q[0], q[2] + 0.02)) + 0.015;
-    return [Math.cos(th) * rr, q[1], -0.02 + Math.sin(th) * rr];
-  };
-  const sashPts = CHAINS.sashEnd.points.map(outOnSkirt);
-  const k1 = sashPts[0];
-  const sashTh = Math.atan2(k1[2] + 0.02, k1[0]);
+  // (armory W1, Nov 6: turned round to the back of her left hip. At the side it hung exactly where her left hand
+  // carries the bow: the stave went through the knot and the tails at every step of a jog, and her thigh came up
+  // through it in the lance's light attack. Behind the hip it is clear of the hand, the bow and the stride)
+  const k0 = CHAINS.sashEnd.points[0];
+  const sashTh = Math.atan2(k0[2] + 0.02, k0[0]) - 1.35;
   const tang = [-Math.sin(sashTh), 0, Math.cos(sashTh)], outW = [Math.cos(sashTh), 0, Math.sin(sashTh)];
-  // armory W1: the knot and its tails as cloth (armor/lib/sash.mjs). They were a ball and two flat 3-column strips,
-  // which read as planks at her hip from every side and back view
-  const upW = [0, 1, 0];
-  // (compact: her left forearm sweeps past it in the lance's light attack)
-  appendGeo(g, sashKnot(V.add(k1, [0, 0.016, 0]), { side: tang, up: upW, out: outW }, { joint: pelvis, rect: lin, rx: 0.023, rz: 0.012, ringW: 0.028, ear: 0.027, earW: 0.019 }));
-  // the tail ends above the skirt's hem: a stride swings the skirt out and would swallow a longer one.
-  // (armory W1, Nov 6: on the pelvis, its lower half easing onto the thigh, as the second tail: dyn_sashEnd's bones
-  // stand at the FRONT of the hip, where brea.mjs put them, and a tail behind the hip skinned to them would swing
-  // round a pivot 24 cm away and leave its knot. The chain stays in the skeleton; see docs/ROUND5-ARMORY.md §5)
-  void sashJ;
-  const tail0 = g.pos.length / 3;
-  appendGeo(g, sashTail(sashPts.slice(0, 3), [pelvis, pelvis, joints.thigh_l], { along: 10, across: 6, width: (u) => 0.058 - 0.012 * u, side: tang, out: outW, rect: lin, uLen: 0.42, twist: 0.3 }));
-  // the second tail, shorter, behind the first and a little forward (never on the chain)
-  {
-    const p2 = [V.add(k1, V.add(V.mul(tang, 0.016), [0, 0.012, 0])), V.add(k1, V.add(V.mul(tang, 0.03), [0, -0.05, 0.002])), V.add(k1, V.add(V.mul(tang, 0.036), [0, -0.105, 0.004]))];
-    const pts = p2.map((q) => { const th = Math.atan2(q[2] + 0.02, q[0]); const rr = Math.max(clothField.radial(q[1], th, 0, -0.02, 0.03, 0.2), Math.hypot(q[0], q[2] + 0.02)) + 0.0105; return [Math.cos(th) * rr, q[1], -0.02 + Math.sin(th) * rr]; });
-    appendGeo(g, sashTail(pts, [pelvis, joints.thigh_l], { along: 8, across: 5, width: (u) => 0.046 - 0.01 * u, side: tang, out: outW, rect: lin, uLen: 0.3, u0: 0.5, twist: -0.25, pleat: (u) => 0.006 * (1 - u) ** 1.5 }));
-  }
-  // (Nov 6: both tails ride the pelvis and take at most a quarter of the thigh, evenly from the knot to the end. Half
-  // the thigh over half the tail stretched its short edges 1.7-2.4 x in a sprint, where the thigh swings furthest
-  // from the pelvis; a gentle ramp over the whole length still lets the stride lift the end)
+  // fix round 1 (judges: "the knot hangs 6-7 cm under the band with nothing joining them; the ears look like wire
+  // loops; the tails are flat strips with sharp cut ends"): the knot sits ON the band, tied (armor/lib/sash.mjs
+  // sashKnotTied: a gathered roll with the tying turn proud round its middle, a turn of the band coming down into
+  // it, two puffed loops), and the tails hang from under it with rolled hems, gathered pleats and weight
+  const KNOT_Y = BELT_Y - 0.047;
+  const onCloth = (y, th, off) => { const rr = clothField.radial(y, th, 0, -0.02, 0.03, 0.2) + off; return [Math.cos(th) * rr, y, -0.02 + Math.sin(th) * rr]; };
+  const kc = onCloth(KNOT_Y, sashTh, 0.0085);
+  const swingJ = addSocketJoint(doc, SASH_SWING.joint, 'pelvis', kc);
+  appendGeo(g, sashKnotTied(kc, { side: tang, up: [0, 1, 0], out: outW }, { joint: pelvis, rect: lin, w: 0.05, h: 0.034, d: 0.024, drop: 0.026, ear: 0.046, earW: 0.021, earT: 0.0075 }));
+  const knotEnd = g.pos.length / 3;
+  // the two tails: from under the knot, down the back of the hip, standing a little off the skirt's folds
+  const tail = (dth, len, off0, off1, y0) => [0, 0.25, 0.5, 0.75, 1].map((u) => onCloth(y0 - len * u, sashTh + dth * (0.4 + 0.6 * u), off0 + (off1 - off0) * u));
+  appendGeo(g, sashTail(tail(0.05, 0.25, 0.012, 0.02, KNOT_Y - 0.012), [pelvis, pelvis, pelvis, pelvis], { along: 10, across: 6, width: (u) => 0.056 - 0.01 * u, side: tang, out: outW, rect: lin, uLen: 0.42, twist: 0.28, thick: 0.0028, hem: 0.0062, pleats: 2, pleat: (u) => 0.009 * (1 - u) ** 1.6 + 0.002, endCut: 0.012 }));
+  appendGeo(g, sashTail(tail(-0.16, 0.19, 0.016, 0.024, KNOT_Y - 0.008), [pelvis, pelvis, pelvis, pelvis], { along: 8, across: 5, width: (u) => 0.047 - 0.008 * u, side: tang, out: outW, rect: lin, uLen: 0.3, u0: 0.5, twist: -0.22, thick: 0.0028, hem: 0.0058, pleats: 2, pleat: (u) => 0.008 * (1 - u) ** 1.5 + 0.0015, endCut: -0.011 }));
+  // the tails' skin: the pelvis at the knot, the swing socket taking over down their length (its pivot is the knot,
+  // so the cloth bends from there instead of hinging)
   {
     let yTop = -9, yBot = 9;
-    for (let i = tail0; i < g.pos.length / 3; i++) { const y = g.pos[i * 3 + 1]; if (y > yTop) yTop = y; if (y < yBot) yBot = y; }
-    const TH = 0.25;
-    for (let i = tail0; i < g.pos.length / 3; i++) {
+    for (let i = knotEnd; i < g.pos.length / 3; i++) { const y = g.pos[i * 3 + 1]; if (y > yTop) yTop = y; if (y < yBot) yBot = y; }
+    for (let i = knotEnd; i < g.pos.length / 3; i++) {
       const t = Math.max(0, Math.min(1, (yTop - g.pos[i * 3 + 1]) / (yTop - yBot)));
-      g.jnt[i * 4] = pelvis; g.jnt[i * 4 + 1] = joints.thigh_l; g.jnt[i * 4 + 2] = 0; g.jnt[i * 4 + 3] = 0;
-      g.wgt[i * 4] = 1 - TH * t; g.wgt[i * 4 + 1] = TH * t; g.wgt[i * 4 + 2] = 0; g.wgt[i * 4 + 3] = 0;
+      const k = sstep(0.0, 0.55, t);
+      g.jnt[i * 4] = pelvis; g.jnt[i * 4 + 1] = swingJ; g.jnt[i * 4 + 2] = 0; g.jnt[i * 4 + 3] = 0;
+      g.wgt[i * 4] = 1 - k; g.wgt[i * 4 + 1] = k; g.wgt[i * 4 + 2] = 0; g.wgt[i * 4 + 3] = 0;
     }
   }
+  void sashJ;
   const sash = mk('sash', { trim: true });
   Object.assign(sash, { pos: g.pos, nrm: g.nrm, uv: g.uv, jnt: g.jnt, wgt: g.wgt, idx: g.idx });
+  // what the runtime needs to hang them: the knot (the pendulum's pivot) and the left hip joint (the thigh's pivot)
+  SASH_SWING.knot = kc.map((v) => +v.toFixed(4));
+  SASH_SWING.hip = jointPos(doc, 'thigh_l').map((v) => +v.toFixed(4));
 
   // ---- a linen cord tied at the keyhole, as the reference tunic's
   const tie = mk('tie', { trim: true });
@@ -1046,7 +1048,7 @@ export async function panLayout(parts, trim, W, H) {
 /** The fit's limits for this cut: the yoke lies flat on the collarbones and shows; it takes little room, whatever a draw asks of it. */
 export const PAN_FIT = { capAt: (x, y, z, slot, max) => (y > 1.385 && Math.abs(x) < 0.21 && !(slot === 'wrap' || slot === 'cowl' || slot === 'capelet') ? (z < -0.02 ? 0.01 : 0.005) : max) };
 
-export const PAN_SET = { set: 'pan', hideBit: HIDE_BIT, chains: ['dyn_sashEnd'] };
+export const PAN_SET = { set: 'pan', hideBit: HIDE_BIT, chains: ['dyn_sashEnd'], get sashSwing() { return { ...SASH_SWING }; } };
 
 export async function build({ out = ROOT } = {}) {
   const base = await panBase();

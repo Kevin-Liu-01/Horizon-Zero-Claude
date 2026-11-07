@@ -50,7 +50,7 @@ function quad(g, a, b, c, d, flip) { if (flip) g.idx.push(a, c, b, b, c, d); els
  * A hanging tail. `P` its path (>= 3 points, top first), `joints` the chain it rides (one per span of P,
  * the last repeated), `side` her tangent at the knot, `out` away from the skirt.
  */
-export function sashTail(P, joints, { along = 10, across = 6, width = () => 0.05, thick = 0.0032, pleats = 2, pleat = (u) => 0.007 * (1 - u) ** 1.5, twist = 0.35, endCut = 0.014, side, out, rect, uLen = 0.5, u0 = 0 } = {}) {
+export function sashTail(P, joints, { along = 10, across = 6, width = () => 0.05, thick = 0.0032, pleats = 2, pleat = (u) => 0.007 * (1 - u) ** 1.5, twist = 0.35, endCut = 0.014, side, out, rect, uLen = 0.5, u0 = 0, hem = 0 } = {}) {
   const g = geo(), C = curve(P);
   const rows = [];
   for (let a = 0; a <= along; a++) {
@@ -80,20 +80,37 @@ export function sashTail(P, joints, { along = 10, across = 6, width = () => 0.05
     rows.push(row);
   }
   // two faces a thread apart, their long edges and the cut end closed: the cloth has an edge
+  // (fix round 1, judges: "the tails are stiff flat strips": with `hem` the long edges are ROLLED: the cloth thickens
+  // to `hem` over its outer fifth and the edge is a half-round, so the tail has weight and its edges catch light)
+  const W = across + 1;
+  const thAt = (k) => { const x = Math.abs((k / across) * 2 - 1); return thick + (hem > 0 ? (hem - thick) * Math.max(0, (x - 0.72) / 0.28) ** 1.5 : 0); };
   const face = (sgn) => {
     const base = g.pos.length / 3;
-    for (const row of rows) for (const v of row) {
-      g.pos.push(...V.add(v.q, V.mul(v.n, sgn * thick * 0.5))); g.nrm.push(0, 0, 0); g.uv.push(...v.uv); g.jnt.push(...v.j); g.wgt.push(...v.w);
-    }
+    for (const row of rows) row.forEach((v, k) => {
+      g.pos.push(...V.add(v.q, V.mul(v.n, sgn * thAt(k) * 0.5))); g.nrm.push(0, 0, 0); g.uv.push(...v.uv); g.jnt.push(...v.j); g.wgt.push(...v.w);
+    });
     return base;
   };
-  const F = face(1), B = face(-1), W = across + 1;
+  const F = face(1), B = face(-1);
   for (let a = 0; a < along; a++) for (let k = 0; k < across; k++) {
     const i = a * W + k;
     quad(g, F + i, F + i + 1, F + i + W, F + i + W + 1, false);
     quad(g, B + i, B + i + 1, B + i + W, B + i + W + 1, true);
   }
-  for (let a = 0; a < along; a++) {
+  if (hem > 0) {
+    // the rolled edge: one vertex out past each long edge, centred in the thickness
+    const E = g.pos.length / 3;
+    for (const row of rows) for (const k of [0, across]) {
+      const v = row[k], o = row[k === 0 ? 1 : across - 1];
+      const outw = V.norm(V.sub(v.q, o.q));
+      g.pos.push(...V.add(v.q, V.mul(outw, hem * 0.45))); g.nrm.push(0, 0, 0); g.uv.push(...v.uv); g.jnt.push(...v.j); g.wgt.push(...v.w);
+    }
+    for (let a = 0; a < along; a++) for (const [s2, k] of [[0, 0], [1, across]]) {
+      const i = a * W + k, e0 = E + a * 2 + s2, e1 = e0 + 2;
+      quad(g, F + i, F + i + W, e0, e1, k === 0);
+      quad(g, e0, e1, B + i, B + i + W, k === 0);
+    }
+  } else for (let a = 0; a < along; a++) {
     for (const k of [0, across]) {
       const i = a * W + k;
       quad(g, F + i, F + i + W, B + i, B + i + W, k === 0);
@@ -147,6 +164,78 @@ export function sashKnot(c, { side, up, out }, { joint, rect, ringW = 0.034, rx 
     const eb2 = g.pos.length / 3;
     for (let i = 0; i < (N + 1) * 3; i++) { const k = (i % 3) - 1, s2 = Math.floor(i / 3); push(V.add(g.pos.slice((eb + i) * 3, (eb + i) * 3 + 3), V.mul(perp, -0.0028 - 0.012 * (1 - k * k) * Math.sin((s2 / N) * Math.PI))), g.uv.slice((eb + i) * 2, (eb + i) * 2 + 2)); }
     for (let s = 0; s < N; s++) for (let k = 0; k < 2; k++) { const i = eb2 + s * 3 + k; quad(g, i, i + 1, i + 3, i + 4, sg < 0); }
+  }
+  normals(g);
+  return g;
+}
+
+/**
+ * Fix round 1 (armory W1 judges: "the knot is two wire loops floating about 6 cm under the band; the ears look like
+ * wire loops"): the knot as a TIED VOLUME sitting ON the band.
+ *   - the core: the band gathered into a soft roll across the hip (`w` wide along her side, `h` tall, `d` deep),
+ *     flattened where it lies on the band, with the turn that ties it standing proud round its middle;
+ *   - the turn of the band that comes DOWN from the band into the knot (`drop`), so it reads tied to the band;
+ *   - two ears: loops of the band, a flattened tube (`earW` wide, `earT` thick) on a U out to each side, open in the
+ *     middle like a bow's loop, never a wire.
+ * `c` the knot's centre on the band; `frame` = { side, up, out } at the hip (her tangent, up, away from her).
+ */
+export function sashKnotTied(c, { side, up, out }, { joint, rect, w = 0.05, h = 0.036, d = 0.024, drop = 0.03, ear = 0.048, earW = 0.02, earT = 0.0075, earDown = 0.22 } = {}) {
+  const g = geo();
+  const push = (q, uv) => { g.pos.push(...q); g.nrm.push(0, 0, 0); g.uv.push(...uv); g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0); return g.pos.length / 3 - 1; };
+  const at = (a, b, e) => V.add(V.add(V.add(c, V.mul(side, a)), V.mul(up, b)), V.mul(out, e));
+  // the core: u along her side, a round the side axis (up, out); its back flattened onto the band
+  {
+    const NU = 9, NA = 10, base = g.pos.length / 3;
+    for (let i = 0; i <= NU; i++) {
+      const u = i / NU, x = (u - 0.5) * w;
+      const end = Math.sqrt(Math.max(0.0, 1 - Math.pow(Math.abs(2 * u - 1), 2.6))) * 0.9 + 0.1;
+      const wrap = 0.16 * Math.exp(-(((u - 0.5) / 0.11) ** 2));
+      for (let k = 0; k <= NA; k++) {
+        const a = (k / NA) * TAU;
+        const cu = Math.cos(a), sa = Math.sin(a);
+        const rUp = (h * 0.5) * (end + wrap), rOut = (d * 0.5) * (end + wrap);
+        // its back lies on the band: the half toward her is pressed nearly flat
+        const e = sa >= 0 ? sa * rOut : sa * rOut * 0.32;
+        push(at(x, cu * rUp, e + d * 0.18), [rect[0] + rect[2] * (0.55 + 0.4 * u), rect[1] + rect[3] * (0.06 + 0.88 * (k / NA))]);
+      }
+    }
+    for (let i = 0; i < NU; i++) for (let k = 0; k < NA; k++) { const q = base + i * (NA + 1) + k; quad(g, q, q + 1, q + NA + 1, q + NA + 2, true); }
+  }
+  // the turn down from the band into the knot: a short strip of the band, slightly cupped, tucked under the wrap
+  {
+    const base = g.pos.length / 3, NV = 3, NK = 4, bw = w * 0.42;
+    for (let r = 0; r <= NV; r++) {
+      const t = r / NV;
+      for (let k = 0; k <= NK; k++) {
+        const x = ((k / NK) * 2 - 1) * bw * 0.5;
+        const q = at(x * (1 - 0.25 * t), h * 0.5 + drop * (1 - t) - h * 0.15 * t, d * (0.12 + 0.36 * t) + 0.0025 * (1 - ((k / NK) * 2 - 1) ** 2));
+        push(q, [rect[0] + rect[2] * (0.1 + 0.3 * t), rect[1] + rect[3] * (0.08 + 0.84 * (k / NK))]);
+      }
+    }
+    for (let r = 0; r < NV; r++) for (let k = 0; k < NK; k++) { const q = base + r * (NK + 1) + k; quad(g, q, q + 1, q + NK + 1, q + NK + 2, false); }
+  }
+  // the ears: a flattened tube on a U from the core's end out and back, the loop open in the middle
+  for (const sg of [-1, 1]) {
+    const NP = 8, NS = 6, base = g.pos.length / 3;
+    const dirO = V.norm(V.add(V.mul(side, sg), V.mul(up, -earDown)));      // the loop droops a little
+    const plane = V.norm(V.cross(dirO, out));                               // the loop's in-plane perpendicular
+    const path = [];
+    for (let i = 0; i <= NP; i++) {
+      const a = (i / NP) * Math.PI;
+      const along = w * 0.34 + Math.sin(a) * ear, across = Math.cos(a) * (h * 0.36) * (1 - 0.35 * Math.sin(a));
+      path.push(V.add(V.add(V.add(c, V.mul(dirO, along)), V.mul(plane, across)), V.mul(out, d * 0.3 + 0.004 * Math.sin(a))));
+    }
+    for (let i = 0; i <= NP; i++) {
+      const p = path[i], t = V.norm(V.sub(path[Math.min(NP, i + 1)], path[Math.max(0, i - 1)]));
+      const nIn = V.norm(V.cross(out, t));                                // thin axis: in the loop's plane
+      const puff = 1 + 0.25 * Math.sin((i / NP) * Math.PI);
+      for (let k = 0; k <= NS; k++) {
+        const a = (k / NS) * TAU;
+        const q = V.add(V.add(p, V.mul(out, Math.cos(a) * earW * 0.5 * puff)), V.mul(nIn, Math.sin(a) * earT * 0.5 * puff));
+        push(q, [rect[0] + rect[2] * (0.08 + 0.42 * (i / NP)), rect[1] + rect[3] * (0.06 + 0.88 * (k / NS))]);
+      }
+    }
+    for (let i = 0; i < NP; i++) for (let k = 0; k < NS; k++) { const q = base + i * (NS + 1) + k; quad(g, q, q + 1, q + NS + 1, q + NS + 2, sg > 0); }
   }
   normals(g);
   return g;

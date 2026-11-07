@@ -8,9 +8,38 @@ import path from 'node:path';
 import { EXTMeshoptCompression } from '@gltf-transform/extensions';
 import { dedup, prune, quantize, reorder, unpartition } from '@gltf-transform/functions';
 import { MeshoptEncoder } from 'meshoptimizer';
-import { io, writeSkinned, nodeByName } from '../../lib/face.mjs';
+import { io, writeSkinned, nodeByName, m4, matToQuat } from '../../lib/face.mjs';
 import { checkProvenance, GENERATOR } from '../../../lib/glb.mjs';
 import { mergeParts } from './part.mjs';
+
+/**
+ * A joint at the identity under `parentName` (its inverse bind = the parent's): a socket the runtime poses (armory W1
+ * fix round 1: `sash_swing`, the sash tails' hang, src/hero/outfit.js). Returns its joint index. Idempotent.
+ */
+export function addSocketJoint(doc, name, parentName, at = null) {
+  const skin = doc.getRoot().listSkins()[0];
+  const have = skin.listJoints().findIndex((j) => j.getName() === name);
+  if (have >= 0) return have;
+  const parent = skin.listJoints().find((j) => j.getName() === parentName);
+  const pi = skin.listJoints().indexOf(parent);
+  const ibmAcc = skin.getInverseBindMatrices();
+  const ibm = Array.from(ibmAcc.getArray());
+  const node = doc.createNode(name);
+  parent.addChild(node);
+  if (at) {
+    // a pivot: the joint stands at `at` (bind space) with the bind space's axes, so turning it turns about that point
+    const W = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, at[0], at[1], at[2], 1];
+    const L = m4.mul(m4.inv(Array.from(parent.getWorldMatrix())), W);
+    node.setTranslation([L[12], L[13], L[14]]).setRotation(matToQuat(L));
+    skin.addJoint(node);
+    ibm.push(...m4.inv(W));
+  } else {
+    skin.addJoint(node);
+    ibm.push(...ibm.slice(pi * 16, pi * 16 + 16));
+  }
+  ibmAcc.setArray(new Float32Array(ibm));
+  return skin.listJoints().length - 1;
+}
 
 /** Build the merged primitive. `tex` may be null: a variant that shares its set's sheet (material only). */
 export function outfitDoc(doc, parts, { name, matName, tex = null, texPrefix = 'set', pieces = false, extra = null }) {

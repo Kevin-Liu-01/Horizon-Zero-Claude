@@ -273,10 +273,26 @@ const A_MATRIX = {
       for (const [pose, weapon, fn, opts] of poses) {
         await fn();
         await frame();
-        // sprint: read two more frames across the stride, keep the worst
+        // fix round 1 (judges: one sampled moment per row moved +-0.15 points between runs): every row reads SEVERAL
+        // frames of its pose and keeps the WORST of each clause on its own — four across the sprint's stride, three
+        // over the held idle and full-draw poses (0.1 s apart), three consecutive frames from the strike's contact
         const o2 = { ...(opts || {}), offenders: id === OFFENDERS_OF };
+        const MAXK = ['stretch', 'stretchOver', 'insideFrac', 'inside', 'headIn', 'creaseExcluded'];
+        const MINK = ['stowDeep', 'heldDeep', 'pieceToHand', 'pieceToHead', 'hatToLance', 'deepest'];
+        const worst = (a, b) => {
+          const r = { ...a };
+          for (const k of MAXK) if (b[k] != null && (r[k] == null || b[k] > r[k])) r[k] = b[k];
+          for (const k of MINK) if (b[k] != null && (r[k] == null || b[k] < r[k])) r[k] = b[k];
+          for (const k of ['edgeOffenders', 'insideOffenders', 'stowOffenders', 'heldOffenders']) if (b[k] && (!r[k] || (k === 'insideOffenders' ? b.insideFrac >= a.insideFrac : true))) r[k] = b[k];
+          r.samples = (a.samples || 1) + 1;
+          return r;
+        };
         let m = X.measurePose(C, snap, o2);
-        if (pose === 'sprint') for (let k = 0; k < 3; k++) { await simWait(0.09, 800); const q = X.measurePose(C, snap, o2); if (q.stretch > m.stretch || q.insideFrac > m.insideFrac) m = q; }
+        const more = pose === 'sprint' ? 3 : 2;
+        for (let k = 0; k < more; k++) {
+          if (pose.includes('contact')) await frame(); else await simWait(pose === 'sprint' ? 0.09 : 0.1, 900);
+          m = worst(m, X.measurePose(C, snap, o2));
+        }
         rows.push({ id, pose, weapon, ...m, weightSumErr: snap.weightSumErr, drawS: pose.startsWith('draw') ? +cmb.drawStrength.toFixed(2) : undefined });
         await clear();
       }
@@ -315,13 +331,19 @@ const STOW_BODY = `
         p.camYaw = (i / 24) * Math.PI * 2;
         if (moving) { keys.clear(); keys.add('KeyW'); standAt(p, 'openGround'); }
         const nf = moving ? 30 : 14; for (let k = 0; k < nf; k++) await frame();
-        const q = X.headCover(C); coverRows.push({ yaw: i, moving, ...q });
+        const q = X.headCover(C), bq = X.boomPen(C);
+        coverRows.push({ yaw: i, moving, ...q, boomPen: bq ? bq.pen : null, boomPiece: bq ? bq.piece : null });
       }
     }
     release();
     p.camYaw = y0;
     const cover = Math.max(...coverRows.map((r) => r.cover));
     const coverAt = coverRows.find((r) => r.cover === cover);
+    // plan §9: no stowed item crosses the boom segment (pivot -> lens) by > 0.02 m, at any of the 48 sweep frames
+    const boomRows = coverRows.filter((r) => r.boomPen != null);
+    const boomWorst = boomRows.length ? Math.max(...boomRows.map((r) => r.boomPen)) : null;
+    const boomAt = boomRows.find((r) => r.boomPen === boomWorst) || null;
+    const boomOk = boomRows.length === 48 && boomWorst <= 0.02;
     // R62 (b): the median over the 24 yaws <= 8 % of the head's box (each sweep, standing and moving; the larger
     // median is graded), and the worst single yaw <= 20 %
     const sweep = (mv) => coverRows.filter((r) => r.moving === mv).map((r) => r.cover).sort((a, b) => a - b);
@@ -331,82 +353,76 @@ const STOW_BODY = `
 `;
 const A_STOW = {
   id: 'A-stow-clearance@armory', kind: 'action', lane: LANE, timeout: 120000, settle: 400,
-  title: 'Sprint 4 s, crouch-walk, dodge, a 24-yaw chase-camera sweep: every stowed item >= 0.05 m from the calf capsules, >= 0.05 m above terrain crouched, the head\'s screen box covered <= 8 % at the median yaw and <= 20 % at the worst (R62 b; melee owns the row at its W1 exit; armory reads it on the art-pass kit)',
+  title: 'Sprint 4 s, crouch-walk, dodge, a 24-yaw chase-camera sweep (standing and moving): every stowed item >= 0.05 m from the calf capsules, >= 0.05 m above terrain crouched, no stowed item crosses the boom segment (pivot -> lens) by > 0.02 m, the head\'s screen box covered <= 8 % at the median yaw and <= 20 % at the worst (R62 b; melee owns the row at its W1 exit; armory reads it on the art-pass kit, every clause)',
   setup: `__CTX__.input.enabled = true;`,
   assert: placed(['openGround'], `(async () => {${PRE}
     freeze(); standAt(p, 'openGround'); await wait(300);${STOW_BODY}
-    const pass = dCalf >= 0.05 && crouchLow >= 0.05 && coverOk && frames_ > 60;
-    return { pass, detail: { dCalf, dPiece, crouchLow, crouchPiece, coverMedian, coverWorst: cover, coverAt, frames: frames_, r62: 'cover: median of the 24 yaws <= 0.08, worst yaw <= 0.20' } };
+    const pass = dCalf >= 0.05 && crouchLow >= 0.05 && coverOk && boomOk && frames_ > 60;
+    return { pass, detail: { dCalf, dPiece, crouchLow, crouchPiece, coverMedian, coverWorst: cover, coverAt, boomWorst, boomAt, boomFrames: boomRows.length, frames: frames_, r62: 'cover: median of the 24 yaws <= 0.08, worst yaw <= 0.20; boom: <= 0.02 m into any shown piece (melee radii)' } };
   })()`),
 };
 
 /* ------------------------------------------------------ A-variant-motion-rerun */
-/** The hero-body rows, run with each variant on. Loaded lazily so a hero-body edit never breaks this file's import. */
-const motionRows = async () => {
-  const hb = await import('./gates.r5.hero-body.mjs');
-  return ['A-wrap-clear', 'A-run-arms'].map((id) => hb.GATES.find((g) => g.id === id)).filter(Boolean);
+/**
+ * Plan §9: per armor variant, `A-stow-clearance`, `A-wrap-clear` and `A-run-arms` pass AT THEIR BARS. Fix round 1
+ * (armory W1 judges): the rows are no longer re-coded here. Each variant row equips the variant, then runs the
+ * carried rows' OWN asserts, verbatim, from their owners' gate files:
+ *   - `A-run-arms` and `A-wrap-clear` from tools/gates.r5.hero-body.mjs (hero-body's, on their own staging: the flat
+ *     46 m strip, the sprint-stop at four pitches and the two crouched rows, the M10 capsule minus its half-thickness);
+ *   - `A-stow-clearance` from tools/gates.r5.melee.mjs once melee's row is in the tree (it owns the row at its W1
+ *     exit); until then this file's `A-stow-clearance@armory` assert, which grades every clause of plan §9's row
+ *     (calf capsules, crouched ground, the boom, R62 b's cover).
+ * A missing owner row is a FAIL by name, never a skip. Loaded with top-level await, so an owner's file that fails to
+ * import is reported in the row instead of breaking this module.
+ */
+const ownerRow = async (file, id) => {
+  try {
+    const m = await import(file);
+    return (m.GATES || []).find((g) => g.id === id) || null;
+  } catch (err) { return { error: String(err?.message || err).slice(0, 200) }; }
 };
+const HB_RUN_ARMS = await ownerRow('./gates.r5.hero-body.mjs', 'A-run-arms');
+const HB_WRAP_CLEAR = await ownerRow('./gates.r5.hero-body.mjs', 'A-wrap-clear');
+const MELEE_STOW = existsSync(path.join(ROOT, 'tools/gates.r5.melee.mjs')) ? await ownerRow('./gates.r5.melee.mjs', 'A-stow-clearance') : null;
 const A_MOTION = {
   id: 'A-variant-motion-rerun', kind: 'runner', lane: LANE, timeout: 1200000,
   title: 'Per armor variant (W1: 4): A-stow-clearance, A-wrap-clear, A-run-arms at their bars',
   check: async () => ({ pass: null, detail: 'run as the page rows A-variant-motion-rerun:<variant>' }),
 };
+/** One carried row's assert, run inline with the variant on (its own setup line first, its own IIFE). */
+const subRow = (g, name) => {
+  if (!g || g.error || !g.assert) return `{ pass: false, detail: ${JSON.stringify(`the owner's ${name} row is not in this tree${g?.error ? ': ' + g.error : ''}`)} }`;
+  const setup = g.setup && !/^\s*\(async/.test(g.setup) ? g.setup : '';
+  return `await (async () => { ${setup}\n return await ${g.assert.trim()}; })()`;
+};
+const ARMORY_STOW_ASSERT = (() => placed(['openGround'], `(async () => {${PRE}
+    freeze(); standAt(p, 'openGround'); await wait(300);${STOW_BODY}
+    const pass = dCalf >= 0.05 && crouchLow >= 0.05 && coverOk && boomOk && frames_ > 60;
+    return { pass, detail: { dCalf, dPiece, crouchLow, crouchPiece, coverMedian, coverWorst: cover, coverAt, boomWorst, boomAt, boomFrames: boomRows.length, frames: frames_ } };
+  })()`))();
 const motionPage = (id) => ({
-  id: `A-variant-motion-rerun:${id}`, kind: 'action', lane: LANE, timeout: 420000, settle: 400,
-  title: `Variant ${id}: A-stow-clearance (bars above), and the wrap / run-arm chains re-measured with it on`,
+  id: `A-variant-motion-rerun:${id}`, kind: 'action', lane: LANE, timeout: 600000, settle: 400,
+  title: `Variant ${id}: A-stow-clearance (${MELEE_STOW ? "melee's row" : 'every clause of plan §9, melee\'s row not in this tree yet'}), hero-body's A-run-arms and A-wrap-clear, each run with ${id} equipped at its own bars`,
   setup: `__CTX__.input.enabled = true;`,
-  assert: placed(['openGround'], `(async () => {${PRE}
-    freeze(); standAt(p, 'openGround'); await wait(300);
-    await H.loadout.equipArmor(${JSON.stringify(id)}); await frames(6);${STOW_BODY}
-    const stow = { dCalf, dPiece, crouchLow, crouchPiece, coverMedian, coverWorst: cover, coverAt, frames: frames_, ok: dCalf >= 0.05 && crouchLow >= 0.05 && coverOk };
-    // A-run-arms, its bars (hero-body row): sprint 4 s, wrist off the midline, below the shoulder, fore-aft range; no prance
-    release(); await wait(300);
-    standAt(p, 'openGround', { dx: 2 });
-    keys.add('KeyW'); keys.add('ShiftLeft'); await simWait(1.5, 8000);
-    const py = [];
-    const b = an.b, CHP = (bone, out) => an._charOf(bone, out);
-    const T3 = p.position.constructor, wL = new T3(), wR = new T3(), s = new T3(), pel = new T3(), kn = new T3(), hp = new T3();
-    let minLat = 9, maxOver = -9, zL0 = 9, zL1 = -9, kneeOver = -9, frames2 = 0;
-    const s0 = E.simTime, w0 = performance.now();
-    while (E.simTime - s0 < 4 && performance.now() - w0 < 26000) {
-      await frame();
-      CHP(b.handL.bone, wL); CHP(b.handR.bone, wR); CHP(b.upArmL.bone, s); CHP(b.pelvis.bone, pel);
-      CHP(b.calfL.bone, kn); CHP(b.thighL.bone, hp);
-      minLat = Math.min(minLat, Math.abs(wL.x), Math.abs(wR.x));
-      maxOver = Math.max(maxOver, wL.y - (s.y - 0.25), wR.y - (s.y - 0.25));
-      zL0 = Math.min(zL0, wL.z); zL1 = Math.max(zL1, wL.z);
-      py.push(pel.y);
-      kneeOver = Math.max(kneeOver, kn.y - hp.y);
-      frames2++;
-    }
-    release();
-    // the pelvis's bob, per stride, as A-run-arms measures it
-    const cyc = Math.max(4, Math.round(frames2 / Math.max(1, 4.0 * (an.loco?.freq || 1.6))));
-    let bob = 0;
-    for (let i = 0; i + cyc <= py.length; i += cyc) { let lo = 9, hi = -9; for (let k = i; k < i + cyc; k++) { lo = Math.min(lo, py[k]); hi = Math.max(hi, py[k]); } bob = Math.max(bob, hi - lo); }
-    const arms = { minLat: +minLat.toFixed(3), wristBelowShoulderBy: +(-maxOver).toFixed(3), foreAft: +(zL1 - zL0).toFixed(3), pelvisOsc: +bob.toFixed(3), kneeOverHip: +kneeOver.toFixed(3), frames: frames2 };
-    arms.ok = minLat >= 0.10 && maxOver <= 0 && (zL1 - zL0) >= 0.25 && bob <= 0.08 && kneeOver <= 0;
-    // A-wrap-clear, its bar: every dyn_ chain >= 0.05 m from the draw hand through a draw cycle at the four pitches
-    const chains = [];
-    p.model.traverse((o) => { if (/^dyn_/.test(o.name)) chains.push(o); });
-    let wrapMin = 9, wrapBy = null;
-    const wr = new T3(), kk = new T3(), ft = new T3();
-    const segD = (q, A, B) => { const ab = B.clone().sub(A), t = Math.max(0, Math.min(1, q.clone().sub(A).dot(ab) / ab.lengthSq())); return A.clone().addScaledVector(ab, t).distanceTo(q); };
-    for (const pitch of [-0.55, -0.4, 0, 0.75]) {
-      release(); await wait(250);
-      p.camPitch = pitch; C.input.mouse.buttons |= 4; await simWait(0.5, 4000); C.input.mouse.buttons |= 1;
-      const s1 = E.simTime, w1 = performance.now();
-      while (E.simTime - s1 < 1.2 && performance.now() - w1 < 9000) {
-        await frame();
-        b.handR.bone.getWorldPosition(wr); an.debugDrawHand?.(kk, ft);
-        for (const c of chains) { const q = c.getWorldPosition(new T3()); const d = segD(q, wr, kk); if (d < wrapMin) { wrapMin = d; wrapBy = c.name; } }
-      }
-    }
-    release();
-    const wrap = { min: +wrapMin.toFixed(3), by: wrapBy, ok: wrapMin >= 0.05 };
+  assert: `(async () => {
+    const C = __CTX__, H = C.player.hero;
+    const frame = () => new Promise((r) => requestAnimationFrame(r));
+    const equip = async () => { await H.loadout.equipArmor(${JSON.stringify(id)}); for (let i = 0; i < 6; i++) await frame(); return H.outfit.variant; };
+    const rel = () => { C.input.keys.clear(); C.input.mouse.buttons = 0; C.player.setCrouch?.(false); };
+    const out = {};
+    out.variant = await equip();
+    out.stow = ${MELEE_STOW ? subRow(MELEE_STOW, 'A-stow-clearance') : `await ${ARMORY_STOW_ASSERT.trim()}`};
+    rel(); out.variantAfterStow = await equip();
+    out.runArms = ${subRow(HB_RUN_ARMS, 'A-run-arms')};
+    rel(); out.variantAfterArms = await equip();
+    out.wrapClear = ${subRow(HB_WRAP_CLEAR, 'A-wrap-clear')};
+    rel();
+    out.stowRow = ${JSON.stringify(MELEE_STOW ? "melee's A-stow-clearance" : 'A-stow-clearance@armory (every plan §9 clause)')};
+    out.equippedThroughout = [out.variant, out.variantAfterStow, out.variantAfterArms].every((v) => v === ${JSON.stringify(id)});
     await H.loadout.equipArmor('pan-1');
-    return { pass: stow.ok && arms.ok && wrap.ok, detail: { id: ${JSON.stringify(id)}, stow, arms, wrap } };
-  })()`),
+    const pass = !!(out.stow?.pass === true && out.runArms?.pass === true && out.wrapClear?.pass === true && out.equippedThroughout);
+    return { pass, detail: out };
+  })()`,
 });
 
 /* --------------------------------------------------------------- A-armor-verb */
@@ -607,5 +623,5 @@ export const GATES = [
   ...V_ROWS,
   V29,
 ].filter(Boolean);
-void A_MOTION; void motionRows; void readFileSync;
+void A_MOTION; void readFileSync;
 export const ARMORY_GATE_IDS = GATES.map((g) => g.id);

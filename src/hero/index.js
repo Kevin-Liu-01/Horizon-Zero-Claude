@@ -125,6 +125,8 @@ export class HeroRig {
     this.loadout?.update(dt, this._lanceOut, this._bowOut);
     // the stowed lance rides the trunk in the R10 band (carry.js)
     this.kit.solve(this.player.animator, dt);
+    // the sash tails' hang (outfit.js SashSwing)
+    this.outfit?.update(dt);
   }
 
   /** The held lance: `{ group, model, ... }` as bow.js built it (dev / sheets), or null. */
@@ -159,7 +161,7 @@ export class HeroRig {
   }
 
   dispose() {
-    const r = { outfit: this.outfit?.unequip() ?? null, kit: this.kit?.dispose() ?? null };
+    const r = { outfit: this.outfit?.dispose() ?? null, kit: this.kit?.dispose() ?? null };
     this.loadout?.dispose();
     this.loadout = null; this.outfit = null; this.kit = null;
     disposeClothDetail();

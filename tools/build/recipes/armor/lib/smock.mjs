@@ -380,6 +380,68 @@ export function bindingAlong(part, run, skin, { w = 0.011, lift = 0.0028, rect, 
 }
 
 /**
+ * Fix round 1 (armory W1 judges: "a thin purple wire hook stands off both shoulders"): a bias binding that LIES ON
+ * the cloth it binds, on EVERY rim point. `bindingAlong` offset its profile from each rim vertex along that vertex's
+ * own normal; a rim vertex's normal is averaged from one side only, and over the shoulder (where the cap is pushed
+ * proud of the sleeve) it leaned out by tens of degrees, so the strip stood off the cloth as a fin, and the rim was
+ * also thinned to every 2nd / 4th point, so its chords cut the curve. Here:
+ *   - the loop is every rim point, lightly smoothed (the cut's 1-2 mm jags go, the curve stays);
+ *   - each profile point on the cloth side is SNAPPED to the cloth (the plane of its 4 nearest `surf` points) and
+ *     lifted along that surface's own normal, so the strip follows the cloth whatever the rim normal says;
+ *   - the turned edge stands just past the rim and tucks under by a little (`under`), never deep into the body side.
+ * `surf` a part.mjs Field over the cloth; `skin` the Field whose skin the binding takes.
+ */
+export function bindingOn(part, run, surf, skin, { w = 0.009, lift = 0.0016, rect, tile = 0.3, smooth = 2, under = 0.4, edge = 0.0012, center = null } = {}) {
+  const N = run.length;
+  if (N < 3) return part;
+  let P = run.map((q) => q.p.slice());
+  for (let it = 0; it < smooth; it++) P = P.map((p, k) => { const a = P[(k - 1 + N) % N], b = P[(k + 1) % N]; return [0, 1, 2].map((c) => p[c] * 0.5 + (a[c] + b[c]) * 0.25); });
+  const C = [0, 1, 2].map((c) => P.reduce((s, p) => s + p[c], 0) / N);
+  const surfAt = (x) => {
+    const near = surf.nearest(x[0], x[1], x[2], 4);
+    let n = [0, 0, 0], c = [0, 0, 0], ws = 0;
+    for (const { p, d } of near) { const f = 1 / (d + 0.003); n = V.add(n, V.mul([p.nx, p.ny, p.nz], f)); c = V.add(c, V.mul([p.x, p.y, p.z], f)); ws += f; }
+    n = V.norm(n); c = V.mul(c, 1 / ws);
+    return { q: V.sub(x, V.mul(n, V.dot(V.sub(x, c), n))), n };
+  };
+  const base = part.pos.length / 3;
+  // rows: outer edge on the cloth, its middle, the turned edge just past the rim, tucked under
+  const ROWS = 4;
+  let acc = 0;
+  for (let k = 0; k < N; k++) {
+    const p = P[k], pv = P[(k - 1 + N) % N], nx = P[(k + 1) % N];
+    const tan = V.norm(V.sub(nx, pv));
+    const s0 = surfAt(p);
+    const n = s0.n;
+    let inw = V.norm(V.cross(n, tan));
+    if (V.dot(inw, V.sub(p, center ? center(p) : C)) < 0) inw = V.mul(inw, -1);       // into the cloth: away from the opening
+    if (k) acc += V.len(V.sub(p, pv));
+    const f = acc / tile, tri = Math.abs((f % 2) - 1);
+    const o1 = surfAt(V.add(p, V.mul(inw, w))), o2 = surfAt(V.add(p, V.mul(inw, w * 0.48)));
+    const pts = [
+      [V.add(o1.q, V.mul(o1.n, 0.0004)), o1.n],
+      [V.add(o2.q, V.mul(o2.n, lift)), V.norm(V.add(o2.n, V.mul(inw, -0.15)))],
+      [V.add(V.add(s0.q, V.mul(inw, -edge)), V.mul(n, lift * 0.45)), V.norm(V.add(V.mul(inw, -1), V.mul(n, 0.4)))],
+      [V.add(V.add(s0.q, V.mul(inw, w * 0.22)), V.mul(n, -lift * under)), V.norm(V.add(V.mul(n, -1), V.mul(inw, -0.3)))],
+    ];
+    const sk = skin.skin(p[0], p[1], p[2], 4);
+    for (let r = 0; r < ROWS; r++) {
+      part.pos.push(...pts[r][0]); part.nrm.push(...pts[r][1]);
+      part.uv.push(rect[0] + rect[2] * tri, rect[1] + rect[3] * (r / (ROWS - 1)));
+      part.jnt.push(...sk.j); part.wgt.push(...sk.w);
+    }
+  }
+  for (let k = 0; k < N; k++) {
+    const k2 = (k + 1) % N;
+    for (let r = 0; r < ROWS - 1; r++) {
+      const a = base + k * ROWS + r, b = a + 1, d = base + k2 * ROWS + r, e = d + 1;
+      part.idx.push(a, b, d, b, e, d);
+    }
+  }
+  return part;
+}
+
+/**
  * A round section swept along a path (`closed` for a loop). Smooth normals from the
  * parallel-transported frame. rect: u along, v around.
  */

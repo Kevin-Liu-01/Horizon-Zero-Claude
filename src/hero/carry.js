@@ -88,6 +88,11 @@ const R10 = {
  * the trunk and the back's normal, and the lance's angle from vertical and
  * azimuth (character space). Steps, per-frame caps (at 60 Hz) and bars.
  */
+/** Fix round 1: the strapped search runs at most every this many frames (it re-runs at once when the held pose breaks a bound). */
+const SEARCH_EVERY = 4;
+/** ...and every this many searches it starts from the whole grid instead of the last answer. */
+const GRID_EVERY = 8;
+
 const FREE = {
   step: [0.03, 0.03, 0.03, 1.5 * Math.PI / 180, 10 * Math.PI / 180],
   cap: [0.08, 0.08, 0.08, 6 * Math.PI / 180, 25 * Math.PI / 180],
@@ -281,6 +286,7 @@ export class LanceCarry {
     this.bounds = R10;                    // (probes / gates read the live bounds)
     this._gridAge = 8; this._lastFeas = false; this._tA = 0; this._tB = 0; this._tS = 0;
     this._tick = 0; this._aspect = 1; this._camOn = false; this._armOn = false; this._climb = false; this._headR = 0.1;
+    this._searchAge = 0; this._armWas = false; this._camWas = false;
     this._nTail = 0; this._tailChains = null; this._tailPts = null; this._terr = null; this._fpOn = false; this._fstep = null;
     // every number is a number (NaN: not measured this frame), so no field ever holds a boxed double
     this.out = { deg: 0, alpha: 0, beta: 0, slide: 0, tipBehindHeadPlane: 0, headGap: 0, armGap: NaN, camGap: NaN, tailGap: NaN, feasible: true, active: false, mode: 'strap' };
@@ -409,11 +415,30 @@ export class LanceCarry {
     const BS = _BS;
     BS[0] = 1e9; BS[1] = this.alpha0; BS[2] = 0; BS[3] = this.sl;
     let bFeas = false;
-    // the whole grid while there is no feasible pose to start from, and every eighth frame so the search cannot stay
-    // in a local minimum; in between the last answer is the start, and the pattern search below follows the body
-    const warm = this.out.active && this._lastFeas === true && this._gridAge < 8;
-    this._gridAge = warm ? this._gridAge + 1 : 0;
-    if (warm) {
+    /* FIX ROUND 1 (armory W1 judges, A-alloc-rate's 4 KB/s per function): the search no longer runs every frame. The
+     * pose it finds is (alpha, beta, slide) IN THE TRUNK FRAME, so it follows the body by construction; it is
+     * re-searched at most every SEARCH_EVERY frames (15 Hz at 60), and at once when the held target breaks a bound in
+     * this frame's body (one evaluation), when the draw arm or the aim camera turns on or off, and while the solve has
+     * no feasible pose. The grid runs every GRID_EVERY-th search (<= 2 Hz) so the search cannot stay in a local
+     * minimum. The ease and the bound check on the eased pose below run every frame, as before. */
+    let due = !this.out.active || this._lastFeas !== true || this._searchAge >= SEARCH_EVERY - 1
+      || armOn !== this._armWas || this._camOn !== this._camWas || this._freeT < FREE.blendOut;
+    if (!due) {
+      _ARG[0] = this._tA; _ARG[1] = this._tB; _ARG[2] = this._tS;
+      this._placeS(_b, _t);
+      this._viol(_b, _t, armOn);
+      if (_RG[0] > 0) due = true;
+    }
+    this._armWas = armOn; this._camWas = this._camOn;
+    if (!due) {
+      this._searchAge++;
+      BS[1] = this._tA; BS[2] = this._tB; BS[3] = this._tS;
+      bFeas = true;
+    } else this._searchAge = 0;
+    // the whole grid while there is no feasible pose to start from, and every GRID_EVERY-th search
+    const warm = !due || (this.out.active && this._lastFeas === true && this._gridAge < GRID_EVERY);
+    if (due) this._gridAge = warm ? this._gridAge + 1 : 0;
+    if (!due) { /* the held target: nothing to search */ } else if (warm) {
       BS[1] = this._tA; BS[2] = this._tB; BS[3] = this._tS;
       _ARG[0] = BS[1]; _ARG[1] = BS[2]; _ARG[2] = BS[3];
       this._placeS(_b, _t);
@@ -452,7 +477,7 @@ export class LanceCarry {
       const SS = _SS;
       SS[3] = 1; if (warm) SS[3] = 0.25;
       SS[0] = SS[3] * (R10.alphaMax - R10.alphaMin) / 30; SS[1] = SS[3] * R10.betaMax / 26; SS[2] = SS[3] * 0.02;
-      for (let it = 0; it < 14 && BS[0] > 0; it++) {
+      for (let it = 0; due && it < 14 && BS[0] > 0; it++) {
         let moved = false;
         for (let k = 0; k < 6; k++) {
           // the six trial moves: +-alpha, +-beta, +-slide (signs from typed tables: a ternary's phi would box)

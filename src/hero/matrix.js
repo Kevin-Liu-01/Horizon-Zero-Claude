@@ -381,6 +381,69 @@ export function stowFrame(ctx) {
   return { dCalf: +dCalf.toFixed(3), dPiece, lowAboveGround: +lowAbove.toFixed(3), lowPiece };
 }
 
+/**
+ * Each stowed piece's line (its lowest and highest bind-height vertices, as melee's A-stow-clearance reads it) and
+ * the radius melee grades it with: lance 0.0145, bow 0.02, quiver 0.03 m.
+ */
+function kitLines(kit) {
+  if (kit.userData.__lines) return kit.userData.__lines;
+  const g = kit.geometry, P = g.getAttribute('_piece'), pos = g.getAttribute('position');
+  const out = [];
+  for (const [name, bit, r] of [['lance', 1, 0.0145], ['bow', 2, 0.02], ['quiver', 4, 0.03]]) {
+    let lo = -1, hi = -1;
+    for (let i = 0; i < pos.count; i++) {
+      if ((Math.round(P.getX(i)) & bit) === 0) continue;
+      if (lo < 0 || pos.getY(i) < pos.getY(lo)) lo = i;
+      if (hi < 0 || pos.getY(i) > pos.getY(hi)) hi = i;
+    }
+    if (lo >= 0) out.push({ name, bit, r, lo, hi });
+  }
+  Object.defineProperty(kit.userData, '__lines', { value: out, enumerable: false });
+  return out;
+}
+
+/** Closest distance between segments [a0,a1] and [b0,b1] (exact, clamped). */
+function segSegDist(a0, a1, b0, b1) {
+  const ux = a1.x - a0.x, uy = a1.y - a0.y, uz = a1.z - a0.z, vx = b1.x - b0.x, vy = b1.y - b0.y, vz = b1.z - b0.z;
+  const wx = a0.x - b0.x, wy = a0.y - b0.y, wz = a0.z - b0.z;
+  const a = ux * ux + uy * uy + uz * uz, b = ux * vx + uy * vy + uz * vz, c = vx * vx + vy * vy + vz * vz;
+  const d = ux * wx + uy * wy + uz * wz, e = vx * wx + vy * wy + vz * wz, D = a * c - b * b;
+  let s = D > 1e-12 ? (b * e - c * d) / D : 0;
+  s = Math.max(0, Math.min(1, s));
+  let t = c > 1e-12 ? (b * s + e) / c : 0;
+  if (t < 0) { t = 0; s = a > 1e-12 ? Math.max(0, Math.min(1, -d / a)) : 0; } else if (t > 1) { t = 1; s = a > 1e-12 ? Math.max(0, Math.min(1, (b - d) / a)) : 0; }
+  return Math.hypot(wx + ux * s - vx * t, wy + uy * s - vy * t, wz + uz * s - vz * t);
+}
+
+/**
+ * Plan §9 A-stow-clearance: "no stowed item crosses the boom segment (pivot -> lens) by > 0.02 m". How deep the boom
+ * runs into each shown piece's capsule (its line, melee's radius): r - distance (m; negative = clear). Measured from
+ * both ends the boom can be said to start at (`camPivot`, and `camOrbit` = the pivot + the lift the boom is swept
+ * from); the deeper one is graded.
+ */
+export function boomPen(ctx) {
+  const { hero, kit } = heroMeshes(ctx);
+  const p = ctx.player, cam = ctx.camera;
+  if (!kit || !p.camPivot) return null;
+  cam.updateMatrixWorld();
+  kit.updateWorldMatrix(true, false);
+  if (kit.skeleton) kit.skeleton.update();
+  const lens = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+  const a = new THREE.Vector3(), b = new THREE.Vector3();
+  let pen = -9, piece = null;
+  for (const L of kitLines(kit)) {
+    if (hero.kit.hidden & L.bit) continue;
+    kit.getVertexPosition(L.lo, a); kit.localToWorld(a);
+    kit.getVertexPosition(L.hi, b); kit.localToWorld(b);
+    for (const piv of [p.camPivot, p.camOrbit]) {
+      if (!piv) continue;
+      const q = L.r - segSegDist(piv, lens, a, b);
+      if (q > pen) { pen = q; piece = L.name; }
+    }
+  }
+  return { pen: +pen.toFixed(4), piece };
+}
+
 /** The share of the head's screen box covered by stowed gear nearer than the head, from the live camera. By piece. */
 export function headCover(ctx) {
   const { hero, kit } = heroMeshes(ctx);
