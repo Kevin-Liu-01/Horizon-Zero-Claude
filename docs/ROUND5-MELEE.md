@@ -108,7 +108,33 @@ hero-body's five functions. Both owners are well under their baselines; the per-
 
 ## 5. The frames, read at 1600x900 against the references
 
-FRAMES_SECTION
+My reading, advisory (rule 3). Frames: `runs/r5/shots/gates/V4{6,7,8,9}-*.png` (the final tree; r1-r4
+the same rows on the earlier states).
+
+**V46-lance-ready** (vs `lance-ready-side.jpg`). The words pass: both hands on the haft, the left hand forward
+on it at 52 % with the palm on the wood (A101: 0.008 m), the blade forward and down, the tip at 0.50 m, the left
+foot forward, knees bent. It does NOT look like the reference. From the side the right hand rests on the side
+of her waist (the wrist goal is 0.25 m out, 1.10 m up, 0.05 m behind her centre) with the elbow flared back
+behind her, so the rear hand reads as a hand on the hip rather than a fist driving the butt; the trunk is
+nearly upright and the weight is not over the front hand. The reference's fighter has both hands in front of him
+and his weight low and forward. **A MAJOR finding under R54, mine** (§6.2 says what the experiment showed).
+
+**V47-melee-swing** (vs the windup, strike and follow stills). The lance is in her hands in every panel;
+light-1, light-2 and the heavy are two-handed, light-3 one-handed; no arm goes behind the head; the heavy's hips
+are the lowest. Weak next to the references: (1) in the 3/4 row the standing contacts of light-1 and light-2
+read alike, the 3/4 lens looks down the thrust and both keys hold the wrist within 0.23 m of the pelvis, so no
+standing contact shows the arms extended the way `lance-strike.jpg` does; (2) the three side windups are close
+to one another (haft raised over the right shoulder, blade forward-up). The moving heavy and the live contact with
+the smear show the body extended over the lead foot and are the two best panels. **A major finding, mine** (§6.2).
+
+**V48-lance-holster** (vs `lance-back-carry.jpg`). Reads well: one steep diagonal, the blade over the right
+shoulder, the bronze bob low at the left hip, the arms swinging fore and aft beside the body, the wrap tail clear
+of the haft. The stowed bow crosses the lance in an X and its upper limb rises behind her head (armory's piece).
+
+**V49-draw-from-jog** (vs `lance-back-carry.jpg`). The stride carries on in every tile; the right hand goes up
+her side to the haft at the right shoulder with the elbow out and under the head (A107: at a sprint the elbow is
+at most 0.056 m over the shoulder and never behind the head plane); the haft comes forward over the shoulder;
+the last tile is the guard. Passes as I read it.
 
 ## 6. Honest gaps and asks
 
