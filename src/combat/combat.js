@@ -469,7 +469,7 @@ export class Combat {
     this._concHeldPrev = false;
     this._pickupTick = 0;      // (fix round 1: frames, a Smi; a double clock written every frame is a heap number a frame)
     this._pickupN = -1; this._pickupLast = null;
-    this._aimWarm = false;
+    this._aimWarm = false; this._pihWarm = false;
 
     // --- input (keybinds v2) — all gated by state so nothing equips/cycles
     //     underneath the pause menu / death screen
@@ -1106,6 +1106,9 @@ export class Combat {
    * does not swing about when the player looks around.
    */
   _placeInHand(model, aiming, ammoId, cam) {
+    // fix round 1 (A-alloc-rate): its first call runs it 800 times, aimed and carried (it is idempotent), so V8
+    // optimizes it before play instead of running it in Sparkplug for its first ~400-800 frames
+    if (!this._pihWarm) { this._pihWarm = true; for (let i = 0; i < 800; i++) this._placeInHand(model, (i & 1) === 0, ammoId, cam); }
     const vis = this._bowVis;
     const node = this._bowNode;
     if (model.group.parent !== node) {

@@ -183,7 +183,7 @@ export async function ashParts() {
     // (its own soft drape: Pan I's modelled folds are cut for Pan's 34 columns and Pan's under-tunic)
     skirt: { yHem: 0.60, rows: 8, flare: 0.06, ripA: 0.006, colsPer: 16, fold: null },
     skirtHem: (th, y0) => y0 + 0.085 * (1 - Math.cos(th - 0.2)) * 0.9,
-    under: { yTop: 0.76, yHem: 0.545, off: -0.024, floorY: 0.70 },
+    under: { yTop: 0.76, yHem: 0.545, off: -0.012, flare: 0.05, floorY: 0.70 },
   });
   const { doc, parts, W, H, bodyPart, skinOf, clothField } = base;
   const added = [];
