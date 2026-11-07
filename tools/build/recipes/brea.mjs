@@ -442,7 +442,7 @@ export async function build({ out = ROOT } = {}) {
     bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, rAxis: 0.0685, topY: 1.82756 },
     knot: CHAINS.wrapSash.points[0],
     // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
-    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 21, across: 5, rootBack: 0.014,
+    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 22, across: 5, rootBack: 0.014,
       // fix round 2 (R54, R66 c: soft, thick, rippling cloth, no paper edge; the length and width stay): the rows go to the free strip,
       // each row is skinned smoothly across the joints, the selvedges are rolled hems 3.4 mm thick, the strip sags and ripples
       rootRows: 4, smoothSkin: true, hem: 0.0034, ripple: 0.0042 },

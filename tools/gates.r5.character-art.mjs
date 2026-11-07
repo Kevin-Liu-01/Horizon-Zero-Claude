@@ -251,8 +251,8 @@ export const GATES = [
         paste(g, img, 2 * PW, j2 * PH / 2, PW, PH / 2);
         label(g, lbl, 2 * PW + 14, j2 * PH / 2 + 28);
       };
-      half(0, off(brow, 0.036, -0.024, -0.022), 0.24, Math.PI / 2, 11, 'HER LEFT EYE IN PROFILE');
-      half(1, off(brow, -0.036, -0.024, -0.022), 0.24, -Math.PI / 2, 11, 'HER RIGHT EYE IN PROFILE');
+      half(0, off(brow, 0.036, -0.033, -0.018), 0.24, Math.PI / 2, 11, 'HER LEFT EYE IN PROFILE');
+      half(1, off(brow, -0.036, -0.033, -0.018), 0.24, -Math.PI / 2, 11, 'HER RIGHT EYE IN PROFILE');
       const hand = an.b.handR.bone.getWorldPosition(new T3()), knk = (an.bones.middle_01_r || an.b.handR.bone).getWorldPosition(new T3());
       const m = hand.clone().lerp(knk, 0.5);
       const fx = Math.sin(h), fz = Math.cos(h), rx = -Math.cos(h), rz = Math.sin(h);
