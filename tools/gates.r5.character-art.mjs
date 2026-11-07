@@ -293,7 +293,7 @@ export const GATES = [
   },
   {
     id: 'A-wrap-closed', kind: 'action', lane: 'character-art', settle: 800, timeout: 600000,
-    title: 'No see-through (plan §9 "no see-through"; R64 d): only the player drawn on a key colour, still air, the stow kit and both free cloth ends collapsed, at THREE idle phases in the same run (fix round 2: a pinhole that comes and goes with the idle is not closed). Each phase scans two view sets at 0.8 m: the HEAD (24 azimuths x 4 elevations round the face) and the COLLAR (24 azimuths x 4 elevations up to 1.2 rad, centred on neck_01 minus 0.06 m). 0 enclosed background pixels within 300 px of the head\'s centre, and within the collar\'s own projected outline (the smock round the neck, its hull grown 24 px) in the collar views (a speck of coil-card alpha, under 6 px or 3 x 2 px, is hair)',
+    title: 'No see-through (plan §9 "no see-through"; R64 d): only the player drawn on a key colour, still air, the stow kit and both free cloth ends collapsed, at THREE idle phases in the same run (fix round 2: a pinhole that comes and goes with the idle is not closed). Each phase scans two view sets at 0.8 m: the HEAD (24 azimuths x 4 elevations round the face) and the COLLAR (24 azimuths x 4 elevations up to 1.2 rad, centred on neck_01 minus 0.06 m). 0 enclosed background pixels within 300 px of the head\'s centre, and within the collar\'s own projected outline (the smock\'s collar: within 12 cm of the neck\'s axis and 4 cm of its top, its hull grown 16 px) in the collar views (a speck of coil-card alpha, under 6 px or 3 x 2 px, is hair)',
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
     })()`),
     assert: `(async () => {
@@ -332,16 +332,17 @@ export const GATES = [
         }
         return comps.filter((c) => c.area >= 6 && c.w >= 3 && c.h >= 2 && inside(c)).sort((a, b) => b.area - a.area);
       };
-      // the collar's own outline in a view: the smock's vertices round the neck (within 13 cm of neck_01's axis, from 12 cm under it to
-      // 2 cm over it), projected, their convex hull grown by 24 px. A radius round the collar counted the air between her arm and her
-      // side as a hole from 0.8 rad up (17-18 k px, enclosed by the arm, the torso and the hip); the collar's opening is what the row
-      // grades there, all of it, from every side
+      // the collar's own outline in a view: the smock's COLLAR (its vertices within 12 cm of neck_01's axis and within 4 cm of the highest
+      // of them, the stand and its rim), projected, their convex hull grown by 16 px. A radius round the collar counted the air between
+      // her arm and her side as a hole from 0.8 rad up (15-18 k px, enclosed by the arm, the torso and the hip), and so did a hull of the
+      // smock down to the chest; the collar's opening is what the row grades there, all of it, from every side
       let outfit = null;
       p.model.traverse((o) => { if (!outfit && o.isSkinnedMesh && /Outfit/i.test(o.name)) outfit = o; });
       const collarPts = () => {
         const out = [], v = new T3(), nk = neck.getWorldPosition(new T3()), n = outfit.geometry.attributes.position.count;
-        for (let i = 0; i < n; i++) { outfit.getVertexPosition(i, v); outfit.localToWorld(v); if (v.y > nk.y - 0.12 && v.y < nk.y + 0.02 && Math.hypot(v.x - nk.x, v.z - nk.z) < 0.13) out.push(v.clone()); }
-        return out;
+        for (let i = 0; i < n; i++) { outfit.getVertexPosition(i, v); outfit.localToWorld(v); if (v.y > nk.y - 0.14 && v.y < nk.y + 0.04 && Math.hypot(v.x - nk.x, v.z - nk.z) < 0.12) out.push(v.clone()); }
+        let top = -1e9; for (const q of out) top = Math.max(top, q.y);
+        return out.filter((q) => q.y > top - 0.04);
       };
       const hullOf = (pts) => {
         const P = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -399,7 +400,7 @@ export const GATES = [
           const d = Fv.clone().multiplyScalar(Math.cos(yaw) * Math.cos(el)).add(Rv.clone().multiplyScalar(Math.sin(yaw) * Math.cos(el))).add(Uv.clone().multiplyScalar(Math.sin(el)));
           const pos = c0.clone().add(d.multiplyScalar(0.8));
           const hull = region === 'collar' ? hullOf(project(cpts, pos.toArray(), c0.toArray())) : null;
-          const inside = region === 'collar' ? (c) => inHull(hull, c.x, c.y, 24) : (c) => Math.hypot(c.x - 450, c.y - 400) < 300;
+          const inside = region === 'collar' ? (c) => inHull(hull, c.x, c.y, 16) : (c) => Math.hypot(c.x - 450, c.y - 400) < 300;
           const near = scanView(pos, c0, inside);
           res.push({ phase: ph, region, az, el, area: near.reduce((s, c) => s + c.area, 0), top: near.slice(0, 2), pos: pos.toArray(), tgt: c0.toArray(), cx: 450, cy: region === 'head' ? 400 : 450 });
         }

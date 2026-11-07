@@ -597,10 +597,13 @@ export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, 
     if (shape(p[0], p[1] - 0.002, p[2]) < 0.6) return false;
     if (p[2] > -0.05) return false;                                 // in front of the ear the coils are painted
     // (fix round 2, A-wrap-closed: a card whose tip could close against the top of the ear left a pinhole of sky between them)
-    if (earClear(p[0], p[1], p[2], { gap: 0.011 }) < 0.5) return false;
+    if (earClear(p[0], p[1], p[2], { gap: 0.02 }) < 0.5) return false;
     return wrapped.lowEdge(p) < 0.10;
   };
   const anchors = scatterAnchors(grid, { center, step: 0.118, seed: 5, keep, elMin: -1.2, elMax: 0.75 });
+  // (fix round 2, A-wrap-closed: the lowest nape cards and those just behind the ear lie flat, a fifth of the lift, and so do the temple
+  // cards below (0.3): seen from behind, a tip standing off the head's curve at its outline shut a sliver of sky against the skin)
+  for (const a of anchors) if (a.p[1] < 1.6 || earClear(a.p[0], a.p[1], a.p[2], { gap: 0.022 }) < 0.5) a.liftK = 0.2;
   // a few coils escape under the hem at the temples: the wrap sits on hair, not on a mannequin
   const R0 = rng(77);
   const far = 0.3;
@@ -614,7 +617,7 @@ export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, 
       const t = grid.cast(center[0] + d[0] * far, center[1] + d[1] * far, center[2] + d[2] * far, -d[0], -d[1], -d[2], far, 0.0001);
       if (t < 0) continue;
       const q = [center[0] + d[0] * (far - t), center[1] + d[1] * (far - t), center[2] + d[2] * (far - t)];
-      if (wrapped.hemGap(q, 0.006) < 0.004) { found = { p: q, n: d, az, el, scale: 0.42 + R0() * 0.2 }; break; }
+      if (wrapped.hemGap(q, 0.006) < 0.004) { found = { p: q, n: d, az, el, scale: 0.42 + R0() * 0.2, liftK: 0.3 }; break; }
     }
     if (found && Math.abs(found.p[0]) < 0.0735 && earClear(found.p[0], found.p[1], found.p[2], { gap: 0.011 }) >= 0.5) anchors.push(found);
   }

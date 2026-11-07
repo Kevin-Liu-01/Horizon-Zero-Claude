@@ -278,7 +278,7 @@ export function coilCards(anchors, { flow, skinOf, length = [0.014, 0.024], widt
     let f = flow(a, R);
     f = norm(sub(f, mul(n, dot(f, n))));
     const s = norm(cross(n, f));
-    const L = mix(length[0], length[1], R()), Wd = mix(width[0], width[1], R()) * (a.scale ?? 1), lift = mix(liftTip[0], liftTip[1], R());
+    const L = mix(length[0], length[1], R()), Wd = mix(width[0], width[1], R()) * (a.scale ?? 1), lift = mix(liftTip[0], liftTip[1], R()) * (a.liftK ?? 1);
     const roll = (R() - 0.5) * 0.7;                                   // a little rotation about the flow, so cards do not all face out
     const sd = norm(add(mul(s, Math.cos(roll)), mul(n, Math.sin(roll))));
     // the coil field's own scale (0.3 mm per texel), so a coil stays round on any card
