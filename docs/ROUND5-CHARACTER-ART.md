@@ -1,8 +1,33 @@
-# ROUND 5 — character-art (W1; R54, R56, R58, R59)
+# ROUND 5 — character-art (W1; R54, R56, R58, R59, R63, R64, R66)
 
-Brea's close-up, rebuilt in the recipe, and the kit settlements builds NPCs on (R56, R57 c). Budgets did not move. Fix round 1
-(Nov 6) answers the gate judge's and the engineering + film judge's findings; §1 marks what it changed, §2 measures it, §3 is the
-reusable API, §4 maps every finding to what was done.
+Brea's close-up, rebuilt in the recipe, and the kit settlements builds NPCs on (R56, R57 c). Budgets did not move. Fix round 2
+(Nov 6-7) answers the eight findings of the gate judge and the engineering + film judge: §0 maps them to what was done, §2 measures the
+final build, §3 is the reusable API (fix round 2's additions at its end), §4 keeps fix round 1's map.
+
+## 0. Fix round 2 (Nov 6), finding by finding
+
+The eight findings of the gate judge (`character-art/W1/gate-judge`) and the engineering + film judge (`fix-r1/judge-eng-film-r1`).
+Before building I read Kevin's five Nov 6 references (R66 a), outside the repo. Image 1's three face panels are our own frames repainted,
+and they show where the face has to go: a lid with a crease and a dark lash line, a warm iris under the lid, full lips, a short, soft
+lower face, small round ears, and chalky paste. Everything was iterated offline first. I used a CPU previewer of the GLB (sun, hemi,
+shadow, ACES) and the posed see-through scan built against the live idle pose dump, so Chrome was used only to confirm. Every number
+below comes from the final build unless it says otherwise.
+
+| # | finding | what was done | measured |
+|---|---|---|---|
+| 1, 6a | The eye in profile is a pale wedge: no catch-light, no lash hair, no lid | **One patch per eye** (`remapEyeUV` with two rects), each painted from **that eye's own opening** (`paintEye({ open, centre, side })`). The upper lid and its lashes shade the top third of the ball (×0.30 at the margin, back to full by 3.4 mm). The lower lid occludes a band over a thin, smooth tear line. Both corners fall to a warm grey near the skin's value (corner ×0.5, warmed 55 % toward the skin), and the inner corner has a pink caruncle. The sclera base drops from (176,162,144) to (166,148,130). Two glints sit either side of the cornea's apex (+1.25 mm / -2.1 mm), so a profile from either side finds one on the near face of the cornea. **Lid rims:** a row lying on the ball under each upper lid's margin, 0.85 mm, mapped to a new `lidRim` cell (lash line → warm lid brown, wet last row). **Lashes:** a two-sided card that curls forward (`curl` 0.24 over the inner two thirds), 6.8 mm, so a profile reads hair standing past the lid. The far eye's outer third shortens sooner, splays less (0.30) and loses its curl. The lash texture's strands no longer cross and sit on a solid root band, so no view shuts a pocket of sky (A-wrap-closed). The rim and the lashes are rough (0.5-0.7), because a smooth wet row caught the 08:00 sun as a white liner. **The lateral white** (what a profile sees) falls to about 40 % by the corner. The ball the lids always cover (2 mm margin) is culled: `cullEyeUnderLids`, 220 tris | detail sheet: both eyes in profile |
+| 5a | "Inset glass balls": a bright, even white all round the iris, no lid thickness | the upper lid comes down 1.2 mm (was 0.72) and the lower lid up 0.95 mm (was 0.5). Both are held clear of the ball and of the cornea dome, never through them. Add the lid rim, the lid shade and the corners above | front: the lid covers the iris top, there is no scleral show below, and the lash line is dark |
+| 5b | Lips have no volume | sculpted in the field from the stock midline's measured landmarks: the upper lip's white roll; the bow's two peaks lifted and its notch held; the tubercle; a philtrum groove between two columns; the lower lip fuller, rolled forward in two lobes over a real mentolabial fold; the corners tucked in. The lips' roughness drops to 0.34, so the lower lip carries a sheen | NOSE + LIPS panel |
+| 5c, 4 | The lower face is long and heavy | chin bump dy -1.6 → **+1.8 mm** (3.4 mm up); jaw d (-1.3, -6.0, 1.4) → (-2.6, -4.4, 3.4), so less of it goes down and more goes in and forward; the mandible's line 2.4 → 1.2 mm down | A-face-delta: chin 6.47, jaw 6.13 mm (≥ 6 kept), IoU see §2 |
+| 5d | Dark smudges at the mouth corners and under the nose read as stubble | three causes, all removed. (1) The muzzle zone painted the mouth area cooler and greyer; it is now neutral warm. (2) The nasolabial fold ended beside the corner of the mouth as a dark spot; it now stops above the corner, softer. (3) The `inward` layer took forward-facing skin toward near-black wherever the baked AO was low, which included the corners' deep fold; it now does that only round the nostrils. The baked AO's floor is also raised over the philtrum and the corners, and the source's strokes are smoothed in the ring round the lips | V-brea-closeup-low (08:00) |
+| 5e, 4 | Matte skin, no specular breakup; large smooth planes | roughness in the ORM: forehead -0.17, brow centre -0.06 more, nose tip -0.24, bridge -0.20, cheekbone crest -0.10 on top of the cheek's -0.12, chin -0.14, lips 0.34. A `planes` layer adds a 1 cm undulation in height (0.13 mm) and in tone (±5 %), and a finer drift in the sheen. A sub-lid fold and a faint line under it (`creases`) | V-brea-closeup, -low |
+| 4 | Salt paste: white band, black-pepper speckle, pixelated edges | `saltPaste` rewritten. The paste dries into **plates** about 5 mm across (cell 190/m), split by continuous hairline cracks only where it lies thick. The network is incomplete (some borders never split), and a crack is the skin in shade, a warm dark brown, never black. Plate edges curl. The dry-brush edge drags along the stroke in streaks the texels can carry, with no per-texel noise anywhere. **Texel density:** the face's density rule had stopped matching once the forehead was culled, so the face fell to the skull's 1.5, 0.56 mm a texel. It is 2.1 now, **0.43 mm a texel**, so the stroke is 19 texels tall instead of 14 | EYES + SALT PASTE |
+| 4 | Temple coil patches end in a hard right-angle step | the box cut-outs round the ear (in `hairShape` and `hairBandUnderHem`) are gone. `earClear` keeps a wandering clearance of 3-6 mm off the reshaped ear's own outline. `templeHair` runs the temple down into a sideburn whose front and bottom edges meet in a soft point at the tragus' height, and over the ear the hair runs on to the nape. The skull sides and ears had also lost their density rule to the same culling (1.1 mm a texel); at 2.6 they are **0.64 mm**. The arms, which are elastic, give 14 % of their texels for it | HEM + TEMPLE, both sides |
+| 4, 6b | Ear oversized, set high, elfin point, thick rim | `reshapeEars` (lib/skin-human.mjs). Each ear is scaled to **0.85** about its attachment, so it also stands off the skull less. In its own (y, z) plane the upper half's outline is pulled back toward an upright ellipse, so the helix is an arc with no top-back point. The lobe's tip rounds up and in. The ear and the skin round its root then go down **5 mm** together, so it is lowered, not sheared | THE EAR, profiles |
+| 2 | The wrap tail is low-poly folded paper with hard kinks at the joints | `clothTail({ smoothSkin, rootRows, hem, ripple })`. Each row is skinned to three joints with quadratic B-spline weights, so a bend at a joint spreads over the rows either side of it. The rest shape follows a Catmull-Rom curve through the chain's points, not their polyline. The rows go where it bends: 4 on the gathered root, 17 on the free strip, crowded toward the root's end where the stiff root hands over to the hanging strip (21 in all, was 18 even). The selvedges are **rolled hems 3.4 mm thick**, joining the two faces with their normals turning round. The hem sits on the faces' own edge vertices, and with a hem the faces sample inside the panel's frayed selvedge. The first live run showed a sky-white slit along the edge, from a hem set 0.85 mm off the faces and their frayed alpha, and this closes it. A soft sag and ripple runs down the free strip. The chain, its names and its points are hero-body's and are untouched | tail 492 tris (was 360); backlit, shade, detail-back |
+| 3 | R63 (c): narrow the tail to 0.40 × 0.07 m | **Superseded by R66 (c)** (Nov 6): the narrowing is suspended; the tail keeps its current length and the work goes into soft, thick, rippling cloth with no paper edge (row 2). Nothing narrowed | — |
+| 7 | A-wrap-closed fails on reproduction (1 of 96, at the ear top); the row sees one idle instant | **The row now grades three idle phases in one run**: now, then 1.3 s and 2.9 s further. The engine clock runs only between phases, and the kit and the cloth ends are re-collapsed for each phase. **The cause is trimmed:** the three temple cards a side that stood over the ear's top are gone, the painted coils carry that stretch now, and no nape card may stand within 11 mm of the ear's outline. The ear is also 5 mm lower and smaller, so nothing closes against its top | §2 |
+| 8 | A-wrap-closed cannot see the collar (R64 d) | **A second view set in the same row**: 24 azimuths × elevations 0, 0.4, 0.8 and 1.2 rad at 0.8 m, centred on `neck_01` minus 0.06 m, in the body's level frame. It uses the same speck rule and the same 300 px window round its own centre. Both regions count, at all three phases: 576 views. §4 rows 14 and 15 now cite this row for the collar | §2 |
 
 ## 1. What was built
 
@@ -215,6 +240,28 @@ enclosed pixel to name the triangle and part that let it through. That tool and 
   A multiplies the alpha cut), `metallicFactor 1` with the ORM's B channel (0 on cloth, 0.19 on hair, so
   near-black coils do not go grey in a strong sun, and keep their diffuse in the shade). The ORM is a third 512² map; §4.4's "hair 512²" counted one.
 
+### API added in fix round 2 (settlements: these are the parts an NPC head reuses)
+- `lib/skin.mjs` `paintEye(N, { span, iris, amber, sclera, open, centre, side, conv, skin })`: given `open` (that eye's `eyeOpening`), `centre`
+  (its eye centre), `side` (+1 her left) and `conv` (the patch's convergence offset, `±EYE_CONV`), the white is painted from the real lids:
+  upper-lid shade, lower-lid occlusion over a tear line, corners to `skin`'s value, a caruncle at the inner corner, glints either side
+  of the apex. Without `open` it paints the old shared patch.
+- `lib/skin-human.mjs` `remapEyeUV(prim, eyes, [rectL, rectR])` one patch per eye (a single rect still works); `EYE_CONV`.
+  `paintHumanSkin({ eyeR: [rectL, rectR], sclera, eyeSkin, temple })` paints each eye from `opens[k]`.
+  `cullEyeUnderLids(eyesPrim, eyes, opens, { margin })` drops the ball under the lids (Brea: 186 tris).
+  `reshapeEars(prim, headW, { mm, scale, drop, c, skull })` scale, round and lower the ears (UBC female numbers by default).
+  `earClear(X, Y, Z, { gap, ear })` and `EAR` the ear's side outline; `templeHair(X, Y, Z)` the temple-to-sideburn hair. `hairShape`
+  and `hairBandUnderHem` use `earClear` (no box cut-outs). `scalpCards` keeps every card 11 mm off the ear and six temple cards a side.
+  `humanDensity`: the face and skull-side rules match the culled islands (face 2.1, skull sides + ears 2.6).
+  `faceLayers` adds `planes` (broad skin undulation), the sub-lid fold, the AO floor over the philtrum and the mouth's corners.
+- `lib/hair.mjs` `lashCard(open, { ..., length, curl, twoSided, rim: { h, rect, onBall(p) } })`: the lid-margin row on the ball, the forward
+  curl, the lashes' backs. `paintLidRim(buf, { rect })` the margin cell; `WRAP_ATLAS.lidRim` = [384, 416, 128, 16] (spare is now
+  [384, 432, 128, 80]). `paintLashes`: non-crossing strands, a solid root band.
+- `lib/wrap.mjs` `clothTail(points, joints, { ..., rootRows, smoothSkin, hem, ripple })` (through `woundHeadwrap`'s `tail`): rows by
+  region, B-spline skin weights over three joints and a Catmull-Rom rest curve, rolled hems, a running ripple. Defaults reproduce the
+  old strip.
+- `lib/skin.mjs` `saltPaste({ y, half, xMax, salt, thick, cell })`: `cell` is now the plate size (190/m); the old `cell` 300 fissure
+  network and its fine twin are gone.
+
 ## 4. Fix round 1, finding by finding
 
 The 23 findings of the gate judge (`character-art/W1/gate-judge`) and the engineering + film judge (r0). "Frame" names the row whose
@@ -237,8 +284,8 @@ live frames and kept them.
 | 11 | far-cheek polygon outline; faceted ears | edges refined on the cheek and temple outline; the ear's facets came from the normal map, now at half on the ear with its own normals | detail THE EAR: rounded, folds read, no planes |
 | 12 | zigzag where the turns cross on her right | each turn lies on the stack under it | `-right` profile: one cloth over another |
 | 13 | staging hid the cord, filmed one side | close-up rows hide only the lance and bow (`setHidden(3)`), film both sides, the back and back-high, backlit, night | every sheet shows the alidade cord |
-| 14 | a sliver inside the collar | the collar lid (row 15) | `A-wrap-closed` |
-| 15 | the back of the wrap open; no scan | `A-wrap-closed`: 96 views on a key colour; closed by the lid, the bun swell, the knot shell, the cap hem, the hair fixes | 3,397 px / 18 views (b2) -> 8 px / 1 view (b3) -> §2 |
+| 14 | a sliver inside the collar | the collar lid (row 15) | `A-wrap-closed`'s COLLAR view set (fix round 2, R64 d: 24 azimuths x elevations 0..1.2 rad round neck_01 less 6 cm, graded inside the collar's own projected outline, at three idle phases); in fix round 1 this was verified offline only |
+| 15 | the back of the wrap open; no scan | `A-wrap-closed`: 96 views on a key colour; closed by the lid, the bun swell, the knot shell, the cap hem, the hair fixes | 3,397 px / 18 views (b2) -> 8 px / 1 view (b3) -> fix round 2: head AND collar sets at three idle phases, §2 |
 | 16 | only her left filmed | 8 close-up rows: both sides, shade, dusk both sides, back, backlit, night, two detail sheets | §2 |
 | 17 | (= 1) | | |
 | 18 | (= 2) | | |
