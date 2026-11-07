@@ -7,7 +7,9 @@
  * Shepherd's. The W2 poses of the swap matrix (gaff hook-rip, Windwall guard, pendulum
  * release) and the perks whose hooks land with combat-kit report PENDING by name.
  * Carried rows the block repeats run under `<id>@armory` with the carried row's own
- * assert (never a copy), so A4, A5, A51, A52 and V29 stay single-sourced.
+ * assert (never a copy), so A4, A5, A51, A52 and V29 stay single-sourced. A-variant-motion-rerun
+ * runs hero-body's A-run-arms and A-wrap-clear asserts verbatim with each variant on (fix round 1),
+ * and melee's A-stow-clearance once its file is in the tree.
  * Page helpers live in `src/hero/{matrix,sheets}.js` (dev / gate modules; never bundled).
  */
 import { PLACES, placed, placedSetup } from './gate-places.mjs';

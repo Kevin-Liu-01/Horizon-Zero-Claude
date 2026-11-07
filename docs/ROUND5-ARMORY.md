@@ -15,13 +15,20 @@ The two W1 judges' findings, fixed in place. Sections 0–5 below are the Nov 6 
   - the smock round the armhole's front keeps 65 % of its clavicle weight (the old rule moved it all to spine_03 below 1.47 m);
   - a soft 7.5 mm bump moves the smock, its binding and the yoke under it off her there before the fit;
   - `PAN_FIT` lets the fit give that region a full ease (it was capped at 5 mm with the yoke).
-  Pan I at full draw: 0.63 / 0.72 % with the new binding and none of these, 0.26 / 0.32 % with them (it was 0.40 / 0.50 % before this round).
+  Probe, Pan I at full draw: 0.63 / 0.72 % with the new binding and none of these; 0.30 / 0.34 % with them. It was 0.40 / 0.50 % before this round.
 - **The yoke and the collar's back.** The yoke's sides ride a third of their clavicle; the collar's back, now kept down to 1.492 m (the window, below), takes up to 88 % of the neck.
-- **Ash I's cowl.** A second fit on the cowl alone (up to 3 cm, in a 6 cm field, smoothed four times), and the loose turn rides up to 45 % of its clavicle where it lies on the shoulder. Probe at full draw: cowl 26–28 vertices → 9–10; Ash 0.72 / 0.76 % → 0.38 / 0.40 %. Its top turn sits 8 mm lower and 4 mm further off under her chin: the head clause reads 0.
-- **Pan III's scutes** take a share of the upper arm, the same for every vertex of a tile (12 / 30 / 50 % from the inside out), so each stays a rigid plate; their front reach is two thirds of their back's. Probe at full draw 0.52 / 0.56 % → 0.24 / 0.27 %; scute vertices inside her 11–12 → 4–5.
-- **The quiver** (`stowkit._pushQuiver`): her right upper arm and forearm push the tube's upper half, her right shin its lower half, wherever they come within 11.5 cm axis to axis; the tube turns about its band by what opens the gap (at most 0.45 rad), eased in fast and out slowly. The lance's roll of its foot is 0.30 rad (was 0.22).
-- **Pan II's back hat** over the stowed bow sits 16 mm further out.
-- **The left ankle in the lance's stance.** The pose dump now records the ready stance over 1.5 s (`idle-lance-1..6`) and the frame after each strike (`light1`, `heavy1`), so the fit sees the moments the matrix samples.
+- **Ash I's cowl.**
+  - A second fit on the cowl alone, up to 2 cm in a 6 cm field smoothed four times.
+  - The loose outer turn rides up to 45 % of its clavicle where it lies on the shoulder.
+  - Its top turn sits 8 mm lower and 4 mm further off under her chin.
+  - Probe at full draw: Ash 0.72 / 0.76 % → 0.48 / 0.49 %.
+  - Run f1-b had the fit at 3 cm. That brought the roll within 2.4 cm of the draw hand (clause d, bar 3), and a clavicle share on the upper rows lifted them into her jaw (the head clause read 1). The fit is now 2 cm, and only the outer turn rides the clavicle.
+- **Pan III's scutes** take a share of the upper arm, the same for every vertex of a tile (12 / 30 / 50 % from the inside out), so each stays a rigid plate. Their front reach is two thirds of their back's; the outer lame's back reach is 70 % (run f1-b: the heavy swung it 4.1 cm into the stowed bow). Probe at full draw: 0.52 / 0.56 % → 0.30 / 0.34 %; scute vertices inside her 11–12 → 4–5.
+- **The quiver** (`stowkit._pushQuiver`). Her right upper arm and forearm shove the tube's upper half, and her right thigh and shin its lower half, wherever they come within 11.5 cm axis to axis. The shove is sideways on its belt, square to the tube, by what opens the gap (at most 7 cm), eased in fast and out slowly. The lance's roll of its foot is 0.30 rad (was 0.22).
+  - Run f1-b turned the tube about its band instead. Knocking the arrows out swung the foot in by up to 18 cm: 3.7–5 cm into the skirt at idle, and 3 mm from the calf (A-stow-clearance).
+- **Pan II's back hat** over the stowed bow rides spine_02, the bone the stowed bow rides, 6 mm further out. On spine_03, her twist turned one against the other: the bow came 3.3–4.0 cm into the brim at a sprint and in the light attack (run f1-b).
+- **Ash I's rope belt** ends ride half of the left thigh at their tips. Rigid on the pelvis, the thigh came 3.9–4.5 cm up through them at a sprint with the lance.
+- **The left ankle in the lance's stance.** The pose dump now records the ready stance over 1.5 s (`idle-lance-1..6`) and the frame after each strike (`light1`, `heavy1`), so the fit sees the moments the matrix samples. `rom-poses.json` is re-dumped (run f1-b) except its three draws, which are kept from Nov 6 (see V-gear-in-hand: the f1-b draws were taken with a bow offset that is reverted). Probe, boots' stretch in the ready stance: 1.40–1.44 at its worst moment (bar 1.6).
 - **The matrix row samples more.** Each row reads several frames of its pose and keeps the worst of each clause on its own: four across the sprint's stride, three over the held idle and full-draw poses (0.1 s apart), three consecutive frames from the strike's contact. A favourable moment can no longer pass a row.
 
 **A-variant-motion-rerun.** The row no longer re-codes anything. Per variant it equips the variant and runs the owners' own asserts, verbatim, from their files: hero-body's `A-run-arms` and `A-wrap-clear` (flat 46 m strip, sprint-stop at four pitches plus the two crouched rows, the M10 capsule minus its half-thickness, the backswing and speed clauses), and `A-stow-clearance`. Melee owns that last row at its W1 exit and its file is not in this tree, so until it is, the row runs `A-stow-clearance@armory`, which now grades every clause of plan §9 including the boom (`matrix.js boomPen`: the boom segment from `camPivot` and from `camOrbit` to the lens, against each shown piece's line at melee's radii, ≤ 0.02 m, at all 48 sweep frames). When `tools/gates.r5.melee.mjs` lands, melee's row is used instead, by name.
@@ -32,7 +39,8 @@ The two W1 judges' findings, fixed in place. Sections 0–5 below are the Nov 6 
 - **The collar window.** The collar's back is kept down to 1.492 m, under the smock's back neckline (1.515), instead of from 1.53: the skin the hide bit culls there showed the world through her. Its two front corners are rounded down into the opening over their last 3 cm.
 - **The knot** (`sash.mjs sashKnotTied`) sits ON the band at 1.075 m, behind the left hip: a gathered roll with the tying turn standing proud round its middle, a turn of the band coming down into it, and two squashed loops whose broad face shows from behind, like a bow's wings. It used to hang 7–9 cm under the band.
 - **The tails** hang from under the knot with rolled hems (the cloth thickens to 6 mm over its outer fifth with a half-round edge), gathered pleats easing out, a twist and a bias cut.
-- **The tails' motion.** They ride a new joint, `sash_swing`, standing at the knot under the pelvis. `src/hero/outfit.js` (`SashSwing`) turns it every frame: a quarter of her left thigh's swing about the hip joint, plus a damped pendulum about the knot driven by the pelvis's acceleration in character space. The pendulum has two angles, out from the hip (−0.04 to 0.5 rad, never in toward her) and round it (±0.3 rad). The skin ramps from the pelvis at the knot to the joint down the tails. The sash is 884 tris (bible ≤ 900).
+- **The tails' motion.** They ride a new joint, `sash_swing`, standing at the knot under the pelvis. `src/hero/outfit.js` (`SashSwing`) turns it every frame: a quarter of her left thigh's swing about the hip joint, plus a damped pendulum about the knot driven by the pelvis's acceleration in character space (low-passed over 0.1 s). The pendulum has two angles, out from the hip (−0.03 to 0.22 rad, never in toward her) and round it (±0.18 rad). The skin ramps from the pelvis at the knot to the joint down the tails. The sash is 884 tris (bible ≤ 900).
+  - Run f1-b's first tuning drove the tails to their 0.5 rad clamp at a jog, into the carried bow's path (the held clause's −3.7 to −4.0 cm), and they rang between their clamps after a turn. The push is a third of what it was, stiffer and better damped.
 - **The smock's albedo.** The dye's blots were noise stretched 3.3 × down the cloth at ±10 %, which read as wood grain; they are round and ±3.5 %. The weft's texel-wide lines and slubs are at 15 % (`cloth(..., { weft })`). The warp's streaks stay, at ±8 %.
 - **The bodice is modelled** (`draftSmock`'s new `bodice(y, th, yNeck)`), on the painter's own fields: gathers falling from the bound neckline (up to 6.7 mm), the drag folds fanning from the two high points of the chest (up to 7 mm), the pull from the shoulder blades down the back, and the felled side seams as a 1.2 mm ridge with a groove each side. Every fold is outward-biased. The painted drag folds keep their shade and halve their height so they do not double. The smock is 64 columns (was 60).
 - **The under-tunic hem.** The slit corners are cut round, 2 cm up over the last 0.14 rad of each panel. The hem is a rolled 3.2 mm lip, a shade lighter, with a stitched turn.
@@ -48,12 +56,104 @@ The two W1 judges' findings, fixed in place. Sections 0–5 below are the Nov 6 
 In 64 px black-fill masks (bind pose, offline), Pan I against Pan III goes from IoU 0.974 / 0.981 (front / side) to 0.950 / 0.926.
 
 **V-gear-in-hand.**
-- **The arrow on the fist.** The Sabina's model hangs at `MODEL_Y` = +0.042 m from the hand's joint (the base class hangs a bow's model at −0.1 m, under it). The animator's draw solve reads that offset live (bow hand = anchor − nock offset), so the nock and the arrow are 6 cm over the hand's joint, on top of her fist, and the solve places the hand under the arrow. The stave's grip is centred at `GRIP_Y` −0.027 m, so the arrow crosses at the wrap's top edge, over her index finger.
-- **The lance panels** are filmed once she is ready (stance `ready`, phase idle), each with her whole figure and the lance's full length.
+- **The arrow on the fist: tried and reverted** (F1.7). The animator's draw solve reads the bow model's hang live. Lifting the Sabina's model to +0.042 m and lowering the stave to match put the arrow on top of her fist in run f1-b's frame. It also re-shaped the draw arm: the forearm moved 0.385 m and the elbow rose above her shoulder, which breaks Kevin's elbow bar. The sleeve cap stretched 1.71 x, matrix (b) at full draw rose to 0.85–1.25 %, and the alidade cord came within 0.042 m of the hand. The arm solve is hero-body's.
+- **The lance panels** are filmed once she is ready (stance `ready`, phase idle), each with her whole figure and the lance's full length (run f1-b's frame: head to boots, the full lance; she holds it in her right hand only, which is melee's ready pose).
 
 **Allocation (A-alloc-rate, 4 KB/s per function from the W1 exit).** See F1.2.
 
-<!-- F1-RESULTS -->
+### F1.2 Allocation: the tier, measured
+
+The judge asked for the tier to be proven. A scratch runner row (`X-carry-tier`, run through `tools/gates.mjs --extra`) launches its own Chrome with `--allow-natives-syntax --trace-deopt` and stages gates-perf's two workloads: standing, then sprint-and-draw with a full draw every 2.5 s. Over four 10 s windows it reads three things:
+- the bytes each src function allocates (the sampling heap profiler, caller attribution, as A-alloc-rate);
+- each hot armory function's V8 tier (`%GetOptimizationStatus`, every 200 ms);
+- every deopt with its reason.
+
+Run f1-b, Nov 7 04:14 UTC, with the fixes below already in:
+
+| Window | What the tiers show | Armory's functions over 4 KB/s |
+|---|---|---|
+| standing | A deopt wave at 9.4 s ("dependent prototype chain changed", lazy). After it, `kit.solve`, `_pushQuiver`, `carry._pose` and `outfit.update` spend 56–100 % of the window in Sparkplug | carry `update` 181, `_pose` 118, `_pushQuiver` 58, outfit `update` 29, combat `update` 10 |
+| sprint and draw 1 | A wave of 327 deopts 0.7 s in, the moment the run and the first draw start: "dependent prototype chain changed" across carry, stowkit, melee and combat, plus "insufficient type feedback" and "wrong map" in `_viol`. `carry.update`, `_pose`, `_report`, `kit.solve`, `combat.update` and `_placeInHand` then run 22–100 % of the window in Sparkplug, where every double is a fresh heap number | carry `update` 341, `_viol` 303, `_pose` 206, outfit `update` 56, `_pushQuiver` 45, `_report` 36, combat `update` 28, `_placeInHand` 10, `_solveQuiver` 5.2 |
+| sprint and draw 2 | 0 deopts. Every armory function is optimized | combat `update` 6.8, `_stepFly` (arrows) 5.2, combat.js:282 `update` 4.7, `_updateAimPoint` 4.3; carry, stowkit, outfit, bow ≤ 1 |
+| sprint and draw 3 | 0 deopts | combat `update` 6.6, `_stepFly` 6.8, combat.js:282 4.1; the rest ≤ 1.8 |
+
+What this proves:
+1. **The steady state is clean.** Once optimized, carry.js, stowkit.js, outfit.js and bow.js allocate under 1 KB/s each. The Nov 6 rewrite was right for the optimized tier.
+2. **The 600–900 KB/s readings are Sparkplug.** In node, a function called once a frame stays in Sparkplug for its first ~400–800 calls (7–13 s at 60 fps) and in Maglev for minutes (`tier/t2.mjs`). Pure arithmetic there allocates a heap number per double: `_m4inv`'s 1.37 KB a call is about 86 of them.
+3. **The page drops everything back to Sparkplug in waves.** The waves are lazy "dependent prototype chain changed" deopts that hit armory, melee and combat functions in the same millisecond, at the moment her sprint and first draw begin. instruments-core traced the same waves to the root ctx, which is a prototype of other systems' ctx views, being reshaped at her first sprint (docs/ROUND5-INSTRUMENTS-CORE.md §F). A once-a-frame function then needs another 400–800 frames to re-optimize, so a 10 s window opened right after the wave grades Sparkplug.
+
+What armory changed for it:
+- **Warm-up.** The per-frame solves warm themselves once, on her first frame, on her real pose and through every branch (carry `warm`: aiming or not, draw arm and aim camera on and off; the quiver with and without the lance's hold; the sash swing; the Sabina's `setDraw` over its draws; the aim march and `_placeInHand` on first use). It costs about 40 ms once. In node, 2000 tight calls put a function in Maglev before its first real frame.
+- **Fewer calls.** The carry search runs at most every 4th frame (15 Hz), at once when the held pose breaks a bound in the current body, and from the whole grid every 8th search. `_viol` runs about 30 times a frame on average, not about 110.
+- **No loads through the root ctx in the solves.** Terrain and camera are read once.
+- **The pickup scan** runs every 18th frame, and only when the interactables list changed.
+
+What is still open is in F1.6.
+
+<!-- F1-GATES -->
+
+### F1.5 Contracts published or changed
+
+```
+// src/hero/outfit.js
+player.hero.outfit.update(dt)                 // HeroRig.update calls it after the kit: the sash tails' hang
+player.hero.outfit.swing -> SashSwing | null  // { bone: 'sash_swing', th (out, rad), ph (along, rad), update(dt) }
+player.hero.outfit.dispose()                  // unequip + remove the joints it created (HeroRig.dispose calls it)
+r5Outfit.sashSwing = { joint: 'sash_swing', parent: 'pelvis', thighShare: 0.25, knot: [x,y,z], hip: [x,y,z] }   // GLB extras
+// a set's joints the hero lacks (never dyn_) are created once under their source parent, with the source's bind
+
+// src/hero/carry.js
+LanceCarry.warm(an, cam)                      // once, first frame: 1600 self-runs through every branch (V8 tiers it)
+SEARCH_EVERY = 4, GRID_EVERY = 8              // the strapped search at <= 15 Hz; re-searched at once on a broken bound
+
+// src/hero/stowkit.js
+HeroStowKit._pushQuiver(an, sock, h, dt)      // the right arm and shin push the quiver about its band
+QUIVER_CLEAR = 0.115 (m, axis to axis), QUIVER_PUSH_MAX = 0.45 (rad), QUIVER_LANCE_ROLL 0.22 -> 0.30
+
+// src/combat/bow.js (SabinaBow)
+model.position.y = MODEL_Y (+0.042)           // the animator's nock offset follows it live: the arrow rests on her fist
+GRIP_Y = -0.027                                // the stave's wrap centre under the model's origin
+
+// src/hero/matrix.js (gate module)
+boomPen(ctx) -> { pen, piece }                 // how deep the boom (camPivot and camOrbit -> lens) runs into a shown piece
+
+// src/combat/combat.js
+_pollWeaponPickups                              // every 18th frame and only when the interactables list changed
+_updateAimPoint, _placeInHand                   // warmed on first use (800 self-runs)
+```
+
+Recipes (armory's libraries):
+
+```
+bindingOn(part, run, surf, skin, { w, lift, rect, tile, smooth, under, edge, center })   // smock.mjs: a binding ON the cloth
+draftSmock(part, T, skin, { ..., bodice(y, th, yNeck) })                                // smock.mjs: modelled bodice folds/seams
+sashKnotTied(c, { side, up, out }, { joint, rect, w, h, d, drop, ear, earW, earT, earDown }) // sash.mjs: the tied knot on the band
+sashTail(P, joints, { ..., hem })                                                       // sash.mjs: rolled hems
+addSocketJoint(doc, name, parentName, at = null)                                        // output.mjs: a pivot joint at `at`
+cloth(t, o, col, { ..., weft })                                                         // outfit-pan-1.mjs: weft lines' share
+PAN_FIT.capAt                                                                           // the armhole's front may take a full ease
+SASH_SWING                                                                              // outfit-pan-1.mjs: the swing joint's data
+addPieces(base)                                                                         // pan-3.mjs: exported (scutes, guards, hem band)
+rom-dump.gates.mjs: + idle-lance-1..6, light1, heavy1                                   // the poses the fit reads
+```
+
+Gates: `A-variant-motion-rerun:<id>` runs the owners' rows (above); `A-stow-clearance@armory` adds the boom clause; `A-variant-swap-matrix` keeps each clause's worst over 3–4 frames per row.
+
+<!-- F1-GAPS -->
+
+### F1.7 For other lanes and the orchestrator
+
+- **hero-body: the arrow on the bow fist** (V-gear-in-hand, "the arrow passes under the bow fist"). I tried it from armory's side and reverted it.
+  - The change: the animator's draw solve reads the bow model's hang live (`bow.model.position`, its nock offset). So lifting the Sabina's model 0.142 m, with the stave lowered 0.122 m to keep the grip in the fist, puts the nock and the arrow on top of her fist, and the solve followed.
+  - What it did to the draw arm (run f1-b): the right forearm moved 0.385 m, the right sleeve cap stretched 1.71 x, matrix (b) at full draw went from about 0.4 % to 0.85–1.25 %, and A-wrap-clear's alidade cord came within 0.042 m of the hand.
+  - The arm's shape at the cheek anchor is your solve's. When you re-tune it, the two numbers are `MODEL_Y` +0.042 (from −0.1) and `GRIP_Y` −0.027 (from 0.095), both in `bow.js`. Please run A-variant-swap-matrix with them, since the sleeve and the cord move with the arm.
+- **melee: the carried bow's hand** (R64 c). `_bowCarryLayer` still aims the left hand at x 0.245. The held clause reads −3.7 to −4.0 cm at a sprint (the stave's lower limb against the outfit at the back of her left hip), and the hand is inside the skirt at idle.
+- **melee: the lance's ready grip.** V-gear-in-hand's lance panels now film her whole figure once she is `ready`. A two-handed ready grip is yours.
+- **melee: the light attack.** In the light's strike (and the frame after it) her right upper arm lies across her right upper chest. That is the 0.55–0.86 % of matrix (b) on every variant's light-1 row: the smock is between the arm and the chest. No cut of the smock clears an arm that is on the chest skin.
+- **melee: `A-stow-clearance`.** Your row (`tools/gates.r5.melee.mjs`) is the one `A-variant-motion-rerun` runs as soon as it is in this tree. Until then it runs `A-stow-clearance@armory`, which grades the same clauses, boom included.
+- **character-art / hero-body.** The sash's knot and tails ride `sash_swing`, a joint the outfit carries and `src/hero/outfit.js` creates under the pelvis at equip. `dyn_sashEnd` stays in Brea's skeleton and nothing skins to it. If the bible's `dyn_sashEnd` should drive the tails again, its points belong behind the hip, around the knot (bind ≈ (0.11, 1.075, −0.16)).
+- **Orchestrator: the deopt waves** (F1.2). In this page, once-a-frame code allocates only in the windows that follow a "dependent prototype chain changed" wave. The wave hits 250–330 functions across armory, melee and combat at once, at her first sprint and draw. A-alloc-rate's per-function 4 KB/s bar, graded on a 10 s window that opens at that moment, grades Sparkplug code. Optimized, armory's per-frame solves are at or under 1 KB/s. The `X-carry-tier` runner (scratch, `diag/carry-tier.gates.mjs`) can be reused as is.
+- **Orchestrator: `A-hero-draws`** (hero-body's file) still tests the retired `heroTris <= 20000` (R62 a).
 
 ## 0. Relaunch, Nov 6 (previous pass)
 
