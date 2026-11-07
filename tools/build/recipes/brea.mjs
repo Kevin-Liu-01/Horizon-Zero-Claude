@@ -54,7 +54,7 @@ import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/wrap-head.mjs';
 import { lashCard } from './lib/hair.mjs';
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, browLines, remapEyeUV,
-  cullUnderWrap, cullEyeBacks, cullEyeUnderLids, reshapeEars, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
+  cullUnderWrap, cullEyeBacks, cullEyeUnderLids, reshapeEars, appendCollarLiner, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
 } from './lib/skin-human.mjs';
 
 export const LANE = 'hero-body';
@@ -527,7 +527,9 @@ export async function build({ out = ROOT } = {}) {
     U.getElement(best, u);
     return [u[0], u[1]];
   })();
-  const skirtFrom = appendCollarSkirt(bodyPrim, panTris, { darkUV });
+  const skirtFrom = appendCollarSkirt(bodyPrim, panTris, { darkUV, seg: 19 });
+  // fix round 2 (A-wrap-closed's collar views): the collar's inner wall, round the sides and the back (19 lid segments pay for it)
+  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV, seg: 19 });
 
   // ---- hide mask (Pan Whites I covers which body vertices)
   const hide = coverageMask(bodyPrim, panTris, 0.08);
@@ -578,7 +580,7 @@ export async function build({ out = ROOT } = {}) {
         hideBits: { 'pan-1': 1 }, hiddenByPan1: hidden,
       },
       r5Face: faceRec,
-      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, eyeUnderLids, handsCut, earTucked, earMoved } },
+      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, eyeUnderLids, handsCut, earTucked, earMoved }, collarLiner: liner },
     },
   });
   void wrapTex;

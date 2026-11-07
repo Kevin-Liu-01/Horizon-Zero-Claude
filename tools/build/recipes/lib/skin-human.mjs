@@ -327,7 +327,7 @@ export function leanInwardNormals(bodyPrim, eyesPrim, { L, eyes }) {
  * Skinned like the torso under the collar (never the neck); one dark texel (the UV of `darkUV`); both faces. Call after the paint.
  * Returns the first new vertex index.
  */
-export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 2, gap = 0.006, backLift = 0.035, margin = 0.012, lip = 0.006, darkUV } = {}) {
+export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 2, gap = 0.006, backLift = 0.035, margin = 0.012, lip = 0.006, darkUV, reach = -0.1 } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
   const n0 = P.getCount();
@@ -350,7 +350,9 @@ export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
   const edge = [];
   for (let r = 0; r <= rings; r++) for (let k = 0; k < seg; k++) {
     const t0 = r / rings, a = (k / seg) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
-    const back = smooth(-0.1, -0.5, ca), t = t0 * back;      // out to the wall only at the back
+    // out to the wall at the back, and (fix round 2, `reach`: the cosine past which it reaches the wall) round the sides too: A-wrap-closed's
+    // collar views saw slivers of sky beside the neck where the smock's single-sided inner wall turns its back
+    const back = smooth(reach, reach - 0.4, ca), t = t0 * back;
     const lift = backLift * 0.5 * (1 - ca);                    // 0 at the front, half at the sides, all of it at the back
     let y = y0 + lift - 0.004 * t;                             // flat out to the wall: a look past the neck meets it before the wall
     // it stays inside the outfit's wall at its own height, and under its roof
@@ -387,6 +389,61 @@ export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
   grow(P, pos); grow(prim.getAttribute('NORMAL'), nrm); grow(prim.getAttribute('TEXCOORD_0'), uv); grow(J, jnt); grow(W, wgt);
   grow(prim.getIndices(), idx);
   return n0;
+}
+
+/**
+ * The collar's inner wall (fix round 2, A-wrap-closed's collar views, R64 d): a single-sided outfit shows nothing from inside, so a
+ * level look past the neck into the collar stand's far side saw the sky through it. A band of the body's own dark texel stands `inset`
+ * inside the outfit's wall, from `y0` (the collar lid's height) up to `below` under the outfit's rim, at every azimuth whose cosine
+ * (0 = her front) is under `reach` (the front V stays open), facing the neck. Skinned like the torso under the collar, as the lid is.
+ * Call after `appendCollarSkirt`. Returns the first new vertex index.
+ */
+export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, seg = 20, reach = 0.45, inset = 0.003, below = 0.003, darkUV } = {}) {
+  const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
+  const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
+  const n0 = P.getCount();
+  const near = [];
+  { const q = [0, 0, 0]; for (let i = 0; i < n0; i++) { P.getElement(i, q); if (q[1] > 1.28 && q[1] < 1.43 && Math.abs(q[0]) < 0.28) near.push([q[0], q[1], q[2], i]); } }
+  const pos = [], nrm = [], uv = [], jnt = [], wgt = [], idx = [];
+  const j = [0, 0, 0, 0], w = [0, 0, 0, 0];
+  const put = (x, y, z, nx, nz) => {
+    pos.push(x, y, z); nrm.push(nx, 0, nz); uv.push(darkUV[0], darkUV[1]);
+    let best = -1, bd = 9;
+    for (const v of near) { const d = (v[0] - x) ** 2 + (v[1] - y) ** 2 + (v[2] - z) ** 2; if (d < bd) { bd = d; best = v[3]; } }
+    J.getElement(best, j); W.getElement(best, w);
+    jnt.push(...j); wgt.push(...w);
+  };
+  const cols = [];
+  for (let k = 0; k <= seg; k++) {
+    const a = (k / seg) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
+    if (ca >= reach) { cols.push(null); continue; }
+    const wallAt = (y) => grid.cast(0, y, centerZ, sa, 0, ca, 0.3, 0.0001);
+    let yBot = y0 + 0.035 * 0.5 * (1 - ca);
+    while (wallAt(yBot) < 0 && yBot < y0 + 0.08) yBot += 0.002;
+    let yTop = yBot;
+    while (wallAt(yTop + 0.002) >= 0 && yTop < yBot + 0.15) yTop += 0.002;
+    yTop -= below;
+    const rB = wallAt(yBot), rT = wallAt(yTop);
+    if (rB < 0 || rT < 0 || yTop <= yBot + 0.004) { cols.push(null); continue; }
+    const base = n0 + pos.length / 3;
+    put(sa * (rB - inset), yBot, centerZ + ca * (rB - inset), -sa, -ca);
+    put(sa * (rT - inset), yTop, centerZ + ca * (rT - inset), -sa, -ca);
+    cols.push(base);
+  }
+  for (let k = 0; k < seg; k++) {
+    const a = cols[k], b = cols[k + 1];
+    if (a === null || b === null) continue;
+    // facing the neck: the quad's normal points at the axis
+    const ax = pos[(a - n0) * 3], az = pos[(a - n0) * 3 + 2] - centerZ, bx = pos[(b - n0) * 3], bz = pos[(b - n0) * 3 + 2] - centerZ;
+    const e1 = [bx - ax, 0, bz - az], e2 = [0, 1, 0];
+    const nx = e1[1] * e2[2] - e1[2] * e2[1], nz = e1[0] * e2[1] - e1[1] * e2[0];
+    const inward = nx * -(ax + bx) + nz * -(az + bz) > 0;
+    if (inward) idx.push(a, b, a + 1, a + 1, b, b + 1); else idx.push(a, a + 1, b, a + 1, b + 1, b);
+  }
+  const grow = (A, add) => { const src = A.getArray(), dst = new src.constructor(src.length + add.length); dst.set(src); dst.set(add, src.length); A.setArray(dst); };
+  grow(P, pos); grow(prim.getAttribute('NORMAL'), nrm); grow(prim.getAttribute('TEXCOORD_0'), uv); grow(J, jnt); grow(W, wgt);
+  grow(prim.getIndices(), idx);
+  return { first: n0, tris: idx.length / 3 };
 }
 
 /**
