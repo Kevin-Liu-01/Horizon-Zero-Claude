@@ -7,9 +7,10 @@ each V row is advisory (rule 3); no R29 judge has graded them.
 Three builders have worked this lane. The first wrote the state machine, the beat table and the gate file. The
 second (Nov 3) re-tabled the pose on Brea's real arm and ran most rows green. This round (Nov 6) re-ran the whole
 block, implemented R62 (b), verified the Counterweight's knockdown on a live machine, fixed A102's heavy-hips
-margin, worked the R48 allocation bar on both owners (−31 % and −92 % against their baselines; the per-function
+margin, worked the R48 allocation bar on both owners (−34 % and −91 % against their baselines; the per-function
 bar is still not met, §4), and tried and measured three changes to the left hand and the contact keys that did
-not hold, all reverted (§6.1). Chrome was the bottleneck: one gate Chrome machine-wide, one slot about every two
+not hold, all reverted (§6.1, §6.2). Four rows of the block still FAIL on my side (A101, A104, A106 by one
+frame, the alloc bar) and three on other lanes' (A100's dodge row, A-stow-clearance, A49/A50 SKIP). Chrome was the bottleneck: one gate Chrome machine-wide, one slot about every two
 to three hours, one run lost to Kevin's own use of the machine (the memory guard killed it, correctly).
 
 ## 1. What this lane built
@@ -28,7 +29,7 @@ off her belly in the solve; the Counterweight's tuning (`LANCE_VARIANTS`, `heavy
 |---|---|---|
 | **R62 (b) in `A-stow-clearance`**: the cover clause is the median over the 24 yaws ≤ 8 % and the worst yaw ≤ 20 %, on the standing and the running sweep each; the detail reports both | `tools/gates.r5.melee.mjs` | the ruling of Nov 3, implemented to its letter |
 | **The Counterweight's knockdown, gated on a live machine.** `A-heavy-two-hand` now also throws a real held-LMB heavy at a staged machine with the Counterweight and with the Shepherd's Lance, recording every `forceState` call and whether `melee.js` made it | `tools/gates.r5.melee.mjs` | r2b–r4: Counterweight heavy lands, 1 stagger from melee.js; Shepherd's heavy lands, 0 (the negative control) |
-| **The heavy sinks deepest, with margin.** Heavy stance: both knees bend further (thighL −0.82, calfL 1.08, thighR 0.30, calfR 0.40, dy −0.26); light-3 stands 0.015 m taller | `meleeLayer.STANCE` | A102 pins the heavy's hips 0.04 m under every light: r1 read 0.079 m, r2b 0.032 (FAIL), r3 PASS |
+| **The heavy sinks deepest, with margin.** Heavy stance: both knees bend further (thighL −0.82, calfL 1.08, thighR 0.30, calfR 0.40, dy −0.26); light-3 stands 0.015 m taller | `meleeLayer.STANCE` | A102 pins the heavy's hips 0.04 m under every light: r1 read 0.079 m, r2b 0.032 (FAIL); r3 and r5 PASS (r5: 0.093 m) |
 | **Fields declared at birth (R48 c).** Every field the frame used to ADD later is declared in the constructor with the value its readers saw for `undefined`: 18 on the animator (`_bobKeep`, `_rbPlanted`, `_latK`, `_trunkPitch0`, `_bowCarryArm`, `_footLatLoc`, `_toeTips`, `_ikMaxK`, `_efS` …), the M10 collider's `minCi/minJ`, the step debug record (7), the melee layer (13) and its debug record (33), `Melee` (10), 11 camera fields on the player (the player.js grant, 2 lines; 4 of 15 used) | ctors of `PlayerAnimator`, `MeleeLayer`, `Melee`, `Player` | an added field is a new hidden class on an object optimised code holds as a constant; every optimised reader is thrown away the frame it appears (§4) |
 | **No per-frame string, closure or iterator.** `toFixed` on per-frame paths (carry slide, re-parent gap, aim gap, contact gap, four step-debug values) → `Math.round`; the conform's `applyPelvis` and the stance step's `ballC` closures → methods; three per-frame `for…of` → indexed loops | `meleeLayer`, `melee.js`, `playerAnimator` | each allocated every frame (or every melee frame) in every tier |
 | **The machine scalars, not their getters**, in `surfaceGap` and `_sneakOk` (`m.sc.heading`, `m.sc.suspicion`) | `melee.js` | instruments-core's W1 ask (its report, fix round 2) |
@@ -55,7 +56,7 @@ spearInHand, spear                         // aliases until armory calls lanceSt
 // src/entities/anim/meleeLayer.js
 decimalFields(o) -> o                      // born-decimal fields (R46); any lane may call it on a per-frame record
 MELEE_TABLES { READY, BEATS, HEAVY, STANCE }   // the live tables (a page must import the module URL the game
-                                               // loaded: Vite serves an edited file under ?t=, see §6.1)
+                                               // loaded: Vite serves an edited file under ?t=, see §6.8)
 // a pose key: { hand, shaft, lh, lhW, lhOn, yaw, py, pitch, roll, dz }
 
 // tools/gates.r5.melee.mjs
@@ -64,18 +65,52 @@ FILM_KIT { NOHUD, FILM, FREEZE, STAGE, AIMLOCK, LOCKCAM, PIN, READY, gridOf }  /
 
 ## 3. Gate table (`node tools/gates.mjs --port 5256 --lane melee`)
 
-GATE_TABLE
+Run r5, the final tree (Nov 7 01:31Z, quiet box, 60 fps). r1-r4 rows were the same except where §6 names a
+difference.
+
+| gate | status | measured | bar | owner of a fail |
+|---|---|---|---|---|
+| A100-lance-holster | FAIL | idle/run/sprint/crouch/bow-draw: tilt 33.38-38.7 deg, midpoint <= 0.219 m, blade 0.473-0.65 m, tip >= 0.476 m right, tails >= 0.1924 m; **dodge**: tilt 35.28-88.73 deg, blade -0.349-0.721 m | 30-60 deg, <= 0.30, 0.20-0.70, > 0.15, >= 0.06 | dodge row: armory (`carry.js`) |
+| A101-lance-grip | FAIL | knuckle-to-axis <= 0.0139 m; blade ahead >= 0.978 m; sweeps light-1 48.7, light-2 68.3, light-3 48.6, heavy 52 deg; left palm light-1 0.0147, light-2 0.0591, light-3 0.0144, heavy 0.014 m; ready tip 0.453 m, left at 0.512; grip at contact from holstered idle click 0.191, idle hold 0.19, jog click 0.19, jog hold 0.19, sprint click 0.191, sprint hold 0.19; light-2: a two-handed frame had the left palm 0.059 m off the haft | <= 0.03; > 0; >= 45; <= 0.05; 0.35-0.55, 0.50-0.60; 0.15-0.28 | melee |
+| A102-melee-body-motion | PASS | hand travel 1.376 / 1.277 / 2.155 / 1.665 m; trunk yaw 40 / 54 / 58.5 / 34.8 deg; step 0.333 / 0.513 / 0.635 / 0.622 m; tip <= 0.34 m/frame; pinned hips {"light-1":0.763,"light-2":0.794,"light-3":0.722,"heavy":0.629}; no bad | >= 1.2; >= 15; 0.25-0.8; <= 0.5; heavy lowest by 0.04 | melee |
+| A103-melee-contact-sync | PASS | {"tiller":"3/3 (worst 0.033 m)"}; no bad | tip <= 0.15 m from the hull, hit in the strike phase, every non-legacy kind | melee |
+| A104-melee-self-clear | FAIL | right forearm to spine >= 0.156 m; LEFT light-1 0.084, light-2 0.104, light-3 0.163, heavy 0.132, holster null m; shaft clear >= 0.153 m; hair >= 0.16 m; elbow over head <= 0.021 m; light-1: the LEFT forearm came within 0.084 m of the spine on a two-handed frame | >= 0.10; >= 0.10; >= 0.12; >= 0.06; <= 0.25 | melee |
+| A105-melee-while-moving | PASS | 12 jogging windows, worst drift 0.0129 m, speed ratio 1 | drift <= 0.08 m, >= 60 % | melee |
+| A106-melee-approach-immovable | FAIL | machine displacement 0 m, worst push 0 m; tiller frozen-then-animated: a forearm/fist was INSIDE a hull on 1 frame(s) (worst -0.0003 m, drawn left in rig_RF_shin#40) — S5 | no root jump > 0.15, release <= 0.10, drag <= 0.08, capsule >= 0.05 | melee |
+| A107-draw-arm-path | PASS | idle: elbow over head -0.129, behind band 0.055; jog: elbow over head -0.043, behind band 0.069; sprint: elbow over head -0.013, behind band 0.07 | elbow <= head + 0.05, <= 0.10 behind | melee |
+| A-stow-clearance | FAIL | cover {"standing":{"yaws":24,"median":0,"worst":0.301},"running":{"yaws":24,"median":0.086,"worst":0.179}}; boom -0.001 m; crouchWalk: the quiver comes 0.035 m from a calf/heel capsule; dodge: the quiver comes -0.045 m from a calf/heel capsule; standing sweep: stowed gear covers 30.1 % of the head box at its worst yaw; running sweep: stowed gear covers a median 8.6 % of the head box | R62 b: median <= 8 %, worst <= 20 %; calf >= 0.05; boom <= 0.02 | bow and quiver: armory |
+| A-heavy-two-hand | PASS | hands <= 0.0144 m (Shepherd), <= 0.0147 m (Counterweight); knockdown shepherd: heavy true, melee staggers 0; counterweight: heavy true, melee staggers 1 | <= 0.05; CW cock >= 1.08x; CW staggers 1, Shepherd 0 | melee |
+| A-melee-latency | PASS | in hand 0.15 / 0.15 / 0.183 s; holstered draw 0.25 / 0.25 / 0.25 s, strike 0.417 / 0.417 / 0.417 s | <= 0.30; draw <= 0.35, + <= 0.30 | melee |
+| A49-melee-exists | PENDING | SKIP-legacy-deleted (R30): role sentry: no live kind yet (lands with Plumb, instruments-a W1) | role sentry | instruments-a (Plumb) |
+| A50-undercut | PENDING | SKIP-legacy-deleted (R30): role sentry: no live kind yet (lands with Plumb, instruments-a W1) | role sentry | instruments-a (Plumb) |
+| V46-lance-ready | NEEDS-JUDGE | filmed; my reading in §5 | R29 judge | melee |
+| V47-melee-swing | NEEDS-JUDGE | filmed; my reading in §5 | R29 judge | melee |
+| V48-lance-holster | NEEDS-JUDGE | filmed; my reading in §5 | R29 judge | melee |
+| V49-draw-from-jog | NEEDS-JUDGE | filmed; my reading in §5 | R29 judge | melee |
+| A-melee-floor | PASS |  | hero-body / global | must stay green |
+| A-lance-stow | PASS |  | hero-body / global | must stay green |
+| A1-boot-clean | PASS |  | hero-body / global | must stay green |
+| A20b-no-system-errors | PASS |  | hero-body / global | must stay green |
+
+Also run on this tree (global list and neighbours): `A-alloc-rate` FAIL on its scheduled per-function bar
+(§4; my two owners pass their baseline guard, the guard's offenders are armory and combat-kit),
+`A-no-horizon-terms-code` PASS (1,358 ≤ 1,371), `A-no-horizon-terms-player` PASS (1,503 ≤ 1,508),
+`A-ID-ip-assets-gone` PASS, `A-assets-tracked` PASS, `A-licence-manifest` PENDING (third-party rows),
+`A-port-guard` PENDING (not a full lane run), `A-carried-suite` refused beside carried rows (orchestrator's),
+`A9-perf-budget` PENDING (load 12 then; r2). The A90 family, `A-vram-ledger` and `A21` did not complete: in r2 the
+memory guard killed the gate Chrome three times while Kevin's own Chrome held the machine at 28-37 % free, and I
+gave the slot back. They belong to the orchestrator's 5270 run. `tools/lint/namecheck.mjs --code`: PASS.
 
 ## 4. R48: the allocation bar on `playerAnimator.js` and the melee files
 
 `A-alloc-rate` at `CAL_WAVE=W1` (gates-perf's instrument, unchanged): the staged fight, then sprint-and-draw,
 10 s each, caller attribution. The instrument passes in every run. Per owner against the R48 (c) baseline:
 
-| owner | baseline KB/frame (KB/s) | r1 | r2b | guard (x 1.10) |
-|---|---|---|---|---|
-| `playerAnimator` (melee from W1) | 48.67 (2,756) | 32.81 (1,915) | 33.53 (1,956) | pass, −31 % |
-| `melee` (meleeLayer, melee.js, lanceStow) | 9.75 (552) | 0.83 (47) | 0.74 (42) | pass, −92 % |
-| `frozen-control` (player.js; my grant lines) | 7.47 (423) | 6.61 (386) | 6.94 (405) | pass |
+| owner | baseline KB/frame (KB/s) | r1 | r2b | r5 (final) | guard (x 1.10) |
+|---|---|---|---|---|---|
+| `playerAnimator` (melee from W1) | 48.67 (2,756) | 32.81 (1,915) | 33.53 (1,956) | 32.03 (1,859) | pass, −34 % |
+| `melee` (meleeLayer, melee.js, lanceStow) | 9.75 (552) | 0.83 (47) | 0.74 (42) | 0.87 (50) | pass, −91 % |
+| `frozen-control` (player.js; my grant lines) | 7.47 (423) | 6.61 (386) | 6.94 (405) | 6.95 (404) | pass |
 
 **The absolute bar (4 KB/s per function, binding on both owners from this exit) is NOT met.** Over it (r2b,
 staged fight / sprint-and-draw, KB/s):
@@ -142,8 +177,8 @@ the last tile is the guard. Passes as I read it.
 
 | clause | r1 | r2b | r3 | r4 | r5 (final tree) | bar |
 |---|---|---|---|---|---|---|
-| A101 light-2: left palm off the haft on a two-handed frame | 0.061 m | 0.058 | 0.072 | 0.192 | R5_A101 | ≤ 0.05 |
-| A104 light-1: left forearm to the spine axis | 0.077 m | 0.077 | 0.075 | 0.081 | R5_A104 | ≥ 0.10 |
+| A101 light-2: left palm off the haft on a two-handed frame | 0.061 m | 0.058 | 0.072 | 0.192 | 0.059 | ≤ 0.05 |
+| A104 light-1: left forearm to the spine axis | 0.077 m | 0.077 | 0.075 | 0.081 | 0.084 (light-2 0.104) | ≥ 0.10 |
 
 What is known. Pinned (`X-left-trace`, r3: every key held still across windup, strike and recover at 0.1 steps)
 every two-handed frame of light-1, light-2 and the heavy has the palm 0.004-0.014 m off the haft and the left
@@ -159,6 +194,14 @@ hand along the haft when the palm is off its line or the forearm is on the belly
 contact keys (below): A101 0.192. The tree carries none of them. **For the next builder:** find what moves the
 right hand or the prop between `_solveLeft` and the end of the frame in a live light-2 (the pinned pose does not
 move it), e.g. by recording `handR` and the prop matrix right after `_solveLeft` and again in `debug()`.
+
+### 6.1b A106: FAIL in r5 by 0.3 mm on one frame (mine)
+
+r1, r2b and r3 PASS (the drive arm 0.17-0.28 m from every hull). r5: in the "frozen-then-animated" row, when the
+Tiller starts moving beside her, its right shin swept into her LEFT forearm on one frame (−0.0003 m, drawn).
+`_armHullGuard` and `_armHullFinal` keep only the drive (right) arm out of a hull; the left arm rides the haft and
+is not guarded. **Next builder:** extend the final arm-hull pass to the left forearm (re-seat the palm on the
+haft after it), and check A101's left-palm clause near a machine afterwards.
 
 ### 6.2 The look: V46's guard and V47's standing contacts (mine; R54 major)
 
@@ -236,6 +279,9 @@ equippable before then, so nobody can see it yet; it belongs with that GLB.
   their readers saw for `undefined`; hero-body's functions are untouched. Any field hero-body adds outside the
   constructor re-opens §4's cause (check: every `this.x =` outside the constructor whose name the constructor
   does not declare).
+- **R63 (a) merge.** hero-body may edit `melee.js`'s press detection (the held-LMB edge). My `melee.js` changes this
+  round are elsewhere in the file (the constructor's declarations, `surfaceGap`, `_sneakOk`, `_scanSneak`'s and
+  `_resolve`'s loops, `aimGap` / `lastContactGap` rounding), so the two should fold without overlap.
 - **gates.r5.carried.mjs:** fold my versions of A100-A107 at my exit (R47).
 - **Chrome:** a wrapper in zsh must not pass `${VAR:+--flag $VAR}` (zsh does not word-split it: my first r2
   passed `--extra` and its path as one argument and burned a slot). And a page that wants the game's own module
