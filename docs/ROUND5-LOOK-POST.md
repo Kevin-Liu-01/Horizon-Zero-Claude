@@ -30,7 +30,7 @@ References are cited `ext:<file>@<sha8>#<panel>` (ROUND5-LOOK §0.2); none is co
 - **Gamut-edge guard** in the grade: colours at Lab chroma ≥ 58 keep their chroma and hue (identity by 82).
   No scene colour lives there (panels and frames sit at chroma 18–55); the lamp tokens do, and without the guard
   the wary token #B5E61D fell outside what the output can show (ΔE 9.9 after invert).
-- Ports by grant: `src/instruments/lamps.js` (18 lines added, 7 removed: `readOutputParams` reads `engine.look`
+- Ports by grant: `src/instruments/lamps.js` (17 lines added, 8 removed: `readOutputParams` reads `engine.look`
   when AgX is in force, `_solve` calls `look.invert` in place of the ACES branch, the per-frame change test and
   the signature include `look.version`, and the wary trough is re-solved for the ACES-era on-screen depth: under
   AgX the wary core sits in the shoulder, where the HDR trough 0.55 read as 0.88 of the peak on screen against
@@ -40,7 +40,7 @@ References are cited `ext:<file>@<sha8>#<panel>` (ROUND5-LOOK §0.2); none is co
   `setLookEnabled(false)`.
 - **Output dither** (±0.5 LSB, a PCG-style integer hash of the pixel: no lattice, no time dependence, so shots
   stay bit-identical): AgX's gentler haze and sky gradients step in 8 bits every 5–30 px; the dither breaks the
-  stairs (and A108's autocorrelation then reads content, not quantisation stairs).
+  stairs into noise (sky banding). It did not change A108 (§5.3).
 - **Diagnostic** `?look=w0` (on the page, or on the page hosting the Pans POC iframe) boots on the Round-5 W0
   output; the gate block carries `<id>@look-post-w0` twins of A108, A-weak40 and A-lamp-states for that reason.
 
@@ -96,11 +96,18 @@ CORE_OVER (the lamp system re-solves on any threshold change). The W0 values are
 - `engine.registerLookItem(id, { owner, estMs, title, set(on), get() })` and `engine.lookItems`: the ledger's
   switches. look-post registers L-01, L-02, L-07.
 - `tools/look/ab-time.mjs` (node driver) + `tools/look/ab-time-page.mjs` (page): per A21 scenario, every item
-  estimated ≥ 0.10 ms A/B'd alone and the rest as one group, 4 interleaved rounds, rows ≤ 0.45 ms, draws ≤ 350.
-- `tools/look/gpu-attrib.mjs` + `tools/look/gpu-attrib-page.mjs`: `engine.gpuAttrib(on)` cuts the frame into
-  consecutive timer-query segments (scene:pre, scene:shadow, scene:opaque, scene:transparent via a zero-vertex
-  sentinel, then each composer pass and each onAfterRender hook); per-owner hide-one marginals over gates-perf's
-  `DRAW_OWNERS`, the all-hidden floor and the interaction residual; the build (git SHA, tree, dirty count) first.
+  estimated ≥ 0.10 ms A/B'd alone on the whole frame and the rest as one group, 4 interleaved rounds; an item that
+  registers a `bench` (a post item whose cost lives in one pass: L-01, L-02, L-07) is A/B'd on that pass alone
+  (`engine.benchPass(pass, n)`: n renders between two gl.finish fences), because a whole-frame A/B at 18–20 ms is
+  ±1–3 ms of noise on this machine (r3: the same look group read +2.87 / +1.60 / +0.15 ms). Rows ≤ 0.45 ms, draws
+  ≤ 350. A runner row (`A-look-ledger-box`) samples the box in node right before the run and hands it to the gate.
+- `tools/look/gpu-attrib.mjs` + `tools/look/gpu-attrib-page.mjs`: the build first (git SHA, tree, dirty count),
+  then per A21 scenario the frame median, **per-pass skip-one marginals on the A21 whole-frame timer** (shadow maps,
+  GTAO, bloom, SMAA, the grade's LUT stage, transparent + additive meshes; remainder = the opaque scene and AgX) with
+  an all-off interaction test for the 10 % sum rule, per-owner hide-one marginals over gates-perf's `DRAW_OWNERS`,
+  the all-hidden floor and the interaction residual. `engine.gpuAttrib(on)` (consecutive timer-query segments with a
+  zero-vertex sentinel at the head of the transparent list) is kept and reported raw: on ANGLE/Metal its per-query
+  times are not usable (§5.4). `A-gpu-attrib-box` samples the box.
 
 ### 1.5 G-post — per-cascade layer masks (`enableCSM`, 15 lines) and U-03 `holdFrame`
 
@@ -134,12 +141,15 @@ export class Look {
   invert(rgb, out = [0,0,0])               // display sRGB 0..1 -> HDR linear (may hold a negative channel)
   toneMap(rgb, out = [0,0,0])              // HDR linear -> display LINEAR 0..1 (AgX + look + shoulder; no OETF, no grade)
   set({ ev, a, b, mix, gradeMix, bloomScale })   // returns a bitmask of LUT slots that changed
+  setSlots(a, b, mix, ev)                  // allocation-free per-hour form; returns whether anything changed
+  hdrForLstar(Ls)                          // the HDR grey that shows at display L* Ls through the look in force
   version                                  // bumps on every change a CPU copy must follow
   exposure, baseExposure, ev, setA, setB, lutMix, gradeMix, vignette, bloomScale, luts, sets
 }
-export function setsForHour(grade, h, weather = null, calimaWeight = null, out = { a, b, mix })
+export function setsForHour(grade, h, weather = null, calimaWeight = null, out = { a, b, mix, ev })
 export function agxLook(x, look, out), agxLookInv(y, look, out), calSigmoid(x), agxSigmoidInv(y),
-       gradeSet(c, set, out), bakeLut(set, size = 32), sampleLut(data, size, c, out),
+       gradeSet(c, set, out), bakeLut(set, size = 32) -> { half: Uint16Array, f32: Float32Array, size },
+       sampleLut(lut, size, c, out), toHalf(v), fromHalf(h),
        calibrateExposure(look), oetf(c), eotf(v), srgbToLab(c, out), labToSrgb(lab, out)
 export const AGX_MIN_EV, AGX_MAX_EV, SH_XMAX, SH_YMAX, SH_A, SH_K, LOOK_DEFAULT, LOOK_EXPOSURE_NOMINAL
 ```
@@ -150,10 +160,11 @@ export const AGX_MIN_EV, AGX_MAX_EV, SH_XMAX, SH_YMAX, SH_A, SH_K, LOOK_DEFAULT,
 engine.look                                // the live Look
 engine.lookActive                          // getter: AgX in force (look.evaluate describes the screen)
 engine.setLook(state)                      // -> engine.look; applied on the next rendered frame
-engine.setLookHour(h, weather = null, calimaWeight = null)   // world-sky: the sets for an hour / a weather
+engine.setLookHour(h, weather = null, calimaWeight = null, opts = null)   // world-sky: sets + hour EV ({ ev: false } keeps yours)
 engine.setLookEnabled(on)                  // false = the Round-5 W0 output (ACES 0.94, W0 grade, W0 bloom)
 engine.registerLookItem(id, { owner, estMs, title, set(on), get() })   // -> engine.lookItems (Map)
-engine.gpuAttrib(on = true) / engine.gpuAttribTake()                   // L-18 per-pass segments
+engine.gpuAttrib(on = true) / engine.gpuAttribTake()                   // L-18 raw timer segments
+engine.benchPass(pass, n = 100)            // L-16: ms per pass render (gl.finish fences); measurement only
 engine.holdFrame(on = true)                // U-03: a held render() submits nothing
 engine.disposeLook()                       // the two LUT slots
 export const QUALITY_TIERS[tier].look, LOOK_ROWS, LOOK_RULE2, LOOK_W0, LOOK_BLOOM,
