@@ -23,9 +23,11 @@ export function attribTable(detail) {
   lines.push(`build ${detail.build?.sha?.slice(0, 10) || '?'} (${detail.build?.tree || '?'}, ${detail.build?.dirtyFiles ?? '?'} uncommitted files); box load ${detail.box?.load1}, quiet ${detail.box?.quiet}`);
   for (const [name, s] of Object.entries(detail.scenarios || {})) {
     if (s.skip || s.error) { lines.push(`\n### ${name}: ${s.skip || s.error}`); continue; }
-    lines.push(`\n### ${name}: frame ${s.frame.medianMs} ms (p95 ${s.frame.p95Ms}, ${s.frame.medianDraws} draws, scale ${s.frame.renderScale}); composer segments sum ${s.perPass.composerSumMs} ms (within 10 %: ${s.sumWithin10}); with after-render hooks ${s.perPass.withHooksSumMs} ms`);
-    lines.push('\n| pass | median ms |\n|---|---|');
-    for (const [k, v] of Object.entries(s.perPass.passes).sort((a, b) => b[1] - a[1])) lines.push(`| ${k} | ${v} |`);
+    const P = s.perPass;
+    lines.push(`\n### ${name}: frame ${s.frame.medianMs} ms (p95 ${s.frame.p95Ms}, ${s.frame.medianDraws} draws, scale ${s.frame.renderScale}); passes (skip-one): rows sum ${P.sumRowsMs} ms, all off removes ${P.allOffRemovesMs} ms (within 10 %: ${s.sumWithin10})`);
+    lines.push('\n| pass (skip-one marginal) | ms |\n|---|---|');
+    for (const [k, v] of Object.entries(P.rows).sort((a, b) => b[1] - a[1])) lines.push(`| ${k} | ${v} |`);
+    lines.push(`| remainder: opaque scene, AgX output pass, fixed costs | ${P.remainderMs} |`);
     lines.push('\n| owner (hide-one) | lanes | children | marginal ms |\n|---|---|---|---|');
     for (const o of s.owners) lines.push(`| ${o.id} | ${o.lanes} | ${o.children} | ${o.marginalMs} |`);
     lines.push(`| floor (all owners hidden) | | | ${s.floorAllOwnersHiddenMs} |`);

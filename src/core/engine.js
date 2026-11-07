@@ -257,14 +257,14 @@ export const LOOK_W0 = Object.freeze({
 });
 /**
  * L-07 bloom retune: only true highlights glow, with a wide soft halo. Under AgX the threshold is
- * keyed to DISPLAY brightness (look.hdrForLstar): bloom starts at the grey that shows at L* 93 at the
+ * keyed to DISPLAY brightness (look.hdrForLstar): bloom starts at the grey that shows at L* 94 at the
  * hour's exposure, with ROUND5-LOOK's knee kept in proportion (0.35 / 1.30 of the threshold). ROUND5-LOOK's 1.30 / 0.35 were ACES-scale numbers: under the
  * CALIMA look HDR 1.30 shows at L* ~84, so sunlit cloth, rock and salt (L* 85-92: A-look-bloom a,
- * V-look-glow) and the calm lamp ring (#F2EAD3, L* 93.6, HDR lum 2.47) would all glow. `threshold` /
+ * V-look-glow) and the calm lamp ring (#F2EAD3, L* 93.6) would all glow. `threshold` /
  * `smoothWidth` stay the fallbacks (ACES output, or before the look is built).
  */
 export const LOOK_BLOOM = Object.freeze({ strength: 0.48, radius: 0.72, threshold: 1.30, smoothWidth: 0.35,
-  thresholdLstar: 93, kneeRatio: 0.35 / 1.30,
+  thresholdLstar: 94, kneeRatio: 0.35 / 1.30,
   factors: Object.freeze([0.55, 0.65, 0.85, 1.05, 1.25]), tint: Object.freeze([1.0, 0.97, 0.93]) });
 
 const OutputGradeShader = {
@@ -1281,18 +1281,18 @@ export class Engine {
   // ------------------------------------------------------------------ look
 
   /**
-   * THE CALIMA LOOK (look-post L-01/L-02/L-07/L-14). Two RGBA8 32^3 LUT slots
-   * (128 KB each; A-rt-ledger counts them as textures), filled from the CPU
-   * copies engine.look baked at boot (one 128 KB texSubImage when a slot's
-   * set changes, never a CPU rebuild per hour), and the look's ledger switches
+   * THE CALIMA LOOK (look-post L-01/L-02/L-07/L-14). Two half-float RGBA 32^3
+   * LUT slots (256 KB each; textures, not render targets), filled from the CPU
+   * copies engine.look baked at boot (one 256 KB upload when a slot's set
+   * changes, never a CPU rebuild per hour), and the look's ledger switches
    * (registerLookItem). Called once from _buildComposer.
    */
   _buildLook() {
     const n = this.look.size;
     const mk = (name) => {
-      const t = new THREE.Data3DTexture(new Uint8Array(n * n * n * 4), n, n, n);
+      const t = new THREE.Data3DTexture(new Uint16Array(n * n * n * 4), n, n, n);
       t.format = THREE.RGBAFormat;
-      t.type = THREE.UnsignedByteType;
+      t.type = THREE.HalfFloatType;
       t.minFilter = THREE.LinearFilter;
       t.magFilter = THREE.LinearFilter;
       t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping;
@@ -1309,11 +1309,12 @@ export class Engine {
     /** L-16: the look ledger's switches, id -> { owner, estMs, tier, set(on), get() } (ab-time.mjs walks it). */
     this.lookItems = new Map();
     const T = () => this.tier.look;
-    this.registerLookItem('L-01', { owner: 'look-post', estMs: 0.03, title: 'AgX + CALIMA look (ACES W0 when off)',
+    const benchGrade = () => this.benchPass(this.grade), benchBloom = () => this.benchPass(this.bloom);
+    this.registerLookItem('L-01', { owner: 'look-post', estMs: 0.03, title: 'AgX + CALIMA look (ACES W0 when off)', bench: benchGrade,
       get: () => T().agx !== false, set: (on) => { T().agx = !!on; this.look.version++; } });
-    this.registerLookItem('L-02', { owner: 'look-post', estMs: 0.08, title: 'grade: two blended 32^3 LUT slots + vignette',
+    this.registerLookItem('L-02', { owner: 'look-post', estMs: 0.08, title: 'grade: two blended 32^3 LUT slots + vignette', bench: benchGrade,
       get: () => T().grade !== false, set: (on) => { T().grade = !!on; this.look.version++; } });
-    this.registerLookItem('L-07', { owner: 'look-post', estMs: 0, title: 'bloom retune (W0 bloom when off)',
+    this.registerLookItem('L-07', { owner: 'look-post', estMs: 0, title: 'bloom retune (W0 bloom when off)', bench: benchBloom,
       get: () => T().bloomRetune !== false, set: (on) => { T().bloomRetune = !!on; this.look.version++; } });
     this._syncLook(true);
   }
@@ -1342,7 +1343,7 @@ export class Engine {
     for (let i = 0; i < 2; i++) {
       const name = i ? L.setB : L.setA;
       if (name === this._lutSet[i]) continue;
-      this._lutTex[i].image.data.set(L.luts[name]);
+      this._lutTex[i].image.data.set(L.luts[name].half);
       this._lutTex[i].needsUpdate = true;
       this._lutSet[i] = name;
     }
@@ -1391,7 +1392,9 @@ export class Engine {
     const o = this._lookHourOut || (this._lookHourOut = { a: 'golden', b: 'golden', mix: 0, ev: 0 });
     setsForHourInto(this.look.grade, h, weather, calimaWeight, o);
     const L = this.look;
-    L.setSlots(o.a, o.b, o.mix, withEv ? o.ev : L.ev);
+    // quantised to 1/64 (mix) and 1/64 EV: the look (and every CPU copy that follows it: the lamp
+    // re-solve, the bloom threshold) moves in steps a viewer cannot see, not every frame of the clock
+    L.setSlots(o.a, o.b, Math.round(o.mix * 64) / 64, withEv ? Math.round(o.ev * 64) / 64 : L.ev);
     return L;
   }
 
@@ -1423,19 +1426,50 @@ export class Engine {
   /**
    * L-16: register a look item's switch so A-look-ledger (tools/look/ab-time.mjs)
    * can time it on and off on the same frame. item: { owner, estMs, title,
-   * set(on), get() }. An item estimated >= 0.10 ms is A/B'd alone; the rest
-   * are timed as one group. Returns the registry.
+   * set(on), get(), bench? }. An item estimated >= 0.10 ms is A/B'd alone; the
+   * rest are timed as one group. `bench()` (optional: a post item whose cost
+   * lives in one pass) returns ms per pass and is A/B'd in isolation
+   * (engine.benchPass) instead of on the whole frame. Returns the registry.
    */
   registerLookItem(id, item) {
     this.lookItems.set(id, { id, owner: item.owner || '?', estMs: item.estMs ?? 0, title: item.title || id,
-      set: item.set, get: item.get || (() => null) });
+      set: item.set, get: item.get || (() => null), bench: item.bench || null });
     return this.lookItems;
   }
 
-  /** The look's GPU objects (the two LUT slots); the engine lives as long as the page. */
+  /**
+   * L-16 micro-benchmark (measurement only): the mean GPU+submit ms of one `pass.render` from the
+   * scene target into a scratch target, n times between two gl.finish() fences. A post item's cost lives
+   * entirely in its pass, and on ANGLE/Metal a whole-frame A/B is ±1-3 ms of noise at these frame times,
+   * so post items are A/B'd here (tools/look/ab-time-page.mjs). Allocates its scratch target once.
+   */
+  benchPass(pass, n = 100) {
+    const r = this.renderer, gl = r.getContext();
+    const w = this.sceneTarget.width, h = this.sceneTarget.height;
+    const rt = this._benchRT || (this._benchRT = new THREE.WebGLRenderTarget(w, h, { depthBuffer: false }));
+    if (rt.width !== w || rt.height !== h) rt.setSize(w, h);
+    const read = this._benchRead || (this._benchRead = { texture: null });
+    read.texture = this.sceneTarget.texture;
+    const was = pass.renderToScreen;
+    pass.renderToScreen = false;
+    this._syncLook();
+    pass.render(r, rt, read, 0, false);   // warm: a define change compiles here, not inside the clock
+    gl.finish();
+    const t0 = performance.now();
+    for (let i = 0; i < n; i++) pass.render(r, rt, read, 0, false);
+    gl.finish();
+    const ms = (performance.now() - t0) / n;
+    pass.renderToScreen = was;
+    r.setRenderTarget(null);
+    return ms;
+  }
+
+  /** The look's GPU objects (the two LUT slots, the bench target); the engine lives as long as the page. */
   disposeLook() {
     for (const t of this._lutTex || []) t.dispose();
     this._lutSet = [null, null];
+    this._benchRT?.dispose();
+    this._benchRT = null;
   }
 
   /**

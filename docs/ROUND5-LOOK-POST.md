@@ -46,12 +46,14 @@ References are cited `ext:<file>@<sha8>#<panel>` (ROUND5-LOOK §0.2); none is co
 
 ### 1.2 L-02 / L-14 — the grade (`src/core/look.grade.json`)
 
-Display space after AgX, baked per **grade set** into a 32³ RGBA8 LUT (look.js `gradeSet` → `bakeLut`):
+Display space after AgX, baked per **grade set** into a 32³ **half-float** RGBA LUT (look.js `gradeSet` →
+`bakeLut`; RGBA8 texels carried up to ±0.5 LSB of rounding each, which trilinear filtering turned into a ripple with
+the period of the texel crossings across smooth gradients, 5–30 px, and A108 read it as content periodicity):
 split tone by luma (shadow tint weighted 1 − smoothstep(0.05, 0.45), highlight smoothstep(0.55, 0.95)), contrast
 about a pivot, saturation by luma (shadow / mid / highlight), then LCh hue work (75–110° rotated toward amber
 with less chroma, greens damped, Orchil violets lifted). Sets: `golden`, `noon`, `dusk` and **`calima`** (L-14:
-shadow (1.04, 0.95, 0.98), saturation 0.95). The four LUTs are baked once at boot (CPU 4 × 128 KB, ≈ 60 ms);
-the GPU holds **two slots** (`CAL.lookLutA/B`, 2 × 128 KB) blended by `uLutMix`, refilled by one 128 KB upload
+shadow (1.04, 0.95, 0.98), saturation 0.95). The four LUTs are baked once at boot (CPU 4 × 384 KB half + decoded, ≈ 80 ms);
+the GPU holds **two slots** (`CAL.lookLutA/B`, 2 × 256 KB) blended by `uLutMix`, refilled by one 256 KB upload
 only when a slot's set changes (never per hour). Vignette 0.28 in the pass.
 
 **Tuned against the frames, not the first numbers.** The first build used ROUND5-LOOK's numbers as written
@@ -78,7 +80,8 @@ ROUND5-LOOK L-03's EV offsets (noon 0, 16:30 +0.10, 17:45 +0.15, 18:45 +0.25, 19
 Strength 0.48, radius 0.72, mip factors [0.55, 0.65, 0.85, 1.05, 1.25], tint (1.00, 0.97, 0.93);
 `look.bloomScale` multiplies the strength per weather (world-sky: calima ×1.25, overcast ×0.6).
 **The threshold is keyed to display brightness** (`look.hdrForLstar`): bloom starts at the grey that shows at
-L\* 93 and is full by L\* 96, at the hour's exposure (≈ 2.8 / 5.4 scene-linear at EV 0 on the golden set).
+L\* 94 at the hour's exposure (≈ 3.3 scene-linear at EV 0 on the golden set), with ROUND5-LOOK's knee kept in
+proportion (0.35 / 1.30 of the threshold).
 ROUND5-LOOK's 1.30 / 0.35 were ACES-scale numbers: under the CALIMA look HDR 1.30 shows at L\* ≈ 84, so
 sunlit cloth, rock and salt at L\* 85–92 (A-look-bloom a, V-look-glow) and the calm lamp ring (#F2EAD3 needs HDR
 luminance 2.47 under AgX) would all glow; measured in r2, the calm ring's own bloom brightened the lamp drum
@@ -209,12 +212,153 @@ own clip bar (at ≥ 250, 1-MR reads 7.6 % against 1–5 %).
 
 ## 4. Gate results (port 5251, this tree; `node tools/gates.mjs --port 5251 --lane look-post`)
 
-GATE_TABLE_PLACEHOLDER
+Runs: r2 (Nov 6 21:50–22:11 UTC), r3 (23:30–00:14), r4 (the fixes below; §4.3). Scratch:
+`/private/tmp/claude-501/-Users-kevinliu-Horizon-Zero-Claude/db31a0fa-9701-46f4-8234-5158425c1e49/scratchpad/r5/look-post/{r2,r3,r4,film-r3}`.
+Every visual row was filmed at 1600×900 and read by me against its panels (§4.2); the R29 judge grades them.
+
+### 4.1 The look-post block (W1)
+
+| row | r3 | measured |
+|---|---|---|
+| A-look-suite-files (b, c, f) | **PASS** | synthetic 6 patches all within ±0.5; fixture 77 numbers within ±0.3; refs.json 8 904 B, no data URI / base64 run / pixel key; 650 files scanned, 0 SHA-256 matches with the 4 reference images |
+| A-look-tonemap (a–d) | **PASS** | (a) 0.02 → L\* 9.92, 0.18 → 50.21, 1.6 → 86.12 at exposure 1.2668; (b) GPU vs `look.evaluate` worst 0.002/255 at mix 0, 0.511/255 golden+calima 50 %, 0.519/255 dusk+noon 25 % (the ±0.5 LSB dither included); invert round trip 0.02/255 over 512 shown values; the four lamp tokens 0/255; (c) skew #FFB070×4 4.76°, #F08A5A×3 4.47°, #FF2D8C×6 2.07°, Orchil #6B3F73×4 2.06°; (d) 64-step ramp 0.001–32 strictly increasing |
+| A-look-tonemap (e, f) | see aliases | A-lamp-canon-distance PASS; A-brea-contrast PASS (5.85:1 salt, ΔE 22.8 sand, 27.6 % ≥ 3:1); A-weak40 every 13:00 clause PASS (calima clause PENDING world-sky); A-lamp-states colour, iris, beams PASS, wary rhythm FAIL in r3 (fixed in r4, §4.3); A-sighting-hue is shell-ui's row (not in this tree) |
+| A-look-suite (a, d, e) | **PASS** | five places identical SHA-256 on two consecutive captures (field after 2 pairs: streaming), depth bins 30 → 29.1 m, 120 → 116.4, 400 → 388, 900 → 873, all in their bins; capture = WebGL canvas |
+| A-look-frame-stats | FAIL | every LUT texel = look.js within 0.5/255 (all four sets); look on at low and medium; places (stand-ins on the W0 map): field 3/9, vista 5/11, aim 2/9, close 2/7, dusk 2/4 — see §5.1 |
+| A-look-random | FAIL | 0/12 meet look.field's bars (lo20 hue 50–61, mid b\* 29–35, p99 53–64) |
+| A-look-bloom | FAIL (r3) | (a) brightest noon ground L\* 86.7 → folded bloom 0 ✓; (d) energy 0 % field and vista ✓; (b) no sun in the vista stand-in (L-06 is world-sky's: profile on = off); (c) halo / core 2.50 with the first threshold mapping (r4 re-measures, §4.3) |
+| A-csm-layer-masks | **PASS** | CASTER_ONLY: 0 view draws, cascades [0, 1, 2]; CASCADE0_ONLY: 8 view draws, cascade [0]; layer 0: both; camera mask restored after the shadow pass |
+| A-hold-frame | **PASS** | held frames 0 draws (10/10); resumed frame within 0.47 % of the held one |
+| A-gpu-attrib (+ box) | FAIL (r3, quiet box, load 1.98) | per-pass timer segments unusable on ANGLE/Metal (opaque 99–159 ms, grade and SMAA 0, also with a flush); re-built as skip-one marginals (r4, §4.3); owners and floor below |
+| A-look-ledger (+ box) | FAIL (r3) | whole-frame A/B of the look group: vista +2.87, herd +1.6, fight +0.15 ms at ±1–3 ms frame noise; re-built as pass benches for post items (r4, §4.3) |
+| V-look-before-after (1/2, 2/2), V-look-grade, V-look-highlights, V-look-glow, V-look-random | NEEDS-JUDGE | read in §4.2 |
+
+### 4.2 Reading the films (r3; panels 1-TR, 1-MR, 1-TL, 1-MC, 1-BL, 2-MR, 5-1)
+
+- **V-look-before-after** (field 16:30, vista 19:00, aim 17:45 behind Brea; close 18:45; dusk 19:45; noon):
+  the CALIMA column turns the W0 output's olive-mustard grass amber, moves the darkest fifth from hue 71–88° to
+  49–57° (toward 1-TR's 52° and the rose band), lifts crushed shadows (crush 0.5–4.6 % → 0–1 %: Brea's face and the
+  wrap read in the close-up, as in 1-MC) and keeps Brea's violet the most saturated hue. It is darker at the top
+  (p99 −2…−8 L\*) and the sky stays the W0 keys' orange-pink haze, so no frame looks like 1-TR or 1-MR yet: no
+  lavender zenith, no rose distance layers, no sun disc, no sea. That is the light (world-sky L-03/L-04/L-05/L-06),
+  the ground and the map (world-ground, world-props), not the transform; the noon frame (noon set) reads tan where
+  W0 read lemon.
+- **V-look-glow**: the hostile and calm lamp discs at the lamp system's solved HDR read as their tokens with a soft
+  halo; sunlit cloth, rock and grass at noon do not glow.
+- **V-look-highlights**: FAIL as filmed: the vista stand-in at 19:00 has no sun disc or sea (L-06, world-ground).
+- **V-look-random**: twelve frames, one warm orange-amber haze; consistent, but monotone beside 1-TR and 1-MR
+  (no depth layering, no violet).
+- **V33b / V20 / V-gpu-tier-look** on the Pans POC under the look: no screen-locked lattice, AO reads as contact;
+  the dune ripples read more clearly (the toe lifts what ACES crushed), which is what A108 trips on (§5.3).
+
+### 4.3 r4: the fixes, re-measured
+
+R4_PLACEHOLDER
+
+### 4.4 Inherited and global rows (r3)
+
+| row | result | note |
+|---|---|---|
+| A-gpu-tier(-box)@look-post | PENDING (r2: load 6.27) | vista 12.49 ms, empty 5.12 ms, 59.9 fps, p95 18.6 ms on the POC (bars 13 / 7 / 58 / 20): passes on numbers, graded on the quiet box |
+| A-rt-ledger@look-post | PASS | 127.27 MB of render targets (≤ 170); the LUT slots are textures (0.5 MB) |
+| A22-msaa@look-post | PASS | SMAA fraction 0.336, gain 1.59× over off |
+| A108-ao-periodicity@look-post | FAIL | content-limited crops under the look (far108m control 0.261; mid47m 0.299–0.615); the `-w0` twin PASSES in the same run (worst 0.135) — §5.3 |
+| A109-ao-distance-fade@look-post | PASS | far/near 0, far luminance on = off |
+| V20, V33b, V-gpu-tier-look @look-post | NEEDS-JUDGE | filmed |
+| A1-boot-clean, A20b, A20, A22b-fov-recompile | PASS | |
+| A9-perf-budget | PASS | 241 draws, 59.9 fps median, p95 18.1 ms, scene GPU 20.0 ms (quiet box, load 2.89) |
+| A21-real-draw-calls | FAIL (GPU term) | draws 248 / 183 / 275, tris 3.66 / 3.87 / 3.93 M PASS; median GPU vista 19.59, herd 33.87, fight 20.50 ms against 14 (quiet box): the Nov 6 numbers to the tenth, so the look does not move A21; **the herd's 33.9 ms is this build (the W0 valley map in the look-post tree, main + look-post)**, not world-ground's island (20.10) |
+| A90-memory-stability, -expansion, A90b, A90-rig-reclaim, A90-abs | PASS | A90-abs heap and GPU controls 1.003× / 1.066× |
+| A-alloc-rate | FAIL (baseline guard) | instruments-core 0.08 vs 0.07 KB/frame (+14 %, lamps.js re-solving through `look.invert` as the clock moved the look); engine 0.71× of its W0b baseline. Fixed for r4: `invert` allocation-free, the hour bridge quantised (§4.3) |
+| A-vram-ledger | PASS | |
+| A-no-horizon-terms-code / -player | PASS | 1371 = ratchet; 1503 ≤ 1508 |
+| A-ID-ip-assets-gone, A-assets-tracked | PASS | |
+| A-licence-manifest | PENDING | third-party clause PENDING (pipeline's re-fetch rows; no asset added by this lane) |
+| A-port-guard | PENDING | refusals PASS; "not a full lane run" (r2's FAIL was this lane's import-time `pgrep`/`git`, removed) |
+| A-carried-suite | PENDING-orchestrator | R48 d |
+| A-reach-all-sites | not registered in this tree | |
+
 
 ## 5. Honest gaps
 
-GAPS_PLACEHOLDER
+### 5.1 The palette bars are the light's, not the transform's
+
+A-look-frame-stats, A-look-random and the likeness rows (V-look-grade, V-look-highlights, V-look-random) cannot pass
+on the W0 map under the W0 keys whatever the grade does, and the grade must not be pushed into a colour filter to
+fake them. Measured on the HDR dump of the places (the same HDR through both outputs):
+
+| frame | W0 lo20 hue → CALIMA | mid b\* | p99 | what the panel has that the frame does not |
+|---|---|---|---|---|
+| field 16:30 | 77 → 60 | 22 → 27 | 73 → 68 | lavender sky (b\* < 0), rose mesas, a sun-side haze at L\* 90+ |
+| vista 19:00 | 66 → 54 | 25 → 32 | 60 → 60 | the sun disc and the sea glint (p99 93, clip 3 %) |
+| aim 17:45 | 76 → 59 | 30 → 34 | 70 → 66 | backlit haze, violet distance |
+| dusk 19:45 | 72 → 54 | 13 → 22 | 30 → 37 | a violet dusk sky (2-MR mid b\* −5.6) |
+| close 18:45 | 7 → 21 | 25 → 32 | 56 → 57 | sky catch-light, skin sheen (L-04, C-01…) |
+
+The transform moves the shadows ≈ 15° toward rose and lifts crushed blacks; the mids stay yellow because the
+frames are ochre ground under an orange fog with no blue-violet sky in them; the top stays low because the keys put
+the brightest pixels at HDR 0.4–0.6, which AgX shows at L\* 65–70 (ACES at 75–81). **For world-sky (L-03):** under
+AgX the sky dome and the sun need roughly +0.5…+1 EV of radiance against the ACES-era keys for the top of the frame
+to read as bright as before (0.18 still shows at L\* 50; 1.0 shows at 82 against ACES's 93).
+
+### 5.2 Places are stand-ins
+
+`gatePlaces.look.*` is world-props' (day-1 stub, not started). The gates stage the stand-ins of
+`tools/look/places.mjs` on the W0 map and say so in every detail. No Ring, cliff, sea or Pans in them: the likeness
+rows can be graded on light and palette only until world-props, world-ground and world-sky land.
+
+### 5.3 A108 under the look (must-stay-green, inherited)
+
+A108 FAILs under the look and PASSES on the W0 output in the same run (`A108-ao-periodicity@look-post-w0`). GTAO adds
+nothing (on − off ≤ +0.01 on every crop): the failure is the instrument's own content check — the far crop
+`far108m` (the pan from 14 m) and the mid crops read GTAO-off control peaks of 0.26 (far) and 0.30–0.61 (mid) under
+the look against 0.02–0.10 under ACES, so they are "content-limited" and the witness cannot see the stock defect over
+the control. The cause is visible in V33b's frames: the dune ripples and grass rows, which ACES crushed into black,
+read under AgX's toe as a regular pattern. r4 re-measures with the half-float LUT (§1.2). If it still fails, the
+fix is a re-survey of A108's crops on the look (docs/ROUND5-ENGINE.md §3.6's procedure, engine-gpu's gate file:
+**an orchestrator grant or ruling is needed**; this lane may not edit `tools/gates.r5.engine-gpu.mjs`).
+
+### 5.4 Quiet-box and per-pass timing on ANGLE/Metal
+
+The segment timer queries the spec planned for L-18 do not work on this machine's ANGLE/Metal (per-query times
+land on the first query of a command buffer even with a flush). L-18 per-pass rows are therefore skip-one marginals on
+the whole-frame timer that A21 itself reads, with an all-off interaction test for the 10 % sum rule. The raw segment
+timings are still reported (`segmentTimersRaw`) for when the platform can time them. L-16 A/Bs post items on their
+own pass (`engine.benchPass`, gl.finish fences) because a whole-frame A/B at 18–20 ms frames is ±1–3 ms of noise.
+
+### 5.5 Not done this wave
+
+- R48(c): the engine row is at 0.71× of its W0b allocation baseline (the cull visit is hoisted), but
+  `ScenePass.render` still allocates ≈ 8.7 MB/s inside three's `renderer.render` (the "program-key churn") and the
+  caster pool re-grows after `length = 0` every 0.1 s (≈ 0.46 MB/s). Not fixed: both need a profile-guided change to
+  the cull and the render path that this wave's G-post scope does not cover; the orchestrator sets engine.js's
+  absolute alloc bars (R53) and decides.
+- U-03 is the engine half only (`holdFrame`); shell-ui wires it in W2.
+- L-14's calima set exists and is gated (A-look-tonemap b); the calima weather is world-sky's, so it is never shown
+  in play yet.
+
 
 ## 6. What other lanes and the orchestrator must do
 
-ACTIONS_PLACEHOLDER
+- **Orchestrator.** (1) Decide A108 (§5.3): a ruling or a grant to re-survey its crops on the look. (2) The
+  look items sit behind `QUALITY_TIERS.<tier>.look` (`agx`, `grade`, `lut`, `bloomRetune`): if Kevin's 5173 should
+  not show the CALIMA look before world-sky's keys land, set `agx: false` on `high` at the merge (that is the W0
+  output, bit for bit). My recommendation is to merge it on: the shadows and faces read better and the palette moves
+  the right way; the darker top is world-sky's to raise with the keys (§5.1). (3) L-18 then L-16 in the W1-exit
+  global run: `cd <scratch> && nice -n 10 node <tree>/tools/look/gpu-attrib.mjs --port 5270`, then
+  `.../tools/look/ab-time.mjs --port 5270` (each runs its gate with its box row and prints the §4.2 / §4.3 tables).
+  (4) ROUND5-LOOK L-07's threshold numbers (1.30 / 0.35) and L-02's grade numbers changed for measured reasons
+  (§1.2, §1.3); the doc should carry the shipped values. (5) The W0 twins (`<id>@look-post-w0`, lane
+  `look-post-diag`) are diagnostic and need not run in the global list.
+- **world-sky.** Call `engine.setLookHour(hour, weather, calimaWeight)` when the hour or weather moves (it applies
+  the hour EV unless `{ ev: false }`), `engine.setLook({ bloomScale })` per weather, and register L-04/L-05/L-06/L-09
+  with `engine.registerLookItem`. Re-key L-03 against AgX (§5.1). In W2 (G-post passes to you): the
+  `onAfterScene` hook for L-08 (note: A21's timer wraps `composer.render` only, so the post-SMAA shafts pass is
+  outside A21 today), L-12, L-17, the L-14 dusk set (a `dusk` set exists; tune it, do not add a slot).
+- **world-props.** Publish `ctx.props.gatePlaces.look.*` in the `tools/look/places.mjs` record shape.
+- **instruments-a / world-ground (I-04, W-01).** `CAL_LAYER` per §2; keep hit proxies on layer 0.
+- **shell-ui (W2).** `engine.holdFrame(on)` for full-screen menus; refit `CALIMA_DISC` through `engine.look`.
+- **hero-body (observation).** In the close stand-in (18:45, sim frozen at timeScale 0 after the place settles),
+  Brea's idle shows her left arm raised behind her head (V-look-before-after-2, row 1). Kevin's bar is never an arm
+  behind the head; if this is a real idle pose and not a frozen transition, it is hero-body's.
+

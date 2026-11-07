@@ -111,6 +111,17 @@ function inv3(m) {
     [C / det, -(a * h - b * g) / det, (a * e - b * d) / det],
   ];
 }
+/** 3 x 3 inverse into `o` (rows), allocation-free; false when singular or not finite. */
+function inv3Into(m, o) {
+  const a = m[0][0], b = m[0][1], c = m[0][2], d = m[1][0], e = m[1][1], f = m[1][2], g = m[2][0], h = m[2][1], i = m[2][2];
+  const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+  const det = a * A + b * B + c * C;
+  if (!det || !Number.isFinite(det)) return false;
+  o[0][0] = A / det; o[0][1] = -(b * i - c * h) / det; o[0][2] = (b * f - c * e) / det;
+  o[1][0] = B / det; o[1][1] = (a * i - c * g) / det; o[1][2] = -(a * f - c * d) / det;
+  o[2][0] = C / det; o[2][1] = -(a * h - b * g) / det; o[2][2] = (a * e - b * d) / det;
+  return Number.isFinite(o[0][0] + o[0][1] + o[0][2] + o[1][0] + o[1][1] + o[1][2] + o[2][0] + o[2][1] + o[2][2]);
+}
 const M_709_TO_2020_INV = inv3(M_709_TO_2020);
 const M_2020_TO_709_INV = inv3(M_2020_TO_709);
 const AGX_INSET_INV = inv3(AGX_INSET);
@@ -364,29 +375,69 @@ export function gradeSet(c, s, out) {
   return out;
 }
 
-/** Bake a set into an RGBA8 LUT (r fastest, then g, then b: the Data3DTexture layout). */
-export function bakeLut(set, size = 32, data = new Uint8Array(size * size * size * 4)) {
+/* IEEE half floats (the LUT's GPU storage), without three: round-to-nearest-even. */
+const _f32 = new Float32Array(1), _u32 = new Uint32Array(_f32.buffer);
+export function toHalf(v) {
+  _f32[0] = v;
+  const x = _u32[0], sign = (x >>> 16) & 0x8000;
+  let e = ((x >>> 23) & 0xff) - 112, m = x & 0x7fffff;
+  if (e <= 0) {   // subnormal or zero
+    if (e < -10) return sign;
+    m |= 0x800000;
+    const sh = 14 - e;
+    let h = m >> sh;
+    const rem = m & ((1 << sh) - 1), half = 1 << (sh - 1);
+    if (rem > half || (rem === half && (h & 1))) h++;
+    return sign | h;
+  }
+  if (e >= 31) return sign | 0x7c00;
+  let h = (e << 10) | (m >> 13);
+  const rem = m & 0x1fff;
+  if (rem > 0x1000 || (rem === 0x1000 && (h & 1))) h++;
+  return sign | h;
+}
+export function fromHalf(h) {
+  const s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 0x1f, f = h & 0x3ff;
+  if (e === 0) return s * f * Math.pow(2, -24);
+  if (e === 31) return f ? NaN : s * Infinity;
+  return s * (1 + f / 1024) * Math.pow(2, e - 15);
+}
+
+/**
+ * Bake a set into a HALF-FLOAT RGBA LUT (r fastest, then g, then b: the Data3DTexture layout):
+ * `half` (Uint16Array, the GPU's texels) and `f32` (the same values decoded, what the CPU samples).
+ * Half floats, not RGBA8: an 8-bit texel carries up to +-0.5 LSB of its own rounding, and trilinear
+ * filtering turns that into a ripple with the period of the texel crossings across a smooth gradient
+ * (5-30 px in haze and sand), which A108's autocorrelation read as content periodicity (0.26-0.61 on
+ * crops that read 0.02-0.10 without the grade). Half precision at 0..1 is <= 0.12 LSB.
+ */
+export function bakeLut(set, size = 32) {
+  const n4 = size * size * size * 4;
+  const half = new Uint16Array(n4), f32 = new Float32Array(n4);
   const c = [0, 0, 0], o = [0, 0, 0];
   const k = 1 / (size - 1);
+  const one = toHalf(1);
   let p = 0;
   for (let bi = 0; bi < size; bi++) {
     for (let gi = 0; gi < size; gi++) {
       for (let ri = 0; ri < size; ri++) {
         c[0] = ri * k; c[1] = gi * k; c[2] = bi * k;
         gradeSet(c, set, o);
-        data[p] = Math.round(o[0] * 255); data[p + 1] = Math.round(o[1] * 255); data[p + 2] = Math.round(o[2] * 255); data[p + 3] = 255;
+        for (let ch = 0; ch < 3; ch++) { const h = toHalf(o[ch]); half[p + ch] = h; f32[p + ch] = fromHalf(h); }
+        half[p + 3] = one; f32[p + 3] = 1;
         p += 4;
       }
     }
   }
-  return data;
+  return { half, f32, size };
 }
 
 /**
- * Trilinear sample of an RGBA8 LUT at display sRGB `c`, as the GPU samples it
- * (texel centres at (i + 0.5) / size; coordinate c * (size - 1) / size + 0.5 / size).
+ * Trilinear sample of a LUT's decoded texels (`lut.f32`, values 0..1) at display sRGB `c`, as the GPU
+ * samples it (texel centres at (i + 0.5) / size; coordinate c * (size - 1) / size + 0.5 / size).
  */
-export function sampleLut(data, size, c, out) {
+export function sampleLut(lut, size, c, out) {
+  const data = lut.f32 || lut;
   const n = size - 1;
   const fr = clamp01(c[0]) * n, fg = clamp01(c[1]) * n, fb = clamp01(c[2]) * n;
   const r0 = Math.min(n - 1, Math.floor(fr)), g0 = Math.min(n - 1, Math.floor(fg)), b0 = Math.min(n - 1, Math.floor(fb));
@@ -400,7 +451,7 @@ export function sampleLut(data, size, c, out) {
     const x00 = c000 + (c100 - c000) * tr, x10 = c010 + (c110 - c010) * tr;
     const x01 = c001 + (c101 - c001) * tr, x11 = c011 + (c111 - c011) * tr;
     const y0 = x00 + (x10 - x00) * tg, y1 = x01 + (x11 - x01) * tg;
-    out[ch] = (y0 + (y1 - y0) * tb) / 255;
+    out[ch] = y0 + (y1 - y0) * tb;
   }
   return out;
 }
@@ -466,7 +517,7 @@ export class Look {
       ? calibrateExposure(this.look) : grade.look.exposure;
     this.ev = 0;
     this.exposure = this.baseExposure;
-    /** CPU copies of every set's LUT, baked once (4 x 128 KB); the GPU holds two slots. */
+    /** CPU copies of every set's LUT, baked once (half + decoded, 4 x 384 KB); the GPU holds two half-float slots. */
     this.luts = {};
     for (const name of Object.keys(grade.sets)) this.luts[name] = bakeLut(grade.sets[name], this.size);
     this.setA = grade.default || 'golden';
@@ -479,6 +530,8 @@ export class Look {
     this._x = [0, 0, 0]; this._y = [0, 0, 0]; this._la = [0, 0, 0]; this._lb = [0, 0, 0];
     this._d = [0, 0, 0]; this._f = [0, 0, 0]; this._r = [0, 0, 0]; this._rr = [0, 0, 0]; this._xs = [0, 0, 0]; this._fh = [0, 0, 0];
     this._J = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    this._Ji = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    this._tgt = null;
   }
 
   /** Every set name in the grade file. */
@@ -551,52 +604,11 @@ export class Look {
     out[0] *= k; out[1] *= k; out[2] *= k;
     // 4. Newton on the exact forward, with backtracking (a step is taken only if it lowers the
     // residual): the shoulder and the gamut clamps make the Jacobian steep or singular near the
-    // display's floor and ceiling, where a full step overshoots
-    const xs = this._xs, fh = this._fh, J = this._J;
-    // a step that parks a channel on a clamped plateau (output exactly 0 or 1 where the target is
-    // not) has zero slope there and Newton can never leave it: such a step is refused (Infinity)
-    const resid = (x, rr) => {
-      this.evaluate(x, f);
-      let e = 0;
-      for (let i = 0; i < 3; i++) {
-        const pinned = (t[i] >= 0.999 && f[i] >= 0.9995) || (t[i] <= 0.0005 && f[i] <= 0.001);
-        if (!pinned && ((f[i] <= 0 && t[i] > 0.0005) || (f[i] >= 1 && t[i] < 0.999))) return Infinity;
-        rr[i] = pinned ? 0 : f[i] - t[i];
-        e += Math.abs(rr[i]);
-      }
-      return e;
-    };
-    const newton = () => {
-      let e = resid(out, r);
-      if (e === Infinity) { this.evaluate(out, f); for (let i = 0; i < 3; i++) r[i] = f[i] - t[i]; return Infinity; }
-      for (let it = 0; it < 16 && e > 2e-6; it++) {
-        for (let j = 0; j < 3; j++) {
-          const h = 1e-4 * Math.max(0.01, Math.abs(out[j]));
-          xs[0] = out[0]; xs[1] = out[1]; xs[2] = out[2];
-          xs[j] += h;
-          this.evaluate(xs, fh);
-          for (let i = 0; i < 3; i++) J[i][j] = (fh[i] - f[i]) / h;
-        }
-        for (let i = 0; i < 3; i++) if (r[i] === 0) { J[i][0] = i === 0 ? 1 : 0; J[i][1] = i === 1 ? 1 : 0; J[i][2] = i === 2 ? 1 : 0; }
-        const Ji = inv3(J);
-        if (!Number.isFinite(Ji[0][0] + Ji[1][1] + Ji[2][2] + Ji[0][1] + Ji[1][2] + Ji[2][0])) break;
-        mul3(Ji, r, xs);
-        const d0 = xs[0], d1 = xs[1], d2 = xs[2];
-        const o0 = out[0], o1 = out[1], o2 = out[2];
-        // a channel may go negative (an emitter pre-compensating AgX's inset, which mixes the
-        // channels): the transform clamps only in AgX space, after the inset
-        let a = 1, ok = false;
-        for (let k = 0; k < 12; k++, a *= 0.5) {
-          out[0] = o0 - a * d0; out[1] = o1 - a * d1; out[2] = o2 - a * d2;
-          const e2 = resid(out, this._rr);
-          if (e2 < e) { e = e2; r[0] = this._rr[0]; r[1] = this._rr[1]; r[2] = this._rr[2]; ok = true; break; }
-        }
-        if (!ok) { out[0] = o0; out[1] = o1; out[2] = o2; this.evaluate(out, f); break; }
-      }
-
-      return e;
-    };
-    let e = newton();
+    // display's floor and ceiling, where a full step overshoots. Allocation-free (methods + scratch:
+    // the lamp system re-solves through this whenever the look moves)
+    this._tgt = t;
+    const newton = this._newtonFn || (this._newtonFn = (o) => this._newton(o));
+    let e = newton(out);
     // a target near the display's ceiling can start Newton on a clamped plateau (zero slope): restart
     // from a dimmer guess and keep the best (rare; the lamp tokens and the gate's samples land first time)
     if (e > 0.5 / 255) {
@@ -607,13 +619,62 @@ export class Look {
         const s = RESTARTS[q % RESTARTS.length];
         if (q < RESTARTS.length) { out[0] = b0 * s; out[1] = b1 * s; out[2] = b2 * s; }
         else { out[0] = m + (b0 - m) * s; out[1] = m + (b1 - m) * s; out[2] = m + (b2 - m) * s; }   // toward grey
-        const e2 = newton();
+        const e2 = newton(out);
         if (e2 < best) { best = e2; k0 = out[0]; k1 = out[1]; k2 = out[2]; }
         if (best <= 0.5 / 255) break;
       }
       out[0] = k0; out[1] = k1; out[2] = k2;
     }
     return out;
+  }
+
+  /**
+   * The residual of `x` against the target `this._tgt` into `rr` (sum of |r|). A channel pinned at the
+   * display's floor or ceiling counts 0; a step that parks a channel on a clamped plateau (output exactly
+   * 0 or 1 where the target is not) has zero slope there and Newton could never leave it: Infinity.
+   */
+  _resid(x, rr) {
+    const t = this._tgt, f = this._f;
+    this.evaluate(x, f);
+    let e = 0;
+    for (let i = 0; i < 3; i++) {
+      const pinned = (t[i] >= 0.999 && f[i] >= 0.9995) || (t[i] <= 0.0005 && f[i] <= 0.001);
+      if (!pinned && ((f[i] <= 0 && t[i] > 0.0005) || (f[i] >= 1 && t[i] < 0.999))) return Infinity;
+      rr[i] = pinned ? 0 : f[i] - t[i];
+      e += Math.abs(rr[i]);
+    }
+    return e;
+  }
+
+  /** Damped Newton from `out` toward `this._tgt` (in place); returns the final residual. */
+  _newton(out) {
+    const t = this._tgt, f = this._f, r = this._r, xs = this._xs, fh = this._fh, J = this._J, Ji = this._Ji;
+    let e = this._resid(out, r);
+    if (e === Infinity) { this.evaluate(out, f); for (let i = 0; i < 3; i++) r[i] = f[i] - t[i]; return Infinity; }
+    for (let it = 0; it < 16 && e > 2e-6; it++) {
+      for (let j = 0; j < 3; j++) {
+        const h = 1e-4 * Math.max(0.01, Math.abs(out[j]));
+        xs[0] = out[0]; xs[1] = out[1]; xs[2] = out[2];
+        xs[j] += h;
+        this.evaluate(xs, fh);
+        for (let i = 0; i < 3; i++) J[i][j] = (fh[i] - f[i]) / h;
+      }
+      for (let i = 0; i < 3; i++) if (r[i] === 0) { J[i][0] = i === 0 ? 1 : 0; J[i][1] = i === 1 ? 1 : 0; J[i][2] = i === 2 ? 1 : 0; }
+      if (!inv3Into(J, Ji)) break;
+      mul3(Ji, r, xs);
+      const d0 = xs[0], d1 = xs[1], d2 = xs[2];
+      const o0 = out[0], o1 = out[1], o2 = out[2];
+      // a channel may go negative (an emitter pre-compensating AgX's inset, which mixes the
+      // channels): the transform clamps only in AgX space, after the inset
+      let a = 1, ok = false;
+      for (let k = 0; k < 12; k++, a *= 0.5) {
+        out[0] = o0 - a * d0; out[1] = o1 - a * d1; out[2] = o2 - a * d2;
+        const e2 = this._resid(out, this._rr);
+        if (e2 < e) { e = e2; r[0] = this._rr[0]; r[1] = this._rr[1]; r[2] = this._rr[2]; ok = true; break; }
+      }
+      if (!ok) { out[0] = o0; out[1] = o1; out[2] = o2; this.evaluate(out, f); break; }
+    }
+    return e;
   }
 
   /**

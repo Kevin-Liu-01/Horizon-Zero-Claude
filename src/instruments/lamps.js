@@ -213,9 +213,7 @@ export const BARREL_DEPTH = 0.85;
 const GRAPHITE_LIN = [0.0242, 0.0252, 0.0296];
 /** Rhythm troughs: the lens never goes fully dark while it is alive. */
 const PULSE_LOW = 0.55;
-// look-post (L-01, grant): under AgX the wary core sits in the shoulder, so its trough is re-solved for the
-// ACES-era on-screen depth (0.84 of the peak's luminance) instead of 0.55 in HDR
-let PULSE_LIVE = PULSE_LOW;
+let PULSE_LIVE = PULSE_LOW;   // look-post (L-01, grant): under AgX the wary trough is re-solved for the ACES-era on-screen depth
 function screenLum(look, c, g, s) { s[0] = c.r * g; s[1] = c.g * g; s[2] = c.b * g; look.evaluate(s, s); return LUMA[0] * srgbToLinear(s[0]) + LUMA[1] * srgbToLinear(s[1]) + LUMA[2] * srgbToLinear(s[2]); }
 const FLICKER_LOW = 0.3;
 /** The rhythm constants, for hot paths that write `lampGain` out (machine.js `_updateEyes`). */
@@ -899,7 +897,7 @@ export class LampSystem {
       let ci = si;
       // lampGain(s, t, phase), written out (a double return from a call would box)
       const tp = t + r.phase;
-      const stateGain = s === 'wary' ? PULSE_LOW + (1 - PULSE_LOW) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp))
+      const stateGain = s === 'wary' ? PULSE_LIVE + (1 - PULSE_LIVE) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp))
         : s === 'hostile' ? ((tp * 4) - Math.floor(tp * 4) < 0.5 ? 1 : FLICKER_LOW) : 1;
       let gain = stateGain;
       if (s === 'dark' && age < SPUTTER_S && r.prev !== 'dark') {

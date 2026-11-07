@@ -763,7 +763,7 @@ const GLOW_FILM = lookJob(`
     unstage();
   }
   s = await stageLook('field', { hour: 13, sunRel: 180, pitch: -0.2 });
-  if (!s.skip) { const c = await grabCanvas(); const bl = __E.bloom; cells.push({ cap: c, label: 'noon, lit ground: nothing diffuse may glow (bloom from HDR ' + bl.threshold.toFixed(2) + ' = display L* 93, knee ' + bl.highPassUniforms.smoothWidth.value.toFixed(2) + ')' }); unstage(); }
+  if (!s.skip) { const c = await grabCanvas(); const bl = __E.bloom; cells.push({ cap: c, label: 'noon, lit ground: nothing diffuse may glow (bloom from HDR ' + bl.threshold.toFixed(2) + ' = display L* 94, knee ' + bl.highPassUniforms.smoothWidth.value.toFixed(2) + ')' }); unstage(); }
   sheet(cells, 'V-look-glow: only true highlights glow (L-07)', 1);
 `);
 
@@ -860,7 +860,7 @@ export const GATES = [
     assert: HOLD },
   boxRow('A-gpu-attrib-box', 'A-gpu-attrib', GPU_ATTRIB),
   { id: 'A-gpu-attrib', kind: 'action', lane: LANE, wave: 'W1', timeout: 600000, settle: 2500,
-    title: 'L-18: records the build it times; vista, herd and staged fight each give a per-pass table (shadow, opaque, transparent, GTAO, bloom, grade, SMAA, after-render hooks) summing to the frame median within 10 %; per-owner hide-one marginals plus residual. ' + QUIET_NOTE,
+    title: 'L-18: records the build it times; vista, herd and staged fight each give a per-pass table (skip-one marginals on the A21 whole-frame timer: shadow maps, GTAO, bloom, SMAA, grade LUT, transparent + additive; remainder = opaque scene + AgX) whose rows sum to what switching them all off removes within 10 % of the frame; per-owner hide-one marginals plus residual. ' + QUIET_NOTE,
     assert: GPU_ATTRIB(null, null) },
   boxRow('A-look-ledger-box', 'A-look-ledger', LEDGER),
   { id: 'A-look-ledger', kind: 'action', lane: LANE, wave: 'W1', timeout: 600000, settle: 2500,

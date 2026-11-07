@@ -6,11 +6,11 @@
  *
  * Per A21 scenario (vista, herd, staged fight from tools/budgets.mjs):
  *   frame      median GPU ms of composer.render (engine.enableGpuTimer: what A21 reads)
- *   passes     median ms per consecutive timer segment (engine.gpuAttrib): scene:pre,
- *              scene:shadow, scene:opaque, scene:transparent, gtao, bloom, grade, smaa,
- *              any other composer pass, and after:<hook> for each onAfterRender hook
- *   sum        the composer segments' per-frame sum (median) against `frame`: within 10 %
- *              (the after:* hooks are outside A21's timer and are reported beside it)
+ *   passes     skip-one marginals on the whole-frame timer (perPassSkip): shadow maps, GTAO, bloom,
+ *              SMAA, the grade's LUT stage, transparent + additive meshes; remainder = the opaque scene
+ *              and the output pass's AgX; the raw segment timers (engine.gpuAttrib) are reported beside
+ *              them but are not usable on ANGLE/Metal
+ *   sum        interaction test: all of them off at once removes the sum of the rows within 10 % of the frame
  *   owners     hide-one marginals per draw owner (gates-perf's DRAW_OWNERS: scene children by
  *              name), the all-hidden floor, and the interaction residual
  *              (frame - floor - sum of marginals); no sum rule (Apple GPUs cannot attribute by
@@ -31,7 +31,51 @@ export async function wholeFrame(E, n = 60) {
   return { medianMs: s?.medianGpuMs ?? null, p95Ms: s?.p95GpuMs ?? null, gpuFrames: s?.gpuFrames ?? 0, medianDraws: s?.medianDrawCalls ?? null, maxDraws: s?.maxDrawCalls ?? null, renderScale: s?.renderScale ?? null };
 }
 
-/** Per-pass medians over n frames (engine.gpuAttrib segments). */
+/**
+ * Per-pass rows as SKIP-ONE marginals on the whole-frame timer (the instrument A21 reads): each
+ * skippable pass is switched off in turn (shadow maps, GTAO, bloom, SMAA, the grade's LUT stage, the
+ * transparent and additive meshes) and its row is the frame median it removes. `remainder` = frame -
+ * sum of rows = the opaque scene, the output pass's AgX and the frame's fixed costs. The sum check is
+ * the interaction test: everything off at once must remove the sum of the rows within 10 % of the frame.
+ * (Segment timer queries, perPass() below, read 95-160 ms for the opaque segment and 0 for the grade and
+ * SMAA on ANGLE/Metal even with a flush between segments: the per-query times are not usable there.)
+ */
+export async function perPassSkip(E, scene, n = 40) {
+  const sm = E.renderer.shadowMap;
+  const transparent = [];
+  scene.traverse((o) => { const m = o.material; if (o.visible && (o.isMesh || o.isPoints || o.isLine) && m && !Array.isArray(m) && (m.transparent || m.blending === 2)) transparent.push(o); });
+  const TOGGLES = [
+    ['shadow maps', () => { const a = sm.autoUpdate; sm.autoUpdate = false; sm.needsUpdate = false; return () => { sm.autoUpdate = a; sm.needsUpdate = true; }; }],
+    ['gtao', () => { const a = E.gtao.enabled; E.gtao.enabled = false; return () => { E.gtao.enabled = a; }; }],
+    ['bloom', () => { const a = E.bloom.enabled; E.bloom.enabled = false; return () => { E.bloom.enabled = a; }; }],
+    ['smaa', () => { const a = E.smaa.enabled; E.smaa.enabled = false; return () => { E.smaa.enabled = a; }; }],
+    ['grade LUT + dither', () => { const g = E.look.gradeMix; E.look.set({ gradeMix: 0 }); return () => { E.look.set({ gradeMix: g }); }; }],
+    ['transparent + additive (' + transparent.length + ' meshes)', () => { transparent.forEach((o) => { o.visible = false; }); return () => { transparent.forEach((o) => { o.visible = true; }); }; }],
+  ];
+  const base = await wholeFrame(E, n);
+  const rows = {};
+  let sum = 0;
+  for (const [k, on] of TOGGLES) {
+    const undo = on();
+    await wait(4);
+    const m = await wholeFrame(E, n);
+    undo();
+    await wait(4);
+    rows[k] = base.medianMs != null && m.medianMs != null ? r3(base.medianMs - m.medianMs) : null;
+    sum += rows[k] || 0;
+  }
+  const undos = TOGGLES.map(([, on]) => on());
+  await wait(4);
+  const allOff = await wholeFrame(E, n);
+  for (let i = undos.length - 1; i >= 0; i--) undos[i]();
+  await wait(4);
+  const removed = base.medianMs != null && allOff.medianMs != null ? base.medianMs - allOff.medianMs : null;
+  return { method: 'skip-one marginals on the whole-frame timer', frameMs: base.medianMs, rows, sumRowsMs: r3(sum), remainderMs: base.medianMs != null ? r3(base.medianMs - sum) : null,
+    allOffFrameMs: allOff.medianMs, allOffRemovesMs: r3(removed),
+    sumWithin10: removed != null && base.medianMs != null && Math.abs(sum - removed) <= 0.1 * base.medianMs };
+}
+
+/** Per-pass medians over n frames (engine.gpuAttrib segments; reported raw, see perPassSkip). */
 export async function perPass(E, n = 60) {
   E.gpuAttrib(true);
   await wait(8);
@@ -61,8 +105,9 @@ export async function attribute({ ctx, scenarios, stage, owners, frames = 60 }) 
     if (unpin && unpin.skip) { out.scenarios[name] = { skip: unpin.skip }; continue; }
     await wait(40);
     const frame = await wholeFrame(E, frames);
-    const pp = await perPass(E, frames);
-    const within = frame.medianMs != null && pp.composerSumMs != null && Math.abs(pp.composerSumMs - frame.medianMs) <= 0.1 * frame.medianMs;
+    const skip = await perPassSkip(E, ctx.scene, frames);
+    const pp = await perPass(E, Math.round(frames / 2));
+    const within = skip.sumWithin10;
     if (!within) out.sumWithin10 = false;
     // owners: hide one at a time, then all
     const kids = ctx.scene.children;
@@ -89,7 +134,7 @@ export async function attribute({ ctx, scenarios, stage, owners, frames = 60 }) 
     const residual = frame.medianMs != null && floor.medianMs != null ? r3(frame.medianMs - floor.medianMs - sumMarg) : null;
     rows.sort((a, b) => (b.marginalMs || 0) - (a.marginalMs || 0));
     out.scenarios[name] = {
-      frame, perPass: pp, sumWithin10: within,
+      frame, perPass: skip, segmentTimersRaw: pp, sumWithin10: within,
       owners: rows, floorAllOwnersHiddenMs: floor.medianMs, interactionResidualMs: residual,
       unattributedChildren: unattributed.slice(0, 24),
       over05: rows.filter((r) => (r.marginalMs || 0) >= 0.5).map((r) => r.id),

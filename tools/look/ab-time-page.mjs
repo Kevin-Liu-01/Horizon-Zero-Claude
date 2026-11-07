@@ -28,10 +28,13 @@ export async function abTime({ ctx, scenarios, stage, rounds = 4, frames = 40, s
   if (!E?.lookItems) return { ok: false, error: 'engine.lookItems missing' };
   E.setDynamicResolution?.(false);
   const items = [...E.lookItems.values()];
+  // an item with a pass bench (its cost lives in one post pass) is A/B'd alone on that pass
+  const benched = items.filter((i) => typeof i.bench === 'function');
+  const framed = items.filter((i) => typeof i.bench !== 'function');
   const units = [
-    ...items.filter((i) => i.estMs >= solo).map((i) => ({ id: i.id, owner: i.owner, estMs: i.estMs, items: [i] })),
+    ...framed.filter((i) => i.estMs >= solo).map((i) => ({ id: i.id, owner: i.owner, estMs: i.estMs, items: [i] })),
   ];
-  const small = items.filter((i) => i.estMs < solo);
+  const small = framed.filter((i) => i.estMs < solo);
   if (small.length) units.push({ id: 'group:<0.10 ms (' + small.map((i) => i.id).join(', ') + ')', owner: [...new Set(small.map((i) => i.owner))].join(', '), estMs: +small.reduce((a, i) => a + i.estMs, 0).toFixed(3), items: small });
   const out = { items: items.map((i) => ({ id: i.id, owner: i.owner, estMs: i.estMs, title: i.title, on: i.get() })), scenarios: {}, allRowsOk: true };
   for (const name of scenarios) {
@@ -40,7 +43,8 @@ export async function abTime({ ctx, scenarios, stage, rounds = 4, frames = 40, s
     if (unpin && unpin.skip) { out.scenarios[name] = { skip: unpin.skip }; continue; }
     await wait(40);
     const rows = [];
-    let maxDraws = 0;
+    const base = await wholeFrame(E, frames);
+    let maxDraws = base.maxDraws || 0;
     for (const u of units) {
       const was = u.items.map((i) => i.get());
       const deltas = [], ons = [], offs = [];
@@ -62,11 +66,27 @@ export async function abTime({ ctx, scenarios, stage, rounds = 4, frames = 40, s
       const d = median(deltas);
       const ok = d != null && d <= ROW_CAP_MS;
       if (!ok) out.allRowsOk = false;
-      rows.push({ id: u.id, owner: u.owner, estMs: u.estMs, deltaMs: r3(d), onMs: r3(median(ons)), offMs: r3(median(offs)), rounds: deltas.length, ok });
+      rows.push({ id: u.id, owner: u.owner, estMs: u.estMs, method: 'whole frame (A21 instrument)', deltaMs: r3(d), onMs: r3(median(ons)), offMs: r3(median(offs)), rounds: deltas.length, ok });
+    }
+    for (const i of benched) {
+      const was = i.get();
+      const ons = [], offs = [], deltas = [];
+      for (let r = 0; r < rounds; r++) {
+        const order = r % 2 ? [false, true] : [true, false];
+        const got = {};
+        for (const on of order) { i.set(on); await wait(2); got[on] = i.bench(); }
+        ons.push(got.true); offs.push(got.false); deltas.push(got.true - got.false);
+      }
+      i.set(was);
+      await wait(2);
+      const d = median(deltas);
+      const ok = d != null && d <= ROW_CAP_MS;
+      if (!ok) out.allRowsOk = false;
+      rows.push({ id: i.id, owner: i.owner, estMs: i.estMs, method: 'pass bench (engine.benchPass, ms per pass)', deltaMs: r3(d), onMs: r3(median(ons)), offMs: r3(median(offs)), rounds: deltas.length, ok });
     }
     const drawsOk = maxDraws <= DRAW_CAP;
     if (!drawsOk) out.allRowsOk = false;
-    out.scenarios[name] = { rows, maxDraws, drawsOk };
+    out.scenarios[name] = { frameMedianMs: base.medianMs, rows, maxDraws, drawsOk };
     try { if (typeof unpin === 'function') unpin(); } catch (e) { /* */ }
   }
   out.ok = true;
