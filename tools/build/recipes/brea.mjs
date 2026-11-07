@@ -445,7 +445,7 @@ export async function build({ out = ROOT } = {}) {
     tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 21, across: 5, rootBack: 0.014,
       // fix round 2 (R54, R66 c: soft, thick, rippling cloth, no paper edge; the length and width stay): the rows go to the free strip,
       // each row is skinned smoothly across the joints, the selvedges are rolled hems 3.4 mm thick, the strip sags and ripples
-      rootRows: 5, smoothSkin: true, hem: 0.0034, ripple: 0.0042 },
+      rootRows: 4, smoothSkin: true, hem: 0.0034, ripple: 0.0042 },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
     tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012 },
   });
@@ -490,9 +490,9 @@ export async function build({ out = ROOT } = {}) {
     const want = RB + dome + 0.00025;
     return [c[0] + v[0] / d * want, c[1] + v[1] / d * want, c[2] + v[2] / d * want];
   };
-  const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W, length: 0.0068, curl: 0.14, twoSided: true, rim: { h: 0.00085, rect: WRAP_ATLAS.lidRim.rect, onBall: onBall(i) } }));
+  const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W, length: 0.0068, curl: 0.24, twoSided: true, rim: { h: 0.00085, rect: WRAP_ATLAS.lidRim.rect, onBall: onBall(i) } }));
   // the ball the lids always cover is never seen: it pays for the lid rims and the lashes' backs
-  const eyeUnderLids = cullEyeUnderLids(eyesPrim, eyes, opens);
+  const eyeUnderLids = cullEyeUnderLids(eyesPrim, eyes, opens, { margin: 0.002 });
 
   // her own marks: the salt-line, the scar, the ∴
   const eyeY = (eyes[0][1] + eyes[1][1]) / 2;

@@ -419,8 +419,9 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
   //   ripple    a soft sag and ripple across the width that runs down the strip, more toward the free end
   const uOf = (a) => {
     if (!rootRows) return a / along;
-    if (a <= rootRows) return gatherTo * (a / rootRows);
-    return gatherTo + (1 - gatherTo) * ((a - rootRows) / (along - rootRows));
+    // (the rows crowd toward the root's end, where the stiff root hands the strip to the hanging part and it bends hardest)
+    if (a <= rootRows) return gatherTo * Math.pow(a / rootRows, 0.8);
+    return gatherTo + (1 - gatherTo) * Math.pow((a - rootRows) / (along - rootRows), 1.35);
   };
   const edges = [];
   for (const [uvx, sgn] of [[uvFront, 1], [uvBack, -1]]) {
@@ -484,7 +485,9 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
           vv = (uvEnd[1] + end.v * uvEnd[3]) / W;
         } else {
           uu = (rect[0] + uPx) / W;
-          vv = (rect[1] + (0.014 + 0.972 * mix(vr[0], vr[1], k / across)) * rect[3]) / W;
+          // (with a rolled `hem` the faces stay inside the panel's frayed selvedge: the hem is the edge, and a frayed alpha there opened a
+          // slit of sky between the face and the hem)
+          vv = hem ? (rect[1] + (0.06 + 0.88 * mix(vr[0], vr[1], k / across)) * rect[3]) / W : (rect[1] + (0.014 + 0.972 * mix(vr[0], vr[1], k / across)) * rect[3]) / W;
         }
         g.pos.push(...at(a, k)); g.nrm.push(...n); g.uv.push(uu, vv); g.jnt.push(...fr.weights.j); g.wgt.push(...fr.weights.w);
       }
@@ -528,11 +531,11 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
         const pf = F.pts[a * rows + k], pb = Bk.pts[a * rows + k];
         const mid = mul(add(pf, pb), 0.5);
         const out = mul(fr.sd, Math.sign(x));
-        // two rows, a hair proud of the faces' edge, their normals turning from the front face's round to the back's: it shades as a
-        // rolled hem at the cost of one quad a row
+        // two rows, their normals turning from the front face's round to the back's: it shades as a rolled hem at one quad a row
+        // (on the faces' own edge vertices: a hem set off from them, even by a millimetre, showed the sky between)
         for (const q of [pf, pb]) {
           const up = dot(sub(q, mid), fr.nrm) > 0 ? 1 : -1;
-          g.pos.push(...add(q, mul(out, hem * 0.25))); g.nrm.push(...norm(add(mul(out, 0.75), mul(fr.nrm, 0.66 * up))));
+          g.pos.push(...q); g.nrm.push(...norm(add(mul(out, 0.75), mul(fr.nrm, 0.66 * up))));
           g.uv.push((rect[0] + 3 + (a / lastPlain) * (uvFront.period - 6)) / W, vEdge); g.jnt.push(...fr.weights.j); g.wgt.push(...fr.weights.w);
         }
       }

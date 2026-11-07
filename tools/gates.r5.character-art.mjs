@@ -293,7 +293,7 @@ export const GATES = [
   },
   {
     id: 'A-wrap-closed', kind: 'action', lane: 'character-art', settle: 800, timeout: 600000,
-    title: 'No see-through (plan §9 "no see-through"; R64 d): only the player drawn on a key colour, still air, the stow kit and both free cloth ends collapsed, at THREE idle phases in the same run (fix round 2: a pinhole that comes and goes with the idle is not closed). Each phase scans two view sets at 0.8 m: the HEAD (24 azimuths x 4 elevations round the face) and the COLLAR (24 azimuths x 4 elevations up to 1.2 rad, centred on neck_01 minus 0.06 m). 0 enclosed background pixels within 300 px of each view\'s centre (a speck of coil-card alpha, under 6 px or 3 x 2 px, is hair)',
+    title: 'No see-through (plan §9 "no see-through"; R64 d): only the player drawn on a key colour, still air, the stow kit and both free cloth ends collapsed, at THREE idle phases in the same run (fix round 2: a pinhole that comes and goes with the idle is not closed). Each phase scans two view sets at 0.8 m: the HEAD (24 azimuths x 4 elevations round the face) and the COLLAR (24 azimuths x 4 elevations up to 1.2 rad, centred on neck_01 minus 0.06 m). 0 enclosed background pixels within 300 px of the head\'s centre, and within the collar\'s own projected outline (the smock round the neck, its hull grown 24 px) in the collar views (a speck of coil-card alpha, under 6 px or 3 x 2 px, is hair)',
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
     })()`),
     assert: `(async () => {
@@ -312,7 +312,7 @@ export const GATES = [
       const frames = (n) => new Promise((r) => { let i = 0; const f = () => { if (++i >= n) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
       const W = 900, H = 900;
       // one view: the enclosed key-colour components within 300 px of (cx, cy)
-      const scanView = (pos, tgt, cx, cy) => {
+      const scanView = (pos, tgt, inside) => {
         const img = S.liveView(C, pos.toArray(), tgt.toArray(), { width: W, height: H, fov: 29 });
         const px = img.data;
         const k = [px[0], px[1], px[2]];
@@ -330,7 +330,36 @@ export const GATES = [
             for (const q of [x > 0 ? j - 1 : -1, x < W - 1 ? j + 1 : -1, y > 0 ? j - W : -1, y < H - 1 ? j + W : -1]) if (q >= 0 && bg[q] && !seen[q]) { seen[q] = 1; s2.push(q); } }
           comps.push({ area, w: x1 - x0 + 1, h: y1 - y0 + 1, x: Math.round(sx / area), y: Math.round(sy / area) });
         }
-        return comps.filter((c) => c.area >= 6 && c.w >= 3 && c.h >= 2 && Math.hypot(c.x - cx, c.y - cy) < 300).sort((a, b) => b.area - a.area);
+        return comps.filter((c) => c.area >= 6 && c.w >= 3 && c.h >= 2 && inside(c)).sort((a, b) => b.area - a.area);
+      };
+      // the collar's own outline in a view: the smock's vertices round the neck (within 13 cm of neck_01's axis, from 12 cm under it to
+      // 2 cm over it), projected, their convex hull grown by 24 px. A radius round the collar counted the air between her arm and her
+      // side as a hole from 0.8 rad up (17-18 k px, enclosed by the arm, the torso and the hip); the collar's opening is what the row
+      // grades there, all of it, from every side
+      let outfit = null;
+      p.model.traverse((o) => { if (!outfit && o.isSkinnedMesh && /Outfit/i.test(o.name)) outfit = o; });
+      const collarPts = () => {
+        const out = [], v = new T3(), nk = neck.getWorldPosition(new T3()), n = outfit.geometry.attributes.position.count;
+        for (let i = 0; i < n; i++) { outfit.getVertexPosition(i, v); outfit.localToWorld(v); if (v.y > nk.y - 0.12 && v.y < nk.y + 0.02 && Math.hypot(v.x - nk.x, v.z - nk.z) < 0.13) out.push(v.clone()); }
+        return out;
+      };
+      const hullOf = (pts) => {
+        const P = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+        const lo = [], up = [];
+        for (const q of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+        for (let i = P.length - 1; i >= 0; i--) { const q = P[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+        return lo.slice(0, -1).concat(up.slice(0, -1));
+      };
+      const inHull = (H, x, y, grow) => {
+        let inside = true;
+        for (let i = 0; i < H.length; i++) { const a = H[i], b = H[(i + 1) % H.length], ex = b[0] - a[0], ey = b[1] - a[1], l = Math.hypot(ex, ey) || 1; if ((ex * (y - a[1]) - ey * (x - a[0])) / l < -grow) { inside = false; break; } }
+        return inside;
+      };
+      const project = (pts, pos, tgt) => {
+        const C3 = new T3().fromArray(pos), Tg = new T3().fromArray(tgt), f = Tg.clone().sub(C3).normalize(), r = f.clone().cross(new T3(0, 1, 0)).normalize(), u = r.clone().cross(f);
+        const fl = (H / 2) / Math.tan(29 * Math.PI / 360);
+        return pts.map((q) => { const d = q.clone().sub(C3), z = d.dot(f); return [W / 2 + d.dot(r) * fl / z, H / 2 - d.dot(u) * fl / z]; });
       };
       // freeze the scene to the player on the key colour (restored at the end)
       const hidden = [];
@@ -341,7 +370,15 @@ export const GATES = [
       const res = [], phases = [];
       // three idle phases: now, then the idle run on 1.3 s and 2.9 s further (the engine clock runs only between phases)
       for (const [ph, adv] of [[0, 0], [1, 78], [2, 96]]) {
-        if (adv) { for (const b of bones) b.scale.setScalar(1); if (C.engine) C.engine.timeScale = 1; await frames(adv); if (C.engine) C.engine.timeScale = 0; await frames(2); }
+        if (adv) {
+          // the world runs between phases exactly as it was (its fog, sky and objects back), so nothing it updates finds them gone
+          for (const b of bones) b.scale.setScalar(1);
+          for (const o of hidden) o.visible = true;
+          scene.background = bg0; scene.fog = fog0; R.setClearColor(cc, ca);
+          if (C.engine) C.engine.timeScale = 1; await frames(adv); if (C.engine) C.engine.timeScale = 0; await frames(2);
+          for (const o of hidden) o.visible = false;
+          scene.background = null; scene.fog = null; R.setClearColor(0x00ff00, 1);
+        }
         p.hero?.kit?.setHidden(31);
         // the free cloth ends collapse to their roots: what hangs behind the neck encloses real background, which is not a hole
         for (const b of bones) b.scale.setScalar(1e-4);
@@ -354,13 +391,17 @@ export const GATES = [
         const nk = neck.getWorldPosition(new T3()), col = nk.clone(); col.y -= 0.06;
         const Up = new T3(0, 1, 0), Fh = F0.clone(); Fh.y = 0; Fh.normalize(); const Rh = Up.clone().cross(Fh).normalize();
         phases.push({ phase: ph, head: cen.toArray().map((v) => +v.toFixed(3)), collar: col.toArray().map((v) => +v.toFixed(3)) });
-        const sets = [['head', cen, F0, R0, U1, [-0.35, 0, 0.35, 0.8], 450, 400], ['collar', col, Fh, Rh, Up, [0, 0.4, 0.8, 1.2], 450, 450]];
-        for (const [region, c0, Fv, Rv, Uv, els, cx, cy] of sets) for (const el of els) for (let az = 0; az < 360; az += 15) {
+        const cpts = collarPts();
+        phases[phases.length - 1].collarVerts = cpts.length;
+        const sets = [['head', cen, F0, R0, U1, [-0.35, 0, 0.35, 0.8]], ['collar', col, Fh, Rh, Up, [0, 0.4, 0.8, 1.2]]];
+        for (const [region, c0, Fv, Rv, Uv, els] of sets) for (const el of els) for (let az = 0; az < 360; az += 15) {
           const yaw = az * Math.PI / 180;
           const d = Fv.clone().multiplyScalar(Math.cos(yaw) * Math.cos(el)).add(Rv.clone().multiplyScalar(Math.sin(yaw) * Math.cos(el))).add(Uv.clone().multiplyScalar(Math.sin(el)));
           const pos = c0.clone().add(d.multiplyScalar(0.8));
-          const near = scanView(pos, c0, cx, cy);
-          res.push({ phase: ph, region, az, el, area: near.reduce((s, c) => s + c.area, 0), top: near.slice(0, 2), pos: pos.toArray(), tgt: c0.toArray(), cx, cy });
+          const hull = region === 'collar' ? hullOf(project(cpts, pos.toArray(), c0.toArray())) : null;
+          const inside = region === 'collar' ? (c) => inHull(hull, c.x, c.y, 24) : (c) => Math.hypot(c.x - 450, c.y - 400) < 300;
+          const near = scanView(pos, c0, inside);
+          res.push({ phase: ph, region, az, el, area: near.reduce((s, c) => s + c.area, 0), top: near.slice(0, 2), pos: pos.toArray(), tgt: c0.toArray(), cx: 450, cy: region === 'head' ? 400 : 450 });
         }
       }
       const total = res.reduce((s, r) => s + r.area, 0);
@@ -372,7 +413,7 @@ export const GATES = [
       sheet.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#000';
       document.body.appendChild(sheet);
       const g = sheet.getContext('2d');
-      const worst = res.slice(0, 2).concat(res.filter((r) => r.region === 'collar').slice(0, 2));
+      const worst = res.filter((r) => r.region === 'head').slice(0, 2).concat(res.filter((r) => r.region === 'collar').slice(0, 2));
       worst.forEach((r, i) => {
         const img = S.liveView(C, r.pos, r.tgt, { width: W, height: H, fov: 29 });
         const k = document.createElement('canvas'); k.width = W; k.height = H; k.getContext('2d').putImageData(img, 0, 0);
@@ -389,7 +430,8 @@ export const GATES = [
       for (const b of bones) b.scale.setScalar(1);
       p.model.updateMatrixWorld(true);
       const pass = total === 0;
-      return { pass, detail: { views: res.length, totalPx: total, byPhase: by('phase'), byRegion: by('region'), phases, worst: res.slice(0, 6).map(({ pos, tgt, ...r }) => r) } };
+      const strip = ({ pos, tgt, ...r }) => r;
+      return { pass, detail: { views: res.length, totalPx: total, byPhase: by('phase'), byRegion: by('region'), phases, worstHead: res.filter((r) => r.region === 'head' && r.area).slice(0, 6).map(strip), worstCollar: res.filter((r) => r.region === 'collar' && r.area).slice(0, 6).map(strip) } };
     })()`,
   },
   {

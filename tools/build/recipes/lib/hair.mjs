@@ -534,7 +534,7 @@ export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062
     // curl fades: the far eye's outer lashes stand at the temple's outline from a 3/4, and must not shut pockets of sky against it)
     const L = length * mix(0.62, 1.04, smooth(0.0, 0.5, f)) * mix(1, 0.34, smooth(0.55, 1.0, f));
     const out = side * mix(0.02, 0.3, f);
-    const up = [out * 0.8, Math.cos(lean * 0.72), Math.sin(lean) + curl * (1 - 0.7 * smooth(0.5, 1, f))];
+    const up = [out * 0.8, Math.cos(lean * 0.72), Math.sin(lean) + curl * (1 - 0.8 * smooth(0.45, 0.95, f))];
     const ul = Math.hypot(up[0], up[1], up[2]);
     const a = [x, y + 0.0001, z + 0.0002], b = [x + up[0] / ul * L, y + up[1] / ul * L, z + up[2] / ul * L];
     const n = norm([0, -0.35, 1]);
@@ -593,18 +593,20 @@ export function paintLidRim(buf, { rect, W = 512, ink = '#1C120E', lid = '#3E271
     const edge = h - 1 - (jag[x] > 0.7 ? 1 : 0);
     const k = smooth(0.15, 0.85, t);
     let r = mix(I[0], Ld[0], k), g = mix(I[1], Ld[1], k), b = mix(I[2], Ld[2], k);
-    const wet = y >= edge - 1 ? 1.22 : 1;
+    // (fix round 2, read on the 08:00 frame: a wet, smooth last row caught the low sun as a white liner along the lid; it is a lid's
+    // margin in its own shade, a touch lighter at its edge and no shinier than skin)
+    const wet = y >= edge - 1 ? 1.08 : 1;
     r *= wet; g *= wet; b *= wet;
     const o = ((y0 + y) * W + x0 + x) * 4;
     buf.base[o] = clampB(r); buf.base[o + 1] = clampB(g); buf.base[o + 2] = clampB(b); buf.base[o + 3] = y <= edge ? 255 : 2;
     const q = ((y0 + y) * W + x0 + x) * 3;
     buf.normal[q] = 128; buf.normal[q + 1] = clampB(128 + 40 * (t - 0.5)); buf.normal[q + 2] = 250;
-    buf.orm[q] = 255; buf.orm[q + 1] = clampB(mix(0.5, 0.22, t) * 255); buf.orm[q + 2] = 0;
+    buf.orm[q] = 255; buf.orm[q + 1] = clampB(mix(0.62, 0.5, t) * 255); buf.orm[q + 2] = 0;
   }
 }
 
 /** The lash cell: tapered curved hairs, root at the bottom, near-black, a hard alpha. */
-export function paintLashes(buf, { rect, W = 512, hair = '#0E0A09', seed = 61, rough = 0.5 } = {}) {
+export function paintLashes(buf, { rect, W = 512, hair = '#0E0A09', seed = 61, rough = 0.7 } = {}) {
   const [x0, y0, w, h] = rect;
   const R = rng(seed * 2654435761);
   const cov = new Float32Array(w * h);

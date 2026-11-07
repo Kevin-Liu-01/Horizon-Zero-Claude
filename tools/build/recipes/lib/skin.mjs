@@ -982,8 +982,9 @@ export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris =
     if (open) {
       // 0 at the iris' edge, 1 at a corner (inner or outer, by which side of the centre the texel is)
       const toC = (mx * side >= 0 ? outC : inC), q = Math.abs(toC) > 1e-6 ? mx / toC : 0;
-      const corner = smooth(0.34, 1.0, q);
-      dimEdge = (1 - 0.5 * corner) * (1 - 0.22 * smooth(0.8, 1.05, q));
+      // (the lateral white is what a profile sees: in the socket's shade it falls to about 40 % by the corner)
+      const corner = smooth(0.26, 0.95, q);
+      dimEdge = (1 - 0.6 * corner) * (1 - 0.22 * smooth(0.8, 1.05, q));
       pink = corner;
       const dUp = lid(mx, 1) - my, dLo = my - lid(mx, 0);
       // the upper lid, its thickness and its lashes shade the top of the ball; the lower lid a narrow band
