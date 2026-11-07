@@ -2110,6 +2110,15 @@ export class PlayerAnimator {
         let want = TR.walk + (TR.jog - TR.walk) * midW;
         want += (TR.sprint - want) * runW;
         want += (TR.crouch - want) * crouchW;
+        /* (hero-body targeted fix round 3, `aimOut.turnUp` /s: while she turns onto the camera to aim — the aim waits
+         * for her, see `aimOut.align` — her trunk already comes up toward the aim's own (`aimTrunk`), so the turn is not
+         * made with a crouch's fold that stands her head 0.25-0.3 m off her root: player.js turns her no faster than
+         * that head can sweep. The aim's trunk takes over from here with the same target as the aim comes in) */
+        const TU = this.T.aimOut?.turnUp, ATu = this.T.aimTrunk;
+        if (TU && ATu) {
+          this._tuW = clamp((this._tuW ?? 0) + (p.aiming && !dead ? TU : -TU) * dt, 0, 1);
+          if (this._tuW > 0) want += (ATu.up + ((ATu.crouch ?? ATu.up) - ATu.up) * crouchW - want) * smoothstep(this._tuW, 0, 1);
+        }
         // two passes: the spine joints sit above the pelvis, so one pass
         // turns the pelvis->neck line by less than it rotates the joints
         let pitch0 = 0;
