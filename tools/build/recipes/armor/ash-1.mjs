@@ -213,7 +213,8 @@ export async function ashParts() {
     // (fix round 1, judges: "Ash I at full draw: ease the cowl's roll against the deltoid without lumping it": the
     // loose turn rides its CLAVICLE where it lies on the shoulder, up to 45 % at the shoulder's top, so a drawn arm's
     // shrug lifts the wool with it instead of rising 1-3 cm through it; the neck turn stays on the neck)
-    const cl = 0.45 * Math.max(0, Math.min(1, (Math.abs(p[0]) - 0.07) / 0.1)) * (r / (rowsC.length - 1)) ** 0.5;
+    // (only the loose outer turn: the first run's clavicle share on the upper rows lifted them into her jaw at full draw)
+    const cl = 0.45 * Math.max(0, Math.min(1, (Math.abs(p[0]) - 0.07) / 0.1)) * Math.max(0, Math.min(1, (r - 2) / 2));
     // ...and its very edge over the shoulder's point takes a little of the upper arm
     const ua = 0;
     const jc = base.J(p[0] >= 0 ? 'clavicle_l' : 'clavicle_r'), ju = base.J(p[0] >= 0 ? 'upperarm_l' : 'upperarm_r');
@@ -260,8 +261,18 @@ export async function ashParts() {
       for (let i = 0; i <= 12; i++) { const a2 = (i / 12) * TAU * 1.6; coil.push(V.add(k, [Math.cos(a2) * 0.0105, 0.012 - 0.024 * (i / 12), 0.004 + Math.sin(a2) * 0.0095])); }
       tubeInto(rope, coil, 0.0072, { sides: 5, rect: rr, joint: jK, tile: 0.06 });
     }
+    // (fix round 1: the two ends ride the left thigh down their length, half of it at the tip, as the sash's tails do:
+    // rigid on the pelvis, her left thigh came 3.9-4.5 cm up through them at a sprint with the lance)
+    const jP = base.J('pelvis'), jT = base.J('thigh_l');
     for (const [dx, len] of [[-0.012, 0.15], [0.013, 0.2]]) {
-      tubeInto(rope, [V.add(k, [dx * 0.5, -0.008, 0.002]), V.add(k, [dx, -len * 0.4, 0.008]), V.add(k, [dx * 1.3, -len, 0.012])], 0.0066, { sides: 5, rect: rr, joint: base.J('pelvis'), tile: 0.09, radiusAt: (u) => (u > 0.92 ? 1.4 : 1) });
+      const v0 = rope.pos.length / 3;
+      const top = k[1] - 0.008;
+      tubeInto(rope, [V.add(k, [dx * 0.5, -0.008, 0.002]), V.add(k, [dx, -len * 0.4, 0.008 + len * 0.05]), V.add(k, [dx * 1.3, -len, 0.012 + len * 0.1])], 0.0066, { sides: 5, rect: rr, joint: jP, tile: 0.09, radiusAt: (u) => (u > 0.92 ? 1.4 : 1) });
+      for (let i = v0; i < rope.pos.length / 3; i++) {
+        const u = Math.max(0, Math.min(1, (top - rope.pos[i * 3 + 1]) / len)), w = 0.5 * u;
+        rope.jnt[i * 4] = jP; rope.jnt[i * 4 + 1] = jT; rope.jnt[i * 4 + 2] = 0; rope.jnt[i * 4 + 3] = 0;
+        rope.wgt[i * 4] = 1 - w; rope.wgt[i * 4 + 1] = w; rope.wgt[i * 4 + 2] = 0; rope.wgt[i * 4 + 3] = 0;
+      }
     }
     recomputeNormals(rope);
     added.push(rope);
@@ -273,6 +284,9 @@ export async function ashParts() {
   return { base, all };
 }
 
+/** The cowl's own fit (fix round 1; first run: 3 cm brought the roll within 2.4 cm of the draw hand at full draw). */
+export const COWL_FIT = { maxPush: 0.02, giveUp: 0.035, radius: 0.06, smoothPasses: 4 };
+
 export async function build({ out = ROOT } = {}) {
   const { base, all } = await ashParts();
   const { doc, W, H } = base;
@@ -281,9 +295,9 @@ export async function build({ out = ROOT } = {}) {
   const tex = await paintAtlas(all, layout, { painters: ASH_PAINTERS, srcNormal, trim: base.trim, salt: [150, 144, 132], curv: { crease: 0.8, ridge: 0.5 }, q: { base: 90, normal: 88, orm: 84 } });
   romFit(all, base, PAN_FIT);
   // fix round 1 (judges: "ease the cowl's roll against the deltoid without lumping it, a romFit ease on the cowl alone
-  // with a capped push"): a second fit on the cowl alone, up to 3 cm, in a 6 cm field smoothed four times, so the
+  // with a capped push"): a second fit on the cowl alone, up to 2 cm, in a 6 cm field smoothed four times, so the
   // room a drawn arm's shoulder asks for spreads along the roll instead of standing as a lump over one shoulder
-  romFit(all.filter((p) => p.slot === 'cowl'), base, { ...PAN_FIT, maxPush: 0.03, giveUp: 0.045, radius: 0.06, smoothPasses: 4 });
+  romFit(all.filter((p) => p.slot === 'cowl'), base, { ...PAN_FIT, maxPush: COWL_FIT.maxPush, giveUp: COWL_FIT.giveUp, radius: COWL_FIT.radius, smoothPasses: COWL_FIT.smoothPasses });
   outfitDoc(doc, all, { name: 'Outfit_Ash_1', matName: 'MI_Ash_1', tex, texPrefix: 'ash', extra: { _AO: ['SCALAR', bakeVertexAO(all, { body: base.bodyPart })] } });
   for (const m of doc.getRoot().listMeshes()) for (const pr of m.listPrimitives()) pr.getAttribute('_AO')?.setNormalized(true);
   return writeOutfit(doc, path.join(out, OUTPUTS[0]), {

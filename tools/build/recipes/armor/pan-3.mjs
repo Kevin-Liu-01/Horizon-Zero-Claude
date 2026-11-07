@@ -61,7 +61,7 @@ export const addPieces = async (base) => {
             const u = 2 * c / COLS - 1, round = 1 - 0.45 * u ** 4;
             // around the shoulder's top, front to back; the front reach is two thirds of the back's (fix round 1: the
             // lance's thrust brings the deltoid's front up through a plate's front edge)
-            const a = T.arc * u * (u > 0 ? 0.66 : 1);
+            const a = T.arc * u * (u > 0 ? 0.66 : i === 2 ? 0.7 : 1);   // (the outer lame's back reach too: the heavy swung it into the stowed bow)
             const yy = 1.464 - i * 0.005, zc = -0.03;
             inner.push([side * T.x0, yy - T.r0 * (1 - Math.cos(a)), zc + T.r0 * Math.sin(a)]);
             const r = T.r1 * (0.92 + 0.08 * round);

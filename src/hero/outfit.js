@@ -23,11 +23,13 @@ import { installCloth } from './clothShader.js';
  *   - and a damped pendulum about the knot, two angles: OUT (the tails' ends away from her hip, along the hip's
  *     outward normal at the knot) and ALONG (round her, along the hip's tangent), driven by the pelvis's horizontal
  *     acceleration in character space: start, stop, turn and the stride's sway swing the tails and they settle.
- *     Clamped so they never swing in toward her (out -0.04..0.5 rad, along +-0.3), sub-stepped at <= 1/120 s.
+ *     Clamped so they never swing in toward her (out -0.03..0.22 rad, along +-0.18), sub-stepped at <= 1/120 s.
  * The skin ramps from the pelvis at the knot to the joint down the tails (outfit-pan-1.mjs), so the cloth bends from
  * the knot. Per frame nothing allocates and no double crosses a call: every quaternion and vector is written in place.
  */
-const SW = { omega2: 52, damp: 5.2, gain: 1.0, outMin: -0.04, outMax: 0.5, alongMax: 0.3, g: 9.81 };
+// (fix round 1, first run: at gain 1 a jog's pelvis drove the tails to the clamp, 0.5 rad out, into the carried bow's
+// path behind her hip, 3.7-4.0 cm: a third of the push, stiffer and better damped, ends at 0.22 out / 0.18 along)
+const SW = { omega2: 70, damp: 9, gain: 0.35, outMin: -0.03, outMax: 0.22, alongMax: 0.18, g: 9.81 };
 const _sQ1 = new THREE.Quaternion(), _sQ2 = new THREE.Quaternion(), _sQ3 = new THREE.Quaternion();
 const _sV = new THREE.Vector3();
 const _SF = new Float64Array(12);    // pelvis world pos (3), velocity (3), accel char (3), scratch
@@ -62,7 +64,7 @@ export class SashSwing {
     const pQ = src.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
     this.axOut = new THREE.Vector3(-this.nOut[1], 0, this.nOut[0]).applyQuaternion(pQ).normalize();
     this.axAlong = new THREE.Vector3(-this.tAlong[1], 0, this.tAlong[0]).applyQuaternion(pQ).normalize();
-    this.th = 0; this.thV = 0; this.ph = 0; this.phV = 0;
+    this.th = 0; this.thV = 0; this.ph = 0; this.phV = 0; this.fT = 0; this.fP = 0;
     this.primed = false; this.warmed = false;
   }
 
@@ -87,7 +89,11 @@ export class SashSwing {
     // the pendulum (small angles): the frame's pseudo-force (-a) along the hip's outward normal and its tangent
     let th = this.th, thV = this.thV, ph = this.ph, phV = this.phV;
     const fo = -(cx * this.nOut[0] + cz * this.nOut[1]), fa = -(cx * this.tAlong[0] + cz * this.tAlong[1]);
-    const tT = SW.gain * fo / SW.g, tP = SW.gain * fa / SW.g;
+    // (the push is low-passed over ~0.1 s: a frame-time hitch reads as a spike of acceleration, and the first run's
+    // tails rang between their clamps after a turn)
+    const lp = dt / (dt + 0.1);
+    this.fT += (SW.gain * fo / SW.g - this.fT) * lp; this.fP += (SW.gain * fa / SW.g - this.fP) * lp;
+    const tT = this.fT, tP = this.fP;
     const n = dt > 1 / 120 ? 2 : 1, h = dt / n;
     for (let i = 0; i < n; i++) {
       thV += (-SW.omega2 * (th - tT) - SW.damp * thV) * h; th += thV * h;
@@ -191,7 +197,7 @@ export class HeroOutfit {
   update(dt) {
     const S = this.swing;
     if (!S) return;
-    if (!S.warmed) { S.warmed = true; for (let i = 0; i < 1600; i++) S.update(1 / 60); S.th = 0; S.thV = 0; S.ph = 0; S.phV = 0; S.primed = false; }
+    if (!S.warmed) { S.warmed = true; for (let i = 0; i < 1600; i++) S.update(1 / 60); S.th = 0; S.thV = 0; S.ph = 0; S.phV = 0; S.fT = 0; S.fP = 0; S.primed = false; }
     S.update(dt);
   }
 

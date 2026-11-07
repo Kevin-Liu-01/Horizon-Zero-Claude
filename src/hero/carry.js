@@ -398,7 +398,9 @@ export class LanceCarry {
         this._nTail++;
       }
     }
-    this._terr = this.player.ctx?.terrain?.getHeight ? this.player.ctx.terrain : null;
+    // (fix round 1: read off the root ctx once, not every frame: the root ctx is a prototype of other systems' views,
+    // and a load through it makes this function deopt with every "dependent prototype chain changed" wave)
+    if (!this._terr) this._terr = this.player.ctx?.terrain?.getHeight ? this.player.ctx.terrain : null;
     // the ground under the butt, every other frame (the two coordinates it takes are the only doubles this frame
     // hands to a call): every pose of the search lies within a hand of it, and she covers 0.2 m in two frames
     this._tick = (this._tick + 1) & 1023;

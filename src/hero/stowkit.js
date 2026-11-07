@@ -37,8 +37,8 @@ const QUIVER_LANCE_ROLL = 0.3;         // ... and its foot, coming forward, out 
 const QUIVER_SWING_RATE = 7;           // per second, toward that hold
 
 const _W1 = new Float64Array(1);
-/** Fix round 1: the gap the quiver keeps from her right arm and shin (m, axis to axis), and its largest push (rad). */
-const QUIVER_CLEAR = 0.115, QUIVER_PUSH_MAX = 0.45;
+/** Fix round 1: the gap the quiver keeps from her right arm and leg (m, axis to axis), and its largest shove (m). */
+const QUIVER_CLEAR = 0.115, QUIVER_SHOVE_MAX = 0.07;
 const _mQ = new THREE.Matrix4();
 const _pA = new THREE.Vector3(), _pB = new THREE.Vector3(), _pC = new THREE.Vector3(), _pT = new THREE.Vector3(), _pF = new THREE.Vector3(), _vB = new THREE.Vector3();
 /** _QS: [gap, push x, push y, lever, tube point x, y, z, push z] of the worst approach this frame. */
@@ -188,7 +188,7 @@ export class HeroStowKit {
     m.getVertexPosition(hi, b); m.localToWorld(b);
     this._quiverFoot = par.worldToLocal(a.clone());
     this._quiverTop = par.worldToLocal(b.clone());
-    this._qAx = new THREE.Vector3(1, 0, 0); this._qPush = 0;
+    this._qOff = new THREE.Vector3();
     this._quiverHang = par.worldToLocal(a.lerp(b, this.entry?.extras?.r5StowKit?.stow?.quiver?.hangK ?? 0.65));
     const Qm = model.getWorldQuaternion(new THREE.Quaternion()).invert();
     this._pelvisBindQ = par.getWorldQuaternion(new THREE.Quaternion()).premultiply(Qm);
@@ -231,20 +231,23 @@ export class HeroStowKit {
       sock.quaternion.multiply(_qS);
     }
     // FIX ROUND 1 (judges: "the quiver into the right sleeve at a sprint, into the shin in the heavy"): her right arm
-    // pushes the quiver's upper half away where it comes within QUIVER_CLEAR of it, and her right shin its lower
-    // half, as a strap-hung tube is pushed: a turn about the band, eased in fast and out slowly
+    // and leg shove the quiver sideways on its belt where they come within QUIVER_CLEAR of it (_pushQuiver)
     if (an?.b?.loArmR && this._quiverTop) this._pushQuiver(an, sock, h, dt);
-    // about the band: p' = q p + t, with t = h - q h
+    // about the band: p' = q p + t, with t = h - q h (plus the shove, pelvis frame)
     _vA.copy(h).applyQuaternion(sock.quaternion);
     sock.position.copy(h).sub(_vA);
+    if (this._qOff) sock.position.add(this._qOff);
     sock.updateWorldMatrix(false, false);
   }
 
   /**
-   * The arm's and the shin's push on the quiver (fix round 1), in the pelvis's frame: the closest approach of the
-   * right upper arm + forearm to the tube from the band up, and of the right shin to the tube from the band down. A
-   * gap under QUIVER_CLEAR turns the tube about the band by what it takes to open it (capped), along the shortest
-   * way out; `sock.quaternion` takes that turn after the hold. No allocation: module scratch and typed slots only.
+   * The arm's and the leg's push on the quiver (fix round 1), in the pelvis's frame: the closest approach of the right
+   * upper arm + forearm to the tube from the band up, and of the right thigh + shin to the tube from the band down.
+   * A gap under QUIVER_CLEAR SHOVES the tube sideways on its belt, square to itself, by what opens the gap (capped at
+   * QUIVER_SHOVE_MAX), eased in fast and out slowly. (A turn about the band was tried first and measured: knocking the
+   * arrows out swings the foot in, 18 cm at the cap, and the first run put the foot 3.7-5 cm into the skirt at idle and
+   * 3 mm from the calf. Her arm and her leg are both inside the quiver, so a shove outward clears both.)
+   * No allocation: module scratch and typed slots only.
    */
   _pushQuiver(an, sock, h, dt) {
     const par = sock.parent;
@@ -257,43 +260,34 @@ export class HeroStowKit {
     _pA.setFromMatrixPosition(b.upArmR.bone.matrixWorld).applyMatrix4(_mQ);
     _pB.setFromMatrixPosition(b.loArmR.bone.matrixWorld).applyMatrix4(_mQ);
     _pC.setFromMatrixPosition(b.handR.bone.matrixWorld).applyMatrix4(_mQ);
-    // the tube's top and foot now (the hold already in sock.quaternion), about the band
+    // the tube's top and foot now (the hold already in sock.quaternion), about the band, before this frame's shove
     _pT.copy(this._quiverTop).sub(h).applyQuaternion(sock.quaternion).add(h);
     _pF.copy(this._quiverFoot).sub(h).applyQuaternion(sock.quaternion).add(h);
     const QS = _QS;
     QS[0] = 9; QS[3] = 0;
-    // upper half vs the arm (two segments), lower half vs the shin
     _segPush(_pA, _pB, h, _pT, QS);
     _segPush(_pB, _pC, h, _pT, QS);
-    if (b.calfR && b.footR) {
+    if (b.calfR && b.footR && b.thighR) {
       b.footR.bone.updateWorldMatrix(true, false);
-      _pA.setFromMatrixPosition(b.calfR.bone.matrixWorld).applyMatrix4(_mQ);
-      _pB.setFromMatrixPosition(b.footR.bone.matrixWorld).applyMatrix4(_mQ);
+      _pA.setFromMatrixPosition(b.thighR.bone.matrixWorld).applyMatrix4(_mQ);
+      _pB.setFromMatrixPosition(b.calfR.bone.matrixWorld).applyMatrix4(_mQ);
+      _pC.setFromMatrixPosition(b.footR.bone.matrixWorld).applyMatrix4(_mQ);
       _segPush(_pA, _pB, h, _pF, QS);
+      _segPush(_pB, _pC, h, _pF, QS);
     }
-    // the turn that opens the worst gap: about axis = tube x push, by (clear - gap) / lever
-    let want = 0;
+    const O = this._qOff, T = _vB;
+    T.x = 0; T.y = 0; T.z = 0;
     if (QS[0] < clearL) {
-      want = (clearL - QS[0]) / (QS[3] > 0.05 / sc ? QS[3] : 0.05 / sc);
-      if (want > QUIVER_PUSH_MAX) want = QUIVER_PUSH_MAX;
-      // axis = (point on the tube - h) x (push direction): turning the tube point along the push
-      const tx = QS[4] - h.x, ty = QS[5] - h.y, tz = QS[6] - h.z, px = QS[1], py = QS[2], pz = QS[7];
-      let ax = ty * pz - tz * py, ay = tz * px - tx * pz, az = tx * py - ty * px;
-      const al = (ax * ax + ay * ay + az * az) ** 0.5;
-      if (al > 1e-6) { ax /= al; ay /= al; az /= al; const k = 0.5; this._qAx.x += (ax - this._qAx.x) * k; this._qAx.y += (ay - this._qAx.y) * k; this._qAx.z += (az - this._qAx.z) * k; }
+      let m = clearL - QS[0];
+      const cap = QUIVER_SHOVE_MAX / sc;
+      if (m > cap) m = cap;
+      T.x = QS[1] * m; T.y = QS[2] * m; T.z = QS[7] * m;
     }
-    let k = dt * (want > this._qPush ? 24 : 5);
+    // in fast toward a larger shove, out slowly
+    const grow = T.x * T.x + T.y * T.y + T.z * T.z > O.x * O.x + O.y * O.y + O.z * O.z;
+    let k = dt * (grow ? 24 : 5);
     if (!(k > 0)) k = 0; else if (k > 1) k = 1;
-    this._qPush += (want - this._qPush) * k;
-    if (this._qPush > 0.002) {
-      _vB.copy(this._qAx);
-      const l = (_vB.x * _vB.x + _vB.y * _vB.y + _vB.z * _vB.z) ** 0.5;
-      if (l > 1e-6) {
-        _vB.x /= l; _vB.y /= l; _vB.z /= l;
-        _axisAngle(_qS, _vB, this._qPush);
-        sock.quaternion.premultiply(_qS);
-      }
-    }
+    O.x += (T.x - O.x) * k; O.y += (T.y - O.y) * k; O.z += (T.z - O.z) * k;
   }
 
   attach() {
@@ -355,7 +349,9 @@ export class HeroStowKit {
     if (!this.carry || !this.attached || !an?.skull) return;
     if (this.hidden & PIECE.lance) { if (this.carry.out.active) this.carry.reset(); return; }
     const aimW = an.aimWeight ?? 0;
-    this.carry.update(an, aimW, aimW > 0.05, dt, this.player.ctx?.camera || null);
+    // (the camera off the root ctx once: see carry.js on loads through it)
+    if (!this._cam) this._cam = this.player.ctx?.camera || null;
+    this.carry.update(an, aimW, aimW > 0.05, dt, this._cam);
     // fix round 5: hand the solved shaft to the spring solver (world), so no
     // dyn_ chain — the wrap tail, the knot tail — passes through the lance
     if (SC) {
@@ -373,9 +369,9 @@ export class HeroStowKit {
   _warm(an) {
     this._warmed = true;
     if (this.quiverSocket && this._quiverHang) {
-      const s0 = this._quiverSwing, p0 = this._qPush, h0 = this.hidden;
+      const s0 = this._quiverSwing, h0 = this.hidden;
       for (let i = 0; i < 1600; i++) { this.hidden = (i & 1) ? (h0 | PIECE.lance) : (h0 & ~PIECE.lance); this._solveQuiver(1 / 60); }
-      this.hidden = h0; this._quiverSwing = s0; this._qPush = p0;
+      this.hidden = h0; this._quiverSwing = s0; this._qOff.set(0, 0, 0);
       this._solveQuiver(0);
     }
     this.carry?.warm(an, this.player.ctx?.camera || null);

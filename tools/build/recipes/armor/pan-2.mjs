@@ -105,8 +105,9 @@ export const addPieces = async (base) => {
       // the stowed bow (its brim's rolled edge clear of the grip); bow in hand, it lies in close where the bow was,
       // 0.12 m off the stowed lance. (Nov 6: the over-the-bow copy 28 mm further out: in the lance's light attack
       // her twist still brought the stowed bow 24 mm into its brim)
-      // (fix round 1: 16 mm further out again: the lance's light attack still brought the stowed bow 1.0 cm into its brim)
-      const hat2 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, -0.12, -1]), V.norm([0, 1, -0.12]), [0.15, 1.31, -0.406], palm, jS3, HAT_ON_BACK);
+      // (fix round 1: it rides spine_02, the bone the stowed bow rides, so her twist in the lance's attacks no longer
+      // turns one against the other: on spine_03 the bow came 3.3-4.0 cm into its brim at a sprint and in the light)
+      const hat2 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, -0.12, -1]), V.norm([0, 1, -0.12]), [0.15, 1.31, -0.396], palm, J('spine_02'), HAT_ON_BACK);
       const hat3 = hatInto(emptyPart('hat', { trim: true }), [1, 0, 0], V.norm([0, -0.12, -1]), V.norm([0, 1, -0.12]), [0.15, 1.31, -0.305], palm, jS3, HAT_ON_BACK_LOW);
       void clothField;
       return [cap, clasp, hat1, hat2, hat3];
