@@ -90,6 +90,8 @@ const R10 = {
  */
 /** Fix round 1: the strapped search runs at most every this many frames (it re-runs at once when the held pose breaks a bound). */
 const SEARCH_EVERY = 4;
+/** Fix round 1: how many times the solve runs itself at its first frame, so V8 optimizes it before play (see `warm`). */
+const WARM_CALLS = 1600;
 /** ...and every this many searches it starts from the whole grid instead of the last answer. */
 const GRID_EVERY = 8;
 
@@ -907,6 +909,26 @@ export class LanceCarry {
     // skinned lance this frame (the camera proxy, gates) sees the solved pose
     sock.updateMatrix();
     sock.matrixWorld.multiplyMatrices(par.matrixWorld, sock.matrix);
+  }
+
+  /**
+   * FIX ROUND 1 (A-alloc-rate's 4 KB/s per function; diagnosis in docs/ROUND5-ARMORY.md §0.7). V8 compiles a
+   * function called once a frame late: it runs interpreted, then in Sparkplug (where EVERY double an expression
+   * makes is a fresh heap number) for its first ~400-800 calls, and in Maglev for minutes before TurboFan, so the
+   * solve allocated 1.4-13 KB a frame in the measured windows whatever its source said. At the first frame the
+   * animator exists, the solve runs itself `WARM_CALLS` times on her real pose, through every branch a frame can
+   * take (aiming or not, the draw arm and the aim camera on and off), which is what V8 counts to optimize it; then
+   * it resets, so the first real frame snaps as before. About 40 ms, once.
+   */
+  warm(an, cam) {
+    if (this._warmed || !an?.skull) return;
+    this._warmed = true;
+    for (let i = 0; i < WARM_CALLS; i++) {
+      const k = i & 3;
+      this.update(an, k === 0 ? 0 : k === 1 ? 0.45 : 1, k >= 2, 1 / 60, k === 0 ? null : cam);
+    }
+    this.reset();
+    this._gridAge = 8; this._lastFeas = false; this._searchAge = 0; this._armWas = false; this._camWas = false;
   }
 
   /** Back to the identity (the lance rides spine_02). */

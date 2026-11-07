@@ -710,16 +710,17 @@ export async function panBase(opt = {}) {
   const bodice = (y, th, yN) => {
     const sth = Math.sin(th), cth = Math.cos(th);
     let r = 0;
-    const kN = sstep(yN - 0.085, yN - 0.012, y);
-    if (kN > 0) r += 0.0026 * kN * (0.35 + ripple(th, 7, [11, 14]));
+    // (outward-biased throughout: a fold never dips back toward the body it hangs from)
+    const kN = sstep(yN - 0.09, yN - 0.012, y);
+    if (kN > 0) r += 0.0042 * kN * (0.55 + ripple(th, 7, [11, 14]));
     if (sth > -0.02 && y > 1.17) {
       const X = cth * 0.14, ax = Math.abs(X) - 0.078, ay = y - 1.325, rr = Math.hypot(ax, ay), ang = Math.atan2(ay, ax);
       const f = fold01(noise3(ang * 2.6, 3.3, 7.7)), f2 = fold01(noise3(ang * 5.3, 6.1, 3.2));
       const w = sstep(0.035, 0.09, rr) * sstep(0.27, 0.13, rr);
-      r += 0.0062 * (f * 0.7 + f2 * 0.3 - 0.55) * w;
+      r += 0.0105 * (f * 0.7 + f2 * 0.3 - 0.3) * w;
     } else if (sth < 0.02 && y > 1.17) {
       const f = fold01(noise3(cth * 0.15 * 16, y * 3.5, 4.1));
-      r += 0.0055 * (f - 0.55) * sstep(1.42, 1.3, y);
+      r += 0.009 * (f - 0.3) * sstep(1.42, 1.3, y);
     }
     const sd = Math.min(Math.abs(Math.atan2(sth, cth)), Math.PI - Math.abs(Math.atan2(sth, cth))) * 0.14;
     if (y < 1.34) r += 0.0012 * (1 - sstep(0.0, 0.006, sd)) - 0.0007 * sstep(0.004, 0.009, sd) * (1 - sstep(0.012, 0.02, sd));

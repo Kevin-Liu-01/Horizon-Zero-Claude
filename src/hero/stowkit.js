@@ -249,6 +249,9 @@ export class HeroStowKit {
   _pushQuiver(an, sock, h, dt) {
     const par = sock.parent;
     _mQ.copy(par.matrixWorld).invert();
+    // (the pelvis's frame may carry the armature's scale: the clearance is metres, taken into its units)
+    const pe = par.matrixWorld.elements, sc = (pe[0] * pe[0] + pe[1] * pe[1] + pe[2] * pe[2]) ** 0.5 || 1;
+    const clearL = QUIVER_CLEAR / sc;
     const b = an.b;
     b.handR.bone.updateWorldMatrix(true, false);       // (the arm's chain, posed this frame)
     _pA.setFromMatrixPosition(b.upArmR.bone.matrixWorld).applyMatrix4(_mQ);
@@ -270,8 +273,8 @@ export class HeroStowKit {
     }
     // the turn that opens the worst gap: about axis = tube x push, by (clear - gap) / lever
     let want = 0;
-    if (QS[0] < QUIVER_CLEAR) {
-      want = (QUIVER_CLEAR - QS[0]) / (QS[3] > 0.05 ? QS[3] : 0.05);
+    if (QS[0] < clearL) {
+      want = (clearL - QS[0]) / (QS[3] > 0.05 / sc ? QS[3] : 0.05 / sc);
       if (want > QUIVER_PUSH_MAX) want = QUIVER_PUSH_MAX;
       // axis = (point on the tube - h) x (push direction): turning the tube point along the push
       const tx = QS[4] - h.x, ty = QS[5] - h.y, tz = QS[6] - h.z, px = QS[1], py = QS[2], pz = QS[7];
@@ -346,6 +349,8 @@ export class HeroStowKit {
   solve(an, dt) {
     const SC = an?._stowCap;
     if (SC) SC.on = false;
+    // fix round 1: the first frame warms the per-frame solves so V8 optimizes them before play (carry.js `warm`)
+    if (!this._warmed && an?.skull && this.attached) this._warm(an);
     if (this.attached && this.quiverSocket) this._solveQuiver(dt);
     if (!this.carry || !this.attached || !an?.skull) return;
     if (this.hidden & PIECE.lance) { if (this.carry.out.active) this.carry.reset(); return; }
@@ -359,6 +364,21 @@ export class HeroStowKit {
       SC.b.copy(this.carry.tip).applyMatrix4(m);
       SC.on = true;
     }
+  }
+
+  /**
+   * Once, at the first frame the animator exists (fix round 1; see carry.js `warm` for why): the quiver's hang and push
+   * run themselves on her real pose, with and without the lance's hold, then their eased state is put back.
+   */
+  _warm(an) {
+    this._warmed = true;
+    if (this.quiverSocket && this._quiverHang) {
+      const s0 = this._quiverSwing, p0 = this._qPush, h0 = this.hidden;
+      for (let i = 0; i < 1600; i++) { this.hidden = (i & 1) ? (h0 | PIECE.lance) : (h0 & ~PIECE.lance); this._solveQuiver(1 / 60); }
+      this.hidden = h0; this._quiverSwing = s0; this._qPush = p0;
+      this._solveQuiver(0);
+    }
+    this.carry?.warm(an, this.player.ctx?.camera || null);
   }
 
   /** The carry solve's last report (gate A-lance-stow), or null. */

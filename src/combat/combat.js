@@ -467,7 +467,9 @@ export class Combat {
     this._hsEnd = 0;
     this._lmbPrev = false;
     this._concHeldPrev = false;
-    this._pickupClock = 0;
+    this._pickupTick = 0;      // (fix round 1: frames, a Smi; a double clock written every frame is a heap number a frame)
+    this._pickupN = -1; this._pickupLast = null;
+    this._aimWarm = false;
 
     // --- input (keybinds v2) — all gated by state so nothing equips/cycles
     //     underneath the pause menu / death screen
@@ -835,6 +837,9 @@ export class Combat {
       cam.updateProjectionMatrix();
     }
 
+    // fix round 1 (A-alloc-rate): the aim march runs itself 800 times on her first aiming frame, so V8 optimizes it
+    // before it is played (a once-a-frame function runs in Sparkplug, a heap number per double, for ~400-800 calls)
+    if (aiming && !this._aimWarm) { this._aimWarm = true; for (let i = 0; i < 800; i++) this._updateAimPoint(); }
     if (aiming) this._updateAimPoint();
 
     // --- the re-nock window (combat-no-nock-delay)
@@ -2384,11 +2389,17 @@ export class Combat {
   /* ----------------------- heavy pickup coordination ---------------------- */
 
   _pollWeaponPickups(realDt) {
-    this._pickupClock -= realDt;
-    if (this._pickupClock > 0) return;
-    this._pickupClock = 0.3;
+    void realDt;
+    // fix round 1 (A-alloc-rate: 22-25 KB/s): every 18th frame, and only when the list changed (its length or its last
+    // entry): the scan reads three optional fields off every interactable, megamorphic loads that cost an IC handler
+    // each, a few hundred times every 0.3 s
+    if (++this._pickupTick < 18) return;
+    this._pickupTick = 0;
     const list = this.ctx.interactables?.list;
     if (!Array.isArray(list)) return;
+    const n = list.length, last = n ? list[n - 1] : null;
+    if (n === this._pickupN && last === this._pickupLast) return;
+    this._pickupN = n; this._pickupLast = last;
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
       if (!e || e.__calWeaponWrapped) continue;

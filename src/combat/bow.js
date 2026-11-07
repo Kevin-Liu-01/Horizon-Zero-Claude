@@ -532,6 +532,10 @@ varying vec3 vBwTint;`)
     this._ride = null;
     this._arrowLen = X.arrowLen;
     this._finish();
+    // fix round 1 (A-alloc-rate): setDraw runs once a frame; run it through its draws and both arrow states now, so V8
+    // optimizes it before play instead of running it in Sparkplug (a heap number per double) for its first frames
+    for (let i = 0; i < 1600; i++) this.setDraw((i % 9) / 8, (i & 1) === 0);
+    this.setDraw(0, true);
   }
 
   setNockRide(p) {

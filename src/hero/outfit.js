@@ -63,7 +63,7 @@ export class SashSwing {
     this.axOut = new THREE.Vector3(-this.nOut[1], 0, this.nOut[0]).applyQuaternion(pQ).normalize();
     this.axAlong = new THREE.Vector3(-this.tAlong[1], 0, this.tAlong[0]).applyQuaternion(pQ).normalize();
     this.th = 0; this.thV = 0; this.ph = 0; this.phV = 0;
-    this.primed = false;
+    this.primed = false; this.warmed = false;
   }
 
   update(dt) {
@@ -187,9 +187,12 @@ export class HeroOutfit {
     this.swing = new SashSwing(this.player, hb, sb, ht, st, S.thighShare ?? 0.25, S.knot);
   }
 
-  /** Per frame (HeroRig.update): the tails' hang. */
+  /** Per frame (HeroRig.update): the tails' hang (warmed once on its first frame, as carry.js `warm`). */
   update(dt) {
-    if (this.swing) this.swing.update(dt);
+    const S = this.swing;
+    if (!S) return;
+    if (!S.warmed) { S.warmed = true; for (let i = 0; i < 1600; i++) S.update(1 / 60); S.th = 0; S.thV = 0; S.ph = 0; S.phV = 0; S.primed = false; }
+    S.update(dt);
   }
 
   /** Unequip, and remove the joints this created (HeroRig.dispose). */
