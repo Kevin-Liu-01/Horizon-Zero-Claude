@@ -105,7 +105,7 @@ export const UBC_ORBIT_CHAINS = { cloth: '^dyn_(wrapSash|sashEnd)', hair: '^dyn_
  * capsule axis (r - link + rootMargin) off every such root (the animator's
  * `_clearArmOfRoots`); null turns that guard off.
  */
-export const UBC_HAND_COLLIDER = { from: 'lowerarm_r', to: 'hand_r', tip: 'middle_04_leaf_r', r: 0.09, rootMargin: 0.007 };
+export const UBC_HAND_COLLIDER = { from: 'lowerarm_r', to: 'hand_r', tip: 'middle_04_leaf_r', r: 0.09, rootMargin: 0.015 };
 /** The hand/forearm's own half-thickness: A-wrap-clear's clearance is axis distance minus this. */
 export const UBC_HAND_HALF = 0.035;
 
@@ -247,7 +247,7 @@ export const UBC_TUNE = {
   // the rest hold / quiver ride the chest / pelvis (`crouchBody`)
   // (`quiverT` s: the nock beat — down over `qUp` of it, back from `qBack`)
   armFlow: { wristV: 2.7, elbowStep: 0.05, elbowBack: 0.16, formWin: 0.6, renock: true, quiverPole: [-0.9, -0.3, 0.15], crouchBody: true,
-    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true, holdBlade: true, rootGive: 0.009,
+    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true, holdBlade: true, rootGive: 0.012,
     // W0b targeted fix 4: the limiters live whenever the aim layer runs and on
     // the arm's final pose until the free pose is reached (`_armContinuity`,
     // at least `tailMin` s after the layer stops): the arm steps at most `armStep`
@@ -296,7 +296,14 @@ export const UBC_TUNE = {
   // whole roll, m; see the animator's constructor and `rollProgress`)
   // ...and the governor: through a roll, 0.6 s (`window`) after one or a landing, and whenever she aims or
   // crouches, the pelvis's world step is held to her root's own step + `govM` per 1/60 s
-  rollExit: { stepM: 0.02, minM: 0.02, minS: 0.2, maxS: 0.8, dodgeDist: 3.4, govM: 0.026, window: 0.6 },
+  // (hero-body targeted fix round 3: ...and the roll's whole pose weighs down into the gait over `blendS` s, the
+  // clip held at the frame it reached, not scrubbed to its last: see the animator's `update`)
+  rollExit: { stepM: 0.02, minM: 0.02, minS: 0.2, maxS: 0.8, dodgeDist: 3.4, govM: 0.026, window: 0.6, blendS: 0.45 },
+  // hero-body targeted fix round 3: the aim's way in and out. The aim waits while her heading is still more than
+  // `align` rad (in .. out) off the camera's line (player.js turns her onto it at a rate now); it goes out at most
+  // `rate` per second standing (crouched `crouchAim.outRate`), and the blade's draw share at most `bladeRate`,
+  // both eased in from `ease0` of their rate over `easeS` s
+  aimOut: { align: [0.15, 0.6], rate: 3.5, ease0: 0.25, easeS: 0.1, bladeRate: 2.5 },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)

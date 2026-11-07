@@ -7477,21 +7477,30 @@ const GATE_PITCHES = [-0.55, -0.4, 0, 0.75];
 /* W0b targeted fix round 4: A-draw-arm-continuity's matrix — every aim pitch the game reaches (camPitch
  * clamps -1.15 / 1.02, player.js PITCH_UP / PITCH_DOWN) x every way she can be moving; the per-step bar */
 const CONT_PITCHES = [-1.15, -0.55, 0, 0.75, 1.02];
-const CONT_LOCOS = ['standing', 'jog', 'strafeR', 'strafeL', 'crouched'];
+/* (hero-body targeted fix round 3, gate judge finding 7: + crouched strafes and a crouched backpedal, where re-raising
+ * the aim after a cancel flipped her 90-180 deg in one tick) */
+const CONT_LOCOS = ['standing', 'jog', 'strafeR', 'strafeL', 'crouched', 'crouchStrafeR', 'crouchStrafeL', 'crouchBack'];
 const CONT_CELLS = CONT_PITCHES.flatMap((p) => CONT_LOCOS.map((l) => [p, l]));
 /* hero-body targeted fix round 2 (Nov 6; gate judge finding 1, eng judge finding 3: the matrix never moved the
  * camera): CAMERA cells at full draw — the five pitches (and 0.2, where the gate judge's yaw read worst) x
  * {standing, jog, crouched}; camera yaw turns at 1.5, 3, 6 and 10 rad/s both ways, each followed by a stop, and
  * camera pitch sweeps at 2, 4 and 8 rad/s there and back (`CAM_TIMELINE` below) */
 const CAM_PITCHES = [-1.15, -0.55, 0, 0.2, 0.75, 1.02];
-const CAM_LOCOS = ['standing', 'jog', 'crouched'];
-const CAM_CELLS = CAM_PITCHES.flatMap((p) => CAM_LOCOS.filter((l) => p !== 0.2 || l === 'standing').map((l) => [p, l, 'cam']));
+/* (hero-body targeted fix round 3, eng judge finding 3: "the matrix never moves the camera while strafing": + strafe
+ * right and left, 0.2 with them; and an oscillating pitch / yaw wiggle after the sweeps, `camTimeline`) */
+const CAM_LOCOS = ['standing', 'jog', 'crouched', 'strafeR', 'strafeL'];
+const CAM_CELLS = CAM_PITCHES.flatMap((p) => CAM_LOCOS.filter((l) => p !== 0.2 || l === 'standing' || l === 'strafeR' || l === 'strafeL').map((l) => [p, l, 'cam']));
 /** Wrist (hand joint) to the nock at full draw, every step of a camera cell (A16's bar). */
 const WRIST_NOCK = 0.09;
 /** Forearm against the REAL arrow (the bow's own draw axis) at full draw, every step of a camera cell (A-draw-elbow-level's bar). */
 const FORE_ARROW_DEG = 20;
 /** The body's own step per 1/60 s, character space: pelvis and head (A-draw-elbow-level's crouched bar). */
 const BODY_STEP = 0.03;
+/** hero-body targeted fix round 3: her heading's change per 1/60 s outside a roll (rad): the kept facing code's own
+ *  standing turn is 14 rad/s (0.233 a step); the aim's turn onto the camera is 12 rad/s or slower (player.js AIM_TURN). */
+const HEADING_STEP = 0.25;
+/** R63 (d): the cord's fixed root link, clear of the draw hand and forearm (m, A-wrap-clear). */
+const ROOT_LINK = 0.015;
 const CONT_STEP = 0.06;
 /* A-draw-elbow-level's pitches: the four gate pitches and both clamps */
 const CONT_ROWS_P6 = [-1.15, -0.55, -0.4, 0, 0.75, 1.02];
@@ -7576,7 +7585,7 @@ const NEW_GATES = [
   /* -------------------------------------------------- A-draw-elbow-level */
   {
     id: 'A-draw-elbow-level', kind: 'action', lane: 'hero-body', timeout: 600000,
-    title: 'Full draw at the four pitches and both clamps (-1.15, 1.02), strafing left and right at 0, 0.75 and both clamps, from a jog and a sprint at 0, and CROUCHED at the four pitches and both clamps: draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices); R35: the draw HAND never > 0.10 m behind the head plane and always in front of the back of the skull, the draw ELBOW <= 0.20 m behind it; the hand ON the string: middle knuckle <= 0.06 m and middle fingertip <= 0.06 m from the bow nock; the forearm within 20 deg of the REAL arrow (the bow\'s own draw axis; the old nock -> bow-wrist reading printed beside it), jog and sprint rows reported; the wrist within 0.03 m of the level draw\'s height over the Head joint and of its place in the head\'s frame (no-strafe rows); through the LOOSE, on every sim step from the release until 0.3 s after it, the elbow <= 0.20 m; W0b targeted fix 4: on EVERY row and EVERY sim step from the aim through the raise, the draw ramp, the loose and the whole re-nock return (0.85 s after the release): the hand (wrist, middle knuckle, middle fingertip) in front of the back of the skull wherever it is at skull height and within the head\'s width from the neck up (the nape), and never over the crown; the elbow and the wrist move <= 0.06 m per sim step relative to the draw shoulder on every row and in character space on the no-key rows; crouched, the pelvis and the head move <= 0.03 m per 1/60 s from the aim on and on every way out (Nov 6: RMB up, the re-aim, a both-button cancel at full draw, stand and crouch toggled at full draw, the loose and RMB up again, every sim step), and the head stays above the line of the shoulders',
+    title: 'Full draw at the four pitches and both clamps (-1.15, 1.02), strafing left and right at 0, 0.75 and both clamps, from a jog and a sprint at 0, and CROUCHED at the four pitches and both clamps: draw elbow within [shoulder - 0.03, shoulder + 0.05] m (aim frame), >= 0.05 m behind the hand along the arrow, bow arm >= 0.04 m clear of the chest surface (torso-skinned outfit vertices); R35: the draw HAND never > 0.10 m behind the head plane and always in front of the back of the skull, the draw ELBOW <= 0.20 m behind it; the hand ON the string: middle knuckle <= 0.06 m and middle fingertip <= 0.06 m from the bow nock; the forearm within 20 deg of the REAL arrow (the bow\'s own draw axis; the old nock -> bow-wrist reading printed beside it), jog and sprint rows reported; the wrist within 0.03 m of the level draw\'s height over the Head joint and of its place in the head\'s frame (no-strafe rows); through the LOOSE, on every sim step from the release until 0.3 s after it, the elbow <= 0.20 m; W0b targeted fix 4: on EVERY row and EVERY sim step from the aim through the raise, the draw ramp, the loose and the whole re-nock return (0.85 s after the release): the hand (wrist, middle knuckle, middle fingertip) in front of the back of the skull wherever it is at skull height and within the head\'s width from the neck up (the nape), and never over the crown; the elbow and the wrist move <= 0.06 m per sim step relative to the draw shoulder on every row and in character space on the no-key rows; crouched, the pelvis and the head move <= 0.03 m per 1/60 s from the aim on and on every way out (Nov 6: RMB up, the re-aim, a both-button cancel at full draw, stand and crouch toggled at full draw, the loose and RMB up again; round 3: and the gate judge\'s order — the draw, stand and crouch again at full draw, the loose and RMB up 0.1 s after it — every sim step), and the head stays above the line of the shoulders',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${DRAW}
       freeze(); standAt(p, 'openGround'); await wait(300);
@@ -7815,6 +7824,13 @@ const NEW_GATES = [
             ph('toCrouch'); p.setCrouch(true); await simWait(0.7, 4000);
             ph('loose'); C.input.mouse.buttons &= ~1; await simWait(0.5, 4000);
             ph('rmbUp2'); C.input.mouse.buttons &= ~4; await simWait(1.0, 8000);
+            /* (hero-body targeted fix round 3, gate judge finding 5: the judge's own order — draw, stand, crouch at
+             * full draw, loose, RMB up 0.1 s after it) */
+            ph('reaim3'); C.input.mouse.buttons |= 4; await simWait(0.6, 4000); C.input.mouse.buttons |= 1; await simWait(1.3, 8000);
+            ph('toStand2'); p.setCrouch(false); await simWait(0.7, 4000);
+            ph('toCrouch2'); p.setCrouch(true); await simWait(0.7, 4000);
+            ph('loose2'); C.input.mouse.buttons &= ~1; await simWait(0.1, 4000);
+            ph('rmbUp3'); C.input.mouse.buttons &= ~4; await simWait(1.0, 8000);
           } finally { an.update = updL; }
           Object.assign(row, { lowerSteps: lw.steps, lowerBodyStepMax60: +lw.max.toFixed(4), lowerBodyStepAt: lw.at, lowerBodyStepByPhase: lw.byPh, crouchedAtToggle });
         }
@@ -7854,7 +7870,7 @@ const NEW_GATES = [
         r.key !== 'crouch' || r.crouching === true ? null : 'notCrouched',
         r.key !== 'crouch' || r.bodyStepMax60 <= 0.03 ? null : 'bodyStep@' + r.bodyStepAt,
         // (Nov 6: ...and on the way out: RMB up, a both-button cancel, stand / crouch toggled at full draw)
-        r.key !== 'crouch' || (r.lowerSteps >= 400 && r.crouchedAtToggle === true && r.lowerBodyStepMax60 <= 0.03) ? null : 'lowerBodyStep@' + r.lowerBodyStepAt,
+        r.key !== 'crouch' || (r.lowerSteps >= 600 && r.crouchedAtToggle === true && r.lowerBodyStepMax60 <= 0.03) ? null : 'lowerBodyStep@' + r.lowerBodyStepAt,
         // (r3 judges: the crouched body folded with the face near the ground)
         r.key !== 'crouch' || r.headOverShouldersM >= 0 ? null : 'headUnderShoulders'].filter(Boolean);
       // fix round 5: at each of the no-strafe pitches the forearm within 20 deg of the
@@ -7932,7 +7948,7 @@ const NEW_GATES = [
     assert: placed(['openGround'], `(async () => {${HB}${FLAT_STRIP}
       freeze();
       const CELLS = ${JSON.stringify([...CONT_CELLS, ...CAM_CELLS])};
-      const STEP = ${CONT_STEP}, KN = ${KNUCKLE_NOCK}, WN = ${WRIST_NOCK}, FA = ${FORE_ARROW_DEG}, BS = ${BODY_STEP};
+      const STEP = ${CONT_STEP}, KN = ${KNUCKLE_NOCK}, WN = ${WRIST_NOCK}, FA = ${FORE_ARROW_DEG}, BS = ${BODY_STEP}, HS = ${HEADING_STEP};
       const r4 = (v) => Math.round(v * 1e4) / 1e4;
       const strip = flatStrip(46);
       const kn = new T3(), ft = new T3(), nk = new T3(), nk0 = new T3(), hu = new T3(), wrW = new T3(), elW = new T3(), adW = new T3();
@@ -7986,8 +8002,17 @@ const NEW_GATES = [
           add(u, 'tag', 'pitchBackStop' + w); u += 0.25; knots.push([+(s + u).toFixed(3), p0]);
         }
         s += u;
+        /* (round 3) the wiggle: the pitch, then the yaw, then both, oscillating 0.25 rad either side at 6 rad/s peak
+         * (24 rad/s, ~3.8 Hz; the pitch from the cell's pitch toward the inside of the clamps), three periods each, each
+         * followed by a 0.25 s stop */
+        const osc = [], OSC_T = 6 * Math.PI / 24;     // (three whole periods: the wiggle ends where it began)
+        const sg = p0 >= 0 ? -1 : 1;
+        for (const [nm, aP, aY] of [['wigglePitch', 0.25, 0], ['wiggleYaw', 0, 0.25], ['wiggleBoth', 0.25, 0.25]]) {
+          add(0, 'tag', nm); osc.push([+s.toFixed(4), +(s + OSC_T).toFixed(4), sg * aP, aY, 24, p0]);
+          add(OSC_T, 'tag', nm + 'Stop'); s += OSC_T + 0.25;
+        }
         add(0, 'lmb-', 'loose'); add(0.3, 'rmb-', 'up'); add(0.9, 'end');
-        return { ev, yaw, knots };
+        return { ev, yaw, knots, osc };
       };
       const cells = [];
       for (let ci = 0; ci < CELLS.length; ci++) {
@@ -8002,23 +8027,28 @@ const NEW_GATES = [
         if (strip) {
           p.position.set(strip.x, 0, strip.z); p.velocity.set(0, 0, 0); p._snapToGround();
           const dx = strip.dx, dz = strip.dz;
-          p.camYaw = loco === 'strafeR' ? Math.atan2(-dz, dx) : loco === 'strafeL' ? Math.atan2(dz, -dx) : strip.yaw;
+          p.camYaw = /strafeR$/i.test(loco) ? Math.atan2(-dz, dx) : /strafeL$/i.test(loco) ? Math.atan2(dz, -dx) : loco === 'crouchBack' ? strip.yaw + Math.PI : strip.yaw;
           p.heading = p.camYaw + Math.PI;
         } else { standAt(p, 'openGround'); p.velocity.set(0, 0, 0); }
         p.camPitch = pitch;
         await simWait(0.35, 4000);
-        if (loco === 'crouched') { p.setCrouch(true); await simWait(0.5, 4000); }
-        const hold = loco === 'jog' ? ['KeyW'] : loco === 'strafeR' ? ['KeyD'] : loco === 'strafeL' ? ['KeyA'] : [];
+        const crouchCell = loco === 'crouched' || loco.startsWith('crouch');
+        if (crouchCell) { p.setCrouch(true); await simWait(0.5, 4000); }
+        const hold = loco === 'jog' ? ['KeyW'] : /strafeR$/i.test(loco) ? ['KeyD'] : /strafeL$/i.test(loco) ? ['KeyA'] : loco === 'crouchBack' ? ['KeyS'] : [];
         for (const k of hold) keys.add(k);
         if (hold.length) await simWait(0.5, 4000);
         const TL = isCam ? camTimeline(pitch) : timeline(rd);
         const ev = TL.ev.map(([t, a, tag]) => ({ t, a, tag, done: false }));
         const T = ev[ev.length - 1].t;
-        const bodyGraded = loco === 'crouched' || loco === 'strafeR' || loco === 'strafeL';
+        /* (round 3: the strafe and crouched cells, the crouched strafes and backpedal with them, grade the body on EVERY
+         * step outside the roll — the raise and the lower out of a sideways run too — in character space and, in the
+         * aim cells, against her root in the world; every cell grades her heading's turn per step outside the roll) */
+        const bodyGraded = crouchCell || loco === 'strafeR' || loco === 'strafeL';
+        const worldGraded = bodyGraded && !isCam;
         const M = { pitch, loco, cell: isCam ? 'camera' : 'aim', reaimDelay: isCam ? null : rd, steps: 0, travel: 0, travelAt: null, rel: 0, relAt: null, shoulderStepMax: 0,
           skull: -9, skullAt: null, nape: -9, napeAt: null, crown: -9, crownAt: null, knFull: 0, knAt: null, wnFull: 0, wnAt: null, foreFull: 0, foreAt: null, fullSteps: 0,
           drawsOver09: 0, dodged: false, crouchSeen: false, standSeen: false, fails: [], byTag: {}, kinds: {}, rawTravel: 0, rawAt: null,
-          bodyStep: 0, bodyAt: null, bodyGraded, camTravelMax: 0, camTravelAt: null, yawTurned: 0, pitchSwept: 0,
+          bodyStep: 0, bodyAt: null, bodyGraded, worldGraded, bodyRel: 0, bodyRelAt: null, headingStep: 0, headingAt: null, camTravelMax: 0, camTravelAt: null, yawTurned: 0, pitchSwept: 0,
           meleeSteps: 0, meleeAt: null, meleeResolves: 0, spearFails: [], foreHome: 0, foreHomeAt: null, foreRamp: 0, foreRampAt: null,
           lanceHead: -9, lanceHeadAt: null, lanceCrown: -9, lanceStepMax: 0, lanceStepAt: null, lanceInRoll: 0 };
         let label = 'start', tLab = 0, prev = null, wasFull = false, camMoved = false, yawNow = 0;
@@ -8033,7 +8063,8 @@ const NEW_GATES = [
           if (!(dt > 0)) return r;
           const Q = this.debugArm('r');
           const e = new T3(Q.elbow.x, Q.elbow.y, Q.elbow.z), w = new T3(Q.hand.x, Q.hand.y, Q.hand.z), s = new T3(Q.shoulder.x, Q.shoulder.y, Q.shoulder.z);
-          const pe = new T3(), he = new T3(); this._charOf(this.b.pelvis.bone, pe); this._charOf(this.b.head.bone, he);
+          const pe = new T3(), he = new T3(), ce = new T3(); this._charOf(this.b.pelvis.bone, pe); this._charOf(this.b.head.bone, he); this._charOf(this.b.spine3.bone, ce);
+          const peW = this.b.pelvis.bone.getWorldPosition(new T3()), heW = this.b.head.bone.getWorldPosition(new T3()), ceW = this.b.spine3.bone.getWorldPosition(new T3()), rtW = p.position.clone(), yawM = p.model.rotation.y;
           const qc = new Q4(); this._liveW(this.b.spine3.bone, qc); qc.invert();
           const eC = e.clone().sub(s).applyQuaternion(qc), wC = w.clone().sub(s).applyQuaternion(qc);
           const lab = label + '+' + (E.simTime - t0 - tLab).toFixed(3);
@@ -8046,7 +8077,9 @@ const NEW_GATES = [
            * A camera cell's step on which the camera's pitch moved: the travel is the camera's,
            * printed (camTravelMax), not graded. The kind is printed with every reading. */
           const inf = !!this._afEng || this.aimWeight > 0.01;
-          const roll = !!p.dodging || this._dodgeW > 0.05;
+          // (round 3: the roll is p.dodging, as A-dodge-exit-continuity reads it; the crossfade into the gait after the
+          // hand-over is graded)
+          const roll = !!p.dodging;
           // the lance layer has the arm: no step of an aim cell stages a spear press (R63 a), so that is the
           // spear clause's failure, below; its steps are the lance's, the travel printed, the head graded
           const lanceArm = !!this.melee?.ok && this.melee.w > 0.02;
@@ -8060,20 +8093,25 @@ const NEW_GATES = [
             if (dS > M.shoulderStepMax) { M.shoulderStepMax = dS; M.shoulderAt = lab + (p.dodging ? ' dodging' : '') + ' aimW ' + this.aimWeight.toFixed(2); }
             // the body's own step per 1/60 s: pelvis and head, character space
             const k60 = 1 / Math.max(1e-3, dt * 60);
-            const dP = pe.distanceTo(prev.pe) * k60, dH = he.distanceTo(prev.he) * k60, dB = Math.max(dP, dH);
+            const dP = pe.distanceTo(prev.pe) * k60, dH = he.distanceTo(prev.he) * k60, dC = ce.distanceTo(prev.ce) * k60, dB = Math.max(dP, dH, dC);
+            const dRt = rtW.clone().sub(prev.rtW);
+            const wP = peW.clone().sub(prev.peW).sub(dRt).length() * k60, wH = heW.clone().sub(prev.heW).sub(dRt).length() * k60, wC = ceW.clone().sub(prev.ceW).sub(dRt).length() * k60, dBw = Math.max(wP, wH, wC);
+            const nmB = dB === dP ? 'pelvis' : dB === dH ? 'head' : 'chest', nmW = dBw === wP ? 'pelvis' : dBw === wH ? 'head' : 'chest';
+            let dYw = yawM - prev.yawM; dYw = Math.abs(dYw - Math.round(dYw / (2 * Math.PI)) * 2 * Math.PI) * k60;
             const kind = lanceArm ? 'lance' : roll ? 'roll' : camMoved ? 'cam' : !inf ? 'clip' : 'aim';
             M.kinds[kind] = (M.kinds[kind] || 0) + 1;
             // (a step the camera's pitch moved: the body follows the aim, printed not graded)
             if (kind !== 'roll' && kind !== 'lance') {
-              if (kind !== 'cam' && dB > M.bodyStep) { M.bodyStep = dB; M.bodyAt = lab + ' ' + kind + ' ' + (dP >= dH ? 'pelvis' : 'head'); }
+              if (kind !== 'cam' && dB > M.bodyStep) { M.bodyStep = dB; M.bodyAt = lab + ' ' + kind + ' ' + nmB + ' aimW ' + this.aimWeight.toFixed(2); }
               if (kind !== 'cam') B.body = Math.max(B.body, r4(dB));
-              /* (crouched: every step; strafing: every step she strafes with the bow up — "strafing right
-               * under the aim", finding 6 — the aim's raise and lower out of a sideways run, where her
-               * heading swings 90 deg onto the camera and the run's pose hands over to the aim walk's,
-               * printed as bodyStepTransition) */
-              const steady = loco === 'crouched' || this.aimWeight >= 0.99;
-              if (!steady && dB > (M.bodyStepTransition || 0)) { M.bodyStepTransition = r4(dB); M.bodyStepTransitionAt = lab + ' ' + (dP >= dH ? 'pelvis' : 'head'); }
-              if (bodyGraded && steady && kind !== 'cam' && dB > BS) failAdd('bodyStep(' + kind + ')', r4(dB) + ' ' + (dP >= dH ? 'pelvis' : 'head') + ' @' + lab);
+              if (!isCam && dBw > M.bodyRel) { M.bodyRel = r4(dBw); M.bodyRelAt = lab + ' ' + kind + ' ' + nmW + ' aimW ' + this.aimWeight.toFixed(2); }
+              if (dYw > M.headingStep) { M.headingStep = r4(dYw); M.headingAt = lab + ' ' + kind; }
+              // (the raise and the lower out of a sideways run, the aim weight between 0.01 and 0.99, printed apart)
+              const steady = crouchCell || this.aimWeight >= 0.99;
+              if (!steady && dB > (M.bodyStepTransition || 0)) { M.bodyStepTransition = r4(dB); M.bodyStepTransitionAt = lab + ' ' + nmB; }
+              if (bodyGraded && kind !== 'cam' && dB > BS) failAdd('bodyStep(' + kind + ')', r4(dB) + ' ' + nmB + ' @' + lab + ' aimW ' + this.aimWeight.toFixed(2));
+              if (worldGraded && dBw > BS) failAdd('bodyStepWorld(' + kind + ')', r4(dBw) + ' ' + nmW + ' @' + lab + ' aimW ' + this.aimWeight.toFixed(2));
+              if (dYw > HS) failAdd('headingStep(' + kind + ')', r4(dYw) + ' rad @' + lab);
             }
             if (kind === 'cam') { if (tr > M.camTravelMax) { M.camTravelMax = r4(tr); M.camTravelAt = lab; } }
             // graded measure(s) per kind
@@ -8088,7 +8126,7 @@ const NEW_GATES = [
             if (gTr > STEP) failAdd('travel(' + kind + ')', r4(gTr) + ' @' + lab);
             else if (gRl > STEP) failAdd('travelRel(' + kind + ')', r4(gRl) + ' @' + lab);
           }
-          prev = { e, w, s, eC, wC, pe, he }; M.steps++;
+          prev = { e, w, s, eC, wC, pe, he, ce, peW, heW, ceW, rtW, yawM }; M.steps++;
           if (this.debugDrawHand(kn, ft)) {
             const pts = [[w, 'wrist'], [CH(kn), 'knuckle'], [CH(ft), 'fingertip']];
             for (const [P, nm] of pts) {
@@ -8179,11 +8217,19 @@ const NEW_GATES = [
             let pc = pitch;
             const K = TL.knots;
             if (K) for (let i = 0; i < K.length; i++) { if (tt >= K[i][0]) { pc = K[i][1]; if (i + 1 < K.length && tt < K[i + 1][0]) pc = K[i][1] + (tt - K[i][0]) / (K[i + 1][0] - K[i][0]) * (K[i + 1][1] - K[i][1]); } }
+            // (the wiggles: the pitch about the cell's own, toward the inside of the clamps; the yaw by its step)
+            let oscYaw = 0;
+            for (const [o0, o1, aP, aY, om, pBase] of (TL.osc || [])) {
+              if (tt < o0 || tPrev > o1) continue;
+              const ta = Math.min(tt, o1) - o0, tb = Math.max(tPrev, o0) - o0;
+              if (aP) pc = pBase + aP * (1 - Math.cos(om * ta));
+              if (aY && ta > tb) { const dy = aY * (Math.sin(om * ta) - Math.sin(om * tb)); p.camYaw += dy; M.yawTurned += Math.abs(dy); oscYaw = Math.max(oscYaw, Math.abs(dy) / Math.max(1e-4, ta - tb)); }
+            }
             p.camPitch = pc;
             camMoved = Math.abs(pc - pPrev) > 1e-5;
             if (camMoved) M.pitchSwept += Math.abs(pc - pPrev);
             pPrev = pc;
-            yawNow = 0;
+            yawNow = oscYaw;
             for (const [a0, a1, rate] of TL.yaw) { const lo = Math.max(a0, tPrev), hi = Math.min(a1, tt); if (hi > lo) { p.camYaw += rate * (hi - lo); M.yawTurned += Math.abs(rate * (hi - lo)); yawNow = rate; } }
             tPrev = tt;
             for (const k of hold) keys.add(k);
@@ -8201,7 +8247,7 @@ const NEW_GATES = [
           if (M.drawsOver09 < 3) M.fails.push('staging: only ' + M.drawsOver09 + ' full draws');
           if (M.yawTurned < 4.5) M.fails.push('staging: yaw turned only ' + M.yawTurned + ' rad');
           if (M.pitchSwept < 4.8) M.fails.push('staging: pitch swept only ' + M.pitchSwept + ' rad');
-          if (loco === 'crouched' && (!M.crouchSeen || M.standSeen)) M.fails.push('staging: crouch ' + M.crouchSeen + ' stand ' + M.standSeen);
+          if (crouchCell && (!M.crouchSeen || M.standSeen)) M.fails.push('staging: crouch ' + M.crouchSeen + ' stand ' + M.standSeen);
         } else {
           if (M.drawsOver09 < 5) M.fails.push('staging: only ' + M.drawsOver09 + ' full draws');
           if (M.lanceInRoll) M.spearFails.push('lance posed: ' + M.lanceInRoll + ' steps from ' + M.lanceOutAt);
@@ -8234,13 +8280,15 @@ const NEW_GATES = [
         forearmArrowRampEndReportedDeg: mx(cells, 'foreRamp'),
         bodyStepMaxGraded: mx(cells.filter((M) => M.bodyGraded), 'bodyStep'), bodyStepMaxReported: mx(cells.filter((M) => !M.bodyGraded), 'bodyStep'),
         bodyStepStrafeTransitionReported: mx(cells.filter((M) => M.loco === 'strafeR' || M.loco === 'strafeL'), 'bodyStepTransition'),
+        bodyStepWorldMaxGraded: mx(cells.filter((M) => M.worldGraded), 'bodyRel'), bodyStepWorldMaxReported: mx(cells.filter((M) => !M.worldGraded && M.cell === 'aim'), 'bodyRel'),
+        headingStepMax: mx(cells, 'headingStep'),
         camTravelMaxReported: mx(cam, 'camTravelMax'),
         spearInDodgeDrawn: aim.reduce((s, M) => s + M.meleeSteps + M.meleeResolves, 0),
         bowToHitMinReported: Math.min(...cells.map((M) => M.bowToHitMin ?? 99)),
       };
       for (const M of cells) delete M.byTag;
       return { pass: cells.length === CELLS.length && failing.length === 0,
-        detail: { bars: { stepM: STEP, knuckleNockM: KN, wristNockM: WN, forearmArrowDeg: FA, bodyStepM: BS }, strip: strip ? { x: +strip.x.toFixed(1), z: +strip.z.toFixed(1) } : null, worst, byTransition: byTag, failing, failingExceptSpear, spearCells: cells.filter((M) => M.spearFails.length).length, cells } };
+        detail: { bars: { stepM: STEP, knuckleNockM: KN, wristNockM: WN, forearmArrowDeg: FA, bodyStepM: BS, headingStepRad: HS }, strip: strip ? { x: +strip.x.toFixed(1), z: +strip.z.toFixed(1) } : null, worst, byTransition: byTag, failing, failingExceptSpear, spearCells: cells.filter((M) => M.spearFails.length).length, cells } };
     })()`),
   },
 
@@ -8254,12 +8302,12 @@ const NEW_GATES = [
    * p.dodging cleared; or landed, grounded again), the pelvis's world step against her root's own world step
    * (player.position: what the locomotion moved her this step). */
   {
-    id: 'A-dodge-exit-continuity', kind: 'action', lane: 'hero-body', timeout: 420000,
-    title: 'Whole-body pops (R63 b): a dodge from a walk, a jog, a sprint and a strafe right and left, each aimed (RMB + LMB held, drawn) and not, a dodge from a standstill, and a jump at full draw standing and jogging (and a jog jump with no aim): on every sim step from the dodge or the jump until 0.6 s after she is back on the gait (the roll handed over / landed), the pelvis\'s world step <= her root\'s world step (the locomotion\'s own speed x dt) + 0.03 m, per 1/60 s',
+    id: 'A-dodge-exit-continuity', kind: 'action', lane: 'hero-body', timeout: 480000,
+    title: 'Whole-body pops (R63 b; hero-body targeted fix round 3): a dodge from a walk, a jog, a sprint and a strafe right and left, each aimed (RMB + LMB held, drawn) and not, a dodge from a standstill, and a jump at full draw standing and jogging (and a jog jump with no aim): on every sim step from the dodge or the jump until 0.6 s after she is back on the gait (the roll handed over / landed), the pelvis\'s world step <= her root\'s world step (the locomotion\'s own speed x dt) + 0.03 m, per 1/60 s; and on every one of those steps outside the roll (a dodge: from the step p.dodging clears; a jump: every step, take-off, air and landing) the PELVIS, the CHEST (spine_03) and the HEAD each move <= 0.03 m per 1/60 s as a vector against her root (|delta bone - delta root|, world) AND in character space, and her heading turns <= ' + HEADING_STEP + ' rad per 1/60 s; at a full-draw jump, whenever the draw is > 0.9 (read after combat\'s update of the same tick), the middle knuckle <= 0.06 m and the wrist <= 0.09 m from the bow\'s nock',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${FLAT_STRIP}
       freeze();
-      const BAR = ${BODY_STEP};
+      const BAR = ${BODY_STEP}, HS = ${HEADING_STEP}, KN = ${KNUCKLE_NOCK}, WN = ${WRIST_NOCK};
       const r4 = (v) => Math.round(v * 1e4) / 1e4;
       const strip = flatStrip(46);
       // [name, keys held, aimed (RMB + LMB), action]
@@ -8269,7 +8317,9 @@ const NEW_GATES = [
         ['strafeRAimed', ['KeyD'], true, 'dodge'], ['strafeLAimed', ['KeyA'], true, 'dodge'],
         ['jumpDrawn', [], true, 'jump'], ['jumpDrawnJog', ['KeyW'], true, 'jump'], ['jumpJog', ['KeyW'], false, 'jump']];
       const rows = [];
-      const peW = new T3(), rtW = new T3();
+      const bW = [new T3(), new T3(), new T3()], bC = [new T3(), new T3(), new T3()], rtW = new T3();
+      const kn = new T3(), ft = new T3(), nk = new T3(), wrW = new T3();
+      const NM = ['pelvis', 'chest', 'head'];
       for (const [name, ks, aimed, act] of ROWS) {
         release(); await wait(300); p.setCrouch?.(false);
         for (let i = 0; i < 40 && (cmb.melee?.active || cmb.melee?.stance !== 'holstered' || an.melee?.w > 0.02); i++) { cmb.melee?.holsterSpear?.(true); await simWait(0.1, 2000); }
@@ -8289,51 +8339,108 @@ const NEW_GATES = [
         if (name === 'sprintAimed') { C.input.mouse.buttons |= 5; await simWait(0.12, 2000); }
         const speed0 = +Math.hypot(p.velocity.x, p.velocity.z).toFixed(2), drawS0 = +cmb.drawStrength.toFixed(2);
         const st = [];
-        let prev = null, sawAct = false, tBack = null;
-        const upd = an.update, t0 = E.simTime;
+        let prev = null, sawAct = false, tBack = null, busyNow = false;
+        const hand = { kn: 0, knAt: null, wr: 0, wrAt: null, full: 0 };
+        const upd = an.update, t0 = E.simTime, cmbU = cmb.update;
         an.update = function (dt, t) {
           const r = upd.call(this, dt, t);
           if (!(dt > 0)) return r;
-          this.b.pelvis.bone.getWorldPosition(peW); rtW.copy(p.position);
+          const B = [this.b.pelvis.bone, this.b.spine3.bone, this.b.head.bone];
+          for (let i = 0; i < 3; i++) { B[i].getWorldPosition(bW[i]); this._charOf(B[i], bC[i]); }
+          rtW.copy(p.position);
+          const yaw = p.model.rotation.y;
           const busy = act === 'dodge' ? !!p.dodging : !p.grounded;
+          busyNow = busy;
           if (busy) sawAct = true;
           if (sawAct && !busy && tBack === null) tBack = E.simTime - t0;
           if (prev) {
             const k60 = 1 / Math.max(1e-3, dt * 60);
-            const dP = peW.distanceTo(prev.pe) * k60, dR = rtW.distanceTo(prev.rt) * k60;
-            st.push([E.simTime - t0, dP - dR, busy ? 1 : 0, dP, dR, peW.clone().sub(prev.pe).sub(rtW.clone().sub(prev.rt)).length() * k60]);
+            const dR = rtW.distanceTo(prev.rt) * k60;
+            const dP = bW[0].distanceTo(prev.w[0]) * k60;
+            const rel = [0, 0, 0], ch = [0, 0, 0];
+            for (let i = 0; i < 3; i++) {
+              rel[i] = bW[i].clone().sub(prev.w[i]).sub(rtW.clone().sub(prev.rt)).length() * k60;
+              ch[i] = bC[i].distanceTo(prev.c[i]) * k60;
+            }
+            let dy = yaw - prev.yaw; dy -= Math.round(dy / (2 * Math.PI)) * 2 * Math.PI;
+            // the roll: a dodge's steps while p.dodging; a jump has none (take-off, air and landing are all graded)
+            const roll = act === 'dodge' && (busy || prev.busy);
+            st.push({ t: E.simTime - t0, ex: dP - dR, busy, roll, dP, dR, rel, ch, dYaw: Math.abs(dy) * k60, aimW: +this.aimWeight.toFixed(3) });
           }
-          prev = { pe: peW.clone(), rt: rtW.clone() };
+          prev = { w: bW.map((v) => v.clone()), c: bC.map((v) => v.clone()), rt: rtW.clone(), yaw, busy };
+          return r;
+        };
+        // (a full-draw jump: the hand on the string on every step the draw is > 0.9, read after combat's update)
+        if (act === 'jump' && aimed) cmb.update = function (...a) {
+          const r = cmbU.apply(this, a);
+          if (this !== cmb || !(a[0] > 0) || !sawAct) return r;
+          if (tBack !== null && E.simTime - t0 > tBack + 0.6) return r;
+          const ds = cmb.drawStrength;
+          if (ds > 0.9 && an.debugDrawHand(kn, ft)) {
+            cmb.bow.getNockWorld(ds, nk); an.b.handR.bone.getWorldPosition(wrW);
+            const lab = (busyNow ? 'air' : 'landed') + ' +' + (E.simTime - t0).toFixed(3) + ' s';
+            const dk = kn.distanceTo(nk), dw = wrW.distanceTo(nk); hand.full++;
+            if (dk > hand.kn) { hand.kn = r4(dk); hand.knAt = lab; }
+            if (dw > hand.wr) { hand.wr = r4(dw); hand.wrAt = lab; }
+          }
           return r;
         };
         try {
           if (act === 'dodge') p.dodge(); else p.jump();
           const w0 = performance.now();
           while (E.simTime - t0 < 2.2 && performance.now() - w0 < 20000) { for (const k of ks) keys.add(k); await frame(); }
-        } finally { an.update = upd; }
+        } finally { an.update = upd; cmb.update = cmbU; }
         release();
-        let worst = -9, worstAt = null, n = 0, pelAt = 0, rootAt = 0, relMax = 0, relAt = null, busyWorst = -9;
-        for (const [t, ex, bz, dP, dR, rel] of st) {
-          if (tBack !== null && t > tBack + 0.6) continue;
+        let worst = -9, worstAt = null, n = 0, pelAt = 0, rootAt = 0, busyWorst = -9;
+        const rel = [0, 0, 0], relAt = [null, null, null], ch = [0, 0, 0], chAt = [null, null, null];
+        let yawMax = 0, yawAt = null, graded = 0;
+        for (const S of st) {
+          if (tBack !== null && S.t > tBack + 0.6) continue;
           n++;
-          if (ex > worst) { worst = ex; worstAt = '+' + t.toFixed(3) + ' s' + (bz ? ' (' + (act === 'dodge' ? 'rolling' : 'airborne') + ')' : ' (+' + (t - tBack).toFixed(3) + ' s after ' + (act === 'dodge' ? 'the hand-over' : 'landing') + ')'); pelAt = dP; rootAt = dR; }
-          if (bz) busyWorst = Math.max(busyWorst, ex);
-          if (rel > relMax) { relMax = rel; relAt = '+' + t.toFixed(3) + ' s'; }
+          const at = '+' + S.t.toFixed(3) + ' s' + (S.busy ? ' (' + (act === 'dodge' ? 'rolling' : 'airborne') + ')' : tBack !== null ? ' (+' + (S.t - tBack).toFixed(3) + ' s after ' + (act === 'dodge' ? 'the hand-over' : 'landing') + ')' : '') + ' aimW ' + S.aimW;
+          if (S.ex > worst) { worst = S.ex; worstAt = at; pelAt = S.dP; rootAt = S.dR; }
+          if (S.busy) busyWorst = Math.max(busyWorst, S.ex);
+          if (S.roll) continue;
+          graded++;
+          for (let i = 0; i < 3; i++) {
+            if (S.rel[i] > rel[i]) { rel[i] = S.rel[i]; relAt[i] = at; }
+            if (S.ch[i] > ch[i]) { ch[i] = S.ch[i]; chAt[i] = at; }
+          }
+          if (S.dYaw > yawMax) { yawMax = S.dYaw; yawAt = at; }
+        }
+        const fails = [];
+        for (let i = 0; i < 3; i++) {
+          if (rel[i] > BAR) fails.push(NM[i] + 'Rel ' + r4(rel[i]) + ' ' + relAt[i]);
+          if (ch[i] > BAR) fails.push(NM[i] + 'Char ' + r4(ch[i]) + ' ' + chAt[i]);
+        }
+        if (yawMax > HS) fails.push('heading ' + r4(yawMax) + ' rad ' + yawAt);
+        if (act === 'jump' && aimed) {
+          if (hand.full < 10) fails.push('staging: ' + hand.full + ' full-draw steps');
+          if (hand.kn > KN) fails.push('knuckleOffNock ' + hand.kn + ' ' + hand.knAt);
+          if (hand.wr > WN) fails.push('wristOffNock ' + hand.wr + ' ' + hand.wrAt);
         }
         rows.push({ name, act, aimed, speedAtAct: speed0, drawSAtAct: drawS0, sawAct, backAtS: tBack === null ? null : +tBack.toFixed(3),
-          steps: n, worstOverRootM: r4(worst), worstAt, pelvisStepThereM: r4(pelAt), rootStepThereM: r4(rootAt),
-          worstOverRootInActM: r4(busyWorst), relStepMaxReportedM: r4(relMax), relStepAt: relAt });
+          steps: n, gradedOutsideRoll: graded, worstOverRootM: r4(worst), worstAt, pelvisStepThereM: r4(pelAt), rootStepThereM: r4(rootAt),
+          worstOverRootInActM: r4(busyWorst),
+          relStepM: { pelvis: r4(rel[0]), chest: r4(rel[1]), head: r4(rel[2]) }, relStepAt: { pelvis: relAt[0], chest: relAt[1], head: relAt[2] },
+          charStepM: { pelvis: r4(ch[0]), chest: r4(ch[1]), head: r4(ch[2]) }, charStepAt: { pelvis: chAt[0], chest: chAt[1], head: chAt[2] },
+          headingStepMaxRad: r4(yawMax), headingStepAt: yawAt,
+          hand: act === 'jump' && aimed ? hand : null, fails });
       }
-      const bad = rows.filter((r) => !(r.sawAct && r.backAtS !== null && r.steps >= 60 && r.worstOverRootM <= BAR)
+      const bad = rows.filter((r) => !(r.sawAct && r.backAtS !== null && r.steps >= 60 && r.worstOverRootM <= BAR) || r.fails.length
         || (!['standing', 'jumpDrawn'].includes(r.name) && !(r.speedAtAct > 1)) || (r.aimed && r.name !== 'sprintAimed' && !(r.drawSAtAct > 0.9)));
-      return { pass: bad.length === 0, detail: { barM: BAR, worst: Math.max(...rows.map((r) => r.worstOverRootM)), rows, failing: bad.map((r) => r.name + ': ' + r.worstOverRootM + ' ' + r.worstAt) } };
+      const mxo = (k, j) => Math.max(...rows.map((r) => r[k][j]));
+      return { pass: bad.length === 0, detail: { bars: { stepM: BAR, headingRad: HS, knuckleNockM: KN, wristNockM: WN },
+        worst: { overRoot: Math.max(...rows.map((r) => r.worstOverRootM)), relPelvis: mxo('relStepM', 'pelvis'), relChest: mxo('relStepM', 'chest'), relHead: mxo('relStepM', 'head'),
+          charPelvis: mxo('charStepM', 'pelvis'), charChest: mxo('charStepM', 'chest'), charHead: mxo('charStepM', 'head'), heading: Math.max(...rows.map((r) => r.headingStepMaxRad)) },
+        rows, failing: bad.map((r) => r.name + ': ' + (r.fails.length ? r.fails.slice(0, 4).join(' | ') : r.worstOverRootM + ' ' + r.worstAt)) } };
     })()`),
   },
 
   /* --------------------------------------------------------- A-wrap-clear */
   {
     id: 'A-wrap-clear', kind: 'action', lane: 'hero-body', timeout: 420000,
-    title: 'M10: every dyn_ chain (wrap tail, knot tail, sash end, alidade cord) >= 0.05 m from the draw hand/forearm through a full draw cycle from a sprint-stop at four pitches, crouched after the sprint-stop at all four (W0b targeted fix 3: 0, 0.75; fix 4: + -0.55, -0.4), and (fix 4) strafing left and right at 0 and 0.75; graded on EVERY sim tick (the collider\'s running minimum since the last read, not its last tick) on particles AND on the strand segments between them (>= 0.05 m; the fixed root link reported), with one repeat under a forced ~27 fps clock; the hand capsule reported active; (fix 4) FAIL by name on any head root (topknot, wrap) whose keep the arm\'s final pose leaves unmet (inside keep - rootGive) on any row',
+    title: 'M10: every dyn_ chain (wrap tail, knot tail, sash end, alidade cord) >= 0.05 m from the draw hand/forearm through a full draw cycle from a sprint-stop at four pitches, crouched after the sprint-stop at all four (W0b targeted fix 3: 0, 0.75; fix 4: + -0.55, -0.4), and (fix 4) strafing left and right at 0 and 0.75; graded on EVERY sim tick (the collider\'s running minimum since the last read, not its last tick) on particles AND on the strand segments between them (>= 0.05 m) AND on each chain\'s fixed root link (>= 0.015 m, R63 d), with one repeat under a forced ~27 fps clock; the hand capsule reported active; (fix 4) FAIL by name on any head root (topknot, wrap) whose keep the arm\'s final pose leaves unmet (inside keep - rootGive) on any row',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}
       freeze();
@@ -8404,14 +8511,16 @@ const NEW_GATES = [
           unmetHeadRoots: unmetHead.map((k) => k.root + ' ' + k.unmetFrames + ' frames, min ' + k.minAxis + ' < ' + k.keep) });
       }
       release(); p.setCrouch?.(false);
+      // (hero-body targeted fix round 3, R63 d: the cord's fixed root link is graded, >= 0.015 m, on every row)
       const fails = (r) => [r.minClearM >= 0.05 ? null : 'particle ' + r.minClearM + ' ' + r.closest, r.segMinClearM >= 0.05 ? null : 'segment ' + r.segMinClearM + ' ' + r.segClosest,
+        r.rootLinkClearM >= ${ROOT_LINK} ? null : 'rootLink ' + r.rootLinkClearM,
         r.inactiveFrames === 0 ? null : 'capsule inactive', r.frames > 30 ? null : 'frames', r.drawMax > 0.9 ? null : 'drawMax', r.fullDrawFrames > 10 ? null : 'fullDrawFrames',
         !r.crouch || r.crouching === true ? null : 'notCrouched', ...r.unmetHeadRoots.map((u) => 'unmetHeadRoot ' + u)].filter(Boolean);
       const bad = rows.map((r) => [r, fails(r)]).filter(([, x]) => x.length).map(([r, x]) => r.pitch + (r.crouch ? ' crouched' : '') + (r.strafe ? ' ' + r.strafe : '') + (r.slowClock ? ' 27fps' : '') + ': ' + x.join(' | '));
       const slowRows = rows.filter((r) => r.slowClock);
       const slowOk = slowRows.every((r) => r.fps < 34 && r.ticksPerFrame > 1.5);
       return { pass: bad.length === 0 && slowOk, detail: { failing: bad, slowClock: slowRows.map((r) => ({ pitch: r.pitch, crouch: r.crouch, fps: r.fps, ticksPerFrame: r.ticksPerFrame })), slowClockOk: slowOk,
-        worst: { particle: Math.min(...rows.map((r) => r.minClearM)), segment: Math.min(...rows.map((r) => r.segMinClearM)), rootLinkReported: Math.min(...rows.map((r) => r.rootLinkClearM)) }, rows, chains, collider: an.debugHandCollider() } };
+        worst: { particle: Math.min(...rows.map((r) => r.minClearM)), segment: Math.min(...rows.map((r) => r.segMinClearM)), rootLink: Math.min(...rows.map((r) => r.rootLinkClearM)) }, bars: { particleM: 0.05, segmentM: 0.05, rootLinkM: ${ROOT_LINK} }, rows, chains, collider: an.debugHandCollider() } };
     })()`),
   },
 
