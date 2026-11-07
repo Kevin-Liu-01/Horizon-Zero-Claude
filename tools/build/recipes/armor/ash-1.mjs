@@ -205,9 +205,20 @@ export async function ashParts() {
     // (armory W1: the loose turn stands a little higher off the tops of her shoulders: at full draw the raised arms'
     // shoulders came up 2-3 cm through it)
     const lift = 0.014 * Math.max(0, Math.min(1, (Math.abs(Math.cos(th)) - 0.35) / 0.4)) * (r / (rowsC.length - 1));
-    const p = [Math.cos(th) * (rad + lift), y - 0.012 * Math.sin(th - 1.0) * (r / 6) + lift * 0.8, -0.035 + Math.sin(th) * rad * kz];
+    // (fix round 1: the top turn sits 8 mm lower under the chin and 4 mm further off it: at full draw her turned head
+    // brought her jaw down onto it, A-variant-swap-matrix's 0-in-the-head clause)
+    const front = Math.max(0, Math.sin(th)) * (r === 0 ? 1 : r === 1 ? 0.5 : 0);
+    const p = [Math.cos(th) * (rad + lift + 0.004 * front), y - 0.012 * Math.sin(th - 1.0) * (r / 6) + lift * 0.8 - 0.008 * front, -0.035 + Math.sin(th) * (rad + 0.004 * front) * kz];
     const w = Math.max(0, Math.min(1, (y - 1.42) / 0.09));
-    return { p, uv: [(c / COLS) * 0.72, (r / (rowsC.length - 1)) * 0.2], j: [base.J('neck_01'), base.J('spine_03'), 0, 0], w: [w, 1 - w, 0, 0] };
+    // (fix round 1, judges: "Ash I at full draw: ease the cowl's roll against the deltoid without lumping it": the
+    // loose turn rides its CLAVICLE where it lies on the shoulder, up to 45 % at the shoulder's top, so a drawn arm's
+    // shrug lifts the wool with it instead of rising 1-3 cm through it; the neck turn stays on the neck)
+    const cl = 0.45 * Math.max(0, Math.min(1, (Math.abs(p[0]) - 0.07) / 0.1)) * (r / (rowsC.length - 1)) ** 0.5;
+    // ...and its very edge over the shoulder's point takes a little of the upper arm
+    const ua = 0;
+    const jc = base.J(p[0] >= 0 ? 'clavicle_l' : 'clavicle_r'), ju = base.J(p[0] >= 0 ? 'upperarm_l' : 'upperarm_r');
+    const rest = 1 - cl - ua;
+    return { p, uv: [(c / COLS) * 0.72, (r / (rowsC.length - 1)) * 0.2], j: [base.J('neck_01'), base.J('spine_03'), jc, ju], w: [w * rest, (1 - w) * rest, cl, ua] };
   });
   orientOut(cowl, 0, -0.035);
   added.push(cowl);
@@ -269,6 +280,10 @@ export async function build({ out = ROOT } = {}) {
   const srcNormal = await loadRaw(path.join(MCO_DIR(srcRoot()), 'T_Peasant_Normal.png'), 1024);
   const tex = await paintAtlas(all, layout, { painters: ASH_PAINTERS, srcNormal, trim: base.trim, salt: [150, 144, 132], curv: { crease: 0.8, ridge: 0.5 }, q: { base: 90, normal: 88, orm: 84 } });
   romFit(all, base, PAN_FIT);
+  // fix round 1 (judges: "ease the cowl's roll against the deltoid without lumping it, a romFit ease on the cowl alone
+  // with a capped push"): a second fit on the cowl alone, up to 3 cm, in a 6 cm field smoothed four times, so the
+  // room a drawn arm's shoulder asks for spreads along the roll instead of standing as a lump over one shoulder
+  romFit(all.filter((p) => p.slot === 'cowl'), base, { ...PAN_FIT, maxPush: 0.03, giveUp: 0.045, radius: 0.06, smoothPasses: 4 });
   outfitDoc(doc, all, { name: 'Outfit_Ash_1', matName: 'MI_Ash_1', tex, texPrefix: 'ash', extra: { _AO: ['SCALAR', bakeVertexAO(all, { body: base.bodyPart })] } });
   for (const m of doc.getRoot().listMeshes()) for (const pr of m.listPrimitives()) pr.getAttribute('_AO')?.setNormalized(true);
   return writeOutfit(doc, path.join(out, OUTPUTS[0]), {

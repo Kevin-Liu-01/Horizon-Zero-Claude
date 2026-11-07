@@ -18,7 +18,7 @@ export const HAT = { brimR: 0.21, brimY: 1.722, tiltX: -0.10, crown: 0.105, topY
 
 /** The hat, local: brim plane y = 0, crown up. Two faces come from the double-sided material. */
 function hatInto(part, X, Y, Z, T, rect, joint, bit) {
-  const SIDES = 16;
+  const SIDES = 14;
   // [radius, y]: brim edge rolled, brim, crown base, crown shoulder, a flat woven top
   const prof = [[HAT.brimR, -0.012], [HAT.brimR - 0.004, -0.004], [HAT.brimR - 0.05, 0.006], [HAT.crown + 0.012, 0.016], [HAT.crown, 0.04], [HAT.crown * 0.92, 0.10], [HAT.crown * 0.62, 0.155], [0.0005, HAT.topY]];
   const base = part.pos.length / 3;

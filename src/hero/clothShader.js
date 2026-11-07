@@ -22,7 +22,10 @@
  */
 import * as THREE from 'three';
 
-const TILE = 128;
+const TILE = 256;
+/** Threads per tile, both ways (fix round 1: 32, was 16 — 0.8 mm at the sets' 2.6 cm tile; at 1.6 mm a plain weave read
+ * as a basket / screen grid at 0.5 m). */
+const THREADS = 32;
 let detailTex = null;
 let users = 0;
 
@@ -31,16 +34,25 @@ function hash(x, y) { let h = (x * 374761393 + y * 668265263) | 0; h = (h ^ (h >
 /** RG = weave height slope, BA = grain slope. Deterministic, tiles. */
 function buildDetail() {
   const data = new Uint8Array(TILE * TILE * 4);
-  const THREADS = 16;                 // threads per tile, both ways
   const weave = new Float32Array(TILE * TILE), grain = new Float32Array(TILE * TILE);
+  // each thread its own thickness, and slubs: stretches of a thread a third thicker, a few crossings long (linen is
+  // never a screen: it is the unevenness of its threads that reads, not their grid)
+  const thick = (i, k) => 0.8 + 0.4 * hash(i, k);
+  const slub = (i, k, a) => {
+    const seg = Math.floor(a / 5), f = a / 5 - seg;
+    const on = hash(i * 7 + seg, k) > 0.72 ? 1 : 0;
+    return 1 + 0.38 * on * Math.sin(Math.PI * f);
+  };
   for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
     const u = (x / TILE) * THREADS, v = (y / TILE) * THREADS;
-    const iu = Math.floor(u), iv = Math.floor(v), fu = u - iu, fv = v - iv;
+    const iu = Math.floor(u), iv = Math.floor(v);
+    // the threads wander a little off their line (a twelfth of a pitch), so the crossings are not a lattice
+    const fu = u - iu + 0.08 * (hash(iu, Math.floor(v / 3)) - 0.5), fv = v - iv + 0.08 * (hash(Math.floor(u / 3) + 101, iv) - 0.5);
     const warpOver = ((iu + iv) & 1) === 0;
-    const warp = Math.sin(fu * Math.PI), weft = Math.sin(fv * Math.PI);
-    const jit = 0.82 + 0.36 * hash(warpOver ? iu : iv, warpOver ? 3 : 7);
-    weave[y * TILE + x] = (warpOver ? warp : weft) * (0.55 + 0.45 * (warpOver ? weft : warp)) * jit;
-    // grain: a few octaves of wrapped lattice noise
+    const tw = thick(iu, 3) * slub(iu, 3, v), tf = thick(iv, 7) * slub(iv, 7, u) * 0.9;
+    const warp = Math.sin(Math.min(1, Math.max(0, fu)) * Math.PI) ** (1 / tw), weft = Math.sin(Math.min(1, Math.max(0, fv)) * Math.PI) ** (1 / tf);
+    weave[y * TILE + x] = (warpOver ? warp * tw : weft * tf) * (0.6 + 0.4 * (warpOver ? weft : warp));
+    // grain: a few octaves of wrapped lattice noise (also the linen's slub texture, sampled 0.21 x: 4-15 mm)
     let g = 0, a = 1, f = 8;
     for (let o = 0; o < 3; o++) {
       const gx = (x / TILE) * f, gy = (y / TILE) * f, ix = Math.floor(gx), iy = Math.floor(gy), rx = gx - ix, ry = gy - iy;
@@ -54,8 +66,8 @@ function buildDetail() {
   const put = (src, x, y) => src[((y + TILE) % TILE) * TILE + ((x + TILE) % TILE)];
   for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
     const o = (y * TILE + x) * 4;
-    data[o] = Math.max(0, Math.min(255, 128 + (put(weave, x - 1, y) - put(weave, x + 1, y)) * 150));
-    data[o + 1] = Math.max(0, Math.min(255, 128 + (put(weave, x, y - 1) - put(weave, x, y + 1)) * 150));
+    data[o] = Math.max(0, Math.min(255, 128 + (put(weave, x - 1, y) - put(weave, x + 1, y)) * 110));
+    data[o + 1] = Math.max(0, Math.min(255, 128 + (put(weave, x, y - 1) - put(weave, x, y + 1)) * 110));
     data[o + 2] = Math.max(0, Math.min(255, 128 + (put(grain, x - 1, y) - put(grain, x + 1, y)) * 300));
     data[o + 3] = Math.max(0, Math.min(255, 128 + (put(grain, x, y - 1) - put(grain, x, y + 1)) * 300));
   }
@@ -110,13 +122,17 @@ float clothK = 0.0; float clothCav = 0.0; float saltK = 0.0;`);
     // the threads only exist where a pixel can see one: past that the tile beats against the
     // pixel grid in rings, and the atlas's own thread streaks carry the cloth instead
     vec2 tileUv = vNormalMapUv * uDetailRep;
-    float threadsPerPixel = max( length( dFdx( tileUv ) ), length( dFdy( tileUv ) ) ) * 16.0;
+    float threadsPerPixel = max( length( dFdx( tileUv ) ), length( dFdy( tileUv ) ) ) * ${THREADS.toFixed(1)};
     float fadeD = 1.0 - smoothstep( 0.2, 0.5, threadsPerPixel );
     vec4 tile = texture2D( uDetail, tileUv );
     vec4 tileG = texture2D( uDetail, tileUv * 0.61 );
+    // (fix round 1) linen's slubs at 4-15 mm: what carries the cloth between the threads' range and the atlas's
+    vec4 tileS = texture2D( uDetail, tileUv * 0.21 + vec2( 0.37, 0.11 ) );
     float weaveW = smoothstep( 0.45, 0.8, cls );
     float grainW = smoothstep( 0.12, 0.3, cls ) * ( 1.0 - weaveW );
-    vec2 d = ( tile.rg - 0.5 ) * 2.0 * weaveW * 0.95 * fadeD + ( tileG.ba - 0.5 ) * 2.0 * grainW * 0.14 * ( 1.0 - smoothstep( 2.2, 7.5, length( vClothView ) ) );
+    float far = 1.0 - smoothstep( 2.2, 7.5, length( vClothView ) );
+    vec2 d = ( tile.rg - 0.5 ) * 2.0 * weaveW * 0.95 * fadeD + ( tileG.ba - 0.5 ) * 2.0 * grainW * 0.09 * far
+      + ( tileS.ba - 0.5 ) * 2.0 * weaveW * 0.16 * far;
     clothCav = ( d.x + d.y ) * 0.5;
     clothK = max( weaveW, grainW * 0.35 ) ;
     normal = normalize( normal + tbn[ 0 ] * d.x + tbn[ 1 ] * d.y );${salt ? `

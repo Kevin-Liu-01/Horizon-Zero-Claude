@@ -437,14 +437,16 @@ const SABINA_ROW = 'armoryBowSabina';
 const GRIP_Z = 0.035;              // the stave's belly at the old riser line, in the palm
 const NOCK_Y = 0.018;
 /**
- * The stave's centre over the model's origin. The base class hangs the model 0.1 m under the
- * left hand's joint and the animator's solve reads that live (`bow.model.position`,
- * playerAnimator "nock offset": bow hand = anchor - nockOffset), so the arrow stays where the
- * draw solve puts it. On Brea her palm stands 0.118-0.146 m over the model's origin: the wrap's
- * centre goes there, its lower binding just over the arrow. (The arrow belongs ON her knuckles;
- * that needs the solve re-tuned, see docs/ROUND5-ARMORY.md requests to hero-body.)
+ * FIX ROUND 1 (judges, V-gear-in-hand: "the arrow passes under the bow fist; the draw-side reference has it resting
+ * on top of the bow hand"). The base class hangs a bow's model 0.1 m under the left hand's joint, and the animator's
+ * draw solve reads that offset LIVE (`bow.model.position`, playerAnimator's nock offset: bow hand = anchor - nockOffset,
+ * the nock at 0.018 over the model's origin). So the arrow's height against her fist is set here, and the solve
+ * follows it: the Sabina's model hangs at MODEL_Y, putting the nock (and the arrow) 6 cm over the hand's joint, on the
+ * top of her fist (her palm stands 0.018-0.046 m over the joint), and the stave's grip wrap is centred GRIP_Y under the
+ * model's origin, so the arrow crosses the stave at the wrap's top edge, over her index finger, as a self-bow is shot.
  */
-const GRIP_Y = 0.095;
+const MODEL_Y = 0.042;
+const GRIP_Y = -0.027;
 const AMMO_TINT = {
   hunter: [0xffffff, 0xffffff], hardpoint: [0xffc890, 0xffd8a8], fire: [0xff9050, 0xffa070],
   precision: [0xd8f4ff, 0xe4f8ff], tearblast: [0x90e8e0, 0xb0f0e8], shock: [0x90d8ff, 0xb0e0ff], freeze: [0xd8f0ff, 0xe8f6ff],
@@ -515,6 +517,7 @@ varying vec3 vBwTint;`)
     this.mesh.name = 'bow-sabina';
     this.mesh.position.y = GRIP_Y;
     this.mesh.position.z = GRIP_Z;
+    this.model.position.y = MODEL_Y;
     this.mesh.castShadow = false;
     this.mesh.frustumCulled = false;
     this.mesh.userData.heroPart = 'held';

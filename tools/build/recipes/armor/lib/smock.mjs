@@ -152,7 +152,7 @@ export function drapeTable(T, { apex = [1.24, 1.40], fall = 0.32, margin = () =>
  * with their rims snapped onto the ellipse.
  */
 export function draftSmock(part, T, skin, {
-  rows = 24, cols = 76, neckY, yBelt, gather = null, seed = 1, slit = null, armholes = [], density = 1, uvScale = 1,
+  rows = 24, cols = 76, neckY, yBelt, gather = null, seed = 1, slit = null, armholes = [], density = 1, uvScale = 1, bodice = null,
 } = {}) {
   const cz = T.cz;
   const th0 = Math.PI / 2;
@@ -180,7 +180,7 @@ export function draftSmock(part, T, skin, {
       while (k + 1 < prof.length && prof[k + 1][2] < want) k++;
       const a = prof[k], b = prof[Math.min(k + 1, prof.length - 1)];
       const f = b[2] > a[2] ? (want - a[2]) / (b[2] - a[2]) : 0;
-      col.push({ y: mix(a[1], b[1], f), r: mix(a[0], b[0], f), s: want, th });
+      col.push({ y: mix(a[1], b[1], f), r: mix(a[0], b[0], f), s: want, th, yN });
     }
     gridP.push(col);
   }
@@ -193,7 +193,8 @@ export function draftSmock(part, T, skin, {
     // (armory W1: the gathers a little deeper, 5.5 mm, and the outfit's painter shades these same ripples)
     const a = 0.0034 * low * (1 - 0.5 * gth) * ripple(q.th, seed, [5, 8]) + 0.0055 * gth * ripple(q.th, seed + 3, [13, 17, 21]);
     const g = gather ? gather(y, q.th) : null;
-    let r = (g != null ? mix(q.r, g, sstep(1.205, 1.152, y)) : q.r) + a;
+    // (fix round 1) `bodice(y, th, yNeck)`: the modelled folds and seams of the bodice above them (outward, m)
+    let r = (g != null ? mix(q.r, g, sstep(1.205, 1.152, y)) : q.r) + a + (bodice ? bodice(y, q.th, q.yN) : 0);
     // the keyhole: the two edges part above its bottom
     let th = q.th;
     if (slit && y > slit.yBottom && (c <= 1 || c >= cols - 1)) {

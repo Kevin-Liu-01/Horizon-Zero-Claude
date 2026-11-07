@@ -36,6 +36,9 @@ export const GATES = [{
     release(); await wait(150); C.input.mouse.buttons |= 4; await simWait(0.5, 3000); C.input.mouse.buttons = 0; await simWait(0.25, 2000);
     dump('idle-bow', out);
     await lanceOut(); dump('idle-lance', out);
+    // (fix round 1: the lance's ready stance over 1.5 s, not one moment: the matrix's idle with the lance read 1.69-1.82
+    // at the left ankle on a frame the single dump never saw)
+    for (let k = 1; k <= 6; k++) { await simWait(0.25, 1500); dump('idle-lance-' + k, out); }
     keys.add('KeyW'); keys.add('ShiftLeft'); await simWait(1.4, 8000);
     for (let k = 0; k < 12; k++) { dump('sprint-lance-' + k, out); await simWait(0.055, 800); }
     release(); await lanceAway();
@@ -58,8 +61,8 @@ export const GATES = [{
     release(); await wait(200); p.camPitch = -0.55; C.input.mouse.buttons |= 4; await simWait(0.6, 5000); C.input.mouse.buttons |= 1; await simWait(1.0, 6000); dump('drawDown', out);
     release(); await wait(200); p.camPitch = 0.5; C.input.mouse.buttons |= 4; await simWait(0.6, 5000); C.input.mouse.buttons |= 1; await simWait(1.0, 6000); dump('drawUp', out);
     release(); await wait(300); p.camPitch = 0;
-    await lanceOut(); M.swing({ heavy: false }); let w0 = performance.now(); while (performance.now() - w0 < 2500) { await frame(); if (M.poseState().phase === 'strike') break; } dump('light', out); await simWait(0.1, 800); dump('light2', out);
-    release(); await wait(600); await lanceOut(); M.swing({ heavy: true }); w0 = performance.now(); while (performance.now() - w0 < 2500) { await frame(); if (M.poseState().phase === 'strike') break; } dump('heavy', out); await simWait(0.12, 800); dump('heavy2', out);
+    await lanceOut(); M.swing({ heavy: false }); let w0 = performance.now(); while (performance.now() - w0 < 2500) { await frame(); if (M.poseState().phase === 'strike') break; } dump('light', out); await frame(); dump('light1', out); await simWait(0.1, 800); dump('light2', out);
+    release(); await wait(600); await lanceOut(); M.swing({ heavy: true }); w0 = performance.now(); while (performance.now() - w0 < 2500) { await frame(); if (M.poseState().phase === 'strike') break; } dump('heavy', out); await frame(); dump('heavy1', out); await simWait(0.12, 800); dump('heavy2', out);
     release();
     return { pass: true, detail: { names, poses: out, scale: p.model.getWorldScale(new T3()).x } };
   })()`),

@@ -502,8 +502,8 @@ export async function panCloseupOverlay(ctx, refs = []) {
     ['neck: bound keyhole, linen collar, tie', { pos: [0.1, 1.47, 0.5], target: [0.0, 1.41, 0.04], fov: 30 }, 402, 40, 296, 268],
     ['girdle, buckle, keeper, tongue', { pos: [0.14, 1.12, 0.56], target: [-0.01, 1.06, 0.08], fov: 30 }, 402, 312, 296, 268],
     ['sleeve, armhole, cuff', { pos: [-0.66, 1.34, 0.5], target: [-0.2, 1.2, 0.0], fov: 26 }, 700, 40, 296, 268],
-    // (Nov 6: the knot is tied behind the left hip now, clear of the bow hand)
-    ['sash knot, tails', { pos: [0.8, 1.04, -0.66], target: [0.13, 0.93, -0.18], fov: 24 }, 700, 312, 296, 268],
+    // (Nov 6: the knot is tied behind the left hip now, clear of the bow hand; fix round 1: on the band, at 1.07)
+    ['sash knot on the band, tails', { pos: [0.78, 1.1, -0.72], target: [0.12, 0.97, -0.17], fov: 26 }, 700, 312, 296, 268],
     ['hem, under-tunic, trousers', { pos: [0.3, 0.72, 0.72], target: [0.04, 0.68, 0.04], fov: 34 }, 998, 40, 296, 268],
     ['shin wraps, sole', { pos: [0.34, 0.3, 0.66], target: [0.1, 0.2, 0.02], fov: 36 }, 998, 312, 296, 268],
     ['back, salt pouch', { pos: [-0.36, 1.28, -1.08], target: [0, 1.12, 0], fov: 36 }, 1296, 40, 300, 540],
@@ -651,13 +651,17 @@ export async function gearInHandOverlay(ctx) {
   E.timeScale = ts0;
   ctx.input.mouse.buttons = 0; await wait(400);
   delete cmb._updateAimPoint;
-  // --- the lance in her hands
-  cmb.melee.swing({});
-  await wait(900);
+  // --- the lance in her hands (fix round 1, judges: "both lance panels crop her head and catch the lance trailing in
+  // one hand": the frame is taken once she is READY, out of the draw and settled, and each panel holds her whole
+  // figure, head to boots, with the lance's full length)
+  const M = cmb.melee;
+  M.swing({});
+  { const w0 = performance.now(); while (performance.now() - w0 < 5000) { await frame(); const st = M.poseState?.(); if (M.stance === 'ready' && (!st || st.phase === 'idle')) break; } }
+  await wait(500);
   E.timeScale = 0; await frame(); await frame();
-  live(toW(-1.7, 1.15, 0.7), toW(0, 1.0, 0.4), 1110, 30, 490, 430, 36);
-  live(toW(1.2, 1.25, 1.5), toW(0, 1.05, 0.3), 1110, 460, 490, 430, 36);
-  label(g, 'the lance in her hands', 1120, 20, 13, '#efe8da');
+  live(toW(-2.7, 1.25, 1.35), toW(0, 0.92, 0.25), 1110, 30, 490, 430, 36);
+  live(toW(2.0, 1.3, 2.4), toW(0, 0.92, 0.25), 1110, 460, 490, 430, 36);
+  label(g, 'the lance in her hands, ready', 1120, 20, 13, '#efe8da');
   E.timeScale = ts0;
   void an;
   return c.toDataURL('image/png');

@@ -33,10 +33,42 @@ const _qA = new THREE.Quaternion(), _qB = new THREE.Quaternion(), _qC = new THRE
 const _vA = new THREE.Vector3();
 const _qS = new THREE.Quaternion(), _qD = new THREE.Quaternion();
 const QUIVER_LANCE_SWING = 0.52;       // radians: the right elbow, lance in hand, pushes the mouth back past upright
-const QUIVER_LANCE_ROLL = 0.22;        // ... and its foot, coming forward, out past her thigh
+const QUIVER_LANCE_ROLL = 0.3;         // ... and its foot, coming forward, out past her thigh (fix round 1: 0.22 -> 0.3, the heavy's stride met it)
 const QUIVER_SWING_RATE = 7;           // per second, toward that hold
 
 const _W1 = new Float64Array(1);
+/** Fix round 1: the gap the quiver keeps from her right arm and shin (m, axis to axis), and its largest push (rad). */
+const QUIVER_CLEAR = 0.115, QUIVER_PUSH_MAX = 0.45;
+const _mQ = new THREE.Matrix4();
+const _pA = new THREE.Vector3(), _pB = new THREE.Vector3(), _pC = new THREE.Vector3(), _pT = new THREE.Vector3(), _pF = new THREE.Vector3(), _vB = new THREE.Vector3();
+/** _QS: [gap, push x, push y, lever, tube point x, y, z, push z] of the worst approach this frame. */
+const _QS = new Float64Array(8);
+/**
+ * The closest approach of segment [a0,a1] (a limb) to [b0,b1] (the tube from its band), into `QS` when it beats the
+ * gap held there: the gap, the unit push (limb -> tube), the lever (band to the tube's point) and the tube's point.
+ */
+function _segPush(a0, a1, b0, b1, QS) {
+  const ux = a1.x - a0.x, uy = a1.y - a0.y, uz = a1.z - a0.z, vx = b1.x - b0.x, vy = b1.y - b0.y, vz = b1.z - b0.z;
+  const wx = a0.x - b0.x, wy = a0.y - b0.y, wz = a0.z - b0.z;
+  const a = ux * ux + uy * uy + uz * uz, b = ux * vx + uy * vy + uz * vz, c = vx * vx + vy * vy + vz * vz;
+  const d = ux * wx + uy * wy + uz * wz, e = vx * wx + vy * wy + vz * wz, D = a * c - b * b;
+  let s = 0;
+  if (D > 1e-12) { s = (b * e - c * d) / D; if (s < 0) s = 0; else if (s > 1) s = 1; }
+  let t = 0;
+  if (c > 1e-12) t = (b * s + e) / c;
+  if (t < 0) { t = 0; if (a > 1e-12) { s = -d / a; if (s < 0) s = 0; else if (s > 1) s = 1; } } else if (t > 1) { t = 1; if (a > 1e-12) { s = (b - d) / a; if (s < 0) s = 0; else if (s > 1) s = 1; } }
+  const qx = b0.x + vx * t, qy = b0.y + vy * t, qz = b0.z + vz * t;
+  let dx = qx - (a0.x + ux * s), dy = qy - (a0.y + uy * s), dz = qz - (a0.z + uz * s);
+  const g = (dx * dx + dy * dy + dz * dz) ** 0.5;
+  if (!(g < QS[0])) return;
+  // the push, square to the tube (sliding along it opens nothing)
+  const vl = c > 1e-12 ? (dx * vx + dy * vy + dz * vz) / c : 0;
+  dx -= vx * vl; dy -= vy * vl; dz -= vz * vl;
+  const pl = (dx * dx + dy * dy + dz * dz) ** 0.5;
+  if (pl < 1e-6) return;
+  QS[0] = g; QS[1] = dx / pl; QS[2] = dy / pl; QS[7] = dz / pl;
+  QS[3] = t * (c ** 0.5); QS[4] = qx; QS[5] = qy; QS[6] = qz;
+}
 /** out = slerp(identity, q, t), into its fields (three.js's Quaternion.slerp from the identity). */
 function _slerpFromId(out, q, t) {
   let x = q._x, y = q._y, z = q._z, w = q._w;
@@ -154,6 +186,9 @@ export class HeroStowKit {
     const a = new THREE.Vector3(), b = new THREE.Vector3();
     m.getVertexPosition(lo, a); m.localToWorld(a);
     m.getVertexPosition(hi, b); m.localToWorld(b);
+    this._quiverFoot = par.worldToLocal(a.clone());
+    this._quiverTop = par.worldToLocal(b.clone());
+    this._qAx = new THREE.Vector3(1, 0, 0); this._qPush = 0;
     this._quiverHang = par.worldToLocal(a.lerp(b, this.entry?.extras?.r5StowKit?.stow?.quiver?.hangK ?? 0.65));
     const Qm = model.getWorldQuaternion(new THREE.Quaternion()).invert();
     this._pelvisBindQ = par.getWorldQuaternion(new THREE.Quaternion()).premultiply(Qm);
@@ -195,10 +230,67 @@ export class HeroStowKit {
       _axisAngle(_qS, _vA, -QUIVER_LANCE_ROLL * this._quiverSwing);
       sock.quaternion.multiply(_qS);
     }
+    // FIX ROUND 1 (judges: "the quiver into the right sleeve at a sprint, into the shin in the heavy"): her right arm
+    // pushes the quiver's upper half away where it comes within QUIVER_CLEAR of it, and her right shin its lower
+    // half, as a strap-hung tube is pushed: a turn about the band, eased in fast and out slowly
+    if (an?.b?.loArmR && this._quiverTop) this._pushQuiver(an, sock, h, dt);
     // about the band: p' = q p + t, with t = h - q h
     _vA.copy(h).applyQuaternion(sock.quaternion);
     sock.position.copy(h).sub(_vA);
     sock.updateWorldMatrix(false, false);
+  }
+
+  /**
+   * The arm's and the shin's push on the quiver (fix round 1), in the pelvis's frame: the closest approach of the
+   * right upper arm + forearm to the tube from the band up, and of the right shin to the tube from the band down. A
+   * gap under QUIVER_CLEAR turns the tube about the band by what it takes to open it (capped), along the shortest
+   * way out; `sock.quaternion` takes that turn after the hold. No allocation: module scratch and typed slots only.
+   */
+  _pushQuiver(an, sock, h, dt) {
+    const par = sock.parent;
+    _mQ.copy(par.matrixWorld).invert();
+    const b = an.b;
+    b.handR.bone.updateWorldMatrix(true, false);       // (the arm's chain, posed this frame)
+    _pA.setFromMatrixPosition(b.upArmR.bone.matrixWorld).applyMatrix4(_mQ);
+    _pB.setFromMatrixPosition(b.loArmR.bone.matrixWorld).applyMatrix4(_mQ);
+    _pC.setFromMatrixPosition(b.handR.bone.matrixWorld).applyMatrix4(_mQ);
+    // the tube's top and foot now (the hold already in sock.quaternion), about the band
+    _pT.copy(this._quiverTop).sub(h).applyQuaternion(sock.quaternion).add(h);
+    _pF.copy(this._quiverFoot).sub(h).applyQuaternion(sock.quaternion).add(h);
+    const QS = _QS;
+    QS[0] = 9; QS[3] = 0;
+    // upper half vs the arm (two segments), lower half vs the shin
+    _segPush(_pA, _pB, h, _pT, QS);
+    _segPush(_pB, _pC, h, _pT, QS);
+    if (b.calfR && b.footR) {
+      b.footR.bone.updateWorldMatrix(true, false);
+      _pA.setFromMatrixPosition(b.calfR.bone.matrixWorld).applyMatrix4(_mQ);
+      _pB.setFromMatrixPosition(b.footR.bone.matrixWorld).applyMatrix4(_mQ);
+      _segPush(_pA, _pB, h, _pF, QS);
+    }
+    // the turn that opens the worst gap: about axis = tube x push, by (clear - gap) / lever
+    let want = 0;
+    if (QS[0] < QUIVER_CLEAR) {
+      want = (QUIVER_CLEAR - QS[0]) / (QS[3] > 0.05 ? QS[3] : 0.05);
+      if (want > QUIVER_PUSH_MAX) want = QUIVER_PUSH_MAX;
+      // axis = (point on the tube - h) x (push direction): turning the tube point along the push
+      const tx = QS[4] - h.x, ty = QS[5] - h.y, tz = QS[6] - h.z, px = QS[1], py = QS[2], pz = QS[7];
+      let ax = ty * pz - tz * py, ay = tz * px - tx * pz, az = tx * py - ty * px;
+      const al = (ax * ax + ay * ay + az * az) ** 0.5;
+      if (al > 1e-6) { ax /= al; ay /= al; az /= al; const k = 0.5; this._qAx.x += (ax - this._qAx.x) * k; this._qAx.y += (ay - this._qAx.y) * k; this._qAx.z += (az - this._qAx.z) * k; }
+    }
+    let k = dt * (want > this._qPush ? 24 : 5);
+    if (!(k > 0)) k = 0; else if (k > 1) k = 1;
+    this._qPush += (want - this._qPush) * k;
+    if (this._qPush > 0.002) {
+      _vB.copy(this._qAx);
+      const l = (_vB.x * _vB.x + _vB.y * _vB.y + _vB.z * _vB.z) ** 0.5;
+      if (l > 1e-6) {
+        _vB.x /= l; _vB.y /= l; _vB.z /= l;
+        _axisAngle(_qS, _vB, this._qPush);
+        sock.quaternion.premultiply(_qS);
+      }
+    }
   }
 
   attach() {
@@ -282,7 +374,7 @@ export class HeroStowKit {
     const r = this.detach();
     if (this.socket) { this.socket.removeFromParent(); this.socket = null; }
     if (this.quiverSocket) { this.quiverSocket.removeFromParent(); this.quiverSocket = null; }
-    this._quiverHang = null; this._pelvisBindQ = null;
+    this._quiverHang = null; this._pelvisBindQ = null; this._quiverTop = null; this._quiverFoot = null;
     this.carry = null;
     return r;
   }

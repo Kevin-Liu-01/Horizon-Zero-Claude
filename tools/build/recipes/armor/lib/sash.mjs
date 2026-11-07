@@ -185,7 +185,7 @@ export function sashKnotTied(c, { side, up, out }, { joint, rect, w = 0.05, h = 
   const at = (a, b, e) => V.add(V.add(V.add(c, V.mul(side, a)), V.mul(up, b)), V.mul(out, e));
   // the core: u along her side, a round the side axis (up, out); its back flattened onto the band
   {
-    const NU = 9, NA = 10, base = g.pos.length / 3;
+    const NU = 9, NA = 9, base = g.pos.length / 3;
     for (let i = 0; i <= NU; i++) {
       const u = i / NU, x = (u - 0.5) * w;
       const end = Math.sqrt(Math.max(0.0, 1 - Math.pow(Math.abs(2 * u - 1), 2.6))) * 0.9 + 0.1;
@@ -214,24 +214,27 @@ export function sashKnotTied(c, { side, up, out }, { joint, rect, w = 0.05, h = 
     }
     for (let r = 0; r < NV; r++) for (let k = 0; k < NK; k++) { const q = base + r * (NK + 1) + k; quad(g, q, q + 1, q + NK + 1, q + NK + 2, false); }
   }
-  // the ears: a flattened tube on a U from the core's end out and back, the loop open in the middle
+  // the ears: each a loop of the band folded back on itself and squashed, as a bow's wing: its path runs out to the
+  // side and back in the (side, out) plane, its WIDTH stands across that plane (up), so from behind it shows the
+  // band's broad face, puffed open at the fold, never an edge-on wire
   for (const sg of [-1, 1]) {
     const NP = 8, NS = 6, base = g.pos.length / 3;
-    const dirO = V.norm(V.add(V.mul(side, sg), V.mul(up, -earDown)));      // the loop droops a little
-    const plane = V.norm(V.cross(dirO, out));                               // the loop's in-plane perpendicular
+    const dirO = V.norm(V.add(V.mul(side, sg), V.mul(up, -earDown)));      // the wing droops a little
+    const wide = V.norm(V.cross(out, dirO));                                // the band's width: across the loop's plane
     const path = [];
     for (let i = 0; i <= NP; i++) {
       const a = (i / NP) * Math.PI;
-      const along = w * 0.34 + Math.sin(a) * ear, across = Math.cos(a) * (h * 0.36) * (1 - 0.35 * Math.sin(a));
-      path.push(V.add(V.add(V.add(c, V.mul(dirO, along)), V.mul(plane, across)), V.mul(out, d * 0.3 + 0.004 * Math.sin(a))));
+      const along = w * 0.3 + Math.sin(a) * ear, depth = Math.cos(a) * d * 0.3 * (0.6 + 0.4 * Math.sin(a));
+      path.push(V.add(V.add(c, V.mul(dirO, along)), V.mul(out, d * 0.32 + depth)));
     }
     for (let i = 0; i <= NP; i++) {
       const p = path[i], t = V.norm(V.sub(path[Math.min(NP, i + 1)], path[Math.max(0, i - 1)]));
-      const nIn = V.norm(V.cross(out, t));                                // thin axis: in the loop's plane
-      const puff = 1 + 0.25 * Math.sin((i / NP) * Math.PI);
+      const thin = V.norm(V.cross(wide, t));
+      const f = Math.sin((i / NP) * Math.PI), puff = 1 + 0.6 * f;            // fuller at the fold
+      const wd = earW * (0.7 + 0.3 * f);
       for (let k = 0; k <= NS; k++) {
         const a = (k / NS) * TAU;
-        const q = V.add(V.add(p, V.mul(out, Math.cos(a) * earW * 0.5 * puff)), V.mul(nIn, Math.sin(a) * earT * 0.5 * puff));
+        const q = V.add(V.add(p, V.mul(wide, Math.cos(a) * wd * 0.5)), V.mul(thin, Math.sin(a) * earT * 0.5 * puff));
         push(q, [rect[0] + rect[2] * (0.08 + 0.42 * (i / NP)), rect[1] + rect[3] * (0.06 + 0.88 * (k / NS))]);
       }
     }
