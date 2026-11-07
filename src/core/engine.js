@@ -1439,7 +1439,7 @@ export class Engine {
 
   /**
    * L-16 micro-benchmark (measurement only): the mean GPU+submit ms of one `pass.render` from the
-   * scene target into a scratch target, n times between two gl.finish() fences. A post item's cost lives
+   * scene target into a scratch target, n times between two readback fences. A post item's cost lives
    * entirely in its pass, and on ANGLE/Metal a whole-frame A/B is ±1-3 ms of noise at these frame times,
    * so post items are A/B'd here (tools/look/ab-time-page.mjs). Allocates its scratch target once.
    */
@@ -1453,11 +1453,15 @@ export class Engine {
     const was = pass.renderToScreen;
     pass.renderToScreen = false;
     this._syncLook();
+    // fences: a 1-pixel readPixels waits for the GPU (gl.finish does not on ANGLE/Metal: r4 read 2 us per
+    // full-screen pass with it); the fixed readback latency cancels in an on/off difference
+    const px = this._benchPx || (this._benchPx = new Uint8Array(4));
+    const fence = () => { r.setRenderTarget(rt); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); };
     pass.render(r, rt, read, 0, false);   // warm: a define change compiles here, not inside the clock
-    gl.finish();
+    fence();
     const t0 = performance.now();
     for (let i = 0; i < n; i++) pass.render(r, rt, read, 0, false);
-    gl.finish();
+    fence();
     const ms = (performance.now() - t0) / n;
     pass.renderToScreen = was;
     r.setRenderTarget(null);

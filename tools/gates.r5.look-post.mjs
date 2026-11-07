@@ -584,19 +584,21 @@ const BLOOM = look(`
     const coreR = 0.12, ringR = 0.3;
     const mk = (r, c, z) => { const m = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(c.r, c.g, c.b), fog: false }));
       m.position.copy(pos).addScaledVector(dir, -z); m.lookAt(cam2.position); m.name = 'look-lamp-probe'; __C.scene.add(m); return m; };
-    const mRing = mk(ringR, ring, 0), mCore = mk(coreR, core, 0.01);
+    // the core alone (r4 measured the halo from the edge of a 2.5x ring disc, which made the bar a tie by
+    // construction): the halo is how far from the core's centre the bloom still adds >= 3 L*
+    const mRing = null, mCore = mk(coreR, core, 0.01);
     await frames(4);
     const c = await grabCanvas();
     const pp = pos.clone().project(cam2); const cx = (pp.x * 0.5 + 0.5) * c.W, cy = (1 - (pp.y * 0.5 + 0.5)) * c.H;
     const pxPerM = c.H / (2 * Math.tan(cam2.fov * Math.PI / 360) * 40);
     const coreRpx = coreR * pxPerM, ringRpx = ringR * pxPerM;
     // the halo: how far out from the disc edge the frame stays >= 3 L* above the same ray with bloom off
-    const ray = (cc) => { const o = []; for (let k = 0; k < 60; k++) { const x = Math.round(cx + ringRpx + k), y = Math.round(cy); if (x >= cc.W) break; const i = (y * cc.W + x) * 4; o.push(LS.srgb8ToLab(cc.px[i], cc.px[i + 1], cc.px[i + 2])); } return o; };
-    const rayRgb = (cc) => { const o = []; for (let k = 0; k < 60; k++) { const x = Math.round(cx + ringRpx + k), y = Math.round(cy); if (x >= cc.W) break; const i = (y * cc.W + x) * 4; o.push([cc.px[i], cc.px[i + 1], cc.px[i + 2]]); } return o; };
+    const ray = (cc) => { const o = []; for (let k = 0; k < 60; k++) { const x = Math.round(cx + coreRpx + k), y = Math.round(cy); if (x >= cc.W) break; const i = (y * cc.W + x) * 4; o.push(LS.srgb8ToLab(cc.px[i], cc.px[i + 1], cc.px[i + 2])); } return o; };
+    const rayRgb = (cc) => { const o = []; for (let k = 0; k < 60; k++) { const x = Math.round(cx + coreRpx + k), y = Math.round(cy); if (x >= cc.W) break; const i = (y * cc.W + x) * 4; o.push([cc.px[i], cc.px[i + 1], cc.px[i + 2]]); } return o; };
     const rOn = ray(c);
     b.enabled = false; await frames(3); const cOff = await grabCanvas(); const rOff = ray(cOff); b.enabled = __E.tier.bloom;
     let reach = 0; for (let k = 0; k < Math.min(rOn.length, rOff.length); k++) if (rOn[k][0] - rOff[k][0] >= 3) reach = k + 1;
-    const haloR = ringRpx + reach;
+    const haloR = coreRpx + reach;
     const hueOf = (l) => { let h = Math.atan2(l[2], l[1]) * 180 / Math.PI; return h < 0 ? h + 360 : h; };
     const tokHue = hueOf(LK.srgbToLab([1, 0x2D / 255, 0x8C / 255], [0, 0, 0]));
     // the halo's hue is the hue of the light bloom adds (on - off in linear sRGB over the halo), not of the
@@ -610,8 +612,8 @@ const BLOOM = look(`
     const haloLab = LK.srgbToLab([enc(addL[0] / mx), enc(addL[1] / mx), enc(addL[2] / mx)], [0, 0, 0]);
     let dh = hueOf(haloLab) - tokHue; if (dh > 180) dh -= 360; if (dh < -180) dh += 360;
     out.c = { coreRpx: +coreRpx.toFixed(1), ringRpx: +ringRpx.toFixed(1), haloRpx: +haloR.toFixed(1), haloOverCore: +(haloR / coreRpx).toFixed(2), haloHueDelta: +dh.toFixed(1),
-      ok: haloR >= 2.5 * coreRpx && Math.abs(dh) <= 15, note: 'probe discs at the lamp system\\'s solved hostile ring and core HDR (lamps.coreHdr / lampHdr), 40 m on the lens axis' };
-    [mRing, mCore].forEach((m) => { __C.scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+      ok: haloR >= 2.5 * coreRpx - 1e-6 && Math.abs(dh) <= 15, note: 'a probe disc at the lamp system\\'s solved hostile core HDR (lamps.coreHdr), 40 m on the lens axis, alone' };
+    [mRing, mCore].filter(Boolean).forEach((m) => { __C.scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
     unstage();
   }
   const pass = out.a.ok && out.b?.ok && out.c?.ok && out.d.ok;

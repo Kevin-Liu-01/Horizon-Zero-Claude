@@ -98,7 +98,7 @@ CORE_OVER (the lamp system re-solves on any threshold change). The W0 values are
 - `tools/look/ab-time.mjs` (node driver) + `tools/look/ab-time-page.mjs` (page): per A21 scenario, every item
   estimated ≥ 0.10 ms A/B'd alone on the whole frame and the rest as one group, 4 interleaved rounds; an item that
   registers a `bench` (a post item whose cost lives in one pass: L-01, L-02, L-07) is A/B'd on that pass alone
-  (`engine.benchPass(pass, n)`: n renders between two gl.finish fences), because a whole-frame A/B at 18–20 ms is
+  (`engine.benchPass(pass, n)`: n renders between two 1-pixel readback fences), because a whole-frame A/B at 18–20 ms is
   ±1–3 ms of noise on this machine (r3: the same look group read +2.87 / +1.60 / +0.15 ms). Rows ≤ 0.45 ms, draws
   ≤ 350. A runner row (`A-look-ledger-box`) samples the box in node right before the run and hands it to the gate.
 - `tools/look/gpu-attrib.mjs` + `tools/look/gpu-attrib-page.mjs`: the build first (git SHA, tree, dirty count),
