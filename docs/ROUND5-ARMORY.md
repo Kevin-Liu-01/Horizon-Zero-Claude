@@ -1,9 +1,61 @@
 # ROUND 5 — lane `armory`, wave W1
 
-Plan: `docs/ROUND5-PLAN.md` §2 (armory row), §1.2, §3.2, §4.1, §9 "armory (W1, W3)", rulings R16, R31, R38, R54, R62. Port 5257.
+Plan: `docs/ROUND5-PLAN.md` §2 (armory row), §1.2, §3.2, §4.1, §9 "armory (W1, W3)", rulings R16, R31, R38, R54, R62, R64, R66. Port 5257.
 Run the block with `nice -n 10 node tools/gates.mjs --port 5257 --lane armory` from a scratch cwd (auto-discovered, `tools/gates.r5.armory.mjs`).
 
-## 0. Relaunch, Nov 6 (this pass)
+## F1. Fix round 1 (Nov 7)
+
+The two W1 judges' findings, fixed in place. Sections 0–5 below are the Nov 6 pass, kept as the record. Nothing here is committed by me (the orchestrator checkpoints the tree). The C-06 Starter re-cut (sleeveless top, harness, bracers; ROUND5-LOOK) is fix round 2 and is not started; everything below was chosen so that it carries over to it: the binding, the collar, the shader's weave, the knot and its swing, the fit.
+
+### F1.1 What changed, by finding
+
+**Matrix, armory's own clauses (blocker).**
+
+- **The front of each armhole.** The binding every rim point (below) put 23–27 more vertices inside her at full draw. They sat on the bow arm's armhole front, where the deltoid and the chest come forward. Three changes, measured on Brea's own body in the 61 dumped poses (probe `matrixd`, Brea's skin):
+  - the smock round the armhole's front keeps 65 % of its clavicle weight (the old rule moved it all to spine_03 below 1.47 m);
+  - a soft 7.5 mm bump moves the smock, its binding and the yoke under it off her there before the fit;
+  - `PAN_FIT` lets the fit give that region a full ease (it was capped at 5 mm with the yoke).
+  Pan I at full draw: 0.63 / 0.72 % with the new binding and none of these, 0.26 / 0.32 % with them (it was 0.40 / 0.50 % before this round).
+- **The yoke and the collar's back.** The yoke's sides ride a third of their clavicle; the collar's back, now kept down to 1.492 m (the window, below), takes up to 88 % of the neck.
+- **Ash I's cowl.** A second fit on the cowl alone (up to 3 cm, in a 6 cm field, smoothed four times), and the loose turn rides up to 45 % of its clavicle where it lies on the shoulder. Probe at full draw: cowl 26–28 vertices → 9–10; Ash 0.72 / 0.76 % → 0.38 / 0.40 %. Its top turn sits 8 mm lower and 4 mm further off under her chin: the head clause reads 0.
+- **Pan III's scutes** take a share of the upper arm, the same for every vertex of a tile (12 / 30 / 50 % from the inside out), so each stays a rigid plate; their front reach is two thirds of their back's. Probe at full draw 0.52 / 0.56 % → 0.24 / 0.27 %; scute vertices inside her 11–12 → 4–5.
+- **The quiver** (`stowkit._pushQuiver`): her right upper arm and forearm push the tube's upper half, her right shin its lower half, wherever they come within 11.5 cm axis to axis; the tube turns about its band by what opens the gap (at most 0.45 rad), eased in fast and out slowly. The lance's roll of its foot is 0.30 rad (was 0.22).
+- **Pan II's back hat** over the stowed bow sits 16 mm further out.
+- **The left ankle in the lance's stance.** The pose dump now records the ready stance over 1.5 s (`idle-lance-1..6`) and the frame after each strike (`light1`, `heavy1`), so the fit sees the moments the matrix samples.
+- **The matrix row samples more.** Each row reads several frames of its pose and keeps the worst of each clause on its own: four across the sprint's stride, three over the held idle and full-draw poses (0.1 s apart), three consecutive frames from the strike's contact. A favourable moment can no longer pass a row.
+
+**A-variant-motion-rerun.** The row no longer re-codes anything. Per variant it equips the variant and runs the owners' own asserts, verbatim, from their files: hero-body's `A-run-arms` and `A-wrap-clear` (flat 46 m strip, sprint-stop at four pitches plus the two crouched rows, the M10 capsule minus its half-thickness, the backswing and speed clauses), and `A-stow-clearance`. Melee owns that last row at its W1 exit and its file is not in this tree, so until it is, the row runs `A-stow-clearance@armory`, which now grades every clause of plan §9 including the boom (`matrix.js boomPen`: the boom segment from `camPivot` and from `camOrbit` to the lens, against each shown piece's line at melee's radii, ≤ 0.02 m, at all 48 sweep frames). When `tools/gates.r5.melee.mjs` lands, melee's row is used instead, by name.
+
+**V-pan-closeup.**
+
+- **The armhole hook.** The binding is on every rim point and lies ON the cloth (`smock.mjs bindingOn`): each profile point on the cloth side is snapped to the smock's local surface and lifted along that surface's normal. The old strip was offset along each rim vertex's own normal, which leans out by tens of degrees over the shoulder where the cap is pushed proud of the sleeve, so it stood off as a fin. The cut rims themselves are smoothed in place first (two passes, every welded copy moved), so no jag of the clip stands past the binding as a tab.
+- **The collar window.** The collar's back is kept down to 1.492 m, under the smock's back neckline (1.515), instead of from 1.53: the skin the hide bit culls there showed the world through her. Its two front corners are rounded down into the opening over their last 3 cm.
+- **The knot** (`sash.mjs sashKnotTied`) sits ON the band at 1.075 m, behind the left hip: a gathered roll with the tying turn standing proud round its middle, a turn of the band coming down into it, and two squashed loops whose broad face shows from behind, like a bow's wings. It used to hang 7–9 cm under the band.
+- **The tails** hang from under the knot with rolled hems (the cloth thickens to 6 mm over its outer fifth with a half-round edge), gathered pleats easing out, a twist and a bias cut.
+- **The tails' motion.** They ride a new joint, `sash_swing`, standing at the knot under the pelvis. `src/hero/outfit.js` (`SashSwing`) turns it every frame: a quarter of her left thigh's swing about the hip joint, plus a damped pendulum about the knot driven by the pelvis's acceleration in character space. The pendulum has two angles, out from the hip (−0.04 to 0.5 rad, never in toward her) and round it (±0.3 rad). The skin ramps from the pelvis at the knot to the joint down the tails. The sash is 884 tris (bible ≤ 900).
+- **The smock's albedo.** The dye's blots were noise stretched 3.3 × down the cloth at ±10 %, which read as wood grain; they are round and ±3.5 %. The weft's texel-wide lines and slubs are at 15 % (`cloth(..., { weft })`). The warp's streaks stay, at ±8 %.
+- **The bodice is modelled** (`draftSmock`'s new `bodice(y, th, yNeck)`), on the painter's own fields: gathers falling from the bound neckline (up to 6.7 mm), the drag folds fanning from the two high points of the chest (up to 7 mm), the pull from the shoulder blades down the back, and the felled side seams as a 1.2 mm ridge with a groove each side. Every fold is outward-biased. The painted drag folds keep their shade and halve their height so they do not double. The smock is 64 columns (was 60).
+- **The under-tunic hem.** The slit corners are cut round, 2 cm up over the last 0.14 rad of each panel. The hem is a rolled 3.2 mm lip, a shade lighter, with a stitched turn.
+- **The cuffs** have 18 sides (were 12), a smoothed radius and a rounder roll. The carmine lining (bible: cuffs) is one piped edge of even width, turned out at the lip.
+- **The girdle and the brass.** The leather's texel-scale pebble is at a third. The girdle has a 3.4-texel burnished cut edge, glossier (roughness 0.3) and rounded, and soft creases across it. The cloth shader's leather grain is at 0.09 (was 0.14). Brass carries brown tarnish over most of it, verdigris in its recesses and pits, and rubbed-bright highs, with metalness and roughness to match.
+- **The linen weave** (`clothShader.js`). The detail tile is 32 threads (0.8 mm at the sets' 2.6 cm tile; it was 16 threads, 1.6 mm, which read as a basket at 0.5 m). Each thread has its own thickness and a slub every few crossings, and the threads wander a twelfth of a pitch off their line. A third sample at 0.21 × carries the slubs' 4–15 mm texture between the threads' range and the atlas's.
+- **The sling** is one strap from the left hip over the right shoulder and down the back, 8.5 mm off the cloth. Its two halves used to meet in a cut end on the shoulder, which read as a notch in the smock.
+
+**V-variant-sheet.** Pan III changes shape:
+- its outer scute is a flared lame standing 3.2 cm off the deltoid, out to 0.30 m from her centre (the shoulder line is at ~0.21);
+- the shin guards wrap ±1.2 rad (were ±0.95), stand 2–3 cm off the shin and flare at the knee;
+- a brine-stiffened hem band (the third added piece, on the crust cell) laps the skirt's hem and hangs 13 cm below it, so at 20 m Pan III's skirt reaches the knee where Pan I's stops above it.
+In 64 px black-fill masks (bind pose, offline), Pan I against Pan III goes from IoU 0.974 / 0.981 (front / side) to 0.950 / 0.926.
+
+**V-gear-in-hand.**
+- **The arrow on the fist.** The Sabina's model hangs at `MODEL_Y` = +0.042 m from the hand's joint (the base class hangs a bow's model at −0.1 m, under it). The animator's draw solve reads that offset live (bow hand = anchor − nock offset), so the nock and the arrow are 6 cm over the hand's joint, on top of her fist, and the solve places the hand under the arrow. The stave's grip is centred at `GRIP_Y` −0.027 m, so the arrow crosses at the wrap's top edge, over her index finger.
+- **The lance panels** are filmed once she is ready (stance `ready`, phase idle), each with her whole figure and the lance's full length.
+
+**Allocation (A-alloc-rate, 4 KB/s per function from the W1 exit).** See F1.2.
+
+<!-- F1-RESULTS -->
+
+## 0. Relaunch, Nov 6 (previous pass)
 
 The W1 builder that wrote sections 1–5 below stopped on Nov 3. This pass read that work, kept it, verified it, and went after what it left open and what the orchestrator's carry-over named: "the alidade cord at the collar and the smock read a tier below the new wrap" and "alloc row carry.js:601/256 still over 4 KB/s". Nothing here is committed by me (the orchestrator checkpoints the tree).
 
