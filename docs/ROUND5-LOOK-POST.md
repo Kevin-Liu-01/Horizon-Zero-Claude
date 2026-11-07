@@ -164,7 +164,7 @@ engine.setLookHour(h, weather = null, calimaWeight = null, opts = null)   // wor
 engine.setLookEnabled(on)                  // false = the Round-5 W0 output (ACES 0.94, W0 grade, W0 bloom)
 engine.registerLookItem(id, { owner, estMs, title, set(on), get() })   // -> engine.lookItems (Map)
 engine.gpuAttrib(on = true) / engine.gpuAttribTake()                   // L-18 raw timer segments
-engine.benchPass(pass, n = 100)            // L-16: ms per pass render (gl.finish fences); measurement only
+engine.benchPass(pass, n = 100)            // L-16: ms per pass render (readback fences); measurement only
 engine.holdFrame(on = true)                // U-03: a held render() submits nothing
 engine.disposeLook()                       // the two LUT slots
 export const QUALITY_TIERS[tier].look, LOOK_ROWS, LOOK_RULE2, LOOK_W0, LOOK_BLOOM,
@@ -335,7 +335,7 @@ The segment timer queries the spec planned for L-18 do not work on this machine'
 land on the first query of a command buffer even with a flush). L-18 per-pass rows are therefore skip-one marginals on
 the whole-frame timer that A21 itself reads, with an all-off interaction test for the 10 % sum rule. The raw segment
 timings are still reported (`segmentTimersRaw`) for when the platform can time them. L-16 A/Bs post items on their
-own pass (`engine.benchPass`, gl.finish fences) because a whole-frame A/B at 18–20 ms frames is ±1–3 ms of noise.
+own pass (`engine.benchPass`, 1-pixel readback fences; gl.finish does not wait on ANGLE/Metal) because a whole-frame A/B at 18–20 ms frames is ±1–3 ms of noise.
 
 ### 5.5 Not done this wave
 
