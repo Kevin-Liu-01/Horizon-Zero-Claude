@@ -64,6 +64,7 @@ const _caX = new THREE.Vector3(1, 0, 0);
 const _a16U = new THREE.Vector3();  // the A16 elbow cap's up: the aim frame's (R52)
 const _gvW = new THREE.Vector3(), _gvT = new THREE.Vector3(); // the body-step governor (`_rollExit`): world pelvis, governed
 const _trR = new THREE.Vector3();   // hero-body targeted fix round 3: `trunkReach` scratch
+const _nlC = new THREE.Vector3(), _nlD = new THREE.Vector3(), _nlA = new THREE.Vector3();   // ...and `crouchAim.nearLead`'s ray
 const _reU = new THREE.Vector3();  // elbow roll: elbow offset, perpendicular
 const _reV = new THREE.Vector3();  // elbow roll: axis x U, completes the frame
 const _reW = new THREE.Vector3();  // elbow roll: the measured height axis (char Y, or the aim frame's up)
@@ -182,6 +183,7 @@ const _efC = new THREE.Vector3();   // R5 fix round 3: the draw elbow's circle c
 const _efF = new THREE.Vector3();   // ...the head's live forward
 const _efUp = new THREE.Vector3();  // ...the aim frame's up
 const _efE = new THREE.Vector3();   // ...a candidate elbow
+const _efW = new THREE.Vector3();   // ...its forearm's direction (hero-body targeted fix round 3, `elbowForm.fore`)
 // W0b targeted fix 3: the draw arm's continuity (`tune.armFlow`) — private, never borrowed
 const _afD = new THREE.Vector3();   // the wrist target's step
 const _afS = new THREE.Vector3();   // the draw shoulder joint, char
@@ -1676,6 +1678,13 @@ export class PlayerAnimator {
      * `aimOut.rate` per second: a both-button cancel, RMB up or a crouch toggle out of the aim while strafing
      * stepped her head 0.031-0.044 m in character space on its first step. Both ways out are eased in over
      * `aimOut.easeS` s from `ease0` of the rate, so the step the aim starts to go is no jump either) */
+    // (...and, with `aimOut.inRate`, the way IN standing is capped the same way, eased in: its 13/s first step took a
+    // fifth of the stance, the chest blade and the bent T at once out of a sideways run)
+    if (AO?.inRate && this._aimW > aw0) {
+      this._aiT = (this._aiT ?? 0) + dt;
+      const eI = Math.min(1, AO.ease0 + (1 - AO.ease0) * this._aiT / AO.easeS);
+      this._aimW = Math.min(this._aimW, aw0 + AO.inRate * eI * dt);
+    } else this._aiT = 0;
     const CAo = this.T.crouchAim?.outRate;
     if ((CAo || AO) && !dead && this._aimW < aw0) {
       this._aoT = (this._aoT ?? 0) + dt;
@@ -1890,6 +1899,18 @@ export class PlayerAnimator {
       // (hero-body targeted fix round 3: the roll's crossfade into the gait, above — locomotion.js damps the
       // roll's weight to 0 at 15/s once `dodging` clears; this lands that damp on the crossfade's value)
       if (this._rhOn && this.loco.dodgeW != null) this.loco.dodgeW = this._rhL0 * this._rhS * Math.exp(15 * dt);
+      /* (hero-body targeted fix round 3, R63 b, eng judge finding 2: "the full-draw jump landing snaps 7 cm" — the air
+       * channel has one slot, and the landing swapped the jump loop's pose for the landing clip's in one step, at the
+       * same weight. An air slot that changes under weight is crossfaded over `rollExit.airX` s instead: the old
+       * clip held where it was and weighed out, the new one weighed in, the rest of the mix scaled to fill) */
+      const LX = this.T.rollExit?.airX;
+      if (LX) {
+        const cur = this._airSlot;
+        if (this._lxSlot && cur && cur !== this._lxSlot && this.loco.actions[this._lxSlot] && (this._lxLastW ?? 0) > 0.02 && !p.dodging && !dead) {
+          this._lxOn = true; this._lxT = 0; this._lxFrom = this._lxSlot; this._lxW0 = this._lxLastW;
+        }
+        this._lxSlot = cur;
+      }
       this.loco.update(dt, {
         speed, moveAngle, crouch: p.crouching && !dead, dodging: p.dodging, dodgeK,
         dead, dieT: this._dieT, aimW,
@@ -1897,6 +1918,8 @@ export class PlayerAnimator {
         air: this._airSlot, airK: this._airK, airW: this._airClipW, airT: this._airTarget,
         act: this._actSlot, actK: this._actK, actW: this._actClipW, actT: this._actTarget,
       });
+      if (this._lxOn) this._airCrossfade(dt, p, dead);
+      if (LX) { const aS = this._airSlot ? this.loco.actions[this._airSlot] : null; this._lxLastW = aS ? aS.weight : 0; }
       this._nativeLayer(p, dt, dead);
       this.mixer.update(dt);
       this.rest.snapshotClip();
@@ -2191,8 +2214,10 @@ export class PlayerAnimator {
       // stood 0.2 m under both of her end poses, and at the down clamp the bow came within
       // the 0.5 m of the crosshair's ground hit where combat stops aiming at it: the bow
       // flickered 0.2 rad, the knuckle 0.19 m off the string, every other step)
-      if (CA && p.crouchAim && this._crouchW < 0.98) this._caT = Math.max(this._caT, Math.min(1, this._crouchW * 4));
-      else if (CA && !p.crouching && this._aimHold) this._caT = Math.min(this._caT, Math.min(1, this._crouchW * 4));
+      // (hero-body targeted fix round 3: `crouchAim.poseFollow`, how many times the crouch blend's own pace — 4 before)
+      const cF = CA?.poseFollow ?? 4;
+      if (CA && p.crouchAim && this._crouchW < 0.98) this._caT = Math.max(this._caT, Math.min(1, this._crouchW * cF));
+      else if (CA && !p.crouching && this._aimHold) this._caT = Math.min(this._caT, Math.min(1, this._crouchW * cF));
       const ct = this._caT;
       this._crouchAimW = CA ? ct * ct * ct * (ct * (ct * 6 - 15) + 10) : damp(this._crouchAimW, want, 9, dt);
       /* hero-body targeted fix round 2 (Nov 6; eng judge finding 5: "lowering the crouched aim snaps
@@ -2799,6 +2824,25 @@ export class PlayerAnimator {
   }
 
   /**
+   * hero-body targeted fix round 3 (R63 b): an air slot that changed under weight (the jump loop -> the landing,
+   * the start -> the loop) crossfades over `rollExit.airX` s: the slot it left keeps a share that weighs out on a
+   * smootherstep (held at the frame it reached: locomotion scrubs only the current slot), the new one weighs in on
+   * the same curve, and the rest of the mix is scaled to fill. Between `loco.update` and the mixer. No allocation.
+   */
+  _airCrossfade(dt, p, dead) {
+    const A = this.loco.actions, from = A[this._lxFrom], to = this._airSlot ? A[this._airSlot] : null;
+    this._lxT += dt;
+    const u = clamp(this._lxT / this.T.rollExit.airX, 0, 1), s = u * u * u * (u * (u * 6 - 15) + 10);
+    if (u >= 1 || !from || from === to || dead || p.dodging) { this._lxOn = false; return; }
+    const wF = this._lxW0 * (1 - s), wT = to ? to.weight * s : 0, left = Math.max(0, 1 - wF - wT);
+    let rest = 0;
+    for (const k in A) { const a = A[k]; if (a !== from && a !== to) rest += a.weight; }
+    if (rest > 1e-5) { const sc = left / rest; for (const k in A) { const a = A[k]; if (a !== from && a !== to) a.weight *= sc; } }
+    from.weight = wF;
+    if (to) to.weight = rest > 1e-5 ? wT : wT + left;
+  }
+
+  /**
    * W0b targeted fix 4: the crouch-aim's height, on the final pose (after the
    * ground conform and the run bob): the pelvis comes up to `crouchAim.pelvisY`
    * (character metres) by the pose's ramp, the ankles stay where they are and
@@ -2820,11 +2864,36 @@ export class PlayerAnimator {
      * loop. A leg may be straight for those steps: the reach limit below does not hold this.) */
     let near = 0;
     const cmbN = this.ctx.combat, nodeN = cmbN?.bow?.group?.parent;
-    if (CA?.nearBow && this._aimHold && pc > 0.6 && dodgeW < 0.5 && nodeN && cmbN.aimPoint) {
+    /* (hero-body targeted fix round 3, `crouchAim.nearLead` s: ...and AHEAD of a look sweeping down: her height moves at
+     * most `liftStep` a step, so at a fast sweep to the down clamp she stood up after the hit had come inside the 0.5 m
+     * and combat had flipped the bow — the hand 0.06-0.12 m off the nock. The hit the look will give `nearLead` s on, at
+     * its present pitch rate (the camera's ray pitched down that far, met with the aim point's ground), is held off too) */
+    const lead = CA?.nearLead ?? 0;
+    const pr = this._nlOk ? (pc - this._nlP) / Math.max(1e-3, this._dtA || 0.016) : 0;
+    this._nlP = pc; this._nlOk = true;
+    const pcL = lead > 0 ? Math.min(1.02, pc + Math.max(0, pr) * lead) : pc;
+    if (CA?.nearBow && this._aimHold && pcL > 0.6 && dodgeW < 0.5 && nodeN && cmbN.aimPoint) {
       nodeN.updateWorldMatrix(true, false);
       _afG.setFromMatrixPosition(nodeN.matrixWorld).sub(cmbN.aimPoint);
-      const nb2 = CA.nearBow * CA.nearBow - _afG.x * _afG.x - _afG.z * _afG.z;
-      if (nb2 > 0) near = Math.max(0, Math.sqrt(nb2) - _afG.y) * (1 - dodgeW);
+      let nb2 = CA.nearBow * CA.nearBow - _afG.x * _afG.x - _afG.z * _afG.z;
+      if (nb2 > 0 && pc > 0.6) near = Math.max(0, Math.sqrt(nb2) - _afG.y) * (1 - dodgeW);
+      const cam = this.ctx.camera;
+      if (lead > 0 && cam && pcL > pc + 1e-3) {
+        cam.getWorldPosition(_nlC); cam.getWorldDirection(_nlD);
+        _nlA.crossVectors(_nlD, Y_AXIS);
+        if (_nlA.lengthSq() > 1e-8) {
+          _nlD.applyAxisAngle(_nlA.normalize(), -(pcL - pc));
+          if (_nlD.y < -0.02) {
+            const tG = (cmbN.aimPoint.y - _nlC.y) / _nlD.y;
+            if (tG > 0.3 && tG < 200) {
+              _nlC.addScaledVector(_nlD, tG);
+              _afG.setFromMatrixPosition(nodeN.matrixWorld).sub(_nlC);
+              nb2 = CA.nearBow * CA.nearBow - _afG.x * _afG.x - _afG.z * _afG.z;
+              if (nb2 > 0) near = Math.max(near, Math.max(0, Math.sqrt(nb2) - _afG.y) * (1 - dodgeW));
+            }
+          }
+        }
+      }
     }
     if ((w < 1e-3 && near <= 0) || !pe || !b.thighL || !b.thighR) { this._caYOk = false; return; }
     pe.bone.updateMatrixWorld(true);
@@ -3951,16 +4020,19 @@ export class PlayerAnimator {
       this._atW = Math.min(aimT > w0 ? Math.min(aimT, w0 + tR) : Math.max(aimT, w0 - tR), Math.max(3 * aimW, caOut));
       if (this.T.crouchAim) this._atW = Math.min(this._atW, 1 - this._crouchW * 0.9 * (1 - this._crouchAimW));
       const want = ATK.up + ((ATK.crouch ?? ATK.up) - ATK.up) * this._crouchW;
-      const S = this._crouchW > 0.5 && ATK.shareCrouch ? ATK.shareCrouch : ATK.share;
+      // (hero-body targeted fix round 3: the crouched share blends in across the crouch, 0.3-0.7; it switched at 0.5 in
+      // one step, and a crouch toggled under the aim moved the head with it)
+      const S0 = ATK.share, S1 = ATK.shareCrouch ?? ATK.share, kS = smoothstep(this._crouchW, 0.3, 0.7);
+      const s0 = S0[0] + (S1[0] - S0[0]) * kS, s1 = S0[1] + (S1[1] - S0[1]) * kS, s2 = S0[2] + (S1[2] - S0[2]) * kS;
       let tot = 0;
       for (let it = 0; it < 2; it++) {
         this._charOf(b.pelvis.bone, _tp0); this._charOf(b.neck1.bone, _tp1);
         _tp1.sub(_tp0);
         const err = Math.max(0, Math.atan2(_tp1.z, _tp1.y) - want) * this._atW * (ATK.gain ?? 1);
         if (err < 1e-4) break;
-        this._rotL(b.spine1, X_AXIS, -err * S[0]);
-        this._rotL(b.spine2, X_AXIS, -err * S[1]);
-        this._rotL(b.spine3, X_AXIS, -err * S[2]);
+        this._rotL(b.spine1, X_AXIS, -err * s0);
+        this._rotL(b.spine2, X_AXIS, -err * s1);
+        this._rotL(b.spine3, X_AXIS, -err * s2);
         this._rotL(b.neck1, X_AXIS, err * ATK.gaze[0]);
         this._rotL(b.head, X_AXIS, err * ATK.gaze[1]);
         tot += err;
@@ -5870,7 +5942,10 @@ export class PlayerAnimator {
     _efUp.set(0, 1, 0).addScaledVector(_dA, -_dA.y);
     if (_efUp.lengthSq() < 1e-6) return;
     _efUp.normalize();
-    const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0, r52: 1, out: 0, shL: 0 });   // once
+    const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0, r52: 1, out: 0, shL: 0, fw: 0, fa: 0 });   // once
+    // (hero-body targeted fix round 3, `elbowForm.fore` [weight, rad]: the forearm along the arrow is a form target too,
+    // soft, inside the same hard bars: past `fore[1]` off the ray it costs `fore[0]` per radian, x100 as the others)
+    S.fw = (EF.fore?.[0] ?? 0) * (1 - lf); S.fa = EF.fore?.[1] ?? 0.26;
     S.out = this.T.armFlow?.outside ? 1 : 0; S.shL = _sg0.dot(this._latT);
     S.r = r; S.shU = _sg0.dot(_efUp); S.shY = _sg0.dot(this._upT); S.hR = this.T.headR.z; S.hdF = _hd.dot(_efF);
     S.hD = _sg2.dot(_dA); S.lo = EF.up[0]; S.hi = EF.up[1]; S.bh = EF.behindHand; S.bd = EF.behindHead;
@@ -5945,8 +6020,13 @@ export class PlayerAnimator {
       // the other bars mid-draw and it flipped between them)
       + S.out * Math.max(0, _efE.dot(this._latT) - S.shL);
     // ...and the form TARGETS inside them, soft (x100)
-    const soft = Math.max(0, S.lo - S.drop - u) + Math.max(0, u - S.hi) + Math.max(0, S.bh - bhd)
+    let soft = Math.max(0, S.lo - S.drop - u) + Math.max(0, u - S.hi) + Math.max(0, S.bh - bhd)
       + Math.max(0, dep - S.bd) + Math.max(0, above + 0.006) + S.r52 * Math.max(0, u + 0.006);
+    if (S.fw > 0) {
+      _efW.subVectors(_sg2, _efE);
+      const fl = _efW.length();
+      if (fl > 1e-4) soft += S.fw * Math.max(0, Math.acos(clamp(_efW.dot(_dA) / fl, -1, 1)) - S.fa);
+    }
     return hard * 1000 + soft * 100 + Math.abs(th) * 0.01;
   }
 

@@ -8363,8 +8363,9 @@ const NEW_GATES = [
               ch[i] = bC[i].distanceTo(prev.c[i]) * k60;
             }
             let dy = yaw - prev.yaw; dy -= Math.round(dy / (2 * Math.PI)) * 2 * Math.PI;
-            // the roll: a dodge's steps while p.dodging; a jump has none (take-off, air and landing are all graded)
-            const roll = act === 'dodge' && (busy || prev.busy);
+            // the roll: a dodge's steps while p.dodging (the hand-over step, the first with p.dodging clear, is graded); a
+            // jump has none (take-off, air and landing are all graded)
+            const roll = act === 'dodge' && busy;
             st.push({ t: E.simTime - t0, ex: dP - dR, busy, roll, dP, dR, rel, ch, dYaw: Math.abs(dy) * k60, aimW: +this.aimWeight.toFixed(3) });
           }
           prev = { w: bW.map((v) => v.clone()), c: bC.map((v) => v.clone()), rt: rtW.clone(), yaw, busy };
@@ -9985,6 +9986,54 @@ const NEW_VISUALS = [
       await sweepTo(0.5, 1.0, 0.125); await hold(0.3);
       await sweepTo(1.0, 0.05, 0.119); await shot('flick 1.0 -> -1.0 at 8 rad/s, at 0.05', ['GAME', 'RIGHT']);`,
     'Eight panels (against the licence-clean draw-side reference). PASS requires ALL of: in every panel the fist is at the cheek outside the hair and the fingers on the string (printed knuckle -> nock <= 0.06 m, draw > 0.9), the forearm along the arrow (printed <= 20 deg), the elbow level with or behind the arrow line, the bow arm clear of the chest, no hand or forearm behind the head; in the game camera the arrow points where the camera looks (the bow is not left behind the turn or the sweep). FAIL if the arrow points away from the view (into the sky while the camera aims down), the fingers ride off the nock, or the arm swings behind the head.'),
+  /* hero-body targeted fix round 3 (eng judge finding 3: "re-film one strafe-and-turn sequence in the game camera and
+   * from her right") */
+  transFilm('V-draw-strafe-turn',
+    'Targeted fix round 3: full draw while strafing and turning the camera: strafing right at 0.2, the camera turning left at 6 rad/s (+0.2 s) and 0.1 s after the turn stops; strafing left at 0, the camera turning right at 6 rad/s (+0.2 s) and 0.1 s after it stops; in the game camera and from her right',
+    `const yawFor = async (rate, sec) => { const t0 = E.simTime, w0 = performance.now(); let tp = t0; while (E.simTime - t0 < sec && performance.now() - w0 < 15000) { p.camYaw += rate * (E.simTime - tp); tp = E.simTime; p.camPitch = cur.pitch; if (cur.key) keys.add(cur.key); await frame(); } };
+      await scene({ pitch: 0.2, key: 'KeyD' });
+      await hold(0.6); C.input.mouse.buttons |= 1; await hold(1.4);
+      await yawFor(-6, 0.2); await shot('strafing R at 0.2, the camera turning left at 6 rad/s, +0.2 s', ['GAME', 'RIGHT']);
+      await yawFor(-6, 0.05); await hold(0.1); await shot('strafing R: 0.1 s after the turn stops', ['GAME', 'RIGHT']);
+      await scene({ pitch: 0, key: 'KeyA' });
+      await hold(0.6); C.input.mouse.buttons |= 1; await hold(1.4);
+      await yawFor(6, 0.2); await shot('strafing L at 0, the camera turning right at 6 rad/s, +0.2 s', ['GAME', 'RIGHT']);
+      await yawFor(6, 0.05); await hold(0.1); await shot('strafing L: 0.1 s after the turn stops', ['GAME', 'RIGHT']);`,
+    'Eight panels (against the licence-clean draw-side reference). PASS requires ALL of: in every panel the fist is at the cheek outside the hair and the fingers on the string (printed knuckle -> nock <= 0.06 m, draw > 0.9), the forearm along the arrow (printed <= 20 deg), the elbow level with or behind the arrow line, the bow arm clear of the chest, no hand or forearm behind the head; in the game camera the arrow points where the camera looks. FAIL if the arrow points away from the view, the fingers ride off the nock, the forearm climbs steeply to the hand, or the arm swings behind the head.'),
+  /* hero-body targeted fix round 3 (gate judge finding 2: "panels 2 -> 3: the torso goes from bent over to upright in one
+   * frame; panels 7 -> 8: she spins to face the camera in one frame") — the judge's own framing: a fixed camera 3.6 m to
+   * the side of the roll's middle, through the roll's last step and the hand-over to the gait */
+  transFilm('V-dodge-handover',
+    'Targeted fix round 3: a moving dodge\'s hand-over to the gait from a FIXED side camera (3.6 m off the roll\'s line, 1.6 m up): a jog dodge and an aimed strafe-right dodge (RMB + LMB held), each at the roll\'s last step and +0.02, +0.10 and +0.25 s after the hand-over',
+    `const P = C.engine;
+      const fixedShot = async (tag, cam) => {
+        E.requestTimeScale('studio', 0);
+        const st = stats(); const img = S.liveView(C, [cam.pos.x, cam.pos.y, cam.pos.z], [cam.tgt.x, cam.tgt.y, cam.tgt.z], { width: W, height: H, fov: 45 });
+        await frame(); E.requestTimeScale('studio', null);
+        panels.push({ img, tag: tag + ' heading ' + (((p.heading * 180 / Math.PI) % 360 + 360) % 360).toFixed(0) + ' deg', lens: 'FIXED side', st });
+      };
+      const handover = async (key, aimed, name) => {
+        await scene({ pitch: 0, key });
+        if (!aimed) C.input.mouse.buttons = 0;
+        else { await hold(0.45); C.input.mouse.buttons |= 1; }
+        await hold(1.2);
+        const P0 = p.position.clone();
+        p.dodge();
+        const dd = p._dodgeDir ? p._dodgeDir.clone().normalize() : new T3(Math.sin(p.heading), 0, Math.cos(p.heading));
+        const rt = new T3(-dd.z, 0, dd.x), mid = P0.clone().addScaledVector(dd, 2.6);
+        const cam = { pos: mid.clone().addScaledVector(rt, 3.6).add(new T3(0, 1.6, 0)), tgt: mid.clone().add(new T3(0, 0.75, 0)) };
+        const w0 = performance.now();
+        let shotRoll = false;
+        while (p.dodging && performance.now() - w0 < 15000) {
+          if (!shotRoll && (p._dodgeTime ?? 0) >= 0.53) { shotRoll = true; await fixedShot(name + ' roll, last step', cam); }
+          if (cur.key) keys.add(cur.key); await frame();
+        }
+        const tH = E.simTime;
+        for (const at of [0.02, 0.10, 0.25]) { await holdUntil(tH + at); await fixedShot(name + ' hand-over +' + at.toFixed(2) + ' s', cam); }
+      };
+      await handover('KeyW', false, 'jog dodge');
+      await handover('KeyD', true, 'aimed strafe-R dodge');`,
+    'Eight panels from one fixed side camera per dodge (the gate judge\'s framing). PASS requires ALL of: from the roll\'s last step through +0.25 s her torso rises from the roll into the run continuously — no panel pair shows the torso going from bent over to upright, or the head jumping, between the roll\'s last step and +0.02 s; after the aimed dodge she turns back toward the camera\'s heading over the panels (the printed heading changes gradually), not in one frame; the bow stays in front of her and the lance on her back. FAIL on a one-frame torso or heading snap, a limb through the body, or the bow over her head.'),
   {
     id: 'V-traversal', kind: 'visual', lane: 'hero-body', settle: 400, timeout: 60000,
     title: 'Ledge climb (pull frame), a cinder slide and a stepped climb, side views',
