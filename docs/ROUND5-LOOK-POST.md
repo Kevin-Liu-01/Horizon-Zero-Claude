@@ -6,15 +6,35 @@ this report, and the W1-exit grants on `src/instruments/lamps.js` (≤ 25 lines)
 (≤ 10 lines). Spec: `docs/ROUND5-LOOK.md` §3.1 (L-00, L-01, L-02, L-07, L-14, L-16, L-18), §4, §5.1–5.3, §7.
 References are cited `ext:<file>@<sha8>#<panel>` (ROUND5-LOOK §0.2); none is copied into the tree.
 
-**Status at the end of W1 (Nov 7).** Built and passing on 5251: AgX + CALIMA look with an exact CPU mirror
-(A-look-tonemap), the four-set grade with two half-float LUT slots, the display-keyed bloom, the lamps.js and
-sheets.js ports (A-lamp-states, A-brea-contrast, A-lamp-canon-distance PASS; A-weak40's 13:00 clauses PASS),
-the look shot suite (A-look-suite, A-look-suite-files), the per-cascade layer masks, `holdFrame`, the
-QUALITY_TIERS look rows and the two orchestrator tools. Failing for reasons outside the transform: the palette
-and highlight bars (the W0 keys and map: §5.1), A-look-bloom (b) (no sun disc until L-06). Failing and needing an
-orchestrator decision: inherited A108 (the look reveals sand/grass periodicity in its crops: §5.3). Quiet-box rows
-(A-gpu-attrib, A-look-ledger) are PENDING by design (R45). The before/after films read better in palette, shadow
-and skin, darker at the top: §4.2.
+**Status after fix round 1 (Nov 12).** Every judge finding is addressed in code or routed with evidence (§0).
+Fixed in this tree: the hour bridge no longer applies the L-03 EV and the W0 output is the W0 output at every hour
+(exposure 0.94); the grade is re-balanced (no sepia fold, violet-rose shadows, greens kept, Brea's violet the most
+saturated hue, no loss of top brightness against W0); A-look-bloom (c) was a gate bug (the probe disc was hidden by
+the engine's small-mesh cull) and passes; A-look-suite (a) now hashes two boots of the build; the lamps.js re-solve
+and the bloom threshold key on a coarse `look.solveVersion`; R48 (c)'s cull-pass churn and the shadow pass's
+program-key churn are fixed; A-look-ledger and A-gpu-attrib implement every written clause and the box witness is
+R45's. Still FAIL and needing the orchestrator: the palette and highlight bars (A-look-frame-stats, A-look-random,
+V-look-highlights, V-look-random) on the W0 map and keys, and inherited A108 (the AgX tone map itself, measured:
+§5.3). Quiet-box rows are PENDING by R45. Results of the fix-round run: §4.
+
+## 0. Fix round 1 (Nov 12): what changed, by finding
+
+Diagnostics run first (scratch `f1-b1`, one Chrome): the HDR dump of the look places, the shadow pass's
+`getProgram` census, two-boot hashes of the look places, A-look-bloom, and A108 three ways (look, `?look=nolut`,
+`?look=nodither`). Then the fix-round lane run `f1-b2` (§4). Every number below is from those runs or from node on
+the HDR dump (`tools/look/hdr-look.mjs` and a scratch tuner over the same `look.js`).
+
+| finding (judge) | what changed | measured |
+|---|---|---|
+| Hour bridge applies the L-03 EV; the W0 controls are not W0 | `_lookBridge` passes `withEv = false`; under ACES `_syncLook` sets exposure 0.94 exactly and never adopts an outside exposure write as EV (`engine.js` `_syncLook`, `_lookBridge`); the look places stage with `setLookHour(h, w, null, { ev: false })` so the gates show what play shows | ⟪b2:ev⟫ |
+| V-look-grade, V-look-before-after, R54: sepia fold, brown shadows, darker top | grade v2 (`look.grade.json` v2, `look.js` `labStage`): no rotation of the amber band beyond −2°, olive band −6° only, greens untouched, Orchil violets ×1.3; an L\*a\*b\* stage that shifts shadows toward rose-violet, scales mid b\* ×0.82, desaturates the top band and opens the top with a monotone tone curve on L\* (§1.2) | HDR dump, same frames: p99 field 73.7 (W0 73.4, r4 66.4), vista 63.3 (59.9 / 57.6), aim 70.6 (69.5 / 63.7), noon 77.0 (77.4 / 68.1), close 60.3 (56.4 / 55.0); lo20 hue field 59.7 → 44.1, vista 52.8 → 13.3, close 22.6 → 331.7; violet max ≥ grass p90 (field 41.5 vs 41.4, aim 40.5 vs 40.5, close 43.0 vs 39.0; r4: 42.2 vs 55.3); share of chroma pixels in the largest 30° band 98.3 % → 91.7 % (field), 98.3 → 83.0 (vista); bars met on the dump 22/40 (r4 14/40) |
+| A-look-bloom (c) inert, halo/core 1.00 | the gate's 0.12 m probe disc at 40 m (5 px) was HIDDEN by the engine's small-mesh cull (`sizeCullPx`; a MeshBasicMaterial does not count as a glow): r4's and the judge's runs had no lamp in frame at all. The probes opt out (`userData.noSizeCull`), like a real lamp core (emissive, glow threshold). The threshold stays display-keyed (L\* 94) | f1-b1: halo/core **5.63** (bar ≥ 2.5), hue Δ 6.8° (≤ 15); (a) brightest noon ground L\* 86.8, folded bloom 0; (d) 0 % / 0 %; (b) still no sun disc (L-06) |
+| A-look-suite (a) is within-page, not two runs | (a) now hashes every place on two BOOTS of the build in one run: the gate's page, then a fresh same-origin iframe boot of the same URL (boot 1 held, 0 draws); a diff sheet marks every differing pixel. Two boot-dependent inputs found and frozen in the look staging: the presentation clock (`engine.wallTime`, which the sky, wind, grass sway and birds read) is snapped to the next multiple of 4096 s, and the hero is settled deterministically (clip phases zeroed, 60 sim steps of exactly 1/60 s) | f1-b1 before the settle: 8–11 % of pixels differed (Brea and the grass round her only), close 75 %; ⟪b2:suite⟫ |
+| A-alloc-rate guard: instruments-core over after the lamps.js grant | `Look#solveVersion` bumps only when the exposure, a slot name or the grade mix moves, or the slot mix moves ≥ 1/16; lamps.js keys its re-solve on it (the same two lines of the grant, no new line: 17 added / 8 removed); the engine's display-keyed bloom threshold (48 evaluations of the look) is cached on it | node: `evaluate` allocates ≈ 50 B and `invert` ≈ 400 B per call (boxed double returns), so a re-solve costs ≈ 4 KB; the bridge's 1/64 steps no longer trigger it; ⟪b2:alloc⟫ |
+| R48 (c) not closed | (1) the cull pass fills its caster pool and distances by index instead of `length = 0` + push (V8 dropped the backing store every pass), selects the nearest `budget` casters by bisection on distance instead of `sort` with a closure, and marks them in a byte array instead of a Set; (2) the shadow pass's program-key churn: three r169 renders every caster with one shared depth material whose `skinning` / `instancing` flip between consecutive casters, so `setProgram` re-derives the program (getParameters + cache key + join) 18 times a frame; skinned / instanced / batched casters now get a depth material shared by their kind (`engine._depthVariant`) | f1-b1 census: 18 `getProgram` per frame from MeshDepthMaterial, 2 from one transparent double-sided MeshBasicMaterial (three's two-pass double side); selection checked against sort in node (2000 random pools, 0 differences); ⟪b2:churn⟫ |
+| A-look-ledger and A-gpu-attrib implement part of their bars | A-look-ledger: A21's W1-exit bars with every high item on (vista ≤ 17.0, herd ≤ 20.0, fight ≤ 17.0), shipped-mode `renderScale` median ≥ 0.95 (DRS restored for that read), the same bars on `low`, every enabled and landed item has a row (a tier knob the build reads during the run whose item registered no switch fails), 0 look draws outside post, render targets ≤ 170 MB and GPU bytes ≤ 450 MB with the look on; the pass bench for post items is recorded as a deviation for a ruling. A-gpu-attrib: every per-pass row is measured (shadow cascades, opaque, transparent + additive, GTAO, bloom, SMAA, shafts, overlay as skip-one marginals; the grade by its pass bench) and they must sum to the frame median within 10 % (no remainder row); every row ≥ 0.5 ms must name a fix owner in ROUND5-LOOK §4.2. The box witness is R45's (load < 3 and at most one gate Chrome, counted by profile) | ⟪b2:ledger⟫ |
+| A108 fails under the look; the witness crop's +0.11 | measured three ways in one run (f1-b1): the full look, `?look=nolut` (AgX with no grade, no vignette, no dither) and `?look=nodither`: **all three fail the same way** (far108m control 0.26 / 0.261 / 0.261), so it is the AgX transform (L-01, mandated), not the LUT or the dither. The witness's +0.11 on "near dune grass": GTAO on reads 0.267 at lag (0, 6) and the stock (Round-4 defect) shader reads the **same** 0.26 at (0, 6): a 6-px row period that both shaders produce is real contact AO in the dune-ripple troughs, not the centre-sample lattice the witness guards (that lattice reads at lags like (5, −29)) | §5.3; needs a ruling |
+| A-look-frame-stats, A-look-random, V-look-highlights, V-look-random FAIL on the W0 map | the grade moves every palette bar it can move without turning into a filter (22/40 on the dump against 14/40); the bars that remain are the light's (p99 ≥ 88–90, clip 0.2–5 %, spread ≥ 60, hi10 chroma: a sun disc, a bright sky, a sea) and the map's | needs a deferral ruling (§6) |
 
 ## 1. What was built
 
@@ -54,36 +74,37 @@ and skin, darker at the top: §4.2.
 - **Diagnostic** `?look=w0` (on the page, or on the page hosting the Pans POC iframe) boots on the Round-5 W0
   output; the gate block carries `<id>@look-post-w0` twins of A108, A-weak40 and A-lamp-states for that reason.
 
-### 1.2 L-02 / L-14 — the grade (`src/core/look.grade.json`)
+### 1.2 L-02 / L-14 — the grade (`src/core/look.grade.json` v2)
 
 Display space after AgX, baked per **grade set** into a 32³ **half-float** RGBA LUT (look.js `gradeSet` →
-`bakeLut`; RGBA8 texels carried up to ±0.5 LSB of rounding each, which trilinear filtering turned into a ripple with
-the period of the texel crossings across smooth gradients, 5–30 px, and A108 read it as content periodicity):
-split tone by luma (shadow tint weighted 1 − smoothstep(0.05, 0.45), highlight smoothstep(0.55, 0.95)), contrast
-about a pivot, saturation by luma (shadow / mid / highlight), then LCh hue work (75–110° rotated toward amber
-with less chroma, greens damped, Orchil violets lifted). Sets: `golden`, `noon`, `dusk` and **`calima`** (L-14:
-shadow (1.04, 0.95, 0.98), saturation 0.95). The four LUTs are baked once at boot (CPU 4 × 384 KB half + decoded, ≈ 80 ms);
-the GPU holds **two slots** (`CAL.lookLutA/B`, 2 × 256 KB) blended by `uLutMix`, refilled by one 256 KB upload
-only when a slot's set changes (never per hour). Vignette 0.28 in the pass.
+`bakeLut`; RGBA8 texels carried up to ±0.5 LSB of rounding each, which trilinear filtering turned into a ripple):
+split tone by luma, a soft-shoulder contrast about a pivot, saturation by luma, LCh hue bands, then (fix round 1)
+**the L\*a\*b\* stage** `lab` (look.js `labStage`): a monotone cubic tone curve on L\* (Fritsch–Carlson, slopes cached
+per curve, so `look.invert` stays exact), a shadow shift of (a\*, b\*) toward rose-violet weighted below L\* 18–42, a
+mid-band b\* scale on the warm hues, and a top-band chroma scale. The four LUTs are baked once at boot (≈ 110 ms in
+node for all four); the GPU holds **two slots** (`CAL.lookLutA/B`, 2 × 256 KB) blended by `uLutMix`, refilled by
+one 256 KB upload only when a slot's set changes. Vignette 0.28 in the pass.
 
-**Tuned against the frames, not the first numbers.** The first build used ROUND5-LOOK's numbers as written
-(linear contrast 1.06 about 0.45, saturation by luma 0.92 / 1.05 / 0.85, the olive band's chroma × 0.85). On the
-HDR dump of the look places (`tools/look/hdr-dump.gates.mjs` → `hdr-look.mjs`, the same eight frames through the
-W0 output and through the look) it read flatter and greyer than the W0 output it replaces: p99 −6…−10 L\*, the
-brightest tenth's chroma 43 → 33, the grass tan instead of amber, faces in shadow flat. Shipped instead:
+**Why v2.** The r4 sets rotated every olive and yellow into one amber band and warmed every highlight: 98 % of the
+chroma pixels of the field and vista frames sat in one 30° hue band, shadows read brown, and the judge read the
+frames as a sepia filter beside 1-TR. v2 was tuned on the HDR dump of the look places (no hour EV, W0 keys), each
+candidate read as a sheet beside the W0 output and the r4 sets and counted against the §7 bars:
 
-| set | contrast (soft, about pivot) | sat by luma (shadow / mid / high) | shadow tint (range) | olive band | violets |
-|---|---|---|---|---|---|
-| golden | 1.25 @ 0.40 | 0.95 / 1.08 / 0.95 | (1.05, 0.92, 1.10) (0.05–0.50) | −12°, chroma × 0.95 | × 1.10 |
-| noon | 1.15 @ 0.40 | 0.96 / 1.05 / 0.95 | (1.02, 0.96, 1.05) | −8°, × 0.95 | × 1.06 |
-| dusk | 1.15 @ 0.40 | 0.92 / 1.06 / 0.95 | (1.03, 0.90, 1.14) (0.05–0.55) | −14°, × 0.90 | × 1.12 |
-| calima | 1.06 @ 0.42 | 0.95 / 0.97 / 0.92 | (1.04, 0.95, 0.98) | −10°, × 0.90 | — |
+| set | soft contrast | sat by luma | hue bands | lab: shadow (below L\* 18–42) | lab: mid b\* | lab: top band (L\* 64–90) |
+|---|---|---|---|---|---|---|
+| golden | 1.08 @ 0.42 | 0.92 / 1.00 / 0.88 | olive 88–118° −6°, × 0.96; amber 50–88° −2°, × 0.96; greens × 1.0; violets × 1.3 | (a, b) × 0.85 + (4, −9) | × 0.82 (a × 1.08) | chroma × 0.42, + (1.5, −2) |
+| dusk | 1.08 @ 0.42 | same | the same bands, amber/olive × 0.91 | below L\* 25–55: × 0.8 + (5, −13) | × 0.6 | × 0.42, + (2, −3) |
+| noon | 1.08 @ 0.42 | 0.95 / 1.08 / 0.95 | amber × 1.08 | × 0.9 + (2, −5) | × 1.0 | × 0.85, + (0.5, −1) |
+| calima | 1.06 @ 0.42 (L-14 split tone kept: shadow (1.04, 0.95, 0.98), sat 0.95) | 0.95 / 0.97 / 0.92 | r4 bands | × 0.95 + (2, −4) | — | × 0.7, + (1, −1) |
 
-The contrast is a **soft-shoulder curve** (slope `contrast` at the pivot, 0 and 1 fixed: h(t) = tk / (1 + (k−1)t)
-on each side): a linear contrast above 1 clipped every value above pivot + (1 − pivot)/k to white, flattened the top
-103 of 400 steps of the grey ramp, and made `invert` ill-posed on the plateau. The hour table `hourEv` carries
-ROUND5-LOOK L-03's EV offsets (noon 0, 16:30 +0.10, 17:45 +0.15, 18:45 +0.25, 19:20 +0.40, 19:45 +0.70, night
-+1.30; the morning mirrors them) and `setLookHour` applies them unless called with `{ ev: false }`.
+Every set shares the tone curve L\* 6 → 7.5, 15 → 17, 30 → 32, 45 → 49.5, 60 → 68.5, 72 → 82, 85 → 92.5, 95 → 98: it
+lifts the toe a little and opens the top that AgX + the look's power 1.22 hold 6–10 L\* under the ACES-era frames
+(A-look-tonemap is graded at grade mix 0, so 0.18 → L\* 50 is untouched). Round trip through the new grade: ≤ 0.25/255
+on 512 shown values per set pair; the four lamp tokens 0/255 (the gamut-edge guard); the grey ramp stays strictly
+increasing. A sun at 4× its colour shows peach-white (#FEF3EF golden, #FFF2E4 noon), never lemon.
+
+The hour table `hourEv` carries ROUND5-LOOK L-03's EV offsets; `setLookHour` applies them unless called with
+`{ ev: false }`. **They are world-sky's** (L-03): neither the bridge nor the look places apply them (fix round 1).
 
 ### 1.3 L-07 — bloom retune
 
@@ -97,6 +118,13 @@ sunlit cloth, rock and salt at L\* 85–92 (A-look-bloom a, V-look-glow) and the
 luminance 2.47 under AgX) would all glow; measured in r2, the calm ring's own bloom brightened the lamp drum
 face to 0.40 and A-weak40's glass-vs-face contrast fell to 2.02:1. The lamp cores still clear the threshold by
 CORE_OVER (the lamp system re-solves on any threshold change). The W0 values are kept as `LOOK_W0.bloom`.
+
+**Fix round 1.** A-look-bloom (c) failed in r4 and in the judge's run with halo/core 1.00 because the gate's probe disc
+(0.12 m at 40 m, 5 px across) was hidden by the engine's small-mesh cull; with the probe kept the solved hostile core
+(lamps.coreHdr: (24.2, −1.9, 3.2), Rec. 601 luma 6.5 against the threshold 3.23 at 17:45) blooms to 5.63× its radius
+at a hue 6.8° from the token. The threshold stays keyed to L\* 94: lowering it adds nothing to a lamp (the core is
+solved to clear it by CORE_OVER) and would light diffuse ground (A-look-bloom a). The threshold is re-solved only on a
+`look.solveVersion` change (it runs the look 48 times).
 
 ### 1.4 L-16 / L-18 — the ledger and the attribution tools
 
@@ -119,6 +147,24 @@ CORE_OVER (the lamp system re-solves on any threshold change). The W0 values are
   zero-vertex sentinel at the head of the transparent list) is kept and reported raw: on ANGLE/Metal its per-query
   times are not usable (§5.4). `A-gpu-attrib-box` samples the box.
 
+**Fix round 1: every written clause.** `abTime` (ab-time-page.mjs) now also grades, per A21 scenario: the frame
+median with every high item on against A21's exit bar (`A21_EXIT_BARS.W1`: vista 17.0, herd 20.0, staged fight
+17.0 ms; `W2`: 14.0); the shipped-mode `renderScale` median over 120 frames with dynamic resolution restored for that
+read (`opts.dynamicResolution` is false under `?shot`) against 0.95; the look's draws (every post item on minus off)
+= 0; render targets ≤ 170 MB and the GPU bytes with the look on ≤ 450 MB (`gpuBytes`: the render-target ledger plus
+a scene walk of texture and geometry bytes, a lower bound of A-vram-ledger's census, which needs a hook before the
+context); then `low`'s frame against the same bars; and **every enabled item has a row**: `engine.tier.look` is
+proxied during the run, a knob the build reads is an item that has landed (`LOOK_KNOB_ITEMS` maps knob → item), and a
+landed item with no registered switch fails (R66 h). The pass bench for post items is listed in `deviations` for a
+ruling. `perPassSkip` (gpu-attrib-page.mjs) measures every row (no remainder): shadow cascades (maps not
+re-rendered), opaque scene (the view draws only the transparent and additive meshes through a spare layer while the
+shadow pass sees every caster), transparent + additive, GTAO, bloom, SMAA, shafts and overlay (the `onAfterRender`
+hooks, outside A21's timer), and the grade by its pass bench; the rows must sum to the frame median within 10 %, and
+every row ≥ 0.5 ms must name a fix owner from ROUND5-LOOK §4.2 (`FIX_OWNERS_42`, `fixOwnerFor`) — bloom, SMAA, the
+grade and overlays have no §4.2 row, so one of them at ≥ 0.5 ms fails until the orchestrator adds it. The box
+witness (`boxSample`) is R45's: load < 3 and at most one gate Chrome alive (distinct `--user-data-dir` of headless
+Chrome processes).
+
 ### 1.5 G-post — per-cascade layer masks (`enableCSM`, 15 lines) and U-03 `holdFrame`
 
 `CAL_LAYER.CASTER_ONLY` (30) / `CAL_LAYER.CASCADE0_ONLY` (29). three r169 tests shadow casters against the
@@ -140,6 +186,32 @@ still render.
   bar holds on its own panel except two of 1-TR's (§5).
 - `tools/look/places.mjs`: the look-place contract and the W1 **stand-ins** (§5).
 
+- **Two-boot reproducibility (fix round 1, A-look-suite a).** `SUITE_SHOTS` stages and hashes the five places; it
+  runs in the gate's page and again in a fresh same-origin iframe boot of the same URL (boot 1 held: `holdFrame`,
+  time scale 0; the iframe's renderer loses its context and the iframe is removed after). The look staging freezes
+  the two boot-dependent inputs the diff sheet showed: `engine.wallTime` (sky, wind, grass sway, birds) is snapped
+  to the next multiple of 4096 s, and the hero is settled deterministically (`mixer.setTime(0)`, then 60 sim steps of
+  exactly 1/60 s whatever the frame time; `stageLook(name, { settle: false })` skips it).
+
+### 1.7 R48 (c) — the engine's two allocation hot spots (fix round 1)
+
+- **The cull pass** (`_cullPass`): the caster pool and its distances are filled by index (`C.n`) and the tail nulled,
+  never truncated (`length = 0` dropped V8's backing store, so every pass re-grew both arrays); the `budget` nearest
+  casters inside the cut are chosen by a 36-step bisection on the distance with ties admitted in pool order (the same
+  set as the old sort: 2000 random pools in node, 0 differences), with no comparator closure and no TimSort work
+  array; the keep set is a byte array that grows only with the pool.
+- **The shadow pass's program-key churn** (`_depthVariant`): three r169 renders casters with one shared
+  `MeshDepthMaterial` unless a mesh carries `customDepthMaterial`; its `setProgram` re-derives the program whenever
+  `skinning`, `instancing`, `batching` or the morph count differs from the previous caster (18 times a frame on the
+  vista and the staged fight). Skinned, instanced and batched casters get a depth material shared by their kind (key
+  skinned 1 + instanced 2 + batched 4 + 8 × morph count; RGBA depth packing as three's), assigned in the cull visit at
+  10 Hz; a caster whose material alpha-tests, alpha-maps, displaces or clips its shadow keeps three's per-material
+  variant. Disposed by `disposeLook()`.
+- Not engine-fixable: three's uniform uploads (`setValueV3f` / `setValueM4`, ≈ 4.3 MB/s of the 8.7 MB/s; a
+  WebGL call with a non-Smi double argument boxes it) scale with draws and distinct materials; and a transparent
+  double-sided `MeshBasicMaterial` that three renders in two passes bumps its own version twice a frame (2 `getProgram`
+  a frame): its owner sets `forceSinglePass = true` (§6, ⟪b2:owner407⟫).
+
 ## 2. Published APIs and contracts (exact signatures)
 
 `src/core/look.js` (no three, no DOM; node, page and game import the same module):
@@ -153,7 +225,10 @@ export class Look {
   set({ ev, a, b, mix, gradeMix, bloomScale })   // returns a bitmask of LUT slots that changed
   setSlots(a, b, mix, ev)                  // allocation-free per-hour form; returns whether anything changed
   hdrForLstar(Ls)                          // the HDR grey that shows at display L* Ls through the look in force
-  version                                  // bumps on every change a CPU copy must follow
+  version                                  // bumps on every change (the pass's uniforms follow it)
+  solveVersion                             // bumps when a CPU copy that solves THROUGH the look must re-solve: exposure / EV,
+                                           // a slot name, the grade mix, or the slot mix moved >= SOLVE_MIX_STEP (1/16)
+  _bump(solve)                             // version++, and solveVersion++ when `solve` or the mix step is crossed
   exposure, baseExposure, ev, setA, setB, lutMix, gradeMix, vignette, bloomScale, luts, sets
 }
 export function setsForHour(grade, h, weather = null, calimaWeight = null, out = { a, b, mix, ev })
@@ -161,7 +236,10 @@ export function agxLook(x, look, out), agxLookInv(y, look, out), calSigmoid(x), 
        gradeSet(c, set, out), bakeLut(set, size = 32) -> { half: Uint16Array, f32: Float32Array, size },
        sampleLut(lut, size, c, out), toHalf(v), fromHalf(h),
        calibrateExposure(look), oetf(c), eotf(v), srgbToLab(c, out), labToSrgb(lab, out)
-export const AGX_MIN_EV, AGX_MAX_EV, SH_XMAX, SH_YMAX, SH_A, SH_K, LOOK_DEFAULT, LOOK_EXPOSURE_NOMINAL
+export const AGX_MIN_EV, AGX_MAX_EV, SH_XMAX, SH_YMAX, SH_A, SH_K, LOOK_DEFAULT, LOOK_EXPOSURE_NOMINAL, SOLVE_MIX_STEP
+// grade set (look.grade.json v2) fields: shadowTint, shadowRange, highlightTint, highlightRange, contrast, pivot, satLuma,
+// satRange, hue[{ from, to, feather, rotate, chroma, minChroma }], edgeChroma, and lab { tone: [[L, L'], ...],
+// shadow: { range, shift: [da, db], chroma }, mid: { range: [4], hue: [h0, h1, feather], b, a }, high: { range, chroma, shift } }
 ```
 
 `src/core/engine.js` (G-post):
@@ -171,12 +249,15 @@ engine.look                                // the live Look
 engine.lookActive                          // getter: AgX in force (look.evaluate describes the screen)
 engine.setLook(state)                      // -> engine.look; applied on the next rendered frame
 engine.setLookHour(h, weather = null, calimaWeight = null, opts = null)   // world-sky: sets + hour EV ({ ev: false } keeps yours)
-engine.setLookEnabled(on)                  // false = the Round-5 W0 output (ACES 0.94, W0 grade, W0 bloom)
+engine.setLookEnabled(on)                  // false = the Round-5 W0 output (ACES 0.94 at every hour, no EV; W0 grade, W0 bloom)
+?look=w0 | nolut | nodither (comma list)   // diagnostics on this page or the page hosting it: W0 output / AgX without the
+                                           // grade stage / no output dither (A108's twins @look-post-<v>, lane look-post-diag)
 engine.registerLookItem(id, { owner, estMs, title, set(on), get() })   // -> engine.lookItems (Map)
 engine.gpuAttrib(on = true) / engine.gpuAttribTake()                   // L-18 raw timer segments
 engine.benchPass(pass, n = 100)            // L-16: ms per pass render (readback fences); measurement only
 engine.holdFrame(on = true)                // U-03: a held render() submits nothing
-engine.disposeLook()                       // the two LUT slots
+engine.disposeLook()                       // the two LUT slots, the bench target, the shadow depth variants
+engine._depthVariant(mesh)                 // R48 (c): a skinned / instanced / batched caster's shared depth material (cull pass)
 export const QUALITY_TIERS[tier].look, LOOK_ROWS, LOOK_RULE2, LOOK_W0, LOOK_BLOOM,
              CAL_LAYER = { CASTER_ONLY: 30, CASCADE0_ONLY: 29 }
 renderer.calLook                           // the engine (src/hero/sheets.js reaches engine.look through its renderer)
@@ -204,7 +285,7 @@ renderer.calLook                           // the engine (src/hero/sheets.js rea
 
 **The hour bridge (W1 only).** Until world-sky's first `engine.setLookHour` call, `engine._lookBridge()` reads
 `window.__CTX__.environment` (time, weather) every 30 frames and picks the grade sets itself (allocation-free,
-no EV). The first `setLookHour` call stands it down for good. It exists so the merged game shows the hour's
+**no EV**: fix round 1 — r4 applied the L-03 hour EV here, so nights ran at +1.30 EV on the W0 keys). The first `setLookHour` call stands it down for good. It exists so the merged game shows the hour's
 grade (noon set at noon, dusk set after 19:45) before world-sky wires the contract; world-sky should delete
 nothing, only call `setLookHour`.
 
@@ -320,25 +401,29 @@ r4 (Nov 7 02:11–02:52 UTC; box load 4.0–4.7, so the quiet-box rows are PENDI
 
 ## 5. Honest gaps
 
-### 5.1 The palette bars are the light's, not the transform's
+### 5.1 The palette bars are the light's, not the transform's (deferral requested)
 
-A-look-frame-stats, A-look-random and the likeness rows (V-look-grade, V-look-highlights, V-look-random) cannot pass
-on the W0 map under the W0 keys whatever the grade does, and the grade must not be pushed into a colour filter to
-fake them. Measured on the HDR dump of the places (the same HDR through both outputs):
+A-look-frame-stats, A-look-random and the likeness rows (V-look-grade criterion 3 aside, V-look-highlights,
+V-look-random) cannot all pass on the W0 map under the W0 keys whatever the grade does, and the grade must not be
+pushed into a colour filter to fake them. Measured on the HDR dump of the places (the same HDR through the W0 output
+and through grade v2; no hour EV):
 
-| frame | W0 lo20 hue → CALIMA | mid b\* | p99 | what the panel has that the frame does not |
-|---|---|---|---|---|
-| field 16:30 | 77 → 60 | 22 → 27 | 73 → 68 | lavender sky (b\* < 0), rose mesas, a sun-side haze at L\* 90+ |
-| vista 19:00 | 66 → 54 | 25 → 32 | 60 → 60 | the sun disc and the sea glint (p99 93, clip 3 %) |
-| aim 17:45 | 76 → 59 | 30 → 34 | 70 → 66 | backlit haze, violet distance |
-| dusk 19:45 | 72 → 54 | 13 → 22 | 30 → 37 | a violet dusk sky (2-MR mid b\* −5.6) |
-| close 18:45 | 7 → 21 | 25 → 32 | 56 → 57 | sky catch-light, skin sheen (L-04, C-01…) |
+| frame | lo20 hue W0 → v2 | mid b\* | p99 | bars met (v2) | what the panel has that the frame does not |
+|---|---|---|---|---|---|
+| field 16:30 (1-TR) | 77 → 44 | 22.2 → 18.8 | 73.4 → 73.7 | 4/9 | lavender sky (hi10 C 8.7), sun-side haze at L\* 90+, clip 0.3 % |
+| vista 19:00 (1-MR) | 66 → 13 | 24.8 → 21.1 | 59.9 → 63.3 | 7/11 | the sun disc and the sea glint (p99 93, clip 3 %) |
+| aim 17:45 (1-BL) | 76 → 39 | 29.6 → 23.9 | 69.5 → 70.6 | 3/9 | backlit haze, violet distance, p99 90 |
+| dusk 19:45 (2-MR) | 73 → 323 | 13.4 → 2.7 | 30.1 → 38.0 | 3/4 | a violet dusk sky (mid b\* −5.6) |
+| close 18:45 (1-MC) | 8 → 332 | 24.7 → 20.6 | 56.4 → 60.3 | 5/7 | sky catch-light, skin sheen (L-04, C-01…) |
 
-The transform moves the shadows ≈ 15° toward rose and lifts crushed blacks; the mids stay yellow because the
-frames are ochre ground under an orange fog with no blue-violet sky in them; the top stays low because the keys put
-the brightest pixels at HDR 0.4–0.6, which AgX shows at L\* 65–70 (ACES at 75–81). **For world-sky (L-03):** under
-AgX the sky dome and the sun need roughly +0.5…+1 EV of radiance against the ACES-era keys for the top of the frame
-to read as bright as before (0.18 still shows at L\* 50; 1.0 shows at 82 against ACES's 93).
+The bars still missed are the top of the frame (p99 ≥ 88–90, clip 0.2–5 %, p95 − p5 ≥ 60–66, hi10 chroma ≤ 16–18) and
+the yellow of mid-tones under an orange fog: that is a sun disc (L-06), a bright lavender sky and its IBL (L-03, L-04),
+rose-violet aerial distance (L-05) and a sea (world-ground), on the real places (world-props). **For world-sky
+(L-03):** under AgX the sky dome and the sun need roughly +0.5…+1 EV of radiance against the ACES-era keys for the top
+of the frame to read as bright as before (0.18 shows at L\* 50; 1.0 at 82 against ACES's 93). **For the orchestrator:**
+the rows are look-post's to build and world-sky's / world-props' to light and stage; I ask for a ruling that grades
+their palette and highlight clauses after world-sky's L-03/L-04/L-06 keys and world-props' `gatePlaces.look` land (as
+R38/R58 did for weather-dependent clauses), with the LUT-texel clause and the tier clause graded now.
 
 ### 5.2 Places are stand-ins
 
@@ -346,16 +431,34 @@ to read as bright as before (0.18 still shows at L\* 50; 1.0 shows at 82 against
 `tools/look/places.mjs` on the W0 map and say so in every detail. No Ring, cliff, sea or Pans in them: the likeness
 rows can be graded on light and palette only until world-props, world-ground and world-sky land.
 
-### 5.3 A108 under the look (must-stay-green, inherited)
+### 5.3 A108 under the look (must-stay-green, inherited) — measured, needs a ruling
 
-A108 FAILs under the look and PASSES on the W0 output in the same run (`A108-ao-periodicity@look-post-w0`). GTAO adds
-nothing (on − off ≤ +0.01 on every crop): the failure is the instrument's own content check — the far crop
-`far108m` (the pan from 14 m) and the mid crops read GTAO-off control peaks of 0.26 (far) and 0.30–0.61 (mid) under
-the look against 0.02–0.10 under ACES, so they are "content-limited" and the witness cannot see the stock defect over
-the control. The cause is visible in V33b's frames: the dune ripples and grass rows, which ACES crushed into black,
-read under AgX's toe as a regular pattern. r4 re-measures with the half-float LUT (§1.2). If it still fails, the
-fix is a re-survey of A108's crops on the look (docs/ROUND5-ENGINE.md §3.6's procedure, engine-gpu's gate file:
-**an orchestrator grant or ruling is needed**; this lane may not edit `tools/gates.r5.engine-gpu.mjs`).
+A108 FAILs under the look and PASSES on the W0 output (`@look-post-w0`) in the same run. Fix round 1 isolated the
+cause in one Chrome run (f1-b1, the same build, the three variants back to back):
+
+| variant | high@1.25 far108m control | content-limited crops | witness |
+|---|---|---|---|
+| the look (AgX + grade + dither) | 0.26 @ (22, −1) | ultra@1: 2, ultra@2: 3 | blind |
+| `?look=nolut` (AgX alone: no grade, no vignette, no dither) | 0.261 | high@1: 2, high@1.25: 3, … | blind |
+| `?look=nodither` | 0.261 | ultra@2: 3 | blind |
+| `?look=w0` (r4 and ⟪b2:a108w0⟫) | 0.098 | 0 | sees (stock 0.239 at (5, −29) vs shipped 0.102) |
+
+So the LUT and the dither are not the cause (without the grade it is slightly worse); the **AgX transform itself**
+(L-01, which ROUND5-LOOK mandates) shows texture in the sunlit pan and the dune ripples that ACES compressed, and
+A108's normalised autocorrelation, which is contrast-invariant but not tone-curve-invariant, reads it as content
+periodicity in its GTAO-off controls. GTAO adds nothing on the graded crops (on − off ≤ +0.01 everywhere except the
+witness). **The witness crop's +0.11** ("near dune grass from the vista spot": off 0.156, shipped 0.267 at lag (0, 6)):
+the stock shader reads the same 0.26 at the same lag (0, 6), so it is not the centre-sample lattice the witness exists
+to catch (that defect reads at lags like (5, −29) and separates stock from shipped); a 6-px row period produced by
+both shaders is real contact AO in the dune-ripple troughs, which the AgX toe makes visible (under ACES the same crop
+reads shipped 0.126 / stock 0.128 at (2, 18): also equal).
+
+What the lane cannot do: change L-01's toe to hide terrain texture (that would undo the spec's "no crushed blacks"
+and Brea's readable face), or edit `tools/gates.r5.engine-gpu.mjs`. **Options for the orchestrator** (any one):
+(1) a ruling that A108 measures the AO term on a fixed display transform (`?look=w0`, which its twin already runs):
+the defect it guards lives in GTAO's centre-depth fetch, not in the display transform; (2) a grant to re-survey
+A108's crops and witness on the look (ROUND5-ENGINE §3.6's procedure); (3) a grant to measure A108 on scene-linear
+luminance (the scene target before the output pass).
 
 ### 5.4 Quiet-box and per-pass timing on ANGLE/Metal
 
@@ -367,46 +470,63 @@ own pass (`engine.benchPass`, 1-pixel readback fences; gl.finish does not wait o
 
 ### 5.5 Not done this wave
 
-- R48(c): the engine row is at 0.71× of its W0b allocation baseline (the cull visit is hoisted), but
-  `ScenePass.render` still allocates ≈ 8.7 MB/s inside three's `renderer.render` (the "program-key churn") and the
-  caster pool re-grows after `length = 0` every 0.1 s (≈ 0.46 MB/s). Not fixed: both need a profile-guided change to
-  the cull and the render path that this wave's G-post scope does not cover; the orchestrator sets engine.js's
-  absolute alloc bars (R53) and decides.
 - U-03 is the engine half only (`holdFrame`); shell-ui wires it in W2.
 - L-14's calima set exists and is gated (A-look-tonemap b); the calima weather is world-sky's, so it is never shown
   in play yet.
-
+- three's own uniform-upload allocation inside `ScenePass.render` (`setValueV3f` / `setValueM4`, ≈ 4.3 MB/s) scales
+  with draws and distinct materials; it is not an engine policy and is not changed here (§1.7).
 
 ## 6. What other lanes and the orchestrator must do
 
-- **Orchestrator.** (1) Decide A108 (§5.3): a ruling or a grant to re-survey its crops on the look. (2) The
-  look items sit behind `QUALITY_TIERS.<tier>.look` (`agx`, `grade`, `lut`, `bloomRetune`): if Kevin's 5173 should
-  not show the CALIMA look before world-sky's keys land, set `agx: false` on `high` at the merge (that is the W0
-  output, bit for bit). My recommendation is to merge it on: the shadows and faces read better and the palette moves
-  the right way; the darker top is world-sky's to raise with the keys (§5.1). (3) L-18 then L-16 in the W1-exit
-  global run: `cd <scratch> && nice -n 10 node <tree>/tools/look/gpu-attrib.mjs --port 5270`, then
-  `.../tools/look/ab-time.mjs --port 5270` (each runs its gate with its box row and prints the §4.2 / §4.3 tables).
-  (4) ROUND5-LOOK L-07's threshold numbers (1.30 / 0.35) and L-02's grade numbers changed for measured reasons
-  (§1.2, §1.3); the doc should carry the shipped values. (5) The W0 twins (`<id>@look-post-w0`, lane
-  `look-post-diag`) are diagnostic and need not run in the global list.
+- **Orchestrator — rulings asked (fix round 1).**
+  1. **A108** (§5.3): one of (1) measure A108 on a fixed display transform (`?look=w0`, its twin already runs and
+     passes), (2) a grant to re-survey its crops and witness on the look, (3) a grant to measure on scene-linear
+     luminance. The cause is the mandated AgX transform, measured three ways in one run.
+  2. **Palette and highlight clauses** of A-look-frame-stats, A-look-random, V-look-highlights and V-look-random
+     (§5.1): graded after world-sky's L-03/L-04/L-06 keys and world-props' `gatePlaces.look` land; the LUT-texel and
+     tier clauses graded now.
+  3. **A-look-ledger's pass bench** for post items (L-01, L-02, L-07; `deviations` in the row's detail) in place of
+     "on A21 frames": a whole-frame A/B at 18–20 ms is ±1–3 ms of noise on this machine.
+  4. **gates-perf's A-alloc-rate owner table** lists `/src/core/look.js` as unowned: map it to the engine row (G-post,
+     look-post now, world-sky in W2).
+  5. **world-sky's A-alloc-rate row** (judge: 3.22 vs 2.70 KB/frame with `environment.js` unchanged): a main-tree
+     control in the same session needs the main tree served, which the lane rules forbid here (Vite only from this
+     tree, never 5173). ⟪b2:worldsky⟫
+- **Orchestrator — merge.** With the bridge EV fixed, `look.agx: false` on `high` is the Round-5 W0 output exactly
+  (ACES 0.94 at every hour). Grade v2 no longer loses top brightness against W0 on the look places (p99 within −0.4…+8
+  L\* of W0 on the dump) and reads warm-light / violet-rose-shadow instead of sepia; I recommend merging it on, and
+  the R54 judge's films (§4.2) decide.
+- **Orchestrator — the W1-exit global run.** L-18 then L-16: `cd <scratch> && nice -n 10 node <tree>/tools/look/gpu-attrib.mjs --port 5270`,
+  then `.../tools/look/ab-time.mjs --port 5270`; each runs its gate with its box row and prints the §4.2 / §4.3 table.
+  The W0 / nolut / nodither twins (lane `look-post-diag`) are diagnostic and need not run in the global list.
+- **ROUND5-LOOK owners.** L-07's threshold (1.30 / 0.35) and L-02's numbers changed for measured reasons (§1.2, §1.3);
+  the spec should carry the shipped values.
 - **world-sky.** Call `engine.setLookHour(hour, weather, calimaWeight)` when the hour or weather moves (it applies
-  the hour EV unless `{ ev: false }`), `engine.setLook({ bloomScale })` per weather, and register L-04/L-05/L-06/L-09
-  with `engine.registerLookItem`. Re-key L-03 against AgX (§5.1). In W2 (G-post passes to you): the
-  `onAfterScene` hook for L-08 (note: A21's timer wraps `composer.render` only, so the post-SMAA shafts pass is
+  the L-03 hour EV unless `{ ev: false }`; the bridge never does), `engine.setLook({ bloomScale })` per weather, and
+  register L-04/L-05/L-06/L-09 with `engine.registerLookItem`. Re-key L-03 against AgX (§5.1). In W2 (G-post passes to
+  you): the `onAfterScene` hook for L-08 (A21's timer wraps `composer.render` only, so the post-SMAA shafts pass is
   outside A21 today), L-12, L-17, the L-14 dusk set (a `dusk` set exists; tune it, do not add a slot).
 - **world-props.** Publish `ctx.props.gatePlaces.look.*` in the `tools/look/places.mjs` record shape.
-- **instruments-a / world-ground (I-04, W-01).** `CAL_LAYER` per §2; keep hit proxies on layer 0.
+- **instruments-a / world-ground (I-04, W-01).** `CAL_LAYER` per §2; keep hit proxies on layer 0. A caster that
+  needs its own shadow material sets `customDepthMaterial` itself; the engine only assigns the shared depth variants
+  to skinned / instanced / batched casters that have none.
+- **instruments-a (lamps.js in W1).** Your tree also edits `src/instruments/lamps.js`: this lane's grant lines are
+  `readOutputParams` (`P.look`, `P.lookVer = … solveVersion`), `paramSig`'s look terms, `_solve`'s `look.invert`
+  branch and the wary trough re-solve (`PULSE_LIVE`, `screenLum`), and `update()`'s change test (`lv = … solveVersion`).
+  Keep them on merge.
+- **The owner of the transparent double-sided `MeshBasicMaterial`** that three renders in two passes (2 program
+  re-derivations a frame on the vista and the fight): set `forceSinglePass = true` (⟪b2:owner407⟫).
 - **shell-ui (W2).** `engine.holdFrame(on)` for full-screen menus; refit `CALIMA_DISC` through `engine.look`.
-- **hero-body (observation).** In the close stand-in (18:45, sim frozen at timeScale 0 after the place settles),
-  Brea's idle shows her left arm raised behind her head (V-look-before-after-2, row 1). Kevin's bar is never an arm
-  behind the head; if this is a real idle pose and not a frozen transition, it is hero-body's.
-
+- **hero-body (observation, r4).** In the close stand-in Brea's idle once showed her left arm raised behind her head
+  (V-look-before-after-2, r4). ⟪b2:arm⟫
 
 ## 7. Files (this lane)
 
-`src/core/engine.js` (G-post), `src/core/look.js` (new), `src/core/look.grade.json` (new),
-`src/instruments/lamps.js` (grant: 17 added / 8 removed lines), `src/hero/sheets.js` (grant: 4 / 1),
-`tools/gates.r5.look-post.mjs` (new), `tools/look/{stats-core,look-stats,places,three,gpu-attrib,gpu-attrib-page,
-ab-time,ab-time-page,hdr-look}.mjs`, `tools/look/hdr-dump.gates.mjs` (tooling, `--extra` only),
-`tools/look/{refs.json,fixture.json,fixture.png}` (numbers; a procedural 320×180 fixture, project-original, not under
-`public/`), this report. No asset under `public/`, so no `LICENSES.json` row. Lint `namecheck --code` PASS (1371 = ratchet).
+`src/core/engine.js` (G-post: the output pass, look sync, bloom parameters, layer masks, `holdFrame`, the
+`?look=` diagnostics, and R48 (c)'s cull-pass and shadow depth-variant fixes), `src/core/look.js` (new),
+`src/core/look.grade.json` (new, v2), `src/instruments/lamps.js` (grant: 17 added / 8 removed lines, unchanged in
+count by fix round 1), `src/hero/sheets.js` (grant: 4 / 1), `tools/gates.r5.look-post.mjs` (new),
+`tools/look/{stats-core,look-stats,places,three,gpu-attrib,gpu-attrib-page,ab-time,ab-time-page,hdr-look}.mjs`,
+`tools/look/hdr-dump.gates.mjs` (tooling, `--extra` only), `tools/look/{refs.json,fixture.json,fixture.png}` (numbers; a
+procedural 320×180 fixture, project-original, not under `public/`), this report. No asset under `public/`, so no
+`LICENSES.json` row. Lint `namecheck --code` PASS (1371 = ratchet).
