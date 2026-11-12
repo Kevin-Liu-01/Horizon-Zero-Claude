@@ -173,7 +173,7 @@ const W_TRADE = { sunMul: 1.00, hemiMul: 1.00, cloud: 0.30, cloudDark: 0.30, den
 const WEATHER = {
   trade: W_TRADE,
   // bible: fog Calima Ochre ×4, coral disc, shadow strength 0.45, perception 0.5; L-14: EV +0.15, bloom ×1.25
-  calima: { ...W_TRADE, sunMul: 0.70, hemiMul: 1.40, cloud: 0.05, cloudDark: 0.20, densMul: 4.00, mist: 0.6, windMS: 2.5, wind: 0.50, gust: 0.20, shaft: 1.40, cloudShadow: 0.00, calima: 1, perception: 0.5, shadowK: 0.45, seaCloud: 0.4, ev: 0.15, bloomK: 1.25 },
+  calima: { ...W_TRADE, sunMul: 0.70, hemiMul: 1.40, cloud: 0.05, cloudDark: 0.20, densMul: 4.00, mist: 0.6, windMS: 2.5, wind: 0.50, gust: 0.20, shaft: 0.35, cloudShadow: 0.00, calima: 1, perception: 0.5, shadowK: 0.45, seaCloud: 0.4, ev: 0.15, bloomK: 1.25 },
   // bible: height fog below 150 m ×3, perception 0.5 inside the bank
   fogbank: { ...W_TRADE, sunMul: 0.55, hemiMul: 1.40, cloud: 0.70, cloudDark: 0.35, densMul: 3.00, mist: 3.0, windMS: 1.5, wind: 0.35, gust: 0.15, shaft: 0.50, desat: 0.30, cloudShadow: 0.10, fogbank: 1, perception: 0.5, shadowK: 0.70, seaCloud: 1.6, ev: 0.10, bloomK: 0.80 },
   // bible: rare, rain on the windward side only, perception 0.8 (fog ×1.6 is this lane's)
@@ -231,6 +231,8 @@ const GRASS_CAST_MAX = 3;
 /** Sky IBL (L-04): rebake every 0.1 game hours or on a 0.05 weather move. */
 const IBL_HOURS = 0.1;
 const IBL_WEATHER = 0.05;
+/** W-08: meshes on this layer are drawn into the sky cube (the reflection probe). */
+const REFLECT_LAYER = 6;
 
 /* ---------------------- golden-weighted clock (L-11) ---------------------- */
 
@@ -360,7 +362,7 @@ function patchShaderChunks() {
       calTauV = calFogC.x * vFogDepth * clamp( calHeightAvg( calFogC.y, calFogC.z, calDy ), 0.0, 40.0 ) * calMn;
     }
     // cloud sea: the windward slab between calFogD.y and calFogD.z, as optical
-    // depth (no planes, no overdraw): the ray's length inside the slab
+    // depth (no planes, no extra fill): the ray's length inside the slab
     float calTauC = 0.0;
     if ( calFogD.x > 0.0 ) {
       float calLo = min( calCamPos.y, vFogWorldPos.y ), calHi = max( calCamPos.y, vFogWorldPos.y );
@@ -766,6 +768,13 @@ export class Environment {
 
   /** 'night' | 'dawn' | 'day' | 'dusk' — for audio/AI/progression. */
   get phase() { return this._phase; }
+
+  /** The pre-grade sky key colours now (linear, live objects): `top` overhead, `low` the
+   *  sky's band at the sea line, `mid`, and `fog` (the aerial in-scatter at the sea line). */
+  get skyKeys() {
+    const su = this.sky.material.uniforms;
+    return this._skyKeys || (this._skyKeys = { top: su.uZenith.value, low: su.uHorizon.value, mid: su.uMid.value, fog: this.u.calFogHorizon.value });
+  }
 
   /** Instrument sight multiplier (bible §2.3): trade 1.0, calima 0.5, fogbank 0.5 inside
    *  the bank, squall 0.8; night 0.7; the smaller of weather and night applies. */
@@ -1629,7 +1638,7 @@ export class Environment {
     if (!r) return;
     const q = this.ctx.engine?.quality;
     const size = q === 'low' ? 64 : q === 'ultra' ? 256 : 128;
-    const cubeRT = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: false, depthBuffer: false });
+    const cubeRT = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: false, depthBuffer: true });
     cubeRT.texture.name = 'CAL.skyCube';
     const cubeCam = new THREE.CubeCamera(1, 3000, cubeRT);
     cubeCam.updateMatrixWorld(true);
@@ -1642,6 +1651,22 @@ export class Environment {
       lastH: -99, bakes: 0, faceFrames: 0 };
     this.ctx.engine?.registerRenderTarget?.('env:skyCube', cubeRT);
     this.skyCube = cubeRT.texture;
+    for (const c of cubeCam.children) c.layers.set(REFLECT_LAYER);
+    /**
+     * W-08: the REFLECT layer. A lane opts a cheap mesh (terrain LOD2, a landmark's LOD1,
+     * a settlement's LOD1; ≤ 10 draws in all) into the sky cube with `reflect.add(obj)`;
+     * the cube then re-centres on the camera on a 25 m move and renders those meshes over
+     * the dome, so the sky IBL and `skyCube` (the probe water samples) carry the island.
+     * With nothing added the cube is the sky alone, centred on the origin, at no extra cost.
+     */
+    const self = this;
+    this.reflect = {
+      layer: REFLECT_LAYER,
+      count: 0,
+      center: cubeCam.position,
+      add(obj) { obj.traverse((o) => o.layers.enable(REFLECT_LAYER)); this.count++; self._ibl.lastH = -99; return obj; },
+      remove(obj) { obj.traverse((o) => o.layers.disable(REFLECT_LAYER)); this.count = Math.max(0, this.count - 1); return obj; },
+    };
   }
 
   _renderIBLFace(face) {
@@ -1654,6 +1679,16 @@ export class Environment {
     r.setRenderTarget(I.cubeRT, face);
     r.render(I.scene, I.cubeCam.children[face]);
     su.uIbl.value = 0;
+    if (this.reflect.count > 0) {
+      // the island over the dome: the main scene through a REFLECT-only camera, shadow
+      // maps left as they are (no re-render of the cascades for a probe face)
+      const sm = r.shadowMap.autoUpdate;
+      r.shadowMap.autoUpdate = false;
+      r.autoClear = false;
+      r.clearDepth();
+      r.render(this.ctx.scene, I.cubeCam.children[face]);
+      r.shadowMap.autoUpdate = sm;
+    }
     r.setRenderTarget(prevT, prevF, prevM);
     r.autoClear = prevAuto;
   }
@@ -1690,6 +1725,12 @@ export class Environment {
   _stepIBL() {
     const I = this._ibl;
     if (!I) return;
+    if (this.reflect.count > 0) {
+      const c = this.ctx.camera.position;
+      if (I.cubeCam.position.distanceToSquared(c) > 625 && !I.pending) {
+        I.cubeCam.position.copy(c); I.cubeCam.updateMatrixWorld(true); I.lastH = -99;
+      }
+    }
     if (!I.pending) {
       let dh = Math.abs(this._time - I.lastH); if (dh > 12) dh = 24 - dh;
       if (dh < IBL_HOURS && Math.abs(this._weatherPos() - this._iblW) < IBL_WEATHER) return;
