@@ -390,6 +390,19 @@ export const GATES = [
         // the collar: neck_01 less 6 cm, orbited in the body's own level frame
         const nk = neck.getWorldPosition(new T3()), col = nk.clone(); col.y -= 0.06;
         const Up = new T3(0, 1, 0), Fh = F0.clone(); Fh.y = 0; Fh.normalize(); const Rh = Up.clone().cross(Fh).normalize();
+        // fix round 2, Nov 12: WARM THE PROGRAMS first. Toggling every player material to double-sided and back changes their programs,
+        // and three skips a mesh whose program is still compiling (parallel shader compile): the first scan with a new variant drew
+        // the outfit, the skin or the wrap MISSING, and that whole region counted as a see-through (r1, r2: 3-7 k px blobs over the
+        // smock and the neck that the same view, re-rendered for the sheet a second later, shows solid). Both variants are rendered
+        // here at the scan's own render-target type, three times with frames between, so every scan below draws every mesh
+        for (let w = 0; w < 3; w++) {
+          for (const dbl of [false, true]) { setDouble(dbl); S.liveView(C, [col.x + 0.3, col.y + 0.5, col.z + 0.6], col.toArray(), { width: 64, height: 64, fov: 29 }); S.liveView(C, [cen.x, cen.y, cen.z + 0.8], cen.toArray(), { width: 64, height: 64, fov: 29 }); }
+          setDouble(false);
+          // (the world runs its frames with its fog and sky back: Environment.update reads them)
+          scene.background = bg0; scene.fog = fog0;
+          await frames(12);
+          scene.background = null; scene.fog = null;
+        }
         phases.push({ phase: ph, head: cen.toArray().map((v) => +v.toFixed(3)), collar: col.toArray().map((v) => +v.toFixed(3)) });
         const sets = [['head', cen, F0, R0, U1, [-0.35, 0, 0.35, 0.8]], ['collar', col, Fh, Rh, Up, [0, 0.4, 0.8, 1.2]]];
         for (const [region, c0, Fv, Rv, Uv, els] of sets) for (const el of els) for (let az = 0; az < 360; az += 15) {
@@ -434,7 +447,7 @@ export const GATES = [
   {
     // fix round 2, Nov 12, ROUND5-LOOK C-01: the skin's own light (src/hero/skinLook.js) measured on the close-up's own staging
     id: 'A-skin-scatter', kind: 'action', lane: 'character-art', settle: 800, timeout: 240000,
-    title: 'LOOK C-01 skin light (src/hero/skinLook.js): front close-up at 0.8 m, 9 x 9 px patches at the projected face landmarks (linear relative luminance of the displayed frame). (a) DAY 11:00: shadow cheek 0.022-0.060; (b) lit:shadow 3.5-5.5; (c) the 80 -> 20 % fall where the terminator runs (the lower face, lit jaw -> chin -> shadow jaw) spans >= 10 % of the face\'s width; (d) shadow-cheek warmth (R-B)/(R+G+B) >= 0.40; (e) BACKLIT 18:45, the 3/4 on her left: the brightest patch on her left ear\'s rim >= 1.5 x the shadow cheek, and < 1.15 x with the transmission term off (negative control); (f) NIGHT 01:00: shadow cheek <= 0.010; (g) the live skin carries userData.calSkin === 1, Brea\'s draws and texture sizes are unchanged',
+    title: 'LOOK C-01 skin light (src/hero/skinLook.js): front close-up at 0.8 m, 9 x 9 px patches at the projected face landmarks (linear relative luminance of the displayed frame). (a) DAY 11:00: shadow cheek 0.022-0.060; (b) lit:shadow 3.5-5.5; (c) the 80 -> 20 % fall where the terminator runs with no cast shadow across it (the forehead, 1.2 cm over the brow, 5 cm either side) spans >= 10 % of the face\'s width; (d) shadow-cheek warmth (R-B)/(R+G+B) >= 0.40; (e) BACKLIT 18:45, the 3/4 on her left: the brightest patch on her left ear\'s rim >= 1.5 x the shadow cheek, and < 1.15 x with the transmission term off (negative control); (f) NIGHT 01:00: shadow cheek <= 0.010; (g) the live skin carries userData.calSkin === 1, Brea\'s draws and texture sizes are unchanged',
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
     })()`),
     assert: `(async () => {
@@ -487,21 +500,26 @@ export const GATES = [
         const a = s.patch(cL), b = s.patch(cR);
         const litIsL = a.L >= b.L, lit = litIsL ? a : b, sh = litIsL ? b : a;
         const wFace = Math.abs(s.proj(face('jawL'))[0] - s.proj(face('jawR'))[0]);
-        // the fall, where the TERMINATOR runs: along the lower face from the lit jaw through the chin to the shadow jaw (the cheek line
-        // crosses the nose's cast shadow, which is a cast edge, not the terminator), each sample a 7 px vertical mean; 80 % and 20 %
-        // between that path's lit-jaw and shadow-jaw patches; the span is the path length between the two crossings over the face width
-        const jl = s.proj(face(litIsL ? 'jawL' : 'jawR')), js = s.proj(face(litIsL ? 'jawR' : 'jawL')), ch = s.proj(face('chin'));
-        const Ll = s.patch(jl).L, Ls = s.patch(js).L;
-        const path = []; const seg = (p0, p1) => { const n = Math.ceil(Math.hypot(p1[0] - p0[0], p1[1] - p0[1])); for (let i = 0; i < n; i++) path.push([p0[0] + (p1[0] - p0[0]) * i / n, p0[1] + (p1[1] - p0[1]) * i / n]); };
-        seg(jl, ch); seg(ch, js);
+        // the fall, where the TERMINATOR runs and no cast shadow crosses it: across the forehead, 1.2 cm over the brow landmark, from 5 cm
+        // toward the lit side to 5 cm toward the shadow side (the cheek line crosses the nose's cast shadow, a cast edge, not the
+        // terminator; the lower face sits near the terminator everywhere). Each sample is a 7 px vertical mean, smoothed over 9 px; 80 %
+        // and 20 % lie between the line's two ends; the span is the path length between the two crossings over the face's width
+        const brow0 = face('brow'), jl0 = face('jawL'), jr0 = face('jawR'), chin0 = face('chin');
+        const Rx = jl0.clone().sub(jr0).normalize(), Ux = brow0.clone().sub(chin0).normalize();
+        const Fx = Rx.clone().cross(Ux).normalize(), Uy = Fx.clone().cross(Rx).normalize();
+        const mid = brow0.clone().add(Uy.clone().multiplyScalar(0.012));
+        const sgn = litIsL ? 1 : -1;
+        const e0 = s.proj(mid.clone().add(Rx.clone().multiplyScalar(0.05 * sgn))), e1 = s.proj(mid.clone().add(Rx.clone().multiplyScalar(-0.05 * sgn)));
+        const path = []; { const n = Math.ceil(Math.hypot(e1[0] - e0[0], e1[1] - e0[1])); for (let i = 0; i <= n; i++) path.push([e0[0] + (e1[0] - e0[0]) * i / n, e0[1] + (e1[1] - e0[1]) * i / n]); }
         const prof = path.map(([x, y]) => s.lumAt(x, y));
         const sm = prof.map((_, i) => { let q = 0, n = 0; for (let k = -4; k <= 4; k++) { const v = prof[i + k]; if (v != null) { q += v; n++; } } return q / n; });
+        const Ll = Math.max(...sm.slice(0, 12)), Ls = Math.min(...sm.slice(-12));
         const P80 = Ls + 0.8 * (Ll - Ls), P20 = Ls + 0.2 * (Ll - Ls);
         let i80 = -1, i20 = -1;
         for (let i = 0; i < sm.length; i++) { if (i20 < 0 && sm[i] >= P80) i80 = i; if (i80 >= 0 && sm[i] <= P20) { i20 = i; break; } }
         const span = i80 >= 0 && i20 >= 0 ? (i20 - i80) / wFace : 0;
         const warm = (sh.R - sh.B) / (sh.R + sh.G + sh.B);
-        out.day = { shadowCheek: r3(sh.L), litCheek: r3(lit.L), ratio: +(lit.L / sh.L).toFixed(2), fallSpan: +span.toFixed(3), jawLit: r3(Ll), jawShadow: r3(Ls), faceWidthPx: Math.round(wFace), warmth: +warm.toFixed(3), shadowSide: litIsL ? 'her right' : 'her left' }; }
+        out.day = { shadowCheek: r3(sh.L), litCheek: r3(lit.L), ratio: +(lit.L / sh.L).toFixed(2), fallSpan: +span.toFixed(3), foreheadLit: r3(Ll), foreheadShadow: r3(Ls), faceWidthPx: Math.round(wFace), warmth: +warm.toFixed(3), shadowSide: litIsL ? 'her right' : 'her left' }; }
       // BACKLIT 18:45, the sun behind her, the 3/4 on her left (the backlit close-up's lens): the brightest 3 x 3 patch on her left ear's
       // rim against her shadow cheek, then with the transmission term off (the negative control)
       await relight(18.75, 180);
