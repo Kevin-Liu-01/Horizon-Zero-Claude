@@ -260,7 +260,7 @@ export async function build({ out = ROOT, scale = 1, file = null } = {}) {
   ];
   const LAMP_AT = sh(V(0, DRUM_Y, DRUM_R + 0.012));
   const sockets = {
-    lens: LAMP_AT,
+    lamp: LAMP_AT,
     vial: sh(V(0, VY, 0)),
     bob: sh(V(0, BOB.y - 0.15, 0)),
     bobTop: sh(BOB),
@@ -288,7 +288,7 @@ export async function build({ out = ROOT, scale = 1, file = null } = {}) {
   const target = file || path.join(out, OUTPUTS[0]);
   const stats = await writeInstrument([
     { bucket: hullAll, role: 'hull', material: { name: 'r5-plumb-hull' } },
-    { bucket: lampAll, role: 'sensor', material: { name: 'r5-plumb-sensor-lens', emissive: [0.95, 1.0, 0.62], baseColor: [0.02, 0.02, 0.012, 1] } },
+    { bucket: lampAll, role: 'sensor', material: { name: 'r5-plumb-sensor-glass', emissive: [0.95, 1.0, 0.62], baseColor: [0.02, 0.02, 0.012, 1] } },
     { bucket: bob, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.bobTop } },
   ], {
     file: target,

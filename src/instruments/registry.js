@@ -31,6 +31,7 @@ import { ROLE_IDS, buildRoles } from './roles.js';
  *   doctrine?   `registerDoctrine` row { body, herd, reband, components,
  *               install, spawn: [...] }
  *   audio?      { set, mass } — the audio lane's set id for this kind
+ *   height?     metres at scale 1 (P-03: hero-body's big-fight framing; W1 grant)
  *
  * Published on the manager:
  *   machines.instrumentKinds   { [id]: descriptor }   (frozen after install)
@@ -81,6 +82,8 @@ export function installInstruments(machines) {
   machines.roleOf = (kind) => ROLE_IDS.find((r) => machines.roles[r] === kind) ?? null;
   machines.kindAudio = Object.freeze(Object.fromEntries(descriptors.map((d) => [d.id, d.audio || null])));
   machines.isLegacyKind = (kind) => !kinds[kind];
+  /** P-03 (instruments-a W1): an Instrument kind's height (m, scale 1), or null; a live machine's own is `m.height`. */
+  machines.heightOf = (kind) => (kinds[kind] && Number.isFinite(kinds[kind].height) ? kinds[kind].height : null);
 
   const rows = {};
   for (const d of descriptors) rows[d.id] = { spec: d.spec, style: d.style, bake: false };

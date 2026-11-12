@@ -186,7 +186,7 @@ export async function build({ out = ROOT, file = null } = {}) {
     ...rigSpec.legs.flatMap((l) => [`${l.id}_thigh`, `${l.id}_shin`, `${l.id}_foot`]),
   ];
   const LAMP_AT = sh(V(0, AY + 0.02, PEG.lampZ));
-  const sockets = { lens: LAMP_AT, mallet: sh(V(0, ARM_END.y - 0.03, ARM_END.z)), rack: sh(V(R + 0.05, AY + 0.05, -0.12)), rackRoot: sh(V(0, AY + 0.05, -0.12)) };
+  const sockets = { lamp: LAMP_AT, mallet: sh(V(0, ARM_END.y - 0.03, ARM_END.z)), rack: sh(V(R + 0.05, AY + 0.05, -0.12)), rackRoot: sh(V(0, AY + 0.05, -0.12)) };
 
   const hullAll = mergeLabelled(hull, BONE_ORDER, 'peg-hull');
   const lampAll = mergeLabelled(lamp, BONE_ORDER, 'peg-sensor');
@@ -196,7 +196,7 @@ export async function build({ out = ROOT, file = null } = {}) {
   const target = file || path.join(out, OUTPUTS[0]);
   const stats = await writeInstrument([
     { bucket: hullAll, role: 'hull', material: { name: 'r5-peg-hull' } },
-    { bucket: lampAll, role: 'sensor', material: { name: 'r5-peg-sensor-lens', emissive: [1.0, 0.86, 0.6], baseColor: [0.02, 0.015, 0.01, 1] } },
+    { bucket: lampAll, role: 'sensor', material: { name: 'r5-peg-sensor-glass', emissive: [1.0, 0.86, 0.6], baseColor: [0.02, 0.015, 0.01, 1] } },
     { bucket: RACK, role: 'tool', material: { name: 'r5-peg-hull', anchor: sockets.rackRoot } },
   ], {
     file: target,

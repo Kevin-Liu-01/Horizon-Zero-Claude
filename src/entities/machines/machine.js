@@ -1343,6 +1343,15 @@ export class Machine {
     return this.manager?.lamps?.attach(this, anchor, opts) ?? null;
   }
 
+  /** P-04 (d), instruments-a W1: +0.35 k toward warm white for 70 ms real time, lamps excluded (lib/hull.js `_hullFlash`). */
+  flashPart(part, k = 1) {
+    const fx = this._hullFlash;
+    if (!fx) return false;
+    fx.until = performance.now() + 70;
+    fx.k = k > 0 ? k : 0;
+    return true;
+  }
+
   /** Weak-point sphere. Offset in meters; radius is in world meters.
    *  Returns the record — set `.enabled = false` for armor-hidden weak spots
    *  (canon strip loop: tear the plate, weak point comes online). */

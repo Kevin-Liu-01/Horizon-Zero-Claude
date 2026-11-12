@@ -423,10 +423,10 @@ export async function build({ out = ROOT } = {}) {
   /* ---------------------- merge per material, label bones ----------------- */
   const hullAll = mergeKit(hull, BONE_ORDER, 'tiller-hull');
   const lampAll = mergeKit(lamp, BONE_ORDER, 'tiller-sensor');
-  const LENS = shift(V(DRUM.x, DRUM.y, DRUM.z + 0.24));
+  const LAMP_C = shift(V(DRUM.x, DRUM.y, DRUM.z + 0.24));
   finish(AUGER, { occluders: [hullAll], rays: 28, dist: 0.4, footBand: 0.6 });
   const fin = finish(hullAll, { occluders: [lampAll, AUGER], rays: 28, dist: 0.4, footBand: 0.6,
-    lamps: [{ at: LENS, r: 0.2 }, { at: shift(V(HOP.x, HOP.y + 0.24, HOP.z)), r: 0.11 }] });
+    lamps: [{ at: LAMP_C, r: 0.2 }, { at: shift(V(HOP.x, HOP.y + 0.24, HOP.z)), r: 0.11 }] });
   const lod1 = await lod1From(hullAll, 0.32, 'tiller-lod1');   // I-04: LOD1 <= 40 % of LOD0 (A-instr-shadow-lod a)
 
   const stats = await writeInstrument([
@@ -441,7 +441,7 @@ export async function build({ out = ROOT } = {}) {
       r5Rig: rigSpec, r5BoneOrder: BONE_ORDER,
       r5Size: [+size.x.toFixed(4), +size.y.toFixed(4), +size.z.toFixed(4)],
       r5Sockets: {
-        lens: LENS,
+        lens: LAMP_C,
         lantern: shift(V(HOP.x, HOP.y + 0.24, HOP.z)),
         hopper: shift(V(HOP.x, HOP.y + 0.1, HOP.z)),
         auger: shift(TIP),

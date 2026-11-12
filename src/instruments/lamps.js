@@ -206,6 +206,8 @@ export const CORE_FRAC = 0.4;
 /** ...per state: the 20 % pinhole keeps a smaller core, so its token ring is still a ring (0 calm, 1 wary, 2 hostile, 3 dark). */
 export const CORE_FRAC_BY_STATE = Object.freeze({ calm: 0.4, wary: 0.4, hostile: 0.2, dark: 0.4 });
 const CORE_FRAC_A = [0.4, 0.4, 0.2, 0.4];
+/** I-01: the inner glow sits this many vessel radii behind the glass (interior parallax). */
+export const CORE_DEPTH = 0.6;
 /** Core HDR = ring HDR x CORE_GAIN, raised until its luminance clears the bloom threshold by CORE_OVER. */
 export const CORE_GAIN = 2.5;
 const CORE_OVER = 1.25;
@@ -224,10 +226,7 @@ const SPUTTER_S = 0.55;
 /** Iris speed (1/s): the aperture closes most of the way in ~0.2 s. */
 const IRIS_RATE = 14;
 
-/**
- * I-05 telegraph constants (ROUND5-LOOK §3.4): steady at 1.6x HDR, the iris at the pinhole within 0.08 s (tau 0.027 s
- * = 95 % in 0.08 s), a warm glint #FFE6C2 at HDR 1.5 for 0.12 s on the striking end (linear 1.5 x [1, 0.788, 0.565]).
- */
+/** I-05: steady 1.6x HDR, pinhole within 0.08 s (tau 0.027), glint #FFE6C2 at HDR 1.5 (linear) for 0.12 s. */
 export const TELEGRAPH = Object.freeze({ gain: 1.6, snapTau: 0.027, glintS: 0.12, glintHdr: Object.freeze([1.5, 1.182, 0.848]) });
 
 /** Instrument perception by weather (bible §2.3): `lib/weather.js`, re-exported for older imports. */
@@ -427,6 +426,7 @@ const IRIS_VERT = /* glsl */`
   varying vec4 vLamp;
   varying vec4 vIris;
   varying vec3 vCore;
+  varying vec3 vPar;
   void main() {
     vP = position.xy;
     vWall = 1.0 - step(0.5, normal.z);   // the face has normal +Z; the barrel wall is radial
@@ -437,6 +437,10 @@ const IRIS_VERT = /* glsl */`
     vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
     vN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
     vV = cameraPosition - wp.xyz;
+    // I-01 interior parallax (instruments-a W1): the view ray in the lamp's frame (x, y across the face, z out of it)
+    mat3 lm = mat3(modelMatrix) * mat3(instanceMatrix);
+    vec3 vl = vec3(dot(vV, normalize(lm[0])), dot(vV, normalize(lm[1])), dot(vV, normalize(lm[2])));
+    vPar = vec3(vl.xy / max(vl.z, 0.3 * length(vl)), vl.z / max(length(vl), 1e-4));
     gl_Position = projectionMatrix * viewMatrix * wp;
   }
 `;
@@ -453,6 +457,7 @@ const IRIS_FRAG = /* glsl */`
   varying vec4 vIris;
   varying vec3 vCore;
   varying float vCoreFrac;
+  varying vec3 vPar;
   void main() {
     float aCoreFrac = vCoreFrac;
     if (vWall > 0.5) {
@@ -470,8 +475,12 @@ const IRIS_FRAG = /* glsl */`
     float a = vLamp.a;
     if (r < a) {
       // the lit glass: a hot core above the bloom threshold inside the token ring
+      // the core is an inner glow sphere ${CORE_DEPTH} x the vessel radius behind the glass (I-01): it slides against the
+      // ring as the view turns; a fresnel rim at the glass edge brightens toward grazing views
       float rc = a * aCoreFrac;
-      c = mix(vCore, vLamp.rgb, smoothstep(rc * 0.85, rc * 1.15, r));
+      float rp = length(vP + vPar.xy * ${CORE_DEPTH.toFixed(2)} * a);
+      c = mix(vCore, vLamp.rgb, smoothstep(rc * 0.85, rc * 1.15, rp));
+      c += vLamp.rgb * 0.35 * pow(1.0 - clamp(vPar.z, 0.0, 1.0), 2.0) * smoothstep(a * 0.72, a, r);
     } else if (r > ${BEZEL_IN.toFixed(3)}) {
       c = vIris.rgb * 1.9;                 // housing bezel (darkened bronze)
     } else {
@@ -821,16 +830,10 @@ export class LampSystem {
 
   stateOf(machine) { return lampStateFor(machine); }
 
-  /**
-   * I-05 THE ATTACK TELEGRAPH (instruments-a W1, grant <= 30 lines). From the first windup frame for `t` seconds
-   * the lamp stops its rhythm and holds steady at TELEGRAPH.gain x its HDR, its iris snaps to the pinhole in
-   * TELEGRAPH.snapS, and the striking end (`glint`: an Object3D on the working end) throws a warm glint
-   * (#FFE6C2, HDR 1.5) for TELEGRAPH.glintS. No new colour (lamp grammar only). Allocation-free.
-   */
+  /** I-05 (instruments-a W1): for `t` s steady at TELEGRAPH.gain, iris to the pinhole, a warm glint at `glint` (the striking end). */
   telegraph(machine, t, glint = null, glintR = 0.07) {
-    const r = machine?.lamp;
+    const r = machine?.lamp, now = (HOT.engine || this.ctx.engine)?.simTime ?? 0;
     if (!r) return false;
-    const now = (HOT.engine || this.ctx.engine)?.simTime ?? 0;
     r.teleSince = now; r.teleUntil = now + (t > 0 ? t : 0); r.glint = glint; r.glintR = glintR;
     return true;
   }
@@ -949,14 +952,11 @@ export class LampSystem {
       // I-01: the hull spill (lib/hull.js) in the lamp's state colour x its rhythm; nothing when dark
       const cu = r.coreU;
       if (cu !== null) { const LA = this._linA, lk = s === 'dark' ? 0 : gain; cu.x = LA[c3] * lk; cu.y = LA[c3 + 1] * lk; cu.z = LA[c3 + 2] * lk; }
-      // I-05: the warm glint at the striking end, one more instance of this draw (camera-facing, _writeMatrices)
-      r.gslot = -1;
+      r.gslot = -1;   // I-05: the glint is one more instance of this draw (camera-facing, _writeMatrices)
       if (tele && r.glint !== null && t - r.teleSince < TELEGRAPH.glintS && n < this.capacity) {
         const og = n * 4, gh = TELEGRAPH.glintHdr;
-        L[og] = gh[0]; L[og + 1] = gh[1]; L[og + 2] = gh[2]; L[og + 3] = 1;
-        K[og] = gh[0]; K[og + 1] = gh[1]; K[og + 2] = gh[2]; K[og + 3] = 1;
-        I[og] = gh[0]; I[og + 1] = gh[1]; I[og + 2] = gh[2]; I[og + 3] = 0;
-        r.gslot = n; n++;
+        for (let j = 0; j < 3; j++) { L[og + j] = gh[j]; K[og + j] = gh[j]; I[og + j] = gh[j]; }
+        L[og + 3] = 1; K[og + 3] = 1; I[og + 3] = 0; r.gslot = n; n++;
       }
 
       // ---- the beam (its matrix too is written in `_writeMatrices`, from the fresh anchor) ----
@@ -1026,8 +1026,7 @@ export class LampSystem {
       }
       im[om + 12] = te[12]; im[om + 13] = te[13]; im[om + 14] = te[14]; im[om + 15] = 1;
       lamps++;
-      if (r.gslot >= 0 && cam !== null) {
-        // the glint faces the camera (its basis rows are the camera's, scaled to the glint radius)
+      if (r.gslot >= 0 && cam !== null) {   // the glint faces the camera (the camera's basis x its radius)
         const g = r.glint.matrixWorld.elements, ce = cam.matrixWorld.elements, og = r.gslot * 16, gr = r.glintR;
         for (let c = 0; c < 12; c += 4) { im[og + c] = ce[c] * gr; im[og + c + 1] = ce[c + 1] * gr; im[og + c + 2] = ce[c + 2] * gr; im[og + c + 3] = 0; }
         im[og + 12] = g[12] + ce[8] * 0.05; im[og + 13] = g[13] + ce[9] * 0.05; im[og + 14] = g[14] + ce[10] * 0.05; im[og + 15] = 1;
