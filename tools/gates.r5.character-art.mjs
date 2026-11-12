@@ -293,8 +293,8 @@ export const GATES = [
     criteria: 'Pass: the nape is coils with a broken outline, with real value, not a shell; the tail leaves the knot as a gathered roll, not a square-cut plate standing off it; the knot is cloth all round, with no dark hollow; the topknot\'s crown is gathered radial pleats with no rectangular tone blocks; its carmine binding is seated in the cloth with no saw-teeth; its other end is a cloth end with a frayed fringe. FAIL if any of them looks like a flat decal, and (R54) FAIL if it looks cheap.',
   },
   {
-    id: 'A-wrap-closed', kind: 'action', lane: 'character-art', settle: 800, timeout: 600000,
-    title: 'No see-through (plan §9 "no see-through"; R64 d): only the player drawn on a key colour, still air, the stow kit and both free cloth ends collapsed, at THREE idle phases in the same run (fix round 2: a pinhole that comes and goes with the idle is not closed). Each phase scans two view sets at 0.8 m: the HEAD (24 azimuths x 4 elevations round the face) and the COLLAR (24 azimuths x 4 elevations up to 1.2 rad, centred on neck_01 minus 0.06 m). 0 enclosed background pixels within 300 px of the head\'s centre, and, in the collar views, 0 SEE-THROUGH px within 220 px of the collar: background that a double-sided draw of the player covers (a look through a surface from its back into a hollow; the air between body parts is not a hole) (a speck of coil-card alpha, under 6 px or 3 x 2 px, is hair)',
+    id: 'A-wrap-closed', kind: 'action', lane: 'character-art', settle: 800, timeout: 900000,
+    title: 'No see-through (plan §9 "no see-through"; R64 d): only the player drawn on a key colour, still air, the stow kit and both free cloth ends collapsed, at THREE idle phases in the same run (fix round 2: a pinhole that comes and goes with the idle is not closed). Each phase scans two view sets at 0.8 m: the HEAD (24 azimuths x 4 elevations round the face) and the COLLAR (24 azimuths x 4 elevations up to 1.2 rad, centred on neck_01 minus 0.06 m). 0 enclosed background pixels within 300 px of the head\'s centre, and, in the collar views, 0 SEE-THROUGH px within 220 px of the collar: background that a double-sided draw of the player covers (a look through a surface from its back into a hollow; the air between body parts is not a hole) (a speck of coil-card alpha, under 6 px or 3 x 2 px, is hair). Each collar state is drawn twice: a see-through is background in BOTH single-sided frames and covered in the double-sided one (a frame that drops a mesh after the side change is not a hole)',
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
     })()`),
     assert: `(async () => {
@@ -338,32 +338,26 @@ export const GATES = [
       // single-sided inner collar seen past the neck, the gap down the collar past a bowed head), never the air between body parts. A
       // radius round the collar, and then a convex outline of it, counted the air between her arm and her side, and beside the bowed
       // head, as holes (r3, r5: 15-18 k px components enclosed by the arm, the torso and the head)
-      // fix round 2, Nov 12: the double-sided draw SWAPS each mesh to a double-sided twin of its material, made once, instead of toggling
-      // material.side. A toggle changes the material's program; three releases a program no material uses any more and draws nothing for a
-      // mesh whose program is still compiling, so a view's single-sided frame could lose the smock or the neck and count it as a
-      // see-through (r1-r4: 3-7 k px blobs where the sheet, re-rendered a moment later, shows solid cloth and skin). Twins keep both
-      // programs alive for the whole scan; they share the source's textures, shader hooks and uniforms, and are disposed at the end
-      const pm = [];
-      p.model.traverse((o) => { if (o.isMesh && o.material) pm.push(o); });
-      const orig = pm.map((o) => o.material);
-      const twinOf = new Map();
-      const twin = (m) => {
-        if (twinOf.has(m)) return twinOf.get(m);
-        const c = m.clone(); c.side = 2; c.onBeforeCompile = m.onBeforeCompile; c.customProgramCacheKey = m.customProgramCacheKey; c.userData = m.userData;
-        C.environment?._matSeen?.add?.(c);   // its hooks are the source's, already composed: world-sky must not wrap it again
-        twinOf.set(m, c); return c;
-      };
-      const dbl = orig.map((m) => (Array.isArray(m) ? m.map(twin) : twin(m)));
-      const setDouble = (on) => { pm.forEach((o, i) => { o.material = on ? dbl[i] : orig[i]; }); };
+      const mats = [];
+      p.model.traverse((o) => { if (o.isMesh && o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (!mats.includes(m)) mats.push(m); });
+      const sides0 = mats.map((m) => m.side);
+      const setDouble = (on) => { mats.forEach((m, i) => { const want = on ? 2 : sides0[i]; if (m.side !== want) { m.side = want; m.needsUpdate = true; } }); };
+      // fix round 2, Nov 12: each state is drawn TWICE and a pixel is a see-through only when BOTH single-sided frames show background there
+      // and the second double-sided frame covers it. The first frame after the material side changes can come back with whole meshes
+      // missing (r1-r5: 5-63 k px blobs over the smock and the neck, where the row's own sheet, the same view drawn again, is solid
+      // cloth; swapping in double-sided twin materials instead made it worse, 167 k px). A real see-through is background in every
+      // single-sided frame; this only refuses a frame that dropped a mesh
       const seeThrough = (pos, tgt) => {
-        const a = S.liveView(C, pos.toArray(), tgt.toArray(), { width: W, height: H, fov: 29 }).data;
+        const opt = { width: W, height: H, fov: 29 };
+        const a0 = S.liveView(C, pos.toArray(), tgt.toArray(), opt).data;
+        const a = S.liveView(C, pos.toArray(), tgt.toArray(), opt).data;
         const k = [a[0], a[1], a[2]];
         setDouble(true);
         let b;
-        try { b = S.liveView(C, pos.toArray(), tgt.toArray(), { width: W, height: H, fov: 29 }).data; } finally { setDouble(false); }
+        try { S.liveView(C, pos.toArray(), tgt.toArray(), opt); b = S.liveView(C, pos.toArray(), tgt.toArray(), opt).data; } finally { setDouble(false); }
         const isBg = (d, i) => Math.abs(d[i * 4] - k[0]) < 28 && Math.abs(d[i * 4 + 1] - k[1]) < 28 && Math.abs(d[i * 4 + 2] - k[2]) < 28;
         const mark = new Uint8Array(W * H);
-        for (let i = 0; i < W * H; i++) if (isBg(a, i) && !isBg(b, i)) mark[i] = 1;
+        for (let i = 0; i < W * H; i++) if (isBg(a, i) && isBg(a0, i) && !isBg(b, i)) mark[i] = 1;
         const seen = new Uint8Array(W * H), comps = [];
         for (let i = 0; i < W * H; i++) if (mark[i] && !seen[i]) {
           let area = 0, sx = 0, sy = 0, x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1; const s2 = [i]; seen[i] = 1;
@@ -408,12 +402,9 @@ export const GATES = [
           return { cen, F0, R0, U1, col, Fh, Rh, Up };
         };
         let st = stage();
-        // fix round 2, Nov 12: WARM THE PROGRAMS first. Toggling every player material to double-sided and back changes their programs,
-        // and three skips a mesh whose program is still compiling (parallel shader compile): the first scan with a new variant drew
-        // the outfit, the skin or the wrap MISSING, and that whole region counted as a see-through (r1, r2: 3-7 k px blobs over the
-        // smock and the neck that the same view, re-rendered for the sheet a second later, shows solid). Both variants are rendered
-        // here at the scan's own render-target type, three times with frames between, so every scan below draws every mesh. The
-        // frames run the hero rig, which shows the stow kit again and lets the cloth ends hang: the scan stages them again after
+        // fix round 2, Nov 12: WARM BOTH MATERIAL STATES first (single- and double-sided, at the scan's own render-target type, three times
+        // with frames between), then stage the kit and the cloth ends again: the frames run the hero rig, which shows the kit again and
+        // lets the cloth ends hang. The first frames after a material's side changes came back with meshes missing (see seeThrough)
         for (let w = 0; w < 3; w++) {
           for (const dbl of [false, true]) { setDouble(dbl); S.liveView(C, [st.col.x + 0.3, st.col.y + 0.5, st.col.z + 0.6], st.col.toArray(), { width: 64, height: 64, fov: 29 }); S.liveView(C, [st.cen.x, st.cen.y, st.cen.z + 0.8], st.cen.toArray(), { width: 64, height: 64, fov: 29 }); }
           setDouble(false);
@@ -455,7 +446,6 @@ export const GATES = [
         g.font = '500 15px "IBM Plex Mono", ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(x + 8, y + 8, g.measureText(lb).width + 12, 22); g.fillStyle = '#fff'; g.fillText(lb, x + 14, y + 24);
       });
       setDouble(false);
-      for (const c of twinOf.values()) c.dispose();
       R.setClearColor(cc, ca);
       for (const o of hidden) o.visible = true;
       scene.background = bg0; scene.fog = fog0;

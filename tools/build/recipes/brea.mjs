@@ -444,8 +444,9 @@ export async function build({ out = ROOT } = {}) {
     // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
     tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1),
       // fix round 2, Nov 12 (R66 d, LOOK C-05: "0.09 m wide at the root, 0.06 m before a 2.5 cm frayed fringe"; game metres / S): the strip
-      // narrows from the knot to the fringe, and the fringe is the last 2.5 cm of the chain's 0.49 m
-      width: (u) => (0.09 - 0.03 * smooth(0.12, 0.95, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 22, across: 5, rootBack: 0.014,
+      // keeps its 0.09 m down the free strip and narrows over its last half to 0.06 m at the fringe (a taper from the knot cost
+      // A-tail-legible its reach at the 64 px sheet: 2 of 24 moments at reach 3 in r5), and the fringe is the last 2.5 cm of the chain's 0.49 m
+      width: (u) => (0.09 - 0.03 * smooth(0.5, 0.95, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 22, across: 5, rootBack: 0.014,
       // fix round 2 (R54, R66 c: soft, thick, rippling cloth, no paper edge; the length and width stay): the rows go to the free strip,
       // each row is skinned smoothly across the joints, the selvedges are rolled hems 3.4 mm thick, the strip sags and ripples
       rootRows: 4, smoothSkin: true, hem: 0.0034, ripple: 0.0042 },
