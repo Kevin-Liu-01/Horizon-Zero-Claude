@@ -39,7 +39,62 @@ No asset file is added (the noise is generated at boot), so no `public/LICENSES.
 
 ## 2. Gates
 
-(filled in from the runs below)
+All on port 5261 from this tree, `nice -n 10`, one gate Chrome under the slot protocol, cwd in scratch.
+Runs: r1 (first block, 18:29 UTC), r2–r5 (fix rounds on the light), r6 (the block + the global list,
+20:17–21:37 UTC), r7 (the allocation fix, see A-alloc-rate). Numbers below are r6's unless marked.
+
+### 2.1 This lane's §9 block (W1)
+
+| row | result | measured |
+|---|---|---|
+| A-weather-states | **PASS** | states exactly trade/calima/fogbank/squall; after a 0.6 s fade: trade fog #CFD8DE (rel. err 0), calima #C98B4E (0) at density ×4.000, fogbank ×3.000 (fog within 0.5 %), squall ×1.6 (lane table: the bible gives none); perceptionScale 1.0 / 0.5 / 0.5 / 0.8 and 0.7 at 23:00; the calima disc, **real pixels** at its centre, #FAA680 = ΔE2000 **1.53** from #F2A27E (bar 3) |
+| A-hour-keys | **PASS** | sky top, sky low band and fog at 05:30, 07:00, 12:00, 16:30, 18:45, 19:20 (top only), 19:45, 23:00: worst ΔE2000 **0.00** (bar 5); 05:30 key present; troughs 05:24 and 19:54 at sunI **0.10** (bar ≤ 0.15) |
+| A55-light-ratio (re-staged: noon, trade; `windPump` place when world-props publishes it, else the W0 `shadowCaster`) | **PASS** | shadow / lit **0.391** (bar ≤ 0.55); shadow L 0.197, lit 0.505; sun 49.2° at bearing 167.8 |
+| A56-cascades | **PASS** | 3 cascades, near texel **1.38 cm**, far planes 13.2 / 39.6 / 120 m, 0 casters beyond 120 m, grass and bush casting |
+| A57-aerial (re-staged) | **PASS** | T(300 m) trade **0.668** (0.55–0.70), calima **0.285** (0.20–0.40) at 12:00; rendered haze moves 10 of 10 measurable samples toward the in-scatter (0 away) |
+| A-cloud-sea | **PASS** (rim stand-in) | 07:00 trade, eye at 205 m over the island centre (no `gatePlaces.calderaRim` on this terrain): 43 windward samples below 140 m, median luminance **1.23 × sky** (bar ≥ 0.75), 100 % at bar, +0.33 over the deck-off control; draw calls 110 on / 110 off (**delta 0**), 0 transparent planes |
+| A-biome-grade | **PASS** | walked a pans → flank border (60 m at 6 m/s): max EV step **0.010 per frame** (bar ≤ 0.05), EV moved 0.30; the six §9.3 rows are the table verbatim and the live grade where each biome dominates on this terrain (all six found through the Round-4 → CALIMA map) |
+| A-no-river | **PASS** | 0 `RiverWater` imports or constructions in environment.js / main.js, 0 scene objects named river; water meshes: none in this tree (the island's sea, Glass and offing arrive with world-ground) |
+| V-calima | NEEDS-JUDGE | `r6/shots/gates/V-calima.png`; own reading in §2.4 |
+| V31-night | NEEDS-JUDGE | `V31-night.png`; §2.4 |
+| V-sky-trade | NEEDS-JUDGE | `V-sky-trade.png`; §2.4 |
+
+### 2.2 LOOK W1 rows this lane can grade alone
+
+| row | result | measured |
+|---|---|---|
+| A-look-ibl | **PASS** | (a) `scene.environment` = CAL.skyIBL, 0 RoomEnvironment imports; (b) at 16:30 the +Y face hue **284.8°** vs the top key's 285.3° (≤ 25°), luminance **0.996 ×** (± 30 %), −Y hue 63.7° vs the ground key's 68.3°; (c) 10 forced rebakes: textures 117 → 117, geometries 150 → 150, face 0.1 ms median / 0.3 max, PMREM 0.6 / 0.7 ms (CPU submit + 1 px sync); (d) no 768×1024 room PMREM in the RT ledger; env rows: skyCube 1.18 MB, PMREM 1.57 MB, ping-pong 1.57 MB |
+| A-sky-last | **PASS** (c PENDING-orchestrator) | the sky is the last of 103 opaque draws, renderOrder 1000, LEQUAL, no depth write, z = w; drawn first vs last: **100 %** identical pixels; 0 fbm calls in the sky shader (noise CAL.skyNoise); the A/B timing is the quiet-box run's (R45) |
+| A-look-sunpath-dwell | **PASS** (0:55 clause PENDING-progression) | bearing 180.0 at 12:45, 167.8 at 12:00, peak 50.0°, sunrise 70, sunset 290, pump shadow at noon 347.8; golden clock **32.6 %** golden, **18.2 %** night, day 1800.0 s, max rate change 0.26 %/frame; New Game 07:00, title / shot 17:45 |
+
+### 2.3 Global green list items that exist in this tree, and must-stay-green rows
+
+| row | result | note |
+|---|---|---|
+| A1-boot-clean | **PASS** | |
+| A20b-no-system-errors | **PASS** | 0 system errors, 357 frames |
+| A9-perf-budget | **PASS** | 59.9 fps median on a quiet box (load 2.36), 233 draws |
+| A21-real-draw-calls | **FAIL** (GPU term only) | draws 243 / 174 / 269 and triangles 3.23 / 3.31 / 3.49 M PASS; median GPU **20.76 / 26.62 / 19.81 ms** (vista / herd / fight) against 14; p95 terms PENDING (null frame). The Nov 6 records are 19.7–21.2 / 33.9 / 20.5 ms, so this lane did not make it worse; it is the global GPU gap (LOOK §4, R66 h; the interim W1-exit bars are 17 / 20 / 17) |
+| A90-memory-stability | **PASS** | 30 kills |
+| A90-memory-stability-expansion | **PASS** | |
+| A90b-memory-attribution | **PASS** | |
+| A90-rig-reclaim | **PASS** | geo +1, tex 0 |
+| A90-abs | **PASS** | post-GC heap 81.8 MB (≤ 450), GPU process 1213 MB (≤ 1500) |
+| A-vram-ledger | **PASS** | textures 63.8 MB, render targets 122.2 MB, geometry 78.1 MB, total 264.0 MB (bars 160 / 170 / 120 / 450) |
+| A-alloc-rate | see §2.5 | |
+| A-ID-ip-assets-gone | **PASS** | |
+| A-assets-tracked | **PASS** | |
+| A-licence-manifest | PENDING | only the `third-party` clause pending (not this lane's); this lane added no asset |
+| A-no-horizon-terms-player | **PASS** | 1503 ≤ 1508 |
+| A-no-horizon-terms-code | **PASS** | total 1371 = ratchet 1371, 0 uncovered, 0 over cap (`tools/lint/namecheck.mjs --code` PASS) |
+| A-port-guard | PENDING | refusals PASS; needs a sealed full run (orchestrator) |
+| A-reach-all-sites | not in this tree | world-ground's row |
+| A-carried-suite | orchestrator | partial seal written by r6 (14 carried rows) |
+| A108-ao-periodicity | **PASS** | worst 0.135 (bar 0.15) |
+| A109-ao-distance-fade | **PASS** | |
+| A-weak40:herd (R46 calima clause) | **PASS** | "PASS (13:00 and calima)": the clause that waited on this lane now runs and passes |
+| A-perception-weather | **PASS** | trade = sight range, calima half, fogbank half, restored |
+| A-kind-block-file | FAIL (infrastructure) | the child kind-block run took 55 min and came back with no rows (`rows: []`, A41c NOT-RUN): a harness outcome, not a row result; A-weak40:herd above is its calima clause, run directly |
 
 ## 3. Published API (exact signatures)
 
