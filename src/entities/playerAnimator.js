@@ -64,6 +64,7 @@ const _caX = new THREE.Vector3(1, 0, 0);
 const _a16U = new THREE.Vector3();  // the A16 elbow cap's up: the aim frame's (R52)
 const _gvW = new THREE.Vector3(), _gvT = new THREE.Vector3(); // the body-step governor (`_rollExit`): world pelvis, governed
 const _gvC = new THREE.Vector3(), _gvH = new THREE.Vector3(), _gvS = new THREE.Vector3(), _gvP3 = [null, null, null];   // ...the trunk's (round 3)
+const _gvQw = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];   // ...last step's trunk turned by her turn since
 const _trR = new THREE.Vector3();   // hero-body targeted fix round 3: `trunkReach` scratch
 const _nlC = new THREE.Vector3(), _nlD = new THREE.Vector3(), _nlA = new THREE.Vector3();   // ...and `crouchAim.nearLead`'s ray
 const _reU = new THREE.Vector3();  // elbow roll: elbow offset, perpendicular
@@ -2824,17 +2825,27 @@ export class PlayerAnimator {
            * chest and the head stepped 0.031-0.054 m on it: a landing's fold, a strafe's cancel, a crouch toggle.
            * The bound is on the trunk: the pelvis, the chest (spine_03) and the head, each against where it was
            * rendered; the body is moved as one piece, by the least that brings the worst of the three onto the cap) */
+          /* (...and, while the aim turns her — onto the camera as it comes up, back onto her run after it — or after a
+           * roll or a landing, against her ROOT in the world too: her heading's turn sweeps the trunk round the root, so
+           * last step's place is also read turned by that step's turn (`trunkWorld`); the body is moved by the least
+           * that brings the worst of all six readings onto the cap) */
           if (pass === 0 && !dodging && this._rxPeOk) {
             const nB = RX.trunk && this._rxTrOk && b.spine3 && b.head ? 3 : 1;
             if (nB === 3) { this._charOf(b.spine3.bone, _gvC); this._charOf(b.head.bone, _gvH); }
             const P = _gvP3, Q = this._rxQ3;
             P[0] = _rxV; P[1] = _gvC; P[2] = _gvH;
+            const dYaw = this._gvYawOk ? this.model.rotation.y - this._gvYaw : 0;
+            const nW = RX.trunkWorld && Math.abs(dYaw) > 1e-5 && Math.abs(dYaw) < 0.6 && (this._aimW > 0.01 || p._aimTurnLim || this._rxWin > 0 || air) ? nB : 0;
+            for (let i = 0; i < nW; i++) _gvQw[i].copy(Q[i]).applyAxisAngle(Y_AXIS, -dYaw);
             _gvT.set(0, 0, 0);
-            for (let it = 0; it < 6; it++) {
+            for (let it = 0; it < 8; it++) {
               let worst = 0, wi = -1;
-              for (let i = 0; i < nB; i++) { const l = _gvS.subVectors(P[i], Q[i]).add(_gvT).length(); if (l > worst) { worst = l; wi = i; } }
+              for (let i = 0; i < nB + nW; i++) {
+                const l = _gvS.subVectors(P[i % nB], i < nB ? Q[i] : _gvQw[i - nB]).add(_gvT).length();
+                if (l > worst) { worst = l; wi = i; }
+              }
               if (wi < 0 || worst <= cap * 1.0005 || worst >= 1.5) break;
-              _gvS.subVectors(P[wi], Q[wi]).add(_gvT);
+              _gvS.subVectors(P[wi % nB], wi < nB ? Q[wi] : _gvQw[wi - nB]).add(_gvT);
               _gvT.addScaledVector(_gvS, cap / worst - 1);
             }
             corr = _gvT.lengthSq() > 1e-12;
@@ -2863,6 +2874,7 @@ export class PlayerAnimator {
     }
     this._charOf(pe.bone, this._rxPe); this._rxPeOk = true;
     if (b.spine3 && b.head) { this._charOf(b.spine3.bone, this._rxQ3[1]); this._charOf(b.head.bone, this._rxQ3[2]); this._rxTrOk = true; }
+    this._gvYaw = this.model.rotation.y; this._gvYawOk = true;
   }
 
   /**

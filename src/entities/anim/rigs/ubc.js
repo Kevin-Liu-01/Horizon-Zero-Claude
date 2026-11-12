@@ -300,8 +300,9 @@ export const UBC_TUNE = {
   // clip held at the frame it reached, not scrubbed to its last: see the animator's `update`; and an air slot that
   // changes under weight, the jump loop to the landing, crossfades over `airX` s: `_airCrossfade`)
   // (...and `trunk`: the governor's character-space bound holds the pelvis, the chest and the head together, the body
-  // moved as one piece; it stays on `gvHold` s after it last held anything back)
-  rollExit: { stepM: 0.02, minM: 0.02, minS: 0.2, maxS: 0.8, dodgeDist: 3.4, govM: 0.026, window: 0.6, blendS: 0.45, airX: 0.16, trunk: true, gvHold: 0.3 },
+  // moved as one piece; `trunkWorld`: while the aim turns her, and after a roll or a landing, against her root in the
+  // world as well; it stays on `gvHold` s after it last held anything back)
+  rollExit: { stepM: 0.02, minM: 0.02, minS: 0.2, maxS: 0.8, dodgeDist: 3.4, govM: 0.026, window: 0.6, blendS: 0.45, airX: 0.16, trunk: true, trunkWorld: true, gvHold: 0.3 },
   // hero-body targeted fix round 3: the aim's way in and out. The aim waits while her heading is still more than
   // `align` rad (in .. out) off the camera's line (player.js turns her onto it at a rate now); it goes out at most
   // `rate` per second standing (crouched `crouchAim.outRate`), and the blade's draw share at most `bladeRate`,

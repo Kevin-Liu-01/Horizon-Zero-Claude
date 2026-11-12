@@ -8064,7 +8064,7 @@ const NEW_GATES = [
           const Q = this.debugArm('r');
           const e = new T3(Q.elbow.x, Q.elbow.y, Q.elbow.z), w = new T3(Q.hand.x, Q.hand.y, Q.hand.z), s = new T3(Q.shoulder.x, Q.shoulder.y, Q.shoulder.z);
           const pe = new T3(), he = new T3(), ce = new T3(); this._charOf(this.b.pelvis.bone, pe); this._charOf(this.b.head.bone, he); this._charOf(this.b.spine3.bone, ce);
-          const peW = this.b.pelvis.bone.getWorldPosition(new T3()), heW = this.b.head.bone.getWorldPosition(new T3()), ceW = this.b.spine3.bone.getWorldPosition(new T3()), rtW = p.position.clone(), yawM = p.model.rotation.y;
+          const peW = this.b.pelvis.bone.getWorldPosition(new T3()), heW = this.b.head.bone.getWorldPosition(new T3()), ceW = this.b.spine3.bone.getWorldPosition(new T3()), rtW = p.position.clone(), yawM = p.model.rotation.y, camY = p.camYaw;
           const qc = new Q4(); this._liveW(this.b.spine3.bone, qc); qc.invert();
           const eC = e.clone().sub(s).applyQuaternion(qc), wC = w.clone().sub(s).applyQuaternion(qc);
           const lab = label + '+' + (E.simTime - t0 - tLab).toFixed(3);
@@ -8097,7 +8097,9 @@ const NEW_GATES = [
             const dRt = rtW.clone().sub(prev.rtW);
             const wP = peW.clone().sub(prev.peW).sub(dRt).length() * k60, wH = heW.clone().sub(prev.heW).sub(dRt).length() * k60, wCw = ceW.clone().sub(prev.ceW).sub(dRt).length() * k60, dBw = Math.max(wP, wH, wCw);
             const nmB = dB === dP ? 'pelvis' : dB === dH ? 'head' : 'chest', nmW = dBw === wP ? 'pelvis' : dBw === wH ? 'head' : 'chest';
-            let dYw = yawM - prev.yawM; dYw = Math.abs(dYw - Math.round(dYw / (2 * Math.PI)) * 2 * Math.PI) * k60;
+            // (her heading's own turn: what it turned beyond the camera's turn of the same step — at full draw her
+            // heading IS the camera's, and a 10 rad/s mouse turn carries her with it)
+            let dYw = (yawM - prev.yawM) - (camY - prev.camY); dYw = Math.abs(dYw - Math.round(dYw / (2 * Math.PI)) * 2 * Math.PI) * k60;
             const kind = lanceArm ? 'lance' : roll ? 'roll' : camMoved ? 'cam' : !inf ? 'clip' : 'aim';
             M.kinds[kind] = (M.kinds[kind] || 0) + 1;
             // (a step the camera's pitch moved: the body follows the aim, printed not graded)
@@ -8126,7 +8128,7 @@ const NEW_GATES = [
             if (gTr > STEP) failAdd('travel(' + kind + ')', r4(gTr) + ' @' + lab);
             else if (gRl > STEP) failAdd('travelRel(' + kind + ')', r4(gRl) + ' @' + lab);
           }
-          prev = { e, w, s, eC, wC, pe, he, ce, peW, heW, ceW, rtW, yawM }; M.steps++;
+          prev = { e, w, s, eC, wC, pe, he, ce, peW, heW, ceW, rtW, yawM, camY }; M.steps++;
           if (this.debugDrawHand(kn, ft)) {
             const pts = [[w, 'wrist'], [CH(kn), 'knuckle'], [CH(ft), 'fingertip']];
             for (const [P, nm] of pts) {

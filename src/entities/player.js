@@ -2372,6 +2372,7 @@ void main() {
       d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
       const step = Math.min(AIM_TURN, arcRate) * dt;
       this.heading += THREE.MathUtils.clamp(d, -step, step);
+      this._aimTurnLim = true;
     } else if (this.moveSpeed > 0.4) {
       this._aimFaceOk = false;
       this._latchFacing(dt);
@@ -2380,10 +2381,13 @@ void main() {
       while (d < -Math.PI) d += Math.PI * 2;
       // 14 rad/s standing, 4.6 rad/s at full sprint: momentum costs agility
       let rate = 14 - 9.4 * THREE.MathUtils.clamp(this.moveSpeed / SPEEDS.sprint, 0, 1);
-      if ((this.animator?.aimWeight ?? 0) > 0.01) rate = Math.min(rate, arcRate);
+      // (...and the turn back onto her run after an aim, until she faces it: once the aim weight was out her head
+      // swept 0.035-0.045 m a step against her root at the kept 14 rad/s, run w11/d2)
+      if ((this.animator?.aimWeight ?? 0) > 0.01 || this._aimTurnLim) rate = Math.min(rate, arcRate);
       const step = rate * dt;
       this.heading += THREE.MathUtils.clamp(d, -step, step);
-    } else this._aimFaceOk = false;
+      if (Math.abs(d) <= step + 0.02 && (this.animator?.aimWeight ?? 0) <= 0.01) this._aimTurnLim = false;
+    } else { this._aimFaceOk = false; this._aimTurnLim = false; }
 
     this.model.position.copy(this.position);
     this.model.rotation.y = this.heading;
