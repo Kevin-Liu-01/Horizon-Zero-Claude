@@ -28,7 +28,7 @@ import { transectsOf, TRANSECT } from './peg-transect.js';
  */
 
 const URL = '/models/instruments/peg.glb';
-const LAMP_R = 0.12;
+const LAMP_R = 0.15;
 const HEIGHT = 0.924;
 const QUAD_WALK = { stride: 0.34, duty: 0.6, lift: 0.07, offsets: { LF: 0, RH: 0, RF: 0.5, LH: 0.5 } };   // trot
 const QUAD_RUN = { stride: 0.7, duty: 0.44, lift: 0.11, offsets: { LF: 0, RH: 0.04, RF: 0.5, LH: 0.54 } };

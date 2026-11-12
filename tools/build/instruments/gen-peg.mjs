@@ -29,7 +29,7 @@ export const LANE = 'instruments-a';
 export const RECIPE = 'tools/build/instruments/gen-peg.mjs';
 export const OUTPUTS = ['public/models/instruments/peg.glb'];
 
-export const PEG = Object.freeze({ axisY: 0.48, bodyR: 0.20, z0: -0.56, z1: 0.30, lampR: 0.12, lampZ: 0.445, mastY: 1.0 });
+export const PEG = Object.freeze({ axisY: 0.48, bodyR: 0.20, z0: -0.56, z1: 0.30, lampR: 0.15, lampZ: 0.445, mastY: 1.0 });
 
 export async function build({ out = ROOT, file = null } = {}) {
   const P = (r, h, surf, tone) => ({ r, h, surf, tone });
@@ -77,15 +77,15 @@ export async function build({ out = ROOT, file = null } = {}) {
   /* --------------------------- head: lamp collar --------------------------- */
   const HZ = PEG.z1;
   lathe(H('head'), [
-    P(0, 0, 'graphite', C.GRAPH), P(0.17, 0, 'bronze', C.BRONZE), P(0.2, 0.03, 'bronze', C.BRONZE), P(0.22, 0.07, 'glaze', C.OXBLOOD),
-    P(0.22, 0.11, 'glaze', C.OXBLOOD), P(0.21, 0.125, 'graphite', C.GRAPH), P(0.17, 0.135, 'graphite', C.GRAPH), P(0, 0.135, 'graphite', C.GRAPH),
+    P(0, 0, 'graphite', C.GRAPH), P(0.2, 0, 'graphite', C.GRAPH), P(0.25, 0.03, 'graphite', C.GRAPH), P(0.26, 0.07, 'bronze', C.BRONZE),
+    P(0.26, 0.10, 'graphite', C.GRAPH), P(0.25, 0.125, 'graphite', C.GRAPH), P(0.2, 0.135, 'graphite', C.GRAPH), P(0, 0.135, 'graphite', C.GRAPH),
   ], at(0, AY + 0.02, HZ, AXIS_Z.clone()), { segs: 24, wear: 0.5, crease: 30 });
   // the visor over the lamp
-  plate(H('head'), [[-0.2, 0], [0.2, 0], [0.15, 0.10], [-0.15, 0.10]], 0.012, 0.004,
-    basis(V(1, 0, 0), V(0, 0.2, 1).normalize(), V(0, 1, -0.2).normalize(), V(0, AY + 0.22, HZ + 0.05)), { surf: 'bronze', tone: C.BRONZE, wear: 0.6 });
+  plate(H('head'), [[-0.24, 0], [0.24, 0], [0.18, 0.10], [-0.18, 0.10]], 0.012, 0.004,
+    basis(V(1, 0, 0), V(0, 0.2, 1).normalize(), V(0, 1, -0.2).normalize(), V(0, AY + 0.26, HZ + 0.05)), { surf: 'bronze', tone: C.BRONZE, wear: 0.6 });
   // the front bumper ring, two small sighting studs
-  torus(H('head'), V(0, AY + 0.02, HZ + 0.13), 0.215, 0.014, 'z', { surf: 'graphite', tone: C.GRAPH, tube: 6, radial: 24 });
-  for (const s of [-1, 1]) ball(L('head'), V(s * 0.17, AY + 0.17, HZ + 0.12), 0.012, { surf: 'lamp', tone: C.LAMP, w: 8, h: 6 });
+  torus(H('head'), V(0, AY + 0.02, HZ + 0.13), 0.255, 0.014, 'z', { surf: 'graphite', tone: C.GRAPH, tube: 6, radial: 24 });
+  for (const s of [-1, 1]) ball(L('head'), V(s * 0.2, AY + 0.21, HZ + 0.12), 0.012, { surf: 'lamp', tone: C.LAMP, w: 8, h: 6 });
 
   /* -------------------------------- the mallet ----------------------------- */
   // A PILE-DRIVER on its back: a bronze mast at the rear carries the mallet arm at its top; the arm reaches

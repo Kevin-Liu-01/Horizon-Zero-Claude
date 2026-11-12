@@ -356,13 +356,13 @@ export function finish(hull, opts = {}) {
     let r = hull.col[i * 3], g = hull.col[i * 3 + 1], b = hull.col[i * 3 + 2];
     // AO: crevices darken; graphite joints go darker still (dark joints, I-03)
     const a = aoMin + (1 - aoMin) * Math.pow(ao[i], 1.4);
-    const ka = slot === graphiteSlot ? a * a : a;
+    const ka = slot === graphiteSlot ? a * a : slot === glazeSlot ? Math.pow(a, 0.6) : a;
     r *= ka; g *= ka; b *= ka;
     // verdigris settles in the bronze crevices and on patches (>= 3 % of bronze, I-03 d)
     if (slot === bronzeSlot || slot === patinaSlot) {
       const occl = 1 - ao[i];
       const patch = vnoise(x, y, z, 0.09);
-      const v = Math.min(1, Math.max(0, occl * 2.4 + (patch - 0.5) * 2.6));
+      const v = Math.min(1, Math.max(0, occl * 3.0 + (patch - 0.42) * 2.8));
       if (v > 0) {
         tmp.setRGB(r, g, b).lerp(verdi.clone().multiplyScalar(0.55 + 0.45 * a), v * 0.85);
         r = tmp.r; g = tmp.g; b = tmp.b;
@@ -373,7 +373,7 @@ export function finish(hull, opts = {}) {
     const fb = y < floorH ? 1 - y / floorH : 0;
     if (fb > 0) {
       const k = Math.pow(fb, 0.8);
-      const keep = 1 - 0.72 * k, add = 0.06 * k;
+      const keep = 1 - 0.86 * k, add = 0.04 * k;
       r = r * keep + dust.r * add;
       g = g * keep + dust.g * add;
       b = b * keep + dust.b * add;

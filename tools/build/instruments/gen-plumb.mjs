@@ -204,7 +204,8 @@ export async function build({ out = ROOT, scale = 1, file = null } = {}) {
   // the telescope: graphite tube, bronze objective + eyepiece rings, on the trunnion
   strut(H('head'), V(0, STD_Y1, -0.28), V(0, STD_Y1, 0.30), 0.042, 0.052, { surf: 'graphite', tone: C.GRAPH, sides: 16 });
   for (const z of [-0.28, 0.0, 0.27]) strut(H('head'), V(0, STD_Y1, z), V(0, STD_Y1, z + 0.035), 0.058, 0.058, { surf: 'bronze', tone: C.BRONZE, sides: 16, wear: 0.6 });
-  ball(L('head'), V(0, STD_Y1, 0.31), 0.04, { surf: 'lamp', tone: C.LAMP, w: 12, h: 8 });
+  ball(H('head'), V(0, STD_Y1, 0.31), 0.04, { surf: 'glaze', tone: 0x2f3a36, w: 12, h: 8, wear: 0.05 });   // objective glass (dark, glossy)
+  ball(L('head'), V(0, STD_Y1 + 0.06, -0.29), 0.012, { surf: 'lamp', tone: C.LAMP, w: 8, h: 6 });   // the eyepiece pilot
   // THE LEVEL VIAL: a glass tube in a bronze cradle across the top — the joint weak point, glowing
   const VY = PLUMB.vialY;
   for (const s of [-1, 1]) {

@@ -449,6 +449,8 @@ function A_CORE_GLOW(kind) {
     hull.getVertexPosition(i, v); hull.localToWorld(v);
     const d = v.distanceTo(lw);
     if (q === 0 && d > 1.2) farExists = true;
+    // far points stand above the grass (blades move between the two frames)
+    if (q === 0 && d > 1.2 && v.y - hy(v.x, v.z) < 1.1) continue;
     // only vertices facing the camera (a sampled pixel must be that vertex, not whatever stands in front of it)
     n3.fromBufferAttribute(nrm, i).transformDirection(hull.matrixWorld);
     if (n3.dot(cam.position.clone().sub(v).normalize()) < 0.35) continue;
@@ -651,9 +653,11 @@ function A_IP_EMISSIVE(kind) {
       else if (o.userData.ipExempt === 'fire') o.visible = false;
       else { const em = o.material.emissive; const glows = em && (em.r + em.g + em.b) > 0.01; o.material = glows ? new THREE.MeshBasicMaterial({ color: em.clone().multiplyScalar(o.material.emissiveIntensity ?? 1) }) : black; } });
     const fog = scene.fog, bg = scene.background, tm = R.toneMapping;
+    // the lamp barrel is LIT by the sun and sky (lamps.js), not emissive: its light is off for this render
+    const LU = LS._uLight, sr = LU.uSunRad.value.clone(), kr = LU.uSkyRad.value.clone(); LU.uSunRad.value.set(0, 0, 0); LU.uSkyRad.value.set(0, 0, 0);
     scene.fog = null; scene.background = new THREE.Color(0, 0, 0); R.toneMapping = THREE.NoToneMapping;
     R.setRenderTarget(rt); R.clear(); R.render(scene, cam); R.readRenderTargetPixels(rt, 0, 0, 1600, 900, buf); R.setRenderTarget(null);
-    scene.fog = fog; scene.background = bg; R.toneMapping = tm;
+    scene.fog = fog; scene.background = bg; R.toneMapping = tm; LU.uSunRad.value.copy(sr); LU.uSkyRad.value.copy(kr);
     for (const [o, mt] of mats) { if (o.material !== mt && o.material !== white && o.material !== black) o.material.dispose(); o.material = mt; }
     for (const o of keep) o.visible = true;
     if (mode === 'mask') { LS.lampMesh.visible = true; }

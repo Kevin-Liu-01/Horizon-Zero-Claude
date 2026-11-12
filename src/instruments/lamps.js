@@ -482,7 +482,7 @@ const IRIS_FRAG = /* glsl */`
       c = mix(vCore, vLamp.rgb, smoothstep(rc * 0.85, rc * 1.15, rp));
       c += vLamp.rgb * 0.35 * pow(1.0 - clamp(vPar.z, 0.0, 1.0), 2.0) * smoothstep(a * 0.72, a, r);
     } else if (r > ${BEZEL_IN.toFixed(3)}) {
-      c = vIris.rgb * 1.9;                 // housing bezel (darkened bronze)
+      c = vIris.rgb * 1.15;                // housing bezel (darkened bronze; stays under the emissive floor)
     } else {
       // the iris blades / drum face: six blades, a hairline seam per blade, swept with the radius
       float ang = atan(vP.y, vP.x) / 6.2831853 + 0.5;

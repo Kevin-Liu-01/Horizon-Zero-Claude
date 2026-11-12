@@ -46,7 +46,7 @@ import { scaleRig } from '../lib/scale.js';
  */
 
 const URL = '/models/instruments/plumb.glb';
-const LAMP_R = 0.19;
+const LAMP_R = 0.20;
 const HEIGHT = 3.408;
 const TRI = (k) => ({
   walk: { stride: 0.78 * k, duty: 0.72, lift: 0.14 * k, offsets: { MF: 0, LH: 1 / 3, RH: 2 / 3 } },
