@@ -84,3 +84,38 @@ Events: `trig-sighted {id, name, sighted}`, `trig-plate {id, name, top}`, `bench
 `look.{field, vista, aim, close, dusk, pansInland, pansSunset, meadow, beach, title, saltrowDusk, craterWall, steepFace, reed, brazier}`
 (each `{x, z, y, eye, yaw, bearing, pitch, fov, look, hour, weather, note, pose?, stub?}`; `stub: true` on the eleven not yet
 filmed and graded by a world-props row). Diagnostics: `__source: 'world-props'`, `__island`, `__stacks`, `__roques`, `__field`.
+
+## 6. What another lane or the orchestrator must do
+
+- **Orchestrator — merge order.** Merge world-ground before world-props; then re-run `--lane world-props` on main.
+  On this tree alone the props stand on the W0 stub map (bible coordinates in its sea) and the place rows
+  report against the wrong map.
+- **world-ground — static kinds and keepouts.** `vegetation._applyKeepouts` thins the flora only. Its static kinds
+  (`rocks-*`, `pan-dykes`) ignore `ctx.props.keepouts`, so world-ground's basalt pavement stood inside T1's
+  footprint (53 column stubs, 54 colliders) and blocked the climb. Until world-ground thins its static kinds
+  itself, `Props._clearScatter()` zeroes those instances inside a keepout's hard radius once and hands their
+  colliders back (the Round-4 clearings rule; report in `ctx.props.clearingReport`). When world-ground does it,
+  the shim finds nothing and is a no-op; delete it then.
+- **world-ground — the Ring's rise (R66 m).** `sites.js` `sounding-ring` height 0.5 → 6 and the 5–6 m grassed
+  shingle rise are world-ground's; the Ring is set on the ground under its cradle at boot, so it rides up with
+  the rise when that lands. Until then it stands on the storm-beach shingle at ≈ 0.3 m.
+- **world-ground — surf at the stack feet (W-04).** `ctx.props.seaStacks` (7 `{x, z, r}`) is published for the
+  sea shader's 8-entry circle-SDF surf. The stacks carry their own wave-washed skirt and a pale collar, but
+  A-look-sea-skyline's "foam L* ≥ 75 at every visible foot" clause is the sea shader's to light.
+- **world-sky — the glitter column (W-09)** for A-look-sea-skyline's "darker than the column by 25 L*" clause;
+  two stacks are placed in the 280–295° column seen from T1.
+- **shell-ui** — `ctx.props.gauge.readout()` for the Sighting card ("GAUGE · SLUICE 3 · TIDE 0.4 m");
+  `ctx.props.landmarks` now carries 11 Organ Shelf cluster records with `map: false` (silhouettes for the gates,
+  not map icons): the map should skip `map === false`.
+- **progression (W3)** — the twelve benchmarks and their regions (`ctx.props.survey.benchmarks`), the
+  `benchmark-resurveyed` and `trig-sighted` events (the triangle opens on the map), fast travel from a benchmark.
+- **settlements (W2)** — Saltrow's three bible pumps are these three (`ctx.props.landmarkSet.records`, ids `pump-*`);
+  settlements should not build a second set.
+- **instruments-b (W2)** — the living Gauge replaces the static one: `ctx.props.gauge.dispose()` takes it out
+  (and its colliders are unregistered by `Props.dispose`, or by unregistering `ref === gauge.body`).
+- **pipeline row** — `landmark-sounding-ring-poc` in `LICENSES.json` still names
+  `tools/build/landmarks/gen-sounding-ring.mjs` as its `source_url`; that generator now lives at
+  `tools/build/landmarks/recipes/sounding-ring.mjs` and writes `public/models/landmarks/sounding-ring.glb`.
+  `public/models/r5-poc/sounding-ring.glb` is no longer rebuilt by anything (world-ground deletes the `?poc=biome`
+  closure at its W1 exit; pipeline drops the row then).
+- **look-post** — `gatePlaces.look.*` is published (15 places); eleven are `stub: true` until filmed.
