@@ -533,6 +533,9 @@ const _c0 = new THREE.Color();
 const _c1 = new THREE.Color();
 const _c2 = new THREE.Color();
 
+/** Ease `cur` toward `tgt` by `a`, landing exactly on it inside 1e-4 (so a settled value stops moving). */
+const easeTo = (cur, tgt, a) => { const n = cur + (tgt - cur) * a; return Math.abs(tgt - n) < 1e-4 ? tgt : n; };
+
 /** Wrap an hour into [0, 24). */
 const wrap24 = (h) => ((h % 24) + 24) % 24;
 
@@ -574,8 +577,14 @@ export class Environment {
     this._windMS = 5.5;
     this._gustPhase = 0;
     this._lightning = { t: 0, k: 0, next: 4 };
-    this._perception = 1;
+    this._perception = 1.5 - 0.5;
     this._iblW = 0;              // weather "position" the IBL was last baked at
+    this._apH = -1;              // the hour the full light state was last applied at
+    this._lightDirty = true;
+    this._flashWas = 0;
+    this._lull = 0.5;
+    this._nightK = 0.5;
+    this._evSnap = false;
 
     /* ------------------------------ biome ------------------------------ */
     this._bw = { pans: 0, holds: 0, malpais: 0, cloudline: 0, flank: 0, caldera: 0,
@@ -707,6 +716,8 @@ export class Environment {
     this._lampCol = [new THREE.Color('#F2EAD3'), new THREE.Color('#B5E61D'), new THREE.Color('#FF2D8C')];
     this._campFire = null;
     this._campSearch = 0;
+    this._fireT = 0;
+    this._fireWas = null;
     this._borrowUntil = -1;
 
     /* ------------------------------ sky -------------------------------- */
@@ -863,6 +874,7 @@ export class Environment {
     for (const k in this.w) this._wFrom[k] = this.w[k];
     for (const k in target) this._wTo[k] = target[k];
     this.weather = id;
+    this._lightDirty = true;
     if (!(fadeSeconds > 0)) {
       for (const k in target) this.w[k] = target[k];
       this._wK = 1;
@@ -1089,6 +1101,7 @@ export class Environment {
       this._wK = Math.min(1, this._wK + dt * this._wRate);
       const k = this._wK * this._wK * (3 - 2 * this._wK);
       for (const key in this._wTo) this.w[key] = this._wFrom[key] + (this._wTo[key] - this._wFrom[key]) * k;
+      this._lightDirty = true;
     }
 
     /* ---- wind + gusts ---- */
@@ -1113,26 +1126,30 @@ export class Environment {
     this._rainMat.uniforms.uTime.value = t;
     const mu = this._moteMat.uniforms;
     mu.uTime.value = t;
-    mu.uFocal.value = ctx.renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
+    const focal = ctx.renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
+    if (mu.uFocal.value !== focal) mu.uFocal.value = focal;
 
-    /* ---- follow the camera / player ---- */
-    this.u.calCamPos.value.copy(cam.position);
-    this.u.calViewInv.value.copy(cam.matrixWorld);
+    /* ---- follow the camera / player (the fog's camera uniforms are set in
+       scene.onBeforeRender from the camera each render actually uses) ---- */
     const p = ctx.player?.position;
     if (p) {
       this._updateGrassCasters(p.x, p.z);
-      this.sky.position.set(p.x, 0, p.z);
-      this.sun.position.copy(this.sunDir).multiplyScalar(300).add(p);
-      this.sun.target.position.copy(p);
+      const sp = this.sky.position;
+      if (sp.x !== p.x || sp.z !== p.z) sp.set(p.x, 0, p.z);
+      if (!this.csm) {
+        this.sun.position.copy(this.sunDir).multiplyScalar(300).add(p);
+        this.sun.target.position.copy(p);
+      }
     }
-    this.motes.position.set(cam.position.x, cam.position.y, cam.position.z);
-    this.rain.position.set(cam.position.x, cam.position.y, cam.position.z);
+    const cp = cam.position, mp = this.motes.position;
+    if (mp.x !== cp.x || mp.y !== cp.y || mp.z !== cp.z) { mp.copy(cp); this.rain.position.copy(cp); }
     // squall: rain on the windward side only (bible §2.3)
     const ww = smooth(SEA_CLOUD.near, SEA_CLOUD.far, cam.position.x * WIND_FROM.x + cam.position.z * WIND_FROM.z);
     const rainAmt = this.w.rain * (this.weather === 'squall' ? 0.15 + 0.85 * ww : 1);
     this.rain.visible = rainAmt > 0.004;
-    this._rainMat.uniforms.uAmount.value = rainAmt;
-    this._rainMat.uniforms.uWind.value.set(this.wind.x * this._windMS * 0.18, 0, this.wind.z * this._windMS * 0.18);
+    const ru = this._rainMat.uniforms;
+    if (ru.uAmount.value !== rainAmt) ru.uAmount.value = rainAmt;
+    if (this.rain.visible) ru.uWind.value.set(this.wind.x * this._windMS * 0.18, 0, this.wind.z * this._windMS * 0.18);
 
     /* ---- cloud + mist drift (downwind) ---- */
     const cd = this.u.calCloudDrift.value;
@@ -1143,7 +1160,8 @@ export class Environment {
     sd.y += dt * this.wind.z * (6 + this._windMS * 1.6);
     if (Math.abs(sd.x) > 4.2e5) sd.x = 0;   // the noise tiles every 4.2 km × 100
     if (Math.abs(sd.y) > 4.2e5) sd.y = 0;
-    mu.uDrift.value.set(this.wind.x * this._windMS, this.wind.z * this._windMS);
+    const mdx = this.wind.x * this._windMS, mdz = this.wind.z * this._windMS;
+    if (mu.uDrift.value.x !== mdx || mu.uDrift.value.y !== mdz) mu.uDrift.value.set(mdx, mdz);
 
     /* ---- pooled lights ---- */
     this._updateNightLights(dt);
@@ -1225,29 +1243,53 @@ export class Environment {
     return o;
   }
 
-  /** Biome weights at the camera → fog tint, density × and the keyed EV (bible §9.3). */
+  /** Biome weights at the camera → fog tint, density × and the keyed EV (bible §9.3).
+   *  Re-sampled on a 2 m move (or a cut); the fog eases toward the sample over ≈ 0.6 s and
+   *  flags the light dirty only while it is still moving. */
   _updateBiome(pos, dt) {
     const G = this._gradeNow || (this._gradeNow = { biome: 'pans', mix: this.biomeMix, fogTint: [1, 1, 1], dens: 1, ev: 0, bloom: 0 });
-    this._mixAt(pos.x, pos.z, this.biomeMix);
-    this._aggregate(this.biomeMix, pos.y, G);
-    this.biome = G.biome;
-    const fr = G.fogTint[0], fg = G.fogTint[1], fb = G.fogTint[2], dens = G.dens, ev = G.ev, bloom = G.bloom;
-    // a teleport (> 50 m in one update) is a cut: snap; walking eases (≈ 0.6 s)
-    const jump = !(this._lastCam.distanceToSquared(pos) < 2500);
-    this._lastCam.copy(pos);
+    const d2 = this._lastCam.distanceToSquared(pos);
+    const jump = !(d2 < 2500);
+    if (jump || d2 >= 4) {
+      this._lastCam.copy(pos);
+      this._mixAt(pos.x, pos.z, this.biomeMix);
+      this._aggregate(this.biomeMix, pos.y, G);
+      if (this.biome !== G.biome) this.biome = G.biome;
+    }
     const a = jump || !(dt > 0) ? 1 : Math.min(1, dt / 0.6);
-    this._biomeFog.r += (fr - this._biomeFog.r) * a;
-    this._biomeFog.g += (fg - this._biomeFog.g) * a;
-    this._biomeFog.b += (fb - this._biomeFog.b) * a;
-    this._biomeDens += (dens - this._biomeDens) * a;
-    this._biomeEV = ev;
-    this._biomeBloom += (bloom - this._biomeBloom) * a;
+    const bf = this._biomeFog;
+    let moving = jump;
+    if (bf.r !== G.fogTint[0]) { bf.r = easeTo(bf.r, G.fogTint[0], a); moving = true; }
+    if (bf.g !== G.fogTint[1]) { bf.g = easeTo(bf.g, G.fogTint[1], a); moving = true; }
+    if (bf.b !== G.fogTint[2]) { bf.b = easeTo(bf.b, G.fogTint[2], a); moving = true; }
+    if (this._biomeDens !== G.dens) { this._biomeDens = easeTo(this._biomeDens, G.dens, a); moving = true; }
+    if (this._biomeBloom !== G.bloom) { this._biomeBloom = easeTo(this._biomeBloom, G.bloom, a); moving = true; }
+    if (this._biomeEV !== G.ev) { this._biomeEV = G.ev; moving = true; }
+    if (moving) this._lightDirty = true;
     this._evSnap = jump;
   }
 
   /* ---------------------------------------------------------------- time */
 
+  /**
+   * Per frame: the wind, perception and the exposure ramp (a handful of scalars). The full
+   * light / sky / fog state is recomputed only when something moved: the hour by ≥ 0.002 h
+   * (0.03° of sun), a weather fade, a lightning flash, the biome grade, or a snap. In a held
+   * frame (?shot, a paused clock) nothing is rewritten, so nothing is allocated.
+   */
   _applyTime(dt, snap) {
+    let dh = Math.abs(this._time - this._apH); if (dh > 12) dh = 24 - dh;
+    const flash = this._lightning.k;
+    if (snap || dh >= 0.002 || this._lightDirty || flash > 0.001 || this._flashWas > 0.001 || !(this._apH >= 0)) {
+      this._apH = this._time;
+      this._lightDirty = false;
+      this._flashWas = flash;
+      this._applyFull(dt, snap);
+    }
+    this._applyFrame(dt, snap);
+  }
+
+  _applyFull(dt, snap) {
     const h = this._time;
     const k = this._keyAt(h);
     const w = this.w;
@@ -1354,39 +1396,20 @@ export class Environment {
     ca.z = w.cloudShadow * (1 - k.night) * (this.sunAboveHorizon ? 1 : 0);
     ca.w = 0.30;
 
-    /* ---- wind ---- */
+    /* ---- wind: the hour's lull (the gusts are per frame, _applyFrame) ---- */
     const lull = 0.35 + 0.65 * smooth(7.2, 10.5, h) * (1 - smooth(17.5, 19.3, h));
+    this._lull = lull;
     this._windMS = w.windMS * (w.calima > 0.5 || w.fogbank > 0.5 ? 1 : lull);
-    this.wind.x = -WIND_FROM.x; this.wind.z = -WIND_FROM.z;
-    this.wind.strength = w.wind * (0.6 + 0.4 * lull) + this.wind.gust;
-    this.u.calWeather.value.set(this.wetness, this.wind.gust,
-      this.wind.x * this.wind.strength, this.wind.z * this.wind.strength);
 
-    /* ---- perception (bible §2.3) ---- */
-    const camY = this.ctx.camera?.position?.y ?? 0;
-    const outside = smooth(140, 170, camY);
-    const wp = 1 - (1 - w.perception) * (1 - w.fogbank * outside);
-    const np = 1 + (0.7 - 1) * k.night;
-    this._perception = Math.min(wp, np);
-
-    /* ---- exposure: hour + biome + weather, rate-limited (A-biome-grade) ---- */
+    /* ---- exposure target: hour + biome + weather (the ramp is per frame) ---- */
     // a negative biome EV (the Pans' −0.3) is salt glare under a high sun (bible §2.4 lists it
     // in the noon row): it fades out as the sun drops toward golden hour
     const glare = smooth(0.25, 0.60, this.sunDir.y);
     const bEV = this._biomeEV < 0 ? this._biomeEV * glare : this._biomeEV;
     this._evTarget = k.ev + bEV + w.ev + cal * (CALIMA_EV - w.ev);
-    if (snap || this._evSnap || !(dt > 0)) this.exposureEV = this._evTarget;
-    else {
-      const step = Math.min(EV_STEP_MAX, EV_RATE * dt);
-      const d = this._evTarget - this.exposureEV;
-      this.exposureEV += Math.max(-step, Math.min(step, d));
-    }
-    const r = this.ctx.renderer;
-    if (r) {
-      const e = this.exposureBase * Math.pow(2, this.exposureEV);
-      if (Math.abs(r.toneMappingExposure - e) > 1e-5) r.toneMappingExposure = e;
-    }
+    this._nightK = k.night;
     this._applyBloom(cal);
+    const r = this.ctx.renderer;
 
     /* ---- sky uniforms ---- */
     const su = this.sky.material.uniforms;
@@ -1426,6 +1449,36 @@ export class Environment {
       const prev = this._phase;
       this._phase = phase;
       if (prev) this.ctx.events?.emit?.('time-phase', { phase, hour: h, previous: prev });
+    }
+  }
+
+  /** The per-frame tail of _applyTime: gusting wind, perception, the exposure ramp. */
+  _applyFrame(dt, snap) {
+    const w = this.w;
+    const st = w.wind * (0.6 + 0.4 * this._lull) + this.wind.gust;
+    if (this.wind.strength !== st) {
+      this.wind.strength = st;
+      this.u.calWeather.value.set(this.wetness, this.wind.gust, this.wind.x * st, this.wind.z * st);
+    }
+    // perception (bible §2.3): fogbank only inside the bank (camera below 140–170 m)
+    const camY = this.ctx.camera?.position?.y ?? 0;
+    const wp = 1 - (1 - w.perception) * (1 - w.fogbank * smooth(140, 170, camY));
+    const pr = Math.min(wp, 1 + (0.7 - 1) * this._nightK);
+    if (this._perception !== pr) this._perception = pr;
+    // exposure, rate-limited (A-biome-grade: ≤ 0.05 EV per frame)
+    if (this.exposureEV !== this._evTarget) {
+      if (snap || this._evSnap || !(dt > 0)) this.exposureEV = this._evTarget;
+      else {
+        const step = Math.min(EV_STEP_MAX, EV_RATE * dt);
+        const d = this._evTarget - this.exposureEV;
+        this.exposureEV = Math.abs(d) <= step ? this._evTarget : this.exposureEV + (d > 0 ? step : -step);
+      }
+      const r = this.ctx.renderer;
+      if (r) {
+        const e = this.exposureBase * Math.pow(2, this.exposureEV);
+        if (Math.abs(r.toneMappingExposure - e) > 1e-5) r.toneMappingExposure = e;
+      }
+      if (this.w.calima > 0.001) this._lightDirty = true;   // the disc is re-solved at the new exposure
     }
   }
 
@@ -1593,24 +1646,24 @@ export class Environment {
     }
     const src = this.fireSource || this._campFire;
     if (src) {
-      src.getWorldPosition(this.fireLight.position);
+      // the fire stands still: its world position is re-read twice a second, not every frame
+      if ((this._fireT -= dt) <= 0 || src !== this._fireWas) { this._fireT = 0.5; this._fireWas = src; src.getWorldPosition(this.fireLight.position); }
       const d = this.fireLight.position.distanceTo(ctx.camera.position);
       const dusk = smooth(18.5, 19.75, this._time) * (this._time < 22 ? 1 : 0);
       const near = 1 - smooth(12, 14, d);
       let k = Math.max(night, dusk, near);
       if (d > 40 && night < 0.05 && dusk < 0.05) k = 0;
-      const flick = 0.82 + Math.sin(now * 9.1) * 0.10 + Math.sin(now * 21.7) * 0.06;
-      this.fireLight.intensity = k * 26 * flick;
-    } else {
+      const fi = k > 0 ? k * 26 * (0.82 + Math.sin(now * 9.1) * 0.10 + Math.sin(now * 21.7) * 0.06) : 0;
+      if (this.fireLight.intensity !== fi) this.fireLight.intensity = fi;
+    } else if (this.fireLight.intensity !== 0) {
       this.fireLight.intensity = 0;
     }
-    this.fireLight.distance = 14;
 
     const lent = now < this._borrowUntil;
     const list = ctx.machines?.list;
     if (!list || !list.length) {
-      this.eyeLights[0].intensity = 0;
-      if (!lent) this.eyeLights[1].intensity = 0;
+      if (this.eyeLights[0].intensity !== 0) this.eyeLights[0].intensity = 0;
+      if (!lent && this.eyeLights[1].intensity !== 0) this.eyeLights[1].intensity = 0;
       return;
     }
     const p = ctx.camera.position;
@@ -1627,13 +1680,14 @@ export class Environment {
       if (i === 1 && lent) continue;
       const l = this.eyeLights[i];
       const m = i === 0 ? a : b;
-      if (!m || (i === 0 ? da : db) > 3600) { l.intensity = 0; continue; }
+      if (!m || (i === 0 ? da : db) > 3600) { if (l.intensity !== 0) l.intensity = 0; continue; }
       l.position.set(m.position.x, m.position.y + (m.eyeHeight ?? 1.5), m.position.z);
       const st = m.state;
       const c = (st === 'attack' || st === 'alert') ? 2 : (st === 'suspicious' || st === 'search') ? 1 : 0;
-      l.color.copy(this._lampCol[c]);
-      l.intensity = night * 3.2;
-      l.distance = 14;
+      if (l.userData.calLamp !== c) { l.userData.calLamp = c; l.color.copy(this._lampCol[c]); }
+      const li = night * 3.2;
+      if (l.intensity !== li) l.intensity = li;
+      if (l.distance !== 14) l.distance = 14;
     }
   }
 
