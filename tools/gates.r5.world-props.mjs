@@ -588,14 +588,14 @@ const GATES = [
       { const fx = Math.sin(R.yaw), fz = Math.cos(R.yaw); const x = R.x + fx * 62 + fz * 18, z = R.z + fz * 62 - fx * 18;
         shot('Sounding Ring (34 m, ' + LS.ring.info.tiltDeg + ' deg off vertical)', x, T.getHeight(x, z) + 1.7, z, R.x, R.y + 14, R.z, 50); }
       // 2 the Organ Shelf: the tallest cluster from its face, 34 m out
-      { const cols = PR.organ.columns.filter((c) => c.cluster === 'organ-6'); const cx = cols.reduce((a, c) => a + c.x, 0) / cols.length, cz = cols.reduce((a, c) => a + c.z, 0) / cols.length;
-        const b = 165 * D2R, x = cx + Math.sin(b) * 30, z = cz - Math.cos(b) * 30; const gy = T.getHeight(cx, cz);
-        shot('Organ Shelf, cluster 6 (columns to 14 m)', x, T.getHeight(x, z) + 1.7, z, cx, gy + 6, cz, 50); }
+      { const cols = PR.organ.columns.filter((c) => c.cluster === 'organ-2'); const cx = cols.reduce((a, c) => a + c.x, 0) / cols.length, cz = cols.reduce((a, c) => a + c.z, 0) / cols.length;
+        const b = 285 * D2R, x = cx + Math.sin(b) * 26, z = cz - Math.cos(b) * 26; const gy = T.getHeight(cx, cz);
+        shot('Organ Shelf, cluster 2 (columns to 12 m)', x, Math.max(T.getHeight(x, z) + 1.7, gy + 2.5), z, cx, gy + 5, cz, 55); }
       // 3 a wind pump, 20 m out, looking up at the hub
       { const rec = LS.records.find((r) => r.id === 'pump-intake-a'); const x = rec.x + 16, z = rec.z + 10;
         shot('wind pump (9.6 m tower, 6 m rotor)', x, T.getHeight(x, z) + 1.6, z, rec.x, rec.y + 7, rec.z, 50); }
       // 4 trig pillar T1 from its steps side
-      { const q = PR.survey.pillars[0]; const x = q.x + q.stepsDir.x * 13 + q.stepsDir.z * 5, z = q.z + q.stepsDir.z * 13 - q.stepsDir.x * 5;
+      { const q = PR.survey.pillars[0]; const x = q.x + q.stepsDir.x * 11 + q.stepsDir.z * 8, z = q.z + q.stepsDir.z * 11 - q.stepsDir.x * 8;
         shot('trig pillar T1 (4 m, three 1 m steps)', x, T.getHeight(x, z) + 1.7, z, q.x, q.y + 2.6, q.z, 50); }
       // 5 the static Gauge at Sluice 3
       { const g = PR.gauge; const x = g.x + 10, z = g.z + 9;

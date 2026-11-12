@@ -84,7 +84,7 @@ function plug(bucket, R, { height = 58, base = 9.5, seed = 3, cols = 22 } = {}) 
     const thick = Math.min(top - y, 4 + R() * 6);
     const t = Math.max(0, y) / height;
     const bulge = (vnoise3(d * 0.9 + seed, 1.7, 0) - 0.5) * 0.22 * base;
-    const r = Math.max(base * 0.3, base * (1 - 0.5 * Math.pow(t, 1.1)) + bulge);
+    const r = Math.max(base * 0.3, base * (1 - 0.58 * Math.pow(t, 0.95)) + bulge);
     rTop = r;
     cx += leanX * thick; cz += leanZ * thick;
     // the drum: a star polygon (alternate radii) = vertical columnar joints; the joints stay aligned
@@ -111,6 +111,14 @@ function plug(bucket, R, { height = 58, base = 9.5, seed = 3, cols = 22 } = {}) 
     const cg = toCreased(g);
     bucket.add(cg, { surf: 'bisque', tone: pal[(d * 3 + seed) % pal.length], wear: 0.9, colorFn: shade });
     cg.dispose(); g.dispose();
+    // a broad broken bench at about a third and two thirds of the height (Roque-like shoulders)
+    if (d === 1 || d === 4) {
+      for (let l = 0; l < 3; l++) {
+        const a = R() * Math.PI * 2;
+        slab(bucket, { cx: cx + Math.cos(a) * r * 0.75, cz: cz + Math.sin(a) * r * 0.7, y0: y + thick - 1.2, thick: 1.6 + R(), r: r * 0.45,
+          aspect: 1.6, yaw: -a + Math.PI / 2, jag: 0.35, seed: seed * 17 + d * 5 + l, tone: pal[(l + 2) % pal.length], bevel: 0.15, rough: 0.16, sides: 10 }, shade);
+      }
+    }
     // ledges: 1-3 short broken lips where a drum steps in, never a full ring
     const lips = (R() * 3) | 0;
     for (let l = 0; l < lips; l++) {

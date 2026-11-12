@@ -44,7 +44,7 @@ function vnoise(x, y) {
 }
 
 const _c = new THREE.Color();
-const BASALT = [0x34343a, 0x3a3a3f, 0x2f2f34, 0x403e3f, 0x37363a];
+const BASALT = [0x3c3b3f, 0x45434a, 0x35353a, 0x4b4846, 0x403f43];
 const TUFF = [0x7a3b2a, 0x8e3b23, 0x9a5a3a, 0x6b3426, 0x8c6a48, 0xa4683f];
 const D2R = Math.PI / 180;
 
@@ -119,7 +119,7 @@ export function buildOrganShelf(terrain, clusters = ORGAN) {
   for (const cl of clusters) {
     const R = mulberry32(seed += 101);
     const diam = 0.95 + R() * 0.4;                        // cluster's mean column diameter (0.6-1.4 m per column)
-    const pitch = diam * 0.93;                            // hex packing pitch (columns touch)
+    const pitch = diam * 1.04;                            // hex packing pitch (a dark joint between columns)
     const fx = Math.sin(cl.face * D2R), fz = -Math.cos(cl.face * D2R);   // toward the face
     const rot = R() * Math.PI / 3;
     const n = Math.ceil(cl.r / pitch) + 1;
@@ -136,8 +136,10 @@ export function buildOrganShelf(terrain, clusters = ORGAN) {
         // height: tallest at the back, stepping down toward the face, quantised into risers
         const along = ((x - cl.x) * fx + (z - cl.z) * fz) / cl.r;          // -1 back .. +1 face
         const t = (1 - along) * 0.5;                                       // 1 at the back
-        let h = 2 + (cl.top - 2) * Math.pow(Math.max(0, t), 0.8) * (0.8 + 0.4 * vnoise(x * 0.5, z * 0.5));
-        h = Math.max(2, Math.min(cl.top, Math.round(h / 0.85) * 0.85 + (R() - 0.5) * 0.35));
+        let h = 2 + (cl.top - 2) * Math.pow(Math.max(0, t), 0.8) * (0.75 + 0.5 * vnoise(x * 0.7, z * 0.7));
+        // organ pipes: neighbours differ by a riser or two (0.5-1.6 m), so each column reads on its own
+        h += (R() - 0.5) * 2.4;
+        h = Math.max(2, Math.min(cl.top, Math.round(h / 0.55) * 0.55));
         const rad = (diam * (0.85 + R() * 0.3)) / 2;
         const g0 = terrain.getHeight(x, z);
         const g1 = Math.min(g0, terrain.getHeight(x + rad, z), terrain.getHeight(x - rad, z),
