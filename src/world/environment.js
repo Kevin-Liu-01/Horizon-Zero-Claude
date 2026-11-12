@@ -1,64 +1,62 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
-import { SimplexNoise } from './terrain.js';
-import { RiverWater } from './water.js';
 
 /**
- * ROUND 4 — lane `world-light`. Sky, sun, cascaded shadows, aerial perspective,
- * day/night and weather. The single largest visual lever in the build.
- *
- * Findings closed here: world-01 (flat lighting / no cascades), world-04 (milky
- * sky, hard god-ray streak), world-05 (no aerial perspective), world-13 (no time
- * of day), world-14 (no weather), perf-tech-03 (shadow pass is half the frame).
+ * ROUND 5 — lane `world-sky` (docs/ROUND5-PLAN.md §2, §9 "world-sky"; the look items are
+ * docs/ROUND5-LOOK.md L-03 … L-15). Sky, sun, cascaded shadows, aerial perspective, the
+ * golden-weighted clock, the CALIMA weather and the per-biome grade of Orchil.
+ * The system is Round 4's `world-light` lane, kept; its values are replaced.
  *
  * ---------------------------------------------------------------------------
- * PUBLISHED API (docs/SPEC.md §World / lighting). Nothing outside this file is
- * edited; every cross-lane need is served through these.
+ * PUBLISHED API. Nothing outside this file is edited; every cross-lane need is
+ * served through these (exact signatures in docs/ROUND5-WORLD-SKY.md §3).
  *
  *   environment.time                 0–24 game hours (read/write)
- *   environment.setTime(h)           snap the sky to an hour
- *   environment.dayLengthSeconds     real seconds per in-game day
+ *   environment.setTime(h)           snap the sky to an hour (re-bakes the sky IBL under ?shot)
+ *   environment.clock                'golden' (default) | 'even' (L-11, Kevin's Q1)
+ *   environment.dayLengthSeconds     real seconds per in-game day (1800)
  *   environment.timeFrozen           stop the clock (set by `?shot=1`)
+ *   environment.weather              'trade' | 'calima' | 'fogbank' | 'squall' (bible §2.3)
+ *   environment.setWeather(n, fade)  cross-fade; fade 0 snaps. Round-4 names are aliases:
+ *                                    clear -> trade, rain/storm -> squall, overcast stays
+ *                                    a hidden legacy state for the kind-block's beam row
+ *   environment.weatherStates        ['trade', 'calima', 'fogbank', 'squall']
+ *   environment.states               name -> the weather record (read-only use)
  *   environment.weatherParams        the resolved, cross-faded weather record
- *   environment.rest(opts)           campfire "rest until" hook -> Promise
+ *   environment.perceptionScale      Instrument sight multiplier: 1.0 / 0.5 / 0.5 / 0.8,
+ *                                    0.7 at night (min of the two; fogbank only inside the bank)
+ *   environment.windAt(x, z, out?)   wind speed in m/s at a point (trade 5.5 with gusts,
+ *                                    lulls at dawn and dusk); `out.x/.z` get the velocity
+ *   environment.wind                 { x, z, strength, gust } (Round-4 foliage contract, kept)
  *   environment.phase                'night' | 'dawn' | 'day' | 'dusk'
- *   environment.sunDir               unit vector TOWARD the SUN (below the
- *                                    horizon at night)
- *   environment.lightDir             TOWARD whatever is lighting the world now
+ *   environment.sunDir / moonDir     unit vectors TOWARD the body (noon stands in the south)
+ *   environment.lightDir             TOWARD whatever lights the world now
  *   environment.nightFactor          0 day .. 1 night
- *   environment.weather              'clear' | 'overcast' | 'rain' | 'storm'
- *   environment.setWeather(n, fade)  cross-fade to a weather state
- *   environment.wetness              0–1 surface wetness (world-ground reads it)
- *   environment.wind                 { x, z, strength, gust } (gust hook)
- *   environment.fogParams            aerial-perspective contract (world-ground)
- *   environment.uniforms             shared uniform holders, incl. `calWeather`
- *                                    (vec4 wetness, gust, windX, windZ) which is
- *                                    declared for every fogged material already
+ *   environment.biome                dominant biome at the camera; `biomeMix` the six weights
+ *   environment.exposureEV           the keyed EV now applied (hour + biome + weather)
+ *   environment.fogParams            aerial-perspective contract (world-ground: horizon,
+ *                                    zenith, sun, transmittance(dist, camY, fragY), ext …)
+ *   environment.fogTransmittance(a, b)  CPU mirror between two world points (L-05)
+ *   environment.uniforms (= .u)      shared uniform holders, incl. calWeather, calSunCol,
+ *                                    calSunRad (L-06/W-09: the sun disc's HDR radiance)
  *   environment.registerMaterial(m)  opt a custom material into fog + cascades
- *   environment.weatherStates        the list of state names
- *   environment.debugInfo()          one-call snapshot for gates / studio
+ *   environment.skyIBL               the sky-captured PMREM texture ('CAL.skyIBL', L-04)
+ *   environment.skyCube              the raw 128² sky cube (a sky-only reflection probe, W-08)
+ *   environment.borrowLight(ms)      lend the pooled impact light (P-04 e) -> PointLight|null
+ *   environment.fireLight            the pooled fire light (F-1 rule; `fireSource` = Object3D)
+ *   environment.rest(opts)           rest-until hook -> Promise<hour>
+ *   environment.dispose()            tear everything down
+ *   Environment.direction(h, out)    static sun direction for an hour
+ *   Environment.HOURS                { newGame: 7, title: 17.75, shot: 17.75 }
  *
- * SHADOW POLICY owned here (perf-tech-03): `engine.shadowCullDistance` is
- * clamped to the last cascade's far plane (120 m — a caster past it cannot
- * appear in any shadow map) and `engine.shadowCasterBudget` is raised 2.2x
- * over the quality tier, because the engine divides that DRAW budget by the
- * cascade count and three then frustum-culls each caster per cascade.
- * `grass-chunk-*` and `bushes-*` are promoted to shadow casters.
- *
- * EVENTS (ctx.events): `time-phase`, `weather-changed`, `rest-start`,
- * `rest-end`, `thunder`.
+ * EVENTS (ctx.events): `time-phase`, `weather-changed`, `rest-start`, `rest-end`, `thunder`.
  * ---------------------------------------------------------------------------
  *
  * WHY THE SHADER CHUNKS ARE PATCHED GLOBALLY (see `patchShaderChunks`): three's
- * built-in fog is a single exp2 term on view depth — it cannot express height
- * falloff or sun in-scatter, and it tints geometry with one flat colour, which
- * is exactly the "milky sky / no aerial perspective" the audit filmed. Rather
- * than fork every material in four other lanes, the fog chunks are replaced
- * once (the same technique three's own CSM uses for the lighting chunks) and
- * every scene material is handed the shared uniform objects. A material that is
- * never registered still renders correctly: `calFogA.x == 0` falls back to
- * stock exp2 fog.
+ * built-in fog is a single exp2 term on view depth. Rather than fork every material
+ * in other lanes, the fog chunks are replaced once and every scene material is handed
+ * the shared uniform objects. A material that is never registered still renders:
+ * `calFogA.x == 0` falls back to stock exp2 fog.
  */
 
 /* ========================================================================== */
@@ -66,99 +64,187 @@ import { RiverWater } from './water.js';
 /* ========================================================================== */
 
 const DEG = Math.PI / 180;
-/** Sun arc. Fitted so t=17:00 reproduces the Round-3 sun to within 1°. */
+/** Sun arc (L-11): rises 06:00 at bearing 70, culminates 50° up in the SOUTH at the
+ *  12:45 solar noon (Orchil is at 28° N), sets 19:30 at bearing 290. */
 const SUN_RISE = 6.0;
 const SUN_SET = 19.5;
 const SUN_MAX_ELEV = 50 * DEG;
-const SUN_AZ_START = 75 * DEG;   // bearing at sunrise (ENE)
-const SUN_AZ_SWEEP = 132 * DEG;  // total sweep to sunset (WNW)
-/** The moon runs the same arc, half a day out of phase (+0.4 h so it is not
- *  perfectly anti-solar and the two are never both exactly on the horizon). */
+const SUN_AZ_START = 70 * DEG;
+const SUN_AZ_SWEEP = 220 * DEG;
+/** The moon runs the same arc, half a day out of phase (+0.4 h). */
 const MOON_PHASE_OFFSET = 12.4;
-/** Hours at which the celestial light hands over. Both are intensity troughs,
- *  so the 150° direction flip happens while the light is nearly off. */
+/** Hand-over hours; both are intensity troughs (sunI ≤ 0.15) at 05:24 and 19:54. */
+const SUN_TAKES_OVER = 5.4;
 const MOON_TAKES_OVER = 19.9;
-const SUN_TAKES_OVER = 5.6;
+
+/** Hours the game starts at (L-11 / R66 j). The look places and gates (`?shot`) stand at 17:45. */
+const HOURS = Object.freeze({ newGame: 7.0, title: 17.75, shot: 17.75 });
 
 /**
- * Keyframes, interpolated by hour. `sunI` is the celestial light (sun by day,
- * moon by night). The two troughs at 5.4/19.9 hide the hand-over.
- *
- * The direct/ambient split is the world-01 fix: ambient (1.9 across hemi + fill
- * + env) used to beat the sun (1.2). Daylight now runs sun ~4.5–5.1 against a
- * hemi of 0.32–0.36 and no counter-fill light at all.
+ * Keyframes, interpolated by hour (bible §2.4 as amended by R66 k = ROUND5-LOOK L-03).
+ * `sunI` is the celestial light (sun by day, moon by night). `env` is the sky-IBL
+ * intensity (L-04: 0.30–0.45 by day, 0.12 at night) and `hemiI` the warm ground bounce
+ * only (0.10–0.14). `ev` is the hour's exposure offset; `mist` the valley-mist density;
+ * `sea` the cloud-sea colour (bible: "cloud sea lit from below #F6D2B0" at dawn).
+ * Bible / LOOK hex values are kept verbatim; the 04:36, 05:24, 19:54 and 21:00 rows and
+ * the colours the tables leave blank are this lane's, chosen to interpolate between them.
  */
 const KEYS = [
-  { h: 0.0, sunI: 0.44, sun: '#7f93cc', hemiI: 0.23, hSky: '#2b3d5e', hGnd: '#14161b', env: 0.05,
-    zen: '#04060d', mid: '#0a1020', hor: '#161d2e', fogH: '#151d30', fogZ: '#080c17', fogSun: '#4a5c8c',
-    dens: 0.00106, night: 1.00 },
-  { h: 4.6, sunI: 0.44, sun: '#8194ca', hemiI: 0.25, hSky: '#33456a', hGnd: '#191b21', env: 0.06,
-    zen: '#060a16', mid: '#111a30', hor: '#28304a', fogH: '#232b41', fogZ: '#0b1120', fogSun: '#5b6a99',
-    dens: 0.00122, night: 0.95 },
-  { h: 5.4, sunI: 0.12, sun: '#9a8fb4', hemiI: 0.24, hSky: '#4a5578', hGnd: '#241f1e', env: 0.07,
-    zen: '#0a1226', mid: '#26314e', hor: '#5e5364', fogH: '#4a4552', fogZ: '#141c34', fogSun: '#8a6f80',
-    dens: 0.00145, night: 0.72 },
-  { h: 6.6, sunI: 1.70, sun: '#ffb277', hemiI: 0.30, hSky: '#6f86ad', hGnd: '#3a3128', env: 0.10,
-    zen: '#1b3060', mid: '#5c6f96', hor: '#e8a071', fogH: '#c1957c', fogZ: '#2b4370', fogSun: '#ff9a54',
-    dens: 0.00176, night: 0.24 },
-  { h: 8.2, sunI: 4.60, sun: '#ffdcb0', hemiI: 0.30, hSky: '#8fb2dc', hGnd: '#6a5a44', env: 0.105,
-    zen: '#1b4a92', mid: '#7ea0cd', hor: '#ddcfb6', fogH: '#bfc0b7', fogZ: '#39619a', fogSun: '#ffc98a',
-    dens: 0.00145, night: 0.00 },
-  { h: 12.0, sunI: 5.20, sun: '#fff1dc', hemiI: 0.31, hSky: '#9cc0e8', hGnd: '#7a6a52', env: 0.115,
-    zen: '#14428f', mid: '#7ba6d8', hor: '#c9d5da', fogH: '#b4c1c7', fogZ: '#31609c', fogSun: '#ffe6bd',
-    dens: 0.00133, night: 0.00 },
-  { h: 15.2, sunI: 5.00, sun: '#ffdfae', hemiI: 0.29, hSky: '#95b7e2', hGnd: '#75634a', env: 0.105,
-    zen: '#17458d', mid: '#7ba0cf', hor: '#d9c8ab', fogH: '#bdb8aa', fogZ: '#355f96', fogSun: '#ffce90',
-    dens: 0.00141, night: 0.00 },
-  { h: 17.4, sunI: 4.90, sun: '#ffc98a', hemiI: 0.27, hSky: '#8aa9d6', hGnd: '#6d5236', env: 0.095,
-    zen: '#173f83', mid: '#7d95bf', hor: '#eeae6c', fogH: '#cfa87f', fogZ: '#365a8d', fogSun: '#ffa54f',
-    dens: 0.00160, night: 0.00 },
-  { h: 19.0, sunI: 2.30, sun: '#ff9b52', hemiI: 0.26, hSky: '#7189b8', hGnd: '#4d3a2a', env: 0.085,
-    zen: '#122e63', mid: '#6a7ba6', hor: '#f2894a', fogH: '#c08560', fogZ: '#2b4677', fogSun: '#ff7a30',
-    dens: 0.00184, night: 0.10 },
-  { h: 19.9, sunI: 0.14, sun: '#b06a58', hemiI: 0.25, hSky: '#5b688c', hGnd: '#3a2c26', env: 0.08,
-    zen: '#0d2049', mid: '#485778', hor: '#a76a4e', fogH: '#8a6353', fogZ: '#1c2d55', fogSun: '#c0673c',
-    dens: 0.00176, night: 0.48 },
-  { h: 21.0, sunI: 0.46, sun: '#7f93cc', hemiI: 0.24, hSky: '#33456a', hGnd: '#1a1c22', env: 0.06,
-    zen: '#070b18', mid: '#0f1729', hor: '#1e2639', fogH: '#1b2337', fogZ: '#0a101c', fogSun: '#54658f',
-    dens: 0.00118, night: 0.92 },
-  { h: 24.0, sunI: 0.44, sun: '#7f93cc', hemiI: 0.23, hSky: '#2b3d5e', hGnd: '#14161b', env: 0.05,
-    zen: '#04060d', mid: '#0a1020', hor: '#161d2e', fogH: '#151d30', fogZ: '#080c17', fogSun: '#4a5c8c',
-    dens: 0.00106, night: 1.00 },
+  { h: 0.0, sunI: 0.20, sun: '#9FB3D6', hemiI: 0.14, hSky: '#2b3d5e', hGnd: '#14161b', env: 0.12,
+    zen: '#0D1220', mid: '#121a2f', hor: '#1B2438', fogH: '#20283A', fogZ: '#0c1222', fogSun: '#3d4a6a',
+    sea: '#2a3146', dens: 0.00110, mist: 0.0020, night: 1.00, ev: 1.30 },
+  { h: 4.6, sunI: 0.20, sun: '#9fb0d2', hemiI: 0.14, hSky: '#33456a', hGnd: '#191b21', env: 0.12,
+    zen: '#121a31', mid: '#1b2440', hor: '#2f3550', fogH: '#2f3546', fogZ: '#111830', fogSun: '#4f5a80',
+    sea: '#363c55', dens: 0.00120, mist: 0.0028, night: 0.95, ev: 1.25 },
+  // hand-over trough 05:24
+  { h: 5.4, sunI: 0.10, sun: '#a99cb8', hemiI: 0.13, hSky: '#4a5578', hGnd: '#241f1e', env: 0.14,
+    zen: '#222b47', mid: '#3c4260', hor: '#7d7387', fogH: '#5d6070', fogZ: '#1c2440', fogSun: '#8a6f80',
+    sea: '#6d6a80', dens: 0.00140, mist: 0.0034, night: 0.74, ev: 1.00 },
+  // 05:30 pre-dawn (bible)
+  { h: 5.5, sunI: 0.14, sun: '#c9a5a8', hemiI: 0.13, hSky: '#56607f', hGnd: '#2a2422', env: 0.15,
+    zen: '#2B3550', mid: '#4b4f6c', hor: '#9C8FA0', fogH: '#6F7480', fogZ: '#222a46', fogSun: '#a07a84',
+    sea: '#8f8a9e', dens: 0.00145, mist: 0.0036, night: 0.68, ev: 0.90 },
+  // 07:00 dawn (bible): cool shadows go violet-rose (R66 k)
+  { h: 7.0, sunI: 2.60, sun: '#FFC9A0', hemiI: 0.12, hSky: '#8a8fb8', hGnd: '#4a3a30', env: 0.32,
+    zen: '#6E88A8', mid: '#9aa5c0', hor: '#F2B98E', fogH: '#C9B3A6', fogZ: '#7d8db0', fogSun: '#ffb487',
+    sea: '#F6D2B0', dens: 0.00160, mist: 0.0025, night: 0.04, ev: 0.35 },
+  // 09:30 (L-03 new key)
+  { h: 9.5, sunI: 4.50, sun: '#FFE6C8', hemiI: 0.12, hSky: '#93a8d0', hGnd: '#6a5a48', env: 0.38,
+    zen: '#5579ad', mid: '#8ea8cc', hor: '#D3D5D8', fogH: '#CCD2D6', fogZ: '#6f8cb8', fogSun: '#ffdcb0',
+    sea: '#F4EEE6', dens: 0.00118, mist: 0.0006, night: 0.00, ev: 0.05 },
+  // 12:00 trade noon (bible): −0.3 EV comes from the Pans' biome row
+  { h: 12.0, sunI: 5.10, sun: '#FFF6E8', hemiI: 0.12, hSky: '#9cb8de', hGnd: '#7a6a56', env: 0.42,
+    zen: '#3F78B5', mid: '#7ca2cf', hor: '#BFD3E0', fogH: '#CFD8DE', fogZ: '#5c86bb', fogSun: '#fff0d8',
+    sea: '#F2F4F5', dens: 0.00100, mist: 0.0003, night: 0.00, ev: 0.00 },
+  // 16:30 (L-03 new key, the light analyst's row)
+  { h: 16.5, sunI: 4.80, sun: '#FFD9A8', hemiI: 0.12, hSky: '#8C8FC4', hGnd: '#6e5640', env: 0.40,
+    zen: '#6F7FB8', mid: '#a49fc6', hor: '#E2BBAE', fogH: '#C89A88', fogZ: '#7d82b0', fogSun: '#ffc58c',
+    sea: '#F3DDCF', dens: 0.00118, mist: 0.0010, night: 0.00, ev: 0.10 },
+  // 17:45 (L-03 new key)
+  { h: 17.75, sunI: 4.20, sun: '#FFC48A', hemiI: 0.12, hSky: '#8a86b8', hGnd: '#6a4e3a', env: 0.38,
+    zen: '#62679f', mid: '#a493b4', hor: '#EBA98C', fogH: '#CF9A80', fogZ: '#6f6f9f', fogSun: '#ffae6a',
+    sea: '#F2CDB6', dens: 0.00130, mist: 0.0018, night: 0.00, ev: 0.15 },
+  // 18:45 golden (bible; zenith #555079 per R66 k)
+  { h: 18.75, sunI: 2.80, sun: '#FFB070', hemiI: 0.12, hSky: '#7b72a2', hGnd: '#5a4030', env: 0.34,
+    zen: '#555079', mid: '#9a7c98', hor: '#F08A5A', fogH: '#D9A37E', fogZ: '#5c5a85', fogSun: '#ff9a50',
+    sea: '#F2C0A0', dens: 0.00145, mist: 0.0028, night: 0.00, ev: 0.25 },
+  // 19:20 (L-03 new key)
+  { h: 19.333, sunI: 1.20, sun: '#FF9B52', hemiI: 0.12, hSky: '#6a6090', hGnd: '#4a3428', env: 0.26,
+    zen: '#4A4A7C', mid: '#7d6688', hor: '#D97A62', fogH: '#A67C78', fogZ: '#47466e', fogSun: '#ff8a48',
+    sea: '#c79a92', dens: 0.00150, mist: 0.0032, night: 0.12, ev: 0.40 },
+  // 19:45 dusk (bible)
+  { h: 19.75, sunI: 0.35, sun: '#c46a5a', hemiI: 0.13, hSky: '#4c4a72', hGnd: '#33282a', env: 0.18,
+    zen: '#2F3560', mid: '#574a6c', hor: '#C46A7A', fogH: '#7A6474', fogZ: '#2c2f52', fogSun: '#b06060',
+    sea: '#8d7a8c', dens: 0.00150, mist: 0.0034, night: 0.40, ev: 0.70 },
+  // hand-over trough 19:54
+  { h: 19.9, sunI: 0.10, sun: '#8f7a96', hemiI: 0.13, hSky: '#3f4466', hGnd: '#2a2426', env: 0.15,
+    zen: '#252a50', mid: '#3e3a5c', hor: '#8a5a6c', fogH: '#5f5466', fogZ: '#22284a', fogSun: '#7a5068',
+    sea: '#6a6078', dens: 0.00145, mist: 0.0034, night: 0.55, ev: 0.85 },
+  { h: 21.0, sunI: 0.20, sun: '#9FB3D6', hemiI: 0.14, hSky: '#33456a', hGnd: '#1a1c22', env: 0.12,
+    zen: '#121831', mid: '#182035', hor: '#222a40', fogH: '#262d40', fogZ: '#0e1426', fogSun: '#45527a',
+    sea: '#30374d', dens: 0.00118, mist: 0.0026, night: 0.92, ev: 1.25 },
+  // 23:00 night (bible): moon #9FB3D6
+  { h: 23.0, sunI: 0.20, sun: '#9FB3D6', hemiI: 0.14, hSky: '#2b3d5e', hGnd: '#14161b', env: 0.12,
+    zen: '#0D1220', mid: '#121a2f', hor: '#1B2438', fogH: '#20283A', fogZ: '#0c1222', fogSun: '#3d4a6a',
+    sea: '#2a3146', dens: 0.00110, mist: 0.0020, night: 1.00, ev: 1.30 },
+  { h: 24.0, sunI: 0.20, sun: '#9FB3D6', hemiI: 0.14, hSky: '#2b3d5e', hGnd: '#14161b', env: 0.12,
+    zen: '#0D1220', mid: '#121a2f', hor: '#1B2438', fogH: '#20283A', fogZ: '#0c1222', fogSun: '#3d4a6a',
+    sea: '#2a3146', dens: 0.00110, mist: 0.0020, night: 1.00, ev: 1.30 },
 ];
 
-/**
- * Weather states (world-14). Multipliers/targets applied on top of the hour
- * keyframe, cross-faded by `setWeather`.
- *   sunMul/hemiMul  direct vs ambient rebalance under cloud
- *   cloud           sky cover 0–1, cloudDark   underside darkness
- *   densMul         aerial-perspective density multiplier
- *   rain            streak density 0–1, wet    target surface wetness
- *   wind            base wind strength, gust   gust amplitude
- *   shaft           screen-space light-shaft strength multiplier
- *   desat           pull the palette toward grey
- */
-const WEATHER = {
-  clear: { sunMul: 1.00, hemiMul: 1.00, cloud: 0.30, cloudDark: 0.30, densMul: 1.00, rain: 0.00, wet: 0.00, wind: 0.85, gust: 0.35, shaft: 1.00, desat: 0.00, cloudShadow: 0.26, lightning: 0 },
-  overcast: { sunMul: 0.26, hemiMul: 1.85, cloud: 0.94, cloudDark: 0.62, densMul: 1.85, rain: 0.00, wet: 0.10, wind: 1.20, gust: 0.55, shaft: 0.18, desat: 0.55, cloudShadow: 0.10, lightning: 0 },
-  rain: { sunMul: 0.17, hemiMul: 1.90, cloud: 0.98, cloudDark: 0.72, densMul: 2.55, rain: 0.85, wet: 0.85, wind: 1.55, gust: 0.75, shaft: 0.08, desat: 0.72, cloudShadow: 0.06, lightning: 0 },
-  storm: { sunMul: 0.10, hemiMul: 1.75, cloud: 1.00, cloudDark: 0.88, densMul: 3.20, rain: 1.00, wet: 1.00, wind: 2.35, gust: 1.35, shaft: 0.04, desat: 0.82, cloudShadow: 0.04, lightning: 1 },
-};
+/** Calima, any hour (bible §2.3, §2.4, §9.3; LOOK L-14). */
+const CALIMA = Object.freeze({
+  zen: '#B9875C', hor: '#D2A274', fog: '#C98B4E', disc: '#F2A27E', sun: '#F7B276', haze: '#D58A63',
+});
 
-/** Cascaded shadow splits as fractions of `maxFar`. Near cascade tight enough
- *  that its texel is ~1.4 cm/px at 16:9 / 55° fov (gate A56 wants ≤ 2 cm). */
+/**
+ * Weather states (bible §2.3). Multipliers/targets applied on top of the hour key,
+ * cross-faded by `setWeather`.
+ *   sunMul/hemiMul  direct vs ambient    cloud/cloudDark  sky cover, underside darkness
+ *   densMul         aerial density ×     mist             valley-mist ×
+ *   rain/wet        streaks, wetness     wind/gust        Round-4 foliage strength units
+ *   windMS          wind speed, m/s      shaft            screen-space shaft ×
+ *   desat           pull toward grey     cloudShadow      ground cloud-shadow strength
+ *   calima/fogbank  state weights        perception       Instrument sight ×
+ *   shadowK         shadow strength      seaCloud         cloud-sea ×
+ *   ev              exposure offset      bloomK           bloom strength ×
+ */
+const W_TRADE = { sunMul: 1.00, hemiMul: 1.00, cloud: 0.30, cloudDark: 0.30, densMul: 1.00, mist: 1.0, rain: 0.00, wet: 0.00, wind: 0.85, gust: 0.35, windMS: 5.5, shaft: 1.00, desat: 0.00, cloudShadow: 0.26, lightning: 0, calima: 0, fogbank: 0, perception: 1.0, shadowK: 1.00, seaCloud: 1.0, ev: 0.00, bloomK: 1.00 };
+const WEATHER = {
+  trade: W_TRADE,
+  // bible: fog Calima Ochre ×4, coral disc, shadow strength 0.45, perception 0.5; L-14: EV +0.15, bloom ×1.25
+  calima: { ...W_TRADE, sunMul: 0.70, hemiMul: 1.40, cloud: 0.05, cloudDark: 0.20, densMul: 4.00, mist: 0.6, windMS: 2.5, wind: 0.50, gust: 0.20, shaft: 1.40, cloudShadow: 0.00, calima: 1, perception: 0.5, shadowK: 0.45, seaCloud: 0.4, ev: 0.15, bloomK: 1.25 },
+  // bible: height fog below 150 m ×3, perception 0.5 inside the bank
+  fogbank: { ...W_TRADE, sunMul: 0.55, hemiMul: 1.40, cloud: 0.70, cloudDark: 0.35, densMul: 3.00, mist: 3.0, windMS: 1.5, wind: 0.35, gust: 0.15, shaft: 0.50, desat: 0.30, cloudShadow: 0.10, fogbank: 1, perception: 0.5, shadowK: 0.70, seaCloud: 1.6, ev: 0.10, bloomK: 0.80 },
+  // bible: rare, rain on the windward side only, perception 0.8 (fog ×1.6 is this lane's)
+  squall: { ...W_TRADE, sunMul: 0.30, hemiMul: 1.80, cloud: 0.92, cloudDark: 0.62, densMul: 1.60, mist: 1.4, rain: 0.80, wet: 0.70, windMS: 9.0, wind: 1.80, gust: 0.90, shaft: 0.15, desat: 0.50, cloudShadow: 0.12, perception: 0.8, shadowK: 0.80, seaCloud: 1.2, ev: 0.10, bloomK: 0.60 },
+  // hidden Round-4 state: the kind-block's beam row stages fog density > 1.2 with no rain
+  overcast: { ...W_TRADE, sunMul: 0.26, hemiMul: 1.85, cloud: 0.94, cloudDark: 0.62, densMul: 1.85, wet: 0.10, wind: 1.20, gust: 0.55, windMS: 7.0, shaft: 0.18, desat: 0.55, cloudShadow: 0.10, shadowK: 0.80, ev: 0.10, bloomK: 0.70 },
+};
+const BIBLE_STATES = Object.freeze(['trade', 'calima', 'fogbank', 'squall']);
+const ALIAS = Object.freeze({ clear: 'trade', rain: 'squall', storm: 'squall' });
+
+/**
+ * Lighting by biome (bible §9.3), driven by the biome weights at the camera. Fog
+ * colours are applied as a tint relative to the Pans' fog (#CFD8DE, which equals the
+ * noon key), so the hour keys hold exactly in the Pans and every other biome shifts
+ * by its own ratio. `bloom` offsets the bloom threshold (salt glare lowers it).
+ */
+const BIOMES = Object.freeze({
+  pans:      { fog: '#CFD8DE', dens: 1.0, ev: -0.3, bloom: -0.10 },
+  holds:     { fog: '#D9C3A2', dens: 1.3, ev: 0.0, bloom: 0.00 },
+  malpais:   { fog: '#B9A08C', dens: 1.1, ev: 0.1, bloom: 0.00 },
+  cloudline: { fog: '#8E9A8C', dens: 3.0, ev: 0.2, bloom: 0.15 },   // ×3 below 150 m only
+  flank:     { fog: '#C7CDD2', dens: 1.2, ev: 0.0, bloom: 0.00 },
+  caldera:   { fog: '#BFD0E6', dens: 0.6, ev: -0.1, bloom: 0.00 },
+});
+const BIOME_IDS = Object.freeze(Object.keys(BIOMES));
+/** Round-4 terrain biome names → their CALIMA stand-ins until world-ground's island lands. */
+const R4_BIOME = Object.freeze({ meadow: 'pans', marsh: 'flank', forest: 'cloudline', ash: 'malpais', scree: 'holds', snow: 'caldera' });
+const CALIMA_EV = 0.15;          // L-03 (the bible's +0.2 is superseded by the look spec)
+const CALIMA_BLOOM = -0.15;
+/** EV may move at most this much per update (A-biome-grade ≤ 0.05 EV per frame). */
+const EV_STEP_MAX = 0.04;
+const EV_RATE = 0.6;             // EV per second when it is moving
+
+/** NE trade wind from bearing 045: blows TOWARD 225 (SW). North is −Z, east is +X. */
+const WIND_FROM = Object.freeze({ x: Math.SQRT1_2, z: -Math.SQRT1_2 });
+/** The trade inversion parks a cloud deck at 110–150 m on the windward slopes (bible §2.3). */
+const SEA_CLOUD = Object.freeze({ base: 105, top: 150, density: 0.065, near: -60, far: 140 });
+
+/** Cascaded shadow splits as fractions of `maxFar` (A56: near texel ≤ 2 cm). */
 const CSM_BREAKS = [0.11, 0.33, 1.0];
 const CSM_MAX_FAR = 120;
 const CSM_MAP_SIZE = 2048;
-/** Aerial perspective: 1/H of the exponential density falloff, and the height
- *  the quoted density is measured at. */
+/** Aerial perspective: 1/H of the main layer and its reference height; the valley
+ *  mist's 1/H (14 m) above its floor (L-05). */
 const FOG_HEIGHT_FALLOFF = 1 / 140;
 const FOG_HEIGHT_REF = 4;
-/** Grass chunks within this of the player cast, at most GRASS_CAST_MAX of
- *  them; see `_shadowPolicy`. The cap is what makes the cost a CONSTANT rather
- *  than a function of where the player is standing in the chunk grid. */
+const MIST_FALLOFF = 1 / 14;
+const MIST_FLOOR = 0;
+/** Per-channel extinction (L-05): golden/trade air and calima dust. */
+const EXT_TRADE = Object.freeze([0.82, 1.00, 1.32]);
+const EXT_CALIMA = Object.freeze([1.00, 0.97, 0.90]);
+/** Grass chunks within this of the player cast, at most GRASS_CAST_MAX of them. */
 const GRASS_CAST_RADIUS = 46;
 const GRASS_CAST_MAX = 3;
+/** Sky IBL (L-04): rebake every 0.1 game hours or on a 0.05 weather move. */
+const IBL_HOURS = 0.1;
+const IBL_WEATHER = 0.05;
+
+/* ---------------------- golden-weighted clock (L-11) ---------------------- */
+
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+/** Sun elevation in degrees at an hour (continuous; negative at night). */
+const sunElevDeg = (h) => 50 * Math.sin(Math.PI * (h - SUN_RISE) / (SUN_SET - SUN_RISE));
+/** Clock rate by sun elevation: ×2.5 below −4°, ×0.5 at 2–22°, ×1 otherwise, blended over 2°. */
+const goldenRate = (e) => 1 + 1.5 * (1 - smooth(-5, -3, e)) - 0.5 * smooth(1, 3, e) * (1 - smooth(21, 23, e));
+/** Normaliser so a golden day is still `dayLengthSeconds` long: the mean of 1/rate over 24 h. */
+const GOLDEN_NORM = (() => {
+  let s = 0; const N = 4800;
+  for (let i = 0; i < N; i++) s += 1 / goldenRate(sunElevDeg((i + 0.5) * 24 / N));
+  return s / N;
+})();
 
 /* ========================================================================== */
 /*                          global shader chunk patches                       */
@@ -167,23 +253,14 @@ const GRASS_CAST_MAX = 3;
 let _chunksPatched = false;
 
 /**
- * Replace three's fog chunks with a height + distance + in-scatter model, and
- * fold a cloud-shadow term into the directional-light loop.
- *
- * Every uniform introduced here is optional: with `calFogA.x == 0` the fog
- * falls back to stock exp2 and `calCloudShadow()` returns 1, so a material this
- * file never registers still renders exactly as it did before.
- *
- * Called AFTER `engine.enableCSM()` because CSM's `injectInclude()` overwrites
- * `lights_fragment_begin` / `lights_pars_begin` wholesale; we wrap whatever it
- * left behind.
+ * Replace three's fog chunks with the L-05 model — a main exponential height layer,
+ * a valley-mist layer, the windward cloud-sea slab, per-channel extinction and two
+ * Henyey-Greenstein lobes toward the sun — and fold a cloud-shadow term into the
+ * directional-light loop. With `calFogA.x == 0` the fog falls back to stock exp2.
+ * Called AFTER `engine.enableCSM()` (CSM replaces the lighting chunks wholesale).
  */
 function patchShaderChunks() {
   const C = THREE.ShaderChunk;
-  // The lighting half is re-applied on every call: three's CSM re-installs its
-  // own `lights_*` chunks each time `enableCSM()` runs, which would silently
-  // drop the cloud-shadow term. The content check below makes that a no-op when
-  // nothing has clobbered us. The fog half only ever needs writing once.
   patchLightChunks(C);
   if (_chunksPatched) return;
   _chunksPatched = true;
@@ -197,10 +274,6 @@ function patchShaderChunks() {
   uniform vec4 calWeather;
 #endif`;
 
-  // World position from VIEW position, not from `transformed`: sprite_vert has
-  // no `transformed` in scope, and instanced/batched meshes would need the
-  // instance matrix folded in by hand. `mvPosition` is the one thing every
-  // shader that includes <fog_vertex> is guaranteed to have.
   C.fog_vertex = /* glsl */`
 #ifdef USE_FOG
   vFogDepth = - mvPosition.z;
@@ -218,13 +291,23 @@ function patchShaderChunks() {
     uniform float fogNear;
     uniform float fogFar;
   #endif
-  // density, 1/heightFalloff, heightRef, inscatterPow
+  // main layer: density, 1/H, reference height, (unused)
   uniform vec4 calFogA;
-  // inscatterStrength, groundGlow, maxOpacity, unused
+  // in-scatter strength, (unused), max opacity, (unused)
   uniform vec4 calFogB;
+  // valley mist: density, 1/H, floor y, noise amount
+  uniform vec4 calFogC;
+  // cloud sea: density, base y, top y, (unused)
+  uniform vec4 calFogD;
+  // windward axis (x, z) and its ramp (near, far) in metres along it
+  uniform vec4 calFogE;
+  // two Henyey-Greenstein lobes: g1, weight1, g2, weight2
+  uniform vec4 calFogG;
+  uniform vec3 calFogExt;
   uniform vec3 calFogHorizon;
   uniform vec3 calFogZenith;
   uniform vec3 calFogSun;
+  uniform vec3 calCloudSeaCol;
   uniform vec3 calSunDir;
   uniform vec3 calCamPos;
   // scale (1/m), coverage, strength, softness
@@ -247,35 +330,59 @@ function patchShaderChunks() {
     float m = smoothstep( calCloudA.y, calCloudA.y + calCloudA.w, n );
     return 1.0 - m * calCloudA.z;
   }
+  // closed-form mean of exp( -(y - ref) k ) along a ray from the camera to the fragment
+  float calHeightAvg( float k, float ref, float dy ) {
+    float b = exp( - ( calCamPos.y - ref ) * k );
+    float e = dy * k;
+    return abs( e ) < 0.002 ? b : b * ( 1.0 - exp( - e ) ) / e;
+  }
+  // Henyey-Greenstein phase relative to isotropic (its mean over the sphere is 1)
+  float calHG( float g, float c ) {
+    return ( 1.0 - g * g ) / pow( max( 1.0 + g * g - 2.0 * g * c, 1e-4 ), 1.5 );
+  }
 #endif`;
 
   C.fog_fragment = /* glsl */`
 #ifdef USE_FOG
   if ( calFogA.x > 0.0 ) {
-    // Analytic height fog: density falls off as exp( -(y - ref) / H ), so the
-    // integral along the ray has a closed form. Both endpoints matter, which is
-    // what makes a ridge top read thinner than a valley floor at the same range.
-    float calK = calFogA.y;
-    float calDy = vFogWorldPos.y - calCamPos.y;
-    float calBase = exp( - ( calCamPos.y - calFogA.z ) * calK );
-    float calE = calDy * calK;
-    float calAvg = abs( calE ) < 0.002 ? calBase : calBase * ( 1.0 - exp( - calE ) ) / calE;
-    float calTau = calFogA.x * vFogDepth * clamp( calAvg, 0.0, 12.0 );
-    float calTrans = clamp( exp( - calTau ), 1.0 - calFogB.z, 1.0 );
-
     vec3 calDv = vFogWorldPos - calCamPos;
-    vec3 calVd = calDv / max( length( calDv ), 1e-3 );
+    float calDist = max( length( calDv ), 1e-3 );
+    vec3 calVd = calDv / calDist;
+    float calDy = calDv.y;
+    // main layer: analytic height fog (both endpoints matter: a ridge top reads
+    // thinner than a valley floor at the same range)
+    float calTauM = calFogA.x * vFogDepth * clamp( calHeightAvg( calFogA.y, calFogA.z, calDy ), 0.0, 12.0 );
+    // valley mist: a second, shallow layer pooled over the valley floor, broken by
+    // one 120 m noise read drifting downwind
+    float calTauV = 0.0;
+    if ( calFogC.x > 0.0 ) {
+      float calMn = 1.0 + calFogC.w * ( calNoise2( vFogWorldPos.xz * ( 1.0 / 120.0 ) + calCloudDrift * 3.0 ) * 2.0 - 1.0 );
+      calTauV = calFogC.x * vFogDepth * clamp( calHeightAvg( calFogC.y, calFogC.z, calDy ), 0.0, 40.0 ) * calMn;
+    }
+    // cloud sea: the windward slab between calFogD.y and calFogD.z, as optical
+    // depth (no planes, no overdraw): the ray's length inside the slab
+    float calTauC = 0.0;
+    if ( calFogD.x > 0.0 ) {
+      float calLo = min( calCamPos.y, vFogWorldPos.y ), calHi = max( calCamPos.y, vFogWorldPos.y );
+      float calOv = max( 0.0, min( calHi, calFogD.z ) - max( calLo, calFogD.y ) );
+      float calAdy = abs( calDy );
+      float calSeg = calAdy > 0.05 ? calDist * calOv / calAdy
+        : ( ( calCamPos.y > calFogD.y && calCamPos.y < calFogD.z ) ? calDist : 0.0 );
+      float calWw = smoothstep( calFogE.z, calFogE.w, dot( vFogWorldPos.xz, calFogE.xy ) );
+      float calBreak = smoothstep( 0.18, 0.52, calNoise2( vFogWorldPos.xz * ( 1.0 / 260.0 ) - calCloudDrift * 2.0 ) + 0.22 );
+      calTauC = calFogD.x * calSeg * calWw * calBreak;
+    }
+
     float calUp = clamp( calVd.y * 1.55 + 0.10, 0.0, 1.0 );
     vec3 calSky = mix( calFogHorizon, calFogZenith, calUp * calUp );
-    float calSd = max( dot( calVd, calSunDir ), 0.0 );
-    // Forward in-scatter: the haze lights up toward the sun and warms the
-    // ridges that face it. Squared so it stays a glow, not a second sun.
-    // No (1 - trans) factor here: the mix() below already scales the whole
-    // in-scatter term by it, and double-counting made the fogged pixel leave
-    // the straight line between "no fog" and "full fog" that A57 measures.
-    calSky += calFogSun * pow( calSd, calFogA.w ) * calFogB.x;
-    calSky += calFogSun * calSd * calSd * calFogB.y;
-    gl_FragColor.rgb = mix( calSky, gl_FragColor.rgb, calTrans );
+    float calCos = dot( calVd, calSunDir );
+    calSky += calFogSun * ( calHG( calFogG.x, calCos ) * calFogG.y + calHG( calFogG.z, calCos ) * calFogG.w ) * calFogB.x;
+
+    vec3 calTau = ( calTauM + calTauV ) * calFogExt + vec3( calTauC );
+    vec3 calTrans = clamp( exp( - calTau ), vec3( 1.0 - calFogB.z ), vec3( 1.0 ) );
+    float calTot = calTauM + calTauV + calTauC;
+    vec3 calIn = calTot > 1e-6 ? ( calSky * ( calTauM + calTauV ) + calCloudSeaCol * calTauC ) / calTot : calSky;
+    gl_FragColor.rgb = mix( calIn, gl_FragColor.rgb, calTrans );
   } else {
     #ifdef FOG_EXP2
       float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
@@ -285,14 +392,11 @@ function patchShaderChunks() {
     gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
   }
 #endif`;
-
 }
 
 /**
- * Cloud shadows folded into the directional-light loop (world-04).
- * `lights_fragment_begin` at this point is whatever CSM installed; every branch
- * of it funnels through getDirectionalLightInfo(), so one textual insertion
- * covers the cascade, the fade and the no-shadow path alike.
+ * Cloud shadows folded into the directional-light loop. Every branch of whatever
+ * CSM installed funnels through getDirectionalLightInfo(), so one insertion covers all.
  */
 let cloudShadowSites = 0;
 function patchLightChunks(C) {
@@ -306,8 +410,6 @@ function patchLightChunks(C) {
     cloudShadowSites = n;
   }
   if (C.lights_pars_begin.indexOf('calCloudShadow') < 0) {
-    // Lit materials with fog:false never see the fog chunk, so they need the
-    // stub. USE_FOG is a compile define, so this is order-independent.
     C.lights_pars_begin = /* glsl */`
 #ifndef USE_FOG
   float calCloudShadow() { return 1.0; }
@@ -317,17 +419,116 @@ function patchLightChunks(C) {
 }
 
 /* ========================================================================== */
+/*                      the sky's baked tiling noise (L-10)                   */
+/* ========================================================================== */
+
+/**
+ * 256² RGBA8, four independent 5-octave value-noise fbm fields that tile (lattice
+ * periods 8 … 128 cells per tile). Built once at boot in ≈ 10 ms, deterministic, no
+ * file and no licence row: it replaces the six procedural fbm calls the Round-4 sky
+ * shaded under every pixel it covered. Mipmapped, so the plane-projected clouds stop
+ * aliasing toward the horizon.
+ */
+function makeSkyNoise(N = 256) {
+  const data = new Uint8Array(N * N * 4);
+  const acc = new Float32Array(N * N);
+  const hash = (x, y, s) => {
+    let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(s, 1442695041);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+  for (let ch = 0; ch < 4; ch++) {
+    acc.fill(0);
+    let amp = 0.5;
+    for (let o = 0; o < 5; o++) {
+      const P = 8 << o;
+      const lat = new Float32Array(P * P);
+      for (let j = 0; j < P; j++) for (let i = 0; i < P; i++) lat[j * P + i] = hash(i, j, ch * 977 + o * 131 + 7);
+      for (let y = 0; y < N; y++) {
+        const fy = (y / N) * P, y0 = Math.floor(fy), ty = fy - y0;
+        const sy = ty * ty * (3 - 2 * ty);
+        const r0 = (y0 % P) * P, r1 = ((y0 + 1) % P) * P;
+        for (let x = 0; x < N; x++) {
+          const fx = (x / N) * P, x0 = Math.floor(fx), tx = fx - x0;
+          const sx = tx * tx * (3 - 2 * tx);
+          const c0 = x0 % P, c1 = (x0 + 1) % P;
+          const a = lat[r0 + c0] + (lat[r0 + c1] - lat[r0 + c0]) * sx;
+          const b = lat[r1 + c0] + (lat[r1 + c1] - lat[r1 + c0]) * sx;
+          acc[y * N + x] += amp * (a + (b - a) * sy);
+        }
+      }
+      amp *= 0.5;
+    }
+    for (let i = 0; i < N * N; i++) data[i * 4 + ch] = Math.max(0, Math.min(255, Math.round((acc[i] / 0.96875) * 255)));
+  }
+  const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.name = 'CAL.skyNoise';
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/* ========================================================================== */
+/*          display mirror: the linear colour that SHOWS as a target hex      */
+/* ========================================================================== */
+
+const _acesIn = [0.59719, 0.35458, 0.04823, 0.07600, 0.90834, 0.01566, 0.02840, 0.13383, 0.83777];
+const _acesOut = [1.60475, -0.53108, -0.07367, -0.10208, 1.10813, -0.00605, -0.00327, -0.07276, 1.07602];
+const _rrt = (v) => (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081);
+const _oetf = (x) => (x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055);
+const _sat = (x) => Math.min(1, Math.max(0, x));
+const _m3 = [0, 0, 0];
+const det = (a0, a1, a2, b0, b1, b2, c0, c1, c2) => a0 * (b1 * c2 - b2 * c1) - a1 * (b0 * c2 - b2 * c0) + a2 * (b0 * c1 - b1 * c0);
+/** CPU mirror of engine.js's OutputGradeShader (ACES at exposure, sRGB, contrast, lift,
+ *  saturation, split tone; no vignette). `out` gets display sRGB 0..1. No allocation. */
+function displayOf(lin, exposure, G, out) {
+  const k = exposure / 0.6;
+  const r = lin[0] * k, g = lin[1] * k, b = lin[2] * k;
+  for (let i = 0; i < 3; i++) _m3[i] = _rrt(_acesIn[i * 3] * r + _acesIn[i * 3 + 1] * g + _acesIn[i * 3 + 2] * b);
+  for (let i = 0; i < 3; i++) {
+    out[i] = _sat(_acesOut[i * 3] * _m3[0] + _acesOut[i * 3 + 1] * _m3[1] + _acesOut[i * 3 + 2] * _m3[2]);
+    out[i] = _oetf(out[i]);
+  }
+  if (!G) return out;
+  const src0 = out[0], src1 = out[1], src2 = out[2];
+  let c0 = (src0 - 0.5) * G.contrast + 0.5 + G.lift[0];
+  let c1 = (src1 - 0.5) * G.contrast + 0.5 + G.lift[1];
+  let c2 = (src2 - 0.5) * G.contrast + 0.5 + G.lift[2];
+  const l = 0.2126 * c0 + 0.7152 * c1 + 0.0722 * c2;
+  c0 = l + (c0 - l) * G.sat; c1 = l + (c1 - l) * G.sat; c2 = l + (c2 - l) * G.sat;
+  const s = smooth(0.12, 0.86, l);
+  c0 *= G.sh[0] + (G.hi[0] - G.sh[0]) * s;
+  c1 *= G.sh[1] + (G.hi[1] - G.sh[1]) * s;
+  c2 *= G.sh[2] + (G.hi[2] - G.sh[2]) * s;
+  out[0] = _sat(src0 + (c0 - src0) * G.mix);
+  out[1] = _sat(src1 + (c1 - src1) * G.mix);
+  out[2] = _sat(src2 + (c2 - src2) * G.mix);
+  return out;
+}
+
+/* ========================================================================== */
 
 const _v0 = new THREE.Vector3();
 const _v1 = new THREE.Vector3();
 const _shaftSize = new THREE.Vector2();
 const _c0 = new THREE.Color();
 const _c1 = new THREE.Color();
+const _c2 = new THREE.Color();
 
 /** Wrap an hour into [0, 24). */
 const wrap24 = (h) => ((h % 24) + 24) % 24;
 
 export class Environment {
+  static get HOURS() { return HOURS; }
+  static get KEYS() { return KEYS; }
+  static get CALIMA() { return CALIMA; }
+  static get BIOMES() { return BIOMES; }
+
   constructor(ctx) {
     this.ctx = ctx;
     const { scene, engine } = ctx;
@@ -335,66 +536,97 @@ export class Environment {
     /* ----------------------------- clock ------------------------------- */
     const qs = ctx.params;
     const t0 = parseFloat(qs?.get?.('time'));
-    /** 0–24 game hours. Default 17:00 — HZD late afternoon. */
-    this._time = Number.isFinite(t0) ? wrap24(t0) : 17.0;
-    /** Real seconds for a full 24 h cycle. Advances on SIM dt, so the studio's
-     *  timeScale freeze freezes the sky too. */
+    const shot = !!qs?.has?.('shot');
+    /** 0–24 game hours. A New Game starts at 07:00 (L-11); gates and look places at 17:45. */
+    this._time = Number.isFinite(t0) ? wrap24(t0) : (shot ? HOURS.shot : HOURS.newGame);
+    /** Real seconds for a full 24 h cycle; advances on SIM dt. */
     this.dayLengthSeconds = 1800;
+    /** 'golden' weights the clock toward low sun (L-11, Kevin's Q1); 'even' is linear. */
+    this.clock = qs?.get?.('clock') === 'even' ? 'even' : 'golden';
     /** `?shot=1` freezes the clock so every gate frame is deterministic. */
-    this.timeFrozen = !!qs?.has?.('shot');
+    this.timeFrozen = shot;
     this._phase = '';
     this._rest = null;
+    this._t = 0;
 
     /* ---------------------------- weather ------------------------------ */
-    this.weather = 'clear';
-    this._wFrom = { ...WEATHER.clear };
-    this._wTo = { ...WEATHER.clear };
+    this.weather = 'trade';
+    this._wFrom = { ...WEATHER.trade };
+    this._wTo = { ...WEATHER.trade };
     this._wK = 1;
     this._wRate = 1;
-    this.w = { ...WEATHER.clear };   // resolved, per frame
+    this.w = { ...WEATHER.trade };   // resolved, per frame
     this.wetness = 0;
-    this.wind = { x: 0.82, z: 0.57, strength: 0.85, gust: 0 };
+    this.wind = { x: -Math.SQRT1_2, z: Math.SQRT1_2, strength: 0.85, gust: 0 };
+    this._windMS = 5.5;
     this._gustPhase = 0;
     this._lightning = { t: 0, k: 0, next: 4 };
+    this._perception = 1;
+    this._iblW = 0;              // weather "position" the IBL was last baked at
+
+    /* ------------------------------ biome ------------------------------ */
+    this._bw = { pans: 0, holds: 0, malpais: 0, cloudline: 0, flank: 0, caldera: 0,
+      meadow: 0, forest: 0, snow: 0, marsh: 0, ash: 0, scree: 0 };
+    /** The six CALIMA weights at the camera (Σ = 1). */
+    this.biomeMix = { pans: 1, holds: 0, malpais: 0, cloudline: 0, flank: 0, caldera: 0 };
+    this.biome = 'pans';
+    this._biomeFog = new THREE.Color(1, 1, 1);    // linear ratio against the Pans' fog
+    /** The live (eased) biome fog tint, linear, × the hour's fog. */
+    this.biomeFogTint = this._biomeFog;
+    this._biomeDens = 1;
+    this._biomeEV = -0.3;
+    this._biomeBloom = -0.10;
+    this._biomeRatio = {};
+    _c0.set(BIOMES.pans.fog);
+    for (const id of BIOME_IDS) {
+      _c1.set(BIOMES[id].fog);
+      this._biomeRatio[id] = [_c1.r / _c0.r, _c1.g / _c0.g, _c1.b / _c0.b];
+    }
+    this._lastCam = new THREE.Vector3(NaN, NaN, NaN);
+
+    /* ------------------------- exposure + bloom ------------------------ */
+    this.exposureBase = ctx.renderer?.toneMappingExposure ?? 0.94;
+    this.exposureEV = 0;
+    this._evTarget = 0;
+    this._bloomBase = engine?.bloom ? { threshold: engine.bloom.threshold, strength: engine.bloom.strength } : null;
 
     /* ------------------ shared uniform holders (see patch) -------------- */
-    // ONE object per uniform, plugged into every registered material's shader.
-    // Updating `.value` here updates every material at once — no per-material
-    // bookkeeping, no per-frame allocation.
     this.u = {
       calViewInv: { value: new THREE.Matrix4() },
-      calFogA: { value: new THREE.Vector4(0.00157, FOG_HEIGHT_FALLOFF, FOG_HEIGHT_REF, 7.0) },
-      calFogB: { value: new THREE.Vector4(0.55, 0.16, 1.0, 0) },
-      calFogHorizon: { value: new THREE.Color('#cfa87f') },
-      calFogZenith: { value: new THREE.Color('#365a8d') },
-      calFogSun: { value: new THREE.Color('#ffa54f') },
+      calFogA: { value: new THREE.Vector4(0.001, FOG_HEIGHT_FALLOFF, FOG_HEIGHT_REF, 0) },
+      calFogB: { value: new THREE.Vector4(0.045, 0, 0.92, 0) },
+      calFogC: { value: new THREE.Vector4(0.0003, MIST_FALLOFF, MIST_FLOOR, 0.45) },
+      calFogD: { value: new THREE.Vector4(0, SEA_CLOUD.base, SEA_CLOUD.top, 0) },
+      calFogE: { value: new THREE.Vector4(WIND_FROM.x, WIND_FROM.z, SEA_CLOUD.near, SEA_CLOUD.far) },
+      calFogG: { value: new THREE.Vector4(0.72, 0.9, 0.20, 0.25) },
+      calFogExt: { value: new THREE.Vector3(...EXT_TRADE) },
+      calFogHorizon: { value: new THREE.Color('#CFD8DE') },
+      calFogZenith: { value: new THREE.Color('#5c86bb') },
+      calFogSun: { value: new THREE.Color('#fff0d8') },
+      calCloudSeaCol: { value: new THREE.Color('#F2F4F5') },
       calSunDir: { value: new THREE.Vector3(0, 1, 0) },
       calCamPos: { value: new THREE.Vector3() },
       calCloudA: { value: new THREE.Vector4(1 / 190, 0.52, 0.26, 0.30) },
       calCloudDrift: { value: new THREE.Vector2() },
-      calWeather: { value: new THREE.Vector4(0, 0, 0.82, 0.57) },
+      calWeather: { value: new THREE.Vector4(0, 0, -Math.SQRT1_2, Math.SQRT1_2) },
+      /** the direct sun (or moon) as the cascades light it: linear colour × intensity */
+      calSunCol: { value: new THREE.Color() },
+      /** the sun disc's HDR radiance (sunCol × 40 × visibility), for sea glitter (W-09) */
+      calSunRad: { value: new THREE.Color() },
     };
-    /** Alias so other lanes can plug the shared holders into their own shaders. */
     this.uniforms = this.u;
 
     /* ------------------------------ sun -------------------------------- */
     this.sunDir = new THREE.Vector3();
     this.moonDir = new THREE.Vector3();
-    /** Toward whichever body is currently lighting the world (sun OR moon). */
     this.lightDir = new THREE.Vector3();
     this.nightFactor = 0;
     this.sunAboveHorizon = true;
     this._celestialColor = new THREE.Color('#ffc98a');
     this._celestialIntensity = 4.5;
 
-    /**
-     * The sun is NOT added to the scene when cascades are live: three's CSM
-     * makes one DirectionalLight PER CASCADE, and every directional light in
-     * the scene that is not a cascade gets added on top of the one the CSM
-     * shader picked — a stray sun (or the old counter-fill light) would be a
-     * second, shadowless sun. It is kept as the public handle for colour and
-     * direction, and it is the fallback light if enableCSM is unavailable.
-     */
+    /** Public handle for colour and direction; NOT in the scene while cascades are live
+     *  (a non-cascade directional light would be a second, shadowless sun). */
     this.sun = new THREE.DirectionalLight('#ffc98a', 4.5);
     this.sun.castShadow = false;
 
@@ -411,10 +643,6 @@ export class Environment {
         lightDirection: new THREE.Vector3(0.48, -0.46, 0.75).normalize(),
         lightIntensity: 4.5,
       });
-      // `enableCSM` cannot take a custom split callback (mode 'custom' without
-      // one console.errors, which would fail every gate), so the splits are
-      // installed after the fact. engine.resize() re-runs updateFrustums and
-      // picks these up.
       this.csm.mode = 'custom';
       this.csm.customSplitsCallback = (amount, near, far, target) => {
         for (let i = 0; i < amount; i++) {
@@ -426,57 +654,57 @@ export class Environment {
         l.shadow.normalBias = 0.035;
         l.shadow.bias = -0.00022;
       }
+      this._sunInScene = false;
     } else {
       this.sun.castShadow = true;
       this.sun.shadow.mapSize.set(2048, 2048);
       scene.add(this.sun, this.sun.target);
+      this._sunInScene = true;
     }
 
-    // Chunk patches must land AFTER CSM's injectInclude (it replaces the
-    // lighting chunks wholesale) and BEFORE the first material compiles.
     patchShaderChunks();
 
-    /* ---------------------- ambient: hemi + IBL ------------------------ */
-    // world-01: hemi 1.25 -> 0.35 and the 0.5 counter-fill directional is gone.
-    // Everything that used to be "bounce" is hemi + a much dimmer IBL now, so
-    // the sun is the only thing making a lit surface bright.
-    this.hemi = new THREE.HemisphereLight('#8aa9d6', '#6d5236', 0.32);
+    /* ---------------------- ambient: hemi + sky IBL -------------------- */
+    // L-03: the hemisphere light is the warm ground bounce only (0.10–0.14); the sky
+    // fill comes from the sky-captured IBL (L-04) built below.
+    this.hemi = new THREE.HemisphereLight('#8C8FC4', '#6e5640', 0.12);
     scene.add(this.hemi);
 
-    const pmrem = new THREE.PMREMGenerator(ctx.renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environmentIntensity = 0.12;
-    pmrem.dispose();
-
     /* ---------------------------- fog ---------------------------------- */
-    // scene.fog stays a real FogExp2 so USE_FOG/FOG_EXP2 are defined and three
-    // keeps refreshing fogColor/fogDensity — that pair IS the fallback path.
-    scene.fog = new THREE.FogExp2('#cfa87f', 0.00157);
+    // scene.fog stays a real FogExp2 so USE_FOG/FOG_EXP2 are defined (the fallback path).
+    scene.fog = new THREE.FogExp2('#CFD8DE', 0.001);
     this.fogParams = this._buildFogContract();
 
-    /* --------------------------- night lights -------------------------- */
-    // Allocated at construction with intensity 0 so NUM_POINT_LIGHTS never
-    // changes at runtime (a change recompiles every program in the scene).
-    this.fireLight = new THREE.PointLight('#ff9a4e', 0, 26, 2);
+    /* --------------------------- pooled lights ------------------------- */
+    // Allocated at construction with intensity 0 so NUM_POINT_LIGHTS never changes.
+    this.fireLight = new THREE.PointLight('#ff9a4e', 0, 14, 2);
     this.fireLight.castShadow = false;
     this.fireLight.position.set(0, 2, 0);
     scene.add(this.fireLight);
+    /** F-1: the fire the pooled light follows (a brazier, W2). Null → the Round-4 camp fire. */
+    this.fireSource = null;
     this.eyeLights = [];
     for (let i = 0; i < 2; i++) {
-      const l = new THREE.PointLight('#ff5a3c', 0, 14, 2);
+      const l = new THREE.PointLight('#F2EAD3', 0, 14, 2);
       l.castShadow = false;
       scene.add(l);
       this.eyeLights.push(l);
     }
+    // bible §9.1 lamp canon (never the Round-4 cyan): calm, wary, hostile
+    this._lampCol = [new THREE.Color('#F2EAD3'), new THREE.Color('#B5E61D'), new THREE.Color('#FF2D8C')];
     this._campFire = null;
     this._campSearch = 0;
+    this._borrowUntil = -1;
 
     /* ------------------------------ sky -------------------------------- */
+    this._noise = makeSkyNoise(256);
+    this._discLin = new THREE.Color(1, 0.5, 0.3);
+    this._discFor = { exposure: -1, mix: -1 };
     this.sky = this._buildSky();
     scene.add(this.sky);
-
-    this.ridges = this._buildRidges();
-    scene.add(this.ridges);
+    /** L-15: the Round-4 far ridge rings are gone; the horizon is the sea and the
+     *  sister isles world-ground carries inside the dome. */
+    this.ridges = null;
 
     this.birds = this._buildBirds();
     scene.add(this.birds);
@@ -485,30 +713,26 @@ export class Environment {
     this.rain = this._buildRain();
     scene.add(this.rain);
 
-    this.water = new RiverWater(ctx);
+    /** The island's water is world-ground's (`ctx.water`); bible §9.5 "no rivers":
+     *  `RiverWater` is gone from this file (A-no-river). */
+    this.water = ctx.water ?? null;
 
     /* ------------------- screen-space light shafts --------------------- */
     this._shafts = this._buildShafts();
     this._afterRender = () => this._renderShafts();
     engine?.onAfterRender?.push(this._afterRender);
 
-    /**
-     * The fog reconstructs world position from view position, so its camera
-     * uniforms have to be the ones the frame is actually drawn with — not the
-     * ones the sim tick left behind. `Environment.update()` runs before
-     * `Player.update()` (world before actors), and a gate or photo mode can
-     * render with a camera the sim never saw at all. three calls this exactly
-     * once per `renderer.render(scene, …)`, with that camera. Chained, never
-     * replaced: the slot belongs to the scene, not to this lane.
-     */
-    const prevOBR = scene.onBeforeRender;
-    scene.onBeforeRender = (r, sc, camera, target) => {
+    /** The fog's camera uniforms are those of the camera the frame is drawn with. */
+    this._prevOBR = scene.onBeforeRender;
+    const prevOBR = this._prevOBR;
+    this._obr = (r, sc, camera, target) => {
       if (typeof prevOBR === 'function') prevOBR.call(scene, r, sc, camera, target);
       if (camera && camera.isCamera) {
         this.u.calCamPos.value.setFromMatrixPosition(camera.matrixWorld);
         this.u.calViewInv.value.copy(camera.matrixWorld);
       }
     };
+    scene.onBeforeRender = this._obr;
 
     /* ------------------------ material registry ------------------------ */
     this._matSeen = new WeakSet();
@@ -518,9 +742,11 @@ export class Environment {
     this._scanAge = 0;
     this._registerScene();
 
-    // Resolve the first frame's values so nothing renders with the constructor
-    // defaults (a single dark frame at boot is a visible pop).
-    this._applyTime(0);
+    this._applyTime(0, true);
+
+    /* -------------------------- sky IBL (L-04) -------------------------- */
+    this._buildIBL();
+    this._bakeIBL(true);
   }
 
   /* ====================================================================== */
@@ -533,54 +759,67 @@ export class Environment {
   /** Snap the sky to an hour (0–24). Returns the wrapped value. */
   setTime(h) {
     this._time = wrap24(h);
-    this._applyTime(0);
+    this._applyTime(0, true);
+    if (this.timeFrozen && this._ibl) this._bakeIBL(true);
     return this._time;
   }
 
   /** 'night' | 'dawn' | 'day' | 'dusk' — for audio/AI/progression. */
   get phase() { return this._phase; }
 
-  /** Diagnostics for gates and the studio. Allocation-light, call at will. */
+  /** Instrument sight multiplier (bible §2.3): trade 1.0, calima 0.5, fogbank 0.5 inside
+   *  the bank, squall 0.8; night 0.7; the smaller of weather and night applies. */
+  get perceptionScale() { return this._perception; }
+
+  /** Diagnostics for gates and the studio. */
   debugInfo() {
     const csm = this.ctx.engine?.csm;
     const near = csm?.lights?.[0]?.shadow?.camera;
     return {
       hour: this._time,
+      clock: this.clock,
       phase: this._phase,
       weather: this.weather,
+      perceptionScale: this._perception,
       wetness: this.wetness,
-      wind: { ...this.wind },
+      wind: { ...this.wind, ms: this._windMS },
       nightFactor: this.nightFactor,
       sunDir: this.sunDir.toArray(),
-      sunIntensity: this.sun.intensity,
+      sunIntensity: this._celestialIntensity,
       hemiIntensity: this.hemi.intensity,
       envIntensity: this.ctx.scene.environmentIntensity,
+      environment: this.ctx.scene.environment?.name ?? null,
       fogDensity: this.u.calFogA.value.x,
+      mistDensity: this.u.calFogC.value.x,
+      cloudSea: this.u.calFogD.value.x,
       transmittance300: this.fogParams.transmittance(300, 6, 6),
+      biome: this.biome,
+      biomeMix: { ...this.biomeMix },
+      exposureEV: this.exposureEV,
+      exposure: this.ctx.renderer?.toneMappingExposure,
       cascades: csm ? csm.cascades : 0,
       nearTexelM: near ? (near.right - near.left) / csm.shadowMapSize : null,
       cloudShadowSites,
       registeredMaterials: this._matCount,
+      ibl: this._ibl ? { size: this._ibl.size, bakes: this._ibl.bakes, faceFrames: this._ibl.faceFrames } : null,
     };
   }
 
-  /** How many light-loop call sites the cloud-shadow term was woven into. */
   get cloudShadowSites() { return cloudShadowSites; }
 
   /**
-   * Campfire rest hook (world-13 / progression). Advances the clock to `toHour`
-   * over `seconds` of real time, emitting `rest-start` / `rest-end`.
+   * Rest-until hook. Advances the clock to `toHour` over `seconds` of real time,
+   * emitting `rest-start` / `rest-end`.
    *   env.rest({ toHour: 6.2, seconds: 2.2 })  -> Promise<hour>
    *   env.rest(8)                              -> advance 8 game hours
    */
   rest(opts = {}) {
     const o = typeof opts === 'number' ? { hours: opts } : opts;
     const from = this._time;
-    let to = Number.isFinite(o.toHour) ? wrap24(o.toHour) : wrap24(from + (o.hours ?? 8));
+    const to = Number.isFinite(o.toHour) ? wrap24(o.toHour) : wrap24(from + (o.hours ?? 8));
     let span = to - from;
     if (span <= 0.001) span += 24;
     const seconds = Math.max(0.1, o.seconds ?? 2.4);
-    // A second rest request mid-rest must not orphan the first promise.
     if (this._rest) { const prev = this._rest; this._rest = null; prev.resolve?.(this._time); }
     this.ctx.events?.emit?.('rest-start', { from, to, seconds });
     return new Promise((resolve) => {
@@ -591,56 +830,100 @@ export class Environment {
   get resting() { return !!this._rest; }
 
   /**
-   * Cross-fade to a weather state (world-14).
-   *   env.setWeather('rain')          2.5 s default fade
-   *   env.setWeather('storm', 0.6)
+   * Cross-fade to a weather state.
+   *   env.setWeather('calima')        2.5 s default fade
+   *   env.setWeather('squall', 0)     snap (gates)
+   * Round-4 names are accepted as aliases (clear → trade, rain/storm → squall).
    */
   setWeather(name, fadeSeconds = 2.5) {
-    const target = WEATHER[name];
+    const id = ALIAS[name] || name;
+    const target = WEATHER[id];
     if (!target) return this.weather;
-    if (name === this.weather && this._wK >= 1) return this.weather;
+    if (id === this.weather && this._wK >= 1) return this.weather;
     for (const k in this.w) this._wFrom[k] = this.w[k];
     for (const k in target) this._wTo[k] = target[k];
-    this._wK = 0;
-    this._wRate = 1 / Math.max(0.05, fadeSeconds);
-    this.weather = name;
-    this.ctx.events?.emit?.('weather-changed', { weather: name, fadeSeconds });
-    return name;
+    this.weather = id;
+    if (!(fadeSeconds > 0)) {
+      for (const k in target) this.w[k] = target[k];
+      this._wK = 1;
+      this._applyTime(0, true);
+      if (this.timeFrozen && this._ibl) this._bakeIBL(true);
+    } else {
+      this._wK = 0;
+      this._wRate = 1 / Math.max(0.05, fadeSeconds);
+    }
+    this.ctx.events?.emit?.('weather-changed', { weather: id, fadeSeconds });
+    return id;
   }
 
-  get weatherStates() { return Object.keys(WEATHER); }
-
-  /** The live, cross-faded weather record (sunMul, cloud, rain, wind, …). */
+  get weatherStates() { return BIBLE_STATES.slice(); }
+  get states() { return WEATHER; }
   get weatherParams() { return this.w; }
 
   /**
-   * The aerial-perspective contract `world-ground` (and anything else with a
-   * hand-written material) needs to match the sky it is standing under.
+   * Wind at a point, m/s (the bible's NE trade, 5.5 m/s with coherent gusts; lulls at
+   * dawn and dusk). With `out`, writes the velocity into out.x / out.z. No allocation.
    */
+  windAt(x, z, out) {
+    const t = this._t;
+    const wx = this.wind.x, wz = this.wind.z;
+    const along = x * wx + z * wz;
+    const g = Math.sin(along * 0.045 - t * 1.3) * 0.6 + Math.sin((x * 0.031 - z * 0.027) + t * 0.7) * 0.4;
+    const s = Math.max(0, this._windMS * (1 + 0.22 * g + 0.35 * this.wind.gust));
+    if (out) { out.x = wx * s; out.z = wz * s; if ('y' in out) out.y = 0; }
+    return s;
+  }
+
+  /**
+   * P-04 (e): lend the pooled impact light for `ms` (it is eyeLights[1]); the borrower
+   * sets position, colour and intensity. Returns the PointLight, or null while it is
+   * already lent. 0 recompiles: the light count never changes.
+   */
+  borrowLight(ms = 90) {
+    const now = this.ctx.engine?.wallTime ?? 0;
+    if (now < this._borrowUntil) return null;
+    this._borrowUntil = now + Math.max(0, ms) / 1000;
+    const l = this.eyeLights[1];
+    l.color.set('#FFB070'); l.distance = 6;
+    return l;
+  }
+
+  /** CPU mirror of the shader's main + mist transmittance (green channel) between two points. */
+  fogTransmittance(a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    return this.fogParams.transmittance(Math.sqrt(dx * dx + dy * dy + dz * dz), a.y, b.y);
+  }
+
+  /** The aerial-perspective contract world-ground (and any hand-written material) reads. */
   _buildFogContract() {
     const u = this.u;
     const self = this;
+    const avg = (k, ref, camY, fragY) => {
+      const base = Math.exp(-(camY - ref) * k);
+      const e = (fragY - camY) * k;
+      return Math.abs(e) < 0.002 ? base : base * (1 - Math.exp(-e)) / e;
+    };
     return {
       uniforms: u,
       get density() { return u.calFogA.value.x; },
       get heightFalloff() { return u.calFogA.value.y; },
       get heightRef() { return u.calFogA.value.z; },
-      get inscatterPow() { return u.calFogA.value.w; },
       get inscatterStrength() { return u.calFogB.value.x; },
+      get mist() { return u.calFogC.value; },
+      get cloudSea() { return u.calFogD.value; },
+      ext: u.calFogExt.value,
       horizon: u.calFogHorizon.value,
       zenith: u.calFogZenith.value,
       sun: u.calFogSun.value,
       sunDir: u.calSunDir.value,
-      /** Beer-Lambert transmittance for a ray of `dist` m between two heights. */
+      /** Beer-Lambert transmittance (green channel; main layer + valley mist at its mean
+       *  noise) for a ray of `dist` m between two heights. */
       transmittance(dist, camY = FOG_HEIGHT_REF, fragY = camY) {
-        const a = u.calFogA.value;
-        const k = a.y;
-        const base = Math.exp(-(camY - a.z) * k);
-        const e = (fragY - camY) * k;
-        const avg = Math.abs(e) < 0.002 ? base : base * (1 - Math.exp(-e)) / e;
-        return Math.exp(-a.x * dist * Math.min(12, Math.max(0, avg)));
+        const a = u.calFogA.value, c = u.calFogC.value;
+        const tm = a.x * dist * Math.min(12, Math.max(0, avg(a.y, a.z, camY, fragY)));
+        const tv = c.x > 0 ? c.x * dist * Math.min(40, Math.max(0, avg(c.y, c.z, camY, fragY))) : 0;
+        return Math.exp(-(tm + tv) * u.calFogExt.value.y);
       },
-      /** GLSL a custom material can paste; identical maths to the chunk. */
       glsl: {
         parsVertex: 'varying vec3 vFogWorldPos; varying float vFogDepth; uniform mat4 calViewInv;',
         vertex: 'vFogDepth = -mvPosition.z; vFogWorldPos = (calViewInv * vec4(mvPosition.xyz,1.0)).xyz;',
@@ -650,11 +933,7 @@ export class Environment {
     };
   }
 
-  /**
-   * Opt a material into the cascades + aerial fog. Built-in materials in the
-   * scene graph are found automatically; this is for anything held off-scene or
-   * created after a scan.
-   */
+  /** Opt a material into the cascades + aerial fog. */
   registerMaterial(mat) {
     if (!mat || this._matSeen.has(mat)) return mat;
     this._matSeen.add(mat);
@@ -663,7 +942,6 @@ export class Environment {
     const u = this.u;
     const prev = typeof mat.onBeforeCompile === 'function' ? mat.onBeforeCompile : null;
 
-    // CSM only makes sense for materials that run the lighting chunks.
     const lit = !!(mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial
       || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial || mat.isMeshToonMaterial);
     let csmFn = null;
@@ -671,7 +949,7 @@ export class Environment {
       engine.csmSetupMaterial(mat);
       if (mat.onBeforeCompile !== prev) {
         csmFn = mat.onBeforeCompile;
-        mat.onBeforeCompile = prev;   // put it back; the chain below calls it
+        mat.onBeforeCompile = prev;
       }
     }
 
@@ -679,31 +957,13 @@ export class Environment {
       if (prev) prev.call(this, shader, renderer);
       if (csmFn) csmFn.call(this, shader, renderer);
       const su = shader.uniforms;
-      su.calViewInv = u.calViewInv;
-      su.calFogA = u.calFogA;
-      su.calFogB = u.calFogB;
-      su.calFogHorizon = u.calFogHorizon;
-      su.calFogZenith = u.calFogZenith;
-      su.calFogSun = u.calFogSun;
-      su.calSunDir = u.calSunDir;
-      su.calCamPos = u.calCamPos;
-      su.calCloudA = u.calCloudA;
-      su.calCloudDrift = u.calCloudDrift;
-      su.calWeather = u.calWeather;
+      for (const k in u) su[k] = u[k];
     };
     mat.needsUpdate = true;
     return mat;
   }
 
-  /**
-   * One traversal: register every material, and set the shadow-caster policy
-   * the audit asks for (grass + bush cast; world-01).
-   *
-   * Re-run on a timer because machines, camp props and the variety species land
-   * seconds after boot. A material is touched exactly once (WeakSet), so the
-   * repeat cost is the traversal, which is an order of magnitude cheaper than
-   * the cull pass the engine already runs ten times a second.
-   */
+  /** One traversal: register every material, and set the shadow-caster policy. */
   _registerScene() {
     const scene = this.ctx.scene;
     scene.traverse((o) => {
@@ -716,22 +976,6 @@ export class Environment {
     });
   }
 
-  /**
-   * world-01 "grass+bush casters".
-   *
-   * The bushes are two world-wide InstancedMeshes and cost ~0.04 M triangles to
-   * cast: they go on and stay on. Grass is 178 per-chunk InstancedMeshes of
-   * ~53 k triangles each, and a 48 m chunk's bounding sphere intersects ALL
-   * THREE cascades — measured at the spawn vista, promoting every chunk took
-   * the frame from 3.93 M to 8.81 M triangles and 223 to 302 draw calls, i.e.
-   * grass shadows alone were 55 % of the frame against a 6.5 M budget
-   * (perf-tech-02 / A21). They are worth paying for only where a cascade can
-   * actually resolve a blade: cascade 0 reaches 13 m at 1.4 cm/px, cascade 1
-   * 40 m at 4 cm/px, and past that a tuft shadow is sub-pixel mush. So the
-   * chunk the player is standing in and its immediate neighbours cast, and the
-   * rest do not — re-evaluated every frame in `update()`, which is a loop over
-   * 178 cached meshes and no allocation.
-   */
   _shadowPolicy(o) {
     if (o.userData.__calShadow) return;
     const n = o.name || '';
@@ -746,11 +990,7 @@ export class Environment {
     this._grassCasters.push(o);
   }
 
-  /**
-   * The (at most GRASS_CAST_MAX) grass chunks near enough for a cascade to
-   * resolve a blade shadow. Two passes over a cached array, no allocation and
-   * no sort: the first finds the Nth-smallest distance, the second applies it.
-   */
+  /** The (at most GRASS_CAST_MAX) grass chunks near enough for a cascade to resolve. */
   _updateGrassCasters(px, pz) {
     const list = this._grassCasters;
     const n = list.length;
@@ -766,18 +1006,11 @@ export class Environment {
       else if (d < m1) { m2 = m1; m1 = d; }
       else if (d < m2) { m2 = d; }
     }
-    // Clamp to the radius: with fewer candidates than the cap the Nth-smallest
-    // is still Infinity, and an un-clamped cut promotes EVERY chunk. Measured
-    // the hard way — standing dead centre in a 48 m chunk there is exactly one
-    // candidate inside the radius, and A21's spawn vista went from 4.9 M to
-    // 8.6 M triangles because of it.
     const cut = Math.min(R2, GRASS_CAST_MAX >= 3 ? m2 : (GRASS_CAST_MAX === 2 ? m1 : m0));
     for (let i = 0; i < n; i++) {
       const o = list[i];
       const dx = o.position.x - px, dz = o.position.z - pz;
       const want = dx * dx + dz * dz <= cut;
-      // The engine's distance cull stashes the base flag when it turns a caster
-      // off, so when it is holding the mesh that stash is what must move.
       if (o.userData.__shadowCulled === true) o.userData.__shadowBase = want;
       else if (o.castShadow !== want) o.castShadow = want;
     }
@@ -788,16 +1021,21 @@ export class Environment {
   /* ====================================================================== */
 
   /**
-   * Direction TOWARD the celestial body for a given hour. Continuous outside
-   * [rise, set] (elevation simply goes negative), so the moon can use it with
-   * a 12.4 h offset.
+   * Direction TOWARD the celestial body for a given hour (L-11: bearing 70 + f × 220°,
+   * south at 12:45, elevation 50·sin(πf)). Continuous outside [rise, set].
    */
   static direction(hour, out) {
     const f = (hour - SUN_RISE) / (SUN_SET - SUN_RISE);
     const elev = SUN_MAX_ELEV * Math.sin(Math.PI * f);
-    const beta = SUN_AZ_START - f * SUN_AZ_SWEEP;
+    const beta = SUN_AZ_START + f * SUN_AZ_SWEEP;
     const ce = Math.cos(elev), se = Math.sin(elev);
     return out.set(Math.sin(beta) * ce, se, -Math.cos(beta) * ce).normalize();
+  }
+
+  /** Game hours per real second at an hour, for the active clock. */
+  clockRate(h = this._time) {
+    const base = 24 / this.dayLengthSeconds;
+    return this.clock === 'golden' ? base * goldenRate(sunElevDeg(h)) * GOLDEN_NORM : base;
   }
 
   /* ====================================================================== */
@@ -807,12 +1045,12 @@ export class Environment {
   update(dt, t) {
     const ctx = this.ctx;
     const engine = ctx.engine;
+    this._t = t;
 
     /* ---- clock ---- */
     if (this._rest) {
       const r = this._rest;
       r.k = Math.min(1, r.k + dt / r.seconds);
-      // ease so the sky accelerates away and settles on the target hour
       const e = r.k * r.k * (3 - 2 * r.k);
       this._time = wrap24(r.from + r.span * e);
       if (r.k >= 1) {
@@ -823,7 +1061,7 @@ export class Environment {
         done?.(this._time);
       }
     } else if (!this.timeFrozen && dt > 0) {
-      this._time = wrap24(this._time + dt * (24 / this.dayLengthSeconds));
+      this._time = wrap24(this._time + dt * this.clockRate());
     }
 
     /* ---- weather cross-fade ---- */
@@ -833,74 +1071,76 @@ export class Environment {
       for (const key in this._wTo) this.w[key] = this._wFrom[key] + (this._wTo[key] - this._wFrom[key]) * k;
     }
 
-    /* ---- wind + gusts (world-14 gust hook) ---- */
+    /* ---- wind + gusts ---- */
     this._gustPhase += dt * (0.22 + this.w.wind * 0.16);
     const g = Math.sin(this._gustPhase) * 0.5 + Math.sin(this._gustPhase * 2.37 + 1.1) * 0.32
       + Math.sin(this._gustPhase * 0.61 - 0.4) * 0.18;
     this.wind.gust = Math.max(0, g) * this.w.gust;
-    this.wind.strength = this.w.wind + this.wind.gust;
     this.wetness += (this.w.wet - this.wetness) * Math.min(1, dt * (this.w.wet > this.wetness ? 0.55 : 0.12));
 
-    /* ---- lightning (storm) ---- */
     this._updateLightning(dt);
 
-    this._applyTime(dt);
+    /* ---- biome at the camera ---- */
+    const cam = ctx.camera;
+    this._updateBiome(cam.position, dt);
+
+    this._applyTime(dt, false);
 
     /* ---- animated uniforms ---- */
-    this.sky.material.uniforms.uTime.value = t;
+    const su = this.sky.material.uniforms;
+    su.uTime.value = t;
     this._birdMat.uniforms.uTime.value = t;
-    this._moteMat.uniforms.uTime.value = t;
     this._rainMat.uniforms.uTime.value = t;
-    this.water.update(dt, t);
-    this._moteMat.uniforms.uFocal.value = ctx.renderer.domElement.height /
-      (2 * Math.tan(THREE.MathUtils.degToRad(ctx.camera.fov) / 2));
+    const mu = this._moteMat.uniforms;
+    mu.uTime.value = t;
+    mu.uFocal.value = ctx.renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
 
     /* ---- follow the camera / player ---- */
-    const cam = ctx.camera;
     this.u.calCamPos.value.copy(cam.position);
     this.u.calViewInv.value.copy(cam.matrixWorld);
     const p = ctx.player?.position;
     if (p) {
       this._updateGrassCasters(p.x, p.z);
       this.sky.position.set(p.x, 0, p.z);
-      this.motes.position.set(p.x, p.y, p.z);
       this.sun.position.copy(this.sunDir).multiplyScalar(300).add(p);
       this.sun.target.position.copy(p);
     }
+    this.motes.position.set(cam.position.x, cam.position.y, cam.position.z);
     this.rain.position.set(cam.position.x, cam.position.y, cam.position.z);
-    this.rain.visible = this.w.rain > 0.004;
-    this._rainMat.uniforms.uAmount.value = this.w.rain;
-    this._rainMat.uniforms.uWind.value.set(this.wind.x * this.wind.strength, 0, this.wind.z * this.wind.strength);
+    // squall: rain on the windward side only (bible §2.3)
+    const ww = smooth(SEA_CLOUD.near, SEA_CLOUD.far, cam.position.x * WIND_FROM.x + cam.position.z * WIND_FROM.z);
+    const rainAmt = this.w.rain * (this.weather === 'squall' ? 0.15 + 0.85 * ww : 1);
+    this.rain.visible = rainAmt > 0.004;
+    this._rainMat.uniforms.uAmount.value = rainAmt;
+    this._rainMat.uniforms.uWind.value.set(this.wind.x * this._windMS * 0.18, 0, this.wind.z * this._windMS * 0.18);
 
-    /* ---- weather uniform (wetness + gust hook for world-ground) ---- */
-    this.u.calWeather.value.set(this.wetness, this.wind.gust,
-      this.wind.x * this.wind.strength, this.wind.z * this.wind.strength);
-
-    /* ---- cloud shadow drift ---- */
+    /* ---- cloud + mist drift (downwind) ---- */
     const cd = this.u.calCloudDrift.value;
-    cd.x += dt * this.wind.x * this.wind.strength * 0.0016;
-    cd.y += dt * this.wind.z * this.wind.strength * 0.0016;
+    cd.x -= dt * this.wind.x * this.wind.strength * 0.0016;
+    cd.y -= dt * this.wind.z * this.wind.strength * 0.0016;
+    const sd = su.uDrift.value;
+    sd.x += dt * this.wind.x * (6 + this._windMS * 1.6);
+    sd.y += dt * this.wind.z * (6 + this._windMS * 1.6);
+    if (Math.abs(sd.x) > 4.2e5) sd.x = 0;   // the noise tiles every 4.2 km × 100
+    if (Math.abs(sd.y) > 4.2e5) sd.y = 0;
+    mu.uDrift.value.set(this.wind.x * this._windMS, this.wind.z * this._windMS);
 
-    /* ---- night point lights ---- */
+    /* ---- pooled lights ---- */
     this._updateNightLights(dt);
 
-    /* ---- shadow policy: cascades multiply the shadow pass (perf-tech-03) ---- */
+    /* ---- shadow policy: cascades multiply the shadow pass ---- */
     if (engine) {
       const tier = engine.tier || {};
-      // Casters past the last cascade's far plane cannot appear in any shadow
-      // map, so culling at CSM_MAX_FAR is free quality-wise and is the
-      // "casters culled beyond 120 m" the gate asks for.
       const want = Math.min(tier.shadowCullDistance ?? CSM_MAX_FAR, CSM_MAX_FAR);
       if (engine.shadowCullDistance !== want) engine.shadowCullDistance = want;
-      // The engine divides this DRAW budget by the cascade count; three then
-      // frustum-culls each caster per cascade, so the realised cost is well
-      // under caster x cascades. Measured at the spawn vista: 2.2x keeps the
-      // Round-3 caster density at ~the Round-3 draw count.
       const budget = Math.round((tier.shadowCasterBudget ?? 150) * 2.2);
       if (engine.shadowCasterBudget !== budget) engine.shadowCasterBudget = budget;
     }
 
-    /* ---- material scan: machines and camp props land after boot ---- */
+    /* ---- sky IBL: one face per frame, PMREM on the seventh ---- */
+    this._stepIBL();
+
+    /* ---- material scan: machines and props land after boot ---- */
     this._scanAge += dt;
     this._scanClock -= dt;
     if (this._scanClock <= 0) {
@@ -909,13 +1149,90 @@ export class Environment {
     }
   }
 
+  /* ---------------------------------------------------------------- biome */
+
+  /** The six CALIMA biome weights at (x, z) into `mix` (Σ = 1). Round-4 terrain names map
+   *  through R4_BIOME until world-ground's island lands. No allocation. */
+  _mixAt(x, z, mix) {
+    const T = this.ctx.terrain;
+    const bw = this._bw;
+    let got = false;
+    if (T && typeof T.biomeWeights === 'function') {
+      for (const k in bw) bw[k] = 0;
+      T.biomeWeights(x, z, bw);
+      let s = 0;
+      for (let i = 0; i < BIOME_IDS.length; i++) s += bw[BIOME_IDS[i]] || 0;
+      if (s > 0.01) {
+        for (let i = 0; i < BIOME_IDS.length; i++) mix[BIOME_IDS[i]] = (bw[BIOME_IDS[i]] || 0) / s;
+        got = true;
+      } else {
+        for (let i = 0; i < BIOME_IDS.length; i++) mix[BIOME_IDS[i]] = 0;
+        for (const r4 in R4_BIOME) { if (bw[r4] > 0) { mix[R4_BIOME[r4]] += bw[r4]; s += bw[r4]; } }
+        if (s > 0.01) { for (let i = 0; i < BIOME_IDS.length; i++) mix[BIOME_IDS[i]] /= s; got = true; }
+      }
+    }
+    if (!got) { for (let i = 0; i < BIOME_IDS.length; i++) mix[BIOME_IDS[i]] = 0; mix.pans = 1; }
+    return mix;
+  }
+
+  /**
+   * The unsmoothed per-biome grade at a point (bible §9.3): `{ biome, mix, fogTint: [r,g,b]
+   * (linear, × the hour's fog), dens, ev, bloom }`. Gates and the studio read it; writes
+   * into `out` when given.
+   */
+  gradeAt(x, z, y = 0, out) {
+    const o = out || { biome: 'pans', mix: { pans: 1, holds: 0, malpais: 0, cloudline: 0, flank: 0, caldera: 0 }, fogTint: [1, 1, 1], dens: 1, ev: 0, bloom: 0 };
+    this._mixAt(x, z, o.mix);
+    this._aggregate(o.mix, y, o);
+    return o;
+  }
+
+  _aggregate(mix, y, o) {
+    const clLow = 1 - smooth(130, 170, y);
+    let fr = 0, fg = 0, fb = 0, dens = 0, ev = 0, bloom = 0, best = -1;
+    for (let i = 0; i < BIOME_IDS.length; i++) {
+      const id = BIOME_IDS[i], k = mix[id];
+      if (k > best) { best = k; o.biome = id; }
+      if (k <= 0) continue;
+      const B = BIOMES[id], R = this._biomeRatio[id];
+      fr += R[0] * k; fg += R[1] * k; fb += R[2] * k;
+      dens += (id === 'cloudline' ? 1 + (B.dens - 1) * clLow : B.dens) * k;
+      ev += B.ev * k;
+      bloom += B.bloom * k;
+    }
+    o.fogTint[0] = fr; o.fogTint[1] = fg; o.fogTint[2] = fb;
+    o.dens = dens; o.ev = ev; o.bloom = bloom;
+    return o;
+  }
+
+  /** Biome weights at the camera → fog tint, density × and the keyed EV (bible §9.3). */
+  _updateBiome(pos, dt) {
+    const G = this._gradeNow || (this._gradeNow = { biome: 'pans', mix: this.biomeMix, fogTint: [1, 1, 1], dens: 1, ev: 0, bloom: 0 });
+    this._mixAt(pos.x, pos.z, this.biomeMix);
+    this._aggregate(this.biomeMix, pos.y, G);
+    this.biome = G.biome;
+    const fr = G.fogTint[0], fg = G.fogTint[1], fb = G.fogTint[2], dens = G.dens, ev = G.ev, bloom = G.bloom;
+    // a teleport (> 50 m in one update) is a cut: snap; walking eases (≈ 0.6 s)
+    const jump = !(this._lastCam.distanceToSquared(pos) < 2500);
+    this._lastCam.copy(pos);
+    const a = jump || !(dt > 0) ? 1 : Math.min(1, dt / 0.6);
+    this._biomeFog.r += (fr - this._biomeFog.r) * a;
+    this._biomeFog.g += (fg - this._biomeFog.g) * a;
+    this._biomeFog.b += (fb - this._biomeFog.b) * a;
+    this._biomeDens += (dens - this._biomeDens) * a;
+    this._biomeEV = ev;
+    this._biomeBloom += (bloom - this._biomeBloom) * a;
+    this._evSnap = jump;
+  }
+
   /* ---------------------------------------------------------------- time */
 
-  _applyTime(dt) {
+  _applyTime(dt, snap) {
     const h = this._time;
     const k = this._keyAt(h);
     const w = this.w;
     const flash = this._lightning.k;
+    const cal = w.calima;
 
     /* ---- celestial direction ---- */
     Environment.direction(h, this.sunDir);
@@ -925,24 +1242,23 @@ export class Environment {
     this.lightDir.copy(dir);
     this.sunAboveHorizon = this.sunDir.y > 0;
     this.nightFactor = k.night;
+    // calima, read as daylight: 1 by day, falling with the sun
+    const dayK = 0.10 + 0.90 * smooth(-0.06, 0.22, this.sunDir.y);
 
-    /* ---- colours ---- */
+    /* ---- direct light ---- */
     _c0.copy(k.sunC);
+    if (cal > 0.001 && !isMoon) _c0.lerp(this._calSun, cal);
     let intensity = k.sunI * (isMoon ? 1 : w.sunMul);
-    // Storm flashes are a second, colder sun for ~120 ms.
     if (flash > 0.001) {
       _c0.lerp(_c1.setRGB(0.86, 0.90, 1.0), Math.min(0.85, flash));
       intensity += flash * 5.5;
     }
-    // Cloud cover desaturates the direct light and lifts the ambient.
     if (w.desat > 0.001) _c0.lerp(_c1.setRGB(0.80, 0.82, 0.86), w.desat * 0.92);
     this._celestialColor.copy(_c0);
     this._celestialIntensity = intensity;
-
     this.sun.color.copy(_c0);
     this.sun.intensity = intensity;
-    // The publicly visible sun direction is the SUN's, even at night — audio,
-    // AI and the shaft pass want to know where the sun is, not the light.
+    this.u.calSunCol.value.copy(_c0).multiplyScalar(intensity);
     this.u.calSunDir.value.copy(this.sunDir.y > -0.05 ? this.sunDir : dir);
 
     if (this.csm) {
@@ -952,43 +1268,64 @@ export class Environment {
       for (let i = 0; i < lights.length; i++) {
         lights[i].color.copy(_c0);
         lights[i].intensity = intensity;
+        lights[i].shadow.intensity = w.shadowK;
       }
     } else {
       this.sun.position.copy(dir).multiplyScalar(300);
+      this.sun.shadow.intensity = w.shadowK;
     }
 
-    /* ---- ambient ---- */
+    /* ---- ambient: warm ground bounce + the sky IBL ---- */
     _c1.copy(k.hSkyC);
-    if (w.desat > 0.001) _c1.lerp(_c0.setRGB(0.72, 0.74, 0.78), w.desat * 0.5);
+    if (cal > 0.001) _c1.lerp(_c2.copy(this._calHor).multiplyScalar(dayK), cal * 0.7);
+    if (w.desat > 0.001) _c1.lerp(_c2.setRGB(0.72, 0.74, 0.78), w.desat * 0.5);
     this.hemi.color.copy(_c1);
     _c1.copy(k.hGndC);
-    if (w.desat > 0.001) _c1.lerp(_c0.setRGB(0.34, 0.35, 0.37), w.desat * 0.6);
+    if (w.desat > 0.001) _c1.lerp(_c2.setRGB(0.34, 0.35, 0.37), w.desat * 0.6);
     this.hemi.groundColor.copy(_c1);
     this.hemi.intensity = k.hemiI * w.hemiMul + flash * 0.8;
-    this.ctx.scene.environmentIntensity = k.env * (0.55 + 0.45 * w.hemiMul);
+    this.ctx.scene.environmentIntensity = k.env * (0.6 + 0.4 * w.hemiMul);
 
-    /* ---- fog / aerial perspective ---- */
-    const dens = k.dens * w.densMul;
+    /* ---- fog / aerial perspective (L-05) ---- */
+    const dens = k.dens * w.densMul * this._biomeDens;
     const fa = this.u.calFogA.value;
-    fa.x = dens;
-    fa.y = FOG_HEIGHT_FALLOFF;
-    fa.z = FOG_HEIGHT_REF;
-    fa.w = 7.0;
+    fa.x = dens; fa.y = FOG_HEIGHT_FALLOFF; fa.z = FOG_HEIGHT_REF; fa.w = 0;
+    const fc = this.u.calFogC.value;
+    fc.x = k.mist * w.mist * Math.min(this._biomeDens, 1.6);
+    fc.y = MIST_FALLOFF; fc.z = MIST_FLOOR; fc.w = 0.45;
     const fb = this.u.calFogB.value;
-    fb.x = 0.55 * (1 - w.desat * 0.7) * (1 - k.night * 0.75);
-    fb.y = 0.16 * (1 - w.desat * 0.8) * (1 - k.night * 0.8);
-    fb.z = 1.0;
-    _c1.copy(k.fogHC);
-    if (w.desat > 0.001) _c1.lerp(_c0.setRGB(0.62, 0.64, 0.67), w.desat * 0.6);
-    this.u.calFogHorizon.value.copy(_c1);
-    _c1.copy(k.fogZC);
-    if (w.desat > 0.001) _c1.lerp(_c0.setRGB(0.48, 0.51, 0.56), w.desat * 0.6);
-    this.u.calFogZenith.value.copy(_c1);
-    this.u.calFogSun.value.copy(k.fogSunC);
-    // keep the fallback path (and anything reading scene.fog) in step
+    fb.x = 0.045 * (1 - w.desat * 0.7) * (1 - k.night * 0.75) * (1 + cal * 0.4);
+    fb.z = 0.92;
+    const fgU = this.u.calFogG.value;
+    fgU.x = 0.72 + 0.08 * cal; fgU.y = 0.9; fgU.z = 0.20; fgU.w = 0.25;
+    const ext = this.u.calFogExt.value;
+    ext.set(EXT_TRADE[0] + (EXT_CALIMA[0] - EXT_TRADE[0]) * cal,
+      EXT_TRADE[1] + (EXT_CALIMA[1] - EXT_TRADE[1]) * cal,
+      EXT_TRADE[2] + (EXT_CALIMA[2] - EXT_TRADE[2]) * cal);
+
+    // fog colour: the hour's fog × the biome's tint; calima replaces it with ochre
+    const fogH = this.u.calFogHorizon.value;
+    fogH.copy(k.fogHC);
+    fogH.r *= this._biomeFog.r; fogH.g *= this._biomeFog.g; fogH.b *= this._biomeFog.b;
+    if (cal > 0.001) fogH.lerp(_c2.copy(this._calFog).multiplyScalar(dayK), cal);
+    if (w.desat > 0.001) fogH.lerp(_c2.setRGB(0.62, 0.64, 0.67).multiplyScalar(0.25 + 0.75 * (1 - k.night)), w.desat * 0.6);
+    const fogZ = this.u.calFogZenith.value;
+    fogZ.copy(k.fogZC);
+    if (cal > 0.001) fogZ.lerp(_c2.copy(this._calZen).multiplyScalar(dayK), cal);
+    if (w.desat > 0.001) fogZ.lerp(_c2.setRGB(0.48, 0.51, 0.56).multiplyScalar(0.25 + 0.75 * (1 - k.night)), w.desat * 0.6);
+    const fogS = this.u.calFogSun.value;
+    fogS.copy(k.fogSunC);
+    if (cal > 0.001) fogS.lerp(_c2.copy(this._calHaze).multiplyScalar(dayK), cal);
     const fog = this.ctx.scene.fog;
     fog.density = dens;
-    fog.color.copy(this.u.calFogHorizon.value);
+    fog.color.copy(fogH);
+
+    /* ---- cloud sea (bible §2.3, §9.4): thickest at dawn, thinner at noon ---- */
+    const seaHour = 0.55 + 0.45 * (1 - smooth(9.0, 12.0, h) * (1 - smooth(16.0, 19.5, h)));
+    const fd = this.u.calFogD.value;
+    fd.x = SEA_CLOUD.density * seaHour * w.seaCloud;
+    this.u.calCloudSeaCol.value.copy(k.seaC);
+    if (cal > 0.001) this.u.calCloudSeaCol.value.lerp(_c2.copy(this._calHor).multiplyScalar(dayK), cal * 0.8);
 
     /* ---- cloud shadows ---- */
     const ca = this.u.calCloudA.value;
@@ -997,17 +1334,65 @@ export class Environment {
     ca.z = w.cloudShadow * (1 - k.night) * (this.sunAboveHorizon ? 1 : 0);
     ca.w = 0.30;
 
+    /* ---- wind ---- */
+    const lull = 0.35 + 0.65 * smooth(7.2, 10.5, h) * (1 - smooth(17.5, 19.3, h));
+    this._windMS = w.windMS * (w.calima > 0.5 || w.fogbank > 0.5 ? 1 : lull);
+    this.wind.x = -WIND_FROM.x; this.wind.z = -WIND_FROM.z;
+    this.wind.strength = w.wind * (0.6 + 0.4 * lull) + this.wind.gust;
+    this.u.calWeather.value.set(this.wetness, this.wind.gust,
+      this.wind.x * this.wind.strength, this.wind.z * this.wind.strength);
+
+    /* ---- perception (bible §2.3) ---- */
+    const camY = this.ctx.camera?.position?.y ?? 0;
+    const outside = smooth(140, 170, camY);
+    const wp = 1 - (1 - w.perception) * (1 - w.fogbank * outside);
+    const np = 1 + (0.7 - 1) * k.night;
+    this._perception = Math.min(wp, np);
+
+    /* ---- exposure: hour + biome + weather, rate-limited (A-biome-grade) ---- */
+    this._evTarget = k.ev + this._biomeEV + w.ev + cal * (CALIMA_EV - w.ev);
+    if (snap || this._evSnap || !(dt > 0)) this.exposureEV = this._evTarget;
+    else {
+      const step = Math.min(EV_STEP_MAX, EV_RATE * dt);
+      const d = this._evTarget - this.exposureEV;
+      this.exposureEV += Math.max(-step, Math.min(step, d));
+    }
+    const r = this.ctx.renderer;
+    if (r) {
+      const e = this.exposureBase * Math.pow(2, this.exposureEV);
+      if (Math.abs(r.toneMappingExposure - e) > 1e-5) r.toneMappingExposure = e;
+    }
+    this._applyBloom(cal);
+
     /* ---- sky uniforms ---- */
     const su = this.sky.material.uniforms;
     su.uSunDir.value.copy(this.sunDir);
     su.uMoonDir.value.copy(this.moonDir);
     su.uSunCol.value.copy(k.sunC);
-    su.uHorizon.value.copy(this.u.calFogHorizon.value);
+    if (cal > 0.001) su.uSunCol.value.lerp(this._calSun, cal);
+    su.uHorizon.value.copy(k.horC);
     su.uMid.value.copy(k.midC);
     su.uZenith.value.copy(k.zenC);
     su.uNight.value = k.night;
     su.uCloud.value.set(w.cloud, w.cloudDark, w.desat, flash);
     su.uStorm.value = w.rain;
+    su.uCalima.value.set(cal, dayK);
+    su.uCalZen.value.copy(this._calZen);
+    su.uCalHor.value.copy(this._calHor);
+    su.uFogDens.value = dens / 0.001;
+    su.uGround.value.copy(k.hGndC);
+    if (cal > 0.001) this._updateDisc(r);
+    su.uDisc.value.copy(this._discLin);
+    // the sun disc's HDR radiance, published for the sea's glitter path (W-09)
+    const vis = (1 - k.night) * smooth(-0.02, 0.04, this.sunDir.y) * (1 - w.cloud * 0.5) * (1 - cal);
+    this.u.calSunRad.value.copy(k.sunC).multiplyScalar(40 * vis);
+
+    /* ---- motes (P-09) ---- */
+    const mu = this._moteMat.uniforms;
+    mu.uMix.value.set((1 - k.night) * (1 - cal) * (1 - w.rain), cal * dayK, 0);
+    mu.uSunDir.value.copy(this.sunDir);
+    mu.uSunCol.value.copy(su.uSunCol.value);
+    mu.uDust.value.copy(this._calFog);
 
     /* ---- phase events ---- */
     const phase = k.night > 0.72 ? 'night'
@@ -1020,13 +1405,83 @@ export class Environment {
     }
   }
 
+  /** Bloom threshold by biome and weather, strength by weather; written only on change,
+   *  relative to the tier's own values (look-post owns the base, L-07). */
+  _applyBloom(cal) {
+    const b = this.ctx.engine?.bloom, base = this._bloomBase;
+    if (!b || !base) return;
+    const th = base.threshold + this._biomeBloom * (1 - cal) + CALIMA_BLOOM * cal;
+    const st = base.strength * this.w.bloomK;
+    if (Math.abs(b.threshold - th) > 1e-4) b.threshold = th;
+    if (Math.abs(b.strength - st) > 1e-4) b.strength = st;
+  }
+
+  /**
+   * The calima disc's linear colour, solved so that it SHOWS as #F2A27E through the
+   * output chain (engine.look.invert when look-post publishes it; otherwise a CPU mirror
+   * of the ACES grade, by damped Newton). Re-solved only when the exposure moves.
+   */
+  _updateDisc(renderer) {
+    const eng = this.ctx.engine;
+    const E = renderer?.toneMappingExposure ?? 1;
+    const gu = eng?.grade?.uniforms;
+    const gm = gu?.uGradeMix?.value ?? 0;
+    if (Math.abs(E - this._discFor.exposure) < 1e-4 && gm === this._discFor.mix) return;
+    this._discFor.exposure = E; this._discFor.mix = gm;
+    const tgt = this._discTarget;   // display sRGB 0..1
+    if (typeof eng?.look?.invert === 'function') {
+      const q = this._solveQ; q[0] = tgt[0]; q[1] = tgt[1]; q[2] = tgt[2];
+      const o = eng.look.invert(q);
+      if (o && o.length >= 3) { this._discLin.setRGB(o[0], o[1], o[2]); return; }
+    }
+    const G = gu ? this._gradeMirror(gu) : null;
+    const x = this._solveX, y = this._solveY, xp = this._solveXp, yp = this._solveYp, J = this._solveJ, r = this._solveR;
+    for (let i = 0; i < 3; i++) x[i] = Math.pow(tgt[i], 2.2) / E * 0.6;
+    // full-Jacobian Newton (ACES mixes the channels), step-limited to stay ≥ 0
+    for (let it = 0; it < 40; it++) {
+      displayOf(x, E, G, y);
+      for (let i = 0; i < 3; i++) r[i] = y[i] - tgt[i];
+      if (Math.abs(r[0]) + Math.abs(r[1]) + Math.abs(r[2]) < 1e-5) break;
+      for (let j = 0; j < 3; j++) {
+        xp[0] = x[0]; xp[1] = x[1]; xp[2] = x[2];
+        const hs = Math.max(1e-5, x[j] * 1e-3);
+        xp[j] += hs;
+        displayOf(xp, E, G, yp);
+        for (let i = 0; i < 3; i++) J[i * 3 + j] = (yp[i] - y[i]) / hs;
+      }
+      const D = det(J[0], J[1], J[2], J[3], J[4], J[5], J[6], J[7], J[8]);
+      if (!(Math.abs(D) > 1e-12)) break;
+      const d0 = det(r[0], J[1], J[2], r[1], J[4], J[5], r[2], J[7], J[8]) / D;
+      const d1 = det(J[0], r[0], J[2], J[3], r[1], J[5], J[6], r[2], J[8]) / D;
+      const d2 = det(J[0], J[1], r[0], J[3], J[4], r[1], J[6], J[7], r[2]) / D;
+      let st = 1;
+      if (x[0] - d0 < 0) st = Math.min(st, 0.9 * x[0] / Math.max(d0, 1e-9));
+      if (x[1] - d1 < 0) st = Math.min(st, 0.9 * x[1] / Math.max(d1, 1e-9));
+      if (x[2] - d2 < 0) st = Math.min(st, 0.9 * x[2] / Math.max(d2, 1e-9));
+      x[0] = Math.max(0, x[0] - st * d0); x[1] = Math.max(0, x[1] - st * d1); x[2] = Math.max(0, x[2] - st * d2);
+    }
+    this._discLin.setRGB(x[0], x[1], x[2]);
+  }
+
+  _gradeMirror(gu) {
+    const G = this._G || (this._G = { contrast: 1, sat: 1, mix: 1, lift: [0, 0, 0], sh: [1, 1, 1], hi: [1, 1, 1] });
+    G.contrast = gu.uContrast?.value ?? 1;
+    G.sat = gu.uSaturation?.value ?? 1;
+    G.mix = gu.uGradeMix?.value ?? 1;
+    const L = gu.uLift?.value, S = gu.uShadowTint?.value, H = gu.uHighlightTint?.value;
+    if (L) { G.lift[0] = L.x; G.lift[1] = L.y; G.lift[2] = L.z; }
+    if (S) { G.sh[0] = S.r; G.sh[1] = S.g; G.sh[2] = S.b; }
+    if (H) { G.hi[0] = H.r; G.hi[1] = H.g; G.hi[2] = H.b; }
+    return G;
+  }
+
   /** Interpolate the keyframe table at `h`, writing into a reused record. */
   _keyAt(h) {
     const K = this._key || (this._key = {
-      sunI: 0, hemiI: 0, env: 0, dens: 0, night: 0,
+      sunI: 0, hemiI: 0, env: 0, dens: 0, mist: 0, night: 0, ev: 0,
       sunC: new THREE.Color(), hSkyC: new THREE.Color(), hGndC: new THREE.Color(),
       zenC: new THREE.Color(), midC: new THREE.Color(), horC: new THREE.Color(),
-      fogHC: new THREE.Color(), fogZC: new THREE.Color(), fogSunC: new THREE.Color(),
+      fogHC: new THREE.Color(), fogZC: new THREE.Color(), fogSunC: new THREE.Color(), seaC: new THREE.Color(),
     });
     if (!KEYS[0]._c) {
       for (const k of KEYS) {
@@ -1040,7 +1495,20 @@ export class Environment {
         k.fogHCol = new THREE.Color(k.fogH);
         k.fogZCol = new THREE.Color(k.fogZ);
         k.fogSunCol = new THREE.Color(k.fogSun);
+        k.seaCol = new THREE.Color(k.sea);
       }
+    }
+    if (!this._calSun) {
+      this._calSun = new THREE.Color(CALIMA.sun);
+      this._calZen = new THREE.Color(CALIMA.zen);
+      this._calHor = new THREE.Color(CALIMA.hor);
+      this._calFog = new THREE.Color(CALIMA.fog);
+      this._calHaze = new THREE.Color(CALIMA.haze);
+      _c2.set(CALIMA.disc);
+      _c2.convertLinearToSRGB();
+      this._discTarget = [_c2.r, _c2.g, _c2.b];
+      this._solveX = [0, 0, 0]; this._solveY = [0, 0, 0]; this._solveXp = [0, 0, 0]; this._solveYp = [0, 0, 0];
+      this._solveJ = new Float64Array(9); this._solveR = [0, 0, 0]; this._solveQ = [0, 0, 0];
     }
     let i = 0;
     while (i < KEYS.length - 2 && KEYS[i + 1].h <= h) i++;
@@ -1050,7 +1518,9 @@ export class Environment {
     K.hemiI = a.hemiI + (b.hemiI - a.hemiI) * s;
     K.env = a.env + (b.env - a.env) * s;
     K.dens = a.dens + (b.dens - a.dens) * s;
+    K.mist = a.mist + (b.mist - a.mist) * s;
     K.night = a.night + (b.night - a.night) * s;
+    K.ev = a.ev + (b.ev - a.ev) * s;
     K.sunC.copy(a.sunCol).lerp(b.sunCol, s);
     K.hSkyC.copy(a.hSkyCol).lerp(b.hSkyCol, s);
     K.hGndC.copy(a.hGndCol).lerp(b.hGndCol, s);
@@ -1060,6 +1530,7 @@ export class Environment {
     K.fogHC.copy(a.fogHCol).lerp(b.fogHCol, s);
     K.fogZC.copy(a.fogZCol).lerp(b.fogZCol, s);
     K.fogSunC.copy(a.fogSunCol).lerp(b.fogSunCol, s);
+    K.seaC.copy(a.seaCol).lerp(b.seaCol, s);
     return K;
   }
 
@@ -1073,41 +1544,52 @@ export class Environment {
       L.k = 1;
       this.ctx.events?.emit?.('thunder', { strength: 0.6 + Math.random() * 0.4 });
     }
-    // two-stroke decay: a hard flash and a weaker echo
     L.k = Math.max(0, L.k - dt * (L.k > 0.55 ? 7.5 : 3.2));
     if (L.k > 0.18 && L.k < 0.24) L.k = 0.55;
   }
 
   /**
-   * world-13 "night = machine eyes + campfire as light sources". Three pooled
-   * point lights, allocated at boot so the light count never changes: one on
-   * the camp fire and two that chase the nearest live machines.
+   * Pooled point lights, allocated at boot so the light count never changes: the fire
+   * (F-1 rule) and two that follow the nearest live Instruments' lamps in the bible's
+   * lamp colours. eyeLights[1] doubles as the borrowed impact light (P-04 e).
    */
   _updateNightLights(dt) {
     const night = this.nightFactor;
     const ctx = this.ctx;
+    const now = ctx.engine?.wallTime ?? 0;
 
-    if (!this._campFire && (this._campSearch -= dt) <= 0) {
+    /* F-1: intensity max(night, a dusk ramp from 18:30, 1 within 12 m) × 26 × flicker,
+       over 14 m; beyond 40 m in daylight it is 0. */
+    if (!this.fireSource && !this._campFire && (this._campSearch -= dt) <= 0) {
       this._campSearch = 1.5;
       const camp = ctx.camp?.group || ctx.scene.getObjectByName('hunter-camp');
       camp?.traverse((o) => {
         if (!this._campFire && o.isPointLight && o !== this.fireLight) this._campFire = o;
       });
     }
-    if (this._campFire) this._campFire.getWorldPosition(this.fireLight.position);
-    // flicker keyed to the fire, strongest once the sun is gone
-    const flick = 0.82 + Math.sin(this.ctx.engine.wallTime * 9.1) * 0.10
-      + Math.sin(this.ctx.engine.wallTime * 21.7) * 0.06;
-    this.fireLight.intensity = night * 26 * flick;
-    this.fireLight.distance = 30;
+    const src = this.fireSource || this._campFire;
+    if (src) {
+      src.getWorldPosition(this.fireLight.position);
+      const d = this.fireLight.position.distanceTo(ctx.camera.position);
+      const dusk = smooth(18.5, 19.75, this._time) * (this._time < 22 ? 1 : 0);
+      const near = 1 - smooth(12, 14, d);
+      let k = Math.max(night, dusk, near);
+      if (d > 40 && night < 0.05 && dusk < 0.05) k = 0;
+      const flick = 0.82 + Math.sin(now * 9.1) * 0.10 + Math.sin(now * 21.7) * 0.06;
+      this.fireLight.intensity = k * 26 * flick;
+    } else {
+      this.fireLight.intensity = 0;
+    }
+    this.fireLight.distance = 14;
 
+    const lent = now < this._borrowUntil;
     const list = ctx.machines?.list;
     if (!list || !list.length) {
-      for (const l of this.eyeLights) l.intensity = 0;
+      this.eyeLights[0].intensity = 0;
+      if (!lent) this.eyeLights[1].intensity = 0;
       return;
     }
     const p = ctx.camera.position;
-    // nearest two alive machines, no allocation
     let a = null, b = null, da = 1e9, db = 1e9;
     for (let i = 0; i < list.length; i++) {
       const m = list[i];
@@ -1117,19 +1599,105 @@ export class Environment {
       if (d < da) { b = a; db = da; a = m; da = d; }
       else if (d < db) { b = m; db = d; }
     }
-    const pick = [a, b];
     for (let i = 0; i < this.eyeLights.length; i++) {
+      if (i === 1 && lent) continue;
       const l = this.eyeLights[i];
-      const m = pick[i];
+      const m = i === 0 ? a : b;
       if (!m || (i === 0 ? da : db) > 3600) { l.intensity = 0; continue; }
       l.position.set(m.position.x, m.position.y + (m.eyeHeight ?? 1.5), m.position.z);
       const st = m.state;
-      if (st === 'attack' || st === 'alert') l.color.setRGB(1.0, 0.22, 0.12);
-      else if (st === 'suspicious' || st === 'search') l.color.setRGB(1.0, 0.70, 0.14);
-      else l.color.setRGB(0.25, 0.85, 1.0);
+      const c = (st === 'attack' || st === 'alert') ? 2 : (st === 'suspicious' || st === 'search') ? 1 : 0;
+      l.color.copy(this._lampCol[c]);
       l.intensity = night * 3.2;
-      l.distance = 16;
+      l.distance = 14;
     }
+  }
+
+  /* ====================================================================== */
+  /*                         sky-captured IBL (L-04)                        */
+  /* ====================================================================== */
+
+  /**
+   * The sky dome alone (a second mesh sharing the dome's geometry and material, in a
+   * scene of its own, so no other system's onBeforeRender runs) rendered by six cube
+   * cameras into a HalfFloat cube, one face per frame, then filtered by PMREM into one
+   * pre-allocated target published as `scene.environment` ('CAL.skyIBL'). The Round-4
+   * RoomEnvironment and its 256 PMREM are gone.
+   */
+  _buildIBL() {
+    const r = this.ctx.renderer;
+    if (!r) return;
+    const q = this.ctx.engine?.quality;
+    const size = q === 'low' ? 64 : q === 'ultra' ? 256 : 128;
+    const cubeRT = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: false, depthBuffer: false });
+    cubeRT.texture.name = 'CAL.skyCube';
+    const cubeCam = new THREE.CubeCamera(1, 3000, cubeRT);
+    cubeCam.updateMatrixWorld(true);
+    const scene = new THREE.Scene();
+    const dome = new THREE.Mesh(this.sky.geometry, this.sky.material);
+    dome.frustumCulled = false;
+    scene.add(dome);
+    const pmrem = new THREE.PMREMGenerator(r);
+    this._ibl = { size, cubeRT, cubeCam, scene, dome, pmrem, rt: null, face: 0, pending: false,
+      lastH: -99, bakes: 0, faceFrames: 0 };
+    this.ctx.engine?.registerRenderTarget?.('env:skyCube', cubeRT);
+    this.skyCube = cubeRT.texture;
+  }
+
+  _renderIBLFace(face) {
+    const I = this._ibl, r = this.ctx.renderer;
+    const su = this.sky.material.uniforms;
+    const prevT = r.getRenderTarget(), prevF = r.getActiveCubeFace(), prevM = r.getActiveMipmapLevel();
+    const prevAuto = r.autoClear;
+    r.autoClear = true;
+    su.uIbl.value = 1;
+    r.setRenderTarget(I.cubeRT, face);
+    r.render(I.scene, I.cubeCam.children[face]);
+    su.uIbl.value = 0;
+    r.setRenderTarget(prevT, prevF, prevM);
+    r.autoClear = prevAuto;
+  }
+
+  _filterIBL() {
+    const I = this._ibl;
+    const first = !I.rt;
+    I.rt = I.pmrem.fromCubemap(I.cubeRT.texture, I.rt);
+    if (first) {
+      I.rt.texture.name = 'CAL.skyIBL';
+      this.ctx.engine?.registerRenderTarget?.('env:pmrem', I.rt);
+      if (I.pmrem._pingPongRenderTarget) this.ctx.engine?.registerRenderTarget?.('env:pmremPingPong', I.pmrem._pingPongRenderTarget);
+      this.skyIBL = I.rt.texture;
+      this.ctx.scene.environment = I.rt.texture;
+    }
+    I.bakes++;
+  }
+
+  /** All six faces + the PMREM now (boot, and every `setTime`/`setWeather` under `?shot`). */
+  _bakeIBL() {
+    const I = this._ibl;
+    if (!I) return;
+    for (let f = 0; f < 6; f++) this._renderIBLFace(f);
+    this._filterIBL();
+    I.pending = false; I.face = 0;
+    I.lastH = this._time; this._iblW = this._weatherPos();
+  }
+
+  /** A scalar that moves when the sky's weather moves (for the 0.05 rebake rule). */
+  _weatherPos() { const w = this.w; return w.calima + w.cloud * 0.6 + w.desat + w.fogbank * 0.5 + w.rain * 0.3; }
+
+  /** Round robin: one face per frame, the PMREM on the seventh; rebake every 0.1 h or on a
+   *  0.05 weather move. */
+  _stepIBL() {
+    const I = this._ibl;
+    if (!I) return;
+    if (!I.pending) {
+      let dh = Math.abs(this._time - I.lastH); if (dh > 12) dh = 24 - dh;
+      if (dh < IBL_HOURS && Math.abs(this._weatherPos() - this._iblW) < IBL_WEATHER) return;
+      I.pending = true; I.face = 0; I.lastH = this._time; this._iblW = this._weatherPos();
+    }
+    if (I.face < 6) { this._renderIBLFace(I.face++); I.faceFrames++; return; }
+    this._filterIBL();
+    I.pending = false;
   }
 
   /* ====================================================================== */
@@ -1146,6 +1714,7 @@ export class Environment {
       stencilBuffer: false,
     });
     rt.texture.name = 'CAL.lightShafts';
+    this.ctx.engine?.registerRenderTarget?.('env:shafts', rt);
 
     const gather = new THREE.ShaderMaterial({
       depthTest: false,
@@ -1154,7 +1723,7 @@ export class Environment {
         tDepth: { value: null },
         uSunUv: { value: new THREE.Vector2(0.5, 0.5) },
         uColor: { value: new THREE.Color('#ffb066') },
-        uParams: { value: new THREE.Vector4(0.91, 0.30, 1.0, 1.78) }, // decay, weight, intensity, aspect
+        uParams: { value: new THREE.Vector4(0.91, 0.30, 1.0, 1.78) },
       },
       vertexShader: /* glsl */`
         varying vec2 vUv;
@@ -1173,17 +1742,12 @@ export class Environment {
           float acc = 0.0;
           for (int i = 0; i < ${SAMPLES}; i++) {
             c -= delta;
-            // depth == 1 means nothing was drawn there: open sky, so the ray
-            // from the sun reaches the camera through that pixel.
             float d = texture2D(tDepth, clamp(c, 0.0, 1.0)).x;
             float sky = step(0.99995, d);
             vec2 r = (c - uSunUv) * vec2(uParams.w, 1.0);
             acc += sky * exp(-dot(r, r) * 18.0) * illum;
             illum *= uParams.x;
           }
-          // normalised by the sample count so the strength knob means the same
-          // thing whatever SAMPLES is — unnormalised this dumped ~3x sunColour
-          // on every pixel near the sun and bleached a quarter of the frame.
           acc /= float(${SAMPLES});
           gl_FragColor = vec4(uColor * min(acc * uParams.y * uParams.z, 0.30), 1.0);
         }
@@ -1205,9 +1769,6 @@ export class Environment {
         uniform vec2 uTexel;
         varying vec2 vUv;
         void main() {
-          // 9-tap blur: the quarter-res buffer has hard occluder edges in it
-          // (a grass blade 2 m from the lens is a hard silhouette), and an
-          // unblurred shaft reads as a painted wedge rather than a ray.
           vec2 o = uTexel * 2.4;
           vec3 c = texture2D(tShaft, vUv).rgb * 0.24;
           c += texture2D(tShaft, vUv + vec2(o.x, 0.0)).rgb * 0.12;
@@ -1234,11 +1795,8 @@ export class Environment {
     };
   }
 
-  /**
-   * Runs from `engine.onAfterRender`, i.e. after the composer has resolved the
-   * frame to the canvas and while the scene depth attachment is still the one
-   * that produced it. Two draws, quarter resolution.
-   */
+  /** Runs from `engine.onAfterRender`, after the composer resolved the frame. Two draws,
+   *  quarter resolution. (L-08 moves this into HDR before the grade in W2.) */
   _renderShafts() {
     const s = this._shafts;
     const engine = this.ctx.engine;
@@ -1246,7 +1804,6 @@ export class Environment {
     const depth = engine?.depthTexture;
     if (!depth) return;
 
-    // strength: sun above the horizon, in front of the camera, not rained out
     const cam = this.ctx.camera;
     const sun = this.sunDir;
     if (sun.y <= 0.015 || this.nightFactor > 0.85) return;
@@ -1257,7 +1814,6 @@ export class Environment {
       * this.w.shaft * Math.min(1, sun.y * 5.0 + 0.15);
     if (strength < 0.02) return;
 
-    // sun position in NDC
     _v0.copy(cam.position).addScaledVector(sun, 900).project(cam);
     const ux = _v0.x * 0.5 + 0.5, uy = _v0.y * 0.5 + 0.5;
     if (ux < -0.6 || ux > 1.6 || uy < -0.6 || uy > 1.6) return;
@@ -1285,92 +1841,6 @@ export class Environment {
     renderer.setRenderTarget(wasTarget);
     s.quadB.render(renderer);
     renderer.autoClear = wasAuto;
-  }
-
-  /* ====================================================================== */
-  /*                          far ridge silhouettes                         */
-  /* ====================================================================== */
-
-  /**
-   * world-05 second half: "rim geometry lit, not MeshBasicMaterial". The rings
-   * used to be unlit meshes with the horizon colour baked into their vertices,
-   * so they never changed with the light and could never receive the aerial
-   * tint. They are lit standard material now with honest rock/snow albedo and
-   * real normals; the height-aware fog does the hazing, which is why the peaks
-   * come out of the haze while the bases sink into it.
-   */
-  _buildRidges() {
-    const group = new THREE.Group();
-    group.name = 'far-ridges';
-    const noise = new SimplexNoise(777);
-    const SS = THREE.MathUtils.smoothstep;
-    const rings = [
-      { r: 620, h: 168, base: '#6d6353', snowY: 92, seed: 0.0 },
-      { r: 900, h: 232, base: '#6a6455', snowY: 128, seed: 3.7 },
-      { r: 1180, h: 300, base: '#66604f', snowY: 168, seed: 7.9 },
-    ];
-    const cBase = new THREE.Color(), cTmp = new THREE.Color();
-    const cSnow = new THREE.Color('#dfe6ea');
-    const cDark = new THREE.Color('#3e392f');
-    const mat = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      side: THREE.DoubleSide,
-      roughness: 0.96,
-      metalness: 0,
-      fog: true,
-    });
-    this.ridgeMaterial = mat;
-
-    for (const ring of rings) {
-      const segs = 240;
-      const pos = [];
-      const col = [];
-      const idx = [];
-      cBase.set(ring.base);
-      for (let i = 0; i <= segs; i++) {
-        const a = (i / segs) * Math.PI * 2;
-        const cs = Math.cos(a), sn = Math.sin(a);
-        const x = cs * ring.r, z = sn * ring.r;
-        const mass = noise.fbm(cs * 2.3 + ring.r, sn * 2.3, 3) * 0.5 + 0.5;
-        const sector = noise.fbm(cs * 1.6 + ring.seed, sn * 1.6 - ring.seed * 2, 2) * 0.5 + 0.5;
-        const jag = SS(sector, 0.52, 0.82);
-        const teeth = Math.abs(noise.noise2D(cs * (5.5 + 4 * jag) + 9, sn * (5.5 + 4 * jag) - 4));
-        const peak = ring.h * (0.34 + 0.52 * mass + 0.38 * teeth * jag);
-        const midY = peak * 0.50;
-
-        // strata banding on the mid band, snow on the upper faces — albedo
-        // only; all the light and haze now comes from the sun and the fog.
-        const strata = noise.fbm(cs * 1.9 + 21, sn * 1.9 - 8, 2) * 0.5 + 0.5;
-        cTmp.copy(cBase).lerp(cDark, 0.18 * strata);
-        const snowLine = ring.snowY * (0.82 + 0.36 * (noise.fbm(cs * 2.9 - 7, sn * 2.9 + 2, 2) * 0.5 + 0.5));
-        const snowK = SS(peak, snowLine, snowLine * 1.30);
-
-        pos.push(x, -40, z, x, midY, z, x, peak, z);
-        _c0.copy(cBase).lerp(cDark, 0.45);
-        col.push(_c0.r, _c0.g, _c0.b);
-        col.push(cTmp.r, cTmp.g, cTmp.b);
-        _c0.copy(cTmp).lerp(cSnow, snowK * 0.92);
-        col.push(_c0.r, _c0.g, _c0.b);
-
-        if (i < segs) {
-          const b = i * 3;
-          idx.push(b, b + 1, b + 3, b + 3, b + 1, b + 4);
-          idx.push(b + 1, b + 2, b + 4, b + 4, b + 2, b + 5);
-        }
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-      geo.setIndex(idx);
-      geo.computeVertexNormals();
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.name = `far-ridge-${ring.r}`;
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      mesh.userData.noSizeCull = true;
-      group.add(mesh);
-    }
-    return group;
   }
 
   /* ====================================================================== */
@@ -1449,23 +1919,33 @@ export class Environment {
     return mesh;
   }
 
-  /* ============================== pollen ================================= */
+  /* ========================= ambient air (P-09) ========================== */
 
+  /**
+   * One Points draw, a type per point: 170 sunlit pollen and salt glints in a 24 m box
+   * (off at night), 600 calima dust motes in a 44 m box drifting downwind at the wind's
+   * speed (2–4 m/s in calima), and 240 slots for Malpaís embers (world-props registers
+   * emitters in W3; weight 0 until then). Alpha × (0.4 + 2.2 × pow(view·sun, 4)).
+   */
   _buildMotes() {
-    const N = 170;
+    const NP = 170, ND = 600, NE = 240, N = NP + ND + NE;
     const rand = (() => { let s = 977; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; })();
     const pos = new Float32Array(N * 3);
-    const seed = new Float32Array(N);
+    const seed = new Float32Array(N * 2);
     for (let i = 0; i < N; i++) {
-      pos[i * 3] = (rand() - 0.5) * 24;
-      pos[i * 3 + 1] = rand() * 9;
-      pos[i * 3 + 2] = (rand() - 0.5) * 24;
-      seed[i] = rand();
+      const type = i < NP ? 0 : i < NP + ND ? 1 : 2;
+      const box = type === 1 ? 44 : 24;
+      const hgt = type === 1 ? 14 : 9;
+      pos[i * 3] = (rand() - 0.5) * box;
+      pos[i * 3 + 1] = rand() * hgt;
+      pos[i * 3 + 2] = (rand() - 0.5) * box;
+      seed[i * 2] = rand();
+      seed[i * 2 + 1] = type;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
-    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 4, 0), 22);
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 2));
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 6, 0), 40);
 
     this._moteMat = new THREE.ShaderMaterial({
       transparent: true,
@@ -1474,43 +1954,66 @@ export class Environment {
       uniforms: {
         uTime: { value: 0 },
         uFocal: { value: 800 },
-        uTint: { value: new THREE.Color(1.0, 0.86, 0.58) },
-        uGain: { value: 1 },
+        uMix: { value: new THREE.Vector3(1, 0, 0) },        // pollen, dust, embers
+        uDrift: { value: new THREE.Vector2(-3.9, 3.9) },    // wind velocity, m/s
+        uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+        uSunCol: { value: new THREE.Color(1, 0.9, 0.7) },
+        uDust: { value: new THREE.Color(CALIMA.fog) },
       },
       vertexShader: /* glsl */ `
-        attribute float aSeed;
+        attribute vec2 aSeed;
         uniform float uTime, uFocal;
+        uniform vec3 uMix;
+        uniform vec2 uDrift;
+        uniform vec3 uSunDir;
         varying float vA;
+        varying float vType;
         void main() {
-          vec3 drift = vec3(
-            uTime * (0.30 + aSeed * 0.25),
-            -uTime * (0.045 + aSeed * 0.05),
-            uTime * (0.18 + aSeed * 0.16)
-          );
-          vec3 p = mod(position + drift, vec3(24.0, 9.0, 24.0)) - vec3(12.0, 0.0, 12.0);
-          p.x += sin(uTime * 0.9 + aSeed * 40.0) * 0.5;
-          p.y += 0.6 + sin(uTime * 1.3 + aSeed * 21.0) * 0.35;
-          p.z += cos(uTime * 0.7 + aSeed * 33.0) * 0.5;
-          float edge = (1.0 - smoothstep(7.0, 11.5, length(p.xz))) * (1.0 - smoothstep(6.0, 8.8, p.y));
-          vA = edge * (0.25 + 0.75 * fract(aSeed * 7.31));
+          float s = aSeed.x;
+          float type = aSeed.y;
+          float w = type < 0.5 ? uMix.x : type < 1.5 ? uMix.y : uMix.z;
+          vType = type;
+          if (w < 0.004) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vA = 0.0; return; }
+          vec3 p;
+          float edge;
+          if (type > 0.5 && type < 1.5) {
+            // calima dust: rides the wind through a 44 m box around the camera
+            vec3 drift = vec3(uDrift.x, -0.05 - s * 0.08, uDrift.y) * uTime * (0.8 + s * 0.4);
+            p = mod(position + drift, vec3(44.0, 14.0, 44.0)) - vec3(22.0, 3.0, 22.0);
+            p += vec3(sin(uTime * 0.7 + s * 40.0), sin(uTime * 0.9 + s * 21.0) * 0.6, cos(uTime * 0.6 + s * 33.0)) * 0.6;
+            edge = (1.0 - smoothstep(14.0, 21.0, length(p.xz))) * (1.0 - smoothstep(8.0, 11.0, p.y));
+          } else {
+            vec3 drift = vec3(uTime * (0.30 + s * 0.25), -uTime * (0.045 + s * 0.05), uTime * (0.18 + s * 0.16));
+            p = mod(position + drift, vec3(24.0, 9.0, 24.0)) - vec3(12.0, 0.0, 12.0);
+            p.x += sin(uTime * 0.9 + s * 40.0) * 0.5;
+            p.y += 0.6 + sin(uTime * 1.3 + s * 21.0) * 0.35;
+            p.z += cos(uTime * 0.7 + s * 33.0) * 0.5;
+            edge = (1.0 - smoothstep(7.0, 11.5, length(p.xz))) * (1.0 - smoothstep(6.0, 8.8, p.y));
+          }
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
-          gl_PointSize = clamp((0.028 + aSeed * 0.020) * uFocal / -mv.z, 1.0, 7.0);
+          // sunlit toward the light only: forward scatter
+          vec3 vdir = normalize((modelMatrix * vec4(p, 1.0)).xyz - cameraPosition);
+          float fwd = pow(max(dot(vdir, normalize(uSunDir)), 0.0), 4.0);
+          vA = w * edge * (0.25 + 0.75 * fract(s * 7.31)) * (0.4 + 2.2 * fwd);
+          float size = type > 0.5 && type < 1.5 ? (0.020 + s * 0.016) : (0.028 + s * 0.020);
+          gl_PointSize = clamp(size * uFocal / -mv.z, 1.0, 6.0);
           gl_Position = projectionMatrix * mv;
         }
       `,
       fragmentShader: /* glsl */ `
         varying float vA;
-        uniform vec3 uTint;
-        uniform float uGain;
+        varying float vType;
+        uniform vec3 uSunCol, uDust;
         void main() {
           vec2 uv = gl_PointCoord * 2.0 - 1.0;
-          float a = smoothstep(1.0, 0.15, length(uv)) * vA * 0.34 * uGain;
-          gl_FragColor = vec4(uTint * a, a);
+          float a = smoothstep(1.0, 0.15, length(uv)) * vA * 0.30;
+          vec3 tint = vType > 0.5 && vType < 1.5 ? uDust * 1.4 : vec3(1.0, 0.86, 0.58) * normalize(uSunCol + 1e-3) * 1.7;
+          gl_FragColor = vec4(tint * a, a);
         }
       `,
     });
     const pts = new THREE.Points(geo, this._moteMat);
-    pts.name = 'pollen-motes';
+    pts.name = 'air-motes';
     pts.frustumCulled = false;
     pts.userData.noSizeCull = true;
     return pts;
@@ -1518,11 +2021,7 @@ export class Environment {
 
   /* =============================== rain ================================== */
 
-  /**
-   * world-14. One draw call: 2600 screen-aligned streaks in a wrap-around box
-   * that rides the camera, animated entirely in the vertex shader off `uTime`,
-   * so there is nothing per-frame to allocate or upload but two uniforms.
-   */
+  /** One draw: screen-sized streaks in a wrap-around box that rides the camera. */
   _buildRain() {
     const N = 9000;
     const rand = (() => { let s = 20250909; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; })();
@@ -1534,7 +2033,6 @@ export class Environment {
     for (let i = 0; i < N; i++) {
       const s0 = rand(), s1 = rand(), s2 = rand();
       for (let c = 0; c < 6; c++) {
-        pos[v * 3] = 0; pos[v * 3 + 1] = 0; pos[v * 3 + 2] = 0;
         seed[v * 3] = s0; seed[v * 3 + 1] = s1; seed[v * 3 + 2] = s2;
         corner[v * 2] = CORN[c][0];
         corner[v * 2 + 1] = CORN[c][1];
@@ -1579,10 +2077,6 @@ export class Environment {
           vec3 dirV = normalize((modelViewMatrix * vec4(dirW, 0.0)).xyz);
           vec2 d2 = normalize(dirV.xy + vec2(1e-4, 0.0));
           vec2 side = vec2(-d2.y, d2.x);
-          // Streaks are sized in SCREEN space, not world space: a view-space
-          // offset subtends offset/depth radians, so both terms scale with
-          // depth. Without this a drop 3 m from the lens drew as a 10 px white
-          // bar and the storm looked like falling planks.
           float k = clamp(-mv.z, 1.5, 26.0);
           float len = (0.020 + fract(aSeed.z * 91.7) * 0.026) * k;
           mv.xy += d2 * (aCorner.y * len) + side * (aCorner.x * 0.0014 * k);
@@ -1613,81 +2107,106 @@ export class Environment {
 
   /* ================================ sky ================================== */
 
+  /**
+   * The dome. L-10: drawn LAST (renderOrder 1000, z = w, LEQUAL), so it shades only the
+   * pixels nothing else covered and the sister isles beyond 1,900 m stay drawn; the
+   * Round-4 procedural fbm is replaced by four fetches of the baked noise (stars and the
+   * moon keep their hash at night). L-03 keys, L-06 sun, L-14 calima, bible §9.4 trade
+   * stratocumulus (flat bases on one plane, tops heaped in four slices, drifting SW).
+   * At the horizon the dome hands over to exactly the fog's in-scatter, so the far sea
+   * meets the sky with no tonal step.
+   */
   _buildSky() {
     const geo = new THREE.SphereGeometry(1900, 48, 32);
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
+      depthTest: true,
+      depthFunc: THREE.LessEqualDepth,
       fog: false,
       uniforms: {
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
         uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
         uSunCol: { value: new THREE.Color('#ffc98a') },
-        uHorizon: { value: new THREE.Color('#cfa87f') },
-        uMid: { value: new THREE.Color('#7d95bf') },
-        uZenith: { value: new THREE.Color('#173f83') },
+        uHorizon: { value: new THREE.Color('#BFD3E0') },
+        uMid: { value: new THREE.Color('#7ca2cf') },
+        uZenith: { value: new THREE.Color('#3F78B5') },
+        uGround: { value: new THREE.Color('#7a6a56') },
         uNight: { value: 0 },
         uCloud: { value: new THREE.Vector4(0.3, 0.3, 0, 0) },
         uStorm: { value: 0 },
         uTime: { value: 0 },
+        uDrift: { value: new THREE.Vector2() },
+        uCalima: { value: new THREE.Vector2(0, 1) },
+        uCalZen: { value: new THREE.Color(CALIMA.zen) },
+        uCalHor: { value: new THREE.Color(CALIMA.hor) },
+        uDisc: { value: new THREE.Color(1, 0.4, 0.25) },
+        uFogDens: { value: 1 },
+        uIbl: { value: 0 },
+        uNoise: { value: this._noise },
+        // the fog's own in-scatter terms, shared objects (the horizon hand-over)
+        calFogHorizon: this.u.calFogHorizon,
+        calFogZenith: this.u.calFogZenith,
+        calFogSun: this.u.calFogSun,
+        calFogB: this.u.calFogB,
+        calFogG: this.u.calFogG,
       },
       vertexShader: /* glsl */ `
         varying vec3 vDir;
         void main() {
           vDir = normalize(position);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          gl_Position.z = gl_Position.w;   // the far plane: drawn last, behind everything
         }
       `,
       fragmentShader: /* glsl */ `
         varying vec3 vDir;
-        uniform vec3 uSunDir, uMoonDir, uSunCol, uHorizon, uMid, uZenith;
-        uniform float uNight, uStorm, uTime;
+        uniform vec3 uSunDir, uMoonDir, uSunCol, uHorizon, uMid, uZenith, uGround;
+        uniform float uNight, uStorm, uTime, uFogDens, uIbl;
         uniform vec4 uCloud;   // coverage, underside darkness, desat, flash
+        uniform vec2 uDrift, uCalima;
+        uniform vec3 uCalZen, uCalHor, uDisc;
+        uniform sampler2D uNoise;
+        uniform vec3 calFogHorizon, calFogZenith, calFogSun;
+        uniform vec4 calFogB, calFogG;
 
-        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
         float hash3(vec3 p){ return fract(sin(dot(p, vec3(12.99,78.23,45.16)))*43758.5453); }
-        float noise(vec2 p){
-          vec2 i=floor(p), f=fract(p);
-          f=f*f*(3.-2.*f);
-          return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
-                     mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
-        }
-        float fbm(vec2 p){
-          float s=0., a=.5;
-          for(int i=0;i<5;i++){ s+=a*noise(p); p*=2.02; a*=.5; }
-          return s;
-        }
+        float hg(float g, float c) { return (1.0 - g * g) / pow(max(1.0 + g * g - 2.0 * g * c, 1e-4), 1.5); }
 
         void main() {
           vec3 d = normalize(vDir);
           vec3 sd = normalize(uSunDir);
           vec3 md = normalize(uMoonDir);
           float h = clamp(d.y, -0.08, 1.0);
-
-          // ---- gradient. Deeper than Round 3: the zenith is a real blue and
-          // the warm band is confined to the sun's bearing instead of ringing
-          // the whole horizon (world-04 "milky sky").
-          vec2 hz = normalize(d.xz + vec2(1e-5));
-          vec2 sz = normalize(sd.xz + vec2(1e-5));
-          float az = max(dot(hz, sz), 0.0);
-          vec3 horizon = mix(uHorizon * 0.72, uHorizon, pow(az, 2.2));
-          vec3 col = mix(horizon, uMid, smoothstep(-0.02, 0.26, h));
-          col = mix(col, uZenith, smoothstep(0.18, 0.92, h));
-          // band the warm glow into the sun's quadrant only
-          col += uSunCol * pow(az, 6.0) * (1.0 - smoothstep(0.0, 0.42, h)) * 0.22 * (1.0 - uNight);
-
-          // overcast lid: past ~40% cover the gradient flattens into a sheet,
-          // otherwise a "cloudy" sky kept a blue zenith showing through
-          {
-            vec3 lid = mix(vec3(0.66, 0.68, 0.72), vec3(0.19, 0.21, 0.25), uCloud.y);
-            lid = mix(lid, vec3(0.09, 0.10, 0.13), uNight * 0.86);
-            col = mix(col, lid, smoothstep(0.34, 0.95, uCloud.x) * 0.88);
-          }
-
+          float day = 1.0 - uNight;
+          float cal = uCalima.x;
           float sunD = max(dot(d, sd), 0.0);
           float moonD = max(dot(d, md), 0.0);
 
-          // ---- stars: stable 3D hash cells, twinkling, fading with daylight
+          // ---- the gradient (L-03 keys): horizon -> mid -> zenith, warm toward the sun
+          vec2 hz = normalize(d.xz + vec2(1e-5));
+          vec2 sz = normalize(sd.xz + vec2(1e-5));
+          float az = max(dot(hz, sz), 0.0);
+          vec3 horizon = mix(uHorizon * 0.86, uHorizon, pow(az, 2.0));
+          vec3 col = mix(horizon, uMid, smoothstep(0.0, 0.30, h));
+          col = mix(col, uZenith, smoothstep(0.20, 0.95, h));
+          col += uSunCol * pow(az, 6.0) * (1.0 - smoothstep(0.0, 0.40, h)) * 0.18 * day;
+
+          // ---- calima (L-14): the gradient flattens to ochre, a broad coral glow at the sun
+          if (cal > 0.001) {
+            vec3 cg = mix(uCalHor, uCalZen, smoothstep(0.0, 0.75, h)) * uCalima.y;
+            cg += uDisc * 0.10 * pow(sunD, 10.0) * uCalima.y;
+            col = mix(col, cg, cal);
+          }
+
+          // ---- overcast lid
+          {
+            vec3 lid = mix(vec3(0.66, 0.68, 0.72), vec3(0.19, 0.21, 0.25), uCloud.y);
+            lid = mix(lid, vec3(0.09, 0.10, 0.13), uNight * 0.86);
+            col = mix(col, lid, smoothstep(0.34, 0.95, uCloud.x) * 0.88 * (1.0 - cal));
+          }
+
+          // ---- stars: stable 3D hash cells, fading with daylight (night only)
           if (uNight > 0.01 && d.y > -0.02) {
             vec3 g = d * 260.0;
             vec3 cell = floor(g);
@@ -1697,93 +2216,146 @@ export class Environment {
               float dd = length(fract(g) - 0.5 - jit * 0.6);
               float tw = 0.62 + 0.38 * sin(uTime * (1.4 + r * 8.0) + r * 60.0);
               float mag = smoothstep(0.36, 0.0, dd) * (0.40 + (r - 0.9880) * 78.0);
-              col += vec3(0.88, 0.92, 1.0) * mag * tw * 1.35 * uNight * smoothstep(-0.02, 0.16, d.y);
+              col += vec3(0.88, 0.92, 1.0) * mag * tw * 1.10 * uNight * smoothstep(-0.02, 0.16, d.y) * (1.0 - cal * 0.85);
             }
-            // milky band
             float mw = exp(-pow((dot(d, normalize(vec3(0.42, 0.55, -0.72))) ), 2.0) * 34.0);
-            col += vec3(0.30, 0.34, 0.46) * mw * 0.055 * uNight;
+            col += vec3(0.30, 0.34, 0.46) * mw * 0.045 * uNight;
           }
 
-          // ---- moon: disc, limb darkening, maria, halo
+          // ---- moon: disc, maria, halo
           if (uNight > 0.005 && md.y > -0.06) {
             float disc = smoothstep(0.99955, 0.99988, moonD);
-            float mtex = fbm(d.xz * 190.0 + 4.0) * 0.35 + 0.65;
-            col += vec3(0.92, 0.93, 0.88) * disc * mtex * 1.5 * uNight;
-            col += vec3(0.62, 0.68, 0.86) * pow(moonD, 900.0) * 0.35 * uNight;
-            col += vec3(0.38, 0.44, 0.62) * pow(moonD, 60.0) * 0.10 * uNight;
+            float mtex = texture2D(uNoise, d.xz * 9.0 + 0.3).a * 0.7 + 0.45;
+            col += vec3(0.92, 0.93, 0.88) * disc * mtex * 1.2 * uNight;
+            col += vec3(0.62, 0.68, 0.86) * pow(moonD, 900.0) * 0.30 * uNight;
+            col += vec3(0.38, 0.44, 0.62) * pow(moonD, 60.0) * 0.08 * uNight;
           }
 
-          // ---- high cirrus
+          // ---- high cirrus: one fetch, stretched across the wind
           if (d.y > 0.06) {
             vec2 cuv = d.xz / (d.y + 0.42);
-            vec2 ruv = vec2(cuv.x * 0.86 - cuv.y * 0.51, cuv.x * 0.51 + cuv.y * 0.86);
-            float cir = fbm(vec2(ruv.x * 0.5, ruv.y * 3.2) + vec2(uTime * 0.005, 0.0));
-            cir = smoothstep(0.52, 0.85, cir)
-                * smoothstep(0.05, 0.28, d.y) * (1.0 - smoothstep(0.5, 0.85, d.y));
-            col = mix(col, mix(vec3(0.99, 0.90, 0.80), vec3(0.30,0.34,0.44), uNight),
-                      cir * 0.26 * (1.0 - uCloud.x * 0.8));
+            vec2 ruv = vec2(cuv.x * 0.71 + cuv.y * 0.71, -cuv.x * 0.71 + cuv.y * 0.71);
+            float cir = texture2D(uNoise, vec2(ruv.x * 0.10, ruv.y * 0.55) - uDrift * 0.000004).g;
+            cir = smoothstep(0.50, 0.80, cir) * smoothstep(0.05, 0.28, d.y) * (1.0 - smoothstep(0.5, 0.85, d.y));
+            col = mix(col, mix(vec3(0.99, 0.92, 0.86), vec3(0.24, 0.27, 0.36), uNight),
+                      cir * 0.22 * (1.0 - uCloud.x * 0.8) * (1.0 - cal));
           }
 
-          // ---- cumulus: domain-warped fbm, sunlit rims from a step toward
-          // the sun. Coverage and underside darkness are the weather knobs.
+          // ---- trade stratocumulus (bible §9.4): flat bases on the 1000 m plane, tops
+          // heaped through four slices to 1600 m, drifting SW; hazed with distance
           float cover = 0.0;
-          if (d.y > 0.012) {
-            vec2 uv = d.xz / (d.y + 0.18);
-            vec2 drift = vec2(uTime * 0.0065, uTime * 0.0022) * (1.0 + uStorm * 2.0);
-            vec2 warp = vec2(fbm(uv * 0.85 + drift * 0.6),
-                             fbm(uv * 0.85 + 7.31 - drift * 0.4)) - 0.5;
-            vec2 cuv = uv * 1.22 + warp * 0.9 + drift;
-            float c = fbm(cuv);
-            float lo = mix(0.56, 0.20, uCloud.x);
-            cover = smoothstep(lo, lo + 0.24, c) * mix(smoothstep(0.96, 0.16, d.y), 1.0, uCloud.x * 0.9);
-            if (cover > 0.002) {
-              float cSun = fbm(cuv + sz * 0.10);
-              float rimL  = clamp((c - cSun) * 4.5, 0.0, 1.0);
-              float shade = clamp((cSun - c) * 3.5, 0.0, 1.0);
-              float tex = fbm(cuv * 2.9 + drift * 1.6);
-              vec3 lit    = mix(vec3(1.18, 1.00, 0.80), vec3(0.34,0.38,0.50), uNight);
-              vec3 body   = mix(vec3(0.94, 0.90, 0.86), vec3(0.52, 0.55, 0.62),
-                                smoothstep(0.32, 0.78, tex));
-              body = mix(body, vec3(0.30, 0.32, 0.38), uCloud.y);
-              body = mix(body, vec3(0.12, 0.14, 0.19), uNight * 0.82);
-              vec3 shadowC = mix(vec3(0.42, 0.44, 0.52), vec3(0.09,0.10,0.14), uNight);
-              vec3 cloudCol = mix(body, shadowC, shade * (0.55 + 0.45 * uCloud.y));
-              cloudCol = mix(cloudCol, lit, rimL * 0.9 * (1.0 - uNight));
-              cloudCol += uSunCol * pow(sunD, 3.0) * (0.24 + 0.5 * rimL) * (1.0 - uNight);
-              cloudCol += vec3(0.9, 0.94, 1.0) * uCloud.w * 0.9;
-              col = mix(col, cloudCol, cover * 0.92);
+          if (d.y > 0.012 && cal < 0.98) {
+            vec3 acc = vec3(0.0);
+            float tr = 1.0;
+            float thr = mix(0.58, 0.30, uCloud.x);
+            vec3 lit = mix(vec3(1.10, 1.02, 0.94) * (0.55 + 0.45 * uSunCol), vec3(0.20, 0.23, 0.32), uNight);
+            vec3 shadeC = mix(mix(uMid, uHorizon, 0.5) * 0.78, vec3(0.06, 0.07, 0.10), uNight);
+            shadeC = mix(shadeC, vec3(0.26, 0.28, 0.33), uCloud.y);
+            float t0 = 1000.0 / d.y;
+            for (int k = 0; k < 4; k++) {
+              float fk = float(k);
+              float hk = 1000.0 + fk * 200.0;
+              vec2 p = d.xz * (hk / d.y) - uDrift;
+              float n = texture2D(uNoise, p * (1.0 / 4200.0)).r;
+              float sh = n - thr - fk * 0.030;
+              float a = smoothstep(0.0, 0.07, sh) * 0.85;
+              float up = (fk + 0.5) / 4.0;
+              vec3 c = mix(shadeC, lit, smoothstep(0.0, 1.0, up * 0.9 + clamp(sh * 6.0, 0.0, 0.3)));
+              c += uSunCol * pow(sunD, 4.0) * 0.35 * day * up;
+              acc += tr * a * c;
+              tr *= 1.0 - a;
+            }
+            cover = (1.0 - tr) * (1.0 - cal);
+            float haze = exp(-t0 / 14000.0);
+            vec3 cc = acc / max(1.0 - tr, 1e-3);
+            cc = mix(horizon, cc, haze);
+            cc += vec3(0.9, 0.94, 1.0) * uCloud.w * 0.9;
+            col = mix(col, cc, cover * smoothstep(0.012, 0.05, d.y));
+          }
+
+          // ---- sun (L-06): 0.5° disc at ×40 HDR with limb darkening, two corona lobes,
+          // a haze glow that grows with the fog; occluded by cloud; none in the IBL
+          float occl = 1.0 - cover * 0.92;
+          if (sd.y > -0.10 && uIbl < 0.5) {
+            float horizonDim = smoothstep(-0.10, 0.06, sd.y);
+            float ang = acos(clamp(sunD, -1.0, 1.0));
+            float rr = ang / 0.00873;               // 0.5° radius
+            float discM = 1.0 - smoothstep(0.85, 1.05, rr);
+            float limb = 1.0 - 0.6 * (1.0 - sqrt(max(0.0, 1.0 - min(rr * rr, 1.0))));
+            float clear = (1.0 - cal) * occl * horizonDim * day;
+            col += uSunCol * 40.0 * discM * limb * clear;
+            col += uSunCol * (pow(sunD, 900.0) * 1.6 + pow(sunD, 64.0) * 0.35) * clear;
+            col += uSunCol * pow(sunD, 8.0) * 0.08 * clamp(uFogDens, 0.5, 4.0) * occl * horizonDim * day * (1.0 - cal);
+            // calima: a soft coral disc that SHOWS as #F2A27E (solved on the CPU)
+            if (cal > 0.001) {
+              float cr = ang / 0.0175;               // 1.0° radius, soft edge
+              float cm = 1.0 - smoothstep(0.80, 1.15, cr);
+              col = mix(col, uDisc, cm * cal * horizonDim * smoothstep(0.0, 0.5, uCalima.y));
             }
           }
 
-          // ---- sun: a TIGHT HDR disc with a corona, not a smeared blob. The
-          // long radial spokes are gone — occlusion-aware shafts are a
-          // screen-space pass now (see _renderShafts).
-          float occl = 1.0 - cover * 0.92;
-          float day = 1.0 - uNight;
-          if (sd.y > -0.10) {
-            float disc = smoothstep(0.99995, 0.999985, sunD);
-            float horizonDim = smoothstep(-0.10, 0.06, sd.y);
-            col += uSunCol * disc * 15.0 * occl * horizonDim * day;
-            // corona: two lobes, tight then wide
-            col += uSunCol * pow(sunD, 2200.0) * 2.6 * occl * horizonDim * day;
-            col += uSunCol * pow(sunD, 190.0) * 0.26 * (0.35 + 0.65 * occl) * horizonDim * day;
-            col += uSunCol * pow(sunD, 14.0) * 0.045 * occl * horizonDim * day;
-          }
-
-          // storm flash lifts the whole dome
           col += vec3(0.80, 0.86, 1.0) * uCloud.w * 0.55;
-
-          // desaturate under cloud
           float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
           col = mix(col, vec3(l), uCloud.z * 0.4);
 
-          gl_FragColor = vec4(min(col, vec3(26.0)), 1.0);
+          // ---- the horizon hand-over: at and below the horizon the dome IS the fog's
+          // in-scatter (same terms as fog_fragment), so the far sea meets the sky clean
+          {
+            float up = clamp(d.y * 1.55 + 0.10, 0.0, 1.0);
+            vec3 fogC = mix(calFogHorizon, calFogZenith, up * up);
+            float c = dot(d, sd);
+            fogC += calFogSun * (hg(calFogG.x, c) * calFogG.y + hg(calFogG.z, c) * calFogG.w) * calFogB.x;
+            float k = 1.0 - smoothstep(-0.004, 0.065, d.y);
+            col = mix(col, fogC, k);
+          }
+          // IBL capture: below the horizon reads the warm ground bounce
+          if (uIbl > 0.5) col = mix(col, uGround * 0.55 + calFogHorizon * 0.15, smoothstep(0.0, -0.20, d.y));
+
+          gl_FragColor = vec4(min(col, vec3(48.0)), 1.0);
         }
       `,
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = 'sky';
+    mesh.renderOrder = 1000;
+    mesh.frustumCulled = false;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     mesh.userData.noSizeCull = true;
     return mesh;
+  }
+
+  /* ============================== dispose ================================ */
+
+  /** Tear down everything this system made (GPU and scene). */
+  dispose() {
+    const scene = this.ctx.scene;
+    const engine = this.ctx.engine;
+    const hooks = engine?.onAfterRender;
+    if (hooks) { const i = hooks.indexOf(this._afterRender); if (i >= 0) hooks.splice(i, 1); }
+    if (scene.onBeforeRender === this._obr) scene.onBeforeRender = this._prevOBR ?? (() => {});
+    for (const o of [this.sky, this.birds, this.motes, this.rain]) {
+      scene.remove(o);
+      o.geometry.dispose();
+      o.material.dispose();
+    }
+    scene.remove(this.hemi, this.fireLight, ...this.eyeLights);
+    if (this._sunInScene) scene.remove(this.sun, this.sun.target);
+    this.sun.dispose?.();
+    this._noise.dispose();
+    const S = this._shafts;
+    engine?.unregisterRenderTarget?.(S.rt);
+    S.rt.dispose(); S.gather.dispose(); S.composite.dispose(); S.quadA.dispose(); S.quadB.dispose();
+    const I = this._ibl;
+    if (I) {
+      if (scene.environment === I.rt?.texture) scene.environment = null;
+      engine?.unregisterRenderTarget?.(I.cubeRT); if (I.rt) engine?.unregisterRenderTarget?.(I.rt);
+      if (I.pmrem._pingPongRenderTarget) engine?.unregisterRenderTarget?.(I.pmrem._pingPongRenderTarget);
+      I.rt?.dispose(); I.cubeRT.dispose(); I.pmrem.dispose();
+      I.scene.remove(I.dome);
+      this._ibl = null;
+    }
+    this.skyIBL = null; this.skyCube = null;
+    if (scene.fog) scene.fog = null;
   }
 }
