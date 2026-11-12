@@ -39,7 +39,7 @@ export async function wholeFrame(E, n = 60) {
 export const FIX_OWNERS_42 = Object.freeze({
   'shadow cascades': 'world-ground (W-01 caster cascades, §4.2 row 2) + instruments-a (I-04 LOD1 casters, row 4)',
   'opaque scene': 'world-ground (W-01 terrain chunks + LOD, far field, §4.2 row 2); world-sky (L-10 sky last, row 3)',
-  'transparent + additive': 'named by L-18 (§4.2 row 7: additive lamp-beam overdraw -> instruments-a)',
+  'transparent + additive': 'named by L-18 (§4.2 row 7: additive lamp-beam fill -> instruments-a)',
   gtao: 'named by L-18 (§4.2 row 7: GTAO at herd density -> the G-post holder, world-sky in W2)',
   shafts: 'world-sky (L-08 shaft pass re-cast, §4.2 row 5)',
   // no §4.2 row (yet): bloom, smaa, grade (output pass), overlay

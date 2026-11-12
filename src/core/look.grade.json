@@ -1,344 +1,678 @@
 {
- "version": 1,
- "about": "CALIMA grade sets (look-post, docs/ROUND5-LOOK.md L-01/L-02/L-14). Display-space grade baked per set into a 32^3 RGBA8 LUT by src/core/look.js; two slots blend on the GPU. Hues are CIE LCh degrees (D65).",
- "lutSize": 32,
- "look": {
-  "exposure": "calibrate",
-  "slope": [
-   1.0,
-   0.99,
-   0.97
-  ],
-  "power": 1.22,
-  "sat": 1.12
- },
- "vignette": 0.28,
- "default": "golden",
- "sets": {
-  "golden": {
-   "shadowTint": [
-    1.05,
-    0.92,
-    1.1
-   ],
-   "shadowRange": [
-    0.05,
-    0.5
-   ],
-   "highlightTint": [
-    1.04,
-    1.0,
-    0.93
-   ],
-   "highlightRange": [
-    0.55,
-    0.95
-   ],
-   "contrast": 1.25,
-   "pivot": 0.4,
-   "satLuma": [
-    0.95,
-    1.08,
-    0.95
-   ],
-   "satRange": [
-    0.04,
-    0.3,
-    0.62,
-    0.98
-   ],
-   "hue": [
-    {
-     "name": "olive to amber",
-     "from": 75,
-     "to": 110,
-     "feather": 14,
-     "rotate": -12,
-     "chroma": 0.95,
-     "minChroma": 6
-    },
-    {
-     "name": "greens",
-     "from": 110,
-     "to": 175,
-     "feather": 12,
-     "rotate": 0,
-     "chroma": 0.9,
-     "minChroma": 4
-    },
-    {
-     "name": "Orchil violets",
-     "from": 290,
-     "to": 340,
-     "feather": 14,
-     "rotate": 0,
-     "chroma": 1.1,
-     "minChroma": 6
-    }
-   ]
+  "version": 2,
+  "about": "CALIMA grade sets (look-post, docs/ROUND5-LOOK.md L-01/L-02/L-14). Display-space grade baked per set into a 32^3 half-float LUT by src/core/look.js (gradeSet: split tone, soft contrast, saturation by luma, LCh hue bands, then the L*a*b* stage `lab`: tone curve on L*, shadow shift toward rose-violet, mid-band b* control, highlight chroma); two slots blend on the GPU. Hues are CIE LCh degrees (D65).",
+  "lutSize": 32,
+  "look": {
+    "exposure": "calibrate",
+    "slope": [
+      1,
+      0.99,
+      0.97
+    ],
+    "power": 1.22,
+    "sat": 1.12
   },
-  "noon": {
-   "shadowTint": [
-    1.02,
-    0.96,
-    1.05
-   ],
-   "shadowRange": [
-    0.05,
-    0.45
-   ],
-   "highlightTint": [
-    1.02,
-    1.0,
-    0.97
-   ],
-   "highlightRange": [
-    0.55,
-    0.95
-   ],
-   "contrast": 1.15,
-   "pivot": 0.4,
-   "satLuma": [
-    0.96,
-    1.05,
-    0.95
-   ],
-   "satRange": [
-    0.04,
-    0.3,
-    0.62,
-    0.98
-   ],
-   "hue": [
-    {
-     "name": "olive to amber",
-     "from": 75,
-     "to": 110,
-     "feather": 14,
-     "rotate": -8,
-     "chroma": 0.95,
-     "minChroma": 6
+  "vignette": 0.28,
+  "default": "golden",
+  "sets": {
+    "golden": {
+      "shadowTint": [
+        1,
+        1,
+        1
+      ],
+      "shadowRange": [
+        0.05,
+        0.5
+      ],
+      "highlightTint": [
+        1.02,
+        1,
+        0.97
+      ],
+      "highlightRange": [
+        0.55,
+        0.95
+      ],
+      "contrast": 1.08,
+      "pivot": 0.42,
+      "satLuma": [
+        0.92,
+        1,
+        0.88
+      ],
+      "satRange": [
+        0.04,
+        0.3,
+        0.62,
+        0.98
+      ],
+      "hue": [
+        {
+          "name": "olive to amber",
+          "from": 88,
+          "to": 118,
+          "feather": 12,
+          "rotate": -6,
+          "chroma": 0.95,
+          "minChroma": 6
+        },
+        {
+          "name": "amber grass",
+          "from": 50,
+          "to": 88,
+          "feather": 10,
+          "rotate": -2,
+          "chroma": 0.96,
+          "minChroma": 6
+        },
+        {
+          "name": "greens",
+          "from": 118,
+          "to": 175,
+          "feather": 12,
+          "rotate": 0,
+          "chroma": 1,
+          "minChroma": 4
+        },
+        {
+          "name": "Orchil violets",
+          "from": 290,
+          "to": 340,
+          "feather": 14,
+          "rotate": 0,
+          "chroma": 1.3,
+          "minChroma": 6
+        }
+      ],
+      "lab": {
+        "tone": [
+          [
+            0,
+            0
+          ],
+          [
+            6,
+            7.5
+          ],
+          [
+            15,
+            17
+          ],
+          [
+            30,
+            32
+          ],
+          [
+            45,
+            49.5
+          ],
+          [
+            60,
+            68.5
+          ],
+          [
+            72,
+            82
+          ],
+          [
+            85,
+            92.5
+          ],
+          [
+            95,
+            98
+          ],
+          [
+            100,
+            100
+          ]
+        ],
+        "shadow": {
+          "range": [
+            18,
+            42
+          ],
+          "shift": [
+            4,
+            -9
+          ],
+          "chroma": 0.85
+        },
+        "mid": {
+          "range": [
+            25,
+            38,
+            68,
+            82
+          ],
+          "hue": [
+            35,
+            100,
+            15
+          ],
+          "b": 0.82,
+          "a": 1.08
+        },
+        "high": {
+          "range": [
+            64,
+            90
+          ],
+          "chroma": 0.42,
+          "shift": [
+            1.5,
+            -2
+          ]
+        }
+      }
     },
-    {
-     "name": "greens",
-     "from": 110,
-     "to": 175,
-     "feather": 12,
-     "rotate": 0,
-     "chroma": 0.92,
-     "minChroma": 4
+    "noon": {
+      "shadowTint": [
+        1,
+        1,
+        1
+      ],
+      "shadowRange": [
+        0.05,
+        0.45
+      ],
+      "highlightTint": [
+        1,
+        1,
+        1
+      ],
+      "highlightRange": [
+        0.55,
+        0.95
+      ],
+      "contrast": 1.08,
+      "pivot": 0.42,
+      "satLuma": [
+        0.95,
+        1.08,
+        0.95
+      ],
+      "satRange": [
+        0.04,
+        0.3,
+        0.62,
+        0.98
+      ],
+      "hue": [
+        {
+          "name": "olive to amber",
+          "from": 88,
+          "to": 118,
+          "feather": 12,
+          "rotate": -6,
+          "chroma": 0.95,
+          "minChroma": 6
+        },
+        {
+          "name": "amber grass",
+          "from": 50,
+          "to": 88,
+          "feather": 10,
+          "rotate": -2,
+          "chroma": 1.08,
+          "minChroma": 6
+        },
+        {
+          "name": "greens",
+          "from": 118,
+          "to": 175,
+          "feather": 12,
+          "rotate": 0,
+          "chroma": 1,
+          "minChroma": 4
+        },
+        {
+          "name": "Orchil violets",
+          "from": 290,
+          "to": 340,
+          "feather": 14,
+          "rotate": 0,
+          "chroma": 1.3,
+          "minChroma": 6
+        }
+      ],
+      "lab": {
+        "tone": [
+          [
+            0,
+            0
+          ],
+          [
+            6,
+            7.5
+          ],
+          [
+            15,
+            17
+          ],
+          [
+            30,
+            32
+          ],
+          [
+            45,
+            49.5
+          ],
+          [
+            60,
+            68.5
+          ],
+          [
+            72,
+            82
+          ],
+          [
+            85,
+            92.5
+          ],
+          [
+            95,
+            98
+          ],
+          [
+            100,
+            100
+          ]
+        ],
+        "shadow": {
+          "range": [
+            18,
+            42
+          ],
+          "shift": [
+            2,
+            -5
+          ],
+          "chroma": 0.9
+        },
+        "mid": {
+          "range": [
+            25,
+            38,
+            68,
+            82
+          ],
+          "hue": [
+            35,
+            100,
+            15
+          ],
+          "b": 1
+        },
+        "high": {
+          "range": [
+            64,
+            90
+          ],
+          "chroma": 0.85,
+          "shift": [
+            0.5,
+            -1
+          ]
+        }
+      }
     },
-    {
-     "name": "Orchil violets",
-     "from": 290,
-     "to": 340,
-     "feather": 14,
-     "rotate": 0,
-     "chroma": 1.06,
-     "minChroma": 6
+    "dusk": {
+      "shadowTint": [
+        1,
+        1,
+        1
+      ],
+      "shadowRange": [
+        0.05,
+        0.55
+      ],
+      "highlightTint": [
+        1.03,
+        0.99,
+        0.98
+      ],
+      "highlightRange": [
+        0.5,
+        0.95
+      ],
+      "contrast": 1.08,
+      "pivot": 0.42,
+      "satLuma": [
+        0.92,
+        1,
+        0.88
+      ],
+      "satRange": [
+        0.04,
+        0.3,
+        0.62,
+        0.98
+      ],
+      "hue": [
+        {
+          "name": "olive to amber",
+          "from": 88,
+          "to": 118,
+          "feather": 12,
+          "rotate": -6,
+          "chroma": 0.9025,
+          "minChroma": 6
+        },
+        {
+          "name": "amber grass",
+          "from": 50,
+          "to": 88,
+          "feather": 10,
+          "rotate": -2,
+          "chroma": 0.9119999999999999,
+          "minChroma": 6
+        },
+        {
+          "name": "greens",
+          "from": 118,
+          "to": 175,
+          "feather": 12,
+          "rotate": 0,
+          "chroma": 1,
+          "minChroma": 4
+        },
+        {
+          "name": "Orchil violets",
+          "from": 290,
+          "to": 340,
+          "feather": 14,
+          "rotate": 0,
+          "chroma": 1.3,
+          "minChroma": 6
+        }
+      ],
+      "lab": {
+        "tone": [
+          [
+            0,
+            0
+          ],
+          [
+            6,
+            7.5
+          ],
+          [
+            15,
+            17
+          ],
+          [
+            30,
+            32
+          ],
+          [
+            45,
+            49.5
+          ],
+          [
+            60,
+            68.5
+          ],
+          [
+            72,
+            82
+          ],
+          [
+            85,
+            92.5
+          ],
+          [
+            95,
+            98
+          ],
+          [
+            100,
+            100
+          ]
+        ],
+        "shadow": {
+          "range": [
+            25,
+            55
+          ],
+          "shift": [
+            5,
+            -13
+          ],
+          "chroma": 0.8
+        },
+        "mid": {
+          "range": [
+            20,
+            32,
+            62,
+            78
+          ],
+          "hue": [
+            30,
+            100,
+            15
+          ],
+          "b": 0.6
+        },
+        "high": {
+          "range": [
+            64,
+            90
+          ],
+          "chroma": 0.42,
+          "shift": [
+            2,
+            -3
+          ]
+        }
+      }
+    },
+    "calima": {
+      "shadowTint": [
+        1.04,
+        0.95,
+        0.98
+      ],
+      "shadowRange": [
+        0.05,
+        0.45
+      ],
+      "highlightTint": [
+        1.03,
+        0.99,
+        0.94
+      ],
+      "highlightRange": [
+        0.55,
+        0.95
+      ],
+      "contrast": 1.06,
+      "pivot": 0.42,
+      "satLuma": [
+        0.95,
+        0.97,
+        0.92
+      ],
+      "satRange": [
+        0.04,
+        0.3,
+        0.62,
+        0.98
+      ],
+      "hue": [
+        {
+          "name": "olive to amber",
+          "from": 75,
+          "to": 110,
+          "feather": 14,
+          "rotate": -10,
+          "chroma": 0.9,
+          "minChroma": 6
+        },
+        {
+          "name": "greens",
+          "from": 110,
+          "to": 175,
+          "feather": 12,
+          "rotate": 0,
+          "chroma": 0.9,
+          "minChroma": 4
+        }
+      ],
+      "lab": {
+        "tone": [
+          [
+            0,
+            0
+          ],
+          [
+            6,
+            7.5
+          ],
+          [
+            15,
+            17
+          ],
+          [
+            30,
+            32
+          ],
+          [
+            45,
+            49.5
+          ],
+          [
+            60,
+            68.5
+          ],
+          [
+            72,
+            82
+          ],
+          [
+            85,
+            92.5
+          ],
+          [
+            95,
+            98
+          ],
+          [
+            100,
+            100
+          ]
+        ],
+        "shadow": {
+          "range": [
+            18,
+            42
+          ],
+          "shift": [
+            2,
+            -4
+          ],
+          "chroma": 0.95
+        },
+        "high": {
+          "range": [
+            64,
+            90
+          ],
+          "chroma": 0.7,
+          "shift": [
+            1,
+            -1
+          ]
+        }
+      }
     }
-   ]
   },
-  "dusk": {
-   "shadowTint": [
-    1.03,
-    0.9,
-    1.14
-   ],
-   "shadowRange": [
-    0.05,
-    0.55
-   ],
-   "highlightTint": [
-    1.06,
-    0.98,
-    0.95
-   ],
-   "highlightRange": [
-    0.5,
-    0.95
-   ],
-   "contrast": 1.15,
-   "pivot": 0.4,
-   "satLuma": [
-    0.92,
-    1.06,
-    0.95
-   ],
-   "satRange": [
-    0.04,
-    0.3,
-    0.62,
-    0.98
-   ],
-   "hue": [
-    {
-     "name": "olive to amber",
-     "from": 75,
-     "to": 110,
-     "feather": 14,
-     "rotate": -14,
-     "chroma": 0.9,
-     "minChroma": 6
-    },
-    {
-     "name": "greens",
-     "from": 110,
-     "to": 175,
-     "feather": 12,
-     "rotate": 0,
-     "chroma": 0.85,
-     "minChroma": 4
-    },
-    {
-     "name": "Orchil violets",
-     "from": 285,
-     "to": 345,
-     "feather": 14,
-     "rotate": 0,
-     "chroma": 1.12,
-     "minChroma": 6
-    }
-   ]
-  },
-  "calima": {
-   "shadowTint": [
-    1.04,
-    0.95,
-    0.98
-   ],
-   "shadowRange": [
-    0.05,
-    0.45
-   ],
-   "highlightTint": [
-    1.03,
-    0.99,
-    0.94
-   ],
-   "highlightRange": [
-    0.55,
-    0.95
-   ],
-   "contrast": 1.06,
-   "pivot": 0.42,
-   "satLuma": [
-    0.95,
-    0.97,
-    0.92
-   ],
-   "satRange": [
-    0.04,
-    0.3,
-    0.62,
-    0.98
-   ],
-   "hue": [
-    {
-     "name": "olive to amber",
-     "from": 75,
-     "to": 110,
-     "feather": 14,
-     "rotate": -10,
-     "chroma": 0.9,
-     "minChroma": 6
-    },
-    {
-     "name": "greens",
-     "from": 110,
-     "to": 175,
-     "feather": 12,
-     "rotate": 0,
-     "chroma": 0.9,
-     "minChroma": 4
-    }
-   ]
-  }
- },
- "hours": [
-  [
-   5.5,
-   "dusk"
+  "hours": [
+    [
+      5.5,
+      "dusk"
+    ],
+    [
+      7,
+      "golden"
+    ],
+    [
+      9.5,
+      "noon"
+    ],
+    [
+      15.5,
+      "noon"
+    ],
+    [
+      16.5,
+      "golden"
+    ],
+    [
+      19.2,
+      "golden"
+    ],
+    [
+      19.75,
+      "dusk"
+    ],
+    [
+      23,
+      "dusk"
+    ]
   ],
-  [
-   7.0,
-   "golden"
+  "tuning": "Fix round 1 (Nov 12): the r4 sets folded yellow and green into one amber band (97 % of chroma pixels in one 30-degree band) and read as a sepia filter beside 1-TR (judge). Re-tuned on the HDR dump of the look places (no hour EV, W0 keys): no hue rotation of the amber band beyond -2 deg, the olive band only -6 deg, greens untouched, Orchil violets x1.3 so Brea's violet is the most saturated hue (field: violet max 41.5 vs grass p90 41.4); shadows shifted toward rose-violet in L*a*b* (lo20 hue 59 -> 44 field, 13 vista, 332 close); mid b* x0.82; highlights x0.42 chroma; a tone curve on L* that opens the top (60 -> 68.5, 72 -> 82) so p99 does not fall below the W0 output (field 73.7 vs W0 73.4). Bars met on the dump: 22/40 against r4 14/40; the rest (p99 >= 88, clip, spread, hi10 chroma) need the sun, the sky and the sea (world-sky L-03/L-04/L-06, world-ground).",
+  "hourEv": [
+    [
+      0,
+      1.3
+    ],
+    [
+      5,
+      1.3
+    ],
+    [
+      5.5,
+      0.7
+    ],
+    [
+      7,
+      0.25
+    ],
+    [
+      9.5,
+      0
+    ],
+    [
+      15.5,
+      0
+    ],
+    [
+      16.5,
+      0.1
+    ],
+    [
+      17.75,
+      0.15
+    ],
+    [
+      18.75,
+      0.25
+    ],
+    [
+      19.33,
+      0.4
+    ],
+    [
+      19.75,
+      0.7
+    ],
+    [
+      21,
+      1.3
+    ]
   ],
-  [
-   9.5,
-   "noon"
-  ],
-  [
-   15.5,
-   "noon"
-  ],
-  [
-   16.5,
-   "golden"
-  ],
-  [
-   19.2,
-   "golden"
-  ],
-  [
-   19.75,
-   "dusk"
-  ],
-  [
-   23.0,
-   "dusk"
-  ]
- ],
- "tuning": "Nov 6, look-post r2: contrast (now a soft-shoulder curve: slope `contrast` at `pivot`, 0 and 1 fixed), saturation-by-luma and the olive band's chroma were raised from ROUND5-LOOK's first numbers (linear contrast 1.06, sat 0.92/1.05/0.85, chroma 0.85) after the HDR dump of the look places under the W0 keys: AgX with the first numbers read flatter and greyer than ACES (p99 -6..-10 L*, hi10 chroma 43 -> 33, the grass tan instead of amber). See docs/ROUND5-LOOK-POST.md section 4.",
- "hourEv": [
-  [
-   0.0,
-   1.3
-  ],
-  [
-   5.0,
-   1.3
-  ],
-  [
-   5.5,
-   0.7
-  ],
-  [
-   7.0,
-   0.25
-  ],
-  [
-   9.5,
-   0.0
-  ],
-  [
-   15.5,
-   0.0
-  ],
-  [
-   16.5,
-   0.1
-  ],
-  [
-   17.75,
-   0.15
-  ],
-  [
-   18.75,
-   0.25
-  ],
-  [
-   19.33,
-   0.4
-  ],
-  [
-   19.75,
-   0.7
-  ],
-  [
-   21.0,
-   1.3
-  ]
- ],
- "hourEvAbout": "ROUND5-LOOK L-03 EV offsets (noon 0, 16:30 +0.10, 17:45 +0.15, 18:45 +0.25, 19:20 +0.40, 19:45 +0.70, night +1.30); the morning half mirrors them (look-post). engine.setLookHour applies them unless called with { ev: false } (world-sky owns L-03 and may pass its own)."
+  "hourEvAbout": "ROUND5-LOOK L-03 EV offsets (noon 0, 16:30 +0.10, 17:45 +0.15, 18:45 +0.25, 19:20 +0.40, 19:45 +0.70, night +1.30); the morning half mirrors them (look-post). engine.setLookHour applies them unless called with { ev: false } (world-sky owns L-03 and may pass its own)."
 }
