@@ -445,10 +445,10 @@ export async function build({ out = ROOT } = {}) {
     tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1),
       // fix round 2, Nov 12 (R66 d, LOOK C-05: "0.09 m wide at the root, 0.06 m before a 2.5 cm frayed fringe"; game metres / S): the strip
       // narrows from the knot to the fringe, and the fringe is the last 2.5 cm of the chain's 0.49 m
-      width: (u) => (0.09 - 0.03 * smooth(0.12, 0.95, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.26, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0105, along: 22, across: 5, rootBack: 0.014,
+      width: (u) => (0.09 - 0.03 * smooth(0.12, 0.95, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 22, across: 5, rootBack: 0.014,
       // fix round 2 (R54, R66 c: soft, thick, rippling cloth, no paper edge; the length and width stay): the rows go to the free strip,
       // each row is skinned smoothly across the joints, the selvedges are rolled hems 3.4 mm thick, the strip sags and ripples
-      rootRows: 4, smoothSkin: true, hem: 0.0034, ripple: 0.0058 },
+      rootRows: 4, smoothSkin: true, hem: 0.0034, ripple: 0.0042 },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
     tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012 },
   });

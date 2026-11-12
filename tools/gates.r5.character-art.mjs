@@ -379,30 +379,38 @@ export const GATES = [
           for (const o of hidden) o.visible = false;
           scene.background = null; scene.fog = null; R.setClearColor(0x00ff00, 1);
         }
-        p.hero?.kit?.setHidden(31);
-        // the free cloth ends collapse to their roots: what hangs behind the neck encloses real background, which is not a hole
-        for (const b of bones) b.scale.setScalar(1e-4);
-        p.model.updateMatrixWorld(true);
-        const brow = face('brow'), chin = face('chin'), jL = face('jawL'), jR = face('jawR');
-        const R0 = jL.clone().sub(jR).normalize(), U0 = brow.clone().sub(chin).normalize();
-        const F0 = R0.clone().cross(U0).normalize(), U1 = F0.clone().cross(R0).normalize();
-        const cen = brow.clone().add(chin).multiplyScalar(0.5).add(U1.clone().multiplyScalar(0.05)).sub(F0.clone().multiplyScalar(0.07));
-        // the collar: neck_01 less 6 cm, orbited in the body's own level frame
-        const nk = neck.getWorldPosition(new T3()), col = nk.clone(); col.y -= 0.06;
-        const Up = new T3(0, 1, 0), Fh = F0.clone(); Fh.y = 0; Fh.normalize(); const Rh = Up.clone().cross(Fh).normalize();
+        // the stow kit hidden and the free cloth ends collapsed to their roots (what hangs behind the neck encloses real background, which is
+        // not a hole), then the face's and the collar's frames read off the live pose
+        const stage = () => {
+          p.hero?.kit?.setHidden(31);
+          for (const b of bones) b.scale.setScalar(1e-4);
+          p.model.updateMatrixWorld(true);
+          const brow = face('brow'), chin = face('chin'), jL = face('jawL'), jR = face('jawR');
+          const R0 = jL.clone().sub(jR).normalize(), U0 = brow.clone().sub(chin).normalize();
+          const F0 = R0.clone().cross(U0).normalize(), U1 = F0.clone().cross(R0).normalize();
+          const cen = brow.clone().add(chin).multiplyScalar(0.5).add(U1.clone().multiplyScalar(0.05)).sub(F0.clone().multiplyScalar(0.07));
+          // the collar: neck_01 less 6 cm, orbited in the body's own level frame
+          const nk = neck.getWorldPosition(new T3()), col = nk.clone(); col.y -= 0.06;
+          const Up = new T3(0, 1, 0), Fh = F0.clone(); Fh.y = 0; Fh.normalize(); const Rh = Up.clone().cross(Fh).normalize();
+          return { cen, F0, R0, U1, col, Fh, Rh, Up };
+        };
+        let st = stage();
         // fix round 2, Nov 12: WARM THE PROGRAMS first. Toggling every player material to double-sided and back changes their programs,
         // and three skips a mesh whose program is still compiling (parallel shader compile): the first scan with a new variant drew
         // the outfit, the skin or the wrap MISSING, and that whole region counted as a see-through (r1, r2: 3-7 k px blobs over the
         // smock and the neck that the same view, re-rendered for the sheet a second later, shows solid). Both variants are rendered
-        // here at the scan's own render-target type, three times with frames between, so every scan below draws every mesh
+        // here at the scan's own render-target type, three times with frames between, so every scan below draws every mesh. The
+        // frames run the hero rig, which shows the stow kit again and lets the cloth ends hang: the scan stages them again after
         for (let w = 0; w < 3; w++) {
-          for (const dbl of [false, true]) { setDouble(dbl); S.liveView(C, [col.x + 0.3, col.y + 0.5, col.z + 0.6], col.toArray(), { width: 64, height: 64, fov: 29 }); S.liveView(C, [cen.x, cen.y, cen.z + 0.8], cen.toArray(), { width: 64, height: 64, fov: 29 }); }
+          for (const dbl of [false, true]) { setDouble(dbl); S.liveView(C, [st.col.x + 0.3, st.col.y + 0.5, st.col.z + 0.6], st.col.toArray(), { width: 64, height: 64, fov: 29 }); S.liveView(C, [st.cen.x, st.cen.y, st.cen.z + 0.8], st.cen.toArray(), { width: 64, height: 64, fov: 29 }); }
           setDouble(false);
           // (the world runs its frames with its fog and sky back: Environment.update reads them)
           scene.background = bg0; scene.fog = fog0;
           await frames(12);
-          scene.background = null; scene.fog = null;
+          scene.background = null; scene.fog = null; R.setClearColor(0x00ff00, 1);
         }
+        st = stage();
+        const { cen, F0, R0, U1, col, Fh, Rh, Up } = st;
         phases.push({ phase: ph, head: cen.toArray().map((v) => +v.toFixed(3)), collar: col.toArray().map((v) => +v.toFixed(3)) });
         const sets = [['head', cen, F0, R0, U1, [-0.35, 0, 0.35, 0.8]], ['collar', col, Fh, Rh, Up, [0, 0.4, 0.8, 1.2]]];
         for (const [region, c0, Fv, Rv, Uv, els] of sets) for (const el of els) for (let az = 0; az < 360; az += 15) {

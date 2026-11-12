@@ -1,10 +1,14 @@
-# ROUND 5 — character-art (W1; R54, R56, R58, R59, R63, R64, R66)
+# ROUND 5 — character-art (W1; R54, R56, R58, R59, R63, R64, R66, R67)
 
-Brea's close-up, rebuilt in the recipe, and the kit settlements builds NPCs on (R56, R57 c). Budgets did not move. Fix round 2
-(Nov 6-7) answers the eight findings of the gate judge and the engineering + film judge: §0 maps them to what was done, §2 measures the
-final build, §3 is the reusable API (fix round 2's additions at its end), §4 keeps fix round 1's map.
+Brea's close-up, rebuilt in the recipe, and the kit settlements builds NPCs on (R56, R57 c). Budgets did not move. Fix round 2 answers
+the eight findings of the gate judge and the engineering + film judge. Its first pass (Nov 6-7) was cut off before its final run; this
+lane picked it up on Nov 12, measured it live, fixed what still failed and took the ROUND5-LOOK items this lane owns at the W1 exit
+(C-01, C-03, C-04 chunk, C-05 mesh). §0 maps the findings to the work and the numbers, §0.1 keeps the first pass's map, §2 measures the
+final build, §3 is the reusable API (the Nov 12 additions at its end), §4 keeps fix round 1's map.
 
-## 0. Fix round 2 (Nov 6), finding by finding
+@NEW0@
+
+### 0.1 Fix round 2, first pass (Nov 6-7), finding by finding
 
 The eight findings of the gate judge (`character-art/W1/gate-judge`) and the engineering + film judge (`fix-r1/judge-eng-film-r1`).
 Before building I read Kevin's five Nov 6 references (R66 a), outside the repo. Image 1's three face panels are our own frames repainted,
