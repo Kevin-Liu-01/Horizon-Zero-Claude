@@ -93,64 +93,64 @@ const HOURS = Object.freeze({ newGame: 7.0, title: 17.75, shot: 17.75 });
  * the colours the tables leave blank are this lane's, chosen to interpolate between them.
  */
 const KEYS = [
-  { h: 0.0, sunI: 0.45, sun: '#9FB3D6', hemiI: 1.10, hSky: '#3a4c78', hGnd: '#161922', env: 1.00,
+  { h: 0.0, sunI: 0.45, sun: '#9FB3D6', hemiI: 0.80, hSky: '#3a4c78', hGnd: '#161922', env: 1.00,
     zen: '#0D1220', mid: '#121a2f', hor: '#1B2438', fogH: '#20283A', fogZ: '#0c1222', fogSun: '#3d4a6a',
     sea: '#2a3146', dens: 0.00110, mist: 0.0012, night: 1.00, ev: 1.30 },
-  { h: 4.6, sunI: 0.42, sun: '#9fb0d2', hemiI: 1.05, hSky: '#3d4c78', hGnd: '#191b21', env: 1.00,
+  { h: 4.6, sunI: 0.42, sun: '#9fb0d2', hemiI: 0.78, hSky: '#3d4c78', hGnd: '#191b21', env: 1.00,
     zen: '#121a31', mid: '#1b2440', hor: '#2f3550', fogH: '#2f3546', fogZ: '#111830', fogSun: '#4f5a80',
     sea: '#363c55', dens: 0.00120, mist: 0.0016, night: 0.95, ev: 1.25 },
   // hand-over trough 05:24
-  { h: 5.4, sunI: 0.10, sun: '#a99cb8', hemiI: 0.85, hSky: '#5a5f88', hGnd: '#241f1e', env: 1.00,
+  { h: 5.4, sunI: 0.10, sun: '#a99cb8', hemiI: 0.62, hSky: '#5a5f88', hGnd: '#241f1e', env: 1.00,
     zen: '#222b47', mid: '#3c4260', hor: '#7d7387', fogH: '#5d6070', fogZ: '#1c2440', fogSun: '#8a6f80',
     sea: '#6d6a80', dens: 0.00140, mist: 0.0020, night: 0.74, ev: 1.00 },
   // 05:30 pre-dawn (bible)
-  { h: 5.5, sunI: 0.14, sun: '#c9a5a8', hemiI: 0.75, hSky: '#6a6a92', hGnd: '#2a2422', env: 1.00,
+  { h: 5.5, sunI: 0.14, sun: '#c9a5a8', hemiI: 0.55, hSky: '#6a6a92', hGnd: '#2a2422', env: 1.00,
     zen: '#2B3550', mid: '#4b4f6c', hor: '#9C8FA0', fogH: '#6F7480', fogZ: '#222a46', fogSun: '#a07a84',
     sea: '#8f8a9e', dens: 0.00145, mist: 0.0020, night: 0.68, ev: 0.90 },
   // 07:00 dawn (bible): cool shadows go violet-rose (R66 k)
-  { h: 7.0, sunI: 2.60, sun: '#FFC9A0', hemiI: 0.50, hSky: '#9a8fb8', hGnd: '#4a3a30', env: 1.00,
+  { h: 7.0, sunI: 2.60, sun: '#FFC9A0', hemiI: 0.30, hSky: '#9a8fb8', hGnd: '#4a3a30', env: 0.95,
     zen: '#6E88A8', mid: '#9aa5c0', hor: '#F2B98E', fogH: '#C9B3A6', fogZ: '#7d8db0', fogSun: '#ffb487',
     sea: '#F6D2B0', dens: 0.00135, mist: 0.0012, night: 0.04, ev: 0.35 },
   // 09:30 (L-03 new key)
-  { h: 9.5, sunI: 4.50, sun: '#FFE6C8', hemiI: 0.30, hSky: '#93a8d0', hGnd: '#6a5a48', env: 0.95,
+  { h: 9.5, sunI: 4.50, sun: '#FFE6C8', hemiI: 0.16, hSky: '#93a8d0', hGnd: '#6a5a48', env: 0.88,
     zen: '#5579ad', mid: '#8ea8cc', hor: '#D3D5D8', fogH: '#CCD2D6', fogZ: '#6f8cb8', fogSun: '#ffdcb0',
     sea: '#F4EEE6', dens: 0.00118, mist: 0.0005, night: 0.00, ev: 0.05 },
   // 12:00 trade noon (bible): −0.3 EV comes from the Pans' biome row
-  { h: 12.0, sunI: 5.10, sun: '#FFF6E8', hemiI: 0.30, hSky: '#9cb8de', hGnd: '#7a6a56', env: 0.95,
+  { h: 12.0, sunI: 5.10, sun: '#FFF6E8', hemiI: 0.15, hSky: '#9cb8de', hGnd: '#7a6a56', env: 0.85,
     zen: '#3F78B5', mid: '#7ca2cf', hor: '#BFD3E0', fogH: '#CFD8DE', fogZ: '#5c86bb', fogSun: '#fff0d8',
     sea: '#F2F4F5', dens: 0.00100, mist: 0.0003, night: 0.00, ev: 0.00 },
   // 16:30 (L-03 new key, the light analyst's row)
-  { h: 16.5, sunI: 4.80, sun: '#FFD9A8', hemiI: 0.42, hSky: '#9a8cc0', hGnd: '#6e5640', env: 0.95,
+  { h: 16.5, sunI: 4.80, sun: '#FFD9A8', hemiI: 0.24, hSky: '#9a8cc0', hGnd: '#6e5640', env: 0.90,
     zen: '#6F7FB8', mid: '#a49fc6', hor: '#E2BBAE', fogH: '#C89A88', fogZ: '#7d82b0', fogSun: '#ffc58c',
     sea: '#F3DDCF', dens: 0.00118, mist: 0.0008, night: 0.00, ev: 0.10 },
   // 17:45 (L-03 new key)
-  { h: 17.75, sunI: 4.20, sun: '#FFC48A', hemiI: 0.50, hSky: '#9a86b8', hGnd: '#6a4e3a', env: 1.00,
+  { h: 17.75, sunI: 4.20, sun: '#FFC48A', hemiI: 0.30, hSky: '#9a86b8', hGnd: '#6a4e3a', env: 0.95,
     zen: '#62679f', mid: '#a493b4', hor: '#EBA98C', fogH: '#CF9A80', fogZ: '#6f6f9f', fogSun: '#ffae6a',
     sea: '#F2CDB6', dens: 0.00122, mist: 0.0011, night: 0.00, ev: 0.15 },
   // 18:45 golden (bible; zenith #555079 per R66 k)
-  { h: 18.75, sunI: 2.80, sun: '#FFB070', hemiI: 0.62, hSky: '#9a7fae', hGnd: '#5a4030', env: 1.05,
+  { h: 18.75, sunI: 2.80, sun: '#FFB070', hemiI: 0.38, hSky: '#9a7fae', hGnd: '#5a4030', env: 1.00,
     zen: '#555079', mid: '#9a7c98', hor: '#F08A5A', fogH: '#D9A37E', fogZ: '#5c5a85', fogSun: '#ff9a50',
     sea: '#F2C0A0', dens: 0.00128, mist: 0.0013, night: 0.00, ev: 0.25 },
   // 19:20 (L-03 new key)
-  { h: 19.333, sunI: 1.20, sun: '#FF9B52', hemiI: 0.70, hSky: '#8a76a6', hGnd: '#4a3428', env: 1.05,
+  { h: 19.333, sunI: 1.20, sun: '#FF9B52', hemiI: 0.45, hSky: '#8a76a6', hGnd: '#4a3428', env: 1.00,
     zen: '#4A4A7C', mid: '#7d6688', hor: '#D97A62', fogH: '#A67C78', fogZ: '#47466e', fogSun: '#ff8a48',
     sea: '#c79a92', dens: 0.00135, mist: 0.0015, night: 0.12, ev: 0.40 },
   // 19:45 dusk (bible)
-  { h: 19.75, sunI: 0.35, sun: '#c46a5a', hemiI: 0.60, hSky: '#6f6a98', hGnd: '#33282a', env: 1.00,
+  { h: 19.75, sunI: 0.35, sun: '#c46a5a', hemiI: 0.50, hSky: '#6f6a98', hGnd: '#33282a', env: 1.00,
     zen: '#2F3560', mid: '#574a6c', hor: '#C46A7A', fogH: '#7A6474', fogZ: '#2c2f52', fogSun: '#b06060',
     sea: '#8d7a8c', dens: 0.00140, mist: 0.0017, night: 0.40, ev: 0.70 },
   // hand-over trough 19:54
-  { h: 19.9, sunI: 0.10, sun: '#8f7a96', hemiI: 0.75, hSky: '#5a5f88', hGnd: '#2a2426', env: 1.00,
+  { h: 19.9, sunI: 0.10, sun: '#8f7a96', hemiI: 0.55, hSky: '#5a5f88', hGnd: '#2a2426', env: 1.00,
     zen: '#252a50', mid: '#3e3a5c', hor: '#8a5a6c', fogH: '#5f5466', fogZ: '#22284a', fogSun: '#7a5068',
     sea: '#6a6078', dens: 0.00145, mist: 0.0017, night: 0.55, ev: 0.85 },
-  { h: 21.0, sunI: 0.42, sun: '#9FB3D6', hemiI: 1.05, hSky: '#3a4c78', hGnd: '#1a1c22', env: 1.00,
+  { h: 21.0, sunI: 0.42, sun: '#9FB3D6', hemiI: 0.80, hSky: '#3a4c78', hGnd: '#1a1c22', env: 1.00,
     zen: '#121831', mid: '#182035', hor: '#222a40', fogH: '#262d40', fogZ: '#0e1426', fogSun: '#45527a',
     sea: '#30374d', dens: 0.00118, mist: 0.0013, night: 0.92, ev: 1.25 },
   // 23:00 night (bible): moon #9FB3D6
-  { h: 23.0, sunI: 0.45, sun: '#9FB3D6', hemiI: 1.10, hSky: '#3a4c78', hGnd: '#161922', env: 1.00,
+  { h: 23.0, sunI: 0.45, sun: '#9FB3D6', hemiI: 0.80, hSky: '#3a4c78', hGnd: '#161922', env: 1.00,
     zen: '#0D1220', mid: '#121a2f', hor: '#1B2438', fogH: '#20283A', fogZ: '#0c1222', fogSun: '#3d4a6a',
     sea: '#2a3146', dens: 0.00110, mist: 0.0012, night: 1.00, ev: 1.30 },
-  { h: 24.0, sunI: 0.45, sun: '#9FB3D6', hemiI: 1.10, hSky: '#3a4c78', hGnd: '#161922', env: 1.00,
+  { h: 24.0, sunI: 0.45, sun: '#9FB3D6', hemiI: 0.80, hSky: '#3a4c78', hGnd: '#161922', env: 1.00,
     zen: '#0D1220', mid: '#121a2f', hor: '#1B2438', fogH: '#20283A', fogZ: '#0c1222', fogSun: '#3d4a6a',
     sea: '#2a3146', dens: 0.00110, mist: 0.0012, night: 1.00, ev: 1.30 },
 ];
@@ -1656,10 +1656,15 @@ export class Environment {
     const cubeRT = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: false, depthBuffer: true });
     cubeRT.texture.name = 'CAL.skyCube';
     const cubeCam = new THREE.CubeCamera(1, 3000, cubeRT);
+    // CubeCamera orients its six cameras only inside update(); faces are rendered one by
+    // one here, so the orientation is set once by hand (else all six look down -Z)
+    cubeCam.coordinateSystem = r.coordinateSystem;
+    cubeCam.updateCoordinateSystem();
     cubeCam.updateMatrixWorld(true);
     const scene = new THREE.Scene();
     const dome = new THREE.Mesh(this.sky.geometry, this.sky.material);
     dome.frustumCulled = false;
+    dome.layers.set(REFLECT_LAYER);   // the cube cameras see the REFLECT layer only
     scene.add(dome);
     const pmrem = new THREE.PMREMGenerator(r);
     this._ibl = { size, cubeRT, cubeCam, scene, dome, pmrem, rt: null, face: 0, pending: false,
