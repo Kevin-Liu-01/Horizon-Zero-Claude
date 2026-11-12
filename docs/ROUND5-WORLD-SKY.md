@@ -90,3 +90,65 @@ Environment.KEYS / CALIMA / BIOMES     the tables
 
 Events on `ctx.events`: `time-phase`, `weather-changed { weather, fadeSeconds }`, `rest-start`, `rest-end`,
 `thunder` (legacy; no bible state sets lightning).
+
+## 4. Honest gaps (what is not done, and what still looks weak)
+
+- **Everything is filmed on the W0 map.** world-ground's island is not on main, so every frame here is the
+  Round-4 valley: its snow-capped rim massif fills the upper third of most frames (the white "hanging" shapes
+  are that terrain's snow line, not cloud), there is no sea, no sister isle, no salt. The light is tuned for
+  the Pans' row (black sand, white crust) but has never been seen on them. The look must be re-filmed on the
+  island after both lanes merge; I expect the Pans' −0.3 EV and the 12:00 haze to need a second pass there.
+- **The clouds are W1-grade.** Four slices of one noise field give flat bases and heaped tops that drift SW,
+  but they are small, pale puffs, not the towering lit cumulus of the key art; L-09 (the baked cumulus band)
+  is W2 work. At night the moonlit cloud is still a little bright.
+- **The cloud sea** reads as cloud from the rim stand-in (lumpy top, lit heaps, no plane), but from 205 m over
+  the old valley it is a broad peach sheet; on the island it sits on the NE slopes only, which I have not seen.
+- **Exposure.** The keyed EV is applied through `renderer.toneMappingExposure` on the ACES chain. look-post's
+  AgX + grade (L-01/L-02) will change every number the eye sees; A-hour-keys is graded on the pre-grade
+  uniforms and holds. The calima disc is solved against the live chain each time the exposure moves (it uses
+  `engine.look.invert` the moment look-post publishes it).
+- **L-03 numbers I did not keep:** the sky IBL runs at 0.85–1.05 and the hemisphere at 0.15–0.80, not
+  L-03's 0.30–0.45 and 0.10–0.14. At L-03's values every surface turned from the sun filmed black (run 1:
+  A55 shadow luminance 0.008); with the sky lighting the ground at the radiance it shows, A55 reads 0.39.
+  A-look-keyfill (look-post's staging) has not been run here.
+- **Not built this run (LOOK W1 items):** A-look-aerial-layers / A-look-golden-air / A-look-sun / A-play-motes
+  gate rows (they need `gatePlaces.look.*` from world-props and look-post's `look-stats.mjs`); the title key
+  (U-08) beyond `Environment.HOURS` (the title hour itself is menu.js, shell-ui's).
+- **The 0:55 beat.** A golden clock alone cannot put "calima at noon" at 0:55: 55 real minutes from 07:00 is
+  1.8 days at 1800 s/day (the row reports 02:00). The first-hour script (progression W3) must set or rest the
+  clock; A-look-sunpath-dwell reports it PENDING.
+- **Title hour conflict.** R66 (j) says the title stands at 17:45; the bible's Nov 6 amendment list says 18:40.
+  `Environment.HOURS.title` is 17.75 per R66 (j); menu.js still uses its own `TITLE_HOUR = 17`.
+- **R4 shaft pass.** The post-SMAA screen-space shafts are kept (L-08 moves them into HDR in W2); in calima
+  they run at 0.35 so they do not wash the coral disc (L-14's ×1.8 belongs to the W2 gather).
+- **GPU timing** of the IBL faces / PMREM, the noise-vs-fbm A/B and the cloud-sea cost are reported as CPU
+  submit times only; the quiet-box timing is the orchestrator's (R45, LOOK L-16/L-18).
+
+## 5. For other lanes and the orchestrator
+
+- **world-ground:** (1) delete the `RiverWater` alias class at the end of `water.js` (environment.js no longer
+  imports it; `A-no-river` passes); (2) the W-08 probe is `environment.skyCube` (sky-only until you call
+  `environment.reflect.add(mesh)` on ≤ 10 draws of terrain LOD2 / landmark LOD1; it then re-centres on the
+  camera on 25 m moves); (3) sea glitter: `environment.uniforms.calSunRad` (disc radiance × 40 × visibility)
+  and `calSunCol` (direct light × intensity), both linear; (4) the cloud sea is in the shared fog chunk, so
+  any registered material gets it; it sits on the windward half along bearing 045 (dot(xz, (0.707, −0.707))
+  > −60 m ramping to 140 m), 105–150 m with a ± 22 m heaped top; (5) `fogParams.horizon`, `.zenith`,
+  `.transmittance()` keep their names; `transmittance` now includes the valley mist; (6) `environment.ridges`
+  is null (your `ridges.visible` line is a no-op); (7) biome weights are read with your CALIMA names first.
+- **orchestrator:** (1) merge order: RiverWater is gone from this branch, so on the W0 map the old river is
+  gone too; carried rows staged on that river (V8 water feature, the wading rows) lose their subject until
+  world-ground's island merges: merge world-ground first or together; (2) `A-kind-block-file`'s / `A-weak40`'s
+  calima clause can now run (`weatherStates` includes 'calima'; `overcast` is kept as a hidden state with
+  densMul 1.85 for the beam row; `clear` aliases to trade); (3) the 0:55 arithmetic above; (4) the title-hour
+  conflict above.
+- **look-post:** `environment.exposureEV` / `exposureBase` are published; this lane multiplies
+  `renderer.toneMappingExposure` by 2^EV over the base it read at construction and nudges
+  `engine.bloom.threshold` (biome / calima) and `.strength` (weather ×) relative to the tier's values, writing
+  only on change. When `engine.look.invert(rgb)` exists the calima disc uses it.
+- **shell-ui:** with live calima, menu.js's CSS stand-in and disc billboard switch themselves off at the title
+  (its own `setWeather('calima') === 'calima'` test); V38 / U-08 frames should be re-filmed.
+- **character-art / hero-body / traversal:** `environment.windAt(x, z, out)` (m/s, trade 5.5 with gusts, lulls
+  < 2 m/s at dawn and dusk, toward 225) for the wrap tail and the kite; `V-brea-closeup-calima` can be filmed.
+- **melee / combat-kit:** `environment.borrowLight(ms)` lends eyeLights[1] (returns null while lent).
+- **settlements (W2):** set `environment.fireSource = brazierObject3D` and the pooled fire light follows it
+  under the F-1 rule.
