@@ -173,7 +173,10 @@ const LOOK = `
   const sunYaw = () => { const s = __C.environment.sunDir; return Math.atan2(-s.x, -s.z); };
   const __camSaved = { fn: null, delta: null };
   /** Freeze the presentation clock too (wind, water, fire and the camera damping read wall time): engine.clock reads 0 s. */
-  const freezeWall = () => { if (!__camSaved.delta) { __camSaved.delta = __E.clock.getDelta; __E.clock.getDelta = () => 0; } };
+  // fix round 1 (A-look-suite a across boots): the presentation clock every system animates from (engine.wallTime:
+  // sky, wind, grass sway, water, birds) is snapped to the next multiple of 4096 s, the same on every boot that
+  // stages the same sequence, instead of the boot-dependent seconds since load; it only ever moves forward
+  const freezeWall = () => { if (!__camSaved.delta) { __camSaved.delta = __E.clock.getDelta; __E.clock.getDelta = () => 0; __E.wallTime = (Math.floor(__E.wallTime / 4096) + 1) * 4096; } };
   const unstage = () => {
     const p = __C.player;
     if (__camSaved.delta) { __E.clock.getDelta = __camSaved.delta; __camSaved.delta = null; __E.clock.getDelta(); }
@@ -208,6 +211,20 @@ const LOOK = `
     p.camPitch = P.pitch ?? 0;
     // the hero faces away from the lens (1-TR, 1-MR, 1-BL: we stand behind her), unless the place says otherwise
     p.heading = p.camYaw + Math.PI + (P.heroRel || 0) * Math.PI / 180;
+    // fix round 1 (A-look-suite a across boots): a DETERMINISTIC settle. Boot 1 and boot 2 reached the place at
+    // different seconds since load, so Brea's clip phases, her idle and the grass round her differed (the diff
+    // sheet: only the hero and her grass). The presentation clock is snapped (freezeWall's rule), the clip
+    // phases are zeroed, and the sim then runs exactly 60 steps of 1/60 s whatever the real frame time; the
+    // wall clock is frozen after it. o.settle === false skips it (A-hold-frame and the bloom probes do not need it).
+    if (o.settle !== false && !__camSaved.delta) {
+      __E.wallTime = (Math.floor(__E.wallTime / 4096) + 1) * 4096;
+      const gd = __E.clock.getDelta; __E.clock.getDelta = () => 1 / 60;
+      try { p.animator?.mixer?.setTime?.(0); } catch (e) { /* */ }
+      __E.requestTimeScale('studio', null);
+      await frames(60);
+      __E.requestTimeScale('studio', 0);
+      __E.clock.getDelta = gd;
+    }
     if (P.cam === 'close') {
       await frames(4);
       const head = p.animator?.b?.head?.bone;
@@ -863,11 +880,11 @@ async function aliases() {
       out.push(row);
       // the same row on the Round-5 W0 output in the same run (`?look=w0`), so a re-measured row that moves
       // under the look says whether the look moved it (diagnostic, not graded)
-      if (W0_TWINS.includes(want)) {
+      if (W0_TWINS.includes(want)) for (const v of (want === 'A108-ao-periodicity' ? ['w0', 'nolut', 'nodither'] : ['w0'])) {
         const tw = Object.defineProperties({}, Object.getOwnPropertyDescriptors(row));
-        Object.defineProperty(tw, 'id', { value: want + '@look-post-w0', enumerable: true, writable: true, configurable: true });
+        Object.defineProperty(tw, 'id', { value: want + '@look-post-' + v, enumerable: true, writable: true, configurable: true });
         Object.defineProperty(tw, 'lane', { value: LANE + '-diag', enumerable: true, writable: true, configurable: true });
-        Object.defineProperty(tw, 'params', { value: (g.params ? g.params + '&' : '') + 'look=w0', enumerable: true, writable: true, configurable: true });
+        Object.defineProperty(tw, 'params', { value: (g.params ? g.params + '&' : '') + 'look=' + v, enumerable: true, writable: true, configurable: true });
         out.push(tw);
       }
     }

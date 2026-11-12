@@ -396,7 +396,7 @@ function readOutputParams(engine, P) {
   P.bloomThr = engine?.bloom?.threshold ?? 1.08;
   // look-post (L-01, grant): under AgX the engine's own exact inverse (engine.look) replaces the ACES branch
   P.look = engine?.lookActive ? engine.look : null;
-  P.lookVer = P.look ? P.look.version : 0;
+  P.lookVer = P.look ? P.look.solveVersion : 0;
   return P;
 }
 
@@ -836,7 +836,7 @@ export class LampSystem {
     const rr = E ? E.renderer : null, gu = E && E.grade ? E.grade.uniforms : null;
     if (rr && gu) {
       const e = rr.toneMappingExposure, c = gu.uContrast.value, sa = gu.uSaturation.value, mx = gu.uGradeMix.value;
-      const bt = E.bloom ? E.bloom.threshold : 1.08, tm = rr.toneMapping, lv = E.look ? E.look.version : 0;
+      const bt = E.bloom ? E.bloom.threshold : 1.08, tm = rr.toneMapping, lv = E.look ? E.look.solveVersion : 0;
       if (e !== this._pe || c !== this._pc || sa !== this._ps || mx !== this._pm || bt !== this._pb || tm !== this._pt || lv !== this._plv) {
         this._pe = e; this._pc = c; this._ps = sa; this._pm = mx; this._pb = bt; this._pt = tm; this._plv = lv;
         this._solve(false);

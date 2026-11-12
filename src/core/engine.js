@@ -1121,9 +1121,13 @@ export class Engine {
     this._buildLook();
     // diagnostic: `?look=w0` (on this page or the page hosting it, e.g. the Pans POC iframe) boots on the
     // Round-5 W0 output, for before/after comparisons of any gate
+    // (fix round 1: also `nolut` = AgX without the grade stage, `nodither` = no output dither; diagnostics for A108)
     try {
-      const q = (w) => new URLSearchParams(w.location.search).get('look');
-      if (q(window) === 'w0' || (window.top !== window && q(window.top) === 'w0')) this.setLookEnabled(false);
+      const q = (w) => (new URLSearchParams(w.location.search).get('look') || '').split(',');
+      const want = new Set([...q(window), ...(window.top !== window ? q(window.top) : [])]);
+      if (want.has('w0')) this.setLookEnabled(false);
+      if (want.has('nolut')) { this._diagNoLut = true; this.look._bump(true); }
+      if (want.has('nodither')) this.grade.uniforms.uDither.value = 0;
     } catch (e) { /* cross-origin host: no switch */ }
 
     this.smaa = new SMAAPass(w, h);
@@ -1311,11 +1315,11 @@ export class Engine {
     const T = () => this.tier.look;
     const benchGrade = () => this.benchPass(this.grade), benchBloom = () => this.benchPass(this.bloom);
     this.registerLookItem('L-01', { owner: 'look-post', estMs: 0.03, title: 'AgX + CALIMA look (ACES W0 when off)', bench: benchGrade,
-      get: () => T().agx !== false, set: (on) => { T().agx = !!on; this.look.version++; } });
+      get: () => T().agx !== false, set: (on) => { T().agx = !!on; this.look._bump(true); } });
     this.registerLookItem('L-02', { owner: 'look-post', estMs: 0.08, title: 'grade: two blended 32^3 LUT slots + vignette', bench: benchGrade,
-      get: () => T().grade !== false, set: (on) => { T().grade = !!on; this.look.version++; } });
+      get: () => T().grade !== false, set: (on) => { T().grade = !!on; this.look._bump(true); } });
     this.registerLookItem('L-07', { owner: 'look-post', estMs: 0, title: 'bloom retune (W0 bloom when off)', bench: benchBloom,
-      get: () => T().bloomRetune !== false, set: (on) => { T().bloomRetune = !!on; this.look.version++; } });
+      get: () => T().bloomRetune !== false, set: (on) => { T().bloomRetune = !!on; this.look._bump(true); } });
     this._syncLook(true);
   }
 
@@ -1352,7 +1356,7 @@ export class Engine {
     u.tLutB.value = this._lutTex[1];
     u.uLutMix.value = L.setB !== L.setA ? L.lutMix : 0;
     // grade: the LUT path under AgX (T.grade); the W0 grade under ACES follows the same mix
-    u.uGradeMix.value = agx ? (T.grade !== false && T.lut !== false ? L.gradeMix : 0) : L.gradeMix;
+    u.uGradeMix.value = agx ? (T.grade !== false && T.lut !== false && !this._diagNoLut ? L.gradeMix : 0) : L.gradeMix;
     u.uVignette.value = agx ? L.vignette : LOOK_W0.vignette;
     // bloom (L-07), scaled per weather (look.bloomScale: calima x1.25, overcast x0.6)
     const B = this.lookEnabled && T.bloomRetune !== false ? LOOK_BLOOM : LOOK_W0.bloom;
@@ -1360,7 +1364,12 @@ export class Engine {
     b.strength = B.strength * L.bloomScale;
     b.radius = B.radius;
     let thr = B.threshold, sw = B.smoothWidth;
-    if (agx && B.thresholdLstar) { thr = L.hdrForLstar(B.thresholdLstar); sw = thr * B.kneeRatio; }
+    if (agx && B.thresholdLstar) {
+      // the display-keyed threshold is re-solved only when the look moved enough to move it (solveVersion):
+      // its bisection runs the look 48 times (fix round 1, A-alloc-rate)
+      if (this._thrVer !== L.solveVersion || this._thrB !== B) { this._thrVer = L.solveVersion; this._thrB = B; this._thrHdr = L.hdrForLstar(B.thresholdLstar); }
+      thr = this._thrHdr; sw = thr * B.kneeRatio;
+    }
     b.threshold = thr;
     if (b.highPassUniforms?.smoothWidth) b.highPassUniforms.smoothWidth.value = sw;
     const cu = b.compositeMaterial?.uniforms;
@@ -1420,7 +1429,7 @@ export class Engine {
   /** false: the Round-5 W0 output (ACES 0.94, the W0 grade and bloom), for before/after shots and A/B. */
   setLookEnabled(on) {
     this.lookEnabled = !!on;
-    this.look.version++;
+    this.look._bump(true);
     this._syncLook();
     return this.lookEnabled;
   }
@@ -1471,7 +1480,29 @@ export class Engine {
   }
 
   /** The look's GPU objects (the two LUT slots, the bench target); the engine lives as long as the page. */
+  /**
+   * R48 (c), look-post fix round 1: THE SHADOW PASS'S PROGRAM-KEY CHURN. three r169 renders every caster with
+   * one shared depth material unless the mesh carries its own; its setProgram sees `skinning` / `instancing`
+   * / `batching` / the morph count flip between consecutive casters and re-derives the program (getParameters
+   * + getProgramCacheKey + join: measured 18 getProgram calls per frame on the vista and the staged fight, the
+   * bulk of ScenePass.render's 8.7 MB/s). A skinned, instanced or batched caster gets a depth material shared
+   * by its kind (key: skinned 1, instanced 2, batched 4, + 8 x morph targets), so the shared one only ever
+   * sees plain meshes and none of them flips. A caster whose material alpha-tests, alpha-maps, displaces or
+   * clips its shadow keeps three's own per-material variant (it never flipped). Engine-owned; disposeLook().
+   */
+  _depthVariant(o) {
+    const m = o.material, mm = Array.isArray(m) ? m[0] : m;
+    if (!mm || mm.alphaTest > 0 || mm.alphaMap || mm.displacementMap || (mm.clipShadows && mm.clippingPlanes?.length)) { o.userData.__calDepthOwn = true; return; }
+    const morph = o.morphTargetInfluences ? o.morphTargetInfluences.length : 0;
+    const key = (o.isSkinnedMesh ? 1 : 0) + (o.isInstancedMesh ? 2 : 0) + (o.isBatchedMesh ? 4 : 0) + 8 * morph;
+    const V = this._depthVariants || (this._depthVariants = new Map());
+    let d = V.get(key);
+    if (!d) { d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); d.name = 'CAL.depthVariant.' + key; V.set(key, d); }
+    o.customDepthMaterial = d;
+  }
+
   disposeLook() {
+    if (this._depthVariants) { for (const d of this._depthVariants.values()) d.dispose(); this._depthVariants.clear(); }
     for (const t of this._lutTex || []) t.dispose();
     this._lutSet = [null, null];
     this._benchRT?.dispose();
@@ -2484,6 +2515,7 @@ export class Engine {
       if (o.userData.__sizeCulled === true) return; // invisible: draws nothing at all
       const off = o.userData.__shadowCulled === true;
       if (!off && !o.castShadow) return; // never a caster: nothing to do
+      if (o.customDepthMaterial === undefined && (o.isSkinnedMesh || o.isInstancedMesh || o.isBatchedMesh) && o.userData.__calDepthOwn !== true) this._depthVariant(o);
       pool[C.n] = o; dists[C.n] = Math.max(0, dist - r); C.n++;
     };
     this.scene.traverse(this._cullVisit);

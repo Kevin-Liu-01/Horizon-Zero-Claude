@@ -372,7 +372,85 @@ export function gradeSet(c, s, out) {
     }
   }
   out[0] = clamp01(out[0]); out[1] = clamp01(out[1]); out[2] = clamp01(out[2]);
+  // 5. the L*a*b* stage (fix round 1; a set without `lab` skips it): the split the panels show, warm light
+  // against violet-rose shadow, made in a perceptual space so it moves hue and not just level
+  if (s.lab && pe < 1) labStage(out, s.lab, 1 - pe);
   return out;
+}
+
+/**
+ * Monotone cubic (Fritsch-Carlson) through the points [[x, y], ...] (x ascending). The tone curve on L*
+ * (0..100): every curve here is strictly increasing so look.invert stays exact.
+ */
+function pchipPrep(P) {
+  const n = P.length, X = new Float64Array(n), Y = new Float64Array(n), M = new Float64Array(n), D = new Float64Array(n);
+  for (let i = 0; i < n; i++) { X[i] = P[i][0]; Y[i] = P[i][1]; }
+  for (let i = 0; i < n - 1; i++) D[i] = (Y[i + 1] - Y[i]) / (X[i + 1] - X[i]);
+  M[0] = D[0]; M[n - 1] = D[n - 2];
+  for (let k = 1; k < n - 1; k++) {
+    const a = D[k - 1], b = D[k];
+    if (a * b <= 0) { M[k] = 0; continue; }
+    const w1 = 2 * (X[k + 1] - X[k]) + (X[k] - X[k - 1]), w2 = (X[k + 1] - X[k]) + 2 * (X[k] - X[k - 1]);
+    M[k] = (w1 + w2) / (w1 / a + w2 / b);
+  }
+  return { n, X, Y, M, D };
+}
+/** Allocation-free after the first call per curve (the prepared slopes are cached on the curve). */
+function pchip(P, x) {
+  const C = P._pc || (P._pc = pchipPrep(P)), { n, X, Y, M, D } = C;
+  if (x <= X[0]) return Y[0] + (x - X[0]) * D[0];
+  if (x >= X[n - 1]) return Y[n - 1] + (x - X[n - 1]) * D[n - 2];
+  let i = 0; while (x > X[i + 1]) i++;
+  const h = X[i + 1] - X[i], t = (x - X[i]) / h, t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * Y[i] + (t3 - 2 * t2 + t) * h * M[i] + (-2 * t3 + 3 * t2) * Y[i + 1] + (t3 - t2) * h * M[i + 1];
+}
+
+/**
+ * The L*a*b* stage of a grade set (`set.lab`), weight w (the gamut-edge guard's complement):
+ *   tone       [[L, L'], ...]   a monotone curve on L* (lifts the toe a little, opens the highlights that
+ *                               AgX + the look's power 1.22 hold 6-10 L* under the ACES-era frames)
+ *   shadow     { range: [L0, L1], shift: [da, db], chroma }   below L1 (full weight below L0): (a*, b*) scaled
+ *                               by `chroma` and shifted by (da, db): ochre and olive shadow toward rose-violet
+ *   mid        { range: [L0, L1, L2, L3], hue: [h0, h1, feather], b }   b* of the warm hues in the mid band
+ *                               scaled by `b` (mustard toward amber without rotating every yellow into one hue)
+ *   high       { range: [L0, L1], chroma, shift: [da, db] }   the brightest band toward cream (hi10 chroma)
+ * L* is kept by the chroma and shift steps; only `tone` moves it.
+ */
+function labStage(c, X, w) {
+  srgbToLab(c, _lab);
+  let L = _lab[0], a = _lab[1], b = _lab[2];
+  const L0 = L;
+  if (X.tone) L = L + (pchip(X.tone, L) - L) * w;
+  if (X.shadow) {
+    const S = X.shadow, ws = (1 - smoothstep(S.range[0], S.range[1], L0)) * w;
+    if (ws > 0) {
+      const k = 1 + ((S.chroma ?? 1) - 1) * ws;
+      a = a * k + (S.shift ? S.shift[0] : 0) * ws;
+      b = b * k + (S.shift ? S.shift[1] : 0) * ws;
+    }
+  }
+  if (X.mid) {
+    const M = X.mid, r = M.range;
+    const wm = smoothstep(r[0], r[1], L0) * (1 - smoothstep(r[2], r[3], L0)) * w;
+    if (wm > 0) {
+      let h = Math.atan2(b, a) * 180 / Math.PI; if (h < 0) h += 360;
+      const wh = bandWeight(h, M.hue[0], M.hue[1], M.hue[2] ?? 12) * Math.min(1, Math.hypot(a, b) / 6);
+      const k = 1 + ((M.b ?? 1) - 1) * wm * wh, ka = 1 + ((M.a ?? 1) - 1) * wm * wh;
+      b *= k; a *= ka;
+    }
+  }
+  if (X.high) {
+    const H = X.high, wh = smoothstep(H.range[0], H.range[1], L0) * w;
+    if (wh > 0) {
+      const k = 1 + ((H.chroma ?? 1) - 1) * wh;
+      a = a * k + (H.shift ? H.shift[0] : 0) * wh;
+      b = b * k + (H.shift ? H.shift[1] : 0) * wh;
+    }
+  }
+  _lab[0] = L; _lab[1] = a; _lab[2] = b;
+  labToSrgb(_lab, c);
+  c[0] = clamp01(c[0]); c[1] = clamp01(c[1]); c[2] = clamp01(c[2]);
+  return c;
 }
 
 /* IEEE half floats (the LUT's GPU storage), without three: round-to-nearest-even. */
@@ -500,6 +578,8 @@ export function setsForHour(grade, h, weather = null, calimaWeight = null, out =
 /* ------------------------------------------------------------------ */
 
 const RESTARTS = Object.freeze([0.8, 0.6, 0.4, 0.25, 0.12]);
+/** The slot-mix step that bumps solveVersion (see Look#solveVersion). */
+export const SOLVE_MIX_STEP = 1 / 16;
 
 export class Look {
   /**
@@ -527,6 +607,14 @@ export class Look {
     this.vignette = grade.vignette ?? 0.28;
     this.bloomScale = 1;
     this.version = 1;
+    /**
+     * Bumps only when a CPU copy that solves THROUGH the look must re-solve (fix round 1, A-alloc-rate): the
+     * exposure, the slot names, the grade mix, or the slot mix moved >= SOLVE_MIX_STEP since the last bump.
+     * The lamp system and the engine's bloom threshold key on it; `version` still bumps on every change.
+     * (A 1/16 step of the mix between two sets moves a lamp token's screen value by <= 0.3 ΔE.)
+     */
+    this.solveVersion = 1;
+    this._solveMix = 0;
     this._x = [0, 0, 0]; this._y = [0, 0, 0]; this._la = [0, 0, 0]; this._lb = [0, 0, 0];
     this._d = [0, 0, 0]; this._f = [0, 0, 0]; this._r = [0, 0, 0]; this._rr = [0, 0, 0]; this._xs = [0, 0, 0]; this._fh = [0, 0, 0];
     this._J = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
@@ -684,25 +772,31 @@ export class Look {
    */
   /** Allocation-free form of set() for the per-hour path: the two slots, their mix and the EV offset. */
   setSlots(a, b, mix, ev) {
-    let changed = false;
-    if (ev !== this.ev) { this.ev = ev; this.exposure = this.baseExposure * Math.pow(2, ev); changed = true; }
-    if (a !== this.setA && this.luts[a]) { this.setA = a; changed = true; }
-    if (b !== this.setB && this.luts[b]) { this.setB = b; changed = true; }
+    let changed = false, solve = false;
+    if (ev !== this.ev) { this.ev = ev; this.exposure = this.baseExposure * Math.pow(2, ev); changed = solve = true; }
+    if (a !== this.setA && this.luts[a]) { this.setA = a; changed = solve = true; }
+    if (b !== this.setB && this.luts[b]) { this.setB = b; changed = solve = true; }
     const m = clamp01(mix);
     if (m !== this.lutMix) { this.lutMix = m; changed = true; }
-    if (changed) this.version++;
+    if (changed) this._bump(solve);
     return changed;
   }
 
+  /** version always; solveVersion when `solve` or the slot mix left its last solved value by a step. */
+  _bump(solve) {
+    this.version++;
+    if (solve || Math.abs(this.lutMix - this._solveMix) >= SOLVE_MIX_STEP) { this.solveVersion++; this._solveMix = this.lutMix; }
+  }
+
   set({ ev, a, b, mix, gradeMix, bloomScale } = {}) {
-    let slots = 0, changed = false;
-    if (ev !== undefined && ev !== this.ev) { this.ev = ev; this.exposure = this.baseExposure * Math.pow(2, ev); changed = true; }
-    if (a !== undefined && a !== this.setA && this.luts[a]) { this.setA = a; slots |= 1; changed = true; }
-    if (b !== undefined && b !== this.setB && this.luts[b]) { this.setB = b; slots |= 2; changed = true; }
+    let slots = 0, changed = false, solve = false;
+    if (ev !== undefined && ev !== this.ev) { this.ev = ev; this.exposure = this.baseExposure * Math.pow(2, ev); changed = solve = true; }
+    if (a !== undefined && a !== this.setA && this.luts[a]) { this.setA = a; slots |= 1; changed = solve = true; }
+    if (b !== undefined && b !== this.setB && this.luts[b]) { this.setB = b; slots |= 2; changed = solve = true; }
     if (mix !== undefined && mix !== this.lutMix) { this.lutMix = clamp01(mix); changed = true; }
-    if (gradeMix !== undefined && gradeMix !== this.gradeMix) { this.gradeMix = clamp01(gradeMix); changed = true; }
+    if (gradeMix !== undefined && gradeMix !== this.gradeMix) { this.gradeMix = clamp01(gradeMix); changed = solve = true; }
     if (bloomScale !== undefined && bloomScale !== this.bloomScale) { this.bloomScale = bloomScale; changed = true; }
-    if (changed) this.version++;
+    if (changed) this._bump(solve);
     return slots;
   }
 }
