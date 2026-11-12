@@ -149,18 +149,23 @@ export async function abTime({ ctx, scenarios, stage, rounds = 4, frames = 40, s
     const scaleMed = median(scales);
     const scaleOk = scaleMed != null && scaleMed >= RENDER_SCALE_MIN;
     // the look's own draws: every post item on vs every post item off (0 outside the post passes)
+    // (3 interleaved on/off pairs, median of the differences: a transient object in one window is not a look draw)
     const postItems = benched;
     const wasP = postItems.map((i) => i.get());
-    postItems.forEach((i) => i.set(true)); await wait(4); const dOn = await wholeFrame(E, 12);
-    postItems.forEach((i) => i.set(false)); await wait(4); const dOff = await wholeFrame(E, 12);
+    const dd = [];
+    for (let r = 0; r < 3; r++) {
+      postItems.forEach((i) => i.set(true)); await wait(4); const dOn = await wholeFrame(E, 20);
+      postItems.forEach((i) => i.set(false)); await wait(4); const dOff = await wholeFrame(E, 20);
+      if (dOn.medianDraws != null && dOff.medianDraws != null) dd.push(dOn.medianDraws - dOff.medianDraws);
+    }
     postItems.forEach((i, k) => i.set(wasP[k])); await wait(4);
-    const lookDraws = dOn.medianDraws != null && dOff.medianDraws != null ? dOn.medianDraws - dOff.medianDraws : null;
+    const lookDraws = median(dd);
     const lookDrawsOk = lookDraws != null && lookDraws <= 0;
     const mem = gpuBytes(E, ctx.scene);
     const memOk = mem.rtMB != null && mem.rtMB <= RT_CAP_MB && mem.sumMB <= VRAM_CAP_MB;
     if (!a21Ok || !scaleOk || !lookDrawsOk || !memOk) out.allRowsOk = false;
     out.scenarios[name] = { frameMedianMs: base.medianMs, a21Bar: { exit, barMs: bar ?? null, ok: a21Ok }, shippedRenderScale: { median: scaleMed, min: Math.min(...scales), bar: RENDER_SCALE_MIN, ok: scaleOk },
-      rows, maxDraws, drawsOk, lookDrawsOutsidePost: { postOnMinusOff: lookDraws, ok: lookDrawsOk }, gpuMemoryWithLookOn: { ...mem, rtCapMB: RT_CAP_MB, vramCapMB: VRAM_CAP_MB, ok: memOk } };
+      rows, maxDraws, drawsOk, lookDrawsOutsidePost: { postOnMinusOff: lookDraws, pairs: dd, ok: lookDrawsOk }, gpuMemoryWithLookOn: { ...mem, rtCapMB: RT_CAP_MB, vramCapMB: VRAM_CAP_MB, ok: memOk } };
     try { if (typeof unpin === 'function') unpin(); } catch (e) { /* */ }
   }
   E.tier.look = lookRow;
