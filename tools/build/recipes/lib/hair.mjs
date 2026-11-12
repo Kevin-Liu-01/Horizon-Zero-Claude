@@ -523,7 +523,7 @@ export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062
   // thickness and its dark lash line over the white, tapering into both corners. `curl` bends the lashes forward past the lid, so
   // a profile finds them as a fringe of hair; `twoSided` gives the card its back, so they read from behind the eye's plane too.
   const rows = rim ? 3 : 2;
-  // fix round 3: the measured margin rises in a spike over the cornea dome (the lid there was pushed out over it); the lash line is
+  // fix round 2, Nov 12: the measured margin rises in a spike over the cornea dome (the lid there was pushed out over it); the lash line is
   // the least-squares parabola through the measured margin, so it reads as one smooth arc, never a tent over the pupil
   const xs = [], ys = [];
   for (let i = 0; i <= segments; i++) {
@@ -560,8 +560,8 @@ export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062
       const taper = smooth(0.0, 0.2, f) * (1 - smooth(0.86, 1.04, f));
       const r = rim.onBall([x, y - rim.h * mix(0.35, 1, taper), z - rim.h * 0.2]);
       const ur = rim.rect[0] + (i / segments) * (rim.rect[2] - 1);
-      g.pos.push(...r); g.nrm.push(...norm([0, -0.75, 0.66]));   // (fix round 3: the margin's under-face looks DOWN at the ball; facing out it caught the sun as a grey sheen) g.uv.push(ur / W, (rim.rect[1] + rim.rect[3] - 1) / W);
-      g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0); g.col.push(0.5, 0.5, 0.5, 1);   // (fix round 3: it lies in the lid's shade; 0.82 read as a pale band in the sun)
+      g.pos.push(...r); g.nrm.push(...norm([0, -0.75, 0.66]));   // (fix round 2, Nov 12: the margin's under-face looks DOWN at the ball; facing out it caught the sun as a grey sheen) g.uv.push(ur / W, (rim.rect[1] + rim.rect[3] - 1) / W);
+      g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0); g.col.push(0.5, 0.5, 0.5, 1);   // (fix round 2, Nov 12: it lies in the lid's shade; 0.82 read as a pale band in the sun)
       // the margin row carries the rim cell's top edge: a duplicate of the lash root with the rim's UV
       g.pos.push(...a); g.nrm.push(...norm([0, -0.35, 0.94])); g.uv.push(ur / W, rim.rect[1] / W);
       g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0); g.col.push(0.7, 0.7, 0.7, 1);
@@ -627,7 +627,7 @@ export function paintLashes(buf, { rect, W = 512, hair = '#120E0C', seed = 61, r
   const [x0, y0, w, h] = rect;
   const R = rng(seed * 2654435761);
   const cov = new Float32Array(w * h);
-  // fix round 3 (R66 C-03: "a heavy dark lash line, >= 40 strands per lid, #120E0C"; the r2 frames read a comb of ruled sticks):
+  // fix round 2, Nov 12 (R66 C-03: "a heavy dark lash line, >= 40 strands per lid, #120E0C"; the r2 frames read a comb of ruled sticks):
   // the lashes grow in CLUMPS of three to five hairs whose tips draw together, each hair tapering and curving outward, the clumps
   // longest at two thirds of the lid and short, sparse and splayed into the outer corner. A clump's hairs converge and never cross
   // another clump's, so the pockets they shut are filled as lash (below) and no view of a card shuts a pocket of sky.

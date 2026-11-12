@@ -88,3 +88,46 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
 export function skinLookUniforms(material) {
   return material?.userData?.calSkinU ?? null;
 }
+
+/**
+ * LOOK C-04 for cloth and hair (Brea's wrap + hair material here; armory's `clothShader.js` and the NPC kit include the same
+ * chunk): the sun-rim `pow(1 - N.V, 3) x pow(L.-V x 0.5 + 0.5, 2) x sun x shadow x kRim` (wrap and hair 0.45, cloth 0.40,
+ * leather 0.30) and, with `velvet`, a dyed cloth's velvet edge `albedo x 1.6 x pow(1 - N.V, 4) x wrapped N.L` (in place of
+ * MeshPhysicalMaterial's sheen). Both ride the sun's own direct term, so they inherit its shadow. Idempotent; marks
+ * material.userData.calCloth = 1.
+ */
+const CLOTH_FRAGMENT = (kRim, velvet) => `
+uniform float calRimK;
+void RE_Direct_CalCloth( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {
+	RE_Direct_Physical( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );
+	#if NUM_DIR_LIGHTS > 0
+	if ( calRimK > 0.0 && dot( directLight.direction, directionalLights[ 0 ].direction ) > 0.9995 ) {
+		float nl = dot( geometryNormal, directLight.direction );
+		float rimV = 1.0 - saturate( dot( geometryNormal, geometryViewDir ) );
+		float rimL = dot( directLight.direction, -geometryViewDir ) * 0.5 + 0.5;
+		vec3 add = directLight.color * ( ${kRim.toFixed(2)} * calRimK * rimV * rimV * rimV * rimL * rimL );
+		${velvet ? 'add += directLight.color * ( 1.6 * calRimK * rimV * rimV * rimV * rimV * saturate( ( nl + 0.5 ) / 1.5 ) );' : ''}
+		reflectedLight.directDiffuse += add * material.diffuseColor;
+	}
+	#endif
+}
+#undef RE_Direct
+#define RE_Direct RE_Direct_CalCloth`;
+
+export function applyClothLook(material, { rim = 0.45, velvet = true } = {}) {
+  if (!material || material.userData.calCloth === 1) return material;
+  const calRimK = { value: 1 };
+  const prev = typeof material.onBeforeCompile === 'function' ? material.onBeforeCompile : null;
+  const prevKey = typeof material.customProgramCacheKey === 'function' ? material.customProgramCacheKey.bind(material) : null;
+  material.onBeforeCompile = function (shader, renderer) {
+    if (prev) prev.call(this, shader, renderer);
+    shader.uniforms.calRimK = calRimK;
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>${CLOTH_FRAGMENT(rim, velvet)}`);
+  };
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calCloth${rim}${velvet ? 'v' : ''}`;
+  material.userData.calCloth = 1;
+  material.userData.calClothU = { calRimK };
+  material.needsUpdate = true;
+  return material;
+}

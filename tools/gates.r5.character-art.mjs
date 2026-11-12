@@ -251,8 +251,9 @@ export const GATES = [
         paste(g, img, 2 * PW, j2 * PH / 2, PW, PH / 2);
         label(g, lbl, 2 * PW + 14, j2 * PH / 2 + 28);
       };
-      half(0, off(brow, 0.036, -0.033, -0.018), 0.24, Math.PI / 2, 11, 'HER LEFT EYE IN PROFILE');
-      half(1, off(brow, -0.036, -0.033, -0.018), 0.24, -Math.PI / 2, 11, 'HER RIGHT EYE IN PROFILE');
+      // (fix round 2, Nov 12: centred on the eye itself, 2.3 cm under the brow landmark; at 3.3 cm the eye sat at the panel's top edge)
+      half(0, off(brow, 0.036, -0.023, -0.018), 0.24, Math.PI / 2, 11, 'HER LEFT EYE IN PROFILE');
+      half(1, off(brow, -0.036, -0.023, -0.018), 0.24, -Math.PI / 2, 11, 'HER RIGHT EYE IN PROFILE');
       const hand = an.b.handR.bone.getWorldPosition(new T3()), knk = (an.bones.middle_01_r || an.b.handR.bone).getWorldPosition(new T3());
       const m = hand.clone().lerp(knk, 0.5);
       const fx = Math.sin(h), fz = Math.cos(h), rx = -Math.cos(h), rz = Math.sin(h);
@@ -431,7 +432,7 @@ export const GATES = [
     })()`,
   },
   {
-    // fix round 3, ROUND5-LOOK C-01: the skin's own light (src/hero/skinLook.js) measured on the close-up's own staging
+    // fix round 2, Nov 12, ROUND5-LOOK C-01: the skin's own light (src/hero/skinLook.js) measured on the close-up's own staging
     id: 'A-skin-scatter', kind: 'action', lane: 'character-art', settle: 800, timeout: 240000,
     title: 'LOOK C-01 skin light (src/hero/skinLook.js): front close-up at 0.8 m, 9 x 9 px patches at the projected face landmarks (linear relative luminance of the displayed frame). (a) DAY 11:00: shadow cheek 0.022-0.060; (b) lit:shadow 3.5-5.5; (c) the 80 -> 20 % fall across the face spans >= 10 % of its width; (d) shadow-cheek warmth (R-B)/(R+G+B) >= 0.40; (e) BACKLIT 18:45, her left profile: ear helix >= 1.5 x the shadow cheek, and < 1.15 x with the transmission term off (negative control); (f) NIGHT 01:00: shadow cheek <= 0.010; (g) the live skin carries userData.calSkin === 1, Brea\'s draws and texture sizes are unchanged',
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}

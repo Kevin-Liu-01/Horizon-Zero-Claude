@@ -129,6 +129,10 @@ export function reshapeEars(prim, headW, { mm, scale = 0.85, drop = 5, c = [0.07
       if (r > 0.9) { const f = 1 + ((0.9 + (r - 0.9) * 0.35) / r - 1) * k; py = c[1] + (py - c[1]) * f; pz = c[2] + (pz - c[2]) * f; }
       const lobe = smooth(-0.62, -0.95, ey);
       if (lobe > 0) { py += lobe * 0.0016; pz += (c[2] - 0.003 - pz) * lobe * 0.42; px -= lobe * 0.0008; }
+      // fix round 2, Nov 12 (the judges, from behind: "an elfin point"): the upper helix flared out from the skull, so from the back the ear
+      // came to a wing; the upper half lies closer to the head, to 70 % of its stand-off at the top
+      const sk = skull(pz), lie = 1 - 0.3 * smooth(-0.1, 0.8, ey);
+      if (px > sk) px = sk + (px - sk) * lie;
     }
     void top;
     const nx = ax + (px - ax) * w, ny = y + (py - y) * w - mm(drop) * Math.max(w, wT), nz = z + (pz - z) * w;
@@ -318,17 +322,7 @@ export function leanInwardNormals(bodyPrim, eyesPrim, { L, eyes }) {
 }
 
 /**
- * Whatever a collar's opening could show that is not skin: a closed dark lid inside the collar, from inside the neck out toward the
- * collar's own wall (`margin` short of it) a hand's width under its rim at the BACK, where the collar stands off the neck; at the
- * front and the sides it stays inside the neck (the V shows skin down to the smock). A look down inside the collar, past a bowed
- * head, over the shoulder and down the back, where the single-sided smock shows no inside, meets the lid, never the ground.
- * Fix round 1 (A-wrap-closed): the first version lay under the skin, so such a look slid down the gap between the back and the
- * smock and out through it; a lid nearer the wall than 12 mm poked through the smock's back once the arms were down.
- * Skinned like the torso under the collar (never the neck); one dark texel (the UV of `darkUV`); both faces. Call after the paint.
- * Returns the first new vertex index.
- */
-/**
- * LOOK C-01 (fix round 3): how thin the tissue is behind each vertex, for the skin's back-transmission (src/hero/skinLook.js).
+ * LOOK C-01 (fix round 2, Nov 12): how thin the tissue is behind each vertex, for the skin's back-transmission (src/hero/skinLook.js).
  * A ray from just under the surface goes inward along the vertex normal (and two neighbours of it, the thinnest wins) to the far
  * side of the same skin; `scale` turns model units into game metres. 1 at <= `t0` (5 mm), 0 at >= `t1` (25 mm) or no hit. Writes
  * the u8 normalized attribute `_CALTHIN` on `prim` (and 0 on each of `zero`, which must join it). Returns { thin, mean }.
@@ -361,6 +355,16 @@ export function bakeThinness(doc, prim, { scale = 1, t0 = 0.005, t1 = 0.025, zer
   return { thin, mean: +(sum / n).toFixed(4) };
 }
 
+/**
+ * Whatever a collar's opening could show that is not skin: a closed dark lid inside the collar, from inside the neck out toward the
+ * collar's own wall (`margin` short of it) a hand's width under its rim at the BACK, where the collar stands off the neck; at the
+ * front and the sides it stays inside the neck (the V shows skin down to the smock). A look down inside the collar, past a bowed
+ * head, over the shoulder and down the back, where the single-sided smock shows no inside, meets the lid, never the ground.
+ * Fix round 1 (A-wrap-closed): the first version lay under the skin, so such a look slid down the gap between the back and the
+ * smock and out through it; a lid nearer the wall than 12 mm poked through the smock's back once the arms were down.
+ * Skinned like the torso under the collar (never the neck); one dark texel (the UV of `darkUV`); both faces. Call after the paint.
+ * Returns the first new vertex index.
+ */
 export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 2, gap = 0.006, backLift = 0.035, margin = 0.012, lip = 0.006, darkUV, reach = -0.1 } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');

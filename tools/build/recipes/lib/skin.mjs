@@ -498,7 +498,7 @@ export function saltPaste({ y, half, xMax, salt = '#EDEAE2', thick = 0.00085, ce
     const widen = 1 + 0.42 * (noise3(X * 62, 4.3, 1.9) - 0.5) + 0.22 * (noise3(X * 190, 8.1, 2.7) - 0.5);
     const streak = noise3(X * 26, Y * 620, 1.7) - 0.5;
     const edgeSlow = noise3(X * 95, Y * 40, 4.1) - 0.5, edgeMid = noise3(X * 210, Y * 160, 9.3) - 0.5;
-    // (fix round 3: the top and bottom edges break at the finger's scale too, a dry edge that bites in and runs out, not a ruled line)
+    // (fix round 2, Nov 12: the top and bottom edges break at the finger's scale too, a dry edge that bites in and runs out, not a ruled line)
     const bite = (noise3(X * 140, Y * 30, 12.1) - 0.5) * 0.55 + (noise3(X * 420, Y * 90, 3.7) - 0.5) * 0.25;
     const r = Math.abs(Y - cy + edgeSlow * hh * 0.75) / (hh * widen * (1 + bite));
     const prof = 1 - smooth(0.3 + streak * 0.7, 1.2 + edgeMid * 0.45 + streak * 0.3, r);
@@ -534,7 +534,7 @@ export function saltPaste({ y, half, xMax, salt = '#EDEAE2', thick = 0.00085, ce
     worley2(wx * cell, wy * cell * 1.3, w);
     const edgeD = (w[1] - w[0]) / cell;                       // metres to the nearest crack
     // (an incomplete network: some plate borders never split, so the cracks run and stop like dried paste's, not a tiling)
-    // (fix round 3: a crack 0.1-0.3 mm wide is under a texel at 0.43 mm and printed as a dotted line; it is a shaded groove 0.5-0.9 mm
+    // (fix round 2, Nov 12: a crack 0.1-0.3 mm wide is under a texel at 0.43 mm and printed as a dotted line; it is a shaded groove 0.5-0.9 mm
     // across now, its floor the darkest, its walls a falling shade, so the texels carry it as a line)
     const crack = (1 - smooth(0.00022, 0.00078, edgeD)) * smooth(0.3, 0.55, thickK) * smooth(0.25, 0.45, cov) * smooth(0.42, 0.62, noise3(wx * 110, wy * 110, 2.9));
     const plate = w[2] - 0.5;
@@ -543,7 +543,7 @@ export function saltPaste({ y, half, xMax, salt = '#EDEAE2', thick = 0.00085, ce
     const curl = smooth(0.00025, 0.0011, edgeD) * (1 - smooth(0.0011, 0.0024, edgeD));
     const dH = thickAt(X, Y + 0.0009, y(X), hh) - thickAt(X, Y - 0.0009, y(X), hh);
     // the finger's drag stays in it as faint striations along the stroke
-    // (fix round 3, R66 C-02: chalk is never paper-white; albedo <= 0.85, with dusty grey-beige drifts where the dust and sweat sit,
+    // (fix round 2, Nov 12, R66 C-02: chalk is never paper-white; albedo <= 0.85, with dusty grey-beige drifts where the dust and sweat sit,
     // so in full sun it stays below the clip and keeps its texture)
     const dust = smooth(0.35, 0.75, noise3(X * 70 + 9, Y * 120, 8.8));
     const tone = (0.56 + 0.13 * lump + 0.03 * grain + 0.12 * thickK + 0.06 * plate + 0.06 * streak2 + 0.05 * curl * smooth(0.4, 0.7, thickK) - 0.07 * dust) * (1 + 0.3 * Math.max(-0.6, Math.min(0.6, dH)));
@@ -990,7 +990,7 @@ export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris =
       // 0 at the iris' edge, 1 at a corner (inner or outer, by which side of the centre the texel is)
       const toC = (mx * side >= 0 ? outC : inC), q = Math.abs(toC) > 1e-6 ? mx / toC : 0;
       // (the lateral white is what a profile sees: in the socket's shade it falls to about 40 % by the corner)
-      // (fix round 3: the profile still read a pale wedge; the lateral white falls further, to about a quarter by the corner)
+      // (fix round 2, Nov 12: the profile still read a pale wedge; the lateral white falls further, to about a quarter by the corner)
       const corner = smooth(0.2, 0.92, q);
       dimEdge = (1 - 0.68 * corner) * (1 - 0.28 * smooth(0.75, 1.05, q));
       pink = corner;

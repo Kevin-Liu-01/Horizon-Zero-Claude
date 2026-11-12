@@ -443,7 +443,7 @@ export async function build({ out = ROOT } = {}) {
     knot: CHAINS.wrapSash.points[0],
     // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
     tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1),
-      // fix round 3 (R66 d, LOOK C-05: "0.09 m wide at the root, 0.06 m before a 2.5 cm frayed fringe"; game metres / S): the strip
+      // fix round 2, Nov 12 (R66 d, LOOK C-05: "0.09 m wide at the root, 0.06 m before a 2.5 cm frayed fringe"; game metres / S): the strip
       // narrows from the knot to the fringe, and the fringe is the last 2.5 cm of the chain's 0.49 m
       width: (u) => (0.09 - 0.03 * smooth(0.12, 0.95, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 22, across: 5, rootBack: 0.014,
       // fix round 2 (R54, R66 c: soft, thick, rippling cloth, no paper edge; the length and width stay): the rows go to the free strip,
@@ -491,7 +491,7 @@ export async function build({ out = ROOT } = {}) {
     const c = [eyes[k][0], eyes[k][1], eyeSphereZ], v = [q[0] - c[0], q[1] - c[1], q[2] - c[2]], d = Math.hypot(...v) || 1;
     const dome = v[2] > 0 ? 0.0033 * (1 - smooth(0.0018, 0.0074, Math.hypot(v[0], v[1]))) : 0;
     const want = RB + dome + 0.00025;
-    // fix round 3: the rim keeps its place on the lid (x, y) and only comes forward onto the ball; pushed out radially it rode up
+    // fix round 2, Nov 12: the rim keeps its place on the lid (x, y) and only comes forward onto the ball; pushed out radially it rode up
     // over the cornea dome as a peak above the pupil
     const zf = Math.sqrt(Math.max(0, want * want - v[0] * v[0] - v[1] * v[1]));
     return zf > 0 ? [q[0], q[1], c[2] + Math.max(zf, v[2])] : [c[0] + v[0] / d * want, c[1] + v[1] / d * want, c[2] + v[2] / d * want];
@@ -536,7 +536,7 @@ export async function build({ out = ROOT } = {}) {
   const skirtFrom = appendCollarSkirt(bodyPrim, panTris, { darkUV, seg: 19 });
   // fix round 2 (A-wrap-closed's collar views): the collar's inner wall, round the sides and the back (19 lid segments pay for it)
   const liner = appendCollarLiner(bodyPrim, panTris, { darkUV, seg: 19 });
-  // fix round 3 (LOOK C-01): the tissue's thickness behind each vertex, for the skin light's back-transmission (src/hero/skinLook.js)
+  // fix round 2, Nov 12 (LOOK C-01): the tissue's thickness behind each vertex, for the skin light's back-transmission (src/hero/skinLook.js)
   // (the head only, and not the lips: the mouth's inside lies a few mm behind them, but a lip is not an ear)
   const thinness = bakeThinness(base, bodyPrim, { scale: S, zero: [eyesPrim], keep: (p) => p[1] > 1.5 && !(Math.abs(p[0]) < 0.034 && p[1] < 1.6 && p[1] > 1.555 && p[2] > 0.05) });
 

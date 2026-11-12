@@ -505,10 +505,12 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
     for (let a = 1; a <= along; a++) {
       const seg = Math.hypot(...sub(at(a, rows >> 1), at(a - 1, rows >> 1)));
       if (a <= lastPlain || !uvEnd) {
-        // fix round 3: the U restarts BEFORE a quad would run past the panel's repeated columns (rect width), not after one has:
+        // fix round 2, Nov 12: the U restarts BEFORE a quad would run past the panel's repeated columns (rect width), not after one has:
         // a long row overshot the panel into the next cell's transparent texels and printed a slit of sky across the strip
         const segPx = seg * pxPerM;
-        if (uAcc + segPx > rect[2] - 2 && uAcc > period) { uAcc -= period; emit(a - 1, uAcc, null); col++; }
+        // (a row longer than the panel's repeat, as on the gathered root's lining, restarts where the pattern repeats if it can, else
+        // at the panel's first column: a seam in the weave, never a hole)
+        if (uAcc + segPx > rect[2] - 2 && a > 1) { uAcc = Math.max(0, uAcc - period); emit(a - 1, uAcc, null); col++; }
         uAcc += segPx;
         emit(a, uAcc, null);
         quad();
