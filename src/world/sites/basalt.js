@@ -115,6 +115,7 @@ export function buildOrganShelf(terrain, clusters = ORGAN) {
   const out = { pos: [], nor: [], col: [] };
   const columns = [];
   const report = [];
+  const clusterRecs = [];
   let seed = 9001;
   for (const cl of clusters) {
     const R = mulberry32(seed += 101);
@@ -153,6 +154,11 @@ export function buildOrganShelf(terrain, clusters = ORGAN) {
       }
     }
     report.push({ id: cl.id, columns: count, hMin: +hiMin.toFixed(2), hMax: +hiMax.toFixed(2) });
+    const mine = columns.filter((c) => c.cluster === cl.id);
+    if (mine.length) {
+      const y = Math.min(...mine.map((c) => terrain.getHeight(c.x, c.z))), top = Math.max(...mine.map((c) => c.y1));
+      clusterRecs.push({ id: cl.id, x: mine.reduce((a, c) => a + c.x, 0) / mine.length, z: mine.reduce((a, c) => a + c.z, 0) / mine.length, y, height: top - y });
+    }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(out.pos, 3));
@@ -165,7 +171,7 @@ export function buildOrganShelf(terrain, clusters = ORGAN) {
   mesh.name = 'organ-shelf-landmark-columns';
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  return { mesh, columns, clusters: report };
+  return { mesh, columns, clusters: report, clusterRecs };
 }
 
 /** One tuff block: a squashed, bedded, noise-displaced icosahedron (unit size). */

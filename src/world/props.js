@@ -111,6 +111,8 @@ export class Props {
     for (const r of this.landmarkSet.records) L.push(r);
     const shelf = site('organ-shelf');
     if (shelf) L.push({ id: 'organ-shelf', name: 'Organ Shelf', kind: 'landmark', x: shelf.x, z: shelf.z, height: 14, object: this.organ.mesh });
+    // each column cluster is its own silhouette (the tallest column, from the cluster's lowest ground)
+    for (const c of this.organ.clusterRecs) L.push({ id: c.id, name: 'Organ Shelf columns', kind: 'landmark', x: c.x, z: c.z, y: c.y, height: c.height, object: this.organ.mesh, map: false });
     L.push({ id: CRATER.id, name: 'red crater', kind: 'landmark', x: CRATER.landmark.x, z: CRATER.landmark.z, height: 41, terrain: true,
       object: this.crater.buttresses });
     for (const p of this.survey.pillars) L.push({ id: `trig-${p.id}`, name: `trig pillar ${p.id}`, kind: 'trig', x: p.x, z: p.z, y: p.y, height: 7.4, object: p.object, instanceId: p.instanceId });
@@ -138,7 +140,7 @@ export class Props {
     for (const p of this.survey.pillars) K.push({ id: p.id, x: p.x, z: p.z, hard: 7, soft: 10, grass: 6 });
     for (const b of this.survey.benchmarks) K.push({ id: b.id, x: b.x, z: b.z, hard: 3.5, soft: 5, grass: 3 });
     const ring = site('sounding-ring');
-    if (ring) K.push({ id: 'sounding-ring', x: ring.x, z: ring.z, hard: 22, soft: 28, grass: 18 });
+    if (ring) K.push({ id: 'sounding-ring', x: ring.x, z: ring.z, hard: 9, soft: 22, grass: 14 });
     return K;
   }
 
@@ -219,8 +221,51 @@ export class Props {
     }
   }
 
+  /**
+   * STOP-GAP until world-ground's static kinds honour `keepouts` (its `_applyKeepouts` thins the flora
+   * only): the static scatter instances (`rocks-*`, `pan-dykes`) standing inside a keepout's hard radius
+   * are scaled to zero and their colliders handed back, once, with a report (`clearingReport`). It is the
+   * Round-4 clearings shim's rule: a clearing that is drawn but still collides, or collides but is not
+   * drawn, is a bug, and a cull that silently does nothing is a FAIL (A98b).
+   */
+  _clearScatter() {
+    const C = this.ctx.collision, veg = this.ctx.vegetation?.group;
+    if (this._scatterCleared || !C || !veg) return;
+    this._scatterCleared = true;
+    const K = this.keepouts, rep = { instances: 0, colliders: 0, byMesh: {}, skipped: [] };
+    const inHard = (x, z) => { for (let i = 0; i < K.length; i++) { const k = K[i], dx = x - k.x, dz = z - k.z; if (dx * dx + dz * dz < k.hard * k.hard) return true; } return false; };
+    const M = new THREE.Matrix4(), P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3();
+    veg.updateWorldMatrix(true, true);
+    for (const im of veg.children) {
+      if (!im.isInstancedMesh || !/^(rocks-|pan-dykes)/.test(im.name || '')) continue;
+      const hits = [];
+      for (let i = 0; i < im.count; i++) {
+        im.getMatrixAt(i, M);
+        P.setFromMatrixPosition(M).applyMatrix4(im.matrixWorld);
+        if (!inHard(P.x, P.z)) continue;
+        M.decompose(P, Q, S); M.compose(P, Q, S.set(0, 0, 0)); im.setMatrixAt(i, M);
+        P.applyMatrix4(im.matrixWorld);
+        hits.push([P.x, P.z]);
+      }
+      if (!hits.length) continue;
+      im.instanceMatrix.needsUpdate = true;
+      const dead = [];
+      for (const c of C.colliders) {
+        if (c.ref !== im && c.node !== im) continue;
+        const cx = c.type === 'sphere' || c.type === 'box' ? c.cx : (c.minx + c.maxx) / 2, cz = c.type === 'sphere' || c.type === 'box' ? c.cz : (c.minz + c.maxz) / 2;
+        if (hits.some(([x, z]) => Math.abs(x - cx) < 0.6 && Math.abs(z - cz) < 0.6)) dead.push(c.id);
+      }
+      if (dead.length) C.unregister(dead);
+      rep.instances += hits.length; rep.colliders += dead.length;
+      rep.byMesh[im.name] = { instances: hits.length, colliders: dead.length };
+    }
+    this.clearingReport = { trees: rep.instances, colliders: rep.colliders, instances: rep.instances, byMesh: rep.byMesh, skipped: rep.skipped,
+      note: 'world-props zeroes world-ground static scatter inside keepout hard radii until world-ground thins its static kinds itself' };
+  }
+
   update(dt, t) {
     if (this.loaded) {
+      if (!this._scatterCleared) this._clearScatter();
       if (!this._collidersDone) this.registerColliders();
       if (!this._interactablesDone) this._registerInteractables();
       this.landmarkSet.update(dt, t);

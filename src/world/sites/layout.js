@@ -135,8 +135,8 @@ export const CRATER = { id: 'red-crater', centre: { e: -388, n: -160 }, rx: 108,
 export const BENCHMARKS = [
   { id: 'bm-01', name: 'Benchmark 1 (Ninewalls)', region: 'ninewalls', biome: 'holds', x: 19, z: 243, r: 14 },
   { id: 'bm-02', name: 'Jameo benchmark', region: 'jameo', biome: 'holds', x: 87, z: 147, r: 14 },
-  { id: 'bm-03', name: 'Saltrow benchmark', region: 'saltrow', biome: 'pans', x: -246, z: 300, r: 12 },
-  { id: 'bm-04', name: 'Glass benchmark', region: 'the-glass', biome: 'pans', x: -312, z: 182, r: 12 },
+  { id: 'bm-03', name: 'Beach benchmark', region: 'black-sand-beach', biome: 'pans', x: -211, z: 397, r: 5 },
+  { id: 'bm-04', name: 'Glass benchmark', region: 'the-glass', biome: 'pans', x: -365, z: 140, r: 5 },
   { id: 'bm-05', name: 'Kiln Yards benchmark', region: 'kiln-yards', biome: 'malpais', x: 204, z: 3, r: 14 },
   { id: 'bm-06', name: 'Hornito benchmark', region: 'hornito-field', biome: 'malpais', x: 296, z: 201, r: 14 },
   { id: 'bm-07', name: 'Mistfold benchmark', region: 'mistfold', biome: 'cloudline', x: 212, z: -260, r: 14 },
@@ -166,12 +166,16 @@ export const STACKS = [
 
 /**
  * The Roque plug (R66 m: 55-60 m, on the caldera's west rim) and its 28 m
- * companion needle, on the rim crest north of T6 and clear of all ten sight
- * rays (≥ 20 m off T6-T4 and T6-T5; the tests are in A-trig-pillars).
+ * companion needle, on the rim's south-west shoulder 50-65 m from T6. Chosen
+ * (offline search on world-ground's bake) as the rim ground the Pans see whole:
+ * from the black-sand beach the plug stands ~55 m clear above the rim line
+ * behind it (>= 105 px at the look.pansInland camera); both stay >= 17 m off
+ * every one of the ten sight rays (A-trig-pillars tests them). On the crest
+ * north of T6 the Flank hid all but the top 18 m from the Pans.
  */
 export const ROQUES = [
-  { id: 'roque-plug', kind: 'roque-plug', x: -58, z: -130, height: 58, yaw: 0.3 },
-  { id: 'roque-needle', kind: 'roque-needle', x: -70, z: -146, height: 28, yaw: 1.7 },
+  { id: 'roque-plug', kind: 'roque-plug', x: -28, z: 1, height: 58, yaw: 0.3 },
+  { id: 'roque-needle', kind: 'roque-needle', x: -40, z: -14, height: 28, yaw: 1.7 },
 ];
 
 /** The bearing sectors A-landmark-bearing grades, and its stations (W1: Saltrow). */

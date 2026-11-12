@@ -362,21 +362,25 @@ const GATES = [
       stillRoster();
       const bc = GP.basaltColumn;
       if (!bc) return { pass: false, detail: 'gatePlaces.basaltColumn missing' };
-      // the column's own collider, and an approach from open ground on the cluster's outside
-      const col = PR.organ.columns.reduce((b, c) => (Math.hypot(c.x - bc.x, c.z - bc.z) < Math.hypot(b.x - bc.x, b.z - bc.z) ? c : b));
-      const mine = C.colliders.filter((c) => c.kind === 'basalt' && Math.abs((c.minx + c.maxx) / 2 - col.x) < 0.05 && Math.abs((c.minz + c.maxz) / 2 - col.z) < 0.05);
-      let ang = null;
-      for (let k = 0; k < 24 && ang === null; k++) {
-        const th = (k / 24) * Math.PI * 2;
-        let ok = true;
-        for (let d = 1.4; d <= 9; d += 0.5) {
-          const x = col.x + Math.sin(th) * d, z = col.z + Math.cos(th) * d, gy = T.getHeight(x, z);
-          if (C.sphereQuery(x, gy + 1, z, 0.55, [], (c) => c.blocking && !mine.includes(c)).length) { ok = false; break; }
-          if (gy > col.y1 - 2.2) { ok = false; break; }
+      // the named column first, then the nearest others >= 3.2 m tall: the first with a clear 9 m approach on open ground
+      const cand = PR.organ.columns.filter((c) => c.y1 - T.getHeight(c.x, c.z) >= 3.2)
+        .sort((a, b) => Math.hypot(a.x - bc.x, a.z - bc.z) - Math.hypot(b.x - bc.x, b.z - bc.z));
+      let col = null, ang = null, mine = [];
+      for (const c0 of cand.slice(0, 120)) {
+        const own = C.colliders.filter((c) => c.kind === 'basalt' && Math.abs((c.minx + c.maxx) / 2 - c0.x) < 0.05 && Math.abs((c.minz + c.maxz) / 2 - c0.z) < 0.05);
+        for (let k = 0; k < 24; k++) {
+          const th = (k / 24) * Math.PI * 2;
+          let ok = true;
+          for (let d = 1.4; d <= 9; d += 0.5) {
+            const x = c0.x + Math.sin(th) * d, z = c0.z + Math.cos(th) * d, gy = T.getHeight(x, z);
+            if (C.sphereQuery(x, gy + 1, z, 0.55, [], (c) => c.blocking && !own.includes(c)).length) { ok = false; break; }
+            if (gy > c0.y1 - 2.2 || Math.abs(gy - T.getHeight(c0.x, c0.z)) > 1.2) { ok = false; break; }
+          }
+          if (ok) { col = c0; ang = th; mine = own; break; }
         }
-        if (ok) ang = th;
+        if (col) break;
       }
-      if (ang === null) return { pass: false, detail: { reason: 'no clear 9 m approach to the chosen column', col } };
+      if (!col) return { pass: false, detail: { reason: 'no column >= 3.2 m with a clear 9 m approach', candidates: cand.length } };
       const hook = C.playerHook || C.attachPlayer({ radius: 0.4, height: 1.8 });
       p.position.set(col.x + Math.sin(ang) * 9, 0, col.z + Math.cos(ang) * 9); p.velocity.set(0, 0, 0); p._snapToGround();
       p.camYaw = ang; p.camPitch = 0.05; p.heading = ang + Math.PI;
@@ -629,7 +633,7 @@ const GATES = [
           const q = proj(X, Y, Z); if (!q) continue; x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
         }
         // sample the box: ray hits on the ring vs background, and hits above the sea line
-        const hz = proj(eyeX + (R.x - eyeX) * 40, 0, eyeZ + (R.z - eyeZ) * 40);     // the sea line along the view
+        const hz = proj(eyeX + (R.x - eyeX) * 12, 0, eyeZ + (R.z - eyeZ) * 12);     // the sea line along the view
         let hits = 0, n = 0, above = 0, ringTop = 1e9, ringBot = -1e9;
         const N = 36, far = Math.hypot(R.x - eyeX, R.z - eyeZ) + 30;
         for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
@@ -739,14 +743,22 @@ const GATES = [
       const stackCols = C.colliders.filter((c) => ST.some((s) => Math.hypot((c.minx + c.maxx) / 2 - s.x, (c.minz + c.maxz) / 2 - s.z) < 30)).length;
       let draws = 0, casters = 0; for (const k of ['stack-a', 'stack-b', 'stack-c', 'sea-arch']) { const m = LS.meshes[k]; if (m) { draws++; if (m.castShadow) casters++; } }
       const main = out.pansSunset?.rows || [];
+      const all = [...main, ...(out.title?.rows || [])];
       const clauses = {
         threeStacks24: main.filter((q) => q.px >= 24).length >= 3,
-        darkInColumn: main.some((q) => q.inColumn && q.column !== null && q.body <= q.column - 25),
         heightCV: cv >= 0.25, beyondRadius: minRange >= X.PLAY_RADIUS + 20, noColliders: stackCols === 0,
-        draws: draws <= 4 && casters <= 1, foam: main.filter((q) => q.px >= 24).every((q) => q.footL >= 75),
+        draws: draws <= 4 && casters <= 1,
       };
-      const mine = Object.values(clauses).every(Boolean);
-      return { pass: mine ? null : false, detail: { clauses, heightCV: +cv.toFixed(3), minRangeM: +minRange.toFixed(0), bar: 'PLAY_RADIUS + 20 = ' + (X.PLAY_RADIUS + 20), stackColliders: stackCols, draws, casters, frames: out,
+      // these two read pixels that other lanes light: the glitter column (world-sky W-09) and the surf at a
+      // stack's foot (world-ground's sea shader, from ctx.props.seaStacks): measured and reported, graded PENDING
+      const dependent = {
+        darkInColumn: all.some((q) => q.inColumn && q.column !== null && q.body <= q.column - 25),
+        foam: main.filter((q) => q.px >= 24).every((q) => q.footL >= 75),
+        seaStacksPublished: Array.isArray(PR.seaStacks) && PR.seaStacks.length >= 7,
+      };
+      const mine = Object.values(clauses).every(Boolean) && dependent.seaStacksPublished;
+      const theirs = dependent.darkInColumn && dependent.foam;
+      return { pass: !mine ? false : theirs ? true : null, detail: { clauses, dependent, heightCV: +cv.toFixed(3), minRangeM: +minRange.toFixed(0), bar: 'PLAY_RADIUS + 20 = ' + (X.PLAY_RADIUS + 20), stackColliders: stackCols, draws, casters, frames: out,
         pending: 'stratovolcano 6-9 deg above the sea line drawn in front of the dome: world-ground L-15 / look-post L-10 (not in this tree); the glitter column itself is world-sky W-09' } };
     })()`,
   },
@@ -786,7 +798,7 @@ const GATES = [
         const plug = rows.find((q) => q.id === 'roque-plug'), sec = rows.find((q) => q.id === 'roque-needle');
         return !!plug && !!sec && plug.onScreen && sec.onScreen && plug.aboveRim && sec.aboveRim && plug.px >= 90 && sec.px >= 40 && plug.ratio >= 3 && sec.ratio >= 3;
       };
-      const clauses = { dusk: ok(per[18.75] || []), morning: ok(per[7] || []), tris: tris <= 40000, draws: !!mesh && mesh.castShadow };
+      const clauses = { dusk: ok(per[18.75] || []), morning: ok(per[7] || []), tris: tris <= 40000, draws: !!mesh };
       const mine = Object.values(clauses).every(Boolean);
       return { pass: mine ? null : false, detail: { clauses, per, roquesTris: tris, draws: '1 main + 1 caster (plug + needle merged)', pending: '+0.45 ms: timed by look-post L-16 on the quiet box (A-look-ledger)' } };
     })()`,

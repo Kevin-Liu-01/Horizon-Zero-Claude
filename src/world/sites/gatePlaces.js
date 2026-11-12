@@ -107,13 +107,13 @@ export function buildGatePlaces(ctx, props) {
   look('aim', -196, 398, 1.6, 300, 0, 46, 17.75, 'trade', 'over the shoulder on the black-sand beach toward the Ring', { pose: 'aim', stub: true });
   look('close', REST?.x ?? salt.x, REST?.z ?? salt.z, 1.55, 250, 0, 30, 18.75, 'trade', 'at 0.8 m at the cistern (character-art\'s close-up place)', { pose: 'close', dist: 0.8, stub: true });
   look('dusk', -338, 214, 1.5, 270, 1, 50, 19.75, 'trade', 'among the sea-lavender on the Glass\'s shore', { pose: 'behind', stub: true });
-  look('pansInland', -255, 380, 1.7, 345, 3, 55, 18.75, 'trade', 'from the black-sand beach inland: the Ring at left, the salt field, Saltrow, the caldera rim and the Roque plug on the skyline');
+  look('pansInland', -200, 414, 1.7, 341.5, 2, 58, 18.75, 'trade', 'from the black-sand beach inland: the Ring at the left edge, the salt field and pumps, the caldera rim with the Roque plug and needle on the skyline at the right');
   look('pansSunset', -226, 186, 1.8, 262, 0, 50, 18.75, 'trade', 'Saltrow\'s rise west over the pans into the sun: the glitter path and the stacks');
   look('meadow', -214, 230, 1.6, 240, 0, 50, 17.5, 'trade', 'the gold meadow belt landward of the pans (world-ground W-06)', { stub: true });
   look('beach', -226, 392, 1.6, 255, -1, 50, 18.25, 'trade', 'the black-sand beach and its surf toward the Ring and the stacks', { stub: true });
-  look('title', -255, 380, 1.7, 330, 2, 40, 18.67, 'trade', 'U-08 title: a rise facing the Ring and the spires; Brea idle (shell-ui W2)', { pose: 'title', stub: true });
+  look('title', -200, 414, 1.7, 335, 2, 40, 18.67, 'trade', 'U-08 title: a rise facing the Ring and the spires; Brea idle (shell-ui W2)', { pose: 'title', stub: true });
   look('saltrowDusk', salt.x + 30, salt.z + 40, 1.7, 330, 1, 50, 19.5, 'trade', 'Saltrow at dusk (settlements W2)', { stub: true });
-  look('craterWall', -356, 196, 1.7, 335, 12, 50, 17.0, 'trade', 'the red tuff wall from the Glass\'s shore: beds, talus, tuff blocks');
+  look('craterWall', -350, 300, 1.7, 352, 8, 55, 17.0, 'trade', 'from the salt field over the Gauge to the red tuff wall: beds, talus, tuff blocks, the reservoir pump');
   look('steepFace', P.steepFace?.x ?? -14, (P.steepFace?.z ?? -380) + 40, 1.7, 0, 10, 50, 16.0, 'trade', 'the north-coast scarp (world-ground\'s steepFace row)', { stub: true });
   look('reed', -406, 196, 1.2, 60, 0, 50, 17.0, 'trade', 'reed cover at the Glass (world-ground F-4)', { stub: true });
   look('brazier', salt.x + 10, salt.z + 6, 1.6, 200, 0, 50, 20.0, 'trade', 'the Brazier at Saltrow (W3, F-1)', { stub: true });
