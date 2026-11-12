@@ -212,7 +212,9 @@ export async function build({ out = ROOT, scale = 1, file = null } = {}) {
     strut(H('head'), V(s * 0.205, VY, 0), V(s * 0.17, VY, 0), 0.062, 0.062, { surf: 'bronze', tone: C.BRONZE, sides: 16, wear: 0.6 });
   }
   rbox(H('head'), V(0, VY - 0.06, 0), [0.40, 0.025, 0.09], 0.008, { surf: 'bronze', tone: C.BRONZE, wear: 0.6 });
-  strut(L('head'), V(-0.17, VY, 0), V(0.17, VY, 0), 0.05, 0.05, { surf: 'lamp', tone: C.LAMP, sides: 16 });
+  // the vial glass is glaze on the hull, lit from inside by the lamp's spill (I-01 `_LAMPPROX` = 1 on it): it glows in
+  // the lamp's state colour without adding a second emissive body to the silhouette (A-ip-emissive's area cap)
+  strut(H('head'), V(-0.17, VY, 0), V(0.17, VY, 0), 0.05, 0.05, { surf: 'glaze', tone: 0xdfe8c8, sides: 16, wear: 0.05 });
   // graduation rings on the vial (graphite hairlines)
   for (const x of [-0.04, 0.04]) torus(H('head'), V(x, VY, 0), 0.052, 0.005, 'x', { surf: 'graphite', tone: C.GRAPH, tube: 4, radial: 16 });
 

@@ -80,6 +80,7 @@ export class Plumb extends ExpansionMachine {
     this._hullHidden = !!opts.hullHidden;
     this._teleA = null;
     this._flagA = null;
+    this.onAlerted = () => this._chime();   // Machine's constructor writes an own `onAlerted = null`: shadow it
     this._vialHits = 0;
     this._toppleT = 0.5; this._toppleT = -1;
     this._toppleDir = 1;
@@ -112,10 +113,9 @@ export class Plumb extends ExpansionMachine {
       walk: T.walk, run: T.run, runRef: this.runSpeed,
       rollAmp: 0.012, impactAmp: 0.018, breatheRate: 0.5, stepDustSpeed: 3.0 * rk,
       turnRadius: 0.9 * k, lookClampYaw: Math.PI * 0.95, stanceFlex: 0.05,
-      fidgets: [
-        { name: 'station-sweep', head: 0.9, dur: 3.2 },
-        { name: 'reading', head: -0.5, dur: 2.6 },
-      ],
+      // no idle head fidget: the drum turns only to a stimulus (the gait's look), so a parked Plumb's lamp
+      // stays on its lens axis (the lamp gates film it there)
+      fidgets: [],
     });
     this.gait.update(0.016, 0);
     foldMachineMeshes(this, k !== 1 ? { pool: `plumb@${k}` } : {});
@@ -147,7 +147,7 @@ export class Plumb extends ExpansionMachine {
   }
 
   /** Bible: "chimes on alarm" — the herd ripple listens (`./tiller-herd.js`). */
-  onAlerted() {
+  _chime() {
     if (this.lampDarkT > 0) return;
     this.emit('plumb-chime', { machine: this, x: this.position.x, z: this.position.z });
   }
@@ -307,12 +307,13 @@ export default {
   tables: {
     /** the sentry: long sight, a slow fill, a 360-degree sweep; `flags: true` is the Sightline (the Flag) */
     perception: { gain: 1.7, periphRange: 12, scanSweep: 2.6, scanPeriod: 6.5, contactRange: 3.4, flags: true },
-    engage: { archetype: 'orbit', band: [3.0, 12], orbitSpeed: 0.55, backSpeed: 0.8 },
+    engage: { archetype: 'orbit', band: [2.6, 7], orbitSpeed: 0.55, backSpeed: 0.8 },
     attacks: [
-      { id: 'pendulum', min: 0, max: 3.4, cd: 3.4, score: 1.0, generic: 'sweep',
-        params: { damage: 14, windup: 0.55, strike: 0.38, recover: 0.7, range: 3.4, arcDeg: 360, knock: 7 } },
-      { id: 'bob-drop', min: 0, max: 2.6, cd: 4.2, score: 0.85, generic: 'slam',
-        params: { damage: 18, windup: 0.62, strike: 0.2, recover: 0.8, ring: 2.0, radius: 2.0 } },
+      { id: 'pendulum', min: 0, max: 3.8, cd: 3.4, score: 1.0, generic: 'sweep',
+        params: { damage: 14, windup: 0.55, strike: 0.38, recover: 0.7, range: 3.8, arcDeg: 360, knock: 7 } },
+      // Bob Drop: the tripod steps in (a short committed stride) and drops the bob in front of it
+      { id: 'bob-drop', min: 0, max: 4.6, cd: 4.2, score: 0.85, generic: 'lunge',
+        params: { damage: 18, windup: 0.62, strike: 0.24, recover: 0.8, dash: 2.0, range: 2.4 } },
       // Sightline (bible §7.4 #2): the drum's hairline sight — a narrow, light hit at range that Flags her
       { id: 'sightline', min: 2.8, max: 24, cd: 5.0, score: 0.8, generic: 'volley',
         params: { damage: 5, windup: 0.7, strike: 0.15, recover: 0.6, shots: 1, range: 24, arcDeg: 6 } },

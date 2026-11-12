@@ -362,19 +362,21 @@ export function finish(hull, opts = {}) {
     if (slot === bronzeSlot || slot === patinaSlot) {
       const occl = 1 - ao[i];
       const patch = vnoise(x, y, z, 0.09);
-      const v = Math.min(1, Math.max(0, occl * 2.2 + (patch - 0.62) * 2.4));
+      const v = Math.min(1, Math.max(0, occl * 2.4 + (patch - 0.5) * 2.6));
       if (v > 0) {
         tmp.setRGB(r, g, b).lerp(verdi.clone().multiplyScalar(0.55 + 0.45 * a), v * 0.85);
         r = tmp.r; g = tmp.g; b = tmp.b;
       }
     }
-    // dust and grime band: the feet sit in the ground (A-hull-value c: foot band <= 0.8 x the upper half)
+    // dust and grime band: the feet sit in the ground (A-hull-value c: foot band <= 0.8 x the upper half);
+    // soil-dark at the pads, fading out by `footBand` metres
     const fb = y < floorH ? 1 - y / floorH : 0;
     if (fb > 0) {
-      const k = fb * fb;
-      r = r * (1 - 0.5 * k) + dust.r * 0.22 * k;
-      g = g * (1 - 0.5 * k) + dust.g * 0.22 * k;
-      b = b * (1 - 0.5 * k) + dust.b * 0.22 * k;
+      const k = Math.pow(fb, 0.8);
+      const keep = 1 - 0.72 * k, add = 0.06 * k;
+      r = r * keep + dust.r * add;
+      g = g * keep + dust.g * add;
+      b = b * keep + dust.b * add;
     }
     hull.col[i * 3] = r; hull.col[i * 3 + 1] = g; hull.col[i * 3 + 2] = b;
     // crazing: glaze roughness 0.15-0.30 by a crackle field; other surfaces jitter a row

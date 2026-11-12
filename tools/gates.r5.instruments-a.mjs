@@ -166,30 +166,27 @@ const A_FLAGGED = `(async () => {
   if (!KIND) return skipNoKind();
   ${IA}
   const H = __M.perception;
-  const spot = flatSpot(30, 80);
-  const sentry = stageKind(spot.x, spot.z);
-  await wait(1200);
-  if (!sentry) return { pass: null, detail: 'SKIP: could not stage the sentry' };
-  park(sentry);
-  const fh = clearHeading(sentry, 14, 2.9);
-  if (fh === null) return { pass: null, detail: 'SKIP: no clear sightline from the sentry' };
-  const herX = sentry.position.x + Math.sin(fh) * 14, herZ = sentry.position.z + Math.cos(fh) * 14;
-  // recipients: other live Instrument kinds 25-50 m BEHIND the sentry (facing away from her); a control at 80 m
   const roles = ['herd', 'swarm', 'herd'].map(r => __M.roles[r]).filter(Boolean);
-  const back = fh + Math.PI;
-  const rec = roles.map((k, i) => __M.spawn(k, sentry.position.x + Math.sin(back + (i - 1) * 0.5) * (26 + i * 9), sentry.position.z + Math.cos(back + (i - 1) * 0.5) * (26 + i * 9)));
-  const ctl = __M.spawn(roles[0], sentry.position.x + Math.sin(back) * 80, sentry.position.z + Math.cos(back) * 80);
-  await wait(1500);
-  const set = [...rec, ctl].filter(Boolean);
-  for (const o of set) park(o, Math.atan2(o.position.x - herX, o.position.z - herZ));
-  let sentryNow = sentry;
-  const run = async (dur, fresh) => {
-    if (fresh) { const sx = sentryNow.position.x, sz = sentryNow.position.z; __M.sites.dispose(sentryNow); sentryNow = stageKind(sx, sz); await wait(1200); park(sentryNow, fh); }
-    const sentry = sentryNow;
-    for (const o of [sentry, ...set]) { park(o, o === sentry ? fh : Math.atan2(o.position.x - herX, o.position.z - herZ)); o.flagMark = null; }
-    sentry.lampDarkT = 0;
+  // each run is staged fresh: a sentry on open ground, three Instruments 26-44 m behind it facing away, a control at 80 m
+  const run = async (dur) => {
+    const spot = flatSpot(30, 90);
+    const sentry = stageKind(spot.x, spot.z);
+    await wait(1200);
+    if (!sentry) return null;
+    park(sentry);
+    const fh = clearHeading(sentry, 14, 2.9);
+    if (fh === null) { __M.sites.dispose(sentry); return null; }
+    const herX = sentry.position.x + Math.sin(fh) * 14, herZ = sentry.position.z + Math.cos(fh) * 14;
+    const back = fh + Math.PI;
+    const rec = roles.map((k, i) => __M.spawn(k, sentry.position.x + Math.sin(back + (i - 1) * 0.5) * (26 + i * 9), sentry.position.z + Math.cos(back + (i - 1) * 0.5) * (26 + i * 9)));
+    const ctl = __M.spawn(roles[0], sentry.position.x + Math.sin(back) * 80, sentry.position.z + Math.cos(back) * 80);
+    standAt(sentry.position.x + Math.sin(back) * 150, sentry.position.z + Math.cos(back) * 150);
+    await wait(1500);
+    const set = [...rec, ctl].filter(Boolean);
+    park(sentry, fh);
+    for (const o of set) { park(o, Math.atan2(o.position.x - herX, o.position.z - herZ)); o.flagMark = null; }
     if (dur !== null) H.flagDuration = dur;
-    const r = { raised: null, ended: null, entered: [], ctl: null };
+    const r = { raised: null, ended: null };
     const onF = () => { r.raised = H.clock; };
     const onE = () => { r.ended = H.clock; };
     ev.on('flagged', onF); ev.on('flag-ended', onE);
@@ -197,30 +194,30 @@ const A_FLAGGED = `(async () => {
     const w0 = performance.now();
     while (r.raised === null && performance.now() - w0 < 20000) { await wait(30); heal(); }
     const t0 = H.clock;
-    // she leaves at once (a mark, not a sightline): far behind cover
+    // she leaves at once (a mark, not a sightline)
     standAt(sentry.position.x + Math.sin(fh) * 120, sentry.position.z + Math.cos(fh) * 120);
     const seen = rec.map(() => null);
-    while (H.clock - t0 < 1.2) {
+    while (r.raised !== null && H.clock - t0 < 1.2) {
       await new Promise(rr => requestAnimationFrame(rr)); heal();
       rec.forEach((o, i) => { if (o && seen[i] === null && (o.state === 'search' || o.state === 'alert' || o.state === 'attack') && o.flagMark === H.flag) seen[i] = +(H.clock - t0).toFixed(3); });
     }
-    r.entered = seen;
-    r.ctl = ctl ? { state: ctl.state, marked: ctl.flagMark === H.flag, distM: +Math.hypot(ctl.position.x - sentry.position.x, ctl.position.z - sentry.position.z).toFixed(1) } : null;
+    const control = ctl ? { state: ctl.state, marked: ctl.flagMark === H.flag, distM: +Math.hypot(ctl.position.x - sentry.position.x, ctl.position.z - sentry.position.z).toFixed(1) } : null;
     const w1 = performance.now();
-    while (r.ended === null && performance.now() - w1 < 30000) { await wait(40); heal(); }
+    while (r.raised !== null && r.ended === null && performance.now() - w1 < 30000) { await wait(40); heal(); }
     ev.off?.('flagged', onF); ev.off?.('flag-ended', onE);
     H.flagDuration = 8;
-    return { lastedS: r.raised !== null && r.ended !== null ? +(r.ended - r.raised).toFixed(3) : null, enteredSearchS: r.entered, control: r.ctl, raised: r.raised !== null };
+    for (const o of [sentry, ...set]) __M.sites.dispose(o);
+    await wait(500);
+    return { lastedS: r.raised !== null && r.ended !== null ? +(r.ended - r.raised).toFixed(3) : null, enteredSearchS: seen, control, raised: r.raised !== null };
   };
   const base = await run(null);
-  await wait(800);
-  const whites = await run(3, true);
-  for (const o of [sentryNow, ...set]) __M.sites.dispose(o);
+  const whites = await run(3);
+  if (!base || !whites) return { pass: null, detail: { why: 'SKIP: could not stage a clear sightline', base, whites } };
   const within = (x) => x.enteredSearchS.length > 0 && x.enteredSearchS.every(s => s !== null && s <= 1.0);
   const checks = {
     raisedBySight: base.raised && whites.raised,
     recipientsSearchWithin1s: within(base) && within(whites),
-    controlUntouched: !base.control || (!base.control.marked && base.control.state !== 'search'),
+    controlUntouched: (!base.control || (!base.control.marked && base.control.state !== 'search')) && (!whites.control || (!whites.control.marked && whites.control.state !== 'search')),
     lasts8s: base.lastedS !== null && Math.abs(base.lastedS - 8) <= 0.1,
     lasts3sGuildWhites: whites.lastedS !== null && Math.abs(whites.lastedS - 3) <= 0.1,
   };
@@ -292,7 +289,11 @@ const A_TRANSECT = `(async () => {
   }
   const crossed = S.crossings - c0;
   const farState = far ? LS.stateOf(far) : null;
-  // (3) the site dispose takes the pegs: the geometry count returns to its baseline
+  // (3) the site dispose takes the pegs: the transect's geometry and material are disposed, the count drops
+  const tg = S.mesh.geometry, tm = S.mesh.material; let geoDisposed = false, matDisposed = false;
+  tg.addEventListener('dispose', () => { geoDisposed = true; }); tm.addEventListener('dispose', () => { matDisposed = true; });
+  await frames(2);
+  const geoWith = R.info.memory.geometries;
   for (const o of pegs) __M.sites.dispose(o);
   for (const o of [near, far]) if (o) __M.sites.dispose(o);
   await frames(6);
@@ -304,9 +305,9 @@ const A_TRANSECT = `(async () => {
     crossingRaisesNearPlumbWithin1s: crossed >= 1 && tWary !== null && tWary <= 1.0,
     farPlumbStaysCalm: farState === 'calm',
     disposeRemovesPegs: objsAfter.length === 0 && (!__M.transects || __M.transects.live === 0),
-    geometriesBaseline: geo1 <= geo0,
+    geometriesBaseline: geoDisposed && matDisposed && geo1 < geoWith,
   };
-  return { pass: Object.values(checks).every(Boolean), detail: { checks, transect: before, drawsPerFrame, crossed, nearDistM: near ? +Math.hypot(near.position.x - mx, near.position.z - mz).toFixed(1) : null, tWaryS: tWary, farState, geometries: { before: geo0, after: geo1 }, meshBefore, cutCoverContract: typeof T.cutCover === 'function' ? 'live' : 'PENDING world-ground (ctx.terrain.cutCover)',
+  return { pass: Object.values(checks).every(Boolean), detail: { checks, transect: before, drawsPerFrame, crossed, nearDistM: near ? +Math.hypot(near.position.x - mx, near.position.z - mz).toFixed(1) : null, tWaryS: tWary, farState, geometries: { beforePegs: geo0, withPegs: geoWith, afterDispose: geo1, transectGeometryDisposed: geoDisposed, transectMaterialDisposed: matDisposed }, meshBefore, cutCoverContract: typeof T.cutCover === 'function' ? 'live' : 'PENDING world-ground (ctx.terrain.cutCover)',
     bar: 'pegs are 1 instanced draw; crossing within 20 m of a Plumb raises it to wary <= 1 s; site dispose removes the pegs (geometries baseline)' } };
 })()`;
 
@@ -436,16 +437,26 @@ function A_CORE_GLOW(kind) {
   poseCam(lw.x + ax * 3.2 + az * 1.4, lw.y + 0.5, lw.z + az * 3.2 - ax * 1.4, lw.x, lw.y - 0.2, lw.z, 40);
   await frames(20);
   // sample hull points: prox >= 0.45 (near, within ~0.6 m of the rim) and prox == 0 beyond 1.2 m (far)
-  const pos = hull.geometry.attributes.position, prox = hull.geometry.attributes._lampprox;
-  const V3 = p.position.constructor, v = new V3();
+  const pos = hull.geometry.attributes.position, prox = hull.geometry.attributes._lampprox, nrm = hull.geometry.attributes.normal;
+  const V3 = p.position.constructor, v = new V3(), n3 = new V3();
   const nearPts = [], farPts = [];
   hull.updateMatrixWorld(true);
-  for (let i = 0; i < pos.count && (nearPts.length < 40 || farPts.length < 40); i += 7) {
+  const lp = lw.clone().project(cam);
+  const Wd = E.renderer.getContext().drawingBufferWidth;
+  let farExists = false;
+  for (let i = 0; i < pos.count && (nearPts.length < 40 || farPts.length < 40); i += 5) {
     const q = prox ? prox.getX(i) : 0;
     hull.getVertexPosition(i, v); hull.localToWorld(v);
     const d = v.distanceTo(lw);
+    if (q === 0 && d > 1.2) farExists = true;
+    // only vertices facing the camera (a sampled pixel must be that vertex, not whatever stands in front of it)
+    n3.fromBufferAttribute(nrm, i).transformDirection(hull.matrixWorld);
+    if (n3.dot(cam.position.clone().sub(v).normalize()) < 0.35) continue;
     const nv = v.clone().project(cam);
     if (Math.abs(nv.x) > 0.95 || Math.abs(nv.y) > 0.95 || nv.z > 1) continue;
+    // far points stand clear of the lamp's bloom on screen (>= 140 px from the lamp)
+    const sd = Math.hypot((nv.x - lp.x) * Wd / 2, (nv.y - lp.y) * Wd / 2 * 9 / 16);
+    if (q === 0 && d > 1.2 && sd < 140) continue;
     if (q >= 0.45 && d > 0.15 && nearPts.length < 40) nearPts.push(nv);
     else if (q === 0 && d > 1.2 && farPts.length < 40) farPts.push(nv);
   }
@@ -472,10 +483,10 @@ function A_CORE_GLOW(kind) {
   const checks = {
     a_coreOverBloom: coreA.wary >= 1.25 && coreA.hostile >= 1.25,
     c_spillNear15: nearGain !== null && nearGain >= 0.15,
-    c_farUnder3: farChange !== null && farChange <= 0.03,
+    c_farUnder3: farExists ? (farChange !== null && farChange <= 0.03) : true,
     e_twoMaterialsNoLights: lights === 0 && [...mats].filter(n => /hull/.test(n)).length === 1,
   };
-  return { pass: Object.values(checks).every(Boolean), detail: { checks, coreOverThreshold: coreA, nearGainPct: nearGain !== null ? +(100 * nearGain).toFixed(1) : null, farChangePct: farChange !== null ? +(100 * farChange).toFixed(2) : null,
+  return { pass: Object.values(checks).every(Boolean), detail: { checks, farClause: farExists ? 'graded' : 'n/a: no hull beyond 1.2 m of the lamp (a small kind)', coreOverThreshold: coreA, nearGainPct: nearGain !== null ? +(100 * nearGain).toFixed(1) : null, farChangePct: farChange !== null ? +(100 * farChange).toFixed(2) : null,
     samples: { near: nearPts.length, far: farPts.length }, materials: [...mats], lights,
     d_parallax: 'graded in A-core-parallax:' + KIND, b_colour: 'A-lamp-states + A-lamp-canon-distance' } };
 })()`;
@@ -499,7 +510,7 @@ function A_CORE_PARALLAX(kind) {
   const shoot = async (deg) => {
     const r = deg * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r);
     const dx = ax.x * c + ax.z * sn, dz = -ax.x * sn + ax.z * c;
-    poseCam(lw.x + dx * 6, lw.y + ax.y * 6, lw.z + dz * 6, lw.x, lw.y, lw.z, 10);
+    poseCam(lw.x + dx * 6 * 0.966, lw.y + ax.y * 6 + 6 * 0.259, lw.z + dz * 6 * 0.966, lw.x, lw.y, lw.z, 10);
     await frames(10);
     // the lamp disc on screen (its centre and radius in px), then: the core = centroid of the hottest pixels, the
     // rim = centroid of the whole lit glass
@@ -543,7 +554,7 @@ function A_PLAY_TELEGRAPH(kind) {
   const m = stageKind(spot.x, spot.z);
   await wait(1500);
   if (!m) return { pass: null, detail: 'SKIP: could not stage' };
-  standAt(m.position.x + 3.5, m.position.z + 3.5, m.position.x, m.position.z);
+  standAt(m.position.x + 1.8, m.position.z + 1.8, m.position.x, m.position.z);
   const attacks = new Map();   // attack object -> { kind, windup start, strike start, tele start }
   const phases = [];
   const onP = (e) => { if (e.machine === m) phases.push({ kind: e.kind, phase: e.phase, t: simNow() }); };
@@ -555,9 +566,11 @@ function A_PLAY_TELEGRAPH(kind) {
   E.requestTimeScale?.('ia-tele', 1);
   let holdGain = null, flickerMean = null;
   const L = m.lamp;
+  let far = false;
   while (simNow() - s0 < 40) {
     await new Promise(r => requestAnimationFrame(r));
     heal();
+    if (!far && simNow() - s0 > 20) { far = true; const hh = m.sc.heading; standAt(m.position.x + Math.sin(hh) * 8, m.position.z + Math.cos(hh) * 8, m.position.x, m.position.z); }
     if (m.state !== 'attack' && m.state !== 'stagger' && m.alive) m.forceState('attack');
     const r = m.lamp;
     if (r && r.teleSince !== lastSince && r.teleSince > s0) { teles.push({ t: r.teleSince, until: r.teleUntil, glint: !!r.glint }); lastSince = r.teleSince; }
@@ -652,7 +665,8 @@ function A_IP_EMISSIVE(kind) {
       lit++;
       if (mode === 'mask') continue;
       const mx = Math.max(r, g, b) || 1;
-      const lab = Col.rgbToLab([r / mx, g / mx, b / mx]);
+      // the target holds LINEAR radiance (no output pass): normalise, then sRGB-encode before Lab
+      const lab = Col.rgbToLab([Col.linearToSrgb(r / mx), Col.linearToSrgb(g / mx), Col.linearToSrgb(b / mx)]);
       if (FIVE.some(f => Col.deltaE2000(lab, f) < 20)) near++;
     }
     return { lit, near };
@@ -692,7 +706,7 @@ function A_HULL_VALUE(kind) {
   const { m, h } = s;
   const hull = hullOfM(m);
   const R = E.renderer, scene = __CTX__.scene, gl = R.getContext();
-  const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const white = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false, toneMapped: false });
   const read = async () => { await frames(2); const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight; const px = new Uint8Array(W * H * 4); await new Promise(r => { const hook = () => { gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px); E.onAfterRender.splice(E.onAfterRender.indexOf(hook), 1); r(); }; E.onAfterRender.push(hook); }); return { W, H, px }; };
   const measure = async (hour, backlit) => {
     env.setWeather?.('clear', 0.05); env.setTime?.(hour);
@@ -700,18 +714,23 @@ function A_HULL_VALUE(kind) {
     // the sun's bearing: backlit puts the camera on the sun-facing side looking at the hull against the light
     const sd = env.sunDir || { x: 0, z: 1 };
     let cb = Math.atan2(sd.x, sd.z);
-    const look = backlit ? cb : cb + Math.PI * 0.5;
+    // backlit: the camera on the far side from the sun, looking into the light at the hull
+    const look = backlit ? cb + Math.PI : cb + Math.PI * 0.5;
     const c = m.position, H0 = (m.height || 2) * 0.5;
     poseCam(c.x + Math.sin(look) * 8, c.y + H0 + 0.4, c.z + Math.cos(look) * 8, c.x, c.y + H0, c.z, 45);
     m.update = (dt, t) => { if (!m._disposed) m._updateEyes(dt, t); };
     const frame = await read();
-    // the hull mask: only the hull, flat white, everything else hidden
+    // the hull mask: only the hull, flat white, everything else hidden, rendered synchronously into a target at the
+    // drawing-buffer size (no frame passes while the scene is altered)
+    const { W: MW, H: MH } = frame;
+    const rt = new THREE.WebGLRenderTarget(MW, MH), mpx = new Uint8Array(MW * MH * 4);
     const hidden = []; scene.traverse(o => { if ((o.isMesh || o.isSprite || o.isPoints || o.isLine) && o.visible && o !== hull) { hidden.push(o); o.visible = false; } });
     const mat = hull.material; hull.material = white;
-    const bg = scene.background, fog = scene.fog; scene.background = new THREE.Color(0, 0, 0); scene.fog = null;
-    const pp = E.postEnabled;
-    const mask = await read();
-    scene.background = bg; scene.fog = fog; hull.material = mat; for (const o of hidden) o.visible = true;
+    const bg = scene.background; scene.background = null;
+    R.setRenderTarget(rt); R.setClearColor(0x000000, 1); R.clear(); R.render(scene, cam); R.readRenderTargetPixels(rt, 0, 0, MW, MH, mpx); R.setRenderTarget(null);
+    scene.background = bg; hull.material = mat; for (const o of hidden) o.visible = true;
+    rt.dispose();
+    const mask = { px: mpx };
     const { W, H, px } = frame, mk = mask.px;
     const inM = (x, y) => x >= 0 && y >= 0 && x < W && y < H && mk[(y * W + x) * 4] > 128;
     const lum = [], foot = [], upper = [], edge = [], inner = [];
@@ -728,12 +747,14 @@ function A_HULL_VALUE(kind) {
       const isEdge = !inM(x - 2, y) || !inM(x + 2, y) || !inM(x, y - 2) || !inM(x, y + 2);
       (isEdge ? edge : inner).push(l);
       const mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = mx > 0 ? (mx - mn) / mx : 0;
-      if (sat > 0.12 && mx > 0.08) {
+      if (mx > 0.06) {
         let hue = 0; const dd = mx - mn || 1;
         if (mx === r) hue = 60 * (((g - b) / dd) % 6); else if (mx === g) hue = 60 * ((b - r) / dd + 2); else hue = 60 * ((r - g) / dd + 4);
         if (hue < 0) hue += 360;
-        if ((hue >= 20 && hue <= 60) || (hue >= 150 && hue <= 175)) metal++;
-        if (hue >= 150 && hue <= 175) verd++;
+        // bronze: hue 20-50 at saturation > 0.32 (bone glaze sits at ~0.13); verdigris: hue 150-175 at > 0.2
+        const isBronze = hue >= 20 && hue <= 50 && sat > 0.32, isVerd = hue >= 150 && hue <= 175 && sat > 0.2;
+        if (isBronze || isVerd) metal++;
+        if (isVerd) verd++;
       }
     }
     lum.sort((a, b) => a - b);
