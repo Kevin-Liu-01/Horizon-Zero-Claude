@@ -1367,7 +1367,7 @@ export class Engine {
     if (agx && B.thresholdLstar) {
       // the display-keyed threshold is re-solved only when the look moved enough to move it (solveVersion):
       // its bisection runs the look 48 times (fix round 1, A-alloc-rate)
-      if (this._thrVer !== L.solveVersion || this._thrB !== B) { this._thrVer = L.solveVersion; this._thrB = B; this._thrHdr = L.hdrForLstar(B.thresholdLstar); }
+      if (this._thrVer !== L.solveVersion || this._thrB !== B) { this._thrVer = L.solveVersion; this._thrB = B; this._thrHdr = L.hdrForLstar(B.thresholdLstar, false); }
       thr = this._thrHdr; sw = thr * B.kneeRatio;
     }
     b.threshold = thr;
@@ -1486,15 +1486,18 @@ export class Engine {
    * / `batching` / the morph count flip between consecutive casters and re-derives the program (getParameters
    * + getProgramCacheKey + join: measured 18 getProgram calls per frame on the vista and the staged fight, the
    * bulk of ScenePass.render's 8.7 MB/s). A skinned, instanced or batched caster gets a depth material shared
-   * by its kind (key: skinned 1, instanced 2, batched 4, + 8 x morph targets), so the shared one only ever
+   * by its kind (key: skinned 1, instanced 2, batched 4, instance colours 8, instance morphs 16, + 32 x morph targets), so the shared one only ever
    * sees plain meshes and none of them flips. A caster whose material alpha-tests, alpha-maps, displaces or
    * clips its shadow keeps three's own per-material variant (it never flipped). Engine-owned; disposeLook().
    */
   _depthVariant(o) {
     const m = o.material, mm = Array.isArray(m) ? m[0] : m;
     if (!mm || mm.alphaTest > 0 || mm.alphaMap || mm.displacementMap || (mm.clipShadows && mm.clippingPlanes?.length)) { o.userData.__calDepthOwn = true; return; }
+    // every input three's setProgram compares for a depth material: skinning, instancing (+ its colour and morph
+    // textures), batching, the morph count (f1-b2: instanced casters with and without instanceColor still flipped 8x a frame)
     const morph = o.morphTargetInfluences ? o.morphTargetInfluences.length : 0;
-    const key = (o.isSkinnedMesh ? 1 : 0) + (o.isInstancedMesh ? 2 : 0) + (o.isBatchedMesh ? 4 : 0) + 8 * morph;
+    const key = (o.isSkinnedMesh ? 1 : 0) + (o.isInstancedMesh ? 2 : 0) + (o.isBatchedMesh ? 4 : 0)
+      + (o.instanceColor ? 8 : 0) + (o.morphTexture ? 16 : 0) + 32 * morph;
     const V = this._depthVariants || (this._depthVariants = new Map());
     let d = V.get(key);
     if (!d) { d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); d.name = 'CAL.depthVariant.' + key; V.set(key, d); }

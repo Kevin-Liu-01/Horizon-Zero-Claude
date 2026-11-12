@@ -641,14 +641,17 @@ export class Look {
    * The HDR grey (scene-linear, before exposure) that shows at display L* `Ls` through the look in
    * force (exposure, slots, grade). The bloom threshold is keyed to it (L-07), so "only true
    * highlights glow" means the same display brightness at every hour and EV. Bisection; no allocation.
+   * `graded = false` reads the AgX + look curve before the grade (the bloom key, fix round 1: grade v2's tone
+   * curve opens the top, which would drop the key from HDR 3.2 to 1.7 and bloom the lamps' rhythm troughs).
    */
-  hdrForLstar(Ls) {
+  hdrForLstar(Ls, graded = true) {
     const y = this._y, o = this._la2 || (this._la2 = [0, 0, 0]);
     let lo = 1e-3, hi = 200;
     for (let i = 0; i < 48; i++) {
       const m = Math.sqrt(lo * hi);
       y[0] = y[1] = y[2] = m;
-      this.evaluate(y, o);
+      if (graded) this.evaluate(y, o);
+      else { this.toneMap(y, o); o[0] = oetf(o[0]); o[1] = oetf(o[1]); o[2] = oetf(o[2]); }
       srgbToLab(o, _lab);
       if (_lab[0] < Ls) lo = m; else hi = m;
     }

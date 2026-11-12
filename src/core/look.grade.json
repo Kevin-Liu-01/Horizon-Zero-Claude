@@ -62,8 +62,8 @@
           "from": 50,
           "to": 88,
           "feather": 10,
-          "rotate": -2,
-          "chroma": 0.96,
+          "rotate": -3,
+          "chroma": 0.98,
           "minChroma": 6
         },
         {
@@ -81,7 +81,7 @@
           "to": 340,
           "feather": 14,
           "rotate": 0,
-          "chroma": 1.3,
+          "chroma": 1.55,
           "minChroma": 6
         }
       ],
@@ -93,15 +93,15 @@
           ],
           [
             6,
-            7.5
+            6.8
           ],
           [
             15,
-            17
+            16.4
           ],
           [
             30,
-            32
+            31.8
           ],
           [
             45,
@@ -134,8 +134,8 @@
             42
           ],
           "shift": [
-            4,
-            -9
+            5.5,
+            -5
           ],
           "chroma": 0.85
         },
@@ -151,8 +151,8 @@
             100,
             15
           ],
-          "b": 0.82,
-          "a": 1.08
+          "b": 0.8,
+          "a": 1.12
         },
         "high": {
           "range": [
@@ -214,7 +214,7 @@
           "from": 50,
           "to": 88,
           "feather": 10,
-          "rotate": -2,
+          "rotate": -3,
           "chroma": 1.08,
           "minChroma": 6
         },
@@ -233,7 +233,7 @@
           "to": 340,
           "feather": 14,
           "rotate": 0,
-          "chroma": 1.3,
+          "chroma": 1.55,
           "minChroma": 6
         }
       ],
@@ -245,15 +245,15 @@
           ],
           [
             6,
-            7.5
+            6.8
           ],
           [
             15,
-            17
+            16.4
           ],
           [
             30,
-            32
+            31.8
           ],
           [
             45,
@@ -365,8 +365,8 @@
           "from": 50,
           "to": 88,
           "feather": 10,
-          "rotate": -2,
-          "chroma": 0.9119999999999999,
+          "rotate": -3,
+          "chroma": 0.9309999999999999,
           "minChroma": 6
         },
         {
@@ -384,7 +384,7 @@
           "to": 340,
           "feather": 14,
           "rotate": 0,
-          "chroma": 1.3,
+          "chroma": 1.55,
           "minChroma": 6
         }
       ],
@@ -396,15 +396,15 @@
           ],
           [
             6,
-            7.5
+            6.8
           ],
           [
             15,
-            17
+            16.4
           ],
           [
             30,
-            32
+            31.8
           ],
           [
             45,
@@ -437,8 +437,8 @@
             55
           ],
           "shift": [
-            5,
-            -13
+            6,
+            -9
           ],
           "chroma": 0.8
         },
@@ -529,15 +529,15 @@
           ],
           [
             6,
-            7.5
+            6.8
           ],
           [
             15,
-            17
+            16.4
           ],
           [
             30,
-            32
+            31.8
           ],
           [
             45,
@@ -623,7 +623,7 @@
       "dusk"
     ]
   ],
-  "tuning": "Fix round 1 (Nov 12): the r4 sets folded yellow and green into one amber band (97 % of chroma pixels in one 30-degree band) and read as a sepia filter beside 1-TR (judge). Re-tuned on the HDR dump of the look places (no hour EV, W0 keys): no hue rotation of the amber band beyond -2 deg, the olive band only -6 deg, greens untouched, Orchil violets x1.3 so Brea's violet is the most saturated hue (field: violet max 41.5 vs grass p90 41.4); shadows shifted toward rose-violet in L*a*b* (lo20 hue 59 -> 44 field, 13 vista, 332 close); mid b* x0.82; highlights x0.42 chroma; a tone curve on L* that opens the top (60 -> 68.5, 72 -> 82) so p99 does not fall below the W0 output (field 73.7 vs W0 73.4). Bars met on the dump: 22/40 against r4 14/40; the rest (p99 >= 88, clip, spread, hi10 chroma) need the sun, the sky and the sea (world-sky L-03/L-04/L-06, world-ground).",
+  "tuning": "Fix round 1 (Nov 12): the r4 sets folded yellow and green into one amber band (97 % of chroma pixels in one 30-degree band) and read as a sepia filter beside 1-TR (judge). Re-tuned on the HDR dump of the look places (no hour EV, W0 keys): the amber band rotated -3 deg toward orange (a* x1.12 in the mids) and kept at chroma x0.98, the olive band only -6 deg, greens untouched, Orchil violets x1.55 so Brea's violet is the most saturated hue (dump: violet max 46.8 vs grass p90 42.0 field, 45.2 vs 41.6 aim, 47.3 vs 39.8 close); shadows shifted toward rose in L*a*b* by (5.5, -5) at chroma x0.85 (the full-resolution frames, with GTAO, put the darkest fifth at a* 8-10: a larger b* shift turned them blue-violet); mid b* x0.82; highlights x0.42 chroma; a tone curve on L* that opens the top (60 -> 68.5, 72 -> 82) so p99 does not fall below the W0 output (field 73.7 vs W0 73.4). Bars met on the dump: 22/40 against r4 14/40; the rest (p99 >= 88, clip, spread, hi10 chroma) need the sun, the sky and the sea (world-sky L-03/L-04/L-06, world-ground).",
   "hourEv": [
     [
       0,

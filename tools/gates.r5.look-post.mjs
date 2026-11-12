@@ -216,14 +216,22 @@ const LOOK = `
     // sheet: only the hero and her grass). The presentation clock is snapped (freezeWall's rule), the clip
     // phases are zeroed, and the sim then runs exactly 60 steps of 1/60 s whatever the real frame time; the
     // wall clock is frozen after it. o.settle === false skips it (A-hold-frame and the bloom probes do not need it).
+    // f1-b2: Brea still differed between boots after it (her idle life draws breath, weight-shift, blink and fidget
+    // phases from Math.random at boot and on its timers): those phases are reset, and Math.random is a seeded
+    // generator for the 120 settle steps only (restored before anything else runs)
     if (o.settle !== false && !__camSaved.delta) {
       __E.wallTime = (Math.floor(__E.wallTime / 4096) + 1) * 4096;
       const gd = __E.clock.getDelta; __E.clock.getDelta = () => 1 / 60;
-      try { p.animator?.mixer?.setTime?.(0); } catch (e) { /* */ }
-      __E.requestTimeScale('studio', null);
-      await frames(60);
-      __E.requestTimeScale('studio', 0);
-      __E.clock.getDelta = gd;
+      const A = p.animator;
+      try { A?.mixer?.setTime?.(0); } catch (e) { /* */ }
+      if (A) for (const [k, v] of [['_breathPh', 0], ['_shiftPh', 0], ['_shift', 0], ['_fidgetT', 9], ['_fidgetK', 1], ['_fidgetKind', 0], ['_blinkT', 4], ['_blinkK', 1], ['_idleT', 0], ['_lidBlink', 0]]) if (typeof A[k] === 'number') A[k] = v;
+      const rnd0 = Math.random; let sd = 0x5EED5EED;
+      Math.random = () => { sd = (sd + 0x6D2B79F5) >>> 0; let t = sd; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+      try {
+        __E.requestTimeScale('studio', null);
+        await frames(120);
+        __E.requestTimeScale('studio', 0);
+      } finally { Math.random = rnd0; __E.clock.getDelta = gd; }
     }
     if (P.cam === 'close') {
       await frames(4);
@@ -832,11 +840,11 @@ const GLOW_FILM = lookJob(`
     const made = [];
     const disc = (c, r, d, side, z) => { if (!c) return; const m = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(c.r, c.g, c.b), fog: false }));
       const right = new THREE.Vector3().crossVectors(dir, cam.up).normalize();
-      m.position.copy(cam.position).addScaledVector(dir, d).addScaledVector(right, side).addScaledVector(dir, -z); m.lookAt(cam.position); m.name = 'look-lamp-probe'; m.userData.noSizeCull = true; __C.scene.add(m); made.push(m); };
-    disc(ring, 0.3, 18, -4.5, 0); disc(core, 0.12, 18, -4.5, 0.01); disc(calmR, 0.3, 18, 4.5, 0); disc(calm, 0.12, 18, 4.5, 0.01);
+      m.position.copy(cam.position).addScaledVector(dir, d).addScaledVector(right, side).addScaledVector(cam.up, 1.4).addScaledVector(dir, -z); m.lookAt(cam.position); m.name = 'look-lamp-probe'; m.userData.noSizeCull = true; __C.scene.add(m); made.push(m); };
+    disc(ring, 0.3, 18, -6.5, 0); disc(core, 0.12, 18, -6.5, 0.01); disc(calmR, 0.3, 18, 6.5, 0); disc(calm, 0.12, 18, 6.5, 0.01);
     await frames(4);
     const c = await grabCanvas();
-    cells.push({ cap: c, label: 'look.aim, 17:45: hostile (left) and calm (right) lamp discs at the lamp system\\'s solved HDR, 18 m; sunlit cloth and rock must not glow' });
+    cells.push({ cap: c, label: 'look.aim, 17:45: hostile (left) and calm (right) lamp discs at the lamp system\\'s solved HDR, 18 m, clear of the hero; sunlit cloth and rock must not glow' });
     made.forEach((m) => { __C.scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
     unstage();
   }
