@@ -105,9 +105,8 @@ void RE_Direct_CalCloth( const in IncidentLight directLight, const in vec3 geome
 		float nl = dot( geometryNormal, directLight.direction );
 		float rimV = 1.0 - saturate( dot( geometryNormal, geometryViewDir ) );
 		float rimL = dot( directLight.direction, -geometryViewDir ) * 0.5 + 0.5;
-		vec3 add = directLight.color * ( ${kRim.toFixed(2)} * calRimK * rimV * rimV * rimV * rimL * rimL );
-		${velvet ? 'add += directLight.color * ( 1.6 * calRimK * rimV * rimV * rimV * rimV * saturate( ( nl + 0.5 ) / 1.5 ) );' : ''}
-		reflectedLight.directDiffuse += add * material.diffuseColor;
+		reflectedLight.directDiffuse += directLight.color * ( ${kRim.toFixed(2)} * calRimK * rimV * rimV * rimV * rimL * rimL ) * material.diffuseColor;
+		${velvet ? 'reflectedLight.directDiffuse += directLight.color * ( 1.6 * calRimK * rimV * rimV * rimV * rimV * saturate( ( nl + 0.5 ) / 1.5 ) ) * BRDF_Lambert( material.diffuseColor );' : ''}
 	}
 	#endif
 }
