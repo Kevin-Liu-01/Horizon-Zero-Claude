@@ -60,6 +60,7 @@ const _rxV = new THREE.Vector3();  // the roll's hand-over: this step's pelvis (
 const _caP = new THREE.Vector3(), _caD = new THREE.Vector3(), _caC = new THREE.Vector3(), _caL = new THREE.Vector3();
 const _caQ = new THREE.Quaternion();
 const _caG = new THREE.Vector3();   // last step's grip carried with her step and her turn (`armFlow.camAim`)
+const _caB = new THREE.Vector3();   // ...and the bow's node, carried the same way (round 3)
 const _caX = new THREE.Vector3(1, 0, 0);
 const _a16U = new THREE.Vector3();  // the A16 elbow cap's up: the aim frame's (R52)
 const _gvW = new THREE.Vector3(), _gvT = new THREE.Vector3(); // the body-step governor (`_rollExit`): world pelvis, governed
@@ -955,7 +956,7 @@ export class PlayerAnimator {
     // last position (world), the T ray relative to the camera ray (low-passed), the camera ray last step (char)
     this._aimPred = new THREE.Vector3(); this._camP = new THREE.Vector3(); this._camPOk = false;
     this._gripCh = new THREE.Vector3(); this._pivCh = new THREE.Vector3(); this._gripE = 0;
-    this._dTl = new THREE.Vector3(0, 0, 1); this._camC = new THREE.Vector3(0, 0, 1); this._camW = new THREE.Vector3(0, 0, 1); this._camRate = 0; this._camCOk = false;
+    this._bnCh = new THREE.Vector3(); this._bnOk = false; this._dTl = new THREE.Vector3(0, 0, 1); this._camC = new THREE.Vector3(0, 0, 1); this._camW = new THREE.Vector3(0, 0, 1); this._camRate = 0; this._camCOk = false;
     this._gripValid = false;
     // hero-body targeted fix round 2: the roll's hand-over (`_rollExit`)
     this._rxPe = new THREE.Vector3(); this._rxD = new THREE.Vector3(); this._rxPeOk = false;
@@ -2268,7 +2269,7 @@ export class PlayerAnimator {
       // layer has stopped — crouched, the crouch-aim pose's ramp, 0.7 s; see `_aimTrunk`)
       if ((this._atW ?? 0) > 1e-3) this._aimTrunk(aimW); else this._atW = 0;
       this._bladeSm = null;
-      this._tOff = true; this._tW = 0; this._tAimW = 0; this._qTs.identity(); this._bcS = 0; this._afOn = false; this._afFull = false; this._gripValid = false; this._aimPrevOk = false; this._camPOk = false; this._camCOk = false; this._camRate = 0;
+      this._tOff = true; this._tW = 0; this._tAimW = 0; this._qTs.identity(); this._bcS = 0; this._afOn = false; this._afFull = false; this._gripValid = false; this._aimPrevOk = false; this._camPOk = false; this._camCOk = false; this._camRate = 0; this._bnOk = false;
     }
     if (!cbFirst && this._crouchAimW > 0.01) this._crouchAimLayer(this._caPoseW, p);
     if (carryW > 0.01) this._carryLayer(carryW, p, t);
@@ -2391,6 +2392,8 @@ export class PlayerAnimator {
         const node = this.ctx.combat?.bow?.group?.parent;
         if (node) {
           node.getWorldPosition(_afG);
+          // (hero-body targeted fix round 3: the node itself, character space: combat's 0.5 m fall-back reads it)
+          if (this.T.armFlow.camAim) { this._bnCh.copy(_afG); this.model.worldToLocal(this._bnCh); this._bnOk = true; }
           _afG.sub(this._gripW);
           _afH.copy(_dA).transformDirection(this.model.matrixWorld);
           this._gripW.add(_afG.addScaledVector(_afH, -_afG.dot(_afH)));
@@ -4403,7 +4406,21 @@ export class PlayerAnimator {
           this.model.localToWorld(_caG);
           _v7.subVectors(this._aimPred, _caG);
           // (...and combat's own fall-back: from nearer than 0.5 m it aims the bow along the camera)
-          if (_v7.lengthSq() < 0.25) _v7.copy(_caD).multiplyScalar(2);
+          /* (hero-body targeted fix round 3, eng judge finding 3, gate judge finding 2: "at the crouched down clamp, have
+           * the string hand follow the bow combat actually renders" — combat measures that 0.5 m from the BOW'S NODE in
+           * the palm; this ray starts at the anchor, 0.5-0.6 m behind it along the arrow, so from 0.5 to ~1.05 m of the
+           * node combat had turned the bow onto the camera's line while the arms still solved for the ground hit: 13-17
+           * deg apart, the knuckle 0.11-0.12 m off the nock at a crouched 0.9 aim, run w11/d3. The node as it was rendered,
+           * carried as the grip is, decides it) */
+          let nearC = _v7.lengthSq() < 0.25;
+          if (this._bnOk) {
+            _caB.subVectors(this._bnCh, this._pivCh);
+            if (Math.abs(dE) > 1e-5) _caB.applyAxisAngle(_caX, -dE * clamp(this._tW ?? 0, 0, 1));
+            _caB.add(this._pivCh);
+            this.model.localToWorld(_caB);
+            nearC = _caB.distanceToSquared(this._aimPred) < 0.25;
+          }
+          if (nearC) _v7.copy(_caD).multiplyScalar(2);
           this._aimPrev.copy(cmb.aimPoint); this._aimPrevOk = true;
         } else if (this.T.armFlow) {
           // (a look near the level moves a far ground hit metres a step: nothing to extrapolate)
