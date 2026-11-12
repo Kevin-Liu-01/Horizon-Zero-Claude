@@ -48,12 +48,12 @@ function seaArch(bucket, R) {
     const taper = 1 - 0.25 * Math.max(0, ym) / H;
     const len = L * taper + (R() - 0.5) * 3, dep = D * taper + (R() - 0.5) * 1.5;
     const open = ym < OH ? OW * Math.sqrt(Math.max(0, 1 - Math.pow(Math.max(0, ym) / OH, 2))) : 0;
-    const tone = STRATA.sea[(i * 5 + 1) % STRATA.sea.length];
+    const tone = [0x3a3a3f, 0x4a4542, 0x2e2d31, 0x403d3d, 0x3a3a3f, 0x5b4636, 0x2e2d31][i % 7];
     const legs = open > 0.8 ? [[-len / 2, -open], [open, len / 2]] : [[-len / 2, len / 2]];
     for (const [a, b] of legs) {
       const w = b - a;
       slab(bucket, { cx: (a + b) / 2, cz: (R() - 0.5) * 0.6, y0: y, thick: thick + 0.12, r: dep / 2, aspect: w / dep,
-        yaw: 0, jag: 0.16, seed: 400 + i * 7 + (a < 0 ? 0 : 3), tone, bevel: 0.35, rough: 0.07, sides: 16 }, shade);
+        yaw: 0, jag: 0.22, seed: 400 + i * 7 + (a < 0 ? 0 : 3), tone, bevel: 0.12, rough: 0.09, sides: 18 }, shade);
     }
     y += thick; i++;
   }
@@ -74,62 +74,68 @@ function seaArch(bucket, R) {
  * the crown broken into column stubs of different heights, talus at the foot.
  */
 function plug(bucket, R, { height = 58, base = 9.5, seed = 3, cols = 22 } = {}) {
-  const shade = rockShade({ seed, streak: 0.3, lip: 0.35 });
+  const shade = rockShade({ seed, streak: 0.32, lip: 0.35 });
   const pal = STRATA.plug;
-  let y = -6, d = 0;
+  let y = -6, d = 0, cx = 0, cz = 0;
   const top = height - 7;
+  const leanX = (R() - 0.5) * 0.09, leanZ = (R() - 0.5) * 0.09;
+  let rTop = base;
   while (y < top) {
-    const thick = Math.min(top - y, 5 + R() * 4.5);
+    const thick = Math.min(top - y, 4 + R() * 6);
     const t = Math.max(0, y) / height;
-    const r = base * (1 - 0.42 * Math.pow(t, 0.9)) + (R() - 0.5) * 0.6;
-    const twist = d * 0.11 + R() * 0.05;
-    // the drum: a star polygon (alternate radii) = vertical flutes
+    const bulge = (vnoise3(d * 0.9 + seed, 1.7, 0) - 0.5) * 0.22 * base;
+    const r = Math.max(base * 0.3, base * (1 - 0.5 * Math.pow(t, 1.1)) + bulge);
+    rTop = r;
+    cx += leanX * thick; cz += leanZ * thick;
+    // the drum: a star polygon (alternate radii) = vertical columnar joints; the joints stay aligned
     const shape = new THREE.Shape();
     const n = cols * 2;
     for (let k = 0; k < n; k++) {
-      const a = (k / n) * Math.PI * 2 + twist;
-      const rr = r * (k % 2 ? 0.86 : 1.0) * (1 + 0.1 * (vnoise3(Math.cos(a) * 2 + seed, Math.sin(a) * 2, d) - 0.5));
-      const x = Math.cos(a) * rr, z = Math.sin(a) * rr * 0.9;
+      const a = (k / n) * Math.PI * 2 + d * 0.02;
+      const rr = r * (k % 2 ? 0.87 : 1.0) * (1 + 0.14 * (vnoise3(Math.cos(a) * 1.4 + seed, Math.sin(a) * 1.4, 0.3) - 0.5));
+      const x = cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr * 0.9;
       if (k === 0) shape.moveTo(x, z); else shape.lineTo(x, z);
     }
     shape.closePath();
-    let g = new THREE.ExtrudeGeometry(shape, { depth: thick, bevelEnabled: true, bevelThickness: 0.35, bevelSize: 0.3, bevelSegments: 1, curveSegments: 1, steps: 2 });
+    const g = new THREE.ExtrudeGeometry(shape, { depth: thick, bevelEnabled: true, bevelThickness: 0.2, bevelSize: 0.18, bevelSegments: 1, curveSegments: 1, steps: 2 });
     g.rotateX(-Math.PI / 2);
-    g.translate(0, y + 0.35, 0);
+    g.translate(0, y + 0.2, 0);
     const P = g.attributes.position;
     for (let k = 0; k < P.count; k++) {
       const x = P.getX(k), yy = P.getY(k), z = P.getZ(k);
       const nn = (fbm3(x * 0.3 + seed, yy * 0.08, z * 0.3, 2) - 0.5) * 2;
-      const rr = Math.hypot(x, z) || 1;
-      P.setXYZ(k, x + (x / rr) * nn * 0.6, yy, z + (z / rr) * nn * 0.6);
+      const dx = x - cx, dz = z - cz, rr = Math.hypot(dx, dz) || 1;
+      P.setXYZ(k, x + (dx / rr) * nn * 0.55, yy, z + (dz / rr) * nn * 0.55);
     }
     g.deleteAttribute('uv'); g.deleteAttribute('normal');
     const cg = toCreased(g);
-    bucket.add(cg, { surf: 'bisque', tone: pal[d % pal.length], wear: 0.9, colorFn: shade });
+    bucket.add(cg, { surf: 'bisque', tone: pal[(d * 3 + seed) % pal.length], wear: 0.9, colorFn: shade });
     cg.dispose(); g.dispose();
-    // a ledge: a thin outset lip at the drum's top on part of the circumference
-    if (R() < 0.75) {
-      slab(bucket, { cx: (R() - 0.5) * 1.2, cz: (R() - 0.5) * 1.2, y0: y + thick - 0.5, thick: 0.9, r: r * 1.08, aspect: 1, yaw: R() * 6,
-        jag: 0.35, seed: seed * 11 + d, tone: 0x5e5650, bevel: 0.2, rough: 0.12 }, rockShade({ seed, lip: 0.45 }));
+    // ledges: 1-3 short broken lips where a drum steps in, never a full ring
+    const lips = (R() * 3) | 0;
+    for (let l = 0; l < lips; l++) {
+      const a = R() * Math.PI * 2;
+      slab(bucket, { cx: cx + Math.cos(a) * r * 0.92, cz: cz + Math.sin(a) * r * 0.85, y0: y + thick - 0.6, thick: 0.8 + R() * 0.6, r: r * (0.18 + R() * 0.14),
+        aspect: 2.2, yaw: -a + Math.PI / 2, jag: 0.4, seed: seed * 11 + d * 3 + l, tone: 0x5e5650, bevel: 0.1, rough: 0.14, sides: 9 }, rockShade({ seed, lip: 0.45 }));
     }
     y += thick; d++;
   }
   // the crown: column stubs of different heights
-  const rTop = base * (1 - 0.42 * Math.pow(top / height, 0.9));
   for (let k = 0; k < 9; k++) {
     const a = (k / 9) * Math.PI * 2 + R() * 0.4;
     const rr = k === 0 ? 0 : rTop * (0.35 + R() * 0.45);
-    const ch = 2 + R() * 6.5 * (k === 0 ? 1.2 : 1);
-    const g = new THREE.CylinderGeometry(rTop * 0.26, rTop * 0.3, ch, 6, 1);
-    g.translate(Math.cos(a) * rr, y + ch / 2 - 0.2, Math.sin(a) * rr);
-    bucket.add(g, { surf: 'bisque', tone: pal[(k + 1) % pal.length], wear: 0.9, colorFn: shade });
-    g.dispose();
+    const ch = 1.5 + R() * 6.5 * (k === 0 ? 1.25 : 1);
+    const cg = new THREE.CylinderGeometry(rTop * 0.24, rTop * 0.29, ch, 6, 1);
+    cg.rotateZ((R() - 0.5) * 0.12);
+    cg.translate(cx + Math.cos(a) * rr, y + ch / 2 - 0.3, cz + Math.sin(a) * rr);
+    bucket.add(cg, { surf: 'bisque', tone: pal[(k + 1) % pal.length], wear: 0.9, colorFn: shade });
+    cg.dispose();
   }
-  // talus apron
-  for (let k = 0; k < 26; k++) {
-    const a = R() * Math.PI * 2, rr = base * (0.95 + R() * 0.75);
-    slab(bucket, { cx: Math.cos(a) * rr, cz: Math.sin(a) * rr, y0: -1.2 + R() * 0.8, thick: 0.8 + R() * 2.2, r: 0.8 + R() * 2.4,
-      aspect: 0.7 + R() * 0.6, yaw: R() * 6, jag: 0.4, seed: seed * 101 + k, tone: pal[k % pal.length], bevel: 0.2, rough: 0.18 }, shade);
+  // talus: chunky blocks at the foot, not plates
+  for (let k = 0; k < 18; k++) {
+    const a = R() * Math.PI * 2, rr = base * (0.95 + R() * 0.6);
+    slab(bucket, { cx: Math.cos(a) * rr, cz: Math.sin(a) * rr, y0: -1.4 + R() * 0.6, thick: 1.4 + R() * 2.4, r: 0.9 + R() * 1.8,
+      aspect: 0.75 + R() * 0.5, yaw: R() * 6, jag: 0.45, seed: seed * 101 + k, tone: pal[k % pal.length], bevel: 0.15, rough: 0.2, sides: 7 }, shade);
   }
   return y;
 }

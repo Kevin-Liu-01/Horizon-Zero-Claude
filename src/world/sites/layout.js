@@ -86,8 +86,8 @@ export const RING = { site: 'sounding-ring', faceBearing: 72 };
 /* ---------------------------------------------------------------- the pumps */
 /** Three pumps (bible §8.6): two on the seaward berm at the intake, one by the landward reservoir. */
 export const PUMPS = [
-  { id: 'pump-intake-west', u: -50, v: -32, yawBearing: 225 },
-  { id: 'pump-intake-east', u: 70, v: -30, yawBearing: 230 },
+  { id: 'pump-intake-a', u: -50, v: -32, yawBearing: 225 },
+  { id: 'pump-intake-b', u: 70, v: -30, yawBearing: 230 },
   { id: 'pump-reservoir', u: -80, v: 92, yawBearing: 220 },
 ];
 
@@ -103,17 +103,17 @@ export const GAUGE = { id: 'gauge-sluice-3', u: -40, v: -6, nozzleBearing: 140, 
  * tallest column above the local ground, `face` the bearing it faces out.
  */
 export const ORGAN = [
-  { id: 'organ-1', x: -224, z: 362, r: 5.5, top: 9, face: 250 },
-  { id: 'organ-2', x: -212, z: 338, r: 6.5, top: 12, face: 300 },
-  { id: 'organ-3', x: -206, z: 381, r: 5.0, top: 7, face: 220 },
-  { id: 'organ-4', x: -178, z: 388, r: 6.0, top: 11, face: 190 },
-  { id: 'organ-5', x: -170, z: 410, r: 4.5, top: 6, face: 175 },
-  { id: 'organ-6', x: -148, z: 401, r: 7.0, top: 14, face: 165 },
-  { id: 'organ-7', x: -140, z: 320, r: 6.0, top: 10, face: 20 },
-  { id: 'organ-8', x: -122, z: 327, r: 5.0, top: 8, face: 40 },
-  { id: 'organ-9', x: -110, z: 380, r: 6.5, top: 13, face: 120 },
-  { id: 'organ-10', x: -98, z: 344, r: 5.0, top: 7, face: 80 },
-  { id: 'organ-11', x: -160, z: 356, r: 4.0, top: 4, face: 0 },
+  { id: 'organ-1', x: -224, z: 362, r: 3.4, top: 9, face: 250 },
+  { id: 'organ-2', x: -212, z: 338, r: 4.0, top: 12, face: 300 },
+  { id: 'organ-3', x: -206, z: 381, r: 3.0, top: 7, face: 220 },
+  { id: 'organ-4', x: -178, z: 388, r: 3.8, top: 11, face: 190 },
+  { id: 'organ-5', x: -170, z: 410, r: 2.8, top: 6, face: 175 },
+  { id: 'organ-6', x: -148, z: 401, r: 4.2, top: 14, face: 165 },
+  { id: 'organ-7', x: -140, z: 320, r: 3.6, top: 10, face: 20 },
+  { id: 'organ-8', x: -122, z: 327, r: 3.0, top: 8, face: 40 },
+  { id: 'organ-9', x: -110, z: 380, r: 4.0, top: 13, face: 120 },
+  { id: 'organ-10', x: -98, z: 344, r: 3.0, top: 7, face: 80 },
+  { id: 'organ-11', x: -160, z: 356, r: 2.6, top: 4, face: 0 },
 ];
 
 /* ---------------------------------------------------------- the red crater */

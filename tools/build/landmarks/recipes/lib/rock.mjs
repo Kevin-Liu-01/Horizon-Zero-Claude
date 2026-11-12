@@ -44,7 +44,7 @@ export function fbm3(x, y, z, oct = 3) {
 export const STRATA = Object.freeze({
   sea: [0x3a3a3f, 0x4a4542, 0x8c6a48, 0x2e2d31, 0x5b4636, 0x7a3b2a, 0x403d3d, 0xb8a890],
   tuff: [0x7a3b2a, 0x8e3b23, 0x9a5a3a, 0x6b3426, 0x8c6a48, 0xa4683f],
-  plug: [0x4a4648, 0x3a3a3f, 0x56504a, 0x45403c, 0x5e5650],
+  plug: [0x47433f, 0x4c4743, 0x433f3c, 0x4f4a45, 0x5a544d],
 });
 
 /**
@@ -72,11 +72,12 @@ export function rockShade({ seed = 1, streak = 0.22, lip = 0.28, wetY = -1e9, we
  *   lean    [dx, dz] shift of the top face (a leaning slab)
  */
 export function slabGeo({ cx = 0, cz = 0, y0 = 0, thick = 2, r = 4, aspect = 1, yaw = 0, jag = 0.2,
-  seed = 1, sides = 14, bevel = 0.25, lean = [0, 0], rough = 0.12 } = {}) {
+  seed = 1, sides = 14, bevel = 0.25, lean = [0, 0], rough = 0.12, outline = null } = {}) {
   const shape = new THREE.Shape();
   for (let i = 0; i < sides; i++) {
     const a = (i / sides) * Math.PI * 2;
-    const k = 1 + jag * (vnoise3(Math.cos(a) * 1.6 + seed, Math.sin(a) * 1.6, seed * 0.37) - 0.5) * 2
+    const k = outline ? outline(a) * (1 + jag * (vnoise3(Math.cos(a) * 3.1 + seed, Math.sin(a) * 3.1, seed * 0.37) - 0.5))
+      : 1 + jag * (vnoise3(Math.cos(a) * 1.6 + seed, Math.sin(a) * 1.6, seed * 0.37) - 0.5) * 2
       + jag * 0.5 * (vnoise3(Math.cos(a) * 4.1, Math.sin(a) * 4.1 + seed, 3.3) - 0.5);
     const x = Math.cos(a) * r * aspect * k, y = Math.sin(a) * r * k;
     if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
@@ -125,51 +126,65 @@ export function slab(bucket, opts, shade) {
  */
 export function seaStack(bucket, R, { height = 40, base = 8, seed = 1, caprock = false, fins = 2, foot = -14,
   aspect = 0.8, twin = false, palette = STRATA.sea } = {}) {
-  const shade = rockShade({ seed, wetY: 1.2, wetK: 0.5 });
+  const shade = rockShade({ seed, wetY: 1.2, wetK: 0.5, streak: 0.3 });
+  // ONE plan outline for the whole stack (buttresses and re-entrants run top to bottom, so
+  // it reads as one mass of rock with bedding across it, not a pile of plates)
+  const outline = (a) => 1 + 0.34 * (vnoise3(Math.cos(a) * 1.25 + seed, Math.sin(a) * 1.25, 7.1) - 0.5) * 2
+    + 0.16 * (vnoise3(Math.cos(a) * 3.6, Math.sin(a) * 3.6 + seed, 2.2) - 0.5) * 2;
+  // bedding: mostly basalt greys, an occasional tuff / ochre band
+  const bedTone = (i) => {
+    const h = vnoise3(i * 0.73 + seed, 0.5, 3.3);
+    return h > 0.9 ? palette[5] : h > 0.82 ? palette[4] : palette[[0, 1, 3, 6, 0, 3][i % 6]];
+  };
   let y = foot, i = 0;
   const top = height;
+  let lx = 0, lz = 0;
+  const lean = [(R() - 0.5) * 0.08, (R() - 0.5) * 0.08];
   while (y < top - 0.8 && i < 40) {
     const t = Math.max(0, y) / height;
     const thick = Math.min(top - y, y < 0 ? 4 + R() * 3 : 1.5 + R() * 4.5);
-    const taper = 1 - 0.55 * Math.pow(t, 1.3);
-    const out = (R() - 0.45) * 2.2;                                  // inset / outset 0.2-1.2 m
-    const r = Math.max(1.4, base * taper + out + (y < 0 ? (-y) * 0.18 : 0));
-    const cx = (R() - 0.5) * 0.8 + (twin && t > 0.55 ? -base * 0.3 : 0);
-    slab(bucket, { cx, cz: (R() - 0.5) * 0.8, y0: y, thick: thick + 0.15, r, aspect: aspect + (R() - 0.5) * 0.15,
-      yaw: R() * Math.PI, jag: 0.22, seed: seed * 31 + i, tone: palette[(i * 3 + seed) % palette.length], bevel: 0.35, rough: 0.09,
-      lean: [(R() - 0.5) * 0.6, (R() - 0.5) * 0.6] }, shade);
+    const taper = 1 - 0.5 * Math.pow(t, 1.4);
+    const ledge = R() < 0.18 ? 0.25 + R() * 0.55 : (R() - 0.5) * 0.35;       // mostly flush, a ledge now and then
+    const notch = y > -1.5 && y < 3 ? 0.86 : 1;                                // the wave-cut notch at the waterline
+    const r = Math.max(1.4, (base * taper + ledge + (y < 0 ? (-y) * 0.15 : 0)) * notch);
+    lx += lean[0] * thick; lz += lean[1] * thick;
+    const cx = lx + (twin && t > 0.55 ? -base * 0.3 : 0);
+    slab(bucket, { cx, cz: lz, y0: y, thick: thick + 0.1, r, aspect, outline,
+      yaw: 0, jag: 0.12, seed: seed * 31 + i, tone: bedTone(i), bevel: 0.1, rough: 0.07, sides: 22 }, shade);
     if (twin && t > 0.55) {
-      slab(bucket, { cx: base * 0.42, cz: (R() - 0.5), y0: y, thick: thick * 0.9, r: r * 0.55, aspect: 0.8,
-        yaw: R() * Math.PI, jag: 0.25, seed: seed * 53 + i, tone: palette[(i * 3 + seed + 1) % palette.length], bevel: 0.3, rough: 0.1 }, shade);
+      slab(bucket, { cx: lx + base * 0.42, cz: lz, y0: y, thick: thick * 0.95, r: r * 0.55, aspect: 0.85, outline,
+        yaw: 1.3, jag: 0.15, seed: seed * 53 + i, tone: bedTone(i + 1), bevel: 0.1, rough: 0.08, sides: 16 }, shade);
     }
     y += thick; i++;
   }
   // windward fins: thin blades on the -x face (the trade wind's side), stepping up
   for (let f = 0; f < fins; f++) {
     const fy = foot + 6 + R() * height * 0.55;
-    const fh = height * (0.18 + R() * 0.22);
+    const fh = height * (0.2 + R() * 0.25);
     const t = Math.max(0, fy) / height;
-    const r = base * (1 - 0.55 * t);
+    const r = base * (1 - 0.5 * t);
     const ang = Math.PI + (R() - 0.5) * 1.2;
-    slab(bucket, { cx: Math.cos(ang) * r * 0.85, cz: Math.sin(ang) * r * 0.85, y0: fy, thick: fh, r: r * 0.32, aspect: 0.32,
-      yaw: -ang, jag: 0.3, seed: seed * 97 + f, tone: palette[(f + 2) % palette.length], bevel: 0.2, rough: 0.12 }, shade);
+    slab(bucket, { cx: Math.cos(ang) * r * 0.9, cz: Math.sin(ang) * r * 0.9, y0: fy, thick: fh, r: r * 0.3, aspect: 0.3,
+      yaw: -ang, jag: 0.3, seed: seed * 97 + f, tone: palette[[0, 3][f % 2]], bevel: 0.08, rough: 0.12, sides: 10 }, shade);
   }
   if (caprock) {
-    const r = base * 0.62;
-    slab(bucket, { cx: 0, cz: 0, y0: y - 0.4, thick: 2.2, r, aspect: 1.05, yaw: R() * 3, jag: 0.16, seed: seed * 7 + 99,
-      tone: 0x2e2d31, bevel: 0.45, rough: 0.06 }, rockShade({ seed, lip: 0.4 }));
+    const r = base * 0.6;
+    slab(bucket, { cx: lx, cz: lz, y0: y - 0.4, thick: 2.2, r, aspect: aspect * 1.08, yaw: 0.4, jag: 0.16, seed: seed * 7 + 99, outline,
+      tone: 0x2e2d31, bevel: 0.15, rough: 0.06, sides: 18 }, rockShade({ seed, lip: 0.4 }));
   }
-  // surf collar: a ragged pale band of wet rock + foam at the waterline
-  const collar = new THREE.TorusGeometry(base * 1.05, 0.9, 5, 28);
+  // surf collar: a ragged band of foam hugging the waterline (pale, broken, low)
+  const collar = new THREE.TorusGeometry(base * 0.93, 0.55, 4, 36);
   collar.rotateX(Math.PI / 2);
   const P = collar.attributes.position;
   for (let k = 0; k < P.count; k++) {
-    const x = P.getX(k), z = P.getZ(k);
-    const n = fbm3(x * 0.3 + seed, 0, z * 0.3, 2);
-    P.setXYZ(k, x * (0.95 + n * 0.25), P.getY(k) * (0.6 + n) + 0.15, z * (0.95 + n * 0.25));
+    const x = P.getX(k), z = P.getZ(k), a = Math.atan2(z, x);
+    const o = outline(a);
+    const n = fbm3(x * 0.4 + seed, 0, z * 0.4, 2);
+    const kk = o * (0.98 + 0.22 * n);
+    P.setXYZ(k, x * kk, Math.max(-0.15, P.getY(k) * (0.5 + n * 0.8)) + 0.12, z * kk * aspect);
   }
   collar.computeVertexNormals();
-  bucket.add(collar, { surf: 'bisque', tone: 0xe9ebe6, wear: 0.4, colorFn: (p, n, k) => k * (0.85 + 0.3 * vnoise3(p.x, p.y * 3, p.z)) });
+  bucket.add(collar, { surf: 'bisque', tone: 0xf2f3ef, wear: 0.3, colorFn: (p, n, k) => k * (0.88 + 0.24 * vnoise3(p.x * 1.3, p.y * 4, p.z * 1.3)) });
   collar.dispose();
   return y;
 }

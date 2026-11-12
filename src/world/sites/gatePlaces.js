@@ -92,8 +92,9 @@ export function buildGatePlaces(ctx, props) {
     }
     if (best) P.basaltColumn = { x: best.x, z: best.z, r: best.r, note: 'an Organ Shelf column >= 3 m tall (A24)' };
   }
-  // the midground vista V34 turns four yaws from: Saltrow's rise (world-ground's measured row)
-  if (!P.midgroundVista && P.aerialStation) P.midgroundVista = P.aerialStation;
+  // the midground vista V34 turns four yaws from: on the salt field's seaward side, where the
+  // reservoir pump (N), the Organ Shelf (E), stack 4 (S) and the sea arch (W) all stand 150-300 m out
+  P.midgroundVista = { x: -296, z: 326, yawOffsetDeg: 0, note: 'the salt field\'s seaward side: a landmark 150-300 m out on all four bearings (V34)' };
 
   // 7. ROUND5-LOOK L-00 look places
   const t1 = TRIG[0];
@@ -106,11 +107,11 @@ export function buildGatePlaces(ctx, props) {
   look('aim', -196, 398, 1.6, 300, 0, 46, 17.75, 'trade', 'over the shoulder on the black-sand beach toward the Ring', { pose: 'aim', stub: true });
   look('close', REST?.x ?? salt.x, REST?.z ?? salt.z, 1.55, 250, 0, 30, 18.75, 'trade', 'at 0.8 m at the cistern (character-art\'s close-up place)', { pose: 'close', dist: 0.8, stub: true });
   look('dusk', -338, 214, 1.5, 270, 1, 50, 19.75, 'trade', 'among the sea-lavender on the Glass\'s shore', { pose: 'behind', stub: true });
-  look('pansInland', -262, 392, 1.7, 345, 3, 55, 18.75, 'trade', 'from the black-sand beach inland: the Ring at left, the salt field, Saltrow, the caldera rim and the Roque plug on the skyline');
+  look('pansInland', -255, 380, 1.7, 345, 3, 55, 18.75, 'trade', 'from the black-sand beach inland: the Ring at left, the salt field, Saltrow, the caldera rim and the Roque plug on the skyline');
   look('pansSunset', -226, 186, 1.8, 262, 0, 50, 18.75, 'trade', 'Saltrow\'s rise west over the pans into the sun: the glitter path and the stacks');
   look('meadow', -214, 230, 1.6, 240, 0, 50, 17.5, 'trade', 'the gold meadow belt landward of the pans (world-ground W-06)', { stub: true });
-  look('beach', -230, 404, 1.6, 255, -1, 50, 18.25, 'trade', 'the black-sand beach and its surf toward the Ring and the stacks', { stub: true });
-  look('title', -262, 392, 1.7, 330, 2, 40, 18.67, 'trade', 'U-08 title: a rise facing the Ring and the spires; Brea idle (shell-ui W2)', { pose: 'title', stub: true });
+  look('beach', -226, 392, 1.6, 255, -1, 50, 18.25, 'trade', 'the black-sand beach and its surf toward the Ring and the stacks', { stub: true });
+  look('title', -255, 380, 1.7, 330, 2, 40, 18.67, 'trade', 'U-08 title: a rise facing the Ring and the spires; Brea idle (shell-ui W2)', { pose: 'title', stub: true });
   look('saltrowDusk', salt.x + 30, salt.z + 40, 1.7, 330, 1, 50, 19.5, 'trade', 'Saltrow at dusk (settlements W2)', { stub: true });
   look('craterWall', -356, 196, 1.7, 335, 12, 50, 17.0, 'trade', 'the red tuff wall from the Glass\'s shore: beds, talus, tuff blocks');
   look('steepFace', P.steepFace?.x ?? -14, (P.steepFace?.z ?? -380) + 40, 1.7, 0, 10, 50, 16.0, 'trade', 'the north-coast scarp (world-ground\'s steepFace row)', { stub: true });

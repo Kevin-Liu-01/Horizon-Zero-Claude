@@ -60,7 +60,7 @@ export async function build({ out = ROOT } = {}) {
   function ringSection(Rm, w, d, glaze) {
     const a = Rm - w / 2, b = Rm + w / 2, h = d / 2, bv = 0.14;
     return [
-      P(a + bv, -h, 'graphite', GRAPH), P(b - bv, -h, 'bronze', BRONZE), P(b, -h + bv, 'glaze', glaze),
+      P(a + bv, -h, 'glaze', 0xc9bfae), P(b - bv, -h, 'bronze', BRONZE), P(b, -h + bv, 'glaze', glaze),
       P(b, -0.12, 'glaze', OXBLOOD), P(b, 0.12, 'glaze', glaze), P(b, h - bv, 'bronze', BRONZE),
       P(b - bv, h, 'glaze', glaze), P(a + bv * 2, h, 'glaze', CELADON), P(a, h - bv, 'graphite', GRAPH),
       P(a, -h + bv, 'graphite', GRAPH), P(a + bv, -h, 'graphite', GRAPH),
@@ -174,8 +174,17 @@ export async function build({ out = ROOT } = {}) {
   // the foot sits in a stepped basalt cradle with a bronze saddle; wedges either side
   const footZ = OUT_EDGE * Math.sin(tilt);          // the foot moves +Z as the top leans back
   const shade = rockShade({ seed: 7, streak: 0.18 });
-  slab(hull, { cx: 0, cz: footZ, y0: -1.2, thick: 1.9, r: 4.6, aspect: 1.9, yaw: 0, jag: 0.12, seed: 71, tone: BASALT, bevel: 0.3, rough: 0.05 }, shade);
-  slab(hull, { cx: 0, cz: footZ, y0: 0.5, thick: 0.7, r: 3.2, aspect: 1.7, yaw: 0, jag: 0.1, seed: 72, tone: 0x2e2d31, bevel: 0.2, rough: 0.04 }, shade);
+  // a stepped bed of dressed basalt blocks (three courses), not one disc
+  for (let c = 0; c < 3; c++) {
+    const n = 7 - c * 2, w = 2.6 - c * 0.3;
+    for (let k = 0; k < n; k++) {
+      const x = (k - (n - 1) / 2) * w * 1.02 + (R() - 0.5) * 0.2;
+      for (const zz of c === 2 ? [0] : [-1.3, 1.3]) {
+        rbox(hull, V(x, -0.55 + c * 0.62 + 0.3, footZ + zz * (1 - c * 0.25)), [w, 0.62, 2.5 - c * 0.3], 0.08,
+          { surf: 'bisque', tone: [BASALT, 0x2e2d31, 0x45423f][(k + c) % 3], wear: 1.1, rot: [0, (R() - 0.5) * 0.06, 0], segs: 1 });
+      }
+    }
+  }
   for (const s of [-1, 1]) {
     rbox(hull, V(s * 2.9, 1.7, footZ), [1.6, 1.8, 2.6], 0.2, { surf: 'bronze', tone: BRONZE, wear: 0.8, rot: [tilt * 0.5, 0, s * 0.35] });
     slab(hull, { cx: s * 5.5, cz: footZ + (R() - 0.5), y0: -0.8, thick: 2.6, r: 1.6, aspect: 1.3, yaw: s * 0.4, jag: 0.25, seed: 75 + s, tone: BASALT, bevel: 0.25, rough: 0.08 }, shade);

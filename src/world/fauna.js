@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32, composeMat, tint } from './props/kit.js';
 import { REST_SITE } from './island/sites.js';
+import { PLAY_RADIUS, EXTENT } from './island/extent.js';
+
+/** No fauna beyond the gather rim (R5: was a 300 m literal of the Round-4 valley). */
+const FAUNA_R2 = (PLAY_RADIUS + EXTENT.gatherRim) ** 2;
+const REST_R2 = 26 * 26;
 
 /**
  * ROUND 4 — `world-15` (no wildlife). Three instanced species that graze the
@@ -651,6 +656,10 @@ export class Fauna {
         state: GRAZE, timer: 1 + rng() * 3, speed: 0, gait: 0,
         hp: def.hp, alive: true, looted: false, respawn: 0,
         phase: rng() * Math.PI * 2, headBob: rng() * 6.28, entry: null, deadT: 0,
+        // R48(c): every per-frame field exists from creation with its final
+        // representation (a field first seen as undefined is generalised to a
+        // tagged field, and every later double store into it allocates)
+        threatD: 1e9 + 0.5, threatX: 0.5, threatZ: 0.5,
       };
       this.animals.push(an);
       this.byId.set(an.id, an);
@@ -677,7 +686,7 @@ export class Fauna {
    */
   _standable(x, z, openOnly = false) {
     const T = this.ctx.terrain;
-    if (x * x + z * z > 300 * 300) return false;
+    if (x * x + z * z > FAUNA_R2) return false;
     const h = T.getHeight(x, z);
     const dh = Math.max(
       Math.abs(T.getHeight(x + 1.2, z) - h),
@@ -685,7 +694,8 @@ export class Fauna {
     if (dh > 0.9) return false;
     const w = this.ctx.water?.levelAt?.(x, z);
     if (w !== null && w !== undefined && h < w + 0.15) return false;
-    if (Math.hypot(x - REST_SITE.x, z - REST_SITE.z) < 26) return false;      // the settlement
+    const rx = x - REST_SITE.x, rz = z - REST_SITE.z;
+    if (rx * rx + rz * rz < REST_R2) return false;                            // the settlement
     if (openOnly && T.tallGrassDensity && T.tallGrassDensity(x, z) > 0.3) return false;
     return true;
   }
@@ -838,114 +848,109 @@ export class Fauna {
     this._sweepArrows(dt);
 
     this._machineClock -= dt;
-    let machines = null;
+    let threats = null;
     if (this._machineClock <= 0) {
       this._machineClock = 0.4;
-      machines = ctx.machines?.list ?? null;
+      threats = ctx.machines?.list ?? null;
     }
+    // crouching in tall grass halves the distance at which she is noticed
+    const stealth = ctx.player?.crouching ? 0.55 : 1;
+    const A = this.animals;
+    for (let i = 0; i < A.length; i++) {
+      const a = A[i];
+      if (a.alive) this._step(a, dt, p.x, p.z, threats, stealth);
+      else this._stepDead(a, dt);
+    }
+    const P = this._poolList || (this._poolList = Object.values(this.pools));
+    for (let i = 0; i < P.length; i++) {
+      P[i].mesh.instanceMatrix.needsUpdate = true;
+      P[i].attr.needsUpdate = true;
+    }
+  }
 
+  /** A dead animal: fades once skinned, restocks a minute later. */
+  _stepDead(a, dt) {
+    a.deadT += dt;
+    if (a.looted && a.deadT > 12) a.respawn += dt;
+    if (a.deadT > 150 || (a.looted && a.deadT > 26)) {
+      if (a.entry) { this.ctx.interactables?.unregister?.(a.entry); a.entry = null; }
+      this._spawn(a.key, a.slot);
+      return;
+    }
+    this._writeInstance(a);
+  }
+
+  /** One live animal's frame: threat scan, state machine, move, write. Allocation-free. */
+  _step(a, dt, px, pz, threats, stealth) {
+    const def = a.def;
     const rng = this.rng;
-    const terr = ctx.terrain;
-    for (let i = 0; i < this.animals.length; i++) {
-      const a = this.animals[i];
-      const def = a.def;
-
-      if (!a.alive) {
-        a.deadT += dt;
-        // a skinned carcass fades out; the species restocks a minute later
-        if (a.looted && a.deadT > 12) { a.respawn = (a.respawn || 0) + dt; }
-        if (a.deadT > 150 || (a.looted && a.deadT > 26)) {
-          if (a.entry) { ctx.interactables?.unregister?.(a.entry); a.entry = null; }
-          this._spawn(a.key, a.slot);
-          continue;
-        }
-        this._writeInstance(a);
-        continue;
+    /* ---- threat scan ---- */
+    const pdx = a.x - px, pdz = a.z - pz;
+    const pd = Math.sqrt(pdx * pdx + pdz * pdz);
+    let threatX = px, threatZ = pz, threatD = pd;
+    if (threats) {
+      for (let k = 0; k < threats.length; k++) {
+        const m = threats[k];
+        if (!m || m.alive === false) continue;
+        const mx = a.x - m.position.x, mz = a.z - m.position.z;
+        const d = Math.sqrt(mx * mx + mz * mz);
+        if (d < threatD) { threatD = d; threatX = m.position.x; threatZ = m.position.z; }
       }
-
-      /* ---- threat scan ---- */
-      const pdx = a.x - p.x, pdz = a.z - p.z;
-      const pd = Math.hypot(pdx, pdz);
-      let threatX = p.x, threatZ = p.z, threatD = pd;
-      if (machines) {
-        for (let k = 0; k < machines.length; k++) {
-          const m = machines[k];
-          if (!m || m.alive === false) continue;
-          const d = Math.hypot(a.x - m.position.x, a.z - m.position.z);
-          if (d < threatD) { threatD = d; threatX = m.position.x; threatZ = m.position.z; }
-        }
-        a.threatD = threatD; a.threatX = threatX; a.threatZ = threatZ;
-      } else if (a.threatD !== undefined && a.threatD < pd) {
-        threatD = a.threatD; threatX = a.threatX; threatZ = a.threatZ;
-      }
-      // crouching in tall grass halves the distance at which she is noticed
-      const stealth = ctx.player?.crouching ? 0.55 : 1;
-
-      a.timer -= dt;
-      switch (a.state) {
-        case GRAZE:
-          a.speed += (0 - a.speed) * Math.min(1, dt * 4);
-          if (threatD < def.alertR * stealth) { a.state = ALERT; a.timer = 0.7 + rng() * 0.8; }
-          else if (a.timer <= 0) { a.state = WALK; a.timer = 2 + rng() * 3; a.heading = this._roamHeading(a); }
-          break;
-        case WALK:
-          a.speed += (def.grazeSpeed - a.speed) * Math.min(1, dt * 3);
-          if (threatD < def.alertR * stealth) { a.state = ALERT; a.timer = 0.6 + rng() * 0.7; }
-          else if (a.timer <= 0) { a.state = GRAZE; a.timer = 3 + rng() * 5; }
-          break;
-        case ALERT: {
-          a.speed += (0 - a.speed) * Math.min(1, dt * 8);
-          // turn to face the threat: prey looks at what might eat it
-          const want = Math.atan2(threatX - a.x, threatZ - a.z);
-          a.heading = angleTo(a.heading, want, dt * 3.5);
-          if (threatD < def.fleeR * stealth) {
-            this._panic(a, threatX, threatZ);
-            ctx.events?.emit?.('fauna-alerted', { species: a.key, id: a.id, x: a.x, z: a.z });
-          } else if (a.timer <= 0 && threatD > def.alertR * stealth * 1.25) {
-            a.state = GRAZE; a.timer = 3 + rng() * 4;
-          }
-          break;
-        }
-        case FLEE: {
-          a.speed += (def.fleeSpeed - a.speed) * Math.min(1, dt * 5);
-          // keep running away, but curve back toward home once clear
-          const away = Math.atan2(a.x - threatX, a.z - threatZ);
-          const home = Math.atan2(a.hx - a.x, a.hz - a.z);
-          const far = Math.hypot(a.x - a.hx, a.z - a.hz);
-          const want = far > def.roam * 3 ? home : away;
-          a.heading = angleTo(a.heading, want, dt * 2.6);
-          if (a.timer <= 0 && threatD > def.fleeR * 1.6) {
-            a.state = WALK; a.timer = 2 + rng() * 2;
-          }
-          break;
-        }
-        default: break;
-      }
-
-      /* ---- move ---- */
-      if (a.speed > 0.01) {
-        const step = a.speed * dt;
-        let nx = a.x + Math.sin(a.heading) * step;
-        let nz = a.z + Math.cos(a.heading) * step;
-        if (!this._standable(nx, nz)) {
-          // bounce off the obstacle and try again next frame
-          a.heading += (rng() - 0.5) * 1.6 + Math.PI * 0.35;
-          nx = a.x; nz = a.z;
-        }
-        a.x = nx; a.z = nz;
-      }
-      a.y = terr.getHeight(a.x, a.z);
-      // gait amplitude tracks speed so a standing animal's legs are still
-      const target = a.speed / def.fleeSpeed;
-      a.gait += (target - a.gait) * Math.min(1, dt * 6);
-      this._writeInstance(a);
+      a.threatD = threatD; a.threatX = threatX; a.threatZ = threatZ;
+    } else if (a.threatD < pd) {
+      threatD = a.threatD; threatX = a.threatX; threatZ = a.threatZ;
     }
 
-    for (const key of Object.keys(this.pools)) {
-      const pool = this.pools[key];
-      pool.mesh.instanceMatrix.needsUpdate = true;
-      pool.attr.needsUpdate = true;
+    a.timer -= dt;
+    switch (a.state) {
+      case GRAZE:
+        a.speed += (0 - a.speed) * Math.min(1, dt * 4);
+        if (threatD < def.alertR * stealth) { a.state = ALERT; a.timer = 0.7 + rng() * 0.8; }
+        else if (a.timer <= 0) { a.state = WALK; a.timer = 2 + rng() * 3; a.heading = this._roamHeading(a); }
+        break;
+      case WALK:
+        a.speed += (def.grazeSpeed - a.speed) * Math.min(1, dt * 3);
+        if (threatD < def.alertR * stealth) { a.state = ALERT; a.timer = 0.6 + rng() * 0.7; }
+        else if (a.timer <= 0) { a.state = GRAZE; a.timer = 3 + rng() * 5; }
+        break;
+      case ALERT: {
+        a.speed += (0 - a.speed) * Math.min(1, dt * 8);
+        // turn to face the threat: prey looks at what might eat it
+        a.heading = angleTo(a.heading, Math.atan2(threatX - a.x, threatZ - a.z), dt * 3.5);
+        if (threatD < def.fleeR * stealth) {
+          this._panic(a, threatX, threatZ);
+          this.ctx.events?.emit?.('fauna-alerted', { species: a.key, id: a.id, x: a.x, z: a.z });
+        } else if (a.timer <= 0 && threatD > def.alertR * stealth * 1.25) {
+          a.state = GRAZE; a.timer = 3 + rng() * 4;
+        }
+        break;
+      }
+      case FLEE: {
+        a.speed += (def.fleeSpeed - a.speed) * Math.min(1, dt * 5);
+        // keep running away, but curve back toward home once clear
+        const hx = a.hx - a.x, hz = a.hz - a.z;
+        const want = Math.sqrt(hx * hx + hz * hz) > def.roam * 3 ? Math.atan2(hx, hz) : Math.atan2(a.x - threatX, a.z - threatZ);
+        a.heading = angleTo(a.heading, want, dt * 2.6);
+        if (a.timer <= 0 && threatD > def.fleeR * 1.6) {
+          a.state = WALK; a.timer = 2 + rng() * 2;
+        }
+        break;
+      }
+      default: break;
     }
+
+    /* ---- move ---- */
+    if (a.speed > 0.01) {
+      const step = a.speed * dt;
+      const nx = a.x + Math.sin(a.heading) * step;
+      const nz = a.z + Math.cos(a.heading) * step;
+      if (this._standable(nx, nz)) { a.x = nx; a.z = nz; }
+      else a.heading += (rng() - 0.5) * 1.6 + Math.PI * 0.35;   // bounce off the obstacle and try again next frame
+    }
+    a.y = this.ctx.terrain.getHeight(a.x, a.z);
+    // gait amplitude tracks speed so a standing animal's legs are still
+    a.gait += (a.speed / def.fleeSpeed - a.gait) * Math.min(1, dt * 6);
+    this._writeInstance(a);
   }
 
   /**
@@ -1016,6 +1021,7 @@ export class Fauna {
       this.group.remove(pool.mesh);
       delete this.pools[key];
     }
+    this._poolList = null;
     if (this.group.parent) this.group.parent.remove(this.group);
     this.group.clear();
     this.animals.length = 0;

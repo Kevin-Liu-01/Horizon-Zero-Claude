@@ -56,7 +56,7 @@ function pushColumn(out, cx, cz, rad, y0, y1, rot, seed, tone) {
   // cross-joint heights (columnar jointing), measured up from the base
   const rings = [y0];
   let y = y0 + 0.6 + R() * 1.2;
-  while (y < y1 - cham - 0.5) { rings.push(y); y += 1.0 + R() * 1.5; }
+  while (y < y1 - cham - 0.6) { rings.push(y); y += 1.9 + R() * 1.8; }
   rings.push(y1 - cham);
   // a broken top: the cap tilts a little
   const tx = (R() - 0.5) * 0.16, tz = (R() - 0.5) * 0.16;
@@ -118,7 +118,7 @@ export function buildOrganShelf(terrain, clusters = ORGAN) {
   let seed = 9001;
   for (const cl of clusters) {
     const R = mulberry32(seed += 101);
-    const diam = 0.75 + R() * 0.5;                        // cluster's mean column diameter
+    const diam = 0.95 + R() * 0.4;                        // cluster's mean column diameter (0.6-1.4 m per column)
     const pitch = diam * 0.93;                            // hex packing pitch (columns touch)
     const fx = Math.sin(cl.face * D2R), fz = -Math.cos(cl.face * D2R);   // toward the face
     const rot = R() * Math.PI / 3;
@@ -178,8 +178,8 @@ function tuffBlockGeo() {
     y = Math.round(y * 3) / 3 * 0.55 + y * 0.12;
     p.setXYZ(i, x * k, y * k, z * k * 0.9);
   }
-  const ng = g.toNonIndexed();
-  g.dispose();
+  const ng = g.index ? g.toNonIndexed() : g;
+  if (ng !== g) g.dispose();
   ng.computeVertexNormals();
   // vertex shade: tops lighter (dust), bed lines darker
   const pos = ng.attributes.position;
