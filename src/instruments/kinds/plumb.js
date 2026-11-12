@@ -180,8 +180,12 @@ export class Plumb extends ExpansionMachine {
    * front foot) that brings the hull's lowest bind-pose vertex to TOPPLE.clearM.
    */
   _measureTopple(entry, k) {
-    let pos = null;
-    entry.root.traverse((o) => { if (!pos && o.isMesh && o.material?.userData?.instrumentHull) pos = o.geometry.attributes.position; });
+    let pos = null, node = null;
+    entry.root.traverse((o) => { if (!pos && o.isMesh && o.material?.userData?.instrumentHull && !o.userData?.casterProxy && !o.userData?.instrumentTool) { pos = o.geometry.attributes.position; node = o; } });
+    // the vertices in body space at scale 1 (a quantised node carries its dequantising scale + offset)
+    const M = node ? node.matrix.elements : null;
+    const by = (i) => M[1] * pos.getX(i) + M[5] * pos.getY(i) + M[9] * pos.getZ(i) + M[13];
+    const bz = (i) => M[2] * pos.getX(i) + M[6] * pos.getY(i) + M[10] * pos.getZ(i) + M[14];
     const legs = this.rig.legs;
     let rearZ = 0, frontZ = 0, nr = 0;
     for (const L of legs) { const z = L.restFoot[1]; if (z < 0) { rearZ += z; nr++; } else frontZ = Math.max(frontZ, z); }
@@ -194,7 +198,7 @@ export class Plumb extends ExpansionMachine {
         const phi = (lo + hi) / 2, c = Math.cos(phi), s = Math.sin(phi);
         let minY = 1e9;
         for (let i = 0; i < pos.count; i += 3) {
-          const y = pos.getY(i) * k, zr = (pos.getZ(i) * k - pz) * dir;
+          const y = by(i) * k, zr = (bz(i) * k - pz) * dir;
           const yy = y * c + zr * s;
           if (yy < minY && zr > 0) minY = yy;
         }

@@ -26,6 +26,11 @@ export function prepareTools(entry) {
   entry.root.traverse((o) => {
     if (!o.isMesh || !o.userData?.instrumentTool) return;
     const a = o.userData.anchor || [0, 0, 0];
+    // bake the node's own transform first: a quantised (KHR_mesh_quantization) node carries the dequantising
+    // scale + offset on the node, and the part re-parents the mesh with an identity transform
+    o.updateMatrix();
+    o.geometry.applyMatrix4(o.matrix);
+    o.position.set(0, 0, 0); o.quaternion.identity(); o.scale.set(1, 1, 1); o.updateMatrix();
     o.geometry.translate(-a[0], -a[1], -a[2]);
     o.geometry.computeBoundingSphere();
     o.geometry.computeBoundingBox();
