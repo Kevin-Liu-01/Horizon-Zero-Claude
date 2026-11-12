@@ -312,92 +312,61 @@ can meet them only with a warmer, higher-contrast sky than the panel's own (a qu
 The clip threshold (largest channel ≥ 254) was chosen because it is the one at which every panel sits inside its
 own clip bar (at ≥ 250, 1-MR reads 7.6 % against 1–5 %).
 
-## 4. Gate results (port 5251, this tree; `node tools/gates.mjs --port 5251 --lane look-post`)
+## 4. Gate results (port 5251, this tree)
 
-Runs: r2 (Nov 6 21:50–22:11 UTC), r3 (23:30–00:14), r4 (the fixes below; §4.3). Scratch:
-`/private/tmp/claude-501/-Users-kevinliu-Horizon-Zero-Claude/db31a0fa-9701-46f4-8234-5158425c1e49/scratchpad/r5/look-post/{r2,r3,r4,film-r3}`.
-Every visual row was filmed at 1600×900 and read by me against its panels (§4.2); the R29 judge grades them.
+Fix-round runs (scratch `/private/tmp/claude-501/-Users-kevinliu-Horizon-Zero-Claude/db31a0fa-9701-46f4-8234-5158425c1e49/scratchpad/r5/look-post/`):
+**f1-b1** (19:30 UTC, diagnostics), **f1-b2** (21:37–22:24, the lane block, its aliases and the global list, 55 rows, grade
+v2 first cut "c6"), **f1-b3** (⟪b3:time⟫, the rows the last changes touch: grade v2 final "c8", the ungraded bloom key,
+the depth-variant key, the hero settle). r2–r4 are in this file's git history.
 
-### 4.1 The look-post block (W1)
+### 4.1 The look-post block
 
-| row | r3 | measured |
+| row | result | measured (run) |
 |---|---|---|
-| A-look-suite-files (b, c, f) | **PASS** | synthetic 6 patches all within ±0.5; fixture 77 numbers within ±0.3; refs.json 8 904 B, no data URI / base64 run / pixel key; 650 files scanned, 0 SHA-256 matches with the 4 reference images |
-| A-look-tonemap (a–d) | **PASS** | (a) 0.02 → L\* 9.92, 0.18 → 50.21, 1.6 → 86.12 at exposure 1.2668; (b) GPU vs `look.evaluate` worst 0.002/255 at mix 0, 0.511/255 golden+calima 50 %, 0.519/255 dusk+noon 25 % (the ±0.5 LSB dither included); invert round trip 0.02/255 over 512 shown values; the four lamp tokens 0/255; (c) skew #FFB070×4 4.76°, #F08A5A×3 4.47°, #FF2D8C×6 2.07°, Orchil #6B3F73×4 2.06°; (d) 64-step ramp 0.001–32 strictly increasing |
-| A-look-tonemap (e, f) | see aliases | A-lamp-canon-distance PASS; A-brea-contrast PASS (5.85:1 salt, ΔE 22.8 sand, 27.6 % ≥ 3:1); A-weak40 every 13:00 clause PASS (calima clause PENDING world-sky); A-lamp-states colour, iris, beams PASS in r3, wary rhythm FAIL in r3 → **PASS in r4** (§4.3); A-sighting-hue is shell-ui's row (not in this tree) |
-| A-look-suite (a, d, e) | **PASS** | five places identical SHA-256 on two consecutive captures (field after 2 pairs: streaming), depth bins 30 → 29.1 m, 120 → 116.4, 400 → 388, 900 → 873, all in their bins; capture = WebGL canvas |
-| A-look-frame-stats | FAIL | every LUT texel = look.js within 0.5/255 (all four sets); look on at low and medium; places (stand-ins on the W0 map): field 3/9, vista 5/11, aim 2/9, close 2/7, dusk 2/4 — see §5.1 |
-| A-look-random | FAIL | 0/12 meet look.field's bars (lo20 hue 50–61, mid b\* 29–35, p99 53–64) |
-| A-look-bloom | FAIL (r3) | (a) brightest noon ground L\* 86.7 → folded bloom 0 ✓; (d) energy 0 % field and vista ✓; (b) no sun in the vista stand-in (L-06 is world-sky's: profile on = off); (c) halo / core 2.50 with the first threshold mapping (r4 re-measures, §4.3) |
-| A-csm-layer-masks | **PASS** | CASTER_ONLY: 0 view draws, cascades [0, 1, 2]; CASCADE0_ONLY: 8 view draws, cascade [0]; layer 0: both; camera mask restored after the shadow pass |
-| A-hold-frame | **PASS** | held frames 0 draws (10/10); resumed frame within 0.47 % of the held one |
-| A-gpu-attrib (+ box) | FAIL (r3, quiet box, load 1.98) | per-pass timer segments unusable on ANGLE/Metal (opaque 99–159 ms, grade and SMAA 0, also with a flush); re-built as skip-one marginals (r4, §4.3); owners and floor below |
-| A-look-ledger (+ box) | FAIL (r3) | whole-frame A/B of the look group: vista +2.87, herd +1.6, fight +0.15 ms at ±1–3 ms frame noise; re-built as pass benches for post items (r4, §4.3) |
-| V-look-before-after (1/2, 2/2), V-look-grade, V-look-highlights, V-look-glow, V-look-random | NEEDS-JUDGE | read in §4.2 |
+| A-look-suite-files (b, c, f) | **PASS** | synthetic 6 patches within ±0.5; fixture 77 numbers within ±0.3; refs.json 8 904 B, no image data; 650 files, 0 SHA-256 matches (b2) |
+| A-look-tonemap (a–d) | **PASS** | 0.02 → L\* 9.92, 0.18 → 50.21, 1.6 → 86.12; GPU vs evaluate ≤ 0.545/255 (dither included); invert round trip 0.037/255; tokens 0/255; skews 4.76° / 4.47° / 2.07° / 2.06°; ramp strictly increasing (b2) ⟪b3:tonemap⟫ |
+| A-look-suite (a) two boots, (d), (e) | ⟪b3:suite⟫ | (d) 29.1 / 116.4 / 388 / 873 m in their bins; (e) WebGL canvas. (a) b1: Brea and the grass round her differed (8–11 %; close 75 %); b2 after the clock snap and the first settle: still Brea (8–10 %, close 61 %) — her idle draws breath / shift / blink / fidget phases from Math.random |
+| A-look-frame-stats | FAIL (§5.1, ruling asked) | ⟪b3:fs⟫; LUT texels = look.js within 0.561/255 (all four sets); look on at medium and low |
+| A-look-random | FAIL (§5.1) | ⟪b3:random⟫ |
+| A-look-bloom | FAIL on (b) only | ⟪b3:bloom⟫ |
+| A-csm-layer-masks | **PASS** | CASTER_ONLY 0 view draws, cascades [0, 1, 2]; CASCADE0_ONLY 8 view draws, cascade [0]; camera mask restored (b2) |
+| A-hold-frame | **PASS** | held frames 0 draws (10/10); resumed frame 0 % different (b2) |
+| A-gpu-attrib (+ box) | PENDING-quiet-box (load 3.47) | build 89b875b (this tree, 0 dirty). Rows (ms, skip-one): vista frame 21.16 = shadow 1.10, opaque 17.62, transparent + additive 6.59, GTAO 4.90, bloom 8.44, SMAA 1.30, shafts 0.21, overlay 1.52, grade (bench) 0.22 → sum 41.9 against 21.2: **the skip-one marginals are strongly superadditive on this GPU on a loaded box**, so the sum rule fails as written; herd 19.15 (sum 28.1), fight 19.66 (sum 14.3, with negative rows = noise). Rows ≥ 0.5 ms with no §4.2 fix owner: bloom, SMAA, overlay; owners settlement (7.37 vista), hero, npcs, landmarks-places. The bloom row (4.7–8.4 ms skip-one) contradicts its pass bench (0.23 ms per bloom render, readback-fenced): the quiet run must settle which the A21 timer believes |
+| A-look-ledger (+ box) | FAIL (b2, box quiet at load 2.37) ⟪b3:ledger⟫ | items L-01 +0.055, L-02 +0.028, L-07 +0.004 ms (pass bench; ≤ 0.45); draws ≤ 275; RT 106.6 MB, GPU bytes 241.6 MB with the look on; every enabled, landed item has a row (17 knobs not landed); shipped renderScale 1.00 on all three. **Fails A21's W1-exit bars with every high item on: vista 15.67 ≤ 17 ✓, herd 20.02 > 20.0, fight 20.16 > 17.0; low: vista 20.02, fight 20.72.** By §4.6 rule 2 that means L-01/L-02 go off on `high` at the W1 exit unless A21 is recovered (orchestrator, §6); the look adds ≈ 0.09 ms of it. b2's one look draw at the vista (on − off = +1 from a single 12-frame window) is now the median of 3 pairs |
 
-### 4.2 Reading the films (r3; panels 1-TR, 1-MR, 1-TL, 1-MC, 1-BL, 2-MR, 5-1)
+### 4.2 Reading the films (f1-b2 c6; f1-b3 c8 ⟪b3:films⟫)
 
-- **V-look-before-after** (field 16:30, vista 19:00, aim 17:45 behind Brea; close 18:45; dusk 19:45; noon):
-  the CALIMA column turns the W0 output's olive-mustard grass amber, moves the darkest fifth from hue 71–88° to
-  49–57° (toward 1-TR's 52° and the rose band), lifts crushed shadows (crush 0.5–4.6 % → 0–1 %: Brea's face and the
-  wrap read in the close-up, as in 1-MC) and keeps Brea's violet the most saturated hue. It is darker at the top
-  (p99 −2…−8 L\*) and the sky stays the W0 keys' orange-pink haze, so no frame looks like 1-TR or 1-MR yet: no
-  lavender zenith, no rose distance layers, no sun disc, no sea. That is the light (world-sky L-03/L-04/L-05/L-06),
-  the ground and the map (world-ground, world-props), not the transform; the noon frame (noon set) reads tan where
-  W0 read lemon.
-- **V-look-glow**: the hostile and calm lamp discs at the lamp system's solved HDR read as their tokens with a soft
-  halo; sunlit cloth, rock and grass at noon do not glow.
-- **V-look-highlights**: FAIL as filmed: the vista stand-in at 19:00 has no sun disc or sea (L-06, world-ground).
-- **V-look-random**: twelve frames, one warm orange-amber haze; consistent, but monotone beside 1-TR and 1-MR
-  (no depth layering, no violet).
-- **V33b / V20 / V-gpu-tier-look** on the Pans POC under the look: no screen-locked lattice, AO reads as contact;
-  the dune ripples read more clearly (the toe lifts what ACES crushed), which is what A108 trips on (§5.3).
+Each sheet read at 1600×900 beside ext:kevin-nov6-keyart.jpg@860d7e9f#1-TR, #1-MR, #1-TL, #1-BL, #1-MC and
+ext:kevin-nov6-board.jpg@f2694e04#2-MR (and 5-1 by its words), the panel statistics in §3, and the W0 column.
 
-### 4.3 r4: the fixes, re-measured
+⟪b3:reading⟫
 
-r4 (Nov 7 02:11–02:52 UTC; box load 4.0–4.7, so the quiet-box rows are PENDING by their own box rows):
-
-| row | r4 | measured |
-|---|---|---|
-| A-look-tonemap | **PASS** | as r3; with the half-float LUT: GPU vs evaluate worst 0.53/255 (dither included), invert round trip 0.109/255, tokens 0/255 |
-| A-look-suite | **PASS** | five places bit-identical; depth bins as r3 |
-| A-look-frame-stats | FAIL (§5.1) | LUT texels within 0.5/255 of look.js on all four sets (half-float); places as r3 |
-| A-look-bloom | FAIL | threshold now display-keyed: HDR 2.90 (17:45) / 3.54 (noon) = L\* 94, knee 0.78 / 0.95; (a) and (d) PASS; (b) no sun disc (L-06); (c) measured from the edge of a 2.5× ring disc the halo/core read 2.50 = the bar by construction (a tie the float compare lost): the row now measures the core alone (changed after r4, not re-run) |
-| A-lamp-states@look-post | **PASS** | every check: colour ΔE calm/wary/hostile/dark within 3 (wary 1.63), iris ratios, cores above bloom (threshold 3.54), rhythm calm steady / wary 0.98 Hz rel. std **0.053** (r3 0.038) / hostile 4 Hz, dark sputter, beams |
-| A-weak40@look-post | PENDING | every 13:00 clause PASSES (r2 FAIL 2.02:1 before the display-keyed threshold); calima clause awaits world-sky |
-| A-brea-contrast@look-post | **PASS** | salt 5.84:1, sand ΔE 22.8, 27.4 % ≥ 3:1 |
-| A22-msaa@look-post | **PASS** | |
-| A108@look-post / -w0 | FAIL / **PASS** | unchanged by the half-float LUT and the dither: content-limited under the look (§5.3) |
-| A1-boot-clean, A20b | **PASS** | |
-| A-gpu-attrib (+ box) | PENDING-quiet-box (load 4.7) | build 858e4b7 (this tree). Skip-one rows on a busy box (ms): vista 18.7 = shadow 1.2, GTAO 0.57, bloom 5.68, SMAA 0.02, grade LUT 0.39, transparent 0.95, remainder 9.88; herd 21.4 = 2.84 / 2.39 / 7.72 / 0.93 / 1.20 / 1.18, remainder 5.1; fight 20.3 = −1.04 / 0.99 / 9.22 / 2.76 / 1.23 / 2.12, remainder 4.97. All-off removes 5.4 / 8.4 / 8.1 against row sums 8.8 / 16.3 / 15.3: the 10 % rule does not hold on a loaded box (±1–3 ms per median); the quiet run decides. Owners (hide-one, vista): settlement 3.46, landmarks 3.05, terrain-sky-sea 1.03, the rest negative (noise); floor with every owner hidden 3.5–3.6 ms. The bloom rows (5.7–9.2 ms) are the first thing to confirm on the quiet box: if they hold, bloom is the largest post cost and the first fix (§4.2 of ROUND5-LOOK needs a row) |
-| A-look-ledger (+ box) | PENDING-quiet-box (load 4.0) | the pass bench read 0.002–0.03 ms per pass on/off: gl.finish does not fence the GPU on ANGLE/Metal, so the bench timed submission only; it now fences with a 1-pixel readPixels (changed after r4, not re-run). The whole-frame instrument is unchanged |
-| A-vram-ledger | **PASS** | |
-| A-alloc-rate | FAIL (baseline guard, two owners) | engine 0.71× of its W0b baseline (152.98 vs 216.24 KB/frame); instruments-core 0.10 vs 0.07 KB/frame (lamps.js re-solves when the look moves; `invert` is allocation-free now and the hour bridge quantised, the 30 B/frame residual is unattributed below the profiler's listing floor); world-sky 3.33 vs 2.70 KB/frame with its file unchanged (`_updateNightLights` 0.6 → 1.19 KB/frame between r3 and r4 on the same code: the guard's run-to-run noise is of the same order). Re-read on the quiet box |
-
-
-### 4.4 Inherited and global rows (r3)
+### 4.3 Inherited and global rows (f1-b2 unless marked)
 
 | row | result | note |
 |---|---|---|
-| A-gpu-tier(-box)@look-post | PENDING (r2: load 6.27) | vista 12.49 ms, empty 5.12 ms, 59.9 fps, p95 18.6 ms on the POC (bars 13 / 7 / 58 / 20): passes on numbers, graded on the quiet box |
-| A-rt-ledger@look-post | PASS | 127.27 MB of render targets (≤ 170); the LUT slots are textures (0.5 MB) |
-| A22-msaa@look-post | PASS | SMAA fraction 0.336, gain 1.59× over off |
-| A108-ao-periodicity@look-post | FAIL | content-limited crops under the look (far108m control 0.261; mid47m 0.299–0.615); the `-w0` twin PASSES in the same run (worst 0.135) — §5.3 |
-| A109-ao-distance-fade@look-post | PASS | far/near 0, far luminance on = off |
-| V20, V33b, V-gpu-tier-look @look-post | NEEDS-JUDGE | filmed |
-| A1-boot-clean, A20b, A20, A22b-fov-recompile | PASS | |
-| A9-perf-budget | PASS | 241 draws, 59.9 fps median, p95 18.1 ms, scene GPU 20.0 ms (quiet box, load 2.89) |
-| A21-real-draw-calls | FAIL (GPU term) | draws 248 / 183 / 275, tris 3.66 / 3.87 / 3.93 M PASS; median GPU vista 19.59, herd 33.87, fight 20.50 ms against 14 (quiet box): the Nov 6 numbers to the tenth, so the look does not move A21; **the herd's 33.9 ms is this build (the W0 valley map in the look-post tree, main + look-post)**, not world-ground's island (20.10) |
-| A90-memory-stability, -expansion, A90b, A90-rig-reclaim, A90-abs | PASS | A90-abs heap and GPU controls 1.003× / 1.066× |
-| A-alloc-rate | FAIL (baseline guard) | instruments-core 0.08 vs 0.07 KB/frame (+14 %, lamps.js re-solving through `look.invert` as the clock moved the look); engine 0.71× of its W0b baseline. Fixed for r4: `invert` allocation-free, the hour bridge quantised (§4.3) |
-| A-vram-ledger | PASS | |
-| A-no-horizon-terms-code / -player | PASS | 1371 = ratchet; 1503 ≤ 1508 |
-| A-ID-ip-assets-gone, A-assets-tracked | PASS | |
-| A-licence-manifest | PENDING | third-party clause PENDING (pipeline's re-fetch rows; no asset added by this lane) |
-| A-port-guard | PENDING | refusals PASS; "not a full lane run" (r2's FAIL was this lane's import-time `pgrep`/`git`, removed) |
-| A-carried-suite | PENDING-orchestrator | R48 d |
+| A-gpu-tier(-box)@look-post | **PASS** (quiet box, load 2.37) | POC vista 12.55 ms (≤ 13), empty 5.16 (≤ 7), 59.9 fps, p95 18.6 ms |
+| A-rt-ledger@look-post | **PASS** | 127.27 MB (≤ 170) |
+| A22-msaa@look-post | **PASS** | SMAA fraction 0.341 |
+| A109-ao-distance-fade@look-post | **PASS** | far/near 0; far luminance on = off |
+| A108-ao-periodicity@look-post / -w0 | FAIL / **PASS** | §5.3: the AgX transform; ⟪b3:a108⟫ |
+| V20, V33b, V-gpu-tier-look @look-post | NEEDS-JUDGE (filmed, read) | V33b: no screen-locked lattice in any of the 8 bearings or the AO ×8 maps; the dune ripples read as geometry; the dark sand takes the violet shadow tint (grey-violet, not blue) |
+| A-lamp-canon-distance@look-post | **PASS** | min ΔE ≥ 24.7 across 28 tokens |
+| A-lamp-states@look-post / -w0 | ⟪b3:lamp⟫ / **PASS** | b2 (c6, the threshold keyed on the graded curve, HDR 1.68): wary rhythm rel. std 0.032 (bar > 0.05) — the lower key bloomed the wary core through its trough; the key is now read on the AgX curve before the grade (HDR 4.16 golden at EV 0) |
+| A-weak40@look-post / -w0 | PENDING / PENDING | every 13:00 clause PASSES; the calima clause awaits world-sky (R46) |
+| A-brea-contrast@look-post | **PASS** | salt 6.14:1, sand ΔE 21.9, 24.5 % ≥ 3:1 |
+| A1-boot-clean, A20b, A22b-fov-recompile | **PASS** | |
+| A9-perf-budget | **PASS** | 241 draws, 59.9 fps, p95 18 ms, scene GPU 19.43 ms (quiet box, load 2.41) |
+| A21-real-draw-calls | PENDING (GPU terms, R45) | draws 248 / 183 / 275, triangles 3.66 / 3.87 / 3.93 M PASS; GPU vista 19.39, herd 37.31, fight 20.54 ms (load 2.29) |
+| A90-memory-stability, -expansion, A90b, A90-rig-reclaim, A90-abs | **PASS** | A90-abs heap and GPU controls 0.997× / 1.04× |
+| A-alloc-rate | FAIL (baseline guard) ⟪b3:alloc⟫ | b2: engine **0.629×** of its W0b baseline (136.1 vs 216.2 KB/frame; r4 0.71×); world-sky **1.019×** (2.75 vs 2.70: the judge's 1.19× was run noise, `environment.js` unchanged); instruments-core 1.143× (0.08 vs 0.07 KB/frame, 4.63 vs 3.98 KB/s); settlements 1.10× / 1.16× and progression 1.12× (files this lane never touched, unchanged from main) |
+| A-vram-ledger | **PASS** | |
+| A-no-horizon-terms-code / -player | **PASS** | 1371 = ratchet; 1503 ≤ 1508 |
+| A-ID-ip-assets-gone, A-assets-tracked | **PASS** | |
+| A-licence-manifest | PENDING | third-party clause (pipeline's re-fetch rows; no asset added by this lane) |
+| A-port-guard | PENDING | refusals PASS; "not a full lane run" |
+| A-carried-suite | refused in a mixed run (by design) | graded in an invocation of its own (R48 d, orchestrator) |
 | A-reach-all-sites | not registered in this tree | |
-
 
 ## 5. Honest gaps
 
