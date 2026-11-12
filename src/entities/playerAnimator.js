@@ -2808,7 +2808,7 @@ export class PlayerAnimator {
       this._charOf(pe.bone, _rxV);
       _gvW.copy(_rxV).applyMatrix4(this.model.matrixWorld);
       // (round 3: ...and for `gvHold` s after it last held anything back, so what it held is let go at its pace, not at once)
-      const on = (dodging || air || this._rxWin > 0 || this._aimW > 0.01 || this._crouchW > 0.5 || this._gvHold > 0) && !p.mantling && !p.riding
+      const on = (dodging || air || this._rxWin > 0 || this._aimW > 0.01 || this._crouchW > 0.5 || this._gvHold > 0 || p._aimTurnLim) && !p.mantling && !p.riding
         && this._deadW < 0.02 && !((this._nat?.ok) && ((this._nat.by.climb?.w ?? 0) > 0.02 || (this._nat.by.sit?.w ?? 0) > 0.02));
       if (on && this._gvOk) {
         const k60 = Math.min(1, Math.max(1e-3, dt * 60)), cap = RX.govM * k60;
@@ -2841,7 +2841,7 @@ export class PlayerAnimator {
             const nW = RX.trunkWorld && Math.abs(dYaw) > 1e-5 && Math.abs(dYaw) < 0.6 && (this._aimW > 0.01 || p._aimTurnLim || this._rxWin > 0 || air) ? nB : 0;
             for (let i = 0; i < nW; i++) _gvQw[i].copy(Q[i]).applyAxisAngle(Y_AXIS, -dYaw);
             _gvT.set(0, 0, 0);
-            for (let it = 0; it < 8; it++) {
+            for (let it = 0; it < 24; it++) {
               let worst = 0, wi = -1;
               for (let i = 0; i < nB + nW; i++) {
                 const l = _gvS.subVectors(P[i % nB], i < nB ? Q[i] : _gvQw[i - nB]).add(_gvT).length();
@@ -4413,7 +4413,7 @@ export class PlayerAnimator {
            * deg apart, the knuckle 0.11-0.12 m off the nock at a crouched 0.9 aim, run w11/d3. The node as it was rendered,
            * carried as the grip is, decides it) */
           let nearC = _v7.lengthSq() < 0.25;
-          if (this._bnOk) {
+          if (this._bnOk && this.T.armFlow.nodeNear) {
             _caB.subVectors(this._bnCh, this._pivCh);
             if (Math.abs(dE) > 1e-5) _caB.applyAxisAngle(_caX, -dE * clamp(this._tW ?? 0, 0, 1));
             _caB.add(this._pivCh);
