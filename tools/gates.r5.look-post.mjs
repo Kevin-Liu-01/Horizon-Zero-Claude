@@ -57,11 +57,22 @@ const IP_CLAUSE = 'FAIL if the frame shows any element of the image IP list (ROU
 /* ------------------------------------------------------------------------ */
 
 /** Box witness for the quiet-box rows (R45): load average and other headless Chromes. */
+/**
+ * Box witness, R45's definition: load average < 3, no lane Chrome alive, exactly one Chrome (this run's own).
+ * Gate Chromes are counted by distinct --user-data-dir among headless Chrome processes (each harness run owns
+ * one profile); the orchestrator's memory guard slot is not a Chrome and is not counted. Fix round 1: the
+ * witness used to call a box quiet on load alone (load 2.32 with ~8 lanes running read as quiet).
+ */
 function boxSample() {
   const load1 = os.loadavg()[0];
-  let chromes = 0;
-  try { chromes = execFileSync('pgrep', ['-f', 'Chrome.*--headless'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).length; } catch { chromes = 0; }
-  return { load1: +load1.toFixed(2), headlessChromeProcs: chromes, quiet: load1 < 3 };
+  let profiles = [], procs = 0;
+  try {
+    const ps = execFileSync('ps', ['-axo', 'command'], { encoding: 'utf8', maxBuffer: 16 << 20 }).split('\n').filter((l) => /Chrome|chrome/.test(l) && /--headless/.test(l));
+    procs = ps.length;
+    profiles = [...new Set(ps.map((l) => (l.match(/--user-data-dir=(\S+)/) || [])[1]).filter(Boolean))];
+  } catch { profiles = []; }
+  const quiet = load1 < 3 && profiles.length <= 1;
+  return { load1: +load1.toFixed(2), headlessChromeProcs: procs, gateChromes: profiles.length, quiet, rule: 'R45: load < 3, no lane Chrome alive, exactly one Chrome (this run)' };
 }
 
 function gitWitness() {
@@ -189,7 +200,8 @@ const LOOK = `
     const weather = env.weatherStates?.includes(P.weather) ? P.weather : 'clear';
     env.setWeather(weather, 0.05);
     env.setTime(P.hour);
-    __E.setLookHour?.(P.hour, weather);
+    // no EV: the L-03 hour EV is world-sky's (fix round 1); the look places show what play shows
+    __E.setLookHour?.(P.hour, weather, null, { ev: false });
     p.position.set(P.x, 0, P.z); p.velocity?.set?.(0, 0, 0); p._snapToGround?.();
     await frames(3);
     p.camYaw = sunYaw() + (P.sunRel || 0) * Math.PI / 180;
@@ -411,25 +423,67 @@ const FRAME_STATS = look(`
 
 /* ------------------------------------------------------------------ A-look-suite */
 
+/**
+ * A-look-suite (a), fix round 1: the spec's property is an identical PNG SHA-256 on two consecutive RUNS,
+ * i.e. across two boots of the build, not two captures of one page. Boot 1 is the gate's own page; boot 2 is a
+ * fresh document of the same URL (same ?shot=1 and params) in a same-origin 1600x900 iframe at the same DPR,
+ * booted while boot 1 is held (holdFrame, timeScale 0). Each boot stages the five places with the same code
+ * (SUITE_SHOTS, evaluated in its own window) and hashes the WebGL canvas; the hashes must match place by
+ * place. The iframe's renderer loses its context and the iframe is removed before (d).
+ */
+const SUITE_SHOTS = `(async () => {${LOOK}
+  const out = {};
+  try {
+    for (const name of ${JSON.stringify(Object.keys(LOOK_CORE))}) {
+      const s = await stageLook(name, { frames: 40 });
+      if (s.skip) { out[name] = { skip: s.skip }; continue; }
+      const c1 = await grabCanvas(); await frames(6); const c2 = await grabCanvas();
+      const h1 = await sha(c1.px), h2 = await sha(c2.px);
+      out[name] = { source: s.source, sha: h1, stable: h1 === h2, W: c1.W, H: c1.H, captureSource: c1.source, px: c1.px };
+      unstage();
+    }
+  } finally { try { unstage(); } catch (e) { /* */ } }
+  return out;
+})()`;
 const SUITE = look(`
   const places = ${JSON.stringify(Object.keys(LOOK_CORE))};
+  // boot 1 (this page)
+  const A = await eval(${JSON.stringify(SUITE_SHOTS)});
+  // boot 2: a fresh document in an iframe; boot 1 is held while it runs (no draws, sim frozen)
+  __E.holdFrame(true); __E.requestTimeScale('look-suite', 0);
+  const f = document.createElement('iframe');
+  Object.assign(f.style, { position: 'fixed', left: '0', top: '0', width: '1600px', height: '900px', border: '0', zIndex: 2147483646 });
+  f.src = location.href;
+  document.body.appendChild(f);
+  let B = null, bootErr = null;
+  const t0 = performance.now();
+  try {
+    while (!(f.contentWindow && f.contentWindow.__READY__ === true)) { if (performance.now() - t0 > 150000) throw new Error('boot 2 not ready in 150 s'); await new Promise((r) => setTimeout(r, 250)); }
+    B = await f.contentWindow.eval(${JSON.stringify(SUITE_SHOTS)});
+  } catch (e) { bootErr = String(e && e.message || e); }
   const rows = {};
+  const diffCells = [];
   for (const name of places) {
-    const s = await stageLook(name, { frames: 40 });
-    if (s.skip) { rows[name] = { skip: s.skip }; continue; }
-    // two consecutive captures 6 frames apart; a place still streaming in gets up to 3 pairs (reported)
-    let c1, c2, h1, h2, diff = 0, pairs = 0;
-    for (; pairs < 3; ) {
-      pairs++;
-      c1 = await grabCanvas(); await frames(6); c2 = await grabCanvas();
-      h1 = await sha(c1.px); h2 = await sha(c2.px);
-      diff = 0; for (let i = 0; i < c1.px.length; i += 4) if (c1.px[i] !== c2.px[i] || c1.px[i + 1] !== c2.px[i + 1] || c1.px[i + 2] !== c2.px[i + 2]) diff++;
-      if (h1 === h2) break;
-      await frames(30);
+    const a = A[name], b = B && B[name];
+    if (!a || a.skip) { rows[name] = { skip: a ? a.skip : 'no boot-1 shot' }; continue; }
+    if (!b || b.skip) { rows[name] = { boot1: a.sha.slice(0, 16), boot2: null, identical: false, note: bootErr || (b && b.skip) || 'no boot-2 shot' }; continue; }
+    let diff = 0, x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1, maxD = 0;
+    const dv = new Uint8Array(a.px.length);
+    if (a.W === b.W && a.H === b.H) for (let i = 0, k = 0; i < a.px.length; i += 4, k++) {
+      const d = Math.max(Math.abs(a.px[i] - b.px[i]), Math.abs(a.px[i + 1] - b.px[i + 1]), Math.abs(a.px[i + 2] - b.px[i + 2]));
+      if (d) { diff++; maxD = Math.max(maxD, d); const x = k % a.W, y = (k / a.W) | 0; if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
+      const v = d ? Math.min(255, 64 + d * 8) : 0; dv[i] = v; dv[i + 1] = d ? 0 : a.px[i + 1] >> 2; dv[i + 2] = d ? v : a.px[i + 2] >> 2; dv[i + 3] = 255;
     }
-    rows[name] = { source: s.source, identical: h1 === h2, pairs, sha: h1.slice(0, 16), diffPx: diff, diffPct: +(100 * diff / (c1.W * c1.H)).toFixed(3), size: [c1.W, c1.H], captureSource: c1.source };
-    unstage();
+    rows[name] = { source: a.source, boot1: a.sha.slice(0, 16), boot2: b.sha.slice(0, 16), identical: a.sha === b.sha && a.W === b.W && a.H === b.H,
+      withinBootStable: [a.stable, b.stable], size: [a.W, a.H], sizeBoot2: [b.W, b.H], diffPx: diff, diffPct: +(100 * diff / (a.W * a.H)).toFixed(3), maxDiff: maxD,
+      diffBox: diff ? [x0, y0, x1, y1] : null, captureSource: a.captureSource };
+    diffCells.push({ cap: { W: a.W, H: a.H, px: a.px }, label: name + ' boot 1  ' + a.sha.slice(0, 12) });
+    diffCells.push({ cap: { W: a.W, H: a.H, px: dv }, label: name + ' boot 2 vs 1: ' + diff + ' px differ (magenta), max ' + maxD });
   }
+  try { const E2 = f.contentWindow && f.contentWindow.__CTX__ && f.contentWindow.__CTX__.engine; if (E2) { E2.renderer.forceContextLoss(); E2.renderer.dispose(); } } catch (e) { /* */ }
+  f.src = 'about:blank'; f.remove();
+  __E.holdFrame(false); __E.requestTimeScale('look-suite', null);
+  await frames(4);
   // (d) depth bins: planted boxes at 30/120/400/900 m in front of the lens, rendered with a gate-only
   // linear-depth material at 160 x 90 (every other scene child hidden for the probe render)
   const cam = __C.camera, p = __C.player;
@@ -469,7 +523,8 @@ const SUITE = look(`
   const aOk = places.every((n) => rows[n].identical === true);
   const dOk = probes.every((q) => q.ok);
   const eOk = places.every((n) => rows[n].captureSource === 'webgl-canvas' || rows[n].skip);
-  return { pass: aOk && dOk && eOk, detail: { a: rows, d: probes, e: { captureSource: 'webgl-canvas (readPixels after the frame): the HUD and banners are DOM, 0 px', ok: eOk } } };
+  sheet(diffCells, 'A-look-suite (a): boot 1 (left) and where boot 2 differs (right, magenta)', 2);
+  return { pass: aOk && dOk && eOk, detail: { a: { rule: 'identical canvas SHA-256 across two boots of the build (this page, then a fresh iframe boot of the same URL)', boot2Error: bootErr, rows }, d: probes, e: { captureSource: 'webgl-canvas (readPixels after the frame): the HUD and banners are DOM, 0 px', ok: eOk } } };
 `);
 
 /* -------------------------------------------------------------- A-look-random */
@@ -583,7 +638,10 @@ const BLOOM = look(`
     const pos = cam2.position.clone().addScaledVector(dir, 40);
     const coreR = 0.12, ringR = 0.3;
     const mk = (r, c, z) => { const m = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(c.r, c.g, c.b), fog: false }));
-      m.position.copy(pos).addScaledVector(dir, -z); m.lookAt(cam2.position); m.name = 'look-lamp-probe'; __C.scene.add(m); return m; };
+      m.position.copy(pos).addScaledVector(dir, -z); m.lookAt(cam2.position); m.name = 'look-lamp-probe';
+      // fix round 1: a 5 px probe disc is under the engine's small-mesh cull (sizeCullPx) and was HIDDEN in r4 and the judge's
+      // run (halo/core 1.00 = no lamp at all); a real lamp core is emissive and keeps the glow threshold, the probe opts out
+      m.userData.noSizeCull = true; __C.scene.add(m); return m; };
     // the core alone (r4 measured the halo from the edge of a 2.5x ring disc, which made the bar a tie by
     // construction): the halo is how far from the core's centre the bloom still adds >= 3 L*
     const mRing = null, mCore = mk(coreR, core, 0.01);
@@ -689,7 +747,8 @@ const GPU_ATTRIB = (box, build) => `(async () => {
   res.box = box;
   if (!res.ok) return { pass: false, detail: res };
   if (!box) return { pass: null, detail: { verdict: 'PENDING: box not sampled (run A-gpu-attrib-box with it: --lane look-post or --only A-gpu-attrib-box,A-gpu-attrib)', ...res } };
-  return { pass: box.quiet ? res.sumWithin10 : null, detail: { verdict: box.quiet ? (res.sumWithin10 ? 'PASS' : 'FAIL: per-pass rows do not sum to the frame within 10 %') : 'PENDING-quiet-box (R45)', ...res } };
+  const ok = res.sumWithin10 && res.everyRowOver05HasFixOwner;
+  return { pass: box.quiet ? ok : null, detail: { verdict: box.quiet ? (ok ? 'PASS' : 'FAIL:' + (res.sumWithin10 ? '' : ' per-pass rows do not sum to the frame median within 10 %;') + (res.everyRowOver05HasFixOwner ? '' : ' a row >= 0.5 ms has no fix owner in ROUND5-LOOK §4.2')) : 'PENDING-quiet-box (R45)', ...res } };
 })()`;
 
 const LEDGER = (box, build) => `(async () => {
@@ -756,7 +815,7 @@ const GLOW_FILM = lookJob(`
     const made = [];
     const disc = (c, r, d, side, z) => { if (!c) return; const m = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(c.r, c.g, c.b), fog: false }));
       const right = new THREE.Vector3().crossVectors(dir, cam.up).normalize();
-      m.position.copy(cam.position).addScaledVector(dir, d).addScaledVector(right, side).addScaledVector(dir, -z); m.lookAt(cam.position); m.name = 'look-lamp-probe'; __C.scene.add(m); made.push(m); };
+      m.position.copy(cam.position).addScaledVector(dir, d).addScaledVector(right, side).addScaledVector(dir, -z); m.lookAt(cam.position); m.name = 'look-lamp-probe'; m.userData.noSizeCull = true; __C.scene.add(m); made.push(m); };
     disc(ring, 0.3, 18, -4.5, 0); disc(core, 0.12, 18, -4.5, 0.01); disc(calmR, 0.3, 18, 4.5, 0); disc(calm, 0.12, 18, 4.5, 0.01);
     await frames(4);
     const c = await grabCanvas();
@@ -862,11 +921,11 @@ export const GATES = [
     assert: HOLD },
   boxRow('A-gpu-attrib-box', 'A-gpu-attrib', GPU_ATTRIB),
   { id: 'A-gpu-attrib', kind: 'action', lane: LANE, wave: 'W1', timeout: 600000, settle: 2500,
-    title: 'L-18: records the build it times; vista, herd and staged fight each give a per-pass table (skip-one marginals on the A21 whole-frame timer: shadow maps, GTAO, bloom, SMAA, grade LUT, transparent + additive; remainder = opaque scene + AgX) whose rows sum to what switching them all off removes within 10 % of the frame; per-owner hide-one marginals plus residual. ' + QUIET_NOTE,
+    title: 'L-18: records the build it times (git SHA, tree); vista, herd and staged fight each give a per-pass table (shadow cascades, opaque, transparent + additive, GTAO, bloom, SMAA, shafts, overlay as skip-one marginals on the A21 whole-frame timer; the grade by its pass bench; every row measured) whose rows sum to the frame median within 10 %; per-owner hide-one marginals plus an interaction residual; every row >= 0.5 ms names a fix owner in ROUND5-LOOK §4.2. ' + QUIET_NOTE,
     assert: GPU_ATTRIB(null, null) },
   boxRow('A-look-ledger-box', 'A-look-ledger', LEDGER),
   { id: 'A-look-ledger', kind: 'action', lane: LANE, wave: 'W1', timeout: 600000, settle: 2500,
-    title: 'L-16: every registered look item A/B-timed on the A21 frames (>= 0.10 ms alone, the rest as one group), 4 interleaved rounds; each row <= 0.45 ms; draws <= 350. ' + QUIET_NOTE,
+    title: 'L-16: every registered look item A/B-timed (>= 0.10 ms alone, the rest as one group; post items by their pass bench, a recorded deviation), 4 interleaved rounds; each row <= 0.45 ms; draws <= 350 and 0 look draws outside post; with every high item on A21 meets the W1-exit bars (vista <= 17.0, herd <= 20.0, fight <= 17.0 ms) and the shipped-mode renderScale median >= 0.95, and low meets the same bars; every enabled, landed item has a row; render targets <= 170 MB and GPU bytes <= 450 MB with the look on. ' + QUIET_NOTE,
     assert: LEDGER(null, null) },
   { id: 'V-look-before-after', kind: 'visual', lane: LANE, wave: 'W1', timeout: 300000, settle: 150000,
     setup: BEFORE_AFTER([['field'], ['vista'], ['aim']], 'V-look-before-after (1/2): Round-5 W0 output (left) vs the CALIMA look (right), same frame, same build'),

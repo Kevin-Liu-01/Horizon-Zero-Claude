@@ -24,15 +24,14 @@ export function attribTable(detail) {
   for (const [name, s] of Object.entries(detail.scenarios || {})) {
     if (s.skip || s.error) { lines.push(`\n### ${name}: ${s.skip || s.error}`); continue; }
     const P = s.perPass;
-    lines.push(`\n### ${name}: frame ${s.frame.medianMs} ms (p95 ${s.frame.p95Ms}, ${s.frame.medianDraws} draws, scale ${s.frame.renderScale}); passes (skip-one): rows sum ${P.sumRowsMs} ms, all off removes ${P.allOffRemovesMs} ms (within 10 %: ${s.sumWithin10})`);
-    lines.push('\n| pass (skip-one marginal) | ms |\n|---|---|');
-    for (const [k, v] of Object.entries(P.rows).sort((a, b) => b[1] - a[1])) lines.push(`| ${k} | ${v} |`);
-    lines.push(`| remainder: opaque scene, AgX output pass, fixed costs | ${P.remainderMs} |`);
+    lines.push(`\n### ${name}: frame ${s.frame.medianMs} ms (p95 ${s.frame.p95Ms}, ${s.frame.medianDraws} draws, scale ${s.frame.renderScale}); rows sum ${P.sumRowsMs} ms against the frame (gap ${P.gapMs} ms; within 10 %: ${s.sumWithin10})`);
+    lines.push('\n| pass | ms | fix owner (ROUND5-LOOK §4.2) |\n|---|---|---|');
+    for (const r of [...(P.table || [])].sort((a, b) => (b.ms || 0) - (a.ms || 0))) lines.push(`| ${r.row} | ${r.ms} | ${r.fixOwner || ((r.ms || 0) >= 0.5 ? '**none: needs a §4.2 row**' : '-')} |`);
     lines.push('\n| owner (hide-one) | lanes | children | marginal ms |\n|---|---|---|---|');
     for (const o of s.owners) lines.push(`| ${o.id} | ${o.lanes} | ${o.children} | ${o.marginalMs} |`);
     lines.push(`| floor (all owners hidden) | | | ${s.floorAllOwnersHiddenMs} |`);
     lines.push(`| interaction residual | | | ${s.interactionResidualMs} |`);
-    if (s.over05?.length) lines.push(`\nrows >= 0.5 ms (each needs a named fix owner in ROUND5-LOOK §4.2): ${s.over05.join(', ')}`);
+    if (s.over05?.length) lines.push(`\nowner rows >= 0.5 ms and their §4.2 fix owners: ${s.over05.map((r) => r.id + ' ' + r.ms + ' ms -> ' + (r.fixOwner || 'NONE (needs a §4.2 row)')).join('; ')}`);
   }
   return lines.join('\n');
 }

@@ -48,7 +48,7 @@ const SETUP = `window.__lookJob = (async () => {
     const [name, o = {}] = shots[k]; const P0 = STANDINS[name]; const b = PLACE(P0.base); if (!b) continue;
     const P = { ...P0, ...o };
     const env = __C.environment, p = __C.player;
-    __E.requestTimeScale('studio', 0); env.timeFrozen = true; env.setWeather('clear', 0.05); env.setTime(P.hour); __E.setLookHour?.(P.hour, 'clear');
+    __E.requestTimeScale('studio', 0); env.timeFrozen = true; env.setWeather('clear', 0.05); env.setTime(P.hour); __E.setLookHour?.(P.hour, 'clear', null, { ev: false });
     p.position.set(b.x, 0, b.z); p.velocity?.set?.(0, 0, 0); p._snapToGround?.(); await frames(3);
     p.camYaw = sunYaw() + (P.sunRel || 0) * Math.PI / 180; p.camPitch = P.pitch ?? 0;
     let saved = null;

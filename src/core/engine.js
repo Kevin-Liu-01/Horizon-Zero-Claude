@@ -1327,16 +1327,17 @@ export class Engine {
    */
   _syncLook(force = false) {
     const L = this.look, r = this.renderer, u = this.grade.uniforms, T = this.tier.look || LOOK_ROWS.high;
-    if (r.toneMappingExposure !== this._expoSeen && this._expoSeen === this._expoSeen) {
-      const base = this._agxOn ? L.baseExposure : LOOK_W0.exposure;
-      L.set({ ev: Math.log2(Math.max(1e-6, r.toneMappingExposure) / base) });
+    // an outside write of the exposure is adopted as an EV offset under AgX only: the W0 output (ACES)
+    // is the Round-5 W0 output at every hour, exposure 0.94 and no EV (fix round 1: the hour EV leaked into it)
+    if (this._agxOn && r.toneMappingExposure !== this._expoSeen && this._expoSeen === this._expoSeen) {
+      L.set({ ev: Math.log2(Math.max(1e-6, r.toneMappingExposure) / L.baseExposure) });
     }
     if (!force && L.version === this._lookVer) return false;
     this._lookVer = L.version;
     const agx = this.lookEnabled && T.agx !== false;
     this._agxOn = agx;
     r.toneMapping = agx ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = (agx ? L.baseExposure : LOOK_W0.exposure) * Math.pow(2, L.ev);
+    r.toneMappingExposure = agx ? L.baseExposure * Math.pow(2, L.ev) : LOOK_W0.exposure;
     this._expoSeen = r.toneMappingExposure;
     u.uAgxSlope.value.set(L.look.slope[0], L.look.slope[1], L.look.slope[2]);
     u.uAgxLook.value.set(L.look.power, L.look.sat);
@@ -1405,14 +1406,15 @@ export class Engine {
    * THE HOUR BRIDGE (W1 only; stands down the first time anyone calls setLookHour). Until
    * world-sky calls engine.setLookHour per hour and weather, the engine reads the hour and the
    * weather of the environment the automation harness publishes (window.__CTX__.environment)
-   * every 30 frames and picks the grade sets itself. Allocation-free; no EV (the L-03 EV offsets
-   * are world-sky's).
+   * every 30 frames and picks the grade sets itself. Allocation-free; NO EV: the L-03 EV offsets
+   * are world-sky's, keyed with its new hour keys (fix round 1: the bridge used to apply them, so
+   * nights ran at +1.3 EV on the W0 keys).
    */
   _lookBridge() {
     if (this._lookOwned || (this._lookBridgeN = ((this._lookBridgeN | 0) + 1) % 30) !== 1) return;
     const env = typeof window !== 'undefined' ? window.__CTX__?.environment : null;
     if (!env || typeof env.time !== 'number') return;
-    this._lookHour(env.time, env.weather, null);
+    this._lookHour(env.time, env.weather, null, false);
   }
 
   /** false: the Round-5 W0 output (ACES 0.94, the W0 grade and bloom), for before/after shots and A/B. */
@@ -2396,8 +2398,8 @@ export class Engine {
     this._shadowCullClock = 0.1;
     const cam = this.camera.position;
     const pool = this._casterPool, dists = this._casterDist;
-    pool.length = 0;
-    dists.length = 0;
+    // R48 (c), look-post fix round 1: filled by index, never truncated (`length = 0` drops V8's backing store,
+    // so every pass re-grew both arrays: _cullVisit's 0.23 MB/s); the tail past `n` is nulled, not cut
 
     // projected diameter in device px = 2 * r * (H / (2 tan(fov/2))) / distance
     //
@@ -2419,8 +2421,9 @@ export class Engine {
     let sizeCulled = 0;
 
     // R48 (c), look-post: the visit is built once (it used to be a fresh closure on every pass)
-    const C = this._cullState || (this._cullState = { cam: null, pool: null, dists: null, fovK: 0, cullPx: 0, sizeCulled: 0 });
+    const C = this._cullState || (this._cullState = { cam: null, pool: null, dists: null, fovK: 0, cullPx: 0, sizeCulled: 0, n: 0 });
     C.cam = cam; C.pool = pool; C.dists = dists; C.fovK = fovK; C.cullPx = cullPx; C.sizeCulled = 0;
+    const nPrev = C.n; C.n = 0;
     if (!this._cullVisit) this._cullVisit = (o) => {
       if (!o.isMesh) return;
       // Read the matrix the LAST render left behind instead of calling
@@ -2461,7 +2464,7 @@ export class Engine {
         if (limit <= 0) {
           if (wasCulled) { o.visible = true; o.userData.__sizeCulled = false; }
           if (o.castShadow || o.userData.__shadowCulled === true) {
-            pool.push(o); dists.push(Math.max(0, dist - r));
+            pool[C.n] = o; dists[C.n] = Math.max(0, dist - r); C.n++;
           }
           return;
         }
@@ -2481,10 +2484,11 @@ export class Engine {
       if (o.userData.__sizeCulled === true) return; // invisible: draws nothing at all
       const off = o.userData.__shadowCulled === true;
       if (!off && !o.castShadow) return; // never a caster: nothing to do
-      pool.push(o);
-      dists.push(Math.max(0, dist - r));
+      pool[C.n] = o; dists[C.n] = Math.max(0, dist - r); C.n++;
     };
     this.scene.traverse(this._cullVisit);
+    const n = C.n;
+    for (let i = n; i < nPrev; i++) pool[i] = null;   // no stale mesh kept alive by the pool
     sizeCulled = C.sizeCulled;
     this.sizeCulled = sizeCulled;
     // Distance cull first, then a hard caster budget: in a staged eight-machine
@@ -2507,21 +2511,32 @@ export class Engine {
     // structures). Measured: a 150-caster budget was letting 198 casters
     // through with three cascades. The rank array is reused; the sort runs at
     // most 10x/second.
-    const order = this._casterOrder || (this._casterOrder = []);
-    order.length = 0;
-    for (let i = 0; i < dists.length; i++) if (dists[i] <= cut) order.push(i);
-    if (order.length > budget) {
-      order.sort((a, b) => dists[a] - dists[b]);
-      order.length = budget;
+    // R48 (c), fix round 1: no sort (a comparator closure and TimSort's work array on every pass) and no Set
+    // (cleared and re-grown every pass): the n nearest within `cut` are chosen by a distance threshold found
+    // by bisection over the distances (ties at the threshold admitted in pool order up to the budget), and
+    // marked in a byte flag array that grows only when the pool does
+    let keepFlags = this._casterKeepFlags;
+    if (!keepFlags || keepFlags.length < n) keepFlags = this._casterKeepFlags = new Uint8Array(Math.max(256, n * 2));
+    let inCut = 0;
+    for (let i = 0; i < n; i++) if (dists[i] <= cut) inCut++;
+    let lo = cut, hi = cut;
+    if (inCut > budget) {
+      // count(<= lo) <= budget < count(<= hi); after 36 halvings (lo, hi] holds only the ties at the budget's distance
+      lo = -1;
+      for (let it = 0; it < 36; it++) {
+        const mid = 0.5 * (lo + hi);
+        let c = 0; for (let i = 0; i < n; i++) if (dists[i] <= mid) c++;
+        if (c > budget) hi = mid; else lo = mid;
+      }
     }
-    const keep = this._casterKeep || (this._casterKeep = new Set());
-    keep.clear();
-    for (let i = 0; i < order.length; i++) keep.add(order[i]);
+    let kept = 0;
+    for (let i = 0; i < n; i++) { const k = dists[i] <= lo ? 1 : 0; keepFlags[i] = k; kept += k; }
+    for (let i = 0; i < n && kept < budget; i++) if (keepFlags[i] === 0 && dists[i] <= hi) { keepFlags[i] = 1; kept++; }
     let active = 0;
-    for (let i = 0; i < pool.length; i++) {
+    for (let i = 0; i < n; i++) {
       const o = pool[i];
       const off = o.userData.__shadowCulled === true;
-      const on = keep.has(i);
+      const on = keepFlags[i] === 1;
       if (on) {
         active++;
         if (off) {
