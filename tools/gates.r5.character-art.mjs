@@ -338,10 +338,23 @@ export const GATES = [
       // single-sided inner collar seen past the neck, the gap down the collar past a bowed head), never the air between body parts. A
       // radius round the collar, and then a convex outline of it, counted the air between her arm and her side, and beside the bowed
       // head, as holes (r3, r5: 15-18 k px components enclosed by the arm, the torso and the head)
-      const mats = [];
-      p.model.traverse((o) => { if (o.isMesh && o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (!mats.includes(m)) mats.push(m); });
-      const sides0 = mats.map((m) => m.side);
-      const setDouble = (on) => { mats.forEach((m, i) => { const want = on ? 2 : sides0[i]; if (m.side !== want) { m.side = want; m.needsUpdate = true; } }); };
+      // fix round 2, Nov 12: the double-sided draw SWAPS each mesh to a double-sided twin of its material, made once, instead of toggling
+      // material.side. A toggle changes the material's program; three releases a program no material uses any more and draws nothing for a
+      // mesh whose program is still compiling, so a view's single-sided frame could lose the smock or the neck and count it as a
+      // see-through (r1-r4: 3-7 k px blobs where the sheet, re-rendered a moment later, shows solid cloth and skin). Twins keep both
+      // programs alive for the whole scan; they share the source's textures, shader hooks and uniforms, and are disposed at the end
+      const pm = [];
+      p.model.traverse((o) => { if (o.isMesh && o.material) pm.push(o); });
+      const orig = pm.map((o) => o.material);
+      const twinOf = new Map();
+      const twin = (m) => {
+        if (twinOf.has(m)) return twinOf.get(m);
+        const c = m.clone(); c.side = 2; c.onBeforeCompile = m.onBeforeCompile; c.customProgramCacheKey = m.customProgramCacheKey; c.userData = m.userData;
+        C.environment?._matSeen?.add?.(c);   // its hooks are the source's, already composed: world-sky must not wrap it again
+        twinOf.set(m, c); return c;
+      };
+      const dbl = orig.map((m) => (Array.isArray(m) ? m.map(twin) : twin(m)));
+      const setDouble = (on) => { pm.forEach((o, i) => { o.material = on ? dbl[i] : orig[i]; }); };
       const seeThrough = (pos, tgt) => {
         const a = S.liveView(C, pos.toArray(), tgt.toArray(), { width: W, height: H, fov: 29 }).data;
         const k = [a[0], a[1], a[2]];
@@ -442,6 +455,7 @@ export const GATES = [
         g.font = '500 15px "IBM Plex Mono", ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(x + 8, y + 8, g.measureText(lb).width + 12, 22); g.fillStyle = '#fff'; g.fillText(lb, x + 14, y + 24);
       });
       setDouble(false);
+      for (const c of twinOf.values()) c.dispose();
       R.setClearColor(cc, ca);
       for (const o of hidden) o.visible = true;
       scene.background = bg0; scene.fog = fog0;

@@ -53,6 +53,7 @@ from the CC0 UBC sources only. Nothing was downloaded.
 | ∴ as three white blobs | Three small dark ink dots on the back of the right hand |
 | eyes without depth | 160 px procedural eye patch: fibred iris, limbal ring, catch-lights, a wet line; a cornea dome in the geometry, so the iris reads from the side. Fix round 1: the white falls off sooner and further toward the corners, so in profile it is a warm shaded wedge, not a pale plate |
 | wrap tail | The root starts inside the knot as a closed gathered roll. Fix round 1 (R54, "the carmine lining is the loudest thing on her"): the violet facing turns back over 38 % of the lining at each selvedge (was 30 %), so a quarter of its width is carmine. The chain rig and points are hero-body's and are untouched |
+| skin light (Nov 12, LOOK C-01, C-04) | `src/hero/skinLook.js`: a per-channel wrapped Lambert, the sun's shadow kept apart and faded in past N·L 0.25, ear back-transmission from a baked `_CALTHIN`, a sun-rim where the sun grazes; the wrap's and hair's rim and violet velvet edge. One shader patch on her live materials, no new draw or map, nothing per frame |
 
 ## 2. Gates (`tools/gates.r5.character-art.mjs`; `node tools/gates.mjs --port 5266 --lane character-art`)
 
@@ -298,6 +299,33 @@ the old build read 16 px over 2 views there.
   near the ear (0.2) and the temple cards (0.3), and drops nape cards within 20 mm of the ear.
 - `lib/skin.mjs` `saltPaste({ y, half, xMax, salt, thick, cell })`: `cell` is now the plate size (190/m); the old `cell` 300 fissure
   network and its fine twin are gone.
+
+### API added on Nov 12 (fix round 2, continued)
+- `src/hero/skinLook.js` (LOOK C-01, C-04; character-art's grant on `src/hero/**`, 3 lines in `src/hero/index.js`):
+  - `applySkinLook(material, { tier }) -> material`: idempotent shader patch on a live MeshStandardMaterial (composes with the fade
+    clone's and world-sky's `onBeforeCompile`, extends the program cache key). The sun's direct term becomes a per-channel wrapped
+    Lambert (w 0.50 / 0.24 / 0.16), the sun's shadow is recovered as the ratio of the light's colour to its unshadowed colour and
+    faded in only past N·L 0.25, a back-transmission from the baked `_CALTHIN` attribute (tint 1.0 / 0.36 / 0.20 × 0.6) and the
+    C-04 sun-rim (skin 0.55, only where the sun grazes: × smoothstep(-0.45, 0.05, N·L)). The emissive hero fill drops to ×0.6 (R59 c's per-frame scaling stays in `index.js`). Marks
+    `material.userData.calSkin = 1`. `tier: 'low'` turns the transmission off.
+  - `skinLookUniforms(material) -> { calSkinK, calThinK }`: the shared uniforms (a gate's negative control sets one to 0).
+  - `applyClothLook(material, { rim = 0.45, velvet = true }) -> material`: C-04's sun-rim and velvet edge on cloth or hair
+    (`userData.calCloth = 1`). armory's `clothShader.js` and settlements' NPC kit call it with their own `rim`.
+  - An NPC: bake `_CALTHIN` in its recipe (below), then `applySkinLook(skinMesh.material)` once after its own material clones.
+- `lib/skin-human.mjs` `bakeThinness(doc, prim, { scale, t0 = 0.005, t1 = 0.025, zero: [prims], keep(p) }) -> { thin, mean }`:
+  the tissue's thickness behind each vertex (a ray inward along the normal and two neighbours of it), written as the u8
+  normalized `_CALTHIN` attribute; `zero` gives the prims that join this one an all-zero copy. Brea: the ears only (lips, nose wings and lower lids glowed red in a back light).
+- `lib/hair.mjs` `paintLashes(buf, { rect, hair = '#120E0C', root = 0.26 })`: clumps of 3-5 hairs that taper, curve and lean
+  together, on a solid root band (`root` of the card's height, the heavy lash line); `buf.lashStrands` returns the count.
+  `lashCard` fits the measured margin with a least-squares parabola (no spike over the cornea); the lid rim's under-face looks
+  down at the ball (normal (0, -0.75, 0.66)) and carries the lid's shade (COLOR_0 0.5 / 0.7), rough 0.78-0.86.
+- `lib/wrap.mjs` `clothTail`: the U restarts before a row would run past the panel's repeated columns, and a row longer than
+  the repeat (the gathered root's lining) restarts at the panel's first column: no slit of the next cell's alpha across the
+  strip. `woundHeadwrap`'s `tail.fray` sets the fringe's share of the length.
+- `lib/skin-human.mjs` `reshapeEars`: the upper helix lies closer to the skull (70 % of its stand-off at the top).
+- `lib/skin.mjs` `saltPaste`: plates 6.7 mm (cell 150), cracks are shaded grooves 0.5-0.9 mm wide and sparser, the edges bite
+  at the finger's scale, albedo capped at (217, 214, 206) with dusty drifts, roughness 0.9. `paintEye`'s lateral white falls
+  to about a quarter by the corner.
 
 ## 4. Fix round 1, finding by finding
 
