@@ -626,20 +626,19 @@ const GATES = [
       env.setWeather('trade', 0); env.setTime(16.5);
       const I = env._ibl;
       if (!I) return { pass: false, detail: { note: 'no IBL built', envName, room } };
-      const read = (face) => {
-        const n = I.size, buf = new Uint16Array(n * n * 4);
-        renderer.readRenderTargetPixels(I.cubeRT, 0, 0, n, n, buf, face);
+      // the face centre: five directions within 15° of the axis, read through env.sampleSkyCube
+      const read = (sy) => {
         let r = 0, g = 0, b = 0;
-        const c = n >> 1, R = Math.max(2, n >> 3);
-        let k = 0;
-        for (let y = c - R; y < c + R; y++) for (let x = c - R; x < c + R; x++) { const i = (y * n + x) * 4; r += THREE_HF(buf[i]); g += THREE_HF(buf[i + 1]); b += THREE_HF(buf[i + 2]); k++; }
-        return [r / k, g / k, b / k];
+        for (const [dx, dz] of [[0, 0], [0.26, 0], [-0.26, 0], [0, 0.26], [0, -0.26]]) {
+          const c = env.sampleSkyCube(new V(dx, sy, dz), 0.5);
+          r += c[0]; g += c[1]; b += c[2];
+        }
+        return [r / 5, g / 5, b / 5];
       };
-      const THREE_HF = (h) => { const s = (h & 0x8000) ? -1 : 1, e = (h >> 10) & 0x1f, f = h & 0x3ff; return e === 0 ? s * Math.pow(2, -14) * (f / 1024) : e === 31 ? (f ? NaN : s * Infinity) : s * Math.pow(2, e - 15) * (1 + f / 1024); };
       const hue = (c) => { const [L, a, b] = lab(c); return (Math.atan2(b, a) * 180 / Math.PI + 360) % 360; };
       const toS = (lin) => lin.map((v) => Math.round(255 * Math.min(1, v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)));
       const hd = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
-      const up = read(2), dn = read(3);
+      const up = read(1), dn = read(-1);
       const top = env.skyKeys.top, gnd = env.hemi.groundColor;
       const upHue = hue(toS(up)), topHue = hue(col2(top));
       const dnHue = hue(toS(dn)), gndHue = hue(col2(gnd));

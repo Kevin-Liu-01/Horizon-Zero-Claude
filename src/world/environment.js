@@ -108,7 +108,7 @@ const KEYS = [
     zen: '#2B3550', mid: '#4b4f6c', hor: '#9C8FA0', fogH: '#6F7480', fogZ: '#222a46', fogSun: '#a07a84',
     sea: '#8f8a9e', dens: 0.00145, mist: 0.0020, night: 0.68, ev: 0.90 },
   // 07:00 dawn (bible): cool shadows go violet-rose (R66 k)
-  { h: 7.0, sunI: 2.60, sun: '#FFC9A0', hemiI: 0.35, hSky: '#9a8fb8', hGnd: '#4a3a30', env: 0.90,
+  { h: 7.0, sunI: 2.60, sun: '#FFC9A0', hemiI: 0.50, hSky: '#9a8fb8', hGnd: '#4a3a30', env: 1.00,
     zen: '#6E88A8', mid: '#9aa5c0', hor: '#F2B98E', fogH: '#C9B3A6', fogZ: '#7d8db0', fogSun: '#ffb487',
     sea: '#F6D2B0', dens: 0.00135, mist: 0.0012, night: 0.04, ev: 0.35 },
   // 09:30 (L-03 new key)
@@ -120,19 +120,19 @@ const KEYS = [
     zen: '#3F78B5', mid: '#7ca2cf', hor: '#BFD3E0', fogH: '#CFD8DE', fogZ: '#5c86bb', fogSun: '#fff0d8',
     sea: '#F2F4F5', dens: 0.00100, mist: 0.0003, night: 0.00, ev: 0.00 },
   // 16:30 (L-03 new key, the light analyst's row)
-  { h: 16.5, sunI: 4.80, sun: '#FFD9A8', hemiI: 0.32, hSky: '#9a8cc0', hGnd: '#6e5640', env: 0.90,
+  { h: 16.5, sunI: 4.80, sun: '#FFD9A8', hemiI: 0.42, hSky: '#9a8cc0', hGnd: '#6e5640', env: 0.95,
     zen: '#6F7FB8', mid: '#a49fc6', hor: '#E2BBAE', fogH: '#C89A88', fogZ: '#7d82b0', fogSun: '#ffc58c',
     sea: '#F3DDCF', dens: 0.00118, mist: 0.0008, night: 0.00, ev: 0.10 },
   // 17:45 (L-03 new key)
-  { h: 17.75, sunI: 4.20, sun: '#FFC48A', hemiI: 0.34, hSky: '#9a86b8', hGnd: '#6a4e3a', env: 0.88,
+  { h: 17.75, sunI: 4.20, sun: '#FFC48A', hemiI: 0.50, hSky: '#9a86b8', hGnd: '#6a4e3a', env: 1.00,
     zen: '#62679f', mid: '#a493b4', hor: '#EBA98C', fogH: '#CF9A80', fogZ: '#6f6f9f', fogSun: '#ffae6a',
     sea: '#F2CDB6', dens: 0.00122, mist: 0.0011, night: 0.00, ev: 0.15 },
   // 18:45 golden (bible; zenith #555079 per R66 k)
-  { h: 18.75, sunI: 2.80, sun: '#FFB070', hemiI: 0.38, hSky: '#9a7fae', hGnd: '#5a4030', env: 0.90,
+  { h: 18.75, sunI: 2.80, sun: '#FFB070', hemiI: 0.62, hSky: '#9a7fae', hGnd: '#5a4030', env: 1.05,
     zen: '#555079', mid: '#9a7c98', hor: '#F08A5A', fogH: '#D9A37E', fogZ: '#5c5a85', fogSun: '#ff9a50',
     sea: '#F2C0A0', dens: 0.00128, mist: 0.0013, night: 0.00, ev: 0.25 },
   // 19:20 (L-03 new key)
-  { h: 19.333, sunI: 1.20, sun: '#FF9B52', hemiI: 0.45, hSky: '#8a76a6', hGnd: '#4a3428', env: 0.95,
+  { h: 19.333, sunI: 1.20, sun: '#FF9B52', hemiI: 0.70, hSky: '#8a76a6', hGnd: '#4a3428', env: 1.05,
     zen: '#4A4A7C', mid: '#7d6688', hor: '#D97A62', fogH: '#A67C78', fogZ: '#47466e', fogSun: '#ff8a48',
     sea: '#c79a92', dens: 0.00135, mist: 0.0015, night: 0.12, ev: 0.40 },
   // 19:45 dusk (bible)
@@ -1370,7 +1370,11 @@ export class Environment {
     this._perception = Math.min(wp, np);
 
     /* ---- exposure: hour + biome + weather, rate-limited (A-biome-grade) ---- */
-    this._evTarget = k.ev + this._biomeEV + w.ev + cal * (CALIMA_EV - w.ev);
+    // a negative biome EV (the Pans' −0.3) is salt glare under a high sun (bible §2.4 lists it
+    // in the noon row): it fades out as the sun drops toward golden hour
+    const glare = smooth(0.25, 0.60, this.sunDir.y);
+    const bEV = this._biomeEV < 0 ? this._biomeEV * glare : this._biomeEV;
+    this._evTarget = k.ev + bEV + w.ev + cal * (CALIMA_EV - w.ev);
     if (snap || this._evSnap || !(dt > 0)) this.exposureEV = this._evTarget;
     else {
       const step = Math.min(EV_STEP_MAX, EV_RATE * dt);
@@ -1726,6 +1730,32 @@ export class Environment {
     this._filterIBL();
     I.pending = false; I.face = 0;
     I.lastH = this._time; this._iblW = this._weatherPos();
+  }
+
+  /**
+   * Gate / studio probe: the sky cube's linear radiance toward `dir` (× `scale` on the way
+   * through an 8-bit target, so values up to 1/scale read). Allocates and disposes a 4×4
+   * target per call; never called by the frame.
+   */
+  sampleSkyCube(dir, scale = 0.5) {
+    const I = this._ibl, r = this.ctx.renderer;
+    if (!I || !r) return null;
+    const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.UnsignedByteType, depthBuffer: false });
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { tCube: { value: I.cubeRT.texture }, uDir: { value: new THREE.Vector3().copy(dir).normalize() }, uScale: { value: scale } },
+      vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: 'uniform samplerCube tCube; uniform vec3 uDir; uniform float uScale; void main() { gl_FragColor = vec4(textureCube(tCube, uDir).rgb * uScale, 1.0); }',
+      depthTest: false, depthWrite: false,
+    });
+    const quad = new FullScreenQuad(mat);
+    const prev = r.getRenderTarget();
+    r.setRenderTarget(rt);
+    quad.render(r);
+    const px = new Uint8Array(4 * 16);
+    r.readRenderTargetPixels(rt, 0, 0, 4, 4, px);
+    r.setRenderTarget(prev);
+    quad.dispose(); mat.dispose(); rt.dispose();
+    return [px[0] / 255 / scale, px[1] / 255 / scale, px[2] / 255 / scale];
   }
 
   /** A scalar that moves when the sky's weather moves (for the 0.05 rebake rule). */
