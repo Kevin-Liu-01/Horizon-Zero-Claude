@@ -94,7 +94,16 @@ const KIT = `
   const col2 = (c) => { const k = c.clone().convertLinearToSRGB(); return [Math.round(k.r * 255), Math.round(k.g * 255), Math.round(k.b * 255)]; };
   const toHex = (a) => '#' + a.map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
   const hideHud = () => { for (const id of ['hud', 'focus', 'crosshair']) { const h = document.getElementById(id); if (h) h.style.display = 'none'; } };
-  const hideHero = () => { const p = ctx.player; const o = p.mesh || p.group || p.object3d || p.root; if (o) o.visible = false; return o; };
+  /** hide Brea and anything carried within 2.5 m of her (a camera at her eye sits inside her head) */
+  const hideHero = () => {
+    const p = ctx.player; if (p.model) p.model.visible = false;
+    const v = new V();
+    for (const o of ctx.scene.children) {
+      if (o === p.model || o.isLight || o === env.sky || o.userData?.noSizeCull) continue;
+      o.getWorldPosition(v);
+      if (v.distanceTo(p.position) < 2.5 && !(o.geometry?.boundingSphere?.radius > 4)) o.visible = false;
+    }
+  };
   /** labelled contact sheet over the page so the runner's one screenshot carries every frame */
   const sheet = (frames, labels, cols = 2) => {
     const w = W(), h = H();
@@ -646,7 +655,8 @@ const GATES = [
       }
       const tex1 = renderer.info.memory.textures, geo1 = renderer.info.memory.geometries;
       const med = (a) => { const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
-      const ledger = engine.renderTargetLedger ? engine.renderTargetLedger().map((r) => ({ owner: r.owner, name: r.name, w: r.width, h: r.height, mb: r.mb })) : [];
+      const L = engine.renderTargetLedger ? engine.renderTargetLedger() : null;
+      const ledger = (L?.rows || []).map((r) => ({ owner: r.owner, name: r.name, w: r.width, h: r.height, mb: r.mb }));
       const roomPm = ledger.filter((r) => r.w === 768 && r.h === 1024);
       env.setTime(17.75);
       const a = envName === 'CAL.skyIBL' && room === 0;
@@ -751,15 +761,17 @@ const GATES = [
       await new Promise((r) => setTimeout(r, 2500));
       const ey = gy(p.position.x, p.position.z) + 1.7;
       const frames = [], labels = [];
+      // the hero at 6 m, her shadow on the ground (filmed first, then she is hidden for the eye frames)
+      const hb = (sunB + 120) * Math.PI / 180;
+      cam.up.set(0, 1, 0); cam.position.set(p.position.x + Math.sin(hb) * 6, ey + 0.6, p.position.z - Math.cos(hb) * 6);
+      cam.lookAt(p.position.x, ey - 0.8, p.position.z); cam.fov = 45; cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
+      draw(4); const brea = grab();
+      hideHero();
       const shot = (b, pch, fov, lab) => { aim(p.position.x, ey, p.position.z, b, pch, fov); draw(4); frames.push(grab()); labels.push(lab); };
       shot(sunB, 30, 62, 'into the sun (bearing ' + sunB.toFixed(0) + ', disc at ' + elevOf(sd).toFixed(0) + '°), 12:00 calima');
       shot(sunB + 70, 3, 55, 'across: an Instrument at 40 m (' + (a.kind || 'none staged') + ')');
       shot(sunB + 180, -6, 55, 'away from the sun: soft shadows');
-      // the hero at 6 m, her shadow on the ground
-      const hb = (sunB + 120) * Math.PI / 180;
-      cam.up.set(0, 1, 0); cam.position.set(p.position.x + Math.sin(hb) * 6, ey + 0.6, p.position.z - Math.cos(hb) * 6);
-      cam.lookAt(p.position.x, ey - 0.8, p.position.z); cam.fov = 45; cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
-      draw(4); frames.push(grab()); labels.push('Brea at 6 m: shadow strength 0.45 (bible)');
+      frames.push(brea); labels.push('Brea at 6 m: shadow strength 0.45 (bible)');
       sheet(frames, labels, 2);
     })()`,
     criteria: 'Four frames at noon in calima on the Pans stand-in (W0 map until world-ground merges). Pass: the sky is a flat ochre/amber haze with no blue and no cloud field; the sun is a soft coral disc (#F2A27E family), not a white HDR glare; shadows are soft and weak (≈ 0.45 strength), not crisp black; the distance dissolves into ochre dust within a few hundred metres; an Instrument lamp at 40 m is still readable as a lamp. FAIL on a blue sky, a white sun, hard noon shadows, brown mud with no air, or a lamp lost in the haze. R54: FAIL if it looks cheap next to the reference (a muddy brown filter instead of luminous dust). IP-clause (R66 c): nothing from the refused sources, no red-eye glow.',
@@ -783,6 +795,7 @@ const GATES = [
       const t = fire ? fire.getWorldPosition(new V()) : null;
       if (t) { const l = Math.hypot(t.x - p.position.x, t.z - p.position.z) || 1; p.position.set(t.x - (t.x - p.position.x) / l * 11, 0, t.z - (t.z - p.position.z) / l * 11); p._snapToGround?.(); }
       await new Promise((r) => setTimeout(r, 1200));
+      hideHero();
       const ey = gy(p.position.x, p.position.z) + 1.7;
       const frames = [], labels = [];
       const md = env.moonDir.clone();
@@ -809,6 +822,7 @@ const GATES = [
       const p = ctx.player;
       standAt(p, 'spawnVista', { yaw: false });
       await new Promise((r) => setTimeout(r, 800));
+      hideHero();
       const ey = gy(p.position.x, p.position.z) + 1.7;
       const su = env.sky.material.uniforms;
       const frames = [], labels = [];
@@ -838,6 +852,7 @@ const GATES = [
       const p = ctx.player;
       standAt(p, 'spawnVista', { yaw: false });
       await new Promise((r) => setTimeout(r, 800));
+      hideHero();
       const ey = gy(p.position.x, p.position.z) + 1.7;
       const frames = [], labels = [];
       for (const [h, lab] of [[5.5, '05:30'], [7, '07:00'], [9.5, '09:30'], [12, '12:00'], [16.5, '16:30'], [17.75, '17:45'], [18.75, '18:45'], [19.75, '19:45'], [23, '23:00']]) {
@@ -863,6 +878,7 @@ const GATES = [
       const p = ctx.player;
       standAt(p, 'spawnVista', { yaw: false });
       await new Promise((r) => setTimeout(r, 800));
+      hideHero();
       const ey = gy(p.position.x, p.position.z) + 1.7;
       const frames = [], labels = [];
       for (const h of [17.75, 12]) for (const w of ['trade', 'calima', 'fogbank', 'squall']) {
