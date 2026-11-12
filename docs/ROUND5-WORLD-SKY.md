@@ -96,6 +96,41 @@ Runs: r1 (first block, 18:29 UTC), r2–r5 (fix rounds on the light), r6 (the bl
 | A-perception-weather | **PASS** | trade = sight range, calima half, fogbank half, restored |
 | A-kind-block-file | FAIL (infrastructure) | the child kind-block run took 55 min and came back with no rows (`rows: []`, A41c NOT-RUN): a harness outcome, not a row result; A-weak40:herd above is its calima clause, run directly |
 
+### 2.4 The visual rows: what I read in the frames (advisory; R29's judge grades them)
+
+Frames: `scratchpad/r5/world-sky/r6/shots/gates/{V-calima,V31-night,V-sky-trade,V-sky-hours,V-sky-weathers}.png`
+(scratch, not in the tree). All on the W0 valley (§4).
+
+- **V-calima.** Flat amber–ochre air with no blue and no cloud field; the sun is a small soft coral disc (the
+  rendered centre measures ΔE2000 1.5 from #F2A27E), not a white blaze; shadows are weak (strength 0.45) and
+  warm; the mid-distance dissolves into ochre dust inside ~300 m, the near grass glows amber; an Instrument at
+  40 m still reads as a dark shape with its lamp. Weak: the old rim massif shows through the dust as pale
+  "hanging" snow faces at the top of two frames, and the disc is small at FOV 62 (1° radius).
+- **V31-night.** Moonlit blue ground that reads without a torch, a moon with halo, stars, the rest-site fire as
+  the only warm colour. Weak: moonlit cloud and the old snow faces are brighter than a night sky should carry,
+  and the grass tips read olive rather than silver.
+- **V-sky-trade.** Clear maritime noon: blue overhead to pale haze low, small flat-based puffs that move
+  downwind (SW) between frames 1 and 2, no spokes at the sun, no golden drama. Weak: the old rim's snow wall
+  fills most of the sky in three of four frames; the cloud field is small and pale next to the references'
+  towering cumulus (L-09, W2).
+- **V-sky-hours / V-sky-weathers (lane sheets).** 16:30–19:45 now read as the look target asks: warm low sun,
+  violet-rose sky and shade, lit haze toward the sun; 23:00 moonlit blue; no black shadows (run 1 had them).
+  Fogbank and squall differ too little from trade on this staging; fogbank's valley mist was raised ×8 after r6.
+
+### 2.5 A-alloc-rate (the binding baseline guard, R67)
+
+| run | world-sky owner KB/s (W0b baseline 155.88; bar ≤ 1.10× = 171.5) | ratio | what changed |
+|---|---|---|---|
+| r6 | 287.56 | 1.845 | the rewrite as first built: the full light/sky/fog state recomputed every frame |
+| r8 | 206.24 | 1.323 | the full state recomputed only when something moves (hour ≥ 0.002 h, a fade, a flash, the biome grade, a snap); biome re-sampled on 2 m moves; redundant per-frame copies dropped |
+| r9 | (pending, filled below) | | pooled lamp lights skipped by day, the fire re-read every 0.25 s, perception and focal cached, rain work only with rain |
+
+In node (V8 sampling profiler, mock renderer) `Environment.update` allocates under 4 B/frame before and after:
+the Chrome cost is in stores into tagged fields (three's shared `{ value }` uniform map, Color/Vector fields),
+which only skipping the stores removes. Per-function numbers (R67 a: reported, not graded): r8 `update`
+79.5 KB/s, `registerMaterial` 52.6 (the material scan, as in Round 4), `_updateNightLights` 45.9,
+`_renderShafts` 16.2 (Round-4 pass), `_applyFrame` 9.1, `_updateBiome` 4.1, `_updateLightning` 4.1.
+
 ## 3. Published API (exact signatures)
 
 ```
