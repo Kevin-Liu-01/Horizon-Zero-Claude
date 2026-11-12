@@ -10057,6 +10057,28 @@ const NEW_VISUALS = [
       await handover('KeyW', false, 'jog dodge');
       await handover('KeyD', true, 'aimed strafe-R dodge');`,
     'Eight panels from one fixed side camera per dodge (the gate judge\'s framing). PASS requires ALL of: from the roll\'s last step through +0.25 s her torso rises from the roll into the run continuously — no panel pair shows the torso going from bent over to upright, or the head jumping, between the roll\'s last step and +0.02 s; after the aimed dodge she turns back toward the camera\'s heading over the panels (the printed heading changes gradually), not in one frame; the bow stays in front of her and the lance on her back. FAIL on a one-frame torso or heading snap, a limb through the body, or the bow over her head.'),
+  /* hero-body targeted fix round 3 (gate judge finding 7: "re-raising the aim after a both-button cancel while
+   * crouch-moving flips her 90-180 deg in one tick ... my film's frames landed just before the raise, so this one has
+   * numbers but no frame"): the raise after a cancel, crouched and backpedalling, from a fixed side camera and the game's */
+  transFilm('V-crouch-reraise',
+    'Targeted fix round 3: crouched and backpedalling (S held) at full draw, a both-button cancel, 0.6 s on, the aim raised again (RMB): at the raise +0.017, +0.10, +0.25 and +0.50 s, from a FIXED side camera (3.4 m off her, 1.3 m up, set at the cancel) and the game camera',
+    `const fixedShot = async (tag, cam) => {
+        E.requestTimeScale('studio', 0);
+        const st = stats(); const img = S.liveView(C, [cam.pos.x, cam.pos.y, cam.pos.z], [cam.tgt.x, cam.tgt.y, cam.tgt.z], { width: W, height: H, fov: 45 });
+        const g = view('GAME');
+        await frame(); E.requestTimeScale('studio', null);
+        const hd = ' heading ' + (((p.heading * 180 / Math.PI) % 360 + 360) % 360).toFixed(0) + ' deg';
+        panels.push({ img, tag: tag + hd, lens: 'FIXED side', st }); panels.push({ img: g, tag: tag + hd, lens: 'GAME', st });
+      };
+      await scene({ pitch: 0, crouch: true, key: 'KeyS' });
+      await hold(0.45); C.input.mouse.buttons |= 1; await hold(1.2);
+      C.input.mouse.buttons = 0;
+      const h = p.heading, rx = -Math.cos(h), rz = Math.sin(h), mid = p.position.clone();
+      const cam = { pos: mid.clone().add(new T3(rx * 3.4, 1.3, rz * 3.4)), tgt: mid.clone().add(new T3(0, 0.7, 0)) };
+      await hold(0.6);
+      C.input.mouse.buttons |= 4; const tR = E.simTime;
+      for (const at of [0.017, 0.10, 0.25, 0.50]) { await holdUntil(tR + at); await fixedShot('crouched backpedal: the raise after a cancel +' + at.toFixed(3) + ' s', cam); }`,
+    'Eight panels (four moments, a fixed side view and the game view of each). PASS requires ALL of: her heading changes gradually across the four moments (the printed heading never jumps 90-180 deg between +0.017 and +0.10 s), she stays crouched and in one piece (no frame with the head or torso displaced from the previous one by more than a step), the bow comes up in front of her, the draw arm never goes behind her head. FAIL on a one-frame turn of her whole body, a limb through the body or the bow over her head.'),
   {
     id: 'V-traversal', kind: 'visual', lane: 'hero-body', settle: 400, timeout: 60000,
     title: 'Ledge climb (pull frame), a cinder slide and a stepped climb, side views',
