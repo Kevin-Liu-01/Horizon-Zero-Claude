@@ -52,7 +52,9 @@ void RE_Direct_CalSkin( const in IncidentLight directLight, const in vec3 geomet
 		// LOOK C-04 calRim (skin 0.55): a sun-rim at grazing view, strongest with the sun behind her, under the sun's own shadow
 		float rimV = 1.0 - saturate( dot( geometryNormal, geometryViewDir ) );
 		float rimL = dot( directLight.direction, -geometryViewDir ) * 0.5 + 0.5;
-		diffuseIrr += c0 * ( 0.55 * calSkinK * sh * rimV * rimV * rimV * rimL * rimL * PI );
+		// (only where the sun grazes: the shadow map's normal bias leaves a face turned from the sun unshadowed, and a rim there
+		// lit the whole cheek red in a back light)
+		diffuseIrr += c0 * ( 0.55 * calSkinK * sh * rimV * rimV * rimV * rimL * rimL * PI * smoothstep( -0.45, 0.05, nl ) );
 	}
 	#endif
 	reflectedLight.directDiffuse += diffuseIrr * BRDF_Lambert( material.diffuseColor );
@@ -105,7 +107,7 @@ void RE_Direct_CalCloth( const in IncidentLight directLight, const in vec3 geome
 		float nl = dot( geometryNormal, directLight.direction );
 		float rimV = 1.0 - saturate( dot( geometryNormal, geometryViewDir ) );
 		float rimL = dot( directLight.direction, -geometryViewDir ) * 0.5 + 0.5;
-		reflectedLight.directDiffuse += directLight.color * ( ${kRim.toFixed(2)} * calRimK * rimV * rimV * rimV * rimL * rimL ) * material.diffuseColor;
+		reflectedLight.directDiffuse += directLight.color * ( ${kRim.toFixed(2)} * calRimK * rimV * rimV * rimV * rimL * rimL * smoothstep( -0.45, 0.05, nl ) ) * material.diffuseColor;
 		${velvet ? 'reflectedLight.directDiffuse += directLight.color * ( 1.6 * calRimK * rimV * rimV * rimV * rimV * saturate( ( nl + 0.5 ) / 1.5 ) ) * BRDF_Lambert( material.diffuseColor );' : ''}
 	}
 	#endif

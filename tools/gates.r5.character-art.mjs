@@ -434,7 +434,7 @@ export const GATES = [
   {
     // fix round 2, Nov 12, ROUND5-LOOK C-01: the skin's own light (src/hero/skinLook.js) measured on the close-up's own staging
     id: 'A-skin-scatter', kind: 'action', lane: 'character-art', settle: 800, timeout: 240000,
-    title: 'LOOK C-01 skin light (src/hero/skinLook.js): front close-up at 0.8 m, 9 x 9 px patches at the projected face landmarks (linear relative luminance of the displayed frame). (a) DAY 11:00: shadow cheek 0.022-0.060; (b) lit:shadow 3.5-5.5; (c) the 80 -> 20 % fall across the face spans >= 10 % of its width; (d) shadow-cheek warmth (R-B)/(R+G+B) >= 0.40; (e) BACKLIT 18:45, her left profile: ear helix >= 1.5 x the shadow cheek, and < 1.15 x with the transmission term off (negative control); (f) NIGHT 01:00: shadow cheek <= 0.010; (g) the live skin carries userData.calSkin === 1, Brea\'s draws and texture sizes are unchanged',
+    title: 'LOOK C-01 skin light (src/hero/skinLook.js): front close-up at 0.8 m, 9 x 9 px patches at the projected face landmarks (linear relative luminance of the displayed frame). (a) DAY 11:00: shadow cheek 0.022-0.060; (b) lit:shadow 3.5-5.5; (c) the 80 -> 20 % fall where the terminator runs (the lower face, lit jaw -> chin -> shadow jaw) spans >= 10 % of the face\'s width; (d) shadow-cheek warmth (R-B)/(R+G+B) >= 0.40; (e) BACKLIT 18:45, the 3/4 on her left: the brightest patch on her left ear\'s rim >= 1.5 x the shadow cheek, and < 1.15 x with the transmission term off (negative control); (f) NIGHT 01:00: shadow cheek <= 0.010; (g) the live skin carries userData.calSkin === 1, Brea\'s draws and texture sizes are unchanged',
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
     })()`),
     assert: `(async () => {
@@ -448,9 +448,6 @@ export const GATES = [
       const idxOf = (q) => { const v = new T3(), n = tpl.geometry.attributes.position.count; let b = -1, bd = 1e9; for (let i = 0; i < n; i++) { tpl.getVertexPosition(i, v); const d = (v.x - q[0]) ** 2 + (v.y - q[1]) ** 2 + (v.z - q[2]) ** 2; if (d < bd) { bd = d; b = i; } } return b; };
       const lmI = {}; for (const k of ['brow', 'chin', 'jawL', 'jawR', 'cheekL', 'cheekR', 'noseTip']) lmI[k] = idxOf(LM[k].now);
       // the left ear's helix: the bind vertex furthest out and up on the reshaped ear (lib/skin-human.mjs EAR)
-      let earI = -1;
-      { const v = new T3(), n = tpl.geometry.attributes.position.count, Ly = LM.brow.now[1], Lz = LM.jawL.now[2]; let best = -1e9;
-        for (let i = 0; i < n; i++) { tpl.getVertexPosition(i, v); if (v.x < 0.05 || v.y > Ly + 0.005 || v.y < LM.cheekL.now[1] - 0.01 || v.z > Lz + 0.01) continue; const sco = v.x * 2 + v.y * 0.5; if (sco > best) { best = sco; earI = i; } } }
       const at = (i) => { const v = new T3(); live.getVertexPosition(i, v); return live.localToWorld(v); };
       const face = (k) => at(lmI[k]);
       const frames = (n) => new Promise((r) => { let i = 0; const f = () => { if (++i >= n) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
@@ -490,22 +487,30 @@ export const GATES = [
         const a = s.patch(cL), b = s.patch(cR);
         const litIsL = a.L >= b.L, lit = litIsL ? a : b, sh = litIsL ? b : a;
         const wFace = Math.abs(s.proj(face('jawL'))[0] - s.proj(face('jawR'))[0]);
-        // the fall: from the lit cheek across the face to the shadow side's outline, at the cheeks' height
-        const p0 = litIsL ? cL : cR, p1 = litIsL ? cR : cL;
-        const dir = Math.sign(p1[0] - p0[0]), y0 = (p0[1] + p1[1]) / 2;
-        const L80 = sh.L + 0.8 * (lit.L - sh.L), L20 = sh.L + 0.2 * (lit.L - sh.L);
-        let x80 = null, x20 = null;
-        for (let x = p0[0]; Math.abs(x - p0[0]) < wFace * 1.1; x += dir) { const l = s.lumAt(x, y0); if (x20 == null && l >= L80) x80 = x; if (l <= L20) { x20 = x; break; } }
-        const span = x80 != null && x20 != null ? Math.abs(x20 - x80) / wFace : 0;
+        // the fall, where the TERMINATOR runs: along the lower face from the lit jaw through the chin to the shadow jaw (the cheek line
+        // crosses the nose's cast shadow, which is a cast edge, not the terminator), each sample a 7 px vertical mean; 80 % and 20 %
+        // between that path's lit-jaw and shadow-jaw patches; the span is the path length between the two crossings over the face width
+        const jl = s.proj(face(litIsL ? 'jawL' : 'jawR')), js = s.proj(face(litIsL ? 'jawR' : 'jawL')), ch = s.proj(face('chin'));
+        const Ll = s.patch(jl).L, Ls = s.patch(js).L;
+        const path = []; const seg = (p0, p1) => { const n = Math.ceil(Math.hypot(p1[0] - p0[0], p1[1] - p0[1])); for (let i = 0; i < n; i++) path.push([p0[0] + (p1[0] - p0[0]) * i / n, p0[1] + (p1[1] - p0[1]) * i / n]); };
+        seg(jl, ch); seg(ch, js);
+        const prof = path.map(([x, y]) => s.lumAt(x, y));
+        const sm = prof.map((_, i) => { let q = 0, n = 0; for (let k = -4; k <= 4; k++) { const v = prof[i + k]; if (v != null) { q += v; n++; } } return q / n; });
+        const P80 = Ls + 0.8 * (Ll - Ls), P20 = Ls + 0.2 * (Ll - Ls);
+        let i80 = -1, i20 = -1;
+        for (let i = 0; i < sm.length; i++) { if (i20 < 0 && sm[i] >= P80) i80 = i; if (i80 >= 0 && sm[i] <= P20) { i20 = i; break; } }
+        const span = i80 >= 0 && i20 >= 0 ? (i20 - i80) / wFace : 0;
         const warm = (sh.R - sh.B) / (sh.R + sh.G + sh.B);
-        out.day = { shadowCheek: r3(sh.L), litCheek: r3(lit.L), ratio: +(lit.L / sh.L).toFixed(2), fallSpan: +span.toFixed(3), faceWidthPx: Math.round(wFace), warmth: +warm.toFixed(3), shadowSide: litIsL ? 'her right' : 'her left' }; }
-      // BACKLIT 18:45, the sun behind her, her left profile: the ear helix against the shadow cheek, then with transmission off
+        out.day = { shadowCheek: r3(sh.L), litCheek: r3(lit.L), ratio: +(lit.L / sh.L).toFixed(2), fallSpan: +span.toFixed(3), jawLit: r3(Ll), jawShadow: r3(Ls), faceWidthPx: Math.round(wFace), warmth: +warm.toFixed(3), shadowSide: litIsL ? 'her right' : 'her left' }; }
+      // BACKLIT 18:45, the sun behind her, the 3/4 on her left (the backlit close-up's lens): the brightest 3 x 3 patch on her left ear's
+      // rim against her shadow cheek, then with the transmission term off (the negative control)
       await relight(18.75, 180);
-      { const ear = () => { const s = shoot(Math.PI / 2); return { e: s.patch(s.proj(at(earI)), 2).L, c: s.patch(s.proj(face('cheekL'))).L }; };
+      { const rim = []; { const v = new T3(), n = tpl.geometry.attributes.position.count, P = []; for (let i = 0; i < n; i++) { tpl.getVertexPosition(i, v); if (v.x > 0.074 && v.y > LM.cheekL.now[1] - 0.012 && v.y < LM.brow.now[1] + 0.004 && v.z < LM.jawL.now[2] + 0.012) P.push(i); } rim.push(...P); }
+        const ear = () => { const s = shoot(Math.PI / 5); let e = 0; for (const i of rim) { const q = s.proj(at(i)); e = Math.max(e, s.patch(q, 1).L); } return { e, c: s.patch(s.proj(face('cheekL'))).L }; };
         const on = ear();
         let off = null;
         if (U) { U.calThinK.value = 0; off = ear(); U.calThinK.value = 1; }
-        out.backlit = { earHelix: r3(on.e), shadowCheek: r3(on.c), ratio: +(on.e / on.c).toFixed(2), ratioThinOff: off ? +(off.e / off.c).toFixed(2) : null }; }
+        out.backlit = { earRimVerts: rim.length, earHelix: r3(on.e), shadowCheek: r3(on.c), ratio: +(on.e / on.c).toFixed(2), ratioThinOff: off ? +(off.e / off.c).toFixed(2) : null }; }
       // NIGHT 01:00
       await relight(1, -38);
       { const s = shoot(0); const a = s.patch(s.proj(face('cheekL'))), b = s.patch(s.proj(face('cheekR'))); out.night = { shadowCheek: r3(Math.min(a.L, b.L)) }; }
