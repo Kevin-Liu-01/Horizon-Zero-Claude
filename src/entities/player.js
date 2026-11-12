@@ -187,7 +187,7 @@ const PIVOT_CROUCH_STEEP = 0.14;
 /** hero-body targeted fix round 3: her turn onto the camera as the aim comes up (rad/s), and the most any part
  *  of her trunk may sweep about her root in that turn (m per 1/60 s); see the facing block in `update`. */
 const AIM_TURN = 12;
-const AIM_TURN_ARC = 0.02;
+const AIM_TURN_ARC = 0.02, AIM_TURN_ARC_MIN = 0.006, AIM_TURN_BUDGET = 0.028;
 const PITCH_UP = -1.15;                   // 66 deg of forward pitch (A32)
 const PITCH_DOWN = 1.02;
 /**
@@ -2356,8 +2356,11 @@ void main() {
      * where her trunk stands further off her root (`animator.trunkReach`: a crouched head 0.2 m forward of
      * it sweeps 0.2 m per radian), so no part of her trunk sweeps more than `AIM_TURN_ARC` m a 1/60 s step.
      * While the aim weight is still up the facing turn out of the aim keeps the same arc. */
+    // (...less what her trunk moved on her last step, `animator.trunkStep`: the head's world step against her root is
+    // that step and the sweep together, and 0.02 of sweep on a jogging strafe's own 0.02 read 0.04 m, run w11/b0)
     const reach = Math.max(0.06, this.animator?.trunkReach ?? 0.1);
-    const arcRate = AIM_TURN_ARC * 60 / reach;
+    const arc = THREE.MathUtils.clamp(AIM_TURN_BUDGET - (this.animator?.trunkStep ?? 0), AIM_TURN_ARC_MIN, AIM_TURN_ARC);
+    const arcRate = arc * 60 / reach;
     if (this.aiming) {
       if (this._aimFaceOk) {
         let dc = this.camYaw - this._aimFaceCam;

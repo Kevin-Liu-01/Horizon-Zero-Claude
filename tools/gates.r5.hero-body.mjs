@@ -9615,6 +9615,27 @@ const NEW_GATES = [
   },
 ];
 
+/* hero-body targeted fix round 3: A-draw-arm-continuity's matrix grew to 40 aim cells (+ the crouched strafes and the
+ * crouched backpedal) and 28 camera cells (+ the strafes, + the wiggles): ~1250 s in one page evaluation, past the
+ * runner's 900 s protocol timeout (run w11/b0: "Runtime.evaluate timed out" at 904 s). The same gate body, every clause
+ * unchanged, runs as three rows: the aim cells on foot (the 25 the row has graded since Nov 3, its id kept), the aim
+ * cells crouch-moving, and the camera cells. Each must pass. */
+{
+  const i = NEW_GATES.findIndex((g) => g.id === 'A-draw-arm-continuity');
+  const g = NEW_GATES[i];
+  const CELLS_RE = /const CELLS = \[[^;]*\];/;
+  if (i < 0 || !CELLS_RE.test(g.assert)) throw new Error('A-draw-arm-continuity: CELLS shape changed');
+  const onFoot = CONT_CELLS.filter(([, l]) => !/^crouch(Strafe|Back)/.test(l));
+  const crouchMove = CONT_CELLS.filter(([, l]) => /^crouch(Strafe|Back)/.test(l));
+  const mk = (id, cells, what) => ({ ...g, id, timeout: 870000,
+    title: what + ' (' + cells.length + ' cells; one of the three rows of A-draw-arm-continuity\'s matrix, each graded on every clause below). ' + g.title,
+    assert: g.assert.replace(CELLS_RE, () => 'const CELLS = ' + JSON.stringify(cells) + ';') });
+  NEW_GATES.splice(i, 1,
+    mk('A-draw-arm-continuity', onFoot, 'AIM cells on foot: {standing, jog, strafe right, strafe left, crouched} x the five pitches'),
+    mk('A-draw-arm-continuity-crouchmove', crouchMove, 'AIM cells crouch-moving: {crouched strafe right, crouched strafe left, crouched backpedal} x the five pitches'),
+    mk('A-draw-arm-continuity-cam', CAM_CELLS, 'CAMERA cells: {standing, jog, crouched, strafe right, strafe left} x the five pitches (and 0.2 standing and strafing)'));
+}
+
 /* --------------------------------------------------------------- visual gates */
 
 /** Film setup: stage Brea at the open ground facing the camera; HUD off. */

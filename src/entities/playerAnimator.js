@@ -2417,10 +2417,19 @@ export class PlayerAnimator {
     /* hero-body targeted fix round 3: how far her trunk stands off her root (the furthest of the pelvis, the chest
      * and the head, horizontally, character metres): player.js turns her onto the camera no faster than that
      * trunk can sweep `AIM_TURN_ARC` m a step */
+    /* (...and how far the trunk itself moved in character space this step, per 1/60 s: the world step of her head
+     * against her root is that step plus the turn's sweep, so player.js gives the turn only what is left of the bar) */
     if (b.head && b.spine3 && b.pelvis) {
-      this._charOf(b.head.bone, _trR); let r = Math.hypot(_trR.x, _trR.z);
-      this._charOf(b.spine3.bone, _trR); r = Math.max(r, Math.hypot(_trR.x, _trR.z));
-      this._charOf(b.pelvis.bone, _trR); this.trunkReach = Math.max(r, Math.hypot(_trR.x, _trR.z));
+      const TP = this._trP || (this._trP = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]);   // once
+      const k60 = 1 / Math.max(1e-3, dt * 60);
+      let r = 0, st = 0;
+      const B3 = this._trB || (this._trB = [b.head, b.spine3, b.pelvis]);   // once
+      for (let i = 0; i < 3; i++) {
+        this._charOf(B3[i].bone, _trR); r = Math.max(r, Math.hypot(_trR.x, _trR.z));
+        if (this._trOk) st = Math.max(st, _trR.distanceTo(TP[i]) * k60);
+        TP[i].copy(_trR);
+      }
+      this.trunkReach = r; this.trunkStep = this._trOk && dt > 0 ? st : 0; this._trOk = true;
     }
   }
 
@@ -2800,11 +2809,13 @@ export class PlayerAnimator {
          * pelvis could still step 0.04 m on her (F1). And always against her root's own world step: a dodge out
          * of an aimed strafe hands over with her heading swinging back to the camera, which swings the pelvis's
          * world place 0.06 m that no character-space bound sees (F2)) */
-        const worldMode = dodging || air;
         const r = p.position.distanceTo(this._gvRoot);
         for (let pass = 0; pass < 2; pass++) {
           let corr = false;
-          if (pass === 0 && !worldMode && this._rxPeOk) {
+          // (hero-body targeted fix round 3: ...and in the air: the jump's take-off moved the pelvis 0.08-0.11 m a step
+          // against her root while its world step stayed inside the scalar bound below, run w11/b0; a roll keeps its
+          // world bound alone, its dive is the clip's)
+          if (pass === 0 && !dodging && this._rxPeOk) {
             const step = _rxV.distanceTo(this._rxPe);
             if (step > cap && step < 1.5) { _gvT.subVectors(_rxV, this._rxPe).multiplyScalar(cap / step - 1); corr = true; }
           } else if (pass === 1) {
