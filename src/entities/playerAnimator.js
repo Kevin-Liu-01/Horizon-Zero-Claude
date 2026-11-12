@@ -63,6 +63,7 @@ const _caG = new THREE.Vector3();   // last step's grip carried with her step an
 const _caX = new THREE.Vector3(1, 0, 0);
 const _a16U = new THREE.Vector3();  // the A16 elbow cap's up: the aim frame's (R52)
 const _gvW = new THREE.Vector3(), _gvT = new THREE.Vector3(); // the body-step governor (`_rollExit`): world pelvis, governed
+const _gvC = new THREE.Vector3(), _gvH = new THREE.Vector3(), _gvS = new THREE.Vector3(), _gvP3 = [null, null, null];   // ...the trunk's (round 3)
 const _trR = new THREE.Vector3();   // hero-body targeted fix round 3: `trunkReach` scratch
 const _nlC = new THREE.Vector3(), _nlD = new THREE.Vector3(), _nlA = new THREE.Vector3();   // ...and `crouchAim.nearLead`'s ray
 const _reU = new THREE.Vector3();  // elbow roll: elbow offset, perpendicular
@@ -957,6 +958,8 @@ export class PlayerAnimator {
     this._gripValid = false;
     // hero-body targeted fix round 2: the roll's hand-over (`_rollExit`)
     this._rxPe = new THREE.Vector3(); this._rxD = new THREE.Vector3(); this._rxPeOk = false;
+    // (hero-body targeted fix round 3: ...the trunk as rendered last step: pelvis (the same vector), chest, head)
+    this._rxQ3 = [this._rxPe, new THREE.Vector3(), new THREE.Vector3()]; this._rxTrOk = false; this._gvHold = 0;
     this._rxOn = false; this._rxT = 0; this._rxDur = 0; this._rxWas = false; this._rxAirWas = false;
     this._rxWin = 0; this._gvRoot = new THREE.Vector3(); this._gvPel = new THREE.Vector3(); this._gvOk = false;
     // aim diagnostics (written by _aimLayer, read by debugAim()/the gates)
@@ -2800,7 +2803,8 @@ export class PlayerAnimator {
       this.model.updateWorldMatrix(true, false);
       this._charOf(pe.bone, _rxV);
       _gvW.copy(_rxV).applyMatrix4(this.model.matrixWorld);
-      const on = (dodging || air || this._rxWin > 0 || this._aimW > 0.01 || this._crouchW > 0.5) && !p.mantling && !p.riding
+      // (round 3: ...and for `gvHold` s after it last held anything back, so what it held is let go at its pace, not at once)
+      const on = (dodging || air || this._rxWin > 0 || this._aimW > 0.01 || this._crouchW > 0.5 || this._gvHold > 0) && !p.mantling && !p.riding
         && this._deadW < 0.02 && !((this._nat?.ok) && ((this._nat.by.climb?.w ?? 0) > 0.02 || (this._nat.by.sit?.w ?? 0) > 0.02));
       if (on && this._gvOk) {
         const k60 = Math.min(1, Math.max(1e-3, dt * 60)), cap = RX.govM * k60;
@@ -2815,9 +2819,25 @@ export class PlayerAnimator {
           // (hero-body targeted fix round 3: ...and in the air: the jump's take-off moved the pelvis 0.08-0.11 m a step
           // against her root while its world step stayed inside the scalar bound below, run w11/b0; a roll keeps its
           // world bound alone, its dive is the clip's)
+          /* (hero-body targeted fix round 3, `rollExit.trunk`, gate judge findings 3-5, eng judge findings 2 and 6:
+           * "the governor clamps exactly the scalar the gate grades" — the pelvis sat pinned at the cap while the
+           * chest and the head stepped 0.031-0.054 m on it: a landing's fold, a strafe's cancel, a crouch toggle.
+           * The bound is on the trunk: the pelvis, the chest (spine_03) and the head, each against where it was
+           * rendered; the body is moved as one piece, by the least that brings the worst of the three onto the cap) */
           if (pass === 0 && !dodging && this._rxPeOk) {
-            const step = _rxV.distanceTo(this._rxPe);
-            if (step > cap && step < 1.5) { _gvT.subVectors(_rxV, this._rxPe).multiplyScalar(cap / step - 1); corr = true; }
+            const nB = RX.trunk && this._rxTrOk && b.spine3 && b.head ? 3 : 1;
+            if (nB === 3) { this._charOf(b.spine3.bone, _gvC); this._charOf(b.head.bone, _gvH); }
+            const P = _gvP3, Q = this._rxQ3;
+            P[0] = _rxV; P[1] = _gvC; P[2] = _gvH;
+            _gvT.set(0, 0, 0);
+            for (let it = 0; it < 6; it++) {
+              let worst = 0, wi = -1;
+              for (let i = 0; i < nB; i++) { const l = _gvS.subVectors(P[i], Q[i]).add(_gvT).length(); if (l > worst) { worst = l; wi = i; } }
+              if (wi < 0 || worst <= cap * 1.0005 || worst >= 1.5) break;
+              _gvS.subVectors(P[wi], Q[wi]).add(_gvT);
+              _gvT.addScaledVector(_gvS, cap / worst - 1);
+            }
+            corr = _gvT.lengthSq() > 1e-12;
           } else if (pass === 1) {
             const step = _gvW.distanceTo(this._gvPel), lim = r + cap;
             if (step > lim && step < 1.5) {
@@ -2828,6 +2848,7 @@ export class PlayerAnimator {
             }
           }
           if (!corr) continue;
+          this._gvHold = RX.gvHold ?? 0;
           this._charOf(b.footL.bone, _rbT[0]); this._charOf(b.footR.bone, _rbT[1]);
           _v2.copy(_gvT).applyMatrix3(this._pelvisM3);
           pe.bone.position.add(_v2);
@@ -2838,9 +2859,10 @@ export class PlayerAnimator {
         }
       }
       this._gvRoot.copy(p.position); this._gvPel.copy(_gvW); this._gvOk = true;
-      this._rxWin = Math.max(0, this._rxWin - dt);
+      this._rxWin = Math.max(0, this._rxWin - dt); this._gvHold = Math.max(0, this._gvHold - dt);
     }
     this._charOf(pe.bone, this._rxPe); this._rxPeOk = true;
+    if (b.spine3 && b.head) { this._charOf(b.spine3.bone, this._rxQ3[1]); this._charOf(b.head.bone, this._rxQ3[2]); this._rxTrOk = true; }
   }
 
   /**

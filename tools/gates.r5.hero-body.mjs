@@ -8095,7 +8095,7 @@ const NEW_GATES = [
             const k60 = 1 / Math.max(1e-3, dt * 60);
             const dP = pe.distanceTo(prev.pe) * k60, dH = he.distanceTo(prev.he) * k60, dC = ce.distanceTo(prev.ce) * k60, dB = Math.max(dP, dH, dC);
             const dRt = rtW.clone().sub(prev.rtW);
-            const wP = peW.clone().sub(prev.peW).sub(dRt).length() * k60, wH = heW.clone().sub(prev.heW).sub(dRt).length() * k60, wC = ceW.clone().sub(prev.ceW).sub(dRt).length() * k60, dBw = Math.max(wP, wH, wC);
+            const wP = peW.clone().sub(prev.peW).sub(dRt).length() * k60, wH = heW.clone().sub(prev.heW).sub(dRt).length() * k60, wCw = ceW.clone().sub(prev.ceW).sub(dRt).length() * k60, dBw = Math.max(wP, wH, wCw);
             const nmB = dB === dP ? 'pelvis' : dB === dH ? 'head' : 'chest', nmW = dBw === wP ? 'pelvis' : dBw === wH ? 'head' : 'chest';
             let dYw = yawM - prev.yawM; dYw = Math.abs(dYw - Math.round(dYw / (2 * Math.PI)) * 2 * Math.PI) * k60;
             const kind = lanceArm ? 'lance' : roll ? 'roll' : camMoved ? 'cam' : !inf ? 'clip' : 'aim';
