@@ -183,7 +183,7 @@ export function seaStack(bucket, R, { height = 40, base = 8, seed = 1, caprock =
       aspect: 0.8 + R() * 0.5, yaw: R() * 6, jag: 0.4, seed: seed * 211 + k, tone: palette[[0, 3, 6][k % 3]], bevel: 0.12, rough: 0.16, sides: 8 }, skirtShade);
   }
   // surf collar: a ragged band of foam round the skirt at the waterline (pale, broken, low)
-  const collar = new THREE.TorusGeometry(base * 1.28, 0.75, 4, 40);
+  const collar = new THREE.TorusGeometry(base * 1.3, 1.15, 4, 44);
   collar.rotateX(Math.PI / 2);
   const P = collar.attributes.position;
   for (let k = 0; k < P.count; k++) {
@@ -191,10 +191,10 @@ export function seaStack(bucket, R, { height = 40, base = 8, seed = 1, caprock =
     const o = outline(a);
     const n = fbm3(x * 0.4 + seed, 0, z * 0.4, 2);
     const kk = o * (0.98 + 0.22 * n);
-    P.setXYZ(k, x * kk, Math.max(-0.15, P.getY(k) * (0.5 + n * 0.8)) + 0.12, z * kk * aspect);
+    P.setXYZ(k, x * kk, Math.max(-0.2, P.getY(k) * (0.45 + n * 0.7)) + 0.18, z * kk * aspect);
   }
   collar.computeVertexNormals();
-  bucket.add(collar, { surf: 'bisque', tone: 0xf2f3ef, wear: 0.3, colorFn: (p, n, k) => k * (0.88 + 0.24 * vnoise3(p.x * 1.3, p.y * 4, p.z * 1.3)) });
+  bucket.add(collar, { surf: 'bisque', tone: 0xfafbf8, wear: 0.2, colorFn: (p, n, k) => k * (0.95 + 0.2 * vnoise3(p.x * 1.3, p.y * 4, p.z * 1.3)) * (n.y > 0.3 ? 1.25 : 1) });
   collar.dispose();
   return y;
 }

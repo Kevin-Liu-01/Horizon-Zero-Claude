@@ -79,10 +79,11 @@ export async function build({ out = ROOT } = {}) {
   // the steps: three 1 m risers of lime-washed rubble toward +Z
   for (const s of TRIG.steps) {
     const d = s.z1 - s.z0;
+    // the steps are dressed basalt (grey-brown, coursed), not lime: the white drum reads as the pillar
     rbox(trig, V(0, s.h / 2 - 0.15, (s.z0 + s.z1) / 2 - 0.05), [TRIG.stepHalfW * 2, s.h + 0.3, d + 0.1], 0.07,
-      { surf: 'bisque', tone: LIME2, wear: 1.2, colorFn: limeShade });
+      { surf: 'bisque', tone: 0x6f675e, wear: 1.3, colorFn: (p, n, k) => k * (0.85 + 0.25 * vnoise3(p.x * 3.1, p.y * 2.2, p.z * 3.1)) * (Math.abs(n.y) < 0.5 && (p.y % 0.5) < 0.04 ? 0.6 : 1) });
     // a worn stone tread on top of each riser
-    rbox(trig, V(0, s.h + 0.02, (s.z0 + s.z1) / 2), [TRIG.stepHalfW * 2 + 0.06, 0.08, d + 0.04], 0.03, { surf: 'bisque', tone: STONE, wear: 1, segs: 1 });
+    rbox(trig, V(0, s.h + 0.02, (s.z0 + s.z1) / 2), [TRIG.stepHalfW * 2 + 0.06, 0.08, d + 0.04], 0.03, { surf: 'bisque', tone: 0x9a9287, wear: 1, segs: 1 });
   }
   // signal mast with crossed vanes (vermilion + staff white halves)
   {

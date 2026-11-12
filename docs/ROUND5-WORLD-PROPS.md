@@ -119,3 +119,48 @@ filmed and graded by a world-props row). Diagnostics: `__source: 'world-props'`,
   `public/models/r5-poc/sounding-ring.glb` is no longer rebuilt by anything (world-ground deletes the `?poc=biome`
   closure at its W1 exit; pipeline drops the row then).
 - **look-post** — `gatePlaces.look.*` is published (15 places); eleven are `stub: true` until filmed.
+
+## 4. Gates — lane block (W1), port 5260, `nice -n 10`, one Chrome under the slot protocol
+
+`tools/gates.r5.world-props.mjs` (18 rows; `node tools/gates.mjs --port 5260 --lane world-props` selects exactly them).
+It shadows five carried rows by id (A98-sites, A98b-clearings, A61-colliders-registered, A24-player-blocked,
+V34-midground), restated on the island at the plan's W1 bars. Numbers are from run **r5** (Nov 12 23:18–23:30 UTC,
+quiet box: 1-min load 2.5, 0 other gate Chromes) on the overlay of §0; the visual rows were re-filmed in r6.
+
+| row | result | measured |
+|---|---|---|
+| A-gate-places-published | **PASS** | all 11 required keys + 7 vistas (one per biome + pansRise) + 3 landmark stations + 15 look places; 34 rows on valid terrain (h > −0.05, wading ≤ 1.2 m), 0 bad |
+| A98-sites | **PASS** | 20 places (6 trig, 12 benchmarks, the Gauge, the Ring), each ≥ 2 interactables; 40/40 fired entries raised their event; pure landmarks named (pumps, stacks, arch, Roques, Organ clusters, crater) |
+| A-trig-pillars | **PASS** | 6/6 at sites.js ±0.000 m (records and instance matrices); 10/10 sight rays clear of terrain (min clearance 2.35 m, T3–T6) and of every collider; deck reached by synthesized input in 2.02–2.72 s (bar ≤ 3), 3 mantles each, still on the deck 0.6 s later |
+| A-landmark-bearing | **PASS** | from Saltrow, all 8 sectors: N trig T5 14.1 px @ 416 m · NE Roque plug 102.7 px @ 330 m · E trig T2 15.3 px @ 344 m · SE Organ cluster 7 57.8 px @ 156 m · S stack-4 133 px @ 284 m · SW stack-1 77.6 px @ 189 m · W stack-3 114 px @ 362 m · NW red crater 178 px @ 189 m (occlusion-tested; N and E are the thinnest, a 7.4 m pillar + mast on a crest) |
+| A61-colliders-registered | **PASS** | 2,079 colliders (bar ≥ 600); world-props 176/176 collidable instances covered (100 %); offshore stacks 0 colliders |
+| A24-player-blocked | **PASS** | sprint (peak 6.9 m/s) into an 11 m Organ column: min distance to axis 0.905 m (bar ≥ 0.45), 0.20 m/s at contact (bar < 1), the contact is that column |
+| A98b-clearings | **PASS** | 19 keepouts; 0 scatter instances drawn and 0 world-ground rock colliders inside any hard radius (9,448 scanned); 0 blocked capsule sweeps; consumer `vegetation._applyKeepouts` + this lane's static-scatter shim (§6) |
+| A-place-draws | **PASS** | per landmark ≤ 3 main + ≤ 2 casters (Ring 2/1, pumps 2/0–1, skyline 4 kinds/0, Roques 1/0–1, trig 1, benchmarks 1, Organ 1, crater 2, Gauge 3 incl. the jet FX/1); worst frame world-props share 17 draws (look.pansSunset; bar ≤ 45) |
+| A-site-dispose | **PASS** | 3 load/unload cycles of the landmark set, survey marks, Gauge and basalt: geometries 88 → 74, textures 124 → 119, colliders 2,308 → 2,079 every cycle (= baseline) |
+| V34-midground | **PASS** | station (−296, 326): N pump-reservoir 74 px + red crater 146 px · E Organ clusters 5–9 (12–49 px) · S stack-4 207 px · W sea arch 94 px |
+| A-look-landmark-scale | **PASS** | Ring 148 px from look.pansInland, 164 px from T1's deck; 88 % of its box is background; 81 % of its silhouette above the sea line; tilt 20°; 34.0 m / 22.0 m; 27 distinct Organ column tops from 150 m; rotors 85 / 67 / 43 px from the field centre; 140/40/40 met on the 4 filmed look frames |
+| A-look-sea-skyline | **PENDING** | own clauses pass: 5 stacks ≥ 24 px, height CV 0.264, nearest 540 m (bar ≥ 510), 0 colliders, 4 draws 0 casters, `seaStacks` published. Dependent: no stack measurably darker than a glitter column (world-sky W-09 not merged) and foot L* 22–58 (bar ≥ 75; world-ground's sea-shader surf) |
+| A-look-spires | **PENDING** | own clauses pass at 18:45 and 07:00: plug 107 px, needle 50 px, both above the rim line (tops at y 111 / 169 vs rim 210 / 215), 3.05:1 / 3.04:1; 8.6 k tris, 1 draw + 1 caster. The +0.45 ms clause is look-post's quiet-box A/B |
+| A-place-names | **PASS** (runner) | 107 place strings and ids: 0 named lint hits, 0 /spire/i |
+| V-landmark-sheet, V-look-ring, V-look-sea-skyline, V-look-spires | NEEDS-JUDGE | filmed; my reading is in §5 |
+
+**Global green list items run in this tree (same r5 run):** A1-boot-clean PASS · A20b-no-system-errors PASS ·
+A9-perf-budget PASS (88 draws, 59.9 fps median, p95 18 ms) · A90-memory-stability PASS · A90b-memory-attribution
+PASS · A-vram-ledger PASS · A-ID-ip-assets-gone PASS (29 GLBs) · A-licence-manifest PENDING (files-matched PASS;
+the pending clause is pre-existing third-party SHA rows) · A-assets-tracked PASS (runner) ·
+A-no-horizon-terms-code PASS (1,334 ≤ 1,371, 0 over cap; runner) ·
+**A-no-horizon-terms-player FAIL** — its count passes (1,481 ≤ 1,508) but brand's `CONTENT_MODULES` list in
+`tools/gates.r5.brand.mjs` dynamic-imports `/src/world/props/places.js` and `/src/world/props/megastructures.js`,
+which plan §6 deletes at this lane's exit; the two 404s are console errors and the runner fails the row. Fix: drop the
+two paths from that list (brand's file; an orchestrator change) ·
+**A-alloc-rate FAIL (not this lane)** — the baseline-guard offenders are playerAnimator (1.32×), frozen control,
+frozen UI engines, audio, progression, instruments-core and the frame loop. This lane's two rows: **fauna 10.27 KB/frame
+= 0.59× its W0b baseline (17.30)**, **world-props 0.48 KB/frame = 0.13× (3.58)**. Per function (R67: reported, graded
+at the W1-exit global run after the gap-F investigation): fauna `_step` 441 KB/s, `_standable` 189, `update` 84,
+`hitscan` 29, `_writeInstance` 5, `angleTo` 5; world-props `landmarks.update` 14, `gauge.update` 7 — all still over the
+absolute 4 KB/s bar ·
+**A21-real-draw-calls FAIL (not this lane)** — draws 90 / 135 / 120 and triangles pass; median GPU 19.7 / 17.7 / 20.7 ms
+vs 14 at tier high, the same as world-ground's report before these props (19.7–21.2): the W1-exit engine/world item.
+Not run here: A90-abs, A90-rig-reclaim, A90-memory-stability-expansion, A-port-guard, A-carried-suite (orchestrator's
+sealed run), A-reach-all-sites (world-ground's row, not in this tree).
