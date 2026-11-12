@@ -145,7 +145,7 @@ export function seaStack(bucket, R, { height = 40, base = 8, seed = 1, caprock =
     const thick = Math.min(top - y, y < 0 ? 4 + R() * 3 : 1.5 + R() * 4.5);
     const taper = 1 - 0.5 * Math.pow(t, 1.4);
     const ledge = R() < 0.18 ? 0.25 + R() * 0.55 : (R() - 0.5) * 0.35;       // mostly flush, a ledge now and then
-    const notch = y > -1.5 && y < 3 ? 0.86 : 1;                                // the wave-cut notch at the waterline
+    const notch = y > 1.2 && y < 4 ? 0.9 : 1;                                  // the wave-cut notch just above the surf
     const r = Math.max(1.4, (base * taper + ledge + (y < 0 ? (-y) * 0.15 : 0)) * notch);
     lx += lean[0] * thick; lz += lean[1] * thick;
     const cx = lx + (twin && t > 0.55 ? -base * 0.3 : 0);
@@ -172,8 +172,18 @@ export function seaStack(bucket, R, { height = 40, base = 8, seed = 1, caprock =
     slab(bucket, { cx: lx, cz: lz, y0: y - 0.4, thick: 2.2, r, aspect: aspect * 1.08, yaw: 0.4, jag: 0.16, seed: seed * 7 + 99, outline,
       tone: 0x2e2d31, bevel: 0.15, rough: 0.06, sides: 18 }, rockShade({ seed, lip: 0.4 }));
   }
-  // surf collar: a ragged band of foam hugging the waterline (pale, broken, low)
-  const collar = new THREE.TorusGeometry(base * 0.93, 0.55, 4, 36);
+  // the foot: a skirt of fallen blocks and wave-washed ledges spreading into the sea, so the stack
+  // stands IN the water (a clean cylinder meeting a flat sea reads as floating from 500 m)
+  const skirtShade = rockShade({ seed: seed + 5, wetY: 1.4, wetK: 0.42, lip: 0.15 });
+  for (let k = 0; k < 14; k++) {
+    const a = (k / 14) * Math.PI * 2 + R() * 0.35;
+    const o = outline(a);
+    const rr = base * o * (1.0 + R() * 0.35);
+    slab(bucket, { cx: lx * 0.2 + Math.cos(a) * rr, cz: lz * 0.2 + Math.sin(a) * rr * aspect, y0: -2.5, thick: 2.6 + R() * 2.2, r: 1.2 + R() * base * 0.22,
+      aspect: 0.8 + R() * 0.5, yaw: R() * 6, jag: 0.4, seed: seed * 211 + k, tone: palette[[0, 3, 6][k % 3]], bevel: 0.12, rough: 0.16, sides: 8 }, skirtShade);
+  }
+  // surf collar: a ragged band of foam round the skirt at the waterline (pale, broken, low)
+  const collar = new THREE.TorusGeometry(base * 1.28, 0.75, 4, 40);
   collar.rotateX(Math.PI / 2);
   const P = collar.attributes.position;
   for (let k = 0; k < P.count; k++) {

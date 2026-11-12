@@ -76,8 +76,10 @@ const KIT = `
         g.fillStyle = '#111'; g.fillRect(0, 0, W, H);
         for (let i = 0; i < frames.length; i++) {
           tg.putImageData(new ImageData(frames[i], W, H), 0, 0);
-          const ox = (i % cols) * W / cols, oy = Math.floor(i / cols) * H / rows;
-          g.save(); g.translate(ox, oy); g.scale(1 / cols, -1 / rows); g.drawImage(t, 0, -H); g.restore();
+          // uniform scale (never squash a frame): the cell is W/cols x H/rows, the frame keeps 16:9 inside it
+          const cw = W / cols, ch = H / rows, k = Math.min(1 / cols, 1 / rows);
+          const ox = (i % cols) * cw + (cw - W * k) / 2, oy = Math.floor(i / cols) * ch + (ch - H * k) / 2;
+          g.save(); g.translate(ox, oy); g.scale(k, -k); g.drawImage(t, 0, -H); g.restore();
           g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(ox, oy, Math.min(W / cols, 760), 20);
           g.fillStyle = '#f2ead3'; g.font = '13px ui-monospace, monospace'; g.fillText(labels[i], ox + 6, oy + 14);
         }
@@ -243,14 +245,16 @@ const GATES = [
           if (p.mantling && !wasM) mantles++;
           wasM = !!p.mantling;
           if (!p.mantling && p.grounded) { ctx.input._press?.('Space', { code: 'Space' }); keys.delete('Space'); }
-          if (p.position.y > q.y + 2.9 && !p.mantling && p.grounded) { reached = E.simTime - t0; break; }
+          // on the deck: the same test A-climb-1m applies to its pillar fixture (y past the top, the pull finished)
+          if (p.position.y > q.y + 2.9 && !p.mantling) { reached = E.simTime - t0; break; }
         }
         keys.clear();
-        await simWait(0.3, 3000);
-        const onDeck = Math.hypot(p.position.x - q.x, p.position.z - q.z) < 2.2 + 1.3 && p.position.y > q.y + 2.85;
+        await simWait(0.6, 3000);
+        // and she STAYS on it (the step tops and the deck are floors: a standable collider kind)
+        const onDeck = p.position.y > q.y + 2.85;
         climbRows.push({ id: q.id, topS: reached === null ? null : +reached.toFixed(2), mantles, onDeck, standY: +(p.position.y - q.y).toFixed(2) });
       }
-      const climbOk = climbRows.every((r) => r.topS !== null && r.topS <= 3);
+      const climbOk = climbRows.every((r) => r.topS !== null && r.topS <= 3 && r.onDeck);
       return { pass: placeOk && pairsOk && climbOk, detail: { placeOk, pairsOk, climbOk, place: placeRows, pairs: pairRows, climb: climbRows, bar: 'pillar <= 1 m from sites.js; deck reached <= 3 s by input; 10/10 rays clear' } };
     })()`,
   },
