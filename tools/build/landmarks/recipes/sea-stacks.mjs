@@ -81,19 +81,22 @@ function plug(bucket, R, { height = 58, base = 9.5, seed = 3, cols = 22 } = {}) 
   const leanX = (R() - 0.5) * 0.09, leanZ = (R() - 0.5) * 0.09;
   let rTop = base;
   while (y < top) {
-    const thick = Math.min(top - y, 4 + R() * 6);
+    const thick = Math.min(top - y, 6 + R() * 5);
     const t = Math.max(0, y) / height;
-    const bulge = (vnoise3(d * 0.9 + seed, 1.7, 0) - 0.5) * 0.22 * base;
-    const r = Math.max(base * 0.3, base * (1 - 0.58 * Math.pow(t, 0.95)) + bulge);
+    const bulge = (vnoise3(d * 0.9 + seed, 1.7, 0) - 0.5) * 0.18 * base;
+    const r = Math.max(base * 0.3, base * (1 - 0.56 * Math.pow(t, 0.95)) + bulge);
     rTop = r;
     cx += leanX * thick; cz += leanZ * thick;
-    // the drum: a star polygon (alternate radii) = vertical columnar joints; the joints stay aligned
+    // the drum: one lobed plan for the whole plug (buttresses and re-entrants run top to bottom)
+    // with columnar joints cut into it as alternate radii
     const shape = new THREE.Shape();
     const n = cols * 2;
     for (let k = 0; k < n; k++) {
-      const a = (k / n) * Math.PI * 2 + d * 0.02;
-      const rr = r * (k % 2 ? 0.87 : 1.0) * (1 + 0.14 * (vnoise3(Math.cos(a) * 1.4 + seed, Math.sin(a) * 1.4, 0.3) - 0.5));
-      const x = cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr * 0.9;
+      const a = (k / n) * Math.PI * 2;
+      const lobe = 1 + 0.3 * (vnoise3(Math.cos(a) * 1.2 + seed, Math.sin(a) * 1.2, 4.4) - 0.5) * 2
+        + 0.12 * (vnoise3(Math.cos(a) * 3.3, Math.sin(a) * 3.3 + seed, 1.1) - 0.5) * 2;
+      const rr = r * lobe * (k % 2 ? 0.9 : 1.0) * (1 + 0.05 * (vnoise3(Math.cos(a) * 5 + d, Math.sin(a) * 5, seed) - 0.5));
+      const x = cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr * 0.88;
       if (k === 0) shape.moveTo(x, z); else shape.lineTo(x, z);
     }
     shape.closePath();
@@ -105,26 +108,19 @@ function plug(bucket, R, { height = 58, base = 9.5, seed = 3, cols = 22 } = {}) 
       const x = P.getX(k), yy = P.getY(k), z = P.getZ(k);
       const nn = (fbm3(x * 0.3 + seed, yy * 0.08, z * 0.3, 2) - 0.5) * 2;
       const dx = x - cx, dz = z - cz, rr = Math.hypot(dx, dz) || 1;
-      P.setXYZ(k, x + (dx / rr) * nn * 0.55, yy, z + (dz / rr) * nn * 0.55);
+      P.setXYZ(k, x + (dx / rr) * nn * 0.9, yy, z + (dz / rr) * nn * 0.9);
     }
     g.deleteAttribute('uv'); g.deleteAttribute('normal');
     const cg = toCreased(g);
     bucket.add(cg, { surf: 'bisque', tone: pal[(d * 3 + seed) % pal.length], wear: 0.9, colorFn: shade });
     cg.dispose(); g.dispose();
-    // a broad broken bench at about a third and two thirds of the height (Roque-like shoulders)
-    if (d === 1 || d === 4) {
-      for (let l = 0; l < 3; l++) {
+    // shoulders: two or three chunky buttress blocks where a drum steps in (never a plate, never a ring)
+    if (d === 1 || d === 3) {
+      for (let l = 0; l < 2 + (d === 1 ? 1 : 0); l++) {
         const a = R() * Math.PI * 2;
-        slab(bucket, { cx: cx + Math.cos(a) * r * 0.75, cz: cz + Math.sin(a) * r * 0.7, y0: y + thick - 1.2, thick: 1.6 + R(), r: r * 0.45,
-          aspect: 1.6, yaw: -a + Math.PI / 2, jag: 0.35, seed: seed * 17 + d * 5 + l, tone: pal[(l + 2) % pal.length], bevel: 0.15, rough: 0.16, sides: 10 }, shade);
+        slab(bucket, { cx: cx + Math.cos(a) * r * 0.78, cz: cz + Math.sin(a) * r * 0.72, y0: y - 1.5, thick: thick * (0.55 + R() * 0.3), r: r * 0.36,
+          aspect: 1.15, yaw: -a + Math.PI / 2, jag: 0.3, seed: seed * 17 + d * 5 + l, tone: pal[(l + 2) % pal.length], bevel: 0.15, rough: 0.14, sides: 11 }, shade);
       }
-    }
-    // ledges: 1-3 short broken lips where a drum steps in, never a full ring
-    const lips = (R() * 3) | 0;
-    for (let l = 0; l < lips; l++) {
-      const a = R() * Math.PI * 2;
-      slab(bucket, { cx: cx + Math.cos(a) * r * 0.92, cz: cz + Math.sin(a) * r * 0.85, y0: y + thick - 0.6, thick: 0.8 + R() * 0.6, r: r * (0.18 + R() * 0.14),
-        aspect: 2.2, yaw: -a + Math.PI / 2, jag: 0.4, seed: seed * 11 + d * 3 + l, tone: 0x5e5650, bevel: 0.1, rough: 0.14, sides: 9 }, rockShade({ seed, lip: 0.45 }));
     }
     y += thick; d++;
   }

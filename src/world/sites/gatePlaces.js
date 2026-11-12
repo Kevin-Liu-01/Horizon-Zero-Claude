@@ -107,7 +107,7 @@ export function buildGatePlaces(ctx, props) {
   look('aim', -196, 398, 1.6, 300, 0, 46, 17.75, 'trade', 'over the shoulder on the black-sand beach toward the Ring', { pose: 'aim', stub: true });
   look('close', REST?.x ?? salt.x, REST?.z ?? salt.z, 1.55, 250, 0, 30, 18.75, 'trade', 'at 0.8 m at the cistern (character-art\'s close-up place)', { pose: 'close', dist: 0.8, stub: true });
   look('dusk', -338, 214, 1.5, 270, 1, 50, 19.75, 'trade', 'among the sea-lavender on the Glass\'s shore', { pose: 'behind', stub: true });
-  look('pansInland', -200, 414, 1.7, 341.5, 2, 58, 18.75, 'trade', 'from the black-sand beach inland: the Ring at the left edge, the salt field and pumps, the caldera rim with the Roque plug and needle on the skyline at the right');
+  look('pansInland', -200, 414, 1.7, 341.5, 15, 58, 18.75, 'trade', 'from the black-sand beach inland: the Ring at the left edge, the salt field and pumps, the caldera rim with the Roque plug and needle on the skyline at the right');
   look('pansSunset', -226, 186, 1.8, 262, 0, 50, 18.75, 'trade', 'Saltrow\'s rise west over the pans into the sun: the glitter path and the stacks');
   look('meadow', -214, 230, 1.6, 240, 0, 50, 17.5, 'trade', 'the gold meadow belt landward of the pans (world-ground W-06)', { stub: true });
   look('beach', -226, 392, 1.6, 255, -1, 50, 18.25, 'trade', 'the black-sand beach and its surf toward the Ring and the stacks', { stub: true });

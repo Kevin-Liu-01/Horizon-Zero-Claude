@@ -78,10 +78,12 @@ export function polar(bearingDeg, range) {
 /* ------------------------------------------------------------------ the Ring */
 /**
  * The Ring stands on its site; its face normal (+Z of the recipe) is turned to
- * bearing 072 (ENE), toward Saltrow and T1, so both see it open with the
- * western sea and the low sun through it; it leans back toward the sea.
+ * bearing 100 (E by S), between T1's deck (077 from the Ring) and the
+ * black-sand beach where look.pansInland stands (122), so both see it open
+ * with the western sea and the low sun through it; it leans back toward the
+ * sea. (At 072 the beach saw it 50 deg side-on and it read as fallen.)
  */
-export const RING = { site: 'sounding-ring', faceBearing: 72 };
+export const RING = { site: 'sounding-ring', faceBearing: 100 };
 
 /* ---------------------------------------------------------------- the pumps */
 /** Three pumps (bible §8.6): two on the seaward berm at the intake, one by the landward reservoir. */

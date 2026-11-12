@@ -128,7 +128,9 @@ export class SurveyMarks {
   /**
    * Explicit colliders: the octagonal drum as two boxes, the three steps as boxes
    * (the mantle finds their 1 m edges), the observing pillar and the mast as
-   * capsules; a benchmark is one box (its 0.30 m top is a step).
+   * capsules; a benchmark is one box (its 0.30 m top is a step). Kinds 'landmark'
+   * and 'prop' are the ones the player's floor search stands on (player.js
+   * STANDABLE): a step's top is a floor, not only a wall.
    */
   colliders() {
     const out = [];
@@ -139,18 +141,18 @@ export class SurveyMarks {
       const c = Math.cos(p.yaw), s = Math.sin(p.yaw);
       const W = (lx, lz) => [p.x + lx * c + lz * s, p.z - lx * s + lz * c];
       for (const yawOff of [0, Math.PI / 4]) {
-        out.push({ kind: 'trig', ref, instanceId: p.instanceId, shape: { type: 'box', c: [p.x, p.y + T.drumH / 2 - 0.2, p.z], half: [ap, T.drumH / 2 + 0.2, ap], yaw: p.yaw + Math.PI / 8 + yawOff } });
+        out.push({ kind: 'landmark', ref, instanceId: p.instanceId, shape: { type: 'box', c: [p.x, p.y + T.drumH / 2 - 0.2, p.z], half: [ap, T.drumH / 2 + 0.2, ap], yaw: p.yaw + Math.PI / 8 + yawOff } });
       }
       for (const st of T.steps) {
         const [cx, cz] = W(0, (st.z0 + st.z1) / 2);
-        out.push({ kind: 'trig', ref, instanceId: p.instanceId, shape: { type: 'box', c: [cx, p.y + st.h / 2 - 0.25, cz], half: [T.stepHalfW, st.h / 2 + 0.25, (st.z1 - st.z0) / 2], yaw: p.yaw } });
+        out.push({ kind: 'landmark', ref, instanceId: p.instanceId, shape: { type: 'box', c: [cx, p.y + st.h / 2 - 0.25, cz], half: [T.stepHalfW, st.h / 2 + 0.25, (st.z1 - st.z0) / 2], yaw: p.yaw } });
       }
-      out.push({ kind: 'trig', ref, instanceId: p.instanceId, shape: { type: 'capsule', a: [p.x, p.y + T.drumH, p.z], b: [p.x, p.y + T.top - 0.3, p.z], radius: T.headR + 0.02 } });
+      out.push({ kind: 'landmark', ref, instanceId: p.instanceId, shape: { type: 'capsule', a: [p.x, p.y + T.drumH, p.z], b: [p.x, p.y + T.top - 0.3, p.z], radius: T.headR + 0.02 } });
       const [mx, mz] = W(T.mast.x, T.mast.z);
-      out.push({ kind: 'trig', ref, instanceId: p.instanceId, shape: { type: 'capsule', a: [mx, p.y + T.drumH, mz], b: [mx, p.y + T.drumH + T.mast.h - 0.6, mz], radius: 0.08 } });
+      out.push({ kind: 'landmark', ref, instanceId: p.instanceId, shape: { type: 'capsule', a: [mx, p.y + T.drumH, mz], b: [mx, p.y + T.drumH + T.mast.h - 0.6, mz], radius: 0.08 } });
     }
     for (const b of this.benchmarks) {
-      out.push({ kind: 'benchmark', ref: this.meshes.bench || null, instanceId: b.instanceId,
+      out.push({ kind: 'prop', ref: this.meshes.bench || null, instanceId: b.instanceId,
         shape: { type: 'box', c: [b.x, b.y + (0.3 - 0.6) / 2, b.z], half: [1.2, 0.45, 1.2], yaw: 0 } });
     }
     return out;
@@ -180,8 +182,10 @@ export class SurveyMarks {
       if (ay + dy * k < this._h(A.x + dx * k, A.z + dz * k)) return false;
     }
     if (C) {
+      // every blocking collider except the two pillars' own (anything within 7 m of either end)
+      const own = (c) => { const cx = (c.minx + c.maxx) / 2, cz = (c.minz + c.maxz) / 2; return Math.hypot(cx - A.x, cz - A.z) < 7 || Math.hypot(cx - B.x, cz - B.z) < 7; };
       const h = C.raycast(A.x + dx / len * 4, ay + dy / len * 4, A.z + dz / len * 4, dx / len, dy / len, dz / len, len - 8,
-        { filter: (c) => c.kind !== 'trig' && c.blocking !== false });
+        { filter: (c) => c.blocking !== false && !own(c) });
       if (h && h.hit) return false;
     }
     return true;

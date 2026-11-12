@@ -170,10 +170,11 @@ export class Props {
     if (this._collidersDone || !C || !this.loaded) return 0;
     this._collidersDone = true;
     const descs = [];
-    // Organ Shelf: one box per column (A24; the mantle climbs the risers)
+    // Organ Shelf: one box per column (A24; the mantle climbs the risers). Kind 'landmark' is one of the
+    // kinds the player's floor search stands on (player.js STANDABLE), so the columns are natural stairs.
     for (const c of this.organ.columns) {
       const ap = c.r * 0.866;
-      descs.push({ kind: 'basalt', ref: this.organ.mesh, shape: { type: 'box', c: [c.x, (c.y0 + c.y1) / 2, c.z], half: [ap, (c.y1 - c.y0) / 2, ap], yaw: -c.rot } });
+      descs.push({ kind: 'landmark', ref: this.organ.mesh, shape: { type: 'box', c: [c.x, (c.y0 + c.y1) / 2, c.z], half: [ap, (c.y1 - c.y0) / 2, ap], yaw: -c.rot } });
     }
     descs.push({ kind: 'rock', object: this.crater.blocks, blocking: true, occluder: true });
     descs.push({ kind: 'rock', object: this.crater.buttresses, blocking: true, occluder: true });

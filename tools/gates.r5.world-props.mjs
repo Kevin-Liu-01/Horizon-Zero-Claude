@@ -219,7 +219,8 @@ const GATES = [
           const f = t / hl; const c = ay + dy * f - T.getHeight(A.x + dx * f, A.z + dz * f);
           if (c < minClear) { minClear = c; at = t; }
         }
-        const hit = C.raycast(A.x + dx / len * 3, ay + dy / len * 3, A.z + dz / len * 3, dx / len, dy / len, dz / len, len - 6, { filter: (c) => c.kind !== 'trig' });
+        const own = (c) => { const cx = (c.minx + c.maxx) / 2, cz = (c.minz + c.maxz) / 2; return Math.hypot(cx - A.x, cz - A.z) < 7 || Math.hypot(cx - B.x, cz - B.z) < 7; };
+        const hit = C.raycast(A.x + dx / len * 3, ay + dy / len * 3, A.z + dz / len * 3, dx / len, dy / len, dz / len, len - 6, { filter: (c) => !own(c) });
         pairRows.push({ pair: a + '-' + b, lenM: +hl.toFixed(0), minTerrainClearM: +minClear.toFixed(2), atM: at, collider: hit && hit.hit ? (hit.collider.kind + '@' + hit.distance.toFixed(0)) : null });
       }
       const pairsOk = pairRows.length === 10 && pairRows.every((r) => r.minTerrainClearM > 0 && !r.collider);
@@ -367,7 +368,7 @@ const GATES = [
         .sort((a, b) => Math.hypot(a.x - bc.x, a.z - bc.z) - Math.hypot(b.x - bc.x, b.z - bc.z));
       let col = null, ang = null, mine = [];
       for (const c0 of cand.slice(0, 120)) {
-        const own = C.colliders.filter((c) => c.kind === 'basalt' && Math.abs((c.minx + c.maxx) / 2 - c0.x) < 0.05 && Math.abs((c.minz + c.maxz) / 2 - c0.z) < 0.05);
+        const own = C.colliders.filter((c) => c.ref === PR.organ.mesh && Math.abs((c.minx + c.maxx) / 2 - c0.x) < 0.05 && Math.abs((c.minz + c.maxz) / 2 - c0.z) < 0.05);
         for (let k = 0; k < 24; k++) {
           const th = (k / 24) * Math.PI * 2;
           let ok = true;
@@ -386,22 +387,22 @@ const GATES = [
       p.camYaw = ang; p.camPitch = 0.05; p.heading = ang + Math.PI;
       await wait(300);
       ctx.input.keys.add('KeyW'); ctx.input.keys.add('ShiftLeft');
-      let minAxis = 1e9, contactT = 0, contactKind = null, peak = 0;
+      let minAxis = 1e9, contactT = 0, contactKind = null, contactOwn = false, peak = 0;
       const trail = []; const t0 = performance.now(); let prev = { x: p.position.x, z: p.position.z, t: t0 };
       while (performance.now() - t0 < 3500) {
         await frame();
         const d = Math.hypot(p.position.x - col.x, p.position.z - col.z);
         if (d < minAxis) minAxis = d;
         const now = performance.now();
-        if (!contactT && hook.blocked) { contactT = now; contactKind = hook.kind; }
+        if (!contactT && hook.blocked) { contactT = now; contactKind = hook.kind; contactOwn = mine.includes(hook.collider); }
         if (now - prev.t >= 80) { const v = Math.hypot(p.position.x - prev.x, p.position.z - prev.z) / ((now - prev.t) / 1000); trail.push({ wStart: prev.t, v }); peak = Math.max(peak, v); prev = { x: p.position.x, z: p.position.z, t: now }; }
       }
       ctx.input.keys.delete('KeyW'); ctx.input.keys.delete('ShiftLeft');
       const win = contactT ? trail.filter((x) => x.wStart >= contactT && x.wStart - contactT <= 400) : [];
       const atContact = win.length ? win.reduce((s, x) => s + x.v, 0) / win.length : 99;
       const reached = minAxis <= col.r + 0.4 + 0.45;
-      const pass = minAxis >= 0.45 && atContact < 1 && reached && peak > 4.5 && contactKind === 'basalt';
-      return { pass, detail: { minAxisM: +minAxis.toFixed(3), columnRadiusM: +col.r.toFixed(2), columnHeightM: +(col.y1 - T.getHeight(col.x, col.z)).toFixed(2),
+      const pass = minAxis >= 0.45 && atContact < 1 && reached && peak > 4.5 && contactOwn;
+      return { pass, detail: { contactIsTheColumn: contactOwn, minAxisM: +minAxis.toFixed(3), columnRadiusM: +col.r.toFixed(2), columnHeightM: +(col.y1 - T.getHeight(col.x, col.z)).toFixed(2),
         speedAtContactMs: +atContact.toFixed(2), peakMs: +peak.toFixed(2), contactKind, reached, approachDeg: +(ang / D2R).toFixed(0) } };
     })()`,
   },
@@ -682,8 +683,8 @@ const GATES = [
           if (!l.height) continue;
           const y0 = l.y ?? T.getHeight(l.x, l.z);
           const a = proj(l.x, y0, l.z), c = proj(l.x, y0 + l.height, l.z);
-          if (!a || !c || a.x < 0 || a.x > W) continue;
-          const px = Math.abs(a.y - c.y) * visFrac(l.x, l.z, y0, y0 + l.height);
+          if (!a || !c || a.x < 0 || a.x > W || c.y < 0 || c.y > H) continue;     // its top must be in the frame
+          const px = (Math.min(H, a.y) - c.y) * visFrac(l.x, l.z, y0, y0 + l.height);
           if (px >= 40) sizes.push({ id: l.id, px: +px.toFixed(0), third: Math.min(2, Math.floor(a.x / (W / 3))) });
         }
         sizes.sort((p, q) => q.px - p.px);
@@ -787,7 +788,7 @@ const GATES = [
           for (let t = 20; t < dd + 60; t += 4) { const f = t / dd; const x = cam.position.x + dx * f, z = cam.position.z + dz * f; const q = proj(x, T.getHeight(x, z), z); if (q) rimY = Math.min(rimY, q.y); }
           const vis = visFrac(nd.x, nd.z, y0, y1);
           rows.push({ id: nd.id, px: +(Math.abs(a.y - c.y) * vis).toFixed(0), topY: +c.y.toFixed(0), rimY: +rimY.toFixed(0), aboveRim: c.y < rimY - 4,
-            ratio: +(nd.height / (2 * nd.base)).toFixed(2), onScreen: c.x >= 0 && c.x <= W });
+            ratio: +(nd.height / (2 * nd.base)).toFixed(2), onScreen: c.x >= 0 && c.x <= W && c.y >= 0 && a.y <= H });
         }
         draw(4); frames.push(grab()); labels.push('look.pansInland ' + hour + ' h: ' + rows.map((q) => q.id + ' ' + (q.px ?? '-') + ' px').join(', '));
         per[hour] = rows;
