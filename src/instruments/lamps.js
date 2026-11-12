@@ -185,6 +185,9 @@ export const BEAM = Object.freeze({
    */
   coneFullDeg: 55,
   coneOffDeg: 70,
+  /** End-on fade at her (instruments-a W1): view-axis cosines where it starts / is full, and its length before her chest. */
+  endOnCos: Object.freeze([0.80, 0.95]),
+  endOnFadeM: 2.5,
   /** Fragments nearer the camera than `nearFadeM[0]` are gone, full by `nearFadeM[1]` (a chase camera inside the cone). */
   nearFadeM: Object.freeze([1.5, 5.0]),
 });
@@ -194,6 +197,7 @@ const BEAM_GAIN_HOSTILE_FOG = BEAM.gainHostileFog, BEAM_FOG_SPAN = BEAM.fogFull 
 const TAN_SWEEP = Math.tan(BEAM.halfAngleDeg * Math.PI / 180), TAN_LOCK = Math.tan(BEAM.lockHalfAngleDeg * Math.PI / 180);
 const CONE_COS_FULL = Math.cos(BEAM.coneFullDeg * Math.PI / 180), LOCK_TGT_R = BEAM.lockTargetRadiusM;
 const CONE_COS_OFF = Math.cos(BEAM.coneOffDeg * Math.PI / 180), CONE_SIN_OFF = Math.sin(BEAM.coneOffDeg * Math.PI / 180);
+const LOCK_TAIL = BEAM.lockTailM;
 
 /** Fraction of the face radius the fully open aperture reaches (the dark drum face is outside it). */
 export const APERTURE_MAX = 0.66;
@@ -219,6 +223,12 @@ export const LAMP_RHYTHM = Object.freeze({ pulseLow: PULSE_LOW, flickerLow: FLIC
 const SPUTTER_S = 0.55;
 /** Iris speed (1/s): the aperture closes most of the way in ~0.2 s. */
 const IRIS_RATE = 14;
+
+/**
+ * I-05 telegraph constants (ROUND5-LOOK §3.4): steady at 1.6x HDR, the iris at the pinhole within 0.08 s (tau 0.027 s
+ * = 95 % in 0.08 s), a warm glint #FFE6C2 at HDR 1.5 for 0.12 s on the striking end (linear 1.5 x [1, 0.788, 0.565]).
+ */
+export const TELEGRAPH = Object.freeze({ gain: 1.6, snapTau: 0.027, glintS: 0.12, glintHdr: Object.freeze([1.5, 1.182, 0.848]) });
 
 /** Instrument perception by weather (bible §2.3): `lib/weather.js`, re-exported for older imports. */
 export { WEATHER_PERCEPTION, NIGHT_PERCEPTION, perceptionScale } from './lib/weather.js';
@@ -550,6 +560,13 @@ const BEAM_FRAG = /* glsl */`
     float sweepA = pow(max(along, 0.0), ${BEAM.fade.toFixed(1)});
     // the cross-section: edge^2 (sweep), edge^3 (lock: a hot line with soft sides) — bright on the axis, gone at the silhouette
     float prof = pow(edge, mix(${BEAM.profileSweep.toFixed(1)}, ${BEAM.profileLock.toFixed(1)}, isLock));
+    // END-ON, AT HER (instruments-a W1, carried minor 2: "chase-cam pink wedge at bow range"): seen along the shaft
+    // from behind her (the chase camera), the lock's last metres before her and everything past her open into a
+    // fan over her head and shoulders and tint her back. When the shaft points at the eye, the light fades over the
+    // last BEAM.endOnFadeM metres before her chest and stays out past her; side views (the films) are unchanged.
+    float endOn = smoothstep(${BEAM.endOnCos[0].toFixed(3)}, ${BEAM.endOnCos[1].toFixed(3)}, av) * isLock * step(tgt, 0.999);
+    float atHer = smoothstep(dT - ${BEAM.endOnFadeM.toFixed(2)}, dT - 0.3, d);
+    lockA *= 1.0 - endOn * atHer;
     float a = mix(sweepA, lockA, isLock) * prof * near;
     gl_FragColor = vec4(vCol * a, 1.0);
   }
@@ -783,6 +800,8 @@ export class LampSystem {
       beamOn: false,
       slot: -1, bslot: -1, bmode: 'lock', bt: 0.5, blen: 30.5,   // written by update(), read by _writeMatrices()
       bk: 0.5, bsi: 2,                       // the beam's gain and state index (update) -> its colour (_writeMatrices)
+      // instruments-a W1: the hull spill uniform (lib/hull.js, I-01) and the attack telegraph (I-05)
+      coreU: null, teleUntil: -1.5, teleSince: -1.5, glint: null, gslot: -1, glintR: 0.07,
     };
     rec.aperture = LAMP_STATES.calm.aperture;
     mutableFromBirth(rec);   // no field const by the time update() is optimised (lib/hot.js; fix round 3)
@@ -801,6 +820,20 @@ export class LampSystem {
   }
 
   stateOf(machine) { return lampStateFor(machine); }
+
+  /**
+   * I-05 THE ATTACK TELEGRAPH (instruments-a W1, grant <= 30 lines). From the first windup frame for `t` seconds
+   * the lamp stops its rhythm and holds steady at TELEGRAPH.gain x its HDR, its iris snaps to the pinhole in
+   * TELEGRAPH.snapS, and the striking end (`glint`: an Object3D on the working end) throws a warm glint
+   * (#FFE6C2, HDR 1.5) for TELEGRAPH.glintS. No new colour (lamp grammar only). Allocation-free.
+   */
+  telegraph(machine, t, glint = null, glintR = 0.07) {
+    const r = machine?.lamp;
+    if (!r) return false;
+    const now = (HOT.engine || this.ctx.engine)?.simTime ?? 0;
+    r.teleSince = now; r.teleUntil = now + (t > 0 ? t : 0); r.glint = glint; r.glintR = glintR;
+    return true;
+  }
 
   /** Can the air carry a beam right now? (fog density > 1.2 or night) */
   beamsOn() { return this.fogK > BEAM.fogK || this.night > BEAM.night; }
@@ -854,7 +887,7 @@ export class LampSystem {
     // (no Math.* call takes a double: written out)
     const dt0 = t - this._lastT, dt = this._lastT < 0 || dt0 < 0 ? 0 : dt0 > 0.25 ? 0.25 : dt0;
     this._lastT = t;
-    const ease = 1 - Math.exp(-IRIS_RATE * dt);
+    const ease = 1 - Math.exp(-IRIS_RATE * dt), teleEase = 1 - Math.exp(-dt / TELEGRAPH.snapTau);
     const recs = this.records;
     const L = this._aLamp.array, I = this._aIris.array, K = this._aCore.array;
     const air = this.fogK > BEAM.fogK || this.night > BEAM.night;
@@ -891,6 +924,8 @@ export class LampSystem {
       const stateGain = s === 'wary' ? PULSE_LOW + (1 - PULSE_LOW) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp))
         : s === 'hostile' ? ((tp * 4) - Math.floor(tp * 4) < 0.5 ? 1 : FLICKER_LOW) : 1;
       let gain = stateGain;
+      const tele = s !== 'dark' && t >= r.teleSince && t < r.teleUntil;   // I-05: steady, brighter, pinhole
+      if (tele) { gain = TELEGRAPH.gain; target = AP_HOSTILE; }
       if (s === 'dark' && age < SPUTTER_S && r.prev !== 'dark') {
         // sputter, then out: the previous colour stutters through a closing iris
         const on = Math.sin(t * 97.0 + r.phase * 13.0) > 0.1;
@@ -899,7 +934,7 @@ export class LampSystem {
         ci = r.prev === 'calm' ? 0 : r.prev === 'wary' ? 1 : r.prev === 'hostile' ? 2 : 3;
         gain = on ? 0.9 : 0.2;
       }
-      r.aperture += (target - r.aperture) * ease;
+      r.aperture += (target - r.aperture) * (tele ? teleEase : ease);
       if (Math.abs(target - r.aperture) < 0.004) r.aperture = target;
 
       r.slot = n;                           // its instance matrix is written in `_writeMatrices` (scene hook)
@@ -911,6 +946,18 @@ export class LampSystem {
       I[o] = HA[9]; I[o + 1] = HA[10]; I[o + 2] = HA[11];
       I[o + 3] = s === 'dark' ? 1 : 0;
       n++;
+      // I-01: the hull spill (lib/hull.js) in the lamp's state colour x its rhythm; nothing when dark
+      const cu = r.coreU;
+      if (cu !== null) { const LA = this._linA, lk = s === 'dark' ? 0 : gain; cu.x = LA[c3] * lk; cu.y = LA[c3 + 1] * lk; cu.z = LA[c3 + 2] * lk; }
+      // I-05: the warm glint at the striking end, one more instance of this draw (camera-facing, _writeMatrices)
+      r.gslot = -1;
+      if (tele && r.glint !== null && t - r.teleSince < TELEGRAPH.glintS && n < this.capacity) {
+        const og = n * 4, gh = TELEGRAPH.glintHdr;
+        L[og] = gh[0]; L[og + 1] = gh[1]; L[og + 2] = gh[2]; L[og + 3] = 1;
+        K[og] = gh[0]; K[og + 1] = gh[1]; K[og + 2] = gh[2]; K[og + 3] = 1;
+        I[og] = gh[0]; I[og + 1] = gh[1]; I[og + 2] = gh[2]; I[og + 3] = 0;
+        r.gslot = n; n++;
+      }
 
       // ---- the beam (its matrix too is written in `_writeMatrices`, from the fresh anchor) ----
       r.beamOn = false;
@@ -964,6 +1011,7 @@ export class LampSystem {
     const recs = this.records, im = this.lampMesh.instanceMatrix.array, bm = this.beamMesh.instanceMatrix.array;
     const B = this._aBeam.array;
     const player = HOT.pOk === 1 ? HOT.ppos : null;   // her position this frame (lib/hot.js)
+    const cam = E && E.camera ? E.camera : null;
     let lamps = 0, beams = 0;
     for (let i = 0; i < recs.length; i++) {
       const r = recs[i];
@@ -978,6 +1026,12 @@ export class LampSystem {
       }
       im[om + 12] = te[12]; im[om + 13] = te[13]; im[om + 14] = te[14]; im[om + 15] = 1;
       lamps++;
+      if (r.gslot >= 0 && cam !== null) {
+        // the glint faces the camera (its basis rows are the camera's, scaled to the glint radius)
+        const g = r.glint.matrixWorld.elements, ce = cam.matrixWorld.elements, og = r.gslot * 16, gr = r.glintR;
+        for (let c = 0; c < 12; c += 4) { im[og + c] = ce[c] * gr; im[og + c + 1] = ce[c + 1] * gr; im[og + c + 2] = ce[c + 2] * gr; im[og + c + 3] = 0; }
+        im[og + 12] = g[12] + ce[8] * 0.05; im[og + 13] = g[13] + ce[9] * 0.05; im[og + 14] = g[14] + ce[10] * 0.05; im[og + 15] = 1;
+      }
       if (r.bslot < 0) continue;
       const m = r.machine;
       r.anchor.matrixWorld.decompose(_p, _q, _s);
@@ -989,7 +1043,7 @@ export class LampSystem {
         _t.copy(_z).applyQuaternion(_q).multiplyScalar(10).add(_p);
       }
       _d.subVectors(_t, _p);
-      const tgtLen = r.bmode === 'lock' && player ? _d.length() : -1;   // a lock: how far her chest is down the shaft
+      let tgtLen = r.bmode === 'lock' && player ? _d.length() : -1;   // a lock: how far her chest is down the shaft
       if (_d.lengthSq() < 1e-6) _d.copy(_z).applyQuaternion(_q);
       _d.normalize();
       if (r.bmode === 'sweep') {
@@ -1028,6 +1082,11 @@ export class LampSystem {
        * cone than a sweep (BEAM.lockHalfAngleDeg), focused to BEAM.lockTargetRadiusM at her chest (round 2). */
       const lock = r.bmode === 'lock';
       const len = r.blen;
+      /* THE CONE'S END (instruments-a W1, carried minor 3: "lock shape pop at the cone end"). Her chest is never
+       * treated as further down the shaft than len - lockTailM: past that the focus clamp used to switch off (radius
+       * 0.40 -> 0.63 m) and the tail to along^2 over the whole cone in one frame (the 12 m light fell 0.18 -> 0.045
+       * crossing 24.07 m at night). Held at the cap, the shape and the light are continuous at every range. */
+      if (lock && tgtLen > 0.5) { const cap = len - LOCK_TAIL; if (tgtLen > cap) tgtLen = cap > 0.5 ? cap : 0.5; }
       let tanA = lock ? TAN_LOCK : TAN_SWEEP;
       // a lock is focused on her: its radius at her chest is at most BEAM.lockTargetRadiusM (targeted fix round 2)
       if (lock && tgtLen > 0.5 && tgtLen < len) { const tf = LOCK_TGT_R / tgtLen; if (tf < tanA) tanA = tf; }
