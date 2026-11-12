@@ -505,10 +505,13 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
     for (let a = 1; a <= along; a++) {
       const seg = Math.hypot(...sub(at(a, rows >> 1), at(a - 1, rows >> 1)));
       if (a <= lastPlain || !uvEnd) {
-        uAcc += seg * pxPerM;
+        // fix round 3: the U restarts BEFORE a quad would run past the panel's repeated columns (rect width), not after one has:
+        // a long row overshot the panel into the next cell's transparent texels and printed a slit of sky across the strip
+        const segPx = seg * pxPerM;
+        if (uAcc + segPx > rect[2] - 2 && uAcc > period) { uAcc -= period; emit(a - 1, uAcc, null); col++; }
+        uAcc += segPx;
         emit(a, uAcc, null);
         quad();
-        if (uAcc > period && a < along) { uAcc -= period; emit(a, uAcc, null); col++; }
       } else {
         if (a === lastPlain + 1) { emit(a - 1, 0, { v: 0 }); col++; }
         emit(a, 0, { v: (a - lastPlain) / (along - lastPlain) });

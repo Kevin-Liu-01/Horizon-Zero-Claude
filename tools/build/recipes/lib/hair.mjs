@@ -523,10 +523,27 @@ export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062
   // thickness and its dark lash line over the white, tapering into both corners. `curl` bends the lashes forward past the lid, so
   // a profile finds them as a fringe of hair; `twoSided` gives the card its back, so they read from behind the eye's plane too.
   const rows = rim ? 3 : 2;
+  // fix round 3: the measured margin rises in a spike over the cornea dome (the lid there was pushed out over it); the lash line is
+  // the least-squares parabola through the measured margin, so it reads as one smooth arc, never a tent over the pupil
+  const xs = [], ys = [];
   for (let i = 0; i <= segments; i++) {
     const f = 0.06 + 0.98 * (i / segments);
     const x = inner + (outer - inner) * Math.min(1.02, f);
-    const y = open.upper(Math.max(Math.min(open.x0, open.x1), Math.min(Math.max(open.x0, open.x1), x)));
+    xs.push(x); ys.push(open.upper(Math.max(Math.min(open.x0, open.x1), Math.min(Math.max(open.x0, open.x1), x))));
+  }
+  const fit = (() => {
+    const xm = xs.reduce((a, b) => a + b, 0) / xs.length;
+    let s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, t0 = 0, t1 = 0, t2 = 0;
+    xs.forEach((x0, k) => { const x = x0 - xm, y = ys[k]; s0++; s1 += x; s2 += x * x; s3 += x * x * x; s4 += x * x * x * x; t0 += y; t1 += x * y; t2 += x * x * y; });
+    const M = [[s4, s3, s2, t2], [s3, s2, s1, t1], [s2, s1, s0, t0]];
+    for (let c = 0; c < 3; c++) { for (let r = c + 1; r < 3; r++) { const k = M[r][c] / M[c][c]; for (let j = c; j < 4; j++) M[r][j] -= k * M[c][j]; } }
+    const cc = M[2][3] / M[2][2], bb = (M[1][3] - M[1][2] * cc) / M[1][1], aa = (M[0][3] - M[0][2] * cc - M[0][1] * bb) / M[0][0];
+    return (x) => aa * (x - xm) ** 2 + bb * (x - xm) + cc;
+  })();
+  for (let i = 0; i <= segments; i++) {
+    const f = 0.06 + 0.98 * (i / segments);
+    const x = xs[i];
+    const y = Math.min(ys[i], mix(ys[i], fit(x), 0.8));
     const z = zAt(x, y);
     // longest at two thirds, short and thin into the outer corner: from the side a lash is hair, not a slab
     // (fix round 1: the outer corner splays less and ends shorter, so the far eye's lashes do not stand past the cheek against the sky)
@@ -543,11 +560,11 @@ export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062
       const taper = smooth(0.0, 0.2, f) * (1 - smooth(0.86, 1.04, f));
       const r = rim.onBall([x, y - rim.h * mix(0.35, 1, taper), z - rim.h * 0.2]);
       const ur = rim.rect[0] + (i / segments) * (rim.rect[2] - 1);
-      g.pos.push(...r); g.nrm.push(...norm([0, 0.2, 1])); g.uv.push(ur / W, (rim.rect[1] + rim.rect[3] - 1) / W);
-      g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0); g.col.push(0.82, 0.82, 0.82, 1);
+      g.pos.push(...r); g.nrm.push(...norm([0, -0.75, 0.66]));   // (fix round 3: the margin's under-face looks DOWN at the ball; facing out it caught the sun as a grey sheen) g.uv.push(ur / W, (rim.rect[1] + rim.rect[3] - 1) / W);
+      g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0); g.col.push(0.5, 0.5, 0.5, 1);   // (fix round 3: it lies in the lid's shade; 0.82 read as a pale band in the sun)
       // the margin row carries the rim cell's top edge: a duplicate of the lash root with the rim's UV
-      g.pos.push(...a); g.nrm.push(...norm([0, 0.2, 1])); g.uv.push(ur / W, rim.rect[1] / W);
-      g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0); g.col.push(1, 1, 1, 1);
+      g.pos.push(...a); g.nrm.push(...norm([0, -0.35, 0.94])); g.uv.push(ur / W, rim.rect[1] / W);
+      g.jnt.push(joint, 0, 0, 0); g.wgt.push(1, 0, 0, 0); g.col.push(0.7, 0.7, 0.7, 1);
     }
     g.pos.push(...a, ...b); g.nrm.push(...n, ...n);
     g.uv.push(u / W, (rect[1] + rect[3] - 1) / W, u / W, rect[1] / W);
@@ -583,7 +600,7 @@ export function lashCard(open, { side, joint, zAt, segments = 7, length = 0.0062
  * near-black warm brown; down to a warm dark brown where it lies on the white; its lower edge wavers by a texel (lash roots, not a
  * ruled liner) and its last row is wet, a little lighter and smooth.
  */
-export function paintLidRim(buf, { rect, W = 512, ink = '#1C120E', lid = '#3E271D', seed = 71 } = {}) {
+export function paintLidRim(buf, { rect, W = 512, ink = '#120E0C', lid = '#2A1A14', seed = 71 } = {}) {
   const [x0, y0, w, h] = rect;
   const I = hex(ink), Ld = hex(lid);
   const R = rng(seed * 2246822519);
@@ -601,39 +618,53 @@ export function paintLidRim(buf, { rect, W = 512, ink = '#1C120E', lid = '#3E271
     buf.base[o] = clampB(r); buf.base[o + 1] = clampB(g); buf.base[o + 2] = clampB(b); buf.base[o + 3] = y <= edge ? 255 : 2;
     const q = ((y0 + y) * W + x0 + x) * 3;
     buf.normal[q] = 128; buf.normal[q + 1] = clampB(128 + 40 * (t - 0.5)); buf.normal[q + 2] = 250;
-    buf.orm[q] = 255; buf.orm[q + 1] = clampB(mix(0.62, 0.5, t) * 255); buf.orm[q + 2] = 0;
+    buf.orm[q] = 150; buf.orm[q + 1] = clampB(mix(0.86, 0.78, t) * 255); buf.orm[q + 2] = 0;
   }
 }
 
 /** The lash cell: tapered curved hairs, root at the bottom, near-black, a hard alpha. */
-export function paintLashes(buf, { rect, W = 512, hair = '#0E0A09', seed = 61, rough = 0.7 } = {}) {
+export function paintLashes(buf, { rect, W = 512, hair = '#120E0C', seed = 61, rough = 0.7, root = 0.26 } = {}) {
   const [x0, y0, w, h] = rect;
   const R = rng(seed * 2654435761);
   const cov = new Float32Array(w * h);
-  const n = Math.floor(w / 1.7);
-  for (let i = 0; i < n; i++) {
-    const xr = (i + R()) * w / n;
-    const xf = xr / w;
-    // the lash thins toward its ends: a soft fan at the inner corner, separate hairs at the outer one
-    if (R() > mix(0.5, 1, smooth(0, 0.22, xf)) * mix(1, 0.34, smooth(0.62, 1, xf))) continue;
-    // (fix round 2: the strands fan but never cross, so no view of a card closes a pocket of sky between two of them: A-wrap-closed)
-    const lean = (R() - 0.5) * 0.9 + (xf - 0.5) * 9;
-    const L = h * (0.58 + 0.42 * R());
-    const steps = Math.ceil(L * 2);
+  // fix round 3 (R66 C-03: "a heavy dark lash line, >= 40 strands per lid, #120E0C"; the r2 frames read a comb of ruled sticks):
+  // the lashes grow in CLUMPS of three to five hairs whose tips draw together, each hair tapering and curving outward, the clumps
+  // longest at two thirds of the lid and short, sparse and splayed into the outer corner. A clump's hairs converge and never cross
+  // another clump's, so the pockets they shut are filled as lash (below) and no view of a card shuts a pocket of sky.
+  const strand = (xr, lean, L, r0) => {
+    const steps = Math.ceil(L * 2.5);
     for (let s = 0; s <= steps; s++) {
       const t = s / steps;
       const x = xr + lean * t * t, y = h - 1 - t * L;
-      const rad = mix(0.86, 0.3, t);
-      for (let yy = Math.floor(y - rad); yy <= Math.ceil(y + rad); yy++) for (let xx = Math.floor(x - rad); xx <= Math.ceil(x + rad); xx++) {
+      const rad = mix(r0, 0.32, t * t);
+      for (let yy = Math.floor(y - rad - 1); yy <= Math.ceil(y + rad + 1); yy++) for (let xx = Math.floor(x - rad - 1); xx <= Math.ceil(x + rad + 1); xx++) {
         if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
         const d = Math.hypot(xx + 0.5 - x, yy + 0.5 - y);
-        cov[yy * w + xx] = Math.max(cov[yy * w + xx], clamp01(1.2 - d / rad));
+        cov[yy * w + xx] = Math.max(cov[yy * w + xx], clamp01(1.25 - d / Math.max(0.35, rad)));
       }
     }
+  };
+  let strands = 0;
+  for (let xr = 1.5 + R() * 2; xr < w - 1.5;) {
+    const xf = xr / w;
+    const n = 3 + Math.floor(R() * 3 * mix(1, 0.4, smooth(0.7, 1, xf)));
+    const spread = mix(2.2, 3.4, R());
+    const lean0 = (R() - 0.5) * 1.2 + (xf - 0.42) * 10;
+    const L0 = h * mix(0.62, 1, smooth(0.0, 0.45, xf)) * mix(1, 0.55, smooth(0.72, 1, xf)) * (0.82 + 0.18 * R());
+    for (let k = 0; k < n; k++) {
+      const off = (k - (n - 1) / 2) * spread / Math.max(1, n - 1);
+      // the hairs of a clump start apart along the lid and lean together toward the clump's tip
+      strand(xr + off, lean0 - off * 0.85, L0 * (0.8 + 0.2 * R()), mix(0.95, 0.7, xf));
+      strands++;
+    }
+    xr += spread + mix(1.4, 3.6, smooth(0.6, 1, xf)) + R() * 1.2;
   }
-  // (fix round 2: the roots are a solid band, the lid's lash line: every gap between two lashes is open at the tips, so no view of
-  // the card shuts a pocket of sky between the lashes and the lid)
-  for (let y = h - 4; y < h; y++) for (let x = 0; x < w; x++) cov[y * w + x] = 1;
+  // the roots are a solid dark band, the lid's heavy lash line (a quarter of the card, about 1 mm): every gap between two clumps is
+  // open at the tips, so no view of the card shuts a pocket of sky between the lashes and the lid
+  const band = Math.max(4, Math.round(h * root));
+  for (let y = h - band; y < h; y++) for (let x = 0; x < w; x++) cov[y * w + x] = 1;
+  // the band's top edge is the clumps' roots, not a ruled line: it wavers by a texel or two
+  for (let x = 0; x < w; x++) { const up = Math.round(R() * 2.2 * smooth(0.04, 0.2, x / w)); for (let y = h - band - up; y < h - band; y++) if (y >= 0) cov[y * w + x] = 1; }
   const C = hex(hair);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const o = ((y0 + y) * W + x0 + x) * 4;
@@ -643,6 +674,7 @@ export function paintLashes(buf, { rect, W = 512, hair = '#0E0A09', seed = 61, r
     buf.normal[q] = 128; buf.normal[q + 1] = 128; buf.normal[q + 2] = 255;
     buf.orm[q] = 255; buf.orm[q + 1] = clampB(rough * 255); buf.orm[q + 2] = 0;
   }
+  buf.lashStrands = strands;
   // fix round 1 (A-wrap-closed): where two lashes cross, the air they shut in is lash too (from the side the far eye's lashes stand
   // against the sky, and a pocket between them read as a pinhole of background)
   const open = new Uint8Array(w * h), st = [];

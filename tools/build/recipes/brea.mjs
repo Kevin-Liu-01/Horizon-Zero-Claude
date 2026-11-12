@@ -54,7 +54,7 @@ import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/wrap-head.mjs';
 import { lashCard } from './lib/hair.mjs';
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, browLines, remapEyeUV,
-  cullUnderWrap, cullEyeBacks, cullEyeUnderLids, reshapeEars, appendCollarLiner, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
+  cullUnderWrap, cullEyeBacks, cullEyeUnderLids, reshapeEars, appendCollarLiner, bakeThinness, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
 } from './lib/skin-human.mjs';
 
 export const LANE = 'hero-body';
@@ -442,7 +442,10 @@ export async function build({ out = ROOT } = {}) {
     bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, rAxis: 0.0685, topY: 1.82756 },
     knot: CHAINS.wrapSash.points[0],
     // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
-    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1), width: (u) => 0.100 * (1 - 0.2 * u), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 22, across: 5, rootBack: 0.014,
+    tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1),
+      // fix round 3 (R66 d, LOOK C-05: "0.09 m wide at the root, 0.06 m before a 2.5 cm frayed fringe"; game metres / S): the strip
+      // narrows from the knot to the fringe, and the fringe is the last 2.5 cm of the chain's 0.49 m
+      width: (u) => (0.09 - 0.03 * smooth(0.12, 0.95, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 22, across: 5, rootBack: 0.014,
       // fix round 2 (R54, R66 c: soft, thick, rippling cloth, no paper edge; the length and width stay): the rows go to the free strip,
       // each row is skinned smoothly across the joints, the selvedges are rolled hems 3.4 mm thick, the strip sags and ripples
       rootRows: 4, smoothSkin: true, hem: 0.0034, ripple: 0.0042 },
@@ -488,9 +491,12 @@ export async function build({ out = ROOT } = {}) {
     const c = [eyes[k][0], eyes[k][1], eyeSphereZ], v = [q[0] - c[0], q[1] - c[1], q[2] - c[2]], d = Math.hypot(...v) || 1;
     const dome = v[2] > 0 ? 0.0033 * (1 - smooth(0.0018, 0.0074, Math.hypot(v[0], v[1]))) : 0;
     const want = RB + dome + 0.00025;
-    return [c[0] + v[0] / d * want, c[1] + v[1] / d * want, c[2] + v[2] / d * want];
+    // fix round 3: the rim keeps its place on the lid (x, y) and only comes forward onto the ball; pushed out radially it rode up
+    // over the cornea dome as a peak above the pupil
+    const zf = Math.sqrt(Math.max(0, want * want - v[0] * v[0] - v[1] * v[1]));
+    return zf > 0 ? [q[0], q[1], c[2] + Math.max(zf, v[2])] : [c[0] + v[0] / d * want, c[1] + v[1] / d * want, c[2] + v[2] / d * want];
   };
-  const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W, length: 0.0068, curl: 0.24, twoSided: true, rim: { h: 0.00085, rect: WRAP_ATLAS.lidRim.rect, onBall: onBall(i) } }));
+  const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W, length: 0.0035, curl: 0.42, twoSided: true, rim: { h: 0.00085, rect: WRAP_ATLAS.lidRim.rect, onBall: onBall(i) } }));
   // the ball the lids always cover is never seen: it pays for the lid rims and the lashes' backs
   const eyeUnderLids = cullEyeUnderLids(eyesPrim, eyes, opens, { margin: 0.002 });
 
@@ -530,6 +536,9 @@ export async function build({ out = ROOT } = {}) {
   const skirtFrom = appendCollarSkirt(bodyPrim, panTris, { darkUV, seg: 19 });
   // fix round 2 (A-wrap-closed's collar views): the collar's inner wall, round the sides and the back (19 lid segments pay for it)
   const liner = appendCollarLiner(bodyPrim, panTris, { darkUV, seg: 19 });
+  // fix round 3 (LOOK C-01): the tissue's thickness behind each vertex, for the skin light's back-transmission (src/hero/skinLook.js)
+  // (the head only, and not the lips: the mouth's inside lies a few mm behind them, but a lip is not an ear)
+  const thinness = bakeThinness(base, bodyPrim, { scale: S, zero: [eyesPrim], keep: (p) => p[1] > 1.5 && !(Math.abs(p[0]) < 0.034 && p[1] < 1.6 && p[1] > 1.555 && p[2] > 0.05) });
 
   // ---- hide mask (Pan Whites I covers which body vertices)
   const hide = coverageMask(bodyPrim, panTris, 0.08);
@@ -580,7 +589,7 @@ export async function build({ out = ROOT } = {}) {
         hideBits: { 'pan-1': 1 }, hiddenByPan1: hidden,
       },
       r5Face: faceRec,
-      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, eyeUnderLids, handsCut, earTucked, earMoved }, collarLiner: liner },
+      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, eyeUnderLids, handsCut, earTucked, earMoved }, collarLiner: liner, thinness },
     },
   });
   void wrapTex;

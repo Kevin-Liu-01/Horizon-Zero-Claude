@@ -124,7 +124,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
       rootRows: tail.rootRows ?? null, smoothSkin: tail.smoothSkin ?? false, hem: tail.hem ?? 0, ripple: tail.ripple ?? 0,
       uvFront: { rect: A.clothA.rect, period: A.clothA.period, W, pxPerM: 1 / 0.00065, v: [1, 0] },
       uvBack: { rect: A.lining.rect, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0, 1] },
-      uvEnd: A.frayEnd.rect, fray: 0.1,
+      uvEnd: A.frayEnd.rect, fray: tail.fray ?? 0.1,
     }));
   }
   // the other end of the knot: a narrow cloth end, the carmine lining showing where it twists

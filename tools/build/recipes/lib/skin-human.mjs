@@ -327,6 +327,40 @@ export function leanInwardNormals(bodyPrim, eyesPrim, { L, eyes }) {
  * Skinned like the torso under the collar (never the neck); one dark texel (the UV of `darkUV`); both faces. Call after the paint.
  * Returns the first new vertex index.
  */
+/**
+ * LOOK C-01 (fix round 3): how thin the tissue is behind each vertex, for the skin's back-transmission (src/hero/skinLook.js).
+ * A ray from just under the surface goes inward along the vertex normal (and two neighbours of it, the thinnest wins) to the far
+ * side of the same skin; `scale` turns model units into game metres. 1 at <= `t0` (5 mm), 0 at >= `t1` (25 mm) or no hit. Writes
+ * the u8 normalized attribute `_CALTHIN` on `prim` (and 0 on each of `zero`, which must join it). Returns { thin, mean }.
+ */
+export function bakeThinness(doc, prim, { scale = 1, t0 = 0.005, t1 = 0.025, zero = [], keep = null } = {}) {
+  const P = prim.getAttribute('POSITION'), N = prim.getAttribute('NORMAL'), n = P.getCount();
+  const grid = new TriGrid(new Float32Array(triSoup(prim)), 0.012);
+  const out = new Uint8Array(n), p = [0, 0, 0], q = [0, 0, 0];
+  let thin = 0, sum = 0;
+  const maxT = t1 / scale * 1.2;
+  for (let i = 0; i < n; i++) {
+    P.getElement(i, p); N.getElement(i, q);
+    if (keep && !keep(p)) continue;
+    let best = Infinity;
+    for (const [jx, jy] of [[0, 0], [0.25, 0], [0, 0.25]]) {
+      const dx = -q[0] + jx * q[1], dy = -q[1] + jy * q[2], dz = -q[2] + jx * q[0];
+      const l = Math.hypot(dx, dy, dz) || 1;
+      const t = grid.cast(p[0] - q[0] * 0.0003, p[1] - q[1] * 0.0003, p[2] - q[2] * 0.0003, dx / l, dy / l, dz / l, maxT, 0.0004);
+      if (t >= 0 && t < best) best = t;
+    }
+    if (!Number.isFinite(best)) continue;
+    const k = 1 - smooth(t0, t1, best * scale);
+    out[i] = Math.round(k * 255);
+    if (k > 0.5) thin++;
+    sum += k;
+  }
+  const buf = doc.getRoot().listBuffers()[0];
+  prim.setAttribute('_CALTHIN', doc.createAccessor().setType('SCALAR').setArray(out).setNormalized(true).setBuffer(buf));
+  for (const z of zero) z.setAttribute('_CALTHIN', doc.createAccessor().setType('SCALAR').setArray(new Uint8Array(z.getAttribute('POSITION').getCount())).setNormalized(true).setBuffer(buf));
+  return { thin, mean: +(sum / n).toFixed(4) };
+}
+
 export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, rx0 = 0.032, rz0 = 0.038, rx1 = 0.19, rz1 = 0.14, seg = 20, rings = 2, gap = 0.006, backLift = 0.035, margin = 0.012, lip = 0.006, darkUV, reach = -0.1 } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');

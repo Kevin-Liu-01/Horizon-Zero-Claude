@@ -431,6 +431,101 @@ export const GATES = [
     })()`,
   },
   {
+    // fix round 3, ROUND5-LOOK C-01: the skin's own light (src/hero/skinLook.js) measured on the close-up's own staging
+    id: 'A-skin-scatter', kind: 'action', lane: 'character-art', settle: 800, timeout: 240000,
+    title: 'LOOK C-01 skin light (src/hero/skinLook.js): front close-up at 0.8 m, 9 x 9 px patches at the projected face landmarks (linear relative luminance of the displayed frame). (a) DAY 11:00: shadow cheek 0.022-0.060; (b) lit:shadow 3.5-5.5; (c) the 80 -> 20 % fall across the face spans >= 10 % of its width; (d) shadow-cheek warmth (R-B)/(R+G+B) >= 0.40; (e) BACKLIT 18:45, her left profile: ear helix >= 1.5 x the shadow cheek, and < 1.15 x with the transmission term off (negative control); (f) NIGHT 01:00: shadow cheek <= 0.010; (g) the live skin carries userData.calSkin === 1, Brea\'s draws and texture sizes are unchanged',
+    setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
+    })()`),
+    assert: `(async () => {
+      const C = __CTX__, p = C.player, env = C.environment, an = p.animator;
+      const S = await import('/src/hero/sheets.js');
+      const T3 = p.position.constructor, A = C.assets.models.hero, LM = A.extras.r5Face.landmarks;
+      let tpl = null, live = null;
+      A.root.traverse((o) => { if (!tpl && o.isSkinnedMesh && o.geometry.getAttribute('_hidemask')) tpl = o; });
+      p.model.traverse((o) => { if (!live && o.isSkinnedMesh && o.geometry.getAttribute('_hidemask')) live = o; });
+      A.root.updateMatrixWorld(true);
+      const idxOf = (q) => { const v = new T3(), n = tpl.geometry.attributes.position.count; let b = -1, bd = 1e9; for (let i = 0; i < n; i++) { tpl.getVertexPosition(i, v); const d = (v.x - q[0]) ** 2 + (v.y - q[1]) ** 2 + (v.z - q[2]) ** 2; if (d < bd) { bd = d; b = i; } } return b; };
+      const lmI = {}; for (const k of ['brow', 'chin', 'jawL', 'jawR', 'cheekL', 'cheekR', 'noseTip']) lmI[k] = idxOf(LM[k].now);
+      // the left ear's helix: the bind vertex furthest out and up on the reshaped ear (lib/skin-human.mjs EAR)
+      let earI = -1;
+      { const v = new T3(), n = tpl.geometry.attributes.position.count, Ly = LM.brow.now[1], Lz = LM.jawL.now[2]; let best = -1e9;
+        for (let i = 0; i < n; i++) { tpl.getVertexPosition(i, v); if (v.x < 0.05 || v.y > Ly + 0.005 || v.y < LM.cheekL.now[1] - 0.01 || v.z > Lz + 0.01) continue; const sco = v.x * 2 + v.y * 0.5; if (sco > best) { best = sco; earI = i; } } }
+      const at = (i) => { const v = new T3(); live.getVertexPosition(i, v); return live.localToWorld(v); };
+      const face = (k) => at(lmI[k]);
+      const frames = (n) => new Promise((r) => { let i = 0; const f = () => { if (++i >= n) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      const relight = async (hour, off) => {
+        env.setTime(hour); env.setWeather('clear', 0);
+        const sun = env.sunDir, h = Math.atan2(sun.x, sun.z) + off * Math.PI / 180;
+        if (C.engine) C.engine.timeScale = 1;
+        for (let i = 0; i < 30; i++) { p.heading = h; await frames(1); }
+        if (C.engine) C.engine.timeScale = 0; await frames(2);
+        p.model.updateMatrixWorld(true);
+      };
+      const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+      const W = 666, H = 1125;
+      const shoot = (yaw) => {
+        const brow = face('brow'), chin = face('chin'), jL = face('jawL'), jR = face('jawR');
+        const R0 = jL.clone().sub(jR).normalize(), U0 = brow.clone().sub(chin).normalize();
+        const F0 = R0.clone().cross(U0).normalize(), U1 = F0.clone().cross(R0).normalize();
+        const cen = brow.clone().add(chin).multiplyScalar(0.5).add(U1.clone().multiplyScalar(0.022)).sub(F0.clone().multiplyScalar(0.07));
+        const d = F0.clone().multiplyScalar(Math.cos(yaw)).add(R0.clone().multiplyScalar(Math.sin(yaw)));
+        const pos = cen.clone().add(d.multiplyScalar(0.8));
+        p.hero?.kit?.setHidden(3);
+        const img = S.liveView(C, pos.toArray(), cen.toArray(), { width: W, height: H, fov: 29 });
+        const cam = C.camera.clone(); cam.fov = 29; cam.aspect = W / H; cam.position.copy(pos); cam.lookAt(cen); cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+        const proj = (w) => { const v = w.clone().project(cam); return [(v.x + 1) / 2 * W, (1 - v.y) / 2 * H]; };
+        const patch = ([x, y], r = 4) => { let L = 0, R = 0, G = 0, B = 0, n = 0; for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) { const X = Math.round(x) + i, Y = Math.round(y) + j; if (X < 0 || Y < 0 || X >= W || Y >= H) continue; const o = (Y * W + X) * 4; const r1 = lin(img.data[o]), g1 = lin(img.data[o + 1]), b1 = lin(img.data[o + 2]); R += r1; G += g1; B += b1; L += 0.2126 * r1 + 0.7152 * g1 + 0.0722 * b1; n++; } return { L: L / n, R: R / n, G: G / n, B: B / n }; };
+        const lumAt = (x, y) => { let L = 0, n = 0; for (let j = -3; j <= 3; j++) { const X = Math.round(x), Y = Math.round(y) + j; const o = (Y * W + X) * 4; L += 0.2126 * lin(img.data[o]) + 0.7152 * lin(img.data[o + 1]) + 0.0722 * lin(img.data[o + 2]); n++; } return L / n; };
+        return { img, proj, patch, lumAt };
+      };
+      const r3 = (v) => +v.toFixed(4);
+      const skinMat = live.material;
+      const U = skinMat.userData?.calSkinU || null;
+      const out = {};
+      // DAY 11:00, the sun on her left front (the close-up's staging)
+      await relight(11, -38);
+      { const s = shoot(0);
+        const cL = s.proj(face('cheekL')), cR = s.proj(face('cheekR'));
+        const a = s.patch(cL), b = s.patch(cR);
+        const litIsL = a.L >= b.L, lit = litIsL ? a : b, sh = litIsL ? b : a;
+        const wFace = Math.abs(s.proj(face('jawL'))[0] - s.proj(face('jawR'))[0]);
+        // the fall: from the lit cheek across the face to the shadow side's outline, at the cheeks' height
+        const p0 = litIsL ? cL : cR, p1 = litIsL ? cR : cL;
+        const dir = Math.sign(p1[0] - p0[0]), y0 = (p0[1] + p1[1]) / 2;
+        const L80 = sh.L + 0.8 * (lit.L - sh.L), L20 = sh.L + 0.2 * (lit.L - sh.L);
+        let x80 = null, x20 = null;
+        for (let x = p0[0]; Math.abs(x - p0[0]) < wFace * 1.1; x += dir) { const l = s.lumAt(x, y0); if (x20 == null && l >= L80) x80 = x; if (l <= L20) { x20 = x; break; } }
+        const span = x80 != null && x20 != null ? Math.abs(x20 - x80) / wFace : 0;
+        const warm = (sh.R - sh.B) / (sh.R + sh.G + sh.B);
+        out.day = { shadowCheek: r3(sh.L), litCheek: r3(lit.L), ratio: +(lit.L / sh.L).toFixed(2), fallSpan: +span.toFixed(3), faceWidthPx: Math.round(wFace), warmth: +warm.toFixed(3), shadowSide: litIsL ? 'her right' : 'her left' }; }
+      // BACKLIT 18:45, the sun behind her, her left profile: the ear helix against the shadow cheek, then with transmission off
+      await relight(18.75, 180);
+      { const ear = () => { const s = shoot(Math.PI / 2); return { e: s.patch(s.proj(at(earI)), 2).L, c: s.patch(s.proj(face('cheekL'))).L }; };
+        const on = ear();
+        let off = null;
+        if (U) { U.calThinK.value = 0; off = ear(); U.calThinK.value = 1; }
+        out.backlit = { earHelix: r3(on.e), shadowCheek: r3(on.c), ratio: +(on.e / on.c).toFixed(2), ratioThinOff: off ? +(off.e / off.c).toFixed(2) : null }; }
+      // NIGHT 01:00
+      await relight(1, -38);
+      { const s = shoot(0); const a = s.patch(s.proj(face('cheekL'))), b = s.patch(s.proj(face('cheekR'))); out.night = { shadowCheek: r3(Math.min(a.L, b.L)) }; }
+      const I = p.hero?.info?.();
+      const body = (I?.meshes || []).filter((m) => m.part === 'body' && /^Brea_/.test(m.name));
+      const sz = (t) => (t?.image ? t.image.width : 0);
+      out.material = { calSkin: skinMat.userData?.calSkin ?? null, draws: body.length, tris: body.reduce((q, m) => q + m.tris, 0), maps: [sz(skinMat.map), sz(skinMat.normalMap), sz(skinMat.roughnessMap)] };
+      const d = out.day, b = out.backlit;
+      const terms = {
+        a: d.shadowCheek >= 0.022 && d.shadowCheek <= 0.060,
+        b: d.ratio >= 3.5 && d.ratio <= 5.5,
+        c: d.fallSpan >= 0.10,
+        d: d.warmth >= 0.40,
+        e: b.ratio >= 1.5 && b.ratioThinOff != null && b.ratioThinOff < 1.15,
+        f: out.night.shadowCheek <= 0.010,
+        g: out.material.calSkin === 1 && out.material.draws <= 2 && out.material.maps.join() === '1024,512,512',
+      };
+      return { pass: Object.values(terms).every(Boolean), detail: { terms, ...out } };
+    })()`,
+  },
+  {
     id: 'A-brea-fill', kind: 'action', lane: 'character-art', settle: 600, timeout: 60000,
     title: 'R59 c: the hero fill (the emissive slot on the skin and wrap) follows the scene\'s ambient: full by day, at most 15 % of it at 01:00, no new map and no new draw; the material stays the one the outfit and the fade clone already use',
     setup: placedSetup(['openGround'], `(async () => {
