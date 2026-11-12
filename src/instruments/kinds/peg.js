@@ -28,7 +28,7 @@ import { transectsOf, TRANSECT } from './peg-transect.js';
  */
 
 const URL = '/models/instruments/peg.glb';
-const LAMP_R = 0.095;
+const LAMP_R = 0.13;
 const HEIGHT = 0.924;
 const QUAD_WALK = { stride: 0.34, duty: 0.6, lift: 0.07, offsets: { LF: 0, RH: 0, RF: 0.5, LH: 0.5 } };   // trot
 const QUAD_RUN = { stride: 0.7, duty: 0.44, lift: 0.11, offsets: { LF: 0, RH: 0.04, RF: 0.5, LH: 0.54 } };
@@ -164,11 +164,11 @@ export default {
     perception: { gain: 2.4, periphRange: 7, scanSweep: 0.7, scanPeriod: 3.2, contactRange: 2.2 },
     engage: { archetype: 'pack', band: [1.2, 7], orbitSpeed: 1.2, backSpeed: 1.1 },
     attacks: [
-      { id: 'mallet', min: 0, max: 1.7, cd: 2.4, score: 1.0, generic: 'lunge',
+      { id: 'mallet', min: 0, max: 2.0, cd: 2.4, score: 1.0, generic: 'lunge',
         params: { damage: 9, windup: 0.5, strike: 0.18, recover: 0.5, dash: 0.6, range: 1.5 } },
       { id: 'peg-shot', min: 3.0, max: 14, cd: 3.6, score: 0.9, generic: 'volley',
         params: { damage: 8, windup: 0.55, strike: 0.12, recover: 0.6, shots: 1, range: 14, arcDeg: 10, knock: 3 } },
-      { id: 'swarm-rush', min: 2.4, max: 9, cd: 4.4, score: 0.8, generic: 'lunge',
+      { id: 'swarm-rush', min: 1.7, max: 9, cd: 4.4, score: 0.8, generic: 'lunge',
         params: { damage: 10, windup: 0.46, strike: 0.3, recover: 0.6, dash: 3.2, range: 1.6 } },
     ],
     attackMode: 'table',

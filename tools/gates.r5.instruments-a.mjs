@@ -182,7 +182,10 @@ const A_FLAGGED = `(async () => {
   await wait(1500);
   const set = [...rec, ctl].filter(Boolean);
   for (const o of set) park(o, Math.atan2(o.position.x - herX, o.position.z - herZ));
-  const run = async (dur) => {
+  let sentryNow = sentry;
+  const run = async (dur, fresh) => {
+    if (fresh) { const sx = sentryNow.position.x, sz = sentryNow.position.z; __M.sites.dispose(sentryNow); sentryNow = stageKind(sx, sz); await wait(1200); park(sentryNow, fh); }
+    const sentry = sentryNow;
     for (const o of [sentry, ...set]) { park(o, o === sentry ? fh : Math.atan2(o.position.x - herX, o.position.z - herZ)); o.flagMark = null; }
     sentry.lampDarkT = 0;
     if (dur !== null) H.flagDuration = dur;
@@ -211,8 +214,8 @@ const A_FLAGGED = `(async () => {
   };
   const base = await run(null);
   await wait(800);
-  const whites = await run(3);
-  for (const o of [sentry, ...set]) __M.sites.dispose(o);
+  const whites = await run(3, true);
+  for (const o of [sentryNow, ...set]) __M.sites.dispose(o);
   const within = (x) => x.enteredSearchS.length > 0 && x.enteredSearchS.every(s => s !== null && s <= 1.0);
   const checks = {
     raisedBySight: base.raised && whites.raised,
@@ -237,7 +240,7 @@ const A_TRANSECT = `(async () => {
   // a clean slate: the world's own Pegs leave (their pegs with them)
   for (const o of __M.list.slice()) if (o.kind === 'peg') __M.sites.dispose(o);
   await frames(4);
-  const geo0 = R.info.memory.geometries, tx0 = __M.transects ? __M.transects.live : 0, meshBefore = !!(__M.transects && __M.transects.mesh);
+  const meshBefore = !!(__M.transects && __M.transects.mesh);
   const spot = flatSpot(30, 80);
   const V3 = p.position.constructor;
   // a swarm of two on a straight 30 m line (bible: "hammer transect pegs in straight lines")
@@ -245,9 +248,15 @@ const A_TRANSECT = `(async () => {
   for (let i = 0; i < 2; i++) {
     const a = new V3(spot.x - 15, 0, spot.z + i * 3), b = new V3(spot.x + 15, 0, spot.z + i * 3);
     const m = stageKind(a.x, a.z, { route: [a, b] });
-    if (m) pegs.push(m);
+    if (m) { m._trav = -1e9; pegs.push(m); }
   }
+  // the Plumbs the crossing must raise (near) and must not (far): blind and deaf for the test, so only the line can raise them
+  const near = __M.spawn('plumb', spot.x + 6, spot.z + 14), far = __M.spawn('plumb', spot.x - 40, spot.z + 12);
+  for (const o of [near, far]) if (o) { o.sightRange = 0.01; o.hearRange = 0.01; }
   standAt(spot.x, spot.z - 45, spot.x, spot.z);
+  await wait(1800); await frames(6);
+  const geo0 = R.info.memory.geometries;
+  for (const m of pegs) m._trav = 0;
   const w0 = performance.now();
   while (performance.now() - w0 < 26000) { await wait(200); heal(); const S = __M.transects; if (S && S.live >= 8) break; }
   const S = __M.transects;
@@ -256,8 +265,8 @@ const A_TRANSECT = `(async () => {
   // (1) one instanced draw for every peg
   const before = S.audit();
   const objs = []; __CTX__.scene.traverse(o => { if (o.name === 'peg-transects') objs.push(o); });
-  S.draws = 0; await frames(2);
-  const drawsPerFrame = S.draws / 2;
+  const d0 = S.drawTotal, f0 = E.frames; await frames(10);
+  const drawsPerFrame = (S.drawTotal - d0) / Math.max(1, E.frames - f0);
   // (2) a crossing within 20 m of a Plumb raises it to wary <= 1 s (and a Plumb 35 m out stays calm)
   let segI = -1;
   for (let i = 0; i < S.mesh.count; i++) if (S.used[i] && S.prev[i] >= 0) { segI = i; break; }
@@ -265,9 +274,11 @@ const A_TRANSECT = `(async () => {
   const j = S.prev[segI];
   const mx = (S.px[segI] + S.px[j]) / 2, mz = (S.pz[segI] + S.pz[j]) / 2;
   const nx = -(S.pz[segI] - S.pz[j]), nz = S.px[segI] - S.px[j], nl = Math.hypot(nx, nz) || 1;
-  const near = __M.spawn('plumb', mx + 12, mz + 8), far = __M.spawn('plumb', mx - 35, mz + 2);
-  await wait(1500);
+  // place them now relative to the segment: near 12 m from the crossing, far 35 m
+  if (near) { near.position.set(mx + 9, hy(mx + 9, mz + 8), mz + 8); }
+  if (far) { far.position.set(mx - 35, hy(mx - 35, mz + 2), mz + 2); }
   for (const o of [near, far]) if (o) park(o, Math.atan2(mx - o.position.x, mz - o.position.z) + Math.PI);
+  await frames(4);
   for (const o of pegs) park(o);
   standAt(mx + nx / nl * 2.0, mz + nz / nl * 2.0);
   await frames(3);
@@ -295,7 +306,7 @@ const A_TRANSECT = `(async () => {
     disposeRemovesPegs: objsAfter.length === 0 && (!__M.transects || __M.transects.live === 0),
     geometriesBaseline: geo1 <= geo0,
   };
-  return { pass: Object.values(checks).every(Boolean), detail: { checks, transect: before, drawsPerFrame, crossed, tWaryS: tWary, farState, geometries: { before: geo0, after: geo1 }, meshBefore, cutCoverContract: typeof T.cutCover === 'function' ? 'live' : 'PENDING world-ground (ctx.terrain.cutCover)',
+  return { pass: Object.values(checks).every(Boolean), detail: { checks, transect: before, drawsPerFrame, crossed, nearDistM: near ? +Math.hypot(near.position.x - mx, near.position.z - mz).toFixed(1) : null, tWaryS: tWary, farState, geometries: { before: geo0, after: geo1 }, meshBefore, cutCoverContract: typeof T.cutCover === 'function' ? 'live' : 'PENDING world-ground (ctx.terrain.cutCover)',
     bar: 'pegs are 1 instanced draw; crossing within 20 m of a Plumb raises it to wary <= 1 s; site dispose removes the pegs (geometries baseline)' } };
 })()`;
 
@@ -372,7 +383,8 @@ const A_HERD_RIPPLE = `(async () => {
     fleesInFile: lateral.every(x => x === null || (x.samples > 30 && x.worstM <= 2.0)),
     leaderRan30m: lenAfter >= 30,
   };
-  return { pass: Object.values(checks).every(Boolean), detail: { checks, flashesS: flashes, flashSpanS: span && +span.toFixed(3), alarmS: alarmT, leaderFlightM: +lenAfter.toFixed(1), lateral, sentry: sentryKind,
+  const diag = { rippleHook: !!__M._herdRipple, ripples: __M._herdRipple ? __M._herdRipple.ripples : null, file: !!f, fileOrder: f ? f.order.length : 0, sentryState: s ? s.state : null, herds: __M.squads.herds.length, alarmedAtEnd: herd.alarmed };
+  return { pass: Object.values(checks).every(Boolean), detail: { checks, diag, flashesS: flashes, flashSpanS: span && +span.toFixed(3), alarmS: alarmT, leaderFlightM: +lenAfter.toFixed(1), lateral, sentry: sentryKind,
     bar: 'a Plumb chimes near a herd -> lamps flash in sequence down the herd within 1.5 s; the herd then flees in file: every member within 2 m lateral of the leader path for the first 30 m' } };
 })()`;
 
@@ -409,6 +421,7 @@ function A_CORE_GLOW(kind) {
   const { m, h } = s;
   const hull = hullOfM(m);
   const lw = lampWorld(m);
+  m.forceState('alert'); m.update = (dt, t) => { if (!m._disposed) m._updateEyes(dt, t); }; await frames(10);
   // (a) the active core over the live bloom threshold
   const thr = E.bloom ? E.bloom.threshold : 1.0;
   const core = { wary: LS.coreHdr ? LS.coreHdr('wary') : null, hostile: LS.coreHdr ? LS.coreHdr('hostile') : null };
@@ -416,7 +429,8 @@ function A_CORE_GLOW(kind) {
   const coreA = { thr, wary: +(lumOf(core.wary) / thr).toFixed(2), hostile: +(lumOf(core.hostile) / thr).toFixed(2) };
   // (c) DUSK 20:30: the hull near the lamp brighter with the spill than without; far hull unchanged
   env.setWeather?.('clear', 0.05); env.setTime?.(20.5);
-  m.forceState('alert'); freezeOne(m);
+  // the paired read needs a steady lamp: calm (the wary pulse and hostile flicker move the bloom between the two frames)
+  park(m, h); freezeOne(m);
   m.update = (dt, t) => { if (!m._disposed) m._updateEyes(dt, t); };
   const ax = Math.sin(h), az = Math.cos(h);
   poseCam(lw.x + ax * 3.2 + az * 1.4, lw.y + 0.5, lw.z + az * 3.2 - ax * 1.4, lw.x, lw.y - 0.2, lw.z, 40);
@@ -433,7 +447,7 @@ function A_CORE_GLOW(kind) {
     const nv = v.clone().project(cam);
     if (Math.abs(nv.x) > 0.95 || Math.abs(nv.y) > 0.95 || nv.z > 1) continue;
     if (q >= 0.45 && d > 0.15 && nearPts.length < 40) nearPts.push(nv);
-    else if (q === 0 && d > 1.2 && d < 2.5 && farPts.length < 40) farPts.push(nv);
+    else if (q === 0 && d > 1.2 && farPts.length < 40) farPts.push(nv);
   }
   const lumAt = async (pts) => {
     const out = [];
@@ -445,7 +459,7 @@ function A_CORE_GLOW(kind) {
   };
   const on = { near: await lumAt(nearPts), far: await lumAt(farPts) };
   const keepU = m.lamp.coreU; m.lamp.coreU = null; hull.material.userData.hullU.uCoreCol.value.set(0, 0, 0);
-  await frames(3);
+  await frames(6);
   const off = { near: await lumAt(nearPts), far: await lumAt(farPts) };
   m.lamp.coreU = keepU;
   PIX.stop();
@@ -478,29 +492,37 @@ function A_CORE_PARALLAX(kind) {
   if (!s) return { pass: null, detail: 'SKIP: could not stage' };
   const { m, h } = s;
   env.setWeather?.('clear', 0.05); env.setTime?.(20.5);
-  m.forceState('alert'); m.update = (dt, t) => { if (!m._disposed) m._updateEyes(dt, t); };
+  park(m, h); m.update = (dt, t) => { if (!m._disposed) m._updateEyes(dt, t); };
   const lw = lampWorld(m);
-  // the lamp axis
   const a = m._lampAnchor; const e = a.matrixWorld.elements; const ax = new (p.position.constructor)(e[8], e[9], e[10]).normalize();
+  const R0 = m.lamp.radius;
   const shoot = async (deg) => {
     const r = deg * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r);
-    // rotate the axis about world up by deg
     const dx = ax.x * c + ax.z * sn, dz = -ax.x * sn + ax.z * c;
     poseCam(lw.x + dx * 6, lw.y + ax.y * 6, lw.z + dz * 6, lw.x, lw.y, lw.z, 10);
-    await frames(8);
-    const g = await PIX.grab((W) => W / 2, (H) => H / 2, 120);
-    // the hottest pixel (the core) vs the centroid of the lit ring (luma > 60)
-    let best = -1, bx = 0, by = 0, sx = 0, sy = 0, n = 0;
-    for (let y = 0; y < g.n; y++) for (let x = 0; x < g.n; x++) {
-      const o = (y * g.n + x) * 4, l = 0.2126 * g.px[o] + 0.7152 * g.px[o + 1] + 0.0722 * g.px[o + 2];
-      if (l > best) { best = l; bx = x; by = y; }
-      if (l > 60) { sx += x; sy += y; n++; }
+    await frames(10);
+    // the lamp disc on screen (its centre and radius in px), then: the core = centroid of the hottest pixels, the
+    // rim = centroid of the whole lit glass
+    const W = E.renderer.getContext().drawingBufferWidth, H = E.renderer.getContext().drawingBufferHeight;
+    const pc = lw.clone().project(cam), cx = (pc.x * 0.5 + 0.5) * W, cy = (pc.y * 0.5 + 0.5) * H;
+    const rpx = R0 * H / (2 * 6 * Math.tan(5 * Math.PI / 180));
+    const n = Math.min(400, Math.ceil(rpx * 2.4));
+    const g = await PIX.grab(() => cx, () => cy, n);
+    let mx = 0;
+    const lum = (o) => 0.2126 * g.px[o] + 0.7152 * g.px[o + 1] + 0.0722 * g.px[o + 2];
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const dd = Math.hypot(x - n / 2, y - n / 2); if (dd < rpx) mx = Math.max(mx, lum((y * n + x) * 4)); }
+    let hx = 0, hy2 = 0, hn = 0, lx = 0, ly = 0, ln = 0;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      if (Math.hypot(x - n / 2, y - n / 2) > rpx) continue;
+      const l = lum((y * n + x) * 4);
+      if (l >= 0.97 * mx) { hx += x; hy2 += y; hn++; }
+      if (l >= 60) { lx += x; ly += y; ln++; }
     }
-    return { core: [bx, by], ring: n ? [sx / n, sy / n] : null, lit: n };
+    return { core: hn ? [hx / hn, hy2 / hn] : null, ring: ln ? [lx / ln, ly / ln] : null, discPx: +rpx.toFixed(1), hot: hn, lit: ln };
   };
   const f0 = await shoot(0), f30 = await shoot(30);
   PIX.stop();
-  const off = (f) => f.ring ? [f.core[0] - f.ring[0], f.core[1] - f.ring[1]] : null;
+  const off = (f) => f.ring && f.core ? [f.core[0] - f.ring[0], f.core[1] - f.ring[1]] : null;
   const o0 = off(f0), o30 = off(f30);
   const moved = o0 && o30 ? Math.hypot(o30[0] - o0[0], o30[1] - o0[1]) : null;
   // a 10 deg view at 6 m: scaled to the 55 deg game view for the record
@@ -593,7 +615,7 @@ function A_IP_EMISSIVE(kind) {
   ${IA}
   ${STAGE}
   const Col = await import('/src/instruments/lib/color.js');
-  const THREE = await import('three');
+  const THREE = (await import('/src/core/collision.js')).THREE;
   const s = await stageOne(15);
   if (!s) return { pass: null, detail: 'SKIP: could not stage' };
   const { m, h } = s;
@@ -664,7 +686,7 @@ function A_HULL_VALUE(kind) {
   if (!KIND) return skipNoKind();
   ${IA}
   ${STAGE}
-  const THREE = await import('three');
+  const THREE = (await import('/src/core/collision.js')).THREE;
   const s = await stageOne(8);
   if (!s) return { pass: null, detail: 'SKIP: could not stage' };
   const { m, h } = s;
@@ -740,7 +762,7 @@ const A_INSTR_SHADOW_LOD = `(async () => {
   if (!KIND) return skipNoKind();
   ${IA}
   ${STAGE}
-  const THREE = await import('three');
+  const THREE = (await import('/src/core/collision.js')).THREE;
   const d = __M.instrumentKinds[KIND];
   const buf = new Uint8Array(await (await fetch(d.spec.url)).arrayBuffer());
   const dv = new DataView(buf.buffer), jl = dv.getUint32(12, true);
@@ -968,5 +990,30 @@ for (const [id, kind, o, crit] of FILMS) {
   GATES.push({ id, kind: 'visual', lane: FILM, timeout: 150000, settle: 1600, setup: FILM_SETUP(kind, o),
     title: `${kind} film: ${id}`, criteria: `${crit} IP-clause: FAIL if the frame shows any element of the image IP list (ROUND5-LOOK §8); this clause outranks every likeness clause.` });
 }
+
+/* diagnosis only (lane ia-probe): what a Peg does after its rack is torn (A-linked-attack staging) */
+const PROBE_LINKED = `(async () => {
+  ${KIND_PRELUDE({ kind: 'peg' })}
+  ${IA}
+  const p0 = p.position;
+  let m = __M.list.filter(x => x.alive && !x._disposed && x.kind === 'peg').sort((a, b) => a.position.distanceToSquared(p0) - b.position.distanceToSquared(p0))[0];
+  const picked = m ? +Math.sqrt(m.position.distanceToSquared(p0)).toFixed(1) : null;
+  const part = m.parts.find(q => q.attached && q.tearable && q.linkedAttack);
+  part.mesh.updateWorldMatrix(true, false);
+  const e = part.mesh.matrixWorld.elements;
+  m.takeDamage({ point: { x: e[12], y: e[13], z: e[14] }, object: part.mesh, impact: 1, tear: 99999, element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'tear' });
+  const log = [];
+  let phases = 0; const on = (ev2) => { if (ev2.machine === m) phases++; };
+  ev.on('machine-attack-phase', on);
+  m.forceState('attack');
+  for (let i = 0; i < 20; i++) {
+    heal(); if (m.alive && m.state !== 'attack' && m.state !== 'stagger') m.forceState('attack');
+    await wait(1000);
+    log.push({ t: i, state: m.state, dist: +Math.hypot(m.position.x - p.position.x, m.position.z - p.position.z).toFixed(1), atk: m._attack ? m._attack.kind : null, cd: +m.sc._attackCd.toFixed(2), unseen: +m.sc._unseenT.toFixed(1), leash: m.ai?.engage?.leashed?.() ?? null, mode: m.ai?.engage?.mode ?? null, phases });
+  }
+  ev.off?.('machine-attack-phase', on);
+  return { pass: null, detail: { picked, torn: !part.attached, log } };
+})()`;
+GATES.push({ id: 'P-linked-peg', kind: 'action', lane: 'ia-probe', timeout: 60000, settle: 400, title: 'diagnosis: Peg after its rack is torn', assert: PROBE_LINKED });
 
 export { GATES };

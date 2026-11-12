@@ -27,8 +27,9 @@ import { scaleRig } from '../lib/scale.js';
  *
  * Attacks: PENDULUM (the bob swings a 3 m conical arc: knockback) and BOB DROP
  * (the bob is hauled up over the head and slammed: a 2 m ring), both linked to
- * the bob — a TOOL (Pry tears it off: no melee after, bible §7.4); Sightline is
- * the Flag. Every windup telegraphs (I-05).
+ * the bob — a TOOL (Pry tears it off: no melee after, bible §7.4); SIGHTLINE (a
+ * narrow hit at range from the drum that raises the Flag). Every windup
+ * telegraphs (I-05).
  *
  * Weak points: the LAMP (the drum face; a precise hit darkens it 6 s, and a dark
  * Plumb cannot Flag) and the LEVEL VIAL (Joint class): two vial hits and it
@@ -78,6 +79,7 @@ export class Plumb extends ExpansionMachine {
     this._scale = k;
     this._hullHidden = !!opts.hullHidden;
     this._teleA = null;
+    this._flagA = null;
     this._vialHits = 0;
     this._toppleT = 0.5; this._toppleT = -1;
     this._toppleDir = 1;
@@ -282,8 +284,12 @@ export class Plumb extends ExpansionMachine {
         else { ax = 0.25 * (1 - a.phaseT); }
       } else {
         telegraphOnWindup(this, a, this._gDrum, 0.08 * this._scale);
+        // SIGHTLINE: the hairline fix — at the strike the Plumb Flags her (a lit lamp only; perception.flagPlayer)
+        if (a.kind === 'sightline' && a.phase === 'strike' && this._flagA !== a) { this._flagA = a; if (!(this.lampDarkT > 0)) this.manager?.perception?.flagPlayer(this); }
       }
     }
+    // the cable is the pendulum's alone: the gait's tail follow-through is undone before the swing is applied
+    t1.quaternion.identity(); t2.quaternion.identity();
     gait.rotX(t1, ax);
     gait.rotZ(t1, az);
     if (ax2 !== 0) gait.rotX(t2, ax2);
@@ -301,12 +307,15 @@ export default {
   tables: {
     /** the sentry: long sight, a slow fill, a 360-degree sweep; `flags: true` is the Sightline (the Flag) */
     perception: { gain: 1.7, periphRange: 12, scanSweep: 2.6, scanPeriod: 6.5, contactRange: 3.4, flags: true },
-    engage: { archetype: 'orbit', band: [3.0, 9], orbitSpeed: 0.55, backSpeed: 0.8 },
+    engage: { archetype: 'orbit', band: [3.0, 12], orbitSpeed: 0.55, backSpeed: 0.8 },
     attacks: [
       { id: 'pendulum', min: 0, max: 3.4, cd: 3.4, score: 1.0, generic: 'sweep',
         params: { damage: 14, windup: 0.55, strike: 0.38, recover: 0.7, range: 3.4, arcDeg: 360, knock: 7 } },
       { id: 'bob-drop', min: 0, max: 2.6, cd: 4.2, score: 0.85, generic: 'slam',
         params: { damage: 18, windup: 0.62, strike: 0.2, recover: 0.8, ring: 2.0, radius: 2.0 } },
+      // Sightline (bible §7.4 #2): the drum's hairline sight — a narrow, light hit at range that Flags her
+      { id: 'sightline', min: 2.8, max: 24, cd: 5.0, score: 0.8, generic: 'volley',
+        params: { damage: 5, windup: 0.7, strike: 0.15, recover: 0.6, shots: 1, range: 24, arcDeg: 6 } },
     ],
     attackMode: 'table',
     react: { staggerFrac: 0.16, downedFrac: 0.34 },

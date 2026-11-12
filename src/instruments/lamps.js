@@ -226,8 +226,8 @@ const SPUTTER_S = 0.55;
 /** Iris speed (1/s): the aperture closes most of the way in ~0.2 s. */
 const IRIS_RATE = 14;
 
-/** I-05: steady 1.6x HDR, pinhole within 0.08 s (tau 0.027), glint #FFE6C2 at HDR 1.5 (linear) for 0.12 s. */
-export const TELEGRAPH = Object.freeze({ gain: 1.6, snapTau: 0.027, glintS: 0.12, glintHdr: Object.freeze([1.5, 1.182, 0.848]) });
+/** I-05: steady (ring 1.25x, core 1.6x HDR), pinhole within 0.08 s (tau 0.027), glint #FFE6C2 at HDR 1.5 for 0.12 s. */
+export const TELEGRAPH = Object.freeze({ gain: 1.25, coreGain: 1.6, snapTau: 0.027, glintS: 0.12, glintHdr: Object.freeze([1.5, 1.182, 0.848]) });
 
 /** Instrument perception by weather (bible §2.3): `lib/weather.js`, re-exported for older imports. */
 export { WEATHER_PERCEPTION, NIGHT_PERCEPTION, perceptionScale } from './lib/weather.js';
@@ -945,7 +945,8 @@ export class LampSystem {
       const o = n * 4;
       L[o] = HA[c3] * gain; L[o + 1] = HA[c3 + 1] * gain; L[o + 2] = HA[c3 + 2] * gain;
       L[o + 3] = APERTURE_MAX * Math.sqrt(r.aperture > 0 ? r.aperture : 0);
-      K[o] = CA[c3] * gain; K[o + 1] = CA[c3 + 1] * gain; K[o + 2] = CA[c3 + 2] * gain; K[o + 3] = CORE_FRAC_A[ci];
+      const kg = tele ? TELEGRAPH.coreGain : gain;   // I-05: the core holds at 1.6x; the ring at 1.25x keeps the token's hue
+      K[o] = CA[c3] * kg; K[o + 1] = CA[c3 + 1] * kg; K[o + 2] = CA[c3 + 2] * kg; K[o + 3] = CORE_FRAC_A[ci];
       I[o] = HA[9]; I[o + 1] = HA[10]; I[o + 2] = HA[11];
       I[o + 3] = s === 'dark' ? 1 : 0;
       n++;

@@ -82,6 +82,7 @@ export class TransectSystem {
     this.lpx = 0.5; this.lpz = 0.5; this.lpOk = 0;
     this.frame = -1;
     this.draws = 0;
+    this.drawTotal = 0;
   }
 
   _build() {
@@ -105,7 +106,7 @@ export class TransectSystem {
     mesh.userData.noSizeCull = true;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.raycast = () => {};
-    mesh.onBeforeRender = () => { this.draws++; };
+    mesh.onBeforeRender = () => { this.draws++; this.drawTotal++; };
     for (let i = 0; i < TRANSECT.cap; i++) mesh.setMatrixAt(i, ZERO);
     this.ctx.scene?.add(mesh);
     this.mesh = mesh;

@@ -29,7 +29,7 @@ export const LANE = 'instruments-a';
 export const RECIPE = 'tools/build/instruments/gen-peg.mjs';
 export const OUTPUTS = ['public/models/instruments/peg.glb'];
 
-export const PEG = Object.freeze({ axisY: 0.50, bodyR: 0.215, z0: -0.56, z1: 0.30, lampR: 0.095, lampZ: 0.445 });
+export const PEG = Object.freeze({ axisY: 0.40, bodyR: 0.20, z0: -0.56, z1: 0.30, lampR: 0.13, lampZ: 0.445, mastY: 0.94 });
 
 export async function build({ out = ROOT, file = null } = {}) {
   const P = (r, h, surf, tone) => ({ r, h, surf, tone });
@@ -77,35 +77,42 @@ export async function build({ out = ROOT, file = null } = {}) {
   /* --------------------------- head: lamp collar --------------------------- */
   const HZ = PEG.z1;
   lathe(H('head'), [
-    P(0, 0, 'graphite', C.GRAPH), P(0.14, 0, 'bronze', C.BRONZE), P(0.15, 0.03, 'bronze', C.BRONZE), P(0.14, 0.08, 'patina', C.VERDI),
-    P(0.135, 0.12, 'bronze', C.BRONZE), P(0.125, 0.135, 'graphite', C.GRAPH), P(0, 0.135, 'graphite', C.GRAPH),
+    P(0, 0, 'graphite', C.GRAPH), P(0.15, 0, 'bronze', C.BRONZE), P(0.165, 0.03, 'bronze', C.BRONZE), P(0.165, 0.08, 'patina', C.VERDI),
+    P(0.16, 0.12, 'graphite', C.GRAPH), P(0.15, 0.135, 'graphite', C.GRAPH), P(0, 0.135, 'graphite', C.GRAPH),
   ], at(0, AY + 0.02, HZ, AXIS_Z.clone()), { segs: 24, wear: 0.5, crease: 30 });
   // the visor over the lamp
-  plate(H('head'), [[-0.13, 0], [0.13, 0], [0.10, 0.10], [-0.10, 0.10]], 0.012, 0.004,
-    basis(V(1, 0, 0), V(0, 0.2, 1).normalize(), V(0, 1, -0.2).normalize(), V(0, AY + 0.14, HZ + 0.05)), { surf: 'bronze', tone: C.BRONZE, wear: 0.6 });
+  plate(H('head'), [[-0.16, 0], [0.16, 0], [0.12, 0.10], [-0.12, 0.10]], 0.012, 0.004,
+    basis(V(1, 0, 0), V(0, 0.2, 1).normalize(), V(0, 1, -0.2).normalize(), V(0, AY + 0.17, HZ + 0.05)), { surf: 'bronze', tone: C.BRONZE, wear: 0.6 });
   // the front bumper ring, two small sighting studs
-  torus(H('head'), V(0, AY + 0.02, HZ + 0.13), 0.13, 0.012, 'z', { surf: 'graphite', tone: C.GRAPH, tube: 6, radial: 24 });
-  for (const s of [-1, 1]) ball(L('head'), V(s * 0.085, AY + 0.11, HZ + 0.12), 0.012, { surf: 'lamp', tone: C.LAMP, w: 8, h: 6 });
+  torus(H('head'), V(0, AY + 0.02, HZ + 0.13), 0.155, 0.012, 'z', { surf: 'graphite', tone: C.GRAPH, tube: 6, radial: 24 });
+  for (const s of [-1, 1]) ball(L('head'), V(s * 0.11, AY + 0.14, HZ + 0.12), 0.012, { surf: 'lamp', tone: C.LAMP, w: 8, h: 6 });
 
   /* -------------------------------- the mallet ----------------------------- */
-  const PIV = V(0, AY + R + 0.10, -0.34);
-  // the A-frame on the back (pelvis)
+  // A PILE-DRIVER on its back: a bronze mast at the rear carries the mallet arm at its top; the arm reaches
+  // forward over the lamp and the hammer hangs below its end (the `mallet` bone pivots at the mast head)
+  const PIV = V(0, PEG.mastY, -0.40);
+  const MB = V(0, AY + R * 0.85, -0.40);
+  strut(H('pelvis'), MB, PIV.clone().add(V(0, -0.02, 0)), 0.03, 0.024, { surf: 'bronze', tone: C.BRONZE, sides: 10, wear: 0.6 });
+  for (const f of [0.35, 0.7]) torus(H('pelvis'), MB.clone().lerp(PIV, f), 0.034, 0.008, 'y', { surf: 'graphite', tone: C.GRAPH, tube: 4, radial: 12 });
   for (const s of [-1, 1]) {
-    strut(H('pelvis'), V(s * 0.12, AY + R * 0.75, -0.44), V(s * 0.04, PIV.y, PIV.z), 0.018, 0.016, { surf: 'bronze', tone: C.BRONZE, sides: 8, wear: 0.6 });
-    strut(H('pelvis'), V(s * 0.12, AY + R * 0.75, -0.22), V(s * 0.04, PIV.y, PIV.z), 0.018, 0.016, { surf: 'bronze', tone: C.BRONZE, sides: 8, wear: 0.6 });
+    strut(H('pelvis'), V(s * 0.13, AY + R * 0.6, -0.30), MB.clone().lerp(PIV, 0.62).add(V(s * 0.02, 0, 0)), 0.014, 0.012, { surf: 'bronze', tone: C.BRONZE, sides: 6, wear: 0.6 });
+    strut(H('pelvis'), V(s * 0.13, AY + R * 0.6, -0.50), MB.clone().lerp(PIV, 0.62).add(V(s * 0.02, 0, 0)), 0.014, 0.012, { surf: 'bronze', tone: C.BRONZE, sides: 6, wear: 0.6 });
   }
-  strut(H('pelvis'), V(-0.06, PIV.y, PIV.z), V(0.06, PIV.y, PIV.z), 0.026, 0.026, { surf: 'graphite', tone: C.GRAPH, sides: 10 });
-  // the piston cylinder on the back (body), its rod rides the arm
-  strut(H('pelvis'), V(0, AY + R * 0.9, -0.02), V(0, AY + R + 0.08, 0.08), 0.032, 0.03, { surf: 'graphite', tone: C.GRAPH, sides: 10 });
-  const ARM_END = V(0, AY + R + 0.17, 0.30);
-  strut(H('mallet'), PIV, ARM_END, 0.028, 0.022, { surf: 'graphite', tone: C.GRAPH, sides: 8 });
-  strut(H('mallet'), V(0, AY + R + 0.08, 0.08), PIV.clone().lerp(ARM_END, 0.62), 0.014, 0.014, { surf: 'graphite', tone: C.CHROME, sides: 8 });
-  rbox(H('mallet'), PIV.clone().lerp(ARM_END, 0.5), [0.07, 0.035, 0.24], 0.01, { surf: 'glaze', tone: C.OXBLOOD, wear: 0.4, rot: [-0.18, 0, 0] });
-  // the hammer head: a bronze drum across, vermilion-banded faces
+  strut(H('pelvis'), V(-0.05, PIV.y, PIV.z), V(0.05, PIV.y, PIV.z), 0.026, 0.026, { surf: 'graphite', tone: C.GRAPH, sides: 10 });
+  // the piston: a cylinder on the back whose rod drives the arm
+  const PB = V(0, AY + R * 0.95, -0.08);
+  strut(H('pelvis'), PB, PB.clone().add(V(0, 0.16, 0.02)), 0.032, 0.03, { surf: 'graphite', tone: C.GRAPH, sides: 10 });
+  const ARM_END = V(0, PEG.mastY - 0.01, 0.34);
+  strut(H('mallet'), PIV, ARM_END, 0.026, 0.02, { surf: 'graphite', tone: C.GRAPH, sides: 8 });
+  strut(H('mallet'), PB.clone().add(V(0, 0.15, 0.02)), PIV.clone().lerp(ARM_END, 0.42), 0.013, 0.013, { surf: 'graphite', tone: C.CHROME, sides: 8 });
+  rbox(H('mallet'), PIV.clone().lerp(ARM_END, 0.55), [0.06, 0.035, 0.30], 0.01, { surf: 'glaze', tone: C.OXBLOOD, wear: 0.4 });
+  // the hammer hangs below the arm's end: a stem and a bronze drum across, vermilion-banded faces
+  strut(H('mallet'), ARM_END, ARM_END.clone().add(V(0, -0.10, 0)), 0.016, 0.016, { surf: 'graphite', tone: C.GRAPH, sides: 8 });
+  const HAM = ARM_END.clone().add(V(0, -0.15, 0));
   lathe(H('mallet'), [
     P(0, 0, 'glaze', C.VERM), P(0.062, 0, 'glaze', C.VERM), P(0.066, 0.02, 'bronze', C.BRONZE), P(0.07, 0.08, 'bronze', C.BRONZE),
     P(0.07, 0.10, 'patina', C.VERDI), P(0.07, 0.12, 'bronze', C.BRONZE), P(0.066, 0.18, 'bronze', C.BRONZE), P(0.062, 0.20, 'glaze', C.VERM), P(0, 0.20, 'glaze', C.VERM),
-  ], at(-0.10, ARM_END.y - 0.03, ARM_END.z, AXIS_X.clone()), { segs: 18, wear: 0.6, crease: 30 });
+  ], at(-0.10, HAM.y, HAM.z, AXIS_X.clone()), { segs: 18, wear: 0.6, crease: 30 });
 
   /* ------------------------------- the peg racks --------------------------- */
   // the tool (bible §7.4: "peg rack (Pry -> bronze pins)"): its own node, mounted on the pelvis as a component
@@ -125,9 +132,9 @@ export async function build({ out = ROOT, file = null } = {}) {
   }
 
   /* ---------------------------------- legs --------------------------------- */
-  const L1 = 0.23, L2 = 0.27;
+  const L1 = 0.18, L2 = 0.21;
   const LEGS = [];
-  const LEG_DEF = [['F', 0.18, 0.25, 1], ['H', -0.34, -0.42, -1]];
+  const LEG_DEF = [['F', 0.18, 0.25, 1], ['H', -0.34, -0.42, -1]];   // short legs: a low churn under a tall mast
   for (const [row, hz, az, hinge] of LEG_DEF) {
     for (const s of [1, -1]) {
       const id = (s > 0 ? 'R' : 'L') + row;
@@ -186,7 +193,7 @@ export async function build({ out = ROOT, file = null } = {}) {
     ...rigSpec.legs.flatMap((l) => [`${l.id}_thigh`, `${l.id}_shin`, `${l.id}_foot`]),
   ];
   const LAMP_AT = sh(V(0, AY + 0.02, PEG.lampZ));
-  const sockets = { lamp: LAMP_AT, mallet: sh(V(0, ARM_END.y - 0.03, ARM_END.z)), rack: sh(V(R + 0.05, AY + 0.05, -0.12)), rackRoot: sh(V(0, AY + 0.05, -0.12)) };
+  const sockets = { lamp: LAMP_AT, mallet: sh(HAM), rack: sh(V(R + 0.05, AY + 0.05, -0.12)), rackRoot: sh(V(0, AY + 0.05, -0.12)) };
 
   const hullAll = mergeLabelled(hull, BONE_ORDER, 'peg-hull');
   const lampAll = mergeLabelled(lamp, BONE_ORDER, 'peg-sensor');
