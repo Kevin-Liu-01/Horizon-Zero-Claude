@@ -51,6 +51,7 @@ export class Peg extends ExpansionMachine {
     const entry = ctx.assets.models[this.modelKind];
     const S = entry.r5Sockets;
     this._teleA = null;
+    this._transectRegistered = false;
     this._driveT = 0.5; this._driveT = -1;
     this._drove = 0;
     this._trav = 0.5; this._trav = 0;
@@ -80,16 +81,22 @@ export class Peg extends ExpansionMachine {
     foldMachineMeshes(this);
     snapSockets(this);
     installHull(this);
+    transectsOf(manager)?.register(this);
     this._gMallet = glintAnchor(this, 'mallet', S.mallet);
     this._gLamp = glintAnchor(this, 'head', S.lamp);
     this._gRack = glintAnchor(this, 'pelvis', S.rack);
-    this._deathRoll = 0.6;
+    this._deathRoll = 1.55;   // a churn rolls onto its flank: the mast comes down (A47c)
     this._deathSink = 0.02;
   }
 
   weightAudit() { return weightAudit(this); }
 
-  onDeathPose(k, deathT) { this.gait.deathPose(k, deathT, 'quad'); }
+  /** The churn rolls onto its flank as it dies (a sprawler: its mass must come down, A47c); the mast comes down with it. */
+  onDeathPose(k, deathT) {
+    this.gait.deathPose(k, deathT, 'quad');
+    const f = k < 0.6 ? (k / 0.6) * (k / 0.6) * (3 - 2 * (k / 0.6)) : 1;
+    this.gait.rotZ(this.rig.pelvis, this._deathSide * 1.25 * f);
+  }
 
   /** The transect: walk, stop, drive a peg every TRANSECT.spacing metres (calm only). */
   _statePatrol(dt) {
@@ -177,6 +184,6 @@ export default {
   },
   audio: { set: 'peg', mass: 'small' },
   doctrine: {
-    spawn: [{ n: 3, x: 54, z: -80, route: 16, routePoints: 2, poi: 'peg-transect' }],
+    spawn: [{ n: 3, x: 40, z: -30, route: 16, routePoints: 2, poi: 'peg-transect' }],
   },
 };

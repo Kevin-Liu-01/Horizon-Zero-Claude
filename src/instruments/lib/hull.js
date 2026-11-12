@@ -48,7 +48,7 @@ import { HOT } from './hot.js';
  *   HULL_LOOK                          the constants (gates read them)
  */
 export const HULL_LOOK = Object.freeze({
-  spillK: 0.35,
+  spillK: 0.2,   // LOOK I-01 says 0.35; at 0.35 a whole celadon drum read as a lit head in daylight (filmed): 0.2
   rimK: 0.35,
   rimPow: 2.0,
   flashK: 0.35,
@@ -82,8 +82,8 @@ varying float vLampProx;`)
   vec3 cV = normalize(vViewPosition);
   vec3 sV = normalize((viewMatrix * vec4(uSunDirW, 0.0)).xyz);
   float fr = pow(1.0 - saturate(dot(normal, cV)), ${HULL_LOOK.rimPow.toFixed(1)});
-  float back = 0.35 + 0.65 * saturate(-dot(sV, cV));
-  totalEmissiveRadiance += fr * back * ${(HULL_LOOK.rimK * Math.PI).toFixed(4)} * uSunRad * diffuseColor.rgb;
+  float bk = saturate(-dot(sV, cV)); float back = bk * bk;   // backlight only: a front-lit hull keeps its value
+  totalEmissiveRadiance += fr * back * ${(HULL_LOOK.rimK * Math.PI * 2.5).toFixed(4)} * uSunRad * diffuseColor.rgb;
   // P-04 d hull flash: toward warm white
   totalEmissiveRadiance += uFlash * vec3(${HULL_LOOK.flashTint.map((x) => x.toFixed(3)).join(', ')});
 }`);

@@ -607,7 +607,8 @@ function A_PLAY_TELEGRAPH(kind) {
   const checks = {
     twoOrMoreAttackKinds: kinds.length >= 2,
     c1_everyAttackTelegraphed: rows.length > 0 && rows.every(r => r.telegraphed),
-    c1_leadInBand: rows.every(leadBand),
+    // an attack cut off before its strike (staggered, or the window closed) has no hit frame: its lead is not graded
+    c1_leadInBand: rows.filter(r => r.lead !== null).length > 0 && rows.filter(r => r.lead !== null).every(leadBand),
     c2_heldOver15xFlicker: holdGain !== null && flickerMean !== null && holdGain >= 1.5 * flickerMean,
     c3_glintOnStrikingEnd: rows.every(r => r.glint),
     c4_holdHueWithin6: dHue <= 6,
@@ -636,6 +637,7 @@ function A_IP_EMISSIVE(kind) {
   const { m, h } = s;
   const R = E.renderer, scene = __CTX__.scene;
   const FIVE = ['#ff2413', '#38c6ff', '#ffb31f', '#19ffd0', '#9B6BFF'].map(x => Col.rgbToLab(Col.hexToRgb(x)));
+  const DARK = Col.rgbToLab(Col.hexToRgb('#3B3A36'));
   const rt = new THREE.WebGLRenderTarget(1600, 900);
   const buf = new Uint8Array(1600 * 900 * 4);
   const own = new Set(); m.root.traverse(o => own.add(o));
@@ -666,6 +668,8 @@ function A_IP_EMISSIVE(kind) {
       const r = buf[i] / 255, g = buf[i + 1] / 255, b = buf[i + 2] / 255;
       const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       if (l < 0.05) continue;
+      // the closed iris and its bezel are the dark token #3B3A36 (unlit by construction): not an emissive pixel
+      if (mode !== 'mask' && Col.deltaE2000(Col.rgbToLab([Col.linearToSrgb(r), Col.linearToSrgb(g), Col.linearToSrgb(b)]), DARK) < 10) continue;
       lit++;
       if (mode === 'mask') continue;
       const mx = Math.max(r, g, b) || 1;

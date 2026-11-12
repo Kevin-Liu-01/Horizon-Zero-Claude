@@ -69,6 +69,9 @@ export function mountTool(machine, mesh, opts) {
     tearHp: opts.tearHp ?? 60, linkedAttack: opts.linkedAttack ?? null,
     loot: opts.loot ?? [], onTorn: opts.onTorn ?? null, weak: !!opts.weak, weakMult: opts.weakMult ?? 2,
   });
+  // a tool sits where its generator put it: the socket snap (rig/sockets.js) must not pull it onto a nearer
+  // hull sample (a bob on a 9 mm cable snapped onto a leg); it rides its own bone, never re-parented
+  if (part && part.mesh) { part.mesh.userData.noSnap = true; part.mesh.userData.noReparent = true; }
   return part;
 }
 

@@ -362,7 +362,7 @@ export function finish(hull, opts = {}) {
     if (slot === bronzeSlot || slot === patinaSlot) {
       const occl = 1 - ao[i];
       const patch = vnoise(x, y, z, 0.09);
-      const v = Math.min(1, Math.max(0, occl * 3.0 + (patch - 0.42) * 2.8));
+      const v = Math.min(1, Math.max(0, occl * 3.2 + (patch - 0.36) * 3.0));
       if (v > 0) {
         tmp.setRGB(r, g, b).lerp(verdi.clone().multiplyScalar(0.55 + 0.45 * a), v * 0.85);
         r = tmp.r; g = tmp.g; b = tmp.b;
@@ -373,7 +373,7 @@ export function finish(hull, opts = {}) {
     const fb = y < floorH ? 1 - y / floorH : 0;
     if (fb > 0) {
       const k = Math.pow(fb, 0.8);
-      const keep = 1 - 0.86 * k, add = 0.04 * k;
+      const keep = 1 - 0.9 * k, add = 0.03 * k;
       r = r * keep + dust.r * add;
       g = g * keep + dust.g * add;
       b = b * keep + dust.b * add;

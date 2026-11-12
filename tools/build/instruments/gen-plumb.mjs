@@ -223,6 +223,9 @@ export async function build({ out = ROOT, scale = 1, file = null } = {}) {
   const T0 = V(0, HEAD_Y - 0.20, 0), T1 = V(0, HEAD_Y - 0.80, 0), BOB = V(0, PLUMB.bobTopY, 0);
   cable(H('tail1'), [T0, V(0, (T0.y + T1.y) / 2, 0.001), T1], 0.009, { surf: 'graphite', tone: C.GRAPH, segs: 4, radial: 5 });
   cable(H('tail2'), [T1, V(0, (T1.y + BOB.y) / 2, 0.001), BOB.clone().add(V(0, 0.03, 0))], 0.009, { surf: 'graphite', tone: C.GRAPH, segs: 4, radial: 5 });
+  // the hanger at the cable's end (hull, tail2): a bronze swivel the bob hangs from (and the socket proxy samples)
+  torus(H('tail2'), BOB.clone().add(V(0, 0.05, 0)), 0.03, 0.008, 'x', { surf: 'bronze', tone: C.BRONZE, tube: 6, radial: 16, wear: 0.6 });
+  strut(H('tail2'), BOB.clone().add(V(0, 0.09, 0)), BOB.clone().add(V(0, 0.035, 0)), 0.014, 0.018, { surf: 'bronze', tone: C.BRONZE, sides: 8, wear: 0.6 });
   const bob = new KBucket('plumb-bob');
   lathe(bob, [
     P(0, -0.40, 'graphite', C.CHROME), P(0.012, -0.38, 'bronze', C.BRONZE), P(0.07, -0.25, 'bronze', C.BRONZE),
@@ -274,7 +277,7 @@ export async function build({ out = ROOT, scale = 1, file = null } = {}) {
   const hullAll = mergeLabelled(hull, BONE_ORDER, 'plumb-hull');
   const lampAll = mergeLabelled(lamp, BONE_ORDER, 'plumb-sensor');
   const fin = finish(hullAll, {
-    occluders: [lampAll, bob], rays: 28, dist: 0.4, footBand: 0.6,
+    occluders: [lampAll, bob], rays: 28, dist: 0.4, footBand: 1.0,
     lamps: [{ at: LAMP_AT, r: PLUMB.lampR }, { at: sockets.vial, r: 0.06 }],
   });
   finish(bob, { occluders: [hullAll], rays: 28, dist: 0.4, footBand: 0.6 });

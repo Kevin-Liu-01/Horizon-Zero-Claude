@@ -76,6 +76,7 @@ export class TransectSystem {
     this.rings = new Map();                    // owner -> { ring: Int32Array(perOwner), n, head, last }
     this.mesh = null;
     this.live = 0;
+    this.pegsAlive = 0;   // live Peg machines: the draw lives exactly as long as one does (A90: never a stray object)
     this.crossings = 0;
     this.raised = 0;
     this.cuts = 0;
@@ -110,6 +111,14 @@ export class TransectSystem {
     for (let i = 0; i < TRANSECT.cap; i++) mesh.setMatrixAt(i, ZERO);
     this.ctx.scene?.add(mesh);
     this.mesh = mesh;
+  }
+
+  /** A Peg joins the world: the draw is built with the first (so it exists before any peg is driven). */
+  register(owner) {
+    if (!owner || owner._transectRegistered) return;
+    owner._transectRegistered = true;
+    this.pegsAlive++;
+    if (!this.mesh) this._build();
   }
 
   /** Drive one peg for `owner` at (x, z). Returns the slot. */
@@ -173,7 +182,8 @@ export class TransectSystem {
       for (let k = 0; k < rec.ring.length; k++) this._freeSlot(rec.ring[k]);
       this.rings.delete(owner);
     }
-    if (this.live <= 0 && this.rings.size === 0) this.dispose();
+    if (owner && owner._transectRegistered) { owner._transectRegistered = false; this.pegsAlive--; }
+    if (this.pegsAlive <= 0 && this.live <= 0 && this.rings.size === 0) { this.pegsAlive = 0; this.dispose(); }
   }
 
   /** Once per frame (the first live Peg's update): does her step cross a live segment? */
@@ -243,6 +253,7 @@ export class TransectSystem {
     this.mesh.dispose();
     this.mesh = null;
     this.live = 0;
+    this.pegsAlive = 0;   // live Peg machines: the draw lives exactly as long as one does (A90: never a stray object)
     this.used.fill(0);
     this.prev.fill(-1);
     this.owner.fill(null);

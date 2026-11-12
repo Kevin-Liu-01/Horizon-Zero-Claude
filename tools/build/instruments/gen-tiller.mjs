@@ -172,7 +172,7 @@ export async function build({ out = ROOT } = {}) {
   // the hopper's bronze rim is a graduated circle (vernier ticks, the shared atlas)
   H('pelvis').decalSince(hopMk, { frame: at(HOP.x, HOP.y, HOP.z), uPeriod: 6, fn: (p) => (p.y > 0.245 && p.y < 0.315 && Math.hypot(p.x, p.z) > 0.29
     ? [(Math.atan2(p.x, p.z) / (2 * Math.PI) + 0.5) * 6, bandV(BAND.vernier, 0.15 + (0.315 - p.y) / 0.07 * 0.7)] : null) });
-  ball(L('pelvis'), V(HOP.x, HOP.y + 0.24, HOP.z), 0.11, { surf: 'lamp', tone: LAMP, w: 14, h: 10 });
+  ball(H('pelvis'), V(HOP.x, HOP.y + 0.24, HOP.z), 0.11, { surf: 'glaze', tone: 0xd8e2cc, w: 14, h: 10, wear: 0.05 });   // the lantern: glaze lit by the spill
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
     cable(H('pelvis'), [
@@ -233,7 +233,7 @@ export async function build({ out = ROOT } = {}) {
     strut(H('head'), c.clone().add(V(0, 0, -0.03)), c.clone().add(V(0, 0, 0.01)), r + 0.02, r + 0.02, { surf: 'graphite', tone: GRAPH, sides: 16 });
     const g = new THREE.SphereGeometry(r, 16, 10);
     g.scale(1, 1, 0.45);
-    L('head').add(g, { matrix: at(c.x, c.y, c.z + 0.012), surf: 'lamp', tone: LAMP });
+    H('head').add(g, { matrix: at(c.x, c.y, c.z + 0.012), surf: 'glaze', tone: 0x30383a, wear: 0.05 });   // glass: lit by the spill
     g.dispose();
   }
   // rangefinder tube on top
@@ -425,7 +425,7 @@ export async function build({ out = ROOT } = {}) {
   const lampAll = mergeKit(lamp, BONE_ORDER, 'tiller-sensor');
   const LAMP_C = shift(V(DRUM.x, DRUM.y, DRUM.z + 0.24));
   finish(AUGER, { occluders: [hullAll], rays: 28, dist: 0.4, footBand: 0.6 });
-  const fin = finish(hullAll, { occluders: [lampAll, AUGER], rays: 28, dist: 0.4, footBand: 0.6,
+  const fin = finish(hullAll, { occluders: [lampAll, AUGER], rays: 28, dist: 0.4, footBand: 0.75,
     lamps: [{ at: LAMP_C, r: 0.2 }, { at: shift(V(HOP.x, HOP.y + 0.24, HOP.z)), r: 0.11 }] });
   const lod1 = await lod1From(hullAll, 0.32, 'tiller-lod1');   // I-04: LOD1 <= 40 % of LOD0 (A-instr-shadow-lod a)
 

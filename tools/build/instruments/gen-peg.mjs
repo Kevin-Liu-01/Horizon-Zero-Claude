@@ -199,7 +199,7 @@ export async function build({ out = ROOT, file = null } = {}) {
 
   const hullAll = mergeLabelled(hull, BONE_ORDER, 'peg-hull');
   const lampAll = mergeLabelled(lamp, BONE_ORDER, 'peg-sensor');
-  const fin = finish(hullAll, { occluders: [lampAll, RACK], rays: 28, dist: 0.4, footBand: 0.3, lamps: [{ at: LAMP_AT, r: PEG.lampR }] });
+  const fin = finish(hullAll, { occluders: [lampAll, RACK], rays: 28, dist: 0.4, footBand: 0.4, lamps: [{ at: LAMP_AT, r: PEG.lampR }] });
   finish(RACK, { occluders: [hullAll], rays: 28, dist: 0.4, footBand: 0.3 });
 
   const target = file || path.join(out, OUTPUTS[0]);
