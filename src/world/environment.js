@@ -177,10 +177,10 @@ const WEATHER = {
   trade: W_TRADE,
   // bible: fog Calima Ochre ×4, coral disc, shadow strength 0.45, perception 0.5; L-14: EV +0.15, bloom ×1.25
   calima: { ...W_TRADE, sunMul: 0.70, hemiMul: 1.40, cloud: 0.05, cloudDark: 0.20, densMul: 4.00, mist: 0.6, windMS: 2.5, wind: 0.50, gust: 0.20, shaft: 0.35, cloudShadow: 0.00, calima: 1, perception: 0.5, shadowK: 0.45, seaCloud: 0.4, ev: 0.15, bloomK: 1.25 },
-  // bible: height fog below 150 m ×3, perception 0.5 inside the bank
-  fogbank: { ...W_TRADE, sunMul: 0.55, hemiMul: 1.40, cloud: 0.70, cloudDark: 0.35, densMul: 3.00, mist: 3.0, windMS: 1.5, wind: 0.35, gust: 0.15, shaft: 0.50, desat: 0.30, cloudShadow: 0.10, fogbank: 1, perception: 0.5, shadowK: 0.70, seaCloud: 1.6, ev: 0.10, bloomK: 0.80 },
+  // bible: height fog below 150 m ×3 (the main layer; the 14 m valley mist ×8 makes the low white bank), perception 0.5 inside the bank
+  fogbank: { ...W_TRADE, sunMul: 0.55, hemiMul: 1.40, cloud: 0.70, cloudDark: 0.35, densMul: 3.00, mist: 8.0, windMS: 1.5, wind: 0.35, gust: 0.15, shaft: 0.50, desat: 0.30, cloudShadow: 0.10, fogbank: 1, perception: 0.5, shadowK: 0.70, seaCloud: 1.6, ev: 0.10, bloomK: 0.80 },
   // bible: rare, rain on the windward side only, perception 0.8 (fog ×1.6 is this lane's)
-  squall: { ...W_TRADE, sunMul: 0.30, hemiMul: 1.80, cloud: 0.92, cloudDark: 0.62, densMul: 1.60, mist: 1.4, rain: 0.80, wet: 0.70, windMS: 9.0, wind: 1.80, gust: 0.90, shaft: 0.15, desat: 0.50, cloudShadow: 0.12, perception: 0.8, shadowK: 0.80, seaCloud: 1.2, ev: 0.10, bloomK: 0.60 },
+  squall: { ...W_TRADE, sunMul: 0.30, hemiMul: 1.50, cloud: 0.92, cloudDark: 0.62, densMul: 1.60, mist: 1.4, rain: 0.80, wet: 0.70, windMS: 9.0, wind: 1.80, gust: 0.90, shaft: 0.15, desat: 0.50, cloudShadow: 0.12, perception: 0.8, shadowK: 0.80, seaCloud: 1.2, ev: 0.00, bloomK: 0.60 },
   // hidden Round-4 state: the kind-block's beam row stages fog density > 1.2 with no rain
   overcast: { ...W_TRADE, sunMul: 0.26, hemiMul: 1.85, cloud: 0.94, cloudDark: 0.62, densMul: 1.85, wet: 0.10, wind: 1.20, gust: 0.55, windMS: 7.0, shaft: 0.18, desat: 0.55, cloudShadow: 0.10, shadowK: 0.80, ev: 0.10, bloomK: 0.70 },
 };
@@ -585,6 +585,12 @@ export class Environment {
     this._lull = 0.5;
     this._nightK = 0.5;
     this._evSnap = false;
+    this._percK = -2;
+    this._apN = 0;
+    this._driftX = -1.5; this._driftZ = 1.5;
+    this._focalFov = -1; this._focalH = -1;
+    this._gcX = 1e9; this._gcZ = 1e9; this._gcN = -1;
+    this._tierRef = null; this._cullWant = -1; this._budgetWant = -1;
 
     /* ------------------------------ biome ------------------------------ */
     this._bw = { pans: 0, holds: 0, malpais: 0, cloudline: 0, flank: 0, caldera: 0,
@@ -718,6 +724,7 @@ export class Environment {
     this._campSearch = 0;
     this._fireT = 0;
     this._fireWas = null;
+    this._fireK = 0;
     this._borrowUntil = -1;
 
     /* ------------------------------ sky -------------------------------- */
@@ -1109,7 +1116,10 @@ export class Environment {
     const g = Math.sin(this._gustPhase) * 0.5 + Math.sin(this._gustPhase * 2.37 + 1.1) * 0.32
       + Math.sin(this._gustPhase * 0.61 - 0.4) * 0.18;
     this.wind.gust = Math.max(0, g) * this.w.gust;
-    this.wetness += (this.w.wet - this.wetness) * Math.min(1, dt * (this.w.wet > this.wetness ? 0.55 : 0.12));
+    if (this.wetness !== this.w.wet) {
+      const nw = this.wetness + (this.w.wet - this.wetness) * Math.min(1, dt * (this.w.wet > this.wetness ? 0.55 : 0.12));
+      this.wetness = Math.abs(nw - this.w.wet) < 1e-4 ? this.w.wet : nw;
+    }
 
     this._updateLightning(dt);
 
@@ -1126,14 +1136,20 @@ export class Environment {
     this._rainMat.uniforms.uTime.value = t;
     const mu = this._moteMat.uniforms;
     mu.uTime.value = t;
-    const focal = ctx.renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
-    if (mu.uFocal.value !== focal) mu.uFocal.value = focal;
+    const H = ctx.renderer.domElement.height;
+    if (this._focalFov !== cam.fov || this._focalH !== H) {
+      this._focalFov = cam.fov; this._focalH = H;
+      mu.uFocal.value = H / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
+    }
 
     /* ---- follow the camera / player (the fog's camera uniforms are set in
        scene.onBeforeRender from the camera each render actually uses) ---- */
     const p = ctx.player?.position;
     if (p) {
-      this._updateGrassCasters(p.x, p.z);
+      if (Math.abs(p.x - this._gcX) + Math.abs(p.z - this._gcZ) > 0.5 || this._grassCasters.length !== this._gcN) {
+        this._gcX = p.x; this._gcZ = p.z; this._gcN = this._grassCasters.length;
+        this._updateGrassCasters(p.x, p.z);
+      }
       const sp = this.sky.position;
       if (sp.x !== p.x || sp.z !== p.z) sp.set(p.x, 0, p.z);
       if (!this.csm) {
@@ -1144,20 +1160,25 @@ export class Environment {
     const cp = cam.position, mp = this.motes.position;
     if (mp.x !== cp.x || mp.y !== cp.y || mp.z !== cp.z) { mp.copy(cp); this.rain.position.copy(cp); }
     // squall: rain on the windward side only (bible §2.3)
-    const ww = smooth(SEA_CLOUD.near, SEA_CLOUD.far, cam.position.x * WIND_FROM.x + cam.position.z * WIND_FROM.z);
-    const rainAmt = this.w.rain * (this.weather === 'squall' ? 0.15 + 0.85 * ww : 1);
-    this.rain.visible = rainAmt > 0.004;
-    const ru = this._rainMat.uniforms;
-    if (ru.uAmount.value !== rainAmt) ru.uAmount.value = rainAmt;
-    if (this.rain.visible) ru.uWind.value.set(this.wind.x * this._windMS * 0.18, 0, this.wind.z * this._windMS * 0.18);
+    if (this.w.rain > 0.004) {
+      const ww = smooth(SEA_CLOUD.near, SEA_CLOUD.far, cam.position.x * WIND_FROM.x + cam.position.z * WIND_FROM.z);
+      const rainAmt = this.w.rain * (this.weather === 'squall' ? 0.15 + 0.85 * ww : 1);
+      this.rain.visible = rainAmt > 0.004;
+      const ru = this._rainMat.uniforms;
+      if (ru.uAmount.value !== rainAmt) ru.uAmount.value = rainAmt;
+      if (this.rain.visible) ru.uWind.value.set(this.wind.x * this._windMS * 0.18, 0, this.wind.z * this._windMS * 0.18);
+    } else if (this.rain.visible) {
+      this.rain.visible = false;
+      this._rainMat.uniforms.uAmount.value = 0;
+    }
 
     /* ---- cloud + mist drift (downwind) ---- */
     const cd = this.u.calCloudDrift.value;
     cd.x -= dt * this.wind.x * this.wind.strength * 0.0016;
     cd.y -= dt * this.wind.z * this.wind.strength * 0.0016;
     const sd = su.uDrift.value;
-    sd.x += dt * this.wind.x * (6 + this._windMS * 1.6);
-    sd.y += dt * this.wind.z * (6 + this._windMS * 1.6);
+    sd.x += dt * this._driftX;
+    sd.y += dt * this._driftZ;
     if (Math.abs(sd.x) > 4.2e5) sd.x = 0;   // the noise tiles every 4.2 km × 100
     if (Math.abs(sd.y) > 4.2e5) sd.y = 0;
     const mdx = this.wind.x * this._windMS, mdz = this.wind.z * this._windMS;
@@ -1167,12 +1188,13 @@ export class Environment {
     this._updateNightLights(dt);
 
     /* ---- shadow policy: cascades multiply the shadow pass ---- */
-    if (engine) {
-      const tier = engine.tier || {};
-      const want = Math.min(tier.shadowCullDistance ?? CSM_MAX_FAR, CSM_MAX_FAR);
-      if (engine.shadowCullDistance !== want) engine.shadowCullDistance = want;
-      const budget = Math.round((tier.shadowCasterBudget ?? 150) * 2.2);
-      if (engine.shadowCasterBudget !== budget) engine.shadowCasterBudget = budget;
+    if (engine && engine.tier && (this._tierRef !== engine.tier || engine.shadowCullDistance !== this._cullWant || engine.shadowCasterBudget !== this._budgetWant)) {
+      const tier = engine.tier;
+      this._tierRef = tier;
+      this._cullWant = Math.min(tier.shadowCullDistance ?? CSM_MAX_FAR, CSM_MAX_FAR);
+      this._budgetWant = Math.round((tier.shadowCasterBudget ?? 150) * 2.2);
+      engine.shadowCullDistance = this._cullWant;
+      engine.shadowCasterBudget = this._budgetWant;
     }
 
     /* ---- sky IBL: one face per frame, PMREM on the seventh ---- */
@@ -1282,6 +1304,7 @@ export class Environment {
     const flash = this._lightning.k;
     if (snap || dh >= 0.002 || this._lightDirty || flash > 0.001 || this._flashWas > 0.001 || !(this._apH >= 0)) {
       this._apH = this._time;
+      this._apN++;
       this._lightDirty = false;
       this._flashWas = flash;
       this._applyFull(dt, snap);
@@ -1400,6 +1423,8 @@ export class Environment {
     const lull = 0.35 + 0.65 * smooth(7.2, 10.5, h) * (1 - smooth(17.5, 19.3, h));
     this._lull = lull;
     this._windMS = w.windMS * (w.calima > 0.5 || w.fogbank > 0.5 ? 1 : lull);
+    this._driftX = this.wind.x * (6 + this._windMS * 1.6);
+    this._driftZ = this.wind.z * (6 + this._windMS * 1.6);
 
     /* ---- exposure target: hour + biome + weather (the ramp is per frame) ---- */
     // a negative biome EV (the Pans' −0.3) is salt glare under a high sun (bible §2.4 lists it
@@ -1461,10 +1486,13 @@ export class Environment {
       this.u.calWeather.value.set(this.wetness, this.wind.gust, this.wind.x * st, this.wind.z * st);
     }
     // perception (bible §2.3): fogbank only inside the bank (camera below 140–170 m)
-    const camY = this.ctx.camera?.position?.y ?? 0;
-    const wp = 1 - (1 - w.perception) * (1 - w.fogbank * smooth(140, 170, camY));
-    const pr = Math.min(wp, 1 + (0.7 - 1) * this._nightK);
-    if (this._perception !== pr) this._perception = pr;
+    if (snap || w.fogbank > 0 || this._percK !== this._apN) {
+      this._percK = this._apN;
+      const camY = this.ctx.camera?.position?.y ?? 0;
+      const wp = 1 - (1 - w.perception) * (1 - (w.fogbank > 0 ? w.fogbank * smooth(140, 170, camY) : 0));
+      const pr = Math.min(wp, 1 + (0.7 - 1) * this._nightK);
+      if (this._perception !== pr) this._perception = pr;
+    }
     // exposure, rate-limited (A-biome-grade: ≤ 0.05 EV per frame)
     if (this.exposureEV !== this._evTarget) {
       if (snap || this._evSnap || !(dt > 0)) this.exposureEV = this._evTarget;
@@ -1613,7 +1641,7 @@ export class Environment {
 
   _updateLightning(dt) {
     const L = this._lightning;
-    if (this.w.lightning < 0.25) { L.k *= Math.max(0, 1 - dt * 8); return; }
+    if (this.w.lightning < 0.25) { if (L.k !== 0) L.k = L.k > 0.001 ? L.k * Math.max(0, 1 - dt * 8) : 0; return; }
     L.t += dt;
     if (L.t >= L.next) {
       L.t = 0;
@@ -1636,7 +1664,8 @@ export class Environment {
     const now = ctx.engine?.wallTime ?? 0;
 
     /* F-1: intensity max(night, a dusk ramp from 18:30, 1 within 12 m) × 26 × flicker,
-       over 14 m; beyond 40 m in daylight it is 0. */
+       over 14 m; beyond 40 m in daylight it is 0. The fire stands still: its position and
+       its distance to the camera are re-read every 0.25 s, the flicker runs per frame. */
     if (!this.fireSource && !this._campFire && (this._campSearch -= dt) <= 0) {
       this._campSearch = 1.5;
       const camp = ctx.camp?.group || ctx.scene.getObjectByName('hunter-camp');
@@ -1646,22 +1675,27 @@ export class Environment {
     }
     const src = this.fireSource || this._campFire;
     if (src) {
-      // the fire stands still: its world position is re-read twice a second, not every frame
-      if ((this._fireT -= dt) <= 0 || src !== this._fireWas) { this._fireT = 0.5; this._fireWas = src; src.getWorldPosition(this.fireLight.position); }
-      const d = this.fireLight.position.distanceTo(ctx.camera.position);
-      const dusk = smooth(18.5, 19.75, this._time) * (this._time < 22 ? 1 : 0);
-      const near = 1 - smooth(12, 14, d);
-      let k = Math.max(night, dusk, near);
-      if (d > 40 && night < 0.05 && dusk < 0.05) k = 0;
+      if ((this._fireT -= dt) <= 0 || src !== this._fireWas) {
+        this._fireT = 0.25; this._fireWas = src;
+        src.getWorldPosition(this.fireLight.position);
+        const d = this.fireLight.position.distanceTo(ctx.camera.position);
+        const dusk = smooth(18.5, 19.75, this._time) * (this._time < 22 ? 1 : 0);
+        let k = Math.max(night, dusk, 1 - smooth(12, 14, d));
+        if (d > 40 && night < 0.05 && dusk < 0.05) k = 0;
+        this._fireK = k;
+      }
+      const k = this._fireK;
       const fi = k > 0 ? k * 26 * (0.82 + Math.sin(now * 9.1) * 0.10 + Math.sin(now * 21.7) * 0.06) : 0;
       if (this.fireLight.intensity !== fi) this.fireLight.intensity = fi;
     } else if (this.fireLight.intensity !== 0) {
       this.fireLight.intensity = 0;
     }
 
+    /* the two lamp lights: only once there is night to light (by day they are 0 and the
+       Instrument scan is skipped); eyeLights[1] is skipped while it is lent (borrowLight) */
     const lent = now < this._borrowUntil;
     const list = ctx.machines?.list;
-    if (!list || !list.length) {
+    if (night < 0.005 || !list || !list.length) {
       if (this.eyeLights[0].intensity !== 0) this.eyeLights[0].intensity = 0;
       if (!lent && this.eyeLights[1].intensity !== 0) this.eyeLights[1].intensity = 0;
       return;
@@ -1672,9 +1706,9 @@ export class Environment {
       const m = list[i];
       if (!m || m.alive === false || !m.position) continue;
       const dx = m.position.x - p.x, dz = m.position.z - p.z;
-      const d = dx * dx + dz * dz;
-      if (d < da) { b = a; db = da; a = m; da = d; }
-      else if (d < db) { b = m; db = d; }
+      const dd = dx * dx + dz * dz;
+      if (dd < da) { b = a; db = da; a = m; da = dd; }
+      else if (dd < db) { b = m; db = dd; }
     }
     for (let i = 0; i < this.eyeLights.length; i++) {
       if (i === 1 && lent) continue;
