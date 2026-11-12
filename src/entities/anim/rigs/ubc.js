@@ -195,7 +195,10 @@ export const UBC_TUNE = {
   // the string-side clavicle's elevation at full draw (radians): lifts the
   // shoulder joint toward the arrow line (V24 forearm-in-line; A16 holds the
   // elbow at or under that joint)
-  drawShrug: 0.58,
+  // (hero-body targeted fix round 3, gate judge findings 1/3, eng judge finding 3: 0.58 -> 0.8. At 0.58 the held draw's
+  // forearm stood 18-20 deg off the real arrow, the elbow 2 cm under the joint and the cheek 3-6 cm over it, so any
+  // camera turn or strafe crossed the 20 deg bar; with the joint 2 cm higher it reads 9-14 deg held, run w11/d6)
+  drawShrug: 0.8,
   // the string-side scapula's retraction share at full draw (Round 4: 0.8):
   // with the shoulder lifted, less retraction keeps the elbow inside the
   // 0.10 m behind-the-skull bar (A-draw-elbow-level) with the forearm in line
@@ -231,7 +234,9 @@ export const UBC_TUNE = {
   // least `behindHand` back of the wrist along the arrow and at most
   // `behindHead` past the back of the skull (bars: [-0.03, 0.05], 0.05, 0.20)
   // (`looseDrop`: through the loose the height floor drops this much, m)
-  elbowForm: { up: [-0.022, 0.04], behindHand: 0.072, behindHead: 0.17, looseDrop: 0.15 },
+  // (`fore` [weight, rad], hero-body targeted fix round 3: the forearm along the arrow is a form target too, soft, inside
+  // the same hard bars — the elbow rises to A16's line instead of resting on the band's floor)
+  elbowForm: { up: [-0.022, 0.04], behindHand: 0.072, behindHead: 0.17, looseDrop: 0.15, fore: [3, 0.12] },
   // W0b targeted fix 3 (judges: the draw elbow jumped 0.36-0.47 m in one sim
   // step at the draw onset and every re-nock, the fist went to the back of her
   // neck after the 0.75 loose, the loose elbow read 0.2012 m behind the head
@@ -283,7 +288,7 @@ export const UBC_TUNE = {
   // hit (see `_crouchAimLayer`, `_crouchAimLift`)
   // (hero-body targeted fix round 2: crouched, the aim weight goes out at most `outRate` per second, and a
   // crouch toggled under the aim moves at most `toggleRate` per second, 2.5 before: 0.036 m head steps)
-  crouchAim: { pelvisY: 0.52, pelvisDown: 0.31, pelvisTilt: 0.10, rampS: 0.8, toggleRate: 1.8, liftStep: 0.022, nearBow: 0.57, outRate: 2.0 },
+  crouchAim: { pelvisY: 0.52, pelvisDown: 0.31, pelvisTilt: 0.10, rampS: 0.8, toggleRate: 1.8, liftStep: 0.022, nearBow: 0.57, outRate: 2.0, nearLead: 0.3 },
   // W0b targeted fix 4: the bent T's reach at the pitch clamps (rad): the turn's
   // caps, and how much of its pitch the hips carry, the upper back the rest
   tClamp: { up: 1.2, down: 1.25, yaw: 0.9, hipUp: 0.6, hipDown: 0.95, hipBack: 1.5 },
