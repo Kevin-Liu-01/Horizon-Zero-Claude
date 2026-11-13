@@ -492,7 +492,7 @@ export class HUD {
     this._healthFill = fillClip;
     // the reading index: a tick riding the top edge, settling on a spring curve when HP moves
     this._staffIndex = div('cal-staff-index', staff);
-    this._healthNum = div('cal-staff-num', hrow, '<b>100</b><span>/100</span>');
+    this._healthNum = div('cal-staff-num cal-glass', hrow, '<b>100</b><span>/100</span>');
 
     // the hairline beneath the staff: there is no stamina system in the game, so it reads the gourd
     const gourdLine = div('cal-gourdline', vitals);
@@ -1976,7 +1976,7 @@ export class HUD {
         const overlapY = Y[i] > Y[j] - hj - gap && Y[i] - hi - gap < Y[j];
         if (overlapX && overlapY) {
           const up = Y[j] - hj - gap;
-          if (up - hi >= topFloorK) Y[i] = up; else Y[i] = Y[j] + hi + gap;
+          if (up - hi >= topFloorK && this._plateFree(X[i], up, HW[i], hi)) Y[i] = up; else Y[i] = Y[j] + hi + gap;
           C[i] |= 2;
         }
       }
@@ -1991,9 +1991,25 @@ export class HUD {
         const l = X[i] - HW[i], r = X[i] + HW[i], t = Y[i] - hi, b = Y[i];
         if (r < B[o] || l > B[o + 2] || b < B[o + 1] || t > B[o + 3]) continue;
         const above = B[o + 1] - gap;
-        if (above - hi >= topFloorK) Y[i] = above;
-        else X[i] = (X[i] < (B[o] + B[o + 2]) * 0.5) ? B[o] - HW[i] - gap : B[o + 2] + HW[i] + gap;
+        const sideX = (X[i] < (B[o] + B[o + 2]) * 0.5) ? B[o] - HW[i] - gap : B[o + 2] + HW[i] + gap;
+        if (above - hi >= topFloorK && this._plateFree(X[i], above, HW[i], hi)) Y[i] = above;
+        else if (this._plateFree(sideX, Y[i], HW[i], hi)) X[i] = sideX;
+        else continue;   // the HUD's own instruments keep their place first
         C[i] |= 2;
+      }
+    }
+    /* 2c. last word: nothing above leaves a plate on the column or the circle */
+    for (let i = 0; i < MHB_CAP; i++) {
+      if (X[i] !== X[i]) continue;
+      const hi = (this._mhbSlots[i].h || MHB_PLATE_H) * ws;
+      const colB = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc, colR = MHB_SAFE_L * sc;
+      if (X[i] - HW[i] < colR && Y[i] - hi < colB) {
+        const toRight = colR + HW[i] - X[i], toBelow = colB + hi - Y[i];
+        if (toRight <= toBelow) X[i] += toRight; else Y[i] += toBelow;
+        C[i] |= 2;
+      }
+      if (Math.abs(X[i] - this._vw * 0.5) < HW[i] + MHB_EYE_HALF * sc && Y[i] - hi < MHB_EYE_BASE * sc) {
+        Y[i] = MHB_EYE_BASE * sc + hi; C[i] |= 2;
       }
     }
 
@@ -2041,6 +2057,15 @@ export class HUD {
       if (atk !== slot.atk) { slot.atk = atk; slot.el.classList.toggle('attack', atk); }
       this._renderElems(slot, m);
     }
+  }
+
+  /** A plate (bottom-centre x, y; half width; height) clear of the column and of the circle with its vial. */
+  _plateFree(x, y, hw, h) {
+    const sc = this._scale;
+    const colB = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc, colR = MHB_SAFE_L * sc;
+    if (x - hw < colR && y - h < colB) return false;
+    if (Math.abs(x - this._vw * 0.5) < hw + MHB_EYE_HALF * sc && y - h < MHB_EYE_BASE * sc) return false;
+    return x - hw > 0 && x + hw < this._vw && y - h >= MHB_TOP_BASE * sc;
   }
 
   _renderElems(slot, m) {
@@ -2556,6 +2581,7 @@ export class HUD {
       })(),
       compass: this._compassAudit(),
       eye: { visible: vis(this._eyeEl), mode: this._eyeEl.dataset.m ?? null,
+        idle: this._eyeEl.classList.contains('idle'), idleS: +(this._vialIdleT ?? 0).toFixed(1),
         rect: rect(this._eyeEl), label: this._eyeLabel.textContent },
       /** Painted centre against an anchor re-projected from the Instrument itself. */
       machineBars: (() => {

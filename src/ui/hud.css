@@ -136,13 +136,13 @@
 @keyframes calIndexLow { 0% { background: var(--cal-staff); } 100% { background: var(--cal-c-staff); } }
 .cal-topleft.healing .cal-staff { box-shadow: 0 0 0 2px var(--cal-c-good); }
 
-/* the reading: engraved numerals at the staff's end */
+/* the reading: a small glass window at the staff's end (bare engraved numerals vanished on white salt) */
 .cal-staff-num {
+  position: relative;
   flex: 0 0 auto;
   display: flex; align-items: baseline;
+  padding: calc(3px * var(--s)) calc(7px * var(--s)) calc(2px * var(--s));
   line-height: 1;
-  color: var(--cal-staff);
-  text-shadow: var(--cal-engrave-s);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

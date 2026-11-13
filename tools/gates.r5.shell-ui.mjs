@@ -182,6 +182,7 @@ const SIGHT_STAGE = (on, hideHero = false, yawK = 0.15) => `
   ${FRAMES}${FACE}${CLEAR_BEARING}
   const ctx = __CTX__;
   ctx.input.enabled = true;
+  ${STAGE_NOTE}
   ${hideHero ? 'if (ctx.player.model) ctx.player.model.visible = false;   /* her violet cloth is the people\'s colour, not the overlay\'s: bible §9.1 */' : ''}
   const spot = clearBearing();
   if (!spot) return null;
@@ -602,10 +603,13 @@ const A_OVER_BREA = {
     m.route = loop;
     S._buildPath(m, 1);
     for (const e of S._paths.values()) { e.mat.uniforms.uFade.value = 1; }
+    /* the weak point if it has one (its ring, chip and leader are the DOM half under test), else its centre */
+    const wpObj = (m.weakPoints || []).find((w) => w && w.enabled !== false && w.obj)?.obj || null;
     const aimBehind = async () => {
-      /* one-pixel-true: turn the camera until the Instrument's centre stands on her chest */
+      /* one-pixel-true: turn the camera until that point stands on her chest */
       for (let i = 0; i < 6; i++) {
         const v = m.position.clone(); v.y += (m.height ?? 2.4) * 0.5;
+        if (wpObj) wpObj.getWorldPosition(v);
         const q = hp.clone(); q.y += 1.1;
         const pv = v.project(c.camera), pq = q.project(c.camera);
         c.player.camYaw -= (pv.x - pq.x) * 0.9;     /* a larger yaw moves the Instrument right on the screen */
@@ -677,6 +681,7 @@ const A_OVER_BREA = {
     const shot2 = await overlayFrame(() => herSilhouette());
     const off = count(shot2, shot2.more.px);
     const domOff = domOnHer(shot2);
+    const domDrawnOff = { rings: [...document.querySelectorAll('.calf-ring')].filter((e) => e.style.display !== 'none').length, leaders: [...document.querySelectorAll('.calf-leader')].filter((e) => e.style.display !== 'none').length, labels: [...document.querySelectorAll('.calf-plabel')].filter((e) => e.style.display !== 'none').length };
     S.debugOcclusion(true);
     delete S._walksRoute;
     const checks = {
@@ -690,7 +695,7 @@ const A_OVER_BREA = {
       domControlCatchesIt: domOff.total > 0,
     };
     const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
-    return { pass: failed.length === 0, detail: { failed, on, control: off, chipPx, dom, domControl: domOff, domDrawn, herBox: S.audit().herBox, meshesInSilhouette: shot.more.meshes, heroShells: S._heroShells.size, paths: S._paths.size } };
+    return { pass: failed.length === 0, detail: { failed, on, control: off, chipPx, dom, domControl: domOff, domDrawn, domDrawnOff, herBox: S.audit().herBox, meshesInSilhouette: shot.more.meshes, heroShells: S._heroShells.size, paths: S._paths.size } };
   })()`),
 };
 
@@ -1557,13 +1562,14 @@ const A_TIP_CARD = {
       const ox = Math.min(c.right, t.right) - Math.max(c.left, t.left), oy = Math.min(c.bottom, t.bottom) - Math.max(c.top, t.top);
       const inter = a.cardVisible && tipShown && ox > 0 && oy > 0 ? Math.round(ox * oy) : 0;
       worst = Math.max(worst, inter);
-      rows.push({ ms: Math.round(performance.now() - t1), card: a.cardVisible, tip: tipShown, inter });
+      rows.push({ ms: Math.round(performance.now() - t1), card: a.cardVisible, tip: tipShown, id: H._tipCur, inter });
     }
     const checks = {
       tipWasUp: tipUp,
       cardCameUp: rows.some((r) => r.card),
       neverIntersect: worst === 0,
-      sightingTipPutAway: !rows[rows.length - 1].tip,
+      /* once the alidade is up the SIGHTING card is gone (a later card in the queue may follow it) */
+      sightingTipPutAway: rows.filter((r) => r.card).every((r) => !(r.tip && r.id === 'sighting')),
     };
     const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
     return { pass: failed.length === 0, detail: { failed, tipRect: [tipRect.left, tipRect.top, tipRect.right, tipRect.bottom].map(Math.round), worstPx: worst, rows: rows.filter((r, i) => i % 3 === 0) } };
@@ -1603,6 +1609,7 @@ const A_DECLUTTER = {
     await frames(6);
     const a = S.audit();
     const sight = textSurfaces();
+    const eye = hud.surfaces().eye;
     const card = document.querySelector('.calf-card')?.innerText || '';
     const floating = [...document.querySelectorAll('#calf-layer .calf-read')].filter((e) => e.offsetParent !== null).length;
     const textReveals = a.reveals.length;
@@ -1639,7 +1646,7 @@ const A_DECLUTTER = {
       calmAtMost4: calm.length <= 4,
     };
     const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
-    return { pass: failed.length === 0, detail: { failed, sight, textReveals, ticks: a.revealTicks, candidates: a.revealCandidates, card: card.slice(0, 80), herd: herd.length, plates: { full, compact, names: mb.names }, covered, calm,
+    return { pass: failed.length === 0, detail: { failed, sight, eye, textReveals, ticks: a.revealTicks, candidates: a.revealCandidates, card: card.slice(0, 80), herd: herd.length, plates: { full, compact, names: mb.names }, covered, calm,
       gradedWith: 'A-sighting, A63, A71c, A71g, A-dmg-chip-clear in the same run (the row\\'s fifth clause)' } };
   })()`),
 };
@@ -1840,6 +1847,8 @@ const V_HUD_DECLUTTER = {
     ${STAGE_NOTE}
     const __m = await (async () => { ${SIGHT_STAGE(true, false, 0.22)} })();
     if (!__m) { __skipCard('STAGING FAILED: no herd kind could be staged'); }
+    /* the herd noticed the spawn; four calm seconds and the vial puts itself away, as in play */
+    await new Promise((r) => setTimeout(r, 4600));
   })()`),
 };
 
@@ -1884,7 +1893,20 @@ const R_GLASS_TOKENS = {
         <div style="display:flex;justify-content:space-between;font:600 12px var(--cal-font-ui);letter-spacing:.06em"><span>LAMP</span><span style="font:600 11px var(--cal-font-ui);padding:0 4px;color:var(--cal-weak-ink);background:var(--cal-weak-chip)">WEAK</span></div></div>
       <div style="display:flex;gap:6px">\${['V', 'T', 'E'].map((k, i) => \`<div class="cal-glass" style="position:relative;width:44px;height:44px;\${i === 1 ? 'background-color:var(--cal-select-fill);box-shadow:inset 0 0 0 1px var(--cal-select-line)' : ''}"><kbd style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:0 4px;font:500 11px var(--cal-font-mono);color:#26343F;background:#F1EEE6;border:1px solid #26343F;border-bottom-width:2px">\${k}</kbd></div>\`).join('')}</div>
       <div class="cal-glass menu" style="position:relative;padding:10px 12px;font:500 14px var(--cal-font-ui);letter-spacing:.12em">MAP <span style="margin-left:14px;padding-bottom:3px;border-bottom:2px solid var(--cal-select-line)">SATCHEL</span> <span style="margin-left:14px;color:var(--cal-glass-text-2)">SKILLS</span></div>
-      <div style="display:flex;gap:6px;font:500 10px var(--cal-font-mono);color:\${name.startsWith('WHITE') || name.startsWith('GOLD') ? '#1C1B1E' : '#F1EEE6'}">\${[['#1E1A28', 'GLASS'], ['#5A2E66', 'ORCHIL DEEP'], ['#D8CCE4', 'LILAC'], ['#D2452E', 'VERMILION'], ['#2C4F8A', 'COBALT'], ['#F1EEE6', 'STAFF']].map(([h, n]) => \`<div style="display:flex;flex-direction:column;gap:3px"><i style="display:block;width:30px;height:18px;background:\${h};box-shadow:inset 0 0 0 1px rgba(127,127,127,.4)"></i>\${n}</div>\`).join('')}</div>
+      <div style="display:flex;align-items:flex-end;gap:10px">
+        <div class="cal-glass" style="position:relative;width:150px;padding:4px 8px 6px;font:600 12px var(--cal-font-ui);letter-spacing:.035em">TILLER<div style="position:relative;height:5px;margin-top:3px;background:rgba(241,238,230,.12)"><i style="position:absolute;inset:0 45% 0 0;background:#F1EEE6"></i><i style="position:absolute;inset:0 45% 0 55%;background:#D2452E;width:12%"></i></div></div>
+        <b style="font:600 24px var(--cal-font-mono);text-shadow:0 1px 0 rgba(20,22,26,.95),0 0 3px rgba(20,22,26,.9)">18</b>
+        <b style="font:600 24px var(--cal-font-mono);padding:2px 5px 1px;color:var(--cal-weak-ink);background:var(--cal-weak-chip);box-shadow:0 1px 0 rgba(20,22,26,.6)">34</b>
+        <span class="cal-glass" style="position:relative;padding:0 8px;line-height:22px;font:600 17px var(--cal-font-mono)">126</span></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="position:relative;display:inline-flex;gap:5px;align-items:baseline;padding:1px 6px 0;font:600 11px var(--cal-font-ui);letter-spacing:.08em;color:#F1EEE6;background:var(--cal-glass-hud);box-shadow:inset 0 0 0 1px var(--cal-glass-line),inset 3px 0 0 #56603F">LOOT <span style="font:400 11px var(--cal-font-mono);letter-spacing:0;color:var(--cal-glass-text-2)">· SALT CACHE</span></span>
+        <i style="display:block;width:8px;height:8px;background:linear-gradient(#F1EEE6,#F1EEE6) center/6px 1.5px no-repeat,linear-gradient(#F1EEE6,#F1EEE6) center/1.5px 6px no-repeat,linear-gradient(rgba(20,22,26,.62),rgba(20,22,26,.62)) center/8px 3.5px no-repeat,linear-gradient(rgba(20,22,26,.62),rgba(20,22,26,.62)) center/3.5px 8px no-repeat"></i>
+        <span style="display:inline-flex;align-items:center;gap:6px"><kbd style="padding:0 4px;font:500 13px var(--cal-font-mono);color:#26343F;background:#F1EEE6;border:1px solid #26343F;border-bottom-width:2px">E</kbd><span class="cal-glass" style="position:relative;padding:2px 8px 1px;font:600 13px var(--cal-font-ui);letter-spacing:.12em">GATHER</span></span></div>
+      <div class="cal-glass" style="position:relative;width:240px;min-height:56px;padding:5px 10px 5px 8px;display:flex;align-items:center;gap:9px">
+        <svg width="26" height="44" viewBox="0 0 26 44"><path d="M6 2 Q22 22 6 42" fill="none" stroke="#F1EEE6" stroke-width="2"/><path d="M6 2 V42" stroke="#F1EEE6" stroke-width="1"/></svg>
+        <div style="flex:1"><div style="font:600 14px var(--cal-font-ui);letter-spacing:.07em">SABINA BOW</div><div style="font:500 11.5px var(--cal-font-ui);letter-spacing:.06em;color:var(--cal-glass-text-2)">REED ARROW</div></div>
+        <b style="font:500 28px var(--cal-font-mono);letter-spacing:-.03em">040</b></div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;font:500 9px var(--cal-font-mono);letter-spacing:.02em;color:\${name.startsWith('WHITE') || name.startsWith('GOLD') ? '#1C1B1E' : '#F1EEE6'}">\${[['#1E1A28', 'GLASS'], ['#5A2E66', 'ORCHIL'], ['#D8CCE4', 'LILAC'], ['#D2452E', 'VERMIL.'], ['#2C4F8A', 'COBALT'], ['#F1EEE6', 'STAFF']].map(([h, n]) => \`<div style="display:flex;flex-direction:column;gap:3px"><i style="display:block;height:18px;background:\${h};box-shadow:inset 0 0 0 1px rgba(127,127,127,.4)"></i>\${n}</div>\`).join('')}</div>
     </div>\`;
     sheet.innerHTML = lights.map(([n, bg]) => col(n, bg)).join('');
     document.body.appendChild(sheet);

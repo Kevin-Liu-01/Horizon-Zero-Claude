@@ -1528,25 +1528,11 @@ export class SightingSystem {
     if (show) {
       this._showCard(this._dwellM);
       this._syncCardLive(this._dwellM);
-      // the page stays pinned to the right of the frame (stable to read); a leader runs to the Instrument
-      const m = this._dwellM;
-      const leader = this._leaders[LABEL_CAP], under = this._leaderU[LABEL_CAP];
-      _v.copy(m.position);
-      _v.y += (m.height ?? 2.4) * 0.72;
-      _v.project(this.ctx.camera);
-      const w = window.innerWidth, h = window.innerHeight;
-      const rect = this._cardRect;
-      if (_v.z < 1 && rect) {
-        const sx = (_v.x * 0.5 + 0.5) * w;
-        const sy = (-_v.y * 0.5 + 0.5) * h;
-        const x1 = rect.left, y1 = rect.top + 14;
-        // the leader keeps off her: an Instrument behind her is read from the card alone
-        if (sx > 0 && sx < x1 - 8 && sy > 0 && sy < h
-          && !this._rectOnHer(sx - 2, sy - 2, sx + 2, sy + 2)
-          && !this._segOnHer(x1 - 22, y1, sx, sy) && !this._segOnHer(x1, y1, x1 - 22, y1)) {
-          this._setLeader(LABEL_CAP, x1, y1, x1 - 22, y1, sx, sy);
-        } else if (leader.style.display !== 'none') { leader.style.display = 'none'; under.style.display = 'none'; }
-      } else { leader.style.display = 'none'; under.style.display = 'none'; }
+      // the page stays pinned to the right of the frame (stable to read). U-02 / 1-TR: no leader
+      // runs from it to the Instrument: the ring, its tag and the figure say which one it reads, and
+      // a line across the frame was the r1 judge's finding (it crossed her shoulder)
+      const leader = this._leaders[LABEL_CAP];
+      if (leader.style.display !== 'none') { leader.style.display = 'none'; this._leaderU[LABEL_CAP].style.display = 'none'; }
     } else {
       this._leaders[LABEL_CAP].style.display = 'none';
       this._leaderU[LABEL_CAP].style.display = 'none';
