@@ -654,7 +654,7 @@ export function eyeOpening(faceGrid, eyeCentre, { rx = 0.024, ry = 0.016, step =
  * third, a short flick past the outer corner), a thinner one at the outer half of the
  * bottom, a warm crease above the lid, and the pink of the inner corner.
  */
-export function lidLines({ open, side, ink = '#1A100C', w = 0.00092, crease = 0.0052 } = {}) {
+export function lidLines({ open, side, ink = '#1A100C', w = 0.0015, crease = 0.0052, shade = 0.0024 } = {}) {
   const C = hex(ink);
   const inner = side > 0 ? open.x0 : open.x1, outer = side > 0 ? open.x1 : open.x0;
   const len = Math.abs(outer - inner);
@@ -674,11 +674,17 @@ export function lidLines({ open, side, ink = '#1A100C', w = 0.00092, crease = 0.
       const k = (1 - smooth(thick * 0.55, thick * 1.35, dy)) * smooth(-0.0006, -0.0002, dy);
       T.r = mix(T.r, C[0], k); T.g = mix(T.g, C[1], k); T.b = mix(T.b, C[2], k); T.rough = mix(T.rough, 0.45, k);
     }
+    // fix round 3 (LOOK C-03: "a 1 mm lash-shade band"; the liner was 0.9 mm and the lid over it read as bright as the lid above): the
+    // lashes' own shade on the lid, a soft dark band over the liner, `shade` tall
+    if (dy > 0 && dy < shade && f > -0.05 && f < 1.08) {
+      const k = (1 - smooth(shade * 0.35, shade, dy)) * 0.55 * smooth(-0.05, 0.12, f) * (1 - smooth(0.95, 1.08, f));
+      T.r *= 1 - k * 0.92; T.g *= 1 - k; T.b *= 1 - k;
+    }
     // the crease above the lid
     const yCr = up + crease * mix(0.75, 1.05, Math.sin(Math.PI * cl));
     const dc = Math.abs(T.Y - yCr);
     if (dc < 0.0016 && f > 0.02 && f < 1.06) {
-      const k = (1 - smooth(0.0003, 0.0015, dc)) * 0.36;
+      const k = (1 - smooth(0.0003, 0.0015, dc)) * 0.24;
       T.r *= 1 - k * 0.8; T.g *= 1 - k; T.b *= 1 - k; T.h -= k * 0.00028;
     }
     // the rim of the lower lid is wet skin in shade, a low warm tone: a pale band there makes her stare

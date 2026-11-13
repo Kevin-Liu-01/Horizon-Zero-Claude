@@ -23,7 +23,7 @@
  *   - C-02: TWO GGX lobes, the second at x0.55 roughness and weight 0.15, under a cavity specular occlusion (AO^2 of the baked
  *     map), and the salt paste's specular x0.3 (its texels are the only ones bright enough to be paste: albedo luminance);
  *   - C-02: a 128^2 tiling micro-pore normal at UV x24 on the face (the `_CALZONE` x weight, x0.35), fading out from 1.5 to 3 m;
- *   - C-03: the cornea (`_CALZONE` y) at roughness 0.04 and the tear line (z) at 0.10, and two analytic SKY-WINDOW lobes on the
+ *   - C-03: the cornea (`_CALZONE` y) at roughness 0.04 and the lower lid's wet line (z) at 0.10, and two analytic SKY-WINDOW lobes on the
  *     cornea in the sky's hue, faded out with the sky's luminance (gone at night): the bright sky round the sun (the catch-light
  *     in the iris) and the horizon sky, Fresnel-weighted (the wet rim along the cornea's outline in profile).
  * Any other light (a point light, a lamp) keeps the stock Lambert. `_CALZONE` w marks the eyes (never paste, never flattened).
@@ -47,13 +47,14 @@ function microTile() {
   const N = 128, h = new Float32Array(N * N);
   // integer hash -> [0, 1): no Math.random, the same tile every run
   const hash = (x, y, s) => { let n = (x * 374761393 + y * 668265263 + s * 1442695041) | 0; n = (n ^ (n >>> 13)) * 1274126177 | 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
-  // pores: one pit per ~6 x 6 texels (0.1 mm a texel on the face), jittered, of varied depth and size
-  const C = 6;
+  // pores: one pit per 8 x 8 texels (0.14 mm a texel on the face: about 1.1 mm apart), jittered, of varied depth and size, broad
+  // enough (0.25-0.4 mm) to survive the mip chain at a close-up's distance (fix round 3: 1-2 texel pits mipped away at 0.4 m)
+  const C = 8;
   for (let gy = 0; gy < N / C; gy++) for (let gx = 0; gx < N / C; gx++) {
-    if (hash(gx, gy, 5) < 0.18) continue;
-    const cx = (gx + 0.15 + 0.7 * hash(gx, gy, 1)) * C, cy = (gy + 0.15 + 0.7 * hash(gx, gy, 2)) * C;
-    const r = 0.9 + 1.1 * hash(gx, gy, 3), d = 0.55 + 0.45 * hash(gx, gy, 4);
-    for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+    if (hash(gx, gy, 5) < 0.15) continue;
+    const cx = (gx + 0.2 + 0.6 * hash(gx, gy, 1)) * C, cy = (gy + 0.2 + 0.6 * hash(gx, gy, 2)) * C;
+    const r = 1.6 + 1.2 * hash(gx, gy, 3), d = 0.4 + 0.4 * hash(gx, gy, 4);
+    for (let y = -6; y <= 6; y++) for (let x = -6; x <= 6; x++) {
       const px = Math.floor(cx) + x, py = Math.floor(cy) + y;
       const q = ((px - cx) ** 2 + (py - cy) ** 2) / (r * r);
       if (q > 4) continue;
@@ -68,8 +69,9 @@ function microTile() {
     const v = (i, j) => hash(((i % P) + P) % P, ((j % P) + P) % P, s);
     return (v(x0, y0) * (1 - sx) + v(x0 + 1, y0) * sx) * (1 - sy) + (v(x0, y0 + 1) * (1 - sx) + v(x0 + 1, y0 + 1) * sx) * sy;
   };
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) h[y * N + x] += 0.22 * (vn(x / 8, y / 8, 16, 7) - 0.5) + 0.12 * (vn(x / 4, y / 4, 32, 9) - 0.5);
-  const d = new Uint8Array(N * N * 4), k = 1.6;
+  // and the skin's own relief between them: two octaves of wrapped value noise, 2.3 and 1.1 mm across
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) h[y * N + x] += 0.45 * (vn(x / 16, y / 16, 8, 7) - 0.5) + 0.22 * (vn(x / 8, y / 8, 16, 9) - 0.5);
+  const d = new Uint8Array(N * N * 4), k = 0.9;
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const dx = (h[y * N + (x + 1) % N] - h[y * N + (x + N - 1) % N]) * k, dy = (h[((y + 1) % N) * N + x] - h[((y + N - 1) % N) * N + x]) * k;
     const l = Math.hypot(dx, dy, 1), o = (y * N + x) * 4;
@@ -148,7 +150,7 @@ void RE_Direct_CalSkin( const in IncidentLight directLight, const in vec3 geomet
 const MAP_FRAGMENT = `
 	calPasteG = smoothstep( 0.30, 0.48, dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) ) * ( 1.0 - vCalZone.w );
 	diffuseColor.rgb = mix( diffuseColor.rgb, calFlat.rgb, calFlat.a * ( 1.0 - vCalZone.w ) );`;
-// the cornea and the tear line (C-03)
+// the cornea and the lower lid's wet line (C-03)
 const ROUGH_FRAGMENT = `
 	roughnessFactor = mix( roughnessFactor, 0.04, vCalZone.y );
 	roughnessFactor = mix( roughnessFactor, 0.10, vCalZone.z );`;

@@ -358,14 +358,14 @@ export function bakeThinness(doc, prim, { scale = 1, t0 = 0.005, t1 = 0.025, zer
 /**
  * Fix round 3 (LOOK C-02, C-03): the `_CALZONE` vertex attribute src/hero/skinLook.js reads, u8 normalized VEC4 on the skin and
  * the eyes: x = the face's micro-pore detail weight (`face(p)`, 0..1), y = the cornea (the eye mesh's front dome, 1 inside
- * `corneaR`, 0 by `corneaR + 1.2 mm`), z = the tear line (the lower lid's margin where it lies on the ball, within `tearD` of it),
+ * `corneaR`, 0 by `corneaR + 1.2 mm`), z = the wet line (the lower lid's margin where it lies on the ball, within `wetD` of it),
  * w = the eye (never paste, never flattened by a gate). `ball(p)` is the distance from a point to the ball's surface (dome
  * included) for the eye it belongs to, `eyes` the eye centres. Call after every append to the skin (the collar's lid and wall).
  */
-export function bakeZones(doc, bodyPrim, eyesPrim, { eyes, sphereZ, face, ball, corneaR = 0.0052, tearD = 0.0009 }) {
+export function bakeZones(doc, bodyPrim, eyesPrim, { eyes, sphereZ, face, ball, corneaR = 0.0052, wetD = 0.0009 }) {
   const buf = doc.getRoot().listBuffers()[0];
   const q = [0, 0, 0];
-  const stats = { face: 0, cornea: 0, tear: 0 };
+  const stats = { face: 0, cornea: 0, wetLine: 0 };
   {
     const P = bodyPrim.getAttribute('POSITION'), n = P.getCount(), out = new Uint8Array(n * 4);
     for (let i = 0; i < n; i++) {
@@ -376,9 +376,9 @@ export function bakeZones(doc, bodyPrim, eyesPrim, { eyes, sphereZ, face, ball, 
       const e = eyes[q[0] > 0 ? 0 : 1], dy = q[1] - e[1], dx = q[0] - e[0];
       if (dy < -0.0012 && dy > -0.0058 && Math.abs(dx) < 0.0105 && q[2] > sphereZ + 0.006) {
         const d = ball(q);
-        const k = (1 - smooth(tearD * 0.4, tearD, d)) * (1 - smooth(0.007, 0.0105, Math.abs(dx)));
+        const k = (1 - smooth(wetD * 0.4, wetD, d)) * (1 - smooth(0.007, 0.0105, Math.abs(dx)));
         out[i * 4 + 2] = Math.round(k * 255);
-        if (k > 0.5) stats.tear++;
+        if (k > 0.5) stats.wetLine++;
       }
     }
     bodyPrim.setAttribute('_CALZONE', doc.createAccessor().setType('VEC4').setArray(out).setNormalized(true).setBuffer(buf));
@@ -480,7 +480,7 @@ export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
  * (0 = her front) is under `reach` (the front V stays open), facing the neck. Skinned like the torso under the collar, as the lid is.
  * Call after `appendCollarSkirt`. Returns the first new vertex index.
  */
-export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, seg = 20, reach = 0.45, inset = 0.003, below = 0.003, darkUV, skinAt = null, drop = 0 } = {}) {
+export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, seg = 20, reach = 0.45, inset = 0.003, below = 0.003, darkUV, skinAt = null, drop = 0, twoSided = false } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
   const n0 = P.getCount();
@@ -529,6 +529,9 @@ export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
     const nx = e1[1] * e2[2] - e1[2] * e2[1], nz = e1[0] * e2[1] - e1[1] * e2[0];
     const inward = nx * -(ax + bx) + nz * -(az + bz) > 0;
     if (inward) idx.push(a, b, a + 1, a + 1, b, b + 1); else idx.push(a, a + 1, b, a + 1, b + 1, b);
+    // (fix round 3, `twoSided`: the wall's back too, on the same vertices; a steep look down past the neck from behind met the wall's
+    // back between it and the collar it lines, the last slivers of A-wrap-closed r1-r2 at az 180-195, el 1.2)
+    if (twoSided) { if (inward) idx.push(a, a + 1, b, a + 1, b + 1, b); else idx.push(a, b, a + 1, a + 1, b, b + 1); }
   }
   const grow = (A, add) => { const src = A.getArray(), dst = new src.constructor(src.length + add.length); dst.set(src); dst.set(add, src.length); A.setArray(dst); };
   grow(P, pos); grow(prim.getAttribute('NORMAL'), nrm); grow(prim.getAttribute('TEXCOORD_0'), uv); grow(J, jnt); grow(W, wgt);

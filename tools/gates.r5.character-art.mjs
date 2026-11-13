@@ -108,11 +108,15 @@ const CLOSEUP = (name, hour, weather, sunOff, views = [FRONT, L34, LPROF], windO
       label(g, tag, 14, 56);
     })()`;
 
+/** The references (licence-clean, staged by the gates lane at W0b), named once. */
+const REF_PORTRAIT = 'reference/r5/gates-perf/portrait-bokeh.jpg';
+const REF_REAR = 'reference/r5/gates-perf/run-rear.jpg';
+
 /**
  * Fix round 3 (LOOK C-02, C-03, C-04 rows): geometry masks off the LIVE skinned skin. `GEOM` defines, inside an assert:
  *   skinLive()            { live, n, P (world xyz per vertex, skinned), Z (_calzone, 0..255 x4), idx }
  *   camOf(pos, tgt, W, H, fov)   the camera S.liveView renders with (same fov, aspect, lookAt)
- *   raster(cam, W, H, G, triOk, front)   a W x H mask of the triangles triOk(a, b, c) accepts (front: facing the lens only)
+ *   raster(cam, W, H, G, triOk, front)   a W x H mask of the triangles triOk(a, b, c) accepts (front: facing the camera only)
  *   lin(c), lum(d, o)     sRGB byte -> linear; the linear relative luminance of pixel o of an RGBA array
  *   key(on)               the player alone on a green key (no fog, no sky, nothing else drawn), restored with key(false)
  */
@@ -208,7 +212,7 @@ const LMK = `
       const tag = (g, t, x, y) => { g.font = '500 14px "IBM Plex Mono", ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - 6, y - 15, g.measureText(t).width + 12, 21); g.fillStyle = '#efe9dc'; g.fillText(t, x, y); };
 `;
 
-const COMMON = 'Reference: reference/r5/gates-perf/portrait-bokeh.jpg (CC0; the form shading, eye depth and lip structure a real face has). Pass: at 1600 x 900, at 0.8 m, front, 3/4 and profile read as a DESIGNED game heroine next to that reference. The headwrap is wound cloth: overlapping turns with hems and folds, soft woven edges, no paper band, no torn alpha, no blocky edge. No helmet hair: close coils at BOTH temples and the nape with a broken edge; the topknot is wound cloth with a carmine binding. Skin has form (socket, nose wing, under-lip and under-jaw shading), visible grain, no flat or plastic areas, no stubble. The nose is refined in profile, not blunt or oversized; the jaw runs in one line to a defined chin. The eyes are wet and deep: a highlight on the cornea, lid shadow on the ball, lashes. The salt-line is cracked paste with thickness over its whole length, not a flat stripe. The brows are hair, heavy and straight, the left one cut clean through by the scar. There is no hole at the collar: skin runs down inside it. The stowed lance and bow are hidden, nothing else: the alidade cord is graded in frame. FAIL on any of these, and (R54) FAIL if the frame passes the words and still looks cheap next to its reference.';
+const COMMON = 'Reference: ' + REF_PORTRAIT + ' (CC0; the form shading, eye depth and lip structure a real face has). Pass: at 1600 x 900, at 0.8 m, front, 3/4 and profile read as a DESIGNED game heroine next to that reference. The headwrap is wound cloth: overlapping turns with hems and folds, soft woven edges, no paper band, no torn alpha, no blocky edge. No helmet hair: close coils at BOTH temples and the nape with a broken edge; the topknot is wound cloth with a carmine binding. Skin has form (socket, nose wing, under-lip and under-jaw shading), visible grain, no flat or plastic areas, no stubble. The nose is refined in profile, not blunt or oversized; the jaw runs in one line to a defined chin. The eyes are wet and deep: a highlight on the cornea, lid shadow on the ball, lashes. The salt-line is cracked paste with thickness over its whole length, not a flat stripe. The brows are hair, heavy and straight, the left one cut clean through by the scar. There is no hole at the collar: skin runs down inside it. The stowed lance and bow are hidden, nothing else: the alidade cord is graded in frame. FAIL on any of these, and (R54) FAIL if the frame passes the words and still looks cheap next to its reference.';
 
 export const GATES = [
   {
@@ -252,14 +256,14 @@ export const GATES = [
   {
     id: 'V-brea-closeup', kind: 'visual', lane: 'character-art', settle: 800, timeout: 90000,
     title: 'Brea at 0.8 m in the live scene, the day light, the sun on her left: front, 3/4 and profile on her left, 1600 x 900',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], CLOSEUP('DAY, SUN HER LEFT', 11, 'clear', -38)),
     criteria: COMMON,
   },
   {
     id: 'V-brea-closeup-right', kind: 'visual', lane: 'character-art', settle: 800, timeout: 90000,
     title: 'Brea at 0.8 m in the live scene, the day light, the sun on her right: front, 3/4 and profile on her right, 1600 x 900',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], CLOSEUP('DAY, SUN HER RIGHT', 11, 'clear', 38, [FRONT, R34, RPROF])),
     criteria: COMMON + ' Her right temple carries close coils the same as her left. The wrap holds on this side too: no flat lens or zigzag where the turns cross.',
   },
@@ -267,49 +271,49 @@ export const GATES = [
     // fix round 2 (the engineering + film judge's 08:00 frame: smudges at the mouth corners and under the nose in a low sun)
     id: 'V-brea-closeup-low', kind: 'visual', lane: 'character-art', settle: 800, timeout: 90000,
     title: 'Brea at 0.8 m in the live scene, the low morning sun (08:00) on her left: front, 3/4 on her left and on her right, 1600 x 900',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], CLOSEUP('LOW SUN, 08:00', 8, 'clear', -38, [FRONT, L34, R34])),
     criteria: COMMON + ' Low sun: the raking light models the cheek, the lips and the lids; nothing round the mouth or under the nose reads as stubble, grime or a smudge, and the skin carries a sheen on the cheekbone, the nose and the lower lip.',
   },
   {
     id: 'V-brea-closeup-shade', kind: 'visual', lane: 'character-art', settle: 800, timeout: 90000,
     title: 'The shadow side at 0.8 m, the day light, the sun on her left: front, 3/4 and profile on her right, 1600 x 900',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], CLOSEUP('DAY, HER SHADOW SIDE', 11, 'clear', -38, [FRONT, R34, RPROF])),
     criteria: COMMON + ' The shadow side keeps its form: socket, brow, nose wing, cheek and jaw all read as separate shapes in the shade, none of it a black mask, and her right brow reads as hair.',
   },
   {
     id: 'V-brea-closeup-dusk', kind: 'visual', lane: 'character-art', settle: 800, timeout: 90000,
     title: 'Brea at 0.8 m in the live scene, dusk: front, 3/4 and profile on her left, 1600 x 900',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], CLOSEUP('DUSK', 18.4, 'clear', -42)),
     criteria: COMMON + ' Dusk: the warm low key models the face; the shadow side keeps its form and does not go to a black mask.',
   },
   {
     id: 'V-brea-closeup-dusk-right', kind: 'visual', lane: 'character-art', settle: 800, timeout: 90000,
     title: 'Brea at 0.8 m in the live scene, dusk, the key on her left: 3/4 and profile on her right and the back, 1600 x 900',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], CLOSEUP('DUSK, HER SHADOW SIDE', 18.4, 'clear', -42, [R34, RPROF, BACK])),
     criteria: COMMON + ' Dusk, away from the key: the form holds in the shade, the wrap stays cloth from behind.',
   },
   {
     id: 'V-brea-closeup-back', kind: 'visual', lane: 'character-art', settle: 800, timeout: 90000,
     title: 'What the player sees: the back of the head at 0.8 m, back-high from the chase and aim cameras\' angle, back 3/4, the day light, still air',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], CLOSEUP('DAY, BEHIND HER, STILL AIR', 11, 'clear', 150, [BACK, BACKHIGH, BACK34], true)),
     criteria: 'Pass: from behind and above the wrap is wound cloth, turns lying on turns, nothing see-through and no stepped hems. The topknot\'s crown is gathered radial pleats with no concentric rings or rectangular tone blocks; its carmine binding is seated, no saw-teeth. The wrap knot is a knot and the tail leaves from inside it as a gathered roll, not a square-cut plate standing off it. The nape is close coils with value and a broken outline, not a black shell. FAIL on any of these, and (R54) FAIL if it looks cheap.',
   },
   {
     id: 'V-brea-closeup-backlit', kind: 'visual', lane: 'character-art', settle: 800, timeout: 90000,
     title: 'The sun behind her, the day light, 0.8 m: front, 3/4 on her left, back, 1600 x 900',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], CLOSEUP('DAY, BACKLIT', 11, 'clear', 180, [FRONT, L34, BACK])),
     criteria: 'Pass: nothing that faces into the head lights up: no bright spot inside the nostril, no white lines at the mouth corners or the lower lids. The face in its own shade keeps form. FAIL on any of these, and (R54) FAIL if it looks cheap.',
   },
   {
     id: 'V-brea-closeup-night', kind: 'visual', lane: 'character-art', settle: 800, timeout: 90000,
     title: 'Brea at 0.8 m at 01:00, clear: front, 3/4 on her left, profile on her right. R59 c: the hero fill has fallen away with the ambient',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], CLOSEUP('NIGHT, 01:00', 1, 'clear', -38, [FRONT, L34, RPROF])),
     criteria: 'Pass: at night she is lit by the night: the face is dark, moonlit and sits in the scene, with no glow of its own; nothing reads as self-lit against the dark ground beside her; the salt-line and the eyes do not float. FAIL if she reads as a lit object pasted on the night.',
   },
@@ -318,7 +322,7 @@ export const GATES = [
     // state exists the frame is real and the judge grades it; until then no stand-in can pass it.
     id: 'V-brea-closeup-calima', kind: 'action', lane: 'character-art', settle: 800, timeout: 90000,
     title: 'Brea at 0.8 m in the live scene, the calima state: front, 3/4 and profile on her left. PENDING until world-sky\'s calima state is on main (R59 b)',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], CLOSEUP('CALIMA', 15, 'calima', -30)),
     assert: `(async () => {
       const has = (__CTX__.environment.weatherStates || []).includes('calima');
@@ -331,7 +335,7 @@ export const GATES = [
   {
     id: 'V-brea-closeup-detail', kind: 'visual', lane: 'character-art', settle: 800, timeout: 120000,
     title: 'Brea detail in the day light, still air: eyes + salt paste, brow + scar, both eyes in profile, the ∴ on the right hand; both temples, the nose and lips, the ear',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -30, true)}
       const W = 1600, H = 900, PW = 400, PH = 450;
       const c = overlay(W, H), g = c.getContext('2d');
@@ -374,7 +378,7 @@ export const GATES = [
   {
     id: 'V-brea-closeup-detail-back', kind: 'visual', lane: 'character-art', settle: 800, timeout: 120000,
     title: 'The back of the head in detail, the sun behind her, still air: the nape from both sides, the knot and the tail\'s root, the topknot\'s crown and binding',
-    reference: 'reference/r5/gates-perf/portrait-bokeh.jpg',
+    reference: REF_PORTRAIT,
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', 165, true)}
       const W = 1600, H = 900, PW = 800, PH = 450;
       const c = overlay(W, H), g = c.getContext('2d');
@@ -676,7 +680,7 @@ export const GATES = [
   {
     // fix round 3, ROUND5-LOOK C-02 (§7 character-art block, at its literal bars)
     id: 'A-skin-spec', kind: 'action', lane: 'character-art', settle: 800, timeout: 240000,
-    title: 'LOOK C-02 skin specular and micro-detail (src/hero/skinLook.js + the recipe ORM): the 3/4 DAY close-up at 0.8 m re-rendered with a flat skin albedo (gate-only override, calFlat): (a) highlights (>= 2.2 x the face median, linear luminance) cover 1.5-8 % of the face box; (b) >= 60 % of them within 2 cm of the forehead, nose-bridge and cheekbone landmarks; (c) MACRO, the lit cheek at 0.4 m: high-pass RMS 0.012-0.040, falling >= 30 % with the detail weight forced to 0, and the detail weight 0 at 3 m (the frames with and without it identical); (d) in the true albedo the salt-line >= 2.5 x the lit cheek with >= 90 % of its pixels <= 0.97 sRGB; (e) brea.glb <= 0.7 MB',
+    title: 'LOOK C-02 skin specular and micro-detail (src/hero/skinLook.js + the recipe ORM): the 3/4 DAY close-up at 0.8 m re-rendered with a flat skin albedo (a gate-only uniform, calFlat): (a) highlights (>= 2.2 x the face median, linear luminance) cover 1.5-8 % of the face box; (b) >= 60 % of them within 2 cm of the forehead, nose-bridge and cheekbone landmarks; (c) MACRO, the sun-side cheek\'s plain skin at 0.4 m (1.6 cm under its landmark, 1.2 cm out, seen at 45 deg): high-pass RMS 0.012-0.040, falling >= 30 % with the detail weight forced to 0, and the detail weight 0 at 3 m (the frames with and without it identical); (d) in the true albedo the salt-line >= 2.5 x the lit cheek with >= 90 % of its pixels <= 0.97 sRGB; (e) brea.glb <= 0.7 MB',
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
     })()`),
     assert: `(async () => {
@@ -726,10 +730,13 @@ export const GATES = [
       // (d) the paste: where the true albedo is far brighter than the flat one under the same light
       const lc = [proj(face('cheekL')), proj(face('cheekR'))];
       const patch = (img, c) => { let L = 0, n = 0; for (let j = -4; j <= 4; j++) for (let i = -4; i <= 4; i++) { const X = Math.round(c[0]) + i, Y = Math.round(c[1]) + j; if (X < 0 || Y < 0 || X >= W || Y >= H) continue; L += lum(img.data, (Y * W + X) * 4); n++; } return L / n; };
-      const litCheek = Math.max(patch(N, lc[0]), patch(N, lc[1]));
+      // (the lit cheek is the one on the sun's side of the face: r1-r2 took the brighter projected patch, which in a 3/4 can be the far
+      // cheek's nose wing)
+      const sunSide = C.environment.sunDir.dot(Fr.R0) >= 0 ? 0 : 1;
+      const litCheek = patch(N, lc[sunSide]);
       const pasteL = []; let clip = 0;
       // (the salt-line on the lit cheek's side of the nose bridge: the stroke in the same light as the cheek it is graded against)
-      const bx = proj(face('noseBridge'))[0], litSgn = Math.sign((patch(N, lc[0]) >= patch(N, lc[1]) ? lc[0][0] : lc[1][0]) - bx) || 1;
+      const bx = proj(face('noseBridge'))[0], litSgn = Math.sign(lc[sunSide][0] - bx) || 1;
       for (let i = 0; i < W * H; i++) {
         if (!mask[i] || ((i % W) - bx) * litSgn < 0) continue;
         const ln = lum(N.data, i * 4), lf = lum(F.data, i * 4);
@@ -740,10 +747,11 @@ export const GATES = [
       // (c) MACRO: the lit cheek at 0.4 m, flat albedo, detail on and off; then the same at 3 m
       // (the macro looks at the lit cheek's plain skin, 2.2 cm under its landmark: clear of the paste and the lower lid, which carry
       // their own relief)
-      const litW = (patch(N, lc[0]) >= patch(N, lc[1]) ? face('cheekL') : face('cheekR')).sub(Fr.U1.clone().multiplyScalar(0.022));
+      const sgnL = sunSide === 0 ? 1 : -1;
+      const litW = face(sunSide === 0 ? 'cheekL' : 'cheekR').sub(Fr.U1.clone().multiplyScalar(0.016)).add(Fr.R0.clone().multiplyScalar(0.012 * sgnL));
       const MW = 600, MH = 600;
-      const mpos = litW.clone().add(d34.clone().multiplyScalar(0.4));
-      const macro = (dist) => { const q = litW.clone().add(d34.clone().multiplyScalar(dist)); return S.liveView(C, q.toArray(), litW.toArray(), { width: MW, height: MH, fov: 29 }); };
+      const dM = Fr.view(sgnL * Math.PI / 4);
+      const macro = (dist) => { const q = litW.clone().add(dM.clone().multiplyScalar(dist)); return S.liveView(C, q.toArray(), litW.toArray(), { width: MW, height: MH, fov: 29 }); };
       const hp = (img) => {
         const L = new Float32Array(MW * MH); for (let i = 0; i < MW * MH; i++) { const o = i * 4; L[i] = (0.2126 * img.data[o] + 0.7152 * img.data[o + 1] + 0.0722 * img.data[o + 2]) / 255; }
         const r = 5, x0b = MW / 2 - 45, y0b = MH / 2 - 45; let s2 = 0, n = 0;
@@ -756,7 +764,7 @@ export const GATES = [
       let farDiff = 0; for (let i = 0; i < far1.data.length; i += 4) if (Math.abs(far1.data[i] - far0.data[i]) + Math.abs(far1.data[i + 1] - far0.data[i + 1]) + Math.abs(far1.data[i + 2] - far0.data[i + 2]) > 3) farDiff++;
       U.calFlat.value.w = 0;
       const bytes = (await (await fetch('/models/hero/brea.glb')).arrayBuffer()).byteLength;
-      // the sheet: flat 3/4 with its highlights (red) and the landmark circles; the true 3/4 with the paste (cyan); the macro on / off
+      // the sheet: flat 3/4 with its highlights (red) and the landmark circles; the true 3/4 with the paste (blue); the macro on / off
       const g = sheetOf();
       const Fo = new ImageData(new Uint8ClampedArray(F.data), W, H), No = new ImageData(new Uint8ClampedArray(N.data), W, H);
       for (let i = 0; i < W * H; i++) { if (hiMask[i]) { Fo.data[i * 4] = 255; Fo.data[i * 4 + 1] = 30; Fo.data[i * 4 + 2] = 30; } }
@@ -765,7 +773,7 @@ export const GATES = [
       g.strokeStyle = '#ffd400'; g.lineWidth = 2; for (const l of lp) { g.beginPath(); g.arc(l.c[0] * 533 / W, l.c[1] * 900 / H, l.r * 533 / W, 0, Math.PI * 2); g.stroke(); }
       putImg(g, M1, 1066, 0, 534, 450, 150, 150, 300, 300); putImg(g, M0, 1066, 450, 534, 450, 150, 150, 300, 300);
       tag(g, 'FLAT ALBEDO 3/4 DAY: highlights >= 2.2x median (red), 2 cm landmark rings', 12, 24);
-      tag(g, 'TRUE ALBEDO: the paste (cyan)', 545, 24);
+      tag(g, 'TRUE ALBEDO: the paste (blue)', 545, 24);
       tag(g, 'MACRO 0.4 m, detail on: RMS ' + rms1.toFixed(4), 1078, 24); tag(g, 'detail off: RMS ' + rms0.toFixed(4), 1078, 474);
       const terms = {
         a: cover >= 0.015 && cover <= 0.08,
@@ -863,6 +871,7 @@ export const GATES = [
         const ctr = Fr.cen.clone().add(Fr.F0.clone().multiplyScalar(0.07));
         const sideOf = (i) => (G.P[i * 3] - ctr.x) * Fr.R0.x + (G.P[i * 3 + 1] - ctr.y) * Fr.R0.y + (G.P[i * 3 + 2] - ctr.z) * Fr.R0.z > 0 ? 1 : -1;
         const corM = raster(cam, PW, PH, G, (a, b, c) => Z[a * 4 + 1] + Z[b * 4 + 1] + Z[c * 4 + 1] > 3 * 128 && sideOf(a) === side, false);
+        const eyeP = raster(cam, PW, PH, G, (a, b, c) => Z[a * 4 + 3] > 200 && Z[b * 4 + 3] > 200 && Z[c * 4 + 3] > 200 && sideOf(a) === side, false);
         const cor = new Uint8Array(PW * PH); const Lc = [];
         for (let i = 0; i < PW * PH; i++) if (corM[i] && !green(i)) { cor[i] = 1; Lc.push(lum(N.data, i * 4)); }
         Lc.sort((a, b) => a - b);
@@ -874,7 +883,8 @@ export const GATES = [
           if (!cor[i]) continue;
           const x = i % PW, y = (i / PW) | 0;
           let edge = false;
-          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= PW || Y >= PH) continue; const q = Y * PW + X; if (!cor[q] && !green(q)) edge = true; }
+          // (fix round 3: a neighbour that is the eye's own white is the limbus, not the outline)
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= PW || Y >= PH) continue; const q = Y * PW + X; if (!cor[q] && !green(q) && !eyeP[q]) edge = true; }
           if (!edge) continue;
           outline++;
           let hit = false;
@@ -922,13 +932,15 @@ export const GATES = [
   {
     // fix round 3, ROUND5-LOOK C-04 (§7 character-art block, at its literal bars)
     id: 'A-hero-rim', kind: 'action', lane: 'character-art', settle: 900, timeout: 240000,
-    title: 'LOOK C-04 golden-hour rim: the chase staging (the lens behind her at head height, as V22), the sun BEHIND her within 30 deg of the lens axis at 8-15 deg up (the first hour from 18.75 back that puts it there). Her mask from a key render (player only); edge = her pixels within 3 px of the outside, interior = the rest; linear luminance of the displayed frame. (a) edge mean >= 1.8 x interior mean; (b) >= 35 % of edge pixels >= the interior P90; (c) in a landmark\'s cast shadow (a 7 x 9 m slab stood 4 m toward the sun, gate-only) edge:interior <= 1.2; (d) noon, front-lit (the sun behind the lens): edge:interior <= 1.3; (e) no extra draws: the hero\'s own meshes (hero.info) <= 5, the look is a shader patch. Per-part edge ratios (skin + wrap, outfit, kit) are reported',
-    setup: placedSetup(['openGround'], `(async () => {
+    title: 'LOOK C-04 golden-hour rim: the chase staging (the camera behind her at head height, as V22), the sun BEHIND her within 30 deg of the camera axis at 8-15 deg up (the first hour from 18.75 back that puts it there). Her mask from a key render (player only); edge = her pixels within 3 px of the outside, interior = the rest; linear luminance of the displayed frame. (a) edge mean >= 1.8 x interior mean; (b) >= 35 % of edge pixels >= the interior P90; (c) in a landmark\'s cast shadow (a 7 x 9 m slab stood 4 m toward the sun, gate-only) edge:interior <= 1.2; (d) noon, front-lit (the sun behind the lens): edge:interior <= 1.3; (e) no extra draws: the hero\'s own meshes (hero.info) <= 5, the look is a shader patch. Per-part edge ratios (skin + wrap, outfit, kit) are reported',
+    // (fix round 3: at openGround the low western sun is behind the trees and she stood in their shade (r1, r2: the rim, the slab and
+    // the rim-off frame all read the same); the map centre is clear 34 m to the west)
+    setup: placedSetup(['navProbe'], `(async () => {
       const C = __CTX__, p = C.player, env = C.environment;
       for (const m of (C.machines?.list || [])) m.update = () => {};
       for (const el of Array.from(document.body.children)) if (el.tagName !== 'CANVAS' && !el.querySelector('canvas')) el.style.visibility = 'hidden';
       C.input.keys.clear(); C.input.mouse.buttons = 0;
-      standAt(p, 'openGround');
+      standAt(p, 'navProbe');
       env.timeFrozen = true;
     })()`),
     assert: `(async () => {
@@ -1008,7 +1020,7 @@ export const GATES = [
       const rimU = []; p.model.traverse((o) => { const u = o.material?.userData; if (u?.calClothU) rimU.push(u.calClothU.calRimK); });
       scene.remove(wall); geo.dispose(); mat.dispose(); C.renderer.shadowMap.needsUpdate = true; await frames(3);
       for (const u of rimU) u.value = 0; const rimOff = measure(vB).r; for (const u of rimU) u.value = 1;
-      // (d) noon, front-lit: the sun behind the lens
+      // (d) noon, front-lit: the sun behind the camera
       const vN = await stage(12.5, false, 12);
       const noon = measure(vN);
       // (e) her drawn meshes
@@ -1033,7 +1045,7 @@ export const GATES = [
         d: noon.r.ratio <= 1.3,
         e: !!I && I.meshes.length <= 5,
       };
-      return { pass: Object.values(terms).every(Boolean), detail: { terms, hour, sunElevDeg: +elev.toFixed(1), sunFromLensAxisDeg: vB.sunAngle, backlit: back.r, slabShade: shade.r, noonFrontLit: noon.r, wrapRimOff: rimOff, heroMeshes: I?.meshes?.map((m) => m.name) ?? null } };
+      return { pass: Object.values(terms).every(Boolean), detail: { terms, hour, sunElevDeg: +elev.toFixed(1), sunFromCameraAxisDeg: vB.sunAngle, backlit: back.r, slabShade: shade.r, noonFrontLit: noon.r, wrapRimOff: rimOff, heroMeshes: I?.meshes?.map((m) => m.name) ?? null } };
     })()`,
   },
   {
@@ -1070,14 +1082,14 @@ export const GATES = [
   {
     // fix round 3, ROUND5-LOOK C-04 (§7 character-art block)
     id: 'V-brea-golden-hour', kind: 'visual', lane: 'character-art', settle: 900, timeout: 150000,
-    title: 'The chase lens from behind and to her right (back 3/4), the sun behind her low (the A-hero-rim hour): idle (left) and mid-sprint (right), 1600 x 900',
-    reference: 'reference/r5/gates-perf/run-rear.jpg',
-    setup: placedSetup(['openGround'], `(async () => {
+    title: 'The chase camera from behind and to her right (back 3/4), the sun behind her low (the A-hero-rim hour): idle (left) and mid-sprint (right), 1600 x 900',
+    reference: REF_REAR,
+    setup: placedSetup(['navProbe'], `(async () => {
       const C = __CTX__, p = C.player, env = C.environment;
       for (const m of (C.machines?.list || [])) m.update = () => {};
       for (const el of Array.from(document.body.children)) if (el.tagName !== 'CANVAS' && !el.querySelector('canvas')) el.style.visibility = 'hidden';
       C.input.keys.clear(); C.input.mouse.buttons = 0;
-      standAt(p, 'openGround');
+      standAt(p, 'navProbe');
       env.timeFrozen = true;
       const S = await import('/src/hero/sheets.js');
       const T3 = p.position.constructor;
@@ -1094,7 +1106,7 @@ export const GATES = [
         const k = document.createElement('canvas'); k.width = img.width; k.height = img.height; k.getContext('2d').putImageData(img, 0, 0);
         g.drawImage(k, x, 0, 800, 900);
       };
-      // idle: she faces the sun (30 deg off the lens axis), the lens behind her right shoulder
+      // idle: she faces the sun (30 deg off the camera axis), the camera behind her right shoulder
       if (C.engine) C.engine.timeScale = 1;
       for (let i = 0; i < 80; i++) { p.heading = az + 0.35; p.camYaw = az + 0.35 + Math.PI - 0.5; p.camPitch = 0.08; await frames(1); }
       if (C.engine) C.engine.timeScale = 0; await frames(2);
@@ -1110,7 +1122,7 @@ export const GATES = [
       const lb = (t, x, y) => { g.font = '500 15px "IBM Plex Mono", ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(x - 6, y - 16, g.measureText(t).width + 12, 22); g.fillStyle = '#efe9dc'; g.fillText(t, x, y); };
       lb('IDLE · ' + hour + ' h · sun behind her', 14, 28); lb('MID-SPRINT', 814, 28);
     })()`),
-    criteria: 'Against #1-TL, #5-3 and reference/r5/gates-perf/run-rear.jpg. Pass: (1) a warm sun-rim on the shoulder, the arm, the wrap\'s edge and the tail; (2) deep saturated violet; (3) skin glowing warm at its edges; (4) glints on leather and bronze; (5) light, not an outline, separates her from the background. FAIL: flat-lit against a golden sky; a uniform halo. IP-clause: nothing from the never-copy list (ROUND5-LOOK §8.1).',
+    criteria: 'Against #1-TL, #5-3 and ' + REF_REAR + '. Pass: (1) a warm sun-rim on the shoulder, the arm, the wrap\'s edge and the tail; (2) deep saturated violet; (3) skin glowing warm at its edges; (4) specular sparkle on leather and bronze; (5) light, not an outline, separates her from the background. FAIL: flat-lit against a golden sky; a uniform halo. IP-clause: nothing from the never-copy list (ROUND5-LOOK §8.1).',
   },
   {
     id: 'A-brea-fill', kind: 'action', lane: 'character-art', settle: 600, timeout: 60000,

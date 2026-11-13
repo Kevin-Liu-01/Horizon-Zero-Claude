@@ -576,7 +576,7 @@ export async function build({ out = ROOT } = {}) {
     const outJ = sd.getRoot().listSkins()[0].listJoints().map((jn) => jn.getName());
     return outfitSkinSampler(sn.map((n) => n.getMesh().listPrimitives()[0]), outJ, joints, (q) => q[1] > 1.40 && Math.abs(q[0]) < 0.16 && q[2] > -0.16);
   })();
-  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV: collarUV, seg: 19, reach: 1.01, skinAt: smockSkin, drop: 0.014 });
+  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV: collarUV, seg: 19, reach: 1.01, skinAt: smockSkin, drop: 0.014, twoSided: true });
   // fix round 2, Nov 12 (LOOK C-01): the tissue's thickness behind each vertex, for the skin light's back-transmission (src/hero/skinLook.js)
   // (the ears only: the lips, the nose wings and the lower lids are thin too, with the mouth, the nostrils and the ball a few mm
   // behind them, but in a back light they glowed as a red nostril and a lit lower lid, which the backlit row forbids)
