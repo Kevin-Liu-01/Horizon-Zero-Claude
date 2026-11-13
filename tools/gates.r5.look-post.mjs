@@ -171,7 +171,7 @@ const LOOK = `
   const statsOf = (cap) => LS.frameStats(cap.px, cap.W, cap.H, { step: 2 });
   /** camYaw that faces the sun (camera forward = (-sin yaw, -cos yaw)). */
   const sunYaw = () => { const s = __C.environment.sunDir; return Math.atan2(-s.x, -s.z); };
-  const __camSaved = { fn: null, delta: null };
+  const __camSaved = { fn: null, delta: null, cad: null };
   /** Freeze the presentation clock too (wind, water, fire and the camera damping read wall time): engine.clock reads 0 s. */
   // fix round 1 (A-look-suite a across boots): the presentation clock every system animates from (engine.wallTime:
   // sky, wind, grass sway, water, birds) is snapped to the next multiple of 4096 s, the same on every boot that
@@ -190,6 +190,7 @@ const LOOK = `
     const p = __C.player;
     if (__camSaved.delta) { __E.clock.getDelta = __camSaved.delta; __camSaved.delta = null; __E.clock.getDelta(); }
     if (__camSaved.fn) { p._updateCamera = __camSaved.fn; __camSaved.fn = null; }
+    if (__camSaved.cad != null) { if (__E.tier) __E.tier.csmFarCadence = __camSaved.cad; __camSaved.cad = null; }
     __E.requestTimeScale('studio', null);
   };
   /** Stage a look place: weather, frozen hour, the grade sets for the hour, the hero, the lens. */
@@ -206,6 +207,7 @@ const LOOK = `
     if (o.x != null) { P.x = o.x; P.z = o.z; }
     if (o.sunRel != null) P.sunRel = o.sunRel;
     if (o.pitch != null) P.pitch = o.pitch;
+    if (o.heroRel != null) P.heroRel = o.heroRel;
     const env = __C.environment, p = __C.player;
     __E.requestTimeScale('studio', 0);
     if (o.agents !== true) hideAgents();
@@ -266,7 +268,23 @@ const LOOK = `
     }
     await frames(o.frames ?? 24);
     // wind and time frozen (ROUND5-LOOK L-00): the sim is at timeScale 0 and the wall clock now reads 0 s per frame
-    if (o.freeze !== false) { freezeWall(); await frames(3); }
+    if (o.freeze !== false) {
+      freezeWall();
+      // fix round 2 (A-look-suite a; f2-b1's per-owner diagnosis: the same place staged twice in ONE boot hashed
+      // differently, and solo renders of terrain, vegetation, world-props, river-water and the hero differed between
+      // boots): three caches carried each boot's own history into the frame. They are rebuilt from the frozen lens
+      // alone: (1) the grass pools, which refill on a 4-12 ms per-frame time budget after the lens moves 2 m, are filled
+      // synchronously at the lens (vegetation.forceStream); (2) the engine's small-mesh cull keeps a mesh hidden until it
+      // grows 30 % past the limit (hysteresis), so every size-culled mesh is un-hidden and the cull pass re-runs once
+      // at the frozen lens; (3) the far shadow cascades render on alternate frames (csmFarCadence 2) and keep the map of
+      // the frame they last drew, so every cascade is redrawn at the place (cadence 1 while staged, restored by unstage)
+      const lens = __C.camera.position;
+      if (VG) { if (typeof VG._treeSortX === 'number') { VG._treeSortX = 1e9; VG._treeSortZ = 1e9; } VG.forceStream?.(lens.x, lens.z); }
+      __C.scene.traverse((q) => { if (q.userData && q.userData.__sizeCulled === true) { q.visible = true; q.userData.__sizeCulled = false; } });
+      __E._shadowCullClock = 0;
+      if (__E.tier && __camSaved.cad == null) { __camSaved.cad = __E.tier.csmFarCadence; __E.tier.csmFarCadence = 1; }
+      await frames(4);
+    }
     return { P, source, weather, hour: env.time };
   };
   /** A sheet of captured frames over the page (for the visual rows; the judge reads this screenshot). */
@@ -675,7 +693,7 @@ const BLOOM = look(`
     const sunR = Math.max(2, (0.5 * Math.PI / 180) / (cam.fov * Math.PI / 180) * cap.H);
     // fix round 2 (judge: no sun to measure on the stand-in): when the frame has no sun disc (scene HDR at the sun's
     // pixel below 4x the bloom threshold), L-06's disc is planted the way (c)'s lamp probe is: radius 0.5 deg on the
-    // sun's bearing at 600 m, the sun light's colour x40 (sunCol x40), limb darkening 0.6 (vertex colours). A second,
+    // sun's bearing at 300 m, drawn last over everything (f2-b1: at 600 m the stand-in's sky dome hid it), the sun light's colour x40 (sunCol x40), limb darkening 0.6 (vertex colours). A second,
     // hotter probe (40x the bloom threshold in luminance, the judge's case) is measured for the white block only. A real
     // disc (world-sky calSun, the integration build) is measured as it is.
     const hdrAt = (fx, fy) => { const st = __E.sceneTarget, w = 1, h = 1, rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, depthBuffer: false });
@@ -688,13 +706,13 @@ const BLOOM = look(`
     const sc0 = __C.environment.sun?.color || new THREE.Color(1, 0.79, 0.54);
     const l0 = 0.2126 * sc0.r + 0.7152 * sc0.g + 0.0722 * sc0.b;
     const plant = (k) => {
-      const D = Math.min(600, cam.far * 0.8), rad = D * Math.tan(0.5 * Math.PI / 180);
+      const D = Math.min(300, cam.far * 0.5), rad = D * Math.tan(0.5 * Math.PI / 180);
       const geo = new THREE.CircleGeometry(rad, 48), n = geo.attributes.position.count, col = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) { const r = Math.hypot(geo.attributes.position.getX(i), geo.attributes.position.getY(i)) / rad, f = 1 - 0.4 * r; col[i * 3] = f; col[i * 3 + 1] = f; col[i * 3 + 2] = f; }
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: new THREE.Color(sc0.r * k, sc0.g * k, sc0.b * k), vertexColors: true, fog: false }));
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: new THREE.Color(sc0.r * k, sc0.g * k, sc0.b * k), vertexColors: true, fog: false, depthTest: false, depthWrite: false }));
       m.position.copy(cam.position).addScaledVector(new THREE.Vector3(sd.x, sd.y, sd.z).normalize(), D); m.lookAt(cam.position);
-      m.name = 'look-sun-probe'; m.userData.noSizeCull = true; m.frustumCulled = false; __C.scene.add(m); return m; };
+      m.name = 'look-sun-probe'; m.renderOrder = 1e6; m.userData.noSizeCull = true; m.frustumCulled = false; __C.scene.add(m); return m; };
     const unplant = (m) => { if (m) { __C.scene.remove(m); m.geometry.dispose(); m.material.dispose(); } };
     if (sunHdr < 4 * b.threshold) { probe = plant(40); await frames(4); }
     const sx = (sp.x * 0.5 + 0.5) * cap.W, sy = (1 - (sp.y * 0.5 + 0.5)) * cap.H;
@@ -911,13 +929,13 @@ const HIGHLIGHT_FILM = lookJob(`
   if (Math.abs(sp.x) < 0.9 && Math.abs(sp.y) < 0.9 && sp.z < 1) {
     const sunR = (0.5 * Math.PI / 180) / (cam.fov * Math.PI / 180) * c.H, sx = (sp.x * 0.5 + 0.5) * c.W, sy = (1 - (sp.y * 0.5 + 0.5)) * c.H;
     const sc0 = __C.environment.sun?.color || new THREE.Color(1, 0.79, 0.54), l0 = 0.2126 * sc0.r + 0.7152 * sc0.g + 0.0722 * sc0.b;
-    const plant = (k) => { const D = Math.min(600, cam.far * 0.8), rad = D * Math.tan(0.5 * Math.PI / 180);
+    const plant = (k) => { const D = Math.min(300, cam.far * 0.5), rad = D * Math.tan(0.5 * Math.PI / 180);
       const geo = new THREE.CircleGeometry(rad, 48), n = geo.attributes.position.count, col = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) { const f = 1 - 0.4 * Math.hypot(geo.attributes.position.getX(i), geo.attributes.position.getY(i)) / rad; col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = f; }
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: new THREE.Color(sc0.r * k, sc0.g * k, sc0.b * k), vertexColors: true, fog: false }));
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: new THREE.Color(sc0.r * k, sc0.g * k, sc0.b * k), vertexColors: true, fog: false, depthTest: false, depthWrite: false }));
       m.position.copy(cam.position).addScaledVector(new THREE.Vector3(sd.x, sd.y, sd.z).normalize(), D); m.lookAt(cam.position);
-      m.name = 'look-sun-probe'; m.userData.noSizeCull = true; m.frustumCulled = false; __C.scene.add(m); return m; };
+      m.name = 'look-sun-probe'; m.renderOrder = 1e6; m.userData.noSizeCull = true; m.frustumCulled = false; __C.scene.add(m); return m; };
     const crop = (cc) => { const S = Math.round(14 * sunR), x0 = Math.max(0, Math.round(sx - S)), y0 = Math.max(0, Math.round(sy - S * 0.6)), w = Math.min(cc.W - x0, 2 * S), h = Math.min(cc.H - y0, Math.round(1.2 * S));
       const px = new Uint8Array(w * h * 4); for (let y = 0; y < h; y++) px.set(cc.px.subarray(((y0 + y) * cc.W + x0) * 4, ((y0 + y) * cc.W + x0 + w) * 4), y * w * 4); return { W: w, H: h, px }; };
     for (const [k, nm] of [[40, 'L-06 sun (sunCol x40)'], [40 * b.threshold / Math.max(1e-4, l0), 'hot sun (40x the bloom threshold)']]) {

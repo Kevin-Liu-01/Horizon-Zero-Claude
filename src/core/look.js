@@ -409,7 +409,8 @@ function pchip(P, x) {
  * The L*a*b* stage of a grade set (`set.lab`), weight w (the gamut-edge guard's complement):
  *   tone       [[L, L'], ...]   a monotone curve on L* (identity in the toe, opens the highlights that
  *                               AgX + the look's power 1.22 hold 6-10 L* under the ACES-era frames)
- *   shadow     { range: [L0, L1], shift: [da, db], chroma }   below L1 (full weight below L0): (a*, b*) scaled
+ *   shadow     { range: [L0, L1], shift: [da, db], chroma, cRange }   below L1 (full weight below L0; near-neutrals
+ *                               only with cRange [C0, C1]): (a*, b*) scaled
  *                               by `chroma` and shifted by (da, db): ochre and olive shadow toward rose-violet
  *   mid        { range: [L0, L1, L2, L3], hue: [h0, h1, feather], b, a, rotate }   b* (a*) of the warm hues in the
  *                               mid band scaled by `b` (`a`), then turned by `rotate` degrees (chroma kept)
@@ -426,7 +427,10 @@ function labStage(c, X, w) {
   // chroma (#FFC070 C 51 -> 23): neutrals (sky, cloud, salt) open, gold and fire keep their colour
   if (X.tone) { const tc = X.toneC, wt = tc ? 1 - (1 - (tc[2] ?? 0)) * smoothstep(tc[0], tc[1], C0) : 1; L = L + (pchip(X.tone, L) - L) * w * wt; }
   if (X.shadow) {
-    const S = X.shadow, ws = (1 - smoothstep(S.range[0], S.range[1], L0)) * w;
+    // fix round 2: `cRange` [C0, C1] keeps the shift to near-neutral darks (full below chroma C0, none above C1): shade
+    // and night go rose-violet, while firelit ground, skin and cloth in shadow keep their own warm hue (f2-b1's play
+    // frames: without it the dusk set turned the campfire's pool of light magenta)
+    const S = X.shadow, ws = (1 - smoothstep(S.range[0], S.range[1], L0)) * (S.cRange ? 1 - smoothstep(S.cRange[0], S.cRange[1], C0) : 1) * w;
     if (ws > 0) {
       const k = 1 + ((S.chroma ?? 1) - 1) * ws;
       a = a * k + (S.shift ? S.shift[0] : 0) * ws;
