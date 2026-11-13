@@ -181,7 +181,9 @@ export class PeopleSystem {
     const has = p.props, carry = p.spec.clips?.carry;
     const work = /Harvest|Chopping|Fixing|Push/.test(name);
     const list = [];
-    if (has.prop_hand && (carry === 'cane' ? name === 'walk' : work)) list.push('prop_hand');
+    // `clips.hand`: the clips this person's hand tool is for (the farmer's can is for the watering, not the harvest)
+    const handFor = p.spec.clips?.hand;
+    if (has.prop_hand && (handFor ? handFor.includes(name) : carry === 'cane' ? name === 'walk' : work)) list.push('prop_hand');
     if (has.prop_back && !(carry === 'rake' && work)) list.push('prop_back');
     if (has.prop_hip && !work) list.push('prop_hip');
     if (has.prop_shoulder) list.push('prop_shoulder');

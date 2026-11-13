@@ -79,6 +79,21 @@ export class PosePlayer {
     return b;
   }
 
+  /**
+   * Advance the clock only (a hidden person: nothing is drawn, so nothing is evaluated; A-alloc-rate). The next `update()`
+   * evaluates the pose at the clock as it stands.
+   */
+  advance() {
+    const b = this.current;
+    if (!b) return;
+    const D = b.duration;
+    let t = b.time + this.step * b.ts;
+    if (b.loop) { if (D > 0) { t %= D; if (t < 0) t += D; } } else if (t > D) t = D; else if (t < 0) t = 0;
+    if (t < b.time) b.cache.fill(0);
+    b.time = t;
+    if (this.fade > 0) this.fade -= this.step;
+  }
+
   /** Advance the clip by `this.step` s (scaled by its time scale), blend, and write every bone. */
   update() {
     const step = this.step;

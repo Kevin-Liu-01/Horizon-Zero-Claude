@@ -37,6 +37,114 @@ const BAKE_AMP = { Walk_Loop: 0.72, Walk_Formal_Loop: 0.8, Jog_Fwd_Loop: 0.55 };
 
 const san = (n) => THREE.PropertyBinding.sanitizeNodeName(n);
 
+/**
+ * Fix round 1 (V-npc-vs-brea line-up: "the 'Superhero' wide stance with clenched fists makes all nine read as mannequins";
+ * V-npc-clips: "Farm_Harvest folds him double"). Baked into the pack, so the runtime pays nothing:
+ *   RELAX       the fingers of the library's idles, talks and walks come 45 % of the way from a fist to the open rest hand;
+ *   NARROW      Idle_Loop's feet (0.39 m apart at the heel, a fighter's stance) each come in about 5 cm: the thigh turns in
+ *               about the body's forward axis and the foot turns back, so the sole stays flat where it stood;
+ *   UNBEND      Farm_Harvest's spine and neck come half way back to upright (the hips keep their bend, so the feet do not move):
+ *               the head stays near hip height instead of at the knees.
+ */
+const RELAX = { Idle_Loop: 0.45, Walk_Loop: 0.4, Walk_Formal_Loop: 0.4, Idle_Talking_Loop: 0.4, Jog_Fwd_Loop: 0.35 };
+const NARROW = { Idle_Loop: 0.062 };
+const UNBEND = { Farm_Harvest: { pelvis: 0.18, spine_02: 0.3, spine_03: 0.35, neck_01: 0.4 } };
+const FINGER = /^(thumb|index|middle|ring|pinky)_0[123]_[lr]$/;
+
+/** q (4 floats at o in arr) toward rest r by t, nlerp on the shorter arc, in place. */
+function nlerpInto(arr, o, r, t) {
+  let x = r[0], y = r[1], z = r[2], w = r[3];
+  if (arr[o] * x + arr[o + 1] * y + arr[o + 2] * z + arr[o + 3] * w < 0) { x = -x; y = -y; z = -z; w = -w; }
+  const a = [arr[o] + (x - arr[o]) * t, arr[o + 1] + (y - arr[o + 1]) * t, arr[o + 2] + (z - arr[o + 2]) * t, arr[o + 3] + (w - arr[o + 3]) * t];
+  const l = Math.hypot(...a) || 1;
+  for (let k = 0; k < 4; k++) arr[o + k] = a[k] / l;
+}
+
+/** The hips of a native clip straightened by `f` of their forward pitch, the thighs held in the world (doc channels, in place). */
+function unbendHips(anim, top, f) {
+  const bones = {};
+  top.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+  const chOf = (n) => anim.listChannels().find((c) => c.getTargetNode()?.getName() === n && c.getTargetPath() === 'rotation');
+  const pc = chOf('pelvis'), tl = chOf('thigh_l'), tr = chOf('thigh_r');
+  if (!pc || !tl || !tr) return;
+  const times = pc.getSampler().getInput().getArray();
+  const same = (c) => { const t = c.getSampler().getInput().getArray(); return t.length === times.length && t.every((x, i) => Math.abs(x - times[i]) < 1e-6); };
+  if (!same(tl) || !same(tr)) throw new Error(`[npc clips] ${anim.getName()}: pelvis and thigh keys differ; unbendHips needs one timeline`);
+  const clip = threeClip(anim);
+  top.updateMatrixWorld(true);
+  const restInv = new THREE.Quaternion();
+  bones.pelvis.getWorldQuaternion(restInv);
+  restInv.invert();
+  const mixer = new THREE.AnimationMixer(top);
+  const act = mixer.clipAction(clip);
+  act.play();
+  const P = Float32Array.from(pc.getSampler().getOutput().getArray());
+  const TL = Float32Array.from(tl.getSampler().getOutput().getArray()), TR = Float32Array.from(tr.getSampler().getOutput().getArray());
+  const pW = new THREE.Quaternion(), ppW = new THREE.Quaternion(), tW = new THREE.Quaternion(), R = new THREE.Quaternion(), q = new THREE.Quaternion(), up = new THREE.Vector3(), X = new THREE.Vector3(1, 0, 0);
+  for (let k = 0; k < times.length; k++) {
+    mixer.setTime(Math.min(clip.duration - 1e-5, times[k]));
+    top.updateMatrixWorld(true);
+    bones.pelvis.getWorldQuaternion(pW);
+    bones.pelvis.parent.getWorldQuaternion(ppW);
+    // the world up turned by the pelvis's rotation from rest: the forward pitch is its angle toward +z
+    up.set(0, 1, 0).applyQuaternion(pW.clone().multiply(restInv));
+    const pitch = Math.atan2(up.z, up.y);
+    R.setFromAxisAngle(X, -pitch * f);
+    const pW2 = R.clone().multiply(pW);
+    q.copy(ppW).invert().multiply(pW2).toArray(P, k * 4);
+    for (const [side, arr] of [['l', TL], ['r', TR]]) {
+      bones[`thigh_${side}`].getWorldQuaternion(tW);
+      q.copy(pW2).invert().multiply(tW).toArray(arr, k * 4);
+    }
+  }
+  act.stop(); mixer.uncacheRoot(top);
+  pc.getSampler().getOutput().setArray(P); tl.getSampler().getOutput().setArray(TL); tr.getSampler().getOutput().setArray(TR);
+}
+
+/** RELAX + NARROW on a baked clip (three tracks), against the target body `top` in its bind pose. */
+function settleClip(clip, top, name) {
+  const bones = {};
+  top.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+  const rest = {};
+  for (const n in bones) rest[n] = bones[n].quaternion.toArray();
+  const relax = RELAX[name] || 0;
+  if (relax) for (const tr of clip.tracks) {
+    const [b, prop] = tr.name.split('.');
+    if (prop !== 'quaternion' || !FINGER.test(b) || !rest[b]) continue;
+    for (let o = 0; o < tr.values.length; o += 4) nlerpInto(tr.values, o, rest[b], relax);
+  }
+  const th = NARROW[name];
+  if (!th) return;
+  const trOf = (n) => clip.tracks.find((t) => t.name === `${n}.quaternion`);
+  const sides = ['l', 'r'].map((sd) => ({ sd, thigh: trOf(`thigh_${sd}`), foot: trOf(`foot_${sd}`), a: sd === 'l' ? -th : th }));
+  if (sides.some((q) => !q.thigh || !q.foot)) return;
+  const mixer = new THREE.AnimationMixer(top);
+  const act = mixer.clipAction(clip);
+  act.play();
+  const out = sides.map((q) => ({ thigh: Float32Array.from(q.thigh.values), foot: Float32Array.from(q.foot.values) }));
+  const pW = new THREE.Quaternion(), cW = new THREE.Quaternion(), R = new THREE.Quaternion(), Ri = new THREE.Quaternion(), q = new THREE.Quaternion(), Z = new THREE.Vector3(0, 0, 1);
+  sides.forEach((S, i) => {
+    R.setFromAxisAngle(Z, S.a); Ri.copy(R).invert();
+    const times = S.thigh.times;
+    for (let k = 0; k < times.length; k++) {
+      mixer.setTime(Math.min(clip.duration - 1e-5, times[k]));
+      top.updateMatrixWorld(true);
+      bones.pelvis.getWorldQuaternion(pW);
+      q.fromArray(S.thigh.values, k * 4);
+      q.premultiply(pW).premultiply(R).premultiply(pW.clone().invert());
+      q.toArray(out[i].thigh, k * 4);
+      // the foot keeps its world rotation: the calf's world turned by R, so the foot's local takes R^-1 in the calf's frame
+      const fk = Math.min(k, S.foot.times.length - 1);
+      bones[`calf_${S.sd}`].getWorldQuaternion(cW);
+      q.fromArray(S.foot.values, fk * 4);
+      q.premultiply(cW).premultiply(Ri).premultiply(cW.clone().invert());
+      q.toArray(out[i].foot, fk * 4);
+    }
+  });
+  act.stop(); mixer.uncacheRoot(top);
+  sides.forEach((S, i) => { S.thigh.values.set(out[i].thigh); S.foot.values.set(out[i].foot); });
+}
+
 /** A three.js scene graph from a glTF document's scene (Bones where the skin says so). */
 export function threeTree(doc) {
   const root = doc.getRoot();
@@ -146,6 +254,21 @@ export async function buildClipPack(file, { provenance }) {
   for (const m of root.listMaterials()) m.dispose();
   for (const t of root.listTextures()) t.dispose();
 
+  // UNBEND: the native clips' spine keys come part of the way back to the rig's rest (in the pack, before the baked ones); the
+  // hips straighten by turning the pelvis back about the body's lateral axis while each thigh keeps its world rotation, so the
+  // legs, the knees and the feet do not move
+  for (const a of root.listAnimations()) {
+    const U = UNBEND[a.getName()];
+    if (!U) continue;
+    if (U.pelvis) unbendHips(a, bodies.F.top, U.pelvis);
+    for (const ch of a.listChannels()) {
+      const n = ch.getTargetNode(), f = U[n?.getName()];
+      if (!f || ch.getTargetPath() !== 'rotation') continue;
+      const acc = ch.getSampler().getOutput(), v = Float32Array.from(acc.getArray()), r = n.getRotation();
+      for (let o = 0; o < v.length; o += 4) nlerpInto(v, o, r, f);
+      acc.setArray(v);
+    }
+  }
   const nodeOf = new Map(root.listNodes().map((n) => [n.getName(), n]));
   const buf = root.listBuffers()[0];
   const nativeThree = new Map();
@@ -161,6 +284,9 @@ export async function buildClipPack(file, { provenance }) {
       const c = sourceClips.get(name);
       if (!c) throw new Error(`[npc clips] ${name} not in UAL1`);
       const { clip: baked } = rt.bake(c, { fps: 30, amp: BAKE_AMP[name] ?? 1 });
+      rt.restoreBind();
+      settleClip(baked, tgt, name);
+      rt.restoreBind();
       const anim = doc.createAnimation(`${sex}|${name}`);
       for (const tr of baked.tracks) {
         const [bone, prop] = tr.name.split('.');

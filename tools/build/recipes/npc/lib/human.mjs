@@ -21,7 +21,7 @@ import path from 'node:path';
 import * as THREE from 'three';
 import { joinPrimitives } from '@gltf-transform/functions';
 import {
-  srcRoot, UBC_DIR, HAIR_DIR, MCO_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex,
+  srcRoot, UBC_DIR, HAIR_DIR, MCO_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex, stripAlong,
   findLandmarks, GRADED, faceField, applyField, recomputeNormals, refineEdges, smoothNormals, smoothPositions, smooth, noise3, profileMask, iou, writeSkinned,
 } from './kit/face.mjs';
 import { relayoutSkinUV, eyeOpening, TriGrid, triSoup, creases, colourZones, scarSeam } from './kit/skin.mjs';
@@ -62,7 +62,7 @@ const bbox = (prim) => {
  * one mandible line, a neck with body, ears back), then the archetype's own vectors at the landmarks.
  * Asymmetry comes from the seed, so no two faces are mirror-true in the same way.
  */
-function faceBumps(spec, L, mm, S, R) {
+function faceBumps(spec, L, mm, S, R, eyes) {
   const bumps = [];
   const B = (at, d, s, ax = null) => bumps.push({ at, d: d.map(mm), s: s / S, ...(ax ? { sx: ax[0] / S, sy: ax[1] / S, sz: ax[2] / S } : {}) });
   const F = spec.face;
@@ -117,13 +117,23 @@ function faceBumps(spec, L, mm, S, R) {
     B([sx * 0.0795, 1.655, -0.04], [-sx * 3.2, 0, 0], 0.017);
     B([sx * 0.0735, 1.598, -0.012], [-sx * 3.0, 3.0, 0.4], 0.0075);
   }
-  // age: the mouth corners and the jowls come down; a young face stays full under the eyes
+  // age (fix round 1: the r0 matron and keeper read about forty at 0.9 m). What sixty-plus years do to a face, in the order the
+  // eye reads them: the mouth corners and the jowls come down past the jaw line, the cheek's fat slides down onto the
+  // nasolabial fold, the temples and the orbit hollow, the lips thin and roll in, the nose tip droops, the lids hood
   const old = smooth(45, 70, spec.age);
   if (old > 0) {
+    const ey = eyes[0][1];
     for (const sx of [1, -1]) {
-      B([sx * 0.0345, my - 0.002, mz - 0.006], [sx * 0.3, -2.4 * old, -0.4 * old], 0.0072);
-      B([sx * 0.05, L.chin[1] + 0.016, 0.052], [sx * 2.0 * old, -3.2 * old, 0.2], 0.014);
+      B([sx * 0.0345, my - 0.002, mz - 0.006], [sx * 0.5, -5.0 * old, -1.0 * old], 0.008);
+      B([sx * 0.05, L.chin[1] + 0.016, 0.052], [sx * 3.6 * old, -7.0 * old, 0.6 * old], 0.018);
+      B([sx * 0.037, ty - 0.012, 0.068], [sx * 0.8 * old, -4.0 * old, 1.4 * old], 0.0135);
+      B([sx * 0.066, 1.69, 0.024], [-sx * 3.4 * old, 0, -1.2 * old], 0.0155);
+      B([sx * 0.031, ey - 0.021, 0.07], [0, -0.8 * old, 2.0 * old], 0.0085);
+      B([sx * 0.052, L.chin[1] + 0.002, 0.03], [sx * 0.6 * old, -2.2 * old, -0.4 * old], 0.016);
     }
+    B([L.upperLip[0], L.upperLip[1], L.upperLip[2]], [0, 0.6 * old, -1.5 * old], 0.0072);
+    B([0, my - 0.008, mz + 0.012], [0, 0.6 * old, -1.1 * old], 0.0072);
+    B([0, ty - 0.002, tz - 0.004], [0, -1.3 * old, 0.3 * old], 0.0075);
   }
   return bumps;
 }
@@ -148,6 +158,12 @@ function shapeLids(prim, { eyes, headW, mm, drop, lower = 0.5 }) {
   P.setArray(a);
 }
 
+/**
+ * Cropped hair lies close: short, narrow cards whose tips barely lift (r0: the follower's 2 cm cards stood off his temples as
+ * dark shards under the band).
+ */
+const CROP = { length: [0.0075, 0.012], width: [0.008, 0.012], liftTip: [0.001, 0.0028] };
+
 /* ================================================================ paint layers */
 
 /** The years, in 3-D, on top of the standard face layers. */
@@ -162,7 +178,7 @@ function ageLayers({ L, eyes, age }) {
     for (let i = 0; i < n; i++) {
       const y = browY + 0.018 + i * 0.0105;
       const zc = browZ - 0.004 - i * 0.003;
-      list.push({ pts: [[-0.052, y - 0.002, zc - 0.03], [-0.02, y + 0.0015, zc - 0.006], [0.02, y - 0.0005, zc - 0.006], [0.052, y + 0.001, zc - 0.03]], w: 0.0011 + 0.0007 * old, depth: 0.00018 + 0.0003 * old, dark: 0.08 + 0.13 * old });
+      list.push({ pts: [[-0.052, y - 0.002, zc - 0.03], [-0.02, y + 0.0015, zc - 0.006], [0.02, y - 0.0005, zc - 0.006], [0.052, y + 0.001, zc - 0.03]], w: 0.0011 + 0.0009 * old, depth: 0.00018 + 0.0004 * old, dark: 0.08 + 0.17 * old });
     }
     // the frown between the brows
     for (const sx of [1, -1]) list.push({ pts: [[sx * 0.0075, browY - 0.002, browZ + 0.0015], [sx * 0.0105, browY + 0.016, browZ - 0.002]], w: 0.001 + 0.0006 * old, depth: 0.0002 + 0.0003 * old, dark: 0.09 + 0.12 * old });
@@ -180,15 +196,29 @@ function ageLayers({ L, eyes, age }) {
       const t = L.noseTip;
       // (both are folds, not lines: wide and soft, so they read as a shaded fall of the cheek and never as two scratches at the
       // mouth; the marionette fold starts under the corner, on the line the nasolabial fold would continue on)
-      list.push({ pts: [[sx * 0.0215, t[1] - 0.006, t[2] - 0.034], [sx * 0.0335, t[1] - 0.028, t[2] - 0.044], [sx * 0.0385, t[1] - 0.047, t[2] - 0.052]], w: 0.0046, depth: 0.00034 + 0.00034 * old, dark: 0.07 + 0.08 * old });
+      list.push({ pts: [[sx * 0.0215, t[1] - 0.006, t[2] - 0.034], [sx * 0.0335, t[1] - 0.028, t[2] - 0.044], [sx * 0.0385, t[1] - 0.047, t[2] - 0.052]], w: 0.0046 + 0.0012 * old, depth: 0.00034 + 0.0006 * old, dark: 0.07 + 0.15 * old });
       const m = L.upperLip;
-      list.push({ pts: [[sx * 0.0372, m[1] - 0.02, m[2] - 0.03], [sx * 0.0392, m[1] - 0.042, m[2] - 0.036]], w: 0.0044, depth: 0.00026 + 0.00032 * old, dark: 0.04 + 0.07 * old });
+      list.push({ pts: [[sx * 0.0372, m[1] - 0.02, m[2] - 0.03], [sx * 0.0392, m[1] - 0.042, m[2] - 0.036]], w: 0.0044 + 0.001 * old, depth: 0.00026 + 0.0005 * old, dark: 0.04 + 0.13 * old });
     }
   }
   if (age >= 55) {
+    const o2 = smooth(55, 72, age);
+    for (const sx of [1, -1]) {
+      const e = eyes[sx > 0 ? 0 : 1];
+      // the lower lid's folds and a second crow's foot fan
+      for (let i = 0; i < 2; i++) list.push({ pts: [[e[0] - sx * 0.012, e[1] - 0.012 - i * 0.0045, e[2] + 0.009], [e[0] + sx * 0.004, e[1] - 0.0145 - i * 0.0045, e[2] + 0.01], [e[0] + sx * 0.02, e[1] - 0.009 - i * 0.004, e[2] + 0.001]], w: 0.0008, depth: 0.00022, dark: 0.12 * o2 + 0.04 });
+      const z = e[2] - 0.008;
+      list.push({ pts: [[e[0] + sx * 0.024, e[1] + 0.006, z], [e[0] + sx * 0.035, e[1] + 0.016, z - 0.012]], w: 0.0009, depth: 0.00024, dark: 0.14 * o2 });
+      list.push({ pts: [[e[0] + sx * 0.025, e[1] - 0.008, z], [e[0] + sx * 0.034, e[1] - 0.017, z - 0.012]], w: 0.0009, depth: 0.00024, dark: 0.13 * o2 });
+      // the jowl's line under the mouth corner, down to the jaw
+      const m = L.upperLip;
+      list.push({ pts: [[sx * 0.035, m[1] - 0.034, m[2] - 0.034], [sx * 0.045, m[1] - 0.05, m[2] - 0.05]], w: 0.003, depth: 0.0004, dark: 0.12 * o2 });
+    }
     // the neck bands, the lip's vertical lines
-    for (let i = 0; i < 3; i++) { const y = 1.505 + i * 0.022; list.push({ pts: [[-0.05, y + 0.006, 0.03], [0, y, 0.058], [0.05, y + 0.006, 0.03]], w: 0.002, depth: 0.0003, dark: 0.12 }); }
-    for (let i = 0; i < 6; i++) { const x = (i - 2.5) * 0.0062; const m = L.upperLip; list.push({ pts: [[x, m[1] + 0.006, m[2] - 0.002 - Math.abs(x) * 0.5], [x * 0.92, m[1] - 0.004, m[2] - 0.002 - Math.abs(x) * 0.5]], w: 0.00055, depth: 0.00014, dark: 0.1 }); }
+    for (let i = 0; i < 3; i++) { const y = 1.505 + i * 0.022; list.push({ pts: [[-0.05, y + 0.006, 0.03], [0, y, 0.058], [0.05, y + 0.006, 0.03]], w: 0.0024, depth: 0.0004, dark: 0.16 }); }
+    // the neck's two cords (platysma bands) under the chin
+    for (const sx of [1, -1]) list.push({ pts: [[sx * 0.016, 1.535, 0.06], [sx * 0.02, 1.49, 0.056], [sx * 0.024, 1.45, 0.05]], w: 0.003, depth: 0.0004, dark: 0.1 });
+    for (let i = 0; i < 6; i++) { const x = (i - 2.5) * 0.0062; const m = L.upperLip; list.push({ pts: [[x, m[1] + 0.006, m[2] - 0.002 - Math.abs(x) * 0.5], [x * 0.92, m[1] - 0.004, m[2] - 0.002 - Math.abs(x) * 0.5]], w: 0.0007, depth: 0.00018, dark: 0.15 }); }
   }
   if (list.length) layers.push(creases(list));
   // the colour of the years: hollow eye sockets, a sallow temple, sun on the nose + cheeks, sun spots
@@ -201,6 +231,12 @@ function ageLayers({ L, eyes, age }) {
       zones.push({ at: [sx * 0.068, 1.685, 0.02], s: [0.018, 0.024, 0.024], gain: [1 - 0.07 * old, 1 - 0.09 * old, 1 - 0.08 * old] });
     }
     zones.push({ at: [cheek[0], cheek[1] - 0.018, cheek[2] - 0.005], s: [0.022, 0.018, 0.024], gain: [1 - 0.06 * old, 1 - 0.1 * old, 1 - 0.1 * old] });
+    if (age >= 55) {
+      // an old mouth loses its colour; the skin under the eyes darkens and the temples go sallow
+      const m = L.upperLip, o2 = smooth(55, 72, age);
+      zones.push({ at: [0, m[1] - 0.008, m[2] - 0.004], s: [0.026, 0.012, 0.016], gain: [1 - 0.04 * o2, 1 + 0.04 * o2, 1 + 0.07 * o2] });
+      for (const sx of [1, -1]) { const e = eyes[sx > 0 ? 0 : 1]; zones.push({ at: [e[0] + sx * 0.002, e[1] - 0.016, e[2] + 0.006], s: [0.02, 0.008, 0.016], gain: [1 - 0.14 * o2, 1 - 0.16 * o2, 1 - 0.12 * o2] }); }
+    }
     zones.push({ at: [-cheek[0], cheek[1] - 0.018, cheek[2] - 0.005], s: [0.022, 0.018, 0.024], gain: [1 - 0.06 * old, 1 - 0.1 * old, 1 - 0.1 * old] });
     layers.push(colourZones(zones));
   }
@@ -420,7 +456,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   for (const k of Object.keys(L)) if (!L[k]) throw new Error(`[npc ${spec.id}] landmark ${k} not found`);
 
   // ---- the face field
-  const bumps = faceBumps(spec, L, mm, S, R);
+  const bumps = faceBumps(spec, L, mm, S, R, eyes);
   const region = (p) => smooth(1.425, 1.47, p[1]) * smooth(-0.10, -0.03, p[2]);
   const field = faceField(bumps, { rigid: eyes, r0: mm(15), r1: mm(33), region });
   const stockPos = new Float32Array(bodyPrim.getAttribute('POSITION').getArray());
@@ -430,7 +466,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   const stockProfile = profileMask(bodyPrim, WIN, 0.0005, headTri);
   applyField(bodyPrim, field);
   // a young face has the open eye of its age: the upper lid barely comes down and the lower one does not rise
-  shapeLids(bodyPrim, { eyes, headW, mm, drop: spec.adolescent ? 0.2 : 0.72 + 1.4 * smooth(40, 70, spec.age), lower: spec.adolescent ? 0 : 0.5 });
+  shapeLids(bodyPrim, { eyes, headW, mm, drop: spec.adolescent ? 0.2 : 0.72 + 2.3 * smooth(40, 70, spec.age), lower: spec.adolescent ? 0 : 0.5 });
   const moved = movedMask(bodyPrim, stockPos);
   recomputeNormals(bodyPrim, moved);
   refineEdges(bodyPrim, {
@@ -578,9 +614,22 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     return gridCache;
   };
   const uvOf = (name) => { const r = uvRect(name); return (q) => [r[0] + Math.max(0, Math.min(1, q[0])) * r[2], r[1] + Math.max(0, Math.min(1, q[1])) * r[3]]; };
+  // the body without its arms: a smock or a tunic hangs off the trunk, and in the bind pose the arms stand in its way (r0+: a
+  // radial cast that met an arm wrapped the cloth round it, a box from the shoulders to the waist)
+  let trunkCache = null;
+  const trunkGridOf = () => {
+    if (trunkCache) return trunkCache;
+    const armJ = new Set();
+    root.listSkins()[0].listJoints().forEach((jn, i) => { if (/^(upperarm|lowerarm|hand|thumb|index|middle|ring|pinky)/.test(jn.getName())) armJ.add(i); });
+    const JJ = bodyPrim.getAttribute('JOINTS_0'), WW = bodyPrim.getAttribute('WEIGHTS_0'), j4 = [0, 0, 0, 0], w4 = [0, 0, 0, 0];
+    const arm = new Float32Array(JJ.getCount());
+    for (let i = 0; i < arm.length; i++) { JJ.getElement(i, j4); WW.getElement(i, w4); for (let k = 0; k < 4; k++) if (armJ.has(j4[k])) arm[i] += w4[k]; }
+    trunkCache = new TriGrid(new Float32Array(triSoup(bodyPrim, (a, b, c) => arm[a] < 0.3 && arm[b] < 0.3 && arm[c] < 0.3)), 0.02);
+    return trunkCache;
+  };
   const ctx = {
-    J, grid: gridOf, skinNear, chain, prop,
-    add(g, o = {}) { const list = Array.isArray(g) ? g : [g]; for (const q of list) pieces.push({ geo: q, dye: o.dye, hide: !!o.hide, noHide: !!o.noHide, shade: o.shade ?? 1, prop: o.prop || null }); invalidate(); },
+    J, grid: gridOf, trunkGrid: trunkGridOf, skinNear, chain, prop,
+    add(g, o = {}) { const list = Array.isArray(g) ? g : [g]; for (const q of list) pieces.push({ geo: q, dye: o.dye, hide: !!o.hide, noHide: !!o.noHide, shade: o.shade ?? 1, prop: o.prop || null, stain: o.stain || null }); invalidate(); },
     uvOf,
     rectUV: (name) => { const r = uvRect(name); return (u, v) => [r[0] + u * r[2], r[1] + v * r[3]]; },
     palm: (side) => { const c = side === 'r' ? base.getRoot().listSkins()[0].listJoints()[J.hand_r] : base.getRoot().listSkins()[0].listJoints()[J.hand_l]; const w = c.getWorldMatrix(); return [w[12] + (side === 'r' ? -0.072 : 0.072), w[13] - dy - 0.024, w[14] + 0.02]; },
@@ -719,7 +768,9 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   const skinImg = await paintHumanSkin({
     bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, opens, scar: null, names: `npc-${spec.id}`,
     occluders: occl, collar: collarSoup, hairBand: wrapped && !bareHair ? hairBandUnderHem(wrapped.hemGap) : null, hairShape: shape,
-    marks, tone: spec.tone, iris: spec.iris, amber: spec.amber, hairColor: spec.hair,
+    // (the paint's coil colour lifts the crowns by up to 1.8x plus a warm sheen, made for near-black hair: a grey head paints from
+    // a darker value so it reads salt-and-pepper, not white)
+    marks, tone: spec.tone, iris: spec.iris, amber: spec.amber, hairColor: spec.hairPaint || spec.hair,
   });
   leanInwardNormals(bodyPrim, eyesPrim, { L, eyes });
   const darkUV = (() => {
@@ -735,10 +786,13 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   const hairParts = [];
   const hairTint = lin(spec.hair).map((v) => Math.min(1, v / HAIR_NEUTRAL));
   let cardCount = 0;
+  // grey hair (the elders): the coil cards' shadowed interiors read as a noisy black-and-white patch at the hem of a wrap or a
+  // hood (r0 judges); a grey head keeps the painted, soft-edged hairline and no cards there
+  const greyHair = !!spec.greyHair;
   if (wrapped && !bareHair) {
-    const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ: bodyPrim.getAttribute('JOINTS_0'), skinW: bodyPrim.getAttribute('WEIGHTS_0'), twoSided: true });
+    const cards = greyHair ? emptyGeo() : scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ: bodyPrim.getAttribute('JOINTS_0'), skinW: bodyPrim.getAttribute('WEIGHTS_0'), twoSided: true });
     cardCount = cards.idx.length / 3;
-    hairParts.push(wrapped.geo, cards);
+    hairParts.push(wrapped.geo, ...(cards.idx.length ? [cards] : []));
   } else if (bareHair) {
     if (wrapped) hairParts.push(wrapped.geo);
     const soup = triSoup(bodyPrim, (a, b, c) => headW[a] > 0.5 || headW[b] > 0.5 || headW[c] > 0.5);
@@ -752,6 +806,8 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
       const hit = shellGrid.cast(p[0] - d[0] * 0.002, p[1] - d[1] * 0.002, p[2] - d[2] * 0.002, d[0], d[1], d[2], 0.03, 0.0001);
       if (hit < 0 || shape(p[0], p[1] - 0.002, p[2]) <= 0.6) return false;
       if (knotAt && Math.hypot(p[0] - knotAt[0], p[1] - knotAt[1], p[2] - knotAt[2]) < 0.045) return false;
+      // under a band, the temples and the sideburns are painted, not carded: a card there stands off the side of the face
+      if (H.kind === 'band' && p[1] < 1.705 && p[2] > -0.045) return false;
       if (wrapped?.stack) {
         // not under the band, and not just above it, where a card's tip would lie on the cloth
         // (a card is up to 2 cm long, flows down and back or forward, and its tip stands up to 5 mm off the scalp: wherever it
@@ -764,16 +820,20 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
       }
       return true;
     };
-    const anchors = scatterAnchors(grid, { center: [0, 1.66, -0.02], step: H.kind === 'hood' ? 0.2 : 0.1, seed: 5 + spec.n, keep, elMin: -1.2, elMax: 1.45 });
-    const cards = coilCards(anchors, { flow: (a, Rr) => { const x = a.p[0], z = a.p[2]; return [Math.sign(x) * 0.25 + (Rr() - 0.5) * 0.8, -0.55, (z > 0 ? 0.3 : -0.8) + (Rr() - 0.5) * 0.7]; }, skinOf, rect: WRAP_ATLAS.coilFringe.rect, W: WRAP_ATLAS.W, length: [0.012, 0.02], width: [0.012, 0.02], liftTip: [0.002, 0.0055], twoSided: true });
+    const anchors = greyHair ? [] : scatterAnchors(grid, { center: [0, 1.66, -0.02], step: H.kind === 'hood' ? 0.2 : 0.1, seed: 5 + spec.n, keep, elMin: -1.2, elMax: 1.45 });
+    const cards = !anchors.length ? emptyGeo() : coilCards(anchors, { flow: (a, Rr) => { const x = a.p[0], z = a.p[2]; return [Math.sign(x) * 0.25 + (Rr() - 0.5) * 0.8, -0.55, (z > 0 ? 0.3 : -0.8) + (Rr() - 0.5) * 0.7]; }, skinOf, rect: WRAP_ATLAS.coilFringe.rect, W: WRAP_ATLAS.W, ...(H.hair === 'crop' ? CROP : { length: [0.012, 0.02], width: [0.012, 0.02], liftTip: [0.002, 0.0055] }), twoSided: true });
     cardCount = cards.idx.length / 3;
-    hairParts.push(cards);
+    if (cards.idx.length) hairParts.push(cards);
     if (H.kind === 'hood') {
-      // a grey lock escapes the hood on her left, on a chain
-      const pts = [[0.074, 1.668, 0.03], [0.083, 1.625, 0.034], [0.086, 1.58, 0.034], [0.085, 1.535, 0.03], [0.082, 1.495, 0.024]];
+      // a grey lock escapes the hood on her left, on a chain: a tapered, twisting ribbon of the lock texture (r0's coil tuft
+      // read as a jagged grey crack down the cheek)
+      const pts = [[0.074, 1.668, 0.03], [0.083, 1.625, 0.036], [0.087, 1.58, 0.037], [0.087, 1.535, 0.033], [0.084, 1.495, 0.027]];
       const j = chain('hairLock', 'Head', pts);
-      const A = WRAP_ATLAS;
-      hairParts.push(coilTuft(pts, j, { count: 3, along: 7, width: 0.014, uv: { rect: A.coilTile.rect, period: A.coilTile.period, W: A.W }, side: [1, 0, 0.3], seed: 13 + spec.n }));
+      const A = WRAP_ATLAS, R = A.lockTile.rect;
+      const rect = [R[0] / A.W, R[1] / A.W, (R[2] * 0.45) / A.W, R[3] / A.W];
+      const lock = stripAlong(pts, j, { along: 12, width: (u) => 0.019 * (1 - 0.8 * smooth(0.15, 1, u)) + 0.0018, side: [1, 0, 0.35], uvFront: rect, uvBack: rect, thick: 0.0022, curl: 0.22, twist: 1.1 });
+      lock.col = new Array((lock.pos.length / 3) * 4).fill(1);
+      hairParts.push(lock);
     }
   }
   const hairBase = joinGeos([...hairParts]);
@@ -809,6 +869,18 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
       vertexAO(g, grid, { rays: 24, maxD: 0.05, floor: 0.42, tint: [1, 0.97, 0.95] });
       if (keepCol) for (let i = 0; i < g.col.length; i++) g.col[i] *= keepCol[i];
       if (p.dye) dye(g, p.dye, NEUTRAL);
+      // a stain over the dye: `stain.at(p)` 0..1 per vertex blends toward the stain's colour (a picker's carmine where her hands
+      // wipe and where the hem drags, not a dyed panel)
+      if (p.stain) {
+        const sc = lin(p.stain.hex), base = lin(p.dye || '#DEDEDE');
+        const n = g.pos.length / 3, q = [0, 0, 0];
+        for (let i = 0; i < n; i++) {
+          q[0] = g.pos[i * 3]; q[1] = g.pos[i * 3 + 1]; q[2] = g.pos[i * 3 + 2];
+          const t = Math.max(0, Math.min(1, p.stain.at(q)));
+          if (t <= 0) continue;
+          for (let k = 0; k < 3; k++) g.col[i * 4 + k] = Math.min(1, g.col[i * 4 + k] * (1 + (sc[k] / Math.max(1e-4, base[k]) - 1) * t));
+        }
+      }
       if (p.shade && p.shade !== 1) for (let i = 0; i < g.col.length; i++) if (i % 4 !== 3) g.col[i] = Math.min(1, g.col[i] * p.shade);
     }
   }
@@ -912,7 +984,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     for (const q of parts) q.gp = withPoses(q.g);
     const run = async (e) => {
       const out = [];
-      for (const q of parts) out.push(q.g.idx.length ? await simplify(q.gp, 0, { err: e, abs: true, attr: ATTR_LOD, extraW: 0.8, vlock: q.lock ? q.lock(q.g) : null }) : q.g);
+      for (const q of parts) out.push(q.g.idx.length ? await simplify(q.gp, 0, { err: e, abs: true, attr: ATTR_LOD, extraW: 0.8, permissive: true, vlock: q.lock ? q.lock(q.g) : null }) : q.g);
       return out;
     };
     let best = null, bestE = hi;

@@ -213,7 +213,7 @@ export function hangingSheet({ grid, rows = 10, cols = 8, y0, y1, halfW, side = 
  * of the walking legs, pleats keep it cloth. Weighted on the pelvis, the lower rows part on the
  * thighs by side, so the hem follows the stride.
  */
-export function skirt({ grid, J, y0 = 1.08, y1 = 0.1, rHem = 0.31, rows = 9, seg = 26, lift = 0.012, pleats = 7, amp = 0.012, uv, seed = 3, follow = 0.42, rFloor = 0.15, cz = -0.012, rMax = 0.4 }) {
+export function skirt({ grid, J, y0 = 1.08, y1 = 0.1, rHem = 0.31, rows = 9, seg = 26, lift = 0.012, pleats = 7, amp = 0.012, uv, seed = 3, follow = 0.42, rFloor = 0.15, cz = -0.012, rMax = 0.4, skin: skinFn = null, hem = 0, hemUV = null, depth = 0 }) {
   const far = 0.7;
   const R = new Float32Array((rows + 1) * seg);
   for (let s = 0; s < seg; s++) {
@@ -232,7 +232,11 @@ export function skirt({ grid, J, y0 = 1.08, y1 = 0.1, rHem = 0.31, rows = 9, seg
   const at = (u, v) => {
     const c = Math.min(seg - 1, Math.round(u * seg)) % seg, r = Math.round(v * rows);
     const th = u * TAU;
-    const pl = amp * smooth(0.08, 0.7, v) * (Math.sin(th * pleats + seed) + 0.5 * Math.sin(th * (pleats * 2 + 1) + seed * 3));
+    // `depth`: real cloth's folds deepen toward the hem and are not even (a third, slower family of folds, and each fold's own
+    // depth wanders), so the hem reads as hanging cloth and not a fluted cone
+    const wob = 1 + 0.35 * Math.sin(th * 2 + seed * 5);
+    const pl = amp * smooth(0.08, 0.7, v) * (Math.sin(th * pleats + seed) + 0.5 * Math.sin(th * (pleats * 2 + 1) + seed * 3)) * (depth ? wob : 1)
+      + depth * Math.pow(v, 1.4) * (Math.sin(th * (pleats - 2) + seed * 1.7 + 0.8 * Math.sin(th * 3)) * 0.8 + 0.35 * Math.sin(th * (pleats + 4) + seed));
     const rad = R[r * seg + c] + pl;
     return [Math.sin(th) * rad, mix(y0, y1, v) + 0.012 * v * Math.sin(th * 3 + seed), cz + Math.cos(th) * rad];
   };
@@ -242,8 +246,28 @@ export function skirt({ grid, J, y0 = 1.08, y1 = 0.1, rHem = 0.31, rows = 9, seg
     const l = m * smooth(-0.7, 0.7, a), rr = m * (1 - smooth(-0.7, 0.7, a));
     return { j: [J.pelvis, J.thigh_l, J.thigh_r, 0], w: [1 - l - rr, l, rr, 0] };
   };
-  const g = surface({ rows, cols: seg, at, closeU: true, out: (p) => norm([p[0], 0.05, p[2] - cz]), uv, skin });
-  return twoSided(g, { inset: 0.004, shade: 0.42 });
+  const g = surface({ rows, cols: seg, at, closeU: true, out: (p) => norm([p[0], 0.05, p[2] - cz]), uv, skin: skinFn || skin });
+  const both = twoSided(g, { inset: 0.004, shade: 0.42 });
+  if (!hem) return both;
+  const roll = hemRoll(g, { rowOf: bottomRow(rows, seg, true), r: hem, uv: hemUV || ((a, b) => uv(a, 1)) });
+  const o = emptyGeo();
+  const base = both.pos.length / 3;
+  for (const k of ['pos', 'nrm', 'uv', 'jnt', 'wgt']) o[k] = both[k].concat(roll[k]);
+  o.col = both.col.concat(new Array((roll.pos.length / 3) * 4).fill(1));
+  o.idx = both.idx.concat(roll.idx.map((i) => i + base));
+  return o;
+}
+
+/** Skin for a smock or a tunic: the trunk above the waist, the skirt's pelvis-and-thighs split below it. */
+export function smockSkin(J, { waist = 1.02, follow = 0.3, y1 = 0.6 } = {}) {
+  const trunk = trunkSkin(J);
+  return (p, u, v) => {
+    if (p[1] >= waist) return trunk(p[1]);
+    const a = Math.sin(u * TAU), m = follow * smooth(0, 1, (waist - p[1]) / Math.max(0.05, waist - y1));
+    const l = m * smooth(-0.7, 0.7, a), rr = m * (1 - smooth(-0.7, 0.7, a));
+    const legs = { j: [J.pelvis, J.thigh_l, J.thigh_r, 0], w: [1 - l - rr, l, rr, 0] };
+    return blendSkin(trunk(waist), legs, smooth(0, 0.06, waist - p[1]));
+  };
 }
 
 /**
@@ -457,3 +481,89 @@ export function cuff({ geo, sgn, xCut, uv }) {
 }
 
 export { blendSkin };
+
+/**
+ * A copper watering can held by its bail: the palm at the top of the bail, the body hanging under it, the spout forward with a
+ * rose on its end. `up` and `fwd` are the clip's world up and forward written in the hand's bind frame (read off the clip).
+ */
+export function wateringCan({ palm, up, fwd, joint, uvBody, uvRose }) {
+  const u = norm(up), f = norm(sub(fwd, mul(u, dot(fwd, u)))), sk = rigid(joint);
+  const c = add(palm, mul(u, -0.2));
+  const parts = [];
+  // the body: a tapered drum with a rolled rim and a domed top
+  parts.push(lathe({ c, axis: u, prof: [[0.002, -0.105], [0.078, -0.103], [0.084, -0.092], [0.08, 0.03], [0.074, 0.062], [0.077, 0.068], [0.06, 0.08], [0.03, 0.09], [0.002, 0.092]], seg: 14, skin: sk, uv: (a, b) => uvBody([a, b]) }));
+  // the spout from low on the front, rising forward, and its rose
+  const s0 = add(c, add(mul(f, 0.07), mul(u, -0.06))), s1 = add(c, add(mul(f, 0.2), mul(u, 0.02))), s2 = add(c, add(mul(f, 0.31), mul(u, 0.085)));
+  parts.push(tube([s0, s1, s2], { r: (t) => 0.014 - 0.007 * t, ring: 6, along: 5, skin: sk, uv: (a, b) => uvBody([a, b]) }));
+  const ra = norm(sub(s2, s1));
+  parts.push(lathe({ c: s2, axis: ra, prof: [[0.008, -0.004], [0.026, 0.012], [0.027, 0.016], [0.001, 0.017]], seg: 10, skin: sk, uv: (a, b) => uvRose([a, b]) }));
+  // the bail over the top, through the fist
+  const side = norm(cross(u, f));
+  const b0 = add(c, add(mul(u, 0.07), mul(side, 0.06))), b1 = add(palm, mul(side, 0.0)), b2 = add(c, add(mul(u, 0.07), mul(side, -0.06)));
+  parts.push(tube([b0, add(mix3(b0, b1, 0.5), mul(u, 0.03)), b1, add(mix3(b1, b2, 0.5), mul(u, 0.03)), b2], { r: () => 0.006, ring: 5, along: 8, skin: sk, uv: (a, b) => uvBody([a, b]) }));
+  return parts;
+}
+const mix3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
+/* ============================================================== the strap-and-buckle kit (fix round 1, R54) */
+
+/**
+ * A roller buckle on a strap: a rectangular frame of four bars, a centre bar the prong turns on, the prong, and the strap's
+ * keeper loop behind it. `at` on the strap's surface, `t` along the strap, `n` out of it, `w` the strap's width.
+ */
+export function buckle({ at, t, n, w = 0.03, skin, uv, bar = 0.0026 }) {
+  const T = norm(t), N = norm(n), S = norm(cross(T, N));
+  const hw = w * 0.5 + 0.0055, hl = w * 0.42, lift = bar + 0.0012;
+  const P = (x, y, z = 0) => add(at, add(add(mul(S, x), mul(T, y)), mul(N, lift + z)));
+  const sk = () => skin(at);
+  const tb = (a, b, r = bar) => tube([a, b], { r: () => r, ring: 4, along: 1, skin: sk, uv: (u, v) => uv([u, v]), cap: true });
+  return [
+    tb(P(-hw, -hl), P(hw, -hl)), tb(P(-hw, hl), P(hw, hl)), tb(P(-hw, -hl), P(-hw, hl)), tb(P(hw, -hl), P(hw, hl)),
+    // the prong across the strap, resting on the far bar
+    tb(P(0, -hl * 0.1, 0.0005), P(0, hl + 0.002, 0.0012), bar * 0.6),
+    // the keeper: a flat loop of the strap's own leather just behind the frame
+    tb(P(-w * 0.5 - 0.002, -hl - 0.012, -0.0004), P(w * 0.5 + 0.002, -hl - 0.012, -0.0004), 0.0032),
+  ];
+}
+
+/** Rivets: low domes on a surface, `pts` with their normals. */
+export function rivets(pts, { r = 0.0042, skin, uv }) {
+  return pts.map(({ p, n }) => lathe({ c: p, axis: norm(n), prof: [[r, 0], [r * 0.96, r * 0.32], [r * 0.6, r * 0.62], [0.0005, r * 0.72]], seg: 6, skin: () => skin(p), uv: (u, v) => uv([u, v]) }));
+}
+
+/**
+ * A rolled hem under a hanging sheet or a skirt: a tube along the sheet's bottom row, `r` thick, skinned like the row, so the
+ * cloth ends in a weight and not a card's edge.
+ */
+export function hemRoll(sheet, { rowOf, r = 0.0035, uv, ring = 4 }) {
+  // rowOf: the vertex indices of the bottom row in order (a sheet's own grid)
+  const g = emptyGeo();
+  const pts = rowOf.map((i) => [sheet.pos[i * 3], sheet.pos[i * 3 + 1], sheet.pos[i * 3 + 2]]);
+  const skins = rowOf.map((i) => ({ j: sheet.jnt.slice(i * 4, i * 4 + 4), w: sheet.wgt.slice(i * 4, i * 4 + 4) }));
+  const nrms = rowOf.map((i) => [sheet.nrm[i * 3], sheet.nrm[i * 3 + 1], sheet.nrm[i * 3 + 2]]);
+  const n = pts.length;
+  for (let a = 0; a < n; a++) {
+    const p = pts[a], prev = pts[Math.max(0, a - 1)], next = pts[Math.min(n - 1, a + 1)];
+    const t = norm(sub(next, prev)), side = norm(nrms[a]), b = cross(t, side);
+    for (let k = 0; k <= ring; k++) {
+      const th = (k % ring) / ring * TAU;
+      const d = add(mul(side, Math.cos(th)), mul(b, Math.sin(th)));
+      // the roll sits on the hem, turned up behind it
+      const q = add(add(p, mul(d, r)), mul(side, -r * 0.4));
+      g.pos.push(...q); g.nrm.push(...d);
+      const c = uv(k / ring, a / (n - 1)); g.uv.push(c[0], c[1]);
+      g.jnt.push(...skins[a].j); g.wgt.push(...skins[a].w);
+    }
+  }
+  for (let a = 0; a < n - 1; a++) for (let k = 0; k < ring; k++) {
+    const i0 = a * (ring + 1) + k, i1 = i0 + 1, i2 = i0 + ring + 1, i3 = i2 + 1;
+    g.idx.push(i0, i2, i1, i1, i2, i3);
+  }
+  fixWinding(g);
+  return g;
+}
+
+/** The bottom row of a `surface` grid (rows x cols, `closeU` adds one column). */
+export const bottomRow = (rows, cols, closeU = false) => { const cn = cols + 1; const o = []; for (let c = 0; c < cn; c++) o.push(rows * cn + c); return closeU ? o : o; };
+
+export const v3n = (v) => norm(v);

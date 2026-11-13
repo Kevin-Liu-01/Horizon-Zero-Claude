@@ -200,7 +200,7 @@ export const GATES = [
   /* ------------------------------------------------------------------ A-npc-fidelity */
   {
     id: 'A-npc-fidelity', kind: 'action', lane: 'settlements', timeout: 300000, settle: 300,
-    title: 'R56, near tier of each archetype at 2 m: 15-20 k tris, <= 4 draws; a face field + paint from the face library (not stock); separate hair or headwrap with live dyn_ chains whose tips move the same order as Brea\'s; >= 3 layered outfit pieces with their own normal/ORM; skin 1024² + normal; the tier change at 18 m cross-fades with <= 0.02 m silhouette jump',
+    title: 'R56, near tier of each archetype at 2 m: 15-20 k tris, <= 4 draws; a face field + paint from the face library (not stock); separate hair or headwrap with live dyn_ chains whose tips move the same order as Brea\'s; >= 3 layered outfit pieces with their own normal/ORM; skin 1024² + normal; the tier change at 18 m cross-fades with <= 0.02 m silhouette jump (the outline Hausdorff distance, front and side, worst over 6 walk phases + 3 phases of every stage clip)',
     assert: `(async () => {${READY}
       const ids = ${JSON.stringify(IDS)};
       PP.autoStage = false;
@@ -261,31 +261,83 @@ export const GATES = [
         const best = Math.max(...chainRows.map((c) => c.travel), 0);
         // the head chain itself, on hair or wrap
         const headChain = (npc.chains || []).find((c) => c.parent === 'Head');
-        // the tier change: silhouette extents, L0 against L1, same pose, against the camera's plane
-        let jumpAt = null;
-        const jump = (() => {
-          who.root.updateWorldMatrix(true, true);
+        // THE TIER CHANGE'S SILHOUETTE (fix round 1). The jump is graded over the person's own motion, not one frame: six phases
+        // of the walk cycle and three phases of every clip the stage plays (props as the stage shows them), and the worst pose
+        // is the number. At each pose both tiers' skinned triangles are projected on the front and side planes and rasterised at
+        // 2.5 mm; the jump is the symmetric Hausdorff distance between the two outlines (how far any part of one silhouette lies
+        // from the other). The per-5 cm-slice extent of r0-r8 is still REPORTED (sliceJumpM): it counts a fingertip that ends
+        // 1 cm higher, across a slice line, as the width of the body, so it is no distance on the screen.
+        const PX = 0.0025;
+        const sil = (() => {
           const q = new T3();
-          const slice = 0.05;
-          const camR = new T3(Math.cos(who.yaw), 0, -Math.sin(who.yaw));
-          const camF = new T3(Math.sin(who.yaw), 0, Math.cos(who.yaw));
+          const posed = (list) => list.map((m) => { const pos = m.geometry.attributes.position, n = pos.count, W = new Float32Array(n * 3); for (let i = 0; i < n; i++) { m.getVertexPosition(i, q); m.localToWorld(q); W[i * 3] = q.x; W[i * 3 + 1] = q.y; W[i * 3 + 2] = q.z; } return { W, I: m.geometry.index.array }; });
+          return (ta, tb) => {
+            who.root.updateWorldMatrix(true, true);
+            const A = posed(ta), B = posed(tb);
+            const cr = Math.cos(who.yaw), sr = Math.sin(who.yaw);
+            let best = { d: 0, at: null };
+            for (const view of [0, 1]) {
+              // front: the person's own across axis; side: along
+              const H = (W, i) => view === 0 ? W[i] * cr - W[i + 2] * sr : W[i] * sr + W[i + 2] * cr;
+              let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+              for (const L of [A, B]) for (const g of L) for (let i = 0; i < g.W.length; i += 3) { const h = H(g.W, i); if (h < x0) x0 = h; if (h > x1) x1 = h; if (g.W[i + 1] < y0) y0 = g.W[i + 1]; if (g.W[i + 1] > y1) y1 = g.W[i + 1]; }
+              x0 -= 0.05; y0 -= 0.05; x1 += 0.05; y1 += 0.05;
+              const w = Math.ceil((x1 - x0) / PX), h = Math.ceil((y1 - y0) / PX);
+              const raster = (L) => {
+                const M = new Uint8Array(w * h);
+                for (const g of L) {
+                  const W = g.W, I = g.I;
+                  for (let t = 0; t < I.length; t += 3) {
+                    const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+                    const ax = (H(W, a) - x0) / PX, ay = (W[a + 1] - y0) / PX, bx = (H(W, b) - x0) / PX, by = (W[b + 1] - y0) / PX, cx = (H(W, c) - x0) / PX, cy = (W[c + 1] - y0) / PX;
+                    const d = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+                    if (d > -1e-12 && d < 1e-12) continue;
+                    const mnx = Math.max(0, Math.floor(Math.min(ax, bx, cx))), mxx = Math.min(w - 1, Math.ceil(Math.max(ax, bx, cx)));
+                    const mny = Math.max(0, Math.floor(Math.min(ay, by, cy))), mxy = Math.min(h - 1, Math.ceil(Math.max(ay, by, cy)));
+                    for (let yy = mny; yy <= mxy; yy++) for (let xx = mnx; xx <= mxx; xx++) {
+                      const sx = xx + 0.5, sy = yy + 0.5;
+                      const u = ((bx - sx) * (cy - sy) - (by - sy) * (cx - sx)) / d, v = ((cx - sx) * (ay - sy) - (cy - sy) * (ax - sx)) / d;
+                      if (u >= -1e-6 && v >= -1e-6 && 1 - u - v >= -1e-6) M[yy * w + xx] = 1;
+                    }
+                  }
+                }
+                return M;
+              };
+              const dist = (M) => {
+                const D = new Float32Array(w * h), R2 = Math.SQRT2;
+                for (let i = 0; i < D.length; i++) D[i] = M[i] ? 0 : 1e9;
+                for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) { const i = yy * w + xx; let v = D[i]; if (xx > 0 && D[i - 1] + 1 < v) v = D[i - 1] + 1; if (yy > 0) { if (D[i - w] + 1 < v) v = D[i - w] + 1; if (xx > 0 && D[i - w - 1] + R2 < v) v = D[i - w - 1] + R2; if (xx < w - 1 && D[i - w + 1] + R2 < v) v = D[i - w + 1] + R2; } D[i] = v; }
+                for (let yy = h - 1; yy >= 0; yy--) for (let xx = w - 1; xx >= 0; xx--) { const i = yy * w + xx; let v = D[i]; if (xx < w - 1 && D[i + 1] + 1 < v) v = D[i + 1] + 1; if (yy < h - 1) { if (D[i + w] + 1 < v) v = D[i + w] + 1; if (xx < w - 1 && D[i + w + 1] + R2 < v) v = D[i + w + 1] + R2; if (xx > 0 && D[i + w - 1] + R2 < v) v = D[i + w - 1] + R2; } D[i] = v; }
+                return D;
+              };
+              const MA = raster(A), MB = raster(B), DA = dist(MA), DB = dist(MB);
+              for (let i = 0; i < w * h; i++) {
+                const d = MA[i] && !MB[i] ? DB[i] : MB[i] && !MA[i] ? DA[i] : 0;
+                if (d * PX > best.d) best = { d: d * PX, at: { view: view ? 'side' : 'front', h: +(x0 + (i % w + 0.5) * PX).toFixed(3), y: +(y0 + (Math.floor(i / w) + 0.5) * PX - who.group.position.y).toFixed(3), only: MA[i] ? 'near' : 'LOD1' } };
+              }
+            }
+            return best;
+          };
+        })();
+        // the old per-slice extents (reported only)
+        const sliceJump = () => {
+          who.root.updateWorldMatrix(true, true);
+          const q = new T3(), slice = 0.05;
+          const camR = new T3(Math.cos(who.yaw), 0, -Math.sin(who.yaw)), camF = new T3(Math.sin(who.yaw), 0, Math.cos(who.yaw));
           const extents = (list, axis) => {
             const map = {};
             for (const m of list) {
               const pos = m.geometry.attributes.position, n = pos.count, idx = m.geometry.index;
               const S_ = new Float32Array(n), Y_ = new Float32Array(n);
               for (let i = 0; i < n; i++) { m.getVertexPosition(i, q); m.localToWorld(q); S_[i] = q.x * axis.x + q.z * axis.z; Y_[i] = q.y - who.group.position.y; }
-              const tri = idx ? idx.count : n;
-              for (let t = 0; t + 2 < tri; t += 3) {
-                const a = idx ? idx.getX(t) : t, b = idx ? idx.getX(t + 1) : t + 1, c = idx ? idx.getX(t + 2) : t + 2;
+              for (let t = 0; t + 2 < idx.count; t += 3) {
+                const a = idx.getX(t), b = idx.getX(t + 1), c = idx.getX(t + 2);
                 const y0 = Math.min(Y_[a], Y_[b], Y_[c]), y1 = Math.max(Y_[a], Y_[b], Y_[c]);
                 for (let k = Math.ceil(y0 / slice); k <= Math.floor(y1 / slice); k++) {
-                  const yy = k * slice;
-                  const e = map[k] || (map[k] = [1e9, -1e9]);
+                  const yy = k * slice, e = map[k] || (map[k] = [1e9, -1e9]);
                   for (let g = 0; g < 3; g++) {
-                    const u = g === 0 ? a : g === 1 ? b : c, v = g === 0 ? b : g === 1 ? c : a;
-                    const du = Y_[u] - yy, dv = Y_[v] - yy;
-                    if ((du <= 0 && dv >= 0) || (du >= 0 && dv <= 0)) { if (Math.abs(du - dv) < 1e-9) continue; const f = du / (du - dv), xx = S_[u] + (S_[v] - S_[u]) * f; e[0] = Math.min(e[0], xx); e[1] = Math.max(e[1], xx); }
+                    const u = g === 0 ? a : g === 1 ? b : c, v = g === 0 ? b : g === 1 ? c : a, du = Y_[u] - yy, dv = Y_[v] - yy;
+                    if ((du <= 0 && dv >= 0) || (du >= 0 && dv <= 0)) { if (Math.abs(du - dv) < 1e-9) continue; const xx = S_[u] + (S_[v] - S_[u]) * (du / (du - dv)); e[0] = Math.min(e[0], xx); e[1] = Math.max(e[1], xx); }
                   }
                 }
               }
@@ -293,15 +345,44 @@ export const GATES = [
             return map;
           };
           let mx = 0;
-          for (const axis of [camR, camF]) {
-            const A = extents(who.tierMeshes[0], axis), B = extents(who.tierMeshes[1], axis);
-            for (const k in A) {
-              const a = A[k], b = B[k]; if (!b) continue;
-              for (let e = 0; e < 2; e++) { const d = Math.abs(a[e] - b[e]); if (d > mx) { mx = d; jumpAt = { axis: axis === camR ? 'across' : 'along', y: +(k * slice).toFixed(2), end: e ? 'max' : 'min' }; } }
-            }
-          }
+          for (const axis of [camR, camF]) { const A = extents(who.tierMeshes[0], axis), B = extents(who.tierMeshes[1], axis); for (const k in A) { const b = B[k]; if (!b) continue; for (let e = 0; e < 2; e++) mx = Math.max(mx, Math.abs(A[k][e] - b[e])); } }
           return +mx.toFixed(4);
-        })();
+        };
+        const poseRows = [];
+        let jumpAt = null, jump = 0, sliceMax = 0;
+        const grade = (label) => {
+          const r = sil(who.tierMeshes[0], who.tierMeshes[1]);
+          const sj = sliceJump();
+          sliceMax = Math.max(sliceMax, sj);
+          poseRows.push({ pose: label, jumpM: +r.d.toFixed(4), sliceM: sj });
+          if (r.d > jump) { jump = r.d; jumpAt = { pose: label, ...r.at }; }
+        };
+        // six phases of the walk cycle, as she walks (live chains, the walk's own overlays)
+        {
+          const a = who.current;
+          const dur = a?.duration || 1;
+          const want = [0, 1, 2, 3, 4, 5].map((k) => k / 6);
+          let k = 0, prev = a ? a.time / dur : 0, guard = 0;
+          while (k < want.length && guard++ < 600 && who.walking) {
+            await frame();
+            const ph = who.current.time / dur;
+            const hit = prev <= ph ? (want[k] >= prev && want[k] <= ph) : (want[k] >= prev || want[k] <= ph);
+            if (hit) { grade('walk@' + ph.toFixed(2)); k++; }
+            prev = ph;
+          }
+        }
+        // three phases of every clip the stage plays, with the props the stage shows for it
+        who.stopWalk();
+        const stageClips = npc.clips?.stage || npc.clips?.idle || [];
+        for (const nm of stageClips) {
+          const d = who.play(nm, { fade: 0 });
+          if (!d) continue;
+          who.showProps(PP._propsFor(who, nm));
+          who.frozen = true;
+          for (const t of [0.2, 0.55, 0.85]) { who.current.time = t * d; await frame(); await frame(); grade(nm + '@' + t); }
+          who.frozen = false;
+        }
+        jump = +jump.toFixed(4);
         // a tier change, watched: both tiers are on through the fade, on complementary dither, and it ends clean
         PP.tierAt(who, 1);
         await frame();
@@ -314,11 +395,11 @@ export const GATES = [
         const clauses = {
           tris: near >= 15000 && near <= 20000, draws: I.draws <= 4, face: over6 >= 3, paint: size(skinM.map) === 1024 && !!skinM.normalMap, hairSeparate: !!who.meshes.Hair_L0,
           chains: !!headChain && best >= 0.02 && (heroTravel == null || best >= heroTravel / 10), layers: npc.layers >= 3 && !!atlas.normalMap && !!atlas.roughnessMap,
-          fade: during >= after.draws && after.tier === 1, jump: jump <= 0.02,
+          fade: during >= after.draws && after.tier === 1, jump: jump <= 0.02 && poseRows.length >= 6 + 3 * Math.min(1, stageClips.length),
         };
         const pass = Object.values(clauses).every(Boolean);
         if (!pass) ok = false;
-        rows.push({ id, pass, tris: near, draws: I.draws, tiers: npc.tiers, over6mm: over6, skinMap: size(skinM.map), normalMap: size(skinM.normalMap), layers: npc.layers, procedural: npc.procedural, chains: chainRows, bestTip: best, heroTip: heroTravel, drawsDuringFade: during, fadeUniform: fadeU, drawsAfter: after.draws, silhouetteJumpM: jump, jumpAt, clauses });
+        rows.push({ id, pass, tris: near, draws: I.draws, tiers: npc.tiers, over6mm: over6, skinMap: size(skinM.map), normalMap: size(skinM.normalMap), layers: npc.layers, procedural: npc.procedural, chains: chainRows, bestTip: best, heroTip: heroTravel, drawsDuringFade: during, fadeUniform: fadeU, drawsAfter: after.draws, silhouetteJumpM: jump, jumpAt, posesGraded: poseRows.length, sliceJumpM: sliceMax, poses: poseRows, clauses });
         PP.despawn(who);
         await frames(2);
       }
@@ -669,7 +750,7 @@ export const GATES = [
   },
   {
     id: 'V-npc-builds', kind: 'visual', lane: 'settlements', settle: 700, timeout: 120000,
-    title: 'The adolescent (uniform 0.90) and an adult of the same body: full height, and the neck, head and shoulders close, 1600 x 900',
+    title: 'The adolescent (uniform 0.90) and an adult of the same body: full height, and the neck, head and shoulders close, 1600 x 900. Fix round 1: the adolescent variant is CUT by the row\'s own fallback (bible §8.9): the sheet films archetype 7 as built (a young adult farmhand) and says so',
     reference: REFS,
     setup: `(async () => {${READY}${SHEET}
       PP.autoStage = false;
@@ -691,14 +772,15 @@ export const GATES = [
       const c = overlay(1600, 900), g = c.getContext('2d');
       const full = S.liveView(C, [pl.x + fw[0] * 5.6, y0 + 1.0, pl.z + fw[1] * 5.6], [pl.x, y0 + 0.9, pl.z], { width: 666, height: 1125, fov: 30 });
       paste(g, full, 0, 0, 533, 900);
-      label(g, 'ADOLESCENT 0.90 + ADULT · grass + props hidden', 14, 28);
+      const cut = !a.spec.adolescent;
+      label(g, cut ? 'ADOLESCENT VARIANT CUT (bible §8.9 fallback) · TILLER-FOLLOWER, ADULT ' + a.spec.height.toFixed(2) + ' m + PIT FARMER · grass + props hidden' : 'ADOLESCENT 0.90 + ADULT · grass + props hidden', 14, 28);
       const close = (w, top, x0, nm) => {
         const px = w.group.position.x, pz = w.group.position.z;
         const img = S.liveView(C, [px + fw[0] * 1.15 + rt[0] * 0.32, y0 + top, pz + fw[1] * 1.15 + rt[1] * 0.32], [px, y0 + top - 0.02, pz], { width: 666, height: 1125, fov: 30 });
         paste(g, img, x0, 0, 533, 900);
         label(g, nm, x0 + 14, 28);
       };
-      close(a, 1.42, 533, 'ADOLESCENT: NECK, HEAD, SHOULDERS');
+      close(a, cut ? 1.56 : 1.42, 533, cut ? 'TILLER-FOLLOWER (adult, age ' + a.spec.age + ')' : 'ADOLESCENT: NECK, HEAD, SHOULDERS');
       close(b, 1.58, 1066, 'ADULT');
     })()`,
     criteria: 'Adolescent (uniform 0.90 scale only) and adult variants. Pass: no LBS artefacts at the neck, head or shoulders; the younger read comes from the face (rounder cheeks, shorter nose); otherwise the adolescent variant is cut (fallback text, bible §8.9). R54.',

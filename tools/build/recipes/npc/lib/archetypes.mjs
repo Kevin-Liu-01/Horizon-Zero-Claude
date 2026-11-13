@@ -15,8 +15,8 @@
  *
  * `clips.stage` is what the W1 staging plays where the bible's clip needs a place that stands at W2 (a bench, a rail, a boat).
  *
- * Archetype 7 is an adolescent, so its body is male at the bible's uniform 0.90, and its clothes
- * are loose and full (a long tunic): the younger read comes from the face (bible §6.2).
+ * Archetype 7 was the adolescent (male at the bible's uniform 0.90, the younger read from the face, bible §6.2); fix round 1
+ * cut that variant by bible §8.9's fallback: it is a young adult farmhand now (its row says why).
  */
 export const PAN = { orchil: '#6B3F73', orchilDeep: '#4F2A5C', orchilNight: '#3A2146', linen: '#D9CFBA', linenDirty: '#BFB29B', salt: '#E4E0D6', brass: '#B08A45', carmine: '#A3213A', basalt: '#4A4A50', esparto: '#B59A62', tar: '#17151A', palm: '#C2A566', leather: '#5C3D29', lapilli: '#1C1B1E', wood: '#6E5238', iron: '#3C3A3C' };
 export const HOLDS = { lapilli: '#1C1B1E', rust: '#8E3B23', rustDeep: '#6A2A1A', wool: '#BDB19A', woolDark: '#7C7262', olive: '#5E5B38', leather: '#4B3122', leatherDark: '#2F2018', mica: '#8D8267', carmine: '#A3213A', carmineStain: '#7A1A2C', brass: '#A07A3F', wood: '#5D4530', iron: '#343236', wicker: '#9A7F52', seed: '#9D9A68' };
@@ -32,7 +32,7 @@ export const ARCHETYPES = [
   },
   {
     id: 'guild-matron', n: 2, name: 'Guild Matron', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.64, age: 63, browK: 0.72,
-    tone: '#8E6547', iris: '#3A2A1E', amber: '#6A4A2C', hair: '#5A5652',
+    tone: '#8E6547', iris: '#3A2A1E', amber: '#6A4A2C', hair: '#6A6660', hairPaint: '#3E3B38', greyHair: true,
     face: { noseBridge: [0, -1.0, 1.5], noseTip: [0, -5.0, 6.0], cheek: [7.0, -3.5, 1.0], jaw: [7.0, -1.5, 2.5], chin: [0, -8.0, 0.5], brow: [0, -2.0, -1.5], upperLip: [0, -3.0, -3.5] },
     head: { kind: 'wrap', dye: PAN.orchilDeep, lining: PAN.carmine, seed: 22, bun: true, tail: 'left' },
     outfit: { key: 'matron' },
@@ -57,7 +57,7 @@ export const ARCHETYPES = [
   },
   {
     id: 'lantern-keeper', n: 5, name: 'Lantern-Keeper', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.68, age: 68, browK: 0.68,
-    tone: '#92694B', iris: '#3F3024', amber: '#6F5233', hair: '#4C4945',
+    tone: '#92694B', iris: '#3F3024', amber: '#6F5233', hair: '#77736C', hairPaint: '#45423E', greyHair: true,
     face: { noseBridge: [0, 1.2, 8.0], noseTip: [0, -2.0, 8.5], cheek: [-4.0, 0.5, -3.0], jaw: [-4.0, -3.0, -3.5], chin: [0, -2.0, 8.0], brow: [0, -1.0, 7.5], upperLip: [0, -1.0, -6.0] },
     head: { kind: 'hood', hair: 'grey', dye: PAN.orchilNight, lining: PAN.orchilNight, seed: 55 },
     outfit: { key: 'keeper' },
@@ -69,15 +69,19 @@ export const ARCHETYPES = [
     face: { noseBridge: [0, 1.5, 8.0], noseTip: [0, -4.0, 7.0], cheek: [-3.5, 2.0, -1.5], jaw: [-4.5, -7.0, -1.5], chin: [0, -8.0, 1.5], brow: [0, 2.0, 1.5], upperLip: [0, -2.5, -4.0] },
     head: { kind: 'cap', dye: HOLDS.rust, lining: HOLDS.rustDeep, seed: 66, tail: 'right', goggles: true, beard: 'stubble' },
     outfit: { key: 'farmer' },
-    clips: { idle: ['Farm_PlantSeed', 'Farm_Watering', 'Farm_Harvest'], walk: { clip: 'Walk_Loop', ts: 0.92, lean: 0.06, swing: 0.9 } },
+    clips: { idle: ['Farm_PlantSeed', 'Farm_Watering', 'Farm_Harvest'], walk: { clip: 'Walk_Loop', ts: 0.92, lean: 0.06, swing: 0.9 }, hand: ['Farm_Watering'] },
   },
   {
-    id: 'tiller-follower', n: 7, name: 'Tiller-Follower', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.60, age: 15, adolescent: true, browK: 0.66,
+    // Bible §8.9's fallback, applied (settlements fix round 1): the adolescent variant is CUT. No face field on the UBC male head
+    // read fifteen (V-npc-builds r0: "about 18-20"; a shorter lower face and a smaller nose read as a deformed adult), so the
+    // Tiller-Follower is a young adult farmhand with the seed bag, at full scale, as the fallback beat says ("adult Pit Farmers
+    // with seed bags" trail the Tiller). The build keeps the `adolescent` path for a later body that can carry it.
+    id: 'tiller-follower', n: 7, name: 'Tiller-Follower', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.74, age: 21, browK: 0.78,
     tone: '#83573A', iris: '#2C1F16', amber: '#5A3A1F', hair: '#181210',
     face: { noseBridge: [0, 0, -3.5], noseTip: [0, 5.0, -6.0], cheek: [4.0, 0, 5.2], cheekS: 0.027, jaw: [-5.0, 4.0, 0.5], chin: [0, 4.5, -4.5], brow: [0, 1.5, -4.0], upperLip: [0, 2.5, 2.5] },
     head: { kind: 'band', dye: HOLDS.wool, lining: HOLDS.woolDark, seed: 77, hair: 'crop', tail: 'left', thin: true },
     outfit: { key: 'follower' },
-    clips: { idle: ['Idle_Rail_Loop', 'Farm_PlantSeed', 'Idle_Loop'], stage: ['Farm_PlantSeed', 'Idle_Loop', 'Idle_Talking_Loop'], walk: { clip: 'Jog_Fwd_Loop', ts: 0.72, lean: 0.05, swing: 1, also: 'Walk_Loop' } },
+    clips: { idle: ['Idle_Rail_Loop', 'Farm_PlantSeed', 'Idle_Loop'], stage: ['Farm_PlantSeed', 'Idle_Loop', 'Idle_Talking_Loop'], walk: { clip: 'Walk_Loop', ts: 1.0, lean: 0.04, swing: 1 } },
   },
   {
     id: 'cochineal-picker', n: 8, name: 'Cochineal Picker', faction: 'holds', family: 'Ranger', sex: 'F', height: 1.70, age: 27, browK: 0.82,

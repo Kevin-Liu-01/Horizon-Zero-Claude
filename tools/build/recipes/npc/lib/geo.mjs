@@ -74,7 +74,7 @@ export function soupOf(g, out = []) {
  * meshoptimizer on a bucket: `target` triangles, positions + normal + uv weighted so a UV seam and a
  * crease survive. Vertices are never moved (a collapse), so the result stays on the near mesh.
  */
-export async function simplify(g, target, { err = 0.02, lock = false, prune = false, attr = [1, 1, 1, 1.2, 1.2], vlock = null, abs = false, extraW = 1 } = {}) {
+export async function simplify(g, target, { err = 0.02, lock = false, prune = false, attr = [1, 1, 1, 1.2, 1.2], vlock = null, abs = false, extraW = 1, permissive = false } = {}) {
   await MeshoptSimplifier.ready;
   if (tris(g) <= target) return g;
   const n = g.pos.length / 3;
@@ -90,6 +90,7 @@ export async function simplify(g, target, { err = 0.02, lock = false, prune = fa
   const flags = lock ? ['LockBorder'] : (prune ? ['Prune'] : []);
   // `abs`: `err` is a distance in the mesh's own units, not a share of its extent (a tier's silhouette budget is in metres)
   if (abs) flags.push('ErrorAbsolute');
+  if (permissive) flags.push('Permissive');
   // `vlock(i)`: vertices the simplifier may not move or collapse (a tier's silhouette pieces: tails, aprons, tools)
   let locks = null;
   if (vlock) { locks = new Uint8Array(n); for (let i = 0; i < n; i++) locks[i] = vlock(i) ? 1 : 0; }

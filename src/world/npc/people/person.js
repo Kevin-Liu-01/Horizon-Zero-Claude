@@ -234,7 +234,9 @@ export class Person {
     const a = this.pose.current;
     const t0 = a ? a.time : 0;
     this.pose.step = step;
-    this.pose.update();
+    // hidden (past 90 m): the clock and the walk go on, the pose is not evaluated and no overlay is written
+    const shown = tier >= 0;
+    if (shown) this.pose.update(); else this.pose.advance();
     this.mixerClock += step;
     if (this.walking && a) {
       const g = this.walking.gait;
@@ -281,8 +283,9 @@ export class Person {
         }
       }
     }
+    if (!shown) return false;
     this._overlay();
-    if (tier <= 1 && tier >= 0) this._carry();
+    if (tier <= 1) this._carry();
     if (tier === 0) this._look();
     return true;
   }
@@ -367,6 +370,8 @@ export class Person {
       this.fromTier = from;
       this.tier = tier;
       this.fadeT = from === -1 || tier === -1 ? 0 : FADE_T;
+      // a person coming into view is posed on this tick, not at the next 15-30 Hz step (a hidden one was not evaluated)
+      if (from === -1) this.mixAcc = 1;
       this._lv = 0;   // a new fade starts its pool at the first level, whatever the last fade ended on
       if (from === -1 || tier === -1) this.fromTier = -1;
       for (let i = 0; i < 3; i++) {
