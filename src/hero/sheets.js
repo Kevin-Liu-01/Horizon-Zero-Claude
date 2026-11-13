@@ -499,13 +499,13 @@ export async function panCloseupOverlay(ctx, refs = []) {
   label(g, 'PAN WHITES I — close-up, in-engine material, neutral light (left) beside the references (right)', 20, 28, 16);
   const shots = [
     ['torso, 1.1 m', { pos: [0.34, 1.32, 0.92], target: [0.0, 1.14, 0], fov: 34 }, 0, 40, 400, 540],
-    ['neck: bound keyhole, linen collar, tie', { pos: [0.1, 1.47, 0.5], target: [0.0, 1.41, 0.04], fov: 30 }, 402, 40, 296, 268],
+    ['neck: high collar, harness, compass boss', { pos: [0.12, 1.42, 0.52], target: [0.0, 1.36, 0.06], fov: 30 }, 402, 40, 296, 268],
     ['girdle, buckle, keeper, tongue', { pos: [0.14, 1.12, 0.56], target: [-0.01, 1.06, 0.08], fov: 30 }, 402, 312, 296, 268],
-    ['sleeve, armhole, cuff', { pos: [-0.66, 1.34, 0.5], target: [-0.2, 1.2, 0.0], fov: 26 }, 700, 40, 296, 268],
+    ['armhole binding, band, wraps, bracer', { pos: [-0.66, 1.3, 0.5], target: [-0.2, 1.18, 0.0], fov: 28 }, 700, 40, 296, 268],
     // (Nov 6: the knot is tied behind the left hip now, clear of the bow hand; fix round 1: on the band, at 1.07)
     ['sash knot on the band, tails', { pos: [0.78, 1.1, -0.72], target: [0.12, 0.97, -0.17], fov: 26 }, 700, 312, 296, 268],
-    ['hem, under-tunic, trousers', { pos: [0.3, 0.72, 0.72], target: [0.04, 0.68, 0.04], fov: 34 }, 998, 40, 296, 268],
-    ['shin wraps, sole', { pos: [0.34, 0.3, 0.66], target: [0.1, 0.2, 0.02], fov: 36 }, 998, 312, 296, 268],
+    ['peplum hem, fitted trousers', { pos: [0.3, 0.92, 0.72], target: [0.04, 0.88, 0.04], fov: 34 }, 998, 40, 296, 268],
+    ['laced boot top, plaited sole', { pos: [0.34, 0.3, 0.66], target: [0.1, 0.2, 0.02], fov: 36 }, 998, 312, 296, 268],
     ['back, salt pouch', { pos: [-0.36, 1.28, -1.08], target: [0, 1.12, 0], fov: 36 }, 1296, 40, 300, 540],
   ];
   // the outfit, not the gear: the kit collapses for these renders (one synchronous pass, no frame runs)
@@ -646,8 +646,11 @@ export async function gearInHandOverlay(ctx) {
   const tgtD = toW(0, 1.28, 0.22);
   live(toW(-2.1, 1.36, 0.28), tgtD, 0, 30, 620, 860, 34);
   live(toW(-1.05, 1.42, 1.5), tgtD, 620, 30, 490, 430, 34);
-  live(toW(0.1, 1.5, -1.6), toW(0, 1.2, 0.05), 620, 460, 490, 430, 34);
-  label(g, 'full draw: from her right, front-right, behind', 10, 20, 13, '#efe8da');
+  // (W1 exit, judges: "in the behind panel the stowed lance's shaft crosses her head and the draw sleeve is a slab at the
+  // near plane": from behind her LEFT shoulder and above it, the lance's diagonal (left hip to right shoulder) falls to
+  // the frame's right, her head, the draw hand at the cheek and the raised elbow stand clear of it)
+  live(toW(0.85, 1.78, -1.45), toW(-0.02, 1.36, 0.12), 620, 460, 490, 430, 34);
+  label(g, 'full draw: from her right, front-right, behind-left', 10, 20, 13, '#efe8da');
   E.timeScale = ts0;
   ctx.input.mouse.buttons = 0; await wait(400);
   delete cmb._updateAimPoint;
@@ -664,6 +667,83 @@ export async function gearInHandOverlay(ctx) {
   label(g, 'the lance in her hands, ready', 1120, 20, 13, '#efe8da');
   E.timeScale = ts0;
   void an;
+  return c.toDataURL('image/png');
+}
+
+/**
+ * V-starter-vs-board (ROUND5-LOOK C-06): the Starter in the world's light at 2 m from the front, 3/4 and back, and from
+ * the chase camera, at DAY (12:30) and at 18:45. The board panels are read by the judge from outside the repo (R66 a);
+ * the stored silhouette sheet sits beside the frames.
+ */
+export async function starterBoardOverlay(ctx, refFile = null) {
+  const p = ctx.player, E = ctx.engine, T3 = p.position.constructor;
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  const env = ctx.environment || ctx.env;
+  const W = 1600, H = 900;
+  const { c, g } = overlay(W, H, '#14120f');
+  const toW = (x, y, z) => p.model.localToWorld(new T3(x, y, z));
+  const h0 = env?.time;
+  const rows = [['DAY 12:30', 12.5, 30], ['18:45', 18.75, 465]];
+  await poseIdle(ctx, 0.6);
+  for (const [name, hour, y] of rows) {
+    env?.setTime?.(hour);
+    for (let i = 0; i < 8; i++) await frame();
+    const ts0 = E.timeScale; E.timeScale = 0; await frame();
+    const views = [['front', [0, 1.2, 2.0]], ['3/4', [1.45, 1.25, 1.45]], ['back', [-0.2, 1.25, -2.0]], ['chase', [0.55, 1.75, -2.8]]];
+    views.forEach(([vn, at], i) => {
+      const img = liveView(ctx, toW(...at).toArray(), toW(0, vn === 'chase' ? 1.25 : 0.98, 0).toArray(), { width: 330, height: 420, fov: vn === 'chase' ? 50 : 36 });
+      g.drawImage(canvasOf(img), 8 + i * 334, y, 330, 420);
+      label(g, `${name} · ${vn}`, 14 + i * 334, y + 16, 12, '#efe8da');
+    });
+    E.timeScale = ts0;
+  }
+  if (env && h0 != null) env.setTime(h0);
+  if (refFile) { try { const i = await imgOf(`/${refFile}`); fitInto(g, i, 1346, 30, 246, 855, 0.5); } catch { label(g, `missing ${refFile}`, 1350, 60, 12, '#efe8da'); } }
+  label(g, 'C-06 Starter: sleeveless top, crossed harness + boss, wraps under bracers, sash panels, dark trousers, laced boots', 10, 892, 12, '#efe8da');
+  return c.toDataURL('image/png');
+}
+
+/**
+ * V-weapon-keyart (ROUND5-LOOK C-08): the Sabina at full draw (V24's staging) and the kit stowed, at 18:45, with close
+ * crops of the reflexed tip and the lance's blade.
+ */
+export async function weaponKeyartOverlay(ctx, refFile = null) {
+  const p = ctx.player, E = ctx.engine, cmb = ctx.combat, T3 = p.position.constructor;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  const env = ctx.environment || ctx.env;
+  const W = 1600, H = 900;
+  const { c, g } = overlay(W, H, '#14120f');
+  const toW = (x, y, z) => p.model.localToWorld(new T3(x, y, z));
+  const h0 = env?.time;
+  env?.setTime?.(18.75);
+  await poseIdle(ctx, 0.6);
+  const ts0 = E.timeScale;
+  // stowed, from behind-left and the side
+  E.timeScale = 0; await frame();
+  g.drawImage(canvasOf(liveView(ctx, toW(1.2, 1.35, -1.6).toArray(), toW(0, 1.05, -0.1).toArray(), { width: 400, height: 430, fov: 40 })), 0, 30, 400, 430);
+  label(g, '18:45 · stowed: lance, bow, quiver', 8, 46, 12, '#efe8da');
+  g.drawImage(canvasOf(liveView(ctx, toW(0.62, 1.62, -0.55).toArray(), toW(0.05, 1.5, -0.22).toArray(), { width: 400, height: 430, fov: 30 })), 0, 465, 400, 430);
+  label(g, 'the blade on her back', 8, 481, 12, '#efe8da');
+  E.timeScale = ts0;
+  // full draw
+  ctx.input.mouse.buttons |= 4; await wait(800);
+  ctx.input.mouse.buttons |= 1; await wait(2200);
+  const upd = cmb._updateAimPoint; cmb._updateAimPoint = () => {};
+  E.timeScale = 0; await frame(); await frame();
+  g.drawImage(canvasOf(liveView(ctx, toW(-1.9, 1.4, 0.9).toArray(), toW(0, 1.3, 0.25).toArray(), { width: 560, height: 865, fov: 36 })), 402, 30, 560, 865);
+  label(g, '18:45 · full draw (V24)', 410, 46, 12, '#efe8da');
+  const tip = new T3(); cmb.bow?.model?.localToWorld?.(tip.set(0, 0.74, -0.06));
+  g.drawImage(canvasOf(liveView(ctx, [tip.x - 0.35, tip.y + 0.05, tip.z + 0.25], tip.toArray(), { width: 300, height: 430, fov: 30 })), 964, 30, 300, 430);
+  label(g, 'reflexed tip, horn nock, carmine', 970, 46, 12, '#efe8da');
+  const hand = new T3(); cmb.bow?.model?.localToWorld?.(hand.set(0, 0.0, 0.0));
+  g.drawImage(canvasOf(liveView(ctx, [hand.x - 0.3, hand.y + 0.12, hand.z + 0.3], hand.toArray(), { width: 300, height: 430, fov: 30 })), 964, 465, 300, 430);
+  label(g, 'grip wrap, the arrow, fletching', 970, 481, 12, '#efe8da');
+  E.timeScale = ts0;
+  ctx.input.mouse.buttons = 0; await wait(400);
+  cmb._updateAimPoint = upd;
+  if (env && h0 != null) env.setTime(h0);
+  if (refFile) { try { const i = await imgOf(`/${refFile}`); fitInto(g, i, 1270, 30, 326, 865, 0.5); } catch { label(g, `missing ${refFile}`, 1276, 60, 12, '#efe8da'); } }
   return c.toDataURL('image/png');
 }
 

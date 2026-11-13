@@ -75,7 +75,7 @@ export const COL = {
   leatherBrown: hex('#5A3F2C'), palm: hex('#B7A06A'), celadon: hex('#8FB8A4'), salt: hex('#EDEAE2'),
   // C-06 (ROUND5-LOOK): the wraps' orchil a shade redder than the top; the sash's rose-orchil (>= 25 dE2000 from the
   // retired carmine #A3213A); cast bronze; tar-blackened esparto (linear 0.06-0.10); the fitted trousers' dark basalt
-  wrapV: hex('#7A4580'), sashRose: hex('#9A6496'), bronze: hex('#8C6A3E'), tar: hex('#514941'), basaltDark: hex('#3E3D47'),
+  wrapV: hex('#7A4580'), sashRose: hex('#9A7AB8'), bronze: hex('#8C6A3E'), tar: hex('#514941'), basaltDark: hex('#3E3D47'),
 };
 
 /** The skeleton + grafted, cut pieces (shared by build() and panBindTriangles()). */
@@ -108,7 +108,9 @@ async function assemble() {
 export async function panBindTriangles() {
   const { doc, nodes } = await assemble();
   const out = [];
-  for (const n of nodes) for (const prim of n.getMesh().listPrimitives()) {
+  // (C-06: the Starter is sleeveless: the bit brea.mjs bakes from this must not cull her arms. The armory sets carry their
+  // own cover of the body, `r5Outfit.hide`; this keeps the fallback bit right for the default set)
+  for (const n of nodes) for (const prim of (n.getName() === 'sleeves' ? [] : n.getMesh().listPrimitives())) {
     const P = prim.getAttribute('POSITION'), idx = prim.getIndices().getArray(), p = [0, 0, 0];
     for (let t = 0; t < idx.length; t++) { P.getElement(idx[t], p); out.push(p[0], p[1], p[2]); }
   }
@@ -947,7 +949,7 @@ export async function panBase(opt = {}) {
   // (armory W1: its top takes the girdle's skin, its foot the skirt's: at full draw the girdle rode up with her
   // trunk and the 4 mm they shared opened to a band of skin; moved whole with the girdle, the skirt's top stood
   // through its foot instead)
-  const sashBand = beltRing(mk('sashband', { trim: true }), wornField, skinOf, { skinY: [BELT_Y - 0.075, BELT_Y + 0.008], y: BELT_Y - 0.043, h: 0.026, off: 0.0016, cols: 26, rect: trim.rect('sash'), thick: 0.003, lip: 0.002, tilt: 0.003, dy: 0.02 });
+  const sashBand = beltRing(mk('sashband', { trim: true }), wornField, skinOf, { skinY: [BELT_Y - 0.055, BELT_Y], skinIn: 0.025, y: BELT_Y - 0.043, h: 0.026, off: 0.0016, cols: 26, rect: trim.rect('sash'), thick: 0.003, lip: 0.002, tilt: 0.003, dy: 0.02 });
   // the buckle stands on the belt, front and a touch to her left, rigid on spine_01
   const fr = new Field([girdle], 0.04).radial(beltY, Math.PI / 2 - 0.12, 0, -0.02, 0.03, 0.14) + 0.0035;
   const bk = [Math.cos(Math.PI / 2 - 0.12) * fr, beltY, -0.02 + Math.sin(Math.PI / 2 - 0.12) * fr];
@@ -988,11 +990,19 @@ export async function panBase(opt = {}) {
       // (over the shoulder nearer the neck than the sling ran: an arm swung across her in the lance's strike lies on the
       // shoulder's point, and a strap there went into it)
       const inShoulder = ([x, y, z]) => [x * sx * (y > 1.38 ? 0.78 : 1), y, z];
-      const fr = slingCtl.map(inShoulder), bk = slingBack.map(inShoulder);
+      // (each end runs on down under the girdle, as a harness's does: ended in the air over the belt it read as a cut stub)
+      const fr = [...slingCtl, [0.13, 1.105, 0.058]].map(inShoulder), bk = [...slingBack, [0.13, 1.1, -0.085]].map(inShoulder);
       // (the second strap rides 3 mm over the first where they cross, so the two never fight for the same surface)
-      strapAlong(harness, clothField, clothField, [...fr.slice().reverse(), ...bk.slice(1)], { width: HW, margin: sx > 0 ? 0.0056 : 0.0088, segs: 30, cols: 2, rect: trim.rect('strap'), tile: 0.42, crown: 0.0012 });
+      strapAlong(harness, clothField, clothField, [...fr.slice().reverse(), ...bk.slice(1)], { width: HW, margin: sx > 0 ? 0.0068 : 0.0098, segs: 30, cols: 2, rect: trim.rect('strap'), tile: 0.42, crown: 0.0012 });
     }
     orientOut(harness, 0, -0.02, 1.2);
+    // (over the shoulder blades the back's modelled pull folds stand up to 9 mm: there the straps lie 2.5 mm higher, or a
+    // fold's crest came through the leather)
+    for (let i = 0; i < harness.pos.length / 3; i++) {
+      const k = 0.0025 * sstep(-0.04, -0.09, harness.pos[i * 3 + 2]) * sstep(1.2, 1.3, harness.pos[i * 3 + 1]);
+      if (k <= 0) continue;
+      harness.pos[i * 3] += harness.nrm[i * 3] * k; harness.pos[i * 3 + 1] += harness.nrm[i * 3 + 1] * k; harness.pos[i * 3 + 2] += harness.nrm[i * 3 + 2] * k;
+    }
   } else {
     // (over the shoulder nearer the neck too, on the sleeveless cut: the lance's strike lays the arm on the shoulder's point)
     const inS = ([x, y, z]) => [x * (!sleevesOn && y > 1.38 ? 0.8 : 1), y, z];
@@ -1185,13 +1195,13 @@ export async function panBase(opt = {}) {
         for (const dir of [1, -1]) {
           const pts = [];
           for (let m = 0; m <= 2; m++) { const f = m / 2; pts.push(at(mix(ys[k], ys[k + 1], f), thF + dir * mix(-half, half, f))); }
-          cordInto(straps, pts, 0.0017, trim.rect('rope'), skinOf, 3);
+          cordInto(straps, pts, 0.0015, trim.rect('strapB'), skinOf, 3);
         }
       }
       // the bow at the top, two short ends
       const top = at(0.448, thF);
-      cordInto(straps, [top, V.add(top, [0.012 * side, -0.004, 0.006]), V.add(top, [0.016 * side, -0.03, 0.008])], 0.0016, trim.rect('rope'), skinOf, 3);
-      cordInto(straps, [top, V.add(top, [-0.01 * side, -0.003, 0.006]), V.add(top, [-0.012 * side, -0.024, 0.008])], 0.0016, trim.rect('rope'), skinOf, 3);
+      cordInto(straps, [top, V.add(top, [0.01 * side, -0.004, 0.004]), V.add(top, [0.012 * side, -0.026, 0.005])], 0.0014, trim.rect('strapB'), skinOf, 3);
+      cordInto(straps, [top, V.add(top, [-0.008 * side, -0.003, 0.004]), V.add(top, [-0.01 * side, -0.02, 0.005])], 0.0014, trim.rect('strapB'), skinOf, 3);
     }
   }
   recomputeNormals(straps);

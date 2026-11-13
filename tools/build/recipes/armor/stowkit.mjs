@@ -182,7 +182,7 @@ function bracerGeo(cell, r = 0.036, len = 0.17, skinR = null) {
   return g;
 }
 
-const CORD_R = 0.0022;
+const CORD_R = 0.0019;   // (W1 exit: a finer cord, round in 8 sides)
 /**
  * A cord through the points P (armory W1: the alidade's neck cord read a tier below the new wrap; it was a square
  * tube on a polygon). The path is a Catmull-Rom curve through P (`per` samples a span), the section a hexagon, and
@@ -369,10 +369,10 @@ export async function build({ out = ROOT } = {}) {
     const loop = [[0, 1.517, -0.121], [0.060, 1.512, -0.098], [0.080, 1.503, -0.042], [0.062, 1.490, 0.012], [0.030, 1.470, 0.052], R,
       [-0.030, 1.470, 0.052], [-0.062, 1.490, 0.012], [-0.080, 1.503, -0.042], [-0.060, 1.512, -0.098], [0, 1.517, -0.121]];
     const loopSkin = loop.map((q) => { const w = Math.max(0, Math.min(1, (1.500 - q[1]) / 0.045)); return [['neck_01', 1 - w], ['spine_03', w]]; });
-    pieces.push({ ...cordGeo(loop, loopSkin, CORD_R, cell, 4, 6), bit: PIECE.alidade });
+    pieces.push({ ...cordGeo(loop, loopSkin, CORD_R, cell, 4, 8), bit: PIECE.alidade });
     const hang = [R, M, top];
     const hangSkin = [[['dyn_alidadeCord_01', 1]], [['dyn_alidadeCord_01', 0.5], ['dyn_alidadeCord_02', 0.5]], [['dyn_alidadeCord_02', 1]]];
-    pieces.push({ ...cordGeo(hang, hangSkin, CORD_R, cell, 4, 6), bit: PIECE.alidade });
+    pieces.push({ ...cordGeo(hang, hangSkin, CORD_R, cell, 4, 8), bit: PIECE.alidade });
     stowInfo.alidadeCord = { loop: loop.length, hang: hang.length, r: CORD_R };
   }
   const all = G();

@@ -94,11 +94,12 @@ export const addPieces = async (base) => {
         const inner = [], outer = [];
         for (let c = 0; c <= COLS; c++) {
           const a = Math.PI / 2 - 1.2 + 2.4 * (c / COLS);
-          inner.push([cx + Math.cos(a) * 0.084, 0.448, cz + Math.sin(a) * 0.1]);
+          // (W1 exit: up to the knee, the board's "bronze knee and shin plates": the plate's top flares over the kneecap)
+          inner.push([cx + Math.cos(a) * 0.092, 0.488, cz + Math.sin(a) * 0.112]);
           outer.push([cx + Math.cos(a) * 0.064, 0.17, cz + Math.sin(a) * 0.09]);
         }
         drapeInto(guards, bootF, inner, outer, {
-          rows: 3, margin: 0.022, marginAt: (t) => mix(0.03, 0.019, t),
+          rows: 3, margin: 0.022, marginAt: (t) => mix(0.036, 0.019, t),
           uvOf: (t, c) => [rg[0] + rg[2] * c, rg[1] + rg[3] * t],
           skinOf: rigid(J(side > 0 ? 'calf_l' : 'calf_r')),
         });

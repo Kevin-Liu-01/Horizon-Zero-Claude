@@ -1141,7 +1141,10 @@ export class Combat {
       let run = 0, h = 0;
       if (pl) { h = +pl.heading || 0; run = pl.moveSpeed / 6; if (!(run > 0)) run = 0; else if (run > 1) run = 1; }
       // the Euler's own fields (its `set` takes the doubles as arguments)
-      _carry._x = 0.92; _carry._y = h + 0.12 + 0.18 * run; _carry._z = 0.16 - 0.32 * run; _carry._order = 'YXZ';
+      // (W1 exit, judges: "the carried bow's limb runs through the skirt", the held clause -1.6 to -3.9 cm at a sprint: the
+      // stave's lower limb crossed in behind her left hip as the roll went from +0.16 to -0.16 with speed. It keeps its lean
+      // out from her hip at every speed now, +0.2 standing to +0.1 at a sprint)
+      _carry._x = 0.92; _carry._y = h + 0.12 + 0.18 * run; _carry._z = 0.2 - 0.1 * run; _carry._order = 'YXZ';
       _qDes.setFromEuler(_carry);
     }
     _wq.invert();

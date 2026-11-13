@@ -202,9 +202,12 @@ export function weaponTrim() {
   // the plain 2-texel-safe swatches other pieces want
   // three plies of hemp, twisted: diagonal strands round the cord (u around, v along, mirrored every 9 mm)
   T.cell('cord', 32, 32, (t, o) => {
+    // (W1 exit, R64 a: "the alidade cord reads as a thick white low-poly V"): a three-ply hemp cord, sun-browned, the
+    // plies' twist cut deep (a dark groove between round crowns) so it reads as cord, not a tube, at 0.8 m
     const ply = ((t.u * 3 + t.v * 1.6) % 1 + 1) % 1, crown = Math.sin(Math.PI * ply);
-    put(o, [200, 180, 142], (0.66 + 0.4 * crown) * (0.9 + 0.2 * noise3(t.ax * 0.5, t.ay * 0.5, 9.1)));
-    o.h = 0.0004 * crown; o.rough = 0.86; o.det = 0;
+    const groove = sstep(0.16, 0.0, Math.min(ply, 1 - ply));
+    put(o, [150, 124, 88], (0.58 + 0.5 * crown) * (1 - 0.35 * groove) * (0.9 + 0.2 * noise3(t.ax * 0.5, t.ay * 0.5, 9.1)));
+    o.h = 0.0005 * crown; o.rough = 0.9; o.det = 0;
   });
   return T;
 }

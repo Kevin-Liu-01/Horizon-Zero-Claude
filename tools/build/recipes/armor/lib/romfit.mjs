@@ -150,10 +150,10 @@ function edgesOf(part, weld) {
 export function romFit(parts, base, {
   target = 1.46, targetShort = 1.34, shortL = 0.012, relaxIts = 14,
   easeIts = 12, deepTo = -0.0022, slack = 0.0014, radius = 0.032, maxPush = 0.014, giveUp = 0.016,
-  skip = new Set(['hat']), noEase = new Set(), stiff = new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes']), rom = null,
+  skip = new Set(['hat']), noEase = new Set(), stiff = new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes', 'boss']), rom = null,
   easeTags = /^(idle|sprint|jog|draw|light|heavy)/, smoothPasses = 2,
   capAt = null,
-  over = { sling: ['smock', 'binds'], slider: ['smock', 'binds'], sashband: ['skirt'], girdle: ['smock', 'skirt'], straps: ['boots'], tie: ['underyoke'], sash: ['skirt'], capelet: ['smock', 'sling', 'binds'], ropebelt: ['smock', 'skirt', 'wrap', 'sashband'] },
+  over = { sling: ['smock', 'binds'], slider: ['smock', 'binds', 'harness'], sashband: ['skirt', 'peplum'], girdle: ['smock', 'skirt', 'peplum', 'harness'], straps: ['boots'], tie: ['underyoke'], sash: ['skirt', 'peplum'], capelet: ['smock', 'sling', 'binds', 'harness'], ropebelt: ['smock', 'skirt', 'wrap', 'sashband'], harness: ['smock', 'binds'], boss: ['harness'], armband: [], bracer: ['armwrap'] },
 } = {}) {
   const R = rom || ROM();
   const skin = base.doc.getRoot().listSkins()[0];
@@ -411,5 +411,8 @@ export function romFit(parts, base, {
     if (stiffOne && big) for (let i = 0; i < n; i++) { p.pos[i * 3] += mx; p.pos[i * 3 + 1] += my; p.pos[i * 3 + 2] += mz; }
   }
   log.push(['lifted', lifted]);
+  // (fix round 1, W1 exit: the lift moves a layer's vertices one by one after the last relax; a 2 mm edge it lengthened
+  // and whose ends ride slightly different bones read 2.1 x at a crouched draw. One more short relax after it)
+  if (lifted) log.push(['relax', relax(6)]);
   return log;
 }

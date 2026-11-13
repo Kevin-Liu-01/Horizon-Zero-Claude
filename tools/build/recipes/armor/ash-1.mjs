@@ -8,7 +8,7 @@
  */
 import path from 'node:path';
 import { ROOT, MCO_DIR, hex, srcRoot } from '../lib/face.mjs';
-import { KEEP_TORSO, cloth, panBase, panLayout, PAN_FIT, PAN_SET, seam, salted } from '../outfit-pan-1.mjs';
+import { KEEP_TORSO, cloth, panBase, panFinish, panLayout, PAN_FIT, PAN_SET, seam, salted } from '../outfit-pan-1.mjs';
 import { Trim, fbm, loadRaw, paintAtlas } from './lib/atlas.mjs';
 import { orientOut, ring, strapAlong, TAU } from './lib/garment.mjs';
 import { tubeInto } from './lib/smock.mjs';
@@ -200,9 +200,11 @@ export async function ashParts() {
     // (its own soft drape: Pan I's modelled folds are cut for Pan's 34 columns and Pan's under-tunic)
     // (W1 exit: it stands further off her thighs at the front, where a sprint lifts them into it)
     skirt: { yHem: 0.60, rows: 8, flare: 0.06, ripA: 0.006, colsPer: 16, fold: null, easeFront: 0.045 },
-    skirtHem: (th, y0) => y0 + 0.085 * (1 - Math.cos(th - 0.2)) * 0.9,
+    skirtHem: (th, y0) => y0 + 0.12 * (1 - Math.cos(th - 0.2)) * 0.9,
     // (its back cut 5 cm higher: the calf comes up behind the knee at a sprint)
-    under: { yTop: 0.76, yHem: 0.545, off: -0.012, flare: 0.05, floorY: 0.70, hem: (th, y0) => y0 + 0.09 * Math.max(0, -Math.sin(th)) ** 1.2 + 0.008 * Math.cos(3 * th) },
+    // (W1 exit, judges: "in black fill Ash I is Pan I's outline in dark colours"): the rust layer follows the wrap's
+    // diagonal 6 cm under it, so the whole outline slants, knee-long at her left, mid-thigh at her right
+    under: { yTop: 0.80, yHem: 0.545, off: -0.019, flare: 0.032, floorY: 0.70, hem: (th, y0) => y0 + 0.13 * (1 - Math.cos(th - 0.2)) * 0.9 + 0.05 * Math.max(0, -Math.sin(th)) ** 1.2 + 0.008 * Math.cos(3 * th) },
   });
   const { doc, parts, W, H, bodyPart, skinOf, clothField } = base;
   const added = [];
@@ -319,10 +321,13 @@ export async function build({ out = ROOT } = {}) {
   // with a capped push"): a second fit on the cowl alone, up to 2 cm, in a 6 cm field smoothed four times, so the
   // room a drawn arm's shoulder asks for spreads along the roll instead of standing as a lump over one shoulder
   romFit(all.filter((p) => p.slot === 'cowl'), base, { ...PAN_FIT, maxPush: COWL_FIT.maxPush, giveUp: COWL_FIT.giveUp, radius: COWL_FIT.radius, smoothPasses: COWL_FIT.smoothPasses });
+  // (W1 exit: the set's own cover of Brea's body, as every Pan rung's: its sleeveless cut bares the arms the body's hide
+  // bit would cull)
+  const hide = panFinish(base, all);
   outfitDoc(doc, all, { name: 'Outfit_Ash_1', matName: 'MI_Ash_1', tex, texPrefix: 'ash', extra: { _AO: ['SCALAR', bakeVertexAO(all, { body: base.bodyPart })] } });
   for (const m of doc.getRoot().listMeshes()) for (const pr of m.listPrimitives()) pr.getAttribute('_AO')?.setNormalized(true);
   return writeOutfit(doc, path.join(out, OUTPUTS[0]), {
     recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',
-    r5Outfit: { ...PAN_SET, set: 'ash', variant: 'ash-1', name: 'Ash Wraps I — Pit Wraps', density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), pieces: ['wrap skirt', 'rust under-layer', 'cowl', 'chest wraps', 'rope belt', 'puttees'], hasAo: true },
+    r5Outfit: { ...PAN_SET, set: 'ash', variant: 'ash-1', name: 'Ash Wraps I — Pit Wraps', density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), pieces: ['wrap skirt', 'rust under-layer', 'cowl', 'chest wraps', 'rope belt', 'puttees', 'forearm wraps', 'bracer'], hasAo: true, cut: 'long', hide: { count: hide.count, tris: hide.tris, covered: hide.covered, rle: hide.rle } },
   });
 }

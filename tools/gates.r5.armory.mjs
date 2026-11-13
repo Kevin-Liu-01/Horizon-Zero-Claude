@@ -64,7 +64,7 @@ const asArmory = (id, extra = {}) => {
 /* ---------------------------------------------------------------- A-gear-draws */
 const A_GEAR_DRAWS = {
   id: 'A-gear-draws', kind: 'action', lane: LANE, timeout: 180000, settle: 400,
-  title: 'Any loadout: <= 5 main draws (skin, hair, merged outfit, stow kit, held weapon), <= 2 shadow casters, every §4.1 tri cap and <= 40 k total; drawing a weapon collapses its stowed copy with 0 extra draws (R38 held-weapon clause: Sabina in hand)',
+  title: 'Any loadout: <= 5 main draws (skin, hair, merged outfit, stow kit, held weapon), <= 2 shadow casters, every §4.1 tri cap as R66 f shifts them (body 11.5 k, outfit 16.0 k, stow 9.0 k, held 3.0 k) and <= 40 k total; drawing a weapon collapses its stowed copy with 0 extra draws (R38 held-weapon clause: Sabina in hand)',
   setup: `__CTX__.input.enabled = true;`,
   assert: placed(['openGround'], `(async () => {${PRE}
     freeze(); standAt(p, 'openGround'); await wait(300);
@@ -77,7 +77,8 @@ const A_GEAR_DRAWS = {
       const held = J.meshes.filter((m) => m.part === 'held');
       const rest = J.meshes.filter((m) => !body.includes(m) && !outfit.includes(m) && !kit.includes(m) && !held.includes(m));
       const r = { id, tag, draws: J.draws, casters: J.casters, tris: J.tris, body: tri(body), outfit: tri(outfit), kit: tri(kit), held: tri(held), heldMeshes: held.length, kitHidden: H.kit.hidden, stray: rest.map((m) => m.part + ':' + m.name).slice(0, 6) };
-      r.ok = r.draws <= 5 && r.casters <= 2 && r.tris <= 40000 && r.body <= 10000 && r.outfit <= 17500 && r.kit <= 9000 && r.held <= 3000 && r.heldMeshes <= 1 && !rest.length;
+      // (R66 f's cap shift, binding from the W1 exit: body <= 11.5 k, outfit <= 16.0 k, stow <= 9.0 k, held <= 3.0 k)
+      r.ok = r.draws <= 5 && r.casters <= 2 && r.tris <= 40000 && r.body <= 11500 && r.outfit <= 16000 && r.kit <= 9000 && r.held <= 3000 && r.heldMeshes <= 1 && !rest.length;
       rows.push(r);
       return r;
     };
@@ -535,6 +536,278 @@ const A_BUDGET = {
   },
 };
 
+/* ------------------------------------------------- W1 exit: C-06 and C-08 (ROUND5-LOOK §7) */
+const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+/** CIEDE2000 between two sRGB 0-255 triples. */
+function dE2000(c1, c2) {
+  const lab = ([r, g, b]) => {
+    const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const R = lin(r), G = lin(g), B = lin(b);
+    const X = (0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047, Y = 0.2126 * R + 0.7152 * G + 0.0722 * B, Z = (0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883;
+    const f = (t) => (t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 * t + 16) / 116);
+    return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+  };
+  const [L1, a1, b1] = lab(c1), [L2, a2, b2] = lab(c2);
+  const C1 = Math.hypot(a1, b1), C2 = Math.hypot(a2, b2), Cm = (C1 + C2) / 2, G = 0.5 * (1 - Math.sqrt(Cm ** 7 / (Cm ** 7 + 25 ** 7)));
+  const a1p = a1 * (1 + G), a2p = a2 * (1 + G), C1p = Math.hypot(a1p, b1), C2p = Math.hypot(a2p, b2);
+  const h = (b, a) => { const v = Math.atan2(b, a) * 180 / Math.PI; return v < 0 ? v + 360 : v; };
+  const h1 = h(b1, a1p), h2 = h(b2, a2p);
+  const dL = L2 - L1, dC = C2p - C1p;
+  let dh = h2 - h1; if (C1p * C2p === 0) dh = 0; else if (dh > 180) dh -= 360; else if (dh < -180) dh += 360;
+  const dH = 2 * Math.sqrt(C1p * C2p) * Math.sin(dh * Math.PI / 360);
+  const Lm = (L1 + L2) / 2, Cmp = (C1p + C2p) / 2;
+  let hm = h1 + h2; if (C1p * C2p !== 0) { if (Math.abs(h1 - h2) > 180) hm += h1 + h2 < 360 ? 360 : -360; hm /= 2; }
+  const T = 1 - 0.17 * Math.cos((hm - 30) * Math.PI / 180) + 0.24 * Math.cos(2 * hm * Math.PI / 180) + 0.32 * Math.cos((3 * hm + 6) * Math.PI / 180) - 0.2 * Math.cos((4 * hm - 63) * Math.PI / 180);
+  const SL = 1 + 0.015 * (Lm - 50) ** 2 / Math.sqrt(20 + (Lm - 50) ** 2), SC = 1 + 0.045 * Cmp, SH = 1 + 0.015 * Cmp * T;
+  const RT = -2 * Math.sqrt(Cmp ** 7 / (Cmp ** 7 + 25 ** 7)) * Math.sin(60 * Math.exp(-(((hm - 275) / 25) ** 2)) * Math.PI / 180);
+  return Math.sqrt((dL / SL) ** 2 + (dC / SC) ** 2 + (dH / SH) ** 2 + RT * (dC / SC) * (dH / SH));
+}
+const hexRGB = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+/** A GLB's skinned mesh + its base colour texture decoded (node; a runner's reading of the shipped file). */
+async function glbRead(rel) {
+  const { io } = await import(path.join(ROOT, 'tools/build/recipes/lib/face.mjs'));
+  const { createRequire } = await import('node:module');
+  const sharp = createRequire(path.join(ROOT, 'package.json'))('sharp');
+  const doc = await (await io()).read(path.join(ROOT, rel));
+  const node = doc.getRoot().listNodes().find((n) => n.getMesh());
+  const prim = node.getMesh().listPrimitives()[0];
+  let tex = null;
+  const t = prim.getMaterial()?.getBaseColorTexture();
+  if (t) { const { data, info } = await sharp(Buffer.from(t.getImage())).removeAlpha().raw().toBuffer({ resolveWithObject: true }); tex = { data, w: info.width, h: info.height }; }
+  return { doc, prim, tex, bytes: statSync(path.join(ROOT, rel)).size, extras: doc.getRoot().getAsset().extras || {} };
+}
+const texAt = (tex, u, v) => { const x = Math.min(tex.w - 1, Math.max(0, Math.floor((u - Math.floor(u)) * tex.w))), y = Math.min(tex.h - 1, Math.max(0, Math.floor((v - Math.floor(v)) * tex.h))); const k = (y * tex.w + x) * 3; return [tex.data[k], tex.data[k + 1], tex.data[k + 2]]; };
+const lin = (c) => { const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+
+const A_STARTER_CUT = {
+  id: 'A-starter-cut', kind: 'runner', lane: LANE, timeout: 120000,
+  title: 'ROUND5-LOOK §7 C-06, read off the shipped Starter and its recipe (bind pose): (a) no sleeve piece; (b) the harness centrelines cross within 3 cm of the sternum landmark (Brea\'s front skin at x = 0, spine_03 + 2 cm), boss 6 +- 1 cm; (c) both forearms covered by wrap (+ bracer) from the wrist to >= 0.18 m, the crescent plate on the LEFT (the stow kit\'s bracer, lowerarm_l); (d) >= 2 sash panels >= 0.30 m at her left-rear hip, their albedo >= 25 dE2000 from #A3213A; (e) boots mean linear albedo <= 0.10; (f) Starter <= 16.0 k tris, <= 0.8 MB, stow <= 9.0 k, held <= 3.0 k, Brea\'s visible body <= 11.5 k (her skin under the set\'s own cover + hair/wrap), total <= 40 k. (a) pixels and the draws/casters: A-starter-cut:arms; (g): the named rows in the same run',
+  check: async () => {
+    const out = {};
+    const P1 = await import(path.join(ROOT, 'tools/build/recipes/outfit-pan-1.mjs'));
+    const { jointPos } = await import(path.join(ROOT, 'tools/build/recipes/lib/face.mjs'));
+    const base = await P1.panBase();
+    await P1.panLayout(base.sheetParts, base.trim, base.W, base.H);      // the packed uvs the shipped atlas is painted on
+    const parts = base.parts, by = (s) => parts.filter((p) => p.slot === s);
+    const S = await glbRead('public/models/hero/outfit-pan-1.glb');
+    const meta = S.extras.r5Outfit || {};
+    // (a)
+    out.a = { sleevePieces: parts.filter((p) => /sleeve|cuff/.test(p.slot)).length + (meta.pieces || []).filter((n) => /sleeve|cuff/.test(n)).length };
+    out.a.ok = out.a.sleevePieces === 0;
+    // (b) the two straps' centrelines (strapAlong, cols 2: the middle vertex of each row)
+    const H = by('harness')[0];
+    const nRow = H.pos.length / 3 / 3, half = nRow / 2;
+    const cl = (s0) => Array.from({ length: half }, (_, s) => { const i = (s0 + s) * 3 + 1; return [H.pos[i * 3], H.pos[i * 3 + 1], H.pos[i * 3 + 2]]; });
+    const A = cl(0), B = cl(half);
+    let best = 9, at = null;
+    for (const a of A) for (const b of B) { if (a[2] < 0.03 || b[2] < 0.03) continue; const d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]); if (d < best) { best = d; at = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]; } }
+    const y3 = jointPos(base.doc, 'spine_03')[1] + 0.02, F = base.fitBody;
+    let lm = null;
+    for (let i = 0; i < F.count; i++) { const x = F.pos[i * 3], y = F.pos[i * 3 + 1], z = F.pos[i * 3 + 2]; if (Math.abs(x) < 0.012 && Math.abs(y - y3) < 0.012 && (!lm || z > lm[2])) lm = [x, y, z]; }
+    const Bo = by('boss')[0];
+    let dia = 0; for (let i = 0; i < Bo.pos.length / 3; i++) for (let j = i + 1; j < Bo.pos.length / 3; j++) dia = Math.max(dia, Math.hypot(Bo.pos[i * 3] - Bo.pos[j * 3], Bo.pos[i * 3 + 1] - Bo.pos[j * 3 + 1], Bo.pos[i * 3 + 2] - Bo.pos[j * 3 + 2]));
+    out.b = { centrelineGap: +best.toFixed(4), cross: at && at.map((v) => +v.toFixed(3)), landmark: lm && lm.map((v) => +v.toFixed(3)), crossToLandmark: at && lm ? +Math.hypot(at[0] - lm[0], at[1] - lm[1]).toFixed(4) : null, bossDia: +dia.toFixed(4) };
+    out.b.ok = best < 0.02 && out.b.crossToLandmark != null && out.b.crossToLandmark <= 0.03 && dia >= 0.05 && dia <= 0.07;
+    // (c) coverage along each forearm from the wrist, wrap + the right bracer; the kit's crescent bracer on lowerarm_l
+    const cover = (side) => {
+      const a = jointPos(base.doc, `lowerarm_${side}`), w = jointPos(base.doc, `hand_${side}`);
+      const ax = [a[0] - w[0], a[1] - w[1], a[2] - w[2]], L = Math.hypot(...ax); ax.forEach((v, k) => { ax[k] = v / L; });
+      let lo = 9, hi = -9;
+      for (const p of [...by('armwrap'), ...by('bracer')]) for (let i = 0; i < p.pos.length / 3; i++) {
+        const d = [p.pos[i * 3] - w[0], p.pos[i * 3 + 1] - w[1], p.pos[i * 3 + 2] - w[2]];
+        if (Math.sign(p.pos[i * 3]) !== (side === 'l' ? 1 : -1)) continue;
+        const t = d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2]; lo = Math.min(lo, t); hi = Math.max(hi, t);
+      }
+      return { fromWrist: +lo.toFixed(3), to: +hi.toFixed(3) };
+    };
+    const K = await glbRead('public/models/armory/stowkit.glb');
+    const kp = K.prim.getAttribute('_PIECE'), kj = K.prim.getAttribute('JOINTS_0'), kw = K.prim.getAttribute('WEIGHTS_0');
+    const kjn = K.doc.getRoot().listNodes().find((n) => n.getSkin())?.getSkin()?.listJoints().map((j) => j.getName()) || [];
+    let crescentOn = null; const q = [0], jj = [0, 0, 0, 0], ww = [0, 0, 0, 0];
+    for (let i = 0; kp && i < kp.getCount(); i++) { kp.getElement(i, q); if ((Math.round(q[0]) & 8) === 0) continue; kj.getElement(i, jj); kw.getElement(i, ww); crescentOn = kjn[jj[ww.indexOf(Math.max(...ww))]]; break; }
+    out.c = { left: cover('l'), right: cover('r'), crescentOn };
+    out.c.ok = ['left', 'right'].every((s) => out.c[s].fromWrist <= 0.012 && out.c[s].to >= 0.18) && crescentOn === 'lowerarm_l';
+    // (d) the sash's hanging panels: its connected pieces below the knot, their length down the hip, place and albedo
+    const Sa = by('sash')[0];
+    const n = Sa.pos.length / 3, comp = new Int32Array(n).fill(-1);
+    const nb = Array.from({ length: n }, () => []);
+    for (let t = 0; t < Sa.idx.length; t += 3) for (const [u, v] of [[0, 1], [1, 2], [2, 0]]) { nb[Sa.idx[t + u]].push(Sa.idx[t + v]); }
+    let nc = 0;
+    for (let i = 0; i < n; i++) { if (comp[i] >= 0) continue; const st = [i]; comp[i] = nc; while (st.length) { const k = st.pop(); for (const m of nb[k]) if (comp[m] < 0) { comp[m] = nc; st.push(m); } } nc++; }
+    const panels = [];
+    for (let c = 0; c < nc; c++) {
+      let y0 = 9, y1 = -9, sx = 0, sz = 0, m = 0;
+      for (let i = 0; i < n; i++) if (comp[i] === c) { y0 = Math.min(y0, Sa.pos[i * 3 + 1]); y1 = Math.max(y1, Sa.pos[i * 3 + 1]); sx += Sa.pos[i * 3]; sz += Sa.pos[i * 3 + 2]; m++; }
+      if (m > 20) panels.push({ len: +(y1 - y0).toFixed(3), x: +(sx / m).toFixed(3), z: +(sz / m).toFixed(3) });
+    }
+    const long = panels.filter((p) => p.len >= 0.3 && p.x > 0.03 && p.z < -0.02);
+    // their albedo off the shipped atlas (the sash's trim cell)
+    const uv = S.prim.getAttribute('TEXCOORD_0');
+    let acc = [0, 0, 0], na = 0; const sr = base.trim.rect('sash'), u2 = [0, 0];
+    for (let i = 0; i < uv.getCount(); i++) { uv.getElement(i, u2); if (u2[0] >= sr[0] && u2[0] <= sr[0] + sr[2] && u2[1] >= sr[1] && u2[1] <= sr[1] + sr[3]) { const c = texAt(S.tex, u2[0], u2[1]); acc = acc.map((v, k) => v + c[k]); na++; } }
+    const sashRGB = acc.map((v) => Math.round(v / Math.max(1, na)));
+    out.d = { panels, long: long.length, sashRGB, dEfromCarmine: +dE2000(sashRGB, hexRGB('#A3213A')).toFixed(1) };
+    out.d.ok = long.length >= 2 && out.d.dEfromCarmine >= 25;
+    // (e) the boots' albedo, area-weighted at their triangles' uv centroids off the shipped atlas
+    const Bt = by('boots')[0];
+    let lum = 0, area = 0;
+    for (let t = 0; t < Bt.idx.length; t += 3) {
+      const [a, b, c] = [Bt.idx[t], Bt.idx[t + 1], Bt.idx[t + 2]];
+      const P = (i) => [Bt.pos[i * 3], Bt.pos[i * 3 + 1], Bt.pos[i * 3 + 2]];
+      const e1 = P(b).map((v, k) => v - P(a)[k]), e2 = P(c).map((v, k) => v - P(a)[k]);
+      const ar = Math.hypot(e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]) / 2;
+      const U = (i) => [Bt.uvNew ? Bt.uvNew[i * 2] : Bt.uv[i * 2], Bt.uvNew ? Bt.uvNew[i * 2 + 1] : Bt.uv[i * 2 + 1]];
+      const cu = (U(a)[0] + U(b)[0] + U(c)[0]) / 3, cv = (U(a)[1] + U(b)[1] + U(c)[1]) / 3;
+      lum += lin(texAt(S.tex, cu, cv)) * ar; area += ar;
+    }
+    out.e = { bootLum: area ? +(lum / area).toFixed(4) : null, uvFrom: Bt.uvNew ? 'packed' : 'unpacked (run the layout first)' };
+    out.e.ok = out.e.bootLum != null && out.e.bootLum <= 0.10;
+    // (f) the caps, off the shipped files
+    const tris = (G) => G.prim.getIndices().getCount() / 3;
+    const bowG = await glbRead('public/models/armory/bow-sabina.glb'), lanceG = await glbRead('public/models/armory/lance-shepherd.glb');
+    const brea = await glbRead('public/models/hero/brea.glb');
+    let bodyVis = 0, hair = 0;
+    {
+      const hide = meta.hide;
+      const bin = Buffer.from(hide.rle, 'base64'), runs = new Uint16Array(bin.buffer, bin.byteOffset, bin.length / 2), mask = new Uint8Array(hide.count);
+      let at2 = 0; for (let r = 0; r < runs.length; r++) { if (r & 1) mask.fill(1, at2, at2 + runs[r]); at2 += runs[r]; }
+      for (const nd of brea.doc.getRoot().listNodes()) {
+        const pr = nd.getMesh()?.listPrimitives()[0]; if (!pr) continue;
+        const ix = pr.getIndices().getArray();
+        if (pr.getAttribute('_HIDEMASK') && pr.getAttribute('POSITION').getCount() === hide.count) { for (let t = 0; t < ix.length; t += 3) if (!(mask[ix[t]] && mask[ix[t + 1]] && mask[ix[t + 2]])) bodyVis++; }
+        else hair += ix.length / 3;
+      }
+    }
+    out.f = { outfitTris: tris(S), outfitMB: +(S.bytes / 1e6).toFixed(3), stowTris: tris(K), heldBow: tris(bowG), heldLance: tris(lanceG), body: bodyVis + hair, bodySkin: bodyVis, hairWrap: hair };
+    out.f.total = out.f.outfitTris + out.f.stowTris + Math.max(out.f.heldBow, out.f.heldLance) + out.f.body;
+    out.f.ok = out.f.outfitTris <= 16000 && out.f.outfitMB <= 0.8 && out.f.stowTris <= 9000 && out.f.heldBow <= 3000 && out.f.heldLance <= 3000 && out.f.body <= 11500 && out.f.total <= 40000;
+    out.g = 'graded by the named rows in the same run: A-brea-contrast, V-brea-one-glance, A-variant-swap-matrix, A-wrap-clear, A-run-arms, A35, A-draw-elbow-level, A-stow-clearance (armory runs A-variant-swap-matrix, A-variant-motion-rerun:pan-1 = A-run-arms + A-wrap-clear + A-stow-clearance, A35@armory)';
+    return { pass: ['a', 'b', 'c', 'd', 'e', 'f'].every((k) => out[k].ok), detail: out };
+  },
+};
+
+const A_STARTER_ARMS = {
+  id: 'A-starter-cut:arms', kind: 'action', lane: LANE, timeout: 120000, settle: 400,
+  title: 'C-06 (a) and (f) in the page: bare arms (skin-hue pixels >= 60 % of the shoulder-to-elbow band on both arms, flat-lit front and back, as V-brea-one-glance\'s sheet frames her) and the Starter\'s <= 5 draws, <= 2 casters, <= 40 k tris',
+  setup: `__CTX__.input.enabled = true;`,
+  assert: placed(['openGround'], `(async () => {${PRE}
+    freeze(); standAt(p, 'openGround'); await wait(300);
+    await H.loadout.equipArmor('pan-1'); await frames(6);
+    const S = await import('/src/hero/sheets.js');
+    const T3 = p.position.constructor;
+    const model = await S.poseIdle(C, 0.6);
+    const an2 = p.animator;
+    const rows = [];
+    for (const [view, yaw] of [['front', 0], ['back', Math.PI]]) {
+      const w = 360, h = 720, cam = { pos: [Math.sin(yaw) * 4.2, 0.95, Math.cos(yaw) * 4.2], target: [0, 0.93, 0], fov: 26 };
+      const img = S.renderIsolated(C, model, { width: w, height: h, cam, background: '#00ff00' });
+      // the same camera, to project the joints
+      const cm = new S.THREE.PerspectiveCamera(cam.fov, w / h, 0.05, 50); cm.position.set(...cam.pos); cm.lookAt(...cam.target); cm.updateMatrixWorld(); cm.updateProjectionMatrix();
+      // the joints where the render had them: the model at the origin, its yaw zeroed (renderIsolated's staging)
+      const p0 = model.position.clone(), ry0 = model.rotation.y;
+      model.position.set(0, 0, 0); model.rotation.y = 0; model.updateMatrixWorld(true);
+      const J = {};
+      for (const side of ['l', 'r']) { J[side] = [an2.b['upArm' + side.toUpperCase()].bone.getWorldPosition(new T3()), an2.b['loArm' + side.toUpperCase()].bone.getWorldPosition(new T3())]; }
+      model.position.copy(p0); model.rotation.y = ry0; model.updateMatrixWorld(true);
+      for (const side of ['l', 'r']) {
+        const a = J[side][0].clone().project(cm), b = J[side][1].clone().project(cm);
+        let skin = 0, all = 0;
+        for (let k = 0; k <= 40; k++) for (let o = -3; o <= 3; o++) {
+          const t = 0.15 + 0.7 * k / 40;
+          const sx = (a.x + (b.x - a.x) * t) * 0.5 + 0.5, sy = 0.5 - (a.y + (b.y - a.y) * t) * 0.5;
+          const px = Math.round(sx * w + o), py = Math.round(sy * h);
+          if (px < 0 || py < 0 || px >= w || py >= h) continue;
+          const i = (py * w + px) * 4, r = img.data[i], g = img.data[i + 1], bl = img.data[i + 2];
+          if (g > 200 && r < 80 && bl < 80) continue;             // background
+          all++;
+          const mx = Math.max(r, g, bl), mn = Math.min(r, g, bl), sat = mx ? (mx - mn) / mx : 0;
+          let hue = 0; if (mx !== mn) { if (mx === r) hue = 60 * (((g - bl) / (mx - mn)) % 6); else if (mx === g) hue = 60 * ((bl - r) / (mx - mn) + 2); else hue = 60 * ((r - g) / (mx - mn) + 4); } if (hue < 0) hue += 360;
+          if (hue >= 5 && hue <= 48 && sat >= 0.2 && mx >= 40 && mx <= 235) skin++;
+        }
+        rows.push({ view, side, skinFrac: all ? +(skin / all).toFixed(3) : 0, px: all });
+      }
+    }
+    // the Starter's draws and casters (stowed, the bow in hand at full draw)
+    const J0 = H.info();
+    C.input.mouse.buttons |= 4; await simWait(0.6, 5000); C.input.mouse.buttons |= 1; await simWait(1.0, 6000);
+    const J1 = H.info();
+    release(); await wait(400);
+    const draws = { stowed: { draws: J0.draws, casters: J0.casters, tris: J0.tris }, drawn: { draws: J1.draws, casters: J1.casters, tris: J1.tris } };
+    const pass = rows.every((r) => r.skinFrac >= 0.6 && r.px > 40) && [J0, J1].every((J) => J.draws <= 5 && J.casters <= 2 && J.tris <= 40000);
+    return { pass, detail: { arms: rows, draws } };
+  })()`),
+};
+
+const A_WEAPON_FINISH = {
+  id: 'A-weapon-finish', kind: 'runner', lane: LANE, timeout: 90000,
+  title: 'ROUND5-LOOK §7 C-08 off the recipes and the shipped atlas: (b) the Sabina\'s tips reflexed >= 8 deg off the limb (tip chord 0.92-1 against the limb chord 0.6-0.86), nock to nock 1.45 +- 0.02 m; (c) the fletching within 6 dE2000 of #6B3F73 (the cock feather\'s atlas cell, the flying arrow\'s material); (d) no weapon emissive within 20 dE of #9B6BFF, the element heads PENDING with F-2 (W3); (e) atlas sizes and the bow\'s draws unchanged (A-gear-draws, A-weapon-swap-memory); (a) the blade\'s glint: A-weapon-finish:glint',
+  check: async () => {
+    const out = {};
+    const WG = await import(path.join(ROOT, 'tools/build/recipes/armor/lib/weapongeo.mjs'));
+    const ang = (t1, t2) => { const a = WG.stave(t1), b = WG.stave(t2); return Math.atan2(b[2] - a[2], b[1] - a[1]) * 180 / Math.PI; };
+    let L = 0, q0 = WG.stave(-1); for (let i = 1; i <= 800; i++) { const q = WG.stave(-1 + 2 * i / 800); L += Math.hypot(q[0] - q0[0], q[1] - q0[1], q[2] - q0[2]); q0 = q; }
+    out.b = { reflexDeg: +(ang(0.92, 1) - ang(0.6, 0.86)).toFixed(1), lengthM: +L.toFixed(3) };
+    out.b.ok = out.b.reflexDeg >= 8 && Math.abs(L - 1.45) <= 0.02;
+    const WA = await import(path.join(ROOT, 'tools/build/recipes/armor/lib/weaponatlas.mjs'));
+    const T = WA.weaponTrim(), r = T.rect('fletchB');
+    const K = await glbRead('public/models/armory/stowkit.glb');
+    let acc = [0, 0, 0], n = 0;
+    for (let k = 0; k < 64; k++) { const u = r[0] + r[2] * (0.2 + 0.6 * (k % 8) / 7), v = r[1] + r[3] * (0.2 + 0.6 * Math.floor(k / 8) / 7); const c = texAt(K.tex, u, v); acc = acc.map((x, i) => x + c[i]); n++; }
+    const atlasRGB = acc.map((x) => Math.round(x / n));
+    const src = readFileSync(path.join(ROOT, 'src/combat/arrows.js'), 'utf8');
+    const m = /const fletchMats = \{[^]*?hunter:\s*new THREE\.MeshStandardMaterial\(\{\s*color:\s*0x([0-9a-f]{6})/i.exec(src);
+    const flyRGB = m ? hexRGB('#' + m[1]) : null;
+    out.c = { atlasRGB, dEatlas: +dE2000(atlasRGB, hexRGB('#6B3F73')).toFixed(1), flyRGB, dEfly: flyRGB ? +dE2000(flyRGB, hexRGB('#6B3F73')).toFixed(1) : null };
+    out.c.ok = out.c.dEatlas <= 6 && out.c.dEfly != null && out.c.dEfly <= 6;
+    // (d) every emissive the weapon code sets, against the retired glow violet #9B6BFF (R66 c)
+    const ems = [...src.matchAll(/emissive:\s*0x([0-9a-f]{6})/gi)].map((x) => '#' + x[1]);
+    const near = ems.filter((h) => dE2000(hexRGB(h), hexRGB('#9B6BFF')) < 20);
+    out.d = { emissives: ems.length, nearRetiredViolet: near, elementHeads: 'PENDING: W3 with F-2 (Brine-Gourd, Cinder-Resin, Dust-Puff)' };
+    out.d.ok = near.length === 0;
+    out.e = { atlas: K.tex ? [K.tex.w, K.tex.h] : null, note: 'draws: A-gear-draws (bow in hand = 1 draw); swaps: A-weapon-swap-memory' };
+    out.e.ok = !!K.tex && K.tex.w <= 1024;
+    return { pass: out.b.ok && out.c.ok && out.d.ok && out.e.ok, detail: out };
+  },
+};
+
+const A_WEAPON_GLINT = {
+  id: 'A-weapon-finish:glint', kind: 'action', lane: LANE, timeout: 120000, settle: 400,
+  title: 'C-08 (a): at the golden hour (18:45), a 3/4 view of the lance\'s bronze leaf at 1.5 m in the world\'s light (eight bearings round the blade, the best one graded): a highlight >= 0.85 sRGB over >= 4 px on the blade',
+  setup: `__CTX__.input.enabled = true;`,
+  assert: placed(['openGround'], `(async () => {${PRE}
+    freeze(); standAt(p, 'openGround'); await wait(300);
+    const env = C.environment; const h0 = env.time; env.setTime(18.75);
+    await frames(6);
+    await lanceOut();
+    const S = await import('/src/hero/sheets.js');
+    const T3 = p.position.constructor;
+    const sp = H.heldLance();
+    const tip = new T3(), base = new T3();
+    sp.model.updateWorldMatrix(true, true);
+    // the blade: the lance's top 0.2 m (its GLB stands along its own +Y; the socket ~1.36 m up the 1.55 m shaft)
+    const box = new (S.THREE.Box3)().setFromObject(sp.model);
+    const up = new T3().subVectors(box.max, box.min);
+    // the far end from her hand is the blade: the lance's local +Y end
+    sp.model.localToWorld(tip.set(0, 1.47, 0)); sp.model.localToWorld(base.set(0, 1.36, 0));
+    const mid = tip.clone().add(base).multiplyScalar(0.5);
+    const ts0 = E.timeScale; E.timeScale = 0; await frames(2);
+    const rows = [];
+    for (let k = 0; k < 8; k++) {
+      const a = k / 8 * Math.PI * 2;
+      const pos = [mid.x + Math.sin(a) * 1.06, mid.y + 0.35, mid.z + Math.cos(a) * 1.06];
+      const img = S.liveView(C, pos, mid.toArray(), { width: 320, height: 320, fov: 18 });
+      let bright = 0;
+      for (let i = 0; i < img.data.length; i += 4) if (Math.max(img.data[i], img.data[i + 1], img.data[i + 2]) >= 217) bright++;
+      rows.push({ bearing: +(a * 180 / Math.PI).toFixed(0), px: bright });
+    }
+    E.timeScale = ts0;
+    env.setTime(h0);
+    await lanceAway();
+    const best = rows.reduce((m, r) => Math.max(m, r.px), 0);
+    return { pass: best >= 4, detail: { best, rows, note: 'pixels >= 0.85 sRGB in a 320 px crop framing the blade (0.2 m) at 1.5 m slant range' } };
+  })()`),
+};
+
 /* ------------------------------------------------------------------- visuals */
 const FILM_PRE = `
       const C = __CTX__, p = C.player;
@@ -555,7 +828,7 @@ const V_ROWS = [
         { file: 'reference/r5/gates-perf/idle-stand.jpg', note: 'cloth weight and fall', cropY: 0.3 },
       ]);
     })()`,
-    criteria: 'Orchestrator brief + R54: in a close-up beside the references Pan Whites I holds up. Pass: each material reads as itself without labels (linen with a visible weave and dye variation, dark oiled leather with a burnished edge and stitching, brass with patina, plaited esparto); seams and hems exist as real lines; wear sits where wear goes (hems, salt tide lines on the shins, worn ridges); layers have real depth (the smock over the linen under-tunic, the girdle over the smock with a contact shadow, the sling over the shoulder). FAIL if it reads as a stock corset, plaid, sewing-pattern stitching, flat colour blocks, or blocky compression; a frame that passes the words and looks cheap next to its reference is a major finding.',
+    criteria: 'Orchestrator brief + R54 + R64(a), on the C-06 Starter cut (R66 f: the smock art pass transfers to the sleeveless top at the same bar): in a close-up beside the references Pan Whites I holds up. Pass: each material reads as itself without labels (the top\'s dyed cloth with a visible weave and dye variation, dark oiled leather with a burnished edge and stitching, bronze and brass with patina, plaited esparto, wound wraps); seams and hems exist as real lines; the armhole binding lies ON the cloth with no hook, fin or loop; wear sits where wear goes (hems, salt, worn ridges); layers have real depth (the harness over the top with a contact shadow, the girdle over the top, the bracer over the wrap). FAIL if it reads as a stock corset, plaid, sewing-pattern stitching, flat colour blocks, or blocky compression; a frame that passes the words and looks cheap next to its reference is a major finding.',
   },
   {
     id: 'V-variant-sheet', kind: 'visual', lane: LANE, settle: 1500, timeout: 120000,
@@ -606,6 +879,31 @@ V_ROWS.push({
   })()`),
   criteria: 'Plan V29: bow low in the LEFT hand, left-arm swing damped; FAIL if on her back. Plus: the grip in the fist, neither limb through her legs, skirt or pouch.',
 });
+V_ROWS.push({
+  id: 'V-starter-vs-board', kind: 'visual', lane: LANE, settle: 1200, timeout: 120000,
+  title: 'C-06: the Starter at 2 m front, 3/4 and back, and from the chase camera, at DAY (12:30) and at 18:45, beside the stored silhouette sheet; the board panels (#2-TC, #1-TL, kevin-nov6-armor.md#4-L1) are read from outside the repo (R66 a)',
+  reference: 'reference/r5/hero/brea-silhouette-sheet.png; ext:kevin-nov6-board.jpg@f2694e04#2-TC; ext:kevin-nov6-keyart.jpg@860d7e9f#1-TL; ext:kevin-nov6-armor.md@d8509a8f#4-L1',
+  setup: placedSetup(['openGround'], `(async () => {${FILM_PRE}
+    C.input.enabled = true; C.state = 'playing';
+    standAt(p, 'openGround'); p.camPitch = 0;
+    await p.hero.loadout.equipArmor('pan-1');
+    const s = await import('/src/hero/sheets.js');
+    await s.starterBoardOverlay(C, 'reference/r5/hero/brea-silhouette-sheet.png');
+  })()`),
+  criteria: 'ROUND5-LOOK §7 V-starter-vs-board: 1 sleeveless violet top with bare toned arms; 2 crossed brown harness with a bronze boss; 3 violet forearm wraps under bracers; 4 sash panels that hang and move; 5 dark trousers and dark laced knee boots; 6 the wrap, tail, salt-line, lance and cane quiver all read; 7 the top carries R64(a)\'s smock art-pass bar (weave, seams, folds, armhole binding) at 0.8 m. FAIL: the old smock with its sleeves cut off; boots the brightest thing below the waist. IP-clause.',
+});
+V_ROWS.push({
+  id: 'V-weapon-keyart', kind: 'visual', lane: LANE, settle: 1200, timeout: 120000,
+  title: 'C-08: the Sabina at full draw (V24) and the kit stowed, at 18:45, with crops of the reflexed tip and the grip',
+  reference: 'reference/r5/gates-perf/bow-in-hand.jpg; ext:kevin-nov6-keyart.jpg@860d7e9f#1-BL; ext:kevin-nov6-keyart.jpg@860d7e9f#1-TL',
+  setup: placedSetup(['openGround'], `(async () => {${FILM_PRE}
+    C.input.enabled = true; C.state = 'playing';
+    standAt(p, 'openGround'); p.camPitch = 0;
+    const s = await import('/src/hero/sheets.js');
+    await s.weaponKeyartOverlay(C, 'reference/r5/gates-perf/bow-in-hand.jpg');
+  })()`),
+  criteria: 'ROUND5-LOOK §7 V-weapon-keyart: the bronze blade glints; a hand-made bow with reflexed tips and a grip wrap; the haft\'s bands read; only element arrows glow, in their element colour. IP-clause.',
+});
 const V29 = asArmory('V29-wielded-carry');
 if (V29 && !V29.reference) Object.defineProperty(V29, 'reference', { value: 'reference/r5/gates-perf/bow-in-hand.jpg', enumerable: true });
 
@@ -621,6 +919,7 @@ export const GATES = [
   A_VERB,
   A_NO_MOVE,
   A_ROLE,
+  A_STARTER_CUT, A_STARTER_ARMS, A_WEAPON_FINISH, A_WEAPON_GLINT,
   asArmory('A4-draw-strength'), asArmory('A5-arrow-fired-event'), asArmory('A51-nock-gap'), asArmory('A52-arrow-drop'),
   ...V_ROWS,
   V29,
