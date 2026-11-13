@@ -447,7 +447,7 @@ export async function build({ out = ROOT } = {}) {
       // and 0.06 +- 0.01; game metres / S): 0.10 m at the knot, held down the free strip, narrowing over its last 40 % to 0.07 m at the
       // fringe, the wide ends of R66 d's tolerances. Narrower cuts (0.09 -> 0.06) cost A-tail-legible its reach on hero-body's 0.49 m,
       // 6-link chain: 1-2 of 24 moments at reach 3 in r5 and r6. The fringe is the last 2.5 cm
-      width: (u) => (0.10 - 0.03 * smooth(0.6, 0.95, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 22, across: 5, rootBack: 0.014,
+      width: (u) => (0.10 - 0.03 * smooth(0.6, 0.95, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 21, across: 5, rootBack: 0.014,
       // fix round 2 (R54, R66 c: soft, thick, rippling cloth, no paper edge; the length and width stay): the rows go to the free strip,
       // each row is skinned smoothly across the joints, the selvedges are rolled hems 3.4 mm thick, the strip sags and ripples
       rootRows: 4, smoothSkin: true, hem: 0.0034, ripple: 0.0042 },
@@ -536,8 +536,11 @@ export async function build({ out = ROOT } = {}) {
     return [u[0], u[1]];
   })();
   const skirtFrom = appendCollarSkirt(bodyPrim, panTris, { darkUV, seg: 19 });
-  // fix round 2 (A-wrap-closed's collar views): the collar's inner wall, round the sides and the back (19 lid segments pay for it)
-  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV, seg: 19 });
+  // fix round 2 (A-wrap-closed's collar views): the collar's inner wall, round the sides and the back (19 lid segments pay for it).
+  // Nov 12: and round the front (reach 1.01): a look from behind and above, past the neck, met the front's single-sided inner face and
+  // saw the ground in front of her (r7: 300-400 px at az 150-180, el 0.4-0.8). The wall faces the neck, so from the front it is never
+  // drawn, and where the V opens there is no wall to line; one tail row pays for it
+  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV, seg: 19, reach: 1.01 });
   // fix round 2, Nov 12 (LOOK C-01): the tissue's thickness behind each vertex, for the skin light's back-transmission (src/hero/skinLook.js)
   // (the ears only: the lips, the nose wings and the lower lids are thin too, with the mouth, the nostrils and the ball a few mm
   // behind them, but in a back light they glowed as a red nostril and a lit lower lid, which the backlit row forbids)
