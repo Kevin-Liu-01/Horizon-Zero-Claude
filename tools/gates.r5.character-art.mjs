@@ -312,11 +312,22 @@ export const GATES = [
       p.model.traverse((o) => { if (o.isBone && /^dyn_(wrapSash|hairKnotTail)_01$/.test(o.name)) bones.push(o); });
       const frames = (n) => new Promise((r) => { let i = 0; const f = () => { if (++i >= n) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
       const W = 900, H = 900;
+      // fix round 2, Nov 12: the KEY colour is the greenest pixel on the frame's border, not the top-left pixel. Looking steeply down
+      // (the collar set's 0.8 and 1.2 rad) the bowed head or the shoulder covers that corner, the "key" became a cloth or skin colour,
+      // and every pixel of that colour which the double-sided draw shades a little differently counted as a see-through (r1-r6: the
+      // 4-7 k px blobs at az 75-105 that the row's own sheet shows as solid smock)
+      const keyOf = (px) => {
+        let best = -1e9, k = [px[0], px[1], px[2]];
+        const at = (i) => { const g = px[i * 4 + 1] - (px[i * 4] + px[i * 4 + 2]) / 2; if (g > best) { best = g; k = [px[i * 4], px[i * 4 + 1], px[i * 4 + 2]]; } };
+        for (let x = 0; x < W; x += 7) { at(x); at((H - 1) * W + x); }
+        for (let y = 0; y < H; y += 7) { at(y * W); at(y * W + W - 1); }
+        return k;
+      };
       // one view: the enclosed key-colour components within 300 px of (cx, cy)
       const scanView = (pos, tgt, inside) => {
         const img = S.liveView(C, pos.toArray(), tgt.toArray(), { width: W, height: H, fov: 29 });
         const px = img.data;
-        const k = [px[0], px[1], px[2]];
+        const k = keyOf(px);
         const bg = new Uint8Array(W * H), seen = new Uint8Array(W * H);
         for (let i = 0; i < W * H; i++) bg[i] = Math.abs(px[i * 4] - k[0]) < 28 && Math.abs(px[i * 4 + 1] - k[1]) < 28 && Math.abs(px[i * 4 + 2] - k[2]) < 28 ? 1 : 0;
         const st = [];
@@ -343,15 +354,13 @@ export const GATES = [
       const sides0 = mats.map((m) => m.side);
       const setDouble = (on) => { mats.forEach((m, i) => { const want = on ? 2 : sides0[i]; if (m.side !== want) { m.side = want; m.needsUpdate = true; } }); };
       // fix round 2, Nov 12: each state is drawn TWICE and a pixel is a see-through only when BOTH single-sided frames show background there
-      // and the second double-sided frame covers it. The first frame after the material side changes can come back with whole meshes
-      // missing (r1-r5: 5-63 k px blobs over the smock and the neck, where the row's own sheet, the same view drawn again, is solid
-      // cloth; swapping in double-sided twin materials instead made it worse, 167 k px). A real see-through is background in every
-      // single-sided frame; this only refuses a frame that dropped a mesh
+      // and the second double-sided frame covers it, so a frame drawn right after the side change can never invent a hole; with the key
+      // colour read off the border (keyOf) every real see-through still counts
       const seeThrough = (pos, tgt) => {
         const opt = { width: W, height: H, fov: 29 };
         const a0 = S.liveView(C, pos.toArray(), tgt.toArray(), opt).data;
         const a = S.liveView(C, pos.toArray(), tgt.toArray(), opt).data;
-        const k = [a[0], a[1], a[2]];
+        const k = keyOf(a);
         setDouble(true);
         let b;
         try { S.liveView(C, pos.toArray(), tgt.toArray(), opt); b = S.liveView(C, pos.toArray(), tgt.toArray(), opt).data; } finally { setDouble(false); }
@@ -402,9 +411,8 @@ export const GATES = [
           return { cen, F0, R0, U1, col, Fh, Rh, Up };
         };
         let st = stage();
-        // fix round 2, Nov 12: WARM BOTH MATERIAL STATES first (single- and double-sided, at the scan's own render-target type, three times
-        // with frames between), then stage the kit and the cloth ends again: the frames run the hero rig, which shows the kit again and
-        // lets the cloth ends hang. The first frames after a material's side changes came back with meshes missing (see seeThrough)
+        // fix round 2, Nov 12: both material states are drawn once at the scan's own render-target type before each phase, with frames
+        // between; then the kit and the cloth ends are staged again (the frames run the hero rig, which shows the kit and lets them hang)
         for (let w = 0; w < 3; w++) {
           for (const dbl of [false, true]) { setDouble(dbl); S.liveView(C, [st.col.x + 0.3, st.col.y + 0.5, st.col.z + 0.6], st.col.toArray(), { width: 64, height: 64, fov: 29 }); S.liveView(C, [st.cen.x, st.cen.y, st.cen.z + 0.8], st.cen.toArray(), { width: 64, height: 64, fov: 29 }); }
           setDouble(false);
