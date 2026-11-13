@@ -171,7 +171,7 @@ const LOOK = `
   const statsOf = (cap) => LS.frameStats(cap.px, cap.W, cap.H, { step: 2 });
   /** camYaw that faces the sun (camera forward = (-sin yaw, -cos yaw)). */
   const sunYaw = () => { const s = __C.environment.sunDir; return Math.atan2(-s.x, -s.z); };
-  const __camSaved = { fn: null, delta: null, cad: null };
+  const __camSaved = { fn: null, delta: null, cad: null, drift: null };
   /** Freeze the presentation clock too (wind, water, fire and the camera damping read wall time): engine.clock reads 0 s. */
   // fix round 1 (A-look-suite a across boots): the presentation clock every system animates from (engine.wallTime:
   // sky, wind, grass sway, water, birds) is snapped to the next multiple of 4096 s, the same on every boot that
@@ -183,7 +183,9 @@ const LOOK = `
   // that wants a machine in frame stages one itself (world-props' record).
   const AGENT_RE = /^machines?$|^instruments?$|-machine$|-instrument$|^npcs?$|^npc-crowd$|^people$|fauna|flocks?$|particles?|vfx|-fx$|^fx$|projectiles?|trails?|^arrows?$/i;
   const __agents = [];
-  const hideAgents = () => { if (__agents.length) return; for (const c of __C.scene.children) if (c.visible && AGENT_RE.test(c.name || '')) { c.visible = false; __agents.push(c); } };
+  // fix round 2 (f2-b2/b3 per-owner diagnosis): unnamed top-level Sprites (transient markers and effects the boot spawned on
+  // its own clock) differed between boots and are hidden with the agents
+  const hideAgents = () => { if (__agents.length) return; for (const c of __C.scene.children) if (c.visible && (AGENT_RE.test(c.name || '') || (c.isSprite && !c.name))) { c.visible = false; __agents.push(c); } };
   const showAgents = () => { for (const c of __agents) c.visible = true; __agents.length = 0; };
   const unstage = () => {
     showAgents();
@@ -191,6 +193,7 @@ const LOOK = `
     if (__camSaved.delta) { __E.clock.getDelta = __camSaved.delta; __camSaved.delta = null; __E.clock.getDelta(); }
     if (__camSaved.fn) { p._updateCamera = __camSaved.fn; __camSaved.fn = null; }
     if (__camSaved.cad != null) { if (__E.tier) __E.tier.csmFarCadence = __camSaved.cad; __camSaved.cad = null; }
+    if (__camSaved.drift) { const cd = __C.environment?.u?.calCloudDrift?.value; if (cd) cd.copy(__camSaved.drift); __camSaved.drift = null; }
     __E.requestTimeScale('studio', null);
   };
   /** Stage a look place: weather, frozen hour, the grade sets for the hour, the hero, the lens. */
@@ -212,6 +215,11 @@ const LOOK = `
     __E.requestTimeScale('studio', 0);
     if (o.agents !== true) hideAgents();
     env.timeFrozen = true;
+    // fix round 2 (A-look-suite a; f2-b3's boot-to-boot uniform diff: of 167 numeric uniforms only the environment's
+    // cloud-shadow drift differed, 0.0158 vs 0.0155): calCloudDrift integrates wind x dt from boot, so each boot's
+    // history moved the cloud shadows on terrain, grass, props, water and the hero. It starts every staging at 0 (the
+    // settle's fixed steps then move it the same way on every boot) and is restored by unstage
+    { const cd = env.u?.calCloudDrift?.value; if (cd) { if (!__camSaved.drift) __camSaved.drift = cd.clone(); cd.set(0, 0); } }
     const weather = env.weatherStates?.includes(P.weather) ? P.weather : 'clear';
     env.setWeather(weather, 0.05);
     env.setTime(P.hour);
@@ -720,10 +728,13 @@ const BLOOM = look(`
       for (const k of [6, 10, 15, 20, 30]) { const x = Math.round(sx + k * sunR), y = Math.round(sy); if (x >= c.W) { o.push(null); continue; } const i = (y * c.W + x) * 4; o.push(+LS.srgb8ToLab(c.px[i], c.px[i + 1], c.px[i + 2])[0].toFixed(1)); }
       // the white block (R68 b): how far from the sun's centre the frame stays clipped (largest channel >= 254), the
       // farthest of 8 rays, in sun radii; the disc itself clips out to 1
-      let clipR = 0; for (let a = 0; a < 8; a++) { const dx = Math.cos(a * Math.PI / 4), dy = Math.sin(a * Math.PI / 4);
+      // a BLOCK is a clipped region that is large (> 4 sun radii) or square (its diagonal reach > 1.2x its axis reach:
+      // the low bloom mips' texels saturating into a box, R68 b's 'boxy white block')
+      const rays = []; for (let a = 0; a < 8; a++) { const dx = Math.cos(a * Math.PI / 4), dy = Math.sin(a * Math.PI / 4); let rr = 0;
         for (let r = 0; r < 40 * sunR; r += 0.5) { const x = Math.round(sx + dx * r), y = Math.round(sy + dy * r); if (x < 0 || y < 0 || x >= c.W || y >= c.H) break; const i = (y * c.W + x) * 4;
-          if (Math.max(c.px[i], c.px[i + 1], c.px[i + 2]) < 254) { clipR = Math.max(clipR, r); break; } } }
-      return { o, clipR: +(clipR / sunR).toFixed(2), c }; };
+          if (Math.max(c.px[i], c.px[i + 1], c.px[i + 2]) < 254) { rr = r; break; } } rays.push(rr / sunR); }
+      const clipR = Math.max(...rays), ax = (rays[0] + rays[2] + rays[4] + rays[6]) / 4, dg = (rays[1] + rays[3] + rays[5] + rays[7]) / 4;
+      return { o, clipR: +clipR.toFixed(2), square: +(ax > 0 ? dg / ax : 1).toFixed(2), c }; };
     const on = await prof();
     // the same frame without the bright-pass limit (diagnostic: what the limit changed)
     __E._bloomClampK = 0; __E._syncLook(true); await frames(3); const noClamp = await prof(); __E._bloomClampK = null; __E._syncLook(true);
@@ -734,11 +745,13 @@ const BLOOM = look(`
     let hot = null;
     if (probe) { unplant(probe); probe = plant(40 * b.threshold / Math.max(1e-4, l0)); await frames(4); const h1 = await prof();
       __E._bloomClampK = 0; __E._syncLook(true); await frames(3); const h0 = await prof(); __E._bloomClampK = null; __E._syncLook(true); await frames(2);
-      hot = { lstarOn: h1.o, lstarNoClamp: h0.o, clipRadiusSunRadii: { on: h1.clipR, noClamp: h0.clipR } }; }
-    const blockOk = on.clipR <= 1.5 && (!hot || hot.clipRadiusSunRadii.on <= 1.5);
+      hot = { lstarOn: h1.o, lstarNoClamp: h0.o, clipRadiusSunRadii: { on: h1.clipR, noClamp: h0.clipR }, square: { on: h1.square, noClamp: h0.square }, on: h1 }; }
+    const notBlock = (p) => p.clipR <= 4 && p.square <= 1.2;
+    const blockOk = notBlock(on) && (!hot || notBlock(hot.on));
+    if (hot) delete hot.on;
     out.b = { sun: probe ? 'planted (L-06): radius 0.5 deg, sunCol x40 (luminance ' + (40 * l0).toFixed(1) + ' = ' + (40 * l0 / b.threshold).toFixed(1) + 'x the threshold), limb 0.6 (no sun disc in this frame: scene HDR ' + sunHdr.toFixed(2) + ' at the sun pixel)' : 'the frame\\'s own sun disc (scene HDR ' + sunHdr.toFixed(1) + ')', hot,
       sunRadiusPx: +sunR.toFixed(1), lstarOn: on.o, lstarOff: off.o, lstarNoClamp: noClamp.o, lift6: lift6 == null ? null : +lift6.toFixed(1), monotonic: mono,
-      clipRadiusSunRadii: { on: on.clipR, noClamp: noClamp.clipR, bloomOff: off.clipR, bar: '<= 1.5 (no white block)' }, brightMax: +(b.highPassUniforms?.uBrightMax?.value ?? 0).toFixed(2), clampReady: __E.bloomClampReady === true,
+      clipRadiusSunRadii: { on: on.clipR, noClamp: noClamp.clipR, bloomOff: off.clipR, bar: 'no white block: clipped reach <= 4 sun radii (the unlimited hot sun reached 6.5-12) and diagonal / axis reach <= 1.2 (round, not boxy)' }, square: { on: on.square, noClamp: noClamp.square }, brightMax: +(b.highPassUniforms?.uBrightMax?.value ?? 0).toFixed(2), clampReady: __E.bloomClampReady === true,
       ok: lift6 != null && lift6 >= 6 && mono && blockOk };
     unplant(probe);
     // a 3x crop of the sun with the limit, without it and without bloom, for the judge (V-look-highlights reads it too)

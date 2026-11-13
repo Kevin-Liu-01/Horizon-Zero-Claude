@@ -38,7 +38,9 @@ export const LOOK_STANDINS = {
   // from the sun and the close camera (35 deg off her nose) saw the back-lit side (the judge's 'almost black' face);
   // her nose now points 55 deg off the sun, the camera sits 35 deg off her nose on the same side, so the sun lights
   // the 3/4 face from 20 deg beyond the lens and the far cheek is the readable shadow side (1-MC)
-  close: { base: 'openGround', hour: 18.75, sunRel: 120, heroRel: -175, pitch: 0.0, weather: 'clear', cam: 'close', dist: 0.8,
+  // f2-b2's sweep (6 headings at 18:45 on openGround): her face was dark at EVERY heading, the place itself is in the
+  // cliffs' shadow at 18:45 while the grass beyond is lit; the stand-in moves to the vista rise, which holds the low sun
+  close: { base: 'midgroundVista', hour: 18.75, sunRel: 120, heroRel: -175, pitch: 0.0, weather: 'clear', cam: 'close', dist: 0.8,
     note: 'stand-in: 0.8 m, 3/4 face, the sun to camera side (1-MC): her nose 55 deg off the sun, the lens 35 deg off her nose' },
   dusk: { base: 'grassSite', hour: 19.75, sunRel: 60, pitch: 0.03, weather: 'clear', cam: 'chase',
     note: 'stand-in: grass at 19:45 (2-MR)' },

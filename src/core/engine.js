@@ -263,8 +263,11 @@ export const LOOK_W0 = Object.freeze({
  * V-look-glow) and the calm lamp ring (#F2EAD3, L* 93.6) would all glow. `threshold` /
  * `smoothWidth` stay the fallbacks (ACES output, or before the look is built).
  */
-export const LOOK_BLOOM = Object.freeze({ strength: 0.48, radius: 0.72, threshold: 1.30, smoothWidth: 0.35,
-  thresholdLstar: 94, kneeRatio: 0.35 / 1.30, clampK: 8,
+// fix round 2: radius 0.72 -> 0.3 (three's lerpBloomFactor mirrors the mip factors by `radius`, so 0.72 had put the
+// weight on the two smallest mips: a sun at sunCol x40 lifted the sky only +3.2 L* at 6 sun radii against A-look-bloom
+// (b)'s +6; 0.3 keeps the factors' own wide-mip weighting, +6.7 in f2-b3's sweep); clampK 6: the bright-pass limit
+export const LOOK_BLOOM = Object.freeze({ strength: 0.48, radius: 0.3, threshold: 1.30, smoothWidth: 0.35,
+  thresholdLstar: 94, kneeRatio: 0.35 / 1.30, clampK: 6,
   factors: Object.freeze([0.55, 0.65, 0.85, 1.05, 1.25]), tint: Object.freeze([1.0, 0.97, 0.93]) });
 
 const OutputGradeShader = {
