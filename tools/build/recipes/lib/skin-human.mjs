@@ -362,7 +362,7 @@ export function bakeThinness(doc, prim, { scale = 1, t0 = 0.005, t1 = 0.025, zer
  * w = the eye (never paste, never flattened by a gate). `ball(p)` is the distance from a point to the ball's surface (dome
  * included) for the eye it belongs to, `eyes` the eye centres. Call after every append to the skin (the collar's lid and wall).
  */
-export function bakeZones(doc, bodyPrim, eyesPrim, { eyes, sphereZ, face, ball, corneaR = 0.0052, tearD = 0.0013 }) {
+export function bakeZones(doc, bodyPrim, eyesPrim, { eyes, sphereZ, face, ball, corneaR = 0.0052, tearD = 0.0009 }) {
   const buf = doc.getRoot().listBuffers()[0];
   const q = [0, 0, 0];
   const stats = { face: 0, cornea: 0, tear: 0 };
@@ -374,9 +374,9 @@ export function bakeZones(doc, bodyPrim, eyesPrim, { eyes, sphereZ, face, ball, 
       out[i * 4] = Math.round(Math.max(0, Math.min(1, f)) * 255);
       if (f > 0.5) stats.face++;
       const e = eyes[q[0] > 0 ? 0 : 1], dy = q[1] - e[1], dx = q[0] - e[0];
-      if (dy < -0.0012 && dy > -0.0085 && Math.abs(dx) < 0.0125 && q[2] > sphereZ) {
+      if (dy < -0.0012 && dy > -0.0058 && Math.abs(dx) < 0.0105 && q[2] > sphereZ + 0.006) {
         const d = ball(q);
-        const k = (1 - smooth(tearD * 0.4, tearD, d)) * (1 - smooth(0.009, 0.0125, Math.abs(dx)));
+        const k = (1 - smooth(tearD * 0.4, tearD, d)) * (1 - smooth(0.007, 0.0105, Math.abs(dx)));
         out[i * 4 + 2] = Math.round(k * 255);
         if (k > 0.5) stats.tear++;
       }
@@ -480,7 +480,7 @@ export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
  * (0 = her front) is under `reach` (the front V stays open), facing the neck. Skinned like the torso under the collar, as the lid is.
  * Call after `appendCollarSkirt`. Returns the first new vertex index.
  */
-export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, seg = 20, reach = 0.45, inset = 0.003, below = 0.003, darkUV, skinAt = null } = {}) {
+export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, seg = 20, reach = 0.45, inset = 0.003, below = 0.003, darkUV, skinAt = null, drop = 0 } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
   const n0 = P.getCount();
@@ -505,7 +505,10 @@ export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
     const a = (k / seg) * Math.PI * 2, sa = Math.sin(a), ca = Math.cos(a);
     if (ca >= reach) { cols.push(null); continue; }
     const wallAt = (y) => grid.cast(0, y, centerZ, sa, 0, ca, 0.3, 0.0001);
-    let yBot = y0 + 0.035 * 0.5 * (1 - ca);
+    // (fix round 3, `drop`: at the back the wall reaches that far BELOW the lid's lip, so the two overlap whatever the bowed idle does
+    // to the collar it lines; a steep look down the inside of the back, past the lip, met the gap between them: A-wrap-closed r1,
+    // 36 px at az 180-195, el 1.2)
+    let yBot = y0 + 0.035 * 0.5 * (1 - ca) - drop * Math.max(0, Math.min(1, (-ca - 0.2) / 0.5));
     while (wallAt(yBot) < 0 && yBot < y0 + 0.08) yBot += 0.002;
     let yTop = yBot;
     while (wallAt(yTop + 0.002) >= 0 && yTop < yBot + 0.15) yTop += 0.002;

@@ -184,9 +184,10 @@ export async function build({ out = ROOT } = {}) {
   }
   const eyes = eyeCentres(eyesPrim);
   const eyeSphereZ = eyeFrontZ(eyesPrim) - 0.0165;
-  // fix round 3 (the judges: "the cornea sits behind the lid line, so a true profile shows no wet bulge"): a taller, tighter cornea
-  // dome (4.0 mm over 1.6-6.4 mm, was 3.3 mm over 1.8-7.4 mm), so its apex stands about 2.5 mm proud of the lid margins (was 1.4)
-  const DOME = { height: 0.0040, r0: 0.0016, r1: 0.0064 };
+  // fix round 3 (the judges: "the cornea sits behind the lid line, so a true profile shows no wet bulge"): a taller cornea seated at
+  // the limbus (4.0 mm over 0-6.4 mm, was 3.3 mm flat-topped over 1.8-7.4 mm) and ROUND at its apex (a cap, not a plateau): the upper
+  // lid's margin sits 2-3 mm above the apex, and on the old plateau the lid there stood level with the apex, so a profile saw only lid
+  const DOME = { height: 0.0040, r0: 0, r1: 0.0064 };
   const domeAt = (r) => DOME.height * (1 - smooth(DOME.r0, DOME.r1, r));
   const headW2 = (prim, i) => { const p = [0, 0, 0]; prim.getAttribute('POSITION').getElement(i, p); return p[1] > 1.6 && p[2] > 0 && Math.abs(p[0]) < 0.075; };
   const L = findLandmarks(headPts, eyes);
@@ -310,7 +311,7 @@ export async function build({ out = ROOT } = {}) {
       if (before < Rb - 0.0002) continue;              // a lid's inner wall behind the ball stays behind it
       const vx = a[i * 3] - c[0], vy = a[i * 3 + 1] - c[1], vz = a[i * 3 + 2] - c[2], d = Math.hypot(vx, vy, vz);
       const dome = vz > 0 ? domeAt(Math.hypot(vx, vy)) : 0;
-      const need = Rb + dome + 0.00045;
+      const need = Rb + dome + 0.0002;
       if (d < need) { a[i * 3] = c[0] + vx / d * need; a[i * 3 + 1] = c[1] + vy / d * need; a[i * 3 + 2] = c[2] + vz / d * need; }
     }
     P.setArray(a);
@@ -575,7 +576,7 @@ export async function build({ out = ROOT } = {}) {
     const outJ = sd.getRoot().listSkins()[0].listJoints().map((jn) => jn.getName());
     return outfitSkinSampler(sn.map((n) => n.getMesh().listPrimitives()[0]), outJ, joints, (q) => q[1] > 1.40 && Math.abs(q[0]) < 0.16 && q[2] > -0.16);
   })();
-  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV: collarUV, seg: 19, reach: 1.01, skinAt: smockSkin });
+  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV: collarUV, seg: 19, reach: 1.01, skinAt: smockSkin, drop: 0.014 });
   // fix round 2, Nov 12 (LOOK C-01): the tissue's thickness behind each vertex, for the skin light's back-transmission (src/hero/skinLook.js)
   // (the ears only: the lips, the nose wings and the lower lids are thin too, with the mouth, the nostrils and the ball a few mm
   // behind them, but in a back light they glowed as a red nostril and a lit lower lid, which the backlit row forbids)
@@ -583,7 +584,9 @@ export async function build({ out = ROOT } = {}) {
   // fix round 3 (LOOK C-02, C-03): the face's micro-detail weight, the cornea and the tear line, for the skin light
   const zones = bakeZones(base, bodyPrim, eyesPrim, {
     eyes, sphereZ: eyeSphereZ,
-    face: (p) => smooth(1.505, 1.535, p[1]) * (1 - smooth(1.70, 1.725, p[1])) * smooth(-0.045, -0.015, p[2]) * (1 - smooth(0.078, 0.092, Math.abs(p[0]))),
+    // (the face proper: not the neck, the ears or the skull sides, whose islands carry fewer texels, so a UV-tiled pore there is
+    // two or three times the size and read as goose-flesh in r1)
+    face: (p) => smooth(1.548, 1.566, p[1]) * (1 - smooth(1.70, 1.725, p[1])) * smooth(-0.004, 0.012, p[2]) * (1 - smooth(0.058, 0.068, Math.abs(p[0]))),
     ball: (p) => { const e = eyes[p[0] > 0 ? 0 : 1], v = [p[0] - e[0], p[1] - e[1], p[2] - eyeSphereZ]; const r = Math.hypot(v[0], v[1]); return Math.hypot(...v) - (RB + (v[2] > 0 ? domeAt(r) : 0)); },
   });
 

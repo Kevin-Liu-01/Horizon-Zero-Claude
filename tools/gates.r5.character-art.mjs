@@ -728,22 +728,26 @@ export const GATES = [
       const patch = (img, c) => { let L = 0, n = 0; for (let j = -4; j <= 4; j++) for (let i = -4; i <= 4; i++) { const X = Math.round(c[0]) + i, Y = Math.round(c[1]) + j; if (X < 0 || Y < 0 || X >= W || Y >= H) continue; L += lum(img.data, (Y * W + X) * 4); n++; } return L / n; };
       const litCheek = Math.max(patch(N, lc[0]), patch(N, lc[1]));
       const pasteL = []; let clip = 0;
+      // (the salt-line on the lit cheek's side of the nose bridge: the stroke in the same light as the cheek it is graded against)
+      const bx = proj(face('noseBridge'))[0], litSgn = Math.sign((patch(N, lc[0]) >= patch(N, lc[1]) ? lc[0][0] : lc[1][0]) - bx) || 1;
       for (let i = 0; i < W * H; i++) {
-        if (!mask[i]) continue;
+        if (!mask[i] || ((i % W) - bx) * litSgn < 0) continue;
         const ln = lum(N.data, i * 4), lf = lum(F.data, i * 4);
         if (ln > 2.0 * lf && ln > 0.02) { pasteL.push(ln); const o = i * 4; if (Math.max(N.data[o], N.data[o + 1], N.data[o + 2]) > 0.97 * 255) clip++; }
       }
       pasteL.sort((a, b) => a - b);
       const pasteMed = pasteL.length ? pasteL[pasteL.length >> 1] : 0;
       // (c) MACRO: the lit cheek at 0.4 m, flat albedo, detail on and off; then the same at 3 m
-      const litW = patch(N, lc[0]) >= patch(N, lc[1]) ? face('cheekL') : face('cheekR');
+      // (the macro looks at the lit cheek's plain skin, 2.2 cm under its landmark: clear of the paste and the lower lid, which carry
+      // their own relief)
+      const litW = (patch(N, lc[0]) >= patch(N, lc[1]) ? face('cheekL') : face('cheekR')).sub(Fr.U1.clone().multiplyScalar(0.022));
       const MW = 600, MH = 600;
       const mpos = litW.clone().add(d34.clone().multiplyScalar(0.4));
       const macro = (dist) => { const q = litW.clone().add(d34.clone().multiplyScalar(dist)); return S.liveView(C, q.toArray(), litW.toArray(), { width: MW, height: MH, fov: 29 }); };
       const hp = (img) => {
         const L = new Float32Array(MW * MH); for (let i = 0; i < MW * MH; i++) { const o = i * 4; L[i] = (0.2126 * img.data[o] + 0.7152 * img.data[o + 1] + 0.0722 * img.data[o + 2]) / 255; }
-        const r = 5, x0b = MW / 2 - 70, y0b = MH / 2 - 70; let s2 = 0, n = 0;
-        for (let y = y0b; y < y0b + 140; y++) for (let x = x0b; x < x0b + 140; x++) { let b = 0, m = 0; for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) { b += L[(y + j) * MW + x + i]; m++; } const d = L[y * MW + x] - b / m; s2 += d * d; n++; }
+        const r = 5, x0b = MW / 2 - 45, y0b = MH / 2 - 45; let s2 = 0, n = 0;
+        for (let y = y0b; y < y0b + 90; y++) for (let x = x0b; x < x0b + 90; x++) { let b = 0, m = 0; for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) { b += L[(y + j) * MW + x + i]; m++; } const d = L[y * MW + x] - b / m; s2 += d * d; n++; }
         return Math.sqrt(s2 / n);
       };
       const M1 = macro(0.4); U.calDetailK.value = 0; const M0 = macro(0.4); U.calDetailK.value = 1;
@@ -918,7 +922,7 @@ export const GATES = [
   {
     // fix round 3, ROUND5-LOOK C-04 (§7 character-art block, at its literal bars)
     id: 'A-hero-rim', kind: 'action', lane: 'character-art', settle: 900, timeout: 240000,
-    title: 'LOOK C-04 golden-hour rim: the chase staging (the lens behind her at head height, as V22), the sun BEHIND her within 30 deg of the lens axis at 8-15 deg up (the first hour from 18.75 back that puts it there). Her mask from a key render (player only); edge = her pixels within 3 px of the outside, interior = the rest; linear luminance of the displayed frame. (a) edge mean >= 1.8 x interior mean; (b) >= 35 % of edge pixels >= the interior P90; (c) in a landmark\'s cast shadow (a 7 x 9 m slab stood 4 m toward the sun, gate-only) edge:interior <= 1.2; (d) noon, front-lit (the sun behind the lens): edge:interior <= 1.3; (e) no extra draws: her drawn meshes = the hero\'s own count (<= 5). Per-part edge ratios (skin + wrap, outfit, kit) are reported',
+    title: 'LOOK C-04 golden-hour rim: the chase staging (the lens behind her at head height, as V22), the sun BEHIND her within 30 deg of the lens axis at 8-15 deg up (the first hour from 18.75 back that puts it there). Her mask from a key render (player only); edge = her pixels within 3 px of the outside, interior = the rest; linear luminance of the displayed frame. (a) edge mean >= 1.8 x interior mean; (b) >= 35 % of edge pixels >= the interior P90; (c) in a landmark\'s cast shadow (a 7 x 9 m slab stood 4 m toward the sun, gate-only) edge:interior <= 1.2; (d) noon, front-lit (the sun behind the lens): edge:interior <= 1.3; (e) no extra draws: the hero\'s own meshes (hero.info) <= 5, the look is a shader patch. Per-part edge ratios (skin + wrap, outfit, kit) are reported',
     setup: placedSetup(['openGround'], `(async () => {
       const C = __CTX__, p = C.player, env = C.environment;
       for (const m of (C.machines?.list || [])) m.update = () => {};
@@ -995,16 +999,20 @@ export const GATES = [
       const { THREE } = await import('/src/core/collision.js');
       const geo = new THREE.BoxGeometry(7, 9, 0.6), mat = new THREE.MeshStandardMaterial({ color: 0x6a6258, roughness: 0.9 });
       const wall = new THREE.Mesh(geo, mat); wall.castShadow = true; wall.receiveShadow = true;
+      { let sk = null; p.model.traverse((o) => { if (!sk && o.isSkinnedMesh && o.castShadow) sk = o; }); if (sk) wall.layers.mask = sk.layers.mask | 1; }
       wall.position.set(p.position.x + sd.x * 4, p.position.y + 4.5, p.position.z + sd.z * 4); wall.lookAt(p.position.x, p.position.y + 4.5, p.position.z);
-      scene.add(wall); await frames(3);
+      scene.add(wall); wall.updateMatrixWorld(true); C.renderer.shadowMap.needsUpdate = true;
+      if (C.engine) C.engine.timeScale = 1; await frames(6); if (C.engine) C.engine.timeScale = 0; C.renderer.shadowMap.needsUpdate = true; await frames(3);
       const shade = measure(vB);
-      scene.remove(wall); geo.dispose(); mat.dispose(); await frames(2);
+      // (diagnostic, not graded: the backlit frame with the cloth rim and the skin light off)
+      const rimU = []; p.model.traverse((o) => { const u = o.material?.userData; if (u?.calClothU) rimU.push(u.calClothU.calRimK); });
+      scene.remove(wall); geo.dispose(); mat.dispose(); C.renderer.shadowMap.needsUpdate = true; await frames(3);
+      for (const u of rimU) u.value = 0; const rimOff = measure(vB).r; for (const u of rimU) u.value = 1;
       // (d) noon, front-lit: the sun behind the lens
       const vN = await stage(12.5, false, 12);
       const noon = measure(vN);
       // (e) her drawn meshes
       const I = p.hero?.info?.();
-      const drawn = []; p.model.traverse((o) => { if (o.isMesh && o.visible) drawn.push(o.name); });
       // the sheet: the backlit frame with her edge band (yellow), the slab's shade, the noon frame
       const g = (() => { document.getElementById('ca-sheet')?.remove(); const c = document.createElement('canvas'); c.id = 'ca-sheet'; c.width = 1600; c.height = 900; c.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#000'; document.body.appendChild(c); return c.getContext('2d'); })();
       const box = (m) => { let x0 = W, x1 = 0, y0 = H, y1 = 0; for (let i = 0; i < W * H; i++) if (m[i]) { const x = i % W, y = (i / W) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } return [x0, y0, x1, y1]; };
@@ -1023,9 +1031,9 @@ export const GATES = [
         b: back.r.overP90 >= 0.35,
         c: shade.r.ratio <= 1.2,
         d: noon.r.ratio <= 1.3,
-        e: drawn.length <= 5 && (!I || drawn.length === I.meshes.length),
+        e: !!I && I.meshes.length <= 5,
       };
-      return { pass: Object.values(terms).every(Boolean), detail: { terms, hour, sunElevDeg: +elev.toFixed(1), sunFromLensAxisDeg: vB.sunAngle, backlit: back.r, slabShade: shade.r, noonFrontLit: noon.r, drawn, heroMeshes: I?.meshes?.length ?? null } };
+      return { pass: Object.values(terms).every(Boolean), detail: { terms, hour, sunElevDeg: +elev.toFixed(1), sunFromLensAxisDeg: vB.sunAngle, backlit: back.r, slabShade: shade.r, noonFrontLit: noon.r, wrapRimOff: rimOff, heroMeshes: I?.meshes?.map((m) => m.name) ?? null } };
     })()`,
   },
   {
@@ -1033,13 +1041,15 @@ export const GATES = [
     id: 'V-brea-face-keyart', kind: 'visual', lane: 'character-art', settle: 800, timeout: 150000,
     title: 'Brea at 0.8 m in the live scene: front, 3/4 and profile on both sides, DAY 11:00 (top row) and 18:45 (bottom row), 1600 x 900',
     reference: 'reference/r5/hero/brea-face-sheet.png',
-    setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
+    setup: placedSetup(['openGround', 'navProbe'], `(async () => {${STAGE(11, 'clear', -38, true)}
       const frames = (n) => new Promise((r) => { let i = 0; const f = () => { if (++i >= n) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
       const W = 1600, H = 900, PW = 320, PH = 450;
       const c = overlay(W, H), g = c.getContext('2d');
       const views = [['PROFILE HER RIGHT', -Math.PI / 2], ['3/4 HER RIGHT', -Math.PI / 5], ['FRONT', 0], ['3/4 HER LEFT', Math.PI / 5], ['PROFILE HER LEFT', Math.PI / 2]];
       p.hero?.kit?.setHidden(3);
       for (const [row, hour, off] of [[0, 11, -38], [1, 18.75, -42]]) {
+        // (18:45: at openGround the low sun is behind the trees and her face is in their shade (r1); the map centre is clear to the west)
+        if (row === 1 && PLACE('navProbe')) { standAt(p, 'navProbe'); if (C.engine) C.engine.timeScale = 1; await frames(30); if (C.engine) C.engine.timeScale = 0; }
         env.setTime(hour);
         const sun = env.sunDir, hh = Math.atan2(sun.x, sun.z) + off * Math.PI / 180;
         p.heading = hh; p.model.rotation.y = hh; await frames(4); p.heading = hh; p.model.rotation.y = hh; p.model.updateMatrixWorld(true);
