@@ -19,7 +19,8 @@ import { ROOT } from './lib/kit/face.mjs';
 import { ARCHETYPES } from './lib/archetypes.mjs';
 import { buildNpc } from './lib/human.mjs';
 import { buildFactionAtlas, buildHairAtlas } from './lib/atlas.mjs';
-import { buildClipPack } from './lib/clips.mjs';
+import { buildClipPack, readClipPack } from './lib/clips.mjs';
+import { existsSync } from 'node:fs';
 
 export const LANE = 'settlements';
 const DIR = 'public/models/npc';
@@ -36,10 +37,15 @@ export async function build({ out = ROOT } = {}) {
   if (want('atlas-holds')) res['atlas-holds'] = await buildFactionAtlas(path.join(out, DIR, 'atlas-holds.glb'), { faction: 'holds', family: 'Ranger', provenance: prov(['mco-fantasy-standard', 'npc-generated']) });
   if (want('atlas-hair')) res['atlas-hair'] = await buildHairAtlas(path.join(out, DIR, 'atlas-hair.glb'), { provenance: prov(['npc-generated']) });
   if (want('clips')) res.clips = await buildClipPack(path.join(out, DIR, 'npc-clips.glb'), { provenance: prov(['ual1', 'ual2-standard']) });
+  // the person's own clips pose the tiers' simplification (lib/human.mjs): the pack this build wrote, or the shipped one on a
+  // partial build that skips it
+  const packOut = path.join(out, DIR, 'npc-clips.glb'), packShipped = path.join(ROOT, DIR, 'npc-clips.glb');
+  let clipOf = null;
   for (const a of ARCHETYPES) {
     if (!want(a.id)) continue;
+    clipOf ||= await readClipPack(existsSync(packOut) ? packOut : packShipped);
     const t0 = Date.now();
-    res[a.id] = await buildNpc(a, { file: path.join(out, DIR, `${a.id}.glb`), provenance: prov(['ubc-standard', 'mco-fantasy-standard', 'npc-generated']), log });
+    res[a.id] = await buildNpc(a, { file: path.join(out, DIR, `${a.id}.glb`), provenance: prov(['ubc-standard', 'mco-fantasy-standard', 'npc-generated']), log, clipOf });
     log(`  ${a.id}: ${Date.now() - t0} ms`);
   }
   return res;

@@ -38,7 +38,7 @@ const BAKE_AMP = { Walk_Loop: 0.72, Walk_Formal_Loop: 0.8, Jog_Fwd_Loop: 0.55 };
 const san = (n) => THREE.PropertyBinding.sanitizeNodeName(n);
 
 /** A three.js scene graph from a glTF document's scene (Bones where the skin says so). */
-function threeTree(doc) {
+export function threeTree(doc) {
   const root = doc.getRoot();
   const jointSet = new Set();
   for (const s of root.listSkins()) for (const j of s.listJoints()) jointSet.add(j);
@@ -198,4 +198,27 @@ export async function buildClipPack(file, { provenance }) {
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, bytes);
   return { bytes: bytes.byteLength, clips: root.listAnimations().length, gaits: Object.fromEntries(Object.entries(gaits).map(([k, g]) => [k, { dur: g.dur, dist: g.dist, speed: +(g.dist / g.dur).toFixed(3) }])) };
+}
+
+/**
+ * A built clip pack, back as three's clips (name -> AnimationClip; native clips copied per body with the pelvis scaled, as the
+ * runtime bank does). The tiers' simplification reads the person's own clips through this (lib/human.mjs, `posedOf`).
+ */
+export async function readClipPack(file) {
+  const doc = await (await io()).read(file);
+  const ex = doc.getRoot().getAsset().extras?.r5Clips || {};
+  const byName = new Map();
+  for (const a of doc.getRoot().listAnimations()) byName.set(a.getName(), threeClip(a));
+  const pelvis = ex.pelvisScale || { F: 1, M: 1 };
+  return (sex, name) => {
+    const key = `${sex}|${name}`;
+    if (byName.has(key)) return byName.get(key);
+    const base = byName.get(name);
+    if (!base) return null;
+    const c = base.clone();
+    c.name = key;
+    for (const tr of c.tracks) if (tr.name === 'pelvis.position') for (let i = 0; i < tr.values.length; i++) tr.values[i] *= pelvis[sex] || 1;
+    byName.set(key, c);
+    return c;
+  };
 }

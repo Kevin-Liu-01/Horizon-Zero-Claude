@@ -74,18 +74,26 @@ export function soupOf(g, out = []) {
  * meshoptimizer on a bucket: `target` triangles, positions + normal + uv weighted so a UV seam and a
  * crease survive. Vertices are never moved (a collapse), so the result stays on the near mesh.
  */
-export async function simplify(g, target, { err = 0.02, lock = false, prune = false, attr = [1, 1, 1, 1.2, 1.2], vlock = null } = {}) {
+export async function simplify(g, target, { err = 0.02, lock = false, prune = false, attr = [1, 1, 1, 1.2, 1.2], vlock = null, abs = false, extraW = 1 } = {}) {
   await MeshoptSimplifier.ready;
   if (tris(g) <= target) return g;
   const n = g.pos.length / 3;
   const pos = Float32Array.from(g.pos), idx = Uint32Array.from(g.idx);
-  const at = new Float32Array(n * 5);
-  for (let i = 0; i < n; i++) { at[i * 5] = g.nrm[i * 3]; at[i * 5 + 1] = g.nrm[i * 3 + 1]; at[i * 5 + 2] = g.nrm[i * 3 + 2]; at[i * 5 + 3] = g.uv[i * 2] * 4; at[i * 5 + 4] = g.uv[i * 2 + 1] * 4; }
+  // `g.extra` (g.extraN floats a vertex, e.g. its skinned position in a few poses) rides as attributes of weight `extraW`
+  const xn = g.extra ? g.extraN : 0, A = 5 + xn;
+  const at = new Float32Array(n * A);
+  for (let i = 0; i < n; i++) {
+    at[i * A] = g.nrm[i * 3]; at[i * A + 1] = g.nrm[i * 3 + 1]; at[i * A + 2] = g.nrm[i * 3 + 2]; at[i * A + 3] = g.uv[i * 2] * 4; at[i * A + 4] = g.uv[i * 2 + 1] * 4;
+    for (let k = 0; k < xn; k++) at[i * A + 5 + k] = g.extra[i * xn + k];
+  }
+  if (xn) attr = [...attr, ...new Array(xn).fill(extraW)];
   const flags = lock ? ['LockBorder'] : (prune ? ['Prune'] : []);
+  // `abs`: `err` is a distance in the mesh's own units, not a share of its extent (a tier's silhouette budget is in metres)
+  if (abs) flags.push('ErrorAbsolute');
   // `vlock(i)`: vertices the simplifier may not move or collapse (a tier's silhouette pieces: tails, aprons, tools)
   let locks = null;
   if (vlock) { locks = new Uint8Array(n); for (let i = 0; i < n; i++) locks[i] = vlock(i) ? 1 : 0; }
-  const [out] = MeshoptSimplifier.simplifyWithAttributes(idx, pos, 3, at, 5, attr, locks, target * 3, err, flags);
+  const [out] = MeshoptSimplifier.simplifyWithAttributes(idx, pos, 3, at, A, attr, locks, target * 3, err, flags);
   return compact({ pos: g.pos.slice(), nrm: g.nrm.slice(), uv: g.uv.slice(), jnt: g.jnt.slice(), wgt: g.wgt.slice(), col: g.col?.slice(), idx: Array.from(out) });
 }
 

@@ -35,6 +35,7 @@ import {
 import { emptyGeo, primToGeo, compact, join, filterTris, clipAbsX, clipTopY, soupOf, simplify, simplifySloppy, nearestSkin, dye, lin, tris, recomputeGeoNormals } from './geo.mjs';
 import { ATLAS, uvRect, mcoUV, NEUTRAL, HAIR_NEUTRAL } from './atlas.mjs';
 import { OUTFITS } from './outfits.mjs';
+import { threeTree } from './clips.mjs';
 
 const SEX = {
   F: { file: 'Superhero_Female_FullBody.gltf', body: 'Superhero_Female', browMat: 'MI_Hair_2', skinMat: 'MI_Superhero_Female', guide: 'Hair_BuzzedFemale.gltf', dy: 0 },
@@ -391,7 +392,7 @@ async function loadPart(base, spec, SRC, dy) {
 
 /* ================================================================= the build */
 
-export async function buildNpc(spec, { file, provenance, log = () => {} }) {
+export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf = null }) {
   const SRC = srcRoot();
   const SX = SEX[spec.sex];
   const dy = SX.dy;
@@ -874,23 +875,63 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
     return [g, tails];
   };
   const skinEyes = skinGeo;
-  // LOD1 keeps every vertex of what stands off the body and moves on its own (dyn_ tails, aprons, sashes, the tools and baskets
-  // on prop joints): those are the silhouette at 18 m, and a 16-triangle apron or a 56-triangle tail popped 3-7 cm at the change
-  // (A-npc-fidelity's jump clause). The rest of the outfit pays for them.
+  // LOD1 and LOD2: ONE absolute error over the whole person (skin, outfit and the wrap's shell), the smallest that lands the
+  // tier under its cap (plan §4.1: 8 k, 4 k). A per-part triangle target with an error relative to each part's extent let the
+  // simplifier take a boot's toe or a shoulder's edge (5-8 cm) while it kept millimetres elsewhere, and the tier change popped
+  // (A-npc-fidelity: <= 0.02 m over the walk and every clip the person plays). Equal error everywhere is what a silhouette needs.
+  // What stands off the body and moves on its own (dyn_ tails, aprons, sashes; the tools and baskets on prop joints) keeps
+  // every vertex: in a pose it leaves the bind shape the error was measured in.
   const silJ = new Set();
   root.listSkins()[0].listJoints().forEach((jn, i) => { if (/^(dyn_|prop_)/.test(jn.getName())) silJ.add(i); });
   const onSil = (g) => (i) => { for (let k = 0; k < 4; k++) if (g.wgt[i * 4 + k] >= 0.25 && silJ.has(g.jnt[i * 4 + k])) return true; return false; };
-  const l1Src = join([outfitGeo, ...shellOf(10, 22)]);
-  const l1Outfit = await simplifyTo(l1Src, 4750, 0.03, 1.25, 0.28, onSil(l1Src));
-  // the skin gives back what the locked pieces cost over the outfit's share: LOD1 stays <= 8 k (plan §4.1)
-  const L1 = {
-    skin: await simplify(skinEyes, Math.min(3200, Math.floor(tris(skinEyes) * 0.55), 7990 - tris(l1Outfit)), { err: 0.03 }),
-    outfit: l1Outfit,
+  // the hands too: fingers curl in every work clip, so a finger the bind-pose error let go is a pop in the pose (about 130
+  // triangles a hand, already simplified at near)
+  const handJ = new Set();
+  root.listSkins()[0].listJoints().forEach((jn, i) => { if (/^(hand_|thumb_|index_|middle_|ring_|pinky_)/.test(jn.getName())) handJ.add(i); });
+  const onHand = (g) => (i) => { for (let k = 0; k < 4; k++) if (g.wgt[i * 4 + k] >= 0.25 && handJ.has(g.jnt[i * 4 + k])) return true; return false; };
+  // position first: at 18 m a normal or a UV seam is not what pops
+  const ATTR_LOD = [0.15, 0.15, 0.15, 0.35, 0.35];
+  // and the person's own poses: each vertex's skinned position in a few frames of the clips this person plays rides with it as
+  // attributes, so two vertices merge only where they also move together (a bind-pose error alone let a spine-weighted apron
+  // corner fold onto a pelvis-weighted one, 3.5 cm apart in the chop)
+  const poses = posedOf(base, spec, clipOf);
+  const withPoses = (g) => {
+    if (!poses) return g;
+    const n = g.pos.length / 3, K = poses.mats.length, ex = new Float32Array(n * 3 * K), v = new THREE.Vector3(), o = new THREE.Vector3();
+    for (let k = 0; k < K; k++) {
+      const M = poses.mats[k];
+      for (let i = 0; i < n; i++) {
+        o.set(0, 0, 0);
+        for (let c = 0; c < 4; c++) { const w = g.wgt[i * 4 + c]; if (w <= 0) continue; v.set(g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]).applyMatrix4(M[g.jnt[i * 4 + c]]); o.addScaledVector(v, w); }
+        ex[(i * K + k) * 3] = o.x; ex[(i * K + k) * 3 + 1] = o.y; ex[(i * K + k) * 3 + 2] = o.z;
+      }
+    }
+    return { ...g, extra: ex, extraN: 3 * K };
   };
-  const L2 = {
-    skin: await simplifyTo(skinEyes, 1350, 0.08),
-    outfit: await simplifyTo(join([outfitGeo, ...shellOf(6, 14)]), 2400, 0.08, 1.08, 0.9),
+  const tierAt = async (parts, cap, lo, hi) => {
+    for (const q of parts) q.gp = withPoses(q.g);
+    const run = async (e) => {
+      const out = [];
+      for (const q of parts) out.push(q.g.idx.length ? await simplify(q.gp, 0, { err: e, abs: true, attr: ATTR_LOD, extraW: 0.8, vlock: q.lock ? q.lock(q.g) : null }) : q.g);
+      return out;
+    };
+    let best = null, bestE = hi;
+    for (let k = 0; k < 14; k++) {
+      const e = Math.sqrt(lo * hi);
+      const out = await run(e);
+      const n = out.reduce((a, g) => a + tris(g), 0);
+      if (n <= cap) { best = out; bestE = e; hi = e; } else lo = e;
+      if (hi / lo < 1.04) break;
+    }
+    if (!best) { best = await run(hi); bestE = hi; }
+    return { parts: best, err: bestE };
   };
+  const shellL1 = shellOf(30, 48), shellL2 = shellOf(14, 24);
+  const l1 = await tierAt([{ g: skinEyes, lock: onHand }, { g: join([outfitGeo, ...shellL1]), lock: onSil }], 7990, 0.0015, 0.08);
+  const l2 = await tierAt([{ g: skinEyes }, { g: join([outfitGeo, ...shellL2]) }], 3990, 0.004, 0.2);
+  const L1 = { skin: l1.parts[0], outfit: l1.parts[1], err: l1.err };
+  const L2 = { skin: l2.parts[0], outfit: l2.parts[1], err: l2.err };
+  log(`  LOD1 error ${(l1.err * 1000).toFixed(1)} mm (${tris(L1.skin)} + ${tris(L1.outfit)}), LOD2 ${(l2.err * 1000).toFixed(1)} mm (${tris(L2.skin)} + ${tris(L2.outfit)})`);
   const caster = await simplifyTo(join([L2.skin, L2.outfit]), 2000, 0.12, 2);
 
   // ---- nodes
@@ -919,8 +960,8 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   const bodyBox = (() => { let lo = 1e9, hi = -1e9; const a = skinGeo.pos; for (let i = 1; i < a.length; i += 3) { lo = Math.min(lo, a[i]); hi = Math.max(hi, a[i]); } return { lo, hi }; })();
   const tierTris = {
     L0: { skin: tris(skinGeo), hair: tris(hairGeo), outfit: tris(outfitGeo) },
-    L1: { skin: tris(L1.skin), outfit: tris(L1.outfit) },
-    L2: { skin: tris(L2.skin), outfit: tris(L2.outfit) },
+    L1: { skin: tris(L1.skin), outfit: tris(L1.outfit), errMm: +(L1.err * 1000).toFixed(2) },
+    L2: { skin: tris(L2.skin), outfit: tris(L2.outfit), errMm: +(L2.err * 1000).toFixed(2) },
     caster: tris(caster),
   };
   const stats = await writeSkinned(base, file, {
@@ -941,6 +982,37 @@ export async function buildNpc(spec, { file, provenance, log = () => {} }) {
   });
   log(`  ${spec.id}: ${JSON.stringify(tierTris)} ${stats.bytes} B, density ${(densityK + 0.04).toFixed(2)} shrink ${layout.shrink.toFixed(3)}, body box ${bodyBox.lo.toFixed(3)}..${bodyBox.hi.toFixed(3)}`);
   return { ...stats, tiers: tierTris, face: faceRec.landmarks, iou: faceRec.iou };
+}
+
+/**
+ * The joint matrices (bone world x inverse bind) of a few frames of the clips this person plays: two walk phases, the middle
+ * of each work or idle clip. Null without a clip pack (the tiers then simplify on the bind pose alone).
+ */
+function posedOf(base, spec, clipOf) {
+  if (!clipOf) return null;
+  const skin = base.getRoot().listSkins()[0];
+  const joints = skin.listJoints();
+  const ibm = skin.getInverseBindMatrices().getArray();
+  const { top, map } = threeTree(base);
+  const bones = joints.map((j) => map.get(j));
+  const W = spec.clips?.walk || {};
+  const list = [];
+  const walk = clipOf(spec.sex, W.also || W.clip || 'Walk_Loop');
+  if (walk) list.push([walk, 0.25], [walk, 0.75]);
+  for (const n of (spec.clips?.stage || spec.clips?.idle || []).slice(0, 3)) { const c = clipOf(spec.sex, n); if (c) list.push([c, 0.5]); }
+  const mats = [];
+  const mixer = new THREE.AnimationMixer(top);
+  for (const [clip, t] of list) {
+    mixer.stopAllAction();
+    const a = mixer.clipAction(clip);
+    a.play();
+    mixer.setTime(t * clip.duration);
+    top.updateMatrixWorld(true);
+    mats.push(bones.map((b, i) => new THREE.Matrix4().multiplyMatrices(b.matrixWorld, new THREE.Matrix4().fromArray(ibm, i * 16))));
+    a.stop();
+  }
+  mixer.uncacheRoot(top);
+  return { mats, clips: list.map(([c, t]) => `${c.name}@${t}`) };
 }
 
 /**
