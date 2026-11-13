@@ -133,7 +133,11 @@
             6.5,
             -4
           ],
-          "chroma": 0.9
+          "chroma": 0.9,
+          "cRange": [
+            20,
+            40
+          ]
         },
         "mid": {
           "range": [
@@ -298,7 +302,11 @@
             1.5,
             -2.5
           ],
-          "chroma": 1
+          "chroma": 1,
+          "cRange": [
+            20,
+            40
+          ]
         },
         "high": {
           "range": [
@@ -440,7 +448,11 @@
             6,
             -9
           ],
-          "chroma": 0.85
+          "chroma": 0.85,
+          "cRange": [
+            20,
+            40
+          ]
         },
         "mid": {
           "range": [
@@ -454,8 +466,8 @@
             100,
             15
           ],
-          "b": 0.6,
-          "rotate": -10
+          "b": 0.8,
+          "rotate": -6
         },
         "high": {
           "range": [
@@ -646,7 +658,7 @@
       "dusk"
     ]
   ],
-  "tuning": "Fix round 2 (Nov 13): v2 read as a rose-brown filter that drained gold, fire and sun glow (judges): its top band took chroma x0.42 from every highlight, the mid a* x1.12 turned yellows salmon, and the tone curve lifted saturated oranges out of sRGB, where a per-channel clamp turned them lemon (#FFC070 C 51 -> 23). v3: the top band desaturates near-neutrals only (cRange 10-22: sky and cloud tops go cream), warm highlights get back the chroma AgX takes (warm 40-95 deg x1.22 above L* 50-78), the tone lift fades with chroma (toneC: neutrals open fully, gold and fire by half), every colour the stage moves out of sRGB is gamut-mapped by chroma at its own hue, the warm mids turn 8 deg toward orange with their chroma kept (1-TR mid hue 49), saturation by luma no longer drops the top (0.95/1.00/1.00), shadows shift toward rose below L* 8-30 only (+6.5, -4), greens untouched, Orchil violets x1.7 so Brea outshines the grass; noon keeps W0 hues (amber +3 deg back toward straw, no mid turn); dusk keeps v2 violet-rose shadows. On the f1-b1 dump: fire C 9 -> 16 (dim fire 25 -> 45, W0 45), sunlit grass C 26 -> 39 (W0 43), mid grass 30 -> 37 (W0 39), violet max 52 vs grass p90 47. Fix round 1 (Nov 12): the r4 sets folded yellow and green into one amber band (97 % of chroma pixels in one 30-degree band) and read as a sepia filter beside 1-TR (judge). Re-tuned on the HDR dump of the look places (no hour EV, W0 keys): the amber band rotated -3 deg toward orange (a* x1.12 in the mids) and kept at chroma x0.98, the olive band only -6 deg, greens untouched, Orchil violets x1.55 so Brea's violet is the most saturated hue (dump: violet max 46.8 vs grass p90 42.0 field, 45.2 vs 41.6 aim, 47.3 vs 39.8 close); shadows shifted toward rose in L*a*b* by (5.5, -5) at chroma x0.85 (the full-resolution frames, with GTAO, put the darkest fifth at a* 8-10: a larger b* shift turned them blue-violet); mid b* x0.82; highlights x0.42 chroma; a tone curve on L* that opens the top (60 -> 68.5, 72 -> 82) so p99 does not fall below the W0 output (field 73.7 vs W0 73.4). Bars met on the dump: 22/40 against r4 14/40; the rest (p99 >= 88, clip, spread, hi10 chroma) need the sun, the sky and the sea (world-sky L-03/L-04/L-06, world-ground). R68 (Nov 13, integration frames a1): the tone curve no longer lifts the toe (identity below L* 15; it used to put 6 at 6.8 and 15 at 16.4): with world-sky's aerial v2 the two lifts stacked into a milky Pans vista; the grade keeps the shadow tint, the aerial term owns distance.",
+  "tuning": "Fix round 2 (Nov 13): v2 read as a rose-brown filter that drained gold, fire and sun glow (judges): its top band took chroma x0.42 from every highlight, the mid a* x1.12 turned yellows salmon, the tone curve lifted saturated oranges out of sRGB, where a per-channel clamp turned them lemon (#FFC070 C 51 -> 23), and the shadow shift turned firelit ground pink. v3 (tuned on the v2 HDR dump: what the output pass tone-maps, GTAO and bloom folded in, every other pixel of the graded frames): the top band desaturates near-neutrals only (cRange 10-22: sky and cloud tops go cream); warm highlights get back the chroma AgX takes (warm 40-95 deg x1.22 above L* 50-78); the tone lift fades with chroma (toneC: neutrals open fully, gold and fire by half); every colour the stage moves out of sRGB is gamut-mapped by chroma at its own hue; the warm mids turn 8 deg toward orange with their chroma kept (1-TR mid hue 49); saturation by luma no longer drops the top (0.95/1.00/1.00); shadows shift toward rose below L* 8-30 only, and only where they are near-neutral (cRange 20-40: firelit ground keeps its orange); greens untouched; Orchil violets x1.7 so Brea outshines the grass; noon keeps W0 hues (amber +3 deg back toward straw, no mid turn); dusk keeps violet-rose neutral shadows with mids x0.8 b* and -6 deg. Probes (HDR through the output, golden 17:45): dim fire C 25 -> 45 (W0 45), sunlit grass 26 -> 39 (W0 43), mid grass 30 -> 37 (W0 39), firelit ground at dusk h 33 -> 46, C 33 -> 39 (W0 h 57, C 47); the v2 dump at full resolution: violet max 47 vs grass p90 47 (field). Fix round 2 (Nov 13): v2 read as a rose-brown filter that drained gold, fire and sun glow (judges): its top band took chroma x0.42 from every highlight, the mid a* x1.12 turned yellows salmon, and the tone curve lifted saturated oranges out of sRGB, where a per-channel clamp turned them lemon (#FFC070 C 51 -> 23). v3: the top band desaturates near-neutrals only (cRange 10-22: sky and cloud tops go cream), warm highlights get back the chroma AgX takes (warm 40-95 deg x1.22 above L* 50-78), the tone lift fades with chroma (toneC: neutrals open fully, gold and fire by half), every colour the stage moves out of sRGB is gamut-mapped by chroma at its own hue, the warm mids turn 8 deg toward orange with their chroma kept (1-TR mid hue 49), saturation by luma no longer drops the top (0.95/1.00/1.00), shadows shift toward rose below L* 8-30 only (+6.5, -4), greens untouched, Orchil violets x1.7 so Brea outshines the grass; noon keeps W0 hues (amber +3 deg back toward straw, no mid turn); dusk keeps v2 violet-rose shadows. On the f1-b1 dump: fire C 9 -> 16 (dim fire 25 -> 45, W0 45), sunlit grass C 26 -> 39 (W0 43), mid grass 30 -> 37 (W0 39), violet max 52 vs grass p90 47. Fix round 1 (Nov 12): the r4 sets folded yellow and green into one amber band (97 % of chroma pixels in one 30-degree band) and read as a sepia filter beside 1-TR (judge). Re-tuned on the HDR dump of the look places (no hour EV, W0 keys): the amber band rotated -3 deg toward orange (a* x1.12 in the mids) and kept at chroma x0.98, the olive band only -6 deg, greens untouched, Orchil violets x1.55 so Brea's violet is the most saturated hue (dump: violet max 46.8 vs grass p90 42.0 field, 45.2 vs 41.6 aim, 47.3 vs 39.8 close); shadows shifted toward rose in L*a*b* by (5.5, -5) at chroma x0.85 (the full-resolution frames, with GTAO, put the darkest fifth at a* 8-10: a larger b* shift turned them blue-violet); mid b* x0.82; highlights x0.42 chroma; a tone curve on L* that opens the top (60 -> 68.5, 72 -> 82) so p99 does not fall below the W0 output (field 73.7 vs W0 73.4). Bars met on the dump: 22/40 against r4 14/40; the rest (p99 >= 88, clip, spread, hi10 chroma) need the sun, the sky and the sea (world-sky L-03/L-04/L-06, world-ground). R68 (Nov 13, integration frames a1): the tone curve no longer lifts the toe (identity below L* 15; it used to put 6 at 6.8 and 15 at 16.4): with world-sky's aerial v2 the two lifts stacked into a milky Pans vista; the grade keeps the shadow tint, the aerial term owns distance.",
   "hourEv": [
     [
       0,

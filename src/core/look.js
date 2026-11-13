@@ -430,7 +430,12 @@ function labStage(c, X, w) {
     // fix round 2: `cRange` [C0, C1] keeps the shift to near-neutral darks (full below chroma C0, none above C1): shade
     // and night go rose-violet, while firelit ground, skin and cloth in shadow keep their own warm hue (f2-b1's play
     // frames: without it the dusk set turned the campfire's pool of light magenta)
-    const S = X.shadow, ws = (1 - smoothstep(S.range[0], S.range[1], L0)) * (S.cRange ? 1 - smoothstep(S.cRange[0], S.cRange[1], C0) : 1) * w;
+    // (the gate covers the warm hues [h0, h1] of cRange[2..3] only, default 20-100 deg: a saturated blue keeps the full shift,
+    // so the stage stays invertible where the sRGB floor is close: look.invert)
+    const S = X.shadow, cr = S.cRange;
+    let wcs = 1;
+    if (cr) { let h0 = Math.atan2(b, a) * 180 / Math.PI; if (h0 < 0) h0 += 360; wcs = 1 - smoothstep(cr[0], cr[1], C0) * bandWeight(h0, cr[2] ?? 20, cr[3] ?? 100, 20); }
+    const ws = (1 - smoothstep(S.range[0], S.range[1], L0)) * wcs * w;
     if (ws > 0) {
       const k = 1 + ((S.chroma ?? 1) - 1) * ws;
       a = a * k + (S.shift ? S.shift[0] : 0) * ws;
@@ -725,10 +730,13 @@ export class Look {
     const d = this._d, f = this._f, r = this._r;
     // 1. ungrade: fixed-point refinement through the live slots and mix
     d[0] = t[0]; d[1] = t[1]; d[2] = t[2];
-    for (let it = 0; it < 6; it++) {
+    // fix round 2: damped after the first steps. Grade v3 lifts violet chroma x1.7, where the grade's local gain passes
+    // 2 and the undamped step d += (t - G(d)) oscillates (0.15 % of random targets missed by > 1/255 in node)
+    for (let it = 0; it < 40; it++) {
       this._grade(d, f);
       let e = 0;
-      for (let i = 0; i < 3; i++) { const di = t[i] - f[i]; d[i] = clamp01(d[i] + di); e += Math.abs(di); }
+      const k = it < 4 ? 1 : 0.5;
+      for (let i = 0; i < 3; i++) { const di = t[i] - f[i]; d[i] = clamp01(d[i] + k * di); e += Math.abs(di); }
       if (e < 1e-5) break;
     }
     // 2. un-encode, 3. un-tonemap
