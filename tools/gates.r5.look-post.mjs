@@ -229,6 +229,12 @@ const LOOK = `
     // f1-b2: Brea still differed between boots after it (her idle life draws breath, weight-shift, blink and fidget
     // phases from Math.random at boot and on its timers): those phases are reset, and Math.random is a seeded
     // generator for the 120 settle steps only (restored before anything else runs)
+    // f1-b4: the last boot-dependent pixels (0.01-0.4 %, max 44/255, dusk already identical) were distant trees in
+    // different LOD bands: vegetation re-sorts tree LODs only when the lens has moved TREE_RESORT_DIST since the last
+    // sort, so the bands followed each boot's camera history. The sort is forced at the place, and the grass rings
+    // are re-scattered synchronously there (vegetation.forceStream, the gates' own entry point)
+    const VG = __C.vegetation;
+    if (VG) { if (typeof VG._treeSortX === 'number') { VG._treeSortX = 1e9; VG._treeSortZ = 1e9; } VG.forceStream?.(P.x, P.z); }
     if (o.settle !== false && !__camSaved.delta) {
       __E.wallTime = (Math.floor(__E.wallTime / 4096) + 1) * 4096;
       const gd = __E.clock.getDelta; __E.clock.getDelta = () => 1 / 60;
@@ -243,6 +249,8 @@ const LOOK = `
         __E.requestTimeScale('studio', 0);
       } finally { Math.random = rnd0; __E.clock.getDelta = gd; }
     }
+    // the lens has settled now (its damping started from each boot's own last position): sort the tree LODs here
+    if (VG && typeof VG._treeSortX === 'number') { VG._treeSortX = 1e9; VG._treeSortZ = 1e9; }
     if (P.cam === 'close') {
       await frames(4);
       const head = p.animator?.b?.head?.bone;
