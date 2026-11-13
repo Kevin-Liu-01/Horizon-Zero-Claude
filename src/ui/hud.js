@@ -1183,7 +1183,7 @@ export class HUD {
     if (Math.abs(x - this._vw * 0.5) < MHB_EYE_HALF * sc + hw && y - h < MHB_EYE_BASE * sc) {
       y = MHB_EYE_BASE * sc + h + gap;
     }
-    const colB = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc;
+    const colB = this._colFoot(sc);
     const colR = MHB_SAFE_L * sc;
     if (x - hw < colR && y - h < colB) {
       const toRight = colR + hw + gap - x, toBelow = colB + h + gap - y;
@@ -1487,7 +1487,14 @@ export class HUD {
   /** Dynamic hide: the note recedes when nothing has changed for a while. */
   _updateTracker(dt) {
     this._trackRenderT = (this._trackRenderT ?? 0) - dt;
-    if (this._trackRenderT <= 0) { this._trackRenderT = 0.5; this._renderTracker(false); }
+    if (this._trackRenderT <= 0) {
+      this._trackRenderT = 0.5;
+      this._renderTracker(false);
+      // one layout read at 2 Hz: where the column really ends (+ the resolver's gap)
+      const off = this._trackEl.classList.contains('off');
+      const el = off ? this._vitalsEl : this._trackEl;
+      this._colFootPx = el.getBoundingClientRect().bottom + 8 * this._scale;
+    }
     const busy = this._anyHostile || this._reveal > 0.01 || this._trackIdleT < TRACK_IDLE_S;
     this._trackIdleT += dt;
     const idle = !busy;
@@ -1946,7 +1953,7 @@ export class HUD {
       let moved = y < topFloor ? 1 : 0;
       if (moved) y = topFloor;
       // the fixed instruments keep their place: the column (the staff, the gourd, the note)...
-      const colB = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc;
+      const colB = this._colFoot(sc);
       const colR = MHB_SAFE_L * sc;
       if (x - halfW < colR && y - plateH < colB) {
         const toRight = colR + halfW - x, toBelow = colB + plateH - y;
@@ -2001,7 +2008,7 @@ export class HUD {
     for (let i = 0; i < MHB_CAP; i++) {
       if (X[i] !== X[i]) continue;
       const hi = (this._mhbSlots[i].h || MHB_PLATE_H) * ws;
-      const colB = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc, colR = MHB_SAFE_L * sc;
+      const colB = this._colFoot(sc), colR = MHB_SAFE_L * sc;
       if (X[i] - HW[i] < colR && Y[i] - hi < colB) {
         const toRight = colR + HW[i] - X[i], toBelow = colB + hi - Y[i];
         if (toRight <= toBelow) { X[i] += toRight; C[i] |= 1; } else { Y[i] += toBelow; C[i] |= 2; }
@@ -2057,10 +2064,20 @@ export class HUD {
     }
   }
 
+  /**
+   * The top-left column's painted foot (the staff, the chips and the field note), measured at 2 Hz in
+   * `_updateTracker`: the glass note grows with its objective's lines, so a fixed base let a plate
+   * slide under a two-line note (V-hud-glass, W1 fix round 2). Never less than the old base.
+   */
+  _colFoot(sc) {
+    const base = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc;
+    return this._colFootPx > base ? this._colFootPx : base;
+  }
+
   /** A plate (bottom-centre x, y; half width; height) clear of the column and of the circle with its vial. */
   _plateFree(x, y, hw, h) {
     const sc = this._scale;
-    const colB = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc, colR = MHB_SAFE_L * sc;
+    const colB = this._colFoot(sc), colR = MHB_SAFE_L * sc;
     if (x - hw < colR && y - h < colB) return false;
     if (Math.abs(x - this._vw * 0.5) < hw + MHB_EYE_HALF * sc && y - h < MHB_EYE_BASE * sc) return false;
     return x - hw > 0 && x + hw < this._vw && y - h >= MHB_TOP_BASE * sc;

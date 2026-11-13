@@ -1627,7 +1627,8 @@ const A_DECLUTTER = {
       for (let j = 0; j < 3; j++) { const o = j * 4; if (B[o + 2] <= B[o]) continue; const ox = Math.min(r.right, B[o + 2]) - Math.max(r.left, B[o]), oy = Math.min(r.bottom, B[o + 3]) - Math.max(r.top, B[o + 1]); if (ox > 2 && oy > 2) covered.push(Math.round(ox * oy)); }
     }
     /* 3. calm: everything away, full health, nothing Flagged, 30 s */
-    /* r5-all-machines: clear */ for (const x of c.machines.list) { if (x.alive !== false) { x.position.x += 400; x.root?.position?.set?.(x.position.x, x.position.y, x.position.z); x.update = () => {}; } }
+    /* calm means calm: everyone 400 m off, at rest, reading nothing */
+    /* r5-all-machines: clear */ for (const x of c.machines.list) { if (x.alive !== false) { x.position.x += 400; x.root?.position?.set?.(x.position.x, x.position.y, x.position.z); x.update = () => {}; x.state = 'idle'; x.suspicion = 0; } }
     for (const [mm, el] of S.tags) { el.remove(); S.tags.delete(mm); }
     c.player.health = c.player.maxHealth;
     c.hud._engaged.clear();
@@ -1635,6 +1636,7 @@ const A_DECLUTTER = {
     const t0 = performance.now();
     while (performance.now() - t0 < 30500) { c.player.health = c.player.maxHealth; await wait(500); }
     const calm = textSurfaces();
+    const eyeCalm = hud.surfaces().eye;
     const checks = {
       sightingSurfacesAtMost8: sight.length <= 8,
       textRevealsAtMost2: textReveals <= 2,
@@ -1646,7 +1648,7 @@ const A_DECLUTTER = {
       calmAtMost4: calm.length <= 4,
     };
     const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
-    return { pass: failed.length === 0, detail: { failed, sight, eye, textReveals, ticks: a.revealTicks, candidates: a.revealCandidates, card: card.slice(0, 80), herd: herd.length, plates: { full, compact, names: mb.names }, covered, calm,
+    return { pass: failed.length === 0, detail: { failed, sight, eye, textReveals, ticks: a.revealTicks, candidates: a.revealCandidates, card: card.slice(0, 80), herd: herd.length, plates: { full, compact, names: mb.names }, covered, calm, eyeCalm,
       gradedWith: 'A-sighting, A63, A71c, A71g, A-dmg-chip-clear in the same run (the row\\'s fifth clause)' } };
   })()`),
 };
@@ -1884,7 +1886,7 @@ const R_GLASS_TOKENS = {
         <div style="font:400 13px var(--cal-font-mono);margin-top:3px">Climb T1 on the Organ Shelf; sight T2 and T6.</div></div>
       <div style="display:flex;align-items:center;gap:8px"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.4" fill="none" stroke="rgba(20,22,26,.62)" stroke-width="3.4"/><circle cx="12" cy="12" r="10.4" fill="none" stroke="#F1EEE6" stroke-width="1.4"/><path d="M12 6.5V17.5M12 6.5L7.4 13M12 6.5L16.6 13" fill="none" stroke="#D2452E" stroke-width="1.8"/></svg>
         <svg width="200" height="6" viewBox="0 0 300 6" preserveAspectRatio="none" style="box-shadow:0 0 0 1px rgba(20,22,26,.62)">\${Array.from({ length: 10 }, (_, i) => \`<rect x="\${i * 30 + (i ? 1 : 0)}" width="\${i ? 29 : 30}" height="6" fill="\${i < 7 ? '#D2452E' : 'rgba(30,26,40,.78)'}"/>\`).join('')}\${Array.from({ length: 9 }, (_, i) => \`<rect x="\${(i + 1) * 30 - 1}" width="2" height="6" fill="#F1EEE6"/>\`).join('')}</svg>
-        <b style="font:600 15px var(--cal-font-mono);text-shadow:var(--cal-engrave-s)">070</b></div>
+        <span class="cal-glass" style="position:relative;padding:3px 7px 2px;font:600 15px var(--cal-font-mono)">070<span style="font:400 11px var(--cal-font-mono);color:var(--cal-staff-80)">/100</span></span></div>
       <div class="cal-glass" style="position:relative;padding:8px 12px 10px 17px;--glass-a:.80"><i style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cal-c-staff)"></i>
         <div style="font:400 12px var(--cal-font-mono);color:var(--cal-glass-text-2);border-bottom:1px solid var(--cal-glass-line);padding-bottom:3px"><span style="font:600 11px var(--cal-font-ui);letter-spacing:.12em">BRG</span> <b style="color:#F1EEE6">126</b>  <span style="font:600 11px var(--cal-font-ui);letter-spacing:.12em">DST</span> <b style="color:#F1EEE6">018</b> m</div>
         <div style="font:600 22px var(--cal-font-display);letter-spacing:.1em;margin-top:4px">TILLER</div>
@@ -1972,7 +1974,7 @@ export const GATES = [
   ...V_UI,
   hud4k('V-hud-4k-a', 'the staff, the gourd, the field note (top-left)', 0, 0),
   hud4k('V-hud-4k-b', 'the theodolite circle and the vial (top-centre)', -1120, 0),
-  hud4k('V-hud-4k-c', 'the plate, the reticle and the breath meter (centre)', -1120, -630, `
+  hud4k('V-hud-4k-c', 'the plate, the reticle and the breath meter (centre)', -1120, -470, `
     /* r1 judge: the frame showed no plate and no breath meter. Steady held on the real Shift edge,
        and one more hit just before the shutter so the plate's 5 s hold is live */
     const __c = __CTX__;

@@ -2,9 +2,16 @@
 
 Port 5265 · tree `~/.calima-r5/trees/shell-ui` · plan §2 row, §9 "shell-ui", R54–R57 · bible §9.1, §9.7, §8.9, §10.3.
 
-The new custom UI: a field book and a set of engraved surveying instruments. Type is only Chakra Petch
-and IBM Plex Mono (R55). Every surface is paper, ink, vermilion, cobalt; 1 px rules; right angles;
-graduated ticks. Lane gates: `nice -n 10 node tools/gates.mjs --port 5265 --lane shell-ui`.
+The new custom UI: engraved surveying instruments on dark violet glass (R66 e, Kevin's decision 1; the
+field HUD and the alidade are glass from this round, the hub pages stay paper until their W2 restyle,
+U-08..U-11). Type is only Chakra Petch and IBM Plex Mono (R55). Right angles with 6 px registration
+ticks; the levelling staff, the theodolite strip, the stadia hairs and the graduated tick stay the motifs.
+Lane gates: `nice -n 10 node tools/gates.mjs --port 5265 --lane shell-ui`.
+
+§0 is this round (W1 fix round 2 + glass start, Nov 13). §1-§6 are the W1 build and fix round 1, kept
+as the record; where §0 changes them it says so.
+
+<!-- R2-SECTION -->
 
 ## 1. What was built
 
