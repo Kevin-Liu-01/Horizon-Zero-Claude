@@ -1,8 +1,12 @@
 import * as THREE from 'three';
 import './hud.css';
 import { LOOT_POPUP, itemIcon, itemPlayerName } from './inventory.js';
-import { TUTORIAL_CARDS, fieldWord, cardLine } from './tips.js';
+import { TUTORIAL_CARDS, fieldWord, cardLine, cardParts } from './tips.js';
 import { COMPASS_PIP } from '../instruments/lamps.js';
+import { ITEMS } from '../items/items.js';
+
+/** The one currency (U-19): the catalogue's own `currency` tag, so no item id is spelled here. */
+const CURRENCY_ID = Object.keys(ITEMS).find((id) => ITEMS[id]?.tags?.includes('currency')) ?? null;
 
 /**
  * ===========================================================================
@@ -63,6 +67,7 @@ const ELEM_LABEL = { fire: 'C', shock: 'D', freeze: 'B' };   // Cinder, Dust, Br
 const COMBAT_IDLE_S = 4;          // dynamic HUD: kit tag hides after this
 const VITALS_IDLE_S = 4;          // dynamic HUD: full health staff hides after this
 const TRACK_IDLE_S = 26;          // dynamic HUD: the field note recedes after this
+const VIAL_IDLE_S = 4;            // U-02: the exposure vial hides after this long UNSEEN
 const GHOST_HOLD_S = 0.45;        // damage-delta ghost lingers before draining
 const GHOST_DRAIN = 55;           // ghost drain rate, % of bar per second
 const LOOT_CLAIM_MS = 400;        // toast suppression after the take-all popup claimed a loot event
@@ -73,6 +78,7 @@ const MHB_CAP = 3;
 const MHB_HOLD_S = 5;             // seconds a plate survives after its last hit
 const MHB_RANGE = 120;            // metres past which a plate is not worth drawing
 const MHB_W = 280;                // the plate's base width (CSS); `TILLER · SOIL CORE · TRANSECT 14` on one line
+const MHB_W_COMPACT = 150;        // U-02: the others' plates, name and bar only
 /**
  * The melee clamp is in PAINTED pixels, and the two things it has to clear scale
  * by different multipliers: the HUD furniture with `_scale`, the plate with
@@ -369,6 +375,8 @@ export class HUD {
     this._mhbX = [NaN, NaN, NaN];  // the plate resolver's scratch: painted px, never reallocated
     this._mhbY = [0, 0, 0];
     this._mhbC = [0, 0, 0];
+    this._mhbHW = [0, 0, 0];       // each plate's painted half width (full or compact)
+    this._mhbBox = new Float32Array(MHB_CAP * 4);   // each engaged Instrument's screen box
     this._pipVis = [];             // the marks on the circle this frame (reused)
     this._scanDt = 0;
     this._decayFlash = (ttl, m) => {
@@ -403,6 +411,8 @@ export class HUD {
     this._tipQueue = [];
     this._tipT = 0;
     this._tipGap = 0;
+    this._tipCur = null;           // the id of the card on screen
+    this._staged = null;           // `stageNote`: a look film's staged beat (?shot only)
 
     this._slowT = 0;               // 10 Hz sampler for the signature-string panels
     this._marks = null;            // progression.getMarkers(), sampled at 4 Hz
@@ -469,6 +479,10 @@ export class HUD {
     this._vitalsEl = vitals;
 
     const hrow = div('cal-staffrow', vitals);
+    // the emblem (U-06): a broad arrow in a ring, the survey's own mark
+    div('cal-emblem', hrow, '<svg viewBox="0 0 24 24" aria-hidden="true" data-shape="disc">'
+      + '<circle class="u" cx="12" cy="12" r="10.4"/><circle class="t" cx="12" cy="12" r="10.4"/>'
+      + '<path class="a" d="M12 6.5 V17.5 M12 6.5 L7.4 13 M12 6.5 L16.6 13"/></svg>');
     const staff = div('cal-staff', hrow);
     this._staffEl = staff;
     // the empty staff: its ticks stay on the scale, as a surveyor's staff would
@@ -486,7 +500,7 @@ export class HUD {
 
     const pr = div('cal-chiprow', vitals);
     this._gourdRow = pr;
-    const gourdChip = div('cal-chip cal-gourd', pr,
+    const gourdChip = div('cal-chip cal-glass cal-gourd', pr,
       '<span class="cal-chip-l">GOURD</span><b class="cal-chip-n">060</b>');
     this._gourdChip = gourdChip;
     this._gourdNum = gourdChip.querySelector('.cal-chip-n');
@@ -494,11 +508,15 @@ export class HUD {
     this._gourdKey.className = 'cal-gourd-key';
     this._gourdKey.textContent = 'Q';
     gourdChip.appendChild(this._gourdKey);
+    // the one currency (U-06, U-19): salt, counted
+    this._saltChip = div('cal-chip cal-glass cal-salt', pr, '<span class="cal-chip-l">SALT</span><b class="cal-chip-n">000</b>');
+    this._saltNum = this._saltChip.querySelector('.cal-chip-n');
+    this._lastSalt = -1;
 
     // the field note, UNDER the vitals
-    const tr = div('cal-track', tl);
+    const tr = div('cal-track cal-glass', tl);
     this._trackEl = tr;
-    div('cal-track-kicker', tr, 'FIELD NOTE');
+    this._trackKicker = div('cal-track-kicker', tr, 'FIELD NOTE');
     this._trackTitle = div('cal-track-title', tr);
     this._trackObj = div('cal-track-obj', tr);
     this._trackMeta = div('cal-track-meta', tr);
@@ -511,7 +529,7 @@ export class HUD {
     this._pipLayer = div('cal-compass-pips', comp);
     div('cal-compass-index', comp, '<svg viewBox="0 0 12 20" aria-hidden="true"><path d="M6 19 L1 8 H11 Z"/><path d="M6 0 V8"/></svg>');
     this._pennantEl = div('cal-pennant', comp, '<svg viewBox="0 0 22 22" aria-hidden="true"><path class="pole" d="M3 1 V21"/><path class="flag" d="M3 2 L20 7 L3 12 Z"/></svg>');
-    this._bearingEl = div('cal-bearing', comp, '<b>000</b>');
+    this._bearingEl = div('cal-bearing cal-glass', comp, '<b>000</b>');
     this._bearingNum = this._bearingEl.firstChild;
 
     /* -------------------------- the exposure vial -------------------------- */
@@ -575,7 +593,7 @@ export class HUD {
     this._intEl.appendChild(intKey);
     this._intRing = div('cal-int-hold', this._intEl, '<i></i>');
     this._intHold = this._intRing.firstChild;
-    this._intLabel = div('cal-int-label', this._intEl, 'LOOT');
+    this._intLabel = div('cal-int-label cal-glass', this._intEl, 'LOOT');
 
     /* ----------------------- bottom-left: tool chips ----------------------- */
     // data and behaviour belong to `ctx.items.tools`; this owns pixels.
@@ -590,7 +608,7 @@ export class HUD {
     this._xpPops = div('cal-flashes', root);
 
     /* -------------------------- bottom-right: kit tag ---------------------- */
-    const wpn = div('cal-weapon', root);
+    const wpn = div('cal-weapon cal-glass', root);
     this._wpnEl = wpn;
     const wrow = div('cal-wpn-row', wpn);
     this._wpnArt = div('cal-wpn-art', wrow, kitArtFor('bow'));
@@ -623,7 +641,7 @@ export class HUD {
 
     /* ------------------------- banners + cards ---------------------------- */
     this._bannerEl = div('cal-banners', root);
-    this._tipEl = div('cal-tip', root);
+    this._tipEl = div('cal-tip cal-glass', root);
     this._tipEl.innerHTML =
       '<div class="cal-tip-title"></div><div class="cal-tip-body"></div><div class="cal-tip-keys"></div>';
     this._tipTitle = this._tipEl.querySelector('.cal-tip-title');
@@ -636,13 +654,13 @@ export class HUD {
    * levelling staff lying on its side: a solid head with two slots out of its lower edge.
    */
   _staffFace(cls) {
-    let cells = '', cuts = '';
+    // U-06: 300 x 6, ten vermilion graduations (`.v`) with nine staff-white gaps (`.p`) between them
+    let cells = '', gaps = '';
     for (let i = 0; i < 10; i++) {
-      const x = i * 30;
-      cells += `<rect class="${i % 2 ? 'p' : 'v'}" x="${x}" y="0" width="30" height="18"/>`;
-      for (const k of [8, 19]) cuts += `<rect class="${i % 2 ? 'v' : 'p'}" x="${x + k}" y="9" width="3" height="9"/>`;
+      cells += `<rect class="v" x="${i * 30 + (i ? 1 : 0)}" y="0" width="${i ? 29 : 30}" height="6"/>`;
+      if (i) gaps += `<rect class="p" x="${i * 30 - 1}" y="0" width="2" height="6"/>`;
     }
-    return `<svg class="${cls}" viewBox="0 0 300 18" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${cells}${cuts}</svg>`;
+    return `<svg class="${cls}" viewBox="0 0 300 6" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${cells}${gaps}</svg>`;
   }
 
   /** One pooled projected plate: `NAME · WORK · TRANSECT nn`, a graduated bar, status gauges, a leader. */
@@ -650,7 +668,7 @@ export class HUD {
     // two transforms, so a moving plate writes memoized strings (X on the wrapper, Y + scale on the plate)
     const wrap = div('cal-px', this._worldLayer);
     const el = div('cal-mhb', wrap);
-    const plate = div('cal-mhb-plate', el);
+    const plate = div('cal-mhb-plate cal-glass', el);
     const head = div('cal-mhb-head', plate);
     const aware = div('cal-iris', head, '<i></i>');
     const name = div('cal-mhb-name', head, 'INSTRUMENT');
@@ -726,6 +744,26 @@ export class HUD {
       body: fieldWord(String(tip.body ?? '')),
       keys: Array.isArray(tip.keys) ? tip.keys.map((k) => keyGlyph(k)) : [],
     });
+  }
+
+  /**
+   * Published (U-17), look films only: under `?shot=1` the field note carries a staged bible §8.9
+   * beat instead of the tracked quest's own text, so a look frame prints CALIMA's quest words only.
+   * `{ kicker, title, objective, meta? }`, or null to hand the note back to progression. Returns
+   * false (and changes nothing) outside `?shot`, so play can never be staged.
+   */
+  stageNote(note) {
+    if (!this.ctx.params?.has?.('shot')) return false;
+    this._staged = note && (note.title || note.objective) ? {
+      kicker: String(note.kicker ?? 'FIELD NOTE'),
+      title: String(note.title ?? ''),
+      objective: String(note.objective ?? ''),
+      meta: String(note.meta ?? ''),
+    } : null;
+    this._trackIdleT = 0;
+    this._lastObjLabel = null;
+    this._renderTracker(true);
+    return true;
   }
 
   /** How much bigger or smaller the browser PAINTED an element than it laid it out. */
@@ -874,6 +912,12 @@ export class HUD {
     }
     // the event form of `ctx.hud.showTip`
     on('tutorial-tip', (e) => this.showTip(e?.tip ?? e));
+    // the alidade answers the card that asked for it: raising it puts the SIGHTING card away, so
+    // the card never stands beside the Instrument card it taught (r1 gate judge)
+    on('sighting-on', () => {
+      if (this._tipCur === 'sighting' && this._tipT > 0) this._dismissTip();
+      for (let i = this._tipQueue.length - 1; i >= 0; i--) if (this._tipQueue[i].id === 'sighting') this._tipQueue.splice(i, 1);
+    });
 
     /* --------------------------- tool chips -------------------------------- */
     on('tool-selected', () => { this._lastToolSig = null; this._emitUi('ui-nav'); });
@@ -1146,13 +1190,14 @@ export class HUD {
       if (toRight <= toBelow) x += toRight; else y += toBelow;
     }
     // a plate can sit under the circle, so the plates are tried after it, twice: stepping below one can land on the next
-    const ws = this._wscale, halfW = MHB_W * 0.5 * ws;
+    const ws = this._wscale;
     for (let pass = 0; pass < 2; pass++) {
       for (let i = 0; i < MHB_CAP; i++) {
         const px = this._mhbX[i];
         if (px !== px) continue;
         const py = this._mhbY[i];
         const ph = (this._mhbSlots[i].h || MHB_PLATE_H) * ws;
+        const halfW = this._mhbHW[i] || MHB_W * 0.5 * ws;
         if (Math.abs(x - px) < halfW + hw && y > py - ph && y - h < py) y = py + h + gap;
       }
     }
@@ -1206,7 +1251,16 @@ export class HUD {
     this._updateWeapon();
     this._updateCraft();
     this._updateTools();
+    this._updateSalt();
     this._updateTips(sdt);
+  }
+
+  /** The salt count beside the gourd: a string only when the number changes. */
+  _updateSalt() {
+    const n = CURRENCY_ID ? (this.ctx.inventory?.count?.(CURRENCY_ID) ?? 0) : 0;
+    if (n === this._lastSalt) return;
+    this._lastSalt = n;
+    this._saltNum.textContent = String(n).padStart(3, '0');
   }
 
   /**
@@ -1398,7 +1452,12 @@ export class HUD {
   _renderTracker(force) {
     const prog = this.ctx.progression;
     let title = null, obj = null, meta = '';
-    if (prog?.tracked) {
+    const st = this._staged;
+    const kick = st ? st.kicker : 'FIELD NOTE';
+    if (this._trackKicker.textContent !== kick) this._trackKicker.textContent = kick;
+    if (st) {
+      title = st.title; obj = st.objective; meta = st.meta;
+    } else if (prog?.tracked) {
       const s = prog.state(prog.tracked);
       if (s && s.status === 'active') {
         title = s.title;
@@ -1698,6 +1757,10 @@ export class HUD {
     const hidden = !!(p.crouching && p.inTallGrass) && fill < 0.05;
     const noise = clamp01((p.moveSpeed ?? 0) / 7) * (p.crouching ? 0.35 : 1);
     const mode = fill >= 0.999 ? 'seen' : hidden ? 'hidden' : fill > AWARE_MIN_SUSPICION ? 'watch' : 'clear';
+    // U-02: UNSEEN for 4 s and the vial puts itself away; any reading brings it back (hold H too)
+    this._vialIdleT = mode === 'clear' ? (this._vialIdleT ?? 0) + dt : 0;
+    const vialIdle = this._vialIdleT > VIAL_IDLE_S;
+    if (vialIdle !== this._lastVialIdle) { this._lastVialIdle = vialIdle; this._eyeEl.classList.toggle('idle', vialIdle); }
     if (mode !== this._lastVialMode) {
       this._lastVialMode = mode;
       this._eyeEl.dataset.m = mode;
@@ -1823,15 +1886,39 @@ export class HUD {
   _updateMachineBars(dt) {
     const cam = this.ctx.camera;
     const ws = this._wscale;
-    const halfW = MHB_W * 0.5 * ws;
     const sc = this._scale;
-    const X = this._mhbX, Y = this._mhbY, C = this._mhbC;
+    const X = this._mhbX, Y = this._mhbY, C = this._mhbC, HW = this._mhbHW, B = this._mhbBox;
     let any = false;
 
-    /* 1. where each plate wants to be, in painted pixels: bottom-centre on the head point */
+    /* 0. each engaged Instrument's own screen box (feet to head): no plate may cover one (r1 gate judge) */
+    for (let i = 0; i < MHB_CAP; i++) {
+      const m = this._mhbPick[i], o = i * 4;
+      B[o] = 0; B[o + 2] = -1;
+      const pos = m && (m.position ?? m.root?.position);
+      if (!pos) continue;
+      const h = m.height ?? 2.2;
+      this._v.set(pos.x, pos.y, pos.z).project(cam);
+      if (this._v.z > 1) continue;
+      const fx = (this._v.x * 0.5 + 0.5) * this._vw, fy = (-this._v.y * 0.5 + 0.5) * this._vh;
+      this._v.set(pos.x, pos.y + h, pos.z).project(cam);
+      const ty = (-this._v.y * 0.5 + 0.5) * this._vh;
+      const half = Math.max(h * 0.62, (m.bodyRadius ?? 1.2) * 1.4) * (fy - ty) / h;
+      B[o] = fx - half; B[o + 1] = ty; B[o + 2] = fx + half; B[o + 3] = fy;
+    }
+
+    /* 1. where each plate wants to be, in painted pixels: bottom-centre on the head point.
+       U-02: the most recently hit wears the full plate; the others a compact one */
     for (let i = 0; i < MHB_CAP; i++) {
       const slot = this._mhbSlots[i];
       const m = this._mhbPick[i];
+      const compact = i > 0;
+      if (slot.compact !== compact) {
+        slot.compact = compact;
+        slot.el.classList.toggle('compact', compact);
+        slot.m = null; slot.h = 0;     // re-label at the new size
+      }
+      const halfW = (compact ? MHB_W_COMPACT : MHB_W) * 0.5 * ws;
+      HW[i] = halfW;
       X[i] = NaN;
       if (!m) {
         if (slot.vis !== false) { slot.el.style.visibility = 'hidden'; slot.vis = false; slot.m = null; }
@@ -1875,17 +1962,38 @@ export class HUD {
     }
     if (!any) return;
 
-    /* 2. a plate never lies on another: the most recently hit holds its place, the others step down */
+    /* 2. a plate never lies on another: the most recently hit holds its place, the others step
+       up over it when there is sky above it, else down */
     const gap = MHB_GAP * sc;
+    const topFloorK = MHB_TOP_BASE * sc;
     for (let i = 1; i < MHB_CAP; i++) {
       if (X[i] !== X[i]) continue;
       const hi = (this._mhbSlots[i].h || MHB_PLATE_H) * ws;
       for (let j = 0; j < i; j++) {
         if (X[j] !== X[j]) continue;
         const hj = (this._mhbSlots[j].h || MHB_PLATE_H) * ws;
-        const overlapX = Math.abs(X[i] - X[j]) < halfW * 2 + gap;
+        const overlapX = Math.abs(X[i] - X[j]) < HW[i] + HW[j] + gap;
         const overlapY = Y[i] > Y[j] - hj - gap && Y[i] - hi - gap < Y[j];
-        if (overlapX && overlapY) { Y[i] = Y[j] + hi + gap; C[i] |= 2; }
+        if (overlapX && overlapY) {
+          const up = Y[j] - hj - gap;
+          if (up - hi >= topFloorK) Y[i] = up; else Y[i] = Y[j] + hi + gap;
+          C[i] |= 2;
+        }
+      }
+    }
+    /* 2b. ...and never on an engaged Instrument: over its head when there is room, else to its nearer side */
+    for (let i = 0; i < MHB_CAP; i++) {
+      if (X[i] !== X[i]) continue;
+      const hi = (this._mhbSlots[i].h || MHB_PLATE_H) * ws;
+      for (let j = 0; j < MHB_CAP; j++) {
+        const o = j * 4;
+        if (B[o + 2] <= B[o]) continue;
+        const l = X[i] - HW[i], r = X[i] + HW[i], t = Y[i] - hi, b = Y[i];
+        if (r < B[o] || l > B[o + 2] || b < B[o + 1] || t > B[o + 3]) continue;
+        const above = B[o + 1] - gap;
+        if (above - hi >= topFloorK) Y[i] = above;
+        else X[i] = (X[i] < (B[o] + B[o + 2]) * 0.5) ? B[o] - HW[i] - gap : B[o + 2] + HW[i] + gap;
+        C[i] |= 2;
       }
     }
 
@@ -1909,7 +2017,7 @@ export class HUD {
       if (slot.m !== m) {
         slot.m = m;
         slot.w = -1; slot.ghostW = -1; slot.awareS = ''; slot.h = 0;
-        slot.name.textContent = cardLine(m);
+        slot.name.textContent = slot.compact ? cardParts(m).name : cardLine(m);
       }
 
       const frac = clamp01((m.health ?? 0) / (m.maxHealth || 1));
@@ -2110,7 +2218,7 @@ export class HUD {
     this._toolsEl.classList.add('show');
 
     while (this._toolSlots.length < tools.slots.length) {
-      const el = div('cal-tool', this._toolRow);
+      const el = div('cal-tool cal-glass', this._toolRow);
       const ic = div('cal-tool-ic', el);
       const n = div('cal-tool-n', el);
       const key = document.createElement('kbd');
@@ -2279,6 +2387,8 @@ export class HUD {
     if (qy !== this._objQy) { this._objQy = qy; this._objDiamond.style.transform = centreY(qy, this._wscale); }
     const di = Math.round(dist);
     if (di !== this._lastObjDist) { this._lastObjDist = di; this._objDiamondDist.textContent = di + ' m'; }
+    // a staged look film (`stageNote`) names no tracked quest's own mark
+    if (this._staged) label = '';
     if (label !== this._lastObjLabel) {
       this._lastObjLabel = label;
       this._objDiamondLabel.textContent = fieldWord(String(label)).toUpperCase();
@@ -2335,12 +2445,13 @@ export class HUD {
     }
     if (this._tipT > 0) {
       this._tipT -= dt;
-      if (this._tipT <= 0) this._tipEl.classList.remove('show');
+      if (this._tipT <= 0) this._dismissTip();
       return;
     }
     if (this._tipGap > 0) { this._tipGap -= dt; return; }
     const tip = this._tipQueue.shift();
     if (!tip) return;
+    this._tipCur = tip.id;
     this._tipTitle.textContent = tip.title;
     this._tipBody.textContent = tip.body;
     this._tipKeys.innerHTML = tip.keys.map((k) => `<kbd>${k}</kbd>`).join('');
@@ -2348,6 +2459,13 @@ export class HUD {
     this._tipT = 6.5;
     this._tipGap = 0.8;
     this._emitUi('ui-nav');
+  }
+
+  /** The card goes: one at a time, auto-dismissed (U-02: <= 1 card, <= 8 s). */
+  _dismissTip() {
+    this._tipT = 0;
+    this._tipCur = null;
+    this._tipEl.classList.remove('show');
   }
 
   /* -------------------------------- audits ----------------------------------- */
@@ -2379,14 +2497,18 @@ export class HUD {
     const bars = this._mhbSlots.filter((s) => s.vis && vis(s.el));
     const dmgLive = this._dmgPool.filter((d) => d.active);
     const svg = this._healthFill.querySelector('svg');
-    const cells = svg ? [...svg.querySelectorAll(':scope > rect')].slice(0, 10) : [];
+    const cells = svg ? [...svg.querySelectorAll(':scope > rect.v')] : [];
+    const allRects = svg ? [...svg.querySelectorAll(':scope > rect')] : [];
     return {
       health: {
         visible: vis(this._vitalsEl),
         pct: this._lastHp,
         numerals: this._healthNum.textContent.trim(),
         graduations: cells.length,
-        graduationColors: [...new Set(cells.map((c) => getComputedStyle(c).fill))],
+        graduationColors: [...new Set(allRects.map((c) => getComputedStyle(c).fill))],
+        gaps: allRects.length - cells.length,
+        widthPx: Math.round(this._staffEl.getBoundingClientRect().width),
+        heightPx: +this._staffEl.getBoundingClientRect().height.toFixed(1),
         widthPct: +(this._healthFill.getBoundingClientRect().width
           / Math.max(1, this._staffEl.getBoundingClientRect().width) * 100).toFixed(1),
         clip: this._healthFill.style.clipPath,

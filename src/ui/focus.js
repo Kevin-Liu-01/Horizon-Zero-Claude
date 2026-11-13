@@ -67,6 +67,9 @@ const LABEL_CAP = 10;      // pooled component chips on screen at once
 const LABEL_RANGE = 70;    // only label parts on Instruments this close
 const RING_CAP = 12;       // pooled weak-point rings
 const REVEAL_CAP = 8;      // pooled reveal chips ON SCREEN at once
+const REVEAL_TEXT_RANGE = 25;   // U-02: words only for finds this close...
+const REVEAL_TEXT_FRAC = 0.22;  // ...and this near the crosshair (fraction of the width), two at most
+const REVEAL_TICK_CAP = 12;     // the rest are 6 px ink ticks
 /**
  * Candidates kept per poll. Visibility decides which twelve draw; distance only
  * decides the order they are tried in.
@@ -224,9 +227,10 @@ const FIGURE_FS = /* glsl */ `
     float partIn = cov(c0.g);
     float papP = cov(d3.g) * (1.0 - partIn) * uPart * clear;
     float inkP = cov(d2.g) * (1.0 - partIn) * dash * uPart * clear;
-    // the others: a solid hairline, quiet, never over her
-    float inkQ = cov(d3.a) * (1.0 - cov(c0.a)) * uQuiet * her * 0.34;
-    float papQ = (cov(d2.a) - cov(d1.a)) * uQuiet * her * 0.46;
+    // the others: a solid hairline, quiet, never over her; ink-led, so a second Instrument reads as a
+    // pencilled note on the sheet, not as an x-ray (r1 gate judge)
+    float inkQ = cov(d3.a) * (1.0 - cov(c0.a)) * uQuiet * her * 0.38;
+    float papQ = (cov(d2.a) - cov(d1.a)) * uQuiet * her * 0.24;
 
     float aInk = max(inkH * 0.8, max(inkQ, inkP * 0.96));
     float aPap = max(papH * 0.98, max(papQ, papP * 0.5 * (1.0 - inkP)));
@@ -312,6 +316,13 @@ const _byNearest = (a, b) => a.__sightD2 - b.__sightD2;
 
 const _trisOf = (o) => (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
 /** Her mask's order: every skinned mesh, then the largest of the rest. */
+/** One Liang-Barsky clip step on T = [t0, t1]; false when the segment misses the box. */
+function _lbClip(T, p, q) {
+  if (p === 0) return q >= 0;
+  const r = q / p;
+  if (p < 0) { if (r > T[1]) return false; if (r > T[0]) T[0] = r; } else { if (r < T[0]) return false; if (r < T[1]) T[1] = r; }
+  return true;
+}
 const _heroRank = (a, b) => (b.isSkinnedMesh ? 1 : 0) - (a.isSkinnedMesh ? 1 : 0) || _trisOf(b) - _trisOf(a);
 
 /** Really in the world: this object and every ancestor. `visible` alone says nothing about a hidden holder. */
@@ -523,6 +534,7 @@ export class SightingSystem {
     const NS = 'http://www.w3.org/2000/svg';
     this._ink = document.createElementNS(NS, 'svg');
     this._ink.setAttribute('class', 'calf-ink');
+    this._ink.setAttribute('data-shape', 'ring');   // weak-point rings: discs by role (A-glass-language-static)
     this._layer.appendChild(this._ink);
     const pool = (cls, tag, n) => Array.from({ length: n }, () => {
       const e = document.createElementNS(NS, tag);
@@ -536,7 +548,8 @@ export class SightingSystem {
     this._ringsU = pool('calf-ring-u', 'circle', RING_CAP);
     this._rings = pool('calf-ring', 'circle', RING_CAP);
     this._ringsLive = 0;
-    this._ringRec = Array.from({ length: RING_CAP }, () => ({ x: 0, y: 0, r: 0, name: '' }));
+    this._ringRec = Array.from({ length: RING_CAP }, () => ({ x: 0, y: 0, r: 0, name: '', qx: NaN, qy: NaN, qr: NaN }));
+    this._leaderQ = new Int32Array((LABEL_CAP + 1) * 6).fill(-1);
 
     // the alidade's crosshair: stadia hairlines, graduated, engraved
     this._reticle = document.createElement('div');
@@ -550,15 +563,18 @@ export class SightingSystem {
       + 'M-34 -74H34M-34 74H34M-16 -38H16M-16 38H16'                    // the stadia, two pairs
       + 'M-6 0H6M0 -6V6' + ticks;                                       // the centre cross + the graduated limb
     this._reticle.innerHTML =
-      `<svg viewBox="-280 -190 560 380" aria-hidden="true"><path class="u" d="${d}"/><path class="t" d="${d}"/></svg>`
-      + '<div class="calf-read"><div class="calf-read-row"><span>BRG</span><b class="calf-brg">000</b></div>'
-      + '<div class="calf-read-row"><span>DST</span><b class="calf-dst">---</b><i>m</i></div></div>';
+      `<svg viewBox="-280 -190 560 380" aria-hidden="true"><path class="u" d="${d}"/><path class="t" d="${d}"/></svg>`;
     this._layer.appendChild(this._reticle);
-    this._brgEl = this._reticle.querySelector('.calf-brg');
-    this._dstEl = this._reticle.querySelector('.calf-dst');
 
+    // the card: glass, pinned right. Its header carries the bearing and the range (U-02: the
+    // floating readout box is gone); the body below is rebuilt when the subject changes.
     this._card = document.createElement('div');
-    this._card.className = 'calf-card';
+    this._card.className = 'calf-card cal-glass';
+    this._card.innerHTML = '<div class="calf-card-read"><span>BRG</span><b class="calf-brg">000</b>'
+      + '<span>DST</span><b class="calf-dst">---</b><i>m</i></div><div class="calf-card-body"></div>';
+    this._brgEl = this._card.querySelector('.calf-brg');
+    this._dstEl = this._card.querySelector('.calf-dst');
+    this._cardBody = this._card.querySelector('.calf-card-body');
     this._layer.appendChild(this._card);
 
     // pooled component chips: no element churn while the alidade sweeps across a herd
@@ -603,7 +619,22 @@ export class SightingSystem {
     this._revealSlots = [];
     for (let i = 0; i < REVEAL_CAP + LABEL_CAP; i++) this._revealSlots.push({ x: 0, y: 0 });
     this._revealSrc = [];   // polled candidate entries (rebuilt on REVEAL_TICK)
+    this._rvX = new Float32Array(REVEAL_SRC_CAP);   // pass 1 of `_updateReveals`: projected anchors
+    this._rvY = new Float32Array(REVEAL_SRC_CAP);
+    this._rvSel = new Uint8Array(REVEAL_SRC_CAP);
+    this._tickPool = [];
+    for (let i = 0; i < REVEAL_TICK_CAP; i++) {
+      const el = document.createElement('i');
+      el.className = 'calf-rtick';
+      el.style.display = 'none';
+      this._layer.appendChild(el);
+      this._tickPool.push({ el, x: NaN, y: NaN, shown: false });
+    }
+    this._ticksLive = 0;
     this._hideBox = new Float32Array(12);
+    this._herBox = new Float32Array(4);
+    this._domKeepOff = true;        // false only for A-sighting-over-brea's negative control
+    this._clipT = new Float32Array(2);
     this._revealPoll = 0;
   }
 
@@ -877,7 +908,7 @@ export class SightingSystem {
   }
 
   /** The negative control of `A-sighting-over-brea`: false lets the overlay draw through her. */
-  debugOcclusion(on) { this._shared.uKnock.value = on ? 1 : 0; }
+  debugOcclusion(on) { this._shared.uKnock.value = on ? 1 : 0; this._domKeepOff = !!on; }
 
   /** Draws the raised alidade adds to the frame right now: the mask's, and the overlay's own. */
   overlayDraws() {
@@ -1329,7 +1360,9 @@ export class SightingSystem {
       const along = _v.dot(_dir);
       if (along < 2 || along > 240) continue;
       const perp = Math.sqrt(Math.max(0, _v.lengthSq() - along * along));
-      const r = Math.max(2.4, (m.bodyRadius ?? 1.4) * 2.1, (m.height ?? 2) * 0.75);
+      // the reach is an angle as well as a size: about 0.24 rad off the line at any range out to 21 m,
+      // so the card holds while the crosshair stands off the Instrument and her weapon clears its ring
+      const r = Math.max(2.4, (m.bodyRadius ?? 1.4) * 2.1, (m.height ?? 2) * 0.75, Math.min(5, along * 0.24));
       if (perp > r) continue;
       const score = perp / r + along * 0.0012;
       if (score < bestScore) { bestScore = score; best = m; }
@@ -1462,7 +1495,7 @@ export class SightingSystem {
       this._cardM = m;
       this._cardBarM = null;
       this._cardLamp = null;
-      this._card.innerHTML = this._cardHTML(m);
+      this._cardBody.innerHTML = this._cardHTML(m);
     }
     this._card.classList.add('show');
   }
@@ -1507,11 +1540,12 @@ export class SightingSystem {
         const sx = (_v.x * 0.5 + 0.5) * w;
         const sy = (-_v.y * 0.5 + 0.5) * h;
         const x1 = rect.left, y1 = rect.top + 14;
-        if (sx > 0 && sx < x1 - 8 && sy > 0 && sy < h) {
-          const pts = `${x1.toFixed(0)},${y1.toFixed(0)} ${(x1 - 22).toFixed(0)},${y1.toFixed(0)} ${sx.toFixed(0)},${sy.toFixed(0)}`;
-          leader.setAttribute('points', pts); under.setAttribute('points', pts);
-          leader.style.display = ''; under.style.display = '';
-        } else { leader.style.display = 'none'; under.style.display = 'none'; }
+        // the leader keeps off her: an Instrument behind her is read from the card alone
+        if (sx > 0 && sx < x1 - 8 && sy > 0 && sy < h
+          && !this._rectOnHer(sx - 2, sy - 2, sx + 2, sy + 2)
+          && !this._segOnHer(x1 - 22, y1, sx, sy) && !this._segOnHer(x1, y1, x1 - 22, y1)) {
+          this._setLeader(LABEL_CAP, x1, y1, x1 - 22, y1, sx, sy);
+        } else if (leader.style.display !== 'none') { leader.style.display = 'none'; under.style.display = 'none'; }
       } else { leader.style.display = 'none'; under.style.display = 'none'; }
     } else {
       this._leaders[LABEL_CAP].style.display = 'none';
@@ -1600,6 +1634,20 @@ export class SightingSystem {
    * point is behind the camera OR outside the viewport: a perspective projection is
    * only meaningful inside the frustum, and noise would move chips the player CAN see.
    */
+  /** Leader `i` through two or three points (x2 NaN: two). A string only when a whole pixel moves. */
+  _setLeader(i, x0, y0, x1, y1, x2, y2) {
+    const q = this._leaderQ, o = i * 6;
+    const a = Math.round(x0), b = Math.round(y0), c = Math.round(x1), d = Math.round(y1);
+    const e = x2 === x2 ? Math.round(x2) : -99999, f = y2 === y2 ? Math.round(y2) : -99999;
+    const li = this._leaders[i], lu = this._leaderU[i];
+    if (q[o] !== a || q[o + 1] !== b || q[o + 2] !== c || q[o + 3] !== d || q[o + 4] !== e || q[o + 5] !== f) {
+      q[o] = a; q[o + 1] = b; q[o + 2] = c; q[o + 3] = d; q[o + 4] = e; q[o + 5] = f;
+      const pts = e === -99999 ? a + ',' + b + ' ' + c + ',' + d : a + ',' + b + ' ' + c + ',' + d + ' ' + e + ',' + f;
+      li.setAttribute('points', pts); lu.setAttribute('points', pts);
+    }
+    if (li.style.display === 'none') { li.style.display = ''; lu.style.display = ''; }
+  }
+
   _project(v, out) {
     const cam = this.ctx.camera;
     _v2.copy(v).sub(cam.position);
@@ -1679,20 +1727,30 @@ export class SightingSystem {
         node.getWorldPosition(_v);
         if (!this._project(_v, _screen)) continue;
         const ax = _screen.x, ay = _screen.y;
+        // a component behind her is not drawn at all: no ring, chip or leader over her (r1 gate judge)
+        if (this._rectOnHer(ax - 2, ay - 2, ax + 2, ay + 2)) continue;
         // weak points wear a cobalt ring, sized by what the shot has to hit
         if (c.weak && nRings < RING_CAP) {
           const rWorld = c.part.radius ?? 0.25;
           const pxPerM = window.innerHeight / (2 * Math.tan(this.ctx.camera.fov * 0.5 * Math.PI / 180))
             / Math.max(1, _v.distanceTo(this.ctx.camera.position));
           const r = Math.min(64, Math.max(8, rWorld * pxPerM));
-          const rec = this._ringRec[nRings];
-          rec.x = ax; rec.y = ay; rec.r = r; rec.name = c.name;
-          const cr = this._rings[nRings], cu = this._ringsU[nRings];
-          const xs = ax.toFixed(1), ys = ay.toFixed(1), rs = r.toFixed(1);
-          cr.setAttribute('cx', xs); cr.setAttribute('cy', ys); cr.setAttribute('r', rs);
-          cu.setAttribute('cx', xs); cu.setAttribute('cy', ys); cu.setAttribute('r', rs);
-          cr.style.display = ''; cu.style.display = '';
-          nRings++;
+          // a ring whose casing would reach onto her is not drawn
+          if (!this._rectOnHer(ax - r - 3, ay - r - 3, ax + r + 3, ay + r + 3)) {
+            const rec = this._ringRec[nRings];
+            rec.x = ax; rec.y = ay; rec.r = r; rec.name = c.name;
+            // a string only when the half-pixel changes: a still frame allocates nothing here
+            const qx = Math.round(ax * 2), qy = Math.round(ay * 2), qr = Math.round(r * 2);
+            if (rec.qx !== qx || rec.qy !== qy || rec.qr !== qr) {
+              rec.qx = qx; rec.qy = qy; rec.qr = qr;
+              const cr = this._rings[nRings], cu = this._ringsU[nRings];
+              const xs = String(qx / 2), ys = String(qy / 2), rs = String(qr / 2);
+              cr.setAttribute('cx', xs); cr.setAttribute('cy', ys); cr.setAttribute('r', rs);
+              cu.setAttribute('cx', xs); cu.setAttribute('cy', ys); cu.setAttribute('r', rs);
+            }
+            if (this._rings[nRings].style.display === 'none') { this._rings[nRings].style.display = ''; this._ringsU[nRings].style.display = ''; }
+            nRings++;
+          }
         }
         // The chip hangs to ONE side of its anchor, chosen before the de-overlap
         // solve: off the card, and off the right edge when there is room on the left.
@@ -1704,6 +1762,13 @@ export class SightingSystem {
             _screen.x + PLABEL_GAP + PLABEL_W, _screen.y + PLABEL_H)
           && this._boxOnScreen(_screen.x - PLABEL_GAP - PLABEL_W, _screen.y - PLABEL_H,
             _screen.x - PLABEL_GAP, _screen.y + PLABEL_H)) flip = true;
+        // a chip that would lie on her takes the other side, and does not draw if both lie on her
+        if (this._rectOnHer(_screen.x + (flip ? -PLABEL_GAP - PLABEL_W : 0), _screen.y - PLABEL_H,
+          _screen.x + (flip ? 0 : PLABEL_GAP + PLABEL_W), _screen.y + PLABEL_H)) {
+          flip = !flip;
+          if (this._rectOnHer(_screen.x + (flip ? -PLABEL_GAP - PLABEL_W : 0), _screen.y - PLABEL_H,
+            _screen.x + (flip ? 0 : PLABEL_GAP + PLABEL_W), _screen.y + PLABEL_H)) continue;
+        }
         const bl = flip ? -PLABEL_GAP - PLABEL_W : PLABEL_GAP;
         const br = flip ? -PLABEL_GAP : PLABEL_GAP + PLABEL_W;
         // horizontal fit is fixed once the side is chosen; only Y moves below
@@ -1725,18 +1790,18 @@ export class SightingSystem {
           if (_screen.y + PLABEL_H > window.innerHeight - VIEW_MARGIN) { ok = false; break; }
         }
         if (!ok) continue;
+        // stacked down the frame, the chip and its leader must still keep off her
+        {
+          const lx = _screen.x + (flip ? -PLABEL_GAP : PLABEL_GAP);
+          if (this._rectOnHer(_screen.x + bl, _screen.y - PLABEL_H, _screen.x + br, _screen.y + PLABEL_H)
+            || this._segOnHer(ax, ay, lx, _screen.y)) continue;
+        }
         const seat = placed[nPlaced++];
         seat.x = _screen.x; seat.y = _screen.y;
         const slot = this._labelPool[live.length];
-        slot.el.classList.toggle('flip', flip);
-        // the leader: anchor, out to the chip's edge
-        {
-          const lx = _screen.x + (flip ? -PLABEL_GAP : PLABEL_GAP);
-          const pts = `${ax.toFixed(0)},${ay.toFixed(0)} ${lx.toFixed(0)},${_screen.y.toFixed(0)}`;
-          const li = this._leaders[live.length], lu = this._leaderU[live.length];
-          li.setAttribute('points', pts); lu.setAttribute('points', pts);
-          li.style.display = ''; lu.style.display = '';
-        }
+        if (slot.flip !== flip) { slot.flip = flip; slot.el.classList.toggle('flip', flip); }
+        // the leader: anchor, out to the chip's edge; a string only when a pixel changes
+        this._setLeader(live.length, ax, ay, _screen.x + (flip ? -PLABEL_GAP : PLABEL_GAP), _screen.y, NaN, NaN);
         if (slot.lastName !== c.name) { slot.name.textContent = c.name; slot.lastName = c.name; }
         const n = c.loot.length;
         if (slot.lastLoot !== c.lootText) {
@@ -1844,7 +1909,11 @@ export class SightingSystem {
     const b = this._hideBox;
     b.fill(0);
     const her = this.ctx.player?.position;
-    if (her && this.ctx.player.model?.visible !== false) this._hideBoxFor(0, her, 1.8, 0.62);
+    if (her && this.ctx.player.model?.visible !== false) {
+      // her real extent this frame (bones + what she holds), else the standing box
+      if (this._fitHerBox()) { b[0] = this._herBox[0]; b[1] = this._herBox[1]; b[2] = this._herBox[2]; b[3] = this._herBox[3]; }
+      else this._hideBoxFor(0, her, 1.8, 0.62);
+    }
     const m = this._subject, pos = m?.position;
     if (pos) this._hideBoxFor(4, pos, m.height ?? 2.4, Math.max((m.height ?? 2.4) * 0.9, (m.bodyRadius ?? 1.4) * 2.2));
     const hud = this.ctx.hud;
@@ -1853,6 +1922,82 @@ export class SightingSystem {
       const ws = hud._wscale || 1, hw = OBJ_HW * ws, hh = OBJ_HH * ws;
       b[8] = hud._objQx - hw; b[9] = hud._objQy - hh; b[10] = hud._objQx + hw; b[11] = hud._objQy + hh;
     }
+  }
+
+  /**
+   * Her screen box this frame, in CSS px, from the meshes her mask already holds: every bone of each
+   * skinned mesh (the pose, not the bind box) and the eight corners of what she holds, padded by the
+   * flesh and cloth around a bone. The DOM half of the alidade keeps off this box (r1 gate judge:
+   * the rings, chips and leaders are drawn in the DOM, where the mask's knock-out cannot reach).
+   * False when there is nothing to measure. No allocation.
+   */
+  _fitHerBox() {
+    const hb = this._herBox;
+    hb[0] = 1e9; hb[1] = 1e9; hb[2] = -1e9; hb[3] = -1e9;
+    const cam = this.ctx.camera;
+    if (!cam || !this._heroShells.size) { hb[2] = hb[0]; return false; }
+    cam.getWorldDirection(_dir);
+    let skel = null, n = 0, zMin = 1e9;
+    for (const src of this._heroShells.keys()) {
+      if (!shownInWorld(src)) continue;
+      if (src.isSkinnedMesh && src.skeleton) {
+        if (src.skeleton === skel) continue;
+        skel = src.skeleton;
+        const bones = skel.bones;
+        for (let i = 0; i < bones.length; i++) {
+          _v.setFromMatrixPosition(bones[i].matrixWorld);
+          const z = this._herTake(_v, cam);
+          if (z > 0) { n++; if (z < zMin) zMin = z; }
+        }
+      } else {
+        const g = src.geometry;
+        if (!g) continue;
+        if (!g.boundingBox) g.computeBoundingBox();
+        const bb = g.boundingBox;
+        for (let c = 0; c < 8; c++) {
+          _v.set(c & 1 ? bb.max.x : bb.min.x, c & 2 ? bb.max.y : bb.min.y, c & 4 ? bb.max.z : bb.min.z).applyMatrix4(src.matrixWorld);
+          const z = this._herTake(_v, cam);
+          if (z > 0) { n++; if (z < zMin) zMin = z; }
+        }
+      }
+    }
+    if (!n || hb[2] <= hb[0]) { hb[2] = hb[0]; return false; }
+    // 0.18 m of hair, cloth and flesh round a bone, at her nearest depth
+    const pad = 0.18 * window.innerHeight / (2 * Math.tan(cam.fov * Math.PI / 360)) / Math.max(0.5, zMin) + 3;
+    hb[0] -= pad; hb[1] -= pad; hb[2] += pad; hb[3] += pad;
+    return true;
+  }
+
+  /** One world point of her into `_herBox`; returns its depth along the view (<= 0: not taken). */
+  _herTake(v, cam) {
+    const z = (v.x - cam.position.x) * _dir.x + (v.y - cam.position.y) * _dir.y + (v.z - cam.position.z) * _dir.z;
+    if (z <= 0.05) return 0;
+    v.project(cam);
+    const x = (v.x * 0.5 + 0.5) * window.innerWidth, y = (-v.y * 0.5 + 0.5) * window.innerHeight;
+    const hb = this._herBox;
+    if (x < hb[0]) hb[0] = x;
+    if (x > hb[2]) hb[2] = x;
+    if (y < hb[1]) hb[1] = y;
+    if (y > hb[3]) hb[3] = y;
+    return z;
+  }
+
+  /** Does the rectangle [l, t, r, b] (CSS px) touch her box? */
+  _rectOnHer(l, t, r, b) {
+    const h = this._hideBox;
+    if (h[2] <= h[0] || this._domKeepOff === false) return false;
+    return !(r < h[0] || l > h[2] || b < h[1] || t > h[3]);
+  }
+
+  /** Does the segment (x0, y0) -> (x1, y1) cross her box? Liang-Barsky, no allocation. */
+  _segOnHer(x0, y0, x1, y1) {
+    const h = this._hideBox;
+    if (h[2] <= h[0] || this._domKeepOff === false) return false;
+    const dx = x1 - x0, dy = y1 - y0;
+    const T = this._clipT;
+    T[0] = 0; T[1] = 1;
+    return _lbClip(T, -dx, x0 - h[0]) && _lbClip(T, dx, h[2] - x0)
+      && _lbClip(T, -dy, y0 - h[1]) && _lbClip(T, dy, h[3] - y0) && T[0] <= T[1];
   }
 
   _hideBoxFor(i, pos, height, halfW) {
@@ -1884,8 +2029,9 @@ export class SightingSystem {
   _updateReveals() {
     const live = this._revealsLive;
     live.length = 0;
+    let nTicks = 0;
     if (this.on) {
-      this._fitHideBoxes();
+      // the hide boxes were fitted once for this frame in update()
       // a reveal that lands on the card is dropped; every reveal takes a SEAT, nudged
       // clear of the seats already taken (the component-chip pass seeds the list), and
       // one that cannot find a seat in 12 tries does not draw.
@@ -1902,14 +2048,43 @@ export class SightingSystem {
       // card bounds unrolled into plain numbers (no closure per frame)
       const cL = cardRect ? cardRect.left - 90 : 1, cR = cardRect ? cardRect.right + 90 : -1;
       const cT = cardRect ? cardRect.top - 14 : 1, cB = cardRect ? cardRect.bottom + 14 : -1;
-      for (const c of this._revealSrc) {
-        if (live.length >= REVEAL_CAP) break;
-        const e = c.entry;
-        if (!e || e.removed || e.consumed) continue;
-        const pos = e.position;
-        if (!pos) continue;
+      /* U-02: words for at most two, the ones nearest the crosshair within 25 m and 0.22 W of it,
+         finds before gathering; every other reveal on screen is a 6 px ink tick. Pass 1 projects
+         each candidate once into preallocated arrays and elects the two. */
+      const src = this._revealSrc, PX = this._rvX, PY = this._rvY, SEL = this._rvSel;
+      const vw0 = window.innerWidth, cx0 = vw0 * 0.5, cy0 = window.innerHeight * 0.5, near = vw0 * REVEAL_TEXT_FRAC;
+      let pick0 = -1, pick1 = -1, score0 = Infinity, score1 = Infinity;
+      for (let i = 0; i < src.length; i++) {
+        SEL[i] = 0;
+        const c = src[i], e = c.entry, pos = e?.position;
+        if (!e || e.removed || e.consumed || !pos) { PX[i] = NaN; continue; }
         _v.set(pos.x ?? 0, (pos.y ?? 0) + (e.datapoint ? 1.7 : 0.75), pos.z ?? 0);
-        if (!this._project(_v, _screen)) continue;
+        if (!this._project(_v, _screen)) { PX[i] = NaN; continue; }
+        PX[i] = _screen.x; PY[i] = _screen.y;
+        const off = Math.hypot(_screen.x - cx0, _screen.y - cy0);
+        if (c.d2 > REVEAL_TEXT_RANGE * REVEAL_TEXT_RANGE || off > near) continue;
+        const score = off + (c.kind === 'GATHER' ? 1e5 : 0);
+        if (score < score0) { pick1 = pick0; score1 = score0; pick0 = i; score0 = score; }
+        else if (score < score1) { pick1 = i; score1 = score; }
+      }
+      if (pick0 >= 0) SEL[pick0] = 1;
+      if (pick1 >= 0) SEL[pick1] = 1;
+      for (let i = 0; i < src.length; i++) {
+        if (PX[i] !== PX[i]) continue;
+        if (!SEL[i]) {
+          // the quiet ones: an ink tick on the find, never on her or under the card
+          if (nTicks < REVEAL_TICK_CAP && !this._rectOnHer(PX[i] - 4, PY[i] - 4, PX[i] + 4, PY[i] + 4)
+            && !(PX[i] > cL + 90 && PX[i] < cR - 90 && PY[i] > cT + 14 && PY[i] < cB - 14)) {
+            const tk = this._tickPool[nTicks++];
+            const tx = Math.round(PX[i]), ty = Math.round(PY[i]);
+            if (tk.x !== tx || tk.y !== ty) { tk.x = tx; tk.y = ty; tk.el.style.transform = 'translate(' + tx + 'px,' + ty + 'px)'; }
+            if (tk.shown !== true) { tk.shown = true; tk.el.style.display = ''; }
+          }
+          continue;
+        }
+        if (live.length >= REVEAL_CAP) break;
+        const c = src[i];
+        _screen.x = PX[i]; _screen.y = PY[i];
         // she and the sighted Instrument keep their place: a chip behind either steps out to the nearer side
         for (let b = 0; b < 2; b++) {
           this._stepClear(_screen, this._hideBox, 0);
@@ -1948,6 +2123,8 @@ export class SightingSystem {
           if (_screen.y - REVEAL_H < VIEW_MARGIN) { ok = false; break; }
         }
         if (!ok) continue;
+        // stacked up the frame, it must still keep off her
+        if (this._rectOnHer(_screen.x - REVEAL_HW * 0.9, _screen.y - REVEAL_H, _screen.x + REVEAL_HW * 0.9, _screen.y)) continue;
         if (nPlaced < placed.length) {
           const seat = placed[nPlaced++];
           seat.x = _screen.x; seat.y = _screen.y;
@@ -1975,7 +2152,13 @@ export class SightingSystem {
       const slot = this._revealPool[i];
       if (slot.shown !== false) { slot.shown = false; slot.el.style.display = 'none'; }
     }
+    this._ticksLive = nTicks;
+    for (let i = nTicks; i < this._tickPool.length; i++) {
+      const tk = this._tickPool[i];
+      if (tk.shown !== false) { tk.shown = false; tk.el.style.display = 'none'; }
+    }
   }
+
 
   /* --------------------------------- audit --------------------------------- */
 
@@ -2016,6 +2199,8 @@ export class SightingSystem {
       viewport: { w: window.innerWidth, h: window.innerHeight },
       shells: { parts: this._parts.size, machines: this._hulls.size },
       figure: { subject: this._subject?.kind ?? null, quiet: this._quiet.length, draws: this.overlayDraws() },
+      revealTicks: this._ticksLive,
+      herBox: this._herBox[2] > this._herBox[0] ? [...this._herBox].map((v) => Math.round(v)) : null,
       rings: this._ringRec.slice(0, this._ringsLive).map((r) => ({ name: r.name, x: Math.round(r.x), y: Math.round(r.y), r: +r.r.toFixed(1) })),
       leaders: this._leaders.filter((l) => l.style.display !== 'none').length,
       readouts: { bearing: this._brgEl.textContent, distance: this._dstEl.textContent },
@@ -2071,14 +2256,24 @@ export class SightingSystem {
     this._rangeT -= dt;
     if (this._rangeT > 0) return;
     this._rangeT = 0.2;
-    const cam = this.ctx.camera, T = this.ctx.terrain;
+    // the range is hers, not the camera's (r0/r1 judges): from her eye to what the crosshair reads
+    const cam = this.ctx.camera, T = this.ctx.terrain, pp = p.position;
+    const ex = pp.x, ey = pp.y + 1.6, ez = pp.z;
     let range = -1;
-    if (this._target?.position) range = this._target.position.distanceTo(cam.position);
-    else if (cam && T?.getHeight) {
+    if (this._target?.position) {
+      const tp = this._target.position;
+      _v2.set(tp.x - ex, tp.y + (this._target.height ?? 2.4) * 0.5 - ey, tp.z - ez);
+      range = _v2.length();
+    } else if (cam && T?.getHeight) {
       cam.getWorldDirection(_dir);
       const ox = cam.position.x, oy = cam.position.y, oz = cam.position.z;
-      for (let d = 4; d <= 400; d += 4) {
-        if (oy + _dir.y * d < T.getHeight(ox + _dir.x * d, oz + _dir.z * d)) { range = d; break; }
+      let hit = -1;
+      for (let d = 2; d <= 400; d += 2) {
+        if (oy + _dir.y * d < T.getHeight(ox + _dir.x * d, oz + _dir.z * d)) { hit = d; break; }
+      }
+      if (hit > 0) {
+        _v2.set(ox + _dir.x * hit - ex, oy + _dir.y * hit - ey, oz + _dir.z * hit - ez);
+        range = _v2.length();
       }
     }
     const q = Math.round(range);
@@ -2194,6 +2389,8 @@ export class SightingSystem {
     // one rect read per frame, BEFORE anything writes a style, so the passes never reflow
     this._cardRect = this._card.classList.contains('show')
       ? this._card.getBoundingClientRect() : null;
+    if (this.on) this._fitHideBoxes();
+    else this._hideBox.fill(0);
     this._updateCard(dt);
     this._updatePartLabels(dt);
     this._updateReveals();

@@ -1,22 +1,36 @@
-/* THE ALIDADE (lane `shell-ui`, bible §9.7, gates A-sighting + V36-sighting-scan).
+/* THE ALIDADE (lane `shell-ui`, bible §9.7, gates A-sighting + V36-sighting-scan; R66 e).
    A sepia paper vignette at most 20 % at the corners, a crosshair with stadia
-   hairlines, bearing and distance readouts, weak points as cobalt-ink rings, components
-   as dashed ink outlines with leader lines to named chips. Not violet, not teal, not
+   hairlines, weak points as cobalt-ink rings on a staff-white casing, components as
+   dashed ink outlines with leader lines to named chips, and ONE glass card that carries
+   the bearing and the range in its header (U-02, U-07). Not violet, not teal, not
    holographic: no glow anywhere, no scanlines, no additive light. Tokens: src/style.css. */
 
 /* ---------------------------- the paper vignette ------------------------------ */
 /* `SightingSystem._vignette()` measures these numbers off the computed style, so the
-   gate and the CSS can never disagree. Clear through the middle; the world keeps its colour. */
+   gate and the CSS can never disagree. Clear through the middle; the world keeps its colour.
+   r1 gate judge: the old ellipse was sized in % of the box (78 % of the WIDTH as a radius), so
+   its outer stops lay far off screen and the edges took 2-3 %. It is sized to the corners now:
+   about 10 % at the middle of each side, 17 % in the corners, with the paper's grain inside the
+   margin at <= 3 % (the two together stay under the 20 % ceiling). */
 .calf-tint {
   position: absolute; inset: 0;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.26s ease;
-  background: radial-gradient(ellipse 78% 82% at center,
-    rgba(137, 104, 62, 0) 0%,
-    rgba(137, 104, 62, 0.02) 58%,
-    rgba(120, 88, 48, 0.10) 82%,
-    rgba(96, 70, 36, 0.20) 100%);
+  background: radial-gradient(ellipse farthest-corner at center,
+    rgba(112, 82, 44, 0) 0%,
+    rgba(112, 82, 44, 0) 42%,
+    rgba(108, 78, 40, 0.06) 60%,
+    rgba(100, 72, 36, 0.12) 76%,
+    rgba(90, 64, 32, 0.155) 90%,
+    rgba(84, 58, 28, 0.17) 100%);
+}
+.calf-tint::after {
+  content: ''; position: absolute; inset: 0;
+  background-image: var(--cal-paper-grain);
+  opacity: 0.2;
+  -webkit-mask-image: radial-gradient(ellipse farthest-corner at center, transparent 48%, #000 92%);
+  mask-image: radial-gradient(ellipse farthest-corner at center, transparent 48%, #000 92%);
 }
 .calf-tint.on { opacity: 1; }
 
@@ -40,7 +54,18 @@ body.cal-sighting .cal-cross { opacity: 0; }
 .calf-leader { stroke: var(--cal-ink); stroke-width: 1; }
 .calf-leader-u { stroke: rgba(241, 238, 230, 0.86); stroke-width: 3; }
 .calf-ring { fill: none; stroke: var(--cal-c-weak); stroke-width: 2.25; }
-.calf-ring-u { fill: none; stroke: rgba(241, 238, 230, 0.9); stroke-width: 4.5; }
+.calf-ring-u { fill: none; stroke: rgba(241, 238, 230, 0.92); stroke-width: 4.5; }   /* the staff-white casing (U-07) */
+/* the reveals the alidade does not name (U-02): a 6 px ink tick on the find */
+.calf-rtick {
+  position: absolute; left: 0; top: 0;
+  width: 8px; height: 8px; margin: -4px 0 0 -4px;
+  background:
+    linear-gradient(var(--cal-staff), var(--cal-staff)) center / 6px 1.5px no-repeat,
+    linear-gradient(var(--cal-staff), var(--cal-staff)) center / 1.5px 6px no-repeat,
+    linear-gradient(var(--cal-under), var(--cal-under)) center / 8px 3.5px no-repeat,
+    linear-gradient(var(--cal-under), var(--cal-under)) center / 3.5px 8px no-repeat;
+  will-change: transform;
+}
 
 /* --------------------------------- the crosshair ------------------------------ */
 .calf-reticle {
@@ -57,54 +82,38 @@ body.cal-sighting .cal-cross { opacity: 0; }
 .calf-reticle .u { stroke: rgba(20, 22, 26, 0.58); stroke-width: 2.8; }
 .calf-reticle .t { stroke: var(--cal-staff); stroke-width: 1; }
 
-/* the readouts: a paper chip hung on the upper hair, above the stadia, where a reading sits on a
-   real reticle plate. World chips hang off the ground and the Instrument, so nothing lands on it. */
-.calf-read {
-  position: absolute;
-  left: calc(50% + 12px * var(--s)); top: calc(50% - 172px * var(--s));
-  padding: calc(3px * var(--s)) calc(7px * var(--s)) calc(2px * var(--s));
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
-}
-.calf-read-row { display: flex; align-items: baseline; gap: calc(6px * var(--s)); line-height: 1.26; }
-.calf-read-row span {
-  font-family: var(--cal-font-ui);
-  font-weight: 600;
-  font-size: calc(11px * var(--s));
-  letter-spacing: var(--cal-track-caps);
-  color: var(--cal-ink-62);
-  width: calc(26px * var(--s));
-}
-.calf-read-row b {
-  font-family: var(--cal-font-mono);
-  font-weight: 600;
-  font-size: calc(15px * var(--s));
-  font-variant-numeric: tabular-nums;
-}
-.calf-read-row i { font-style: normal; font-size: calc(11px * var(--s)); color: var(--cal-ink-62); }
-
 /* ------------------------------------ the card --------------------------------- */
-/* A page of the book, pinned to the right of the frame. */
+/* ONE glass card (U-07, 1-TR), pinned to the right of the frame, a vermilion rule down its left. */
 .calf-card {
   position: absolute;
-  right: calc(30px * var(--s)); top: calc(160px * var(--s));
+  right: calc(30px * var(--s)); top: calc(150px * var(--s));
   width: calc(306px * var(--s));
   max-height: calc(100vh - 220px * var(--s));
   overflow: hidden;
-  padding: calc(9px * var(--s)) calc(12px * var(--s)) calc(10px * var(--s)) calc(28px * var(--s));
-  color: var(--cal-ink);
-  background-color: var(--cal-paper);
-  background-image: var(--cal-paper-grain), repeating-linear-gradient(180deg, transparent 0 calc(23px * var(--s)), var(--cal-rule-ruled) calc(23px * var(--s)) calc(24px * var(--s)));
-  border: 1px solid var(--cal-ink);
+  padding: calc(8px * var(--s)) calc(13px * var(--s)) calc(10px * var(--s)) calc(17px * var(--s));
+  --glass-a: 0.80;
   opacity: 0;
   transform: translateX(calc(10px * var(--s)));
   transition: opacity 0.18s var(--cal-ease-out), transform 0.2s var(--cal-ease-out);
 }
 .calf-card::before {
-  content: ''; position: absolute; left: calc(13px * var(--s)); top: 0; bottom: 0;
-  border-left: 3px double var(--cal-c-staff);
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: calc(3px * var(--s)); background: var(--cal-c-staff);
 }
+/* the header: the reading under the crosshair (U-02: the floating box is gone) */
+.calf-card-read {
+  display: flex; align-items: baseline; gap: calc(6px * var(--s));
+  margin-bottom: calc(4px * var(--s));
+  padding-bottom: calc(3px * var(--s));
+  border-bottom: 1px solid var(--cal-glass-line);
+  font-family: var(--cal-font-mono);
+  font-size: calc(12px * var(--s));
+  color: var(--cal-glass-text-2);
+}
+.calf-card-read span { font-family: var(--cal-font-ui); font-weight: 600; font-size: calc(11px * var(--s)); letter-spacing: var(--cal-track-caps); }
+.calf-card-read b { font-weight: 600; color: var(--cal-glass-text); font-variant-numeric: tabular-nums; margin-right: calc(8px * var(--s)); }
+.calf-card-read b:last-of-type { margin-right: 0; }
+.calf-card-read i { font-style: normal; }
 .calf-card.show { opacity: 1; transform: none; }
 .calf-name {
   font-family: var(--cal-font-display);
@@ -120,25 +129,24 @@ body.cal-sighting .cal-cross { opacity: 0; }
   font-weight: 600;
   font-size: calc(11.5px * var(--s));
   letter-spacing: 0.07em;
-  color: var(--cal-ink-80);
+  color: var(--cal-glass-text-2);
 }
 /* the graduated bar */
 .calf-bar {
   position: relative;
-  height: calc(8px * var(--s));
+  height: calc(6px * var(--s));
   margin: calc(6px * var(--s)) 0 calc(7px * var(--s));
-  background: var(--cal-ink-22);
-  outline: 1px solid var(--cal-ink);
+  background: rgba(241, 238, 230, 0.12);
 }
-.calf-bar-fill { position: absolute; inset: 0; display: block; transform-origin: 0 50%; background: var(--cal-ink); transition: transform 0.12s ease-out; }
+.calf-bar-fill { position: absolute; inset: 0; display: block; transform-origin: 0 50%; background: var(--cal-staff); transition: transform 0.12s ease-out; }
 .calf-bar-ticks {
   position: absolute; inset: 0; display: block;
-  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--cal-paper) calc(10% - 1px) 10%);
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--cal-glass) calc(10% - 1px) 10%);
 }
 .calf-row {
   display: flex; align-items: center; gap: calc(8px * var(--s));
   padding: calc(2px * var(--s)) 0;
-  border-bottom: 1px solid var(--cal-ink-10);
+  border-bottom: 1px solid var(--cal-glass-line);
   font-family: var(--cal-font-ui);
   font-size: calc(12px * var(--s));
   letter-spacing: 0.06em;
@@ -149,7 +157,7 @@ body.cal-sighting .cal-cross { opacity: 0; }
   font-weight: 600;
   font-size: calc(11px * var(--s));
   letter-spacing: var(--cal-track-caps);
-  color: var(--cal-ink-62);
+  color: var(--cal-glass-text-2);
   width: calc(72px * var(--s));
   white-space: nowrap;
   flex: none;
@@ -159,13 +167,13 @@ body.cal-sighting .cal-cross { opacity: 0; }
   width: calc(12px * var(--s)); height: calc(12px * var(--s));
   margin-left: calc(3px * var(--s));
   border: calc(1.5px * var(--s)) solid var(--lamp);
-  box-shadow: 0 0 0 1px var(--cal-ink);
+  box-shadow: none;
 }
 .calf-comp-head {
   display: flex; align-items: baseline; justify-content: space-between;
   margin-top: calc(8px * var(--s));
   padding-bottom: calc(2px * var(--s));
-  border-bottom: 1px solid var(--cal-ink);
+  border-bottom: 1px solid var(--cal-glass-line);
 }
 .calf-comp-head .calf-lbl { width: auto; }
 .calf-comp-n { font-family: var(--cal-font-mono); font-weight: 500; font-size: calc(12px * var(--s)); }
@@ -176,7 +184,7 @@ body.cal-sighting .cal-cross { opacity: 0; }
   grid-template-areas: 'name tags' 'loot loot';
   gap: 0 calc(6px * var(--s));
   padding: calc(3px * var(--s)) 0 calc(2px * var(--s));
-  border-bottom: 1px solid var(--cal-ink-10);
+  border-bottom: 1px solid rgba(241, 238, 230, 0.08);
 }
 .calf-comp-row.torn { opacity: 0.45; }
 .calf-comp-name {
@@ -198,17 +206,18 @@ body.cal-sighting .cal-cross { opacity: 0; }
   letter-spacing: 0.05em;
   line-height: 1.2;
   padding: 0 calc(4px * var(--s));
-  color: var(--cal-staff);
-  background: var(--cal-ink);
+  color: var(--cal-glass);
+  background: var(--cal-staff);
 }
-.calf-tag-weak { background: var(--cal-c-weak) !important; }
+/* WEAK (U-01): a staff-white chip with cobalt text */
+.calf-tag-weak { color: var(--cal-weak-ink) !important; background: var(--cal-weak-chip) !important; }
 .calf-tag-pry { background: var(--cal-c-pry) !important; }
 .calf-comp-loot { grid-area: loot; display: flex; flex-wrap: wrap; gap: 0 calc(8px * var(--s)); margin-top: calc(1px * var(--s)); }
 .calf-loot-chip {
   display: inline-flex; align-items: center; gap: calc(3px * var(--s));
   font-family: var(--cal-font-mono);
   font-size: calc(11px * var(--s));
-  color: var(--cal-ink-80);
+  color: var(--cal-glass-text-2);
 }
 .calf-loot-chip i { display: block; width: calc(12px * var(--s)); height: calc(12px * var(--s)); }
 .calf-loot-chip i svg { display: block; width: 100%; height: 100%; }
@@ -255,22 +264,24 @@ body.cal-sighting .cal-cross { opacity: 0; }
   font-size: 11px; letter-spacing: 0.06em; line-height: 1.5;
   color: var(--cal-ink);
   white-space: nowrap;
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
+  color: var(--cal-glass-text);
+  background-color: var(--cal-glass-hud);
+  box-shadow: inset 0 0 0 1px var(--cal-glass-line);
   will-change: left, top;
 }
 .calf-plabel .calf-ploot {
   font-family: var(--cal-font-mono);
   font-weight: 400;
   font-size: 11px; letter-spacing: 0;
-  color: var(--cal-ink-80);
+  color: var(--cal-glass-text-2);
 }
 .calf-plabel .calf-ploot:not(:empty)::before { content: '· '; }
-.calf-plabel.is-weak { border-color: var(--cal-c-weak); border-left-width: 3px; color: var(--cal-c-weak); }
+/* the weak point's tag: a staff-white chip with cobalt text (U-01, 1-TR's LAMP tag) */
+.calf-plabel.is-weak { color: var(--cal-weak-ink); background-color: var(--cal-weak-chip); box-shadow: 0 1px 0 rgba(20, 22, 26, 0.55); }
+.calf-plabel.is-weak .calf-ploot { color: rgba(44, 79, 138, 0.8); }
 /* flipped: the chip hangs to the LEFT of its anchor; the text still reads name, then loot */
 .calf-plabel.flip { transform: translate(calc(-100% - 34px), -50%); }
-.calf-plabel.flip.is-weak { border-left-width: 1px; border-right-width: 3px; }
-.calf-plabel.hovered { background: var(--cal-staff); box-shadow: 0 0 0 1px var(--cal-ink); }
+.calf-plabel.hovered { box-shadow: inset 0 0 0 1px var(--cal-select-line); }
 
 /* ------------------------- LOOT / FIELD BOOK / GATHER chips --------------------- */
 .calf-reveal {
@@ -282,10 +293,9 @@ body.cal-sighting .cal-cross { opacity: 0; }
   font-weight: 600;
   font-size: 11px; letter-spacing: 0.08em; line-height: 1.45;
   white-space: nowrap;
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
-  border-left: 3px solid var(--rar, var(--cal-ink));
+  color: var(--cal-glass-text);
+  background-color: var(--cal-glass-hud);
+  box-shadow: inset 0 0 0 1px var(--cal-glass-line), inset 3px 0 0 var(--rar, var(--cal-staff-55));
   will-change: left, top;
   animation: calf-reveal-in 0.2s var(--cal-ease-out) both;
 }
@@ -299,9 +309,9 @@ body.cal-sighting .cal-cross { opacity: 0; }
   font-family: var(--cal-font-mono);
   font-weight: 400;
   font-size: 11px; letter-spacing: 0;
-  color: var(--cal-ink-80);
+  color: var(--cal-glass-text-2);
   max-width: 190px; overflow: hidden; text-overflow: ellipsis;
 }
 .calf-reveal .calf-rname:not(:empty)::before { content: '· '; }
-.calf-reveal.k-field-book { border-left-color: var(--cal-c-weak); }
-.calf-reveal.k-gather { border-left-color: var(--cal-moss); }
+.calf-reveal.k-field-book { --rar: var(--cal-select-line); }
+.calf-reveal.k-gather { --rar: var(--cal-moss); }

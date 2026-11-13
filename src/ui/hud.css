@@ -1,12 +1,14 @@
-/* THE FIELD-BOOK HUD (lane `shell-ui`, bible §9.7, plan R55). Lives under #hud
+/* THE FIELD HUD (lane `shell-ui`, bible §9.7, plan R55, R66 e). Lives under #hud
    (fixed, pointer-events:none, z-index 40). Palette and type scale are tokens in
    src/style.css; every colour here is one of them.
 
-   TWO MATERIALS, one system:
-     paper chips     field-book paper, ink text, 1 px ink rule: anything read as words
+   TWO MATERIALS, one system (ROUND5-LOOK U-01, U-06):
+     dark glass      `.cal-glass` (style.css): violet-black at 0.70, a pale frame line, 6 px
+                     registration ticks at the corners: anything read as words
      engraved lines  staff white hairlines and numerals straight on the world, each
                      with a tight ink underlay so they read on salt AND on black sand
-   Right angles only. Motif: the graduated tick.
+   Right angles only; no blur. Motifs: the levelling staff, the theodolite strip, the
+   stadia hairs, the graduated tick. Thin: calm exploration shows four surfaces or fewer.
 
    HUD SCALE. `--hud-scale` is a unitless multiplier written by hud.js (viewport
    against 1600x900, times the player's preference). Every dimension is
@@ -93,33 +95,38 @@
 #hud.reveal .cal-track.idle { opacity: 1; }
 
 .cal-staffrow { display: flex; align-items: center; gap: calc(8px * var(--s)); }
+/* the emblem: a broad arrow in a ring (U-06; a disc by role, never a diamond) */
+.cal-emblem { flex: none; width: calc(24px * var(--s)); height: calc(24px * var(--s)); }
+.cal-emblem svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.cal-emblem .u { fill: none; stroke: var(--cal-under); stroke-width: 3.4; }
+.cal-emblem .t { fill: none; stroke: var(--cal-staff); stroke-width: 1.4; stroke-linecap: square; }
+.cal-emblem .a { fill: none; stroke: var(--cal-c-staff); stroke-width: 1.8; stroke-linecap: square; }
 
-/* The staff: ten graduations, vermilion and paper, E-pattern comb on the lower edge.
+/* The staff (U-06): 300 x 6, ten vermilion graduations cut by nine staff-white gaps.
    Damage eats from the right; what is left of the scale stays engraved in the dark. */
 .cal-staff {
   position: relative;
   flex: 0 0 auto;
-  width: calc(300px * var(--s)); height: calc(18px * var(--s));
-  outline: 1px solid var(--cal-ink);
-  box-shadow: 0 0 0 2px var(--cal-under);
+  width: calc(300px * var(--s)); height: max(6px, calc(6px * var(--s)));
+  box-shadow: 0 0 0 1px var(--cal-under), 0 0 0 2px rgba(20, 22, 26, 0.18);
 }
 .cal-staff-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }
 .cal-staff-svg .v { fill: var(--cal-c-staff); }
 .cal-staff-svg .p { fill: var(--cal-staff); }
 .cal-staff-empty { position: absolute; inset: 0; }
-.cal-staff-svg.empty .v { fill: rgba(28, 27, 30, 0.86); }
-.cal-staff-svg.empty .p { fill: rgba(62, 60, 58, 0.86); }
+.cal-staff-svg.empty .v { fill: rgba(var(--cal-glass-rgb), 0.78); }
+.cal-staff-svg.empty .p { fill: var(--cal-staff-30); }
 .cal-staff-fill { position: absolute; inset: 0; transition: clip-path 0.14s ease-out; }
 /* the ghost: where the reading was, a paper trail that holds and then drains */
 .cal-staff-ghost {
   position: absolute; inset: 0;
   transform-origin: 0 50%;
-  background: var(--cal-paper);
+  background: var(--cal-staff-80);
 }
 /* the reading index rides the top edge and settles when HP moves */
 .cal-staff-index {
   position: absolute;
-  left: 100%; top: calc(-5px * var(--s)); bottom: calc(-3px * var(--s));
+  left: 100%; top: calc(-4px * var(--s)); bottom: calc(-4px * var(--s));
   width: 1.5px; margin-left: -0.75px;
   background: var(--cal-staff);
   box-shadow: 0 0 0 1px var(--cal-ink);
@@ -129,17 +136,13 @@
 @keyframes calIndexLow { 0% { background: var(--cal-staff); } 100% { background: var(--cal-c-staff); } }
 .cal-topleft.healing .cal-staff { box-shadow: 0 0 0 2px var(--cal-c-good); }
 
-/* the reading window: a paper chip at the staff's end, like the bearing's */
+/* the reading: engraved numerals at the staff's end */
 .cal-staff-num {
   flex: 0 0 auto;
   display: flex; align-items: baseline;
-  height: calc(20px * var(--s));
-  padding: 0 calc(6px * var(--s));
-  line-height: calc(19px * var(--s));
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
-  box-shadow: var(--cal-chip-edge);
+  line-height: 1;
+  color: var(--cal-staff);
+  text-shadow: var(--cal-engrave-s);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -150,17 +153,16 @@
 .cal-staff-num span {
   font-size: max(11px, calc(11px * var(--s)));
   font-weight: 400;
-  color: var(--cal-ink-80);
+  color: var(--cal-staff-80);
   margin-left: calc(2px * var(--s));
 }
-.cal-topleft.low .cal-staff-num { background: var(--cal-c-staff); color: var(--cal-staff); }
-.cal-topleft.low .cal-staff-num span { color: var(--cal-staff-80); }
+.cal-topleft.low .cal-staff-num b { color: #FF8A73; }
 
 /* the hairline beneath the staff */
 .cal-gourdline {
   position: relative;
   width: calc(300px * var(--s)); height: calc(2px * var(--s)); min-height: 2px;
-  margin-top: calc(5px * var(--s));
+  margin-top: calc(5px * var(--s)); margin-left: calc(32px * var(--s));
   background: var(--cal-under);
 }
 .cal-gourdline-fill {
@@ -172,19 +174,17 @@
 
 .cal-chiprow {
   display: flex; align-items: center; gap: calc(6px * var(--s));
-  margin-top: calc(6px * var(--s));
+  margin-top: calc(6px * var(--s)); margin-left: calc(32px * var(--s));
 }
 
-/* ------------------------------- paper chips ---------------------------------- */
+/* ------------------------------- glass chips ---------------------------------- */
 .cal-chip {
+  position: relative;
   display: inline-flex; align-items: baseline; gap: calc(7px * var(--s));
-  padding: calc(2px * var(--s)) calc(7px * var(--s)) calc(1px * var(--s));
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
-  box-shadow: var(--cal-chip-edge);
+  padding: calc(3px * var(--s)) calc(8px * var(--s)) calc(2px * var(--s));
   animation: calChipIn 0.2s var(--cal-ease-out) both;
 }
+.cal-chip-l { color: var(--cal-glass-text-2); }
 .cal-chip-l {
   font-family: var(--cal-font-ui);
   font-weight: 600;
@@ -197,58 +197,56 @@
   font-size: max(12px, calc(13px * var(--s)));
   font-variant-numeric: tabular-nums;
 }
-.cal-gourd.healing { background: var(--cal-staff); }
+.cal-gourd.healing { box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--cal-c-good); }
 .cal-gourd.pulse { animation: calChipBump 0.42s var(--cal-ease-settle) 1; }
 @keyframes calChipBump { 0% { transform: translateY(calc(-3px * var(--s))); } 100% { transform: none; } }
 .cal-gourd-key { display: none !important; margin-left: calc(2px * var(--s)); }
 .cal-gourd-key.show { display: inline-block !important; }
 
 /* -------------------------------- the field note ------------------------------ */
-/* A corner of a field-book page, the red margin down its left. */
+/* U-06: 340 px of glass, a vermilion rule down its left: kicker Chakra 11, title Chakra
+   600 17, objective Plex 13. Recedes when nothing has changed for a while. */
 .cal-track {
   position: relative;
-  width: calc(300px * var(--s));
-  margin-top: calc(9px * var(--s));
-  padding: calc(6px * var(--s)) calc(9px * var(--s)) calc(7px * var(--s)) calc(18px * var(--s));
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
-  box-shadow: var(--cal-chip-edge);
+  width: calc(340px * var(--s));
+  margin-top: calc(12px * var(--s));
+  padding: calc(8px * var(--s)) calc(12px * var(--s)) calc(9px * var(--s)) calc(17px * var(--s));
   transition: opacity 0.8s ease;
 }
 .cal-track::before {
-  content: ''; position: absolute; left: calc(9px * var(--s)); top: 0; bottom: 0;
-  border-left: 3px double var(--cal-c-staff);
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: calc(3px * var(--s));
+  background: var(--cal-c-staff);
 }
 .cal-track.off { display: none; }
-.cal-track.idle { opacity: 0.5; }
+.cal-track.idle { opacity: 0.12; }
 .cal-track-kicker {
   font-family: var(--cal-font-ui);
   font-weight: 600;
   font-size: max(11px, calc(11px * var(--s)));
   letter-spacing: var(--cal-track-wide);
-  color: var(--cal-ink-62);
+  color: var(--cal-glass-text-2);
 }
 .cal-track-title {
   font-family: var(--cal-font-ui);
   font-weight: 600;
-  font-size: max(13px, calc(14px * var(--s)));
-  letter-spacing: 0.08em;
-  line-height: 1.25;
-  margin-top: calc(1px * var(--s));
+  font-size: max(15px, calc(17px * var(--s)));
+  letter-spacing: 0.07em;
+  line-height: 1.2;
+  margin-top: calc(2px * var(--s));
 }
 .cal-track-obj {
   font-family: var(--cal-font-mono);
-  font-size: max(11.5px, calc(12.5px * var(--s)));
-  line-height: 1.36;
-  color: var(--cal-ink);
-  margin-top: calc(2px * var(--s));
+  font-size: max(12px, calc(13px * var(--s)));
+  line-height: 1.38;
+  color: var(--cal-glass-text);
+  margin-top: calc(3px * var(--s));
 }
 .cal-track-meta {
   font-family: var(--cal-font-mono);
   font-weight: 500;
   font-size: max(11px, calc(12px * var(--s)));
-  color: var(--cal-ink-80);
+  color: var(--cal-glass-text-2);
   margin-top: calc(2px * var(--s));
 }
 .cal-track.bump { animation: calChipIn 0.3s var(--cal-ease-out) 1; }
@@ -312,16 +310,12 @@
 }
 .cal-strip .c.north { fill: #FF8A73; }
 
-/* the reading window: a paper chip over the index */
+/* the reading window: a glass chip over the index (a disc by role is allowed it; it stays square) */
 .cal-bearing {
   position: absolute; top: 0; left: 50%;
   transform: translateX(-50%);
-  padding: 0 calc(7px * var(--s));
+  padding: 0 calc(8px * var(--s));
   line-height: calc(22px * var(--s));
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
-  box-shadow: var(--cal-chip-edge);
   font-family: var(--cal-font-mono);
   font-weight: 600;
   font-size: max(14px, calc(17px * var(--s)));
@@ -478,7 +472,10 @@
 .cal-eye-bars i:nth-child(2) { height: 70%; }
 .cal-eye-bars i:nth-child(3) { height: 100%; }
 .cal-eye-bars i.on { background: var(--cal-staff); }
+.cal-vial { transition: opacity 0.6s ease; }
 .cal-vial[data-m='clear'] { opacity: 0.78; }
+.cal-vial.idle { opacity: 0; }
+#hud.reveal .cal-vial.idle { opacity: 0.78; }
 .cal-vial[data-m='hidden'] { --bubble: #A9C4B0; }
 .cal-vial[data-m='watch'] { --bubble: var(--cal-c-wary); }
 .cal-vial[data-m='seen'] { --bubble: var(--cal-c-hostile); }
@@ -509,12 +506,12 @@
 }
 .cal-mhb-plate {
   position: relative;
-  padding: 3px 7px 5px;
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
-  box-shadow: var(--cal-chip-edge);
+  padding: 4px 8px 6px;
 }
+/* U-02: the others wear a compact plate, name and bar only */
+.cal-mhb.compact { width: 150px; }
+.cal-mhb.compact .cal-mhb-plate { padding: 3px 7px 5px; }
+.cal-mhb.compact .cal-mhb-elems { display: none; }
 .cal-mhb-head { display: flex; align-items: center; gap: 7px; height: 18px; }
 .cal-mhb-head .cal-iris { flex: none; width: 11px; height: 11px; margin: 0 1px; border-width: 1.25px; box-shadow: none; }
 .cal-mhb-name {
@@ -528,18 +525,17 @@
 }
 .cal-mhb-bar {
   position: relative;
-  height: 7px;
-  margin-top: 2px;
-  background: var(--cal-ink-22);
-  outline: 1px solid var(--cal-ink);
+  height: 5px;
+  margin-top: 3px;
+  background: rgba(241, 238, 230, 0.12);
 }
 .cal-mhb-ghost, .cal-mhb-fill { position: absolute; inset: 0; transform-origin: 0 50%; }
 .cal-mhb-ghost { background: var(--cal-c-staff); }
-.cal-mhb-fill { background: var(--cal-ink); transition: transform 0.12s ease-out; }
-/* the graduated bar: ticks at every tenth, cut through the fill */
+.cal-mhb-fill { background: var(--cal-staff); transition: transform 0.12s ease-out; }
+/* the graduated bar: ticks at every tenth, cut through the fill in the glass's own colour */
 .cal-mhb-ticks {
   position: absolute; inset: 0;
-  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--cal-paper) calc(10% - 1px) 10%);
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--cal-glass) calc(10% - 1px) 10%);
 }
 .cal-mhb-elems { display: flex; gap: 8px; }
 .cal-mhb-elems:has(.show) { margin-top: 4px; }
@@ -548,8 +544,8 @@
 .cal-elem[data-e='fire'] { --c: var(--cal-cinder); }
 .cal-elem[data-e='shock'] { --c: var(--cal-dust); }
 .cal-elem[data-e='freeze'] { --c: var(--cal-brine); }
-.cal-elem span { font-family: var(--cal-font-mono); font-weight: 600; font-size: 11px; line-height: 1; color: var(--cal-ink); }
-.cal-elem-rule { width: 34px; height: 5px; background: var(--cal-ink); }
+.cal-elem span { font-family: var(--cal-font-mono); font-weight: 600; font-size: 11px; line-height: 1; color: var(--cal-glass-text); }
+.cal-elem-rule { width: 34px; height: 4px; background: rgba(241, 238, 230, 0.14); }
 .cal-elem-rule i { display: block; height: 100%; transform-origin: 0 50%; background: var(--c); }
 .cal-elem.triggered .cal-elem-rule { animation: calElemTrig 0.45s steps(2, jump-none) infinite; }
 @keyframes calElemTrig { 0% { background: var(--cal-ink); } 100% { background: var(--cal-c-staff); } }
@@ -571,7 +567,9 @@
   flex-direction: column; align-items: center; gap: 2px;
 }
 .cal-objmark.show { display: flex; }
-body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads what is in front of her: the mark keeps its arrow and its metres */
+body.cal-sighting .cal-objmark-label { display: none; }
+/* U-02: with the alidade up the circle carries the objective; the world mark stands aside */
+body.cal-sighting .cal-objmark { opacity: 0; }
 .cal-objmark-d { width: 22px; height: 22px; }
 .cal-objmark-d svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .cal-objmark-d path { fill: none; stroke-linecap: square; }
@@ -601,21 +599,20 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
 .cal-interact {
   position: absolute; left: 0; top: 0;
   display: none;
-  flex-direction: column; align-items: center; gap: 3px;
+  flex-direction: row; align-items: center; gap: 6px;
 }
 .cal-interact.show { display: flex; }
 .cal-int-key { font-size: 13px !important; min-width: 22px !important; }
 .cal-int-hold { width: 34px; height: 2px; background: var(--cal-under); }
 .cal-int-hold i { display: block; height: 100%; transform-origin: 0 50%; transform: scaleX(0); background: var(--cal-staff); }
+.cal-int-hold { position: absolute; left: 0; bottom: -5px; }
 .cal-int-label {
-  padding: 1px 6px 0;
+  position: relative;
+  padding: 2px 8px 1px;
   font-family: var(--cal-font-ui);
   font-weight: 600;
-  font-size: 11px; letter-spacing: var(--cal-track-caps);
+  font-size: 13px; letter-spacing: var(--cal-track-caps);
   white-space: nowrap;
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
 }
 
 /* ------------------------------- awareness rods ------------------------------- */
@@ -741,11 +738,12 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
 }
 
 /* ============================================================================ */
-/* BOTTOM-LEFT: tool chips                                                       */
+/* BOTTOM-CENTRE: tool cells (U-06: three 44 px glass cells with their key hints) */
 /* ============================================================================ */
 
 .cal-tools {
-  position: absolute; left: calc(30px * var(--s)); bottom: calc(26px * var(--s));
+  position: absolute; left: 50%; bottom: calc(26px * var(--s));
+  transform: translateX(-50%);
   display: none; align-items: flex-end; gap: calc(6px * var(--s));
 }
 .cal-tools.show { display: flex; }
@@ -753,13 +751,11 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
 .cal-tool {
   position: relative;
   width: calc(44px * var(--s)); height: calc(44px * var(--s));
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
 }
-.cal-tool.active { outline: 1px solid var(--cal-staff); box-shadow: 0 calc(-3px * var(--s)) 0 var(--cal-c-staff); }
+/* the cell in hand: the lilac selection line over Orchil Deep (U-01), never a glow */
+.cal-tool.active { background-color: var(--cal-select-fill); box-shadow: inset 0 0 0 1px var(--cal-select-line); }
 .cal-tool.empty { opacity: 0.55; }
-.cal-tool.blocked { border-style: dashed; }
+.cal-tool.blocked { box-shadow: inset 0 0 0 1px var(--cal-c-staff); }
 .cal-tool-ic {
   position: absolute;
   left: calc(5px * var(--s)); top: calc(4px * var(--s));
@@ -774,7 +770,7 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
   line-height: 1.1;
 }
 .cal-tool-key { position: absolute; left: 50%; top: calc(-26px * var(--s)); transform: translateX(-50%); }
-.cal-tool-cd { position: absolute; inset: 0; transform-origin: 50% 100%; transform: scaleY(0); background: var(--cal-ink-62); }
+.cal-tool-cd { position: absolute; inset: 0; transform-origin: 50% 100%; transform: scaleY(0); background: rgba(var(--cal-glass-rgb), 0.62); }
 .cal-tool-chev { display: flex; align-items: center; padding-bottom: calc(12px * var(--s)); }
 
 /* ---------------------------------- flashes ----------------------------------- */
@@ -784,19 +780,21 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
   display: flex; flex-direction: column; align-items: center; gap: calc(4px * var(--s));
 }
 .cal-flash {
-  padding: calc(2px * var(--s)) calc(8px * var(--s)) calc(1px * var(--s));
+  position: relative;
+  padding: calc(3px * var(--s)) calc(10px * var(--s)) calc(2px * var(--s));
   font-family: var(--cal-font-ui);
   font-weight: 600;
   font-size: max(11px, calc(12px * var(--s)));
   letter-spacing: var(--cal-track-caps);
   white-space: nowrap;
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
+  color: var(--cal-glass-text);
+  background-color: var(--cal-glass-hud);
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--cal-glass-line);
   animation: calFlash 1.9s ease-out forwards;
 }
-.cal-flash.k-good { border-left: calc(4px * var(--s)) solid var(--cal-c-good); }
-.cal-flash.k-warn { border-left: calc(4px * var(--s)) solid var(--cal-c-staff); }
+.cal-flash.k-good { box-shadow: inset calc(3px * var(--s)) 0 0 var(--cal-c-good), inset 0 0 0 1px var(--cal-glass-line); }
+.cal-flash.k-warn { box-shadow: inset calc(3px * var(--s)) 0 0 var(--cal-c-staff), inset 0 0 0 1px var(--cal-glass-line); }
 @keyframes calFlash {
   0% { opacity: 0; transform: translateY(calc(6px * var(--s))); }
   10% { opacity: 1; transform: none; }
@@ -805,27 +803,24 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
 }
 
 /* ============================================================================ */
-/* BOTTOM-RIGHT: the kit tag                                                     */
+/* BOTTOM-RIGHT: weapon and ammo (U-06: 240 x 56 of glass)                      */
 /* ============================================================================ */
 
 .cal-weapon {
   position: absolute; right: calc(30px * var(--s)); bottom: calc(26px * var(--s));
-  width: calc(262px * var(--s));
-  padding: calc(5px * var(--s)) calc(9px * var(--s)) calc(7px * var(--s)) calc(7px * var(--s));
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
-  box-shadow: var(--cal-chip-edge);
+  width: calc(240px * var(--s)); min-height: calc(56px * var(--s));
+  padding: calc(5px * var(--s)) calc(10px * var(--s)) calc(5px * var(--s)) calc(8px * var(--s));
   transition: opacity 0.45s ease;
 }
-.cal-weapon::after {   /* the tag's foot: a graduated edge */
-  content: ''; position: absolute; left: 0; right: 0; bottom: 0;
+/* the tag's foot: a graduated edge, staff white at a third */
+.cal-weapon::before {
+  content: ''; position: absolute; left: calc(8px * var(--s)); right: calc(8px * var(--s)); bottom: calc(3px * var(--s));
   height: calc(3px * var(--s));
-  background: repeating-linear-gradient(90deg, var(--cal-ink-62) 0 1px, transparent 1px calc(10px * var(--s)));
+  background: repeating-linear-gradient(90deg, var(--cal-staff-30) 0 1px, transparent 1px calc(10px * var(--s)));
 }
 .cal-weapon.idle { opacity: 0; }
 .cal-wpn-row { display: flex; align-items: center; gap: calc(9px * var(--s)); }
-.cal-wpn-art { flex: none; width: calc(30px * var(--s)); height: calc(48px * var(--s)); color: var(--cal-ink); }
+.cal-wpn-art { flex: none; width: calc(26px * var(--s)); height: calc(44px * var(--s)); color: var(--cal-staff); }
 .cal-wpn-art svg { width: 100%; height: 100%; display: block; }
 .cal-wpn-mid { flex: 1 1 auto; min-width: 0; }
 .cal-wpn-name {
@@ -841,18 +836,18 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
   font-weight: 500;
   font-size: max(11px, calc(11.5px * var(--s)));
   letter-spacing: 0.06em;
-  color: var(--cal-ink-80);
+  color: var(--cal-glass-text-2);
   white-space: nowrap;
 }
 /* the ammo roster: one tick each, the active one solid */
 .cal-wpn-dots { display: flex; gap: calc(3px * var(--s)); margin-top: calc(3px * var(--s)); }
-.cal-wpn-dots i { width: calc(11px * var(--s)); height: calc(4px * var(--s)); outline: 1px solid var(--cal-ink); outline-offset: -1px; }
-.cal-wpn-dots i.on { background: var(--cal-ink); }
+.cal-wpn-dots i { width: calc(11px * var(--s)); height: calc(3px * var(--s)); background: var(--cal-staff-30); }
+.cal-wpn-dots i.on { background: var(--cal-staff); }
 .cal-wpn-countrow { flex: none; }
 .cal-wpn-count {
   font-family: var(--cal-font-mono);
   font-weight: 500;
-  font-size: max(22px, calc(31px * var(--s)));
+  font-size: max(22px, calc(28px * var(--s)));
   line-height: 1;
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
@@ -866,8 +861,8 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
 }
 .cal-craft.on { max-height: calc(24px * var(--s)); opacity: 1; }
 .cal-craft span { font-family: var(--cal-font-ui); font-weight: 600; font-size: max(11px, calc(11px * var(--s))); letter-spacing: var(--cal-track-caps); white-space: nowrap; }
-.cal-craft-bar { flex: 1; height: calc(4px * var(--s)); background: var(--cal-ink-22); outline: 1px solid var(--cal-ink); }
-.cal-craft-bar i { display: block; height: 100%; transform-origin: 0 50%; transform: scaleX(0); background: var(--cal-ink); }
+.cal-craft-bar { flex: 1; height: calc(3px * var(--s)); background: var(--cal-staff-30); }
+.cal-craft-bar i { display: block; height: 100%; transform-origin: 0 50%; transform: scaleX(0); background: var(--cal-staff); }
 .cal-craft.deny .cal-craft-bar i { background: var(--cal-c-staff); }
 
 /* ------------------------------ pickup chips ---------------------------------- */
@@ -876,15 +871,17 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
   display: flex; flex-direction: column; align-items: flex-end; gap: calc(3px * var(--s));
 }
 .cal-item {
+  position: relative;
   display: flex; align-items: center; gap: calc(6px * var(--s));
-  padding: calc(2px * var(--s)) calc(8px * var(--s)) calc(1px * var(--s)) calc(5px * var(--s));
+  padding: calc(3px * var(--s)) calc(9px * var(--s)) calc(2px * var(--s)) calc(6px * var(--s));
   font-family: var(--cal-font-ui);
   font-weight: 500;
   font-size: max(11px, calc(12.5px * var(--s)));
   letter-spacing: 0.04em;
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
+  color: var(--cal-glass-text);
+  background-color: var(--cal-glass-hud);
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--cal-glass-line);
   animation: calItemToast 3.05s linear forwards;
 }
 .cal-item-ic { display: block; width: calc(15px * var(--s)); height: calc(15px * var(--s)); font-style: normal; }
@@ -915,12 +912,13 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
   white-space: nowrap;
   will-change: transform, opacity;
 }
+/* WEAK (U-01): a staff-white chip with cobalt text */
 .cal-dmg.weak {
   padding: 2px 5px 1px;
-  color: var(--cal-c-weak);
+  color: var(--cal-weak-ink);
   text-shadow: none;
-  background: var(--cal-paper);
-  border: 1px solid var(--cal-c-weak);
+  background: var(--cal-weak-chip);
+  box-shadow: 0 1px 0 rgba(20, 22, 26, 0.6);
 }
 .cal-dmg.pry {
   padding: 2px 5px 1px;
@@ -942,15 +940,16 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
 .cal-banner {
   position: relative;
   min-width: calc(320px * var(--s)); max-width: calc(560px * var(--s));
-  padding: calc(7px * var(--s)) calc(18px * var(--s)) calc(8px * var(--s)) calc(28px * var(--s));
-  color: var(--cal-ink);
-  background: var(--cal-paper-92);
-  border: 1px solid var(--cal-ink);
+  padding: calc(8px * var(--s)) calc(18px * var(--s)) calc(9px * var(--s)) calc(20px * var(--s));
+  color: var(--cal-glass-text);
+  background-color: var(--cal-glass-hud);
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--cal-glass-line);
   animation: calBanner 3.9s ease forwards;
 }
 .cal-banner::before {
-  content: ''; position: absolute; left: calc(12px * var(--s)); top: 0; bottom: 0;
-  border-left: 3px double var(--cal-c-staff);
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: calc(3px * var(--s)); background: var(--cal-c-staff);
 }
 .cal-banner .b-title {
   font-family: var(--cal-font-ui);
@@ -971,23 +970,21 @@ body.cal-sighting .cal-objmark-label { display: none; }   /* the alidade reads w
   100% { opacity: 0; }
 }
 
-/* a tutorial card: Plex on field-book paper, the red margin down its left */
+/* a tutorial card: Plex on glass, a vermilion rule down its left. It lives low on the LEFT,
+   in the column the tools vacated, so it can never stand beside the Sighting card pinned
+   right (r1 gate judge); one at a time, auto-dismissed (U-02). */
 .cal-tip {
   position: absolute;
-  right: calc(30px * var(--s)); top: 30%;
+  left: calc(30px * var(--s)); bottom: calc(118px * var(--s));
   width: calc(304px * var(--s));
-  padding: calc(9px * var(--s)) calc(13px * var(--s)) calc(10px * var(--s)) calc(30px * var(--s));
-  color: var(--cal-ink);
-  background: var(--cal-paper);
-  background-image: var(--cal-paper-grain);
-  border: 1px solid var(--cal-ink);
+  padding: calc(9px * var(--s)) calc(13px * var(--s)) calc(10px * var(--s)) calc(18px * var(--s));
   opacity: 0; visibility: hidden;
-  transform: translateX(calc(10px * var(--s)));
+  transform: translateX(calc(-10px * var(--s)));
   transition: opacity 0.22s var(--cal-ease-out), transform 0.22s var(--cal-ease-out), visibility 0.22s;
 }
 .cal-tip::before {
-  content: ''; position: absolute; left: calc(14px * var(--s)); top: 0; bottom: 0;
-  border-left: 3px double var(--cal-c-staff);
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: calc(3px * var(--s)); background: var(--cal-c-staff);
 }
 .cal-tip.show { opacity: 1; visibility: visible; transform: none; }
 .cal-tip-title {

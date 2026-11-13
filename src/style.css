@@ -109,6 +109,29 @@
   --cal-under: rgba(20, 22, 26, 0.62);          /* the ink under a hairline */
   --cal-chip-edge: inset 0 0 0 1px rgba(255, 250, 235, 0.3), 0 1px 0 rgba(20, 22, 26, 0.42);  /* a label's inner rule + the shadow of its edge */
 
+  /* ---- R66 (e), ROUND5-LOOK U-01: dark violet glass. Right angles with 6 px registration ticks;
+          no notch, no cut corner, no hexagon, no blur in play; violet is the glass's tint and a dye,
+          never a glow. Every selection / focus token is >= 20 dE2000 from the five reference hues. ---- */
+  --cal-glass: #1E1A28;                        /* L* 10.3, a* 5.8, b* -8.8 */
+  --cal-glass-rgb: 30, 26, 40;
+  --cal-glass-a-hud: 0.70;
+  --cal-glass-a-menu: 0.90;
+  --cal-glass-hud: rgba(30, 26, 40, 0.70);
+  --cal-glass-menu: rgba(30, 26, 40, 0.90);
+  --cal-glass-card: rgba(30, 26, 40, 0.80);   /* the Sighting card (U-07) */
+  --cal-glass-grad: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.06));   /* +4 % / -6 % */
+  --cal-glass-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 -.35'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)' opacity='.03'/%3E%3C/svg%3E");
+  --cal-glass-hi: rgba(241, 238, 230, 0.08);   /* the 1 px top highlight */
+  --cal-glass-line: rgba(241, 238, 230, 0.16); /* frame lines */
+  --cal-glass-tick: rgba(241, 238, 230, 0.62); /* the survey registration ticks at the corners */
+  --cal-glass-text: #F1EEE6;                   /* staff white */
+  --cal-glass-text-2: rgba(241, 238, 230, 0.66);
+  --cal-orchil-deep: #5A2E66;                  /* Orchil Deep: a dye fill, never a glow */
+  --cal-select-line: #D8CCE4;                  /* lilac: the selection's 1 px line (>= 30.5 dE from the five) */
+  --cal-select-fill: rgba(90, 46, 102, 0.60);  /* Orchil Deep at 60 % under the selection */
+  --cal-weak-chip: #F1EEE6;                    /* WEAK: a staff-white chip... */
+  --cal-weak-ink: #2C4F8A;                     /* ...with cobalt text (lifted cobalts fail the distance) */
+
   /* ---- semantic colours: the ONLY colours the accessibility palettes re-point ---- */
   --cal-c-staff: var(--cal-vermilion);         /* the levelling staff, the margin rule, full draw */
   --cal-c-weak: var(--cal-cobalt);             /* weak-point rings, weak damage chips */
@@ -183,6 +206,39 @@ html { font-synthesis-weight: none; }
 /* no element falls back to a UA face (R55) */
 button, input, select, textarea { font-family: inherit; }
 kbd, code { font-family: var(--cal-font-mono); }
+
+/* ===========================================================================
+   GLASS (U-01). One material for every panel: a dark violet fill at the panel's
+   own alpha (`--glass-a`: 0.70 in the HUD, 0.80 on the Sighting card, 0.90 on a
+   page), a +4 / -6 % two-stop gradient, a 3 % grain, a 1 px top highlight and a
+   pale frame line. The corners carry 6 px L-shaped survey registration ticks,
+   drawn by `::after` from eight gradient strokes. Right angles only: no radius,
+   no clip-path, no blur (the world is never sampled through it in play).
+   A panel opts in with `.cal-glass` and must be positioned already.
+   =========================================================================== */
+.cal-glass {
+  --glass-a: var(--cal-glass-a-hud);
+  color: var(--cal-glass-text);
+  background-color: rgba(var(--cal-glass-rgb), var(--glass-a));
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  border: 0;
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--cal-glass-line);
+}
+.cal-glass::after {
+  content: ''; position: absolute; inset: 0;
+  pointer-events: none;
+  --t: var(--cal-glass-tick);
+  background:
+    linear-gradient(var(--t), var(--t)) left top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 1px 6px no-repeat;
+}
+.cal-glass.menu { --glass-a: var(--cal-glass-a-menu); }
 
 html, body {
   width: 100%; height: 100%;
@@ -1237,6 +1293,8 @@ body.cal-hub-open #cal-prog .pg-panel, body.cal-hub-open #cal-prog .sk-panel {
 }
 body #cal-prog .pg-head, body #cal-prog .sk-title { font-family: var(--cal-font-display); font-weight: 600; font-size: var(--cal-type-head); letter-spacing: 0.14em; text-indent: 0; color: var(--cal-ink); border-bottom-color: var(--cal-ink); }
 body #cal-prog .sk-head { border-bottom-color: var(--cal-ink); }
+/* the hub's head already names the page: the panel's own SKILLS heading would print it twice */
+body #cal-prog .sk-head .sk-title { display: none; }
 body #cal-prog .pg-sub, body #cal-prog .sk-points { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); letter-spacing: 0; text-transform: none; color: var(--cal-ink-80); }
 body #cal-prog .pg-foot, body #cal-prog .sk-foot { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); letter-spacing: 0; text-transform: none; color: var(--cal-ink-62); border-top-color: var(--cal-rule); }
 body #cal-prog .pg-body::-webkit-scrollbar-thumb, body #cal-prog .sk-cols::-webkit-scrollbar-thumb { background: var(--cal-ink-40); }

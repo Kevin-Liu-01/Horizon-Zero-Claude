@@ -352,6 +352,7 @@ export class InventoryScreen {
     const def = itemDef(id);
     const rar = rarityDef(def.rarity);
     const card = el('button', `cal-card r-${rar.id}`, parent);
+    card.dataset.item = id;   // the injective-name check of A-ui-words-all reads this
     card.style.setProperty('--rar', rarInk(rar));
     el('i', 'cal-card-glyph', card, itemIcon(id));
     el('span', 'cal-card-name', card, esc(fieldWord(def.name).toUpperCase()));
@@ -445,6 +446,7 @@ export class InventoryScreen {
       const def = ammoDef(id);
       const rar = rarityDef(def.rarity);
       const card = el('button', `cal-card r-${rar.id}${active ? ' active' : ''}`, grid);
+      card.dataset.item = 'ammo:' + id;
       card.style.setProperty('--rar', rarInk(rar));
       el('i', 'cal-card-glyph', card, itemIcon(id));
       el('span', 'cal-card-name', card, esc(fieldWord(name ?? def.name).toUpperCase()));
@@ -561,6 +563,7 @@ export class InventoryScreen {
         const def = ammoDef(id);
         const rar = rarityDef(def.rarity);
         const card = el('button', `cal-card r-${rar.id}`, gridB);
+        card.dataset.item = 'ammo:' + id;
         card.style.setProperty('--rar', rarInk(rar));
         el('i', 'cal-card-glyph', card, itemIcon(id));
         el('span', 'cal-card-name', card, esc(fieldWord(def.name).toUpperCase()));
@@ -748,6 +751,7 @@ export class InventoryScreen {
     const def = itemDef(id);
     const rar = rarityDef(def.rarity);
     const row = el('button', `cal-trade-row r-${rar.id}${afford ? '' : ' off'}`, parent);
+    row.dataset.item = id;
     row.style.setProperty('--rar', rarInk(rar));
     el('i', 'cal-trade-glyph', row, itemIcon(id));
     el('span', 'cal-trade-name', row, esc(fieldWord(def.name).toUpperCase()));

@@ -963,8 +963,8 @@ export class WorldMap {
   }
 
   /** A word on the sheet: Chakra Petch caps with a paper halo, so it breaks the contours under it. */
-  _letter(g, text, x, y, size = 11, weight = 600, align = 'left', fill = INK, track = 0.06) {
-    g.font = `${weight} ${size * K}px ${FONT_LABEL}`;
+  _letter(g, text, x, y, size = 11, weight = 600, align = 'left', fill = INK, track = 0.06, family = FONT_LABEL) {
+    g.font = `${weight} ${size * K}px ${family}`;
     g.textAlign = align;
     g.textBaseline = 'middle';
     if ('letterSpacing' in g) g.letterSpacing = `${(track * size * K).toFixed(2)}px`;
@@ -1003,8 +1003,8 @@ export class WorldMap {
    * A name beside its mark, on whichever side is free: right, left, above, below. A name
    * with no free side stays off the sheet and reads on hover, rather than lying on another.
    */
-  _name(g, text, pt, off, size = 11, weight = 600, fill = INK, must = false) {
-    g.font = `${weight} ${size * K}px ${FONT_LABEL}`;
+  _name(g, text, pt, off, size = 11, weight = 600, fill = INK, must = false, family = FONT_LABEL) {
+    g.font = `${weight} ${size * K}px ${family}`;
     if ('letterSpacing' in g) g.letterSpacing = `${(0.06 * size * K).toFixed(2)}px`;
     const w = g.measureText(text).width + 2 * K;
     if ('letterSpacing' in g) g.letterSpacing = '0px';
@@ -1018,10 +1018,10 @@ export class WorldMap {
     for (const t of tries) {
       if (!this._free(t[3], t[4], t[5], t[6])) continue;
       this._claim(t[3], t[4], t[5], t[6]);
-      this._letter(g, text, t[0], t[1], size, weight, t[2], fill);
+      this._letter(g, text, t[0], t[1], size, weight, t[2], fill, 0.06, family);
       return true;
     }
-    if (must) { this._letter(g, text, tries[0][0], tries[0][1], size, weight, 'left', fill); return true; }
+    if (must) { this._letter(g, text, tries[0][0], tries[0][1], size, weight, 'left', fill, 0.06, family); return true; }
     return false;
   }
 
@@ -1034,7 +1034,8 @@ export class WorldMap {
     g.strokeStyle = INK; g.lineWidth = 1.8 * K;
     g.beginPath(); g.moveTo(pt.x, pt.y + 7 * K); g.lineTo(pt.x, pt.y - 7 * K); g.moveTo(pt.x - 5 * K, pt.y + 2 * K); g.lineTo(pt.x, pt.y - 7 * K); g.lineTo(pt.x + 5 * K, pt.y + 2 * K); g.stroke();
     this._claim(pt.x - 8 * K, pt.y - 9 * K, pt.x + 8 * K, pt.y + 9 * K);
-    this._name(g, q.id, { x: pt.x, y: pt.y - 6 * K }, 12 * K, 11, 700, INK, true);
+    // the station id in Plex at 13: Chakra's 6 read as an 8 at 11 px (r0/r1 judges)
+    this._name(g, q.id, { x: pt.x, y: pt.y - 6 * K }, 12 * K, 13, 600, INK, true, FONT_MONO);
     g.restore();
   }
 

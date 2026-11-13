@@ -309,14 +309,15 @@ export class SettingsPanel {
     const reset = el('button', 'mn-btn small', foot, 'RESTORE DEFAULTS');
     reset.addEventListener('click', () => { this.store.reset(); this.refresh(); });
     el('div', 'mn-set-note', foot,
-      'Saved to this browser as <code>cal.settings.v5</code> — restored on the next launch.');
+      'Saved on this device and restored the next time you play.');
     return this.root;
   }
 
   _buildRow(sec, row) {
     const r = el('div', `mn-set-row ${row.kind}`, sec);
     const label = el('label', 'mn-set-label', r, row.label);
-    if (row.pending) el('span', 'mn-set-pending', label, 'NOT LIVE YET');
+    // what the game does today, in the player's words: the toggle is stored, the body still holds
+    if (row.pending) el('span', 'mn-set-pending', label, 'HOLD ONLY');
     const ctrl = el('div', 'mn-set-ctrl', r);
     let read;
 

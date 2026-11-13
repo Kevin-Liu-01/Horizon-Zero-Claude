@@ -36,6 +36,20 @@ function planBullet(id) {
   if (!line) throw new Error('plan §9 bullet not found: ' + id);
   return line.replace(/^- /, '').replace(/\*\*/g, '');
 }
+const LOOK = readFileSync(path.join(ROOT, 'docs/ROUND5-LOOK.md'), 'utf8');
+/** A ROUND5-LOOK §7 row, verbatim (its bullet and the indented clauses under it): R66 (e) moves V10, V37, V36, V-map, V-ui-* to these. */
+function lookRow(id) {
+  const lines = LOOK.split('\n');
+  const i = lines.findIndex((l) => l.startsWith('- **' + id + '**'));
+  if (i < 0) throw new Error('ROUND5-LOOK §7 row not found: ' + id);
+  const out = [lines[i]];
+  for (let j = i + 1; j < lines.length && /^\s+\S/.test(lines[j]); j++) out.push(lines[j].trim());
+  return out.join(' ').replace(/^- /, '').replace(/\*\*/g, '');
+}
+/** R66 (b): every V row that cites a panel also carries the IP-clause, which outranks every likeness clause. */
+const IP_CLAUSE = ' || IP-clause (R66 b, c): nothing from the rights holders R66 (c) names: no names, logos, creature designs or UI trade dress; the panels are graded for light, placement and legibility only, never as a target for chrome geometry, icon glyphs or glows. FAIL on a notch, a cut corner, a hexagon, a hologram, a teal glow or a violet glow wash.';
+/** U-17: every look film stages a bible §8.9 beat through hud.stageNote (works only under ?shot=1). */
+const STAGE_NOTE = `__CTX__.hud?.stageNote?.({ kicker: 'FIELD NOTE', title: 'THE TILLER HERD', objective: 'Read the herd from cover, then shoot the level vial on the Plumb.' });`;
 const INCREDIBLE = ' || R54 (d): every judge also asks whether the frame looks incredible next to its reference: a frame that passes the words and looks cheap is a major finding. R55: type is Chakra Petch + IBM Plex Mono only; engraved surveying instruments, right angles, hairlines, no hexagons.';
 
 /** The A-ui-words regex, from the plan bullet (so this file never spells the words). */
@@ -200,20 +214,42 @@ const SIGHT_STAGE = (on, hideHero = false, yawK = 0.15) => `
 /** The combat scene: 40 % HP, aiming, an Instrument engaged, a tool slot full (V10 / V37). */
 const TOOLS_FULL = `for (const __s of (__CTX__.items?.tools?.slots ?? [])) __CTX__.inventory?.add?.(__s.id, 4); __CTX__.items?.tools?.refresh?.();`;
 
+/**
+ * A full satchel, from the catalogue itself (no item id is spelled here), holding only what the game
+ * can give her today (r1 gate judge): every recipe's inputs and outputs, every stores item, and what a
+ * living Instrument carries; never an item named for a kind that is no longer in \`ctx.machines.kinds\`
+ * (the four deleted IP kinds' lampglass and hearts).
+ */
+const SEED_SATCHEL = `{
+  const __items = await import('/src/items/items.js');
+  const __craft = await import('/src/items/crafting.js');
+  const __inv = __CTX__.inventory;
+  const __kinds = new Set(__CTX__.machines?.kinds ?? []);
+  const __ids = new Set();
+  for (const r of __craft.RECIPES ?? []) { __ids.add(r.id); for (const c of r.cost ?? []) __ids.add(c[0]); }
+  for (const [id, d] of Object.entries(__items.ITEMS)) if (d.category === 'resource') __ids.add(id);
+  /* what a STAGED kind carries (role-mapped, never legacy, R28): a legacy kind still drops a deleted kind's loot */
+  const __roles = __CTX__.machines?.roles;
+  const __live = new Set([...(typeof __roles?.values === 'function' ? __roles.values() : Object.values(__roles ?? {}))].map((v) => (typeof v === 'string' ? v : v?.kind)).filter((k) => k && __kinds.has(k)));
+  /* r5-all-machines: census */ for (const m of __CTX__.machines?.list ?? []) { if (!__live.has(m.kind)) continue; for (const l of m.lootTable ?? []) if (l?.id) __ids.add(l.id); for (const pt of m.parts ?? []) for (const l of pt?.loot ?? []) if (l?.id) __ids.add(l.id); }
+  let __k = 3;
+  for (const id of __ids) { if (!__items.ITEMS[id]) continue; __inv?.add?.(id, 2 + (__k++ * 5) % 17); }
+}`;
+
 /* ---------------------------------------------------------------- rows */
 
-const V37_CRITERIA = planBullet('V10-hud / V37-hud-language') + INCREDIBLE;
+const V37_CRITERIA = planBullet('V10-hud / V37-hud-language') + INCREDIBLE + ' || R66 (e): this row takes ROUND5-LOOK §7 V-hud-glass\'s criteria for its paper clauses (V-hud-glass, registered below, is the same staging); graded on frames from after the world look pass.';
 
 const r10 = re('V37-hud-language', {
   newId: 'V10-hud-language',
-  title: 'The field-book HUD at 40 % HP, aiming, Instrument engaged, tool slot full',
+  title: 'The field HUD at 40 % HP, aiming, Instrument engaged, tool slot full',
   criteria: V37_CRITERIA,
-  setupPatch: [["const STAGE_DIST = 20;", `const STAGE_DIST = 20; ${TOOLS_FULL}`]],
+  setupPatch: [["const STAGE_DIST = 20;", `const STAGE_DIST = 20; ${TOOLS_FULL} ${STAGE_NOTE}`]],
 });
 const r37 = re('V37-hud-language', {
-  title: 'The field-book HUD at 40 % HP, aiming, Instrument engaged, tool slot full',
+  title: 'The field HUD at 40 % HP, aiming, Instrument engaged, tool slot full',
   criteria: V37_CRITERIA,
-  setupPatch: [["const STAGE_DIST = 20;", `const STAGE_DIST = 20; ${TOOLS_FULL}`]],
+  setupPatch: [["const STAGE_DIST = 20;", `const STAGE_DIST = 20; ${TOOLS_FULL} ${STAGE_NOTE}`]],
 });
 
 /** A damage number gives way to what she reads: thrown at the vial's word, at a plate and at the column. */
@@ -357,7 +393,9 @@ const V36 = {
   criteria: planBullet('V36-sighting-scan') + INCREDIBLE,
   settle: 900, timeout: 120000,
   setup: stagedSetup(['herd'], `(async () => {
-    const __m = await (async () => { ${SIGHT_STAGE(true)} })();
+    ${STAGE_NOTE}
+    /* 0.22 rad off the Instrument: her lance clears its ring and the card holds (the reach is an angle now) */
+    const __m = await (async () => { ${SIGHT_STAGE(true, false, 0.22)} })();
     if (!__m) { __skipCard('STAGING FAILED: no herd kind could be staged: this frame has no subject'); }
   })()`),
 };
@@ -549,7 +587,7 @@ const HER_SILHOUETTE = `
  */
 const A_OVER_BREA = {
   id: 'A-sighting-over-brea', kind: 'action', lane: LANE, timeout: 150000, settle: 600,
-  title: 'With Brea visible and an Instrument and a transect straight behind her, the raised alidade adds 0 pixels inside her silhouette; with the knock-out off the same stage adds them',
+  title: 'With Brea visible and an Instrument and a transect straight behind her, the raised alidade adds 0 pixels inside her silhouette, in WebGL and in its DOM half (rings, casings, leaders, chips, ticks, card); with the knock-out off the same stage adds them',
   assert: staged(['herd'], `(async () => {
     ${FRAMES}
     const m = await (async () => { ${SIGHT_STAGE(true, false, 0)} })();
@@ -596,25 +634,49 @@ const A_OVER_BREA = {
       }
       return { silPx, insidePx: inside, addedPx: added, paperPx: paper, outsidePx: outside };
     };
-    const shot = await overlayFrame(() => herSilhouette());
-    const on = count(shot, shot.more.px);
-    /* the DOM half of the overlay: no reveal chip lies on her */
-    let chipPx = 0;
-    {
+    /*
+     * The DOM half of the overlay, sampled where it really paints, on the silhouette of the same
+     * frame (r1 gate judge: the rings, their casings, the leaders, the part chips and the card's
+     * leader are DOM, which the WebGL diff above cannot see). Rings: their stroked circle; leaders:
+     * every 2 px along each segment; chips and ticks: their box every 2 px. The reticle is the
+     * crosshair she aims with and is not counted.
+     */
+    const domOnHer = (shot) => {
       const sil = shot.more.px, cssK = shot.w / innerWidth;
-      for (const el of document.querySelectorAll('.calf-reveal')) {
-        if (el.style.display === 'none' || el.offsetParent === null) continue;
-        const r = el.getBoundingClientRect();
-        for (let y = Math.round(r.top); y < r.bottom; y += 2) for (let x = Math.round(r.left); x < r.right; x += 2) {
-          const px = Math.round(x * cssK), py = shot.h - 1 - Math.round(y * cssK);
-          if (px >= 0 && px < shot.w && py >= 0 && py < shot.h && sil[(py * shot.w + px) * 4] > 127) chipPx += 4;
+      const hit = (x, y) => { const px = Math.round(x * cssK), py = shot.h - 1 - Math.round(y * cssK); return px >= 0 && px < shot.w && py >= 0 && py < shot.h && sil[(py * shot.w + px) * 4] > 127; };
+      const shown = (el) => el.style.display !== 'none' && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+      const by = {}, add = (k, n) => { by[k] = (by[k] || 0) + n; };
+      for (const el of document.querySelectorAll('#calf-layer .calf-ring, #calf-layer .calf-ring-u')) {
+        if (!shown(el)) continue;
+        const cx = +el.getAttribute('cx'), cy = +el.getAttribute('cy'), r = +el.getAttribute('r');
+        const sw = parseFloat(getComputedStyle(el).strokeWidth) || 2;
+        for (let i = 0; i < 96; i++) { const a = i / 96 * 6.2832; for (let k = -1; k <= 1; k++) { const rr = r + k * sw * 0.5; if (hit(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr)) add(el.getAttribute('class'), 1); } }
+      }
+      for (const el of document.querySelectorAll('#calf-layer .calf-leader, #calf-layer .calf-leader-u')) {
+        if (!shown(el)) continue;
+        const pts = (el.getAttribute('points') || '').trim().split(/\s+/).map((q) => q.split(',').map(Number)).filter((q) => q.length === 2 && q.every(Number.isFinite));
+        for (let i = 1; i < pts.length; i++) {
+          const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 2));
+          for (let k = 0; k <= n; k++) if (hit(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n)) add(el.getAttribute('class'), 1);
         }
       }
-    }
+      for (const el of document.querySelectorAll('#calf-layer .calf-plabel, #calf-layer .calf-reveal, #calf-layer .calf-rtick, #calf-layer .calf-card.show')) {
+        if (!shown(el) || el.offsetParent === null) continue;
+        const r = el.getBoundingClientRect();
+        for (let y = Math.round(r.top); y < r.bottom; y += 2) for (let x = Math.round(r.left); x < r.right; x += 2) if (hit(x, y)) add(String(el.className).split(' ')[0], 4);
+      }
+      return { total: Object.values(by).reduce((a, b) => a + b, 0), by };
+    };
+    const shot = await overlayFrame(() => herSilhouette());
+    const on = count(shot, shot.more.px);
+    const dom = domOnHer(shot);
+    const chipPx = dom.by['calf-reveal'] || 0;
+    const domDrawn = { rings: [...document.querySelectorAll('.calf-ring')].filter((e) => e.style.display !== 'none').length, leaders: [...document.querySelectorAll('.calf-leader')].filter((e) => e.style.display !== 'none').length, labels: [...document.querySelectorAll('.calf-plabel')].filter((e) => e.style.display !== 'none').length };
     S.debugOcclusion(false);
-    await frames(2);
+    await frames(3);
     const shot2 = await overlayFrame(() => herSilhouette());
     const off = count(shot2, shot2.more.px);
+    const domOff = domOnHer(shot2);
     S.debugOcclusion(true);
     delete S._walksRoute;
     const checks = {
@@ -624,9 +686,11 @@ const A_OVER_BREA = {
       noPaperOverHer: on.paperPx === 0,
       controlCatchesIt: off.addedPx > 150,
       noRevealOnHer: chipPx === 0,
+      noDomInkOnHer: dom.total === 0,
+      domControlCatchesIt: domOff.total > 0,
     };
     const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
-    return { pass: failed.length === 0, detail: { failed, on, control: off, chipPx, meshesInSilhouette: shot.more.meshes, heroShells: S._heroShells.size, paths: S._paths.size } };
+    return { pass: failed.length === 0, detail: { failed, on, control: off, chipPx, dom, domControl: domOff, domDrawn, herBox: S.audit().herBox, meshesInSilhouette: shot.more.meshes, heroShells: S._heroShells.size, paths: S._paths.size } };
   })()`),
 };
 
@@ -808,7 +872,8 @@ const A71E = re('A71e-tutorial-cards', {
     ["oneShot: again === false && seen.includes('focus'),", `oneShot: again === false && seen.includes('sighting'),
         /* bible §8.9, parsed from the bible's own table at gate load: same cards, same order, same text */
         cardsMatchBible: (() => { const want = ${JSON.stringify(BIBLE_CARDS)}, got = hud.cards(); return got.length === want.length && want.every((w, i) => got[i].beat === w.beat && got[i].text === w.text); })(),
-        paperCard: getComputedStyle(el).backgroundColor === 'rgb(226, 211, 176)',
+        /* R66 (e): the card is glass now (U-01): the violet-black at the HUD's 0.70 */
+        glassCard: getComputedStyle(el).backgroundColor === 'rgba(30, 26, 40, 0.7)' && el.classList.contains('cal-glass'),
         plexBody: /IBM Plex Mono/.test(getComputedStyle(el.querySelector('.cal-tip-body')).fontFamily),`],
     ["detail: { failed, card, kbd, kbdText, bodyPx, seen } };", "detail: { failed, card, kbd, kbdText, bodyPx, seen, cards: hud.cards().length } };"],
   ],
@@ -1024,13 +1089,25 @@ const V_MAP = {
 
 const A_UI_WORDS = {
   id: 'A-ui-words-all', kind: 'action', lane: LANE, timeout: 180000, settle: 900,
-  title: 'All surfaces (HUD, hub, satchel, map, tips, cards, Sighting, death) render none of the plan §9 A-ui-words terms',
+  title: 'All surfaces (HUD, hub, satchel, map, tips, cards, Sighting, death) render none of the plan §9 A-ui-words terms, and no two items print under one name (the catalogue, and every satchel page as rendered)',
   assert: `(async () => {${FRAMES}${STORAGE_GUARD}
     const snap = snapStorage();
     const RE = new RegExp(${JSON.stringify(UI_WORDS_RE)}, 'gi');
     const c = __CTX__, m = c.menus, hud = window.__HUD_DEBUG__;
     c.input.enabled = true;
     const s = {}, later = {};
+    const pageCollisions = [];
+    let itemRows = 0;
+    /* the word bridge is injective over the whole catalogue: one player word, one item */
+    const catalogueCollisions = [];
+    {
+      const IT = await import('/src/items/items.js'), TP = await import('/src/ui/tips.js');
+      const byWord = new Map();
+      const put = (id, name) => { const w = TP.fieldWord(name).toUpperCase(); if (!byWord.has(w)) byWord.set(w, new Set()); byWord.get(w).add(id); };
+      for (const [id, d] of Object.entries(IT.ITEMS)) put(id, d.name);
+      for (const [id, d] of Object.entries(IT.AMMO_INFO ?? {})) put('ammo:' + id, d.name);
+      for (const [w, ids] of byWord) if (ids.size > 1) catalogueCollisions.push(w + ' <- ' + [...ids].join(', '));
+    }
     try {
       document.getElementById('hud').classList.add('reveal');
       s.hud = document.getElementById('hud').innerText;
@@ -1043,11 +1120,24 @@ const A_UI_WORDS = {
         if (id === 'map' || id === 'settings') s['hub:' + id] = m.hubBody.innerText;
         else s['hub:' + id] = document.querySelector('.cal-inv').innerText;
       }
+      ${SEED_SATCHEL}
       for (const p of ['resources', 'ammo', 'tools', 'valuables', 'crafting', 'notebook', 'trade']) {
         c.items?.screen?.open?.(p);
         c.items?.screen?._render?.();
         await frames(2);
         s['satchel:' + p] = document.querySelector('.cal-inv')?.innerText || '';
+        /* r1 gate judge: no two items print under one name on a page */
+        const seen = new Map();
+        for (const el of document.querySelectorAll('.cal-inv [data-item]')) {
+          if (el.offsetParent === null) continue;
+          const nm = (el.querySelector('.cal-card-name, .cal-trade-name')?.textContent || '').trim();
+          if (!nm) continue;
+          const id = el.dataset.item.replace(/^ammo:/, 'ammo:');
+          if (!seen.has(nm)) seen.set(nm, new Set());
+          seen.get(nm).add(id);
+        }
+        for (const [nm, ids] of seen) if (ids.size > 1) pageCollisions.push(p + ': ' + nm + ' <- ' + [...ids].join(', '));
+        itemRows += seen.size;
       }
       m.openHub('quests'); await frames(6);
       later['hub:quests (progression W3)'] = document.getElementById('cal-prog')?.innerText || '';
@@ -1079,7 +1169,8 @@ const A_UI_WORDS = {
     const hits = [], laterHits = [];
     for (const [k, t] of Object.entries(s)) for (const mm of String(t).matchAll(RE)) hits.push(k + ': "' + mm[0] + '"');
     for (const [k, t] of Object.entries(later)) for (const mm of String(t).matchAll(RE)) laterHits.push(k + ': "' + mm[0] + '"');
-    return { pass: hits.length === 0 && Object.keys(s).length > 30, detail: { hits: hits.slice(0, 40), surfaces: Object.keys(s).length,
+    return { pass: hits.length === 0 && Object.keys(s).length > 30 && catalogueCollisions.length === 0 && pageCollisions.length === 0 && itemRows > 10,
+      detail: { hits: hits.slice(0, 40), surfaces: Object.keys(s).length, catalogueCollisions, pageCollisions, itemRows,
       pendingClauses: laterHits.length ? ['quest and skill page text is progression W3 (src/ui/{quests,skills}.js, core/progression.js): ' + laterHits.slice(0, 12).join('; ')] : [] } };
   })()`,
 };
@@ -1257,13 +1348,6 @@ const UI_ROW = (id, title, setup, { pendingWords = '', ...extra } = {}) => ({
   setup, ...extra,
 });
 
-/** A full satchel, from the catalogue itself (no item id is spelled here). */
-const SEED_SATCHEL = `{
-  const __items = await import('/src/items/items.js');
-  const __inv = __CTX__.inventory;
-  let __k = 3;
-  for (const id of Object.keys(__items.ITEMS)) { __inv?.add?.(id, 2 + (__k++ * 5) % 17); }
-}`;
 
 const V_UI = [
   UI_ROW('V-ui-title', 'Title: the menu in, over the vista', `(async () => {${FRAMES}
@@ -1293,6 +1377,7 @@ const V_UI = [
   })()`, { pendingWords: 'R61 (b): retired words in quest text are PENDING until progression W3 (plan §7.3); that text is in its files. Every other clause is graded now.' }),
   UI_ROW('V-ui-tip', 'A tutorial card in play', `(async () => {${FRAMES}
     __CTX__.input.enabled = true;
+    ${STAGE_NOTE}
     window.__HUD_DEBUG__.resetTips();
     __CTX__.hud._tipQueue.length = 0;
     __CTX__.hud._tipT = 0; __CTX__.hud._tipGap = 0;
@@ -1349,7 +1434,7 @@ const V_UI = [
 ];
 
 /** 4K, at true pixels: the HUD laid out for 3840x2160, shifted so each corner falls in the 1600x900 frame. */
-const hud4k = (id, title, dx, dy) => ({
+const hud4k = (id, title, dx, dy, extra = '') => ({
   id, kind: 'visual', lane: LANE, settle: 700, timeout: 180000,
   reference: 'reference/r5/gates-perf/field-book',
   title: '4K crop at true pixels: ' + title,
@@ -1361,6 +1446,7 @@ const hud4k = (id, title, dx, dy) => ({
     h.style.width = '3840px'; h.style.height = '2160px';
     h.style.transform = 'translate(${dx}px, ${dy}px)';
     h.style.right = 'auto'; h.style.bottom = 'auto';
+    ${extra}
   })()`,
 });
 
@@ -1404,6 +1490,410 @@ const V_UI_SHEET = {
   },
 };
 
+/* ===================================================== W1 fix round 2: declutter, staging, glass */
+
+/**
+ * Text-bearing surfaces, counted on the rendered DOM (A-ui-declutter): a surface is a top-level
+ * piece of the HUD or the alidade (a child of #hud, of the top-left column, of the projected
+ * layers, of #calf-layer, or a toast in a stack) that shows at least one visible text node with
+ * effective opacity >= 0.15 and at least half of its box on screen.
+ */
+const SURFACES = `
+  const textSurfaces = () => {
+    const STACK = (n) => n && (n.id === 'hud' || n.id === 'calf-layer' || (n.classList && (n.classList.contains('cal-topleft')
+      || n.classList.contains('cal-world') || n.classList.contains('cal-awares') || n.classList.contains('cal-dmglayer')
+      || n.classList.contains('cal-banners') || n.classList.contains('cal-items') || n.classList.contains('cal-flashes'))));
+    const rootOf = (el) => { let n = el; while (n && n.parentElement && !STACK(n.parentElement)) n = n.parentElement; return n && n.parentElement ? n : null; };
+    const eff = (el) => { let a = 1; for (let n = el; n && n !== document.body; n = n.parentElement) { const cs = getComputedStyle(n); if (cs.display === 'none' || cs.visibility === 'hidden') return 0; a *= parseFloat(cs.opacity); if (!(a > 0)) return 0; } return a; };
+    const roots = new Map();
+    for (const top of [document.getElementById('hud'), document.getElementById('calf-layer')]) {
+      if (!top) continue;
+      const tw = document.createTreeWalker(top, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = tw.nextNode())) {
+        if (!/[A-Za-z0-9]/.test(n.nodeValue)) continue;
+        const el = n.parentElement;
+        if (!el) continue;
+        const root = rootOf(el);
+        if (!root || roots.has(root)) continue;
+        if (eff(el) < 0.15) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) continue;
+        const vx = Math.min(r.right, innerWidth) - Math.max(r.left, 0), vy = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0);
+        if (vx < r.width * 0.5 || vy < r.height * 0.5) continue;
+        roots.set(root, (root.className && String(root.className.baseVal ?? root.className).split(' ')[0]) || root.tagName);
+      }
+    }
+    return [...roots.values()];
+  };`;
+
+/** The judge's finding: raising the alidade with the SIGHTING card up must not stack the two cards. */
+const A_TIP_CARD = {
+  id: 'A-sighting-tip-clear', kind: 'action', lane: LANE, timeout: 150000, settle: 600,
+  title: 'The SIGHTING tutorial card is up when she raises the alidade, as it asks: the card puts itself away and never intersects the Instrument card',
+  assert: staged(['herd'], `(async () => {
+    ${FRAMES}
+    const hud = window.__HUD_DEBUG__, H = __CTX__.hud;
+    hud.resetTips(); H._tipQueue.length = 0; H._tipT = 0; H._tipGap = 0;
+    const m = await (async () => { ${SIGHT_STAGE(false)} })();
+    if (!m) return { pass: null, detail: 'SKIP-R18: no herd kind stands' };
+    hud.showTip('sighting');
+    const t0 = performance.now();
+    while (!H._tipEl.classList.contains('show') && performance.now() - t0 < 4000) await wait(100);
+    const tipUp = H._tipEl.classList.contains('show');
+    const tipRect = H._tipEl.getBoundingClientRect();
+    /* she does what the card asks: V */
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyV', key: 'v', bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyV', key: 'v', bubbles: true }));
+    if (!__CTX__.sighting.on) __CTX__.sighting.toggle(true);
+    const rows = [];
+    const t1 = performance.now();
+    let worst = 0;
+    while (performance.now() - t1 < 3200) {
+      await wait(160);
+      const a = __CTX__.sighting.audit();
+      const c = document.querySelector('.calf-card').getBoundingClientRect(), t = H._tipEl.getBoundingClientRect();
+      const tipShown = parseFloat(getComputedStyle(H._tipEl).opacity) > 0.05 && getComputedStyle(H._tipEl).visibility !== 'hidden';
+      const ox = Math.min(c.right, t.right) - Math.max(c.left, t.left), oy = Math.min(c.bottom, t.bottom) - Math.max(c.top, t.top);
+      const inter = a.cardVisible && tipShown && ox > 0 && oy > 0 ? Math.round(ox * oy) : 0;
+      worst = Math.max(worst, inter);
+      rows.push({ ms: Math.round(performance.now() - t1), card: a.cardVisible, tip: tipShown, inter });
+    }
+    const checks = {
+      tipWasUp: tipUp,
+      cardCameUp: rows.some((r) => r.card),
+      neverIntersect: worst === 0,
+      sightingTipPutAway: !rows[rows.length - 1].tip,
+    };
+    const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+    return { pass: failed.length === 0, detail: { failed, tipRect: [tipRect.left, tipRect.top, tipRect.right, tipRect.bottom].map(Math.round), worstPx: worst, rows: rows.filter((r, i) => i % 3 === 0) } };
+  })()`),
+};
+
+/** Three of the herd engaged, the latest hit most recently: one full plate, the others compact. */
+const PLATES_STAGE = `
+  const stagePlates = async () => {
+    const c = __CTX__, p = c.player, pp = p.position;
+    const herd = [];
+    for (let i = 0; i < 3; i++) { try { const mm = spawnRole('herd', pp.x + 16 + i * 6, pp.z + 18 - i * 3); if (mm) herd.push(mm); } catch (e) { /* named below */ } }
+    await wait(700);
+    for (const mm of herd) mm.update = () => {};
+    const mid = herd[1] || herd[0];
+    if (mid) p.camYaw = Math.atan2(mid.position.x - pp.x, mid.position.z - pp.z) + Math.PI;
+    for (const mm of herd) {
+      const pt = mm.position.clone(); pt.y += (mm.height ?? 2.2) * 0.6;
+      c.events.emit('machine-damaged', { machine: mm, damage: 12, weak: false, point: pt, tear: 0, tornPart: null, triggeredElement: null });
+      await wait(120);
+    }
+    await frames(20);
+    return herd;
+  };`;
+
+const A_DECLUTTER = {
+  id: 'A-ui-declutter', kind: 'action', lane: LANE, timeout: 240000, settle: 600,
+  title: 'U-02: the alidade on the herd at 15 m shows <= 8 text surfaces, <= 2 reveal chips with words, its bearing and range in the card (no floating box); three engaged show one full plate and <= 2 compact; calm exploration (full health, nothing Flagged, 30 s idle) shows <= 4',
+  criteria: lookRow('A-ui-declutter'),
+  assert: staged(['herd'], `(async () => {
+    ${FRAMES}${SURFACES}${PLATES_STAGE}
+    const c = __CTX__, S = c.sighting, hud = window.__HUD_DEBUG__;
+    ${STAGE_NOTE}
+    /* 1. the alidade on the herd at 15 m, her in the frame */
+    const m = await (async () => { ${SIGHT_STAGE(true, false)} })();
+    if (!m) return { pass: null, detail: 'SKIP-R18: no herd kind stands' };
+    await frames(6);
+    const a = S.audit();
+    const sight = textSurfaces();
+    const card = document.querySelector('.calf-card')?.innerText || '';
+    const floating = [...document.querySelectorAll('#calf-layer .calf-read')].filter((e) => e.offsetParent !== null).length;
+    const textReveals = a.reveals.length;
+    S.toggle(false);
+    await frames(10);
+    /* 2. three engaged, as V37 stages them */
+    const herd = await stagePlates();
+    const mb = hud.surfaces().machineBars;
+    const plates = [...document.querySelectorAll('.cal-mhb')].filter((e) => getComputedStyle(e).visibility === 'visible');
+    const full = plates.filter((e) => !e.classList.contains('compact')).length, compact = plates.filter((e) => e.classList.contains('compact')).length;
+    /* no plate on an engaged Instrument (r1 gate judge: the Tiller hid behind its own plates) */
+    const B = c.hud._mhbBox, covered = [];
+    for (const el of plates) {
+      const r = el.querySelector('.cal-mhb-plate').getBoundingClientRect();
+      for (let j = 0; j < 3; j++) { const o = j * 4; if (B[o + 2] <= B[o]) continue; const ox = Math.min(r.right, B[o + 2]) - Math.max(r.left, B[o]), oy = Math.min(r.bottom, B[o + 3]) - Math.max(r.top, B[o + 1]); if (ox > 2 && oy > 2) covered.push(Math.round(ox * oy)); }
+    }
+    /* 3. calm: everything away, full health, nothing Flagged, 30 s */
+    /* r5-all-machines: clear */ for (const x of c.machines.list) { if (x.alive !== false) { x.position.x += 400; x.root?.position?.set?.(x.position.x, x.position.y, x.position.z); x.update = () => {}; } }
+    for (const [mm, el] of S.tags) { el.remove(); S.tags.delete(mm); }
+    c.player.health = c.player.maxHealth;
+    c.hud._engaged.clear();
+    document.getElementById('hud').classList.remove('reveal');
+    const t0 = performance.now();
+    while (performance.now() - t0 < 30500) { c.player.health = c.player.maxHealth; await wait(500); }
+    const calm = textSurfaces();
+    const checks = {
+      sightingSurfacesAtMost8: sight.length <= 8,
+      textRevealsAtMost2: textReveals <= 2,
+      noFloatingReadout: floating === 0,
+      cardCarriesBearing: /BRG\\s*\\d{3}/.test(card) && /DST\\s*\\d{3}/.test(card),
+      oneFullPlate: full <= 1 && plates.length >= 1,
+      compactAtMost2: compact <= 2,
+      noPlateOnAnEngagedInstrument: covered.length === 0,
+      calmAtMost4: calm.length <= 4,
+    };
+    const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+    return { pass: failed.length === 0, detail: { failed, sight, textReveals, ticks: a.revealTicks, candidates: a.revealCandidates, card: card.slice(0, 80), herd: herd.length, plates: { full, compact, names: mb.names }, covered, calm,
+      gradedWith: 'A-sighting, A63, A71c, A71g, A-dmg-chip-clear in the same run (the row\\'s fifth clause)' } };
+  })()`),
+};
+
+/** U-17: the look frames carry CALIMA's quest words only, through hud.stageNote. */
+const LOOK_WORDS_RE = (() => {
+  const line = LOOK.split('\n').find((l) => l.includes('0 case-insensitive matches of'));
+  const m = line && line.match(/`(\\b\(.+?\)\\b)`/);
+  if (!m) throw new Error('A-ui-words-look regex not found in ROUND5-LOOK §7');
+  return m[1];
+})();
+const A_WORDS_LOOK = {
+  id: 'A-ui-words-look', kind: 'action', lane: LANE, timeout: 200000, settle: 600,
+  title: "U-17: the DOM text of every look-gate frame of this lane (the field HUD, the alidade on the herd, three engaged, a tutorial card) matches none of ROUND5-LOOK §7's IP words, with the note staged by hud.stageNote; outside ?shot the call refuses",
+  criteria: lookRow('A-ui-words-look'),
+  assert: staged(['herd'], `(async () => {
+    ${FRAMES}${PLATES_STAGE}
+    const RE = new RegExp(${JSON.stringify(LOOK_WORDS_RE)}, 'gi');
+    const c = __CTX__, hud = window.__HUD_DEBUG__, H = c.hud;
+    const staged = H.stageNote({ kicker: 'FIELD NOTE', title: 'THE TILLER HERD', objective: 'Read the herd from cover, then shoot the level vial on the Plumb.' });
+    const texts = {};
+    const grab = (k) => { texts[k] = (document.getElementById('hud')?.innerText || '') + ' ' + (document.getElementById('calf-layer')?.innerText || ''); };
+    document.getElementById('hud').classList.add('reveal');
+    await frames(6); grab('field');
+    const m = await (async () => { ${SIGHT_STAGE(true, false, 0.22)} })();
+    if (m) grab('sighting');
+    c.sighting.toggle(false); await frames(6);
+    await stagePlates(); grab('engaged');
+    hud.resetTips(); H._tipQueue.length = 0; H._tipT = 0; H._tipGap = 0;
+    hud.showTip('bow');
+    const t0 = performance.now();
+    while (!H._tipEl.classList.contains('show') && performance.now() - t0 < 4000) await wait(100);
+    grab('tip');
+    const note = { kicker: H._trackKicker.textContent, title: H._trackTitle.textContent, obj: H._trackObj.textContent };
+    /* the contract's other half: outside ?shot nothing can be staged */
+    const realParams = c.params;
+    c.params = new URLSearchParams('');
+    const refusedInPlay = H.stageNote({ title: 'X', objective: 'Y' }) === false;
+    c.params = realParams;
+    const hits = [];
+    for (const [k, t] of Object.entries(texts)) for (const mm of String(t).matchAll(RE)) hits.push(k + ': "' + mm[0] + '"');
+    const checks = { staged: staged === true, noteIsStaged: note.title === 'THE TILLER HERD', zeroHits: hits.length === 0, framesRead: Object.keys(texts).length >= 4, refusedInPlay };
+    const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+    return { pass: failed.length === 0, detail: { failed, hits, frames: Object.keys(texts), note, gradedWith: 'A-ui-words-all in the same run' } };
+  })()`),
+};
+
+/** CIE dE2000 between two sRGB triples (0-255), for the glass rows. */
+const DE2000 = `
+  const lab = (r, g, b) => { const f = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }; const R = f(r), G = f(g), B = f(b);
+    let X = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047, Y = R * 0.2126 + G * 0.7152 + B * 0.0722, Z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+    const t = (v) => v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116; X = t(X); Y = t(Y); Z = t(Z); return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)]; };
+  const de00 = (c1, c2) => { const [L1, a1, b1] = lab(...c1), [L2, a2, b2] = lab(...c2); const rad = Math.PI / 180;
+    const C1 = Math.hypot(a1, b1), C2 = Math.hypot(a2, b2), Cb = (C1 + C2) / 2, G = 0.5 * (1 - Math.sqrt(Cb ** 7 / (Cb ** 7 + 25 ** 7)));
+    const a1p = a1 * (1 + G), a2p = a2 * (1 + G), C1p = Math.hypot(a1p, b1), C2p = Math.hypot(a2p, b2);
+    const h = (b, a) => { if (!a && !b) return 0; const v = Math.atan2(b, a) / rad; return v < 0 ? v + 360 : v; }; const h1 = h(b1, a1p), h2 = h(b2, a2p);
+    const dL = L2 - L1, dC = C2p - C1p; let dh = 0; if (C1p * C2p) { dh = h2 - h1; if (dh > 180) dh -= 360; else if (dh < -180) dh += 360; }
+    const dH = 2 * Math.sqrt(C1p * C2p) * Math.sin(dh * rad / 2); const Lb = (L1 + L2) / 2, Cbp = (C1p + C2p) / 2;
+    let hb = h1 + h2; if (C1p * C2p) { if (Math.abs(h1 - h2) > 180) hb += h1 + h2 < 360 ? 360 : -360; hb /= 2; }
+    const T = 1 - 0.17 * Math.cos((hb - 30) * rad) + 0.24 * Math.cos(2 * hb * rad) + 0.32 * Math.cos((3 * hb + 6) * rad) - 0.2 * Math.cos((4 * hb - 63) * rad);
+    const SL = 1 + 0.015 * (Lb - 50) ** 2 / Math.sqrt(20 + (Lb - 50) ** 2), SC = 1 + 0.045 * Cbp, SH = 1 + 0.015 * Cbp * T;
+    const RT = -2 * Math.sqrt(Cbp ** 7 / (Cbp ** 7 + 25 ** 7)) * Math.sin(60 * Math.exp(-(((hb - 275) / 25) ** 2)) * rad);
+    return Math.sqrt((dL / SL) ** 2 + (dC / SC) ** 2 + (dH / SH) ** 2 + RT * (dC / SC) * (dH / SH)); };
+  const rgba = (s) => { const m = String(s).match(/rgba?\\(([\\d.]+),\\s*([\\d.]+),\\s*([\\d.]+)(?:,\\s*([\\d.]+))?\\)/); return m ? [+m[1], +m[2], +m[3], m[4] === undefined ? 1 : +m[4]] : null; };
+  const GLASS = [30, 26, 40];
+  const FIVE = [[255, 36, 19], [56, 198, 255], [255, 179, 31], [25, 255, 208], [155, 107, 255]];`;
+
+/** The rendered DOM under the glass rules (A-glass-language-static's live half). */
+const GLASS_SCAN = `
+  const glassScan = (where, roots) => {
+    const out = { panels: 0, badAlpha: [], badTint: [], backdrop: [], clip: [], radius: [], teal: [], circles: 0 };
+    const hsl = (r, g, b) => { r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, l = (mx + mn) / 2; if (!d) return [0, 0]; const s = d / (1 - Math.abs(2 * l - 1)); let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; return [h < 0 ? h + 360 : h, s]; };
+    /* discs by role: the compass marks and the lamp's iris, the vial's bubble, the emblem's ring, the weak-point rings */
+    const disc = (el) => !!el.closest('[data-shape], .cal-iris, .cal-vial-bubble, .cal-pip');
+    /* the selection is a dye fill (Orchil Deep at 60 %), not a glass panel */
+    const isSelect = (v) => v && Math.abs(v[0] - 90) + Math.abs(v[1] - 46) + Math.abs(v[2] - 102) < 6;
+    for (const root of roots) {
+      if (!root) continue;
+      for (const el of [root, ...root.querySelectorAll('*')]) {
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+        const r = el.getBoundingClientRect();
+        const tag = where + ' ' + (String(el.className?.baseVal ?? el.className).split(' ')[0] || el.tagName);
+        if (cs.backdropFilter && cs.backdropFilter !== 'none') out.backdrop.push(tag);
+        if (/blur\\(/.test(cs.filter || '')) out.backdrop.push(tag + ' filter:blur');
+        const panel = r.width >= 40 && r.height >= 16 && (rgba(cs.backgroundColor)?.[3] > 0.05 || cs.backgroundImage !== 'none');
+        const cp = cs.clipPath || 'none';
+        if (panel && /polygon\\(/.test(cp)) {
+          const pts = cp.slice(cp.indexOf('(') + 1, cp.lastIndexOf(')')).split(',').map((q) => q.trim().split(/\\s+/));
+          let diag = false;
+          for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; if (a[0] !== b[0] && a[1] !== b[1]) diag = true; }
+          if (pts.length >= 5 || diag) out.clip.push(tag + ' ' + cp.slice(0, 60));
+        }
+        const rad = Math.max(...[cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomLeftRadius, cs.borderBottomRightRadius].map((v) => parseFloat(v) || 0));
+        if (rad > 2 && !disc(el)) out.radius.push(tag + ' ' + rad);
+        if (el.tagName === 'circle' || el.tagName === 'ellipse') { out.circles++; if (!disc(el)) out.radius.push(tag + ' <' + el.tagName + '>'); }
+        for (const k of ['color', 'backgroundColor', 'borderTopColor', 'fill', 'stroke']) {
+          const v = rgba(cs[k]); if (!v || v[3] <= 0.02) continue;
+          const [h, s] = hsl(v[0], v[1], v[2]);
+          if (h >= 160 && h <= 185 && s > 0.4) out.teal.push(tag + ' ' + k + ' ' + cs[k]);
+        }
+        if (el.classList?.contains('cal-glass') && !isSelect(rgba(cs.backgroundColor))) {
+          out.panels++;
+          const v = rgba(cs.backgroundColor);
+          if (!v || v[3] < 0.66 || v[3] > 0.95) out.badAlpha.push(tag + ' ' + cs.backgroundColor);
+          else if (de00(v.slice(0, 3), GLASS) > 3) out.badTint.push(tag + ' ' + cs.backgroundColor);
+        }
+      }
+    }
+    return out;
+  };`;
+
+const A_GLASS_STATIC = {
+  id: 'A-glass-language-static', kind: 'action', lane: LANE, timeout: 200000, settle: 900,
+  title: 'U-01 on the rendered DOM: 0 backdrop-filter or blur while playing, 0 clip-path panels with >= 5 vertices or a diagonal edge, 0 radius > 2 px outside discs by role (SVG circles counted), every glass panel alpha 0.66-0.95 within dE00 3 of #1E1A28, 0 teal; every glow / focus / accent / select / highlight token >= 20 dE00 from the five',
+  criteria: lookRow('A-glass-language-static'),
+  assert: staged(['herd'], `(async () => {
+    ${FRAMES}${DE2000}${GLASS_SCAN}
+    const c = __CTX__;
+    c.input.enabled = true;
+    document.getElementById('hud').classList.add('reveal');
+    ${TOOLS_FULL}
+    await frames(8);
+    const scans = {};
+    scans.hud = glassScan('hud', [document.getElementById('hud')]);
+    const m = await (async () => { ${SIGHT_STAGE(true, false)} })();
+    scans.sighting = glassScan('sighting', [document.getElementById('hud'), document.getElementById('calf-layer')]);
+    c.sighting.toggle(false); await frames(4);
+    window.__HUD_DEBUG__.resetTips(); c.hud._tipQueue.length = 0; c.hud._tipT = 0; c.hud._tipGap = 0;
+    window.__HUD_DEBUG__.showTip('bow');
+    await wait(900);
+    scans.tip = glassScan('tip', [document.getElementById('hud')]);
+    /* the tokens by name: every glow, focus, accent, select and highlight colour */
+    const tokens = [];
+    for (const sh of document.styleSheets) { let rules; try { rules = sh.cssRules; } catch { continue; } for (const r of rules) { if (r.selectorText !== ':root') continue; for (const k of r.style) if (/--cal-.*(glow|focus|accent|select|highlight)/.test(k)) tokens.push(k); } }
+    const tokenDist = tokens.map((k) => { const raw = getComputedStyle(document.documentElement).getPropertyValue(k).trim(); const probe = document.createElement('i'); probe.style.color = raw; document.body.appendChild(probe); const v = rgba(getComputedStyle(probe).color); probe.remove(); return { k, raw, min: v ? +Math.min(...FIVE.map((f) => de00(v.slice(0, 3), f))).toFixed(1) : null }; });
+    const sum = (k) => Object.values(scans).reduce((n, s) => n + s[k].length, 0);
+    const checks = {
+      noBackdropOrBlur: sum('backdrop') === 0,
+      noNotchedPanels: sum('clip') === 0,
+      radiusOnlyOnDiscs: sum('radius') === 0,
+      glassAlpha: sum('badAlpha') === 0,
+      glassTint: sum('badTint') === 0,
+      glassPanelsPresent: Object.values(scans).reduce((n, s) => n + s.panels, 0) >= 6,
+      noTeal: sum('teal') === 0,
+      tokensFarFromTheFive: tokenDist.length > 0 && tokenDist.every((t) => t.min != null && t.min >= 20),
+    };
+    const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+    const trim = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Array.isArray(v) ? v.slice(0, 6) : v]));
+    return { pass: failed.length === 0, detail: { failed, scans: Object.fromEntries(Object.entries(scans).map(([k, v]) => [k, trim(v)])), tokenDist,
+      pendingClauses: ['the hub, title, map and satchel pages are paper until their W2 restyle (U-08..U-11): their glass panels are graded then; their border-radius / clip / backdrop clauses hold today through A-ui-language-static', '0 px of teal in a UI FRAME: graded here on every colour the DOM paints (the frame-pixel form waits for the orchestrator CDP wrapper, U-04)', 'A-ui-type-only PASS: graded in the same run'] } };
+  })()`),
+};
+
+const A_HUD_GLASS = {
+  id: 'A-hud-glass', kind: 'action', lane: LANE, timeout: 200000, settle: 900,
+  title: 'U-06 (started): every HUD glass panel alpha 0.66-0.80 over #1E1A28 within dE00 3; the staff 300 +- 8 px with 9 graduation gaps; tools centred within 12 px of W/2 with their bottom >= 0.92 H; no minimap',
+  criteria: lookRow('A-hud-glass'),
+  assert: staged(['herd'], `(async () => {
+    ${FRAMES}${DE2000}
+    const c = __CTX__, hud = window.__HUD_DEBUG__;
+    c.input.enabled = true;
+    document.getElementById('hud').classList.add('reveal');
+    ${TOOLS_FULL}
+    ${STAGE_NOTE}
+    await frames(10);
+    const m = await (async () => { ${SIGHT_STAGE(true, false)} })();
+    await frames(6);
+    const panels = [...document.querySelectorAll('#hud .cal-glass, #calf-layer .cal-glass')].filter((e) => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0);
+    const bad = [];
+    for (const e of panels) { const v = rgba(getComputedStyle(e).backgroundColor); if (v && Math.abs(v[0] - 90) + Math.abs(v[1] - 46) + Math.abs(v[2] - 102) < 6) continue; if (!v || v[3] < 0.66 || v[3] > 0.80 || de00(v.slice(0, 3), GLASS) > 3) bad.push(String(e.className).split(' ')[0] + ' ' + getComputedStyle(e).backgroundColor); }
+    const s = hud.surfaces();
+    const tools = document.querySelector('.cal-tools');
+    const tr = tools.getBoundingClientRect();
+    const toolsShown = getComputedStyle(tools).display !== 'none' && tr.width > 0;
+    const minimap = document.querySelectorAll('[class*="minimap"], [id*="minimap"]').length;
+    const checks = {
+      hudPanelsGlass: panels.length >= 5 && bad.length === 0,
+      staff300: Math.abs(s.health.widthPx - 300) <= 8,
+      nineGaps: s.health.gaps === 9 && s.health.graduations === 10,
+      toolsCentred: !toolsShown || Math.abs((tr.left + tr.right) / 2 - innerWidth / 2) <= 12,
+      toolsLow: !toolsShown || tr.bottom >= innerHeight * 0.92,
+      noMinimap: minimap === 0,
+    };
+    const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+    return { pass: failed.length === 0, detail: { failed, panels: panels.length, bad, staff: { w: s.health.widthPx, h: s.health.heightPx, gaps: s.health.gaps, graduations: s.health.graduations, colors: s.health.graduationColors }, tools: { shown: toolsShown, cx: Math.round((tr.left + tr.right) / 2), bottom: Math.round(tr.bottom), slots: s.tools.slots },
+      pendingClauses: ['tools: the slots are combat-kit W2 (the Kit Rack); graded on whatever slots the tree has, and vacuous with none shown (' + (toolsShown ? 'shown' : 'none shown') + ')', 'the A71b/c/d/f/g/h, A63, A-dmg-chip-clear and A-ui-contrast clauses: graded with those rows; A-ui-contrast is W2 (U-05)', 'the interact prompt beside the crosshair (U-06): it stays projected on the interactable, because A71f-interact-anchor (carried, binding) grades exactly that; the orchestrator rules which bar holds at W2'] } };
+  })()`),
+};
+
+const GLASS_REF = 'reference/r5/shell-ui/glass-tokens.png (project-original, rendered from U-01 by R-glass-tokens) · ext:kevin-nov6-keyart.jpg@860d7e9f#1-TR · ext:kevin-nov6-board.jpg@f2694e04#2-MR · ext:kevin-nov6-stills.md@bf79cdc9#5-3';
+const V_HUD_DECLUTTER = {
+  id: 'V-hud-declutter', kind: 'visual', lane: LANE, settle: 900, timeout: 150000,
+  reference: GLASS_REF,
+  title: 'U-02: the alidade on the herd at 15 m, her in the frame, the six surfaces of 1-TR',
+  criteria: lookRow('V-hud-declutter') + IP_CLAUSE + INCREDIBLE,
+  setup: stagedSetup(['herd'], `(async () => {
+    ${STAGE_NOTE}
+    const __m = await (async () => { ${SIGHT_STAGE(true, false, 0.22)} })();
+    if (!__m) { __skipCard('STAGING FAILED: no herd kind could be staged'); }
+  })()`),
+};
+
+const V_HUD_GLASS = {
+  id: 'V-hud-glass', kind: 'visual', lane: LANE, settle: 1200, timeout: 180000,
+  reference: GLASS_REF,
+  title: 'U-06 (started): the thin glass field HUD at 40 % HP, aiming, an Instrument engaged, a tool slot full',
+  criteria: lookRow('V-hud-glass') + IP_CLAUSE + INCREDIBLE + ' || R66 (e): graded on frames from after the world look pass; this W1 frame is the start of U-06.',
+  setup: null,   // set below from r37's staging
+};
+
+/**
+ * The project-original stored reference for every glass V-row (U-01): the tokens rendered by the
+ * game's own stylesheet over four lights (white salt at noon, golden grass, dusk, night). The frame
+ * is copied to reference/r5/shell-ui/glass-tokens.png with its MANIFEST row.
+ */
+const R_GLASS_TOKENS = {
+  id: 'R-glass-tokens', kind: 'visual', lane: LANE, settle: 900, timeout: 120000,
+  reference: 'none: this frame IS the reference (project-original, CC0 by construction)',
+  title: 'The U-01 glass tokens, rendered from src/style.css over four lights',
+  criteria: lookRow('A-glass-language-static') + ' || The sheet a judge holds every glass row against: dark violet glass that recedes, staff-white type that holds at four lights, lilac selection over Orchil Deep, the vermilion staff, the WEAK chip, right angles with registration ticks. FAIL on a notch, a hexagon, a glow, teal.',
+  setup: `(async () => {${FRAMES}
+    await document.fonts.ready;
+    const lights = [['WHITE SALT · 12:00', 'linear-gradient(180deg, #F6F3EC, #E9E4D8)'], ['GOLDEN GRASS · 18:40', 'linear-gradient(180deg, #E6B46A, #A8742F)'], ['DUSK · 20:10', 'linear-gradient(180deg, #7C6A8C, #3E3550)'], ['NIGHT · 23:30', 'linear-gradient(180deg, #1A2030, #0B0D14)']];
+    const sheet = document.createElement('div');
+    sheet.id = 'r-glass-tokens';
+    sheet.style.cssText = 'position:fixed;inset:0;z-index:2147483600;display:grid;grid-template-columns:repeat(4,1fr);font-family:var(--cal-font-mono);color:var(--cal-staff)';
+    const col = (name, bg) => \`<div style="position:relative;background:\${bg};padding:22px 18px;display:flex;flex-direction:column;gap:14px">
+      <div style="font:600 11px var(--cal-font-ui);letter-spacing:.22em;color:\${name.startsWith('WHITE') || name.startsWith('GOLD') ? '#1C1B1E' : '#F1EEE6'}">\${name}</div>
+      <div class="cal-glass" style="position:relative;padding:9px 12px 10px 17px"><i style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cal-c-staff)"></i>
+        <div style="font:600 11px var(--cal-font-ui);letter-spacing:.22em;color:var(--cal-glass-text-2)">FIELD NOTE</div>
+        <div style="font:600 17px var(--cal-font-ui);letter-spacing:.07em;margin-top:2px">THE FIRST TRIANGLE</div>
+        <div style="font:400 13px var(--cal-font-mono);margin-top:3px">Climb T1 on the Organ Shelf; sight T2 and T6.</div></div>
+      <div style="display:flex;align-items:center;gap:8px"><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.4" fill="none" stroke="rgba(20,22,26,.62)" stroke-width="3.4"/><circle cx="12" cy="12" r="10.4" fill="none" stroke="#F1EEE6" stroke-width="1.4"/><path d="M12 6.5V17.5M12 6.5L7.4 13M12 6.5L16.6 13" fill="none" stroke="#D2452E" stroke-width="1.8"/></svg>
+        <svg width="200" height="6" viewBox="0 0 300 6" preserveAspectRatio="none" style="box-shadow:0 0 0 1px rgba(20,22,26,.62)">\${Array.from({ length: 10 }, (_, i) => \`<rect x="\${i * 30 + (i ? 1 : 0)}" width="\${i ? 29 : 30}" height="6" fill="\${i < 7 ? '#D2452E' : 'rgba(30,26,40,.78)'}"/>\`).join('')}\${Array.from({ length: 9 }, (_, i) => \`<rect x="\${(i + 1) * 30 - 1}" width="2" height="6" fill="#F1EEE6"/>\`).join('')}</svg>
+        <b style="font:600 15px var(--cal-font-mono);text-shadow:var(--cal-engrave-s)">070</b></div>
+      <div class="cal-glass" style="position:relative;padding:8px 12px 10px 17px;--glass-a:.80"><i style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cal-c-staff)"></i>
+        <div style="font:400 12px var(--cal-font-mono);color:var(--cal-glass-text-2);border-bottom:1px solid var(--cal-glass-line);padding-bottom:3px"><span style="font:600 11px var(--cal-font-ui);letter-spacing:.12em">BRG</span> <b style="color:#F1EEE6">126</b>  <span style="font:600 11px var(--cal-font-ui);letter-spacing:.12em">DST</span> <b style="color:#F1EEE6">018</b> m</div>
+        <div style="font:600 22px var(--cal-font-display);letter-spacing:.1em;margin-top:4px">TILLER</div>
+        <div style="display:flex;justify-content:space-between;font:600 11.5px var(--cal-font-ui);letter-spacing:.07em;color:var(--cal-glass-text-2)"><span>SOIL CORE</span><span>TRANSECT 27</span></div>
+        <div style="position:relative;height:6px;margin:6px 0;background:rgba(241,238,230,.12)"><i style="position:absolute;inset:0 30% 0 0;background:#F1EEE6"></i></div>
+        <div style="display:flex;justify-content:space-between;font:600 12px var(--cal-font-ui);letter-spacing:.06em"><span>LAMP</span><span style="font:600 11px var(--cal-font-ui);padding:0 4px;color:var(--cal-weak-ink);background:var(--cal-weak-chip)">WEAK</span></div></div>
+      <div style="display:flex;gap:6px">\${['V', 'T', 'E'].map((k, i) => \`<div class="cal-glass" style="position:relative;width:44px;height:44px;\${i === 1 ? 'background-color:var(--cal-select-fill);box-shadow:inset 0 0 0 1px var(--cal-select-line)' : ''}"><kbd style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:0 4px;font:500 11px var(--cal-font-mono);color:#26343F;background:#F1EEE6;border:1px solid #26343F;border-bottom-width:2px">\${k}</kbd></div>\`).join('')}</div>
+      <div class="cal-glass menu" style="position:relative;padding:10px 12px;font:500 14px var(--cal-font-ui);letter-spacing:.12em">MAP <span style="margin-left:14px;padding-bottom:3px;border-bottom:2px solid var(--cal-select-line)">SATCHEL</span> <span style="margin-left:14px;color:var(--cal-glass-text-2)">SKILLS</span></div>
+      <div style="display:flex;gap:6px;font:500 10px var(--cal-font-mono);color:\${name.startsWith('WHITE') || name.startsWith('GOLD') ? '#1C1B1E' : '#F1EEE6'}">\${[['#1E1A28', 'GLASS'], ['#5A2E66', 'ORCHIL DEEP'], ['#D8CCE4', 'LILAC'], ['#D2452E', 'VERMILION'], ['#2C4F8A', 'COBALT'], ['#F1EEE6', 'STAFF']].map(([h, n]) => \`<div style="display:flex;flex-direction:column;gap:3px"><i style="display:block;width:30px;height:18px;background:\${h};box-shadow:inset 0 0 0 1px rgba(127,127,127,.4)"></i>\${n}</div>\`).join('')}</div>
+    </div>\`;
+    sheet.innerHTML = lights.map(([n, bg]) => col(n, bg)).join('');
+    document.body.appendChild(sheet);
+    await frames(6);
+  })()`,
+};
+
+V_HUD_GLASS.setup = r37.setup;
+
 /** For a builder's or judge's extra rows at other angles (`--extra`). */
 export { SIGHT_STAGE };
 
@@ -1443,6 +1933,12 @@ export const GATES = [
   A_MAP_RELOAD,
   A_MAP_ARROW,
   A_DMG_CLEAR,
+  /* W1 fix round 2: the r1 judge's findings, U-02, U-17, U-01, U-06 (started) */
+  A_TIP_CARD,
+  A_DECLUTTER,
+  A_WORDS_LOOK,
+  A_GLASS_STATIC,
+  A_HUD_GLASS,
   /* the absorbed carried row (hud half) */
   re('A10-loot-single-render'),
   /* visuals */
@@ -1454,9 +1950,19 @@ export const GATES = [
   ...V_UI,
   hud4k('V-hud-4k-a', 'the staff, the gourd, the field note (top-left)', 0, 0),
   hud4k('V-hud-4k-b', 'the theodolite circle and the vial (top-centre)', -1120, 0),
-  hud4k('V-hud-4k-c', 'the plate, the reticle and the breath meter (centre)', -1120, -630),
+  hud4k('V-hud-4k-c', 'the plate, the reticle and the breath meter (centre)', -1120, -630, `
+    /* r1 judge: the frame showed no plate and no breath meter. Steady held on the real Shift edge,
+       and one more hit just before the shutter so the plate's 5 s hold is live */
+    const __c = __CTX__;
+    __c.input.keys.add('ShiftLeft');
+    /* r5-all-machines: cast */ const __m = __c.hud._mhbPick[0] || [...__c.hud._engaged.keys()][0];
+    if (__m) { const __pt = __m.position.clone(); __pt.y += (__m.height ?? 2.2) * 0.6; __c.events.emit('machine-damaged', { machine: __m, damage: 9, weak: false, point: __pt, tear: 0, tornPart: null, triggeredElement: null }); }
+    await new Promise((r) => setTimeout(r, 500));`),
   hud4k('V-hud-4k-d', 'the kit tag and the tool chips (bottom-right)', -2240, -1260),
   hub4k('V-ui-4k-a', 'the book, map page, top-left: the fore-edge, the station index, the title, the sheet', 'map', 0, 0),
   hub4k('V-ui-4k-b', 'the book, settings page, bottom-right: the foot, the actions', 'settings', -2240, -1260),
+  V_HUD_DECLUTTER,
+  V_HUD_GLASS,
+  R_GLASS_TOKENS,
   V_UI_SHEET,
 ];
