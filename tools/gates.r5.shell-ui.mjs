@@ -866,6 +866,11 @@ const A71C = re('A71c-hud-surfaces', {
     [`health: s.health, pouch: s.pouch, bars: s.machineBars, eye: s.eye,`, `health: s.health, gourd: s.gourd, bars: s.machineBars, eye: s.eye,`],
     [`tools: s.tools, xp: s.xp, weapon: s.weapon, reticle: s.reticle,`, `tools: s.tools, weapon: s.weapon, reticle: s.reticle, pendingClauses: ['the combat-kit Kit Rack and tool slots (W2)', 'XP retired from the HUD: certifications replace it at W3 (A-certifications)'],`],
     [`Math.abs(r.plateW - 224 * r.world) <= 2`, `Math.abs(r.plateW - 280 * r.world) <= 2`],
+    /* W1 fix round 2: the row's own rule ("the first stand-off at which ITS plate is free at 1.6") with two
+       farther candidates. At 1.6 the 448 px plate of a Tiller 26-44 m off rides above the top band and
+       is clamped there; the row then leaned on a second, free plate, which U-02's compact plates now
+       step off the engaged Instruments' boxes. Every check below is unchanged. */
+    [`for (const d of [26, 34, 44]) {`, `for (const d of [26, 34, 44, 56, 70]) {`],
   ],
 });
 
@@ -1974,7 +1979,24 @@ export const GATES = [
   ...V_UI,
   hud4k('V-hud-4k-a', 'the staff, the gourd, the field note (top-left)', 0, 0),
   hud4k('V-hud-4k-b', 'the theodolite circle and the vial (top-centre)', -1120, 0),
-  hud4k('V-hud-4k-c', 'the plate, the reticle and the breath meter (centre)', -1120, -470, `
+  /* r1 judge: 4k-c showed no plate and no breath meter. At 4K the plates ride the top band (230-330 px) and the
+     breath meter sits 120 px under the reticle (1080): 1000 px apart, more than one 900 px crop. Two crops, one staging. */
+  hud4k('V-hud-4k-c', 'the plates over the Instrument and the reticle (top-centre)', -1120, -200, `
+    /* r1 judge: the frame showed no plate and no breath meter. Steady held on the real Shift edge,
+       and one more hit just before the shutter so the plate's 5 s hold is live */
+    const __c = __CTX__;
+    __c.input.keys.add('ShiftLeft');
+    /* r5-all-machines: cast */ const __m = __c.hud._mhbPick[0] || [...__c.hud._engaged.keys()][0];
+    if (__m) {
+      /* at 20 m its plate rides the top band, above this crop: bring the frozen Instrument to 11 m on the line of sight */
+      const __p = __c.player.position, __a = __c.player.camYaw + Math.PI;
+      const __x = __p.x + Math.sin(__a) * 11, __z = __p.z + Math.cos(__a) * 11, __y = __c.terrain?.getHeight?.(__x, __z) ?? __m.position.y;
+      __m.position.set(__x, __y, __z); __m.root?.position?.set?.(__x, __y, __z); __m.root?.updateMatrixWorld?.(true);
+      const __pt = __m.position.clone(); __pt.y += (__m.height ?? 2.2) * 0.6;
+      __c.events.emit('machine-damaged', { machine: __m, damage: 9, weak: false, point: __pt, tear: 0, tornPart: null, triggeredElement: null });
+    }
+    await new Promise((r) => setTimeout(r, 500));`),
+  hud4k('V-hud-4k-e', 'the reticle, the draw scale and the breath meter while Steady is held (centre)', -1120, -630, `
     /* r1 judge: the frame showed no plate and no breath meter. Steady held on the real Shift edge,
        and one more hit just before the shutter so the plate's 5 s hold is live */
     const __c = __CTX__;
