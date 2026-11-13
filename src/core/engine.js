@@ -1479,7 +1479,6 @@ export class Engine {
     return ms;
   }
 
-  /** The look's GPU objects (the two LUT slots, the bench target); the engine lives as long as the page. */
   /**
    * R48 (c), look-post fix round 1: THE SHADOW PASS'S PROGRAM-KEY CHURN. three r169 renders every caster with
    * one shared depth material unless the mesh carries its own; its setProgram sees `skinning` / `instancing`
@@ -1504,6 +1503,7 @@ export class Engine {
     o.customDepthMaterial = d;
   }
 
+  /** The look's GPU objects (the two LUT slots, the bench target, the shadow depth variants); the engine lives as long as the page. */
   disposeLook() {
     if (this._depthVariants) { for (const d of this._depthVariants.values()) d.dispose(); this._depthVariants.clear(); }
     for (const t of this._lutTex || []) t.dispose();
