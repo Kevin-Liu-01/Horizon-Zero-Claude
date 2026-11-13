@@ -11,7 +11,168 @@ Lane gates: `nice -n 10 node tools/gates.mjs --port 5265 --lane shell-ui`.
 §0 is this round (W1 fix round 2 + glass start, Nov 13). §1-§6 are the W1 build and fix round 1, kept
 as the record; where §0 changes them it says so.
 
-<!-- R2-SECTION -->
+## 0. W1 fix round 2 + glass start (Nov 13)
+
+Order of work, as briefed (ROUND5-LOOK §5.2 shell-ui row; R66 e): the r1 gate judge's two MAJOR logic
+findings and every logic minor, then U-02 (declutter to 1-TR's six surfaces), U-17 (`hud.stageNote`),
+U-01 (the glass tokens and `reference/r5/shell-ui/glass-tokens.png`), and the start of U-06 (the glass
+field HUD on unchanged `hud.js` logic). Frames and logs:
+`/private/tmp/claude-501/-Users-kevinliu-Horizon-Zero-Claude/db31a0fa-9701-46f4-8234-5158425c1e49/scratchpad/r5/shell-ui/w1r2/{r1,r2,r3}/`
+(r2 = the whole lane block + the global list in one run; r3 = the rows touched after r2, on the final code).
+
+### 0.1 The r1 gate judge's findings
+
+| finding | what changed | measured now |
+|---|---|---|
+| **[major] The alidade's DOM half drew over Brea** (cobalt ring, LAMP chip, card leader) | `focus.js` fits **her screen box every frame from her own pose**: every bone of each skinned mesh her mask already holds, plus the 8 corners of what she holds, padded by 0.18 m at her nearest depth (`_fitHerBox`, no allocation). Every DOM element of the overlay keeps off it: a component whose anchor is on her draws nothing (no ring, chip or leader); a ring whose casing would reach her is not drawn; a chip that would lie on her takes the other side or does not draw; a leader that crosses her is not drawn (`_segOnHer`, Liang-Barsky); reveal chips re-check after stacking; ink ticks skip her. The card's own leader is gone (U-02: 1-TR has none). `debugOcclusion(false)` now also turns the DOM keep-off off, so the row has a DOM negative control | `A-sighting-over-brea` extended (as the judge asked) to every visible `.calf-ring`, `.calf-ring-u`, `.calf-leader`, `.calf-leader-u`, `.calf-plabel`, `.calf-reveal`, `.calf-rtick` and the card, sampled where each paints (ring circumference, every 2 px along each leader segment, chip boxes) on the silhouette of the same frame; the stage now turns the camera until the Instrument's **weak point** stands on her chest. r2: WebGL 0 px added inside her 52 273 px (control 2 396), **DOM 0 px on her (control 900: ring 288, casing 288, chip 324)**. The reticle is the crosshair she aims with and is not counted (the judge's note) |
+| **[major] The SIGHTING tutorial card landed on the Sighting card** | Raising the alidade puts the SIGHTING card away (`sighting-on` → `_dismissTip`, and a queued one is dropped). Tutorial cards now live low on the LEFT (left 30, bottom 118), the column the tools vacated, so no card can stand beside the Instrument card pinned right | `A-sighting-tip-clear` (new): fresh tips, the herd at 15 m, SIGHTING card up, she presses V: the card came up at 0.65 s, the two rects never intersect (worst 0 px over 3.2 s), the SIGHTING card is gone once the card is up (the queue's next card, MOVE, follows it on the left) |
+| [minor] V36 busy; lance crosses the LAMP ring; six chips; vignette invisible; quiet Tiller x-ray | `_pickTarget`'s reach is an angle as well as a size (`min(5 m, 0.24 x range)`), so V36 stages at 0.22 rad and keeps the card: her lance clears the ring. Reveal chips: words for at most two (nearest the crosshair within 25 m and 0.22 W, finds before gathering), the rest are 6 px ink ticks (U-02). The vignette's ellipse was sized in % of the box (78 % of the WIDTH as a radius, so its outer stops lay off screen); it is now `farthest-corner`: about 10 % mid-side, 17 % in the corners, with a <= 3 % paper grain in the margin (both under the 20 % bar). The quiet second Instrument is ink-led (paper 0.46 → 0.24, ink 0.34 → 0.38) | V36 at 0.22 rad: card up, lance tip clear of the ring (frame read). `A-sighting`: vignette centre 0 / max 0.17; text reveals 0-2 (A-ui-declutter: 0 words, 3 ticks) |
+| [minor] The engaged Instrument hid behind its own plates | Plates now resolve against each engaged Instrument's projected box (feet to head): over its head when there is sky, else to its nearer side. U-02: the most recently hit wears the full plate, the others a compact one (name and bar, 150 px). The column's foot is measured from the DOM at 2 Hz (the glass note grows with its objective); every step-up or step-aside is checked against the column and the circle, and a last pass keeps both clear. A plate moved off its axis is marked clamped (A71c's axis rule) | `A-ui-declutter`: 3 engaged → 1 full + 2 compact, 0 plates on an engaged Instrument. A71c / V37 / V-hud-glass: see §0.3 (r3) |
+| [minor] fieldWord collisions (two BARBED ARROW, two ESCAPEMENT) | The word bridge is injective over the catalogue: machine heart → **Mainspring**, machine core → Escapement; hardpoint → **Obsidian Arrow** (bible §5.2: obsidian heads), tearblast → Barbed Arrow; and the bible's ammo words where the engine still uses Round-4 ones: fire / freeze / shock arrows → Cinder-Resin / Brine-Gourd / Dust-Puff Arrow, blast bomb → Cinder Pot. Satchel cards and trade rows carry `data-item` | `A-ui-words-all`: catalogue collisions 0 (ITEMS + AMMO_INFO), page collisions 0 over 49 rendered item rows on 7 satchel pages, 0 banned words over 58 surfaces |
+| [minor] r0 leftovers | 1) DST is hers: from her eye to the target (or to where the crosshair ray meets the ground), not the camera's (`015` at the 15 m stage, was `018`). 2) Station ids on the sheet are Plex Mono 13 (Chakra's 6 read as an 8 at 11). 3) At 4K the plates ride the top band and the breath meter sits under the reticle, 1000 px apart, more than one 900 px crop: V-hud-4k-c now crops the plates over the Instrument with the reticle, and a new V-hud-4k-e the reticle, draw scale and breath meter; both hold Steady on the real Shift edge and land a hit before the shutter so the plate's 5 s hold is live. 4) Settings: `NOT LIVE YET` → `HOLD ONLY`; the footer says "Saved on this device and restored the next time you play." 5) SKILLS printed once (the hub's head; the panel's own heading is hidden in `style.css`). 6) `_updatePartLabels` writes ring attributes and leader points only when a half-pixel / pixel changes (`_setLeader`, cached ints). 7) The two bow lines: left as they are, as the judge says, until the control lands (combat-kit W2) | frames read: V-map (T6), V-ui-settings, V-ui-skills, V-hud-4k-c (r3) |
+| [minor] Words on V-ui-books/-making/-skills/-trade, V10/V37 field note; SEED_SATCHEL seeds IP-kind loot | `SEED_SATCHEL` seeds only what the game can give her today: recipe inputs and outputs, stores, and what a **staged** (role-mapped, non-legacy) kind carries; the deleted kinds' lampglass and hearts no longer reach the frames. The V10/V37/V36/V-ui-tip films (and every alidade stage) carry a staged CALIMA beat (U-17, below) | V-ui-trade / V-ui-making (r2) read: no Watcher / Sawtooth / Behemoth / Thunderjaw rows, one ESCAPEMENT, one BARBED ARROW. **Orchestrator:** the R61(b)/R65-style ruling for V-ui-books/-making/-skills/-trade is still asked for (progression's catalogue titles, combat-kit's FIRE-era recipe and skill text) |
+
+### 0.2 U-02, U-17, U-01, U-06 (started)
+
+- **U-02 declutter.** Text reveal chips ≤ 2 (+ 6 px ink ticks), BRG/DST folded into the card header (the
+  floating box under the reticle is deleted), the vial hides after 4 s UNSEEN, one full plate and ≤ 2
+  compact, ≤ 1 tutorial card (one at a time, 6.5 s), no card leader, the world objective mark stands
+  aside while the alidade is up (the circle carries it), the kit tag stays up while sighting (1-TR).
+  V-hud-declutter's frame shows exactly 1-TR's six: field note, compass + 122 chip, the TILLER card,
+  the LAMP tag (cobalt ring, staff-white chip), the tool cells, SABINA BOW 040.
+- **U-17 `hud.stageNote({kicker, title, objective, meta?})`.** Under `?shot=1` only (returns false and
+  changes nothing in play): the field note shows the staged beat and the objective mark drops the quest's
+  label. Every alidade stage and the V10/V37/V36/V-hud-*/V-ui-tip films stage "FIELD NOTE / THE TILLER
+  HERD / Read the herd from cover, then shoot the level vial on the Plumb." (bible §8.9, 0:25).
+- **U-01 tokens** (`src/style.css`): `--cal-glass` #1E1A28, `--cal-glass-rgb`, alphas 0.70 HUD / 0.80
+  card / 0.90 menu, the +4/−6 % gradient, a 3 % grain (data URI, 0.5 KB), the 1 px top highlight
+  rgba(241,238,230,.08), frame line .16, registration ticks .62, staff-white text, `--cal-select-line`
+  #D8CCE4 over `--cal-select-fill` Orchil Deep #5A2E66 at 60 %, `--cal-weak-chip` / `--cal-weak-ink`.
+  One utility, `.cal-glass`: fill + gradient + grain + highlight + frame line, and `::after` draws the
+  four 6 px L ticks from eight gradient strokes. No radius, no clip-path, no blur.
+  **`reference/r5/shell-ui/glass-tokens.png`** is rendered from these tokens by `R-glass-tokens` over
+  four lights (white salt 12:00, golden grass 18:40, dusk 20:10, night 23:30), with its
+  `reference/r5/shell-ui/MANIFEST.md` row (project-original, CC0; no reference pixels went into it).
+- **U-06 started** (`hud.css` + class names in `hud.js`; logic unchanged): the staff is 300 × 6, ten
+  vermilion graduations cut by nine staff-white gaps, the reading in a small glass window; a 24 px
+  emblem (a broad arrow in a ring, `data-shape="disc"`); gourd and **salt** chips (the one currency, read
+  through the catalogue's `currency` tag); the field note is 340 px of glass (kicker Chakra 11, title
+  Chakra 600 17, objective Plex 13) with a vermilion rule; the bearing chip, plates, tool cells (three
+  44 px, bottom-centre, key hints), the kit tag (240 × 56), tutorial cards, toasts, flashes and banners
+  are glass; WEAK is a staff-white chip with cobalt text (damage chips and the card's tag). The Sighting
+  card is glass at 0.80 with its vermilion rule (U-07's card, done here so the frame is one material).
+  Not done yet (W2): the interact prompt beside the crosshair (A71f-interact-anchor, carried and binding,
+  grades the prompt ON the interactable: the orchestrator rules which bar holds), the field note's 8 s
+  fade (it recedes at 26 s to 0.12 opacity; A71g's `readableAtFullHealth` reads it at boot), U-05
+  contrast at four lights, U-03 frozen-frame menus, the hub/map/satchel/title glass.
+
+### 0.3 Gates (port 5265, nice -n 10, one Chrome through the slot broker)
+
+r2: the whole lane block (66 rows) + the global list (16) in one run: **49 pass, 3 fail, 5 pending,
+25 need judging**. Fails: A21 (timing, R58: graded at the W1 exit; unchanged from fix round 1),
+A-alloc-rate (baseline guard: world-sky 1.175x; shell-ui is not an offender), A71c (fixed after r2, see
+r3). r3 re-ran every row the last changes touch, on the final code.
+
+Lane rows, final code (r3/r4/r5; r2 for rows the later changes do not touch):
+
+| row | result | numbers |
+|---|---|---|
+| A-sighting-over-brea (extended) | PASS | WebGL: 0 px added inside her 53 076 px (control 2 381); **DOM: 0 px on her** (control 768: ring 288, casing 288, chip 192); her box [535, 324, 869, 959] |
+| A-sighting-tip-clear (new) | PASS | card up at 0.64 s; tip/card intersection 0 px over 3.2 s; SIGHTING card gone once the card is up |
+| A-ui-declutter (new) | PASS | alidade: 7 text surfaces (note, compass, vial, tools, weapon, card, LAMP tag) of 8; 0 text reveals + 3 ticks; card `BRG 126 · DST 015`; floating boxes 0. Three engaged: 1 full + 2 compact, 0 on an engaged Instrument. Calm 30 s: 3 (compass, objective mark, tools); the vial idle at 30.5 s |
+| A-ui-words-look (new) | PASS | 4 frames (field, alidade, engaged, tip), 0 hits; the note reads THE TILLER HERD; `stageNote` refused outside `?shot` |
+| A-glass-language-static (new) | PASS | 29 glass panels over 3 scans: alpha / tint 0 off, backdrop 0, clip 0, radius 0 (discs by role: 2-4 circles), teal 0; `--cal-select-line` 30.5, `--cal-select-fill` 30.8 dE00 from the five |
+| A-hud-glass (new, started) | PASS | 14 HUD glass panels, 0 off; staff 300 × 6, 10 graduations, 9 gaps; tools centred at 800 (W/2), bottom 874 ≥ 828; 0 minimap |
+| A-sighting | PASS | card up, LAMP ring cobalt, 1 leader (the chip's), vignette 0 / 0.17, figure 0.51 % of the target, 2 transects, readouts `126` / `015` |
+| A-sighting-hue, -off | PASS | added violet 0, teal 0 (r2) |
+| A-transect-fine, A-sighting-draws | PASS | p95 2 px, p50 1, max 14 (r2); +16 draws held, +17 sweep, cap 30 (r2) |
+| A63 | PASS | 2 reveals (TILLER WRECK, SALT CACHE), 0 overlaps, 0 off screen |
+| A71b, A71e, A71h, A-dmg-chip-clear | PASS | min font 11 px; 18 cards in the bible's order, glass card; plates clear the column and vial; damage numbers 0 hits on vial word, circle, column, plate |
+| A71c | R5 | |
+| A71, A71d x2, A71f, A71g, A68-A70c, A72, A72b, A-map-*, A-settings-rows-visible, A-ui-type-only, A-ui-words-all, A-ui-language-static, A-lamp-canon-distance-ui | PASS (r2) | A-ui-words-all: 58 surfaces, 0 hits, catalogue collisions 0, page collisions 0 over 49 item rows |
+| A10, A62 x2 | PENDING | no sentry kind (Plumb); no named parts (R18) |
+| V-ui-sheet | PENDING | the runner composes the sheet for a judge |
+| V10, V37, V36, V36-focus-scan, V-hud-declutter, V-hud-glass, R-glass-tokens, V-hud-4k-a..e, V-map, V-ui-*, V-ui-4k-a/b | NEEDS JUDGE | filmed at 1600x900, read by the builder (§0.4) |
+
+
+Global green list (r2, quiet box: load 2.8, 0 other gate Chromes):
+
+| row | result | numbers |
+|---|---|---|
+| A1, A20b | PASS | boot `state=playing`; 361 frames, 0 system errors |
+| A9 | PASS | 59.9 fps median, 241 draws |
+| A21 | counters PASS, timing FAIL (W1 exit, R58) | draws 248 / 183 / 275 of 350; tris 3.66 / 3.87 / 3.94 M; medianGpuMs 19.5 / 38.8 / 20.5 against 14 (unchanged; the shell draws nothing in the world unless the alidade is up) |
+| A90-memory-stability, A90b, A90-rig-reclaim, -expansion | PASS | objects −34, heap −4.6 %; rig 0 geo / 0 tex over 30 cycles; non-machine growth 0 |
+| A90-abs, A-vram-ledger | PASS | VRAM total 269.91 MB of 450 (targets 127.27, 0 unattributed) |
+| A-alloc-rate | baseline guard FAIL on world-sky (1.175x); **shell-ui 277.4 KB/s against its 588.51 baseline (0.471x), not an offender** | per-function (R67: reported, graded at W2): `_updateMachineBars` 60.4, `Menus._raf` 41.2, `_updateCompass` 38.6, `_scanMachines` 38.0 KB/s |
+| A-ID-ip-assets-gone, A-assets-tracked | PASS | |
+| A-no-horizon-terms-player | PASS | 1449 of the 1508 ratchet |
+| A-no-horizon-terms-code | PASS | 1311 of 1371, 0 uncovered, 0 over cap (`tools/lint/namecheck.mjs --code` PASS) |
+| A-licence-manifest | PENDING | third-party clause only; no asset added (the reference PNG is not shipped) |
+| A-port-guard, A-carried-suite, A-reach-all-sites | orchestrator / not on this tree | |
+
+### 0.4 What I read in the frames (advisory, R29)
+
+- **V-hud-declutter** (r2): reads like 1-TR's layout: six surfaces, the world holds the eye, faint
+  transect dashes with station ticks, the LAMP tag and ring on the Tiller, no line across the frame.
+  Below 1-TR: the world under it (the Round-4 valley, flat light), not the HUD's.
+- **V36** (r2, 0.22 rad): her lance clears the ring; one card; the figure dashed on the Tiller; the
+  quiet second Tiller is a pencil line now. The vignette reads at the corners only faintly on a bright
+  sky; it is at its ceiling.
+- **V10 / V37 / V-hud-glass** (r2): the glass column, staff and chips read well on the dark forest; a
+  compact plate slid under the two-line field note (fixed after r2: the column's foot is measured);
+  re-read in r3.
+- **R-glass-tokens**: the glass holds staff-white text at all four lights; on white salt the glass reads
+  mid-grey (as U-05 predicts, ≈ sRGB 0.38). **A bare staff-white Blunt damage numeral on white salt
+  reads weakly** (the sheet shows it honestly): a U-05 / W2 contrast item. The health reading moved into
+  a glass window for the same reason.
+- Menus (V-ui-*): still the paper book (W2). Words: no IP-kind loot, one name per item.
+
+### 0.5 Contracts added this round
+
+```
+ctx.hud.stageNote({ kicker, title, objective, meta? } | null) -> boolean   // ?shot=1 only; false (no-op) in play
+ctx.sighting.debugOcclusion(on)       // now also the DOM keep-off (A-sighting-over-brea's DOM control)
+ctx.sighting.audit().herBox           // [l, t, r, b] CSS px: her fitted screen box this frame, or null
+ctx.sighting.audit().revealTicks      // reveals drawn as ink ticks (words for <= 2)
+window.__HUD_DEBUG__.surfaces().health.{gaps, widthPx, heightPx}; .eye.{idle, idleS}
+.cal-glass (style.css)                // the U-01 panel material; set --glass-a to 0.70 / 0.80 / 0.90
+--cal-glass*, --cal-select-line, --cal-select-fill, --cal-weak-chip, --cal-weak-ink, --cal-orchil-deep
+src/ui/tips.js fieldWord: injective over ITEMS + AMMO_INFO (A-ui-words-all checks it)
+.cal-inv [data-item]                  // satchel cards ('ammo:<id>' for ammo) and trade rows
+```
+
+New rows in `tools/gates.r5.shell-ui.mjs`: `A-sighting-tip-clear`, `A-ui-declutter`, `A-ui-words-look`,
+`A-glass-language-static`, `A-hud-glass` (started), `V-hud-declutter`, `V-hud-glass`, `R-glass-tokens`;
+criteria are ROUND5-LOOK §7's bullets verbatim (`lookRow`), each V row with the IP-clause and the cited
+`ext:` panels. Changed: `A-sighting-over-brea` (DOM half + DOM control), `A-ui-words-all` (injective
+names), `A71e` (the card is glass: the paper-colour clause is replaced, R66 e), V36 (0.22 rad), V10/V37/
+V36/V-ui-tip (staged note), V-hud-4k-c (Steady + plate in the crop), `SEED_SATCHEL`.
+
+### 0.6 Honest gaps and asks
+
+- **Orchestrator: paste ROUND5-LOOK §7's shell-ui rows into plan §9** (the rows read them from the
+  LOOK doc today). A-ui-declutter's fifth clause and A-hud-glass's dependency clause are graded by the
+  named rows in the same run, not inside the row.
+- **Orchestrator: rule U-06's interact prompt** (beside the crosshair) against A71f-interact-anchor
+  (on the interactable, carried); and the field note's 8 s fade against A71g's boot read.
+- **Orchestrator: R61(b)/R65 for V-ui-books/-making/-skills/-trade** (asked again; the catalogue and
+  recipe text are progression's and combat-kit's).
+- **A-glass-language-static** grades the rendered HUD and alidade (the menus are paper until W2), and
+  teal on DOM colours (the frame-pixel form waits for the orchestrator's CDP wrapper, U-04).
+  **A-violet-budget, A-ui-contrast, A-ui-composite-cost, A-menu-freeze, A-ui-ip-geometry** are W2 rows
+  and are not registered yet.
+- **Weak-point rings** are counted as discs by role (`data-shape="ring"` on the ink layer); the LOOK
+  list names skills nodes, the compass chip and the broad-arrow ring. Asking the orchestrator to add
+  the weak-point ring (A-sighting requires it).
+- **Blunt damage numerals on white salt** are weak (glass-tokens.png shows it): U-05 at W2.
+- **The vial** reappears whenever anything reads her and hides after 4 s calm; in a staged spawn the herd
+  notices her, so the A-ui-declutter alidade count includes it (7 of 8).
+- Per-function allocation: unchanged status (R67); `_updateMachineBars` rose to 60.4 KB/s in the
+  staged fight (more plate work: boxes, compact swaps), still 0.471x of the owner baseline.
+- Everything visual is the builder's reading; R66(e) grades the glass rows on frames from after the
+  world look pass.
+
 
 ## 1. What was built
 
