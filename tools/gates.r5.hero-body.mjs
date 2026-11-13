@@ -10033,7 +10033,7 @@ const NEW_VISUALS = [
    * frame; panels 7 -> 8: she spins to face the camera in one frame") — the judge's own framing: a fixed camera 3.6 m to
    * the side of the roll's middle, through the roll's last step and the hand-over to the gait */
   transFilm('V-dodge-handover',
-    'Targeted fix round 3: a moving dodge\'s hand-over to the gait from a FIXED side camera (3.6 m off the roll\'s line, 1.6 m up): a jog dodge and an aimed strafe-right dodge (RMB + LMB held), each at the roll\'s last step and +0.02, +0.10 and +0.25 s after the hand-over',
+    'Targeted fix round 3: a moving dodge\'s hand-over to the gait from a FIXED side camera (4.6 m off the roll\'s line at its hand-over point, 1.5 m up): a jog dodge and an aimed strafe-right dodge (RMB + LMB held), each at the roll\'s last step and +0.02, +0.10 and +0.25 s after the hand-over',
     `const P = C.engine;
       const fixedShot = async (tag, cam) => {
         E.requestTimeScale('studio', 0);
@@ -10049,8 +10049,10 @@ const NEW_VISUALS = [
         const P0 = p.position.clone();
         p.dodge();
         const dd = p._dodgeDir ? p._dodgeDir.clone().normalize() : new T3(Math.sin(p.heading), 0, Math.cos(p.heading));
-        const rt = new T3(-dd.z, 0, dd.x), mid = P0.clone().addScaledVector(dd, 2.6);
-        const cam = { pos: mid.clone().addScaledVector(rt, 3.6).add(new T3(0, 1.6, 0)), tgt: mid.clone().add(new T3(0, 0.75, 0)) };
+        // (aimed at where the roll hands over, 3.4 m on, and 0.6 m past it, from 4.6 m off its line: she stays in frame
+        // from the roll's last step through +0.25 s of the gait)
+        const rt = new T3(-dd.z, 0, dd.x), mid = P0.clone().addScaledVector(dd, 3.4);
+        const cam = { pos: mid.clone().addScaledVector(rt, 4.6).addScaledVector(dd, 0.6).add(new T3(0, 1.5, 0)), tgt: mid.clone().addScaledVector(dd, 0.6).add(new T3(0, 0.8, 0)) };
         const w0 = performance.now();
         let shotRoll = false;
         while (p.dodging && performance.now() - w0 < 15000) {
@@ -10067,10 +10069,10 @@ const NEW_VISUALS = [
    * crouch-moving flips her 90-180 deg in one tick ... my film's frames landed just before the raise, so this one has
    * numbers but no frame"): the raise after a cancel, crouched and backpedalling, from a fixed side camera and the game's */
   transFilm('V-crouch-reraise',
-    'Targeted fix round 3: crouched and backpedalling (S held) at full draw, a both-button cancel, 0.6 s on, the aim raised again (RMB): at the raise +0.017, +0.10, +0.25 and +0.50 s, from a FIXED side camera (3.4 m off her, 1.3 m up, set at the cancel) and the game camera',
+    'Targeted fix round 3: crouched and backpedalling (S held) at full draw, a both-button cancel, 0.6 s on, the aim raised again (RMB): at the raise +0.017, +0.10, +0.25 and +0.50 s, from a FIXED side camera (4.2 m off her, 1.3 m up, set at the cancel, 58 deg lens) and the game camera',
     `const fixedShot = async (tag, cam) => {
         E.requestTimeScale('studio', 0);
-        const st = stats(); const img = S.liveView(C, [cam.pos.x, cam.pos.y, cam.pos.z], [cam.tgt.x, cam.tgt.y, cam.tgt.z], { width: W, height: H, fov: 45 });
+        const st = stats(); const img = S.liveView(C, [cam.pos.x, cam.pos.y, cam.pos.z], [cam.tgt.x, cam.tgt.y, cam.tgt.z], { width: W, height: H, fov: 58 });
         const g = view('GAME');
         await frame(); E.requestTimeScale('studio', null);
         const hd = ' heading ' + (((p.heading * 180 / Math.PI) % 360 + 360) % 360).toFixed(0) + ' deg';
@@ -10080,7 +10082,7 @@ const NEW_VISUALS = [
       await hold(0.45); C.input.mouse.buttons |= 1; await hold(1.2);
       C.input.mouse.buttons = 0;
       const h = p.heading, rx = -Math.cos(h), rz = Math.sin(h), mid = p.position.clone();
-      const cam = { pos: mid.clone().add(new T3(rx * 3.4, 1.3, rz * 3.4)), tgt: mid.clone().add(new T3(0, 0.7, 0)) };
+      const cam = { pos: mid.clone().add(new T3(rx * 4.2, 1.3, rz * 4.2)), tgt: mid.clone().add(new T3(0, 0.7, 0)) };
       await hold(0.6);
       C.input.mouse.buttons |= 4; const tR = E.simTime;
       for (const at of [0.017, 0.10, 0.25, 0.50]) { await holdUntil(tR + at); await fixedShot('crouched backpedal: the raise after a cancel +' + at.toFixed(3) + ' s', cam); }`,

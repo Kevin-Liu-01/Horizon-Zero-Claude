@@ -2808,7 +2808,7 @@ export class PlayerAnimator {
       this._charOf(pe.bone, _rxV);
       _gvW.copy(_rxV).applyMatrix4(this.model.matrixWorld);
       // (round 3: ...and for `gvHold` s after it last held anything back, so what it held is let go at its pace, not at once)
-      const on = (dodging || air || this._rxWin > 0 || this._aimW > 0.01 || this._crouchW > 0.5 || this._gvHold > 0 || p._aimTurnLim || this._afEng) && !p.mantling && !p.riding
+      const on = (dodging || air || this._rxWin > 0 || this._aimW > 0.01 || this._crouchW > 0.5 || this._gvHold > 0 || p._aimTurnLim || this._afEng) && !p.mantling && !p.riding && !p.sliding
         && this._deadW < 0.02 && !((this._nat?.ok) && ((this._nat.by.climb?.w ?? 0) > 0.02 || (this._nat.by.sit?.w ?? 0) > 0.02));
       if (on && this._gvOk) {
         const k60 = Math.min(1, Math.max(1e-3, dt * 60)), cap = RX.govM * k60;
@@ -4429,6 +4429,11 @@ export class PlayerAnimator {
             nearC = _caB.distanceToSquared(this._aimPred) < 0.25;
           }
           if (nearC) _v7.copy(_caD).multiplyScalar(2);
+          /* (hero-body targeted fix round 3: ...and never a ray more than 60 deg off the camera's own: strafing through a
+           * fast pitch wiggle the carried grip and the predicted hit crossed for a step and the ray turned 164 deg, the
+           * bow arm thrown behind her, the knuckle 0.30-0.85 m off the nock, run w11/F1 — the camera's line is what
+           * combat aims along at worst) */
+          else if (_v7.dot(_caD) < 0.5 * _v7.length()) _v7.copy(_caD).multiplyScalar(2);
           this._aimPrev.copy(cmb.aimPoint); this._aimPrevOk = true;
         } else if (this.T.armFlow) {
           // (a look near the level moves a far ground hit metres a step: nothing to extrapolate)
