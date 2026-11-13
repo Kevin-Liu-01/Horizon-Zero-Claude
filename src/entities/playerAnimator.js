@@ -2461,7 +2461,10 @@ export class PlayerAnimator {
     // ...then hold it at a low, slightly-forward carry beside her left thigh,
     // riding the breath and a little of the stride
     const sw = Math.sin((this.loco?.phase ?? 0) * Math.PI * 2) * 0.022 * this._moveW;
-    _grip.set(0.245, 0.94 + sw + (this._brNow - 0.5) * 0.012 - 0.30 * this._crouchW, 0.135);
+    /* R64 (c), Nov 6: 3 cm wider than Round 5's 0.245, so the held bow and the
+     * hand clear the skirt by >= 0.5 cm on all four Pans (A-variant-swap-matrix's
+     * held clause) */
+    _grip.set(0.275, 0.94 + sw + (this._brNow - 0.5) * 0.012 - 0.30 * this._crouchW, 0.135);
     _pole.set(0.85, -0.55, -0.25);
     this._ikArm('l', _grip, _pole, w * 0.92, null);
     this._rot(b.handL, X_AXIS, -0.30 * w);

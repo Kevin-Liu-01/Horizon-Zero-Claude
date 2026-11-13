@@ -233,9 +233,26 @@ const SPRINT_STOW_T = 0.30;
 /** What is left of the heavy's cock when a held light turns into it: the hold
  *  (`MELEE.heavy.chargeTime`) already spent the rest of the wind-up. */
 const HEAVY_AFTER_HOLD = 0.62;
-/** Hit-stop floors (s): the blade stops on the machine, the world with it. */
-const HITSTOP_LIGHT = 0.050;
-const HITSTOP_HEAVY = 0.085;
+/** P-05 hit weight (ROUND5-LOOK; melee W1 fix round). The hit-stop is a capped FREEZE
+ *  (R66 l), on the real clock, spoken through `engine.requestTimeScale('hitstop',
+ *  0.03)`: a lance light 55 ms, a heavy 90, a weak point +25, a kill 120 (the cap),
+ *  and never more than 180 ms of freeze in any 1 s. Round 5 asked for 50 / 85 ms
+ *  floors and `impactFeedback`'s own k-scaled hold could run longer than either. */
+const HITSTOP_LIGHT = 0.055;
+const HITSTOP_HEAVY = 0.090;
+const HITSTOP_WEAK = 0.025;
+const HITSTOP_KILL = 0.120;
+const HITSTOP_WINDOW = 0.180;
+/** Shorter than this after the 1 s budget, a hit does not freeze at all (s). */
+const HITSTOP_MIN = 0.020;
+/** The directional kick along the swing's tangent, as the PEAK of the lens's
+ *  recoil spring (rad; light / heavy), and that spring's peak per unit of
+ *  `player.addRecoil` at 60 Hz (omega 21, critically damped, implicit step). */
+const KICK_LIGHT = 0.012;
+const KICK_HEAVY = 0.022;
+const KICK_PEAK = 0.391;
+/** P-04 (b): what a heavy multiplies the impact's showers by. */
+const HEAVY_FX = 1.4;
 /** The prompt, and who an Undercut kills outright: the small classes, by role. */
 const UNDERCUT_LABEL = 'UNDERCUT';
 const UNDERCUT_KILLS = ['sentry', 'swarm', 'flanker', 'spotter'];
@@ -514,6 +531,16 @@ export class Melee {
     this._visT = 0;           // legacy 'swung recently' cue (kept for readers)
     this._scanT = 0;
     this._stats = { swings: 0, hits: 0, silent: 0, crits: 0, outOfReach: 0 };
+    /* P-04 / P-05 (fix round 1): the blade's last real direction of travel (world,
+     * unit), the hit-stops of the last second (real-clock start / end, a ring of 8)
+     * and the last kick, which `melee-hit` publishes for A-play-hitweight */
+    this._tan = new THREE.Vector3(0, 0, 1);
+    this._hsS = new Float64Array(8);
+    this._hsE = new Float64Array(8);
+    this._hsI = 0;
+    this.lastHitstop = 0;
+    this.lastKickPitch = 0;
+    this.lastKickYaw = 0;
 
     /* ------------------------- stance (player-melee) --------------------- */
     /** 'holstered' | 'draw' | 'ready' | 'swing' | 'holster' */
@@ -1537,6 +1564,12 @@ export class Melee {
       this.layer.tipWorld(_tNow);
       _pPrev.copy(_pNow);
       if (p) _pNow.copy(p.position);
+      /* the swing's tangent (P-04 b, P-05): the last frame the tip really moved, so
+       * the contact key's hold (the tip parked on the hull) keeps the direction it
+       * arrived along */
+      const tx = _tNow.x - _tPrev.x, ty = _tNow.y - _tPrev.y, tz = _tNow.z - _tPrev.z;
+      const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+      if (tl > 0.01 && tl < 1.5) this._tan.set(tx / tl, ty / tl, tz / tl);
     }
     if (this.active) this._advance(dt);
     this._updateTrail(dt);
@@ -2183,15 +2216,26 @@ export class Melee {
 
     // 4. feedback — sparks scaled by what actually landed, hitstop, kick
     const dealt = res?.damage ?? impact;
-    this.combat?.impactFeedback?.({
+    const weak = !!res?.weak, killed = !!res?.killed || machine.alive === false;
+    const cmb = this.combat;
+    const hsEnd0 = cmb && typeof cmb._hsEnd === 'number' ? cmb._hsEnd : 0;
+    const hs = this._hitstopFor(heavy, weak, killed);
+    cmb?.impactFeedback?.({
       point: _pt, normal: _n, machine, damage: dealt,
-      weak: !!res?.weak, tear: res?.tear ?? 0, tornPart: res?.tornPart ?? null,
+      weak, tear: res?.tear ?? 0, tornPart: res?.tornPart ?? null,
       kind: crit ? 'crit' : (heavy ? 'heavy' : 'light'),
       maxHealth: machine.maxHealth ?? 100,
       colors: SPARK_STEEL,
+      /* P-04 (b): the showers bias along the swing; a heavy's are x1.4. P-05: the
+       * exact freeze this hit asks for (combat-kit's `impactFeedback` honours these
+       * from W2; until then they are read by nobody and the hold is set below) */
+      tangent: this._tan, scale: heavy ? HEAVY_FX : 1, hitstop: hs,
     });
-    /* the blade stopped: longer than an arrow's plink, the haft rides back */
-    this.combat?._startHitstop?.(0, heavy ? HITSTOP_HEAVY : HITSTOP_LIGHT);
+    /* the blade stopped: the world stops with it, for exactly `hs` (P-05) */
+    this._applyHitstop(hs, hsEnd0);
+    this._kick(heavy);
+    /* P-04 (d): the struck part flashes warm (instruments-a's `flashPart`, W1) */
+    if (typeof machine.flashPart === 'function') machine.flashPart(object, 1);
     this.layer?.onHit?.(heavy);
 
     ctx.events.emit('melee-hit', {
@@ -2199,8 +2243,79 @@ export class Melee {
       point: _pt.clone(), killed: !!res?.killed, tornPart: res?.tornPart ?? null,
       // blade tip to the nearest hull SURFACE at this instant (A103, F3)
       contactGap: this.lastContactGap,
+      // P-04 / P-05, for A-play-hitweight and A-play-impact
+      weak, tangent: [this._tan.x, this._tan.y, this._tan.z], hitstop: this.lastHitstop,
+      kickPitch: this.lastKickPitch, kickYaw: this.lastKickYaw,
     });
     this._noise(heavy ? 'impact' : 'noise', _pt, heavy ? 0.85 : 0.6);
+  }
+
+  /**
+   * P-05: how long this hit freezes the world (s, real clock), inside the 1 s
+   * budget. 55 / 90 ms, +25 on a weak point, a kill 120 (the cap); the freezes of
+   * the last second are counted from the ring and the new one is cut to what is
+   * left of 180 ms (conservatively: everything in [now - 1, now] counts).
+   */
+  _hitstopFor(heavy, weak, killed) {
+    let dur = killed ? HITSTOP_KILL : (heavy ? HITSTOP_HEAVY : HITSTOP_LIGHT) + (weak ? HITSTOP_WEAK : 0);
+    if (dur > HITSTOP_KILL) dur = HITSTOP_KILL;
+    const now = performance.now() / 1000, from = now - 1;
+    let used = 0;
+    for (let i = 0; i < 8; i++) {
+      const a = this._hsS[i] > from ? this._hsS[i] : from;
+      const b = this._hsE[i] < now ? this._hsE[i] : now;
+      if (b > a) used += b - a;
+    }
+    const left = HITSTOP_WINDOW - used;
+    if (dur > left) dur = left;
+    return dur >= HITSTOP_MIN ? dur : 0;
+  }
+
+  /** Freeze for exactly `dur` (s): `engine.requestTimeScale('hitstop', 0.03)`, released
+   *  by combat's real-clock timer, whose end this sets (an arrow's freeze already
+   *  running past it is kept). */
+  _applyHitstop(dur, endBefore) {
+    this.lastHitstop = dur;
+    if (!(dur > 0)) return;
+    const e = this.ctx.engine;
+    if (!e?.requestTimeScale) return;
+    const now = performance.now() / 1000;
+    /* a freeze still running is cut where this one starts, so the ring never counts twice */
+    const j = (this._hsI + 7) & 7;
+    if (this._hsE[j] > now) this._hsE[j] = now;
+    this._hsS[this._hsI] = now;
+    this._hsE[this._hsI] = now + dur;
+    this._hsI = (this._hsI + 1) & 7;
+    e.requestTimeScale('hitstop', 0.03);
+    const c = this.combat;
+    if (c && typeof c._hsEnd === 'number') {
+      c._hsActive = true;
+      c._hsEnd = endBefore > now + dur ? endBefore : now + dur;
+    }
+  }
+
+  /**
+   * P-05: the lens kicks ALONG the swing — the tangent's share across the screen
+   * (camera right / up), light 0.012 rad and heavy 0.022 at the spring's peak,
+   * through `player.addRecoil` (the critically damped lens spring; it never moves
+   * the aim). A thrust straight down the lens lifts the view. `settings.cameraShake`
+   * scales it, and 0 turns it off.
+   */
+  _kick(heavy) {
+    this.lastKickPitch = 0; this.lastKickYaw = 0;
+    const p = this.ctx.player, cam = this.ctx.camera;
+    if (!p?.addRecoil || !cam) return;
+    const sk = this.ctx.settings?.cameraShake ?? 1;
+    if (!(sk > 0)) return;
+    const m = cam.matrixWorld.elements, t = this._tan;
+    let a = t.x * m[0] + t.y * m[1] + t.z * m[2];
+    let b = t.x * m[4] + t.y * m[5] + t.z * m[6];
+    let l = Math.sqrt(a * a + b * b);
+    if (l < 0.2) { a = 0; b = 1; l = 1; }
+    const mag = (heavy ? KICK_HEAVY : KICK_LIGHT) / KICK_PEAK * sk;
+    this.lastKickPitch = b / l * mag;
+    this.lastKickYaw = a / l * mag;
+    p.addRecoil(this.lastKickPitch, this.lastKickYaw);
   }
 
   _noise(kind, pos, strength) {

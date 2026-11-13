@@ -143,6 +143,12 @@ const _ahB = new THREE.Vector3();
 /** ...and `_armHullFinal`'s wrist goal (char). */
 const _ahG = new THREE.Vector3();
 const _ahQi = new THREE.Quaternion();
+/** the left hand's late seat (fix round 1): palm goal, haft butt / tip, knuckle centre */
+const _slG = new THREE.Vector3();
+const _slB = new THREE.Vector3();
+const _slT = new THREE.Vector3();
+const _slP = new THREE.Vector3();
+const _slF = new THREE.Vector3();
 const _ident = new THREE.Quaternion();
 const _hTab = new THREE.Vector3();
 const _hOff = new THREE.Vector3();
@@ -786,6 +792,7 @@ export class MeleeLayer {
       leftArmToBow: null, legAmp: 0, legBeat: null, legW: 0, lhOnNow: null, lhPalmErr: 0, reachSeen: 0,
       skullGap: 0, strideHandCut: 0, strideLeanDeg: null, stridePitchCut: 0, strideW: 0,
       tipGroundLack: 0, tipGroundLift: 0, tipGroundResid: 0,
+      lhReseat: 0, lhGapPre: 0, lhGapPost: 0, lhSlide: 0, armHullFinalL: 0, armHullDefL: 0,
     };
 
     const b = an.b;
@@ -949,6 +956,13 @@ export class MeleeLayer {
     this._ahT = 1;
     this._pfN = 0;
     this._idleT = 0;
+    /* the left hand's seat, kept for `postFix` (fix round 1, `_seatLeft`) */
+    this._lhOnW = 0;
+    this._lhArmW = 0;
+    this._lhOnWant = 0;
+    this._lhSOn = 0;
+    this._lhReachLack = 0;
+    this._lhFree = new THREE.Vector3();
 
     this.ok = true;
     register({
@@ -1642,7 +1656,13 @@ export class MeleeLayer {
      * from inside `_groundConform`, which runs after this layer. A frame of
      * latency on "is the stride running" is invisible and reading it fresh
      * would mean running the conform first. */
-    const welded = (an._strideT || 0) > 0.10 ? 1 : 0;
+    /* ...OR STANDING, SWINGING (fix round 1): the step-in's velocity floor blends a
+     * little of the walk clip in, its stance weights dip under 0.40, `_strideT` reset
+     * and the beat's stance damped out under a live contact: the judge filmed light-2
+     * and light-3 landing on straight legs with the feet together. `_moveW` excludes
+     * the step drive and is held under 0.45 for the length of a melee step, so under
+     * 0.30 she is standing whatever the clip's weights do; a jog keeps it at 1. */
+    const welded = ((an._strideT || 0) > 0.10 || (stance === 'swing' && (an._moveW ?? 1) < 0.30)) ? 1 : 0;
     this._stanceW = damp(this._stanceW || 0, welded, 7, dt);
     /* THE HIPS TURN AND TRAVEL WITH THE BEAT (melee W1; `py` and `dz` on the pose
      * keys, continuous with them). The feet are planted by the conform, so a
@@ -3200,29 +3220,54 @@ export class MeleeLayer {
       an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
       this._clearLeftArmOfBow(w);
       D.lhOnNow = null;
+      this._lhOnW = 0;
       return;
     }
+    /* what the late passes (`postFix`) need to seat this hand again on the haft
+     * the renderer will draw: its weight, its place on the haft and the free goal */
+    this._lhOnW = on;
+    this._lhArmW = w;
+    this._lhOnWant = (u.lhOn || 0) * (this._lhK || 1);
+    this._lhFree.copy(_lh);
+    this._seatLeft(on, w, this._lhOnWant, 0);
+  }
+
+  /**
+   * THE LEFT HAND ON THE HAFT, from wherever the haft is NOW (fix round 1).
+   *
+   * Split out of `_solveLeft` so the last pass of the frame can run it again:
+   * `postFix` turns the right hand after this layer (the hand guard rotates the
+   * haft off her braid and spine by up to 0.3 rad a pass, the hull pass pulls the
+   * fist in), and the left palm, 0.3-0.5 m down the haft, was left behind by
+   * 0.06-0.15 m on light-2's live strike (A101) while the layer's own error read
+   * 0-0.04. `slide` moves the goal along the haft (m, + toward the tip): the
+   * forearm-off-the-belly fallback below and the hull pass use it.
+   */
+  _seatLeft(on, w, sWant, slide) {
+    const an = this.an, b = an.b, D = this._dbg;
+    _pole.set(0.82, -0.54, 0.16).normalize();
     this._gripChar(_grip);
     this._shaftChar(_a);
     an._charOf(b.upArmL.bone, _eS);
     const reach = (an._lenUpL + an._lenLoL) * 0.975 + LH_PALM;
-    let sOn = (u.lhOn || 0) * (this._lhK || 1);
+    let sOn = sWant + slide;
     _b.subVectors(_grip, _eS);
     const bd = _b.dot(_a), disc = bd * bd - (_b.lengthSq() - reach * reach);
     const sFar = disc >= 0 ? -bd + Math.sqrt(disc) : -bd;
+    this._lhReachLack = disc >= 0 ? 0 : Math.sqrt(-disc);
     if (sOn > sFar) sOn = sFar;
     if (sOn < LH_ON_MIN) sOn = LH_ON_MIN;
     D.lhOnNow = sOn;
+    this._lhSOn = sOn;
     _d.copy(_grip).addScaledVector(_a, sOn);          // the palm goal
-    _eT.copy(_lh);                                    // the free goal (world of the blend)
-    for (let pass = 0; pass < 3; pass++) {
+    _slG.copy(_d);
+    for (let pass = 0; pass < 5; pass++) {
       an._liveW(b.handL.bone, _q1);
       _c.copy(this.palmOffLL).applyQuaternion(_q1);
-      _eC.subVectors(_d, _c);                         // the wrist goal on the haft
-      _lh.copy(_eT).lerp(_eC, on);
+      _eC.subVectors(_slG, _c);                       // the wrist goal on the haft
+      _lh.copy(this._lhFree).lerp(_eC, on);
       an._ikArm('l', _lh, _pole, w, null);
       an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
-      if (pass < 2) this._leftElbowOut();   // turns the pole: the next pass solves with it, and the palm is re-seated
       /* the knuckle line along the haft, index toward the blade */
       an._liveW(b.handL.bone, _q1);
       _b.copy(this.gripDirLL).applyQuaternion(_q1);
@@ -3232,12 +3277,176 @@ export class MeleeLayer {
       if (ang > 2.6) k *= 2.6 / ang;
       if (k < 0.999) _q2.slerp(_qi(), 1 - k);
       an._rotQL(b.handL, _q2);
+      /* turns the pole when the forearm lies on her belly: the next pass solves with
+       * it and re-seats the palm. Round 5 stopped after two turns, and A104 read the
+       * left forearm 0.084-0.088 m off the spine on light-1's last recover frame and
+       * light-2's windup: up to four now, and the loop ends once it is clear. */
+      if (pass >= 4 || !this._leftElbowOut()) {
+        if (pass >= 2) break;
+      }
     }
     /* one last small correction: whatever the turn moved the palm by */
     an._charOf(b.handL.bone, _c);
     an._liveW(b.handL.bone, _q1);
     _b.copy(this.palmOffLL).applyQuaternion(_q1).add(_c);
-    D.lhPalmErr = _b.distanceTo(_d);
+    D.lhPalmErr = _b.distanceTo(_slG);
+    return D.lhPalmErr;
+  }
+
+  /** The left forearm's distance to her pelvis->neck axis, on the live bones (char). */
+  _leftForeGap() {
+    const an = this.an, b = an.b;
+    an._charOf(b.loArmL.bone, _lbE);
+    an._charOf(b.handL.bone, _lbH);
+    an._charOf(b.pelvis.bone, _lbA);
+    an._charOf(b.neck1.bone, _lbB);
+    segSegN(_lbE, _lbH, _lbA, _lbB);
+    return _sgNum[0];
+  }
+
+  /** The left knuckle line's centre against the live haft (char); the number A101 reads. */
+  _leftPalmGap() {
+    const K = this._knuckleL;
+    if (!K) return 0;
+    const an = this.an;
+    this._gripChar(_grip);
+    this._shaftChar(_a);
+    _slB.copy(_grip).addScaledVector(_a, -this.gripFrac * this.length);
+    _slT.copy(_grip).addScaledVector(_a, (1 - this.gripFrac) * this.length);
+    an._charOf(K.i, _slP);
+    an._charOf(K.p, _slF);
+    _slP.add(_slF).multiplyScalar(0.5);
+    segPointN(_slB, _slT, _slP);
+    return _sgNum[0];
+  }
+
+  /**
+   * THE LEFT HAND SEATED AGAIN ON THE FINAL HAFT (fix round 1; `postFix`, after
+   * the right hand's late passes). Runs only when the left hand is on the haft
+   * and something moved it off (> 0.012 m) or laid the forearm on her belly
+   * (< 0.105 m off the axis). If the turn alone does not clear the belly, the
+   * palm slides toward the blade in 0.03 m steps (at most 0.12 m, never past
+   * her reach): moving the hand away along the haft moves the forearm off her.
+   */
+  _reseatLeft() {
+    const D = this._dbg;
+    const on = this._lhOnW;
+    D.lhReseat = 0;
+    if (!(on > 1e-3) || !this._held || !this.an.b.handL) return;
+    const g0 = this._leftPalmGap(), f0 = this._leftForeGap();
+    D.lhGapPre = g0;
+    if (g0 <= 0.012 && f0 >= 0.105) { D.lhGapPost = g0; return; }
+    let slide = 0;
+    this._seatLeft(on, this._lhArmW, this._lhOnWant, slide);
+    D.lhReseat = 1;
+    let f = this._leftForeGap();
+    while (f < 0.105 && slide < 0.12 && this._lhSOn >= this._lhOnWant + slide - 1e-4) {
+      slide += 0.03;
+      this._seatLeft(on, this._lhArmW, this._lhOnWant, slide);
+      D.lhReseat++;
+      f = this._leftForeGap();
+    }
+    D.lhSlide = slide;
+    D.lhGapPost = this._leftPalmGap();
+  }
+
+  /**
+   * THE LEFT FIST OUT OF THE METAL TOO (fix round 1, A106 S5). `_armHullGuard`
+   * and `_armHullFinal` kept only the drive arm out of a hull; the left arm rides
+   * the haft and a Tiller's shin swept into it (r5: 0.3 mm inside; the judge's run:
+   * 20 mm). On the final matrices: the left elbow turns about shoulder -> wrist
+   * (the palm stays on the haft), then the palm slides back along the haft toward
+   * the right hand in 0.04 m steps until the forearm is `ARM_CLEAR_FINAL` clear.
+   */
+  _leftHullFinal(an) {
+    const D = this._dbg;
+    D.armHullFinalL = 0;
+    if (!(this._lhOnW > 1e-3)) return;
+    const st = D.stance;
+    if (st !== 'swing' && st !== 'ready') return;
+    const mel = this.ctx.combat?.melee;
+    const hulls = mel && typeof mel.armHulls === 'function' ? mel.armHulls() : null;
+    if (!hulls || !hulls.length) return;
+    an.model.updateWorldMatrix(true, false);
+    const M = an.model.matrixWorld;
+    _ahSh.set(0, 0, 0);
+    const goal = ARM_CLEAR - ARM_CLEAR_FINAL;
+    let worst = this._armDeficitL(hulls, M);
+    D.armHullDefL = worst;
+    if (!(worst > goal)) return;
+    let n = 0;
+    if (this._armRollOutL(hulls, M, worst)) { n += 100; worst = this._armDeficitL(hulls, M); }
+    let slide = 0;
+    while (worst > goal && slide > -0.36 && this._lhSOn > LH_ON_MIN + 1e-3) {
+      slide -= 0.04;
+      this._seatLeft(this._lhOnW, this._lhArmW, this._lhOnWant, slide);
+      if (this._armRollOutL(hulls, M, this._armDeficitL(hulls, M))) n += 100;
+      worst = this._armDeficitL(hulls, M);
+      n++;
+    }
+    D.armHullFinalL = n;
+    D.armHullDefL = worst;
+  }
+
+  /** `_armDeficit` for the LEFT forearm (elbow -> knuckle centre), world. */
+  _armDeficitL(hulls, M) {
+    const an = this.an, b = an.b;
+    an._charOf(b.loArmL.bone, _ahE).add(_ahSh).applyMatrix4(M);
+    const K = this._knuckleL;
+    if (K && K.i && K.p) {
+      an._charOf(K.i, _ahH);
+      an._charOf(K.p, _ahF);
+      _ahF.add(_ahH).multiplyScalar(0.5).add(_ahSh).applyMatrix4(M);
+    } else an._charOf(b.handL.bone, _ahF).add(_ahSh).applyMatrix4(M);
+    return this._segHullDeficit(hulls, _ahE, _ahF, false);
+  }
+
+  /** `_armRollOut` for the left arm: the upper arm turns about shoulder -> wrist,
+   *  the hand stays where it is on the haft. True if it turned. */
+  _armRollOutL(hulls, M, now) {
+    const an = this.an, b = an.b;
+    an._charOf(b.upArmL.bone, _eS);
+    an._charOf(b.loArmL.bone, _eE);
+    an._charOf(b.handL.bone, _eH);
+    _eAx.subVectors(_eH, _eS);
+    const d = _eAx.length();
+    if (d < 1e-4) return false;
+    _eAx.multiplyScalar(1 / d);
+    const along = _eT.subVectors(_eE, _eS).dot(_eAx);
+    _eC.copy(_eS).addScaledVector(_eAx, along);
+    _eU.subVectors(_eE, _eC);
+    const r = _eU.length();
+    if (r < 1e-3) return false;
+    _eU.multiplyScalar(1 / r);
+    _eV.crossVectors(_eAx, _eU);
+    const K = this._knuckleL;
+    if (K && K.i && K.p) {
+      an._charOf(K.i, _ahH);
+      an._charOf(K.p, _ahF);
+      _ahF.add(_ahH).multiplyScalar(0.5).add(_ahSh).applyMatrix4(M);
+    } else _ahF.copy(_eH).add(_ahSh).applyMatrix4(M);
+    an._charOf(b.pelvis.bone, _lbA);
+    an._charOf(b.neck1.bone, _lbB);
+    const step = Math.PI / 12;
+    let best = now, bestPhi = 0;
+    for (let i = 1; i <= 8; i++) {
+      for (let sg = -1; sg <= 1; sg += 2) {
+        const phi = sg * i * step;
+        _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
+        if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
+        /* never onto her belly: the turned forearm keeps A104's 0.10 m */
+        segSegN(_eT, _eH, _lbA, _lbB);
+        if (_sgNum[0] < 0.10) continue;
+        _ahE.copy(_eT).add(_ahSh).applyMatrix4(M);
+        const def = this._segHullDeficit(hulls, _ahE, _ahF, false);
+        if (def <= 1e-4) { best = 0; bestPhi = phi; i = 99; break; }
+        if (def < best - 0.01) { best = def; bestPhi = phi; }
+      }
+    }
+    if (bestPhi === 0) return false;
+    _eQ.setFromAxisAngle(_eAx, bestPhi);
+    an._rotQL(b.upArmL, _eQ);
+    return true;
   }
 
   /**
@@ -3254,22 +3463,23 @@ export class MeleeLayer {
     an._charOf(b.pelvis.bone, _lbA);
     an._charOf(b.neck1.bone, _lbB);
     segSegN(_lbE, _lbH, _lbA, _lbB); const g = _sgNum[0];
-    if (!(g < LEFT_FORE_CLEAR)) return;
+    if (!(g < LEFT_FORE_CLEAR)) return false;
     an._charOf(b.upArmL.bone, _lbS);
     _lbU.subVectors(_lbH, _lbS);
     const ul = _lbU.length();
-    if (ul < 1e-4) return;
+    if (ul < 1e-4) return false;
     _lbU.multiplyScalar(1 / ul);
     /* the elbow's radius about shoulder->wrist, and which way round is away from the axis */
     _lbF.subVectors(_lbE, _lbS);
     _lbF.addScaledVector(_lbU, -_lbF.dot(_lbU));
     const r = _lbF.length();
-    if (r < 1e-3) return;
+    if (r < 1e-3) return false;
     _lbV.crossVectors(_lbU, _lbF).multiplyScalar(1 / r);   // the elbow's tangent
     const away = _lbV.x * (_ss.x - _segNear.x) + _lbV.y * (_ss.y - _segNear.y) + _lbV.z * (_ss.z - _segNear.z);
     const sign = away >= 0 ? 1 : -1;
     const ang = Math.min(0.9, (LEFT_FORE_CLEAR - g) / r * 1.6) * sign;
     _pole.applyAxisAngle(_lbU, ang);
+    return true;
   }
 
   /**
@@ -3797,6 +4007,13 @@ export class MeleeLayer {
     const an = this.an, e = an.b.handR;
     if (e && this._held && this._guardOn && this.w >= 0.2) this._handOffSelf(an, e);
     if (e && this._held && this.w >= 0.2) this._armHullFinal(an);
+    /* ...AND THE LEFT HAND FOLLOWS THE HAFT THOSE TWO PASSES MOVED, then keeps its
+     * own forearm out of the metal (fix round 1: A101 light-2, A104, A106) */
+    if (e && this._held && this.w >= 0.2 && this._lhOnW > 1e-3) {
+      this._reseatLeft();
+      this._leftHullFinal(an);
+      this._dbg.forearmToSpineL = this._leftForeGap();
+    }
     /* THE BRAID GIVES WAY LAST, because the hand moved the haft above it.
      * Filmed with the order the other way round: `_hairOffHaft` pushed the
      * braid clear, then the hand guard rotated the haft back into it, and

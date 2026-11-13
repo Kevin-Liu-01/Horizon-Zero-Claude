@@ -328,7 +328,7 @@ const KITLINES = `
 `;
 
 /** The film helpers, for a builder's or a judge's extra film rows (`--extra`). */
-export const FILM_KIT = { NOHUD, FILM, FREEZE, STAGE, AIMLOCK, LOCKCAM, PIN, READY, gridOf };
+export const FILM_KIT = { NOHUD, FILM, FREEZE, STAGE, AIMLOCK, LOCKCAM, PIN, READY, SWING, PLACE, FRAME, gridOf };
 
 export const GATES = [
 
@@ -938,9 +938,17 @@ export const GATES = [
             const dr = d3(A.contactLegs.kneeR, B.contactLegs.kneeR);
             const legM = Math.max(dp, dl, dr);
             if (legM < worstLeg) worstLeg = legM;
+            /* GRADED LIVE TOO (fix round 1, the judge's finding): the pinned rows below
+             * hold each key for 60 frames, so a live swing that loses its legs (the step-in
+             * blending the walk clip in) still passed. Same 0.06 m bar as the pinned pairs. */
             legSep.push({ pair: A.label + '/' + B.label, pelvisM: +dp.toFixed(3),
               kneeLM: +dl.toFixed(3), kneeRM: +dr.toFixed(3), legM: +legM.toFixed(3),
-              gated: false });
+              gated: true, ok: legM >= 0.06 });
+            if (!(legM >= 0.06)) {
+              bad.push('LIVE: ' + A.label + ' and ' + B.label + ' land in the same stance — pelvis '
+                + dp.toFixed(3) + ' m, knees ' + dl.toFixed(3) + ' / ' + dr.toFixed(3) + ' m, worst axis '
+                + legM.toFixed(3) + ' m against a 0.06 m bar');
+            }
           } else {
             bad.push(A.label + '/' + B.label + ': no leg pose was sampled at contact, so the '
               + 'stance instrument is not running');
@@ -3599,5 +3607,346 @@ export const GATES = [
       show();
       e.timeScale = 0;
     })()`),
+  },
+
+  /* ------------------------------------------------ V47, the live half (fix round 1) */
+  {
+    id: 'V47-melee-swing-live', kind: 'visual', lane: 'melee',
+    reference: 'reference/r5/gates-perf/lance-windup, lance-strike, lance-follow (A-reference-set, W0b)',
+    settle: 400,
+    title: 'V47\'s live half: the four contacts of a REAL chain (light-1, light-2, light-3, heavy), each '
+      + 'frozen on the first frame at strike k >= 0.70 with nothing overridden (no poseState pin), '
+      + '3/4 on the top row and side underneath the same frozen frame',
+    criteria: "Eight captioned panels of the live swing (V47 builds its other twelve from pinned keys; these are the same beats played by melee.js and the animator with nothing overridden, frozen on the contact frame). Judge against the licence-clean strike and follow references, with V47's own criteria: the BODY does the work (hips into the beat, the lead knee bent with weight over it, the rear leg pushing, the step-in legible); the lance in her hands; light-1, light-2 and the heavy two-handed, light-3 one-handed; the four contacts four different actions (level thrust, sweep crossing her front, long overhand stab, low committed drive with the hips lowest). FAIL if she stands upright while only the arms move, if the legs are straight with the feet together, if two contacts are the same pose, if a hand floats off the haft.",
+    setup: placedSetup(['openGround'], `(async () => {
+      const C = __CTX__, p = C.player, e = C.engine;
+      C.input.enabled = true; C.state = 'playing';
+      ${NOHUD} ${FILM} ${FREEZE} ${STAGE} ${AIMLOCK} ${LOCKCAM} ${READY}
+      ${gridOf(4, 2, 0.50, [
+        '3/4 LIVE L1 CONTACT', '3/4 LIVE L2 CONTACT', '3/4 LIVE L3 CONTACT', '3/4 LIVE HEAVY CONTACT',
+        'SIDE LIVE L1 CONTACT', 'SIDE LIVE L2 CONTACT', 'SIDE LIVE L3 CONTACT', 'SIDE LIVE HEAVY CONTACT',
+      ])}
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      const M = C.combat.melee;
+      const SIDE = () => lockCam(-3.4, 0.55, 1.25, 0.98, 40, 0.55);
+      const Q34 = () => lockCam(-1.7, -2.5, 1.45, 0.95, 40, 0.45);
+      for (const m of (C.machines?.list || [])) {
+        if (m.alive && Math.hypot(m.position.x - p.position.x, m.position.z - p.position.z) < 12) {
+          m.position.x += 60; if (m.root) m.root.position.x = m.position.x;
+        }
+      }
+      await toReady(C);
+      Q34();
+      for (let i = 0; i < 30; i++) await frame();
+      const grabAt = async (slot) => {
+        got = slot; want = true;
+        const tq = performance.now();
+        while (want && performance.now() - tq < 1500) await frame();
+      };
+      const seen = [];
+      for (let b = 0; b < 4; b++) {
+        M.swing({ heavy: b === 3 });
+        const t0 = performance.now();
+        let froze = false;
+        while (performance.now() - t0 < 4000) {
+          await frame();
+          const k = M._phaseEnd > 1e-4 ? M._t / M._phaseEnd : 0;
+          if (!froze && M.phase === 'strike' && k >= 0.70) {
+            e.timeScale = 0;
+            froze = true;
+            const d = p.animator.debugMelee();
+            seen.push({ beat: d?.beat, k: +k.toFixed(2), lp: d?.leftPalmToHaft ?? null, legAmp: d?.legAmp ?? null, legW: d?.legW ?? null });
+            Q34(); for (let i = 0; i < 3; i++) await frame(); await grabAt(b);
+            SIDE(); for (let i = 0; i < 3; i++) await frame(); await grabAt(4 + b);
+            Q34();
+            e.timeScale = 1;
+          }
+          if (froze && !M.active) break;
+        }
+        if (!froze) seen.push({ beat: b, missed: true });
+        await new Promise((r) => setTimeout(r, 120));
+      }
+      window.__V47LIVE__ = seen;
+      got = 8;
+      show();
+      e.timeScale = 0;
+    })()`),
+  },
+
+  /* ------------------------------------- P-05 hit weight, the lance's clauses (W1) */
+  {
+    id: 'A-play-hitweight-lance', kind: 'action', lane: 'melee',
+    timeout: 150000, settle: 500,
+    title: 'ROUND5-LOOK A-play-hitweight, the clauses melee owns from W1 for lance hits: (1) frames at '
+      + 'timeScale <= 0.05 last 55 / 90 / 115 / 120 ms (light / heavy / heavy on a weak point / kill), each '
+      + 'within one frame; (3) 10 s of light spam at a machine: no 1 s window over 180 ms; (5) the kick peaks '
+      + '0.010-0.014 rad (light) and 0.019-0.025 rad (heavy), its sign along the swing tangent, and is back '
+      + 'within 0.001 rad <= 0.35 s after the hit',
+    setup: `__CTX__.input.enabled = true;`,
+    assert: staged([], placed(['openGround'], `(async () => {${HERO}
+      const C = __CTX__, p = C.player, an = p.animator, E = C.engine;
+      if (!an?.debugMelee) return { pass: null, detail: 'SKIP: no animator.debugMelee' };
+      ${FREEZE} ${STAGE} ${AIMLOCK} ${SWING} ${READY} ${PLACE}
+      const M = C.combat.melee;
+      const prevState = C.state; C.state = 'playing';
+      const S = C.settings || null, sk0 = S ? S.cameraShake : undefined;
+      if (S) S.cameraShake = 1;
+      const bad = [];
+      const watch = async (fire, ms) => {
+        let hit = null, tHit = null, camR = null, camU = null;
+        const on = (ev) => { if (!hit) { hit = ev; tHit = performance.now();
+          const m = C.camera.matrixWorld.elements; camR = [m[0], m[1], m[2]]; camU = [m[4], m[5], m[6]]; } };
+        C.events.on('melee-hit', on);
+        const fr = [];
+        const t0 = performance.now();
+        fire();
+        while (performance.now() - t0 < ms) {
+          await frame();
+          fr.push({ t: performance.now(), ts: E.timeScale, rp: p.recoil ? p.recoil.pitch : 0, ry: p.recoil ? p.recoil.yaw : 0 });
+          if (hit && performance.now() - tHit > 700 && !M.active) break;
+        }
+        C.events.off?.('melee-hit', on);
+        return { hit, tHit, fr, camR, camU };
+      };
+      const frameMs = (fr) => { const d = []; for (let i = 1; i < fr.length; i++) d.push(fr[i].t - fr[i - 1].t); d.sort((a, b) => a - b); return d.length ? d[d.length >> 1] : 16.7; };
+      const freezeOf = (fr, tHit) => {
+        let a = null, b = null;
+        for (const f of fr) {
+          if (f.t < tHit - 0.5) continue;
+          if (a == null) { if (f.ts <= 0.05) a = f.t; else if (f.t - tHit > 60) break; }
+          else if (f.ts > 0.05) { b = f.t; break; }
+        }
+        return a != null && b != null ? b - a : null;
+      };
+      const kickOf = (w) => {
+        let pk = 0, tPk = null, back = null, pkP = 0, pkY = 0;
+        for (const f of w.fr) {
+          if (f.t < w.tHit) continue;
+          const m = Math.hypot(f.rp, f.ry);
+          if (m > pk) { pk = m; tPk = f.t; pkP = f.rp; pkY = f.ry; }
+        }
+        for (const f of w.fr) if (tPk != null && f.t > tPk && Math.hypot(f.rp, f.ry) < 0.001) { back = f.t - w.tHit; break; }
+        return { peak: pk, pitch: pkP, yaw: pkY, backMs: back };
+      };
+      const stage = async () => {
+        const m = await place('sentry', 2.6);
+        if (m) { m.maxHealth = Math.max(m.maxHealth || 0, 5000); m.health = m.maxHealth; }
+        await toReady(C);
+        for (let i = 0; i < 30; i++) await frame();
+        return m;
+      };
+      const rows = [];
+      const runs = [['light', false, null], ['heavy', true, null], ['heavy-weak', true, 'weak'], ['light-kill', false, 'kill']];
+      const expect = { light: 55, heavy: 90, 'heavy-weak': 115, 'light-kill': 120 };
+      for (const [label, heavy, mod] of runs) {
+        const m = await stage();
+        if (!m) { rows.push({ label, staged: false }); bad.push(label + ': no machine could be staged'); continue; }
+        const td0 = m.takeDamage;
+        if (mod === 'weak') m.takeDamage = function (h) { const r = td0.call(this, h); return r ? Object.assign({}, r, { weak: true }) : { weak: true, damage: h.impact }; };
+        if (mod === 'kill') m.health = 1;
+        const w = await watch(() => M.swing({ heavy }), 3500);
+        m.takeDamage = td0; delete m.takeDamage;
+        const fm = frameMs(w.fr);
+        const fz = w.hit ? freezeOf(w.fr, w.tHit) : null;
+        const kk = w.hit ? kickOf(w) : null;
+        const tg = w.hit?.tangent || null;
+        let expYaw = 0, expPitch = 0;
+        if (tg && w.camR) {
+          const a = tg[0] * w.camR[0] + tg[1] * w.camR[1] + tg[2] * w.camR[2];
+          const b = tg[0] * w.camU[0] + tg[1] * w.camU[1] + tg[2] * w.camU[2];
+          const l = Math.hypot(a, b);
+          if (l < 0.2) { expPitch = 1; } else { expYaw = Math.abs(a / l) > 0.15 ? Math.sign(a) : 0; expPitch = Math.abs(b / l) > 0.15 ? Math.sign(b) : 0; }
+        }
+        const row = { label, hit: !!w.hit, heavy: w.hit?.heavy ?? null, weak: w.hit?.weak ?? null, killed: w.hit?.killed ?? null,
+          hitstopAsked: w.hit ? +(w.hit.hitstop * 1000).toFixed(1) : null, freezeMs: fz == null ? null : +fz.toFixed(1),
+          expectMs: expect[label], frameMs: +fm.toFixed(1),
+          kickPeak: kk ? +kk.peak.toFixed(4) : null, kickBackMs: kk && kk.backMs != null ? +kk.backMs.toFixed(0) : null,
+          kickArgs: w.hit ? [+w.hit.kickPitch.toFixed(4), +w.hit.kickYaw.toFixed(4)] : null,
+          recoilAtPeak: kk ? [+kk.pitch.toFixed(4), +kk.yaw.toFixed(4)] : null,
+          tangent: tg ? tg.map((v) => +v.toFixed(3)) : null, expectSign: { pitch: expPitch, yaw: expYaw } };
+        rows.push(row);
+        if (!w.hit) { bad.push(label + ': the swing never landed'); continue; }
+        if (mod === 'kill' && !w.hit.killed) bad.push(label + ': the hit did not kill');
+        if (mod === 'weak' && !w.hit.weak) bad.push(label + ': the hit was not on a weak point');
+        if (fz == null) bad.push(label + ': no hit-stop frames were seen');
+        else if (!(Math.abs(fz - expect[label]) <= Math.max(17, fm * 1.05))) bad.push(label + ': the freeze lasted ' + fz.toFixed(1) + ' ms against ' + expect[label] + ' (one frame ' + fm.toFixed(1) + ' ms) — clause 1');
+        if (label === 'light' || label === 'heavy') {
+          const lo = heavy ? 0.019 : 0.010, hi = heavy ? 0.025 : 0.014;
+          if (!(kk.peak >= lo && kk.peak <= hi)) bad.push(label + ': the kick peaked at ' + kk.peak.toFixed(4) + ' rad (bar ' + lo + '-' + hi + ') — clause 5');
+          if (!(kk.backMs != null && kk.backMs <= 350)) bad.push(label + ': the kick was back within 0.001 rad after ' + kk.backMs + ' ms (bar 350) — clause 5');
+          /* addRecoil(pitch, yaw): the lens spring's pitch runs NEGATIVE for a positive pitch argument */
+          const sp = Math.sign(w.hit.kickPitch), sy = Math.sign(w.hit.kickYaw);
+          if (expPitch && sp !== expPitch) bad.push(label + ': the kick pitches ' + sp + ' against the tangent\\'s ' + expPitch + ' — clause 5');
+          if (expYaw && sy !== expYaw) bad.push(label + ': the kick yaws ' + sy + ' against the tangent\\'s ' + expYaw + ' — clause 5');
+          if (sp && Math.abs(kk.pitch) > 0.002 && Math.sign(kk.pitch) !== -sp) bad.push(label + ': the lens pitched the other way from the kick asked');
+          if (sy && Math.abs(kk.yaw) > 0.002 && Math.sign(kk.yaw) !== sy) bad.push(label + ': the lens yawed the other way from the kick asked');
+        }
+      }
+      /* (3) 10 s of light spam at a machine: real LMB clicks every 100 ms */
+      let spam = null;
+      {
+        const m = await stage();
+        if (!m) bad.push('spam: no machine could be staged');
+        else {
+          let hits = 0;
+          const on = (ev) => { if (ev.machine === m) hits++; };
+          C.events.on('melee-hit', on);
+          const fr = [];
+          const t0 = performance.now();
+          let down = false, lastT = t0;
+          while (performance.now() - t0 < 10000) {
+            await frame();
+            const now = performance.now();
+            if (now - lastT >= 50) { lastT = now; down = !down; if (down) C.input.mouse.buttons |= 1; else C.input.mouse.buttons &= ~1; }
+            fr.push({ t: now, ts: E.timeScale });
+            if (m.health < m.maxHealth * 0.5) m.health = m.maxHealth;
+          }
+          C.input.mouse.buttons &= ~1;
+          C.events.off?.('melee-hit', on);
+          const fz = [];
+          for (let i = 0; i + 1 < fr.length; i++) if (fr[i].ts <= 0.05) fz.push([fr[i].t, fr[i + 1].t]);
+          let worst = 0, worstAt = 0;
+          for (let i = 0; i < fr.length; i++) {
+            const a = fr[i].t, b = a + 1000;
+            let sum = 0;
+            for (const [x, y] of fz) { const lo = Math.max(x, a), hi = Math.min(y, b); if (hi > lo) sum += hi - lo; }
+            if (sum > worst) { worst = sum; worstAt = a - t0; }
+          }
+          spam = { hits, frozenFrames: fz.length, worstWindowMs: +worst.toFixed(1), worstWindowAtMs: +worstAt.toFixed(0), frameMs: +frameMs(fr).toFixed(1) };
+          if (!(hits >= 8)) bad.push('spam: only ' + hits + ' hits landed in 10 s — the clause proves nothing');
+          if (!(worst <= 180 + frameMs(fr) * 0.5)) bad.push('spam: ' + worst.toFixed(1) + ' ms of freeze in one 1 s window (bar 180) — clause 3');
+        }
+      }
+      /* clause 7 is combat-kit's from W2; reported here for the lance only */
+      let shakeOff = null;
+      if (S) {
+        S.cameraShake = 0;
+        const m = await stage();
+        if (m) { const w = await watch(() => M.swing({}), 3000); const kk = w.hit ? kickOf(w) : null; shakeOff = { hit: !!w.hit, kickPeak: kk ? kk.peak : null }; }
+        S.cameraShake = sk0;
+      }
+      C.state = prevState;
+      return { pass: bad.length === 0, detail: { bad, rows, spam, shakeOff,
+        note: 'Clauses 1, 3 and 5 of ROUND5-LOOK A-play-hitweight for lance hits (melee W1; combat-kit owns the row from W2). '
+          + 'The weak point is forced through the machine\\'s own result (takeDamage wrapped to report weak) and the kill by '
+          + 'setting health to 1; the durations are melee.js\\'s. timeScale is read on every rendered frame.' } };
+    })()`)),
+  },
+
+  /* ------------------------------------- P-04 bursts, the lance's clauses (W1) */
+  {
+    id: 'A-play-burst-lance', kind: 'action', lane: 'melee',
+    timeout: 90000, settle: 500,
+    title: 'ROUND5-LOOK P-04 (its impact row), the clauses melee owns from W1 for lance hits: a heavy on a weak point '
+      + 'at 2.6 m, frozen at +60 ms: (2) >= 70 % of the VFX mask (an A/B with the particle pools hidden) within '
+      + '0.9 m of the impact; (6) the struck part +15..+40 % mean luminance at +30 ms and back within 2 % by +150 ms '
+      + '(needs instruments-a\'s machine.flashPart)',
+    setup: `__CTX__.input.enabled = true;`,
+    assert: staged([], placed(['openGround'], `(async () => {${HERO}
+      const C = __CTX__, p = C.player, an = p.animator, E = C.engine;
+      if (!an?.debugMelee) return { pass: null, detail: 'SKIP: no animator.debugMelee' };
+      ${FREEZE} ${STAGE} ${AIMLOCK} ${SWING} ${READY} ${PLACE}
+      const M = C.combat.melee, cb = C.combat;
+      const prevState = C.state; C.state = 'playing';
+      const gl = C.renderer.getContext();
+      const grab = () => new Promise((res) => {
+        const h = () => {
+          const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
+          const px = new Uint8Array(W * H * 4);
+          gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          const i = E.onAfterRender.indexOf(h); if (i >= 0) E.onAfterRender.splice(i, 1);
+          res({ px, W, H });
+        };
+        E.onAfterRender.push(h);
+      });
+      const pools = ['sparks', 'chips', 'trail', 'dirt', 'smoke'].map((k) => cb[k]?.mesh).filter(Boolean);
+      const setPools = (v) => { for (const m of pools) m.visible = v; };
+      const m = await place('sentry', 2.6);
+      if (!m) { C.state = prevState; return { pass: null, detail: 'SKIP: no machine could be staged' }; }
+      m.maxHealth = Math.max(m.maxHealth || 0, 5000); m.health = m.maxHealth;
+      await toReady(C);
+      for (let i = 0; i < 30; i++) await frame();
+      const td0 = m.takeDamage;
+      m.takeDamage = function (h) { const r = td0.call(this, h); return r ? Object.assign({}, r, { weak: true }) : { weak: true, damage: h.impact }; };
+      const hasFlash = typeof m.flashPart === 'function';
+      let hit = null, tHit = null;
+      const on = (ev) => { if (!hit && ev.machine === m) { hit = ev; tHit = performance.now(); } };
+      C.events.on('melee-hit', on);
+      M.swing({ heavy: true });
+      const t0 = performance.now();
+      let lum = null;
+      while (performance.now() - t0 < 4000 && !hit) await frame();
+      const bad = [];
+      let mask = null;
+      if (!hit) bad.push('the heavy never landed');
+      else {
+        /* (6) +30 ms: flash on vs off, pools hidden, the machine's own pixels from a third frame with it hidden */
+        if (hasFlash) {
+          while (performance.now() - tHit < 30) await new Promise((r) => setTimeout(r, 1));
+          E.requestTimeScale('studio', 0);
+          setPools(false);
+          const fx = m._hullFlash, until0 = fx ? fx.until : 0;
+          const A = await grab();
+          if (fx) fx.until = 0;
+          const B = await grab();
+          const vis0 = m.root ? m.root.visible : true;
+          if (m.root) m.root.visible = false;
+          const Cc = await grab();
+          if (m.root) m.root.visible = vis0;
+          if (fx) fx.until = until0;
+          let n = 0, la = 0, lb = 0;
+          for (let i = 0; i < A.px.length; i += 4) {
+            const d = Math.abs(B.px[i] - Cc.px[i]) + Math.abs(B.px[i + 1] - Cc.px[i + 1]) + Math.abs(B.px[i + 2] - Cc.px[i + 2]);
+            if (d < 30) continue;
+            n++;
+            la += 0.2126 * A.px[i] + 0.7152 * A.px[i + 1] + 0.0722 * A.px[i + 2];
+            lb += 0.2126 * B.px[i] + 0.7152 * B.px[i + 1] + 0.0722 * B.px[i + 2];
+          }
+          lum = { hullPx: n, rise: n ? +(la / Math.max(1, lb) - 1).toFixed(3) : null };
+          setPools(true);
+          E.requestTimeScale('studio', null);
+        }
+        /* (2) +60 ms: the mask of what the particle pools add, and how much of it is near the impact */
+        while (performance.now() - tHit < 60) await new Promise((r) => setTimeout(r, 1));
+        E.requestTimeScale('studio', 0);
+        const A = await grab();
+        setPools(false);
+        const B = await grab();
+        setPools(true);
+        const V = p.position.constructor;
+        const P = new V(hit.point.x, hit.point.y, hit.point.z);
+        const cm = C.camera.matrixWorld.elements;
+        const Q = P.clone().add(new V(cm[0], cm[1], cm[2]).multiplyScalar(0.9));
+        P.project(C.camera); Q.project(C.camera);
+        const W = A.W, H = A.H;
+        const px = (P.x + 1) * 0.5 * W, py = (P.y + 1) * 0.5 * H;
+        const r = Math.hypot((Q.x + 1) * 0.5 * W - px, (Q.y + 1) * 0.5 * H - py);
+        let tot = 0, near = 0;
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const d = Math.abs(A.px[i] - B.px[i]) + Math.abs(A.px[i + 1] - B.px[i + 1]) + Math.abs(A.px[i + 2] - B.px[i + 2]);
+            if (d < 36) continue;
+            tot++;
+            if (Math.hypot(x - px, y - py) <= r) near++;
+          }
+        }
+        E.requestTimeScale('studio', null);
+        mask = { maskPx: tot, coverPct: +(tot / (W * H) * 100).toFixed(2), nearFrac: tot ? +(near / tot).toFixed(3) : null,
+          hitPx: [+px.toFixed(0), +(H - py).toFixed(0)], radiusPx: +r.toFixed(1) };
+        if (!(tot > 50)) bad.push('the VFX mask is empty (' + tot + ' px) — nothing to grade');
+        else if (!(near / tot >= 0.70)) bad.push((near / tot * 100).toFixed(1) + ' % of the VFX mask lies within 0.9 m of the impact (bar 70 %) — clause 2');
+      }
+      C.events.off?.('melee-hit', on);
+      m.takeDamage = td0; delete m.takeDamage;
+      C.state = prevState;
+      const pending = [];
+      if (!hasFlash) pending.push('clause 6 PENDING-instruments-a: machine.flashPart is not on this tree (P-04 d; instruments-a W1 grant)');
+      else if (!lum || lum.rise == null) bad.push('clause 6: no machine pixels were read');
+      else if (!(lum.rise >= 0.15 && lum.rise <= 0.40)) bad.push('clause 6: the struck part rose ' + (lum.rise * 100).toFixed(1) + ' % at +30 ms (bar 15-40 %)');
+      return { pass: bad.length === 0 ? (pending.length ? null : true) : false,
+        detail: { bad, pending, hit: hit ? { heavy: hit.heavy, weak: hit.weak, hitstopMs: +(hit.hitstop * 1000).toFixed(1), tangent: hit.tangent } : null, mask, flash: lum,
+          note: 'The VFX itself is combat.js impactFeedback (combat-kit, W2: palette, bursts, the 60 % tangent bias); melee passes the tangent, the heavy x1.4 and calls flashPart.' } };
+    })()`)),
   },
 ];
