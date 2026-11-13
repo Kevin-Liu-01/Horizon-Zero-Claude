@@ -27,7 +27,7 @@ export async function build({ out = ROOT } = {}) {
         case 'cuffs': return 0.8;
         case 'smock': return sstep(1.46, 1.52, y) * 0.5;
         case 'sash': return 0.6;
-        case 'crusthem': return 0.95;
+        case 'crusthem': return sstep(0.74, 0.63, y) * 0.75 + 0.15;
         default: return 0;
       }
     },
@@ -38,7 +38,7 @@ export async function build({ out = ROOT } = {}) {
 /** Pan III's pieces on Pan I's base (exported for the offline checks). */
 export const addPieces = async (base) => {
       const { trim, J, bodyPart } = base;
-      const surf = new Field(base.parts.filter((q) => q.slot === 'smock' || q.slot === 'sling' || q.slot === 'sleeves'), 0.04);
+      const surf = new Field(base.parts.filter((q) => q.slot === 'smock' || q.slot === 'sling' || q.slot === 'harness' || q.slot === 'sleeves' || q.slot === 'armband'), 0.04);
       const scutes = emptyPart('scutes', { trim: true });
       const rc = trim.rect('celadon');
       // FIX ROUND 1 (judges: "at 20 m Pan III has Pan I's silhouette, separated only by a whiter hem and two jade
@@ -49,10 +49,15 @@ export const addPieces = async (base) => {
       // stays a rigid plate), so a raised bow or draw arm lifts them instead of rising 2-4 cm through them
       for (const side of [1, -1]) {
         const jc = J(side > 0 ? 'clavicle_l' : 'clavicle_r'), ju = J(side > 0 ? 'upperarm_l' : 'upperarm_r');
+        // (W1 exit, judges: "weighted to the upper arm, against bible §4.1/§4.2: a constant two-bone blend is not rigid
+        // when the bones turn apart"): every tile is RIGID on its clavicle again. The clearance a raised arm needs comes
+        // from the shape: each lame stands further off the deltoid the further out it lies (2.0 / 3.2 / 4.6 cm at its
+        // outer edge), so the shrug of a full draw rises under them, not through them, and the mantle is broad enough to
+        // change her shoulder line in black fill
         const TILES = [
-          { x0: 0.136, x1: 0.192, r0: 0.062, r1: 0.066, arc: 0.92, drop: 0.004, m0: 0.013, m1: 0.018, arm: 0.12 },
-          { x0: 0.170, x1: 0.236, r0: 0.068, r1: 0.076, arc: 1.0, drop: 0.012, m0: 0.016, m1: 0.024, arm: 0.3 },
-          { x0: 0.212, x1: 0.300, r0: 0.074, r1: 0.094, arc: 1.06, drop: 0.034, m0: 0.019, m1: 0.034, arm: 0.5 },
+          { x0: 0.088, x1: 0.158, r0: 0.07, r1: 0.084, arc: 1.3, drop: 0.004, m0: 0.012, m1: 0.016, arm: 0 },
+          { x0: 0.132, x1: 0.2, r0: 0.074, r1: 0.09, arc: 1.22, drop: 0.012, m0: 0.016, m1: 0.026, arm: 0 },
+          { x0: 0.172, x1: 0.236, r0: 0.08, r1: 0.096, arc: 1.12, drop: 0.026, m0: 0.022, m1: 0.04, arm: 0 },
         ];
         TILES.forEach((T, i) => {
           const COLS = 6;
@@ -82,6 +87,7 @@ export const addPieces = async (base) => {
       const guards = emptyPart('guards', { trim: true });
       const bootF = new Field(base.parts.filter((q) => q.slot === 'boots' || q.slot === 'straps'), 0.03);
       const rg = trim.rect('crust');
+      const rl = trim.rect('linen');
       for (const side of [1, -1]) {
         const cx = side * 0.111, cz = -0.06;
         const COLS = 7;
@@ -92,7 +98,7 @@ export const addPieces = async (base) => {
           outer.push([cx + Math.cos(a) * 0.064, 0.17, cz + Math.sin(a) * 0.09]);
         }
         drapeInto(guards, bootF, inner, outer, {
-          rows: 4, margin: 0.022, marginAt: (t) => mix(0.03, 0.019, t),
+          rows: 3, margin: 0.022, marginAt: (t) => mix(0.03, 0.019, t),
           uvOf: (t, c) => [rg[0] + rg[2] * c, rg[1] + rg[3] * t],
           skinOf: rigid(J(side > 0 ? 'calf_l' : 'calf_r')),
         });
@@ -104,15 +110,18 @@ export const addPieces = async (base) => {
       const skirtF = new Field(base.parts.filter((q) => q.slot === 'skirt'), 0.04);
       const slits = [-Math.PI / 2, 0.02, Math.PI / 2, Math.PI - 0.02];
       const hems = skirtPanels((slot) => emptyPart(slot, { trim: true }), skirtF, base.joints, {
-        slot: 'crusthem', yTop: 0.79, yHem: 0.618, off: 0.007, flare: 0.05, slits, rows: 2, colsPer: 12, ripA: 0.003, seed: 21,
-        floorY: 0.762, overlap: 0.05, weightY: () => 0.92, lip: 0.003,
+        // (W1 exit, judges: "the hem band reads as fleece or fur trim", "flares as a stiff white plank off the left thigh"):
+        // it is linen stiffened by brine, hanging as cloth: soft folds of its own, four rows, the skirt's thigh share easing
+        // in down its length as the hem it laps does, on the sheet's linen cell (the crust is the `_SALT` the shader grows)
+        slot: 'crusthem', yTop: 0.79, yHem: 0.622, off: 0.006, flare: 0.03, slits, rows: 3, colsPer: 12, ripA: 0.0075, seed: 21,
+        floorY: 0.762, overlap: 0.05, weightY: (y) => 0.86 + 0.06 * Math.min(1, Math.max(0, (0.76 - y) / 0.14)), lip: 0.003,
         hem: (th, y0) => y0 + 0.014 * Math.pow(Math.abs(Math.sin(th)), 3) + 0.006 * Math.cos(5 * th + 0.4),
       });
       for (const h of hems) {
-        // the panels' metric uv onto the crust cell (mirrored along the hem, down the band)
+        // the panels' metric uv onto the linen cell (mirrored along the hem, down the band)
         for (let i = 0; i < h.uv.length; i += 2) {
           const f = h.uv[i] / 0.12, tri = Math.abs((f % 2) - 1);
-          h.uv[i] = rg[0] + rg[2] * tri; h.uv[i + 1] = rg[1] + rg[3] * Math.min(1, Math.max(0, h.uv[i + 1] / 0.19));
+          h.uv[i] = rl[0] + rl[2] * tri; h.uv[i + 1] = rl[1] + rl[3] * Math.min(1, Math.max(0, h.uv[i + 1] / 0.19));
         }
       }
       void V;

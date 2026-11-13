@@ -80,9 +80,9 @@ const headMats = {
   }),
 };
 const fletchMats = {
-  // gull feather
+  // reed arrow, orchil-dyed fletching (C-08, ROUND5-LOOK: #6B3F73; only element ammo glows, so no emissive)
   hunter: new THREE.MeshStandardMaterial({
-    color: 0xf2eee6, roughness: 0.85, emissive: 0x6e6a60, emissiveIntensity: 0.25,
+    color: 0x6b3f73, roughness: 0.85,
   }),
   hardpoint: new THREE.MeshStandardMaterial({
     color: 0xffb45e, roughness: 0.85, emissive: 0xc86a1e, emissiveIntensity: 0.6,

@@ -13,6 +13,7 @@
  * hide bit, so a cut that bares the arms (C-06's sleeveless Starter) shows them without a rebuild of brea.glb.
  */
 import path from 'node:path';
+import sharp from 'sharp';
 import { ROOT, io } from '../../lib/face.mjs';
 
 const BREA = () => path.join(ROOT, 'public/models/hero/brea.glb');
@@ -64,7 +65,22 @@ export async function breaBody(doc) {
       nrm[i * 3] = nx / l; nrm[i * 3 + 1] = ny / l; nrm[i * 3 + 2] = nz / l;
       for (let k = 0; k < 4; k++) { jn[i * 4 + k] = joints[j4[k]].getName(); wg[i * 4 + k] = w4[k]; }
     }
-    _cache = { pos, nrm, jn, wg, idx: Array.from(prim.getIndices().getArray()), count: n };
+    // the skin's own albedo at each vertex (its base colour map at the vertex uv): the cover mask reads it to cull the
+    // stock body's painted underwear where a cut opens over it (C-06's armholes)
+    const T = prim.getMaterial()?.getBaseColorTexture();
+    const lum = new Float32Array(n).fill(1);
+    if (T && prim.getAttribute('TEXCOORD_0')) {
+      const { data, info } = await sharp(Buffer.from(T.getImage())).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      const UV = prim.getAttribute('TEXCOORD_0'), uv = [0, 0];
+      for (let i = 0; i < n; i++) {
+        UV.getElement(i, uv);
+        const x = Math.min(info.width - 1, Math.max(0, Math.floor((uv[0] - Math.floor(uv[0])) * info.width)));
+        const y = Math.min(info.height - 1, Math.max(0, Math.floor((uv[1] - Math.floor(uv[1])) * info.height)));
+        const k = (y * info.width + x) * 3;
+        lum[i] = (0.2126 * data[k] + 0.7152 * data[k + 1] + 0.0722 * data[k + 2]) / 255;
+      }
+    }
+    _cache = { pos, nrm, jn, wg, idx: Array.from(prim.getIndices().getArray()), count: n, lum };
   }
   const C = _cache;
   const names = doc.getRoot().listSkins()[0].listJoints().map((j) => j.getName());
@@ -80,7 +96,7 @@ export async function breaBody(doc) {
     }
     if (s > 0) for (let k = 0; k < 4; k++) wgt[i * 4 + k] /= s;
   }
-  return { slot: 'brea', pos: Array.from(C.pos), nrm: Array.from(C.nrm), uv: [], jnt, wgt, idx: C.idx.slice(), count: n, tris: C.idx.length / 3 };
+  return { slot: 'brea', pos: Array.from(C.pos), nrm: Array.from(C.nrm), uv: [], jnt, wgt, idx: C.idx.slice(), count: n, tris: C.idx.length / 3, lum: C.lum };
 }
 
 /**
@@ -89,7 +105,7 @@ export async function breaBody(doc) {
  * under a piece by less than `inside`. Returns { count, tris, rle } (the mask run-length coded, base64 of uint16 runs,
  * alternating 0- and 1-runs, starting with 0).
  */
-export function coverMask(body, parts, { reach = 0.08, skip = new Set(), keep = null } = {}) {
+export function coverMask(body, parts, { reach = 0.08, skip = new Set(), keep = null, also = null } = {}) {
   const tris = [];
   for (const p of parts) {
     if (skip.has(p.slot) || !p.pos.length) continue;
@@ -130,7 +146,7 @@ export function coverMask(body, parts, { reach = 0.08, skip = new Set(), keep = 
         const v = (d[0] * qv[0] + d[1] * qv[1] + d[2] * qv[2]) / det;
         if (v < 0 || u + v > 1) continue;
         const dist = (e2[0] * qv[0] + e2[1] * qv[1] + e2[2] * qv[2]) / det;
-        if (dist > -0.004 && dist < reach) return true;
+        if (dist > -0.012 && dist < reach) return true;
       }
     }
     return false;
@@ -140,7 +156,7 @@ export function coverMask(body, parts, { reach = 0.08, skip = new Set(), keep = 
   for (let i = 0; i < n; i++) {
     if (keep && keep(body.pos[i * 3], body.pos[i * 3 + 1], body.pos[i * 3 + 2])) continue;
     const o = [body.pos[i * 3], body.pos[i * 3 + 1], body.pos[i * 3 + 2]], d = [body.nrm[i * 3], body.nrm[i * 3 + 1], body.nrm[i * 3 + 2]];
-    mask[i] = hit(o, d) ? 1 : 0;
+    mask[i] = hit(o, d) || (also && also(i)) ? 1 : 0;
   }
   const runs = [];
   let cur = 0, len = 0;

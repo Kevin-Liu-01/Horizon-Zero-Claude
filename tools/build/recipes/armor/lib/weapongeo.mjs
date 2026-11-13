@@ -174,14 +174,16 @@ export function lanceGeo(cell, { lod = 0 } = {}) {
 
 /* --------------------------------------------------------------- the bow */
 
-export const BOW = { length: 1.45, brace: 0.16, tipK: 0.13, tipC: 0.06 };
+export const BOW = { length: 1.45, brace: 0.16, tipK: 0.13, tipC: 0.06, reflex: 0.72 };
 
 /** The stave's centre line: t in [-1, 1], y up, z toward the target (+) / archer (-). */
 export function stave(t) {
   const a = Math.abs(t);
   const half = (BOW.length / 2) * 1.0267;       // nock groove to nock groove along the back = BOW.length (bible: 1.45 m)
   const y = t * half * (1 - 0.05 * a * a);
-  const z = -BOW.brace * Math.pow(a, 1.9) + 0.022 * Math.pow(a, 6);
+  // (C-08: the tips are reflexed: past 0.86 of the limb they turn back toward the target, about 13 degrees off the
+  // limb's line, as a steamed juniper self-bow's are)
+  const z = -BOW.brace * Math.pow(a, 1.9) + 0.022 * Math.pow(a, 6) + BOW.reflex * Math.max(0, a - 0.86) ** 2;
   // wind-twisted: a small S out of the plane, zero at the grip and the tips
   const x = 0.013 * Math.sin(Math.PI * t) * Math.sin(Math.PI * a * 0.9 + 0.3);
   return [x, y, z];

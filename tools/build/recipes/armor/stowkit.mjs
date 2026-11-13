@@ -121,7 +121,8 @@ function bracerGeo(cell, r = 0.036, len = 0.17, skinR = null) {
       const y = Math.sin(th), z = Math.cos(th);
       const lip = i === 0 || i === ROWS ? 1.0015 : 0;
       // a stiff cuff, but it stands off the forearm under it everywhere: the skin never comes through
-      const rr = skinR ? Math.max(skinR(f, th) + 0.003, r * 0.8) * (1 + 0.04 * Math.pow(Math.abs(f - 0.12), 1.5)) + lip * 0.002 : r * flare * (lip ? 1.012 : 1);
+      // (W1 exit: 7.5 mm off her skin: it is laced over the outfit's wound forearm wrap, C-06)
+      const rr = skinR ? Math.max(skinR(f, th) + 0.0075, r * 0.8) * (1 + 0.04 * Math.pow(Math.abs(f - 0.12), 1.5)) + lip * 0.002 : r * flare * (lip ? 1.012 : 1);
       shell.pos.push(x, y * rr, z * rr);
       shell.nrm.push(0, y, z);
       shell.uv.push(rect[0] + f * rect[2], rect[1] + (k / SEG) * rect[3]);
@@ -141,49 +142,42 @@ function bracerGeo(cell, r = 0.036, len = 0.17, skinR = null) {
     const [X, Y, Z] = basisY(dir, [1, 0, 0]);
     merge(g, place(lathe([[0.0016, 0], [0.0016, Math.hypot(...dir)]], { sides: 3, rect: cord }), X, Y, Z, P0));
   }
-  // the crescent: outer arc from horn to horn round the belly, inner arc the moon's bite
+  // the crescent (W1 exit, judges: "the crescent bracer plate stands off her left forearm as a large black curved spike
+  // ... like a claw blade"): a cast bronze plate LYING ON the bracer's back, low and close to the arm. Its two horns
+  // point along the forearm, to the wrist and to the elbow; its belly bulges round the dorsal ridge; it stands 3.5 mm
+  // proud of the leather with a bevelled edge, so it reads as a bronze plate on the cuff (the 64 px cue, bible §3.2,
+  // by its bright bronze against the dark leather, not by a fin)
+  const mix = (a, b, t) => a + (b - a) * t;
   const br = cell('bronzeCast');
-  const N = 22, t = 0.0024, base = r * 1.0;
-  const x0 = len * 0.08, x1 = len * 0.92, midX = (x0 + x1) / 2, half = (x1 - x0) / 2;
-  const hornH = 0.108, bellyH = 0.03;                     // horns 10.8 cm proud, the belly's bite 3 cm (the 64 px cue, §3.2)
-  const outerY = (a) => base - 0.006;                     // the outer arc lies on the leather
-  const innerY = (a) => base + bellyH + (hornH - bellyH) * Math.pow(Math.abs(a), 1.9);
-  void outerY;
-  const taper = (a) => 1 - 0.8 * Math.pow(Math.abs(a), 4);
-  const faces = (f) => {
-    const q = G();
-    for (let i = 0; i <= N; i++) {
-      const a = -1 + 2 * (i / N), x = midX + a * half * Math.cos(a * 0.25);
-      const yIn = innerY(a);
-      // the crescent narrows to a point at each horn: its lower edge rises to meet the top
-      const yLo = base - 0.006 + (yIn - base + 0.006) * Math.pow(Math.abs(a), 3.2) * 0.86;
-      const tk = t * taper(a);
-      q.pos.push(x, yLo, f * tk, x, yIn, f * tk * 0.6);
-      q.nrm.push(0, 0, f, 0, 0, f);
-      const u = i / N;
-      q.uv.push(br[0] + u * br[2], br[1] + br[3], br[0] + u * br[2], br[1]);
+  const NU = 16, x0 = len * 0.1, x1 = len * 0.9, half = (x1 - x0) / 2, midX = (x0 + x1) / 2;
+  const A = 1.05, phi0 = -0.42;                          // the arc reach round the arm (rad) and where it starts
+  const radAt = (f, th) => (skinR ? Math.max(skinR(f, th) + 0.0075, r * 0.8) * (1 + 0.04 * Math.pow(Math.abs(f - 0.12), 1.5)) : r);
+  const pt = (x, ph, lift) => { const th = Math.PI / 2 + ph, rr = radAt(x / len, th) + lift; return [x, Math.sin(th) * rr, Math.cos(th) * rr]; };
+  const plate = G();
+  const rowsP = [[0, 0.0012], [0.12, 0.0035], [0.88, 0.0035], [1, 0.0012]];      // across: bevel, face, face, bevel
+  for (let i = 0; i <= NU; i++) {
+    const u = -1 + 2 * (i / NU), x = midX + u * half;
+    const s = Math.sqrt(Math.max(0, 1 - u * u));
+    const outer = phi0 + A * s, inner = phi0 + A * 0.5 * Math.pow(s, 1.25);
+    for (const [f, lift] of rowsP) {
+      const ph = mix(inner, outer, f);
+      const q = pt(x, ph, lift);
+      plate.pos.push(...q);
+      plate.nrm.push(0, Math.sin(Math.PI / 2 + ph), Math.cos(Math.PI / 2 + ph));
+      plate.uv.push(br[0] + br[2] * (i / NU), br[1] + br[3] * f);
     }
-    for (let i = 0; i < N; i++) { const p = i * 2; if (f > 0) q.idx.push(p, p + 2, p + 1, p + 1, p + 2, p + 3); else q.idx.push(p, p + 1, p + 2, p + 1, p + 3, p + 2); }
-    return q;
-  };
-  merge(g, faces(1)); merge(g, faces(-1));
-  // its bright top edge
-  const e = G();
-  for (let i = 0; i <= N; i++) {
-    const a = -1 + 2 * (i / N), x = midX + a * half * Math.cos(a * 0.25), y = innerY(a), tk = t * taper(a) * 0.6;
-    e.pos.push(x, y, tk, x, y, -tk);
-    const nx = -Math.sign(a) * 0.6 * Math.pow(Math.abs(a), 0.9);
-    const l = Math.hypot(nx, 1);
-    e.nrm.push(nx / l, 1 / l, 0, nx / l, 1 / l, 0);
-    e.uv.push(br[0] + (i / N) * br[2], br[1], br[0] + (i / N) * br[2], br[1] + 0.15 * br[3]);
   }
-  for (let i = 0; i < N; i++) { const p = i * 2; e.idx.push(p, p + 2, p + 1, p + 1, p + 2, p + 3); }
-  merge(g, e);
-  // two rivets where the crescent meets the leather
-  for (const a of [-0.34, 0.34]) {
-    const x = midX + a * half, y = base + 0.003;
-    merge(g, place(lathe([[0.0001, 0.0038], [0.0035, 0.0028], [0.0042, 0]], { sides: 6, rect: cell('brass') }), [1, 0, 0], [0, 0, 1], [0, -1, 0], [x, y, t * 0.9]));
-    merge(g, place(lathe([[0.0001, 0.0038], [0.0035, 0.0028], [0.0042, 0]], { sides: 6, rect: cell('brass') }), [1, 0, 0], [0, 0, -1], [0, 1, 0], [x, y, -t * 0.9]));
+  for (let i = 0; i < NU; i++) for (let k = 0; k < rowsP.length - 1; k++) {
+    const a = i * rowsP.length + k, b = a + 1, c = a + rowsP.length, d = c + 1;
+    plate.idx.push(a, c, b, b, c, d);
+  }
+  merge(g, plate);
+  // two bronze rivets through it into the leather
+  for (const u of [-0.42, 0.42]) {
+    const x = midX + u * half, s = Math.sqrt(1 - u * u), ph = phi0 + A * 0.75 * s;
+    const c0 = pt(x, ph, 0.0035), n = v3.norm([0, Math.sin(Math.PI / 2 + ph), Math.cos(Math.PI / 2 + ph)]);
+    const [X, , Z] = basisY(n, [1, 0, 0]);
+    merge(g, place(lathe([[0.0001, 0.0018], [0.0028, 0.0012], [0.0032, 0]], { sides: 6, rect: cell('brass') }), X, n, Z, c0));
   }
   return g;
 }

@@ -52,7 +52,7 @@ export async function build({ out = ROOT } = {}) {
 /** Pan II's pieces on Pan I's base (exported for the offline checks). */
 export const addPieces = async (base) => {
       const { trim, J, bodyPart, clothField } = base;
-      const surf = new Field(base.parts.filter((p) => p.slot === 'smock' || p.slot === 'sling'), 0.04);
+      const surf = new Field(base.parts.filter((p) => p.slot === 'smock' || p.slot === 'sling' || p.slot === 'harness'), 0.04);
       const jS3 = J('spine_03'), jCl = J('clavicle_l'), jCr = J('clavicle_r');
       // the capelet: rigid across the shoulders (spine_03 easing onto the clavicles), never on the upper arm
       const cap = emptyPart('capelet', { trim: true });

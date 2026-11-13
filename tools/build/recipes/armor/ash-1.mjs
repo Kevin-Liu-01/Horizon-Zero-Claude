@@ -105,6 +105,20 @@ function ashTrim(W, H, trimH) {
     const b = 1 - clamp(Math.abs(t.y - 5) / 0.8);
     if (b > 0 && ((t.x / 4) % 1) < 0.58) over(o, [150, 110, 80], b * 0.5);
   });
+  // (C-06 carried to the VEIL rung: wound forearm wraps in the rust wool, each turn's lapped edge shaded; and the cast
+  // bronze of its fittings)
+  T.cell('wrapV', 148, 44, (t, o) => {
+    t.X = (t.ax + t.ay) * 0.0085; t.Y = (t.ax - t.ay) * 0.0085; t.Z = 0;
+    wool(t, o, sc(COL.rust, 0.86), 23);
+    const lap = sstep(0.82, 1.0, t.v);
+    o.ao *= 1 - 0.45 * lap; o.h += 0.0008 * (1 - lap) - 0.0006 * lap;
+  });
+  T.cell('bronze', 60, 18, (t, o) => {
+    const m = fbm(t.ax * 0.2, t.ay * 0.2, 5.1, 3);
+    put(o, sc([140, 106, 62], 0.8 + 0.4 * (m - 0.4)));
+    over(o, [74, 58, 40], sstep(0.55, 0.3, m) * 0.5);
+    o.metal = 0.85; o.rough = 0.4; o.det = 0;
+  });
   // the cowl and the chest wraps: thick black wool with a stitched edge
   return T;
 }
@@ -177,13 +191,18 @@ const ASH_PAINTERS = {
 /** Every part of the set, before the sheet: `build` paints them, the offline checks read them. */
 export async function ashParts() {
   const base = await panBase({
+    // (C-06 carried to the VEIL rung: the wool tunic is sleeveless over wrapped forearms, a sleeveless long coat; its
+    // own wraps cross the chest in place of the harness; it wears the long cut on its own sheet)
+    cut: 'long', sleeves: false, harness: false, armKit: true,
     trim: ashTrim,
     buckle: false,
     // a diagonal wrap: long at her left (+X), rising to her right, the front panel crossing
     // (its own soft drape: Pan I's modelled folds are cut for Pan's 34 columns and Pan's under-tunic)
-    skirt: { yHem: 0.60, rows: 8, flare: 0.06, ripA: 0.006, colsPer: 16, fold: null },
+    // (W1 exit: it stands further off her thighs at the front, where a sprint lifts them into it)
+    skirt: { yHem: 0.60, rows: 8, flare: 0.06, ripA: 0.006, colsPer: 16, fold: null, easeFront: 0.045 },
     skirtHem: (th, y0) => y0 + 0.085 * (1 - Math.cos(th - 0.2)) * 0.9,
-    under: { yTop: 0.76, yHem: 0.545, off: -0.012, flare: 0.05, floorY: 0.70 },
+    // (its back cut 5 cm higher: the calf comes up behind the knee at a sprint)
+    under: { yTop: 0.76, yHem: 0.545, off: -0.012, flare: 0.05, floorY: 0.70, hem: (th, y0) => y0 + 0.09 * Math.max(0, -Math.sin(th)) ** 1.2 + 0.008 * Math.cos(3 * th) },
   });
   const { doc, parts, W, H, bodyPart, skinOf, clothField } = base;
   const added = [];
@@ -198,7 +217,8 @@ export async function ashParts() {
     const [y, off] = rowsC[r];
     const th = -Math.PI / 2 + TAU * (c % COLS) / COLS;
     const lump = 0.006 * Math.sin(th * 3 + y * 40);
-    const rad = neck[r][c] + off + lump;
+    // (W1 exit: the outer turns lie a little narrower over the shoulders: the sleeveless arm's deltoid rose into them)
+    const rad = (neck[r][c] + off + lump) * (r >= 4 ? 1 - 0.12 * Math.abs(Math.cos(-Math.PI / 2 + TAU * (c % COLS) / COLS)) : 1);
     // her shoulders are wider than she is deep: the loose turn lies on them and falls against the chest and the back,
     // it is no brim standing out in front of her
     const kz = 1 - 0.36 * (r / (rowsC.length - 1));
@@ -228,8 +248,9 @@ export async function ashParts() {
   // (armory W1: each band was cut at the top of the shoulder, front and back apart, and the two cut ends showed
   // there. Each is now ONE band: up the back from the hip, over the shoulder, down the front to the other hip)
   for (const [ctl, tag] of [
-    [[[-0.135, 1.15, 0.03], [-0.11, 1.17, -0.09], [-0.03, 1.27, -0.125], [0.08, 1.38, -0.13], [0.118, 1.462, -0.03], [0.112, 1.458, 0.05], [0.075, 1.36, 0.12], [-0.02, 1.26, 0.135], [-0.10, 1.18, 0.105], [-0.135, 1.15, 0.03]], 'a'],
-    [[[0.135, 1.15, 0.03], [0.11, 1.17, -0.09], [0.03, 1.27, -0.125], [-0.08, 1.38, -0.13], [-0.118, 1.462, -0.03], [-0.112, 1.458, 0.05], [-0.075, 1.36, 0.12], [0.02, 1.26, 0.135], [0.10, 1.18, 0.105], [0.135, 1.15, 0.03]], 'b'],
+    // (W1 exit: over the shoulder 2 cm nearer the neck, off the sleeveless armhole and out of the strike's arm)
+    [[[-0.135, 1.15, 0.03], [-0.11, 1.17, -0.09], [-0.03, 1.27, -0.125], [0.07, 1.38, -0.13], [0.098, 1.468, -0.03], [0.093, 1.462, 0.05], [0.065, 1.36, 0.12], [-0.02, 1.26, 0.135], [-0.10, 1.18, 0.105], [-0.135, 1.15, 0.03]], 'a'],
+    [[[0.135, 1.15, 0.03], [0.11, 1.17, -0.09], [0.03, 1.27, -0.125], [-0.07, 1.38, -0.13], [-0.098, 1.468, -0.03], [-0.093, 1.462, 0.05], [-0.065, 1.36, 0.12], [0.02, 1.26, 0.135], [0.10, 1.18, 0.105], [0.135, 1.15, 0.03]], 'b'],
   ]) {
     const w = emptyPart('wrap', { density: 0.9 });
     strapAlong(w, wrapF, skinOf, ctl, { width: 0.088, margin: 0.012 + (tag === 'b' ? 0.005 : 0), segs: 26, cols: 4, crown: 0.0035 });

@@ -107,8 +107,14 @@ export function weaponTrim() {
     over(o, [206, 170, 110], rub * 0.5);
     // dark in the hollow beside the midrib
     if (t.v < 0.2) { const q = 0.82 + 0.9 * t.v; o.r *= q; o.g *= q; o.b *= q; }
-    over(o, [232, 200, 136], edge * 0.72);
-    o.metal = pat < 0.38 && edge < 0.3 ? 0.55 : 1; o.rough = mix(0.44, 0.2, edge) + 0.16 * (hm - 0.5); o.h = 0.0006 * (pl - 0.5) + 0.0005 * (hm - 0.5); o.det = 0; o.wear = 0.3;
+    over(o, [232, 200, 136], edge * 0.6);
+    // C-08 (ROUND5-LOOK): the ground bevel honed (roughness 0.26-0.30) and a 3 mm polish band at the very edge (the outer
+    // ~0.11 of the bevel strip's v), mirror-bright bronze at 0.22-0.24, so the blade glints under a low sun
+    const bev = sstep(0.64, 0.7, t.v), band = sstep(0.865, 0.885, t.v);
+    over(o, [246, 220, 168], band * 0.82);
+    o.metal = pat < 0.38 && bev < 0.3 ? 0.55 : 1;
+    o.rough = band > 0.5 ? 0.23 + 0.01 * hm : bev > 0.5 ? 0.27 + 0.03 * hm : mix(0.44, 0.3, edge) + 0.16 * (hm - 0.5);
+    o.h = 0.0006 * (pl - 0.5) * (1 - band) + 0.0005 * (hm - 0.5) * (1 - band); o.det = 0; o.wear = 0.3;
   });
   T.cell('bronzeCast', 96, 96, (t, o) => {
     const hm = fbm(t.ax * 0.2, t.ay * 0.2, 5.1, 3), pat = fbm(t.ax * 0.06, t.ay * 0.06, 2.3, 3);
@@ -181,8 +187,9 @@ export function weaponTrim() {
     o.rough = 0.8; o.det = 0;
   });
   T.cell('fletchB', 64, 64, (t, o) => {
+    // C-08: the cock feather dyed in orchil (#6B3F73), the other two left white: the arrow is the Reckoner's
     const barb = Math.sin((t.x * 0.9 - t.y * 1.4)), m = fbm(t.ax * 0.1, t.ay * 0.2, 6.3, 2);
-    put(o, [38, 36, 42], 0.9 + 0.5 * (0.5 + 0.5 * barb) + 0.4 * (m - 0.5));
+    put(o, [107, 63, 115], 0.92 + 0.12 * (0.5 + 0.5 * barb) + 0.08 * (m - 0.5));
     if (t.v < 0.08) over(o, [170, 160, 140], 0.8);
     o.rough = 0.72; o.det = 0;
   });

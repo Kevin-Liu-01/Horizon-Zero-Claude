@@ -190,8 +190,8 @@ export function compassBoss(part, c, n, up, rect, sk, { R = 0.03, thick = 0.0055
   const at = (x, y, z) => V.add(c, V.add(V.add(V.mul(X, x), V.mul(Y, y)), V.mul(n, z)));
   const push = (q, nn, u, v) => { part.pos.push(...q); part.nrm.push(...nn); part.uv.push(rect[0] + rect[2] * u, rect[1] + rect[3] * v); part.jnt.push(...sk.j); part.wgt.push(...sk.w); };
   // the disc: back edge, side wall, the raised rim, the field (a low dome) to the centre
-  const SIDES = 28;
-  const prof = [[R * 0.98, 0], [R, thick * 0.35], [R * 0.98, thick * 0.8], [R * 0.9, thick * 0.9], [R * 0.86, thick * 0.62], [R * 0.6, thick * 0.7], [R * 0.3, thick * 0.78], [0.0004, thick * 0.82]];
+  const SIDES = 16;
+  const prof = [[R * 0.98, 0], [R, thick * 0.35], [R * 0.97, thick * 0.85], [R * 0.86, thick * 0.62], [R * 0.45, thick * 0.74], [0.0004, thick * 0.82]];
   let base = part.pos.length / 3;
   for (let r = 0; r < prof.length; r++) for (let s = 0; s <= SIDES; s++) {
     const a = (s / SIDES) * TAU, [rad, z] = prof[r];
