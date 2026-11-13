@@ -213,6 +213,8 @@ export const BARREL_DEPTH = 0.85;
 const GRAPHITE_LIN = [0.0242, 0.0252, 0.0296];
 /** Rhythm troughs: the lens never goes fully dark while it is alive. */
 const PULSE_LOW = 0.55;
+let PULSE_LIVE = PULSE_LOW;   // look-post (L-01, grant): under AgX the wary trough is re-solved for the ACES-era on-screen depth
+function screenLum(look, c, g, s) { s[0] = c.r * g; s[1] = c.g * g; s[2] = c.b * g; look.evaluate(s, s); return LUMA[0] * srgbToLinear(s[0]) + LUMA[1] * srgbToLinear(s[1]) + LUMA[2] * srgbToLinear(s[2]); }
 const FLICKER_LOW = 0.3;
 /** The rhythm constants, for hot paths that write `lampGain` out (machine.js `_updateEyes`). */
 export const LAMP_RHYTHM = Object.freeze({ pulseLow: PULSE_LOW, flickerLow: FLICKER_LOW });
@@ -246,7 +248,7 @@ export function lampStateFor(m) {
 /** Brightness of a lamp in state `s` at sim time `t` (peak 1 = the token). */
 export function lampGain(s, t, phase = 0, darkAge = 99) {
   switch (s) {
-    case 'wary': return PULSE_LOW + (1 - PULSE_LOW) * (0.5 + 0.5 * Math.cos(2 * Math.PI * (t + phase)));
+    case 'wary': return PULSE_LIVE + (1 - PULSE_LIVE) * (0.5 + 0.5 * Math.cos(2 * Math.PI * (t + phase)));
     case 'hostile': return ((t + phase) * 4) % 1 < 0.5 ? 1 : FLICKER_LOW;
     case 'dark': return 1;
     default: return 1;
@@ -392,13 +394,17 @@ function readOutputParams(engine, P) {
   P.shadow[0] = S?.r ?? 1; P.shadow[1] = S?.g ?? 1; P.shadow[2] = S?.b ?? 1;
   P.highlight[0] = H?.r ?? 1; P.highlight[1] = H?.g ?? 1; P.highlight[2] = H?.b ?? 1;
   P.bloomThr = engine?.bloom?.threshold ?? 1.08;
+  // look-post (L-01, grant): under AgX the engine's own exact inverse (engine.look) replaces the ACES branch
+  P.look = engine?.lookActive ? engine.look : null;
+  P.lookVer = P.look ? P.look.solveVersion : 0;
   return P;
 }
 
 function paramSig(P) {
   return P.exposure + P.contrast * 3 + P.saturation * 7 + P.mix * 11 + (P.aces ? 13 : 0)
     + P.lift[0] * 17 + P.lift[1] * 19 + P.lift[2] * 23 + P.shadow[0] * 29 + P.shadow[1] * 31
-    + P.shadow[2] * 37 + P.highlight[0] * 41 + P.highlight[1] * 43 + P.highlight[2] * 47 + P.bloomThr * 53;
+    + P.shadow[2] * 37 + P.highlight[0] * 41 + P.highlight[1] * 43 + P.highlight[2] * 47 + P.bloomThr * 53
+    + P.lookVer * 59 + (P.look ? 61 : 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -575,7 +581,7 @@ export class LampSystem {
     this.capacity = opts.capacity ?? BEAM.capacity;
     this.records = [];
     this._P = { exposure: 1, aces: true, contrast: 1, saturation: 1, mix: 1,
-      lift: [0, 0, 0], shadow: [1, 1, 1], highlight: [1, 1, 1], bloomThr: 1.08 };
+      lift: [0, 0, 0], shadow: [1, 1, 1], highlight: [1, 1, 1], bloomThr: 1.08, look: null, lookVer: 0 };
     this._sig = NaN;
     this.solves = 0;
     /** The tokens as sRGB triples, and the solver's output scratch (a re-solve allocates nothing). */
@@ -721,7 +727,7 @@ export class LampSystem {
     const x = this._x;
     for (let i = 0; i < LAMP_ORDER.length; i++) {
       const id = LAMP_ORDER[i];
-      outputInverse(this._tokRgb[id], P, x);
+      if (P.look) P.look.invert(this._tokRgb[id], x); else outputInverse(this._tokRgb[id], P, x);
       const h = this.hdr[id];
       h.r = x[0]; h.g = x[1]; h.b = x[2];
       // the core: x2.5, raised until its HDR luminance clears the bloom threshold by CORE_OVER
@@ -739,6 +745,9 @@ export class LampSystem {
       this._coreA[i * 3] = c.r; this._coreA[i * 3 + 1] = c.g; this._coreA[i * 3 + 2] = c.b;
       this._linA[i * 3] = l.r; this._linA[i * 3 + 1] = l.g; this._linA[i * 3 + 2] = l.b;
     }
+    PULSE_LIVE = PULSE_LOW;
+    if (P.look) { const c = this.core.wary, s = this._s3 || (this._s3 = [0, 0, 0]), top = screenLum(P.look, c, 1, s); let lo = 0.05, hi = 1;
+      for (let i = 0; i < 24; i++) { const m = 0.5 * (lo + hi); if (screenLum(P.look, c, m, s) > 0.76 * top) hi = m; else lo = m; } PULSE_LIVE = 0.5 * (lo + hi); }
     this.solves++;
     return true;
   }
@@ -827,9 +836,9 @@ export class LampSystem {
     const rr = E ? E.renderer : null, gu = E && E.grade ? E.grade.uniforms : null;
     if (rr && gu) {
       const e = rr.toneMappingExposure, c = gu.uContrast.value, sa = gu.uSaturation.value, mx = gu.uGradeMix.value;
-      const bt = E.bloom ? E.bloom.threshold : 1.08, tm = rr.toneMapping;
-      if (e !== this._pe || c !== this._pc || sa !== this._ps || mx !== this._pm || bt !== this._pb || tm !== this._pt) {
-        this._pe = e; this._pc = c; this._ps = sa; this._pm = mx; this._pb = bt; this._pt = tm;
+      const bt = E.bloom ? E.bloom.threshold : 1.08, tm = rr.toneMapping, lv = E.look ? E.look.solveVersion : 0;
+      if (e !== this._pe || c !== this._pc || sa !== this._ps || mx !== this._pm || bt !== this._pb || tm !== this._pt || lv !== this._plv) {
+        this._pe = e; this._pc = c; this._ps = sa; this._pm = mx; this._pb = bt; this._pt = tm; this._plv = lv;
         this._solve(false);
       }
       // the lift / tint vectors change in place: the full signature is checked every 64 frames
@@ -888,7 +897,7 @@ export class LampSystem {
       let ci = si;
       // lampGain(s, t, phase), written out (a double return from a call would box)
       const tp = t + r.phase;
-      const stateGain = s === 'wary' ? PULSE_LOW + (1 - PULSE_LOW) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp))
+      const stateGain = s === 'wary' ? PULSE_LIVE + (1 - PULSE_LIVE) * (0.5 + 0.5 * Math.cos(2 * Math.PI * tp))
         : s === 'hostile' ? ((tp * 4) - Math.floor(tp * 4) < 0.5 ? 1 : FLICKER_LOW) : 1;
       let gain = stateGain;
       if (s === 'dark' && age < SPUTTER_S && r.prev !== 'dark') {

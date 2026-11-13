@@ -8,6 +8,8 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise.js';
 import { CSM } from 'three/examples/jsm/csm/CSM.js';
 import { CSMFrustum } from 'three/examples/jsm/csm/CSMFrustum.js';
+import { Look, SH_A, SH_K, SH_XMAX, AGX_MIN_EV, AGX_MAX_EV, setsForHour as setsForHourInto } from './look.js';
+import LOOK_GRADE from './look.grade.json';
 
 /**
  * Renderer + scene + camera + post stack + the perf/quality plumbing every
@@ -60,6 +62,23 @@ import { CSMFrustum } from 'three/examples/jsm/csm/CSMFrustum.js';
  * Fix round 2: the cap is split by texture role.
  *   QUALITY_TIERS.<tier>.maxAnisotropyData   cap on data textures (normal / rough / AO maps)
  *   engine.anisotropyCapData                 the data-texture cap in force
+ *
+ * ROUND 5 (look-post, W1; G-post; docs/ROUND5-LOOK.md §3.1, report
+ * docs/ROUND5-LOOK-POST.md) — THE CALIMA LOOK. The output pass is AgX with
+ * the CALIMA look and shoulder (src/core/look.js), then the grade as two
+ * blended 32^3 LUT slots built from src/core/look.grade.json, then vignette.
+ *   engine.look                              the live Look (src/core/look.js): evaluate(rgb) /
+ *                                            invert(rgb) / toneMap(rgb) / version / exposure
+ *   engine.setLook({ ev, a, b, mix, gradeMix, bloomScale })   hour / weather / grade state
+ *   engine.setLookHour(h, weather, calimaWeight)   the sets for an hour (world-sky's per-hour call)
+ *   engine.setLookEnabled(on)                false = the Round-5 W0 output (ACES 0.94, the old
+ *                                            grade and bloom): the before/after and A/B control
+ *   engine.registerLookItem(id, item) / engine.lookItems   the look ledger's switches (L-16)
+ *   QUALITY_TIERS.<tier>.look                per-tier look rows (ROUND5-LOOK §4.4); owners read
+ *                                            `engine.tier.look.<item>`
+ *   engine.gpuAttrib(on) / engine.gpuAttribTake()   per-pass GPU timer segments (L-18)
+ *   CAL_LAYER.CASTER_ONLY / CASCADE0_ONLY    per-cascade shadow layer masks (W-01, I-04)
+ *   engine.holdFrame(on)                     U-03: a menu holds the last graded frame
  */
 
 /**
@@ -78,33 +97,117 @@ import { CSMFrustum } from 'three/examples/jsm/csm/CSMFrustum.js';
  * textures (normal maps, roughness / AO packs: everything not sRGB);
  * undefined = the colour cap; null = the GPU's maximum, i.e. as authored.
  */
+/**
+ * THE LOOK ROWS (look-post L-16; docs/ROUND5-LOOK.md §4.4). One row per tier,
+ * read by each item's owner as `engine.tier.look.<item>` (the engine keeps a
+ * per-engine copy of the tier, so a gate or the A/B tool may flip one item
+ * without editing this table). `high` is the shipped tier A21 grades: a
+ * positive-cost item ships on it only under §4.6 rule 2 (A21's quiet-box
+ * median with it on meets the exit's bar), so the rule-2 items stand at
+ * `false` on `high` until A-look-ledger clears them, and the orchestrator
+ * flips them here at the exit (R66 h). `ultra` is never a graded tier.
+ *   agx / grade / lut / bloomRetune   look-post (L-01, L-02, L-07): on at every tier
+ *   skyIbl { size, everyH }           world-sky L-04
+ *   aerial { lobes, mist }            world-sky L-05
+ *   shafts { taps }                   world-sky L-08 (0 = off)
+ *   cumulus { variants }              world-sky L-09
+ *   aoTint, contact { maxDepth }      L-12 (contact 0 = off)
+ *   adaptation                        L-13
+ *   dof { aim, close }                L-17
+ *   probe { size, facesPerFrame }     world-ground W-08 (size 0 = the analytic sky)
+ *   strata, meadow, trees, stacks     world-ground / world-props W-03, W-06, W-10, W-04
+ *   sparkle, glints, farFieldStart    W-07, W-09, W-01
+ *   skin, heroShadow                  character-art C-01/C-02, C-07
+ *   vfx { scale, footfalls }          combat-kit P-04...P-09
+ *   uiBlur                            shell-ui U-18
+ */
+export const LOOK_ROWS = Object.freeze({
+  low: Object.freeze({
+    agx: true, grade: true, lut: true, bloomRetune: true,
+    skyIbl: { size: 64, everyH: 0.5 }, aerial: { lobes: 1, mist: false }, shafts: { taps: 0 }, cumulus: { variants: 1 },
+    aoTint: true, contact: { maxDepth: 0 }, adaptation: false, dof: { aim: false, close: false },
+    probe: { size: 0, facesPerFrame: 0 }, strata: 'albedo', meadow: { r0: 8, r1: 22, r2: 'shader' },
+    trees: { lod1From: 30, casters: false }, stacks: { lod1: true, casters: false },
+    sparkle: false, glints: false, farFieldStart: 110, skin: 'wrap', heroShadow: false,
+    vfx: { scale: 0.5, footfalls: false }, uiBlur: false,
+  }),
+  medium: Object.freeze({
+    agx: true, grade: true, lut: true, bloomRetune: true,
+    skyIbl: { size: 128, everyH: 0.1 }, aerial: { lobes: 2, mist: true }, shafts: { taps: 20 }, cumulus: { variants: 2 },
+    aoTint: true, contact: { maxDepth: 0 }, adaptation: true, dof: { aim: false, close: false },
+    probe: { size: 64, facesPerFrame: 0.5 }, strata: 'noLedgeNormal', meadow: { r0: 10, r1: 30, r2: 70 },
+    trees: { lod1From: 50, casters: true }, stacks: { lod1: false, casters: 'lastCascade' },
+    sparkle: true, glints: true, farFieldStart: 110, skin: 'transmission', heroShadow: false,
+    vfx: { scale: 1, footfalls: true }, uiBlur: false,
+  }),
+  /** the shipped tier: rule-2 items (contact, heroShadow) stay false until A-look-ledger clears them (§4.6 rule 2) */
+  high: Object.freeze({
+    agx: true, grade: true, lut: true, bloomRetune: true,
+    skyIbl: { size: 128, everyH: 0.1 }, aerial: { lobes: 2, mist: true }, shafts: { taps: 32 }, cumulus: { variants: 2 },
+    aoTint: true, contact: { maxDepth: 0 }, adaptation: true, dof: { aim: true, close: true },
+    probe: { size: 128, facesPerFrame: 1 }, strata: 'full', meadow: { r0: 12, r1: 40, r2: 100 },
+    trees: { lod1From: null, casters: true }, stacks: { lod1: false, casters: true },
+    sparkle: true, glints: true, farFieldStart: 160, skin: 'full', heroShadow: false,
+    vfx: { scale: 1, footfalls: true }, uiBlur: false,
+  }),
+  ultra: Object.freeze({
+    agx: true, grade: true, lut: true, bloomRetune: true,
+    skyIbl: { size: 256, everyH: 0.05 }, aerial: { lobes: 2, mist: true }, shafts: { taps: 32 }, cumulus: { variants: 2 },
+    aoTint: true, contact: { maxDepth: 40 }, adaptation: true, dof: { aim: true, close: true },
+    probe: { size: 256, facesPerFrame: 2 }, strata: 'full', meadow: { r0: 16, r1: 60, r2: 140 },
+    trees: { lod1From: null, casters: true }, stacks: { lod1: false, casters: true },
+    sparkle: true, glints: true, farFieldStart: 160, skin: 'full', heroShadow: true,
+    vfx: { scale: 1, footfalls: true }, uiBlur: 'optional',
+  }),
+});
+
+/**
+ * Items on `high` that ship only under §4.6 rule 2, and the value each takes
+ * once A-look-ledger clears it (the orchestrator applies these at the exit).
+ */
+export const LOOK_RULE2 = Object.freeze({
+  contact: { maxDepth: 12 },   // L-12 hero-near contact shadows
+  heroShadow: true,            // C-07
+});
+
 export const QUALITY_TIERS = {
   low: {
     dprCap: 1.0, msaa: 0, gtao: false, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [1024],
     postFold: true, csmFarCadence: 2, maxAnisotropy: 1, maxAnisotropyData: 1,
-    bloom: true, sizeCullPx: 11,
+    bloom: true, sizeCullPx: 11, look: LOOK_ROWS.low,
     shadowCullDistance: 70, shadowCasterBudget: 60, shadowType: THREE.PCFShadowMap, drs: true, drsFloor: 0.55,
   },
   medium: {
     dprCap: 1.25, msaa: 0, gtao: false, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
     postFold: true, csmFarCadence: 2, maxAnisotropy: 1, maxAnisotropyData: 4,
-    bloom: true, sizeCullPx: 9,
+    bloom: true, sizeCullPx: 9, look: LOOK_ROWS.medium,
     shadowCullDistance: 95, shadowCasterBudget: 95, shadowType: THREE.PCFShadowMap, drs: true, drsFloor: 0.65,
   },
   /** THE SHIPPED DEFAULT (W0b decision, A-gpu-tier / A-rt-ledger). */
   high: {
     dprCap: 1.25, msaa: 0, gtao: true, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
     postFold: true, csmFarCadence: 2, maxAnisotropy: 1, maxAnisotropyData: 4,
-    bloom: true, sizeCullPx: 7,
+    bloom: true, sizeCullPx: 7, look: LOOK_ROWS.high,
     shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: THREE.PCFSoftShadowMap, drs: true, drsFloor: 0.7,
   },
   ultra: {
     dprCap: 2.0, msaa: 4, gtao: true, gtaoScale: 1.0, smaa: true, smaaHalfFloat: true, csmMapCaps: null,
     postFold: true, csmFarCadence: 1, maxAnisotropy: null, maxAnisotropyData: null,
-    bloom: true, sizeCullPx: 4,
+    bloom: true, sizeCullPx: 4, look: LOOK_ROWS.ultra,
     shadowCullDistance: 190, shadowCasterBudget: 260, shadowType: THREE.PCFSoftShadowMap, drs: false, drsFloor: 0.85,
   },
 };
+
+/**
+ * Per-cascade shadow layer masks (look-post under G-post, for W-01 (4) and
+ * I-04). An object whose ONLY layer is CASTER_ONLY draws into every shadow
+ * cascade and never into the main view (an LOD1 caster proxy); an object whose
+ * only layer is CASCADE0_ONLY draws in the main view and casts into cascade 0
+ * alone (small kinds skip the far cascades). three r169 tests shadow casters
+ * against the MAIN camera's layers, so enableCSM sets that mask per cascade
+ * while the shadow maps render and restores it before anything else draws.
+ */
+export const CAL_LAYER = Object.freeze({ CASTER_ONLY: 30, CASCADE0_ONLY: 29 });
 
 /** The tier a fresh install boots into (main.js: `?q=` or this). */
 export const DEFAULT_TIER = 'high';
@@ -133,6 +236,37 @@ const TS_PRIORITY = ['studio', 'wheel', 'hitstop', 'concentration', 'legacy'];
  * could not do on the way past. The op order is byte-identical to the two-pass
  * version (tonemap -> sRGB transfer -> grade), so the look does not move.
  */
+/** Compile-time constants of the CAL_AGX branch, from src/core/look.js (so GPU and CPU cannot drift). */
+const _glf = (v) => { const t = Number(v).toPrecision(10); return /[.e]/.test(t) ? t : t + '.0'; };
+const CAL_LUT_SIZE = LOOK_GRADE.lutSize || 32;
+const CAL_AGX_DEFINES = Object.freeze({
+  CAL_AGX: '',
+  CAL_AGX_MIN: _glf(AGX_MIN_EV), CAL_AGX_MAX: _glf(AGX_MAX_EV),
+  CAL_SH_A: _glf(SH_A), CAL_SH_K: _glf(SH_K), CAL_SH_XMAX: _glf(SH_XMAX),
+  CAL_LUT_SCALE: _glf((CAL_LUT_SIZE - 1) / CAL_LUT_SIZE), CAL_LUT_OFFSET: _glf(0.5 / CAL_LUT_SIZE),
+});
+
+/**
+ * The Round-5 W0 output (ACES Filmic, the W0 grade and bloom), kept for
+ * engine.setLookEnabled(false): the before/after films and the A/B control.
+ */
+export const LOOK_W0 = Object.freeze({
+  exposure: 0.94, vignette: 0.34,
+  bloom: Object.freeze({ strength: 0.35, radius: 0.5, threshold: 1.08, smoothWidth: 0.01,
+    factors: Object.freeze([1.0, 0.8, 0.6, 0.4, 0.2]), tint: Object.freeze([1, 1, 1]) }),
+});
+/**
+ * L-07 bloom retune: only true highlights glow, with a wide soft halo. Under AgX the threshold is
+ * keyed to DISPLAY brightness (look.hdrForLstar): bloom starts at the grey that shows at L* 94 at the
+ * hour's exposure, with ROUND5-LOOK's knee kept in proportion (0.35 / 1.30 of the threshold). ROUND5-LOOK's 1.30 / 0.35 were ACES-scale numbers: under the
+ * CALIMA look HDR 1.30 shows at L* ~84, so sunlit cloth, rock and salt (L* 85-92: A-look-bloom a,
+ * V-look-glow) and the calm lamp ring (#F2EAD3, L* 93.6) would all glow. `threshold` /
+ * `smoothWidth` stay the fallbacks (ACES output, or before the look is built).
+ */
+export const LOOK_BLOOM = Object.freeze({ strength: 0.48, radius: 0.72, threshold: 1.30, smoothWidth: 0.35,
+  thresholdLstar: 94, kneeRatio: 0.35 / 1.30,
+  factors: Object.freeze([0.55, 0.65, 0.85, 1.05, 1.25]), tint: Object.freeze([1.0, 0.97, 0.93]) });
+
 const OutputGradeShader = {
   uniforms: {
     tDiffuse: { value: null },
@@ -153,6 +287,13 @@ const OutputGradeShader = {
     uAOMix: { value: 0 },
     tBloom: { value: null },
     uBloomOn: { value: 0 },
+    // look-post (L-01, L-02): the CALIMA look in AgX space and the two grade LUT slots
+    uAgxSlope: { value: new THREE.Vector3(1, 0.99, 0.97) },
+    uAgxLook: { value: new THREE.Vector2(1.22, 1.12) },   // power, saturation
+    tLutA: { value: null },
+    tLutB: { value: null },
+    uLutMix: { value: 0 },
+    uDither: { value: 1 / 255 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -172,6 +313,59 @@ const OutputGradeShader = {
     // here a second time is a redefinition error.
     #include <tonemapping_pars_fragment>
 
+    #ifdef CAL_AGX
+    // THE CALIMA LOOK (look-post L-01; src/core/look.js agxLook is this, operation for operation).
+    // three r169's AgX (MIT): rec2020, inset, log2 [-12.47393, +4.026069], the 6th-order sigmoid,
+    // outset, pow 2.2, rec709; plus the CALIMA shoulder above the log range (look.js SH_*) and the
+    // CALIMA look, an ASC-CDL in AgX space (slope, power, luma-preserving saturation).
+    uniform vec3 uAgxSlope;
+    uniform vec2 uAgxLook;
+    uniform highp sampler3D tLutA;
+    uniform highp sampler3D tLutB;
+    uniform float uLutMix;
+    uniform float uDither;
+    // white-noise dither for the 8-bit output (a PCG-style integer hash of the pixel: no lattice, no
+    // time dependence, so shots stay bit-identical). AgX's gentler haze and sky gradients step in 8 bits
+    // every 5-30 px; +-0.5 LSB breaks those stairs into noise (and A108's autocorrelation sees content, not stairs)
+    float calHash( vec2 p ) {
+      uvec2 q = uvec2( ivec2( p ) );
+      uint h = q.x * 1664525u + q.y * 1013904223u;
+      h ^= h >> 16u; h *= 0x7feb352du; h ^= h >> 15u; h *= 0x846ca68bu; h ^= h >> 16u;
+      return float( h ) * ( 1.0 / 4294967295.0 );
+    }
+    vec3 calSigmoid( vec3 x ) {
+      vec3 o = max( x - 1.0, 0.0 );
+      return agxDefaultContrastApprox( min( x, 1.0 ) ) + CAL_SH_A * ( 1.0 - exp( - o * CAL_SH_K ) );
+    }
+    vec3 calAgX( vec3 color ) {
+      const mat3 AgXInsetMatrix = mat3(
+        vec3( 0.856627153315983, 0.137318972929847, 0.11189821299995 ),
+        vec3( 0.0951212405381588, 0.761241990602591, 0.0767994186031903 ),
+        vec3( 0.0482516061458583, 0.101439036467562, 0.811302368396859 )
+      );
+      const mat3 AgXOutsetMatrix = mat3(
+        vec3( 1.1271005818144368, - 0.1413297634984383, - 0.14132976349843826 ),
+        vec3( - 0.11060664309660323, 1.157823702216272, - 0.11060664309660294 ),
+        vec3( - 0.016493938717834573, - 0.016493938717834257, 1.2519364065950405 )
+      );
+      color *= toneMappingExposure;
+      color = LINEAR_SRGB_TO_LINEAR_REC2020 * color;
+      color = AgXInsetMatrix * color;
+      color = max( color, 1e-10 );
+      color = log2( color );
+      color = ( color - CAL_AGX_MIN ) / ( CAL_AGX_MAX - CAL_AGX_MIN );
+      color = clamp( color, 0.0, CAL_SH_XMAX );
+      color = calSigmoid( color );
+      color = pow( max( color * uAgxSlope, 0.0 ), vec3( uAgxLook.x ) );
+      float l = dot( color, vec3( 0.2126, 0.7152, 0.0722 ) );
+      color = l + uAgxLook.y * ( color - l );
+      color = AgXOutsetMatrix * color;
+      color = pow( max( vec3( 0.0 ), color ), vec3( 2.2 ) );
+      color = LINEAR_REC2020_TO_LINEAR_SRGB * color;
+      return clamp( color, 0.0, 1.0 );
+    }
+    #endif
+
     void main() {
       vec4 src = texture2D(tDiffuse, vUv);
       // the two in-place blends that used to run as full-resolution passes
@@ -188,6 +382,26 @@ const OutputGradeShader = {
         src.rgb += bl.rgb * bl.a;
         src.a += bl.a * bl.a;
       }
+
+      #ifdef CAL_AGX
+        // AgX + the CALIMA look -> sRGB -> the grade: two LUT slots (texel centres), blended
+        src.rgb = calAgX(src.rgb);
+        #ifdef SRGB_TRANSFER
+          src = sRGBTransferOETF(src);
+        #endif
+        vec3 g = src.rgb;
+        if (uGradeMix > 0.0) {
+          vec3 uvw = clamp(src.rgb, 0.0, 1.0) * CAL_LUT_SCALE + CAL_LUT_OFFSET;
+          g = texture(tLutA, uvw).rgb;
+          if (uLutMix > 0.0) g = mix(g, texture(tLutB, uvw).rgb, uLutMix);
+          vec2 dv = (vUv - 0.5) * vec2(uAspect, 1.0);
+          float rv = length(dv) / (0.5 * sqrt(uAspect * uAspect + 1.0));
+          g *= 1.0 - uVignette * smoothstep(uVigInner, uVigOuter, rv);
+          g += ( calHash( gl_FragCoord.xy ) - 0.5 ) * uDither;
+        }
+        gl_FragColor = vec4(clamp(mix(src.rgb, g, uGradeMix), 0.0, 1.0), src.a);
+        return;
+      #endif
 
       #ifdef ACES_FILMIC_TONE_MAPPING
         src.rgb = ACESFilmicToneMapping(src.rgb);
@@ -250,6 +464,11 @@ class OutputGradePass extends ShaderPass {
         [THREE.NeutralToneMapping]: 'NEUTRAL_TONE_MAPPING',
       };
       if (names[this._tm]) d[names[this._tm]] = '';
+      // look-post: AgX is the CALIMA AgX (look + shoulder + grade LUT), never three's bare AgX
+      if (this._tm === THREE.AgXToneMapping) {
+        delete d.AGX_TONE_MAPPING;
+        Object.assign(d, CAL_AGX_DEFINES);
+      }
       this.material.defines = d;
       this.material.needsUpdate = true;
     }
@@ -694,6 +913,7 @@ export class Engine {
     this.quality = QUALITY_TIERS[opts.quality] ? opts.quality : DEFAULT_TIER;
     // a per-engine copy: a gate or a probe that moves one lever on `engine.tier` never edits the table
     const tier = { ...QUALITY_TIERS[this.quality] };
+    tier.look = { ...(tier.look || LOOK_ROWS.high) };
     this.tier = tier;
     /** Screenshots/gates must be bit-deterministic: no dynamic resolution there. */
     this.drsEnabled = tier.drs && opts.dynamicResolution !== false;
@@ -714,8 +934,12 @@ export class Engine {
     this.renderer.setPixelRatio(this.basePixelRatio);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = tier.shadowType;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.94;
+    // look-post (L-01): AgX with the CALIMA look; the exposure is engine.look's (setLook / _syncLook)
+    this.look = new Look(LOOK_GRADE);
+    this.lookEnabled = true;
+    this.renderer.toneMapping = THREE.AgXToneMapping;
+    this.renderer.toneMappingExposure = this.look.exposure;
+    this.renderer.calLook = this;   // src/hero/sheets.js screenPixels reaches engine.look through its renderer
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.info.autoReset = false; // engine owns the reset (perf-tech-02)
     container.appendChild(this.renderer.domElement);
@@ -725,6 +949,7 @@ export class Engine {
       55, window.innerWidth / window.innerHeight, 0.1, 2400,
     );
     this.camera.position.set(0, 3, 8);
+    this.camera.layers.enable(CAL_LAYER.CASCADE0_ONLY);   // per-cascade masks (enableCSM)
 
     this.clock = new THREE.Clock();
 
@@ -876,7 +1101,7 @@ export class Engine {
 
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.35, 0.5, 1.08,
+      LOOK_BLOOM.strength, LOOK_BLOOM.radius, LOOK_BLOOM.threshold,
     );
     // Bloom is low-frequency by definition: paying DPR-2 fill for it buys
     // nothing a viewer can see, so its mip chain is capped at 1280 wide.
@@ -893,6 +1118,17 @@ export class Engine {
     this.grade = new OutputGradePass(OutputGradeShader);
     this.grade.uniforms.uAspect.value = window.innerWidth / Math.max(1, window.innerHeight);
     this.composer.addPass(this.grade);
+    this._buildLook();
+    // diagnostic: `?look=w0` (on this page or the page hosting it, e.g. the Pans POC iframe) boots on the
+    // Round-5 W0 output, for before/after comparisons of any gate
+    // (fix round 1: also `nolut` = AgX without the grade stage, `nodither` = no output dither; diagnostics for A108)
+    try {
+      const q = (w) => (new URLSearchParams(w.location.search).get('look') || '').split(',');
+      const want = new Set([...q(window), ...(window.top !== window ? q(window.top) : [])]);
+      if (want.has('w0')) this.setLookEnabled(false);
+      if (want.has('nolut')) { this._diagNoLut = true; this.look._bump(true); }
+      if (want.has('nodither')) this.grade.uniforms.uDither.value = 0;
+    } catch (e) { /* cross-origin host: no switch */ }
 
     this.smaa = new SMAAPass(w, h);
     this.smaa.enabled = this.tier.smaa;
@@ -1046,6 +1282,236 @@ export class Engine {
     return t;
   }
 
+  // ------------------------------------------------------------------ look
+
+  /**
+   * THE CALIMA LOOK (look-post L-01/L-02/L-07/L-14). Two half-float RGBA 32^3
+   * LUT slots (256 KB each; textures, not render targets), filled from the CPU
+   * copies engine.look baked at boot (one 256 KB upload when a slot's set
+   * changes, never a CPU rebuild per hour), and the look's ledger switches
+   * (registerLookItem). Called once from _buildComposer.
+   */
+  _buildLook() {
+    const n = this.look.size;
+    const mk = (name) => {
+      const t = new THREE.Data3DTexture(new Uint16Array(n * n * n * 4), n, n, n);
+      t.format = THREE.RGBAFormat;
+      t.type = THREE.HalfFloatType;
+      t.minFilter = THREE.LinearFilter;
+      t.magFilter = THREE.LinearFilter;
+      t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping;
+      t.unpackAlignment = 1;
+      t.generateMipmaps = false;
+      t.colorSpace = THREE.NoColorSpace;
+      t.name = name;
+      return t;
+    };
+    this._lutTex = [mk('CAL.lookLutA'), mk('CAL.lookLutB')];
+    this._lutSet = [null, null];
+    this._lookVer = -1;
+    this._expoSeen = NaN;
+    /** L-16: the look ledger's switches, id -> { owner, estMs, tier, set(on), get() } (ab-time.mjs walks it). */
+    this.lookItems = new Map();
+    const T = () => this.tier.look;
+    const benchGrade = () => this.benchPass(this.grade), benchBloom = () => this.benchPass(this.bloom);
+    this.registerLookItem('L-01', { owner: 'look-post', estMs: 0.03, title: 'AgX + CALIMA look (ACES W0 when off)', bench: benchGrade,
+      get: () => T().agx !== false, set: (on) => { T().agx = !!on; this.look._bump(true); } });
+    this.registerLookItem('L-02', { owner: 'look-post', estMs: 0.08, title: 'grade: two blended 32^3 LUT slots + vignette', bench: benchGrade,
+      get: () => T().grade !== false, set: (on) => { T().grade = !!on; this.look._bump(true); } });
+    this.registerLookItem('L-07', { owner: 'look-post', estMs: 0, title: 'bloom retune (W0 bloom when off)', bench: benchBloom,
+      get: () => T().bloomRetune !== false, set: (on) => { T().bloomRetune = !!on; this.look._bump(true); } });
+    this._syncLook(true);
+  }
+
+  /**
+   * Push engine.look into the pass, the renderer and bloom when it changed
+   * (version), once per frame from render(): an integer compare when nothing
+   * moved, no allocation. A lane that writes renderer.toneMappingExposure
+   * directly is adopted as an EV offset so look.evaluate() keeps matching.
+   */
+  _syncLook(force = false) {
+    const L = this.look, r = this.renderer, u = this.grade.uniforms, T = this.tier.look || LOOK_ROWS.high;
+    // an outside write of the exposure is adopted as an EV offset under AgX only: the W0 output (ACES)
+    // is the Round-5 W0 output at every hour, exposure 0.94 and no EV (fix round 1: the hour EV leaked into it)
+    if (this._agxOn && r.toneMappingExposure !== this._expoSeen && this._expoSeen === this._expoSeen) {
+      L.set({ ev: Math.log2(Math.max(1e-6, r.toneMappingExposure) / L.baseExposure) });
+    }
+    if (!force && L.version === this._lookVer) return false;
+    this._lookVer = L.version;
+    const agx = this.lookEnabled && T.agx !== false;
+    this._agxOn = agx;
+    r.toneMapping = agx ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping;
+    r.toneMappingExposure = agx ? L.baseExposure * Math.pow(2, L.ev) : LOOK_W0.exposure;
+    this._expoSeen = r.toneMappingExposure;
+    u.uAgxSlope.value.set(L.look.slope[0], L.look.slope[1], L.look.slope[2]);
+    u.uAgxLook.value.set(L.look.power, L.look.sat);
+    for (let i = 0; i < 2; i++) {
+      const name = i ? L.setB : L.setA;
+      if (name === this._lutSet[i]) continue;
+      this._lutTex[i].image.data.set(L.luts[name].half);
+      this._lutTex[i].needsUpdate = true;
+      this._lutSet[i] = name;
+    }
+    u.tLutA.value = this._lutTex[0];
+    u.tLutB.value = this._lutTex[1];
+    u.uLutMix.value = L.setB !== L.setA ? L.lutMix : 0;
+    // grade: the LUT path under AgX (T.grade); the W0 grade under ACES follows the same mix
+    u.uGradeMix.value = agx ? (T.grade !== false && T.lut !== false && !this._diagNoLut ? L.gradeMix : 0) : L.gradeMix;
+    u.uVignette.value = agx ? L.vignette : LOOK_W0.vignette;
+    // bloom (L-07), scaled per weather (look.bloomScale: calima x1.25, overcast x0.6)
+    const B = this.lookEnabled && T.bloomRetune !== false ? LOOK_BLOOM : LOOK_W0.bloom;
+    const b = this.bloom;
+    b.strength = B.strength * L.bloomScale;
+    b.radius = B.radius;
+    let thr = B.threshold, sw = B.smoothWidth;
+    if (agx && B.thresholdLstar) {
+      // the display-keyed threshold is re-solved only when the look moved enough to move it (solveVersion):
+      // its bisection runs the look 48 times (fix round 1, A-alloc-rate)
+      if (this._thrVer !== L.solveVersion || this._thrB !== B) { this._thrVer = L.solveVersion; this._thrB = B; this._thrHdr = L.hdrForLstar(B.thresholdLstar, false); }
+      thr = this._thrHdr; sw = thr * B.kneeRatio;
+    }
+    b.threshold = thr;
+    if (b.highPassUniforms?.smoothWidth) b.highPassUniforms.smoothWidth.value = sw;
+    const cu = b.compositeMaterial?.uniforms;
+    if (cu?.bloomFactors) for (let i = 0; i < cu.bloomFactors.value.length; i++) cu.bloomFactors.value[i] = B.factors[i] ?? B.factors[B.factors.length - 1];
+    if (b.bloomTintColors) for (let i = 0; i < b.bloomTintColors.length; i++) b.bloomTintColors[i].set(B.tint[0], B.tint[1], B.tint[2]);
+    return true;
+  }
+
+  /**
+   * The look's live state (world-sky's per-hour and per-weather call; the
+   * gates). Fields: ev (stops over the base exposure), a / b (grade set names
+   * for the two slots), mix (slot B's weight), gradeMix, bloomScale. Applied
+   * on the next rendered frame. Returns engine.look.
+   */
+  setLook(state) {
+    this.look.set(state);
+    return this.look;
+  }
+
+  /**
+   * The grade sets for an hour and a weather (look.grade.json `hours`): world-sky
+   * calls this when the hour or the weather moves. Allocation-free.
+   */
+  setLookHour(h, weather = null, calimaWeight = null, opts = null) {
+    this._lookOwned = true;   // world-sky drives the sets from here on: the bridge below stands down
+    return this._lookHour(h, weather, calimaWeight, !(opts && opts.ev === false));
+  }
+
+  _lookHour(h, weather, calimaWeight, withEv = true) {
+    const o = this._lookHourOut || (this._lookHourOut = { a: 'golden', b: 'golden', mix: 0, ev: 0 });
+    setsForHourInto(this.look.grade, h, weather, calimaWeight, o);
+    const L = this.look;
+    // quantised to 1/64 (mix) and 1/64 EV: the look (and every CPU copy that follows it: the lamp
+    // re-solve, the bloom threshold) moves in steps a viewer cannot see, not every frame of the clock
+    L.setSlots(o.a, o.b, Math.round(o.mix * 64) / 64, withEv ? Math.round(o.ev * 64) / 64 : L.ev);
+    return L;
+  }
+
+  /** Whether engine.look.evaluate() describes the screen (AgX on); false under setLookEnabled(false) or L-01 off. */
+  get lookActive() { this._syncLook(); return this._agxOn === true; }
+
+  /**
+   * THE HOUR BRIDGE (W1 only; stands down the first time anyone calls setLookHour). Until
+   * world-sky calls engine.setLookHour per hour and weather, the engine reads the hour and the
+   * weather of the environment the automation harness publishes (window.__CTX__.environment)
+   * every 30 frames and picks the grade sets itself. Allocation-free; NO EV: the L-03 EV offsets
+   * are world-sky's, keyed with its new hour keys (fix round 1: the bridge used to apply them, so
+   * nights ran at +1.3 EV on the W0 keys).
+   */
+  _lookBridge() {
+    if (this._lookOwned || (this._lookBridgeN = ((this._lookBridgeN | 0) + 1) % 30) !== 1) return;
+    const env = typeof window !== 'undefined' ? window.__CTX__?.environment : null;
+    if (!env || typeof env.time !== 'number') return;
+    this._lookHour(env.time, env.weather, null, false);
+  }
+
+  /** false: the Round-5 W0 output (ACES 0.94, the W0 grade and bloom), for before/after shots and A/B. */
+  setLookEnabled(on) {
+    this.lookEnabled = !!on;
+    this.look._bump(true);
+    this._syncLook();
+    return this.lookEnabled;
+  }
+
+  /**
+   * L-16: register a look item's switch so A-look-ledger (tools/look/ab-time.mjs)
+   * can time it on and off on the same frame. item: { owner, estMs, title,
+   * set(on), get(), bench? }. An item estimated >= 0.10 ms is A/B'd alone; the
+   * rest are timed as one group. `bench()` (optional: a post item whose cost
+   * lives in one pass) returns ms per pass and is A/B'd in isolation
+   * (engine.benchPass) instead of on the whole frame. Returns the registry.
+   */
+  registerLookItem(id, item) {
+    this.lookItems.set(id, { id, owner: item.owner || '?', estMs: item.estMs ?? 0, title: item.title || id,
+      set: item.set, get: item.get || (() => null), bench: item.bench || null });
+    return this.lookItems;
+  }
+
+  /**
+   * L-16 micro-benchmark (measurement only): the mean GPU+submit ms of one `pass.render` from the
+   * scene target into a scratch target, n times between two readback fences. A post item's cost lives
+   * entirely in its pass, and on ANGLE/Metal a whole-frame A/B is ±1-3 ms of noise at these frame times,
+   * so post items are A/B'd here (tools/look/ab-time-page.mjs). Allocates its scratch target once.
+   */
+  benchPass(pass, n = 100) {
+    const r = this.renderer, gl = r.getContext();
+    const w = this.sceneTarget.width, h = this.sceneTarget.height;
+    const rt = this._benchRT || (this._benchRT = new THREE.WebGLRenderTarget(w, h, { depthBuffer: false }));
+    if (rt.width !== w || rt.height !== h) rt.setSize(w, h);
+    const read = this._benchRead || (this._benchRead = { texture: null });
+    read.texture = this.sceneTarget.texture;
+    const was = pass.renderToScreen;
+    pass.renderToScreen = false;
+    this._syncLook();
+    // fences: a 1-pixel readPixels waits for the GPU (gl.finish does not on ANGLE/Metal: r4 read 2 us per
+    // full-screen pass with it); the fixed readback latency cancels in an on/off difference
+    const px = this._benchPx || (this._benchPx = new Uint8Array(4));
+    const fence = () => { r.setRenderTarget(rt); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); };
+    pass.render(r, rt, read, 0, false);   // warm: a define change compiles here, not inside the clock
+    fence();
+    const t0 = performance.now();
+    for (let i = 0; i < n; i++) pass.render(r, rt, read, 0, false);
+    fence();
+    const ms = (performance.now() - t0) / n;
+    pass.renderToScreen = was;
+    r.setRenderTarget(null);
+    return ms;
+  }
+
+  /** The look's GPU objects (the two LUT slots, the bench target); the engine lives as long as the page. */
+  /**
+   * R48 (c), look-post fix round 1: THE SHADOW PASS'S PROGRAM-KEY CHURN. three r169 renders every caster with
+   * one shared depth material unless the mesh carries its own; its setProgram sees `skinning` / `instancing`
+   * / `batching` / the morph count flip between consecutive casters and re-derives the program (getParameters
+   * + getProgramCacheKey + join: measured 18 getProgram calls per frame on the vista and the staged fight, the
+   * bulk of ScenePass.render's 8.7 MB/s). A skinned, instanced or batched caster gets a depth material shared
+   * by its kind (key: skinned 1, instanced 2, batched 4, instance colours 8, instance morphs 16, + 32 x morph targets), so the shared one only ever
+   * sees plain meshes and none of them flips. A caster whose material alpha-tests, alpha-maps, displaces or
+   * clips its shadow keeps three's own per-material variant (it never flipped). Engine-owned; disposeLook().
+   */
+  _depthVariant(o) {
+    const m = o.material, mm = Array.isArray(m) ? m[0] : m;
+    if (!mm || mm.alphaTest > 0 || mm.alphaMap || mm.displacementMap || (mm.clipShadows && mm.clippingPlanes?.length)) { o.userData.__calDepthOwn = true; return; }
+    // every input three's setProgram compares for a depth material: skinning, instancing (+ its colour and morph
+    // textures), batching, the morph count (f1-b2: instanced casters with and without instanceColor still flipped 8x a frame)
+    const morph = o.morphTargetInfluences ? o.morphTargetInfluences.length : 0;
+    const key = (o.isSkinnedMesh ? 1 : 0) + (o.isInstancedMesh ? 2 : 0) + (o.isBatchedMesh ? 4 : 0)
+      + (o.instanceColor ? 8 : 0) + (o.morphTexture ? 16 : 0) + 32 * morph;
+    const V = this._depthVariants || (this._depthVariants = new Map());
+    let d = V.get(key);
+    if (!d) { d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); d.name = 'CAL.depthVariant.' + key; V.set(key, d); }
+    o.customDepthMaterial = d;
+  }
+
+  disposeLook() {
+    if (this._depthVariants) { for (const d of this._depthVariants.values()) d.dispose(); this._depthVariants.clear(); }
+    for (const t of this._lutTex || []) t.dispose();
+    this._lutSet = [null, null];
+    this._benchRT?.dispose();
+    this._benchRT = null;
+  }
+
   /**
    * GTAO's Poisson-denoise noise from `seed` (makeGtaoDenoiseNoise). The
    * constructor installs GTAO_NOISE_SEED; a probe that surveys other seeds
@@ -1151,6 +1617,7 @@ export class Engine {
   applyTier(row, name = 'custom') {
     if (!row) return this.quality;
     const tier = { ...row };
+    tier.look = { ...(row.look || LOOK_ROWS.high) };
     this.quality = name;
     this.tier = tier;
     this.basePixelRatio = Math.min(window.devicePixelRatio || 1, tier.dprCap);
@@ -1318,7 +1785,7 @@ export class Engine {
    * now, so `grade.enabled = false` would dump raw HDR to the screen. Lanes and
    * A/B probes flip this instead.
    */
-  setGrade(on) { this.grade.uniforms.uGradeMix.value = on ? 1 : 0; return !!on; }
+  setGrade(on) { this.look.set({ gradeMix: on ? 1 : 0 }); this._syncLook(); return !!on; }
 
   /**
    * Dynamic resolution on/off, and always back to full scale when it goes off
@@ -1588,6 +2055,21 @@ export class Engine {
       lightIntensity: lightIntensity ?? (light ? light.intensity : 3),
     });
     this.csm.fade = fade;
+    // per-cascade layer masks (CAL_LAYER): the shadow pass reads camera.layers per cascade, restored after
+    const cam = this.camera, sm = this.renderer.shadowMap, CO = 1 << CAL_LAYER.CASTER_ONLY, C0 = 1 << CAL_LAYER.CASCADE0_ONLY;
+    cam.layers.enable(CAL_LAYER.CASCADE0_ONLY);
+    if (!sm._calLayers) {
+      const render = sm.render;
+      sm._calLayers = true;
+      sm.render = function (lights, scene, camera) {
+        const keep = camera.layers.mask; camera.layers.mask = keep | CO;
+        try { render.call(this, lights, scene, camera); } finally { camera.layers.mask = keep; }
+      };
+    }
+    this.csm.lights.forEach((l, i) => {
+      const up = l.shadow.updateMatrices;
+      l.shadow.updateMatrices = function (light, vp) { cam.layers.mask = i === 0 ? (cam.layers.mask | C0 | CO) : (cam.layers.mask | CO) & ~C0; up.call(this, light, vp); };
+    });
     if (light) {
       this.csmSourceLight = light;
       this._csmLightShadowWas = light.castShadow;
@@ -1950,8 +2432,8 @@ export class Engine {
     this._shadowCullClock = 0.1;
     const cam = this.camera.position;
     const pool = this._casterPool, dists = this._casterDist;
-    pool.length = 0;
-    dists.length = 0;
+    // R48 (c), look-post fix round 1: filled by index, never truncated (`length = 0` drops V8's backing store,
+    // so every pass re-grew both arrays: _cullVisit's 0.23 MB/s); the tail past `n` is nulled, not cut
 
     // projected diameter in device px = 2 * r * (H / (2 tan(fov/2))) / distance
     //
@@ -1972,7 +2454,11 @@ export class Engine {
     // hysteresis is applied inline as limit * 1.3: never flicker on the boundary
     let sizeCulled = 0;
 
-    this.scene.traverse((o) => {
+    // R48 (c), look-post: the visit is built once (it used to be a fresh closure on every pass)
+    const C = this._cullState || (this._cullState = { cam: null, pool: null, dists: null, fovK: 0, cullPx: 0, sizeCulled: 0, n: 0 });
+    C.cam = cam; C.pool = pool; C.dists = dists; C.fovK = fovK; C.cullPx = cullPx; C.sizeCulled = 0;
+    const nPrev = C.n; C.n = 0;
+    if (!this._cullVisit) this._cullVisit = (o) => {
       if (!o.isMesh) return;
       // Read the matrix the LAST render left behind instead of calling
       // getWorldPosition(), which walks the parent chain and recomputes
@@ -1994,30 +2480,31 @@ export class Engine {
         r = o.geometry?.boundingSphere?.radius ?? 0;
       }
       r *= scl;
+      const cam = C.cam, pool = C.pool, dists = C.dists;
       const dx = _wp.x - cam.x, dy = _wp.y - cam.y, dz = _wp.z - cam.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
       // ---- 2. screen-space small-mesh cull ----
       const wasCulled = o.userData.__sizeCulled === true;
-      if (cullPx > 0 && !o.userData.noSizeCull && !o.isInstancedMesh && r > 0) {
+      if (C.cullPx > 0 && !o.userData.noSizeCull && !o.isInstancedMesh && r > 0) {
         // Anything that glows keeps a far lower threshold: bloom turns a 4-pixel
         // emissive lens into a 200-pixel flare, so culling one by its geometry
         // size deletes something the player can see across the valley — and the
         // red eye / orange canister read IS the machine's tell. Measured on
         // film: hiding them at 7 px removed the strider's chest glare entirely.
         const glow = _glows(o.material);
-        const limit = glow ? cullPx * this.sizeCullGlowFactor : cullPx;
-        const px = 2 * r * fovK / Math.max(0.05, dist);
+        const limit = glow ? C.cullPx * this.sizeCullGlowFactor : C.cullPx;
+        const px = 2 * r * C.fovK / Math.max(0.05, dist);
         if (limit <= 0) {
           if (wasCulled) { o.visible = true; o.userData.__sizeCulled = false; }
           if (o.castShadow || o.userData.__shadowCulled === true) {
-            pool.push(o); dists.push(Math.max(0, dist - r));
+            pool[C.n] = o; dists[C.n] = Math.max(0, dist - r); C.n++;
           }
           return;
         }
         if (px < limit || (wasCulled && px < limit * 1.3)) {
           if (!wasCulled && o.visible) { o.visible = false; o.userData.__sizeCulled = true; }
-          if (o.userData.__sizeCulled === true) sizeCulled++;
+          if (o.userData.__sizeCulled === true) C.sizeCulled++;
         } else if (wasCulled) {
           o.visible = true;
           o.userData.__sizeCulled = false;
@@ -2031,9 +2518,13 @@ export class Engine {
       if (o.userData.__sizeCulled === true) return; // invisible: draws nothing at all
       const off = o.userData.__shadowCulled === true;
       if (!off && !o.castShadow) return; // never a caster: nothing to do
-      pool.push(o);
-      dists.push(Math.max(0, dist - r));
-    });
+      if (o.customDepthMaterial === undefined && (o.isSkinnedMesh || o.isInstancedMesh || o.isBatchedMesh) && o.userData.__calDepthOwn !== true) this._depthVariant(o);
+      pool[C.n] = o; dists[C.n] = Math.max(0, dist - r); C.n++;
+    };
+    this.scene.traverse(this._cullVisit);
+    const n = C.n;
+    for (let i = n; i < nPrev; i++) pool[i] = null;   // no stale mesh kept alive by the pool
+    sizeCulled = C.sizeCulled;
     this.sizeCulled = sizeCulled;
     // Distance cull first, then a hard caster budget: in a staged eight-machine
     // fight everything is inside 30 m and distance alone saves nothing, so the
@@ -2055,21 +2546,32 @@ export class Engine {
     // structures). Measured: a 150-caster budget was letting 198 casters
     // through with three cascades. The rank array is reused; the sort runs at
     // most 10x/second.
-    const order = this._casterOrder || (this._casterOrder = []);
-    order.length = 0;
-    for (let i = 0; i < dists.length; i++) if (dists[i] <= cut) order.push(i);
-    if (order.length > budget) {
-      order.sort((a, b) => dists[a] - dists[b]);
-      order.length = budget;
+    // R48 (c), fix round 1: no sort (a comparator closure and TimSort's work array on every pass) and no Set
+    // (cleared and re-grown every pass): the n nearest within `cut` are chosen by a distance threshold found
+    // by bisection over the distances (ties at the threshold admitted in pool order up to the budget), and
+    // marked in a byte flag array that grows only when the pool does
+    let keepFlags = this._casterKeepFlags;
+    if (!keepFlags || keepFlags.length < n) keepFlags = this._casterKeepFlags = new Uint8Array(Math.max(256, n * 2));
+    let inCut = 0;
+    for (let i = 0; i < n; i++) if (dists[i] <= cut) inCut++;
+    let lo = cut, hi = cut;
+    if (inCut > budget) {
+      // count(<= lo) <= budget < count(<= hi); after 36 halvings (lo, hi] holds only the ties at the budget's distance
+      lo = -1;
+      for (let it = 0; it < 36; it++) {
+        const mid = 0.5 * (lo + hi);
+        let c = 0; for (let i = 0; i < n; i++) if (dists[i] <= mid) c++;
+        if (c > budget) hi = mid; else lo = mid;
+      }
     }
-    const keep = this._casterKeep || (this._casterKeep = new Set());
-    keep.clear();
-    for (let i = 0; i < order.length; i++) keep.add(order[i]);
+    let kept = 0;
+    for (let i = 0; i < n; i++) { const k = dists[i] <= lo ? 1 : 0; keepFlags[i] = k; kept += k; }
+    for (let i = 0; i < n && kept < budget; i++) if (keepFlags[i] === 0 && dists[i] <= hi) { keepFlags[i] = 1; kept++; }
     let active = 0;
-    for (let i = 0; i < pool.length; i++) {
+    for (let i = 0; i < n; i++) {
       const o = pool[i];
       const off = o.userData.__shadowCulled === true;
-      const on = keep.has(i);
+      const on = keepFlags[i] === 1;
       if (on) {
         active++;
         if (off) {
@@ -2144,6 +2646,114 @@ export class Engine {
       if (this._gpuSamples.length > 240) this._gpuSamples.shift();
     }
     while (pending.length > 8) gl.deleteQuery(pending.shift());
+  }
+
+  /**
+   * L-18 GPU ATTRIBUTION (look-post; tools/look/gpu-attrib.mjs, gate
+   * A-gpu-attrib). On: the frame is cut into consecutive timer-query segments
+   * (one TIME_ELAPSED query open at a time, so the whole-frame query of
+   * enableGpuTimer is suspended): scene:pre (clear), scene:shadow (every
+   * cascade), scene:opaque, scene:transparent (additive lamp beams, VFX: a
+   * zero-vertex sentinel at the head of the transparent list switches the
+   * segment), then one segment per composer pass (gtao, bloom, grade, smaa,
+   * ...) and one per onAfterRender hook (world-sky's shafts, overlays).
+   * Results arrive a few frames late; gpuAttribTake() returns and clears the
+   * per-frame rows. Off restores every wrapped function. A measurement mode:
+   * it allocates per frame while on, and never runs in play.
+   */
+  gpuAttrib(on = true) {
+    const gl = this.renderer.getContext();
+    const ext = this._attribExt !== undefined ? this._attribExt
+      : (this._attribExt = gl.getExtension('EXT_disjoint_timer_query_webgl2') || null);
+    if (!ext) return false;
+    const A = this._attrib || (this._attrib = { on: false, cur: null, q: null, frame: 0, pending: [], rows: [], open: new Map(), undo: [] });
+    if (!!on === A.on) return A.on;
+    if (on) {
+      A.on = true;
+      this._attribGpuWas = this.gpuTimerOn;
+      this.gpuTimerOn = false;
+      const self = this;
+      const wrap = (obj, key, label) => {
+        const f = obj[key];
+        obj[key] = function (...args) { self._attribSwitch(label); return f.apply(this, args); };
+        A.undo.push(() => { obj[key] = f; });
+      };
+      const sp = this.scenePass, sm = this.renderer.shadowMap;
+      wrap(sp, 'render', 'scene:pre');
+      const smr = sm.render;
+      sm.render = function (...args) {
+        self._attribSwitch('scene:shadow');
+        const r = smr.apply(this, args);
+        self._attribSwitch('scene:opaque');
+        return r;
+      };
+      A.undo.push(() => { sm.render = smr; });
+      const names = new Map([[this.gtao, 'gtao'], [this.bloom, 'bloom'], [this.grade, 'grade'], [this.smaa, 'smaa']]);
+      for (const p of this.composer.passes) if (p !== sp) wrap(p, 'render', names.get(p) || ('pass:' + (p.constructor?.name || '?')));
+      const sentinel = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, depthTest: false }));
+      sentinel.name = 'CAL.attribSentinel';
+      sentinel.renderOrder = -1e9;
+      sentinel.frustumCulled = false;
+      sentinel.onBeforeRender = () => { if (self._attrib.cur === 'scene:opaque') self._attribSwitch('scene:transparent'); };
+      this.scene.add(sentinel);
+      A.undo.push(() => { this.scene.remove(sentinel); sentinel.geometry.dispose(); sentinel.material.dispose(); });
+      return true;
+    }
+    this._attribSwitch(null);
+    for (let i = A.undo.length - 1; i >= 0; i--) A.undo[i]();
+    A.undo.length = 0;
+    A.on = false;
+    this.gpuTimerOn = !!this._attribGpuWas;
+    return false;
+  }
+
+  /** End the open segment (if any) and open `label` (null: none). */
+  _attribSwitch(label) {
+    const A = this._attrib;
+    if (!A || !A.on && label !== null) return;
+    const gl = this.renderer.getContext(), ext = this._attribExt;
+    if (A.q) { gl.endQuery(ext.TIME_ELAPSED_EXT); A.pending.push({ q: A.q, label: A.cur, frame: A.frame }); A.q = null; }
+    // ANGLE on Metal times a query by the command buffers it spans: without a flush every segment of a frame
+    // shares one command buffer and the first query takes the whole frame (measured: scene:opaque 95 ms, grade 0)
+    gl.flush();
+    A.cur = label;
+    if (label !== null) { A.q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, A.q); }
+  }
+
+  /** Collect finished segments into per-frame rows ({ frame, seg: { label: ms } }). */
+  _attribPoll() {
+    const A = this._attrib, gl = this.renderer.getContext(), ext = this._attribExt;
+    if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+      for (const p of A.pending) gl.deleteQuery(p.q);
+      A.pending.length = 0; A.open.clear(); A.disjoint = (A.disjoint || 0) + 1;
+      return;
+    }
+    while (A.pending.length) {
+      const p = A.pending[0];
+      if (!gl.getQueryParameter(p.q, gl.QUERY_RESULT_AVAILABLE)) break;
+      const ms = gl.getQueryParameter(p.q, gl.QUERY_RESULT) / 1e6;
+      gl.deleteQuery(p.q);
+      A.pending.shift();
+      let row = A.open.get(p.frame);
+      if (!row) { row = { frame: p.frame, seg: {} }; A.open.set(p.frame, row); }
+      row.seg[p.label] = (row.seg[p.label] || 0) + ms;
+    }
+    // a frame is complete once nothing of it is pending
+    for (const [f, row] of A.open) {
+      if (A.pending.some((p) => p.frame === f)) continue;
+      A.rows.push(row); A.open.delete(f);
+    }
+    if (A.rows.length > 600) A.rows.splice(0, A.rows.length - 600);
+  }
+
+  /** The finished per-frame segment rows since the last take (and clears them). */
+  gpuAttribTake() {
+    const A = this._attrib;
+    if (!A) return [];
+    if (A.on) this._attribPoll();
+    const out = A.rows.slice();
+    A.rows.length = 0;
+    return out;
   }
 
   perfReset() {
@@ -2278,9 +2888,27 @@ export class Engine {
    * the perf budget is written against is assembled by main.js `_frame()` and
    * handed to `_recordFrame()`; do not mistake this return value for it.
    */
+  /**
+   * U-03 (look-post, engine half): hold the last presented frame while a menu
+   * covers the world. A WebGL canvas that is not drawn to keeps showing its
+   * last frame, so a held render() submits nothing at all (0 draws, no GPU
+   * work); the first frame after holdFrame(true) still renders, so the held
+   * image is the current one, and a resize while held renders once. shell-ui
+   * calls it when a full-screen menu opens and closes (W2).
+   */
+  holdFrame(on = true) {
+    this._hold = !!on;
+    this._holdFrames = 0;
+    return this._hold;
+  }
+
   render(realDt = 0.016) {
     this.renderer.info.reset();
+    if (this._hold && this._holdFrames > 0 && this._holdW === this.renderer.domElement.width
+      && this._holdH === this.renderer.domElement.height) { this._holdFrames++; return 0; }
     const t0 = performance.now();
+    this._lookBridge();
+    this._syncLook();
     this._cullPass(realDt);
     this._csmUpdate();
     this._anisoRoles();
@@ -2307,6 +2935,8 @@ export class Engine {
       query = this._gl.createQuery();
       this._gl.beginQuery(this._gpuExt.TIME_ELAPSED_EXT, query);
     }
+    const attrib = this._attrib?.on === true;
+    if (attrib) this._attrib.frame++;
     this.composer.render(realDt);
     if (query) {
       this._gl.endQuery(this._gpuExt.TIME_ELAPSED_EXT);
@@ -2314,8 +2944,11 @@ export class Engine {
       this._pollGpuTimer();
     }
     for (let i = 0; i < this.onAfterRender.length; i++) {
+      if (attrib) this._attribSwitch('after:' + (this.onAfterRender[i].name || i));
       try { this.onAfterRender[i](this); } catch (err) { this._hookThrew('engine.onAfterRender[' + i + ']', err); }
     }
+    if (attrib) { this._attribSwitch(null); this._attribPoll(); }
+    if (this._hold) { this._holdFrames++; this._holdW = this.renderer.domElement.width; this._holdH = this.renderer.domElement.height; }
     // after the hooks: they run inside the frame and cost real milliseconds
     // (the perf scenarios' pin closure is one of them).
     return performance.now() - t0;
