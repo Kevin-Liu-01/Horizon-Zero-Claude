@@ -1980,7 +1980,14 @@ export const GATES = [
     const __c = __CTX__;
     __c.input.keys.add('ShiftLeft');
     /* r5-all-machines: cast */ const __m = __c.hud._mhbPick[0] || [...__c.hud._engaged.keys()][0];
-    if (__m) { const __pt = __m.position.clone(); __pt.y += (__m.height ?? 2.2) * 0.6; __c.events.emit('machine-damaged', { machine: __m, damage: 9, weak: false, point: __pt, tear: 0, tornPart: null, triggeredElement: null }); }
+    if (__m) {
+      /* at 20 m its plate rides the top band, above this crop: bring the frozen Instrument to 11 m on the line of sight */
+      const __p = __c.player.position, __a = __c.player.camYaw + Math.PI;
+      const __x = __p.x + Math.sin(__a) * 11, __z = __p.z + Math.cos(__a) * 11, __y = __c.terrain?.getHeight?.(__x, __z) ?? __m.position.y;
+      __m.position.set(__x, __y, __z); __m.root?.position?.set?.(__x, __y, __z); __m.root?.updateMatrixWorld?.(true);
+      const __pt = __m.position.clone(); __pt.y += (__m.height ?? 2.2) * 0.6;
+      __c.events.emit('machine-damaged', { machine: __m, damage: 9, weak: false, point: __pt, tear: 0, tornPart: null, triggeredElement: null });
+    }
     await new Promise((r) => setTimeout(r, 500));`),
   hud4k('V-hud-4k-d', 'the kit tag and the tool chips (bottom-right)', -2240, -1260),
   hub4k('V-ui-4k-a', 'the book, map page, top-left: the fore-edge, the station index, the title, the sheet', 'map', 0, 0),

@@ -2000,7 +2000,8 @@ export class HUD {
         const above = B[o + 1] - gap;
         const sideX = (X[i] < (B[o] + B[o + 2]) * 0.5) ? B[o] - HW[i] - gap : B[o + 2] + HW[i] + gap;
         if (above - hi >= topFloorK && this._plateFree(X[i], above, HW[i], hi)) C[i] |= 2, Y[i] = above;
-        else if (this._plateFree(sideX, Y[i], HW[i], hi)) C[i] |= 1, X[i] = sideX;   // off its axis: "clamped"
+        // the most recently hit keeps its own axis (it only ever rises); the others may step aside
+        else if (i > 0 && this._plateFree(sideX, Y[i], HW[i], hi)) C[i] |= 1, X[i] = sideX;   // off its axis: "clamped"
         // else: the HUD's own instruments keep their place first
       }
     }
