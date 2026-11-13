@@ -185,7 +185,8 @@ const LOOK = `
   const __agents = [];
   // fix round 2 (f2-b2/b3 per-owner diagnosis): unnamed top-level Sprites (transient markers and effects the boot spawned on
   // its own clock) differed between boots and are hidden with the agents
-  const hideAgents = () => { if (__agents.length) return; for (const c of __C.scene.children) if (c.visible && (AGENT_RE.test(c.name || '') || (c.isSprite && !c.name))) { c.visible = false; __agents.push(c); } };
+  // idempotent: called at the start of a staging and again at the freeze (a sprite spawned during the settle is hidden too)
+  const hideAgents = () => { for (const c of __C.scene.children) if (c.visible && (AGENT_RE.test(c.name || '') || (c.isSprite && !c.name))) { c.visible = false; __agents.push(c); } };
   const showAgents = () => { for (const c of __agents) c.visible = true; __agents.length = 0; };
   const unstage = () => {
     showAgents();
@@ -286,6 +287,10 @@ const LOOK = `
       // grows 30 % past the limit (hysteresis), so every size-culled mesh is un-hidden and the cull pass re-runs once
       // at the frozen lens; (3) the far shadow cascades render on alternate frames (csmFarCadence 2) and keep the map of
       // the frame they last drew, so every cascade is redrawn at the place (cadence 1 while staged, restored by unstage)
+      // f2-b4: the cloud drift still moved by real dt in the frames between the settle and the freeze (1e-6 apart between
+      // boots, enough to flip pixels on the close frame's far ridges): it is set again here, once the clock is frozen
+      { const cd = __C.environment?.u?.calCloudDrift?.value; if (cd) cd.set(0, 0); }
+      if (o.agents !== true) hideAgents();
       const lens = __C.camera.position;
       if (VG) { if (typeof VG._treeSortX === 'number') { VG._treeSortX = 1e9; VG._treeSortZ = 1e9; } VG.forceStream?.(lens.x, lens.z); }
       __C.scene.traverse((q) => { if (q.userData && q.userData.__sizeCulled === true) { q.visible = true; q.userData.__sizeCulled = false; } });
