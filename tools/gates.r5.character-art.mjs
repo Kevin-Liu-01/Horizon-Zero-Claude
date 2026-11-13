@@ -108,6 +108,106 @@ const CLOSEUP = (name, hour, weather, sunOff, views = [FRONT, L34, LPROF], windO
       label(g, tag, 14, 56);
     })()`;
 
+/**
+ * Fix round 3 (LOOK C-02, C-03, C-04 rows): geometry masks off the LIVE skinned skin. `GEOM` defines, inside an assert:
+ *   skinLive()            { live, n, P (world xyz per vertex, skinned), Z (_calzone, 0..255 x4), idx }
+ *   camOf(pos, tgt, W, H, fov)   the camera S.liveView renders with (same fov, aspect, lookAt)
+ *   raster(cam, W, H, G, triOk, front)   a W x H mask of the triangles triOk(a, b, c) accepts (front: facing the lens only)
+ *   lin(c), lum(d, o)     sRGB byte -> linear; the linear relative luminance of pixel o of an RGBA array
+ *   key(on)               the player alone on a green key (no fog, no sky, nothing else drawn), restored with key(false)
+ */
+const GEOM = `
+      const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+      const lum = (d, o) => 0.2126 * lin(d[o]) + 0.7152 * lin(d[o + 1]) + 0.0722 * lin(d[o + 2]);
+      const skinLive = () => {
+        let live = null; __CTX__.player.model.traverse((o) => { if (!live && o.isSkinnedMesh && o.name === 'Brea_Skin') live = o; });
+        const T3 = __CTX__.player.position.constructor, v = new T3(), n = live.geometry.attributes.position.count;
+        live.updateMatrixWorld(true);
+        const P = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { live.getVertexPosition(i, v); live.localToWorld(v); P[i * 3] = v.x; P[i * 3 + 1] = v.y; P[i * 3 + 2] = v.z; }
+        const za = live.geometry.getAttribute('_calzone');
+        return { live, n, P, Z: za ? za.array : null, idx: live.geometry.index.array };
+      };
+      const camOf = (pos, tgt, W, H, fov) => { const c = __CTX__.camera.clone(); c.fov = fov; c.aspect = W / H; c.position.set(...pos); c.lookAt(...tgt); c.updateProjectionMatrix(); c.updateMatrixWorld(); return c; };
+      const raster = (cam, W, H, G, triOk, front = true) => {
+        const T3 = __CTX__.player.position.constructor, v = new T3(), m = new Uint8Array(W * H);
+        const sx = new Float32Array(G.n), sy = new Float32Array(G.n), sz = new Float32Array(G.n);
+        for (let i = 0; i < G.n; i++) { v.set(G.P[i * 3], G.P[i * 3 + 1], G.P[i * 3 + 2]).project(cam); sx[i] = (v.x + 1) / 2 * W; sy[i] = (1 - v.y) / 2 * H; sz[i] = v.z; }
+        for (let t = 0; t < G.idx.length; t += 3) {
+          const a = G.idx[t], b = G.idx[t + 1], c = G.idx[t + 2];
+          if (!triOk(a, b, c) || sz[a] > 1 || sz[b] > 1 || sz[c] > 1) continue;
+          const area = (sx[b] - sx[a]) * (sy[c] - sy[a]) - (sx[c] - sx[a]) * (sy[b] - sy[a]);
+          if (front && area >= 0) continue;
+          if (Math.abs(area) < 1e-9) continue;
+          const x0 = Math.max(0, Math.floor(Math.min(sx[a], sx[b], sx[c]))), x1 = Math.min(W - 1, Math.ceil(Math.max(sx[a], sx[b], sx[c])));
+          const y0 = Math.max(0, Math.floor(Math.min(sy[a], sy[b], sy[c]))), y1 = Math.min(H - 1, Math.ceil(Math.max(sy[a], sy[b], sy[c])));
+          for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+            const px = x + 0.5, py = y + 0.5;
+            const w0 = ((sx[b] - px) * (sy[c] - py) - (sx[c] - px) * (sy[b] - py)) / area, w1 = ((sx[c] - px) * (sy[a] - py) - (sx[a] - px) * (sy[c] - py)) / area;
+            if (w0 >= 0 && w1 >= 0 && w0 + w1 <= 1) m[y * W + x] = 1;
+          }
+        }
+        return m;
+      };
+      const keyState = { on: false, hidden: [], bg: null, fog: null, cc: null, ca: 1 };
+      const key = (on) => {
+        const C = __CTX__, scene = C.scene, R = C.renderer;
+        if (on && !keyState.on) {
+          keyState.hidden = []; for (const o of scene.children) if (o !== C.player.model && !o.isLight && o.visible) { o.visible = false; keyState.hidden.push(o); }
+          keyState.bg = scene.background; keyState.fog = scene.fog; scene.background = null; scene.fog = null;
+          let colObj = null; C.player.model.traverse((o) => { if (!colObj && o.isMesh && o.material?.color) colObj = o.material.color.clone(); });
+          keyState.cc = R.getClearColor(colObj); keyState.ca = R.getClearAlpha();
+          R.setClearColor(0x00ff00, 1); keyState.on = true;
+        } else if (!on && keyState.on) {
+          for (const o of keyState.hidden) o.visible = true;
+          scene.background = keyState.bg; scene.fog = keyState.fog; R.setClearColor(keyState.cc, keyState.ca); keyState.on = false;
+        }
+      };
+`;
+
+/** Inside an assert: the face's landmarks on the LIVE skin, `face(k)`, and its frame `frame()` -> { cen, F0, R0, U1, view(yaw, el) }. */
+const LMK = `
+      const T3 = __CTX__.player.position.constructor, A_ = __CTX__.assets.models.hero, LM_ = A_.extras.r5Face.landmarks;
+      let tpl_ = null, live_ = null;
+      A_.root.traverse((o) => { if (!tpl_ && o.isSkinnedMesh && o.geometry.getAttribute('_hidemask')) tpl_ = o; });
+      __CTX__.player.model.traverse((o) => { if (!live_ && o.isSkinnedMesh && o.geometry.getAttribute('_hidemask')) live_ = o; });
+      A_.root.updateMatrixWorld(true);
+      const lmI_ = {};
+      { const v = new T3(), n = tpl_.geometry.attributes.position.count;
+        for (const k of Object.keys(LM_)) { let b = -1, bd = 1e9; const q = LM_[k].now; for (let i = 0; i < n; i++) { tpl_.getVertexPosition(i, v); const d = (v.x - q[0]) ** 2 + (v.y - q[1]) ** 2 + (v.z - q[2]) ** 2; if (d < bd) { bd = d; b = i; } } lmI_[k] = b; } }
+      const face = (k) => { const v = new T3(); live_.getVertexPosition(lmI_[k], v); return live_.localToWorld(v); };
+      const frame = () => {
+        live_.updateMatrixWorld(true);
+        const brow = face('brow'), chin = face('chin'), jL = face('jawL'), jR = face('jawR');
+        const R0 = jL.clone().sub(jR).normalize(), U0 = brow.clone().sub(chin).normalize();
+        const F0 = R0.clone().cross(U0).normalize(), U1 = F0.clone().cross(R0).normalize();
+        const cen = brow.clone().add(chin).multiplyScalar(0.5).add(U1.clone().multiplyScalar(0.022)).sub(F0.clone().multiplyScalar(0.07));
+        const view = (yaw, el = 0) => F0.clone().multiplyScalar(Math.cos(yaw) * Math.cos(el)).add(R0.clone().multiplyScalar(Math.sin(yaw) * Math.cos(el))).add(U1.clone().multiplyScalar(Math.sin(el)));
+        return { cen, F0, R0, U1, view, brow, chin };
+      };
+      const frames = (n) => new Promise((r) => { let i = 0; const f = () => { if (++i >= n) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      // relight with the idle FROZEN (fix round 3: A-skin-scatter's staging ran the engine at timeScale 1 for 30 frames per light, so
+      // the head pose and the cheek patches moved between runs): the sun and her heading change, the pose does not
+      const relight = async (hour, off, weather = 'clear') => {
+        const C = __CTX__, env = C.environment, p = C.player;
+        env.setTime(hour); env.setWeather(weather, 0);
+        const sun = env.sunDir, h = Math.atan2(sun.x, sun.z) + off * Math.PI / 180;
+        if (C.engine) C.engine.timeScale = 0;
+        p.heading = h; p.model.rotation.y = h;
+        await frames(4);
+        p.heading = h; p.model.rotation.y = h; p.model.updateMatrixWorld(true);
+      };
+      const sheetOf = () => {
+        document.getElementById('ca-sheet')?.remove();
+        for (const el of Array.from(document.body.children)) if (el.tagName !== 'CANVAS' && !el.querySelector('canvas')) el.style.visibility = 'hidden';
+        const c = document.createElement('canvas'); c.id = 'ca-sheet'; c.width = 1600; c.height = 900;
+        c.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#000';
+        document.body.appendChild(c); return c.getContext('2d');
+      };
+      const putImg = (g, img, x, y, w, h, sx = 0, sy = 0, sw = img.width, sh = img.height) => { const k = document.createElement('canvas'); k.width = img.width; k.height = img.height; k.getContext('2d').putImageData(img, 0, 0); g.imageSmoothingQuality = 'high'; g.drawImage(k, sx, sy, sw, sh, x, y, w, h); };
+      const tag = (g, t, x, y) => { g.font = '500 14px "IBM Plex Mono", ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - 6, y - 15, g.measureText(t).width + 12, 21); g.fillStyle = '#efe9dc'; g.fillText(t, x, y); };
+`;
+
 const COMMON = 'Reference: reference/r5/gates-perf/portrait-bokeh.jpg (CC0; the form shading, eye depth and lip structure a real face has). Pass: at 1600 x 900, at 0.8 m, front, 3/4 and profile read as a DESIGNED game heroine next to that reference. The headwrap is wound cloth: overlapping turns with hems and folds, soft woven edges, no paper band, no torn alpha, no blocky edge. No helmet hair: close coils at BOTH temples and the nape with a broken edge; the topknot is wound cloth with a carmine binding. Skin has form (socket, nose wing, under-lip and under-jaw shading), visible grain, no flat or plastic areas, no stubble. The nose is refined in profile, not blunt or oversized; the jaw runs in one line to a defined chin. The eyes are wet and deep: a highlight on the cornea, lid shadow on the ball, lashes. The salt-line is cracked paste with thickness over its whole length, not a flat stripe. The brows are hair, heavy and straight, the left one cut clean through by the scar. There is no hole at the collar: skin runs down inside it. The stowed lance and bow are hidden, nothing else: the alidade cord is graded in frame. FAIL on any of these, and (R54) FAIL if the frame passes the words and still looks cheap next to its reference.';
 
 export const GATES = [

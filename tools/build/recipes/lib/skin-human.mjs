@@ -356,6 +356,50 @@ export function bakeThinness(doc, prim, { scale = 1, t0 = 0.005, t1 = 0.025, zer
 }
 
 /**
+ * Fix round 3 (LOOK C-02, C-03): the `_CALZONE` vertex attribute src/hero/skinLook.js reads, u8 normalized VEC4 on the skin and
+ * the eyes: x = the face's micro-pore detail weight (`face(p)`, 0..1), y = the cornea (the eye mesh's front dome, 1 inside
+ * `corneaR`, 0 by `corneaR + 1.2 mm`), z = the tear line (the lower lid's margin where it lies on the ball, within `tearD` of it),
+ * w = the eye (never paste, never flattened by a gate). `ball(p)` is the distance from a point to the ball's surface (dome
+ * included) for the eye it belongs to, `eyes` the eye centres. Call after every append to the skin (the collar's lid and wall).
+ */
+export function bakeZones(doc, bodyPrim, eyesPrim, { eyes, sphereZ, face, ball, corneaR = 0.0052, tearD = 0.0013 }) {
+  const buf = doc.getRoot().listBuffers()[0];
+  const q = [0, 0, 0];
+  const stats = { face: 0, cornea: 0, tear: 0 };
+  {
+    const P = bodyPrim.getAttribute('POSITION'), n = P.getCount(), out = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      P.getElement(i, q);
+      const f = face(q);
+      out[i * 4] = Math.round(Math.max(0, Math.min(1, f)) * 255);
+      if (f > 0.5) stats.face++;
+      const e = eyes[q[0] > 0 ? 0 : 1], dy = q[1] - e[1], dx = q[0] - e[0];
+      if (dy < -0.0012 && dy > -0.0085 && Math.abs(dx) < 0.0125 && q[2] > sphereZ) {
+        const d = ball(q);
+        const k = (1 - smooth(tearD * 0.4, tearD, d)) * (1 - smooth(0.009, 0.0125, Math.abs(dx)));
+        out[i * 4 + 2] = Math.round(k * 255);
+        if (k > 0.5) stats.tear++;
+      }
+    }
+    bodyPrim.setAttribute('_CALZONE', doc.createAccessor().setType('VEC4').setArray(out).setNormalized(true).setBuffer(buf));
+  }
+  {
+    const P = eyesPrim.getAttribute('POSITION'), n = P.getCount(), out = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      P.getElement(i, q);
+      const e = eyes[q[0] > 0 ? 0 : 1];
+      const r = Math.hypot(q[0] - e[0], q[1] - e[1]);
+      const k = q[2] > sphereZ ? 1 - smooth(corneaR, corneaR + 0.0012, r) : 0;
+      out[i * 4 + 1] = Math.round(k * 255);
+      out[i * 4 + 3] = 255;
+      if (k > 0.5) stats.cornea++;
+    }
+    eyesPrim.setAttribute('_CALZONE', doc.createAccessor().setType('VEC4').setArray(out).setNormalized(true).setBuffer(buf));
+  }
+  return stats;
+}
+
+/**
  * Whatever a collar's opening could show that is not skin: a closed dark lid inside the collar, from inside the neck out toward the
  * collar's own wall (`margin` short of it) a hand's width under its rim at the BACK, where the collar stands off the neck; at the
  * front and the sides it stays inside the neck (the V shows skin down to the smock). A look down inside the collar, past a bowed
@@ -436,7 +480,7 @@ export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
  * (0 = her front) is under `reach` (the front V stays open), facing the neck. Skinned like the torso under the collar, as the lid is.
  * Call after `appendCollarSkirt`. Returns the first new vertex index.
  */
-export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, seg = 20, reach = 0.45, inset = 0.003, below = 0.003, darkUV } = {}) {
+export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, seg = 20, reach = 0.45, inset = 0.003, below = 0.003, darkUV, skinAt = null } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
   const n0 = P.getCount();
@@ -446,6 +490,11 @@ export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
   const j = [0, 0, 0, 0], w = [0, 0, 0, 0];
   const put = (x, y, z, nx, nz) => {
     pos.push(x, y, z); nrm.push(nx, 0, nz); uv.push(darkUV[0], darkUV[1]);
+    // fix round 3: skinned like the OUTFIT it lines (`skinAt`: the nearest outfit vertex's joints and weights, in this skin's joint
+    // order), so in the bowed idle the wall moves with the collar's rim (neck_01 carries up to 0.46 of the smock's back rim) and never
+    // stands above it; skinned like the torso under it, the wall stayed put while the rim came forward and down, and its top showed
+    // over the rim from behind (A-wrap-closed's last collar slivers, az 150-180, el 0.4)
+    if (skinAt && skinAt(x, y, z, j, w)) { jnt.push(...j); wgt.push(...w); return; }
     let best = -1, bd = 9;
     for (const v of near) { const d = (v[0] - x) ** 2 + (v[1] - y) ** 2 + (v[2] - z) ** 2; if (d < bd) { bd = d; best = v[3]; } }
     J.getElement(best, j); W.getElement(best, w);
@@ -482,6 +531,38 @@ export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
   grow(P, pos); grow(prim.getAttribute('NORMAL'), nrm); grow(prim.getAttribute('TEXCOORD_0'), uv); grow(J, jnt); grow(W, wgt);
   grow(prim.getIndices(), idx);
   return { first: n0, tris: idx.length / 3 };
+}
+
+/**
+ * Fix round 3: a skin sampler from an outfit's own bind mesh, for what lines it (`appendCollarLiner({ skinAt })`).
+ * `prims` are the outfit's primitives grafted on a doc whose skin joints are named `outJoints`; `joints` is this skin's joint
+ * name list. `keep(p)` limits the search (the collar region). Returns `skinAt(x, y, z, j, w) -> bool`: the nearest kept outfit
+ * vertex's joints (remapped by name) and weights, written into `j` and `w`; false when nothing is kept or a joint is missing.
+ */
+export function outfitSkinSampler(prims, outJoints, joints, keep = () => true) {
+  const idx = new Map(joints.map((n, i) => [n, i]));
+  const pts = [];
+  const q = [0, 0, 0], jj = [0, 0, 0, 0], ww = [0, 0, 0, 0];
+  for (const prim of prims) {
+    const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
+    if (!J || !W) continue;
+    for (let i = 0; i < P.getCount(); i++) {
+      P.getElement(i, q);
+      if (!keep(q)) continue;
+      J.getElement(i, jj); W.getElement(i, ww);
+      const j = [], w = [];
+      let ok = true;
+      for (let k = 0; k < 4; k++) { if (ww[k] <= 0) { j.push(0); w.push(0); continue; } const t = idx.get(outJoints[jj[k]]); if (t == null) { ok = false; break; } j.push(t); w.push(ww[k]); }
+      if (ok) pts.push({ p: [q[0], q[1], q[2]], j, w });
+    }
+  }
+  return (x, y, z, j, w) => {
+    let best = null, bd = 1e9;
+    for (const v of pts) { const d = (v.p[0] - x) ** 2 + (v.p[1] - y) ** 2 + (v.p[2] - z) ** 2; if (d < bd) { bd = d; best = v; } }
+    if (!best) return false;
+    for (let k = 0; k < 4; k++) { j[k] = best.j[k]; w[k] = best.w[k]; }
+    return true;
+  };
 }
 
 /**

@@ -44,7 +44,7 @@ import path from 'node:path';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { joinPrimitives } from '@gltf-transform/functions';
 import {
-  ROOT, srcRoot, UBC_DIR, HAIR_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex,
+  ROOT, srcRoot, UBC_DIR, HAIR_DIR, MCO_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex,
   findLandmarks, GRADED, faceField, applyField,
   recomputeNormals, refineEdges, smoothNormals, smoothPositions, smooth, profileMask, iou, rle, writeSkinned, v3,
 } from './lib/face.mjs';
@@ -54,7 +54,7 @@ import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/wrap-head.mjs';
 import { lashCard } from './lib/hair.mjs';
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, browLines, remapEyeUV,
-  cullUnderWrap, cullEyeBacks, cullEyeUnderLids, reshapeEars, appendCollarLiner, bakeThinness, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
+  cullUnderWrap, cullEyeBacks, cullEyeUnderLids, reshapeEars, appendCollarLiner, outfitSkinSampler, bakeThinness, bakeZones, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
 } from './lib/skin-human.mjs';
 
 export const LANE = 'hero-body';
@@ -184,6 +184,10 @@ export async function build({ out = ROOT } = {}) {
   }
   const eyes = eyeCentres(eyesPrim);
   const eyeSphereZ = eyeFrontZ(eyesPrim) - 0.0165;
+  // fix round 3 (the judges: "the cornea sits behind the lid line, so a true profile shows no wet bulge"): a taller, tighter cornea
+  // dome (4.0 mm over 1.6-6.4 mm, was 3.3 mm over 1.8-7.4 mm), so its apex stands about 2.5 mm proud of the lid margins (was 1.4)
+  const DOME = { height: 0.0040, r0: 0.0016, r1: 0.0064 };
+  const domeAt = (r) => DOME.height * (1 - smooth(DOME.r0, DOME.r1, r));
   const headW2 = (prim, i) => { const p = [0, 0, 0]; prim.getAttribute('POSITION').getElement(i, p); return p[1] > 1.6 && p[2] > 0 && Math.abs(p[0]) < 0.075; };
   const L = findLandmarks(headPts, eyes);
   for (const k of Object.keys(L)) if (!L[k]) throw new Error(`landmark ${k} not found`);
@@ -305,7 +309,7 @@ export async function build({ out = ROOT } = {}) {
       } else continue;
       if (before < Rb - 0.0002) continue;              // a lid's inner wall behind the ball stays behind it
       const vx = a[i * 3] - c[0], vy = a[i * 3 + 1] - c[1], vz = a[i * 3 + 2] - c[2], d = Math.hypot(vx, vy, vz);
-      const dome = vz > 0 ? 0.0033 * (1 - smooth(0.0018, 0.0074, Math.hypot(vx, vy))) : 0;
+      const dome = vz > 0 ? domeAt(Math.hypot(vx, vy)) : 0;
       const need = Rb + dome + 0.00045;
       if (d < need) { a[i * 3] = c[0] + vx / d * need; a[i * 3 + 1] = c[1] + vy / d * need; a[i * 3 + 2] = c[2] + vz / d * need; }
     }
@@ -364,7 +368,7 @@ export async function build({ out = ROOT } = {}) {
   { const a = eyesPrim.getAttribute('POSITION').getArray(); for (let i = 0; i < a.length; i += 3) eyeMax = Math.max(eyeMax, Math.hypot(a[i] - eyeStock[i], a[i + 1] - eyeStock[i + 1], a[i + 2] - eyeStock[i + 2])); }
 
   // the ball's socket was measured above and stays rigid; the cornea is the eye's own form
-  corneaDome(eyesPrim, eyes, eyeSphereZ);
+  corneaDome(eyesPrim, eyes, eyeSphereZ, DOME);
   // measure what the field did at each landmark (game mm), and the profile IoU
   const disp = {};
   const faceRec = { landmarks: {}, graded: GRADED };
@@ -491,7 +495,7 @@ export async function build({ out = ROOT } = {}) {
   const RB = 0.0165;                              // the ball's radius (eyeSphereZ above); the cornea dome stands on it
   const onBall = (k) => (q) => {
     const c = [eyes[k][0], eyes[k][1], eyeSphereZ], v = [q[0] - c[0], q[1] - c[1], q[2] - c[2]], d = Math.hypot(...v) || 1;
-    const dome = v[2] > 0 ? 0.0033 * (1 - smooth(0.0018, 0.0074, Math.hypot(v[0], v[1]))) : 0;
+    const dome = v[2] > 0 ? domeAt(Math.hypot(v[0], v[1])) : 0;
     const want = RB + dome + 0.00025;
     // fix round 2, Nov 12: the rim keeps its place on the lid (x, y) and only comes forward onto the ball; pushed out radially it rode up
     // over the cornea dome as a peak above the pupil
@@ -535,16 +539,46 @@ export async function build({ out = ROOT } = {}) {
     U.getElement(best, u);
     return [u[0], u[1]];
   })();
-  const skirtFrom = appendCollarSkirt(bodyPrim, panTris, { darkUV, seg: 19 });
+  // fix round 3 (the judges: "a solid black wedge between the neck and the inside of the collar" in the day front): the lid and the
+  // wall inside the collar take the neck's own skin a hand under the collar's back rim (its texel carries the collar's baked contact
+  // shade), not the mouth's black: a look into the collar reads skin running down inside it, not a void
+  const collarUV = (() => {
+    const Q = bodyPrim.getAttribute('POSITION'), U = bodyPrim.getAttribute('TEXCOORD_0'), q = [0, 0, 0], u = [0, 0];
+    let best = -1, bz = 9;
+    for (let i = 0; i < Q.getCount(); i++) { Q.getElement(i, q); if (q[1] > 1.488 && q[1] < 1.512 && Math.abs(q[0]) < 0.022 && q[2] < -0.02 && q[2] < bz) { bz = q[2]; best = i; } }
+    if (best < 0) throw new Error('[brea] no neck texel for the collar lining');
+    U.getElement(best, u);
+    return [u[0], u[1]];
+  })();
+  void darkUV;
+  const skirtFrom = appendCollarSkirt(bodyPrim, panTris, { darkUV: collarUV, seg: 19 });
   // fix round 2 (A-wrap-closed's collar views): the collar's inner wall, round the sides and the back (19 lid segments pay for it).
   // Nov 12: and round the front (reach 1.01): a look from behind and above, past the neck, met the front's single-sided inner face and
   // saw the ground in front of her (r7: 300-400 px at az 150-180, el 0.4-0.8). The wall faces the neck, so from the front it is never
   // drawn, and where the V opens there is no wall to line; one tail row pays for it
-  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV, seg: 19, reach: 1.01 });
+  // fix round 3 (A-wrap-closed, the collar set's last slivers): the wall is skinned like the smock it lines, read off the outfit's own
+  // source mesh grafted on this skeleton (the same graft outfit-pan-1.mjs makes), so its top rides with the rim in the bowed idle
+  const smockSkin = await (async () => {
+    const sd = await readGltf(path.join(UBC_DIR(SRC), 'Superhero_Female_FullBody.gltf'));
+    cleanDoc(sd);
+    for (const n of sd.getRoot().listNodes()) if (n.getMesh()) { n.getMesh().dispose(); n.dispose(); }
+    const pd = await readGltf(path.join(MCO_DIR(SRC), 'Female_Peasant_Body.gltf'));
+    cleanDoc(pd);
+    const sn = graft(sd, pd, 'Female_Peasant_Body');
+    const outJ = sd.getRoot().listSkins()[0].listJoints().map((jn) => jn.getName());
+    return outfitSkinSampler(sn.map((n) => n.getMesh().listPrimitives()[0]), outJ, joints, (q) => q[1] > 1.40 && Math.abs(q[0]) < 0.16 && q[2] > -0.16);
+  })();
+  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV: collarUV, seg: 19, reach: 1.01, skinAt: smockSkin });
   // fix round 2, Nov 12 (LOOK C-01): the tissue's thickness behind each vertex, for the skin light's back-transmission (src/hero/skinLook.js)
   // (the ears only: the lips, the nose wings and the lower lids are thin too, with the mouth, the nostrils and the ball a few mm
   // behind them, but in a back light they glowed as a red nostril and a lit lower lid, which the backlit row forbids)
   const thinness = bakeThinness(base, bodyPrim, { scale: S, zero: [eyesPrim], keep: (p) => p[1] > 1.55 && p[1] < 1.72 && Math.abs(p[0]) > 0.062 && p[2] < 0.03 });
+  // fix round 3 (LOOK C-02, C-03): the face's micro-detail weight, the cornea and the tear line, for the skin light
+  const zones = bakeZones(base, bodyPrim, eyesPrim, {
+    eyes, sphereZ: eyeSphereZ,
+    face: (p) => smooth(1.505, 1.535, p[1]) * (1 - smooth(1.70, 1.725, p[1])) * smooth(-0.045, -0.015, p[2]) * (1 - smooth(0.078, 0.092, Math.abs(p[0]))),
+    ball: (p) => { const e = eyes[p[0] > 0 ? 0 : 1], v = [p[0] - e[0], p[1] - e[1], p[2] - eyeSphereZ]; const r = Math.hypot(v[0], v[1]); return Math.hypot(...v) - (RB + (v[2] > 0 ? domeAt(r) : 0)); },
+  });
 
   // ---- hide mask (Pan Whites I covers which body vertices)
   const hide = coverageMask(bodyPrim, panTris, 0.08);
@@ -595,7 +629,7 @@ export async function build({ out = ROOT } = {}) {
         hideBits: { 'pan-1': 1 }, hiddenByPan1: hidden,
       },
       r5Face: faceRec,
-      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, eyeUnderLids, handsCut, earTucked, earMoved }, collarLiner: liner, thinness },
+      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, eyeUnderLids, handsCut, earTucked, earMoved }, collarLiner: liner, thinness, zones },
     },
   });
   void wrapTex;
