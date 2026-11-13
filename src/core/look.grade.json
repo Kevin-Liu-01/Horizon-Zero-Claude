@@ -92,28 +92,24 @@
             0
           ],
           [
-            6,
-            6.8
-          ],
-          [
             15,
-            16.4
+            15
           ],
           [
             30,
-            31.8
+            30.6
           ],
           [
             45,
-            49.5
+            48.6
           ],
           [
             60,
-            68.5
+            67.5
           ],
           [
             72,
-            82
+            81
           ],
           [
             85,
@@ -244,28 +240,24 @@
             0
           ],
           [
-            6,
-            6.8
-          ],
-          [
             15,
-            16.4
+            15
           ],
           [
             30,
-            31.8
+            30.6
           ],
           [
             45,
-            49.5
+            48.6
           ],
           [
             60,
-            68.5
+            67.5
           ],
           [
             72,
-            82
+            81
           ],
           [
             85,
@@ -395,28 +387,24 @@
             0
           ],
           [
-            6,
-            6.8
-          ],
-          [
             15,
-            16.4
+            15
           ],
           [
             30,
-            31.8
+            30.6
           ],
           [
             45,
-            49.5
+            48.6
           ],
           [
             60,
-            68.5
+            67.5
           ],
           [
             72,
-            82
+            81
           ],
           [
             85,
@@ -528,28 +516,24 @@
             0
           ],
           [
-            6,
-            6.8
-          ],
-          [
             15,
-            16.4
+            15
           ],
           [
             30,
-            31.8
+            30.6
           ],
           [
             45,
-            49.5
+            48.6
           ],
           [
             60,
-            68.5
+            67.5
           ],
           [
             72,
-            82
+            81
           ],
           [
             85,
@@ -623,7 +607,7 @@
       "dusk"
     ]
   ],
-  "tuning": "Fix round 1 (Nov 12): the r4 sets folded yellow and green into one amber band (97 % of chroma pixels in one 30-degree band) and read as a sepia filter beside 1-TR (judge). Re-tuned on the HDR dump of the look places (no hour EV, W0 keys): the amber band rotated -3 deg toward orange (a* x1.12 in the mids) and kept at chroma x0.98, the olive band only -6 deg, greens untouched, Orchil violets x1.55 so Brea's violet is the most saturated hue (dump: violet max 46.8 vs grass p90 42.0 field, 45.2 vs 41.6 aim, 47.3 vs 39.8 close); shadows shifted toward rose in L*a*b* by (5.5, -5) at chroma x0.85 (the full-resolution frames, with GTAO, put the darkest fifth at a* 8-10: a larger b* shift turned them blue-violet); mid b* x0.82; highlights x0.42 chroma; a tone curve on L* that opens the top (60 -> 68.5, 72 -> 82) so p99 does not fall below the W0 output (field 73.7 vs W0 73.4). Bars met on the dump: 22/40 against r4 14/40; the rest (p99 >= 88, clip, spread, hi10 chroma) need the sun, the sky and the sea (world-sky L-03/L-04/L-06, world-ground).",
+  "tuning": "Fix round 1 (Nov 12): the r4 sets folded yellow and green into one amber band (97 % of chroma pixels in one 30-degree band) and read as a sepia filter beside 1-TR (judge). Re-tuned on the HDR dump of the look places (no hour EV, W0 keys): the amber band rotated -3 deg toward orange (a* x1.12 in the mids) and kept at chroma x0.98, the olive band only -6 deg, greens untouched, Orchil violets x1.55 so Brea's violet is the most saturated hue (dump: violet max 46.8 vs grass p90 42.0 field, 45.2 vs 41.6 aim, 47.3 vs 39.8 close); shadows shifted toward rose in L*a*b* by (5.5, -5) at chroma x0.85 (the full-resolution frames, with GTAO, put the darkest fifth at a* 8-10: a larger b* shift turned them blue-violet); mid b* x0.82; highlights x0.42 chroma; a tone curve on L* that opens the top (60 -> 68.5, 72 -> 82) so p99 does not fall below the W0 output (field 73.7 vs W0 73.4). Bars met on the dump: 22/40 against r4 14/40; the rest (p99 >= 88, clip, spread, hi10 chroma) need the sun, the sky and the sea (world-sky L-03/L-04/L-06, world-ground). R68 (Nov 13, integration frames a1): the tone curve no longer lifts the toe (identity below L* 15; it used to put 6 at 6.8 and 15 at 16.4): with world-sky's aerial v2 the two lifts stacked into a milky Pans vista; the grade keeps the shadow tint, the aerial term owns distance.",
   "hourEv": [
     [
       0,
