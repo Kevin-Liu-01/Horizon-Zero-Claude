@@ -2808,7 +2808,7 @@ export class PlayerAnimator {
       this._charOf(pe.bone, _rxV);
       _gvW.copy(_rxV).applyMatrix4(this.model.matrixWorld);
       // (round 3: ...and for `gvHold` s after it last held anything back, so what it held is let go at its pace, not at once)
-      const on = (dodging || air || this._rxWin > 0 || this._aimW > 0.01 || this._crouchW > 0.5 || this._gvHold > 0 || p._aimTurnLim) && !p.mantling && !p.riding
+      const on = (dodging || air || this._rxWin > 0 || this._aimW > 0.01 || this._crouchW > 0.5 || this._gvHold > 0 || p._aimTurnLim || this._afEng) && !p.mantling && !p.riding
         && this._deadW < 0.02 && !((this._nat?.ok) && ((this._nat.by.climb?.w ?? 0) > 0.02 || (this._nat.by.sit?.w ?? 0) > 0.02));
       if (on && this._gvOk) {
         const k60 = Math.min(1, Math.max(1e-3, dt * 60)), cap = RX.govM * k60;
@@ -2837,7 +2837,11 @@ export class PlayerAnimator {
             if (nB === 3) { this._charOf(b.spine3.bone, _gvC); this._charOf(b.head.bone, _gvH); }
             const P = _gvP3, Q = this._rxQ3;
             P[0] = _rxV; P[1] = _gvC; P[2] = _gvH;
-            const dYaw = this._gvYawOk ? this.model.rotation.y - this._gvYaw : 0;
+            // (her own turn: what her heading turned beyond the camera's turn of this step — a mouse turn at full draw
+            // carries her round with it, and that sweep is the player's, as the gates read it)
+            let dCam = this._gvYawOk ? (p.camYaw ?? 0) - this._gvCam : 0;
+            dCam -= Math.round(dCam / (2 * Math.PI)) * 2 * Math.PI;
+            const dYaw = this._gvYawOk ? this.model.rotation.y - this._gvYaw - dCam : 0;
             const nW = RX.trunkWorld && Math.abs(dYaw) > 1e-5 && Math.abs(dYaw) < 0.6 && (this._aimW > 0.01 || p._aimTurnLim || this._rxWin > 0 || air) ? nB : 0;
             for (let i = 0; i < nW; i++) _gvQw[i].copy(Q[i]).applyAxisAngle(Y_AXIS, -dYaw);
             _gvT.set(0, 0, 0);
@@ -2877,7 +2881,7 @@ export class PlayerAnimator {
     }
     this._charOf(pe.bone, this._rxPe); this._rxPeOk = true;
     if (b.spine3 && b.head) { this._charOf(b.spine3.bone, this._rxQ3[1]); this._charOf(b.head.bone, this._rxQ3[2]); this._rxTrOk = true; }
-    this._gvYaw = this.model.rotation.y; this._gvYawOk = true;
+    this._gvYaw = this.model.rotation.y; this._gvCam = p.camYaw ?? 0; this._gvYawOk = true;
   }
 
   /**
@@ -4320,7 +4324,11 @@ export class PlayerAnimator {
       // DOWN aim too, where A16 holds the elbow under the shoulder joint and
       // A-draw-elbow-level wants it >= 0.05 m up-and-back of the hand along
       // the falling arrow — the joint has to rise for both to hold)
-      const sh = this.T.drawShrug * drawS * aimW * (levelK + (this.T.drawShrugDown ?? 0) * (1 - levelK)) * (1 - 0.5 * clamp(-fp / 0.55, 0, 1));
+      // (hero-body targeted fix round 3, `drawShrugUp`: the up-aims keep the shrug they had, 0.58 — the new 0.8 is
+      // the level and down aims' forearm; at -0.55 the higher arm, carried in the chest's frame through a drawn dodge,
+      // put the fingertips over the crown, run w11/F1)
+      const shK = this.T.drawShrugUp != null ? this.T.drawShrug + (this.T.drawShrugUp - this.T.drawShrug) * clamp(-fp / 0.3, 0, 1) : this.T.drawShrug;
+      const sh = shK * drawS * aimW * (levelK + (this.T.drawShrugDown ?? 0) * (1 - levelK)) * (1 - 0.5 * clamp(-fp / 0.55, 0, 1));
       if (sh > 1e-4) {
         this._charOf(b.clavR.bone, _sg0); this._charOf(b.upArmR.bone, _sg1);
         _v3.subVectors(_sg1, _sg0).cross(Y_AXIS);
@@ -6016,7 +6024,8 @@ export class PlayerAnimator {
     const S = this._efS || (this._efS = { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0, r52: 1, out: 0, shL: 0, fw: 0, fa: 0 });   // once
     // (hero-body targeted fix round 3, `elbowForm.fore` [weight, rad]: the forearm along the arrow is a form target too,
     // soft, inside the same hard bars: past `fore[1]` off the ray it costs `fore[0]` per radian, x100 as the others)
-    S.fw = (EF.fore?.[0] ?? 0) * (1 - lf); S.fa = EF.fore?.[1] ?? 0.26;
+    // (...faded out over the up-aims, as `drawShrugUp` is: there the elbow keeps the band's floor it had)
+    S.fw = (EF.fore?.[0] ?? 0) * (1 - lf) * (1 - clamp(Math.asin(clamp(_dA.y, -1, 1)) / 0.3, 0, 1)); S.fa = EF.fore?.[1] ?? 0.26;
     S.out = this.T.armFlow?.outside ? 1 : 0; S.shL = _sg0.dot(this._latT);
     S.r = r; S.shU = _sg0.dot(_efUp); S.shY = _sg0.dot(this._upT); S.hR = this.T.headR.z; S.hdF = _hd.dot(_efF);
     S.hD = _sg2.dot(_dA); S.lo = EF.up[0]; S.hi = EF.up[1]; S.bh = EF.behindHand; S.bd = EF.behindHead;

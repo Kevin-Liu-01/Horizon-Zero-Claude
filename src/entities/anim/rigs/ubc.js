@@ -198,7 +198,7 @@ export const UBC_TUNE = {
   // (hero-body targeted fix round 3, gate judge findings 1/3, eng judge finding 3: 0.58 -> 0.8. At 0.58 the held draw's
   // forearm stood 18-20 deg off the real arrow, the elbow 2 cm under the joint and the cheek 3-6 cm over it, so any
   // camera turn or strafe crossed the 20 deg bar; with the joint 2 cm higher it reads 9-14 deg held, run w11/d6)
-  drawShrug: 0.8,
+  drawShrug: 0.8, drawShrugUp: 0.58,
   // the string-side scapula's retraction share at full draw (Round 4: 0.8):
   // with the shoulder lifted, less retraction keeps the elbow inside the
   // 0.10 m behind-the-skull bar (A-draw-elbow-level) with the forearm in line
