@@ -24,9 +24,10 @@ export function attribTable(detail) {
   for (const [name, s] of Object.entries(detail.scenarios || {})) {
     if (s.skip || s.error) { lines.push(`\n### ${name}: ${s.skip || s.error}`); continue; }
     const P = s.perPass;
-    lines.push(`\n### ${name}: frame ${s.frame.medianMs} ms (p95 ${s.frame.p95Ms}, ${s.frame.medianDraws} draws, scale ${s.frame.renderScale}); rows sum ${P.sumRowsMs} ms against the frame (gap ${P.gapMs} ms; within 10 %: ${s.sumWithin10})`);
-    lines.push('\n| pass | ms | fix owner (ROUND5-LOOK §4.2) |\n|---|---|---|');
-    for (const r of [...(P.table || [])].sort((a, b) => (b.ms || 0) - (a.ms || 0))) lines.push(`| ${r.row} | ${r.ms} | ${r.fixOwner || ((r.ms || 0) >= 0.5 ? '**none: needs a §4.2 row**' : '-')} |`);
+    lines.push(`\n### ${name}: frame ${P.frameMs ?? s.frame.medianMs} ms (p95 ${s.frame.p95Ms}, ${s.frame.medianDraws} draws, scale ${s.frame.renderScale}); rows sum ${P.sumRowsMs} ms against the frame (gap ${P.gapMs} ms; within 10 % and no negative row: ${s.sumWithin10})`);
+    if (P.method) lines.push(`method: ${P.method}; steps ${JSON.stringify(P.stepsMs)}; reverse ${JSON.stringify(P.reverseStepsMs)}; grade pass bench ${P.gradePassBenchMs} ms`);
+    lines.push('\n| pass | ms (cumulative) | ms with every later pass on | interaction | fix owner (ROUND5-LOOK §4.2) |\n|---|---|---|---|---|');
+    for (const r of P.table || []) lines.push(`| ${r.row} | ${r.ms} | ${r.withLaterPassesOnMs ?? '-'} | ${r.interactionMs ?? '-'} | ${r.fixOwner || ((r.ms || 0) >= 0.5 ? '**none: needs a §4.2 row**' : '-')} |`);
     lines.push('\n| owner (hide-one) | lanes | children | marginal ms |\n|---|---|---|---|');
     for (const o of s.owners) lines.push(`| ${o.id} | ${o.lanes} | ${o.children} | ${o.marginalMs} |`);
     lines.push(`| floor (all owners hidden) | | | ${s.floorAllOwnersHiddenMs} |`);

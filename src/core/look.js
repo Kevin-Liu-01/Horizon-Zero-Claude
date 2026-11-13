@@ -414,8 +414,12 @@ function pchip(P, x) {
  *                               by `chroma` and shifted by (da, db): ochre and olive shadow toward rose-violet
  *   mid        { range: [L0, L1, L2, L3], hue: [h0, h1, feather], b, a, rotate }   b* (a*) of the warm hues in the
  *                               mid band scaled by `b` (`a`), then turned by `rotate` degrees (chroma kept)
- *   high       { range: [L0, L1], chroma, shift: [da, db], cRange: [C0, C1] }   the brightest NEAR-NEUTRAL band
- *                               toward cream (weight 1 below chroma C0, 0 above C1: warm highlights keep their gold)
+ *   cool       { range: [L0, L1, L2, L3], cRange: [C0, C1], chroma, shift: [da, db] }   fix round 3: the low-chroma upper
+ *                               mids (haze, sky, dust) toward lavender, the cool half of the panels' split
+ *   high       { range: [L0, L1(, L2, L3)], chroma, shift: [da, db], cRange: [C0, C1], rotate, warm }   the lit band
+ *                               (weight 1 below chroma C0, 0 above C1; a 4-entry range fades out again above L2-L3 so
+ *                               fire cores keep their chroma); `rotate` turns it toward gold (fix round 3)
+ *   mid.cRange [C0, C1]         fix round 3: spares saturated cloth (full weight below chroma C0, none above C1)
  * L* is kept by the chroma and shift steps; only `tone` moves it.
  */
 function labStage(c, X, w) {
@@ -447,7 +451,9 @@ function labStage(c, X, w) {
     const wm = smoothstep(r[0], r[1], L0) * (1 - smoothstep(r[2], r[3], L0)) * w;
     if (wm > 0) {
       let h = Math.atan2(b, a) * 180 / Math.PI; if (h < 0) h += 360;
-      const wh = bandWeight(h, M.hue[0], M.hue[1], M.hue[2] ?? 12) * Math.min(1, Math.hypot(a, b) / 6);
+      // fix round 3: `cRange` [C0, C1] spares saturated colours (cloth, fire-lit paint): full weight below Lab chroma C0, none above C1
+      const wh = bandWeight(h, M.hue[0], M.hue[1], M.hue[2] ?? 12) * Math.min(1, Math.hypot(a, b) / 6)
+        * (M.cRange ? 1 - smoothstep(M.cRange[0], M.cRange[1], C0) : 1);
       const k = 1 + ((M.b ?? 1) - 1) * wm * wh, ka = 1 + ((M.a ?? 1) - 1) * wm * wh;
       b *= k; a *= ka;
       // fix round 2: `rotate` (deg) turns the warm mids toward orange (1-TR's mid hue is 49 deg) while the top band
@@ -455,15 +461,33 @@ function labStage(c, X, w) {
       if (M.rotate) { const t = M.rotate * wm * wh * Math.PI / 180, ct = Math.cos(t), st = Math.sin(t), a1 = a * ct - b * st; b = a * st + b * ct; a = a1; }
     }
   }
+  if (X.cool) {
+    // fix round 3 (judges: mid b* is the grade's): the low-chroma upper mids (haze, cloud, sky, pale rock and dust:
+    // Lab chroma below cRange) go lavender-rose while sunlit grass, skin and cloth keep their warmth. 1-TR's mid b* is low
+    // because a lavender sky sits beside orange grass (its top band b* -10.9 over grass at b* +31-37), not because its
+    // grass is pink: the cool half of the split belongs to the neutrals. (a*, b*) x chroma + shift, weight by L* (4 entries,
+    // up then down) and by chroma
+    const K = X.cool, r = K.range, wc = 1 - smoothstep(K.cRange[0], K.cRange[1], C0);
+    const wk = smoothstep(r[0], r[1], L0) * (1 - smoothstep(r[2], r[3], L0)) * wc * w;
+    if (wk > 0) {
+      const k = 1 + ((K.chroma ?? 1) - 1) * wk;
+      a = a * k + K.shift[0] * wk;
+      b = b * k + K.shift[1] * wk;
+    }
+  }
   if (X.high) {
     // fix round 2: `cRange` [C0, C1] limits the top band to near-neutral colours (full weight below Lab chroma C0,
     // none above C1): sky and cloud tops go cream, while fire, sun glow and sunlit gold keep their chroma and hue
-    const H = X.high, wc = H.cRange ? 1 - smoothstep(H.cRange[0], H.cRange[1], C0) : 1;
-    const wh = smoothstep(H.range[0], H.range[1], L0) * wc * w;
+    // fix round 3: a 4-entry `range` [L0, L1, L2, L3] fades the band out again above L2-L3 (fire cores and sun glow keep
+    // their chroma while sunlit grass and rock tops go pale gold)
+    const H = X.high, wc = H.cRange ? 1 - smoothstep(H.cRange[0], H.cRange[1], C0) : 1, hr = H.range;
+    const wh = smoothstep(hr[0], hr[1], L0) * (hr.length > 3 ? 1 - smoothstep(hr[2], hr[3], L0) : 1) * wc * w;
     if (wh > 0) {
       const k = 1 + ((H.chroma ?? 1) - 1) * wh;
       a = a * k + (H.shift ? H.shift[0] : 0) * wh;
       b = b * k + (H.shift ? H.shift[1] : 0) * wh;
+      // fix round 3: `rotate` (deg) turns the lit band toward gold (warm light over orange mids over rose shadow)
+      if (H.rotate) { const t = H.rotate * wh * Math.PI / 180, ct = Math.cos(t), st = Math.sin(t), a1 = a * ct - b * st; b = a * st + b * ct; a = a1; }
     }
     // fix round 2: `warm` [h0, h1, feather, k, Lfrom, Lto] gives warm highlights back the chroma AgX's path to white takes
     // (sunlit gold, fire, sun glow: W0 showed them at C 40-45, AgX at 30-35); gamut-mapped below

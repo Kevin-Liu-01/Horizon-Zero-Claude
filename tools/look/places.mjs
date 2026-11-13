@@ -40,8 +40,11 @@ export const LOOK_STANDINS = {
   // the 3/4 face from 20 deg beyond the lens and the far cheek is the readable shadow side (1-MC)
   // f2-b2's sweep (6 headings at 18:45 on openGround): her face was dark at EVERY heading, the place itself is in the
   // cliffs' shadow at 18:45 while the grass beyond is lit; the stand-in moves to the vista rise, which holds the low sun
+  // fix round 3: `fill`, the portrait's staged bounce (judge: lo20 L* 7.5 against 9-16 'by staging, fill or bounce at the
+  // stand-in, never by lifting the toe'): a violet-rose point light below and beside the lens on the shadow side, range 3 m
   close: { base: 'midgroundVista', hour: 18.75, sunRel: 120, heroRel: -175, pitch: 0.0, weather: 'clear', cam: 'close', dist: 0.8,
-    note: 'stand-in: 0.8 m, 3/4 face, the sun to camera side (1-MC): her nose 55 deg off the sun, the lens 35 deg off her nose' },
+    fill: { color: '#E6B4C8', intensity: 1.2, range: 3, side: -0.35, up: -0.3, back: 0.2 },
+    note: 'stand-in: 0.8 m, 3/4 face, the sun to camera side (1-MC): her nose 55 deg off the sun, the lens 35 deg off her nose; a staged violet-rose fill on the shadow side' },
   dusk: { base: 'grassSite', hour: 19.75, sunRel: 60, pitch: 0.03, weather: 'clear', cam: 'chase',
     note: 'stand-in: grass at 19:45 (2-MR)' },
 };

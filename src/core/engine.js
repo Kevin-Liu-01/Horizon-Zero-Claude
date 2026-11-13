@@ -268,8 +268,11 @@ export const LOOK_W0 = Object.freeze({
 // (b)'s +6; 0.3 keeps the factors' own wide-mip weighting, +6.7 in f2-b3's sweep); clampK 4.5: the bright-pass limit
 // sits just above L-06's own sun (sunCol x40 = 4.4x the threshold), so a hotter sun stops widening the white core
 // (f2-b4 at 6x: a sun at 40x the threshold still clipped out to 4.3 sun radii)
+// fix round 3: thresholdLstar 94 -> 90 (judge: at 94 = HDR 4.16 the additive campfire, whose particles sum to HDR 2-4, no
+// longer reached the bright pass and stopped glowing; 90 = HDR 2.37 on the golden set, still above the calm lamp ring's 2.47
+// x the knee's foot and above lit noon ground, L* 86.8); sigmaDiv 2.5: the round blur kernel (_bloomFold)
 export const LOOK_BLOOM = Object.freeze({ strength: 0.48, radius: 0.3, threshold: 1.30, smoothWidth: 0.35,
-  thresholdLstar: 94, kneeRatio: 0.35 / 1.30, clampK: 4.5,
+  thresholdLstar: 90, kneeRatio: 0.35 / 1.30, clampK: 4.5, clampLstar: 94, sigmaDiv: 2.5,
   factors: Object.freeze([0.55, 0.65, 0.85, 1.05, 1.25]), tint: Object.freeze([1.0, 0.97, 0.93]) });
 
 const OutputGradeShader = {
@@ -1212,6 +1215,36 @@ export class Engine {
       .replace(A2, A2 + '\n\t\t\tif (uAOMix > 0.0) { vec4 ao = texture2D(tAO, vUv); texel.rgb *= mix(vec3(1.0), ao.rgb, uAOMix); texel.a *= ao.a; }')
       .replace(A3, A3 + '\n\t\t\t{ float bv = luminance( gl_FragColor.rgb ); if ( bv > uBrightMax ) gl_FragColor.rgb *= uBrightMax / bv; }');
     hp.needsUpdate = true;
+    // L-07 fix round 3 (judges: a square halo round the sun). three's blur weights are a Gaussian of sigma = the kernel
+    // radius cut at 1 sigma (edge weight 0.6, a near-box whose separable 2-D footprint is a square), and the composite reads
+    // the 80 x 45 and 40 x 23 mips bilinearly (a tent: square iso-lines). Under the L-07 bloom each mip blurs with a
+    // Gaussian of sigma = radius / LOOK_BLOOM.sigmaDiv (cut at 2.5 sigma) and mips 3-5 are read with a 4-tap cubic B-spline
+    // (uBSpline). Offline model of the chain (scratch f3/bloomsim.py): iso-contour diagonal / axis 1.14-1.16 -> 1.00-1.03,
+    // the halo's reach at 1 % of the peak 28.6 -> 26.9 mip-0 px. The W0 bloom keeps three's weights and taps (look=w0).
+    this._blurW = b.separableBlurMaterials.map((m) => {
+      const R = m.defines.KERNEL_RADIUS, sg = R / LOOK_BLOOM.sigmaDiv, round = [];
+      for (let i = 0; i < R; i++) round.push(Math.exp(-0.5 * i * i / (sg * sg)));
+      return { stock: m.uniforms.gaussianCoefficients.value, round };
+    });
+    const cm = b.compositeMaterial, C1 = 'float lerpBloomFactor(';
+    this.bloomRoundReady = cm.fragmentShader.includes(C1) && [3, 4, 5].every((k) => cm.fragmentShader.includes(`texture2D(blurTexture${k}, vUv)`));
+    if (this.bloomRoundReady) {
+      cm.uniforms.uBSpline = { value: 0 };
+      let fs = cm.fragmentShader.replace(C1, `uniform float uBSpline;
+				vec4 calBSpline(sampler2D t, vec2 uv) {
+					vec2 sz = vec2(textureSize(t, 0)), st = uv * sz - 0.5, i = floor(st), f = st - i, f2 = f * f, f3 = f2 * f;
+					vec2 w0 = (-f3 + 3.0 * f2 - 3.0 * f + 1.0) / 6.0, w1 = (3.0 * f3 - 6.0 * f2 + 4.0) / 6.0;
+					vec2 w2 = (-3.0 * f3 + 3.0 * f2 + 3.0 * f + 1.0) / 6.0, w3 = f3 / 6.0, g0 = w0 + w1, g1 = w2 + w3;
+					vec2 h0 = (i - 0.5 + w1 / g0) / sz, h1 = (i + 1.5 + w3 / g1) / sz;
+					return g0.y * (g0.x * texture2D(t, h0) + g1.x * texture2D(t, vec2(h1.x, h0.y)))
+						+ g1.y * (g0.x * texture2D(t, vec2(h0.x, h1.y)) + g1.x * texture2D(t, h1));
+				}
+				vec4 calTap(sampler2D t, vec2 uv) { return uBSpline > 0.5 ? calBSpline(t, uv) : texture2D(t, uv); }
+				` + C1);
+      for (const k of [3, 4, 5]) fs = fs.replace(`texture2D(blurTexture${k}, vUv)`, `calTap(blurTexture${k}, vUv)`);
+      cm.fragmentShader = fs;
+      cm.needsUpdate = true;
+    }
     b.render = function (renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
       const gu = engine.grade.uniforms;
       const fold = !this.renderToScreen && engine._postFold();
@@ -1379,15 +1412,25 @@ export class Engine {
     if (agx && B.thresholdLstar) {
       // the display-keyed threshold is re-solved only when the look moved enough to move it (solveVersion):
       // its bisection runs the look 48 times (fix round 1, A-alloc-rate)
-      if (this._thrVer !== L.solveVersion || this._thrB !== B) { this._thrVer = L.solveVersion; this._thrB = B; this._thrHdr = L.hdrForLstar(B.thresholdLstar, false); }
+      const tL = this._bloomThrL || B.thresholdLstar;   // _bloomThrL: diagnostic override (null = shipped)
+      if (this._thrVer !== L.solveVersion || this._thrB !== B || this._thrL !== tL) {
+        this._thrVer = L.solveVersion; this._thrB = B; this._thrL = tL; this._thrHdr = L.hdrForLstar(tL, false);
+        this._clampBase = B.clampLstar ? L.hdrForLstar(B.clampLstar, false) : this._thrHdr;
+      }
       thr = this._thrHdr; sw = thr * B.kneeRatio;
     }
+    const clampBase = agx && B.thresholdLstar ? this._clampBase : thr;
     b.threshold = thr;
     if (b.highPassUniforms?.smoothWidth) b.highPassUniforms.smoothWidth.value = sw;
-    // the bright-pass limit (L-07 fix round 2): clampK x the threshold under the L-07 bloom, none under the W0 bloom
-    if (b.highPassUniforms?.uBrightMax) b.highPassUniforms.uBrightMax.value = B.clampK && this._bloomClampK !== 0 ? thr * (this._bloomClampK || B.clampK) : 1e9;
+    // the bright-pass limit (L-07 fix round 2): clampK x the L* 94 grey (B.clampLstar; fix round 3 keeps it where fix round 2
+    // measured it when the threshold moved to L* 90) under the L-07 bloom, none under the W0 bloom
+    if (b.highPassUniforms?.uBrightMax) b.highPassUniforms.uBrightMax.value = B.clampK && this._bloomClampK !== 0 ? clampBase * (this._bloomClampK || B.clampK) : 1e9;
     const cu = b.compositeMaterial?.uniforms;
     if (cu?.bloomFactors) for (let i = 0; i < cu.bloomFactors.value.length; i++) cu.bloomFactors.value[i] = B.factors[i] ?? B.factors[B.factors.length - 1];
+    // the round kernel (fix round 3): Gaussian weights and the B-spline taps under the L-07 bloom only (B.sigmaDiv)
+    const round = !!B.sigmaDiv && this._bloomRound !== false;
+    if (cu?.uBSpline) cu.uBSpline.value = round ? 1 : 0;
+    if (this._blurW) for (let i = 0; i < this._blurW.length; i++) b.separableBlurMaterials[i].uniforms.gaussianCoefficients.value = round ? this._blurW[i].round : this._blurW[i].stock;
     if (b.bloomTintColors) for (let i = 0; i < b.bloomTintColors.length; i++) b.bloomTintColors[i].set(B.tint[0], B.tint[1], B.tint[2]);
     return true;
   }

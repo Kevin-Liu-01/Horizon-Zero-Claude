@@ -195,6 +195,7 @@ const LOOK = `
     if (__camSaved.fn) { p._updateCamera = __camSaved.fn; __camSaved.fn = null; }
     if (__camSaved.cad != null) { if (__E.tier) __E.tier.csmFarCadence = __camSaved.cad; __camSaved.cad = null; }
     if (__camSaved.drift) { const cd = __C.environment?.u?.calCloudDrift?.value; if (cd) cd.copy(__camSaved.drift); __camSaved.drift = null; }
+    if (__camSaved.fill) { __C.scene.remove(__camSaved.fill); __camSaved.fill.dispose(); __camSaved.fill = null; }
     __E.requestTimeScale('studio', null);
   };
   /** Stage a look place: weather, frozen hour, the grade sets for the hour, the hero, the lens. */
@@ -274,6 +275,16 @@ const LOOK = `
       fw.applyAxisAngle(new THREE.Vector3(0, 1, 0), 35 * Math.PI / 180);
       cam.position.copy(hp).addScaledVector(fw, P.dist || 0.8); cam.position.y -= 0.03;
       cam.lookAt(hp.x, hp.y - 0.02, hp.z); cam.updateMatrixWorld();
+      // fix round 3 (judge: close lo20 L* 7.5 against 9-16, 'by staging, fill or bounce, never by lifting the toe'): the
+      // place's portrait fill, a staged bounce (1-MC's violet-rose fill on the shadow side): a point light below and beside
+      // the lens, range 3 m so the background keeps its own light; o.fill overrides the intensity (diagnostic sweeps)
+      const F = P.fill, fi = o.fill != null ? o.fill : F?.intensity;
+      if (F && fi > 0 && !__camSaved.fill) {
+        const L = new THREE.PointLight(new THREE.Color(F.color), fi, F.range || 3, 2); L.name = 'look-close-fill'; L.castShadow = false;
+        const right = new THREE.Vector3().crossVectors(fw, new THREE.Vector3(0, 1, 0)).normalize();
+        L.position.copy(cam.position).addScaledVector(fw, F.back || 0.2).addScaledVector(right, F.side || -0.35); L.position.y += F.up ?? -0.3;
+        __C.scene.add(L); __camSaved.fill = L;
+      }
     }
     await frames(o.frames ?? 24);
     // wind and time frozen (ROUND5-LOOK L-00): the sim is at timeScale 0 and the wall clock now reads 0 s per frame
@@ -633,14 +644,17 @@ const RANDOM_BODY = (forSheet) => `
     const cap = await grabCanvas();
     const st = statsOf(cap);
     const g = gradeBars(st, 'field');
-    rows.push({ i: q.i, hour: q.hour, at: [+x.toFixed(1), +z.toFixed(1)], met: g.met, pass: g.pass, lo20hue: st.lo20.hue, midB: st.mid.b, chroma: st.chroma, p99: st.L.p99, clip: st.clip });
+    rows.push({ i: q.i, hour: q.hour, at: [+x.toFixed(1), +z.toFixed(1)], met: g.met, pass: g.pass, lo20hue: st.lo20.hue, midB: st.mid.b, chroma: st.chroma, p99: st.L.p99, clip: st.clip,
+      missed: g.rows.filter((r) => !r.ok).map((r) => r.key) });
     ${forSheet ? "cells.push({ cap: { W: cap.W, H: cap.H, px: cap.px }, label: '#' + q.i + ' ' + q.hour.toFixed(2) + ' h  ' + g.met });" : ''}
     unstage();
   }
 `;
 const RANDOM = look(`${RANDOM_BODY(false)}
   const passing = rows.filter((r) => r.pass).length;
-  return { pass: passing >= 9, detail: { passing: passing + '/12 (bar >= 9)', rows } };
+  // fix round 3: per clause, how many of the 12 poses meet it (which clauses are the grade's and which the light's)
+  const clauses = {}; for (const key of Object.keys(BARS.field.bars)) clauses[key] = rows.filter((r) => r.missed && !r.missed.includes(key)).length + '/12';
+  return { pass: passing >= 9, detail: { passing: passing + '/12 (bar >= 9)', clauses, rows } };
 `);
 
 /* -------------------------------------------------------------- A-look-bloom */
@@ -740,22 +754,43 @@ const BLOOM = look(`
           if (Math.max(c.px[i], c.px[i + 1], c.px[i + 2]) < 254) { rr = r; break; } } rays.push(rr / sunR); }
       const clipR = Math.max(...rays), ax = (rays[0] + rays[2] + rays[4] + rays[6]) / 4, dg = (rays[1] + rays[3] + rays[5] + rays[7]) / 4;
       return { o, clipR: +clipR.toFixed(2), square: +(ax > 0 ? dg / ax : 1).toFixed(2), c }; };
+    // fix round 3 (judge: the clipped-core trace cannot see a boxy glow): the HALO's shape. Along 16 rays from the sun's
+    // centre, the farthest radius where the bloom still adds >= 3 L* (bloom on minus bloom off, same frame); a ray that
+    // leaves the frame while still >= 3 L* is truncated and left out. diagonal / axis = mean reach of the 4 diagonal rays
+    // over the 4 axis rays; round <= 1.1 (three's stock kernel draws 1.14-1.16 in the offline model)
+    const haloShape = (cOn, cOff) => { const reach = [];
+      for (let a = 0; a < 16; a++) { const dx = Math.cos(a * Math.PI / 8), dy = Math.sin(a * Math.PI / 8); let rr = 0, trunc = false;
+        for (let r = 0; r < 60 * sunR; r += 0.5) { const x = Math.round(sx + dx * r), y = Math.round(sy + dy * r);
+          if (x < 0 || y < 0 || x >= cOn.W || y >= cOn.H) { trunc = rr >= r - 1; break; }
+          const i = (y * cOn.W + x) * 4; const d = LS.srgb8ToLab(cOn.px[i], cOn.px[i + 1], cOn.px[i + 2])[0] - LS.srgb8ToLab(cOff.px[i], cOff.px[i + 1], cOff.px[i + 2])[0];
+          if (d >= 3) rr = r; }
+        reach.push(trunc ? null : rr / sunR); }
+      const mean = (ks) => { const v = ks.map((k) => reach[k]).filter((q) => q != null); return v.length >= 2 ? v.reduce((p, q) => p + q, 0) / v.length : null; };
+      const ax = mean([0, 4, 8, 12]), dg = mean([2, 6, 10, 14]);
+      return { reachSunRadii: reach.map((q) => (q == null ? null : +q.toFixed(2))), axis: ax == null ? null : +ax.toFixed(2), diag: dg == null ? null : +dg.toFixed(2),
+        diagOverAxis: ax && dg != null ? +(dg / ax).toFixed(3) : null }; };
     const on = await prof();
     // the same frame without the bright-pass limit (diagnostic: what the limit changed)
     __E._bloomClampK = 0; __E._syncLook(true); await frames(3); const noClamp = await prof(); __E._bloomClampK = null; __E._syncLook(true);
     b.enabled = false; await frames(3); const off = await prof(); b.enabled = __E.tier.bloom; await frames(2);
+    const halo = haloShape(on.c, off.c);
     const lift6 = on.o[0] != null && off.o[0] != null ? on.o[0] - off.o[0] : null;
     let mono = true; for (let k = 1; k < on.o.length; k++) if (on.o[k] != null && on.o[k - 1] != null && on.o[k] > on.o[k - 1] + 0.5) mono = false;
     // the hot probe (40x the bloom threshold in luminance): the white block only
     let hot = null;
-    if (probe) { unplant(probe); probe = plant(40 * b.threshold / Math.max(1e-4, l0)); await frames(4); const h1 = await prof();
+    // the hot probe: 40x the L* 94 grey (fix round 2's 40x the threshold, kept in absolute terms when fix round 3 moved the
+    // threshold to L* 90)
+    const hot94 = __E.look?.hdrForLstar ? __E.look.hdrForLstar(94, false) : b.threshold;
+    if (probe) { unplant(probe); probe = plant(40 * hot94 / Math.max(1e-4, l0)); await frames(4); const h1 = await prof();
       __E._bloomClampK = 0; __E._syncLook(true); await frames(3); const h0 = await prof(); __E._bloomClampK = null; __E._syncLook(true); await frames(2);
-      hot = { lstarOn: h1.o, lstarNoClamp: h0.o, clipRadiusSunRadii: { on: h1.clipR, noClamp: h0.clipR }, square: { on: h1.square, noClamp: h0.square }, on: h1 }; }
+      b.enabled = false; await frames(3); const hOff = await prof(); b.enabled = __E.tier.bloom; await frames(2);
+      hot = { lstarOn: h1.o, lstarNoClamp: h0.o, clipRadiusSunRadii: { on: h1.clipR, noClamp: h0.clipR }, square: { on: h1.square, noClamp: h0.square }, halo: haloShape(h1.c, hOff.c), on: h1 }; }
     const notBlock = (p) => p.clipR <= 4 && p.square <= 1.2;
-    const blockOk = notBlock(on) && (!hot || notBlock(hot.on));
+    const roundHalo = (hs) => hs.diagOverAxis != null && hs.diagOverAxis <= 1.1;
+    const blockOk = notBlock(on) && (!hot || notBlock(hot.on)) && roundHalo(halo) && (!hot || roundHalo(hot.halo));
     if (hot) delete hot.on;
     out.b = { sun: probe ? 'planted (L-06): radius 0.5 deg, sunCol x40 (luminance ' + (40 * l0).toFixed(1) + ' = ' + (40 * l0 / b.threshold).toFixed(1) + 'x the threshold), limb 0.6 (no sun disc in this frame: scene HDR ' + sunHdr.toFixed(2) + ' at the sun pixel)' : 'the frame\\'s own sun disc (scene HDR ' + sunHdr.toFixed(1) + ')', hot,
-      sunRadiusPx: +sunR.toFixed(1), lstarOn: on.o, lstarOff: off.o, lstarNoClamp: noClamp.o, lift6: lift6 == null ? null : +lift6.toFixed(1), monotonic: mono,
+      sunRadiusPx: +sunR.toFixed(1), halo: { ...halo, bar: 'the 3-L* halo contour round: diagonal / axis reach <= 1.1 (L-06 sun and the hot sun)' }, lstarOn: on.o, lstarOff: off.o, lstarNoClamp: noClamp.o, lift6: lift6 == null ? null : +lift6.toFixed(1), monotonic: mono,
       clipRadiusSunRadii: { on: on.clipR, noClamp: noClamp.clipR, bloomOff: off.clipR, bar: 'no white block: clipped reach <= 4 sun radii (the unlimited hot sun reached 6.5-12) and diagonal / axis reach <= 1.2 (round, not boxy)' }, square: { on: on.square, noClamp: noClamp.square }, brightMax: +(b.highPassUniforms?.uBrightMax?.value ?? 0).toFixed(2), clampReady: __E.bloomClampReady === true,
       ok: lift6 != null && lift6 >= 6 && mono && blockOk };
     unplant(probe);
@@ -956,17 +991,80 @@ const HIGHLIGHT_FILM = lookJob(`
       m.name = 'look-sun-probe'; m.renderOrder = 1e6; m.userData.noSizeCull = true; m.frustumCulled = false; __C.scene.add(m); return m; };
     const crop = (cc) => { const S = Math.round(14 * sunR), x0 = Math.max(0, Math.round(sx - S)), y0 = Math.max(0, Math.round(sy - S * 0.6)), w = Math.min(cc.W - x0, 2 * S), h = Math.min(cc.H - y0, Math.round(1.2 * S));
       const px = new Uint8Array(w * h * 4); for (let y = 0; y < h; y++) px.set(cc.px.subarray(((y0 + y) * cc.W + x0) * 4, ((y0 + y) * cc.W + x0 + w) * 4), y * w * 4); return { W: w, H: h, px }; };
-    for (const [k, nm] of [[40, 'L-06 sun (sunCol x40)'], [40 * b.threshold / Math.max(1e-4, l0), 'hot sun (40x the bloom threshold)']]) {
+    const hot94 = __E.look?.hdrForLstar ? __E.look.hdrForLstar(94, false) : b.threshold;
+    // fix round 3: the halo's shape made visible: (bloom on - bloom off) x 6 in L*, the way the judge stretched it
+    const stretch = (cOn, cOff) => { const px = new Uint8Array(cOn.px.length);
+      for (let i = 0; i < px.length; i += 4) { const d = Math.max(0, LS.srgb8ToLab(cOn.px[i], cOn.px[i + 1], cOn.px[i + 2])[0] - LS.srgb8ToLab(cOff.px[i], cOff.px[i + 1], cOff.px[i + 2])[0]);
+        const v = Math.min(255, Math.round(d * 6 * 2.55)); px[i] = px[i + 1] = px[i + 2] = v; px[i + 3] = 255; } return { W: cOn.W, H: cOn.H, px }; };
+    for (const [k, nm] of [[40, 'L-06 sun (sunCol x40)'], [40 * hot94 / Math.max(1e-4, l0), 'hot sun (40x the L* 94 grey)']]) {
       const m = plant(k); await frames(4);
       const on = await grabCanvas();
       if (k === 40) cells.splice(0, 1, { cap: on, label: 'look.vista (' + s.source + ') with ' + nm + ' planted on the sun bearing  hi10 hue ' + statsOf(on).hi10.hue + '  p99 ' + statsOf(on).L.p99 });
-      __E._bloomClampK = 0; __E._syncLook(true); await frames(3); const nc = await grabCanvas(); __E._bloomClampK = null; __E._syncLook(true); await frames(2);
-      cells.push({ cap: crop(on), label: nm + ': L-07 bloom with the bright-pass limit (shipped)' });
-      cells.push({ cap: crop(nc), label: nm + ': the same bloom without the limit (r4-f1)' });
+      b.enabled = false; await frames(3); const off = await grabCanvas(); b.enabled = __E.tier.bloom; await frames(2);
+      __E._bloomRound = false; __E._syncLook(true); await frames(3); const sq = await grabCanvas(); __E._bloomRound = null; __E._syncLook(true); await frames(2);
+      cells.push({ cap: crop(on), label: nm + ': L-07 bloom, shipped (bright-pass limit, round kernel)' });
+      cells.push({ cap: crop(stretch(on, off)), label: nm + ': what the shipped bloom adds, (on - off) x6 L* (round = no box)' });
+      cells.push({ cap: crop(stretch(sq, off)), label: nm + ': the same with three\\'s stock kernel (fix round 2: the square halo)' });
+      cells.push({ cap: crop(sq), label: nm + ': three\\'s stock kernel, as filmed in fix round 2' });
       __C.scene.remove(m); m.geometry.dispose(); m.material.dispose();
     }
   }
   sheet(cells, 'V-look-highlights: the sun glow and glints read cream or peach-white, not lemon; no white block (R68 b)', 2);
+`);
+
+/* ------------------------------------------------- the play frame (fix round 3) */
+
+// fix round 3 (judge R54/R66 b: the look places never filmed the camp, so a play-frame regression passed every graded row):
+// the boot's own play view (the spawn, the campfire in frame) at 17:45 and 19:54, W0 (left) vs CALIMA (right), plus the
+// fire's glow measured the judge's way: rings round the fire's screen point, bloom on vs off under each output
+const PLAY_HOURS = [17.75, 19.9];
+const PLAY_STAGE = `
+  const env = __C.environment;
+  const playAt = async (h) => { __E.requestTimeScale('studio', 0); env.timeFrozen = true; env.setWeather('clear', 0.05); env.setTime(h);
+    __E.setLookHour?.(h, 'clear', null, { ev: false }); await frames(40); };
+  const firePx = (c) => { const fp = __C.camp?.firePosition; if (!fp) return null; const p = fp.clone(); p.y += 0.5; p.project(__C.camera);
+    if (p.z > 1 || Math.abs(p.x) > 0.95 || Math.abs(p.y) > 0.95) return null; return [(p.x * 0.5 + 0.5) * c.W, (1 - (p.y * 0.5 + 0.5)) * c.H]; };
+  const ring = (c, cx, cy, r0, r1) => { let sL = 0, sa = 0, sb = 0, n = 0; for (let y = Math.round(cy - r1); y <= cy + r1; y++) for (let x = Math.round(cx - r1); x <= cx + r1; x++) {
+      const d = Math.hypot(x - cx, y - cy); if (d < r0 || d > r1 || x < 0 || y < 0 || x >= c.W || y >= c.H) continue; const i = (y * c.W + x) * 4; const l = LS.srgb8ToLab(c.px[i], c.px[i + 1], c.px[i + 2]); sL += l[0]; sa += l[1]; sb += l[2]; n++; }
+    return n ? { L: +(sL / n).toFixed(1), C: +Math.hypot(sa / n, sb / n).toFixed(1), h: +((Math.atan2(sb / n, sa / n) * 180 / Math.PI + 360) % 360).toFixed(0) } : null; };
+`;
+const PLAY_FILM = lookJob(`${PLAY_STAGE}
+  const cells = [];
+  try {
+    for (const h of ${JSON.stringify(PLAY_HOURS)}) {
+      await playAt(h);
+      __E.setLookEnabled(false); await frames(4); const a = await grabCanvas();
+      __E.setLookEnabled(true); await frames(4); const b = await grabCanvas();
+      const tag = (st) => 'lo20 L ' + st.lo20.L + '  mid b ' + st.mid.b + '  C ' + st.chroma + '  spread ' + st.spread + '  p99 ' + st.L.p99;
+      cells.push({ cap: a, label: 'play spawn ' + h + ' h  W0 (ACES)  ' + tag(statsOf(a)) }, { cap: b, label: 'play spawn ' + h + ' h  CALIMA  ' + tag(statsOf(b)) });
+    }
+  } finally { __E.setLookEnabled(true); __E.requestTimeScale('studio', null); }
+  sheet(cells, 'V-look-play: the boot play view at the campfire, 17:45 and 19:54: W0 (left) vs CALIMA (right)', 2);
+`);
+const PLAY_FIRE = look(`${PLAY_STAGE}
+  const out = {}; const b = __E.bloom;
+  try {
+    for (const h of ${JSON.stringify(PLAY_HOURS)}) {
+      await playAt(h);
+      const row = {};
+      for (const [nm, on] of [['W0', false], ['CALIMA', true]]) {
+        __E.setLookEnabled(on); await frames(4);
+        const c = await grabCanvas(); const f = firePx(c);
+        if (!f) { row[nm] = { note: 'the campfire is not in the play view' }; continue; }
+        b.enabled = false; await frames(3); const c0 = await grabCanvas(); b.enabled = __E.tier.bloom; await frames(3);
+        const core = ring(c, f[0], f[1], 0, 12), halo = ring(c, f[0], f[1], 20, 60), halo0 = ring(c0, f[0], f[1], 20, 60), st = statsOf(c);
+        row[nm] = { core, halo, glowL: +(halo.L - halo0.L).toFixed(1), frame: { lo20L: st.lo20.L, midB: st.mid.b, chroma: st.chroma, spread: st.spread, p99: st.L.p99 } };
+      }
+      row.bloomThreshold = +b.threshold.toFixed(3);
+      out['h' + h] = row;
+    }
+  } finally { __E.setLookEnabled(true); __E.requestTimeScale('studio', null); }
+  // graded (R66 b, the judge's findings): under CALIMA the fire still glows (the bloom adds >= 60 % of the L* W0's bloom
+  // adds to the 20-60 px halo, and >= 3 L*) and the fire's core keeps its colour (chroma >= 60 % of W0's)
+  const rows = Object.values(out).filter((r) => r.W0?.core && r.CALIMA?.core);
+  const checks = rows.map((r) => ({ glow: r.CALIMA.glowL >= Math.max(3, 0.6 * r.W0.glowL), core: r.CALIMA.core.C >= 0.6 * r.W0.core.C }));
+  const pass = rows.length === ${PLAY_HOURS.length} ? checks.every((k) => k.glow && k.core) : null;
+  return { pass, detail: { ...out, checks, bar: 'CALIMA fire glow (bloom-added L* in the 20-60 px ring) >= max(3, 0.6x W0); fire core chroma >= 0.6x W0; at 17:45 and 19:54 in the boot play view' } };
 `);
 
 const GLOW_FILM = lookJob(`
@@ -1085,7 +1183,7 @@ export const GATES = [
     assert: HOLD },
   boxRow('A-gpu-attrib-box', 'A-gpu-attrib', GPU_ATTRIB),
   { id: 'A-gpu-attrib', kind: 'action', lane: LANE, wave: 'W1', timeout: 600000, settle: 2500,
-    title: 'L-18: records the build it times (git SHA, tree); vista, herd and staged fight each give a per-pass table (shadow cascades, opaque, transparent + additive, GTAO, bloom, SMAA, shafts, overlay as skip-one marginals on the A21 whole-frame timer; the grade by its pass bench; every row measured) whose rows sum to the frame median within 10 %; per-owner hide-one marginals plus an interaction residual; every row >= 0.5 ms names a fix owner in ROUND5-LOOK §4.2. ' + QUIET_NOTE,
+    title: 'L-18: records the build it times (git SHA, tree); vista, herd and staged fight each give a per-pass table (fix round 3: cumulative enabling on the A21 whole-frame timer, 3 interleaved sweeps: the floor (output pass with AgX + grade, clears, present), then opaque, shadow cascades, transparent + additive, GTAO, bloom, SMAA, shafts, overlay switched on in turn; every row measured, none a remainder) whose rows sum to the frame median within 10 % with no row below -max(0.15 ms, 3 %) (the reverse-order sweep and the skip-one marginals are reported as diagnostics); per-owner hide-one marginals plus an interaction residual; every row >= 0.5 ms names a fix owner in ROUND5-LOOK §4.2. ' + QUIET_NOTE,
     assert: GPU_ATTRIB(null, null) },
   boxRow('A-look-ledger-box', 'A-look-ledger', LEDGER),
   { id: 'A-look-ledger', kind: 'action', lane: LANE, wave: 'W1', timeout: 600000, settle: 2500,
@@ -1106,6 +1204,12 @@ export const GATES = [
   { id: 'V-look-glow', kind: 'visual', lane: LANE, wave: 'W1', timeout: 240000, settle: 70000,
     setup: GLOW_FILM,
     criteria: 'Against ext:kevin-nov6-keyart.jpg@860d7e9f#1-BL and reference/r5/gates-perf/spark-burst.jpg. Pass: the lamp or arrow tip has a soft halo; sunlit cloth and rock do not glow. ' + IP_CLAUSE },
+  { id: 'A-look-play-fire', kind: 'action', lane: LANE, wave: 'W1', timeout: 180000, settle: 1500,
+    title: 'Fix round 3 (R66 b): the boot play view at 17:45 and 19:54: under CALIMA the campfire still glows (bloom-added L* in the 20-60 px ring >= max(3, 0.6x W0)) and its core keeps its colour (chroma >= 0.6x W0)',
+    assert: PLAY_FIRE },
+  { id: 'V-look-play', kind: 'visual', lane: LANE, wave: 'W1', timeout: 240000, settle: 70000,
+    setup: PLAY_FILM,
+    criteria: 'The boot play view at the campfire at 17:45 and 19:54, Round-5 W0 output (left) vs the CALIMA look (right), graded for R66 (b) against ext:kevin-nov6-keyart.jpg@860d7e9f#1-TR and #1-BL: the CALIMA frame must not look cheaper, flatter or more veiled than W0; the fire glows warm; warm light, rose-violet shadow, no salmon or milky veil over the ground. ' + IP_CLAUSE },
   { id: 'V-look-random', kind: 'visual', lane: LANE, wave: 'W1', timeout: 300000, settle: 160000,
     setup: RANDOM_FILM,
     criteria: 'The 12 A-look-random frames, graded for R54 (R66 b) against ext:kevin-nov6-keyart.jpg@860d7e9f#1-TR and #1-MR, reference/r5/gates-perf/long-shadows.jpg and reference/r5/gates-perf/ridge-skyline.jpg: none looks cheap beside them. ' + IP_CLAUSE },

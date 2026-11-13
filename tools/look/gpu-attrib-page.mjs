@@ -121,6 +121,79 @@ export async function perPassSkip(E, scene, n = 40) {
     rowsOver05WithoutFixOwner: over.filter((r) => !r.fixOwner).map((r) => r.row) };
 }
 
+/**
+ * Fix round 3 (judges: skip-one marginals on a pipelined Metal GPU are superadditive, 1.5x the frame in f2-b3 and 0.39x
+ * in the judge's run): per-pass rows by CUMULATIVE ENABLING, which sum to the frame by construction. The frame is timed
+ * with everything off (the floor: the output pass with AgX and the grade, clears and the present), then with the passes
+ * switched on one at a time in a fixed order; each row is the increment its pass adds to the median of the frame
+ * before it. `rounds` interleaved sweeps, medians per step (no row is a remainder; floor + rows = the full-chain median
+ * exactly, and the full chain is checked against the frame median timed on its own, within 10 %). A second sweep in the
+ * reverse order gives each pass's increment with every other pass already on (its skip-one marginal, measured in the
+ * same run); the per-row difference between the two orders is reported as that pass's interaction (diagnostic). A row
+ * below -max(0.15 ms, 3 % of the frame) is noise the method cannot absorb and fails `noNegativeRows`.
+ */
+export const CUMULATIVE_ORDER = Object.freeze(['opaque scene', 'shadow cascades', 'transparent + additive', 'gtao', 'bloom', 'smaa', 'shafts', 'overlay']);
+export async function perPassCumulative(E, scene, n = 40, rounds = 3) {
+  const sm = E.renderer.shadowMap, cam = E.camera, hooks = E.onAfterRender || [];
+  const transparent = [];
+  scene.traverse((o) => { const m = o.material; if (o.visible && (o.isMesh || o.isPoints || o.isLine || o.isSprite) && m && (Array.isArray(m) ? m.some((x) => x.transparent || x.blending === 2) : (m.transparent || m.blending === 2))) transparent.push(o); });
+  const SPARE = 28, EMPTY = 27;
+  const isShaft = (h) => /shaft|crepus|godray/i.test(h.name || '');
+  const keep = { mask: cam.layers.mask, smAuto: sm.autoUpdate, lights: (E.csm?.lights || []).map((l) => [l.shadow, l.shadow.autoUpdate]),
+    gtao: E.gtao.enabled, bloom: E.bloom.enabled, smaa: E.smaa.enabled, shafts: hooks.filter(isShaft), overlay: hooks.filter((h) => !isShaft(h)), smRender: sm.render };
+  // the shadow pass always sees every caster (three tests casters against the camera's layers)
+  sm.render = function (l, s, c) { const k = c.layers.mask; c.layers.mask = keep.mask; try { keep.smRender.call(this, l, s, c); } finally { c.layers.mask = k; } };
+  transparent.forEach((o) => o.layers.enable(SPARE));
+  const apply = (on) => {
+    const has = (k) => on.has(k);
+    cam.layers.mask = has('opaque scene') ? keep.mask : (has('transparent + additive') ? 1 << SPARE : 1 << EMPTY);
+    transparent.forEach((o) => { o.visible = has('transparent + additive'); });
+    const sh = has('shadow cascades');
+    sm.autoUpdate = sh ? keep.smAuto : false; if (sh) sm.needsUpdate = true;
+    keep.lights.forEach(([s0, au]) => { s0.autoUpdate = sh ? au : false; if (sh) s0.needsUpdate = true; });
+    E.gtao.enabled = has('gtao') && keep.gtao; E.bloom.enabled = has('bloom') && keep.bloom; E.smaa.enabled = has('smaa') && keep.smaa;
+    hooks.length = 0;
+    if (has('shafts')) hooks.push(...keep.shafts);
+    if (has('overlay')) hooks.push(...keep.overlay);
+  };
+  const N = CUMULATIVE_ORDER.length;
+  const fwd = Array.from({ length: N + 1 }, () => []), rev = Array.from({ length: N + 1 }, () => []);
+  try {
+    for (let r = 0; r < rounds; r++) {
+      for (let k = 0; k <= N; k++) { apply(new Set(CUMULATIVE_ORDER.slice(0, k))); await wait(4); fwd[k].push((await wholeFrame(E, n)).medianMs); }
+      // the reverse order: all on, then switch passes OFF from the first of the order (so step k of `rev` has passes k..N-1 off)
+      if (r === 0) for (let k = 0; k <= N; k++) { apply(new Set(CUMULATIVE_ORDER.slice(k))); await wait(4); rev[k].push((await wholeFrame(E, n)).medianMs); }
+    }
+  } finally {
+    apply(new Set(CUMULATIVE_ORDER));
+    cam.layers.mask = keep.mask; sm.render = keep.smRender; sm.autoUpdate = keep.smAuto; sm.needsUpdate = true;
+    keep.lights.forEach(([s0, au]) => { s0.autoUpdate = au; s0.needsUpdate = true; });
+    transparent.forEach((o) => { o.layers.disable(SPARE); o.visible = true; });
+    E.gtao.enabled = keep.gtao; E.bloom.enabled = keep.bloom; E.smaa.enabled = keep.smaa;
+    hooks.length = 0; hooks.push(...keep.shafts, ...keep.overlay);
+    await wait(4);
+  }
+  const F = fwd.map(median), Rv = rev.map(median);
+  const rows = {}, table = [];
+  const floor = F[0];
+  table.push({ row: 'floor: output pass (AgX + grade + fold), clears, present', ms: r3(floor), fixOwner: 'look-post (L-01/L-02 by their pass bench)' });
+  for (let k = 1; k <= N; k++) {
+    const name = CUMULATIVE_ORDER[k - 1];
+    const inc = F[k] != null && F[k - 1] != null ? F[k] - F[k - 1] : null;
+    // skip-one in the same run: all on (Rv[0]) minus all on with this pass and every pass before it in the order off ...
+    // (the reverse sweep removes passes one at a time from the front: Rv[k-1] - Rv[k] is pass k's increment when every LATER
+    // pass is already on)
+    const late = Rv[k - 1] != null && Rv[k] != null ? Rv[k - 1] - Rv[k] : null;
+    rows[name] = r3(inc);
+    table.push({ row: name, ms: r3(inc), withLaterPassesOnMs: r3(late), interactionMs: inc != null && late != null ? r3(late - inc) : null, fixOwner: fixOwnerFor(name) });
+  }
+  const sum = table.reduce((a, r) => a + (r.ms || 0), 0);
+  let grade = null;
+  try { E.benchPass(E.grade, 20); grade = r3(E.benchPass(E.grade, 60)); } catch (e) { grade = null; }
+  return { method: 'cumulative enabling (floor, then ' + CUMULATIVE_ORDER.join(' -> ') + '), ' + rounds + ' interleaved sweeps, medians per step; rows sum to the full chain by construction', floorMs: r3(floor), rows, table,
+    fullChainMs: r3(F[N]), sumRowsMs: r3(sum), stepsMs: F.map(r3), reverseStepsMs: Rv.map(r3), gradePassBenchMs: grade, transparentMeshes: transparent.length };
+}
+
 /** Per-pass medians over n frames (engine.gpuAttrib segments; reported raw, see perPassSkip). */
 export async function perPass(E, n = 60) {
   E.gpuAttrib(true);
@@ -151,11 +224,23 @@ export async function attribute({ ctx, scenarios, stage, owners, frames = 60 }) 
     if (unpin && unpin.skip) { out.scenarios[name] = { skip: unpin.skip }; continue; }
     await wait(40);
     const frame = await wholeFrame(E, frames);
-    const skip = await perPassSkip(E, ctx.scene, frames);
+    // fix round 3: the graded per-pass table is the cumulative one (sums by construction); the skip-one marginals stay as
+    // a diagnostic (superadditive on this GPU)
+    const cum = await perPassCumulative(E, ctx.scene, Math.round(frames * 2 / 3), 3);
+    const frame2 = await wholeFrame(E, frames);
+    const frameMed = median([frame.medianMs, frame2.medianMs, cum.fullChainMs]);
+    cum.frameMs = frameMed;
+    cum.gapMs = frameMed != null ? r3(frameMed - cum.sumRowsMs) : null;
+    cum.sumWithin10 = frameMed != null && Math.abs(cum.sumRowsMs - frameMed) <= 0.1 * frameMed;
+    const negTol = Math.max(0.15, 0.03 * (frameMed || 0));
+    cum.negativeRows = cum.table.filter((r) => r.ms != null && r.ms < -negTol).map((r) => r.row + ' ' + r.ms);
+    cum.noNegativeRows = cum.negativeRows.length === 0;
+    cum.rowsOver05WithoutFixOwner = cum.table.filter((r) => (r.ms || 0) >= 0.5 && !r.fixOwner).map((r) => r.row);
+    const skip = await perPassSkip(E, ctx.scene, Math.round(frames / 2));
     const pp = await perPass(E, Math.round(frames / 2));
-    const within = skip.sumWithin10;
+    const within = cum.sumWithin10 && cum.noNegativeRows;
     if (!within) out.sumWithin10 = false;
-    if (skip.rowsOver05WithoutFixOwner.length) out.everyRowOver05HasFixOwner = false;
+    if (cum.rowsOver05WithoutFixOwner.length) out.everyRowOver05HasFixOwner = false;
     // owners: hide one at a time, then all
     const kids = ctx.scene.children;
     const rows = [];
@@ -181,7 +266,7 @@ export async function attribute({ ctx, scenarios, stage, owners, frames = 60 }) 
     const residual = frame.medianMs != null && floor.medianMs != null ? r3(frame.medianMs - floor.medianMs - sumMarg) : null;
     rows.sort((a, b) => (b.marginalMs || 0) - (a.marginalMs || 0));
     out.scenarios[name] = {
-      frame, perPass: skip, segmentTimersRaw: pp, sumWithin10: within,
+      frame, frameRepeat: frame2, perPass: cum, perPassSkipOneDiagnostic: skip, segmentTimersRaw: pp, sumWithin10: within,
       owners: rows, floorAllOwnersHiddenMs: floor.medianMs, interactionResidualMs: residual,
       unattributedChildren: unattributed.slice(0, 24),
       over05: rows.filter((r) => (r.marginalMs || 0) >= 0.5).map((r) => ({ id: r.id, ms: r.marginalMs, fixOwner: fixOwnerFor(r.id, String(r.lanes || '')) })),

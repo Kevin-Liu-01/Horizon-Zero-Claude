@@ -1,713 +1,434 @@
 {
-  "version": 3,
-  "about": "CALIMA grade sets (look-post, docs/ROUND5-LOOK.md L-01/L-02/L-14). Display-space grade baked per set into a 32^3 half-float LUT by src/core/look.js (gradeSet: split tone, soft contrast, saturation by luma, LCh hue bands, then the L*a*b* stage `lab`: a tone curve on L* faded by chroma, a shadow shift toward rose, a mid-band turn toward orange, the near-neutral top band toward cream, warm highlights given back their chroma, and hue-preserving gamut mapping); two slots blend on the GPU. Hues are CIE LCh degrees (D65).",
-  "lutSize": 32,
-  "look": {
-    "exposure": "calibrate",
-    "slope": [
-      1,
-      0.99,
-      0.97
-    ],
-    "power": 1.22,
-    "sat": 1.12
-  },
-  "vignette": 0.28,
-  "default": "golden",
-  "sets": {
-    "golden": {
-      "shadowTint": [
-        1,
-        1,
-        1
-      ],
-      "shadowRange": [
-        0.05,
-        0.5
-      ],
-      "highlightTint": [
-        1.02,
-        1,
-        0.97
-      ],
-      "highlightRange": [
-        0.55,
-        0.95
-      ],
-      "contrast": 1.08,
-      "pivot": 0.42,
-      "satLuma": [
-        0.95,
-        1,
-        1
-      ],
-      "satRange": [
-        0.04,
-        0.3,
-        0.62,
-        0.98
-      ],
-      "hue": [
-        {
-          "name": "olive to amber",
-          "from": 88,
-          "to": 118,
-          "feather": 12,
-          "rotate": -8,
-          "chroma": 1,
-          "minChroma": 6
-        },
-        {
-          "name": "amber grass",
-          "from": 50,
-          "to": 88,
-          "feather": 10,
-          "rotate": -2,
-          "chroma": 1.04,
-          "minChroma": 6
-        },
-        {
-          "name": "greens",
-          "from": 118,
-          "to": 175,
-          "feather": 12,
-          "rotate": 0,
-          "chroma": 1,
-          "minChroma": 4
-        },
-        {
-          "name": "Orchil violets",
-          "from": 290,
-          "to": 340,
-          "feather": 14,
-          "rotate": 0,
-          "chroma": 1.7,
-          "minChroma": 6
-        }
-      ],
-      "lab": {
-        "tone": [
-          [
-            0,
-            0
-          ],
-          [
-            15,
-            15
-          ],
-          [
-            30,
-            30.6
-          ],
-          [
-            45,
-            48.6
-          ],
-          [
-            60,
-            67.5
-          ],
-          [
-            72,
-            81
-          ],
-          [
-            85,
-            92.5
-          ],
-          [
-            95,
-            98
-          ],
-          [
-            100,
-            100
-          ]
-        ],
-        "shadow": {
-          "range": [
-            6,
-            26
-          ],
-          "shift": [
-            7,
-            -4.5
-          ],
-          "chroma": 0.9,
-          "cRange": [
-            20,
-            40
-          ]
-        },
-        "mid": {
-          "range": [
-            22,
-            34,
-            58,
-            72
-          ],
-          "hue": [
-            60,
-            100,
-            14
-          ],
-          "b": 0.95,
-          "rotate": -8
-        },
-        "high": {
-          "range": [
-            64,
-            90
-          ],
-          "chroma": 0.6,
-          "shift": [
-            0.5,
-            -1.5
-          ],
-          "cRange": [
-            10,
-            22
-          ],
-          "warm": [
-            40,
-            95,
-            15,
-            1.22,
-            50,
-            78
-          ]
-        },
-        "toneC": [
-          15,
-          45,
-          0.5
-        ]
-      }
+ "version": 4,
+ "about": "CALIMA grade sets (look-post, docs/ROUND5-LOOK.md L-01/L-02/L-14). Display-space grade baked per set into a 32^3 half-float LUT by src/core/look.js (gradeSet: split tone, soft contrast, saturation by luma, LCh hue bands, then the L*a*b* stage `lab`: a tone curve on L* faded by chroma, a shadow shift toward rose, a mid-band turn toward orange, the low-chroma upper mids toward lavender (`cool`), the lit band toward pale gold (`high`), warm highlights given back their chroma, and hue-preserving gamut mapping); two slots blend on the GPU. Sets: golden (16:30-18:30), sunset (18:30-19:12, v4), dusk (19:45 on), noon, calima. Hues are CIE LCh degrees (D65).",
+ "lutSize": 32,
+ "look": {
+  "exposure": "calibrate",
+  "slope": [1, 0.99, 0.97],
+  "power": 1.22,
+  "sat": 1.12
+ },
+ "vignette": 0.28,
+ "default": "golden",
+ "sets": {
+  "golden": {
+   "shadowTint": [1, 1, 1],
+   "shadowRange": [0.05, 0.5],
+   "highlightTint": [1.02, 1, 0.97],
+   "highlightRange": [0.55, 0.95],
+   "contrast": 1.08,
+   "pivot": 0.42,
+   "satLuma": [0.95, 1, 1],
+   "satRange": [0.04, 0.3, 0.62, 0.98],
+   "hue": [
+    {
+     "name": "olive to amber",
+     "from": 88,
+     "to": 118,
+     "feather": 12,
+     "rotate": -8,
+     "chroma": 1,
+     "minChroma": 6
     },
-    "noon": {
-      "shadowTint": [
-        1,
-        1,
-        1
-      ],
-      "shadowRange": [
-        0.05,
-        0.45
-      ],
-      "highlightTint": [
-        1,
-        1,
-        1
-      ],
-      "highlightRange": [
-        0.55,
-        0.95
-      ],
-      "contrast": 1.08,
-      "pivot": 0.42,
-      "satLuma": [
-        0.95,
-        1.08,
-        0.95
-      ],
-      "satRange": [
-        0.04,
-        0.3,
-        0.62,
-        0.98
-      ],
-      "hue": [
-        {
-          "name": "olive to amber",
-          "from": 88,
-          "to": 118,
-          "feather": 12,
-          "rotate": 0,
-          "chroma": 1,
-          "minChroma": 6
-        },
-        {
-          "name": "amber grass",
-          "from": 50,
-          "to": 88,
-          "feather": 10,
-          "rotate": 3,
-          "chroma": 1,
-          "minChroma": 6
-        },
-        {
-          "name": "greens",
-          "from": 118,
-          "to": 175,
-          "feather": 12,
-          "rotate": 0,
-          "chroma": 1,
-          "minChroma": 4
-        },
-        {
-          "name": "Orchil violets",
-          "from": 290,
-          "to": 340,
-          "feather": 14,
-          "rotate": 0,
-          "chroma": 1.7,
-          "minChroma": 6
-        }
-      ],
-      "lab": {
-        "tone": [
-          [
-            0,
-            0
-          ],
-          [
-            15,
-            15
-          ],
-          [
-            30,
-            30.6
-          ],
-          [
-            45,
-            48.6
-          ],
-          [
-            60,
-            67.5
-          ],
-          [
-            72,
-            81
-          ],
-          [
-            85,
-            92.5
-          ],
-          [
-            95,
-            98
-          ],
-          [
-            100,
-            100
-          ]
-        ],
-        "shadow": {
-          "range": [
-            8,
-            30
-          ],
-          "shift": [
-            1.5,
-            -2.5
-          ],
-          "chroma": 1,
-          "cRange": [
-            20,
-            40
-          ]
-        },
-        "high": {
-          "range": [
-            64,
-            90
-          ],
-          "chroma": 0.85,
-          "shift": [
-            0,
-            -0.5
-          ],
-          "cRange": [
-            10,
-            22
-          ]
-        },
-        "toneC": [
-          15,
-          45,
-          0.5
-        ]
-      }
+    {
+     "name": "amber grass",
+     "from": 50,
+     "to": 88,
+     "feather": 10,
+     "rotate": -2,
+     "chroma": 1.04,
+     "minChroma": 6
     },
-    "dusk": {
-      "shadowTint": [
-        1,
-        1,
-        1
-      ],
-      "shadowRange": [
-        0.05,
-        0.55
-      ],
-      "highlightTint": [
-        1.03,
-        0.99,
-        0.98
-      ],
-      "highlightRange": [
-        0.5,
-        0.95
-      ],
-      "contrast": 1.08,
-      "pivot": 0.42,
-      "satLuma": [
-        0.95,
-        1,
-        1
-      ],
-      "satRange": [
-        0.04,
-        0.3,
-        0.62,
-        0.98
-      ],
-      "hue": [
-        {
-          "name": "olive to amber",
-          "from": 88,
-          "to": 118,
-          "feather": 12,
-          "rotate": -8,
-          "chroma": 0.97,
-          "minChroma": 6
-        },
-        {
-          "name": "amber grass",
-          "from": 50,
-          "to": 88,
-          "feather": 10,
-          "rotate": -2,
-          "chroma": 1.0088,
-          "minChroma": 6
-        },
-        {
-          "name": "greens",
-          "from": 118,
-          "to": 175,
-          "feather": 12,
-          "rotate": 0,
-          "chroma": 1,
-          "minChroma": 4
-        },
-        {
-          "name": "Orchil violets",
-          "from": 290,
-          "to": 340,
-          "feather": 14,
-          "rotate": 0,
-          "chroma": 1.7,
-          "minChroma": 6
-        }
-      ],
-      "lab": {
-        "tone": [
-          [
-            0,
-            0
-          ],
-          [
-            15,
-            15
-          ],
-          [
-            30,
-            30.6
-          ],
-          [
-            45,
-            48.6
-          ],
-          [
-            60,
-            67.5
-          ],
-          [
-            72,
-            81
-          ],
-          [
-            85,
-            92.5
-          ],
-          [
-            95,
-            98
-          ],
-          [
-            100,
-            100
-          ]
-        ],
-        "shadow": {
-          "range": [
-            10,
-            38
-          ],
-          "shift": [
-            6,
-            -9
-          ],
-          "chroma": 0.85,
-          "cRange": [
-            20,
-            40
-          ]
-        },
-        "mid": {
-          "range": [
-            18,
-            30,
-            58,
-            72
-          ],
-          "hue": [
-            60,
-            100,
-            14
-          ],
-          "b": 0.8,
-          "rotate": -6
-        },
-        "high": {
-          "range": [
-            64,
-            90
-          ],
-          "chroma": 0.6,
-          "shift": [
-            1.5,
-            -2.5
-          ],
-          "cRange": [
-            10,
-            22
-          ],
-          "warm": [
-            40,
-            95,
-            15,
-            1.22,
-            50,
-            78
-          ]
-        },
-        "toneC": [
-          15,
-          45,
-          0.5
-        ]
-      }
+    {
+     "name": "greens",
+     "from": 118,
+     "to": 175,
+     "feather": 12,
+     "rotate": 0,
+     "chroma": 1,
+     "minChroma": 4
     },
-    "calima": {
-      "shadowTint": [
-        1.04,
-        0.95,
-        0.98
-      ],
-      "shadowRange": [
-        0.05,
-        0.45
-      ],
-      "highlightTint": [
-        1.03,
-        0.99,
-        0.94
-      ],
-      "highlightRange": [
-        0.55,
-        0.95
-      ],
-      "contrast": 1.06,
-      "pivot": 0.42,
-      "satLuma": [
-        0.95,
-        0.97,
-        0.92
-      ],
-      "satRange": [
-        0.04,
-        0.3,
-        0.62,
-        0.98
-      ],
-      "hue": [
-        {
-          "name": "olive to amber",
-          "from": 75,
-          "to": 110,
-          "feather": 14,
-          "rotate": -10,
-          "chroma": 0.9,
-          "minChroma": 6
-        },
-        {
-          "name": "greens",
-          "from": 110,
-          "to": 175,
-          "feather": 12,
-          "rotate": 0,
-          "chroma": 0.9,
-          "minChroma": 4
-        }
-      ],
-      "lab": {
-        "tone": [
-          [
-            0,
-            0
-          ],
-          [
-            15,
-            15
-          ],
-          [
-            30,
-            30.6
-          ],
-          [
-            45,
-            48.6
-          ],
-          [
-            60,
-            67.5
-          ],
-          [
-            72,
-            81
-          ],
-          [
-            85,
-            92.5
-          ],
-          [
-            95,
-            98
-          ],
-          [
-            100,
-            100
-          ]
-        ],
-        "shadow": {
-          "range": [
-            18,
-            42
-          ],
-          "shift": [
-            2,
-            -4
-          ],
-          "chroma": 0.95
-        },
-        "high": {
-          "range": [
-            64,
-            90
-          ],
-          "chroma": 0.7,
-          "shift": [
-            1,
-            -1
-          ],
-          "cRange": [
-            10,
-            22
-          ]
-        },
-        "toneC": [
-          15,
-          45,
-          0.5
-        ]
-      }
+    {
+     "name": "Orchil violets",
+     "from": 290,
+     "to": 340,
+     "feather": 14,
+     "rotate": 0,
+     "chroma": 1.7,
+     "minChroma": 6
     }
+   ],
+   "lab": {
+    "tone": [
+     [0, 0],
+     [15, 15],
+     [30, 30.6],
+     [45, 48.6],
+     [60, 67.5],
+     [72, 81],
+     [85, 92.5],
+     [95, 98],
+     [100, 100]
+    ],
+    "shadow": {
+     "range": [8, 30],
+     "shift": [7, -5],
+     "chroma": 1.25,
+     "cRange": [28, 50]
+    },
+    "mid": {
+     "range": [18, 28, 54, 64],
+     "hue": [52, 100, 10],
+     "b": 0.84,
+     "a": 1.38,
+     "rotate": -8,
+     "cRange": [38, 54]
+    },
+    "high": {
+     "range": [48, 58, 66, 74],
+     "chroma": 0.36,
+     "shift": [0, 0],
+     "rotate": 18,
+     "cRange": [46, 66],
+     "warm": [40, 95, 15, 1.22, 76, 88]
+    },
+    "toneC": [15, 45, 0.5],
+    "cool": {
+     "range": [30, 40, 54, 62],
+     "cRange": [14, 28],
+     "chroma": 0.3,
+     "shift": [5, -20]
+    }
+   }
   },
-  "hours": [
-    [
-      5.5,
-      "dusk"
+  "sunset": {
+   "shadowTint": [1, 1, 1],
+   "shadowRange": [0.05, 0.5],
+   "highlightTint": [1.02, 1, 0.97],
+   "highlightRange": [0.55, 0.95],
+   "contrast": 1.08,
+   "pivot": 0.42,
+   "satLuma": [0.95, 1, 1],
+   "satRange": [0.04, 0.3, 0.62, 0.98],
+   "hue": [
+    {
+     "name": "olive to amber",
+     "from": 88,
+     "to": 118,
+     "feather": 12,
+     "rotate": -8,
+     "chroma": 1,
+     "minChroma": 6
+    },
+    {
+     "name": "amber grass",
+     "from": 50,
+     "to": 88,
+     "feather": 10,
+     "rotate": -2,
+     "chroma": 1.04,
+     "minChroma": 6
+    },
+    {
+     "name": "greens",
+     "from": 118,
+     "to": 175,
+     "feather": 12,
+     "rotate": 0,
+     "chroma": 1,
+     "minChroma": 4
+    },
+    {
+     "name": "Orchil violets",
+     "from": 290,
+     "to": 340,
+     "feather": 14,
+     "rotate": 0,
+     "chroma": 1.7,
+     "minChroma": 6
+    }
+   ],
+   "lab": {
+    "tone": [
+     [0, 0],
+     [15, 15],
+     [30, 30.6],
+     [45, 48.6],
+     [60, 67.5],
+     [72, 81],
+     [85, 92.5],
+     [95, 98],
+     [100, 100]
     ],
-    [
-      7,
-      "golden"
+    "shadow": {
+     "range": [8, 32],
+     "shift": [8, -7],
+     "chroma": 0.95,
+     "cRange": [30, 55]
+    },
+    "mid": {
+     "range": [14, 24, 46, 56],
+     "hue": [35, 100, 12],
+     "b": 0.5,
+     "a": 1.15,
+     "rotate": -10,
+     "cRange": [40, 56]
+    },
+    "high": {
+     "range": [48, 58, 66, 74],
+     "chroma": 0.34,
+     "shift": [0, 0],
+     "rotate": 20,
+     "cRange": [46, 66],
+     "warm": [40, 95, 15, 1.22, 76, 88]
+    },
+    "toneC": [15, 45, 0.5],
+    "cool": {
+     "range": [26, 36, 54, 62],
+     "cRange": [18, 34],
+     "chroma": 0.3,
+     "shift": [7, -16]
+    }
+   }
+  },
+  "noon": {
+   "shadowTint": [1, 1, 1],
+   "shadowRange": [0.05, 0.45],
+   "highlightTint": [1, 1, 1],
+   "highlightRange": [0.55, 0.95],
+   "contrast": 1.08,
+   "pivot": 0.42,
+   "satLuma": [0.95, 1.08, 0.95],
+   "satRange": [0.04, 0.3, 0.62, 0.98],
+   "hue": [
+    {
+     "name": "olive to amber",
+     "from": 88,
+     "to": 118,
+     "feather": 12,
+     "rotate": 0,
+     "chroma": 1,
+     "minChroma": 6
+    },
+    {
+     "name": "amber grass",
+     "from": 50,
+     "to": 88,
+     "feather": 10,
+     "rotate": 3,
+     "chroma": 1,
+     "minChroma": 6
+    },
+    {
+     "name": "greens",
+     "from": 118,
+     "to": 175,
+     "feather": 12,
+     "rotate": 0,
+     "chroma": 1,
+     "minChroma": 4
+    },
+    {
+     "name": "Orchil violets",
+     "from": 290,
+     "to": 340,
+     "feather": 14,
+     "rotate": 0,
+     "chroma": 1.7,
+     "minChroma": 6
+    }
+   ],
+   "lab": {
+    "tone": [
+     [0, 0],
+     [15, 15],
+     [30, 30.6],
+     [45, 48.6],
+     [60, 67.5],
+     [72, 81],
+     [85, 92.5],
+     [95, 98],
+     [100, 100]
     ],
-    [
-      9.5,
-      "noon"
+    "shadow": {
+     "range": [8, 30],
+     "shift": [1.5, -2.5],
+     "chroma": 1,
+     "cRange": [20, 40]
+    },
+    "high": {
+     "range": [64, 90],
+     "chroma": 0.85,
+     "shift": [0, -0.5],
+     "cRange": [10, 22]
+    },
+    "toneC": [15, 45, 0.5]
+   }
+  },
+  "dusk": {
+   "shadowTint": [1, 1, 1],
+   "shadowRange": [0.05, 0.55],
+   "highlightTint": [1.03, 0.99, 0.98],
+   "highlightRange": [0.5, 0.95],
+   "contrast": 1.08,
+   "pivot": 0.42,
+   "satLuma": [0.95, 1, 1],
+   "satRange": [0.04, 0.3, 0.62, 0.98],
+   "hue": [
+    {
+     "name": "olive to amber",
+     "from": 88,
+     "to": 118,
+     "feather": 12,
+     "rotate": -8,
+     "chroma": 0.97,
+     "minChroma": 6
+    },
+    {
+     "name": "amber grass",
+     "from": 50,
+     "to": 88,
+     "feather": 10,
+     "rotate": -2,
+     "chroma": 1.0088,
+     "minChroma": 6
+    },
+    {
+     "name": "greens",
+     "from": 118,
+     "to": 175,
+     "feather": 12,
+     "rotate": 0,
+     "chroma": 1,
+     "minChroma": 4
+    },
+    {
+     "name": "Orchil violets",
+     "from": 290,
+     "to": 340,
+     "feather": 14,
+     "rotate": 0,
+     "chroma": 1.7,
+     "minChroma": 6
+    }
+   ],
+   "lab": {
+    "tone": [
+     [0, 0],
+     [15, 15],
+     [30, 30.6],
+     [45, 48.6],
+     [60, 67.5],
+     [72, 81],
+     [85, 92.5],
+     [95, 98],
+     [100, 100]
     ],
-    [
-      15.5,
-      "noon"
+    "shadow": {
+     "range": [10, 40],
+     "shift": [12, -15.5],
+     "chroma": 0.72,
+     "cRange": [18, 32]
+    },
+    "mid": {
+     "range": [6, 14, 58, 72],
+     "hue": [10, 110, 15],
+     "b": 0.05,
+     "a": 1,
+     "rotate": -26,
+     "cRange": [26, 42]
+    },
+    "high": {
+     "range": [64, 90],
+     "chroma": 0.6,
+     "shift": [1.5, -2.5],
+     "cRange": [10, 22],
+     "warm": [40, 95, 15, 1.22, 50, 78]
+    },
+    "toneC": [15, 45, 0.5]
+   }
+  },
+  "calima": {
+   "shadowTint": [1.04, 0.95, 0.98],
+   "shadowRange": [0.05, 0.45],
+   "highlightTint": [1.03, 0.99, 0.94],
+   "highlightRange": [0.55, 0.95],
+   "contrast": 1.06,
+   "pivot": 0.42,
+   "satLuma": [0.95, 0.97, 0.92],
+   "satRange": [0.04, 0.3, 0.62, 0.98],
+   "hue": [
+    {
+     "name": "olive to amber",
+     "from": 75,
+     "to": 110,
+     "feather": 14,
+     "rotate": -10,
+     "chroma": 0.9,
+     "minChroma": 6
+    },
+    {
+     "name": "greens",
+     "from": 110,
+     "to": 175,
+     "feather": 12,
+     "rotate": 0,
+     "chroma": 0.9,
+     "minChroma": 4
+    }
+   ],
+   "lab": {
+    "tone": [
+     [0, 0],
+     [15, 15],
+     [30, 30.6],
+     [45, 48.6],
+     [60, 67.5],
+     [72, 81],
+     [85, 92.5],
+     [95, 98],
+     [100, 100]
     ],
-    [
-      16.5,
-      "golden"
-    ],
-    [
-      19.2,
-      "golden"
-    ],
-    [
-      19.75,
-      "dusk"
-    ],
-    [
-      23,
-      "dusk"
-    ]
-  ],
-  "tuning": "Fix round 2 (Nov 13): v2 read as a rose-brown filter that drained gold, fire and sun glow (judges): its top band took chroma x0.42 from every highlight, the mid a* x1.12 turned yellows salmon, the tone curve lifted saturated oranges out of sRGB, where a per-channel clamp turned them lemon (#FFC070 C 51 -> 23), and the shadow shift turned firelit ground pink. v3 (tuned on the v2 HDR dump: what the output pass tone-maps, GTAO and bloom folded in, every other pixel of the graded frames): the top band desaturates near-neutrals only (cRange 10-22: sky and cloud tops go cream); warm highlights get back the chroma AgX takes (warm 40-95 deg x1.22 above L* 50-78); the tone lift fades with chroma (toneC: neutrals open fully, gold and fire by half); every colour the stage moves out of sRGB is gamut-mapped by chroma at its own hue; the yellow-olive mids (hue 60-100) turn 8 deg toward orange with their chroma kept (1-TR mid hue 49); hues already orange are left alone, so firelit ground and orange cloth do not go salmon; saturation by luma no longer drops the top (0.95/1.00/1.00); shadows shift toward rose below L* 6-26 only (+7, -4.5; dusk 10-38), and only where they are near-neutral (cRange 20-40: firelit ground keeps its orange); greens untouched; Orchil violets x1.7 so Brea outshines the grass; noon keeps W0 hues (amber +3 deg back toward straw, no mid turn); dusk keeps violet-rose neutral shadows with mids x0.8 b* and -6 deg. Probes (HDR through the output, golden 17:45): dim fire C 25 -> 45 (W0 45), sunlit grass 26 -> 39 (W0 43), mid grass 30 -> 37 (W0 39), firelit ground at dusk h 33 -> 46, C 33 -> 39 (W0 h 57, C 47); the v2 dump at full resolution: violet max 47 vs grass p90 47 (field). Fix round 2 (Nov 13): v2 read as a rose-brown filter that drained gold, fire and sun glow (judges): its top band took chroma x0.42 from every highlight, the mid a* x1.12 turned yellows salmon, and the tone curve lifted saturated oranges out of sRGB, where a per-channel clamp turned them lemon (#FFC070 C 51 -> 23). v3: the top band desaturates near-neutrals only (cRange 10-22: sky and cloud tops go cream), warm highlights get back the chroma AgX takes (warm 40-95 deg x1.22 above L* 50-78), the tone lift fades with chroma (toneC: neutrals open fully, gold and fire by half), every colour the stage moves out of sRGB is gamut-mapped by chroma at its own hue, the warm mids turn 8 deg toward orange with their chroma kept (1-TR mid hue 49), saturation by luma no longer drops the top (0.95/1.00/1.00), shadows shift toward rose below L* 8-30 only (+6.5, -4), greens untouched, Orchil violets x1.7 so Brea outshines the grass; noon keeps W0 hues (amber +3 deg back toward straw, no mid turn); dusk keeps v2 violet-rose shadows. On the f1-b1 dump: fire C 9 -> 16 (dim fire 25 -> 45, W0 45), sunlit grass C 26 -> 39 (W0 43), mid grass 30 -> 37 (W0 39), violet max 52 vs grass p90 47. Fix round 2 (Nov 13): v2 read as a rose-brown filter that drained gold, fire and sun glow (judges): its top band took chroma x0.42 from every highlight, the mid a* x1.12 turned yellows salmon, and the tone curve lifted saturated oranges out of sRGB, where a per-channel clamp turned them lemon (#FFC070 C 51 -> 23). v3: the top band desaturates near-neutrals only (cRange 10-22: sky and cloud tops go cream), warm highlights get back the chroma AgX takes (warm 40-95 deg x1.22 above L* 50-78), the tone lift fades with chroma (toneC: neutrals open fully, gold and fire by half), every colour the stage moves out of sRGB is gamut-mapped by chroma at its own hue, the warm mids turn 8 deg toward orange with their chroma kept (1-TR mid hue 49), saturation by luma no longer drops the top (0.95/1.00/1.00), shadows shift toward rose below L* 8-30 only (+6.5, -4), greens untouched, Orchil violets x1.7 so Brea outshines the grass; noon keeps W0 hues (amber +3 deg back toward straw, no mid turn); dusk keeps v2 violet-rose shadows. On the f1-b1 dump: fire C 9 -> 16 (dim fire 25 -> 45, W0 45), sunlit grass C 26 -> 39 (W0 43), mid grass 30 -> 37 (W0 39), violet max 52 vs grass p90 47. Fix round 2 (Nov 13): v2 read as a rose-brown filter that drained gold, fire and sun glow (judges): its top band took chroma x0.42 from every highlight, the mid a* x1.12 turned yellows salmon, and the tone curve lifted saturated oranges out of sRGB, where a per-channel clamp turned them lemon (#FFC070 C 51 -> 23). v3: the top band desaturates near-neutrals only (cRange 10-22: sky and cloud tops go cream), warm highlights get back the chroma AgX takes (warm 40-95 deg x1.22 above L* 50-78), the tone lift fades with chroma (toneC: neutrals open fully, gold and fire by half), every colour the stage moves out of sRGB is gamut-mapped by chroma at its own hue, the warm mids turn 8 deg toward orange with their chroma kept (1-TR mid hue 49), saturation by luma no longer drops the top (0.95/1.00/1.00), shadows shift toward rose below L* 8-30 only (+6.5, -4), greens untouched, Orchil violets x1.7 so Brea outshines the grass; noon keeps W0 hues (amber +3 deg back toward straw, no mid turn); dusk keeps v2 violet-rose shadows. On the f1-b1 dump: fire C 9 -> 16 (dim fire 25 -> 45, W0 45), sunlit grass C 26 -> 39 (W0 43), mid grass 30 -> 37 (W0 39), violet max 52 vs grass p90 47. Fix round 1 (Nov 12): the r4 sets folded yellow and green into one amber band (97 % of chroma pixels in one 30-degree band) and read as a sepia filter beside 1-TR (judge). Re-tuned on the HDR dump of the look places (no hour EV, W0 keys): the amber band rotated -3 deg toward orange (a* x1.12 in the mids) and kept at chroma x0.98, the olive band only -6 deg, greens untouched, Orchil violets x1.55 so Brea's violet is the most saturated hue (dump: violet max 46.8 vs grass p90 42.0 field, 45.2 vs 41.6 aim, 47.3 vs 39.8 close); shadows shifted toward rose in L*a*b* by (5.5, -5) at chroma x0.85 (the full-resolution frames, with GTAO, put the darkest fifth at a* 8-10: a larger b* shift turned them blue-violet); mid b* x0.82; highlights x0.42 chroma; a tone curve on L* that opens the top (60 -> 68.5, 72 -> 82) so p99 does not fall below the W0 output (field 73.7 vs W0 73.4). Bars met on the dump: 22/40 against r4 14/40; the rest (p99 >= 88, clip, spread, hi10 chroma) need the sun, the sky and the sea (world-sky L-03/L-04/L-06, world-ground). R68 (Nov 13, integration frames a1): the tone curve no longer lifts the toe (identity below L* 15; it used to put 6 at 6.8 and 15 at 16.4): with world-sky's aerial v2 the two lifts stacked into a milky Pans vista; the grade keeps the shadow tint, the aerial term owns distance.",
-  "hourEv": [
-    [
-      0,
-      1.3
-    ],
-    [
-      5,
-      1.3
-    ],
-    [
-      5.5,
-      0.7
-    ],
-    [
-      7,
-      0.25
-    ],
-    [
-      9.5,
-      0
-    ],
-    [
-      15.5,
-      0
-    ],
-    [
-      16.5,
-      0.1
-    ],
-    [
-      17.75,
-      0.15
-    ],
-    [
-      18.75,
-      0.25
-    ],
-    [
-      19.33,
-      0.4
-    ],
-    [
-      19.75,
-      0.7
-    ],
-    [
-      21,
-      1.3
-    ]
-  ],
-  "hourEvAbout": "ROUND5-LOOK L-03 EV offsets (noon 0, 16:30 +0.10, 17:45 +0.15, 18:45 +0.25, 19:20 +0.40, 19:45 +0.70, night +1.30); the morning half mirrors them (look-post). engine.setLookHour applies them unless called with { ev: false } (world-sky owns L-03 and may pass its own)."
+    "shadow": {
+     "range": [18, 42],
+     "shift": [2, -4],
+     "chroma": 0.95
+    },
+    "high": {
+     "range": [64, 90],
+     "chroma": 0.7,
+     "shift": [1, -1],
+     "cRange": [10, 22]
+    },
+    "toneC": [15, 45, 0.5]
+   }
+  }
+ },
+ "hours": [
+  [5.5, "dusk"],
+  [7, "golden"],
+  [9.5, "noon"],
+  [15.5, "noon"],
+  [16.5, "golden"],
+  [18.5, "sunset"],
+  [19.2, "sunset"],
+  [19.75, "dusk"],
+  [23, "dusk"]
+ ],
+ "tuning": "Fix round 3 (Nov 13, v4): the judges ruled mid b* and hi10 chroma grade-owned. 1-TR's mid b* (17.8) is low because a lavender sky (top band b* -10.9) sits beside orange grass (b* +31-37), not because its grass is pink; 1-TR's sunlit grass tips are paler (C 25) than its mid grass (C 44). v4 builds that split by luminance and chroma instead of one filter: `cool` turns the low-chroma upper mids (haze, cloud, sky, dust: L* 30-62, chroma < 14-28) lavender (x0.3 + (5, -20)); `mid` turns the warm mids (hue 52-100) toward orange with a* x1.38 / b* x0.84, -8 deg, sparing saturated cloth (cRange 38-54); `high` takes the lit band (L* 48-74, under the fire cores) to pale gold (chroma x0.36, +18 deg toward gold); `shadow` keeps rose-violet darks (+7, -5, x1.25). A new set `sunset` (18:30-19:12, between golden and dusk) carries the later, rosier light (mids b* x0.5 over hue 35-100, cool x0.3 + (7, -16), lit band +20 deg); `dusk` turns the dark mids violet (b* x0.05, -26 deg; shadows +12, -15.5) while firelit ground keeps its orange (cRange 26-42). toneC back to [15, 45, 0.5] (a stronger lift on saturated highlights cost fire chroma in the gamut map). Probes (HDR through the output at 17:45, W0 / v3 / v4): fire dim C 45 / 45 / 40, fire glow 18 / 18 / 18, orange shirt hue 49 / 47 / 46, firelit ground C 47 / 46 / 42. History: v3 (fix round 2) cut v2's rose-brown filter (near-neutral top band only, warm highlights x1.22, gamut-mapped lift); v2 (fix round 1) the first L*a*b* stage.",
+ "hourEv": [
+  [0, 1.3],
+  [5, 1.3],
+  [5.5, 0.7],
+  [7, 0.25],
+  [9.5, 0],
+  [15.5, 0],
+  [16.5, 0.1],
+  [17.75, 0.15],
+  [18.75, 0.25],
+  [19.33, 0.4],
+  [19.75, 0.7],
+  [21, 1.3]
+ ],
+ "hourEvAbout": "ROUND5-LOOK L-03 EV offsets (noon 0, 16:30 +0.10, 17:45 +0.15, 18:45 +0.25, 19:20 +0.40, 19:45 +0.70, night +1.30); the morning half mirrors them (look-post). engine.setLookHour applies them unless called with { ev: false } (world-sky owns L-03 and may pass its own)."
 }
