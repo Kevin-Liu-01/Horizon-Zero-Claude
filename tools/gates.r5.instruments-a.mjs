@@ -12,7 +12,8 @@
  * (`ctx.machines.roles`) for other lanes' Instruments; no coordinate, no bone
  * literal (bones through `machine.rig`).
  */
-import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { kindBlock, KIND_PRELUDE, PIX } from './gates.r5.kind-block.mjs';
@@ -21,14 +22,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LANE = 'instruments-a';
 const FILM = 'instruments-a-film';
 
-/** `gait.js` lines changed against main (A-plumb-topple: "0 gait.js lines changed"); read-only git, at load. */
+/**
+ * `gait.js` unchanged (A-plumb-topple: "0 gait.js lines changed"). No child process at module load (A-port-guard:
+ * a gate module must not spawn before the harness refuses a port): the file's SHA-256 against main's, recorded
+ * here from `git show main:src/entities/machines/gait.js` (Nov 12). A main-side change to the frozen file would
+ * need this constant re-recorded; 0 = identical, 1 = changed, -1 = unreadable.
+ */
+const GAIT_MAIN_SHA256 = '5a58f45630ce904149ab874cfece61ab3cb8aebae73ad8340a0638c1b3d35e95';
 const GAIT_DIFF = (() => {
-  try {
-    const out = execSync('git diff --numstat main -- src/entities/machines/gait.js', { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    if (!out) return 0;
-    const [a, d] = out.split(/\s+/);
-    return (+a || 0) + (+d || 0);
-  } catch (e) { return -1; }
+  try { return createHash('sha256').update(readFileSync(path.join(ROOT, 'src/entities/machines/gait.js'))).digest('hex') === GAIT_MAIN_SHA256 ? 0 : 1; } catch (e) { return -1; }
 })();
 
 /* ------------------------------------------------------------------ */
@@ -154,7 +156,7 @@ const A_PLUMB_TOPPLE = `(async () => {
     gaitUnchanged: ${GAIT_DIFF} === 0,
   };
   __M.sites.dispose(m);
-  return { pass: Object.values(checks).every(Boolean), detail: { checks, afterOne, layRad: +lay.toFixed(3), maxTiltRad: +maxTilt.toFixed(3), tFallS: tFall && +tFall.toFixed(3), downS: downS && +downS.toFixed(3), upS: tUp && +tUp.toFixed(3), ground, standing, gaitLinesChangedVsMain: ${GAIT_DIFF},
+  return { pass: Object.values(checks).every(Boolean), detail: { checks, afterOne, layRad: +lay.toFixed(3), maxTiltRad: +maxTilt.toFixed(3), tFallS: tFall && +tFall.toFixed(3), downS: downS && +downS.toFixed(3), upS: tUp && +tUp.toFixed(3), ground, standing, gaitChangedVsMain: ${GAIT_DIFF},
     bar: 'two level-vial hits -> topple within 0.5 s, down 4 +-0.3 s, grounded (penetration <= 0.10 m, lowest point <= 0.10 m) while down, stands back up; 0 gait.js lines changed' } };
 })()`;
 
@@ -638,8 +640,8 @@ function A_IP_EMISSIVE(kind) {
   const R = E.renderer, scene = __CTX__.scene;
   const FIVE = ['#ff2413', '#38c6ff', '#ffb31f', '#19ffd0', '#9B6BFF'].map(x => Col.rgbToLab(Col.hexToRgb(x)));
   const DARK = Col.rgbToLab(Col.hexToRgb('#3B3A36'));
-  const rt = new THREE.WebGLRenderTarget(1600, 900);
-  const buf = new Uint8Array(1600 * 900 * 4);
+  const rt = new THREE.WebGLRenderTarget(1600, 900, { type: THREE.FloatType });
+  const buf = new Float32Array(1600 * 900 * 4);
   const own = new Set(); m.root.traverse(o => own.add(o));
   const lampGroup = LS.group;
   const black = new THREE.MeshBasicMaterial({ color: 0x000000 }), white = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -665,11 +667,11 @@ function A_IP_EMISSIVE(kind) {
     if (mode === 'mask') { LS.lampMesh.visible = true; }
     let lit = 0, near = 0;
     for (let i = 0; i < buf.length; i += 4) {
-      const r = buf[i] / 255, g = buf[i + 1] / 255, b = buf[i + 2] / 255;
+      const r = Math.max(0, buf[i]), g = Math.max(0, buf[i + 1]), b = Math.max(0, buf[i + 2]);
       const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       if (l < 0.05) continue;
       // the closed iris and its bezel are the dark token #3B3A36 (unlit by construction): not an emissive pixel
-      if (mode !== 'mask' && Col.deltaE2000(Col.rgbToLab([Col.linearToSrgb(r), Col.linearToSrgb(g), Col.linearToSrgb(b)]), DARK) < 10) continue;
+      if (mode !== 'mask' && Col.deltaE2000(Col.rgbToLab([Col.linearToSrgb(Math.min(1, r)), Col.linearToSrgb(Math.min(1, g)), Col.linearToSrgb(Math.min(1, b))]), DARK) < 10) continue;
       lit++;
       if (mode === 'mask') continue;
       const mx = Math.max(r, g, b) || 1;

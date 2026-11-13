@@ -85,18 +85,13 @@ export class Peg extends ExpansionMachine {
     this._gMallet = glintAnchor(this, 'mallet', S.mallet);
     this._gLamp = glintAnchor(this, 'head', S.lamp);
     this._gRack = glintAnchor(this, 'pelvis', S.rack);
-    this._deathRoll = 1.55;   // a churn rolls onto its flank: the mast comes down (A47c)
+    this._deathRoll = 0.6;
     this._deathSink = 0.02;
   }
 
   weightAudit() { return weightAudit(this); }
 
-  /** The churn rolls onto its flank as it dies (a sprawler: its mass must come down, A47c); the mast comes down with it. */
-  onDeathPose(k, deathT) {
-    this.gait.deathPose(k, deathT, 'quad');
-    const f = k < 0.6 ? (k / 0.6) * (k / 0.6) * (3 - 2 * (k / 0.6)) : 1;
-    this.gait.rotZ(this.rig.pelvis, this._deathSide * 1.25 * f);
-  }
+  onDeathPose(k, deathT) { this.gait.deathPose(k, deathT, 'quad'); }
 
   /** The transect: walk, stop, drive a peg every TRANSECT.spacing metres (calm only). */
   _statePatrol(dt) {
