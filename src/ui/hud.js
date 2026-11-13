@@ -1992,10 +1992,9 @@ export class HUD {
         if (r < B[o] || l > B[o + 2] || b < B[o + 1] || t > B[o + 3]) continue;
         const above = B[o + 1] - gap;
         const sideX = (X[i] < (B[o] + B[o + 2]) * 0.5) ? B[o] - HW[i] - gap : B[o + 2] + HW[i] + gap;
-        if (above - hi >= topFloorK && this._plateFree(X[i], above, HW[i], hi)) Y[i] = above;
-        else if (this._plateFree(sideX, Y[i], HW[i], hi)) X[i] = sideX;
-        else continue;   // the HUD's own instruments keep their place first
-        C[i] |= 2;
+        if (above - hi >= topFloorK && this._plateFree(X[i], above, HW[i], hi)) C[i] |= 2, Y[i] = above;
+        else if (this._plateFree(sideX, Y[i], HW[i], hi)) C[i] |= 1, X[i] = sideX;   // off its axis: "clamped"
+        // else: the HUD's own instruments keep their place first
       }
     }
     /* 2c. last word: nothing above leaves a plate on the column or the circle */
@@ -2005,8 +2004,7 @@ export class HUD {
       const colB = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc, colR = MHB_SAFE_L * sc;
       if (X[i] - HW[i] < colR && Y[i] - hi < colB) {
         const toRight = colR + HW[i] - X[i], toBelow = colB + hi - Y[i];
-        if (toRight <= toBelow) X[i] += toRight; else Y[i] += toBelow;
-        C[i] |= 2;
+        if (toRight <= toBelow) { X[i] += toRight; C[i] |= 1; } else { Y[i] += toBelow; C[i] |= 2; }
       }
       if (Math.abs(X[i] - this._vw * 0.5) < HW[i] + MHB_EYE_HALF * sc && Y[i] - hi < MHB_EYE_BASE * sc) {
         Y[i] = MHB_EYE_BASE * sc + hi; C[i] |= 2;
