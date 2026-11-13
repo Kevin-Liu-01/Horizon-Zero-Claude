@@ -3,7 +3,7 @@
 Brea's close-up, rebuilt in the recipe, and the kit settlements builds NPCs on (R56, R57 c). Budgets did not move. Fix round 2 answers
 the eight findings of the gate judge and the engineering + film judge. Its first pass (Nov 6-7) was cut off before its final run; this
 lane picked it up on Nov 12, measured it live, fixed what still failed and took the ROUND5-LOOK items this lane owns at the W1 exit
-(C-01, C-03, C-04 chunk, C-05 mesh). §0 maps the findings to the work and the numbers, §0.1 keeps the first pass's map, §2 measures the
+(C-01, C-04's chunk, and the lash, paste and tail parts of C-02, C-03 and C-05; §2.1 lists what is not built). §0 maps the findings to the work and the numbers, §0.1 keeps the first pass's map, §2 measures the
 final build, §3 is the reusable API (the Nov 12 additions at its end), §4 keeps fix round 1's map.
 
 ## 0. Fix round 2, continued (Nov 12), finding by finding
@@ -12,18 +12,18 @@ The first pass's build (`52ea0c43`) had never been run live. Its first live run 
 (the collar set 7,827 px in 33 of 288 views, the head 6 px in 1); the V rows showed a white slit across the wrap tail at the knot, a pale
 grey band along both upper lids in the sun, a comb of ruled lash sticks, a paper-white paste, and ears that flare to a point from behind.
 Each fix below was iterated offline first in a CPU previewer of the GLB (sun + shadow map, hemi, GGX, ACES, the skin light emulated), then
-confirmed live. Runs: **b0** = the first pass's build; **r1-r3** = this round's builds; **r4** = the final build. Numbers are r3/r4's.
+confirmed live. §2 lists the runs; **the final build is r8's** (`e2b21de7`).
 
 | # | finding | what was done (Nov 12) | measured |
 |---|---|---|---|
 | 1, 6a | Eye in profile a pale wedge; no lash hair, no lid | **The grey band along the upper lid was the lid-rim row**: lit full by the sun (the shadow map's 3.5 cm normal bias cannot shade a row under a lid) and facing out, so its GGX sheen read pale grey on a near-black texel. Its under-face now looks down at the ball (normal (0, -0.75, 0.66)), it carries the lid's contact shade (COLOR_0 0.5 / 0.7), rough 0.78-0.86, AO 0.59, and its texel runs `#120E0C` → `#2A1A14`. **The lash line** follows a least-squares parabola through the measured margin (it had a spike over the cornea dome) and the rim keeps its (x, y) on the lid, coming forward onto the ball only. **Lashes** (LOOK C-03): clumps of 3-5 tapered hairs that curve and lean together, 97 strands a lid (C-03: ≥ 40), `#120E0C`, on a solid root band a quarter of the card (the heavy lash line), 3.5 mm long (C-03's 3.0-3.5 mm), curl 0.42 so they stand past the lid in profile. **The white** falls to about a quarter of its value by the corner (was 40 %), warmed 70 % toward the skin. The detail sheet's two profile panels are now centred on the eye (2.3 cm under the brow landmark, was 3.3: the eye sat at the panel's edge) | detail sheet: a dark lash line and a dark warm wedge with the iris at its front in both profiles; the grey band is gone in every lit frame (r3 low 08:00, 3/4 her right) |
-| 2 | The wrap tail reads as low-poly folded paper | **The white slit across the strip at the knot** (b0 day and right fronts) was the U restart: a row longer than a cloth panel's repeated columns ran into the next atlas cell, the fray end's transparent texels, before the U wrapped. The U now restarts BEFORE a row would leave the panel, and a row longer than the repeat (the gathered root's lining, 57 px rows on a 96 px repeat in a 128 px cell) restarts at the panel's first column (`clothTail`). R66 d's widths at the wide ends of A-tail-flow (a)'s tolerances: 0.10 m at the knot, held down the free strip, to 0.07 m before a 2.5 cm frayed fringe (was 0.10 → 0.08 with 4.9 cm of fringe); rolled hems kept. The centre values (0.09 → 0.06) cost `A-tail-legible` its reach on hero-body's 0.49 m, 6-link chain: it passed r1 and r4 but failed 2 of 24 moments in r5 and 1 of 24 in r6, at reach 3. A wider cup (curl 0.26) read rounder but failed 1 of 24 in r3, so the final build keeps the first pass's cup | no slit in any frame (r1-r3); tail 520 tris (≤ 900); `A-tail-legible` @TL@ |
-| 3 | R63 c: narrow the tail | **Withdrawn by R66 d**: the tail keeps its length (the chain is hero-body's) and takes R66 d's widths within tolerance, above; the centre values wait on the 7-link chain (§2.2) | `A-tail-legible` @TL@ |
+| 2 | The wrap tail reads as low-poly folded paper | **The white slit across the strip at the knot** (b0 day and right fronts) was the U restart: a row longer than a cloth panel's repeated columns ran into the next atlas cell, the fray end's transparent texels, before the U wrapped. The U now restarts BEFORE a row would leave the panel, and a row longer than the repeat (the gathered root's lining, 57 px rows on a 96 px repeat in a 128 px cell) restarts at the panel's first column (`clothTail`). R66 d's widths at the wide ends of A-tail-flow (a)'s tolerances: 0.10 m at the knot, held down the free strip, to 0.07 m before a 2.5 cm frayed fringe (was 0.10 → 0.08 with 4.9 cm of fringe); rolled hems kept. The centre values (0.09 → 0.06) cost `A-tail-legible` its reach on hero-body's 0.49 m, 6-link chain: it passed r1 and r4 but failed 2 of 24 moments in r5 and 1 of 24 in r6, at reach 3. A wider cup (curl 0.26) read rounder but failed 1 of 24 in r3, so the final build keeps the first pass's cup | no slit in any frame (r1-r9); tail 496 tris (≤ 900); `A-tail-legible` PASS r7, r8, r9 (0 of 24 each) |
+| 3 | R63 c: narrow the tail | **Withdrawn by R66 d**: the tail keeps its length (the chain is hero-body's) and takes R66 d's widths within tolerance, above; the centre values wait on the 7-link chain (§2.2) | `A-tail-legible` PASS r7, r8, r9 (0 of 24 each) |
 | 4, 5 | R54: matte skin, hard terminator, cheap beside the reference; paste a white band with speckle | **The skin's own light, LOOK C-01 and C-04** (`src/hero/skinLook.js`, by grant): a per-channel wrapped Lambert (0.50 / 0.24 / 0.16) so the shadow side stays warm red-brown with form, the sun's shadow faded in only past N·L 0.25 so the normal-bias seam does not print a hard terminator, back-transmission through the ears from a baked `_CALTHIN` attribute, a sun-rim (skin 0.55) where the sun grazes, the hero fill ×0.6. The wrap and hair get C-04's rim (0.45) and violet velvet edge (`applyClothLook`). **The paste** (C-02's chalk): albedo capped at (217, 214, 206) with dusty drifts, rough 0.9, plates 6.7 mm, cracks shaded grooves 0.5-0.9 mm wide (a 0.1-0.3 mm crack printed a dotted line at 0.43 mm a texel) and sparser, edges that bite at the finger's scale | `A-skin-scatter` PASS (r8): shadow cheek 0.047, lit:shadow 3.82, fall 0.473 of the face width, warmth 0.813, backlit ear rim 3.01 × the cheek (0.57 with the transmission off), night 0.0016; `A-brea-contrast` salt 6.14:1 |
 | 5 | (backlit, in the new light) | The first cut of the transmission (r1) lit the lips, the nose wings and the lower lids too (each has a hollow a few mm behind it) and the rim lit whole cheeks turned from the sun (the normal bias leaves them unshadowed): a red nostril. The thickness is baked on the ears only, and the rim is multiplied by smoothstep(-0.45, 0.05, N·L) | r3 backlit: no lit nostril, no lit lid line; the ears' rims warm |
 | 6b | The ear oversized, high, an elfin point | The first pass scaled it to 0.85, lowered it 5 mm and rounded the helix. From behind it still flared to a wing: the upper half now lies closer to the skull, 70 % of its stand-off at the top (`reshapeEars`) | r3 detail-back nape panels: no wing |
-| 7 | A-wrap-closed fails on reproduction | **Head set: 0 px in r1-r7 at all three idle phases** (the first pass's trims hold; the judge's ear-top hole and the 6 px crack at az 255 are gone). **The collar set's blobs were the row reading the wrong key colour**: it took the top-left pixel as the background, and looking steeply down (0.8 and 1.2 rad) the bowed head or the shoulder covers that corner. Every pixel of that cloth or skin colour that the double-sided draw shades a little differently then counted as a see-through: 4-7 k px at az 75-105, where the row's own sheet shows solid smock (b0, r1, r2, r4, r5, r6). The key is now the greenest pixel on the frame's border. Two other changes were tried on the way and kept as hygiene: each state is drawn twice and a see-through must be background in both single-sided frames, and both states are warmed before each phase. A third, swapping in double-sided twin materials (r5, 167 k px), was not kept | @WRAP@ |
-| 8 | A-wrap-closed cannot see the collar | The first pass's collar set stands: 24 azimuths × 0 / 0.4 / 0.8 / 1.2 rad round `neck_01` less 6 cm, at three phases. A see-through is background single-sided but covered double-sided, within 220 px; only the key colour and the double-frame rule changed. With a true key, r7 found the first pass's open item: 300-400 px slivers at az 150-180, el 0.4-0.8, a look from behind past the neck onto the single-sided inner face of the collar's FRONT. The collar wall (`appendCollarLiner`) now runs all the way round (`reach: 1.01`, 38 tris, was 22). It faces the neck, so it is never drawn from the front, and where the V opens there is no wall to line. One tail row (22 → 21) pays for it, and the body stays at 9,926 tris live | @WRAPC@ |
+| 7 | A-wrap-closed fails on reproduction | **Head set: 0 px in r1-r7 at all three idle phases** (the first pass's trims hold; the judge's ear-top hole and the 6 px crack at az 255 are gone). **The collar set's blobs were the row reading the wrong key colour**: it took the top-left pixel as the background, and looking steeply down (0.8 and 1.2 rad) the bowed head or the shoulder covers that corner. Every pixel of that cloth or skin colour that the double-sided draw lights a little differently then counted as a see-through: 4-7 k px at az 75-105, where the row's own sheet shows solid smock (b0, r1, r2, r4, r5, r6). The key is now the greenest pixel on the frame's border. Two other changes were tried on the way and kept as hygiene: each state is drawn twice and a see-through must be background in both single-sided frames, and both states are warmed before each phase. A third, swapping in double-sided twin materials (r5, 167 k px), was not kept | head set 0 px, all phases (r1-r9); collar set: b0 7,833 px over 33 views → r7 3,186 px over 19 → r8 1,116 px over 5. `A-wrap-closed` still FAILS on the collar set (§2, §2.1 item 4) |
+| 8 | A-wrap-closed cannot see the collar | The first pass's collar set stands: 24 azimuths × 0 / 0.4 / 0.8 / 1.2 rad round `neck_01` less 6 cm, at three phases. A see-through is background single-sided but covered double-sided, within 220 px; only the key colour and the double-frame rule changed. With a true key, r7 found the first pass's open item: 300-400 px slivers at az 150-180, el 0.4-0.8, a look from behind past the neck onto the single-sided inner face of the collar's FRONT. The collar wall (`appendCollarLiner`) now runs all the way round (`reach: 1.01`, 38 tris, was 22). It faces the neck, so it is never drawn from the front, and where the V opens there is no wall to line. One tail row (22 → 21) pays for it, and the body stays at 9,926 tris live | r7 → r8: 19 → 5 views, 3,186 → 1,116 px |
 
 ### 0.1 Fix round 2, first pass (Nov 6-7), finding by finding
 
@@ -74,36 +74,36 @@ from the CC0 UBC sources only. Nothing was downloaded.
 
 ## 2. Gates (`tools/gates.r5.character-art.mjs`; `node tools/gates.mjs --port 5266 --lane character-art`)
 
-Fix round 2, Nov 12, port 5266. Final build: `brea.glb` @BYTES@ bytes, sha256 `@SHA@…`, from `build-assets --only hero-body`; the tree's file
+Fix round 2, Nov 12, port 5266. Final build: `brea.glb` 658,972 bytes, sha256 `e2b21de7cd7e…`, from `build-assets --only hero-body`; the tree's file
 is byte-identical to that output; `brea-clips-ual2.glb` and `outfit-pan-1.glb` are unchanged. Nine runs; the ones the table cites:
 - **b0:** the first pass's build.
 - **r1-r3:** the skin light, the eye and tail fixes; r3 ran every lane row and every must-stay-green row.
 - **r5:** the global rows.
 - **r7:** the final key colour.
 - **r8:** the final face and tail, with the lane rows, the must-stay-green rows and every V row re-filmed.
-- **r9:** the final build: the collar wall raised to the rim, otherwise r8's.
+- **r9:** the collar wall raised to the outfit's rim. It was worse, 2,225 px over 6 views, so it was reverted. **The final build is r8's**: the tree's file is the byte-identical rebuild (`e2b21de7`), and r9's other rows (budget, draws, face, bind, hair, fill, outfit dispose, tail) read the same.
 
 The visual rows are my own reading; the independent judge grades them (R29).
 
 | gate | result | measured |
 |---|---|---|
-| **A-brea-budget** | PASS (r1-r8) | 9,926 tris live (skin 6,707 + hair/wrap 3,219; ≤ 10 k), 2 draws, 1 skeleton, skin 1024² + 512² normal / ORM / AO, hair/wrap 512², @BYTES@ bytes (≤ 0.7 MB); alpha cut 0.5, per-vertex shadow, face normal energy 2.98, AO range 90..255 |
-| **A-wrap-closed** (R64 d, 3 phases × 192 views) | @WRAPR@ | @WRAPM@ |
+| **A-brea-budget** | PASS (r1-r8) | 9,926 tris live (skin 6,707 + hair/wrap 3,219; ≤ 10 k), 2 draws, 1 skeleton, skin 1024² + 512² normal / ORM / AO, hair/wrap 512², 658,972 bytes (≤ 0.7 MB); alpha cut 0.5, per-vertex shadow, face normal energy 2.98, AO range 90..255 |
+| **A-wrap-closed** (R64 d, 3 phases × 192 views) | **FAIL** (r8, final build) | head set 0 px in all 288 views at the three idle phases (r1-r9). Collar set 1,116 px in 5 of 288 views. az 180, el 0.4: 357 and 391 px (phases 0, 2). az 150, el 0.4: 307 px (phase 0). az 195 and 180, el 1.2: 34 and 27 px. The run history: b0 7,833 px; r1-r6 7-167 k px (the wrong key colour); r7 3,186 px over 19 views (the true key); r8 1,116 px over 5 (the wall round the front). The r8 slivers sit in the air beside the neck, above the smock's shoulder: §2.1 item 4 |
 | **A-skin-scatter** (new, LOOK C-01) | PASS (r3, r8) | r8: (a) shadow cheek 0.0474 (0.022-0.060); (b) lit:shadow 3.82 (3.5-5.5); (c) the fall across the forehead 0.473 of the face width (≥ 0.10); (d) warmth 0.813 (≥ 0.40); (e) backlit ear rim 0.0151 vs cheek 0.0050 = 3.01 (≥ 1.5), 0.57 with `_CALTHIN` off (< 1.15); (f) night 0.0016 (≤ 0.010); (g) `calSkin` 1, 2 draws, maps 1024 / 512 / 512 |
 | **A-brea-fill** (R59 c) | PASS (r3) | emissive intensity 0.963 noon, 0.511 dusk, 1.0 overcast, 0.075 at 01:00 (the ×0.6 lives in the colour) |
 | A-face-delta | PASS (r3) | ≥ 6 mm on 5 of 7 (bridge 7.88, cheeks 6.30 / 6.31, jaw 6.12, chin 6.48, brow 7.39; tip 5.05, upper lip 1.18), eye socket 0.213 mm, profile IoU 0.867 live / 0.9167 recipe |
 | A-human-bind | PASS (r3) | 52 / 52, hipScale 0.993 |
 | A-hero-draws | PASS (r3-r8) | her 4 draws, 2 casters, body 9,926 + outfit 7,876 + kit 2,180 = 19,982 (≤ 20 k under this tree's R38 row) |
 | A33-hair-bounce | PASS (r3) | detrended 0.075 m (≥ 0.04), 3.73 Hz vs footfall 3.73 Hz |
-| A-tail-legible (hero-body's) | @TLR@ | @TLM@ |
-| A-wrap-clear | PASS (r3, r4) | @WCLEAR@ |
+| A-tail-legible (hero-body's) | PASS (r7, r8, r9) | 0 of 24 gust moments failing in each run. r8: graded reach min 4 and clear3 min ≥ 5 in every view, calm reach 3 (reported, not graded). r8 and r9 are the final tail; r7 had one more row. The R66 d centre widths failed it in r5 and r6 |
+| A-wrap-clear | PASS (r3-r8) | min clearance 0.055 m (≥ 0.05) at every pitch, crouched and not |
 | A-brea-contrast | PASS (r3, r8) | salt 6.14:1, sand ΔE 21.4, 21.1 % of pixels at 3:1 |
 | A-outfit-merge-dispose | PASS (r3) | geometries 152 → 152, textures 115 → 115, skeletons 3 → 3 |
 | A1-boot-clean, A20b | PASS (r1, r3, r5, r8) | 0 system errors with the new shaders (a GLSL error would fail both) |
 | A90b-memory-attribution | PASS (r1, r3, r8) | 0 offenders |
-| V-brea-closeup, -right, -low, -shade, -dusk, -dusk-right, -back, -backlit, -night, -detail, -detail-back | NEEDS-JUDGE; filmed and read (r3, r4) | §2.1 |
+| V-brea-closeup, -right, -low, -shade, -dusk, -dusk-right, -back, -backlit, -night, -detail, -detail-back | NEEDS-JUDGE; filmed and read (r3, r5, r8 = final) | §2.1 |
 | V-brea-closeup-calima | PENDING (R59 b) | no calima state in this tree; the row says so |
-| V-brea-face, V-brea-one-glance, V23-secondary-motion | NEEDS-JUDGE; read (r3, r4) | the salt-line, the scar and the eyes read at 1.2 m; the tail stands off the left rear in the 64 px sheet |
+| V-brea-face, V-brea-one-glance, V23-secondary-motion | NEEDS-JUDGE; read (r3; face and one-glance r8) | the salt-line, the scar and the eyes read at 1.2 m; the tail stands off the left rear in the 64 px sheet |
 | A90-memory-stability, -expansion, A90-rig-reclaim | PASS (r5) | stability over 30 kills; expansion objects 2,715 → 2,785; rig-reclaim geo growth 0, tex 0 |
 | A-ID-ip-assets-gone, A-assets-tracked, A-no-horizon-terms-code, A-no-horizon-terms-player | PASS (r5) | 24 GLBs, 0 IP hits; 228 refs tracked; code 1371 of 1371 (`namecheck --code` PASS offline too); player 1504 ≤ 1508 |
 | A-build-deterministic | PASS (r5) | 19 outputs, 0 differ, the committed `brea.glb` equal to the build, 18 s a pass, 1.44 GB peak |
@@ -111,12 +111,12 @@ The visual rows are my own reading; the independent judge grades them (R29).
 | A90-abs, A-alloc-rate, A-vram-ledger | not graded: infra | "Waiting failed: 90000ms exceeded" in each of r5-r8, four runs, every one with a browser relaunch for shared-GPU contention. The first pass ran them green (A90-abs, A-vram-ledger) and A-alloc-rate named other owners. This round's runtime change is one shader patch, built once at install, with no per-frame work and no allocation. The orchestrator's quiet global run grades them (R45, R67) |
 | A9-perf-budget, A21-real-draw-calls, A-port-guard, A-carried-suite | not run | quiet-box rows and the orchestrator's sealed-run rows (R45) |
 
-### 2.1 Still weak, next to the reference (read on r3's, r4's and r5's frames, beside `portrait-bokeh.jpg` and Kevin's Nov 6 face panels)
+### 2.1 Still weak, next to the reference (read on r3's, r5's and r8's frames, beside `portrait-bokeh.jpg` and Kevin's Nov 6 face panels)
 
 1. **Overall (R54).** The skin light is the largest step this round. In the day frames the shadow side is a warm red-brown that keeps
    the cheekbone, jaw and nose planes, the terminator is soft, and at dusk she reads close to the key art's face panels. Side by side
-   with the stock light (the `D-skin-ab` sheet, scratch), the new light is clearly closer to the panels. Two things are weaker:
-   - In full sun the lit cheek runs a little orange next to the panels' brown. A-skin-scatter (d) reads 0.807 against a floor of 0.40,
+   with the stock light (`reference/r5/character-art/brea-skin-light-ab.jpg`), the new light is clearly closer to the panels. Two things are weaker:
+   - In full sun the lit cheek runs a little orange next to the panels' brown. A-skin-scatter (d) reads 0.813 against a floor of 0.40,
      so there is room to pull the red wrap down, but I kept LOOK C-01's numbers.
    - Beside the photo she is still a stylised game heroine, not "incredible". The skin's micro-detail at 0.8 m is the stock map's
      (C-02's second lobe and tiling micro-normal are not built), and the lips are fuller but still thinner than the panels'.
@@ -125,19 +125,25 @@ The visual rows are my own reading; the independent judge grades them (R29).
 3. **Wrap tail.** The slit is gone and the strip has R66 d's widths. In the still-air nape view her left, it still folds at a hard angle
    where the stiff root hands over to the hanging strip (the chain's own 70°, hero-body's), and the strip there reads as a flat plate.
    A cupped strip (curl 0.26) read rounder, but cost `A-tail-legible` a moment at the bar (r3), so it is not in the final build.
-4. **Ear.** Smaller, lower, round-topped, lying closer from behind. Its rim polygons still show at 0.26 m.
-5. **Paste.** Chalky and cracked, no longer paper-white. Next to the panels' paste it is still a neat stroke, not a gritty smear.
-6. **Not mine, in every close-up:**
+4. **`A-wrap-closed`'s collar set is not closed (FAIL, 1,116 px over 5 views).** The slivers sit in the air beside the neck, above the
+   smock's shoulder, seen from behind at 0.4 rad. In the double-sided frame something covers them: the collar wall's back face where
+   it stands above the smock's rim in the bowed idle. The wall is skinned to the torso and the rim moves with the neck. Raising the
+   wall to the rim made them grow (r9: 300-400 → 500-590 px), so I read it that way. The next step is a two-sided top band on the
+   wall, or a wall 6-10 mm under the rim, each graded on a live run; I had no Chrome slot left for it this round.
+5. **Ear.** Smaller, lower, round-topped, lying closer from behind. Its rim polygons still show at 0.26 m.
+6. **Paste.** Chalky and cracked, no longer paper-white. Next to the panels' paste it is still a neat stroke, not a gritty smear.
+7. **Not mine, in every close-up:**
    - the cord, a thick white low-poly V (armory, R64 a);
    - the plastic pink smock (armory, R64 a and R66 f's sleeveless re-cut);
    - the bowed idle head (hero-body, R64 b).
-7. **Calima** is not graded (R59 b).
+8. **Calima** is not graded (R59 b).
 
 ### 2.2 What others need to do
-- **hero-body:** the tail mesh now has R66 d's widths (0.09 → 0.06 m, 2.5 cm fringe) on your unchanged 6-link chain, and
-  `A-tail-legible` passes on it in r1, r4 and r5 (0 of 24 moments each; calm reach still 3). When the 7-link `dyn_wrapSash_01..07` chain
-  lands (LOOK C-05), the recipe's `tail` spec takes its points and joints unchanged (`clothTail` works on any chain length); tell this
-  lane, and re-run `A-tail-legible`. The fold where the stiff root hands over to the hanging strip is the chain's own angle. The idle
+- **hero-body:** the tail mesh is 0.10 → 0.07 m with a 2.5 cm fringe, the wide ends of R66 d / A-tail-flow (a)'s tolerances, on your
+  unchanged 6-link, 0.49 m chain. `A-tail-legible` passes on it in r7, r8 and r9 (0 of 24 moments each; calm reach still 3). R66 d's
+  centre widths (0.09 → 0.06) failed it 2 / 24 and 1 / 24 (r5, r6) on this chain. When the 7-link, 0.53-0.62 m `dyn_wrapSash_01..07`
+  chain lands (LOOK C-05), the recipe's `tail` spec takes its points and joints unchanged (`clothTail` works on any chain length). Tell
+  this lane then, and the centre widths get re-tried against `A-tail-legible`. The fold where the stiff root hands over to the hanging strip is the chain's own angle. The idle
   head is still bowed (R64 b).
 - **armory:** `applyClothLook(material, { rim: 0.40, velvet: true })` (`src/hero/skinLook.js`) is LOOK C-04's chunk for
   `clothShader.js` (≤ 6 lines; leather `rim: 0.30, velvet: false`). It composes with the fade clone's and world-sky's hooks; call it
@@ -149,9 +155,9 @@ The visual rows are my own reading; the independent judge grades them (R29).
 - **orchestrator:**
   - the independent judge for the V rows (R29);
   - `V-brea-closeup-calima` needs a re-film when world-sky's calima state merges (R59 b);
-  - the Chrome slots: this lane waited 30-60 min for each of its five runs.
-  - `A-wrap-closed`'s collar set also holds the double-sided-twin fix, which any other gate that toggles `material.side` between
-    two renders needs: three drops a mesh whose program is still compiling.
+  - the Chrome slots: this lane waited 30 min to 2.5 h for each of its ten runs;
+  - any gate that keys background off a frame's corner pixel has the bug `A-wrap-closed` had (`keyOf` in this file is the fix);
+  - `A90-abs`, `A-alloc-rate` and `A-vram-ledger` timed out (infra) in all four of this lane's runs that included them.
 
 ## 3. API (reusable: `tools/build/recipes/lib/**`, Node only, deterministic, no clocks or `Math.random`)
 

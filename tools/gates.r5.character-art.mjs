@@ -17,6 +17,7 @@
  *   V-brea-closeup-night     01:00: the hero fill has fallen away (R59 c)
  *   A-wrap-closed            no see-through: 3 idle phases x (96 head views + 96 collar views, R64 d) on a key colour, 0 enclosed background px
  *   A-brea-fill              R59 c: the hero fill falls away with the scene's ambient at night
+ *   A-skin-scatter           LOOK C-01: the skin light (src/hero/skinLook.js) on the close-up's staging, day / backlit / night
  *   A-brea-budget            plan §4.1 Brea row, measured live: <= 10 k tris, <= 2 draws, skin 1024²
  *                            + 512² normal/ORM, hair+wrap <= 512², <= 0.7 MB; and that the look's
  *                            maps are real: alpha-cut hair+wrap, a baked AO, pore-scale normal energy
@@ -314,7 +315,7 @@ export const GATES = [
       const W = 900, H = 900;
       // fix round 2, Nov 12: the KEY colour is the greenest pixel on the frame's border, not the top-left pixel. Looking steeply down
       // (the collar set's 0.8 and 1.2 rad) the bowed head or the shoulder covers that corner, the "key" became a cloth or skin colour,
-      // and every pixel of that colour which the double-sided draw shades a little differently counted as a see-through (r1-r6: the
+      // and every pixel of that colour which the double-sided draw lights a little differently counted as a see-through (r1-r6: the
       // 4-7 k px blobs at az 75-105 that the row's own sheet shows as solid smock)
       const keyOf = (px) => {
         let best = -1e9, k = [px[0], px[1], px[2]];
