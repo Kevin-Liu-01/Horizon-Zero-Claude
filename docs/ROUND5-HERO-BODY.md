@@ -1,9 +1,16 @@
 # ROUND 5 — lane `hero-body` report (W0b): Brea on the kept rig
 
 Lane: hero-body · port 5252 · wave W0b · Oct 18–19 2026, fix round 2 Oct 22, fix round 3 Oct 22 (evening),
-fix round 4 Oct 22–23 (night), fix round 5 Oct 23, **W0b targeted fix round 1 Oct 30 (§T)**, **targeted fix round 2 Oct 30 (§T2)**, targeted fix round 3 Oct 31 (§T3), targeted fix round 4 Nov 3 (§T4), **targeted fix round 2 after the merge, Nov 6 (§T5)**. Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2
+fix round 4 Oct 22–23 (night), fix round 5 Oct 23, **W0b targeted fix round 1 Oct 30 (§T)**, **targeted fix round 2 Oct 30 (§T2)**, targeted fix round 3 Oct 31 (§T3), targeted fix round 4 Nov 3 (§T4), **targeted fix round 2 after the merge, Nov 6 (§T5)**, **targeted fix round 3, Nov 12–13 (§T6)**. Plan: `docs/ROUND5-PLAN.md` §2 (row), §1.2 (grants), §3.1 (W0b exit), §3.2
 (contracts), §4.1 (budgets), §6 (aloy.glb), §8 (rulings, incl. §8.3 R33 g, R35–R39, R46, R47), §9 (gate block).
 Canon: `docs/ROUND5-BIBLE.md` §2.2 (the trade wind), §3 (Brea), §3.8 (build order), §5.2 (bow poses), §5.9 (controls).
+
+**Status (Nov 13, targeted fix round 3, §T6).** Final run `w11/F3` (the literal lane command + A1 / A20b / A90 / A90b,
+port 5252): lane **49 PASS · 4 FAIL · 23 NEEDS-JUDGE** of 76 rows (A-draw-arm-continuity's 68-cell matrix now runs as three rows
+under the runner's 900 s page limit); nothing that passed fails. **A-draw-arm-continuity (25 on-foot cells) PASS**,
+**A-draw-elbow-level PASS** (forearm 9.4–14 deg), **A-wrap-clear PASS with the root link graded** (≥ 0.0182, R63 d). FAIL: A31c
+(listed), A-dodge-exit-continuity (the full-draw jump's wrist 0.099 / 0.112 after landing; every body step ≤ 0.026 as vectors),
+A-draw-arm-continuity-crouchmove (5 / 15) and -cam (14 / 28) — the open items in §T6.3. Globals all PASS.
 
 **Status (Nov 6, targeted fix round 2 after the merge, §T5).** Final run `w9/F3` (the literal lane command + A1 / A20b /
 A90 / A90b, port 5252): lane **49 PASS · 2 FAIL · 20 NEEDS-JUDGE** (F2: 47 · 4 · 20; nothing that passed fails), the FAILs A31c
@@ -65,6 +72,124 @@ clock, max 0.044 m); **A-lance-stow** — a pattern search with the lance slidin
 4 / 4 PASS, one on a loaded clock). Global list (`f5final`): A1, A20b, **A9 (fps 59.3, PASS)**, A90 ×4,
 A-no-override PASS; A21 FAIL on median GPU (77–96 ms against 20; listed under R33 b, R45's quiet run); A81 /
 A-ID-ip-assets-gone / A-licence-manifest / A-assets-tracked fail on other lanes' unmerged rows (R39, R47; §4.5).
+
+## T6. Targeted fix round 3 (Nov 12–13) — the body as one piece, her turn onto the aim, the forearm, the gate's matrix
+
+Ten findings from the round-2 judges (gate judge: 1–7; eng-film judge: 8–10), worked in their order. A previous builder of
+this round had started (checkpoints `5737183`, `1a6aecb`, `f6d8eb9`, Nov 7; unmeasured, no notes): its roll crossfade, air
+crossfade, aim-out rates, the turn onto the camera in `player.js`, R63 (d) and the gate extensions were kept and measured;
+its gate hook had a `const wC` that shadowed the arm's own `wC` inside the same block — a temporal-dead-zone throw on the
+second step of every cell, so none of its matrix clauses had ever run (fixed, `w11/d1` → `d2`). Probes, films and logs:
+`scratchpad/r5/hero-body/w11/` (`b0`, `d1`–`d6`, `F1`–`F3`; diagnostics in `w11/diag/diag.mjs`, derived copies of the
+lane's own gates with chosen cells and runtime tune patches, never in the tree).
+
+### T6.1 What changed, by finding (file:line in this tree)
+
+1. **The state-matrix gate (gate judge 1; eng judge 3, 6, 10's gate halves).** `tools/gates.r5.hero-body.mjs`:
+   - `CONT_LOCOS` (l.7482) + crouched strafe right / left and a crouched backpedal; `CAM_LOCOS` (l.7491) + strafe right and
+     left (0.2 with them); a pitch, a yaw and a combined **wiggle** (0.25 rad either side, 6 rad/s peak, three periods,
+     each followed by a stop; l.8005).
+   - Strafe and crouched cells grade the **pelvis, chest (spine_03) and head** on every step from the first RMB until the
+     aim, the arm's tail, her turn onto or off the camera and the governor's hold are over, in character space, and in
+     the aim cells also **against her root in the world** (l.8107–8121; the kept locomotion's own steps after that are
+     printed, `bodyStepClipReported`); every cell grades her **heading's own turn** (beyond the camera's turn of that step)
+     at <= `HEADING_STEP` 0.25 rad / step (l.7501, l.8100).
+   - The matrix is 68 cells, ~1300 s: one page evaluation timed out at the runner's 900 s (`b0`). The same gate body runs
+     as three rows (l.9626): **A-draw-arm-continuity** (the 25 on-foot aim cells it has graded since Nov 3, its id kept),
+     **A-draw-arm-continuity-crouchmove** (15), **A-draw-arm-continuity-cam** (28). No clause narrowed.
+   - Fixed the previous builder's hook bug (`const wC` shadowing the arm's `wC`: a TDZ throw from the second step of every
+     cell; `w11/d1` read 1 step per cell).
+2. **The roll's hand-over (gate judge 3; eng judge 10).** Kept the previous builder's crossfade (`playerAnimator.js`
+   l.1773–1803: the clip held at the frame it reached, its whole pose weighed into the gait over `rollExit.blendS` 0.45 s)
+   and the jump-loop -> landing crossfade (`_airCrossfade`, l.2896). New: **the body governor bounds the trunk, not the
+   pelvis** (`_rollExit` l.2829–2863, `rollExit.trunk`): pelvis, chest and head each against where it was rendered,
+   the body moved as one piece by the least that brings the worst onto `govM` 0.026; in the air too (the jump's take-off
+   moved them 0.08–0.11 m a step inside the old scalar bound); **against her root in the world** while the aim turns her
+   or after a roll / landing (`trunkWorld`, l.2843–2852: last step's trunk read turned by her own turn, the camera's turn
+   excluded); on through the arm's tail and `gvHold` 0.3 s after it last held anything; off in a slide (A-slide's planted
+   foot read 0.23 m with it on, `F1`). `A-dodge-exit-continuity` (l.8314) grades pelvis, chest and head as vectors
+   against the root and in character space, the heading per step, and the full-draw jump's knuckle / wrist.
+3. **Her turn onto the aim (gate judge 3, 6; eng judge 9's player.js:2348).** `player.js` l.2350–2390 (the previous
+   builder's turn, kept): the camera's own turn is carried the same step; what is left closes at <= `AIM_TURN` 12 rad/s
+   and at no more than `AIM_TURN_ARC` 0.02 m of trunk sweep a step, **less what her trunk moved on its last step**
+   (`animator.trunkStep`, `playerAnimator.js` l.2427; budget 0.028 m); **the turn back onto her run after an aim keeps the
+   same limit until she faces it** (`_aimTurnLim`, l.2375–2390). The aim waits while she is > `aimOut.align` 0.15–0.6 rad
+   off the camera's line (l.1666).
+4. **The way out of the aim while strafing (gate judge 4; eng judge 9).** Kept: the aim weight out at <= `aimOut.rate`
+   3.5/s eased in over 0.1 s (l.1697; **not in a roll**: eased out over a roll the drawn arm rode the tumble with the aim's
+   form, the fingertips over the crown at the −0.55 strafing dodge, `F1`/`F2`), the blade's draw share out at <= 2.5/s
+   (l.4204), the crouched share blended across the crouch (l.4087). With the trunk governor these hold the head.
+5. **The crouched ways out (gate judge 5).** `A-draw-elbow-level` stages the judge's order (draw, stand, crouch at full
+   draw, loose, RMB up 0.1 s later) and the 1.02 draw (l.7826–7833, kept), graded <= 0.03 on every step.
+6. **The re-raise after a cancel while crouch-moving (gate judge 6).** Item 3's turn; the crouch-move row grades it.
+7. **R63 (d) (gate judge 7).** `ubc.js` l.108 `rootMargin` 0.015, l.255 `rootGive` 0.012; `A-wrap-clear` grades the root
+   link >= `ROOT_LINK` 0.015 m on every row (l.7503, l.8525).
+8. **The forearm while the camera moves (gate judge 2; eng judge 8).** Measured with a per-step decomposition (`w11/d2`–
+   `d6`): the solve's ray matched the real arrow within 0.5 deg; the forearm sat 18–20 deg off because the elbow rested
+   on the height band's floor, 2 cm under the shoulder joint, with the cheek 3–6 cm over it, so any turn tipped it past 20.
+   Now `drawShrug` 0.58 -> **0.8** at the level and down aims (the up aims keep 0.58, `drawShrugUp`, l.4330), and
+   **`elbowForm.fore`** [3, 0.12] (l.6033): the forearm along the arrow is a soft form target inside the same hard bars
+   (faded out past a 0.15 rad up-aim). Held draw: forearm 9–14 deg (A-draw-elbow-level rows 9.0–13.5). The aim ray is never
+   more than 60 deg off the camera's (l.4435: strafing through a fast pitch wiggle it turned 164 deg for a step, the bow arm
+   thrown behind her, knuckle 0.85 m, `F1`). `crouchAim.nearLead` 0.3 s (l.2931): the crouched stand-up off a near hit starts
+   ahead of a downward sweep. The bow-node near-hit decision (l.2398, `armFlow.nodeNear`) is left OFF: tried in `d4`, it
+   flipped the other way (knuckle 0.43 m).
+
+### T6.2 Results (final run `w11/F3`: the literal lane command + A1 / A20b / A90 / A90b, port 5252, `nice -n 10`, one Chrome in one slot)
+
+- **Lane block: 76 rows, 49 PASS · 4 FAIL · 23 NEEDS-JUDGE** (round 2's F3: 71 rows, 49 · 2 · 20; the five new rows are the
+  two split-off matrix rows and three films). Every gate that passed before still passes (A-slide failed once in `F1`,
+  0.23 m, with the governor on in a slide; off there it is 0.031 / 0.031, PASS). FAIL: A31c (listed, R36 / R51) and three of
+  this round's rows below.
+- **A-draw-arm-continuity — PASS** (25 on-foot aim cells; was FAIL 23 of 41 with the camera cells, gate judge's run A).
+  Body steps graded on every aim-influenced step: char ≤ 0.026, world ≤ 0.0273 (bar 0.03; the judges' 0.031–0.044 char
+  and 0.065–0.071 world at a cancel, refire, loose or crouch toggle while strafing); heading's own turn ≤ 0.195 rad / step;
+  knuckle ≤ 0.051; travel ≤ 0.0558, rel ≤ 0.051; skull ≤ −0.012, nape ≤ −0.0158, crown ≤ 0.27; spear 0.
+- **A-draw-elbow-level — PASS**: forearm vs the real arrow 9.4–13.95 deg on every row (was 16–18), every crouched way out
+  ≤ 0.026 per step incl. the judge's order and the 1.02 draw (judge: 0.0285–0.0347).
+- **A-dodge-exit-continuity — FAIL on the full-draw jump's wrist only.** All 14 rows: pelvis, chest and head ≤ 0.026 m per
+  1/60 s as vectors against her root AND in character space on every step outside the roll (judges: head 0.12–0.24 m at
+  the hand-over, 0.065–0.11 at take-off / landing); heading ≤ 0.0999 rad / step after an aimed strafe dodge (judge: 120 deg
+  in one step); full-draw jump knuckle 0.046 on every step. **Wrist 0.0993 / 0.1116 m off the nock 0.15 s after landing**
+  (bar 0.09).
+- **A-draw-arm-continuity-crouchmove — FAIL, 5 of 15 cells.** Her turn onto the camera at the raise after a cancel is
+  ≤ 0.143 rad / step (judge: 90–180 deg in one step, head 0.52–0.78 m). Open: −1.15 crouched strafe-right raise
+  (knuckle / fingertip over the crown, u.y 1.02–1.25, raise +0.57–0.60 s); −1.15 crouched backpedal (fingertip at the
+  nape 0.0597, raiseAfterCancel +0.317); crouched backpedal at 0 / 0.75 / 1.02, the head's world step 0.032–0.046 m at a
+  cancel / RMB up while she turns back onto her backpedal (char ≤ 0.026).
+- **A-draw-arm-continuity-cam — FAIL, 14 of 28 cells.** Held still and through most moves the forearm is 8–16 deg (judges
+  20–29); it still crosses 20 deg (20.1–24.7) in the 6 rad/s yaw turns while strafing LEFT (every pitch), strafing right
+  at 1.02 and the 1.02 jog at 10 rad/s, where her velocity swings round her under the turn and the shoulder line stands
+  27–32 deg off the arrow (elbow pushed 8 cm under the joint; `d5`/`d6`). Knuckle: 0.060–0.065 in four 8 rad/s pitch
+  sweeps; 0.094–0.12 at the crouched 0 / 1.02 sweeps' stop (the bow within combat's 0.5 m of the near hit before the
+  stand-up arrives); one 0.249 m step at −0.55 strafe-left `pitch2`. Body steps ≤ 0.026 in every cell.
+- **A-wrap-clear — PASS** with the root link GRADED: particle 0.055, segment 0.0521, root link ≥ 0.0182 m (bar 0.015;
+  judge: 0.0109–0.0149 ungraded at 0.007 / 0.009).
+- **Globals:** A1 PASS; A20b PASS (0 system errors, 359 frames); A90 PASS (heap −2.7 %, geometry +15, textures −3, 30
+  kills); A90b PASS (0 offenders).
+- **Films read** (frames against their criteria): **V-dodge-handover** (fixed side camera at the hand-over point): the
+  jog dodge's torso rises continuously from the roll's last step through +0.25 s; the aimed strafe-right dodge's heading
+  328 → 339 → 0 → 0 deg over +0.02 / +0.10 / +0.25 s, no one-frame spin, bow in front, lance on her back — PASS.
+  **V-crouch-reraise** (new): heading 172 → 156 → 105 → 0 deg over +0.017 / 0.10 / 0.25 / 0.50 s, crouched, in one piece,
+  the bow up in front at +0.5 s — PASS. **V-draw-camera-sweep**: knuckle 0.045–0.047, forearm 8.4–13.5 deg (was
+  14.0–20.7), fist at the jaw, elbow level / behind, the arrow on the view — PASS. **V-draw-strafe-turn**: knuckle 0.046,
+  forearm 12.0–19.3 deg in the four moments filmed, fist at the cheek, bow arm clear — PASS on its frames (the gate's
+  worst steps are +0.22–0.30 s into the left strafe's turn, between them). **V24-draw-down**: knuckle 0.046, forearm
+  11.0 deg, hand and forearm in front of the head (R54's elbow over the crown accepted). **V-crouched-draw**: crouched
+  0 / 0.75 full draw, forearm 12–13.5 deg, fist at the cheek. **V-draw-dodge-aim**: bow in front, lance stowed, the draw
+  home at +1.78 s (knuckle 0.046, forearm 18.7).
+
+### T6.3 Still open
+
+- The forearm during a fast yaw turn while strafing (left above all): the strafe gait's trunk under the turn, not the arm
+  solve (the solve's ray is within 0.5 deg of the arrow; `elbowForm.fore` at weight 3 and a 5x blade-lock rate moved it
+  < 1 deg, `d5`). The next lever is the upper body's own pose under a held draw while the gait swings.
+- The crouched sweeps' stop at the 0 / 1.02 cells: the stand-up off the near hit (`nearBow`) arrives 1–3 steps after
+  combat flips the bow at 0.5 m; deciding the flip from the bow's node (`nodeNear`) made it worse (`d4`). Combat's
+  `combat.js:1106` flip (armory's file) is the other half.
+- The full-draw jump's wrist after landing (knuckle on the nock; the hand turned 0.49 rad to keep it there).
+- The −1.15 crouch-moving raise and backpedal re-raise (over the crown / the nape), and the crouched backpedal's turn back
+  onto its run (world head step 0.032–0.046).
 
 ## T5. Targeted fix round 2 after the merge (Nov 6) — the camera at full draw, the roll's end, the bow's LMB, the crouched lower, the strafe
 
