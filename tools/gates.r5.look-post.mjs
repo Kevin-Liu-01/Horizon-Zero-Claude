@@ -177,7 +177,16 @@ const LOOK = `
   // sky, wind, grass sway, water, birds) is snapped to the next multiple of 4096 s, the same on every boot that
   // stages the same sequence, instead of the boot-dependent seconds since load; it only ever moves forward
   const freezeWall = () => { if (!__camSaved.delta) { __camSaved.delta = __E.clock.getDelta; __E.clock.getDelta = () => 0; __E.wallTime = (Math.floor(__E.wallTime / 4096) + 1) * 4096; } };
+  // fix round 1 (A-look-suite a across boots, f1-b3): after the clock snap and the hero settle the two boots still
+  // differed in sparse pixels where free-roaming agents stood (machines, NPC crowds, fauna, pooled VFX: their
+  // positions are the boot's own history). The look places hide them while staged and restore them after; a place
+  // that wants a machine in frame stages one itself (world-props' record).
+  const AGENT_RE = /^machines?$|^instruments?$|-machine$|-instrument$|^npcs?$|^npc-crowd$|^people$|fauna|flocks?$|particles?|vfx|-fx$|^fx$|projectiles?|trails?|^arrows?$/i;
+  const __agents = [];
+  const hideAgents = () => { if (__agents.length) return; for (const c of __C.scene.children) if (c.visible && AGENT_RE.test(c.name || '')) { c.visible = false; __agents.push(c); } };
+  const showAgents = () => { for (const c of __agents) c.visible = true; __agents.length = 0; };
   const unstage = () => {
+    showAgents();
     const p = __C.player;
     if (__camSaved.delta) { __E.clock.getDelta = __camSaved.delta; __camSaved.delta = null; __E.clock.getDelta(); }
     if (__camSaved.fn) { p._updateCamera = __camSaved.fn; __camSaved.fn = null; }
@@ -199,6 +208,7 @@ const LOOK = `
     if (o.pitch != null) P.pitch = o.pitch;
     const env = __C.environment, p = __C.player;
     __E.requestTimeScale('studio', 0);
+    if (o.agents !== true) hideAgents();
     env.timeFrozen = true;
     const weather = env.weatherStates?.includes(P.weather) ? P.weather : 'clear';
     env.setWeather(weather, 0.05);

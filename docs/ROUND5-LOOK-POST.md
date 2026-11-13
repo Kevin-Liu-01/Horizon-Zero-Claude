@@ -26,13 +26,13 @@ the HDR dump (`tools/look/hdr-look.mjs` and a scratch tuner over the same `look.
 
 | finding (judge) | what changed | measured |
 |---|---|---|
-| Hour bridge applies the L-03 EV; the W0 controls are not W0 | `_lookBridge` passes `withEv = false`; under ACES `_syncLook` sets exposure 0.94 exactly and never adopts an outside exposure write as EV (`engine.js` `_syncLook`, `_lookBridge`); the look places stage with `setLookHour(h, w, null, { ev: false })` so the gates show what play shows | ⟪b2:ev⟫ |
-| V-look-grade, V-look-before-after, R54: sepia fold, brown shadows, darker top | grade v2 (`look.grade.json` v2, `look.js` `labStage`): no rotation of the amber band beyond −2°, olive band −6° only, greens untouched, Orchil violets ×1.3; an L\*a\*b\* stage that shifts shadows toward rose-violet, scales mid b\* ×0.82, desaturates the top band and opens the top with a monotone tone curve on L\* (§1.2) | HDR dump, same frames: p99 field 73.7 (W0 73.4, r4 66.4), vista 63.3 (59.9 / 57.6), aim 70.6 (69.5 / 63.7), noon 77.0 (77.4 / 68.1), close 60.3 (56.4 / 55.0); lo20 hue field 59.7 → 44.1, vista 52.8 → 13.3, close 22.6 → 331.7; violet max ≥ grass p90 (field 41.5 vs 41.4, aim 40.5 vs 40.5, close 43.0 vs 39.0; r4: 42.2 vs 55.3); share of chroma pixels in the largest 30° band 98.3 % → 91.7 % (field), 98.3 → 83.0 (vista); bars met on the dump 22/40 (r4 14/40) |
+| Hour bridge applies the L-03 EV; the W0 controls are not W0 | `_lookBridge` passes `withEv = false`; under ACES `_syncLook` sets exposure 0.94 exactly and never adopts an outside exposure write as EV (`engine.js` `_syncLook`, `_lookBridge`); the look places stage with `setLookHour(h, w, null, { ev: false })` so the gates show what play shows | f1-b3 film: the W0 column is ACES 0.94 at every hour (field 16:30 W0 p99 66.5; the judge's W0 column read 68.6 with the leaked +0.10 EV); f1-b3's churn diagnostic over 300 frames of the vista and the fight: `look.version` and `solveVersion` unchanged |
+| V-look-grade, V-look-before-after, R54: sepia fold, brown shadows, darker top | grade v2 (`look.grade.json` v2, `look.js` `labStage`): the amber band rotated only −3° (a\* ×1.12 in the mids, b\* ×0.8), the olive band −6°, greens untouched, Orchil violets ×1.55; an L\*a\*b\* stage that shifts shadows toward rose, desaturates the top band and opens the top with a monotone tone curve on L\* (§1.2) | f1-b3 films, W0 → CALIMA on the same frames: lo20 hue field 71° → 32°, vista 61° → 11°, aim 71° → 35°, close 34° → 349°, dusk 55° → 328°; p99 field 66.5 → 68.2, vista 60.0 → 63.5, aim 64.7 → 66.7, close 55.3 → 59.3, dusk 29.8 → 37.6, noon 76.5 → 76.3; on the HDR dump violet max ≥ grass p90 (field 46.8 vs 42.0, aim 45.2 vs 41.6, close 47.3 vs 39.8; r4 42.2 vs 55.3) and the share of chroma pixels in one 30° band 98.3 % → 93.0 % (field), 98.3 % → 86.6 % (vista); A-look-frame-stats 18/40 bars (r4 14/40) |
 | A-look-bloom (c) inert, halo/core 1.00 | the gate's 0.12 m probe disc at 40 m (5 px) was HIDDEN by the engine's small-mesh cull (`sizeCullPx`; a MeshBasicMaterial does not count as a glow): r4's and the judge's runs had no lamp in frame at all. The probes opt out (`userData.noSizeCull`), like a real lamp core (emissive, glow threshold). The threshold stays display-keyed (L\* 94) | f1-b1: halo/core **5.63** (bar ≥ 2.5), hue Δ 6.8° (≤ 15); (a) brightest noon ground L\* 86.8, folded bloom 0; (d) 0 % / 0 %; (b) still no sun disc (L-06) |
 | A-look-suite (a) is within-page, not two runs | (a) now hashes every place on two BOOTS of the build in one run: the gate's page, then a fresh same-origin iframe boot of the same URL (boot 1 held, 0 draws); a diff sheet marks every differing pixel. Two boot-dependent inputs found and frozen in the look staging: the presentation clock (`engine.wallTime`, which the sky, wind, grass sway and birds read) is snapped to the next multiple of 4096 s, and the hero is settled deterministically (clip phases zeroed, 60 sim steps of exactly 1/60 s) | f1-b1 before the settle: 8–11 % of pixels differed (Brea and the grass round her only), close 75 %; ⟪b2:suite⟫ |
-| A-alloc-rate guard: instruments-core over after the lamps.js grant | `Look#solveVersion` bumps only when the exposure, a slot name or the grade mix moves, or the slot mix moves ≥ 1/16; lamps.js keys its re-solve on it (the same two lines of the grant, no new line: 17 added / 8 removed); the engine's display-keyed bloom threshold (48 evaluations of the look) is cached on it | node: `evaluate` allocates ≈ 50 B and `invert` ≈ 400 B per call (boxed double returns), so a re-solve costs ≈ 4 KB; the bridge's 1/64 steps no longer trigger it; ⟪b2:alloc⟫ |
-| R48 (c) not closed | (1) the cull pass fills its caster pool and distances by index instead of `length = 0` + push (V8 dropped the backing store every pass), selects the nearest `budget` casters by bisection on distance instead of `sort` with a closure, and marks them in a byte array instead of a Set; (2) the shadow pass's program-key churn: three r169 renders every caster with one shared depth material whose `skinning` / `instancing` flip between consecutive casters, so `setProgram` re-derives the program (getParameters + cache key + join) 18 times a frame; skinned / instanced / batched casters now get a depth material shared by their kind (`engine._depthVariant`) | f1-b1 census: 18 `getProgram` per frame from MeshDepthMaterial, 2 from one transparent double-sided MeshBasicMaterial (three's two-pass double side); selection checked against sort in node (2000 random pools, 0 differences); ⟪b2:churn⟫ |
-| A-look-ledger and A-gpu-attrib implement part of their bars | A-look-ledger: A21's W1-exit bars with every high item on (vista ≤ 17.0, herd ≤ 20.0, fight ≤ 17.0), shipped-mode `renderScale` median ≥ 0.95 (DRS restored for that read), the same bars on `low`, every enabled and landed item has a row (a tier knob the build reads during the run whose item registered no switch fails), 0 look draws outside post, render targets ≤ 170 MB and GPU bytes ≤ 450 MB with the look on; the pass bench for post items is recorded as a deviation for a ruling. A-gpu-attrib: every per-pass row is measured (shadow cascades, opaque, transparent + additive, GTAO, bloom, SMAA, shafts, overlay as skip-one marginals; the grade by its pass bench) and they must sum to the frame median within 10 % (no remainder row); every row ≥ 0.5 ms must name a fix owner in ROUND5-LOOK §4.2. The box witness is R45's (load < 3 and at most one gate Chrome, counted by profile) | ⟪b2:ledger⟫ |
+| A-alloc-rate guard: instruments-core over after the lamps.js grant | `Look#solveVersion` bumps only when the exposure, a slot name or the grade mix moves, or the slot mix moves ≥ 1/16; lamps.js keys its re-solve on it (the same two lines of the grant, no new line: 17 added / 8 removed); the engine's display-keyed bloom threshold (48 evaluations of the look) is cached on it | node: `evaluate` allocates ≈ 50 B and `invert` ≈ 400 B per call (boxed double returns), so a re-solve costs ≈ 4 KB; the bridge's 1/64 steps no longer trigger it; f1-b3: instruments-core **1.00×** (0.07 vs 0.07 KB/frame, 3.88 vs 3.98 KB/s); the lamp system ran 0 re-solves over 300 frames of the vista and of the fight |
+| R48 (c) not closed | (1) the cull pass fills its caster pool and distances by index instead of `length = 0` + push (V8 dropped the backing store every pass), selects the nearest `budget` casters by bisection on distance instead of `sort` with a closure, and marks them in a byte array instead of a Set; (2) the shadow pass's program-key churn: three r169 renders every caster with one shared depth material whose `skinning` / `instancing` flip between consecutive casters, so `setProgram` re-derives the program (getParameters + cache key + join) 18 times a frame; skinned / instanced / batched casters now get a depth material shared by their kind (`engine._depthVariant`) | f1-b1 census: 18 `getProgram` per frame from MeshDepthMaterial, 2 from one transparent double-sided MeshBasicMaterial (three's two-pass double side); selection checked against sort in node (2000 random pools, 0 differences); f1-b3: `getProgram` per frame **20 → 2** on the vista and the fight (the remaining 2 are one transparent double-sided material, §1.7); `join` under ScenePass.render 1103 KB/s (judge) → 270–377 KB/s, getParameters / getProgramCacheKeyParameters out of the top list; `_cullVisit` 231–341 → 67–185 KB/s (what is left is first-sight work on newly streamed meshes: bounding spheres, userData flags); engine owner **0.558×** of its W0b baseline (120.7 vs 216.2 KB/frame; r4 0.71×) |
+| A-look-ledger and A-gpu-attrib implement part of their bars | A-look-ledger: A21's W1-exit bars with every high item on (vista ≤ 17.0, herd ≤ 20.0, fight ≤ 17.0), shipped-mode `renderScale` median ≥ 0.95 (DRS restored for that read), the same bars on `low`, every enabled and landed item has a row (a tier knob the build reads during the run whose item registered no switch fails), 0 look draws outside post, render targets ≤ 170 MB and GPU bytes ≤ 450 MB with the look on; the pass bench for post items is recorded as a deviation for a ruling. A-gpu-attrib: every per-pass row is measured (shadow cascades, opaque, transparent + additive, GTAO, bloom, SMAA, shafts, overlay as skip-one marginals; the grade by its pass bench) and they must sum to the frame median within 10 % (no remainder row); every row ≥ 0.5 ms must name a fix owner in ROUND5-LOOK §4.2. The box witness is R45's (load < 3 and at most one gate Chrome, counted by profile) | f1-b2 and f1-b3 (quiet box by R45 both times): the post items cost L-01 +0.055, L-02 +0.028, L-07 ±0.005 ms per pass (≤ 0.45); RT 106.6 MB, GPU bytes 241.6 MB, shipped renderScale 1.00, every landed item has a row; it FAILs A21's W1-exit bars with every high item on (f1-b3: vista 17.94, herd 19.12, fight 19.45 ms against 17 / 20 / 17), which §4.6 rule 2 turns into an orchestrator decision (§6) |
 | A108 fails under the look; the witness crop's +0.11 | measured three ways in one run (f1-b1): the full look, `?look=nolut` (AgX with no grade, no vignette, no dither) and `?look=nodither`: **all three fail the same way** (far108m control 0.26 / 0.261 / 0.261), so it is the AgX transform (L-01, mandated), not the LUT or the dither. The witness's +0.11 on "near dune grass": GTAO on reads 0.267 at lag (0, 6) and the stock (Round-4 defect) shader reads the **same** 0.26 at (0, 6): a 6-px row period that both shaders produce is real contact AO in the dune-ripple troughs, not the centre-sample lattice the witness guards (that lattice reads at lags like (5, −29)) | §5.3; needs a ruling |
 | A-look-frame-stats, A-look-random, V-look-highlights, V-look-random FAIL on the W0 map | the grade moves every palette bar it can move without turning into a filter (22/40 on the dump against 14/40); the bars that remain are the light's (p99 ≥ 88–90, clip 0.2–5 %, spread ≥ 60, hi10 chroma: a sun disc, a bright sky, a sea) and the map's | needs a deferral ruling (§6) |
 
@@ -88,16 +88,19 @@ one 256 KB upload only when a slot's set changes. Vignette 0.28 in the pass.
 **Why v2.** The r4 sets rotated every olive and yellow into one amber band and warmed every highlight: 98 % of the
 chroma pixels of the field and vista frames sat in one 30° hue band, shadows read brown, and the judge read the
 frames as a sepia filter beside 1-TR. v2 was tuned on the HDR dump of the look places (no hour EV, W0 keys), each
-candidate read as a sheet beside the W0 output and the r4 sets and counted against the §7 bars:
+candidate read as a sheet beside the W0 output and the r4 sets and counted against the §7 bars; the first cut (c6,
+f1-b2) turned GTAO-darkened shadows blue-violet at full resolution and let the grass outshine Brea's violet less
+than it should, so the shipped cut (c8) shifts shadows less in b\* and more in a\*, keeps the grass richer and lifts
+the violets further:
 
 | set | soft contrast | sat by luma | hue bands | lab: shadow (below L\* 18–42) | lab: mid b\* | lab: top band (L\* 64–90) |
 |---|---|---|---|---|---|---|
-| golden | 1.08 @ 0.42 | 0.92 / 1.00 / 0.88 | olive 88–118° −6°, × 0.96; amber 50–88° −2°, × 0.96; greens × 1.0; violets × 1.3 | (a, b) × 0.85 + (4, −9) | × 0.82 (a × 1.08) | chroma × 0.42, + (1.5, −2) |
-| dusk | 1.08 @ 0.42 | same | the same bands, amber/olive × 0.91 | below L\* 25–55: × 0.8 + (5, −13) | × 0.6 | × 0.42, + (2, −3) |
+| golden | 1.08 @ 0.42 | 0.92 / 1.00 / 0.88 | olive 88–118° −6°, × 0.95; amber 50–88° −3°, × 0.98; greens × 1.0; violets × 1.55 | (a, b) × 0.85 + (5.5, −5) | × 0.8 (a × 1.12) | chroma × 0.42, + (1.5, −2) |
+| dusk | 1.08 @ 0.42 | same | the same bands, amber / olive × 0.93 / 0.90 | below L\* 25–55: × 0.8 + (6, −9) | × 0.6 | × 0.42, + (2, −3) |
 | noon | 1.08 @ 0.42 | 0.95 / 1.08 / 0.95 | amber × 1.08 | × 0.9 + (2, −5) | × 1.0 | × 0.85, + (0.5, −1) |
 | calima | 1.06 @ 0.42 (L-14 split tone kept: shadow (1.04, 0.95, 0.98), sat 0.95) | 0.95 / 0.97 / 0.92 | r4 bands | × 0.95 + (2, −4) | — | × 0.7, + (1, −1) |
 
-Every set shares the tone curve L\* 6 → 7.5, 15 → 17, 30 → 32, 45 → 49.5, 60 → 68.5, 72 → 82, 85 → 92.5, 95 → 98: it
+Every set shares the tone curve L\* 6 → 6.8, 15 → 16.4, 30 → 31.8, 45 → 49.5, 60 → 68.5, 72 → 82, 85 → 92.5, 95 → 98: it
 lifts the toe a little and opens the top that AgX + the look's power 1.22 hold 6–10 L\* under the ACES-era frames
 (A-look-tonemap is graded at grade mix 0, so 0.18 → L\* 50 is untouched). Round trip through the new grade: ≤ 0.25/255
 on 512 shown values per set pair; the four lamp tokens 0/255 (the gamut-edge guard); the grey ramp stays strictly
@@ -210,7 +213,7 @@ still render.
 - Not engine-fixable: three's uniform uploads (`setValueV3f` / `setValueM4`, ≈ 4.3 MB/s of the 8.7 MB/s; a
   WebGL call with a non-Smi double argument boxes it) scale with draws and distinct materials; and a transparent
   double-sided `MeshBasicMaterial` that three renders in two passes bumps its own version twice a frame (2 `getProgram`
-  a frame): its owner sets `forceSinglePass = true` (§6, ⟪b2:owner407⟫).
+  a frame): its owner sets `forceSinglePass = true` (§6, `datapoint-slates`, `src/items/datapoints.js:271`: progression's file).
 
 ## 2. Published APIs and contracts (exact signatures)
 
@@ -316,7 +319,7 @@ own clip bar (at ≥ 250, 1-MR reads 7.6 % against 1–5 %).
 
 Fix-round runs (scratch `/private/tmp/claude-501/-Users-kevinliu-Horizon-Zero-Claude/db31a0fa-9701-46f4-8234-5158425c1e49/scratchpad/r5/look-post/`):
 **f1-b1** (19:30 UTC, diagnostics), **f1-b2** (21:37–22:24, the lane block, its aliases and the global list, 55 rows, grade
-v2 first cut "c6"), **f1-b3** (⟪b3:time⟫, the rows the last changes touch: grade v2 final "c8", the ungraded bloom key,
+v2 first cut "c6"), **f1-b3** (23:37–23:56, the rows the last changes touch: grade v2 final "c8", the ungraded bloom key,
 the depth-variant key, the hero settle). r2–r4 are in this file's git history.
 
 ### 4.1 The look-post block
@@ -324,22 +327,47 @@ the depth-variant key, the hero settle). r2–r4 are in this file's git history.
 | row | result | measured (run) |
 |---|---|---|
 | A-look-suite-files (b, c, f) | **PASS** | synthetic 6 patches within ±0.5; fixture 77 numbers within ±0.3; refs.json 8 904 B, no image data; 650 files, 0 SHA-256 matches (b2) |
-| A-look-tonemap (a–d) | **PASS** | 0.02 → L\* 9.92, 0.18 → 50.21, 1.6 → 86.12; GPU vs evaluate ≤ 0.545/255 (dither included); invert round trip 0.037/255; tokens 0/255; skews 4.76° / 4.47° / 2.07° / 2.06°; ramp strictly increasing (b2) ⟪b3:tonemap⟫ |
+| A-look-tonemap (a–d) | **PASS** | 0.02 → L\* 9.92, 0.18 → 50.21, 1.6 → 86.12; GPU vs evaluate ≤ 0.545/255 (dither included); invert round trip 0.037/255; tokens 0/255; skews 4.76° / 4.47° / 2.07° / 2.06°; ramp strictly increasing (b2) f1-b3 with grade v2: GPU vs evaluate ≤ 0.534/255, invert round trip 0.155/255, tokens 0/255 |
 | A-look-suite (a) two boots, (d), (e) | ⟪b3:suite⟫ | (d) 29.1 / 116.4 / 388 / 873 m in their bins; (e) WebGL canvas. (a) b1: Brea and the grass round her differed (8–11 %; close 75 %); b2 after the clock snap and the first settle: still Brea (8–10 %, close 61 %) — her idle draws breath / shift / blink / fidget phases from Math.random |
-| A-look-frame-stats | FAIL (§5.1, ruling asked) | ⟪b3:fs⟫; LUT texels = look.js within 0.561/255 (all four sets); look on at medium and low |
-| A-look-random | FAIL (§5.1) | ⟪b3:random⟫ |
-| A-look-bloom | FAIL on (b) only | ⟪b3:bloom⟫ |
+| A-look-frame-stats | FAIL (§5.1, ruling asked) | f1-b3: field 1/9 (lo20 hue 32.1 vs 35–58, L\* 10.9 vs 20–30, hi10 C 26.4, mid b\* 18.3 vs ≤ 18, chroma 20.2, p95−p5 53.2, p99 68.2, clip 0), vista **7/11** (lo20 (8.9, 1.7) ✓, mid a\* 18.5 ✓, chroma 23.3 ✓, crush 0 ✓, top band ✓; misses mid b\* 16.8, spread 55.7, p99 63.5, clip 0), aim 4/9 (lo20 (9.3, 6.6) ✓, chroma 23.4 ✓), close 3/7 (lo20 (9.0, −1.6): a\* 9.0 vs ≥ 10; mid a\* 14 vs ≥ 20), dusk **3/4** (lo20 hue 328 ✓, mid a\* 10.9 ✓, chroma 12.3 ✓; mid b\* 4.1 vs ≤ −4) — 18/40 against r4's 14/40; LUT texels = look.js within 0.561/255 (all four sets); look on at medium and low |
+| A-look-random | FAIL (§5.1) | f1-b3: 0/12 (best pose 4/9; lo20 hue 5–53°, mid b\* 14–24, p99 52–69, clip 0 everywhere) |
+| A-look-bloom | FAIL on (b) only | f1-b3: threshold HDR 4.16 (L\* 94 on the AgX curve before the grade), knee 1.12; (a) brightest noon ground L\* 91.9, folded bloom 0 ✓; (c) halo/core **8.33**, hue Δ −1.9° ✓; (d) 0 % / 0 % ✓; (b) lift at 6 sun radii 0: the vista stand-in has no sun disc (L-06, world-sky) |
 | A-csm-layer-masks | **PASS** | CASTER_ONLY 0 view draws, cascades [0, 1, 2]; CASCADE0_ONLY 8 view draws, cascade [0]; camera mask restored (b2) |
 | A-hold-frame | **PASS** | held frames 0 draws (10/10); resumed frame 0 % different (b2) |
 | A-gpu-attrib (+ box) | PENDING-quiet-box (load 3.47) | build 89b875b (this tree, 0 dirty). Rows (ms, skip-one): vista frame 21.16 = shadow 1.10, opaque 17.62, transparent + additive 6.59, GTAO 4.90, bloom 8.44, SMAA 1.30, shafts 0.21, overlay 1.52, grade (bench) 0.22 → sum 41.9 against 21.2: **the skip-one marginals are strongly superadditive on this GPU on a loaded box**, so the sum rule fails as written; herd 19.15 (sum 28.1), fight 19.66 (sum 14.3, with negative rows = noise). Rows ≥ 0.5 ms with no §4.2 fix owner: bloom, SMAA, overlay; owners settlement (7.37 vista), hero, npcs, landmarks-places. The bloom row (4.7–8.4 ms skip-one) contradicts its pass bench (0.23 ms per bloom render, readback-fenced): the quiet run must settle which the A21 timer believes |
-| A-look-ledger (+ box) | FAIL (b2, box quiet at load 2.37) ⟪b3:ledger⟫ | items L-01 +0.055, L-02 +0.028, L-07 +0.004 ms (pass bench; ≤ 0.45); draws ≤ 275; RT 106.6 MB, GPU bytes 241.6 MB with the look on; every enabled, landed item has a row (17 knobs not landed); shipped renderScale 1.00 on all three. **Fails A21's W1-exit bars with every high item on: vista 15.67 ≤ 17 ✓, herd 20.02 > 20.0, fight 20.16 > 17.0; low: vista 20.02, fight 20.72.** By §4.6 rule 2 that means L-01/L-02 go off on `high` at the W1 exit unless A21 is recovered (orchestrator, §6); the look adds ≈ 0.09 ms of it. b2's one look draw at the vista (on − off = +1 from a single 12-frame window) is now the median of 3 pairs |
+| A-look-ledger (+ box) | FAIL (b2, box quiet at load 2.37) f1-b3 (load 2.97, quiet by R45): vista 17.94 / herd 19.12 / fight 19.45 ms (bars 17 / 20 / 17); low 18.76 / 18.31 / 18.83 | items L-01 +0.055, L-02 +0.028, L-07 +0.004 ms (pass bench; ≤ 0.45); draws ≤ 275; RT 106.6 MB, GPU bytes 241.6 MB with the look on; every enabled, landed item has a row (17 knobs not landed); shipped renderScale 1.00 on all three. **Fails A21's W1-exit bars with every high item on: vista 15.67 ≤ 17 ✓, herd 20.02 > 20.0, fight 20.16 > 17.0; low: vista 20.02, fight 20.72.** By §4.6 rule 2 that means L-01/L-02 go off on `high` at the W1 exit unless A21 is recovered (orchestrator, §6); the look adds ≈ 0.09 ms of it. b2's one look draw at the vista (on − off = +1 from a single 12-frame window) is now the median of 3 pairs |
 
-### 4.2 Reading the films (f1-b2 c6; f1-b3 c8 ⟪b3:films⟫)
+### 4.2 Reading the films (f1-b2 c6; f1-b3 c8 )
 
 Each sheet read at 1600×900 beside ext:kevin-nov6-keyart.jpg@860d7e9f#1-TR, #1-MR, #1-TL, #1-BL, #1-MC and
 ext:kevin-nov6-board.jpg@f2694e04#2-MR (and 5-1 by its words), the panel statistics in §3, and the W0 column.
 
-⟪b3:reading⟫
+- **V-look-before-after (1/2)**, f1-b3 (W0 = ACES 0.94, no EV; CALIMA = grade v2 c8). Field 16:30: W0 has
+  mustard-olive grass, olive shadows (lo20 71°) and a grey sky; CALIMA has amber-gold grass (mid b\* 18.3 vs 21.9),
+  rose shadows (lo20 32°), pines still dark green, a pinker grey sky, and a **brighter** top than W0 (p99 68.2 vs 66.5).
+  Vista 19:00: both are the W0 keys' salmon fog wall; CALIMA's shadows read rose (11° vs 61°), p99 63.5 vs 60.0.
+  Aim 17:45: as field (35° vs 71°; p99 66.7 vs 64.7). Shown unlabelled beside 1-TR and 1-BL I would pick the CALIMA
+  frame in field and aim: it has the panel's split (warm light, rose shadow) and its grass hue; neither column has
+  the panel's lavender sky, sun haze or receding layers. In vista neither looks like 1-MR (no sun, no sea).
+- **V-look-before-after (2/2)**, f1-b3. Close 18:45: the face reads as in W0, the background pinker, the shadow side not
+  crushed (crush 0 %). Dusk 19:45: CALIMA is violet-rose (lo20 328°, mid b\* 4.1, p99 37.6) where W0 is brown (55°,
+  8.8, 29.8): the direction of 2-MR. Noon 12:30: the same brightness (p99 76.3 vs 76.5), amber-gold grass where W0 is
+  lemon, a neutral sky: no golden-hour cast forced on midday.
+- **V-look-grade**, f1-b3, against 1-TR and 1-BL. (1) The hillside and cloth shadows read rose-brown, violet in the
+  deepest, never olive; (2) the grass is amber-gold, not mustard; (3) Brea's violet is vivid (violet max 46.8 against
+  the grass's p90 42.0 on the dump) but she stands in shadow in both stand-ins, and her red-pink head-wrap tail is the
+  most saturated thing in both frames (hero-body's asset colour, not the grade); (4) no crushed black (crush 0 %).
+  Beside 1-TR the frame still lacks the light (lavender sky, sun-side haze), so it reads as a warm dusty evening rather
+  than the panel's luminous one.
+- **V-look-highlights**, f1-b3: FAIL as staged. The vista stand-in is a salmon fog wall at 19:00 with no sun disc, no sea
+  and no glints (hi10 hue 41.6, C 35.3, p99 63.5, clip 0 %); the pale jagged band with blue gaps at the top edge is the
+  W0 map's far ridge ring (L-15). Through the look a sun at 4× its colour shows peach-white (#FEF3EF), not lemon (§1.2).
+- **V-look-glow**, f1-b3: the hostile disc (magenta) and the calm disc (cream) at 18 m, now staged clear of the hero,
+  each carry a soft halo; at noon nothing diffuse glows (the key is HDR 4.16).
+- **V-look-random**, f1-b2/b3: twelve frames of one orange-brown haze under the W0 keys at 17–19 h, the far ridge band
+  at the top edge; consistent, and cheap beside 1-TR and 1-MR for the reasons of §5.1 (sky, sun, distance, map).
+- **V33b / V20 / V-gpu-tier-look** on the Pans POC, f1-b2: no screen-locked lattice in any of the eight bearings or the
+  AO ×8 maps; the dune ripples read as geometry; the black sand takes the violet shadow tint (grey-violet, not blue).
 
 ### 4.3 Inherited and global rows (f1-b2 unless marked)
 
@@ -349,7 +377,7 @@ ext:kevin-nov6-board.jpg@f2694e04#2-MR (and 5-1 by its words), the panel statist
 | A-rt-ledger@look-post | **PASS** | 127.27 MB (≤ 170) |
 | A22-msaa@look-post | **PASS** | SMAA fraction 0.341 |
 | A109-ao-distance-fade@look-post | **PASS** | far/near 0; far luminance on = off |
-| A108-ao-periodicity@look-post / -w0 | FAIL / **PASS** | §5.3: the AgX transform; ⟪b3:a108⟫ |
+| A108-ao-periodicity@look-post / -w0 | FAIL / **PASS** | §5.3: the AgX transform; f1-b3 with grade v2: also `ultra@2 mid46m: periodic peak 0.297 at lag 0,4 (control 0.139)` — GTAO now *adds* a 4-px row period on a measurable crop at the full-resolution AO tier; the same dune-ripple AO the witness shows, opened by the grade's toe (ultra is never a graded tier for the look, but A108 measures it) |
 | V20, V33b, V-gpu-tier-look @look-post | NEEDS-JUDGE (filmed, read) | V33b: no screen-locked lattice in any of the 8 bearings or the AO ×8 maps; the dune ripples read as geometry; the dark sand takes the violet shadow tint (grey-violet, not blue) |
 | A-lamp-canon-distance@look-post | **PASS** | min ΔE ≥ 24.7 across 28 tokens |
 | A-lamp-states@look-post / -w0 | ⟪b3:lamp⟫ / **PASS** | b2 (c6, the threshold keyed on the graded curve, HDR 1.68): wary rhythm rel. std 0.032 (bar > 0.05) — the lower key bloomed the wary core through its trough; the key is now read on the AgX curve before the grade (HDR 4.16 golden at EV 0) |
@@ -359,7 +387,7 @@ ext:kevin-nov6-board.jpg@f2694e04#2-MR (and 5-1 by its words), the panel statist
 | A9-perf-budget | **PASS** | 241 draws, 59.9 fps, p95 18 ms, scene GPU 19.43 ms (quiet box, load 2.41) |
 | A21-real-draw-calls | PENDING (GPU terms, R45) | draws 248 / 183 / 275, triangles 3.66 / 3.87 / 3.93 M PASS; GPU vista 19.39, herd 37.31, fight 20.54 ms (load 2.29) |
 | A90-memory-stability, -expansion, A90b, A90-rig-reclaim, A90-abs | **PASS** | A90-abs heap and GPU controls 0.997× / 1.04× |
-| A-alloc-rate | FAIL (baseline guard) ⟪b3:alloc⟫ | b2: engine **0.629×** of its W0b baseline (136.1 vs 216.2 KB/frame; r4 0.71×); world-sky **1.019×** (2.75 vs 2.70: the judge's 1.19× was run noise, `environment.js` unchanged); instruments-core 1.143× (0.08 vs 0.07 KB/frame, 4.63 vs 3.98 KB/s); settlements 1.10× / 1.16× and progression 1.12× (files this lane never touched, unchanged from main) |
+| A-alloc-rate | FAIL (baseline guard) (f1-b3: the only offender is frame-loop 1.14×, `main.js`, frozen and untouched here) | b2: engine **0.629×** of its W0b baseline (136.1 vs 216.2 KB/frame; r4 0.71×); world-sky **1.019×** (2.75 vs 2.70: the judge's 1.19× was run noise, `environment.js` unchanged); instruments-core 1.143× (0.08 vs 0.07 KB/frame, 4.63 vs 3.98 KB/s); settlements 1.10× / 1.16× and progression 1.12× (files this lane never touched, unchanged from main) |
 | A-vram-ledger | **PASS** | |
 | A-no-horizon-terms-code / -player | **PASS** | 1371 = ratchet; 1503 ≤ 1508 |
 | A-ID-ip-assets-gone, A-assets-tracked | **PASS** | |
@@ -374,16 +402,16 @@ ext:kevin-nov6-board.jpg@f2694e04#2-MR (and 5-1 by its words), the panel statist
 
 A-look-frame-stats, A-look-random and the likeness rows (V-look-grade criterion 3 aside, V-look-highlights,
 V-look-random) cannot all pass on the W0 map under the W0 keys whatever the grade does, and the grade must not be
-pushed into a colour filter to fake them. Measured on the HDR dump of the places (the same HDR through the W0 output
-and through grade v2; no hour EV):
+pushed into a colour filter to fake them. Measured at full resolution in f1-b3 (the before/after films and
+A-look-frame-stats: the same frame through the W0 output and through grade v2; no hour EV):
 
 | frame | lo20 hue W0 → v2 | mid b\* | p99 | bars met (v2) | what the panel has that the frame does not |
 |---|---|---|---|---|---|
-| field 16:30 (1-TR) | 77 → 44 | 22.2 → 18.8 | 73.4 → 73.7 | 4/9 | lavender sky (hi10 C 8.7), sun-side haze at L\* 90+, clip 0.3 % |
-| vista 19:00 (1-MR) | 66 → 13 | 24.8 → 21.1 | 59.9 → 63.3 | 7/11 | the sun disc and the sea glint (p99 93, clip 3 %) |
-| aim 17:45 (1-BL) | 76 → 39 | 29.6 → 23.9 | 69.5 → 70.6 | 3/9 | backlit haze, violet distance, p99 90 |
-| dusk 19:45 (2-MR) | 73 → 323 | 13.4 → 2.7 | 30.1 → 38.0 | 3/4 | a violet dusk sky (mid b\* −5.6) |
-| close 18:45 (1-MC) | 8 → 332 | 24.7 → 20.6 | 56.4 → 60.3 | 5/7 | sky catch-light, skin sheen (L-04, C-01…) |
+| field 16:30 (1-TR) | 71 → 32 | 21.9 → 18.3 | 66.5 → 68.2 | 1/9 | lavender sky (hi10 C 8.7), sun-side haze at L\* 90+, clip 0.3 %, lo20 L\* 25 (haze-lifted shadows) |
+| vista 19:00 (1-MR) | 61 → 11 | 18.7 → 16.8 | 60.0 → 63.5 | 7/11 | the sun disc and the sea glint (p99 93, clip 3 %) |
+| aim 17:45 (1-BL) | 71 → 35 | 24.4 → 20.5 | 64.7 → 66.7 | 4/9 | backlit haze, violet distance, p99 90 |
+| dusk 19:45 (2-MR) | 55 → 328 | 8.8 → 4.2 | 29.8 → 37.6 | 3/4 | a violet dusk sky (mid b\* −5.6) |
+| close 18:45 (1-MC) | 34 → 349 | 18.3 → 17.4 | 55.3 → 59.3 | 3/7 | sky catch-light, skin sheen (L-04, C-01…) |
 
 The bars still missed are the top of the frame (p99 ≥ 88–90, clip 0.2–5 %, p95 − p5 ≥ 60–66, hi10 chroma ≤ 16–18) and
 the yellow of mid-tones under an orange fog: that is a sun disc (L-06), a bright lavender sky and its IBL (L-03, L-04),
@@ -410,7 +438,7 @@ cause in one Chrome run (f1-b1, the same build, the three variants back to back)
 | the look (AgX + grade + dither) | 0.26 @ (22, −1) | ultra@1: 2, ultra@2: 3 | blind |
 | `?look=nolut` (AgX alone: no grade, no vignette, no dither) | 0.261 | high@1: 2, high@1.25: 3, … | blind |
 | `?look=nodither` | 0.261 | ultra@2: 3 | blind |
-| `?look=w0` (r4 and ⟪b2:a108w0⟫) | 0.098 | 0 | sees (stock 0.239 at (5, −29) vs shipped 0.102) |
+| `?look=w0` (r4 and f1-b2) | 0.098 | 0 | sees (stock 0.239 at (5, −29) vs shipped 0.102) |
 
 So the LUT and the dither are not the cause (without the grade it is slightly worse); the **AgX transform itself**
 (L-01, which ROUND5-LOOK mandates) shows texture in the sunlit pan and the dune ripples that ACES compressed, and
@@ -460,11 +488,15 @@ own pass (`engine.benchPass`, 1-pixel readback fences; gl.finish does not wait o
      look-post now, world-sky in W2).
   5. **world-sky's A-alloc-rate row** (judge: 3.22 vs 2.70 KB/frame with `environment.js` unchanged): a main-tree
      control in the same session needs the main tree served, which the lane rules forbid here (Vite only from this
-     tree, never 5173). ⟪b2:worldsky⟫
+     tree, never 5173). Settled without it: f1-b2 world-sky 1.019× and f1-b3 0.974× of its baseline (2.75 / 2.63 vs 2.70 KB/frame) on the same build that read 1.19× in the judge's run, so that reading was run-to-run spread, not a cause. The same spread showed elsewhere: f1-b2 settlements 1.10× / progression 1.12×, f1-b3 frame-loop 1.14× (main.js), all files this lane never touched
 - **Orchestrator — merge.** With the bridge EV fixed, `look.agx: false` on `high` is the Round-5 W0 output exactly
-  (ACES 0.94 at every hour). Grade v2 no longer loses top brightness against W0 on the look places (p99 within −0.4…+8
-  L\* of W0 on the dump) and reads warm-light / violet-rose-shadow instead of sepia; I recommend merging it on, and
-  the R54 judge's films (§4.2) decide.
+  (ACES 0.94 at every hour). Grade v2 no longer loses top brightness against W0 on the look places (f1-b3 at full resolution: p99
+  −0.2 (noon) … +7.8 (dusk) L\* against W0) and reads warm-light / violet-rose-shadow instead of sepia; I recommend merging it on, and
+  the R54 judge's films (§4.2) decide. **§4.6 rule 2 cuts across that:** A-look-ledger (quiet box by R45 in f1-b2
+  and f1-b3) shows A21 missing its W1-exit bars with every high item on (fight 19.45 > 17, vista 17.94 > 17 in f1-b3)
+  while the look's own items cost ≈ 0.09 ms; read literally, L-01/L-02 stay off on `high` at the W1 exit
+  (FAIL-deferred) until A21 is recovered (W-01, I-04, L-10). That is the orchestrator's call at the W1-exit global run;
+  `look.agx: false` / `look.grade: false` on `high` is the switch, and the look stays on at every other tier.
 - **Orchestrator — the W1-exit global run.** L-18 then L-16: `cd <scratch> && nice -n 10 node <tree>/tools/look/gpu-attrib.mjs --port 5270`,
   then `.../tools/look/ab-time.mjs --port 5270`; each runs its gate with its box row and prints the §4.2 / §4.3 table.
   The W0 / nolut / nodither twins (lane `look-post-diag`) are diagnostic and need not run in the global list.
@@ -484,10 +516,10 @@ own pass (`engine.benchPass`, 1-pixel readback fences; gl.finish does not wait o
   branch and the wary trough re-solve (`PULSE_LIVE`, `screenLum`), and `update()`'s change test (`lv = … solveVersion`).
   Keep them on merge.
 - **The owner of the transparent double-sided `MeshBasicMaterial`** that three renders in two passes (2 program
-  re-derivations a frame on the vista and the fight): set `forceSinglePass = true` (⟪b2:owner407⟫).
+  re-derivations a frame on the vista and the fight): set `forceSinglePass = true` (`datapoint-slates`, `src/items/datapoints.js:271`: progression's file).
 - **shell-ui (W2).** `engine.holdFrame(on)` for full-screen menus; refit `CALIMA_DISC` through `engine.look`.
 - **hero-body (observation, r4).** In the close stand-in Brea's idle once showed her left arm raised behind her head
-  (V-look-before-after-2, r4). ⟪b2:arm⟫
+  (V-look-before-after-2, r4). Not reproduced in fix round 1: in f1-b2 and f1-b3 the close frame shows the head wrap's tail behind her head, no arm (the hero is now settled at a reset idle phase before the shot).
 
 ## 7. Files (this lane)
 

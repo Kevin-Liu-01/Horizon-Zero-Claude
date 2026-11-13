@@ -152,12 +152,17 @@ export async function abTime({ ctx, scenarios, stage, rounds = 4, frames = 40, s
     // (3 interleaved on/off pairs, median of the differences: a transient object in one window is not a look draw)
     const postItems = benched;
     const wasP = postItems.map((i) => i.get());
+    // (the sim is frozen for these pairs: the A21 scenarios are live, and a machine walking in or out of the
+    // frame moved the draw count by -2..+2 between windows in f1-b3)
     const dd = [];
+    E.requestTimeScale?.('look-ledger', 0);
+    await wait(4);
     for (let r = 0; r < 3; r++) {
       postItems.forEach((i) => i.set(true)); await wait(4); const dOn = await wholeFrame(E, 20);
       postItems.forEach((i) => i.set(false)); await wait(4); const dOff = await wholeFrame(E, 20);
       if (dOn.medianDraws != null && dOff.medianDraws != null) dd.push(dOn.medianDraws - dOff.medianDraws);
     }
+    E.requestTimeScale?.('look-ledger', null);
     postItems.forEach((i, k) => i.set(wasP[k])); await wait(4);
     const lookDraws = median(dd);
     const lookDrawsOk = lookDraws != null && lookDraws <= 0;

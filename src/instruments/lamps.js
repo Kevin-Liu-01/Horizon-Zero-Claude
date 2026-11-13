@@ -747,7 +747,7 @@ export class LampSystem {
     }
     PULSE_LIVE = PULSE_LOW;
     if (P.look) { const c = this.core.wary, s = this._s3 || (this._s3 = [0, 0, 0]), top = screenLum(P.look, c, 1, s); let lo = 0.05, hi = 1;
-      for (let i = 0; i < 24; i++) { const m = 0.5 * (lo + hi); if (screenLum(P.look, c, m, s) > 0.84 * top) hi = m; else lo = m; } PULSE_LIVE = 0.5 * (lo + hi); }
+      for (let i = 0; i < 24; i++) { const m = 0.5 * (lo + hi); if (screenLum(P.look, c, m, s) > 0.76 * top) hi = m; else lo = m; } PULSE_LIVE = 0.5 * (lo + hi); }
     this.solves++;
     return true;
   }
