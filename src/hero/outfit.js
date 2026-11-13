@@ -149,7 +149,12 @@ export class HeroOutfit {
     this.variant = meta.variant || row;
     this.row = row;
     this.hasPieces = !!meta.hasPieces;
-    this.body?.apply(meta.hideBit || 0);
+    // the set's own cover of Brea's body when it carries one for this body (C-06: the Starter bares her arms), else its bit
+    if (this.body && meta.hide) {
+      const cache = entry.root.userData;
+      if (cache.__ownMask === undefined) cache.__ownMask = this.body.ownMask(meta.hide);
+      this.body.apply(meta.hideBit || 1, cache.__ownMask);
+    } else this.body?.apply(meta.hideBit || 0);
     this.player._collectMaterials?.();
     return this.info();
   }

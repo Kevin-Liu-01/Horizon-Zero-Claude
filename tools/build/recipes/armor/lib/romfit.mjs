@@ -247,7 +247,8 @@ export function romFit(parts, base, {
   };
 
   // ---- ease
-  const body = base.bodyPart;
+  // (fix round 1: Brea's own body when the recipe read it, lib/breabody.mjs: the body A-variant-swap-matrix grades against)
+  const body = base.fitBody || base.bodyPart;
   const bn = body.pos.length / 3;
   const BQ = new Float64Array(bn * 3), BN = new Float64Array(bn * 3);
   const pushed = new Map(info.map((f) => [f.p, new Float64Array(f.n)]));
