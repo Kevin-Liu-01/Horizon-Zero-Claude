@@ -290,6 +290,21 @@
       "delete_owner": "world-ground"
     },
     {
+      "id": "landmarks-world-props",
+      "paths": [
+        "public/models/landmarks/*.glb"
+      ],
+      "title": "The Pans landmarks (world-props W1): Sounding Ring, wind pump, trig pillar + benchmark, sea stacks + arch + Roque plug, static Gauge",
+      "author": "CALIMA project",
+      "source_url": "tools/build/landmarks/recipes/",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
       "id": "legacy-audio",
       "paths": [
         "public/audio/**"
