@@ -540,7 +540,7 @@ export async function build({ out = ROOT } = {}) {
   // Nov 12: and round the front (reach 1.01): a look from behind and above, past the neck, met the front's single-sided inner face and
   // saw the ground in front of her (r7: 300-400 px at az 150-180, el 0.4-0.8). The wall faces the neck, so from the front it is never
   // drawn, and where the V opens there is no wall to line; one tail row pays for it
-  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV, seg: 19, reach: 1.01 });
+  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV, seg: 19, reach: 1.01, below: 0.0005, inset: 0.0022 });
   // fix round 2, Nov 12 (LOOK C-01): the tissue's thickness behind each vertex, for the skin light's back-transmission (src/hero/skinLook.js)
   // (the ears only: the lips, the nose wings and the lower lids are thin too, with the mouth, the nostrils and the ball a few mm
   // behind them, but in a back light they glowed as a red nostril and a lit lower lid, which the backlit row forbids)
