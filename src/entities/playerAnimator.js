@@ -1691,7 +1691,10 @@ export class PlayerAnimator {
       this._aimW = Math.min(this._aimW, aw0 + AO.inRate * eI * dt);
     } else this._aiT = 0;
     const CAo = this.T.crouchAim?.outRate;
-    if ((CAo || AO) && !dead && this._aimW < aw0) {
+    // (round 3, F2: ...but never in a roll: there the layer goes at the damp's own pace, gone in nine steps, as before —
+    // eased out over the roll, the drawn arm rode the tumble with the aim's form and the fingertips went over the crown
+    // at the -0.55 strafing dodge, run w11/F1, F2)
+    if ((CAo || AO) && !dead && !p.dodging && this._aimW < aw0) {
       this._aoT = (this._aoT ?? 0) + dt;
       const rS = AO ? AO.rate : CAo + 20, rC = CAo ?? rS;
       const ease = AO ? Math.min(1, AO.ease0 + (1 - AO.ease0) * this._aoT / AO.easeS) : 1;
@@ -6030,7 +6033,7 @@ export class PlayerAnimator {
     // (hero-body targeted fix round 3, `elbowForm.fore` [weight, rad]: the forearm along the arrow is a form target too,
     // soft, inside the same hard bars: past `fore[1]` off the ray it costs `fore[0]` per radian, x100 as the others)
     // (...faded out over the up-aims, as `drawShrugUp` is: there the elbow keeps the band's floor it had)
-    S.fw = (EF.fore?.[0] ?? 0) * (1 - lf) * (1 - clamp(Math.asin(clamp(_dA.y, -1, 1)) / 0.3, 0, 1)); S.fa = EF.fore?.[1] ?? 0.26;
+    S.fw = (EF.fore?.[0] ?? 0) * (1 - lf) * (1 - clamp((Math.asin(clamp(_dA.y, -1, 1)) - 0.15) / 0.3, 0, 1)); S.fa = EF.fore?.[1] ?? 0.26;
     S.out = this.T.armFlow?.outside ? 1 : 0; S.shL = _sg0.dot(this._latT);
     S.r = r; S.shU = _sg0.dot(_efUp); S.shY = _sg0.dot(this._upT); S.hR = this.T.headR.z; S.hdF = _hd.dot(_efF);
     S.hD = _sg2.dot(_dA); S.lo = EF.up[0]; S.hi = EF.up[1]; S.bh = EF.behindHand; S.bd = EF.behindHead;
