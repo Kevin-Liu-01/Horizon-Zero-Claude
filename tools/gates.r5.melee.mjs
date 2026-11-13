@@ -3909,10 +3909,15 @@ export const GATES = [
         /* (2) +60 ms: the mask of what the particle pools add, and how much of it is near the impact */
         while (performance.now() - tHit < 60) await new Promise((r) => setTimeout(r, 1));
         E.requestTimeScale('studio', 0);
+        /* A (pools on), B (pools off), A2 (pools on again): a pixel is in the mask only
+         * if it differs between A and B AND between A2 and B, and NOT between A and A2,
+         * so anything that moves on the wall clock (sky, haze, grass) stays out (f1 read
+         * 26 % of the frame as "VFX" with a two-frame A/B) */
         const A = await grab();
         setPools(false);
         const B = await grab();
         setPools(true);
+        const A2 = await grab();
         const V = p.position.constructor;
         const P = new V(hit.point.x, hit.point.y, hit.point.z);
         const cm = C.camera.matrixWorld.elements;
@@ -3921,18 +3926,22 @@ export const GATES = [
         const W = A.W, H = A.H;
         const px = (P.x + 1) * 0.5 * W, py = (P.y + 1) * 0.5 * H;
         const r = Math.hypot((Q.x + 1) * 0.5 * W - px, (Q.y + 1) * 0.5 * H - py);
-        let tot = 0, near = 0;
+        let tot = 0, near = 0, noise = 0;
         for (let y = 0; y < H; y++) {
           for (let x = 0; x < W; x++) {
             const i = (y * W + x) * 4;
             const d = Math.abs(A.px[i] - B.px[i]) + Math.abs(A.px[i + 1] - B.px[i + 1]) + Math.abs(A.px[i + 2] - B.px[i + 2]);
             if (d < 36) continue;
+            const d2 = Math.abs(A2.px[i] - B.px[i]) + Math.abs(A2.px[i + 1] - B.px[i + 1]) + Math.abs(A2.px[i + 2] - B.px[i + 2]);
+            if (d2 < 36) continue;
+            const dn = Math.abs(A.px[i] - A2.px[i]) + Math.abs(A.px[i + 1] - A2.px[i + 1]) + Math.abs(A.px[i + 2] - A2.px[i + 2]);
+            if (dn >= 36) { noise++; continue; }
             tot++;
             if (Math.hypot(x - px, y - py) <= r) near++;
           }
         }
         E.requestTimeScale('studio', null);
-        mask = { maskPx: tot, coverPct: +(tot / (W * H) * 100).toFixed(2), nearFrac: tot ? +(near / tot).toFixed(3) : null,
+        mask = { maskPx: tot, unstablePx: noise, coverPct: +(tot / (W * H) * 100).toFixed(2), nearFrac: tot ? +(near / tot).toFixed(3) : null,
           hitPx: [+px.toFixed(0), +(H - py).toFixed(0)], radiusPx: +r.toFixed(1) };
         if (!(tot > 50)) bad.push('the VFX mask is empty (' + tot + ' px) — nothing to grade');
         else if (!(near / tot >= 0.70)) bad.push((near / tot * 100).toFixed(1) + ' % of the VFX mask lies within 0.9 m of the impact (bar 70 %) — clause 2');

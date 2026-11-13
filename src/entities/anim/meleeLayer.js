@@ -265,9 +265,16 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
  *            down behind it; the fist lands at shoulder height, outboard of
  *            the head line, the reach from spine pitch and the lunge.
  */
+/* FIX ROUND 1 (the judge's V46 finding: a hand on the hip, the elbow back): the
+ * rear wrist 0.05 m further forward and up, the haft a little more to her left,
+ * the trunk turned and pitched further toward the front hand. How far forward the
+ * rear fist can go is set by A101's bars, not by taste: the left palm has to reach
+ * 50-60 % of the haft with the tip at 0.35-0.55 m, and her arm is 0.475 m; the pose
+ * lab (f1) measured the left hand sliding to 40-43 % of the haft with the wrist 0.17-0.27 m
+ * further forward (doc §6.2). */
 const READY = {
-  hand: [-0.25, 1.10, -0.05], shaft: [0.36, -0.405, 0.84],
-  lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.52, yaw: -0.36, py: -0.26, pitch: 0.27, roll: 0.02, dz: 0.0,
+  hand: [-0.23, 1.12, 0.0], shaft: [0.38, -0.40, 0.83],
+  lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.50, yaw: -0.40, py: -0.28, pitch: 0.32, roll: 0.02, dz: 0.0,
 };
 /**
  * Her legs, per beat. Rotations are char-space radians on thigh, calf and
@@ -296,14 +303,18 @@ const RECOIL_RATE = 11;
  *  snap her hips; see `_stance`). */
 const STANCE_STEP_MAX = 0.10;
 const STANCE = {
-  ready: { thighL: -0.50, thighR: 0.14, calfL: 0.66, calfR: 0.30, footL: -0.16, footR: -0.30, abd: 0.15, dx: 0.0, dy: -0.105 },
-  'light-1': { thighL: -0.62, thighR: 0.26, calfL: 0.74, calfR: 0.14, footL: -0.12, footR: -0.26, abd: 0.11, dx: 0.02, dy: -0.125 },
-  'light-2': { thighL: -0.30, thighR: -0.42, calfL: 0.46, calfR: 0.62, footL: -0.16, footR: -0.20, abd: 0.20, dx: -0.09, dy: -0.15 },
-  'light-3': { thighL: -0.66, thighR: 0.30, calfL: 0.70, calfR: 0.10, footL: -0.04, footR: -0.26, abd: 0.11, dx: 0.05, dy: -0.12 },
+  ready: { thighL: -0.54, thighR: 0.16, calfL: 0.72, calfR: 0.34, footL: -0.17, footR: -0.30, abd: 0.15, dx: 0.0, dy: -0.115 },
+  /* fix round 1 (V47: "four different actions", the body doing the work): light-1 is
+   * a lunge (the lead knee over the foot, the rear leg long), light-2 a wide base with
+   * the weight going onto the lead leg under the sweep, light-3 sinks onto the lead
+   * knee under the overhand stab; f1's pose lab filmed and measured them */
+  'light-1': { thighL: -0.88, thighR: 0.48, calfL: 0.86, calfR: 0.08, footL: -0.14, footR: -0.44, abd: 0.10, dx: 0.02, dy: -0.19 },
+  'light-2': { thighL: -0.55, thighR: 0.30, calfL: 0.70, calfR: 0.22, footL: -0.12, footR: -0.30, abd: 0.22, dx: 0.06, dy: -0.15 },
+  'light-3': { thighL: -0.84, thighR: 0.34, calfL: 1.00, calfR: 0.14, footL: -0.10, footR: -0.30, abd: 0.11, dx: 0.05, dy: -0.175 },
   /* the heavy sinks deepest (V47: "a low committed drive with the hips lowest"; A102 pins it 0.04 m under
    * every light): r1/r2b read its pinned hips 0.643 / 0.669 m against light-3's 0.722 / 0.701, so the
    * margin was the run's noise. Both knees bend further and the long stab stands 0.015 m taller. */
-  heavy: { thighL: -0.82, thighR: 0.30, calfL: 1.08, calfR: 0.40, footL: -0.26, footR: -0.43, abd: 0.18, dx: -0.03, dy: -0.26 },
+  heavy: { thighL: -1.00, thighR: 0.50, calfL: 1.20, calfR: 0.30, footL: -0.28, footR: -0.50, abd: 0.18, dx: -0.03, dy: -0.32 },
 };
 /** How much of a beat's stance is on at clip progress `cu` (0 cock .. 1 end). */
 const STANCE_ENV = (cu) => (
@@ -316,14 +327,17 @@ const BEATS = [
   {
     id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.16,
     cock: { hand: [-0.29, 1.24, -0.24], shaft: [0.40, 0.47, 0.79], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.50, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
-    contact: { hand: [-0.15, 1.13, 0.23], shaft: [0.10, -0.03, 0.995], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.12, py: 0.02, pitch: 0.20, roll: -0.04, dz: 0.10 },
-    follow: { hand: [-0.19, 1.09, 0.22], shaft: [0.24, -0.34, 0.91], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.22, py: 0.0, pitch: 0.14, roll: -0.08, dz: 0.05 },
+    /* fix round 1: a LEVEL THRUST, the front arm long and the hips driven over the lead foot */
+    contact: { hand: [-0.12, 1.10, 0.45], shaft: [0.06, 0.05, 0.997], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.42, py: 0.08, pitch: 0.45, roll: -0.04, dz: 0.22 },
+    follow: { hand: [-0.13, 1.06, 0.46], shaft: [0.16, -0.20, 0.966], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.36, yaw: -0.42, py: 0.06, pitch: 0.42, roll: -0.06, dz: 0.20 },
   },
   {
     id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
-    cock: { hand: [-0.35, 1.30, -0.09], shaft: [0.60, 0.22, 0.77], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.40, yaw: 0.26, py: 0.22, pitch: 0.06, roll: 0.04, dz: -0.04 },
-    contact: { hand: [-0.21, 1.19, 0.22], shaft: [-0.14, 0.02, 0.99], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.27, yaw: -0.18, py: -0.08, pitch: 0.18, roll: 0.04, dz: 0.07 },
-    follow: { hand: [-0.23, 1.01, 0.22], shaft: [-0.46, -0.22, 0.86], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.28, yaw: -0.40, py: -0.28, pitch: 0.20, roll: 0.06, dz: 0.06 },
+    /* fix round 1: a SWEEP CROSSING HER FRONT, the blade 33 deg to her right at contact
+     * and the shoulders turned through it (it read as light-1 again at -8 deg) */
+    cock: { hand: [-0.30, 1.26, -0.04], shaft: [0.62, 0.18, 0.763], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.36, yaw: 0.30, py: 0.24, pitch: 0.06, roll: 0.04, dz: -0.04 },
+    contact: { hand: [-0.17, 1.16, 0.28], shaft: [-0.55, 0.0, 0.835], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.24, yaw: -0.50, py: -0.30, pitch: 0.22, roll: 0.06, dz: 0.06 },
+    follow: { hand: [-0.24, 1.04, 0.16], shaft: [-0.80, -0.18, 0.572], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.22, yaw: -0.66, py: -0.42, pitch: 0.18, roll: 0.06, dz: 0.05 },
   },
   {
     id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.20,
@@ -336,8 +350,9 @@ const BEATS = [
 const HEAVY = {
   id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.18,
   cock: { hand: [-0.28, 1.31, -0.12], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.46, py: -0.36, pitch: -0.10, roll: 0.08, dz: -0.10 },
-  contact: { hand: [-0.22, 1.35, 0.27], shaft: [0.12, -0.05, 0.992], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.14, py: 0.04, pitch: 0.30, roll: -0.05, dz: 0.13 },
-  follow: { hand: [-0.21, 1.17, 0.24], shaft: [0.26, -0.42, 0.87], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.10, py: 0.10, pitch: 0.32, roll: -0.08, dz: 0.10 },
+  /* fix round 1: the LOWEST, LONGEST drive: the hips sink furthest and travel furthest */
+  contact: { hand: [-0.13, 1.28, 0.47], shaft: [0.10, -0.12, 0.988], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.44, py: 0.12, pitch: 0.55, roll: -0.05, dz: 0.26 },
+  follow: { hand: [-0.15, 1.16, 0.46], shaft: [0.22, -0.36, 0.906], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.40, py: 0.10, pitch: 0.50, roll: -0.08, dz: 0.22 },
 };
 /** How far before `CONTACT_K` the contact key is reached; it is then HELD for
  *  the rest of the strike window. See `_blend`. 0.16 -> 0.10 in fix pass 1: the
@@ -963,6 +978,8 @@ export class MeleeLayer {
     this._lhSOn = 0;
     this._lhReachLack = 0;
     this._lhFree = new THREE.Vector3();
+    this._weldSwing = false;
+    this._weldWas = false;
 
     this.ok = true;
     register({
@@ -1659,10 +1676,14 @@ export class MeleeLayer {
     /* ...OR STANDING, SWINGING (fix round 1): the step-in's velocity floor blends a
      * little of the walk clip in, its stance weights dip under 0.40, `_strideT` reset
      * and the beat's stance damped out under a live contact: the judge filmed light-2
-     * and light-3 landing on straight legs with the feet together. `_moveW` excludes
-     * the step drive and is held under 0.45 for the length of a melee step, so under
-     * 0.30 she is standing whatever the clip's weights do; a jog keeps it at 1. */
-    const welded = ((an._strideT || 0) > 0.10 || (stance === 'swing' && (an._moveW ?? 1) < 0.30)) ? 1 : 0;
+     * and light-3 landing on straight legs with the feet together. So a swing that
+     * STARTS welded (standing) stays welded to its end; one started at a jog (the
+     * stance weight already out) is untouched, which is what A105's stride needs
+     * (keying it on `_moveW` instead read under 0.30 through jogging swings, f1). */
+    if (stance === 'swing' && !this._weldWas) this._weldSwing = this._stanceW > 0.5;
+    else if (stance !== 'swing') this._weldSwing = false;
+    this._weldWas = stance === 'swing';
+    const welded = ((an._strideT || 0) > 0.10 || this._weldSwing) ? 1 : 0;
     this._stanceW = damp(this._stanceW || 0, welded, 7, dt);
     /* THE HIPS TURN AND TRAVEL WITH THE BEAT (melee W1; `py` and `dz` on the pose
      * keys, continuous with them). The feet are planted by the conform, so a
@@ -3324,7 +3345,7 @@ export class MeleeLayer {
    * THE LEFT HAND SEATED AGAIN ON THE FINAL HAFT (fix round 1; `postFix`, after
    * the right hand's late passes). Runs only when the left hand is on the haft
    * and something moved it off (> 0.012 m) or laid the forearm on her belly
-   * (< 0.105 m off the axis). If the turn alone does not clear the belly, the
+   * (< 0.115 m off the axis; A104's bar is 0.10). If the turn alone does not clear the belly, the
    * palm slides toward the blade in 0.03 m steps (at most 0.12 m, never past
    * her reach): moving the hand away along the haft moves the forearm off her.
    */
@@ -3335,12 +3356,12 @@ export class MeleeLayer {
     if (!(on > 1e-3) || !this._held || !this.an.b.handL) return;
     const g0 = this._leftPalmGap(), f0 = this._leftForeGap();
     D.lhGapPre = g0;
-    if (g0 <= 0.012 && f0 >= 0.105) { D.lhGapPost = g0; return; }
+    if (g0 <= 0.012 && f0 >= 0.115) { D.lhGapPost = g0; return; }
     let slide = 0;
     this._seatLeft(on, this._lhArmW, this._lhOnWant, slide);
     D.lhReseat = 1;
     let f = this._leftForeGap();
-    while (f < 0.105 && slide < 0.12 && this._lhSOn >= this._lhOnWant + slide - 1e-4) {
+    while (f < 0.115 && slide < 0.12 && this._lhSOn >= this._lhOnWant + slide - 1e-4) {
       slide += 0.03;
       this._seatLeft(on, this._lhArmW, this._lhOnWant, slide);
       D.lhReseat++;

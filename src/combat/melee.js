@@ -245,6 +245,11 @@ const HITSTOP_KILL = 0.120;
 const HITSTOP_WINDOW = 0.180;
 /** Shorter than this after the 1 s budget, a hit does not freeze at all (s). */
 const HITSTOP_MIN = 0.020;
+/** The freeze is released by the first frame past its end, so it lasts up to one
+ *  frame longer than asked (f1: 90 -> 97, 115 -> 131, 120 -> 135 ms). The end is
+ *  set this much early, and the 1 s budget counts each freeze this much long. */
+const HITSTOP_LATE = 0.007;
+const HITSTOP_SLACK = 0.016;
 /** The directional kick along the swing's tangent, as the PEAK of the lens's
  *  recoil spring (rad; light / heavy), and that spring's peak per unit of
  *  `player.addRecoil` at 60 Hz (omega 21, critically damped, implicit step). */
@@ -2264,9 +2269,9 @@ export class Melee {
     for (let i = 0; i < 8; i++) {
       const a = this._hsS[i] > from ? this._hsS[i] : from;
       const b = this._hsE[i] < now ? this._hsE[i] : now;
-      if (b > a) used += b - a;
+      if (b > a) used += b - a + HITSTOP_SLACK;
     }
-    const left = HITSTOP_WINDOW - used;
+    const left = HITSTOP_WINDOW - used - HITSTOP_SLACK;
     if (dur > left) dur = left;
     return dur >= HITSTOP_MIN ? dur : 0;
   }
@@ -2283,14 +2288,15 @@ export class Melee {
     /* a freeze still running is cut where this one starts, so the ring never counts twice */
     const j = (this._hsI + 7) & 7;
     if (this._hsE[j] > now) this._hsE[j] = now;
+    const end = now + dur - HITSTOP_LATE;
     this._hsS[this._hsI] = now;
-    this._hsE[this._hsI] = now + dur;
+    this._hsE[this._hsI] = end;
     this._hsI = (this._hsI + 1) & 7;
     e.requestTimeScale('hitstop', 0.03);
     const c = this.combat;
     if (c && typeof c._hsEnd === 'number') {
       c._hsActive = true;
-      c._hsEnd = endBefore > now + dur ? endBefore : now + dur;
+      c._hsEnd = endBefore > end ? endBefore : end;
     }
   }
 
