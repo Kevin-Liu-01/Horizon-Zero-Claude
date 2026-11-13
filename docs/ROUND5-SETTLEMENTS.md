@@ -80,7 +80,7 @@ stands apart from it on neutral ground near REST (`ctx.people.stagePlace`, the f
 
 ## 2. How a person is put together
 
-- **Body.** `Superhero_Female` or `Superhero_Male`, uniform scale to the bible's height. The adolescent is male at 0.90 of an adult and wears a long loose tunic; no bone scale of any kind.
+- **Body.** `Superhero_Female` or `Superhero_Male`, uniform scale to the bible's height; no bone scale of any kind. (Fix round 1 cut the adolescent variant by bible §8.9's fallback: archetype 7 is a young adult at full scale; the `adolescent` path stays in the build.)
 - **Male bodies through the kit.** The kit's numbers are in the female pack's frame. A male head is the same head 42.5 mm higher, so male geometry passes through the kit 42.5 mm down and comes back up. Chain and prop points are authored in that frame; the skeleton never moves.
 - **Face.** Brea's refinements (alae, nose tip plane and lobule, mandible line, cheekbone hollow, ears, neck) plus the archetype's own vector at each of the seven landmarks, plus lid droop and jowls by age (open lids on the adolescent). Each archetype's `extras.r5Face` carries the vectors for `A-npc-face-delta`.
 - **Paint.** `paintHumanSkin` with the person's tone, iris and brow weight, plus age layers (forehead lines, frown, eye bags, crow's feet, soft nasolabial and marionette folds, neck bands, sun spots), a beard (a coil field dissolving at its edge) or stubble, tar to the elbow, carmine to the elbow, burn scars. The forehead's olive cast from the source is corrected; the adolescent's head and neck drop 72 % of the source's adult muscle relief and his neck geometry is smoothed.
@@ -89,14 +89,19 @@ stands apart from it on neutral ground near REST (`ctx.people.stagePlace`, the f
 - **Tools.** A tool hangs on a prop joint. The runtime collapses a joint it does not want (`scale` ~0), so a rake moves from back to hand with no draw and no allocation.
 - **Motion.** One `PosePlayer` per person (`pose.js`, allocation-free) on the shared clip pack; a walk moves by the clip's own stride table (the planted foot is the fixed point); overlays after the mixer: the walk style's lean and arm-swing gain, a held arm (the porter's basket), the head's carriage (`LIFT`), and the look-at toward her within 5.5 m. The player writes every bone on every update, so no overlay compounds (§1, items 1 and 9). Live `dyn_` chains (hair tail, wrap sash, apron halves, sash ends, shawl ends, cloak halves, a medal, a seed bag) run a Verlet solve from the kept hero solver's physics on the near tier only, with leg capsules so an apron goes round a thigh.
 
-### Tiers (measured from the GLBs of this build)
+### Tiers (measured from the GLBs of this build, fix round 1)
 
 | tier | meshes | tris (all nine) | draws | distance |
 |---|---|---|---|---|
-| near | `Skin_L0` (body + eyes), `Hair_L0`, `Outfit_L0` | 15.9–18.9 k | 3 | the 6 nearest within 18 m |
-| LOD1 | `Skin_L1`, `Outfit_L1` (wrap folded in as a 10 × 22 shell cast onto the cloth; tails, aprons, sashes and tools kept whole) | 7.95–7.99 k | 2 | 18–35 m |
-| LOD2 | `Skin_L2`, `Outfit_L2` | 3.70–3.75 k | 2 | beyond; hidden past 90 m |
+| near | `Skin_L0` (body + eyes), `Hair_L0`, `Outfit_L0` | 16.7–19.2 k | 3 | the 6 nearest within 18 m |
+| LOD1 | `Skin_L1`, `Outfit_L1` (the wrap folded in as a 30 × 48 shell cast onto the cloth, then simplified with the rest) | 7.87–7.99 k, one absolute error per person of 3.4–5.0 mm | 2 | 18–35 m |
+| LOD2 | `Skin_L2`, `Outfit_L2` | 3.79–3.97 k (5.6–8.6 mm) | 2 | beyond; hidden past 90 m |
 | caster | `Caster` (merged, about 2.0 k) | | 1 per cascade | the 4 nearest; no main pass |
+
+LOD1 and LOD2 are each built with one absolute error over skin, outfit and shell together (the smallest that lands the tier
+under its cap), with each vertex's skinned position in 9 frames of the person's own clips as simplifier attributes; hands,
+`dyn_` and `prop_` geometry keep every vertex at LOD1 (§0 item 1). A hidden person advances its clip's clock and walk but
+evaluates no pose (§0 item 2).
 
 The main-pass draw of `Caster` is skipped by a `drawRange.count = -1` set in `onBeforeRender` (three returns before `gl.drawElements`) and restored in `onAfterRender`; the shadow pass does not call those hooks. A tier change is a 0.32 s screen-door cross-fade from a pool of quantised fade materials. All of them share one compiled program, so a tier change compiles nothing. Chains freeze (back to bind) when the near tier fades out. The mixer runs every frame near, at 30 Hz on LOD1, 15 Hz on LOD2.
 
@@ -121,8 +126,9 @@ ctx.people                                      src/world/npc/people/index.js
 
 Person
   .play(name, { fade, ts, loop, offset }) -> duration
+  (spec.clips.hand: the clips a hand tool shows for; fix round 1)
   .current : { name, time, ts, loop, duration, getClip() }   the clip playing (pose.js)
-  .pose : PosePlayer                            bind(clip), play(clip, opts), update(step), dispose()
+  .pose : PosePlayer                            bind(clip), play(clip, opts), update(), advance() (clock only), dispose(); step in .step
   .walkTo(x, z, then)  .stopWalk()              walks by the clip's stride table
   .showProps(names | null)                      prop joints: prop_hand, prop_back, prop_hip, prop_shoulder, prop_lamp
   .look : boolean                               the look-at toward her (default true; sheets and cutscenes turn it off)

@@ -75,7 +75,8 @@ function apron(ctx, { y0, y1, wTop, wBot, dye, swatch = 'panelA', lift = 0.01, c
       return P.blendSkin(trunk(yHang), c, Math.min(1, t * 2.6));
     },
   });
-  ctx.add(twoSide ? P.twoSided(sheet) : sheet, { dye, hide: true, stain });
+  // (its back face a little darker than its front, not a dark hole: r0's V41 read the picker's apron lining as a black diamond)
+  ctx.add(twoSide ? P.twoSided(sheet, { shade: 0.8 }) : sheet, { dye, hide: true, stain });
   // the hem: a rolled, stitched edge with weight (r0: "a notched card", "a hung flag")
   if (hem) ctx.add(P.hemRoll(sheet, { rowOf: P.bottomRow(rows, cols), r: hem, uv: (a, b) => ctx.rectUV(swatch)(b, 0.98) }), { dye, stain });
   return sheet;

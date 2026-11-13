@@ -372,7 +372,9 @@ function bandHead({ headSoup, skin, joint, center, lift, tailPts, tailJ, width, 
   add('knotShell', underShell(kf, { axis: [0.3, 0.8, -0.5], oMin: () => -82 * DEG, seg: 10, rings: 4, joint, W, cloth: true, uv: [A.knotFold.rect[0], A.knotFold.rect[1], A.knotFold.period, A.knotFold.rect[3]], at: (dx, dy, dz) => kf.R(dx, dy, dz) - 0.0003 }));
   add('knot', ribbon(kf, { n: [0.5, 0.6, -0.6], o0: -14 * DEG, w: 0.86, along: 10, rowsT: [-1, -0.85, -0.3, 0.3, 0.85, 1], lift: 0, pillow: 0.0011, hemSink: 0.0002, stack: kst, bridge: 0, creases: 2, creaseAmp: 0.0007, seed: seed + 1, joint, uv: { rect: A.knotFold.rect, period: A.knotFold.period, W, pxPerM: 1 / 0.0012, v: [0, 1] }, wander: 0.04 }));
   add('tail', clothTail(tailPts, tailJ, {
-    along: 14, across: 3, width: (u) => 0.058 * (1 - 0.22 * u), side: [0.55, 0.65, 0.5], thick: 0.003, curl: 0.1, twist: Math.PI / 2, gather: 0.42, gatherTo: 0.3, roll: 0.5, fold: 0.005, rootBack: 0.012,
+    // (fix round 1: the r0 tail, 5.8 cm gathered to 30 % and turned a quarter, read edge-on as a stiff rod; a band's end is cloth
+    // that opens out and hangs flat)
+    along: 14, across: 3, width: (u) => 0.07 * (1 - 0.12 * u), side: [0.55, 0.65, 0.5], thick: 0.0028, curl: 0.14, twist: Math.PI / 3.2, gather: 0.62, gatherTo: 0.42, roll: 0.35, fold: 0.006, rootBack: 0.012,
     uvFront: { rect: A.clothA.rect, period: A.clothA.period, W, pxPerM: 1 / 0.00065, v: [1, 0] },
     uvBack: { rect: A.lining.rect, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0, 1] },
     uvEnd: A.frayEnd.rect, fray: 0.1,
@@ -967,6 +969,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   // attributes, so two vertices merge only where they also move together (a bind-pose error alone let a spine-weighted apron
   // corner fold onto a pelvis-weighted one, 3.5 cm apart in the chop)
   const poses = posedOf(base, spec, clipOf);
+  if (poses && poses.mats.length > 9) poses.mats.length = 9;
   const withPoses = (g) => {
     if (!poses) return g;
     const n = g.pos.length / 3, K = poses.mats.length, ex = new Float32Array(n * 3 * K), v = new THREE.Vector3(), o = new THREE.Vector3();
@@ -984,7 +987,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     for (const q of parts) q.gp = withPoses(q.g);
     const run = async (e) => {
       const out = [];
-      for (const q of parts) out.push(q.g.idx.length ? await simplify(q.gp, 0, { err: e, abs: true, attr: ATTR_LOD, extraW: 0.8, permissive: true, vlock: q.lock ? q.lock(q.g) : null }) : q.g);
+      for (const q of parts) out.push(q.g.idx.length ? await simplify(q.gp, 0, { err: e, abs: true, attr: ATTR_LOD, extraW: 1, permissive: true, vlock: q.lock ? q.lock(q.g) : null }) : q.g);
       return out;
     };
     let best = null, bestE = hi;
@@ -1070,8 +1073,9 @@ function posedOf(base, spec, clipOf) {
   const W = spec.clips?.walk || {};
   const list = [];
   const walk = clipOf(spec.sex, W.also || W.clip || 'Walk_Loop');
-  if (walk) list.push([walk, 0.25], [walk, 0.75]);
-  for (const n of (spec.clips?.stage || spec.clips?.idle || []).slice(0, 3)) { const c = clipOf(spec.sex, n); if (c) list.push([c, 0.5]); }
+  // (at most 9 poses: meshopt takes 32 attribute floats, 5 are the normal and the UV)
+  if (walk) list.push([walk, 0.17], [walk, 0.5], [walk, 0.83]);
+  for (const n of (spec.clips?.stage || spec.clips?.idle || []).slice(0, 3)) { const c = clipOf(spec.sex, n); if (c) list.push([c, 0.25], [c, 0.75]); }
   const mats = [];
   const mixer = new THREE.AnimationMixer(top);
   for (const [clip, t] of list) {
