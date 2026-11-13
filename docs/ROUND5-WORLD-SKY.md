@@ -40,8 +40,11 @@ No asset file is added (the noise is generated at boot), so no `public/LICENSES.
 ## 2. Gates
 
 All on port 5261 from this tree, `nice -n 10`, one gate Chrome under the slot protocol, cwd in scratch.
-Runs: r1 (first block, 18:29 UTC), r2–r5 (fix rounds on the light), r6 (the block + the global list,
-20:17–21:37 UTC), r7 (the allocation fix, see A-alloc-rate). Numbers below are r6's unless marked.
+Runs: r1 (first block, 18:29 UTC), r2–r5 (fix rounds on the light and the IBL), r6 (the block + the global
+list, 20:17–21:37 UTC), r8 and r9 (the allocation fix; r9 = the final code: A1, A20b, A55, A57, A-hour-keys,
+A-weather-states, A-biome-grade, A-look-ibl, A-alloc-rate, V-calima, V31-night, V-sky-weathers all re-run and
+unchanged in result). The light changes after r6 are allocation guards and the fogbank/squall tuning; every
+action row re-run after them reads the same numbers. Numbers below are r6's unless marked.
 
 ### 2.1 This lane's §9 block (W1)
 
@@ -81,7 +84,7 @@ Runs: r1 (first block, 18:29 UTC), r2–r5 (fix rounds on the light), r6 (the bl
 | A90-rig-reclaim | **PASS** | geo +1, tex 0 |
 | A90-abs | **PASS** | post-GC heap 81.8 MB (≤ 450), GPU process 1213 MB (≤ 1500) |
 | A-vram-ledger | **PASS** | textures 63.8 MB, render targets 122.2 MB, geometry 78.1 MB, total 264.0 MB (bars 160 / 170 / 120 / 450) |
-| A-alloc-rate | see §2.5 | |
+| A-alloc-rate | FAIL (row) / **world-sky owner PASS** | baseline guard for world-sky 1.015× (bar 1.10×) in r9 on the final code; the row fails on other owners (§2.5); the absolute bars are graded at the W1-exit global run (R67 c) |
 | A-ID-ip-assets-gone | **PASS** | |
 | A-assets-tracked | **PASS** | |
 | A-licence-manifest | PENDING | only the `third-party` clause pending (not this lane's); this lane added no asset |
@@ -123,13 +126,17 @@ Frames: `scratchpad/r5/world-sky/r6/shots/gates/{V-calima,V31-night,V-sky-trade,
 |---|---|---|---|
 | r6 | 287.56 | 1.845 | the rewrite as first built: the full light/sky/fog state recomputed every frame |
 | r8 | 206.24 | 1.323 | the full state recomputed only when something moves (hour ≥ 0.002 h, a fade, a flash, the biome grade, a snap); biome re-sampled on 2 m moves; redundant per-frame copies dropped |
-| r9 | (pending, filled below) | | pooled lamp lights skipped by day, the fire re-read every 0.25 s, perception and focal cached, rain work only with rain |
+| r9 (final code) | **158.15** | **1.015** (KB/frame 1.007×) — **PASS for this owner** | pooled lamp lights skipped by day, the fire re-read every 0.25 s, perception and focal cached, rain work only with rain, grass casters on a 0.5 m move, the shadow policy on a tier change |
 
 In node (V8 sampling profiler, mock renderer) `Environment.update` allocates under 4 B/frame before and after:
 the Chrome cost is in stores into tagged fields (three's shared `{ value }` uniform map, Color/Vector fields),
 which only skipping the stores removes. Per-function numbers (R67 a: reported, not graded): r8 `update`
 79.5 KB/s, `registerMaterial` 52.6 (the material scan, as in Round 4), `_updateNightLights` 45.9,
-`_renderShafts` 16.2 (Round-4 pass), `_applyFrame` 9.1, `_updateBiome` 4.1, `_updateLightning` 4.1.
+`_renderShafts` 16.2 (Round-4 pass), `_applyFrame` 9.1, `_updateBiome` 4.1, `_updateLightning` 4.1. r9: `update` 62.5,
+`registerMaterial` 54.4, `_renderShafts` 13.6, `_updateGrassCasters` 9.3, `_applyFrame` 7.7, `_updateBiome` 7.3,
+`_updateNightLights` 5.9. The row as a whole still FAILs in r9 on other owners (`instruments-core` 10.1×,
+`legacy-species` 1.18×; r8 named `frozen-ui-engines` 1.12× and `progression` 1.10×): they move run to run and are
+not this lane's (R67).
 
 ## 3. Published API (exact signatures)
 
