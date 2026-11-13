@@ -9,7 +9,7 @@
  *   disposeSkinLook()                                    (frees the shared micro-normal tile; also freed with the last skin)
  *
  * A shader patch on the skin's own MeshStandardMaterial: no new draw, no per-frame work. The sun's direct term becomes:
- *   - C-01: a per-channel WRAPPED Lambert, w = (0.35, 0.20, 0.14) (fix round 3: was LOOK's 0.50 / 0.24 / 0.16, which held the
+ *   - C-01: a per-channel WRAPPED Lambert, w = (0.40, 0.21, 0.14) (fix round 3: was LOOK's 0.50 / 0.24 / 0.16, which held the
  *     shadow cheek at the top of A-skin-scatter (a), its lit:shadow on the floor of (b) and its chroma at 40 against the key-art
  *     panels' 22; chosen off a live sweep of wrap x fill, D-skin-sweep): past the terminator red light still
  *     arrives, green less, blue hardly, so the shadow side of dark skin stays a warm red-brown with form and the terminator is soft;
@@ -22,7 +22,7 @@
  *     `bakeThinness`; 1 at <= 5 mm of tissue, 0 at >= 25 mm), tinted (1.0, 0.36, 0.20) x 0.6, seen when the sun is behind;
  *   - C-02: TWO GGX lobes, the second at x0.55 roughness and weight 0.15, under a cavity specular occlusion (AO^2 of the baked
  *     map), and the salt paste's specular x0.3 (its texels are the only ones bright enough to be paste: albedo luminance);
- *   - C-02: a 128^2 tiling micro-pore normal at UV x24 on the face (the `_CALZONE` x weight, x0.35), fading out from 1.5 to 3 m;
+ *   - C-02: a 128^2 tiling micro-pore normal at UV x24 on the face (the `_CALZONE` x weight, x1.2: D-detail-sweep), fading out from 1.5 to 3 m;
  *   - C-03: the cornea (`_CALZONE` y) at roughness 0.04 and the lower lid's wet line (z) at 0.10, and two analytic SKY-WINDOW lobes on the
  *     cornea in the sky's hue, faded out with the sky's luminance (gone at night): the bright sky round the sun (the catch-light
  *     in the iris) and the horizon sky, Fresnel-weighted (the wet rim along the cornea's outline in profile).
@@ -30,7 +30,7 @@
  *
  * The fade clone (src/entities/player.js `_collectMaterials`) owns the material's onBeforeCompile; this composes with whatever
  * is there (and with world-sky's CSM/fog wrapper, which composes the same way), and extends the program cache key.
- * R59 c: the emissive hero fill drops to x0.4 here (the scatter carries the shadow side); src/hero/index.js still scales
+ * R59 c: the emissive hero fill drops to x0.55 here (the scatter carries the shadow side); src/hero/index.js still scales
  * emissiveIntensity by the scene's ambient every frame.
  *
  * Tiers (LOOK §4.4): low = wrap only, one lobe, no transmission, no detail; medium = no detail normal; high, ultra = all.
@@ -38,7 +38,7 @@
 import { DataTexture, RepeatWrapping, LinearMipmapLinearFilter, LinearFilter, RGBAFormat, UnsignedByteType, Vector3, Vector4 } from 'three';
 
 const TINT = '1.0, 0.36, 0.20';
-const FILL = 0.4;
+const FILL = 0.55;
 
 /** The shared 128^2 micro-pore normal tile (deterministic; built once, freed with the last skin that uses it). */
 let micro = null, microRefs = 0;
@@ -201,8 +201,8 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
   const low = tier === 'low', medium = tier === 'medium';
   const U = {
     calSkinK: { value: 1 }, calThinK: { value: low ? 0 : 1 },
-    calWrap: { value: new Vector3(0.35, 0.20, 0.14) }, calEdgeKeep: { value: 0.6 },
-    calLobeK: { value: low ? 0 : 1 }, calDetailK: { value: low || medium ? 0 : 0.35 }, calSkyK: { value: 3.0 }, calWinK: { value: 30 },
+    calWrap: { value: new Vector3(0.40, 0.21, 0.14) }, calEdgeKeep: { value: 0.6 },
+    calLobeK: { value: low ? 0 : 1 }, calDetailK: { value: low || medium ? 0 : 1.2 }, calSkyK: { value: 3.0 }, calWinK: { value: 30 },
     calFlat: { value: new Vector4(0.2, 0.2, 0.2, 0) }, calMicro: { value: microTile() },
   };
   microRefs++;
@@ -227,7 +227,7 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
   material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calSkin3`;
   material.userData.calSkin = 1;
   material.userData.calSkinU = U;
-  // R59 c / LOOK C-01: the hero fill drops once the scatter carries the shadow side (x0.4; fix round 3, was x0.6, off the live sweep)
+  // R59 c / LOOK C-01: the hero fill drops once the scatter carries the shadow side (x0.55; fix round 3, was x0.6: off the live sweep, D-skin-sweep, and three readings a run)
   if (material.emissive) material.emissive.multiplyScalar(FILL);
   const onDispose = () => {
     material.removeEventListener('dispose', onDispose);

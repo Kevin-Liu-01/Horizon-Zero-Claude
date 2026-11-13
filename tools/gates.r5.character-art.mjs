@@ -652,11 +652,27 @@ export const GATES = [
       // rim against her shadow cheek, then with the transmission term off (the negative control)
       await relight(18.75, 180);
       { const rim = []; { const v = new T3(), n = tpl.geometry.attributes.position.count, P = []; for (let i = 0; i < n; i++) { tpl.getVertexPosition(i, v); if (v.x > 0.074 && v.y > LM.cheekL.now[1] - 0.012 && v.y < LM.brow.now[1] + 0.004 && v.z < LM.jawL.now[2] + 0.012) P.push(i); } rim.push(...P); }
-        const ear = () => { const s = shoot(Math.PI / 5); let e = 0; for (const i of rim) { const q = s.proj(at(i)); e = Math.max(e, s.patch(q, 1).L); } return { e, c: s.patch(s.proj(face('cheekL'))).L }; };
+        // (fix round 3: a rim vertex on the ear's outline can project its 3 x 3 patch onto the sky behind her; r3 read 0.104 off one such
+        // patch with the transmission on AND off. A patch counts only if all 9 pixels are hers in a key render of the same view)
+        const keyImg = (yaw) => {
+          const sc = C.scene, Rr = C.renderer, hid = [];
+          for (const o of sc.children) if (o !== p.model && !o.isLight && o.visible) { o.visible = false; hid.push(o); }
+          const bg0 = sc.background, fog0 = sc.fog; sc.background = null; sc.fog = null;
+          const cc = Rr.getClearColor(live.material.color.clone()), ca = Rr.getClearAlpha(); Rr.setClearColor(0x00ff00, 1);
+          const k = shoot(yaw).img;
+          Rr.setClearColor(cc, ca); sc.background = bg0; sc.fog = fog0; for (const o of hid) o.visible = true;
+          return k;
+        };
+        const ear = () => {
+          const s = shoot(Math.PI / 5), K = keyImg(Math.PI / 5);
+          const hers = (q) => { for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const X = Math.round(q[0]) + i, Y = Math.round(q[1]) + j; if (X < 0 || Y < 0 || X >= W || Y >= H) return false; const o = (Y * W + X) * 4; if (K.data[o + 1] - Math.max(K.data[o], K.data[o + 2]) > 60) return false; } return true; };
+          let e = 0, used = 0; for (const i of rim) { const q = s.proj(at(i)); if (!hers(q)) continue; used++; e = Math.max(e, s.patch(q, 1).L); }
+          return { e, c: s.patch(s.proj(face('cheekL'))).L, used };
+        };
         const on = ear();
         let off = null;
         if (U) { U.calThinK.value = 0; off = ear(); U.calThinK.value = 1; }
-        out.backlit = { earRimVerts: rim.length, earHelix: r3(on.e), shadowCheek: r3(on.c), ratio: +(on.e / on.c).toFixed(2), ratioThinOff: off ? +(off.e / off.c).toFixed(2) : null }; }
+        out.backlit = { earRimVerts: rim.length, earRimVertsOnHer: on.used, earHelix: r3(on.e), shadowCheek: r3(on.c), ratio: +(on.e / on.c).toFixed(2), ratioThinOff: off ? +(off.e / off.c).toFixed(2) : null }; }
       // NIGHT 01:00
       await relight(1, -38);
       { const s = shoot(0); const a = s.patch(s.proj(face('cheekL'))), b = s.patch(s.proj(face('cheekR'))); out.night = { shadowCheek: r3(Math.min(a.L, b.L)) }; }

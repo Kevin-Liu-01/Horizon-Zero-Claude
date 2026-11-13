@@ -554,7 +554,7 @@ export function saltPaste({ y, half, xMax, salt = '#EDEAE2', thick = 0.00085, ce
     // (fix round 2, Nov 12, R66 C-02: chalk is never paper-white; albedo <= 0.85, with dusty grey-beige drifts where the dust and sweat sit,
     // so in full sun it stays below the clip and keeps its texture)
     const dust = smooth(0.35, 0.75, noise3(X * 70 + 9, Y * 120, 8.8));
-    const tone = (0.56 + 0.13 * lump + 0.03 * grain + 0.12 * thickK + 0.06 * plate + 0.06 * streak2 + 0.05 * curl * smooth(0.4, 0.7, thickK) - 0.07 * dust) * (1 + 0.3 * Math.max(-0.6, Math.min(0.6, dH)));
+    const tone = (0.63 + 0.13 * lump + 0.03 * grain + 0.12 * thickK + 0.06 * plate + 0.06 * streak2 + 0.05 * curl * smooth(0.4, 0.7, thickK) - 0.07 * dust) * (1 + 0.3 * Math.max(-0.6, Math.min(0.6, dH)));
     const warm = mix(0.86, 1, thickK) * (1 - 0.04 * dust);
     let cr = Math.min(217, S[0] * tone), cg = Math.min(214, S[1] * tone * warm), cb = Math.min(206, S[2] * tone * warm * warm);
     const dk = crack * 0.62;
@@ -654,7 +654,7 @@ export function eyeOpening(faceGrid, eyeCentre, { rx = 0.024, ry = 0.016, step =
  * third, a short flick past the outer corner), a thinner one at the outer half of the
  * bottom, a warm crease above the lid, and the pink of the inner corner.
  */
-export function lidLines({ open, side, ink = '#1A100C', w = 0.0015, crease = 0.0052, shade = 0.0024 } = {}) {
+export function lidLines({ open, side, ink = '#1A100C', w = 0.0018, crease = 0.0052, shade = 0.0028 } = {}) {
   const C = hex(ink);
   const inner = side > 0 ? open.x0 : open.x1, outer = side > 0 ? open.x1 : open.x0;
   const len = Math.abs(outer - inner);
@@ -677,7 +677,7 @@ export function lidLines({ open, side, ink = '#1A100C', w = 0.0015, crease = 0.0
     // fix round 3 (LOOK C-03: "a 1 mm lash-shade band"; the liner was 0.9 mm and the lid over it read as bright as the lid above): the
     // lashes' own shade on the lid, a soft dark band over the liner, `shade` tall
     if (dy > 0 && dy < shade && f > -0.05 && f < 1.08) {
-      const k = (1 - smooth(shade * 0.35, shade, dy)) * 0.55 * smooth(-0.05, 0.12, f) * (1 - smooth(0.95, 1.08, f));
+      const k = (1 - smooth(shade * 0.45, shade, dy)) * 0.8 * smooth(-0.05, 0.12, f) * (1 - smooth(0.95, 1.08, f));
       T.r *= 1 - k * 0.92; T.g *= 1 - k; T.b *= 1 - k;
     }
     // the crease above the lid

@@ -457,11 +457,11 @@ export async function build({ out = ROOT } = {}) {
       // 6-link chain: 1-2 of 24 moments at reach 3 in r5 and r6. The fringe is the last 2.5 cm
       // fix round 3 (the judges: "the tail leaves the knot as a flat plate", "a wide flat purple panel with a hard angular fold", "taper
       // from the root rather than holding 0.10 m for 60 % of the length"): the stiff, nearly level root stays a gathered ROLL with C-05's
-      // three pleats (5.5 mm deep, peak to peak) until the strip turns down (it opens over u 0.34-0.56), the free strip tapers from the
-      // root (0.10 m where it opens, 0.07 m at the fringe), its section is a gentle cup (curl 0.18), its hems are C-05's 4 mm, and each
+      // three pleats (5.5 mm deep, peak to peak) until the strip turns down (it opens over u 0.26-0.46), the free strip tapers from
+      // halfway (0.10 m, to 0.07 m at the fringe; a taper from the bend cost A-tail-legible a side-view moment in r3), its section is a gentle cup (curl 0.18), its hems are C-05's 4 mm, and each
       // row is skinned over FOUR joints (cubic B-spline), so the stiff-to-free hand-over drapes over two links instead of folding at one
-      width: (u) => (0.10 - 0.03 * Math.pow(smooth(0.36, 0.97, u), 0.85)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.18, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 21, across: 5, rootBack: 0.014,
-      open: [0.34, 0.56], pleats: 0.00275 / S,
+      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.18, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 21, across: 5, rootBack: 0.014,
+      open: [0.26, 0.46], pleats: 0.00275 / S,
       rootRows: 4, smoothSkin: 4, hem: 0.004, ripple: 0.0042 },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
     tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012 },
@@ -576,7 +576,7 @@ export async function build({ out = ROOT } = {}) {
     const outJ = sd.getRoot().listSkins()[0].listJoints().map((jn) => jn.getName());
     return outfitSkinSampler(sn.map((n) => n.getMesh().listPrimitives()[0]), outJ, joints, (q) => q[1] > 1.40 && Math.abs(q[0]) < 0.16 && q[2] > -0.16);
   })();
-  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV: collarUV, seg: 19, reach: 1.01, skinAt: smockSkin, drop: 0.014, twoSided: true });
+  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV: collarUV, seg: 19, reach: 1.01, skinAt: smockSkin, drop: 0.014 });
   // fix round 2, Nov 12 (LOOK C-01): the tissue's thickness behind each vertex, for the skin light's back-transmission (src/hero/skinLook.js)
   // (the ears only: the lips, the nose wings and the lower lids are thin too, with the mouth, the nostrils and the ball a few mm
   // behind them, but in a back light they glowed as a red nostril and a lit lower lid, which the backlit row forbids)
