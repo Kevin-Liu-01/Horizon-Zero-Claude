@@ -525,6 +525,14 @@ export function saltPaste({ y, half, xMax, salt = '#EDEAE2', thick = 0.00085, ce
     // the paste thins to a dry drag: the skin shows through in streaks along the stroke well before the edge
     let cov = smooth(0.1, 0.4, thickK * (0.84 + 0.5 * (streak2 + 0.5)) + drag * 0.22 * (1 - smooth(0.35, 0.8, thickK)));
     cov *= smooth(0.0, 0.5, endK + drag * 0.3 + 0.03) * (1 - smooth(xMax * 0.96, xMax * 1.08, Math.abs(X)));
+    // fix round 3 (the judges: "a neat bright stroke with crisp edges, a decal read"; Kevin's face panels: a finger-wiped chalk smear):
+    // the dry edge breaks into GRIT, flecks of chalk a texel or two across (1-2 mm, light on the skin, never dark specks in the white),
+    // dense in the stroke's thin margin and scattered past it where the finger dragged dust, so the stroke has no clean outline
+    const gr = (noise3(X * 1100 + 3, Y * 1100, 9.1) - 0.5) * 0.65 + (noise3(X * 2300, Y * 2300 + 5, 1.3) - 0.5) * 0.35 + 0.5;
+    const margin = smooth(0.015, 0.1, thickK) * (1 - smooth(0.32, 0.55, thickK));
+    const fleck = smooth(0.56, 0.63, gr + 0.22 * thickK + 0.08 * drag) * margin * smooth(0.0, 0.35, endK + 0.05);
+    const dust2 = smooth(0.70, 0.76, gr) * (1 - smooth(1.05, 1.85, Math.abs(dy) / hh)) * smooth(0.05, 0.4, endK) * smooth(0.45, 0.6, noise3(X * 160, Y * 90, 2.2));
+    cov = Math.max(cov, fleck * 0.92, dust2 * 0.8);
     // the contact line it casts on the skin under its lower edge, whatever the light
     const under = smooth(0.9, 1.25, -dy / hh) * (1 - smooth(1.45, 2.0, -dy / hh)) * smooth(0.25, 0.7, endK);
     if (under > 0) { const f = 1 - 0.18 * under * (1 - cov); T.r *= f; T.g *= f * 0.98; T.b *= f * 0.97; }
@@ -555,7 +563,7 @@ export function saltPaste({ y, half, xMax, salt = '#EDEAE2', thick = 0.00085, ce
     T.r = mix(T.r, cr, a); T.g = mix(T.g, cg, a); T.b = mix(T.b, cb, a);
     // thickness: the stroke's section, its slow lumps, each plate's own height with its edges curling up, sunk in the cracks
     T.h += a * thickK * thick + a * (lump - 0.5) * thick * 0.7 + a * plate * thick * 0.3 + a * curl * thick * 0.35 - crack * a * thick * 0.9;
-    T.rough = mix(T.rough, 0.9, a);
+    T.rough = mix(T.rough, 0.85, a);                          // LOOK C-02: chalk at 0.85 (the skin light takes its specular x0.3)
     T.ao *= 1 - crack * 0.35 * a;
   };
 }

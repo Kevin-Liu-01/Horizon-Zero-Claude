@@ -568,7 +568,7 @@ export const GATES = [
   {
     // fix round 2, Nov 12, ROUND5-LOOK C-01: the skin's own light (src/hero/skinLook.js) measured on the close-up's own staging
     id: 'A-skin-scatter', kind: 'action', lane: 'character-art', settle: 800, timeout: 240000,
-    title: 'LOOK C-01 skin light (src/hero/skinLook.js): front close-up at 0.8 m, 9 x 9 px patches at the projected face landmarks (linear relative luminance of the displayed frame). (a) DAY 11:00: shadow cheek 0.022-0.060; (b) lit:shadow 3.5-5.5; (c) the 80 -> 20 % fall where the terminator runs with no cast shadow across it (the forehead, 1.2 cm over the brow, 5 cm either side) spans >= 10 % of the face\'s width; (d) shadow-cheek warmth (R-B)/(R+G+B) >= 0.40; (e) BACKLIT 18:45, the 3/4 on her left: the brightest patch on her left ear\'s rim >= 1.5 x the shadow cheek, and < 1.15 x with the transmission term off (negative control); (f) NIGHT 01:00: shadow cheek <= 0.010; (g) the live skin carries userData.calSkin === 1, Brea\'s draws and texture sizes are unchanged',
+    title: 'LOOK C-01 skin light (src/hero/skinLook.js): front close-up at 0.8 m, the idle frozen at the staged instant (fix round 3), 9 x 9 px patches at the projected face landmarks (linear relative luminance of the displayed frame). (a) DAY 11:00: shadow cheek 0.022-0.060; (b) lit:shadow 3.5-5.5; (c) the 80 -> 20 % fall where the terminator runs with no cast shadow across it (the forehead, 1.2 cm over the brow, 5 cm either side) spans >= 10 % of the face\'s width; (d) shadow-cheek warmth (R-B)/(R+G+B) >= 0.40; (e) BACKLIT 18:45, the 3/4 on her left: the brightest patch on her left ear\'s rim >= 1.5 x the shadow cheek, and < 1.15 x with the transmission term off (negative control); (f) NIGHT 01:00: shadow cheek <= 0.010; (g) the live skin carries userData.calSkin === 1, Brea\'s draws and texture sizes are unchanged',
     setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
     })()`),
     assert: `(async () => {
@@ -588,9 +588,12 @@ export const GATES = [
       const relight = async (hour, off) => {
         env.setTime(hour); env.setWeather('clear', 0);
         const sun = env.sunDir, h = Math.atan2(sun.x, sun.z) + off * Math.PI / 180;
-        if (C.engine) C.engine.timeScale = 1;
-        for (let i = 0; i < 30; i++) { p.heading = h; await frames(1); }
-        if (C.engine) C.engine.timeScale = 0; await frames(2);
+        // fix round 3 (the judge: "the staging runs the engine at timeScale 1 for 30 frames with the idle live, so the head pose and the
+        // cheek patches move between runs"): the idle stays FROZEN at the staged instant; only the sun and her heading change
+        if (C.engine) C.engine.timeScale = 0;
+        p.heading = h; p.model.rotation.y = h;
+        await frames(4);
+        p.heading = h; p.model.rotation.y = h;
         p.model.updateMatrixWorld(true);
       };
       const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
@@ -671,6 +674,435 @@ export const GATES = [
     })()`,
   },
   {
+    // fix round 3, ROUND5-LOOK C-02 (§7 character-art block, at its literal bars)
+    id: 'A-skin-spec', kind: 'action', lane: 'character-art', settle: 800, timeout: 240000,
+    title: 'LOOK C-02 skin specular and micro-detail (src/hero/skinLook.js + the recipe ORM): the 3/4 DAY close-up at 0.8 m re-rendered with a flat skin albedo (gate-only override, calFlat): (a) highlights (>= 2.2 x the face median, linear luminance) cover 1.5-8 % of the face box; (b) >= 60 % of them within 2 cm of the forehead, nose-bridge and cheekbone landmarks; (c) MACRO, the lit cheek at 0.4 m: high-pass RMS 0.012-0.040, falling >= 30 % with the detail weight forced to 0, and the detail weight 0 at 3 m (the frames with and without it identical); (d) in the true albedo the salt-line >= 2.5 x the lit cheek with >= 90 % of its pixels <= 0.97 sRGB; (e) brea.glb <= 0.7 MB',
+    setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
+    })()`),
+    assert: `(async () => {
+      const C = __CTX__, p = C.player;
+      const S = await import('/src/hero/sheets.js');
+      ${GEOM}
+      ${LMK}
+      await relight(11, -38);
+      p.hero?.kit?.setHidden(3);
+      const G = skinLive(), U = G.live.material.userData.calSkinU;
+      if (!U || !G.Z || !U.calFlat) return { pass: false, detail: { calSkinU: !!U, calzone: !!G.Z, calFlat: !!U?.calFlat } };
+      const Fr = frame();
+      const W = 666, H = 1125, FOV = 29;
+      const d34 = Fr.view(Math.PI / 5);
+      const pos = Fr.cen.clone().add(d34.clone().multiplyScalar(0.8));
+      const cam = camOf(pos.toArray(), Fr.cen.toArray(), W, H, FOV);
+      const shoot = () => S.liveView(C, pos.toArray(), Fr.cen.toArray(), { width: W, height: H, fov: FOV });
+      const N = shoot();
+      U.calFlat.value.set(0.20, 0.11, 0.07, 1);
+      const F = shoot();
+      G.live.visible = false; const Hd = shoot(); G.live.visible = true;
+      // the face: front-facing skin triangles on the face's detail zone, not the eyes, where the skin is the visible surface
+      const Z = G.Z;
+      const geo = raster(cam, W, H, G, (a, b, c) => Z[a * 4] + Z[b * 4] + Z[c * 4] > 3 * 160 && Z[a * 4 + 3] + Z[b * 4 + 3] + Z[c * 4 + 3] === 0);
+      const mask = new Uint8Array(W * H);
+      let x0 = W, x1 = 0, y0 = H, y1 = 0, nm = 0;
+      for (let i = 0; i < W * H; i++) {
+        if (!geo[i]) continue;
+        const o = i * 4; if (Math.abs(F.data[o] - Hd.data[o]) + Math.abs(F.data[o + 1] - Hd.data[o + 1]) + Math.abs(F.data[o + 2] - Hd.data[o + 2]) < 6) continue;
+        mask[i] = 1; nm++; const x = i % W, y = (i / W) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      }
+      const Ls = []; for (let i = 0; i < W * H; i++) if (mask[i]) Ls.push(lum(F.data, i * 4));
+      Ls.sort((a, b) => a - b);
+      const med = Ls[Ls.length >> 1] || 1e-6;
+      const box = (x1 - x0 + 1) * (y1 - y0 + 1);
+      const T3b = p.position.constructor;
+      const proj = (w) => { const v = w.clone().project(cam); return [(v.x + 1) / 2 * W, (1 - v.y) / 2 * H]; };
+      const lms = [face('brow').add(Fr.U1.clone().multiplyScalar(0.015)), face('noseBridge'), face('cheekL').add(Fr.U1.clone().multiplyScalar(0.009)), face('cheekR').add(Fr.U1.clone().multiplyScalar(0.009))];
+      const lp = lms.map((w) => ({ c: proj(w), r: Math.hypot(...proj(w.clone().add(Fr.R0.clone().multiplyScalar(0.02))).map((q, k) => q - proj(w)[k])) }));
+      let hi = 0, near = 0;
+      const hiMask = new Uint8Array(W * H);
+      for (let i = 0; i < W * H; i++) if (mask[i] && lum(F.data, i * 4) >= 2.2 * med) {
+        hi++; hiMask[i] = 1; const x = i % W, y = (i / W) | 0;
+        if (lp.some((l) => Math.hypot(x - l.c[0], y - l.c[1]) <= l.r)) near++;
+      }
+      const cover = hi / Math.max(1, box), nearK = hi ? near / hi : 0;
+      // (d) the paste: where the true albedo is far brighter than the flat one under the same light
+      const lc = [proj(face('cheekL')), proj(face('cheekR'))];
+      const patch = (img, c) => { let L = 0, n = 0; for (let j = -4; j <= 4; j++) for (let i = -4; i <= 4; i++) { const X = Math.round(c[0]) + i, Y = Math.round(c[1]) + j; if (X < 0 || Y < 0 || X >= W || Y >= H) continue; L += lum(img.data, (Y * W + X) * 4); n++; } return L / n; };
+      const litCheek = Math.max(patch(N, lc[0]), patch(N, lc[1]));
+      const pasteL = []; let clip = 0;
+      for (let i = 0; i < W * H; i++) {
+        if (!mask[i]) continue;
+        const ln = lum(N.data, i * 4), lf = lum(F.data, i * 4);
+        if (ln > 2.0 * lf && ln > 0.02) { pasteL.push(ln); const o = i * 4; if (Math.max(N.data[o], N.data[o + 1], N.data[o + 2]) > 0.97 * 255) clip++; }
+      }
+      pasteL.sort((a, b) => a - b);
+      const pasteMed = pasteL.length ? pasteL[pasteL.length >> 1] : 0;
+      // (c) MACRO: the lit cheek at 0.4 m, flat albedo, detail on and off; then the same at 3 m
+      const litW = patch(N, lc[0]) >= patch(N, lc[1]) ? face('cheekL') : face('cheekR');
+      const MW = 600, MH = 600;
+      const mpos = litW.clone().add(d34.clone().multiplyScalar(0.4));
+      const macro = (dist) => { const q = litW.clone().add(d34.clone().multiplyScalar(dist)); return S.liveView(C, q.toArray(), litW.toArray(), { width: MW, height: MH, fov: 29 }); };
+      const hp = (img) => {
+        const L = new Float32Array(MW * MH); for (let i = 0; i < MW * MH; i++) { const o = i * 4; L[i] = (0.2126 * img.data[o] + 0.7152 * img.data[o + 1] + 0.0722 * img.data[o + 2]) / 255; }
+        const r = 5, x0b = MW / 2 - 70, y0b = MH / 2 - 70; let s2 = 0, n = 0;
+        for (let y = y0b; y < y0b + 140; y++) for (let x = x0b; x < x0b + 140; x++) { let b = 0, m = 0; for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) { b += L[(y + j) * MW + x + i]; m++; } const d = L[y * MW + x] - b / m; s2 += d * d; n++; }
+        return Math.sqrt(s2 / n);
+      };
+      const M1 = macro(0.4); U.calDetailK.value = 0; const M0 = macro(0.4); U.calDetailK.value = 1;
+      const rms1 = hp(M1), rms0 = hp(M0), fall = rms1 > 0 ? (rms1 - rms0) / rms1 : 0;
+      const far1 = macro(3.02); U.calDetailK.value = 0; const far0 = macro(3.02); U.calDetailK.value = 1;
+      let farDiff = 0; for (let i = 0; i < far1.data.length; i += 4) if (Math.abs(far1.data[i] - far0.data[i]) + Math.abs(far1.data[i + 1] - far0.data[i + 1]) + Math.abs(far1.data[i + 2] - far0.data[i + 2]) > 3) farDiff++;
+      U.calFlat.value.w = 0;
+      const bytes = (await (await fetch('/models/hero/brea.glb')).arrayBuffer()).byteLength;
+      // the sheet: flat 3/4 with its highlights (red) and the landmark circles; the true 3/4 with the paste (cyan); the macro on / off
+      const g = sheetOf();
+      const Fo = new ImageData(new Uint8ClampedArray(F.data), W, H), No = new ImageData(new Uint8ClampedArray(N.data), W, H);
+      for (let i = 0; i < W * H; i++) { if (hiMask[i]) { Fo.data[i * 4] = 255; Fo.data[i * 4 + 1] = 30; Fo.data[i * 4 + 2] = 30; } }
+      for (let i = 0; i < W * H; i++) if (mask[i]) { const ln = lum(N.data, i * 4), lf = lum(F.data, i * 4); if (ln > 2.0 * lf && ln > 0.02) { No.data[i * 4] = 0; No.data[i * 4 + 1] = 230; No.data[i * 4 + 2] = 255; } }
+      putImg(g, Fo, 0, 0, 533, 900); putImg(g, No, 533, 0, 533, 900);
+      g.strokeStyle = '#ffd400'; g.lineWidth = 2; for (const l of lp) { g.beginPath(); g.arc(l.c[0] * 533 / W, l.c[1] * 900 / H, l.r * 533 / W, 0, Math.PI * 2); g.stroke(); }
+      putImg(g, M1, 1066, 0, 534, 450, 150, 150, 300, 300); putImg(g, M0, 1066, 450, 534, 450, 150, 150, 300, 300);
+      tag(g, 'FLAT ALBEDO 3/4 DAY: highlights >= 2.2x median (red), 2 cm landmark rings', 12, 24);
+      tag(g, 'TRUE ALBEDO: the paste (cyan)', 545, 24);
+      tag(g, 'MACRO 0.4 m, detail on: RMS ' + rms1.toFixed(4), 1078, 24); tag(g, 'detail off: RMS ' + rms0.toFixed(4), 1078, 474);
+      const terms = {
+        a: cover >= 0.015 && cover <= 0.08,
+        b: nearK >= 0.60,
+        c: rms1 >= 0.012 && rms1 <= 0.040 && fall >= 0.30 && farDiff === 0,
+        d: pasteL.length > 50 && pasteMed >= 2.5 * litCheek && clip <= 0.10 * pasteL.length,
+        e: bytes <= 700000,
+      };
+      return { pass: Object.values(terms).every(Boolean), detail: { terms, faceMaskPx: nm, faceBox: box, faceMedian: +med.toFixed(4), highlights: { px: hi, cover: +cover.toFixed(4), nearLandmarks: +nearK.toFixed(3) }, macro: { rmsOn: +rms1.toFixed(4), rmsOff: +rms0.toFixed(4), fall: +fall.toFixed(3), at3mDifferingPx: farDiff }, paste: { px: pasteL.length, median: +pasteMed.toFixed(4), litCheek: +litCheek.toFixed(4), ratio: +(pasteMed / Math.max(1e-6, litCheek)).toFixed(2), over097: clip, over097K: +(clip / Math.max(1, pasteL.length)).toFixed(3) }, bytes } };
+    })()`,
+  },
+  {
+    // fix round 3, ROUND5-LOOK C-03 (§7 character-art block, at its literal bars)
+    id: 'A-eye-catchlight', kind: 'action', lane: 'character-art', settle: 800, timeout: 300000,
+    title: 'LOOK C-03 eyes (the _calZone cornea and tear line, the sky-window lobe, the lash line): front and 3/4 at 0.8 m, 1600 x 900 at DPR 1.25. (a) DAY 11:00 and DUSK 18.4: each iris disc in view holds a highlight blob >= 2 x 2 px, >= 0.75 sRGB and >= 4 x the iris median; (b) NIGHT 01:00: no iris pixel > 0.50 sRGB; (c) PROFILE (both sides, day): a >= 1 px rim highlight (>= 2.5 x the cornea median and >= 0.45 sRGB, on the outline or 1 px inside it) on >= 30 % of the cornea outline; (d) front, day: the 2 mm band over the upper lid margin <= 0.45 x the lid 4 mm above, over >= 70 % of the eye width; (e) is A-wrap-closed\'s own row in the same run (0 px). The iris is the cornea zone that is visible: the skin is flattened to a green albedo and the hair + wrap hidden for the mask render only',
+    setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
+    })()`),
+    assert: `(async () => {
+      const C = __CTX__, p = C.player;
+      const S = await import('/src/hero/sheets.js');
+      ${GEOM}
+      ${LMK}
+      p.hero?.kit?.setHidden(3);
+      let wrapM = null; p.model.traverse((o) => { if (o.isSkinnedMesh && o.name === 'Brea_HairWrap') wrapM = o; });
+      const W = 666, H = 1125, FOV = 29;
+      const out = { day: {}, dusk: {}, night: {}, profile: {}, lid: {} }, shots = [];
+      const views = { front: 0, '3/4': Math.PI / 5 };
+      const analyse = (yaw, withLid) => {
+        const G = skinLive(), U = G.live.material.userData.calSkinU, Z = G.Z, Fr = frame();
+        const pos = Fr.cen.clone().add(Fr.view(yaw).multiplyScalar(0.8));
+        const cam = camOf(pos.toArray(), Fr.cen.toArray(), W, H, FOV);
+        const N = S.liveView(C, pos.toArray(), Fr.cen.toArray(), { width: W, height: H, fov: FOV });
+        U.calFlat.value.set(0, 1, 0, 1); if (wrapM) wrapM.visible = false;
+        const K = S.liveView(C, pos.toArray(), Fr.cen.toArray(), { width: W, height: H, fov: FOV });
+        U.calFlat.value.w = 0; if (wrapM) wrapM.visible = true;
+        const green = (i) => { const o = i * 4; return K.data[o + 1] > 1.3 * K.data[o] + 4 && K.data[o + 1] > 1.3 * K.data[o + 2] + 4; };
+        const out2 = [];
+        for (const side of [1, -1]) {
+          const ctr = Fr.cen.clone().add(Fr.F0.clone().multiplyScalar(0.07));
+          const sideOf = (i) => (G.P[i * 3] - ctr.x) * Fr.R0.x + (G.P[i * 3 + 1] - ctr.y) * Fr.R0.y + (G.P[i * 3 + 2] - ctr.z) * Fr.R0.z > 0 ? 1 : -1;
+          const eyeM = raster(cam, W, H, G, (a, b, c) => Z[a * 4 + 3] > 200 && Z[b * 4 + 3] > 200 && Z[c * 4 + 3] > 200 && sideOf(a) === side, false);
+          const corM = raster(cam, W, H, G, (a, b, c) => Z[a * 4 + 1] + Z[b * 4 + 1] + Z[c * 4 + 1] > 3 * 128 && sideOf(a) === side, false);
+          const vis = new Uint8Array(W * H), iris = new Uint8Array(W * H); let nv = 0, ni = 0, x0 = W, x1 = 0, y0 = H, y1 = 0;
+          for (let i = 0; i < W * H; i++) if (eyeM[i] && !green(i)) { vis[i] = 1; nv++; if (corM[i]) { iris[i] = 1; ni++; const x = i % W, y = (i / W) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } }
+          const Li = []; for (let i = 0; i < W * H; i++) if (iris[i]) Li.push(lum(N.data, i * 4));
+          Li.sort((a, b) => a - b);
+          const med = Li.length ? Li[Li.length >> 1] : 0;
+          let maxS = 0; for (let i = 0; i < W * H; i++) if (iris[i]) { const o = i * 4; maxS = Math.max(maxS, (0.2126 * N.data[o] + 0.7152 * N.data[o + 1] + 0.0722 * N.data[o + 2]) / 255); }
+          // highlight blobs: >= 0.75 sRGB luma and >= 4 x the median (linear)
+          const hb = new Uint8Array(W * H);
+          for (let i = 0; i < W * H; i++) if (iris[i]) { const o = i * 4; const sl = (0.2126 * N.data[o] + 0.7152 * N.data[o + 1] + 0.0722 * N.data[o + 2]) / 255; if (sl >= 0.75 && lum(N.data, o) >= 4 * med) hb[i] = 1; }
+          let best = null; const seen = new Uint8Array(W * H);
+          for (let i = 0; i < W * H; i++) if (hb[i] && !seen[i]) {
+            let area = 0, bx0 = W, bx1 = 0, by0 = H, by1 = 0; const st = [i]; seen[i] = 1;
+            while (st.length) { const j = st.pop(); area++; const x = j % W, y = (j / W) | 0; bx0 = Math.min(bx0, x); bx1 = Math.max(bx1, x); by0 = Math.min(by0, y); by1 = Math.max(by1, y);
+              for (const q of [j - 1, j + 1, j - W, j + W]) if (q >= 0 && q < W * H && hb[q] && !seen[q]) { seen[q] = 1; st.push(q); } }
+            const bl = { area, w: bx1 - bx0 + 1, h: by1 - by0 + 1 };
+            if (!best || bl.area > best.area) best = bl;
+          }
+          const blobOk = !!best && best.w >= 2 && best.h >= 2 && best.area >= 4;
+          let lid = null;
+          if (withLid && nv > 40) {
+            // the margin per column: the topmost visible eye pixel; px per mm off the projection of 1 cm across the face
+            const pc = Fr.cen.clone().add(Fr.F0.clone().multiplyScalar(0.07)), q0 = pc.clone().project(cam), q1 = pc.clone().add(Fr.R0.clone().multiplyScalar(0.01)).project(cam);
+            const pxmm = Math.abs((q1.x - q0.x) / 2 * W) / 10;
+            let ex0 = W, ex1 = 0; for (let i = 0; i < W * H; i++) if (vis[i]) { const x = i % W; ex0 = Math.min(ex0, x); ex1 = Math.max(ex1, x); }
+            const a0 = Math.round(ex0 + 0.1 * (ex1 - ex0)), a1 = Math.round(ex1 - 0.1 * (ex1 - ex0));
+            let cols = 0, ok = 0; const ratios = [];
+            for (let x = a0; x <= a1; x++) {
+              let top = -1; for (let y = 0; y < H; y++) if (vis[y * W + x]) { top = y; break; }
+              if (top < 0) continue;
+              const band = (ya, yb) => { let L = 0, n = 0; for (let y = Math.max(0, Math.round(ya)); y <= Math.round(yb); y++) { L += lum(N.data, (y * W + x) * 4); n++; } return n ? L / n : 0; };
+              const A = band(top - 2 * pxmm, top - 1), B = band(top - 4.5 * pxmm, top - 3.5 * pxmm);
+              cols++; const r = B > 0 ? A / B : 9; ratios.push(r); if (r <= 0.45) ok++;
+            }
+            ratios.sort((a, b) => a - b);
+            lid = { cols, ok, k: cols ? +(ok / cols).toFixed(3) : 0, medianRatio: ratios.length ? +ratios[ratios.length >> 1].toFixed(3) : null, pxPerMm: +pxmm.toFixed(2) };
+          }
+          out2.push({ side: side > 0 ? 'her left' : 'her right', irisPx: ni, visPx: nv, median: +med.toFixed(4), maxSrgb: +maxS.toFixed(3), blob: best, blobOk, lid, box: [x0, y0, x1, y1] });
+        }
+        return { N, out: out2, cam };
+      };
+      const profile = (yaw) => {
+        const G = skinLive(), U = G.live.material.userData.calSkinU, Z = G.Z, Fr = frame();
+        const side = yaw > 0 ? 1 : -1;
+        const eyeC = face('brow').add(Fr.R0.clone().multiplyScalar(0.036 * side)).sub(Fr.U1.clone().multiplyScalar(0.023)).sub(Fr.F0.clone().multiplyScalar(0.018));
+        const PW = 600, PH = 600, PF = 11;
+        const pos = eyeC.clone().add(Fr.view(yaw).multiplyScalar(0.24));
+        const cam = camOf(pos.toArray(), eyeC.toArray(), PW, PH, PF);
+        const N = S.liveView(C, pos.toArray(), eyeC.toArray(), { width: PW, height: PH, fov: PF });
+        U.calFlat.value.set(0, 1, 0, 1); if (wrapM) wrapM.visible = false;
+        const K = S.liveView(C, pos.toArray(), eyeC.toArray(), { width: PW, height: PH, fov: PF });
+        U.calFlat.value.w = 0; if (wrapM) wrapM.visible = true;
+        const green = (i) => { const o = i * 4; return K.data[o + 1] > 1.3 * K.data[o] + 4 && K.data[o + 1] > 1.3 * K.data[o + 2] + 4; };
+        const ctr = Fr.cen.clone().add(Fr.F0.clone().multiplyScalar(0.07));
+        const sideOf = (i) => (G.P[i * 3] - ctr.x) * Fr.R0.x + (G.P[i * 3 + 1] - ctr.y) * Fr.R0.y + (G.P[i * 3 + 2] - ctr.z) * Fr.R0.z > 0 ? 1 : -1;
+        const corM = raster(cam, PW, PH, G, (a, b, c) => Z[a * 4 + 1] + Z[b * 4 + 1] + Z[c * 4 + 1] > 3 * 128 && sideOf(a) === side, false);
+        const cor = new Uint8Array(PW * PH); const Lc = [];
+        for (let i = 0; i < PW * PH; i++) if (corM[i] && !green(i)) { cor[i] = 1; Lc.push(lum(N.data, i * 4)); }
+        Lc.sort((a, b) => a - b);
+        const med = Lc.length ? Lc[Lc.length >> 1] : 0;
+        const bright = (i) => { const o = i * 4; return lum(N.data, o) >= 2.5 * med && (0.2126 * N.data[o] + 0.7152 * N.data[o + 1] + 0.0722 * N.data[o + 2]) / 255 >= 0.45; };
+        // the outline: cornea pixels with a 4-neighbour outside it that is not lid (green) either: the dome's edge against the air
+        let outline = 0, lit = 0; const mark = new Uint8Array(PW * PH);
+        for (let i = 0; i < PW * PH; i++) {
+          if (!cor[i]) continue;
+          const x = i % PW, y = (i / PW) | 0;
+          let edge = false;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= PW || Y >= PH) continue; const q = Y * PW + X; if (!cor[q] && !green(q)) edge = true; }
+          if (!edge) continue;
+          outline++;
+          let hit = false;
+          for (let dy = -1; dy <= 1 && !hit; dy++) for (let dx = -1; dx <= 1 && !hit; dx++) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= PW || Y >= PH) continue; const q = Y * PW + X; if (cor[q] && bright(q)) hit = true; }
+          if (hit) { lit++; mark[i] = 1; }
+        }
+        return { N, mark, res: { side: side > 0 ? 'her left' : 'her right', corneaPx: Lc.length, median: +med.toFixed(4), outline, lit, k: outline ? +(lit / outline).toFixed(3) : 0 } };
+      };
+      await relight(11, -38);
+      for (const [nm, yaw] of Object.entries(views)) { const r = analyse(yaw, nm === 'front'); out.day[nm] = r.out; shots.push(['DAY ' + nm, r]); }
+      const pL = profile(Math.PI / 2), pR = profile(-Math.PI / 2); out.profile = { left: pL.res, right: pR.res };
+      await relight(18.4, -42);
+      for (const [nm, yaw] of Object.entries(views)) { const r = analyse(yaw, false); out.dusk[nm] = r.out; shots.push(['DUSK ' + nm, r]); }
+      await relight(1, -38);
+      for (const [nm, yaw] of Object.entries(views)) { const r = analyse(yaw, false); out.night[nm] = r.out; shots.push(['NIGHT ' + nm, r]); }
+      await relight(11, -38);
+      // the sheet: each eye crop of every view (2x), the two profiles with their lit outline (magenta)
+      const g = sheetOf();
+      shots.forEach(([lb, r], k) => {
+        r.out.forEach((e, j) => {
+          if (!e.irisPx) return;
+          const cx = (e.box[0] + e.box[2]) / 2, cy = (e.box[1] + e.box[3]) / 2, cw = 100, ch = 75;
+          const x = (k % 3) * 266 + j * 133, y = Math.floor(k / 3) * 200;
+          putImg(g, r.N, x, y, 133, 100, cx - cw / 2, cy - ch / 2, cw, ch);
+        });
+        tag(g, lb, (k % 3) * 266 + 6, Math.floor(k / 3) * 200 + 118);
+      });
+      [pL, pR].forEach((pr, k) => {
+        const im = new ImageData(new Uint8ClampedArray(pr.N.data), 600, 600);
+        for (let i = 0; i < 600 * 600; i++) if (pr.mark[i]) { im.data[i * 4] = 255; im.data[i * 4 + 1] = 0; im.data[i * 4 + 2] = 255; }
+        putImg(g, pr.N, 800 + k * 400, 0, 400, 400, 100, 100, 400, 400);
+        putImg(g, im, 800 + k * 400, 450, 400, 400, 100, 100, 400, 400);
+        tag(g, 'PROFILE ' + pr.res.side + ': lit outline ' + pr.res.lit + ' / ' + pr.res.outline, 812 + k * 400, 474);
+      });
+      const eyesIn = (set) => Object.values(set).flat().filter((e) => e.irisPx >= 60);
+      const terms = {
+        a: eyesIn(out.day).length >= 3 && eyesIn(out.day).every((e) => e.blobOk) && eyesIn(out.dusk).length >= 3 && eyesIn(out.dusk).every((e) => e.blobOk),
+        b: eyesIn(out.night).length >= 3 && eyesIn(out.night).every((e) => e.maxSrgb <= 0.50),
+        c: out.profile.left.k >= 0.30 && out.profile.right.k >= 0.30,
+        d: out.day.front.every((e) => e.lid && e.lid.cols >= 8 && e.lid.k >= 0.70),
+      };
+      return { pass: Object.values(terms).every(Boolean), detail: { terms, e: 'graded by A-wrap-closed in the same run', ...out } };
+    })()`,
+  },
+  {
+    // fix round 3, ROUND5-LOOK C-04 (§7 character-art block, at its literal bars)
+    id: 'A-hero-rim', kind: 'action', lane: 'character-art', settle: 900, timeout: 240000,
+    title: 'LOOK C-04 golden-hour rim: the chase staging (the lens behind her at head height, as V22), the sun BEHIND her within 30 deg of the lens axis at 8-15 deg up (the first hour from 18.75 back that puts it there). Her mask from a key render (player only); edge = her pixels within 3 px of the outside, interior = the rest; linear luminance of the displayed frame. (a) edge mean >= 1.8 x interior mean; (b) >= 35 % of edge pixels >= the interior P90; (c) in a landmark\'s cast shadow (a 7 x 9 m slab stood 4 m toward the sun, gate-only) edge:interior <= 1.2; (d) noon, front-lit (the sun behind the lens): edge:interior <= 1.3; (e) no extra draws: her drawn meshes = the hero\'s own count (<= 5). Per-part edge ratios (skin + wrap, outfit, kit) are reported',
+    setup: placedSetup(['openGround'], `(async () => {
+      const C = __CTX__, p = C.player, env = C.environment;
+      for (const m of (C.machines?.list || [])) m.update = () => {};
+      for (const el of Array.from(document.body.children)) if (el.tagName !== 'CANVAS' && !el.querySelector('canvas')) el.style.visibility = 'hidden';
+      C.input.keys.clear(); C.input.mouse.buttons = 0;
+      standAt(p, 'openGround');
+      env.timeFrozen = true;
+    })()`),
+    assert: `(async () => {
+      const C = __CTX__, p = C.player, env = C.environment, scene = C.scene;
+      const S = await import('/src/hero/sheets.js');
+      ${GEOM}
+      const frames = (n) => new Promise((r) => { let i = 0; const f = () => { if (++i >= n) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      const T3 = p.position.constructor;
+      // the hour: the first from 18.75 back whose sun stands 8-15 deg up
+      let hour = 18.75, elev = 0;
+      for (const hh of [18.75, 18.6, 18.5, 18.4, 18.3, 18.2, 18.0, 17.8, 17.6, 17.4]) { env.setTime(hh); env.setWeather('clear', 0); await frames(2); elev = Math.asin(Math.max(-1, Math.min(1, env.sunDir.y / Math.hypot(env.sunDir.x, env.sunDir.y, env.sunDir.z)))) * 180 / Math.PI; hour = hh; if (elev >= 8 && elev <= 15) break; }
+      const W = 1600, H = 900;
+      const stage = async (hourX, toSun, offDeg) => {
+        env.setTime(hourX); env.setWeather('clear', 0);
+        const sun = env.sunDir, az = Math.atan2(sun.x, sun.z) + offDeg * Math.PI / 180;
+        const h = toSun ? az : az + Math.PI;
+        if (C.engine) C.engine.timeScale = 1;
+        for (let i = 0; i < 70; i++) { p.heading = h; p.camYaw = h + Math.PI; p.camPitch = 0.10; await frames(1); }
+        if (C.engine) C.engine.timeScale = 0; await frames(2);
+        const cam = C.camera, fwd = new T3(); cam.getWorldDirection(fwd);
+        const pos = cam.position.clone(), tgt = pos.clone().add(fwd.multiplyScalar(10));
+        return { pos: pos.toArray(), tgt: tgt.toArray(), fov: cam.fov, sunAngle: +(Math.acos(Math.max(-1, Math.min(1, fwd.normalize().dot(sun.clone().setY(0).normalize())))) * 180 / Math.PI).toFixed(1) };
+      };
+      const shot = (v) => S.liveView(C, v.pos, v.tgt, { width: W, height: H, fov: v.fov });
+      const meshes = []; p.model.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o); });
+      const partOf = (o) => (/^Brea_/.test(o.name) ? 'body' : (o.isSkinnedMesh ? 'outfit' : 'kit'));
+      const keyMask = (v, only) => {
+        key(true);
+        const hid = []; if (only) for (const o of meshes) if (partOf(o) !== only && o.visible) { o.visible = false; hid.push(o); }
+        const K = shot(v);
+        for (const o of hid) o.visible = true;
+        key(false);
+        const m = new Uint8Array(W * H);
+        // (her pixels are the ones the key does not tint: an anti-aliased edge pixel that is a quarter key or more is not hers, so the
+        // edge band never averages in the sky behind her)
+        for (let i = 0; i < W * H; i++) { const o = i * 4; if (K.data[o + 1] - Math.max(K.data[o], K.data[o + 2]) < 60) m[i] = 1; }
+        return m;
+      };
+      const measure = (v, parts = false) => {
+        const img = shot(v), m = keyMask(v);
+        const edge = new Uint8Array(W * H);
+        for (let i = 0; i < W * H; i++) {
+          if (!m[i]) continue;
+          const x = i % W, y = (i / W) | 0; let e = false;
+          for (let dy = -3; dy <= 3 && !e; dy++) for (let dx = -3; dx <= 3 && !e; dx++) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= W || Y >= H || !m[Y * W + X]) e = true; }
+          if (e) edge[i] = 1;
+        }
+        const Le = [], Li = [];
+        for (let i = 0; i < W * H; i++) if (m[i]) (edge[i] ? Le : Li).push(lum(img.data, i * 4));
+        const mean = (a) => a.reduce((q, x) => q + x, 0) / Math.max(1, a.length);
+        const sorted = Li.slice().sort((a, b) => a - b), p90 = sorted.length ? sorted[Math.floor(sorted.length * 0.9)] : 0;
+        const r = { edgePx: Le.length, interiorPx: Li.length, edge: +mean(Le).toFixed(4), interior: +mean(Li).toFixed(4), ratio: +(mean(Le) / Math.max(1e-6, mean(Li))).toFixed(3), overP90: +(Le.filter((x) => x >= p90).length / Math.max(1, Le.length)).toFixed(3) };
+        if (parts) {
+          r.parts = {};
+          for (const part of ['body', 'outfit', 'kit']) {
+            const pm = keyMask(v, part); const a = [];
+            for (let i = 0; i < W * H; i++) if (edge[i] && pm[i]) a.push(lum(img.data, i * 4));
+            r.parts[part] = { edgePx: a.length, ratio: +(mean(a) / Math.max(1e-6, mean(Li))).toFixed(3) };
+          }
+        }
+        return { r, img, m, edge };
+      };
+      p.hero?.kit?.setHidden(0);
+      const vB = await stage(hour, true, 12);
+      const back = measure(vB, true);
+      // (c) the same light in a landmark's cast shadow: a slab stood 4 m toward the sun (gate-only, removed and disposed)
+      const sd = env.sunDir.clone().setY(0).normalize();
+      const { THREE } = await import('/src/core/collision.js');
+      const geo = new THREE.BoxGeometry(7, 9, 0.6), mat = new THREE.MeshStandardMaterial({ color: 0x6a6258, roughness: 0.9 });
+      const wall = new THREE.Mesh(geo, mat); wall.castShadow = true; wall.receiveShadow = true;
+      wall.position.set(p.position.x + sd.x * 4, p.position.y + 4.5, p.position.z + sd.z * 4); wall.lookAt(p.position.x, p.position.y + 4.5, p.position.z);
+      scene.add(wall); await frames(3);
+      const shade = measure(vB);
+      scene.remove(wall); geo.dispose(); mat.dispose(); await frames(2);
+      // (d) noon, front-lit: the sun behind the lens
+      const vN = await stage(12.5, false, 12);
+      const noon = measure(vN);
+      // (e) her drawn meshes
+      const I = p.hero?.info?.();
+      const drawn = []; p.model.traverse((o) => { if (o.isMesh && o.visible) drawn.push(o.name); });
+      // the sheet: the backlit frame with her edge band (yellow), the slab's shade, the noon frame
+      const g = (() => { document.getElementById('ca-sheet')?.remove(); const c = document.createElement('canvas'); c.id = 'ca-sheet'; c.width = 1600; c.height = 900; c.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#000'; document.body.appendChild(c); return c.getContext('2d'); })();
+      const box = (m) => { let x0 = W, x1 = 0, y0 = H, y1 = 0; for (let i = 0; i < W * H; i++) if (m[i]) { const x = i % W, y = (i / W) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } return [x0, y0, x1, y1]; };
+      const crop = (res, x, y, w, h, mark) => {
+        const b = box(res.m), cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2, ch = Math.min(H, (b[3] - b[1]) * 1.15), cw = ch * w / h;
+        const im = new ImageData(new Uint8ClampedArray(res.img.data), W, H);
+        if (mark) for (let i = 0; i < W * H; i++) if (res.edge[i] && (i % 3 === 0)) { im.data[i * 4] = 255; im.data[i * 4 + 1] = 230; im.data[i * 4 + 2] = 0; }
+        const k = document.createElement('canvas'); k.width = W; k.height = H; k.getContext('2d').putImageData(im, 0, 0);
+        g.drawImage(k, cx - cw / 2, cy - ch / 2, cw, ch, x, y, w, h);
+      };
+      crop(back, 0, 0, 400, 900, false); crop(back, 400, 0, 400, 900, true); crop(shade, 800, 0, 400, 900, false); crop(noon, 1200, 0, 400, 900, false);
+      const tg = (t, x, y) => { g.font = '500 14px "IBM Plex Mono", ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - 6, y - 15, g.measureText(t).width + 12, 21); g.fillStyle = '#efe9dc'; g.fillText(t, x, y); };
+      tg('BACKLIT ' + hour + ' h, sun ' + elev.toFixed(1) + ' deg up: edge:int ' + back.r.ratio, 10, 24); tg('edge band (3 px)', 410, 24); tg('IN THE SLAB SHADE: ' + shade.r.ratio, 810, 24); tg('NOON, FRONT-LIT: ' + noon.r.ratio, 1210, 24);
+      const terms = {
+        a: back.r.ratio >= 1.8,
+        b: back.r.overP90 >= 0.35,
+        c: shade.r.ratio <= 1.2,
+        d: noon.r.ratio <= 1.3,
+        e: drawn.length <= 5 && (!I || drawn.length === I.meshes.length),
+      };
+      return { pass: Object.values(terms).every(Boolean), detail: { terms, hour, sunElevDeg: +elev.toFixed(1), sunFromLensAxisDeg: vB.sunAngle, backlit: back.r, slabShade: shade.r, noonFrontLit: noon.r, drawn, heroMeshes: I?.meshes?.length ?? null } };
+    })()`,
+  },
+  {
+    // fix round 3, ROUND5-LOOK C-01..C-04 key-art face (§7 character-art block)
+    id: 'V-brea-face-keyart', kind: 'visual', lane: 'character-art', settle: 800, timeout: 150000,
+    title: 'Brea at 0.8 m in the live scene: front, 3/4 and profile on both sides, DAY 11:00 (top row) and 18:45 (bottom row), 1600 x 900',
+    reference: 'reference/r5/hero/brea-face-sheet.png',
+    setup: placedSetup(['openGround'], `(async () => {${STAGE(11, 'clear', -38, true)}
+      const frames = (n) => new Promise((r) => { let i = 0; const f = () => { if (++i >= n) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      const W = 1600, H = 900, PW = 320, PH = 450;
+      const c = overlay(W, H), g = c.getContext('2d');
+      const views = [['PROFILE HER RIGHT', -Math.PI / 2], ['3/4 HER RIGHT', -Math.PI / 5], ['FRONT', 0], ['3/4 HER LEFT', Math.PI / 5], ['PROFILE HER LEFT', Math.PI / 2]];
+      p.hero?.kit?.setHidden(3);
+      for (const [row, hour, off] of [[0, 11, -38], [1, 18.75, -42]]) {
+        env.setTime(hour);
+        const sun = env.sunDir, hh = Math.atan2(sun.x, sun.z) + off * Math.PI / 180;
+        p.heading = hh; p.model.rotation.y = hh; await frames(4); p.heading = hh; p.model.rotation.y = hh; p.model.updateMatrixWorld(true);
+        const brow2 = face('brow'), chin2 = face('chin'), jL2 = face('jawL'), jR2 = face('jawR');
+        const Rr = jL2.clone().sub(jR2).normalize(), Uu = brow2.clone().sub(chin2).normalize(), Ff = Rr.clone().cross(Uu).normalize(), Uv = Ff.clone().cross(Rr).normalize();
+        const cen2 = brow2.clone().add(chin2).multiplyScalar(0.5).add(Uv.clone().multiplyScalar(0.03)).sub(Ff.clone().multiplyScalar(0.07));
+        views.forEach(([nm, yaw], i) => {
+          const d = Ff.clone().multiplyScalar(Math.cos(yaw)).add(Rr.clone().multiplyScalar(Math.sin(yaw)));
+          const img = S.liveView(C, [cen2.x + d.x * 0.8, cen2.y + d.y * 0.8, cen2.z + d.z * 0.8], [cen2.x, cen2.y, cen2.z], { width: Math.round(PW * 1.25), height: Math.round(PH * 1.25), fov: 17 });
+          paste(g, img, i * PW, row * PH, PW, PH);
+          label(g, nm, i * PW + 10, row * PH + 26);
+        });
+        label(g, (row ? '18:45' : 'DAY 11:00') + ' · 0.8 m', 10, row * PH + 52);
+      }
+    })()`),
+    criteria: 'Against Kevin\'s Nov 6 key-art face panels (#1-MC: all three faces), #5-7 and reference/r5/hero/brea-face-sheet.png. Pass: (1) a warm red-brown shadow side that keeps the cheekbone, jaw and nose planes; (2) a soft terminator; (3) sheen on the forehead, the nose bridge and the cheekbone; (4) wet eyes with catch-lights; (5) a dark upper lash line; (6) a matte chalky salt-line; (7) the wrap as soft dyed cloth with deep folds. FAIL if it reads as brea-closeup-day-nov6-wip with only the brightness changed, or looks cheap beside the panel (R54 d). IP-clause: nothing from the never-copy list (ROUND5-LOOK §8.1).',
+  },
+  {
+    // fix round 3, ROUND5-LOOK C-04 (§7 character-art block)
+    id: 'V-brea-golden-hour', kind: 'visual', lane: 'character-art', settle: 900, timeout: 150000,
+    title: 'The chase lens from behind and to her right (back 3/4), the sun behind her low (the A-hero-rim hour): idle (left) and mid-sprint (right), 1600 x 900',
+    reference: 'reference/r5/gates-perf/run-rear.jpg',
+    setup: placedSetup(['openGround'], `(async () => {
+      const C = __CTX__, p = C.player, env = C.environment;
+      for (const m of (C.machines?.list || [])) m.update = () => {};
+      for (const el of Array.from(document.body.children)) if (el.tagName !== 'CANVAS' && !el.querySelector('canvas')) el.style.visibility = 'hidden';
+      C.input.keys.clear(); C.input.mouse.buttons = 0;
+      standAt(p, 'openGround');
+      env.timeFrozen = true;
+      const S = await import('/src/hero/sheets.js');
+      const T3 = p.position.constructor;
+      const frames = (n) => new Promise((r) => { let i = 0; const f = () => { if (++i >= n) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      let hour = 18.75;
+      for (const hh of [18.75, 18.6, 18.5, 18.4, 18.3, 18.2, 18.0, 17.8]) { env.setTime(hh); env.setWeather('clear', 0); await frames(2); const e = Math.asin(env.sunDir.y / env.sunDir.length()) * 180 / Math.PI; hour = hh; if (e >= 8 && e <= 15) break; }
+      const az = Math.atan2(env.sunDir.x, env.sunDir.z);
+      const c = document.createElement('canvas'); c.id = 'ca-sheet'; c.width = 1600; c.height = 900;
+      c.style.cssText = 'position:fixed;left:0;top:0;width:1600px;height:900px;z-index:2147483646;background:#000';
+      const g = c.getContext('2d');
+      const grab = (x) => {
+        const cam = C.camera, f = new T3(); cam.getWorldDirection(f);
+        const img = S.liveView(C, cam.position.toArray(), cam.position.clone().add(f.multiplyScalar(10)).toArray(), { width: 1000, height: 1125, fov: cam.fov * 1.0 });
+        const k = document.createElement('canvas'); k.width = img.width; k.height = img.height; k.getContext('2d').putImageData(img, 0, 0);
+        g.drawImage(k, x, 0, 800, 900);
+      };
+      // idle: she faces the sun (30 deg off the lens axis), the lens behind her right shoulder
+      if (C.engine) C.engine.timeScale = 1;
+      for (let i = 0; i < 80; i++) { p.heading = az + 0.35; p.camYaw = az + 0.35 + Math.PI - 0.5; p.camPitch = 0.08; await frames(1); }
+      if (C.engine) C.engine.timeScale = 0; await frames(2);
+      grab(0);
+      // mid-sprint toward the sun
+      if (C.engine) C.engine.timeScale = 1;
+      C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft');
+      for (let i = 0; i < 75; i++) { p.camYaw = az + 0.35 + Math.PI - 0.5; p.camPitch = 0.08; await frames(1); }
+      if (C.engine) C.engine.timeScale = 0; await frames(2);
+      C.input.keys.delete('KeyW'); C.input.keys.delete('ShiftLeft');
+      grab(800);
+      document.body.appendChild(c);
+      const lb = (t, x, y) => { g.font = '500 15px "IBM Plex Mono", ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(x - 6, y - 16, g.measureText(t).width + 12, 22); g.fillStyle = '#efe9dc'; g.fillText(t, x, y); };
+      lb('IDLE · ' + hour + ' h · sun behind her', 14, 28); lb('MID-SPRINT', 814, 28);
+    })()`),
+    criteria: 'Against #1-TL, #5-3 and reference/r5/gates-perf/run-rear.jpg. Pass: (1) a warm sun-rim on the shoulder, the arm, the wrap\'s edge and the tail; (2) deep saturated violet; (3) skin glowing warm at its edges; (4) glints on leather and bronze; (5) light, not an outline, separates her from the background. FAIL: flat-lit against a golden sky; a uniform halo. IP-clause: nothing from the never-copy list (ROUND5-LOOK §8.1).',
+  },
+  {
     id: 'A-brea-fill', kind: 'action', lane: 'character-art', settle: 600, timeout: 60000,
     title: 'R59 c: the hero fill (the emissive slot on the skin and wrap) follows the scene\'s ambient: full by day, at most 15 % of it at 01:00, no new map and no new draw; the material stays the one the outfit and the fade clone already use',
     setup: placedSetup(['openGround'], `(async () => {
@@ -691,3 +1123,6 @@ export const GATES = [
     })()`,
   },
 ];
+
+/** (debug and NPC rows may reuse the staging and the masks) */
+export { STAGE, GEOM, LMK, CLOSEUP };

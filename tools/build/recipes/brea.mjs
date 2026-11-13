@@ -358,7 +358,10 @@ export async function build({ out = ROOT } = {}) {
       const nose = Math.hypot(p[0] / 0.022, (p[1] - (L.noseTip[1] - 0.012)) / 0.013);
       // the ear keeps the normals the source's map was baked against (fix round 1: softened, the map printed its planes)
       const ear = smooth(0.058, 0.066, Math.abs(p[0])) * smooth(1.575, 1.59, p[1]) * (1 - smooth(1.70, 1.715, p[1])) * smooth(-0.08, -0.07, p[2]) * (1 - smooth(0.022, 0.035, p[2]));
-      return smooth(0.85, 1.25, lid) * smooth(0.8, 1.2, lip) * smooth(0.75, 1.15, nose) * (1 - ear);
+      // fix round 3 (the judges: "the ear's rim is faceted"): the helix, the ear's outer rim where it stands farthest off the skull,
+      // softens like the face; the concha and the root keep the normals the map was baked against
+      const helix = ear * smooth(0.0745, 0.0785, Math.abs(p[0])) * 0.85;
+      return smooth(0.85, 1.25, lid) * smooth(0.8, 1.2, lip) * smooth(0.75, 1.15, nose) * Math.max(1 - ear, helix);
     },
   });
   applyField(browPrim, field);
@@ -451,10 +454,14 @@ export async function build({ out = ROOT } = {}) {
       // and 0.06 +- 0.01; game metres / S): 0.10 m at the knot, held down the free strip, narrowing over its last 40 % to 0.07 m at the
       // fringe, the wide ends of R66 d's tolerances. Narrower cuts (0.09 -> 0.06) cost A-tail-legible its reach on hero-body's 0.49 m,
       // 6-link chain: 1-2 of 24 moments at reach 3 in r5 and r6. The fringe is the last 2.5 cm
-      width: (u) => (0.10 - 0.03 * smooth(0.6, 0.95, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.12, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 21, across: 5, rootBack: 0.014,
-      // fix round 2 (R54, R66 c: soft, thick, rippling cloth, no paper edge; the length and width stay): the rows go to the free strip,
-      // each row is skinned smoothly across the joints, the selvedges are rolled hems 3.4 mm thick, the strip sags and ripples
-      rootRows: 4, smoothSkin: true, hem: 0.0034, ripple: 0.0042 },
+      // fix round 3 (the judges: "the tail leaves the knot as a flat plate", "a wide flat purple panel with a hard angular fold", "taper
+      // from the root rather than holding 0.10 m for 60 % of the length"): the stiff, nearly level root stays a gathered ROLL with C-05's
+      // three pleats (5.5 mm deep, peak to peak) until the strip turns down (it opens over u 0.34-0.56), the free strip tapers from the
+      // root (0.10 m where it opens, 0.07 m at the fringe), its section is a gentle cup (curl 0.18), its hems are C-05's 4 mm, and each
+      // row is skinned over FOUR joints (cubic B-spline), so the stiff-to-free hand-over drapes over two links instead of folding at one
+      width: (u) => (0.10 - 0.03 * Math.pow(smooth(0.36, 0.97, u), 0.85)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.18, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 21, across: 5, rootBack: 0.014,
+      open: [0.34, 0.56], pleats: 0.00275 / S,
+      rootRows: 4, smoothSkin: 4, hem: 0.004, ripple: 0.0042 },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
     tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012 },
   });
@@ -502,7 +509,7 @@ export async function build({ out = ROOT } = {}) {
     const zf = Math.sqrt(Math.max(0, want * want - v[0] * v[0] - v[1] * v[1]));
     return zf > 0 ? [q[0], q[1], c[2] + Math.max(zf, v[2])] : [c[0] + v[0] / d * want, c[1] + v[1] / d * want, c[2] + v[2] / d * want];
   };
-  const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W, length: 0.0035, curl: 0.42, twoSided: true, rim: { h: 0.00085, rect: WRAP_ATLAS.lidRim.rect, onBall: onBall(i) } }));
+  const lashes = [1, -1].map((side, i) => lashCard(opens[i], { side, joint: head, zAt, rect: WRAP_ATLAS.lashes.rect, W: WRAP_ATLAS.W, length: 0.0035, curl: 0.42, twoSided: true, tufts: [0.42, 0.62, 0.8], rim: { h: 0.00085, rect: WRAP_ATLAS.lidRim.rect, onBall: onBall(i) } }));
   // the ball the lids always cover is never seen: it pays for the lid rims and the lashes' backs
   const eyeUnderLids = cullEyeUnderLids(eyesPrim, eyes, opens, { margin: 0.002 });
 

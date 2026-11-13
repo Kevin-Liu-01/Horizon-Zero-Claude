@@ -905,6 +905,21 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
       { at: [eyes[1][0], eyes[1][1] - 0.0145, eyes[1][2] + 0.008], s: [0.017, 0.0065, 0.02], gain: [0.93, 0.9, 0.91] },
       { at: [0, 1.50, 0.03], s: [0.05, 0.03, 0.06], gain: [0.94, 0.93, 0.93] },                           // under the jaw
     ]),
+    // fix round 3, LOOK C-02: the roughness repainted to the look's zones before the pores go in (pores then add their +0.08): the
+    // T-zone 0.36-0.42 (forehead 0.40, bridge 0.36, tip 0.38, chin 0.42), the cheeks 0.48, everything else 0.55; the lips keep theirs
+    (T) => {
+      if (T.metal > 0.05) return;
+      if (Math.hypot(T.X / 0.032, (T.Y - (L.upperLip[1] - 0.011)) / 0.017) < 1.05 && T.Z > 0.055) return;
+      const g = (at, sx, sy, sz) => Math.exp(-(((T.X - at[0]) / sx) ** 2 + ((T.Y - at[1]) / sy) ** 2 + ((T.Z - at[2]) / sz) ** 2));
+      let t = 0.55;
+      t = mix(t, 0.48, Math.min(1, g(cheek, 0.026, 0.022, 0.03) + g([-cheek[0], cheek[1], cheek[2]], 0.026, 0.022, 0.03)));
+      t = mix(t, 0.40, g([0, 1.70, 0.08], 0.045, 0.024, 0.05));
+      t = mix(t, 0.42, g(L.chin, 0.018, 0.013, 0.018));
+      t = mix(t, 0.36, g(L.noseBridge, 0.011, 0.02, 0.02));
+      t = mix(t, 0.38, g(noseT, 0.013, 0.013, 0.02));
+      const n2 = noise3(T.X * 150 + 4, T.Y * 150, T.Z * 150) - 0.5;
+      T.rough = mix(T.rough, t + n2 * 0.05, 0.85);
+    },
     pores({ depth: 0.00009, poreFreq: 820, zone: (T) => (T.Y > 1.42 && Math.abs(T.X) < 0.2 ? 1 : Math.abs(T.X) > 0.4 ? 0.6 : 0.4) }),
     planes,
     // (fix round 2, the judges: "remove the mouth-corner and philtrum darkening from the crease and AO layers"): the baked AO's floor

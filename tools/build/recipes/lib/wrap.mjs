@@ -405,7 +405,7 @@ export function cullCovered(g, depth, margin = 0.0009) {
  * in), and the last `fray` of its length mapped to a frayed end cell.
  *   uvFront / uvBack: { rect, period, W, pxPerM, v:[a,b] }, uvEnd: [x, y, w, h] px
  */
-export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, gatherTo = 0.16, roll = 0, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7, rootBack = 0, rootRows = null, smoothSkin = false, hem = 0, ripple = 0 } = {}) {
+export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, gatherTo = 0.16, roll = 0, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7, rootBack = 0, rootRows = null, smoothSkin = false, hem = 0, ripple = 0, open = null, pleats = 0 } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const pl = polyline(P);
   const R = rng(seed * 40503);
@@ -440,12 +440,15 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
       let sd = norm(sub(side, mul(t, dot(side, t))));
       if (twist) { const n0 = norm(cross(sd, t)), a2 = twist * u; sd = norm(add(mul(sd, Math.cos(a2)), mul(n0, Math.sin(a2)))); }
       const nrm = norm(cross(sd, t));
-      const rootK = 1 - smooth(gatherTo * 0.55, gatherTo, u);        // 1 at the knot, 0 on the free strip
-      const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(gatherTo * 0.34, gatherTo, u));
+      // fix round 3 (`open`: [u0, u1]): the gathered roll holds until the strip turns down, then opens over [u0, u1], so the stiff,
+      // nearly level root reads as a rope of cloth leaving the knot, never a wide plate standing off it
+      const o0 = open ? open[0] : gatherTo * 0.34, o1 = open ? open[1] : gatherTo;
+      const rootK = 1 - smooth(open ? o0 : gatherTo * 0.55, o1, u);        // 1 at the knot, 0 on the free strip
+      const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(o0, o1, u));
       // the cloth starts inside the knot: nothing shows a cut edge where it leaves
       const back = rootBack * (1 - smooth(0, 0.07, u));
       const p0 = sub(p, mul(t, back));
-      const weights = smoothSkin ? chainW3(joints, seg, f) : chainW(joints, seg, f);
+      const weights = smoothSkin === 4 ? chainW4(joints, seg, f) : smoothSkin ? chainW3(joints, seg, f) : chainW(joints, seg, f);
       for (let k = 0; k <= across; k++) {
         const x = (k / across) * 2 - 1;
         // the root is gathered into a closed roll (`roll`: the two faces bulge apart, so it reads as a rope of cloth from
@@ -454,7 +457,9 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
         const lens = sgn * roll * rootK * (1 - x * x) * hw;
         let w = 0;
         for (const q of waves) w += q.a * Math.sin(x * q.f * Math.PI + q.ph + u * q.m) * (0.5 + 0.5 * Math.sin(u * q.m * 2 + q.ph2));
-        const pleat = rootK * hw * 0.16 * Math.sin(x * 7.3 + u * 9 + 1.1);
+        // (fix round 3, `pleats`: C-05's pleats into the knot, an absolute depth: the columns fold alternately up and down across the
+        // gathered root, the selvedges held, fading out as the strip opens)
+        const pleat = pleats ? rootK * pleats * (k & 1 ? 1 : -1) * (1 - x * x * x * x) * (0.75 + 0.25 * Math.sin(u * 17 + k)) : rootK * hw * 0.16 * Math.sin(x * 7.3 + u * 9 + 1.1);
         // the two faces meet at the selvedges: no slit to see through along the strip's edge (with a `hem`, they stay apart there
         // and the rolled hem below closes it)
         const seal = hem ? 1 - (x * x * x * x) * (1 - hem / thick) : 1 - x * x * x * x;
@@ -563,6 +568,22 @@ function chainW3(joints, seg, f) {
   const ws = [0.5 * (1 - f) * (1 - f), 0.5 + f * (1 - f), 0.5 * f * f];
   const j = [], w = [];
   for (let i = 0; i < 3; i++) { const k = j.indexOf(joints[ids[i]]); if (k >= 0) w[k] += ws[i]; else { j.push(joints[ids[i]]); w.push(ws[i]); } }
+  while (j.length < 4) { j.push(0); w.push(0); }
+  return { j, w };
+}
+
+/**
+ * Cubic B-spline weights over a chain (fix round 3, `smoothSkin: 4`): a point is skinned to the four joints round it, so a hard bend
+ * between a stiff link and a free one (the wrap tail's root handing over to its hanging strip) spreads over two links either side
+ * (C2) and reads as a drape, not a fold. Clamped at both ends; the rest shape is unchanged (identity skinning).
+ */
+function chainW4(joints, seg, f) {
+  const n = joints.length;
+  const ids = [seg - 1, seg, seg + 1, seg + 2].map((i) => Math.max(0, Math.min(n - 1, i)));
+  const f2 = f * f, f3 = f2 * f;
+  const ws = [(1 - f) ** 3 / 6, (3 * f3 - 6 * f2 + 4) / 6, (-3 * f3 + 3 * f2 + 3 * f + 1) / 6, f3 / 6];
+  const j = [], w = [];
+  for (let i = 0; i < 4; i++) { const k = j.indexOf(joints[ids[i]]); if (k >= 0) w[k] += ws[i]; else { j.push(joints[ids[i]]); w.push(ws[i]); } }
   while (j.length < 4) { j.push(0); w.push(0); }
   return { j, w };
 }
@@ -752,23 +773,35 @@ export function paintFrayEnd(buf, { rect, W = 512, dye, seed = 3, rough = 0.92, 
   const D = hex(dye);
   const S = stripe ? hex(stripe) : null;
   const R = rng(seed * 7919);
-  const nThreads = Math.floor(w / 2);
-  const ends = []; for (let i = 0; i < nThreads; i++) ends.push(0.48 + 0.52 * R());
-  const tones = []; for (let i = 0; i < nThreads; i++) tones.push(R());
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const v = y / h, ti = Math.min(nThreads - 1, Math.floor(x / 2));
-    const wx = x % 2;
-    const over = ((ti + Math.floor(y / 3)) & 1) === 0;
-    const weaveOn = v < 0.46;                                  // the weft stops; only warp threads run on
-    const on = v < ends[ti] && (weaveOn || wx === 1 || tones[ti] > 0.72);
-    const thread = wx === 1 ? 1 : 0.8;
-    let k = (0.82 + 0.3 * tones[ti]) * thread * (over ? 1.02 : 0.92) * (1 - 0.2 * smooth(0.45, 1, v));
+  // fix round 3 (the judges: "a straight-cut comb fringe"): the weft stops along a wandering line, and the loose warp runs on in
+  // TUFTS of 3-7 threads that twist together toward soft points of uneven length, with the odd thread lost; not a comb of even sticks
+  const alpha = new Uint8Array(w * h), tone = new Float32Array(w * h).fill(-1);
+  const weftAt = []; { let a = 0.40, v = 0; for (let x = 0; x < w; x++) { v += (R() - 0.5) * 0.05; v *= 0.9; a = 0.40 + v + 0.06 * Math.sin(x * 0.11 + seed); weftAt.push(Math.max(0.3, Math.min(0.52, a))); } }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (y / h < weftAt[x]) { alpha[y * w + x] = 255; tone[y * w + x] = 0.9 + 0.1 * (((x >> 1) + Math.floor(y / 3)) & 1); }
+  let x = 0;
+  while (x < w) {
+    const n = 3 + Math.floor(R() * 5), len = 0.58 + 0.42 * Math.pow(R(), 0.7), cx = x + n * 1.5, lean = (R() - 0.5) * 3;
+    for (let t = 0; t < n && x < w; t++, x += 3) {
+      if (R() < 0.08) continue;                                    // a lost thread
+      const end = len * (0.9 + 0.1 * R()), tn = 0.82 + 0.3 * R();
+      for (let y = 0; y < h; y++) {
+        const v = y / h;
+        if (v < weftAt[Math.min(w - 1, x)] - 0.02 || v > end) continue;
+        const k = smooth(weftAt[Math.min(w - 1, x)], end, v);
+        const px = Math.round(x + (cx - x) * 0.55 * k + lean * k * k);
+        for (const dx of [0, 1]) { const X = px + dx; if (X < 0 || X >= w) continue; const i = y * w + X; alpha[i] = 255; tone[i] = Math.max(tone[i], tn * (dx ? 1 : 0.86) * (1 - 0.22 * k)); }
+      }
+    }
+    x += R() < 0.35 ? 1 : 0;                                       // tufts part a little
+  }
+  for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) {
+    const i = y * w + xx, k = tone[i] < 0 ? 0.8 : tone[i];
     let r = D[0] * k, g = D[1] * k, b = D[2] * k;
-    if (S && Math.abs(x - w * 0.5) > w * 0.5 - 4) { r = S[0] * k; g = S[1] * k; b = S[2] * k; }
-    const o = ((y0 + y) * W + x0 + x) * 4;
-    buf.base[o] = clampB(r); buf.base[o + 1] = clampB(g); buf.base[o + 2] = clampB(b); buf.base[o + 3] = on ? 255 : 2;
-    const q = ((y0 + y) * W + x0 + x) * 3;
-    const nx = (wx - 0.5) * 0.3, nl = Math.hypot(nx, 1);
+    if (S && Math.abs(xx - w * 0.5) > w * 0.5 - 4) { r = S[0] * k; g = S[1] * k; b = S[2] * k; }
+    const o = ((y0 + y) * W + x0 + xx) * 4;
+    buf.base[o] = clampB(r); buf.base[o + 1] = clampB(g); buf.base[o + 2] = clampB(b); buf.base[o + 3] = alpha[i] ? 255 : 2;
+    const q = ((y0 + y) * W + x0 + xx) * 3;
+    const nx = (xx & 1 ? 0.5 : -0.5) * 0.3, nl = Math.hypot(nx, 1);
     buf.normal[q] = clampB((nx / nl * 0.5 + 0.5) * 255); buf.normal[q + 1] = 128; buf.normal[q + 2] = clampB((1 / nl * 0.5 + 0.5) * 255);
     buf.orm[q] = 255; buf.orm[q + 1] = clampB(rough * 255); buf.orm[q + 2] = 0;
   }

@@ -121,7 +121,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
   if (tail) {
     add('tail', clothTail(tail.points, tail.joints, {
       along: tail.along ?? 16, across: tail.across ?? 4, width: tail.width, side: tail.side, thick: tail.thick ?? 0.004, curl: tail.curl ?? 0.10, twist: tail.twist ?? 0, gather: tail.gather ?? 0.7, gatherTo: tail.gatherTo ?? 0.16, roll: tail.roll ?? 0, fold: tail.fold ?? 0.0052, rootBack: tail.rootBack ?? 0,
-      rootRows: tail.rootRows ?? null, smoothSkin: tail.smoothSkin ?? false, hem: tail.hem ?? 0, ripple: tail.ripple ?? 0,
+      rootRows: tail.rootRows ?? null, smoothSkin: tail.smoothSkin ?? false, hem: tail.hem ?? 0, ripple: tail.ripple ?? 0, open: tail.open ?? null, pleats: tail.pleats ?? 0,
       uvFront: { rect: A.clothA.rect, period: A.clothA.period, W, pxPerM: 1 / 0.00065, v: [1, 0] },
       uvBack: { rect: A.lining.rect, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0, 1] },
       uvEnd: A.frayEnd.rect, fray: tail.fray ?? 0.1,
