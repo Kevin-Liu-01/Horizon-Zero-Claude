@@ -645,7 +645,7 @@ const RANDOM_BODY = (forSheet) => `
     const st = statsOf(cap);
     const g = gradeBars(st, 'field');
     rows.push({ i: q.i, hour: q.hour, at: [+x.toFixed(1), +z.toFixed(1)], met: g.met, pass: g.pass, lo20hue: st.lo20.hue, midB: st.mid.b, chroma: st.chroma, p99: st.L.p99, clip: st.clip,
-      missed: g.rows.filter((r) => !r.ok).map((r) => r.key) });
+      missed: g.miss.map((r) => r.key) });
     ${forSheet ? "cells.push({ cap: { W: cap.W, H: cap.H, px: cap.px }, label: '#' + q.i + ' ' + q.hour.toFixed(2) + ' h  ' + g.met });" : ''}
     unstage();
   }
@@ -1021,7 +1021,9 @@ const PLAY_HOURS = [17.75, 19.9];
 const PLAY_STAGE = `
   const env = __C.environment;
   const playAt = async (h) => { __E.requestTimeScale('studio', 0); env.timeFrozen = true; env.setWeather('clear', 0.05); env.setTime(h);
-    __E.setLookHour?.(h, 'clear', null, { ev: false }); await frames(40); };
+    __E.setLookHour?.(h, 'clear', null, { ev: false }); await frames(40);
+    // the fire's flicker frozen (the presentation clock, as the look places freeze it): W0 and CALIMA see the same flames
+    freezeWall(); await frames(2); };
   const firePx = (c) => { const fp = __C.camp?.firePosition; if (!fp) return null; const p = fp.clone(); p.y += 0.5; p.project(__C.camera);
     if (p.z > 1 || Math.abs(p.x) > 0.95 || Math.abs(p.y) > 0.95) return null; return [(p.x * 0.5 + 0.5) * c.W, (1 - (p.y * 0.5 + 0.5)) * c.H]; };
   const ring = (c, cx, cy, r0, r1) => { let sL = 0, sa = 0, sb = 0, n = 0; for (let y = Math.round(cy - r1); y <= cy + r1; y++) for (let x = Math.round(cx - r1); x <= cx + r1; x++) {
