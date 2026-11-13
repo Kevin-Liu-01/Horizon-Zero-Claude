@@ -34,8 +34,12 @@ export const LOOK_STANDINS = {
     note: 'stand-in: a rise facing the low sun (1-MR); no sea or Ring on this map' },
   aim: { base: 'rangeGround', hour: 17.75, sunRel: 25, pitch: 0.0, weather: 'clear', cam: 'over',
     note: 'stand-in: over the shoulder toward the sun-side (1-BL, 5-2)' },
-  close: { base: 'openGround', hour: 18.75, sunRel: 120, pitch: 0.0, weather: 'clear', cam: 'close', dist: 0.8,
-    note: 'stand-in: 0.8 m, 3/4 face, the sun to camera side (1-MC)' },
+  // fix round 2: heroRel turns Brea so the sun keys her face. With sunRel 120 and no heroRel she faced 120 deg away
+  // from the sun and the close camera (35 deg off her nose) saw the back-lit side (the judge's 'almost black' face);
+  // her nose now points 55 deg off the sun, the camera sits 35 deg off her nose on the same side, so the sun lights
+  // the 3/4 face from 20 deg beyond the lens and the far cheek is the readable shadow side (1-MC)
+  close: { base: 'openGround', hour: 18.75, sunRel: 120, heroRel: -175, pitch: 0.0, weather: 'clear', cam: 'close', dist: 0.8,
+    note: 'stand-in: 0.8 m, 3/4 face, the sun to camera side (1-MC): her nose 55 deg off the sun, the lens 35 deg off her nose' },
   dusk: { base: 'grassSite', hour: 19.75, sunRel: 60, pitch: 0.03, weather: 'clear', cam: 'chase',
     note: 'stand-in: grass at 19:45 (2-MR)' },
 };

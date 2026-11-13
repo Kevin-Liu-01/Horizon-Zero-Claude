@@ -407,20 +407,24 @@ function pchip(P, x) {
 
 /**
  * The L*a*b* stage of a grade set (`set.lab`), weight w (the gamut-edge guard's complement):
- *   tone       [[L, L'], ...]   a monotone curve on L* (lifts the toe a little, opens the highlights that
+ *   tone       [[L, L'], ...]   a monotone curve on L* (identity in the toe, opens the highlights that
  *                               AgX + the look's power 1.22 hold 6-10 L* under the ACES-era frames)
  *   shadow     { range: [L0, L1], shift: [da, db], chroma }   below L1 (full weight below L0): (a*, b*) scaled
  *                               by `chroma` and shifted by (da, db): ochre and olive shadow toward rose-violet
- *   mid        { range: [L0, L1, L2, L3], hue: [h0, h1, feather], b }   b* of the warm hues in the mid band
- *                               scaled by `b` (mustard toward amber without rotating every yellow into one hue)
- *   high       { range: [L0, L1], chroma, shift: [da, db] }   the brightest band toward cream (hi10 chroma)
+ *   mid        { range: [L0, L1, L2, L3], hue: [h0, h1, feather], b, a, rotate }   b* (a*) of the warm hues in the
+ *                               mid band scaled by `b` (`a`), then turned by `rotate` degrees (chroma kept)
+ *   high       { range: [L0, L1], chroma, shift: [da, db], cRange: [C0, C1] }   the brightest NEAR-NEUTRAL band
+ *                               toward cream (weight 1 below chroma C0, 0 above C1: warm highlights keep their gold)
  * L* is kept by the chroma and shift steps; only `tone` moves it.
  */
 function labStage(c, X, w) {
   srgbToLab(c, _lab);
   let L = _lab[0], a = _lab[1], b = _lab[2];
-  const L0 = L;
-  if (X.tone) L = L + (pchip(X.tone, L) - L) * w;
+  const L0 = L, C0 = Math.hypot(a, b);
+  // fix round 2: `toneC` [C0, C1, floor] fades the tone curve's lift with chroma (full below C0, `floor` of it above
+  // C1). SRGB holds little chroma for orange at L* 90, so lifting a saturated gold highlight 82 -> 90 cost it half its
+  // chroma (#FFC070 C 51 -> 23): neutrals (sky, cloud, salt) open, gold and fire keep their colour
+  if (X.tone) { const tc = X.toneC, wt = tc ? 1 - (1 - (tc[2] ?? 0)) * smoothstep(tc[0], tc[1], C0) : 1; L = L + (pchip(X.tone, L) - L) * w * wt; }
   if (X.shadow) {
     const S = X.shadow, ws = (1 - smoothstep(S.range[0], S.range[1], L0)) * w;
     if (ws > 0) {
@@ -437,20 +441,55 @@ function labStage(c, X, w) {
       const wh = bandWeight(h, M.hue[0], M.hue[1], M.hue[2] ?? 12) * Math.min(1, Math.hypot(a, b) / 6);
       const k = 1 + ((M.b ?? 1) - 1) * wm * wh, ka = 1 + ((M.a ?? 1) - 1) * wm * wh;
       b *= k; a *= ka;
+      // fix round 2: `rotate` (deg) turns the warm mids toward orange (1-TR's mid hue is 49 deg) while the top band
+      // keeps its gold and the chroma is kept: amber mids under gold highlights, not one yellow from top to toe
+      if (M.rotate) { const t = M.rotate * wm * wh * Math.PI / 180, ct = Math.cos(t), st = Math.sin(t), a1 = a * ct - b * st; b = a * st + b * ct; a = a1; }
     }
   }
   if (X.high) {
-    const H = X.high, wh = smoothstep(H.range[0], H.range[1], L0) * w;
+    // fix round 2: `cRange` [C0, C1] limits the top band to near-neutral colours (full weight below Lab chroma C0,
+    // none above C1): sky and cloud tops go cream, while fire, sun glow and sunlit gold keep their chroma and hue
+    const H = X.high, wc = H.cRange ? 1 - smoothstep(H.cRange[0], H.cRange[1], C0) : 1;
+    const wh = smoothstep(H.range[0], H.range[1], L0) * wc * w;
     if (wh > 0) {
       const k = 1 + ((H.chroma ?? 1) - 1) * wh;
       a = a * k + (H.shift ? H.shift[0] : 0) * wh;
       b = b * k + (H.shift ? H.shift[1] : 0) * wh;
     }
+    // fix round 2: `warm` [h0, h1, feather, k, Lfrom, Lto] gives warm highlights back the chroma AgX's path to white takes
+    // (sunlit gold, fire, sun glow: W0 showed them at C 40-45, AgX at 30-35); gamut-mapped below
+    if (H.warm) {
+      const Wm = H.warm, wl = smoothstep(Wm[4] ?? 50, Wm[5] ?? 75, L0) * w;
+      if (wl > 0) {
+        let h = Math.atan2(b, a) * 180 / Math.PI; if (h < 0) h += 360;
+        const wk = 1 + (Wm[3] - 1) * wl * bandWeight(h, Wm[0], Wm[1], Wm[2]) * Math.min(1, C0 / 8);
+        a *= wk; b *= wk;
+      }
+    }
+  }
+  // fix round 2: hue-preserving gamut mapping. The tone curve opens the top (82 -> 88 L*), and a saturated orange
+  // lifted that far leaves sRGB; a per-channel clamp then turned it toward yellow (#FFC070 hue 74 -> 86: the lemon
+  // highlights and the white sun the judges read). The chroma is reduced instead, at the stage's L* and hue.
+  if (!labInGamut(L, a, b)) {
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 14; i++) { const m = 0.5 * (lo + hi); if (labInGamut(L, a * m, b * m)) lo = m; else hi = m; }
+    a *= lo; b *= lo;
   }
   _lab[0] = L; _lab[1] = a; _lab[2] = b;
   labToSrgb(_lab, c);
   c[0] = clamp01(c[0]); c[1] = clamp01(c[1]); c[2] = clamp01(c[2]);
   return c;
+}
+
+/** Whether L*a*b* (D65) is inside the sRGB cube (linear channels in [-1e-6, 1 + 1e-6]). */
+function labInGamut(L, a, b) {
+  const fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - b / 200;
+  const x = fLabInv(fx) * XN, y = fLabInv(fy), z = fLabInv(fz) * ZN;
+  const r = 3.2404542 * x - 1.5371385 * y - 0.4985314 * z;
+  const g = -0.9692660 * x + 1.8760108 * y + 0.0415560 * z;
+  const bb = 0.0556434 * x - 0.2040259 * y + 1.0572252 * z;
+  const e = 1e-6;
+  return r >= -e && g >= -e && bb >= -e && r <= 1 + e && g <= 1 + e && bb <= 1 + e;
 }
 
 /* IEEE half floats (the LUT's GPU storage), without three: round-to-nearest-even. */

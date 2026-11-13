@@ -298,6 +298,9 @@ const LOOK = `
   };
 `;
 
+/** The prelude, for tooling rows outside this block (tools/look/hdr-dump.gates.mjs). */
+export { LOOK as LOOK_PRELUDE };
+
 /** Wrap an async body with the LOOK prelude and a top-level unstage. */
 const look = (body) => `(async () => {${LOOK}
   try {
@@ -477,6 +480,13 @@ const FRAME_STATS = look(`
 const SUITE_SHOTS = `(async () => {${LOOK}
   const out = {};
   try {
+    // fix round 2 (A-look-suite a across runs): the judge's two runs hashed the iframe boot identically for vista, aim and
+    // close while this page's boot differed, and the first place staged after a boot (field) differed in both: what a
+    // place streams in after READY (vegetation rings, LOD models, textures fetched on first sight) was still landing
+    // when it was first staged. A warm pass stages every place once (no capture) so each boot shoots only after all
+    // five places have streamed in and settled, whatever the boot's own timing
+    for (const name of ${JSON.stringify(Object.keys(LOOK_CORE))}) { const w = await stageLook(name, { frames: 30 }); if (!w.skip) await frames(30); unstage(); }
+    out.__warm = true;
     for (const name of ${JSON.stringify(Object.keys(LOOK_CORE))}) {
       const s = await stageLook(name, { frames: 40 });
       if (s.skip) { out[name] = { skip: s.skip }; continue; }
@@ -661,14 +671,61 @@ const BLOOM = look(`
   const inFrame = Math.abs(sp.x) < 0.95 && Math.abs(sp.y) < 0.95 && sp.z < 1;
   if (!inFrame) out.b = { ok: false, note: 'the sun is not in the vista stand-in frame (L-06 sun disc and the look.vista place are world-sky / world-props W1 work)', sunNdc: [+sp.x.toFixed(2), +sp.y.toFixed(2)] };
   else {
-    const sunR = Math.max(2, (0.5 * Math.PI / 180) / (cam.fov * Math.PI / 180) * cap.H);   // L-06: a 0.5 deg disc
-    const prof = async () => { const c = await grabCanvas(); const sx = (sp.x * 0.5 + 0.5) * c.W, sy = (1 - (sp.y * 0.5 + 0.5)) * c.H; const o = [];
-      for (const k of [6, 10, 15, 20, 30]) { const x = Math.round(sx + k * sunR), y = Math.round(sy); if (x >= c.W) { o.push(null); continue; } const i = (y * c.W + x) * 4; o.push(+LS.srgb8ToLab(c.px[i], c.px[i + 1], c.px[i + 2])[0].toFixed(1)); } return o; };
+    // L-06: disc radius 0.5 deg at sunCol x40 HDR, limb darkening 0.6 (ROUND5-LOOK §3.1 L-06)
+    const sunR = Math.max(2, (0.5 * Math.PI / 180) / (cam.fov * Math.PI / 180) * cap.H);
+    // fix round 2 (judge: no sun to measure on the stand-in): when the frame has no sun disc (scene HDR at the sun's
+    // pixel below 4x the bloom threshold), L-06's disc is planted the way (c)'s lamp probe is: radius 0.5 deg on the
+    // sun's bearing at 600 m, the sun light's colour x40 (sunCol x40), limb darkening 0.6 (vertex colours). A second,
+    // hotter probe (40x the bloom threshold in luminance, the judge's case) is measured for the white block only. A real
+    // disc (world-sky calSun, the integration build) is measured as it is.
+    const hdrAt = (fx, fy) => { const st = __E.sceneTarget, w = 1, h = 1, rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, depthBuffer: false });
+      const m = new THREE.ShaderMaterial({ uniforms: { t: { value: st.texture }, uv: { value: new THREE.Vector2(fx, fy) } }, vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: 'uniform sampler2D t; uniform vec2 uv; void main(){ gl_FragColor = texture2D(t, uv); }', depthTest: false });
+      const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m), sc = new THREE.Scene(); sc.add(q);
+      __R.setRenderTarget(rt); __R.render(sc, new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)); const buf = new Float32Array(4); __R.readRenderTargetPixels(rt, 0, 0, 1, 1, buf); __R.setRenderTarget(null);
+      rt.dispose(); m.dispose(); q.geometry.dispose(); return 0.2126 * buf[0] + 0.7152 * buf[1] + 0.0722 * buf[2]; };
+    const sunHdr = hdrAt(sp.x * 0.5 + 0.5, sp.y * 0.5 + 0.5);
+    let probe = null;
+    const sc0 = __C.environment.sun?.color || new THREE.Color(1, 0.79, 0.54);
+    const l0 = 0.2126 * sc0.r + 0.7152 * sc0.g + 0.0722 * sc0.b;
+    const plant = (k) => {
+      const D = Math.min(600, cam.far * 0.8), rad = D * Math.tan(0.5 * Math.PI / 180);
+      const geo = new THREE.CircleGeometry(rad, 48), n = geo.attributes.position.count, col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { const r = Math.hypot(geo.attributes.position.getX(i), geo.attributes.position.getY(i)) / rad, f = 1 - 0.4 * r; col[i * 3] = f; col[i * 3 + 1] = f; col[i * 3 + 2] = f; }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: new THREE.Color(sc0.r * k, sc0.g * k, sc0.b * k), vertexColors: true, fog: false }));
+      m.position.copy(cam.position).addScaledVector(new THREE.Vector3(sd.x, sd.y, sd.z).normalize(), D); m.lookAt(cam.position);
+      m.name = 'look-sun-probe'; m.userData.noSizeCull = true; m.frustumCulled = false; __C.scene.add(m); return m; };
+    const unplant = (m) => { if (m) { __C.scene.remove(m); m.geometry.dispose(); m.material.dispose(); } };
+    if (sunHdr < 4 * b.threshold) { probe = plant(40); await frames(4); }
+    const sx = (sp.x * 0.5 + 0.5) * cap.W, sy = (1 - (sp.y * 0.5 + 0.5)) * cap.H;
+    const prof = async () => { const c = await grabCanvas(); const o = [];
+      for (const k of [6, 10, 15, 20, 30]) { const x = Math.round(sx + k * sunR), y = Math.round(sy); if (x >= c.W) { o.push(null); continue; } const i = (y * c.W + x) * 4; o.push(+LS.srgb8ToLab(c.px[i], c.px[i + 1], c.px[i + 2])[0].toFixed(1)); }
+      // the white block (R68 b): how far from the sun's centre the frame stays clipped (largest channel >= 254), the
+      // farthest of 8 rays, in sun radii; the disc itself clips out to 1
+      let clipR = 0; for (let a = 0; a < 8; a++) { const dx = Math.cos(a * Math.PI / 4), dy = Math.sin(a * Math.PI / 4);
+        for (let r = 0; r < 40 * sunR; r += 0.5) { const x = Math.round(sx + dx * r), y = Math.round(sy + dy * r); if (x < 0 || y < 0 || x >= c.W || y >= c.H) break; const i = (y * c.W + x) * 4;
+          if (Math.max(c.px[i], c.px[i + 1], c.px[i + 2]) < 254) { clipR = Math.max(clipR, r); break; } } }
+      return { o, clipR: +(clipR / sunR).toFixed(2), c }; };
     const on = await prof();
-    b.enabled = false; await frames(3); const off = await prof(); b.enabled = __E.tier.bloom;
-    const lift6 = on[0] != null && off[0] != null ? on[0] - off[0] : null;
-    let mono = true; for (let k = 1; k < on.length; k++) if (on[k] != null && on[k - 1] != null && on[k] > on[k - 1] + 0.5) mono = false;
-    out.b = { sunRadiusPx: +sunR.toFixed(1), lstarOn: on, lstarOff: off, lift6: lift6 == null ? null : +lift6.toFixed(1), monotonic: mono, ok: lift6 != null && lift6 >= 6 && mono };
+    // the same frame without the bright-pass limit (diagnostic: what the limit changed)
+    __E._bloomClampK = 0; __E._syncLook(true); await frames(3); const noClamp = await prof(); __E._bloomClampK = null; __E._syncLook(true);
+    b.enabled = false; await frames(3); const off = await prof(); b.enabled = __E.tier.bloom; await frames(2);
+    const lift6 = on.o[0] != null && off.o[0] != null ? on.o[0] - off.o[0] : null;
+    let mono = true; for (let k = 1; k < on.o.length; k++) if (on.o[k] != null && on.o[k - 1] != null && on.o[k] > on.o[k - 1] + 0.5) mono = false;
+    // the hot probe (40x the bloom threshold in luminance): the white block only
+    let hot = null;
+    if (probe) { unplant(probe); probe = plant(40 * b.threshold / Math.max(1e-4, l0)); await frames(4); const h1 = await prof();
+      __E._bloomClampK = 0; __E._syncLook(true); await frames(3); const h0 = await prof(); __E._bloomClampK = null; __E._syncLook(true); await frames(2);
+      hot = { lstarOn: h1.o, lstarNoClamp: h0.o, clipRadiusSunRadii: { on: h1.clipR, noClamp: h0.clipR } }; }
+    const blockOk = on.clipR <= 1.5 && (!hot || hot.clipRadiusSunRadii.on <= 1.5);
+    out.b = { sun: probe ? 'planted (L-06): radius 0.5 deg, sunCol x40 (luminance ' + (40 * l0).toFixed(1) + ' = ' + (40 * l0 / b.threshold).toFixed(1) + 'x the threshold), limb 0.6 (no sun disc in this frame: scene HDR ' + sunHdr.toFixed(2) + ' at the sun pixel)' : 'the frame\\'s own sun disc (scene HDR ' + sunHdr.toFixed(1) + ')', hot,
+      sunRadiusPx: +sunR.toFixed(1), lstarOn: on.o, lstarOff: off.o, lstarNoClamp: noClamp.o, lift6: lift6 == null ? null : +lift6.toFixed(1), monotonic: mono,
+      clipRadiusSunRadii: { on: on.clipR, noClamp: noClamp.clipR, bloomOff: off.clipR, bar: '<= 1.5 (no white block)' }, brightMax: +(b.highPassUniforms?.uBrightMax?.value ?? 0).toFixed(2), clampReady: __E.bloomClampReady === true,
+      ok: lift6 != null && lift6 >= 6 && mono && blockOk };
+    unplant(probe);
+    // a 3x crop of the sun with the limit, without it and without bloom, for the judge (V-look-highlights reads it too)
+    window.__lookSunCrops = [on, noClamp, off].map((p) => { const S = Math.round(16 * sunR), x0 = Math.max(0, Math.round(sx - S)), y0 = Math.max(0, Math.round(sy - S)), w = Math.min(p.c.W - x0, 2 * S), h = Math.min(p.c.H - y0, 2 * S);
+      const px = new Uint8Array(w * h * 4); for (let y = 0; y < h; y++) px.set(p.c.px.subarray(((y0 + y) * p.c.W + x0) * 4, ((y0 + y) * p.c.W + x0 + w) * 4), y * w * 4); return { W: w, H: h, px }; });
   }
   unstage();
   // (c) a hostile lamp at 40 m: the instruments' own lamp at its solved core HDR, as a probe disc
@@ -844,8 +901,36 @@ const GRADE_FILM = lookJob(`
 const HIGHLIGHT_FILM = lookJob(`
   const s = await stageLook('vista');
   if (s.skip) { sheet([], 'V-look-highlights: ' + s.skip); return; }
+  const cells = [];
   const c = await grabCanvas(); const st = statsOf(c);
-  sheet([{ cap: c, label: 'look.vista (' + s.source + ')  hi10 hue ' + st.hi10.hue + ' C ' + st.hi10.chroma + '  p99 ' + st.L.p99 + '  clip ' + st.clip + '%' }], 'V-look-highlights: the sun glow and glints read cream or peach-white, not lemon', 1);
+  cells.push({ cap: c, label: 'look.vista (' + s.source + ')  hi10 hue ' + st.hi10.hue + ' C ' + st.hi10.chroma + '  p99 ' + st.L.p99 + '  clip ' + st.clip + '%' });
+  // fix round 2: the stand-in has no sun disc (L-06 is world-sky's); L-06's disc is planted on the sun's bearing (radius
+  // 0.5 deg, sunCol x40, limb 0.6) and once more at 40x the bloom threshold, each with the L-07 bright-pass limit on and off
+  const cam = __C.camera, sd = __C.environment.sunDir, b = __E.bloom;
+  const sp = new THREE.Vector3().copy(cam.position).addScaledVector(new THREE.Vector3(sd.x, sd.y, sd.z), 1000).project(cam);
+  if (Math.abs(sp.x) < 0.9 && Math.abs(sp.y) < 0.9 && sp.z < 1) {
+    const sunR = (0.5 * Math.PI / 180) / (cam.fov * Math.PI / 180) * c.H, sx = (sp.x * 0.5 + 0.5) * c.W, sy = (1 - (sp.y * 0.5 + 0.5)) * c.H;
+    const sc0 = __C.environment.sun?.color || new THREE.Color(1, 0.79, 0.54), l0 = 0.2126 * sc0.r + 0.7152 * sc0.g + 0.0722 * sc0.b;
+    const plant = (k) => { const D = Math.min(600, cam.far * 0.8), rad = D * Math.tan(0.5 * Math.PI / 180);
+      const geo = new THREE.CircleGeometry(rad, 48), n = geo.attributes.position.count, col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { const f = 1 - 0.4 * Math.hypot(geo.attributes.position.getX(i), geo.attributes.position.getY(i)) / rad; col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = f; }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: new THREE.Color(sc0.r * k, sc0.g * k, sc0.b * k), vertexColors: true, fog: false }));
+      m.position.copy(cam.position).addScaledVector(new THREE.Vector3(sd.x, sd.y, sd.z).normalize(), D); m.lookAt(cam.position);
+      m.name = 'look-sun-probe'; m.userData.noSizeCull = true; m.frustumCulled = false; __C.scene.add(m); return m; };
+    const crop = (cc) => { const S = Math.round(14 * sunR), x0 = Math.max(0, Math.round(sx - S)), y0 = Math.max(0, Math.round(sy - S * 0.6)), w = Math.min(cc.W - x0, 2 * S), h = Math.min(cc.H - y0, Math.round(1.2 * S));
+      const px = new Uint8Array(w * h * 4); for (let y = 0; y < h; y++) px.set(cc.px.subarray(((y0 + y) * cc.W + x0) * 4, ((y0 + y) * cc.W + x0 + w) * 4), y * w * 4); return { W: w, H: h, px }; };
+    for (const [k, nm] of [[40, 'L-06 sun (sunCol x40)'], [40 * b.threshold / Math.max(1e-4, l0), 'hot sun (40x the bloom threshold)']]) {
+      const m = plant(k); await frames(4);
+      const on = await grabCanvas();
+      if (k === 40) cells.splice(0, 1, { cap: on, label: 'look.vista (' + s.source + ') with ' + nm + ' planted on the sun bearing  hi10 hue ' + statsOf(on).hi10.hue + '  p99 ' + statsOf(on).L.p99 });
+      __E._bloomClampK = 0; __E._syncLook(true); await frames(3); const nc = await grabCanvas(); __E._bloomClampK = null; __E._syncLook(true); await frames(2);
+      cells.push({ cap: crop(on), label: nm + ': L-07 bloom with the bright-pass limit (shipped)' });
+      cells.push({ cap: crop(nc), label: nm + ': the same bloom without the limit (r4-f1)' });
+      __C.scene.remove(m); m.geometry.dispose(); m.material.dispose();
+    }
+  }
+  sheet(cells, 'V-look-highlights: the sun glow and glints read cream or peach-white, not lemon; no white block (R68 b)', 2);
 `);
 
 const GLOW_FILM = lookJob(`

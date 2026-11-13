@@ -264,7 +264,7 @@ export const LOOK_W0 = Object.freeze({
  * `smoothWidth` stay the fallbacks (ACES output, or before the look is built).
  */
 export const LOOK_BLOOM = Object.freeze({ strength: 0.48, radius: 0.72, threshold: 1.30, smoothWidth: 0.35,
-  thresholdLstar: 94, kneeRatio: 0.35 / 1.30,
+  thresholdLstar: 94, kneeRatio: 0.35 / 1.30, clampK: 8,
   factors: Object.freeze([0.55, 0.65, 0.85, 1.05, 1.25]), tint: Object.freeze([1.0, 0.97, 0.93]) });
 
 const OutputGradeShader = {
@@ -1196,9 +1196,16 @@ export class Engine {
     if (!this.postFoldReady) { console.warn('[CAL] bloom high-pass anchors missing: post fold off'); return false; }
     hp.uniforms.tAO = { value: null };
     hp.uniforms.uAOMix = { value: 0 };
+    // L-07 fix round 2 (R68 b, the a1 sun blob): the bright pass's output is limited to uBrightMax in luminance (hue
+    // kept), so a sun at x40 the threshold stops saturating the low mips into a white block; a lamp core (x1.25-2) is
+    // untouched. 1e9 = no limit (the W0 bloom, and three's own path when the anchor is missing)
+    const A3 = 'gl_FragColor = mix( outputColor, texel, alpha );';
+    hp.uniforms.uBrightMax = { value: 1e9 };
+    this.bloomClampReady = hp.fragmentShader.includes(A3);
     hp.fragmentShader = hp.fragmentShader
-      .replace(A1, A1 + '\n\t\tuniform sampler2D tAO;\n\t\tuniform float uAOMix;')
-      .replace(A2, A2 + '\n\t\t\tif (uAOMix > 0.0) { vec4 ao = texture2D(tAO, vUv); texel.rgb *= mix(vec3(1.0), ao.rgb, uAOMix); texel.a *= ao.a; }');
+      .replace(A1, A1 + '\n\t\tuniform sampler2D tAO;\n\t\tuniform float uAOMix;\n\t\tuniform float uBrightMax;')
+      .replace(A2, A2 + '\n\t\t\tif (uAOMix > 0.0) { vec4 ao = texture2D(tAO, vUv); texel.rgb *= mix(vec3(1.0), ao.rgb, uAOMix); texel.a *= ao.a; }')
+      .replace(A3, A3 + '\n\t\t\t{ float bv = luminance( gl_FragColor.rgb ); if ( bv > uBrightMax ) gl_FragColor.rgb *= uBrightMax / bv; }');
     hp.needsUpdate = true;
     b.render = function (renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
       const gu = engine.grade.uniforms;
@@ -1372,6 +1379,8 @@ export class Engine {
     }
     b.threshold = thr;
     if (b.highPassUniforms?.smoothWidth) b.highPassUniforms.smoothWidth.value = sw;
+    // the bright-pass limit (L-07 fix round 2): clampK x the threshold under the L-07 bloom, none under the W0 bloom
+    if (b.highPassUniforms?.uBrightMax) b.highPassUniforms.uBrightMax.value = B.clampK && this._bloomClampK !== 0 ? thr * (this._bloomClampK || B.clampK) : 1e9;
     const cu = b.compositeMaterial?.uniforms;
     if (cu?.bloomFactors) for (let i = 0; i < cu.bloomFactors.value.length; i++) cu.bloomFactors.value[i] = B.factors[i] ?? B.factors[B.factors.length - 1];
     if (b.bloomTintColors) for (let i = 0; i < b.bloomTintColors.length; i++) b.bloomTintColors[i].set(B.tint[0], B.tint[1], B.tint[2]);
