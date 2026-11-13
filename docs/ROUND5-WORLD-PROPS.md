@@ -5,9 +5,12 @@ the red crater, all six trig pillars and twelve benchmark pads, `ctx.props.gateP
 scripted Gauge; R66 (m) adds six offshore stacks, a sea arch and one Roque plug; R48 (c) the `fauna.js`
 allocation bar. The Round-4 props are removed from the island (plan §6).
 
-(Sections 1–8 are filled in below; gate numbers are from the runs named in §5.)
+Sections: 0 how it was built and graded · 1 what was built · 2 files · 3 contracts · 4 gates · 5 my reading of the frames · 6 what others must do · 7 processes and budgets.
 
 ## 0. How this was built and graded (read first)
+
+Relaunch note: the earlier builder of this lane left no work in this tree (its one checkpoint, 7bf755e, holds two
+plan lines), so everything below was built in this session.
 
 **The island is world-ground's, and it is not on main yet.** This tree (branch `r5/w1-world-props`) still
 carries the W0 stub `src/world/island/sites.js` (no `TRIG`, no `SALT_FIELD`, `PLAY_RADIUS` 330) and the
@@ -85,41 +88,6 @@ Events: `trig-sighted {id, name, sighted}`, `trig-plate {id, name, top}`, `bench
 (each `{x, z, y, eye, yaw, bearing, pitch, fov, look, hour, weather, note, pose?, stub?}`; `stub: true` on the eleven not yet
 filmed and graded by a world-props row). Diagnostics: `__source: 'world-props'`, `__island`, `__stacks`, `__roques`, `__field`.
 
-## 6. What another lane or the orchestrator must do
-
-- **Orchestrator — merge order.** Merge world-ground before world-props; then re-run `--lane world-props` on main.
-  On this tree alone the props stand on the W0 stub map (bible coordinates in its sea) and the place rows
-  report against the wrong map.
-- **world-ground — static kinds and keepouts.** `vegetation._applyKeepouts` thins the flora only. Its static kinds
-  (`rocks-*`, `pan-dykes`) ignore `ctx.props.keepouts`, so world-ground's basalt pavement stood inside T1's
-  footprint (53 column stubs, 54 colliders) and blocked the climb. Until world-ground thins its static kinds
-  itself, `Props._clearScatter()` zeroes those instances inside a keepout's hard radius once and hands their
-  colliders back (the Round-4 clearings rule; report in `ctx.props.clearingReport`). When world-ground does it,
-  the shim finds nothing and is a no-op; delete it then.
-- **world-ground — the Ring's rise (R66 m).** `sites.js` `sounding-ring` height 0.5 → 6 and the 5–6 m grassed
-  shingle rise are world-ground's; the Ring is set on the ground under its cradle at boot, so it rides up with
-  the rise when that lands. Until then it stands on the storm-beach shingle at ≈ 0.3 m.
-- **world-ground — surf at the stack feet (W-04).** `ctx.props.seaStacks` (7 `{x, z, r}`) is published for the
-  sea shader's 8-entry circle-SDF surf. The stacks carry their own wave-washed skirt and a pale collar, but
-  A-look-sea-skyline's "foam L* ≥ 75 at every visible foot" clause is the sea shader's to light.
-- **world-sky — the glitter column (W-09)** for A-look-sea-skyline's "darker than the column by 25 L*" clause;
-  two stacks are placed in the 280–295° column seen from T1.
-- **shell-ui** — `ctx.props.gauge.readout()` for the Sighting card ("GAUGE · SLUICE 3 · TIDE 0.4 m");
-  `ctx.props.landmarks` now carries 11 Organ Shelf cluster records with `map: false` (silhouettes for the gates,
-  not map icons): the map should skip `map === false`.
-- **progression (W3)** — the twelve benchmarks and their regions (`ctx.props.survey.benchmarks`), the
-  `benchmark-resurveyed` and `trig-sighted` events (the triangle opens on the map), fast travel from a benchmark.
-- **settlements (W2)** — Saltrow's three bible pumps are these three (`ctx.props.landmarkSet.records`, ids `pump-*`);
-  settlements should not build a second set.
-- **instruments-b (W2)** — the living Gauge replaces the static one: `ctx.props.gauge.dispose()` takes it out
-  (and its colliders are unregistered by `Props.dispose`, or by unregistering `ref === gauge.body`).
-- **pipeline row** — `landmark-sounding-ring-poc` in `LICENSES.json` still names
-  `tools/build/landmarks/gen-sounding-ring.mjs` as its `source_url`; that generator now lives at
-  `tools/build/landmarks/recipes/sounding-ring.mjs` and writes `public/models/landmarks/sounding-ring.glb`.
-  `public/models/r5-poc/sounding-ring.glb` is no longer rebuilt by anything (world-ground deletes the `?poc=biome`
-  closure at its W1 exit; pipeline drops the row then).
-- **look-post** — `gatePlaces.look.*` is published (15 places); eleven are `stub: true` until filmed.
-
 ## 4. Gates — lane block (W1), port 5260, `nice -n 10`, one Chrome under the slot protocol
 
 `tools/gates.r5.world-props.mjs` (18 rows; `node tools/gates.mjs --port 5260 --lane world-props` selects exactly them).
@@ -164,3 +132,87 @@ absolute 4 KB/s bar ·
 vs 14 at tier high, the same as world-ground's report before these props (19.7–21.2): the W1-exit engine/world item.
 Not run here: A90-abs, A90-rig-reclaim, A90-memory-stability-expansion, A-port-guard, A-carried-suite (orchestrator's
 sealed run), A-reach-all-sites (world-ground's row, not in this tree).
+
+The final re-run **r6** (Nov 13 00:59–01:01 UTC) on the overlay: A1-boot-clean PASS, A-trig-pillars PASS (unchanged
+numbers), A-look-sea-skyline PENDING (same split), V-landmark-sheet / V-look-ring / V-look-sea-skyline re-filmed.
+Then, in the same slot hold, **this tree alone** (its own Vite, the W0 stub island): A1-boot-clean PASS,
+A20b-no-system-errors PASS — the lane boots clean without world-ground — and A-gate-places-published FAIL, as it must
+on the stub (no `GROUND` rows, every island coordinate in the stub map's sea).
+
+Frames (scratch, outside the tree): `…/scratchpad/r5/world-props/r6/overlay/shots/gates/{V-landmark-sheet,V-look-ring,V-look-sea-skyline}.png`,
+`…/r5/shots/gates/{V-look-spires,A-landmark-bearing,V34-midground,A-look-spires,A-look-sea-skyline}.png`.
+
+## 5. My reading of the frames (advisory; R54 bar), and what still looks weak
+
+- **The Ring** reads as its bible description: an upright broken gyroscope, 34 m, glaze panels on bronze flanges, the
+  inner gimbal and dim core, sky through it, panels lying in the shingle. Best frame: from T1's deck at 18:45, the Ring
+  between Organ columns over the salt field with the stacks and the low sun behind (close to 1-MR's mood). Weak: from
+  look.pansInland it sits small at the frame's left edge. The geography forbids more (below).
+- **look.pansInland cannot hold both the Ring at ≥ 140 px and the needles at ≥ 90 px well.** The Ring stands on the
+  south-west storm beach and the caldera rim is north-east, so from any Pans ground the two are ≥ 79° apart: the only
+  camera that sees them in one direction stands in the sea. The frame passes both numbers with the Ring at the left
+  edge (58° FOV, pitched 15° up). Ask: let A-look-landmark-scale grade the Ring from T1 / look.vista, and keep the
+  needles on pansInland.
+- **Organ Shelf**: from T1 and from Saltrow the clusters read as dark pipe bundles; seen alone at 26 m a cluster looks
+  like a blackened stump standing in front of world-ground's scarp rather than being the scarp. Mid-tier next to a real
+  Los Órganos photograph (none is stored: §6).
+- **Wind pumps**: read well (lattice, rotor, vane, cistern, trough). **Gauge**: reads as the lighthouse on stilts; the
+  6 m staff is very thin at 15 m. **Trig pillar**: white drum + vermilion band + plate + mast reads; the stone steps
+  are still blocky at 10 m.
+- **Stacks**: staggered heights and distances read; but at 18:45 they float over a far sea that has no texture and a fog
+  colour equal to the sky, and their foam does not survive 500 m of haze. R68's integration run a1 also found them
+  reading as "bundles of cylinders". After r6 I roughened the beds (each bed's plan turned ±14°, scaled ±8 %,
+  rougher faces, fewer, thicker beds; offline preview only, **not re-filmed**: `public/models/landmarks/sea-stacks.glb`
+  sha256 b7f5591b…). The waterline is still a shared world-ground / world-sky term.
+- **Roque plug**: a fluted, lobed, shouldered needle; from the beach it stands above the rim line. From the caldera
+  floor it is darker than the pale pumice around it and still reads a little like a stacked chimney.
+- Kevin's Nov 6 board (image 2, LANDMARKS) puts the Ring on a ridge; ours stands on the beach (bible §8.4 site,
+  world-ground's rise pending).
+
+## 6. What another lane or the orchestrator must do
+
+- **Orchestrator — merge order.** Merge world-ground before world-props; then re-run `--lane world-props` on main.
+  On this tree alone the props stand on the W0 stub map (bible coordinates in its sea) and the place rows
+  report against the wrong map.
+- **world-ground — static kinds and keepouts.** `vegetation._applyKeepouts` thins the flora only. Its static kinds
+  (`rocks-*`, `pan-dykes`) ignore `ctx.props.keepouts`, so world-ground's basalt pavement stood inside T1's
+  footprint (53 column stubs, 54 colliders) and blocked the climb. Until world-ground thins its static kinds
+  itself, `Props._clearScatter()` zeroes those instances inside a keepout's hard radius once and hands their
+  colliders back (the Round-4 clearings rule; report in `ctx.props.clearingReport`). When world-ground does it,
+  the shim finds nothing and is a no-op; delete it then.
+- **world-ground — the Ring's rise (R66 m).** `sites.js` `sounding-ring` height 0.5 → 6 and the 5–6 m grassed
+  shingle rise are world-ground's; the Ring is set on the ground under its cradle at boot, so it rides up with
+  the rise when that lands. Until then it stands on the storm-beach shingle at ≈ 0.3 m.
+- **world-ground — surf at the stack feet (W-04).** `ctx.props.seaStacks` (7 `{x, z, r}`) is published for the
+  sea shader's 8-entry circle-SDF surf. The stacks carry their own wave-washed skirt and a pale collar, but
+  A-look-sea-skyline's "foam L* ≥ 75 at every visible foot" clause is the sea shader's to light.
+- **world-sky — the glitter column (W-09)** for A-look-sea-skyline's "darker than the column by 25 L*" clause;
+  two stacks are placed in the 280–295° column seen from T1.
+- **shell-ui** — `ctx.props.gauge.readout()` for the Sighting card ("GAUGE · SLUICE 3 · TIDE 0.4 m");
+  `ctx.props.landmarks` now carries 11 Organ Shelf cluster records with `map: false` (silhouettes for the gates,
+  not map icons): the map should skip `map === false`.
+- **progression (W3)** — the twelve benchmarks and their regions (`ctx.props.survey.benchmarks`), the
+  `benchmark-resurveyed` and `trig-sighted` events (the triangle opens on the map), fast travel from a benchmark.
+- **settlements (W2)** — Saltrow's three bible pumps are these three (`ctx.props.landmarkSet.records`, ids `pump-*`);
+  settlements should not build a second set.
+- **instruments-b (W2)** — the living Gauge replaces the static one: `ctx.props.gauge.dispose()` takes it out
+  (and its colliders are unregistered by `Props.dispose`, or by unregistering `ref === gauge.body`).
+- **pipeline row** — `landmark-sounding-ring-poc` in `LICENSES.json` still names
+  `tools/build/landmarks/gen-sounding-ring.mjs` as its `source_url`; that generator now lives at
+  `tools/build/landmarks/recipes/sounding-ring.mjs` and writes `public/models/landmarks/sounding-ring.glb`.
+  `public/models/r5-poc/sounding-ring.glb` is no longer rebuilt by anything (world-ground deletes the `?poc=biome`
+  closure at its W1 exit; pipeline drops the row then).
+- **look-post** — `gatePlaces.look.*` is published (15 places); eleven are `stub: true` until filmed.
+
+## 7. Processes, scratch, budgets
+
+- Vite: overlay Vite and the plain-tree Vite on 5260 both killed; 0 listeners on 5260. Chrome: only through
+  `tools/gates.mjs`, one slot at a time (6 runs, slot dirs created and removed by this lane only; r3's first attempt
+  released its slot within 1 s on a script error); 0 Chrome profiles left by this lane.
+- Scratch: `/private/tmp/claude-501/-Users-kevinliu-Horizon-Zero-Claude/db31a0fa-9701-46f4-8234-5158425c1e49/scratchpad/r5/world-props/`
+  (overlay, world-ground snapshot, runs r1–r6, offline previews, node probes). Nothing was written into world-ground's tree.
+- Budgets: landmark GLBs 0.90 MB on disk (plan §4.5 ≈ 2.5 MB for landmarks); Ring 20.8 k tris, plug + needle 8.6 k,
+  stacks 25.7 k across 4 meshes, Organ Shelf 29.8 k (generated), pumps 5.9 k, survey marks 3.1 k, Gauge 4.9 k; all ≤ 40 k
+  per landmark. World-props share of the worst look frame: 17 draws (bar 45).
+- Lint: `tools/lint/namecheck.mjs --code` PASS (1,334 ≤ 1,371, 0 over cap; `engine:machines` back to ≤ 187 after
+  renaming two helpers). Licence manifest: files-matched PASS, one new project-original row.
