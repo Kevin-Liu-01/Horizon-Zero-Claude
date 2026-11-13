@@ -198,7 +198,8 @@ export function compassBoss(part, c, n, up, rect, sk, { R = 0.03, thick = 0.0055
     const q = at(Math.cos(a) * rad, Math.sin(a) * rad, z);
     const slope = r === 0 ? 0 : (prof[r - 1][1] - z) / Math.max(1e-4, rad - prof[r - 1][0] || 1e-4);
     const nn = V.norm(V.add(V.mul(n, 1), V.mul(V.add(V.mul(X, Math.cos(a)), V.mul(Y, Math.sin(a))), r <= 1 ? 1.6 : clamp(-slope, -1.5, 1.5) * 0.3)));
-    push(q, nn, 0.5 + 0.5 * Math.cos(a) * rad / R, 0.5 + 0.5 * Math.sin(a) * rad / R);
+    // (the cell's upper half is rubbed bright: the rim; its lower half the patinated field)
+    push(q, nn, 0.1 + 0.8 * (s / SIDES), r <= 2 ? 0.8 : 0.22);
   }
   for (let r = 0; r < prof.length - 1; r++) for (let s = 0; s < SIDES; s++) {
     const a = base + r * (SIDES + 1) + s, b = a + 1, d = a + SIDES + 1, e = d + 1;
@@ -215,8 +216,9 @@ export function compassBoss(part, c, n, up, rect, sk, { R = 0.03, thick = 0.0055
     const top = at(0, 0, h);
     base = part.pos.length / 3;
     const f1 = V.norm(V.cross(V.sub(tip, top), V.sub(l, top))), f2 = V.norm(V.cross(V.sub(rr, top), V.sub(tip, top)));
-    push(top, f1, 0.5, 0.5); push(l, f1, 0.5 + 0.5 * s[0] * half / R, 0.5 + 0.5 * s[1] * half / R); push(tip, f1, 0.5 + 0.5 * d[0] * len / R, 0.5 + 0.5 * d[1] * len / R);
-    push(top, f2, 0.5, 0.5); push(tip, f2, 0.5 + 0.5 * d[0] * len / R, 0.5 + 0.5 * d[1] * len / R); push(rr, f2, 0.5 - 0.5 * s[0] * half / R, 0.5 - 0.5 * s[1] * half / R);
+    // (the ridge and the point rubbed bright, the feet of the flanks in the patina)
+    push(top, f1, 0.3 + 0.05 * k, 0.9); push(l, f1, 0.3 + 0.05 * k, 0.3); push(tip, f1, 0.32 + 0.05 * k, 0.85);
+    push(top, f2, 0.3 + 0.05 * k, 0.9); push(tip, f2, 0.32 + 0.05 * k, 0.85); push(rr, f2, 0.3 + 0.05 * k, 0.3);
     const o1 = V.dot(f1, n) < 0, o2 = V.dot(f2, n) < 0;
     if (o1) part.idx.push(base, base + 2, base + 1); else part.idx.push(base, base + 1, base + 2);
     if (o2) part.idx.push(base + 3, base + 5, base + 4); else part.idx.push(base + 3, base + 4, base + 5);
@@ -226,7 +228,7 @@ export function compassBoss(part, c, n, up, rect, sk, { R = 0.03, thick = 0.0055
   const SD = 10, sr = R * 0.14;
   for (const [rad, z] of [[sr, thick * 0.84], [sr * 0.8, thick + 0.0028], [0.0003, thick + 0.0034]]) for (let s = 0; s <= SD; s++) {
     const a = (s / SD) * TAU;
-    push(at(Math.cos(a) * rad, Math.sin(a) * rad, z), V.norm(V.add(n, V.mul(V.add(V.mul(X, Math.cos(a)), V.mul(Y, Math.sin(a))), rad / sr * 0.8))), 0.5 + 0.5 * Math.cos(a) * rad / R, 0.5 + 0.5 * Math.sin(a) * rad / R);
+    push(at(Math.cos(a) * rad, Math.sin(a) * rad, z), V.norm(V.add(n, V.mul(V.add(V.mul(X, Math.cos(a)), V.mul(Y, Math.sin(a))), rad / sr * 0.8))), 0.7 + 0.2 * (s / SD), 0.88);
   }
   for (let r = 0; r < 2; r++) for (let s = 0; s < SD; s++) {
     const a = base + r * (SD + 1) + s, b = a + 1, d = a + SD + 1, e = d + 1;

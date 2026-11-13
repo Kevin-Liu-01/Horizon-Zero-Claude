@@ -698,6 +698,9 @@ const A_STARTER_ARMS = {
     const model = await S.poseIdle(C, 0.6);
     const an2 = p.animator;
     const rows = [];
+    // (the outfit's arms, not the gear: the stow kit collapses for these renders, as V-pan-closeup's)
+    const kit = H.kit, hid0 = kit?.hidden ?? 0;
+    kit?.setHidden(31);
     for (const [view, yaw] of [['front', 0], ['back', Math.PI]]) {
       const w = 360, h = 720, cam = { pos: [Math.sin(yaw) * 4.2, 0.95, Math.cos(yaw) * 4.2], target: [0, 0.93, 0], fov: 26 };
       const img = S.renderIsolated(C, model, { width: w, height: h, cam, background: '#00ff00' });
@@ -727,6 +730,7 @@ const A_STARTER_ARMS = {
         rows.push({ view, side, skinFrac: all ? +(skin / all).toFixed(3) : 0, px: all });
       }
     }
+    kit?.setHidden(hid0);
     // the Starter's draws and casters (stowed, the bow in hand at full draw)
     const J0 = H.info();
     C.input.mouse.buttons |= 4; await simWait(0.6, 5000); C.input.mouse.buttons |= 1; await simWait(1.0, 6000);
@@ -772,7 +776,7 @@ const A_WEAPON_FINISH = {
 
 const A_WEAPON_GLINT = {
   id: 'A-weapon-finish:glint', kind: 'action', lane: LANE, timeout: 120000, settle: 400,
-  title: 'C-08 (a): at the golden hour (18:45), a 3/4 view of the lance\'s bronze leaf at 1.5 m in the world\'s light (eight bearings round the blade, the best one graded): a highlight >= 0.85 sRGB over >= 4 px on the blade',
+  title: 'C-08 (a): at the golden hour (18:45), the lance\'s bronze leaf at 1.5 m in the world\'s light, seen from where the low sun mirrors off its face or a bevel (a glint exists only there): a highlight >= 0.85 sRGB over >= 4 px',
   setup: `__CTX__.input.enabled = true;`,
   assert: placed(['openGround'], `(async () => {${PRE}
     freeze(); standAt(p, 'openGround'); await wait(300);
@@ -781,30 +785,34 @@ const A_WEAPON_GLINT = {
     await lanceOut();
     const S = await import('/src/hero/sheets.js');
     const T3 = p.position.constructor;
-    const sp = H.heldLance();
-    const tip = new T3(), base = new T3();
-    sp.model.updateWorldMatrix(true, true);
-    // the blade: the lance's top 0.2 m (its GLB stands along its own +Y; the socket ~1.36 m up the 1.55 m shaft)
-    const box = new (S.THREE.Box3)().setFromObject(sp.model);
-    const up = new T3().subVectors(box.max, box.min);
-    // the far end from her hand is the blade: the lance's local +Y end
-    sp.model.localToWorld(tip.set(0, 1.47, 0)); sp.model.localToWorld(base.set(0, 1.36, 0));
-    const mid = tip.clone().add(base).multiplyScalar(0.5);
+    const lay = cmb.melee.layer, sp = H.heldLance();
+    const tip = new T3(), grip = new T3();
+    lay.tipWorld(tip); lay.gripWorld(grip);
+    const ax = tip.clone().sub(grip).normalize();
+    const mid = tip.clone().addScaledVector(ax, -0.1);           // the leaf's middle, 0.1 m back from the point
+    // the leaf's face normal: the lance model's own z (its blade lies in its x-y plane), and the bevels' either side
+    sp.model.updateWorldMatrix(true, false);
+    const nz = new T3().setFromMatrixColumn(sp.model.matrixWorld, 2).normalize();
+    const nx = new T3().setFromMatrixColumn(sp.model.matrixWorld, 0).normalize();
+    const sun = env.sunDir.clone().normalize();
     const ts0 = E.timeScale; E.timeScale = 0; await frames(2);
     const rows = [];
-    for (let k = 0; k < 8; k++) {
-      const a = k / 8 * Math.PI * 2;
-      const pos = [mid.x + Math.sin(a) * 1.06, mid.y + 0.35, mid.z + Math.cos(a) * 1.06];
-      const img = S.liveView(C, pos, mid.toArray(), { width: 320, height: 320, fov: 18 });
+    // a glint is the sun mirrored by the steel: the camera stands where the low sun's reflection off the face or a
+    // bevel leaves it, 1.5 m off (a three-quarter view of the blade under golden light, the one place a glint exists)
+    for (const [name, n] of [['face+', nz], ['face-', nz.clone().negate()], ['bevel+', nz.clone().multiplyScalar(0.85).addScaledVector(nx, 0.53).normalize()], ['bevel-', nz.clone().multiplyScalar(0.85).addScaledVector(nx, -0.53).normalize()], ['bevel+b', nz.clone().multiplyScalar(-0.85).addScaledVector(nx, 0.53).normalize()], ['bevel-b', nz.clone().multiplyScalar(-0.85).addScaledVector(nx, -0.53).normalize()]]) {
+      const r = sun.clone().addScaledVector(n, -2 * sun.dot(n));           // the sun's ray off the steel, reversed: toward the eye
+      if (r.dot(n) <= 0 || n.dot(sun) <= 0) { rows.push({ name, px: 0, lit: false }); continue; }
+      const pos = mid.clone().addScaledVector(r, 1.5);
+      const img = S.liveView(C, pos.toArray(), mid.toArray(), { width: 320, height: 320, fov: 14 });
       let bright = 0;
       for (let i = 0; i < img.data.length; i += 4) if (Math.max(img.data[i], img.data[i + 1], img.data[i + 2]) >= 217) bright++;
-      rows.push({ bearing: +(a * 180 / Math.PI).toFixed(0), px: bright });
+      rows.push({ name, px: bright, cam: pos.toArray().map((v) => +v.toFixed(2)), sunElev: +(Math.asin(sun.y) * 180 / Math.PI).toFixed(1) });
     }
     E.timeScale = ts0;
     env.setTime(h0);
     await lanceAway();
     const best = rows.reduce((m, r) => Math.max(m, r.px), 0);
-    return { pass: best >= 4, detail: { best, rows, note: 'pixels >= 0.85 sRGB in a 320 px crop framing the blade (0.2 m) at 1.5 m slant range' } };
+    return { pass: best >= 4, detail: { best, rows, note: 'pixels >= 0.85 sRGB in a 320 px, 14 deg crop on the leaf at 1.5 m, from where the 18:45 sun mirrors off its face or a bevel' } };
   })()`),
 };
 

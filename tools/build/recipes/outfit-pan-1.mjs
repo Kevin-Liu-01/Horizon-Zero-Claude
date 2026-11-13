@@ -368,8 +368,11 @@ export function panTrim(W, H, trimH) {
   // the boss's cast bronze: darker and warmer than the brass, a brown patina in the low field, the rose's ridges and the
   // rim rubbed bright by the straps and her hands
   T.cell('bronze', 60, 18, (t, o) => {
+    // (W1 exit: in the engine the boss read as a dark wooden button. The cell's lower half is the patinated field, its
+    // upper half the bronze rubbed bright, which compassBoss maps to the rim, the rose's ridges and the stud)
     const m = fbm(t.ax * 0.2, t.ay * 0.2, 5.1, 3), sp = noise3(t.ax * 1.1, t.ay * 1.1, 2.9);
-    put(o, sc(COL.bronze, 0.82 + 0.46 * (m - 0.4)));
+    if (t.v > 0.5) { put(o, sc([214, 168, 98], 0.86 + 0.24 * (m - 0.4))); o.metal = 1; o.rough = 0.26 + 0.06 * m; o.det = 0; return; }
+    put(o, sc(COL.bronze, 0.92 + 0.46 * (m - 0.4)));
     over(o, [74, 58, 40], sstep(0.55, 0.3, m) * 0.5);
     if (m < 0.34) over(o, [62, 92, 80], (0.34 - m) * 2.2);
     if (sp > 0.82) over(o, [46, 40, 32], (sp - 0.82) * 3);
@@ -996,6 +999,19 @@ export async function panBase(opt = {}) {
       strapAlong(harness, clothField, clothField, [...fr.slice().reverse(), ...bk.slice(1)], { width: HW, margin: sx > 0 ? 0.0068 : 0.0098, segs: 30, cols: 2, rect: trim.rect('strap'), tile: 0.42, crown: 0.0012 });
     }
     orientOut(harness, 0, -0.02, 1.2);
+    // (in the engine the straps' EDGES read torn: a 4 cm strap is straight across, and over the bust's sides and the
+    // shoulder blades the cloth curves up under its edges. Every vertex of the strap, not only its centre line, is kept at
+    // least 4.5 mm over the cloth under it, along the cloth's own normal)
+    {
+      const near = (x, y, z) => { const L = clothField.nearest(x, y, z, 6); let nx = 0, ny = 0, nz = 0, h = 0, f = 0; for (const { p, d } of L) { const w = 1 / (d * d + 1e-4); nx += p.nx * w; ny += p.ny * w; nz += p.nz * w; h += ((x - p.x) * p.nx + (y - p.y) * p.ny + (z - p.z) * p.nz) * w; f += w; } const n = V.norm([nx, ny, nz]); return { n, h: h / f }; };
+      for (let i = 0; i < harness.pos.length / 3; i++) {
+        const q = near(harness.pos[i * 3], harness.pos[i * 3 + 1], harness.pos[i * 3 + 2]);
+        const want = 0.0045 + (i >= harness.pos.length / 6 ? 0.003 : 0);      // the second strap lies on the first
+        if (q.h >= want) continue;
+        const k = want - q.h;
+        harness.pos[i * 3] += q.n[0] * k; harness.pos[i * 3 + 1] += q.n[1] * k; harness.pos[i * 3 + 2] += q.n[2] * k;
+      }
+    }
     // (over the shoulder blades the back's modelled pull folds stand up to 9 mm: there the straps lie 2.5 mm higher, or a
     // fold's crest came through the leather)
     for (let i = 0; i < harness.pos.length / 3; i++) {

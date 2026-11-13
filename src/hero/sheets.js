@@ -649,7 +649,9 @@ export async function gearInHandOverlay(ctx) {
   // (W1 exit, judges: "in the behind panel the stowed lance's shaft crosses her head and the draw sleeve is a slab at the
   // near plane": from behind her LEFT shoulder and above it, the lance's diagonal (left hip to right shoulder) falls to
   // the frame's right, her head, the draw hand at the cheek and the raised elbow stand clear of it)
-  live(toW(0.85, 1.78, -1.45), toW(-0.02, 1.36, 0.12), 620, 460, 490, 430, 34);
+  // (run a: from behind-left at shoulder height the lance still crossed her right shoulder. From above and behind,
+  // 40 degrees down, the diagonal on her back projects below her shoulder line: head, cheek, hand and elbow above it)
+  live(toW(0.35, 2.4, -1.3), toW(-0.04, 1.44, 0.1), 620, 460, 490, 430, 36);
   label(g, 'full draw: from her right, front-right, behind-left', 10, 20, 13, '#efe8da');
   E.timeScale = ts0;
   ctx.input.mouse.buttons = 0; await wait(400);
@@ -689,9 +691,10 @@ export async function starterBoardOverlay(ctx, refFile = null) {
     env?.setTime?.(hour);
     for (let i = 0; i < 8; i++) await frame();
     const ts0 = E.timeScale; E.timeScale = 0; await frame();
-    const views = [['front', [0, 1.2, 2.0]], ['3/4', [1.45, 1.25, 1.45]], ['back', [-0.2, 1.25, -2.0]], ['chase', [0.55, 1.75, -2.8]]];
+    // (head to boots in each: at 2 m a 36 degree lens cut her off at the shin and the boots are a criterion)
+    const views = [['front', [0, 1.1, 2.15]], ['3/4', [1.52, 1.15, 1.52]], ['back', [-0.2, 1.15, -2.15]], ['chase', [0.55, 1.75, -2.8]]];
     views.forEach(([vn, at], i) => {
-      const img = liveView(ctx, toW(...at).toArray(), toW(0, vn === 'chase' ? 1.25 : 0.98, 0).toArray(), { width: 330, height: 420, fov: vn === 'chase' ? 50 : 36 });
+      const img = liveView(ctx, toW(...at).toArray(), toW(0, vn === 'chase' ? 1.25 : 0.88, 0).toArray(), { width: 330, height: 420, fov: vn === 'chase' ? 50 : 50 });
       g.drawImage(canvasOf(img), 8 + i * 334, y, 330, 420);
       label(g, `${name} · ${vn}`, 14 + i * 334, y + 16, 12, '#efe8da');
     });
@@ -723,7 +726,12 @@ export async function weaponKeyartOverlay(ctx, refFile = null) {
   E.timeScale = 0; await frame();
   g.drawImage(canvasOf(liveView(ctx, toW(1.2, 1.35, -1.6).toArray(), toW(0, 1.05, -0.1).toArray(), { width: 400, height: 430, fov: 40 })), 0, 30, 400, 430);
   label(g, '18:45 · stowed: lance, bow, quiver', 8, 46, 12, '#efe8da');
-  g.drawImage(canvasOf(liveView(ctx, toW(0.62, 1.62, -0.55).toArray(), toW(0.05, 1.5, -0.22).toArray(), { width: 400, height: 430, fov: 30 })), 0, 465, 400, 430);
+  // (the stowed lance's leaf: its tip off the carry's own line, 0.1 m back along it)
+  const kc = p.hero?.kit?.carry;
+  const bt = kc ? p.model.localToWorld(new T3().fromArray(kc.tip.toArray())) : toW(-0.2, 1.75, -0.2);
+  const bb = kc ? p.model.localToWorld(new T3().fromArray(kc.butt.toArray())) : toW(0.2, 0.5, -0.2);
+  const bm = bt.clone().addScaledVector(bt.clone().sub(bb).normalize(), -0.1);
+  g.drawImage(canvasOf(liveView(ctx, [bm.x + 0.25, bm.y + 0.12, bm.z - 0.45], bm.toArray(), { width: 400, height: 430, fov: 28 })), 0, 465, 400, 430);
   label(g, 'the blade on her back', 8, 481, 12, '#efe8da');
   E.timeScale = ts0;
   // full draw
@@ -733,10 +741,12 @@ export async function weaponKeyartOverlay(ctx, refFile = null) {
   E.timeScale = 0; await frame(); await frame();
   g.drawImage(canvasOf(liveView(ctx, toW(-1.9, 1.4, 0.9).toArray(), toW(0, 1.3, 0.25).toArray(), { width: 560, height: 865, fov: 36 })), 402, 30, 560, 865);
   label(g, '18:45 · full draw (V24)', 410, 46, 12, '#efe8da');
-  const tip = new T3(); cmb.bow?.model?.localToWorld?.(tip.set(0, 0.74, -0.06));
-  g.drawImage(canvasOf(liveView(ctx, [tip.x - 0.35, tip.y + 0.05, tip.z + 0.25], tip.toArray(), { width: 300, height: 430, fov: 30 })), 964, 30, 300, 430);
+  // (the upper tip: the top of the stave's own mesh, where the reflex turns)
+  const bm2 = cmb.bow?.mesh; const tip = new T3();
+  if (bm2) { bm2.geometry.computeBoundingBox(); const bx = bm2.geometry.boundingBox; bm2.localToWorld(tip.set(0, bx.max.y - 0.06, -0.09)); } else toW(0.3, 1.9, 0.5);
+  g.drawImage(canvasOf(liveView(ctx, [tip.x - 0.32, tip.y + 0.02, tip.z + 0.3], tip.toArray(), { width: 300, height: 430, fov: 34 })), 964, 30, 300, 430);
   label(g, 'reflexed tip, horn nock, carmine', 970, 46, 12, '#efe8da');
-  const hand = new T3(); cmb.bow?.model?.localToWorld?.(hand.set(0, 0.0, 0.0));
+  const hand = new T3(); if (bm2) bm2.localToWorld(hand.set(0, 0, 0)); else cmb.bow?.model?.localToWorld?.(hand.set(0, 0, 0));
   g.drawImage(canvasOf(liveView(ctx, [hand.x - 0.3, hand.y + 0.12, hand.z + 0.3], hand.toArray(), { width: 300, height: 430, fov: 30 })), 964, 465, 300, 430);
   label(g, 'grip wrap, the arrow, fletching', 970, 481, 12, '#efe8da');
   E.timeScale = ts0;

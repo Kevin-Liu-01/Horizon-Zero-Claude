@@ -10,7 +10,7 @@
  *   lance  on the `stow_lance` socket the carry solve poses, 34° from vertical, the
  *          bob low at her left hip, the blade above her right shoulder
  *   bow    spine_02, the opposite diagonal beneath the lance, <= 3 cm off the back
- *   quiver pelvis, right hip, tilted 20° forward
+ *   quiver pelvis, right hip, tilted 12° forward (W1 exit; was 20)
  *   bracer lowerarm_l, dorsal
  *   alidade dyn_alidadeCord_02, on its neck cord at the sternum
  * The surface it clears is the current Pan I outfit (armor/lib + outfit-pan-1).
@@ -316,11 +316,13 @@ export async function build({ out = ROOT } = {}) {
     pieces.push({ g: place(g, X, Y, Z, c), joint: 'spine_02', bit: PIECE.bow });
     stowInfo.bow = { centre: c, degFromVertical: 36, joint: 'spine_02' };
   }
-  // ---- quiver: right hip, tilted 20° forward, out past the skirt
+  // ---- quiver: right hip, tilted 12° forward, out past the skirt
+  // (W1 exit: 3 cm further back and 8° less forward: its mouth and the arrows stood in the swing of her right forearm,
+  // which came through them at a jog; the C-06 forearm wrap and bracer made it measurable)
   {
-    const ang = 20 * Math.PI / 180;
+    const ang = 12 * Math.PI / 180;
     const d = [0, Math.cos(ang), Math.sin(ang)];
-    const ctr = [-0.315, 0.925, -0.135];
+    const ctr = [-0.322, 0.925, -0.165];
     const foot = v3.sub(ctr, v3.mul(d, QUIVER.length / 2));
     const [X, Y, Z] = basisY(d, [0, 0, 1]);
     pieces.push({ g: place(quiverGeo(cell), X, Y, Z, foot), joint: QUIVER_SOCKET, bit: PIECE.quiver });

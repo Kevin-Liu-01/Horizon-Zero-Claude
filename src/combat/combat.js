@@ -1127,6 +1127,16 @@ export class Combat {
 
     node.updateWorldMatrix(true, false);
     node.matrixWorld.decompose(_wp, _wq, _ws);
+    // (W1 exit, judges: "the hand sits near the lower end of the stave: the grip in the fist is not legible", and the
+    // matrix's held clause: the stave ran through her wrist's wrap, C-06): carried, the bow's grip sits IN the fist,
+    // seven tenths of the way from the wrist to the middle knuckle; aimed, at the hand's origin, where the animator's
+    // draw solve expects it (it reads the bow model's hang live)
+    if (!aiming && this._palmL === undefined) {
+      this._palmL = null;
+      for (const c of node.children) if (c.isBone && /^middle_01/.test(c.name)) { this._palmL = c.position.clone().multiplyScalar(0.7); break; }
+    }
+    if (!aiming && this._palmL) model.group.position.copy(this._palmL);
+    else { const gp = model.group.position; gp.x = 0; gp.y = 0; gp.z = 0; }
     if (aiming) {
       _aimDir.subVectors(this.aimPoint, _wp);
       if (_aimDir.lengthSq() < 0.25) cam.getWorldDirection(_aimDir);
