@@ -132,12 +132,12 @@ publishes it (F-4).
 
 Runs (reports in scratch, not in the tree): `full1` (the whole block, 22:28–22:55 UTC: 73 PASS / 18 FAIL /
 2 PENDING / 13 NEEDS-JUDGE), `r2` (fix round on the 18 + globals, 23:57–00:43), `r3` (final verification:
-R3_SUMMARY). The table gives the LATEST verdict per row with its number.
+02:19–02:41 UTC; its first five rows (A1, A20b, A44/A44b:plumb) timed out at boot because this lane's Vite had gone stale after the main merge (served `/` as 404; restarted at 02:38, every later row ran: A-plumb-topple, A-ip-emissive ×3, A-roles-published, A-beams-one-draw, A-ID-ip-assets-gone, A-assets-tracked, A-licence-manifest, A-port-guard, films). A1/A20b and A44/A44b:plumb PASS in r2/full1 on the same code minus the bob hanger; the hanger build (r3) is re-graded only by A-plumb-topple and the films). The table gives the LATEST verdict per row with its number.
 
 ### 3.1 The per-kind block × {tiller (medium), plumb (small), peg (small)}
 | row | tiller | plumb | peg |
 |---|---|---|---|
-| A44 / A44b socket integrity | PASS / PASS (0.00 m) | PASS / PASS (0.00 m; bob hanger added, tools no longer snapped) | PASS / PASS |
+| A44 / A44b socket integrity | PASS / PASS (0.00 m) | PASS / PASS (full1; the r3 re-run after the bob hanger hit the stale Vite — re-grade) | PASS / PASS |
 | A45 / A45c / A46 | PASS ×3 (0.00 m/frame, 0.00 m) | PASS ×3 (A46 worst 0.049 m) | PASS ×3 (0.00) |
 | A47 / A47b | PASS / PASS | PASS (0.07 m) / PASS | PASS / PASS |
 | A47c corpse mass | PASS | PASS | **FAIL** (dead median 0.44 m vs loco chassis 0.47 → 0.94; bar ≤ 0.75; a flank roll made it 1.17, reverted) |
@@ -169,7 +169,7 @@ R3_SUMMARY). The table gives the LATEST verdict per row with its number.
 | A-core-glow (a core ≥ 1.25× bloom, c spill, e materials) | **FAIL** c-far (near +163 %, far 21 %) | **FAIL** c-far (near +43.5 %, far 12.6 %; 2.3 % in an earlier run) | PASS (near +74.7 %; far n/a: no hull beyond 1.2 m) |
 | A-core-parallax (d, ≥ 2 px) | PASS (6.2 px) | PASS (2.77 px) | PASS (2.02 px) |
 | A-play-telegraph | PASS (13 attacks, lead 0.48–0.60 s, hold 1.8× flicker, hue ΔE 3.39) | PASS (pendulum, sightline, bob-drop; 0.55–0.70 s) | PASS (3 moves, 0.46–0.55 s) |
-| A-ip-emissive | IPE_T | IPE_P | IPE_G |
+| A-ip-emissive | PASS (float target; hostile 15 m ≤ 1.5 %: the drum lens domes and hopper lantern are now spill-lit glass, not emissive bodies) | PASS (vial and objective are spill-lit hull glass) | **FAIL** c2 (c1 PASS): a readable Peg lamp is > 12 px on an ~800 px silhouette (§5) |
 | A-hull-value | **FAIL** (a, b, d PASS; c foot/upper noon 1.56; e backlit edge 1.05) | **FAIL** (a–d PASS: foot 0.79, verdigris 5.7 %; e 0.88) | **FAIL** (c noon 1.23, d 0.95 %, e 0.67) |
 | A-instr-shadow-lod | PENDING look-post: (a) LOD1 29.8 % of LOD0 PASS, (d) shadow-mask IoU 0.984 PASS; (b) needs CAL_LAYER, (c) quiet box | — (small) | — (small) |
 
@@ -182,13 +182,13 @@ R3_SUMMARY). The table gives the LATEST verdict per row with its number.
 ### 3.5 Global green list items run in this tree
 | row | verdict | note |
 |---|---|---|
-| A1-boot-clean, A20b-no-system-errors | PASS | |
+| A1-boot-clean, A20b-no-system-errors | PASS (r2) | r3's boot timeouts were the stale lane Vite, see §3 |
 | A90-memory-stability, A90-rig-reclaim, A90b-memory-attribution | PASS (r2) | the herd workload now respawns the live Tiller |
 | A-ID-ip-assets-gone, A-assets-tracked, A-no-horizon-terms-code, -player, A-lamp-canon-distance | PASS | namecheck --code PASS (1371 = ratchet; three new "lens" tokens renamed) |
-| A-port-guard | GLOBAL_PG | r2 FAIL was this lane's: the gate module ran `git diff` at load; replaced by a file hash |
-| A-licence-manifest, A-roles-published, A-beams-one-draw | GLOBAL_LRB | |
+| A-port-guard | PENDING in r3 (refusals and monitor PASS; "not a full lane run" — needs the orchestrator's sealed run) | r2 FAIL was this lane's: the gate module ran `git diff` at load; replaced by a file hash |
+| A-licence-manifest, A-roles-published, A-beams-one-draw | A-roles-published PASS (sentry → plumb, herd → tiller, swarm → peg, all `live`); A-beams-one-draw PASS; A-licence-manifest PENDING (other lanes' third-party rows; files-matched/schema/credits PASS) | |
 | A21-real-draw-calls | PENDING-quiet-box (draws + tris PASS) | R45/R58 |
-| A90-abs, A-alloc-rate, A-vram-ledger | not graded in-lane: "Waiting failed: 90000ms" (r2, late in a 46-min run while other lanes' runs queued) | R58/R67: graded at the orchestrator's W1-exit run; this lane's owner rows were not measured |
+| A90-abs, A-alloc-rate, A-vram-ledger | not graded in-lane: "Waiting failed: 90000ms" at boot in r2 — most likely the same stale Vite (it was found serving 404 at 02:38) | R58/R67: graded at the orchestrator's W1-exit run; this lane's owner rows were not measured |
 | A-kind-registration (instruments-core's) | FAIL in r2: its nested run timed out (exit 130, no verdicts) | infrastructure; re-run on 5270 |
 
 ## 4. Honest gaps
