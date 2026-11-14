@@ -16,7 +16,7 @@ import { Props } from './props.js';
  * Solid vertex-coloured meshes, no alpha, one draw per kind (`A-scatter-draws`, ≤ 8 kinds):
  *
  *   marram-near  96 tris   dune colonies, the Pans' stalking cover
- *   marram-far   18 tris   the same colonies as a far read, to 170 m
+ *   cerrillo     80 tris   the golden meadow's grass + viborina clumps, to 52 m (marram-far retired, W-01)
  *   glasswort    36 tris   red-tipped succulents on pan margins and hollows
  *   lavender     60 tris   violet sea-lavender on the saline flats
  *   rocks-basalt 180 tris  reef in the surf, the Shelf's foot, strays (collided, casts)
@@ -40,8 +40,10 @@ const HALF = WORLD_SIZE / 2;
  * the small kinds stop where they fall under two pixels; the cover the stalker reads is the
  * field, not the draw, so A59b / A60 are untouched. */
 const STREAM = {
-  marramNear: { src: 'marram', name: 'marram-near', r: 44, cap: 7000, fade: [34, 44], every: 1, sway: 1.0 },
-  marramFar: { src: 'marram', name: 'marram-far', r: 175, cap: 14000, fade: [140, 175], every: 2, inner: 36, sway: 0.7 },
+  marramNear: { src: 'marram', name: 'marram-near', r: 44, cap: 9000, fade: [34, 44], every: 1, sway: 1.0, keep: 2 },
+  /* marram-far is retired (LOOK W-01 item 3): past the near ring the colonies are the ground's
+   * own tone. The golden meadow takes its draw: cerrillo tufts to 52 m, shader grass beyond (W-06) */
+  cerrillo: { src: 'cerrillo', name: 'cerrillo', r: 42, cap: 9000, fade: [32, 42], every: 1, sway: 1.1, keep: 1 },
   glasswort: { src: 'glasswort', name: 'glasswort', r: 60, cap: 5600, fade: [46, 60], every: 1, sway: 0.15 },
   lavender: { src: 'lavender', name: 'lavender', r: 104, cap: 4000, fade: [82, 104], every: 1, sway: 0.5 },
 };
@@ -94,6 +96,31 @@ function marramGeo(blades, segs, seed, widthK = 1) {
     c1.copy(tip).lerp(tip2, R() * 0.55).multiplyScalar(0.82 + R() * 0.3);
     blade(P, C, N, dx * r0, dz * r0, dx, dz, 0.62 + R() * 0.5, (0.011 + R() * 0.01) * widthK, segs, c0, c1, 0.5 + R() * 0.45);
   }
+  return geoFrom(P, C, N);
+}
+
+/**
+ * Cerrillo (Hyparrhenia-like), the golden meadow's grass (LOOK W-06): a loose tuft ≤ 0.70 m,
+ * fine straps from a dark straw base to pale gold tips, a few seed heads leaning down-wind; one in
+ * four tufts carries a violet viborina spike, so the flowers come in clumps where tufts crowd.
+ * Solid vertex colour, no alpha, 0 casters; scenery, never cover (it adds 0 to the cover field).
+ */
+function cerrilloGeo(seed) {
+  const R = rng(seed), P = [], C = [], N = [];
+  const base = new THREE.Color('#6b5428'), gold = new THREE.Color('#d9b060'), gold2 = new THREE.Color('#c9a04e');
+  const c0 = new THREE.Color(), c1 = new THREE.Color();
+  for (let b = 0; b < 18; b++) {
+    const a = (b / 18) * 6.2832 + R() * 0.7;
+    const dx = Math.cos(a), dz = Math.sin(a), r0 = 0.02 + R() * 0.11;
+    c0.copy(base).multiplyScalar(0.75 + R() * 0.35);
+    c1.copy(gold).lerp(gold2, R()).multiplyScalar(0.85 + R() * 0.3);
+    blade(P, C, N, dx * r0, dz * r0, dx, dz, 0.34 + R() * 0.3, 0.008 + R() * 0.007, 2, c0, c1, 0.35 + R() * 0.5);
+  }
+  // the viborina spike: a violet column of florets on a short stem (2 straps x 2 quads)
+  c0.set('#4f5a3a'); c1.set('#7b4f9a');
+  blade(P, C, N, 0.03, 0.0, 0.05, 0.0, 0.62, 0.022, 2, c0, c1, 0.05);
+  c0.set('#5d3f7d'); c1.set('#8f6bb4');
+  blade(P, C, N, 0.0, 0.03, 0.0, 0.05, 0.58, 0.02, 2, c0, c1, 0.05);
   return geoFrom(P, C, N);
 }
 
@@ -230,12 +257,29 @@ function wallGeo() {
     g.rotateY((R() - 0.5) * 0.5);
     g.rotateZ((R() - 0.5) * 0.22);
     g.translate(x, y, z);
-    parts.push(g.toNonIndexed());
+    const f = g.toNonIndexed();
     g.dispose();
+    /* Weathered, not cut: each vertex's normal leans 62 % toward the stone's own ellipsoid
+     * normal and keeps 38 % of its face's, so the stone reads rounded with soft arrises at 1.5 m
+     * (V32: flat facets read as crystal shards), while the 20 faces still give a broken outline.
+     * The grain, vesicles and edge wear are the basalt layer's triplanar albedo and normal. */
+    const P = f.attributes.position, Nn = new Float32Array(P.count * 3);
+    const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), F = new THREE.Vector3(), Q = new THREE.Vector3();
+    for (let t = 0; t < P.count; t += 3) {
+      A.fromBufferAttribute(P, t); B.fromBufferAttribute(P, t + 1); C.fromBufferAttribute(P, t + 2);
+      F.subVectors(C, B).cross(Q.subVectors(A, B)).normalize();
+      for (let k = 0; k < 3; k++) {
+        Q.fromBufferAttribute(P, t + k);
+        Q.set((Q.x - x) / (sx * sx), (Q.y - y) / (sy * sy), (Q.z - z) / (sz * sz)).normalize();
+        Q.multiplyScalar(0.62).addScaledVector(F, 0.38).normalize();
+        Nn[(t + k) * 3] = Q.x; Nn[(t + k) * 3 + 1] = Q.y; Nn[(t + k) * 3 + 2] = Q.z;
+      }
+    }
+    f.setAttribute('normal', new THREE.BufferAttribute(Nn, 3));
+    parts.push(f);
   }
   const m = mergeGeometries(parts, false);
   for (const g of parts) g.dispose();
-  m.computeVertexNormals();
   m.computeBoundingSphere();
   return m;
 }
@@ -414,6 +458,17 @@ export class Vegetation {
       shader.uniforms.uSunTan = U.uSunTan; shader.uniforms.uHzWorldInv = U.uHzWorldInv; shader.uniforms.uHzK = U.uHzK;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\n${FLORA_VERT}`)
+        .replace('#include <begin_vertex>', cfg.src === 'cerrillo' ? `#include <begin_vertex>
+#if defined(USE_INSTANCING_COLOR) && defined(USE_COLOR)
+  {
+    // viborina in clumps (W-06: 3-9 m across, 8-25 % of the meadow): the spike's violet vertices
+    // fold away on a tuft outside a clump
+    vec2 ip = instanceMatrix[3].xz;
+    vec2 cc = floor(ip / 6.5 + vec2(0.37, 0.71) * floor(ip.yx / 23.0));
+    float cl = fract(sin(dot(cc, vec2(12.9898, 78.233))) * 43758.5453);
+    if (color.b > color.r * 1.15 && (cl < 0.8 || instanceColor.r < 0.92)) transformed *= 0.0;
+  }
+#endif` : '#include <begin_vertex>')
         .replace('#include <project_vertex>', FLORA_PROJECT)
         .replace('#include <worldpos_vertex>', FLORA_WORLD);
       shader.fragmentShader = shader.fragmentShader
@@ -421,7 +476,7 @@ export class Vegetation {
         .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize(vNormal);')
         .replace('#include <aomap_fragment>', FLORA_AO);
     };
-    mat.customProgramCacheKey = () => 'cal-flora';
+    mat.customProgramCacheKey = () => (cfg.src === 'cerrillo' ? 'cal-flora-cerrillo' : 'cal-flora');
     this._owned.mat.push(mat);
     return mat;
   }
@@ -429,15 +484,10 @@ export class Vegetation {
   _buildFlora() {
     const geos = {
       marramNear: marramGeo(16, 3, 101),                // 16 straps x 3 quads = 96 tris
-      marramFar: marramGeo(3, 3, 202, 3.4),                  // 3 straps x 3 quads = 18 tris (wider below)
+      cerrillo: cerrilloGeo(505),                      // 20 straps x 2 quads = 80 tris (W-06 R0 <= 96)
       glasswort: glasswortGeo(303),
       lavender: lavenderGeo(404),
     };
-    // the far tuft carries a whole tuft's width on three straps
-    {
-      const p = geos.marramFar.attributes.position;
-      for (let i = 0; i < p.count; i++) { p.setX(i, p.getX(i) * 1.7); p.setZ(i, p.getZ(i) * 1.7); }
-    }
     for (const key of this._streamKeys) {
       const cfg = STREAM[key];
       const geo = geos[key];
@@ -467,6 +517,7 @@ export class Vegetation {
     const tx0 = Math.max(0, Math.floor((cx - r + HALF) / TILE)), tx1 = Math.min(TILE_N - 1, Math.floor((cx + r + HALF) / TILE));
     const tz0 = Math.max(0, Math.floor((cz - r + HALF) / TILE)), tz1 = Math.min(TILE_N - 1, Math.floor((cz + r + HALF) / TILE));
     const over = cfg.src === 'marram' ? this._over : null;
+    const keep = cfg.keep || 0;     // W-06 rings: past 12 m keep `keep` in 5 records
     let n = 0;
     for (let tz = tz0; tz <= tz1 && n < cap; tz++) {
       const czT = -HALF + (tz + 0.5) * TILE - cz;
@@ -488,6 +539,8 @@ export class Vegetation {
           if (sx <= 0) continue;
           const dx = x - cx, dz = z - cz, dd = dx * dx + dz * dz;
           if (dd > r2 || dd < inner) continue;
+          // W-06 rings: the full 6/m² within 12 m, two in five beyond (2.4/m²), by record (stable)
+          if (dd > 144 && keep && ((i / STRIDE) % 5) >= keep) continue;
           const yaw = a[i + 3], c = Math.cos(yaw), s = Math.sin(yaw);
           const sy = a[i + 5], sz = a[i + 6], lean = a[i + 7];
           const o = n * 16;
@@ -575,9 +628,11 @@ export class Vegetation {
       _p.set(data[o] - cx, data[o + 1], data[o + 2] - cz);
       rad = Math.max(rad, Math.hypot(_p.x, _p.z));
       const lean = isWall ? 0 : data[o + 7];
-      _e.set(lean, data[o + 3], lean * 0.7);
+      // no two dyke runs alike: half are turned end for end, each its own height and girth
+      const hz = isWall ? ((Math.imul(i + 1, 2654435761) >>> 0) / 4294967296) : 0;
+      _e.set(lean, data[o + 3] + (hz > 0.5 ? Math.PI : 0), lean * 0.7);
       _q.setFromEuler(_e);
-      _s.set(data[o + 4], data[o + 5], data[o + 6]);
+      _s.set(data[o + 4] * (isWall ? 0.92 + 0.16 * ((hz * 7.31) % 1) : 1), data[o + 5] * (isWall ? 0.86 + 0.28 * ((hz * 13.7) % 1) : 1), data[o + 6]);
       _m.compose(_p, _q, _s);
       mesh.setMatrixAt(i, _m);
       const t = data[o + 8];
