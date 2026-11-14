@@ -19,7 +19,7 @@
  * Every other row runs as registered (carried, or the lane row that shadows it by id).
  */
 import { staged } from '../gate-roster.mjs';
-import { placed } from '../gate-places.mjs';
+import { placed, placedSetup } from '../gate-places.mjs';
 import { TURNTABLE } from './turntable.mjs';
 
 /** List A: from the 55 rows the Oct 15 survey classed CARRY (51 kept). */
@@ -493,8 +493,10 @@ const A22_ISLAND = `(async () => {${TURNTABLE}${SLEEP}
     on = a && aaMetric(a, region.w, region.h);
     off = b && aaMetric(b, region.w, region.h);
   } finally { if (E.smaa) E.smaa.enabled = true; if (fixture) fixture(); TT.exit(); }
-  const gain = on && off && off.fraction ? +(on.fraction / off.fraction).toFixed(3) : null;
-  const measured = msaaPath ? null : { smaaOn: on, smaaOff: off, gainOverOff: gain,
+  // a card with hard stair-steps reads 0 intermediates with SMAA off: any ramp SMAA adds is then an unbounded gain
+  const gain = on && off && off.fraction ? +(on.fraction / off.fraction).toFixed(3)
+    : on && off && off.fraction === 0 && on.fraction > 0 ? Infinity : null;
+  const measured = msaaPath ? null : { smaaOn: on, smaaOff: off, gainOverOff: gain === Infinity ? 'unbounded (0 ramps with SMAA off)' : gain,
     ok: !!on && on.edges >= 200 && on.fraction >= BAR.minFraction && gain != null && gain >= BAR.minGainOverOff };
   const pass = mechOk && (msaaPath || measured.ok);
   return { pass, detail: { stage: 'island: spawn vista, the turntable AA card (five dark stakes at five angles against the sky)',
@@ -558,11 +560,53 @@ export const USE_CARRIED = [
 ];
 
 /**
+ * A turntable trunk for V21 (setup context: `ctx`, `sp` in scope): one vertical capsule collider (r 0.42 m,
+ * 6 m, kind 'tree', camera on) at 7 m along a flat lane, and a drawn 12-sided trunk on it. Returns [collider].
+ */
+const TRUNK_FIXTURE = `${FLAT_LANE}
+      const __veg = ctx.scene.getObjectByName('vegetation'); if (__veg) __veg.visible = false;
+      const __gateTrunk = () => {
+        const L = flatLane(16);
+        if (!L) return [];
+        const tx = L.x + Math.sin(L.heading) * 7, tz = L.z + Math.cos(L.heading) * 7, ty = ctx.terrain.getHeight(tx, tz) - 0.2;
+        const id = sp.collision.register({ kind: 'tree', shape: { type: 'capsule', a: [tx, ty, tz], b: [tx, ty + 6, tz], radius: 0.42 },
+          blocking: true, occluder: true, camera: true });
+        let M = null, mat = null;
+        ctx.scene.traverse((o) => { if (!M && o.isMesh && o.geometry && o.geometry.isBufferGeometry && o.geometry.attributes.position) M = o; });
+        ctx.scene.traverse((o) => { const m = o.material; if (!mat && m && !Array.isArray(m) && /^Mesh(Standard|Lambert|Phong|Basic)Material$/.test(m.type) && !Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile')) mat = m; });
+        if (M && mat) {
+          mat = mat.clone(); mat.color.setRGB(0.22, 0.16, 0.11); mat.map = null; mat.vertexColors = false; mat.transparent = false; mat.opacity = 1;
+          if (mat.emissive) mat.emissive.setRGB(0, 0, 0);
+          const v = [], N = 12, R = 0.42, H = 6;
+          for (let i = 0; i < N; i++) {
+            const a0 = i / N * Math.PI * 2, a1 = (i + 1) / N * Math.PI * 2;
+            const x0 = Math.sin(a0) * R, z0 = Math.cos(a0) * R, x1 = Math.sin(a1) * R, z1 = Math.cos(a1) * R;
+            v.push(x0, 0, z0, x1, 0, z1, x1, H, z1, x0, 0, z0, x1, H, z1, x0, H, z0);
+          }
+          const g = new M.geometry.constructor();
+          g.setAttribute('position', new M.geometry.attributes.position.constructor(new Float32Array(v), 3));
+          g.computeVertexNormals();
+          mat.side = 2;
+          const trunk = new M.constructor(g, mat);
+          trunk.position.set(tx, ty, tz); trunk.name = 'gate-trunk'; trunk.castShadow = true; trunk.frustumCulled = false;
+          ctx.scene.add(trunk);
+        }
+        return [sp.collision.byId.get(id)];
+      };`;
+
+/**
  * Rows that stand as registered except for one staging line: each patch is applied to the
  * registered row's assert text (exact strings; a patch that does not apply turns the row into a
  * FAIL naming the patch, so a later edit to the row cannot silently run the old staging).
  */
 export const PATCHED = [
+  {
+    id: 'A90b-memory-attribution',
+    why: 'its allocation sweep names ctx.studio as a root to walk; the studio is out of the kept-stack frame, so the sweep no longer names it (a walk of an absent root reads the trap, not the studio)',
+    patches: [
+      ["'studio', 'environment', 'vegetation'", "'environment', 'vegetation'"],
+    ],
+  },
   {
     id: 'A72b-accessibility',
     why: 'the palette clause read --cal-accent, a token the new HUD no longer defines; the colour palettes now re-point the semantic --cal-c-* tokens (src/ui/settings.js PALETTES), so it reads --cal-c-staff',
@@ -572,12 +616,10 @@ export const PATCHED = [
   },
   {
     id: 'V21-camera-cover',
-    why: 'the shot took a tree collider within 220 m of the old valley origin; on the island it takes the nearest trunk-shaped camera collider to the player (vertical capsule, 0.33 < r <= 1.5 m, >= 2 m tall; trees first)',
+    why: 'the shot needs a tree trunk on open ground; the island has no tree within 220 m of the old valley origin (the row filmed nothing: "no tree"), so the turntable stands one 0.42 m trunk collider with a drawn trunk on a flat lane clear of every collider, and hides the reeds',
     patches: [
-      [".filter((c) => c.kind === 'tree' && Math.hypot(c.ax, c.az) < 220 && c.r > 0.33);",
-        ".filter((c) => c.type === 'capsule' && c.vertical && c.r > 0.33 && c.r <= 1.5 && (c.by - c.ay) >= 2 && c.camera !== false)\n"
-        + "        .map((c) => [c.kind === 'tree' ? 0 : 1, Math.hypot(c.ax - p.position.x, c.az - p.position.z), c.id, c])\n"
-        + "        .sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]).map((r) => r[3]);"],
+      ["const pitch = 0.1;", TRUNK_FIXTURE + "\n      const pitch = 0.1;"],
+      [".filter((c) => c.kind === 'tree' && Math.hypot(c.ax, c.az) < 220 && c.r > 0.33);", ".filter(() => false).concat(__gateTrunk());"],
     ],
     field: 'setup',
   },
@@ -667,11 +709,56 @@ const A45C_ISLAND = `(async () => {
 })()`;
 
 /**
+ * V2 had no staging: it filmed her from the chase camera at the rest site, from behind and through the reeds.
+ * On the turntable: open ground, reeds hidden, the lens 3.2 m out at a front three-quarter, idle 2.5 s, frozen.
+ */
+const V2_TT = `(async () => {${TURNTABLE}
+  const C = __CTX__, p = C.player;
+  C.state = 'playing';
+  document.getElementById('hud').style.display = 'none';
+  standAt(p, 'openGround'); p.velocity?.set?.(0, 0, 0);
+  const veg = C.scene.getObjectByName('vegetation'); if (veg) veg.visible = false;
+  C.input.keys.clear();
+  TT.enter();
+  await new Promise((r) => setTimeout(r, 2500));
+  const V = C.camera.position.constructor, hd = p.heading + 0.6;
+  TT.lens({ pos: new V(p.position.x + Math.sin(hd) * 3.2, p.position.y + 1.15, p.position.z + Math.cos(hd) * 3.2),
+    look: new V(p.position.x, p.position.y + 0.95, p.position.z), fov: 40 });
+  await new Promise((r) => setTimeout(r, 300));
+  TT.freeze();
+})()`;
+
+/** V4 had no staging (the aim at the rest site, through the reeds): the same aim on open ground, reeds hidden. */
+const V4_OPEN = `(async () => {
+  const C = __CTX__, p = C.player;
+  C.input.enabled = true; C.state = 'playing';
+  standAt(p, 'openGround'); p.velocity?.set?.(0, 0, 0);
+  const veg = C.scene.getObjectByName('vegetation'); if (veg) veg.visible = false;
+  await new Promise((r) => setTimeout(r, 600));
+  C.input.mouse.buttons |= 4;
+  setTimeout(() => { C.input.mouse.buttons |= 1; }, 400);
+})()`;
+
+/**
  * The turntable versions of the four rows that drove the studio. Same ids, same bars; what the
  * studio's own shell did (its F10 key, its panel buttons, its gaze/expression overlay) is not
  * graded, because the turntable replaces that shell (REMOVE.md R4: A79b, A79f, A79d dropped).
  */
 export const RESTAGED = [
+  {
+    id: 'V2-idle-frame', kind: 'visual', lane: 'kept-stack', stage: 'turntable',
+    title: '[turntable] Idle stance reads alive and asymmetric',
+    setup: placedSetup(['openGround'], V2_TT),
+    settle: 1500,
+    criteria: 'Weight settled into one hip (pelvis offset), relaxed asymmetric arms, natural head angle. FAIL if perfectly symmetric A-pose-with-arms-down.',
+  },
+  {
+    id: 'V4-aim-anchor', kind: 'visual', lane: 'kept-stack', stage: 'island',
+    title: '[island] Full draw anchored at cheek',
+    setup: placedSetup(['openGround'], V4_OPEN),
+    settle: 2600,
+    criteria: 'Draw hand at cheek/jaw, elbow high and level, arrow nocked ON the string line, torso twisted toward target. FAIL if arrow floats detached or draw hand is off the face.',
+  },
   {
     id: 'A45c-foot-continuity', kind: 'action', lane: 'kept-stack', stage: 'island',
     title: '[island] a PLANTED Instrument foot does not move: <= 0.12 m in any rendered frame AND <= 3 m/s (debugFeet, every staged kind that walks)',

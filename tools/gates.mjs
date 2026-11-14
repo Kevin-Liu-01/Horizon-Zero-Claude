@@ -123,8 +123,8 @@ const patchRow = (g, pt) => {
 const GATES = keptStack
   ? merged.map((g) => (restagedById.has(g.id)
     ? { ...restagedById.get(g.id), source: 'gates/kept-stack.mjs', restages: g.source }
-    : patchedById.has(g.id) ? patchRow(g, patchedById.get(g.id))
-      : carriedById.has(g.id) ? carriedRow(g, carriedById.get(g.id).why) : g))
+    : ((b) => (patchedById.has(g.id) ? patchRow(b, patchedById.get(g.id)) : b))(
+      carriedById.has(g.id) ? carriedRow(g, carriedById.get(g.id).why) : g)))
   : merged;
 // Only the files that actually contributed gates are reported as merged: the
 // old line listed every file it TRIED, including the ones that threw.
