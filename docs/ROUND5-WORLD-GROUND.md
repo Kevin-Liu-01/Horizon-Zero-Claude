@@ -19,6 +19,31 @@ and `A-port-guard` are the orchestrator's (PENDING). Ten visual rows are filmed 
 §5. The title frame is now the Pans: no Round-4 spire or prop is anywhere in view.
 
 
+## 0. Fix round 1 (Nov 13): what changed, by finding
+
+Findings from the r0/r2 gate and film judges. **Verification status: the code is built and checked
+offline (node recipe/bake/scatter runs, Vite bundle, name lint PASS); the Chrome runs are listed in §0.2.**
+
+| # | finding | what changed (files) |
+|---|---|---|
+| 1, 9 | `A-skirt-masked` fails; a real seam | Cause found: the water did not write depth, so GTAO (traced off the shared scene depth) shaded every sea pixel with the AO of the sea floor under it, and the floor's mesh is cut at the −7 m contour and ends near the world square. The sea and the Glass now write depth (`water.js`). The row's measure is back to the raw step (the "net of trend" variant is withdrawn); it reports, ungraded, the same step with GTAO off and with the terrain hidden. |
+| 2 | `A108` FAILs on the real Pans | `F-a108-survey` (diagnostic, not graded) renders 32 candidate frames over the island's own content (plain, meadow, dunes, the ring's scored outer slopes, the Holds) with GTAO off and on at the shipped tier, DPR 1, and lists the crops whose control stays under 0.12. The graded frames move only with the orchestrator's sign-off (R49). |
+| 3, 12 | the vista reads as clean CG next to Janubio | Salt cells: per-cell tone, wetness and hue jitter (bake), rust-red crystallisers reaching the middle rows (fill odds), polygon crust 0.8–2.5 m, trampled pits to 35 m, rake furrows along the field, damp patches. Dykes are darkened and widened with distance past 45 m (they are the field's drawing at range). The field has a halo of salt stain round it (shore.A), not a rug edge. Black sand darker (macro lift ×1.14 max). The plain: a golden meadow belt (maskB.A, 3.1 ha) drawn as cerrillo tufts with viborina clumps to 42 m and shader grass beyond (W-06), marram colonies 40–90 m across at 6.6 tufts/m². The Glass: depth-graded algae colour over a visible bed, the crater wall mirrored in it (baked skyline, 32 bearings), weaker sky sheen and sun blob. The sea line: no offing ring; the far sea is drawn to the dome's own sea-line colour at its bearing and dissolves before the far plane. Crater: strata term (beds 1.7 m, lips, undercuts, varnish) on its steep faces (W-03 b). |
+| 4, 13 | V32: faceted stones, no grit, no crust | Dyke stones: normals 62 % toward each stone's ellipsoid (rounded, soft arrises), runs turned end-for-end and varied in height and girth per instance. Pebbles (6–15 cm, lit/shaded) and grit (2–3 cm) on sand, silt and shingle to 16 m. The pan mask is read through a cubic B-spline (4 taps) inside 110 m, so the cell edge is a smooth curve (no 0.48 m staircase, no scallops). |
+| 5, 15 | `A-gpu-tier-pans` can never FAIL | `A-gpu-tier-pans-box` (engine-gpu's `sampleBox`, in node) hands the box to the row: on a quiet box an over-bar result is FAIL; PENDING only on a loud or unsampled box. W-01 started: marram-far retired. |
+| 6 | carried RESTAGE rows SKIP-replaced | A59 and A62 run as carried on re-authored places (`GROUND.grassPoints` six colonies ≥ 5 tufts/m² over 20 m on this bake, `grassSite`, `rimFace`, `litMeadowRef`). V33, A61, A63 are re-staged here on the red tuff ring (A63's bed band is LOOK W-03's crater 0.8–2.5 m, through `terrain.beddingAt` / `setStrataStrength`, both new). V44 stays SKIP (W4). |
+| 7 | the Ring's rise | `sites.js` Sounding Ring h 0.5 → 6; `recipe.js` stamps a 6 m shingle rise with its own spit (the coast bulges 24 m seaward round it), ending in a bank at the field's edge (island-check: got 6.03 m). |
+| 8 | isles cheap | L-15: three basalt silhouettes in one draw, 2,696 triangles: a 196 m stratovolcano (7–8° over the sea line from the Pans) with a 32–46 m sea cliff, a cliffed tableland, a lone islet; ash/tuff/basalt bands in the vertex colour; their air is the dome's sea-line colour, thicker at the base. |
+| 10 | Glass straight edge, sea in the crater | The Glass plane covers every point its mask reaches (4.2 rx); the sea discards wherever the lagoon mask reaches inland. The Glass's damp margin is narrower and broken, no hard ring. |
+| 11 | surf reads as noise, straight cut | The straight radial edge was the run-up's `fract` wrap: every run-up term is now 0 at both ends of its cycle. The spent-bore carpet is thin decaying filaments, not soft blots; backwash ripples are flattened in thin water (no sky blots); the fronts' spacing wanders by bearing and the swell faces break into sections (no contour rings from the rim). |
+| 14 | `A-anti-tile` passes on a blank crop | Texture-presence floor on every crop: high-pass RMS / mean ≥ 0.036, half the farthest Janubio crust (0.072; near rows 0.19), measured with the same high-pass on `reference/r5/brand/salinas-de-janubio.jpg`. |
+
+Not done in this round (honest): tamarisk groves (W-10) and reed/rush kinds (F-4) — a ninth scatter kind
+would break `A-scatter-draws`' ≤ 8 until a kind retires; W-01's terrain chunks/LOD and far-field macro
+albedo (W2 item); W-07 sand sparkle and wet band; W-08's probe sampling (world-sky's probe not merged).
+GPU: the added ground terms and the denser flora cost GPU time against bars already missed.
+
+
 ## 1. What this lane built
 
 | deliverable | where | notes |
