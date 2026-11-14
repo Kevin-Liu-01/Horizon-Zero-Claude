@@ -3,7 +3,155 @@
 Plan: `docs/ROUND5-PLAN.md` §2 (armory row), §1.2, §3.2, §4.1, §9 "armory (W1, W3)", rulings R16, R31, R38, R54, R62, R64, R66. Port 5257.
 Run the block with `nice -n 10 node tools/gates.mjs --port 5257 --lane armory` from a scratch cwd (auto-discovered, `tools/gates.r5.armory.mjs`).
 
+## F2. Fix round 1, second pass (Nov 13–14): the judges' 12 findings, C-06, C-08 and R69
+
+The two W1 judges graded the Nov 7 pass (F1, kept below as the record) and filed 12 findings. This pass fixes them in place and does the W1-exit work two of them name: the C-06 Starter re-cut (ROUND5-LOOK §3.3, R66 f) and the C-08 weapon finish, with their four §7 rows registered. Nothing here is committed by me; the orchestrator's checkpoints hold it.
+
+### F2.0 How it was built: Brea's own body, offline, first
+
+Chrome was one slot machine-wide (the orchestrator's guard holds the other) and the matrix is the blocker, so every fit and cut was settled offline before a gate ran:
+
+- `tools/build/recipes/armor/lib/breabody.mjs` (new) reads Brea's skinned body out of `public/models/hero/brea.glb` (hero-body's output; same UBC skeleton and bind pose) into a recipe's raw bind space and joint indices. **Every loft, conform, skin transfer and the fit (`romfit`) now read Brea's body**, not the stock UBC body: the matrix grades the outfit against Brea, whose sculpt is fuller at the deltoids, chest and thighs. The same body gives the outfit's own cover mask (below).
+- A scratch replica of A-variant-swap-matrix clauses (a) and (b) (`matrix.js`'s logic, R62 c's exclusion, 4 mm and 5 cm) over the 61 dumped poses, run on the shipped GLBs and, per slot, on the recipe's parts before they are written. On the Nov 7 GLBs it read Pan I sprint+lance 0.76 % and light-1 0.60–0.66 %: the gate judge's 0.76 % and 0.60 %.
+- A scratch software rasteriser (albedo × lambert, the outfit's own cover mask applied to the body) for every look change and the 75 px silhouettes.
+
+### F2.1 C-06: the Starter re-cut (ROUND5-LOOK §3.3, R66 f; `outfit-pan-1.mjs`, `armor/lib/starter.mjs`)
+
+Pan Whites I is the board's Starter (#2-TC front, 3/4 and back; 4-L1), built on Brea's own body:
+
+- **The top is sleeveless and fitted.** The MCO linen sleeves and the rolled cuffs are gone. The top lies closer (5.8 mm off her, 3.6 mm across the upper chest; it falls 0.2 from the bust, was 0.34), closes high and round at the front with no keyhole (the stand collar shows, dyed in the top's orchil), and its armholes are cut IN, an athlete's armhole (`ARMHOLE_SL`): the shoulder strap stops inside the deltoid and the hole's front is scooped, so the arm moves free of it. The rim is bound ON the cloth (`bindingOn`, the tuck nearly flat on this cut) and the binding takes the skin of the cloth's rim point it turns over, one skin per column across it (`panFinish`), so the two cannot part in a pose. The armhole's bottom lies in against her ribs (a 3.5 mm inward ease in the armpit).
+- **A crossed brown harness.** Two 4 cm straps, each one strap from a hip up over the opposite shoulder and down the back to the same hip, crossing 1.9 cm from the sternum landmark (Brea's front skin at x = 0, spine_03 + 2 cm) and between the shoulder blades; both ends run on under the girdle. A brass buckle low on each strap.
+- **The compass-rose boss** where they cross: a 6.0 cm cast bronze disc, domed, with a raised rim, an eight-point rose (four long cardinal points, four short) and a centre stud, rigid on her chest, on its own bronze cell. The alidade hangs on its cord above it.
+- **Arms.** Violet strips wound on the bias from the wrist 0.195 m up each forearm (`woundWrap`: each turn laps the one under it, the radius steps up across a turn), a stitched, laced leather bracer over the right one (`cuff`), a violet band on each upper arm (R69; the right one only until Nov 14). The left forearm's bracer is the stow kit's, with its crescent plate, laced over the wrap (7.5 mm off her skin).
+- **The sash's panels.** The knot behind her left hip keeps its place; its two tails are now hanging panels, 0.38 and 0.33 m, 7.4 and 6.4 cm wide, in a deep violet (#62358C since R69; it was lilac #9A7AB8) embroidered in thin gold-ochre ticks, 26.9 dE2000 from the retired carmine as painted (bar 25). The band under the girdle takes the same dye.
+- **A short peplum** under the girdle in place of the long skirt and the under-tunic: cut away at the front (the board's top is tucked into the sash there), to the hip at the sides and back, its top riding the pelvis like the belly under it and only its hem taking the thigh.
+- **Fitted dark trousers** (room 1.1 cm at the thigh, was 2.1) shipped to the waist, the crotch gusset kept; dark brown-grey #443B35 since R69 (were basalt #3E3D47).
+- **Boots, re-painted to R69 on Nov 14:** heavy dark-brown laced leather work boots to mid-shin (#4A3426): brass-ringed eyelets in two rows with the lace crossing between them, two buckled straps round the shaft with a square brass buckle on the outside, scuffs at the toe cap and heel, a stacked dark sole with a welt stitch. Above them violet cloth (#532A5E) is wound round the shin to under the knee, each turn lapping the one below it with a frayed top turn. Area-weighted linear albedo 0.045 (bar 0.10). They replace the Nov 13 tar-blackened esparto plait.
+- **Her bare skin shows.** brea.glb's hide bit 1 culls the body under the old sleeved cut, so each set now carries its own cover of Brea's body (`r5Outfit.hide`: which of her 7,932 skin vertices the finished, fitted set covers, a ray out along each vertex's normal within 8 cm, run-length coded) and `src/hero/parts.js` `HideMask.apply(bit, own)` uses it when it fits the body (vertex and triangle counts). The stock body's painted underwear, dark at the ribs, is culled where the armhole opens over it; the top's inner face shows there (the material is double-sided).
+- **Caps (R66 f), Nov 14 build.** Starter 11,955 tris (≤ 16.0 k), 0.411 MB; Brea's visible body with this cover 8,080 + hair and wrap 2,292 = 10,372 (≤ 11.5 k); total with the stow kit and the bow 27.95 k (A-starter-cut f, node).
+
+The rungs above it inherit the cut (they share the Pan sheet, which is now packed from the union of every Pan cloth piece, `sheetParts`): Pan II and Pan III wear the long skirt and under-tunic over the same sleeveless top, harness and wraps; Ash I is a sleeveless long coat (its rolled sleeves are gone too) with rust wool wraps on its own sheet.
+
+### F2.2 The findings, one by one
+
+| # | Finding (judge) | What changed | Measured |
+|---|---|---|---|
+| 1, 7 | A-variant-swap-matrix FAIL, 22 of 32 rows, head clause on Ash I (blocker, both judges) | The fit reads Brea's body (F2.0). The sleeveless cut removes the sleeves and cuffs that were most of the sprint and light-1 offenders. The rest, by slot, measured per pose: the peplum's top rides the pelvis and its front is cut away (a sprinting thigh lifted it 5 cm); the top keeps its clavicle above the armpit (the strike's forward-rolled shoulder); the armhole is cut in and its front scooped; the harness and Ash I's sling and chest wraps cross the shoulder 2 cm nearer the neck (the strike lays the arm on the shoulder's point); the binding rides its rim point; the yoke's front (hidden under the closed top) is cut; the boots ease 4–5 mm more under the sole and round the heel and are cut 2 cm lower behind the knee; the wraps stop 0.195 m up (the elbow's crease at full draw); Pan III's scutes are rigid on the clavicle and shaped as an inner mantle (below); Ash I's skirt stands 4.5 cm off at the front, its rust layer follows the wrap's diagonal 6 cm under it and is cut 5 cm higher at the back (the calf behind the knee); its cowl's outer turns lie 12 % narrower over the shoulders. One more short relax after the fit's lift step (a 2 mm edge it lengthened read 2.1 x). | F2.3: the page matrix still FAILS (run5) |
+| 2, 8 | Pan Whites I's armhole "hook", fin and detached strip; the sling's stub on the shoulder (both judges) | The sleeveless armhole is bound ON the cloth with every rim point (F2.1); the cap's 8 mm stand-off (made for a sleeve under it) is gone; the binding rides the cloth's skin column by column; the sling is replaced by the harness, two continuous straps over the shoulders whose ends run under the girdle. | V-pan-closeup, V-starter-vs-board (run5 frames; not re-filmed, F2.3) |
+| 2, 9 | V-pan-closeup: no weave at 1.1 m, plaid on the back, torn tabs, sewing-pattern soles; the smock reads flat and plastic in the engine frame | `clothShader.js`: where a pixel can no longer see a 0.8 mm thread (0.8–1.5 m) the same weave at half the frequency takes over at half the relief and fades itself before it beats; the slub term is 1.5 x; the threads' crowns are 18 % smoother than their valleys so the weave reads in the highlight; the threads' albedo contrast is 1.45 x. The fitted top's own modelled bodice folds stay. The soles are a plait (F2.1). | V-pan-closeup |
+| 3, 12 | V-variant-sheet: Pan III and Ash I read apart only by colour at 20 m; Pan III's hem band reads as fleece; Ash I's dye edge stair-steps; the scutes are flaps on the deltoid | The four rungs now differ in black fill: the Starter's legs from the hip (peplum, fitted trousers); Pan II's hat disc behind her; Pan III's knee-length hem band and knee-high shin plates (their top flared over the kneecap, 3.6 cm off); Ash I's diagonal coat, knee-long at her left and mid-thigh at her right (its rust layer follows it, so the whole outline slants). Pan III's hem band is linen stiffened by brine, four rows of soft folds on the linen cell (the crust is the shader's `_SALT`), its thigh share easing in down its length; Ash I's rust layer stays inside the wrap until its hem (it had come through as stepped patches). Offline 75 px masks (bind-ish idle, 4 rungs, front / side IoU): Pan III–Ash I 0.944 / 0.928 → see F2.3. | V-variant-sheet |
+| 4 | V-bow-carry: the carried bow's limb runs through the skirt | The Starter has no skirt at the hip (the peplum ends there); the carry's roll keeps the lower limb out from her hip at a run (F2.3). Melee's hand (R64 c) is unchanged in this tree. | A-variant-swap-matrix held clause |
+| 5 | V-gear-in-hand: the crescent bracer reads as a black horn; the behind panel is unreadable | The crescent is a cast bronze plate LYING on the bracer's back (3.5 mm proud, bevelled, two rivets), its horns along the forearm; the behind panel films from behind her LEFT shoulder and above, where the stowed lance's diagonal falls to the frame's right and the head, the draw hand and the elbow are clear. | V-gear-in-hand |
+| 6 | The W1-exit rows of ROUND5-LOOK §7 are not registered; C-06 not started | C-06 and C-08 done (F2.1, F2.5); `A-starter-cut` (runner + `:arms` in the page), `V-starter-vs-board`, `A-weapon-finish` (runner + `:glint` in the page) and `V-weapon-keyart` are in `tools/gates.r5.armory.mjs`. | F2.3 |
+| 10 | The draw arm's sleeve collapses into a flat grey sheet in the aim camera | No rung has sleeves now. | V-gear-in-hand, the aim camera |
+| 11 | Pan III's scutes weighted to the upper arm, against bible §4.1/§4.2 | Every tile rigid on its clavicle; clearance by shape: an inner mantle (x 0.09–0.24, three lames, the outer one 4 cm off the deltoid at its edge). | matrix (b), (d) |
+
+### F2.5 C-08: the weapons' finish (ROUND5-LOOK §3.3, W1 exit part: bow, lance, fletching)
+
+- **The Sabina's tips are reflexed** (`weapongeo.mjs` `stave`, `BOW.reflex` 0.72): past 0.86 of each limb the stave turns back toward the target, 12.5° off the limb's line (tip chord 0.92–1 against the limb chord 0.6–0.86); nock to nock 1.443 m along the centre line. The horn nocks and the carmine silk lashings were there; the string and the arrow follow the nocks.
+- **The Shepherd's Lance's leaf** (the weapon atlas's `bronzeBlade` cell): the ground bevel honed (roughness 0.27–0.30) and a 3 mm polish band at the very edge, mirror-bright bronze at 0.23–0.24 roughness, metal 1, so the blade glints under a low sun.
+- **Fletching in orchil and white**: the cock feather's cell is #6B3F73 (painted 104, 62, 112: 0.8 dE2000), the other two stay white; a hunter arrow in flight has orchil fins with no emissive (it had a faint glow; only element ammo glows).
+- **Element heads** (Brine-Gourd, Cinder-Resin, Dust-Puff) glowing in their element colour only while nocked or in flight are W3 with F-2: PENDING by name in `A-weapon-finish`.
+- No weapon emissive within 20 dE2000 of #9B6BFF (15 emissives in `arrows.js`, none near).
+
+### F2.6 Contracts published or changed
+
+```
+// src/hero/parts.js
+HideMask.apply(bit, own = null)        // own: Uint8Array per body vertex (1 = covered) from the set; replaces the bit
+HideMask.ownMask(hide) -> Uint8Array | null   // decodes r5Outfit.hide; null when made for another body (counts differ)
+
+// src/hero/outfit.js
+equip(row)                              // uses r5Outfit.hide when present (cached once on the row's root.userData)
+
+// GLB extras (every armory outfit)
+r5Outfit.hide = { count, tris, covered, rle }   // the set's own cover of brea.glb's skin: base64 uint16 runs, 0-run first
+r5Outfit.cut  = 'starter' | 'long'
+
+// src/combat/combat.js
+_placeInHand: the carry's roll 0.2 - 0.1 * run (was 0.16 - 0.32 * run)
+```
+
+Recipes (armory's libraries):
+
+```
+breaBody(doc) -> Part in doc's bind space + { count, tris, lum }          // armor/lib/breabody.mjs
+coverMask(body, parts, { reach, skip, keep, also }) -> { count, tris, covered, rle, mask }
+limbRadius(body, a, b, opts) / woundWrap(part, R, skin, opts) / cuff(part, R, skin, opts)   // armor/lib/starter.mjs
+compassBoss(part, c, n, up, rect, sk, { R, thick }) / cordInto(part, pts, r, rect, skin, sides)
+panBase({ cut: 'starter' | 'long', sleeves, harness, armKit, keyhole, ubcBody, ... })  // outfit-pan-1.mjs
+  -> { ..., parts (shipped for the cut), sheetParts (the Pan sheet's union), fitBody (Brea) }
+panFinish(base, parts) -> cover   // the binding rides its rim; the set's cover of Brea's body
+rideOn(part, hosts, k)
+ARMHOLE_SL                        // the sleeveless armhole
+beltRing(..., { skinIn })         // garment.mjs: read the band's skin nearer her axis
+romFit: base.fitBody; a relax after the lift; `over` adds harness, boss, peplum, bracer
+panVariant({ ..., baseOpt = { cut: 'long' } })   // packs base.sheetParts, writes r5Outfit.hide
+```
+
+Gates: `A-starter-cut` (runner) and `A-starter-cut:arms` (page), `A-weapon-finish` (runner) and `A-weapon-finish:glint` (page), `V-starter-vs-board`, `V-weapon-keyart`; `A-gear-draws` reads R66 f's caps (body ≤ 11.5 k, outfit ≤ 16.0 k).
+
+### F2.7 For other lanes and the orchestrator
+
+- **melee, R64 (c): the carried bow's hand.** `_bowCarryLayer` still aims the left hand at x 0.245. On the three rungs that wear a skirt at her hip (Pan II, Pan III, Ash I) the fist is inside it standing, so the stave in the fist is too: that is the held clause's idle rows. The Starter has no skirt at the hip. armory moved its own side (the carry's roll keeps the lower limb out at every speed; no rung has a sleeve or a skirt that can be narrowed there without the thigh coming through).
+- **melee: the lance's light strike lays her right upper arm across her upper right chest** (light-1 contact and the frame after). With the sleeveless top every rung reads 0.44–0.47 % there offline (bar 0.5 %), all of it the top, its binding and the harness under that arm; it is the row with the least margin. A strike that keeps the upper arm off the chest would take most of it.
+- **melee: the lance's ready grip** is one-handed and trailing (V-gear-in-hand's lance panels).
+- **hero-body / character-art: `panBindTriangles()`** now leaves out the sleeves (the Starter has none). brea.glb's hide bit 1 is no longer what culls her body under an armory set: each set carries its own cover (`r5Outfit.hide`) keyed on brea.glb's skin vertex and triangle counts (7,932 / 13,580). If brea.glb is rebuilt with other counts, the sets fall back to the bit until armory rebuilds them (one `build` per recipe), and a rebuild of brea.mjs with the new `panBindTriangles` gives a bit that already matches the Starter.
+- **character-art: the newly bared arm skin** (C-06 "character-art paints the newly visible arm skin"). The stock body's painted underwear at the ribs is culled by the sets' cover where an armhole opens over it.
+- **Orchestrator: `A-hero-draws`** (hero-body's file) still tests the retired 20 k (R62 a); `A-gear-draws` here reads R66 f's caps.
+- **melee + hero-body (R69):** the long sash panels need the carried bow's hand off her left hip (R64 c) and a cloth chain per panel. armory builds the panels' geometry and skin on those chains when both exist (F2.8).
+- **Orchestrator: no page run was possible on Nov 14** (both slots held by the mem-guard from 02:54 to past 04:10 UTC, swap 5.9 → 6.8 GB). The queued batch is `X-mtx-dump,X-arms-view,A-starter-cut:arms,A-weapon-finish:glint` with `--extra` (the scratch `diag/mtxdump.gates.mjs`), then the full `--lane armory` block.
+- **Orchestrator: the four §7 rows** are registered here under their §7 ids (plus `:arms` and `:glint` for the clauses that need the page). When they are pasted into §9 they can move as they are.
+
+### F2.8 Honest gaps
+
+- **The lance's light strike** is the matrix row with the least margin on every rung (0.44–0.47 % offline against 0.5 %): her upper arm crosses her upper chest (melee's pose, F2.7).
+- **Rungs 2–4 are at their W1 state.** Pan II is not yet the board's Scout (the layered vest, one-side shoulder guard, patterned leg wraps and long panel skirt are its W3 re-cut), Pan III's satchel is W3, Ash I's hood, veil and goggles are W3 (C-09).
+- **The bra culling** relies on the stock body's albedo at its vertices; a repaint of brea.glb's skin that lightens the underwear would leave it to the ray test alone.
+- **The boots' sole, the wraps and the boss** are new and read well in the offline rasteriser; the boots were re-painted on Nov 14 (R69) and have no engine frame yet (F2.3).
+
+- **R69's long sash panels, front and back, to below the knee** are not built. Anything that hangs in front of or behind her left hip lies in the carried bow's path: in V-bow-carry the upper limb crosses the front of that hip and the lower limb trails behind the left knee. (run5's held-clause failures are elsewhere: the stave against the forearm wraps at the wrists, F2.3; before the Starter's peplum the stave measured −1.6 to −3.9 cm into the skirt at that hip.) The panels need the carry hand moved (melee, R64 c) and hero-body's cloth chains (R69 gives them the panels). Skinned rigid to the thighs, a back panel below the knee would also take the sprinting calf through it. armory will build the geometry on those chains once the carry has moved.
+- **R69's fingerless gloves, neck scarf, slung second belt, knee straps, square buckle-plate and back survey case** are not built (F2.3).
+- **No page row was re-graded this pass** (F2.3): the machine's memory held both Chrome slots for the whole session.
+
+### F2.3 This pass (Nov 14): R69, and what ran
+
+**R69 (Kevin's Nov 13 turnaround, binding for rung 1) landed after the Nov 13 work.** What changed toward it in the Starter's recipe (`outfit-pan-1.mjs`; every Pan rung inherits it through the shared sheet):
+- trousers dark brown-grey (`COL.trouserBG`), boots dark-brown laced leather with violet shin wraps (`PAN_PAINTERS.boots`, F2.1);
+- the sash and its two panels deep violet with the graduated-tick embroidery in gold-ochre thread (`T.cell('sash')`: a couched running line in from each hem, a short tick every 8 mm, a long one every 4 cm);
+- a violet band on both upper arms (it was the right only). To keep Pan III under its 0.15 MB cap the band is 4 rings by 12 sides (Pan III now 0.1503 MB: at the cap, rounded).
+
+Not yet done toward R69, and why (F2.8): the long front-and-back sash panels to below the knee, fingerless gloves, the neck scarf, the second slung belt with pouches, knee straps, the square brass buckle-plate at the harness crossing (C-06's gate still asks for the round 6 cm boss), and the survey case on the back.
+
+**Node-side rows on the Nov 14 build (no Chrome):**
+
+| Row | Result | Numbers |
+|---|---|---|
+| A-starter-cut (a–f) | PASS | no sleeve pieces; straps cross 1.1 cm from the sternum landmark, boss 6.0 cm; wraps from 6 mm to 0.195 m on both forearms, crescent on `lowerarm_l`; 2 panels 0.378 / 0.329 m at the left-rear hip, 26.9 dE2000 from #A3213A; boots 0.045; caps as above |
+| A-weapon-finish (b–e) | PASS | reflex 12.5°, nock to nock 1.443 m; fletching 0.8 dE (atlas) / 0 dE (flight); no emissive near #9B6BFF; weapon atlas 1024² |
+| A-armory-budget | PASS | Pan I 0.411, Pan II 0.149, Pan III 0.150 (cap 0.15), Ash I 0.362, stow kit 0.196, bow 0.059, lance 0.044 MB |
+| Matrix (a)+(b), offline replica on the 61 dumped poses (`matrix.js` logic, R62 c) | every graded pose under the bars | worst in the graded poses: Pan I light-1 0.46 %, Pan II light-1 0.47 %, Pan III drawUp 0.49 % (draw 0 0.41 %), Ash I light-1 0.47 % (drawUp 0.57 %, not a graded pose); stretch ≤ 1.523; head 0 |
+
+**What did not run: every page row.** From 02:54 to past 04:10 UTC on Nov 14 the machine sat at memory pressure 2 with 41–49 % free and swap growing from 5.9 to 6.8 GB, so the orchestrator's mem-guard held BOTH Chrome slots the whole time (its rule: the second slot is held at pressure ≥ 2 or free < 50 %). My one batched run (`X-mtx-dump`, a scratch row that dumps every frame the matrix samples so the stow and held clauses can be fitted offline, plus `A-starter-cut:arms` and `A-weapon-finish:glint`) waited in the queue the whole session and never got a slot. So the page rows below are the Nov 13 run (run5, 17:17 UTC, before the last Nov 13 edits and before this pass), and they are NOT re-graded:
+
+| Row (run5, Nov 13) | Result | Numbers |
+|---|---|---|
+| A-variant-swap-matrix | FAIL | (b) under 0.5 % on 25 of 32 rows; over: Pan II sprint+bow 0.56, light-1 0.53; Pan III draw 0 0.69, draw −0.55 0.70; Ash I idle+lance 1.05, sprint+bow 0.78 (stretch 1.794), draw 0 0.52. (c) stow −4.7 to −4.9 cm on most rows: the quiver (bit 4) inside the outfit at bind (−0.47, 1.48, 0.01), the right forearm's new wrap and bracer. (c) held −4.6 to −5.0 cm with the lance at contact and the bow at a sprint: the stave against the same wrap. Head 0 on every row |
+| A-starter-cut:arms | FAIL | front-left 1.00, back-left 0.98, back-right 0.87, front-right 0.12 skin (bar 0.60) |
+| A-weapon-finish:glint | FAIL | 0 px at all 8 bearings; the row was rewritten after run5 to stand where the 18:45 sun mirrors off the leaf's face or bevels, never run since |
+| A-gear-draws, A-outfit-swap-memory, A-weapon-swap-memory, A-variant-motion-rerun ×4, A-stow-clearance@armory, A-no-move-mods, A4, A5, A51, A-starter-cut | PASS | stowed 4 draws / 2 casters, full draw 5 / 2, lance 5 / 2 |
+| A-weapon-sockets, A-armor-verb, A-weapon-role, A52 | PENDING | as before (melee's prop scale, W2 filters, W3, legacy) |
+| V-pan-closeup, V-variant-sheet, V-weapon-sheet, V-gear-in-hand, V-bow-carry, V-starter-vs-board, V-weapon-keyart, V29 | NEEDS-JUDGE | filmed in run5 on the pre-R69 colours; not re-filmed |
+
+**What run5 says still needs fixing (none of it fixed this pass, because none of it can be checked without the page):**
+- **The quiver against the right forearm.** The Starter's wound wrap and laced bracer put cloth and leather on the forearm, where the sleeves never reached, and the quiver's arrows and mouth stand in that arm's swing. After run5 the Nov 13 pass moved the quiver 3 cm back and 8° more upright (`stowkit.mjs`). An offline estimate on the dumped poses, with the quiver rigid on the pelvis and without the runtime hold and shove, still puts it 0.1–1.9 cm from the forearm wrap through the whole sprint stride. Moved a further 4 cm back it clears every pose by more than 3 cm. That is the next change, but it has to be checked against the runtime solve, the stowed bow and `A-stow-clearance`'s boom clause first.
+- **The held clause** is the stave against the forearm wraps at the wrists: the bow's at her left wrist at a sprint (bind x +0.51), the lance's at her right wrist at contact (bind x −0.47). The Nov 13 pass seats the carried bow's grip inside the fist (`combat.js _placeInHand`), so it can no longer reach that wrap; it has not been measured since that change.
+- **The (b) rows over 0.5 %** read 0.1–0.9 points higher in the page than in the offline replica on the same GLBs (Ash I idle+lance: 1.05 % in the page, 0.11 % offline). The page reads a live frame (cloth chains, sash swing, the carry and the melee ready stance as they run), and the dump that would show which part differs is the queued `X-mtx-dump`.
+- **A-starter-cut:arms front-right 0.12.** The other three samples pass and the arm is bare in the offline renders, so it is the sampling line, not the cut. The scratch `X-arms-view` row in the same queued run draws the render with the sample points marked.
+
 ## F1. Fix round 1 (Nov 7)
+
+(Superseded where F2 says so.)
 
 The two W1 judges' findings, fixed in place. Sections 0–5 below are the Nov 6 pass, kept as the record. Nothing here is committed by me (the orchestrator checkpoints the tree). The C-06 Starter re-cut (sleeveless top, harness, bracers; ROUND5-LOOK) is fix round 2 and is not started; everything below was chosen so that it carries over to it: the binding, the collar, the shader's weave, the knot and its swing, the fit.
 
