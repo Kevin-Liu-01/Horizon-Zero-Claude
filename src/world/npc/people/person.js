@@ -1,0 +1,427 @@
+import * as THREE from 'three';
+import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { PersonChains } from './chains.js';
+import { FADE_LEVELS } from './bank.js';
+import { PosePlayer, rotOf } from './pose.js';
+
+/**
+ * CALIMA · one person on the street (settlements; R56; bible §6.2). A clone of an archetype's GLB: ONE
+ * skeleton, its tier meshes, its mixer, its chains. Moves by the clip's own stride table, so the
+ * planted foot is the fixed point of the walk (A97).
+ *
+ * Tiers: 0 near (3 draws, live chains), 1 at 18-35 m (2 draws), 2 beyond (2 draws), -1 hidden. A tier
+ * change is a screen-door cross-fade over FADE_T, out of a quantised material pool. The `Caster` mesh is
+ * the only thing that ever casts: no main pass (its draw is skipped before it reaches GL) and one draw
+ * per cascade, and only the system's nearest four have it on.
+ */
+const FADE_T = 0.32;
+const TAU = Math.PI * 2;
+const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
+const _v = new THREE.Vector3(), _sc = new THREE.Vector3();
+const _mq = new THREE.Quaternion();
+/** Head turn toward the player (rad, m): a person near her looks up from what they are doing. */
+const LOOK_MAX = 0.75, LOOK_R = 5.5, LOOK_RATE = 2.2;
+/**
+ * The head's carriage (rad, + lifts the face). The library's idles, talks and walks carry the head 11-15 deg down (measured off
+ * the pack: Idle_Loop -12.7, Walk_Loop -14.8, Idle_Talking_Loop -12.8; R64 b on Brea's idle), which reads as a crowd that will
+ * not meet her eye. Those clips get it back to level, split neck 40 % / head 60 %; the work clips keep their gaze on the work.
+ */
+const LIFT = {
+  Idle_Loop: 0.2, Walk_Loop: 0.22, Walk_Formal_Loop: 0.2, Jog_Fwd_Loop: 0.3, Idle_Talking_Loop: 0.18, Sitting_Talking_Loop: 0.2,
+  Sitting_Idle_Loop: 0.14, Idle_FoldArms_Loop: 0.16, Idle_Lantern_Loop: 0.18, Interact: 0.16, Push_Loop: 0.12, Yes: 0.16,
+  Consume: 0.08, Idle_No_Loop: 0.3, Idle_Rail_Loop: 0.3, Idle_Rail_Call: 0.36,
+};
+const LIFT_RATE = 3;
+const _sphere = new THREE.Sphere(new THREE.Vector3(0, 0.95, 0), 1.75);
+
+/** No main-pass draw: count -1 makes three return before gl.drawElements; the shadow pass (which skips these hooks) sees the full range. */
+function skipMain(geo) {
+  return {
+    before() { geo.drawRange.count = -1; },
+    after() { geo.drawRange.count = Infinity; },
+  };
+}
+
+export class Person {
+  constructor(sys, entry, { x = 0, z = 0, yaw = 0, seed = 1, id = null, script = null, height = null } = {}) {
+    this.sys = sys;
+    this.entry = entry;
+    this.archetype = entry.id;
+    this.spec = entry.npc;
+    this.id = id || `${entry.id}#${seed}`;
+    this.seed = seed;
+    this.script = script;
+    const npc = entry.npc;
+    const bank = sys.bank;
+    this.group = new THREE.Group();
+    this.group.name = `person-${this.id}`;
+    this.yaw = yaw;
+    this.group.position.set(x, 0, z);
+    this.group.rotation.y = yaw;
+
+    const root = skeletonClone(entry.scene);
+    this.root = root;
+    // uniform scale only (bible §6.2); the sole sits on the ground
+    const S = (height ? height / npc.height : 1) * npc.scale;
+    this.scale = S;
+    root.scale.setScalar(S);
+    root.position.y = -npc.footY * S;
+    this.group.add(root);
+
+    this.meshes = {};
+    this.bones = {};
+    root.traverse((o) => { if (o.isBone) this.bones[o.name] = o; if (o.isSkinnedMesh) this.meshes[o.name] = o; });
+    // ONE skeleton for every mesh of this person (a clone gets one per mesh, each with a bone texture)
+    const firstMesh = this.meshes.Skin_L0;
+    this.skeleton = firstMesh.skeleton;
+    const outfitMat = bank.atlases.get(entry.faction).material, hairMat = bank.atlases.get('hair').material;
+    for (const name in this.meshes) {
+      const m = this.meshes[name];
+      if (m.skeleton !== this.skeleton) { m.skeleton.dispose(); m.skeleton = this.skeleton; }
+      m.boundingSphere = _sphere;
+      m.frustumCulled = true;
+      m.castShadow = false;
+      m.receiveShadow = true;
+      if (/^Outfit_/.test(name)) m.material = outfitMat;
+      else if (/^Hair_/.test(name)) m.material = hairMat;
+      else if (name === 'Caster') m.material = bank.casterMat;
+      else m.material = entry.skinMat;
+      m.userData.baseMat = m.material;
+      m.userData.noSizeCull = true;   // a tier owns its own visibility
+      m.visible = false;
+    }
+    const c = this.meshes.Caster;
+    if (c) {
+      const hook = skipMain(c.geometry);
+      c.onBeforeRender = hook.before;
+      c.onAfterRender = hook.after;
+      c.castShadow = false;
+    }
+    this.tierMeshes = [
+      [this.meshes.Skin_L0, this.meshes.Hair_L0, this.meshes.Outfit_L0].filter(Boolean),
+      [this.meshes.Skin_L1, this.meshes.Outfit_L1].filter(Boolean),
+      [this.meshes.Skin_L2, this.meshes.Outfit_L2].filter(Boolean),
+    ];
+    this.tier = -1;
+    this.fromTier = -1;
+    this.fadeT = 0;
+    this.casting = false;
+
+    this.chains = new PersonChains(this.bones, npc.chains || [], { worldScale: S, scale: S });
+
+    // the clip player (pose.js: three's mixer allocated about 2.5 KB per person per update)
+    this.pose = new PosePlayer(this.bones);
+    this.clipCount = new Set();
+    this.mixAcc = 0;
+    this.mixerClock = 0;
+    this._dtNow = 0;
+    this._stepNow = 0;
+    this._beatT = 0;
+    this._beatEnd = 8;
+    this.distance = 0;
+    this.walking = null;     // { clip, gait, ts, lean, swing }
+    this.walkTarget = null;
+    this.speed = 0;
+    this.travelled = 0;
+    this.stateT = 0;
+    this.scriptI = 0;
+    this.frozen = false;
+    this.leanK = 0;
+    this.lean = 0;
+    this.swing = 1;
+    this.head = this.bones.Head;
+    this.neck = this.bones.neck_01;
+    this.lookYaw = 0;
+    /** false: the head stays on the clip (a staged sheet, a cutscene); true: a near person looks up at her. */
+    this.look = true;
+    this.lift = 0;
+    this.liftTarget = 0;
+    this.spine1 = this.bones.spine_01;
+    this.upL = this.bones.upperarm_l;
+    this.upR = this.bones.upperarm_r;
+    // a held arm (the porter's on his basket): local rotations written over the clip
+    this.armPose = [];
+    if (npc.armPose) for (const k of Object.keys(npc.armPose)) {
+      if (k === 'side' || !this.bones[k]) continue;
+      this.armPose.push({ bone: this.bones[k], q: new THREE.Quaternion().fromArray(npc.armPose[k]) });
+    }
+    // The overlays (lean, arm swing, held arm, carriage, look) compose onto the clip's value. three's mixer wrote a bone only when
+    // the clip's value CHANGED since its last write, so on a constant track an overlay compounded every frame and folded the body
+    // over (r2: a porter lying flat in his walk). PosePlayer writes every bone on every update, so each overlay starts clean.
+    this.props = {};
+    for (const p of npc.props || []) this.props[p.name] = this.bones[p.name] || null;
+    this.showProps(null);
+    this.setPosition(x, z);
+    // she walks round a person, not through them (the crowd's capsule, the same kind)
+    this.colliderId = -1;
+    this.collider = null;
+    const Cl = sys.ctx.collision;
+    if (Cl?.register) {
+      const y = this.group.position.y;
+      this.colliderId = Cl.register({
+        kind: 'npc', dynamic: true, ref: this, blocking: true, occluder: false, camera: false,
+        shape: { type: 'capsule', a: [x, y + 0.25, z], b: [x, y + 1.45 * (npc.height / 1.75), z], radius: 0.3 },
+      });
+      this.collider = Cl.byId?.get?.(this.colliderId) || null;
+    }
+  }
+
+  /** Prop joints: a tool is collapsed by scaling its joint to nothing (no draw, no allocation). */
+  showProps(list) {
+    for (const name in this.props) {
+      const b = this.props[name];
+      if (!b) continue;
+      const on = list ? list.includes(name) : (name !== 'prop_hand' && name !== 'prop_lamp');
+      b.scale.setScalar(on ? 1 : 0.0005);
+    }
+  }
+
+  setPosition(x, z) {
+    this.group.position.x = x; this.group.position.z = z;
+    const T = this.sys.ctx.terrain;
+    if (T) this.group.position.y = T.getHeight(x, z);
+  }
+
+  /** The clip playing now: `{ time, ts, loop, duration, getClip() }` (null before the first play). */
+  get current() { return this.pose.current; }
+
+  /** Cross-fade to a clip; returns its duration. */
+  play(name, { fade = 0.35, ts = 1, loop = true, offset = null } = {}) {
+    const clip = this.sys.bank.clipPack.of(this.spec.sex, name);
+    if (!clip) return 0;
+    const was = this.pose.current;
+    const a = this.pose.play(clip, { fade, ts, loop, offset });
+    if (a === was) return a.duration;
+    this.clipCount.add(name);
+    this.liftTarget = LIFT[name] ?? 0;
+    return a.duration;
+  }
+
+  /** Walk to a point in this person's walk style; `then` when there. */
+  walkTo(x, z, then = null) {
+    const W = this.spec.clips?.walk || { clip: 'Walk_Loop', ts: 1, lean: 0, swing: 1 };
+    const clip = W.also && !this._jog ? W.also : W.clip;
+    const ts = W.also && !this._jog ? 1 : W.ts;
+    const gait = this.sys.bank.clipPack.gaits[`${this.spec.sex}|${clip}`] || null;
+    this.walking = { clip, gait, ts };
+    this.lean = W.lean || 0;
+    this.swing = W.swing ?? 1;
+    this.walkTarget = { x, z, then };
+    this.play(clip, { ts, fade: 0.32 });
+    this.armMean = this.sys.bank.armMean(this.spec.sex, clip);
+  }
+
+  stopWalk() {
+    this.walking = null;
+    this.walkTarget = null;
+    this.speed = 0;
+  }
+
+  /** One tick (the system's `_dt`): tier, clip, walk, overlays. Returns whether the pose moved this tick. */
+  update(tier, wind) {
+    const dt = this.frozen ? 0 : this.sys._dt;
+    this.stateT += dt;
+    this._dtNow = dt;
+    this._applyTier(tier);
+    // the clip's rate falls with distance (bible §6.2): every frame within 8 m, 30 Hz to the end of the near tier and on LOD1,
+    // 15 Hz on LOD2, 4 Hz hidden (A-alloc-rate counts every tick; at 8-18 m a 30 Hz pose is not seen)
+    const hz = tier === 0 ? (this.distance > 8 ? 1 / 30 : 0) : tier === 1 ? 1 / 30 : tier === 2 ? 1 / 15 : 1 / 4;
+    this.mixAcc += dt;
+    if (this.mixAcc < hz) return false;
+    const step = this.mixAcc;
+    this.mixAcc = 0;
+    this._stepNow = step;
+    const a = this.pose.current;
+    const t0 = a ? a.time : 0;
+    this.pose.step = step;
+    // hidden (past 90 m): the clock and the walk go on, the pose is not evaluated and no overlay is written
+    const shown = tier >= 0;
+    if (shown) this.pose.update(); else this.pose.advance();
+    this.mixerClock += step;
+    if (this.walking && a) {
+      const g = this.walking.gait;
+      const t1 = a.time;
+      let d = 0.9 * step * this.walking.ts;
+      if (g) {
+        // the stride table between the two clip times (inline: no number-argument calls in the tick)
+        const n = g.frames, cum = g.cum;
+        let fa = t0 * n / g.dur, fb = t1 * n / g.dur;
+        if (fa < 0) fa = 0; else if (fa > n - 1e-4) fa = n - 1e-4;
+        if (fb < 0) fb = 0; else if (fb > n - 1e-4) fb = n - 1e-4;
+        const ia = Math.floor(fa), ib = Math.floor(fb);
+        const ca = cum[ia] + (cum[ia + 1] - cum[ia]) * (fa - ia), cb = cum[ib] + (cum[ib + 1] - cum[ib]) * (fb - ib);
+        let dd = t1 >= t0 ? cb - ca : (g.dist - ca) + cb;
+        if (dd < 0) dd = 0;
+        d = dd * this.scale;
+      }
+      this.speed = step > 0 ? d / step : 0;
+      const T = this.walkTarget;
+      if (T) {
+        const dx = T.x - this.group.position.x, dz = T.z - this.group.position.z;
+        const want = Math.atan2(dx, dz);
+        let turn = want - this.yaw;
+        while (turn > Math.PI) turn -= TAU;
+        while (turn < -Math.PI) turn += TAU;
+        const maxTurn = 1.5 * step;
+        this.yaw += Math.max(-maxTurn, Math.min(maxTurn, turn));
+        this.group.rotation.y = this.yaw;
+        const px = this.group.position.x + Math.sin(this.yaw) * d, pz = this.group.position.z + Math.cos(this.yaw) * d;
+        this.group.position.x = px; this.group.position.z = pz;
+        this.travelled += d;
+        const Tn = this.sys.ctx.terrain;
+        if (Tn && d > 0) this.group.position.y = Tn.getHeight(px, pz);
+        const cc = this.collider;
+        if (cc) {
+          const gy = this.group.position.y;
+          cc.ax = px; cc.az = pz; cc.ay = gy + 0.25; cc.bx = px; cc.bz = pz; cc.by = gy + 1.45 * (this.spec.height / 1.75);
+          this.sys.ctx.collision._bounds(cc);
+        }
+        if (dx * dx + dz * dz < 0.09) {
+          const then = T.then;
+          this.stopWalk();
+          if (then) then(this);
+        }
+      }
+    }
+    if (!shown) return false;
+    this._overlay();
+    if (tier <= 1) this._carry();
+    if (tier === 0) this._look();
+    return true;
+  }
+
+  /**
+   * The head turns toward the player when she is close and in front, split between neck and head,
+   * written over the clip. World-axis yaw in each bone's parent frame, from last frame's matrices (no allocation).
+   */
+  _look() {
+    const dt = this._stepNow;
+    const pl = this.sys.ctx.player;
+    let want = 0;
+    if (pl && !this.frozen && this.look) {
+      const dx = pl.position.x - this.group.position.x, dz = pl.position.z - this.group.position.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < LOOK_R * LOOK_R && d2 > 0.25) {
+        let off = Math.atan2(dx, dz) - this.yaw;
+        while (off > Math.PI) off -= TAU;
+        while (off < -Math.PI) off += TAU;
+        if (Math.abs(off) < 1.9) want = Math.max(-LOOK_MAX, Math.min(LOOK_MAX, off));
+      }
+    }
+    this.lookYaw += (want - this.lookYaw) * Math.min(1, LOOK_RATE * dt);
+    if (Math.abs(this.lookYaw) < 0.002 || !this.neck || !this.head) return;
+    for (let i = 0; i < 2; i++) {
+      const b = i ? this.head : this.neck, share = i ? 0.55 : 0.45;
+      rotOf(b.parent.matrixWorld.elements, _mq);
+      _q3.copy(_mq).invert();
+      { const h = this.lookYaw * share * 0.5, sn = Math.sin(h); _q._x = 0; _q._y = sn; _q._z = 0; _q._w = Math.cos(h); }
+      // q_local' = parent^-1 * R * parent * q_local
+      _q2.copy(_q3).multiply(_q).multiply(_mq).multiply(b.quaternion);
+      b.quaternion.copy(_q2);
+    }
+  }
+
+  /** The head's carriage: a pitch about the person's own lateral axis, split between neck and head, over the clip (no allocation). */
+  _carry() {
+    const dt = this._stepNow;
+    this.lift += (this.liftTarget - this.lift) * Math.min(1, LIFT_RATE * dt);
+    if (Math.abs(this.lift) < 0.002 || !this.neck || !this.head) return;
+    // her right in the world: (-cos yaw, 0, sin yaw); a positive turn about it raises the face
+    _v.set(-Math.cos(this.yaw), 0, Math.sin(this.yaw));
+    for (let i = 0; i < 2; i++) {
+      const b = i ? this.head : this.neck, share = i ? 0.6 : 0.4;
+      rotOf(b.parent.matrixWorld.elements, _mq);
+      _q3.copy(_mq).invert();
+      { const h = this.lift * share * 0.5, sn = Math.sin(h); _q._x = _v.x * sn; _q._y = 0; _q._z = _v.z * sn; _q._w = Math.cos(h); }
+      _q2.copy(_q3).multiply(_q).multiply(_mq).multiply(b.quaternion);
+      b.quaternion.copy(_q2);
+    }
+  }
+
+  /** The walk style's posture (bible §6.2): a lean from the hips and an arm-swing gain, preallocated. */
+  _overlay() {
+    for (let i = 0; i < this.armPose.length; i++) this.armPose[i].bone.quaternion.copy(this.armPose[i].q);
+    const k = this.walking ? 1 : 0;
+    this.leanK += (k - this.leanK) * 0.08;
+    if (this.lean !== 0 && this.spine1) {
+      { const h = this.lean * this.leanK * 0.5; _q._x = Math.sin(h); _q._y = 0; _q._z = 0; _q._w = Math.cos(h); }
+      this.spine1.quaternion.multiply(_q);
+    }
+    if (this.swing < 0.999 && this.leanK > 0.01) {
+      const s = (1 - this.swing) * this.leanK;
+      if (this.armMean && this.upL && this.upR && !this.armPose.length) {
+        // toward the clip's mean arm by s (nlerp on the shorter arc: no slerp call with a number argument)
+        for (let i = 0; i < 2; i++) {
+          const q = i ? this.upR.quaternion : this.upL.quaternion, m = i ? this.armMean.r : this.armMean.l;
+          let mx = m._x, my = m._y, mz = m._z, mw = m._w;
+          if (q._x * mx + q._y * my + q._z * mz + q._w * mw < 0) { mx = -mx; my = -my; mz = -mz; mw = -mw; }
+          const x = q._x + (mx - q._x) * s, y = q._y + (my - q._y) * s, z = q._z + (mz - q._z) * s, w = q._w + (mw - q._w) * s;
+          const l = Math.sqrt(x * x + y * y + z * z + w * w) || 1;
+          q._x = x / l; q._y = y / l; q._z = z / l; q._w = w / l;
+        }
+      }
+    }
+  }
+
+  _applyTier(tier) {
+    const dt = this._dtNow;
+    if (tier !== this.tier) {
+      const from = this.tier;
+      this.fromTier = from;
+      this.tier = tier;
+      this.fadeT = from === -1 || tier === -1 ? 0 : FADE_T;
+      // a person coming into view is posed on this tick, not at the next 15-30 Hz step (a hidden one was not evaluated)
+      if (from === -1) this.mixAcc = 1;
+      this._lv = 0;   // a new fade starts its pool at the first level, whatever the last fade ended on
+      if (from === -1 || tier === -1) this.fromTier = -1;
+      for (let i = 0; i < 3; i++) {
+        const on = i === tier || i === this.fromTier;
+        for (const m of this.tierMeshes[i]) { m.visible = on; m.material = m.userData.baseMat; }
+      }
+      if (tier !== 0 && from !== 0) this.chains.freeze();
+    }
+    if (this.fadeT > 0) {
+      this.fadeT -= dt;
+      if (this.fadeT <= 0) {
+        for (const m of this.tierMeshes[this.fromTier] || []) { m.visible = false; m.material = m.userData.baseMat; }
+        for (const m of this.tierMeshes[this.tier] || []) m.material = m.userData.baseMat;
+        if (this.fromTier === 0) this.chains.freeze();
+        this.fromTier = -1;
+      } else {
+        const lv = Math.max(1, Math.min(FADE_LEVELS - 1, Math.floor((1 - this.fadeT / FADE_T) * FADE_LEVELS)));
+        if (lv !== this._lv) {
+          this._lv = lv;
+          const bank = this.sys.bank;
+          for (const m of this.tierMeshes[this.tier]) m.material = bank.fadeOf(m.userData.baseMat, lv, 1);
+          for (const m of this.tierMeshes[this.fromTier]) m.material = bank.fadeOf(m.userData.baseMat, lv, -1);
+        }
+      }
+    }
+  }
+
+  setCasting(on) {
+    if (on === this.casting) return;
+    this.casting = on;
+    const c = this.meshes.Caster;
+    if (c) { c.visible = on; c.castShadow = on; }
+  }
+
+  /** What this person is drawing right now (gate surface). */
+  info() {
+    let draws = 0, tris = 0;
+    const list = [];
+    for (const t of this.tierMeshes) for (const m of t) {
+      if (!m.visible) continue;
+      const n = (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
+      draws++; tris += n; list.push({ name: m.name, tris: Math.round(n) });
+    }
+    return { tier: this.tier, draws, tris: Math.round(tris), casting: this.casting, meshes: list };
+  }
+
+  dispose() {
+    if (this.colliderId >= 0) { try { this.sys.ctx.collision?.unregister(this.colliderId); } catch { /* gone */ } this.colliderId = -1; this.collider = null; }
+    this.pose.dispose();
+    this.skeleton.dispose();
+    this.group.removeFromParent();
+  }
+}

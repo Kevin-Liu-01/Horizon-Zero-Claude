@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { buildSettlement } from './props/settlement.js';
 import { buildNpcCrowd, ROSTER } from './props/npcs.js';
 import { installNpcs } from './npc/npc.js';
+import { installPeople } from './npc/people/index.js';
 import { REST_SITE } from './island/sites.js';
 
 /**
@@ -89,6 +90,8 @@ export class Camp {
     // finds when it traverses this group for the flicker anchor.
     this._buildSettlement();
     this._placeNpcs();
+    // R56 + R57 c: the people built like Brea, staged on neutral ground near REST until W2 places them
+    this.people = installPeople(ctx);
 
     ctx.scene.add(this.group);
   }
@@ -1192,6 +1195,8 @@ export class Camp {
         b.light.position.y = b.y + 0.04 * Math.sin(t * 8.2 + b.phase);
       }
     }
+
+    this.people?.update(dt, t);
 
     this._ensureCampfire();
     this._hookProgressionRest();
