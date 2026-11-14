@@ -141,7 +141,7 @@ rows and the studio is deleted.
 | `V3-crouch-stalk` | island |
 | `V4-aim-anchor` | island |
 | `V13-aim-strafe` | island |
-| `V21-camera-cover` | island |
+| `V21-camera-cover` | island: the shot stands at the nearest trunk-shaped camera collider to her (the valley's trees are gone) |
 | `V49-draw-from-jog` | island |
 
 ### C. Climb, slide and mantle (added to list B by id at M0.12)

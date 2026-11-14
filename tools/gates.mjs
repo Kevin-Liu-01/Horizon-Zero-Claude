@@ -22,7 +22,8 @@ import {
   sweepProfiles, profileDir, disposeProfile, installProfileCleanup, countProfiles, guardPort, acquireChromeSlot,
 } from './chrome-profile.mjs';
 import { formatVerdict, writeLine } from './gate-verdict.mjs';
-import { KEPT_STACK, RESTAGED, PATCHED, NO_STUDIO, STUDIO_TOUCHED, STAGE_OF } from './gates/kept-stack.mjs';
+import { KEPT_STACK, RESTAGED, PATCHED, USE_CARRIED, NO_STUDIO, STUDIO_TOUCHED, STAGE_OF } from './gates/kept-stack.mjs';
+import { GATES as CARRIED_ROWS } from './gates.r5.carried.mjs';
 
 /**
  * Round 4 lane gates (D8 module ownership): every lane writes its own gates to
@@ -98,6 +99,14 @@ for (const file of laneFiles) {
 const keptStack = args.includes('--kept-stack');
 const restagedById = new Map(RESTAGED.map((g) => [g.id, g]));
 const patchedById = new Map(PATCHED.map((x) => [x.id, x]));
+const carriedById = new Map(USE_CARRIED.map((x) => [x.id, x]));
+/** The carried row itself (accessors kept), for an id whose lane shadow can no longer run. */
+const carriedRow = (g, why) => {
+  const c = CARRIED_ROWS.find((r) => r.id === g.id);
+  if (!c) return g;
+  return Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(c),
+    source: { value: 'gates.r5.carried.mjs', enumerable: true }, stagingPatch: { value: why, enumerable: true } });
+};
 /** A patched row: its own assert with the staging lines swapped; a patch that does not apply is a FAIL. */
 const patchRow = (g, pt) => {
   const field = pt.field || 'assert';
@@ -114,7 +123,8 @@ const patchRow = (g, pt) => {
 const GATES = keptStack
   ? merged.map((g) => (restagedById.has(g.id)
     ? { ...restagedById.get(g.id), source: 'gates/kept-stack.mjs', restages: g.source }
-    : patchedById.has(g.id) ? patchRow(g, patchedById.get(g.id)) : g))
+    : patchedById.has(g.id) ? patchRow(g, patchedById.get(g.id))
+      : carriedById.has(g.id) ? carriedRow(g, carriedById.get(g.id).why) : g))
   : merged;
 // Only the files that actually contributed gates are reported as merged: the
 // old line listed every file it TRIED, including the ones that threw.

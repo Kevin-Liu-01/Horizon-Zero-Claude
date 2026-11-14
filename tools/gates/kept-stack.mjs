@@ -436,22 +436,54 @@ const A22_ISLAND = `(async () => {${TURNTABLE}${SLEEP}
     }
     return { edges, intermediate: inter, fraction: edges ? +(inter / edges).toFixed(4) : null };
   };
-  let on = null, off = null, region = null;
+  let on = null, off = null, region = null, fixture = null;
   try {
     const p = ctx.player;
     standAt(p, 'spawnVista');
     await waitFrames(6);
     TT.enter();
-    // the lens low and close, looking up past her shoulder at the sky: her silhouette against the sky
+    // The turntable's AA card: five dark stakes, 0.25 x 3 m, at five angles, 6 m ahead of the lens and pitched up
+    // into the sky, so every edge in the crop is a hard geometric silhouette against the sky (V20's basalt columns
+    // were the same subject on the deleted Pans host). The stakes are the gate's; the AA chain is the engine's.
     const V = ctx.camera.position.constructor;
-    const head = new V(); p.animator.b.head.bone.getWorldPosition(head);
-    const f = new V(Math.sin(p.heading), 0, Math.cos(p.heading));
-    TT.lens({ pos: new V(head.x + f.x * 2.2, head.y - 0.9, head.z + f.z * 2.2), look: new V(head.x, head.y + 0.35, head.z), fov: 40 });
+    const eye = new V(); p.animator.b.head.bone.getWorldPosition(eye);
+    const fwd = new V(Math.sin(p.heading), 0, Math.cos(p.heading));
+    const pos = eye.clone().addScaledVector(fwd, 0.6);
+    const pitch = 25 * Math.PI / 180;
+    const dir = new V(fwd.x * Math.cos(pitch), Math.sin(pitch), fwd.z * Math.cos(pitch)).normalize();
+    TT.lens({ pos, look: pos.clone().addScaledVector(dir, 10), fov: 40 });
+    let M = null, mat = null;
+    ctx.scene.traverse((o) => { if (!M && o.isMesh && o.geometry && o.geometry.isBufferGeometry && o.geometry.attributes.position) M = o; });
+    ctx.scene.traverse((o) => { const m = o.material; if (!mat && m && !Array.isArray(m) && m.type === 'MeshBasicMaterial') mat = m; });
+    if (!mat) ctx.scene.traverse((o) => { const m = o.material; if (!mat && m && !Array.isArray(m) && /^Mesh(Standard|Lambert|Phong)Material$/.test(m.type) && !Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile')) mat = m; });
+    mat = mat ? mat.clone() : null;
+    if (mat && mat.emissive) mat.emissive.setRGB(0, 0, 0);
+    if (mat && 'envMapIntensity' in mat) { mat.envMap = null; mat.envMapIntensity = 0; }
+    if (mat && 'roughness' in mat) { mat.roughness = 1; mat.metalness = 0; }
+    if (!M || !mat) return { pass: null, detail: 'SKIP: no mesh or MeshBasicMaterial in the scene to build the AA card from' };
+    mat.color.setRGB(0.02, 0.02, 0.02); mat.map = null; mat.transparent = false; mat.opacity = 1; mat.side = 2; mat.fog = false;
+    mat.depthTest = true; mat.depthWrite = true; mat.vertexColors = false; mat.needsUpdate = true;
+    const up0 = new V(0, 1, 0), right = new V().crossVectors(dir, up0).normalize(), upV = new V().crossVectors(right, dir).normalize();
+    const centre = pos.clone().addScaledVector(dir, 6);
+    const verts = [];
+    [-40, -15, 10, 30, 55].forEach((deg, i) => {
+      const th = deg * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+      const o = centre.clone().addScaledVector(right, (i - 2) * 0.9);
+      const pt = (u, v) => o.clone().addScaledVector(right, u * c - v * sn).addScaledVector(upV, u * sn + v * c);
+      const q = [pt(-0.125, -1.5), pt(0.125, -1.5), pt(0.125, 1.5), pt(-0.125, 1.5)];
+      for (const k of [0, 1, 2, 0, 2, 3]) verts.push(q[k].x, q[k].y, q[k].z);
+    });
+    const geo = new M.geometry.constructor();
+    geo.setAttribute('position', new M.geometry.attributes.position.constructor(new Float32Array(verts), 3));
+    const card = new M.constructor(geo, mat);
+    card.frustumCulled = false; card.castShadow = false; card.receiveShadow = false; card.name = 'gate-aa-card';
+    ctx.scene.add(card);
+    fixture = () => { ctx.scene.remove(card); geo.dispose(); mat.dispose(); };
     await waitFrames(8);
     TT.freeze();
     await waitFrames(6);
     const pr = R.getPixelRatio(), W = R.domElement.width, H = R.domElement.height;
-    region = { x: Math.round(W * 0.3), y: Math.round(H * 0.05), w: Math.round(W * 0.4), h: Math.round(H * 0.5), pr };
+    region = { x: Math.round(W * 0.2), y: Math.round(H * 0.12), w: Math.round(W * 0.6), h: Math.round(H * 0.76), pr };
     const a = await crop(region.x, region.y, region.w, region.h);
     E.smaa.enabled = false;
     await waitFrames(4);
@@ -460,12 +492,12 @@ const A22_ISLAND = `(async () => {${TURNTABLE}${SLEEP}
     await waitFrames(2);
     on = a && aaMetric(a, region.w, region.h);
     off = b && aaMetric(b, region.w, region.h);
-  } finally { if (E.smaa) E.smaa.enabled = true; TT.exit(); }
+  } finally { if (E.smaa) E.smaa.enabled = true; if (fixture) fixture(); TT.exit(); }
   const gain = on && off && off.fraction ? +(on.fraction / off.fraction).toFixed(3) : null;
   const measured = msaaPath ? null : { smaaOn: on, smaaOff: off, gainOverOff: gain,
     ok: !!on && on.edges >= 200 && on.fraction >= BAR.minFraction && gain != null && gain >= BAR.minGainOverOff };
   const pass = mechOk && (msaaPath || measured.ok);
-  return { pass, detail: { stage: 'island: spawn vista, turntable lens low on Brea against the sky',
+  return { pass, detail: { stage: 'island: spawn vista, the turntable AA card (five dark stakes at five angles against the sky)',
     path: msaaPath ? 'MSAA x' + mech.samples + ' + SMAA' : 'R25: SMAA-only at the shipped tier',
     mechanical: Object.assign(mech, { ok: mechOk }), measuredAA: measured, bar: BAR, region } };
 })()`;
@@ -515,6 +547,17 @@ export const FLAT_LANE = `function flatLane(len) {
 }`;
 
 /**
+ * Rows whose lane shadow can no longer run: instruments-core re-staged A43, A90-rig-reclaim and A90b by text
+ * surgery on the Round-4 rows, and that text has since moved (its rows report "re-stage edits not applied").
+ * The carried rows are already staged by role (R28, R34), so a kept-stack run takes the carried row.
+ */
+export const USE_CARRIED = [
+  { id: 'A43-corpse-lifecycle', why: 'instruments-core shadow is a PENDING stub (its re-stage text moved); the carried row stages the eight wrecks by role (R28)' },
+  { id: 'A90-rig-reclaim', why: 'instruments-core shadow is a PENDING stub; the carried row cycles the staged role kinds (R28)' },
+  { id: 'A90b-memory-attribution', why: 'instruments-core shadow is a PENDING stub; the carried row kills and respawns a staged kind (R28, R34)' },
+];
+
+/**
  * Rows that stand as registered except for one staging line: each patch is applied to the
  * registered row's assert text (exact strings; a patch that does not apply turns the row into a
  * FAIL naming the patch, so a later edit to the row cannot silently run the old staging).
@@ -557,6 +600,65 @@ export const PATCHED = [
   },
 ];
 
+/* ------------------------------------------------------------------------------------------ */
+/* A45c on the island: a planted Instrument foot does not jump between rendered frames          */
+/* ------------------------------------------------------------------------------------------ */
+/**
+ * The carried A45c read `footContinuity()`, which only the handle-rig FootLock publishes, and the handle rig
+ * ran only on the legacy kinds (deleted at M0.3 R2), so it reported SKIP-legacy. The live Instruments plant
+ * their feet through gait.js and publish them through `debugFeet()` (the source A45 reads). Same primary bar:
+ * a planted foot moves <= 0.12 m in any rendered frame and <= 3 m/s. The footlock-only "lock ramp <= 9 m/s"
+ * clause has no gait equivalent and is not graded.
+ */
+const A45C_ISLAND = `(async () => {
+  { const __k = noKindsSkip(); if (__k) return __k; }
+  const T = __CTX__.terrain, species = new Map();
+  for (const _m of stagedPicks()) species.set(_m.kind, _m);
+  const out = {}; let measured = 0, worstFrameM = 0, worstMps = 0, worstAt = null;
+  for (const [kind, m] of species) {
+    if (!m.debugFeet || m.debugFeet().length < 2) { out[kind] = 'no feet'; continue; }
+    {
+      const _p = __CTX__.player;
+      _p.position.set(m.position.x + 14, 0, m.position.z + 14);
+      _p._snapToGround?.();
+      _p.camYaw = Math.atan2(m.position.x - _p.position.x, m.position.z - _p.position.z) + Math.PI;
+      await new Promise((r) => setTimeout(r, 2200));
+    }
+    const prev = {};
+    let prevT = performance.now(), samples = 0, plantedPairs = 0, kFrame = 0, kMps = 0, moved = 0;
+    let sx = m.position.x, sz = m.position.z;
+    const t0 = performance.now();
+    while (performance.now() - t0 < 5000) {
+      await new Promise((r) => requestAnimationFrame(r));
+      const now = performance.now(), dt = Math.max(1e-3, (now - prevT) / 1000);
+      prevT = now; samples++;
+      moved += Math.hypot(m.position.x - sx, m.position.z - sz); sx = m.position.x; sz = m.position.z;
+      for (const f of m.debugFeet()) {
+        const on = f.planted && Math.abs(f.world.y - T.getHeight(f.world.x, f.world.z)) <= 0.25;
+        const q = prev[f.name];
+        if (on && q) {
+          const step = Math.hypot(f.world.x - q.x, f.world.y - q.y, f.world.z - q.z);
+          plantedPairs++;
+          if (step > kFrame) kFrame = step;
+          if (step / dt > kMps) kMps = step / dt;
+          if (step > worstFrameM) { worstFrameM = step; worstAt = kind + ':' + f.name; }
+          if (step / dt > worstMps) worstMps = step / dt;
+        }
+        prev[f.name] = on ? { x: f.world.x, y: f.world.y, z: f.world.z } : null;
+      }
+    }
+    if (moved < 0.4 || plantedPairs < 20) { out[kind] = { skipped: 'idle', movedM: +moved.toFixed(2), plantedPairs }; continue; }
+    out[kind] = { worstPlantedFrameM: +kFrame.toFixed(4), worstPlantedMps: +kMps.toFixed(3), plantedPairs, frames: samples, movedM: +moved.toFixed(2) };
+    measured++;
+  }
+  const need = Math.min(2, species.size);
+  if (measured < need) return { pass: null, detail: { note: 'SKIP: fewer than ' + need + ' staged kinds walked far enough to sample', out } };
+  const pass = worstFrameM <= 0.12 && worstMps <= 3;
+  return { pass, detail: { stage: 'island: one walking machine of each staged kind, read through debugFeet() (gait.js)',
+    barFrameM: 0.12, barMps: 3, worstPlantedFrameM: +worstFrameM.toFixed(4), worstPlantedMps: +worstMps.toFixed(3), worstAt,
+    speciesMeasured: measured, out, notGraded: 'lock ramp <= 9 m/s (FootLock only; no live kind runs the handle rig)' } };
+})()`;
+
 /**
  * The turntable versions of the four rows that drove the studio. Same ids, same bars; what the
  * studio's own shell did (its F10 key, its panel buttons, its gaze/expression overlay) is not
@@ -564,8 +666,14 @@ export const PATCHED = [
  */
 export const RESTAGED = [
   {
+    id: 'A45c-foot-continuity', kind: 'action', lane: 'kept-stack', stage: 'island',
+    title: '[island] a PLANTED Instrument foot does not move: <= 0.12 m in any rendered frame AND <= 3 m/s (debugFeet, every staged kind that walks)',
+    settle: 500, timeout: 180000,
+    assert: staged([], A45C_ISLAND),
+  },
+  {
     id: 'A22-msaa', kind: 'action', lane: 'kept-stack', stage: 'island',
-    title: '[island] A22 under R25: the scene target is composer.renderTarget1 with the shipped tier\'s sample count (>= 4 if the tier keeps MSAA, else 0) and SMAA present and enabled; measured on Brea against the sky, SMAA ramps >= 20 % of silhouette pixels and >= 1.5x the same frame with SMAA off',
+    title: '[island] A22 under R25: the scene target is composer.renderTarget1 with the shipped tier\'s sample count (>= 4 if the tier keeps MSAA, else 0) and SMAA present and enabled; measured on the turntable AA card (dark stakes against the island sky), SMAA ramps >= 20 % of silhouette pixels and >= 1.5x the same frame with SMAA off',
     settle: 1500, timeout: 120000,
     assert: placed(['spawnVista'], A22_ISLAND),
   },
