@@ -27,6 +27,10 @@ import { HERO_ROWS, DEFAULT_OUTFIT, BREA_URL } from './rows.js';
 import { HeroOutfit } from './outfit.js';
 import { HeroStowKit, PIECE } from './stowkit.js';
 import { holdPreview, SABINA_URL } from './held.js';
+import { applySkinLook, applyClothLook } from './skinLook.js';
+
+/** Noon's ambient (hemisphere intensity x colour luminance): the hero fill is full from here up (R59 c). */
+const FILL_AMBIENT_REF = 0.155;
 
 export { HERO_ROWS, DEFAULT_OUTFIT, BREA_URL, PIECE };
 
@@ -67,6 +71,8 @@ export class HeroRig {
     this.kit = new HeroStowKit(this.player, kit);
     if (kit) this.kit.attach();
     this.player._collectMaterials?.();
+    // LOOK C-01 (character-art grant): the skin's own light (wrapped scatter, soft terminator, back-transmission) on her live material
+    for (const m of this.bodyMeshes) if (m.name === 'Brea_Skin') applySkinLook(m.material, { tier: this.ctx.engine?.quality }); else applyClothLook(m.material, { rim: 0.45 });
     return this;
   }
 
@@ -82,6 +88,12 @@ export class HeroRig {
    * out when combat has its bow model visible on the hand node.
    */
   update(dt = 1 / 60) {
+    // R59 c: the hero fill (skin + wrap emissive, recipe lib/skin-human.mjs) follows the scene's ambient, so it is gone at night
+    const hemi = this.ctx.environment?.hemi;
+    if (hemi) {
+      const k = Math.min(1, hemi.intensity * (0.2126 * hemi.color.r + 0.7152 * hemi.color.g + 0.0722 * hemi.color.b) / FILL_AMBIENT_REF);
+      for (let i = 0; i < this.bodyMeshes.length; i++) this.bodyMeshes[i].material.emissiveIntensity = k;
+    }
     if (!this._pullApplied) this._applyBowSolve();
     if (!this.kit?.attached) return;
     // the procedural spear melee builds (W1 replaces it) is shown only in her

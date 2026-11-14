@@ -686,11 +686,171 @@ export function recomputeNormals(prim, moved) {
 }
 
 /**
+ * Refine a mesh where its silhouette shows: split the longest welded edges that `want` accepts
+ * (both ends) at their PN-triangle midpoint, up to `maxEdges`, re-triangulating each touched
+ * triangle (1, 2 or 3 of its edges split). Copies of a welded edge get the same position, each
+ * keeping its own UV side of a seam. Existing vertices keep their index. Returns the edge count.
+ */
+export function refineEdges(prim, { want, minLen = 0.007, maxEdges = 200 } = {}) {
+  const P = prim.getAttribute('POSITION'), N = prim.getAttribute('NORMAL'), UV = prim.getAttribute('TEXCOORD_0'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
+  const idx = Array.from(prim.getIndices().getArray());
+  const n0 = P.getCount();
+  const pos = Array.from(P.getArray()), nrm = Array.from(N.getArray()), uv = Array.from(UV.getArray()), jnt = Array.from(J.getArray()), wgt = Array.from(W.getArray());
+  const key = (i) => `${Math.round(pos[i * 3] * 1e5)},${Math.round(pos[i * 3 + 1] * 1e5)},${Math.round(pos[i * 3 + 2] * 1e5)}`;
+  const weld = new Map(), rep = new Int32Array(n0);
+  for (let i = 0; i < n0; i++) { const k = key(i); if (!weld.has(k)) weld.set(k, i); rep[i] = weld.get(k); }
+  // welded normals: the mean of the copies
+  const wn = new Float64Array(n0 * 3);
+  for (let i = 0; i < n0; i++) for (let k = 0; k < 3; k++) wn[rep[i] * 3 + k] += nrm[i * 3 + k];
+  const nAt = (r) => { const l = Math.hypot(wn[r * 3], wn[r * 3 + 1], wn[r * 3 + 2]) || 1; return [wn[r * 3] / l, wn[r * 3 + 1] / l, wn[r * 3 + 2] / l]; };
+  const ek = (a, b) => (a < b ? a * n0 + b : b * n0 + a);
+  const wantV = new Uint8Array(n0);
+  { const p = [0, 0, 0]; for (let i = 0; i < n0; i++) { p[0] = pos[i * 3]; p[1] = pos[i * 3 + 1]; p[2] = pos[i * 3 + 2]; wantV[i] = want(p) ? 1 : 0; } }
+  const edges = new Map();
+  for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) {
+    const a = idx[t + e], b = idx[t + (e + 1) % 3];
+    const ra = rep[a], rb = rep[b];
+    if (ra === rb || !wantV[ra] || !wantV[rb]) continue;
+    const k = ek(ra, rb);
+    if (edges.has(k)) continue;
+    const l = Math.hypot(pos[ra * 3] - pos[rb * 3], pos[ra * 3 + 1] - pos[rb * 3 + 1], pos[ra * 3 + 2] - pos[rb * 3 + 2]);
+    if (l >= minLen) edges.set(k, { ra, rb, l });
+  }
+  const picked = [...edges.entries()].sort((x, y) => y[1].l - x[1].l || x[0] - y[0]).slice(0, maxEdges);
+  const split = new Map();
+  for (const [k, e] of picked) {
+    const a = [pos[e.ra * 3], pos[e.ra * 3 + 1], pos[e.ra * 3 + 2]], b = [pos[e.rb * 3], pos[e.rb * 3 + 1], pos[e.rb * 3 + 2]];
+    const na = nAt(e.ra), nb = nAt(e.rb);
+    const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const wa = d[0] * na[0] + d[1] * na[1] + d[2] * na[2], wb = -(d[0] * nb[0] + d[1] * nb[1] + d[2] * nb[2]);
+    const m = [0, 1, 2].map((c) => {
+      const b210 = (2 * a[c] + b[c] - wa * na[c]) / 3, b120 = (2 * b[c] + a[c] - wb * nb[c]) / 3;
+      return (a[c] + 3 * b210 + 3 * b120 + b[c]) / 8;
+    });
+    const mn = [na[0] + nb[0], na[1] + nb[1], na[2] + nb[2]];
+    const ml = Math.hypot(...mn) || 1;
+    split.set(k, { m, n: [mn[0] / ml, mn[1] / ml, mn[2] / ml] });
+  }
+  const mids = new Map();
+  const midOf = (a, b) => {
+    const k0 = a < b ? `${a}_${b}` : `${b}_${a}`;
+    if (mids.has(k0)) return mids.get(k0);
+    const s = split.get(ek(rep[a], rep[b]));
+    const i = pos.length / 3;
+    pos.push(...s.m); nrm.push(...s.n);
+    uv.push((uv[a * 2] + uv[b * 2]) / 2, (uv[a * 2 + 1] + uv[b * 2 + 1]) / 2);
+    // weights: the union of both ends, halved, the top four kept
+    const w = new Map();
+    for (const v of [a, b]) for (let k = 0; k < 4; k++) if (wgt[v * 4 + k] > 0) w.set(jnt[v * 4 + k], (w.get(jnt[v * 4 + k]) || 0) + wgt[v * 4 + k] * 0.5);
+    const top = [...w.entries()].sort((x, y) => y[1] - x[1] || x[0] - y[0]).slice(0, 4);
+    let sum = 0; for (const t of top) sum += t[1];
+    for (let k = 0; k < 4; k++) { jnt.push(top[k] ? top[k][0] : 0); wgt.push(top[k] ? top[k][1] / sum : 0); }
+    mids.set(k0, i);
+    return i;
+  };
+  const out = [];
+  for (let t = 0; t < idx.length; t += 3) {
+    const v = [idx[t], idx[t + 1], idx[t + 2]];
+    const s = [0, 1, 2].map((e) => split.has(ek(rep[v[e]], rep[v[(e + 1) % 3]])) ? midOf(v[e], v[(e + 1) % 3]) : -1);
+    const c = s.filter((x) => x >= 0).length;
+    if (c === 0) { out.push(...v); continue; }
+    if (c === 3) { out.push(v[0], s[0], s[2], s[0], v[1], s[1], s[2], s[1], v[2], s[0], s[1], s[2]); continue; }
+    if (c === 1) {
+      const e = s.findIndex((x) => x >= 0);
+      const a = v[e], b = v[(e + 1) % 3], d = v[(e + 2) % 3], m = s[e];
+      out.push(a, m, d, m, b, d);
+      continue;
+    }
+    // two: the unsplit edge starts at v[e]
+    const e = s.findIndex((x) => x < 0);
+    const a = v[e], b = v[(e + 1) % 3], d = v[(e + 2) % 3], mb = s[(e + 1) % 3], md = s[(e + 2) % 3];
+    out.push(a, b, mb, a, mb, md, md, mb, d);
+  }
+  P.setArray(new Float32Array(pos)); N.setArray(new Float32Array(nrm)); UV.setArray(new Float32Array(uv));
+  J.setArray(new Uint16Array(jnt)); W.setArray(new Float32Array(wgt));
+  prim.getIndices().setArray(new Uint32Array(out));
+  return split.size;
+}
+
+/**
+ * Soften a primitive's vertex normals (welded by position) over `iters` passes, weighted by
+ * `weight(p)` in 0..1 per vertex: a low-poly face stops printing its polygons on the
+ * terminator, while the lips, lids and nostrils (weight 0) keep their crease. character-art.
+ */
+export function smoothNormals(prim, { iters = 2, weight = () => 1 } = {}) {
+  const P = prim.getAttribute('POSITION'), N = prim.getAttribute('NORMAL');
+  const idx = prim.getIndices().getArray(), n = P.getCount(), pos = P.getArray();
+  const key = (i) => `${Math.round(pos[i * 3] * 1e5)},${Math.round(pos[i * 3 + 1] * 1e5)},${Math.round(pos[i * 3 + 2] * 1e5)}`;
+  const weld = new Map(), rep = new Int32Array(n);
+  for (let i = 0; i < n; i++) { const k = key(i); if (!weld.has(k)) weld.set(k, i); rep[i] = weld.get(k); }
+  const nb = new Map();
+  const link = (a, b) => { const r = rep[a], s = rep[b]; if (r === s) return; let l = nb.get(r); if (!l) { l = new Set(); nb.set(r, l); } l.add(s); };
+  for (let t = 0; t < idx.length; t += 3) { const a = idx[t], b = idx[t + 1], c = idx[t + 2]; link(a, b); link(b, a); link(b, c); link(c, b); link(a, c); link(c, a); }
+  let cur = Float32Array.from(N.getArray());
+  const w = new Float32Array(n);
+  { const p = [0, 0, 0]; for (let i = 0; i < n; i++) { p[0] = pos[i * 3]; p[1] = pos[i * 3 + 1]; p[2] = pos[i * 3 + 2]; w[i] = weight(p); } }
+  for (let it = 0; it < iters; it++) {
+    const next = Float32Array.from(cur);
+    for (let i = 0; i < n; i++) {
+      const r = rep[i];
+      if (r !== i || w[i] <= 0) continue;
+      const l = nb.get(r);
+      if (!l) continue;
+      let x = 0, y = 0, z = 0;
+      for (const s of l) { x += cur[s * 3]; y += cur[s * 3 + 1]; z += cur[s * 3 + 2]; }
+      const m = 1 / l.size, k = w[i] * 0.6;
+      const ax = cur[i * 3] * (1 - k) + x * m * k, ay = cur[i * 3 + 1] * (1 - k) + y * m * k, az = cur[i * 3 + 2] * (1 - k) + z * m * k;
+      const len = Math.hypot(ax, ay, az) || 1;
+      next[i * 3] = ax / len; next[i * 3 + 1] = ay / len; next[i * 3 + 2] = az / len;
+    }
+    // copies of a welded vertex take its normal
+    for (let i = 0; i < n; i++) { const r = rep[i]; if (r !== i) { next[i * 3] = next[r * 3]; next[i * 3 + 1] = next[r * 3 + 1]; next[i * 3 + 2] = next[r * 3 + 2]; } }
+    cur = next;
+  }
+  N.setArray(cur);
+}
+
+/**
  * Per-archetype face offsets for the NPC recipes (settlements W2): a
  * deterministic hash of `seed` scales each base bump by 0.6-1.4 and flips the
  * sign of the minor ones, so archetypes of one sex differ by >= 4 mm on >= 4
  * landmarks (A-npc-face-delta) without any random state.
  */
+/**
+ * Taubin smoothing of positions, welded by position, weighted by `weight(p)` (0 keeps a vertex): rounds a
+ * faceted form (an ear's rim, a cheek's outline) without shrinking it. Recompute or soften the normals after.
+ */
+export function smoothPositions(prim, { iters = 2, weight = () => 1, lambda = 0.5, mu = -0.53 } = {}) {
+  const P = prim.getAttribute('POSITION');
+  const idx = prim.getIndices().getArray(), n = P.getCount();
+  const pos = Float32Array.from(P.getArray());
+  const key = (i) => `${Math.round(pos[i * 3] * 1e5)},${Math.round(pos[i * 3 + 1] * 1e5)},${Math.round(pos[i * 3 + 2] * 1e5)}`;
+  const weld = new Map(), rep = new Int32Array(n);
+  for (let i = 0; i < n; i++) { const k = key(i); if (!weld.has(k)) weld.set(k, i); rep[i] = weld.get(k); }
+  const nb = new Map();
+  const link = (a, b) => { const r = rep[a], s = rep[b]; if (r === s) return; let l = nb.get(r); if (!l) { l = new Set(); nb.set(r, l); } l.add(s); };
+  for (let t = 0; t < idx.length; t += 3) { const a = idx[t], b = idx[t + 1], c = idx[t + 2]; link(a, b); link(b, a); link(b, c); link(c, b); link(a, c); link(c, a); }
+  const w = new Float32Array(n);
+  { const p = [0, 0, 0]; for (let i = 0; i < n; i++) { p[0] = pos[i * 3]; p[1] = pos[i * 3 + 1]; p[2] = pos[i * 3 + 2]; w[i] = weight(p); } }
+  const step = (k) => {
+    const next = Float32Array.from(pos);
+    for (let i = 0; i < n; i++) {
+      if (rep[i] !== i || w[i] <= 0) continue;
+      const l = nb.get(i); if (!l) continue;
+      let x = 0, y = 0, z = 0;
+      for (const s of l) { x += pos[s * 3]; y += pos[s * 3 + 1]; z += pos[s * 3 + 2]; }
+      const m = 1 / l.size;
+      next[i * 3] = pos[i * 3] + (x * m - pos[i * 3]) * k * w[i];
+      next[i * 3 + 1] = pos[i * 3 + 1] + (y * m - pos[i * 3 + 1]) * k * w[i];
+      next[i * 3 + 2] = pos[i * 3 + 2] + (z * m - pos[i * 3 + 2]) * k * w[i];
+    }
+    for (let i = 0; i < n; i++) { const r = rep[i]; if (r !== i) { next[i * 3] = next[r * 3]; next[i * 3 + 1] = next[r * 3 + 1]; next[i * 3 + 2] = next[r * 3 + 2]; } }
+    pos.set(next);
+  };
+  for (let it = 0; it < iters; it++) { step(lambda); step(mu); }
+  P.setArray(pos);
+}
+
 export function archetypeDeltas(seed, base) {
   let h = 2166136261;
   for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
