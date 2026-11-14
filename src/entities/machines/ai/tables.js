@@ -42,7 +42,7 @@ export const PERCEPTION = {
     periphDeg: 150,      // half-angle (deg) of the short-range peripheral arc
     periphRange: 8,      // metres the peripheral arc reaches
     periphWeight: 0.4,   // fill multiplier inside the peripheral arc
-    hiddenRange: 1.6,    // crouched IN TALL GRASS: this is the whole sight range
+    hiddenRange: 1.6,    // crouched IN Cover grass: this is the whole sight range
     hiddenPeriph: 0,     // ...and the peripheral arc is off entirely
     /**
      * ENGAGED CONTACT. A machine that is ALREADY fighting keeps its target
@@ -53,7 +53,7 @@ export const PERCEPTION = {
      * it at 4.9 m with no build-up. This one can never begin a detection — it
      * only applies in `attack` state, i.e. after the machine has already found
      * her the honest way — it still requires line of sight, and crouching into
-     * tall grass still collapses sight to `hiddenRange` and breaks it.
+     * cover grass still collapses sight to `hiddenRange` and breaks it.
      *
      * Without it a duel at 3 m had the machine losing a player standing dead
      * still in front of it 21 % of the time (orbit angular speed at knife
@@ -154,7 +154,7 @@ export const SEARCH = {
   radius: [6, 18],      // ring the sweep points sit in
   dwell: [1.2, 2.6],    // seconds spent looking around at each point
   lookSweep: 1.15,      // heading sweep amplitude while dwelling (rad)
-  grassBias: 0.75,      // fraction of points biased onto tall-grass cover
+  grassBias: 0.75,      // fraction of points biased onto cover grass cover
   arrive: 2.4,          // metres that count as "reached the point"
   repath: 1.5,          // seconds between nav repaths
 };
@@ -459,7 +459,7 @@ export const SCORING = {
    * cooldown, so every time the footwork took it out toward its 7 m laser the
    * bite came off cooldown first and dragged it back in — eleven attacks in
    * 30 s, two of them distinct, with the laser stalled out (A41c). Backing
-   * off and then shooting is the whole read of that machine in HZD.
+   * off and then shooting is the whole read of that machine in Older game.
    *
    * Bounded three ways so it can never become a statue: it applies only to a
    * move the fight has NOT seen yet, only after the machine has already

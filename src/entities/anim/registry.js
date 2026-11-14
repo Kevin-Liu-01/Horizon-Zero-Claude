@@ -126,14 +126,14 @@ function compare(bone, legacyFn, boneSpaceFn) {
 }
 
 /**
- * playerAnimator's four private helpers vs BoneSpace, on the LIVE Aloy rig.
+ * playerAnimator's four private helpers vs BoneSpace, on the LIVE Brea rig.
  * Non-destructive: every bone is restored.
  */
 function probePlayerAnimator(ctx) {
   const an = ctx?.player?.animator;
   if (!an || !an._entries || !an.model) return { reachable: false, why: 'no ctx.player.animator' };
   // R5 (hero-body): the probe bones by ANIMATOR KEY, so the probe runs on
-  // whatever rig the profile bound (the Round-4 literals named Aloy's bones and
+  // whatever rig the profile bound (the Round-4 literals named Brea's bones and
   // probed 0 bones on Brea, which read as DIVERGENT)
   const names = ['spine1', 'head', 'upArmR', 'thighL', 'handL']
     .map((k) => an.b?.[k]?.name || an.KEY?.[k]).filter(Boolean);
@@ -324,7 +324,7 @@ export function audit(ctx) {
       convention = probe.identical
         ? 'BoneSpace.rotLocal/verified (local-axis, identical)'
         : 'DIVERGENT from BoneSpace.rotLocal';
-      // A divergent machine rig is `legacy` exactly like a divergent Aloy one.
+      // A divergent machine rig is `legacy` exactly like a divergent Brea one.
       // Without this line machine-rig could land a Wave 1 migration that
       // changes the algebra and A26 would still be green — the regression
       // detector this module documents itself as would not exist.
@@ -420,7 +420,7 @@ export function audit(ctx) {
     legacyModules,
     selfDeclaredForeign,
     // R5: the protagonist's section is `hero` (the rig profile id names the
-    // body: `rigProfile`). The Round-4 `aloy` alias is gone (W0b targeted
+    // body: `rigProfile`). The Round-4 `Brea` alias is gone (W0b targeted
     // fix): A26-one-convention@hero finds the section by shape, not by name.
     hero,
     rigProfile: c?.player?.model?.userData?.rigProfile?.name ?? null,

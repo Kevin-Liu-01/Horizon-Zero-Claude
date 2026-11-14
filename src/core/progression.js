@@ -3,23 +3,23 @@
  * ===========================================================================
  * The spine the audit's §1 #8 asks for: XP, levels, a skill tree wired to real
  * gameplay hooks, a data-driven quest registry, the tutorial chain, difficulty,
- * the merchant economy, the camp hunter, and the save/checkpoint/respawn loop.
+ * the merchant economy, the rest site hunter, and the save/checkpoint/respawn loop.
  *
  * Findings closed here:
  *   progression-001  XP curve + level-up banner + +HP + three skill trees
  *   progression-002  data-driven quest registry (talk/goto/scan/kill/gather)
- *   progression-003  campfire save + Continue + MachineSite respawn + victory
+ *   progression-003  brazier save + Continue + MachineSite respawn + victory
  *                    banner→resume (no more page-reload-to-play-again)
  *   progression-004  merchant: shards ARE currency, buy/sell against real items
  *   progression-005  weapon/ammo TIERS gated by level (D7 slice)
  *   progression-009  side content: four side quests from a named NPC, plus the
  *                    `award()`/`discover()` world-content XP the other lanes'
- *                    24 datapoints / 6 caches / hunting ground
+ *                    24 fieldbooks / 6 caches / trial ground
  *                    / fauna kills call into (FIX ROUND 2 — see `award()`)
  *   progression-012  `+XP` from `machine.level` instead of a kill feed
  *   progression-014  difficulty presets (damage in/out, loot, gauge, XP)
  *   progression-019  death reloads the checkpoint — no free pouch refill
- *   missing-systems-title-save-campfire-flow / -npc-dialogue-quests-merchants
+ *   missing-systems-title-save-brazier-flow / -npc-dialogue-quests-merchants
  *   missing-systems-difficulty
  *   onboarding-loop-no-tutorial-hunt (data) / -death-no-stakes
  *
@@ -79,15 +79,15 @@
  * ---------------------------------------------------------------------------
  * EXPANSION ROUND (lane `progression-expansion`) — what this file gained
  * ---------------------------------------------------------------------------
- * 1. THE ROSTER. All thirteen of `npc`'s named Nora are registered in `NPCS`
+ * 1. THE ROSTER. All thirteen of `npc`'s named Old-tribe are registered in `NPCS`
  *    (`NPC_IDS`), each with its own greetings and "ask about…" topics, so
- *    `ctx.npcs.talkTo(id)` opens a conversation for every person in camp
- *    instead of for Varl alone (docs/ROUND4-NPC.md §3).
+ *    `ctx.npcs.talkTo(id)` opens a conversation for every person in rest site
+ *    instead of for The old guide alone (docs/ROUND4-NPC.md §3).
  *
  *    `dialogueState(npcId)` -> { id, name, title, line, topic, talked,
  *       choices:[{ id, kind:'quest-turnin'|'quest-accept'|'topic'|'trade'|
  *       'journal'|'leave', label, hint, questId?, topicId? }] }   — 2-3 choices,
- *       exit last, HZD's priority order.
+ *       exit last, Older game's priority order.
  *    `choose(choiceId)` -> { state, closed, action:'trade'|'journal'|null }
  *       — the ONLY place a choice has consequences; `src/ui/dialogue.js` just
  *       draws `state` and calls this back. `timesTalked(id)`.
@@ -96,19 +96,19 @@
  *
  * 2. SITE-ANCHORED SIDE QUESTS. Six new quests (`side-hunting-trial`,
  *    `side-outpost-supply`, `side-lakeshore-fisher`,
- *    `side-cave-datapoints`, `side-wreck-salvage`) anchored at
+ *    `side-cave-fieldbooks`, `side-wreck-salvage`) anchored at
  *    `ctx.props.sites()` BY KIND through `at:{ site, alt? }`, with the authored
  *    `x/z` as the fallback for a build where that site kind does not exist yet.
  *    `objectiveAnchor(questId, objectiveId?)` -> { x, z, site, kind, radius }
  *    publishes where an objective actually points, after resolution.
  *
  * 3. FOUR NEW OBJECTIVE TYPES, each on an event that already existed:
- *       datapoint  'datapoint-collected'   (src/items/datapoints.js)
+ *       fieldbook  'fieldbook-collected'   (src/items/fieldbooks.js)
  *       cache      'cache-found'          (src/world/props/activities.js)
  *       hunt       'fauna-killed'          (src/world/fauna.js)
  *    plus `within: seconds` on a kill objective — a TIMED trial. The window
  *    opens when the objective becomes current, restarts when the player
- *    re-enters the ring ('hunting-ground'), and resets its own count when it
+ *    re-enters the ring ('trial-ground'), and resets its own count when it
  *    lapses. `trialState(questId, objectiveId?)` · `restartTrial(groundId?)`.
  *
  * 4. PER-SITE RESPAWN. `respawnPolicy(site)` / `SITE_RESPAWN` re-time a
@@ -153,7 +153,6 @@ import * as THREE from 'three';
 import { SaveSystem, SLOT } from './save.js';
 import { REST_SITE } from '../world/island/sites.js';
 import { QuestLogUI } from '../ui/quests.js';
-import { SkillTreeUI } from '../ui/skills.js';
 import { DialogueUI } from '../ui/dialogue.js';
 // READ-ONLY: `MELEE.silent` (instant list + heavyFrac) belongs to player-melee.
 // weapons.js imports nothing, so this cannot form a cycle.
@@ -163,7 +162,8 @@ import { MELEE } from '../combat/weapons.js';
 /* 1. XP + LEVELS                                                             */
 /* ========================================================================== */
 
-export const MAX_LEVEL = 20;
+/** No levels in CALIMA (bible §15): the Round-4 level plumbing stays inert until the M1.6 split. */
+export const MAX_LEVEL = 1;
 
 /** XP needed to go from `level` to `level + 1`. */
 export function xpToNextAt(level) {
@@ -173,8 +173,8 @@ export function xpToNextAt(level) {
 }
 
 /** Health granted by each level-up (progression-001: "+HP"). */
-export const HEALTH_PER_LEVEL = 15;
-export const POINTS_PER_LEVEL = 1;
+export const HEALTH_PER_LEVEL = 0;
+export const POINTS_PER_LEVEL = 0;
 
 /**
  * `progression-012` — XP is a function of `machine.level`, which the species
@@ -183,9 +183,8 @@ export const POINTS_PER_LEVEL = 1;
  * flat number: a Colossus is worth eleven Sentries, and that is the whole
  * reason to go and fight one.
  */
-export function xpForMachineLevel(level) {
-  const L = Math.max(1, Number(level) || 1);
-  return Math.round(10 * L * (1 + 0.06 * L));
+export function xpForMachineLevel() {
+  return 0; // kills move no counter (bible §15)
 }
 
 /**
@@ -203,17 +202,14 @@ export const AWARD_REPEATABLE = new Set(['hunt', 'kill', 'combat', 'trial', 'bon
  *
  * The ledger takes any id, but only a place gets the DISCOVERED banner. The
  * other two live callers are the 24 `dp-*` records, and `focus-items` already
- * renders a DATAPOINT card off `datapoint-collected` — a second overlay reading
+ * renders a FIELD BOOK card off `fieldbook-collected` — a second overlay reading
  * "DISCOVERED · DP SPAN 1" would be the same pickup announced twice, in slug
  * case. Those still enter the ledger and still raise `discovery`, so a Notebook
  * or world map can count them; they just do not shout. A caller that wants a
  * banner for an id this map does not know passes its own
  * `discover(id, { label })`.
  */
-export const PLACE_NAMES = {
-  tallneck: 'TALLNECK',
-  'hunting-ground-valley': 'HUNTING GROUND',
-};
+export const PLACE_NAMES = {};
 
 /* ========================================================================== */
 /* 2. SKILL TREES — 12 nodes, every one wired to a real hook                  */
@@ -225,28 +221,28 @@ export const PLACE_NAMES = {
  *
  * `melee.silentStrike()` sends `impact = maxHealth × MELEE.silent.heavyFrac`
  * (0.55, owned by player-melee) for every species outside
- * `MELEE.silent.instant`. The two Prowler nodes used to multiply that impact by
+ * `MELEE.silent.instant`. The two Stealth nodes used to multiply that impact by
  * 1.75 × 2.0 = 3.5, so three skill points turned one stab into 1.35 × a
- * Colossus's max health — the apex fight, and the win condition, ended from
+ * Colossus's max health — the peak fight, and the win condition, ended from
  * the grass. Canon (docs/research/mechanics.md, Silent Strike row): instant
- * kills on humans and small machines only, "big damage + brief stun on
+ * kills on humans and small machines only, "big damage + brief daze on
  * mediums". So the skills now RAISE THE FRACTION, one `fracStep` each
  * (0.55 → 0.65 → 0.75), and the wrapper clamps the hit's FINAL damage — after
  * armour, weak spots and BRITTLE, which can all multiply impact in
  * `Machine.takeDamage` — to:
  *   - at most `capFrac` × maxHealth on every non-instant species (a
  *     full-health medium always survives one stab, at any difficulty), and
- *   - for `apex` species, additionally at most `health − 1`: a Silent Strike
- *     can never be the killing blow on an apex machine.
+ *   - for `peak` species, additionally at most `health − 1`: a Silent Strike
+ *     can never be the killing blow on an peak machine.
  * Difficulty and Precision (`damageOut`) still scale the stab like every other
  * hit; the clamp is what keeps Story + every skill inside canon.
  */
 export const SILENT_STRIKE = {
   fracStep: 0.10,
   capFrac: 0.8,
-  apex: ['thunderjaw', 'stormbird', 'behemoth', 'tallneck', 'corruptor'],
+  peak: [],
 };
-const SILENT_APEX = new Set(SILENT_STRIKE.apex);
+const SILENT_PEAK = new Set(SILENT_STRIKE.peak);
 /** player-melee's base fraction, read live so a retune there is followed. */
 const silentBaseFrac = () => {
   const f = MELEE?.silent?.heavyFrac;
@@ -296,12 +292,12 @@ function silentImpactMult(m, hit) {
 
 /**
  * Largest IMPACT this Silent Strike may carry so its final damage stays inside
- * `SILENT_STRIKE` — ≤ capFrac × maxHealth, and for an apex ≤ health − 1.
+ * `SILENT_STRIKE` — ≤ capFrac × maxHealth, and for an peak ≤ health − 1.
  */
 function silentImpactCap(m, hit) {
   const maxH = m.maxHealth ?? 100;
   let cap = SILENT_STRIKE.capFrac * maxH;
-  if (SILENT_APEX.has(m.kind)) cap = Math.min(cap, (m.health ?? maxH) - 1);
+  if (SILENT_PEAK.has(m.kind)) cap = Math.min(cap, (m.health ?? maxH) - 1);
   if (!(cap > 0)) return 0;
   const k = silentImpactMult(m, hit);
   return k > 0 ? cap / k : cap;
@@ -315,100 +311,10 @@ function silentImpactCap(m, hit) {
  * documented wrapper (see `_installHooks`) rather than editing that file, and
  * the wrapper disappears the moment the owner reads `mult()` natively.
  */
-export const SKILLS = [
-  /* ---- PROWLER (stealth) ---- */
-  {
-    id: 'prowler-silent-strike', tree: 'Prowler', tier: 1, cost: 1,
-    name: 'Silent Strike', requires: [],
-    desc: `Silent Strikes on machines too big to kill outright hit for ${
-      _pct(silentBaseFrac() + SILENT_STRIKE.fracStep)}% of their max health before armour, up from ${_pct(silentBaseFrac())}%.`,
-    mult: { silentStrikeFrac: SILENT_STRIKE.fracStep },
-    hook: 'Machine.takeDamage — hit.type "undercut" (or hit.silent === true)',
-  },
-  {
-    id: 'prowler-low-profile', tree: 'Prowler', tier: 1, cost: 1,
-    name: 'Low Profile', requires: [],
-    desc: 'Machines fill their suspicion 35% slower while you are crouched.',
-    mult: { detectionRate: 0.65 },
-    hook: 'suspicion growth damping in Progression.update',
-  },
-  {
-    id: 'prowler-quiet-step', tree: 'Prowler', tier: 2, cost: 1,
-    name: 'Quiet Sprint', requires: ['prowler-low-profile'],
-    desc: 'The noise you make carries 40% less far.',
-    mult: { noiseRadius: 0.6 },
-    hook: 'machines.noise() wrapper',
-  },
-  {
-    id: 'prowler-strike-from-above', tree: 'Prowler', tier: 3, cost: 2,
-    name: 'Strike from Above', requires: ['prowler-silent-strike'],
-    desc: `Silent Strikes hit for ${_pct(silentBaseFrac() + 2 * SILENT_STRIKE.fracStep)}% of a large machine's max health before armour, and tear components loose. An apex machine always survives one.`,
-    mult: { silentStrikeFrac: SILENT_STRIKE.fracStep, tearOut: 1.15 },
-    hook: 'Machine.takeDamage',
-  },
+/** No skill trees (bible §15: certifications replace them, M1.6). */
+export const SKILLS = [];
 
-  /* ---- BRAVE (combat) ---- */
-  {
-    id: 'brave-precision', tree: 'Brave', tier: 1, cost: 1,
-    name: 'Precision', requires: [],
-    desc: 'All weapon impact damage +15%.',
-    mult: { damageOut: 1.15 },
-    hook: 'Machine.takeDamage — hit.impact',
-  },
-  {
-    id: 'brave-concentration', tree: 'Brave', tier: 1, cost: 1,
-    name: 'Concentration+', requires: [],
-    desc: 'Concentration lasts 60% longer.',
-    mult: { concentrationDuration: 1.6 },
-    hook: 'combat.steady.gauge top-up in Progression.update',
-  },
-  {
-    id: 'brave-fortitude', tree: 'Brave', tier: 2, cost: 1,
-    name: 'Fortitude', requires: ['brave-concentration'],
-    desc: 'You take 20% less damage.',
-    mult: { damageIn: 0.8 },
-    hook: 'player.takeDamage wrapper',
-  },
-  {
-    id: 'brave-tinker', tree: 'Brave', tier: 2, cost: 2,
-    name: 'Tinker', requires: ['brave-precision'],
-    desc: 'Tear damage +30%; components come off faster.',
-    mult: { tearOut: 1.3 },
-    hook: 'Machine.takeDamage — hit.tear',
-  },
-
-  /* ---- FORAGER (survival) ---- */
-  {
-    id: 'forager-gatherer', tree: 'Forager', tier: 1, cost: 1,
-    name: 'Gatherer', requires: [],
-    desc: 'Resource pickups yield 1 extra.',
-    mult: { gatherYield: 1 },
-    hook: "'item-gained' listener (re-entrant-guarded inventory.add)",
-  },
-  {
-    id: 'forager-herbalist', tree: 'Forager', tier: 1, cost: 1,
-    name: 'Herbalist', requires: [],
-    desc: 'Medicinal herbs restore 50% more, and the pouch holds 25 more.',
-    mult: { herbPotency: 1.5, pouchBonus: 25 },
-    hook: 'player.addGourd wrapper + player.maxGourd on unlock',
-  },
-  {
-    id: 'forager-scavenger', tree: 'Forager', tier: 2, cost: 1,
-    name: 'Scavenger', requires: ['forager-gatherer'],
-    desc: 'Machine wrecks pay 35% more shards.',
-    mult: { lootYield: 1.35 },
-    hook: "'machine-killed' shard payout",
-  },
-  {
-    id: 'forager-healer', tree: 'Forager', tier: 3, cost: 2,
-    name: 'Healer', requires: ['forager-herbalist'],
-    desc: 'The pouch holds 30 more still, and you keep half of it when you fall.',
-    mult: { pouchBonus: 30, deathPouchKeep: 0.5 },
-    hook: 'player.maxGourd on unlock + checkpoint restore',
-  },
-];
-
-export const SKILL_TREES = ['Prowler', 'Brave', 'Forager'];
+export const SKILL_TREES = [];
 
 /** Defaults for every multiplier key. Additive keys default to 0. */
 const MULT_DEFAULTS = {
@@ -424,13 +330,11 @@ const ADDITIVE = new Set(['gatherYield', 'pouchBonus', 'deathPouchKeep', 'silent
 /* 3. DIFFICULTY (missing-systems-difficulty / progression-014)               */
 /* ========================================================================== */
 
+/** Tolerance (bible §13): three survey accuracy classes. `loot` and `gauge` stay neutral. */
 export const DIFFICULTIES = [
-  { id: 'story',     name: 'Story',      damageIn: 0.35, damageOut: 1.60, loot: 1.35, gauge: 1.60, xp: 0.90 },
-  { id: 'easy',      name: 'Easy',       damageIn: 0.60, damageOut: 1.25, loot: 1.15, gauge: 1.25, xp: 0.95 },
-  { id: 'normal',    name: 'Normal',     damageIn: 1.00, damageOut: 1.00, loot: 1.00, gauge: 1.00, xp: 1.00 },
-  { id: 'hard',      name: 'Hard',       damageIn: 1.45, damageOut: 0.85, loot: 0.90, gauge: 0.85, xp: 1.10 },
-  { id: 'very-hard', name: 'Very Hard',  damageIn: 1.90, damageOut: 0.75, loot: 0.80, gauge: 0.70, xp: 1.20 },
-  { id: 'ultra',     name: 'Ultra Hard', damageIn: 2.50, damageOut: 0.65, loot: 0.70, gauge: 0.55, xp: 1.35 },
+  { id: 'loose',    name: 'Loose',    damageIn: 0.60, damageOut: 1.25, detection: 0.8, loot: 1, gauge: 1, xp: 1 },
+  { id: 'standard', name: 'Standard', damageIn: 1.00, damageOut: 1.00, detection: 1.0, loot: 1, gauge: 1, xp: 1 },
+  { id: 'fine',     name: 'Fine',     damageIn: 1.50, damageOut: 0.85, detection: 1.2, loot: 1, gauge: 1, xp: 1 },
 ];
 
 /* ========================================================================== */
@@ -447,7 +351,7 @@ export const DIFFICULTIES = [
 export const AMMO_TIERS = {
   hunter: 1, harvest: 1,
   fire: 2, hardpoint: 2,
-  shock: 4, tearblast: 4,
+  shock: 4, pryburst: 4,
   freeze: 6, precision: 6,
   'blast-bomb': 8, disc: 8,
 };
@@ -473,10 +377,6 @@ export const MERCHANT_STOCK = [
 
 /** What the hunter pays for the trophies machines actually drop. */
 export const SELL_VALUES = {
-  'watcher-lens': 55, 'sawtooth-lens': 95, 'behemoth-lens': 140, 'thunderjaw-lens': 220,
-  'watcher-heart': 120, 'sawtooth-heart': 190, 'behemoth-heart': 280, 'thunderjaw-heart': 420,
-  'machine-core': 90, 'machine-heart': 150,
-  'luminous-braiding': 210, 'crystal-braiding': 260,
   'echo-shell': 7, 'blastpaste': 11, 'metal-vessel': 9, 'wire': 3,
   'blaze': 4, 'sparker': 5, 'chillwater': 5, 'ridge-wood': 2,
 };
@@ -488,18 +388,18 @@ export const SELL_VALUES = {
 /**
  * THE ROSTER (expansion round).
  *
- * `npc` (port 5218) ships thirteen named Nora and routes every `TALK · NAME`
+ * `npc` (port 5218) ships thirteen named Old-tribe and routes every `TALK · NAME`
  * interactable through `ctx.npcs.talkTo(id)`, which hands off to
  * `progression.talkTo(id)` **only when `progression.NPCS[id]` exists**
  * (docs/ROUND4-NPC.md §3). Until this round exactly one id existed, so twelve
- * of the thirteen people in camp emitted an event nobody rendered and the
+ * of the thirteen people in rest site emitted an event nobody rendered and the
  * player got a hold prompt that did nothing.
  *
  * Every row is now registered, and each carries its own voice:
  *   greeting  2-3 lines, picked by what the run has actually done
  *   topics    the "ask about…" choices — a choice ADVANCES state (the topic is
  *             logged in `dialogue.seen`, pays its 10 XP once through the same
- *             `award()` ledger a datapoint uses, and raises `dialogue-topic`)
+ *             `award()` ledger a fieldbook uses, and raises `dialogue-topic`)
  *   trade     whether this person opens the merchant panel
  *
  * `lines` authored on the npc lane's own roster row (`ctx.npcs.roster`) are
@@ -507,154 +407,20 @@ export const SELL_VALUES = {
  * without touching this file and neither lane owns the other's copy.
  */
 export const NPCS = {
-  varl: {
-    id: 'varl', name: 'Varl', title: 'Hunter of the Valley', trade: true,
-    fallback: { x: 24.6, z: 32.2 },
+  ansel: {
+    id: 'ansel', name: 'Ansel', title: 'Guild Matron', trade: true,
+    // stand-in anchor beside REST until the settlements place her at the pans (M1.5)
+    fallback: { x: REST_SITE.x + 2.4, z: REST_SITE.z + 1.6 },
     greeting: [
-      'You slept through dawn again. The machines did not.',
-      'Still breathing. The valley has not taken you yet.',
-      'Back from the grass? Good. Sit, or trade, or go be useful.',
+      'The third pan will not rake itself, Reckoner.',
+      'Salt first. Questions after.',
     ],
     topics: [
-      { id: 'machines', q: 'What should I know about the machines?', a: 'They are herd animals with metal hearts. Watch one long enough and it tells you where it will be.' },
-      { id: 'valley', q: 'Who holds the valley now?', a: 'We do, from the palisade out to the ridge. Past that it belongs to whatever walks it.' },
-    ],
-  },
-  sona: {
-    id: 'sona', name: 'Sona', title: 'War-Chief', fallback: { x: 16, z: 44 },
-    greeting: [
-      'Eyes on the ridge. The Watchers walk it at dusk.',
-      'You shoot well enough. Now learn to leave before the herd answers.',
-    ],
-    topics: [
-      { id: 'watch', q: 'What is the war-party watching for?', a: 'Corrupted ones out of the south. They do not graze and they do not leave.' },
-      { id: 'orders', q: 'Any orders for me?', a: 'Stay useful and stay alive. In that order, if you can manage both.' },
-    ],
-  },
-  teb: {
-    id: 'teb', name: 'Teb', title: 'Stitcher', fallback: { x: 30, z: 20 },
-    greeting: [
-      'Hide takes a week to soften. Patience is the craft.',
-      'Careful of the frame — that skin is half a moon of work.',
-    ],
-    topics: [
-      { id: 'craft', q: 'What are you working on?', a: 'A winter coat for Karst. He will complain about the collar. He always does.' },
-      { id: 'hides', q: 'Do you need anything brought in?', a: 'Boar hide, always. Bring it clean and I will not ask how you got it.' },
-    ],
-  },
-  bast: {
-    id: 'bast', name: 'Bast', title: 'Hunter', fallback: { x: 38, z: 34 },
-    greeting: [
-      'The gate stays watched. That is the whole of it.',
-      'You want the trial? The ground south-east. Bring arrows, not opinions.',
-    ],
-    topics: [
-      { id: 'trial', q: 'Tell me about the hunting ground.', a: 'A ring of wrecks the scrappers claim every season. Clear it inside the light and the Braves will hear of it.' },
-      { id: 'boast', q: 'How many have you taken?', a: 'Enough that I have stopped counting out loud. Ask me again when you pass me.' },
-    ],
-  },
-  vala: {
-    id: 'vala', name: 'Vala', title: 'Storyteller', fallback: { x: 20, z: 28 },
-    greeting: [
-      'Sit. The fire is better with a story on it.',
-      'You came back. That is already half a story.',
-    ],
-    topics: [
-      { id: 'hollow', q: 'What is in the Hollow?', a: 'Voices in the old metal. The Elders call it wind. I have been inside, and wind does not repeat itself.' },
-      { id: 'story', q: 'Tell me a story.', a: 'A hunter once outran a Thunderjaw. She did it by being three valleys away when it woke.' },
-    ],
-  },
-  karst: {
-    id: 'karst', name: 'Karst', title: 'Elder', fallback: { x: 14, z: 30 },
-    greeting: [
-      'I have seen the metal beasts change. They learn. So must we.',
-      'Sit with an old man a moment. My knees have opinions about the cold.',
-    ],
-    topics: [
-      { id: 'cauldron', q: 'What is the door under the hill?', a: 'A Cauldron. The metal beasts are born there. The Matriarchs forbid it, which is how I know it can be opened.' },
-      { id: 'law', q: 'What does the law say about the ruins?', a: 'That they are forbidden. And that a Seeker may walk where the law does not. Read the law carefully.' },
-    ],
-  },
-  maris: {
-    id: 'maris', name: 'Maris', title: 'Trader', trade: true, fallback: { x: 28, z: 40 },
-    greeting: [
-      'Shards for arrows, arrows for shards. Everyone eats.',
-      'You look like a woman with a full pouch and an empty pack.',
-    ],
-    topics: [
-      { id: 'road', q: 'How is the trade road?', a: 'Walked by Scrappers and nobody else. The outpost has not had a delivery in a moon.' },
-      { id: 'prices', q: 'Why are your prices what they are?', a: 'Because I am the only one carrying. Bring me competition and I will bring you a discount.' },
-    ],
-  },
-  olin: {
-    id: 'olin', name: 'Olin', title: 'Gatherer', fallback: { x: 12, z: 22 },
-    greeting: [
-      'Berries by the west wall, if the birds leave any.',
-      'Do not step on the beds. I will know it was you.',
-    ],
-    topics: [
-      { id: 'herbs', q: 'Where does the medicine grow?', a: 'Low ground, near water, in the shade. The bloom is worth three of the moss — do not trample it to get to it.' },
-      { id: 'birds', q: 'The birds?', a: 'Grouse. Fat ones. Hunt them away from the beds and we will both be happy.' },
-    ],
-  },
-  thok: {
-    id: 'thok', name: 'Thok', title: 'Smith', fallback: { x: 34, z: 24 },
-    greeting: [
-      'Bring me metal shards and I will bring you arrowheads.',
-      'The forge is hot and the crates are empty. You see my problem.',
-    ],
-    topics: [
-      { id: 'salvage', q: 'What do you need from the wrecks?', a: 'Anything sealed. The caches out there hold better steel than anything we can draw from ore.' },
-      { id: 'spear', q: 'Can you work on my spear?', a: 'I could. I would rather you brought me something to work WITH.' },
-    ],
-  },
-  renn: {
-    id: 'renn', name: 'Renn', title: 'Lookout', fallback: { x: 10, z: 38 },
-    greeting: [
-      'Nothing on the south line. Yet.',
-      'Quiet is not the same as safe. Quiet is what it sounds like before.',
-    ],
-    topics: [
-      { id: 'south', q: 'What is moving in the south?', a: 'Something tall enough to see over the tanks. It has not come closer. I would rather it stayed that way.' },
-      { id: 'night', q: 'How is the night watch?', a: 'Cold. Long. Better than the alternative, which is not watching.' },
-    ],
-  },
-  delve: {
-    id: 'delve', name: 'Delve', title: 'Hunter', fallback: { x: 42, z: 30 },
-    greeting: [
-      'Two Striders on the west meadow. Easy shards, hard shots.',
-      'You hunt loud. That is not a compliment, it is an observation.',
-    ],
-    topics: [
-      { id: 'herd', q: 'Where is the herd grazing?', a: 'West meadow, past the stones. Take the lead one first or you will be chasing all six.' },
-      { id: 'bow', q: 'Any advice on the bow?', a: 'Draw before you need it. A full draw late is worse than a half draw early.' },
-    ],
-  },
-  aura: {
-    id: 'aura', name: 'Aura', title: 'Gatherer', fallback: { x: 18, z: 18 },
-    greeting: [
-      'The racks will be full before the light goes.',
-      'If you are heading to the water, I have a favour to ask.',
-    ],
-    topics: [
-      { id: 'lake', q: 'What is down at the water?', a: 'Snapmaws, most days. And the best fishing in the valley, on the days they are elsewhere.' },
-      { id: 'racks', q: 'Do you need a hand?', a: 'Hands I have. Meat I do not. Bring me something from the shore and we are square.' },
-    ],
-  },
-  nil: {
-    id: 'nil', name: 'Nil', title: 'Hunter', fallback: { x: 26, z: 16 },
-    greeting: [
-      'A spear you have not sharpened is a stick.',
-      'Strike first, strike close, and do not tell Sona I said so.',
-    ],
-    topics: [
-      { id: 'spear', q: 'Teach me something about the spear.', a: 'Get under the guard. A machine cannot bite what is already inside its reach.' },
-      { id: 'stealth', q: 'How do you get that close?', a: 'Tall grass and patience. Mostly patience. The grass is easy to find.' },
+      { id: 'pans', q: 'What needs doing at the pans?', a: 'Rake the third pan with me, then read the sluice. The tide is wrong this morning.' },
     ],
   },
 };
 
-/** Every id the dialogue panel can open, in camp order. */
 export const NPC_IDS = Object.keys(NPCS);
 
 /* ========================================================================== */
@@ -672,204 +438,19 @@ export const NPC_IDS = Object.keys(NPCS);
  *   gather { item, count }            'item-gained'
  */
 export const QUESTS = [
-  /* --------------------------- MAIN: the tutorial chain ------------------- */
+  /* Stand-in table (M0.3): the first two objectives of "Raker's Morning" (bible §11, 0:00-0:05). */
   {
-    id: 'lessons-of-the-valley',
-    title: 'Lessons of the Valley',
+    id: 'rakers-morning',
+    title: "Raker's Morning",
     type: 'main',
-    giver: 'varl',
+    giver: 'ansel',
     autoStart: true,
-    summary: 'Varl will not let you leave camp until you can look at a machine without dying to it.',
+    summary: 'Ansel is raking the third pan. The tide at Sluice 3 is wrong.',
     objectives: [
-      { id: 'talk', type: 'talk', npc: 'varl', label: 'Speak with Varl at the campfire' },
-      { id: 'ridge', type: 'goto', x: -18, z: -34, radius: 9, label: 'Walk out to the north ridge' },
-      { id: 'scan', type: 'scan', kind: 'watcher', count: 1, label: 'Scan a Watcher with your Focus (V, then T)' },
-      { id: 'kill', type: 'kill', kind: 'watcher', count: 1, label: 'Bring down a Watcher' },
-      { id: 'wood', type: 'gather', item: 'ridge-wood', count: 3, label: 'Gather Ridge-Wood for arrows' },
+      { id: 'talk', type: 'talk', npc: 'ansel', label: 'Speak with Ansel' },
+      { id: 'pans', type: 'goto', x: REST_SITE.x + 30, z: REST_SITE.z + 30, radius: 12, label: 'Walk down to the pans' },
     ],
-    rewards: { xp: 180, shards: 60, items: [{ id: 'blaze', n: 6 }], skillPoints: 1 },
-    next: 'proving-of-the-hunt',
-  },
-  {
-    id: 'proving-of-the-hunt',
-    title: 'Proving of the Hunt',
-    type: 'main',
-    giver: 'varl',
-    summary: 'A Watcher is a scout. Varl wants to know you can take what the scouts call in.',
-    objectives: [
-      { id: 'herd', type: 'kill', kind: 'strider', count: 2, label: 'Cull two Striders from the west herd' },
-      { id: 'scrap', type: 'kill', kind: 'scrapper', count: 2, label: 'Clear two Scrappers off the wrecks' },
-      { id: 'herb', type: 'gather', item: 'medicinal-herb', count: 2, label: 'Restock your pouch with herbs' },
-    ],
-    rewards: { xp: 320, shards: 120, items: [{ id: 'wire', n: 8 }], skillPoints: 1 },
-    next: 'the-thunderjaw',
-  },
-  {
-    id: 'the-thunderjaw',
-    title: 'The Thunderjaw',
-    type: 'main',
-    giver: 'varl',
-    summary: 'Something in the southern flats walks like a mountain. Kill it and the valley is ours.',
-    objectives: [
-      { id: 'saw', type: 'kill', kind: 'sawtooth', count: 1, label: 'Kill a Sawtooth to prove the spear' },
-      { id: 'scan', type: 'scan', kind: 'thunderjaw', count: 1, label: 'Scan the Thunderjaw before you commit' },
-      { id: 'tj', type: 'kill', kind: 'thunderjaw', count: 1, label: 'Destroy the Thunderjaw' },
-    ],
-    rewards: { xp: 900, shards: 400, items: [{ id: 'blastpaste', n: 4 }], skillPoints: 2 },
-    victory: true,
-  },
-
-  /* ------------------------------- SIDE quests ---------------------------- */
-  {
-    id: 'side-broken-nest',
-    title: 'The Broken Nest',
-    type: 'side',
-    giver: 'varl',
-    offerAtLevel: 2,
-    summary: 'Scrappers have moved into the old wrecks east of camp. They eat everything, including hunters.',
-    objectives: [
-      { id: 'scan', type: 'scan', kind: 'scrapper', count: 2, label: 'Scan two Scrappers' },
-      { id: 'kill', type: 'kill', kind: 'scrapper', count: 3, label: 'Destroy three Scrappers' },
-    ],
-    rewards: { xp: 220, shards: 90, items: [{ id: 'metal-vessel', n: 2 }] },
-  },
-  {
-    id: 'side-herbalists-debt',
-    title: "The Herbalist's Debt",
-    type: 'side',
-    giver: 'varl',
-    offerAtLevel: 2,
-    summary: 'Camp is out of medicine and Varl is too proud to gather it himself.',
-    objectives: [
-      // a bounty you ACCEPT: what you are already carrying counts (see `_tallySnapshot`)
-      { id: 'herb', type: 'gather', item: 'medicinal-herb', count: 5, fromStock: true, deliver: true, label: 'Gather five medicinal herbs' },
-      { id: 'back', type: 'talk', npc: 'varl', label: 'Bring them back to Varl' },
-    ],
-    rewards: { xp: 160, shards: 140 },
-  },
-  {
-    id: 'side-lens-trade',
-    title: 'Lenses for the Trade Road',
-    type: 'side',
-    giver: 'varl',
-    offerAtLevel: 3,
-    summary: 'Watcher lenses fetch a good price on the trade road. Varl wants two.',
-    objectives: [
-      { id: 'lens', type: 'gather', item: 'watcher-lens', count: 2, fromStock: true, deliver: true, label: 'Recover two Watcher Lenses' },
-    ],
-    rewards: { xp: 200, shards: 180, items: [{ id: 'echo-shell', n: 3 }] },
-  },
-  {
-    id: 'side-the-long-watch',
-    title: 'The Long Watch',
-    type: 'side',
-    giver: 'varl',
-    offerAtLevel: 4,
-    summary: 'Something tall is walking the eastern shelf at night. Varl wants a name for it.',
-    objectives: [
-      { id: 'goto', type: 'goto', x: 152, z: 88, radius: 14, label: 'Reach the eastern shelf' },
-      { id: 'scan', type: 'scan', kind: 'longleg', count: 1, label: 'Scan a Longleg' },
-    ],
-    rewards: { xp: 280, shards: 150, skillPoints: 1 },
-  },
-
-  /* ------------------- SIDE quests anchored at the world's SITES ----------- */
-  /**
-   * EXPANSION ROUND. `world-props` publishes `ctx.props.sites()` — datapoints,
-   * caches, the hunting ground, and (as that lane's own
-   * expansion lands) the outpost, the cauldron mouth, the lakeshore and the
-   * wrecks. These six quests are anchored to those sites BY KIND, not by
-   * coordinate: `_anchor()` resolves `at:{site}` against the live registry at
-   * read time and falls back to the authored `x/z` when that kind does not
-   * exist yet. So the same quest points at the real outpost the day it ships
-   * and at the container yard until then — no cross-lane edit either way.
-   *
-   * Objective types added this round, every one on a REAL published event:
-   *   datapoint  'datapoint-collected'  (src/items/datapoints.js)
-   *   cache      'cache-found'         (src/world/props/activities.js)
-   *   hunt       'fauna-killed'         (src/world/fauna.js)
-   *   kill + `within`  a TIMED trial: the window starts when the objective
-   *                    becomes current, restarts when the player re-enters the
-   *                    hunting ground, and resets its own count when it lapses.
-   */
-  {
-    id: 'side-hunting-trial',
-    title: 'The Valley Trial',
-    type: 'side',
-    giver: 'bast',
-    offerAtLevel: 2,
-    site: 'hunting-ground',
-    summary: 'Bast says the Braves only count a hunt that was finished before the light went. The trial ring is south-east.',
-    objectives: [
-      { id: 'ground', type: 'goto', at: { site: 'hunting-ground' }, x: 128, z: -78, radius: 12, label: 'Reach the hunting ground' },
-      {
-        id: 'trial', type: 'kill', kind: 'scrapper', count: 3, within: 300,
-        trial: 'hunting-ground', at: { site: 'hunting-ground' }, x: 128, z: -78,
-        label: 'Take three Scrappers inside the trial window',
-      },
-    ],
-    rewards: { xp: 260, shards: 120, items: [{ id: 'wire', n: 6 }], skillPoints: 1 },
-  },
-  {
-    id: 'side-outpost-supply',
-    title: 'Supply Run',
-    type: 'side',
-    giver: 'maris',
-    offerAtLevel: 2,
-    site: 'outpost',
-    summary: 'The outpost has not had a delivery in a moon. Maris has the shards; she does not have the legs.',
-    objectives: [
-      { id: 'wood', type: 'gather', item: 'ridge-wood', count: 6, deliver: true, label: 'Gather six Ridge-Wood for the run' },
-      { id: 'crate', type: 'cache', count: 1, at: { site: 'cache' }, label: 'Empty a supply cache on the road' },
-      { id: 'drop', type: 'goto', at: { site: 'outpost' }, x: 185, z: 5, radius: 14, label: 'Carry it out to the outpost' },
-      { id: 'report', type: 'talk', npc: 'maris', label: 'Report back to Maris' },
-    ],
-    rewards: { xp: 240, shards: 150, items: [{ id: 'wire', n: 6 }, { id: 'blaze', n: 4 }] },
-  },
-  {
-    id: 'side-lakeshore-fisher',
-    title: "The Fisher's Request",
-    type: 'side',
-    giver: 'aura',
-    offerAtLevel: 2,
-    site: 'lakeshore',
-    summary: 'Aura wants meat off the shore and would rather not meet whatever is basking on it.',
-    objectives: [
-      { id: 'shore', type: 'goto', at: { site: 'lakeshore', alt: 'lake' }, x: -146, z: -100, radius: 16, label: 'Walk down to the lakeshore' },
-      { id: 'game', type: 'hunt', count: 2, label: 'Hunt two animals by the water' },
-      { id: 'back', type: 'talk', npc: 'aura', label: 'Bring the catch back to Aura' },
-    ],
-    rewards: { xp: 200, shards: 110, items: [{ id: 'medicinal-herb', n: 3 }] },
-  },
-  {
-    id: 'side-cave-datapoints',
-    title: 'Echoes in the Hollow',
-    type: 'side',
-    giver: 'vala',
-    offerAtLevel: 3,
-    site: 'cave',
-    summary: 'Vala has heard the old metal repeat itself inside the Hollow. She wants to know what it is saying.',
-    objectives: [
-      { id: 'mouth', type: 'goto', at: { site: 'cave', alt: 'hollow' }, x: -166, z: 118, radius: 16, label: 'Find the mouth of the Hollow' },
-      { id: 'records', type: 'datapoint', count: 2, at: { site: 'datapoint' }, label: 'Recover two datapoints from the dark' },
-      { id: 'tell', type: 'talk', npc: 'vala', label: 'Tell Vala what the voices said' },
-    ],
-    rewards: { xp: 220, shards: 100, items: [{ id: 'echo-shell', n: 2 }] },
-  },
-  {
-    id: 'side-wreck-salvage',
-    title: 'Salvage for the Forge',
-    type: 'side',
-    giver: 'thok',
-    offerAtLevel: 2,
-    site: 'wreck',
-    summary: 'Thok has a hot forge and empty crates. The sealed caches out in the wrecks hold better steel than the ore does.',
-    objectives: [
-      { id: 'caches', type: 'cache', count: 2, at: { site: 'cache' }, label: 'Empty two sealed caches in the wrecks' },
-      { id: 'metal', type: 'gather', item: 'metal-shards', count: 40, fromStock: true, deliver: true, label: 'Carry forty Metal Shards to the forge' },
-      { id: 'hand', type: 'talk', npc: 'thok', label: 'Hand the salvage to Thok' },
-    ],
-    rewards: { xp: 260, items: [{ id: 'blaze', n: 8 }, { id: 'metal-vessel', n: 2 }], skillPoints: 1 },
+    rewards: { xp: 0, shards: 10, items: [] },
   },
 ];
 
@@ -889,22 +470,17 @@ export const QUESTS = [
  * nothing here can make a site slower than the stock scheduler would have.
  */
 export const SITE_RESPAWN = {
-  trial: [90, 150],     // inside a hunting ground: the trial has to be re-runnable
+  trial: [90, 150],     // inside a trial ground: the trial has to be re-runnable
   quest: [120, 180],    // an active quest is asking for this kind right now
   small: [240, 330],    // sentry · runner · browser · ram · scavenger
   medium: [330, 450],   // big cat · wader · sprawler · carrier · brute · red-lamp kind · flyer
   large: [420, 540],    // colossus · hauler · raptor · crawler
 };
 
-const RESPAWN_CLASS = {
-  watcher: 'small', strider: 'small', grazer: 'small', broadhead: 'small', scrapper: 'small',
-  sawtooth: 'medium', longleg: 'medium', snapmaw: 'medium', shellwalker: 'medium',
-  ravager: 'medium', redeye: 'medium', glinthawk: 'medium',
-  thunderjaw: 'large', behemoth: 'large', stormbird: 'large', corruptor: 'large',
-};
+const RESPAWN_CLASS = {};
 
 /**
- * Seconds -> `M:SS`, the way HZD writes a Hunting Ground clock. Rounds UP so a
+ * Seconds -> `M:SS`, the way Older game writes a Trial ground clock. Rounds UP so a
  * clock reading `0:01` still has time on it and `0:00` is genuinely spent.
  */
 export function mmss(seconds) {
@@ -932,7 +508,7 @@ const _anchorOut = { x: 0, z: 0, ok: false, site: null };
  * world-content types; `freshTally` is the single place the shape is defined,
  * used by the constructor, `newGame()` and `deserialize()` alike.
  */
-export const TALLY_TYPES = ['kill', 'scan', 'talk', 'datapoint', 'cache', 'hunt'];
+export const TALLY_TYPES = ['kill', 'scan', 'talk', 'fieldbook', 'cache', 'hunt'];
 function freshTally(src = null) {
   const out = Object.create(null);
   for (const t of TALLY_TYPES) out[t] = { ...(src && src[t] ? src[t] : {}) };
@@ -969,7 +545,7 @@ export class Progression {
     this.baseMaxPouch = ctx.player?.maxGourd ?? 100;
 
     /* ---- difficulty ---- */
-    this._difficulty = 'normal';
+    this._difficulty = 'standard';
 
     /* ---- quests ---- */
     /** @type {Map<string, {id,state,counts:Record<string,number>,startedAt}>} */
@@ -993,9 +569,9 @@ export class Progression {
      * tutorial), and the old `_advance` threw away any event that did not
      * match the objective standing at the front of the queue. So the single
      * most likely path through `lessons-of-the-valley` — Focus-tag the Sentry
-     * you can see while Varl is still talking — silently lost the scan, and
+     * you can see while The old guide is still talking — silently lost the scan, and
      * the obvious recovery (tag it again) is a NO-OP because
-     * `FocusSystem.tagTarget()` is a toggle: the second press removes the tag
+     * `SightingSystem.tagTarget()` is a toggle: the second press removes the tag
      * and emits nothing. The player was stuck on step 3 with no feedback.
      *
      * So every scan/kill/talk is counted here the moment it happens, whatever
@@ -1045,7 +621,7 @@ export class Progression {
     this._inGrant = false;
     this._victoryT = -1;
     this._deathPouch = 0;
-    this._campEntry = null;
+    this._restEntry = null;
     this._npcEntry = null;
     this._hooked = false;
     this._hookT = 0;
@@ -1062,7 +638,8 @@ export class Progression {
 
     /* ---- UI (this lane owns both files) ---- */
     this.ui = new QuestLogUI(ctx, this);
-    this.skillsUI = new SkillTreeUI(ctx, this);
+    /** The Round-4 skill tree screen was deleted at M0.3 R3; certifications (M1.6) replace it. */
+    this.skillsUI = { refresh() {}, open() {}, close() {}, update() {}, dispose() {}, isOpen: false };
     /** The conversation card (expansion round). Owns its own DOM island. */
     this.dialogueUI = new DialogueUI(ctx, this);
 
@@ -1072,7 +649,7 @@ export class Progression {
     /* ---- dialogue ---- */
     /**
      * `topic` is the line currently on the card, `seen` the topics this run has
-     * already heard (one 10 XP award each, through the same ledger a datapoint
+     * already heard (one 10 XP award each, through the same ledger a fieldbook
      * uses), `talked` how many conversations each person has had. All three are
      * serialized: a choice is state, and A65 restores it.
      */
@@ -1143,11 +720,11 @@ export class Progression {
    * two other lanes' files were already calling this API against the shape
    * documented in `docs/ROUND4-WORLD-PROPS.md:106`:
    *
-   *   src/world/props/activities.js:439  discover(id)            (datapoint)
-   *   src/world/props/activities.js:440  award 25  'datapoint'   × 24
+   *   src/world/props/activities.js:439  discover(id)            (fieldbook)
+   *   src/world/props/activities.js:440  award 25  'fieldbook'   × 24
    *   src/world/props/activities.js:524  award 15  'cache'       × 6
    *   src/world/props/activities.js:542  discover('tower')
-   *   src/world/props/activities.js:562  discover(hunting-ground)
+   *   src/world/props/activities.js:562  discover(trial ground)
    *   src/world/fauna.js:624             award 20/12 'hunt'      × every kill
    *
    * `?.award?.(...)` means a missing method throws nothing — it just pays
@@ -1162,7 +739,7 @@ export class Progression {
    * kill recurs under a species id and must pay every time — see
    * `AWARD_REPEATABLE`. `once` overrides the default either way.
    *
-   * Accepts the positional form `award(25, 'datapoint', id)` too, so a caller
+   * Accepts the positional form `award(25, 'fieldbook', id)` too, so a caller
    * that guesses the simpler signature is not silently paid 0 a second time.
    */
   award(spec, reason2, id2) {
@@ -1195,14 +772,14 @@ export class Progression {
    *
    * The other half of the API the world lanes call. Idempotent per id: it
    * emits `discovery` exactly once, whatever re-raises it, which is what a
-   * Notebook / world-map entry wants (and what stops a re-entered hunting
+   * Notebook / world-map entry wants (and what stops a re-entered trial
    * ground spamming the banner strip). It pays no XP of its own —
    * `activities.js:439-440` pairs `discover(id)` with its own `award(...)`, so
    * granting here would double-pay — but `discover(id, { xp })` routes through
    * `award()` for a caller that wants one call.
    *
    * The DISCOVERED banner is reserved for ids that name a place (`PLACE_NAMES`,
-   * or an explicit `opts.label`); see that map for why the 24 datapoint ids are
+   * or an explicit `opts.label`); see that map for why the 24 fieldbook ids are
    * deliberately silent.
    */
   discover(id, opts = null) {
@@ -1347,7 +924,7 @@ export class Progression {
 
   get difficulty() { return this._difficulty; }
   get difficultyDef() {
-    return DIFFICULTIES.find((d) => d.id === this._difficulty) ?? DIFFICULTIES[2];
+    return DIFFICULTIES.find((d) => d.id === this._difficulty) ?? DIFFICULTIES[1];
   }
 
   setDifficulty(id) {
@@ -1498,11 +1075,11 @@ export class Progression {
    * Shallow copy of the run tallies, taken when a quest starts, plus the stock
    * of every item that quest asks you to gather.
    *
-   * The item baseline is why the tutorial still teaches gathering: Aloy starts
+   * The item baseline is why the tutorial still teaches gathering: Brea starts
    * with 20 ridge-wood, so crediting "have 3 ridge-wood" against the bag would
    * tick "Gather Ridge-Wood for arrows" off the instant the Sentry fell. An
    * objective marked `fromStock` opts out and counts what you are already
-   * carrying — that is the right reading for a bounty you ACCEPT ("Varl wants
+   * carrying — that is the right reading for a bounty you ACCEPT ("The old guide wants
    * two lenses"), and the wrong one for a step whose whole job is to make you
    * pick something up.
    */
@@ -1569,7 +1146,7 @@ export class Progression {
        * this quest already spent — so a cache emptied on the walk out counts
        * when the objective comes up, and a reload cannot double-credit it.
        */
-      case 'datapoint': case 'cache': case 'hunt': {
+      case 'fieldbook': case 'cache': case 'hunt': {
         const k = o.id2 ?? o.dp ?? o.node ?? o.species ?? '*';
         n = (this.tally[o.type][k] ?? 0) - (st.base?.[o.type]?.[k] ?? 0);
         break;
@@ -1741,7 +1318,7 @@ export class Progression {
   _emitObjectiveChanged() {
     const s = this.tracked ? this.state(this.tracked) : null;
     const title = s ? s.title : 'THE VALLEY';
-    const detail = s?.current?.label ?? (s ? 'Return to camp' : 'Hunt as you please');
+    const detail = s?.current?.label ?? (s ? 'Return to Ansel' : 'Survey as you please');
     if (title === this._lastObjTitle && detail === this._lastObjDetail) return;
     this._lastObjTitle = title;
     this._lastObjDetail = detail;
@@ -1772,7 +1349,7 @@ export class Progression {
         const npc = this._npcPos(o.npc);
         if (npc) { x = npc.x; z = npc.z; }
       } else {
-        // goto / datapoint / cache / timed kill — all of them resolve
+        // goto / fieldbook / cache / timed kill — all of them resolve
         // through the site registry, so the pip lands on the real thing
         const a = this._anchor(o);
         if (a.ok) { x = a.x; z = a.z; }
@@ -1796,13 +1373,13 @@ export class Progression {
    *
    * `_rebuildMarkers` bakes the anchor into scalars and only re-runs when
    * `_markersDirty` is set, which nothing does on a timer. Every other anchor
-   * kind (`goto`/`datapoint`/`cache`) resolves through the static
+   * kind (`goto`/`fieldbook`/`cache`) resolves through the static
    * `ctx.props.sites()` registry and is genuinely static, so caching is right
-   * for them — but `npc` (port 5218) walks thirteen Nora around camp, and this
+   * for them — but `npc` (port 5218) walks thirteen Old-tribe around rest site, and this
    * lane put four `talk` objectives on the roving ones. Measured: the marker
    * for "Bring the catch back to Aura" sat frozen while Aura walked 7.8 m away,
    * three times its own 2.5 m ring, so the player stood inside the marker with
-   * no TALK prompt. Max roam over 70 s reaches 21.7 m (sona).
+   * no TALK prompt. Max roam over 70 s reaches 21.7 m (the old chief).
    *
    * So `talk` rows resolve LIVE, on read. Cost is bounded by `_talkRows` (0 in
    * almost every frame — at most one per active quest), the early-out is a
@@ -1834,19 +1411,15 @@ export class Progression {
     const def = NPCS[npcId];
     if (!def) return null;
     /**
-     * `npc` (port 5218) walks thirteen people around camp, so a marker on a
+     * `npc` (port 5218) walks thirteen people around rest site, so a marker on a
      * person has to follow them. `ctx.npcs.byId(id).group.position` is that
-     * lane's published transform; `ctx.camp.npc` (Varl's anchor) and the
+     * lane's published transform; `ctx.settlements.npc` (The old guide's anchor) and the
      * authored fallback are the two older answers, kept for a build without it.
      */
     try {
       const rec = this.ctx.npcs?.byId?.get ? this.ctx.npcs.byId.get(npcId) : this.ctx.npcs?.byId?.(npcId);
       if (rec?.group?.position) return rec.group.position;
     } catch { /* npc lane mid-build */ }
-    if (npcId === 'varl') {
-      const npc = this.ctx.camp?.npc;
-      if (npc?.position) return npc.position;
-    }
     const fb = def.fallback;
     if (!fb) return null;
     _v.set(fb.x, 0, fb.z);
@@ -1866,7 +1439,7 @@ export class Progression {
    * that is not finished yet and, among those, the nearest to the player. The
    * authored `x/z` on the objective is the fallback for a build where that kind
    * does not exist yet, so the quest is playable today and snaps onto the real
-   * outpost/cauldron/lakeshore/wreck the day that lane registers them.
+   * outpost/forge site/lakeshore/wreck the day that lane registers them.
    *
    * Allocation-free: the answer is written into one shared record, read
    * immediately by the caller, and never retained.
@@ -1888,8 +1461,8 @@ export class Progression {
       /**
        * A site matches on its KIND (either the wanted one or the named
        * alternative that stands in for it today), or on its id containing the
-       * wanted kind — so a future `cauldron-rho` site registered under some
-       * other kind still answers `at:{site:'cauldron'}`. The alternative is
+       * wanted kind — so a future `forge site-rho` site registered under some
+       * other kind still answers `at:{site:'forge site'}`. The alternative is
        * deliberately NOT matched by id substring: `alt` is a stand-in, and a
        * loose stand-in silently drags a quest marker onto the wrong thing.
        */
@@ -1901,7 +1474,7 @@ export class Progression {
       /**
        * Order: the real thing before the stand-in, an unfinished site before a
        * finished one, and only then the nearest. Distance alone is not enough —
-       * `world-props` now registers BOTH a `cauldron` site and the older
+       * `world-props` now registers BOTH a `forge site` site and the older
        * `override` node this quest used to point at, and a marker that moves
        * between them depending on where the player happens to be standing is a
        * quest objective that cannot be followed.
@@ -1918,7 +1491,7 @@ export class Progression {
    * `ctx.props.sites()` BUILDS its array every call (20+ records, one object
    * each). The 5 Hz proximity sweep asks per unfinished `goto`, and the marker
    * rebuild asks per active objective, so an uncached read is ~15 throwaway
-   * arrays a second for a list that changes when a datapoint is picked up.
+   * arrays a second for a list that changes when a fieldbook is picked up.
    * Cached for a second of simulated time; `_markersDirty` is unaffected.
    */
   _sites() {
@@ -1953,7 +1526,7 @@ export class Progression {
   }
 
   /* ====================================================================== */
-  /* timed trials (`within`) — the hunting-ground contract                  */
+  /* timed trials (`within`) — the trial ground contract                  */
   /* ====================================================================== */
 
   _trialKey(questId, objId) { return `${questId}:${objId}`; }
@@ -2043,7 +1616,7 @@ export class Progression {
   /**
    * One pass per sampler tick: open a window on any timed objective that has
    * become current, and reset one that lapsed. A lapsed trial restarts itself
-   * rather than dead-ending the quest — HZD's Hunting Grounds let you run the
+   * rather than dead-ending the quest — Older game's Trial grounds let you run the
    * trial again, and a side quest that can be permanently failed by a slow walk
    * is a bug report, not a challenge.
    */
@@ -2110,11 +1683,6 @@ export class Progression {
     let cls = RESPAWN_CLASS[site.kind] ?? 'medium';
     let why = cls;
     // a trial ring has to be re-runnable: the quest asks for three of them
-    const ground = this._anchor({ at: { site: 'hunting-ground' }, x: 128, z: -78 });
-    if (ground.ok) {
-      const dx = site.x - ground.x, dz = site.z - ground.z;
-      if (dx * dx + dz * dz <= 70 * 70) { cls = 'trial'; why = 'trial'; }
-    }
     if (why !== 'trial') {
       // an active quest is asking for this kind right now
       for (const def of QUESTS) {
@@ -2213,7 +1781,7 @@ export class Progression {
   /**
    * Everything the conversation card draws, computed from run state: which
    * greeting this person is on, the line currently showing (a topic answer
-   * replaces the greeting), and 2-3 choices in HZD's priority order —
+   * replaces the greeting), and 2-3 choices in Older game's priority order —
    * report-in first, then the offer, then an unheard topic, then trade, and
    * LEAVE always last.
    */
@@ -2251,7 +1819,7 @@ export class Progression {
     }
 
     /**
-     * HZD's wheel shows a handful, never a wall: two lines plus the exit. A
+     * Older game's wheel shows a handful, never a wall: two lines plus the exit. A
      * MERCHANT always keeps one of those two, because "buy arrows" is the whole
      * reason that person is stood there — with a turn-in and an offer both
      * pending, a flat top-two cut hid the only shop in the valley behind quest
@@ -2286,7 +1854,7 @@ export class Progression {
         const key = `${npcId}:${c.topicId}`;
         if (!this.dialogue.seen.has(key)) {
           this.dialogue.seen.add(key);
-          // one-shot, through the same ledger a datapoint uses
+          // one-shot, through the same ledger a fieldbook uses
           this.award({ xp: 10, reason: 'talk', id: key, once: true });
         }
         this._emit('dialogue-topic', { npc: npcId, topic: c.topicId });
@@ -2325,7 +1893,7 @@ export class Progression {
     const self = this;
     const stock = MERCHANT_STOCK.map((s) => ({ ...s }));
     return {
-      npc: 'varl',
+      npc: 'ansel',
       stock: () => stock,
       shards: () => self.ctx.inventory?.count?.(CURRENCY) ?? 0,
       /** Buy price, scaled by difficulty (harder = pricier). */
@@ -2397,9 +1965,9 @@ export class Progression {
    * TURN-IN TAKES THE GOODS (`quest-delivered`).
    *
    * Every "bring me X" objective carries `deliver: true`, and until this round
-   * none of them cost anything: Varl's five medicinal herbs, the two Sentry
-   * lenses, the outpost's six Ridge-Wood and Thok's forty Metal Shards all
-   * stayed in the pouch while the quest paid out on top. In HZD the hand-over
+   * none of them cost anything: The old guide's five medicinal herbs, the two Sentry
+   * lenses, the outpost's six Ridge-Wood and An old smith's forty Metal Shards all
+   * stayed in the pouch while the quest paid out on top. In Older game the hand-over
    * is the trade — the items leave your pockets and the reward replaces them —
    * and with `metal-shards` being the CURRENCY itself, "Carry forty Metal
    * Shards to the forge" for a 260 XP payout was simply free money.
@@ -2437,7 +2005,7 @@ export class Progression {
        * about to appear is a QUEST COMPLETE card — a player who watched forty
        * shards leave with no line about it reads it as a bug. Banners are the
        * one channel `shell-hud` already renders for this lane (§2), and the
-       * two cards stack the way HZD's turn-in feed does.
+       * two cards stack the way Older game's turn-in feed does.
        */
       const said = out.filter((r) => r.n > 0)
         .map((r) => `${r.n} ${String(this.ui._name(r.id)).toUpperCase()}`)
@@ -2533,7 +2101,7 @@ export class Progression {
   /* dialogue / NPC                                                         */
   /* ====================================================================== */
 
-  talkTo(npcId = 'varl') {
+  talkTo(npcId = 'ansel') {
     const def = NPCS[npcId];
     if (!def) return false;
     // switching speakers mid-conversation starts a fresh card
@@ -2696,11 +2264,11 @@ export class Progression {
     return true;
   }
 
-  /** Campfire save (also writes the checkpoint — they are the same moment). */
-  save(reason = 'campfire') {
+  /** Brazier save (also writes the checkpoint — they are the same moment). */
+  save(reason = 'brazier') {
     const res = this.saves.write(SLOT.main, reason);
     this.saves.write(SLOT.checkpoint, reason);
-    if (res.ok) this.banner('PROGRESS SAVED', reason === 'campfire' ? 'CAMPFIRE' : reason.toUpperCase(), 'save');
+    if (res.ok) this.banner('PROGRESS SAVED', reason === 'brazier' ? 'BRAZIER' : reason.toUpperCase(), 'save');
     return res;
   }
 
@@ -2786,7 +2354,7 @@ export class Progression {
   _onVictory() {
     this._victoryT = 0;
     this.save('victory');
-    this.banner('VALLEY RECLAIMED', 'THE THUNDERJAW IS DOWN', 'victory');
+    this.banner('THE LINE HOLDS', 'THE GROUND IS TRUE', 'victory');
   }
 
   banner(title, detail, kind = 'info') {
@@ -2884,15 +2452,15 @@ export class Progression {
     /**
      * WORLD-CONTENT OBJECTIVES (expansion round). Four types, four events that
      * already existed and that nothing was listening to for quest credit:
-     *   'datapoint-collected'  src/items/datapoints.js   (all 24 records)
+     *   'fieldbook-collected'  src/items/fieldbooks.js   (all 24 records)
      *   'cache-found'         src/world/props/activities.js
      *   'fauna-killed'         src/world/fauna.js
      * Each is tallied by id/species AND under '*', so an objective can ask for
-     * "three datapoints" or for one named record with the same machinery.
+     * "three fieldbooks" or for one named record with the same machinery.
      */
-    on('datapoint-collected', ({ id } = {}) => {
-      this._bump('datapoint', id);
-      this._advance('datapoint', (o) => !o.dp || o.dp === id);
+    on('fieldbook-collected', ({ id } = {}) => {
+      this._bump('fieldbook', id);
+      this._advance('fieldbook', (o) => !o.dp || o.dp === id);
     });
     on('cache-found', ({ id } = {}) => {
       this._bump('cache', id);
@@ -2903,7 +2471,6 @@ export class Progression {
       this._advance('hunt', (o) => !o.species || o.species === species);
     });
     /** Walking back into the trial ring runs the trial again, from zero. */
-    on('hunting-ground', ({ id } = {}) => { this.restartTrial(id); });
 
     on('player-damage', ({ from } = {}) => {
       if (from) this.lastKiller = from?.displayName ?? from?.kind ?? String(from);
@@ -2916,7 +2483,7 @@ export class Progression {
 
     /**
      * `progression-019` — the player's own `_die()` refills the pouch to 60 and
-     * teleports her to camp 3.2 s later. That is the "death has no stakes"
+     * teleports her to rest site 3.2 s later. That is the "death has no stakes"
      * finding. This lane cannot edit `player.js`, so it takes the frame after:
      * the checkpoint is reloaded, which restores the pouch the run actually had
      * (minus what Healer lets you keep), her saved position, and her health.
@@ -3026,9 +2593,9 @@ export class Progression {
 
     /* ---- damage dealt: difficulty.damageOut × Precision × Tinker × Strike ----
      * A Silent Strike on a non-instant species is a fraction-of-health hit:
-     * the Prowler nodes raise the fraction (`silentStrikeDamage` is derived
+     * the Stealth nodes raise the fraction (`silentStrikeDamage` is derived
      * from it), and `silentImpactCap` clamps the final damage to
-     * SILENT_STRIKE.capFrac × maxHealth, and below lethal on an apex. */
+     * SILENT_STRIKE.capFrac × maxHealth, and below lethal on an peak. */
     const first = this.ctx.machines?.list?.[0];
     const Proto = first ? Object.getPrototypeOf(first) : null;
     const MachineProto = this._rootMachineProto(Proto);
@@ -3139,7 +2706,7 @@ export class Progression {
   }
 
   /* ====================================================================== */
-  /* world interactables — campfire + the camp hunter                        */
+  /* world interactables — brazier + the rest site hunter                        */
   /* ====================================================================== */
 
   _ensureInteractables() {
@@ -3147,25 +2714,22 @@ export class Progression {
     const inter = ctx.interactables;
     if (!inter?.register) return;
 
-    if (!this._campEntry) {
-      const fire = ctx.camp?.firePosition;
+    if (!this._restEntry) {
+      const fire = ctx.settlements?.firePosition;
       const pos = fire ? fire.clone() : new THREE.Vector3(REST_SITE.x, 0, REST_SITE.z);
       if (!fire) pos.y = ctx.terrain?.getHeight?.(pos.x, pos.z) ?? 0;
-      this._campEntry = inter.register({
+      this._restEntry = inter.register({
         position: pos, radius: 3.4, label: 'REST & SAVE', hold: 0.55,
-        onInteract: () => this.openCampfire(),
+        onInteract: () => this.openRest(),
       });
     }
 
     if (!this._npcEntry) {
-      const npc = ctx.camp?.npc;
-      const pos = npc?.position
-        ? npc.position.clone()
-        : new THREE.Vector3(NPCS.varl.fallback.x, 0, NPCS.varl.fallback.z);
-      if (!npc?.position) pos.y = ctx.terrain?.getHeight?.(pos.x, pos.z) ?? 0;
+      const pos = new THREE.Vector3(NPCS.ansel.fallback.x, 0, NPCS.ansel.fallback.z);
+      pos.y = ctx.terrain?.getHeight?.(pos.x, pos.z) ?? 0;
       this._npcEntry = inter.register({
-        position: pos, radius: 2.8, label: 'TALK  ·  VARL', hold: 0.35,
-        onInteract: () => this.talkTo('varl'),
+        position: pos, radius: 2.8, label: 'TALK  ·  ANSEL', hold: 0.35,
+        onInteract: () => this.talkTo('ansel'),
       });
       this._markersDirty = true;
     }
@@ -3178,12 +2742,12 @@ export class Progression {
   openQuestLog() { this.ui.openLog(); }
   openSkills() { this.skillsUI.open(); }
   openTrade() { this.ui.openTrade(); }
-  openCampfire() { this.ui.openCampfire(); }
+  openRest() { this.ui.openRest(); }
 
   /** Rest at the fire: advance the clock, restore the pouch, save. */
   async rest(toHour = 6.2) {
     const env = this.ctx.environment;
-    this.save('campfire');
+    this.save('brazier');
     if (env?.rest) { try { await env.rest({ toHour, seconds: 2.0 }); } catch { /* env busy */ } }
     const p = this.ctx.player;
     if (p) {
@@ -3207,7 +2771,7 @@ export class Progression {
     this._bootT += dt;
     // the trial clock is SIMULATED seconds, never wall time (see `this.clock`)
     this.clock += dt;
-    if (!this._campEntry || !this._npcEntry) this._ensureInteractables();
+    if (!this._restEntry || !this._npcEntry) this._ensureInteractables();
 
     // Cross-lane hooks that could not resolve at construction (see
     // `_installHooks`): retry at 1 Hz, then never again.
@@ -3217,7 +2781,7 @@ export class Progression {
     }
 
     // A first checkpoint so the very first death has something to roll back to
-    // (progression-019: dying before you ever reach a campfire must still cost
+    // (progression-019: dying before you ever reach a brazier must still cost
     // you the pouch you spent, not hand you a fresh one).
     if (!this._bootCheckpoint && this._bootT > 1.5) {
       this._bootCheckpoint = true;
@@ -3238,7 +2802,7 @@ export class Progression {
           const st = this.questState.get(def.id);
           if (!st || st.state !== 'active') continue;
           // EVERY unfinished goto is tested, not just the current one: walking
-          // past the ridge while Varl is still talking has to count when the
+          // past the ridge while The old guide is still talking has to count when the
           // ridge step comes up (same rule as scan/kill — see `this.tally`).
           for (const o of def.objectives) {
             if (o.type !== 'goto') continue;
@@ -3425,7 +2989,7 @@ export class Progression {
    *      has no `interpolate`, and a disposed system must never throw at 60 Hz;
    *   3. a second call is a silent no-op.
    *
-   * `ctx.progression` is deliberately LEFT in place: the HUD, camp, menus and
+   * `ctx.progression` is deliberately LEFT in place: the HUD, rest site, menus and
    * npc lanes all read it, and a quiesced instance is safer for them than a
    * dangling `undefined` on the frame after teardown.
    *
@@ -3459,7 +3023,7 @@ export class Progression {
     }
     const machines = this.ctx.machines;
     if (machines?.noise?.__calOriginal) machines.noise = machines.noise.__calOriginal;
-    if (this._campEntry) this.ctx.interactables?.unregister?.(this._campEntry);
+    if (this._restEntry) this.ctx.interactables?.unregister?.(this._restEntry);
     if (this._npcEntry) this.ctx.interactables?.unregister?.(this._npcEntry);
     this.trials.clear();
     this.siteTuning.clear();

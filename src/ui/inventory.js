@@ -189,7 +189,7 @@ export class InventoryScreen {
     ctx.events.on('player-died', () => this._hide());
     // live-refresh while open so a craft/upgrade/trade shows immediately
     for (const ev of ['item-gained', 'item-crafted', 'capacity-upgraded',
-      'ammo-crafted', 'trade-buy', 'trade-sell', 'datapoint-collected']) {
+      'ammo-crafted', 'trade-buy', 'trade-sell', 'fieldbook-collected']) {
       ctx.events.on(ev, () => { if (this._open) this._render(); });
     }
   }
@@ -209,7 +209,7 @@ export class InventoryScreen {
     return true;
   }
 
-  /** Datapoint pickup / Notebook key: open straight onto a record. */
+  /** FieldBook pickup / Notebook key: open straight onto a record. */
   openNotebook(id) {
     if (id) this._selected = { kind: 'record', id };
     return this.open('notebook');
@@ -249,7 +249,7 @@ export class InventoryScreen {
       if (p.category && p.category !== 'ammo') {
         badge.textContent = String((inv?.items?.(p.category) ?? []).length || '');
       } else if (p.id === 'notebook') {
-        const dp = items?.datapoints;
+        const dp = items?.fieldbooks;
         badge.textContent = dp ? `${dp.count}/${dp.total}` : '';
       } else badge.textContent = '';
     }
@@ -643,7 +643,7 @@ export class InventoryScreen {
   /* ------------------------------------------------------------ notebook */
 
   _renderNotebook() {
-    const dp = this.ctx.items?.datapoints;
+    const dp = this.ctx.items?.fieldbooks;
     if (!dp) { this._empty('No Field Books found yet.'); this._detailHint(); return; }
     el('div', 'cal-cap-title', this._capEl,
       `FIELD BOOKS: ${dp.count} OF ${dp.total} RECOVERED`);

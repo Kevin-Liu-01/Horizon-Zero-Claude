@@ -46,7 +46,7 @@
  *                     shows NONE of the attributions is "not wired yet"
  *                     (brand, W0b): PENDING before the W0 exit, FAIL from it
  *                     (`w0ExitReached`: the wave, the R39 hero swap, or
- *                     aloy.glb gone — fix round 5); a surface that shows
+ *                     Brea.glb gone — fix round 5); a surface that shows
  *                     some but not all is FAIL (drift)
  *   size              du public/ <= 60 MB
  */
@@ -112,7 +112,7 @@ export function gradeCredits({ need, readmeText, rendered, atOrPastW0Exit }) {
  *   - the wave (R5_WAVE, the lane branch, OR the lane-report lower bound: a lower bound at or past the exit is
  *     sound, since the true wave can only be later);
  *   - SPECS.hero no longer names the Round-4 body: the R39 hero swap merges in the W0-exit window;
- *   - public/models/aloy.glb is gone: hero-body deletes it at the W0 exit (plan §6).
+ *   - public/models/Brea.glb is gone: hero-body deletes it at the W0 exit (plan §6).
  * Returns { reached, signals: [why...] }.
  */
 export function w0ExitReached({ wave, specs, root = ROOT }) {
@@ -126,7 +126,7 @@ export function w0ExitReached({ wave, specs, root = ROOT }) {
 
 /**
  * NEGATIVE CONTROL of the exit rule (no files read): a README and a rendered modal that show none of the
- * attributions must grade FAIL once the exit is signalled by the hero swap alone (wave W0b, aloy.glb present),
+ * attributions must grade FAIL once the exit is signalled by the hero swap alone (wave W0b, Brea.glb present),
  * and PENDING before it. A credits clause whose control fails is a FAIL.
  */
 export function creditsExitControl(need) {
@@ -139,7 +139,7 @@ export function creditsExitControl(need) {
   const empty = { visible: true, how: 'control', text: '' };
   const atExit = gradeCredits({ need: n, readmeText: '', rendered: empty, atOrPastW0Exit: swapped.reached }).status;
   const before = gradeCredits({ need: n, readmeText: '', rendered: empty, atOrPastW0Exit: notYet.reached }).status;
-  // with aloy.glb gone from this tree the "before" case is itself past the exit (FAIL is then correct too)
+  // with Brea.glb gone from this tree the "before" case is itself past the exit (FAIL is then correct too)
   const ok = swapped.reached && atExit === 'FAIL' && (aloyOnDisk ? before === 'PENDING' : before === 'FAIL');
   return { ok, heroSwappedAtW0b: atExit, heroNotSwappedAtW0b: before, aloyOnDisk };
 }

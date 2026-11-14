@@ -2,7 +2,7 @@
  * GATE ROSTER — who a gate stages, by ROLE, never by species (plan §9 intro,
  * §3.2 `ctx.machines.roles`, rulings R7, R18, R28, R30).
  *
- * Round 4's gates named HZD kinds by literal (57 gates said one sentry kind,
+ * Round 4's gates named Older game kinds by literal (57 gates said one sentry kind,
  * 29 the flanker, 19 the colossus ...). Round 5 replaces every kind, so a gate
  * that names a species is a gate that silently stops gating. This module is the
  * one place a gate learns WHAT to stage:
@@ -36,7 +36,7 @@
  * such a report. It is not a verdict mode (R28).
  */
 
-/** The twelve role ids (bible §7.4 / §10.2). None matches the forbidden HZD role words. */
+/** The twelve role ids (bible §7.4 / §10.2). None matches the forbidden Older game role words. */
 export const ROLES = ['sentry', 'herd', 'swarm', 'flanker', 'heavy', 'keeper', 'duelist',
   'artillery', 'support', 'spotter', 'ambusher', 'colossus'];
 

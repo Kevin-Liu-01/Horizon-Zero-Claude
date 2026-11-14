@@ -15,9 +15,9 @@ import { heldMaterial, weaponEntry } from '../hero/weaponAtlas.js';
  */
 
 /**
- * `combat-weapon-models-neon`. HZD's tribal bows are WOOD, LEATHER, BONE and
+ * `combat-weapon-models-neon`. Older game's tribal bows are WOOD, LEATHER, BONE and
  * a little salvaged metal — the only thing that glows on them is the sight
- * bead of the Sharpshot and the salvaged Colossus hardware. The Round 3
+ * bead of the Sighting and the salvaged Colossus hardware. The Round 3
  * models banded every limb in a 2.6-intensity emissive, which read as a neon
  * toy at any distance. The accent slot is now a MATERIAL choice per bow (bone,
  * leather wrap, bronze) and the three `*Glow` materials are kept only for the
@@ -31,7 +31,7 @@ const ironMat = new THREE.MeshStandardMaterial({ color: 0x5c6670, metalness: 0.8
 /** Sun-bleached bone: limb tips, nock guards, inlays. */
 const boneMat = new THREE.MeshStandardMaterial({ color: 0xcfc2a4, roughness: 0.72, metalness: 0.02 });
 const boneDarkMat = new THREE.MeshStandardMaterial({ color: 0xa2947a, roughness: 0.78, metalness: 0.02 });
-/** Dyed leather binding — the Nora red-brown. */
+/** Dyed leather binding — the Old-tribe red-brown. */
 const wrapMat = new THREE.MeshStandardMaterial({ color: 0x7a3a24, roughness: 0.85, metalness: 0.02 });
 const wrapDarkMat = new THREE.MeshStandardMaterial({ color: 0x4a2a1c, roughness: 0.88, metalness: 0.02 });
 /** Salvaged machine hardware — the ONLY emissive left on a tribal weapon. */
@@ -85,7 +85,7 @@ export function weaponAssets() {
 /**
  * Release them. TEARDOWN ONLY and single-shot, exactly like
  * `disposeArrowAssets()`: call once, from `Combat.dispose()`, after every
- * `WeaponModel` and the spear are gone.
+ * `WeaponModel` and the lance are gone.
  */
 export function disposeWeaponAssets() {
   for (const g of SHARED_GEOS) g.dispose();
@@ -113,7 +113,7 @@ function setSegment(mesh, a, b, r) {
 const NOOP = () => {};
 
 /* ------------------------- static-part baking ----------------------------
- * Weapons are now ALWAYS on screen (stowed across Aloy's back when not
+ * Weapons are now ALWAYS on screen (stowed across Brea's back when not
  * wielded), so every static detail part is baked into ONE mesh per material
  * instead of one mesh per part — the hunter bow drops from ~13 draw calls
  * to 4 (+2 dynamic string segments).
@@ -167,7 +167,7 @@ class WeaponModel {
   constructor() {
     this.group = new THREE.Group();
     this.model = new THREE.Group();
-    this.model.rotation.z = 0.22; // HZD-style cant so bows never read edge-on
+    this.model.rotation.z = 0.22; // Older game-style cant so bows never read edge-on
     this.model.position.y = -0.1; // grip sits in the palm
     this.group.add(this.model);
     this.restZ = 0.055;
@@ -245,7 +245,7 @@ class WeaponModel {
 /**
  * Parameterized recurve. opts:
  *   size (limb scale), curveK (recurve depth), limbR, bodyMat, accentMat,
- *   scope (sharpshot aperture bead), pull, name
+ *   scope (sighting aperture bead), pull, name
  */
 class RecurveBow extends WeaponModel {
   constructor(opts = {}) {
@@ -325,7 +325,7 @@ class RecurveBow extends WeaponModel {
     addBand(0.045, bronzeParts, limbR, 0.055);
     addBand(0.955, bronzeParts, limbR, 0.055);
 
-    // sharpshot scope: salvaged machine aperture + the one glowing sight bead
+    // sighting scope: salvaged machine aperture + the one glowing sight bead
     const beadParts = [];
     if (opts.scope) {
       ironParts.push(
@@ -451,7 +451,7 @@ const NOCK_Y = 0.018;
 const GRIP_Y = 0.095;
 const AMMO_TINT = {
   hunter: [0xffffff, 0xffffff], hardpoint: [0xffc890, 0xffd8a8], fire: [0xff9050, 0xffa070],
-  precision: [0xd8f4ff, 0xe4f8ff], tearblast: [0x90e8e0, 0xb0f0e8], shock: [0x90d8ff, 0xb0e0ff], freeze: [0xd8f0ff, 0xe8f6ff],
+  precision: [0xd8f4ff, 0xe4f8ff], pryburst: [0x90e8e0, 0xb0f0e8], shock: [0x90d8ff, 0xb0e0ff], freeze: [0xd8f0ff, 0xe8f6ff],
 };
 class SabinaBow extends WeaponModel {
   constructor(entry, material) {
@@ -733,7 +733,7 @@ class DiscLauncher extends WeaponModel {
   }
 }
 
-/* ------------------------- ropecaster / tripcaster ------------------------ */
+/* ------------------------- tether / wirelayer ------------------------ */
 
 /**
  * Shared chassis for the two "caster" weapons (`combat-roster-missing`): a
@@ -788,7 +788,7 @@ class CasterWeapon extends WeaponModel {
           .rotateY(Math.PI / 2).translate(0.038, -0.045, 0.20),
       );
     } else {
-      // tripcaster: a rack of wire canisters
+      // wirelayer: a rack of wire canisters
       for (let i = 0; i < 3; i++) {
         accent.push(new THREE.CylinderGeometry(0.021, 0.021, 0.10, 7)
           .rotateZ(Math.PI / 2).translate(0, -0.045, 0.10 + i * 0.075));
@@ -830,18 +830,18 @@ class CasterWeapon extends WeaponModel {
   }
 }
 
-class Ropecaster extends CasterWeapon {
+class Tether extends CasterWeapon {
   constructor() {
-    super({ name: 'ropecaster', spool: true, accentMat: wrapMat, pull: 0.2, restZ: 0.30 });
+    super({ name: 'tether', spool: true, accentMat: wrapMat, pull: 0.2, restZ: 0.30 });
   }
 }
-class Tripcaster extends CasterWeapon {
+class Wirelayer extends CasterWeapon {
   constructor() {
-    super({ name: 'tripcaster', spool: false, accentMat: bronzeMat, pull: 0.12, restZ: 0.26 });
+    super({ name: 'wirelayer', spool: false, accentMat: bronzeMat, pull: 0.12, restZ: 0.26 });
   }
 }
 
-/* ---------------------------------- spear --------------------------------- */
+/* ---------------------------------- lance --------------------------------- */
 
 /**
  * The Shepherd's Lance (armory W1; bible §5.3; `public/models/armory/lance-shepherd.glb`),
@@ -850,17 +850,17 @@ class Tripcaster extends CasterWeapon {
  * Local space as the kept contract: butt at the origin, blade along +Z, returned as
  * `{ group, model, length, blade }`; melee parents `group` and scales it.
  *
- * `melee.js` still multiplies the prop by `SPEAR_SCALE` 0.80 (M9; melee W1 removes
+ * `melee.js` still multiplies the prop by `LANCE_SCALE` 0.80 (M9; melee W1 removes
  * it). Until then the model is authored at real size under that scale: `propScale`
  * is what the caller will apply, `model.scale` undoes it, and `length` is chosen so
- * `length * propScale` is the true 1.55 m. When melee removes SPEAR_SCALE it calls
- * `buildSpear({ propScale: 1 })`, and nothing else changes.
+ * `length * propScale` is the true 1.55 m. When melee removes LANCE_SCALE it calls
+ * `buildLance({ propScale: 1 })`, and nothing else changes.
  */
 export const LANCE_LENGTH = 1.55;
 export const LANCE_ROW = 'armoryLanceShepherd';
 const LANCE_PROP_SCALE = 0.8;
 
-export function buildSpear({ propScale = LANCE_PROP_SCALE } = {}) {
+export function buildLance({ propScale = LANCE_PROP_SCALE } = {}) {
   const group = new THREE.Group();
   const model = new THREE.Group();
   group.add(model);
@@ -913,14 +913,14 @@ export function buildWeaponModel(id, opts = {}) {
 
 function makeWeaponModel(id) {
   switch (id) {
-    case 'sharpshot-bow':
+    case 'sighting-bow':
       // long, black-ash, bone-tipped, one amber sight bead
       return new RecurveBow({
         name: id, size: 1.32, curveK: 1.05, limbR: 0.02,
         bodyMat: woodBlack, accentMat: boneMat, wrapMat: wrapDarkMat,
         lashMat: bronzeMat, beadMat: amberGlow, scope: true, pull: 0.6,
       });
-    case 'war-bow':
+    case 'cane-recurve':
       // short, thick, heavily bound — bone limb caps, no glow at all
       return new RecurveBow({
         name: id, size: 0.74, curveK: 1.45, limbR: 0.024,
@@ -929,20 +929,20 @@ function makeWeaponModel(id) {
       });
     case 'blast-sling':
       return new BlastSling();
-    case 'ropecaster':
-      return new Ropecaster();
-    case 'tripcaster':
-      return new Tripcaster();
+    case 'tether':
+      return new Tether();
+    case 'wirelayer':
+      return new Wirelayer();
     case 'disc-launcher':
       return new DiscLauncher();
-    case 'hunter-bow':
+    case 'sabina-bow':
     default: {
       // the default bow is the Sabina (combat-kit W2 renames the catalog ids)
       const entry = weaponEntry(SABINA_ROW);
       const mat = entry ? heldMaterial('MI_Sabina_Held') : null;
       if (entry && mat) return new SabinaBow(entry, mat);
       return new RecurveBow({
-        name: 'hunter-bow', accentMat: boneMat,
+        name: 'sabina-bow', accentMat: boneMat,
         wrapMat: wrapMat, lashMat: boneDarkMat,
       });
     }

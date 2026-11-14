@@ -29,7 +29,7 @@
  *                                         source row + every source row the shipped
  *                                         GLB's `asset.extras.provenance.sources` names,
  *                                         `source_url` = the provenance recipe
- *   in base and ours, gone from theirs    deleted (their deletion, e.g. aloy.glb's row)
+ *   in base and ours, gone from theirs    deleted (their deletion, e.g. Brea.glb's row)
  *                                         when ours still equals base, else CONFLICT
  *   changed on both sides differently     CONFLICT (nothing written)
  * Prints one JSON summary; exit 1 on a conflict or an invalid row.

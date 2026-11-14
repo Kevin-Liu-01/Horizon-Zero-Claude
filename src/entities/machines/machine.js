@@ -14,16 +14,16 @@ import { HOT, playerBoxes, refreshHot, mutableFromBirth } from '../../instrument
 
 /**
  * Base Machine: state machine, perception, terrain-conforming steering,
- * part damage (weak points / armor / burn / stun), state-colored sensor glow,
+ * part damage (weak points / armor / burn / daze), state-colored sensor glow,
  * death FX. Subclasses supply model config, procedural animation and attacks.
  */
 
-const CAMP = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
+const REST_PT = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
 const WORLD_LIMIT = PLAY_RADIUS + EXTENT.machineRim;
 
 /**
  * Sensor colours by state — THE LAMP GRAMMAR (bible §7.2, `src/instruments/
- * lamps.js` LAMP_STATES; Round 5 W0b). The Round-4 values were Horizon's own
+ * lamps.js` LAMP_STATES; Round 5 W0b). The Round-4 values were the older game's own
  * sensor canon; every machine (legacy kinds included, until they go at W2)
  * now glows in the CALIMA lamp tokens, and `_updateEyes` runs the lamp
  * rhythm from `lampStateFor` / `lampGain` (calm steady, wary 1 Hz pulse,
@@ -137,22 +137,22 @@ const _sphereGeo = new THREE.SphereGeometry(1, 10, 8);
 export const _st = mutableFromBirth({ want: 0.5, d: 0.5, x: 0.5, z: 0.5, fx: 0.5, fz: 0.5, speed: 0.5, out: 0.5, sx: 0.5, sz: 0.5 });   // (never a folded constant: see _steerOpts)
 
 /**
- * The root step every mover shares — hunter-camp safe ring and world rim —
+ * The root step every mover shares — hunter-rest site safe ring and world rim —
  * reading (`_st.sx`, `_st.sz`): allocation-free whether or not it is inlined.
  */
 export function stepRootS(m) {
   const p = m.position;
   let nx = p.x + _st.sx;
   let nz = p.z + _st.sz;
-  // hunter camp is a safe zone
-  // the camp push-out and the world rim, every operation run on every call (a machine first reaching the camp
+  // hunter rest site is a safe zone
+  // the rest site push-out and the world rim, every operation run on every call (a machine first reaching the rest site
   // edge or the rim mid-session must not deoptimise this: fix round 3); same values as the branchy form
-  const cx = nx - CAMP.x, cz = nz - CAMP.z;
+  const cx = nx - REST_PT.x, cz = nz - REST_PT.z;
   const cd = Math.sqrt(cx * cx + cz * cz);
-  const minR = CAMP.r + m.bodyRadius;
-  const inCamp = cd < minR && cd > 0.001, cdS = cd > 0.001 ? cd : 1;
-  const pcx = CAMP.x + (cx / cdS) * minR, pcz = CAMP.z + (cz / cdS) * minR;
-  nx = inCamp ? pcx : nx; nz = inCamp ? pcz : nz;
+  const minR = REST_PT.r + m.bodyRadius;
+  const inRest = cd < minR && cd > 0.001, cdS = cd > 0.001 ? cd : 1;
+  const pcx = REST_PT.x + (cx / cdS) * minR, pcz = REST_PT.z + (cz / cdS) * minR;
+  nx = inRest ? pcx : nx; nz = inRest ? pcz : nz;
   const r = Math.sqrt(nx * nx + nz * nz);
   const over = r > WORLD_LIMIT, kw = WORLD_LIMIT / (r > 0 ? r : 1);
   const rx = nx * kw, rz = nz * kw;
@@ -321,9 +321,9 @@ export function warmSteering(m, navOnly = false) {
       _st.x = fx; _st.z = fz; _st.fx = px + fx * 4.5; _st.fz = pz + fz * 4.5; _st.speed = 2.5; steerAlongS(m, dt); reset();
       _st.x = -fx; _st.z = -fz; _st.fx = px + fx * 4.5; _st.fz = pz + fz * 4.5; _st.speed = 2.5; steerAlongS(m, dt); reset();
       _st.x = fz; _st.z = -fx; _st.fx = px + fx * 4.5; _st.fz = pz + fz * 4.5; _st.speed = 2.5; steerAlongS(m, dt); reset();
-      // stepRootS: open ground, inside the camp ring, past the world rim
+      // stepRootS: open ground, inside the rest site ring, past the world rim
       _st.sx = 0.05; _st.sz = -0.05; stepRootS(m); reset();
-      p.x = CAMP.x + 0.75; p.z = CAMP.z - 0.5; _st.sx = 0.05; _st.sz = 0.05; stepRootS(m); reset();
+      p.x = REST_PT.x + 0.75; p.z = REST_PT.z - 0.5; _st.sx = 0.05; _st.sz = 0.05; stepRootS(m); reset();
       p.x = WORLD_LIMIT + 3.5; p.z = 0.5; _st.sx = 0.05; _st.sz = 0.05; stepRootS(m); reset();
       // navTowardS without a navgrid (the plain chase) and arrived
       HOT.nav = null;
@@ -442,7 +442,7 @@ export function conformM(m, dt) {
 
 /**
  * `Machine.update`'s own arithmetic, in two leaves (W0b fix round 3). `update` is the per-machine dispatcher: a
- * rare path it meets for the first time (a stun, a burn, a reaction) can deoptimise it, and in the tier it then
+ * rare path it meets for the first time (a daze, a burn, a reaction) can deoptimise it, and in the tier it then
  * runs in every double it computes is a heap allocation (measured: 238 KB/s in one window). With its arithmetic
  * here, a deoptimised `update` only makes calls; these leaves stay optimised on their own. Branch-free.
  */
@@ -738,13 +738,13 @@ export function updateElementalM(m, dt) {
  * representation instead (see the constructor), which every reader, frozen
  * files included, loads without a box.
  */
-export const MACHINE_SCALARS = Object.freeze(['heading', '_speed', '_accelPitch', 'strafeK', 'suspicion', '_unseenT', '_stateT', 'playerDist', 'detectFill', 'scanOffset', 'health', 'lampDarkT', 'stunT', 'burnT', '_burnDps', '_flameClock', '_arcClock', 'brittleT', '_frostK', '_iceClock', '_elemHold', '_eyeFlare', '_telegraphT', '_deathT', '_waitT', '_lodAccum', '_lampSince', '_lampPhase', '_alarmCd', '_attackCd']);
+export const MACHINE_SCALARS = Object.freeze(['heading', '_speed', '_accelPitch', 'strafeK', 'suspicion', '_unseenT', '_stateT', 'playerDist', 'detectFill', 'scanOffset', 'health', 'lampDarkT', 'dazeT', 'burnT', '_burnDps', '_flameClock', '_arcClock', 'brittleT', '_frostK', '_iceClock', '_elemHold', '_eyeFlare', '_telegraphT', '_deathT', '_waitT', '_lodAccum', '_lampSince', '_lampPhase', '_alarmCd', '_attackCd']);
 export class MachineScalars {
   constructor() {
     /* DOUBLE FIELDS ARE BORN DOUBLE (W0b fix round 2). A field first stored as an integer has V8's Smi
      * representation; its first fractional value then GENERALISES it to Double — a map deprecation that
      * deoptimises every function that touched this class, mid-session (the first wary pulse, the first
-     * telegraph, the first stun ...). Each double field is therefore stored as 0.5 first, then its value:
+     * telegraph, the first daze ...). Each double field is therefore stored as 0.5 first, then its value:
      * the map is final from the constructor on. Flags and counts (`_cgOk`, `_eN`) stay Smi. */
     this._cgOk = 0;     // _conform terrain sample cache: valid?
     this._cgx = 0.5;    //   at x
@@ -786,7 +786,7 @@ export class MachineScalars {
     this._pbscanOffset = null; this._pbscanOffset = 0; this._pvscanOffset = NaN;
     this._pbhealth = null; this._pbhealth = 0; this._pvhealth = NaN;
     this._pblampDarkT = null; this._pblampDarkT = 0; this._pvlampDarkT = NaN;
-    this._pbstunT = null; this._pbstunT = 0; this._pvstunT = NaN;
+    this._pbdazeT = null; this._pbdazeT = 0; this._pvdazeT = NaN;
     this._pbburnT = null; this._pbburnT = 0; this._pvburnT = NaN;
     this._pb_burnDps = null; this._pb_burnDps = 0; this._pv_burnDps = NaN;
     this._pb_flameClock = null; this._pb_flameClock = 0; this._pv_flameClock = NaN;
@@ -816,7 +816,7 @@ export class MachineScalars {
     this.scanOffset = 0.5; this.scanOffset = 0;
     this.health = 0.5; this.health = 0;
     this.lampDarkT = 0.5; this.lampDarkT = 0;
-    this.stunT = 0.5; this.stunT = 0;
+    this.dazeT = 0.5; this.dazeT = 0;
     this.burnT = 0.5; this.burnT = 0;
     this._burnDps = 0.5; this._burnDps = 0;
     this._flameClock = 0.5; this._flameClock = 0;
@@ -1053,7 +1053,7 @@ export class Machine {
     this._disposed = false;
 
     // combat state
-    this.stunT = 0;
+    this.dazeT = 0;
     this.burnT = 0;
     this._burnDps = 0;
     this._burnAnchor = new THREE.Vector3(); // body-local stuck-arrow point
@@ -1211,8 +1211,8 @@ export class Machine {
   set health(v) { this.sc.health = v; }
   get lampDarkT() { const sc = this.sc; if (sc.lampDarkT !== sc._pvlampDarkT) { sc._pblampDarkT = sc.lampDarkT; sc._pvlampDarkT = sc.lampDarkT; } return sc._pblampDarkT; }
   set lampDarkT(v) { this.sc.lampDarkT = v; }
-  get stunT() { const sc = this.sc; if (sc.stunT !== sc._pvstunT) { sc._pbstunT = sc.stunT; sc._pvstunT = sc.stunT; } return sc._pbstunT; }
-  set stunT(v) { this.sc.stunT = v; }
+  get dazeT() { const sc = this.sc; if (sc.dazeT !== sc._pvdazeT) { sc._pbdazeT = sc.dazeT; sc._pvdazeT = sc.dazeT; } return sc._pbdazeT; }
+  set dazeT(v) { this.sc.dazeT = v; }
   get burnT() { const sc = this.sc; if (sc.burnT !== sc._pvburnT) { sc._pbburnT = sc.burnT; sc._pvburnT = sc.burnT; } return sc._pbburnT; }
   set burnT(v) { this.sc.burnT = v; }
   get _burnDps() { const sc = this.sc; if (sc._burnDps !== sc._pv_burnDps) { sc._pb_burnDps = sc._burnDps; sc._pv_burnDps = sc._burnDps; } return sc._pb_burnDps; }
@@ -1801,7 +1801,7 @@ export class Machine {
         this._burnAnchorSet = true;
       }
     } else if (el === 'shock') {
-      this.stunT = Math.max(this.stunT, 3);
+      this.dazeT = Math.max(this.dazeT, 3);
       this._cancelAttack();
     } else if (el === 'freeze') {
       this.brittleT = 8;
@@ -2008,7 +2008,7 @@ export class Machine {
     this.escort = null;
     this.scavenge = null;
     this.burnT = 0;
-    this.stunT = 0;
+    this.dazeT = 0;
     this._deathT = 0;
     this.setState('dead');
     _v1.copy(this.position); _v1.y += this.height * 0.55;
@@ -2097,10 +2097,10 @@ export class Machine {
     tickTimersM(sc, dt);   // the alarm cooldown and the darkened-lamp clock (a leaf: see tickTimersM)
 
     // attack-timer cooldowns tick unconditionally (lowLOD coarse steps and
-    // stun must not freeze them — subclasses implement tickCooldowns)
+    // daze must not freeze them — subclasses implement tickCooldowns)
     if (this._hasTickCd) this.tickCooldowns(dt);
 
-    // burn DoT ticks even while stunned — sustained flames + smoke at the
+    // burn DoT ticks even while dazed — sustained flames + smoke at the
     // stuck-arrow point (SPEC: "orange flame particles")
     if (sc.burnT > 0) {
       sc.burnT -= dt;
@@ -2124,11 +2124,11 @@ export class Machine {
       if (sc.health <= 0) { this._die(); return; }
     }
 
-    // elemental buildup decay + brittle/frost status (runs through stun too)
+    // elemental buildup decay + brittle/frost status (runs through daze too)
     updateElementalM(this, dt);
 
-    if (sc.stunT > 0) {
-      sc.stunT -= dt;
+    if (sc.dazeT > 0) {
+      sc.dazeT -= dt;
       // shock: frozen — shiver + jittering electric arcs (SPEC: "electric arcs")
       this.body.position.x = (Math.random() - 0.5) * 0.035;
       sc._arcClock -= dt;
@@ -2682,7 +2682,7 @@ export class Machine {
   /** See `_navTowardS`. @returns the distance to the point. */
   _navToward(x, z, speed, dt) { _st.x = x; _st.z = z; _st.speed = speed; navTowardS(this, dt); return _st.out; }
 
-  /** Move the root directly (attack root-motion). Respects camp/world limits. */
+  /** Move the root directly (attack root-motion). Respects rest site/world limits. */
   moveRoot(dx, dz) {
     this._applyStep(dx, dz);
   }
@@ -2898,7 +2898,7 @@ export class Machine {
     });
   }
 
-  /** Jittering electric arc streak across the body while shock-stunned. */
+  /** Jittering electric arc streak across the body while shock-dazed. */
   _arcFlash(color = VFX_COLORS.bronzeChip) {
     const mat = new THREE.SpriteMaterial({
       map: glowTexture(), color, transparent: true, opacity: 0.95,

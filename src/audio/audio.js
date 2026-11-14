@@ -3,7 +3,7 @@
  *
  * v1/v2 were 100 % procedural. That ceiling (`audio-16`) made four blockers
  * unfixable: eight species shared two synthesized roars, one footstep served
- * every surface, three bows shared one release, and there was no Aloy foley at
+ * every surface, three bows shared one release, and there was no Brea foley at
  * all. v3 keeps every procedural voice that is *idiomatic* — the Focus
  * hologram, elemental zaps, UI blips, the wind bed, the adaptive plucks — and
  * puts a licensed sample bank underneath everything that wanted a recording.
@@ -64,7 +64,7 @@ const roleOf = (ctx, machine) => String(ctx.machines?.roleOf?.(machine?.kind) ||
 const BEDS = [
   'amb/meadow', 'amb/river', 'amb/forest', 'amb/night', 'amb/ridge',
 ];
-/** Per-bed level: a campfire is a presence, a night bed is a floor. */
+/** Per-bed level: a brazier is a presence, a night bed is a floor. */
 const BED_GAIN = {
   'amb/brazier': 0.5, 'amb/river': 0.46, 'amb/ridge': 0.44,
   'amb/forest': 0.42, 'amb/meadow': 0.42, 'amb/night': 0.34,
@@ -93,8 +93,8 @@ const SURFACE_SET = {
 /**
  * Weapon id fragment -> bow set (`audio-13`).
  *
- * `rope` is on the heavy rung deliberately: the Ropecaster is a crossbow-weight
- * draw, and without it `bowSetFor('ropecaster')` fell through to `hunter` and a
+ * `rope` is on the heavy rung deliberately: the Tether is a crossbow-weight
+ * draw, and without it `bowSetFor('tether')` fell through to `hunter` and a
  * harpoon launcher twanged like a short bow.
  */
 function bowSetFor(id) {
@@ -105,7 +105,7 @@ function bowSetFor(id) {
 }
 
 /** Weapons that put an arrow on a string — the only ones that nock. */
-const NOCKING = /bow|ropecaster/;
+const NOCKING = /bow|tether/;
 /** Voice priorities — the pool steals upward only. */
 const PRI = {
   ambience: 1, footstep: 2, gear: 2, ui: 9, item: 3, machineStep: 3,
@@ -837,7 +837,7 @@ export class GameAudio {
     return true;
   }
 
-  /** Non-positional bank playback (UI, Aloy first-person foley). */
+  /** Non-positional bank playback (UI, Brea first-person foley). */
   play2D(setId, opts = {}) {
     if (!this.ac) return false;
     const picked = this.bank.pick(setId);
@@ -900,7 +900,7 @@ export class GameAudio {
    * Which biome bed is under the mix (`audio-11`).
    *
    * Ordered most-specific first, and every branch reads a PUBLISHED query —
-   * `camp.firePosition`, `water.depthAt`, `terrain.surfaceAt`,
+   * `rest site.firePosition`, `water.depthAt`, `terrain.surfaceAt`,
    * `environment.phase` — rather than a hard-coded coordinate. The Round-3
    * selector guessed the river was "roughly x ≈ 40", which was true of one
    * build's terrain seed and nothing else.
@@ -910,9 +910,9 @@ export class GameAudio {
     if (!p) return 'amb/meadow';
     const x = p.position.x; const z = p.position.z;
 
-    // NOTE: there is deliberately no campfire bed. A fire is a source you can
+    // NOTE: there is deliberately no brazier bed. A fire is a source you can
     // walk around, not a place you are inside — `_zoneScan()` puts it in the
-    // world at `camp.firePosition` instead (`audio-11`).
+    // world at `rest site.firePosition` instead (`audio-11`).
 
     // open water within ~18 m: close enough that you are inside the sound
     // field rather than hearing it from over there (which is the zone emitter)
@@ -1053,7 +1053,7 @@ export class GameAudio {
 
   /**
    * Zone ambience that lives in the world rather than on the bus (`audio-11`):
-   * the campfire you can circle, and open water heard from the bank.
+   * the brazier you can circle, and open water heard from the bank.
    *
    * The water emitter deliberately does NOT run while the river bed is up.
    * Inside ~18 m you are in the sound field (that is the bed); past it the
@@ -1069,11 +1069,11 @@ export class GameAudio {
     const px = p.position.x; const pz = p.position.z;
 
     // --- fire
-    const fire = this.ctx.camp?.firePosition;
+    const fire = this.ctx.settlements?.firePosition;
     if (fire && Math.hypot(px - fire.x, pz - fire.z) < 80) {
-      z.ensure('fire:camp', 'amb/brazier', fire.x, fire.y + 0.35, fire.z,
+      z.ensure('fire:rest', 'amb/brazier', fire.x, fire.y + 0.35, fire.z,
         { volume: 0.62, reverb: 0.2 });
-    } else z.retire('fire:camp', 0.8);
+    } else z.retire('fire:rest', 0.8);
 
     // --- water, mid distance only
     const w = this.ctx.environment?.water;
@@ -1101,7 +1101,7 @@ export class GameAudio {
   /**
    * Elemental status loops (`audio-10`).
    *
-   * Polled, not evented: the machine lane owns `burnT` / `stunT` / `brittleT`
+   * Polled, not evented: the machine lane owns `burnT` / `dazeT` / `brittleT`
    * as continuous timers and publishes no start/stop pair for them, so a
    * listener would have to guess when a status ended. A 4 Hz sweep of the
    * machines in earshot is exact, costs one pass over ~24 objects, and is the
@@ -1127,7 +1127,7 @@ export class GameAudio {
           const k = `burn:${id}`; want.add(k);
           z.ensure(k, 'status/burn', m.position.x, y, m.position.z, { volume: 0.55 });
         }
-        if (m.stunT > 0.05) {
+        if (m.dazeT > 0.05) {
           const k = `shock:${id}`; want.add(k);
           z.ensure(k, 'status/shock', m.position.x, y, m.position.z, { volume: 0.5 });
         }
@@ -1205,7 +1205,7 @@ export class GameAudio {
     }, { category: 'ambience', volume: 1, priority: PRI.ambience, reverb: 0.9 });
   }
 
-  /* ============================ Aloy foley ============================= */
+  /* ============================ Brea foley ============================= */
 
   /**
    * Effort and breath (`audio-03`). D2 stands: no VO, ever — this is a throat
@@ -1376,7 +1376,7 @@ export class GameAudio {
 
   /**
    * One servo idle loop per living machine within earshot (`audio-02`: the
-   * spatialized idle bed that tells you a Sawtooth is behind the ridge).
+   * spatialized idle bed that tells you a heavy Instrument is behind the ridge).
    * Loops are created lazily and torn down on death or when the machine leaves
    * the radius, so a 24-machine roster costs at most a handful of voices.
    */
@@ -1484,7 +1484,7 @@ export class GameAudio {
   /**
    * Dedicated chains for looping emitters. Loops are long-lived and quiet, so
    * they must NOT compete in the one-shot pool: at PRI.ambience a single
-   * footstep would steal a Sawtooth's idle bed and it would never come back.
+   * footstep would steal a heavy Instrument's idle bed and it would never come back.
    * Capped at 8 — the 55 m radius rarely holds more.
    */
   _loopChain() {
@@ -1979,7 +1979,7 @@ export class GameAudio {
 
   /** Concentration breath: inhale (start) / exhale (end). */
   _breath(inhale) {
-    // sampled breath first (D2 — breath and effort are the whole of Aloy's
+    // sampled breath first (D2 — breath and effort are the whole of Brea's
     // voice), synthesized noise sweep as the fallback
     if (this.play2D(inhale ? 'brea/breath-in' : 'brea/breath-out',
       { volume: inhale ? 0.7 : 0.55, category: 'voice' })) {
@@ -2049,7 +2049,7 @@ export class GameAudio {
         this._env(eg3.gain, t, 0.04, 0.002, dec);
         this._osc('sine', 2200 + Math.random() * 3800, t, dec + 0.05, eg3);
       }
-    } else if (/shock|stun|spark/i.test(el)) {
+    } else if (/shock|daze|spark/i.test(el)) {
       this._zap(pan, a);
       this._zap(pan * 0.5, a * 0.8);
       this._boom(pan, a * 0.9);
@@ -2583,16 +2583,16 @@ export class GameAudio {
       }
     }));
 
-    /* --- the spear (audio, for `combat`'s melee.js) ----------------------
+    /* --- the lance (audio, for `combat`'s melee.js) ----------------------
      *
      * The melee set was rendered into the bank but nothing ever played it, so
-     * the spear — the payoff the stealth grass and the shock-stun exist to set
+     * the lance — the payoff the stealth grass and the shock-daze exist to set
      * up — landed in total silence. Four rungs, chosen from the same fields
      * the feedback layer uses so what you hear and what you see agree:
      *
      *   light   a fast tap;
      *   heavy   the committed two-hand swing;
-     *   crit    the Critical Hit on a stunned machine — loudest, ducks the mix;
+     *   crit    the Critical Hit on a dazed machine — loudest, ducks the mix;
      *   silent  Silent Strike, the from-behind kill. Deliberately NOT the
      *           loudest thing in the game: it is the sound of not being heard,
      *           and it plays under a duck so the valley stays quiet around it.
@@ -2628,7 +2628,7 @@ export class GameAudio {
       })) this._clank(this._pan, 0.5, true);
     }));
 
-    /* --- Tripcaster + Ropecaster ----------------------------------------
+    /* --- Wirelayer + Tether ----------------------------------------
      * Both weapons were fully silent for the same reason. `trap-placed` is
      * the quiet confirmation that the wire took (it is placed at the player,
      * so it reads close); `trap-triggered` is the blast, which keeps the
@@ -2956,7 +2956,7 @@ export class GameAudio {
     ev.on('loot-rummage', armed((e = {}) => quietBeacon(e.machine)));
     ev.on('machine-disposed', armed((e = {}) => quietBeacon(e.machine)));
 
-    /* ----- Aloy: effort on the verbs that cost something (audio-03) ----- */
+    /* ----- Brea: effort on the verbs that cost something (audio-03) ----- */
     ev.on('player-jump', armed(() => { this._airborne = true; this._effort(false, 0.8); }));
     ev.on('player-land', armed((e = {}) => {
       const hard = this._airborne && ((e.fallHeight ?? e.height ?? 0) > 2.4 || (e.impact ?? 0) > 0.5);
@@ -2978,7 +2978,7 @@ export class GameAudio {
     /* ------- discovery stingers on the score (audio-01, audio-12) ------- */
     const discover = armed(() => this.music?.sting('discover', { volume: 0.8, minGap: 8 }));
     for (const name of ['level-up', 'skill-unlocked', 'quest-started', 'quest-complete',
-      'fieldbook-found', 'discovery', 'cache-found', 'hunting-ground']) {
+      'fieldbook-found', 'discovery', 'cache-found', 'trial-ground']) {
       ev.on(name, discover);
     }
 
@@ -3369,7 +3369,7 @@ export class GameAudio {
       }
     }
 
-    // --- Aloy's breath layer + the distant valley (audio-03 / audio-11)
+    // --- Brea's breath layer + the distant valley (audio-03 / audio-11)
     this._breathLayer(rdt, playing);
     this._distantCall(rdt, playing);
     this._nockPoll(playing);

@@ -1082,7 +1082,7 @@ export function paintEye(N, { span, iris = '#3B2A20', amber = '#5E3A20', rIris =
       const shade = upShade * loShade;
       R *= shade; G *= shade * 0.975; B *= shade * 0.955;
       R = mix(R, 214, tear * 0.3); G = mix(G, 196, tear * 0.3); B = mix(B, 184, tear * 0.3);
-      // catch-lights: a tight glint over the pupil's upper edge on each side of the apex, so a profile from either side
+      // catch-lights: a tight glint over the pupil's upper edge on each side of the peak, so a profile from either side
       // finds one on the cornea's near face, and a soft sky window; all of it under the lid's shade
       const vis = smooth(0.0004, 0.0018, lid(mx, 1) - my);
       glint = Math.max(1 - smooth(0.0003, 0.00058, Math.hypot(mx - 0.00125, my - 0.0016)), 0.75 * (1 - smooth(0.00022, 0.00048, Math.hypot(mx + 0.0021, my - 0.00135)))) * vis;

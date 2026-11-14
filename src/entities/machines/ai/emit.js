@@ -13,7 +13,7 @@
  * That is what happened: `PlayerAnimator` subscribes `player-damage` to a
  * method that does not exist (`src/entities/playerAnimator.js:459` calls
  * `this._onDamage(e)`; there is no `_onDamage` on the class), so the first
- * machine hit that landed on Aloy killed the entire machine AI. Four of this
+ * machine hit that landed on Brea killed the entire machine AI. Four of this
  * lane's gates went red with every one of their own assertions passing.
  *
  * The one-line fix belongs to the `player-anim` lane and this lane must not

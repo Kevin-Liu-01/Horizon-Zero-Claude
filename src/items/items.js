@@ -83,55 +83,53 @@ export const HERB_BY_ID = Object.fromEntries(HERBS.map((h) => [h.id, h]));
 export const ITEMS = {
   /* ---- resources (crafting economy, docs/research/mechanics.md §3) ---- */
   'metal-shards': {
-    name: 'Metal Shards', category: 'resource', glyph: '◆', color: '#aeb9c2',
+    name: 'Salt', category: 'resource', glyph: '◆', color: '#aeb9c2',
     rarity: 'common', cap: 500, value: 1, tags: ['currency'],
-    desc: 'Torn machine plating, cut down to trading weight. Every Nora deal '
-      + 'is counted in shards.',
+    desc: 'Raked from the pans. The only coin the guild counts.',
   },
   'ridge-wood': {
-    name: 'Ridge-Wood', category: 'resource', glyph: '☰', color: '#a97c50',
+    name: 'Juniper', category: 'resource', glyph: '☰', color: '#a97c50',
     rarity: 'common', cap: 120, value: 2,
     desc: 'Straight-grained deadfall from the pine stands. Shafts, stakes and '
       + 'trap frames all start here.',
   },
   blaze: {
-    name: 'Blaze', category: 'resource', glyph: '◉', color: '#f0a03c',
+    name: 'Vent Resin', category: 'resource', glyph: '◉', color: '#f0a03c',
     rarity: 'common', cap: 100, value: 4,
     desc: 'Machine fuel, drained from a punctured canister. Volatile enough '
       + 'to carry fire down an arrow shaft.',
   },
   chillwater: {
-    name: 'Chillwater', category: 'resource', glyph: '✦', color: '#59c1c6',
+    name: 'Brine Gourd', category: 'resource', glyph: '✦', color: '#59c1c6',
     rarity: 'common', cap: 100, value: 4,
     desc: 'Coolant bled from a freeze sac. It burns cold, and it makes metal '
       + 'brittle enough to shatter.',
   },
   sparker: {
-    name: 'Sparker', category: 'resource', glyph: 'ϟ', color: '#4fa3e3',
+    name: 'Pumice Dust', category: 'resource', glyph: 'ϟ', color: '#4fa3e3',
     rarity: 'common', cap: 100, value: 4,
-    desc: 'A charged cell still holding its last spark. Enough to stun a '
-      + 'machine long enough to matter.',
+    desc: 'Pumice ground fine. Packed into a Dust-Puff head it clouds an Instrument\'s lamps.',
   },
   'echo-shell': {
-    name: 'Echo Shell', category: 'resource', glyph: '◎', color: '#cfae6a',
+    name: 'Escapement', category: 'resource', glyph: '◎', color: '#cfae6a',
     rarity: 'uncommon', cap: 60, value: 8,
     desc: 'A resonant sensor housing. It rings when struck — useful for '
       + 'anything meant to be heard from a distance.',
   },
   wire: {
-    name: 'Wire', category: 'resource', glyph: '∿', color: '#c9a86a',
+    name: 'Cord', category: 'resource', glyph: '∿', color: '#c9a86a',
     rarity: 'common', cap: 100, value: 3,
     desc: 'Braided machine filament. Strong past reason, and the only thing '
-      + 'that holds a tripwire under load.',
+      + 'that holds a tripline under load.',
   },
   blastpaste: {
-    name: 'Blastpaste', category: 'resource', glyph: '✸', color: '#e8762c',
+    name: 'Calima Dust', category: 'resource', glyph: '✸', color: '#e8762c',
     rarity: 'uncommon', cap: 60, value: 10,
     desc: 'Rendered blaze thickened with ash. Handle it gently and it goes '
       + 'where you throw it, not where you stand.',
   },
   'metal-vessel': {
-    name: 'Metal Vessel', category: 'resource', glyph: '⬢', color: '#8fa3ad',
+    name: 'Seed Glass', category: 'resource', glyph: '⬢', color: '#8fa3ad',
     rarity: 'uncommon', cap: 40, value: 12,
     desc: 'An intact machine container. Old-world work; nobody alive knows '
       + 'how to make another one.',
@@ -139,19 +137,19 @@ export const ITEMS = {
 
   /* ---- herbs (progression-011: three variants, three values) ---- */
   'medicinal-moss': {
-    name: 'Medicinal Moss', category: 'resource', glyph: '❦', color: '#93b984',
+    name: 'Fog Moss', category: 'resource', glyph: '❦', color: '#93b984',
     rarity: 'common', cap: 40, value: 2, tags: ['herb'], pouch: 12,
     desc: 'Low creeping moss from shaded rock. Weak medicine, but it grows '
       + 'everywhere the sun does not.',
   },
   'medicinal-herb': {
-    name: 'Medicinal Herb', category: 'resource', glyph: '❧', color: '#7fb069',
+    name: 'Salt Herb', category: 'resource', glyph: '❧', color: '#7fb069',
     rarity: 'common', cap: 40, value: 4, tags: ['herb'], pouch: 25,
     desc: 'The standard leaf of the medicine pouch. Bruise it, pack the '
       + 'wound, keep moving.',
   },
   'medicinal-bloom': {
-    name: 'Medicinal Bloom', category: 'resource', glyph: '✿', color: '#e0d264',
+    name: 'Tabaiba Bloom', category: 'resource', glyph: '✿', color: '#e0d264',
     rarity: 'uncommon', cap: 30, value: 12, tags: ['herb'], pouch: 45,
     desc: 'A gold-headed bloom that only opens on open meadow. One handful '
       + 'is worth a whole afternoon of moss.',
@@ -165,13 +163,13 @@ export const ITEMS = {
       + 'and away from where you actually are.',
   },
   'potion-vigor': {
-    name: 'Vigour Draught', category: 'tool', glyph: '⚱', color: '#7fb069',
+    name: 'Fog-water Gourd', category: 'tool', glyph: '⚱', color: '#7fb069',
     rarity: 'uncommon', cap: 8, value: 30, tags: ['tool', 'potion'],
     desc: 'Boiled bloom and moss. Restores the medicine pouch outright — the '
       + 'pouch itself only ever holds so much.',
   },
   'trap-shock': {
-    name: 'Shock Wire Trap', category: 'tool', glyph: '⌇', color: '#57c8ff',
+    name: 'Jolt Line', category: 'tool', glyph: '⌇', color: '#57c8ff',
     rarity: 'uncommon', cap: 10, value: 25, tags: ['tool', 'trap'],
     desc: 'A wire strung between two stakes and fed from a charged cell. '
       + 'Set it on a route, then make the machine take the route.',
@@ -179,69 +177,25 @@ export const ITEMS = {
 
   /* ---- valuables (machine trophies, docs/research/mechanics.md §5) ---- */
   'machine-core': {
-    name: 'Machine Core', category: 'valuable', glyph: '⌬', color: '#59c1c6',
+    name: 'Escapement Core', category: 'valuable', glyph: '⌬', color: '#59c1c6',
     rarity: 'rare', cap: 30, value: 60,
     desc: 'The power heart of a heavy machine, still warm. Traders will empty '
       + 'a stall for one.',
   },
   'machine-heart': {
-    name: 'Machine Heart', category: 'valuable', glyph: '❖', color: '#3d7bd9',
+    name: 'Lampglass', category: 'valuable', glyph: '❖', color: '#3d7bd9',
     rarity: 'rare', cap: 30, value: 55,
     desc: 'A dense drive node. It hums faintly for hours after the machine '
       + 'stops moving.',
   },
-  'watcher-lens': {
-    name: 'Watcher Lens', category: 'valuable', glyph: '◐', color: '#4ec9b0',
-    rarity: 'uncommon', cap: 30, value: 18,
-    desc: 'The blue eye of a Watcher, intact. Rare to take one out without '
-      + 'cracking it.',
-  },
-  'watcher-heart': {
-    name: 'Watcher Heart', category: 'valuable', glyph: '❖', color: '#3d7bd9',
-    rarity: 'rare', cap: 30, value: 34,
-    desc: 'A recon drive node. Small, clean, and worth a week of arrows.',
-  },
-  'sawtooth-lens': {
-    name: 'Sawtooth Lens', category: 'valuable', glyph: '◐', color: '#4ec9b0',
-    rarity: 'rare', cap: 30, value: 40,
-    desc: 'The hunting eye of a Sawtooth. It tracked you before you took it.',
-  },
-  'sawtooth-heart': {
-    name: 'Sawtooth Heart', category: 'valuable', glyph: '❖', color: '#3d7bd9',
-    rarity: 'veryRare', cap: 30, value: 75,
-    desc: 'A combat-class drive node, ringed with scorch. Few hunters carry '
-      + 'more than one at a time.',
-  },
-  'behemoth-lens': {
-    name: 'Behemoth Lens', category: 'valuable', glyph: '◐', color: '#4ec9b0',
-    rarity: 'rare', cap: 30, value: 48,
-    desc: 'A transport optic the size of a shield boss.',
-  },
-  'behemoth-heart': {
-    name: 'Behemoth Heart', category: 'valuable', glyph: '❖', color: '#3d7bd9',
-    rarity: 'veryRare', cap: 30, value: 90,
-    desc: 'A hauler drive node. Heavy enough that carrying it is a decision.',
-  },
-  'thunderjaw-lens': {
-    name: 'Thunderjaw Lens', category: 'valuable', glyph: '◐', color: '#4ec9b0',
-    rarity: 'veryRare', cap: 30, value: 110,
-    desc: 'The forward optic of a Thunderjaw. Bringing one back is a story '
-      + 'the whole camp will make you tell twice.',
-  },
-  'thunderjaw-heart': {
-    name: 'Thunderjaw Heart', category: 'valuable', glyph: '❖', color: '#3d7bd9',
-    rarity: 'legendary', cap: 30, value: 220,
-    desc: 'The core of the largest thing that walks the valley. It still '
-      + 'pulls at the metal in your hand.',
-  },
   'luminous-braiding': {
-    name: 'Luminous Braiding', category: 'valuable', glyph: '≋', color: '#9c8cff',
+    name: 'Bronze Cable', category: 'valuable', glyph: '≋', color: '#9c8cff',
     rarity: 'rare', cap: 30, value: 45,
     desc: 'Woven light-carrying filament. Nobody has cut one that did not '
       + 'keep glowing.',
   },
   'crystal-braiding': {
-    name: 'Crystal Braiding', category: 'valuable', glyph: '❋', color: '#8f7be8',
+    name: 'Ceramic Plate', category: 'valuable', glyph: '❋', color: '#8f7be8',
     rarity: 'veryRare', cap: 30, value: 85,
     desc: 'Braiding grown through with clear crystal. The old world made it; '
       + 'the machines only carry it.',
@@ -249,27 +203,27 @@ export const ITEMS = {
 
   /* ---- pickup weapons (identity for toasts if combat can't grant them) ---- */
   'disc-launcher': {
-    name: 'Disc Launcher', category: 'valuable', glyph: '◬', color: '#f2c230',
+    name: 'Heavy Disc Thrower', category: 'valuable', glyph: '◬', color: '#f2c230',
     rarity: 'legendary', cap: 2, value: 0,
-    desc: 'A Thunderjaw shoulder launcher, torn free. Too heavy to keep — '
+    desc: 'A heavy disc thrower, torn free. Too heavy to keep, '
       + 'but not too heavy to use where it fell.',
   },
 };
 
 /** Ammo identity for the AMMO pocket / toasts (counts live in ctx.combat). */
 export const AMMO_INFO = {
-  hunter:       { name: 'Hunter Arrow',    glyph: '➳', color: '#e8d9b0', rarity: 'common' },
-  hardpoint:    { name: 'Hardpoint Arrow', glyph: '➶', color: '#ffb45e', rarity: 'uncommon' },
-  fire:         { name: 'Fire Arrow',      glyph: '✹', color: '#ff7a1e', rarity: 'uncommon' },
-  precision:    { name: 'Precision Arrow', glyph: '✜', color: '#9fe8ff', rarity: 'rare' },
-  tearblast:    { name: 'Tearblast Arrow', glyph: '✷', color: '#6fd6e8', rarity: 'rare' },
-  harvest:      { name: 'Harvest Arrow',   glyph: '❧', color: '#7fb069', rarity: 'uncommon' },
-  shock:        { name: 'Shock Arrow',     glyph: 'ϟ', color: '#57c8ff', rarity: 'uncommon' },
-  freeze:       { name: 'Freeze Arrow',    glyph: '✻', color: '#bfe6ff', rarity: 'uncommon' },
-  'blast-bomb': { name: 'Blast Bomb',      glyph: '✸', color: '#ff9a3c', rarity: 'rare' },
+  hunter:       { name: 'Reed Arrow',    glyph: '➳', color: '#e8d9b0', rarity: 'common' },
+  hardpoint:    { name: 'Barbed Arrow', glyph: '➶', color: '#ffb45e', rarity: 'uncommon' },
+  fire:         { name: 'Cinder-Resin Arrow',      glyph: '✹', color: '#ff7a1e', rarity: 'uncommon' },
+  precision:    { name: 'Long Reed Arrow', glyph: '✜', color: '#9fe8ff', rarity: 'rare' },
+  pryburst:    { name: 'Pry-Burst Arrow', glyph: '✷', color: '#6fd6e8', rarity: 'rare' },
+  harvest:      { name: 'Gathering Arrow',   glyph: '❧', color: '#7fb069', rarity: 'uncommon' },
+  shock:        { name: 'Dust-Puff Arrow',     glyph: 'ϟ', color: '#57c8ff', rarity: 'uncommon' },
+  freeze:       { name: 'Brine-Gourd Arrow',    glyph: '✻', color: '#bfe6ff', rarity: 'uncommon' },
+  'blast-bomb': { name: 'Cinder Pot',      glyph: '✸', color: '#ff9a3c', rarity: 'rare' },
   disc:         { name: 'Explosive Disc',  glyph: '◎', color: '#ff5a30', rarity: 'veryRare' },
   rope:         { name: 'Rope',            glyph: '⌇', color: '#c9a86a', rarity: 'uncommon' },
-  tripwire:     { name: 'Tripwire',        glyph: '⋔', color: '#b8d46a', rarity: 'uncommon' },
+  tripline:     { name: 'Tripline',        glyph: '⋔', color: '#b8d46a', rarity: 'uncommon' },
 };
 
 /* ========================================================================== */

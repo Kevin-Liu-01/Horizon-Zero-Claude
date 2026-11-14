@@ -10,7 +10,7 @@ const SEARCH_RIM = PLAY_RADIUS + EXTENT.searchRim;
  *
  * Round 3's search was "walk to lastKnown, wiggle, give up after 7 s". This
  * builds a real 12-20 s sweep: 4 points around the last contact, biased onto
- * the tall grass and hard cover a hider would actually use, walked in order
+ * the cover grass and hard cover a hider would actually use, walked in order
  * with a look-around dwell at each. Bumping into the player during a sweep
  * reveals her (that is the honest reward for holding still in the wrong spot).
  */

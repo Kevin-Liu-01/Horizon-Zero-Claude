@@ -18,7 +18,7 @@ import { SimplexNoise } from '../terrain.js';
  *      renderer sorts them into one state bucket even when the meshes differ.
  *
  * No allocation happens after construction: every builder here runs once,
- * during `new Props()` / `new Camp()`.
+ * during `new Props()` / `new Rest site()`.
  */
 
 export { SimplexNoise };
@@ -157,7 +157,7 @@ export function paintRock(geo, seed, noise) {
  * padded XZ bounding box (src/core/nav.js `_triStamp`). A one-segment cylinder
  * has side quads that run its entire length, so an 8 m ridge beam 3 m off the
  * ground used to blank a 10 x 10 m square of the navgrid — that is what sealed
- * the hunter camp and made `nav.path(camp -> anywhere)` return null in gate
+ * the hunter rest site and made `nav.path(rest site -> anywhere)` return null in gate
  * A25b. Only the HORIZONTAL run matters: a vertical post's box is already
  * small, so palisade logs still cost one segment and nothing gets heavier for
  * the 496 of them.
@@ -290,7 +290,7 @@ export function materials() {
      * Concrete, stone, timber: decks, pylons, palisades, talus.
      *
      * `side: DoubleSide`, and that is a RENDERING FIX, not a modelling choice.
-     * Measured on port 5211 against the shipped hunter camp: a merged,
+     * Measured on port 5211 against the shipped hunter rest site: a merged,
      * vertex-coloured, SINGLE-sided `MeshStandardMaterial` in this scene draws
      * its vertex colours as WHITE. Same geometry, same `USE_COLOR` in the
      * program cache key (mask bit 11 set on both), same colour attribute — the

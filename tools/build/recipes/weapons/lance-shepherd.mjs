@@ -3,7 +3,7 @@
  * "lance ≤ 1.5 k", plan §9 A-weapon-sockets).
  *
  * OUTPUT public/models/armory/lance-shepherd.glb — ONE mesh at its REAL 1.55 m
- * (SPEAR_SCALE retired, M9), no textures (shared weapon atlas at runtime): resin-dark
+ * (LANCE_SCALE retired, M9), no textures (shared weapon atlas at runtime): resin-dark
  * pine, 22 cm hammered bronze leaf with midrib and ground bevel, a cast bob-shaped
  * butt cap, esparto cord wraps at both hand positions (20 %, 55 %), vermilion / white
  * graduations on the upper third, carmine lashing at the socket.

@@ -5,14 +5,14 @@ import { Events } from './core/events.js';
 import { Terrain } from './world/terrain.js';
 import { Environment } from './world/environment.js';
 import { Vegetation } from './world/vegetation.js';
-import { Camp } from './world/camp.js';
+import { SettlementHost } from './world/settlements/host.js';
 import { Player } from './entities/player.js';
 import { Inventory } from './items/inventory.js';
 import { Interactables } from './items/interactables.js';
 import { Machines } from './entities/machines/index.js';
 import { Combat } from './combat/combat.js';
-import { WeaponWheel } from './ui/wheel.js';
-import { FocusSystem } from './ui/focus.js';
+import { QuickSlots } from './ui/quickslots.js';
+import { SightingSystem } from './ui/sighting.js';
 import { HUD } from './ui/hud.js';
 import { GameAudio } from './audio/audio.js';
 import { Studio } from './studio/studio.js';
@@ -39,7 +39,7 @@ const params = new URLSearchParams(location.search);
  *      with no system implementing `interpolate(alpha, dt)` the leftover is
  *      discarded, so at 41 fps a rendered frame advances the world by one step
  *      or two at random and everything on screen judders (measured: apparent
- *      machine speed CV 0.30, Aloy's mixer rate CV 0.26; at timeScale 0.3,
+ *      machine speed CV 0.30, Brea's mixer rate CV 0.26; at timeScale 0.3,
  *      45 % of frames advanced the sim by nothing at all).
  *
  * Until a lane ships `interpolate()`, 'substep' is the honest default: same
@@ -62,9 +62,9 @@ class Game {
       params,
       engine: null, scene: null, camera: null, renderer: null,
       input: null, events: new Events(), assets: new Assets(),
-      terrain: null, environment: null, vegetation: null, camp: null,
+      terrain: null, environment: null, vegetation: null, settlements: null,
       player: null, inventory: null, machines: null, combat: null,
-      wheel: null, sighting: null, interactables: null,
+      quickslots: null, sighting: null, interactables: null,
       hud: null, audio: null,
       state: 'loading', // loading | title | playing | paused | dead | victory
       settings: { quality: params.get('q') || 'high' },
@@ -119,18 +119,18 @@ class Game {
     ctx.terrain = this._add(new Terrain(ctx));
     ctx.environment = this._add(new Environment(ctx));
     ctx.vegetation = this._add(new Vegetation(ctx));
-    ctx.camp = this._add(new Camp(ctx));
+    ctx.settlements = this._add(new SettlementHost(ctx));
     ctx.player = this._add(new Player(ctx));
     ctx.inventory = this._add(new Inventory(ctx));
     ctx.machines = this._add(new Machines(ctx));
     ctx.combat = this._add(new Combat(ctx));
-    ctx.wheel = this._add(new WeaponWheel(ctx));
-    ctx.sighting = this._add(new FocusSystem(ctx));
+    ctx.quickslots = this._add(new QuickSlots(ctx));
+    ctx.sighting = this._add(new SightingSystem(ctx));
     ctx.interactables = this._add(new Interactables(ctx));
-    installProgression(ctx); // Round 4 progression lane: XP/levels/skills, quests, save/continue (registers its own systems)
+    installProgression(ctx); // quests (stand-in table), rest and save, Tolerance (registers its own systems)
     ctx.audio = this._add(new GameAudio(ctx));
     ctx.hud = this._add(new HUD(ctx));
-    installMenus(ctx); // Round 4 shell-menus lane: pause hub, world map, settings, title flow, death/victory (registers its own systems)
+    installMenus(ctx); // pause hub, map, settings, title flow, death (registers its own systems)
     ctx.studio = this._add(new Studio(ctx)); // last: its camera write wins the frame
 
     // perf-tech-10 — compile every program behind the loading bar so the first

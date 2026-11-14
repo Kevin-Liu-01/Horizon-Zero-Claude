@@ -95,7 +95,7 @@ const CADENCE_RUN = 2.50;
 /**
  * Combat shuffle floor. An ENGAGED machine that is not travelling is not a
  * statue on its feet: it shifts weight and repositions, which is both what
- * HZD machines do between attacks and what keeps `A48`'s wall-clock cadence
+ * Older game machines do between attacks and what keeps `A48`'s wall-clock cadence
  * honest when `machine-ai` parks a machine mid-window. Calm machines get no
  * floor, so a patrolling machine waiting at a waypoint still stands still.
  */
@@ -1521,7 +1521,7 @@ export class GaitController {
     else if (d < dMin) { _v2.multiplyScalar(dMin / Math.max(d, 1e-5)); d = dMin; }
     _v2.divideScalar(d);                            // D̂
 
-    // hinge plane: knee apex toward the leg's bind-pose side (body ±Z)
+    // hinge plane: knee peak toward the leg's bind-pose side (body ±Z)
     _v3.set(0, 0, L.hingeZ).applyQuaternion(_q1);   // pole in world
     _v4.crossVectors(_v2, _v3);
     if (_v4.lengthSq() < 1e-6) _v4.set(1, 0, 0).applyQuaternion(_q1);
@@ -2209,7 +2209,7 @@ export class GaitController {
      *
      * Per class, and asymmetric with the collapse (`side`), so the wreck goes
      * down the way it was already buckling: a quadruped rolls furthest onto
-     * its flank, an apex biped pitches over its hips and lands on chest and
+     * its flank, an peak biped pitches over its hips and lands on chest and
      * shoulder, and the heavy drops mostly straight down onto locking knees
      * and then slumps.
      */
@@ -2234,7 +2234,7 @@ export class GaitController {
      *   roll  2.75 -> colossus 0.73
      *   roll  3.00 -> colossus 0.71   (on its back, legs up)
      *
-     * 3.00 rad is 172 degrees — an apex predator that goes over backwards and
+     * 3.00 rad is 172 degrees — an peak predator that goes over backwards and
      * stays there, which is what the real thing does and what the silhouette
      * films (shots/r2fix-dead-colossus-after.png).
      *

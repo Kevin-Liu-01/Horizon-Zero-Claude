@@ -513,7 +513,7 @@ export function timeScaleSelfTest(timeScale = 0.02) {
  * Falsifiability proof for the EXTERNAL half of `ClipLayer.stuck()` (gate A27).
  *
  * A judge's objection to Round 4's first anim-core drop was exact and correct:
- * `stuck()` opened with `if (this.external) return null`, every Aloy layer is
+ * `stuck()` opened with `if (this.external) return null`, every Brea layer is
  * external, so the two A27 clauses that read `stuck.length === 0` could not
  * fail. This test drives an external layer into each stuck state the detector
  * now claims to catch AND through the healthy states next door, so the clause

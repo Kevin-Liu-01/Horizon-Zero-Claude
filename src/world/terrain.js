@@ -836,13 +836,13 @@ export class Terrain {
   }
 
   /**
-   * THE ROUND-4 SETTLEMENT MUST NOT STAND IN THE PANS. `camp.js` builds its palisade and huts
+   * THE ROUND-4 SETTLEMENT MUST NOT STAND IN THE PANS. `rest site.js` builds its palisade and huts
    * around REST_SITE, which is Saltrow now; settlements replaces it at W2 (plan §6). Until
    * then its art and its blockers are retired here, once, through the public scene and
    * collision surface; its REST & SAVE interactable keeps working on the same point.
    */
   _retireOldSite() {
-    const old = this.ctx.camp, C = this.ctx.collision;
+    const old = this.ctx.settlements, C = this.ctx.collision;
     if (!old?.group || !C) return false;
     old.group.visible = false;
     const inOld = new Set();

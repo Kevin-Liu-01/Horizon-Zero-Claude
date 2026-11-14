@@ -154,7 +154,7 @@ const A_WEAPON_SOCKETS = {
     const pullOk = Math.abs(bow.pull - (prof.drawLength + bow.restZ)) <= 0.01;
     // the retired prop scale (M9) is read off the live prop: its group must stand at 1 once melee retires it
     const held = cmb.melee.lance ?? null;
-    const propScale = held ? 1 : +(cmb.melee.layer?.propScale ?? cmb.melee.spear?.group?.scale?.x ?? NaN);
+    const propScale = held ? 1 : +(cmb.melee.layer?.propScale ?? cmb.melee.lance?.group?.scale?.x ?? NaN);
     const retired = propScale === 1;
     const own = rows.every((r) => r.ok) && pullOk;
     return { pass: !own ? false : (retired ? true : null), detail: { rows, pull: bow.pull, restZ: bow.restZ, solve: prof, pullOk, propScale,
@@ -504,7 +504,7 @@ const A_NO_MOVE = {
       p.jump();
       const w0 = performance.now();
       while (!p.lastJump && performance.now() - w0 < 6000) await frame();
-      return p.lastJump ? { apex: +p.lastJump.apex.toFixed(3), air: +p.lastJump.air.toFixed(3) } : null;
+      return p.lastJump ? { peak: +p.lastJump.peak.toFixed(3), air: +p.lastJump.air.toFixed(3) } : null;
     };
     for (const id of ${JSON.stringify(IDS)}) {
       await H.loadout.equipArmor(id); await frames(6);
@@ -512,8 +512,8 @@ const A_NO_MOVE = {
     }
     await H.loadout.equipArmor('pan-1');
     const d0 = rows[0].dodge, j0 = rows[0].jump;
-    // the bars as carried: A28's apex 1.35-1.7 m, 0.55-0.9 s of air; every variant within 0.25 m / 0.03 m of the default set
-    const pass = rows.every((r) => r.speedsCanon && !Object.keys(r.mods).some((k) => /speed|dodge|jump/i.test(k)) && Math.abs(r.dodge - d0) <= 0.25 && r.jump && r.jump.apex >= 1.35 && r.jump.apex <= 1.7 && r.jump.air >= 0.55 && r.jump.air <= 0.9 && Math.abs(r.jump.apex - j0.apex) <= 0.03);
+    // the bars as carried: A28's peak 1.35-1.7 m, 0.55-0.9 s of air; every variant within 0.25 m / 0.03 m of the default set
+    const pass = rows.every((r) => r.speedsCanon && !Object.keys(r.mods).some((k) => /speed|dodge|jump/i.test(k)) && Math.abs(r.dodge - d0) <= 0.25 && r.jump && r.jump.peak >= 1.35 && r.jump.peak <= 1.7 && r.jump.air >= 0.55 && r.jump.air <= 0.9 && Math.abs(r.jump.peak - j0.peak) <= 0.03);
     return { pass, detail: { rows, canon } };
   })()`),
 };

@@ -8,7 +8,7 @@ import { BoneSpace, RestPose, RigDebug, register } from './anim/index.js';
  * PlayerAnimator — Round 4: mocap clip base + procedural overlays.
  *
  * BASE (src/entities/anim/): the CC0 Quaternius Universal Animation Library
- * is retargeted onto the Aloy rig once at boot (ClipLibrary -> Retargeter,
+ * is retargeted onto the Brea rig once at boot (ClipLibrary -> Retargeter,
  * char-space bake, clips bind by bone name) and played through a plain
  * THREE.AnimationMixer on this model. LocomotionBlend steers the mixer:
  * idle/walk/jog/sprint + crouch loops phase-locked to player.moveSpeed (feet
@@ -19,7 +19,7 @@ import { BoneSpace, RestPose, RigDebug, register } from './anim/index.js';
  * local quaternions — the old per-frame reset-to-bind is gone; only bones the
  * clips do not animate (spine_02/04, neck_02, dyn_ chains) are reset:
  *   - locomotion additives: strafe leg-yaw + torso counter, speed/accel lean,
- *     banked turns, plant-turn, stop settle, tall-grass crouch sink
+ *     banked turns, plant-turn, stop settle, cover grass crouch sink
  *   - head look-at toward the camera view / nearest machine (clamped)
  *   - aim/draw layer: torso blade + spine pitch, head-glued cheek anchor,
  *     reach clamp, head-sphere guard, quiver flourish, loose follow-through —
@@ -224,7 +224,7 @@ const afWrap = (a) => (a > Math.PI ? a - 2 * Math.PI : (a < -Math.PI ? a + 2 * M
 
 
 // (ball- and ankle-bone rest heights are MEASURED off the bind pose in the
-// constructor — assets.js grounds Aloy with a -55mm yOffset so the skirt
+// constructor — assets.js grounds Brea with a -55mm yOffset so the skirt
 // tassels do not float her, which leaves ball_l at y = -0.007, not at 0)
 // max horizontal correction the foot lock will hold before it re-anchors (m)
 const MAX_LOCK = 0.3;
@@ -280,9 +280,9 @@ const STEP_SLIP = 0.040;     // measured ball skate that forces a step (m)
  * clip's own foot on the step arc — a quick re-step, never a slide. */
 const LOCO_STEP_ERR = 0.24;  // lock correction that earns a re-step while moving (m)
 const LOCO_STEP_SLIP = 0.03; // real ball travel that earns one at once (m)
-// nock-reach flourish window (s). HZD's reach-to-quiver beat is ~0.25-0.35s;
+// nock-reach flourish window (s). Older game's reach-to-quiver beat is ~0.25-0.35s;
 // at the Round-4 value of 0.13s it was 8 frames and never read on film.
-// FIX ROUND (player-anim): 0.34, not 0.28. HZD's reach-to-quiver beat is
+// FIX ROUND (player-anim): 0.34, not 0.28. Older game's reach-to-quiver beat is
 // 0.25-0.35 s and the hand has to physically GET to the hip and back inside
 // it — at 0.28 s the dip bottomed out at 0.154 m from the quiver point instead
 // of the 0.05 m it reaches at 0.34, and on a loaded box (16 lanes on one GPU,
@@ -560,7 +560,7 @@ export class PlayerAnimator {
     model.traverse((o) => { if (o.isBone) this.bones[o.name] = o; });
     /* R5 fix round 1: bone ALIASES a rig profile publishes for the kept
      * systems that still look a bone up by its Round-4 name — combat.js's bow
-     * back-stow reads `bones['spine_03_08']` (Aloy's DEF-spine.002, which is
+     * back-stow reads `bones['spine_03_08']` (Brea's DEF-spine.002, which is
      * UBC's spine_02): with no such bone its stow was null and the bow stayed
      * parented to the hand through every melee swing (A101, ruling R8).
      * Non-enumerable, so nothing that walks the map sees a bone twice. */
@@ -596,7 +596,7 @@ export class PlayerAnimator {
       return e;
     };
 
-    /* Round 5 rig seam: a non-Aloy body names its bones on
+    /* Round 5 rig seam: a non-Brea body names its bones on
      * `model.userData.rigProfile.key` (same short keys; null = absent). With no
      * profile `this.KEY === KEY` and nothing below changes. */
     const prof = model.userData?.rigProfile || null;
@@ -1415,7 +1415,7 @@ export class PlayerAnimator {
    * Foot-plant diagnostics (gate A15-foot-flat): the pitch of each foot
    * (ankle -> ball, degrees below horizontal) live vs at BIND, and how far
    * each heel/toe sits off the terrain. A retarget that bakes the source's
-   * rest ankle angle onto Aloy shows up here as a permanent pitch excess.
+   * rest ankle angle onto Brea shows up here as a permanent pitch excess.
    */
   debugStance() {
     const T = this.ctx.terrain;
@@ -1602,7 +1602,7 @@ export class PlayerAnimator {
 
   _findName(prefix) {
     if (this.bones[prefix]) return prefix;
-    // Round 5: suffix-free rigs (UBC `index_01_r`) answer the Aloy-style
+    // Round 5: suffix-free rigs (UBC `index_01_r`) answer the Brea-style
     // `index_01_r_` prefix with the bone named exactly the stem
     if (prefix.endsWith('_') && this.bones[prefix.slice(0, -1)]) return prefix.slice(0, -1);
     let best = null;
@@ -1996,7 +1996,7 @@ export class PlayerAnimator {
     if (this._slideW > 0.02 && p.groundNormal) this._slidePose(p, this._slideW);
 
     // Roll_RM is a DIVE roll — its hips peak ~0.28m above standing, which reads
-    // as a swan dive rather than HZD's low tap-dodge. Flatten the leap (bounded)
+    // as a swan dive rather than Older game's low tap-dodge. Flatten the leap (bounded)
     // while leaving the clip's tuck, shoulder roll and recovery alone.
     if (this._dodgeW > 0.02 && this.loco?.actions.roll) {
       this._charOf(b.pelvis.bone, _v1);
@@ -2201,7 +2201,7 @@ export class PlayerAnimator {
       }
     }
 
-    // tall grass: sink the stealth crouch a little deeper
+    // cover grass: sink the stealth crouch a little deeper
     if (crouchW > 0.01 && p.inTallGrass) {
       const deep = crouchW * 0.12;
       pdy += -0.5 * deep;
@@ -2535,7 +2535,7 @@ export class PlayerAnimator {
        * fx * 0.42 at the neck and fx * 0.34 at the head ON TOP of the 1.10 the
        * pelvis -> spine_03 fold already carries, so the peak of a 14 hp chest
        * hit (18.2 deg of torso) craned her chin at the sky — a limbo, not a
-       * flinch. HZD's chest flinch folds the torso and keeps the face toward
+       * flinch. Older game's chest flinch folds the torso and keeps the face toward
        * the impact. The neck now carries at most a THIRD of the fold (0.24 of
        * 1.10) and the head counter-rotates 0.18 of it, so her gaze ends up
        * pointing back down her own chest instead of straight up, while the
@@ -2779,7 +2779,7 @@ export class PlayerAnimator {
   _crouchAimLayer(w, p) {
     const b = this.b;
     /* W0b targeted fix 4 — THE CROUCHED ARCHER IS NOT SITTING ON THE GROUND. This
-     * pose (Round 4, on Aloy's taller crouch) flexed the hips and knees further
+     * pose (Round 4, on Brea's taller crouch) flexed the hips and knees further
      * and tipped the pelvis on top of the crouch clip: on Brea the UAL1 crouch
      * already stands the pelvis 0.35 m off the ground, and the ground conform
      * followed the feet down to 0.15 m (under the knees), the trunk folded 53 deg
@@ -6997,7 +6997,7 @@ export class PlayerAnimator {
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
       // Round 5: a rig whose fingers do not curl about local +Z (Rigify-style
-      // UBC: local X) sets `e.curlAxis` per finger; Aloy leaves it unset
+      // UBC: local X) sets `e.curlAxis` per finger; Brea leaves it unset
       _q1.setFromAxisAngle(e.curlAxis || Z_AXIS, e.isThumb ? thumbCurl : curl);
       e.bone.quaternion.multiply(_q1);
     }
@@ -7455,7 +7455,7 @@ export class PlayerAnimator {
   _springs(dt, t, ph, speed, moveW, runW) {
     // Sanitise, then integrate. Every force below multiplies into a quaternion
     // the skinned mesh reads, so ONE non-finite input does not produce a
-    // glitch: a NaN bone matrix collapses every vertex it skins and Aloy
+    // glitch: a NaN bone matrix collapses every vertex it skins and Brea
     // renders as a bald mannequin with no skirt and no pouches. Gate A33.
     // The 0.05 s ceiling is a guard, not a working limit: main.js sub-steps the
     // sim, so this is handed at most FIXED_DT (1/60 s) however long the frame

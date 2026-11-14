@@ -5,7 +5,7 @@
  * numbers without an import cycle.
  *
  * The bar: no particle, glint, arc or spark colour within ΔE2000 15 of
- * Horizon's sensor blue `#38c6ff` or its override teal `#19ffd0`
+ * the older game's sensor blue `#38c6ff` or its override teal `#19ffd0`
  * (measured in `A-vfx-palette`; every value here clears it).
  *
  * Elements per bible §5.8: `fire` = Cinder (#FF7A1A), `freeze` = Brine

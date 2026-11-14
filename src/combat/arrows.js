@@ -41,7 +41,7 @@ const glowMats = {
   freeze: new THREE.SpriteMaterial({
     map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xcfeaff,
   }),
-  tearblast: new THREE.SpriteMaterial({
+  pryburst: new THREE.SpriteMaterial({
     map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, color: 0x7fe8e0,
   }),
 };
@@ -66,7 +66,7 @@ const headMats = {
     color: 0xd8e8f0, metalness: 0.95, roughness: 0.22,
     emissive: 0x9fe8ff, emissiveIntensity: 1.4,
   }),
-  tearblast: new THREE.MeshStandardMaterial({
+  pryburst: new THREE.MeshStandardMaterial({
     color: 0x1e4a50, metalness: 0.7, roughness: 0.35,
     emissive: 0x4fe0d8, emissiveIntensity: 1.9,
   }),
@@ -93,7 +93,7 @@ const fletchMats = {
   precision: new THREE.MeshStandardMaterial({
     color: 0xd8f2ff, roughness: 0.85, emissive: 0x6fc8f0, emissiveIntensity: 0.75,
   }),
-  tearblast: new THREE.MeshStandardMaterial({
+  pryburst: new THREE.MeshStandardMaterial({
     color: 0x8fe8e0, roughness: 0.85, emissive: 0x2eb8b0, emissiveIntensity: 0.8,
   }),
   shock: new THREE.MeshStandardMaterial({
@@ -107,7 +107,7 @@ const fletchMats = {
 // head silhouette variation per ammo (scale on the merged head mesh)
 const HEAD_SCALE = {
   hunter: 1, hardpoint: 1.7, fire: 1.15, precision: 1.25,
-  tearblast: 2.1, shock: 1.1, freeze: 1.1,
+  pryburst: 2.1, shock: 1.1, freeze: 1.1,
 };
 
 /* ---------------------------- shared geometries --------------------------- */
@@ -115,7 +115,7 @@ const HEAD_SCALE = {
 /**
  * `docs/ROUND4-CHARACTER.md` §9.8 — the NOCKED arrow is a different length
  * from the one in flight. A recurve's pull is 0.465 m, so a 0.78 m shaft hangs
- * 0.315 m past the riser at full draw, and its fletching lands on Aloy's cheek
+ * 0.315 m past the riser at full draw, and its fletching lands on Brea's cheek
  * anchor. The nock variant is sized to the pull and its fletches are cut to
  * 0.03 x 0.075 m so they read as feathers rather than as a white paddle.
  */
@@ -190,7 +190,7 @@ export function setArrowType(arrow, type) {
   const hs = HEAD_SCALE[type] ?? 1;
   arrow.head.scale.set(hs, hs, Math.min(hs, 1.3));
   arrow.flame.visible = type === 'fire';
-  const glowType = type === 'shock' || type === 'freeze' || type === 'tearblast';
+  const glowType = type === 'shock' || type === 'freeze' || type === 'pryburst';
   arrow.glow.visible = glowType;
   if (glowType) arrow.glow.material = glowMats[type];
 }
@@ -251,7 +251,7 @@ export function makeBombVisual(kind) {
     const rim = new THREE.Mesh(discRimGeo, discRimMat);
     rim.rotation.x = Math.PI / 2;
     const hub = new THREE.Mesh(discHubGeo, discRimMat);
-    // was `new THREE.Sprite(glowMats.tearblast)` followed immediately by an
+    // was `new THREE.Sprite(glowMats.pryburst)` followed immediately by an
     // overwrite of `.material` — the first argument was dead (judge finding 2).
     glow = new THREE.Sprite(discGlowMat);
     glow.scale.setScalar(0.5);
@@ -281,7 +281,7 @@ const TRAIL_COLORS = {
   hardpoint: [0.95, 0.62, 0.22],
   fire: [1.0, 0.45, 0.12],
   precision: [0.55, 0.85, 1.0],
-  tearblast: [0.4, 0.88, 0.85],
+  pryburst: [0.4, 0.88, 0.85],
   shock: [0.3, 0.75, 1.0],
   freeze: [0.72, 0.88, 1.0],
   'blast-bomb': [1.0, 0.55, 0.18],
@@ -563,7 +563,7 @@ export class ArrowPool {
       a.draw = 0;
       a.age = 0;
       a.seed = Math.random() * 20;
-      // tearblast latch fuse (combat-tearblast-canon)
+      // pryburst latch fuse (combat-pryburst-canon)
       a.fuse = 0; a.fuseT = 0; a.fuseM = null; a.fuseObj = null;
       a.fuseN = new THREE.Vector3(); a.fuseD = new THREE.Vector3();
       /**
@@ -999,7 +999,7 @@ export class ArrowPool {
     if (_n.dot(_segDir) > 0) _n.negate();
 
     /**
-     * `combat-tearblast-canon` — a Tearblast does not detonate on contact. It
+     * `combat-pryburst-canon` — a Pryburst does not detonate on contact. It
      * LATCHES to the plate it hits and blows `fuse` seconds later, riding the
      * machine in the meantime, which is what makes it a set-up shot rather
      * than a hitscan part-deleter.
@@ -1034,7 +1034,7 @@ export class ArrowPool {
     const m = a.fuseM;
     // a machine that died (or was disposed) while the charge ticked
     const alive = m && m.alive !== false && m.root && !m._disposed;
-    // a latched Tearblast is a RIDER: re-compose from the host first so the
+    // a latched Pryburst is a RIDER: re-compose from the host first so the
     // burst goes off on this frame's plate, not last frame's (the old code got
     // this for free from the parent chain — see `_ride`).
     if (a.stuckTo) this._followHost(a);
@@ -1129,7 +1129,7 @@ export class BombPool {
       if (segLen < 1e-6) continue;
       _segDir.multiplyScalar(1 / segLen);
 
-      // ember trail
+      // spark trail
       if (this.trailFx) {
         const col = TRAIL_COLORS[b.type] ?? TRAIL_COLORS['blast-bomb'];
         const n = Math.min(4, Math.max(1, Math.ceil(segLen / 0.5)));

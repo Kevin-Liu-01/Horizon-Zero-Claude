@@ -378,7 +378,7 @@ export function installMachineAI(machines) {
   machines.lure = (pos, opts = {}) => machines.stimulus.emit({
     x: pos.x, z: pos.z, kind: opts.kind || 'lure', lure: true, ...opts,
   });
-  /** Whistle: Aloy makes the noise, so machines investigate HER position. */
+  /** Whistle: Brea makes the noise, so machines investigate HER position. */
   machines.whistle = (opts = {}) => {
     const p = ctx.player;
     if (!p) return 0;

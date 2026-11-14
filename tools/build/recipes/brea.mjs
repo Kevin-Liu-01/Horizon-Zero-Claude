@@ -190,8 +190,8 @@ export async function build({ out = ROOT } = {}) {
   const eyes = eyeCentres(eyesPrim);
   const eyeSphereZ = eyeFrontZ(eyesPrim) - 0.0165;
   // fix round 3 (the judges: "the cornea sits behind the lid line, so a true profile shows no wet bulge"): a taller cornea seated at
-  // the limbus (4.0 mm over 0-6.4 mm, was 3.3 mm flat-topped over 1.8-7.4 mm) and ROUND at its apex (a cap, not a plateau): the upper
-  // lid's margin sits 2-3 mm above the apex, and on the old plateau the lid there stood level with the apex, so a profile saw only lid
+  // the limbus (4.0 mm over 0-6.4 mm, was 3.3 mm flat-topped over 1.8-7.4 mm) and ROUND at its peak (a cap, not a plateau): the upper
+  // lid's margin sits 2-3 mm above the peak, and on the old plateau the lid there stood level with the peak, so a profile saw only lid
   const DOME = { height: 0.0040, r0: 0, r1: 0.0064 };
   const domeAt = (r) => DOME.height * (1 - smooth(DOME.r0, DOME.r1, r));
   const headW2 = (prim, i) => { const p = [0, 0, 0]; prim.getAttribute('POSITION').getElement(i, p); return p[1] > 1.6 && p[2] > 0 && Math.abs(p[0]) < 0.075; };

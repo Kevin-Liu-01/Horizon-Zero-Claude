@@ -22,7 +22,7 @@ import { InventoryScreen } from '../ui/inventory.js';
  * ---------------------------------------------------------------------------
  *   tools        -> Tools        (ui-11 quick-slot strip data; see tools.js)
  *   crafting     -> Crafting     (recipes + capacity upgrades)
- *   datapoints   -> Datapoints   (attached by items/interactables.js)
+ *   fieldbooks   -> FieldBooks   (attached by items/interactables.js)
  *   screen       -> InventoryScreen  (the full-screen pockets)
  *   capacity(id) · capacityTier(pocket) · pocketOf(id)
  *   upgradeCost / canUpgrade / upgradeCapacity  (delegates to crafting)
@@ -36,7 +36,7 @@ import { InventoryScreen } from '../ui/inventory.js';
  *   'capacity-upgraded' { pocket, tier, mult, label }
  *   'tool-selected' / 'tool-used' / 'tool-blocked' / 'tool-throw' /
  *   'tool-landed'                                (tools.js)
- *   'datapoint-collected'                        (datapoints.js)
+ *   'fieldbook-collected'                        (fieldbooks.js)
  *   'loot-rummage'      { entry, label, duration, rows }   (interactables.js)
  */
 
@@ -84,7 +84,7 @@ export class Inventory {
       inventory: this,
       tools: this.tools,
       crafting: c,
-      datapoints: null,            // items/interactables.js attaches this
+      fieldbooks: null,            // items/interactables.js attaches this
       screen: this.screen,
       POCKETS: CAPACITY_POCKETS,
 
@@ -110,7 +110,7 @@ export class Inventory {
   }
 
   audit() {
-    const dp = this.ctx.items?.datapoints;
+    const dp = this.ctx.items?.fieldbooks;
     return {
       items: this.counts.size,
       capacities: Object.fromEntries(
@@ -118,7 +118,7 @@ export class Inventory {
       ),
       tools: this.tools.audit(),
       recipes: this.crafting.recipes().length,
-      datapoints: dp ? { total: dp.total, collected: dp.count } : null,
+      fieldbooks: dp ? { total: dp.total, collected: dp.count } : null,
       screenOpen: this.screen.isOpen,
       pocket: this.screen.pocket,
     };
@@ -197,7 +197,7 @@ export class Inventory {
     return {
       counts: Object.fromEntries(this.counts),
       crafting: this.crafting.serialize(),
-      datapoints: this.ctx.items?.datapoints?.serialize?.() ?? null,
+      fieldbooks: this.ctx.items?.fieldbooks?.serialize?.() ?? null,
     };
   }
 
@@ -208,7 +208,7 @@ export class Inventory {
       for (const [id, n] of Object.entries(d.counts)) this.counts.set(id, n);
     }
     this.crafting.deserialize(d.crafting);
-    this.ctx.items?.datapoints?.deserialize?.(d.datapoints);
+    this.ctx.items?.fieldbooks?.deserialize?.(d.fieldbooks);
     this.tools.refresh();
   }
 

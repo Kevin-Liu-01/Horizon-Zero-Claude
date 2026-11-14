@@ -156,12 +156,12 @@ export function buildRig(machine, spec) {
       L.toe[0] - L.ankle[0], L.toe[1] - L.ankle[1], L.toe[2] - L.ankle[2]);
     const l1 = bindThigh.length();
     const l2 = bindShin.length();
-    // hinge pole: which way the knee apex points in bind (auto-detected):
-    // apex offset of the knee from the hip→ankle chord, in the sagittal plane
+    // hinge pole: which way the knee peak points in bind (auto-detected):
+    // peak offset of the knee from the hip→ankle chord, in the sagittal plane
     const mid = _v1.set(
       (L.hip[0] + L.ankle[0]) / 2, (L.hip[1] + L.ankle[1]) / 2, (L.hip[2] + L.ankle[2]) / 2);
-    const apexZ = L.knee[2] - mid.z;
-    const hinge = L.hinge ?? (apexZ >= 0 ? 1 : -1);
+    const peakZ = L.knee[2] - mid.z;
+    const hinge = L.hinge ?? (peakZ >= 0 ? 1 : -1);
     legs.push({
       id: L.id,
       thigh, shin, foot,

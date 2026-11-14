@@ -95,10 +95,10 @@ export class HeroRig {
       for (let i = 0; i < this.bodyMeshes.length; i++) this.bodyMeshes[i].material.emissiveIntensity = k;
     }
     if (!this.kit?.attached) return;
-    // the procedural spear melee builds (W1 replaces it) is shown only in her
+    // the procedural lance melee builds (W1 replaces it) is shown only in her
     // hands: holstered, the stow kit's Shepherd's Lance is the one on her back
     const ml = this.player.animator?.melee;
-    const sp = this._lanceProp = ml?.lance ?? ml?.spear ?? null;
+    const sp = this._lanceProp = ml?.lance ?? ml?.lance ?? null;
     if (sp) sp.visible = sp.parent !== ml.socketBone;
     // melee's held prop (lanceStow.js, once merged) loads the GLB itself: point it at the
     // final Shepherd's Lance (plan §1.2, W3 variants go through the same call), give it the atlas

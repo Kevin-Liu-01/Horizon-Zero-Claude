@@ -58,7 +58,7 @@ const SHEET = `
       for (const el of Array.from(document.body.children)) if (el.tagName !== 'CANVAS' && !el.querySelector('canvas')) el.style.visibility = 'hidden';
       // a sheet is a look at the people: the tall grass, the scatter props and the Round-4 camp are hidden while it is filmed (the
       // terrain, the sky, the light and its shadows stay), and the sheet says so
-      const studio = (on) => { for (const o of [C.vegetation?.group, C.props?.group, C.camp?.group]) if (o) o.visible = !on; };
+      const studio = (on) => { for (const o of [C.vegetation?.group, C.props?.group, C.settlements?.group]) if (o) o.visible = !on; };
       studio(true);
 `;
 

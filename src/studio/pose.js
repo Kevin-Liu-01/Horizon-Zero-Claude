@@ -1,11 +1,11 @@
 /**
- * Studio pose + expression driver for Aloy. Lane `studio`
+ * Studio pose + expression driver for Brea. Lane `studio`
  * (`missing-systems-photo-mode`, `player-anim-17-studio-cannot-film-hit-death`).
  *
  * TWO CHANNELS, BOTH THROUGH PUBLISHED CONTRACTS — this file never edits and
  * never monkey-patches `src/entities/playerAnimator.js`:
  *
- * 1. POSES are ClipLayer one-shots. `LocomotionBlend` wraps every Aloy clip in
+ * 1. POSES are ClipLayer one-shots. `LocomotionBlend` wraps every Brea clip in
  *    a `ClipLayer` (anim-core) whose weight and `scrub()` are authored by the
  *    animator every frame from its hit / air / act channels. The sanctioned way
  *    to start one is therefore the animator's own EVENT inputs — `player-damage`
@@ -36,7 +36,7 @@
  * 2.375 s long and its FINAL frame snaps back to a standing pose — scrubbing
  * through it takes the head from world-Y -1.13 (down) to +0.20 (upright) inside
  * the last 0.04 s. `ClipLayer.scrub()` clamps to `duration - 1e-4`, so a death
- * held past the clip parks on that bad frame and Aloy stands up. It is visible
+ * held past the clip parks on that bad frame and Brea stands up. It is visible
  * in gameplay too, merely hidden there by the death card arriving at 1.15 s.
  * The studio does not paper over it: the fix is the clip's tail or a hold frame
  * in `LocomotionBlend`, both of which live in `player-anim`. Until then a held
@@ -96,7 +96,7 @@ export class PoseDirector {
     this.gazePitch = 0;
     this.expression = 'neutral';
     this.expressionAmt = 1;
-    this.hideAloy = false;
+    this.hideHero = false;
     this._up = 0;                  // damped lid state
     this._lo = 0;
     this._gw = 0;
@@ -192,7 +192,7 @@ export class PoseDirector {
          * A DEATH POSE IS STAGED, NOT SUFFERED. This used to route through
          * `takeDamage` inside an `asPlaying` window, which reached `_die()` and
          * with it the entire death PIPELINE: a `player-died` broadcast, a 3.2 s
-         * wall-clock respawn that heals and teleports her to camp, and (since
+         * wall-clock respawn that heals and teleports her to rest site, and (since
          * `shell-menus` landed) a card, a grayscale grade on the render canvas
          * and a park onto `ctx.state = 'death-menu'`.
          *
@@ -203,7 +203,7 @@ export class PoseDirector {
          * frame loop where the studio could pre-empt them. Traced live: two
          * restarts per shot, `_dieT` sawtoothing 0.54 -> 0.08 -> 0.53 -> 0.08,
          * so the clip never got past its first half second and every death shot
-         * came out with Aloy standing upright four seconds after the button.
+         * came out with Brea standing upright four seconds after the button.
          *
          * The animator needs ONE thing for the crumple: `ctx.state === 'dead'`.
          * So the pose sets exactly that and the health it reads from, and the
@@ -266,7 +266,7 @@ export class PoseDirector {
   setHidden(on) {
     const model = this.ctx.player?.model;
     if (!model) return;
-    this.hideAloy = !!on;
+    this.hideHero = !!on;
     this._hidden = !!on;
     model.visible = !on;
   }

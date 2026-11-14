@@ -9,7 +9,7 @@ import { installSpatial } from '../core/collision.js';
 import { REST } from '../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../world/island/extent.js';
 
-const CAMP_POS = new THREE.Vector3(REST.x, 0, REST.z);
+const REST_POS = new THREE.Vector3(REST.x, 0, REST.z);
 
 /* ===========================================================================
  * ROUND 4 — lane `player-control`.
@@ -20,7 +20,7 @@ const CAMP_POS = new THREE.Vector3(REST.x, 0, REST.z);
  * floated 0.16 m; climbing she sank), and it walked through every trunk, tent
  * and machine in the world.  This file is now a kinematic capsule:
  *
- *   · gravity -22 m/s^2, jump apex exactly 1.5 m (v0 = sqrt(2 g h) = 8.124),
+ *   · gravity -22 m/s^2, jump peak exactly 1.5 m (v0 = sqrt(2 g h) = 8.124),
  *     0.74 s of air, and a mantle/vault when a ledge is found  (camera-feel-01)
  *   · the ground is TRACKED, not damped — `position.y === groundY` on the frame
  *     she is on it, so a conform overlay never has to chase a lagging pelvis,
@@ -31,7 +31,7 @@ const CAMP_POS = new THREE.Vector3(REST.x, 0, REST.z);
  *     substeps + depenetrates + brakes; machines carry blocking capsules, so a
  *     machine pushes her and she never pushes a machine  (camera-feel-09, A24/A25)
  *   · the camera boom is swept with `ctx.collision.cameraBoom` (12 samples) and
- *     Aloy fades when the lens is forced inside her             (camera-feel-03)
+ *     Brea fades when the lens is forced inside her             (camera-feel-03)
  *
  * Everything the animator reads is unchanged in NAME and meaning:
  *   moveSpeed, heading, crouching, aiming, dodging, dodgeK, inTallGrass, health.
@@ -39,14 +39,14 @@ const CAMP_POS = new THREE.Vector3(REST.x, 0, REST.z);
 
 /* ------------------------------- dodge ---------------------------------- */
 // Dodge roll: the animator's Roll_RM clip carries a root-motion curve; the
-// roll travels DODGE_DIST along it over DODGE_T (HZD tap-dodge: 0.7-0.9s,
+// roll travels DODGE_DIST along it over DODGE_T (Older game tap-dodge: 0.7-0.9s,
 // 2-3m; A2 gate wants >= 3m). Without the clip pack the old 0.42s impulse runs.
 const DODGE_T = 0.82;
 const DODGE_DIST = 3.4;
 const DODGE_T_IMPULSE = 0.42;
 /**
  * `combat-dodge-iframes`: the roll was FULLY invulnerable for its whole
- * duration, which makes it a free "ignore this attack" button.  HZD gives the
+ * duration, which makes it a free "ignore this attack" button.  Older game gives the
  * evade a window: i-frames start after the commit and end before the recovery.
  * Absolute seconds, not fractions — the window must not stretch if the clip
  * length ever changes.
@@ -66,14 +66,14 @@ const JUMP_BUFFER = 0.18;
  * Round 3 shipped RUN 4.6 / SPRINT 8.2.  8.2 m/s is 29.5 km/h *sustained*,
  * faster than a 100 m world record average, and it drove `Sprint_Loop`
  * (nominal 7.72 m/s) at 1.06x while plain-W drove `Jog_Fwd_Loop` (6.16) at
- * 0.75x — the bounding gait A28-run-cadence measured.  Canon HZD is a ~5 m/s
+ * 0.75x — the bounding gait A28-run-cadence measured.  Canon Older game is a ~5 m/s
  * jog and a ~6.8 m/s sprint (ratio 1.36), which also lands both loops inside
  * their own cadence.  PUBLISHED as `player.speeds` so the animator retimes
  * against one source of truth instead of a copied literal.
  */
 const SPEEDS = {
   walk: 1.5,        // hold Alt: stroll (drives Walk_Loop at 1.28x)
-  crouch: 1.4,      // HZD stalk
+  crouch: 1.4,      // Older game stalk
   crouchAim: 1.05,  // crouched AND aiming: a shuffle, not a stalk
   aim: 1.35,        // combat sidestep/backpedal
   jog: 5.0,         // default W
@@ -82,8 +82,8 @@ const SPEEDS = {
 
 /* ------------------------------ kinematics ------------------------------ */
 const GRAVITY = 22;                       // m/s^2 (camera-feel-01)
-const JUMP_APEX = 1.5;                    // m
-const JUMP_V0 = Math.sqrt(2 * GRAVITY * JUMP_APEX);   // 8.124 m/s
+const JUMP_PEAK = 1.5;                    // m
+const JUMP_V0 = Math.sqrt(2 * GRAVITY * JUMP_PEAK);   // 8.124 m/s
 const CAP_R = 0.4;
 const CAP_H = 1.8;
 const STEP_UP = 0.55;                     // max instant rise (kerbs, roots)
@@ -140,7 +140,7 @@ const EDGE_SOFT = PLAY_RADIUS + EXTENT.edgeSoft; // steer + taper start here
 /* -------------------------------- camera -------------------------------- */
 /**
  * camera-feel-07 framing. The audit asks for 3.0; measured against
- * `reference/run-back-2-walking.jpg` — where Aloy's silhouette spans 58 % of
+ * `reference/run-back-2-walking.jpg` — where Brea's silhouette spans 58 % of
  * frame height and her feet are cropped by the bottom edge — 3.0 m at fov 55
  * puts her silhouette at 54.0 % (measured by projecting every skinned vertex),
  * i.e. UNDER the V22 bar. 2.8 m measures 57.7 % and reproduces the reference
@@ -294,7 +294,7 @@ const ORBIT_A0 = -Math.PI / 2;
  * The lens stays on the camera's side of her: |angle| <= this.  46 deg until
  * residue fix round 2; sprinting straight away at the clamp every candidate
  * inside 46 deg has her head hidden behind her shoulders (judge: "films her
- * shoulder in the corner with the stowed bow and spear dominant"), and the
+ * shoulder in the corner with the stowed bow and lance dominant"), and the
  * ones that see its upper half sit 75-85 deg round her at the 0.6 m running
  * lens height (measured over a stride) — the whole candidate grid now.
  */
@@ -502,7 +502,7 @@ const SWING_LEAD = 0.12;                  // s of swing the pitch rotation is so
 const SWING_MARGIN = 0.15;                // m a swing candidate must clear by (see `_groundSwingFor`)
 /**
  * RESIDUE FIX ROUND 2 (judge: "a whole yaw sector and every pan crossing have
- * no Aloy in frame, and clamp pans put the lens inside her gear").
+ * no Brea in frame, and clamp pans put the lens inside her gear").
  *
  * `ROT_UP_IN`  where, as a fraction of the look-up, the ground ROTATION starts
  *              to be held to her framing (fully at `SWING_UP_MIN`).  At a deep
@@ -517,13 +517,13 @@ const SWING_MARGIN = 0.15;                // m a swing candidate must clear by (
  * `SWING_CLR`  m a swing candidate keeps from her body proxy (the run
  *              framing's: limb / torso / cloth capsules + her visible gear) —
  *              `SWING_BODY` measures the vertical through her head and cannot
- *              see a stowed spear butt 0.6 m out behind her hip (0.033 m from
+ *              see a stowed lance butt 0.6 m out behind her hip (0.033 m from
  *              the lens on a clamp pan, judge-measured).
  */
 const ROT_UP_IN = SWING_UP_MIN - 0.10;
 /**
  * RESIDUE FIX ROUND 3 (judge: "crouch-aim at a 56-66 deg look-up dissolves
- * Aloy to opacity 0.06 on flat open ground").  The deep-look-up contract above
+ * Brea to opacity 0.06 on flat open ground").  The deep-look-up contract above
  * trades the rotation for the DOLLY — but a crouch-aim boom is already at
  * `BOOM_MIN` (0.9 m from a 1.2 m pivot, A31's cap), i.e. at `DOLLY_GAP`, so the
  * dolly has no room, the rotation was refused for framing (the aimed frame at
@@ -658,7 +658,7 @@ const BOOM_MIN = 0.9;
  * and a lens inside the hill renders the world X-rayed (the judge round's
  * `lens-in-head-sprint` frame).  A close shoulder pose just above the ground
  * line is the honest answer there — and the lens-proximity fade dissolves her
- * so the frame shows a dithered Aloy rather than an absent one.
+ * so the frame shows a dithered Brea rather than an absent one.
  */
 const BOOM_GND = 0.55;
 /**
@@ -787,7 +787,7 @@ const LIFT_MAX = 1.6;                     // m the ground may push the ORBIT CEN
  * ANGLE, not a distance: the first cut of this cap priced a lift as
  * `tan(hijack) * boom + FRAME_LOW * half-height` and that linear model is
  * simply wrong at a short boom — it allowed a 1.25 m lift on a 1.6 m boom and
- * filmed a frame with Aloy entirely below the bottom edge (her highest vertex
+ * filmed a frame with Brea entirely below the bottom edge (her highest vertex
  * at NDC y -1.13).  The real offset is the angle the lens subtends at the
  * pivot against the view axis, and that is what is solved for now.
  */
@@ -1070,7 +1070,7 @@ export class Player {
     ctx.input.settings = s;
 
     // --- state
-    this.position = new THREE.Vector3(CAMP_POS.x, 0, CAMP_POS.z);
+    this.position = new THREE.Vector3(REST_POS.x, 0, REST_POS.z);
     this.velocity = new THREE.Vector3();
     // last finite position — the backstop restores it if any integrator ever
     // produces a non-finite value (a NaN position renders the world black and
@@ -1128,7 +1128,7 @@ export class Player {
     this._dodgeQueued = -1;
     this._launchY = 0;
     /**
-     * Last completed airborne arc, measured in SIMULATION time — apex above the
+     * Last completed airborne arc, measured in SIMULATION time — peak above the
      * launch height, seconds of air, and the error between where she landed and
      * the surface.  Wall-clock sampling cannot measure this: the bounded-step
      * loop advances at most 0.05 s of sim per frame, so on a loaded box a 0.74 s
@@ -1153,7 +1153,7 @@ export class Player {
 
     this.maxHealth = 100;
     this.health = this.maxHealth;
-    // HZD medicine pouch: a 0..100 meter filled by medicinal herbs; holding Q
+    // Older game medicine pouch: a 0..100 meter filled by medicinal herbs; holding Q
     // transfers pouch -> health over time (research: docs/research/mechanics.md)
     this.gourd = 60;
     this.maxGourd = 100;
@@ -1292,7 +1292,7 @@ export class Player {
     this._hw = new THREE.Vector3();
     this._headDrop = 0;
     // R5: the head bone's standing height is the BODY's (Round 4's 1.36 was
-    // Aloy's `head_0104`; Brea's `Head` stands at 1.47) — from the rig profile
+    // Brea's `head_0104`; Brea's `Head` stands at 1.47) — from the rig profile
     this._headRest = this.model?.userData?.rigProfile?.tune?.headRest ?? HEAD_REST;
     // ...and how far the rig may follow her head DOWN a face (profile
     // `tune.headFollowMax`; Brea keeps Round 4's 0.20 — 0.32 was tried for the
@@ -1350,7 +1350,7 @@ export class Player {
 
     ctx.input.onDown('Space', () => this.jump());
     ctx.input.onDown('KeyE', () => { if (this._ride) this.endRide('input'); });
-    ctx.input.onDown('ControlLeft', () => this.dodge()); // HZD PC dodge bind
+    ctx.input.onDown('ControlLeft', () => this.dodge()); // Older game PC dodge bind
     ctx.input.onDown('KeyC', () => this.toggleCrouch());
 
     ctx.events.on('player-damage', ({ amount, from }) => this.takeDamage(amount, from));
@@ -1381,7 +1381,7 @@ export class Player {
    * `transparent` / `depthWrite` — the flag-flipping that made the old fade
    * pulse is gone with it.
    *
-   * Re-entrant on purpose: the bow, arrow, quiver and spear are parented onto
+   * Re-entrant on purpose: the bow, arrow, quiver and lance are parented onto
    * her bones AFTER the constructor runs (combat lane), and on the first pass
    * they were left solid — a fully opaque bow across the left third of frame
    * while the body dissolved.  `_matMap` makes the scan idempotent so it can
@@ -1580,7 +1580,7 @@ void main() {
       if (this.ctx.state !== 'dead') return; // victory/pause may have superseded
       this.health = this.maxHealth;
       this.gourd = 60;
-      this.position.set(CAMP_POS.x, 0, CAMP_POS.z);
+      this.position.set(REST_POS.x, 0, REST_POS.z);
       this._snapToGround();
       this.animator?.replant?.();   // R5 fix round 3: her feet re-plant where she respawns
       this.ctx.state = 'playing';
@@ -2221,7 +2221,7 @@ void main() {
     if (!this.grounded) {
       this.airTime += dt;
       // velocity Verlet, not semi-implicit Euler: for a constant acceleration
-      // the half-step term makes the arc EXACT at any dt, so the 1.5 m apex is
+      // the half-step term makes the arc EXACT at any dt, so the 1.5 m peak is
       // 1.5 m at 144 Hz and at 20 Hz.  Plain Euler loses g·dt²·n(n+1)/2 — 6.4 cm
       // of a 1.5 m jump at 60 Hz, which is 4 % of the whole mechanic.
       this.position.y += (this.velocity.y - 0.5 * GRAVITY * dt) * dt;
@@ -2247,7 +2247,7 @@ void main() {
     const fall = Math.max(0, this._fallPeak - gy);
     const vy = this.velocity.y;
     this.lastJump = {
-      apex: +(this._fallPeak - this._launchY).toFixed(4),
+      peak: +(this._fallPeak - this._launchY).toFixed(4),
       air: +this.airTime.toFixed(4),
       fall: +fall.toFixed(4),
       landErr: +(this.position.y - gy).toFixed(4),
@@ -2396,7 +2396,7 @@ void main() {
     this.model.position.copy(this.position);
     this.model.rotation.y = this.heading;
 
-    // --- hold Q: transfer medicine pouch into health (HZD pouch mechanic)
+    // --- hold Q: transfer medicine pouch into health (Older game pouch mechanic)
     this.healing = input.actionDown('heal') && this.gourd > 0.5 && this.health < this.maxHealth;
     if (this.healing) {
       const rate = 16; // hp per second, 1 pouch unit = 1 hp
@@ -2869,7 +2869,7 @@ void main() {
      * candidate.  A turn is the future — her body rotates about her root by
      * whatever is left of the turn (`turn`: rendered facing -> travel
      * direction, which leads the facing by the latch and the turn rate), and
-     * in the judge's staging that swept the stowed spear butt through the held
+     * in the judge's staging that swept the stowed lance butt through the held
      * candidate in 3-6 frames, 0.005-0.06 m from the lens.  Rotating her body
      * by `turn` about her root is, for a lens that orbits her head, the same
      * as rotating the candidate's offset from her head by `-turn`
@@ -3003,7 +3003,7 @@ void main() {
      * skipping the path test when stuck let a turn out of a sprint carry the
      * lens across her back, 0.013 m past the stowed bow). */
     /* While she turns the pose itself is changing under the prediction (her
-     * lean, the swing of the stowed spear), so a candidate needs
+     * lean, the swing of the stowed lance), so a candidate needs
      * `ORBIT_PASS_TURN` of predicted clearance to be taken or passed. */
     const passBar = turning ? ORBIT_PASS_TURN : ORBIT_PASS;
     const pathBar = stuck ? Math.max(0, curEnv - 0.02) : passBar;
@@ -3084,7 +3084,7 @@ void main() {
     let dr = goalR - this._orbitR;
     if (dr > rStep) dr = rStep; else if (dr < -rStep) dr = -rStep;
     /* …and it only comes back IN once the inner ring is clear all the way to
-     * the goal: crossing on the way in took the lens past the stowed spear at
+     * the goal: crossing on the way in took the lens past the stowed lance at
      * 0.149 m on a jog turn (residue fix round 2). */
     if (dr < 0 && gj >= 0 && !this._orbitPathClear(this._orbitPsi, goal, (gj / N) | 0, passBar)) dr = 0;
     this._orbitR += dr;
@@ -3278,7 +3278,7 @@ void main() {
    * monotonic on a crease).  Admissible pushes keep the lens `DOLLY_GAP` from
    * the pivot and clear of her body — `SWING_CLR`, or whatever the un-pushed
    * lens already had if that is less (the clamp rig hangs 0.2 m off her stowed
-   * spear by design), but never under `DOLLY_BODY_MIN`.  Writes `_dollyC`, the
+   * lance by design), but never under `DOLLY_BODY_MIN`.  Writes `_dollyC`, the
    * ground clearance at the returned `t`; when nothing admissible clears, the
    * admissible `t` with the most clearance.
    */
@@ -3467,8 +3467,8 @@ void main() {
         /* Samples such that EVERY vertex of the mesh is within
          * `ORBIT_RIGID_GAP` of one (greedy, in the mesh's own space, scaled by
          * its world scale; re-run only when the visible set changes).  Stride
-         * samples of the 1.5 m bow and the 1.16 m spear shaft left 0.1 m gaps
-         * along a limb (residue fix round 2): a turn swept the spear butt to
+         * samples of the 1.5 m bow and the 1.16 m lance shaft left 0.1 m gaps
+         * along a limb (residue fix round 2): a turn swept the lance butt to
          * 0.03 m, a clamp pan the bow limb to 0.073 m, with the proxy reading
          * clear. */
         const pa = o.geometry.attributes.position, cnt = pa.count;
@@ -3852,7 +3852,7 @@ void main() {
          * the pushed-in lens is clear of HER. On the 38.8 deg face at the
          * clamp, up-slope, a 5 deg rotation "cleared" on a 0.65 push-in that
          * parked the lens on her stowed lance (0.001 m from its shaft, the
-         * proxy reading 0.007 m; dithered to 0.31) — Aloy's 1.16 m spear never
+         * proxy reading 0.007 m; dithered to 0.31) — Brea's 1.16 m lance never
          * reached that far round her back, Brea's 1.55 m R10 diagonal does. */
         const H = this._hw;
         if (this._dollyC > clear && (!bodyOn || t >= 1
@@ -4020,7 +4020,7 @@ void main() {
       this.pivotHeight = this._pivotSeeded ? this.pivotHeight + THREE.MathUtils.clamp(pvT - this.pivotHeight, -pvS, pvS) : pvT;
     }
     /**
-     * FIX (judge: "aim + look-up ghosts Aloy with no occluder").
+     * FIX (judge: "aim + look-up ghosts Brea with no occluder").
      *
      * A third-person orbit that pitches UP swings the lens DOWN, so at the
      * aim boom every steep look-up parked the lens within centimetres of the

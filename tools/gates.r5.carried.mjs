@@ -4194,8 +4194,8 @@ const SILHOUETTE = `function silhouette() {
 
 /**
  * RESIDUE FIX ROUND 1 — her silhouette as RENDERED.  The rig carries 69
- * meshes and 53 of them are hidden: the five unequipped weapons (sharpshot /
- * war bow, blast sling, ropecaster, tripcaster, disc launcher) are all
+ * meshes and 53 of them are hidden: the five unequipped weapons (sighting /
+ * war bow, blast sling, tether, wirelayer, disc launcher) are all
  * parented to her left hand bone and toggled invisible, and `SILHOUETTE` above
  * samples them anyway — about half of every sample set, all of it sitting in
  * her left fist.  A hidden weapon near the lens is not on screen and a hidden
@@ -4335,7 +4335,7 @@ const GATES = [
   /* ------------------------------------------------------------------ A28 */
   {
     id: 'A28-jump-arc', kind: 'action', lane: 'player-control',
-    title: 'Space from flat ground: apex 1.35-1.7 m, 0.55-0.9 s of air, lands on the surface',
+    title: 'Space from flat ground: peak 1.35-1.7 m, 0.55-0.9 s of air, lands on the surface',
     setup: `__CTX__.input.enabled = true;`,
     settle: 700, timeout: 90000,
     assert: `(async () => {
@@ -4353,7 +4353,7 @@ const GATES = [
       /* The arc is measured in SIMULATION time by the controller itself
        * (player.lastJump).  A wall-clock rAF probe cannot do it: main.js caps
        * a frame at 0.05 s of sim, so on a loaded box a 0.74 s arc spans 1.2 s
-       * of wall clock and every rAF sample reads it long.  apex is the peak of
+       * of wall clock and every rAF sample reads it long.  peak is the peak of
        * the integrated arc, air is summed dt, landErr is |feet - terrain| on
        * the landing frame. */
       const runs = [];
@@ -4366,11 +4366,11 @@ const GATES = [
         while (!p.lastJump && performance.now() - t0 < 6000) await new Promise((r) => requestAnimationFrame(r));
         if (!p.lastJump) return { pass: false, detail: { i, note: 'never landed' } };
         const gy = C.terrain.getHeight(p.position.x, p.position.z);
-        runs.push({ apex: p.lastJump.apex, air: p.lastJump.air,
+        runs.push({ peak: p.lastJump.peak, air: p.lastJump.air,
                     landErr: +(p.position.y - gy).toFixed(4), drift: +Math.abs(p.position.y - y0).toFixed(3) });
         await new Promise((r) => setTimeout(r, 250));
       }
-      const ok = runs.every((r) => r.apex >= 1.35 && r.apex <= 1.7
+      const ok = runs.every((r) => r.peak >= 1.35 && r.peak <= 1.7
         && r.air >= 0.55 && r.air <= 0.9 && Math.abs(r.landErr) <= 0.1);
       return { pass: ok && p.grounded && p.health === p.maxHealth,
                detail: { runs, grounded: p.grounded, health: p.health, at: spot } };
@@ -7112,7 +7112,7 @@ const GATES = [
       const spineish = (n) => !!n && /spine|chest|clavicle/i.test(n);
       const read = (label) => {
         const d = an.debugMelee();
-        return { label, parent: d.parent, held: d.held, visible: M.spear.group.visible,
+        return { label, parent: d.parent, held: d.held, visible: M.lance.group.visible,
           midToBack: d.midToBack, midToSpine: d.midToSpine, tiltDeg: d.shaftTiltDeg,
           tipAboveShoulder: d.tipAboveShoulder, tipAboveShoulderMax: d.tipAboveShoulder,
           tipRightOfSpine: d.tipRightOfSpine,
@@ -7653,7 +7653,7 @@ const GATES = [
           const t0 = performance.now();
           while (performance.now() - t0 < 1200) {
             await frame(); n++;
-            const sp = M.spear?.group?.parent?.name || '';
+            const sp = M.lance?.group?.parent?.name || '';
             const bw = C.combat?.bow?.group?.parent?.name || '';
             if (/hand_r/.test(sp) && /hand_l/.test(bw)) both++;
             if (bowInHandAt == null && /hand_l/.test(bw)) bowInHandAt = +((performance.now() - t0) / 1000).toFixed(3);
@@ -7661,7 +7661,7 @@ const GATES = [
           C.input.mouse.buttons &= ~4;
           C.input.keys.clear(); p.velocity.set(0, 0, 0);
           const r = { label, frames: n, framesBothInHand: both, bowInHandAfterAimS: bowInHandAt,
-            spearAtEnd: M.spear?.group?.parent?.name || null };
+            spearAtEnd: M.lance?.group?.parent?.name || null };
           bothRows.push(r);
           if (both > 0) bad.push('aim after a swing (' + label + '): the bow and the spear were BOTH in her hands on ' + both + ' of ' + n + ' frames — ruling R8');
           if (bowInHandAt == null) bad.push('aim after a swing (' + label + '): the bow never came into her hand within 1.2 s — aim must still win');
@@ -12310,7 +12310,7 @@ const KIT = `
   const hutClose = () => {
     ctx.environment && ctx.environment.setWeather && ctx.environment.setWeather('clear', 0);
     ctx.environment && ctx.environment.setTime && ctx.environment.setTime(10.0);
-    const h = ctx.camp.huts[0];
+    const h = ctx.settlements.huts[0];
     const wx = h.x, wz = h.z + h.r, cx = h.x, cz = h.z + h.r + 2.6;
     p.position.set(h.x + 30, 0, h.z - 30); p._snapToGround && p._snapToGround();
     ctx.vegetation && ctx.vegetation.forceStream && ctx.vegetation.forceStream(cx, cz);
@@ -18862,7 +18862,7 @@ const GATES = [
       s.takeDamage({
         point: { x: e[12], y: e[13], z: e[14] },
         object: part.mesh, impact: 1, tear: 9999,
-        element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'tearblast',
+        element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'pryburst',
       });
       const cancelled = s._attack === null;
       const stateNow = s.state;
@@ -20623,7 +20623,7 @@ const GATES = [
       const RANGE = 55;
       const p = place(hx, hz + RANGE, {});
       C.combat.setWeapon(1, { silent: true });
-      C.combat.selectAmmo('hunter-bow', 'hunter');
+      C.combat.selectAmmo('sabina-bow', 'hunter');
       C.combat.ammo.hunter = 60;
       await faceMachine(m);
       // level the crosshair on its chest, not its feet
@@ -20853,7 +20853,7 @@ const GATES = [
       pin(m, Math.PI);            // it must not charge out of the shot
       C.combat.setWeapon(1, { silent: true });
       C.combat.ammo.hardpoint = 40;
-      C.combat.selectAmmo('hunter-bow', 'hardpoint');
+      C.combat.selectAmmo('sabina-bow', 'hardpoint');
       m.health = m.maxHealth;
 
       /* Sec 4 says a full-draw WEAK hit: the shot has to land on a live weak
@@ -21062,7 +21062,7 @@ const __S_combat_memory = await (async () => {
  * models, AND the 74 rope/wire/preview meshes of `traps.js` plus the swing
  * trail and spear of `melee.js` (combat.js `_trapRoots` / `_meleeRoots`).
  * Those last 83 objects were invisible to the first cut of these gates, which
- * meant a `new THREE.Mesh` per tripwire or per swing could have passed all
+ * meant a `new THREE.Mesh` per tripline or per swing could have passed all
  * four; `dTrapObjects` / `dMeleeObjects` are asserted at zero in A94 and
  * reported in A91. The contract is written up in
  * `docs/ROUND4-COMBAT-MEMORY.md`.
@@ -21124,9 +21124,9 @@ const FIRE = `async function fire(wid, ammo, x, y, z, waitMs) {
 
 /** Every projectile ammo type in the game, by the weapon that fires it. */
 const AMMO_MATRIX = `const TYPES = [
-  ['hunter-bow', 'hunter'], ['hunter-bow', 'hardpoint'], ['hunter-bow', 'fire'],
-  ['sharpshot-bow', 'precision'], ['sharpshot-bow', 'tearblast'],
-  ['war-bow', 'shock'], ['war-bow', 'freeze'],
+  ['sabina-bow', 'hunter'], ['sabina-bow', 'hardpoint'], ['sabina-bow', 'fire'],
+  ['sighting-bow', 'precision'], ['sighting-bow', 'pryburst'],
+  ['cane-recurve', 'shock'], ['cane-recurve', 'freeze'],
   ['blast-sling', 'blast-bomb'],
 ];`;
 
@@ -21397,7 +21397,7 @@ const GATES = [
        * eight ammo types, a barrage must add nothing to it.
        *
        * MATERIALS are reported but not asserted, and the reason is measured,
-       * not assumed: the sharpshot bow's two body materials are REPLACED (2
+       * not assumed: the sighting bow's two body materials are REPLACED (2
        * added, 2 removed, set size unchanged at 86) the first time the model is
        * seen in its stowed bone rather than in the hand — a scene-wide material
        * patch from another lane's lighting/weather pass, one-off per model
@@ -21565,7 +21565,7 @@ const GATES = [
         aims.push({ onGeometry: T.onGeometry, offCentreM: +T.point.distanceTo(new (__CTX__.player.position.constructor)(m.position.x, m.position.y + (m.height || 2) * 0.5, m.position.z)).toFixed(2) });
         for (let i = 0; i < n; i++) {
           m.health = m.maxHealth;
-          await fire('hunter-bow', 'hunter', T.point.x, T.point.y, T.point.z);
+          await fire('sabina-bow', 'hunter', T.point.x, T.point.y, T.point.z);
         }
         await new Promise(x => setTimeout(x, 600));
         return cb.arrows.audit().riding;
@@ -21952,8 +21952,8 @@ const GATES = [
         const x = p.position.x + 20, z = p.position.z + 20;
         await fire(w, a, x, gy(x, z), z, 200);
       }
-      try { cb.setWeapon('ropecaster', { silent: true }); } catch {}
-      try { cb.setWeapon('tripcaster', { silent: true }); } catch {}
+      try { cb.setWeapon('tether', { silent: true }); } catch {}
+      try { cb.setWeapon('wirelayer', { silent: true }); } catch {}
       try { cb.grantWeapon('disc-launcher'); cb.setWeapon('disc-launcher', { silent: true }); } catch {}
       await new Promise(r => setTimeout(r, 1200));
 
@@ -22217,7 +22217,7 @@ const GATES = [
   /* ------------------------------------------------------------------ A63 */
   {
     id: 'A63-loot-reveals', kind: 'action', lane: 'focus-items',
-    title: 'Focus reveals a machine wreck AND a supply crate as named LOOT, plus datapoint records',
+    title: 'Focus reveals a machine wreck AND a supply crate as named LOOT, plus fieldbook records',
     timeout: 60000,
     settle: 600,
     assert: staged([], `(async () => {
@@ -22272,8 +22272,8 @@ const GATES = [
       const vp = a.viewport ?? { w: innerWidth, h: innerHeight };
       const stray = reveals.filter(
         (r) => !(r.x >= 0 && r.x <= vp.w && r.y >= 0 && r.y <= vp.h));
-      // and the datapoint pedestals must reveal themselves the same way
-      const dp = ctx.items?.datapoints;
+      // and the fieldbook pedestals must reveal themselves the same way
+      const dp = ctx.items?.fieldbooks;
       const ov = labelOverlaps();
       const pass = !!wreckRow && !!crateRow && drawn >= reveals.length
         && shown === drawn && stray.length === 0
@@ -22287,7 +22287,7 @@ const GATES = [
         wreck: wreckRow?.name ?? null, wreckRarity: wreckRow?.rarity ?? null,
         crate: crateRow?.name ?? null, crateRarity: crateRow?.rarity ?? null,
         kinds: [...new Set(reveals.map((r) => r.kind))],
-        datapoints: dp ? dp.total : 0,
+        fieldbooks: dp ? dp.total : 0,
       } };
     })()`),
   },
@@ -22976,7 +22976,7 @@ const GATES = [
       const p = __CTX__.player;
 
       // nearest registered entry with a real world position (gather nodes,
-      // crates, datapoints — whatever this world actually spawned)
+      // crates, fieldbooks — whatever this world actually spawned)
       const live = (I.list || []).filter(e =>
         e && !e.removed && !e.consumed && !e.disabled
         && e.position && Number.isFinite(e.position.x));
@@ -23280,7 +23280,7 @@ const __S_shell_menus = await (async () => {
  * added on free ids because the §4 block gives this lane five gates for
  * eleven findings:
  *
- *   A70b-fast-travel   the campfire half of `missing-systems-title-save-campfire-flow`
+ *   A70b-fast-travel   the brazier half of `missing-systems-title-save-brazier-flow`
  *   A70c-title-flow    `ui-18` / `onboarding-loop-title-screen` made LITERAL —
  *                      V38 is judged from a PNG, this counts the logos
  *   A72b-accessibility `missing-systems-accessibility`: HUD scale, colourblind
@@ -23396,7 +23396,7 @@ const GATES = [
         p.takeDamage(9999);
         await wait(1600);
         out.deathAfterVictory = { state: c.state, victoryVisible: m.audit().victory.visible };
-        m.respawn('camp');
+        m.respawn('rest');
         await wait(400);
         out.respawned = { state: c.state, hp: Math.round(p.health) };
 
@@ -23558,11 +23558,11 @@ const GATES = [
   },
 
   /* ===================================================================== */
-  /* missing-systems-title-save-campfire-flow — the travel half             */
+  /* missing-systems-title-save-brazier-flow — the travel half             */
   /* ===================================================================== */
   {
     id: 'A70b-fast-travel', kind: 'action', lane: 'shell-menus',
-    title: 'Fast travel: campfire-only, discovered-only, and it actually moves her',
+    title: 'Fast travel: brazier-only, discovered-only, and it actually moves her',
     settle: 900, timeout: 60000,
     assert: `(async () => {${FRAMES}${STORAGE_GUARD}
       const snap = snapStorage();
@@ -23571,8 +23571,8 @@ const GATES = [
       try {
         const m = c.menus, p = c.player;
         if (!m) return { pass: null, detail: 'SKIP: menus not installed' };
-        const fire = c.camp?.firePosition;
-        if (!fire) return { pass: null, detail: 'SKIP: no campfire in this build' };
+        const fire = c.settlements?.firePosition;
+        if (!fire) return { pass: null, detail: 'SKIP: no brazier in this build' };
         const out = {};
 
         m.openHub('map'); await frames(6);
@@ -23586,14 +23586,14 @@ const GATES = [
         // 1. away from the fire it is refused, with a reason a player can read
         p.position.set(fire.x + 80, p.position.y, fire.z + 80); p._snapToGround?.();
         m.map.fog.reveal(site.x, site.z, 20);
-        out.awayFromFire = m.map.canFastTravel(site);
+        out.awayFromFire = m.map.canTravel(site);
 
         // 2. at the fire, to somewhere never visited, it is still refused.
         // R5 W0b fix round 1 (gates-perf's staging defect, judge finding): the map fog persists in localStorage
         // (cal.map.v5) across the suite's pages, so an earlier row can already have revealed ANY fixed point; the
         // Round-4 "(-300, -300) from the fire" was revealed in the full run and the row trusted it. The "never
         // visited" point is now the first candidate (the Round-4 offset first, then rings round the fire) that the
-        // live fog reports UNSEEN through FogOfWar.seenAt (the call canFastTravel reads) and that lies on the map
+        // live fog reports UNSEEN through FogOfWar.seenAt (the call canTravel reads) and that lies on the map
         // (worldToMap inside the canvas: the map's own extent, not a coordinate). Nothing is revealed or cleared,
         // so no state is touched; if every candidate is revealed the row FAILs by name.
         p.position.set(fire.x + 1.5, p.position.y, fire.z + 1.5); p._snapToGround?.();
@@ -23612,13 +23612,13 @@ const GATES = [
         out.unvisitedPick = far ? { dx: Math.round(far.x - fire.x), dz: Math.round(far.z - fire.z), revealedCandidatesSkipped: revealedCands, offMapSkipped: offMap,
           seenBefore: m.map.fog.seenAt(far.x, far.z) } : { revealedCandidatesSkipped: revealedCands, offMapSkipped: offMap };
         if (!far) return { pass: false, detail: { ...out, why: 'FAIL (staging): every candidate "never visited" point on the map is already revealed in the fog (' + revealedCands + ' revealed, ' + offMap + ' off the map); the undiscovered refusal cannot be tested' } };
-        out.undiscovered = m.map.canFastTravel(far);
+        out.undiscovered = m.map.canTravel(far);
 
         // 3. at the fire, to a discovered site, it travels
-        out.allowed = m.map.canFastTravel(site);
+        out.allowed = m.map.canTravel(site);
         onTravel = (e) => { fired = e; };
-        c.events.on('fast-travel', onTravel);
-        const res = m.map.fastTravel(site);
+        c.events.on('travel', onTravel);
+        const res = m.map.travelTo(site);
         await frames(6);
         out.result = res;
         out.event = fired ? { to: fired.to, site: fired.site } : null;
@@ -23627,7 +23627,7 @@ const GATES = [
         out.hubClosed = !m.hubOpen && c.state === 'playing';
 
         // the undiscovered refusal is for the RIGHT reason (an unseen point, refused as undiscovered)
-        const pass = out.awayFromFire.ok === false && /CAMPFIRE/.test(out.awayFromFire.reason)
+        const pass = out.awayFromFire.ok === false && /BRAZIER/.test(out.awayFromFire.reason)
           && out.unvisitedPick.seenBefore === false
           && out.undiscovered.ok === false && /UNDISCOVERED/.test(out.undiscovered.reason)
           && out.allowed.ok === true
@@ -23636,7 +23636,7 @@ const GATES = [
           && out.hubClosed;
         return { pass, detail: out };
       } finally {
-        if (onTravel) c.events.off('fast-travel', onTravel);   // W0b fix round 1: the listener is removed (memory rule)
+        if (onTravel) c.events.off('travel', onTravel);   // W0b fix round 1: the listener is removed (memory rule)
         restoreStorage(snap);
       }
     })()`,
@@ -24219,7 +24219,7 @@ const GATES = [
 
       /* ---- 4. ... and so is a DEATH, held past the respawn timer ------
        * Player._die() schedules a 3.2 s WALL-CLOCK setTimeout that heals
-       * her, TELEPORTS her to CAMP_POS and sets 'playing'. So the death pose
+       * her, TELEPORTS her to REST_POS and sets 'playing'. So the death pose
        * has to be measured on the far side of that timer or the gate is just
        * asking whether it happened to have fired yet: the first cut of this
        * gate slept 0.5 s, passed twice and failed once on identical code, and
@@ -26545,7 +26545,7 @@ const GATES = [
        */
       const cam = ctx.camera;
       const V = ctx.player.position.constructor;
-      const fy = ctx.camp.firePosition.y;
+      const fy = ctx.settlements.firePosition.y;
       // R5: the Round-4 framing, as offsets from the rest site's centre
       cam.position.set(RS.x - 13.0, fy + 6.2, RS.z - 14.0);
       cam.lookAt(RS.x - 0.6, fy + 1.1, RS.z + 0.6);
@@ -26588,7 +26588,7 @@ const GATES = [
       const clips = new Set(inFrame.map((n) => n.clip));
       // lit braziers are world-props' bar, but a dusk camp with nobody visible
       // is this lane's failure, so the light is only reported
-      const braziers = (ctx.camp.brazierLights || []).length;
+      const braziers = (ctx.settlements.brazierLights || []).length;
 
       return {
         pass: inFrame.length >= 6 && activities.size >= 4,
@@ -27107,9 +27107,9 @@ const GATES = [
       if (cache) cache.onInteract(ctx, cache);
       const cacheAgain = prog.totalXp - xpC1;
 
-      // 2. one-shot reason: a datapoint id can never be farmed
-      const dp1 = prog.award({ xp: 25, reason: 'datapoint', id:'gate-dp' });
-      const dp2 = prog.award({ xp: 25, reason: 'datapoint', id:'gate-dp' });
+      // 2. one-shot reason: a fieldbook id can never be farmed
+      const dp1 = prog.award({ xp: 25, reason: 'fieldbook', id:'gate-dp' });
+      const dp2 = prog.award({ xp: 25, reason: 'fieldbook', id:'gate-dp' });
 
       // 3. repeatable reason: fauna passes the SPECIES key, so every kill pays.
       //    Driven through fauna's own _kill when two of a species are alive.
@@ -27132,8 +27132,8 @@ const GATES = [
       }
 
       // 4. discover(): idempotent — one 'discovery' event per id, ever. A PLACE
-      //    banners; the 24 datapoint slugs are ledgered silently, because
-      //    focus-items already renders a DATAPOINT card for each of them and a
+      //    banners; the 24 fieldbook slugs are ledgered silently, because
+      //    focus-items already renders a FIELD BOOK card for each of them and a
       //    "DISCOVERED · DP SPAN 1" overlay would announce the same pickup
       //    twice, in slug case.
       const d1 = prog.discover('hunting-ground-valley');   // in PLACE_NAMES
@@ -27154,7 +27154,7 @@ const GATES = [
         && /HUNTING GROUND/.test(discBanners[0].textContent)
         && prog.hasDiscovered('hunting-ground-valley') === true
         && prog.hasDiscovered('dp-gate-quiet') === true
-        && prog.audit().awarded.includes('datapoint:gate-dp');
+        && prog.audit().awarded.includes('fieldbook:gate-dp');
 
       // level-up: step exactly onto the threshold through the public API
       const lvl0 = prog.level, pts0 = prog.skillPoints, hp0 = ctx.player.maxHealth, cur0 = ctx.player.health;
@@ -27199,7 +27199,7 @@ const GATES = [
   /* ------------------------------------------------------------------ A65 */
   {
     id: 'A65-save-restore', kind: 'action', lane: 'progression',
-    title: 'Save at the campfire, kill two machines, RELOAD the page, Continue — quest stage, inventory, ammo, position and alive-set all match',
+    title: 'Save at the brazier, kill two machines, RELOAD the page, Continue — quest stage, inventory, ammo, position and alive-set all match',
     timeout: 180000,
     /**
      * A literal page reload, not a simulated one. The setup builds a
@@ -27276,10 +27276,10 @@ const GATES = [
 
       // FIX ROUND 2 — the world-content ledgers have to cross the reload too,
       // or a save/load cycle becomes an XP farm for every one-shot pickup.
-      prog.award({ xp: 25, reason: 'datapoint', id:'a65-dp' });
+      prog.award({ xp: 25, reason: 'fieldbook', id:'a65-dp' });
       prog.discover('a65-place');
 
-      const res = prog.save('campfire');
+      const res = prog.save('brazier');
       const snap = prog.saves.read('cal.save.v5');
 
       const expected = {
@@ -27355,9 +27355,9 @@ const GATES = [
         alive: liveRoster(ctx).length,
       };
 
-      // one-shot ledgers survived: the datapoint cannot be re-farmed, and the
+      // one-shot ledgers survived: the fieldbook cannot be re-farmed, and the
       // place stays discovered (checked AFTER "got", so it cannot skew the XP)
-      const reAward = prog.award({ xp: 25, reason: 'datapoint', id:'a65-dp' });
+      const reAward = prog.award({ xp: 25, reason: 'fieldbook', id:'a65-dp' });
       const stillDiscovered = prog.hasDiscovered('a65-place');
 
       const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -27729,7 +27729,7 @@ const GATES = [
   /**
    * FIX ROUND 1 regression gate for judge-progression-r2-r0: "Silent Strike +
    * Strike from Above stack 3.5x onto melee's max-health-fraction silent
-   * strike: one stab kills any unaware apex, and the Colossus kill ends the
+   * strike: one stab kills any unaware peak, and the Colossus kill ends the
    * game". The two Prowler nodes multiplied `impact = maxHealth × 0.55` by
    * 1.75 × 2.0, so three skill points made one stab 1.347 × a Colossus's
    * max health and the VALLEY RECLAIMED screen followed.
@@ -27739,11 +27739,11 @@ const GATES = [
    *      placed behind an unaware Colossus, `_sneakOk` true): all four
    *      Prowler nodes on Easy, full health -> alive, damage <= 0.8 x max;
    *   2. worst case the game can reach — Story (1.60) + Precision (1.15) + all
-   *      Prowler, on a BRITTLE machine (x2 in machine.js) — on every apex and
+   *      Prowler, on a BRITTLE machine (x2 in machine.js) — on every peak and
    *      on two full-health mediums: alive, damage <= 0.8 x max. This is the
    *      row that proves the clamp is on DAMAGE, after the armour/weak/brittle
    *      factors, and not on impact;
-   *   3. a wounded apex (Colossus at 500) is never finished by a stab:
+   *   3. a wounded peak (Colossus at 500) is never finished by a stab:
    *      health ends >= 1;
    *   4. the skills still bite: Normal, all Prowler vs none, the Colossus
    *      stab grows by exactly (0.55 + 0.20) / 0.55 and `silentStrikeDamage`
@@ -27751,12 +27751,12 @@ const GATES = [
    *   5. a Sentry (melee's instant list) still dies to one REAL stab.
    * Rows 2-4 send the exact record melee.js:2199-2203 builds (impact =
    * maxHealth x MELEE.silent.heavyFrac, tear = MELEE.silent.tear, no struck
-   * object, point at 0.62 x height). `A64c-silent-apex` was checked against
+   * object, point at 0.62 x height). `A64c-silent-peak` was checked against
    * every id in tools/gates.config.mjs and tools/gates.round4.*.mjs —
    * unclaimed.
    */
   {
-    id: 'A64c-silent-apex', kind: 'action', lane: 'progression',
+    id: 'A64c-silent-peak', kind: 'action', lane: 'progression',
     title: 'Stealth skills raise the silent stab\'s health fraction without one-shotting the colossus: a skilled stab on an unaware colossus leaves it alive at <= 0.8 x max, the sentry still dies',
     timeout: 120000,
     setup: UP,
@@ -27785,7 +27785,7 @@ const GATES = [
       const { SILENT_STRIKE } = await import('/src/core/progression.js');
       const hf = MELEE.silent.heavyFrac;
       const CAP = SILENT_STRIKE.capFrac;
-      // R5: the colossus role (Round 4 named its apex species); get() spawns it when none stands
+      // R5: the colossus role (Round 4 named its peak species); get() spawns it when none stands
       const get = (kind) => {
         let m = liveOfKind(kind);   // W0b fix round 2: a staged kind's machine only (R28)
         if (!m && C.machines.spawn) {
@@ -27838,7 +27838,7 @@ const GATES = [
       };
 
       const bad = [];
-      const detail = { heavyFrac: hf, capFrac: CAP, apex: SILENT_STRIKE.apex };
+      const detail = { heavyFrac: hf, capFrac: CAP, peak: SILENT_STRIKE.peak };
       const tj = get(KIND.colossus);
       if (!tj) return { pass: false, detail: 'no colossus (' + KIND.colossus + ') could be staged' };
 
@@ -27870,13 +27870,13 @@ const GATES = [
       else if (!real.alive || real.killed || real.damage > CAP * tj.maxHealth + 1e-6) bad.push('real stab on a full-health colossus: alive=' + real.alive + ' frac=' + real.frac);
       if (!tj.alive) return { pass: false, detail: Object.assign(detail, { bad }) };
 
-      // 2. worst reachable case on every apex + two mediums
+      // 2. worst reachable case on every peak + two mediums
       prog.unlock('brave-precision');
       prog.setDifficulty('story');
       detail.storyDamageOut = +prog.mult('damageOut').toFixed(4);
       const worst = [];
-      // R5: the game's apex list where it names a staged kind, plus the colossus, heavy and flanker roles (R28: never a legacy kind)
-      for (const kind of [...new Set([...(SILENT_STRIKE.apex || []).filter((k) => STAGED_KINDS.includes(k)), KIND.colossus, KIND.heavy, KIND.flanker].filter(Boolean))]) {
+      // R5: the game's peak list where it names a staged kind, plus the colossus, heavy and flanker roles (R28: never a legacy kind)
+      for (const kind of [...new Set([...(SILENT_STRIKE.peak || []).filter((k) => STAGED_KINDS.includes(k)), KIND.colossus, KIND.heavy, KIND.flanker].filter(Boolean))]) {
         const m = get(kind);
         if (!m) { worst.push({ kind, missing: true }); if (kind === KIND.colossus) bad.push('no ' + kind); continue; }
         const r = stab(m, { brittle: true });
@@ -27885,7 +27885,7 @@ const GATES = [
       }
       detail.worstStoryPrecisionBrittle = worst;
 
-      // 3. a wounded apex is never finished by a stab
+      // 3. a wounded peak is never finished by a stab
       const wounded = stab(tj, { health: 500, brittle: true });
       detail.woundedColossus = wounded;
       if (!wounded.alive || wounded.health < 1 - 1e-6) bad.push('wounded colossus finished: health ' + wounded.health);
@@ -27940,7 +27940,7 @@ const __S_progression_expansion = await (async () => {
  * new objective types on real published events, a TIMED trial, a thirteen-NPC
  * conversation card, and the fact that all of it survives a literal page
  * reload. Every objective below is driven through the same call a player's
- * input would reach — the datapoint's own `collect()`, the cache's registered
+ * input would reach — the fieldbook's own `collect()`, the cache's registered
  * `onInteract`, `fauna._kill`, a real `takeDamage` kill, `npcs.talkTo` — never
  * by writing a counter.
  *
@@ -28026,10 +28026,10 @@ const A65X_PICK = `
       const __a65xQuests = (prog) => {
         const o = (q) => q.objectives || [];
         const sides = (prog.QUESTS || []).filter((q) => q.type === 'side' && q.site && !o(q).some((x) => x.type === 'override'));
-        const dp = sides.find((q) => o(q)[0]?.type === 'goto' && o(q)[1]?.type === 'datapoint' && (o(q)[1].count || 1) >= 2) || null;
+        const dp = sides.find((q) => o(q)[0]?.type === 'goto' && o(q)[1]?.type === 'fieldbook' && (o(q)[1].count || 1) >= 2) || null;
         const gather = sides.find((q) => q !== dp && o(q)[0]?.type === 'gather' && !!o(q)[0].item && !o(q)[0].fromStock && o(q).length >= 2) || null;
         const trial = sides.find((q) => q !== dp && q !== gather && o(q)[0]?.type === 'goto' && o(q).slice(1).some((x) => x.within > 0)) || null;
-        const miss = [['goto then a multi-count datapoint', dp], ['gather (not from stock) then more', gather], ['goto then a timed (within) objective', trial]].filter(([, q]) => !q).map(([k]) => k);
+        const miss = [['goto then a multi-count fieldbook', dp], ['gather (not from stock) then more', gather], ['goto then a timed (within) objective', trial]].filter(([, q]) => !q).map(([k]) => k);
         return { dp, gather, trial, ids: [dp, gather, trial].map((q) => q && q.id),
           skip: miss.length ? 'SKIP-R18: no site-anchored side quest of shape ' + miss.join(' / ') + ' in prog.QUESTS (progression re-authors the quests at W3)' : null };
       };
@@ -28080,8 +28080,8 @@ const GATES = [
       // --- three side quests, each PART done (picked by shape) ---
       prog.quests.start(Q.dp.id);
       await walkTo(ctx, prog, Q.dp.id, Q.dp.objectives[0].id);         // its goto: 1 objective done
-      const dpIds = (ctx.props && ctx.props.datapoints ? ctx.props.datapoints : []).map((d) => d.id);
-      ctx.items.datapoints.collect(dpIds[0]);                          // 1 record of its datapoint count
+      const dpIds = (ctx.props && ctx.props.fieldbooks ? ctx.props.fieldbooks : []).map((d) => d.id);
+      ctx.items.fieldbooks.collect(dpIds[0]);                          // 1 record of its fieldbook count
       prog.quests.start(Q.gather.id);
       const gObj = Q.gather.objectives[0];
       ctx.inventory.add(gObj.item, gObj.count || 1);                   // its gather: 1 objective done
@@ -28091,7 +28091,7 @@ const GATES = [
       prog.track(Q.dp.id);
 
       const trial = prog.trialState(Q.trial.id);
-      const res = prog.save('campfire');
+      const res = prog.save('brazier');
       const want = {
         level: prog.level, totalXp: prog.totalXp, skillPoints: prog.skillPoints,
         unlocked: [...prog.unlocked].sort(),
@@ -30209,7 +30209,7 @@ const GATES = [
       ctx.settings.cameraSmoothing = 0;
       const p = ctx.player;
       standAt(p, 'spawnVista', { yaw: false });   // R5: gatePlaces.spawnVista (was the map origin)
-      // face the camp fire so the "campfire is a light source" claim is visible
+      // face the camp fire so the "brazier is a light source" claim is visible
       // skip this lane's OWN pooled lights — they are added before the camp's
       const mine = new Set([env.fireLight, ...env.eyeLights]);
       let fire = null;
@@ -30227,7 +30227,7 @@ const GATES = [
       p.camPitch = 0.04;
       for (let i = 0; i < 4; i++) p._updateCamera(0.2, 0);
     })();`),
-    criteria: 'Pass: the scene is readable moonlit blue — terrain, tents and tree silhouettes all legible without a torch; stars visible in the sky with a moon; the campfire and any nearby machine eyes read as the warm/coloured light sources against the cool moonlight. FAIL on black mud with nothing readable, on a daylight-bright "night", or on a sky with no stars.',
+    criteria: 'Pass: the scene is readable moonlit blue — terrain, tents and tree silhouettes all legible without a torch; stars visible in the sky with a moon; the brazier and any nearby machine eyes read as the warm/coloured light sources against the cool moonlight. FAIL on black mud with nothing readable, on a daylight-bright "night", or on a sky with no stars.',
   },
 ];
   return { GATES };
@@ -30354,7 +30354,7 @@ const GATES = [
         if (c.ref) registered.add(c.ref);
       }
       // R5: the landmark groups are found by their '-landmark' suffix (Round 4 named one by its species)
-      const groups = ['world-props', 'hunter-camp', 'world-rockworks', 'world-activities',
+      const groups = ['world-props', 'settlement-host', 'world-rockworks', 'world-activities',
         ...ctx.scene.children.filter((c) => /-landmark$/.test(c.name || '')).map((c) => c.name)];
       const missing = [];
       const byGroup = {};
@@ -30398,7 +30398,7 @@ const GATES = [
       const total = C.count();
 
       /* ---- 3. the palisade stops a capsule, and its two gates do not ---- */
-      const camp = ctx.camp;
+      const camp = ctx.settlements;
       const S = camp.settlement;
       const fire = camp.firePosition;
       const probe = (a) => {
@@ -30590,7 +30590,7 @@ const GATES = [
       ${KIT}
       hideHud();
       const env = ctx.environment;
-      const camp = ctx.camp;
+      const camp = ctx.settlements;
       env.setWeather('clear', 0);
       env.setTime(19.4);                       // dusk: the braziers have to earn it
       if (ctx.settings) ctx.settings.cameraSmoothing = 0;
@@ -30742,16 +30742,16 @@ const GATES = [
 
   /* ----------------------------------------------------------------- A61b */
   /**
-   * FIX ROUND 1. `camp-rest` was published in this lane's contract and never
+   * FIX ROUND 1. `brazier-rest` was published in this lane's contract and never
    * emitted in the shipped build: `progression` registers the REST & SAVE entry
-   * first and its `onInteract` only OPENS the campfire panel, so the emit that
+   * first and its `onInteract` only OPENS the brazier panel, so the emit that
    * sat inside `camp.restAtFire()` was unreachable — and a first fix that added
    * a second emit to the same method was still unreachable. Nothing caught it
    * because no gate drove the button a player actually presses.
    *
    * This one does: it finds the live REST entry at the fire, interacts with it,
    * clicks the real REST UNTIL DAWN control in the DOM, and then asserts the
-   * clock moved, health came back, and EXACTLY ONE `camp-rest` was raised.
+   * clock moved, health came back, and EXACTLY ONE `brazier-rest` was raised.
    * A direct `camp.restAtFire()` is then driven as a control, so a future fix
    * cannot pass by double-emitting. localStorage is snapshotted and restored,
    * because resting writes a real save and this gate must not hand a save to
@@ -30759,7 +30759,7 @@ const GATES = [
    */
   {
     id: 'A61b-camp-rest-event', kind: 'action', lane: 'world-props',
-    title: 'Resting at the campfire through the shipped UI raises exactly one camp-rest, moves the clock and heals',
+    title: 'Resting at the brazier through the shipped UI raises exactly one camp-rest, moves the clock and heals',
     settle: 2400, timeout: 150000,
     assert: `(async () => {
       const ctx = __CTX__;
@@ -30799,8 +30799,8 @@ const GATES = [
         document.body.appendChild(d);
       };
 
-      const fire = ctx.camp && ctx.camp.firePosition;
-      if (!fire) { restoreLS(); return { pass: false, detail: { reason: 'ctx.camp.firePosition missing' } }; }
+      const fire = ctx.settlements && ctx.settlements.firePosition;
+      if (!fire) { restoreLS(); return { pass: false, detail: { reason: 'ctx.settlements.firePosition missing' } }; }
       const near = ctx.interactables.list.filter((e) => e && e.position
         && /REST/i.test(e.label || '')
         && Math.hypot(e.position.x - fire.x, e.position.z - fire.z) < 4.5);
@@ -30808,7 +30808,7 @@ const GATES = [
       const ev = ctx.events;
       const emitted = [];
       const origEmit = ev.emit.bind(ev);
-      ev.emit = (t, p) => { if (t === 'camp-rest') emitted.push(p); return origEmit(t, p); };
+      ev.emit = (t, p) => { if (t === 'brazier-rest') emitted.push(p); return origEmit(t, p); };
 
       const p = ctx.player;
       const maxHp = (p && p.maxHealth) || 100;
@@ -30842,7 +30842,7 @@ const GATES = [
       emitted.length = 0;
       if (p) p.health = Math.round(maxHp * 0.5);
       if (ctx.environment && ctx.environment.setTime) ctx.environment.setTime(22.0);
-      try { await ctx.camp.restAtFire(6.2); } catch (err) { /* reported below */ }
+      try { await ctx.settlements.restAtFire(6.2); } catch (err) { /* reported below */ }
       await waitFor(() => emitted.length > 0, 30000);
       await sleep(900);
       const directEvents = emitted.length;
@@ -30856,7 +30856,7 @@ const GATES = [
       const healed = hpAfter === null || hpAfter >= maxHp - 0.01;
       const detail = {
         restEntries: near.length,
-        adoptedProgressionEntry: near[0] === (ctx.progression && ctx.progression._campEntry),
+        adoptedProgressionEntry: near[0] === (ctx.progression && ctx.progression._restEntry),
         buttonText, clicked,
         hourBefore: hourBefore === null ? null : +hourBefore.toFixed(2),
         hourAfter: hourAfter === null ? null : +hourAfter.toFixed(2),
@@ -30880,21 +30880,21 @@ const GATES = [
 
   /* ----------------------------------------------------------------- A61c */
   /**
-   * FIX ROUND 1. This lane shipped a second, parallel datapoint system beside
-   * the one `focus-items` publishes — 24 pickups labelled DATAPOINT, of which
+   * FIX ROUND 1. This lane shipped a second, parallel fieldbook system beside
+   * the one `focus-items` publishes — 24 pickups labelled FIELD BOOK, of which
    * only 12 could ever reach the Notebook. The fix routes this lane's twelve
-   * through `ctx.items.datapoints.place()`; this gate holds that line.
+   * through `ctx.items.fieldbooks.place()`; this gate holds that line.
    *
-   * It proves ONE system owns every DATAPOINT in the world (each pickup is a
-   * store record by identity, no local `site:'datapoint'` entry survives, no
+   * It proves ONE system owns every FIELD BOOK in the world (each pickup is a
+   * store record by identity, no local `site:'fieldbook'` entry survives, no
    * two pickups share a square metre), that all twelve of this lane's ids are
    * in the store, that the duplicate mote mesh is gone from the frame, and
    * that collecting one of THIS lane's records fills the Notebook and raises
-   * both `datapoint-collected` and `fieldbook-found`.
+   * both `fieldbook-collected` and `fieldbook-found`.
    */
   {
-    id: 'A61c-datapoints-unified', kind: 'action', lane: 'world-props',
-    title: 'Every DATAPOINT in the world belongs to one system and reaches the Notebook',
+    id: 'A61c-fieldbooks-unified', kind: 'action', lane: 'world-props',
+    title: 'Every FIELD BOOK in the world belongs to one system and reaches the Notebook',
     settle: 2200, timeout: 60000,
     assert: `(async () => {
       const ctx = __CTX__;
@@ -30907,20 +30907,20 @@ const GATES = [
         d.textContent = lines.join(String.fromCharCode(10));
         document.body.appendChild(d);
       };
-      const store = ctx.items && ctx.items.datapoints;
+      const store = ctx.items && ctx.items.fieldbooks;
       const acts = ctx.props && ctx.props.activities;
       if (!store || !acts) {
-        return { pass: false, detail: { reason: 'ctx.items.datapoints or ctx.props.activities missing' } };
+        return { pass: false, detail: { reason: 'ctx.items.fieldbooks or ctx.props.activities missing' } };
       }
 
-      const entries = ctx.interactables.list.filter((e) => /DATAPOINT/i.test((e && e.label) || ''));
+      const entries = ctx.interactables.list.filter((e) => /FIELD BOOK/i.test((e && e.label) || ''));
       // identity, not label: every pickup must BE one of the store's records
       const recSet = new Set(store.list.map((r) => r.id));
-      const strays = entries.filter((e) => !(e.datapoint && recSet.has(e.datapoint.id)));
-      const localSite = entries.filter((e) => e.site === 'datapoint').length;
+      const strays = entries.filter((e) => !(e.fieldbook && recSet.has(e.fieldbook.id)));
+      const localSite = entries.filter((e) => e.site === 'fieldbook').length;
 
       // no two pickups on the same spot (the duplicate system put a second
-      // DATAPOINT within a metre of a record at several sites)
+      // FIELD BOOK within a metre of a record at several sites)
       let minPairDist = Infinity;
       for (let i = 0; i < entries.length; i++) {
         for (let j = i + 1; j < entries.length; j++) {
@@ -30930,7 +30930,7 @@ const GATES = [
         }
       }
 
-      const mineIds = acts.datapoints.map((d) => d.id);
+      const mineIds = acts.fieldbooks.map((d) => d.id);
       const missing = mineIds.filter((id) => !store.record(id));
       const motesHidden = !acts.motes || acts.motes.visible === false;
 
@@ -30939,16 +30939,16 @@ const GATES = [
       const ev = ctx.events;
       const seen = [];
       const origEmit = ev.emit.bind(ev);
-      ev.emit = (t, p) => { if (t === 'datapoint-collected' || t === 'fieldbook-found') seen.push(t); return origEmit(t, p); };
+      ev.emit = (t, p) => { if (t === 'fieldbook-collected' || t === 'fieldbook-found') seen.push(t); return origEmit(t, p); };
       const before = store.count;
-      const entry = entries.find((e) => e.datapoint && e.datapoint.id === pick);
+      const entry = entries.find((e) => e.fieldbook && e.fieldbook.id === pick);
       if (entry && entry.onInteract) { try { await entry.onInteract(); } catch (err) { /* below */ } }
       await sleep(300);
       const after = store.count;
       ev.emit = origEmit;
 
       const detail = {
-        datapointPickups: entries.length, storeRecords: store.total,
+        fieldbookPickups: entries.length, storeRecords: store.total,
         strays: strays.length, localFallbackEntries: localSite,
         minPairDistance: +minPairDist.toFixed(2),
         laneRecordsInStore: mineIds.length - missing.length, missing,
@@ -30960,11 +30960,11 @@ const GATES = [
         && localSite === 0 && missing.length === 0 && motesHidden
         && minPairDist > 1.5
         && after === before + 1
-        && seen.indexOf('datapoint-collected') >= 0
+        && seen.indexOf('fieldbook-collected') >= 0
         && seen.indexOf('fieldbook-found') >= 0;
       note([
-        'A61c datapoints  ' + (pass ? 'PASS' : 'FAIL'),
-        'DATAPOINT pickups in the world: ' + entries.length
+        'A61c fieldbooks  ' + (pass ? 'PASS' : 'FAIL'),
+        'FIELD BOOK pickups in the world: ' + entries.length
           + '   store records: ' + store.total + '   strays: ' + strays.length,
         'this lane in the store: ' + detail.laneRecordsInStore + '/' + mineIds.length
           + '   duplicate mote mesh hidden: ' + motesHidden,
@@ -31427,9 +31427,9 @@ const GATES = [
       const voiceNeed = ${SPECIES}.flatMap(s => ['voice/' + s + '/windup', 'voice/' + s + '/strike']);
       const need = [
         ['foot/grass', 'foot/dirt', 'foot/rock'],
-        ['hunter', 'sharpshot', 'war'].flatMap(w => ['nock','draw','release','flyby','empty'].map(k => 'bow/' + w + '/' + k)),
+        ['hunter', 'sighting', 'war'].flatMap(w => ['nock','draw','release','flyby','empty'].map(k => 'bow/' + w + '/' + k)),
         ['hit/plink', 'hit/thunk', 'hit/crunch', 'hit/crit'],
-        ['amb/meadow', 'amb/river', 'amb/campfire'],
+        ['amb/meadow', 'amb/river', 'amb/brazier'],
       ].flat();
       const missing = need.filter(s => !a.bank.has(s));
       const voiceMissing = voiceNeed.filter(s => !a.bank.has(s));
@@ -32448,7 +32448,7 @@ const GATES = [
       if (!a.ac) return { pass: null, detail: 'SKIP: no AudioContext' };
       const C = __CTX__;
       const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-      const BOWS = [[1, 'hunter', 'hunter-bow'], [2, 'sharpshot', 'sharpshot-bow'], [3, 'war', 'war-bow']];
+      const BOWS = [[1, 'hunter', 'sabina-bow'], [2, 'sighting', 'sighting-bow'], [3, 'war', 'cane-recurve']];
 
       const out = {}; const problems = [];
       try {
@@ -32465,7 +32465,7 @@ const GATES = [
            *
            * This used to hold RMB for 950 ms and LMB for 950 ms for all three
            * bows — numbers sized for the hunter (nockTime 0.42 s, drawTime
-           * 0.7 s). The sharpshot needs 0.62 s + 1.2 s = 1.82 s, so its arrow
+           * 0.7 s). The sighting needs 0.62 s + 1.2 s = 1.82 s, so its arrow
            * was loosed at ~79 % draw and the gate passed only because a
            * partial draw still happened to fire on an unloaded box. Under the
            * full suite it did not, and the gate reported "no draw cue / no
@@ -32929,7 +32929,7 @@ const GATES = [
      *           Walked across the real valley surfaces (ridge rock, the river
      *           bank, the meadow) through `terrain.surfaceAt`, so a bed table
      *           that had collapsed to one entry fails here.
-     *   ZONES   the campfire and the river are POSITIONAL emitters that live
+     *   ZONES   the brazier and the river are POSITIONAL emitters that live
      *           at a place in the world — they appear in range, they track
      *           their distance to the listener, and they retire when you walk
      *           away. A 2D bed cannot do the first or the third.
@@ -32996,26 +32996,26 @@ const GATES = [
           return Object.keys(g).every(set => (set === named ? g[set] > 0 : g[set] === 0));
         });
 
-        /* -- 2. the campfire is a place you can walk away from ---------- */
-        const fire = __CTX__.camp && __CTX__.camp.firePosition;
+        /* -- 2. the brazier is a place you can walk away from ---------- */
+        const fire = __CTX__.settlements && __CTX__.settlements.firePosition;
         const zone = { hasFire: !!fire };
         if (fire) {
           P.position.x = fire.x + 6; P.position.z = fire.z + 6;
           if (P._snapToGround) P._snapToGround();
           const t0 = performance.now();
-          while (performance.now() - t0 < 6000 && !a.zones.has('fire:camp')) await sleep(120);
+          while (performance.now() - t0 < 6000 && !a.zones.has('fire:rest')) await sleep(120);
           zone.nearIds = a.zones.ids();
-          zone.lit = a.zones.has('fire:camp');
+          zone.lit = a.zones.has('fire:rest');
           // a positional emitter tracks its distance; a 2D bed has none
-          const near = a.zones._live.get('fire:camp');
+          const near = a.zones._live.get('fire:rest');
           zone.nearDist = near ? +near.chain.dist.toFixed(2) : null;
           P.position.x = fire.x + 120; P.position.z = fire.z + 120;
           if (P._snapToGround) P._snapToGround();
           await sleep(2500);
           zone.farDist = near ? +near.chain.dist.toFixed(2) : null;
           const t1 = performance.now();
-          while (performance.now() - t1 < 6000 && a.zones.has('fire:camp')) await sleep(120);
-          zone.retired = !a.zones.has('fire:camp');
+          while (performance.now() - t1 < 6000 && a.zones.has('fire:rest')) await sleep(120);
+          zone.retired = !a.zones.has('fire:rest');
         }
 
         /* -- 3. the distant call, on the real path ----------------------- */
@@ -33072,7 +33072,7 @@ const GATES = [
   /* ===================================================================== */
   {
     /**
-     * A73e — the spear, the Tripcaster and the Ropecaster have a voice.
+     * A73e — the spear, the Wirelayer and the Tether have a voice.
      *
      * These nine sets were rendered into the bank by `tools/audio-bank.mjs`
      * and then never played: `src/audio/audio.js` subscribed to none of the

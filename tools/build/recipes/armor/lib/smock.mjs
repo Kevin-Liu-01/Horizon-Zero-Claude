@@ -8,7 +8,7 @@
  *
  *   radialTable   the outermost radius per (height, bearing) of the surfaces under it
  *   drapeTable    per height: the convex hull of the slice (cloth bridges every hollow);
- *                 per bearing: a straight run from the collarbone to the bust's apex,
+ *                 per bearing: a straight run from the collarbone to the bust's peak,
  *                 and below it a limited fall (it hangs, it does not cup back in)
  *   draftSmock    one ring-cut sheet from the neckline to the belt, opening at the
  *                 centre front (the keyhole), with real armholes, metric UVs and the
@@ -88,7 +88,7 @@ function hullRow(R, off, n) {
 
 /**
  * What a loose cloth does over the table: `fall` metres in per metre down from the
- * apex (it hangs), a straight run from the top down to the apex (tension), `margin`
+ * peak (it hangs), a straight run from the top down to the peak (tension), `margin`
  * ease all over, and a low-pass so no body landmark prints through.
  */
 export function drapeTable(T, { apex = [1.24, 1.40], fall = 0.32, margin = () => 0.006, passes = 3, minEase = 0.003 } = {}) {
@@ -104,7 +104,7 @@ export function drapeTable(T, { apex = [1.24, 1.40], fall = 0.32, margin = () =>
       const at = rA - fall * (iA - y) * dy;
       if (R[y * nTh + t] < at) R[y * nTh + t] = at;
     }
-    // the upper hull of (y, r) from the apex up: a straight run across any hollow
+    // the upper hull of (y, r) from the peak up: a straight run across any hollow
     const st = [iA];
     for (let y = iA + 1; y < nY; y++) {
       if (R[y * nTh + t] <= 0) continue;

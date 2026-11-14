@@ -5,7 +5,18 @@ import { buildWeaponModel, weaponAssets, disposeWeaponAssets } from './bow.js';
 import { armoryAssets } from '../hero/weaponAtlas.js';
 import { AMMO, WEAPON_DEFS, DISC_LAUNCHER_DEF } from './weapons.js';
 import { Melee } from './melee.js';
-import { Traps } from './traps.js';
+/**
+ * The Round-4 trap weapons were deleted at M0.3 R3 (bible §8.1 has no laid trap; Q8). This stand-in keeps the
+ * combat paths that asked the trap system a question answered with "nothing placed".
+ */
+const NO_TRAPS = Object.freeze({
+  placing: null,
+  update() {},
+  clearPlacement() {},
+  fireRope() { return false; },
+  placeWire() { return null; },
+  dispose() {},
+});
 import { CombatFeedback } from './feedback.js';
 
 /**
@@ -28,7 +39,7 @@ import { CombatFeedback } from './feedback.js';
  */
 
 /**
- * `combat-tap-fire-cancelled`. HZD looses at ANY draw — an underdrawn arrow is
+ * `combat-tap-fire-cancelled`. Older game looses at ANY draw — an underdrawn arrow is
  * a weak arrow, not a cancelled one. The old 0.15 floor silently ate every
  * quick snap shot; the only thing left below the floor is an accidental click
  * with no draw at all.
@@ -38,7 +49,7 @@ const FOV_HIP = 55;
 const CONC_TIME = 6;         // seconds of Concentration drain (and refill)
 const CONC_TIMESCALE = 0.35;
 /**
- * `combat-bow-stowed-in-combat`. Aloy does not put her bow away between
+ * `combat-bow-stowed-in-combat`. Brea does not put her bow away between
  * arrows. Once she has used a weapon (or a hostile machine is close) she keeps
  * it in her LEFT hand for this long, then stows it across her back.
  */
@@ -47,16 +58,16 @@ const THREAT_RANGE = 40;     // an alert machine this close keeps the bow out
 /** Hold R this long to craft a batch (`combat-wheel-canon-gaps`). */
 const CRAFT_HOLD = 0.55;
 
-// Stowed carry (HZD: Aloy always wears her bow diagonally across the back).
+// Stowed carry (Older game: Brea always wears her bow diagonally across the back).
 // Offsets are in character space (+Z forward, y up from feet, +X = her left),
 // converted into spine-bone space once at bind pose in _initStow().
 const STOW_POS = { x: 0.10, y: 1.30, z: -0.17 }; // grip up-left on the back
 /* FIX ROUND 3 — ONE LINE, CHANGED BY LANE player-melee, OUTSIDE ITS GRANT.
- * +0.62, not -0.62. ROUND4-AUDIT §4 stows the SPEAR with its blade above her
+ * +0.62, not -0.62. ROUND4-AUDIT §4 stows the LANCE with its blade above her
  * RIGHT shoulder, which forces it onto a low-left-to-high-right diagonal; the
  * bow ran the opposite one, so the two crossed in an X on her back and V48's
  * "does not intersect the quiver/bow" failed on the film two rounds running.
- * Same sign = two near-parallel straps, as in reference/spear-holster-back-hfw.jpg.
+ * Same sign = two near-parallel straps, as in reference/lance-holster-back-older game.jpg.
  * Nothing else about the stow changes (grip point, lean, hand-off all untouched)
  * and no combat gate reads this constant. Combat lane: revert it and V48 fails
  * again — see docs/ROUND4-PLAYER-MELEE.md §5 for the geometry that rules out an
@@ -72,7 +83,7 @@ const SPARK_COLORS = [
 const SHOCK_COLORS = [[0.30, 0.80, 1.0], [0.55, 0.90, 1.0], [0.15, 0.55, 1.0]];
 const FREEZE_COLORS = [[0.75, 0.90, 1.0], [0.88, 0.96, 1.0], [0.55, 0.80, 1.0]];
 const TEAR_COLORS = [[0.35, 0.95, 0.9], [0.6, 1.0, 0.95], [0.2, 0.7, 0.75]];
-const EMBER_COLORS = [[1.0, 0.50, 0.10], [1.0, 0.32, 0.05], [1.0, 0.70, 0.22]];
+const GLOW_COLORS = [[1.0, 0.50, 0.10], [1.0, 0.32, 0.05], [1.0, 0.70, 0.22]];
 /** White-hot impact core, deliberately over the bloom threshold. */
 const FLASH_CORE = [[3.2, 2.7, 1.6]];
 const DIRT_COLORS = [[0.42, 0.34, 0.22], [0.52, 0.43, 0.28], [0.35, 0.28, 0.18]];
@@ -137,7 +148,7 @@ const _AP = new Float64Array(4);      // the aim march's bracket: a, b, f(a), f(
  * TEARDOWN PATH ONLY — never called from a frame. Geometries, materials and
  * their textures are gathered into sets first so a resource shared by many
  * meshes (the traps' one unit cylinder and one stake geometry are shared 56
- * ways) is disposed exactly once, and so the traversal cannot be corrupted by
+ * ways) is disposed exactly once, and so the traversal cannot be damaged by
  * the removal it is about to perform.
  */
 function disposeSceneRoots(roots) {
@@ -338,7 +349,7 @@ export class Combat {
     this.steady = { active: false, gauge: 1 };
     /**
      * `combat-no-nock-delay` + the character-lane handoff
-     * (docs/ROUND4-CHARACTER.md §9.5). `nockLanded` is FALSE while Aloy is
+     * (docs/ROUND4-CHARACTER.md §9.5). `nockLanded` is FALSE while Brea is
      * still pulling an arrow out of the quiver, and the string physically
      * cannot bend until it flips. `player-anim` reads it to hold the quiver
      * flourish; `shell-hud` can read `nockProgress` for a re-nock pip.
@@ -406,14 +417,14 @@ export class Combat {
     this._bowNode = node;
     armoryAssets(ctx);
     this._models = {};
-    for (const id of ['hunter-bow', 'sharpshot-bow', 'war-bow', 'blast-sling',
-      'ropecaster', 'tripcaster', 'disc-launcher']) {
+    for (const id of ['sabina-bow', 'sighting-bow', 'cane-recurve', 'blast-sling',
+      'tether', 'wirelayer', 'disc-launcher']) {
       const model = buildWeaponModel(id, { bow: ctx.player?.model?.userData?.rigProfile?.bow });
       model.group.visible = false;
       node.add(model.group);
       this._models[id] = model;
     }
-    this.bow = this._models['hunter-bow'];
+    this.bow = this._models['sabina-bow'];
 
     // stowed-carry calibration (bow across the back when not wielded) —
     // computed at bind pose, before the animator has posed the skeleton
@@ -450,7 +461,7 @@ export class Combat {
 
     // --- Round 4 sub-systems (combat owns them; main.js is core-platform's)
     this.melee = new Melee(ctx, this);          // combat-melee-missing
-    this.traps = new Traps(ctx, this);          // combat-roster-missing
+    this.traps = NO_TRAPS;
     this.feedback = new CombatFeedback(ctx);    // combat-hit-feedback-faint
 
     // --- craft hold (combat-wheel-canon-gaps / onboarding crafting-feedback)
@@ -475,17 +486,11 @@ export class Combat {
     //     underneath the pause menu / death screen
     const wheelOpen = () => !!ctx.wheel?.open;
     const inPlay = () => ctx.state === 'playing' || ctx.params.has('shot');
-    // six weapon slots now (Ropecaster + Tripcaster); the wheel is hexagonal
-    for (let s = 1; s <= WEAPON_DEFS.length; s++) {
-      ctx.input.onDown(`Digit${s}`, () => {
-        if (wheelOpen()) ctx.wheel?.hoverSlot?.(s);
-        else if (inPlay()) this.setWeapon(s);
-      });
-    }
+    // number keys belong to the quick slots (src/ui/quickslots.js): 1 = bow, 2 = lance
     ctx.input.onDown('KeyZ', () => { if (!wheelOpen() && inPlay()) this.cycleAmmo(-1); });
     ctx.input.onDown('KeyX', () => { if (!wheelOpen() && inPlay()) this.cycleAmmo(1); });
     /**
-     * `stealth-lure-missing`. G is the whistle: Aloy makes a noise where she
+     * `stealth-lure-missing`. G is the whistle: Brea makes a noise where she
      * stands and machines come to look at THAT, which is the other half of the
      * stealth pillar the grass and the Silent Strike already set up.
      * Routed through machine-ai's published stimulus bus.
@@ -692,11 +697,11 @@ export class Combat {
   }
 
   _applyWeaponModel() {
-    const id = this.activeWeapon?.id ?? 'hunter-bow';
+    const id = this.activeWeapon?.id ?? 'sabina-bow';
     for (const key in this._models) {
       if (key !== id) this._models[key].group.visible = false;
     }
-    this.bow = this._models[id] ?? this._models['hunter-bow'];
+    this.bow = this._models[id] ?? this._models['sabina-bow'];
     this._nockType = null; // force re-nock
     this._bowVis = Math.min(this._bowVis, 0.35); // small re-equip pop
   }
@@ -731,7 +736,7 @@ export class Combat {
 
   /**
    * Calibrate the stowed-carry transform: where the active bow sits on
-   * Aloy's back (spine bone space) when not wielded. Computed from the bind
+   * Brea's back (spine bone space) when not wielded. Computed from the bind
    * pose so it tracks the spine through idle/run/crouch afterwards.
    */
   _initStow() {
@@ -820,7 +825,7 @@ export class Combat {
     const w = this.activeWeapon;
     const isDisc = w?.id === 'disc-launcher';
 
-    // --- Concentration (real-time meter; the world slows, Aloy doesn't)
+    // --- Concentration (real-time meter; the world slows, Brea doesn't)
     this._updateConcentration(realDt, playing, aiming);
 
     // --- time scale: `engine.requestTimeScale` is the single authority
@@ -884,7 +889,7 @@ export class Combat {
           this.drawStrength = 0;
         } else if (this._drawing) {
           // draw builds in REAL time — drawing at full speed inside
-          // Concentration slow-mo is the signature HZD moment
+          // Concentration slow-mo is the signature Older game moment
           this.drawStrength += realDt / drawTime;
           if (this.drawStrength > 1) this.drawStrength = 1;
         }
@@ -898,7 +903,7 @@ export class Combat {
     this._lmbPrev = lmb;
     if (player) player.drawStrength = this.drawStrength; // animator contract
 
-    // --- the spear owns LMB whenever she is NOT aiming
+    // --- the lance owns LMB whenever she is NOT aiming
     this.melee.update(realDt, playing);
     // --- hold-R crafting with a radial fill
     this._updateCraft(realDt, playing, wheelOpen);
@@ -935,7 +940,7 @@ export class Combat {
     this.bombs.update(dt, fx);
     this.discs.update(dt, fx);
 
-    // --- ropes + tripwires (combat-roster-missing)
+    // --- ropes + triplines (combat-roster-missing)
     this.traps.update(realDt, aiming ? this.aimPoint : null, ammoId);
     this._updateTrapPrompt(w, ammoId, aiming);
 
@@ -1049,17 +1054,17 @@ export class Combat {
 
   /** `combat-bow-stowed-in-combat` — the 8 s holster timer + threat check. */
   _updateWield(realDt, playing, aiming) {
-    /* LANE player-melee (grant extended Sep 27, ROUND4-AUDIT.md §4). A spear
-     * swing is not a bow action, and while the spear is in her RIGHT hand her
-     * LEFT hand is empty (spear-canon.md finding 2 / M3), so the bow stays on
-     * her back. Round 6 (ruling R8, "never both in hand"): keyed on the spear
+    /* LANE player-melee (grant extended Sep 27, ROUND4-AUDIT.md §4). A lance
+     * swing is not a bow action, and while the lance is in her RIGHT hand her
+     * LEFT hand is empty (lance-canon.md finding 2 / M3), so the bow stays on
+     * her back. Round 6 (ruling R8, "never both in hand"): keyed on the lance
      * actually being in her fist, AIMING INCLUDED — round 5 let an aim pull
      * the bow into her left hand while the swing and the holster still had
-     * the spear in her right (~0.5 s of both, the r5 skeptic). Aim still wins:
-     * melee cuts the recover and stows the spear fast, and the bow comes up
-     * the frame the spear is back on its socket. */
+     * the lance in her right (~0.5 s of both, the r5 skeptic). Aim still wins:
+     * melee cuts the recover and stows the lance fast, and the bow comes up
+     * the frame the lance is back on its socket. */
     // lanceStow.js `lanceOut(melee)` once melee's module is on main (plan §1.2; the two read the same flag)
-    const spearOut = !!this.melee && !!(this.melee.lanceInHand ?? this.melee.spearInHand);
+    const lanceOut = !!this.melee && !!this.melee.lanceInHand;
     if (aiming || this._drawing) this._holsterT = HOLSTER_TIME;
     else this._holsterT = Math.max(0, this._holsterT - realDt);
 
@@ -1078,10 +1083,10 @@ export class Combat {
         break;
       }
     }
-    this.weaponDrawn = !!playing && !spearOut && (aiming || this._holsterT > 0 || threat);
+    this.weaponDrawn = !!playing && !lanceOut && (aiming || this._holsterT > 0 || threat);
   }
 
-  /** The Tripcaster's placement state, shown centred above the reticle. */
+  /** The Wirelayer's placement state, shown centred above the reticle. */
   _updateTrapPrompt(w, ammoId, aiming) {
     if (!w?.place || !aiming) { this.feedback.trapPrompt(''); return; }
     const pl = this.traps.placing;
@@ -1101,7 +1106,7 @@ export class Combat {
    * Two poses, and the second one is `combat-bow-stowed-in-combat` /
    * gate V29-wielded-carry: while AIMING the bow is levelled at the aim point;
    * while merely CARRYING it hangs low across her body, limbs raked forward
-   * and canted down, which is how Aloy jogs through a fight in HZD. The carry
+   * and canted down, which is how Brea jogs through a fight in Older game. The carry
    * pose is expressed as a rotation off her heading, not off the camera, so it
    * does not swing about when the player looks around.
    */
@@ -1166,7 +1171,7 @@ export class Combat {
     S.z = vis / (_ws.z > 1e-6 ? _ws.z : 1e-6);
   }
 
-  /** Unwielded: ride the spine bone, diagonal across the back (HZD carry). */
+  /** Unwielded: ride the spine bone, diagonal across the back (Older game carry). */
   _placeOnBack(model, stowVis, isDisc) {
     const st = this._initStow();
     // the disc launcher is carried in-hands only — never on the back
@@ -1381,7 +1386,7 @@ export class Combat {
      * `onboarding-loop-first-kill-trivial` — `_pointBlankHit` is GONE. It swept
      * chest -> aim and resolved any machine surface inside 2.6 m as an
      * automatic hit before the arrow existed, which meant the first Sentry
-     * died to a click with no aiming at all. Point blank is now the SPEAR's
+     * died to a click with no aiming at all. Point blank is now the LANCE's
      * job (LMB unaimed), and the arrow that IS fired at knife range is swept
      * honestly by ctx.hitHulls from the tail of its first segment.
      */
@@ -1398,7 +1403,7 @@ export class Combat {
     this._afterLoose(type, ds);
   }
 
-  /** Tripcaster: shot 1 plants the anchor, shot 2 closes the wire. */
+  /** Wirelayer: shot 1 plants the anchor, shot 2 closes the wire. */
   _placeTrap(type, def, ds) {
     const r = this.traps.placeWire(this.aimPoint, type);
     if (!r) return;
@@ -1409,7 +1414,7 @@ export class Combat {
     }
     // an anchor costs nothing; only closing the span spends a wire
     this.ctx.events.emit('arrow-fired', {
-      type, drawStrength: ds, weapon: this.activeWeapon?.id ?? 'tripcaster',
+      type, drawStrength: ds, weapon: this.activeWeapon?.id ?? 'wirelayer',
       placed: false,
     });
     const p = this.ctx.player;
@@ -1449,7 +1454,7 @@ export class Combat {
      * spring applied to the lens only, so the shot after the kick starts
      * exactly where she was aiming.
      */
-    const heavy = type === 'precision' || type === 'tearblast' || type === 'blast-bomb';
+    const heavy = type === 'precision' || type === 'pryburst' || type === 'blast-bomb';
     const p = this.ctx.player;
     if (p) {
       const kick = (0.018 + 0.030 * ds) * (heavy ? 1.6 : 1);
@@ -1461,7 +1466,7 @@ export class Combat {
     this.nockLanded = this._nockT <= 0;
     this.noteCombatAction();
     this.ctx.events.emit('arrow-fired', {
-      type, drawStrength: ds, weapon: this.activeWeapon?.id ?? 'hunter-bow',
+      type, drawStrength: ds, weapon: this.activeWeapon?.id ?? 'sabina-bow',
       // machine-ai asks for the shot ORIGIN so an unseen hit points at where
       // it came from instead of at where the player is standing now
       origin: _spawn.clone(),
@@ -1642,7 +1647,7 @@ export class Combat {
     };
   }
 
-  /** A Tearblast has latched: a small cue, no damage yet (fuse in arrows.js). */
+  /** A Pryburst has latched: a small cue, no damage yet (fuse in arrows.js). */
   _handleLatch(hit) {
     this.sparks.burst(hit.point, hit.normal ?? _up, {
       count: 6, speed: [1.5, 4], spread: 0.9,
@@ -1777,12 +1782,12 @@ export class Combat {
         if (!out.machine) out.machine = m;
       }
       // tear burst rips at attached parts NEAR the impact only: tight radius
-      // + rough line-of-sight so one tearblast can't strip far-side
+      // + rough line-of-sight so one pryburst can't strip far-side
       // components through a 15m machine's body
       if (tear > 0 && Array.isArray(m.parts)) {
         const tearR = Math.min(radius, 2.2);
-        // `combat-tearblast-canon`: a burst strips at most `tearCap`
-        // components. Uncapped, one Tearblast could denude a Colossus.
+        // `combat-pryburst-canon`: a burst strips at most `tearCap`
+        // components. Uncapped, one Pryburst could denude a Colossus.
         const cap = def.tearCap ?? 99;
         let stripped = 0;
         for (const part of m.parts) {
@@ -1829,7 +1834,7 @@ export class Combat {
    *
    * `combat-burst-vfx-blob` — a blast was one additive sphere plus one ring:
    * a coloured blob. It is now five layers that read as an explosion —
-   * a white-hot core, an ember cone, dark SHRAPNEL under real gravity, rising
+   * a white-hot core, an spark cone, dark SHRAPNEL under real gravity, rising
    * smoke, and a scorch DECAL left on the ground afterwards.
    */
   _impactFx(hit, def, machine, weak) {
@@ -1845,10 +1850,10 @@ export class Combat {
         count: 7, speed: [0.2, 1.4], spread: 1,
         size: [0.8, 1.9], life: [0.07, 0.19], colors: [[1, 0.95, 0.8]],
       });
-      // 2. ember cone
+      // 2. spark cone
       this.sparks.burst(hit.point, _up, {
         count: 40, speed: [7, 22], spread: 1.0,
-        size: [0.06, 0.17], life: [0.2, 0.55], colors: EMBER_COLORS,
+        size: [0.06, 0.17], life: [0.2, 0.55], colors: GLOW_COLORS,
         stretch: [2, 6],
       });
       // 3. shrapnel — dark, heavy, arcing; this is what sells the scale
@@ -1894,7 +1899,7 @@ export class Combat {
     }
 
     if (def.burst === 'tear') {
-      // compressed-air tearblast pop: cyan shock puff, no flame, no fire cue
+      // compressed-air pryburst pop: cyan shock puff, no flame, no fire cue
       const groundY = ctx.terrain?.getHeight(hit.point.x, hit.point.z) ?? hit.point.y;
       this.blastFx.spawn(hit.point, groundY, def.aoe?.radius ?? 4, 0x9fe8e0);
       this.sparks.burst(hit.point, hit.normal ?? _up, {
@@ -1930,7 +1935,7 @@ export class Combat {
       } else if (def.element === 'fire') {
         this.sparks.burst(hit.point, hit.normal, {
           count: 10, speed: [1.5, 5], spread: 0.85,
-          size: [0.07, 0.16], life: [0.22, 0.55], colors: EMBER_COLORS,
+          size: [0.07, 0.16], life: [0.22, 0.55], colors: GLOW_COLORS,
         });
       }
       return;
@@ -1944,7 +1949,7 @@ export class Combat {
     if (def.element === 'fire') {
       this.sparks.burst(hit.point, hit.normal ?? _up, {
         count: 8, speed: [1, 4], spread: 0.8,
-        size: [0.06, 0.14], life: [0.2, 0.5], colors: EMBER_COLORS,
+        size: [0.06, 0.14], life: [0.2, 0.5], colors: GLOW_COLORS,
       });
     }
   }
@@ -1952,7 +1957,7 @@ export class Combat {
   /**
    * A trap went off (`traps.js` calls this). Same resolve as an ammo impact:
    * AoE damage, layered burst FX, the stimulus, and the events other lanes
-   * listen to — so a tripwire kill is indistinguishable from a bomb kill
+   * listen to — so a tripline kill is indistinguishable from a bomb kill
    * downstream.
    */
   detonate(point, def, machine = null) {
@@ -2051,14 +2056,14 @@ export class Combat {
    * `traps.js` and `melee.js` are combat files the memory pass does not own
    * (no gameplay edit belongs there), but the meshes they allocate are
    * combat's memory all the same, and while they sat outside `_ownedRoots()`
-   * a `new THREE.Mesh` per tripwire or per swing would have moved neither
+   * a `new THREE.Mesh` per tripline or per swing would have moved neither
    * `sceneObjects` nor `gpuFingerprint()` — 74 scene objects that every gate
    * in this lane was blind to. They are enumerated from here, read-only,
    * defensively (a field rename in either file costs a count, never a throw).
    *
    * `Traps`: ROPE_MAX 24 x {line, stake} + WIRE_MAX 8 x {line, s0, s1} +
    * `_preview` + `_previewStake` = 74. `Melee`: the swing `_trail` plus the
-   * spear group (6 baked meshes under a model node), parented into the
+   * lance group (6 baked meshes under a model node), parented into the
    * player's right-hand attach rather than the scene root.
    */
   _trapRoots(out = []) {
@@ -2083,7 +2088,7 @@ export class Combat {
     const m = this.melee;
     if (!m) return out;
     if (m._trail) out.push(m._trail);
-    if (m.spear?.group) out.push(m.spear.group);
+    if (m.lance?.group) out.push(m.lance.group);
     return out;
   }
 
@@ -2147,7 +2152,7 @@ export class Combat {
    * the constructor behind a hard cap — five particle pools (ring buffers),
    * ten scorch quads, three blast rings, 28 arrows, 8 bombs, 6 discs, seven
    * weapon models, plus the 74 rope/wire/preview meshes of `traps.js` and the
-   * swing trail + spear of `melee.js` — so `sceneObjects` must read the same
+   * swing trail + lance of `melee.js` — so `sceneObjects` must read the same
    * number after sixty shots and ten kills as it did at boot, and
    * `arrows.orphaned` (pooled arrows still riding a machine that has been
    * disposed) must be zero.
@@ -2156,7 +2161,7 @@ export class Combat {
    * `sceneObjects` and `fingerprint` cover EVERY file under `src/combat/`
    * (particles, arrows, bow, weapons, traps, melee, combat itself). `live`
    * deliberately means TRANSIENT FX IN FLIGHT ONLY — particles, scorches,
-   * blast rings, arrows, bombs, discs. A placed rope or an armed tripwire is
+   * blast rings, arrows, bombs, discs. A placed rope or an armed tripline is
    * durable gameplay state with its own timer, so it is reported under
    * `traps` and bounded by `sceneObjects`, never folded into `live` (a gate
    * that demanded `live === 0` would otherwise fail on a legally armed trap).
@@ -2252,7 +2257,7 @@ export class Combat {
       models += a.inScene;
       modelMeshes += a.meshes;
     }
-    /* sub-system objects: counted by TRAVERSAL, because the spear group is a
+    /* sub-system objects: counted by TRAVERSAL, because the lance group is a
      * node with six meshes under it and a leak inside it must show up here. */
     let subObjects = 0;
     const countNode = () => { subObjects++; };
@@ -2310,7 +2315,7 @@ export class Combat {
   /**
    * Full teardown of every GPU resource combat owns — TEARDOWN ONLY, and
    * single-shot: it disposes module-level geometries and materials shared by
-   * the weapon models and the spear, so a Combat that has been disposed is
+   * the weapon models and the lance, so a Combat that has been disposed is
    * dead and a second call is meaningless. Nothing in the game calls it (there
    * is one Combat per session), but a system whose objects can only ever be
    * added to the scene is a system that can only ever be leaked — and the gate

@@ -19,7 +19,7 @@
  * coordinate or a bone. The rest point comes from `src/world/island/sites.js`
  * (imported in node and in the page), extents from `extent.js`, the forbidden
  * vocabularies from `tools/lint/` (rename-map.json, lexicon.json), and the
- * allowed non-camp coincidences of A-single-rest are pinned by a hash of the
+ * allowed non-rest site coincidences of A-single-rest are pinned by a hash of the
  * line, not by its text.
  */
 import { readFileSync, readdirSync, lstatSync, existsSync, statSync } from 'fs';
@@ -138,7 +138,7 @@ function extentGrep() {
 /* A-single-rest — grep half                                                */
 /* ------------------------------------------------------------------------ */
 
-/** Files whose camp literals the day-1 pass replaced; each must still import sites.js. */
+/** Files whose rest site literals the day-1 pass replaced; each must still import sites.js. */
 const REST_FILES = [
   'src/entities/player.js', 'src/ui/map.js', 'src/ui/menu.js', 'src/world/props.js', 'src/world/terrain.js',
   'src/world/npc/waypoints.js', 'src/world/vegetation.js', 'src/items/gather.js', 'src/entities/machines/index.js',
@@ -185,7 +185,7 @@ function restGrep() {
 
 /**
  * A-extent-refactor proved the day-1 pass changed no number. Its HASH half is the
- * day-1 old map: W0a deleted content (the IP machine GLBs, the camp NPC bodies),
+ * day-1 old map: W0a deleted content (the IP machine GLBs, the rest site NPC bodies),
  * so from W0a on the collider / nav / gather hashes may legitimately differ. At
  * W0b the hashes are REPORTED against this baseline and the extents are graded
  * by value, by grep and by the structural probes (route, machine, doctrine and
@@ -1223,7 +1223,7 @@ const W0B = [
  */
 const CONTENT_MODULES = [
   '/src/ui/tips.js', '/src/core/progression.js', '/src/combat/weapons.js', '/src/items/items.js', '/src/items/crafting.js',
-  '/src/items/datapoints.js', '/src/world/props/npcs.js',
+  '/src/items/fieldbooks.js', '/src/world/props/npcs.js',
   '/src/world/npc/waypoints.js', '/src/audio/manifest.js', '/src/audio/music.js', '/src/entities/machines/legacy.js',
   '/src/entities/machines/ai/tables.js', '/src/instruments/roles.js', '/src/studio/pose.js', '/src/studio/cast.js',
   '/src/core/assets.specs.js',
@@ -1288,7 +1288,7 @@ const DAY1 = [
       const spawn = { x: r3(p.position.x), z: r3(p.position.z), d: r3(dRest()) };
       // the Instrument no-spawn ring + the route keep-out + the doctrine keep-out, all centred on REST_SITE
       const machine = machineProbe(), route = routeProbe(), doctrine = await doctrineProbe();
-      const fire = ctx.camp?.firePosition;
+      const fire = ctx.settlements?.firePosition;
       const fireD = fire ? r3(Math.hypot(fire.x - SITE.x, fire.z - SITE.z)) : null;
       let minMachineD = 1e9;
       for (const m of (ctx.machines?.list || [])) if (m.alive) minMachineD = Math.min(minMachineD, Math.hypot(m.position.x - SITE.x, m.position.z - SITE.z));
@@ -1314,12 +1314,12 @@ const DAY1 = [
         respawn: !!respawn && respawn.d <= 3 && respawn.state === 'playing' && respawn.health > 0 && before > 3,
         ringCentred: !!machine && Math.abs(machine.campRingR - SITE.r) < 0.01,
         routeKeepOut: !!route && Math.abs(route.campMinD - (SITE.r + 6)) < 0.01,
-        doctrineKeepOut: !!doctrine && doctrine.campClamp === 'camp' && Math.abs(doctrine.campD - 46) < 0.01,
-        campfireAtSite: fireD !== null && fireD < 0.01,
+        doctrineKeepOut: !!doctrine && doctrine.campClamp === 'rest' && Math.abs(doctrine.campD - 46) < 0.01,
+        brazierAtSite: fireD !== null && fireD < 0.01,
       };
       return { pass: Object.values(checks).every(Boolean), detail: {
         failed: Object.keys(checks).filter((k) => !checks[k]),
-        REST, REST_SITE: SITE, spawn, deathAt: before, respawn, ring: machine, route, doctrine, campfireToSite: fireD,
+        REST, REST_SITE: SITE, spawn, deathAt: before, respawn, ring: machine, route, doctrine, brazierToSite: fireD,
         minAliveMachineToSite: r3(minMachineD),
         grep: { hits: GREP.hits, missingImport: GREP.noImport, filesScanned: GREP.filesScanned, allowedNotCamp: GREP.allowed },
       } };

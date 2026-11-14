@@ -15,7 +15,7 @@
  *   public/models/hero/kit/quiver-cane-v0.glb     rigid cane tube, palm-weave cap, 12 arrows
  *   public/models/hero/kit/bracer-crescent-v0.glb archer's crescent bracer (leather,
  *        bronze crescent plate)
- * Every held GLB is authored at REAL length (SPEAR_SCALE retired, M9) with socket
+ * Every held GLB is authored at REAL length (LANCE_SCALE retired, M9) with socket
  * nodes `grip`, `grip2`, `nock`, `string_top`, `string_bottom`, `tip`, `stow`, `butt`.
  *
  * STOW (R10, bible §3.6), authored from the body + outfit surface in bind space:

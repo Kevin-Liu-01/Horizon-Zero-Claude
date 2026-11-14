@@ -1,5 +1,5 @@
 /**
- * models-staging/ cleanup (pipeline lane, W0b; plan §6 "models-staging/** HZD-cast items (134 MB on disk,
+ * models-staging/ cleanup (pipeline lane, W0b; plan §6 "models-staging/** Older game-cast items (134 MB on disk,
  * mostly ignored) — W0b (pipeline) — CC0 packs kept only if a lane names them", §4.6 "134 MB -> ~30 MB").
  *
  * The bulk is UNTRACKED / git-ignored, so it lives only in the main tree (lane worktrees never had it) and
@@ -10,7 +10,7 @@
  *
  * KEPT: models-staging/r5-src (the Round-5 sources, A-sources-staged) and every TRACKED file (the manifest
  * and the licence texts of donors that still ship until their W2 deletion). Everything else under
- * models-staging/ — the Round-4 Sketchfab/HZD originals and bake backups (`orig/`, `baked/`), the expansion
+ * models-staging/ — the Round-4 Sketchfab/Older game originals and bake backups (`orig/`, `baked/`), the expansion
  * donor GLB/glTF caches, the CC0 packs no Round-5 lane names (AnimatedMech, UltimateMonsters, loose
  * Fox/Mech/Robo GLBs), the lab-anim staging copies — is listed for deletion. Nothing here reads the network
  * and nothing outside models-staging/ is touched.

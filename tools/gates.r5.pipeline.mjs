@@ -68,7 +68,7 @@
  * proves it on a scratch merge trial with hero-body's branch and boots the copy in its own Chrome, in a child,
  * before any page gate). A-licence-manifest's credits clause FAILs a surface showing none of the attributions
  * once ANY W0-exit signal holds (the wave, incl. a lane-report lower bound at or past it; SPECS.hero no longer
- * aloy.glb; aloy.glb gone), with a negative control (check.mjs creditsExitControl) that must hold.
+ * Brea.glb; Brea.glb gone), with a negative control (check.mjs creditsExitControl) that must hold.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -365,7 +365,7 @@ const BOOT_ROWS = `(async () => {
     r30Machines[m.kind] = (r30Machines[m.kind] || 0) + 1;
     if (!(r30.pending || []).includes(m.modelKind) || !A.models[m.modelKind]) onDeletedBody.push(m.kind);
   }
-  const campNpcs = Array.isArray(__CTX__.camp?.npcs) ? __CTX__.camp.npcs.length : 0;
+  const campNpcs = Array.isArray(__CTX__.settlements?.npcs) ? __CTX__.settlements.npcs.length : 0;
   const pass = loaded.length === specs.length && !failed.length && !!A.models.hero && (r30.deleted || []).length >= 1
     && !unaccounted.length && !unreported.length && !pendingNotReal.length && !ownDeletionPending.length && !falsePositive.length
     && !placeholderEntries.length && !placeholderMeshes.length && !onDeletedBody.length;
@@ -388,12 +388,12 @@ const BOOT_ROWS = `(async () => {
  *         present (pending: that lane's change not merged yet) or both gone;
  *         every pipeline-owned R30 file is gone; no class imports a deleted
  *         class; the SCHEDULED_IP (licence) table agrees with DELETED; the
- *         camp.js guard is in place while camp.js exists;
+ *         rest site.js guard is in place while rest site.js exists;
  *   FAIL  HALF STATE: a file gone while its reader class is still here (the
  *         class would boot without a body — what the capsule era was);
  *   FAIL  ORPHAN: a reader gone while the IP file is still on disk (nothing
  *         loads it; it must be deleted — instruments-core, or the orchestrator
- *         in the merge commit: `git rm public/models/{watcher,sawtooth,behemoth,thunderjaw}.glb`);
+ *         in the merge commit: `git rm public/models/{sentry,big cat,hauler,colossus}.glb`);
  *   FAIL  a pipeline-owned R30 file back on disk.
  */
 async function r30MergeOrder() {
@@ -417,7 +417,7 @@ async function r30MergeOrder() {
     const ex = SCHEDULED_IP[r.file];
     if (!ex || !ex.rowless || ex.owner !== r.owner || ex.reader !== r.reader) problems.push(`${r.kind}: lib.mjs SCHEDULED_IP disagrees with assets.specs.js DELETED (owner / reader / rowless)`);
   }
-  // a class importing the class of a deleted kind (a chassis: redeye on watcher) goes with it
+  // a class importing the class of a deleted kind (a chassis: red-lamp kind on sentry) goes with it
   const goneReaders = rows.filter((r) => r.reader && !r.readerPresent).map((r) => path.basename(r.reader));
   const chassis = walk('src/entities/machines', ['.js']).filter((f) => {
     const t = readFileSync(path.join(ROOT, f), 'utf8');
@@ -508,7 +508,7 @@ function childJson(script, args, timeoutMs) {
  * Lane guard (fix round 5, judges: "R39 hero swap incomplete"): the R39 data patch
  * (tools/build/pipeline/hero-swap.mjs) applied to a merge trial in scratch = this tree + hero-body's branch
  * (git show, read-only) + the LICENSES.json fold. PASS needs: no overlay conflict, fold ok, the patch applies
- * once and is idempotent, --verify ok (four files, one non-IP licence row each, aloy.glb gone, none ignored,
+ * once and is idempotent, --verify ok (four files, one non-IP licence row each, Brea.glb gone, none ignored,
  * hero-body's rows.js a proven no-op with its negative control), and A1, A20b, A-pipeline-boot-rows and the
  * hero-rows check PASS on the booted copy (one Chrome, in a child; filmed). A-human-bind on the copy is
  * reported as advisory only (unsealed). Never PASS in place of the plan's gates on main after the R39 window.

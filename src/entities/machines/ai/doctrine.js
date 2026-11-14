@@ -16,7 +16,7 @@ const ANCHOR_RIM = PLAY_RADIUS + EXTENT.anchorRim;
  *   installDoctrine(m, opts)      per machine, from `Machines._spawnCls`
  *   installExpansionDoctrine(machines)   the ONE manager-side part-torn hook
  *   spawnExpansion(machines)      walks SPAWN_PLAN (rows added by owners)
- *   siteAnchor(ctx, plan)         POI -> site, camp keep-out, rim clamp
+ *   siteAnchor(ctx, plan)         POI -> site, rest site keep-out, rim clamp
  *   doctrineAudit(machines)       live count per registered kind + squads
  *
  * A doctrine row (every field optional):
@@ -172,9 +172,9 @@ export function installExpansionDoctrine(machines) {
 
 /**
  * Where a site actually goes: the published world-props POI when there is one,
- * else the measured fallback. Never inside the camp keep-out and never outside
+ * else the measured fallback. Never inside the rest site keep-out and never outside
  * the `_route` rim clamp (EXTENT.routeRim) — both are re-checked here because a
- * POI list this lane does not own could put a machine in the camp.
+ * POI list this lane does not own could put a machine in the rest site.
  */
 export function siteAnchor(ctx, plan) {
   const out = { x: plan.x, z: plan.z, from: 'casting-v4' };
@@ -186,13 +186,13 @@ export function siteAnchor(ctx, plan) {
       out.x = hit.x; out.z = hit.z; out.from = 'world-props:' + plan.poi;
     }
   }
-  // camp keep-out (the same circle `Machines._route` respects)
+  // rest site keep-out (the same circle `Machines._route` respects)
   const dx = out.x - REST_SITE.x, dz = out.z - REST_SITE.z;
   const d = Math.hypot(dx, dz);
   if (d < 46) {
     out.x = REST_SITE.x + (dx / (d || 1)) * 46;
     out.z = REST_SITE.z + (dz / (d || 1)) * 46;
-    out.clamped = 'camp';
+    out.clamped = 'rest';
   }
   const r = Math.hypot(out.x, out.z);
   if (r > ANCHOR_RIM) { out.x *= ANCHOR_RIM / r; out.z *= ANCHOR_RIM / r; out.clamped = 'rim'; }

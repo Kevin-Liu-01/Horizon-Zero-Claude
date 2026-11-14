@@ -1,11 +1,11 @@
 /**
  * Bone-name map: Quaternius Universal Animation Library ("Godot Standard"
- * glTF, Blender Rigify DEF- bones) -> Aloy (UE4-mannequin naming, exact names).
+ * glTF, Blender Rigify DEF- bones) -> Brea (UE4-mannequin naming, exact names).
  *
- * Promoted from src/spikes/retarget/boneMap.js (Round 4). Aloy has 5 spine
+ * Promoted from src/spikes/retarget/boneMap.js (Round 4). Brea has 5 spine
  * bones + 2 neck bones; the source has 3 spine + 1 neck, so the source chain is
  * spread over the target chain (unmapped intermediates hold their bind local
- * rotation and simply inherit). Aloy has metacarpal bones between the hand and
+ * rotation and simply inherit). Brea has metacarpal bones between the hand and
  * *_01, Rigify does not — the retargeter assigns ABSOLUTE char-space
  * orientations per bone, so the extra metacarpal just rides along.
  */
@@ -55,10 +55,10 @@ export const AIM_RULES = {
   'DEF-hand.L': 'DEF-f_middle.01.L',
   'DEF-hand.R': 'DEF-f_middle.01.R',
   'DEF-head': null,
-  // ANKLES: identity, i.e. Aloy's bind foot angle IS the rest angle, so the
+  // ANKLES: identity, i.e. Brea's bind foot angle IS the rest angle, so the
   // source's per-frame delta from ITS rest is what drives the ankle. The
   // default (aim the ankle at the first mapped descendant, the toe) instead
-  // bakes the Quaternius rest ankle pitch onto Aloy, which left her standing
+  // bakes the Quaternius rest ankle pitch onto Brea, which left her standing
   // ~13 deg plantarflexed — heels floating ~4cm — in every idle/aim frame.
   'DEF-foot.L': null,
   'DEF-foot.R': null,

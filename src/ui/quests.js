@@ -13,7 +13,7 @@
  * Layers, all driven from `ctx.progression`:
  *   · bottom-left  XP strip: level pip, XP bar, tracked-quest objective line
  *   · centre       banner queue (level-up, quest, objective, save, death)
- *   · overlay      quest log (J), dialogue panel, trade panel, campfire menu
+ *   · overlay      quest log (J), dialogue panel, trade panel, brazier menu
  *
  * `ui-05` (banners + quest log), `ui-17` (contextual cards), `progression-001`
  * (level pip + XP bar), `progression-004` (TRADE panel),
@@ -89,7 +89,7 @@ const CSS = `
 #cal-prog .pg-track-count { color: var(--pg-teal); }
 
 /* ----------------------------- trial clock -------------------------------
- * HZD puts the Hunting Ground clock right under the objective, in the frame's
+ * A trial clock sits right under the objective, in the frame's
  * top-left, and it is the ONE piece of this island shell-hud has not taken
  * (docs/ROUND4-PROGRESSION.md §3.8): a "within:" objective was on a countdown
  * nothing on screen showed. So this chip is NOT part of .pg-strip (hud.css
@@ -132,7 +132,7 @@ const CSS = `
   color: rgba(239,230,213,0.76);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* the last thirty seconds read as a warning, the way the HZD clock does */
+/* the last thirty seconds read as a warning, the way a trial clock should */
 #cal-prog .pg-trial.urgent { border-color: rgba(217,84,63,0.75); border-left-color: #d9543f; }
 #cal-prog .pg-trial.urgent .pg-trial-kicker { color: #d9543f; }
 #cal-prog .pg-trial.urgent .pg-trial-time { color: #f0a08c; animation: pgTrialPulse 1s ease-in-out infinite; }
@@ -357,7 +357,7 @@ export class QuestLogUI {
     this.ctx = ctx;
     this.prog = prog;
     this.root = progRoot();
-    this.state = null;        // 'quests' | 'dialogue' | 'trade' | 'campfire'
+    this.state = null;        // 'quests' | 'dialogue' | 'trade' | 'brazier'
     this._banners = [];
     this._msgT = 0;
 
@@ -507,7 +507,7 @@ export class QuestLogUI {
     this._track.classList.remove('pg-hidden');
     this._trackTitle.textContent = s.title.toUpperCase();
     const o = s.current;
-    if (!o) { this._trackObj.textContent = 'Return to Varl'; return; }
+    if (!o) { this._trackObj.textContent = 'Return to Ansel'; return; }
     const count = (o.need > 1) ? ` <span class="pg-track-count">${o.have}/${o.need}</span>` : '';
     this._trackObj.innerHTML = `${o.label}${count}`;
     if (this.state === 'quests') this._renderLog();
@@ -543,7 +543,7 @@ export class QuestLogUI {
 
   _open(state, head, footHtml) {
     const ctx = this.ctx;
-    const PANEL = /^(quests|dialogue|trade|campfire|skills)$/;
+    const PANEL = /^(quests|dialogue|trade|brazier|skills)$/;
     if (ctx.state !== 'playing' && !PANEL.test(ctx.state) && !this.state) return false;
     if (!this.state) {
       this._prevState = ctx.state;
@@ -568,7 +568,7 @@ export class QuestLogUI {
     this._body.innerHTML = '';
     this._panel.classList.remove('narrow');
     if (ctx.state === 'quests' || ctx.state === 'dialogue'
-        || ctx.state === 'trade' || ctx.state === 'campfire') {
+        || ctx.state === 'trade' || ctx.state === 'brazier') {
       ctx.state = 'playing';
     }
     this._emit('ui-close');
@@ -610,7 +610,7 @@ export class QuestLogUI {
       el('div', 'pg-sub', body, label);
       for (const q of rows) this._questRow(body, q, label);
     }
-    if (!any) el('div', 'pg-q-sum', body, 'No quests. Speak to Varl at the campfire.');
+    if (!any) el('div', 'pg-q-sum', body, 'No quests. Speak to Ansel at the pans.');
   }
 
   _questRow(parent, q, group) {
@@ -644,7 +644,7 @@ export class QuestLogUI {
   openDialogue(npcId) {
     const p = this.prog;
     const def = p.NPCS?.[npcId] ?? null;
-    const name = def?.name ?? 'Varl';
+    const name = def?.name ?? 'Ansel';
     if (!this._open('dialogue', 'CONVERSATION', '<span><kbd>ESC</kbd>LEAVE</span>')) return;
     this._panel.classList.add('narrow');
     this._renderDialogue(npcId, name, def);
@@ -685,7 +685,7 @@ export class QuestLogUI {
         run: () => this.openLog(),
       });
     }
-    choices.push({ label: '“Later, Varl.”', hint: 'LEAVE', run: () => this.close() });
+    choices.push({ label: '“Later.”', hint: 'LEAVE', run: () => this.close() });
 
     for (const c of choices) {
       const b = el('button', 'pg-choice', body,
@@ -712,7 +712,7 @@ export class QuestLogUI {
 
     const grid = el('div', 'pg-trade', body);
     const left = el('div', null, grid);
-    el('h4', null, left, "Varl's wares");
+    el('h4', null, left, 'Guild stores');
     for (const row of m.stock()) {
       const price = m.price(row.id);
       const poor = m.shards() < price || row.qty <= 0;
@@ -751,10 +751,10 @@ export class QuestLogUI {
   _name(id) { return itemDef(id)?.name ?? String(id); }
   _glyph(id) { return itemDef(id)?.glyph ?? '◇'; }
 
-  /* ------------------------------- campfire -------------------------------- */
+  /* ------------------------------- brazier -------------------------------- */
 
-  openCampfire() {
-    if (!this._open('campfire', 'CAMPFIRE', '<span><kbd>ESC</kbd>STAND UP</span>')) return;
+  openRest() {
+    if (!this._open('brazier', 'BRAZIER', '<span><kbd>ESC</kbd>STAND UP</span>')) return;
     this._panel.classList.add('narrow');
     const p = this.prog;
     const body = this._body;
@@ -769,7 +769,7 @@ export class QuestLogUI {
     const row = el('div', 'pg-row', body);
     const bSave = el('button', 'pg-btn primary', row, 'SAVE PROGRESS');
     bSave.addEventListener('click', () => {
-      const r = p.save('campfire');
+      const r = p.save('brazier');
       this._flash(body, r.ok ? 'Progress saved.' : `Save failed: ${r.error}`, !r.ok);
     });
     const bRest = el('button', 'pg-btn', row, 'REST UNTIL DAWN');
@@ -783,7 +783,7 @@ export class QuestLogUI {
     const diffRow = el('div', 'pg-row', body);
     for (const d of (p.DIFFICULTIES ?? [])) {
       const b = el('button', `pg-btn${d.id === p.difficulty ? ' primary' : ''}`, diffRow, d.name.toUpperCase());
-      b.addEventListener('click', () => { p.setDifficulty(d.id); this.openCampfire(); });
+      b.addEventListener('click', () => { p.setDifficulty(d.id); this.openRest(); });
     }
     this._msgEl = el('div', 'pg-msg', body, '');
   }

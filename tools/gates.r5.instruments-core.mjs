@@ -1747,7 +1747,7 @@ const A_VFX = (S) => `(async () => {
     for (const row of T.attackTable(k)) if (row.params && row.params.color !== undefined) { try { m._arcFlash(row.params.color); ex.push('flash ' + row.id); } catch (e) { /* */ } }
     for (const fn of ['_pingRing', '_freezeSpit', '_spit', '_shatterBurst']) if (typeof m[fn] === 'function') { try { m[fn](); ex.push(fn); } catch (e) { /* needs a target */ } }
     // run the statuses for a beat (burn flames + smoke, seized-crust glints from the Brine hit, Clouded arcs)
-    m.burnT = Math.max(m.burnT, 1); m._burnDps = 0.01; m.stunT = Math.max(m.stunT, 0.6);   // (the seized crust is already on from the Brine hit above)
+    m.burnT = Math.max(m.burnT, 1); m._burnDps = 0.01; m.dazeT = Math.max(m.dazeT, 0.6);   // (the seized crust is already on from the Brine hit above)
     await new Promise(r => setTimeout(r, 900));
     // death sparks + smoke, then the loot beacon
     hit({ impact: 1e6, baseDamage: 1e6 }); ex.push('death');

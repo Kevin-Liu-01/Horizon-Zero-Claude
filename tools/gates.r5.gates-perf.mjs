@@ -249,7 +249,7 @@ const stripComments = (s) => String(s).replace(/\/\*[\s\S]*?\*\//g, (m) => m.rep
 
 /**
  * Old-IP terms and reference stills in what a judge READS (fix round 2: re-staged criteria still
- * named HZD/HFW stills and the old wordmark). Graded on every carried row's title / criteria /
+ * named Older game/Older game stills and the old wordmark). Graded on every carried row's title / criteria /
  * reference and every visual row's (any lane), plus reference-still basenames inside carried
  * code (an action row's detail text citing a still). Licence-clean references live under
  * reference/r5/ (A-reference-set, W0b).
@@ -1884,7 +1884,7 @@ const VISUAL_JUDGE_PORT = 5271;
 const MIN_FULL_RUNS = Math.max(1, Math.floor(Number(process.env.CAL_CARRIED_RUNS) || 1));
 const RANK = (c) => (c === 'pass' ? 4 : /^skip/.test(c) || c === 'pendingAttributed' || c === 'pendingQuietBox' ? 3 : c === 'pendingUnattributed' ? 2 : c === 'fail' ? 1 : 0);
 /**
- * R47 (plan §8.3, Oct 22): the carried player-melee rows A100-A107 are staged on the Round-4 spear, which CALIMA replaces
+ * R47 (plan §8.3, Oct 22): the carried player-melee rows A100-A107 are staged on the Round-4 lance, which CALIMA replaces
  * with the lance; melee's W1 row owns "lance tables on Brea, A100-A107". At the W0b exit A-carried-suite reports them
  * SKIP-replaced (melee W1), each listed by name, never counted as PASS; they are graded on Brea with the lance at
  * melee's W1 exit (CAL_SHADOW_EXITED is not involved: melee re-stages them by shadowing the ids).
@@ -2119,7 +2119,7 @@ async function carriedSuite({ PORT, GATES: ALL }) {
       runs: per.map((p) => ({ run: p.run.seal.sealId, partial: p.run.partial || undefined, status: p.status, cls: p.cls, note: p.cls === 'pass' ? undefined : String(p.note || '').slice(0, 120) })) };
     const seen = per.filter((p) => p.cls !== 'infra');    // the observations of this row, oldest first
     if (R47_ROWS.includes(g.id) && !shadowedIds.has(g.id)) {
-      // R47: staged on the Round-4 spear (replaced by the lance); graded on Brea with the lance at melee's W1 exit
+      // R47: staged on the Round-4 lance (replaced by the lance); graded on Brea with the lance at melee's W1 exit
       Object.assign(row, { cls: 'skipReplaced', owner: 'melee W1', ruling: 'R47', note: `SKIP-replaced (melee W1), R47: staged on the Round-4 spear, which CALIMA replaces with the lance; melee grades it on Brea with the lance at its W1 exit. Observed here: ${seen.map((p) => p.cls).join(' / ') || 'not run'}` });
     } else if (r33gShadowed(g)) {
       // R33 (g): graded by hero-body on Brea until its exit; observed here, never graded (and never counted as PASS)

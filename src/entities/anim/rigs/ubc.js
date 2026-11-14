@@ -344,7 +344,7 @@ export const UBC_TUNE = {
   // brass tube on an 8 cm cord is a short pendulum (w = sqrt(g/L) ~ 11 rad/s,
   // w^2 ~ 120), not a stiff quiver: it bounces with each footfall and swings
   dynClass: { gear: { stiff: 115, drag: 6.5, grav: 0.25, maxAng: 0.42, strike: 1.1, base: 0.36 } },
-  // the Head bone's standing height over her feet (camera stance follow; Aloy's
+  // the Head bone's standing height over her feet (camera stance follow; Brea's
   // head_0104 stood at 1.36, the Round-4 HEAD_REST); measured idle on flat ground
   headRest: 1.468,
 };

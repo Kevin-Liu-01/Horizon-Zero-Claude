@@ -53,12 +53,12 @@
  * id is REPLACED in its own array object (the runner shares those objects), and
  * a round4-file row (already copied by the runner) is run here under
  * `<id>@hero` so `--lane hero-body` still runs this lane's version.
- * W0b targeted fix 4 (r1 eng judge: deleting the registry's `aloy` alias makes
- * the Round-4 A26-one-convention throw on `a.aloy.animatorProbe`): that row now
+ * W0b targeted fix 4 (r1 eng judge: deleting the registry's `Brea` alias makes
+ * the Round-4 A26-one-convention throw on `a.Brea.animatorProbe`): that row now
  * lives only in tools/gates/archive/gates.round4.anim-core.mjs. A Round-4 row
  * loaded on today's runner (`--extra <archive file>`) arrives after the
  * registry, so it is dropped by id for this file's A26-one-convention, which
- * finds the hero section by its shape and names no rig. No `aloy` identifier
+ * finds the hero section by its shape and names no rig. No `Brea` identifier
  * came back. Doc §T4 has both runs.
  *
  * W0b targeted fix 4 (Nov 3): A-draw-arm-continuity (the state matrix); A-draw-elbow-level
@@ -86,7 +86,7 @@ const TOOLS = path.dirname(fileURLToPath(import.meta.url));
  * GATE ROSTER — who a gate stages, by ROLE, never by species (plan §9 intro,
  * §3.2 `ctx.machines.roles`, rulings R7, R18, R28, R30).
  *
- * Round 4's gates named HZD kinds by literal (57 gates said one sentry kind,
+ * Round 4's gates named Older game kinds by literal (57 gates said one sentry kind,
  * 29 the flanker, 19 the colossus ...). Round 5 replaces every kind, so a gate
  * that names a species is a gate that silently stops gating. This module is the
  * one place a gate learns WHAT to stage:
@@ -122,7 +122,7 @@ const TOOLS = path.dirname(fileURLToPath(import.meta.url));
  * such a report. It is not a verdict mode (R28).
  */
 
-/** The twelve role ids (bible §7.4 / §10.2). None matches the forbidden HZD role words. */
+/** The twelve role ids (bible §7.4 / §10.2). None matches the forbidden Older game role words. */
 const ROLES = ['sentry', 'herd', 'swarm', 'flanker', 'heavy', 'keeper', 'duelist',
   'artillery', 'support', 'spotter', 'ambusher', 'colossus'];
 
@@ -388,7 +388,7 @@ const HERO = `
  * intro, §3.2 `ctx.props.gatePlaces`).
  *
  * Round 4's gates teleported to literal coordinates of the old valley map (the
- * flat meadow strip, the 56 deg face, the west herd, the camp ...). Round 5
+ * flat meadow strip, the 56 deg face, the west herd, the rest site ...). Round 5
  * replaces the map at W1, so a coordinate in a gate is a gate that silently
  * measures the wrong ground. Every gate now asks for a NAMED place:
  *
@@ -715,7 +715,7 @@ const UNATTRIBUTED_CAP = Object.freeze({
     confirmedBy: ['p5255-34463-1792428571168'],
     measured: '2026-10-19, port 5255 (gates-perf W0b fix round 1), A21 staged fight (8 casts of the herd role = the Tiller fixture, the other 7 roles named R18/R28/R30 fallbacks), tier high, pixel ratio 1.5, 1600x900; 335 draws/frame in all, post chain 22',
     method: 'the largest of: the plan\'s hide-each-owner residual (-2 / 3), the direct per-draw attribution (11 / 11), the drawing unregistered roots hidden together (16 / 16)',
-    roots: 'datapoints (6 direct draws: progression, items/datapoints.js) + 5 unnamed meshes (5: the focus wave/ring/gather meshes of ui/focus.js, the combat trajectory/landing ring of combat/combat.js, the melee trail) — none carries an owner name yet',
+    roots: 'fieldbooks (6 direct draws: progression, items/fieldbooks.js) + 5 unnamed meshes (5: the focus wave/ring/gather meshes of ui/focus.js, the combat trajectory/landing ring of combat/combat.js, the melee trail) — none carries an owner name yet',
   }),
 });
 
@@ -1014,7 +1014,7 @@ const INPUT_ON = `__CTX__.input.enabled = true;`;
  *
  * WHAT BROKE (core-platform-followup2). `A13`, `A19` and `A28` already staged
  * onto the flat meadow before running. `A3` and `A12` did not — they held W and
- * Shift from wherever the player spawned. Round 4 put a camp (tent, crates,
+ * Shift from wherever the player spawned. Round 4 put a rest site (tent, crates,
  * bedroll, all with collision) a few metres in front of the spawn point, so
  * those two gates stopped measuring the hero's sprint and started measuring the
  * tent: filmed at `shots/cpf2-sprint-probe.png` with `sprinting: true`,
@@ -5062,8 +5062,8 @@ const SILHOUETTE = `function silhouette() {
 
 /**
  * RESIDUE FIX ROUND 1 — her silhouette as RENDERED.  The rig carries 69
- * meshes and 53 of them are hidden: the five unequipped weapons (sharpshot /
- * war bow, blast sling, ropecaster, tripcaster, disc launcher) are all
+ * meshes and 53 of them are hidden: the five unequipped weapons (sighting /
+ * war bow, blast sling, tether, wirelayer, disc launcher) are all
  * parented to her left hand bone and toggled invisible, and `SILHOUETTE` above
  * samples them anyway — about half of every sample set, all of it sitting in
  * her left fist.  A hidden weapon near the lens is not on screen and a hidden
@@ -5203,7 +5203,7 @@ const GATES = [
   /* ------------------------------------------------------------------ A28 */
   {
     id: 'A28-jump-arc', kind: 'action', lane: 'player-control',
-    title: 'Space from flat ground: apex 1.35-1.7 m, 0.55-0.9 s of air, lands on the surface',
+    title: 'Space from flat ground: peak 1.35-1.7 m, 0.55-0.9 s of air, lands on the surface',
     setup: `__CTX__.input.enabled = true;`,
     settle: 700, timeout: 90000,
     assert: `(async () => {
@@ -5221,7 +5221,7 @@ const GATES = [
       /* The arc is measured in SIMULATION time by the controller itself
        * (player.lastJump).  A wall-clock rAF probe cannot do it: main.js caps
        * a frame at 0.05 s of sim, so on a loaded box a 0.74 s arc spans 1.2 s
-       * of wall clock and every rAF sample reads it long.  apex is the peak of
+       * of wall clock and every rAF sample reads it long.  peak is the peak of
        * the integrated arc, air is summed dt, landErr is |feet - terrain| on
        * the landing frame. */
       const runs = [];
@@ -5234,11 +5234,11 @@ const GATES = [
         while (!p.lastJump && performance.now() - t0 < 6000) await new Promise((r) => requestAnimationFrame(r));
         if (!p.lastJump) return { pass: false, detail: { i, note: 'never landed' } };
         const gy = C.terrain.getHeight(p.position.x, p.position.z);
-        runs.push({ apex: p.lastJump.apex, air: p.lastJump.air,
+        runs.push({ peak: p.lastJump.peak, air: p.lastJump.air,
                     landErr: +(p.position.y - gy).toFixed(4), drift: +Math.abs(p.position.y - y0).toFixed(3) });
         await new Promise((r) => setTimeout(r, 250));
       }
-      const ok = runs.every((r) => r.apex >= 1.35 && r.apex <= 1.7
+      const ok = runs.every((r) => r.peak >= 1.35 && r.peak <= 1.7
         && r.air >= 0.55 && r.air <= 0.9 && Math.abs(r.landErr) <= 0.1);
       return { pass: ok && p.grounded && p.health === p.maxHealth,
                detail: { runs, grounded: p.grounded, health: p.health, at: spot } };
@@ -10348,9 +10348,9 @@ const byId = (id) => carried.find((g) => g.id === id);
   const a = Object.getOwnPropertyDescriptor(g, 'assert').value;
   if (!a.includes("await measure(-0.4, 'up');")) throw new Error('A35 shape changed');
   /* ...and the band is graded where plan §9 puts it: |hand_r - head| with
-   * "UBC Head sits at the skull base like Aloy's" — the HEAD JOINT. Round 4's
+   * "UBC Head sits at the skull base like Brea's" — the HEAD JOINT. Round 4's
    * `debugArm().handToHead` measured to the head keep-out ellipsoid's centre
-   * instead (Aloy: head bone + 5 cm), and on Brea that centre is the re-fitted
+   * instead (Brea: head bone + 5 cm), and on Brea that centre is the re-fitted
    * skull's, 11.4 cm over the joint: with the fist OUTSIDE the jaw (Oct 22: it
    * had been inside it) the wrist sits under the ear, 0.17-0.18 m from that
    * centre and 0.11-0.13 m from the joint. Both are reported, with the

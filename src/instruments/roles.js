@@ -20,7 +20,7 @@
  * LEGACY KINDS ARE NEVER MAPPED (R28): only modules under
  * `src/instruments/kinds/` can claim a role, and `machines/legacy.js` kinds
  * cannot be registered there. No role id matches
- * /rusher|digger|browser|lurker|sentry|apex|scout/i (bible §7.4).
+ * /rusher|digger|browser|lurker|sentry|peak|scout/i (bible §7.4).
  */
 
 /** The twelve roles, in bible §7.4 roster order. */
@@ -45,7 +45,6 @@ export const ROLE_PLAN = Object.freeze({
   colossus: { kind: 'transit', lane: 'instruments-d', wave: 'W4' },
 });
 
-export const FORBIDDEN_ROLE_ID = /charger|burrower|grazer|stalker|watcher|apex|scout/i;
 
 /**
  * Build the role map from registered kind descriptors ({ id, role, fixture }).

@@ -890,7 +890,7 @@ const A71E = re('A71e-tutorial-cards', {
 });
 
 const A70B = re('A70b-fast-travel', {
-  patch: [["/CAMPFIRE/.test(out.awayFromFire.reason)", "/CISTERN/.test(out.awayFromFire.reason)"]],
+  patch: [["/BRAZIER/.test(out.awayFromFire.reason)", "/CISTERN/.test(out.awayFromFire.reason)"]],
 });
 
 const A72B = re('A72b-accessibility', {
@@ -1414,7 +1414,7 @@ const V_UI = [
   })()`, { pendingWords: 'R61 (b): retired words in dialogue text are PENDING until settlements W2, because that text is in its files. Every other clause is graded now.' }),
   UI_ROW('V-ui-books', 'The Field Books page, with records found', `(async () => {${FRAMES}
     __CTX__.input.enabled = true;
-    const dp = __CTX__.items.datapoints;
+    const dp = __CTX__.items.fieldbooks;
     for (const r of dp.list.slice(0, 7)) dp.collect(r.id);
     await frames(4);
     __CTX__.menus.openHub('notebook');

@@ -1653,7 +1653,7 @@ export class MeleeLayer {
    *    correct for it — a knee bend moves the ball, the lock puts the ball back
    *    with a hip rotation, and the clamp lowers the hips until the higher
    *    planted foot is on the ground. That is a crouch, which is what is wanted.
-   *    The precedent is the animator's own tall-grass sink, plant-and-turn,
+   *    The precedent is the animator's own cover grass sink, plant-and-turn,
    *    stop-settle and flinch brace, which drive exactly these bones the same way.
    *
    * 3. WHEN IT STANDS DOWN. `an._strideT` is the animator's own "neither
@@ -2926,7 +2926,7 @@ export class MeleeLayer {
    * is never broken to make a number.
    *
    * Then two guards, both of which are the literal FAIL conditions of A104:
-   * the segment guard Aloy's bow draw already uses (`_clearArmOfHead`), and a
+   * the segment guard Brea's bow draw already uses (`_clearArmOfHead`), and a
    * shaft guard — the haft is a 1.85 m lever and a wrist that clears her skull
    * can still sweep the pole through it.
    */

@@ -40,7 +40,7 @@ const ROCK_POOL = 6;
 const THROW_RANGE = 16;      // metres down the aim ray
 const THROW_SPEED = 22;      // m/s launch speed of the lob
 /** The wire ammo `combat.traps` recognises (weapons.js AMMO, `trap: 'wire'`). */
-const WIRE_AMMO = 'tripwire-shock';
+const WIRE_AMMO = 'tripline-shock';
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -188,7 +188,7 @@ export class Tools {
   }
 
   /**
-   * Shock Wire Trap: spans one tripwire across the ground in front of Aloy
+   * Shock Wire Trap: spans one tripline across the ground in front of Brea
    * through `combat.traps` — the lane that owns wires owns the wire.
    */
   _use_trap_shock() {

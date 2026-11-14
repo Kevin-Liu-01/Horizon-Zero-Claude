@@ -2,7 +2,7 @@
  * PHOTO MODE — the Round 3 "Animation Studio", promoted. Lane `studio`.
  *
  * Findings closed here:
- *   missing-systems-photo-mode          poses, DoF, filters, frames, hide-Aloy
+ *   missing-systems-photo-mode          poses, DoF, filters, frames, hide-Brea
  *   player-anim-17                      takeDamage/jump/dodge filmable in studio
  *   machine-rig-19                      ONE timeScale authority (gate A79)
  *   onboarding-loop-studio-cast-buttons forceState + hold, close pause on
@@ -12,7 +12,7 @@
  *   - Free-fly camera on REAL seconds (`interpolate(alpha, realDt)`), so the
  *     lens still moves with the world frozen at timeScale 0. Round 3 flew on a
  *     hard-coded `1/60` and drifted against every frame rate.
- *   - The studio owns ALL input (`ctx.input.enabled = false`), so Aloy never
+ *   - The studio owns ALL input (`ctx.input.enabled = false`), so Brea never
  *     answers the fly keys.
  *   - `engine.requestTimeScale('studio', v)` is the ONLY way this file touches
  *     time. It outranks wheel / hitstop / concentration by the engine's own
@@ -278,13 +278,13 @@ export class Studio {
      * FREEZING IT. `Player._die()` arms a 3.2 s wall-clock `setTimeout` that
      * early-outs unless `ctx.state === 'dead'` — which is exactly the state
      * photo mode now HOLDS so the crumple can play, so during a long death
-     * shoot that timer finally runs: it heals her, teleports her to camp,
+     * shoot that timer finally runs: it heals her, teleports her to rest site,
      * writes `ctx.state = 'playing'` and emits this, all in one task.
      *
      * The rAF guard below would take the world back a frame later, and a frame
      * later is too late: `playerAnimator` scrubs the crumple off `_dieT` and
      * RESETS it the moment it ticks with `ctx.state` not 'dead'. Filmed at 3.2 s
-     * intervals — `_dieT` sawtoothing back to ~0.30 and Aloy standing up out of
+     * intervals — `_dieT` sawtoothing back to ~0.30 and Brea standing up out of
      * her own death, the identical artefact pose.js documents for the card.
      * The emit is synchronous with the write, so answering it here restores
      * 'dead' (and the pin) inside the same task, before any system can tick on
@@ -466,7 +466,7 @@ export class Studio {
    * `state !== 'dead'` — it fired during the shoot, found the studio holding
    * the world, and returned. That respawn is already gone; exiting completes
    * it instead of stranding her on a death screen with no timer left to run.
-   * We do NOT teleport to camp the way `_die()` would: the photographer keeps
+   * We do NOT teleport to rest site the way `_die()` would: the photographer keeps
    * the frame they composed.
    */
   exit() {
@@ -613,7 +613,7 @@ export class Studio {
    * `const dead = this.ctx.state === 'dead'` (its `_deadW`, which gates the
    * whole pose). The Round-4 studio took 'dead' back to 'studio' on the very
    * next tick to keep the respawn from firing — and so the animator never once
-   * saw 'dead' and Aloy stood there, upright and idle, through every death shot
+   * saw 'dead' and Brea stood there, upright and idle, through every death shot
    * the panel could take. Measured on film: `layers:[idle:1.00]`, head 1.4 m
    * off the ground, four seconds after the Death button. So while the subject
    * is down the studio HOLDS 'dead' rather than reclaiming it, and everything
@@ -623,7 +623,7 @@ export class Studio {
    *
    * THE SUBJECT. Holding 'dead' is what lets `Player._die()`'s 3.2 s wall-clock
    * timer through (`if (ctx.state !== 'dead') return`), and that timer heals
-   * her, teleports her to CAMP_POS and snaps her to the ground — the subject
+   * her, teleports her to REST_POS and snaps her to the ground — the subject
    * leaves the frame three seconds into every death shot. Rather than dodge the
    * timer (which is the same guard the crumple needs), the studio PINS what it
    * staged: where she fell and the fact that she is down, re-asserted on the sim
@@ -670,7 +670,7 @@ export class Studio {
    *
    * That is not hypothetical. `shell-menus` parks `ctx.state = 'death-menu'`
    * 1.15 s after a real death, from its own rAF, and 'death-menu' is not in
-   * `live`. So a machine that killed Aloy mid-shoot — or one click on the ALOY
+   * `live`. So a machine that killed Brea mid-shoot — or one click on the BREA
    * panel's own Knockdown chip at low health — froze photo mode SOLID while it
    * still looked alive: the panels repainted, the hint bar sat there, and the
    * last rendered frame stayed on screen. Measured on the real build: W held
@@ -705,10 +705,10 @@ export class Studio {
   /**
    * Stand her back up. The counterpart to the pin above, so a photographer who
    * filmed a fall is not stuck with a corpse until they leave photo mode: the
-   * ALOY panel's "Idle" button clears every one-shot channel, and a staged
+   * BREA panel's "Idle" button clears every one-shot channel, and a staged
    * death is the one channel that cannot clear itself. Also the whole of
    * `exit()`'s undo — the card is retired through its owner's published
-   * `respawn('checkpoint')` ('camp' is the mode that teleports), with a direct
+   * `respawn('checkpoint')` ('rest site' is the mode that teleports), with a direct
    * heal behind it for a build with no menus lane.
    * @returns {boolean} whether a staged death was released
    */
@@ -750,7 +750,7 @@ export class Studio {
        * happened to be filming. The respawn owns health and position here; we
        * own nothing but the pin coming off, which already happened above.
        *
-       * Reached from `exit()` AND from the ALOY panel's "Idle" button, and it
+       * Reached from `exit()` AND from the BREA panel's "Idle" button, and it
        * is the same act either way: the subject goes back to her checkpoint.
        * A photographer who wants to keep the frame must not have died for real
        * inside it — and a photo mode that "kept the frame" by re-pinning her
@@ -770,7 +770,7 @@ export class Studio {
        * player in it is the one outcome worse than a heal.
        */
       if (!(p.health > 0)) p.health = this._healthIn > 0 ? this._healthIn : p.maxHealth;
-      // respawn('checkpoint') leaves her where she is; 'camp' would not, and
+      // respawn('checkpoint') leaves her where she is; 'rest site' would not, and
       // neither would `_die()`'s own timer. The photographer keeps the frame —
       // but only when the studio actually pinned one (`_deathPos` is meaningless
       // otherwise).
@@ -920,12 +920,12 @@ export class Studio {
    * Where auto-focus actually lands. A portrait focuses on the EYES, not on
    * the transform origin at the subject's feet — with a wide aperture the
    * 40 cm between her sternum and her face is the difference between a sharp
-   * face and a soft one. Aloy resolves to her head bone through the animator's
+   * face and a soft one. Brea resolves to her head bone through the animator's
    * published `b.head`; a machine resolves to half its own height.
    * @returns {boolean} whether `this._probe` now holds a world focus point
    */
   _focusPoint() {
-    const subject = this.pose.hideAloy ? this.cast.target : (this.ctx.player ?? this.cast.target);
+    const subject = this.pose.hideHero ? this.cast.target : (this.ctx.player ?? this.cast.target);
     if (!subject?.position) return false;
     const head = subject === this.ctx.player ? this.pose.animator?.b?.head?.bone : null;
     if (head) { head.getWorldPosition(this._probe); return true; }
@@ -987,7 +987,7 @@ export class Studio {
   /* ------------------------------------------------------------------- API */
 
   /**
-   * Fire one Aloy pose — the ONE entry point, so a scripted shot behaves
+   * Fire one Brea pose — the ONE entry point, so a scripted shot behaves
    * exactly like the panel button. `player-anim-17`: a pose that hands the
    * state on (a filmed death drops `ctx.state` to 'dead') latches `_deathFilm`
    * so `update()` takes the world back when the respawn timer releases it and
@@ -1213,7 +1213,7 @@ export class Studio {
     this._lensPanel = panel('#st-lens', '#st-lens-panel');
     this._castPanel = panel('#st-cast', '#st-cast-panel', () => this._refreshCastKinds());
 
-    /* ------- Aloy ------- */
+    /* ------- Brea ------- */
     const poses = $('#st-poses');
     for (const p of POSES) {
       const b = document.createElement('button');
@@ -1253,9 +1253,9 @@ export class Studio {
     slider('#st-gaze-pitch', '#st-gaze-pitch-out', (v) => { this.pose.gazePitch = v; });
     this._hideBtn = $('#st-hide-aloy');
     this._hideBtn.addEventListener('click', () => {
-      this.pose.setHidden(!this.pose.hideAloy);
-      this._hideBtn.classList.toggle('on', this.pose.hideAloy);
-      this._hideBtn.textContent = this.pose.hideAloy ? 'Show Aloy' : 'Hide Aloy';
+      this.pose.setHidden(!this.pose.hideHero);
+      this._hideBtn.classList.toggle('on', this.pose.hideHero);
+      this._hideBtn.textContent = this.pose.hideHero ? 'Show Aloy' : 'Hide Aloy';
     });
 
     /* ------- lens ------- */

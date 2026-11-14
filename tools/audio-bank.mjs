@@ -86,7 +86,7 @@ const BUILD = [
   { set: 'machine/scan-ping', variants: 1, dur: 0.85, gain: 0.9, tags: ['machine', 'scan'] },
   { set: 'machine/alarm', variants: 1, dur: 0.85, gain: 1.0, tags: ['machine', 'alert'] },
 
-  // --- Aloy foley (D2: breath and gear, no VO) ---------------------------
+  // --- Brea foley (D2: breath and gear, no VO) ---------------------------
   { set: 'brea/breath-in', variants: 1, dur: 0.55, gain: 0.9, tags: ['brea', 'breath'] },
   { set: 'brea/breath-out', variants: 1, dur: 0.65, gain: 0.9, tags: ['brea', 'breath'] },
   { set: 'brea/effort', variants: 2, dur: 0.36, gain: 0.9, tags: ['brea', 'effort'] },
@@ -121,7 +121,7 @@ const BUILD = [
   { set: 'status/shock', variants: 1, dur: 2.4, gain: 0.9, loop: true, tags: ['status', 'shock'] },
   { set: 'status/frost', variants: 1, dur: 2.4, gain: 0.9, loop: true, tags: ['status', 'freeze'] },
 
-  // --- Aloy's harder efforts (audio-03; D2 — still no VO) ---------------
+  // --- Brea's harder efforts (audio-03; D2 — still no VO) ---------------
   { set: 'brea/effort-hard', variants: 2, dur: 0.46, gain: 0.95, tags: ['brea', 'effort'] },
   { set: 'brea/breath-hard', variants: 2, dur: 0.85, gain: 0.9, tags: ['brea', 'breath'] },
 
@@ -144,7 +144,7 @@ const BUILD = [
   { set: 'music/sting-alert', variants: 1, dur: 1.3, ch: 2, kbps: 80, gain: 0.8, tags: ['music', 'sting'] },
   { set: 'music/sting-discover', variants: 1, dur: 2.6, ch: 2, kbps: 80, gain: 0.8, tags: ['music', 'sting'] },
 
-  /* --- the spear (audio content half) -----------------------------------
+  /* --- the lance (audio content half) -----------------------------------
    * `src/combat/melee.js` emits `melee-hit`, `critical-hit` and
    * `undercut`; before this pass nothing in the mix listened, so the
    * headline Round 4 melee verb was completely silent. Four rungs, matching
@@ -157,7 +157,7 @@ const BUILD = [
   { set: 'melee/crit', variants: 2, dur: 0.8, gain: 1.0, tags: ['melee', 'impact', 'crit'] },
   { set: 'melee/silent', variants: 1, dur: 0.95, gain: 0.9, tags: ['melee', 'stealth'] },
 
-  /* --- Tripcaster + Ropecaster ------------------------------------------
+  /* --- Wirelayer + Tether ------------------------------------------
    * `src/combat/traps.js` emits `trap-placed`, `trap-triggered`,
    * `net-fouled` and `instrument-fouled`. Same story: four emitted events, no
    * listener, two whole weapons that made no sound of their own.

@@ -11,7 +11,7 @@ import { register } from './registry.js';
  * Both rigs are reduced to CHARACTER space (their root Group frame: +Y up,
  * +Z forward, meters) — the same frame playerAnimator.js uses for its
  * W / invW trick — so the wildly different bone-axis conventions (Rigify:
- * +Y along bone; UE4/Fortnite: +X along bone, mirrored L/R frames, Z-up cm
+ * +Y along bone; UE4/Another game: +X along bone, mirrored L/R frames, Z-up cm
  * internal frame) never have to be reconciled bone-by-bone.
  *
  * Per mapped bone pair (s -> t):
@@ -19,7 +19,7 @@ import { register } from './registry.js';
  *   Wt, Pt  target bind orientation/position (char space)
  *   C       rest correction: minimal rotation taking the target's bind bone
  *           DIRECTION (to its mapped child) onto the source's rest direction
- *           — this is what turns Aloy's A-pose into the source's T-pose so
+ *           — this is what turns Brea's A-pose into the source's T-pose so
  *           "arm down 90° from rest" means the same thing on both rigs.
  *   Wt2     = C * Wt   (target posed into the source's rest pose)
  * Per frame:
@@ -77,7 +77,7 @@ const ARM_RE = /shoulder|upper_arm|forearm|hand|f_|thumb|Shoulder|Arm|Hand/;
 export class Retargeter {
   /**
    * @param {object} o
-   * @param {THREE.Object3D} o.targetRoot   Aloy root Group (char frame)
+   * @param {THREE.Object3D} o.targetRoot   Brea root Group (char frame)
    * @param {THREE.Object3D} o.sourceRoot   source gltf.scene (char frame), in REST pose
    * @param {Record<string,string>} o.map   source bone name -> target bone name
    * @param {string} o.hip                  source hip bone name

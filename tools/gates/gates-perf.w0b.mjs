@@ -2,7 +2,7 @@
  * ROUND 5 — lane `gates-perf`, W0b block (docs/ROUND5-PLAN.md §2 row gates-perf, §9 gates-perf, §4.2, §4.4,
  * §10.2 item 4, §6 `reference/*.jpg`; E27, E32).
  *
- *   A-reference-clean    reference/ holds no Guerrilla/Sony/HZD/HFW file (the deleted Round-4 stills are named with
+ *   A-reference-clean    reference/ holds no Another studio/A console maker/Older game/Older game file (the deleted Round-4 stills are named with
  *                        their sha256 in reference/MANIFEST.md and may not reappear under any name); every file has a
  *                        MANIFEST row with licence PD / CC0 / CC BY (attributed) / own photo; share-alike or unclear
  *                        sources are URL-only rows; V12 / V22 / V24 / V46 / V48 point at reference/r5/**
@@ -78,7 +78,7 @@ export const DRAW_OWNERS = Object.freeze([
   { id: 'ground-scatter', row: 'ground scatter', lanes: 'world-ground', re: /^(ground-?)?scatter|^pebbles|^ground-?cover|^rock-?scatter/i },
   { id: 'vegetation', row: 'vegetation chunks', lanes: 'world-ground', re: /^vegetation|^grass|^trees?$|^shrubs?/i },
   { id: 'landmarks-places', row: 'landmarks + places', lanes: 'world-props',
-    re: /^(world-)?props?$|landmark|^places?$|^sites?$|^(world-)?rockworks$|^gather-nodes$|^(world-)?activities$|^datapoints$|megastructure/i },
+    re: /^(world-)?props?$|landmark|^places?$|^sites?$|^(world-)?rockworks$|^gather-nodes$|^(world-)?activities$|^fieldbooks$|megastructure/i },
   { id: 'settlement', row: 'settlement kit', lanes: 'settlements', re: /settlement|^(hunter-)?camp$|hamlet/i },
   { id: 'instruments', row: 'Instruments', lanes: 'instruments lanes (legacy kinds: instruments-core / -b)', re: /^machines?$|^instruments?$|-machine$|-instrument$/i },
   { id: 'lamp-beams', row: 'lamp beams', lanes: 'instruments-core', re: /beam/i },

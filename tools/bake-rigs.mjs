@@ -23,7 +23,7 @@
  * Usage:
  *   node tools/bake-rigs.mjs              # bake every donor that is missing
  *   node tools/bake-rigs.mjs --force      # re-bake all of them
- *   node tools/bake-rigs.mjs broadhead    # one species
+ *   node tools/bake-rigs.mjs ram    # one species
  *   node tools/bake-rigs.mjs --report     # measure only, write nothing
  *
  * LICENSING. Four donors are CC-BY 3.0 (BlackCaiman, Lion, Scorpion, Hawk) and

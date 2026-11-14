@@ -870,7 +870,7 @@ export class Engage {
    * search, `Search.begin` calls this so the sweep's first leg heads for the
    * remembered point from the first frame, instead of finishing a reposition
    * the fight had started. Measured before this existed, Raptor on five
-   * bearings with Aloy 200 m out: the search began 29-41 m from the belief and
+   * bearings with Brea 200 m out: the search began 29-41 m from the belief and
    * then flew AWAY from it for up to 3 s along the seek spot's path, peaking
    * 41-51 m out and still 41-48 m out at the A40 window's end.
    *

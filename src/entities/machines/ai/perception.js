@@ -18,7 +18,7 @@ import { HOT, mutableFromBirth } from '../../../instruments/lib/hot.js';
  *    snapping to 1 the frame you enter the cone;
  *  - the 360-degree `dist < bodyRadius + 4` bubble is GONE. A short peripheral
  *    arc replaces it, and a machine keeps a real blind spot behind it;
- *  - crouching in tall grass collapses sight to ~1.6 m (was 8 m);
+ *  - crouching in cover grass collapses sight to ~1.6 m (was 8 m);
  *  - line of sight tests props/rocks/ruins through `ctx.collision.occluded`,
  *    not just the heightfield;
  *  - hearing arrives as STIMULI on a bus (footsteps, impacts, lures), each

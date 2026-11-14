@@ -96,7 +96,7 @@ const DEFAULT_NO_SHADOW = /\b(lamp|sensor|lens)\b/i;
 
 /**
  * Per-mesh shadow policy (perf-tech-03). A shadow map costs one draw call per
- * caster, and these models are built from 10-45 separate meshes each — Aloy
+ * caster, and these models are built from 10-45 separate meshes each — Brea
  * alone was 45 shadow draws, a Colossus 31 — while the buckles, straps, hair
  * cards and bolt heads contribute nothing to a silhouette that the body mesh
  * already casts. A mesh casts only if its own bounding sphere is a meaningful

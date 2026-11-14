@@ -1,7 +1,5 @@
 import * as THREE from 'three';
-import { Activities } from './props/activities.js';
 import { disposeMaterials } from './props/kit.js';
-import { Fauna } from './fauna.js';
 import { Landmarks } from './sites/landmarks.js';
 import { SurveyMarks } from './sites/survey.js';
 import { StaticGauge } from './sites/gauge.js';
@@ -24,8 +22,6 @@ import { site, CRATER, SITES_OK } from './sites/layout.js';
  *               each with two interactables                        sites/survey.js
  *   gauge       the static scripted Gauge that opens Sluice 3      sites/gauge.js
  *   gatePlaces  the place contract every gate stages by (§3.2)  sites/gatePlaces.js
- *   activities  the Round-4 records/caches (progression W3 migrates them)
- *   fauna       the kept fauna system (world-props W3 re-picks the species)
  *
  * The Round-4 valley content (river rocks, driftwood, deadfall, ruins, the
  * watchtower and lookout, the megastructures, the Tower, the rockworks and
@@ -70,10 +66,9 @@ export class Props {
     this.gauge = new StaticGauge(ctx, this.group);
 
     // kept Round-4 systems (their own groups)
-    this.activities = new Activities(ctx, this);
-    this.fauna = new Fauna(ctx);
-    this.datapoints = this.activities.datapoints;
-    this.trials = this.activities.trials;
+    // the Round-4 records, caches, trials and fauna were deleted at M0.3 R3 (fauna returns in M3)
+    this.fieldbooks = null;
+    this.trials = [];
     this.revealed = false;
 
     this.places = this._buildPlaces();
@@ -145,7 +140,7 @@ export class Props {
   }
 
   sites() {
-    const out = this.activities.sites();
+    const out = [];
     for (const p of this.places) out.push({ kind: p.kind, id: p.id, x: p.x, z: p.z, name: p.name, done: p.done, place: true });
     return out;                                // landmarks are their own list (ctx.props.landmarks; the map reads both)
   }
@@ -178,7 +173,7 @@ export class Props {
     }
     descs.push({ kind: 'rock', object: this.crater.blocks, blocking: true, occluder: true });
     descs.push({ kind: 'rock', object: this.crater.buttresses, blocking: true, occluder: true });
-    descs.push(...this.landmarkSet.colliders(), ...this.survey.colliders(), ...this.gauge.colliders(), ...this.activities.colliders());
+    descs.push(...this.landmarkSet.colliders(), ...this.survey.colliders(), ...this.gauge.colliders());
     for (const d of descs) {
       const id = C.register(d);
       if (Array.isArray(id)) this._colliderIds.push(...id);
@@ -272,9 +267,6 @@ export class Props {
       this.landmarkSet.update(dt, t);
       this.gauge.update(dt, t);
     }
-    this.activities.update(dt, t);
-    this.fauna.update(dt, t);
-    this.revealed = this.activities.revealed;
   }
 
   /**
@@ -296,7 +288,6 @@ export class Props {
     this.gauge.dispose();
     this.organ.mesh.geometry.dispose(); this.organ.mesh.material.dispose();
     this.crater.blocks.dispose(); this.crater.geo.dispose(); this.crater.bgeo.dispose(); this.crater.mat.dispose();
-    this.fauna?.dispose?.();
     const ag = this.activities?.group;
     if (ag) {
       const seen = new Set();

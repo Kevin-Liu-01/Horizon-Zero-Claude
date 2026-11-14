@@ -436,7 +436,7 @@ export function cannonMesh({ accent = 0xffb36b } = {}) {
   return noShadows(g);
 }
 
-/** Power cell: small caged emissive box (shock detonation -> self-stun). */
+/** Power cell: small caged emissive box (shock detonation -> self-daze). */
 export function powerCellMesh({ color = 0xffd23d } = {}) {
   const g = new THREE.Group();
   // cage + emissive core: ONE draw. No glow sprite (draw-call budget):

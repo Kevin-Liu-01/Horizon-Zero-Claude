@@ -3,7 +3,7 @@
  * intro, §3.2 `ctx.props.gatePlaces`).
  *
  * Round 4's gates teleported to literal coordinates of the old valley map (the
- * flat meadow strip, the 56 deg face, the west herd, the camp ...). Round 5
+ * flat meadow strip, the 56 deg face, the west herd, the rest site ...). Round 5
  * replaces the map at W1, so a coordinate in a gate is a gate that silently
  * measures the wrong ground. Every gate now asks for a NAMED place:
  *

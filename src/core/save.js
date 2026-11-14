@@ -3,15 +3,15 @@
  * ---------------------------------------------------------------------------
  * `progression-003` ("victory ends the session; no respawn; no save"),
  * `progression-019` ("death has no consequence"),
- * `missing-systems-title-save-campfire-flow`,
+ * `missing-systems-title-save-brazier-flow`,
  * `onboarding-loop-death-no-stakes`.
  *
  * Round 3 had no persistence of any kind: closing the tab lost the run, dying
- * refilled the medicine pouch for free and teleported Aloy to the camp with no
+ * refilled the medicine pouch for free and teleported Brea to the rest site with no
  * cost, and winning required a page reload. This module is the whole of the
  * persistence contract:
  *
- *   SLOT.main        the player's campfire save   ("Continue" on the title)
+ *   SLOT.main        the player's brazier save   ("Continue" on the title)
  *   SLOT.checkpoint  the autosave death rolls back to
  *   SLOT.meta        difficulty + last-played, readable WITHOUT a full save
  *

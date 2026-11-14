@@ -51,7 +51,7 @@ const FONT_LABEL = '"Chakra Petch", "Arial Narrow", sans-serif';
 const FONT_MONO = '"IBM Plex Mono", ui-monospace, Menlo, monospace';
 
 /** Marker kinds you can travel TO. */
-const TRAVELABLE = new Set(['settlement', 'camp', 'site', 'landmark', 'lookout', 'cache']);
+const TRAVELABLE = new Set(['settlement', 'rest', 'site', 'landmark', 'lookout', 'cache']);
 /** How close to the rest point counts as "at the cistern". */
 const REST_R = 7;
 
@@ -477,7 +477,7 @@ export class MapBake {
 
 /**
  * Where she has been, on a 72² grid. It does not paint anything: the sheet opens by
- * triangles. It decides which sites she has found on foot and where fast travel goes.
+ * triangles. It decides which sites she has found on foot and where travel goes.
  */
 export class FogOfWar {
   constructor(store) {
@@ -1112,7 +1112,7 @@ export class WorldMap {
   _paintWaypointBox() {
     if (!this._wpBox) return;
     const sel = this._selected;
-    const gate = sel ? this.canFastTravel(sel) : null;
+    const gate = sel ? this.canTravel(sel) : null;
     const travel = sel
       ? `<div class="mn-map-wp-site"><b>${String(sel.name).toUpperCase()}</b></div>`
         + `<button class="mn-btn small${gate.ok ? ' primary' : ' off'}" id="mn-wp-travel"`
@@ -1129,7 +1129,7 @@ export class WorldMap {
         + '<button class="mn-btn small" id="mn-wp-clear">CLEAR WAYPOINT</button>';
       this._wpBox.querySelector('#mn-wp-clear')?.addEventListener('click', () => this.clearWaypoint());
     }
-    this._wpBox.querySelector('#mn-wp-travel')?.addEventListener('click', () => this.fastTravel());
+    this._wpBox.querySelector('#mn-wp-travel')?.addEventListener('click', () => this.travelTo());
   }
 
   /* ------------------------------------------------------------ interaction */
@@ -1175,20 +1175,20 @@ export class WorldMap {
     this.setWaypoint(target.x, target.z, near ? String(near.name) : 'Waypoint');
   }
 
-  /* ----------------------------------------------------------- fast travel */
+  /* ----------------------------------------------------------- travel */
 
   /**
    * Travel is free from the rest point, to somewhere she has actually been, when
    * nothing is hunting her; the reason it is refused is always printed. (Re-surveyed
    * benchmarks become nodes with progression, W3.)
    */
-  canFastTravel(site = this._selected) {
+  canTravel(site = this._selected) {
     if (!site) return { ok: false, reason: 'SELECT A DISCOVERED SITE' };
     if (!TRAVELABLE.has(site.kind)) return { ok: false, reason: 'NOT A TRAVEL POINT' };
     if (!this.fog.seenAt(site.x, site.z)) return { ok: false, reason: 'UNDISCOVERED: WALK THERE FIRST' };
     const p = this.ctx.player;
     if (!p) return { ok: false, reason: 'NO PLAYER' };
-    const fire = this.ctx.camp?.firePosition ?? ISLAND.REST;
+    const fire = this.ctx.settlements?.firePosition ?? ISLAND.REST;
     const dFire = fire ? Math.hypot(p.position.x - fire.x, p.position.z - fire.z) : Infinity;
     if (dFire > REST_R) return { ok: false, reason: 'REST AT THE CISTERN TO TRAVEL' };
     if (Math.hypot(site.x - p.position.x, site.z - p.position.z) < 25) {
@@ -1201,8 +1201,8 @@ export class WorldMap {
     return { ok: true, reason: 'TRAVEL' };
   }
 
-  fastTravel(site = this._selected) {
-    const gate = this.canFastTravel(site);
+  travelTo(site = this._selected) {
+    const gate = this.canTravel(site);
     if (!gate.ok) return gate;
     const p = this.ctx.player;
     const from = { x: p.position.x, z: p.position.z };
@@ -1211,9 +1211,9 @@ export class WorldMap {
     p._snapToGround?.();
     this.fog.reveal(site.x, site.z);
     this._travels++;
-    this.menus?._emit?.('fast-travel', { from, to: { x: site.x, z: site.z }, site: site.name });
+    this.menus?._emit?.('travel', { from, to: { x: site.x, z: site.z }, site: site.name });
     // an autosave on arrival, through the owning lane's published writer
-    try { this.ctx.progression?.checkpoint?.('fast-travel'); } catch { /* no save lane */ }
+    try { this.ctx.progression?.checkpoint?.('travel'); } catch { /* no save lane */ }
     this.menus?.closeHub?.();
     return { ok: true, to: site.name };
   }
@@ -1262,7 +1262,7 @@ export class WorldMap {
       gaveWay: this._gaveWay ?? 0,
       waypoint: this.waypoint ? { ...this.waypoint, distance: this.distanceToWaypoint() } : null,
       selected: this._selected ? { kind: this._selected.kind, name: this._selected.name } : null,
-      travel: this._selected ? this.canFastTravel(this._selected) : null,
+      travel: this._selected ? this.canTravel(this._selected) : null,
       travels: this._travels,
       canvas: this.canvas ? { w: this.canvas.width, h: this.canvas.height, onScreen: !!this.canvas.offsetParent } : null,
     };

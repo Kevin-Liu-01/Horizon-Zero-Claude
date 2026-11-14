@@ -7,12 +7,12 @@
  * Round 3 had no dialogue at all; the Wave-2 progression lane bolted a
  * name/line/choices block into the JOURNAL overlay, which is a full-screen
  * modal — talking to a hunter blanked the hunter. `npc` (port 5218) then
- * shipped thirteen named Nora, each with authored lines and a `TALK · NAME`
+ * shipped thirteen named Old-tribe, each with authored lines and a `TALK · NAME`
  * prompt, and routed every one of them at `progression.talkTo(id)`.
  *
  * So this is the real thing: its own DOM island, anchored to the BOTTOM of the
  * frame so the person speaking stays on screen (that is half of what V45
- * judges), drawn in HZD's chrome — tracked caps for the name, a gold chamfered
+ * judges), drawn in Older game's chrome — tracked caps for the name, a gold chamfered
  * slab, numbered choices with a role tag on the right.
  *
  *   #cal-dlg  ─ never a child of #hud or #cal-prog, injects its own <style>
@@ -252,7 +252,7 @@ export class DialogueUI {
     const ctx = this.ctx;
     const state = this.prog.dialogueState(npcId);
     if (!state) return false;
-    const PANEL = /^(playing|dialogue|quests|trade|campfire|skills)$/;
+    const PANEL = /^(playing|dialogue|quests|trade|brazier|skills)$/;
     if (!PANEL.test(ctx.state)) return false;
 
     if (!this.isOpen) {

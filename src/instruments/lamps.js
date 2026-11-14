@@ -60,7 +60,7 @@ import { HOT, mutableFromBirth } from './lib/hot.js';
  * and on every machine: `machine.lampState` (machine.js getter).
  */
 
-/** Horizon's sensor colours (calm, wary, hostile, override teal, Focus violet). Never a CALIMA token. */
+/** The older game's sensor colours (calm, wary, hostile, override teal, Focus violet). Never a CALIMA token. */
 export const LAMP_CANON = Object.freeze(['#38c6ff', '#ffb31f', '#ff2413', '#19ffd0', '#9B6BFF']);
 
 /** Bible §9.7 scanner tokens (shell-ui W2 draws them); highlights are ink and cobalt. */
@@ -237,7 +237,7 @@ export { WEATHER_PERCEPTION, NIGHT_PERCEPTION, perceptionScale } from './lib/wea
 /**
  * Map a machine to its lamp state (bible §7.2 + §7.3).
  *   dark     dead, or blinded: a precise hit on the lamp (`lampDarkT`, 6 s) or
- *            Clouded (the Dust status, engine channel `shock`: `stunT`)
+ *            Clouded (the Dust status, engine channel `shock`: `dazeT`)
  *   hostile  alert, attack, stagger, downed
  *   wary     suspicious, search
  *   calm     patrol, return
@@ -246,7 +246,7 @@ export function lampStateFor(m) {
   if (!m || !m.alive || m.state === 'dead') return 'dark';
   // the machine's doubles through its monomorphic `sc` (machine.js MachineScalars): no boxing
   const sc = m.sc;
-  if (sc ? (sc.lampDarkT > 0 || sc.stunT > 0) : ((m.lampDarkT || 0) > 0 || (m.stunT || 0) > 0)) return 'dark';
+  if (sc ? (sc.lampDarkT > 0 || sc.dazeT > 0) : ((m.lampDarkT || 0) > 0 || (m.dazeT || 0) > 0)) return 'dark';
   switch (m.state) {
     case 'suspicious': case 'search': return 'wary';
     case 'alert': case 'attack': case 'stagger': case 'downed': return 'hostile';
@@ -669,7 +669,7 @@ export class LampSystem {
 
     // ---- the beams: ONE instanced additive draw for every beam ----
     const cone = new THREE.ConeGeometry(1, 1, BEAM.segments, 1, true);
-    cone.translate(0, -0.5, 0);                 // apex at the origin, base at y = -1
+    cone.translate(0, -0.5, 0);                 // peak at the origin, base at y = -1
     cone.rotateX(-Math.PI / 2);                 // base at z = +1: the cone points down +Z
     this._aBeam = new THREE.InstancedBufferAttribute(new Float32Array(this.capacity * 4), 4).setUsage(THREE.DynamicDrawUsage);
     cone.setAttribute('aBeam', this._aBeam);

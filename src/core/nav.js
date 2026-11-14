@@ -116,7 +116,7 @@ export class Nav {
     this._budgetRows = opts.rowsPerFrame ?? 44;
 
     /**
-     * Merged prop/camp meshes span the whole valley, so their AABB says
+     * Merged prop/rest site meshes span the whole valley, so their AABB says
      * nothing. Stamp per triangle instead, and only where the surface stands
      * clear of the ground — river cobbles and floor slabs are walked over,
      * boulders, ruin beams, tents and the tower are not.

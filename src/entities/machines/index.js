@@ -54,7 +54,7 @@ const NO_LEGACY = { kinds: [], boot: [], ready: Promise.resolve({ loaded: [], fa
 /** The legacy kind ids (empty once `legacy.js` is gone): their `_moveToward` returns on demand (machine.js). */
 const LEGACY_KIND_SET = new Set(LEGACY_MODULE?.LEGACY_KINDS || []);
 
-const CAMP = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
+const REST_PT = REST_SITE;            // { x, z, r }: the Instrument no-spawn ring
 const ROUTE_RIM = PLAY_RADIUS + EXTENT.routeRim;
 const LOD_DIST = 250;
 const LOD_TICK = 0.25;
@@ -177,7 +177,7 @@ export class Machines {
         this.expansionReady = true;
       });
 
-    // calm everything down when the player respawns at the campfire
+    // calm everything down when the player respawns at the brazier
     ctx.events.on('player-respawn', () => {
       for (const m of this.list) {
         if (!m.alive || m._disposed) continue;
@@ -197,7 +197,7 @@ export class Machines {
     });
   }
 
-  /** Waypoint ring around (cx,cz), warped, kept out of camp + world rim. */
+  /** Waypoint ring around (cx,cz), warped, kept out of rest site + world rim. */
   _route(cx, cz, r, n, seed = 0) {
     const pts = [];
     for (let i = 0; i < n; i++) {
@@ -205,12 +205,12 @@ export class Machines {
       const rr = r * (0.7 + 0.3 * Math.sin(a * 2.7 + seed));
       let x = cx + Math.sin(a) * rr;
       let z = cz + Math.cos(a) * rr;
-      // keep waypoints out of the hunter camp
-      const dx = x - CAMP.x, dz = z - CAMP.z;
+      // keep waypoints out of the hunter rest site
+      const dx = x - REST_PT.x, dz = z - REST_PT.z;
       const d = Math.sqrt(dx * dx + dz * dz);
-      if (d < CAMP.r + 6) {
-        x = CAMP.x + (dx / (d || 1)) * (CAMP.r + 6);
-        z = CAMP.z + (dz / (d || 1)) * (CAMP.r + 6);
+      if (d < REST_PT.r + 6) {
+        x = REST_PT.x + (dx / (d || 1)) * (REST_PT.r + 6);
+        z = REST_PT.z + (dz / (d || 1)) * (REST_PT.r + 6);
       }
       // ... and inside the playable valley
       const wr = Math.sqrt(x * x + z * z);
@@ -722,17 +722,17 @@ export class Machines {
      */
     // hard standoff: machines never interpenetrate the player — in EVERY
     // state (patrol/return wander included: a hauler must not stroll
-    // through an idle Aloy) and along the whole BODY, not just the center:
+    // through an idle Brea) and along the whole BODY, not just the center:
     // long machines are treated as a capsule (rear / center / snout spheres,
     // spaced by standoffHalfLen) so snouts and tails can't sweep through her.
     /* `meleeStandoffHalfLen` is the melee approach term, published by
-     * `Collision._meleeStandoff` on the ONE machine Aloy currently has selected
-     * with her spear drawn (null on every other machine and at every other
+     * `Collision._meleeStandoff` on the ONE machine Brea currently has selected
+     * with her lance drawn (null on every other machine and at every other
      * time). THIS LOOP IS ITS ONLY CONSUMER, and it has to be: the loop and the
      * player's blocking capsule are two halves of the same standoff, so if the
      * capsule lets her closer and this does not, every melee approach shoves
      * the machine instead of stopping her (gate A25, and A106 measures the
-     * drawn-spear case A25 cannot see). Everything that reads the machine's
+     * drawn-lance case A25 cannot see). Everything that reads the machine's
      * GEOMETRY — runner/hauler charge reach, the Silent Strike prompt —
      * keeps `standoffHalfLen` itself, which this term never writes. */
     {

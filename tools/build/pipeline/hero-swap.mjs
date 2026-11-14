@@ -3,7 +3,7 @@
  *
  * "The orchestrator merges pipeline's SPECS.hero swap (/models/hero/brea.glb and
  *  the hero outfit, stow-kit and UAL2 rows) in the same merge window as
- *  hero-body's aloy.glb deletion, pipeline first; A-assets-tracked is graded on
+ *  hero-body's Brea.glb deletion, pipeline first; A-assets-tracked is graded on
  *  main after both."
  *
  * The swap cannot sit in this branch's `src/core/assets.specs.js` while the
@@ -16,7 +16,7 @@
  *   node tools/build/pipeline/hero-swap.mjs --check  [--root <tree>]   dry run: what --write would change (exit 0)
  *   node tools/build/pipeline/hero-swap.mjs --verify [--root <tree>] [--scratch <dir>]
  *        after BOTH merges: patch applied, the four files present, each matched by exactly one non-IP
- *        LICENSES.json row, aloy.glb gone, none of the four git-ignored, hero-body's rows.js a proven no-op;
+ *        LICENSES.json row, Brea.glb gone, none of the four git-ignored, hero-body's rows.js a proven no-op;
  *        exit 1 otherwise
  *   node tools/build/pipeline/hero-swap.mjs --trial --scratch <dir> [--hero-ref r5/w0b-hero-body] [--shot <png>]
  *        the R39 merge trial in scratch (no git write, nothing written into the tree): clone this tree,
@@ -29,7 +29,7 @@
  *   src/core/assets.specs.js   SPECS.hero -> Brea; + SPECS.heroOutfitPan1, SPECS.heroStowKit; + ANIMS.heroUal2
  *                              (the rows hero-body's src/hero/rows.js adds at module evaluation today, value for
  *                              value, so its applyHeroRows() becomes a no-op — proven by `rowsNoop`)
- *   tools/licences/lib.mjs     the SCHEDULED_IP entry for public/models/aloy.glb (its file goes in the same window)
+ *   tools/licences/lib.mjs     the SCHEDULED_IP entry for public/models/Brea.glb (its file goes in the same window)
  */
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
@@ -121,7 +121,7 @@ export function patchSpecsText(text) {
   return { text: b.text, hero: a.state, anims: b.state, changed: a.state === 'applied' || b.state === 'applied' };
 }
 
-/** lib.mjs text -> SCHEDULED_IP without aloy.glb. Pure; throws on an unexpected file. */
+/** lib.mjs text -> SCHEDULED_IP without Brea.glb. Pure; throws on an unexpected file. */
 export function patchLibText(text) {
   if (count(text, OLD_SCHEDULED) === 1) return { text: text.replace(OLD_SCHEDULED, ''), scheduled: 'applied', changed: true };
   if (!/^\s*'public\/models\/aloy\.glb'\s*:/m.test(text)) return { text, scheduled: 'already', changed: false };

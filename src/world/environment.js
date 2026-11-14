@@ -709,7 +709,7 @@ export class Environment {
     this.fireLight.castShadow = false;
     this.fireLight.position.set(0, 2, 0);
     scene.add(this.fireLight);
-    /** F-1: the fire the pooled light follows (a brazier, W2). Null → the Round-4 camp fire. */
+    /** F-1: the fire the pooled light follows (a brazier, W2). Null → the Round-4 rest site fire. */
     this.fireSource = null;
     this.eyeLights = [];
     for (let i = 0; i < 2; i++) {
@@ -720,8 +720,8 @@ export class Environment {
     }
     // bible §9.1 lamp canon (never the Round-4 cyan): calm, wary, hostile
     this._lampCol = [new THREE.Color('#F2EAD3'), new THREE.Color('#B5E61D'), new THREE.Color('#FF2D8C')];
-    this._campFire = null;
-    this._campSearch = 0;
+    this._restFire = null;
+    this._restSearch = 0;
     this._fireT = 0;
     this._fireWas = null;
     this._fireK = 0;
@@ -1666,14 +1666,14 @@ export class Environment {
     /* F-1: intensity max(night, a dusk ramp from 18:30, 1 within 12 m) × 26 × flicker,
        over 14 m; beyond 40 m in daylight it is 0. The fire stands still: its position and
        its distance to the camera are re-read every 0.25 s, the flicker runs per frame. */
-    if (!this.fireSource && !this._campFire && (this._campSearch -= dt) <= 0) {
-      this._campSearch = 1.5;
-      const camp = ctx.camp?.group || ctx.scene.getObjectByName('hunter-camp');
-      camp?.traverse((o) => {
-        if (!this._campFire && o.isPointLight && o !== this.fireLight) this._campFire = o;
+    if (!this.fireSource && !this._restFire && (this._restSearch -= dt) <= 0) {
+      this._restSearch = 1.5;
+      const host = ctx.settlements?.group || ctx.scene.getObjectByName('settlement-host');
+      host?.traverse((o) => {
+        if (!this._restFire && o.isPointLight && o !== this.fireLight) this._restFire = o;
       });
     }
-    const src = this.fireSource || this._campFire;
+    const src = this.fireSource || this._restFire;
     if (src) {
       if ((this._fireT -= dt) <= 0 || src !== this._fireWas) {
         this._fireT = 0.25; this._fireWas = src;
@@ -2099,7 +2099,7 @@ export class Environment {
   /**
    * One Points draw, a type per point: 170 sunlit pollen and salt glints in a 24 m box
    * (off at night), 600 calima dust motes in a 44 m box drifting downwind at the wind's
-   * speed (2–4 m/s in calima), and 240 slots for Malpaís embers (world-props registers
+   * speed (2–4 m/s in calima), and 240 slots for Malpaís sparks (world-props registers
    * emitters in W3; weight 0 until then). Alpha × (0.4 + 2.2 × pow(view·sun, 4)).
    */
   _buildMotes() {
@@ -2129,7 +2129,7 @@ export class Environment {
       uniforms: {
         uTime: { value: 0 },
         uFocal: { value: 800 },
-        uMix: { value: new THREE.Vector3(1, 0, 0) },        // pollen, dust, embers
+        uMix: { value: new THREE.Vector3(1, 0, 0) },        // pollen, dust, sparks
         uDrift: { value: new THREE.Vector2(-3.9, 3.9) },    // wind velocity, m/s
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
         uSunCol: { value: new THREE.Color(1, 0.9, 0.7) },

@@ -33,7 +33,7 @@ import { MELEE } from './weapons.js';
  * ---------------------------------------------------------------------------
  * ROUND 4, lane `player-melee` (Kevin: "melee and how lance is held needs to
  * be fixed too"). This file used to own a `_poseLance` that slid the lance
- * MESH around the camera plane on a hand-tuned Euler while Aloy's body did
+ * MESH around the camera plane on a hand-tuned Euler while Brea's body did
  * nothing, and a rest carry that only existed for 2.2 s after a swing. It now
  * owns the STATE and `src/entities/anim/meleeLayer.js` owns the POSE:
  *
@@ -129,7 +129,7 @@ const NO_SNEAK_STATES = new Set(['dead', 'downed', 'stagger']);
  * machine's blocking collider (`collision._syncMachines`) is a CAPSULE swept
  * along its heading: `standoffHalfLen` either side of the centre, inflated by
  * `bodyRadius + machinePad`, and the player's own capsule adds its radius on
- * top. Measured on port 5208, a crouched Aloy pressed against the BACK of a
+ * top. Measured on port 5208, a crouched Brea pressed against the BACK of a
  * Sentry stands 3.35 m from its centre — the collider will not let her any
  * closer — while `MELEE.silent.range` is 2.0 m centre-to-centre. The Silent
  * Strike prompt could therefore never appear on any machine, and the lance
@@ -213,7 +213,7 @@ const CONTACT_K = 0.70;
 /**
  * THE COCK IS TOO SHORT IN `weapons.js`, AND THAT FILE IS NOT THIS LANE'S.
  *
- * Filmed (HZD Remastered 69.90-70.50 s): guard -> cocked is 0.30-0.45 s and
+ * Filmed (Older game Remastered 69.90-70.50 s): guard -> cocked is 0.30-0.45 s and
  * cocked -> contact 0.15 s. `MELEE.light.windup` is [0.10, 0.09, 0.12] and
  * `strike` [0.10, 0.09, 0.12]: the strike is in the right neighbourhood, the
  * windup is ~40 % of what it should be, and a 0.10 s cock reads as a twitch
@@ -744,9 +744,6 @@ export class Melee {
     return this.stance !== 'holstered';
   }
 
-  /** Until armory calls `lanceStow.js` from `combat.js` (plan §1.2). */
-  get spearInHand() { return this.lanceInHand; }
-  get spear() { return this.lance; }
 
   /** Ask for the lance. Returns the seconds until it is swingable. */
   drawLance(hold = READY_HOLD) {
@@ -1540,7 +1537,7 @@ export class Melee {
     const canSwing = playing && !aiming && !wheelOpen && (p?.health ?? 1) > 0;
 
     // --- charge / release
-    /* R63 (a) — the bow's LMB is not a spear press (hero-body targeted fix round 2; the one edit R63
+    /* R63 (a) — the bow's LMB is not a lance press (hero-body targeted fix round 2; the one edit R63
      * grants hero-body in this file, the press detection). An LMB already down when a roll begins, or
      * down while RMB is held (which covers RMB coming up from a draw with LMB still held), belongs to the
      * bow until it is released: no charge, no swing, no strike. Read as a press, it charged through a
@@ -2018,7 +2015,7 @@ export class Melee {
        * fallback IS the common path, not an edge case. Measured at 3.2 m from
        * a Sentry, a confirmed hit put its sparks, its chips and its damage
        * number 1.7 m (20 deg) to 1.8 m (40 deg) off the machine, out on the
-       * grass by Aloy's shoulder — and `melee-hit.point` published the same
+       * grass by Brea's shoulder — and `melee-hit.point` published the same
        * wrong spot to positional audio and to every other listener.
        *
        * Nor is the standoff CAPSULE the answer: it is a keep-out volume
@@ -2417,7 +2414,7 @@ export class Melee {
 
   /**
    * Execute the strike. Small classes die outright (canon); anything bigger
-   * takes `heavyFrac` of max health and a stagger, which is the HZD behaviour
+   * takes `heavyFrac` of max health and a stagger, which is the Older game behaviour
    * of "you hurt it badly and it now knows exactly where you are".
    */
   /**

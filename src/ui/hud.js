@@ -231,7 +231,7 @@ const KIT_ART = {
 };
 const kitArtFor = (id) => {
   const s = String(id ?? '');
-  const key = /lance|spear/i.test(s) ? 'lance' : /gaff/i.test(s) ? 'gaff' : /windwall/i.test(s) ? 'windwall'
+  const key = /lance/i.test(s) ? 'lance' : /gaff/i.test(s) ? 'gaff' : /windwall/i.test(s) ? 'windwall'
     : /pot|sling/i.test(s) ? 'pot' : /net|caster/i.test(s) ? 'net' : 'bow';
   return `<svg viewBox="0 0 40 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${KIT_ART[key]}</svg>`;
 };
@@ -1684,7 +1684,7 @@ export class HUD {
         q.x = px;
         q.el.style.transform = txString(px);
       }
-      const shape = mk.shape ?? (mk.kind === 'settlement' || mk.kind === 'camp' ? 'settlement'
+      const shape = mk.shape ?? (mk.kind === 'settlement' || mk.kind === 'rest' ? 'settlement'
         : mk.kind === 'benchmark' ? 'benchmark' : i < nQ ? 'objective' : 'site');
       if (q.shape !== shape) { q.shape = shape; q.el.dataset.shape = shape; }
       const tr = i < nQ && !!mk.tracked;

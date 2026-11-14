@@ -1,5 +1,5 @@
 import { Gather } from './gather.js';
-import { Datapoints } from './datapoints.js';
+import { FieldBooks } from './fieldbooks.js';
 import { LootPopup } from '../ui/inventory.js';
 import { itemDef } from './items.js';
 
@@ -21,7 +21,7 @@ import { itemDef } from './items.js';
  *                                and show the take-all popup ANCHORED TO THE
  *                                INTERACTABLE (`ui-16`).
  *   entry.pickupWeapon = 'disc-launcher' -> ctx.combat.grantWeapon() if present
- *   entry.datapoint           -> the Notebook record this pedestal carries
+ *   entry.fieldbook           -> the Notebook record this pedestal carries
  * No line-of-sight requirement — radius is the whole gate (spec).
  *
  * ROUND 4 ADDITIONS
@@ -31,7 +31,7 @@ import { itemDef } from './items.js';
  *   over the grant. It is fire-and-forget: nothing here waits on the animator.
  *   `ui-16` — the popup is projected onto the interactable, not pinned to the
  *   screen corner.
- *   `missing-systems-focus-datapoints` — datapoint pedestals live here and
+ *   `missing-systems-focus-fieldbooks` — fieldbook pedestals live here and
  *   open the Notebook reader on pickup.
  */
 
@@ -39,7 +39,7 @@ const DEFAULT_RADIUS = 2.2;
 const DEFAULT_HOLD = 0.45;
 
 /** How long the rummage animation should run for each interaction class. */
-const RUMMAGE = { LOOT: 1.15, 'PICK UP': 0.85, GATHER: 0.7, DATAPOINT: 0.9 };
+const RUMMAGE = { LOOT: 1.15, 'PICK UP': 0.85, GATHER: 0.7, 'FIELD BOOK': 0.9 };
 
 export class Interactables {
   constructor(ctx) {
@@ -55,9 +55,9 @@ export class Interactables {
 
     // World gather nodes live here (main.js is frozen — we own their system).
     this.gather = new Gather(ctx, this);
-    // Old-World records + the Notebook they fill (missing-systems-focus-datapoints)
-    this.datapoints = new Datapoints(ctx, this);
-    if (ctx.items) ctx.items.datapoints = this.datapoints;
+    // Old-World records + the Notebook they fill (missing-systems-focus-fieldbooks)
+    this.fieldbooks = new FieldBooks(ctx, this);
+    if (ctx.items) ctx.items.fieldbooks = this.fieldbooks;
 
     // reset the hold latch on key release so taps feel crisp
     ctx.input.onUp('KeyE', () => { this._latched = false; });
@@ -90,7 +90,7 @@ export class Interactables {
   sourceName(entry) {
     if (!entry) return '';
     if (entry.sourceName) return String(entry.sourceName).toUpperCase();
-    if (entry.datapoint) return String(entry.datapoint.title ?? 'RECORD').toUpperCase();
+    if (entry.fieldbook) return String(entry.fieldbook.title ?? 'RECORD').toUpperCase();
     if (entry.part) {
       const p = entry.part;
       const m = p.machine ?? entry.machine;
@@ -163,11 +163,11 @@ export class Interactables {
 
     entry.onInteract?.(ctx, entry);
 
-    // A datapoint opens its own reader once it has been collected — but not
+    // A fieldbook opens its own reader once it has been collected — but not
     // in the middle of a fight: a full-screen modal while a Big cat is
     // charging is the kind of thing that gets a player killed. The record is
     // already in the Notebook either way; it just waits for a quiet moment.
-    if (entry.datapoint) {
+    if (entry.fieldbook) {
       const p = ctx.player?.position;
       let hostile = false;
       for (const m of (ctx.machines?.list ?? [])) {
@@ -176,7 +176,7 @@ export class Interactables {
         if (st !== 'alert' && st !== 'attack' && st !== 'search') continue;
         if (m.position.distanceToSquared(p) < 3600) { hostile = true; break; }
       }
-      if (!hostile) ctx.items?.openNotebook?.(entry.datapoint.id);
+      if (!hostile) ctx.items?.openNotebook?.(entry.fieldbook.id);
     }
 
     // "removes if once" — entries carrying loot default to one-shot so a
@@ -197,7 +197,7 @@ export class Interactables {
 
   update(dt, t) {
     this.gather.update(dt, t);
-    this.datapoints.update(dt, t);
+    this.fieldbooks.update(dt, t);
     this.popup.update(dt);
 
     const ctx = this.ctx;

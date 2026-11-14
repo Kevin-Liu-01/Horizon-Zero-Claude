@@ -835,7 +835,7 @@ const ROWS = [
       for (const g of old) g.traverse((o) => { if (o.isMesh) inOld.add(o); });
       const liveColliders = (C?.colliders || []).filter((c) => (c.ref && inOld.has(c.ref)) || (c.object && inOld.has(c.object))).length;
       const ledges = (P?.rockworks?.ledges?.length || 0) + (P?.placeSystem?.ledges?.length || 0);
-      const camp = ctx.camp?.group ? ctx.camp.group.visible : false;
+      const camp = ctx.settlements?.group ? ctx.settlements.group.visible : false;
       const ridges = ctx.environment?.ridges ? ctx.environment.ridges.visible : false;
       const pass = !shown.length && !liveColliders && !ledges && !camp && !ridges;
       return { pass, detail: { signature: !!P?.megaMeshes, groupsHidden: old.length, shown, liveColliders, ledges, campVisible: camp, ridgesVisible: ridges, oldSite: ctx.terrain.oldSiteRetired } };

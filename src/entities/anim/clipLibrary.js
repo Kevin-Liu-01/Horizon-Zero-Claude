@@ -8,11 +8,11 @@ const { clamp } = THREE.MathUtils;
 
 /**
  * ClipLibrary — bakes the CC0 Quaternius Universal Animation Library clips
- * onto the Aloy rig ONCE (per boot, cached) and measures each locomotion
+ * onto the Brea rig ONCE (per boot, cached) and measures each locomotion
  * loop's gait so the animator can drive it at speed without foot skate.
  *
  * Baked clips bind by bone NAME, so one library serves every
- * SkeletonUtils.clone of aloy.root. The bake runs on a private, detached
+ * SkeletonUtils.clone of Brea.root. The bake runs on a private, detached
  * skeleton clone — the player's model is never touched.
  *
  * Gait metadata per clip (from the contact tracks the retargeter records):
@@ -59,7 +59,7 @@ export const CLIPS = {
   jumpLand: 'Jump_Land',
   interact: 'Interact',
   pickup: 'PickUp_Table',
-  // Round 4 (player-melee): the spear. `Sword_Attack` is the only committed
+  // Round 4 (player-melee): the lance. `Sword_Attack` is the only committed
   // one-handed overhand swing in the pack and `Sword_Idle` the only weapon
   // guard; both are baked whole here and MASKED to the upper body by
   // `anim/meleeLayer.js` before they reach the mixer, so the legs never see
@@ -112,7 +112,7 @@ export const CANON_SPEEDS = { walk: 1.5, crouch: 1.4, crouchAim: 1.05, aim: 1.35
  * change how far the clip's own stride carries it — which is what the
  * retargeter's amplitude warp does. `Sprint_Loop` bakes at a 5.06 m cycle,
  * which at the 6.8 m/s canon is 2.69 steps/s before warp (measured 2.97): a
- * long, floaty bound, not HZD's drive. `Strafe_Loop` had the opposite problem
+ * long, floaty bound, not Older game's drive. `Strafe_Loop` had the opposite problem
  * — amp 0.42 shrank the cycle to 0.62 m and the side-step became a 4.4
  * steps/s shuffle.
  *
@@ -318,9 +318,9 @@ export class ClipLibrary {
     this.source = ualGltf.scene;
     this.source.updateMatrixWorld(true);
     this.sourceClips = ualGltf.animations || [];
-    /* Round 5 rig seam: a body other than Aloy carries its own bone map on
+    /* Round 5 rig seam: a body other than Brea carries its own bone map on
      * `root.userData.rigProfile` ({ name, map, aim, contacts, feet }); with no
-     * profile this is byte-for-byte the Aloy setup. */
+     * profile this is byte-for-byte the Brea setup. */
     const prof = heroModel.root.userData?.rigProfile || null;
     this.rigName = prof?.name || 'hero';
     this.feet = prof?.feet || null;

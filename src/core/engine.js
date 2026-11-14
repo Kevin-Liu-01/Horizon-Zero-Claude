@@ -425,7 +425,7 @@ const OutputGradeShader = {
       c = (c - 0.5) * uContrast + 0.5 + uLift;
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c = mix(vec3(l), c, uSaturation);
-      // split tone: cool shade, warm light — the HZD valley read
+      // split tone: cool shade, warm light — the warm valley read
       c *= mix(uShadowTint, uHighlightTint, smoothstep(0.12, 0.86, l));
       vec2 d = (vUv - 0.5) * vec2(uAspect, 1.0);
       float r = length(d) / (0.5 * sqrt(uAspect * uAspect + 1.0));
@@ -484,7 +484,7 @@ const BLOOM_MAX_WIDTH = 1280;
  * occlusion here is a contact-scale term (0.55 m world radius). Past ~120 m that
  * radius is one or two AO texels and a 24-bit depth step on this 0.1 / 2400 m
  * camera is 7 cm at 350 m and 0.6 m at 1 km, so the horizon search is reading
- * depth quantisation, not rock: measured on the eye-height camp view, shipped
+ * depth quantisation, not rock: measured on the eye-height rest site view, shipped
  * occlusion ROSE with distance (0.07 at 30-100 m, 0.118 at 150-250 m) where a
  * real contact term can only fall. It is faded out, 60 -> 120 m, and the pass
  * skips its kernel entirely past the far edge.
@@ -2542,7 +2542,7 @@ export class Engine {
     this.shadowDrawEstimate = 0;
     // Rank by distance rather than thresholding on it: a distance CUT admits
     // every tie above the budget, and ties are common because `dist - radius`
-    // clamps to 0 for anything the camera is standing inside (terrain, camp
+    // clamps to 0 for anything the camera is standing inside (terrain, rest site
     // structures). Measured: a 150-caster budget was letting 198 casters
     // through with three cascades. The rank array is reused; the sort runs at
     // most 10x/second.

@@ -118,12 +118,12 @@ const TAB_BY_ID = new Map(TABS.map((t) => [t.id, t]));
 const TAB_BY_KEY = new Map(TABS.map((t) => [t.key, t]));
 
 /** States another lane's panel parks on — the hub stays open behind them. */
-const PANEL_STATES = ['quests', 'dialogue', 'trade', 'campfire', 'skills', 'inventory'];
+const PANEL_STATES = ['quests', 'dialogue', 'trade', 'brazier', 'skills', 'inventory'];
 
 const DEATH_HOLD_S = 1.15;    // let the crumple play before the card takes over
 const VICTORY_S = 3.0;        // ui-13: banner, then the valley is yours again
 const GRAY_RAMP_S = 1.6;
-const CAMP = { x: REST.x, z: REST.z };
+const REST_PT = { x: REST.x, z: REST.z };
 /**
  * Title framing (brand, W0b; bible §9.8 "the Pans in calima"). The camera LOOKS
  * along the sun's azimuth + TITLE_LOOK_OFFSET, so the calima disc sits on the
@@ -704,7 +704,7 @@ export class Menus {
       let worst = Infinity;
       for (const radius of [150, 116]) {
         for (const lat of [-TITLE_TRUCK_M, 0, TITLE_TRUCK_M]) {
-          const cx = CAMP.x - hx * radius - hz * lat, cz = CAMP.z - hz * radius + hx * lat;
+          const cx = REST_PT.x - hx * radius - hz * lat, cz = REST_PT.z - hz * radius + hx * lat;
           const cy = T.getHeight(cx, cz) + (radius === 150 ? 32 : 25);
           // the sun where the sky draws it, seen from this point of the path
           this._titleSunPoint(sp, cam.set(cx, cy, cz), sun).sub(cam);
@@ -757,8 +757,8 @@ export class Menus {
   _titlePlace(cam, head, ease, lat) {
     const terrain = this.ctx.terrain;
     const radius = 150 - ease * 34;
-    const cx = CAMP.x - head.sx * radius - head.cz * lat;
-    const cz = CAMP.z - head.cz * radius + head.sx * lat;
+    const cx = REST_PT.x - head.sx * radius - head.cz * lat;
+    const cz = REST_PT.z - head.cz * radius + head.sx * lat;
     const ground = terrain?.getHeight ? terrain.getHeight(cx, cz) : 0;
     const camY = ground + 32 - ease * 7;
     cam.position.set(cx, camY, cz);
@@ -1055,7 +1055,7 @@ export class Menus {
     ctx.input?.exitPointerLock?.();
     // a corpse must not be what "Continue" resumes into
     const p = ctx.player;
-    if (p && p.health <= 0) { p.health = p.maxHealth; p.position.set(CAMP.x, 0, CAMP.z); p._snapToGround?.(); }
+    if (p && p.health <= 0) { p.health = p.maxHealth; p.position.set(REST_PT.x, 0, REST_PT.z); p._snapToGround?.(); }
     document.getElementById('hud')?.classList.add('hidden');
     document.getElementById('title')?.classList.remove('hidden');
     ctx.state = 'title';
@@ -1333,7 +1333,7 @@ export class Menus {
         sub: info ? `from: ${String(info.reason || 'the last entry').toLowerCase()}` : 'no save yet: she wakes at the cistern',
         fn: () => this.respawn('checkpoint') },
       { label: 'RETURN TO THE CISTERN', mode: 'rest', sub: 'keep what the last entry holds, and start from the rest',
-        fn: () => this.respawn('camp') },
+        fn: () => this.respawn('rest') },
       { label: 'QUIT TO TITLE', sub: 'the book stays open', fn: () => this.quitToTitle() },
     ];
     opts.forEach((o, i) => {
@@ -1352,7 +1352,7 @@ export class Menus {
    * `mode`:
    *   'checkpoint' — emit `player-respawn`; `progression` restores the
    *                  checkpoint it wrote (position, health, pouch, inventory).
-   *   'camp'       — the same, then move her to camp on the next microtask so
+   *   'rest site'       — the same, then move her to rest site on the next microtask so
    *                  the restore does not put her back where she died.
    *
    * THE CORPSE THAT WALKED (found on film, `shots/sm-a69.png` probe). Health is
@@ -1374,12 +1374,12 @@ export class Menus {
     if (p) {
       p.health = p.maxHealth;
       p.velocity?.set?.(0, 0, 0);
-      if (mode === 'camp') { p.position.set(CAMP.x, 0, CAMP.z); p._snapToGround?.(); }
+      if (mode === 'rest') { p.position.set(REST_PT.x, 0, REST_PT.z); p._snapToGround?.(); }
     }
     ctx.events?.emit?.('player-respawn', { source: 'menus', mode });
     if (p) {
       queueMicrotask(() => {
-        if (mode === 'camp') { p.position.set(CAMP.x, 0, CAMP.z); p._snapToGround?.(); }
+        if (mode === 'rest') { p.position.set(REST_PT.x, 0, REST_PT.z); p._snapToGround?.(); }
         if (!(p.health > 0)) {
           p.health = p.maxHealth;
           ctx.events?.emit?.('player-hurt', { health: p.health, max: p.maxHealth });

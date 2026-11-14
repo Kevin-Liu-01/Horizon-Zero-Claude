@@ -62,7 +62,7 @@ export class PeopleSystem {
     this._streamT = 2;
     this._dt = 0;
     this._loading = false;
-    // the fetches start with the camp, so the group stands before the game's first frame on any box that can run it
+    // the fetches start with the rest site, so the group stands before the game's first frame on any box that can run it
     if (this.autoStage && ctx.terrain) {
       this._loading = true;
       this.stage().catch((e) => console.warn('[people] staging failed', e)).finally(() => { this._loading = false; });

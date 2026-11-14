@@ -296,7 +296,7 @@ export async function build({ out = ROOT } = {}) {
   }
   const LEGS = [];
   const LEG_DEF = [
-    // row, hip z, ankle x, ankle z, hinge (+1 = knee apex forward), parent
+    // row, hip z, ankle x, ankle z, hinge (+1 = knee peak forward), parent
     ['F', 0.86, 0.88, 1.50, 1, 'chest'],
     ['M', -0.02, 0.94, -0.02, -1, 'pelvis'],
     ['H', -0.86, 0.88, -1.50, -1, 'pelvis'],

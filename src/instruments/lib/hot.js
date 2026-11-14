@@ -60,7 +60,7 @@ export const HOT = {
   pOk: 0,
   /** her position: the player's own THREE.Vector3, by reference (one class: a stable shape); a placeholder until she exists */
   ppos: new THREE.Vector3(0.5, 0.5, 0.5),
-  /** her health, ground speed, and the crouch / tall-grass flags (Smi 0/1) */
+  /** her health, ground speed, and the crouch / cover grass flags (Smi 0/1) */
   pHealth: 0.5,
   pMoveSpeed: 0.5,
   pCrouch: 0,

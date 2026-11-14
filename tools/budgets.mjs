@@ -209,8 +209,8 @@ export const MEMORY_BUDGETS = Object.freeze({
       { id: 'frozen-ui-engines', files: '^/src/ui/dialogue\\.js$|^/src/items/(interactables|inventory)\\.js$|^/src/audio/(bank|buses|clock|music|probe|spatial|zones)\\.js$|^/src/combat/particles\\.js$', lane: 'FROZEN UI engines (plan §1.1): §11 W1 perf-hygiene grant', barsFrom: null, cls: 'frozen', ruling: 'plan §1.1 (frozen)' },
       // armory W1: combat/{bow,weapons,arrows,combat}.js, src/hero/** (from W1 day 1)
       { id: 'armory', files: '^/src/combat/(bow|weapons|arrows|combat)\\.js$|^/src/hero/', lane: 'armory', cls: 'held', barsFrom: 'W1', ruling: 'plan §2 armory (W1, W3)' },
-      // progression W3: core/{progression,save}.js, ui/{quests,skills}.js, items/{datapoints,fieldbooks}.js
-      { id: 'progression', files: '^/src/core/(progression|save)\\.js$|^/src/ui/(quests|skills)\\.js$|^/src/items/(datapoints|fieldbooks)\\.js$', lane: 'progression', cls: 'held', barsFrom: 'W3', ruling: 'plan §2 progression (W3)' },
+      // progression W3: core/{progression,save}.js, ui/{quests,skills}.js, items/{fieldbooks,fieldbooks}.js
+      { id: 'progression', files: '^/src/core/(progression|save)\\.js$|^/src/ui/(quests|skills)\\.js$|^/src/items/(fieldbooks|fieldbooks)\\.js$', lane: 'progression', cls: 'held', barsFrom: 'W3', ruling: 'plan §2 progression (W3)' },
       // combat-kit W2: the rest of combat/** and items/**, ui/wheel.js
       { id: 'combat-kit', files: '^/src/combat/|^/src/items/|^/src/ui/wheel\\.js$', lane: 'combat-kit', cls: 'held', barsFrom: 'W2', ruling: 'plan §2 combat-kit (W2)' },
       // shell-ui W2 (R48 c): the rest of ui/**

@@ -262,7 +262,7 @@
     A.burst(t, dur, { f: 2200, Q: 1.4, gain: 0.03, atk: 0.15 });
   };
   // Light and airy on purpose: the Runner is prey. A deep body thump here put
-  // it inside the Sawtooth's and Colossus's spectra.
+  // it inside the Big cat's and Colossus's spectra.
   // Warm and tonal, centred in the mids. The airy top end this used to have put
   // it inside the Flyer's shriek.
   RECIPES['voice/herd/strike'] = (A) => {
@@ -290,7 +290,7 @@
   // over it and nothing above 3 kHz, so it never reads as a Sentry.
   // A rattling scavenger, not a predator: no body thump at all, a fast buzzing
   // rasp and a cluster of loose mid-high plates. The growl register belongs to
-  // the Sawtooth and the sub to the Hauler.
+  // the Big cat and the sub to the Hauler.
   RECIPES['voice/swarm/strike'] = (A) => {
     const t = 0.01, dur = 0.55;
     const rasp = A.am(t, dur, 62, 0.85, A.flt('bandpass', 1250, 2.2));
@@ -450,7 +450,7 @@
     A.burst(t, 0.7, { f: 2600, Q: 1.4, gain: 0.035, atk: 0.02 });
   };
 
-  /* ------------------------------ Aloy foley --------------------------- */
+  /* ------------------------------ Brea foley --------------------------- */
   // D2: no VO. Breath and gear only.
   RECIPES['brea/breath-in'] = (A) => {
     const t = 0.01, dur = 0.45;
@@ -745,7 +745,7 @@
 
   /* ----------------------------- combat -------------------------------- */
   // The tribal kit. Deep taiko on the downbeat, syncopated toms, 16th shakers
-  // and a clap on 2 and 4 — the pattern that makes a Sawtooth fight read as a
+  // and a clap on 2 and 4 — the pattern that makes a Big cat fight read as a
   // hunt instead of a chase.
   RECIPES['music/drums-combat'] = (A) => {
     const C = A.pan(0), L = A.pan(-0.55), R = A.pan(0.55), LL = A.pan(-0.8), RR = A.pan(0.8);
@@ -1212,7 +1212,7 @@
   };
 
   /* ===================================================================== */
-  /*  ALOY: the harder efforts (audio-03, still no VO)                     */
+  /*  BREA: the harder efforts (audio-03, still no VO)                     */
   /* ===================================================================== */
   RECIPES['brea/effort-hard'] = (A) => {
     const t = 0.01, dur = 0.44;
@@ -1230,9 +1230,9 @@
   };
 
   /* ===================================================================== */
-  /*  MELEE — the spear (audio content half)                               */
+  /*  MELEE — the lance (audio content half)                               */
   /*                                                                       */
-  /*  The Round 4 spear shipped with no audio at all: `melee-hit`,         */
+  /*  The Round 4 lance shipped with no audio at all: `melee-hit`,         */
   /*  `critical-hit` and `undercut` were emitted by src/combat/melee.js*/
   /*  and nobody listened. These are the four rungs that verb needs. The    */
   /*  timbre brief: a wooden HAFT carrying a metal head into machine plate  */
@@ -1270,7 +1270,7 @@
     A.sweep('sine', t + 0.02, 0.3, 210, 96, A.env(t + 0.02, 0.1, 0.01, 0.3, A.out));
   };
   RECIPES['melee/crit'] = (A) => {
-    // the Critical Hit: the spear goes THROUGH something structural
+    // the Critical Hit: the lance goes THROUGH something structural
     const t = 0.01;
     A.burst(t, 0.04, { type: 'highpass', f: 6500, gain: 0.42, atk: 0.0006 });
     A.thump(t, 56, 0.36, 0.55);
@@ -1298,7 +1298,7 @@
   };
 
   /* ===================================================================== */
-  /*  TRAPS + ROPE — Tripcaster and Ropecaster (audio content half)        */
+  /*  TRAPS + ROPE — Wirelayer and Tether (audio content half)        */
   /*                                                                       */
   /*  src/combat/traps.js emits `trap-placed`, `trap-triggered`,           */
   /*  `net-fouled` and `instrument-fouled`; all four were silent.            */

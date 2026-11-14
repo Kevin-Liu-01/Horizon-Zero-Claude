@@ -3,7 +3,7 @@
  *
  * A bed on the ambience bus tells you what kind of place you are in. It cannot
  * tell you that the fire is on your left, that the river is thirty metres
- * behind the ridge, or that the Sawtooth you set alight is still burning
+ * behind the ridge, or that the Instrument you set alight is still burning
  * somewhere in the smoke. Those are *sources*, and a source has to be in the
  * world: spatialised, occluded by the terrain between you and it, and
  * attenuated by distance like everything else.
@@ -11,7 +11,7 @@
  * This is the registry for them. Each entry is a keyed, long-lived
  * `LoopEmitter` on its own `SpatialChain`:
  *
- *   fire:<n>       campfires and burning props (world-props / camp)
+ *   fire:<n>       braziers and burning props (world-props / rest site)
  *   water:river    the nearest point of open water, re-aimed as you move
  *   burn:<machine> / shock:<machine> / frost:<machine>   elemental status
  *   loot:<machine> the wreck beacon that says "there is something here"

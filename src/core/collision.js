@@ -48,7 +48,7 @@ const GRID_OFF = 512;
  * for).  The first cut bled the tangential velocity with
  * `exp(-mu * headOn^2 * dt)` and recomputed `headOn` from the LIVE contact
  * normal every substep, so as the normal rotated around a trunk the brake
- * released itself: whether Aloy stopped dead or glanced off and re-accelerated
+ * released itself: whether Brea stopped dead or glanced off and re-accelerated
  * to sprint came down to sub-frame contact geometry, i.e. to frame timing.
  * Measured 4 failures in 10 runs.
  *
@@ -99,16 +99,16 @@ const _boomS = new THREE.Vector3();
  * her position AFTER she has moved, and a walking player penetrates by up to a
  * frame of travel before the swept solve pushes her back out — so on a loaded
  * box every forward frame fired a push and they integrated. Measured by the
- * round-4 film judge: spear drawn, 4 s of KeyW into a frozen Sentry parked
+ * round-4 film judge: lance drawn, 4 s of KeyW into a frozen Sentry parked
  * 5 m ahead moved the MACHINE 2.38 m (0.057 m on the worst single frame),
- * against 0.000 m with the spear holstered. `machinePad`'s own comment says
+ * against 0.000 m with the lance holstered. `machinePad`'s own comment says
  * what the margin is for — "clears the manager's bodyRadius + 0.6 standoff by
  * a frame of sprint travel" — and 0.12 m is that frame (5.5 m/s at 45 fps,
  * the box's loaded frame time). The 0.12 m of reach it costs is handed
  * straight back through `MELEE_L_CUT`, which is the SAME distance on the same
  * axis, so nothing about how close she gets to the machine changes.
  *
- * Gated by `A106-melee-approach-immovable` (spear drawn, machine frozen, 3 s
+ * Gated by `A106-melee-approach-immovable` (lance drawn, machine frozen, 3 s
  * of KeyW: machine displacement 0.000 m while the term is live).
  */
 const MELEE_PAD_FLOOR = 0.32;
@@ -219,12 +219,12 @@ const MELEE_RELAX_SPEED = 1.5;
  * its axis. On four species the full standoff leaves a head or a tail capsule
  * poking out past its end cap (Big cat and Hauler heads, Crawler and
  * Brute tails), so a term that could only ever cut would still let her walk
- * her body into them with the spear drawn — the ENDS are hull-accurate in both
+ * her body into them with the lance drawn — the ENDS are hull-accurate in both
  * directions. The FLANKS are not: the outline never goes past the machine's
  * own flank (`machinePad`), so a capsule that pokes SIDEWAYS out of the full
  * standoff (the Sentry family's `Neck_Bone_7_026` hull, which spans 4.4 m
  * across the body; a Flyer's wings) is exactly as reachable as it is with
- * the spear on her back. That is the base standoff's geometry, not something
+ * the lance on her back. That is the base standoff's geometry, not something
  * the melee term created, and A106 publishes it per species rather than
  * hiding it. The cap also stops a stray hull (a part lying on the ground) from
  * turning the term into a wall.
@@ -567,7 +567,7 @@ export class Collision {
     const cells = [];
     const span = Math.max(col.maxx - col.minx, col.maxz - col.minz);
     if (col.type === 'mesh' && span > 16) {
-      // world-spanning merged meshes (props, camp): index the cells their
+      // world-spanning merged meshes (props, rest site): index the cells their
       // triangles ACTUALLY touch, or every query in the valley would have to
       // shapecast them
       for (const k of this._meshCells(col)) cells.push(k);
@@ -990,8 +990,8 @@ export class Collision {
    *                              Seed it with the spawn position (or leave it
    *                              non-finite and the first call seeds it).
    * @param {THREE.Vector3} velocity  caller's velocity; mutated on contact.
-   * @param {number} radius   capsule radius (Aloy: 0.4)
-   * @param {number} height   capsule height (Aloy: 1.8)
+   * @param {number} radius   capsule radius (Brea: 0.4)
+   * @param {number} height   capsule height (Brea: 1.8)
    * @param {number} dt       this frame's delta seconds
    * @param {object} [opts]   { wish, state, axis, filter, maxSteps }
    *   `wish`  unit XZ input direction (`player._wishDir()`).  Omit and the
@@ -1093,7 +1093,7 @@ export class Collision {
 
   /**
    * Machine line-of-sight: is the segment a->b broken by a registered
-   * occluder (trunk capsules, rock/ruin spheres, camp/tower meshes)?
+   * occluder (trunk capsules, rock/ruin spheres, rest site/tower meshes)?
    * Terrain occlusion stays where it is — this is the prop layer only.
    */
   occluded(a, b, opts = null) {
@@ -1203,10 +1203,10 @@ export class Collision {
         else if (/^rocks-/.test(c.name)) this._seedRocks(c);
       }
     }
-    for (const name of ['world-props', 'hunter-camp']) {
+    for (const name of ['world-props', 'settlement-host']) {
       const g = ctx.scene && ctx.scene.getObjectByName(name);
       if (!g) continue;
-      const kind = name === 'hunter-camp' ? 'tent' : 'ruin';
+      const kind = name === 'settlement-host' ? 'tent' : 'ruin';
       g.updateWorldMatrix(true, true);
       g.traverse((o) => {
         if (!o.isMesh || o.isInstancedMesh) return;
@@ -1456,16 +1456,16 @@ export class Collision {
    * THE PROBLEM IT EXISTS FOR. `machinePad` is a GAMEPLAY standoff, not
    * geometry: it keeps a walking player from shoving a machine (A25) by
    * clearing the machine manager's own `bodyRadius + 0.6` push. It is applied
-   * to every machine in every state, including the one Aloy is trying to hit
-   * with a 1.59 m spear. Measured on a Sentry: `standoffHalfLen` 1.5615 +
+   * to every machine in every state, including the one Brea is trying to hit
+   * with a 1.59 m lance. Measured on a Sentry: `standoffHalfLen` 1.5615 +
    * `bodyRadius` 0.9 + `machinePad` 0.55 + her own 0.4 m capsule radius holds
    * her 3.41 m from its centre head-on, while the contact pose puts her blade
    * tip 1.87 m ahead of her root. The blade finished 0.32-0.58 m short of the
    * nearest hull surface on every landed hit (gate A103's `bestD`), and
-   * `reference/spear-light-strike.jpg` — the shot the whole lane is judged
+   * `reference/lance-light-strike.jpg` — the shot the whole lane is judged
    * against — has the blade ON the machine's head.
    *
-   * WHAT IT DOES. While `combat.melee` has the spear drawn AND has that
+   * WHAT IT DOES. While `combat.melee` has the lance drawn AND has that
    * machine selected as its approach target (`melee._scanApproach`, the same
    * wedge the hit resolve uses), that ONE machine's blocking capsule drops its
    * pad to `MELEE_PAD`. Every other machine, and every machine at every other
@@ -1489,7 +1489,7 @@ export class Collision {
    * penetrates the capsule by up to one frame of travel before the swept solve
    * pushes her out, and the push then fires on every forward frame and
    * integrates — the film judge measured 2.38 m of MACHINE displacement under
-   * 4 s of KeyW with the spear drawn (0.000 m holstered). `MELEE_PAD_FLOOR` is
+   * 4 s of KeyW with the lance drawn (0.000 m holstered). `MELEE_PAD_FLOOR` is
    * 0.32 now: the equality plus a 0.12 m frame of loaded-box travel, which is
    * the same margin `machinePad`'s own comment claims for the general case.
    * The reach it costs is returned on the same axis by `MELEE_L_CUT`.
@@ -1500,7 +1500,7 @@ export class Collision {
    * The pad alone is not enough and the measurement says why. A Sentry's
    * blocking capsule is `standoffHalfLen` 1.5615 swept either side of its
    * centre, inflated by `bodyRadius` 0.9; its ACTUAL hit hull, at the height
-   * a spear contacts (about 1.0 m up), starts 0.5 m from the centre and ends
+   * a lance contacts (about 1.0 m up), starts 0.5 m from the centre and ends
    * 1.65 m out. The 1.5615 m half-length is not the machine, it is
    * `max(size.x, size.z) * 0.5 - bodyRadius` off the ANIMATED bounding box —
    * 4.92 m for a Sentry, i.e. the box that contains its legs at full spread.
@@ -1536,17 +1536,17 @@ export class Collision {
    *
    *   `runner.js`  `reach = bodyRadius + standoffHalfLen + 0.8` (charge hit
    *                 test and `damagePlayer` radius): measured 2.287 -> 2.003 m
-   *                 the moment she drew the spear;
+   *                 the moment she drew the lance;
    *   `hauler.js` `reach = bodyRadius + standoffHalfLen + 0.9`: 5.80 -> 4.78 m;
    *   `melee.js`    the Silent Strike prompt radius.
    *
-   * i.e. drawing the spear shrank the charge that was about to hit her. So the
+   * i.e. drawing the lance shrank the charge that was about to hit her. So the
    * shortened segment is published as `m.meleeStandoffHalfLen` and exactly ONE
    * consumer reads it — the manager's push loop, which has to agree with this
    * collider or A25 breaks (`machines/index.js`: `m.meleeStandoffHalfLen ??
    * m.standoffHalfLen`). Everything else keeps the machine's real half-length.
    * `A106-melee-approach-immovable` measures both halves: the machine still
-   * moves 0.000 m under a drawn-spear walk-in, AND a Runner's and a Hauler's
+   * moves 0.000 m under a drawn-lance walk-in, AND a Runner's and a Hauler's
    * charge reach are identical drawn and holstered.
    *
    * NO INTERPENETRATION, AND IT IS MEASURED RATHER THAN CLAIMED: gate A103

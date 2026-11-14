@@ -45,7 +45,7 @@ export const CAPACITY_TIERS = [
   { mult: 1.5, shards: 60,  items: [['ridge-wood', 12], ['wire', 4]] },
   { mult: 2.0, shards: 180, items: [['wire', 10], ['machine-heart', 1]] },
   // Tier-3 cost is machine cores and hearts, NOT braiding: no species in
-  // src/entities/machines/* drops braiding and the camp hunter does not stock
+  // src/entities/machines/* drops braiding and the rest site hunter does not stock
   // it, so a braiding cost would have made the last tier unreachable.
   { mult: 3.0, shards: 420, items: [['machine-core', 2], ['machine-heart', 2]] },
 ];

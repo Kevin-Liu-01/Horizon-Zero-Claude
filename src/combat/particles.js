@@ -26,7 +26,7 @@ const VERT = /* glsl */ `
    * shared a deceleration curve — and an impact shower and an explosion want
    * opposite ones. A hit spark is a fleck of hot metal: it leaves at 8 m/s and
    * is stopped by the air inside 5 cm of travel, which is what keeps the burst
-   * READING as one event at the impact point. A blast ember is a burning
+   * READING as one event at the impact point. A blast spark is a burning
    * fragment that has to carry 5 m. Sharing drag 2.4 between them meant the
    * impact shower had blown out to a 3 m haze 100 ms after the hit — measured
    * on port 5208: nothing at all within 164 px of the impact, 64 sparks

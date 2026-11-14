@@ -17,16 +17,16 @@ import { PLAY_RADIUS, EXTENT } from '../world/island/extent.js';
  *    Respawn 120 s.
  *  - ~80 ridge-wood: fallen branch bundles biased toward the pine stands.
  *    Gather -> ridge-wood x2-4. Respawn 120 s.
- *  - 3 camp supply crates: one-shot loot (shards + blaze/sparker/chillwater
+ *  - 3 rest site supply crates: one-shot loot (shards + blaze/sparker/chillwater
  *    ammo resources) through the loot-popup path.
  *
  * Everything is instanced: 4 draw calls total (herb stems, herb bulbs, wood,
- * crates). Terrain-conforming, deterministic RNG, exclusion zones: camp
+ * crates). Terrain-conforming, deterministic RNG, exclusion zones: rest site
  * clearing + steep rock. Zero per-frame allocations.
  */
 
-const CAMP = { x: REST_SITE.x, z: REST_SITE.z };
-const CAMP_EXCLUDE = 9;      // spec: none in the camp clearing (min 7 m)
+const REST_PT = { x: REST_SITE.x, z: REST_SITE.z };
+const REST_EXCLUDE = 9;      // spec: none in the rest site clearing (min 7 m)
 const RESPAWN_S = 120;
 
 const HERB_TARGET = 120;
@@ -102,7 +102,7 @@ export class Gather {
 
   _ok(x, z, maxH, maxSlope) {
     const t = this.ctx.terrain;
-    if (Math.hypot(x - CAMP.x, z - CAMP.z) < CAMP_EXCLUDE) return false;
+    if (Math.hypot(x - REST_PT.x, z - REST_PT.z) < REST_EXCLUDE) return false;
     if (Math.hypot(x, z) > PLAY_RADIUS + EXTENT.gatherRim) return false;
     const h = t.getHeight(x, z);
     if (h > maxH) return false;
@@ -367,7 +367,7 @@ export class Gather {
     const mat = new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 0.9, metalness: 0,
     });
-    // camp edge spots clear of tents / rack / firepit props (see camp.js)
+    // rest site edge spots clear of tents / rack / firepit props (see rest site.js)
     const crates = [
       {
         x: 28.8, z: 27.6, yaw: 0.5,
@@ -405,7 +405,7 @@ export class Gather {
         position, radius: 2.4, label: 'LOOT', once: true,
         loot: c.loot,
         gatherNode: node,
-        // crates never respawn; the emptied crate stays, dimmed (HZD shows
+        // crates never respawn; the emptied crate stays, dimmed (Older game shows
         // an emptied indicator on looted containers)
         onInteract: () => {
           this.crateMesh.setColorAt(i, _c.set(0x4d4640));

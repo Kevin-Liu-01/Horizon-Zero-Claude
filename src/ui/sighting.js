@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import './focus.css';
+import './sighting.css';
 import { itemDef, rarityDef } from '../items/items.js';
 import { fieldWord, cardParts } from './tips.js';
 import { itemIcon, bookHeading } from './inventory.js';
@@ -1853,7 +1853,7 @@ export class SightingSystem {
       const d2 = dx * dx + dz * dz;
       if (d2 > REVEAL_RANGE * REVEAL_RANGE) continue;
       let kind = null;
-      if (e.datapoint) kind = 'FIELD BOOK';
+      if (e.fieldbook) kind = 'FIELD BOOK';
       else if (e.pickupWeapon) kind = 'PICK UP';
       else if (Array.isArray(e.loot) && e.loot.length) kind = 'LOOT';
       else if (e.label === 'GATHER') kind = 'GATHER';
@@ -1872,7 +1872,7 @@ export class SightingSystem {
       src.push({
         entry: e, kind, d2, rarity,
         // a Field Book she has not read keeps its title: the alidade only sees what kind of record lies there
-        name: e.datapoint ? bookHeading(e.datapoint.category)
+        name: e.fieldbook ? bookHeading(e.fieldbook.category)
           : fieldWord(inter.sourceName ? inter.sourceName(e) : (e.label ?? '')),
         // derived once per poll, not once per frame
         cls: `calf-reveal k-${kind.replace(/\s+/g, '-').toLowerCase()}`,
@@ -2044,7 +2044,7 @@ export class SightingSystem {
         SEL[i] = 0;
         const c = src[i], e = c.entry, pos = e?.position;
         if (!e || e.removed || e.consumed || !pos) { PX[i] = NaN; continue; }
-        _v.set(pos.x ?? 0, (pos.y ?? 0) + (e.datapoint ? 1.7 : 0.75), pos.z ?? 0);
+        _v.set(pos.x ?? 0, (pos.y ?? 0) + (e.fieldbook ? 1.7 : 0.75), pos.z ?? 0);
         if (!this._project(_v, _screen)) { PX[i] = NaN; continue; }
         PX[i] = _screen.x; PY[i] = _screen.y;
         const off = Math.hypot(_screen.x - cx0, _screen.y - cy0);
@@ -2414,4 +2414,4 @@ export class SightingSystem {
 }
 
 /** main.js imports this name (one line for the orchestrator at W2; the class is `SightingSystem`). */
-export { SightingSystem as FocusSystem };
+

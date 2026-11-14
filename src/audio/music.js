@@ -5,7 +5,7 @@
  * every few seconds and a percussion layer that faded in on a tension float.
  * It had no metre, so nothing could ever land on a beat; it had no form, so a
  * fight and a walk sounded like the same texture at two volumes; and it had no
- * transitions, so the moment a Sawtooth noticed you the mix just got louder.
+ * transitions, so the moment an Instrument noticed you the mix just got louder.
  *
  * This replaces it with seven composed stems and a bar clock.
  *
