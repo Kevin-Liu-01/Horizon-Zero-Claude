@@ -9,6 +9,7 @@ import {
 } from './island/groundShader.js';
 import { GROUND_AO } from './terrain.js';
 import { Props } from './props.js';
+import { Meadow } from './island/meadow.js';
 
 /**
  * THE PANS' FLORA AND LOOSE STONE (world-ground W1; bible §8.3, §9.6, plan §4.1).
@@ -16,7 +17,7 @@ import { Props } from './props.js';
  * Solid vertex-coloured meshes, no alpha, one draw per kind (`A-scatter-draws`, ≤ 8 kinds):
  *
  *   marram-near  96 tris   dune colonies, the Pans' stalking cover
- *   cerrillo     80 tris   the golden meadow's grass + viborina clumps, to 52 m (marram-far retired, W-01)
+ *   (the golden meadow, M1.1b: island/meadow.js, three rings of blades, clumps and cards; cerrillo retired)
  *   glasswort    36 tris   red-tipped succulents on pan margins and hollows
  *   lavender     60 tris   violet sea-lavender on the saline flats
  *   rocks-basalt 180 tris  reef in the surf, the Shelf's foot, strays (collided, casts)
@@ -42,8 +43,8 @@ const HALF = WORLD_SIZE / 2;
 const STREAM = {
   marramNear: { src: 'marram', name: 'marram-near', r: 44, cap: 9000, fade: [34, 44], every: 1, sway: 1.0, keep: 2 },
   /* marram-far is retired (LOOK W-01 item 3): past the near ring the colonies are the ground's
-   * own tone. The golden meadow takes its draw: cerrillo tufts to 52 m, shader grass beyond (W-06) */
-  cerrillo: { src: 'cerrillo', name: 'cerrillo', r: 42, cap: 9000, fade: [32, 42], every: 1, sway: 1.1, keep: 1 },
+   * own tone. M1.1b: the cerrillo tufts are retired too; the golden meadow is island/meadow.js (three rings of
+   * blades, clumps and cards to the written budget) */
   glasswort: { src: 'glasswort', name: 'glasswort', r: 60, cap: 5600, fade: [46, 60], every: 1, sway: 0.15 },
   lavender: { src: 'lavender', name: 'lavender', r: 104, cap: 4000, fade: [82, 104], every: 1, sway: 0.5 },
 };
@@ -101,31 +102,6 @@ function marramGeo(blades, segs, seed, widthK = 1) {
     c1.copy(tip).lerp(tip2, R() * 0.55).multiplyScalar(0.82 + R() * 0.3);
     blade(P, C, N, dx * r0, dz * r0, dx, dz, 0.62 + R() * 0.5, (0.011 + R() * 0.01) * widthK, segs, c0, c1, 0.5 + R() * 0.45);
   }
-  return geoFrom(P, C, N);
-}
-
-/**
- * Cerrillo (Hyparrhenia-like), the golden meadow's grass (LOOK W-06): a loose tuft ≤ 0.70 m,
- * fine straps from a dark straw base to pale gold tips, a few seed heads leaning down-wind; one in
- * four tufts carries a violet viborina spike, so the flowers come in clumps where tufts crowd.
- * Solid vertex colour, no alpha, 0 casters; scenery, never cover (it adds 0 to the cover field).
- */
-function cerrilloGeo(seed) {
-  const R = rng(seed), P = [], C = [], N = [];
-  const base = new THREE.Color('#6b5428'), gold = new THREE.Color('#d9b060'), gold2 = new THREE.Color('#c9a04e');
-  const c0 = new THREE.Color(), c1 = new THREE.Color();
-  for (let b = 0; b < 18; b++) {
-    const a = (b / 18) * 6.2832 + R() * 0.7;
-    const dx = Math.cos(a), dz = Math.sin(a), r0 = 0.02 + R() * 0.11;
-    c0.copy(base).multiplyScalar(0.75 + R() * 0.35);
-    c1.copy(gold).lerp(gold2, R()).multiplyScalar(0.85 + R() * 0.3);
-    blade(P, C, N, dx * r0, dz * r0, dx, dz, 0.34 + R() * 0.3, 0.008 + R() * 0.007, 2, c0, c1, 0.35 + R() * 0.5);
-  }
-  // the viborina spike: a violet column of florets on a short stem (2 straps x 2 quads)
-  c0.set('#4f5a3a'); c1.set('#7b4f9a');
-  blade(P, C, N, 0.03, 0.0, 0.05, 0.0, 0.62, 0.022, 2, c0, c1, 0.05);
-  c0.set('#5d3f7d'); c1.set('#8f6bb4');
-  blade(P, C, N, 0.0, 0.03, 0.0, 0.05, 0.58, 0.02, 2, c0, c1, 0.05);
   return geoFrom(P, C, N);
 }
 
@@ -424,6 +400,10 @@ export class Vegetation {
     if (!this.props.gatePlaces) this.props.gatePlaces = { ...GROUND, __fallback: true };
     this._applyKeepouts();
     const st = ctx.props || this.props;
+    /* M1.1b: the golden meadow, after the keepouts are known (it zeroes its density under them) */
+    this.meadow = new Meadow(ctx, { uTime: this._uTime, uWind: this._uWind, uActors: this._uActors,
+      keepouts: ctx.props?.keepouts || this.props?.keepouts });
+    this.group.add(this.meadow.group);
     this.forceStream(st?.spawnX ?? -284, st?.spawnZ ?? 247);
     this.buildMs = performance.now() - t0;
   }
@@ -462,17 +442,6 @@ export class Vegetation {
       shader.uniforms.uSunTan = U.uSunTan; shader.uniforms.uHzWorldInv = U.uHzWorldInv; shader.uniforms.uHzK = U.uHzK;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\n${FLORA_VERT}`)
-        .replace('#include <begin_vertex>', cfg.src === 'cerrillo' ? `#include <begin_vertex>
-#if defined(USE_INSTANCING_COLOR) && defined(USE_COLOR)
-  {
-    // viborina in clumps (W-06: 3-9 m across, 8-25 % of the meadow): the spike's violet vertices
-    // fold away on a tuft outside a clump
-    vec2 ip = instanceMatrix[3].xz;
-    vec2 cc = floor(ip / 6.5 + vec2(0.37, 0.71) * floor(ip.yx / 23.0));
-    float cl = fract(sin(dot(cc, vec2(12.9898, 78.233))) * 43758.5453);
-    if (color.b > color.r * 1.15 && (cl < 0.8 || instanceColor.r < 0.92)) transformed *= 0.0;
-  }
-#endif` : '#include <begin_vertex>')
         .replace('#include <project_vertex>', FLORA_PROJECT)
         .replace('#include <worldpos_vertex>', FLORA_WORLD);
       shader.fragmentShader = shader.fragmentShader
@@ -480,7 +449,7 @@ export class Vegetation {
         .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize(vNormal);')
         .replace('#include <aomap_fragment>', FLORA_AO);
     };
-    mat.customProgramCacheKey = () => (cfg.src === 'cerrillo' ? 'cal-flora-cerrillo' : 'cal-flora');
+    mat.customProgramCacheKey = () => 'cal-flora';
     this._owned.mat.push(mat);
     return mat;
   }
@@ -488,7 +457,6 @@ export class Vegetation {
   _buildFlora() {
     const geos = {
       marramNear: marramGeo(16, 3, 101),                // 16 straps x 3 quads = 96 tris
-      cerrillo: cerrilloGeo(505),                      // 20 straps x 2 quads = 80 tris (W-06 R0 <= 96)
       glasswort: glasswortGeo(303),
       lavender: lavenderGeo(404),
     };
@@ -956,9 +924,12 @@ export class Vegetation {
       this._streamI = (this._streamI + 1) % this._streamKeys.length;
       this._pending--;
     }
+    this.meadow?.update(cam);
   }
 
   dispose() {
+    this.meadow?.dispose();
+    this.meadow = null;
     this.props?.dispose?.();
     for (const c of this.group.children) c.dispose?.();
     for (const g of this._owned.geo) g.dispose();

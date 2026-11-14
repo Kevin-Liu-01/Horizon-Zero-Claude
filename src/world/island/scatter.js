@@ -23,7 +23,7 @@ export const KINDS = Object.freeze({
   marram: { streamed: true, cap: 6.8 },        // colonies at 6.6 tufts/m² (W-06 R0; A59's stealth patch ≥ 6)
   glasswort: { streamed: true, cap: 1.6 },
   lavender: { streamed: true, cap: 0.7 },
-  cerrillo: { streamed: true, cap: 6.0 },     // the golden meadow's grass (W-06 R0 6.0/m²): scenery, never cover
+  // cerrillo retired (M1.1b): the golden meadow is drawn by island/meadow.js from the meadow mask, not from records
 });
 
 /** A field reader over the finished grids (shared record: read at once). */
@@ -71,7 +71,7 @@ function tileRng(tx, tz, salt) {
 /** Instances of a streamed kind on one tile, appended to `out` (a plain array). */
 export function scatterTile(kind, tx, tz, R, out) {
   const x0 = -HALF + tx * TILE, z0 = -HALF + tz * TILE;
-  const seed = kind === 'marram' ? 11 : kind === 'glasswort' ? 23 : kind === 'lavender' ? 37 : 53;
+  const seed = kind === 'marram' ? 11 : kind === 'glasswort' ? 23 : 37;
   const r = tileRng(tx, tz, seed);
   // the tile's corners and centre tell most tiles there is nothing to do
   const cap = KINDS[kind].cap, tries = Math.round(cap * TILE * TILE);
@@ -92,10 +92,6 @@ export function scatterTile(kind, tx, tz, R, out) {
       if (margin <= 0.08) continue;
       d = margin * 1.5 * ss(0.38, 0.62, fbm(x * 0.05 + 2, z * 0.05, 3));
       sc = 0.7 + c0 * 1.1; sy = 0.7 + c1 * 0.9;
-    } else if (kind === 'cerrillo') {
-      if (F.meadow < 0.04 || F.cover > 0.45) continue;
-      d = 6.0 * ss(0.04, 0.6, F.meadow);
-      sc = 0.7 + c0 * 0.6; sy = 0.75 + c1 * 0.55; lean = 0.08 + c2 * 0.16;
     } else { // lavender
       if (F.slope > 0.45 || F.rock > 0.2 || F.track > 0.25 || F.coast < 14 || F.h > 7 || F.silt > 0.6) continue;
       if (authored.pan(x, z).kind >= 0) continue;
@@ -242,13 +238,12 @@ export function scatterRows(F, tz0, tz1) {
   for (let tz = tz0; tz < tz1; tz++) {
     for (let tx = 0; tx < TILE_N; tx++) {
       // a tile with no cover, no margin and no shingle in its texels is skipped outright
-      let cover = 0, wet = 0, land = 0, mead = 0;
+      let cover = 0, wet = 0, land = 0;
       const i0 = Math.floor(tx * per), j0 = Math.floor(tz * per), s = Math.ceil(per);
       for (let j = j0; j < Math.min(N, j0 + s); j++) for (let i = i0; i < Math.min(N, i0 + s); i++) {
         const o = (j * N + i) * 4;
         if (maskB[o] > cover) cover = maskB[o];
         if (maskB[o + 2] > wet) wet = maskB[o + 2];
-        if (maskB[o + 3] > mead) mead = maskB[o + 3];
         if (maskA[o + 3] > wet) wet = maskA[o + 3];
         if (shore[o] > land) land = shore[o];
       }
@@ -263,7 +258,6 @@ export function scatterRows(F, tz0, tz1) {
       if (cover > 0) run('marram');
       if (wet > 12) run('glasswort');
       if (coastM > 12) run('lavender');
-      if (mead > 10) run('cerrillo');
     }
   }
   for (const kind of Object.keys(KINDS)) out[kind].rec = Float32Array.from(out[kind].rec);

@@ -222,8 +222,10 @@ export function maskTexel(H, x, z, out) {
   /* the golden meadow (LOOK W-06): the Pans' landward belt behind the salt field, 1.5-26 m up,
    * in drifts and clearings; never on the field, the tracks, the rock or the Glass's margin.
    * Scenery, never cover: the stealth field is maskB.R alone (F-4). */
-  const drift = ss(0.3, 0.54, fbm(x * 0.021 + 13, z * 0.021 - 5, 3));
-  const meadow = pans * ss(0.7, 1.6, h) * (1 - ss(22, 30, h)) * ss(16, 30, c) * (1 - fk) * (1 - ss(0.25, 0.5, rock))
+  /* M1.1b: the hero frames stand in it (OVER, KEY): down to 0.3 m over the sea, up to the field's dykes (the halo's
+   * outer 9 m), wider drifts and fewer clearings */
+  const drift = ss(0.2, 0.44, fbm(x * 0.021 + 13, z * 0.021 - 5, 3));
+  const meadow = pans * ss(0.3, 0.9, h) * (1 - ss(22, 30, h)) * ss(16, 30, c) * (1 - ss(0.55, 0.92, fk)) * (1 - ss(0.25, 0.5, rock))
     * (1 - ss(0.4, 0.7, slope)) * (1 - ss(0.2, 0.5, track)) * ss(1.5, 2.2, glass) * (1 - ss(0.2, 0.5, cr)) * drift;
 
   out[0] = clamp255(lav * (1 - fk) * 255);

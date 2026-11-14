@@ -367,12 +367,13 @@ export const TERRAIN_COLOR = /* glsl */ `
     sandCol = mix(sandCol, vec3(0.12, 0.095, 0.15), mA.r * farK * (0.18 + 0.3 * nMac.a));
     col = mix(col, sandCol, smoothstep(0.02, 0.5, w[0]));
   }
-  /* the golden meadow (W-06 R3): past the tufts' ring it is the ground's own tone, cerrillo gold
-   * #C9A04E-#D9B060 in drifts, a ±8 % wind wave running toward 225°, violet speckle where the
-   * viborina clumps; under the near tufts a dark straw litter, so the tufts stand out of it */
+  /* the golden meadow (W-06 R3, M1.1b): past the cards' ring (80 m, island/meadow.js) it is the ground's own tone,
+   * cerrillo gold #C9A04E-#D9B060 in drifts, a ±8 % wind wave running toward 225°, violet speckle where the
+   * viborina clumps; inside the rings the ground under the blades is the blades' own foot colour (TECH §5), so a gap
+   * between blades reads as shade in grass, never as soil */
   if (mB.a > 0.01) {
     float mk = smoothstep(0.02, 0.6, mB.a) * (1.0 - wSalt) * (1.0 - wRock);
-    float farG = smoothstep(34.0, 54.0, dCam);
+    float farG = smoothstep(52.0, 82.0, dCam);
     vec4 gn = gNoiseT(xz * 0.0071 + 0.13);
     vec3 grass = mix(vec3(0.578, 0.352, 0.074), vec3(0.694, 0.431, 0.117), gn.r);   // #C9A04E..#D9B060
     float wave = sin(dot(xz, vec2(-0.7071, -0.7071)) * 0.21 + uTime * 1.3 + gn.g * 3.0);
@@ -380,10 +381,12 @@ export const TERRAIN_COLOR = /* glsl */ `
     float clump = smoothstep(0.66, 0.8, gNoiseT(xz * 0.0187 + 0.61).a);
     grass = mix(grass, vec3(0.20, 0.10, 0.30), clump * 0.4 * smoothstep(0.4, 0.7, gn.a));
     // dark culms and gaps between the drifts read as texture from the rim, never a flat fill
-    grass *= 0.68 + 0.42 * smoothstep(0.3, 0.7, gNoiseT(xz * 0.061).b);
-    vec3 litter = mix(col, vec3(0.085, 0.062, 0.03), 0.65);
+    // two incommensurate, turned reads: one read of the periodic noise repeated every 16.4 m (M1.1e tiling check)
+    vec2 xzR = vec2(dot(xz, vec2(0.8, 0.6)), dot(xz, vec2(-0.6, 0.8)));
+    grass *= 0.68 + 0.42 * smoothstep(0.3, 0.7, 0.5 * gNoiseT(xz * 0.061).b + 0.5 * gNoiseT(xzR * 0.0437 + 0.29).a);
+    vec3 litter = vec3(0.17, 0.104, 0.026) * (0.82 + 0.3 * gn.b);   // meadow.js: the blade's foot colour, a shade lit
     col = mix(col, mix(litter, grass, farG), mk);
-    pert *= 1.0 - 0.5 * mk * farG;
+    pert *= 1.0 - mk * mix(0.75, 0.5, farG);
   }
   // packed tracks: pale, smooth, salt-dusted
   if (mB.g > 0.01) {
