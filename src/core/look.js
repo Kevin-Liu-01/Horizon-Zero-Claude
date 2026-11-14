@@ -659,6 +659,10 @@ export function setsForHour(grade, h, weather = null, calimaWeight = null, out =
 /* ------------------------------------------------------------------ */
 
 const RESTARTS = Object.freeze([0.8, 0.6, 0.4, 0.25, 0.12]);
+// fix round 3: per-channel restarts for the rare target (9 in 220 771 random ones, node) whose Newton path from the
+// ungraded guess lands in a fold of AgX's channel mixing near the display floor or ceiling: each channel scaled alone
+const PERTURB = Object.freeze([[1.5, 1, 1], [1, 1.5, 1], [1, 1, 1.5], [0.6, 1, 1], [1, 0.6, 1], [1, 1, 0.6], [2.5, 1, 1], [1, 2.5, 1], [1, 1, 2.5],
+  [0.3, 1, 1], [1, 0.3, 1], [1, 1, 0.3], [0.05, 1, 1], [1, 0.05, 1], [1, 1, 0.05], [4, 1, 1], [1, 4, 1], [1, 1, 4]]);
 /** The slot-mix step that bumps solveVersion (see Look#solveVersion). */
 export const SOLVE_MIX_STEP = 1 / 16;
 
@@ -797,6 +801,13 @@ export class Look {
         const e2 = newton(out);
         if (e2 < best) { best = e2; k0 = out[0]; k1 = out[1]; k2 = out[2]; }
         if (best <= 0.5 / 255) break;
+      }
+      for (let q = 0; q < PERTURB.length * 2 && best > 0.5 / 255; q++) {
+        // around the best point so far, then around the ungraded guess
+        const s = PERTURB[q % PERTURB.length], g0 = q < PERTURB.length ? k0 : b0, g1 = q < PERTURB.length ? k1 : b1, g2 = q < PERTURB.length ? k2 : b2;
+        out[0] = (Math.abs(g0) > 1e-4 ? g0 : 0.01) * s[0]; out[1] = (Math.abs(g1) > 1e-4 ? g1 : 0.01) * s[1]; out[2] = (Math.abs(g2) > 1e-4 ? g2 : 0.01) * s[2];
+        const e2 = newton(out);
+        if (e2 < best) { best = e2; k0 = out[0]; k1 = out[1]; k2 = out[2]; }
       }
       out[0] = k0; out[1] = k1; out[2] = k2;
     }
