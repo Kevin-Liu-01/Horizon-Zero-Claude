@@ -18,9 +18,9 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const MANIFEST = 'public/LICENSES.json';
 
-/** SPDX ids a row may declare (plan §10.1). MIT is for shipped code only. */
+/** SPDX ids a row may declare (plan §10.1). MIT and Apache-2.0 are for shipped code only, never for files under public/. */
 export const ASSET_LICENCES = ['CC0-1.0', 'CC-BY-4.0', 'CC-BY-3.0', 'OFL-1.1', 'project-original'];
-export const CODE_LICENCES = ['MIT'];
+export const CODE_LICENCES = ['MIT', 'Apache-2.0'];   // Apache-2.0: the Basis Universal transcoder (M0.10 KTX2)
 /** Licences that require an `attribution` string (shown verbatim in credits). */
 export const NEEDS_ATTRIBUTION = ['CC-BY-4.0', 'CC-BY-3.0', 'MIT'];
 /** Never allowed anywhere (plan §0 rule 9). */

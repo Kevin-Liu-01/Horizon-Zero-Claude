@@ -10,6 +10,7 @@ import { CSM } from 'three/examples/jsm/csm/CSM.js';
 import { CSMFrustum } from 'three/examples/jsm/csm/CSMFrustum.js';
 import { Look, SH_A, SH_K, SH_XMAX, AGX_MIN_EV, AGX_MAX_EV, setsForHour as setsForHourInto } from './look.js';
 import LOOK_GRADE from './look.grade.json';
+import { configureKTX2 } from './ktx2.js';
 
 /**
  * Renderer + scene + camera + post stack + the perf/quality plumbing every
@@ -950,6 +951,7 @@ export class Engine {
     this.renderer.calLook = this;   // src/hero/sheets.js screenPixels reaches engine.look through its renderer
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.info.autoReset = false; // engine owns the reset (perf-tech-02)
+    configureKTX2(this.renderer);   // M0.10: every shipped texture is KTX2; the page's one transcoder, before any load
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();

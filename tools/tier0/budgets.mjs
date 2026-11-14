@@ -44,7 +44,7 @@ export function readAssets(root) {
   const files = listFiles(root, ['public']);
   /** @type {Map<string, import('./lib/glb.mjs').GlbInfo>} */
   const glbs = new Map();
-  /** @type {{ file: string, sha1: string, width: number, height: number, compressed: boolean, mime: string }[]} */
+  /** @type {{ file: string, sha1: string, width: number, height: number, layers?: number, compressed: boolean, mime: string }[]} */
   const textures = [];
   const errors = [];
   for (const f of files) {
@@ -58,7 +58,7 @@ export function readAssets(root) {
       const b = readFileSync(path.join(root, f));
       const sz = imageSize(new Uint8Array(b.buffer, b.byteOffset, b.byteLength));
       if (!sz) { errors.push(`${f}: unreadable image header`); continue; }
-      textures.push({ file: f, sha1: `file:${f}`, width: sz.width, height: sz.height, compressed: sz.mime === 'image/ktx2', mime: sz.mime });
+      textures.push({ file: f, sha1: `file:${f}`, width: sz.width, height: sz.height, layers: sz.layers || 1, compressed: sz.mime === 'image/ktx2', mime: sz.mime });
     }
   }
   return { files, glbs, textures, errors };

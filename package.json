@@ -11,7 +11,7 @@
     "tier0": "node tools/tier0/run.mjs",
     "measure": "node tools/measure-machines.mjs",
     "budgets": "node tools/budgets.mjs",
-    "optimize": "node tools/optimize.mjs",
+    "ktx2": "node tools/build/pipeline/ktx2.mjs",
     "shot": "node tools/screenshot.mjs"
   },
   "repository": {

@@ -77,8 +77,8 @@ async function bakeSingle(opts = {}) {
   const F = { H, maskA, maskB, shore };
   const scatter = stitchScatter([{ tz0: 0, part: scatterRows(F, 0, TILE_N) }], scatterStatic(fieldReader(F)));
   const t2 = performance.now();
-  const layers = newLayerStore();
-  if (opts.layers !== false) for (const job of layerJobs()) storeLayer(layers, job, await decodeLayer(job.url));
+  const layers = opts.layers === false ? null : newLayerStore();
+  if (layers) for (const job of layerJobs()) storeLayer(layers, job, await decodeLayer(job.url));
   const t3 = performance.now();
   return assemble({ H, normals, tint, maskA, maskB, shore, coastF, pan, skylineA, skylineB, layers, scatter,
     stats: { mode: 'single', workers: 0, segs, buildMs: t2 - t0, heightMs: t1 - t0, shadeMs: t2 - t1, layerMs: t3 - t2, totalMs: t3 - t0 } });
@@ -135,7 +135,7 @@ async function bakePool(opts = {}) {
     const tReady = performance.now();
 
     // layers decode alongside the heights: they share the pool, not the bar
-    const store = newLayerStore();
+    const store = opts.layers === false ? null : newLayerStore();
     const layerP = opts.layers === false ? Promise.resolve() : Promise.all(layerJobs().map(async (job) => {
       storeLayer(store, job, await run({ op: 'layer', url: job.url }));
     }));

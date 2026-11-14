@@ -76,7 +76,11 @@ test('imageSize: WebP lossy / lossless / extended and KTX2 headers', () => {
   ktx.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
   new DataView(ktx.buffer).setUint32(20, 2048, true);
   new DataView(ktx.buffer).setUint32(24, 2048, true);
-  assert.deepEqual(imageSize(ktx), { width: 2048, height: 2048, mime: 'image/ktx2' });
+  assert.deepEqual(imageSize(ktx), { width: 2048, height: 2048, layers: 1, mime: 'image/ktx2' });
+  const arr = new Uint8Array(80);   // a 3-layer KTX2 array (M0.10 ground layers): layerCount at byte 32
+  arr.set(ktx);
+  new DataView(arr.buffer).setUint32(32, 3, true);
+  assert.deepEqual(imageSize(arr), { width: 2048, height: 2048, layers: 3, mime: 'image/ktx2' });
   assert.equal(imageSize(new Uint8Array(40)), null);
 });
 
@@ -84,6 +88,7 @@ test('residentBytes follows the ledger rule: RGBA8 + mips, or 8 bpp + mips for K
   // 2048² RGBA8 with mips is 22.4 MB (decimal); 8 bpp compressed is 5.6 MB.
   assert.equal(Math.round(residentBytes({ width: 2048, height: 2048, compressed: false }) / 1e5) / 10, 22.4);
   assert.equal(Math.round(residentBytes({ width: 2048, height: 2048, compressed: true }) / 1e5) / 10, 5.6);
+  assert.equal(residentBytes({ width: 1024, height: 1024, compressed: true, layers: 3 }), 3 * residentBytes({ width: 1024, height: 1024, compressed: true }));
 });
 
 test('lineOf picks the first matching ledger line, honours excludes, and falls back to the last', () => {

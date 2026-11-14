@@ -4,7 +4,7 @@ import { REST_SITE, TUBES, SALT_FIELD } from './island/sites.js';
 import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './island/recipe.js';
 import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, SKYLINE_N, bakeShade, maskTexel } from './island/bake.js';
 import { bakeIsland } from './island/pool.js';
-import { LAYER_FILES, LAYER_SIZE } from './island/layers.js';
+import { LAYER_FILES } from './island/layers.js';
 import { fieldReader } from './island/scatter.js';
 import {
   GROUND_VERT_PARS, GROUND_VERT_WORLD, TERRAIN_FRAG_PARS, TERRAIN_COLOR,
@@ -185,7 +185,7 @@ if (gLiquid > 0.004) {
 
 /* -------------------------------------- bake -------------------------------------- */
 /** The finished island. terrain.js does not evaluate until this resolves (see header). */
-const BAKE = await bakeIsland();
+const BAKE = await bakeIsland({ layers: false });   // M0.10: the layer arrays are KTX2, loaded by ctx.assets (TEXTURES rows)
 const H = BAKE.H;
 const { side: GS, step: GSTEP, half: GHALF } = GRID;
 
@@ -480,22 +480,20 @@ export class Terrain {
     this._maskTextures.coastF = cf;
     /* Layers as texture arrays: every layer of the wave costs two samplers per size. They
      * stay NoColorSpace on purpose (the shader decodes sRGB): engine.js's anisotropy sweep
-     * caps colour-role textures through TEXTURE_2D, and these are arrays. */
-    const mkArr = (data, s, n) => {
-      const t = new THREE.DataArrayTexture(data, s, s, n);
-      t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
-      t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.generateMipmaps = true;
-      t.anisotropy = 4;
-      t.needsUpdate = true;
+     * caps colour-role textures through TEXTURE_2D, and these are arrays. M0.10: they ship as
+     * KTX2 arrays (ETC1S colour, UASTC normal) with their mips, loaded at boot by ctx.assets
+     * (TEXTURES rows groundA1/N1/A2/N2, colorSpace 'none', repeat, anisotropy 4). A missing
+     * array (its load already logged an error) becomes a flat mid-grey array so the ground
+     * still builds. */
+    const flatArr = (n) => {
+      const t = new THREE.DataArrayTexture(new Uint8Array(4 * n).fill(160), 1, 1, n);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true;
       return t;
     };
-    const L = BAKE.layers, nB = LAYER_FILES.big.length, nS = LAYER_FILES.small.length;
-    const sB = LAYER_SIZE.big, sS = LAYER_SIZE.small;
+    const T = this.ctx.assets?.textures || {}, nB = LAYER_FILES.big.length, nS = LAYER_FILES.small.length;
     this._layerTextures = {
-      a1: mkArr(L.aBig, sB, nB), n1: mkArr(L.nBig, sB, nB),
-      a2: mkArr(L.aSmall, sS, nS), n2: mkArr(L.nSmall, sS, nS),
+      a1: T.groundA1 || flatArr(nB), n1: T.groundN1 || flatArr(nB),
+      a2: T.groundA2 || flatArr(nS), n2: T.groundN2 || flatArr(nS),
     };
     /* Four octaves of periodic value noise in one texture: the ground's macro read costs a few
      * fetches, where sin-hash noise cost forty sines a pixel. */

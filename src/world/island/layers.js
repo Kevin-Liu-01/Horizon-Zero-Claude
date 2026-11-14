@@ -8,6 +8,13 @@ export const LAYER_FILES = Object.freeze({
   small: Object.freeze(['mud', 'pebble']),              // 512²,  sampler2DArray tA2 / tN2
 });
 export const LAYER_SIZE = Object.freeze({ big: 1024, small: 512 });
+/**
+ * What ships (M0.10): one KTX2 texture array per size and part, layers in LAYER_FILES order, mips included.
+ * `_a` is ETC1S (colour; sRGB data the shader decodes), `_n` UASTC. Built by tools/build/pipeline/ktx2.mjs from
+ * the WebP pairs tools/build/ground/gen-ground-layers.mjs writes; loaded by src/core/assets.js (`TEXTURES` rows).
+ */
+export const layerArrayPath = (group, part) => `public/textures/ground/${group}_${part}.ktx2`;
+export const layerArrayUrl = (group, part) => `/textures/ground/${group}_${part}.ktx2`;
 
 export async function decodeLayer(url) {
   const res = await fetch(url);

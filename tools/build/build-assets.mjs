@@ -34,6 +34,7 @@ import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ktx2Outputs, GROUND_SOURCES } from './pipeline/ktx2.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
@@ -91,13 +92,18 @@ export async function buildAssets({ only = null, out = ROOT } = {}) {
     // PROOF recipes (W0b) write only under an explicit --out: never into the repository, never shipped
     if (r.proof && path.resolve(out) === ROOT) { skipped.push({ recipe: r.file, why: 'PROOF recipe: outputs only with --out <dir>' }); continue; }
     let stats;
+    let ktx2 = null;
     try {
       stats = await r.build({ out });
+      // M0.10: textures ship as KTX2. GLB outputs are re-encoded in place; the ground WebP pair outputs become the
+      // KTX2 arrays (tools/build/pipeline/ktx2.mjs) and the WebP intermediates are removed from `out`.
+      ktx2 = await ktx2Outputs({ outputs: r.outputs, out });
     } catch (err) {
       failed.push({ recipe: r.file, lane: r.lane, outputs: r.outputs, missingSource: isMissingSource(err), code: err?.code ?? null, error: String(err?.message || err).slice(0, 400) });
       continue;
     }
-    const files = r.outputs.map((o) => {
+    const shipped = [...new Set([...r.outputs.filter((o) => !GROUND_SOURCES.includes(o)), ...(ktx2?.files || [])])];
+    const files = shipped.map((o) => {
       const abs = path.join(out, o);
       return { path: o, bytes: existsSync(abs) ? statSync(abs).size : null, sha256: existsSync(abs) ? sha(abs) : null };
     });

@@ -72,7 +72,8 @@ export function imageSize(b) {
   }
   const KTX2 = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];
   if (b.length >= 32 && KTX2.every((x, k) => b[k] === x)) {
-    return { width: dv.getUint32(20, true), height: dv.getUint32(24, true), mime: 'image/ktx2' };
+    // layerCount at byte 32: a texture array (the ground's layers, M0.10) is resident once per layer
+    return { width: dv.getUint32(20, true), height: dv.getUint32(24, true), layers: b.length >= 36 ? Math.max(1, dv.getUint32(32, true)) : 1, mime: 'image/ktx2' };
   }
   return null;
 }
@@ -150,9 +151,10 @@ export function inspectGlb(buf) {
  * Resident GPU bytes for one texture with a full mip chain: RGBA8 when it ships as PNG/JPEG/WebP
  * (the browser decodes it to 32 bits per pixel), 8 bits per pixel when it ships as KTX2
  * (UASTC; ETC1S transcodes to BC7/ASTC at the same 8 bpp on this target). TECH §9.3's own rule.
- * @param {{ width: number, height: number, compressed: boolean }} t
+ * A KTX2 array counts once per layer.
+ * @param {{ width: number, height: number, compressed: boolean, layers?: number }} t
  */
 export function residentBytes(t) {
   const bpp = t.compressed ? 1 : 4;
-  return Math.round(t.width * t.height * bpp * 4 / 3);
+  return Math.round(t.width * t.height * bpp * 4 / 3) * (t.layers || 1);
 }

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { SPECS as CORE_SPECS, ANIMS as CORE_ANIMS, DELETED } from './assets.specs.js';
+import { SPECS as CORE_SPECS, ANIMS as CORE_ANIMS, TEXTURES as CORE_TEXTURES, DELETED } from './assets.specs.js';
+import { ktx2Loader, loadKTX2 } from './ktx2.js';
 
 /**
  * Loads and normalizes all game models.
@@ -78,6 +79,8 @@ function liveR30Rows() {
  */
 export const SPECS = withoutDeleted({ ...liveR30Rows(), ...CORE_SPECS });
 export const ANIMS = { ...CORE_ANIMS };
+/** KTX2 texture rows (M0.10), loaded at boot into `assets.textures` (see assets.specs.js `TEXTURES`). */
+export const TEXTURES = { ...(CORE_TEXTURES || {}) };
 export { DELETED };
 
 /** Read legacy.js's optional row exports: `{ boot, deferred }` (both `{}` when absent). */
@@ -244,6 +247,21 @@ export class Assets {
     this.r30 = { deleted: [], pending: [] };
     this.loader = new GLTFLoader();
     this.loader.setMeshoptDecoder(MeshoptDecoder);
+    /** name -> THREE.Texture from the TEXTURES rows (KTX2; M0.10) */
+    this.textures = {};
+  }
+
+  /**
+   * Every shipped texture is KTX2 (KHR_texture_basisu inside the GLBs). The page's one KTX2 loader exists once
+   * the engine has a renderer (`configureKTX2` in engine.js), which is before any load: hand it to the GLTFLoader.
+   */
+  _useKTX2() {
+    if (this._ktx2) return true;
+    const k = ktx2Loader();
+    if (!k) { console.error('[assets] no KTX2 loader: the engine must call configureKTX2(renderer) before loading'); return false; }
+    this.loader.setKTX2Loader(k);
+    this._ktx2 = true;
+    return true;
   }
 
   async loadAll(onProgress = () => {}) {
@@ -257,7 +275,9 @@ export class Assets {
     const specs = this.specs;
     const names = Object.keys(specs);
     const animNames = Object.keys(ANIMS);
-    const total = names.length + animNames.length;
+    const texNames = Object.keys(TEXTURES);
+    const total = names.length + animNames.length + texNames.length;
+    this._useKTX2();
     let done = 0;
     this._noteDeleted();
     await Promise.all([
@@ -284,6 +304,18 @@ export class Assets {
         }
         done += 1;
         onProgress(done / total, `${name} clips`);
+      }),
+      ...texNames.map(async (name) => {
+        const row = TEXTURES[name];
+        try {
+          this.textures[name] = await loadKTX2(row.url, row);
+        } catch (err) {
+          if (row.required) console.error(`[assets] required texture "${name}" failed to load (${row.url})`, err);
+          else console.warn(`[assets] texture "${name}" failed to load (${row.url}) — skipped`, err);
+          this.skipped.push({ name, status: 'SKIP-load-failed', note: String(err?.message || err) });
+        }
+        done += 1;
+        onProgress(done / total, `${name} texture`);
       }),
     ]);
     return this.models;
@@ -336,6 +368,7 @@ export class Assets {
   async loadExtra(specs, { onProgress = () => {}, onEntry = null, force = false } = {}) {
     const names = Object.keys(specs).filter((n) => force || !this.models[n]);
     if (!names.length) return this.models;
+    this._useKTX2();
     const total = names.length;
     let done = 0;
     await Promise.all(names.map(async (name) => {

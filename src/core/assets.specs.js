@@ -60,3 +60,20 @@ export const ANIMS = {
 
 /** R30 rows: none left (the table was retired at M0.3; kept empty so `ctx.assets.legacyDeleted` still answers). */
 export const DELETED = {};
+
+/**
+ * Texture rows (M0.10): KTX2 files loaded at boot through `src/core/ktx2.js` into `ctx.assets.textures[name]`,
+ * behind the loading bar, like the model rows. Row shape:
+ *   url          public URL of the .ktx2 file (a texture array when the file has layers)
+ *   colorSpace?  'none' (the shader decodes sRGB itself) | 'srgb' | 'file' (default: as the file is tagged)
+ *   wrap?        'repeat' | 'clamp' (default)
+ *   anisotropy?  default 1
+ *   required?    as for model rows
+ * The ground's four arrays (world-ground; layout in src/world/island/layers.js) are read by terrain.js.
+ */
+export const TEXTURES = {
+  groundA1: { url: '/textures/ground/big_a.ktx2', colorSpace: 'none', wrap: 'repeat', anisotropy: 4, required: true },
+  groundN1: { url: '/textures/ground/big_n.ktx2', colorSpace: 'none', wrap: 'repeat', anisotropy: 4, required: true },
+  groundA2: { url: '/textures/ground/small_a.ktx2', colorSpace: 'none', wrap: 'repeat', anisotropy: 4, required: true },
+  groundN2: { url: '/textures/ground/small_n.ktx2', colorSpace: 'none', wrap: 'repeat', anisotropy: 4, required: true },
+};

@@ -84,12 +84,28 @@
       ],
       "title": "Licence texts of shipped third-party code and of the staged CC0 packs",
       "author": "the respective authors (see each file)",
-      "source_url": "node_modules/{three,three-mesh-bvh,meshoptimizer}/LICENSE*; models-staging/r5-src/{ubc,mco,ual2}/License*.txt",
+      "source_url": "node_modules/{three,three-mesh-bvh,meshoptimizer}/LICENSE*; models-staging/r5-src/{ubc,mco,ual2}/License*.txt; basis-universal-LICENSE.txt: the Apache-2.0 terms as shipped in node_modules/detect-libc/LICENSE, with a header naming the Basis Universal transcoder",
       "licence": "project-original",
       "licence_text": null,
       "archive_sha256": null,
       "retrieved": null,
       "modified": "copied verbatim",
+      "attribution": null
+    },
+    {
+      "id": "code-basis-transcoder",
+      "paths": [
+        "dist/assets/basis_transcoder-*.wasm",
+        "dist/assets/*.js (bundled as text: three/examples/jsm/libs/basis/basis_transcoder.js)"
+      ],
+      "title": "Basis Universal transcoder (the KTX2 texture transcoder, shipped with three r169)",
+      "author": "Binomial LLC and the Basis Universal contributors",
+      "source_url": "https://github.com/BinomialLLC/basis_universal",
+      "licence": "Apache-2.0",
+      "licence_text": "public/licences/basis-universal-LICENSE.txt",
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
       "attribution": null
     },
     {
@@ -212,16 +228,16 @@
     {
       "id": "ground-layers",
       "paths": [
-        "public/textures/ground/*.webp"
+        "public/textures/ground/*.ktx2"
       ],
-      "title": "Ground layers: black sand, salt crust, basalt, wet silt, shingle (2 RGBA WebP each)",
+      "title": "Ground layers: black sand, salt crust, basalt, wet silt, shingle (KTX2 texture arrays: ETC1S colour + height, UASTC normal, roughness and AO)",
       "author": "CALIMA project",
-      "source_url": "tools/build/ground/gen-ground-layers.mjs",
+      "source_url": "tools/build/ground/gen-ground-layers.mjs, encoded by tools/build/pipeline/ktx2.mjs",
       "licence": "project-original",
       "licence_text": null,
       "archive_sha256": null,
       "retrieved": null,
-      "modified": null,
+      "modified": "encoded to KTX2 (M0.10)",
       "attribution": null
     },
     {
