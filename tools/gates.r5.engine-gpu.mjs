@@ -141,8 +141,8 @@ function budgetsRecord() {
  * W0a brief) and carries `rulingRequested`.
  */
 function planRulings() {
-  const f = path.join(ROOT, 'docs/ROUND5-PLAN.md');
-  const out = { poolTerrainBuild: null, rtLedgerBar: null, source: 'docs/ROUND5-PLAN.md' };
+  const f = path.join(ROOT, 'tools/build/sources.rulings.md');
+  const out = { poolTerrainBuild: null, rtLedgerBar: null, source: 'tools/build/sources.rulings.md' };
   if (!existsSync(f)) return out;
   const text = readFileSync(f, 'utf8');
   // the marker must stand on a line of its own: a marker quoted inside prose or backticks is not a ruling

@@ -113,8 +113,8 @@ export const DIRS = { 'ubc-standard': 'ubc', 'mco-fantasy-standard': 'mco', ual1
  * this tool as well as to the lock and the row (and is refused without the new-version ruling).
  */
 export const PLAN_BYTES = { 'ubc-standard': 128968391, 'mco-fantasy-standard': 294347394 };
-/** The orchestrator's plan (§8.3 rulings are `<!-- r5-ruling key=value -->` lines, the form engine-gpu's gates read). */
-export const PLAN = 'docs/ROUND5-PLAN.md';
+/** The recorded rulings: `<!-- r5-ruling key=value -->` lines, the form engine-gpu's gates read. */
+export const PLAN = 'tools/build/sources.rulings.md';
 /** Tracked member listings of the recorded archives: `<LISTINGS>/<row>.tsv`. */
 export const LISTINGS = 'tools/build/sources.listings';
 

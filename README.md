@@ -13,9 +13,9 @@ hunts the **Instruments**: theodolite tripods, soil samplers, a road grader, a
 pottery kiln, a tide gauge, still keeping the island true to the Datum.
 
 The game is being rebuilt (Round 5) on the kept rigging and movement stack of
-the previous rounds. Creative canon: [`docs/ROUND5-BIBLE.md`](docs/ROUND5-BIBLE.md).
-Build plan, lanes and gates: [`docs/ROUND5-PLAN.md`](docs/ROUND5-PLAN.md).
-Older rounds' documents are in the git history.
+the previous rounds. Creative canon: [`docs/BIBLE.md`](docs/BIBLE.md). Gates:
+[`docs/GATES.md`](docs/GATES.md). Current state: [`docs/STATE.md`](docs/STATE.md). Open
+findings: [`docs/BACKLOG.md`](docs/BACKLOG.md). Older documents are in the git history.
 
 ## Play
 
