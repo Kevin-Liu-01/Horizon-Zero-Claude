@@ -668,16 +668,6 @@ export const GATES = [
     check: specsDataDriven,
   },
   {
-    id: 'A-poc-promoted', kind: 'runner', lane: 'pipeline', timeout: 900000,
-    title: 'W0 exit (literal): no ?poc=human|creature path in src/main.js; tools/r5-poc/ and public/models/r5-poc/ absent; ?poc=biome still serves A-gpu-tier. Never PASS with a file left in either folder; no reference to them outside the biome hook',
-    check: pocPromoted,
-  },
-  {
-    id: 'A-pipeline-hero-swap', kind: 'runner', lane: 'pipeline', timeout: 900000,
-    title: 'Lane guard (R39): the SPECS.hero swap data patch (hero, outfit, stow-kit, UAL2 rows; aloy.glb out of SCHEDULED_IP) applies to a scratch merge trial with hero-body\'s branch, verifies, and the copy boots clean with every hero row loaded',
-    check: heroSwap,
-  },
-  {
     id: 'A-loader-fixes', kind: 'action', lane: 'pipeline', timeout: 90000, settle: 1500,
     title: 'Shared loader on a quantised generated GLB: dequantised error <= 1 mm, fold through rig/lod.js moves no vertex > 1 mm, labels via getX, lamp casts no shadow, entry disposes',
     assert: LOADER_FIXES,

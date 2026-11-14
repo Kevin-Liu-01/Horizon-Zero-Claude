@@ -5,7 +5,7 @@
  * WHY THIS IS A SHARED MODULE. Round 3 shipped jog 4.6 / sprint 8.2 m/s and half
  * a dozen gates hard-coded it (`spd > 7.5`, a 6–9.5 band, titles saying "at 8
  * m/s"). Round 4's `player-control` corrected the canon to walk 1.5 / jog 5.0 /
- * sprint 6.8 — Older game's own ratio, and the speed both locomotion clips are actually
+ * sprint 6.8 — the speed both locomotion clips are actually
  * authored at — and PUBLISHED it as `ctx.player.speeds`. Every literal left
  * behind is a gate that fails a CORRECT build and can only be made green by
  * putting the wrong speed back: a gate that enforces a bug.

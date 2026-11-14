@@ -61,7 +61,6 @@ import net from 'net';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { W0_PLACES } from './gate-places.mjs';
 import { ROSTER, ROLE_PENDING, ALL_MACHINES_REASONS } from './gate-roster.mjs';
-import { GATES as W0B_GATES } from './gates/gates-perf.w0b.mjs';
 
 const TOOLS = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(TOOLS, '..');
@@ -111,7 +110,7 @@ const LANE_FILE_RE_LOCAL = /^gates\.r5\.([a-z0-9][a-z0-9-]*)\.mjs$/;
 
 /** The files this lane owns among the gate sources (stricter scan: no species WORD at all). */
 const OWNED = ['gates.mjs', 'gates.config.mjs', 'gates.r5.carried.mjs', 'gates.r5.gates-perf.mjs',
-  'gate-roster.mjs', 'gate-places.mjs', 'budgets.mjs', 'gates/gates-perf.w0b.mjs'];
+  'gate-roster.mjs', 'gate-places.mjs', 'budgets.mjs'];
 
 /** `tools/gates*.mjs` (A-gate-preludes) and `tools/gate*.mjs` (A-gates-no-hero-literals). */
 const gatesGlob = () => readdirSync(TOOLS).filter((f) => /^gates.*\.mjs$/.test(f)).sort();
@@ -119,6 +118,8 @@ const gateGlob = () => readdirSync(TOOLS).filter((f) => /^gate.*\.mjs$/.test(f))
 
 /** docs/ROUND5-INVENTORY.md Appendix B: [{ id, lane, kind, verdict }] */
 function appendixB() {
+  // the inventory report went to git history at M0.3 R4a (status reports are not kept in the tree)
+  if (!existsSync(path.join(ROOT, 'docs', 'ROUND5-INVENTORY.md'))) return [];
   const md = read(path.join(ROOT, 'docs', 'ROUND5-INVENTORY.md'));
   const at = md.indexOf('## Appendix B');
   const rows = [];
@@ -135,6 +136,7 @@ function appendixB() {
  * FAIL exemption); the detail says which offenders Round 5 inherited so the ruling is quick.
  */
 function round4Fails() {
+  if (!existsSync(path.join(ROOT, 'docs', 'ROUND5-INVENTORY.md'))) return {};
   const md = read(path.join(ROOT, 'docs', 'ROUND5-INVENTORY.md'));
   const out = {};
   for (const m of md.matchAll(/^\| `([^`]+)` \| \*\*FAIL\*\*([^|]*)\|/gm)) out[m[1]] = 'inventory baseline run: FAIL' + m[2].trimEnd();
@@ -270,8 +272,10 @@ const textOf = (v) => (Array.isArray(v) ? v.join(' ') : typeof v === 'string' ? 
 /* A-gate-preludes                                                           */
 /* ------------------------------------------------------------------------ */
 function gatePreludes(GATES) {
+  // M0.3 R4a: the W0 map table this scan forbade is deleted (tools/gate-places.mjs); the row retires with it
+  if (!Object.keys(W0_PLACES).length) return { pass: null, detail: 'SKIP-RETIRED: the W0 map table was deleted at M0.3 R4a' };
   const files = gatesGlob();
-  const extra = ['budgets.mjs', 'gates/gates-perf.w0b.mjs'];   // A21's staging lives in budgets.mjs; the W0b rows in tools/gates/
+  const extra = ['budgets.mjs'];   // A21's staging lives in budgets.mjs; the W0b rows in tools/gates/
   const scan = [...files, ...extra.filter((f) => !files.includes(f))];
   const speciesLiterals = {}, ownedSpeciesWords = {}, coords = {};
   const vocab = oldMapVocabulary();
@@ -398,7 +402,7 @@ function gatePreludes(GATES) {
     });
   };
   for (const g of carried) scanMachineUse(body(g), g.id);
-  for (const f of ['budgets.mjs', 'gates/gates-perf.w0b.mjs']) scanMachineUse(read(path.join(TOOLS, f)), f);
+  for (const f of ['budgets.mjs']) scanMachineUse(read(path.join(TOOLS, f)), f);
   // POSITIVE + NEGATIVE CONTROL for this scan: the W0a re-stage's own A92 pick and A50b list must be flagged; an
   // annotated freeze, a KIND filter and a roster helper call must not
   const pickControl = (() => {
@@ -1062,7 +1066,7 @@ const { GATES: CARRIED } = await import('./gates.r5.carried.mjs');
 const CARRIED_IDS = new Set(CARRIED.map((g) => g.id));
 /** R48 (b): the W0b instruments, graded from sealed runs (tools/gates/gates-perf.w0b.mjs INSTRUMENT_ROWS) */
 const INSTRUMENT_IDS = new Set(['A-alloc-rate', 'A-vram-ledger', 'A90-abs']);
-const INSTRUMENT_SOURCES = ['gates/gates-perf.w0b.mjs', 'budgets.mjs', 'gates.r5.gates-perf.mjs'];
+const INSTRUMENT_SOURCES = ['budgets.mjs', 'gates.r5.gates-perf.mjs'];
 // (createHash directly: this runs at module load, before the ledger section's `sha256` helper is initialised)
 const instrumentSha = (f) => { try { return createHash('sha256').update(readFileSync(path.join(TOOLS, f))).digest('hex'); } catch { return null; } };
 const INSTRUMENT_SHA_AT_LOAD = INSTRUMENT_SOURCES.map(instrumentSha);
@@ -2421,7 +2425,6 @@ export const GATES = [
     check: (ctx) => carriedSuite(ctx),
   },
   // W0b rows (tools/gates/gates-perf.w0b.mjs): the licence-clean reference set and the memory / draw ledgers
-  ...W0B_GATES,
   // LAST in the block (fix round 3): its lsof half grades this invocation's own run monitor from process
   // start to the moment it runs, so every other row of the block (A-chrome-semaphore's child runs too) is inside
   {

@@ -996,24 +996,6 @@
    ],
    "verdict": "skipR18"
   },
-  "A48b-cadence-headroom-expansion": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
-  "V26c-plate-contrast-expansion": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
   "A37-stealth-approach": {
    "kind": "action",
    "perRun": [
@@ -1125,105 +1107,6 @@
   "V25-alarm-converge": {
    "kind": "visual",
    "verdict": "n/a (R33 c)"
-  },
-  "A37-expansion": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
-  "A38-expansion": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
-  "A39-expansion": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
-  "A40-expansion": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
-  "A41-expansion": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
-  "A41b-expansion": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
-  "A41c-expansion": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
-  "A41d-must-fire": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
-  "A42-expansion": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
-  "A43-expansion": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
-  "A90-memory-stability-expansion": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
   },
   "A49-melee-exists": {
    "kind": "action",
@@ -1582,69 +1465,6 @@
    ],
    "verdict": "pass"
   },
-  "A95-npc-roster": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
-  "A96-npc-animated": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
-  "A97-npc-no-skate": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
-  "A97b-npc-talk-freeze": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
-  "V40-settlement-life": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
-  "V41-npc-closeup": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
-  "A64-xp-loop": {
-   "kind": "action",
-   "perRun": [
-    "skipR30",
-    "infra",
-    "skipR30"
-   ],
-   "verdict": "skipR30"
-  },
   "A65-save-restore": {
    "kind": "action",
    "perRun": [
@@ -1653,15 +1473,6 @@
     "pass"
    ],
    "verdict": "pass"
-  },
-  "A66-quest-objectives": {
-   "kind": "action",
-   "perRun": [
-    "skipR30",
-    "infra",
-    "skipR30"
-   ],
-   "verdict": "skipR30"
   },
   "A67-machine-respawn": {
    "kind": "action",
@@ -1672,15 +1483,6 @@
    ],
    "verdict": "skipR30"
   },
-  "A64b-damage-channels": {
-   "kind": "action",
-   "perRun": [
-    "skipR18",
-    "infra",
-    "skipR18"
-   ],
-   "verdict": "skipR18"
-  },
   "A64c-silent-apex": {
    "kind": "action",
    "perRun": [
@@ -1689,28 +1491,6 @@
     "skipR30"
    ],
    "verdict": "skipR30"
-  },
-  "A65-save-restore-expansion": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
-  "A99-dialogue": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
-  "V45-dialogue-panel": {
-   "kind": "visual",
-   "verdict": "n/a (R33 c)"
   },
   "A67b-site-ledgers-expansion": {
    "kind": "action",
@@ -1867,15 +1647,6 @@
    ],
    "verdict": "pass"
   },
-  "V35-settlement": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
   "A61b-camp-rest-event": {
    "kind": "action",
    "perRun": [
@@ -1886,24 +1657,6 @@
    "verdict": "pass"
   },
   "A61c-datapoints-unified": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
-  "A98-sites": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
-  "A98b-clearings": {
    "kind": "action",
    "perRun": [
     "pass",
@@ -2037,15 +1790,6 @@
     "pass"
    ],
    "verdict": "pass"
-  },
-  "A73e-melee-traps": {
-   "kind": "action",
-   "perRun": [
-    "skipR30",
-    "infra",
-    "skipR30"
-   ],
-   "verdict": "skipR30"
   }
  }
 }

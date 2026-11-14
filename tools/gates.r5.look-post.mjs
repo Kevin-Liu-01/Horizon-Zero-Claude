@@ -46,7 +46,7 @@ import { PLACES } from './gate-places.mjs';
 import { PERF_SCENARIOS, STAGE_PRELUDE } from './budgets.mjs';
 import { LOOK_BARS, PANELS, REFS_FILE, DIRECTION_DIR, selftest } from './look/look-stats.mjs';
 import { LOOK_STANDINS, LOOK_CORE, randomPoses } from './look/places.mjs';
-import { DRAW_OWNERS } from './gates/gates-perf.w0b.mjs';
+import { DRAW_OWNERS } from './gates/draw-owners.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LANE = 'look-post';
