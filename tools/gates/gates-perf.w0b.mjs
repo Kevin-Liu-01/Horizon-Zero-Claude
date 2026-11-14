@@ -45,10 +45,9 @@ import { PROFILE_ROOT, profileDir, disposeProfile, acquireChromeSlot, installPro
 import { BUDGETS, STAGE_PRELUDE, PERF_SCENARIOS, MEMORY_BUDGETS, RT_LEDGER } from '../budgets.mjs';
 import { ROSTER } from '../gate-roster.mjs';
 import { PLACES } from '../gate-places.mjs';
-import { verify as verifyReferenceSet, storedRowProblems, rowRulesSelfTest } from '../r5-refs/fetch.mjs';
-import { classifierSelfTest } from '../r5-refs/licence.mjs';
-import { readManifest, laneFolders, parserSelfTest } from '../r5-refs/manifest.mjs';
-import { SLOTS } from '../r5-refs/slots.mjs';
+// M0.3 R0: reference/ and tools/r5-refs/ are deleted (A-reference-set is retired, REMOVE R4). The two
+// reference rows below return a named SKIP; this whole file goes in R4a.
+const REFS_RETIRED = { pass: null, detail: 'SKIP-RETIRED: reference/ and tools/r5-refs/ were removed at M0.3 R0; A-reference-set is retired' };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TOOLS = path.resolve(HERE, '..');
@@ -2169,7 +2168,8 @@ function resolveRef({ lane, name }) {
 const KEPT_VISUAL = ['V1-sprint-frame', 'V2-idle-frame', 'V3-crouch-stalk', 'V4-aim-anchor', 'V12-sprint-vs-reference', 'V13-aim-strafe', 'V14-slope-contour', 'V21-camera-cover'];
 const laneOfGate = (g) => (g.source === 'gates.r5.carried.mjs' || g.lane === 'carried' || g.r4Source) ? 'carried' : (/gates\.r5\.([a-z0-9-]+)\.mjs$/.exec(g.source || '')?.[1] || g.lane || 'unknown');
 
-function referenceClean({ GATES }) {
+function referenceClean() { return REFS_RETIRED; }
+function referenceCleanRetired({ GATES }) {
   const refDir = path.join(ROOT, 'reference');
   const files = walkFiles(refDir).filter((p) => IMG_RE.test(p));
   const topLevel = files.filter((p) => path.dirname(p) === refDir).map(relRoot);
@@ -2235,7 +2235,8 @@ function referenceClean({ GATES }) {
   } };
 }
 
-function referenceSet({ GATES }) {
+function referenceSet() { return REFS_RETIRED; }
+function referenceSetRetired({ GATES }) {
   // (a) the fetcher: Commons API, filtered by the classifier, whose controls hold
   const src = readFileSync(path.join(TOOLS, 'r5-refs', 'fetch.mjs'), 'utf8');
   const fetcher = { commonsApi: /https:\/\/commons\.wikimedia\.org\/w\/api\.php/.test(src), filtersOnClassifier: /classifyCommons\(/.test(src) && /info\.c\.cls !== 'stored'/.test(src),

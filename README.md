@@ -15,7 +15,7 @@ pottery kiln, a tide gauge, still keeping the island true to the Datum.
 The game is being rebuilt (Round 5) on the kept rigging and movement stack of
 the previous rounds. Creative canon: [`docs/ROUND5-BIBLE.md`](docs/ROUND5-BIBLE.md).
 Build plan, lanes and gates: [`docs/ROUND5-PLAN.md`](docs/ROUND5-PLAN.md).
-Older rounds' documents live in [`docs/archive/`](docs/archive/).
+Older rounds' documents are in the git history.
 
 ## Play
 

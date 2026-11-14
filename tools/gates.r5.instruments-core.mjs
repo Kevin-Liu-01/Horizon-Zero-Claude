@@ -992,8 +992,8 @@ async function importFirst(rels) {
   return null;
 }
 
-const MEM = await importFirst(['tools/gates.round4.memory.mjs', 'tools/gates/archive/gates.round4.memory.mjs']);
-const MAI = await importFirst(['tools/gates.round4.machine-ai.mjs', 'tools/gates/archive/gates.round4.machine-ai.mjs']);
+const MEM = await importFirst(['tools/gates.round4.memory.mjs', 'tools/gates.r5.carried.mjs']);
+const MAI = await importFirst(['tools/gates.round4.machine-ai.mjs', 'tools/gates.r5.carried.mjs']);
 const KB = await import(pathToFileURL(path.join(ROOT, 'tools/gates.r5.kind-block.mjs')).href);
 const COL = await import(pathToFileURL(path.join(ROOT, 'src/instruments/lib/color.js')).href);
 
@@ -1833,7 +1833,7 @@ const A43_HERD = restage(rowOf(MAI, 'A43-corpse-lifecycle'), [
 });
 
 /** A90-rig-reclaim on the staged (role) kinds, as gates-perf's carried row re-stages it (R28: never a legacy kind). */
-const A90_RIG = restage(rowOf(await importFirst(['tools/gates.round4.machines-expansion.mjs', 'tools/gates/archive/gates.round4.machines-expansion.mjs']), 'A90-rig-reclaim'), [
+const A90_RIG = restage(rowOf(await importFirst(['tools/gates.round4.machines-expansion.mjs', 'tools/gates.r5.carried.mjs']), 'A90-rig-reclaim'), [
   [`const roster = M.kinds.filter(k => M.canSpawn ? M.canSpawn(k) : true);
       if (roster.length < 4) return { pass: null, detail: { note: 'SKIP: roster not loaded', roster } };`,
   `// R5 (R28): the staged role kinds only, never a legacy kind
