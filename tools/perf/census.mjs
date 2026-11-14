@@ -28,7 +28,7 @@ import { SLOTS, assertOutsideRepo } from '../frames/paths.mjs';
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
-const has = (k) => args.includes(k);
+const has = (k) => args.includes(k);   // inside page.evaluate, `has` is the opts flag below
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const utc = () => new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 const log = (...a) => console.log(`[census ${new Date().toISOString().slice(11, 19)}]`, ...a);
@@ -122,7 +122,7 @@ try {
     try {
       const staged = await page.evaluate(stageFrame, f, { settleMs: 2600 });
       await page.screenshot({ path: path.join(OUT, `${id}.png`) });
-      const opts = { groups: has('--groups'), ab: has('--ab'), seams: SEAMS.has(id) };
+      const opts = { groups: has('--groups'), ab: has('--ab') || has('--ab-all-only'), abAllOnly: has('--ab-all-only'), seams: SEAMS.has(id) };
       const a = await page.evaluate(async (opts) => {
         const M = await import('/tools/perf/census-page.mjs');
         const A = await import('/tools/perf/attrib-page.mjs');
@@ -150,7 +150,8 @@ try {
         out.censusLookOff = M.census(E, S).totals;
         if (opts.ab) {
           const sw = [...(T.perfSwitches ? T.perfSwitches() : []), ...(C.vegetation?.perfSwitches ? C.vegetation.perfSwitches() : [])];
-          out.ab = await M.toggles(E, sw, { n: 30, pairs: 8 });
+          const all = { id: 'all-switches', on: () => sw.forEach((x) => x.on()), off: () => sw.forEach((x) => x.off()) };
+          out.ab = await M.toggles(E, opts.abAllOnly ? [all] : [...sw, all], { n: 30, pairs: opts.abAllOnly ? 12 : 8 });
           out.abCensus = {};
           for (const s of sw) { s.off(); for (let i = 0; i < 6; i++) await raf(); out.abCensus[s.id] = M.census(E, S).totals; (s.restore || s.on)(); for (let i = 0; i < 4; i++) await raf(); }
         }
