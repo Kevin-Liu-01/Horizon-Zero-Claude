@@ -9,6 +9,8 @@
  *            --vite-config <file> serve the tree with that Vite config (M0.7: three resolved to another version)
  *            --label <tag> appended to the run directory name (e.g. r187)
  *            --probe <served path> a page module run after each shot; its probe(frame) result goes in run.json
+ *            --hud-twin   for a frame with the HUD: two more shots with the page chrome hidden, so run.json
+ *                         carries the share of pixels the HUD changes (measured.hudCover) and <id>-nohud.png
  *
  * The run, in order:
  *   1. the machine guard: memory free >= 50 % (memory_pressure -Q) and pressure level 1, then the
@@ -49,6 +51,10 @@ const ONLY = flag('--only') ? new Set(flag('--only').split(',').map((s) => s.tri
 // --probe <served path>: a page module whose probe(frame) runs after each screenshot (frozen world); its result
 // lands in run.json as frames[].probe (sky-look M1.1f: tools/look/sky-probe-page.mjs)
 const PROBE = flag('--probe');
+// --hud-twin (ui M1.6g1): the HUD's cover of the frame, measured as pixels it changes against the same frozen
+// frame with the page chrome hidden (display: none; a visible child paints through visibility: hidden); a second
+// chrome-off shot gives the noise floor of the frozen world
+const HUD_TWIN = args.includes('--hud-twin');
 
 const set = loadFrameSet();
 const problems = validate(set);
@@ -174,6 +180,23 @@ try {
       const lin = (c) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
       const [r, g, b] = st.channels.map((c) => c.mean);
       staged.measured.meanLuminance = Math.round((0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)) * 1000) / 10;
+      if (HUD_TWIN && f.state?.hud) {
+        try {
+          const raw = async () => (await sharp(await page.screenshot({ type: 'png' })).resize(vp.width, vp.height, { fit: 'fill' }).removeAlpha().raw().toBuffer());
+          await page.evaluate(() => { window.__twinHidden = []; const cv = window.__CTX__?.engine?.renderer?.domElement;
+            for (const el of Array.from(document.body.children)) { if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el === cv || (cv && el.contains(cv))) continue;
+              window.__twinHidden.push([el, el.style.display]); el.style.display = 'none'; } });
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+          const offA = await raw(), offB = await raw();
+          writeFileSync(path.join(runDir, `${f.id}-nohud.png`), await sharp(offA, { raw: { width: vp.width, height: vp.height, channels: 3 } }).png().toBuffer());
+          await page.evaluate(() => { for (const [el, v] of window.__twinHidden || []) el.style.display = v; window.__twinHidden = []; });
+          const on = await sharp(png).removeAlpha().raw().toBuffer();
+          const TH = 10;   // 8-bit, max over RGB
+          const frac = (a, b) => { let n = 0; for (let i = 0; i < a.length; i += 3) { if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) > TH) n++; } return n / (a.length / 3); };
+          const r3 = (v) => Math.round(v * 100000) / 1000;
+          staged.measured.hudCover = { pct: r3(frac(on, offA)), noisePct: r3(frac(offA, offB)), threshold: TH, file: `${f.id}-nohud.png` };
+        } catch (e) { staged.measured.hudCover = { error: String(e?.message || e).slice(0, 300) }; }
+      }
       if (PROBE) {
         try { staged.probe = await page.evaluate(async (url, fr) => (await import(url)).probe(fr), PROBE, f); }
         catch (e) { staged.probe = { error: String(e?.message || e).slice(0, 400) }; }
