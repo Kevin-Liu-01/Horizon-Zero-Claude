@@ -1,16 +1,38 @@
 import * as THREE from 'three';
+import { assertPostPatches } from './shaderPatchAudit.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+// M0.7: the three post passes the engine re-plumbs (bloom fold, GTAO patch and render, SMAA targets) stay at three r169
+// (src/core/vendor/three-r169/README.md); the core, the composer and the CSM addon move with the three version
+import { UnrealBloomPass } from './vendor/three-r169/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
-import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
-import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { SMAAPass } from './vendor/three-r169/postprocessing/SMAAPass.js';
+import { GTAOPass } from './vendor/three-r169/postprocessing/GTAOPass.js';
 import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise.js';
 import { CSM } from 'three/examples/jsm/csm/CSM.js';
 import { CSMFrustum } from 'three/examples/jsm/csm/CSMFrustum.js';
 import { Look, SH_A, SH_K, SH_XMAX, AGX_MIN_EV, AGX_MAX_EV, setsForHour as setsForHourInto } from './look.js';
 import LOOK_GRADE from './look.grade.json';
 import { configureKTX2 } from './ktx2.js';
+
+/**
+ * M0.7 (three r169 -> r187): the soft-shadow type. three r182 rewrote shadows on native depth textures with hardware
+ * comparison; from then `PCFShadowMap` is the soft filter and `PCFSoftShadowMap` is removed (three warns and swaps it).
+ */
+const SOFT_SHADOWS = Number.parseInt(THREE.REVISION, 10) >= 182 ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+
+/** `THREE.Clock`'s getDelta / getElapsedTime (three deprecates Clock from r183); wall time, as before. */
+class FrameClock {
+  constructor() { this.startTime = performance.now(); this.oldTime = this.startTime; this.elapsedTime = 0; }
+  getDelta() {
+    const now = performance.now();
+    const d = (now - this.oldTime) / 1000;
+    this.oldTime = now;
+    this.elapsedTime += d;
+    return d;
+  }
+  getElapsedTime() { this.getDelta(); return this.elapsedTime; }
+}
 
 /**
  * Renderer + scene + camera + post stack + the perf/quality plumbing every
@@ -189,13 +211,13 @@ export const QUALITY_TIERS = {
     dprCap: 1.25, msaa: 0, gtao: true, gtaoScale: 0.25, smaa: true, smaaHalfFloat: false, csmMapCaps: [2048, 1024],
     postFold: true, csmFarCadence: 2, maxAnisotropy: 1, maxAnisotropyData: 4,
     bloom: true, sizeCullPx: 7, look: LOOK_ROWS.high,
-    shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: THREE.PCFSoftShadowMap, drs: true, drsFloor: 0.7,
+    shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: SOFT_SHADOWS, drs: true, drsFloor: 0.7,
   },
   ultra: {
     dprCap: 2.0, msaa: 4, gtao: true, gtaoScale: 1.0, smaa: true, smaaHalfFloat: true, csmMapCaps: null,
     postFold: true, csmFarCadence: 1, maxAnisotropy: null, maxAnisotropyData: null,
     bloom: true, sizeCullPx: 4, look: LOOK_ROWS.ultra,
-    shadowCullDistance: 190, shadowCasterBudget: 260, shadowType: THREE.PCFSoftShadowMap, drs: false, drsFloor: 0.85,
+    shadowCullDistance: 190, shadowCasterBudget: 260, shadowType: SOFT_SHADOWS, drs: false, drsFloor: 0.85,
   },
 };
 
@@ -222,7 +244,7 @@ export const ROUND4_HIGH = Object.freeze({
   dprCap: 1.5, msaa: 4, gtao: true, gtaoScale: 0.5, smaa: true, smaaHalfFloat: true, csmMapCaps: null,
   postFold: false, csmFarCadence: 1, maxAnisotropy: null, maxAnisotropyData: null,
   bloom: true, sizeCullPx: 7,
-  shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: THREE.PCFSoftShadowMap, drs: true, drsFloor: 0.7,
+  shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: SOFT_SHADOWS, drs: true, drsFloor: 0.7,
 });
 
 /** Highest wins. Anything not listed sorts just above `legacy`. */
@@ -686,7 +708,7 @@ const _csmBox = new THREE.Box3();
 const _csmCamToLight = new THREE.Matrix4();
 const _csmLightOri = new THREE.Matrix4();
 const _csmLightOriInv = new THREE.Matrix4();
-const _csmLightFrustum = new CSMFrustum();
+const _csmLightFrustum = new CSMFrustum({ webGL: true });   // r187 needs the flag (NDC z -1..1); r169 ignores it
 
 /** Bytes per texel of a texture as the GPU stores it (render-target ledger). */
 function _texelBytes(t) {
@@ -961,7 +983,7 @@ export class Engine {
     this.camera.position.set(0, 3, 8);
     this.camera.layers.enable(CAL_LAYER.CASCADE0_ONLY);   // per-cascade masks (enableCSM)
 
-    this.clock = new THREE.Clock();
+    this.clock = new FrameClock();
 
     // ---- time authority (machine-rig-18 / studio-19) ----
     this._ts = Object.create(null);
@@ -1129,6 +1151,8 @@ export class Engine {
     this.grade.uniforms.uAspect.value = window.innerWidth / Math.max(1, window.innerHeight);
     this.composer.addPass(this.grade);
     this._buildLook();
+    // M0.7: the post anchors the engine checked above must all have applied (shaderPatchAudit.js)
+    assertPostPatches(this);
     // diagnostic: `?look=w0` (on this page or the page hosting it, e.g. the Pans POC iframe) boots on the
     // Round-5 W0 output, for before/after comparisons of any gate
     // (fix round 1: also `nolut` = AgX without the grade stage, `nodither` = no output dither; diagnostics for A108)
