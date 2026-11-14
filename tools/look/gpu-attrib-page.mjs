@@ -42,7 +42,10 @@ export const FIX_OWNERS_42 = Object.freeze({
   'transparent + additive': 'named by L-18 (§4.2 row 7: additive lamp-beam fill -> instruments-a)',
   gtao: 'named by L-18 (§4.2 row 7: GTAO at herd density -> the G-post holder, world-sky in W2)',
   shafts: 'world-sky (L-08 shaft pass re-cast, §4.2 row 5)',
-  // no §4.2 row (yet): bloom, smaa, grade (output pass), overlay
+  // fix round 3: the post chain has no §4.2 row; its owner is the G-post holder by plan §1.2 (look-post through its W1-exit
+  // merge, world-sky in W2). Named here from the plan and reported as 'plan §1.2, §4.2 row asked' (doc §6); overlay: none
+  bloom: 'G-post holder (plan §1.2: look-post L-07 to its W1-exit merge, then world-sky in W2; §4.2 row asked)',
+  smaa: 'G-post holder (plan §1.2: look-post to its W1-exit merge, then world-sky in W2; §4.2 row asked)',
 });
 /** DRAW_OWNERS lanes -> §4.2 rows (per-owner hide-one rows). */
 export const FIX_OWNER_LANES_42 = Object.freeze([
