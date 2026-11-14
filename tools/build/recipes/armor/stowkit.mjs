@@ -417,7 +417,14 @@ export async function build({ out = ROOT } = {}) {
   // ring charm (the Sounding Ring motif) at its end. Both keep the alidade bit
   {
     const at = CHAINS.alidadeCord.points[2];
-    pieces.push({ g: place(ringCharmGeo(cell), [1, 0, 0], [0, 1, 0], [0, 0, 1], [at[0], at[1] - 0.004, at[2] + 0.004]), joint: 'dyn_alidadeCord_02', bit: PIECE.alidade });
+    // the charm hangs just under the scarf's front, on the top's surface: rigid on spine_03 (on the swinging chain end it
+    // fell back into her chest at idle and was never seen); the cord runs down under the scarf to it
+    const near = (pred) => { let z = -9; for (const p of base.parts) if (pred(p.slot)) for (let i = 0; i < p.pos.length; i += 3) if (Math.abs(p.pos[i]) < 0.015 && Math.abs(p.pos[i + 1] - 1.375) < 0.015) z = Math.max(z, p.pos[i + 2]); return z; };
+    const zTop = near((sl) => sl === 'smock' || sl === 'binds' || sl === 'harness' || sl === 'underyoke');
+    let zScarf = 9;
+    for (const p of base.parts) if (p.slot === 'scarf') for (let i = 0; i < p.pos.length; i += 3) if (Math.abs(p.pos[i]) < 0.015 && p.pos[i + 1] > 1.405 && p.pos[i + 1] < 1.44 && p.pos[i + 2] > 0) zScarf = Math.min(zScarf, p.pos[i + 2]);
+    const charmAt = [0, 1.396, (zTop > -9 ? zTop : at[2]) + 0.0048];
+    pieces.push({ g: place(ringCharmGeo(cell), [1, 0, 0], [0, 1, 0], [0, 0, 1], charmAt), joint: 'spine_03', bit: PIECE.alidade });
     const H = base.parts.find((p) => p.slot === 'harness');
     if (H) {
       // the right strap's centre line (strapAlong, 3 vertices a row: the middle one), nearest the upper right chest
@@ -447,15 +454,19 @@ export async function build({ out = ROOT } = {}) {
       pieces.push({ g: place(alidadeGeo(cell), [1, 0, 0], [0, 1, 0], [0, 0, 1], [at[0], at[1] - 0.006, at[2] + 0.004]), joint: 'dyn_alidadeCord_02', bit: PIECE.alidade });
       stowInfo.alidade = { at, joint: 'dyn_alidadeCord_02' };
     }
-    stowInfo.charm = { at, joint: 'dyn_alidadeCord_02' };
-    const R = CHAINS.alidadeCord.points[0], M = CHAINS.alidadeCord.points[1];
-    const top = [at[0], at[1] - 0.004 + 0.0012, at[2] + 0.004];
+    stowInfo.charm = { at: charmAt.map((v) => +v.toFixed(4)), joint: 'spine_03' };
+    // (M1.2d: the loop lies close round her neck and the knot point in at the throat, all of it inside the scarf)
+    const R = [0, 1.452, 0.058], M = CHAINS.alidadeCord.points[1];
+    const top = [charmAt[0], charmAt[1] + 0.0012, charmAt[2]];
+    const under = [0, 1.408, Math.min(zScarf < 9 ? zScarf - 0.006 : charmAt[2], charmAt[2] + 0.002)];
     const loop = [[0, 1.517, -0.121], [0.060, 1.512, -0.098], [0.080, 1.503, -0.042], [0.062, 1.490, 0.012], [0.030, 1.470, 0.052], R,
-      [-0.030, 1.470, 0.052], [-0.062, 1.490, 0.012], [-0.080, 1.503, -0.042], [-0.060, 1.512, -0.098], [0, 1.517, -0.121]];
+      [-0.030, 1.470, 0.052], [-0.062, 1.490, 0.012], [-0.080, 1.503, -0.042], [-0.060, 1.512, -0.098], [0, 1.517, -0.121]]
+      .map((q) => (q === R ? q : [q[0] * 0.82, q[1], -0.035 + (q[2] + 0.035) * 0.82]));
     const loopSkin = loop.map((q) => { const w = Math.max(0, Math.min(1, (1.500 - q[1]) / 0.045)); return [['neck_01', 1 - w], ['spine_03', w]]; });
     pieces.push({ ...cordGeo(loop, loopSkin, CORD_R, cell, 4, 8), bit: PIECE.alidade });
-    const hang = [R, M, top];
-    const hangSkin = [[['dyn_alidadeCord_01', 1]], [['dyn_alidadeCord_01', 0.5], ['dyn_alidadeCord_02', 0.5]], [['dyn_alidadeCord_02', 1]]];
+    void M;
+    const hang = [R, under, top];
+    const hangSkin = [[['spine_03', 1]], [['spine_03', 1]], [['spine_03', 1]]];
     pieces.push({ ...cordGeo(hang, hangSkin, CORD_R, cell, 4, 8), bit: PIECE.alidade });
     stowInfo.alidadeCord = { loop: loop.length, hang: hang.length, r: CORD_R };
   }

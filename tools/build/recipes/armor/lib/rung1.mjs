@@ -141,9 +141,9 @@ export function scarfCowl(part, field, J, { cols = 40, rows = 9, cz = -0.035, se
   const cc = cols + 1;
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const a = base + r * cc + c, b = a + 1, d = a + cc, e = d + 1;
-    part.idx.push(a, d, b, b, d, e);
+    part.idx.push(a, b, d, b, e, d);
   }
-  orientOut(part, 0, cz, null);
+  recomputeNormals(part);
   part.scarf = { cz, yTop, yBot };
   return part;
 }
@@ -199,14 +199,40 @@ export function hangPanel(part, field, J, { thC, halfW = 0.09, narrow = 0.15, yT
       part.jnt.push(jP, side === 'l' ? jL : jR, 0, 0); part.wgt.push(1 - k, k, 0, 0);
     }
   }
+  // (rows run down, columns round her: (a, b, d) faces out. Wound per panel, never by orientOut over the whole part,
+  // which flipped a panel that was right when the next two were added; the game draws front faces only)
   const cc = cols + 1;
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const a = base + r * cc + c, b = a + 1, d = a + cc, e = d + 1;
-    part.idx.push(a, d, b, b, d, e);
+    part.idx.push(a, b, d, b, e, d);
   }
-  orientOut(part);
   (part.panels ||= []).push({ thC, rRef, yTop, yHem, halfW, seed });
   return part;
+}
+
+/**
+ * The other face of a free-hanging sheet (the game draws front faces only): every vertex again, `inset` behind the
+ * sheet along its normal, the normal turned round, the triangles wound the other way, into `into` (a trim part, so the
+ * sheet's packing is not doubled). `into.uv` is filled from the sheet's packed uvs by `backUVs` once the sheet is laid
+ * out; until then it carries the sheet's own.
+ */
+export function backFaces(into, sheet, { inset = 0.0011 } = {}) {
+  const base = into.pos.length / 3, n = sheet.pos.length / 3;
+  for (let i = 0; i < n; i++) {
+    const nn = [sheet.nrm[i * 3], sheet.nrm[i * 3 + 1], sheet.nrm[i * 3 + 2]];
+    into.pos.push(sheet.pos[i * 3] - nn[0] * inset, sheet.pos[i * 3 + 1] - nn[1] * inset, sheet.pos[i * 3 + 2] - nn[2] * inset);
+    into.nrm.push(-nn[0], -nn[1], -nn[2]);
+    into.uv.push(sheet.uv[i * 2], sheet.uv[i * 2 + 1]);
+    for (let k = 0; k < 4; k++) { into.jnt.push(sheet.jnt[i * 4 + k]); into.wgt.push(sheet.wgt[i * 4 + k]); }
+  }
+  for (let t = 0; t < sheet.idx.length; t += 3) into.idx.push(base + sheet.idx[t], base + sheet.idx[t + 2], base + sheet.idx[t + 1]);
+  (sheet.backs ||= []).push({ part: into, base, n });
+  return into;
+}
+
+/** After packing: every back face takes its sheet's packed uvs. */
+export function backUVs(sheets) {
+  for (const s of sheets) for (const b of s.backs || []) for (let i = 0; i < b.n * 2; i++) b.part.uv[b.base * 2 + i] = s.uvNew[i];
 }
 
 /* ------------------------------------------------------------------ the slung belt */
@@ -397,6 +423,51 @@ export function caseTube(part, a, b, r, { rects, sk, sides = 12 }) {
     latheAt(part, a, N, up, [[r + 0.0006, h0 - 0.011], [r + 0.0034, h0 - 0.0095], [r + 0.0034, h0 + 0.0095], [r + 0.0006, h0 + 0.011]], { sides, rect: rects.strap, sk });
   }
   return part;
+}
+
+/**
+ * Turn every triangle of `part` to face out of the body under it (`field`, a part.mjs Field over the body): a triangle
+ * whose own normal points into the body's nearest normal is rewound. Returns the count turned.
+ */
+export function faceOut(part, field) {
+  let n = 0;
+  const P = part.pos, I = part.idx;
+  for (let t = 0; t < I.length; t += 3) {
+    const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+    const e1 = [P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]], e2 = [P[c] - P[a], P[c + 1] - P[a + 1], P[c + 2] - P[a + 2]];
+    const f = V.cross(e1, e2);
+    if (V.len(f) < 1e-12) continue;
+    const q = field.nearest((P[a] + P[b] + P[c]) / 3, (P[a + 1] + P[b + 1] + P[c + 1]) / 3, (P[a + 2] + P[b + 2] + P[c + 2]) / 3, 3);
+    let nx = 0, ny = 0, nz = 0;
+    for (const { p } of q) { nx += p.nx; ny += p.ny; nz += p.nz; }
+    if (f[0] * nx + f[1] * ny + f[2] * nz < 0) { const s = I[t + 1]; I[t + 1] = I[t + 2]; I[t + 2] = s; n++; }
+  }
+  part.turned = (part.turned || 0) + n;
+  if (n) recomputeNormals(part);
+  return n;
+}
+
+/**
+ * Close the small holes in a part (open loops of at most `maxN` points and `maxPerim` metres round, e.g. left by
+ * collapsing short edges): a fan from the loop's centre, uv and skin from the loop. Wind with `faceOut` after.
+ */
+export function fillHoles(part, { maxN = 14, maxPerim = 0.09 } = {}) {
+  let filled = 0;
+  for (const run of openEdges(part)) {
+    if (run.length < 3 || run.length > maxN) continue;
+    let per = 0;
+    for (let k = 0; k < run.length; k++) per += V.len(V.sub(run[k].p, run[(k + 1) % run.length].p));
+    if (per > maxPerim) continue;
+    const c = [0, 0, 0], nn = [0, 0, 0], uv = [0, 0];
+    for (const q of run) { for (let k = 0; k < 3; k++) { c[k] += q.p[k] / run.length; nn[k] += q.n[k]; } uv[0] += part.uv[q.i * 2] / run.length; uv[1] += part.uv[q.i * 2 + 1] / run.length; }
+    const ci = part.pos.length / 3, i0 = run[0].i;
+    part.pos.push(...c); part.nrm.push(...V.norm(nn)); part.uv.push(...uv);
+    for (let k = 0; k < 4; k++) { part.jnt.push(part.jnt[i0 * 4 + k]); part.wgt.push(part.wgt[i0 * 4 + k]); }
+    for (let k = 0; k < run.length; k++) part.idx.push(run[k].i, run[(k + 1) % run.length].i, ci);
+    filled++;
+  }
+  part.filled = (part.filled || 0) + filled;
+  return filled;
 }
 
 /** Recompute normals of the parts that are smooth sheets (helper for the recipe). */

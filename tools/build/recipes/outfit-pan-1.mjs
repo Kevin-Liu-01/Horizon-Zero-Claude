@@ -46,7 +46,7 @@ import { breaBody, coverMask } from './armor/lib/breabody.mjs';
 import { compassBoss, cordInto, cuff, limbRadius, woundWrap } from './armor/lib/starter.mjs';
 import { sashKnotTied, sashTail } from './armor/lib/sash.mjs';
 import { bakeVertexAO } from './armor/lib/vertexao.mjs';
-import { caseTube, gloveShell, hangPanel, pouchOn, rimTubes, rivetAt, scarfCowl, slungBelt, squarePlate } from './armor/lib/rung1.mjs';
+import { backFaces, backUVs, faceOut, fillHoles, caseTube, gloveShell, hangPanel, pouchOn, rimTubes, rivetAt, scarfCowl, slungBelt, squarePlate } from './armor/lib/rung1.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/hero/outfit-pan-1.glb'];
@@ -87,8 +87,8 @@ export const COL = {
 // on the orchil violet, the sash panels and the scarf on the deep violet, the shin wraps on the near-black violet, the
 // trousers and boots on the dark brown, the leather straps on the plum
 Object.assign(COL, {
-  smock: hex('#7A3488'), trouserBG: hex('#4A3530'), bootLeather: hex('#57403A'), shinWrap: hex('#4E2C58'), sashDeep: hex('#77307F'),
-  panel: hex('#7A2F86'), scarf: hex('#7C3A84'), print: hex('#B07AA6'), strapLeather: hex('#61403F'),
+  smock: hex('#6E247C'), trouserBG: hex('#4A3530'), bootLeather: hex('#57403A'), shinWrap: hex('#4E2C58'), sashDeep: hex('#77307F'),
+  panel: hex('#7A2F86'), scarf: hex('#6C2874'), print: hex('#A06A98'), strapLeather: hex('#64445A'),
 });
 
 /** The skeleton + grafted, cut pieces (shared by build() and panBindTriangles()). */
@@ -523,9 +523,9 @@ export const PAN_PAINTERS = {
     cloth(t, o, COL.scarf, { slub: 0.09, mottle: 0.1, seed: 41, thread: 0.07 });
     // the folds the mesh is cut with (rung1.mjs scarfCowl, seed 2), shaded in the valleys, sun-faded on the crests
     const f = fold01(noise3(th * 1.8 + 2, t.Y * 62, 3.1)), g = fold01(noise3(th * 5.2, t.Y * 12, 9.7));
-    o.ao *= 1 - 0.32 * sstep(0.35, 0.05, f);
-    over(o, [168, 132, 160], 0.28 * sstep(0.65, 0.95, f) * (0.6 + 0.4 * g));
-    o.h += 0.0024 * (f - 0.5);
+    o.ao *= 1 - 0.14 * sstep(0.35, 0.05, f);
+    over(o, [150, 112, 148], 0.14 * sstep(0.7, 0.98, f) * (0.6 + 0.4 * g));
+    o.h += 0.0016 * (f - 0.5);
     // a faint print of small marks, as the turnaround's scarf
     const m = noise3(t.X * 140, t.Y * 140, t.Z * 140);
     if (m > 0.78) over(o, [196, 150, 96], 0.22 * sstep(0.78, 0.86, m));
@@ -535,7 +535,7 @@ export const PAN_PAINTERS = {
       const q = 1 - t.dm / 0.012;
       if (fr > 0.55) over(o, [136, 96, 128], 0.45 * q); else { const k = 1 - 0.25 * q; o.r *= k; o.g *= k; o.b *= k; }
     }
-    o.rough = 0.92; o.det = 0.85; o.wear = 1.4; o.crease = 0.8;
+    o.rough = 0.92; o.det = 0.85; o.wear = 1.0; o.crease = 0.45;
   },
   /**
    * M1.2d: the hip sash's long panels: deep violet, embroidered in thin gold-ochre (the graduated-tick family mark: a
@@ -906,6 +906,12 @@ export async function panBase(opt = {}) {
   // in a GLB capped at 0.15 MB)
   collapseShort(boots, 0.0085, null, (x, y, z) => ((y > 0.4 && z < -0.12) || (y > 0.11 && y < 0.2 && z > -0.03) ? 0.015 : y < 0.06 ? 0.011 : y > 0.24 && y < 0.42 ? 0.0145 : 0.0122));
   smoothSkin(boots, { its: 30, k: 0.5 });
+  // (M1.2d: collapsing short edges turned some triangles over; the game draws front faces only, so each showed as a
+  // hole through the boot and the shin wrap to the backdrop. Every triangle now faces out of the leg under it)
+  // (and the small holes the collapse left are closed: the body under a boot is culled, so each one was a window)
+  fillHoles(boots); fillHoles(trousers);
+  faceOut(boots, new Field([bodyPart], 0.04));
+  faceOut(trousers, new Field([bodyPart], 0.04));
 
   // ---- surfaces the lofts read
   const under = new Field([bodyPart, trousers], 0.04);
@@ -1480,7 +1486,7 @@ export async function panBase(opt = {}) {
   // the neck scarf: a bunched violet cowl over the throat, low in a V on the chest, over the top's neckline
   const scarf = mk('scarf');
   scarfCowl(scarf, new Field([fitBody, smock, binds, underYoke, ...(harnessOn ? [harness] : [])], 0.03), J);
-  scarf.density = 0.85;
+  scarf.density = 1.0;
   // the hip sash's long panels, front and back, to below the knee, torn at the hem
   const panels = mk('panel');
   const hipField = new Field([bodyPart, trousers, ...peplum], 0.04);
@@ -1489,6 +1495,11 @@ export async function panBase(opt = {}) {
   hangPanel(panels, hipField, J, { thC: Math.PI / 2 + 0.62, halfW: 0.058, yTop: 1.082, yHem: 0.56, side: 'r', thighW: 0.7, seed: 2, rag: 0.035, off: 0.011, cols: 6, rows: 9 });
   hangPanel(panels, hipField, J, { thC: -Math.PI / 2 + 0.12, halfW: 0.1, yTop: 1.082, yHem: 0.42, side: 'c', thighW: 0.42, seed: 3, rag: 0.05, off: 0.016 });
   panels.density = 0.8;
+  recomputeNormals(panels);
+  // their other faces (the game culls back faces: a hanging panel seen from behind needs its own), and the scarf's inside
+  const backs = mk('backs', { trim: true });
+  backFaces(backs, panels);
+  backFaces(backs, scarf, { inset: 0.0012 });
   // their edges and the scarf's, rolled (no paper edge anywhere)
   const hems = mk('hems', { trim: true });
   rimTubes(hems, panels, { r: 0.0017, rect: trim.rect('bind'), skip: (p) => p[1] > 1.06 });
@@ -1549,7 +1560,7 @@ export async function panBase(opt = {}) {
   const caseP = mk('case', { trim: true });
   {
     const ang = 36 * Math.PI / 180, d = [Math.sin(ang), Math.cos(ang), 0], perp = [Math.cos(ang), -Math.sin(ang), 0];
-    const mid = V.add(V.add([-0.02, 1.24, 0], V.mul(d, 0.05)), V.mul(perp, 0.062));
+    const mid = V.add(V.add([-0.02, 1.24, 0], V.mul(d, 0.07)), V.mul(perp, 0.082));
     const L = 0.38, rC = 0.034;
     const back = [bodyPart, smock, binds, ...(harnessOn ? [harness] : [sling]), girdle];
     let zMin = 0;
@@ -1564,7 +1575,7 @@ export async function panBase(opt = {}) {
     caseP.caseAxis = { a, b, r: rC };
   }
 
-  const rung1 = starter ? [scarf, panels, hems, glove, rivets, belt2, pouch2, knee, caseP] : [];
+  const rung1 = starter ? [scarf, panels, backs, hems, glove, rivets, belt2, pouch2, knee, caseP] : [];
   const parts = [underYoke, smock, binds, ...worn, ...(sleevesOn ? [sleeves] : []), trousersCut, boots, girdle, sashBand, ...(buckle.pos.length ? [buckle, tongue] : []), harnessOn ? harness : sling, sling.extra, boss, pouch, sash, tie, cuffs, straps, tab, armwrap, bracer, armband, ...rung1].filter((p) => p && p.idx.length);
   // the set's sheet is packed from every cloth piece any Pan rung wears (trim pieces map to the trim band and need none)
   const sheetParts = [underYoke, smock, ...skirt, ...undr, ...peplum, ...(sleevesOn ? [sleeves] : []), trousersCut, boots, scarf, panels];
@@ -1617,7 +1628,9 @@ function cuffRing(part, sleeves, sgn, uvLinen, uvCarmine, skinOf) {
 
 /** Pack + paint the Pan atlas once (variants II / III reuse this layout and sheet). */
 export async function panLayout(parts, trim, W, H) {
-  return packAtlas(parts, { W, H, pad: 3, trimH: TRIM_H });
+  const L = packAtlas(parts, { W, H, pad: 3, trimH: TRIM_H });
+  backUVs(parts);       // (M1.2d: the panels' and the scarf's back faces read the same texels as their fronts)
+  return L;
 }
 
 /** The fit's limits for this cut: the yoke lies flat on the collarbones and shows; it takes little room, whatever a draw asks of it. */
@@ -1632,7 +1645,7 @@ export const PAN_FIT = {
   // M1.2d: the Starter's own pieces. The gloves carry her hand's own skin and the scarf, the panels and their rolled
   // edges hang as built (their range of motion is the cloth chains' work, M1.2e); the plate, rivets, case and pouches
   // are stiff; the slung belt, the knee straps and the rivets stay over what they lie on
-  skip: new Set(['hat', 'glove', 'scarf', 'panel', 'hems', 'case']),
+  skip: new Set(['hat', 'glove', 'scarf', 'panel', 'backs', 'hems', 'case']),
   stiff: new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes', 'boss', 'rivets', 'pouch2']),
   over: {
     sling: ['smock', 'binds'], slider: ['smock', 'binds', 'harness'], sashband: ['skirt', 'peplum'], girdle: ['smock', 'skirt', 'peplum', 'harness'], straps: ['boots'], tie: ['underyoke'], sash: ['skirt', 'peplum'], capelet: ['smock', 'sling', 'binds', 'harness'], ropebelt: ['smock', 'skirt', 'wrap', 'sashband'], harness: ['smock', 'binds'], boss: ['harness'], armband: [], bracer: ['armwrap'],
@@ -1652,7 +1665,7 @@ export const STARTER_PIECES = {
   'brass-capped bracers, both forearms (crescent plate left)': ['bracer', 'stowkit:bracer'],
   'fingerless gloves': ['glove'],
   'two belts with pouches': ['girdle', 'buckle', 'tongue', 'pouch', 'belt2', 'pouch2'],
-  'hip sash, long ragged embroidered panels front and back': ['sashband', 'sash', 'panel', 'hems'],
+  'hip sash, long ragged embroidered panels front and back': ['sashband', 'sash', 'panel', 'backs', 'hems'],
   'work trousers with knee straps': ['trousers', 'knee'],
   'shin wraps': ['boots'],
   'laced boots': ['boots', 'straps'],
@@ -1698,8 +1711,10 @@ export function panFinish(base, parts) {
   // set culls those faces too, and what shows in the hole is the top's own inner face (the material is double-sided))
   const B = base.fitBody;
   const bra = (i) => B.lum && B.lum[i] < 0.24 && B.pos[i * 3 + 1] > 1.15 && B.pos[i * 3 + 1] < 1.45 && Math.abs(B.pos[i * 3]) < 0.2;
-  // (M1.2d: the scarf hides her throat but never the underside of her jaw, which a face camera sees)
-  return coverMask(B, parts, { skip: new Set(['tab', 'boss', 'slider', 'buckle', 'tongue', 'pouch', 'sash', 'straps', 'tie', 'hat', 'panel', 'hems', 'rivets', 'belt2', 'pouch2', 'knee', 'case']), also: bra, keep: (x, y) => y > 1.525 });
+  // (M1.2d: the scarf hides her throat but never the underside of her jaw, which a face camera sees; and the narrow
+  // bands and wraps on her arms no longer cull the skin under them: the band slides on the arm in a pose and the skin it
+  // had culled showed the backdrop through her, a pale sliver under every band in the Nov 14 refilm)
+  return coverMask(B, parts, { skip: new Set(['tab', 'boss', 'slider', 'buckle', 'tongue', 'pouch', 'sash', 'straps', 'tie', 'hat', 'panel', 'backs', 'hems', 'rivets', 'belt2', 'pouch2', 'knee', 'case', 'armband', 'armwrap', 'bracer']), also: bra, keep: (x, y) => y > 1.525 });
 }
 
 export async function build({ out = ROOT } = {}) {
