@@ -8,6 +8,7 @@
  *            --settle <ms> per-frame settle (default 2600) · --no-review · --status "line 1|line 2"
  *            --vite-config <file> serve the tree with that Vite config (M0.7: three resolved to another version)
  *            --label <tag> appended to the run directory name (e.g. r187)
+ *            --probe <served path> a page module run after each shot; its probe(frame) result goes in run.json
  *
  * The run, in order:
  *   1. the machine guard: memory free >= 50 % (memory_pressure -Q) and pressure level 1, then the
@@ -45,6 +46,9 @@ const WAIT_S = Number(flag('--wait', 1800));
 const BUDGET_S = Number(flag('--budget', 840));
 const SETTLE_MS = Number(flag('--settle', 2600));
 const ONLY = flag('--only') ? new Set(flag('--only').split(',').map((s) => s.trim())) : null;
+// --probe <served path>: a page module whose probe(frame) runs after each screenshot (frozen world); its result
+// lands in run.json as frames[].probe (sky-look M1.1f: tools/look/sky-probe-page.mjs)
+const PROBE = flag('--probe');
 
 const set = loadFrameSet();
 const problems = validate(set);
@@ -170,6 +174,10 @@ try {
       const lin = (c) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
       const [r, g, b] = st.channels.map((c) => c.mean);
       staged.measured.meanLuminance = Math.round((0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)) * 1000) / 10;
+      if (PROBE) {
+        try { staged.probe = await page.evaluate(async (url, fr) => (await import(url)).probe(fr), PROBE, f); }
+        catch (e) { staged.probe = { error: String(e?.message || e).slice(0, 400) }; }
+      }
       const un = await page.evaluate(unstageFrame);
       run.frames.push({ id: f.id, ok: true, file, seconds: Math.round((Date.now() - fs0) / 100) / 10, ...staged, unstageErrors: un.errors });
       log(`${f.id} ok in ${((Date.now() - fs0) / 1000).toFixed(1)} s${staged.standIns.length ? ` (${staged.standIns.length} stand-in)` : ''}`);

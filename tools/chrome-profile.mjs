@@ -467,9 +467,9 @@ export function countProfiles() {
   return n;
 }
 
-export function guardPort(raw, p = Number(raw)) {   // R5 gates-perf W0a, plan §0 rules 6 + 8: lanes 5250-5269, orchestrator 5270, judges 5271 + 5280-5299; 5272-5279 reserved; 5173 never
-  if (/^\d+$/.test(String(raw ?? '')) && p >= 5250 && p <= 5299 && !(p >= 5272 && p <= 5279)) return p;
-  console.error(`[port-guard] refused port ${raw ?? '(none)'}: pass --port or SHOT_PORT in 5250-5271 or 5280-5299 (5173 is never used; 5272-5279 reserved)`); process.exit(2);
+export function guardPort(raw, p = Number(raw)) {   // R5 gates-perf W0a, plan §0 rules 6 + 8: lanes 5250-5269, orchestrator 5270, judges 5271 + 5280-5299; M1a lane ports 5272-5279 (plan v2 briefs); 5173 never
+  if (/^\d+$/.test(String(raw ?? '')) && p >= 5250 && p <= 5299) return p;
+  console.error(`[port-guard] refused port ${raw ?? '(none)'}: pass --port or SHOT_PORT in 5250-5299 (5173 is never used)`); process.exit(2);
 }
 export function preflight(env = process.env) {   // CAL_PREFLIGHT_FREE_GB / CAL_PREFLIGHT_MEM_FREE_PCT simulate a reading
   let gb = Number(env.CAL_PREFLIGHT_FREE_GB);
