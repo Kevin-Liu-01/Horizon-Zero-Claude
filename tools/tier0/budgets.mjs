@@ -9,7 +9,7 @@
  *
  * Numbers live in tools/tier0/budgets.json. GLBs are parsed by lib/glb.mjs.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { listFiles, sizeOf, mb, MB } from './lib/files.mjs';
 import { inspectGlb, imageSize, residentBytes } from './lib/glb.mjs';
@@ -18,7 +18,9 @@ const IMAGE = /\.(png|jpe?g|webp|ktx2)$/i;
 
 /** @param {string} root */
 export function loadBudgets(root) {
-  return JSON.parse(readFileSync(path.join(root, 'tools/tier0/budgets.json'), 'utf8'));
+  const own = path.join(root, 'tools/tier0/budgets.json');
+  const here = new URL('./budgets.json', import.meta.url);
+  return JSON.parse(readFileSync(existsSync(own) ? own : here, 'utf8'));   // a tree without Tier 0 uses this copy's
 }
 
 /**

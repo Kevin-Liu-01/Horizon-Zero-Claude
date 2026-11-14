@@ -35,8 +35,8 @@ export function wordListPath(argv = process.argv) {
 
 /** @param {string} root */
 export function loadAllow(root) {
-  const p = path.join(root, 'tools/lint/allow.json');
-  const j = JSON.parse(readFileSync(p, 'utf8'));
+  const own = path.join(root, 'tools/lint/allow.json');
+  const j = JSON.parse(readFileSync(existsSync(own) ? own : new URL('../lint/allow.json', import.meta.url), 'utf8'));   // a tree without one uses this copy's
   return {
     words: new Set((j.identifiers?.words || []).map((/** @type {string} */ w) => w.toLowerCase())),
     exact: /** @type {string[]} */ (j.identifiers?.exact || []),
