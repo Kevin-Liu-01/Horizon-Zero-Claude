@@ -257,7 +257,7 @@ export async function stageFrame(f, o = {}) {
   for (const r of actors) {
     if (r.m) {   // an Instrument stands still where it was put, facing Brea
       const want = Math.atan2(bx - r.x, bz - r.z);
-      r.m.heading = want; if (r.m.root) { r.m.root.position.set(r.x, ground(r.x, r.z), r.z); }
+      r.m.heading = want; if (r.m.root) { r.m.root.position.set(r.x, ground(r.x, r.z), r.z); r.m.root.rotation.y = want; }
       const u0 = r.m.update; r.m.update = function () {}; undo.push(() => { r.m.update = u0; });
     } else if (r.q) {
       const tx = r.a.face === 'camera' ? lens.pos.x : bx, tz = r.a.face === 'camera' ? lens.pos.z : bz;

@@ -34,7 +34,7 @@ try {
   r = await build({ out: tmp, file: path.join(tmp, 'plumb.glb') });
   r0 = await build({ out: tmp, file: path.join(tmp, 'plumb-nodust.glb'), noDust: true });   // the same model with no dust band
 } finally { rmSync(tmp, { recursive: true, force: true }); }
-const { hullAll, glassAll, bob, drum, sockets } = r._buckets;
+const { hullAll, glassAll, bob, drum, gimbal, gyroA, gyroB, scope, crown, mast, sockets } = r._buckets;
 /** the lamp system draws its iris and dark housing face over the drum's face (r <= lampR): that disc is lamp, not hull */
 const LF = sockets.lamp, LR = sockets.lampR;
 const onLampFace = (b, i) => b === drum && Math.abs(b.pos[i * 3 + 2] - LF[2]) < 0.012 && Math.hypot(b.pos[i * 3] - LF[0], b.pos[i * 3 + 1] - LF[1]) <= LR + 1e-3;
@@ -62,7 +62,7 @@ function classOf(b, i) {
 }
 const area = {};
 let total = 0;
-for (const b of [hullAll, bob, drum]) {
+for (const b of [hullAll, bob, drum, gimbal, gyroA, gyroB, scope, crown, mast]) {
   const P = b.pos;
   for (let t = 0; t + 8 < P.length; t += 9) {
     const ax = P[t + 3] - P[t], ay = P[t + 4] - P[t + 1], az = P[t + 5] - P[t + 2];
@@ -87,7 +87,7 @@ function visibleShare(eye, tgt, W = 360, Hh = 540, fov = 50) {
   const f = nz(sub(tgt, eye)), rr = nz(cross(f, [0, 1, 0])), u = cross(rr, f), fl = (Hh / 2) / Math.tan(fov * Math.PI / 360);
   const zb = new Float32Array(W * Hh).fill(1e9), id = new Array(W * Hh).fill(null);
   const proj = (p) => { const d = sub(p, eye); const z = dot(d, f); return [W / 2 + dot(d, rr) * fl / z, Hh / 2 - dot(d, u) * fl / z, z]; };
-  for (const [b, cls] of [[hullAll, true], [bob, true], [drum, true], [glassAll, false]]) {
+  for (const [b, cls] of [[hullAll, true], [bob, true], [drum, true], [gimbal, true], [gyroA, true], [gyroB, true], [scope, true], [crown, true], [mast, true], [glassAll, false]]) {
     const P = b.pos;
     for (let t = 0; t + 8 < P.length; t += 9) {
       const v = [0, 1, 2].map((k) => proj([P[t + k * 3], P[t + k * 3 + 1], P[t + k * 3 + 2]]));

@@ -44,7 +44,7 @@ export const PLUMB = Object.freeze({
   sphereY: 2.48, sphereR: 0.42,
   ringIn: 0.425, ringOut: 0.55,
   drumBackZ: 0.32, drumR: 0.20, drumDepth: 0.19,
-  vialY: 2.97, vialLen: 0.30, vialR: 0.045,
+  vialY: 3.21, vialLen: 0.30, vialR: 0.045,
   top: 3.40,
   cable: 1.2, bobLen: 0.36,
   legSpreadR: 1.20,
@@ -171,11 +171,17 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
   // pole bosses: brass rings that close the shell at top and bottom
   limbRing(HD, at(0, SY + SR * 0.86, 0), 0.03, 0.2, 0.035, { ticks: 6, vernier: false, faceSurf: 'glaze', faceTone: C.ENAMEL });
   limbRing(HD, at(0, SY - SR * 0.86, 0), 0.03, 0.2, 0.035, { ticks: 6, vernier: false, tone: C.GUNMETAL, surf: 'graphite', faceSurf: 'glaze', faceTone: C.ENAMEL });
+  // the equatorial gimbal (ring, tabs, wings): its own node, mounted on the head as a fixed part, so the arrow sweep
+  // fits it its own thin capsules (core/hitHulls.js fits a bone's capsules to cells of its whole skin: a ring and
+  // wings on the head's skin made capsules that reached up past the vial)
+  const GB = new KBucket('plumb-gimbal');
+  // the two gyroscope rings: fixed parts too, each its own node (thin capsules round each ring)
+  const GR1 = new KBucket('plumb-gyro-a'), GR2 = new KBucket('plumb-gyro-b');
   // the brass equatorial ring, open at the front where the drum sits; its face engraved with the vernier
   const OPEN = THREE.MathUtils.degToRad(30);
-  limbRing(HD, at(0, SY, 0), PLUMB.ringIn, PLUMB.ringOut, 0.05, { ticks: 24, phiStart: OPEN, phiLength: Math.PI * 2 - 2 * OPEN, segs: 64, faceSurf: 'glaze', faceTone: C.ENAMEL, outerSurf: 'glaze', outerTone: C.ENAMEL });
+  limbRing(GB, at(0, SY, 0), PLUMB.ringIn, PLUMB.ringOut, 0.05, { ticks: 24, phiStart: OPEN, phiLength: Math.PI * 2 - 2 * OPEN, segs: 64, faceSurf: 'glaze', faceTone: C.ENAMEL, outerSurf: 'glaze', outerTone: C.ENAMEL });
   // rivets round the ring's face, none in the opening (rivetRing about +Y puts u at (cos u, 0, -sin u))
-  rivetRing(HD, V(0, SY + 0.026, 0), V(0, 1, 0), (PLUMB.ringIn + PLUMB.ringOut) / 2, 30, 0.01,
+  rivetRing(GB, V(0, SY + 0.026, 0), V(0, 1, 0), (PLUMB.ringIn + PLUMB.ringOut) / 2, 30, 0.01,
     { skip: (u) => Math.abs(Math.atan2(Math.cos(u), -Math.sin(u))) < OPEN + 0.08 });
   // flange tabs and two side wings on the ring (enamel plates, brass rivets)
   for (const [azDeg, len, wid] of [[55, 0.63, 0.13], [-55, 0.63, 0.13], [125, 0.63, 0.13], [-125, 0.63, 0.13], [90, 0.71, 0.17], [-90, 0.71, 0.17], [180, 0.62, 0.12]]) {
@@ -183,40 +189,46 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
     const out_ = V(Math.sin(az), 0, Math.cos(az)), tan = V(Math.cos(az), 0, -Math.sin(az));
     // outline in (tan, out) with the plate's normal along +Y
     const Mp = basis(tan, out_.clone(), new THREE.Vector3().crossVectors(tan, out_), V(0, SY, 0));
-    plate(HD, [[-wid / 2, PLUMB.ringOut - 0.04], [wid / 2, PLUMB.ringOut - 0.04], [wid * 0.32, len], [-wid * 0.32, len]], 0.028, 0.006, Mp,
+    plate(GB, [[-wid / 2, PLUMB.ringOut - 0.04], [wid / 2, PLUMB.ringOut - 0.04], [wid * 0.32, len], [-wid * 0.32, len]], 0.028, 0.006, Mp,
       { surf: 'glaze', tone: C.ENAMEL, wear: 0.35 });
     const n = new THREE.Vector3().crossVectors(tan, out_).normalize();
     const up = n.y > 0 ? n : n.clone().negate();
-    for (const r of [PLUMB.ringOut + 0.03, len - 0.035]) rivet(HD, V(0, SY, 0).addScaledVector(out_, r).addScaledVector(up, 0.016), up, 0.01);
+    for (const r of [PLUMB.ringOut + 0.03, len - 0.035]) rivet(GB, V(0, SY, 0).addScaledVector(out_, r).addScaledVector(up, 0.016), up, 0.01);
   }
   // two gyroscope rings on gunmetal pivots, crossing behind and beside the drum
   {
-    const t1 = THREE.MathUtils.degToRad(16);
-    gyroRing(HD, SC, V(0, -Math.sin(t1), Math.cos(t1)), 0.49, 0.012, { pivot: V(1, 0, 0) });
-    const t2 = THREE.MathUtils.degToRad(55);
-    gyroRing(HD, SC, V(Math.sin(t2), 0.12, Math.cos(t2)).normalize(), 0.475, 0.010, { pivot: V(Math.cos(t2), 0, -Math.sin(t2)) });
+    // tilted so neither ring's crown passes the vial: each top stands >= 0.09 m below the vial's centre line
+    const t1 = THREE.MathUtils.degToRad(40);
+    gyroRing(GR1, SC, V(0, -Math.sin(t1), Math.cos(t1)), 0.47, 0.012, { pivot: V(1, 0, 0) });
+    const t2 = THREE.MathUtils.degToRad(55), l2 = THREE.MathUtils.degToRad(32);
+    gyroRing(GR2, SC, V(Math.sin(t2) * Math.cos(l2), Math.sin(l2), Math.cos(t2) * Math.cos(l2)), 0.465, 0.010, { pivot: V(Math.cos(t2), 0, -Math.sin(t2)) });
   }
+  const SCP = new KBucket('plumb-scope'), CR = new KBucket('plumb-crown'), MS = new KBucket('plumb-mast');
   // the sighting telescope beside the drum, on a brass bracket (visible instrument parts round the lamp)
+  // (its own node: core/hitHulls.js fits a bone's capsules to cells of its whole skin, and a 7 cm tube beside a
+  // 0.84 m sphere got a 0.2 m capsule that stopped arrows at the vial's height)
   {
     const TY = SY + 0.235, TX = 0.2;
     const zs = Math.sqrt(Math.max(0, SR * SR - TX * TX - 0.235 * 0.235));
-    strut(HD, V(TX, TY, zs - 0.06), V(TX, TY, zs + 0.27), 0.03, 0.036, { surf: 'graphite', tone: C.GUNMETAL, sides: 14 });
-    for (const z of [zs - 0.06, zs + 0.1, zs + 0.24]) strut(HD, V(TX, TY, z), V(TX, TY, z + 0.03), 0.044, 0.044, { surf: 'bronze', tone: C.BRASS, sides: 14, wear: 0.6 });
-    ball(HD, V(TX, TY, zs + 0.272), 0.03, { surf: 'glaze', tone: 0x2f3a36, w: 10, h: 6, wear: 0.05 });   // objective glass (dark)
-    rbox(HD, V(TX - 0.02, TY - 0.045, zs + 0.03), [0.03, 0.06, 0.1], 0.006, { surf: 'bronze', tone: C.BRASS, wear: 0.6 });
+    strut(SCP, V(TX, TY, zs - 0.06), V(TX, TY, zs + 0.27), 0.03, 0.036, { surf: 'graphite', tone: C.GUNMETAL, sides: 14 });
+    for (const z of [zs - 0.06, zs + 0.1, zs + 0.24]) strut(SCP, V(TX, TY, z), V(TX, TY, z + 0.03), 0.044, 0.044, { surf: 'bronze', tone: C.BRASS, sides: 14, wear: 0.6 });
+    ball(SCP, V(TX, TY, zs + 0.272), 0.03, { surf: 'glaze', tone: 0x2f3a36, w: 10, h: 6, wear: 0.05 });   // objective glass (dark)
+    rbox(SCP, V(TX - 0.02, TY - 0.045, zs + 0.03), [0.03, 0.06, 0.1], 0.006, { surf: 'bronze', tone: C.BRASS, wear: 0.6 });
   }
-  // THE LEVEL VIAL: the weak point, in a brass cradle on the sphere's crown
+  // THE LEVEL VIAL: the weak point, on two slender brass standards above the sphere's crown (a short mast topped by
+  // the vial). Its cradle (caps, saddles, rings, bubble, crossbar) is its own node, the vial's hit volume (the kind file
+  // mounts it as the `vial` part); the standards and the antennae are another (`plumb-mast`): thin capsules round each
   const VY = PLUMB.vialY;
   for (const s of [-1, 1]) {
     const x = s * 0.16, y0 = SY + Math.sqrt(SR * SR - x * x) - 0.03;
-    strut(HD, V(x, y0, 0), V(x, VY - 0.045, 0), 0.016, 0.014, { surf: 'bronze', tone: C.BRASS, sides: 8 });
-    rbox(HD, V(x, VY - 0.035, 0), [0.03, 0.03, 0.09], 0.006, { surf: 'bronze', tone: C.BRASS, wear: 0.6 });
+    strut(MS, V(x, y0, 0), V(x, VY - 0.045, 0), 0.016, 0.014, { surf: 'bronze', tone: C.BRASS, sides: 8 });
+    rbox(CR, V(x, VY - 0.035, 0), [0.03, 0.03, 0.09], 0.006, { surf: 'bronze', tone: C.BRASS, wear: 0.6 });
   }
-  rbox(HD, V(0, VY - 0.07, 0), [0.36, 0.02, 0.07], 0.006, { surf: 'bronze', tone: C.BRASS, wear: 0.6 });
-  const vial = levelVial(HD, G('head'), V(0, VY, 0), V(1, 0, 0), { len: PLUMB.vialLen, r: PLUMB.vialR });
+  rbox(CR, V(0, VY - 0.07, 0), [0.36, 0.02, 0.07], 0.006, { surf: 'bronze', tone: C.BRASS, wear: 0.6 });
+  const vial = levelVial(CR, G('head'), V(0, VY, 0), V(1, 0, 0), { len: PLUMB.vialLen, r: PLUMB.vialR });
   // the antennae: one with a cross-arm and the 3.40 m finial, behind the vial; a shorter one off the crown
-  antenna(HD, V(0, VY - 0.07, -0.085), V(0, PLUMB.top, -0.085), { r: 0.012, finial: 0.12, cross: 0.055 });
-  antenna(HD, V(-0.2, SY + 0.31, -0.13), V(-0.3, 3.12, -0.19), { r: 0.009, finial: 0.07 });
+  antenna(MS, V(0, VY - 0.07, -0.085), V(0, PLUMB.top, -0.085), { r: 0.012, finial: 0.12, cross: 0.055 });
+  antenna(MS, V(-0.175, VY - 0.07, -0.03), V(-0.19, 3.17, -0.04), { r: 0.009, finial: 0.07 });
 
   /* ------------------------------- the lamp drum (a tool) ------------------- */
   const drum = new KBucket('plumb-drum');
@@ -241,7 +253,7 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
   rivetRing(bob, BOB.clone().add(V(0, -0.068, 0)), V(0, 1, 0), 0.124, 8, 0.008, { radial: true });
 
   /* ------------------------------- recentre -------------------------------- */
-  const all = [...hull.values(), ...glass.values(), bob, drum];
+  const all = [...hull.values(), ...glass.values(), bob, drum, GB, GR1, GR2, SCP, CR, MS];
   const box = new THREE.Box3();
   for (const b of all) b.bounds(box);
   const cx = (box.min.x + box.max.x) / 2, cz = 0, y0 = box.min.y;   // z stays on the head's axis (the lamp looks down +Z)
@@ -286,13 +298,15 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
 
   const hullAll = mergeLabelled(hull, BONE_ORDER, 'plumb-hull');
   const glassAll = mergeLabelled(glass, BONE_ORDER, 'plumb-vial');
-  const fin = finish(hullAll, { occluders: [glassAll, bob, drum], rays: 28, dist: 0.4, footBand: noDust ? 0 : 0.6, lamps: [], verdigris: 0.3 });
+  const fin = finish(hullAll, { occluders: [glassAll, bob, drum, GB, GR1, GR2, SCP, CR, MS], rays: 28, dist: 0.4, footBand: noDust ? 0 : 0.6, lamps: [], verdigris: 0.3 });
   finish(bob, { occluders: [hullAll], rays: 28, dist: 0.4, footBand: noDust ? 0 : 0.6, lamps: [], verdigris: 0.3 });
   finish(drum, { occluders: [hullAll], rays: 28, dist: 0.4, footBand: noDust ? 0 : 0.6, lamps: [], verdigris: 0.3 });
+  for (const G of [GR1, GR2, SCP, CR, MS]) finish(G, { occluders: [hullAll, GB, glassAll], rays: 28, dist: 0.4, footBand: noDust ? 0 : 0.6, lamps: [], verdigris: 0.3 });
+  finish(GB, { occluders: [hullAll, drum, GR1, GR2], rays: 28, dist: 0.4, footBand: noDust ? 0 : 0.6, lamps: [], verdigris: 0.3 });
 
   let rig = rigSpec, sk = sockets, sz = size;
   if (scale !== 1) {
-    for (const b of [hullAll, glassAll, bob, drum]) b.scale(scale);
+    for (const b of [hullAll, glassAll, bob, drum, GB, GR1, GR2, SCP, CR, MS]) b.scale(scale);
     rig = scaleRig(rigSpec, scale);
     sk = Object.fromEntries(Object.entries(sockets).map(([k, v]) => [k, Array.isArray(v) ? v.map((x) => +(x * scale).toFixed(4)) : +(v * scale).toFixed(4)]));
     sz = size.clone().multiplyScalar(scale);
@@ -307,6 +321,12 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
     { bucket: glassAll, role: 'sensor', material: { name: 'r5-plumb-vial-glass', emissive: [ICE_LIN.r, ICE_LIN.g, ICE_LIN.b], baseColor: [0.62, 0.78, 0.76, 1] } },
     { bucket: bob, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.bobTop } },
     { bucket: drum, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.drumBack } },
+    { bucket: GB, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.head } },
+    { bucket: GR1, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.head } },
+    { bucket: GR2, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.head } },
+    { bucket: SCP, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.head } },
+    { bucket: CR, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.vial } },
+    { bucket: MS, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.head } },
   ], {
     file: target,
     provenance: { recipe: RECIPE, sources: [], licence: 'project-original' },
@@ -321,7 +341,7 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
     kind: 'plumb', file: path.relative(out, target), bytes: stats.bytes, tris: stats.tris, meshTris: stats.meshTris, verts: stats.verts,
     materials: stats.materials, textures: stats.textures, bones: BONE_ORDER.length, legs: LEGS.length, aoMean: +fin.aoMean.toFixed(3),
     size: { x: +sz.x.toFixed(3), y: +sz.y.toFixed(3), z: +sz.z.toFixed(3) },
-    _buckets: { hullAll, glassAll, bob, drum, sockets: sk, size: sz },
+    _buckets: { hullAll, glassAll, bob, drum, gimbal: GB, gyroA: GR1, gyroB: GR2, scope: SCP, crown: CR, mast: MS, sockets: sk, size: sz },
   };
 }
 

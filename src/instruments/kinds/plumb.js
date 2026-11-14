@@ -68,6 +68,7 @@ const _wp = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _xAxis = new THREE.Vector3(1, 0, 0);
 
+
 export class Plumb extends ExpansionMachine {
   constructor(ctx, manager, opts = {}) {
     const k = opts.scale > 0 ? opts.scale : 1, rk = Math.sqrt(k);
@@ -105,6 +106,8 @@ export class Plumb extends ExpansionMachine {
     this._seeded = seedAuthoredWeights(this);
     const bob = detachTool(this, 'plumb-bob');
     const drum = detachTool(this, 'plumb-drum');
+    const cradle = detachTool(this, 'plumb-crown');
+    const fixed = ['plumb-gimbal', 'plumb-gyro-a', 'plumb-gyro-b', 'plumb-scope', 'plumb-mast'].map((n) => [n, detachTool(this, n)]);
 
     this.addLamp(sc3(S.lamp), { radius: (S.lampR || LAMP_R) * k });
     this._lampWp = this.addWeakPoint('lamp', this.body, ...sc3(S.lamp), 0.16 * k, 2.2);
@@ -118,6 +121,14 @@ export class Plumb extends ExpansionMachine {
       name: 'bob', displayName: 'Plumb bob', bone: 'tail2', anchor: entry.tools?.['plumb-bob'] || S.bobTop, scale: k,
       tearHp: 55, linkedAttack: 'pendulum', loot: [{ id: 'plumb-bob', n: 1 }],
     });
+    // the level vial's cradle (caps, saddles, rings, bubble) is the `vial` part: its own hit capsules, so a shot at the
+    // vial stops on the vial. core/hitHulls.js fits a bone's capsules to cells of its whole skin, and on the head's skin
+    // the 0.30 m tube had none of its own; never torn (the vial breaks by the topple rule, not by tearing)
+    this._vialPart = mountTool(this, cradle, { name: 'vial', displayName: 'Level vial', bone: 'head', anchor: entry.tools?.['plumb-crown'] || S.vial, scale: k,
+      tearHp: Infinity, weak: true, weakMult: 2.0 });
+    // the equatorial gimbal ring, the two gyroscope rings, the telescope and the vial's standards with the antennae: fixed parts on the head (each its own hit capsules,
+    // drawn in the component fold's one draw; never torn)
+    for (const [n, mesh] of fixed) mountTool(this, mesh, { name: n.slice(6), displayName: 'Gimbal ring', bone: 'head', anchor: entry.tools?.[n] || S.head, scale: k, tearHp: Infinity });
     // the lamp drum: Pried off, the lamp is gone for good (no Flag, no Sightline); its glass is the loot
     this._drum = mountTool(this, drum, {
       name: 'drum', displayName: 'Lamp drum', bone: 'head', anchor: entry.tools?.['plumb-drum'] || S.drumBack || S.drum, scale: k,
@@ -193,6 +204,12 @@ export class Plumb extends ExpansionMachine {
     if (this.alive && wp && pt) {
       wp.obj.getWorldPosition(_wp);
       vial = _wp.distanceToSquared(pt) <= wp.radius * wp.radius;
+    }
+    // a hit on the vial's own hit volume (the glass and its caps) is a vial hit too
+    if (this.alive && hit?.object && this._vialPart) {
+      let o = hit.object;
+      while (o && !o.userData?.part) o = o.parent;
+      if (o?.userData?.part === this._vialPart) vial = true;
     }
     const r = super.takeDamage(hit);
     if (vial && this.alive && this._toppleT < 0) {
