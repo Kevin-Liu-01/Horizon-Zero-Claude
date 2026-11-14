@@ -902,6 +902,8 @@ const FADE_MIN = 0.06;
 /** Look target distance along the boom axis, and the framing tilt at it. */
 const LOOK_AHEAD = 12;
 const FRAME_DROP = 0.09;                  // 0.43 deg: she sits a touch high
+/** M1.1h: out of the aim the lens looks this far above the requested axis (rad, 9 deg; see `_updateCamera`). */
+const FRAME_TILT = 0.157;
 const FOV_BASE = 55;                      // matches combat's FOV_HIP
 const FOV_SPRINT = 60;                    // camera-feel-07
 
@@ -1357,7 +1359,7 @@ export class Player {
 
     this._snapToGround();
     // R48 c (melee W1 grant): the camera fields first written at her first sprint / aim / turn, declared with what their readers read for undefined
-    for (const [k, v] of Object.entries({ _keepDrop: 0, camKeepDrop: 0, _turnFrame: -1, _hijStep: 0, _viewFrame: NaN, _viewStepAcc: 0, _preCut: 0, _rotLenCap: Infinity, mantleK: 0, _orbitFrame: 0, _orderTries: 0 })) if (!(k in this)) this[k] = v;
+    for (const [k, v] of Object.entries({ _frameTiltK: 1, camFrameTilt: 0, _keepDrop: 0, camKeepDrop: 0, _turnFrame: -1, _hijStep: 0, _viewFrame: NaN, _viewStepAcc: 0, _preCut: 0, _rotLenCap: Infinity, mantleK: 0, _orbitFrame: 0, _orderTries: 0 })) if (!(k in this)) this[k] = v;
     decimalFields(this);   // R46: per-frame fields born as decimals (melee W1 grant)
   }
 
@@ -4942,6 +4944,22 @@ void main() {
     /** Delivered forward elevation (rad, + = up): what the gates measure. */
     this.camElev = Math.asin(THREE.MathUtils.clamp(ly, -1, 1));
     this.camElevWant = elevReq;
+    /* M1.1h — THE HORIZON LOW, THE WORLD TALL (no ground-staring). Out of the aim the lens looks
+     * `FRAME_TILT` above the axis the player asked for: at the boot pitch (6 deg down) the horizon stands
+     * about 45 % of the frame height from the bottom (it stood at 60 %) and she sits in the lower-centre
+     * third, the land and sky over her head. The lens does not move; only where it looks. The aim's view is
+     * the request to the bit (the tilt goes out with the aim at 8/s, so the crosshair is never moved), and
+     * `camElev` above stays the player's look; the tilt is published beside it (`camFrameTilt`). */
+    {
+      const tk = this._frameTiltK = THREE.MathUtils.damp(this._frameTiltK ?? 1, this.aiming ? 0 : 1, 8, dt);
+      const tilt = FRAME_TILT * tk;
+      this.camFrameTilt = tilt;
+      if (tilt > 1e-5) {
+        const ev3 = Math.min(Math.asin(THREE.MathUtils.clamp(ly, -1, 1)) + tilt, 1.45);
+        const hz = Math.hypot(lx, lz), k3 = hz > 1e-6 ? Math.cos(ev3) / hz : 0;
+        lx *= k3; lz *= k3; ly = Math.sin(ev3);
+      }
+    }
     cam.lookAt(
       this._camPos.x + lx * LOOK_AHEAD,
       this._camPos.y + ly * LOOK_AHEAD - FRAME_DROP,
