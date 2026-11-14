@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ClipLibrary } from './anim/clipLibrary.js';
 import { LocomotionBlend } from './anim/locomotion.js';
-import { MeleeLayer } from './anim/meleeLayer.js';
+import { MeleeLayer, decimalFields } from './anim/meleeLayer.js';
 import { BoneSpace, RestPose, RigDebug, register } from './anim/index.js';
 
 /**
@@ -145,6 +145,10 @@ const _spAcc = new THREE.Quaternion();
 // _pushOutOfCapsule's OWN scratch — the caller hands it `_spC` as the point to
 // move, so it may not borrow any `_sp*` vector (see the note on the method).
 const _cp0 = new THREE.Vector3();
+/** `_segDistN`'s result: a number `_springs` reads without a boxed return. */
+const _spNum = new Float64Array(1);
+/** `_springParentQ`'s rotation matrix. */
+const _spMq = new THREE.Matrix4();
 const _cp1 = new THREE.Vector3();
 const _cp2 = new THREE.Vector3();
 // W0b targeted fix 2: the M10 fallback's candidates (`_springs`) and the draw
@@ -337,7 +341,14 @@ const HAND_IN = 0.90;
 // 0.985 read as a soft 156 deg arm. Gate A35-cheek-anchor asserts 165-172.
 const BOW_ARM_LOCK = 0.9945;
 
-const { damp, clamp, smoothstep } = THREE.MathUtils;
+/* The three hot-path helpers, written small on purpose (R48 c, melee W1). THREE's
+ * own go through Math.max/min and lerp, and the optimiser's cumulative inlining
+ * budget runs out long before the end of `update`: a double returned across a call
+ * that is not inlined is a fresh HeapNumber. These are small enough to be inlined
+ * whatever the budget, and read the same values. */
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const damp = (x, y, l, dt) => { const t = 1 - Math.exp(-l * dt); return (1 - t) * x + t * y; };
+const smoothstep = (x, a, b) => { if (x <= a) return 0; if (x >= b) return 1; const u = (x - a) / (b - a); return u * u * (3 - 2 * u); };
 
 const KEY = {
   pelvis: 'pelvis_05',
@@ -667,6 +678,7 @@ export class PlayerAnimator {
         { a: new THREE.Vector3(), b: new THREE.Vector3(), r: hc.r },
         { a: new THREE.Vector3(), b: new THREE.Vector3(), r: hc.r },
       ], active: false, pushes: 0, minAxis: Infinity,
+      minCi: -1, minJ: -1,      // R48 c (melee W1): written by `_springs` at the first push, so declared (a new field re-shapes the record)
       // W0b targeted fix 4: the running minima since the last `debugHandCollider()`
       // read, so a gate grades EVERY sim tick at any frame rate (a rendered frame
       // can carry up to three): particles, and the strands' segments between them
@@ -880,7 +892,8 @@ export class PlayerAnimator {
     this._flightPool = [{ t: 0, dur: 0, fx: 0, fz: 0, hx: 0, hz: 0 },
                         { t: 0, dur: 0, fx: 0, fz: 0, hx: 0, hz: 0 }];
     this._stepCd = [0, 0];
-    this._stepDbg = { armed: 0, steps: 0, side: -1, lift: 0, len: 0, err: 0, slip: 0 };
+    this._stepDbg = { armed: 0, steps: 0, side: -1, lift: 0, len: 0, err: 0, slip: 0,
+      lockErr: 0, rekeys: 0, locoSteps: 0, frames: 0, dead: 0, deadMove: 0, deadOff: 0 };   // (every field it gets, declared: R48 c)
     this._stepErrs = [0, 0];        // _stanceStep scratch — never reallocated
     this._stepLoads = [0, 0];
     this._strideT = 0;              // seconds since either foot last lifted
@@ -950,6 +963,8 @@ export class PlayerAnimator {
     // R5 fix round 5: the stowed lance's shaft as a spring-side capsule (world;
     // HeroStowKit.solve writes it after the carry solve, `on` false while drawn)
     this._stowCap = { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.11, on: false };
+    this._springsWarm = false;      // see `_warmSprings`
+    this._springsSeen = 0;
     this._latT = new THREE.Vector3(1, 0, 0); this._restGripT = new THREE.Vector3();
     this._dTs = new THREE.Vector3(0, 0, 1); this._tOff = true;   // the T ray, low-passed (snapped when the turn starts)
     // hero-body targeted fix round 2 (`armFlow.camAim`): the aim point this step's camera will give, the camera's
@@ -1028,8 +1043,8 @@ export class PlayerAnimator {
       }
     });
 
-    /* ------------------ Round 4 · lane player-melee (spear) --------------- */
-    // How Aloy HOLDS and SWINGS the spear. Built last: it reads the rest pose
+    /* ------------------ Round 4 · lane player-melee (lance) --------------- */
+    // How she HOLDS and SWINGS the lance. Built last: it reads the rest pose
     // through `this.b` / `this.space` and adds its own masked additive layers
     // to the mixer above. `melee.js` publishes the state; this owns the pose.
     this.melee = new MeleeLayer(this);
@@ -1041,6 +1056,43 @@ export class PlayerAnimator {
       status: 'migrated', bones: this.space.size,
       chains: this._chains.length, twists: this._twists.length,
     });
+    /* R48 c (melee W1): THE FIELDS THE FRAME USED TO ADD LATER, DECLARED HERE.
+     * Each of these was first written inside a branch that runs only once she
+     * moves, strafes while aiming, sprints, carries the bow or draws it. The
+     * first write added a property, i.e. gave the animator a new hidden class,
+     * and every optimised function holding the old one (this file's `update` and
+     * `_springs` among them) was thrown away at her first sprint or first draw
+     * and re-ran in the baseline tier, where each double is a HeapNumber. Each
+     * initial value is the one the lazy code would have produced, or one its
+     * readers treat the same (`|| 0`, `?? 0`, `|| 0.985`, `== null || !finite`). */
+    this._dtA = 1 / 60;               // set at the top of every update
+    this._slideW = 0.5; this._slideW = 0;
+    this._trunkErr = 0; this._trunkPitch0 = 0;
+    this._latK = 0; this._latMove = 0; this._fyHold = [0.5, 0.5]; this._fyHold[0] = 0; this._fyHold[1] = 0;
+    this._mStepRekey = 0;
+    this._ikMaxK = 0.985;             // `_ikArm` reads `this._ikMaxK || 0.985`
+    this._efS = decimalFields({ r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0, r52: 1, out: 0, shL: 0 });
+    this._bobMean = NaN;              // `_runBob`: `== null || !Number.isFinite` -> the first sample
+    this._bobW = 0;
+    this._bobKeep = this.T.runBob ? this.T.runBob.keep : 0.5;   // what `?? this.T.runBob.keep` read
+    this._rbPlanted = [false, false];
+    {
+      const b = this.b;
+      this._bowCarryArm = [b.upArmL, b.loArmL, b.handL];
+      this._footLatLoc = [b.footL, b.footR].map((f) => (f?.W
+        ? new THREE.Vector3(1, 0, 0).applyQuaternion(f.W.clone().invert())
+        : new THREE.Vector3(1, 0, 0)));
+      const tip = (e) => (e?.bone?.children || []).find((o) => o.isBone) || null;
+      this._toeTips = [tip(b.ballL), tip(b.ballR)];
+    }
+    this.lastHitClass = 'light';
+    /* R46: the per-frame fields are born as decimals (see `decimalFields`) */
+    decimalFields(this);
+    decimalFields(this._stepDbg);
+    for (let i = 0; i < this._chains.length; i++) decimalFields(this._chains[i]);
+    for (let i = 0; i < this._twists.length; i++) decimalFields(this._twists[i]);
+    for (let i = 0; i < this._locks.length; i++) decimalFields(this._locks[i]);
+    if (this.wind) decimalFields(this.wind);
   }
 
   /* --------------- Round 4: reactions, traversal, interaction ------------- */
@@ -1462,7 +1514,7 @@ export class PlayerAnimator {
   }
 
   /**
-   * Spear/melee measurements for the `player-melee` gates (A100-A105). Cold
+   * Lance/melee measurements for the `player-melee` gates (A100-A105). Cold
    * path — it walks the rig and re-reads world matrices; never call per frame.
    */
   debugMelee() { return this.melee?.ok ? this.melee.debug() : null; }
@@ -2304,14 +2356,14 @@ export class PlayerAnimator {
       if (rw > 0.01) this._runArmClamp(rw);
     }
 
-    /* ============ OVERLAY 4b: the spear — carry, draw, swing ============= */
+    /* ============ OVERLAY 4b: the lance — carry, draw, swing ============= */
     // `melee.js` owns the state machine and publishes it; this layer owns the
-    // pose. It runs AFTER aim (aim wins: a drawn bow holsters the spear) and
+    // pose. It runs AFTER aim (aim wins: a drawn bow holsters the lance) and
     // BEFORE the react layer, so a hit still folds the torso over the swing.
     if (this.melee?.ok) {
       this.melee.step(dt);
       this.melee.update(dt, this.ctx.combat?.melee?.poseState?.() ?? null);
-      /* THE SPEAR'S OWN STANCE ASKS FOR A PELVIS OFFSET (fix pass 2, melee
+      /* THE LANCE'S OWN STANCE ASKS FOR A PELVIS OFFSET (fix pass 2, melee
        * `STANCE`). The melee layer bends the knees for the beat it is playing;
        * a bent knee with the hips held up lifts the foot off the floor, so the
        * hips have to come down with it. Adding it to `pdx`/`pdy` here rather
@@ -2320,6 +2372,7 @@ export class PlayerAnimator {
        * route every other procedural leg pose in this file takes. */
       pdx += this.melee.pelvisDx || 0;
       pdy += this.melee.pelvisDy || 0;
+      pdz += this.melee.pelvisDz || 0;
     }
 
     /* ================ OVERLAY 5: hit react / death / weary ================ */
@@ -2411,6 +2464,7 @@ export class PlayerAnimator {
     this._twistLayer();
 
     /* ------------------ secondary motion: dyn_ spring chains --------------- */
+    if (!this._springsWarm && ++this._springsSeen >= 40) { this._springsWarm = true; this._warmSprings(t, ph); }
     this._springs(dt, t, ph, speed, moveW, runW);
     if (this._ali) this._alidadePlace();
 
@@ -2419,7 +2473,7 @@ export class PlayerAnimator {
     // avoiding LAST frame's ponytail; this is the same check on the pose the
     // renderer will actually draw, in both directions — the hand gives way to
     // the skull and the spine, and the BRAID gives way to the haft (a stowed
-    // spear during a dodge roll is the case no placement can dodge). Costs one
+    // lance during a dodge roll is the case no placement can dodge). Costs one
     // scan of 32 hair bones and does nothing unless a strand is inside 0.078 m
     // of the haft, which at idle/walk/run/sprint it never is.
     this.melee?.postFix?.();
@@ -3024,7 +3078,10 @@ export class PlayerAnimator {
     // ...then hold it at a low, slightly-forward carry beside her left thigh,
     // riding the breath and a little of the stride
     const sw = Math.sin((this.loco?.phase ?? 0) * Math.PI * 2) * 0.022 * this._moveW;
-    _grip.set(0.245, 0.94 + sw + (this._brNow - 0.5) * 0.012 - 0.30 * this._crouchW, 0.135);
+    /* R64 (c), Nov 6: 3 cm wider than Round 5's 0.245, so the held bow and the
+     * hand clear the skirt by >= 0.5 cm on all four Pans (A-variant-swap-matrix's
+     * held clause) */
+    _grip.set(0.275, 0.94 + sw + (this._brNow - 0.5) * 0.012 - 0.30 * this._crouchW, 0.135);
     _pole.set(0.85, -0.55, -0.25);
     this._ikArm('l', _grip, _pole, w * 0.92, null);
     this._rot(b.handL, X_AXIS, -0.30 * w);
@@ -3140,6 +3197,13 @@ export class PlayerAnimator {
 
   /* -------------------------- ground conforming --------------------------- */
 
+  /** The conform's pelvis drop to ground height `g` (was a closure made every frame: R48 c). */
+  _applyPelvis(pe, g) {
+    _v2.set(0, g - this._grnd, 0).applyMatrix3(this._pelvisM3);
+    pe.bone.position.add(_v2);
+    this._grnd = g;
+  }
+
   /**
    * Post-pose pass on the clip pose: samples the terrain under each foot,
    * pitches planted feet to the slope, clamps the pelvis so the planted
@@ -3157,14 +3221,9 @@ export class PlayerAnimator {
     // pulled the climbing body 0.33 m down and the hands off the ledge)
     const N = this._nat?.ok ? this._nat.by : null;
     const offW = Math.max(dodgeW, this._deadW, N?.climb?.w ?? 0, N?.sit?.w ?? 0);
-    const applyPelvis = (g) => {
-      _v2.set(0, g - this._grnd, 0).applyMatrix3(this._pelvisM3);
-      pe.bone.position.add(_v2);
-      this._grnd = g;
-    };
     if (offW > 0.25) {
       // rolling / dying: release the conform smoothly and leave the pose alone
-      applyPelvis(damp(this._grnd, 0, 8, dt));
+      this._applyPelvis(pe, damp(this._grnd, 0, 8, dt));
       // and forget the ramp state, so the frame she stands up again does not
       // see a whole roll's worth of offset as one frame of "slope"
       this._grndWant = null; this._grndRate = 0;
@@ -3333,7 +3392,7 @@ export class PlayerAnimator {
     const ff = clamp(this._grndRate / rate, -0.07, 0.07);
     const g = clamp(damp(g0, clamp(want + ff, -0.5, 0.5), rate, dt), -0.38, 0.32);
     const dg = g - g0;
-    applyPelvis(g);
+    this._applyPelvis(pe, g);
 
     // Per-foot clamp. Raise any planted foot still underground — and LOWER a
     // planted one still in the air, which the first drop had no term for at
@@ -3708,6 +3767,14 @@ export class PlayerAnimator {
    *
    * @returns {void} state lands in `this._flight[side]`
    */
+  /** A ball where its lock holds it (char space, in `_v5`; `_m4` = inverse model matrix). Was a per-call closure (R48 c). */
+  _ballC(side) {
+    const L = this._locks[side];
+    if (L.on && L.w > 0.5) return _v5.set(L.x, 0, L.z).applyMatrix4(_m4);
+    const b = this.b;
+    return this._charOf(side === 0 ? b.ballL.bone : b.ballR.bone, _v5);
+  }
+
   _stanceStep(dt, moveW, offW) {
     const b = this.b;
     this._mStepT = Math.max(0, this._mStepT - dt);
@@ -3782,11 +3849,6 @@ export class PlayerAnimator {
      * world position; when the lock is off, the bone is. */
     this.model.updateWorldMatrix(true, false);
     _m4.copy(this.model.matrixWorld).invert();
-    const ballC = (side) => {
-      const L = this._locks[side];
-      if (L.on && L.w > 0.5) return _v5.set(L.x, 0, L.z).applyMatrix4(_m4);
-      return this._charOf(side === 0 ? b.ballL.bone : b.ballR.bone, _v5);
-    };
     // the stance she is standing in, captured once per armed window
     for (let s = 0; s < 2; s++) {
       if (this._stepHome[s]) continue;
@@ -3848,15 +3910,15 @@ export class PlayerAnimator {
     let worst = -1, worstLoad = 0;
     for (let s = 0; s < 2; s++) {
       const home = this._stepHome[s];
-      const c = ballC(s);
+      const c = this._ballC(s);
       errs[s] = Math.hypot(home[0] - c.x, home[1] - c.z);
       const L = this._locks[s];
       loads[s] = L.on && !this._flight[s] ? Math.hypot(L.cx, L.cz) : 0;
       if (errs[s] > worst) worst = errs[s];
       if (loads[s] > worstLoad) worstLoad = loads[s];
     }
-    this._stepDbg.err = +worst.toFixed(3);
-    this._stepDbg.lockErr = +worstLoad.toFixed(3);
+    this._stepDbg.err = Math.round(worst * 1e3) / 1e3;          // (no toFixed: a string a frame, R48 c)
+    this._stepDbg.lockErr = Math.round(worstLoad * 1e3) / 1e3;
     const lead = Math.max(errs[0], loads[0]) >= Math.max(errs[1], loads[1]) ? 0 : 1;
     this._tryStep(lead, errs[lead], vx, vz);
     this._tryStep(1 - lead, errs[1 - lead], vx, vz);
@@ -3983,7 +4045,7 @@ export class PlayerAnimator {
      * inside a stance window can exceed STEP_SLIP plus the settle of the frame
      * that detects it. */
     const slip = L.on ? Math.hypot(L.wx - L.sx, L.wz - L.sz) : 0;
-    if (slip > this._stepDbg.slip) this._stepDbg.slip = +slip.toFixed(4);
+    if (slip > this._stepDbg.slip) this._stepDbg.slip = Math.round(slip * 1e4) / 1e4;
     const slipping = slip > STEP_SLIP;
     const urgent = err > URGENT || myLock > MAX_LOCK * 0.5 || slipping;
     /* ...AND PAST THIS, NOT EVEN THE OVERLAP RULE HOLDS IT (fix round 3).
@@ -4020,7 +4082,7 @@ export class PlayerAnimator {
     this._flight[side] = F;
     this._stepDbg.steps++;
     this._stepDbg.side = side;
-    this._stepDbg.len = +err.toFixed(3);
+    this._stepDbg.len = Math.round(err * 1e3) / 1e3;
   }
 
   /**
@@ -7171,10 +7233,12 @@ export class PlayerAnimator {
       { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.105 },
       { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.105 },
     ]);
-    const at = (e, out) => { if (e) out.setFromMatrixPosition(e.bone.matrixWorld); };
-    at(b.pelvis, C[0].a); at(b.head, C[0].b);
-    at(b.thighL, C[1].a); at(b.calfL, C[1].b);
-    at(b.thighR, C[2].a); at(b.calfR, C[2].b);
+    if (b.pelvis) C[0].a.setFromMatrixPosition(b.pelvis.bone.matrixWorld);
+    if (b.head) C[0].b.setFromMatrixPosition(b.head.bone.matrixWorld);
+    if (b.thighL) C[1].a.setFromMatrixPosition(b.thighL.bone.matrixWorld);
+    if (b.calfL) C[1].b.setFromMatrixPosition(b.calfL.bone.matrixWorld);
+    if (b.thighR) C[2].a.setFromMatrixPosition(b.thighR.bone.matrixWorld);
+    if (b.calfR) C[2].b.setFromMatrixPosition(b.calfR.bone.matrixWorld);
     return C;
   }
 
@@ -7207,6 +7271,28 @@ export class PlayerAnimator {
   }
 
   /** W0b targeted fix 2: a point's distance to the nearer of the M10 capsule's `n` axis segments (clobbers _cp0 / _cp1). */
+  /** `_segDist` / `_hcMinAxis` with the result in `_spNum[0]`: `_springs` must not
+   *  box a double per link (R48 c: the function's bar is 4 KB/s). */
+  _segDistN(p, a, b) {
+    _cp0.subVectors(b, a);
+    const l2 = _cp0.x * _cp0.x + _cp0.y * _cp0.y + _cp0.z * _cp0.z;
+    _cp1.subVectors(p, a);
+    let t = l2 > 1e-9 ? (_cp1.x * _cp0.x + _cp1.y * _cp0.y + _cp1.z * _cp0.z) / l2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    _cp1.x -= _cp0.x * t; _cp1.y -= _cp0.y * t; _cp1.z -= _cp0.z * t;
+    _spNum[0] = Math.sqrt(_cp1.x * _cp1.x + _cp1.y * _cp1.y + _cp1.z * _cp1.z);
+  }
+
+  _hcMinAxisN(p, H, n) {
+    let d = Infinity;
+    for (let q = 0; q < n; q++) {
+      this._segDistN(p, H.caps[q].a, H.caps[q].b);
+      const e = _spNum[0];
+      if (e < d) d = e;
+    }
+    _spNum[0] = d;
+  }
+
   _hcMinAxis(p, H, n) {
     let d = Infinity;
     for (let q = 0; q < n; q++) { const e = this._segDist(p, H.caps[q].a, H.caps[q].b); if (e < d) d = e; }
@@ -7324,6 +7410,48 @@ export class PlayerAnimator {
    * the world rotation each bone needs. Because the accumulated rotation is
    * carried down the sweep, no bone matrix is recomputed inside the loop.
    */
+  /**
+   * A bone's world rotation off its matrix, with no `updateWorldMatrix` walk and no
+   * `decompose` (melee W1, R48 c): `_springs` opens with `model.updateMatrixWorld(true)`,
+   * so a parent that is not itself a simulated strand is current here, and a strand's
+   * own parent keeps three's path (it was rewritten by the chain before this one).
+   */
+  _springParentQ(bone, out) {
+    if (bone.name.charCodeAt(0) === 100 && bone.name.startsWith('dyn_')) { bone.getWorldQuaternion(out); return; }
+    const e = bone.matrixWorld.elements, m = _spMq.elements;
+    const sx = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+    const sy = Math.sqrt(e[4] * e[4] + e[5] * e[5] + e[6] * e[6]);
+    const sz = Math.sqrt(e[8] * e[8] + e[9] * e[9] + e[10] * e[10]);
+    const det = e[0] * (e[5] * e[10] - e[6] * e[9]) - e[4] * (e[1] * e[10] - e[2] * e[9]) + e[8] * (e[1] * e[6] - e[2] * e[5]);
+    const ix = (det < 0 ? -1 : 1) / sx, iy = 1 / sy, iz = 1 / sz;
+    m[0] = e[0] * ix; m[1] = e[1] * ix; m[2] = e[2] * ix;
+    m[4] = e[4] * iy; m[5] = e[5] * iy; m[6] = e[6] * iy;
+    m[8] = e[8] * iz; m[9] = e[9] * iz; m[10] = e[10] * iz;
+    out.setFromRotationMatrix(_spMq);
+  }
+
+  /**
+   * Every branch of the solver, once, before anyone is looking (melee W1, R48 c).
+   * The solver is optimised while she stands; a branch that first runs at her first
+   * sprint or step throws the optimised code away ("insufficient type feedback") and
+   * the next seconds run in the baseline tier, where every double is a HeapNumber:
+   * measured 0.76 KB/frame standing, 28 KB/frame in the first sprint. So the strides
+   * are rehearsed at boot and the chains re-seated on their rest pose. No allocation.
+   */
+  _warmSprings(t, ph) {
+    const SC = this._stowCap, scOn = SC ? SC.on : false;
+    const sL0 = this._stL, sR0 = this._stR, pL0 = this._prevStL, pR0 = this._prevStR;
+    for (let i = 0; i < 48; i++) {
+      const v = (i % 4) * 2.3;
+      this._stL = i % 2; this._stR = 1 - (i % 2);
+      if (SC) SC.on = i % 3 === 0;
+      this._springs(1 / 60, t + i / 60, ph, v, Math.min(1, v), Math.min(1, v / 5));
+    }
+    if (SC) SC.on = scOn;
+    this._stL = sL0; this._stR = sR0; this._prevStL = pL0; this._prevStR = pR0;
+    for (let i = 0; i < this._chains.length; i++) this._chains[i].seeded = false;
+  }
+
   _springs(dt, t, ph, speed, moveW, runW) {
     // Sanitise, then integrate. Every force below multiplies into a quaternion
     // the skinned mesh reads, so ONE non-finite input does not produce a
@@ -7335,7 +7463,7 @@ export class PlayerAnimator {
     // nor the MAX_SUB loop below can bind under the current loop; see the note
     // above MAX_SUB. Sanitising still matters: every force below multiplies
     // into a quaternion the skinned mesh reads.
-    dt = Number.isFinite(dt) ? clamp(dt, 1 / 480, 0.05) : 1 / 60;
+    dt = Number.isFinite(dt) ? (dt < 1 / 480 ? 1 / 480 : dt > 0.05 ? 0.05 : dt) : 1 / 60;
     t = Number.isFinite(t) ? t : 0;
     speed = Number.isFinite(speed) ? speed : 0;
     moveW = Number.isFinite(moveW) ? moveW : 0;
@@ -7390,7 +7518,7 @@ export class PlayerAnimator {
     const W0 = this.wind;
     const gust = 1 + (W0.gust || 0) * (0.55 * Math.sin(0.83 * t) + 0.3 * Math.sin(1.97 * t + 1.3) + 0.15 * Math.sin(4.1 * t + 0.7));
     const windX = (Number.isFinite(W0.x) ? W0.x : 0) * gust, windZ = (Number.isFinite(W0.z) ? W0.z : 0) * gust;
-    const windS = Math.hypot(windX, windZ);
+    const windS = Math.sqrt(windX * windX + windZ * windZ);
     const wux = windS > 1e-6 ? windX / windS : 0, wuz = windS > 1e-6 ? windZ / windS : 0;
 
     for (let ci = 0; ci < this._chains.length; ci++) {
@@ -7400,12 +7528,12 @@ export class PlayerAnimator {
 
       /* ---- 1. animated rest pose: positions (matrices) + world quats ---- */
       const rootBone = c.links[0].bone;
-      if (rootBone.parent) rootBone.parent.getWorldQuaternion(_spQ); else _spQ.identity();
+      if (rootBone.parent) this._springParentQ(rootBone.parent, _spQ); else _spQ.identity();
       for (let j = 0; j < N; j++) {
         const bone = c.links[j].bone;
         _spQ.multiply(bone.quaternion);              // Wanim[j] = Wanim[j-1] * L
-        c.wq[j * 4] = _spQ.x; c.wq[j * 4 + 1] = _spQ.y;
-        c.wq[j * 4 + 2] = _spQ.z; c.wq[j * 4 + 3] = _spQ.w;
+        c.wq[j * 4] = _spQ._x; c.wq[j * 4 + 1] = _spQ._y;
+        c.wq[j * 4 + 2] = _spQ._z; c.wq[j * 4 + 3] = _spQ._w;
         _spA.setFromMatrixPosition(bone.matrixWorld);
         anim[j * 3] = _spA.x; anim[j * 3 + 1] = _spA.y; anim[j * 3 + 2] = _spA.z;
       }
@@ -7439,7 +7567,7 @@ export class PlayerAnimator {
       const aB = c.acc;
 
       /* ---- 4. foot-strike impulse (one frame, deeper links get more) ---- */
-      if (strike > 0 && cls.strike > 0) {
+      if (cls.strike > 0) {     // (with no strike this adds zero: no branch that first runs at her first step)
         for (let j = 1; j < n; j++) {
           const w = (0.4 + 0.6 * (j / N)) * cls.strike;
           vel[j * 3] += rx * lat * w;
@@ -7459,8 +7587,9 @@ export class PlayerAnimator {
       // walk, x(1 + runFl) at a sprint). The extra phase is accumulated per
       // chain (`flX`), so the wave never jumps; standing it adds nothing and
       // the idle's tail is the trade wind's alone
-      const rf = cls.runFl > 0 ? cls.runFl * clamp((speed - 1) / 5.8, 0, 1) : 0;
-      if (rf > 0) c.flX += dt * rf;
+      const rfk = (speed - 1) / 5.8;
+      const rf = cls.runFl > 0 ? cls.runFl * (rfk < 0 ? 0 : rfk > 1 ? 1 : rfk) : 0;
+      c.flX += dt * rf;
       const tf = t + c.flX;
       const flA = cw > 0 ? (this.wind.flutter || 0) * windS * (1 + rf) : 0, sd = c.seed;
       for (let s = 0; s < steps; s++) {
@@ -7497,14 +7626,26 @@ export class PlayerAnimator {
       for (let j = 0; j < N; j++) {
         const i0 = j * 3, i1 = i0 + 3;
         // animated direction of this segment, carried by the parent's rotation
-        _spB.set(anim[i1] - anim[i0], anim[i1 + 1] - anim[i0 + 1], anim[i1 + 2] - anim[i0 + 2]);
-        if (_spB.lengthSq() < 1e-12) _spB.set(0, -1, 0); else _spB.normalize();
+        {
+          const bx = anim[i1] - anim[i0], by = anim[i1 + 1] - anim[i0 + 1], bz = anim[i1 + 2] - anim[i0 + 2];
+          const b2 = bx * bx + by * by + bz * bz;
+          if (b2 < 1e-12) { _spB.x = 0; _spB.y = -1; _spB.z = 0; } else {
+            const bi = 1 / Math.sqrt(b2);
+            _spB.x = bx * bi; _spB.y = by * bi; _spB.z = bz * bi;
+          }
+        }
         _spB.applyQuaternion(_spAcc);                      // reference direction
         // where the free integration wants the child
-        _spA.set(pos[i1] - pos[i0], pos[i1 + 1] - pos[i0 + 1], pos[i1 + 2] - pos[i0 + 2]);
-        if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
+        {
+          const ax = pos[i1] - pos[i0], ay = pos[i1 + 1] - pos[i0 + 1], az = pos[i1 + 2] - pos[i0 + 2];
+          const a2 = ax * ax + ay * ay + az * az;
+          if (a2 < 1e-12) { _spA.x = _spB.x; _spA.y = _spB.y; _spA.z = _spB.z; } else {
+            const ai = 1 / Math.sqrt(a2);
+            _spA.x = ax * ai; _spA.y = ay * ai; _spA.z = az * ai;
+          }
+        }
         // bend limit, relative to the parent's achieved rotation
-        const dot = _spA.dot(_spB);
+        const dot = _spA.x * _spB.x + _spA.y * _spB.y + _spA.z * _spB.z;
         if (dot < cosMax) {
           if (dot < -0.9999) _spA.copy(_spB);
           else {
@@ -7516,16 +7657,22 @@ export class PlayerAnimator {
           }
         }
         // place the child at the bind segment length, then bounce it off the body
-        _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
+        { const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg; }
         if (cls.collide) {
           const nc = cls.collide === 2 ? 3 : 1;
           // the child's ANIMATED rest, so a capsule can only stop a strand
           // sinking further in than the artist drew it (see _pushOutOfCapsule)
-          _spE.set(anim[i1], anim[i1 + 1], anim[i1 + 2]);
+          _spE.x = anim[i1]; _spE.y = anim[i1 + 1]; _spE.z = anim[i1 + 2];
           for (let q = 0; q < nc; q++) this._pushOutOfCapsule(_spC, caps[q], _spE);
-          _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
-          if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
-          _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
+          {
+            const ax = _spC.x - pos[i0], ay = _spC.y - pos[i0 + 1], az = _spC.z - pos[i0 + 2];
+            const a2 = ax * ax + ay * ay + az * az;
+            if (a2 < 1e-12) { _spA.x = _spB.x; _spA.y = _spB.y; _spA.z = _spB.z; } else {
+              const ai = 1 / Math.sqrt(a2);
+              _spA.x = ax * ai; _spA.y = ay * ai; _spA.z = az * ai;
+            }
+          }
+          { const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg; }
         }
         if (hcN) {
           // push out, put the particle back at its segment length, and repeat:
@@ -7540,9 +7687,15 @@ export class PlayerAnimator {
             if (!hit) { inside = false; break; }
             inside = true;
             if (it === 0) H.pushes++;
-            _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
-            if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
-            _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
+            {
+              const ax = _spC.x - pos[i0], ay = _spC.y - pos[i0 + 1], az = _spC.z - pos[i0 + 2];
+              const a2 = ax * ax + ay * ay + az * az;
+              if (a2 < 1e-12) { _spA.x = _spB.x; _spA.y = _spB.y; _spA.z = _spB.z; } else {
+                const ai = 1 / Math.sqrt(a2);
+                _spA.x = ax * ai; _spA.y = ay * ai; _spA.z = az * ai;
+              }
+            }
+            { const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg; }
           }
           if (inside) {
             // still in after four passes: the best place on the parent's
@@ -7552,27 +7705,35 @@ export class PlayerAnimator {
             // the candidates are now straight away from each segment's
             // nearest point and from their mean, and the one farthest from
             // BOTH axes wins (where the passes left it, if that is farther)
-            _spE.set(pos[i0], pos[i0 + 1], pos[i0 + 2]);
-            let bestD = this._hcMinAxis(_spC, H, hcN);
+            _spE.x = pos[i0]; _spE.y = pos[i0 + 1]; _spE.z = pos[i0 + 2];
+            this._hcMinAxisN(_spC, H, hcN);
+            let bestD = _spNum[0];
             _hcB.copy(_spC);
-            _spD.set(0, 0, 0);
+            _spD.x = 0; _spD.y = 0; _spD.z = 0;
             for (let q = 0; q <= hcN; q++) {
               if (q < hcN) {
-                this._segDist(_spE, H.caps[q].a, H.caps[q].b);   // leaves parent - axis point in _cp1
-                if (_cp1.lengthSq() < 1e-10) continue;
+                this._segDistN(_spE, H.caps[q].a, H.caps[q].b);   // leaves parent - axis point in _cp1
+                if (_cp1.x * _cp1.x + _cp1.y * _cp1.y + _cp1.z * _cp1.z < 1e-10) continue;
                 _hcU.copy(_cp1).normalize();
                 _spD.add(_hcU);
               } else {
-                if (_spD.lengthSq() < 1e-10) continue;
+                if (_spD.x * _spD.x + _spD.y * _spD.y + _spD.z * _spD.z < 1e-10) continue;
                 _hcU.copy(_spD).normalize();
               }
-              _hcC.copy(_spE).addScaledVector(_hcU, c.seg[j]);
-              const dc = this._hcMinAxis(_hcC, H, hcN);
+              { const sg = c.seg[j]; _hcC.x = _spE.x + _hcU.x * sg; _hcC.y = _spE.y + _hcU.y * sg; _hcC.z = _spE.z + _hcU.z * sg; }
+              this._hcMinAxisN(_hcC, H, hcN);
+              const dc = _spNum[0];
               if (dc > bestD) { bestD = dc; _hcB.copy(_hcC); }
             }
             _spC.copy(_hcB);
-            _spA.subVectors(_spC, _spE);
-            if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
+            {
+              const ax = _spC.x - _spE.x, ay = _spC.y - _spE.y, az = _spC.z - _spE.z;
+              const a2 = ax * ax + ay * ay + az * az;
+              if (a2 < 1e-12) { _spA.x = _spB.x; _spA.y = _spB.y; _spA.z = _spB.z; } else {
+                const ai = 1 / Math.sqrt(a2);
+                _spA.x = ax * ai; _spA.y = ay * ai; _spA.z = az * ai;
+              }
+            }
           }
           /* W0b targeted fix 4 (r2 gate judge: a strand's SEGMENT between two
            * clear particles came 0.0494 m from the capsule surface, every
@@ -7598,7 +7759,8 @@ export class PlayerAnimator {
             }
           }
           for (let q = 0; q < hcN; q++) {
-            const d = this._segDist(_spC, H.caps[q].a, H.caps[q].b);
+            this._segDistN(_spC, H.caps[q].a, H.caps[q].b);
+            const d = _spNum[0];
             if (d < H.minAxis) { H.minAxis = d; H.minCi = ci; H.minJ = j + 1; }
             if (d < H.minSinceRead) { H.minSinceRead = d; H.minCiSR = ci; H.minJSR = j + 1; }
           }
@@ -7621,9 +7783,15 @@ export class PlayerAnimator {
         if (SC.on) {
           for (let it = 0; it < 2; it++) {
             if (!this._pushOutOfCapsule(_spC, SC, null)) break;
-            _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
-            if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
-            _spC.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).addScaledVector(_spA, c.seg[j]);
+            {
+              const ax = _spC.x - pos[i0], ay = _spC.y - pos[i0 + 1], az = _spC.z - pos[i0 + 2];
+              const a2 = ax * ax + ay * ay + az * az;
+              if (a2 < 1e-12) { _spA.x = _spB.x; _spA.y = _spB.y; _spA.z = _spB.z; } else {
+                const ai = 1 / Math.sqrt(a2);
+                _spA.x = ax * ai; _spA.y = ay * ai; _spA.z = az * ai;
+              }
+            }
+            { const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg; }
           }
         }
         // Constraint velocity correction (position-based dynamics), CLAMPED.
@@ -7632,17 +7800,18 @@ export class PlayerAnimator {
         // still, and the chain saturates its bend limit and stays there. The
         // clamp keeps the constraint able to absorb a real impact without ever
         // being a power source.
-        const cvx = clamp((_spC.x - pos[i1]) * invDt * 0.5, -PBD_V_MAX, PBD_V_MAX);
-        const cvy = clamp((_spC.y - pos[i1 + 1]) * invDt * 0.5, -PBD_V_MAX, PBD_V_MAX);
-        const cvz = clamp((_spC.z - pos[i1 + 2]) * invDt * 0.5, -PBD_V_MAX, PBD_V_MAX);
+        const pvx = (_spC.x - pos[i1]) * invDt * 0.5, pvy = (_spC.y - pos[i1 + 1]) * invDt * 0.5, pvz = (_spC.z - pos[i1 + 2]) * invDt * 0.5;
+        const cvx = pvx < -PBD_V_MAX ? -PBD_V_MAX : pvx > PBD_V_MAX ? PBD_V_MAX : pvx;
+        const cvy = pvy < -PBD_V_MAX ? -PBD_V_MAX : pvy > PBD_V_MAX ? PBD_V_MAX : pvy;
+        const cvz = pvz < -PBD_V_MAX ? -PBD_V_MAX : pvz > PBD_V_MAX ? PBD_V_MAX : pvz;
         vel[i1] += cvx; vel[i1 + 1] += cvy; vel[i1 + 2] += cvz;
         pos[i1] = _spC.x; pos[i1 + 1] = _spC.y; pos[i1 + 2] = _spC.z;
 
         // ---- write back: rotate the bone from its reference to the solved dir
         _spQ2.setFromUnitVectors(_spB, _spA);
-        if (Math.abs(_spQ2.w) < 0.999999) {
+        if (Math.abs(_spQ2._w) < 0.999999) {
           // the bone's ACTUAL world orientation right now = qAcc * Wanim[j]
-          _spQ.set(c.wq[j * 4], c.wq[j * 4 + 1], c.wq[j * 4 + 2], c.wq[j * 4 + 3]);
+          _spQ._x = c.wq[j * 4]; _spQ._y = c.wq[j * 4 + 1]; _spQ._z = c.wq[j * 4 + 2]; _spQ._w = c.wq[j * 4 + 3];
           _spQ.premultiply(_spAcc);
           _spQ3.copy(_spQ).invert().multiply(_spQ2).multiply(_spQ);
           c.links[j].bone.quaternion.multiply(_spQ3);

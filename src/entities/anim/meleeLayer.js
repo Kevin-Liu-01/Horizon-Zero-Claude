@@ -3,44 +3,41 @@ import { ClipLayerSet } from './clipLayer.js';
 import { register } from './registry.js';
 
 /**
- * MeleeLayer — how Aloy HOLDS and SWINGS the spear (lane `player-melee`).
+ * MeleeLayer — how Brea HOLDS and SWINGS the lance (melee W1; the system is the
+ * Round-4 player-melee stack, re-tabled on her body and on two hands).
  *
- * Kevin, Sep 17: *"melee and how spear is held needs to be fixed too"*. Before
- * this file the spear was parented to `hand_r` with a hand-tuned Euler and
- * `melee.js::_poseSpear` moved the MESH through the camera plane while Aloy's
- * body did nothing; the rest carry was an ad-hoc angled-behind-the-shoulder
- * pose that only appeared for 2.2 s after a swing and was invisible the rest of
- * the time. Three things change here:
+ * Kevin's bar: "melee performed by the body with the weapon held properly".
  *
- *   1. THE SPEAR IS HELD, NOT PLACED. One rigid grip transform, derived once
+ *   1. THE LANCE IS HELD, NOT PLACED. One rigid grip transform, derived once
  *      from the hand bone's own rest axes (knuckle line = grip axis, palm
- *      centre = shaft axis), is written into the spear's bone-local transform.
- *      Every pose after that moves the HAND; the spear follows because it is
- *      in the hand. Gate A101 is then true by construction on every frame of
- *      every beat, not by tuning.
- *   2. THE BODY PERFORMS THE SWING. A four-key beat table (ready / cock /
- *      contact / follow-through) built from `docs/research/spear-canon.md` and
- *      `reference/spear-*.jpg` drives the right arm by IK, the torso by
- *      procedural yaw/pitch/roll, and the left arm as a counterweight (or onto
- *      the shaft on the two-handed thrust). An upper-body-masked ADDITIVE clip
- *      (`Sword_Attack`, retimed and axially mirrored per combo step) rides on
- *      top of the locomotion tree through anim-core's `ClipLayer`, so the legs
- *      keep their stride while the torso swings.
- *   3. IT LIVES ON HER BACK. A spine socket computed once from the rest pose
- *      carries the spear diagonally across the upper back whenever she is not
- *      in melee, and the draw/holster is a real hand travel along the shaft —
- *      the hand meets the shaft where the shaft already is, so re-parenting is
- *      a sub-centimetre event rather than a teleport.
+ *      centre = shaft axis), is written into the lance's bone-local transform.
+ *      Every pose after that moves the HAND; the lance follows because it is
+ *      in the hand. The LEFT hand then goes ONTO the haft at its table mark
+ *      (55 % in the guard) with the same construction: palm on the axis, index
+ *      toward the blade, and it slides along the haft when the arm is short.
+ *   2. THE BODY PERFORMS THE SWING. A beat table (ready / cock / contact /
+ *      follow-through) drives both arms by IK, the torso by procedural
+ *      yaw/pitch/roll and the legs by a stance table. An upper-body-masked
+ *      ADDITIVE clip (`Sword_Attack`) rides on top of the locomotion tree
+ *      through `ClipLayer`, so the legs keep their stride under a swing.
+ *   3. IT LIVES ON HER BACK, ON THE STOW KIT. The stowed lance she wears is the
+ *      stow kit's skinned piece on the R10 diagonal (`src/hero/carry.js`). The
+ *      prop here is hidden while she is holstered and posed on that same line
+ *      from the first frame of a draw (the kit collapses its copy on that
+ *      frame), the hand travels to the haft where the haft already is, so the
+ *      hand-over is a sub-centimetre event rather than a teleport.
  *
- * MEMORY (Kevin crashed twice): every object this file creates is built once in
- * the constructor and released in `dispose()`. Nothing in `update()` allocates:
- * all working vectors/quaternions are the module-level scratch below.
+ * MEMORY (Kevin's Mac has been force-restarted): every object this file creates
+ * is built once in the constructor and released in `dispose()`. Nothing in
+ * `update()` allocates: all working vectors/quaternions are the module scratch.
  *
- * Owner: `player-melee`. Read `docs/ROUND4-PLAYER-MELEE.md` before editing the
- * beat table — the numbers are measured against the reference stills.
+ * Owner: melee. Numbers and history: docs/ROUND5-MELEE.md.
  */
 
-const { clamp, damp, smoothstep } = THREE.MathUtils;
+/* small enough to be inlined whatever the budget (R48 c; see playerAnimator.js) */
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const damp = (x, y, l, dt) => { const t = 1 - Math.exp(-l * dt); return (1 - t) * x + t * y; };
+const smoothstep = (x, a, b) => { if (x <= a) return 0; if (x >= b) return 1; const u = (x - a) / (b - a); return u * u * (3 - 2 * u); };
 
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -71,14 +68,14 @@ const _gapBone = new THREE.Vector3();
 const _gapPt = new THREE.Vector3();
 /** debug(): the haft midpoint. Its own scratch — it outlives _a's next use. */
 const _mid = new THREE.Vector3();
-/** `_liveSocket`'s own scratch: it runs inside `debug()`, which holds `_mid`. */
+/** `_liveSocket`'s own scratch. */
 const _skMid = new THREE.Vector3();
 const _skA = new THREE.Vector3();
 const _skB = new THREE.Vector3();
 const _skC = new THREE.Vector3();
 /** the prop's world butt on the frame a hand-over happens (`grabGap`). */
 const _hoPos = new THREE.Vector3();
-/** `_backCentre`'s own scratch (it runs inside `_liveSocket`, which holds _d). */
+/** `_backCentre`'s own scratch. */
 const _bcTmp = new THREE.Vector3();
 /** `_reparentGap`'s throwaway direction out-param. */
 const _rgDir = new THREE.Vector3();
@@ -146,12 +143,41 @@ const _ahB = new THREE.Vector3();
 /** ...and `_armHullFinal`'s wrist goal (char). */
 const _ahG = new THREE.Vector3();
 const _ahQi = new THREE.Quaternion();
+/** the left hand's late seat (fix round 1): palm goal, haft butt / tip, knuckle centre */
+const _slG = new THREE.Vector3();
+const _slB = new THREE.Vector3();
+const _slT = new THREE.Vector3();
+const _slP = new THREE.Vector3();
+const _slF = new THREE.Vector3();
 const _ident = new THREE.Quaternion();
+const _hTab = new THREE.Vector3();
+const _hOff = new THREE.Vector3();
+const _hOffD = new THREE.Vector3();
 /** The identity, as a value (never mutated). */
 function _qi() { return _ident; }
+/**
+ * Per-frame number fields are born as decimals (R46, melee W1). A field created as
+ * `0` has the small-integer representation; its first fractional value (her first
+ * step, for most of them, since she stands through the opening) changes the object's
+ * map and throws away every optimised function that read it, in every lane, and the
+ * next seconds run in the baseline tier where each double is a HeapNumber: measured
+ * 0.76 KB/frame standing, 28 KB/frame in the first sprint. The same write also takes
+ * a field out of "never changed" tracking, for numbers and booleans.
+ */
+export function decimalFields(o) {
+  const keys = Object.keys(o);
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    const d = Object.getOwnPropertyDescriptor(o, k);
+    if (!d || !('value' in d) || !d.writable) continue;
+    const v = d.value;
+    if (typeof v === 'number') { if (Number.isFinite(v)) { o[k] = v + 0.25; o[k] = v; } } else if (typeof v === 'boolean') { o[k] = !v; o[k] = v; }
+  }
+  return o;
+}
 
 /**
- * THE GRIP FRACTION. `spear-grip-closeup.jpg`: the right hand wraps the rear
+ * THE GRIP FRACTION. `lance-grip-closeup.jpg`: the right hand wraps the rear
  * ~20 % of the shaft, the butt projecting only a fist-length behind the wrist.
  * `melee.js` used to grip at 0.38 of a 1.85 m haft — 33 cm too far up, which is
  * most of why the carry read wrong. Canon band 0.15-0.28, best 0.22; 0.20 keeps
@@ -193,182 +219,6 @@ export const GRAB_FRAC = 0.60;
  */
 export const GRAB_SNAP = 0.09;
 
-/**
- * THE BACK SOCKET (gate A100, `reference/spear-holster-back-hfw.jpg`).
- *
- * Character space: +X is her LEFT, +Y up, +Z forward, metres, origin on the
- * ground under the pelvis. `MID` is where the shaft's midpoint sits — on the
- * upper back, a little right of the spine and behind the ponytail (measured
- * live: `dyn_hairBackMain_03` sits at z = -0.11, the stowed bow group at
- * (0.10, 1.30, -0.17), so the spear plane goes behind both). `TILT` is the
- * angle off vertical and `LEAN` the sagittal component of it.
- *
- * FINDING 1 in the canon doc: Horizon ZERO DAWN does not put the spear on her
- * back at all — it materialises in her hand on the swing. A100 is a FORBIDDEN
- * WEST rule, and the reference still for it is HFW with its blade end occluded
- * by hair and shoulder pad. It is still the right call here (an invisible
- * spear is the thing Kevin is complaining about) but the judges should know
- * the carry angle is extrapolated from a shaft line, not seen.
- */
-const SOCKET = {
-  /**
-   * FIX ROUND 1 (V48). At z = -0.245 the haft passed 0.099 m from the stowed
-   * bow's limb axis — under a hand's width, and from a dead-back view the two
-   * diagonals read as one X. 0.06 m further off her back puts the measured
-   * separation at 0.16 m, which is the clearance the HFW still shows (and
-   * `debug().bowClear` now measures it, so A100 gates it instead of a judge
-   * guessing from a screenshot).
-   */
-  /**
-   * FIX ROUND 1, x: -0.06 -> -0.17. The canon carry lives on the RIGHT half of
-   * her back — `spear-holster-back-hfw.jpg` puts the butt cap at the right hip
-   * and the shaft climbing to the right shoulder. A 1.85 m haft inside §4's
-   * 30-60 deg band spans ~0.95 m laterally and cannot do that (see TILT), but
-   * sliding the whole carry 0.11 m to her right takes the butt in off her left
-   * thigh, and drops the point where the haft crosses the stowed bow by 0.12 m
-   * — off her neck line and down onto her back, where a crossed rig belongs.
-   */
-  /* FIX ROUND 2, z: -0.225 -> -0.335. The stowed bow's own shell is at
-   * z = -0.03..-0.22, so a carry at -0.225 shares it and the two props read as
-   * one crossed X with nothing between them (V48, measured 0.050-0.070 m of
-   * clearance once the measurement was corrected). At -0.335 the haft passes
-   * cleanly behind the bow; the midpoint ball clamps whatever of it her live
-   * spine will not carry. */
-  MID: new THREE.Vector3(-0.15, 1.18, -0.335),
-  /**
-   * 31 deg, not 33: §4's band is 30-60 deg from vertical and the CANON is
-   * 20-30 (`spear-holster-back-hfw.jpg`, measured 19.6 deg off the visible
-   * straight segment). The band's floor is as close to the reference as §4
-   * allows, and a steeper carry is also a narrower one — at 1.85 m of haft
-   * every degree of tilt is 3 cm of sprawl past her hip and past her shoulder.
-   * The reference carry is not reachable at this length: 20 deg on a 1.85 m
-   * shaft still spans 0.63 m laterally, and §4's own floor spans 0.95 m.
-   */
-  TILT: 31 * Math.PI / 180,   // off vertical, lateral: butt low-left, blade high-right
-  LEAN: 8 * Math.PI / 180,    // sagittal share (top leans forward over the shoulder)
-  /**
-   * WHICH BONE CARRIES IT. `spine_04` was the obvious choice and it measured
-   * 36.8 deg of tilt at idle and 60.5 deg at a sprint — over A100's 60 deg
-   * bar, because the sprint lean pitches the whole upper spine forward and a
-   * socket bolted to the top of that chain inherits all of it. `spine_02` sits
-   * below most of the lean, so the carry tracks her torso without being
-   * levered by it: the same rest placement, about half the excursion.
-   */
-  BONE: 'spine2',
-};
-
-/**
- * THE CARRY IS BOUNDED, NOT JUST ANCHORED (fix round 1, A100).
- *
- * Round 1 wrote the stowed transform as a RIGID offset on `spine_02`'s live
- * world matrix with no bound at all, so whatever that bone did, the 1.85 m
- * shaft did 1.85 m of. At idle/sprint/crouch/bow-draw that is exactly right
- * (36.9 / 54.8 / 40.3 / 40.0 deg of tilt, all inside A100's 30-60 band) — but
- * a dodge roll curls `spine_02` through most of a right angle and the carry
- * inherited all of it: measured here at 87.2 deg of tilt with the blade 0.28 m
- * above the shoulder, and on a loaded box (where the damped layers overshoot
- * further) A100's dodge row failed 2 runs in 3. A coin flip, not a gate.
- *
- * So every number A100 measures now has an ACTIVE BOUND in the pose: the live
- * socket is read exactly as before and then clamped — tilt into a band, the
- * midpoint into a ball around the live upper-back centre, the blade above the
- * shoulder and right of the spine. Inside the bounds nothing changes (idle and
- * crouch pass through untouched, so the numbers still MOVE and the gate still
- * measures something); outside them the carry stops following and rides the
- * bound, which is what a strap across the back does when the spine folds.
- *
- * The bounds sit inside A100's bars with margin, because the gate reads the
- * PROP's own world matrix a frame later, after the twist layer, the ground
- * conform and the spring chains have run.
- */
-const CARRY = {
-  TILT_MIN: 30.5 * Math.PI / 180, // A100 band is 30-60 deg
-  TILT_MAX: 54 * Math.PI / 180,
-  /* A100 bar: midpoint <= 0.30 m from the back centre. FIX ROUND 2: 0.235 ->
-   * 0.265. The carry has to sit OUTBOARD of the stowed bow — the bow runs the
-   * opposite diagonal (measured in char space: lower limb at (-0.279, 0.659,
-   * -0.223), upper at (0.572, 1.880, -0.034)) and the only separation
-   * available is depth, so the ball has to be wide enough to reach behind it.
-   * It is only affordable because the bound is now enforced on the pose the
-   * renderer draws (see `postFix`) rather than on a mid-frame estimate that
-   * the spine then moved by another 0.12 m. */
-  MID_BALL: 0.265,
-  /* A100 bar: > 0.20 m above the right shoulder. FIX PASS 1: 0.26 -> 0.23. The
-   * floor and the ceiling below are the carry's only VERTICAL freedom, and on a
-   * dodge roll it needs all of it — with the corridor at [0.26, 0.60] the bow
-   * bound and the braid servo failed the same rolls together (bow 0.086 m and
-   * braid 0.060 m on one suite run), which is not two tuning problems but one
-   * boxed-in haft. [0.23, 0.66] is 0.43 m of corridor instead of 0.34, both
-   * ends still inside A100's own bars (0.20 and 0.70) by 0.03-0.04 m. */
-  TIP_ABOVE: 0.23,
-  /* ...AND NOT A FLAGPOLE. Fix round 2, finding 4: A100's blade clause was a
-   * FLOOR with no ceiling, so a build whose blade stood 0.73 m over her
-   * shoulder — which is what round 1 shipped, and what the judge read off the
-   * bow-draw still as "towering into the top of the frame" — passed it. A100
-   * now carries a ceiling too, and this is the bound that earns it. */
-  /* 0.62, and it is now the number the drawn prop actually reads.
-   *
-   * Fix round 4: the tilt search inside `_liveSocket`'s bow bound is allowed
-   * to take the carry anywhere in A100's 30-60 deg band, and a steeper tilt
-   * stands the blade higher — so the clause has to be re-applied AFTER that
-   * search, which it now is. With the re-clamp in, the measured maximum tracks
-   * this constant to ~0.015 m across a whole dodge roll (it used to overshoot
-   * to 0.725 m against A100's 0.70 m bar), so the bound can sit just under the
-   * bar instead of guessing at the overshoot. It is 0.69 and not lower on
-   * purpose: every centimetre taken off it is a centimetre the bow bound's
-   * push cannot spend, and the two clauses compete for the same budget.
-   * Measured on the dodge row, holding everything else fixed: at 0.54 the bow
-   * clearance collapsed to 0.067-0.134 m (2 runs in 6 under the 0.10 m bar),
-   * at 0.66 it was 0.064-0.156 (4 in 8 under), at 0.69 it is the range in
-   * §3.6c. `tipAboveShoulderMax` tracks this constant to 0.001 m. */
-  TIP_ABOVE_MAX: 0.66,
-  TIP_RIGHT: 0.22,                // A100 bar: > 0.15 m right of the spine
-  /**
-   * The braid is SIMULATED, so no static placement can dodge it: a roll throws
-   * it a long way off her back and it found the stowed haft at 0.042 m (A100's
-   * bar is 0.06) once the carry stopped flying away from her during a dodge.
-   * So the carry gives way: a servo pushes it outboard — the one direction
-   * that cannot trade the braid for the bow, since both are between the haft
-   * and her spine — until the braid clears, then relaxes back over ~0.25 s.
-   */
-  HAIR_KEEP: 0.105,
-  /* 0.185, was 0.160. The bound is enforced one pose pass before `combat.js`
-   * re-poses the stowed bow, so what it leaves behind is nudged again before
-   * anything is drawn; the extra 25 mm is that residual, measured, not
-   * padding. */
-  /* 0.22 in fix pass 1, was 0.185. This is the TARGET the bound solves for and
-   * A100's bar is 0.10; the difference is the residual between the pose the
-   * bound writes and the pose the renderer draws, because the ground conform,
-   * the twist layer and the spring chains all move `spine_02` after the socket
-   * is written and `combat.js` re-poses the stowed bow after the animator
-   * entirely. Round 4 budgeted 0.085 m for that and measured 0.094-0.180 m of
-   * it inside a full suite (the dodge row failing at 0.0206-0.094). 0.12 m of
-   * budget, and the sweep test below makes the lag itself smaller. */
-  BOW_KEEP: 0.22,
-  /* FIX ROUND 2: 0.085 -> 0.20, and the ramp below is four times faster. The
-   * servo is the only part of the carry that closes its loop on the segment
-   * the renderer actually drew, and during a dodge roll that is the only
-   * honest sensor there is: `combat.js` re-poses the stowed bow AFTER the
-   * animator inside the same sub-step, so the bound's own read of the bow is
-   * always one update stale and extrapolating it did not help (measured: the
-   * bound reported 0.223 m on a haft drawn 0.017 m from the limb). A roll is
-   * ten frames; a servo that needs six of them is not a fix. */
-  PUSH_MAX: 0.22,
-  /**
-   * The hard ceiling on the midpoint after the servo (A100 bar: 0.30).
-   *
-   * FIX PASS 1: 0.296 -> 0.288. The bound writes the socket into `spine_02`'s
-   * LOCAL frame and the ground conform, the twist layer and the spring chains
-   * all move that bone afterwards, so what A100 measures on the DRAWN pose is
-   * this number plus that residual — observed 0.298, 0.299 and 0.304 against
-   * the 0.30 m bar, i.e. up to 8 mm, where 0.296 left only 4. It costs the bow
-   * push nothing measurable now that the push slides tangentially when the ball
-   * is saturated (see `_bowSolve`): the passing runs sit at 0.288-0.296 of
-   * midpoint with 0.113-0.122 m of bow clearance.
-   */
-  MID_CEIL: 0.288,
-};
-
 /** Upper-body bones the masked clip is allowed to write. Legs are absent on
  *  purpose: that is what keeps locomotion intact under a swing (gate A105). */
 const MASK_PREFIX = [
@@ -380,452 +230,133 @@ const MASK_PREFIX = [
 const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
 
 /**
- * THE BEAT TABLE — one entry per swing, four keys each.
+ * THE GUARD AND THE BEAT TABLE (melee W1, on Brea with the 1.55 m lance).
  *
- * `hand` is the right WRIST goal in character space; `shaft` the butt->tip
- * direction (normalised on load); `lh` the left wrist goal, or `null` when the
- * left hand rides the shaft at `lhOn` metres from the grip (negative = toward
- * the butt). `yaw/pitch/roll` are the procedural torso rotations, split across
- * spine_01..03 so the PELVIS never yaws (a yawed pelvis swings the planted
- * feet, and A105 allows 0.08 m of drift).
+ * Character space: +X her LEFT, +Y up, +Z forward, metres, origin on the
+ * ground under the pelvis. `hand` is the right WRIST goal; `shaft` the
+ * butt->tip direction (normalised on load); `lhW` how much the left hand is ON
+ * the haft (1 on it, 0 free at the wrist goal `lh`); `lhOn` where on the haft,
+ * in metres ahead of the right grip (authored on the 1.55 m lance and scaled
+ * by the live length), and the left hand slides there: a two-handed thrust
+ * runs the haft through the front hand. `yaw/pitch/roll` are the procedural
+ * torso rotations split across the three spine joints; `py` is the pelvis's own
+ * turn and `dz` its travel forward, on a standing body only (a stride owns its
+ * hips): the feet are planted by the conform, so the hips load the legs instead
+ * of skating them (A105 reads 0.02 m of drift through it).
  *
- * Every number is read off `docs/research/spear-canon.md` and checked against
- * the stills: cock = `spear-light-windup.jpg` (hand at sternum, shaft +35-40 deg,
- * blade high and FORWARD of the head plane), contact = `spear-light-strike.jpg`
- * (arm extended, hand at chest, shaft through horizontal), follow =
- * `spear-light-follow.jpg` (hand at waist, shaft 10-15 deg below horizontal,
- * spine pitched over the lead foot).
+ * Numbers are for her 0.474 m arm and were read off the offline rig solve
+ * (docs/ROUND5-MELEE.md §2): the left shoulder only reaches the 55 % mark of a
+ * low guard because she is bladed and her trunk comes forward over the front
+ * hand, which is also what a polearm guard looks like (reference/r5/melee).
  *
- * ONE-HANDED, BY THE REFERENCE. Finding 2 of the canon doc: guard, windup,
- * contact and follow-through all show the LEFT HAND EMPTY, used as a
- * counterweight. Through round 4 the L3 thrust was kept two-handed; since
- * round 5 (orchestrator ruling R1) every beat is one-handed and the left hand
- * never rides the shaft (A101 gates that).
+ * THE GUARD: right hand low beside the hip at 20 % of the haft, left hand
+ * forward at 55 % (bible §5.3), blade forward and down, tip 0.35-0.55 m (R2).
+ *
+ * THE BEATS. All but light-3 carry two hands on the haft (R1, R12).
+ *   light-1  the hip-driven THRUST: hands chamber back at the right hip with
+ *            the blade up, the rear foot pushes, the haft runs through the
+ *            front hand, the follow drops the blade off to her right.
+ *   light-2  the SWEEP, left to right: the shoulders wind left and the blade
+ *            crosses level at chest height, the hips first.
+ *   light-3  the one-handed LONG STAB (R1): the left hand lets go, trails as a
+ *            counterweight, the arm goes out over the lead foot.
+ *   heavy    the two-handed DRIVE (R3, R12): she sinks and winds up with the
+ *            blade high and both hands on the haft, then the whole trunk comes
+ *            down behind it; the fist lands at shoulder height, outboard of
+ *            the head line, the reach from spine pitch and the lunge.
  */
-/**
- * ROUND 5 (orchestrator ruling R2, Sep 26): THE TIP COMES UP TO THE SHIN.
- * Round 4's shaft [0.40, -0.50, 0.77] put the tip at 0.38 m — inside canon M7's
- * 0.35-0.55 m, but on its floor. [0.40, -0.37, 0.84] puts it at 0.43 m
- * (measured by A101 on the settled guard, off the prop's own matrix). And the
- * angles quoted below are ORTHOGRAPHIC — the shaft vector projected onto a
- * plane, not read off any camera: 47 deg off vertical in the front plane
- * (atan 0.40/0.37; the "39 deg" further down is the round-4 vector's),
- * 24 deg below horizontal in the side plane, 22 deg below horizontal in 3-D.
- *
- * THE GUARD — ONE POSE, READ FROM EVERY CAMERA (fix round 4, finding F2).
- *
- * Round 3's guard was canon in profile and wrong from the front: `shaft` was
- * [0.22, -0.47, 0.86], i.e. 25 deg off vertical once the forward component is
- * foreshortened away, so V46's front tile showed a spear hanging down the
- * right leg with the tip in the dirt while the side tile showed the correct
- * angled low carry. Both tiles were the same pose; only one of them said so.
- *
- * Two things change. The shaft now carries a real LATERAL component (0.40,
- * her left) so the haft crosses the front of the thigh and projects as a
- * diagonal from any bearing — 39 deg off vertical head-on, 30 deg below
- * horizontal in profile, which is still inside the canon's -20...-35 deg band
- * (`spear-canon.md` M6). And the free arm comes forward rather than hanging
- * behind the hip: `spear-ready-side.jpg` has the left hand open and slightly
- * ahead of the body as a counterweight, not trailing.
- *
- * Geometry it produces on a 1.591 m haft gripped at 0.20: butt (-0.487,
- * 1.179, 0.015) — a fist-length stub behind the wrist, at the belt line; tip
- * (0.148, 0.384, 1.239) — knee height (canon M7: 0.35-0.55 m), 1.24 m ahead of
- * her and just across the midline, i.e. blade ahead of the leading knee.
- */
+/* FIX ROUND 1 (the judge's V46 finding: a hand on the hip, the elbow back): the
+ * rear wrist 0.05 m further forward and up, the haft a little more to her left,
+ * the trunk turned and pitched further toward the front hand. How far forward the
+ * rear fist can go is set by A101's bars, not by taste: the left palm has to reach
+ * 50-60 % of the haft with the tip at 0.35-0.55 m, and her arm is 0.475 m; the pose
+ * lab (f1) measured the left hand sliding to 40-43 % of the haft with the wrist 0.17-0.27 m
+ * further forward (doc §6.2). */
 const READY = {
-  hand: [-0.36, 1.02, 0.26], shaft: [0.40, -0.37, 0.84],
-  lh: [0.35, 0.93, 0.08], lhOn: 0, yaw: -0.10, pitch: 0.10, roll: 0,
+  hand: [-0.23, 1.12, 0.0], shaft: [0.38, -0.40, 0.83],
+  lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.50, yaw: -0.40, py: -0.28, pitch: 0.32, roll: 0.02, dz: 0.0,
 };
-
 /**
- * THE LOWER BODY — FOUR STANCES, NOT ONE (fix pass 2, the film judge's blocker).
- *
- * THE DEFECT, AND IT WAS STRUCTURAL RATHER THAN A TUNING MISS. The judge
- * cropped the leg region out of V47's four CONTACT panels and measured them
- * against each other: mean absolute pixel difference 2-3/255 between EVERY
- * pair, i.e. background noise. Four different swings, one identical pair of
- * legs and one identical cast shadow, with only the arm moved — which is the
- * literal text of the gate's own FAIL clause and of Kevin's Sep 17 complaint.
- *
- * The reason was three lines up the file: `_mask` keeps only `MASK_PREFIX`
- * tracks, so the retimed `Sword_Attack` clip has NO leg tracks at all, and the
- * whole lane's own comment ("with no leg tracks in the clip, the stride is
- * untouched by construction") was ALSO saying, without noticing, that this
- * layer could not move a leg if it wanted to. `beat.step` in the tables below
- * was never read by anything: the real step is a velocity impulse in
- * `melee.js::_stepIn`, and a pinned still (which is what V47's comparison
- * panels are) has no impulse, so all four panels rendered the locomotion idle
- * stance.
- *
- * WHAT THIS IS. A per-beat stance, authored the way `playerAnimator` already
- * authors its own procedural leg poses (the tall-grass sink, plant-and-turn,
- * the stop settle, the flinch brace): thigh flexion, knee bend, ankle
- * compensation, thigh abduction for the track width, and a pelvis offset handed
- * back to the animator so the ground conform's pelvis clamp plants the feet
- * against it instead of fighting it. Signs follow that precedent — `thigh` X
- * negative is flexion (knee forward), `calf` X positive is knee bend, `foot` X
- * negative is the ankle catching up, `dy` negative drops the hips, `dx`
- * positive shifts the weight to her LEFT, `abd` widens the track.
- *
- * WHY IT CANNOT TOUCH A105's JOGGING ROW. It is gated on
- * `playerAnimator._strideT` — the animator's own "neither stance weight has
- * dropped in the last tenth of a second", i.e. both feet welded to the floor —
- * which is the same test `_stanceStep` already stands down on. At a jog the
- * gate is 0 and the legs are the stride's, exactly as before; at a standstill
- * it is 1. It is damped, so a standing swing that lifts a foot through
- * `_stanceStep` does not pop (the locomotion clip's stance weights do not drop
- * for a melee step, only `_flight` does).
- *
- * THE FOUR ARE DISTINGUISHABLE AS SILHOUETTES, which is what the judge measures:
- *   light-1  lead (left) knee driving, trail leg near straight, shallow sink
- *   light-2  the MIRROR — weight back on the right leg as the sweep returns
- *   light-3  a deep lunge: left knee folded, right leg extended behind, heel up
- *   heavy    both knees folded, widest track, the deepest drop of the four
+ * Her legs, per beat. Rotations are char-space radians on thigh, calf and
+ * foot; `dx/dy` the pelvis offset. Read with STANCE_ENV: nothing in a windup's
+ * opening, full at the contact, gone by the end of the recover.
  */
-/* NO STANCE OUTSIDE A SWING, AND THAT IS A MEASUREMENT (fix pass 2, second
- * pass). The first version also carried a small `ready` sink (2 cm of hip) so
- * the guard read as weight on the balls of the feet. It costs more than it buys:
- * the guard's stance ramps in with the layer's own `w`, i.e. during the DRAW and
- * the HOLSTER, which is the one moment in this lane with a hard bar on prop
- * continuity — A102's `reparentGap`, 0.10 m. Measured over 12 isolated runs with
- * the gate's stall injection, the ready sink took that number from a steady
- * 0.039-0.042 m to 0.003-0.093 m, two runs inside 7 % of the bar, because the
- * hand hangs off a spine the sink was moving on the frame the prop changed
- * parent. The guard is already the pose V46 and the reference still agree on, so
- * the term applies to SWING frames only and the hand-over sees a stance that is
- * not moving at all. */
+/** The left forearm's axis off her pelvis->neck axis (a forearm is 0.05 thick, her belly 0.12 out). */
+const LEFT_FORE_CLEAR = 0.13;
+/** How much of the trunk's turn the head keeps, and how much of its lean the
+ *  neck and skull take out (see `update`). */
+const HEAD_LEAD = 0.14;
+const HEAD_LEVEL = 0.92;
+/** The wrap and knot tails: the two simulated chains near the haft (A104). */
+const TAIL_RE = /^dyn_(wrapSash|sashEnd|hairKnotTail)/;
+/** `lhOn` is authored on the 1.55 m lance at the guard's 0.20 -> 0.55. */
+const LH_ON_REF = 0.5425;
+/** Her wrist to the palm's centre on the haft (m; measured on the UBC hand). */
+const LH_PALM = 0.075;
+/** The left hand never slides closer to the right hand than this (m). */
+const LH_ON_MIN = 0.14;
+/** The recoil on a hit: metres back along the haft, and its decay (1/s). */
+const RECOIL_LIGHT = 0.045;
+const RECOIL_HEAVY = 0.085;
+const RECOIL_RATE = 11;
+/** How much of a stance one RENDERED frame may take on (a loaded box must not
+ *  snap her hips; see `_stance`). */
+const STANCE_STEP_MAX = 0.10;
 const STANCE = {
-  'light-1': { thighL: -0.22, thighR: -0.04, calfL: 0.30, calfR: 0.10, footL: -0.12, footR: -0.03, abd: 0.03, dx: 0.05, dy: -0.055 },
-  'light-2': { thighL: -0.10, thighR: -0.50, calfL: 0.18, calfR: 0.66, footL: -0.06, footR: -0.26, abd: 0.12, dx: -0.11, dy: -0.140 },
-  'light-3': { thighL: -0.44, thighR: 0.14, calfL: 0.50, calfR: 0.06, footL: -0.18, footR: 0.18, abd: 0.05, dx: 0.09, dy: -0.140 },
-  heavy: { thighL: -0.54, thighR: -0.32, calfL: 0.98, calfR: 0.86, footL: -0.38, footR: -0.32, abd: 0.26, dx: -0.06, dy: -0.370 },
+  ready: { thighL: -0.54, thighR: 0.16, calfL: 0.72, calfR: 0.34, footL: -0.17, footR: -0.30, abd: 0.15, dx: 0.0, dy: -0.115 },
+  /* fix round 1 (V47: "four different actions", the body doing the work): light-1 is
+   * a lunge (the lead knee over the foot, the rear leg long), light-2 a wide base with
+   * the weight going onto the lead leg under the sweep, light-3 sinks onto the lead
+   * knee under the overhand stab; f1's pose lab filmed and measured them */
+  'light-1': { thighL: -0.88, thighR: 0.48, calfL: 0.86, calfR: 0.08, footL: -0.14, footR: -0.44, abd: 0.10, dx: 0.02, dy: -0.19 },
+  'light-2': { thighL: -0.55, thighR: 0.30, calfL: 0.70, calfR: 0.22, footL: -0.12, footR: -0.30, abd: 0.22, dx: 0.06, dy: -0.15 },
+  'light-3': { thighL: -0.84, thighR: 0.34, calfL: 1.00, calfR: 0.14, footL: -0.10, footR: -0.30, abd: 0.11, dx: 0.05, dy: -0.175 },
+  /* the heavy sinks deepest (V47: "a low committed drive with the hips lowest"; A102 pins it 0.04 m under
+   * every light): r1/r2b read its pinned hips 0.643 / 0.669 m against light-3's 0.722 / 0.701, so the
+   * margin was the run's noise. Both knees bend further and the long stab stands 0.015 m taller. */
+  heavy: { thighL: -1.00, thighR: 0.50, calfL: 1.20, calfR: 0.30, footL: -0.28, footR: -0.50, abd: 0.18, dx: -0.03, dy: -0.32 },
 };
-
-/**
- * How much of its stance a beat is carrying, as a function of the swing's own
- * monotone progress (`_blend`'s `clipU`: 0 at the guard, 0.30 at the cock, 0.68
- * at contact, 0.82 at the follow-through, 1 back in the guard).
- *
- * The weight LOADS into the cock, DRIVES to full at contact, HOLDS through the
- * follow-through — the canon's "weight over the lead foot" is a
- * follow-through note, not a contact note — and rises out of it on the return.
- */
+/** How much of a beat's stance is on at clip progress `cu` (0 cock .. 1 end). */
 const STANCE_ENV = (cu) => (
-  cu <= 0.30 ? 0.55 * smoothstep(cu / 0.30, 0, 1)
-    : cu <= 0.68 ? 0.55 + 0.45 * smoothstep((cu - 0.30) / 0.38, 0, 1)
+  cu <= 0.30 ? 0.20 * smoothstep(cu / 0.30, 0, 1)
+    : cu <= 0.68 ? 0.20 + 0.80 * smoothstep((cu - 0.30) / 0.38, 0, 1)
       : cu <= 0.82 ? 1
         : 1 - smoothstep((cu - 0.82) / 0.18, 0, 1)
 );
-
-/**
- * HOW FAST THE STANCE MAY CHANGE, PER RENDERED FRAME — and this one is not a
- * style choice, it is the bound that keeps A105's standing row honest.
- *
- * Measured: with no limit, the term passed A105 in isolation (planted drift
- * 0.011 m against a 0.08 m bar) and FAILED it inside a full suite at 0.1109 m.
- * That is the signature of a frame-rate-dependent defect, and the mechanism is
- * exact: the ground conform's foot lock pins the ball's world XZ with a rigid
- * hip rotation over two passes, which has a finite correction per frame, while
- * `STANCE_ENV` loads the whole stance across a 0.15 s windup. At 60 fps that is
- * nine frames and the lock keeps up; at the 12-17 fps a box running sixteen
- * lane suites renders, it is two or three, each carrying ~0.1 of amplitude —
- * about 0.02 m of ball travel per frame on the heavy's lever — and the lock
- * eats the remainder as drift.
- *
- * So the amplitude may move at most this much per RENDERED frame (the same
- * device `CARRY_STEP_MAX` and `STANCE_STEP_MAX` use, and for the same reason:
- * the melee layer runs on sim sub-steps, several per drawn frame, so a
- * per-second rate limit does not bound what the player or the gate SEES). A
- * full 0 -> 1 ramp therefore takes at least 10 drawn frames; above ~60 fps the
- * envelope runs out of clock first and nothing changes, and below it the
- * stance simply arrives shallower, which costs depth and never costs a planted
- * foot.
- */
-const STANCE_STEP_MAX = 0.10;
-
-/* FIX ROUND 2 — THE CONTACT REACHES 7-8 cm FURTHER.
- * The haft is 0.33 m shorter than round 1's (melee.js SPEAR_SCALE) and A103
- * measures the blade tip against the impact point the hull raycast returns:
- * with three rendered frames in a 0.1 s strike the reading came out at
- * 1.29-1.45 m against a 1.2 m bar on a loaded box. The arm gives the length
- * back at the one beat that needs it — the contact and its follow-through —
- * which is also what the canon's strike is (hand driving forward to chest
- * height, the shaft flattening into a thrust). */
-/* THE CONTACT KEYS PITCH THE SPINE HARDER THAN ROUND 3 (fix round 4, F3).
- * Not for the look — though the canon asks for it ("spine pitches forward over
- * the lead foot") — but for REACH. The wrist goal is in character space and
- * the arm is at full extension at contact on every light (measured: authored
- * hand z 0.76, posed hand z 0.49-0.56), so authoring the goal further forward
- * buys nothing; what does buy reach is moving the SHOULDER, and 0.12 -> 0.28
- * rad of spine pitch carries it ~0.07 m down the swing line. */
 const BEATS = [
-  { /* L1 — right-to-left horizontal sweep at chest height */
-    id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.26,
-    /* FIX PASS 1: the cocked HAND sits 0.08 m closer to the contact than round
-     * 4 authored it (the cocked SHAFT is untouched, and the shaft is what a
-     * cock reads as). The cock->contact chord is the fastest leg in the swing
-     * and a loaded box renders the whole of it between two frames — see
-     * `STRIKE_PRE`. 0.567 m of wrist chord over the strike's 54 ms could not be
-     * drawn inside A102's per-frame budget however it was eased; 0.51 m spread
-     * over 132 ms can. */
-    cock: { hand: [-0.34, 1.18, 0.38], shaft: [-0.70, 0.58, 0.42], lh: [0.28, 0.95, 0.28], lhOn: 0, yaw: -0.38, pitch: -0.06, roll: 0.04 },
-    /* FIX ROUND 4 (F3): CENTRED, AND LONGER. The contact key used to leave the
-     * blade tip 0.33 m to her LEFT of the centre line (hand x -0.04 plus 1.27 m
-     * of haft along a shaft yawed 9.8 deg), so a sweep at a machine standing
-     * dead ahead was measured past it: filmed per frame, the tip-to-hull
-     * distance went 0.49 m at 62 % of the cock-to-contact leg and BACK UP to
-     * 0.62 m at 92 %, because the blade had already swept through. The shaft
-     * is now aimed so the tip crosses the midline AT contact, and the hand
-     * reaches 0.08 m further forward — which is where light-3's contact
-     * already is, so it is a reach the arm demonstrably has. */
-    /* FIX PASS 1 (the film judge's "L1, L2 and L3 now share one contact pose").
-     * Round 4 collapsed all three light contacts onto one forward thrust —
-     * hands within 0.08 m and shafts within 3.5 deg — because every centimetre
-     * of height or bearing was being spent on reach. The approach term has
-     * since bought 0.9 m of standoff and A103 measures the blade 0.04-0.16 m
-     * INSIDE the hull, so the separation is affordable again and it is taken
-     * on the two axes a still shows: the BEARING (this sweep's tip crosses the
-     * midline to her left, 12.7 deg of yaw; light-2's leaves to her right) and
-     * the wrist HEIGHT (chest, 1.14 m; light-2 waist, light-3 high, heavy
-     * overhead). Reach cost, measured against the round-4 key: the shaft's
-     * forward component drops 1.00 -> 0.978 of unit length, i.e. 0.03 m of the
-     * 1.27 m lever, and the hand is 0.02 m further forward to pay it back. */
-    /* ROUND 5: THE SWEEP COMES UP TO THE BODY. With the machine staged facing
-     * her (A103 used to stage it at a random yaw) and the approach term bounded
-     * by its hulls, a Watcher's body is at chest height in front of her and its
-     * legs below: light-1's level-to-falling blade at char y 1.03 was reading
-     * 0.12-0.15 m short on the poses where the head-on outline is longest. The
-     * shaft now rises 3 deg instead of falling 3 (tip ~1.15 m), which is also
-     * nearer canon M20 (a horizontal sweep at chest-to-shoulder height). */
-    contact: { hand: [-0.06, 1.14, 0.80], shaft: [0.27, 0.052, 0.9615], lh: [0.34, 0.95, -0.20], lhOn: 0, yaw: 0.26, pitch: 0.28, roll: -0.05 },
-    follow: { hand: [0.16, 1.00, 0.46], shaft: [0.88, -0.24, 0.41], lh: [0.30, 0.94, -0.18], lhOn: 0, yaw: 0.40, pitch: 0.18, roll: -0.10 },
+  {
+    id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.16,
+    cock: { hand: [-0.29, 1.24, -0.24], shaft: [0.40, 0.47, 0.79], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.50, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
+    /* fix round 1: a LEVEL THRUST, the front arm long and the hips driven over the lead foot */
+    contact: { hand: [-0.12, 1.10, 0.45], shaft: [0.06, 0.05, 0.997], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.42, py: 0.08, pitch: 0.45, roll: -0.04, dz: 0.22 },
+    follow: { hand: [-0.13, 1.06, 0.46], shaft: [0.16, -0.20, 0.966], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.36, yaw: -0.42, py: 0.06, pitch: 0.42, roll: -0.06, dz: 0.20 },
   },
-  { /* L2 — the return, left-to-right, a little lower.
-       FIX ROUND 4 (finding F4): this beat had no margin anywhere and was
-       most of A102's ~44 % isolated-run failure rate. Measured on the
-       round-3 build it sat at torso yaw 14.3-23.1 deg against a 15 deg bar,
-       hand travel 1.02-1.48 m against 1.2, and a 0.235-0.277 m step against
-       0.25 — three clauses inside their own sampling noise, because under
-       the gate's injected 20-80 ms stalls a 0.47 s swing is seven rendered
-       samples and a path length measured on seven chords of an arc loses a
-       fifth of the arc. The beat is not re-tuned to pass; it is authored
-       BIGGER, which is also what it should have been: a return sweep that
-       loads across the body and finishes wide. Authored now: 2.09 m of hand
-       path (was 1.50), 60 deg of torso excursion (was 40), 0.55 m of step
-       (was 0.36). The cock is held at z = 0.38 so the butt stays 0.27 m off
-       spine_02 — CLEAR_BONES gained the lower spine this round (F7) and the
-       old z = 0.34 put it at 0.19 m, inside the guard's own target. */
-    id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.26,
-    /* FIX PASS 1: the cocked HAND crosses to her centre line, not past it. The
-     * mirrored load is carried by the cocked SHAFT (blade up and out to her
-     * left) and by 30 deg of torso yaw, which is what the eye reads; the hand
-     * going all the way to x +0.30 made the READY->cock chord 0.617 m — the
-     * longest leg in any beat, in the shortest phase — and it was the one
-     * A102 clause still over budget after the strike leg was fixed (0.42 m in
-     * a 45 ms frame, measured). 0.474 m now, over 87 ms. */
-    cock: { hand: [0.06, 1.18, 0.42], shaft: [0.78, 0.50, 0.38], lh: [0.28, 0.93, -0.18], lhOn: 0, yaw: 0.52, pitch: -0.06, roll: -0.06 },
-    /* AND IT LANDS LOWER THAN L1 (fix round 4, F1). The canon calls L2 "the
-     * return at the same height, slightly lower"; at 6 cm of difference a side
-     * camera cannot tell the two apart, and V47's job is to let a judge do
-     * exactly that. It does not survive contact with the REACH budget, and
-     * that is measured rather than argued: the hull capsule nearest the blade
-     * on a Watcher is its NECK, which is high, so every centimetre the sweep
-     * drops is a centimetre of reach, and a 0.71 m tip put the reach reading at
-     * +0.61 m on one run in three. Light-2's CONTACT therefore sits where
-     * light-1's does and the difference a judge can see is carried by the
-     * FOLLOW-THROUGH, which is where a mirrored sweep pair actually differs to
-     * the eye: the blade leaves to opposite sides of her. V47 shows that frame
-     * rather than asking a side camera to read a torso yaw. */
-    /* FIX PASS 1: IT LANDS LOWER AGAIN, AND IT LANDS ON THE OTHER SIDE.
-     * Round 4's note below was measured and honest — a 0.06 m drop cost enough
-     * reach to put one run in three over the bar — but it was measured with the
-     * blade 0.3-0.8 m short of the hull. With the approach term the same drop
-     * costs nothing that A103 can see (the reading is negative on every row),
-     * so the beat gets the canon's lower return back: wrist at 1.02 m (0.12 m
-     * under light-1's), the blade RISING through the target at +5.9 deg where
-     * light-1's is level, and the tip leaving to her RIGHT (-13.8 deg of yaw)
-     * where light-1's crosses to her left. Mirrored contacts, not one pose
-     * shot twice. */
-    /* AND THE PAIR SEPARATES ON THE BEARING, NOT ON THE WRIST — measured, and
-     * it is why this shaft RISES rather than sitting level. Authored,
-     * light-2's wrist is 0.12 m BELOW light-1's; live at CONTACT_K it reads
-     * 0.04 m ABOVE it, because the goal is in character space, the arm is at
-     * full extension and the torso pose (yaw -0.28, roll +0.06) lifts the
-     * shoulder more than the goal lowers the hand — so lowering the authored
-     * key further buys nothing a judge or the gate can see. The separation
-     * comes from where the BLADE points: light-1 crosses to her left and level
-     * (+8 deg yaw, -2 deg pitch), light-2 leaves to her right and RISING
-     * (-11 deg yaw, +13 deg pitch), 24 deg apart against A102's 15 deg clause.
-     * The rise costs no reach either — 0.025 m of the lever's forward
-     * component, and it carries the tip to 1.30 m, which on a Watcher is the
-     * NECK, the capsule nearest the blade. */
-    /* ROUND 5 (judge finding M1): 0.05-0.08 m MORE FORWARD TIP. A103 now
-     * solves the blade against the hull in the gate itself, and light-2 was
-     * the beat that came up short on it (the rising shaft spends lever on
-     * height). The rise comes down from +9 to +4 deg and the wrist goal goes
-     * 0.05 m forward; the tip still leaves to her RIGHT and still rises, so the
-     * mirrored pair keeps its bearing split (A102). */
-    contact: { hand: [-0.16, 1.02, 0.83], shaft: [-0.2225, 0.069, 0.9617], lh: [0.32, 0.98, 0.16], lhOn: 0, yaw: -0.28, pitch: 0.30, roll: 0.06 },
-    /* FIX PASS 1: THE FINISH GOES WIDER, and the reason is a measurement.
-     * Trimming the cocked hand back to her centre line (above) cost the whole
-     * beat 0.14 m of authored hand path, and A102's `handTravel` clause is
-     * 1.2 m: the first isolated run after the trim read 1.306 m, which is 9 %
-     * of margin on a polyline measurement that loses a fifth of an arc under
-     * the gate's own injected stalls. The path comes back where a mirrored
-     * sweep should have it — at the END, sweeping down and out to her right —
-     * not at the start, where it was the fastest leg in the shortest phase.
-     * Authored path now 1.95 m; the two legs it lengthens both live in the
-     * 0.26 s `recover`, so the per-frame rate goes DOWN (contact->follow
-     * 5.4 m/s, return 3.2 m/s, against A102's ~8.3 m/s budget). */
-    follow: { hand: [-0.70, 0.90, 0.36], shaft: [-0.90, -0.28, 0.34], lh: [0.34, 0.96, 0.02], lhOn: 0, yaw: -0.52, pitch: 0.18, roll: 0.10 },
+  {
+    id: 'light-2', clip: [0.10, 0.62], mirror: true, clipW: 0.16,
+    /* fix round 1: a SWEEP CROSSING HER FRONT, the blade 33 deg to her right at contact
+     * and the shoulders turned through it (it read as light-1 again at -8 deg) */
+    cock: { hand: [-0.30, 1.26, -0.04], shaft: [0.62, 0.18, 0.763], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.36, yaw: 0.30, py: 0.24, pitch: 0.06, roll: 0.04, dz: -0.04 },
+    contact: { hand: [-0.17, 1.16, 0.28], shaft: [-0.55, 0.0, 0.835], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.24, yaw: -0.50, py: -0.30, pitch: 0.22, roll: 0.06, dz: 0.06 },
+    follow: { hand: [-0.24, 1.04, 0.16], shaft: [-0.80, -0.18, 0.572], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.22, yaw: -0.66, py: -0.42, pitch: 0.18, roll: 0.06, dz: 0.05 },
   },
-  { /* L3 — the wide finisher: a down-and-forward diagonal chop that ends as a
-       thrust (canon: tip from above the shoulder line to below the hip, fully
-       committed body, the longest step of the chain). ONE-HANDED since round 5
-       (orchestrator ruling R1, canon M3): rounds 1-4 put the left hand on the
-       rear of the haft here so A101's two-handed clause had a beat to
-       measure; the ruling voids that clause, and the free arm now TRAILS
-       behind the hip through the contact and the follow-through.
-       The cock is loaded 0.10 m further off her centre line than it reads
-       naturally: the 34 deg of torso rotation that sells this chop also throws
-       the braid forward, and at the original hand position the butt sat 0.19 m
-       off the midline at chest height, which the swinging ponytail closed to
-       0.011 m (gate A104). Clearance the guard cannot buy back after the fact,
-       because the hair is simulated after it. */
-    id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.30,
-    /* ROUND 5: the chop is loaded further to her right (cock shaft x -0.42 ->
-     * -0.60) and finishes further to her left (follow x 0.16 -> 0.30), i.e. a
-     * WIDER diagonal. Measured reason: with the heavy's fist brought down to
-     * her shoulder (R3) the two beats' whole-swing signatures had come within
-     * A102's tolerance on every axis but the tip's yaw sweep, and that one by
-     * 3-4 deg; the sweep is now ~15 deg wider. */
-    cock: { hand: [-0.30, 1.30, 0.34], shaft: [-0.60, 0.70, 0.40], lh: [0.26, 0.98, 0.24], lhOn: 0, yaw: -0.22, pitch: -0.16, roll: 0.04 },
-    /* THE LEFT HAND STAYS ON THE REAR OF THE SHAFT, AND THE ELBOW MOVES
-     * INSTEAD (fix round 4, F7). The obvious answer to A104's new left-forearm
-     * clause (0.106 m to the spine against a 0.10 m bar) was to slide the free
-     * hand FORWARD of the driving fist, which is how a spear thrust is really
-     * held. It does not fit this rig: at `lhOn` +0.10 the target sits 0.87 m
-     * from the left shoulder, past the arm's reach, the IK leaves the hand off
-     * the haft and A101's two-handed clause loses the frames it needs
-     * (measured: twoHandFrames 12 -> 0). So the hand stays where it can reach
-     * and the CLEARANCE is bought at the elbow — `_solveLeft` swings the pole
-     * outboard on two-handed frames. */
-    /* FIX ROUND 4 (F3): the chop lands ON the machine, then continues down.
-     * The contact key put the tip at 0.53 m — under a Watcher, whose body sits
-     * at ~1.0 m — and A103 measured the miss as 0.75 m of reach it was not.
-     * Contact is at 0.85 m now, which is the canon's "below the hip" and the
-     * height the impact points actually come back at; the follow-through still
-     * carries the blade down past the knee, which is where the travel reads
-     * from. */
-    /* FIX PASS 1: THE DIAGONAL IS BACK IN THE CONTACT KEY, NOT ONLY IN THE
-     * FOLLOW. Round 4 levelled this key for reach and the three lights became
-     * one pose. A chop that is level at the moment it lands is a thrust, and
-     * the canon calls light-3 a diagonal. So: the wrist goes HIGH (1.32 m, the
-     * highest of the three lights and 0.18 m under the heavy's) and the blade
-     * is angled 15 deg DOWN into the target — descending, where light-1 is
-     * level and light-2 rises. The tip still lands at 0.97 m (hull height on
-     * every quadruped in the roster) because the wrist carries it, and the
-     * descent continues through the follow to 0.47 m. */
-    /* ROUND 5: 0.06 m more wrist and 0.06 rad more spine for reach (A103 read
-     * light-3 0.08-0.12 m short on the longest head-on outlines). */
-    contact: { hand: [-0.30, 1.42, 0.82], shaft: [0.20, -0.26, 0.944], lh: [0.32, 0.92, -0.28], lhOn: 0, yaw: 0.02, pitch: 0.38, roll: 0.02 },
-    /* THE CHOP FLATTENS INTO A THRUST AT CONTACT AND DROPS AFTERWARDS, NOT
-     * BEFORE IT (fix round 4, F3). Filmed per strike frame against a Watcher:
-     * the blade crossed the hull at k = 0.48 (tip 1.24 m) and was 0.56 m clear
-     * again by k = 0.87 (tip 0.66 m) — the whole descent happened inside the
-     * strike window, so where the hit landed inside that window decided
-     * whether it connected, and A103's reach reading swung 0.5 m run to run on
-     * this beat alone. The contact key is level now — which is what the canon
-     * says light-3 is, "a down-and-forward diagonal chop ENDING AS A THRUST" —
-     * and the descent belongs to the follow-through and the recover, where the
-     * canon's "tip below the hip" still happens (follow tip 0.47 m). */
-    follow: { hand: [0.02, 0.98, 0.70], shaft: [0.30, -0.42, 0.85], lh: [0.36, 0.88, -0.34], lhOn: 0, yaw: 0.10, pitch: 0.30, roll: -0.04 },
+  {
+    id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.20,
+    release: [0.05, 0.42],
+    cock: { hand: [-0.31, 1.28, -0.10], shaft: [0.34, 0.42, 0.84], lh: [0.28, 1.02, 0.20], lhW: 1, lhOn: 0.40, yaw: -0.40, py: -0.26, pitch: -0.06, roll: 0.04, dz: -0.06 },
+    /* fix round 1 (A102 f1: light-3 and the heavy read as ONE arc, contact pitch -15 vs
+     * -3 deg): the overhand stab drives DOWN through the hull, 30 deg under level, which
+     * is also what tells it from the heavy's level drive in V47's frames */
+    contact: { hand: [-0.22, 1.36, 0.60], shaft: [0.12, -0.50, 0.858], lh: [0.40, 0.98, -0.20], lhW: 0, lhOn: 0.40, yaw: 0.24, py: 0.20, pitch: 0.30, roll: 0.02, dz: 0.12 },
+    follow: { hand: [-0.21, 1.08, 0.48], shaft: [0.24, -0.54, 0.806], lh: [0.38, 0.92, -0.24], lhW: 0, lhOn: 0.40, yaw: 0.18, py: 0.20, pitch: 0.26, roll: -0.04, dz: 0.10 },
   },
 ];
-
-/**
- * THE HEAVY — A COMMITTED OVERHEAD-TO-LOW CHOP (fix round 4, finding F1).
- *
- * Round 3's heavy was a LIGHT. Its contact key was `hand [-0.05, 1.12, 0.66]`,
- * `shaft [0.30, -0.06, 0.95]` against light-1's `hand [-0.04, 1.15, 0.64]`,
- * `shaft [0.17, -0.07, 0.98]`: 1 cm of hand and 8 deg of shaft between them.
- * V47's "HEAVY CONTACT" tile and its "L1 CONTACT" tile were the same forward
- * thrust at chest height, taken from the same camera, and A102's distinct-arc
- * clause could not see it because it compared yaw sweep and contact pitch, and
- * a thrust has nearly none of either.
- *
- * The heavy is now the canon's committed overhead (`spear-canon.md` §4:
- * "a heavier sequence of vertical slashes... knock down small to medium
- * machines"), authored as a PATH rather than as a pose:
- *
- *   cock     blade 2.65 m up and 0.76 m FORWARD of her — above the head and
- *            ahead of the head plane, never behind it (canon M11 is a hard
- *            fail if it goes behind); the hand at 1.52 m, spine arched back;
- *   contact  (fix pass 1 — superseded by ruling R3 in round 5, see the key)
- *            the hand drives DOWN and forward to 1.46 m with the shaft 18-22
- *            deg below horizontal, tip at HIP height (char y 1.09, measured on
- *            the live rig at CONTACT_K) and 1.76 m ahead of her, the torso
- *            pitched 0.38 rad over the lead foot;
- *   follow   the blade continues DOWN past the knee (follow tip char y ~0.2)
- *            with the spine folded over the step and the free arm trailing.
- *
- * FIX PASS 1 corrects a claim as well as a number: round 4's comment, the
- * doc's F1 row and the caption on `shots/melee-heavy-contact-side.png` all said
- * the contact key drove the tip "to knee height". Measured at CONTACT_K it was
- * 1.02-1.03 m, which is HIP height — the film judge caught it. Knee height is
- * the FOLLOW key, and that is where the claim belongs.
- *
- * Read as numbers the four swings now separate on every axis A102 measures:
- * the hand DESCENDS 0.50 m through the heavy against 0.19-0.34 m on the
- * lights, its contact hand sits 0.22 m above light-3's, and the shaft sweeps
- * 106 deg of pitch against 49-90. One-handed, per canon finding 2 — no
- * official HZD still shows two hands on a swing, and the only two-handed beat
- * in this lane stays light-3's thrust, which is what keeps the heavy and L3
- * from converging.
- */
 const HEAVY = {
-  id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.34,
-  /* ROUND 5: the cock wrist 0.10 m higher. With the contact fist brought down
-   * to her shoulder (R3) and light-3's chop given more spine for reach, the
-   * two beats' hand paths had converged to within A102's tolerance on three of
-   * its four axes (hand span 0.39 vs 0.48 m); the heavy's committed load is
-   * what separates them, so it is where the span comes from. */
-  cock: { hand: [-0.30, 1.62, 0.22], shaft: [-0.10, 0.90, 0.42], lh: [0.26, 0.96, 0.30], lhOn: 0, yaw: -0.40, pitch: -0.30, roll: 0.10 },
-  /* FIX PASS 1 — THE HEAVY HAS TO LAND (the film judge ran a byte-identical
-   * copy of A103 with `heavy: true` and measured the blade stopping 0.08-0.23 m
-   * SHORT of the hull on every row, where the three lights read -0.001 to
-   * -0.181 m). The cause was geometric: the raised wrist spends the lever's
-   * length on height, so at 1.42 m the tip reached 0.06 m less far forward than
-   * light-1's. The hand goes 0.12 m further forward (0.60 -> 0.72) and the
-   * shaft 4 deg shallower, which is +0.12 m of forward tip. It is now gated:
-   * A103 runs a fourth row with `heavy: true` against the same staging. */
-  /* ROUND 5 (orchestrator ruling R3): THE FIST COMES OUT OF HER FACE. Fix
-   * pass 1's contact wrist [-0.04, 1.46, 0.78] sat on her centre line at face
-   * height, so from a dead-front camera and from V47's row-1 camera the
-   * forearm and the haft crossed her face. The fist is at shoulder height and
-   * OUTBOARD of the head line now (x -0.22 = her right; live, pinned at
-   * CONTACT_K: about [-0.27, 1.15, 0.65] against a head bone at x -0.03 to
-   * -0.09, and 0.13-0.15 m below it), and the
-   * reach it gave up is taken back through the spine (pitch 0.38 -> 0.50) and
-   * the lunge — not by raising the hand. A104 gates the forearm and the haft
-   * outside a 0.16 m head cylinder on this key and the follow. The haft comes
-   * in nearly level (-7 deg) because that is where a Watcher facing her has a
-   * body: at -16 to -22 deg the tip went in UNDER its chest, between the front
-   * legs, and A103 read the blade 0.22-0.73 m short. What still makes it the
-   * heavy is the path: the overhead cock above her head, the deepest stance,
-   * and the follow-through driving on down past the knee (hand 1.10 -> 0.94,
-   * A102's handSpanY 0.44 against the lights' 0.15-0.27). */
-  contact: { hand: [-0.22, 1.24, 0.80], shaft: [0.10, -0.02, 0.995], lh: [0.34, 0.94, -0.18], lhOn: 0, yaw: 0.10, pitch: 0.50, roll: -0.06 },
-  follow: { hand: [0.04, 0.94, 0.54], shaft: [0.22, -0.48, 0.85], lh: [0.30, 0.92, -0.22], lhOn: 0, yaw: 0.22, pitch: 0.52, roll: -0.10 },
+  id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.18,
+  cock: { hand: [-0.28, 1.31, -0.12], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.46, py: -0.36, pitch: -0.10, roll: 0.08, dz: -0.10 },
+  /* fix round 1: the LOWEST, LONGEST drive: the hips sink furthest and travel furthest */
+  contact: { hand: [-0.13, 1.28, 0.47], shaft: [0.10, -0.12, 0.988], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.44, py: 0.12, pitch: 0.55, roll: -0.05, dz: 0.26 },
+  follow: { hand: [-0.15, 1.16, 0.46], shaft: [0.22, -0.36, 0.906], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.40, py: 0.10, pitch: 0.50, roll: -0.08, dz: 0.22 },
 };
-
-/**
- * How long the prop takes to slide out of the transform it was in when the
- * hand took it and into the authored grip (see `_blendCarry`). Short enough to
- * read as a grab, long enough that even a 12 fps frame moves it less than the
- * per-frame budget A102 holds the swing to.
- */
 /** How far before `CONTACT_K` the contact key is reached; it is then HELD for
  *  the rest of the strike window. See `_blend`. 0.16 -> 0.10 in fix pass 1: the
  *  hold is still 0.030 s of a 0.10 s strike, and the 0.006 s it gives back goes
@@ -859,7 +390,7 @@ const RECOVER_FOLLOW = 0.62;
  *
  * No easing inside a 54 ms window can fix that, so the leg gets more clock: the
  * cock is reached at `WINDUP_COCK` of the windup and the release begins there,
- * which is also what a real swing does (a spear does not dwell at the top).
+ * which is also what a real swing does (a lance does not dwell at the top).
  * `STRIKE_PRE` is the fraction of the leg that happens before the strike phase,
  * and it is set to the fraction of the leg's TIME that the windup tail owns —
  * 0.48 * 0.15 s of windup against 0.60 * 0.10 s of strike — so the wrist rate
@@ -968,25 +499,10 @@ const CLEAR_BONES = [
  * overhead at 0.037 m of the braid across repeated runs. The margins here are
  * the lag, measured, not padding.
  */
-/**
- * How far ahead the bow bound looks, in FRAMES of the bow's own measured
- * displacement (see `_bowClearDir`). Fix pass 1: 2.0 -> 1.0. `_bowSample` runs
- * once per rendered frame, so its velocity is a per-FRAME delta and 2.0 was a
- * two-frame lead; `combat.js` re-poses the stowed bow one update after the
- * animator, which is one frame of lag, not two. The bound is also no longer
- * solved against the predicted bow ALONE — it takes the worse of the live and
- * the predicted segment, so a lead that is too long can no longer steer the
- * carry into the bow it is avoiding — which is also why the lead is 1.8 and not
- * 1.0: with the worse-of-two test, OVER-predicting can only add a constraint,
- * while UNDER-predicting still lets the real lag through (the estimate is a
- * lerped, clamped per-frame delta and the first frame of a roll has none yet),
- * so the lead is deliberately generous.
- */
-const BOW_PREDICT = 1.8;
 
-const SHAFT_CLEAR = 0.200;
+const SHAFT_CLEAR = 0.150;
 /**
- * How far the SPEAR-side guard tries to stay off the braid.
+ * How far the LANCE-side guard tries to stay off the braid.
  *
  * Fix round 1: this was 0.150 m, which was the margin the haft needed when it
  * was the only thing that could give — the braid is simulated after this layer
@@ -998,7 +514,7 @@ const SHAFT_CLEAR = 0.200;
  * with the braid already clear at 0.113). 0.095 is above A104's 0.05 hair bar
  * and below the axial target, so the skull and the spine win ties again.
  */
-const HAIR_CLEAR = 0.095;
+const HAIR_CLEAR = 0.07;
 /**
  * How far the free LEFT arm's axis (upper arm, forearm + hand) is kept from
  * the stowed bow's limb axis, metres (round 5 fix pass 1, `_clearLeftArmOfBow`).
@@ -1006,16 +522,6 @@ const HAIR_CLEAR = 0.095;
  * leaves ~0.05 m of daylight. A104 gates >= 0.08 (no contact) on every frame.
  */
 const BOW_ARM_CLEAR = 0.11;
-/**
- * The radius the braid is pushed OUT of, after the spring sim (`_hairOffHaft`).
- * Above A100's 0.06 m and A104's 0.05 m bars so both have margin; well under
- * `HAIR_CLEAR` so it only ever fires on a real intersection, never as a
- * standing offset on the hair's rest shape.
- */
-const HAIR_FIX = 0.078;
-/** How many convergence passes `_hairOffHaft` may take on one frame. See the
- *  loop for the measured reason it is not five. */
-const HAIR_PASSES = 24;
 /** Distance from the spinal axis to the surface things are stowed on. */
 const BACK_DEPTH = 0.13;
 /** Forearm pronation/supination budget, and the wrist deviation left over. */
@@ -1029,7 +535,7 @@ const ELBOW_ROLL = 1.9;
  * major). Every beat's torso pitch (`u.pitch`, up to 0.52 rad on the heavy)
  * was authored on a STANDING body, where the pelvis -> head line starts at
  * ~11 deg off vertical, and it was added on top of whatever the stride had
- * already done. The stride leans her 35-41 deg by itself (measured, spear
+ * already done. The stride leans her 35-41 deg by itself (measured, lance
  * ready, `_moveW` 1), so a jogging heavy reached 56-59 deg with the head
  * down at 1.10 m, and because the drive-hand keys are in CHARACTER space
  * (they do not travel with the spine) the fist ended 0.09 m ABOVE the head
@@ -1059,7 +565,12 @@ const ELBOW_ROLL = 1.9;
  * The STANCE legs/pelvis drop is already 0 at a jog (`_stanceW`), so nothing
  * there stacks.
  */
-const JOG_TORSO_CAP = 40 * Math.PI / 180;
+const JOG_TORSO_CAP = 30 * Math.PI / 180;
+const STRIDE_FWD = 0.15;
+/** How much of the shaft's rise a cock keeps on the move (y of the unit shaft). */
+const STRIDE_SHAFT_RISE = 0.18;
+/** The most the arm guards' push may change in one animator step (m). */
+const GUARD_STEP = 0.055;
 /** The stride weight's speed ramp (m/s): above a standing swing's step-in
  *  drive (1.15), full by a slow jog. See `_stridePitch`. */
 const STRIDE_V0 = 1.6;
@@ -1103,7 +614,7 @@ const HEAD_STAB_MAX = 0.055;
 const ELB_OVER_HEAD = -0.01;
 const ELB_BEHIND = 0.07;
 /** "Above the shoulder" for the plane clause: elbow.y > shoulder.y + this. */
-const ELB_BAND = -0.03;
+const ELB_BAND = -0.12;
 /** Elbow-circle samples the guard searches (every 10 deg). */
 const ELB_SAMPLES = 36;
 /** How much of the upper body the draw turns TOWARD the drawing hand: + is
@@ -1126,7 +637,7 @@ const PULL_EASE = (u) => u * u * (3 - 2 * u);
 /** The holster's last leg: the hand leaves the socket DOWN HER SIDE to here
  *  (char), and only then hands the arm back to the locomotion. */
 const SIDE_KEY = {
-  hand: [-0.25, 0.86, 0.10], shaft: [0.0, -0.2, 1.0], lh: [0.30, 0.90, 0.04], lhOn: 0,
+  hand: [-0.25, 0.86, 0.10], shaft: [0.0, -0.2, 1.0], lh: [0.30, 0.90, 0.04], lhOn: 0, lhW: 0,
   yaw: 0, pitch: 0, roll: 0,
 };
 
@@ -1155,7 +666,9 @@ const AIM_YAW = 90 * Math.PI / 180;
 const TIP_GROUND_CLEAR = 0.10;
 /** R9: the drive forearm's axis kept this far off her pelvis->neck axis on
  *  every swing frame (contact with the belly mesh starts at about 0.19). */
-const FORE_CLEAR = 0.24;
+const FORE_CLEAR = 0.15;
+/** The haft's daylight to the skull's largest semi-axis (m). */
+const SKULL_CLEAR = 0.04;
 /** S5: the forearm/fist capsule radius, and the daylight kept to a hull. */
 const ARM_R = 0.05;
 const ARM_CLEAR = 0.06;
@@ -1204,6 +717,9 @@ function unit(v) {
   const l = Math.hypot(v[0], v[1], v[2]) || 1;
   return [v[0] / l, v[1] / l, v[2] / l];
 }
+/** The tables, for the gates and the offline rig tools (never written at runtime). */
+export const MELEE_TABLES = { READY, BEATS, HEAVY, STANCE };
+
 for (const k of ['hand', 'shaft', 'lh']) {
   if (READY[k] && k === 'shaft') READY[k] = unit(READY[k]);
 }
@@ -1217,9 +733,9 @@ export class MeleeLayer {
     this.an = an;
     this.ctx = an.ctx;
     this.ok = false;
-    this.spear = null;
+    this.lance = null;
     this.length = 1.85;
-    /** uniform scale written onto the prop (melee.js SPEAR_SCALE) */
+    /** uniform scale written onto the prop (melee.js LANCE_SCALE) */
     this.propScale = 1;
     this.gripFrac = GRIP_FRAC;
     this.w = 0;                 // how much of the upper body this layer owns
@@ -1229,12 +745,15 @@ export class MeleeLayer {
      * frame so the ground conform's pelvis clamp plants the feet against it */
     this._stanceW = 0;
     this._stanceA = 0;          // rate-limited stance amplitude (STANCE_STEP_MAX)
+    this._stanceMix = 0;        // ...and how far from the guard's stance to the beat's
     this._stanceKey = null;     // the beat whose stance is currently applied
     this._saFrame = -1;
     this._saBudget = 1;
     this.pelvisDx = 0;
     this.pelvisDy = 0;
-    this._held = false;         // is the spear parented to the hand right now?
+    this.pelvisDz = 0;
+    this._pelvisYawNow = 0;
+    this._held = false;         // is the lance parented to the hand right now?
     this._grabK = 0.55;         // drawK at which the hand actually took it
     this._handQ = new THREE.Quaternion();  // last SOLVED hand orientation (char)
     /* the post-swing settle (see `SETTLE_T`): parked at the end, so nothing
@@ -1248,11 +767,11 @@ export class MeleeLayer {
      * `_fracNow` the grip fraction written this frame; `_pathOn` true while
      * the draw/holster drives the arm (the elbow bound is on). */
     this._drawFrom = {
-      hand: [-0.25, 0.9, 0.1], shaft: [0, -0.2, 1], lh: [0.30, 0.90, 0.04], lhOn: 0,
+      hand: [-0.25, 0.9, 0.1], shaft: [0, -0.2, 1], lh: [0.30, 0.90, 0.04], lhOn: 0, lhW: 0,
       yaw: 0, pitch: 0, roll: 0,
     };
     this._holsterFrom = {
-      hand: READY.hand.slice(), shaft: READY.shaft.slice(), lh: READY.lh.slice(), lhOn: 0,
+      hand: READY.hand.slice(), shaft: READY.shaft.slice(), lh: READY.lh.slice(), lhOn: READY.lhOn, lhW: 1,
       yaw: READY.yaw, pitch: READY.pitch, roll: READY.roll,
     };
     this._prevStance = 'holstered';
@@ -1284,6 +803,14 @@ export class MeleeLayer {
       hairClearGuard: 9, hairArgmin: null, hairPreFix: 9, hairFixed: 0,
       carrySlide: 0, carrySpan: 0, carryDur: 0,
       elbowGuard: 0, elbowGuardFail: 0, gripFracNow: GRIP_FRAC, handoverDone: true,
+      /* R48 c: every field a frame writes is declared (an added field is a new hidden class) */
+      drawK: 0, aimLean: 0, aimPitchDeg: 0, aimYawDeg: 0, aimResidDeg: 0, aimW: 0,
+      armHullBack: 0, armHullDeficit: 0, armHullFinal: 0, armHullFinalLeft: 0, armHullFull: 0, armHullLeft: 0,
+      armHullPush: 0, armHullRetract: 0, armHullRoll: 0, armHullT: 0, foreGuard: 0, forearmToSpineL: 9,
+      leftArmToBow: null, legAmp: 0, legBeat: null, legW: 0, lhOnNow: null, lhPalmErr: 0, reachSeen: 0,
+      skullGap: 0, strideHandCut: 0, strideLeanDeg: null, stridePitchCut: 0, strideW: 0,
+      tipGroundLack: 0, tipGroundLift: 0, tipGroundResid: 0,
+      lhReseat: 0, lhGapPre: 0, lhGapPost: 0, lhSlide: 0, armHullFinalL: 0, armHullDefL: 0,
     };
 
     const b = an.b;
@@ -1325,7 +852,7 @@ export class MeleeLayer {
      * out of band.
      *
      * A haft in a closed fist lies in the grip crease, about 1.5 cm proximal
-     * of the knuckle line (`spear-grip-closeup.jpg`: the shaft sits in the
+     * of the knuckle line (`lance-grip-closeup.jpg`: the shaft sits in the
      * fingers with the thumb over it, not back at the wrist). So the axis is
      * placed on the knuckle-line midpoint, backed off toward the wrist along
      * the hand's own long axis — which puts `knuckleToAxis` at 0.015 m by
@@ -1340,27 +867,39 @@ export class MeleeLayer {
     this.gripDirL = shaftC.clone().applyQuaternion(invWh).normalize();
     /** palm centre as a hand-local METRIC offset (divided by bone scale at use) */
     this.palmOffL = palmC.clone().sub(wristC).applyQuaternion(invWh);
-    /** the quaternion that takes the spear's +Z onto `gripDirL` */
+    /** the quaternion that takes the lance's +Z onto `gripDirL` */
     this.gripQ = new THREE.Quaternion().setFromUnitVectors(Z_AXIS, this.gripDirL);
     /** published for the gates: the hand's grip axis in char space at bind */
     this.gripAxisChar = shaftC.clone();
 
+    /* THE LEFT HAND'S GRIP, derived the same way from ITS bones: pinky -> index
+     * along the haft (index toward the blade), the palm centre on the axis. */
+    const idxL = an.bones[an._findName('index_01_l_')];
+    const pkyL = an.bones[an._findName('pinky_01_l_')];
+    const midL = an.bones[an._findName('middle_01_l_')];
+    this._knuckleL = idxL && pkyL ? { i: idxL, p: pkyL } : null;
+    if (idxL && pkyL && midL && b.handL) {
+      const wL = charOf(b.handL.bone), iL = charOf(idxL), pL = charOf(pkyL), mL = charOf(midL);
+      const invWl = b.handL.W.clone().invert();
+      const pc = iL.clone().add(pL).multiplyScalar(0.5);
+      pc.addScaledVector(mL.clone().sub(wL).normalize(), -0.015);
+      this.gripDirLL = iL.clone().sub(pL).normalize().applyQuaternion(invWl).normalize();
+      this.palmOffLL = pc.sub(wL).applyQuaternion(invWl);
+    } else {
+      this.gripDirLL = new THREE.Vector3(-this.gripDirL.x, this.gripDirL.y, this.gripDirL.z);
+      this.palmOffLL = new THREE.Vector3(-this.palmOffL.x, this.palmOffL.y, this.palmOffL.z);
+    }
+
     /* ---------------------- the back socket, from the rest pose ----------- */
-    const spineE = b[SOCKET.BONE] || b.spine4;
+    const spineE = b.spine2 || b.spine4;
     this.socketBone = spineE.bone;
-    /** bind references `_rebuildSocket` re-reads when the haft length changes */
-    this._sockBind = { spineC: charOf(spineE.bone), invWs: spineE.W.clone().invert() };
-    this.socketDir = new THREE.Vector3(0, 1, 0);
-    this.socketMid = new THREE.Vector3();
-    this.socketButt = new THREE.Vector3();
-    this.socketTip = new THREE.Vector3();
-    this.socketGrab = new THREE.Vector3();
-    this.socketPosL = new THREE.Vector3();
-    this.socketQL = new THREE.Quaternion();
-    this.socketDirL = new THREE.Vector3(0, 0, 1);
-    this.socketQChar = new THREE.Quaternion();
-    this.socketAz = 0;
-    this._rebuildSocket();
+    /** The stowed line (char space), when no stow kit is worn: R10's diagonal. */
+    this.socketButt = new THREE.Vector3(0.30, 0.82, -0.20);
+    this.socketDir = new THREE.Vector3(-0.54, 0.84, 0.03).normalize();
+    /** ...and the kit's stowed bow in `spine_02`'s frame (see `_stowBowInit`). */
+    this._bowLA = new THREE.Vector3(); this._bowLB = new THREE.Vector3();
+    this._bowLine = this._stowBowInit();
+    this._sockStamp = -1; this._sockRun = 0;
 
     /* -------------------------- the masked clips -------------------------- */
     this.set = null;
@@ -1390,7 +929,7 @@ export class MeleeLayer {
      */
     this._hairBones = [];
     for (const n in an.bones) {
-      if (/^dyn_hairBack/.test(n)) this._hairBones.push(an.bones[n]);
+      if (TAIL_RE.test(n)) this._hairBones.push(an.bones[n]);
     }
     /** char-space xyz of every `_hairBones` entry, refreshed once per pose. */
     this._hairPos = new Float32Array(this._hairBones.length * 3);
@@ -1417,62 +956,43 @@ export class MeleeLayer {
     this._tipLocalOk = false;
     /** where on the haft the hand actually took it (fraction from the butt) */
     this._grabFrac = GRAB_FRAC;
-    /** the braid servo's current outboard push, metres (see `_carryServo`) */
-    this._carryPush = 0;
-    /** ...and the direction it pushes in, damped (fix round 2, A100 dodge). */
-    this._pushV = new THREE.Vector3(0, 0, -1);
-    /** the stowed bow's char-space limb ends and their per-sub-step velocity */
-    this._bowPA = new THREE.Vector3(); this._bowPB = new THREE.Vector3();
-    this._bowVA = new THREE.Vector3(); this._bowVB = new THREE.Vector3();
-    this._bowHas = false;
-    /** last bounded upper-back centre, for the servo's outward hemisphere */
-    this._backC = new THREE.Vector3();
-    /** last bounded socket, for the servo (no re-solve, no allocation) */
-    this._sockMid = new THREE.Vector3();
-    this._sockDir = new THREE.Vector3(0, 1, 0);
+    this._recoil = 0;
+    this._guardOff = new THREE.Vector3();
+    this._windOn = false;
+    this._prevBeat = null;
+    /* R48 c: every field the frame writes, declared here with the value the lazy
+     * code would have made (an added property is a new hidden class, and every
+     * optimised reader of the old one is thrown away on the frame it appears);
+     * the pose records are born decimal like the rest (`decimalFields`). */
+    this._windFrom = decimalFields({ hand: [0.5, 0, 0], shaft: [0.5, 0, 1], lh: [0.5, 0, 0], lhOn: 0, lhW: 0, yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0 });
+    this._u = decimalFields({ yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0, lhOn: 0, lhW: 0, clipU: 0, armLift: 0 });
+    this._lastDt = 1 / 60;
+    this._prevPhase = null;
+    this._prevSwing = false;
+    this._guardOn = false;
+    this._strideW = 0;
+    this._ahT = 1;
+    this._pfN = 0;
+    this._idleT = 0;
+    /* the left hand's seat, kept for `postFix` (fix round 1, `_seatLeft`) */
+    this._lhOnW = 0;
+    this._lhArmW = 0;
+    this._lhOnWant = 0;
+    this._lhSOn = 0;
+    this._lhReachLack = 0;
+    this._lhFree = new THREE.Vector3();
+    this._weldSwing = false;
+    this._weldWas = false;
 
     this.ok = true;
     register({
       id: 'anim/meleeLayer', file: 'src/entities/anim/meleeLayer.js',
-      owner: 'player-melee', rig: 'aloy', convention: 'BoneSpace + ClipLayer',
+      owner: 'melee', rig: 'brea', convention: 'BoneSpace + ClipLayer',
       status: 'migrated', layers: this.set ? this.set.order.length : 0,
-      gripFrac: GRIP_FRAC, socketTiltDeg: +(SOCKET.TILT * 180 / Math.PI).toFixed(1),
+      gripFrac: GRIP_FRAC,
     });
-  }
-
-  /**
-   * Re-derive the whole back socket from the rest pose for the CURRENT haft
-   * length. Called from the constructor and again from `attachSpear`, because
-   * this lane carries a 1.52 m haft rather than bow.js's 1.85 m one (see
-   * `melee.js SPEAR_SCALE`) and every socket number is a multiple of it.
-   *
-   * No allocation: every vector/quaternion it writes exists already.
-   */
-  _rebuildSocket() {
-    const bind = this._sockBind;
-    if (!bind) return;
-    // butt->tip: vertical, rotated TILT toward her right (-X), then LEAN
-    // forward so the blade clears the shoulder rather than the shoulder blade
-    const st = Math.sin(SOCKET.TILT), ct = Math.cos(SOCKET.TILT);
-    const sl = Math.sin(SOCKET.LEAN), cl = Math.cos(SOCKET.LEAN);
-    this.socketDir.set(-st, ct * cl, ct * sl).normalize();
-    this.socketMid.copy(SOCKET.MID);
-    this.socketButt.copy(this.socketMid).addScaledVector(this.socketDir, -this.length * 0.5);
-    this.socketTip.copy(this.socketMid).addScaledVector(this.socketDir, this.length * 0.5);
-    /* the point on the stowed shaft the right hand reaches for (GRAB_FRAC) */
-    this.socketGrab.copy(this.socketButt)
-      .addScaledVector(this.socketDir, this.length * GRAB_FRAC);
-
-    const socketQ = _q1.setFromUnitVectors(Z_AXIS, this.socketDir);
-    this.socketPosL.copy(this.socketButt).sub(bind.spineC).applyQuaternion(bind.invWs);
-    this.socketQL.copy(bind.invWs).multiply(socketQ);
-    /* The stowed butt->tip axis in the socket BONE's local frame. */
-    this.socketDirL.set(0, 0, 1).applyQuaternion(this.socketQL);
-    /* The bind carry orientation in CHARACTER space (roll included, so a
-     * re-aim never spins the blade about its own axis). */
-    this.socketQChar.copy(socketQ);
-    /* Bind azimuth of the carry about +Y, for the lateral bound. */
-    this.socketAz = Math.atan2(this.socketDir.x, this.socketDir.z);
+    decimalFields(this);
+    decimalFields(this._dbg);
   }
 
   /* ========================== clip plumbing ============================== */
@@ -1500,7 +1020,7 @@ export class MeleeLayer {
     } catch { atk = null; }
     if (!atk && !idle) return;
 
-    this.set = new ClipLayerSet(an.mixer, { name: 'aloy-melee', owner: 'player-melee' });
+    this.set = new ClipLayerSet(an.mixer, { name: 'hero-melee', owner: 'melee' });
     const add = (name, entry, mirror) => {
       if (!entry?.clip) return;
       const clip = this._mask(entry.clip, name, mirror);
@@ -1562,40 +1082,130 @@ export class MeleeLayer {
     return out;
   }
 
-  /* ========================== spear attachment =========================== */
+  /* ========================== lance attachment =========================== */
 
   /** melee.js hands the prop over once; this layer owns where it lives. */
   /**
-   * @param {THREE.Object3D} group the prop
-   * @param {number} length its length in metres AFTER `propScale`
-   * @param {number} [propScale] uniform scale applied to the mesh (see
-   *   `melee.js SPEAR_SCALE`: bow.js builds a 1.85 m haft and this lane
-   *   carries a 1.52 m one)
+   * Hand the layer the prop: butt at its origin, +Z along the haft to the tip,
+   * authored at real length (`propScale` 1: the Round-4 SCALE is retired, M9).
+   * `grip` / `grip2` are the two wrap marks as fractions of the haft from the
+   * butt (the GLB's sockets; bible §5.3: 0.20 / 0.55).
    */
-  attachSpear(group, length, propScale = 1) {
-    this.spear = group || null;
+  attachLance(group, length, propScale = 1, marks = null) {
+    this.lance = group || null;
     if (length > 0.2) this.length = length;
     this.propScale = propScale > 1e-3 ? propScale : 1;
-    this._rebuildSocket();
-    if (this.spear) this.spear.userData.meleeLen = this.length;
-    if (this.spear) this._toBack();
+    if (marks?.grip > 0.05 && marks.grip < 0.5) this.gripFrac = marks.grip;
+    this._lhK = marks?.grip2 > marks?.grip ? ((marks.grip2 - this.gripFrac) * this.length) / LH_ON_REF : this.length / 1.55;
+    if (this.lance) { this.lance.userData.meleeLen = this.length; this._toBack(); }
   }
 
+  /** The kit's carry solve (`src/hero/carry.js`), when she wears the kit. */
+  get _carry() { return this.ctx.player?.hero?.kit?.carry || null; }
+
+  /**
+   * The stowed line right now, char space: butt into `outP`, butt->tip unit
+   * into `outD`. While the kit's copy is collapsed (a draw or a holster) the
+   * kit no longer solves it, so the layer runs the same solve, once per
+   * animator step, for the line the hand is going to.
+   */
+  _liveSocket(outP, outD) {
+    const c = this._carry;
+    if (!c) {
+      const an = this.an, K = this._sockBind0;
+      if (!K) { outP.copy(this.socketButt); outD.copy(this.socketDir); return; }
+      an._charOf(this.socketBone, outP); an._liveW(this.socketBone, _q1);
+      outP.add(_b.copy(K.p).applyQuaternion(_q1));
+      outD.copy(K.d).applyQuaternion(_q1).normalize();
+      return;
+    }
+    const kit = this.ctx.player.hero.kit;
+    if ((kit.hidden & 1) && this._sockStamp !== this._sockRun && this.an.skull) {
+      this._sockStamp = this._sockRun;
+      c.update(this.an, 0, false, this._lastDt || 1 / 60, null);
+    }
+    outP.copy(c.butt);
+    outD.subVectors(c.tip, c.butt).normalize();
+  }
+
+  /** The prop on the stowed line (hidden while holstered; see `_settleLance`). */
+  _poseHolstered() {
+    const g = this.lance;
+    const bone = this.socketBone;
+    if (!g || !bone) return;
+    const an = this.an;
+    this._liveSocket(_grip, _c);
+    const bs = this._boneScale(bone);
+    g.scale.setScalar(this.propScale / bs);
+    an._charOf(bone, _a);
+    an._liveW(bone, _q1);
+    _q2.copy(_q1).invert();
+    g.position.copy(_b.subVectors(_grip, _a)).applyQuaternion(_q2).multiplyScalar(1 / bs);
+    _q3.setFromUnitVectors(Z_AXIS, _c);
+    g.quaternion.copy(_q2).multiply(_q3);
+    this._blendCarry(g);
+  }
+
+  /**
+   * The stowed bow's line in `spine_02`'s frame, read once off the kit's bind
+   * (cold; the constructor runs in the bind pose): its two limb tips. The free
+   * arm of light-3 and A100 / A104 measure against it. False with no kit.
+   */
+  _stowBowInit() {
+    const an = this.an, kit = this.ctx.player?.hero?.kit, m = kit?.meshes?.[0], bone = this.socketBone;
+    if (!m || !bone) return false;
+    const P = m.geometry.getAttribute('_piece'), pos = m.geometry.getAttribute('position');
+    if (!P || !pos) return false;
+    let lo = -1, hi = -1;
+    for (let i = 0; i < pos.count; i++) {
+      if ((Math.round(P.getX(i)) & 2) === 0) continue;
+      if (lo < 0 || pos.getY(i) < pos.getY(lo)) lo = i;
+      if (hi < 0 || pos.getY(i) > pos.getY(hi)) hi = i;
+    }
+    if (lo < 0) return false;
+    an.model.updateMatrixWorld(true);
+    const inv = _m4.copy(bone.matrixWorld).invert().clone();
+    m.getVertexPosition(lo, this._bowLA); m.localToWorld(this._bowLA); this._bowLA.applyMatrix4(inv);
+    m.getVertexPosition(hi, this._bowLB); m.localToWorld(this._bowLB); this._bowLB.applyMatrix4(inv);
+    return true;
+  }
+
+  /** The stowed bow's line, char space; false with no kit. */
+  _bowChar(a, b) {
+    /* the kit is worn after this layer is built: look again until it is there */
+    if (!this._bowLine) { this._bowLine = this._stowBowInit(); if (!this._bowLine) return false; }
+    const kit = this.ctx.player?.hero?.kit;
+    if (kit && (kit.hidden & 2)) return false;   // the bow is in her hand
+    const bone = this.socketBone, an = this.an;
+    bone.updateWorldMatrix(true, false);
+    _m4.copy(an.model.matrixWorld).invert().multiply(bone.matrixWorld);
+    a.copy(this._bowLA).applyMatrix4(_m4);
+    b.copy(this._bowLB).applyMatrix4(_m4);
+    return true;
+  }
+
+  /**
+   * WEIGHT ON THE HIT (feel, plan §2 W1). The blade stopped on something: the
+   * haft is driven back through her hands a little and comes out again. Spent
+   * on GAME time, so the hit-stop holds it at the machine and it plays after.
+   */
+  onHit(heavy) { this._recoil = heavy ? RECOIL_HEAVY : RECOIL_LIGHT; }
+
   _toBack() {
-    if (!this.spear || !this.socketBone) return;
-    if (this.spear.parent !== this.socketBone) {
+    if (!this.lance || !this.socketBone) return;
+    if (this.lance.parent !== this.socketBone) {
       this._captureCarry(this.socketBone);
-      this.socketBone.add(this.spear);
+      this.socketBone.add(this.lance);
     }
     this._held = false;
   }
 
   _toHand() {
     const node = this.an.b.handR?.bone;
-    if (!this.spear || !node) return;
-    if (this.spear.parent !== node) {
+    if (!this.lance || !node) return;
+    if (this.lance.parent !== node) {
       this._captureCarry(node);
-      node.add(this.spear);
+      node.add(this.lance);
     }
     this._held = true;
   }
@@ -1605,7 +1215,7 @@ export class MeleeLayer {
    *
    * FIX ROUND 2, and a real bug this lane shipped the moment the prop was
    * scaled: every "point at z = length" read below transforms a point through
-   * the spear's own matrix, and that matrix carries `propScale`. Feeding it
+   * the lance's own matrix, and that matrix carries `propScale`. Feeding it
    * `this.length` (metres) asks for a point 0.82 of the way up the haft and
    * calls it the tip — which is exactly what made `debug().bowClear` read
    * 0.070 m while the servo, measuring the real segment, read 0.136 m. Local
@@ -1621,83 +1231,6 @@ export class MeleeLayer {
   }
 
   /**
-   * Stowed: the BOUNDED socket (see `CARRY` and `_liveSocket`), written into
-   * the socket bone's local frame so the prop's parent is still the spine.
-   */
-  _poseHolstered() {
-    const g = this.spear;
-    const bone = this.socketBone;
-    if (!g || !bone) return;
-    const an = this.an;
-    this._liveSocket(_grip, _c);              // bounded butt point + butt->tip (char)
-    const bs = this._boneScale(bone);
-    // SCALE and POSITION carry different factors: the mesh is shrunk by
-    // `propScale` (melee.js SPEAR_SCALE), the offset from the bone is not.
-    g.scale.setScalar(this.propScale / bs);
-    an._charOf(bone, _a);
-    an._liveW(bone, _q1);
-    _q2.copy(_q1).invert();
-    g.position.copy(_b.subVectors(_grip, _a)).applyQuaternion(_q2).multiplyScalar(1 / bs);
-    // re-aim the BIND carry orientation rather than rebuilding one, so the
-    // blade's roll about its own axis never changes with the bound
-    _q3.setFromUnitVectors(this.socketDir, _c).multiply(this.socketQChar);
-    g.quaternion.copy(_q2).multiply(_q3);
-    this._blendCarry(g);
-    /* ...AND THE HAND-OVER BLEND CLEARS THE BOW TOO (fix pass 1, A100's dodge
-     * row).
-     *
-     * Everything above is bounded — `_liveSocket` spends four A100 clauses and
-     * the bow solve on the socket — and then `_blendCarry` lerps the result
-     * TOWARD THE CAPTURED HAND TRANSFORM, which is bounded by nothing. For the
-     * 0.16-0.55 s the hand-over lasts, the drawn prop is therefore somewhere
-     * between her hand and her back, and the straight line between those two
-     * places runs past the stowed bow. Filmed on a dodge started during that
-     * window: `carryBowBound` 0.185 (the solve believing it had cleared the
-     * bow) against a MEASURED `bowClear` of 0.0745, with the haft's midpoint
-     * 0.601 m off her back and its blade 1.196 m over her shoulder — i.e. the
-     * numbers of a prop in flight, not of a carry. That is the 0.0206-0.094 m
-     * A100's dodge row kept catching inside a full suite while isolated runs
-     * passed: whether the roll happened to start during a hand-over.
-     *
-     * So the blended pose gets the same hard bound the socket does, in the one
-     * place that can still move the prop: three passes of push-off-the-bow,
-     * translated into the socket bone's own local frame. It only runs while the
-     * blend is live and only when the bow is inside `BOW_KEEP`, so idle, walk,
-     * sprint and crouch never pay for it, and the push is at most `BOW_KEEP`
-     * itself — well inside the per-frame budget A102 holds the hand-over to. */
-    /* ...EASED IN, NOT APPLIED ON THE HAND-OVER FRAME (round 5 fix pass 1).
-     * Until this pass the bow was usually in her LEFT fist while the spear was
-     * out (combat.js counted a swing as a bow action); now it stays on her
-     * back, so every holster hands the spear over NEXT TO it — and the push
-     * below, applied in full on the re-parent frame, IS a teleport: measured,
-     * A102's `grabGap` on every holster equalled this frame's push to the
-     * millimetre (0.011-0.037 m over 24 cycles, 0.129 m once in 23 A102 runs
-     * against its 0.10 m bar). The push now comes in with the blend (0 on the
-     * re-parent frame, full by a third of the way through it), i.e. the
-     * clearance is part of the hand-over's slide, which A102 budgets per frame. */
-    const bowEase = smoothstep(this._carryB, 0, 0.35);
-    if (this._carryB < 1 && this._bowNode()) {
-      let pushed = 0;
-      for (let i = 0; i < 3; i++) {
-        g.updateWorldMatrix(true, false);
-        _m4.copy(an.model.matrixWorld).invert().multiply(g.matrixWorld);
-        _sgA.set(0, 0, 0).applyMatrix4(_m4);
-        _sgB.set(0, 0, this._localLen).applyMatrix4(_m4);
-        const gap = this._bowClearDir(_sgA, _sgB, _sv4, BOW_PREDICT);
-        if (gap == null || gap >= CARRY.BOW_KEEP) break;
-        if (_sv4.z > 0) _sv4.z = 0;                    // never into her back
-        if (_sv4.lengthSq() < 1e-4) _sv4.set(0, 0, -1);
-        if (bowEase <= 1e-4) break;
-        _sv4.normalize().multiplyScalar((CARRY.BOW_KEEP - gap) * bowEase);
-        pushed += (CARRY.BOW_KEEP - gap) * bowEase;
-        _sv4.applyQuaternion(_q2).multiplyScalar(1 / bs);
-        g.position.add(_sv4);
-      }
-      if (this._carryB <= 1e-6) this._dbg.hoBowPush = +pushed.toFixed(4);
-    }
-  }
-
-  /**
    * Held: the haft passes through the palm centre along the hand's own grip
    * axis, with `frac` of its length behind the hand. `frac` is animated during
    * the draw (the hand slides from GRAB_FRAC down to GRIP_FRAC as she pulls it
@@ -1705,7 +1238,7 @@ export class MeleeLayer {
    * than a pop.
    */
   _poseHeld(frac) {
-    const g = this.spear;
+    const g = this.lance;
     const bone = this.an.b.handR?.bone;
     if (!g || !bone) return;
     const s = this._boneScale(bone);
@@ -1725,7 +1258,7 @@ export class MeleeLayer {
    * the haft, and published the residual as `grabGap`. On a quiet box that was
    * 0.084 m; under the full concurrent suite the draw is 0.26 s rendered in
    * two or three frames, the arm's weight ramp has not finished, the hand is
-   * still in flight, and the escape clause handed the spear over at whatever
+   * still in flight, and the escape clause handed the lance over at whatever
    * gap was left — measured 0.111 m with a 1.13 m tip pop, against coded bars
    * of 0.10 m and 0.9 m. The gate failed for a real reason: the prop visibly
    * jumped, and how far it jumped depended on the frame rate.
@@ -1748,8 +1281,8 @@ export class MeleeLayer {
       // residual — and therefore the duration — can finally be measured
       const span = this._carrySpan();
       this._carryDur = clamp(span / CARRY_RATE, CARRY_T, CARRY_MAX);
-      this._dbg.carrySpan = +span.toFixed(3);
-      this._dbg.carryDur = +this._carryDur.toFixed(3);
+      this._dbg.carrySpan = span;
+      this._dbg.carryDur = this._carryDur;
     }
     const k = this._carryB;
     g.position.lerp(this._carryP, 1 - k);
@@ -1768,10 +1301,10 @@ export class MeleeLayer {
    * four times §4's per-frame budget and exactly the teleport the clause is
    * about (A102 measures it). So the duration is stretched until the worst
    * point on the haft is moving under `CARRY_RATE`, and the slide reads as her
-   * turning the spear into her grip rather than as a snap.
+   * turning the lance into her grip rather than as a snap.
    */
   _captureCarry(parent) {
-    const g = this.spear;
+    const g = this.lance;
     if (!g || !parent) return;
     g.updateWorldMatrix(true, false);
     parent.updateWorldMatrix(true, false);
@@ -1783,7 +1316,7 @@ export class MeleeLayer {
 
   /** Worst-case travel of the haft's far end across the rest of the blend. */
   _carrySpan() {
-    const g = this.spear;
+    const g = this.lance;
     if (!g) return 0;
     // the authored pose is already written into `g` when this runs
     _q1.copy(g.quaternion).invert().multiply(this._carryQ);
@@ -1843,8 +1376,10 @@ export class MeleeLayer {
         if (pb > this._carryB) this._carryB = pb;
       }
     }
+    this._sockRun++;
     this._cacheHair();
     this._lastDt = dt;
+    if (this._recoil > 1e-4) this._recoil *= Math.exp(-RECOIL_RATE * dt); else this._recoil = 0;
 
     /* THE DRAW STARTS WHERE THE ARM IS (round 6): capture it on the first
      * frame of a draw, before this layer has touched the arm. */
@@ -1874,7 +1409,7 @@ export class MeleeLayer {
     this.w = damp(this.w, want, stance === 'holstered' ? 9 : (stance === 'draw' ? 30 : 16), dt);
     if (want === 0 && this.w < 0.01) this.w = 0;
     const w = this.w;
-    D.w = +w.toFixed(3);
+    D.w = w;
 
     /* --- swing direction: melee aims down the camera, so the pose does too - */
     const wantYaw = clamp(st?.aimYaw ?? 0, -0.7, 0.7);
@@ -1883,14 +1418,39 @@ export class MeleeLayer {
     if (w <= 0.001) {
       // `_stance` never ran, so withdraw last frame's pelvis offset rather than
       // leaving the animator adding a stale one for ever
-      this.pelvisDx = 0; this.pelvisDy = 0; this._stanceW = 0; this._stanceA = 0;
-      this._clipWeights(null, 0, 0); this._settleSpear(stance, st); return;
+      this.pelvisDx = 0; this.pelvisDy = 0; this.pelvisDz = 0; this._pelvisYawNow = 0; this._stanceW = 0; this._stanceA = 0; this._stanceMix = 0;
+      this._guardOff.set(0, 0, 0);
+      this._clipWeights(null, 0, 0); this._settleLance(stance, st); return;
     }
 
     /* ------------------------ resolve the beat ------------------------ */
     const beat = st.heavy ? HEAVY : BEATS[clamp(st.combo | 0, 0, BEATS.length - 1)];
     D.beat = stance === 'swing' ? beat.id : 'ready';
-    const u = this._blend(stance, st, beat);   // fills _hand/_shaft/_lh + torso
+    /* A NEW SWING STARTS FROM WHERE SHE IS (a combo cuts in on a recover, a held
+     * light turns into a heavy): the cock leg opens from the last pose drawn,
+     * not from the guard, so a beat change is never a jump. */
+    if (stance === 'swing' && this._swingOut && st.phase === 'windup') {
+      const id = beat.id;
+      if (this._prevBeat !== id || this._prevPhase !== 'windup') {
+        const was = this._prevSwing;
+        if (was) {
+          const f = this._windFrom;
+          const so = this._swingOut;
+          for (let i = 0; i < 3; i++) { f.hand[i] = so.hand[i]; f.shaft[i] = so.shaft[i]; f.lh[i] = so.lh[i]; }
+          f.lhOn = so.lhOn; f.lhW = so.lhW; f.yaw = so.yaw; f.pitch = so.pitch; f.roll = so.roll; f.py = so.py; f.dz = so.dz;
+          this._windOn = true;
+        } else this._windOn = false;
+      }
+    } else if (stance !== 'swing') this._windOn = false;
+    this._prevBeat = stance === 'swing' ? beat.id : null;
+    this._prevPhase = stance === 'swing' ? st.phase : null;
+    this._prevSwing = stance === 'swing';
+    const u = this._blend(stance, st, beat);
+    /* the recoil: back along the haft, the far end up a touch */
+    if (this._recoil > 1e-4) {
+      _hand.addScaledVector(_shaft, -this._recoil);
+      u.pitch -= this._recoil * 1.6;
+    }   // fills _hand/_shaft/_lh + torso
     // where her drive SHOULDER is before the animator moves the body under
     // it (see `_pelvisShift`) — read after the torso turns, just below
     /* the swing aimed at the machine and kept out of the ground (round 6):
@@ -1907,7 +1467,7 @@ export class MeleeLayer {
        * 0.04-0.23 m INSIDE the hillside after every swing uphill (probed on
        * the r5 skeptic's slope, Oct 2) — and so did the last frames of a DRAW
        * (the pull ends on that guard: 0.04-0.26 m in, a click from holstered
-       * uphill) and the first of a holster. Whenever the spear is in her hand.
+       * uphill) and the first of a holster. Whenever the lance is in her hand.
        * Flat ground: untouched. */
       this._groundClear(st);
     }
@@ -1927,16 +1487,18 @@ export class MeleeLayer {
     this._stance(dt, w, u, beat, stance);
 
     /* --------------------- procedural torso rotation ------------------ */
-    // NOT the pelvis: yawing the pelvis swings the planted feet and A105 only
-    // allows 0.08 m of drift. spine_01..03 carry the whole excursion, which is
-    // also the axis A102 measures (pelvis -> spine_03).
+    // spine_01..03 carry the twist over the hips, which is the axis A102 measures
+    // (pelvis -> spine_03); the pelvis's own turn is `_stance`'s, above.
     const yaw = u.yaw * w, roll = u.roll * w;
     // budgeted against the stride's own lean while she is moving (JOG_TORSO_CAP)
     /* ...plus the LEAN INTO a target the blade cannot otherwise reach (round
      * 6, R7): reach comes from the spine and the step (canon, R3), so when
      * the aimed hull point is beyond this beat's reach the spine pitches in by
      * up to `AIM_LEAN_MAX` over the release and the contact. */
-    const pitch = this._stridePitch(u.pitch * w + (stance === 'swing' ? this._aimLean(st, beat, w) : 0), dt);
+    /* the guard's forward lean is for standing: on the move the stride already
+     * carries the trunk, and the lance rides lower and closer */
+    const guardK = stance === 'swing' ? 1 : 1 - 0.8 * (this._strideW || 0);
+    const pitch = this._stridePitch(u.pitch * w * guardK + (stance === 'swing' ? this._aimLean(st, beat, w) : 0), dt);
     an._rotL(b.spine1, Y_AXIS, yaw * 0.30);
     an._rotL(b.spine2, Y_AXIS, yaw * 0.36);
     an._rotL(b.spine3, Y_AXIS, yaw * 0.34);
@@ -1945,10 +1507,19 @@ export class MeleeLayer {
     an._rot(b.spine3, X_AXIS, pitch * 0.32);
     an._rot(b.spine2, Z_AXIS, roll * 0.5);
     an._rot(b.spine3, Z_AXIS, roll * 0.5);
-    // the head leads the swing: she looks where the blade is going
-    an._rotL(b.neck1, Y_AXIS, yaw * 0.18);
-    an._rotL(b.head, Y_AXIS, yaw * 0.22);
-    an._rot(b.head, X_AXIS, pitch * 0.18);
+    /* HER EYES STAY ON WHAT SHE IS FIGHTING (melee W1, filmed: the trunk's turn and
+     * lean carried the head with them, and the guard and every contact read as a
+     * woman looking at her own feet). The neck and the skull take out most of the
+     * chest's turn and lean, so she faces down the haft however bladed she stands;
+     * `HEAD_LEAD` of the turn stays, because the head does lead the swing. */
+    {
+      const ty = (yaw + (this._pelvisYawNow || 0) * w) * (1 - HEAD_LEAD);
+      const tp = pitch;
+      an._rot(b.neck1, Y_AXIS, -ty * 0.42);
+      an._rot(b.head, Y_AXIS, -ty * 0.50);
+      an._rot(b.neck1, X_AXIS, -tp * HEAD_LEVEL * 0.45);
+      an._rot(b.head, X_AXIS, -tp * HEAD_LEVEL * 0.55);
+    }
     // shoulder girdle follows the drive arm
     // (and further when the swing is aimed up at a tall machine: the girdle
     // rises into a reach over the head — round 6, R7)
@@ -1972,6 +1543,14 @@ export class MeleeLayer {
     this._guardOn = stance === 'ready' || stance === 'swing'
       || (this._held && (stance === 'draw' || stance === 'holster'));
     this._strideHand(st, stance);
+    /* A table is written over a standing trunk; a stride carries the chest and
+     * the head well forward of it (0.2 m at a jog). The hands go with them. */
+    if ((this._strideW || 0) > 0.01 && (stance === 'swing' || stance === 'ready')) {
+      _hand.z += STRIDE_FWD * this._strideW;
+      _lh.z += STRIDE_FWD * this._strideW;
+      const rise = 1 - (1 - STRIDE_SHAFT_RISE) * this._strideW;
+      if (_shaft.y > rise) { _shaft.y = rise; _shaft.normalize(); }
+    }
     this._solveRight(w, u);
     /* THE CONTACT LANDS WHERE IT WAS AIMED (round 6, R7): the aim above bent
      * the beat's KEY toward the target, but the arm does not reach every key
@@ -1992,10 +1571,10 @@ export class MeleeLayer {
     // fists: the drive hand is closed on the haft, the free hand open (canon:
     // "left arm empty, swept back and out, PALM OPEN")
     an._curlFingers(an._fingerR, 0.85 * w, 0.75 * w);
-    an._curlFingers(an._fingerL, (u.lhOnShaft ? 0.8 : 0.12) * w, (u.lhOnShaft ? 0.7 : 0.06) * w);
+    an._curlFingers(an._fingerL, (0.12 + 0.70 * u.lhW) * w, (0.06 + 0.64 * u.lhW) * w);
 
     this._measure();
-    this._settleSpear(stance, st);
+    this._settleLance(stance, st);
     /* THE REACH THIS BEAT ACTUALLY GETS (round 6, R7). The contact keys ask
      * for more hand than the arm has on some beats (the IK clamps at full
      * extension), so the tip lands 0.1-0.3 m short of the key's own reach —
@@ -2003,7 +1582,7 @@ export class MeleeLayer {
      * that far short of the machine. Measured on the contact hold of every
      * swing (shoulder to posed tip), per beat, and handed to `_aimAt`. */
     if (stance === 'swing' && st.phase === 'strike'
-        && (st.k ?? 0) >= Math.max(0.10, (st.contactK ?? 0.7) - HIT_LEAD) && this.spear) {
+        && (st.k ?? 0) >= Math.max(0.10, (st.contactK ?? 0.7) - HIT_LEAD) && this.lance) {
       const i = st.heavy ? 3 : clamp(st.combo | 0, 0, 2);
       this.tipWorld(_eT);
       this.an.b.upArmR.bone.getWorldPosition(_eS);
@@ -2014,7 +1593,7 @@ export class MeleeLayer {
       if ((this._pullNow || 0) < 0.02) {
         this._reachSeen[i] = this._reachSeen[i] > 0 ? this._reachSeen[i] * 0.5 + r * 0.5 : r;
       }
-      D.reachSeen = +r.toFixed(3);
+      D.reachSeen = r;
     }
   }
 
@@ -2044,7 +1623,7 @@ export class MeleeLayer {
    * `GRAB_SNAP`. `frac` holds at the grab point until then, so the target the
    * arm is chasing cannot slide out from under it, and only slides down the
    * haft afterwards. `k >= 0.90` is the escape: a hand that never arrives
-   * still gets its spear rather than reaching forever.
+   * still gets its lance rather than reaching forever.
    *
    * FIX ROUND 1: THE ESCAPE NO LONGER COSTS A POP. Under the full concurrent
    * suite the draw renders in two or three frames, the arm's weight ramp has
@@ -2091,15 +1670,37 @@ export class MeleeLayer {
   _stance(dt, w, u, beat, stance) {
     const an = this.an, b = an.b, D = this._dbg;
     if (!b.thighL || !b.thighR || !b.calfL || !b.calfR) {
-      this.pelvisDx = 0; this.pelvisDy = 0; this._stanceA = 0; return;
+      this.pelvisDx = 0; this.pelvisDy = 0; this.pelvisDz = 0; this._pelvisYawNow = 0; this._stanceA = 0; return;
     }
     /* The gate, one frame stale on purpose: `_stanceStep` writes `_strideT`
      * from inside `_groundConform`, which runs after this layer. A frame of
      * latency on "is the stride running" is invisible and reading it fresh
      * would mean running the conform first. */
-    const welded = (an._strideT || 0) > 0.10 ? 1 : 0;
+    /* ...OR STANDING, SWINGING (fix round 1): the step-in's velocity floor blends a
+     * little of the walk clip in, its stance weights dip under 0.40, `_strideT` reset
+     * and the beat's stance damped out under a live contact: the judge filmed light-2
+     * and light-3 landing on straight legs with the feet together. So a swing that
+     * STARTS welded (standing) stays welded to its end; one started at a jog (the
+     * stance weight already out) is untouched, which is what A105's stride needs
+     * (keying it on `_moveW` instead read under 0.30 through jogging swings, f1). */
+    if (stance === 'swing' && !this._weldWas) this._weldSwing = this._stanceW > 0.5;
+    else if (stance !== 'swing') this._weldSwing = false;
+    this._weldWas = stance === 'swing';
+    const welded = ((an._strideT || 0) > 0.10 || this._weldSwing) ? 1 : 0;
     this._stanceW = damp(this._stanceW || 0, welded, 7, dt);
-    const live = stance === 'swing' ? STANCE[beat.id] : null;
+    /* THE HIPS TURN AND TRAVEL WITH THE BEAT (melee W1; `py` and `dz` on the pose
+     * keys, continuous with them). The feet are planted by the conform, so a
+     * turned and driven pelvis loads the legs instead of skating them, and the leg
+     * rotations below are authored on the turned pelvis. Standing only: a stride
+     * owns its hips (`_stanceW` is 0 at a jog). */
+    {
+      /* (nor a crouch's, nor a roll's) */
+      const hw = w * this._stanceW * (1 - (an._crouchW || 0)) * (1 - (an._dodgeW || 0));
+      this._pelvisYawNow = (u.py || 0) * hw;
+      this.pelvisDz = (u.dz || 0) * hw;
+      if (this._pelvisYawNow !== 0 && b.pelvis) an._rot(b.pelvis, Y_AXIS, this._pelvisYawNow);
+    }
+    const live = stance === 'swing' ? STANCE[beat.id] : (stance === 'ready' ? STANCE.ready : null);
     /* ...and she stands TALL to stab up at a tall machine (round 6, R7): a
      * swing the aim has bent up past ~12 deg (a Thunderjaw's jaw, a Longleg's
      * body) gives up most of the crouch — nobody sinks into a lunge to thrust
@@ -2107,67 +1708,59 @@ export class MeleeLayer {
      * 0.1 m of reach it did not have. Standing swings with no target, and
      * every gate staging them, are untouched (`aimPitchDeg` is 0). */
     const tall = clamp(((D.aimPitchDeg || 0) - 12) / 25, 0, 1);
-    const want = live ? w * this._stanceW * STANCE_ENV(u.clipU) * (1 - 0.8 * tall) : 0;
-    /* THE KEY OUTLIVES THE SWING BY AS LONG AS THE UNWIND TAKES. `STANCE_ENV`
-     * is already 0 at the end of `recover`, so on a normal frame `a` is spent
-     * before `stance` leaves 'swing' — but the rate limit below is in RENDERED
-     * frames, so on a loaded box the amplitude can still be finite when the
-     * state machine returns to the guard. Dropping the key there would snap the
-     * legs to neutral in one frame, which is the same class of defect the rate
-     * limit exists to prevent. The last beat's key is held until `a` is gone. */
-    const key = live || (this._stanceA > 0.002 ? this._stanceKey : null);
-    /* A NEW KEY UNDER A LOADED STANCE IS A STEP TOO (round 5 fix pass 1). The
-     * arming below fires on AMPLITUDE change only, so a key swapped while the
-     * amplitude is already up (V47 pins light-3 then the heavy at full
-     * amplitude; a fast combo can hand one beat to the next before the first
-     * has unwound) kept the feet locked where the OLD stance put them, and the
-     * ground conform's pelvis clamp then held the hips up to reach them:
-     * A102 read the pinned heavy's pelvis at 0.686-0.723 m on most runs and
-     * 0.799 m on the runs where the feet were left too far apart (two in
-     * twenty). The swap arms the animator's stance step with `rekey`: the
-     * home is re-captured off the NEW key and a foot re-places once it is
-     * `STEP_TRIGGER_REKEY` (3 cm) out of it, so the feet go where the new
-     * stance puts them. */
-    if (live && this._stanceKey && live !== this._stanceKey && this._stanceA > 0.02) an.beginMeleeStep?.(true);
-    if (live) this._stanceKey = live;
-    /* RATE-LIMITED PER RENDERED FRAME (see `STANCE_STEP_MAX` for the measured
-     * failure this exists for). One budget per drawn frame, not per sim
-     * sub-step, because the sub-steps are what made the unbounded version
-     * frame-rate dependent in the first place. */
+    /* THE LEGS LIVE IN THE GUARD AND LOAD INTO THE BEAT (melee W1). `want` is how
+     * much of a melee stance is on at all; `mixT` how far from the guard's stance
+     * to this beat's: nothing through the cock's opening, full at the contact, gone
+     * by the end of the recover. Round 4 scaled one key by an envelope, so the
+     * knees straightened at the top of every swing and bent again for the strike. */
+    const want = live ? w * this._stanceW * (1 - 0.8 * tall) * (1 - (an._crouchW || 0)) * (1 - (an._dodgeW || 0)) : 0;
+    const mixT = stance === 'swing' ? STANCE_ENV(u.clipU) : 0;
+    /* THE KEY OUTLIVES THE SWING BY AS LONG AS THE UNWIND TAKES: the rate limit
+     * below is in RENDERED frames, so on a loaded box the mix can still be finite
+     * when the state machine returns to the guard, and dropping the key there
+     * would snap the legs in one frame. The last beat's key is held until it is
+     * spent. */
+    const key = stance === 'swing' ? live : (this._stanceMix > 0.002 ? this._stanceKey : STANCE.ready);
+    /* A NEW KEY UNDER A LOADED STANCE IS A STEP TOO (round 5 fix pass 1): the feet
+     * go where the new stance puts them. `rekey` re-captures the home off the new
+     * key and a foot re-places once it is `STEP_TRIGGER_REKEY` out of it. */
+    if (stance === 'swing' && this._stanceKey && live !== this._stanceKey && this._stanceMix > 0.02 && this._stanceA > 0.02) an.beginMeleeStep?.(true);
+    if (stance === 'swing') this._stanceKey = live;
+    /* RATE-LIMITED PER RENDERED FRAME (see `STANCE_STEP_MAX`): one budget per drawn
+     * frame, not per sim sub-step, shared by the two numbers. */
     const fid = this.ctx.renderer?.info?.render?.frame;
     const fnow = typeof fid === 'number' ? fid : Math.floor(performance.now() / 8);
     if (fnow !== this._saFrame) { this._saFrame = fnow; this._saBudget = STANCE_STEP_MAX; }
     const dA = clamp(want - this._stanceA, -this._saBudget, this._saBudget);
     this._saBudget = Math.max(0, this._saBudget - Math.abs(dA));
     this._stanceA += dA;
-    const a = this._stanceA;
-    /* A STANCE CHANGE IS A STEP, SO SAY SO. The animator already owns the only
-     * honest way to move a planted foot — `_stanceStep` unplants, lifts and
-     * replants the foot the body has left behind, and A105 gates it. Arming it
-     * while the stance is actively loading means the feet RE-PLACE for the new
-     * base instead of being dragged against the lock; the rate limit above
-     * bounds what is left. Threshold, not every frame: a settled stance must
-     * not hold a foot in flight for ever. */
-    if (Math.abs(dA) > 0.02) an.beginMeleeStep?.();
+    const dM = clamp(mixT - this._stanceMix, -this._saBudget, this._saBudget);
+    this._stanceMix += dM;
+    const a = this._stanceA, m = this._stanceMix;
+    /* A STANCE CHANGE IS A STEP, SO SAY SO: `_stanceStep` unplants, lifts and
+     * replants the foot the body has left behind (A105). Armed only while the
+     * stance is actively loading: a settled stance must not hold a foot in flight. */
+    if (Math.abs(dA) > 0.02 || (a > 0.02 && Math.abs(dM) > 0.02)) an.beginMeleeStep?.();
     // NOT `D.stance` — that is the melee STATE ('swing' / 'ready' / 'holstered')
-    // and every gate keys its swing frames off it (clobbering it read as "0
-    // swing frames" on A102 and 0 deg of torso on A105).
-    D.legW = +this._stanceW.toFixed(3);
-    D.legAmp = +a.toFixed(3);
-    D.legBeat = live ? beat.id : (key ? 'unwind' : null);
-    if (!key || a <= 0.002) { this.pelvisDx = 0; this.pelvisDy = 0; return; }
-    an._rot(b.thighL, X_AXIS, key.thighL * a);
-    an._rot(b.thighR, X_AXIS, key.thighR * a);
-    an._rot(b.calfL, X_AXIS, key.calfL * a);
-    an._rot(b.calfR, X_AXIS, key.calfR * a);
-    if (b.footL) an._rot(b.footL, X_AXIS, key.footL * a);
-    if (b.footR) an._rot(b.footR, X_AXIS, key.footR * a);
+    // and every gate keys its swing frames off it.
+    D.legW = this._stanceW;
+    D.legAmp = a;
+    D.legBeat = stance === 'swing' ? beat.id : (m > 0.002 ? 'unwind' : (a > 0.002 ? 'ready' : null));
+    if (a <= 0.002) { this.pelvisDx = 0; this.pelvisDy = 0; return; }
+    const R = STANCE.ready, K = key || R, n = 1 - m;
+    an._rot(b.thighL, X_AXIS, (R.thighL * n + K.thighL * m) * a);
+    an._rot(b.thighR, X_AXIS, (R.thighR * n + K.thighR * m) * a);
+    an._rot(b.calfL, X_AXIS, (R.calfL * n + K.calfL * m) * a);
+    an._rot(b.calfR, X_AXIS, (R.calfR * n + K.calfR * m) * a);
+    if (b.footL) an._rot(b.footL, X_AXIS, (R.footL * n + K.footL * m) * a);
+    if (b.footR) an._rot(b.footR, X_AXIS, (R.footR * n + K.footR * m) * a);
     // track width: +Z on her left thigh and -Z on her right both swing the
     // knee OUTBOARD (the animator's own wide-track term uses the same signs)
-    an._rotL(b.thighL, Z_AXIS, key.abd * a);
-    an._rotL(b.thighR, Z_AXIS, -key.abd * a);
-    this.pelvisDx = key.dx * a;
-    this.pelvisDy = key.dy * a;
+    const abd = (R.abd * n + K.abd * m) * a;
+    an._rotL(b.thighL, Z_AXIS, abd);
+    an._rotL(b.thighR, Z_AXIS, -abd);
+    this.pelvisDx = (R.dx * n + K.dx * m) * a;
+    this.pelvisDy = (R.dy * n + K.dy * m) * a;
   }
 
   /**
@@ -2193,7 +1786,7 @@ export class MeleeLayer {
     const p = this.ctx.player;
     const want = p && !p.dodging ? smoothstep(p.moveSpeed ?? 0, STRIDE_V0, STRIDE_V1) : 0;
     const mv = this._strideW = damp(this._strideW || 0, want, 10, dt);
-    D.strideW = +mv.toFixed(3);
+    D.strideW = mv;
     if (mv < 0.01 || !b.pelvis || !b.head) {
       D.strideLeanDeg = null; D.stridePitchCut = 0;
       return pitch;
@@ -2204,8 +1797,8 @@ export class MeleeLayer {
     const lean = Math.atan2(_b.z - _a.z, Math.max(1e-3, _b.y - _a.y));
     const over = lean + pitch - JOG_TORSO_CAP;
     const cut = over > 0 ? clamp(over, 0, Math.max(0, pitch + JOG_COUNTER_MAX)) * mv : 0;
-    D.strideLeanDeg = +(lean * 180 / Math.PI).toFixed(1);
-    D.stridePitchCut = +cut.toFixed(3);
+    D.strideLeanDeg = lean * 180 / Math.PI;
+    D.stridePitchCut = cut;
     return pitch - cut;
   }
 
@@ -2237,7 +1830,7 @@ export class MeleeLayer {
     if (over <= 0) return;
     const cut = over * mv * pw;
     _hand.y -= cut;
-    D.strideHandCut = +cut.toFixed(3);
+    D.strideHandCut = cut;
   }
 
   /**
@@ -2273,7 +1866,7 @@ export class MeleeLayer {
     const beat = heavy ? HEAVY : BEATS[clamp(combo | 0, 0, BEATS.length - 1)];
     const c = beat.contact;
     const L = (1 - this.gripFrac) * this.length;
-    out.set(c.hand[0] + c.shaft[0] * L, c.hand[1] + c.shaft[1] * L, c.hand[2] + c.shaft[2] * L);
+    out.set(c.hand[0] + c.shaft[0] * L, c.hand[1] + c.shaft[1] * L, c.hand[2] + c.shaft[2] * L + (c.dz || 0));
     if (Math.abs(this._aimYaw) > 1e-3) out.applyAxisAngle(Y_AXIS, this._aimYaw);
     this.an.model.updateWorldMatrix(true, false);
     out.applyMatrix4(this.an.model.matrixWorld);
@@ -2287,7 +1880,7 @@ export class MeleeLayer {
    * overhangs at arm height — a Behemoth's head, a Glinthawk's body, a
    * Tallneck's jaw — the r5 skeptic found the fist 0.03 m and the forearm
    * 0.06-0.10 m inside it, on a heavy's contact, a follow-through and a
-   * holster. The live hull set of the machine the spear is on
+   * holster. The live hull set of the machine the lance is on
    * (`melee.armHulls()`) is read once a frame; the wrist and the forearm
    * segment are tested against every capsule near them (world space, radius
    * `ARM_R` + `ARM_CLEAR`), and a penetration moves the wrist goal straight out
@@ -2333,7 +1926,7 @@ export class MeleeLayer {
       steps++;
     }
     D.armHullBack = steps;
-    D.armHullLeft = +worst.toFixed(3);
+    D.armHullLeft = worst;
   }
 
   _armHullPasses(w, st) {
@@ -2368,7 +1961,7 @@ export class MeleeLayer {
       if (pass > 0) _ahX.copy(_ahDir);          // last pass's escape, to spot a flip
       const worst = this._armDeficit(hulls, M);
       if (pass === 0) {
-        D.armHullDeficit = +worst.toFixed(3);
+        D.armHullDeficit = worst;
         /* INSIDE IS NOT A TRIM (round 6, Oct 2). The strike's taper above is
          * for an arm that brushes the `ARM_CLEAR` margin on its way to the
          * aimed skin; a fist actually INSIDE a hull is not what any aim is
@@ -2382,9 +1975,9 @@ export class MeleeLayer {
         D.armHullFull = worst > ARM_CLEAR ? 1 : 0;
         if (worst > ARM_CLEAR) { pushMax = ARM_PUSH_MAX; retractMax = ARM_RETRACT_INSIDE; rollMax = Math.PI; }
       }
-      D.armHullLeft = +worst.toFixed(3);
+      D.armHullLeft = worst;
       if (worst <= 1e-4) return;
-      D.armHullT = +(this._ahT || 0).toFixed(2);
+      D.armHullT = this._ahT || 0;
       /* an ELBOW-end contact (a head that overhangs the arm) is not taken out
        * by moving the wrist — the IK keeps the elbow on its plane — so the
        * elbow is rolled round its circle about shoulder -> wrist instead (the
@@ -2414,7 +2007,7 @@ export class MeleeLayer {
         push = Math.min(retractMax - retrUsed, worst + 0.01, lx - 0.25);
         if (!(push > 0.002)) return;
         retrUsed += push;
-        D.armHullRetract = +retrUsed.toFixed(3);
+        D.armHullRetract = retrUsed;
       } else {
         _ahX.copy(_ahDir).applyQuaternion(_ahQi);      // world -> char
         push = Math.min(pushMax - pushUsed, (worst + 0.01) / Math.max(0.35, this._ahT));
@@ -2424,7 +2017,7 @@ export class MeleeLayer {
       _hand.addScaledVector(_ahX, push);
       an._ikArm('r', _hand, _pole, w, null);
       this._alignHaft(w);
-      D.armHullPush = +(D.armHullPush + push).toFixed(3);
+      D.armHullPush = D.armHullPush + push;
     }
   }
 
@@ -2523,7 +2116,7 @@ export class MeleeLayer {
     if (bestPhi === 0) return false;
     _eQ.setFromAxisAngle(_eAx, bestPhi);
     an._rotQL(b.upArmR, _eQ);
-    this._dbg.armHullRoll = +(bestPhi * 180 / Math.PI).toFixed(0);
+    this._dbg.armHullRoll = bestPhi * 180 / Math.PI;
     return true;
   }
 
@@ -2557,7 +2150,7 @@ export class MeleeLayer {
     const reach = this._reachSeen[i] > 0.3 ? this._reachSeen[i] : 1.6;
     const short = _eT.distanceTo(_eS) - reach;
     const lean = clamp(short * AIM_LEAN_GAIN, 0, AIM_LEAN_MAX) * aw;
-    this._dbg.aimLean = +lean.toFixed(3);
+    this._dbg.aimLean = lean;
     return lean;
   }
 
@@ -2591,7 +2184,7 @@ export class MeleeLayer {
     const over = _eU.length() - _eV.length();     // > 0: the tip would pass through
     _eU.normalize(); _eV.normalize();
     const ang = Math.acos(clamp(_eU.dot(_eV), -1, 1));
-    this._dbg.aimResidDeg = +(ang * 180 / Math.PI).toFixed(1);
+    this._dbg.aimResidDeg = ang * 180 / Math.PI;
     if (ang < 0.01 && !(Math.abs(over) > 0.02)) return false;
     _eQ.setFromUnitVectors(_eU, _eV);
     const k2 = cw * Math.min(1, AIM_RESID_MAX / Math.max(ang, 1e-3));
@@ -2624,7 +2217,7 @@ export class MeleeLayer {
       const e = this.an.b[CLEAR_BONES[i]];
       if (!e) continue;
       e.bone.getWorldPosition(_eU);
-      const d = segPoint(_eC, _eV, _eU);
+      segPointN(_eC, _eV, _eU); const d = _sgNum[0];
       if (d < best) best = d;
     }
     return best;
@@ -2650,7 +2243,7 @@ export class MeleeLayer {
     if (!this.ok) return false;
     const beat = heavy ? HEAVY : BEATS[clamp(combo | 0, 0, BEATS.length - 1)];
     const c = beat.contact;
-    out.set(c.hand[0], c.hand[1], c.hand[2]);
+    out.set(c.hand[0], c.hand[1], c.hand[2] + (c.dz || 0));
     if (Math.abs(this._aimYaw) > 1e-3) out.applyAxisAngle(Y_AXIS, this._aimYaw);
     this.an.model.updateWorldMatrix(true, false);
     out.applyMatrix4(this.an.model.matrixWorld);
@@ -2668,7 +2261,7 @@ export class MeleeLayer {
   _strikeAim(st, beat, w) {
     const D = this._dbg;
     const want = this._aimPhaseW(st) * w;
-    D.aimW = +want.toFixed(3);
+    D.aimW = want;
     this._pullNow = 0;
     if (want < 1e-3) { D.aimPitchDeg = 0; D.aimYawDeg = 0; return; }
     const an = this.an, b = an.b;
@@ -2717,8 +2310,8 @@ export class MeleeLayer {
       _hand.addScaledVector(_eV, -pull / lv);
       this._pullNow += pull;
     }
-    D.aimPitchDeg = +(dp * 180 / Math.PI).toFixed(1);
-    D.aimYawDeg = +(dy * 180 / Math.PI).toFixed(1);
+    D.aimPitchDeg = dp * 180 / Math.PI;
+    D.aimYawDeg = dy * 180 / Math.PI;
   }
 
   /**
@@ -2743,7 +2336,7 @@ export class MeleeLayer {
     _eC.sub(_eD);
     const gy = terr.getHeight(_eT.x, _eT.z);
     const lack = gy + TIP_GROUND_CLEAR - _eT.y;
-    D.tipGroundLack = +lack.toFixed(3);
+    D.tipGroundLack = lack;
     if (!(lack > 0)) return;
     an._charOf(b.upArmR.bone, _eS);
     _eU.subVectors(_eC, _eS);
@@ -2759,7 +2352,7 @@ export class MeleeLayer {
     _eQ.setFromAxisAngle(_eAx, ang);
     _hand.sub(_eS).applyQuaternion(_eQ).add(_eS);
     _shaft.applyQuaternion(_eQ);
-    D.tipGroundLift = +(ang * 180 / Math.PI).toFixed(1);
+    D.tipGroundLift = ang * 180 / Math.PI;
   }
 
   /** The pose a holster starts from: last frame's solved wrist and grip axis
@@ -2770,7 +2363,8 @@ export class MeleeLayer {
     if (!this._handLastOk || this.w < 0.5) {
       // not the layer's arm last frame: the guard key is as good as anything
       for (let i = 0; i < 3; i++) { f.hand[i] = READY.hand[i]; f.shaft[i] = READY.shaft[i]; f.lh[i] = READY.lh[i]; }
-      f.yaw = READY.yaw; f.pitch = READY.pitch; f.roll = READY.roll;
+      f.yaw = READY.yaw; f.pitch = READY.pitch; f.roll = READY.roll; f.py = READY.py; f.dz = READY.dz;
+      f.lhW = 1; f.lhOn = READY.lhOn;
       return;
     }
     _b.copy(this.gripDirL).applyQuaternion(this._handQ).normalize();
@@ -2779,6 +2373,8 @@ export class MeleeLayer {
     this.an._charOf(this.an.b.handL.bone, _c);
     f.lh[0] = _c.x; f.lh[1] = _c.y; f.lh[2] = _c.z;
     f.yaw = u ? u.yaw : READY.yaw; f.pitch = u ? u.pitch : READY.pitch; f.roll = u ? u.roll : READY.roll;
+    f.py = u ? u.py : READY.py; f.dz = u ? u.dz : READY.dz;
+    f.lhW = u ? u.lhW : 1; f.lhOn = u ? u.lhOn : READY.lhOn;
     // the capture is already in the swing bearing: undo `_lerpPose`'s turn
     const y = this._aimYaw;
     if (Math.abs(y) > 1e-3) {
@@ -2823,7 +2419,7 @@ export class MeleeLayer {
     _eQ.setFromAxisAngle(_eAx, ang);
     _hand.sub(_eS).applyQuaternion(_eQ).add(_eS);
     _shaft.applyQuaternion(_eQ);
-    D.tipGroundResid = +(ang * 180 / Math.PI).toFixed(1);
+    D.tipGroundResid = ang * 180 / Math.PI;
     return true;
   }
 
@@ -2833,8 +2429,9 @@ export class MeleeLayer {
     return this._held && this._carryB >= 1 && Math.abs(this._fracNow - this.gripFrac) < 1e-4;
   }
 
-  _settleSpear(stance, st) {
-    if (!this.spear) return;
+  _settleLance(stance, st) {
+    if (!this.lance) return;
+    this.lance.visible = stance !== 'holstered';
     const D = this._dbg;
     let frac = this.gripFrac;
     let holstered = true;
@@ -2876,16 +2473,16 @@ export class MeleeLayer {
      * `grabReach` above and is a reach quality, not a discontinuity. */
     const changing = this._held === holstered;   // this frame flips the parent
     if (changing) this._preHandover(_hoPos);
-    if (holstered) { this._toBack(); this._poseHolstered(); }
+    if (holstered) { this._toBack(); if (stance !== 'holstered' || changing) this._poseHolstered(); }
     else { this._toHand(); this._poseHeld(frac); }
     if (changing) {
-      this.spear.updateWorldMatrix(true, false);
-      _a.set(0, 0, 0).applyMatrix4(this.spear.matrixWorld);
-      D.grabGap = +_a.distanceTo(_hoPos).toFixed(4);
+      this.lance.updateWorldMatrix(true, false);
+      _a.set(0, 0, 0).applyMatrix4(this.lance.matrixWorld);
+      D.grabGap = _a.distanceTo(_hoPos);
     }
-    D.carryBlend = +this._carryB.toFixed(3);
+    D.carryBlend = this._carryB;
     this._fracNow = holstered ? gf : frac;
-    D.gripFracNow = +this._fracNow.toFixed(4);
+    D.gripFracNow = this._fracNow;
     D.handoverDone = this.handoverDone;
 
     /* HOW FAST THE PROP MOVES INSIDE THE HAND (A102's hand-over clause).
@@ -2897,13 +2494,24 @@ export class MeleeLayer {
      * not the tip. What the hand-over must not hide is the prop sliding
      * through the hand, so that is what this is: the far end of the haft, in
      * metres, relative to whatever it is parented to. */
-    const g = this.spear;
+    const g = this.lance;
     const sc = this._boneScale(g.parent || this.socketBone);
     _a.set(0, 0, this._localLen * g.scale.z).applyQuaternion(g.quaternion)
       .add(g.position).multiplyScalar(sc);
-    D.carrySlide = (changing || !this._tipLocalOk) ? 0 : +_a.distanceTo(this._tipLocal).toFixed(4);
+    D.carrySlide = (changing || !this._tipLocalOk) ? 0 : Math.round(_a.distanceTo(this._tipLocal) * 1e4) / 1e4;   // (no toFixed: a string a frame)
     this._tipLocal.copy(_a);
     this._tipLocalOk = true;
+
+    /* The held haft is a capsule in the spring solver, as the stowed one is
+     * (`_stowCap`; the kit only writes it while the lance is on her back), so
+     * no wrap tail or knot tail is drawn through the haft (M10). */
+    const SC = this.an._stowCap;
+    if (SC && this._held) {
+      g.updateWorldMatrix(true, false);
+      SC.a.set(0, 0, 0).applyMatrix4(g.matrixWorld);
+      SC.b.set(0, 0, this._localLen).applyMatrix4(g.matrixWorld);
+      SC.on = true;
+    }
   }
 
   /** Clear the hand-over convergence state (see `_grabSettle`). */
@@ -2959,15 +2567,13 @@ export class MeleeLayer {
 
   /** The prop's world-space butt BEFORE the hand-over, for `grabGap`. */
   _preHandover(out) {
-    this.spear.updateWorldMatrix(true, false);
-    return out.set(0, 0, 0).applyMatrix4(this.spear.matrixWorld);
+    this.lance.updateWorldMatrix(true, false);
+    return out.set(0, 0, 0).applyMatrix4(this.lance.matrixWorld);
   }
 
   /** Interpolate the beat into `_hand` / `_shaft` / `_lh` + torso scalars. */
   _blend(stance, st, beat) {
-    const out = this._u || (this._u = {
-      yaw: 0, pitch: 0, roll: 0, lhOn: 0, lhOnShaft: false, clipU: 0, armLift: 0,
-    });
+    const out = this._u;
     const phase = st.phase || 'idle';
     const k = clamp(st.k ?? 0, 0, 1);
     const cK = clamp(st.contactK ?? 0.55, 0.05, 0.95);
@@ -3032,7 +2638,7 @@ export class MeleeLayer {
          * `STRIKE_PRE` of the way from cock to contact, which is where the
          * strike branch below starts. */
         if (k <= WINDUP_COCK) {
-          A = READY; B = beat.cock; t = WINDUP_EASE(k / WINDUP_COCK); clipU = 0.30 * t;
+          A = this._windOn ? this._windFrom : READY; B = beat.cock; t = WINDUP_EASE(k / WINDUP_COCK); clipU = 0.30 * t;
         } else {
           A = beat.cock; B = beat.contact;
           t = STRIKE_PRE * ((k - WINDUP_COCK) / (1 - WINDUP_COCK));
@@ -3042,7 +2648,7 @@ export class MeleeLayer {
         /* THE FOLLOW-THROUGH BELONGS TO `recover`, NOT TO THE TAIL OF THE
          * STRIKE (fix round 4, F3) — and the canon says so.
          *
-         * `spear-canon.md` §3 films cocked->contact at 0.15 s and
+         * `lance-canon.md` §3 films cocked->contact at 0.15 s and
          * contact->follow-through at 0.20 s. This lane's phases are
          * `windup 0.15 / strike 0.10 / recover 0.26`: the 0.20 s of
          * follow-through is `recover`'s length, not the back third of a 0.10 s
@@ -3058,7 +2664,7 @@ export class MeleeLayer {
          * the reach came back at 0.98-1.11 m instead of -0.05 m.
          *
          * So: the strike reaches the contact key at `cK - HIT_LEAD` and HOLDS
-         * it — an impact hold, which is what a spear landing on metal should
+         * it — an impact hold, which is what a lance landing on metal should
          * have — and `recover` plays contact -> follow -> guard. Phase
          * durations, `CONTACT_K`, the combo window and the damage are all
          * untouched; what moves is which key each phase interpolates. */
@@ -3092,8 +2698,15 @@ export class MeleeLayer {
     out.yaw = A.yaw + (B.yaw - A.yaw) * t;
     out.pitch = A.pitch + (B.pitch - A.pitch) * t;
     out.roll = A.roll + (B.roll - A.roll) * t;
+    out.py = (A.py || 0) + ((B.py || 0) - (A.py || 0)) * t;
+    out.dz = (A.dz || 0) + ((B.dz || 0) - (A.dz || 0)) * t;
     out.lhOn = (A.lhOn || 0) + ((B.lhOn || 0) - (A.lhOn || 0)) * t;
-    out.lhOnShaft = (A.lh == null && t < 0.5) || (B.lh == null && t >= 0.5);
+    out.lhW = (A.lhW || 0) + ((B.lhW || 0) - (A.lhW || 0)) * t;
+    /* light-3 (R1): the left hand lets go on its own schedule, off the haft
+     * before the strike phase opens (STRIKE_PRE of the cock -> contact leg). */
+    if (beat.release && A === beat.cock && B === beat.contact) {
+      out.lhW = 1 - smoothstep(t, beat.release[0], beat.release[1]);
+    }
     out.clipU = clipU;
     out.armLift = (_hand.y - 1.0) * 2;
     return out;
@@ -3110,10 +2723,10 @@ export class MeleeLayer {
    * swing frame: one object, one module scratch.
    */
   _snapPose(A, B, t) {
-    const s = this._swingOut || (this._swingOut = {
-      hand: [0, 0, 0], shaft: [0, 0, 1], lh: [0.30, 0.98, 0.04], lhOn: 0,
-      yaw: 0, pitch: 0, roll: 0,
-    });
+    const s = this._swingOut || (this._swingOut = decimalFields({
+      hand: [0.5, 0, 0], shaft: [0.5, 0, 1], lh: [0.30, 0.98, 0.04], lhOn: 0, lhW: 0,
+      yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0,
+    }));
     const q = 1 - t;
     const la = A.lh || B.lh || READY.lh, lb = B.lh || A.lh || READY.lh;
     for (let i = 0; i < 3; i++) {
@@ -3123,9 +2736,12 @@ export class MeleeLayer {
     this._slerpDir(A.shaft, B.shaft, t, _snapD);
     s.shaft[0] = _snapD.x; s.shaft[1] = _snapD.y; s.shaft[2] = _snapD.z;
     s.lhOn = (A.lhOn || 0) * q + (B.lhOn || 0) * t;
+    s.lhW = (A.lhW || 0) * q + (B.lhW || 0) * t;
     s.yaw = A.yaw + (B.yaw - A.yaw) * t;
     s.pitch = A.pitch + (B.pitch - A.pitch) * t;
     s.roll = A.roll + (B.roll - A.roll) * t;
+    s.py = (A.py || 0) + ((B.py || 0) - (A.py || 0)) * t;
+    s.dz = (A.dz || 0) + ((B.dz || 0) - (A.dz || 0)) * t;
   }
 
   /**
@@ -3147,10 +2763,10 @@ export class MeleeLayer {
     /* ROUND 6: the chest turns TOWARD the drawing hand (`DRAW_YAW`, right
      * shoulder forward) — round 5 turned it -0.16 rad, away, which is half of
      * why the elbow had to go up behind her head to reach the haft. */
-    const p = this._reach || (this._reach = {
-      hand: [0, 0, 0], shaft: [0, 0, 1], lh: [0.30, 0.98, 0.04], lhOn: 0,
+    const p = this._reach || (this._reach = decimalFields({
+      hand: [0.5, 0, 0], shaft: [0.5, 0, 1], lh: [0.30, 0.98, 0.04], lhOn: 0.54, lhW: 0,
       yaw: DRAW_YAW, pitch: -0.04, roll: 0.06,
-    });
+    }));
     this._liveSocket(_grip, _c);           // butt, dir (char)
     /* WHERE ON THE HAFT SHE TAKES IT — the point the hand can actually reach.
      *
@@ -3178,7 +2794,7 @@ export class MeleeLayer {
      * FILMED the worst frame — the right forearm lying horizontally across the
      * back of her neck with the hand between her shoulder blades, which is
      * Kevin's "arm literally behind head" verbatim. Two round-4 changes had
-     * made it worse rather than better: `SPEAR_SCALE` 0.86 -> 0.80 shortened
+     * made it worse rather than better: `LANCE_SCALE` 0.86 -> 0.80 shortened
      * the stowed haft, so the same FRACTION is physically nearer her spine,
      * and the holster's pose leg grew from 0.45 to 0.62 of `HOLSTER_T`, so more
      * rendered frames land in the deep-reach pose.
@@ -3209,534 +2825,6 @@ export class MeleeLayer {
   }
 
   /**
-   * The socket's live char-space butt point and butt->tip direction — READ off
-   * `spine_02` exactly as round 1 did, then BOUNDED (see `CARRY`).
-   *
-   * Every clause of A100 gets an active bound here, in the order they can
-   * fight each other: the tilt band first (it is the one the dodge breaks
-   * worst), then the midpoint ball about the live upper-back centre, then the
-   * two blade bounds, which are spent on the tilt where the band still has
-   * room and on the midpoint when it does not. Two passes, because moving the
-   * midpoint can re-break the ball.
-   *
-   * Inside the bounds this is the identity — idle and crouch read exactly what
-   * a rigid socket read — so A100's numbers still move with her.
-   */
-  _liveSocket(outP, outD) {
-    const an = this.an, L = this.length;
-    if (!this.socketBone) { outP.copy(this.socketButt); outD.copy(this.socketDir); return; }
-    an._charOf(this.socketBone, outP);
-    an._liveW(this.socketBone, _q1);
-    outP.add(_b.copy(this.socketPosL).applyQuaternion(_q1));
-    outD.copy(this.socketDirL).applyQuaternion(_q1).normalize();
-
-    /* the live midpoint, and the two live references the bounds are about */
-    _skMid.copy(outP).addScaledVector(outD, 0.5 * L);
-    this._backCentre(_skA);                      // upper-back surface (char)
-    an._charOf(an.b.upArmR.bone, _skB);          // right shoulder (char)
-
-    for (let pass = 0; pass < 2; pass++) {
-      /* 1. TILT BAND. Rebuild the direction at the clamped polar angle,
-       *    keeping its azimuth: which way the blade leans is the carry's
-       *    identity, how far off vertical is what the dodge breaks. */
-      this._setTilt(outD, clamp(Math.acos(clamp(outD.y, -1, 1)),
-        CARRY.TILT_MIN, CARRY.TILT_MAX));
-
-      /* 2. THE MIDPOINT BALL, about the live upper-back centre. */
-      _skC.subVectors(_skMid, _skA);
-      const r = _skC.length();
-      if (r > CARRY.MID_BALL) _skMid.copy(_skA).addScaledVector(_skC, CARRY.MID_BALL / r);
-
-      /* 3. BLADE ABOVE THE SHOULDER. Buy it with tilt first (a more upright
-       *    carry lifts the blade without moving the strap), then with height. */
-      let tipY = _skMid.y + 0.5 * L * outD.y;
-      let need = (_skB.y + CARRY.TIP_ABOVE) - tipY;
-      if (need > 1e-4) {
-        const wantY = clamp((tipY + need - _skMid.y) / (0.5 * L), -1, 1);
-        this._setTilt(outD, Math.max(CARRY.TILT_MIN, Math.acos(wantY)));
-        tipY = _skMid.y + 0.5 * L * outD.y;
-        need = (_skB.y + CARRY.TIP_ABOVE) - tipY;
-        if (need > 1e-4) _skMid.y += need;
-      }
-      /* 3b. ...and not a flagpole (see CARRY.TIP_ABOVE_MAX). */
-      const over = tipY - (_skB.y + CARRY.TIP_ABOVE_MAX);
-      if (over > 1e-4) _skMid.y -= over;
-
-      /* 4. BLADE RIGHT OF THE SPINE (char -X is her right). */
-      const tipX = _skMid.x + 0.5 * L * outD.x;
-      const dx = (-tipX) - CARRY.TIP_RIGHT;
-      if (dx < -1e-4) _skMid.x += dx;
-    }
-    /* 5. GIVE WAY TO WHAT IS ALREADY ON HER BACK (the servo, see
-     *    `CARRY.HAIR_KEEP`). Spent AFTER the ball, not inside it: a dodge
-     *    parks the carry on the ball's surface, where a push that the ball
-     *    then re-clamps has no authority at all — filmed, the braid went
-     *    THROUGH the stowed haft (0.002 m) with the servo running. This is a
-     *    pure -Z move, so it cannot disturb clauses 3 and 4, and it has its
-     *    own ceiling `MID_CEIL` well inside A100's 0.30 m. */
-    if (this._carryPush > 1e-4) {
-      _skMid.addScaledVector(this._pushV, this._carryPush);
-      /* ...and re-satisfy the two blade clauses the push can disturb, then the
-       * ceiling. Both are monotone (raise the tip, move it right), so a second
-       * application cannot oscillate; the push is at most PUSH_MAX, so in
-       * practice they do nothing at all unless the roll had already parked the
-       * carry on a bound. */
-      const tipY2 = _skMid.y + 0.5 * L * outD.y;
-      const need2 = (_skB.y + CARRY.TIP_ABOVE) - tipY2;
-      if (need2 > 1e-4) _skMid.y += need2;
-      const dx2 = (-(_skMid.x + 0.5 * L * outD.x)) - CARRY.TIP_RIGHT;
-      if (dx2 < -1e-4) _skMid.x += dx2;
-      _skC.subVectors(_skMid, _skA);
-      const r2 = _skC.length();
-      if (r2 > CARRY.MID_CEIL) _skMid.copy(_skA).addScaledVector(_skC, CARRY.MID_CEIL / r2);
-    }
-    /* 6. AND IT DOES NOT PASS THROUGH THE STOWED BOW — a HARD bound, not a
-     *    servo (fix round 2, finding 5).
-     *
-     * The bow is rigid on `spine_03`; a dodge roll curls that bone through
-     * most of a right angle and sweeps the bow across a carry that the clauses
-     * above are holding still in character space. A damped push cannot follow
-     * that — measured, the clearance collapsed 0.127 -> 0.0996 -> 0.067 ->
-     * 0.0274 m over four consecutive roll frames with the servo still ramping,
-     * and A100's dodge row skipped the clause rather than fail it. This solves
-     * the deficit inside the same frame, in the direction that actually opens
-     * the gap, and re-satisfies the ceiling and the two blade clauses after.
-     * The servo stays for the BRAID, which is simulated after this runs and so
-     * genuinely cannot be solved here.
-     *
-     * A number nothing gates is not a gate: A100's dodge row now carries this
-     * clause like every other row. */
-    if (this._bowNode()) {
-      let gap = this._bowSolve(_skMid, outD, L, _skA, _skB);
-      /* Translation alone runs out of room: the midpoint is already on
-       * MID_CEIL and the only direction left costs radius the ball does not
-       * have (measured on the worst roll frame, 0.094 m against a 0.12 bar).
-       * The TILT is the other free variable — A100's band is 30-60 deg and the
-       * roll pins the carry on the 30 deg floor, so there are 24 degrees of
-       * unused authority. Three candidates, each re-solved; the best wins. The
-       * whole block only runs on a frame where the bow is actually close, so
-       * idle, walk, run and the bow draw never pay for it. */
-      if (gap != null && gap < CARRY.BOW_KEEP) {
-        /* EACH CANDIDATE FROM THE SAME START, AND THE BEST ONE KEPT (round 6,
-         * Oct 2). The search used to re-solve every candidate tilt from the
-         * midpoint the PREVIOUS candidate's solve had left, then set the best
-         * tilt and solve once more from wherever the last one ended — so the
-         * winner was never the carry it had scored. A100's dodge row, repeated
-         * 12 times on the real input path (aim, draw, stow, roll), dipped to
-         * 0.07 m once and 0.14-0.18 m twice on the one roll frame where the
-         * bow sweeps across the haft. Now every candidate (seven across the
-         * band, the current tilt included) starts from the same midpoint and
-         * the best candidate's midpoint AND haft direction are what is kept. */
-        _bsMid0.copy(_skMid);
-        _bsMidBest.copy(_skMid); _bsDirBest.copy(outD);
-        const tilt0 = Math.acos(clamp(outD.y, -1, 1));
-        let best = gap;
-        for (let i = 0; i <= 6 && best < CARRY.BOW_KEEP; i++) {
-          const t = CARRY.TILT_MIN + (CARRY.TILT_MAX - CARRY.TILT_MIN) * (i / 6);
-          if (Math.abs(t - tilt0) < 0.02) continue;
-          _skMid.copy(_bsMid0);
-          this._setTilt(outD, t);
-          const g2 = this._bowSolve(_skMid, outD, L, _skA, _skB);
-          if (g2 != null && g2 > best) { best = g2; _bsMidBest.copy(_skMid); _bsDirBest.copy(outD); }
-        }
-        _skMid.copy(_bsMidBest); outD.copy(_bsDirBest);
-        gap = best;
-      }
-      /* THE BLADE CEILING HAS THE LAST WORD (fix round 4).
-       *
-       * The tilt search above is allowed to take the carry anywhere in A100's
-       * 30-60 deg band to open the bow gap, and a steeper tilt stands the
-       * blade higher: with the search doing real work every roll frame, A100's
-       * `tipAboveShoulderMax` went to 0.716-0.725 m against its 0.70 m bar
-       * while the bow clause it was buying passed comfortably. Re-clamping
-       * here costs the bow gap nothing measurable (the push is mostly lateral
-       * and mostly outboard) and the midpoint re-clamp after it can only move
-       * the carry TOWARD the back centre, so it cannot raise the tip again. */
-      /* ...and the tilt search gets the same treatment, for the same reason:
-       * it is allowed to take the carry anywhere in A100's 30-60 deg band to
-       * open the bow gap, and the shallowest tilts in that band stand the
-       * blade highest. `_bowSolve` ends each of its passes on this clause now,
-       * so this is only the residual the last projection left. */
-      const overf = (_skMid.y + 0.5 * L * outD.y) - (_skB.y + CARRY.TIP_ABOVE_MAX);
-      if (overf > 1e-4) _skMid.y -= overf;
-      this._dbg.carryBowBound = gap;
-    }
-
-    outP.copy(_skMid).addScaledVector(outD, -0.5 * L);
-    this._sockMid.copy(_skMid);
-    this._sockDir.copy(outD);
-    this._backC.copy(_skA);
-  }
-
-  /**
-   * The braid servo (see `CARRY.HAIR_KEEP`). Runs once per frame off the hair
-   * buffer `_cacheHair` already filled, so it costs one pass over 32 points
-   * and no matrix work at all; `_liveSocket` only reads the scalar.
-   */
-  _carryServo(dt) {
-    const P = this._hairPos;
-    if (!P || !this._hairN) return;
-    /* MEASURE THE HAFT THE RENDERER DRAWS (fix round 2). The socket the bound
-     * computes is written into `spine_02`'s LOCAL frame mid-pose; the ground
-     * conform, the twist layer and the spring chains all move that bone
-     * afterwards, so the recomputed socket and the prop's final world segment
-     * are not the same line. Steering off the socket, the servo read 0.135 m
-     * of bow clearance on a haft that was drawn 0.068 m away — a feedback loop
-     * with the wrong sensor, which is why the servo sat idle while V48's shot
-     * showed the crossing. It now closes the loop on the prop itself. */
-    const g = this.spear;
-    if (g && !this._held) {
-      g.updateWorldMatrix(true, false);
-      _m4.copy(this.an.model.matrixWorld).invert().multiply(g.matrixWorld);
-      _sgA.set(0, 0, 0).applyMatrix4(_m4);
-      _sgB.set(0, 0, this._localLen).applyMatrix4(_m4);
-    } else {
-      _sgA.copy(this._sockMid).addScaledVector(this._sockDir, -0.5 * this.length);
-      _sgB.copy(this._sockMid).addScaledVector(this._sockDir, 0.5 * this.length);
-    }
-    let hair = 9;
-    _sv2.set(0, 0, -1);
-    for (let i = 0, j = 0; i < this._hairN; i++, j += 3) {
-      _d.set(P[j], P[j + 1], P[j + 2]);
-      const g = segPoint(_sgA, _sgB, _d);
-      // the braid lies BETWEEN the haft and her spine, so the escape is
-      // always outboard; keep the measured direction anyway so a strand
-      // thrown sideways by a roll is escaped sideways
-      if (g < hair) { hair = g; _sv2.subVectors(_segNear, _d); }
-    }
-    if (_sv2.lengthSq() > 1e-8) _sv2.normalize(); else _sv2.set(0, 0, -1);
-
-    const bow = this._bowClearDir(_sgA, _sgB, _sv3);
-    const needHair = CARRY.HAIR_KEEP - hair;
-    /* THE SERVO DOES NOT SERVE THE BOW (fix round 2, and this is measured).
-     *
-     * The bow is solved inside the bound now (`_bowSolve`), where the sensor
-     * and the correction are in the same frame. Leaving it in the servo as
-     * well gave two controllers one actuator: filmed over repeated rolls, the
-     * servo saturated at its ceiling and the worst approach went 0.122 m (bound
-     * alone) -> 0.095 m (both). The braid keeps the servo because the braid is
-     * simulated AFTER the bound runs and cannot be solved there. */
-    const needBow = -9;
-    this._dbg.carryBowMeasured = bow;
-    /* PROPORTIONAL, NOT INCREMENTAL. Adding the raw deficit each frame is an
-     * integrator with a gain of 1: it needs as many frames as the deficit has
-     * multiples of one frame's damp step, and a dodge roll is ten frames. A
-     * gain of 4 on the deficit closes it in two, and the hard ceiling below is
-     * what keeps that from over-driving. */
-    const need = Math.max(needHair, needBow) * 1.6;
-    /* WHICH CONSTRAINT IS BINDING DECIDES WHICH WAY TO GO (fix round 2).
-     * Round 1 pushed along -Z whatever was in the way. During a dodge the bow
-     * curls with `spine_03` and -Z stops being the direction that opens the
-     * gap — measured 0.0274 m of bow clearance with the servo pinned at its
-     * ceiling. The escape direction is now the mutual perpendicular of
-     * whichever of the two is worse, damped so it cannot flip between them
-     * inside a frame. */
-    if (need > -8 && (needHair > -8 || needBow > -8)) {
-      _sv1.copy(needBow >= needHair ? _sv3 : _sv2);
-      /* OUTBOARD ONLY. The mutual perpendicular is the shortest escape, and
-       * the shortest escape from something lying against her back points INTO
-       * her back half the time (measured: the servo saturated at +Z, driving
-       * the haft through her shoulder blades and the clearance DOWN). The
-       * half-space the carry may be pushed into is the one away from her
-       * spine; inside it the direction is free. */
-      if (_sv1.z > 0) { _sv1.z = 0; }
-      /* ...AND IT MAY NOT CLOSE THE BOW GAP EITHER (fix pass 2), for exactly
-       * the reason the back projection below exists.
-       *
-       * The bow is solved inside the bound (`_bowSolve`) and the braid is
-       * solved here, a frame later, so the two can disagree — and they did.
-       * Measured: strengthening `_hairOffHaft` (which changed WHICH strand is
-       * the nearest, and therefore which way `_sv2` points) took the dodge
-       * row's braid clearance from 0.0286-0.1176 m to a stable 0.077-0.111 and
-       * simultaneously took `bowClear` from a rock-steady 0.22 m to
-       * 0.22 / 0.22 / 0.166 / 0.082 against a 0.10 m bar. That is one actuator
-       * serving two sensors again. `_sv3` is the direction that OPENS the bow
-       * gap (`_bowClearDir`, computed above), so any component of the braid's
-       * escape that points against it is projected out: the servo can still
-       * fail to open the bow, it can no longer close it. Applied BEFORE the
-       * back projection, so her own spine still wins ties. */
-      if (_sv3.lengthSq() > 1e-8) {
-        _sv3.normalize();
-        const db = _sv1.dot(_sv3);
-        if (db < 0) _sv1.addScaledVector(_sv3, -db);
-      }
-      /* ...AND IT MAY ONLY EVER MOVE THE CARRY OFF HER BACK.
-       * The escape direction is measured against a bow that `combat.js`
-       * re-poses after this layer runs, so during a roll it can point the
-       * wrong way — filmed, a 0.153 m push pulled the carry 0.08 m CLOSER to
-       * her back and the clearance fell from 0.098 to 0.052 m. Projecting the
-       * direction onto the outward hemisphere makes the servo monotone: it can
-       * fail to help, but it can no longer hurt. */
-      _sv2.subVectors(this._sockMid, this._backC);
-      if (_sv2.lengthSq() > 1e-8) {
-        _sv2.normalize();
-        const d2 = _sv1.dot(_sv2);
-        if (d2 < 0) _sv1.addScaledVector(_sv2, -d2);
-      }
-      if (_sv1.lengthSq() < 1e-4) _sv1.set(0, 0, -1);
-      if (_sv1.lengthSq() > 1e-8) {
-        _sv1.normalize();
-        this._pushV.lerp(_sv1, 1 - Math.exp(-14 * dt));
-        if (this._pushV.lengthSq() > 1e-8) this._pushV.normalize();
-      }
-    }
-    /* The push is the BRAID's servo first and the bow's second: the braid is
-     * simulated after this layer and genuinely cannot be solved in the bound,
-     * while the bow now can (`_bowSolve`). Both feed the same scalar, and its
-     * direction is constrained to the outward hemisphere so a stale reading
-     * can fail to help but never drag the carry back onto her spine. */
-    const want = clamp(this._carryPush + need, 0, CARRY.PUSH_MAX);
-    this._carryPush = damp(this._carryPush, want, want > this._carryPush ? 90 : 9, dt);
-    this._dbg.carryPush = +this._carryPush.toFixed(4);
-    this._dbg.carryHair = +hair.toFixed(4);
-    this._dbg.carryBow = bow;
-    this._dbg.carryPushDir = [+this._pushV.x.toFixed(2), +this._pushV.y.toFixed(2), +this._pushV.z.toFixed(2)];
-    // DIAGNOSTIC: the haft and the bow as this (final) pass sees them
-  }
-
-  /**
-   * `_bowClear`, plus the escape direction in `out` (see `segSegDir`), and
-   * optionally ONE SUB-STEP OF PREDICTION.
-   *
-   * WHY THE BOUND HAS TO PREDICT. The stowed bow's local transform is written
-   * by `combat.js` (`_updateWield`), which runs AFTER the animator inside the
-   * same sub-step — so the carry bound can only ever see where the bow was one
-   * update ago. Standing still that is nothing; through a dodge roll the bow
-   * moved 0.35 m between the frame the bound solved and the frame the renderer
-   * drew, and the bound reported 0.235 m of clearance on a haft that was drawn
-   * 0.028 m from the limb. The bow's own per-sub-step velocity is sampled at
-   * the end of every frame (`_carryServo`) and the bound solves against where
-   * the bow is about to be. `combat.js` is not this lane's file, so this is
-   * the honest fix available: extrapolate, and keep measuring the truth.
-   */
-  _bowClearDir(butt, tip, out, predict = 0) {
-    const bow = this._bowNode();
-    out.set(0, 0, -1);
-    if (!bow) return null;
-    this._bowSeg(bow, _bwA, _bwB);
-    const gNow = +segSegDir(butt, tip, _bwA, _bwB, out).toFixed(4);
-    if (!(predict > 0) || !this._bowHas) return gNow;
-    /* CLEAR OF WHERE THE BOW IS **AND** WHERE IT IS GOING — fix pass 1.
-     *
-     * Round 4 replaced the live bow with the PREDICTED one and solved against
-     * that alone. A point estimate one lead-length ahead is right only when the
-     * lead is right, and the lead is a number of FRAMES while the error it
-     * corrects is a number of SUB-STEPS: on a quiet box the bow moves 0.02 m
-     * per frame and a 2-frame lead costs nothing, under the concurrent suite it
-     * moves 0.2-0.35 m per frame and a 2-frame lead aims the whole solve a
-     * third of a metre past the bow. That is load-dependent by construction,
-     * and it is what A100's dodge row was doing: 0.107-0.141 m isolated,
-     * 0.0206 m inside a full suite on the same build.
-     *
-     * A sweeping segment is not a position, it is a VOLUME, so the constraint
-     * is against both ends of the sweep and the worse one wins. Over-predicting
-     * can then no longer hurt — the live bow is always one of the two tests —
-     * and under-predicting still buys the lead it was there for. */
-    /* TWO SAMPLES, NOT THREE, AND THAT IS MEASURED. A third sample at half the
-     * lead sounds strictly safer — a roll's bow path is an arc, so its midpoint
-     * can be nearer the haft than either end — and it is not: tried, it failed
-     * 2 of 6 isolated A100 runs (bow 0.0607 on one, and the BRAID at 0.0387
-     * against its 0.06 bar on another). The carry has one actuator and two
-     * things to avoid; a third bow constraint spends budget the braid servo
-     * needs, and the braid is simulated after this layer and cannot buy it
-     * back. Two samples: 11 isolated runs, 11 PASS. */
-    _bwA.addScaledVector(this._bowVA, predict);
-    _bwB.addScaledVector(this._bowVB, predict);
-    const gNext = +segSegDir(butt, tip, _bwA, _bwB, _bwDir2).toFixed(4);
-    if (gNext < gNow) { out.copy(_bwDir2); return gNext; }
-    return gNow;
-  }
-
-  /**
-   * Sample the stowed bow's per-sub-step velocity in char space (see
-   * `_bowClearDir`). Runs at the end of the frame, where the endpoints are the
-   * ones the renderer will use.
-   */
-  /**
-   * The stowed bow's limb axis in char space, AT FULL SIZE (round 5).
-   *
-   * `combat.js` does not snap the bow onto her back, it SCALES it in: on the
-   * frame it leaves her hand its world scale is ~0.5 (`_placeOnBack`'s
-   * `stowVis`, damped at 14/s) and a loaded 100 ms frame takes it to ~0.9 —
-   * both limb tips jump ~0.2 m outward in one frame, a motion the per-frame
-   * velocity lead cannot see coming, and on the first stowed frame there is no
-   * velocity at all. That is the A100 dodge row's one failure this round
-   * (0.0678 m against 0.10, the first gate of a fresh lane run; four isolated
-   * runs and eight back-to-back rolls read 0.22), because that row rolls on
-   * the very frame the bow re-stows.
-   * The carry therefore clears the bow it is GOING to be: the same placement,
-   * scaled back up about its own centre by 1 / scale. The clearance the gates
-   * measure (`debug().bowClear`, `_bowClear`) is still the bow as drawn, and a
-   * sub-segment about the same centre can only be further away.
-   */
-  _bowSeg(bow, a, b) {
-    bow.updateWorldMatrix(true, false);
-    _m4.copy(this.an.model.matrixWorld).invert().multiply(bow.matrixWorld);
-    a.set(0, -0.75, 0).applyMatrix4(_m4);
-    b.set(0, 0.75, 0).applyMatrix4(_m4);
-    const e = bow.matrixWorld.elements;
-    const sc = Math.hypot(e[4], e[5], e[6]);      // world scale of the limb axis
-    if (sc > 1e-3 && sc < 0.995) {
-      const k = Math.min(20, 1 / sc);
-      _bwMid.addVectors(a, b).multiplyScalar(0.5);
-      a.sub(_bwMid).multiplyScalar(k).add(_bwMid);
-      b.sub(_bwMid).multiplyScalar(k).add(_bwMid);
-    }
-    return a;
-  }
-
-  _bowSample() {
-    const bow = this._bowNode();
-    if (!bow) { this._bowHas = false; return; }
-    this._bowSeg(bow, _bwA, _bwB);
-    if (this._bowHas) {
-      /* Clamped, but less tightly than round 4's 0.35 m: the clamp was there
-       * because the estimate REPLACED the live bow in the bound, so a hitched
-       * frame could throw the carry across her back. Since fix pass 1 the bound
-       * takes the worse of the live and the predicted segment, so a too-large
-       * estimate can only add a constraint — and a roll genuinely moves the bow
-       * 0.35-0.45 m in a loaded frame, which the old clamp was cutting off. */
-      /* RAW, NOT SMOOTHED (fix pass 1). The `lerp(0.5)` halved the estimate on
-       * exactly the frames that need it — the first long frame of a roll, and
-       * the frames where `combat.js` is still lerping the bow back onto her
-       * back after an aim, which is the state A100's dodge row is in. Since the
-       * bound takes the worse of the live and the predicted segment, an
-       * over-estimate can only add a constraint, so there is nothing for the
-       * smoothing to protect. Under-estimating is what was still failing the
-       * row inside a full suite (0.0843 m with the smoothed estimate). */
-      this._bowVA.subVectors(_bwA, this._bowPA).clampLength(0, 0.50);
-      this._bowVB.subVectors(_bwB, this._bowPB).clampLength(0, 0.50);
-    }
-    this._bowPA.copy(_bwA); this._bowPB.copy(_bwB);
-    this._bowHas = true;
-  }
-
-  /**
-   * Translate the carry's midpoint until the haft clears the stowed bow, or
-   * until the midpoint ball's ceiling says it cannot. Returns the clearance it
-   * reached (null when there is no bow to clear).
-   *
-   * `mid`/`dir` are modified in place; `back` is the upper-back centre the
-   * ceiling is about and `sh` the right shoulder the blade clause is about —
-   * both passed in so this can be called from inside `_liveSocket`'s own
-   * scratch without aliasing it.
-   */
-  _bowSolve(mid, dir, L, back, sh) {
-    let gap = null;
-    // eight passes, not five: each pass translates and is then re-clamped by
-    // the blade clauses and the midpoint ceiling, so a push that the ceiling
-    // eats needs another pass to find a direction the ceiling leaves alone
-    for (let i = 0; i < 8; i++) {
-      _bwC.copy(mid).addScaledVector(dir, -0.5 * L);
-      _bwD.copy(mid).addScaledVector(dir, 0.5 * L);
-      /* PREDICT THE BOW ONE SUB-STEP (fix round 4).
-       *
-       * `_bowClearDir` has taken a `predict` argument since round 2 and
-       * `_bowSample` has maintained the velocity it needs — and nothing ever
-       * passed it, so the solve has always steered off a bow one update stale.
-       * That is invisible while she is upright and it is the whole story
-       * during a dodge roll, where `spine_03` (which the stowed bow is rigid
-       * on) turns through most of a right angle inside one update: A100's
-       * dodge row is bimodal, landing at ~0.16 m when the lag does not matter
-       * and at 0.070-0.082 m against a 0.10 m bar when it does. One sub-step
-       * of extrapolation is exactly the lag, and `_bowSample` already clamps
-       * the velocity to 0.35 m so a hitched frame cannot throw the carry
-       * across her back. */
-      gap = this._bowClearDir(_bwC, _bwD, _sv4, BOW_PREDICT);
-      if (gap == null || gap >= CARRY.BOW_KEEP) break;
-      if (_sv4.z > 0) _sv4.z = 0;                 // never into her back
-      if (_sv4.lengthSq() < 1e-4) _sv4.set(0, 0, -1);
-      _sv4.normalize();
-      /* SLIDE ALONG A CONSTRAINT THAT IS ALREADY TIGHT, DO NOT PUSH INTO IT
-       * (fix pass 1, A100's dodge row).
-       *
-       * Round 4 reordered the clamps so the blade clause could not be undone,
-       * and that was right but not sufficient: measured on a failing dodge
-       * frame the carry sat at `midToBack` 0.299 (ceiling 0.296) and
-       * `tipAboveShoulderMax` 0.600 (ceiling 0.600) with `bowClear` 0.0645 m
-       * against A100's 0.10 m bar — i.e. BOTH ceilings saturated and the whole
-       * push being thrown away by the clamps every pass, so eight passes did
-       * the same nothing five did. A saturated constraint does not mean there
-       * is nowhere to go; it means the only directions left are TANGENTIAL. So
-       * the radial component of the escape is removed when the midpoint is on
-       * the ball, and its rising component when the blade is on its ceiling:
-       * the carry then slides around her back — the bow runs the opposite
-       * diagonal, so lateral and axial separation are available even when depth
-       * is not — instead of trying to leave it. */
-      _bsRaw.copy(_sv4);
-      _skC.subVectors(mid, back);
-      const rNow = _skC.length();
-      const onBall = rNow > CARRY.MID_CEIL - 2e-3 && rNow > 1e-4;
-      if (onBall) {
-        _skC.multiplyScalar(1 / rNow);
-        const radial = _sv4.dot(_skC);
-        if (radial > 0) _sv4.addScaledVector(_skC, -radial);
-      }
-      if (mid.y + 0.5 * L * dir.y > sh.y + CARRY.TIP_ABOVE_MAX - 2e-3 && _sv4.y > 0) _sv4.y = 0;
-      if (_sv4.lengthSq() < 1e-4) {
-        /* NOTHING TANGENTIAL LEFT IN THE MEASURED DIRECTION — so slide around
-         * her back along the one axis that costs neither radius nor tip height:
-         * perpendicular to both the radial and the haft. Round 4's fallback was
-         * a pure -Z, which on a saturated ball is exactly the component the
-         * ceiling throws away, so the pass did nothing and eight passes did
-         * nothing eight times (that is the 0.063 m dodge frame). The sign is
-         * the one the measured escape agrees with. */
-        if (onBall) {
-          _sv4.crossVectors(_skC, dir);
-          if (_sv4.lengthSq() < 1e-6) _sv4.set(1, 0, 0);
-          _sv4.normalize();
-          /* WHICH WAY ROUND HER BACK — decided by measuring, not by the raw
-           * escape's sign (fix pass 1). Both signs slide along the ball and
-           * neither is preferred by the bow's own measured direction, because
-           * that direction is exactly what the ball projected away. So both
-           * candidates are evaluated against the bow AND against the braid, and
-           * the braid is the tie-breaker: the carry has one actuator and two
-           * things to avoid, and the run where the bow clause failed at 0.086 m
-           * had the braid failing at 0.060 m on the same roll. */
-          const step0 = CARRY.BOW_KEEP - gap;
-          _sgC.copy(mid).addScaledVector(_sv4, step0);
-          const bPos = this._bowClearDir(_sgA.copy(_sgC).addScaledVector(dir, -0.5 * L),
-            _sgB.copy(_sgC).addScaledVector(dir, 0.5 * L), _bwDir2, BOW_PREDICT) ?? 9;
-          const hPos = this._hairGapFor(_sgC, dir, L);
-          _sgC.copy(mid).addScaledVector(_sv4, -step0);
-          const bNeg = this._bowClearDir(_sgA.copy(_sgC).addScaledVector(dir, -0.5 * L),
-            _sgB.copy(_sgC).addScaledVector(dir, 0.5 * L), _bwDir2, BOW_PREDICT) ?? 9;
-          const hNeg = this._hairGapFor(_sgC, dir, L);
-          const flip = Math.abs(bPos - bNeg) <= 0.02 ? hNeg > hPos : bNeg > bPos;
-          if (flip) _sv4.negate();
-        } else _sv4.set(0, 0, -1);
-      }
-      _sv4.normalize();
-      mid.addScaledVector(_sv4, CARRY.BOW_KEEP - gap);
-      /* THE CEILING FIRST, THE BLADE CLAUSES LAST (fix round 4).
-       *
-       * This ran the other way round, and during a dodge roll the midpoint
-       * projection was therefore free to undo the blade clamp that had just
-       * been applied: A100's `tipAboveShoulderMax` read 0.716-0.725 m against
-       * its 0.70 m bar on three runs in six while the bow clause the push was
-       * buying passed comfortably. Projecting onto the ball first and clamping
-       * the blade after means the NEXT pass re-pushes the bow from a legal
-       * position instead of the blade clause being overwritten every pass, and
-       * five passes converge on something that satisfies both.
-       *
-       * The blade ceiling also re-reads the tip: `over3` used the tip height
-       * from BEFORE the floor clause had moved it, so a frame where both fired
-       * clamped against a stale number. */
-      _skC.subVectors(mid, back);
-      const r3 = _skC.length();
-      if (r3 > CARRY.MID_CEIL) mid.copy(back).addScaledVector(_skC, CARRY.MID_CEIL / r3);
-      let tipY3 = mid.y + 0.5 * L * dir.y;
-      const need3 = (sh.y + CARRY.TIP_ABOVE) - tipY3;
-      if (need3 > 1e-4) { mid.y += need3; tipY3 += need3; }
-      const over3 = tipY3 - (sh.y + CARRY.TIP_ABOVE_MAX);
-      if (over3 > 1e-4) mid.y -= over3;
-      const dx3 = (-(mid.x + 0.5 * L * dir.x)) - CARRY.TIP_RIGHT;
-      if (dx3 < -1e-4) mid.x += dx3;
-    }
-    return gap;
-  }
-
-  /**
    * The braid's smallest distance to a CANDIDATE carry segment (fix pass 1).
    *
    * `_carryServo` measures the braid against the segment the renderer drew;
@@ -3753,22 +2841,10 @@ export class MeleeLayer {
     let best = 9;
     for (let i = 0, j = 0; i < this._hairN; i++, j += 3) {
       _hgP.set(P[j], P[j + 1], P[j + 2]);
-      const g = segPoint(_hgA, _hgB, _hgP);
+      segPointN(_hgA, _hgB, _hgP); const g = _sgNum[0];
       if (g < best) best = g;
     }
     return best;
-  }
-
-  /** Re-aim `d` to the given angle off +Y, keeping its azimuth about +Y. */
-  _setTilt(d, tilt) {
-    const h = Math.hypot(d.x, d.z);
-    const s = Math.sin(tilt);
-    if (h < 1e-5) {
-      d.set(Math.sin(this.socketAz) * s, Math.cos(tilt), Math.cos(this.socketAz) * s);
-    } else {
-      d.set(d.x / h * s, Math.cos(tilt), d.z / h * s);
-    }
-    return d;
   }
 
   /**
@@ -3856,6 +2932,7 @@ export class MeleeLayer {
    */
   _solveRight(w, u) {
     const an = this.an, b = an.b;
+    _hTab.copy(_hand);
     // elbow pole: down-and-back, opened outward as the hand rises, so the
     // elbow stays BESIDE the ribs (canon) instead of lifting over the shoulder
     const lift = clamp((_hand.y - 1.02) * 2.2, -0.4, 1);
@@ -3867,7 +2944,10 @@ export class MeleeLayer {
        * chooses the side of the elbow circle; `_elbowGuard` holds the bound. */
       _pole.set(-0.50, -0.30, 0.81).normalize();
     } else {
-      _pole.set(-0.55 - 0.35 * Math.max(0, lift), -0.80 + 0.28 * Math.max(0, lift), -0.34).normalize();
+      /* a low hand's elbow goes BACK beside the ribs, a raised hand's opens outward:
+       * "out" at the guard stood the upper arm level with her shoulder (filmed) */
+      const up = Math.max(0, lift);
+      _pole.set(-0.36 - 0.54 * up, -0.80 + 0.28 * up, -0.62 + 0.28 * up).normalize();
     }
     an._ikArm('r', _hand, _pole, w, null);
     an._clearArmOfHead(b.upArmR, b.loArmR, b.handR, _hand, _pole, w);
@@ -3909,6 +2989,22 @@ export class MeleeLayer {
     }
     if (path) this._pathGuard(w);
     else if (this._guardOn) this._foreGuard(w);
+    /* THE GUARDS MAY NOT POP: what they added to the table's hand changes by at
+     * most GUARD_STEP a step, so a clearance that wakes up is a push and not a
+     * jump of the far end of a 1.55 m lance (filmed: 0.66 m in a frame at a jog). */
+    if (!path) {
+      _hOff.subVectors(_hand, _hTab);
+      _hOffD.subVectors(_hOff, this._guardOff);
+      const m = Math.sqrt(_hOffD.x * _hOffD.x + _hOffD.y * _hOffD.y + _hOffD.z * _hOffD.z);
+      if (m > GUARD_STEP) {
+        _hOffD.multiplyScalar(GUARD_STEP / m);
+        this._guardOff.add(_hOffD);
+        _hand.copy(_hTab).add(this._guardOff);
+        an._ikArm('r', _hand, _pole, w, null);
+        an._clearArmOfHead(b.upArmR, b.loArmR, b.handR, _hand, _pole, w);
+        this._alignHaft(w);
+      } else this._guardOff.copy(_hOff);
+    } else this._guardOff.subVectors(_hand, _hTab);
     this._rollOff = false;
   }
 
@@ -3930,7 +3026,7 @@ export class MeleeLayer {
       an._charOf(b.handR.bone, _eH);
       an._charOf(b.pelvis.bone, _eS);
       an._charOf(b.neck1.bone, _eD);
-      const g = segSegDir(_eE, _eH, _eS, _eD, _eU);   // _eU: from the axis to the forearm
+      segSegDirN(_eE, _eH, _eS, _eD, _eU); const g = _sgNum[0];   // _eU: from the axis to the forearm
       if (!(g < FORE_CLEAR)) { if (i === 0) D.foreGuard = 0; return; }
       _eU.y = 0;
       if (_eU.lengthSq() < 1e-8) _eU.set(-1, 0, 0);
@@ -3938,7 +3034,7 @@ export class MeleeLayer {
       _hand.addScaledVector(_eU, FORE_CLEAR - g + 0.01);
       an._ikArm('r', _hand, _pole, w, null);
       this._alignHaft(w);
-      D.foreGuard = +(FORE_CLEAR - g).toFixed(3);
+      D.foreGuard = FORE_CLEAR - g;
     }
   }
 
@@ -4080,7 +3176,7 @@ export class MeleeLayer {
         _d.normalize();
         if (this._twistAbout(_q2, _d, _q3)) {
           const ang = 2 * Math.acos(clamp(Math.abs(_q3.w), -1, 1));
-          this._dbg.foreTwistDeg = +(ang * 180 / Math.PI).toFixed(1);
+          this._dbg.foreTwistDeg = ang * 180 / Math.PI;
           let k = w;
           if (ang > FORE_TWIST) k *= FORE_TWIST / ang;
           _q1.copy(_q3);
@@ -4094,7 +3190,7 @@ export class MeleeLayer {
 
       // --- 3. the residual, on the wrist
       const ang = 2 * Math.acos(clamp(Math.abs(_q2.w), -1, 1));
-      this._dbg.wristSwingDeg = +(ang * 180 / Math.PI).toFixed(1);
+      this._dbg.wristSwingDeg = ang * 180 / Math.PI;
       let k = w;
       if (ang > WRIST_SWING) k *= WRIST_SWING / ang;
       if (k < 0.999) _q2.slerp(_qi(), 1 - k);
@@ -4102,7 +3198,7 @@ export class MeleeLayer {
     }
     an._liveW(ha.bone, _q1);
     _a.copy(this.gripDirL).applyQuaternion(_q1);
-    this._dbg.shaftErrDeg = +(Math.acos(clamp(_a.dot(_shaft), -1, 1)) * 180 / Math.PI).toFixed(1);
+    this._dbg.shaftErrDeg = Math.acos(clamp(_a.dot(_shaft), -1, 1)) * 180 / Math.PI;
   }
 
   /**
@@ -4127,91 +3223,308 @@ export class MeleeLayer {
     return an._segInHead(_sgA, _sgB) || an._segInHead(_sgB, _sgC);
   }
 
-  /** The free arm: counterweight, or onto the haft on the two-handed thrust. */
+  /* ---------------------------- measurement ----------------------------- */
+
+  /** Shoulder line vs hip line, in degrees (the readable torso twist). */
+  /**
+   * THE LEFT ARM. Free (`lhW` 0) it goes to the table's wrist goal `_lh`. On the
+   * haft (`lhW` 1) the palm centre goes to the mark `lhOn` metres ahead of the
+   * right grip, on the prop's axis, and when the arm cannot reach that mark the
+   * hand takes the farthest point of the haft it can (the haft runs through the
+   * front hand). The wrist goal is the palm goal less the hand's own palm offset,
+   * which depends on how the hand ends up turned, so it is solved twice.
+   */
   _solveLeft(w, u) {
-    const an = this.an, b = an.b;
-    if (u.lhOnShaft) {
-      // ride the LIVE haft, not the authored one: the left hand lands on the
-      // pole wherever the right arm actually put it (A101's <= 0.05 m clause)
-      this._gripChar(_grip);
-      this._shaftChar(_a);
-      _lh.copy(_grip).addScaledVector(_a, u.lhOn);
-    }
-    /* THE FREE ARM'S ELBOW, AND THE TWO-HANDED ONE'S (fix round 4, F7).
-     *
-     * One pole served both, and it is the wrong pole for a hand that is out on
-     * the haft in front of her chest: with the elbow hanging down-and-back the
-     * left forearm ran 0.106 m from her own spine on light-3's thrust, against
-     * A104's new 0.10 m bar. On a two-handed frame the elbow goes OUT — which
-     * is also how anyone holds a pole with two hands, and is the same note
-     * Kevin has made about the right arm ("arms crossing into her body"). */
-    /* FIX PASS 1: the two-handed pole goes OUT AND FORWARD, not just out, and
-     * the free hand takes the haft 0.10 m further down it (`lhOn` -0.22 ->
-     * -0.12 on light-3's contact and follow). The judge measured
-     * `forearmToSpineL` at 0.099-0.108 m across eight runs against a 0.10 m bar
-     * — 3 mm of median margin, i.e. inside its own sampling noise. Live, over
-     * four swing cycles at 30 ms of injected stall: 0.124-0.129 m. That is the
-     * rig's limit rather than a choice — pushed further out (pole z 0.46,
-     * `lhOn` -0.08) the number stops moving at 0.130 and the left hand starts
-     * leaving the haft (`leftHandToShaft` 0.034-0.045 against A101's 0.05 m
-     * two-handed test), which trades a measured clause for a worse one. */
-    if (u.lhOnShaft) _pole.set(1.00, -0.08, 0.30).normalize();
+    const an = this.an, b = an.b, D = this._dbg;
+    const on = clamp(u.lhW || 0, 0, 1) * w;
+    if (on > 1e-3) _pole.set(0.82, -0.54, 0.16).normalize();
     else _pole.set(0.72, -0.62, -0.18).normalize();
-    an._ikArm('l', _lh, _pole, w, null);
-    an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
-    if (!u.lhOnShaft) this._clearLeftArmOfBow(w);
-    if (u.lhOnShaft) {
-      // align the free hand's own grip axis to the haft so it READS as a grip
-      an._liveW(b.handL.bone, _q1);
-      _b.set(-this.gripDirL.x, this.gripDirL.y, this.gripDirL.z).applyQuaternion(_q1);
-      _q2.setFromUnitVectors(_b, _a);
-      const ang = 2 * Math.acos(clamp(Math.abs(_q2.w), -1, 1));
-      let s = w;
-      if (ang > 1.0) s *= 1.0 / ang;
-      if (s < 0.999) _q2.slerp(_qi(), 1 - s);
-      an._rotQL(b.handL, _q2);
+    if (on <= 1e-3) {
+      an._ikArm('l', _lh, _pole, w, null);
+      an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
+      this._clearLeftArmOfBow(w);
+      D.lhOnNow = null;
+      this._lhOnW = 0;
+      return;
     }
+    /* what the late passes (`postFix`) need to seat this hand again on the haft
+     * the renderer will draw: its weight, its place on the haft and the free goal */
+    this._lhOnW = on;
+    this._lhArmW = w;
+    this._lhOnWant = (u.lhOn || 0) * (this._lhK || 1);
+    this._lhFree.copy(_lh);
+    this._seatLeft(on, w, this._lhOnWant, 0);
   }
 
   /**
-   * THE FREE ARM STAYS OFF THE STOWED BOW (round 5 fix pass 1).
+   * THE LEFT HAND ON THE HAFT, from wherever the haft is NOW (fix round 1).
    *
-   * Until this pass every live swing put the BOW in her left fist
-   * (combat.js counted a spear swing as a bow action — judge finding), so the
-   * free arm never met the bow on her back. With the bow now kept on its
-   * spine socket while the spear is out, its stow — a diagonal from above her
-   * right shoulder down to her LEFT hip, the lower limb standing ~0.56 m out
-   * from her centre line at hip height — lies across exactly where the free
-   * arm hangs and trails: measured on the pinned beats before this solve, the
-   * left forearm 0.022 m from the limb axis at light-1's contact, the wrist
-   * 0.018 m, the upper arm 0.006 m on light-2's follow (the arm through the
-   * bow). So after the IK, the upper arm and the forearm-plus-hand are
-   * measured against the limb axis (`_bowSeg`: the bow as it will be at full
-   * size) and, where either is inside `BOW_ARM_CLEAR`, the wrist goal and the
-   * elbow pole are pushed along the separating direction and the arm is
-   * re-solved — at most three passes, the same shape as `_clearArmOfHead`.
-   * `debug().leftArmToBow` publishes the result; A104 gates it.
+   * Split out of `_solveLeft` so the last pass of the frame can run it again:
+   * `postFix` turns the right hand after this layer (the hand guard rotates the
+   * haft off her braid and spine by up to 0.3 rad a pass, the hull pass pulls the
+   * fist in), and the left palm, 0.3-0.5 m down the haft, was left behind by
+   * 0.06-0.15 m on light-2's live strike (A101) while the layer's own error read
+   * 0-0.04. `slide` moves the goal along the haft (m, + toward the tip): the
+   * forearm-off-the-belly fallback below and the hull pass use it.
+   */
+  _seatLeft(on, w, sWant, slide) {
+    const an = this.an, b = an.b, D = this._dbg;
+    _pole.set(0.82, -0.54, 0.16).normalize();
+    this._gripChar(_grip);
+    this._shaftChar(_a);
+    an._charOf(b.upArmL.bone, _eS);
+    const reach = (an._lenUpL + an._lenLoL) * 0.975 + LH_PALM;
+    let sOn = sWant + slide;
+    _b.subVectors(_grip, _eS);
+    const bd = _b.dot(_a), disc = bd * bd - (_b.lengthSq() - reach * reach);
+    const sFar = disc >= 0 ? -bd + Math.sqrt(disc) : -bd;
+    this._lhReachLack = disc >= 0 ? 0 : Math.sqrt(-disc);
+    if (sOn > sFar) sOn = sFar;
+    if (sOn < LH_ON_MIN) sOn = LH_ON_MIN;
+    D.lhOnNow = sOn;
+    this._lhSOn = sOn;
+    _d.copy(_grip).addScaledVector(_a, sOn);          // the palm goal
+    _slG.copy(_d);
+    for (let pass = 0; pass < 5; pass++) {
+      an._liveW(b.handL.bone, _q1);
+      _c.copy(this.palmOffLL).applyQuaternion(_q1);
+      _eC.subVectors(_slG, _c);                       // the wrist goal on the haft
+      _lh.copy(this._lhFree).lerp(_eC, on);
+      an._ikArm('l', _lh, _pole, w, null);
+      an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
+      /* the knuckle line along the haft, index toward the blade */
+      an._liveW(b.handL.bone, _q1);
+      _b.copy(this.gripDirLL).applyQuaternion(_q1);
+      _q2.setFromUnitVectors(_b, _a);
+      const ang = 2 * Math.acos(clamp(Math.abs(_q2.w), -1, 1));
+      let k = on;
+      if (ang > 2.6) k *= 2.6 / ang;
+      if (k < 0.999) _q2.slerp(_qi(), 1 - k);
+      an._rotQL(b.handL, _q2);
+      /* turns the pole when the forearm lies on her belly: the next pass solves with
+       * it and re-seats the palm. Round 5 stopped after two turns, and A104 read the
+       * left forearm 0.084-0.088 m off the spine on light-1's last recover frame and
+       * light-2's windup: up to four now, and the loop ends once it is clear. */
+      if (pass >= 4 || !this._leftElbowOut()) {
+        if (pass >= 2) break;
+      }
+    }
+    /* one last small correction: whatever the turn moved the palm by */
+    an._charOf(b.handL.bone, _c);
+    an._liveW(b.handL.bone, _q1);
+    _b.copy(this.palmOffLL).applyQuaternion(_q1).add(_c);
+    D.lhPalmErr = _b.distanceTo(_slG);
+    return D.lhPalmErr;
+  }
+
+  /** The left forearm's distance to her pelvis->neck axis, on the live bones (char). */
+  _leftForeGap() {
+    const an = this.an, b = an.b;
+    an._charOf(b.loArmL.bone, _lbE);
+    an._charOf(b.handL.bone, _lbH);
+    an._charOf(b.pelvis.bone, _lbA);
+    an._charOf(b.neck1.bone, _lbB);
+    segSegN(_lbE, _lbH, _lbA, _lbB);
+    return _sgNum[0];
+  }
+
+  /** The left knuckle line's centre against the live haft (char); the number A101 reads. */
+  _leftPalmGap() {
+    const K = this._knuckleL;
+    if (!K) return 0;
+    const an = this.an;
+    this._gripChar(_grip);
+    this._shaftChar(_a);
+    _slB.copy(_grip).addScaledVector(_a, -this.gripFrac * this.length);
+    _slT.copy(_grip).addScaledVector(_a, (1 - this.gripFrac) * this.length);
+    an._charOf(K.i, _slP);
+    an._charOf(K.p, _slF);
+    _slP.add(_slF).multiplyScalar(0.5);
+    segPointN(_slB, _slT, _slP);
+    return _sgNum[0];
+  }
+
+  /**
+   * THE LEFT HAND SEATED AGAIN ON THE FINAL HAFT (fix round 1; `postFix`, after
+   * the right hand's late passes). Runs only when the left hand is on the haft
+   * and something moved it off (> 0.012 m) or laid the forearm on her belly
+   * (< 0.115 m off the axis; A104's bar is 0.10). If the turn alone does not clear the belly, the
+   * palm slides toward the blade in 0.03 m steps (at most 0.12 m, never past
+   * her reach): moving the hand away along the haft moves the forearm off her.
+   */
+  _reseatLeft() {
+    const D = this._dbg;
+    const on = this._lhOnW;
+    D.lhReseat = 0;
+    if (!(on > 1e-3) || !this._held || !this.an.b.handL) return;
+    const g0 = this._leftPalmGap(), f0 = this._leftForeGap();
+    D.lhGapPre = g0;
+    if (g0 <= 0.012 && f0 >= 0.115) { D.lhGapPost = g0; return; }
+    let slide = 0;
+    this._seatLeft(on, this._lhArmW, this._lhOnWant, slide);
+    D.lhReseat = 1;
+    let f = this._leftForeGap();
+    while (f < 0.115 && slide < 0.12 && this._lhSOn >= this._lhOnWant + slide - 1e-4) {
+      slide += 0.03;
+      this._seatLeft(on, this._lhArmW, this._lhOnWant, slide);
+      D.lhReseat++;
+      f = this._leftForeGap();
+    }
+    D.lhSlide = slide;
+    D.lhGapPost = this._leftPalmGap();
+  }
+
+  /**
+   * THE LEFT FIST OUT OF THE METAL TOO (fix round 1, A106 S5). `_armHullGuard`
+   * and `_armHullFinal` kept only the drive arm out of a hull; the left arm rides
+   * the haft and a Tiller's shin swept into it (r5: 0.3 mm inside; the judge's run:
+   * 20 mm). On the final matrices: the left elbow turns about shoulder -> wrist
+   * (the palm stays on the haft), then the palm slides back along the haft toward
+   * the right hand in 0.04 m steps until the forearm is `ARM_CLEAR_FINAL` clear.
+   */
+  _leftHullFinal(an) {
+    const D = this._dbg;
+    D.armHullFinalL = 0;
+    if (!(this._lhOnW > 1e-3)) return;
+    const st = D.stance;
+    if (st !== 'swing' && st !== 'ready') return;
+    const mel = this.ctx.combat?.melee;
+    const hulls = mel && typeof mel.armHulls === 'function' ? mel.armHulls() : null;
+    if (!hulls || !hulls.length) return;
+    an.model.updateWorldMatrix(true, false);
+    const M = an.model.matrixWorld;
+    _ahSh.set(0, 0, 0);
+    const goal = ARM_CLEAR - ARM_CLEAR_FINAL;
+    let worst = this._armDeficitL(hulls, M);
+    D.armHullDefL = worst;
+    if (!(worst > goal)) return;
+    let n = 0;
+    if (this._armRollOutL(hulls, M, worst)) { n += 100; worst = this._armDeficitL(hulls, M); }
+    let slide = 0;
+    while (worst > goal && slide > -0.36 && this._lhSOn > LH_ON_MIN + 1e-3) {
+      slide -= 0.04;
+      this._seatLeft(this._lhOnW, this._lhArmW, this._lhOnWant, slide);
+      if (this._armRollOutL(hulls, M, this._armDeficitL(hulls, M))) n += 100;
+      worst = this._armDeficitL(hulls, M);
+      n++;
+    }
+    D.armHullFinalL = n;
+    D.armHullDefL = worst;
+  }
+
+  /** `_armDeficit` for the LEFT forearm (elbow -> knuckle centre), world. */
+  _armDeficitL(hulls, M) {
+    const an = this.an, b = an.b;
+    an._charOf(b.loArmL.bone, _ahE).add(_ahSh).applyMatrix4(M);
+    const K = this._knuckleL;
+    if (K && K.i && K.p) {
+      an._charOf(K.i, _ahH);
+      an._charOf(K.p, _ahF);
+      _ahF.add(_ahH).multiplyScalar(0.5).add(_ahSh).applyMatrix4(M);
+    } else an._charOf(b.handL.bone, _ahF).add(_ahSh).applyMatrix4(M);
+    return this._segHullDeficit(hulls, _ahE, _ahF, false);
+  }
+
+  /** `_armRollOut` for the left arm: the upper arm turns about shoulder -> wrist,
+   *  the hand stays where it is on the haft. True if it turned. */
+  _armRollOutL(hulls, M, now) {
+    const an = this.an, b = an.b;
+    an._charOf(b.upArmL.bone, _eS);
+    an._charOf(b.loArmL.bone, _eE);
+    an._charOf(b.handL.bone, _eH);
+    _eAx.subVectors(_eH, _eS);
+    const d = _eAx.length();
+    if (d < 1e-4) return false;
+    _eAx.multiplyScalar(1 / d);
+    const along = _eT.subVectors(_eE, _eS).dot(_eAx);
+    _eC.copy(_eS).addScaledVector(_eAx, along);
+    _eU.subVectors(_eE, _eC);
+    const r = _eU.length();
+    if (r < 1e-3) return false;
+    _eU.multiplyScalar(1 / r);
+    _eV.crossVectors(_eAx, _eU);
+    const K = this._knuckleL;
+    if (K && K.i && K.p) {
+      an._charOf(K.i, _ahH);
+      an._charOf(K.p, _ahF);
+      _ahF.add(_ahH).multiplyScalar(0.5).add(_ahSh).applyMatrix4(M);
+    } else _ahF.copy(_eH).add(_ahSh).applyMatrix4(M);
+    an._charOf(b.pelvis.bone, _lbA);
+    an._charOf(b.neck1.bone, _lbB);
+    const step = Math.PI / 12;
+    let best = now, bestPhi = 0;
+    for (let i = 1; i <= 8; i++) {
+      for (let sg = -1; sg <= 1; sg += 2) {
+        const phi = sg * i * step;
+        _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
+        if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
+        /* never onto her belly: the turned forearm keeps A104's 0.10 m */
+        segSegN(_eT, _eH, _lbA, _lbB);
+        if (_sgNum[0] < 0.10) continue;
+        _ahE.copy(_eT).add(_ahSh).applyMatrix4(M);
+        const def = this._segHullDeficit(hulls, _ahE, _ahF, false);
+        if (def <= 1e-4) { best = 0; bestPhi = phi; i = 99; break; }
+        if (def < best - 0.01) { best = def; bestPhi = phi; }
+      }
+    }
+    if (bestPhi === 0) return false;
+    _eQ.setFromAxisAngle(_eAx, bestPhi);
+    an._rotQL(b.upArmL, _eQ);
+    return true;
+  }
+
+  /**
+   * A LOW TWO-HANDED GRIP MAY NOT LAY THE LEFT FOREARM ON HER BELLY (A104; Kevin's
+   * "arms crossing into her body"): when the forearm is within `LEFT_FORE_CLEAR` of
+   * the pelvis->neck axis, the elbow pole turns about shoulder->wrist, away from the
+   * axis, for the next pass of the solve. (Rolling the solved arm instead left the palm
+   * off the haft: the hand turned with it, and A101 read 0.08 m.)
+   */
+  _leftElbowOut() {
+    const an = this.an, b = an.b;
+    an._charOf(b.loArmL.bone, _lbE);
+    an._charOf(b.handL.bone, _lbH);
+    an._charOf(b.pelvis.bone, _lbA);
+    an._charOf(b.neck1.bone, _lbB);
+    segSegN(_lbE, _lbH, _lbA, _lbB); const g = _sgNum[0];
+    if (!(g < LEFT_FORE_CLEAR)) return false;
+    an._charOf(b.upArmL.bone, _lbS);
+    _lbU.subVectors(_lbH, _lbS);
+    const ul = _lbU.length();
+    if (ul < 1e-4) return false;
+    _lbU.multiplyScalar(1 / ul);
+    /* the elbow's radius about shoulder->wrist, and which way round is away from the axis */
+    _lbF.subVectors(_lbE, _lbS);
+    _lbF.addScaledVector(_lbU, -_lbF.dot(_lbU));
+    const r = _lbF.length();
+    if (r < 1e-3) return false;
+    _lbV.crossVectors(_lbU, _lbF).multiplyScalar(1 / r);   // the elbow's tangent
+    const away = _lbV.x * (_ss.x - _segNear.x) + _lbV.y * (_ss.y - _segNear.y) + _lbV.z * (_ss.z - _segNear.z);
+    const sign = away >= 0 ? 1 : -1;
+    const ang = Math.min(0.9, (LEFT_FORE_CLEAR - g) / r * 1.6) * sign;
+    _pole.applyAxisAngle(_lbU, ang);
+    return true;
+  }
+
+  /**
+   * The free left arm (light-3) stays off the stowed bow's limb: the wrist goal
+   * and the elbow pole are pushed away from it. Same bar as Round 4 (A104).
    */
   _clearLeftArmOfBow(w) {
     const D = this._dbg;
-    if (w < 0.01) { D.leftArmToBow = null; return; }
-    const bow = this._bowNode();
-    if (!bow) { D.leftArmToBow = null; return; }
+    if (w < 0.01 || !this._bowChar(_lbA, _lbB)) { D.leftArmToBow = null; return; }
     const an = this.an, b = an.b;
-    if (!b.upArmL || !b.loArmL || !b.handL) return;
-    this._bowSeg(bow, _lbA, _lbB);
     let g = 9;
     for (let it = 0; it < 4; it++) {
       an._charOf(b.upArmL.bone, _lbS);
       an._charOf(b.loArmL.bone, _lbE);
       an._charOf(b.handL.bone, _lbH);
-      // the hand itself: 9 cm on from the wrist, along the forearm
       _lbF.subVectors(_lbH, _lbE);
       const fl = _lbF.length();
       if (fl > 1e-6) _lbF.multiplyScalar(0.09 / fl);
       _lbF.add(_lbH);
-      const gU = segSegDir(_lbS, _lbE, _lbA, _lbB, _lbU);
-      const gF = segSegDir(_lbE, _lbF, _lbA, _lbB, _lbV);
+      segSegDirN(_lbS, _lbE, _lbA, _lbB, _lbU); const gU = _sgNum[0];
+      segSegDirN(_lbE, _lbF, _lbA, _lbB, _lbV); const gF = _sgNum[0];
       g = Math.min(gU, gF);
       if (g >= BOW_ARM_CLEAR || it === 3) break;
       const push = BOW_ARM_CLEAR - g + 0.01;
@@ -4219,19 +3532,27 @@ export class MeleeLayer {
         _lh.addScaledVector(_lbV, push);
         _pole.addScaledVector(_lbV, 0.6).normalize();
       } else {
-        // the UPPER arm: the elbow moves, and the hand with it
         _pole.addScaledVector(_lbU, 1.2).normalize();
         _lh.addScaledVector(_lbU, push);
       }
       an._ikArm('l', _lh, _pole, w, null);
       an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
     }
-    D.leftArmToBow = +g.toFixed(4);
+    D.leftArmToBow = g;
   }
 
-  /* ---------------------------- measurement ----------------------------- */
+  /** The left arm to the stowed bow, read only (a hand on the haft; cold path). */
+  _leftArmBowGap() {
+    if (!this._bowChar(_lbA, _lbB)) return null;
+    const an = this.an, b = an.b;
+    an._charOf(b.upArmL.bone, _lbS);
+    an._charOf(b.loArmL.bone, _lbE);
+    an._charOf(b.handL.bone, _lbH);
+    segSegN(_lbS, _lbE, _lbA, _lbB); const gU = _sgNum[0];
+    segSegN(_lbE, _lbH, _lbA, _lbB); const gF = _sgNum[0];
+    return gU < gF ? gU : gF;
+  }
 
-  /** Shoulder line vs hip line, in degrees (the readable torso twist). */
   _twistDeg() {
     const an = this.an, b = an.b;
     if (!b.clavL || !b.clavR || !b.thighL || !b.thighR) return 0;
@@ -4276,11 +3597,11 @@ export class MeleeLayer {
     _butt.copy(_grip).addScaledVector(_c, -this.gripFrac * this.length);
     _tip.copy(_grip).addScaledVector(_c, (1 - this.gripFrac) * this.length);
     let best = 9;
-    for (const name of CLEAR_BONES) {
-      const e = an.b[name];
+    for (let ci = 0; ci < CLEAR_BONES.length; ci++) {
+      const e = an.b[CLEAR_BONES[ci]];
       if (!e) continue;
       an._charOf(e.bone, _d);
-      const g = segPoint(_butt, _tip, _d);
+      segPointN(_butt, _tip, _d); const g = _sgNum[0];
       if (g < best) {
         best = g;
         if (where) { _gapBone.copy(_d); _gapPt.copy(_segNear); }
@@ -4302,17 +3623,29 @@ export class MeleeLayer {
   _clearDeficit() {
     const axial = this._shaftGap(true);
     let worst = SHAFT_CLEAR - axial;
+    /* THE SKULL, not its joint: \`Head\` is the skull's base, and the haft of a cock
+     * can pass over that joint and through her face (filmed at a jog: the head
+     * rides 0.2 m forward of where the table was written). */
+    const an = this.an;
+    if (an.skull) {
+      const R = an.skull(_skA, _skB);
+      const rr = Math.max(R.x, R.y, R.z) + SKULL_CLEAR;
+      segPointN(_butt, _tip, _skA);
+      const g = _sgNum[0];
+      this._dbg.skullGap = g - rr + SKULL_CLEAR;
+      if (rr - g > worst) { worst = rr - g; _gapBone.copy(_skA); _gapPt.copy(_segNear); }
+    }
     let hair = 9, argmin = -1;
     const P = this._hairPos;
     for (let i = 0, j = 0; i < this._hairN; i++, j += 3) {
       _d.set(P[j], P[j + 1], P[j + 2]);
-      const g = segPoint(_butt, _tip, _d);
+      segPointN(_butt, _tip, _d); const g = _sgNum[0];
       if (g < hair) {
         hair = g; argmin = i;
         if (HAIR_CLEAR - g > worst) { worst = HAIR_CLEAR - g; _gapBone.copy(_d); _gapPt.copy(_segNear); }
       }
     }
-    this._dbg.hairClearGuard = +hair.toFixed(4);
+    this._dbg.hairClearGuard = hair;
     this._hairArgmin = argmin;
     return worst;
   }
@@ -4346,7 +3679,7 @@ export class MeleeLayer {
   _reparentGap(frac) {
     const an = this.an;
     const handBone = an.b.handR?.bone;
-    if (!this.spear || !handBone || !this.socketBone) return 0;
+    if (!this.lance || !handBone || !this.socketBone) return 0;
     // held: where the butt would be, in char space, if the hand took it now
     an._charOf(handBone, _a);
     an._liveW(handBone, _q2);
@@ -4355,7 +3688,7 @@ export class MeleeLayer {
     // holstered: the BOUNDED socket's butt point — the same one `_poseHolstered`
     // writes, so this is the gap the hand-over would actually see
     this._liveSocket(_c, _rgDir);
-    return +_a.distanceTo(_c).toFixed(4);
+    return Math.round(_a.distanceTo(_c) * 1e4) / 1e4;
   }
 
   /**
@@ -4366,17 +3699,17 @@ export class MeleeLayer {
    */
   _measure() {
     const an = this.an, D = this._dbg;
-    D.shaftClear = +this._shaftGap().toFixed(4);
+    D.shaftClear = this._shaftGap();
     an._charOf(an.b.loArmR.bone, _a);
     an._charOf(an.b.handR.bone, _b);
     an._charOf(an.b.head.bone, _d);
-    D.elbowOverHead = +(_a.y - _d.y).toFixed(3);
-    D.forearmCross = +Math.max(_a.x, _b.x).toFixed(3);
+    D.elbowOverHead = _a.y - _d.y;
+    D.forearmCross = Math.max(_a.x, _b.x);
     /* THE CROSSING THAT MATTERS IS THE ONE INTO HER BODY.
      *
      * A104 says "the swinging forearm never crosses the body midline by more
      * than 0.10 m inward", and read as a bare x-coordinate that fails every
-     * follow-through in the canon: `spear-light-follow.jpg` has the spear tip
+     * follow-through in the canon: `lance-light-follow.jpg` has the lance tip
      * past the machine's far shoulder, which puts her right hand well over
      * her own midline — out in FRONT of her, half a metre clear of her chest.
      * Kevin's complaint was never "the hand went past the middle", it was
@@ -4386,7 +3719,7 @@ export class MeleeLayer {
      * is the literal x read and `forearmToSpine` the physical one. */
     an._charOf(an.b.pelvis.bone, _c);
     an._charOf(an.b.neck1.bone, _d);
-    D.forearmToSpine = +segSeg(_a, _b, _c, _d).toFixed(3);
+    segSegN(_a, _b, _c, _d); D.forearmToSpine = _sgNum[0];
     /* AND THE OTHER FOREARM (fix round 4, finding F7).
      *
      * Kevin's complaint — "arms crossing into her body" — is about ARMS, and
@@ -4398,8 +3731,8 @@ export class MeleeLayer {
      * (`leftHandToShaft <= 0.05`), at the same 0.10 m bar as the right. */
     an._charOf(an.b.loArmL.bone, _sgA);
     an._charOf(an.b.handL.bone, _sgB);
-    D.forearmToSpineL = +segSeg(_sgA, _sgB, _c, _d).toFixed(3);
-    D.torsoYawDeg = +this._twistDeg().toFixed(2);
+    segSegN(_sgA, _sgB, _c, _d); D.forearmToSpineL = _sgNum[0];
+    D.torsoYawDeg = this._twistDeg();
     // the SOLVED hand orientation, for next frame's reach target (see _reachPose)
     an._liveW(an.b.handR.bone, this._handQ);
     // ...and the solved wrist, for a draw that reverses a holster (`_captureFrom`)
@@ -4412,7 +3745,7 @@ export class MeleeLayer {
    *
    * Everything geometric here is read off the PROP's own world matrix and
    * mapped into character space, not off the hand — so it is equally true when
-   * the spear is on her back, in the middle of a draw, or mid-swing, and a
+   * the lance is on her back, in the middle of a draw, or mid-swing, and a
    * gate can never be handed the pose the code intended instead of the pose
    * the renderer will draw.
    */
@@ -4421,9 +3754,10 @@ export class MeleeLayer {
     const an = this.an;
     an.model.updateMatrixWorld(true);
     const out = { ...D, held: this._held, gripFrac: this.gripFrac, length: this.length };
-    if (!this.spear) return out;
-    this.spear.updateWorldMatrix(true, false);
-    _m4.copy(an.model.matrixWorld).invert().multiply(this.spear.matrixWorld);
+    if (!this.lance) return out;
+    if (D.stance === 'holstered' && !this._held) this._poseHolstered();  // the hot path leaves it
+    this.lance.updateWorldMatrix(true, false);
+    _m4.copy(an.model.matrixWorld).invert().multiply(this.lance.matrixWorld);
     _butt.set(0, 0, 0).applyMatrix4(_m4);
     _tip.set(0, 0, this._localLen).applyMatrix4(_m4);
     _grip.set(0, 0, this.gripFrac * this._localLen).applyMatrix4(_m4);
@@ -4462,12 +3796,12 @@ export class MeleeLayer {
     _d.set(_b.x, _b.y, _b.z - BACK_DEPTH);   // char space: +Z is forward, full stop
     out.backCentre = f3(_d);
     out.midToBack = +mid.distanceTo(_d).toFixed(3);
-    out.bowClear = this._bowClear(_butt, _tip);
+    out.bowClear = this._bowChar(_bwA, _bwB) ? +segSeg(_butt, _tip, _bwA, _bwB).toFixed(4) : null;
+    { const g = this._leftArmBowGap(); out.leftArmToBow = g == null ? null : +g.toFixed(4); }
     // which node that number is about — null when the bow is in her hand, so
     // a gate can tell "clear" from "not stowed, nothing to be clear of"
-    { const bw = this._bowNode();
-      out.bowParent = bw ? (bw.parent?.name || null) : null;
-      out.bowStowed = !!bw; }
+    { const kit = this.ctx.player?.hero?.kit;
+      out.bowStowed = !!kit && !(kit.hidden & 2) && this._bowLine; }
     out.shaftTiltDeg = +(Math.acos(clamp(Math.abs(_c.y), -1, 1)) * 180 / Math.PI).toFixed(2);
     an._charOf(an.b.upArmR.bone, _d);
     out.tipAboveShoulder = +(_tip.y - _d.y).toFixed(3);
@@ -4495,22 +3829,14 @@ export class MeleeLayer {
     out.torsoYawDeg = +this._twistDeg().toFixed(2);
     out.butt = f3(_butt); out.tipChar = f3(_tip); out.grip = f3(_grip);
     out.shaft = f3(_c); out.mid = f3(mid);
-    out.socket = {
-      mid: this.socketMid.toArray().map((v) => +v.toFixed(3)),
-      dir: this.socketDir.toArray().map((v) => +v.toFixed(3)),
-      tiltDeg: +(Math.acos(clamp(this.socketDir.y, -1, 1)) * 180 / Math.PI).toFixed(2),
-      grabRest: this.socketGrab.toArray().map((v) => +v.toFixed(3)),
-      grabFrac: +this._grabFrac.toFixed(3),
-      grabLive: (() => {
-        this._liveSocket(_a, _rgDir);
-        _a.addScaledVector(_rgDir, this._grabFrac * this.length);
-        return f3(_a);
-      })(),
-      bound: { tiltDeg: [+(CARRY.TILT_MIN * 180 / Math.PI).toFixed(1), +(CARRY.TILT_MAX * 180 / Math.PI).toFixed(1)],
-        midBall: CARRY.MID_BALL, tipAbove: CARRY.TIP_ABOVE, tipRight: CARRY.TIP_RIGHT },
-    };
+    out.socket = {};
+    this._liveSocket(_a, _rgDir);
+    out.socket.butt = f3(_a);
+    out.socket.dir = f3(_rgDir);
+    out.socket.tiltDeg = +(Math.acos(clamp(_rgDir.y, -1, 1)) * 180 / Math.PI).toFixed(2);
+    out.socket.grabFrac = +this._grabFrac.toFixed(3);
     out.clips = this.set ? this.set.order.map((l) => l.name) : [];
-    out.parent = this.spear.parent?.name || null;
+    out.parent = this.lance.parent?.name || null;
     /* BLADE FORWARD OF THE HAND (A101), MEASURED RATHER THAN ASSERTED.
      * Round 1 published `(1 - gripFrac) * length`, which is the definition of
      * the grip fraction restated and cannot fail. What the clause is about is
@@ -4522,11 +3848,21 @@ export class MeleeLayer {
     an._charOf(an.b.handR.bone, _d);
     out.buttToWrist = +_butt.distanceTo(_d).toFixed(3);
     out.carryBlend = +this._carryB.toFixed(3);
+    /* THE LEFT HAND ON THE HAFT, off the LIVE bones and the prop's own matrix:
+     * the left knuckle line's centre against the haft segment (A101's
+     * two-handed clause, A-heavy-two-hand). `leftHandToHaft` is the wrist joint. */
+    if (this._knuckleL) {
+      an._charOf(this._knuckleL.i, _a);
+      an._charOf(this._knuckleL.p, _b);
+      _d.addVectors(_a, _b).multiplyScalar(0.5);
+      out.leftPalmToHaft = +segPoint(_butt, _tip, _d).toFixed(4);
+      _c.subVectors(_tip, _butt).normalize();
+      out.leftKnuckleAlongDeg = +(Math.acos(clamp(Math.abs(_b.subVectors(_a, _b).normalize().dot(_c)), 0, 1)) * 180 / Math.PI).toFixed(1);
+      out.leftGripFrac = +(_d.clone().sub(_butt).dot(_c) / this.length).toFixed(3);
+    }
     // diagnostics for the carry bound: what the BOUND thinks it wrote, next to
     // what the prop's own matrix says, so a disagreement is visible
-    out.sockMid = [+this._sockMid.x.toFixed(3), +this._sockMid.y.toFixed(3), +this._sockMid.z.toFixed(3)];
     this._backCentre(_skC);
-    out.sockMidToBack = +this._sockMid.distanceTo(_skC).toFixed(3);
     out.backCentreNow = [+_skC.x.toFixed(3), +_skC.y.toFixed(3), +_skC.z.toFixed(3)];
     out.postFixN = this._pfN || 0;
 
@@ -4552,10 +3888,10 @@ export class MeleeLayer {
     }
 
     // world-space reads the gates sample per frame
-    this.spear.updateWorldMatrix(true, false);
-    _a.set(0, 0, this._localLen).applyMatrix4(this.spear.matrixWorld);
+    this.lance.updateWorldMatrix(true, false);
+    _a.set(0, 0, this._localLen).applyMatrix4(this.lance.matrixWorld);
     out.tipWorld = f3(_a);
-    _a.set(0, 0, this.gripFrac * this._localLen).applyMatrix4(this.spear.matrixWorld);
+    _a.set(0, 0, this.gripFrac * this._localLen).applyMatrix4(this.lance.matrixWorld);
     out.gripWorld = f3(_a);
     an._charOf(an.b.handR.bone, _a);
     out.handChar = f3(_a);
@@ -4600,64 +3936,21 @@ export class MeleeLayer {
    *
    * The bow group is looked up lazily and re-looked-up if it is swapped: the
    * combat lane owns it, it is stowed on `spine_03`, and this lane may not
-   * touch it — so the SPEAR is what moves to make room.
+   * touch it — so the LANCE is what moves to make room.
    */
-  /**
-   * The STOWED bow, or null.
-   *
-   * FIX ROUND 2 — THIS WAS MEASURING THE WRONG OBJECT, AND IT IS WHY THE DODGE
-   * ROW LOOKED UNFIXABLE. The node is looked up by "a `bow` under a `spine`
-   * bone", but the cache was only invalidated when the node lost its parent —
-   * and `combat.js` does not orphan the bow when Aloy wields it, it RE-PARENTS
-   * it to `hand_l`. So after any aim the carry's clearance servo, the A100
-   * clause and V48's number were all measuring the distance from the stowed
-   * haft to the bow IN HER LEFT HAND, which during a dodge roll sweeps through
-   * everything (filmed: 0.35 m of apparent bow motion in one sub-step, with
-   * `bow.parent.name === 'hand_l_014'`). Six rounds of servo tuning were
-   * chasing her hand. The cache is now valid only while the node is still
-   * stowed, and the clause reports null — not a number — when the bow is out.
-   */
-  _bowNode() {
-    const an = this.an;
-    let bow = this._bow;
-    if (!bow || !bow.parent || !/spine|chest/i.test(bow.parent.name || '')) {
-      // a miss costs a full traverse, so look at most twice a second
-      const now = performance.now();
-      if (now - (this._bowT || -1e9) < 500) return null;
-      this._bowT = now;
-      bow = null;
-      an.model.traverse((o) => {
-        if (!bow && /bow/i.test(o.name || '') && /spine/i.test(o.parent?.name || '')) bow = o;
-      });
-      this._bow = bow;
-    }
-    return bow || null;
-  }
-
-  _bowClear(butt, tip) {
-    const an = this.an;
-    const bow = this._bowNode();
-    if (!bow) return null;
-    bow.updateWorldMatrix(true, false);
-    _m4.copy(an.model.matrixWorld).invert().multiply(bow.matrixWorld);
-    _bwA.set(0, -0.75, 0).applyMatrix4(_m4);
-    _bwB.set(0, 0.75, 0).applyMatrix4(_m4);
-    return +segSeg(butt, tip, _bwA, _bwB).toFixed(4);
-  }
-
-  /** World-space tip of the live spear (gates / trail). */
+  /** World-space tip of the live lance (gates / trail). */
   tipWorld(out) {
-    if (!this.spear) return null;
-    this.spear.updateWorldMatrix(true, false);
-    out.set(0, 0, this._localLen).applyMatrix4(this.spear.matrixWorld);
+    if (!this.lance) return null;
+    this.lance.updateWorldMatrix(true, false);
+    out.set(0, 0, this._localLen).applyMatrix4(this.lance.matrixWorld);
     return out;
   }
 
-  /** World-space grip point of the live spear. */
+  /** World-space grip point of the live lance. */
   gripWorld(out) {
-    if (!this.spear) return null;
-    this.spear.updateWorldMatrix(true, false);
-    out.set(0, 0, this.gripFrac * this._localLen).applyMatrix4(this.spear.matrixWorld);
+    if (!this.lance) return null;
+    this.lance.updateWorldMatrix(true, false);
+    out.set(0, 0, this.gripFrac * this._localLen).applyMatrix4(this.lance.matrixWorld);
     return out;
   }
 
@@ -4665,7 +3958,9 @@ export class MeleeLayer {
 
   _clipWeights(active, weight, t, idleName, idleW) {
     if (!this.set) return;
-    for (const layer of this.set.order) {
+    const order = this.set.order;
+    for (let li = 0; li < order.length; li++) {
+      const layer = order[li];
       const on = layer.name === active;
       const onIdle = idleName && layer.name === idleName;
       const wv = on ? weight : (onIdle ? idleW : 0);
@@ -4712,7 +4007,7 @@ export class MeleeLayer {
     this.an.space?.syncFrame?.();
     /* THE CARRY IS WRITTEN LAST (fix round 2).
      *
-     * `_settleSpear` runs inside the pose pass, and the ground conform, the
+     * `_settleLance` runs inside the pose pass, and the ground conform, the
      * twist layer and the `dyn_` spring chains all move `spine_02` afterwards
      * — so the bounded socket the carry was clamped into and the segment the
      * renderer actually drew were two different lines. Measured on a dodge
@@ -4721,7 +4016,7 @@ export class MeleeLayer {
      * the stowed prop again here, off the final matrices, makes the bound and
      * the measurement the same statement. It is an absolute local write, so
      * doing it twice costs one `_liveSocket` and changes nothing else. */
-    if (this.spear && !this._held) this._poseHolstered();
+    if (this.lance && !this._held && this._dbg.stance !== 'holstered') this._poseHolstered();
     /* the pelvis shift the animator really applied after this layer this
      * frame (stance offset + conform clamp), for next frame's arm checks */
     if (this.w > 0.001 && this.an.b.upArmR) {
@@ -4736,12 +4031,18 @@ export class MeleeLayer {
     const an = this.an, e = an.b.handR;
     if (e && this._held && this._guardOn && this.w >= 0.2) this._handOffSelf(an, e);
     if (e && this._held && this.w >= 0.2) this._armHullFinal(an);
+    /* ...AND THE LEFT HAND FOLLOWS THE HAFT THOSE TWO PASSES MOVED, then keeps its
+     * own forearm out of the metal (fix round 1: A101 light-2, A104, A106) */
+    if (e && this._held && this.w >= 0.2 && this._lhOnW > 1e-3) {
+      this._reseatLeft();
+      this._leftHullFinal(an);
+      this._dbg.forearmToSpineL = this._leftForeGap();
+    }
     /* THE BRAID GIVES WAY LAST, because the hand moved the haft above it.
      * Filmed with the order the other way round: `_hairOffHaft` pushed the
      * braid clear, then the hand guard rotated the haft back into it, and
      * light 3 measured 0.048 m of ponytail against A104's 0.05 bar. */
-    this._hairOffHaft();
-    this._dbg.shaftClear = +this._shaftGap().toFixed(4);
+    if (this._held) this._dbg.shaftClear = this._shaftGap();
     /* THE CARRY SERVO MEASURES THE FINAL POSE, NOT THE RAW CLIP (fix round 2).
      * Round 1 ran it at the top of `update`, where the animator has just reset
      * every non-clip bone and re-applied the mixer: `spine_03` — which the
@@ -4751,8 +4052,6 @@ export class MeleeLayer {
      * and therefore never pushed. Here it reads the matrices that get drawn;
      * the value it computes is spent by `_liveSocket` on the NEXT frame, which
      * is the same one-frame lag every damped layer in this rig already has. */
-    this._carryServo(this._lastDt || 0.016);
-    this._bowSample();
   }
 
   /**
@@ -4767,7 +4066,7 @@ export class MeleeLayer {
    * matrices: if the forearm or fist is INSIDE a hull (past `ARM_CLEAR`), the
    * wrist is drawn straight back toward the shoulder in 0.04 m steps and the
    * arm re-solved until it clears, or the arm is folded to its 0.25 m floor.
-   * The spear rides the hand. Nothing allocates; nothing runs unless the fist
+   * The lance rides the hand. Nothing allocates; nothing runs unless the fist
    * is in a hull.
    */
   _armHullFinal(an) {
@@ -4810,7 +4109,7 @@ export class MeleeLayer {
      * LEAN that has put her shoulder at the metal (a heavy's spine pitch puts
      * the drive shoulder 0.23 m ahead of her root; a Tallneck's foot bars are
      * 0.48 m out): she straightens out of it — the upper spine pitched back
-     * in 0.03 rad steps, arm and spear riding along rigidly, at most 0.36
+     * in 0.03 rad steps, arm and lance riding along rigidly, at most 0.36
      * rad. */
     let backs = 0;
     while (worst > goal && backs < 6 && b.spine2 && b.spine3) {
@@ -4820,7 +4119,7 @@ export class MeleeLayer {
       worst = this._armDeficit(hulls, M);
     }
     this._dbg.armHullFinal = steps + rolls * 100 + backs * 1000;
-    this._dbg.armHullFinalLeft = +worst.toFixed(3);
+    this._dbg.armHullFinalLeft = worst;
   }
 
   /** The hand guard's three passes (see `postFix`). */
@@ -4843,124 +4142,6 @@ export class MeleeLayer {
     }
   }
 
-  /**
-   * THE BRAID COLLIDES WITH THE HAFT (fix round 1).
-   *
-   * Round 1 only ever moved the SPEAR away from the hair, and there is a limit
-   * to how far it can go: the stowed carry has to stay inside A100's 0.30 m of
-   * the upper-back centre and the swing has to stay on the beat, while the
-   * ponytail is SIMULATED — a dodge roll or a committed chop throws it across
-   * the shaft at speeds no placement can dodge. Measured on a 120-frame roll
-   * scan with the carry servo at its ceiling: a minimum of 0.023 m, i.e. the
-   * braid passing through a rigid pole.
-   *
-   * What was missing is the other half of the constraint: the braid does not
-   * know the spear is there. This is that half — a capsule constraint applied
-   * AFTER the spring chains, so it is the last word: any `dyn_hairBack*` bone
-   * inside `HAIR_FIX` of the haft is pushed back out to it by rotating its
-   * PARENT about the axis that moves it away (the bone's own origin only moves
-   * when its parent turns), by the smallest angle that does it, clamped, and
-   * under-relaxed so it converges over two frames instead of snapping.
-   *
-   * It costs one early-out on the buffer `_cacheHair` has just filled, and
-   * does nothing at all unless a strand is actually inside the haft — at idle,
-   * walk, run and sprint the stowed clearance is 0.14-0.32 m and this never
-   * fires, which is why `A31b` and `V23-secondary-motion` are unaffected.
-   */
-  _hairOffHaft() {
-    const an = this.an, g = this.spear;
-    if (!g || !this._hairN) return;
-    g.updateWorldMatrix(true, false);
-    _m4.copy(an.model.matrixWorld).invert().multiply(g.matrixWorld);
-    _sgA.set(0, 0, 0).applyMatrix4(_m4);
-    _sgB.set(0, 0, this._localLen).applyMatrix4(_m4);
-    // early out on the cached positions: nothing near the haft, nothing to do
-    const P = this._hairPos;
-    let near = 9;
-    for (let i = 0, j = 0; i < this._hairN; i++, j += 3) {
-      _d.set(P[j], P[j + 1], P[j + 2]);
-      const dist = segPoint(_sgA, _sgB, _d);
-      if (dist < near) near = dist;
-    }
-    this._dbg.hairPreFix = +near.toFixed(4);
-    if (near >= HAIR_FIX) {
-      this._dbg.hairFixed = 0; this._dbg.hairPasses = 0;
-      this._dbg.hairPostFix = +near.toFixed(4);
-      return;
-    }
-    let fixed = 0;
-    /* PASSES UNTIL IT CONVERGES, NOT A FIXED FIVE (fix pass 2).
-     *
-     * One pass is not enough on the short links: the correction is a rotation
-     * of the PARENT, so the angle it takes is (deficit / link length) — on the
-     * 2-3 cm links near the braid's tip that is over a radian, and a single
-     * clamped pass moves the strand under a centimetre. Re-measuring and
-     * re-applying spreads the same clamped angle over consecutive links up the
-     * chain, which is also where a real hair collision would put it.
-     *
-     * FIVE WAS NOT ENOUGH EITHER, AND THE EVIDENCE IS A FAILING GATE RATHER
-     * THAN AN ARGUMENT. Round 4's comment recorded five passes taking a
-     * 120-frame roll scan from 0.023 m to 0.076 m — against A100's 0.06 m bar,
-     * i.e. 1.6 cm of margin on the worst frame of a whipping braid. Measured
-     * again on this build over three isolated A100 runs the dodge row read
-     * 0.1176 / 0.0286 / 0.0779 m: a real 1-in-3 failure, and the 0.0286 says
-     * the servo simply ran out of passes on the frames where the strand was
-     * deepest. (Attributed before it was fixed: this lane's melee layer is
-     * provably INACTIVE in that row — filmed per frame with the spear
-     * holstered, `w` is 0, the per-beat stance never runs and `pelvisDy` is 0
-     * on all 40 frames of the roll — so the braid clause is a carry defect,
-     * not a stance one.)
-     *
-     * So it iterates to a fixed point instead: up to `HAIR_PASSES`, stopping
-     * the moment a pass has nothing left to move. The cost is the same on
-     * every frame that was already clear (the early-out above never enters the
-     * loop) and on every frame that converges in one or two, which is almost
-     * all of them; only the deep frames of a roll pay for the rest. The
-     * per-pass clamp also goes 0.22 -> 0.28 rad, which is what lets a deep
-     * strand get out in the passes available. */
-    for (let pass = 0; pass < HAIR_PASSES; pass++) {
-    let moved = 0;
-    for (let i = 0; i < this._hairN; i++) {
-      const bone = this._hairBones[i];
-      const par = bone.parent;
-      if (!par) continue;
-      an._charOf(bone, _a);
-      const dist = segPoint(_sgA, _sgB, _a);
-      if (dist >= HAIR_FIX) continue;
-      _b.subVectors(_a, _segNear);                 // haft -> strand: push this way
-      if (_b.lengthSq() < 1e-8) _b.set(0, 0, -1); else _b.normalize();
-      an._charOf(par, _c);
-      _d.subVectors(_a, _c);                       // parent -> strand
-      const r = _d.length();
-      if (r < 2e-3) continue;
-      _c.crossVectors(_d, _b);
-      if (_c.lengthSq() < 1e-10) continue;
-      _c.normalize();
-      _q1.setFromAxisAngle(_c, clamp((HAIR_FIX - dist) / r * 0.7, 0, 0.28));
-      an._rotQL(par, _q1);
-      par.updateWorldMatrix(false, true);
-      fixed++; moved++;
-    }
-    this._dbg.hairPasses = pass + 1;
-    if (!moved) break;
-    }
-    /* PUBLISH WHAT THE LOOP ACHIEVED, not what it attempted (fix pass 2). The
-     * only way this servo can leave a strand inside the haft is by running out
-     * of passes, and the only way to know that happened is to re-measure after
-     * it. `hairPostFix` is the same quantity `debug().hairClear` reports a few
-     * lines later, taken here, so a gate failure can be read as "the loop did
-     * not converge" or "something after the loop moved it" instead of guessed
-     * at — which is how the five-pass version hid for a whole round. */
-    let after = 9;
-    for (let i = 0; i < this._hairN; i++) {
-      an._charOf(this._hairBones[i], _a);
-      const dist = segPoint(_sgA, _sgB, _a);
-      if (dist < after) after = dist;
-    }
-    this._dbg.hairPostFix = +after.toFixed(4);
-    this._dbg.hairFixed = fixed;
-  }
-
   /** Advance the layer clocks (NOT the mixer — the animator steps that). */
   step(dt) {
     this._idleT = ((this._idleT || 0) + dt * 0.24) % 1;
@@ -4977,7 +4158,7 @@ export class MeleeLayer {
       this.set.order.length = 0;
       this.set = null;
     }
-    this.spear = null;
+    this.lance = null;
     this.socketBone = null;
     /* the post-swing settle's pose snapshot: a plain struct, but it is the one
      * object this layer creates outside the constructor, so it is released
@@ -5000,6 +4181,9 @@ export class MeleeLayer {
  * `_segNear` — the haft guard pushes along (P -> that point), so it needs both.
  */
 const _segNear = new THREE.Vector3();
+/** The hot paths read a distance from here: a double returned across a call is
+ *  a heap number (R48 c). `segPointN`, `segSegN`, `segSegDirN` fill it. */
+const _sgNum = new Float64Array(1);
 function segPoint(A, B, P) {
   _seg.subVectors(B, A);
   const l2 = _seg.lengthSq();
@@ -5018,8 +4202,8 @@ function segSeg(A, B, C, D) {
   let lo = 0, hi = 1;
   for (let i = 0; i < 12; i++) {
     const a = lo + (hi - lo) / 3, b = hi - (hi - lo) / 3;
-    const fa = segPoint(C, D, _lerp3(A, B, a, _ss));
-    const fb = segPoint(C, D, _lerp3(A, B, b, _ss));
+    segPointN(C, D, _lerp3(A, B, a, _ss)); const fa = _sgNum[0];
+    segPointN(C, D, _lerp3(A, B, b, _ss)); const fb = _sgNum[0];
     if (fa < fb) hi = b; else lo = a;
   }
   return segPoint(C, D, _lerp3(A, B, (lo + hi) * 0.5, _ss));
@@ -5037,8 +4221,51 @@ function segSeg(A, B, C, D) {
  * 0.0274 m with the -Z servo at its ceiling the whole time. The mutual
  * perpendicular is the direction that actually buys clearance.
  */
+function segPointN(A, B, P) {
+  const ax = A.x, ay = A.y, az = A.z;
+  const ex = B.x - ax, ey = B.y - ay, ez = B.z - az;
+  const l2 = ex * ex + ey * ey + ez * ez;
+  let t = l2 > 1e-9 ? ((P.x - ax) * ex + (P.y - ay) * ey + (P.z - az) * ez) / l2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const nx = ax + ex * t, ny = ay + ey * t, nz = az + ez * t;
+  _segNear.x = nx; _segNear.y = ny; _segNear.z = nz;
+  const dx = nx - P.x, dy = ny - P.y, dz = nz - P.z;
+  _sgNum[0] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+/** Closest points of segments AB and CD (closed form): `_ss` on AB, `_segNear` on CD. */
+function segSegN(A, B, C, D) {
+  const d1x = B.x - A.x, d1y = B.y - A.y, d1z = B.z - A.z;
+  const d2x = D.x - C.x, d2y = D.y - C.y, d2z = D.z - C.z;
+  const rx = A.x - C.x, ry = A.y - C.y, rz = A.z - C.z;
+  const a = d1x * d1x + d1y * d1y + d1z * d1z, e = d2x * d2x + d2y * d2y + d2z * d2z;
+  const f = d2x * rx + d2y * ry + d2z * rz;
+  let s = 0, t = 0;
+  if (a > 1e-9 || e > 1e-9) {
+    if (a <= 1e-9) { t = f / e; t = t < 0 ? 0 : t > 1 ? 1 : t; } else {
+      const c = d1x * rx + d1y * ry + d1z * rz;
+      if (e <= 1e-9) { s = -c / a; s = s < 0 ? 0 : s > 1 ? 1 : s; } else {
+        const b = d1x * d2x + d1y * d2y + d1z * d2z, den = a * e - b * b;
+        if (den > 1e-12) { s = (b * f - c * e) / den; s = s < 0 ? 0 : s > 1 ? 1 : s; }
+        t = (b * s + f) / e;
+        if (t < 0) { t = 0; s = -c / a; s = s < 0 ? 0 : s > 1 ? 1 : s; } else if (t > 1) { t = 1; s = (b - c) / a; s = s < 0 ? 0 : s > 1 ? 1 : s; }
+      }
+    }
+  }
+  const px = A.x + d1x * s, py = A.y + d1y * s, pz = A.z + d1z * s;
+  const qx = C.x + d2x * t, qy = C.y + d2y * t, qz = C.z + d2z * t;
+  _ss.x = px; _ss.y = py; _ss.z = pz;
+  _segNear.x = qx; _segNear.y = qy; _segNear.z = qz;
+  const dx = px - qx, dy = py - qy, dz = pz - qz;
+  _sgNum[0] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+function segSegDirN(A, B, C, D, out) {
+  segSegN(A, B, C, D);
+  const x = _ss.x - _segNear.x, y = _ss.y - _segNear.y, z = _ss.z - _segNear.z;
+  const l2 = x * x + y * y + z * z;
+  if (l2 > 1e-12) { const i = 1 / Math.sqrt(l2); out.x = x * i; out.y = y * i; out.z = z * i; } else out.set(0, 0, -1);
+}
 function segSegDir(A, B, C, D, out) {
-  const d = segSeg(A, B, C, D);
+  segSegN(A, B, C, D); const d = _sgNum[0];
   // segSeg leaves the closest point on AB in `_ss` and the one on CD in
   // `_segNear` (segPoint's own out-param, written by its final call)
   out.subVectors(_ss, _segNear);
