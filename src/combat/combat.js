@@ -1147,8 +1147,11 @@ export class Combat {
     if (!aiming && this._palmL) model.group.position.copy(this._palmL);
     else { const gp = model.group.position; gp.x = 0; gp.y = 0; gp.z = 0; }
     if (aiming) {
-      _aimDir.subVectors(this.aimPoint, _wp);
-      if (_aimDir.lengthSq() < 0.25) cam.getWorldDirection(_aimDir);
+      // M1.3b: down the animator's constraint rig's own arrow while it solves (the string lands in the hand)
+      if (!this.ctx.player?.animator?.bowAimDir?.(_aimDir)) {
+        _aimDir.subVectors(this.aimPoint, _wp);
+        if (_aimDir.lengthSq() < 0.25) cam.getWorldDirection(_aimDir);
+      }
       _aimDir.normalize();
       _m.lookAt(_zero, _neg.copy(_aimDir).negate(), _up); // basis +Z = aim dir
       _qDes.setFromRotationMatrix(_m);

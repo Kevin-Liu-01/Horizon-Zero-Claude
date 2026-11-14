@@ -335,7 +335,7 @@ export const UBC_TUNE = {
     jaw: [-0.048, 0.002, -0.012], out: [-1, -0.35, -0.15], kOut: 0.014,
     handL: [1, 0.5, -0.05], handP: [1, 0, 0],
     bowPole: [0.55, -0.8, 0.1], bowL: [-0.75, 0.45, 0.3], bowP: [0.8, -0.3, 0],
-    elbowH: -0.01, hookBack: 0.25, kick: 0.07, qOut: 0.16, qFwd: 0.12, blendOut: 0.1, wrapK: 0.7,
+    elbowH: -0.01, hookBack: 0.25, kick: 0.07, kickOut: 1.6, qOut: 0.16, qFwd: 0.12, blendOut: 0.1, wrapK: 0.7,
     loose: [0.95, 0.5],
     twistMax: 0.6, twistRate: 14, twistSpare: 0.006,
     limits: { draw: { back: 0.95, up: 0.99 }, bow: { back: 0.75, up: 0.99 } },

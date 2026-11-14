@@ -200,7 +200,7 @@ export function buildMeasure(R, THREE) {
     // 5: the hand on the string
     const bow = R.combat?.bow;
     if (bow?.getNockWorld) {
-      bow.getNockWorld(1, P.b); CH(P.b, P.b);
+      bow.getNockWorld(st.draw, P.b); CH(P.b, P.b);           // the string's nocking point at its draw now
       CP(SR.i2, P.h); CP(SR.m2, P.a); P.h.lerp(P.a, 0.5);         // the string fingers' first joints
       acc.handNock = Math.max(acc.handNock, P.b.distanceTo(P.h));
       const g = bow.nockArrow?.group;

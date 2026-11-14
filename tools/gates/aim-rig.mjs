@@ -38,9 +38,12 @@ const HB = `
       const release = () => { keys.clear(); C.input.mouse.buttons = 0; };
       const buildMeasure = ${String(buildMeasure)};`;
 
-const MOVES = { still: null, strafeL: 'KeyA', strafeR: 'KeyD', fwd: 'KeyW', back: 'KeyS' };
-const PAGE_PITCHES = [-0.55, 0, 0.75];
-const PAGE_YAWS = ['0', 'sweep8'];
+const MOVES_ALL = { still: null, strafeL: 'KeyA', strafeR: 'KeyD', fwd: 'KeyW', back: 'KeyS' };
+const env = (k, d) => (process.env[k] ? process.env[k].split(',') : d);
+/* (a targeted re-run narrows the matrix: AIMRIG_PITCHES, AIMRIG_YAWS, AIMRIG_MOVES, comma lists) */
+const PAGE_PITCHES = env('AIMRIG_PITCHES', ['-0.55', '0', '0.75']).map(Number);
+const PAGE_YAWS = env('AIMRIG_YAWS', ['0', 'sweep8']);
+const MOVES_ON = env('AIMRIG_MOVES', null);
 
 /** One stance's matrix: every move x yaw x pitch cell, all seven bars, every step. */
 const matrixRow = (stance) => ({
@@ -52,7 +55,7 @@ const matrixRow = (stance) => ({
       freeze();
       const M = buildMeasure({ an, model: p.model, combat: cmb }, THREE);
       const cells = [];
-      const MOVES = ${JSON.stringify(MOVES)};
+      const MOVES = ${JSON.stringify(MOVES_ON ? Object.fromEntries(MOVES_ON.map((k) => [k, MOVES_ALL[k]])) : MOVES_ALL)};
       let sampling = false, T = 0, tSim0 = 0;
       let yawProg = null;
       const updA = an.update;

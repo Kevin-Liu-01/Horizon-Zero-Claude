@@ -122,8 +122,8 @@ function placeBow(R) {
   node.updateWorldMatrix(true, false);
   const wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
   node.matrixWorld.decompose(wp, wq, ws);
-  const ad = new THREE.Vector3().subVectors(c.aimPoint, wp);
-  if (ad.lengthSq() < 0.25) R.camera.getWorldDirection(ad);
+  const ad = new THREE.Vector3();
+  if (!an.bowAimDir?.(ad)) { ad.subVectors(c.aimPoint, wp); if (ad.lengthSq() < 0.25) R.camera.getWorldDirection(ad); }
   ad.normalize();
   const m = new THREE.Matrix4().lookAt(new THREE.Vector3(), ad.clone().negate(), new THREE.Vector3(0, 1, 0));
   const qd = new THREE.Quaternion().setFromRotationMatrix(m);

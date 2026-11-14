@@ -71,7 +71,7 @@ export class ConstraintAim {
       Lr: new THREE.Vector3(), Pr: new THREE.Vector3(), Ll: new THREE.Vector3(), Pl: new THREE.Vector3(), framesOk: false,
       // the aim ray and the targets this step (character space), for the gates and the next step
       d: new THREE.Vector3(0, 0, 1), anchor: new THREE.Vector3(), knT: new THREE.Vector3(), hook: new THREE.Vector3(), grip: new THREE.Vector3(),
-      hold: 0, lastLooseT: 1, w: 0, gripDef: 0, tw: 0, twist: 0, reachDef: 0, reachDefMax: 0,
+      hold: 0, lastLooseT: 1, lastRaw: 0, w: 0, gripDef: 0, tw: 0, twist: 0, reachDef: 0, reachDefMax: 0,
       verifyFails: 0, verifyLast: null, solves: 0,
     };
     return C;
@@ -264,7 +264,7 @@ export class ConstraintAim {
     // a new loose: the string hand holds the draw it loosed from until the quiver beat takes it
     if (this._looseT < C.lastLooseT) C.hold = this._looseDraw ?? 1;
     C.lastLooseT = this._looseT;
-    if (w < 0.004) { C.hold = 0; C.tw = 0; return; }
+    if (w < 0.004) { C.hold = 0; C.tw = 0; C.lastRaw = 0; return; }
     if (!C.framesOk && !this._cRigFrames()) return;
     const R = this.T.cRig, b = this.b, cmb = this.ctx.combat;
     const e = w >= 0.999 ? 1 : smoothstep(w, 0, 1);
@@ -371,7 +371,11 @@ export class ConstraintAim {
       if (dG > reach) _G.copy(_S).addScaledVector(_a, reach / dG);
     }
     // the string hand at this draw: on the string between the bow and the jaw; held on the jaw after a loose
-    const sDraw = Math.max(drawS, C.hold);
+    // (on the STRING's draw, combat's, a step ahead: combat moves the string after this pass)
+    const raw = cmb ? clamp(cmb.drawStrength ?? drawS, 0, 1) : drawS;
+    const rawNext = raw > C.lastRaw && raw < 1 ? Math.min(1, 2 * raw - C.lastRaw) : raw;
+    C.lastRaw = raw;
+    const sDraw = Math.max(rawNext, C.hold);
     _N.copy(_G).add(this._cRigNockOff(_d, sDraw, _c));                                  // the nock now
     _T.copy(_N).sub(_hOff);                                                    // the wrist for it
     if (looseOn || C.hold > 0) {
@@ -379,7 +383,7 @@ export class ConstraintAim {
       const lk = this._looseT < 0.35 ? smoothstep(this._looseT, 0, 0.35) : 1 - smoothstep(this._looseT, 0.35, 1);
       // (along the arrow's level heading, never up the back of a down aim)
       _a.set(_d.x, 0, _d.z).normalize(); _lat.set(_a.z, 0, -_a.x);
-      _T.addScaledVector(_a, -R.kick * lk).addScaledVector(_lat, -R.kick * 0.8 * lk);
+      _T.addScaledVector(_a, -R.kick * lk).addScaledVector(_lat, -R.kick * (R.kickOut ?? 0.8) * lk);
     }
     if (this._looseT >= 1 && C.hold > 0 && this._quiverT >= 0.5) C.hold = 0;
     // the quiver beat (arrow pulled at the raise and after a loose): down to the hip, out to her right
@@ -519,6 +523,17 @@ export class ConstraintAim {
     const L = this.T.cRig?.loose;
     if (!L) return true;
     return this._aimW * (1 - this._dodgeW) >= L[0] && this._drawS >= L[1];
+  }
+
+  /**
+   * Combat aims the bow down the rig's own arrow (world) while the rig is solving, so the string it moves
+   * after this pass lands in the hand it was solved for (its aim point moves after the animator: on a
+   * camera sweep that is a step of lag, measured 0.06-0.19 m at the string). False: aim as before.
+   */
+  bowAimDir(out) {
+    const C = this._cr;
+    if (!C || !this.T.cRig || C.w < 0.004) return false;
+    return !!out.copy(C.d).transformDirection(this.model.matrixWorld);
   }
 
   /** Gate: zero the audit. */
