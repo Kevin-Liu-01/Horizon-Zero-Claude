@@ -453,7 +453,7 @@ export function faceOut(part, field) {
  * map, 1 cell per 6 cm), skin from the loop. Never in `part` itself: a fan joining two of its uv islands would merge
  * them in the atlas packing. Wind with `faceOut` after.
  */
-export function fillHoles(into, part, { maxN = 14, maxPerim = 0.09, minPerim = 0, where = null, rectAt } = {}) {
+export function fillHoles(into, part, { maxN = 14, maxPerim = 0.09, minPerim = 0, where = null, rectAt, grow = 1.45, inset = 0.0025 } = {}) {
   let filled = 0;
   for (const run of openEdges(part)) {
     if (run.length < 3 || run.length > maxN) continue;
@@ -466,8 +466,11 @@ export function fillHoles(into, part, { maxN = 14, maxPerim = 0.09, minPerim = 0
     const rect = rectAt(c), N = V.norm(nn);
     const A = V.norm(V.cross(N, Math.abs(N[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), B = V.cross(N, A);
     const uvOf = (p) => { const d = V.sub(p, c); return [rect[0] + rect[2] * (0.5 + 0.5 * clamp(V.dot(d, A) / 0.06, -1, 1)), rect[1] + rect[3] * (0.5 + 0.5 * clamp(V.dot(d, B) / 0.06, -1, 1))]; };
+    // (a little larger than the hole and a little behind it: the fit eases the boot out after this, and a patch cut to
+    // the hole's own edge showed a thin rim of backdrop round it in F08)
     const b0 = into.pos.length / 3;
-    for (const p of [c, ...run.map((q) => q.p)]) {
+    for (const p0 of [c, ...run.map((q) => q.p)]) {
+      const p = V.sub(V.add(c, V.mul(V.sub(p0, c), grow)), V.mul(N, inset));
       into.pos.push(...p); into.nrm.push(...N); into.uv.push(...uvOf(p));
     }
     const i0 = run[0].i;

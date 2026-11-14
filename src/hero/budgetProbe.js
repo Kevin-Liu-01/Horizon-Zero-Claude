@@ -25,16 +25,23 @@ export async function probe() {
     }
     const img = t.image || {};
     const w = img.width || img.videoWidth || 0, h = img.height || img.videoHeight || 0, d = img.depth || 1;
+    // a data texture that carries its own mip chain (an uncompressed KTX2 level set): its bytes as they are
+    if (t.mipmaps?.length && t.mipmaps[0]?.data) { let b = 0; for (const m of t.mipmaps) b += m.data.byteLength; return { b, kind: 'data+mips', w, h }; }
     // RedFormat 1028: 1 channel, RGFormat 1030: 2, anything else (RGBAFormat 1023) 4; times the element size
     const ch = t.format === 1028 ? 1 : t.format === 1030 ? 2 : 4;
     const bpp = img.data ? (img.data.BYTES_PER_ELEMENT || 1) * ch : 4;
     const mip = t.generateMipmaps && t.minFilter !== 1006 && t.minFilter !== 1003 ? 4 / 3 : 1;
     return { b: Math.round(w * h * d * bpp * mip), kind: img.data ? 'data' : 'image', w, h };
   };
+  // (one GPU upload per image source: three shares a source between textures that clone it, as the hero fill's emissive
+  // map clones the base colour; counted once, at the larger of the two uploads' sizes)
   const take = (t, where) => {
-    if (!t || !t.isTexture || seen.has(t.uuid)) return;
+    if (!t || !t.isTexture) return;
+    const key = t.source?.uuid || t.uuid;
     const r = texBytes(t);
-    seen.set(t.uuid, { name: t.name || where, where, ...r });
+    const had = seen.get(key);
+    if (had && had.b >= r.b) { had.shared = (had.shared || 1) + 1; return; }
+    seen.set(key, { name: t.name || where, where, ...r, shared: had ? (had.shared || 1) + 1 : 1 });
   };
   const scan = (o, where, depth = 0) => {
     if (!o || typeof o !== 'object' || depth > 3) return;
@@ -61,7 +68,7 @@ export async function probe() {
   for (const s of skeletons) if (s.boneTexture) boneB += s.boneTexture.image.width * s.boneTexture.image.height * 16;
   const list = [...seen.values()].sort((a, b) => b.b - a.b);
   const sum = list.reduce((a, t) => a + t.b, 0) + boneB;
-  out.textures = { mb: +(sum / 1e6).toFixed(2), boneMB: +(boneB / 1e6).toFixed(3), count: list.length, list: list.map((t) => ({ name: t.name, where: t.where, kind: t.kind, w: t.w, h: t.h, mb: +(t.b / 1e6).toFixed(3) })) };
+  out.textures = { mb: +(sum / 1e6).toFixed(2), boneMB: +(boneB / 1e6).toFixed(3), count: list.length, list: list.map((t) => ({ name: t.name, where: t.where, kind: t.kind, w: t.w, h: t.h, mb: +(t.b / 1e6).toFixed(3), shared: t.shared })) };
   const R = C.engine?.renderer;
   if (R?.info) out.frame = { calls: R.info.render.calls, triangles: R.info.render.triangles, textures: R.info.memory?.textures, geometries: R.info.memory?.geometries };
   return out;
