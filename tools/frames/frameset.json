@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "set": "M1",
+  "about": "The Frame Set F01-F32: fixed camera, hour, weather and state per frame, and what each is compared against. Reference crops are named by id only; the masked images live outside the repo (tools/frames/paths.mjs). Read by tools/frames/film.mjs and tools/frames/review.mjs; validated by tools/frames/frameset.mjs.",
+  "viewport": { "width": 1600, "height": 900, "dpr": 1.25 },
+  "conventions": {
+    "at": "look.<name> (ctx.props.gatePlaces.look row) | place:<name> (ctx.props.gatePlaces row) | site:<id> | trig:<id> | rest | fire | {\"en\": [E, N]} in bible metres (x = E, z = -N, times ISLAND_SCALE)",
+    "approach": "{ dist, bearing }: stand Brea dist metres from 'at' along the compass bearing, facing back toward it",
+    "bearing": "compass degrees, 0 = north, 90 = east; Brea faces it unless 'approach' sets her facing",
+    "camera.chase": "the game's own chase camera behind Brea; pitch in degrees",
+    "camera.eye": "a fixed lens at eye metres over the ground at 'at', looking along bearing/pitch; Brea hidden unless hideHero is false",
+    "camera.pov": "a lens at Brea's eye height on her position, looking along her facing; Brea hidden",
+    "camera.orbit": "a lens around Brea: yawRel degrees from her front (+ toward her left), dist metres, height metres over her feet, target 'body' | 'head' | {fwd, up} metres in her frame",
+    "camera.screen": "a full-screen UI state: title | map | crafting | character | sighting",
+    "state.pose": "idle | run | draw | crouch | crouchAim | lanceHeavy | sit",
+    "state.actors": "people by archetype id and Instruments by kind, placed dist metres from Brea at side degrees (+ her left), facing Brea or the camera",
+    "ref": "crops: masked reference crop ids, first is primary | text: a worded reference id | written: a countable target | measured: rows the filmer reads | bar: an animation bar measured as rows"
+  },
+  "frames": [
+    { "id": "F01", "subject": "title screen", "in": "M1b",
+      "hour": 17.75, "weather": "trade", "at": "rest",
+      "camera": { "mode": "screen", "screen": "title" }, "state": { "pose": "idle", "hud": false },
+      "ref": { "crops": ["over-title", "key-title"] } },
+
+    { "id": "F02", "subject": "the Pans at golden hour, the hero frame", "in": "M1a",
+      "hour": 18.25, "weather": "trade", "at": "look.field", "bearing": 300,
+      "camera": { "mode": "chase", "pitch": 2 }, "state": { "pose": "idle", "hud": false },
+      "clip": { "seconds": 10, "walk": "1 m/s, then a sprint", "status": "pending: filmed with the bar clips (M1.3g)" },
+      "ref": { "crops": ["over-pans-golden"] } },
+
+    { "id": "F03", "subject": "exploration with the HUD, Brea from behind", "in": "M1a",
+      "hour": 16.5, "weather": "trade", "at": "look.pansInland", "bearing": 341.5,
+      "camera": { "mode": "chase", "pitch": 6 }, "state": { "pose": "idle", "hud": true },
+      "ref": { "crops": ["key-play", "over-explore"] } },
+
+    { "id": "F04", "subject": "the Pans at noon, salt and black sand", "in": "M1a",
+      "hour": 12.5, "weather": "trade", "at": "site:salt-pans", "bearing": 200,
+      "camera": { "mode": "eye", "eye": 1.7, "pitch": -38, "fov": 55 }, "state": { "pose": "idle", "hud": false },
+      "ref": { "crops": ["over-materials"] } },
+
+    { "id": "F05", "subject": "sea skyline at dusk: stacks, the Ring, glitter path", "in": "M1a",
+      "hour": 19.6, "weather": "trade", "at": "look.vista", "bearing": 283,
+      "camera": { "mode": "chase", "pitch": 1 }, "state": { "pose": "idle", "hud": false },
+      "ref": { "crops": ["key-dusk"] } },
+
+    { "id": "F06", "subject": "calima at noon", "in": "M1b",
+      "hour": 12.5, "weather": "calima", "at": "look.pansInland", "bearing": 341.5,
+      "camera": { "mode": "chase", "pitch": 4 }, "state": { "pose": "idle", "hud": false },
+      "ref": { "crops": ["board-calima"] } },
+
+    { "id": "F07", "subject": "Saltrow at night, lamps", "in": "M1b",
+      "hour": 21.0, "weather": "trade", "at": { "en": [-300, -262] }, "bearing": 45,
+      "camera": { "mode": "eye", "eye": 3.0, "pitch": 2, "fov": 50 }, "state": { "pose": "idle", "hud": false, "crowd": true },
+      "ref": { "written": "At 21:00 from the breakwater: at least 14 lit windows and the breakwater lamp; no pixel of sky brighter than the brightest window; walls readable as white by lamp spill within 6 m of a window and falling to silhouette beyond; frame mean luminance 4-9 %.", "measured": ["meanLuminance"] },
+      "note": "The breakwater has no authored coordinate yet: the lens stands on Saltrow's seaward edge (bible E -300, N -262) looking NE." },
+
+    { "id": "F08", "subject": "Brea front at 2.5 m, flat light", "in": "M1a",
+      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 0, "dist": 2.5, "height": 1.0, "target": "body", "fov": 40 }, "state": { "pose": "idle", "hud": false },
+      "ref": { "crops": ["turn-front", "turn-details"] }, "note": "Flat light is approximated by the 13:00 sun until a neutral turntable stage exists (M0.13)." },
+
+    { "id": "F09", "subject": "Brea side at 2.5 m, flat light", "in": "M1a",
+      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 90, "dist": 2.5, "height": 1.0, "target": "body", "fov": 40 }, "state": { "pose": "idle", "hud": false },
+      "ref": { "crops": ["turn-side"] } },
+
+    { "id": "F10", "subject": "Brea back at 2.5 m, flat light", "in": "M1a",
+      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 180, "dist": 2.5, "height": 1.0, "target": "body", "fov": 40 }, "state": { "pose": "idle", "hud": false },
+      "ref": { "crops": ["turn-back"] } },
+
+    { "id": "F11", "subject": "Brea's face, front", "in": "M0.11 spike, then M1a",
+      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 0, "dist": 0.8, "height": 1.58, "target": "head", "fov": 30 }, "state": { "pose": "idle", "hud": false, "hideKit": true },
+      "ref": { "crops": ["turn-face-front", "key-face-front"] } },
+
+    { "id": "F12", "subject": "Brea's face, three-quarter", "in": "M0.11 spike, then M1a",
+      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 35, "dist": 0.8, "height": 1.58, "target": "head", "fov": 30 }, "state": { "pose": "idle", "hud": false, "hideKit": true },
+      "ref": { "crops": ["turn-face-34", "key-face-34"] } },
+
+    { "id": "F13", "subject": "Brea's face, profile", "in": "M0.11 spike, then M1a",
+      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 90, "dist": 0.8, "height": 1.58, "target": "head", "fov": 30 }, "state": { "pose": "idle", "hud": false, "hideKit": true },
+      "ref": { "crops": ["turn-face-profile", "key-face-profile"] } },
+
+    { "id": "F14", "subject": "idle", "in": "M1a",
+      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 20, "dist": 3.2, "height": 1.0, "target": "body", "fov": 40 }, "state": { "pose": "idle", "hud": false },
+      "ref": { "crops": ["turn-front"], "bar": "M1.3c idle: hands unchanged (pose hash)" } },
+
+    { "id": "F15", "subject": "run, side-on, mid-stride", "in": "M1a",
+      "hour": 13.0, "weather": "trade", "at": "place:runway", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 90, "dist": 4.0, "height": 1.0, "target": "body", "fov": 45 }, "state": { "pose": "run", "hud": false },
+      "ref": { "bar": "M1.3c run: wrists beside the body through the cycle; forearms clear the survey case" } },
+
+    { "id": "F16", "subject": "full draw, side-on", "in": "M1a",
+      "hour": 17.75, "weather": "trade", "at": "place:rangeGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 90, "dist": 3.5, "height": 1.3, "target": "body", "fov": 42 }, "state": { "pose": "draw", "hud": false },
+      "ref": { "crops": ["key-bow"], "bar": "M1.3b draw: index knuckle within 0.03 m of the jaw-corner anchor; 0 frames with a hand behind the head" } },
+
+    { "id": "F17", "subject": "full draw, over the shoulder", "in": "M1a",
+      "hour": 17.75, "weather": "trade", "at": "look.aim", "bearing": 300,
+      "camera": { "mode": "chase", "pitch": 0 }, "state": { "pose": "draw", "hud": false },
+      "ref": { "crops": ["inst-wild"] } },
+
+    { "id": "F18", "subject": "crouch-moving aim", "in": "M1a",
+      "hour": 17.75, "weather": "trade", "at": "place:rangeGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 60, "dist": 3.5, "height": 0.9, "target": "body", "fov": 42 }, "state": { "pose": "crouchAim", "hud": false },
+      "ref": { "bar": "M1.3b crouch-moving aim: no hand or forearm behind the head in any cell" } },
+
+    { "id": "F19", "subject": "lance heavy at contact", "in": "M1a",
+      "hour": 17.75, "weather": "trade", "at": "place:duelGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 90, "dist": 4.0, "height": 1.1, "target": "body", "fov": 45 }, "state": { "pose": "lanceHeavy", "hud": false },
+      "ref": { "text": "stills-melee", "bar": "M1.3d heavy: hips lead the shoulders by 40 ms or more; palms within 0.05 m of the shaft at windup, contact and follow-through" } },
+
+    { "id": "F20", "subject": "Ansel beside Brea at 3 m", "in": "M1a",
+      "hour": 17.5, "weather": "trade", "at": "rest", "bearing": 200,
+      "camera": { "mode": "orbit", "yawRel": 0, "dist": 5.5, "height": 1.3, "target": { "fwd": 0, "side": 1.5, "up": 1.0 }, "fov": 42 },
+      "state": { "pose": "idle", "hud": false, "actors": [ { "type": "person", "id": "guild-matron", "dist": 3, "side": 90, "face": "camera" } ] },
+      "ref": { "crops": ["people-lineup"] } },
+
+    { "id": "F21", "subject": "three NPC faces", "in": "M1b",
+      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "camera": { "mode": "pov", "eye": 1.6, "pitch": 0, "fov": 30 },
+      "state": { "pose": "idle", "hud": false, "actors": [
+        { "type": "person", "id": "salt-raker", "dist": 1.9, "side": 13, "face": "brea" },
+        { "type": "person", "id": "boat-caulker", "dist": 1.9, "side": 0, "face": "brea" },
+        { "type": "person", "id": "pit-farmer", "dist": 1.9, "side": -13, "face": "brea" } ] },
+      "ref": { "crops": ["people-faces"] } },
+
+    { "id": "F22", "subject": "a Saltrow street at golden hour", "in": "M1b",
+      "hour": 18.67, "weather": "trade", "at": { "en": [-290, -252] }, "bearing": 40,
+      "camera": { "mode": "eye", "eye": 1.7, "pitch": 4, "fov": 55 }, "state": { "pose": "idle", "hud": false, "crowd": true },
+      "ref": { "written": "From the ramp looking up the main street at 18:40: at least 9 buildings in three lime-wash tones, 4 violet balconies, 2 bougainvillea, 2 salt cones, 5 people at work, the guild bell; warm sun on the left faces and violet-rose shadow on the right; no two adjacent buildings with the same roofline height." },
+      "note": "The ramp has no authored coordinate yet: the lens stands seaward of Saltrow (bible E -290, N -252) looking NE up the town." },
+
+    { "id": "F23-plumb", "subject": "the Plumb with Brea at 6 m", "in": "M1a",
+      "hour": 16.5, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 155, "dist": 4.5, "height": 2.0, "target": { "fwd": 4, "side": 0, "up": 1.6 }, "fov": 50 },
+      "state": { "pose": "idle", "hud": false, "actors": [ { "type": "instrument", "kind": "plumb", "dist": 6, "side": 0, "face": "brea" } ] },
+      "ref": { "crops": ["inst-plumb", "inst-lineup"] } },
+
+    { "id": "F23-peg", "subject": "the Peg with Brea at 6 m", "in": "M1b",
+      "hour": 16.5, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "camera": { "mode": "orbit", "yawRel": 155, "dist": 4.5, "height": 1.6, "target": { "fwd": 4, "side": 0, "up": 0.8 }, "fov": 50 },
+      "state": { "pose": "idle", "hud": false, "actors": [ { "type": "instrument", "kind": "peg", "dist": 6, "side": 0, "face": "brea" } ] },
+      "ref": { "crops": ["inst-lineup"] }, "note": "The Peg's default form has no board design: scored on material, lamp and finish only; silhouette is 'no reference'." },
+
+    { "id": "F23-gauge", "subject": "the Gauge with Brea at 6 m", "in": "M1b",
+      "hour": 16.5, "weather": "trade", "at": "place:gauge", "approach": { "dist": 6, "bearing": 220 },
+      "camera": { "mode": "orbit", "yawRel": 155, "dist": 4.5, "height": 2.2, "target": { "fwd": 4, "side": 0, "up": 2.0 }, "fov": 55 },
+      "state": { "pose": "idle", "hud": false },
+      "ref": { "crops": ["inst-gauge", "inst-lineup"] }, "note": "The Gauge is the static scripted one at Sluice 3 until the kind exists." },
+
+    { "id": "F24", "subject": "the Plumb in the meadow, Brea aiming", "in": "M1a",
+      "hour": 17.5, "weather": "trade", "at": "look.meadow", "bearing": 240,
+      "camera": { "mode": "chase", "pitch": 2 },
+      "state": { "pose": "draw", "hud": false, "actors": [ { "type": "instrument", "kind": "plumb", "dist": 20, "side": 0, "face": "brea" } ] },
+      "ref": { "crops": ["inst-wild"] } },
+
+    { "id": "F25", "subject": "the Plumb toppling on the dyke with its Peg swarm rushing", "in": "M1b",
+      "hour": 18.4, "weather": "trade", "at": "site:salt-pans", "bearing": 120,
+      "camera": { "mode": "chase", "pitch": 3 },
+      "state": { "pose": "draw", "hud": false, "actors": [
+        { "type": "instrument", "kind": "plumb", "dist": 16, "side": 0, "face": "brea", "state": "topple" },
+        { "type": "instrument", "kind": "peg", "dist": 8, "side": 18, "face": "brea" },
+        { "type": "instrument", "kind": "peg", "dist": 9, "side": 6, "face": "brea" },
+        { "type": "instrument", "kind": "peg", "dist": 10, "side": -8, "face": "brea" },
+        { "type": "instrument", "kind": "peg", "dist": 8.5, "side": -20, "face": "brea" } ] },
+      "ref": { "written": "Brea in the foreground third with the bow raised; the Plumb mid-topple, legs splayed, bob swinging; at least four Pegs in the frame; the vermilion line on the dyke behind; low sun." },
+      "note": "The dyke and the topple do not exist yet: staged on the salt pans with a standing Plumb." },
+
+    { "id": "F26", "subject": "Sighting on the Gauge", "in": "M1b",
+      "hour": 16.0, "weather": "trade", "at": "place:gauge", "approach": { "dist": 12, "bearing": 220 },
+      "camera": { "mode": "screen", "screen": "sighting" }, "state": { "pose": "idle", "hud": true },
+      "ref": { "crops": ["key-sighting"] } },
+
+    { "id": "F27", "subject": "map", "in": "M1b",
+      "hour": 16.0, "weather": "trade", "at": "rest", "bearing": 200,
+      "camera": { "mode": "screen", "screen": "map" }, "state": { "pose": "idle", "hud": true },
+      "ref": { "crops": ["over-map"] } },
+
+    { "id": "F28", "subject": "Making ledger", "in": "M1b",
+      "hour": 16.0, "weather": "trade", "at": "rest", "bearing": 200,
+      "camera": { "mode": "screen", "screen": "crafting" }, "state": { "pose": "idle", "hud": true },
+      "ref": { "crops": ["over-making"] } },
+
+    { "id": "F29", "subject": "Character page", "in": "M1b",
+      "hour": 16.0, "weather": "trade", "at": "rest", "bearing": 200,
+      "camera": { "mode": "screen", "screen": "character" }, "state": { "pose": "idle", "hud": true },
+      "ref": { "crops": ["over-character"] }, "note": "No Character page exists yet: the filmer opens the satchel and says so." },
+
+    { "id": "F30", "subject": "resting at the Brazier at dusk", "in": "M1b",
+      "hour": 19.5, "weather": "trade", "at": "fire", "approach": { "dist": 1.6, "bearing": 200 },
+      "camera": { "mode": "orbit", "yawRel": 40, "dist": 3.5, "height": 1.2, "target": { "fwd": 0.8, "side": 0, "up": 0.7 }, "fov": 45 },
+      "state": { "pose": "sit", "hud": false, "crowd": true },
+      "ref": { "text": "stills-fire" } },
+
+    { "id": "F31", "subject": "Reed cover by the Glass", "in": "M1b",
+      "hour": 17.0, "weather": "trade", "at": "look.reed", "bearing": 60,
+      "camera": { "mode": "chase", "pitch": 0 },
+      "state": { "pose": "crouch", "hud": false, "actors": [ { "type": "instrument", "kind": "plumb", "dist": 17, "side": 0, "face": "brea" } ] },
+      "ref": { "written": "Brea crouched in pale carrizo at the Glass rim with a calm Plumb 15 m beyond; the canes taller than her and leaning SW; her violet visible through no more than a third of the stems; water in the lower third; never gold or rust grass." } },
+
+    { "id": "F32", "subject": "aerial, 120 m over T1 looking NE across the island", "in": "M1a",
+      "hour": 15.0, "weather": "trade", "at": "trig:T1", "bearing": 45,
+      "camera": { "mode": "eye", "eye": 120, "pitch": -22, "fov": 60 }, "state": { "pose": "idle", "hud": false },
+      "ref": { "measured": ["calls<=350", "triangles<=6500000", "frame bar (TECH 9.1)", "no missing terrain chunk", "no LOD seam wider than 2 px"] } }
+  ]
+}
