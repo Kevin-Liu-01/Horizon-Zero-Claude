@@ -826,7 +826,7 @@ const V_ROWS = [
   {
     id: 'V-pan-closeup', kind: 'visual', lane: LANE, settle: 1600, timeout: 90000,
     title: 'Pan Whites I at close range in its in-engine material, beside the linen, belt and esparto references',
-    reference: 'reference/r5/armory/linen-tunic.jpg, reference/r5/armory/belt-brass.jpg, reference/r5/armory/espadrilles.jpg',
+    reference: 'reference/r5/armory/linen-tunic.jpg, reference/r5/armory/belt-brass.jpg, reference/r5/armory/espadrilles.jpg; ext:kevin-nov13-brea-turnaround.jpg@722ebae7 (R69, binding for rung 1)',
     setup: `(async () => {${FILM_PRE}
       const s = await import('/src/hero/sheets.js');
       await s.panCloseupOverlay(C, [
@@ -841,7 +841,7 @@ const V_ROWS = [
   {
     id: 'V-variant-sheet', kind: 'visual', lane: LANE, settle: 1500, timeout: 120000,
     title: 'W1 armor variants front / side / back flat-lit, and at 20 m',
-    reference: 'reference/r5/gates-perf/idle-stand.jpg',
+    reference: 'reference/r5/gates-perf/idle-stand.jpg; ext:kevin-nov13-brea-turnaround.jpg@722ebae7 (R69, binding for rung 1)',
     setup: `(async () => {${FILM_PRE}
       const s = await import('/src/hero/sheets.js');
       await s.variantSheetOverlay(C);
@@ -865,7 +865,7 @@ const V_ROWS = [
   {
     id: 'V-gear-in-hand', kind: 'visual', lane: LANE, settle: 1200, timeout: 90000,
     title: 'The gear on Brea in the world: full draw with the Sabina from three sides (flexed limbs, the string at the nock), the lance in her hands',
-    reference: 'reference/r5/gates-perf/draw-side.jpg, reference/r5/gates-perf/lance-ready-side.jpg',
+    reference: 'reference/r5/gates-perf/draw-side.jpg, reference/r5/gates-perf/lance-ready-side.jpg; ext:kevin-nov13-brea-turnaround.jpg@722ebae7 (R69, binding for rung 1)',
     setup: placedSetup(['openGround'], `(async () => {${FILM_PRE}
       C.input.enabled = true; C.state = 'playing';
       standAt(p, 'openGround'); p.camPitch = 0;
@@ -878,7 +878,7 @@ const V_ROWS = [
 V_ROWS.push({
   id: 'V-bow-carry', kind: 'visual', lane: LANE, settle: 900, timeout: 90000,
   title: 'The Sabina carried at a jog (V29 staged without a machine until an alert kind is live): low in her left hand',
-  reference: 'reference/r5/gates-perf/bow-in-hand.jpg',
+  reference: 'reference/r5/gates-perf/bow-in-hand.jpg; ext:kevin-nov13-brea-turnaround.jpg@722ebae7 (R69, binding for rung 1)',
   setup: placedSetup(['openGround'], `(async () => {${FILM_PRE}
     C.input.enabled = true; C.state = 'playing';
     standAt(p, 'openGround'); p.camPitch = 0;
@@ -890,7 +890,7 @@ V_ROWS.push({
 V_ROWS.push({
   id: 'V-starter-vs-board', kind: 'visual', lane: LANE, settle: 1200, timeout: 120000,
   title: 'C-06: the Starter at 2 m front, 3/4 and back, and from the chase camera, at DAY (12:30) and at 18:45, beside the stored silhouette sheet; the board panels (#2-TC, #1-TL, kevin-nov6-armor.md#4-L1) are read from outside the repo (R66 a)',
-  reference: 'reference/r5/hero/brea-silhouette-sheet.png; ext:kevin-nov6-board.jpg@f2694e04#2-TC; ext:kevin-nov6-keyart.jpg@860d7e9f#1-TL; ext:kevin-nov6-armor.md@d8509a8f#4-L1',
+  reference: 'ext:kevin-nov13-brea-turnaround.jpg@722ebae7 (R69, binding for rung 1); reference/r5/hero/brea-silhouette-sheet.png; ext:kevin-nov6-board.jpg@f2694e04#2-TC; ext:kevin-nov6-keyart.jpg@860d7e9f#1-TL; ext:kevin-nov6-armor.md@d8509a8f#4-L1',
   setup: placedSetup(['openGround'], `(async () => {${FILM_PRE}
     C.input.enabled = true; C.state = 'playing';
     standAt(p, 'openGround'); p.camPitch = 0;

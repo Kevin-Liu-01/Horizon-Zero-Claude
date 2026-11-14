@@ -76,6 +76,10 @@ export const COL = {
   // C-06 (ROUND5-LOOK): the wraps' orchil a shade redder than the top; the sash's rose-orchil (>= 25 dE2000 from the
   // retired carmine #A3213A); cast bronze; tar-blackened esparto (linear 0.06-0.10); the fitted trousers' dark basalt
   wrapV: hex('#7A4580'), sashRose: hex('#9A7AB8'), bronze: hex('#8C6A3E'), tar: hex('#514941'), basaltDark: hex('#3E3D47'),
+  // R69 (Kevin's Nov 13 turnaround, binding for rung 1): dark brown-grey work trousers, heavy dark-brown laced leather
+  // boots, violet cloth wound round the shins over the boot tops, the hip sash's panels a deep violet embroidered in thin
+  // gold-ochre ticks (the graduated-tick family mark)
+  trouserBG: hex('#443B35'), bootLeather: hex('#4A3426'), shinWrap: hex('#532A5E'), sashDeep: hex('#62358C'), tick: hex('#B8914A'),
 };
 
 /** The skeleton + grafted, cut pieces (shared by build() and panBindTriangles()). */
@@ -329,7 +333,23 @@ export function panTrim(W, H, trimH) {
     // the knot's tails run the cell's length
     t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0; t.d = 99;
     // (C-06: the sash is dyed: the board's rose-orchil band and panels at her left hip, not undyed linen)
-    cloth(t, o, COL.sashRose, { slub: 0.07, mottle: 0.1, seed: 13, thread: 0.04 });
+    // (R69: Kevin's Nov 13 turnaround: a deep violet, embroidered in thin gold-ochre ticks)
+    cloth(t, o, COL.sashDeep, { slub: 0.07, mottle: 0.1, seed: 13, thread: 0.04 });
+    {
+      // the graduated-tick family mark, couched in gold-ochre thread: a running line in from each hem, short ticks every
+      // 8 mm standing in from it, a long one every 4 cm; the thread a little proud, worn dull where the cloth is creased
+      const lineAt = [0.24, 0.76];
+      const cr = noise3(t.ax * 0.05, t.ay * 0.05, 1.9);
+      const thr = (a) => { over(o, sc(COL.tick, 0.85 + 0.3 * cr), a); o.h += 0.00035 * a; o.rough = mix(o.rough, 0.6, a); };
+      for (const lv of lineAt) {
+        const dv = Math.abs(t.v - lv) * 44;
+        if (dv < 0.7) thr(0.85 * (1 - dv / 0.7));
+        const inward = lv < 0.5 ? t.v - lv : lv - t.v;
+        const per = 6, ph = ((t.x % per) + per) % per;
+        const long = Math.floor(t.x / per) % 5 === 0;
+        if (inward > 0 && inward < (long ? 0.2 : 0.09) && ph < 0.9) thr(0.75);
+      }
+    }
     const c = fold01(noise3(t.ax * 0.018, t.y * 0.16, 2.9)), c2 = fold01(noise3(t.ax * 0.04, t.y * 0.34, 7.3));
     const f = c * 0.7 + c2 * 0.3;
     o.h += 0.0032 * (f - 0.6);
@@ -518,7 +538,7 @@ export const PAN_PAINTERS = {
     o.wear = 0.6; o.crease = 0.35;
   },
   trousers(t, o) {
-    cloth(t, o, COL.basaltDark, { slub: 0.1, mottle: 0.13, seed: 8, rough: 0.94, thread: 0.08 });
+    cloth(t, o, COL.trouserBG, { slub: 0.1, mottle: 0.13, seed: 8, rough: 0.94, thread: 0.08 });
     o.det = 0.66;
     seam(t, o, { d0: 3.0, line2: 2.2, a: 0.2 });
     // knee patches, sewn on
@@ -541,58 +561,92 @@ export const PAN_PAINTERS = {
     o.wear = 0.9; o.crease = 0.6;
   },
   boots(t, o) {
+    // R69 (Kevin's Nov 13 turnaround): heavy dark-brown laced leather work boots to mid-shin, two buckled straps round the
+    // shaft, scuffed at the toe and heel, a stacked dark sole with a welt stitch; above them violet cloth wound round the
+    // shin to under the knee, each turn lapping the one below it (the wound geometry the esparto plait used)
     const side = t.X >= 0 ? 1 : -1;
     const cx = side * 0.111, cz = t.Y < 0.13 ? 0.0 : -0.042;
     const th = Math.atan2(t.Z - cz, t.X - cx);
-    const n = fbm(t.X * 21, t.Y * 21, t.Z * 21, 3);
-    if (t.Y > 0.075) {
-      // A FLAT plait of esparto (a pleita) wound up the shin, each turn lapping the one below it. Armory W1: it read
-      // as stacked rope, because its height was one round crown per turn. Now the band is flat across with rounded
-      // edges, and its face is the plait: strands at 45 degrees from either edge meeting at the middle (chevrons),
-      // each strand its own lot of grass, a groove between strands, the two halves' strands interleaved at the spine
-      const turn = t.Y / 0.03 + th / TAU * side;
+    const n = fbm(t.X * 21, t.Y * 21, t.Z * 21, 3), n2 = fbm(t.X * 64, t.Y * 64, t.Z * 64, 2);
+    const front = Math.cos(th - Math.PI / 2);                      // 1 at the shin's front, -1 at the calf
+    const TOP = 0.292;
+    if (t.Y > TOP) {
+      // the shin wrap: a 3 cm strip wound up the leg, its lower edge turned and shaded under the next turn, frayed threads
+      const turn = (t.Y - TOP) / 0.031 + th / TAU * side;
       const k = Math.floor(turn), fb = turn - k;
-      const arc = th * 0.058 * side;
-      const edge = sstep(0.0, 0.15, fb) * sstep(1.0, 0.86, fb);            // flat across, rounded at both edges
-      const half = Math.abs(fb - 0.5) * 2, hs = fb < 0.5 ? 0 : 1;
-      const sp = arc / 0.0105 + half * 1.15 + hs * 0.5;                    // strand coordinate (period 10.5 mm)
-      const si = Math.floor(sp), sf = sp - si;
-      const strand = Math.sin(Math.PI * sf);                               // each strand's own round crown
-      const groove = sstep(0.16, 0.0, sf) + sstep(0.84, 1.0, sf);          // the shade between two strands
-      const lot = 0.9 + 0.2 * noise3(si * 1.37 + hs * 9.1, k * 2.11, 3.3);  // grass from different cuts, strand by strand
-      const spine = 1 - clamp(half / 0.07);                                 // where the halves interleave
-      const v = (0.72 + 0.28 * edge) * (0.87 + 0.16 * strand) * (1 - 0.15 * groove) * (1 - 0.08 * spine) * lot * (0.95 + 0.1 * (n - 0.5));
-      put(o, sc(COL.tar, v));
-      o.h = 0.0011 * edge + 0.00055 * strand * edge - 0.0002 * groove;
-      // the turn above lies over this one's top edge
-      if (fb > 0.9) { const q = mix(1, 0.62, (fb - 0.9) / 0.1); o.r *= q; o.g *= q; o.b *= q; }
-      o.rough = 0.9;
-      o.ao *= 1 - 0.3 * sstep(0.435, 0.455, t.Y);
-    } else if (t.Y < 0.027) {
-      // the sole: a plait of esparto (C-06, judges: "white rectangular stitch blocks"): three strands braided round the
-      // foot, seen edge on: chevrons of round strands leaning one way then the other, tar-dark like the upper
-      const arc = th * 0.09;
-      const row = t.Y / 0.009, ri = Math.floor(row), rf = row - ri;
-      const lean = (ri & 1) ? 1 : -1;
-      const sp = arc / 0.008 + lean * rf * 0.9, sf = sp - Math.floor(sp);
-      const strand = Math.sin(Math.PI * sf) * Math.sin(Math.PI * rf);
-      const lot = 0.9 + 0.2 * noise3(Math.floor(sp) * 1.7, ri * 3.1, 5.5);
-      put(o, sc(sc(COL.tar, 1.12), (0.58 + 0.42 * strand) * lot));
-      o.h = 0.0012 * strand; o.rough = 0.9; o.det = 0;
+      cloth(t, o, COL.shinWrap, { slub: 0.09, mottle: 0.12, seed: 31 + (k % 7), thread: 0.07 });
+      const lot = 0.93 + 0.14 * noise3(k * 1.7, 0.3, 9.1);
+      o.r *= lot; o.g *= lot; o.b *= lot;
+      const edge = sstep(0.0, 0.12, fb) * sstep(1.0, 0.88, fb);
+      o.h += 0.0010 * edge;
+      if (fb > 0.86) { const q = mix(1, 0.6, (fb - 0.86) / 0.14); o.r *= q; o.g *= q; o.b *= q; o.ao *= q; }
+      // faded where the turns stand proud, dust in the laps
+      over(o, [150, 120, 150], 0.10 * edge * sstep(0.5, 0.8, n));
+      over(o, [120, 104, 92], 0.18 * sstep(0.84, 0.97, fb));
+      // the wrap's top turn ends in a frayed edge under the knee
+      if (t.Y > 0.44) { const fr = noise3(th * 40, t.Y * 300, 4.4); if (fr > 0.6) over(o, [140, 110, 140], 0.3); }
+      o.rough = 0.92; o.det = 0.7; o.wear = 0.7; o.crease = 0.3;
+      return;
+    }
+    if (t.Y < 0.027) {
+      // the sole: stacked dark leather, a pale welt line with its stitch round the top, the stack's layers seen edge on
+      put(o, sc([42, 36, 32], 0.85 + 0.3 * n));
+      const layer = (t.Y / 0.0065) % 1;
+      if (layer < 0.12) { o.r *= 0.8; o.g *= 0.8; o.b *= 0.8; }
+      if (t.Y > 0.021) {
+        put(o, sc([74, 58, 44], 0.9 + 0.2 * n));
+        const s2 = ((th * 0.09 / 0.006) % 1 + 1) % 1;
+        if (s2 < 0.45 && t.Y > 0.0225 && t.Y < 0.0255) over(o, [128, 108, 84], 0.55);
+      }
+      o.h = 0.0004 * (layer < 0.12 ? -1 : 0); o.rough = 0.8; o.det = 0.2;
     } else {
-      // the upper: dark oiled leather, scuffed; the whipping thread round the sole line
-      put(o, sc(COL.leatherBrown, 0.68 + 0.42 * n)); o.rough = 0.56 + 0.2 * n; o.det = 0.33;
-      if (t.Y < 0.036) {
-        const s = ((th * 0.09 / 0.0125) % 1 + 1) % 1;
-        if (s < 0.3) { over(o, [92, 82, 70], 0.6); o.h += 0.0005; }
+      // the upper: oiled dark-brown leather, creased across the ankle, scuffed pale at the toe cap and the heel
+      put(o, sc(COL.bootLeather, 0.82 + 0.34 * n));
+      o.rough = 0.5 + 0.22 * n; o.det = 0.35;
+      const ankle = sstep(0.07, 0.1, t.Y) * sstep(0.15, 0.12, t.Y);
+      const crease = Math.abs(Math.sin(t.Y * 420 + n * 3));
+      if (ankle > 0) { o.h += -0.0005 * ankle * sstep(0.8, 1, crease); o.r *= 1 - 0.12 * ankle * sstep(0.8, 1, crease); o.g *= 1 - 0.12 * ankle * sstep(0.8, 1, crease); o.b *= 1 - 0.12 * ankle * sstep(0.8, 1, crease); }
+      const toe = sstep(0.07, 0.03, t.Y) * sstep(0.3, 0.9, front), heel = sstep(0.08, 0.03, t.Y) * sstep(0.4, 0.9, -front);
+      over(o, [112, 86, 64], (toe * 0.45 + heel * 0.3) * (0.6 + 0.6 * n2));
+      // the lacing up the front: brass-ringed eyelets in two rows, the lace crossing between them
+      const fa = th - Math.PI / 2;
+      const ew = 0.3;
+      if (t.Y > 0.05 && t.Y < TOP - 0.012 && Math.abs(fa) < ew + 0.12) {
+        const pitch = 0.024, row = (t.Y - 0.05) / pitch, ri = Math.round(row);
+        // the tongue under the lacing, a shade darker
+        if (Math.abs(fa) < ew) { o.r *= 0.86; o.g *= 0.86; o.b *= 0.86; o.h -= 0.0004; }
+        for (const sgn of [-1, 1]) {
+          const ex = Math.hypot((fa - sgn * ew) * 0.06 / 0.0036, (row - ri) * pitch / 0.0036);
+          if (ex < 1) { put(o, ex > 0.5 ? sc([122, 94, 54], 0.8 + 0.4 * n2) : [26, 21, 18]); o.metal = ex > 0.5 ? 0.9 : 0; o.rough = 0.42; o.h += 0.0005; }
+        }
+        // the lace: two cords crossing from eyelet to eyelet
+        const u = (fa + ew) / (2 * ew);
+        if (u > 0 && u < 1) for (const dir of [1, -1]) {
+          const lineRow = dir > 0 ? ri + u - 0.5 : ri + (1 - u) - 0.5;
+          const d = Math.abs(row - lineRow) * pitch;
+          if (d < 0.0018) { put(o, sc([72, 56, 40], 1.1 - 0.4 * (d / 0.0018))); o.h += 0.0008 * (1 - d / 0.0018); o.rough = 0.7; }
+        }
+      }
+      // two buckled straps round the shaft
+      for (const sy of [0.165, 0.245]) {
+        const d = Math.abs(t.Y - sy);
+        if (d < 0.0085) {
+          put(o, sc([58, 40, 28], 0.9 + 0.25 * n)); o.h += 0.0009 * Math.sin(Math.PI * (1 - d / 0.0085)); o.rough = 0.55;
+          if (d > 0.0065) { o.r *= 0.75; o.g *= 0.75; o.b *= 0.75; }
+          // the burnished edge and a stitch line inside it
+          if (d > 0.0058 && d < 0.0068 && ((th * 0.06 / 0.004) % 1 + 1) % 1 < 0.5) over(o, [120, 98, 72], 0.5);
+          // a square brass buckle on the outside of the leg
+          const ob = th - (side > 0 ? 0 : Math.PI), obw = Math.atan2(Math.sin(ob), Math.cos(ob));
+          const bx = Math.abs(obw) * 0.06 / 0.011, by = d / 0.0105;
+          if (Math.max(bx, by) < 1 && Math.max(bx, by) > 0.62) { put(o, sc([168, 132, 72], 0.85 + 0.3 * n2)); o.metal = 1; o.rough = 0.32; o.h += 0.0012; }
+        }
       }
     }
-    // salt and dust rising from the ground
-    const dust = sstep(0.26, 0.0, t.Y);
-    // (C-06: on tar-dark esparto the dust is a grey film, not a pale coat: boots stay the darkest thing below the waist)
-    over(o, [150, 142, 128], dust * (0.06 + 0.2 * n));
+    // dust rising from the ground
+    const dust = sstep(0.2, 0.0, t.Y);
+    over(o, [140, 128, 112], dust * (0.06 + 0.18 * n));
     o.salt = Math.max(o.salt, sstep(0.06, 0.0, t.Y) * (0.04 + 0.25 * n));
-    o.wear = 0.7; o.crease = 0.2;
+    o.wear = 0.75; o.crease = 0.25;
   },
   default(t, o) { put(o, [200, 0, 200]); },
 };
@@ -1274,11 +1328,12 @@ export async function panBase(opt = {}) {
       const from = 1 - 0.195 / L, to = 1 - 0.006 / L;
       woundWrap(armwrap, R, armSkin, { from, to, off: 0.0024, step: 0.0018, pitch: 0.036, turnsSign: sgn, rings: 15, sides: 12, rect: trim.rect('wrapV') });
       if (side === 'r') cuff(bracer, R, armSkin, { from: 1 - 0.175 / L, to: 1 - 0.04 / L, off: 0.0062, thick: 0.0028, rings: 8, sides: 16, rect: trim.rect('pouch'), stiff: 0.55, laceAt: Math.PI / 2, laceRect: trim.rect('rope') });
-      if (side === 'r') {
-        const ua = jointPos(doc, 'upperarm_r');
-        const onUp = (i) => fitBody.pos[i * 3] < ua[0] + 0.03;
+      // (R69: Kevin's Nov 13 turnaround has a violet band on BOTH upper arms)
+      {
+        const ua = jointPos(doc, `upperarm_${side}`);
+        const onUp = (i) => (side === 'r' ? fitBody.pos[i * 3] < ua[0] + 0.03 : fitBody.pos[i * 3] > ua[0] - 0.03);
         const RU = limbRadius(fitBody, ua, a, { pick: onUp });
-        cuff(armband, RU, armSkin, { from: 0.5, to: 0.5 + 0.045 / RU.F.len, off: 0.0016, thick: 0.002, rings: 6, sides: 16, rect: trim.rect('wrapV'), stiff: 0.2, roll: 0.0012 });
+        cuff(armband, RU, armSkin, { from: 0.5, to: 0.5 + 0.045 / RU.F.len, off: 0.0016, thick: 0.002, rings: 4, sides: 12, rect: trim.rect('wrapV'), stiff: 0.2, roll: 0.0012 });
       }
     }
     for (const p of [armwrap, bracer, armband]) recomputeNormals(p);
