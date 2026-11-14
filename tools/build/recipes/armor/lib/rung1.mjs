@@ -116,7 +116,9 @@ export function scarfCowl(part, field, J, { cols = 40, rows = 9, cz = -0.035, se
       // a cowl lies round the neck: it never spreads out over the shoulders as a collar would (the shoulders' slope is
       // under its lowest turn, not in its radius)
       const rMax = 0.064 + 0.5 * Math.max(0, 1.5 - y) + 0.026 * Math.max(0, Math.sin(th)) ** 2;
-      row.push(Math.min(rb + mix(0.012, 0.024, sstep(0.15, 0.85, t)), rMax + mix(0.008, 0.016, t)) + fz);
+      // (and never closer than 11 mm to what it covers: capped tight at the sides, the posed neck and trapezius came
+      // through it in F13 and the scarf showed as a thin collar)
+      row.push(Math.max(Math.min(rb + mix(0.012, 0.024, sstep(0.15, 0.85, t)), rMax + mix(0.008, 0.016, t)), rb + 0.011) + fz);
     }
     R.push(row);
   }
