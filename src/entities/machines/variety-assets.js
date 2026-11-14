@@ -150,7 +150,7 @@ export function freezeSkins(root) {
  *
  * VERTEX COLOURS are ranked with them. Quaternius' `Main` material carries its
  * palette in a `color` ATTRIBUTE with `vertexColors: true`, so a material-only
- * pass leaves the albedo exactly as brown as it was — measured on the Grazer,
+ * pass leaves the albedo exactly as brown as it was — measured on the Browser,
  * whose material read 0x89898e (correctly grey) over a vertex buffer that was
  * still a deer.
  */
@@ -231,7 +231,7 @@ function rankedRamp(root, chassis, mid, muscle) {
 /**
  * THE UNDERBODY PALETTE, and the judge finding that produced it.
  *
- * Fix round 1: "the Broadhead is a uniform tan low-poly cow ... the incumbents
+ * Fix round 1: "the Ram is a uniform tan low-poly cow ... the incumbents
  * show struts, cabling, white-grey plate over a dark underbody and a lit eye;
  * the three new species show none of it and read as livestock ... the shell
  * definitions already tag pieces plate/muscle/lacquer/trim, so the tint table
@@ -251,13 +251,13 @@ function rankedRamp(root, chassis, mid, muscle) {
 /**
  * FIX ROUND 2 — THE SEPARATION IS GRADED IN THE FRAME, NOT IN THE TABLE.
  *
- * Judge finding: "Donor-animal read is not closed on the Broadhead: authored
+ * Judge finding: "Donor-animal read is not closed on the Ram: authored
  * plate and donor hide measure 3% apart in the graded frame ... The
  * material-level fix DID land (an in-page probe shows the Bull donor's `Main`
  * material ramped to #6b727a by the new `underbody` table) ... but it does not
  * survive the warm key light of the graded frame."
  *
- * Reproduced, with a method that leaves no room to argue: the Broadhead is
+ * Reproduced, with a method that leaves no room to argue: the Ram is
  * staged alone through `V26a`'s own `stageCast`/`repairCast` and filmed three
  * times — machine hidden (the background plate), SHELL hidden (the hide alone)
  * and DONOR hidden (the plate alone) — and each machine frame is differenced
@@ -285,14 +285,14 @@ const UNDER_ROUGH = 0.90;
 
 export function styleMachine(root, style) {
   const seen = new Set();
-  // per-species palette override (the Corruptor's matte-black chassis)
+  // per-species palette override (the Crawler's matte-black chassis)
   let chassis = style.tint ? new THREE.Color(style.tint.chassis) : CHASSIS;
   let mid = style.tint ? new THREE.Color(style.tint.mid) : MID;
   let muscle = style.tint ? new THREE.Color(style.tint.muscle) : MUSCLE;
   if (style.underbody && !style.tint) {
     chassis = UNDER_CHASSIS; mid = UNDER_MID; muscle = UNDER_MUSCLE;
   } else if (style.underbody) {
-    // the Corruptor is already near-black; underbody only takes its
+    // the Crawler is already near-black; underbody only takes its
     // brightest surface off the chassis tone so its own trim still reads
     chassis = new THREE.Color(style.tint.mid);
   }

@@ -6,7 +6,7 @@ import * as THREE from 'three';
  * Every rig in the game re-poses from a rest snapshot each frame, and every
  * one of them rolled its own storage:
  *
- *   gait.js / watcher.js …  `Map<Bone, Quaternion>` rebuilt per species,
+ *   gait.js / sentry.js …  `Map<Bone, Quaternion>` rebuilt per species,
  *                           restored with a for..of over the Map.
  *   playerAnimator.js       `_entries[*].bindQ/bindP`, split into a
  *                           `_resetList` (bones the mixer never writes → reset

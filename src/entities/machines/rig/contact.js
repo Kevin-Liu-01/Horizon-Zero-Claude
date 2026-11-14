@@ -1,8 +1,8 @@
 /**
  * The contact ledger — one rule about foot contact, in one place.
  *
- * `GaitController` (six species) and `FootLock` (the clip-driven Watcher and
- * Longleg) both run once per **sim substep** — up to three times per rendered
+ * `GaitController` (six species) and `FootLock` (the clip-driven Sentry and
+ * Wader) both run once per **sim substep** — up to three times per rendered
  * frame — while every consumer of `debugFeet()` samples once per **rendered
  * frame**: the gates, the audio lane's footstep bank, the camera's step shake.
  *
@@ -14,7 +14,7 @@
  *
  * Break it and two consecutive stances read as one uninterrupted plant, and
  * the "stance drift" measured across the join is a whole stride. A judge
- * measured exactly that on the watcher under full-suite load: **0.422 m
+ * measured exactly that on the sentry under full-suite load: **0.422 m
  * against gate `A45`'s 0.06 m budget**, while the same gate passed at 0.008 m
  * on an idle box. Nothing was skating; the measurement had been handed two
  * plants glued together.
@@ -45,7 +45,7 @@
  * a 150-frame grace period so an abandoned poll would eventually let go. That
  * is exactly backwards: `_seenFrame` is stamped by the poll, so ONE call armed
  * a 150-frame window in which the next release of every leg waited for a
- * second call that never came. Measured on a strider at 5207: 36 plants in 120
+ * second call that never came. Measured on a runner at 5207: 36 plants in 120
  * frames, then ONE `debugFeet()` and 4 plants in the next 120 — a machine
  * gliding over the meadow with four legs in the air, silent, kicking no dust,
  * because `_footfall` fires off the same rising edge.
@@ -80,10 +80,10 @@ export const OBSERVER_TTL = 2;
  * about a stance reported as NOTHING — and that is the other half of what
  * the cadence gate was reading:
  *
- *   > measured on a strider at 10.5 m/s on a 21 fps page: one foot opened 13
+ *   > measured on a runner at 10.5 m/s on a 21 fps page: one foot opened 13
  *   > plants in 6 s and a consumer sampling every drawn frame saw 7 of them,
  *   > and was told "planted" on 15 frames in total — barely one frame per
- *   > stance. The longleg opened 18 plants across two feet and 12 were
+ *   > stance. The wader opened 18 plants across two feet and 12 were
  *   > observable.
  *
  * A stance whose REPORTED window is shorter than a drawn frame can fall
@@ -124,12 +124,12 @@ export class ContactLedger {
      * authority opened (residue fix round 1).
      *
      * Judge finding (blocker): "A48b-cadence-headroom-expansion still red 4/5
-     * on HEAD: the Longleg is ceiling-bound under load ... Fix the measurement,
+     * on HEAD: the Wader is ceiling-bound under load ... Fix the measurement,
      * not the coefficient. In rig/contact.js latch, count a plant for every
      * dominant-clip stance wrap per foot ... Then observedPlants reflects real
      * steps, the debt stays near zero and trim stays near 1."
      *
-     * Measured on the Longleg at 12.5 fps (`shots/mx-r4-longleg*`): 20 real
+     * Measured on the Wader at 12.5 fps (`shots/mx-r4-wader*`): 20 real
      * stances in 5 s, SIX of them visible to a once-per-frame sample, and on a
      * third run 31 real stances and ZERO visible. `observedPlants` is the
      * visible count, so a loop closed over it read a machine stepping at 2 Hz
@@ -159,7 +159,7 @@ export class ContactLedger {
    * (rig/contact.js latch counts a plant per dominant-clip stance wrap)".
    * `leg.wraps` is that window, per foot, and BOTH controllers now publish it
    * on every `debugFeet()` row as `stances` — `FootLock` from the clip's
-   * stance phase (Watcher, Redeye, Longleg), `GaitController` from its own
+   * stance phase (Sentry, Red-lamp kind, Wader), `GaitController` from its own
    * pattern (`phase + offset[foot]` crossing an integer, gait.js). A consumer
    * that samples once per drawn frame — or once per ten — reads the counter's
    * increment and cannot lose a stance that opened and closed between two of
@@ -213,7 +213,7 @@ export class ContactLedger {
       } else if (leg.rptPending) {
         /**
          * A STANCE THAT OPENED AND CLOSED BETWEEN TWO DRAWN FRAMES (residue
-         * fix round 1, `A48-cadence` on the Longleg — the judge's remedy: "the
+         * fix round 1, `A48-cadence` on the Wader — the judge's remedy: "the
          * latch needs to publish a stance window that survives a slow frame").
          *
          * The controller marked it `rptPending` on the substep its foot was

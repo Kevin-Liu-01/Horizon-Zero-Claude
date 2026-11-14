@@ -5,7 +5,7 @@
  *
  * The old build panned with a `StereoPannerNode` and a hand-rolled
  * `1 - d/40` falloff: everything sat on a flat line in front of the camera and
- * a Thunderjaw 200 m away was as loud as one at 45 m. Every voice now runs
+ * a Colossus 200 m away was as loud as one at 45 m. Every voice now runs
  * through this chain:
  *
  *   input ─ occLP ─ panner ─┬─ dry  ─→ sfx/amb/voice bus
@@ -210,7 +210,7 @@ export class SpatialChain {
 }
 
 /**
- * Priority voice pool (`audio-14`). Cheap sounds never starve a Thunderjaw
+ * Priority voice pool (`audio-14`). Cheap sounds never starve a Colossus
  * roar: at the cap the pool steals the oldest *lower-priority* chain and fades
  * it out in 25 ms rather than cutting it, and refuses the new sound outright
  * if nothing quieter is playing.

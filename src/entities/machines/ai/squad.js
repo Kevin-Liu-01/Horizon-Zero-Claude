@@ -7,17 +7,17 @@ const FLEE_RIM = PLAY_RADIUS + EXTENT.fleeRim;
 
 /**
  * Squad + ecosystem behaviour — `machine-ai-07` (herd doctrine is a one-shot
- * dead flag), `machine-ai-14` (no ecosystem behaviour), `strider-07`.
+ * dead flag), `machine-ai-14` (no ecosystem behaviour), `runner-07`.
  *
  *  - HERD DOCTRINE RESET: `herd.alarmed` used to latch true forever, so a herd
  *    could stampede exactly once per session and never post a rearguard again.
  *    It now clears once the whole herd has been calm for `calmTime`, and the
  *    rearguard is re-picked among the LIVING whenever the current one dies.
- *  - ESCORTS: the two Watchers that shadow the Strider herd hold slots on a
+ *  - ESCORTS: the two Sentries that shadow the Runner herd hold slots on a
  *    ring around it instead of walking an unrelated patrol loop, and they
  *    re-space themselves as members die.
- *  - SCAVENGERS: Scrappers within 90 m of a fresh wreck break patrol, lope to
- *    it and pick at it for 8-16 s. That is the Scrapper's entire canon role.
+ *  - SCAVENGERS: Scavengers within 90 m of a fresh wreck break patrol, lope to
+ *    it and pick at it for 8-16 s. That is the Scavenger's entire canon role.
  */
 
 const _v = new THREE.Vector3();
@@ -27,8 +27,8 @@ export class Squads {
     this.machines = machines;
     this.ctx = machines.ctx;
     this.herds = [];
-    this.convoys = [];     // Shell-Walker columns (registerConvoy)
-    this.baskings = [];    // Snapmaw pool sites (registerBasking)
+    this.convoys = [];     // Carrier columns (registerConvoy)
+    this.baskings = [];    // Sprawler pool sites (registerBasking)
     this.wrecks = [];      // { x, z, t } fresh kills for scavengers
     this.calmTime = 12;
     this._t = 0;
@@ -102,7 +102,7 @@ export class Squads {
       if (!b.members.includes(machine)) b.members.push(machine);
       /**
        * A pool whose whole pair was killed keeps `alarmed = true` for ever,
-       * and `installDoctrine`'s Snapmaw `onStateChange` returns early on an
+       * and `installDoctrine`'s Sprawler `onStateChange` returns early on an
        * alarmed site — so the replacement pair could never wake together
        * again even once its membership was restored. The flag belongs to the
        * EPISODE, not to the site: a pool with nothing hot in it is calm.
@@ -122,7 +122,7 @@ export class Squads {
    *
    * `field` is 'herd' | 'convoy' | 'basking'. `spawnExpansion` used to do
    * `basking.members.push(m); m.basking = basking;` by hand — which is how the
-   * Snapmaw pool stayed invisible to the site record even after `_remember`
+   * Sprawler pool stayed invisible to the site record even after `_remember`
    * existed: the raw push never touched it, so the pool still emptied on the
    * first respawn while the convoy (registered through `registerConvoy`) came
    * back. Anything that hands a machine a squad goes through here now, and
@@ -135,10 +135,10 @@ export class Squads {
   }
 
   /**
-   * CONVOY DOCTRINE (casting-v4.md §2.5 — the Shell-Walker, engine ask 4).
+   * CONVOY DOCTRINE (casting-v4.md §2.5 — the Carrier, engine ask 4).
    *
    * A herd FLEES and posts one rearguard. A convoy does the opposite and it is
-   * the whole read of a Shell-Walker column: on alarm the escorts close ranks
+   * the whole read of a Carrier column: on alarm the escorts close ranks
    * AROUND the carrier — the member still holding the cargo crate — and fight
    * outward from it, while the carrier itself backs away along the route. Kill
    * the carrier, or tear its crate off, and the convoy has nothing to defend
@@ -164,9 +164,9 @@ export class Squads {
   }
 
   /**
-   * BASKING SITES (casting-v4.md §2.3 — Snapmaw pairs).
+   * BASKING SITES (casting-v4.md §2.3 — Sprawler pairs).
    *
-   * 2-4 Snapmaws hold a pool and do nothing else: they lie motionless on the
+   * 2-4 Sprawlers hold a pool and do nothing else: they lie motionless on the
    * bank in `patrol` (the `basking` fidget) and, when one of them wakes up,
    * the site wakes with it — but they do NOT converge on a caller the way an
    * alarm recipient does. They slide into the water and come at the player
@@ -196,16 +196,16 @@ export class Squads {
   }
 
   /**
-   * THE SHARED HERD ALARM (casting-v4.md §5.5 — "extract the Strider's
+   * THE SHARED HERD ALARM (casting-v4.md §5.5 — "extract the Runner's
    * `onAlerted` rather than copy it a third time").
    *
-   * Broadhead and Grazer herds have the identical doctrine and this is it, in
+   * Ram and Browser herds have the identical doctrine and this is it, in
    * one place: the first alert of an episode fixes the stampede vector
    * (threat -> through the meadow, away), elects the member NEAREST the threat
    * as the single rearguard, and sets everyone else running. A later alert
    * from a member that is not the rearguard just extends its own run.
    *
-   * `strider.js` still carries its own copy — that file belongs to
+   * `runner.js` still carries its own copy — that file belongs to
    * `machine-rig` and this lane does not edit it. When that lane is next in
    * the file, `onAlerted() { Squads.alarmHerd(this); }` is the whole change
    * and the behaviour is identical (this helper was written from it).
@@ -245,7 +245,7 @@ export class Squads {
   }
 
   /**
-   * One frame of stampede — the Strider's `_flee`, shared. Gallops along the
+   * One frame of stampede — the Runner's `_flee`, shared. Gallops along the
    * herd vector, bends tangentially at the valley rim instead of piling into
    * it, and calms down once the clock runs out and the threat is far.
    * Returns whether it owned the frame.
@@ -297,7 +297,7 @@ export class Squads {
    * `_updateConvoys` hands every non-carrier an `escort` anchor on alarm, and
    * `Machine._statePatrol` tries `escort` BEFORE `convoy` — so the anchor does
    * not merely outlive the fight, it permanently replaces the in-file column
-   * that is the whole read of a Shell-Walker convoy. Measured on the shipped
+   * that is the whole read of a Carrier convoy. Measured on the shipped
    * tree: fight -> calm -> 60 s, five cycles, the escort still owned the patrol
    * frame in 5 of 5 and orbited the position the carrier stood at when the
    * alarm dropped (232.0, 23.8) while the carrier walked its route away from
@@ -526,7 +526,7 @@ export class Squads {
    * The basking pool's alarm is an EPISODE flag, exactly like the herd's
    * (`machine-ai-07`) and the convoy's: it latches on the first wake and has
    * to release again, or a pool that was spooked once is spooked for the rest
-   * of the session and `installDoctrine`'s Snapmaw `onStateChange` — which
+   * of the session and `installDoctrine`'s Sprawler `onStateChange` — which
    * returns early on an alarmed site — can never wake the pair together again.
    */
   _updateBaskings(dt) {

@@ -99,7 +99,7 @@ const _boomS = new THREE.Vector3();
  * her position AFTER she has moved, and a walking player penetrates by up to a
  * frame of travel before the swept solve pushes her back out — so on a loaded
  * box every forward frame fired a push and they integrated. Measured by the
- * round-4 film judge: spear drawn, 4 s of KeyW into a frozen Watcher parked
+ * round-4 film judge: spear drawn, 4 s of KeyW into a frozen Sentry parked
  * 5 m ahead moved the MACHINE 2.38 m (0.057 m on the worst single frame),
  * against 0.000 m with the spear holstered. `machinePad`'s own comment says
  * what the margin is for — "clears the manager's bodyRadius + 0.6 standoff by
@@ -117,17 +117,17 @@ const MELEE_PAD_FLOOR = 0.32;
  * in metres. See `Collision._meleeStandoff`: it is the end cap of a capsule
  * built from a machine's animated bounding box, which on every quadruped in
  * this roster is about a metre of empty air in front of the sculpt. Absolute
- * rather than proportional so a Thunderjaw loses the same centimetre of cap a
- * Watcher does instead of a third of its body.
+ * rather than proportional so a Colossus loses the same centimetre of cap a
+ * Sentry does instead of a third of its body.
  *
  * FIX PASS 1 (round 4), TWICE OVER: 0.66 -> 1.02. 0.12 m of it pays back the
  * pad (below); the other 0.24 m is the rest of the end cap, and it is what
  * makes the blade land on a beat whose tip is not aimed dead down the centre
  * line. Measured with the pad at 0.32 and the cut at 0.78: light-1's contact
  * tip (char 0.15, 1.05, 1.86) read +0.23 m short of the nearest hull surface
- * while light-2's (-0.43, 1.13, 1.72) read -0.02 m INSIDE it — a Watcher's idle
+ * while light-2's (-0.43, 1.13, 1.72) read -0.02 m INSIDE it — a Sentry's idle
  * hull is not symmetric about her aim, so a reach budget that only works for a
- * thrust down the midline is not a reach budget. On a Watcher the cut now lands
+ * thrust down the midline is not a reach budget. On a Sentry the cut now lands
  * on `MELEE_L_FLOOR` (0.5465 m of 1.5615), she stands 2.17 m from the centre
  * instead of 2.40, and `playerToShell` — the exact bound A103 gates — is still
  * 0.87 m of daylight.
@@ -138,7 +138,7 @@ const MELEE_PAD_FLOOR = 0.32;
  * the pad and the segment cut are the same axis, so moving 0.12 m from one to
  * the other leaves the distance, and therefore the blade's reach, exactly
  * where it was. Proven rather than argued: A103 publishes `playerToMachine`
- * (2.402 m on a Watcher before and after) and `tipToHullAtHit`.
+ * (2.402 m on a Sentry before and after) and `tipToHullAtHit`.
  */
 const MELEE_L_CUT = 1.02;
 /**
@@ -157,8 +157,8 @@ const MELEE_L_FLOOR = 0.35;
  * Round 4 withdrew the term in one frame: `melee._scanApproach` nulled the
  * target the frame she holstered (or the wedge lost the machine), the collider
  * snapped back to the full standoff on the same sync, and the swept solve
- * shoved her out of it — measured 1.247 m in ONE frame on a Watcher, 1.234 m
- * on a Redeye, 0.525 m on a Strider. Now the term is held while she is still
+ * shoved her out of it — measured 1.247 m in ONE frame on a Sentry, 1.234 m
+ * on a Red-lamp kind, 0.525 m on a Runner. Now the term is held while she is still
  * inside the full standoff (`_meleeLatched`) and only lets go once she is out
  * of it, and any GROWTH of the outline she is standing against is budgeted to
  * this per drawn frame (plus however far she herself moved that frame, so
@@ -188,7 +188,7 @@ const MELEE_BOUND_TTL = 2.0;
 /**
  * FIX PASS 1 (judge finding: the outline was taken once per engagement and
  * never refreshed, so a machine animating in place put her body 0.156 m into
- * a Redeye's neck hull and 0.176 m into a Strider's foot hull with the term
+ * a Red-lamp kind's neck hull and 0.176 m into a Runner's foot hull with the term
  * engaged). Three things keep the bound live while the term is in force:
  *
  *   `_meleeLive`  every SIM STEP, the live hulls on HER bearing: the nearest
@@ -217,13 +217,13 @@ const MELEE_RELAX_SPEED = 1.5;
 /**
  * How far the hull outline may reach PAST the machine's own standoff, along
  * its axis. On four species the full standoff leaves a head or a tail capsule
- * poking out past its end cap (Sawtooth and Behemoth heads, Corruptor and
- * Ravager tails), so a term that could only ever cut would still let her walk
+ * poking out past its end cap (Big cat and Hauler heads, Crawler and
+ * Brute tails), so a term that could only ever cut would still let her walk
  * her body into them with the spear drawn — the ENDS are hull-accurate in both
  * directions. The FLANKS are not: the outline never goes past the machine's
  * own flank (`machinePad`), so a capsule that pokes SIDEWAYS out of the full
- * standoff (the Watcher family's `Neck_Bone_7_026` hull, which spans 4.4 m
- * across the body; a Glinthawk's wings) is exactly as reachable as it is with
+ * standoff (the Sentry family's `Neck_Bone_7_026` hull, which spans 4.4 m
+ * across the body; a Flyer's wings) is exactly as reachable as it is with
  * the spear on her back. That is the base standoff's geometry, not something
  * the melee term created, and A106 publishes it per species rather than
  * hiding it. The cap also stops a stray hull (a part lying on the ground) from
@@ -1349,7 +1349,7 @@ export class Collision {
    * standoff, not geometry — the sculpt is not 0.55 m wider than it looks.
    * Because `camera` defaulted to `blocking`, that pad was inflating the lens
    * volume too: measured on port 5202, a 4.20 m boom collapsed to 0.89 m at
-   * 3 m from a Watcher and to the 0.45 m floor near a Thunderjaw, 0.55 m
+   * 3 m from a Sentry and to the 0.45 m floor near a Colossus, 0.55 m
    * earlier than the silhouette justifies, and player-control was about to
    * inherit that in Wave 1 with no warning. Splitting the two roles keeps the
    * lens out of the machine (which is right) without the gameplay pad.
@@ -1457,7 +1457,7 @@ export class Collision {
    * geometry: it keeps a walking player from shoving a machine (A25) by
    * clearing the machine manager's own `bodyRadius + 0.6` push. It is applied
    * to every machine in every state, including the one Aloy is trying to hit
-   * with a 1.59 m spear. Measured on a Watcher: `standoffHalfLen` 1.5615 +
+   * with a 1.59 m spear. Measured on a Sentry: `standoffHalfLen` 1.5615 +
    * `bodyRadius` 0.9 + `machinePad` 0.55 + her own 0.4 m capsule radius holds
    * her 3.41 m from its centre head-on, while the contact pose puts her blade
    * tip 1.87 m ahead of her root. The blade finished 0.32-0.58 m short of the
@@ -1497,13 +1497,13 @@ export class Collision {
   /**
    * THE OTHER HALF OF THE MELEE APPROACH TERM: the standoff SEGMENT.
    *
-   * The pad alone is not enough and the measurement says why. A Watcher's
+   * The pad alone is not enough and the measurement says why. A Sentry's
    * blocking capsule is `standoffHalfLen` 1.5615 swept either side of its
    * centre, inflated by `bodyRadius` 0.9; its ACTUAL hit hull, at the height
    * a spear contacts (about 1.0 m up), starts 0.5 m from the centre and ends
    * 1.65 m out. The 1.5615 m half-length is not the machine, it is
    * `max(size.x, size.z) * 0.5 - bodyRadius` off the ANIMATED bounding box —
-   * 4.92 m for a Watcher, i.e. the box that contains its legs at full spread.
+   * 4.92 m for a Sentry, i.e. the box that contains its legs at full spread.
    * So the capsule's END CAP is ~1 m of empty air in front of the sculpt, and
    * that cap is the whole reach shortfall: with the pad at its floor she still
    * stands 3.06 m from the centre while the blade reaches 1.80 m (measured off
@@ -1534,10 +1534,10 @@ export class Collision {
    * other consumers read that same number as geometry, and none of them wants
    * a melee approach term in it —
    *
-   *   `strider.js`  `reach = bodyRadius + standoffHalfLen + 0.8` (charge hit
+   *   `runner.js`  `reach = bodyRadius + standoffHalfLen + 0.8` (charge hit
    *                 test and `damagePlayer` radius): measured 2.287 -> 2.003 m
    *                 the moment she drew the spear;
-   *   `behemoth.js` `reach = bodyRadius + standoffHalfLen + 0.9`: 5.80 -> 4.78 m;
+   *   `hauler.js` `reach = bodyRadius + standoffHalfLen + 0.9`: 5.80 -> 4.78 m;
    *   `melee.js`    the Silent Strike prompt radius.
    *
    * i.e. drawing the spear shrank the charge that was about to hit her. So the
@@ -1546,7 +1546,7 @@ export class Collision {
    * collider or A25 breaks (`machines/index.js`: `m.meleeStandoffHalfLen ??
    * m.standoffHalfLen`). Everything else keeps the machine's real half-length.
    * `A106-melee-approach-immovable` measures both halves: the machine still
-   * moves 0.000 m under a drawn-spear walk-in, AND a Strider's and a Behemoth's
+   * moves 0.000 m under a drawn-spear walk-in, AND a Runner's and a Hauler's
    * charge reach are identical drawn and holstered.
    *
    * NO INTERPENETRATION, AND IT IS MEASURED RATHER THAN CLAIMED: gate A103
@@ -1559,8 +1559,8 @@ export class Collision {
    * (1) IT IS LATCHED, AND IT LETS GO WITHOUT A JUMP. Round 4 withdrew the
    * term on the frame `melee._scanApproach` lost the target (holster, or the
    * wedge swinging off the machine), and the next swept solve shoved her out
-   * of the restored standoff in ONE frame — 1.247 m on a Watcher, 1.234 m on a
-   * Redeye, 0.525 m on a Strider (measured, A106's release clause). Now a
+   * of the restored standoff in ONE frame — 1.247 m on a Sentry, 1.234 m on a
+   * Red-lamp kind, 0.525 m on a Runner (measured, A106's release clause). Now a
    * machine that carries a term keeps it while her capsule is still inside
    * that machine's FULL-standoff capsule (`_meleeLatched`); it lets go only
    * once she is outside it, where the full standoff cannot push her, and any
@@ -1569,12 +1569,12 @@ export class Collision {
    * like any other.
    *
    * (2) IT IS THE MACHINE'S REAL HIT HULLS, NOT A CONSTANT. The cut was
-   * `MELEE_L_CUT` off both ends of the standoff capsule, tuned on a Watcher's
-   * empty end cap; on a Redeye it let her torso and head into the sculpt.
+   * `MELEE_L_CUT` off both ends of the standoff capsule, tuned on a Sentry's
+   * empty end cap; on a Red-lamp kind it let her torso and head into the sculpt.
    * Bounding that CAPSULE by the hulls was built and measured first, and it
    * cannot work: a capsule's end is a semicircle as wide as its flank, so
    * keeping her off a machine's front LEGS at the corners drags the whole end
-   * out — on a Watcher facing her the bounded front end came out 1.08-1.76 m
+   * out — on a Sentry facing her the bounded front end came out 1.08-1.76 m
    * long against its own 1.56, i.e. she could get at most 0.3 m closer head-on
    * and in half the poses none at all, with 0.7 m of daylight between her and
    * the head she was trying to hit. So the term's collider is now the hull
@@ -1599,8 +1599,8 @@ export class Collision {
    * FIX PASS 1 (round 5) — THE BOUND IS KEPT LIVE, AND THE RELEASE RELAXES.
    * The judge animated the rig in place (idle clip, no AI) with the term
    * engaged and found the outline was the ENGAGEMENT'S pose for as long as the
-   * term lasted: a Redeye's idle head gesture put her body capsule 0.156 m
-   * inside its neck hull, a Strider's front foot 0.176 m, within 3.5 s — and
+   * term lasted: a Red-lamp kind's idle head gesture put her body capsule 0.156 m
+   * inside its neck hull, a Runner's front foot 0.176 m, within 3.5 s — and
    * after a holster the latch kept that stale outline for as long as she stood
    * still (400 frames measured). Now, while the term is in force, engaged or
    * releasing: (a) `_meleeLive` reads the LIVE hulls on her own bearing every
@@ -1610,7 +1610,7 @@ export class Collision {
    * longer waits for her to walk out — it relaxes to the machine's own
    * standoff at `MELEE_RELAX_SPEED` (<= `MELEE_GROW_STEP` per drawn frame) and
    * lets go when it gets there. A106's clause 5 animates the rig for 6 s on a
-   * Watcher, a Redeye and a Strider and samples her capsule against every
+   * Sentry, a Red-lamp kind and a Runner and samples her capsule against every
    * hull capsule on every rendered frame.
    */
   _meleeStandoff(m, rec) {
@@ -1682,8 +1682,8 @@ export class Collision {
       /* RELEASING — ROUND 6, ORCHESTRATOR RULING R6 (Sep 27, from the r5
        * skeptic). Fix pass 1 walked the released outline back out to the
        * machine's own standoff at `MELEE_RELAX_SPEED`, which is the collider
-       * moving her: the skeptic holstered in front of a frozen Watcher, a
-       * Strider and a Redeye and watched her GLIDE 0.37-0.67 m backwards over
+       * moving her: the skeptic holstered in front of a frozen Sentry, a
+       * Runner and a Red-lamp kind and watched her GLIDE 0.37-0.67 m backwards over
        * ~0.3-0.4 s with a planted foot dragged up to 0.34 m. R6: releasing the
        * term must not move her at all unless she moves herself. So a released
        * term is a RATCHET that follows her out and never pushes:
@@ -1843,7 +1843,7 @@ export class Collision {
      * flat spheres of `bodyRadius + 0.6` at the rear, centre and snout
      * (± `standoffHalfLen` along the heading). The term keeps the manager on
      * its centre sphere alone (`meleeStandoffHalfLen` 0); withdrawn, the
-     * snout sphere comes back. On a Thunderjaw head-on she stood 5.07 m from
+     * snout sphere comes back. On a Colossus head-on she stood 5.07 m from
      * its centre — outside the slanted capsule, so the term let go, and 2.0 m
      * inside the snout sphere, so on the holster frame the manager shoved
      * the MACHINE 2.0 m away in one frame (real input probe, Oct 2). The
@@ -1878,7 +1878,7 @@ export class Collision {
    * animation. Anything that refreshed the set in between (a gate's
    * `hulls(m)` read after a frame, a raycast from a system that runs before
    * the machines) left the live check reading the pose from BEFORE the
-   * machine moved. A106 clause 5 caught it on the Strider, frozen-then-
+   * machine moved. A106 clause 5 caught it on the Runner, frozen-then-
    * animated, in the two of five campaign runs that rendered at ~60 fps (one
    * step a frame, so the stale read was the only read): its front foot,
    * snapping to the idle clip 0.13 s / 0.23 s after it was let go, put her
@@ -1921,8 +1921,8 @@ export class Collision {
    * force, engaged or releasing.
    *
    * The judge animated the target's rig in place (idle clip, no AI) with the
-   * term engaged: within 3.5 s a Redeye's neck put her body capsule 0.156 m
-   * inside a hull, a Strider's front foot 0.176 m — the outline was bounded
+   * term engaged: within 3.5 s a Red-lamp kind's neck put her body capsule 0.156 m
+   * inside a hull, a Runner's front foot 0.176 m — the outline was bounded
    * once, at the engagement, on whatever pose the machine had then. This is
    * the same arithmetic as `_mbZone` on ONE ray, hers: the farthest point
    * along her bearing (from the machine's centre) at which her body capsule
@@ -1937,7 +1937,7 @@ export class Collision {
    * prediction the result depends on: 5 mm plus twice the distance the
    * requirement grew over the last step on the same ray, decaying, capped at
    * `MELEE_LIVE_LEAD_MAX` 0.03 m (a 0.12 m cap over-pushed her 0.27 m past a
-   * Strider's own standoff after the frozen-then-animated rig snapped its
+   * Runner's own standoff after the frozen-then-animated rig snapped its
    * foot 0.32 m in one step — measured), taken on a lead-free copy of the
    * ray so it cannot feed itself.
    *
@@ -2074,7 +2074,7 @@ export class Collision {
    * `rec.zN`, and, only if the machine has moved or turned since the cap was
    * last taken, `MELEE_ROLL_BINS` bins of the cap. When both are through, the
    * new zone becomes the outline (`_mbFinish`, floor/dilate/cap exactly as the
-   * full bound). A Watcher turns over in ~6 frames, a Thunderjaw in ~60; the
+   * full bound). A Sentry turns over in ~6 frames, a Colossus in ~60; the
    * cost per frame is bounded by the sample count, not by the species.
    * Growth of the outline it produces is budgeted like any other growth (and
    * the live check above is what keeps her clear inside a cycle).
@@ -2148,7 +2148,7 @@ export class Collision {
         if (g >= R + 0.35) continue;             // out of reach whatever the slope
         /* ...and where it could matter, the terrain under THIS sample, with her
          * body band widened 5 cm each way for the slope across the disc: on a
-         * long hull (a Thunderjaw's neck) the midpoint can be metres from the
+         * long hull (a Colossus's neck) the midpoint can be metres from the
          * part she stands next to. */
         const fy = terr && terr.getHeight ? terr.getHeight(ax + ex * t, az + ez * t) : my;
         const y0 = fy + MELEE_BODY_R - 0.05, y1 = fy + MELEE_BODY_H - MELEE_BODY_R + 0.05;
@@ -2216,10 +2216,10 @@ export class Collision {
       const r0g = stadiumRay(base, dBase, cu, sv);
       /* Her feet on the terrain where she would stand, not at the machine's
        * own ground: the capsule is slanted, so the height moves the outline —
-       * and on a tall machine it moves it a lot (a Thunderjaw's standoff runs
+       * and on a tall machine it moves it a lot (a Colossus's standoff runs
        * from 0.15 m up at the tail to 7 m up at the head), so the terrain is
        * re-read where the previous pass landed, three passes. One read at the
-       * XZ-stadium point put this outline up to 0.049 m INSIDE a Thunderjaw's
+       * XZ-stadium point put this outline up to 0.049 m INSIDE a Colossus's
        * real standoff (measured over 180 bearings; three passes: 0.0001 m), and
        * on a bearing where the term stays out that is a place she stands that
        * neither the hulls nor the holstered standoff allow — A106 caught her
@@ -2248,7 +2248,7 @@ export class Collision {
    * From a finished zone to the outline in force: floor, dilate, cap. ...AND
    * IF THE HULLS POKE OUT PAST THE CAP, THE TERM STAYS OUT OF IT. Stopping the
    * outline AT the cap there would only move her contact with that hull to a
-   * place the term created (measured: a Glinthawk's wing reaches 4.2 m
+   * place the term created (measured: a Flyer's wing reaches 4.2 m
    * sideways from its centre, and an outline capped at 2.35 m stood her 0.95 m
    * inside the wing). On such a bearing the outline is the machine's own
    * standoff, exactly as holstered.
@@ -2260,8 +2260,8 @@ export class Collision {
      * CAPSULE. The floor used to be the round-4 term capsule (the machine's
      * segment shortened by `MELEE_L_CUT`, a third of it at least), and on the
      * machines whose standoff SEGMENT is long it was the whole bound: a
-     * Thunderjaw's floor end cap sat 6.17 m from its centre and the blade
-     * landed 1.13-1.19 m short of the hull; a grounded Stormbird's (segment
+     * Colossus's floor end cap sat 6.17 m from its centre and the blade
+     * landed 1.13-1.19 m short of the hull; a grounded Raptor's (segment
      * 9.28 m) 11.2 m out, nowhere near it (the r5 skeptic and this round's
      * per-species A103). The hull outline is the bound R4 asks for; the ONLY
      * thing the floor still has to guarantee is the manager agreement — her

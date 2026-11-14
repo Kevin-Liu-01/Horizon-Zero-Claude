@@ -504,7 +504,7 @@ const ROW_W = [[26, 42], [24, 38], [22, 34], [20, 32], [18, 28], [12, 19], [12, 
 /**
  * The field's floor: one gentle incline, 0.3 m from the sea rows up to the town's, the same for a
  * cell and for the dyke strip beside it. Steps and crowns at the cell edges were drawn by the
- * 1.94 m mesh as sawtooth teeth along every diagonal dyke (A-anti-tile, ground alone); the relief
+ * 1.94 m mesh as big cat teeth along every diagonal dyke (A-anti-tile, ground alone); the relief
  * at a dyke is the stone's.
  */
 function rowLevel(vw) {

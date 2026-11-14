@@ -681,7 +681,7 @@ export class Fauna {
    * port 5211, a boar stands 0.9 m at the bristle ridge and `world-ground`'s
    * tall grass is taller than that, so a herd grazing in a stealth band is a
    * herd nobody can see, hunt or loot — 36 animals rendering every frame for
-   * no one. Grazers crop short sward in the open anyway, so the truthful
+   * no one. Browsers crop short sward in the open anyway, so the truthful
    * placement and the legible one are the same placement.
    */
   _standable(x, z, openOnly = false) {

@@ -211,7 +211,7 @@ export class Perception {
     this.lastStimulus = { x: m.lastKnown.x, z: m.lastKnown.z, kind: 'hit' };
   }
 
-  /** Omnidirectional sensor (Thunderjaw radar) — canon, per species. */
+  /** Omnidirectional sensor (Colossus radar) — canon, per species. */
   _omni(dist) {
     const o = this.cfg.omni;
     if (!o) return 0;

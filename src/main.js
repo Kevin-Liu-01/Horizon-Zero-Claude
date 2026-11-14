@@ -134,7 +134,7 @@ class Game {
     ctx.studio = this._add(new Studio(ctx)); // last: its camera write wins the frame
 
     // perf-tech-10 — compile every program behind the loading bar so the first
-    // arrow, the first Focus pulse and the first Thunderjaw do not stall.
+    // arrow, the first Focus pulse and the first Colossus do not stall.
     setLoad(0.93, 'shaders');
     const warm = await engine.warmUp(ctx.scene, ctx.camera);
     setLoad(1, `ready:${warm.programs} programs in ${warm.ms} ms`);

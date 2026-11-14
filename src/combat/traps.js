@@ -7,8 +7,8 @@ import { AMMO, tieDownCount } from './weapons.js';
  * deals meaningful damage, both change where the fight happens.
  *
  *   Ropecaster  Each rope stakes the machine to the ground. At
- *               `tieDownCount(kind)` ropes (2 for a Watcher, 5 for a
- *               Thunderjaw) it is PINNED — `forceState('downed')`, which is
+ *               `tieDownCount(kind)` ropes (2 for a Sentry, 5 for a
+ *               Colossus) it is PINNED — `forceState('downed')`, which is
  *               the same window machine-ai opens for a Critical Hit, held for
  *               as long as the ropes last. Ropes are consumed by the pin and
  *               snap when it ends.
@@ -341,7 +341,7 @@ export class Traps {
         // the machine's legs sweep a cylinder; the wire is a segment
         const r = (m.bodyRadius ?? 1) * 0.9 + TRIP_R;
         if (distPointSeg2(m.position, w.a, w.b) > r * r) continue;
-        // ...and it must be low enough to catch (a Glinthawk in the air is not)
+        // ...and it must be low enough to catch (a Flyer in the air is not)
         const gy = this.ctx.terrain ? this.ctx.terrain.getHeight(m.position.x, m.position.z) : 0;
         if (m.position.y - gy > 2.2) continue;
         this._trigger(w, m);

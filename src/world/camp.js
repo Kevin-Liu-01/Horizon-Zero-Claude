@@ -634,7 +634,7 @@ export class Camp {
     const lx = x + px * 0.45, lz = z + pz * 0.45;
     const lTopY = this._groundY(lx, lz) + h;
     this._tube(this._small, [lx, lTopY, lz], [lx, lTopY - 0.26, lz], 0.006, 0.006, '#2c2118');
-    // glowing watcher-eye lens trophy — own emissive material, pulsed in update
+    // glowing sentry-eye lens trophy — own emissive material, pulsed in update
     this._lensMat = new THREE.MeshStandardMaterial({
       color: '#0a2630', emissive: '#38d9f7', emissiveIntensity: 1.6,
       roughness: 0.3, metalness: 0.2,

@@ -64,7 +64,7 @@ export const PERCEPTION = {
     engagedWeight: 1,
     /**
      * CONTACT RANGE — knife-range fallback for a machine ALREADY in the fight
-     * (fix round 1, `A41b-attack-coverage`: "Scrapper does nothing at 2 m").
+     * (fix round 1, `A41b-attack-coverage`: "Scavenger does nothing at 2 m").
      *
      * `engagedRange` above still requires line of sight, and an optical line
      * at 2 m is the easiest one in the world to lose: a rock lip between two
@@ -190,7 +190,7 @@ export const ENGAGE = {
      * band against what it believes, before it gives up and walks to the
      * remembered point.
      *
-     * A Scrapper on its own ground spends 40 % of a duel with no line of sight
+     * A Scavenger on its own ground spends 40 % of a duel with no line of sight
      * (measured: 59 of 215 perception ticks blocked by `collision.occluded`,
      * 31 of 41 ticks at the 4 m mark, a rock between the two of them). Every
      * one of those ticks used to hand the frame to `Engage.pursue`, which is
@@ -215,7 +215,7 @@ export const ENGAGE = {
      * restores the line. It now runs off `Engage._blindT`, which only
      * `noteSeen()` clears. AND RE-ARGUED ON EVIDENCE, which the
      * judge asked for, because the round-3 case for this hold was made under
-     * the pinned clock. Two A/B sweeps on the Scrapper's own ground with the
+     * the pinned clock. Two A/B sweeps on the Scavenger's own ground with the
      * clock HONEST (`_unseenT` free, 22 sim s a duel, the most occluded arcs
      * of twelve, three seeds each):
      *
@@ -247,7 +247,7 @@ export const ENGAGE = {
      * straight at the remembered point — which is what used to walk the
      * machine into the rock and then into knife range, where `contactRange`
      * lets it fight blind for ever and no standoff move can ever be selected
-     * (measured on the Scrapper's spawn: 93 % of a 22 s duel with no
+     * (measured on the Scavenger's spawn: 93 % of a 22 s duel with no
      * sightline, the whole fight at 3-4 m, laser never fired).
      *
      * Short on purpose: it is a reposition, not a patrol, and `noteSeen()`
@@ -307,9 +307,9 @@ export const ENGAGE = {
    * `Engage._ringWindow()` cannot hold a radius below `band[0] + hyst/2`, so a
    * move whose row ENDS within that clearance is a move the footwork can only
    * ever stand at the very edge of — the orbit's own radial slop then puts the
-   * machine outside it at the moment it picks. Measured: the Scrapper held
+   * machine outside it at the moment it picks. Measured: the Scavenger held
    * ring 3.3 m against a `claw` capped at 3.4 m and threw `dart-bite` eight
-   * times out of eight; the Strider did the same at 4.5 m against a 4.4 m
+   * times out of eight; the Runner did the same at 4.5 m against a 4.4 m
    * kick. Every close-range floor below is therefore set at least 0.8 m under
    * the shortest move it has to set up, which leaves >= 0.5 m of band the
    * machine can actually orbit in and still be in range.
@@ -334,14 +334,14 @@ export const ENGAGE = {
  * simply drops out and the generic fallback takes over.
  *
  * ---------------------------------------------------------------------------
- * BAND HONESTY (round-4 judge finding "strider dead zone", A41b)
+ * BAND HONESTY (round-4 judge finding "runner dead zone", A41b)
  * ---------------------------------------------------------------------------
  * `authored: 'species'` is the ONE row shape that can lie. It builds only from
  * whatever `machine.chooseAttack(dist)` happened to offer this frame, so if
  * the species' own if-ladder guards the move more tightly than the row's
  * `min/max`, the row is legal at ranges where it can never build and the
- * machine simply throws nothing. That is exactly what happened to the Strider:
- * its `charge` row read 5-20 m while `strider.js` only offers a charge past
+ * machine simply throws nothing. That is exactly what happened to the Runner:
+ * its `charge` row read 5-20 m while `runner.js` only offers a charge past
  * 15 m, its kicks stop at 4.2 m, and its own standoff band is 10-22 m — so the
  * footwork parked it at 12.5 m, dead centre of a 4.2-15 m hole, and it stood
  * there for the whole fight.
@@ -359,7 +359,7 @@ export const ENGAGE = {
  *      fight is a bug, not a design.
  *   3. ...and covering it with ONE row is not covering it. A band whose every
  *      metre has the same single answer is the fixed attack ladder wearing a
- *      coverage report: it passed rule 2 for the Strider while the species
+ *      coverage report: it passed rule 2 for the Runner while the species
  *      threw nothing but `charge` (judge-machine-ai-followup-r0). At least two
  *      non-rear rows must reach into the band, and no single row may be the
  *      sole answer for more than 70 % of it. `AttackPicker.bandProfile()`
@@ -371,7 +371,7 @@ export const ATTACKS = {
 /**
  * `table`  — selection is entirely table-driven; the species' own
  *            `chooseAttack()` is never consulted (its private builders are
- *            called by name instead, so canon gates like the Thunderjaw's
+ *            called by name instead, so canon gates like the Colossus's
  *            40 %-health laser lock can be lifted from data).
  * `hybrid` — the species' `chooseAttack()` offers one candidate and the table
  *            rows compete with it. Default.
@@ -392,7 +392,7 @@ export const SCORING = {
    * ...and an ADDITIVE tier on top of it, applied after the jitter, so a legal
    * move the machine has not shown this fight ALWAYS outranks one it has.
    * Multiplicative freshness alone could be overturned by `randomness`, which
-   * is what made a Sawtooth duel sometimes spend the whole window inside
+   * is what made a Big cat duel sometimes spend the whole window inside
    * pounce range and never reach its charge (A41 flaked ~1 run in 5).
    * Ordering AMONG fresh moves is still `score`-driven.
    */
@@ -403,7 +403,7 @@ export const SCORING = {
    * gives that move up and arranges for something else, and how long the
    * give-up lasts. A move only holds the ring while it keeps its promise.
    *
-   * The Strider's stuck ring had a specific cause (a row that ended inside the
+   * The Runner's stuck ring had a specific cause (a row that ended inside the
    * ring clamp) and that cause is now unrepresentable — but "the machine wants
    * a move it can never take, so it holds one radius and throws one move for
    * the whole fight" is a CLASS, and it has now been produced three times by
@@ -423,7 +423,7 @@ export const SCORING = {
    * It is deliberately SHORT and deliberately soft. The failure it exists for
    * is a machine re-committing to the same shadowed radius the instant its
    * belief comes back; the failure it must not cause is retiring a move
-   * because one arc of one duel was awkward — the Scrapper's laser is exactly
+   * because one arc of one duel was awkward — the Scavenger's laser is exactly
    * the move this ground makes hard, and the whole round is about that laser
    * firing. So: `_bestArrangeable` falls back to the blind set when nothing
    * else is arrangeable, the row stays fully LEGAL (selection never consults
@@ -433,10 +433,10 @@ export const SCORING = {
    * standing INSIDE the arranged move's range that loses the line has a
    * sightline problem, not a reachability one, so `Engage._giveUpBlind` skips
    * the mark there and repositions instead. Traced, because marking it dropped
-   * the ring from 9.7 m to 3.6 m at the exact moment the Scrapper arrived at
+   * the ring from 9.7 m to 3.6 m at the exact moment the Scavenger arrived at
    * 8.1 m and blinked, throwing away the whole trip out to laser range. With
    * the exception in place the mark never fired across ten seeded duels on the
-   * Scrapper's worst arc, and the laser fired in all ten.
+   * Scavenger's worst arc, and the laser fired in all ten.
    */
   blindHold: 3.5,
   /**
@@ -455,7 +455,7 @@ export const SCORING = {
    * shown this fight while it is still walking to the range of one it has not.
    *
    * Without it a species whose cheap move closes the distance can never set a
-   * long one up: the Scrapper's `dart-bite` lunges 4.2 m forward on a 3.2 s
+   * long one up: the Scavenger's `dart-bite` lunges 4.2 m forward on a 3.2 s
    * cooldown, so every time the footwork took it out toward its 7 m laser the
    * bite came off cooldown first and dragged it back in — eleven attacks in
    * 30 s, two of them distinct, with the laser stalled out (A41c). Backing
@@ -470,14 +470,14 @@ export const SCORING = {
   /**
    * ...AND AS LONG AS THE WALK ACTUALLY TAKES, CAPPED (FIX ROUND 5).
    *
-   * A flat 2 s is right for a Scrapper (orbitSpeed 0.75 x runSpeed 9) and
-   * far too short for the slowest machines in the expansion: a Snapmaw orbits
+   * A flat 2 s is right for a Scavenger (orbitSpeed 0.75 x runSpeed 9) and
+   * far too short for the slowest machines in the expansion: a Sprawler orbits
    * at 0.4 x 7.5 = 3 m/s, so the 7 m out to its freeze-mortar shell is a
    * 2.3 s trip and the patience expired before it arrived — its cheap
    * `lunge-bite` (a 6.5 m dash) then came off cooldown and dragged it back
-   * in, every single time. Measured: the Snapmaw held 0.13 decayed seconds
+   * in, every single time. Measured: the Sprawler held 0.13 decayed seconds
    * inside 13-19.7 m across a 22 s duel and never fired the mortar; the
-   * Ravager held 0.05 s inside its cannon shell.
+   * Brute held 0.05 s inside its cannon shell.
    *
    * So the patience is now `gap / orbitSpeed + 0.5`, floored at
    * `setupPatience` and capped here. It can only ever be extended for a
@@ -556,8 +556,8 @@ export const ECOSYSTEM = {
    * POPULATION BUDGET — the bound that replaces "the app crashed on memory".
    *
    * Counted in SCENE NODES, not in machines, because the species differ 3x in
-   * node cost and a count-based cap therefore bounds nothing: a Watcher's
-   * donor hierarchy is 110 Object3Ds, a Glinthawk's 34. Measured over 30 kills
+   * node cost and a count-based cap therefore bounds nothing: a Sentry's
+   * donor hierarchy is 110 Object3Ds, a Flyer's 34. Measured over 30 kills
    * with the A90 loop's own workload (`docs` / the lane report): scene objects
    * grew +1170 with ZERO of it orphaned — every one of those nodes belonged to
    * a LIVE machine the loop had spawned and nothing despawned. Disposal was

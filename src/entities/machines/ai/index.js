@@ -50,8 +50,8 @@ export { Perception, PerceptionHooks, Engage, Search, AttackPicker, Reactions, S
  * --- ROUND 4 EXPANSION (lane `machine-ai-expansion`) --------------------
  *   machines.registerKind(kind, Cls) -> bool
  *       `machines-expansion` retires a CHASSIS. Every Round-4 kind
- *       (broadhead, grazer, snapmaw, ravager, shellwalker, corruptor,
- *       stormbird, tallneck, redeye) ships its BEHAVIOUR here and borrows an
+ *       (ram, browser, sprawler, brute, carrier, crawler,
+ *       raptor, tower, red-lamp kind) ships its BEHAVIOUR here and borrows an
  *       existing species class for its body until its own lands; this call
  *       makes the real class the one every future spawn — site respawns
  *       included — uses. Nothing else changes: the tables, the doctrine, the
@@ -68,7 +68,7 @@ export { Perception, PerceptionHooks, Engage, Search, AttackPicker, Reactions, S
  *       IS A REGISTRY QUESTION: `spawn()` ignores a `modelKind` option.
  *       Covered end-to-end by A100-expansion-doctrine §7.
  *   machines.canSpawn(kind)          class + sculpt both present?
- *   machines.chassisAudit()          ['redeye<-watcher', ...] still on a body
+ *   machines.chassisAudit()          ['red-lamp kind<-sentry', ...] still on a body
  *                                    — read off the WORLD (live machines and
  *                                    remembered sites), not off the chassis
  *                                    map `registerKind` empties, so a kind
@@ -91,15 +91,15 @@ export { Perception, PerceptionHooks, Engage, Search, AttackPicker, Reactions, S
  *                                    by the site lifecycle on disposal)
  *   Squads.alarmHerd(m) / Squads.stepFlee(m, dt) / Squads.stepConvoy(m, dt)
  *       the ONE shared herd stampede + rearguard doctrine and the convoy
- *       column, so Broadhead/Grazer/Shell-Walker never copy it again
+ *       column, so Ram/Browser/Carrier never copy it again
  *
  * --- machine fields the expansion adds ---------------------------------
  *   machine.modelKind   which loaded sculpt the body was built from; equals
  *                       `kind` except while a kind rides a chassis. EVERYTHING
  *                       that frees GPU memory must key off this, not `kind`.
- *   machine.docile      never leaves `patrol` (Tallneck) — hard guard in
+ *   machine.docile      never leaves `patrol` (Tower) — hard guard in
  *                       `setState`
- *   machine._eyeCalm    per-species CALM sensor colour (Redeye is red idle)
+ *   machine._eyeCalm    per-species CALM sensor colour (Red-lamp kind is red idle)
  *   machine.herd / .convoy / .basking   squad membership, held by the BASE
  *                       class so no species file has to remember to copy it,
  *                       accepted as a spawn OPTION, and written back into the
@@ -121,7 +121,7 @@ export { Perception, PerceptionHooks, Engage, Search, AttackPicker, Reactions, S
  *                       the arrangement only, exactly like `blindRings()`:
  *                       selection never consults it and firing clears it.
  *   machine.ai.picker._needPartOk(need)   `needPart: '!engine'` = legal only
- *                       once every part of that name is torn (Stormbird
+ *                       once every part of that name is torn (Raptor
  *                       air->ground, casting-v4 §5.2)
  *
  * --- events the expansion adds -----------------------------------------
@@ -196,7 +196,7 @@ export { Perception, PerceptionHooks, Engage, Search, AttackPicker, Reactions, S
  *                       exactly on band[1] sits on the `close` threshold, so
  *                       the orbit pumped in and out of close mode instead of
  *                       holding the radius, and every row whose midpoint is
- *                       past the band (a Scrapper laser at 7-29 m, a Behemoth
+ *                       past the band (a Scavenger laser at 7-29 m, a Hauler
  *                       boulder at 11-42) rings exactly there.
  *   machine.ai.engage.mode / .hole   footwork mode, radius it is escaping to
  *   machine.ai.engage.heldAt(lo, hi)  MEASURED, not tabled: decayed seconds
@@ -204,7 +204,7 @@ export { Perception, PerceptionHooks, Engage, Search, AttackPicker, Reactions, S
  *                       metres, sampled once per sim step. Non-allocating.
  *                       This is the reading `coverage()`/`bandProfile()`/
  *                       `bandBlocked()` structurally cannot make — all three
- *                       were green for a Scrapper whose laser never fired
+ *                       were green for a Scavenger whose laser never fired
  *                       because a rock sat where its band's outer third is.
  *   machine.ai.engage.heldReach(s)    outermost radius held for >= s seconds
  *   machine.ai.engage.heldProfile()   the whole histogram + reach + window,
@@ -242,9 +242,9 @@ export { Perception, PerceptionHooks, Engage, Search, AttackPicker, Reactions, S
  *               through `_machineMap` defensively).
  *   `machine-rig` (1): route the ELEVEN raw `this.ctx.events.emit(...)` calls
  *               in the species files through `this.emit(...)` instead —
- *               watcher.js:305/:421, glinthawk.js:238/:362, longleg.js:317,
- *               behemoth.js:352, thunderjaw.js:283/:526/:594/:773,
- *               scrapper.js:357. Six are `player-damage`, the event whose
+ *               sentry.js:305/:421, flyer.js:238/:362, wader.js:317,
+ *               hauler.js:352, colossus.js:283/:526/:594/:773,
+ *               scavenger.js:357. Six are `player-damage`, the event whose
  *               broken subscriber quarantined `Machines.update` and disabled
  *               every machine in the valley for a whole session. `Machine`
  *               now hands each species a ctx view whose `events.emit` is
@@ -254,14 +254,14 @@ export { Perception, PerceptionHooks, Engage, Search, AttackPicker, Reactions, S
  *               (`const ev = ctx.events` at construction, a callback bound
  *               from the manager's ctx) silently steps back outside it.
  *               `this.emit()` is explicit and cannot drift.
- *   `machine-rig` (2): `strider.js:_frontKick` reaches 4.6 m
+ *   `machine-rig` (2): `runner.js:_frontKick` reaches 4.6 m
  *               (`damagePlayer(16, 4.6)`) where roster-v2 §4 gives the double
  *               front-kick 0-7 m; this lane covers 4.4-8.4 m with a `lunge`
  *               row ('dash-kick') because widening a builder is machine-rig's
  *               edit. If that reach becomes 7 m, fold the two rows back into
- *               one. Related: `strider.js:253`'s "Charge 15-50 m (roster)"
- *               docstring and the `dist > 15` guard in `strider.chooseAttack`
- *               are dead code — `ATTACK_MODE.strider = 'table'` means the
+ *               one. Related: `runner.js:253`'s "Charge 15-50 m (roster)"
+ *               docstring and the `dist > 15` guard in `runner.chooseAttack`
+ *               are dead code — `ATTACK_MODE.runner = 'table'` means the
  *               ladder is never consulted and the row owns the range.
  * =======================================================================
  */
@@ -304,9 +304,9 @@ export class MachineAI {
    *
    * Consulting the species' own `chooseAttack()` is NOT free: those ladders
    * commit their move's cooldown (`this._cdFlash = 12`) and, for the
-   * Glinthawk, the flock's single dive token, at the moment they *offer* — so
+   * Flyer, the flock's single dive token, at the moment they *offer* — so
    * every offer the scored table then declined quietly put a move the machine
-   * never threw on cooldown, and a Glinthawk that lost a dive to a fresher
+   * never threw on cooldown, and a Flyer that lost a dive to a fresher
    * freeze-spit leaked the flock token for the rest of its life. The ladder's
    * side-effect state is snapshotted and rolled back unless its candidate is
    * the move that actually fires. Snapshot keys are resolved once per machine

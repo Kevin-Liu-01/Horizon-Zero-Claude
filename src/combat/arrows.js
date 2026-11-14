@@ -272,9 +272,9 @@ export function makeBombVisual(kind) {
 
 /* -------------------------------- the pools ------------------------------- */
 
-// broad-phase capsule radii / center heights per machine kind
-const HIT_RADII = { watcher: 2.6, sawtooth: 3.6, behemoth: 5.2, thunderjaw: 10, aloy: 0 };
-const HIT_CY = { watcher: 1.0, sawtooth: 1.2, behemoth: 2.2, thunderjaw: 3.6 };
+// broad-phase capsule radii / center heights per machine kind (an unlisted kind uses the defaults at the read)
+const HIT_RADII = {};
+const HIT_CY = {};
 
 const TRAIL_COLORS = {
   hunter: [0.62, 0.52, 0.34],
@@ -890,7 +890,7 @@ export class ArrowPool {
         if (a.fuseT > 0) {
           a.fuseT -= dt;
           // the latch pulses faster as the charge builds — the tell that lets
-          // a player back off a Thunderjaw before the burst
+          // a player back off a Colossus before the burst
           const k = 1 - Math.max(0, a.fuseT) / Math.max(1e-3, a.fuse);
           const s = 0.13 + 0.24 * k * (0.6 + 0.4 * Math.sin(t * (26 + 40 * k)));
           if (a.glow.visible) a.glow.scale.set(s, s, 1);

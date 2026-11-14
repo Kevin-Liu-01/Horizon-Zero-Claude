@@ -20,7 +20,7 @@ import { tickComponents, disposeComponents } from './components.js';
  * | unnamed roots (dust sprites)   |     73 |
  *
  * The sculpts are the reason: every mesh of every GLB arrived with its OWN
- * material (behemoth 11 meshes / 11 materials, scrapper 12/12, strider 7/7),
+ * material (hauler 11 meshes / 11 materials, scavenger 12/12, runner 7/7),
  * so nothing could ever batch, and `applyShadowPolicy`'s default
  * `alwaysLargest: 8` kept eight casters per machine. Four levers here:
  *
@@ -95,7 +95,7 @@ function quantise(color, which = 'legacy') {
 /**
  * Texture identity by IMAGE, not by object. Sketchfab and Blender exports
  * routinely emit one THREE.Texture per material over the SAME decoded image —
- * the behemoth ships nine materials that are byte-identical apart from their
+ * the hauler ships nine materials that are byte-identical apart from their
  * texture object identity, which is why a uuid-keyed signature deduped none of
  * them. Two textures over one image with the same sampling render identically.
  */
@@ -160,7 +160,7 @@ export function unifyMaterials(machine, opts = {}) {
       // SNAP, don't lerp. A 72 % lerp keeps 28 % of eleven different toy
       // colours, so eleven materials stay eleven signatures and nothing can
       // ever merge — the sculpts arrive with one material per mesh
-      // (behemoth 11/11, scrapper 12/12, strider 7/7). Snapping to the five
+      // (hauler 11/11, scavenger 12/12, runner 7/7). Snapping to the five
       // family tones is what makes `mergeByMaterial` able to do its job, and
       // it is the roster-v2 §1 look besides: white-grey plate over dark
       // muscle, with the shells' vertex-colour edge wear carrying the detail.
@@ -278,7 +278,7 @@ const usesUv1 = (m) => !!m && (m.userData?.uv1 === true || Object.values(m).some
 /**
  * WHY A POOL, AND WHY IT IS THE A90 FIX.
  *
- * `A90-memory-stability` spawns a Watcher every five seconds for 150 s and
+ * `A90-memory-stability` spawns a Sentry every five seconds for 150 s and
  * lets the site manager respawn every wreck, so the loop ENDS with ~30 more
  * living machines than it started with. Measured at 5207 with an isolated A/B
  * (45 s running with no machine traffic vs 45 s of the gate's own kill/spawn
@@ -291,15 +291,15 @@ const usesUv1 = (m) => !!m && (m.userData?.uv1 === true || Object.values(m).some
  * Every buffer the fold builds is a function of the SPECIES, not of the
  * instance: `unifySkin` re-expresses vertices in a canonical bind frame,
  * `skinRigidAttachments` bakes a bind-pose bone transform, `mergeByMaterial`
- * welds a group in model-local space. Two Watchers clone one node graph with
+ * welds a group in model-local space. Two Sentries clone one node graph with
  * one bind pose, so those three passes compute the same numbers twice. Pooled
- * per species, the second Watcher costs zero geometries and skips the merge
+ * per species, the second Sentry costs zero geometries and skips the merge
  * arithmetic outright.
  *
  * SAFETY. A pooled buffer is tagged `perMachine: false`, which is the flag
  * `rig/ground.js` already keys the corpse-bounds solve off: a LIVING machine
  * leaves a shared box alone, and a CORPSE takes its own clone (disposed with
- * the wreck), so a dead Watcher's posed bounds can never follow a live one
+ * the wreck), so a dead Sentry's posed bounds can never follow a live one
  * around. And because `ai/sites.js` (another lane's file) disposes every
  * geometry under `machine.root` that is not in the donor asset, the pooled
  * buffer parks a no-op `dispose` in front of the real one — the same shape as
@@ -351,8 +351,8 @@ export function geometryPoolStats() {
 /**
  * A matte, unmapped, non-emissive standard material's signature WITHOUT its
  * colour (A21, residue fix round 1). Two donor tones that differ only in
- * albedo — the Broadhead's `Main` and `Main_Light` underbody ramp, measured as
- * two draws per Broadhead in the staged fight — can share one material once
+ * albedo — the Ram's `Main` and `Main_Light` underbody ramp, measured as
+ * two draws per Ram in the staged fight — can share one material once
  * the colour is carried per vertex. Null for anything a state system drives
  * (eye materials, sensors, the shell) or anything with a texture.
  */
@@ -385,7 +385,7 @@ export function mergeByMaterial(model, opts = {}) {
       : 'st';
     // NOT keyed on the attribute layout: the sculpts ship three different
     // layouts inside one model (with/without uv, with/without tangent), which
-    // is what kept behemoth's eleven meshes eleven draws even once their
+    // is what kept hauler's eleven meshes eleven draws even once their
     // materials matched. `normalizeAttrs` reconciles them at merge time.
     // A SKINNED mesh's own matrix cancels out of the skinning pipeline
     // (`bindMatrixInverse` is refreshed from `matrixWorld` every frame in
@@ -516,21 +516,21 @@ export function mergeByMaterial(model, opts = {}) {
  *
  * Judge finding (Wave 2, machine-rig): "A21-real-draw-calls still FAIL — the
  * lane-owned deferred gate is 66 draws over". The two levers §6.2 named were a
- * texture atlas for the watcher/behemoth donors, or a plate-shell kitbash for
- * the watcher so its 19-mesh donor could be retired. Measuring the STAGED
+ * texture atlas for the sentry/hauler donors, or a plate-shell kitbash for
+ * the sentry so its 19-mesh donor could be retired. Measuring the STAGED
  * FIGHT — which is the scenario that fails, one machine of each species at
  * 9-17 m, i.e. LOD tier 0 — showed both levers are aimed at the wrong half of
  * the frame:
  *
  * | staged-fight machine draws | before | after this fold |
  * |----------------------------|--------|-----------------|
- * | watcher   donor plates     |  16    |  2              |
- * | longleg   shell plates     |  19    |  2              |
+ * | sentry   donor plates     |  16    |  2              |
+ * | wader   shell plates     |  19    |  2              |
  * | everything else            |  80    |  80             |
  *
- * The watcher's 16 donor plates and the Longleg's 19 kitbash plates are not
- * expensive because of their MATERIALS (the watcher's 16 plates carry 5, the
- * Longleg's 19 carry 2). They are expensive because each plate is a separate
+ * The sentry's 16 donor plates and the Wader's 19 kitbash plates are not
+ * expensive because of their MATERIALS (the sentry's 16 plates carry 5, the
+ * Wader's 19 carry 2). They are expensive because each plate is a separate
  * OBJECT parented to its own animated bone, and `mergeByMaterial` cannot weld
  * two static meshes that do not share a parent — their transforms are baked
  * into the merged geometry, and a bone's transform is not a constant.
@@ -557,7 +557,7 @@ export function mergeByMaterial(model, opts = {}) {
  * key `mergeByMaterial` groups on, so they weld by material.
  *
  * `unifySkin()` does the other half: the sculpts arrive with one SKIN per
- * mesh (the watcher GLB ships three) and `autorig.buildRig` binds each mesh
+ * mesh (the sentry GLB ships three) and `autorig.buildRig` binds each mesh
  * with its OWN `matrixWorld` as the bind matrix, so two meshes that share a
  * material still land in different merge groups. Both are rewritten onto one
  * canonical skeleton (the union of the bones) and one canonical bind matrix,
@@ -648,7 +648,7 @@ export function unifySkin(model, pool = null) {
         /**
          * A REWRITTEN MESH MOVES TO THE REFERENCE FRAME (`machines-expansion`).
          *
-         * THE BUG THIS CLOSES, measured on the Ravager: its donor rendered
+         * THE BUG THIS CLOSES, measured on the Brute: its donor rendered
          * NOTHING. The buffer was there (`visible: true`, 2,496 vertices) and
          * the vertices were in the right place — the mesh was being FRUSTUM
          * CULLED, every frame, from ten metres away.
@@ -851,14 +851,14 @@ export function foldMachineMeshes(machine, opts = {}) {
    * `_lodTier = -1` and nothing applies a tier until the machine's first
    * `animate()` — but a machine spawned mid-frame can be RENDERED before that
    * update ever runs, and on that one frame every component mesh is still
-   * visible. So a Watcher spawned at 49 m (tier 2, where `partIsTrimmable`
+   * visible. So a Sentry spawned at 49 m (tier 2, where `partIsTrimmable`
    * retires its eye and antenna components) registered two geometries it then
    * immediately hid and never drew again.
    *
    * Measured with a registration census — a geometry is registered with the
    * backend exactly while it carries WebGLGeometries' own `dispose` listener,
    * which is readable without hooking anything (`shots/mx-r3-probe9.png`).
-   * Six consecutive 8-Watcher hold/release brackets on one page:
+   * Six consecutive 8-Sentry hold/release brackets on one page:
    *
    * | iter | raw geo for 8 | newly registered, every one of them |
    * | --- | --- | --- |
@@ -933,9 +933,9 @@ function casterEligible(machine, o) {
  *
  * | species | `_shadowCasters` | prime | any DRAWN mesh casting |
  * | --- | --- | --- | --- |
- * | snapmaw, ravager, corruptor, strider | **0 entries** | null | yes, by accident |
- * | shellwalker, sawtooth | 1, and it is **`visible: false`** | hidden donor | **NO** |
- * | broadhead, grazer, stormbird, redeye, watcher | 1-2, visible | ok | yes |
+ * | sprawler, brute, crawler, runner | **0 entries** | null | yes, by accident |
+ * | carrier, big cat | 1, and it is **`visible: false`** | hidden donor | **NO** |
+ * | ram, browser, raptor, red-lamp kind, sentry | 1-2, visible | ok | yes |
  *
  * The cause is one line in each of two places: both the policy below and the
  * capture in `updateRigLOD` walked **`machine.model`** and ignored visibility.
@@ -945,7 +945,7 @@ function casterEligible(machine, o) {
  * `model` traversal, the policy ranked nothing, and the capture came back
  * empty. And on a `hideSculpt` species the largest thing under `model` is the
  * retired donor, so `alwaysLargest` handed the machine's entire shadow to a
- * mesh that is not drawn: a Shell-Walker and a Sawtooth stood at 4 m with no
+ * mesh that is not drawn: a Carrier and a Big cat stood at 4 m with no
  * ground shadow at all, which is the exact regression the 1.65-ring revert was
  * meant to end.
  *
@@ -1037,7 +1037,7 @@ export function skinnedBounds(model, pad = 2.2) {
 
 /**
  * Distance LOD chain (`perf-tech-04`). Tiers are expressed in machine heights
- * so a Watcher and a Thunderjaw retire detail at the same apparent size:
+ * so a Sentry and a Colossus retire detail at the same apparent size:
  *
  *   near   (< 6 H)   everything
  *   mid    (< 14 H)  everything — nothing is retired inside a fight
@@ -1050,8 +1050,8 @@ export function skinnedBounds(model, pad = 2.2) {
  * PER-MESH LOD CHAIN (`perf-tech-04` / `perf-tech-14`, gate `A21`).
  *
  * ROUND-4 FIX ROUND 2 (second pass), judge finding "A21 LOD chain deletes
- * structural geometry inside combat range — machines go hollow, the Longleg
- * is decapitated, the Watcher loses its eye lens".
+ * structural geometry inside combat range — machines go hollow, the Wader
+ * is decapitated, the Sentry loses its eye lens".
  *
  * The first pass ranked EVERY mesh under the model by world size and kept a
  * shrinking fraction of that ranking. Three things were wrong with it, all
@@ -1062,11 +1062,11 @@ export function skinnedBounds(model, pad = 2.2) {
  *      was 3-4 rows for 2 real meshes, so a "keep 36 %" fraction rounded down
  *      to keeping ONE, and the retired donor had eaten a keep slot;
  *   2. what it then dropped was `shell-soft`, i.e. the machine's whole soft
- *      underbody — the Sawtooth went see-through at 38.5 m, the Thunderjaw at
- *      56.4 m, the Scrapper at 21 m, all inside combat range;
+ *      underbody — the Big cat went see-through at 38.5 m, the Colossus at
+ *      56.4 m, the Scavenger at 21 m, all inside combat range;
  *   3. the sensor exemption keyed on `_eyeMats` only, so the donor eye meshes
  *      that carry their own glass material (`Eye_Lense_1001_Glass_Lense_0`)
- *      were retired at 12.6 m on the Watcher — the one small mesh whose
+ *      were retired at 12.6 m on the Sentry — the one small mesh whose
  *      colour is the aggro read.
  *
  * SIZE RANKING CANNOT EXPRESS "does not open a hole". So the chain is
@@ -1151,16 +1151,16 @@ function trimSet(machine) {
      * That non-determinism is the mechanism behind `A90-rig-reclaim`'s
      * intermittent failure (docs/ROUND4-MEMORY.md §6.5, "what allocates exactly
      * 4 geometries and never releases them?"). The four, named by a
-     * registration census (`shots/mx-r3-probe9.png`), are the Watcher's
+     * registration census (`shots/mx-r3-probe9.png`), are the Sentry's
      * `Eye001_Eye_texture_0` (344 v), `Eye_Lense_1001_Glass_Lense_0` (20 v),
      * `Eye_Camera001_Lense_-_Blue_Cameras_0` (20 v) and
      * `Headplate_Frill_001_Headplate_Frill__0-x4` (2136 v) — all four SPECIES-
      * POOLED, so their `dispose()` is a deliberate no-op and they are correctly
      * retained, which is why the gate reads them as "held". They appear inside
-     * the bracket only because a later Watcher kept a third of its frills that
+     * the bracket only because a later Sentry kept a third of its frills that
      * an earlier one had dropped, and `renderer.info.memory.geometries` counts
      * FIRST DRAW. With the list built from the species' own structure, every
-     * instance keeps the same third and the first Watcher of the session pays
+     * instance keeps the same third and the first Sentry of the session pays
      * for the pool.
      *
      * A mesh a LANE has hidden on purpose (`o.visible === false` with no
@@ -1200,15 +1200,15 @@ function trimSet(machine) {
  * the doc's "nothing at all is retired inside 14 body heights" described only
  * half the chain. What the name regex actually deleted, measured per species:
  *
- *   thunderjaw  `heart-plate` and `head-plate`  — the two CANON weak points,
+ *   colossus  `heart-plate` and `head-plate`  — the two CANON weak points,
  *               the armour-strip loop the whole fight is built around
  *               (tearHp 55), plus `armor-plate-1..2` (tearHp 50)
- *   sawtooth    `hip-plate-r` / `hip-plate-l`   — armour (tearHp 30)
+ *   big cat    `hip-plate-r` / `hip-plate-l`   — armour (tearHp 30)
  *
- * A Thunderjaw is 9.4 m tall, so tier 1 starts at 56 m — but a Sawtooth is
- * 2.75 m and lost its hip armour at 16.5 m, and a Watcher its antenna at
+ * A Colossus is 9.4 m tall, so tier 1 starts at 56 m — but a Big cat is
+ * 2.75 m and lost its hip armour at 16.5 m, and a Sentry its antenna at
  * 12.6 m. Those are fighting distances, and the hull stayed behind in every
- * case: `A50-hulls-visible` counted 22 sawtooth, 81 behemoth and 83 thunderjaw
+ * case: `A50-hulls-visible` counted 22 big cat, 81 hauler and 83 colossus
  * hulls sitting on components nobody could see.
  *
  * The rule is the same STRUCTURAL test the mesh trim uses, expressed in the
@@ -1235,11 +1235,11 @@ function trimSet(machine) {
  *     only where it is smaller than `PART_TRIM_PX` pixels.
  *
  * WHAT THAT COSTS AND BUYS, measured on the roster (1600x900, 55 deg FOV):
- * at tier 2 (14 H) a Sawtooth antenna is 0.31 H, i.e. ~19 px — so NOTHING on
+ * at tier 2 (14 H) a Big cat antenna is 0.31 H, i.e. ~19 px — so NOTHING on
  * today's roster is retired at tier 2, which is the finding's requirement met
  * by arithmetic rather than by assertion. At tier 3 (40 H) the same antenna
  * is 6.7 px and the four masts do retire. The staged fight pays for this:
- * `A21`'s machine draws went 73 -> 75 because a Sawtooth at 16.5 m keeps the
+ * `A21`'s machine draws went 73 -> 75 because a Big cat at 16.5 m keeps the
  * hip armour and three antennae it used to delete. That is the trade the
  * finding asked for.
  * ---------------------------------------------------------------------- */
@@ -1249,7 +1249,7 @@ function trimSet(machine) {
  * budget the shadow cut was spent on, and the judge asked for both to be
  * re-examined "until A21 is actually inside budget from a source that is not
  * machine shadows". At tier 1 a machine is 6 body heights out — 9.7 m for a
- * Broadhead — and a canister at 9.7 m is not a handful of pixels, it is the
+ * Ram — and a canister at 9.7 m is not a handful of pixels, it is the
  * thing the player is lining a tear arrow up on. Back to 2 (14+ body heights),
  * where a component really is too small to aim at.
  */
@@ -1392,10 +1392,10 @@ export function updateRigLOD(machine) {
    * early-return". The rings are metres (`max(H * 2.15, 12)` and
    * `max(H * 6, 40)`); the tiers are body heights (6 H, 14 H, 40 H). For every
    * machine shorter than 5.6 m the near ring falls INSIDE tier 1 and the far
-   * ring inside tier 2 — a Watcher's rings are 12 m and 40 m while its tier 1
+   * ring inside tier 2 — a Sentry's rings are 12 m and 40 m while its tier 1
    * spans 12.6-29.4 m — so the player can walk a machine's whole shadow range
    * without the tier ever changing, and under the old order the rule ran only
-   * on a tier CHANGE. Measured: a Watcher that entered tier 1 at 13 m kept
+   * on a tier CHANGE. Measured: a Sentry that entered tier 1 at 13 m kept
    * casting every caster out to 29 m, and one that entered tier 1 from the far
    * side cast nothing at 13 m. It is two comparisons and at most three property
    * writes per machine per frame, allocates nothing, and is now evaluated on
@@ -1429,16 +1429,16 @@ export function updateRigLOD(machine) {
  *
  * Judge finding: "Shadow-caster range cut from 2.15 to 1.65 body heights
  * regresses every machine in the game, and the draw budget it was spent for
- * still fails ... broadhead dist 3.3 m castShadowNow 0 (bodyH 1.62 -> new
+ * still fails ... ram dist 3.3 m castShadowNow 0 (bodyH 1.62 -> new
  * cutoff 2.67 m, old cutoff 3.48 m: a clear flip from casting to not casting)
- * ... shots/...-world-close.png shows a Grazer at 6.9 m with no ground shadow
+ * ... shots/...-world-close.png shows a Browser at 6.9 m with no ground shadow
  * at all."
  *
  * The 1.65 is gone and STAYS gone. Two rings, and the outer one scales by
  * metres with a floor:
  *
- *   NEAR  `max(H * 2.15, 12 m)`  every caster on the machine casts. A Watcher
- *         keeps its full shadow to 12 m instead of 3.5, a Thunderjaw to 20.
+ *   NEAR  `max(H * 2.15, 12 m)`  every caster on the machine casts. A Sentry
+ *         keeps its full shadow to 12 m instead of 3.5, a Colossus to 20.
  *   FAR   `max(H * 6, 40 m)`     only the PRIME caster — the body — casts, so
  *         the machine still reads as standing on the ground for a single draw
  *         instead of the five to nine a full set costs.
@@ -1484,8 +1484,8 @@ function applyShadowRings(machine, d, H, floor = 0) {
  * machine killed beyond 40 m casts no shadow when the player walks up to loot
  * it". `Machine.update()` returns before `animate()` for a dead machine, so
  * `updateRigLOD` — and the rings inside it — stopped on the frame of death and
- * froze whatever ring the kill happened in: a Broadhead, Shell-Walker and
- * Sawtooth killed at 55 m and walked up to read `ringNow 0` at 5 m, and the
+ * froze whatever ring the kill happened in: a Ram, Carrier and
+ * Big cat killed at 55 m and walked up to read `ringNow 0` at 5 m, and the
  * frame showed the far-killed wreck on lit ground beside a near-killed one
  * that cast.
  *
@@ -1521,9 +1521,9 @@ export function applyWreckShadow(machine) {
  * the wreck's `update()` never runs again, so the prime the rings had kept on
  * was switched off for good and a player who walked up to loot a wreck found
  * it on lit ground. Measured (16 species killed 90-140 m from the player,
- * walked up to at 9 m after the freeze): on the previous build the Broadhead,
- * Shell-Walker and Longleg — the wrecks inside the engine's 120 m caster cull
- * when the freeze ran — drew ZERO shadow draws, and the Thunderjaw kept only
+ * walked up to at 9 m after the freeze): on the previous build the Ram,
+ * Carrier and Wader — the wrecks inside the engine's 120 m caster cull
+ * when the freeze ran — drew ZERO shadow draws, and the Colossus kept only
  * its two disc launchers; the other twelve cast only because the engine had
  * distance-culled them before the freeze and so still held their wish in
  * `__shadowBase`. After: all 16 draw their prime in every cascade (3).
@@ -1584,22 +1584,22 @@ export function attachRigRuntime(machine, opts = {}) {
  * WHAT `A90-rig-reclaim` WAS HOLDING (residue round 2 — "perLiveGeo 1.13 /
  * heldThenReleased 4", the fingerprint carried since round 3).
  *
- * The four held geometries are the Watcher's species-POOLED donor pieces
+ * The four held geometries are the Sentry's species-POOLED donor pieces
  * (`Eye001_Eye_texture_0`, `Eye_Lense_1001_Glass_Lense_0`,
  * `Eye_Camera001_Lense_-_Blue_Cameras_0`, `Headplate_Frill...-x4`) — pooled,
  * so retained by design once they have been uploaded. What was NOT by design
  * is WHEN they got uploaded. Traced frame by frame on the gate's own hold
- * bracket (8 Watchers spawned 49-56 m out): each new Watcher drew those
+ * bracket (8 Sentries spawned 49-56 m out): each new Sentry drew those
  * meshes on its first 2-3 frames and then `engine.js`'s screen-size cull
  * hid them (`__sizeCulled`, sub-pixel at that range). That cull runs at
  * 10 Hz, so a machine is born with every mesh visible and keeps them until
  * the next pass — and three uploads a geometry the first frame its mesh is
- * in the frustum. Whether the pool was first uploaded by a boot Watcher, a
+ * in the frustum. Whether the pool was first uploaded by a boot Sentry, a
  * warm-phase one or a HELD one was therefore a race between the spawn and
  * the cull clock: in the losing case four pooled buffers appeared inside the
  * per-live bracket and stayed there — the fingerprint's "held 4", named by
  * §10.6's registration census; the rest of its 9 raw geometries (1.13 per
- * live Watcher) were the per-machine component PROXIES, which `parts.js` now
+ * live Sentry) were the per-machine component PROXIES, which `parts.js` now
  * shares per shape.
  *
  * So a machine's first drawn frame applies the SAME test the engine would
@@ -1710,8 +1710,8 @@ export function ownRigResource(machine, res) {
  *
  * Measured on an isolated spawn/dispose loop at 5207, every species, four
  * cycles each: geometries flat, **textures +1 per machine, without exception**
- * (watcher 1.25, strider/sawtooth/scrapper/longleg/glinthawk/behemoth/
- * thunderjaw 1.00). No new texture appeared anywhere in the scene graph across
+ * (sentry 1.25, runner/big cat/scavenger/wader/flyer/hauler/
+ * colossus 1.00). No new texture appeared anywhere in the scene graph across
  * the same spawn, which is what named the culprit: on WebGL2 three uploads
  * every `Skeleton` as a `DataTexture` (`Skeleton.computeBoneTexture`), and
  * that texture is a property of the SKELETON, not of any material or mesh — so

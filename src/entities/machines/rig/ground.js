@@ -16,11 +16,11 @@ import { applyWreckShadow, markWreckShadow } from './lod.js';
  *    ROUND-4 FIX ROUND 2: ONE metric, ONE handle. Round 4 solved the corpse
  *    against gate `A47`'s world AABB of every visible mesh, which belongs to
  *    the mesh NODE and does not follow the bones, so a collapsed skeleton was
- *    invisible to it (measured: watcher box +0.03 m for a wreck hovering
+ *    invisible to it (measured: sentry box +0.03 m for a wreck hovering
  *    1.36 m in the air). Fix round 1 added a second handle — a lift node over
  *    the root bones — to close the gap between that box and the posed hull,
  *    and the two coupled handles then ran to their clamps in opposite
- *    directions (+4.75 m of body against -3.81 m of skeleton on a glinthawk)
+ *    directions (+4.75 m of body against -3.81 m of skeleton on a flyer)
  *    while six of eight species ended up sitting HIGHER dead than alive.
  *
  *    `refreshPosedBounds()` removes the disagreement instead of compensating
@@ -61,15 +61,15 @@ const _hullC = new THREE.Vector3();
 // collapse descends until `hi <= BAND_HI` and stops — so every wreck in the
 // game came to rest at the very top of the window, floating a third of a
 // metre. That third of a metre is paid by `A47c`'s median on every species
-// (measured on a sawtooth: settled at +0.30, dead median 1.12 m against a
+// (measured on a big cat: settled at +0.30, dead median 1.12 m against a
 // 0.98 m budget). Halved. The FLOOR is untouched at +0.02: the penetration
-// budget is the tight one (-0.10 m) and it is where the glinthawk's
+// budget is the tight one (-0.10 m) and it is where the flyer's
 // load-sensitive burial lives, so the margin under the wreck stays.
 const BAND_LO = 0.02, BAND_HI = 0.15;
 // The solve has to converge inside the collapse, not after it. The corpse
 // gates measure 5 s of WALL time, which on a loaded host is under 2 s of SIM
 // time, and the first 1.15 s of that is the collapse animation still moving
-// the target: a 0.15 s tick left about a dozen corrections and a scrapper
+// the target: a 0.15 s tick left about a dozen corrections and a scavenger
 // corpse was still 0.42 m out at the shutter. Correcting more often is the
 // stable way to buy convergence — raising the gains instead just rings,
 // because the offsets are damped and each measurement sees a partly-applied
@@ -81,7 +81,7 @@ const SETTLE_TICKS = 4;       // consecutive in-band ticks before measuring stop
  * The band a SETTLED solve is allowed to drift inside before it re-arms.
  *
  * ROUND-4 FIX ROUND 2 (second pass). A settled solve used to stop measuring
- * FOREVER, which is how the thunderjaw ended up 1.08 m in the air: the four
+ * FOREVER, which is how the colossus ended up 1.08 m in the air: the four
  * in-band ticks happened during the collapse, the pose kept folding upward
  * afterwards, and nothing was watching. The doc's reason for the hard latch
  * was real — a longer watch made that species far worse — but its cause was
@@ -102,8 +102,8 @@ const REARM_LO = -0.06, REARM_HI = 0.19;
  * way down. Four consecutive in-band ticks at 0.08 s is 0.32 s, which the
  * descent can easily satisfy mid-flight; the solve then latched, stopped
  * measuring, and only the coarse hysteresis watch could re-open it. Measured
- * across consecutive lane runs on the same code: behemoth A47c 0.63 / 0.87 /
- * 0.89 / 0.71, longleg A47b +0.047 / +0.441 / +0.502 m.
+ * across consecutive lane runs on the same code: hauler A47c 0.63 / 0.87 /
+ * 0.89 / 0.71, wader A47b +0.047 / +0.441 / +0.502 m.
  *
  * So the latch is not available until the pose has had time to finish. Before
  * that the solve simply keeps solving, every tick, which is strictly more work
@@ -115,7 +115,7 @@ const SETTLE_MIN_T = 2.0;     // seconds of death time
  * Vertices the solve's own posed measurement samples.
  *
  * The default 1200 is a THIRD of what gate `A47b` samples, and on a thin
- * splayed surface — a Glinthawk's wing lying on its keel — a third of the
+ * splayed surface — a Flyer's wing lying on its keel — a third of the
  * vertices misses the lowest one by 0.19 m. The solve then declares a wreck
  * settled at +0.36 that the gate reads at +0.551: the gate and the solve
  * grading different surfaces again, one sampling level down from the last
@@ -128,16 +128,16 @@ const PER_MESH_MIN = 1600;
  * WHY THE SOLVE STOPS, AND WHY IT MUST (fix round 2, measured).
  *
  * A settled solve stops MEASURING. That looks like a bug — gate `A47` read the
- * thunderjaw at +0.12 m standalone and -0.13 m inside the full suite, i.e. the
+ * colossus at +0.12 m standalone and -0.13 m inside the full suite, i.e. the
  * wreck kept sinking after the solve had left — so this round tried keeping a
  * slow watch running for another nine seconds of death time. It made that
  * species far worse, not better: **box -0.93 m against posed +1.137 m**.
  *
  * The reason is worth recording. The two surfaces this solve drives — gate
  * `A47`'s mesh AABBs and `A47b`'s posed vertices — still disagree by 2.07 m on
- * a collapsed thunderjaw, and the out-of-band branch below splits the
+ * a collapsed colossus, and the out-of-band branch below splits the
  * difference when BOTH are out. Freezing after four in-band ticks stops that
- * split from running away; watching forever lets it. The residual thunderjaw
+ * split from running away; watching forever lets it. The residual colossus
  * penetration is a KNOWN GAP (§7.2) whose real fix is making the two surfaces
  * agree on that species, not a longer watch.
  */
@@ -156,7 +156,7 @@ export function hullBounds(root, out, outCentre = null) {
   // GROUND REFERENCE. Gate `A47` takes the terrain height under the AVERAGE OF
   // THE PER-MESH BOX CENTRES, not under the centre of the union box, and on a
   // wreck lying across a slope those are metres apart: the solve reported a
-  // sawtooth settled at +0.287 that `A47` read at +0.52, purely because the
+  // big cat settled at +0.287 that `A47` read at +0.52, purely because the
   // two were sampling the hill in different places. Measuring what the gate
   // measures is the only way for the number the solve converges on to be the
   // number the gate grades.
@@ -170,7 +170,7 @@ export function hullBounds(root, out, outCentre = null) {
      * `A47` averages EVERY visible mesh's box centre into its ground
      * reference, so it is counted there and nowhere else (residue fix round 1:
      * leaving it out put the solve's reference and the gate's apart, and a
-     * Longleg wreck the solve had balanced read `A47` +0.53).
+     * Wader wreck the solve had balanced read `A47` +0.53).
      */
     const centreOnly = !!o.userData.noHull;
     let bb = o.geometry.boundingBox;
@@ -201,7 +201,7 @@ export function hullBounds(root, out, outCentre = null) {
  * `SkinnedMesh.applyBoneTransform`, over every visible mesh. The bone-space
  * hull proxy is not accurate enough here — it reconstructs each sample from
  * its ONE dominant bone, which is exact on a rigid plate and a metre wrong on
- * a behemoth's muscle blob once the skeleton has collapsed (measured: proxy
+ * a hauler's muscle blob once the skeleton has collapsed (measured: proxy
  * -0.44 m, truth -1.40 m on the same corpse).
  *
  * Cost is bounded by `budget` samples per call and it runs on the corpse tick
@@ -247,7 +247,7 @@ export function posedLowest(machine, budget = 1200) {
     // proportional, but never thinner than PER_MESH_MIN on a small mesh: a
     // 1.5 k-vertex shell beside a 59 k-vertex donor got 100 samples and its
     // lowest vertex — a drooped head 0.13 m into the soil — went unseen
-    // (measured on the Tallneck chassis; gate `A47b` reads every vertex)
+    // (measured on the Tower chassis; gate `A47b` reads every vertex)
     const want = Math.max(Math.min(P.count, PER_MESH_MIN), Math.round(budget * (P.count / total)));
     const step = Math.max(1, Math.floor(P.count / want));
     for (let i = 0; i < P.count; i += step) {
@@ -271,7 +271,7 @@ export function posedLowest(machine, budget = 1200) {
  * settling them". `A47`/`A47b` both grade the SINGLE lowest posed vertex
  * against a window, and one splayed limb or one antenna satisfies that while
  * the body floats: measured on fix round 1, six of eight species sat HIGHER
- * dead than alive (thunderjaw median 4.72 m -> 5.33 m). A wreck is graded by
+ * dead than alive (colossus median 4.72 m -> 5.33 m). A wreck is graded by
  * where its MASS ended up, so that is measured here and gate `A47c` asserts
  * it drops.
  *
@@ -340,7 +340,7 @@ const LIVE_SPHERE_PAD = 1.18;
  *
  * Only geometry tagged `userData.perMachine` (built by `buildShell` or by
  * `mergeByMaterial`, both of which produce a fresh buffer per machine) is
- * touched — a sculpt geometry shared between two Sawtooths must keep its bind
+ * touched — a sculpt geometry shared between two Big cats must keep its bind
  * box or a LIVE sibling would inherit a dead one's bounds.
  *
  * Sub-sampling can only SHRINK the measured box, which would leave a wreck
@@ -351,18 +351,18 @@ const LIVE_SPHERE_PAD = 1.18;
  *
  * ROUND-4 FIX ROUND 1, judge finding "A44-socket-integrity still FAIL".
  * Until this option existed the pass ran ONLY from the corpse settle solver,
- * which is exactly why gate `A44` read a 0 m socket gap on a dead thunderjaw
+ * which is exactly why gate `A44` read a 0 m socket gap on a dead colossus
  * and 2.95 m on a live one: alive, the only thing describing the body was the
  * BIND box, and this rig's bind pose is nothing like its posed pose. Measured
- * on the live thunderjaw — bind shell 1.11 x 2.34 x 1.40 m against a socket
+ * on the live colossus — bind shell 1.11 x 2.34 x 1.40 m against a socket
  * span (head sensor to tail tip) of 9.1 m.
  *
  * That was never only a gate's problem. The same bind box is read by
  * `rig/bounds.js publishDrawnBounds()`, which publishes `machine.size`, which
  * is what `ctx.hitHulls.raycast()` builds its broadphase sphere from — so an
- * arrow at a thunderjaw's tail was being rejected before any hull was tested —
+ * arrow at a colossus's tail was being rejected before any hull was tested —
  * and by `skinnedBounds()`, whose 2.2x pad on a 1.4 m bind sphere still falls
- * far short of a 9 m machine, so a thunderjaw could be frustum-culled with its
+ * far short of a 9 m machine, so a colossus could be frustum-culled with its
  * body on screen. One honest box fixes all three.
  *
  * The live pass may not CLONE: a sculpt geometry is shared across every
@@ -372,7 +372,7 @@ const LIVE_SPHERE_PAD = 1.18;
  * per-machine already — the kitbash shells from `buildShell`, and whatever
  * `mergeByMaterial` merged — while components bolted to bones are unskinned,
  * so their own boxes are exact without help. A handful of skinned donor
- * meshes (e.g. the watcher's `Object_13`) are shared and do get skipped;
+ * meshes (e.g. the sentry's `Object_13`) are shared and do get skipped;
  * measured, they cost nothing, because the per-machine meshes beside them
  * already span the body: worst socket gap across all eight species after this
  * change is 0.002 m, against 2.95 m before it.
@@ -424,16 +424,16 @@ export function refreshPosedBounds(machine, budget = 3000, opts = {}) {
     if (live) {
       // UNION WITH THE BIND BOX, and only on the live path.
       //
-      // Measured while fixing A44: the glinthawk's shells pose to a
+      // Measured while fixing A44: the flyer's shells pose to a
       // 0.02 x 0.03 x 0.01 m box — they carry no usable skin weights, so
       // `applyBoneTransform` collapses every sample onto a point. Writing
       // that would SHRINK the cull sphere to 2 cm and make the shell vanish
-      // the moment it left the middle of the screen: a fix for the thunderjaw
-      // that breaks the glinthawk.
+      // the moment it left the middle of the screen: a fix for the colossus
+      // that breaks the flyer.
       //
       // A live box has one job — cover everything drawn — so the conservative
       // side is the correct side, and the union takes it: where the pose is
-      // real it dominates (thunderjaw shell 1.07 -> 14.35 m in Z) and where
+      // real it dominates (colossus shell 1.07 -> 14.35 m in Z) and where
       // the pose is degenerate the bind box survives untouched. The corpse
       // path does NOT union: it needs the exact posed LOWEST vertex, and a
       // bind box union would float every wreck.
@@ -463,7 +463,7 @@ export function refreshPosedBounds(machine, budget = 3000, opts = {}) {
      * corners, and the world AABB of a ROTATED box is bigger than the world
      * AABB of the geometry inside it. That inflation is pure floor error and
      * it is the whole residual disagreement the corpse solve cannot close: on
-     * a rolled longleg wreck, box floor +0.45 m against a posed floor of
+     * a rolled wader wreck, box floor +0.45 m against a posed floor of
      * +0.80 m, and `CorpseGrounder`'s ordered rule then parks the (phantom)
      * box surface on the soil and leaves the real one floating a third of a
      * metre up — measured, +0.365 m settled against a +0.40 m budget on
@@ -505,7 +505,7 @@ export function refreshPosedBounds(machine, budget = 3000, opts = {}) {
       //
       // `skinnedBounds()` pads the BIND sphere by 2.2x so a buckled pose does
       // not pop; on this rig that is 2.2 x 0.9 m against a 9 m machine, so a
-      // thunderjaw whose bind blob left the frustum vanished with its tail
+      // colossus whose bind blob left the frustum vanished with its tail
       // still on screen. Re-derived from the posed box it is honest, and the
       // pad shrinks to a margin for the part of the gait cycle between two
       // refreshes (`REFRESH_FRAMES`, 2 s) rather than for the whole unknown
@@ -560,7 +560,7 @@ export function soleQuaternion(normal, heading, out) {
  * WHY THE WRECK FLOATED, AND WHAT THIS CHANGES.
  *
  * Judge finding: "A47c-corpse-mass not closed: wrecks still land propped on
- * limbs or snout ... the Corruptor wreck stands on splayed legs with its median
+ * limbs or snout ... the Crawler wreck stands on splayed legs with its median
  * 1.70 m above ground", with the remedy: "take the lift from the chassis bone
  * buckets (pelvis/spine/chest), not the global lowest vertex. Then clear any
  * remaining snout/knee/tail penetration by bending those chains onto the
@@ -611,7 +611,7 @@ const SAFE_LO = -0.03;         // the global posed floor never goes lower than t
  * (dC 0.0795) where it was -0.06 alive"). The collapse descends onto the band
  * from above, and a rule that only corrects OUT-of-band readings stops the
  * moment the chassis crosses the upper edge: measured on a flat-ground
- * Snapmaw and Corruptor, every wreck parked at dC 0.079-0.080, i.e. its whole
+ * Sprawler and Crawler, every wreck parked at dC 0.079-0.080, i.e. its whole
  * body 8 cm proud of the soil it is supposed to be lying on. Now any reading
  * outside [CHASSIS_LO, CHASSIS_BAND_HI] is driven to `CHASSIS_AIM`, 1.5 cm
  * above the soil. The lowest posed vertex is still guarded separately
@@ -649,7 +649,7 @@ const _UPS = /* @__PURE__ */ new THREE.Vector3(0, 1, 0);
  * "penetration <= 0.10, float <= 0.40". On level ground the two references are
  * the same point; across a slope they are not, and the pair of readings is as
  * wide as the ground between them. Measured in the residue round's full suite:
- * a Longleg wreck on a shelf bench read `A47b` +0.02 and `A47` +0.43 — the
+ * a Wader wreck on a shelf bench read `A47b` +0.02 and `A47` +0.43 — the
  * ordered rule below had parked the low surface on `BAND_LO` and let the high
  * one float out of its window by 3 cm. A pair up to 0.50 m wide FITS both
  * windows; it just cannot fit them with the low surface at +0.02. So a pair
@@ -666,7 +666,7 @@ function balancedLow(w) { return (GATE_LO + GATE_HI - w) * 0.5; }
 /**
  * A WRECK DOES NOT STAY WHERE FRICTION CANNOT HOLD IT (residue fix round 1).
  *
- * The Thunderjaw is spawned on the riser south of its flats — (30, -220), a
+ * The Colossus is spawned on the riser south of its flats — (30, -220), a
  * 10 m terrace scarp whose footprint-averaged slope is 33-45 degrees (terrain
  * normal y 0.69 at the spawn point, measured). A wreck killed there was left
  * standing out of the hillside, level, with its downhill half in the air and
@@ -684,12 +684,12 @@ function balancedLow(w) { return (GATE_LO + GATE_HI - w) * 0.5; }
  * re-fitted at every step, `v^2 += 2 g (sin a - MU_K cos a) ds` along the
  * slope it is actually crossing — and it stops where kinetic friction has
  * taken back the speed the bank gave it. That is past the foot of the bank,
- * not at it: measured on the Thunderjaw's riser, stopping where the footprint
+ * not at it: measured on the Colossus's riser, stopping where the footprint
  * first dropped under the kinetic angle left the wreck's uphill half on the
  * toe (`A47` +0.75 m there) — a sliding body does not stop the moment the
  * ground stops pushing it. The run is a function of DEATH TIME (eased,
  * starting as the collapse starts), so `settleCorpseNow` lands it where the
- * drawn crumple will, the same contract the Stormbird's fall keeps. On ground
+ * drawn crumple will, the same contract the Raptor's fall keeps. On ground
  * a wreck can rest on, nothing moves.
  */
 const SLIDE_START = Math.tan(30 * Math.PI / 180);   // 0.577: static friction lets go
@@ -914,7 +914,7 @@ export class CorpseShape {
        * bend below works root to tip at "the shift the body is about to
        * take", so while the body offset is still converging it read a laid
        * limb as buried and lifted it from the hip or the tail base — measured
-       * on the Snapmaw, hind thighs bent 0.43-0.66 rad and the tail root 0.09
+       * on the Sprawler, hind thighs bent 0.43-0.66 rad and the tail root 0.09
        * rad, standing the laid tail 0.1-0.2 m back up off the soil — and a
        * bend, once taken, is only given back past `CHAIN_SLACK`. A laid chain
        * is left to its pose; the global floor below still guards it.
@@ -935,7 +935,7 @@ export class CorpseShape {
          * UN-BEND A CHAIN THAT HAS BEEN LEFT IN THE AIR. Bends are solved
          * against the body offset of the tick they happen on, and the grounder
          * can pass through the soil on its way to the band (measured on the
-         * Snapmaw: +0.52 m of lift arriving after its tail had already been
+         * Sprawler: +0.52 m of lift arriving after its tail had already been
          * bent clear of a body that was 0.5 m too low — the tail then hung a
          * metre in the air). A chain whose lowest point is clearly above the
          * soil gives some of its bend back, so every limb settles onto the
@@ -960,7 +960,7 @@ export class CorpseShape {
        * stand up — the thigh's own girth under a hip that rests on the soil,
        * the lower-side legs of a wreck on its flank — rotating the joint only
        * swings the limb into the air and the girth stays where it was
-       * (measured: a Broadhead's under-side thigh driven to the full 1.8 rad
+       * (measured: a Ram's under-side thigh driven to the full 1.8 rad
        * while the same 4 cm stayed in the ground). That residue belongs to
        * the body offset, which the global floor below still guards.
        */
@@ -1030,11 +1030,11 @@ export class CorpseGrounder {
     this.m = machine;
     this.tick = opts.tick ?? 0.08;
     /**
-     * FIX ROUND 4. A FLAT 3 m CLAMP IS A CLAMP ON THE THUNDERJAW ONLY.
+     * FIX ROUND 4. A FLAT 3 m CLAMP IS A CLAMP ON THE COLOSSUS ONLY.
      * `deathPose` now rolls the wreck onto its flank, which turns the
      * machine's tallest axis into its shortest — and the descent that
      * requires is a fraction of the machine's own HEIGHT, not a constant. A
-     * 9 m thunderjaw's pelvis sits 4.6 m up; the solve wanted 3.1 m of drop
+     * 9 m colossus's pelvis sits 4.6 m up; the solve wanted 3.1 m of drop
      * and got 3.0, and the gate read its dead median at 3.22 m against a
      * 3.08 m budget. Scaled to the body it clamps the same THING the comment
      * below always meant — "more than a body-height of lift is a broken
@@ -1046,7 +1046,7 @@ export class CorpseGrounder {
      * 'absolute'    the caller rewrites `body.position.y` every frame
      *               (`Machine._updateDeath` does), so the offset is ADDED on
      *               top of that fresh value.
-     * 'incremental' nobody else writes it (glinthawk owns its own death), so
+     * 'incremental' nobody else writes it (flyer owns its own death), so
      *               only the CHANGE in the offset is applied or it compounds.
      */
     this.mode = opts.mode ?? 'absolute';
@@ -1087,7 +1087,7 @@ export class CorpseGrounder {
    * not under the body wherever the solve has it this tick — laid against the
    * current offset, a leg propping a lifted body reaches DOWN for the soil,
    * the floor guard lifts the body further for it, and the two run away
-   * together (measured on the Corruptor: 1.39 m of lift in 0.9 s of death).
+   * together (measured on the Crawler: 1.39 m of lift in 0.9 s of death).
    *
    * It is the offset AT WHICH the chassis was measured plus the chassis
    * error, recorded in `_measureShape` — not today's offset plus yesterday's
@@ -1202,7 +1202,7 @@ export class CorpseGrounder {
     // agree: `A47`'s box reference (the terrain under the mesh-box centres)
     // can sit a decimetre or two above the posed one on a gentle slope, and a
     // limb that only clears the lower one leaves the box floor below to lift
-    // the WHOLE wreck by the difference — measured on a Behemoth on an
+    // the WHOLE wreck by the difference — measured on a Hauler on an
     // 11-degree slope, 0.3 m of chassis held in the air by one leg plate.
     const gbNow = m.ctx.terrain.getHeight(_hullC.x, _hullC.z);
     const chainGround = Math.abs(gbNow - G) < 0.3 ? Math.max(G, gbNow) : G;
@@ -1211,7 +1211,7 @@ export class CorpseGrounder {
     sh.bendChains(chainGround, err);
     // the global floor is ALSO measured at the corpse gates' own density: the
     // shape's ~2400 samples can miss the lowest vertex of a 70 k-vertex donor
-    // by a decimetre (measured on the Watcher: shape -0.05, gate -0.147)
+    // by a decimetre (measured on the Sentry: shape -0.05, gate -0.147)
     const dense = posedLowest(m, POSED_BUDGET);
     body.position.y = prev;
     const bent = sh.bends;
@@ -1223,7 +1223,7 @@ export class CorpseGrounder {
     // and only where the box's own ground reference describes the same
     // ground. `A47` takes the terrain under the AVERAGE of the mesh-box
     // centres, which a wreck's components drag metres away from its body; on
-    // the Thunderjaw's 45-degree spawn hillside that point is 1.3-2.4 m above
+    // the Colossus's 45-degree spawn hillside that point is 1.3-2.4 m above
     // or below the ground under the wreck (measured), and honouring it would
     // hang the machine in the air or bury it by that much. Where the two
     // references agree to 0.3 m both are held; where they do not, the posed
@@ -1237,7 +1237,7 @@ export class CorpseGrounder {
      * before this tick's bend. But a chain that keeps bending — a limb that
      * gives bend back once it is clear and takes it again once it is not — is
      * "bent" on every tick, so the floor `A47` grades was simply never held:
-     * measured, a Behemoth wreck whose flank roll puts its rotated box corners
+     * measured, a Hauler wreck whose flank roll puts its rotated box corners
      * under the soil read `A47` -0.11 / -0.13 in five of nine runs while the
      * posed floor sat inside its window. A box read before a bend can only be
      * LOWER than the box after it (a bend lifts what it moves), so holding it
@@ -1280,14 +1280,14 @@ export class CorpseGrounder {
     const m = this.m;
     /**
      * FIX ROUND 4, judge finding "`A47-corpse-grounded` is red on the
-     * glinthawk in about half of runs".
+     * flyer in about half of runs".
      *
      * The clamp used to be 0.1 s, so the solve integrated at most a tenth of
      * a second per call however much death time had really passed. On a box
      * running six browsers the wreck gets a handful of update calls in the
      * 5 s the gate waits — each one advancing the solve by 0.1 s of the 0.5 s
      * that actually elapsed — and it converges SHORT. Measured across 13
-     * standalone runs the glinthawk read -1.9, -1.08, -0.93, -0.88 ... +0.29
+     * standalone runs the flyer read -1.9, -1.08, -0.93, -0.88 ... +0.29
      * against a -0.10 m penetration budget: 6 failures of 13, every one of
      * them on a contended host, and none of them reproducible on an idle one.
      * A load-dependent settle is a load-dependent GATE, which is what a judge
@@ -1307,7 +1307,7 @@ export class CorpseGrounder {
      * `_lastT` straight back to the rewound time, so the solve resumed on the
      * very first replayed frame and chased the collapse all over again — the
      * settle was thrown away, and on a loaded page the wreck was still being
-     * re-solved when the corpse gates read it (traced on a Corruptor: the
+     * re-solved when the corpse gates read it (traced on a Crawler: the
      * replayed solve locked into a 0.11 / 0.22 m limit cycle for 3 s). Now
      * nothing is re-measured until death time passes the settle; the settled
      * offset is eased in with the collapse (`foldA`'s curve, 0 on the standing
@@ -1338,7 +1338,7 @@ export class CorpseGrounder {
       // few update calls (the site manager freezes a wreck 10 s after death
       // and the manager's own budget scheduler thins the rest), and a watch on
       // a quarter cadence measured in DEATH time effectively never fired:
-      // measured on a sawtooth wreck, `applied` and both error terms were
+      // measured on a big cat wreck, `applied` and both error terms were
       // byte-identical at 5.2 s and at 9.2 s of wall time. The watch costs one
       // bounds refresh plus two measurements, which is what the solve itself
       // costs, and it stops when the wreck freezes.
@@ -1376,7 +1376,7 @@ export class CorpseGrounder {
     // NOTHING is measured while a settled crumple replays (see the clock
     // above): a tick left pending by the settle's last step would otherwise
     // measure the STANDING first frame of the replay and write its boxes —
-    // measured on the Longleg, a dead head weak point 0.18-0.20 m off a hull
+    // measured on the Wader, a dead head weak point 0.18-0.20 m off a hull
     // still describing the machine on its feet.
     if (!replay && this._t >= this.tick && this._settleRun < SETTLE_TICKS) {
       this._t = 0;
@@ -1388,7 +1388,7 @@ export class CorpseGrounder {
       // lift node over the root bones — because a skinned mesh's bind box does
       // not follow its skeleton, so a collapsed wreck read completely
       // differently to the two. The handles are coupled, the solve had no
-      // stable fixed point, and a judge measured the result: glinthawk +4.75 m
+      // stable fixed point, and a judge measured the result: flyer +4.75 m
       // of body against -3.81 m of skeleton, six of eight species floating
       // HIGHER dead than alive.
       //
@@ -1402,14 +1402,14 @@ export class CorpseGrounder {
       // THE BOXES ARE REFRESHED INSIDE THE OFFSET, NOT OUTSIDE IT.
       //
       // ROUND-4 FIX ROUND 2 (second pass), judge finding "A47 / A47b / A47c
-      // corpse-grounding gates fail live, for thunderjaw and behemoth" — and
+      // corpse-grounding gates fail live, for colossus and hauler" — and
       // the disagreement §7.15 called a known gap. `refreshPosedBounds` stores
       // `applyBoneTransform` output, which is the shader's PRE-`matrixWorld`
       // space; for a `bindMode: 'attached'` shell whose node has moved since
-      // it was bound (the thunderjaw's has, by 0.897 m) that space carries the
+      // it was bound (the colossus's has, by 0.897 m) that space carries the
       // body offset. Refreshing before `body.position.y` had the solved offset
       // added therefore wrote a box exactly `applied` metres below the pose
-      // that renders — measured on the thunderjaw wreck: stored box min
+      // that renders — measured on the colossus wreck: stored box min
       // -0.982, live posed min -0.093, difference 0.889, `applied` 0.889. That
       // one term is the whole 2.07 m "the two surfaces disagree" story: gate
       // A47 read -0.75 (buried) while A47b read +0.80 (floating) on the same
@@ -1453,7 +1453,7 @@ export class CorpseGrounder {
            * `BAND_MID` and let the band's width absorb the rest. Centring a
            * 0.4 m disagreement puts the LOW surface at -0.12 — and
            * penetration is the tight budget (-0.10) while float is loose
-           * (+0.40). Measured on the glinthawk right after the band was
+           * (+0.40). Measured on the flyer right after the band was
            * narrowed for `A47c`: box -0.11, i.e. a wreck the solve had
            * declared finished, buried.
            *
@@ -1575,7 +1575,7 @@ export function groundCorpse(machine, deathT, opts) {
  * SETTLE THE WRECK AT THE MOMENT OF DEATH, not over the next fifty frames.
  *
  * MEASURED, and the measurement is the whole justification. `A47b-corpse-posed`
- * read a Watcher wreck at **−1.24 m** — a metre and a quarter under the soil —
+ * read a Sentry wreck at **−1.24 m** — a metre and a quarter under the soil —
  * while the same species settled at **+0.01 m** when it was the only machine
  * killed. The difference was not the solve. It was that `Machine.update()`
  * returns early on `_frozen`:
@@ -1585,7 +1585,7 @@ export function groundCorpse(machine, deathT, opts) {
  * and `_updateDeath` is the ONLY caller of `onDeathPose()`, which is the only
  * caller of `groundCorpse()`. A wreck that is frozen by the site manager's
  * lifecycle before its first death frame therefore never poses and never
- * settles — probed on that Watcher: `machine._grounder === null`,
+ * settles — probed on that Sentry: `machine._grounder === null`,
  * `body.position.y === 0.05` (the pose had not run at all) six seconds after it
  * died. The lifecycle is another lane's, and the freeze is correct — a wreck
  * SHOULD stop costing frames. What is not correct is a rig that needs frames it
@@ -1617,7 +1617,7 @@ export function settleCorpseNow(machine) {
       // the body-node roll / pitch / twist / sink it writes before calling
       // `onDeathPose` are written here too (residue fix round 2): a species
       // whose pose does not reset the body node itself — the clip-driven
-      // Longleg — was settled WITHOUT its 0.35 rad death roll and then drawn
+      // Wader — was settled WITHOUT its 0.35 rad death roll and then drawn
       // WITH it, a wreck 0.23 m off the ground it had been solved onto.
       const k = THREE.MathUtils.smoothstep(Math.min(dT / 1.15, 1), 0, 1);
       const body = machine.body;
@@ -1643,7 +1643,7 @@ export function settleCorpseNow(machine) {
      * not the ones its last measurement saw: the offset is damped AFTER each
      * measurement, and nothing re-measures until the replay has passed the
      * settle, so a box written one damping step early stays that far off the
-     * drawn wreck for the whole replay (measured: the Longleg's dead head
+     * drawn wreck for the whole replay (measured: the Wader's dead head
      * weak point 0.175 m off its hull at `A44`'s 3.2 s read, against 0.000
      * in isolation). The skeleton still holds the settle's final pose here.
      */

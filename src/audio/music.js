@@ -71,7 +71,7 @@ export const STATES = ['calm', 'suspicious', 'combat', 'resolve'];
 /**
  * The mix per state. A state is a *chord of stems*, not a track: `suspicious`
  * keeps a quarter of the exploration pad so the world does not vanish when a
- * Watcher turns its head, and `combat` keeps the tense drone underneath the
+ * Sentry turns its head, and `combat` keeps the tense drone underneath the
  * kit so the low end never drops out mid-transition.
  */
 export const MIX = {
@@ -136,7 +136,7 @@ export class MusicDirector {
      * Starts OUTSIDE the state set on purpose. `setState` refuses a no-op, so
      * initialising to 'calm' made the opening `setState('calm')` a no-op and
      * every stem stayed at gain 0 — the score was wired, phase-locked and
-     * completely silent until the first Watcher noticed you.
+     * completely silent until the first Sentry noticed you.
      */
     this._state = 'silent';
     this._pending = null;      // { to, at, xfade } while a transition is queued

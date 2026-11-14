@@ -242,12 +242,12 @@ export function spawnExpansion(machines) {
       rec.n++;
       audit.spawned++;
       /**
-       * NOT AN UNCONDITIONAL PUSH. The Strider chassis' own constructor
+       * NOT AN UNCONDITIONAL PUSH. The Runner chassis' own constructor
        * already does `if (this.herd) this.herd.members.push(this)`, so
        * appending here listed every member TWICE — which made the herd read
        * four strong with two machines and the "one rearguard, everyone else
        * runs" count come out as 2 of 3. When `machines-expansion` lands a
-       * Broadhead class that does not self-register, this still adds it.
+       * Ram class that does not self-register, this still adds it.
        */
       if (herd) machines.squads.join(m, herd, 'herd');
       /**

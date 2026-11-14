@@ -20,7 +20,7 @@
  * LEGACY KINDS ARE NEVER MAPPED (R28): only modules under
  * `src/instruments/kinds/` can claim a role, and `machines/legacy.js` kinds
  * cannot be registered there. No role id matches
- * /charger|burrower|grazer|stalker|watcher|apex|scout/i (bible §7.4).
+ * /rusher|digger|browser|lurker|sentry|apex|scout/i (bible §7.4).
  */
 
 /** The twelve roles, in bible §7.4 roster order. */

@@ -113,7 +113,7 @@
  *
  * 4. PER-SITE RESPAWN. `respawnPolicy(site)` / `SITE_RESPAWN` re-time a
  *    MachineSite the frame `machine-ai` disposes it — a trial ring repopulates
- *    in 90-150 s so the trial can be run again, a Thunderjaw in 420-540 s.
+ *    in 90-150 s so the trial can be run again, a Colossus in 420-540 s.
  *    Written onto the published `site.respawnAt`, never slower than the stock
  *    window, and never an edit to that lane's file or its tuning table.
  *
@@ -178,9 +178,9 @@ export const POINTS_PER_LEVEL = 1;
 
 /**
  * `progression-012` — XP is a function of `machine.level`, which the species
- * files already carry (strider 4 · watcher 5 · scrapper 6 · glinthawk 8 ·
- * longleg 12 · sawtooth 15 · behemoth 25 · thunderjaw 27). No kill feed, no
- * flat number: a Thunderjaw is worth eleven Watchers, and that is the whole
+ * files already carry (runner 4 · sentry 5 · scavenger 6 · flyer 8 ·
+ * wader 12 · big cat 15 · hauler 25 · colossus 27). No kill feed, no
+ * flat number: a Colossus is worth eleven Sentries, and that is the whole
  * reason to go and fight one.
  */
 export function xpForMachineLevel(level) {
@@ -227,7 +227,7 @@ export const PLACE_NAMES = {
  * (0.55, owned by player-melee) for every species outside
  * `MELEE.silent.instant`. The two Prowler nodes used to multiply that impact by
  * 1.75 × 2.0 = 3.5, so three skill points turned one stab into 1.35 × a
- * Thunderjaw's max health — the apex fight, and the win condition, ended from
+ * Colossus's max health — the apex fight, and the win condition, ended from
  * the grass. Canon (docs/research/mechanics.md, Silent Strike row): instant
  * kills on humans and small machines only, "big damage + brief stun on
  * mediums". So the skills now RAISE THE FRACTION, one `fracStep` each
@@ -262,7 +262,7 @@ const _silentWp = new THREE.Vector3();
  * same three steps, in the same order, as machine.js's impact channel: armour
  * floor, then weak spots / weak struck part (max), then BRITTLE ×2. The clamp
  * has to be on DAMAGE, not on impact, or a stab that happens to land on a
- * Thunderjaw's heart (×3) or on a frozen one (×2) walks straight through it.
+ * Colossus's heart (×3) or on a frozen one (×2) walks straight through it.
  * A64c re-measures the outcome through the real method, so if machine.js ever
  * grows a fourth factor this mirror is caught, not trusted.
  * Not a hot path: one call per Silent Strike.
@@ -880,7 +880,7 @@ export const QUESTS = [
 /**
  * `machine-ai` owns the MachineSite scheduler and draws EVERY site from one
  * window (`SITE.respawn = [300, 420]`), so the trial ring a side quest asks you
- * to clear three times repopulates on the same clock as the Thunderjaw that is
+ * to clear three times repopulates on the same clock as the Colossus that is
  * meant to be a landmark. This lane owns what the schedule means to the run, so
  * it re-times the site the frame it is disposed — a published field on a
  * published record, never an edit to that lane's file or its tuning table.
@@ -891,9 +891,9 @@ export const QUESTS = [
 export const SITE_RESPAWN = {
   trial: [90, 150],     // inside a hunting ground: the trial has to be re-runnable
   quest: [120, 180],    // an active quest is asking for this kind right now
-  small: [240, 330],    // watcher · strider · grazer · broadhead · scrapper
-  medium: [330, 450],   // sawtooth · longleg · snapmaw · shellwalker · ravager · redeye · glinthawk
-  large: [420, 540],    // thunderjaw · behemoth · stormbird · corruptor
+  small: [240, 330],    // sentry · runner · browser · ram · scavenger
+  medium: [330, 450],   // big cat · wader · sprawler · carrier · brute · red-lamp kind · flyer
+  large: [420, 540],    // colossus · hauler · raptor · crawler
 };
 
 const RESPAWN_CLASS = {
@@ -992,7 +992,7 @@ export class Progression {
      * Objectives complete IN ORDER (that is what makes the tutorial a
      * tutorial), and the old `_advance` threw away any event that did not
      * match the objective standing at the front of the queue. So the single
-     * most likely path through `lessons-of-the-valley` — Focus-tag the Watcher
+     * most likely path through `lessons-of-the-valley` — Focus-tag the Sentry
      * you can see while Varl is still talking — silently lost the scan, and
      * the obvious recovery (tag it again) is a NO-OP because
      * `FocusSystem.tagTarget()` is a toggle: the second press removes the tag
@@ -1146,7 +1146,7 @@ export class Progression {
    *   src/world/props/activities.js:439  discover(id)            (datapoint)
    *   src/world/props/activities.js:440  award 25  'datapoint'   × 24
    *   src/world/props/activities.js:524  award 15  'cache'       × 6
-   *   src/world/props/activities.js:542  discover('tallneck')
+   *   src/world/props/activities.js:542  discover('tower')
    *   src/world/props/activities.js:562  discover(hunting-ground)
    *   src/world/fauna.js:624             award 20/12 'hunt'      × every kill
    *
@@ -1445,7 +1445,7 @@ export class Progression {
     this.banner('NEW QUEST', def.title.toUpperCase(), 'quest');
     this.ui.refresh();
     // credit anything this run already earned: wood gathered before he asked,
-    // a Watcher scanned on the walk in, a Scrapper already down.
+    // a Sentry scanned on the walk in, a Scavenger already down.
     this._settle(id);
     return true;
   }
@@ -1483,7 +1483,7 @@ export class Progression {
   /** Ledger key for an objective: type + the thing it is counting. */
   _objKey(o) {
     /**
-     * Tallied types share a key on purpose: two "kill 2 Striders" steps in one
+     * Tallied types share a key on purpose: two "kill 2 Runners" steps in one
      * quest must draw from the same run tally, four kills between them.
      * `goto` is NOT tallied — it is a per-objective boolean in `st.reached` —
      * so it keys on the objective id. Sharing `goto:*` across two places in one
@@ -1500,7 +1500,7 @@ export class Progression {
    *
    * The item baseline is why the tutorial still teaches gathering: Aloy starts
    * with 20 ridge-wood, so crediting "have 3 ridge-wood" against the bag would
-   * tick "Gather Ridge-Wood for arrows" off the instant the Watcher fell. An
+   * tick "Gather Ridge-Wood for arrows" off the instant the Sentry fell. An
    * objective marked `fromStock` opts out and counts what you are already
    * carrying — that is the right reading for a bounty you ACCEPT ("Varl wants
    * two lenses"), and the wrong one for a step whose whole job is to make you
@@ -1637,7 +1637,7 @@ export class Progression {
      * pays shards through `_grant`, which emits `item-gained`, which re-enters
      * `_advance('gather')`, which settles — and the settle credits the kill
      * from the tally *before* the kill's own `_credit` line has run. One
-     * Scrapper then counted as two.
+     * Scavenger then counted as two.
      *
      * It was invisible for a year because every kill objective in the shipped
      * chain asks for a number the FIRST credit already reaches (1), so the
@@ -2397,7 +2397,7 @@ export class Progression {
    * TURN-IN TAKES THE GOODS (`quest-delivered`).
    *
    * Every "bring me X" objective carries `deliver: true`, and until this round
-   * none of them cost anything: Varl's five medicinal herbs, the two Watcher
+   * none of them cost anything: Varl's five medicinal herbs, the two Sentry
    * lenses, the outpost's six Ridge-Wood and Thok's forty Metal Shards all
    * stayed in the pouch while the quest paid out on top. In HZD the hand-over
    * is the trade — the items leave your pockets and the reward replaces them —
@@ -2997,7 +2997,7 @@ export class Progression {
           if (!wrapped.__calNative) a = amount * self.mult('damageIn');
           // onboarding-loop-death-no-stakes wants the killer's NAME on the death
           // card. The `player-damage` listener in `_bind` gets it for machine
-          // hits (verified: `lastKiller` reads "Watcher" after one emit). This
+          // hits (verified: `lastKiller` reads "Sentry" after one emit). This
           // line covers the calls that never go through the bus at all —
           // `player.js:1085/1089` call `takeDamage(dmg, 'fall')` directly, and
           // falling off the ridge is a real way to die.

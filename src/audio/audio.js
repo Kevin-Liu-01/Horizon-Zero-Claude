@@ -16,7 +16,7 @@
  *  - A mix graph (src/audio/buses.js): world low-pass over the whole diegetic
  *    world for Concentration, a UI bus that bypasses it, sidechain ducking and
  *    persisted volume sliders on `ctx.settings.audio`.
- *  - A priority voice pool: a Thunderjaw roar steals a footstep, never the
+ *  - A priority voice pool: a Colossus roar steals a footstep, never the
  *    other way round.
  *  - Headless verification (src/audio/probe.js): the gates render the real
  *    graph through an OfflineAudioContext and measure the samples.
@@ -51,21 +51,22 @@ const SETTINGS_KEY = 'cal.audio.v5';
 const weakKey = (v) => v !== null && typeof v === 'object';
 
 /** Machine kind -> footfall weight class (mstep/*) and voice loudness. */
+/** Weight class by Instrument role (src/instruments/roles.js); a role not listed is 'medium'. */
 const WEIGHT = {
-  watcher: 'light', scrapper: 'light', glinthawk: 'light', longleg: 'medium',
-  strider: 'medium', sawtooth: 'medium', behemoth: 'heavy', thunderjaw: 'heavy',
+  sentry: 'light', swarm: 'light', spotter: 'light', herd: 'medium', flanker: 'medium',
+  keeper: 'medium', duelist: 'medium', heavy: 'heavy', artillery: 'heavy', colossus: 'heavy',
 };
-const SPECIES = [
-  'watcher', 'strider', 'scrapper', 'longleg',
-  'glinthawk', 'sawtooth', 'behemoth', 'thunderjaw',
-];
+/** Roles with their own voice and idle sets; any other role speaks with the sentry's. */
+const VOICE_ROLES = ['sentry', 'herd', 'swarm', 'heavy'];
+/** A machine's role, read from the Instrument registry (`machines.roleOf`). */
+const roleOf = (ctx, machine) => String(ctx.machines?.roleOf?.(machine?.kind) || '');
 /** Biome beds, cross-faded one-at-a-time by `_pickBed()` (`audio-11`). */
 const BEDS = [
   'amb/meadow', 'amb/river', 'amb/forest', 'amb/night', 'amb/ridge',
 ];
 /** Per-bed level: a campfire is a presence, a night bed is a floor. */
 const BED_GAIN = {
-  'amb/campfire': 0.5, 'amb/river': 0.46, 'amb/ridge': 0.44,
+  'amb/brazier': 0.5, 'amb/river': 0.46, 'amb/ridge': 0.44,
   'amb/forest': 0.42, 'amb/meadow': 0.42, 'amb/night': 0.34,
 };
 /**
@@ -98,9 +99,9 @@ const SURFACE_SET = {
  */
 function bowSetFor(id) {
   const s = String(id || '').toLowerCase();
-  if (/sharp|precision|marks/.test(s)) return 'sharpshot';
-  if (/war|heavy|tear|rope/.test(s)) return 'war';
-  return 'hunter';
+  if (/sharp|precision|marks|sighting/.test(s)) return 'sighting';
+  if (/war|heavy|tear|rope|recurve/.test(s)) return 'recurve';
+  return 'sabina';
 }
 
 /** Weapons that put an arrow on a string — the only ones that nock. */
@@ -131,8 +132,8 @@ export class GameAudio {
     this._tension = 0;
     this._lastTenseT = -99;
     this._pollT = 0;
-    this._watcherDist = Infinity;
-    this._watcher = null;
+    this._sentryDist = Infinity;
+    this._sentry = null;
     this._birdT = 4;
     this._pluckT = 2.5;
     this._radarT = 1.5;
@@ -783,7 +784,7 @@ export class GameAudio {
   /**
    * Play a bank set through the 3D chain.
    *
-   * @param {string} setId       e.g. 'voice/thunderjaw/strike'
+   * @param {string} setId       e.g. 'voice/colossus/strike'
    * @param {{x:number,y:number,z:number}|null} pos  world position; null = 2D
    * @param {object} [opts] { volume, category, priority, rate, track, duck, reverb }
    * @returns {boolean} false when the bank has no such set (caller synthesizes)
@@ -1070,7 +1071,7 @@ export class GameAudio {
     // --- fire
     const fire = this.ctx.camp?.firePosition;
     if (fire && Math.hypot(px - fire.x, pz - fire.z) < 80) {
-      z.ensure('fire:camp', 'amb/campfire', fire.x, fire.y + 0.35, fire.z,
+      z.ensure('fire:camp', 'amb/brazier', fire.x, fire.y + 0.35, fire.z,
         { volume: 0.62, reverb: 0.2 });
     } else z.retire('fire:camp', 0.8);
 
@@ -1213,9 +1214,9 @@ export class GameAudio {
    * on its first frame, and recovers over several seconds rather than cutting.
    */
   _effort(hard = false, volume = 1) {
-    const set = hard ? 'aloy/effort-hard' : 'aloy/effort';
+    const set = hard ? 'brea/effort-hard' : 'brea/effort';
     if (!this.play2D(set, { volume: 0.5 * volume, category: 'voice', rate: 0.96 + Math.random() * 0.1 })) {
-      this.play2D('aloy/effort', { volume: 0.45 * volume, category: 'voice' });
+      this.play2D('brea/effort', { volume: 0.45 * volume, category: 'voice' });
     }
     this._exertion = Math.min(1, this._exertion + (hard ? 0.28 : 0.16));
   }
@@ -1277,10 +1278,10 @@ export class GameAudio {
     if (this._breathT > 0) return;
     if (this._exertion > 0.62) {
       this._breathT = 2.1 + Math.random() * 0.9;
-      this.play2D('aloy/breath-hard', { volume: 0.34 + this._exertion * 0.2, category: 'voice' });
+      this.play2D('brea/breath-hard', { volume: 0.34 + this._exertion * 0.2, category: 'voice' });
     } else if (this._exertion > 0.3) {
       this._breathT = 3.4 + Math.random() * 1.6;
-      this.play2D('aloy/breath-out', { volume: 0.22, category: 'voice' });
+      this.play2D('brea/breath-out', { volume: 0.22, category: 'voice' });
     } else {
       this._breathT = 2.5;
     }
@@ -1316,16 +1317,16 @@ export class GameAudio {
   }
 
   _speciesSet(machine, phase) {
-    const kind = String(machine?.kind || '').toLowerCase();
-    const k = SPECIES.includes(kind) ? kind : 'watcher';
+    const role = roleOf(this.ctx, machine);
+    const k = VOICE_ROLES.includes(role) ? role : 'sentry';
     return `voice/${k}/${phase}`;
   }
 
-  _weightOf(machine) { return WEIGHT[String(machine?.kind || '')] || 'medium'; }
+  _weightOf(machine) { return WEIGHT[roleOf(this.ctx, machine)] || 'medium'; }
 
   /**
    * Play a species voice at a machine. Heavy machines get priority, a longer
-   * reverb send and a duck; a Watcher warble must never shove a Thunderjaw
+   * reverb send and a duck; a Sentry warble must never shove a Colossus
    * roar out of the pool.
    * @returns {boolean} false when the bank has no such cue
    */
@@ -1391,8 +1392,8 @@ export class GameAudio {
       // you a machine was near; eight tell you WHICH, which is the information
       // a stealth approach is actually played on. `machine/servo-loop` stays
       // as the fallback for a kind the bank has no bed for.
-      const kind = String(machine.kind || '').toLowerCase();
-      const first = (SPECIES.includes(kind) && this.bank.first(`idle/${kind}`))
+      const role = roleOf(this.ctx, machine);
+      const first = (VOICE_ROLES.includes(role) && this.bank.first(`idle/${role}`))
         || this.bank.first('machine/servo-loop');
       if (!first) return;
       const chain = this._loopChain();
@@ -1980,7 +1981,7 @@ export class GameAudio {
   _breath(inhale) {
     // sampled breath first (D2 — breath and effort are the whole of Aloy's
     // voice), synthesized noise sweep as the fallback
-    if (this.play2D(inhale ? 'aloy/breath-in' : 'aloy/breath-out',
+    if (this.play2D(inhale ? 'brea/breath-in' : 'brea/breath-out',
       { volume: inhale ? 0.7 : 0.55, category: 'voice' })) {
       this._counts.breaths++;
       return;
@@ -2090,7 +2091,7 @@ export class GameAudio {
   /**
    * Heavy-machine footfall: short quiet sub thud, steeply distance-scaled.
    * Deliberately NOT a roar/boom and never drives combat tension — a calm
-   * thunderjaw stomping on patrol should read as distant weight, not threat.
+   * colossus stomping on patrol should read as distant weight, not threat.
    */
   _machineStep(pan, att, big) {
     // steepen falloff beyond the normal 1/(1+0.03d) so far steps stay subtle
@@ -2338,7 +2339,7 @@ export class GameAudio {
     this._noise(t0, 0.04, bp);
   }
 
-  /** Watcher blinding strobe: bright white-hot zap sting (dodge/avert cue). */
+  /** Sentry blinding strobe: bright white-hot zap sting (dodge/avert cue). */
   _flashZap(pan, att) {
     const g = this._voice(0.7, Math.max(att, 0.5), pan, this.sfxBus);
     if (!g) return;
@@ -2695,9 +2696,9 @@ export class GameAudio {
     // Focus tag marker placed (focus builder emits 'machine-tagged')
     ev.on('machine-tagged', armed(() => this._tagBlip()));
 
-    // Watcher blinding strobe — machines builder may emit this; the
+    // Sentry blinding strobe — machines builder may emit this; the
     // optional-chained position read keeps it harmless if it never fires.
-    ev.on('watcher-flash', armed((e = {}) => {
+    ev.on('sentry-flash', armed((e = {}) => {
       at(e?.machine?.position ?? null);
       this._flashZap(this._pan, this._att);
     }));
@@ -2725,7 +2726,7 @@ export class GameAudio {
 
     ev.on('machine-attack', armed(({ machine, kind } = {}) => {
       at(machine?.position ?? null);
-      const big = machine?.kind === 'thunderjaw' || machine?.kind === 'behemoth';
+      const big = this._weightOf(machine) === 'heavy';
       // Locomotion footfalls are ambience, not aggression: quiet low thud,
       // and never refresh the combat-tension timer.
       if (kind === 'step') {
@@ -2765,7 +2766,7 @@ export class GameAudio {
       const m = e.machine;
       const pos = e.position || m?.position;
       if (!pos) return;
-      // per-machine throttle: a sprinting Scrapper must not out-shout a fight.
+      // per-machine throttle: a sprinting Scavenger must not out-shout a fight.
       // `m` may be absent (position-only footfall) and a WeakMap refuses a
       // non-object key, so those share one scalar throttle instead.
       const nowMs = performance.now();
@@ -2868,9 +2869,8 @@ export class GameAudio {
 
     ev.on('machine-killed', armed(({ machine } = {}) => {
       at(machine?.position ?? null);
-      const size = machine?.kind === 'thunderjaw' ? 1.5
-        : machine?.kind === 'behemoth' ? 1.3
-          : machine?.kind === 'sawtooth' ? 1.15 : 1;
+      const w = this._weightOf(machine);
+      const size = w === 'heavy' ? 1.4 : w === 'medium' ? 1.15 : 1;
       this._explosion(this._pan, Math.max(this._att, 0.5), size);
       // audio-06 — death is not one explosion: the reactor spins down after it
       this.playAt('machine/powerdown', machine?.position, {
@@ -2898,10 +2898,10 @@ export class GameAudio {
 
     ev.on('player-hurt', armed(() => {
       // D2: no VO. Breath and effort only.
-      this.play2D('aloy/hurt', { volume: 0.75, category: 'voice', duck: 0.25 });
+      this.play2D('brea/hurt', { volume: 0.75, category: 'voice', duck: 0.25 });
       this._hurt();
     }));
-    ev.on('player-dodge', armed(() => this.play2D('aloy/effort', { volume: 0.55, category: 'voice' })));
+    ev.on('player-dodge', armed(() => this.play2D('brea/effort', { volume: 0.55, category: 'voice' })));
     // Heal audio keys off player.healing edges observed in update() — the
     // pouch drains continuously, so count-based chimes would spam.
     ev.on('player-died', armed(() => {
@@ -2934,7 +2934,7 @@ export class GameAudio {
       this.playAt('machine/collapse', pos, {
         volume: 0.55 + strength * 0.5,
         priority: PRI.death,
-        rate: 1.12 - strength * 0.34,      // a Thunderjaw lands slower than a Watcher
+        rate: 1.12 - strength * 0.34,      // a Colossus lands slower than a Sentry
         duck: 0.25 + strength * 0.2,
         duckHold: 0.5,
         reverb: 0.7,
@@ -3315,30 +3315,30 @@ export class GameAudio {
     if (this._humLevel < 0.0004) this._humLevel = 0;
     if (this.humGain) this.humGain.gain.value = this._humLevel;
 
-    // --- machine polling (throttled): combat tension + nearest idle watcher
+    // --- machine polling (throttled): combat tension + nearest idle sentry
     this._pollT -= dt;
     if (this._pollT <= 0) {
       this._pollT = 0.4;
       const list = ctx.machines?.list;
       let tense = false;
       let wDist = Infinity;
-      let watcher = null;
+      let sentry = null;
       if (list && p) {
         for (let i = 0; i < list.length; i++) {
           const m = list[i];
           if (!m.alive) continue;
           if (m.state === 'attack' || m.state === 'alert') tense = true;
-          if (m.kind === 'watcher' && m.state !== 'attack') {
+          if (roleOf(ctx, m) === 'sentry' && m.state !== 'attack') {
             const dx = m.position.x - p.position.x;
             const dz = m.position.z - p.position.z;
             const d = Math.sqrt(dx * dx + dz * dz);
-            if (d < wDist) { wDist = d; watcher = m; }
+            if (d < wDist) { wDist = d; sentry = m; }
           }
         }
       }
       if (tense) this._lastTenseT = t;
-      this._watcherDist = wDist;
-      this._watcher = watcher;
+      this._sentryDist = wDist;
+      this._sentry = sentry;
     }
 
     // --- tension float. Still computed when the stem score is live: the
@@ -3390,14 +3390,14 @@ export class GameAudio {
       if (this._tension < 0.25 && this._legacyScore) this._pluck();
     }
 
-    // --- watcher idle radar chirps within 35m
+    // --- sentry idle radar chirps within 35m
     this._radarT -= dt;
     if (this._radarT <= 0) {
       this._radarT = 2.0 + Math.random() * 1.4;
-      const w = this._watcher;
-      if (w && w.alive && this._watcherDist < 35) {
+      const w = this._sentry;
+      if (w && w.alive && this._sentryDist < 35) {
         this._spatial(w.position);
-        const vol = 0.03 + 0.09 * (1 - this._watcherDist / 35);
+        const vol = 0.03 + 0.09 * (1 - this._sentryDist / 35);
         this._radarChirp(vol, this._pan);
       }
     }
@@ -3451,8 +3451,8 @@ export class GameAudio {
         creak: r(this._creakLevel),
         gust: r(this._gust),
         heartbeat: this._hbOn,
-        watcherDist: this._watcherDist === Infinity
-          ? null : Math.round(this._watcherDist),
+        sentryDist: this._sentryDist === Infinity
+          ? null : Math.round(this._sentryDist),
         // v2 layers
         musicLP: Math.round(this._lpFreq),
         concentration: this._concActive,

@@ -61,24 +61,6 @@ const KNOWN_MODULES = [
     status: 'pending', probe: 'machineLocal',
     recipe: `rotX/Y/Z -> BoneSpace.rotLocal; rig.rest Map -> RestPose (${MIGRATION_DOC} §3)`,
   },
-  {
-    id: 'machines/species', file: 'src/entities/machines/{watcher,strider,sawtooth,thunderjaw,scrapper,behemoth}.js',
-    owner: 'machine-rig', wave: 1, rig: 'machines', convention: "local-axis _rot(bone,'x',a) + Map rest",
-    status: 'pending', probe: 'machineLocal',
-    recipe: `_rot -> BoneSpace.rotLocal; this._rest Map -> RestPose.fromMap (${MIGRATION_DOC} §3)`,
-  },
-  {
-    id: 'machines/glinthawk', file: 'src/entities/machines/glinthawk.js', owner: 'machine-rig', wave: 1,
-    rig: 'machines', convention: 'AnimationMixer + setTimeout one-shot',
-    status: 'pending', probe: 'mixerSpecies', risk: 'WALL-CLOCK one-shot restore (A27): setTimeout survives engine.timeScale',
-    recipe: `this._act -> ClipLayerSet; _oneShot -> set.oneShot(name) (${MIGRATION_DOC} §4)`,
-  },
-  {
-    id: 'machines/longleg', file: 'src/entities/machines/longleg.js', owner: 'machine-rig', wave: 1,
-    rig: 'machines', convention: 'AnimationMixer + local-axis neck overlay',
-    status: 'pending', probe: 'mixerSpecies',
-    recipe: `this._act -> ClipLayerSet; neck quaternion.multiply -> BoneSpace.rotLocal (${MIGRATION_DOC} §4)`,
-  },
 ];
 
 /* ------------------------- runtime registrations ------------------------- */
@@ -212,7 +194,7 @@ function probeMachineLocal(ctx) {
 function probeMixerSpecies(ctx) {
   const list = ctx?.machines?.list || [];
   const out = [];
-  for (const kind of ['glinthawk', 'longleg']) {
+  for (const kind of /** the mixer-driven kinds (none since M0.3 R2) */ []) {
     const m = list.find((x) => x?.kind === kind && x?.mixer);
     if (!m) { out.push({ kind, reachable: false }); continue; }
     const src = typeof m._oneShot === 'function' ? String(m._oneShot) : '';
@@ -508,7 +490,7 @@ export function selftest(timeScale = 0.02) {
  * `debugFeet()` are one call away for every lane:
  *
  *   __CTX__.anim.overlay('hero')            // skeleton on, on the live scene
- *   __CTX__.anim.debug('watcher').probe('hipsBone_03')
+ *   __CTX__.anim.debug('sentry').probe('hipsBone_03')
  *   __CTX__.anim.overlay('hero', false)
  *
  * Cold path: it allocates, walks the scene graph and refreshes the char frame

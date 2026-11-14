@@ -79,7 +79,7 @@ const _m4 = new THREE.Matrix4();
  * spark bursts and the plate chips. Round 1's `_flashTrail` ran BEFORE that
  * call and overwrote `_n` with the world-space grip->tip SHAFT direction, so
  * every melee impact fired its sparks along the lance, INTO the machine's
- * hull, instead of off its surface: measured at heading 0 against a Watcher
+ * hull, instead of off its surface: measured at heading 0 against a Sentry
  * parked at +Z, the normal handed over was [0.133, -0.04, 0.99] on a light and
  * [0.272, -0.006, 0.962] on a heavy, where a surface normal is about
  * [0, 0, -1]. Nothing gated it — A103 measures tip-to-impact distance only.
@@ -130,14 +130,14 @@ const NO_SNEAK_STATES = new Set(['dead', 'downed', 'stagger']);
  * along its heading: `standoffHalfLen` either side of the centre, inflated by
  * `bodyRadius + machinePad`, and the player's own capsule adds its radius on
  * top. Measured on port 5208, a crouched Aloy pressed against the BACK of a
- * Watcher stands 3.35 m from its centre — the collider will not let her any
+ * Sentry stands 3.35 m from its centre — the collider will not let her any
  * closer — while `MELEE.silent.range` is 2.0 m centre-to-centre. The Silent
  * Strike prompt could therefore never appear on any machine, and the lance
- * could not reach a Thunderjaw at all (its standoff segment is far longer).
+ * could not reach a Colossus at all (its standoff segment is far longer).
  *
  * This returns the gap between `(x, z)` and the machine's OUTER SHELL: the
  * distance to its standoff segment, less `bodyRadius`. Pressed against a
- * Watcher that is ~0.95 m; a step back is ~1.9 m; two steps is out of range —
+ * Sentry that is ~0.95 m; a step back is ~1.9 m; two steps is out of range —
  * which is what "2 m from the machine" is supposed to mean.
  */
 function surfaceGap(m, x, z) {
@@ -386,7 +386,7 @@ const STEP_SPEED = 1.15;
  * m/s, read back a hair over by the controller) tripped it: the strike's lunge,
  * fired at the windup->strike boundary while the windup's lunge was still
  * carrying her, cancelled itself and the windup's drive with it. Filmed on the
- * real input path (walk up to a Tallneck, click): the lunge asked for 0.81 m,
+ * real input path (walk up to a Tower, click): the lunge asked for 0.81 m,
  * delivered 0.13 m, and the hit landed 0.38-0.56 m short. With no drive in
  * progress the rule is unchanged (a crouch-walk at 1.4 m/s still owns its own
  * step).
@@ -404,7 +404,7 @@ const TRAIL_PEAK = 0.32;
  * `machines/index.js`'s own push were the SAME radius, which is an equilibrium
  * and not a margin — a moving player penetrates by a frame of travel first, so
  * every forward frame fired the manager's push and a drawn lance bulldozed a
- * frozen Watcher 2.38 m across the field (measured by the round-4 film judge;
+ * frozen Sentry 2.38 m across the field (measured by the round-4 film judge;
  * gated now by `A106-melee-approach-immovable`). 0.32 is that equality plus a
  * 0.12 m loaded-box frame of travel, and the 0.12 m of reach is handed back on
  * the same axis by `MELEE_L_CUT` (0.66 -> 0.78), so her standing distance from
@@ -420,7 +420,7 @@ const LUNGE_MAX = 1.0;
 /**
  * How much daylight the lunge aims to leave between the blade and the shell.
  * Zero: the collision solve is what stops her, and it stops her a long way
- * short of this ask on every machine in the roster (measured on a Watcher: the
+ * short of this ask on every machine in the roster (measured on a Sentry: the
  * lunge asks for 0.72 m and gets 0.33 m of it), so any positive margin here is
  * subtracted from a distance she never covers.
  */
@@ -431,10 +431,10 @@ const LUNGE_LEAVE = 0;
  * inside it) on the frame the hit resolves, or the swing is a whiff: no
  * damage, no sparks, no `melee-hit`. Until round 6 the arc test measured to
  * the machine's GAMEPLAY standoff capsule — a keep-out volume, 9.3 m of
- * half-length on a grounded Stormbird — and the blade-line ray reached 0.45 m
- * past the tip, so a click from where she stops walking up to a Stormbird
- * dealt damage with the blade 6.1-6.6 m from any part of it, a Tallneck's
- * 0.38-0.56 m and a Shellwalker's 0.32 m (`scratchpad/sk6/out-bigmach.json`,
+ * half-length on a grounded Raptor — and the blade-line ray reached 0.45 m
+ * past the tip, so a click from where she stops walking up to a Raptor
+ * dealt damage with the blade 6.1-6.6 m from any part of it, a Tower's
+ * 0.38-0.56 m and a Carrier's 0.32 m (`scratchpad/sk6/out-bigmach.json`,
  * Oct 2). It is A103's own reach bar, so every hit the game deals is one the
  * gate would pass.
  */
@@ -511,10 +511,10 @@ export class Melee {
      * starts (`_aimAt`). `meleeLayer` bends the release and the contact toward
      * it (pitch and yaw about her shoulder, bounded), and `_lungeFor` closes
      * the horizontal gap to it. It is the difference between "the blade lands
-     * on the machine" and "the blade lands where a Watcher's body would be":
-     * a Thunderjaw has NOTHING at blade height in front of its centre (its
+     * on the machine" and "the blade lands where a Sentry's body would be":
+     * a Colossus has NOTHING at blade height in front of its centre (its
      * jaw is 2.6 m up, over her head, at the closest she may stand), a
-     * Behemoth's head sits above the chest-high sweep — the r5 skeptic read
+     * Hauler's head sits above the chest-high sweep — the r5 skeptic read
      * 1.13-1.19 m and 0.19-0.32 m short. A world point (no allocation);
      * `aimOk` false = nothing within reach, swing as authored.
      */
@@ -598,7 +598,7 @@ export class Melee {
      * haft, at 0.9 opacity, additive. Centred on the haft means half of it
      * sweeps back from the hand across her torso, and an inner radius of
      * 0.55 m puts that half over her chest: filmed as a solid white pie-slice
-     * taller than she is, lying across the ground and through a Watcher's leg.
+     * taller than she is, lying across the ground and through a Sentry's leg.
      * Now the sector STARTS at the blade (theta 0 -> 1.55 rad, with +X on the
      * haft), its inner radius is out past the fist at 0.95 of the blade's own
      * reach, and it peaks at a third of the old opacity for a shorter time.
@@ -794,7 +794,7 @@ export class Melee {
       /* THE STEP-IN STARTS WITH THE DRAW (round 6, R7 on the real input
        * path). A click from holstered plays the draw first (ruling R5), and
        * where she stopped walking up to a big machine is its FULL standoff —
-       * a Tallneck's hull 0.3 m past the blade even after the windup's lunge,
+       * a Tower's hull 0.3 m past the blade even after the windup's lunge,
        * because the windup is too short to carry a long step. A fighter steps
        * in while she draws: with a strike asked for (queued, or the button
        * still down) and the wedge on a machine, the lunge `_fire` would ask
@@ -967,7 +967,7 @@ export class Melee {
     const p = this.ctx.player;
     if (!p) return base;
     /* ROUND 6 (R7): TO THE HULL THE BLADE IS AIMED AT, NOT TO `bodyRadius`.
-     * `bodyRadius` is the machine's bounding radius — 4.0 m on a Thunderjaw,
+     * `bodyRadius` is the machine's bounding radius — 4.0 m on a Colossus,
      * whose legs and belly are nowhere near that at blade height — so the
      * shell the lunge used to close on was the bbox. When `_aimAt` found the
      * surface this beat is going to, the ask is the horizontal gap between
@@ -978,7 +978,7 @@ export class Melee {
       /* what the blade is still short of the aimed skin point, in 3-D from
        * her shoulder (the pivot the aim bends about), turned into the
        * horizontal step that closes it: a step of x closes a target at
-       * elevation e by ~x cos e (a steep stab up at a Longleg's body needs
+       * elevation e by ~x cos e (a steep stab up at a Wader's body needs
        * more step for the same shortfall than a level thrust) */
       const dx = this.aimPoint.x - _aSh.x, dy = this.aimPoint.y - _aSh.y, dz = this.aimPoint.z - _aSh.z;
       const d3 = Math.hypot(dx, dy, dz);
@@ -990,11 +990,11 @@ export class Melee {
     }
     /* TO THE SHELL, NOT TO THE STANDOFF SEGMENT. `approachGap` is
      * `surfaceGap`, which measures to the GAMEPLAY standoff capsule — for a
-     * Watcher that capsule's near end sticks out 1.5615 m from the centre
+     * Sentry that capsule's near end sticks out 1.5615 m from the centre
      * while the sculpt's hull ends 0.87 m out, so `surfaceGap` read 0.93 m on
      * a machine whose body was 2.49 m away and the lunge never fired at all.
      * `bodyRadius` is the machine's own idea of its body and matches the
-     * measured hull to 3 cm on a Watcher, so the shell is the quantity here.
+     * measured hull to 3 cm on a Sentry, so the shell is the quantity here.
      * Over-asking is free — `_stepIn` is a velocity floor and `moveCapsule`
      * stops her at whatever the collision solve allows — so the ask is
      * clamped only by LUNGE_MAX. */
@@ -1025,7 +1025,7 @@ export class Melee {
     const hulls = this._hullSet(m);
     if (!hulls || !hulls.length) return;
     /* THE NEAREST PART OF THE MACHINE THE BLADE CAN GET TO, not the nearest
-     * to where a Watcher-sized contact would have put it: the blade turns
+     * to where a Sentry-sized contact would have put it: the blade turns
      * about her SHOULDER (meleeLayer `_strikeAim`), so the target is the hull
      * surface point closest to the shoulder inside the cone the swing may be
      * bent through, with the angle off the authored contact as a tie-break
@@ -1079,10 +1079,10 @@ export class Melee {
         if (Math.abs(off) > AIM_SIDE || pb < -AIM_DOWN) continue;
         /* the TIP is what lands: a surface point at the blade's own reach, so
          * the tip ends on the skin — not a nearer one the blade would pass
-         * through and come out of the far side into air (a Behemoth's head
+         * through and come out of the far side into air (a Hauler's head
          * overhangs her: its underside is 1.1 m out, the tip 1.8 m) */
         /* ...and a point the blade cannot get to at all costs more than one
-         * that is a little off the authored line: on a Thunderjaw the side of
+         * that is a little off the authored line: on a Colossus the side of
          * the jaw nearer her drive shoulder is 0.15 m closer than the side the
          * light-1 sweep points at, and that is the difference between on and
          * short. The absolute pitch is bounded too — never straight up. */
@@ -1091,7 +1091,7 @@ export class Melee {
          * near skin (the arm gives back up to `AIM_PULL_MAX`, meleeLayer) or
          * carried on into a thick body both land; only a thin overhang lets
          * the tip out the far side, and the near skin is also where the ARM
-         * stays out of the machine (a Sawtooth's head at arm height) */
+         * stays out of the machine (a Big cat's head at arm height) */
         const cost = (dl < reach ? AIM_OVER_COST : 1) * Math.abs(dl - reach)
           + AIM_SHORT_COST * Math.max(0, dl - reach)
           + AIM_ANGLE_COST * Math.hypot(dp, dyaw * (this.heavy ? 2 : 1));
@@ -1116,7 +1116,7 @@ export class Melee {
         _aSh.z + (pz - _aSh.z) * f0, px, py, pz);
       if (gap < AIM_BODY_CLEAR) continue;
       /* ...and preferably not a line that puts her ARM in the machine: the
-       * forearm lies along the first ~0.6 m of it (S5 — a Behemoth's head
+       * forearm lies along the first ~0.6 m of it (S5 — a Hauler's head
        * overhangs her reach: aimed at the skin 1.7 m out, the fist went into
        * the underside 0.5 m out, and the arm guard and the aim fought over it
        * every frame). When every line clear of her body would put the arm
@@ -1127,7 +1127,7 @@ export class Melee {
       if (this._fistHits(hulls, px, py, pz, dl, reach)) { if (fallback < 0) fallback = n; continue; }
       /* ...and a NEAR target only if the blade ends in the machine: the arm
        * draws back part of an overshoot, not always all of it (the forearm
-       * and haft guards have their say), and a thin overhang (a Tallneck's
+       * and haft guards have their say), and a thin overhang (a Tower's
        * jaw) lets the rest of the tip out the far side into air */
       if (dl < reach - 0.10 && !this._tipLands(hulls, px, py, pz, dl, reach)) { if (fallback < 0) fallback = n; continue; }
       fallback = n;
@@ -1226,7 +1226,7 @@ export class Melee {
 
   /**
    * The hulls her ARMS must stay out of (round 6, S5 — the r5 skeptic's hand
-   * 0.03-0.10 m inside a Behemoth's head and a Glinthawk's body, which A106's
+   * 0.03-0.10 m inside a Hauler's head and a Flyer's body, which A106's
    * body capsule never reached): the machine the lance is on, and for a
    * couple of seconds after the wedge lets it go (a holster, a turn) so the
    * stow cannot put a forearm through the head she was just fighting.
@@ -1411,7 +1411,7 @@ export class Melee {
      * a machine's standoff) kept `went` at 0 while the clock ran on: the
      * unwalked step was carried for up to 1.3 s and paid out the moment the
      * collider let go — a kill mid-lunge stepped her 0.6-0.84 m into the
-     * wreck, and a holster at a Thunderjaw (the term letting go) 0.29 m at
+     * wreck, and a holster at a Colossus (the term letting go) 0.29 m at
      * it, after she had stood still for half a second. When the root has
      * made under a quarter of what the drive asked for over 0.12 s, the step
      * is over: she was stopped. */
@@ -1797,7 +1797,7 @@ export class Melee {
       /* ...AND IT LANDS WHEN THE BLADE GETS THERE (round 6, with
        * `HIT_TIP_REACH`). A hit now needs the tip on the hull, and the
        * contact frame is a fixed fraction of a 0.10 s window that this box
-       * draws in two or three frames: a heavy chopped THROUGH a Watcher's back
+       * draws in two or three frames: a heavy chopped THROUGH a Sentry's back
        * from where she stops walking up (tip 0.21 m inside it the frame
        * before) and came out under its belly on the contact frame — a whiff,
        * on the real input path. So through the strike leg the tip is read
@@ -1953,7 +1953,7 @@ export class Melee {
        * §4's A103 asks for the impact "at the tip, not down the lens", and
        * with the haft at 1.52 m the difference stopped being cosmetic. The
        * camera ray starts at her chest and carries the camera's pitch, so on a
-       * Watcher — whose collider holds her 3.2 m from its centre — it shows the
+       * Sentry — whose collider holds her 3.2 m from its centre — it shows the
        * ray a LEG: the impact point came back 2.6 m out and 1.5 m low, and the
        * tip-to-impact reading was 1.23-1.94 m against A103's 1.2 m bar on a
        * blade that was swinging correctly at chest height. Casting along the
@@ -1993,7 +1993,7 @@ export class Melee {
           const m = list[li];
           if (!m || m.alive === false || !m.root || m._disposed) continue;
           // gap to the SHELL (see surfaceGap): a lance that measured to the
-          // navel could not touch anything bigger than a Strider
+          // navel could not touch anything bigger than a Runner
           const d = surfaceGap(m, _chest.x, _chest.z);
           if (d > reach || d > best) continue;
           // the wedge test still points at the body, so a swing at the sky
@@ -2016,13 +2016,13 @@ export class Melee {
        * above already catches those: the arc exists precisely for the 15-70
        * deg off-axis swings a 110/140 deg wedge is supposed to land, so the
        * fallback IS the common path, not an edge case. Measured at 3.2 m from
-       * a Watcher, a confirmed hit put its sparks, its chips and its damage
+       * a Sentry, a confirmed hit put its sparks, its chips and its damage
        * number 1.7 m (20 deg) to 1.8 m (40 deg) off the machine, out on the
        * grass by Aloy's shoulder — and `melee-hit.point` published the same
        * wrong spot to positional audio and to every other listener.
        *
        * Nor is the standoff CAPSULE the answer: it is a keep-out volume
-       * (bodyRadius + standoffHalfLen, 2.46 m on a Watcher) around a mesh
+       * (bodyRadius + standoffHalfLen, 2.46 m on a Sentry) around a mesh
        * whose nose is 1.0 m out, so a point on the capsule still floats 1.4 m
        * in front of the machine. The only thing that knows where the surface
        * is, is the surface. So once the wedge has CHOSEN a target, spend one
@@ -2063,7 +2063,7 @@ export class Melee {
      *
      * Both paths above start their query at her CHEST, so on a machine whose
      * collider holds her at arm's length the point they return is the first
-     * surface on a 2.8 m line — a Watcher's far leg — while the blade is a
+     * surface on a 2.8 m line — a Sentry's far leg — while the blade is a
      * metre short of it. §4 asks for the sparks "at the tip, not down the
      * lens", and the gate measures exactly that: it read 1.23-1.94 m against
      * a 1.2 m bar. So the point is moved onto the surface the blade is
@@ -2075,7 +2075,7 @@ export class Melee {
     if (machine && hulls && this.layer?.ok && this.layer.tipWorld(_tNow)) {
       /* THE NEAREST POINT ON THE MACHINE, SOLVED — NOT SAMPLED (fix round 3).
        *
-       * A Watcher's blocking collider holds her 3.41 m from its centre (its
+       * A Sentry's blocking collider holds her 3.41 m from its centre (its
        * standoff capsule is 1.56 m of half-length plus 0.9 m of body radius
        * plus the pads) while a 1.59 m haft gripped in its rear fifth puts the
        * blade tip 1.80 m ahead of her root. The blade therefore never touches

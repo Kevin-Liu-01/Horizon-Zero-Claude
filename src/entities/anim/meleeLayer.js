@@ -643,13 +643,13 @@ const SIDE_KEY = {
 
 /* ------------- THE STRIKE AIMS AT THE HULL (round 6, ruling R7) ----------- */
 /**
- * The contact keys were authored against a Watcher's chest: the blade lands
+ * The contact keys were authored against a Sentry's chest: the blade lands
  * 1.8 m ahead of her root at 1.0-1.2 m. Every species was staged by the round-6
- * A103 and the ones that are not built like a Watcher could not be hit —
- * nothing of a Thunderjaw is at blade height in front of its centre (the jaw
+ * A103 and the ones that are not built like a Sentry could not be hit —
+ * nothing of a Colossus is at blade height in front of its centre (the jaw
  * is 2.6 m up, over her head, at the closest the machine manager lets her
- * stand), a Behemoth's and a Tallneck's heads sit above the sweep, a grounded
- * Stormbird's chest above it. `melee.js::_aimAt` solves the hull point nearest
+ * stand), a Hauler's and a Tower's heads sit above the sweep, a grounded
+ * Raptor's chest above it. `melee.js::_aimAt` solves the hull point nearest
  * the beat's contact tip; here the release and the contact are bent toward it
  * by rotating the drive hand and the haft about her SHOULDER — pitch first,
  * then yaw, each bounded — so the blade arrives where the machine is. The
@@ -675,7 +675,7 @@ const ARM_CLEAR = 0.06;
 /** `_armHullFinal`'s own daylight (round 6): it works on the drawn matrices,
  *  so it needs no prediction margin — it acts when the forearm or fist is
  *  within this of a hull, and stops when it is this clear. (Tried at 0.012 to
- *  give marginal swings at a Tallneck's foot lattice more reach: 5 of 12
+ *  give marginal swings at a Tower's foot lattice more reach: 5 of 12
  *  whiffed against 3 of 12 at 0.03 — the reach there is short by itself, not
  *  by this margin — so it stays.) */
 const ARM_CLEAR_FINAL = 0.03;
@@ -685,7 +685,7 @@ const ARM_CLEAR_FINAL = 0.03;
  *  machine it was aimed at — the aim (melee `_aimAt`) is what picks a line the
  *  arm fits on; this only takes out what that proxy misses. */
 const ARM_PUSH_MAX = 0.40;
-/* round 6, Oct 2: 0.25 -> 0.40. A heavy recovering against a Sawtooth's low
+/* round 6, Oct 2: 0.25 -> 0.40. A heavy recovering against a Big cat's low
  * head sandwiches the fist between two head capsules (the escape flips each
  * pass, so the guard draws the fist back toward the shoulder instead), and
  * 0.25 m of draw-back left it 0.062 m short of `ARM_CLEAR` — A106's swing row
@@ -696,7 +696,7 @@ const ARM_PUSH_MAX = 0.40;
 const ARM_RETRACT_MAX = 0.40;
 /** ...and when the fist is actually INSIDE a hull (see `_armHullGuard`): as
  *  far back toward the shoulder as the arm folds (the 0.25 m floor there) —
- *  a heavy's contact puts the fist 0.80 m out (ruling R3), and a Tallneck's
+ *  a heavy's contact puts the fist 0.80 m out (ruling R3), and a Tower's
  *  foot lattice stands 0.5 m in front of her chest at the head-on stand. */
 const ARM_RETRACT_INSIDE = 0.65;
 /** ...and through the release and the strike, where the blade is on its way
@@ -1702,9 +1702,9 @@ export class MeleeLayer {
     }
     const live = stance === 'swing' ? STANCE[beat.id] : (stance === 'ready' ? STANCE.ready : null);
     /* ...and she stands TALL to stab up at a tall machine (round 6, R7): a
-     * swing the aim has bent up past ~12 deg (a Thunderjaw's jaw, a Longleg's
+     * swing the aim has bent up past ~12 deg (a Colossus's jaw, a Wader's
      * body) gives up most of the crouch — nobody sinks into a lunge to thrust
-     * over their own head, and on a Thunderjaw the heavy's 0.1 m of crouch was
+     * over their own head, and on a Colossus the heavy's 0.1 m of crouch was
      * 0.1 m of reach it did not have. Standing swings with no target, and
      * every gate staging them, are untouched (`aimPitchDeg` is 0). */
     const tall = clamp(((D.aimPitchDeg || 0) - 12) / 25, 0, 1);
@@ -1877,8 +1877,8 @@ export class MeleeLayer {
    * THE HAND AND FOREARM STAY OUT OF THE MACHINE (round 6, S5). The approach
    * term bounds her BODY capsule against the target's hulls (collision.js);
    * her right arm reaches ~0.5 m in front of that capsule, and where a hull
-   * overhangs at arm height — a Behemoth's head, a Glinthawk's body, a
-   * Tallneck's jaw — the r5 skeptic found the fist 0.03 m and the forearm
+   * overhangs at arm height — a Hauler's head, a Flyer's body, a
+   * Tower's jaw — the r5 skeptic found the fist 0.03 m and the forearm
    * 0.06-0.10 m inside it, on a heavy's contact, a follow-through and a
    * holster. The live hull set of the machine the lance is on
    * (`melee.armHulls()`) is read once a frame; the wrist and the forearm
@@ -1895,7 +1895,7 @@ export class MeleeLayer {
     /* THE LAST RESORT, WHEN THE FIST IS STILL IN THE METAL (round 6, Oct 2).
      * The passes above escape locally — roll the elbow, push out of the
      * nearest capsule, draw back — and a CAGE of thin capsules defeats that
-     * (a Tallneck's foot lattice: eight bars from knee to shoulder height
+     * (a Tower's foot lattice: eight bars from knee to shoulder height
      * 0.5-0.9 m in front of her chest at the head-on stand; each escape finds
      * the next bar, and the heavy's recover left the knuckles 0.02-0.04 m
      * inside on 5 of 5 probed swings). Her own body capsule is clear of every
@@ -1967,7 +1967,7 @@ export class MeleeLayer {
          * aimed skin; a fist actually INSIDE a hull is not what any aim is
          * for. When `_aimAt` had to take a line the arm does not fit on (every
          * candidate clear of her body put the forearm against the machine — a
-         * Tallneck's neck base head-on) the trim left the knuckles 0.04-0.09 m
+         * Tower's neck base head-on) the trim left the knuckles 0.04-0.09 m
          * inside it through the strike (A106's swing row, Oct 2). Then the
          * guard has its full reach, strike or not: the arm comes out, and the
          * blade lands wherever that leaves it — a whiff, if it is then out of
@@ -1991,7 +1991,7 @@ export class MeleeLayer {
        * fist is drawn in toward the shoulder instead */
       if (pass > 0 && _ahX.dot(_ahDir) < 0) retract = true;
       /* ...and when the way OUT is spent and the arm is still in (round 6,
-       * Oct 2 — a Tallneck's foot lattice, eight thin capsules 0.5-0.9 m in
+       * Oct 2 — a Tower's foot lattice, eight thin capsules 0.5-0.9 m in
        * front of her chest at the head-on stand: every sideways escape found
        * another bar and the push ran out with the knuckles 0.11 m inside),
        * the way out is back toward her too */
@@ -2300,7 +2300,7 @@ export class MeleeLayer {
     _shaft.applyQuaternion(_eQ);
     /* ...and a target NEARER than the reach stops the thrust ON it: the arm
      * gives back the overshoot (<= `AIM_PULL_MAX`), so the tip lands on the
-     * skin instead of passing through a Stormbird's chest into the air behind
+     * skin instead of passing through a Raptor's chest into the air behind
      * it. The reach is the one this beat has actually been seen to land at. */
     const iB = st.heavy ? 3 : clamp(st.combo | 0, 0, 2);
     const reachNow = this._reachSeen[iB] > 0.3 ? this._reachSeen[iB] : lu - 0.15;
@@ -4061,7 +4061,7 @@ export class MeleeLayer {
    * the whole upper body after this layer, and it uses last frame's shift.
    * Through a heavy's recover that offset changes fastest (the deepest stance
    * rising back up, the spine still pitched in), and the prediction was off by
-   * up to 0.09 m: a Tallneck's foot lattice measured the knuckles 0.08 m
+   * up to 0.09 m: a Tower's foot lattice measured the knuckles 0.08 m
    * inside a bar the guard had scored 0.012 m clear. Here, on the final
    * matrices: if the forearm or fist is INSIDE a hull (past `ARM_CLEAR`), the
    * wrist is drawn straight back toward the shoulder in 0.04 m steps and the
@@ -4107,7 +4107,7 @@ export class MeleeLayer {
     }
     /* ...and if the arm is folded as far as it goes and still in, it is her
      * LEAN that has put her shoulder at the metal (a heavy's spine pitch puts
-     * the drive shoulder 0.23 m ahead of her root; a Tallneck's foot bars are
+     * the drive shoulder 0.23 m ahead of her root; a Tower's foot bars are
      * 0.48 m out): she straightens out of it — the upper spine pitched back
      * in 0.03 rad steps, arm and lance riding along rigidly, at most 0.36
      * rad. */

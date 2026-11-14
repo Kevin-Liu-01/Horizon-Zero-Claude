@@ -179,9 +179,9 @@
   /* ------------------------------- bows -------------------------------- */
   // Per-weapon sets so the three bows never share a release (audio-13).
   const BOWS = {
-    hunter: { twang: 152, body: 0.9, bright: 1.0 },
-    sharpshot: { twang: 196, body: 0.72, bright: 1.35 },
-    war: { twang: 112, body: 1.25, bright: 0.78 },
+    sabina: { twang: 152, body: 0.9, bright: 1.0 },
+    sighting: { twang: 196, body: 0.72, bright: 1.35 },
+    recurve: { twang: 112, body: 1.25, bright: 0.78 },
   };
   for (const [name, B] of Object.entries(BOWS)) {
     RECIPES[`bow/${name}/nock`] = (A) => {
@@ -235,16 +235,16 @@
   /* --------------------------- species voices -------------------------- */
   // Eight machines, eight identities. Each gets a windup (the telegraph the
   // player dodges on) and a strike (the commit). audio-02.
-  RECIPES['voice/watcher/windup'] = (A) => {
+  RECIPES['voice/sentry/windup'] = (A) => {
     const t = 0.02, dur = 0.6;
     const am = A.am(t, dur, 34, 0.6, A.flt('bandpass', 1400, 2.2));
     A.sweep('square', t, dur, 880, 1720, A.envS(t, 0.2, 0.03, dur - 0.16, 0.13, am));
     A.burst(t, dur, { type: 'highpass', f: 5200, gain: 0.035, atk: 0.05 });
   };
   // Deliberately the narrowest spectrum in the cast: two tight resonances and
-  // no broadband noise at all. The Watcher is a lens on a stalk, not an animal,
-  // and this is what keeps it from colliding with the Scrapper's clatter.
-  RECIPES['voice/watcher/strike'] = (A) => {
+  // no broadband noise at all. The Sentry is a lens on a stalk, not an animal,
+  // and this is what keeps it from colliding with the Scavenger's clatter.
+  RECIPES['voice/sentry/strike'] = (A) => {
     const t = 0.01, dur = 0.45;
     const g = A.env(t, 0.5, 0.002, dur, A.flt('bandpass', 1950, 9));
     A.sweep('square', t, dur, 2700, 980, g);
@@ -253,7 +253,7 @@
     A.metal(t + 0.01, 2100, 0.1, 0.05, [1, 2.7]);
   };
 
-  RECIPES['voice/strider/windup'] = (A) => {
+  RECIPES['voice/herd/windup'] = (A) => {
     const t = 0.02, dur = 0.7;
     const lp = A.flt('lowpass', 1500, 1.1);
     const g = A.envS(t, 0.22, 0.14, dur - 0.4, 0.26, lp);
@@ -261,11 +261,11 @@
     A.sweep('sine', t, dur, 600, 1280, A.envS(t, 0.07, 0.2, dur - 0.45, 0.25, lp));
     A.burst(t, dur, { f: 2200, Q: 1.4, gain: 0.03, atk: 0.15 });
   };
-  // Light and airy on purpose: the Strider is prey. A deep body thump here put
-  // it inside the Sawtooth's and Thunderjaw's spectra.
+  // Light and airy on purpose: the Runner is prey. A deep body thump here put
+  // it inside the Sawtooth's and Colossus's spectra.
   // Warm and tonal, centred in the mids. The airy top end this used to have put
-  // it inside the Glinthawk's shriek.
-  RECIPES['voice/strider/strike'] = (A) => {
+  // it inside the Flyer's shriek.
+  RECIPES['voice/herd/strike'] = (A) => {
     const t = 0.01, dur = 0.65;
     A.thump(t, 128, 0.14, 0.2);
     const vib = A.am(t, dur, 15, 0.5, A.flt('bandpass', 1050, 3.6));
@@ -275,7 +275,7 @@
     A.metal(t, 880, 0.22, 0.1, [1, 2.3, 4.4]);
   };
 
-  RECIPES['voice/scrapper/windup'] = (A) => {
+  RECIPES['voice/swarm/windup'] = (A) => {
     const t = 0.02;
     // accelerating chitter — 9 clicks closing up
     let ct = t;
@@ -286,12 +286,12 @@
     }
     A.burst(t, 0.6, { f: 700, Q: 1.2, gain: 0.045, atk: 0.1 });
   };
-  // The Scrapper lives in the low mids: a rasp with a scrapyard of mid metal
-  // over it and nothing above 3 kHz, so it never reads as a Watcher.
+  // The Scavenger lives in the low mids: a rasp with a scrapyard of mid metal
+  // over it and nothing above 3 kHz, so it never reads as a Sentry.
   // A rattling scavenger, not a predator: no body thump at all, a fast buzzing
   // rasp and a cluster of loose mid-high plates. The growl register belongs to
-  // the Sawtooth and the sub to the Behemoth.
-  RECIPES['voice/scrapper/strike'] = (A) => {
+  // the Sawtooth and the sub to the Hauler.
+  RECIPES['voice/swarm/strike'] = (A) => {
     const t = 0.01, dur = 0.55;
     const rasp = A.am(t, dur, 62, 0.85, A.flt('bandpass', 1250, 2.2));
     A.sweep('sawtooth', t, dur - 0.06, 330, 215, A.env(t, 0.5, 0.004, dur - 0.08, rasp));
@@ -301,84 +301,14 @@
     A.burst(t, 0.06, { type: 'highpass', f: 3200, gain: 0.2, atk: 0.001 });
   };
 
-  RECIPES['voice/longleg/windup'] = (A) => {
-    const t = 0.02, dur = 0.72;
-    const trem = A.am(t, dur, 11, 0.45, A.flt('bandpass', 2400, 3.2));
-    A.sweep('triangle', t, dur, 1180, 2650, A.envS(t, 0.22, 0.1, dur - 0.35, 0.24, trem));
-    A.sweep('sine', t, dur, 2360, 5300, A.envS(t, 0.05, 0.16, dur - 0.4, 0.23, A.out));
-  };
-  RECIPES['voice/longleg/strike'] = (A) => {
-    const t = 0.01, dur = 0.55;
-    const g = A.env(t, 0.4, 0.006, dur, A.flt('bandpass', 3000, 5.5));
-    A.sweep('sawtooth', t, dur, 2900, 1450, g);
-    A.burst(t, 0.3, { f: 4200, Q: 1.1, gain: 0.22, atk: 0.004, sweepTo: 1600 });
-    A.thump(t, 130, 0.12, 0.16);
-  };
-
-  RECIPES['voice/glinthawk/windup'] = (A) => {
-    const t = 0.02, dur = 0.8;
-    // wing beats + a rising turbine
-    for (let i = 0; i < 5; i++) {
-      const wt = t + i * 0.145;
-      A.burst(wt, 0.1, { f: A.rnd(280, 420), Q: 0.9, gain: 0.2, atk: 0.02, rate: 0.7 });
-    }
-    A.sweep('sawtooth', t, dur, 640, 1420, A.envS(t, 0.12, 0.22, dur - 0.5, 0.28, A.flt('bandpass', 1600, 2.4)));
-  };
-  // The top of the cast: a metal shriek and wing wash with no mid body at all.
-  RECIPES['voice/glinthawk/strike'] = (A) => {
-    const t = 0.01, dur = 0.62;
-    const g = A.env(t, 0.36, 0.004, dur, A.flt('bandpass', 3400, 6));
-    A.sweep('square', t, dur, 2900, 1650, g);
-    A.metal(t, 2900, 0.3, 0.15, [1, 2.4, 4.8, 7.1]);
-    A.burst(t, 0.34, { type: 'highpass', f: 5200, gain: 0.16, atk: 0.01, rate: 1.4 });
-  };
-
-  RECIPES['voice/sawtooth/windup'] = (A) => {
-    const t = 0.02, dur = 0.8;
-    const growl = A.am(t, dur, 19, 0.7, A.flt('lowpass', 760, 1.4));
-    A.sweep('sawtooth', t, dur, 84, 128, A.envS(t, 0.4, 0.13, dur - 0.4, 0.27, growl));
-    A.burst(t, dur, { f: 340, Q: 1.6, gain: 0.06, atk: 0.2 });
-  };
-  RECIPES['voice/sawtooth/strike'] = (A) => {
-    const t = 0.01, dur = 1.0;
-    const growl = A.am(t, dur, 24, 0.55, A.out);
-    const f1 = A.flt('bandpass', 640, 2.4, growl);
-    const f2 = A.flt('bandpass', 1450, 3.2, growl);
-    const g = A.envS(t, 0.5, 0.02, dur * 0.42, dur * 0.5, A.out);
-    const o = A.sweep('sawtooth', t, dur, 152, 94, g);
-    o.connect(f1); o.connect(f2);
-    // mid-weight body: the sub belongs to the Behemoth and the Thunderjaw
-    A.thump(t, 94, 0.28, 0.22);
-    A.burst(t, 0.5, { f: 900, Q: 0.9, gain: 0.09, atk: 0.02, sweepTo: 420 });
-    A.metal(t + 0.03, 430, 0.26, 0.07, [1, 2.76, 5.4]);
-  };
-
-  RECIPES['voice/behemoth/windup'] = (A) => {
-    const t = 0.02, dur = 0.95;
-    const rum = A.am(t, dur, 6.5, 0.5, A.flt('lowpass', 300, 1.1));
-    A.sweep('sawtooth', t, dur, 42, 58, A.envS(t, 0.55, 0.2, dur - 0.55, 0.34, rum));
-    A.burst(t, dur, { f: 190, Q: 1.2, gain: 0.09, atk: 0.3 });
-    A.metal(t + dur * 0.6, 240, 0.3, 0.05, [1, 2.1, 3.6]);
-  };
-  RECIPES['voice/behemoth/strike'] = (A) => {
-    const t = 0.01, dur = 1.35;
-    const g = A.envS(t, 0.62, 0.03, dur * 0.4, dur * 0.55, A.flt('lowpass', 620, 1.2));
-    const o = A.sweep('sawtooth', t, dur, 64, 37, g);
-    A.am(t, dur, 11, 0.4, A.out).gain.value = 1;
-    o.connect(A.flt('bandpass', 210, 2.4));
-    A.thump(t, 48, 0.5, 0.5);
-    A.burst(t, 0.7, { f: 620, Q: 0.8, gain: 0.1, atk: 0.03, sweepTo: 180 });
-    A.metal(t + 0.06, 300, 0.55, 0.09, [1, 1.94, 3.3, 5.8]);
-  };
-
-  RECIPES['voice/thunderjaw/windup'] = (A) => {
+  RECIPES['voice/heavy/windup'] = (A) => {
     const t = 0.02, dur = 1.0;
     A.sweep('sawtooth', t, dur, 118, 268, A.envS(t, 0.3, 0.2, dur - 0.55, 0.33, A.flt('bandpass', 900, 2.8)));
     A.sweep('sine', t, dur, 34, 44, A.envS(t, 0.5, 0.25, dur - 0.5, 0.24, A.out));
     A.burst(t, dur, { f: 1500, Q: 1.5, gain: 0.05, atk: 0.35, sweepTo: 3200 });
     A.metal(t + dur * 0.55, 520, 0.35, 0.06, [1, 2.5, 4.2]);
   };
-  RECIPES['voice/thunderjaw/strike'] = (A) => {
+  RECIPES['voice/heavy/strike'] = (A) => {
     const t = 0.01, dur = 1.45;
     const growl = A.am(t, dur, 15, 0.5, A.flt('lowpass', 900, 1.3));
     const o = A.sweep('sawtooth', t, dur, 92, 44, A.envS(t, 0.66, 0.02, dur * 0.35, dur * 0.6, growl));
@@ -522,22 +452,22 @@
 
   /* ------------------------------ Aloy foley --------------------------- */
   // D2: no VO. Breath and gear only.
-  RECIPES['aloy/breath-in'] = (A) => {
+  RECIPES['brea/breath-in'] = (A) => {
     const t = 0.01, dur = 0.45;
     A.burst(t, dur, { f: 620, Q: 1.6, gain: 0.15, atk: 0.16, sweepTo: 1250, rate: 0.85 });
     A.burst(t, dur, { type: 'highpass', f: 2600, gain: 0.05, atk: 0.2 });
   };
-  RECIPES['aloy/breath-out'] = (A) => {
+  RECIPES['brea/breath-out'] = (A) => {
     const t = 0.01, dur = 0.55;
     A.burst(t, dur, { f: 1150, Q: 1.4, gain: 0.16, atk: 0.05, sweepTo: 460, rate: 0.9 });
     A.burst(t, dur * 0.7, { type: 'highpass', f: 2200, gain: 0.04, atk: 0.04 });
   };
-  RECIPES['aloy/effort'] = (A) => {
+  RECIPES['brea/effort'] = (A) => {
     const t = 0.01, dur = 0.32;
     A.burst(t, dur, { f: 780, Q: 2.4, gain: 0.22, atk: 0.012, sweepTo: 420 });
     A.thump(t, 130, 0.12, 0.09);
   };
-  RECIPES['aloy/hurt'] = (A) => {
+  RECIPES['brea/hurt'] = (A) => {
     const t = 0.01, dur = 0.42;
     A.burst(t, dur, { f: 520, Q: 3.2, gain: 0.26, atk: 0.008, sweepTo: 300 });
     A.burst(t, 0.18, { f: 1600, Q: 2.2, gain: 0.09, atk: 0.006 });
@@ -608,7 +538,7 @@
       A.sweep('sine', t, 0.2, A.rnd(420, 900), A.rnd(900, 1600), g);
     }
   };
-  RECIPES['amb/campfire'] = (A) => {
+  RECIPES['amb/brazier'] = (A) => {
     const dur = 13;
     const bedFlt = A.flt('lowpass', 700, 0.8);
     const bed = A.ac.createGain(); bed.gain.value = 0.13; bed.connect(bedFlt);
@@ -1011,32 +941,10 @@
   // has something continuous to work with.
   const IDLE = {
     // [carrier, carrierType, band, bandQ, amRate, amDepth, shimmer, tickRate]
-    watcher: { f: 640, type: 'square', band: 1900, Q: 4.2, am: 5.6, depth: 0.45, hi: 3400, tick: 0.62, amp: 0.10 },
-    strider: { f: 196, type: 'sawtooth', band: 720, Q: 2.0, am: 2.4, depth: 0.3, hi: 2100, tick: 0.9, amp: 0.13 },
-    scrapper: { f: 262, type: 'square', band: 1250, Q: 2.6, am: 8.4, depth: 0.55, hi: 2900, tick: 0.34, amp: 0.11 },
-    // Longleg and Glinthawk started life one table row apart and measured as
-    // the SAME BED (12-band cosine distance 0.006, centroids 7124 vs 7186 Hz):
-    // both were carried by their coolant hiss and relay ticks, which sat in the
-    // same octave, so the one thing these beds exist to tell a stalking player
-    // — WHICH machine is behind that rock — was exactly the thing they could
-    // not say. They are now built from different mechanisms, not different
-    // numbers: a pneumatic ground bird versus a rotor.
-    longleg: {
-      f: 250, type: 'triangle', band: 1150, Q: 2.4, am: 2.2, depth: 0.4,
-      hi: 2600, tick: 0.95, amp: 0.11,
-      // the pneumatic sigh its legs make between steps
-      pneumatic: { f0: 300, f1: 150, every: 1.45, dur: 0.55, amp: 0.5 },
-    },
-    glinthawk: {
-      f: 420, type: 'sawtooth', band: 3100, Q: 1.8, am: 12.0, depth: 0.6,
-      hi: 5600, tick: 0, amp: 0.09,
-      // airborne: no relay ticks on the ground, and the bed IS the rotor —
-      // band-limited air chopped at blade rate, under a turbine whine
-      rotor: { rate: 13.5, depth: 0.85, band: 900, Q: 0.8, amp: 0.5, whine: 5200 },
-    },
-    sawtooth: { f: 132, type: 'sawtooth', band: 560, Q: 1.6, am: 1.8, depth: 0.35, hi: 1700, tick: 0.86, amp: 0.15 },
-    behemoth: { f: 58, type: 'sawtooth', band: 240, Q: 1.2, am: 1.1, depth: 0.4, hi: 900, tick: 1.1, amp: 0.19 },
-    thunderjaw: { f: 82, type: 'sawtooth', band: 340, Q: 1.4, am: 1.6, depth: 0.45, hi: 1400, tick: 0.78, amp: 0.18 },
+    sentry: { f: 640, type: 'square', band: 1900, Q: 4.2, am: 5.6, depth: 0.45, hi: 3400, tick: 0.62, amp: 0.10 },
+    herd: { f: 196, type: 'sawtooth', band: 720, Q: 2.0, am: 2.4, depth: 0.3, hi: 2100, tick: 0.9, amp: 0.13 },
+    swarm: { f: 262, type: 'square', band: 1250, Q: 2.6, am: 8.4, depth: 0.55, hi: 2900, tick: 0.34, amp: 0.11 },
+    heavy: { f: 82, type: 'sawtooth', band: 340, Q: 1.4, am: 1.6, depth: 0.45, hi: 1400, tick: 0.78, amp: 0.18 },
   };
   for (const [sp, S] of Object.entries(IDLE)) {
     RECIPES[`idle/${sp}`] = (A) => {
@@ -1052,7 +960,7 @@
       const hg = A.ac.createGain(); hg.gain.value = S.amp * 0.22;
       hg.connect(A.flt('bandpass', S.hi, 1.1));
       A.ns(0, dur, hg, 1);
-      // the harmonic that separates a Strider's whine from a Behemoth's rumble
+      // the harmonic that separates a Runner's whine from a Hauler's rumble
       const h = A.ac.createGain(); h.gain.value = S.amp * 0.3;
       h.connect(A.flt('bandpass', S.f * 3, 5));
       const o2 = A.ac.createOscillator();
@@ -1306,14 +1214,14 @@
   /* ===================================================================== */
   /*  ALOY: the harder efforts (audio-03, still no VO)                     */
   /* ===================================================================== */
-  RECIPES['aloy/effort-hard'] = (A) => {
+  RECIPES['brea/effort-hard'] = (A) => {
     const t = 0.01, dur = 0.44;
-    // a landing grunt: the same throat as aloy/effort, forced
+    // a landing grunt: the same throat as brea/effort, forced
     A.burst(t, dur, { f: 430, Q: 3.4, gain: 0.3, atk: 0.006, sweepTo: 240 });
     A.burst(t, 0.2, { f: 1150, Q: 2.6, gain: 0.11, atk: 0.004, sweepTo: 700 });
     A.thump(t, 96, 0.18, 0.13);
   };
-  RECIPES['aloy/breath-hard'] = (A) => {
+  RECIPES['brea/breath-hard'] = (A) => {
     const t = 0.01, dur = 0.8;
     // two exhausted breaths, in and straight back out
     A.burst(t, 0.34, { f: 700, Q: 1.5, gain: 0.17, atk: 0.11, sweepTo: 1350, rate: 0.85 });

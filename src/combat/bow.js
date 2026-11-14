@@ -17,7 +17,7 @@ import { heldMaterial, weaponEntry } from '../hero/weaponAtlas.js';
 /**
  * `combat-weapon-models-neon`. HZD's tribal bows are WOOD, LEATHER, BONE and
  * a little salvaged metal — the only thing that glows on them is the sight
- * bead of the Sharpshot and the salvaged Thunderjaw hardware. The Round 3
+ * bead of the Sharpshot and the salvaged Colossus hardware. The Round 3
  * models banded every limb in a 2.6-intensity emissive, which read as a neon
  * toy at any distance. The accent slot is now a MATERIAL choice per bow (bone,
  * leather wrap, bronze) and the three `*Glow` materials are kept only for the
@@ -677,7 +677,7 @@ class BlastSling extends WeaponModel {
 
 /* ------------------------------ disc launcher ----------------------------- */
 
-/** Chunky torn-off Thunderjaw disc launcher: barrel, drum, glowing core. */
+/** Chunky torn-off Colossus disc launcher: barrel, drum, glowing core. */
 class DiscLauncher extends WeaponModel {
   constructor() {
     super();

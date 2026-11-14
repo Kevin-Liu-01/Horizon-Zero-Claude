@@ -1984,7 +1984,7 @@ void main() {
     input.lookDelta(_look, realDt);
     this.camYaw -= _look.x;
     // camera-feel-06: the forward pitch clamp was 0.55 rad (31 deg), so a
-    // Glinthawk overhead was literally unreachable. 1.15 rad = 66 deg up.
+    // Flyer overhead was literally unreachable. 1.15 rad = 66 deg up.
     this.camPitch = THREE.MathUtils.clamp(this.camPitch + _look.y, PITCH_UP, PITCH_DOWN);
 
     if (this._ride) {
@@ -4719,7 +4719,7 @@ void main() {
      *
      * Look FAR along the axis, not one metre past the pivot: a fixed 1 m
      * offset made the view pitch depend on boom length, which flattened 66 deg
-     * of orbit into 52 deg of view at the aim boom and put A32's Glinthawk out
+     * of orbit into 52 deg of view at the aim boom and put A32's Flyer out
      * of reach.  A distant target makes view pitch == axis pitch at ANY boom
      * length, including the 0.45 m floor.
      *
@@ -4767,7 +4767,7 @@ void main() {
          * take the target past `AIM_FRAME` of the half-frame.  Crouch-aiming
          * at the clamp the pivot cap (A31) leaves a 0.9 m boom that the ground
          * rotation lifts 14 deg, and paying all of that back delivered 51.6 of
-         * 65.9 deg — the 16 m Glinthawk off the reticle.  14 deg is inside the
+         * 65.9 deg — the 16 m Flyer off the reticle.  14 deg is inside the
          * frame, so it now costs framing, not aim. */
         const comfort = this.aiming ? AIM_FRAME * halfFov : 0;
         const ang = Math.min(th > comfort ? th - comfort : 0, hijackMax);

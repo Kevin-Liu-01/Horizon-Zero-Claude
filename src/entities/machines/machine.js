@@ -902,9 +902,9 @@ export class Machine {
      * normally the same string. It differs only while a Round-4 expansion
      * species has its behaviour shipped (this lane) and its mesh still in
      * flight (`machines-expansion` owns every species file and every donor
-     * model): a Broadhead then thinks, fights, herds and dies as a Broadhead
-     * on a Strider chassis. The moment `machines-expansion` registers a real
-     * `Broadhead` class through `machines.registerKind()` the chassis is gone
+     * model): a Ram then thinks, fights, herds and dies as a Ram
+     * on a Runner chassis. The moment `machines-expansion` registers a real
+     * `Ram` class through `machines.registerKind()` the chassis is gone
      * and nothing else in this file changes — see `ai/doctrine.js` §CHASSIS.
      *
      * Everything that frees GPU memory must key off `modelKind`, not `kind`,
@@ -1015,8 +1015,8 @@ export class Machine {
      * THE HERD, HELD BY THE BASE (FIX ROUND 5).
      *
      * `opts.herd` used to be remembered only by the species files that happen
-     * to implement herd doctrine — `strider.js` does `this.herd = opts.herd`.
-     * The moment `machines-expansion` landed real `Broadhead` and `Grazer`
+     * to implement herd doctrine — `runner.js` does `this.herd = opts.herd`.
+     * The moment `machines-expansion` landed real `Ram` and `Browser`
      * classes that do not, every herd behaviour keyed off `machine.herd` went
      * silently dead: `ai/doctrine.js` skipped its wiring, no stampede vector
      * was ever computed and no rearguard was ever posted, with nothing
@@ -1033,7 +1033,7 @@ export class Machine {
      * walks the members it was handed), so neither ever reached `opts`, neither
      * was stored in the MachineSite record, and `Squads.forget` dropped the
      * dead member with nothing putting the new one back. One dispose/respawn
-     * cycle emptied the Shell-Walker column and the Snapmaw pool permanently:
+     * cycle emptied the Carrier column and the Sprawler pool permanently:
      * `convoyMembers 2 -> 0`, `baskingMembers 2 -> 0`, both machines alive and
      * standing on the spot with no column and no pair. Measured, not argued.
      *
@@ -1043,7 +1043,7 @@ export class Machine {
      */
     this.convoy = opts.convoy ?? null;
     this.basking = opts.basking ?? null;
-    /** Never leaves `patrol` — see `setState` (casting-v4 §2.8, Tallneck). */
+    /** Never leaves `patrol` — see `setState` (casting-v4 §2.8, Tower). */
     this.docile = !!opts.docile;
     this.scavenge = null;
     /** 1 on a legacy kind (machines/index.js `spawn`): `_moveToward` returns the distance only while scavenging. */
@@ -1081,12 +1081,12 @@ export class Machine {
 
     // sensors / glow
     /**
-     * PER-SPECIES CALM SENSOR COLOUR (casting-v4.md §5.1 — the Redeye).
+     * PER-SPECIES CALM SENSOR COLOUR (casting-v4.md §5.1 — the Red-lamp kind).
      *
-     * `EYE_COLORS.calm` is global, so a Redeye Watcher whose whole point is
+     * `EYE_COLORS.calm` is global, so a Red-lamp kind Sentry whose whole point is
      * that its IDLE sensor is already red could only ever be a recoloured
-     * Watcher. `_eyeCalm` is the colour the `default` branch of
-     * `_updateEyes` lerps to; every other state is unchanged, so a Redeye
+     * Sentry. `_eyeCalm` is the colour the `default` branch of
+     * `_updateEyes` lerps to; every other state is unchanged, so a Red-lamp kind
      * still goes yellow when it is wary and white-hot on a telegraph.
      * Set from `ai/doctrine.js` at spawn; species files may set it too.
      */
@@ -1146,7 +1146,7 @@ export class Machine {
      *   `_doctrineSnapped`   rig/expansion-base.js, set in a microtask after construction
      *   `onAlerted`, `_flee` ai/doctrine.js, herd kinds
      * and the legacy species' own lazily-added fields (deleted with the legacy kinds at W2, plan §6):
-     *   glinthawk `_soar`; longleg `_pingClock` `_cadBand` `_cadLoop` `_cadence`; stormbird `_groundHold` `_perchPhase` */
+     *   flyer `_soar`; wader `_pingClock` `_cadBand` `_cadLoop` `_cadence`; raptor `_groundHold` `_perchPhase` */
     this._doctrineSnapped = undefined;
     this.onAlerted = null;
     this._flee = null;
@@ -1369,7 +1369,7 @@ export class Machine {
   /**
    * Round-3 contract (gate A6): [{ name, world: Vector3, planted: bool }] for
    * every walking machine. Gait-controlled species report their IK feet;
-   * native-boned subclasses (watcher) and non-walkers override.
+   * native-boned subclasses (sentry) and non-walkers override.
    */
   debugFeet() {
     return this.gait ? this.gait.debugFeet() : [];
@@ -1722,7 +1722,7 @@ export class Machine {
         /**
          * `combat-elemental-no-tier-scaling`: the meter stays 0..100 (the HUD
          * reads it that way) and the per-kind THRESHOLD scales the gain
-         * instead — one Freeze arrow brittles a Watcher, nine a Thunderjaw.
+         * instead — one Freeze arrow brittles a Sentry, nine a Colossus.
          */
         let amt = elementAmount * (100 / this.elemThreshold);
         if (element === this.elemWeak) amt *= 1.6;
@@ -2022,15 +2022,15 @@ export class Machine {
   setState(name) {
     const sc = this.sc;
     /**
-     * DOCILE MACHINES NEVER LEAVE THE LOOP (casting-v4.md §2.8, the Tallneck).
+     * DOCILE MACHINES NEVER LEAVE THE LOOP (casting-v4.md §2.8, the Tower).
      *
-     * `PERCEPTION.tallneck` zeroes every sense and `REACT.tallneck` puts every
+     * `PERCEPTION.tower` zeroes every sense and `REACT.tower` puts every
      * reaction threshold above 1.0 of maxHP, so nothing SHOULD flip it — but
      * "nothing should" is not a guarantee, and one stray `forceState`, alarm
      * recipient or scavenger claim would have a 25 m comms tower charging the
      * player. `docile` is the hard guard the card asks for: the only state a
      * docile machine may enter is its own patrol loop (and `dead`, which the
-     * Tallneck's armour makes unreachable but which must not be blocked in
+     * Tower's armour makes unreachable but which must not be blocked in
      * case another lane kills one deliberately).
      */
     if (this.docile && name !== 'patrol' && name !== 'dead') return;
@@ -2214,7 +2214,7 @@ export class Machine {
     // anchored on the carrier, which the branch above already understands
     if (this.convoy && Squads.stepConvoy(this, dt)) return;
     /**
-     * BASKING (casting-v4 §2.3). A Snapmaw on its bank does not walk a
+     * BASKING (casting-v4 §2.3). A Sprawler on its bank does not walk a
      * waypoint loop — it lies there. The fidget is the whole idle: a slow
      * flank roll and a jaw twitch, no translation at all, which is why the
      * ambush works. It ends the moment suspicion crosses `susEnter` above.
@@ -2288,8 +2288,8 @@ export class Machine {
    * `machine-ai-02` / `machine-ai-15`: ONE combat frame, for every species.
    *
    * This logic used to live in `_stateAttack()` — which three species
-   * (scrapper, glinthawk, strider) override. Those three therefore never
-   * reached the engage layer OR the scored attack table: a Scrapper parked at
+   * (scavenger, flyer, runner) override. Those three therefore never
+   * reached the engage layer OR the scored attack table: a Scavenger parked at
    * exactly 7 m, where its own if-ladder had a dead zone between `claw`
    * (< 3.4 m) and `laser` (> 7 m), and threw nothing at all for the whole
    * fight. `update()` now routes the `attack` state here instead — a name no
@@ -2297,8 +2297,8 @@ export class Machine {
    *
    * The two things those overrides owned that are NOT footwork are preserved
    * below by CAPABILITY rather than by class, because the species files belong
-   * to `machine-rig`: a stampeding Strider (`_fleeing`/`_flee`, strider-07)
-   * and a burn-grounded Glinthawk (`_downT`, its crit window). A follow-up is
+   * to `machine-rig`: a stampeding Runner (`_fleeing`/`_flee`, runner-07)
+   * and a burn-grounded Flyer (`_downT`, its crit window). A follow-up is
    * filed to `machine-rig` to delete the now-dead `_stateAttack` overrides.
    */
   _engageFrame(dt) {
@@ -2370,7 +2370,7 @@ export class Machine {
        * `pursue` is LONG-HAUL travel — straight at the remembered point at
        * 0.9 x runSpeed, no band, no ring, no orbit — and every frame with no
        * line of sight used to go to it, however close she was. On open ground
-       * that is invisible. On a Scrapper's own ground it is the whole fight:
+       * that is invisible. On a Scavenger's own ground it is the whole fight:
        * 59 of 215 perception ticks in a solo duel had `collision.occluded`
        * true (31 of the 41 ticks at the 4 m mark — one rock), so each time the
        * machine backed out toward the 7-29 m `laser` it lost her behind that
@@ -2415,7 +2415,7 @@ export class Machine {
        * `playerDist` is a perception product and refreshes on the perception
        * tick (`PERCEPTION.tick`, 0.1 s, deliberately staggered per machine so
        * 24 machines do not all raycast on the same frame). Move selection is
-       * the one consumer that cannot tolerate that lag: a Strider closing at
+       * the one consumer that cannot tolerate that lag: a Runner closing at
        * 13 m/s is 1.3 m from where the last tick says it is, so a table row
        * chosen at the edge of its band could fire from outside it — the same
        * "throws a move that cannot reach" symptom as the dead zone the A41b
@@ -2657,8 +2657,8 @@ export class Machine {
    * Plain heading chase to (x, z) at `speed`. @returns the distance to the point — on an Instrument always; on a
    * legacy kind (`_mtOnDemand` 1) only while it is scavenging (W0b targeted fix; judge: "`_moveToward` reached 4.38
    * KB/s in A-alloc-machines' paired no-inline run"). MEASURED (a census of every call in A-alloc-machines' staging,
-   * 405 frames): 4.89 calls per frame, all on legacy kinds — 3.67 from `Glinthawk._orbit` (glinthawk.js:144), 1.22
-   * from the frozen convoy step (`Squads.stepConvoy`, squad.js:289) walking the ShellWalkers — and every one DISCARDS
+   * 405 frames): 4.89 calls per frame, all on legacy kinds — 3.67 from `Flyer._orbit` (flyer.js:144), 1.22
+   * from the frozen convoy step (`Squads.stepConvoy`, squad.js:289) walking the Carriers — and every one DISCARDS
    * the result. A double returned from a call that is not inlined is a fresh HeapNumber (12 B), so those calls cost
    * 3.35 / 3.43 / 4.26 / 2.42 / 3.02 / 2.95 KB/s with inlining off: not a deopt, the return. The only caller that reads
    * the value is the frozen scavenger step (`Squads.stepScavenge`, squad.js:501, `d < cfg.arrive`), which calls it

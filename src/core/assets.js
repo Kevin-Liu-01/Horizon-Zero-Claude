@@ -97,7 +97,7 @@ const DEFAULT_NO_SHADOW = /\b(lamp|sensor|lens)\b/i;
 /**
  * Per-mesh shadow policy (perf-tech-03). A shadow map costs one draw call per
  * caster, and these models are built from 10-45 separate meshes each — Aloy
- * alone was 45 shadow draws, a Thunderjaw 31 — while the buckles, straps, hair
+ * alone was 45 shadow draws, a Colossus 31 — while the buckles, straps, hair
  * cards and bolt heads contribute nothing to a silhouette that the body mesh
  * already casts. A mesh casts only if its own bounding sphere is a meaningful
  * fraction of the model's, and the largest few always cast so a model can never
@@ -322,7 +322,7 @@ export class Assets {
    * together with a second GLTFLoader; that duplication is the contract debt
    * the frozen-file model cost us. Owners now call:
    *
-   *   await ctx.assets.loadExtra({ scrapper: { url, targetHeight, yaw } }, {
+   *   await ctx.assets.loadExtra({ scavenger: { url, targetHeight, yaw } }, {
    *     onEntry: (entry, name) => styleMachine(entry.root, STYLE[name]),
    *     onProgress: (p, name) => …,
    *   });

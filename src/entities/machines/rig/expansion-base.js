@@ -10,7 +10,7 @@ import { deathDt } from '../gait.js';
  * ## 1. Sockets are snapped AFTER the doctrine has authored its components
  *
  * `ai/doctrine.js` (machine-ai) owns the canon components of the nine new kinds
- * — the Ravager's cannon, the Shell-Walker's cargo crate, the Stormbird's six
+ * — the Brute's cannon, the Carrier's cargo crate, the Raptor's six
  * engines — and `index.js` installs them by calling `installDoctrine(m, opts)`
  * immediately AFTER the constructor returns. A species constructor therefore
  * cannot snap them: `snapSockets()` has already run by the time they exist, and
@@ -27,8 +27,8 @@ import { deathDt } from '../gait.js';
  * (`lunge` / `sweep` / `charge` / `volley` / `flurry`) whose ranges, cooldowns
  * and band coverage `A41b-attack-coverage` already grades. Those builders write
  * the shared pose channels, so a table move is never pure root motion — but
- * they cannot know that a Broadhead drops its horns, that a Grazer's antler
- * rotors spin up, or that a Snapmaw's whole tail leads a spin.
+ * they cannot know that a Ram drops its horns, that a Browser's antler
+ * rotors spin up, or that a Sprawler's whole tail leads a spin.
  *
  * `attackPose(a)` is that species layer. It runs every frame AFTER the move's
  * own `onUpdate`, so it wins the frame for the channels it writes and leaves
@@ -72,7 +72,7 @@ export class ExpansionMachine extends Machine {
    *
    * `Machine.update` skips `animate()` altogether while a machine is `lowLOD`,
    * so a machine that spawned beyond the animation ring never ran the re-snap:
-   * probed in the running game, the Ravager, Corruptor and Snapmaw on the far
+   * probed in the running game, the Brute, Crawler and Sprawler on the far
    * side of the map had `_doctrineSnapped` unset and read exactly the gaps the
    * gate has failed on for two rounds — `part:cannon` 0.26, `spike-launcher` /
    * `grenade-launcher` 0.247, `freeze-sac` 0.125 — while every species near the

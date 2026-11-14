@@ -14,7 +14,7 @@ import { aiRandom } from './rng.js';
  * it degrades to the raw direction and still moves.
  *
  * The band and the flavour constants live in `ai/tables.js` — a species is
- * `orbit` / `stalker` / `bruiser` / `artillery` / `skittish` / `pack` /
+ * `orbit` / `lurker` / `bruiser` / `artillery` / `skittish` / `pack` /
  * `harrier`, and the state machine is shared.
  */
 
@@ -109,7 +109,7 @@ export class Engage {
      *
      * `bandProfile()` reads the TABLE, `bandBlocked()` reads the ring window;
      * both answer "which radii are legal". Neither can see the reading the
-     * judge's Scrapper failed on — which radii the footwork MANAGED to stand
+     * judge's Scavenger failed on — which radii the footwork MANAGED to stand
      * at over real ground. This is that record: a decayed, dt-weighted
      * histogram of the standoff distance, `HELD_BINS` buckets spanning
      * `[0, band[1] * 1.5]`.
@@ -250,7 +250,7 @@ export class Engage {
     r = THREE.MathUtils.clamp(r, lo, hi);
     // ...and never ring inside a range NOTHING can reach. A band wider than the
     // moveset used to let the dice park a machine in a hole for a whole orbit
-    // cycle (the Strider's 10-22 m band over a 4.2-15 m dead zone).
+    // cycle (the Runner's 10-22 m band over a 4.2-15 m dead zone).
     if (picker && !picker.coveredAt(r)) {
       const safe = picker.nearestCovered(r);
       if (safe != null) r = safe;
@@ -276,7 +276,7 @@ export class Engage {
    * was `ringPlan()`, and that answer is a soft preference: a blind or an
    * unreachable-ring hint drops the row out of the arrangement for 3.5-5 s,
    * and a fresher row with a higher score takes the ring first. Traced on the
-   * Scrapper's hardest arc (A41c's own seed): the `laser` shell [5.8, 9.7]
+   * Scavenger's hardest arc (A41c's own seed): the `laser` shell [5.8, 9.7]
    * lost the ring to `claw` after every blind give-up and to the unreachable
    * hint after the `dart-bite` treadmill, and a 30 s duel ended with the
    * laser never thrown. Whether it fired came down to which hint happened to
@@ -371,7 +371,7 @@ export class Engage {
    * not a total. Non-allocating.
    *
    * RESOLUTION. The answer is bucketed at `heldStep` (the band's outer edge
-   * x 1.5, over 32 buckets — 0.66 m for a Strider, 1.41 m for a Thunderjaw)
+   * x 1.5, over 32 buckets — 0.66 m for a Runner, 1.41 m for a Colossus)
    * and any bucket that OVERLAPS the range is counted whole, so a shell
    * narrower than a bucket reads generously by up to one bucket either side.
    * Deliberate for a floor-style bar: it can say "this machine never goes
@@ -497,7 +497,7 @@ export class Engage {
    * which is what `pursue` does — walks the machine into the rock that is
    * blocking it and then into knife range, where `contactRange` lets it fight
    * blind for ever and no standoff move can ever be selected. Measured on the
-   * Scrapper's own spawn at the arc `hardBearing` picks: 93 % of a 22 s duel
+   * Scavenger's own spawn at the arc `hardBearing` picks: 93 % of a 22 s duel
    * with no sightline at all, three blind give-ups, the whole fight at 3-4 m,
    * and the 7-9.7 m laser never fired although the footwork did reach 8.4 m.
    *
@@ -554,7 +554,7 @@ export class Engage {
      * AND IT KEEPS TRYING. The first cut of this ran the give-up once, on the
      * crossing — so a machine whose first reposition did not restore the line
      * walked at the remembered point for the rest of the fight with nothing
-     * left to fire the retry: filmed at the Scrapper's hardest arc as a 26 s
+     * left to fire the retry: filmed at the Scavenger's hardest arc as a 26 s
      * duel spent 100 % blind at 6.7 m with one give-up and no laser. The
      * give-up now repeats every `beliefHold` seconds for as long as the
      * machine cannot see her, each time from a new arc (it flips first), so
@@ -591,7 +591,7 @@ export class Engage {
      * the arranged row's range, the thing it cannot do is see her, not reach
      * the radius — and telling the picker to stop arranging that move throws
      * the whole trip away and walks it back to knife range (traced: the ring
-     * dropped 9.7 -> 3.6 the moment the Scrapper arrived at 8.1 m and blinked).
+     * dropped 9.7 -> 3.6 the moment the Scavenger arrived at 8.1 m and blinked).
      * The reposition below already keeps the radius and changes the arc, which
      * is the right answer for that case.
      */
@@ -643,7 +643,7 @@ export class Engage {
      *
      * Strafing is the only thing that can find a new line around a rock, and a
      * flip in the middle of that sweep walks the machine straight back into
-     * the shadow it just came out of — measured on the Scrapper's own ground,
+     * the shadow it just came out of — measured on the Scavenger's own ground,
      * where the sightline is blocked over a 60 degree wedge and clear
      * everywhere else. So while `_blindT` is running the flip timer is frozen;
      * it resumes the moment the machine can see her again, and `_giveUpBlind`
@@ -687,7 +687,7 @@ export class Engage {
     /**
      * Mode choice with HYSTERESIS. A bare `dist < band[0] -> back` flipped
      * back/orbit every frame once a duel settled on the inner edge of the band
-     * (a stalker whose best move is a 3.4 m paw swipe rings at exactly
+     * (a lurker whose best move is a 3.4 m paw swipe rings at exactly
      * band[0]), which cancels its own travel out and reads as a jitter.
      * `back` is now entered below band[0] and only left above band[0] + hyst;
      * `close` is entered above band[1] and only left below band[1] - hyst.
@@ -707,7 +707,7 @@ export class Engage {
     /**
      * DEAD-ZONE ESCAPE (`A41b-attack-coverage`). Standing at a range where no
      * move in the table can fire is the one thing the footwork must never do —
-     * it is what made a Strider hold 12.5 m and throw nothing for a whole
+     * it is what made a Runner hold 12.5 m and throw nothing for a whole
      * fight. This overrides every mode above, including the archetype rules:
      * a machine with nothing to throw closes or gives ground until it has
      * something, and `this.hole` records the radius it is heading for so the
@@ -741,8 +741,8 @@ export class Engage {
        * arrives at is a move it never throws. With a flat `orbitSpeed` and a
        * (dist - ring)/4 nudge, a slow species drifted toward its ring at a
        * metre or two a second and its attack cooldown came back up first,
-       * every time: a Behemoth that had decided on a boulder at 12 m threw
-       * `slam`/`charge` five times from 8-10 m instead, and a Scrapper that
+       * every time: a Hauler that had decided on a boulder at 12 m threw
+       * `slam`/`charge` five times from 8-10 m instead, and a Scavenger that
        * wanted its 7 m laser was dragged back inside 5 m by its own lunges.
        * Both read as "two moves and a treadmill".
        *
@@ -800,7 +800,7 @@ export class Engage {
     }
     /**
      * ONE PLAN PER DESTINATION, NOT ONE PER FRAME (fix round 1 — found while
-     * tracing the Stormbird above). The seek branch used to drop the path on
+     * tracing the Raptor above). The seek branch used to drop the path on
      * EVERY frame it was active, so `!this.path` was always true and a full
      * A* (up to 24 000 expansions, plus a fresh array of Vector3 waypoints)
      * ran every frame for the whole seek hold — measured as a new 3-12 node
@@ -816,10 +816,10 @@ export class Engage {
     this.repathT -= dt;
     /**
      * A FLIER DOES NOT TAKE THE FOOTPATH (fix round 1, judge
-     * machine-ai-expansion: A40-expansion / Stormbird). `ctx.nav.path` is a
+     * machine-ai-expansion: A40-expansion / Raptor). `ctx.nav.path` is a
      * WALKER's route: it goes round slopes, water and rock that a machine
      * holding a 16 m cruise altitude is flying over. Measured with the
-     * Stormbird searching from 33 m out: the ground route to the remembered
+     * Raptor searching from 33 m out: the ground route to the remembered
      * point ran 11 nodes and led AWAY from it for two seconds — 33 -> 48 m —
      * which is the whole of its "sweep overshoots the 6-18 m ring". While
      * `_airborne` it flies the straight line; the moment it lands (perched,
@@ -861,7 +861,7 @@ export class Engage {
 
   /**
    * FORGET WHERE THE FIGHT WAS WALKING TO (fix round 1, judge
-   * machine-ai-expansion: A40-expansion / Stormbird).
+   * machine-ai-expansion: A40-expansion / Raptor).
    *
    * `pursue` carries two pieces of travel intent between frames: the nav
    * `path` it is following (re-planned only every `repath` seconds) and the
@@ -869,7 +869,7 @@ export class Engage {
    * for `seekHold` seconds). Both belong to the FIGHT. When the fight becomes a
    * search, `Search.begin` calls this so the sweep's first leg heads for the
    * remembered point from the first frame, instead of finishing a reposition
-   * the fight had started. Measured before this existed, Stormbird on five
+   * the fight had started. Measured before this existed, Raptor on five
    * bearings with Aloy 200 m out: the search began 29-41 m from the belief and
    * then flew AWAY from it for up to 3 s along the seek spot's path, peaking
    * 41-51 m out and still 41-48 m out at the A40 window's end.
@@ -894,7 +894,7 @@ export class Engage {
      * before any gate could seed the lane dice — and nothing ever rolled them
      * again. So the first fight a machine had in a session opened on whichever
      * side boot had picked for it, and every later fight opened on whatever the
-     * last one ended on. Measured on the Behemoth, A41c's first species, same
+     * last one ended on. Measured on the Hauler, A41c's first species, same
      * seed / bearing / pose, orbit direction forced: +1 ends at
      * [-151.48, 92.55, -0.90] and -1 at [-168.96, 92.96, 0.96] — exactly the
      * two mirror end poses the judge recorded across runs. They are re-rolled

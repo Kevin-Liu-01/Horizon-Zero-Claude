@@ -37,7 +37,7 @@ const HALF = WORLD_SIZE / 2;
 /** Streamed draw settings: radius (m), buffer capacity, fade band, source kind, stride thinning. */
 /* GPU (A-gpu-tier at the Pans vista): flora was 4.6 of the frame's 18 ms, nearly all of it
  * sub-pixel triangles. The near tufts hand over to the 18-tri far tufts at 44 m (it was 52),
- * the small kinds stop where they fall under two pixels; the cover the stalker reads is the
+ * the small kinds stop where they fall under two pixels; the cover the lurker reads is the
  * field, not the draw, so A59b / A60 are untouched. */
 const STREAM = {
   marramNear: { src: 'marram', name: 'marram-near', r: 44, cap: 7000, fade: [34, 44], every: 1, sway: 1.0 },

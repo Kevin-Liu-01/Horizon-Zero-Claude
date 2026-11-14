@@ -6,7 +6,7 @@
  * `setState` is the state machine's own SETTER — it writes `this.state` and
  * emits, and then the very next `Machine.update()` re-derives the state from
  * perception (`suspicion`, `_unseenT`, the leash) and threw it away. Pressing
- * "Attack" on a calm Watcher produced one frame of `attack` and 59 frames of
+ * "Attack" on a calm Sentry produced one frame of `attack` and 59 frames of
  * `patrol`; on film it did nothing at all.
  *
  * The fix is two things, not one:

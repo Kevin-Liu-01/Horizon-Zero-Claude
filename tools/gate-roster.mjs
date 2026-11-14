@@ -24,15 +24,10 @@
  *             from the animator (`animator.b.<key>`, `animator.chainOf(cls)`),
  *             so no gate names a rig's bone literal (A-gates-no-hero-literals).
  *
- * SKIP labels (A-carried-suite counts each, never as PASS):
- *   SKIP-legacy-deleted (R30)  the role's Round-4 kind was IP and is deleted at
- *                              W0a (sentry, flanker, heavy, colossus) and its
- *                              replacement has not landed (Plumb W1, Sickle and
- *                              Screed W2, Transit W4)
- *   SKIP-legacy (R28)          the role's Round-4 kind still runs as legacy
- *                              content, which is never mapped to a role
+ * SKIP label (A-carried-suite counts it, never as PASS):
  *   SKIP-R18                   no kind for the role yet, or `ctx.machines.roles`
- *                              is not published in this tree
+ *                              is not published in this tree (the legacy kinds
+ *                              were deleted at M0.3 R2; no role ever maps to one)
  *
  * MECHANICS VALIDATION ONLY: `CAL_GATE_ROLE_OVERRIDE='{"herd":"<kind>",...}'`
  * maps roles to kinds for one run so a re-staged gate can be proven to still
@@ -47,17 +42,17 @@ export const ROLES = ['sentry', 'herd', 'swarm', 'flanker', 'heavy', 'keeper', '
 
 /** What a role reports while it has no live kind — a static fact per role, no species names. */
 export const ROLE_PENDING = {
-  sentry: { label: 'SKIP-legacy-deleted (R30)', until: 'Plumb, instruments-a W1' },
-  flanker: { label: 'SKIP-legacy-deleted (R30)', until: 'Sickle, instruments-b W2' },
-  heavy: { label: 'SKIP-legacy-deleted (R30)', until: 'Screed, instruments-b W2' },
-  colossus: { label: 'SKIP-legacy-deleted (R30)', until: 'Transit, instruments-d W4' },
-  herd: { label: 'SKIP-legacy (R28)', until: 'Tiller fixture, instruments-core W0a' },
-  swarm: { label: 'SKIP-legacy (R28)', until: 'Peg, instruments-a W1' },
-  keeper: { label: 'SKIP-legacy (R28)', until: 'Gauge, instruments-b W2' },
-  duelist: { label: 'SKIP-legacy (R28)', until: 'Spindle, instruments-c W3' },
-  artillery: { label: 'SKIP-legacy (R28)', until: 'Kiln, instruments-c W3' },
-  spotter: { label: 'SKIP-legacy (R28)', until: 'Sonde, instruments-c W3' },
-  ambusher: { label: 'SKIP-legacy (R28)', until: 'Dredge, instruments-d W4' },
+  sentry: { label: 'SKIP-R18', until: 'Plumb, instruments-a W1' },
+  flanker: { label: 'SKIP-R18', until: 'Sickle, instruments-b W2' },
+  heavy: { label: 'SKIP-R18', until: 'Screed, instruments-b W2' },
+  colossus: { label: 'SKIP-R18', until: 'Transit, instruments-d W4' },
+  herd: { label: 'SKIP-R18', until: 'Tiller, instruments-a W1' },
+  swarm: { label: 'SKIP-R18', until: 'Peg, instruments-a W1' },
+  keeper: { label: 'SKIP-R18', until: 'Gauge, instruments-b W2' },
+  duelist: { label: 'SKIP-R18', until: 'Spindle, instruments-c W3' },
+  artillery: { label: 'SKIP-R18', until: 'Kiln, instruments-c W3' },
+  spotter: { label: 'SKIP-R18', until: 'Sonde, instruments-c W3' },
+  ambusher: { label: 'SKIP-R18', until: 'Dredge, instruments-d W4' },
   support: { label: 'SKIP-R18', until: 'Davit, instruments-c W3' },
 };
 

@@ -469,7 +469,7 @@ export function attachFxPool(machine) {
        *
        * `parts.js`'s accent fold merged each component's metal body INTO the
        * material that carries its accent colour, so from this filter's point
-       * of view a Thunderjaw cannon, a Behemoth cargo drum and a Watcher
+       * of view a Colossus cannon, a Hauler cargo drum and a Sentry
        * antenna all became "a pure-glow accent" and were hidden — 34 whole
        * component meshes missing from the live world, and the pooled halo
        * sized from the merged bounding sphere grew 4-5x with them (a 0.18 m

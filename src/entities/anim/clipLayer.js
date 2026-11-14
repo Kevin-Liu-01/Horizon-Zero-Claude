@@ -8,7 +8,7 @@ import * as THREE from 'three';
  * `src/main.js` scales the whole simulation: `const dt = rawDt * engine.timeScale`.
  * The weapon wheel drops timeScale to 0.25, Concentration to 0.02, Studio to 0.
  * Anything that schedules animation state on the WALL clock therefore desyncs
- * from the animation it is scheduling. The live example is glinthawk.js:
+ * from the animation it is scheduling. The live example is flyer.js:
  *
  *     setTimeout(() => { a.fadeOut(0.3); idle.reset(); idle.fadeIn(0.3); … },
  *                (a.getClip().duration / (a.timeScale || 1)) * 1000);
@@ -26,7 +26,7 @@ import * as THREE from 'three';
  * and reports anything inconsistent through `stuck()`).
  *
  * Two ways to drive a one-shot, both timeScale-safe:
- *   layer.playOnce()   the layer owns the timeline (glinthawk's Attack/Shoot)
+ *   layer.playOnce()   the layer owns the timeline (flyer's Attack/Shoot)
  *   layer.scrub(k)     gameplay owns the timeline and the layer follows it
  *                      (locomotion.js's roll/death: k = player.dodgeK, which
  *                      is itself integrated from the scaled dt)

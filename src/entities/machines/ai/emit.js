@@ -32,14 +32,14 @@
  * idiom `this.ctx.events.emit(...)` from inside closures that `Machine.update`
  * drives, six of them on `player-damage`, the exact event of the outage:
  *
- *   watcher.js:305 'watcher-flash'      watcher.js:421 'player-damage'
- *   glinthawk.js:238 'machine-attack'   glinthawk.js:362 'player-damage'
- *   longleg.js:317 'machine-attack'     behemoth.js:352 'player-damage'
- *   thunderjaw.js:283 'machine-attack' (onFootfall, every step of a fight)
- *   thunderjaw.js:526 / :594 / :773 'player-damage'
- *   scrapper.js:357 'player-damage'
+ *   sentry.js:305 'sentry-flash'      sentry.js:421 'player-damage'
+ *   flyer.js:238 'machine-attack'   flyer.js:362 'player-damage'
+ *   wader.js:317 'machine-attack'     hauler.js:352 'player-damage'
+ *   colossus.js:283 'machine-attack' (onFootfall, every step of a fight)
+ *   colossus.js:526 / :594 / :773 'player-damage'
+ *   scavenger.js:357 'player-damage'
  *
- * Measured before this fix: one engaged Thunderjaw for 10 sim s produced 727
+ * Measured before this fix: one engaged Colossus for 10 sim s produced 727
  * emits of which 725 came from the raw footfall site, every one of them
  * throwing out of `Machines.update` into the engine quarantine; the
  * well-behaved subscriber on the same event heard 2.
@@ -56,7 +56,7 @@
  * This is a BACKSTOP, not the destination: the ask on `machine-rig` to route
  * those eleven sites through `this.emit()` is published in the LANE CONTRACT
  * (`ai/index.js`). Until it lands, `A44-listener-isolation-machine-ai` drives
- * a real species site (`thunderjaw.onFootfall`) from inside the machine loop
+ * a real species site (`colossus.onFootfall`) from inside the machine loop
  * so the raw path is gated, not asserted.
  *
  * Nothing is silenced. A swallowed failure is:

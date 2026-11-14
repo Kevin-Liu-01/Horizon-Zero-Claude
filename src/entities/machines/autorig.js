@@ -7,7 +7,7 @@ import { skinnedBounds } from './rig/lod.js';
  * Runtime auto-rig: converts a static machine sculpt into a SkinnedMesh with
  * a procedurally-built skeleton at load time.
  *
- * The big three sculpts (sawtooth / behemoth / thunderjaw) shipped as merged
+ * The big three sculpts (big cat / hauler / colossus) shipped as merged
  * static meshes with no bones — they slid across the ground as statues. This
  * module builds a THREE.Bone hierarchy from a per-species RIG SPEC (leg/spine
  * joint positions measured off the actual vertex data in body space), computes
@@ -21,7 +21,7 @@ import { skinnedBounds } from './rig/lod.js';
  *   the bind pose) and position-only offsets. Procedural animation can then
  *   reason in body axes for every joint of every species.
  * - The bind pose is the sculpt's pose. Some sculpts are frozen mid-stride
- *   (thunderjaw's right leg is swung way out) — restFoot targets let the rig
+ *   (colossus's right leg is swung way out) — restFoot targets let the rig
  *   settle into a corrected neutral stance at build time via one IK pass.
  *
  * Weights: robots read best with near-rigid plate assignment. Each vertex
@@ -204,11 +204,11 @@ export function buildRig(machine, spec) {
   /**
    * THE TAIL GATE (opt-in: `spec.tailGateY`, body metres; absent = off) — the
    * tail's skin re-rooted BEHIND the abdomen (ORCHESTRATOR RULING Sep 26,
-   * `A47c-corpse-mass`: "the Corruptor is closable in-lane — re-root the tail
+   * `A47c-corpse-mass`: "the Crawler is closable in-lane — re-root the tail
    * behind the abdomen so it droops without pushing the belly up").
    *
    * The same idea as `legGateY`, for a trunk that runs on BEHIND the tail's
-   * first joint. Measured on the Corruptor (per vertex, dominant bone, body
+   * first joint. Measured on the Crawler (per vertex, dominant bone, body
    * space): the Scorpion donor's abdomen runs back to z -3.75 at belly height
    * (y 0.21-1.22), well behind `rig_tail1` at z -1.45 — and every one of those
    * vertices fell to the tail, 18-56 per 0.25 m slice, through the
@@ -233,7 +233,7 @@ export function buildRig(machine, spec) {
    * `legGateY` is a horizontal cut, and it is enough for a machine whose
    * trunk rides clear above its hips. It is not enough for the soft
    * underbelly, which by construction hangs BELOW the hips and yet is body,
-   * not leg: on the Scrapper the belly muscle dips to y 0.78 under a 0.80
+   * not leg: on the Scavenger the belly muscle dips to y 0.78 under a 0.80
    * gate, lands 0.03 m from a thigh capsule axis, wins the capsule's 1.6x
    * boost outright and is then torn off the machine the first time the gait
    * swings that thigh.
@@ -404,8 +404,8 @@ export function buildRig(machine, spec) {
    *
    * `GaitController.deathPose` lays a wreck's neck down, and how far it MAY be
    * laid down is a property of the species, not a constant: the same 0.55 rad
-   * that brings a Grazer's antler rotors to belly height drives a Snapmaw's
-   * snout 1.10 m and a Corruptor's head capsule 3.07 m THROUGH the terrain,
+   * that brings a Browser's antler rotors to belly height drives a Sprawler's
+   * snout 1.10 m and a Crawler's head capsule 3.07 m THROUGH the terrain,
    * and `CorpseGrounder` then lifts the whole wreck by exactly that much to
    * put its lowest vertex back on the soil — measured as dead-median ratios of
    * 2.7x and 4.4x on gate `A47c`. So the reach is published here (neck -> head
@@ -420,7 +420,7 @@ export function buildRig(machine, spec) {
   rig.headRestY = _headSpec.pos[1];
   /**
    * TAIL REST HEIGHT — the same clamp, for the other free chain (fix round 2).
-   * A Corruptor's tail is authored ARCHED to y 2.90 over a hull whose deck is
+   * A Crawler's tail is authored ARCHED to y 2.90 over a hull whose deck is
    * at 1.32, so it carries a real share of the corpse metric's mass and the
    * death pose has to be able to bring it down without putting the tip through
    * the soil. `GaitController._chainBudget` reads this as the chain root's rest

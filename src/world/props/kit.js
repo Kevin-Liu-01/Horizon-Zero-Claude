@@ -282,7 +282,7 @@ let _mats = null;
 export function materials() {
   if (_mats) return _mats;
   _mats = {
-    /** Rusted old-world steel: beams, plate, gantries, the Tallneck shell. */
+    /** Rusted old-world steel: beams, plate, gantries, the Tower shell. */
     metal: new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 0.66, metalness: 0.5, side: THREE.DoubleSide,
     }),

@@ -462,7 +462,7 @@ export class HUD {
     const root = this.rootEl;
 
     this._vignette = div('cal-vignette', root);
-    // a sentry's blind-flash when close and facing it (`watcher-flash`, machine.js)
+    // a sentry's blind-flash when close and facing it (`sentry-flash`)
     this._wflash = div('cal-wflash', root);
 
     /* ---------------- top-left: the staff, the gourd, the field note ------- */
@@ -893,7 +893,7 @@ export class HUD {
       this._hpGhostHold = GHOST_HOLD_S; // the ghost on the staff
       this._combatIdleT = 0;
     });
-    on('watcher-flash', (e) => this._lampFlash(e));
+    on('sentry-flash', (e) => this._lampFlash(e));
     on('player-died', () => {
       this._hurtFlash = Math.min(1.4, this._hurtFlash + 1.0);
     });

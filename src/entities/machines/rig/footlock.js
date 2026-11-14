@@ -7,10 +7,10 @@ import { ContactLedger } from './contact.js';
  * not own (`machine-rig-03` "planted feet skate", `machine-rig-04` "feet
  * float/sink", gates `A45` / `A46`).
  *
- * Two of the eight species walk on clips (Longleg's Walk/Run) and one on a
- * rotational procedural stride (Watcher). Neither has plant bookkeeping, so
+ * Two of the eight species walk on clips (Wader's Walk/Run) and one on a
+ * rotational procedural stride (Sentry). Neither has plant bookkeeping, so
  * their "planted" feet were carried along by the body: the audit measured
- * **1.33 m** of stance drift on a Longleg and **0.37 m** on a Watcher against
+ * **1.33 m** of stance drift on a Wader and **0.37 m** on a Sentry against
  * a 0.06 m budget, and gate `A6` only passed because the flags were generous.
  *
  * This layer runs AFTER the clip / procedural pose and corrects it:
@@ -27,7 +27,7 @@ import { ContactLedger } from './contact.js';
  *
  * The solve is a DELTA rotation on the live pose, so it needs no bind table,
  * no rest pose and no assumption about the rig's local axes — it works on the
- * Watcher's 3-segment digitigrade bird leg and the Longleg's 2-segment leg
+ * Sentry's 3-segment digitigrade bird leg and the Wader's 2-segment leg
  * alike. Segment lengths are measured live, so a clip that bends the ankle
  * does not desync the solve.
  *
@@ -89,7 +89,7 @@ export class FootLock {
      * legs belong to something other than the locomotion clips.
      *
      * ROUND-4 FIX ROUND 2 (second pass). A stomp/leap one-shot moves the
-     * Longleg's foot handles up to 1.08 m in a rendered frame, on the spot,
+     * Wader's foot handles up to 1.08 m in a rendered frame, on the spot,
      * with the body stationary — legitimate authored motion. A foot lock has
      * no business in it: the plant opened whenever the descending foot crossed
      * `contactH`, the clip carried it 1.77 m away on the next frame, the
@@ -102,7 +102,7 @@ export class FootLock {
     /**
      * THE PLANT IS ALWAYS HEIGHT-GATED. RETIRED OPTION: `stanceLatch`.
      *
-     * ROUND-4 FIX ROUND 2 (second pass), judge finding "Longleg stanceLatch
+     * ROUND-4 FIX ROUND 2 (second pass), judge finding "Wader stanceLatch
      * teleports the foot up to 1.07 m in one frame and leaves it visibly
      * detached from the leg — A45/A46/A48 pass by construction and cannot see
      * it". Fix round 1 let `stancePhase` open a plant with NO height test at
@@ -131,7 +131,7 @@ export class FootLock {
      *
      * The judge's test is "do not open the plant unless the sole is actually
      * within reach of the ground", and on a clip-driven biped that is a
-     * LENGTH, not a constant: the Longleg's Walk clip carries the sole 0.3 to
+     * LENGTH, not a constant: the Wader's Walk clip carries the sole 0.3 to
      * 0.6 m up through the first part of a stance while the body drops onto
      * it, and its measured leg reach is 1.19-1.34 m. A fixed `contactH` tuned
      * low enough to look conservative silently dropped two thirds of that
@@ -167,7 +167,7 @@ export class FootLock {
      * until `hold >= 0.9`, and `_rampStep` bounds the ramp by
      * `holdRate / corrM` — so a fast clip, whose lock correction is large,
      * spends most of a short stance ramping and the stance is reported for a
-     * fraction of its length. Measured on a longleg: contact 39 % of samples,
+     * fraction of its length. Measured on a wader: contact 39 % of samples,
      * `planted` 28 %. Gate `A45c-foot-continuity` grades this exact number
      * (`lockRampMps`) against 9 m/s and read 5.5, so there was 1.6x of unused
      * budget; 7.5 keeps 1.2x of it.
@@ -195,8 +195,8 @@ export class FootLock {
     /**
      * Report a stance that fell entirely BETWEEN two drawn frames, for one
      * frame, at the position it was planted at (rig/contact.js `latch`). Opt
-     * in per species: the Longleg needs it (its stance windows run shorter
-     * than a drawn frame on a loaded host); the Watcher's are long enough and
+     * in per species: the Wader needs it (its stance windows run shorter
+     * than a drawn frame on a loaded host); the Sentry's are long enough and
      * it is left exactly as it was.
      */
     this.reportPending = !!opts.reportPending;
@@ -280,7 +280,7 @@ export class FootLock {
      * that closes and re-opens between two reports was never observed as
      * released, so two stances read as one and the drift measured across the
      * join is a whole stride — 0.422 m against `A45`'s 0.06 m budget on the
-     * watcher, under full-suite load, on a rig that skates by 0.008 m.
+     * sentry, under full-suite load, on a rig that skates by 0.008 m.
      *
      * Every exit from stance below therefore calls `ledger.release()` — the
      * failed-solve branch included, which is the one that was missing — and
@@ -399,7 +399,7 @@ export class FootLock {
         // digitigrade leg abstracted to two bones can be within 1 % of full
         // extension in its own rest pose, so a target projected down onto the
         // soil is out of reach on the very first frame and the plant is
-        // released before it exists (measured on the Watcher: reach 1.11).
+        // released before it exists (measured on the Sentry: reach 1.11).
         leg.lock.copy(_toe);
         // NOT snapped onto `gy`: the sole is already within `contactH` of the
         // soil (the branch above is what guarantees it), and the damp below
@@ -446,7 +446,7 @@ export class FootLock {
       const wantY = T.getHeight(leg.lock.x, leg.lock.z) + this.soleOff;
       /**
        * TWO RATES: WALKING THE FOOT DOWN IS NOT THE SAME AS HOLDING IT THERE
-       * (fix round 4, `A48-cadence` on the longleg).
+       * (fix round 4, `A48-cadence` on the wader).
        *
        * `plantReach` lets a plant open with the sole a long way up — it has
        * to, or a digitigrade chain near full extension never plants at all —
@@ -454,7 +454,7 @@ export class FootLock {
        * constant) a plant that opens 0.4 m high needs about 0.3 s to come
        * inside `groundTol`, and `planted` is false for every one of them. A
        * stance shorter than that is a footfall NOBODY EVER SEES: not the
-       * gate, not the footstep bank, not the camera. Measured: longleg
+       * gate, not the footstep bank, not the camera. Measured: wader
        * 0.89 Hz against a 0.97 Hz band floor with the cadence loop already
        * saturated, because the extra rate it commanded bought no extra
        * REPORTED plants.
@@ -501,7 +501,7 @@ export class FootLock {
    * CCD solve up the real joint chain (hip .. parent-of-toe), not a two-bone
    * abstraction of it.
    *
-   * The two-bone form failed on the Watcher for a structural reason worth
+   * The two-bone form failed on the Sentry for a structural reason worth
    * recording: its digitigrade bird leg is FOUR joints, and the straight-line
    * abstraction hip->knee->toe is already 1.5 % past full extension in the
    * sculpt's own rest pose, so every plant was released on the frame it
@@ -546,7 +546,7 @@ export class FootLock {
   }
 
   /**
-   * IK-handle leg (Longleg): the foot bone is parented to the rig root and
+   * IK-handle leg (Wader): the foot bone is parented to the rig root and
    * positioned by the clip, so the plant is held by WRITING that position —
    * exact by construction — and the thigh / shin are then aimed at it so the
    * leg still reads as connected.
@@ -740,7 +740,7 @@ export function findLeg(bones, id, names) {
  * Ordered joint chain from `hip` down to the parent of `toe`, or `null` when
  * the toe is not a descendant of the hip.
  *
- * The Longleg's rig is the case that forced this: `FootL` / `FootR` are IK
+ * The Wader's rig is the case that forced this: `FootL` / `FootR` are IK
  * HANDLES parented straight to `Root`, not to `LowerLegL` / `LowerLegR`, so
  * walking parents from the foot never reaches the hip and the old version
  * happily returned the scene root — which is how `Machines.update` started

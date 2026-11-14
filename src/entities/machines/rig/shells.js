@@ -8,8 +8,8 @@ import { invalidateShadowCasters } from './lod.js';
  * ("no plate/muscle material").
  *
  * The sculpts we can license are the wrong animals: a cat mech for a
- * Sawtooth, a cartoon bird for a Longleg, a chrome biped for a Scrapper, two
- * see-through armatures for a Glinthawk and a Strider. Re-modelling them is
+ * Big cat, a cartoon bird for a Wader, a chrome biped for a Scavenger, two
+ * see-through armatures for a Flyer and a Runner. Re-modelling them is
  * out of scope for a browser build, so the silhouette is built ON them:
  * hard-surface plate over dark synthetic muscle, in the machine family
  * palette, welded into ONE mesh per material so the whole shell costs two or
@@ -183,7 +183,7 @@ function prim0(kind, s) {
       // Radii are chosen so the WIDEST diameter is exactly 1 before scaling,
       // i.e. `s` is the piece's real size in metres. (The first version used
       // 0.5/0.72, which made every wedge 1.44x its declared width — that is
-      // what buried the Sawtooth's own head under its chest block.)
+      // what buried the Big cat's own head under its chest block.)
       const g = new THREE.CylinderGeometry(0.35, 0.5, 1, 4, 1);
       g.rotateY(Math.PI / 4);
       g.scale(sx, sy, sz);
@@ -253,7 +253,7 @@ export function buildShell(machine, builder, opts = {}) {
   const mats = shellMaterials(opts.sensorColor);
   machine._shellMats = mats;
   /**
-   * PER-MACHINE PLATE TINT (`casting-v4.md` §5.3 — "the Corruptor can be
+   * PER-MACHINE PLATE TINT (`casting-v4.md` §5.3 — "the Crawler can be
    * matte black without forking shells.js").
    *
    * The family palette is baked into the VERTEX COLOURS by `bakeWear`, not
@@ -377,8 +377,8 @@ export function buildShell(machine, builder, opts = {}) {
   if (opts.hideSculpt) hideSculpt(machine);
   machine._shell = { meshes, pieces: count, tris: Math.round(tris), hidSculpt: !!opts.hideSculpt };
   // A SHELL IS THE MACHINE'S SILHOUETTE, so the shadow-caster ranking that was
-  // taken before it existed is wrong (fix round 3). The Redeye builds its shell
-  // AFTER `super()` has already folded the Watcher, so this is the only hook
+  // taken before it existed is wrong (fix round 3). The Red-lamp kind builds its shell
+  // AFTER `super()` has already folded the Sentry, so this is the only hook
   // that catches it.
   invalidateShadowCasters(machine);
   return machine._shell;
@@ -388,9 +388,9 @@ export function buildShell(machine, builder, opts = {}) {
  * Retire the donor sculpt and let the SHELL be the machine.
  *
  * ROUND-4 FIX ROUND 1, finding `machine-rig-01`: the Round-4 shells were
- * plates floating over a competing animal — a cat mech under the Sawtooth, an
- * upright chrome biped under the quadruped Scrapper, a see-through armature
- * under the Glinthawk — so the silhouette a judge read at 12 m was the sculpt's,
+ * plates floating over a competing animal — a cat mech under the Big cat, an
+ * upright chrome biped under the quadruped Scavenger, a see-through armature
+ * under the Flyer — so the silhouette a judge read at 12 m was the sculpt's,
  * not the shell's, and three of the five species graded as the wrong machine.
  * Where the shell is a COMPLETE creature (torso, limbs off the rig spec, head,
  * tail) the sculpt underneath is pure noise, so it stops being drawn.
@@ -441,8 +441,8 @@ const NO_RAYCAST = function retiredRaycast() { /* retired: not aim geometry */ }
  * `userData.noHull`, which the socket proxy and the corpse solve honour — but
  * `ctx.hitHulls` is a FIFTH consumer and it honours neither, so up to 80 % of
  * a machine's hit volumes were built from geometry nobody can see, sitting up
- * to 0.87 m away from the shell that IS the machine (measured: thunderjaw
- * 1369 of 1720 hulls, glinthawk 48 of 114). That is the arrow raycast, the
+ * to 0.87 m away from the shell that IS the machine (measured: colossus
+ * 1369 of 1720 hulls, flyer 48 of 114). That is the arrow raycast, the
  * component attribution path and the Focus part labels all aiming at a ghost.
  *
  * `hitHulls` is core-platform's file, so the fix is made on this side of the
@@ -518,7 +518,7 @@ export function legPieces(rig, o = {}) {
  * asks for it any more. Recording why, because it cost a day:
  *
  * The specs in `autorig.js` are measured off sculpts exported FROZEN
- * MID-STRIDE — the Thunderjaw's right foot is at `x 2.6, z 1.15` and its left
+ * MID-STRIDE — the Colossus's right foot is at `x 2.6, z 1.15` and its left
  * at `x -1.15, z -1.0` — so drawing leg plates on those joints looked like two
  * disconnected slabs. Moving the plates onto the neutral stance fixed the
  * PICTURE and broke the RIG: `buildRig` weights vertices by distance to the
@@ -556,7 +556,7 @@ export function spinePieces(rig, o = {}) {
   let halfW = 0.3;
   for (const L of rig.legs || []) halfW = Math.max(halfW, Math.abs(L.hip[0]));
   const bw = halfW * (o.width ?? 2.0);
-  // `to` lets a species draw its OWN neck and head (the Thunderjaw's skull is
+  // `to` lets a species draw its OWN neck and head (the Colossus's skull is
   // carried high, and the spec's head joint is on the sculpt's crocodile line
   // at y 2.5) without the generic chain also drawing a second, lower one.
   const last = Math.min(o.to ?? sp.length - 1, sp.length - 1);
@@ -574,7 +574,7 @@ export function spinePieces(rig, o = {}) {
       w: bw * taper * 0.78, d: bw * taper * 1.02, k: 1.2, o: [0, -bw * taper * 0.22, 0],
     });
   }
-  // Tail blisters are OPT-IN. The Thunderjaw's tail bones follow the sculpt's
+  // Tail blisters are OPT-IN. The Colossus's tail bones follow the sculpt's
   // upswept crest (y 5.3 -> 6.0) while the shell authors a level counterweight
   // tail a metre below them, so the generic blisters floated clear of the body
   // — "several pieces visibly detached", V26 fix round 1.
@@ -621,9 +621,9 @@ function findBone(machine, name) {
  *
  * This module is the shell MACHINERY (`buildShell`, `hideSculpt`,
  * `retireMesh`, `legPieces`, `spinePieces`, `boneBodyPos`, `shellMaterials`).
- * The three Round-3 shells fitted to the CC-BY-NC sculpts (Sawtooth,
- * Thunderjaw, Behemoth) were deleted with those sculpts (R30); the legacy
- * shells (Scrapper, Longleg, Glinthawk) moved to `rig/shells-expansion.js`,
+ * The three Round-3 shells fitted to the CC-BY-NC sculpts (Big cat,
+ * Colossus, Hauler) were deleted with those sculpts (R30); the legacy
+ * shells (Scavenger, Wader, Flyer) moved to `rig/shells-expansion.js`,
  * the legacy shell module that is deleted with `machines/legacy.js` at the W2
  * exit. A new kind's shell lives with that kind.
  * ======================================================================= */

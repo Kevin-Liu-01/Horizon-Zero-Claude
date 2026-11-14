@@ -82,7 +82,7 @@ export class CombatFeedback {
 
   /**
    * `k` 0..1 is how much of the target this hit removed — the tick is a
-   * READOUT, not a constant. A 6-damage plink on a Thunderjaw and a 400-point
+   * READOUT, not a constant. A 6-damage plink on a Colossus and a 400-point
    * Critical Hit must not look the same.
    */
   hit(kind = 'body', k = 0.2) {

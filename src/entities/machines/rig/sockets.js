@@ -8,7 +8,7 @@ import { guardMaterialDisposal } from './lod.js';
  * space and then reparented it onto the nearest bone. That is right for
  * riding the pose and wrong for sitting on the hull: the authored offset was
  * a guess against a sculpt nobody had measured, so the audit filmed a
- * Thunderjaw tail-tip launcher **1.50 m** off the tail and Longleg concussion
+ * Colossus tail-tip launcher **1.50 m** off the tail and Wader concussion
  * sacs **1.51 m** off the chest once the death clip had played.
  *
  * The fix is a proxy, not a table of hand-tuned offsets:
@@ -35,7 +35,7 @@ const _m = new THREE.Matrix4();
 
 /**
  * Sample budget. The measured gap includes the proxy's own sampling density:
- * on a 13 m Thunderjaw tail, 900 samples over the whole hull leave ~0.15 m
+ * on a 13 m Colossus tail, 900 samples over the whole hull leave ~0.15 m
  * between neighbours, which is most of the gap the strict socket gate reads
  * at the tail tip. 2400 halves that, and it is a one-off cost at construction
  * (a few hundred microseconds) — `nearestHull` is a cold path.
@@ -45,8 +45,8 @@ const DEFAULT_SAMPLES = 2400;
 /**
  * Sampling density is a MEASUREMENT ERROR, not slack, so it is sized against
  * the machine instead of being a constant: a 2400-sample proxy leaves ~0.15 m
- * between neighbours on a 13 m Thunderjaw tail and ~0.02 m on a 1.5 m
- * Scrapper. `sampleBudget()` holds the spacing roughly constant by scaling
+ * between neighbours on a 13 m Colossus tail and ~0.02 m on a 1.5 m
+ * Scavenger. `sampleBudget()` holds the spacing roughly constant by scaling
  * with hull area, and `proxySpacing()` reports what is left so a gate can
  * print the residual as its own named term (Round-4 fix round 1: the strict
  * socket gate used to buy its pass with a blanket 0.12 m radius credit that
@@ -56,7 +56,7 @@ function sampleBudget(machine, want) {
   if (want) return want;
   const h = machine.height || 2.5;
   const r = Math.max(0.5, machine.bodyRadius || 1);
-  // area-like measure normalised to a 2.5 m strider, clamped to sane limits
+  // area-like measure normalised to a 2.5 m runner, clamped to sane limits
   const k = (h * r) / (2.5 * 1.0);
   return Math.round(THREE.MathUtils.clamp(DEFAULT_SAMPLES * k, DEFAULT_SAMPLES, 14000));
 }
@@ -113,7 +113,7 @@ export function buildHullProxy(machine, opts = {}) {
     const isPart = isPartMesh(mesh) ? 1 : 0;
     // A STATIC mesh parented under a bone (every kitbash shell piece on a
     // GLB-rigged species, and every component socket) rides that bone. Round 4
-    // stored it in the MODEL frame, so the proxy said a Longleg wing was still
+    // stored it in the MODEL frame, so the proxy said a Wader wing was still
     // beside the ribs while the bone had swung it out — which is how a corpse
     // solve measured against the proxy could read a metre high. It is stored
     // in the bone's frame, exactly like a skinned sample.
@@ -124,7 +124,7 @@ export function buildHullProxy(machine, opts = {}) {
     // every frame), so a sample taken through `mesh.matrixWorld` is only
     // correct for a rig bound in place — which the auto-rigged sculpts are
     // and the `SkeletonUtils.clone()` species are NOT. That mismatch is why
-    // the strict socket gate read 2.03 m on a dead Longleg while the same
+    // the strict socket gate read 2.03 m on a dead Wader while the same
     // machine read 0.07 m alive.
     const bind = skel ? mesh.bindMatrix : mesh.matrixWorld;
     for (let i = 0; i < P.count && n < want; i += stride) {
@@ -177,7 +177,7 @@ export function buildHullProxy(machine, opts = {}) {
 
   // FACE CENTROIDS. Once the donor sculpt is retired (`hideSculpt`) the hull
   // IS the kitbash shell, and a shell is a few thousand vertices spread over a
-  // 15 m machine: the Thunderjaw's proxy measured a 0.114 m median spacing,
+  // 15 m machine: the Colossus's proxy measured a 0.114 m median spacing,
   // which is the whole socket budget. A vertex cloud has no samples in the
   // MIDDLE of a plate, and the middle of a plate is exactly where a component
   // sits, so every face contributes its centroid as well. Same bone, same
@@ -307,7 +307,7 @@ export function hullWorld(proxy, i, out = _v2) {
  * (dominant weight >= 0.97). That matters for the snap and not for the
  * measurement: a socket rides one bone rigidly, so if the sample it was
  * snapped against is blended between two bones, the two drift apart the
- * moment the joint bends — which on a Thunderjaw's whipping tail is worth
+ * moment the joint bends — which on a Colossus's whipping tail is worth
  * ~0.09 m of the 0.10 m budget all by itself. Snap against rigid geometry
  * and the gap is invariant in every pose.
  */
@@ -377,7 +377,7 @@ export function surfaceDistance(proxy, worldPoint) {
  * including components. This is the quantity the audit's corpse test measures
  * ("lowest posed vertex vs terrain") and the one a bind-pose AABB cannot see:
  * a SkinnedMesh's box is fixed to the mesh NODE and does not follow the bones,
- * so a collapsed corpse is invisible to it (measured Round 4: a Thunderjaw
+ * so a collapsed corpse is invisible to it (measured Round 4: a Colossus
  * wreck read -0.49 m by box and -2.49 m by posed vertex).
  * @returns {{y:number, cx:number, cz:number}|null}
  */
@@ -465,7 +465,7 @@ export function snapSockets(machine, opts = {}) {
   if (!proxy || !proxy.count) return { moved: 0, worstBefore: 0, worstAfter: 0 };
   // Snap TIGHT. The gate measures in every pose, and a socket rides ONE bone
   // rigidly while the hull under it is blended between two — on a whipping
-  // Thunderjaw tail that divergence is worth ~0.09 m by itself. Landing the
+  // Colossus tail that divergence is worth ~0.09 m by itself. Landing the
   // socket ON the hull in bind (rather than 0.035 m proud of it) leaves the
   // whole 0.10 m budget as headroom for the pose instead of two thirds of it.
   const maxGap = opts.maxGap ?? 0.02;
@@ -486,7 +486,7 @@ export function snapSockets(machine, opts = {}) {
     worstBefore = Math.max(worstBefore, gap);
     // BONE-SPACE SOCKET: ride the bone that owns the hull under the socket,
     // not whichever capsule the auto-rig's nearest-segment sweep picked. A
-    // Thunderjaw eye glow attached to the neck while the plate under it is
+    // Colossus eye glow attached to the neck while the plate under it is
     // skinned to the head drifts 0.16 m the moment the skull drops in a death
     // pose; attached here, the gap is invariant in every pose.
     const owner = proxy.bones[proxy.boneOf[near.index]];

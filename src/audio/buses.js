@@ -177,7 +177,7 @@ export function buildBuses(ac, { volumes = DEFAULT_VOLUMES, ir = null, analyser 
 
 /**
  * Sidechain ducker. `trigger(amount)` dips ambience + music under a loud,
- * important voice and lets them breathe back — the reason a Thunderjaw roar
+ * important voice and lets them breathe back — the reason a Colossus roar
  * reads as *big* instead of just louder (`audio-14`).
  */
 export class Ducker {

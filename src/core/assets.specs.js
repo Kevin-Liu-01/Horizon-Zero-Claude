@@ -58,38 +58,5 @@ export const ANIMS = {
   heroUal2: { url: '/models/hero/brea-clips-ual2.glb' },
 };
 
-/**
- * R30 — the IP / NC files the plan deletes at W0a whatever replaces them
- * (plan §6, R30). Each row names WHO deletes the file (plan §6 "deleted at"):
- *
- *   owner 'pipeline'          deleted in THIS branch (`npc.glb`, with the
- *                             `camp.js` guard). Never fetched.
- *   owner 'instruments-core'  deleted in instruments-core's branch TOGETHER
- *                             with `reader`, the class that builds its body
- *                             (plan §6 row 1: the four machine GLBs + their
- *                             classes; "SPECS rows by pipeline"). `row` is the
- *                             boot row, and it is loaded ONLY while `reader`
- *                             is still in the tree — the file and its reader
- *                             go in one change, so no merge order ever leaves
- *                             a class without its body (fix round 3: no
- *                             placeholder body exists any more). Once the
- *                             reader is gone the row is never fetched and the
- *                             kind is `SKIP-legacy-deleted`.
- *
- * Gates whose subject a deleted file was report `SKIP-legacy-deleted` with
- * the row's note (`ctx.assets.legacyDeleted(kind)` / `ctx.assets.skipped`).
- * `reader` must be a file under `src/entities/machines/` (the loader's
- * presence test is a lazy glob of that folder). Remove this table at W0b.
- */
-export const DELETED = {
-  watcher:    { file: 'public/models/watcher.glb',    ruling: 'R30', owner: 'instruments-core', why: 'third-party game IP (fan-made rig)',
-    reader: 'src/entities/machines/watcher.js',    row: { url: '/models/watcher.glb',    targetHeight: 2.1,  yaw: 0 } },
-  // canon scale: sawtooth "towers over" the hero, thunderjaw is 9 m tall / 24 m long (Round-4 rows, unchanged)
-  sawtooth:   { file: 'public/models/sawtooth.glb',   ruling: 'R30', owner: 'instruments-core', why: 'third-party game IP, NC licence',
-    reader: 'src/entities/machines/sawtooth.js',   row: { url: '/models/sawtooth.glb',   targetHeight: 2.75, yaw: 0 } },
-  behemoth:   { file: 'public/models/behemoth.glb',   ruling: 'R30', owner: 'instruments-core', why: 'third-party game IP, NC licence',
-    reader: 'src/entities/machines/behemoth.js',   row: { url: '/models/behemoth.glb',   targetHeight: 4.5,  yaw: 0 } },
-  thunderjaw: { file: 'public/models/thunderjaw.glb', ruling: 'R30', owner: 'instruments-core', why: 'third-party game IP, NC licence',
-    reader: 'src/entities/machines/thunderjaw.js', row: { url: '/models/thunderjaw.glb', targetHeight: 9.4,  yaw: 0 } },
-  npc:        { file: 'public/models/npc.glb',        ruling: 'R30', owner: 'pipeline',         why: 'third-party game IP (character fan art)' },
-};
+/** R30 rows: none left (the table was retired at M0.3; kept empty so `ctx.assets.legacyDeleted` still answers). */
+export const DELETED = {};

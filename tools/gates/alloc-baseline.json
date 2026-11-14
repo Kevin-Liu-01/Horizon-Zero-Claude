@@ -889,24 +889,6 @@
    "measuredKBps": 68.02,
    "gradedKBps": 75.69
   },
-  "_statePatrol /src/entities/machines/glinthawk.js:157": {
-   "owner": "legacy-species",
-   "kbPerFrame": 0.14,
-   "measuredKBps": 7.59,
-   "gradedKBps": 8.44
-  },
-  "_fly /src/entities/machines/glinthawk.js:152": {
-   "owner": "legacy-species",
-   "kbPerFrame": 0.21,
-   "measuredKBps": 11.19,
-   "gradedKBps": 12.46
-  },
-  "animate /src/entities/machines/glinthawk.js:393": {
-   "owner": "legacy-species",
-   "kbPerFrame": 0.13,
-   "measuredKBps": 7.21,
-   "gradedKBps": 8.02
-  },
   "get _speed /src/entities/machines/machine.js:1192": {
    "owner": "kept-machines",
    "kbPerFrame": 0.38,
@@ -942,18 +924,6 @@
    "kbPerFrame": 4.38,
    "measuredKBps": 236.02,
    "gradedKBps": 262.66
-  },
-  "_statePatrol /src/entities/machines/longleg.js:458": {
-   "owner": "legacy-species",
-   "kbPerFrame": 0.09,
-   "measuredKBps": 5.05,
-   "gradedKBps": 5.62
-  },
-  "animate /src/entities/machines/longleg.js:620": {
-   "owner": "legacy-species",
-   "kbPerFrame": 0.26,
-   "measuredKBps": 14.86,
-   "gradedKBps": 15.74
   },
   "wallPerSim /src/entities/machines/gait.js:271": {
    "owner": "frozen-machine-rig",
@@ -1014,18 +984,6 @@
    "kbPerFrame": 0.21,
    "measuredKBps": 11.59,
    "gradedKBps": 12.9
-  },
-  "update /src/entities/machines/scrapper.js:147": {
-   "owner": "legacy-species",
-   "kbPerFrame": 0.09,
-   "measuredKBps": 4.74,
-   "gradedKBps": 5.28
-  },
-  "_statePatrol /src/entities/machines/scrapper.js:242": {
-   "owner": "legacy-species",
-   "kbPerFrame": 0.1,
-   "measuredKBps": 5.87,
-   "gradedKBps": 6.21
   },
   "(anonymous) /src/entities/machines/rig/ground.js:391": {
    "owner": "frozen-machine-rig",
@@ -2035,23 +1993,11 @@
    "measuredKBps": 5.29,
    "gradedKBps": 5.61
   },
-  "update /src/entities/machines/scrapper.js:282": {
-   "owner": "legacy-species",
-   "kbPerFrame": 0.07,
-   "measuredKBps": 3.91,
-   "gradedKBps": 4.14
-  },
   "applyShadowRings /src/entities/machines/rig/lod.js:1459": {
    "owner": "frozen-machine-rig",
    "kbPerFrame": 0.26,
    "measuredKBps": 14.86,
    "gradedKBps": 15.74
-  },
-  "animate /src/entities/machines/grazer.js:223": {
-   "owner": "legacy-species",
-   "kbPerFrame": 0.07,
-   "measuredKBps": 4.11,
-   "gradedKBps": 4.36
   },
   "_syncServoLoop /src/audio/audio.js:1382": {
    "owner": "audio",

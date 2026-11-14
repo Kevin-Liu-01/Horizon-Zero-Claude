@@ -19,7 +19,7 @@ import { _st, stepRootS } from '../machine.js';
  * `machine-ai-09` (planted windups), `machine-ai-19` (TJ canon).
  *
  * Round 3 picked moves with an if-ladder inside each species file, so a
- * Sawtooth at 8 m ALWAYS pounced and a Thunderjaw only ever showed its laser
+ * Big cat at 8 m ALWAYS pounced and a Colossus only ever showed its laser
  * under 40 % health. Selection now scores every legal move from
  * `ai/tables.js` and picks the best, with a repeat penalty (variety), a miss
  * penalty (it stops re-throwing what just whiffed) and a band bonus.
@@ -154,7 +154,7 @@ function charge(m, p) {
 
 /**
  * The species' own pose channels, when it has a procedural gait. Generic moves
- * drive the SAME fields the authored species attacks drive (`sawtooth.js`'s
+ * drive the SAME fields the authored species attacks drive (`big cat.js`'s
  * swipe writes `spineYaw`/`legLift`/`crouch`/`headPitch`), so a table-built
  * move is visible on the rig instead of being pure root motion. This is a READ
  * of `machine-rig`'s structure — every write is undone in `cleanup()`.
@@ -185,7 +185,7 @@ function clearPose(pose) {
 }
 
 /**
- * Multi-slash flurry — the Sawtooth's canon **Berserker Fury** (roster-v2 §4,
+ * Multi-slash flurry — the Big cat's canon **Berserker Fury** (roster-v2 §4,
  * `machine-ai-08`). A loaded crouch, then N alternating paw slashes that each
  * step the body forward a little and each roll their own front-arc damage
  * check, then a settle. Unlike `lunge` it does not commit to one dash, so it
@@ -271,7 +271,7 @@ function flurry(m, p) {
 /**
  * Wide arc swipe. `arcDeg >= 180` measures the arc against the machine's BACK
  * (`damagePlayerArc`), for a species that actually has a tail to swing — the
- * Thunderjaw's authored `_tailSweep` is the canon user; the Sawtooth is
+ * Colossus's authored `_tailSweep` is the canon user; the Big cat is
  * explicitly tail-less (roster-v2 §3) and no longer has a rear move here.
  */
 function sweep(m, p) {
@@ -299,7 +299,7 @@ function sweep(m, p) {
       if (!pose) return;
       const rear = (p.arcDeg ?? 180) >= 180;
       if (rear) {
-        // the tail chain IS the weapon (thunderjaw); the torso counter-rotates
+        // the tail chain IS the weapon (colossus); the torso counter-rotates
         pose.tailYaw = s * 0.95;
         pose.tailLift = 0.22 * Math.abs(s);
         pose.spineYaw = s * -0.22;
@@ -459,7 +459,7 @@ export class AttackPicker {
      * Rows that were LEGAL and still built nothing (`authored: 'species'` with
      * the species' own ladder offering nothing at all this frame). A phantom
      * row is a range band that exists in the table and not in the world, which
-     * is exactly the Strider dead zone; the tables are fixed, but a species
+     * is exactly the Runner dead zone; the tables are fixed, but a species
      * whose ladder narrows again would silently re-open one. Coverage queries
      * skip phantoms, so `Engage` walks out of the hole instead of standing in
      * it. A row un-phantoms the moment its species does offer the move.
@@ -493,7 +493,7 @@ export class AttackPicker {
      * half the judge asked for: "I never got there at all" — a ring on the far
      * side of a slope the machine cannot climb, behind a rock the navgrid
      * steers it around for ever, or outside the soft leash. Measured on the
-     * Behemoth's shelf and the Scrapper's ruin: the orbit walks at the ring at
+     * Hauler's shelf and the Scavenger's ruin: the orbit walks at the ring at
      * `closeSpeed` and its radial error simply does not fall, so the move that
      * ring is set up for keeps winning the arrangement and the fight collapses
      * to whatever is legal where the machine is actually standing.
@@ -508,7 +508,7 @@ export class AttackPicker {
     this._arrangedId = null;    // what the ring is currently set up for
     this._arrangedT = 0;        // ...and for how many seconds IN TOTAL
     /**
-     * TWO CLOCKS, NOT ONE (FIX ROUND 5, A41c/A41d Scrapper + Shell-Walker).
+     * TWO CLOCKS, NOT ONE (FIX ROUND 5, A41c/A41d Scavenger + Carrier).
      *
      * `_arrangedT` is the TOTAL time this move has owned the ring and it
      * drives `SCORING.arrangeGiveUp` — the bound on a move holding the fight
@@ -521,11 +521,11 @@ export class AttackPicker {
      * when the ANSWER changes, so a machine that keeps arranging for the same
      * move (the hostage case the total is watching for) had `_arrangedT` past
      * `setupPatience` for ever and never declined another window again.
-     * Measured: a Scrapper threw `dart-bite` six times in 30 s, each throw a
+     * Measured: a Scavenger threw `dart-bite` six times in 30 s, each throw a
      * 4.2 m dash that put it back inside its own laser floor, with the laser
      * fresh, arrangeable and unblocked the whole time — the exact treadmill
      * `setupPatience` was written for, with the patience spent in the first
-     * two seconds. Same shape on a Shell-Walker and its homing blast.
+     * two seconds. Same shape on a Carrier and its homing blast.
      *
      * `_setupT` resets whenever a move actually fires, so the patience is
      * renewed per attempt; `_arrangedT` keeps counting, so the 8 s give-up is
@@ -560,7 +560,7 @@ export class AttackPicker {
        * finding 2). `_setupT` restarts when a move fires, and it used to keep
        * counting through that move's own windup, strike and recovery — time
        * in which the machine is committed to the attack and cannot take one
-       * step toward the next range. Traced on the Scrapper's hardest arc at
+       * step toward the next range. Traced on the Scavenger's hardest arc at
        * A41c's own seed: `dart-bite` (0.89 s of attack) left ~1.1 s of the
        * 2 s patience for a 1.3 -> 5.8 m walk to the `laser` floor, the
        * patience ran out at 4.9-5.4 m, `dart-bite` was the only legal move
@@ -658,7 +658,7 @@ export class AttackPicker {
   }
 
   /**
-   * NEGATED `needPart` (casting-v4.md §5.2 — the Stormbird's grounded rows).
+   * NEGATED `needPart` (casting-v4.md §5.2 — the Raptor's grounded rows).
    *
    * `needPart: 'lightning-gun'` means "this move needs that component". A
    * flier's GROUNDED moves are the mirror: `tail-lash` and `thunder-rush` are
@@ -671,7 +671,7 @@ export class AttackPicker {
    *
    * Every legality, coverage, arrangement and profile query below goes through
    * this one predicate, so a negated row is honest in `coveredAt()`,
-   * `bandProfile()` and `bandBlocked()` too — a Stormbird with its engines
+   * `bandProfile()` and `bandBlocked()` too — a Raptor with its engines
    * intact must not be counted as owing a move it structurally cannot throw.
    */
   _needPartOk(need) {
@@ -735,7 +735,7 @@ export class AttackPicker {
    * Rows are tried in descending score and only the WINNER is built. The old
    * loop built every row that was leading at the time it was reached, which
    * (a) ran a species builder for moves that never fired and (b) burned that
-   * move's `cdField` on the species — a Thunderjaw could lose its laser to a
+   * move's `cdField` on the species — a Colossus could lose its laser to a
    * cannon it chose instead. Building lazily also means the phantom check
    * below sees a row's real buildability, not a scoring accident.
    */
@@ -757,8 +757,8 @@ export class AttackPicker {
     if (dist >= row.min && dist <= row.max) return false;   // already there: throw it
     /**
      * PATIENCE THAT KNOWS HOW FAR THE WALK IS (FIX ROUND 5,
-     * `A41d-must-fire`). A flat 2 s is a Scrapper's trip; it is not a
-     * Snapmaw's. The wait is the time the machine still needs to COVER THE
+     * `A41d-must-fire`). A flat 2 s is a Scavenger's trip; it is not a
+     * Sprawler's. The wait is the time the machine still needs to COVER THE
      * GAP at its own orbit speed, floored at `SCORING.setupPatience` and
      * capped at `SCORING.setupPatienceMax` (comfortably under
      * `arrangeGiveUp`, so a move that truly cannot be set up still loses the
@@ -850,7 +850,7 @@ export class AttackPicker {
    *
    * THE LIVELOCK (judge-machine-ai-followup-r1). `Engage._pickRing()` clamps
    * its ring away from the band's inner edge by half a hysteresis, so with the
-   * Strider's band at 4.2 m the smallest ring it can hold is 4.5 m — 0.1 m
+   * Runner's band at 4.2 m the smallest ring it can hold is 4.5 m — 0.1 m
    * outside `front-kick`'s 4.4 m row. The unclamped overlap said 4.2 m, the
    * footwork stood at 4.5 m, the kick was never legal, never fired, never left
    * the fresh set, and so was re-arranged for on every single flip: the
@@ -872,13 +872,13 @@ export class AttackPicker {
      * (FIX ROUND 5, A41d-held-radius-coverage).
      *
      * Every long ranged row has a midpoint far outside the engage band — a
-     * Shell-Walker `homing-blast` is [13, 48] against a band that stops at 24,
-     * a Behemoth `gravity-boulder` is [11, 42] against 13.5 — so clamping that
+     * Carrier `homing-blast` is [13, 48] against a band that stops at 24,
+     * a Hauler `gravity-boulder` is [11, 42] against 13.5 — so clamping that
      * midpoint always returned the band's OUTER LIP, which is the single
      * hardest radius on any ground to hold and the one the footwork's own
-     * radial slop pushes it straight back out of. Measured: the Shell-Walker
+     * radial slop pushes it straight back out of. Measured: the Carrier
      * ringed at 23.7 m, reached 11.25 m, banked 0.37 s inside its 13-23.7 m
-     * shell and never fired the blast; the Behemoth boulder had the same shape
+     * shell and never fired the blast; the Hauler boulder had the same shape
      * at 13.2 m and was worked around once already by widening the band.
      *
      * The overlap's own centre is the radius that is furthest from BOTH edges
@@ -901,7 +901,7 @@ export class AttackPicker {
     return this._reachable(row, lo, hi) != null;
   }
 
-  /* ---------------- range coverage (the Strider dead zone) ------------- */
+  /* ---------------- range coverage (the Runner dead zone) ------------- */
 
   /**
    * Can this row EVER fire at `dist`? Structure only — parts, disabled moves,
@@ -953,7 +953,7 @@ export class AttackPicker {
   /**
    * Structural audit of the whole table: the holes inside `[0, reach]` where
    * no move can fire. `A41b-attack-coverage` asserts this is empty across each
-   * species' engage band, and it is the check the Strider dead zone failed.
+   * species' engage band, and it is the check the Runner dead zone failed.
    * Off the hot path — the gate and the debug HUD call it, the sim does not.
    */
   coverage(step = 0.25) {
@@ -974,7 +974,7 @@ export class AttackPicker {
    * MOVE VARIETY ACROSS THE STANDOFF BAND (judge-machine-ai-followup-r0 §2).
    *
    * `coverage()` answers "is there a move here?". This answers "is it always
-   * the SAME move?" — the failure that replaced the Strider dead zone once the
+   * the SAME move?" — the failure that replaced the Runner dead zone once the
    * hole was closed by stretching one row over it. Walks the species' engage
    * band and reports, per non-rear row, how much of the band it covers and how
    * much of the band it is the ONLY answer for.
@@ -1059,9 +1059,9 @@ export class AttackPicker {
    * footwork can actually hold. Such a row is a move the machine can want for
    * ever and never fire: the picker keeps arranging for it, the orbit keeps
    * walking to a radius it is out of range at, and the species collapses to
-   * whatever else happens to be legal there. Measured three times — a Strider
-   * `front-kick` capped at 4.4 m against a 4.5 m ring floor, a Scrapper `claw`
-   * at 3.4 m against 3.3 m, a Longleg `jet-blast` cone at 7 m against 7.3 m.
+   * whatever else happens to be legal there. Measured three times — a Runner
+   * `front-kick` capped at 4.4 m against a 4.5 m ring floor, a Scavenger `claw`
+   * at 3.4 m against 3.3 m, a Wader `jet-blast` cone at 7 m against 7.3 m.
    *
    * `_reachable` already clips by the band, so with the ring window passed in
    * this is non-zero exactly when some eligible row's `max` sits below
@@ -1105,7 +1105,7 @@ export class AttackPicker {
    * climbs past a row's `max` drops that row out of `bandProfile()` AND out
    * of `bandBlocked()`'s eligibility at the same instant — the move leaves
    * the fight, the invariant stops watching it, and the bar falls by one to
-   * meet what is left. Measured: pushing the Strider's band to `[4.95, 14]`
+   * meet what is left. Measured: pushing the Runner's band to `[4.95, 14]`
    * takes `front-kick` (row `[0, 4.6]`) out of the repertoire with
    * `blocked: 0` and the band bar dropping 3 -> 2, i.e. silently green.
    * Counting the TABLE cannot move with any of them.
@@ -1174,7 +1174,7 @@ export class AttackPicker {
   /**
    * The range the machine WANTS to be at: the range that sets up the move it
    * would most like to throw next, ignoring the current distance. `Engage`
-   * uses this to pick its orbit ring, so a Sawtooth that fancies a charge
+   * uses this to pick its orbit ring, so a Big cat that fancies a charge
    * actually backs off to charge distance instead of circling forever at
    * pounce range. This is what turns a scored table into a readable moveset.
    *
@@ -1224,7 +1224,7 @@ export class AttackPicker {
    * on its orbit radius until the whole moveset has been on screen once.
    * Takes the same ring window as `wantedRange`: a fresh move no holdable ring
    * can set up is not a reason to keep taking the wanted range deterministic
-   * (that was half of what kept the Strider pinned to one radius).
+   * (that was half of what kept the Runner pinned to one radius).
    */
   hasFresh(lo = null, hi = null) {
     const rows = this.rows;

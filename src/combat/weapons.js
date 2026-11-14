@@ -105,7 +105,7 @@ export const AMMO = {
 
   /* ----------------------- Ropecaster (combat-roster-missing) -------------
    * Canon: ropes do no damage. Enough of them PIN the machine to the ground,
-   * which is the whole point — a tied Thunderjaw is a free Critical Hit and a
+   * which is the whole point — a tied Colossus is a free Critical Hit and a
    * free tear window. `ropes` is how many it takes on a small machine; the
    * scale-up per class lives in TIE_DOWN below.
    */
@@ -147,15 +147,12 @@ export const AMMO = {
 };
 
 /**
- * Ropes needed to pin a machine, by class. `combat-roster-missing`: a Watcher
- * goes down to two, a Thunderjaw takes five — which is why the Ropecaster is a
+ * Ropes needed to pin a machine, by class. `combat-roster-missing`: a Sentry
+ * goes down to two, a Colossus takes five — which is why the Ropecaster is a
  * setup weapon and not a stun button.
  */
 export const TIE_DOWN = {
   default: 3,
-  watcher: 2, strider: 2, scrapper: 2, glinthawk: 2,
-  longleg: 3, sawtooth: 3,
-  behemoth: 5, thunderjaw: 5,
 };
 export const tieDownCount = (kind) => TIE_DOWN[kind] ?? TIE_DOWN.default;
 
@@ -239,7 +236,7 @@ export const MELEE = {
   silent: {
     range: 2.0, rearDot: -0.15, label: 'SILENT STRIKE', hold: 0.2,
     /** These die outright; everything else takes `heavyFrac` of max health. */
-    instant: ['watcher', 'strider', 'scrapper', 'glinthawk'],
+    instant: [],
     heavyFrac: 0.55, tear: 90,
   },
   /** Critical Hit on a downed machine. */

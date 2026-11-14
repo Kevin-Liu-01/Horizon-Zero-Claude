@@ -16,7 +16,7 @@ const LAMP_CALM = new THREE.Color(LAMP_STATES.calm.token).getHex();
  *
  * Perf rules (draw-call budget):
  * - same-material sub-shapes are merged into ONE geometry per factory
- * - part meshes NEVER cast shadows, except the two Thunderjaw disc
+ * - part meshes NEVER cast shadows, except the two Colossus disc
  *   launchers (the signature pickup must ground itself visually)
  * - materials with `userData.sensor = true` are picked up by Machine.addPart
  *   and driven by the eye-state system (the lamp tokens + telegraph flash,
@@ -34,8 +34,8 @@ const LAMP_CALM = new THREE.Color(LAMP_STATES.calm.token).getHex();
  * registers and uploads a mesh's geometry in `projectObject` BEFORE it looks
  * at `material.visible`, so each proxy that enters the frustum still costs one
  * GPU geometry: measured on the gate's own hold bracket with a registration
- * census, the eight held Watchers registered 3-8 of their `lens` (328 v) and
- * `antenna` (155 v) proxies, i.e. 0.38-1.0 geometries per live Watcher from
+ * census, the eight held Sentries registered 3-8 of their `lens` (328 v) and
+ * `antenna` (155 v) proxies, i.e. 0.38-1.0 geometries per live Sentry from
  * buffers nobody draws, against a 1.0 bar.
  *
  * Shared through the species geometry pool (`rig/lod.js` `poolGeometry`, pool
@@ -166,7 +166,7 @@ function foldedPart({
   for (const g of metal) { if (!g.attributes.color) tintGeo(g, 1); geos.push(stampUV(g, 0.25)); }
   // WHERE THE LIGHT IS, measured before the merge erases the distinction.
   // `rig/fx.js` used to size a component's pooled halo from the mesh's whole
-  // bounding sphere, which after the fold is the WHOLE COMPONENT — a watcher's
+  // bounding sphere, which after the fold is the WHOLE COMPONENT — a sentry's
   // 0.18 m antenna tip became a 0.90 m ball of light. The accent's own box is
   // the honest anchor and the honest radius.
   const accBox = accent.length ? new THREE.Box3() : null;
@@ -322,7 +322,7 @@ export function antennaMesh({ len = 0.65, color = 0x565c64, tip = LAMP_CALM } = 
 }
 
 /**
- * Watcher eye lens (research 0.4/1.2: the eye IS the character). A large
+ * Sentry eye lens (research 0.4/1.2: the eye IS the character). A large
  * emissive iris ball — SENSOR-tagged so it burns with the exact state color
  * (blue/yellow/red + white-hot telegraph, dark on death) — in a metal rim.
  * Weak part, not tearable.
@@ -339,11 +339,11 @@ export function lensMesh({ r = 0.26 } = {}) {
   return noShadows(g);
 }
 
-/** Behemoth anti-gravity Force Loader: metal ring + purple-blue emissive disc (+Y out). */
+/** Hauler anti-gravity Force Loader: metal ring + purple-blue emissive disc (+Y out). */
 export function forceLoaderMesh({ r = 0.4, color = 0xd2452e } = {}) {      // survey vermilion (was violet)
   const g = new THREE.Group();
   // ring + anti-grav disc in ONE draw, and NO glow sprite — six of these ride
-  // on a behemoth, so the sprite alone was six draws. The same argument the
+  // on a hauler, so the sprite alone was six draws. The same argument the
   // canister and the power cell already carry: a 2.4-intensity emissive disc
   // through bloom is the read.
   const mesh = foldedPart({
@@ -359,7 +359,7 @@ export function forceLoaderMesh({ r = 0.4, color = 0xd2452e } = {}) {      // su
   return noShadows(g);
 }
 
-/** Thunderjaw back Radar: base + pole + rotating fin (userData.fin). Upright. */
+/** Colossus back Radar: base + pole + rotating fin (userData.fin). Upright. */
 export function radarMesh({ accent = LAMP_CALM } = {}) {
   const g = new THREE.Group();
   // base + pole: one metal material, merged
@@ -387,7 +387,7 @@ export function radarMesh({ accent = LAMP_CALM } = {}) {
   return noShadows(g);
 }
 
-/** Thunderjaw Disc Launcher: boxy turret w/ 3 stacked barrels + emissive vents. Upright, barrels +Z.
+/** Colossus Disc Launcher: boxy turret w/ 3 stacked barrels + emissive vents. Upright, barrels +Z.
  *  The ONLY part that casts shadows (signature pickup must sit visually). */
 export function discLauncherMesh({ accent = 0xe8c48a } = {}) {      // bronze chip (was ice blue)
   const g = new THREE.Group();
@@ -413,7 +413,7 @@ export function discLauncherMesh({ accent = 0xe8c48a } = {}) {      // bronze ch
   return g;
 }
 
-/** Thunderjaw mandibular cannon: mount + tapered barrel (+Z), emissive muzzle. */
+/** Colossus mandibular cannon: mount + tapered barrel (+Z), emissive muzzle. */
 export function cannonMesh({ accent = 0xffb36b } = {}) {
   const g = new THREE.Group();
   // mount + barrel + glowing muzzle ring: ONE draw. The tracer origin was the
@@ -469,7 +469,7 @@ export function coreMesh({ color = 0xff9a3d, r = 0.32 } = {}) {
   return noShadows(g);
 }
 
-/** Behemoth belly Cargo Hold: banded ochre drum, slotted vertically. */
+/** Hauler belly Cargo Hold: banded ochre drum, slotted vertically. */
 export function cargoMesh() {
   const g = new THREE.Group();
   // drum + both retaining bands in ONE draw (perf-tech-14)
@@ -485,7 +485,7 @@ export function cargoMesh() {
   return noShadows(g);
 }
 
-/** Thunderjaw tail-tip: bladed counterweight spike, tip pointing -Z (rearward). */
+/** Colossus tail-tip: bladed counterweight spike, tip pointing -Z (rearward). */
 export function tailTipMesh() {
   const g = new THREE.Group();
   // spike + both fins in ONE draw (perf-tech-14), fin tone in vertex colours
@@ -505,7 +505,7 @@ export function tailTipMesh() {
   return noShadows(g);
 }
 
-/** Gravity boulder for the Behemoth's force-loader attacks. Single mesh. */
+/** Gravity boulder for the Hauler's force-loader attacks. Single mesh. */
 export function rockMesh(r = 0.6) {
   const geo = new THREE.DodecahedronGeometry(r, 0);
   // jitter vertices so the rock reads hand-hewn, not platonic

@@ -2229,7 +2229,7 @@ export class Engine {
 
   /**
    * perf-tech-10 — compile every program while the loading bar is still up so
-   * the first arrow / first Thunderjaw does not stall the frame.
+   * the first arrow / first Colossus does not stall the frame.
    */
   async warmUp(scene = this.scene, camera = this.camera, timeoutMs = 20000) {
     const t0 = performance.now();
@@ -2417,7 +2417,7 @@ export class Engine {
    *
    * 2. Small meshes. A machine is built from 8-31 separate meshes and every one
    *    of them is a draw call at any distance — the west herd spent 90 calls on
-   *    six striders whose bolt heads and hip plates project to one pixel. A
+   *    six runners whose bolt heads and hip plates project to one pixel. A
    *    mesh whose projected diameter is under `sizeCullPx` device pixels is
    *    hidden until it grows back past the hysteresis band. This is a renderer
    *    policy, not a model change: it is generic over the scene, it never
@@ -2491,7 +2491,7 @@ export class Engine {
         // emissive lens into a 200-pixel flare, so culling one by its geometry
         // size deletes something the player can see across the valley — and the
         // red eye / orange canister read IS the machine's tell. Measured on
-        // film: hiding them at 7 px removed the strider's chest glare entirely.
+        // film: hiding them at 7 px removed the runner's chest glare entirely.
         const glow = _glows(o.material);
         const limit = glow ? C.cullPx * this.sizeCullGlowFactor : C.cullPx;
         const px = 2 * r * C.fovK / Math.max(0.05, dist);

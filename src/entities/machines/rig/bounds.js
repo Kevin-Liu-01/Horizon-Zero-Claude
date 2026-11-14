@@ -18,11 +18,11 @@ import { refreshPosedBounds } from './ground.js';
  *     rad = 0.5 * max(m.size.x, m.size.z, m.height) + 1.2
  *
  * A ray that misses that sphere is never tested against the machine's hulls
- * at all. Measured before this file existed: the Glinthawk's shell spans
+ * at all. Measured before this file existed: the Flyer's shell spans
  * 6.4 x 6.9 m of wing against a declared 2.6 x 1.4 m, and its sphere fell
  * 1.05 m short of its own wingtips — **10 of 50 arrows fired at drawn
- * glinthawk triangles registered nothing** (gate `A50b`). The Behemoth was
- * 0.76 m short; the Thunderjaw and Sawtooth had 0.14 m and 0.30 m of margin
+ * flyer triangles registered nothing** (gate `A50b`). The Hauler was
+ * 0.76 m short; the Colossus and Big cat had 0.14 m and 0.30 m of margin
  * on a walk cycle that swings further than that.
  *
  * So the rig publishes what it drew. `size` is only ever GROWN — a species
@@ -53,7 +53,7 @@ const PAD = 1.12;
  * frustum test only needs the extremes, and a shell is a hard-surface mesh
  * whose extremes are corners. Measured against the full 3000-sample box on
  * every per-machine shell of the four kitbashed species: worst corner error
- * **0.028 m** (thunderjaw `shell-hard`, 3432 verts), and zero on six of the
+ * **0.028 m** (colossus `shell-hard`, 3432 verts), and zero on six of the
  * nine shells, which are small enough that 256 walks them entirely. Cost is
  * ~8 % of the full walk — 24 machines x ~2 shells x ~270 samples per
  * `REFRESH_FRAMES` (2 s) tick, against 3000 once for a corpse.
@@ -68,13 +68,13 @@ const LIVE_BUDGET = 256;
  * That box used to be assumed "a conservative envelope of every pose the
  * skeleton can reach". It is not, and fix round 1 measured how badly: on a
  * SkinnedMesh it is the BIND box, and this rig's bind pose is a compact blob
- * that the skeleton then spreads into the machine — thunderjaw shell bind
+ * that the skeleton then spreads into the machine — colossus shell bind
  * 1.11 x 2.34 x 1.40 m against a 9.1 m posed body. It was wrong on the
  * DANGEROUS side, not the safe one. `refreshPosedBounds(..., { live: true })`
  * now re-poses those boxes on this function's own throttle, so the cheap
  * corner walk below reads a surface that exists.
  * Retired donor sculpts (`userData.noHull`) are excluded — they are not drawn,
- * and on the Glinthawk and Longleg they are a different shape entirely.
+ * and on the Flyer and Wader they are a different shape entirely.
  *
  * Meshes that are momentarily invisible (distance LOD, the engine's
  * small-mesh cull, the FX pool's glow sources) still count: they come back,

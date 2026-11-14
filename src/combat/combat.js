@@ -166,8 +166,8 @@ function disposeSceneRoots(roots) {
 }
 
 /** Broadphase radii/centres, used by the AoE resolve only. */
-const AIM_RADII = { watcher: 2.6, sawtooth: 3.6, behemoth: 5.2, thunderjaw: 10 };
-const AIM_CY = { watcher: 1.0, sawtooth: 1.2, behemoth: 2.2, thunderjaw: 3.6 };
+const AIM_RADII = {};
+const AIM_CY = {};
 /**
  * `combat-arrow-drop-autocompensated` + `onboarding-loop-first-kill-trivial`.
  * AIM_MAGNET was 1.15 m of unconditional snap-to-body-centre: every shot
@@ -671,7 +671,7 @@ export class Combat {
    */
   noteCombatAction() { this._holsterT = HOLSTER_TIME; }
 
-  /** Heavy pickup weapons (Thunderjaw disc launcher). */
+  /** Heavy pickup weapons (Colossus disc launcher). */
   grantWeapon(id = 'disc-launcher', shots = DISC_LAUNCHER_DEF.shots) {
     if (id !== 'disc-launcher') return false;
     this._disc = { shots };
@@ -908,7 +908,7 @@ export class Combat {
      *
      * Round 3 stowed the bow the instant RMB came up, so a jog between two
      * arrows put it on her back and V29 filmed a hunter with no weapon in
-     * front of an alert Sawtooth. `weaponDrawn` now holds it in her LEFT hand
+     * front of an alert Big cat. `weaponDrawn` now holds it in her LEFT hand
      * for HOLSTER_TIME after any combat action, and for as long as anything
      * hostile is inside THREAT_RANGE.  The 14/s fade crossfades hand <-> back.
      */
@@ -1242,7 +1242,7 @@ export class Combat {
   /**
    * Where the crosshair actually lands. `perf-tech-01`: the machine half was
    * `Raycaster.intersectObject(machine.root, true)` per candidate per frame —
-   * 124-370 ms per ray against the Thunderjaw's 188k-triangle skinned mesh,
+   * 124-370 ms per ray against the Colossus's 188k-triangle skinned mesh,
    * which is the 4 fps the audit filmed. It is now ONE `ctx.hitHulls.raycast`
    * over the whole roster (1.7-6.6 us), exactly the swap
    * docs/ROUND4-SPATIAL.md §3 specifies, and the magnet is gone with it.
@@ -1380,7 +1380,7 @@ export class Combat {
     /**
      * `onboarding-loop-first-kill-trivial` — `_pointBlankHit` is GONE. It swept
      * chest -> aim and resolved any machine surface inside 2.6 m as an
-     * automatic hit before the arrow existed, which meant the first Watcher
+     * automatic hit before the arrow existed, which meant the first Sentry
      * died to a click with no aiming at all. Point blank is now the SPEAR's
      * job (LMB unaimed), and the arrow that IS fired at knife range is swept
      * honestly by ctx.hitHulls from the tail of its first segment.
@@ -1521,7 +1521,7 @@ export class Combat {
        * Fix round 1. The first cut threw the shower at 12-25 m/s on the pool's
        * shared drag of 2.4, and the arithmetic is merciless: 100 ms after the
        * hit those sparks are 1.0-2.6 m from the impact. Measured on port 5208
-       * against a Sawtooth at 8 m (160 px/m, 318 px of machine on screen), the
+       * against a Big cat at 8 m (160 px/m, 318 px of machine on screen), the
        * nearest spark of sixty-four was 164 px from the impact point and the
        * cloud spanned 500 px — every particle was on screen, none of them was
        * ON THE HIT. That is what "reads as a faint puff" means, and no amount
@@ -1782,7 +1782,7 @@ export class Combat {
       if (tear > 0 && Array.isArray(m.parts)) {
         const tearR = Math.min(radius, 2.2);
         // `combat-tearblast-canon`: a burst strips at most `tearCap`
-        // components. Uncapped, one Tearblast could denude a Thunderjaw.
+        // components. Uncapped, one Tearblast could denude a Colossus.
         const cap = def.tearCap ?? 99;
         let stripped = 0;
         for (const part of m.parts) {

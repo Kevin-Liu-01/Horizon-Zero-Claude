@@ -28,7 +28,7 @@ import { site, CRATER, SITES_OK } from './sites/layout.js';
  *   fauna       the kept fauna system (world-props W3 re-picks the species)
  *
  * The Round-4 valley content (river rocks, driftwood, deadfall, ruins, the
- * watchtower and lookout, the megastructures, the Tallneck, the rockworks and
+ * watchtower and lookout, the megastructures, the Tower, the rockworks and
  * the six Round-4 places) is deleted with this file's rewrite (plan §6).
  *
  * BOOT. `Props` is constructed by world-ground's `Vegetation` (after the

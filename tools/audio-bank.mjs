@@ -50,7 +50,7 @@ const BUILD = [
   { set: 'foot/snow', variants: 4, dur: 0.4, gain: 1.0, tags: ['footstep', 'snow'] },
 
   // --- bows: one full set per weapon (audio-13) --------------------------
-  ...['hunter', 'sharpshot', 'war'].flatMap((w) => ([
+  ...['sabina', 'sighting', 'recurve'].flatMap((w) => ([
     { set: `bow/${w}/nock`, variants: 2, dur: 0.24, gain: 0.9, tags: ['bow', w, 'nock'] },
     { set: `bow/${w}/draw`, variants: 1, dur: 0.95, gain: 0.9, tags: ['bow', w, 'draw'] },
     { set: `bow/${w}/release`, variants: 2, dur: 0.62, gain: 1.0, tags: ['bow', w, 'release'] },
@@ -58,11 +58,11 @@ const BUILD = [
     { set: `bow/${w}/empty`, variants: 1, dur: 0.2, gain: 0.8, tags: ['bow', w, 'empty'] },
   ])),
 
-  // --- eight species, windup + strike each (audio-02) --------------------
-  ...['watcher', 'strider', 'scrapper', 'longleg', 'glinthawk', 'sawtooth', 'behemoth', 'thunderjaw']
+  // --- one voice per Instrument role, windup + strike each (audio-02) ----
+  ...['sentry', 'herd', 'swarm', 'heavy']
     .flatMap((s) => ([
-      { set: `voice/${s}/windup`, variants: 1, dur: s === 'thunderjaw' || s === 'behemoth' ? 1.15 : 0.95, gain: 1.0, tags: ['voice', s, 'windup'] },
-      { set: `voice/${s}/strike`, variants: 1, dur: s === 'thunderjaw' ? 1.7 : s === 'behemoth' ? 1.6 : 0.95, gain: 1.0, tags: ['voice', s, 'strike'] },
+      { set: `voice/${s}/windup`, variants: 1, dur: s === 'heavy' ? 1.15 : 0.95, gain: 1.0, tags: ['voice', s, 'windup'] },
+      { set: `voice/${s}/strike`, variants: 1, dur: s === 'heavy' ? 1.7 : 0.95, gain: 1.0, tags: ['voice', s, 'strike'] },
     ])),
 
   // --- machine footfalls by weight class (audio-07) ---------------------
@@ -87,25 +87,25 @@ const BUILD = [
   { set: 'machine/alarm', variants: 1, dur: 0.85, gain: 1.0, tags: ['machine', 'alert'] },
 
   // --- Aloy foley (D2: breath and gear, no VO) ---------------------------
-  { set: 'aloy/breath-in', variants: 1, dur: 0.55, gain: 0.9, tags: ['aloy', 'breath'] },
-  { set: 'aloy/breath-out', variants: 1, dur: 0.65, gain: 0.9, tags: ['aloy', 'breath'] },
-  { set: 'aloy/effort', variants: 2, dur: 0.36, gain: 0.9, tags: ['aloy', 'effort'] },
-  { set: 'aloy/hurt', variants: 2, dur: 0.48, gain: 1.0, tags: ['aloy', 'hurt'] },
+  { set: 'brea/breath-in', variants: 1, dur: 0.55, gain: 0.9, tags: ['brea', 'breath'] },
+  { set: 'brea/breath-out', variants: 1, dur: 0.65, gain: 0.9, tags: ['brea', 'breath'] },
+  { set: 'brea/effort', variants: 2, dur: 0.36, gain: 0.9, tags: ['brea', 'effort'] },
+  { set: 'brea/hurt', variants: 2, dur: 0.48, gain: 1.0, tags: ['brea', 'hurt'] },
   { set: 'gear/light', variants: 2, dur: 0.2, gain: 0.7, tags: ['gear'] },
   { set: 'gear/heavy', variants: 2, dur: 0.24, gain: 0.7, tags: ['gear'] },
 
   // --- ambience beds (audio-11) — stereo, crossfade-looped at runtime ----
   { set: 'amb/meadow', variants: 1, dur: 13, ch: 2, kbps: 80, gain: 1.0, loop: true, tags: ['ambience'] },
   { set: 'amb/river', variants: 1, dur: 13, ch: 2, kbps: 80, gain: 1.0, loop: true, tags: ['ambience'] },
-  { set: 'amb/campfire', variants: 1, dur: 13, ch: 2, kbps: 80, gain: 1.0, loop: true, tags: ['ambience'] },
+  { set: 'amb/brazier', variants: 1, dur: 13, ch: 2, kbps: 80, gain: 1.0, loop: true, tags: ['ambience'] },
   { set: 'amb/forest', variants: 1, dur: 13, ch: 2, kbps: 80, gain: 1.0, loop: true, tags: ['ambience'] },
   { set: 'amb/night', variants: 1, dur: 13, ch: 2, kbps: 80, gain: 1.0, loop: true, tags: ['ambience'] },
   { set: 'amb/ridge', variants: 1, dur: 13, ch: 2, kbps: 80, gain: 1.0, loop: true, tags: ['ambience'] },
   // distant machine calls — the valley is inhabited (audio-11)
   { set: 'amb/call-far', variants: 3, dur: 2.4, ch: 2, kbps: 64, gain: 0.9, tags: ['ambience', 'call'] },
 
-  // --- per-species idle beds (audio-02): eight identities, not one hum ---
-  ...['watcher', 'strider', 'scrapper', 'longleg', 'glinthawk', 'sawtooth', 'behemoth', 'thunderjaw']
+  // --- per-role idle beds (audio-02): one identity per role, not one hum ---
+  ...['sentry', 'herd', 'swarm', 'heavy']
     .map((s) => ({ set: `idle/${s}`, variants: 1, dur: 3.2, gain: 0.9, loop: true, tags: ['machine', 'idle', s] })),
 
   // --- death: collapse + loot beacon (audio-06) -------------------------
@@ -122,8 +122,8 @@ const BUILD = [
   { set: 'status/frost', variants: 1, dur: 2.4, gain: 0.9, loop: true, tags: ['status', 'freeze'] },
 
   // --- Aloy's harder efforts (audio-03; D2 — still no VO) ---------------
-  { set: 'aloy/effort-hard', variants: 2, dur: 0.46, gain: 0.95, tags: ['aloy', 'effort'] },
-  { set: 'aloy/breath-hard', variants: 2, dur: 0.85, gain: 0.9, tags: ['aloy', 'breath'] },
+  { set: 'brea/effort-hard', variants: 2, dur: 0.46, gain: 0.95, tags: ['brea', 'effort'] },
+  { set: 'brea/breath-hard', variants: 2, dur: 0.85, gain: 0.9, tags: ['brea', 'breath'] },
 
   /* --- the adaptive score (audio-01) ------------------------------------
    * 96 BPM, 4/4: bar 2.5 s, phrase 10.0 s. Rendered at 10.6 s and looped by
@@ -174,7 +174,7 @@ const JOBS = [];
  *
  * It used to be advanced only for sets that survived the filter, which made
  * every cue's seed a function of *which other sets happened to be selected* —
- * so `--only idle/longleg` rendered a longleg bed that a full re-run would
+ * so `--only idle/herd` rendered a herd bed that a full re-run would
  * never reproduce, and the bank stopped being the deterministic artefact the
  * manifest claims it is. Two idle beds on disk were built that way. Counting
  * past the skipped sets costs nothing and makes a subset render bit-identical
@@ -542,7 +542,7 @@ results.sort((a, b) => (a.set === b.set ? a.index - b.index : a.set < b.set ? -1
 
 /* ------------------------------- write ----------------------------------- */
 if (!only && existsSync(OUT_DIR)) {
-  for (const d of ['foot', 'bow', 'voice', 'mstep', 'hit', 'machine', 'aloy', 'gear', 'amb',
+  for (const d of ['foot', 'bow', 'voice', 'mstep', 'hit', 'machine', 'brea', 'gear', 'amb',
     'idle', 'status', 'music']) {
     rmSync(path.join(OUT_DIR, d), { recursive: true, force: true });
   }
@@ -581,7 +581,7 @@ if (only) {
   for (const row of prev) {
     if (renderedSets.has(row.set)) {
       // the row is superseded — remove the file it named, which is NOT
-      // necessarily the file we just wrote (idle/longleg.ogg -> .wav)
+      // necessarily the file we just wrote (idle/herd.ogg -> .wav)
       const old = path.join(OUT_DIR, row.file);
       if (existsSync(old) && !results.some((r) => r.file === row.file)) rmSync(old, { force: true });
       continue;

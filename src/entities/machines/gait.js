@@ -19,8 +19,8 @@ import { ContactLedger } from './rig/contact.js';
  *    (`_reachOut`), which is what a real leg does, and it plants where the
  *    body WILL be (turn-rate look-ahead) rather than where it is.
  *  - **Cadence.** Stride was a constant per species, so cadence was
- *    `speed / stride` — a behemoth ambling at 1.2 m/s took a 0.5 Hz stride and
- *    a strider at 10 m/s took 3.1 Hz, both outside the biomechanical band
+ *    `speed / stride` — a hauler ambling at 1.2 m/s took a 0.5 Hz stride and
+ *    a runner at 10 m/s took 3.1 Hz, both outside the biomechanical band
  *    `A48` grades against. Cadence is now the INPUT (`hz = C(runK)/sqrt(L/2.5)`
  *    against measured body length) and stride is derived, so a machine
  *    lengthens its stride to go faster the way an animal does, and the
@@ -106,7 +106,7 @@ const ENGAGED_CADENCE_FLOOR = 0.85;
  *
  * Round 4 set the floor as a fraction of `hz`, which is mid-band, so a calm
  * machine shuffling at `0.30 * hz` sat at a THIRD of the band minimum and gate
- * `A48` failed it (thunderjaw 0.30 Hz vs a 0.40 Hz floor, longleg 0.49 vs
+ * `A48` failed it (colossus 0.30 Hz vs a 0.40 Hz floor, wader 0.49 vs
  * 0.59) — and failed a different subset each run, because whether the floor
  * was the engaged one or the calm one depended on whether `machine-ai` had
  * noticed the player yet. A machine that is TRAVELLING has a cadence, and that
@@ -130,7 +130,7 @@ const BAND_REF_HZ = 2.2;     // cadence of a 2.5 m reference body
  *
  * Fix round 1 pinned the floor at 0.94 x the band MAXIMUM to compensate for
  * the sim running at half wall speed, and that traded one failure for two: a
- * watcher at 3.1 Hz completes a stance in 0.16 s, and gate `A45` samples the
+ * sentry at 3.1 Hz completes a stance in 0.16 s, and gate `A45` samples the
  * contact flags once per `requestAnimationFrame` — at 10 fps a whole swing
  * falls between two samples, two consecutive plants read as ONE plant window,
  * and the "stance drift" the gate reports is a whole stride (measured: 0.422 m
@@ -182,7 +182,7 @@ const CALM_CADENCE_FLOOR = 0.30;
 
 /**
  * The cadence band a body length dictates, and where a MOVING machine sits
- * inside it. One law, exported, so the clip-driven species (`watcher.js`,
+ * inside it. One law, exported, so the clip-driven species (`sentry.js`,
  * which has no `GaitController`) grade against the same numbers instead of
  * carrying a second copy that drifts.
  * @param {number} bodyLengthM largest horizontal mesh extent
@@ -218,7 +218,7 @@ export function cadenceBand(bodyLengthM) {
  * The ceiling used to be 2.5, chosen for "half speed plus margin". The gate
  * suite runs six browsers on one GPU: measured on a box at load average 150
  * the sim ran more than **ten times** behind wall time, the correction
- * saturated, and the Longleg — the one species whose footfalls ARE its clip
+ * saturated, and the Wader — the one species whose footfalls ARE its clip
  * rate, with nothing downstream re-deriving them from ground speed —
  * delivered 0.70 Hz against a 1.65 Hz target and failed `A48`. Raising the
  * ceiling to 8 was not enough either (measured 0.70, 1.30, 1.70 over three
@@ -257,7 +257,7 @@ const WPS_SLEW = 4;            // max e-folds per second the scale may move
  * (`wallPerSim`, up to 25x). Measured on this lane's box under five other
  * lanes' suites: 9-10 frames drawn in the corpse gates' 5 s, the death clock
  * at 0.2-0.5 s, every wreck caught a third of the way into its collapse — the
- * Behemoth -0.82 m, the Thunderjaw halfway down its slide. A collapse is a
+ * Hauler -0.82 m, the Colossus halfway down its slide. A collapse is a
  * real-time event for the same reason a footfall is (see above): the death
  * clock advances by sim dt times `wallPerSim`, which is exactly 1 when the sim
  * keeps up (so nothing changes at frame rate), pause-safe (no update, no
@@ -280,7 +280,7 @@ export function wallPerSim(engine) {
     // cannot poison the average — but at 1 s it also DROPPED the frames a
     // loaded host actually stutters on, which are exactly the frames the
     // correction exists for, and it biased the estimate low precisely when it
-    // mattered. Measured on the gate box: the Longleg's stance windows opened
+    // mattered. Measured on the gate box: the Wader's stance windows opened
     // at 0.6 Hz against a 1.63 Hz target because the correction had not caught
     // up. `k` is 0.85 (about 7 frames) for the same reason: at 5 fps a
     // 12-frame average spends half of a 5 s gate window still converging.
@@ -336,13 +336,13 @@ export function wallSeconds(engine) {
  * between the two is unmodelled, and on a contended box it is large:
  *
  * * `wallPerSim`'s EMA lags a host whose load changes inside the 5 s the gate
- *   samples, in both directions. Measured by a judge: a behemoth at 1.61 Hz
+ *   samples, in both directions. Measured by a judge: a hauler at 1.61 Hz
  *   against a band ceiling of 1.50 (the correction reading ~1.8x on a host
- *   that was keeping up), and on another run a strider at 0.65 against a 0.83
- *   floor and a longleg at 0.40 against 1.16.
+ *   that was keeping up), and on another run a runner at 0.65 against a 0.83
+ *   floor and a wader at 0.40 against 1.16.
  * * `ContactLedger` DEFERS a re-plant until the release has been drawn (and,
  *   briefly, read). That is a fixed penalty in WALL time — at 10 fps, up to
- *   0.2 s of extra swing per step, which is a fifth of a strider's stride.
+ *   0.2 s of extra swing per step, which is a fifth of a runner's stride.
  * * the reach guard (`_reachOut`) ends a stance early, which spends a cycle
  *   faster than the phase rate asked for.
  *
@@ -378,8 +378,8 @@ const TRIM_LO = 0.55;
  * way. A loop that cannot reach its set point inside ±35 % is not being
  * under-commanded, it is being under-delivered, and winding the command up
  * only pushes the DELIVERED rate out of the top of the band, which is exactly
- * the failure mode two judges filmed (thunderjaw 1.48 Hz against a 1.19 Hz
- * ceiling; sawtooth 2.23 against 2.23).
+ * the failure mode two judges filmed (colossus 1.48 Hz against a 1.19 Hz
+ * ceiling; big cat 2.23 against 2.23).
  */
 const TRIM_HI = 1.35;
 
@@ -393,7 +393,7 @@ const TRIM_HI = 1.35;
  * ceiling. Clamping the command to the band was the first version and it caps
  * the correction exactly where it is needed: a machine losing a third of its
  * reports to the frame rate is commanded at the band and DELIVERS below it —
- * measured, longleg 0.89 Hz against a 0.94 Hz floor with the trim saturated.
+ * measured, wader 0.89 Hz against a 0.94 Hz floor with the trim saturated.
  *
  * The honest ceiling is conditional on the evidence. Positive debt means the
  * machine is measurably delivering FEWER footfalls than its band asks for, so
@@ -407,10 +407,10 @@ export function cadCeilK(loop) {
   /**
    * ANTI-WINDUP, AND THE MEASUREMENT THAT MADE IT NECESSARY (fix round 2).
    *
-   * Removing `watcher.js`/`longleg.js`'s `Math.min(0.98, ...)` — which a judge
+   * Removing `sentry.js`/`wader.js`'s `Math.min(0.98, ...)` — which a judge
    * correctly called a cap keyed to the gate's own bar — exposed what that cap
    * had been hiding, on the species the file already warns about. Probed on a
-   * charging Longleg: `observedPlants` delta 0 for ten consecutive half-second
+   * charging Wader: `observedPlants` delta 0 for ten consecutive half-second
    * samples at 4.0 m/s, `rateHz` 0.00, `debt` pinned at 0.75, `trim` at its
    * 1.68 ceiling and the commanded rate at **4.5 Hz** against a 2.86 Hz band
    * top. Delivered cadence then measured 0.50-0.79 Hz against a 0.95 Hz floor —
@@ -431,8 +431,8 @@ export function cadCeilK(loop) {
   if ((loop.stallT ?? 0) > CEIL_STALL) return 1;
   /**
    * ROUND-4 FIX ROUND 2, judge finding "A48 fails under realistic multi-suite
-   * load — a SECOND species (thunderjaw) crosses out of band", measured at
-   * 1.48 Hz against a [0.40, 1.19] band, and the same shape on the sawtooth
+   * load — a SECOND species (colossus) crosses out of band", measured at
+   * 1.48 Hz against a [0.40, 1.19] band, and the same shape on the big cat
    * (2.23 against a 2.23 ceiling). Both are OVER the band, which is the one
    * direction this ceiling can cause: instantaneous debt goes positive for a
    * frame whenever a touchdown lands late, the ceiling opens, and on a host
@@ -468,7 +468,7 @@ export class CadenceLoop {
    *
    * The defaults are the tight, post-fix authority the GAIT path needs. A
    * clip-driven species whose stance windows genuinely fall between drawn
-   * frames (watcher, longleg) passes the wider pair it was tuned with.
+   * frames (sentry, wader) passes the wider pair it was tuned with.
    */
   constructor(opts = {}) {
     this.trimHi = opts.trimHi ?? TRIM_HI;
@@ -634,7 +634,7 @@ export class GaitController {
      * rest pelvis puts them. Every term that then LOWERS the pelvis — the
      * stance flex, the foot-follow offset, a bask or attack crouch — pushed
      * the belly through the ground: measured on flat ground, a standing
-     * Corruptor's belly 0.14-0.17 m under the soil and a basking Snapmaw's
+     * Crawler's belly 0.14-0.17 m under the soil and a basking Sprawler's
      * 0.06 m under it. Three per-species terms, all zero by default:
      *
      *   `standLift` m   raises the standing body (a scorpion's legs hold its
@@ -643,7 +643,7 @@ export class GaitController {
      *                   crocodile's high walk lifts the belly clear to move)
      *   `bellyMin`  m   the lowest the pelvis may go relative to its rest
      *                   height — the belly may come down TO the soil (a
-     *                   basking Snapmaw, a crouching Corruptor) but not into it
+     *                   basking Sprawler, a crouching Crawler) but not into it
      */
     /**
      * How far a `sprawl` wreck's tail ROOT may droop when the tail is laid
@@ -654,8 +654,8 @@ export class GaitController {
     /**
      * Lay this wreck's legs and tail along the ground (`deathPose`, `sprawl`
      * class, chassis mode) instead of folding the legs and drooping the tail.
-     * Opt-in per species: the belly-down sprawlers (Snapmaw, Corruptor,
-     * Shell-Walker). The Stormbird also dies as `sprawl`, but it is a raptor
+     * Opt-in per species: the belly-down sprawlers (Sprawler, Crawler,
+     * Carrier). The Raptor also dies as `sprawl`, but it is a raptor
      * on two long legs, not a belly-down body, and on flat ground the lay
      * changes nothing it is graded on (`A47c` 0.663 with it, 0.667 without),
      * so it keeps the droop it was measured with.
@@ -687,10 +687,10 @@ export class GaitController {
     /**
      * ROUND-4 FIX ROUND 3 — `cadFloorK` MAY NOT INVERT THE WINDOW IT SITS IN.
      *
-     * Judge finding, r2: "Stormbird is ceiling-bound on 98 % of moving frames
+     * Judge finding, r2: "Raptor is ceiling-bound on 98 % of moving frames
      * because cadFloorK inverts its own cadence window". Measured in the
      * running game before this line existed (`shots/mx-r3-probe1.png`): the
-     * Stormbird's body length is 15.58 m, so its band top is 1.190 Hz,
+     * Raptor's body length is 15.58 m, so its band top is 1.190 Hz,
      * `band.floor` is 0.559 and `cadCeil` is 0.714 — and `cadFloorK: 1.45`
      * (raised in fix round 2 when the first honest measurement of a perched
      * bird came in at 0.30 Hz) put `cadFloor` at **0.811 Hz, above its own
@@ -964,17 +964,17 @@ export class GaitController {
        * THE WINDOW MUST BE NON-EMPTY — WHICHEVER FLOOR IS ASKING (fix round 3).
        *
        * `cadFloorK`'s half of this is asserted where the window is built (see
-       * `this.cadFloor` above), and fixing only that half took the Stormbird's
+       * `this.cadFloor` above), and fixing only that half took the Raptor's
        * `A48b-cadence-headroom-expansion` fraction from **0.90 to 0.276** —
        * better, still red, and the remaining 0.276 is the SECOND floor on this
        * line. Measured per species from the constants:
        *
        * | species | engaged run floor `hzRun * 0.85` | `cadCeil` |
        * | --- | --- | --- |
-       * | stormbird | 0.851 | **0.714** |
-       * | sawtooth | 1.591 | **1.334** |
-       * | thunderjaw | 0.884 | **0.742** |
-       * | broadhead | 1.647 | **1.381** |
+       * | raptor | 0.851 | **0.714** |
+       * | big cat | 1.591 | **1.334** |
+       * | colossus | 0.884 | **0.742** |
+       * | ram | 1.647 | **1.381** |
        *
        * `hzRun` is `CADENCE_RUN / sizeK` and `cadCeil` is `0.60 * bandHi`: two
        * different laws, and the first is above the second for every species on
@@ -987,7 +987,7 @@ export class GaitController {
        * So the floor that is actually applied is capped by the ceiling that is
        * actually applied. This can only ever LOWER a commanded cadence, so no
        * species can be pushed OUT of the band by it — and it pulls the two that
-       * were sitting on the band's upper edge (ravager 1.79 of a 1.88 top) back
+       * were sitting on the band's upper edge (brute 1.79 of a 1.88 top) back
        * toward the middle.
        */
       const floor = Math.min(this.cadCeil,
@@ -1009,9 +1009,9 @@ export class GaitController {
      * `ledger.observedPlants` — the touchdowns a once-per-frame sample
      * happened to catch — which under load reads fewer stances than the rig
      * made, winds the trim up and steps the machine faster into frames nobody
-     * can see (the Longleg's positive-feedback loop, §11.5), and on the
-     * escorting Ravager read its reach flicker as over-delivery (§12.4). The
-     * clip-driven species (Watcher, Longleg) already close over stance wraps.
+     * can see (the Wader's positive-feedback loop, §11.5), and on the
+     * escorting Brute read its reach flicker as over-delivery (§12.4). The
+     * clip-driven species (Sentry, Wader) already close over stance wraps.
      */
     const trim = this.cadLoop.step(engine, wantWallHz,
       this.ledger.stanceWraps, this.legs.length, dt);
@@ -1180,7 +1180,7 @@ export class GaitController {
        * swallow it, and it is never counted twice. The per-leg clock
        * (`leg.ph`) is NOT the authority here: the reach guard below resets it
        * mid-stance and the re-sync pulls it back and forth, which is how an
-       * escorting Ravager reported three touchdowns per commanded step
+       * escorting Brute reported three touchdowns per commanded step
        * (§12.4). A foot held off the ground for the whole window (a leap, a
        * stomp lift, a limp) opens no stance and counts nothing.
        */
@@ -1200,7 +1200,7 @@ export class GaitController {
        * the pattern still says stance, and the re-sync on the next line pulled
        * the leg straight back across `duty` into stance: re-plant, out of reach
        * again, swing, re-plant, once per drawn frame. Instrumented on an
-       * escorting Ravager in `A48`'s own order: its commanded phase at 0.69 Hz
+       * escorting Brute in `A48`'s own order: its commanded phase at 0.69 Hz
        * while its feet reported 3-7 touchdowns per 0.25 s — the gate read up
        * to 3.4 Hz against a 1.87 Hz ceiling, the loop read the same flicker as
        * over-delivery and slowed the phase, the stride grew, and it reached
@@ -1315,7 +1315,7 @@ export class GaitController {
   /**
    * Cheap gait for machines past the animation LOD ring (`machine-rig-17`).
    * Advances phase and body english only — no IK, no bone writes past the
-   * pelvis — so a Thunderjaw on the far ridge still strides at 500 m for
+   * pelvis — so a Colossus on the far ridge still strides at 500 m for
    * about 2 % of the full cost. Plants are marked stale so `debugFeet()`
    * keeps telling the truth.
    */
@@ -1453,7 +1453,7 @@ export class GaitController {
   /**
    * Spring chains on the whippy bits (`machine-rig-11`). Antennae, cables and
    * crest wires lag the body: the holder is driven by a damped spring against
-   * the machine's own acceleration and turn rate, so a Sawtooth's antenna fan
+   * the machine's own acceleration and turn rate, so a Big cat's antenna fan
    * whips when it wheels and settles when it stops. Runs over `machine.parts`
    * — a handful of objects — with no allocation.
    */
@@ -1632,7 +1632,7 @@ export class GaitController {
    * ground the way a dead animal's tail and legs do. The droop it replaces
    * curled a sprawler's tail by a fixed angle per joint and left
    * `CorpseShape` to bend the tip back out of the soil from the ROOT, which
-   * stood the middle of the tail up in an arch (measured on the Snapmaw:
+   * stood the middle of the tail up in an arch (measured on the Sprawler:
    * `rig_tail2` 0.59 m alive, 0.98 m dead).
    *
    * `horiz` (optional) overrides the horizontal direction the segment is laid
@@ -1688,7 +1688,7 @@ export class GaitController {
    * solve's floor guard) measure every vertex against the terrain under the
    * wreck's CENTRE, so on a slope a limb laid on the soil downhill of it reads
    * as buried by the slope times its reach — measured on a 5-degree meadow, a
-   * splayed Corruptor's downhill legs held its chassis 0.19 m off the soil
+   * splayed Crawler's downhill legs held its chassis 0.19 m off the soil
    * through the guard. Downhill, the limb lies level with the centre instead.
    */
   _layGround(T, p) {
@@ -1732,8 +1732,8 @@ export class GaitController {
    * clamped against (`A47c`, fix round 2).
    *
    * Judge finding: "A47c-corpse-mass is red on 7 of 8 expansion species and the
-   * wrecks visibly float metres above the soil ... corruptor 3.55 (alive 0.733 m
-   * -> dead 2.604 m) ... a killed Corruptor hanging at tree-canopy height with
+   * wrecks visibly float metres above the soil ... crawler 3.55 (alive 0.733 m
+   * -> dead 2.604 m) ... a killed Crawler hanging at tree-canopy height with
    * its legs dangling in clear air above the grass line", with the remedy:
    * "clamp the pose against the rig's own measured lowest-vertex envelope (the
    * same way rig.headReach/headRestY bound the neck droop) so the fold can
@@ -1742,7 +1742,7 @@ export class GaitController {
    * `rig.headReach` was already trying to be that clamp and could not be,
    * because it is a SPEC distance — neck joint to the head spec's own tip —
    * and what actually hangs off a bone is whatever the skin binds to it. I
-   * bucketed a dead Corruptor's posed vertices by dominant bone and the numbers
+   * bucketed a dead Crawler's posed vertices by dominant bone and the numbers
    * say it plainly: `rig_head` carries 514 samples spanning 2.58 m of height,
    * because the scorpion's CLAW ARMS (shell z +0.98 to +3.36) bind to the head
    * and chest, not to a "head" the size of a skull. A 0.5 rad droop on a 3.4 m
@@ -1827,7 +1827,7 @@ export class GaitController {
         // Driving the true minimum to the surface is what kept every wreck at
         // standing height: one dangling limb tip touches, the loop declares
         // the machine landed, and the body never comes down (measured on the
-        // sawtooth — 1.38 m of authored collapse, 1.26 m of it handed straight
+        // big cat — 1.38 m of authored collapse, 1.26 m of it handed straight
         // back, net descent 0.12 m). A wreck beds its limb tips INTO the soil
         // and rests on its bulk, so the target is the 2nd-percentile height,
         // with the true minimum allowed 0.05 m of sink — a twentieth of the
@@ -1868,7 +1868,7 @@ export class GaitController {
    * ground a metre or more apart, and every corpse measurement then has to
    * pick which end of the hill it is standing on: gate `A47` takes the ground
    * under the average of its mesh boxes, `A47b`/`A47c` under the posed
-   * extent's centre, and on a 16 m Thunderjaw lying across a slope at
+   * extent's centre, and on a 16 m Colossus lying across a slope at
    * (29, -219) those two points were 1.3 m apart in height (measured), so the
    * wreck could not be on the ground by both. A body that length does not come
    * to rest across a slope anyway — it slews round onto the contour as it goes
@@ -1921,7 +1921,7 @@ export class GaitController {
      * `Machine._updateDeath` rolls and sinks the whole `body` node, and a
      * rigid rotation of the body is the worst thing that can happen to this
      * measurement: gate `A47` grades a corpse with the world AABB of each
-     * mesh's BIND box, and rotating a 13 m Thunderjaw mesh by 0.15 rad drops
+     * mesh's BIND box, and rotating a 13 m Colossus mesh by 0.15 rad drops
      * that box's corner a metre below any geometry — the solve then lifts the
      * wreck to satisfy it and the machine ends up hanging in the air (a judge
      * measured six of eight species sitting HIGHER dead than alive).
@@ -1941,12 +1941,12 @@ export class GaitController {
      * The paragraph above is only half the argument. `_conform()` composes the
      * root quaternion from the terrain NORMAL as well as the heading, and it
      * is not called again once a machine is dead — so a wreck keeps whatever
-     * slope tilt it had on its last living frame. For a 14 m thunderjaw shell
+     * slope tilt it had on its last living frame. For a 14 m colossus shell
      * a 5-degree tilt puts the low corner of its axis-aligned box 0.6 m below
      * its lowest real vertex, and that is the whole remaining disagreement
      * between `A47` (which grades mesh AABBs) and `A47b` (which grades posed
      * vertices): measured span 0.53 m against a 0.50 m acceptance window, i.e.
-     * mutually infeasible by construction, exactly as the scrapper's tilt was
+     * mutually infeasible by construction, exactly as the scavenger's tilt was
      * (§7.1). Levelling the root closes it, and it costs nothing visually —
      * the lie of the wreck is the BODY's pose, which is what the fold below
      * authors.
@@ -1961,13 +1961,13 @@ export class GaitController {
 
     /**
      * A HEAVY WRECK FALLS ON ITS LEFT FLANK (chassis mode). Measured on the
-     * Behemoth chassis, the same death rolled each way: onto +1 the wreck lies
+     * Hauler chassis, the same death rolled each way: onto +1 the wreck lies
      * flat (0.58-0.64 of its standing median), onto -1 it lands on its right
      * thigh armour, whose plating stands the chassis 0.3 m off the soil, and
      * measures 0.90-1.04 — the same machine floating by the flip of a coin.
      * Any other species that measures the same asymmetry names the flank its
      * wreck lies flat on (`machine.wreckSide`, residue fix round 1: the
-     * Stormbird and the Broadhead, see their constructors); the rest keep the
+     * Raptor and the Ram, see their constructors); the rest keep the
      * random side.
      */
     const side = this.grounder?.shape
@@ -1988,7 +1988,7 @@ export class GaitController {
      * short one and the mass comes down. Run it on a machine that is ALREADY
      * flatter than it is tall and it does the exact opposite — it stands the
      * wide axis up. Measured on gate `A47c` (dead median / alive median, where
-     * <= 0.75 passes): snapmaw **1.98**, corruptor **3.90**, shellwalker
+     * <= 0.75 passes): sprawler **1.98**, crawler **3.90**, carrier
      * **3.22**. All three are low sprawling bodies whose alive median is
      * 0.47-1.11 m; rolling one onto its flank makes it TALLER dead than alive,
      * and `CorpseGrounder` then floats the whole thing to keep the lowest
@@ -1997,7 +1997,7 @@ export class GaitController {
      * A crocodile, a scorpion and a crab die BELLY DOWN. So `sprawl` keeps the
      * roll to a list rather than a flank roll and splays the legs flat out to
      * the sides, which is the `heavy` fold — the one that already works on a
-     * wide low chassis (the Behemoth's, §7.2) — with the roll taken off it.
+     * wide low chassis (the Hauler's, §7.2) — with the roll taken off it.
      */
     const sprawl = cls === 'sprawl';
 
@@ -2008,7 +2008,7 @@ export class GaitController {
      * hoped the wreck would land somewhere sensible; none of them did, and the
      * two failure modes traded off against each other. Fold the legs UNDER the
      * body and the wreck stays exactly as tall as it was standing (measured on
-     * the sawtooth: 1.24 m standing median, 1.11 m collapsed — a judge caught
+     * the big cat: 1.24 m standing median, 1.11 m collapsed — a judge caught
      * this as "six of eight species sit HIGHER dead than alive"). Push the
      * chassis down instead and the legs punch through the soil, and
      * `CorpseGrounder` — whose job is to put the lowest point back ON the soil
@@ -2040,9 +2040,9 @@ export class GaitController {
      * how far the lowest geometry hangs below the bulk — and a rigid downward
      * translation of the chassis cannot change it. Every drop this file tried
      * (0.5x to 0.95x hip height) was handed straight back: the settle loop
-     * measured 1.38 m of authored collapse on a sawtooth and returned 1.26 m
-     * of it, and the two species where a drop DID survive (thunderjaw,
-     * scrapper) survived it by floating — +0.78 m and +0.57 m against a
+     * measured 1.38 m of authored collapse on a big cat and returned 1.26 m
+     * of it, and the two species where a drop DID survive (colossus,
+     * scavenger) survived it by floating — +0.78 m and +0.57 m against a
      * 0.40 m float budget, failing A47/A47b instead.
      *
      * So the pose folds and the ground solve lands it, full stop. What still
@@ -2058,7 +2058,7 @@ export class GaitController {
      * on its BELLY, because then the lowest thing is the chassis itself and
      * lowering it lowers the contact. That is what a crocodile, a scorpion and
      * a crab do, and it is what `A47c` was still failing them for: measured
-     * corruptor 4.46x, snapmaw 2.28x, shellwalker 2.14x dead-median over
+     * crawler 4.46x, sprawler 2.28x, carrier 2.14x dead-median over
      * alive-median, i.e. the wreck ends up metres ABOVE where the machine
      * stood. So `sprawl` drives the pelvis down to belly height and the splay
      * below lays the legs out flat beside it.
@@ -2095,7 +2095,7 @@ export class GaitController {
     // Forward kinematics, not IK onto absolute ground points: a leg pinned to
     // a world position does not move when `_settleChassis` lowers the pelvis,
     // so the settle loop can never satisfy itself and runs to its clamp (it
-    // put a sawtooth's pelvis 0.22 m ABOVE its standing height). Everything
+    // put a big cat's pelvis 0.22 m ABOVE its standing height). Everything
     // moves together, the loop converges, and the wreck comes down as far as
     // its own geometry allows.
     // near-horizontal: a splayed limb that still hangs below the belly is
@@ -2104,10 +2104,10 @@ export class GaitController {
     /**
      * ROUND-4 FIX ROUND 2 — THE HEAVY'S LEGS GO OUT, NOT UNDER.
      *
-     * The Behemoth was the one species the roll sweep could not move: 1.20 ->
+     * The Hauler was the one species the roll sweep could not move: 1.20 ->
      * 0.94, 1.48 -> 0.89, 1.70 -> 1.05, 2.10 -> 1.20 on gate `A47c`, i.e. its
      * optimum was already shipped and every direction was worse. Because the
-     * roll is not what holds a Behemoth up — its legs are. It is a wide, low
+     * roll is not what holds a Hauler up — its legs are. It is a wide, low
      * cargo chassis on four short columns, so a splay that keeps the knees
      * near the body leaves the belly standing on them at very nearly its
      * living height, whatever the torso does. Splayed FLAT (a collapsed
@@ -2120,11 +2120,11 @@ export class GaitController {
      * `sprawl` BARELY MOVES THE LEGS, and the measurement is why. A splay is
      * a rotation about the hip, so how far it drives the TOE below the soil is
      * a function of the leg's geometry — and on a machine whose knees sit
-     * ABOVE its hips (Corruptor, Shell-Walker) or OUTBOARD of them (Snapmaw) a
+     * ABOVE its hips (Crawler, Carrier) or OUTBOARD of them (Sprawler) a
      * flat splay drives the feet metres down. `CorpseGrounder` then lifts the
      * whole wreck by exactly that much to put the lowest vertex back on the
-     * soil, and the mass ends up HIGHER dead than alive: measured, corruptor
-     * 4.64x, shell-walker 2.40x, snapmaw 2.33x on `A47c`. A sprawling machine
+     * soil, and the mass ends up HIGHER dead than alive: measured, crawler
+     * 4.64x, carrier 2.40x, sprawler 2.33x on `A47c`. A sprawling machine
      * dies where it stands, on its own legs — so the legs stay where they are.
      */
     /**
@@ -2135,7 +2135,7 @@ export class GaitController {
      * driving the feet down, not the splay. A 1.75 rad thigh fold on a leg
      * whose knee already stands above its hip swings the whole limb under and
      * past the body; `CorpseGrounder` then lands on that limb and floats the
-     * chassis on it, which is the 4.46x Corruptor exactly.
+     * chassis on it, which is the 4.46x Crawler exactly.
      *
      * A belly-down death barely folds a knee at all: the legs go OUT, flat, to
      * either side, and the chassis comes down between them. So the fold angles
@@ -2148,7 +2148,7 @@ export class GaitController {
      * separately fixed.
      *
      * The note above records the measurement that took this to 0.12: a flat
-     * splay put the Corruptor at 4.64x on `A47c`. The note below it records the
+     * splay put the Crawler at 4.64x on `A47c`. The note below it records the
      * follow-up that found the real culprit — `thighK`/`shinK` at the QUAD
      * values, i.e. the knee FOLD, not the splay. A splay is a rotation about
      * the machine's own forward axis, and rotating a leg OUT from under a hip
@@ -2163,8 +2163,8 @@ export class GaitController {
     /**
      * CHASSIS MODE: legs stay near their own rest direction and fall. A 1.15
      * rad splay on a sprawler whose legs already stand out at ~45 degrees
-     * swings them PAST horizontal — measured, a dead Corruptor's feet at
-     * 2.0-2.9 m and a Shell-Walker's at 1.4-2.4 m, against 0.0-0.8 m alive —
+     * swings them PAST horizontal — measured, a dead Crawler's feet at
+     * 2.0-2.9 m and a Carrier's at 1.4-2.4 m, against 0.0-0.8 m alive —
      * and the whole point of the chain bend is that nothing has to be kept
      * out of the soil by the pose any more.
      */
@@ -2184,7 +2184,7 @@ export class GaitController {
      * wreck's LOWEST vertex on the soil, so the height of the mass above
      * ground is `median − lowest`, a property of the pose's vertical
      * DISTRIBUTION alone. No rigid translation can change it — 2.69 m of
-     * solved chassis descent on the thunderjaw moved its dead median by
+     * solved chassis descent on the colossus moved its dead median by
      * 0.12 m, because lowering the pelvis lowers the legs with it and the
      * grounder hands the whole thing straight back.
      *
@@ -2199,7 +2199,7 @@ export class GaitController {
      *
      * * on the pelvis, not on `body.rotation.z` — a posed box is tight in the
      *   mesh's own space, and the world AABB of a rotated NODE is not the
-     *   AABB of rotated geometry. The node roll parked a thunderjaw 1.53 m in
+     *   AABB of rotated geometry. The node roll parked a colossus 1.53 m in
      *   the air. Inside the skeleton, `refreshPosedBounds` re-measures the
      *   real surface and the box stays honest.
      * * on the PELVIS, not spread down the spine — the legs hang off the
@@ -2217,7 +2217,7 @@ export class GaitController {
      * ROUND-4 FIX ROUND 2 — THE BIPED GOES ALL THE WAY OVER.
      *
      * The biped's roll was 1.55 rad, i.e. exactly onto its flank, which is the
-     * WORST angle for a Thunderjaw and the measurement says so plainly. Its
+     * WORST angle for a Colossus and the measurement says so plainly. Its
      * torso is deeper than it is wide: bucketed by dominant bone, a wreck
      * rolled to 1.55 read `rig_pelvis` spanning [1.02, 6.26] — 5.2 m of
      * vertical extent from the chassis alone, on a machine whose ALIVE median
@@ -2228,19 +2228,19 @@ export class GaitController {
      * lays the back plates out flat. Measured, one species per run, no other
      * change (gate `A47c` dead/alive median):
      *
-     *   roll  0.40 -> thunderjaw 1.75   (collapses onto the chest: worst)
-     *   roll  1.55 -> thunderjaw 0.99   (onto the flank: the shipped value)
-     *   roll  2.35 -> thunderjaw 0.78
-     *   roll  2.75 -> thunderjaw 0.73
-     *   roll  3.00 -> thunderjaw 0.71   (on its back, legs up)
+     *   roll  0.40 -> colossus 1.75   (collapses onto the chest: worst)
+     *   roll  1.55 -> colossus 0.99   (onto the flank: the shipped value)
+     *   roll  2.35 -> colossus 0.78
+     *   roll  2.75 -> colossus 0.73
+     *   roll  3.00 -> colossus 0.71   (on its back, legs up)
      *
      * 3.00 rad is 172 degrees — an apex predator that goes over backwards and
      * stays there, which is what the real thing does and what the silhouette
-     * films (shots/r2fix-dead-thunderjaw-after.png).
+     * films (shots/r2fix-dead-colossus-after.png).
      *
      * The other two classes were swept the same way and both are already AT
-     * their optimum: heavy 1.00 -> behemoth 0.98, 1.48 -> 0.86, 1.90 -> 1.05;
-     * quad 2.20 -> sawtooth 0.77 against 1.60's 0.66. They keep their angles.
+     * their optimum: heavy 1.00 -> hauler 0.98, 1.48 -> 0.86, 1.90 -> 1.05;
+     * quad 2.20 -> big cat 0.77 against 1.60's 0.66. They keep their angles.
      */
     // `sprawl` does not roll: a belly-down machine that rolls stands its wide
     // axis up, which is the thing this class exists to stop.
@@ -2250,7 +2250,7 @@ export class GaitController {
      * grounder that lifted the whole machine by its lowest vertex, so they
      * folded every leg toward the sky side (`rollBias`) and rolled a biped onto
      * its BACK (3.0 rad) to keep the feet out of the soil — measured, a dead
-     * Thunderjaw's feet at 4.1 and 5.9 m and a Shell-Walker's six at 1.8-2.7 m,
+     * Colossus's feet at 4.1 and 5.9 m and a Carrier's six at 1.8-2.7 m,
      * which is most of those wrecks' median height. `rig/ground.js`
      * `CorpseShape` now bends a limb that goes through the soil instead of
      * lifting the machine, so a leg can simply come to rest perpendicular to
@@ -2258,7 +2258,7 @@ export class GaitController {
      * and a biped rolls onto its side like everything else.
      */
     // ...and a SPRAWLER does not roll at all in chassis mode: its belly is
-    // already on the soil alive (measured: Corruptor -0.05 m, Snapmaw -0.06),
+    // already on the soil alive (measured: Crawler -0.05 m, Sprawler -0.06),
     // so any roll only digs one flank in and the solve lifts the other — a
     // 0.08 + 0.14 rad roll on a 3 m-wide scorpion stood its far side 0.66 m up
     const rollK = sprawl ? (chassisMode ? 0 : 0.08) : biped ? (chassisMode ? 1.57 : 3.00) : heavy ? 1.48 : 1.60;
@@ -2268,7 +2268,7 @@ export class GaitController {
     // rather than sitting on a rolled hip: nose-down for the quadrupeds that
     // fall forward onto the chest, hips-over-shoulders for the biped.
     // chassis mode lies FLAT: a pitched chassis only stands its rear up once
-    // the snout is allowed to rest on the soil (measured on the Snapmaw: chest
+    // the snout is allowed to rest on the soil (measured on the Sprawler: chest
     // on the ground, pelvis plates 0.47 m up)
     this._rotWorld(rig.pelvis, _vRight, (chassisMode ? 0 : biped ? 0.34 : sprawl ? 0.06 : 0.18) * foldB);
     for (let li = 0; li < rig.legs.length; li++) {
@@ -2291,7 +2291,7 @@ export class GaitController {
       // down (and the wreck then rested on the low one at standing height).
       // KNEE FOLD, measured not guessed. The angles below are the ones that
       // demonstrably lift a machine's feet clear of the ground: a probe that
-      // rotated every thigh 1.4 rad and every shin -2.2 rad put a sawtooth's
+      // rotated every thigh 1.4 rad and every shin -2.2 rad put a big cat's
       // four feet at y 0.48-1.63 m. Anything shallower leaves the toes ON the
       // soil, the chassis has nothing to descend through, and the wreck comes
       // to rest at exactly the height it died at (measured: pelvis 1.29 m
@@ -2305,9 +2305,9 @@ export class GaitController {
       // ...and BOTH legs go to the same side of the rolled body. A pure +/-
       // splay about the roll axis sends one leg up and the other DOWN, and
       // the down one is what a tall wreck then stands on: measured on the
-      // thunderjaw, foot_L at 6.09 m and foot_R at 0.81 m with the pelvis at
+      // colossus, foot_L at 6.09 m and foot_R at 0.81 m with the pelvis at
       // 3.89 m — a straight leg propping a 9 m machine at standing height,
-      // which is the whole of `A47c`'s thunderjaw failure. An animal that
+      // which is the whole of `A47c`'s colossus failure. An animal that
       // comes down on its flank folds its legs toward the sky-facing side;
       // `rollBias` is that, scaled per class to the leg length it has to lift
       // clear.
@@ -2319,8 +2319,8 @@ export class GaitController {
        * judge finding on `A47c`: "splay sprawler legs outward in chassis mode
        * so the belly reaches the soil"). The FK fold above leaves a
        * crocodile's or a scorpion's legs folded up beside the body — measured
-       * on flat ground, a dead Snapmaw's feet at 0.29-0.32 m and its shins at
-       * 0.37-0.43 m against 0.13-0.23 m alive, a dead Corruptor's shins at
+       * on flat ground, a dead Sprawler's feet at 0.29-0.32 m and its shins at
+       * 0.37-0.43 m against 0.13-0.23 m alive, a dead Crawler's shins at
        * 0.82-0.84 m. So each leg is laid, hip to ankle, onto the ground beside
        * the body: the thigh swings down until the knee rests one leg-radius
        * above the soil, then the shin until the ankle does, out along the
@@ -2360,10 +2360,10 @@ export class GaitController {
     const sn = rig.spine.length;
     /**
      * A `sprawl` WRECK'S WHOLE FORWARD CHAIN IS ONE ENVELOPE (fix round 2, the
-     * second half of `A47c`'s Corruptor).
+     * second half of `A47c`'s Crawler).
      *
      * Capping the neck and head alone was not enough and the probe says exactly
-     * why. On a dead Corruptor the head chain measures a 4.00 m radius (the
+     * why. On a dead Crawler the head chain measures a 4.00 m radius (the
      * claw arms), so its own budget came out at 0.07 rad — but the bucketed
      * wreck still read `rig_head` 1.74 m UNDER the soil before the ground solve
      * lifted it, because the claws hang off the CHEST end of a chain that the
@@ -2408,7 +2408,7 @@ export class GaitController {
      *
      * `A47c` is the median of every posed vertex above terrain, so a species
      * that carries mass on a long neck cannot pass it with the neck still up:
-     * measured on the Grazer, whose antler ROTORS sit at y 3.12 body space,
+     * measured on the Browser, whose antler ROTORS sit at y 3.12 body space,
      * dead median 1.56 against an alive 1.52 — the wreck rolled onto its flank
      * and left a third of itself standing in the air on its own neck.
      *
@@ -2419,7 +2419,7 @@ export class GaitController {
      * down to belly height without putting it under: the rotation is split
      * across the neck (which has the reach) and the head (which only has to
      * finish the line), and it is measured from the pelvis rather than guessed,
-     * so a Redeye's short neck moves as little as a Grazer's long one moves a
+     * so a Red-lamp kind's short neck moves as little as a Browser's long one moves a
      * lot.
      */
     /**
@@ -2430,14 +2430,14 @@ export class GaitController {
      * `asin(headRestY / headReach)`, so that is the budget, split 0.62/0.48
      * between the neck (which has the reach) and the head (which finishes the
      * line), and capped at 0.95 rad so a long-necked species does not fold in
-     * half. Measured: grazer 0.55/0.42 rad (antler rotors come to belly
-     * height), snapmaw 0.16/0.12, corruptor 0.19/0.15 — the two species whose
+     * half. Measured: browser 0.55/0.42 rad (antler rotors come to belly
+     * height), sprawler 0.16/0.12, crawler 0.19/0.15 — the two species whose
      * heads were being driven metres underground barely move, which is the
      * whole point.
      */
     /**
      * ...AND THE REACH IS MEASURED, NOT SPECIFIED (fix round 2). See
-     * `_chainReach`: `rig.headReach` is a spec distance and the Corruptor's
+     * `_chainReach`: `rig.headReach` is a spec distance and the Crawler's
      * claw arms bind to this chain, so the spec under-reports the real radius
      * by 3x and the "budget" let the pose swing a 3.4 m limb 1.6 m underground.
      * The fallback is the old spec value, for a rig whose skin cannot be
@@ -2448,8 +2448,8 @@ export class GaitController {
      * round 2, second pass) — and the measurement that decided it.
      *
      * The first version of this change put every class on `_chainBudget`, and
-     * the quadrupeds got WORSE: broadhead 1.16 -> 1.31, grazer 1.06 -> 1.11 on
-     * `A47c`. The reason is honest and specific. A Broadhead's measured head
+     * the quadrupeds got WORSE: ram 1.16 -> 1.31, browser 1.06 -> 1.11 on
+     * `A47c`. The reason is honest and specific. A Ram's measured head
      * chain includes its HORNS, which sweep forward to z 2.20, so the measured
      * radius is 1.6 m against a 1.2 m spec reach and the derived budget fell
      * from 0.95 rad to 0.76 — a shorter droop, a head left higher, and a higher
@@ -2473,27 +2473,27 @@ export class GaitController {
      *
      * | species | deepest bucket | its min | its median | wreck median |
      * | --- | --- | --- | --- | --- |
-     * | broadhead | `shell-hard::rig_head` | 0.07 | 1.22 | 1.50 |
-     * | grazer | `shell-hard::rig_neck` | 0.04 | 1.26 | 1.60 |
-     * | shellwalker | `shell-hard::rig_head` | 0.11 | 1.42 | 1.50 |
-     * | corruptor | `Geo_Scorpion::rig_head` | 0.13 | 1.46 | 1.80 |
-     * | snapmaw | `BlackCaiman::rig_chest` | 0.02 | 0.43 | 0.84 |
-     * | redeye | `Object_11::R_HeadPlate` | 0.04 | 0.41 | 1.49 |
+     * | ram | `shell-hard::rig_head` | 0.07 | 1.22 | 1.50 |
+     * | browser | `shell-hard::rig_neck` | 0.04 | 1.26 | 1.60 |
+     * | carrier | `shell-hard::rig_head` | 0.11 | 1.42 | 1.50 |
+     * | crawler | `Geo_Scorpion::rig_head` | 0.13 | 1.46 | 1.80 |
+     * | sprawler | `BlackCaiman::rig_chest` | 0.02 | 0.43 | 0.84 |
+     * | red-lamp kind | `Object_11::R_HeadPlate` | 0.04 | 0.41 | 1.49 |
      *
      * — the wreck is standing on its own snout, and `CorpseGrounder`'s lift is
-     * the penetration this pose authored (broadhead 0.787 m, grazer 0.857,
-     * corruptor 1.275, shellwalker 0.691, snapmaw 0.641) applied to the WHOLE
+     * the penetration this pose authored (ram 0.787 m, browser 0.857,
+     * crawler 1.275, carrier 0.691, sprawler 0.641) applied to the WHOLE
      * machine.
      *
      * AND THE OBVIOUS LEVER IS MEASURED AND DOES NOT WORK. A closed loop that
      * took the droop back until the snout cleared the soil was built and run:
-     * it closed the redeye (0.90 -> 0.71), the tallneck (0.84 -> 0.65) and the
-     * longleg (0.53 -> 0.26) and pushed the BEHEMOTH from 0.68 to 0.91 while
-     * floating the THUNDERJAW 1.27-1.50 m off the soil, turning a green `A47b`
+     * it closed the red-lamp kind (0.90 -> 0.71), the tower (0.84 -> 0.65) and the
+     * wader (0.53 -> 0.26) and pushed the HAULER from 0.68 to 0.91 while
+     * floating the COLOSSUS 1.27-1.50 m off the soil, turning a green `A47b`
      * red. Re-cast as a hill-climb on the gate's own quantity — posed median
      * plus the lift the pose is about to earn — it correctly declined every
      * step on all six target species and returned the shipped numbers
-     * (broadhead 1.20, corruptor 2.47, shellwalker 1.08, grazer 1.08), so it
+     * (ram 1.20, crawler 2.47, carrier 1.08, browser 1.08), so it
      * was removed rather than shipped inert.
      *
      * The reason is geometric and it is the same reason §9.5's clamp failed:
@@ -2522,7 +2522,7 @@ export class GaitController {
        * local pitch is "down" only while the body is upright: on a wreck
        * rolled onto its flank the neck's local X points at the sky, and the
        * same angle swings the head sideways at spine height (measured: a dead
-       * Tallneck-chassis head 2.16 m up against 0.60 alive). The axis is the
+       * Tower-chassis head 2.16 m up against 0.60 alive). The axis is the
        * neck-to-head direction crossed with world down, so the droop always
        * brings the head toward the soil; `CorpseShape` stops it there.
        */
@@ -2548,7 +2548,7 @@ export class GaitController {
       : 0;
     for (let i = 0; i < tn; i++) {
       /**
-       * A `sprawl` TAIL COMES DOWN (fix round 1). The Corruptor's tail is
+       * A `sprawl` TAIL COMES DOWN (fix round 1). The Crawler's tail is
        * authored ARCHED over its back to y 2.90 — 2 m above its own hull — and
        * the corpse metric is the median of every posed vertex, so a tail left
        * standing in the air is a third of the machine's height held up after
@@ -2557,13 +2557,13 @@ export class GaitController {
        * the crumple, which is also what a dead scorpion looks like.
        */
       if (chassisMode) {
-        // the tail falls to the soil — the Corruptor's arched sting and the
-        // Stormbird's tail fan (its wing mass rides `tail1`) included — and
+        // the tail falls to the soil — the Crawler's arched sting and the
+        // Raptor's tail fan (its wing mass rides `tail1`) included — and
         // `CorpseShape` stops it at the surface. The axis is taken from the
         // chain's own WORLD direction (tail x down), not from `_vRight`: the
         // rig root carries each model's yaw fix, and on a rig turned 180
         // degrees the same signed angle about `_vRight` lifts the tail instead
-        // (measured on the Thunderjaw: its tail components at 6.7-7.7 m).
+        // (measured on the Colossus: its tail components at 6.7-7.7 m).
         if (i === 0) {
           rig.tail[0].updateWorldMatrix(true, false);
           rig.tail[tn - 1].updateWorldMatrix(true, true);
@@ -2581,8 +2581,8 @@ export class GaitController {
            * every joint by the same angle and leaves `CorpseShape` to lift the
            * buried tip back out by bending the ROOT — which stands the middle
            * of the tail up in an arch: measured on flat ground, a dead
-           * Snapmaw's `rig_tail2` at 0.98 m against 0.59 m alive and its
-           * `rig_tail1` at 0.81 m against 0.56 m; a dead Corruptor's sting
+           * Sprawler's `rig_tail2` at 0.98 m against 0.59 m alive and its
+           * `rig_tail1` at 0.81 m against 0.56 m; a dead Crawler's sting
            * (`rig_tail3`) still 1.9 m up. Laid, each segment comes down until
            * its far joint rests one tail-radius above the soil under it
            * (`_layToward`), so the tail lies on the ground behind the body the
@@ -2609,7 +2609,7 @@ export class GaitController {
           // the ROOT joint's bone may be skinned to the rear of the body as
           // well as to the tail, so by default it droops no further than the
           // chassis-mode droop always allowed; a species whose tail skin is
-          // gated off its body (`tailGateY`, the Corruptor since residue
+          // gated off its body (`tailGateY`, the Crawler since residue
           // round 2) raises `layTailRoot`. The rest lie down.
           this._layToward(rig.tail[i], _vD1,
             this._layGround(T, _vD1) + r + LAY_CLEAR - (this.grounder?.restOffset() || 0), foldB,
@@ -2622,7 +2622,7 @@ export class GaitController {
         /**
          * A `sprawl` TAIL IS LAID DOWN IN WORLD SPACE, TO ITS MEASURED BUDGET
          * (fix round 2). The 0.10 rad this replaces was a nominal droop that
-         * did nothing at all to an arch: the Corruptor's tail is authored
+         * did nothing at all to an arch: the Crawler's tail is authored
          * climbing to y 2.90 and a dead one still measured `rig_tail2` at 2.84
          * to 4.98 m above the soil, i.e. a fifth of the machine left standing
          * in the air. Rotating about the machine's own LATERAL axis (rather

@@ -29,7 +29,7 @@ const _protected = new Map();   // kind -> Set<BufferGeometry>
 /**
  * Keyed on `machine.modelKind`, NOT on `machine.kind`: an expansion species
  * riding a donor chassis (see `Machine.modelKind`) shares the DONOR's buffers,
- * so a Broadhead disposed under its own name would free every Strider's
+ * so a Ram disposed under its own name would free every Runner's
  * geometry. Measured the hard way once already with the shared-asset rule.
  */
 function protectedGeos(ctx, kind) {
@@ -64,7 +64,7 @@ export class SiteManager {
    * donor chassis wrote `modelKind: <donor>` into its site, and after
    * `machines.registerKind()` retired that chassis the replay still handed the
    * donor string back to `spawn()`, which used to spread caller options last.
-   * The respawned "Broadhead" was a Strider with a Broadhead's brain, and no
+   * The respawned "Ram" was a Runner with a Ram's brain, and no
    * audit could see it. `spawn()` also overrides identity from the resolver
    * now; this is the same rule enforced at the other end, so a site record
    * written by any future path is inert rather than merely outvoted.

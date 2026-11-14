@@ -3,10 +3,10 @@
  * (`audio-07`, gate `A76`).
  *
  * Round 4 emitted `machine-footfall` from `GaitController._footfall` only.
- * Six species run that controller; the Watcher and the Longleg run `FootLock`
+ * Six species run that controller; the Sentry and the Wader run `FootLock`
  * over a clip instead, so two of the eight stayed silent walkers — measured
- * over a 5.5 s provoke: thunderjaw 24, behemoth 55, sawtooth 77, strider 170,
- * scrapper 62, watcher **0**, longleg **0**. `FootLock` already computes an
+ * over a 5.5 s provoke: colossus 24, hauler 55, big cat 77, runner 170,
+ * scavenger 62, sentry **0**, wader **0**. `FootLock` already computes an
  * honest per-leg contact transition, so the emit belongs here, where both
  * callers can reach it, rather than in either one of them.
  *

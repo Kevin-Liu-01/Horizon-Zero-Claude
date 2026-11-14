@@ -376,7 +376,7 @@ export class Machines {
   /**
    * PUBLISHED (`machines-expansion`): retire a chassis.
    *
-   * `machines.registerKind('broadhead', Broadhead)` makes the real species
+   * `machines.registerKind('ram', Ram)` makes the real species
    * class the one every future spawn (including every site respawn) uses.
    * Nothing else changes: the tables, the doctrine, the spawn plan and every
    * gate already key off `kind`. Returns whether a chassis was replaced.
@@ -478,12 +478,12 @@ export class Machines {
    * MAKE ROOM BEFORE SPAWNING (`A90-memory-stability`).
    *
    * MEASURED FIRST, then fixed. The A90 loop kills a machine and spawns a
-   * Watcher thirty times over; scene objects grew +1170 across it and a
+   * Sentry thirty times over; scene objects grew +1170 across it and a
    * census of every node in the scene attributed **+1170 of +1170 to LIVE
-   * machines and 0 to anything orphaned** (per-kind node counts: watcher 110,
-   * thunderjaw 72, longleg 69, sawtooth 52, behemoth 49, scrapper 39, strider
-   * 38, glinthawk 34 — so replacing 18 procedural machines with 18 Sketchfab
-   * Watchers IS +1170 nodes, honestly). Corpse reclaim was already complete:
+   * machines and 0 to anything orphaned** (per-kind node counts: sentry 110,
+   * colossus 72, wader 69, big cat 52, hauler 49, scavenger 39, runner
+   * 38, flyer 34 — so replacing 18 procedural machines with 18 Sketchfab
+   * Sentries IS +1170 nodes, honestly). Corpse reclaim was already complete:
    * `SiteManager.dispose` frees geometry, materials, FX, hit hulls, the loot
    * interactable, the collider and now every squad-side reference too. What
    * did not exist was a CEILING, and a ceiling is what a crash-on-memory
@@ -649,7 +649,7 @@ export class Machines {
      * and 30 spawns the roster had SHRUNK 39 -> 29 while its node count had
      * GROWN 2428 -> 2708 against a 2568 budget, `recycled: 10`, and the gate
      * failed on `overBudget` alone. Both terms are honest: the loop replaces
-     * mixed 62-node machines with 110-node Watchers, so a smaller roster really
+     * mixed 62-node machines with 110-node Sentries, so a smaller roster really
      * can cost more nodes — which is exactly why the ceiling has to be counted
      * in NODES and re-checked over time rather than at the door.
      *
@@ -721,7 +721,7 @@ export class Machines {
      * same clamp as a module function fed through `_st` (machine.js `stepRootS`): no double crosses a call.
      */
     // hard standoff: machines never interpenetrate the player — in EVERY
-    // state (patrol/return wander included: a behemoth must not stroll
+    // state (patrol/return wander included: a hauler must not stroll
     // through an idle Aloy) and along the whole BODY, not just the center:
     // long machines are treated as a capsule (rear / center / snout spheres,
     // spaced by standoffHalfLen) so snouts and tails can't sweep through her.
@@ -733,7 +733,7 @@ export class Machines {
      * capsule lets her closer and this does not, every melee approach shoves
      * the machine instead of stopping her (gate A25, and A106 measures the
      * drawn-spear case A25 cannot see). Everything that reads the machine's
-     * GEOMETRY — strider/behemoth charge reach, the Silent Strike prompt —
+     * GEOMETRY — runner/hauler charge reach, the Silent Strike prompt —
      * keeps `standoffHalfLen` itself, which this term never writes. */
     {
       for (let i = 0; i < list.length; i++) {

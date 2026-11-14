@@ -141,7 +141,7 @@ export class Interactables {
       });
     }
 
-    // pickup weapons (Thunderjaw disc launchers) pass through to combat
+    // pickup weapons (Colossus disc launchers) pass through to combat
     if (entry.pickupWeapon) {
       const combat = ctx.combat;
       if (typeof combat?.grantWeapon === 'function') {
@@ -164,7 +164,7 @@ export class Interactables {
     entry.onInteract?.(ctx, entry);
 
     // A datapoint opens its own reader once it has been collected — but not
-    // in the middle of a fight: a full-screen modal while a Sawtooth is
+    // in the middle of a fight: a full-screen modal while a Big cat is
     // charging is the kind of thing that gets a player killed. The record is
     // already in the Notebook either way; it just waits for a quiet moment.
     if (entry.datapoint) {
@@ -210,7 +210,7 @@ export class Interactables {
     // nearest entry within its own radius (defensive: cross-builder entries
     // may carry plain {x,y,z} positions, vanish mid-frame, or be retired by
     // setting removed/disabled/consumed instead of calling unregister).
-    // Weapon pickups (Thunderjaw disc launchers) get radius >= 3.5 AND a 3.5x
+    // Weapon pickups (Colossus disc launchers) get radius >= 3.5 AND a 3.5x
     // selection weight so a shard pile 0.3m closer can't shadow the launcher.
     const PICKUP_W2 = 3.5 * 3.5;
     const px = p.position.x, py = p.position.y, pz = p.position.z;

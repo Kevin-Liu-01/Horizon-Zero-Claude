@@ -42,7 +42,7 @@ import { poolGeometry } from './lod.js';
  * carries its own `raycast`, which `hitHulls.build` skips as an FX shell), the
  * corpse solve and the corpse gates skip it (`noHull`), the shadow ranking
  * skips it (`noShadow`), and a component that casts a shadow on purpose (the
- * Thunderjaw's disc launchers, `keepShadow`) is left drawing itself.
+ * Colossus's disc launchers, `keepShadow`) is left drawing itself.
  *
  * COST. One geometry and one material per machine (both released by
  * `disposeRig`), one shared program, and per drawn frame one matrix multiply
@@ -236,10 +236,10 @@ varying vec4 vCmpEmi;`)
  * DONOR HOST (residue round 2, `A21-real-draw-calls` — the ruling's lever,
  * finished). A machine with no authored shell had its components folded into
  * ONE separate mesh: two draws per machine (donor + components), and the
- * Strider is a herd animal — six of them in the west-herd scenario is twelve
+ * Runner is a herd animal — six of them in the west-herd scenario is twelve
  * draws. Riding the DONOR's draw is the same idea as riding the shell's, with
- * one difference the shell never had: a donor is TEXTURED (the Strider's
- * albedo atlas; the Watcher's full PBR set), so a component vertex must not
+ * one difference the shell never had: a donor is TEXTURED (the Runner's
+ * albedo atlas; the Sentry's full PBR set), so a component vertex must not
  * read the donor's maps. The patch below keeps every map for `cmpSlot == 0`
  * and, for a component vertex, replaces what the maps produced — albedo after
  * `color_fragment`, roughness / metalness after their map chunks, the normal
@@ -255,11 +255,11 @@ varying vec4 vCmpEmi;`)
  *
  * MEMORY. The combined buffer copies the donor's vertices, so it is POOLED
  * per species (`poolGeometry`, keyed on the donor buffer and the slots'
- * content): the first Strider pays for one buffer, every later one draws the
+ * content): the first Runner pays for one buffer, every later one draws the
  * same bytes — nothing in it is per machine (the shader places each slot from
  * its proxy's live transform). And a donor above `DONOR_HOST_MAX_VERTS` stays
- * on the separate component mesh: the Watcher's donor is 73,818 vertices, and
- * a second copy of it (~6.5 MB) is not worth one draw per Watcher in view.
+ * on the separate component mesh: the Sentry's donor is 73,818 vertices, and
+ * a second copy of it (~6.5 MB) is not worth one draw per Sentry in view.
  */
 const DONOR_TAG = 'donor+components-v1';
 const DONOR_HOST_MAX_VERTS = 20000;
@@ -584,8 +584,8 @@ export function foldComponents(machine) {
   /**
    * THE EYE CORES TOO. `Machine.addEye` gives every sensor a small unlit
    * sphere (a `MeshBasicMaterial` the eye-state system recolours) beside its
-   * pooled glow sprite — two draws per machine on the Sawtooth, Behemoth,
-   * Strider and Thunderjaw, measured in the staged fight. They ride a bone
+   * pooled glow sprite — two draws per machine on the Big cat, Hauler,
+   * Runner and Colossus, measured in the staged fight. They ride a bone
    * like a component and are recoloured like one, so they fold the same way:
    * an UNLIT slot (no albedo, the eye colour as emission through the lit mask
    * texel).
@@ -627,8 +627,8 @@ export function foldComponents(machine) {
    * as it uses that machine's `bindInv` too — which it does, below.
    * Instrumented on A90's own loop (every geometry the renderer uploaded,
    * tagged at upload): 12 of the 62 buffers still alive at the end were this
-   * mesh, one per living Watcher. Pooled through the species geometry pool
-   * (`rig/lod.js`), the second and every later Watcher costs none. The key is
+   * mesh, one per living Sentry. Pooled through the species geometry pool
+   * (`rig/lod.js`), the second and every later Sentry costs none. The key is
    * the slots' own content — each source buffer's size and sampled vertices,
    * and what the fold stamps from each material — so two folds that would
    * bake different numbers never share a buffer.
@@ -663,7 +663,7 @@ export function foldComponents(machine) {
    * callback of the machine's own body mesh, which draws every frame the
    * machine does. `tickComponents` runs from `animate()`, and a machine whose
    * update is frozen (a staged still) would otherwise keep whatever the last
-   * tick decided — measured: a Watcher staged at 60 m kept the "far" verdict
+   * tick decided — measured: a Sentry staged at 60 m kept the "far" verdict
    * from where it had stood at 237 m, and filmed without its lens.
    */
   const carrier = bodyCarrier(machine);
@@ -830,7 +830,7 @@ function buildDonorCombined(hg, slots) {
   const geo = new THREE.BufferGeometry();
   // every donor attribute, component rows neutral (skin: bone 0, weight 1).
   // DE-QUANTISED: a donor can ship KHR_mesh_quantization buffers (the
-  // Strider's positions are normalised Int16, its normals Int8), and a
+  // Runner's positions are normalised Int16, its normals Int8), and a
   // component's float vertices cannot be written into those. `getComponent`
   // returns the denormalised value; everything but the bone indices is
   // stored as plain float.
@@ -1011,7 +1011,7 @@ export function tickComponents(machine) {
  *
  * The staged fight draws every machine in the view, and eight of them stand
  * 150-280 m off in the background — 40 to 170 body heights — where the whole
- * component set of a Broadhead, a Glinthawk or a Redeye is a few pixels. The
+ * component set of a Ram, a Flyer or a Red-lamp kind is a few pixels. The
  * merged component mesh is still a draw call for each of them.
  *
  * `partIsTrimmable` (rig/lod.js) keeps weak points, canisters and armour on

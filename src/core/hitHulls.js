@@ -3,7 +3,7 @@
  *
  * Closes perf-tech-01 and the query half of machine-ai-13. Aiming currently
  * runs `Raycaster.intersectObject(machine.root, true)` every frame; against a
- * 190k-triangle Thunderjaw that is a ~210 ms frame (4 fps). This replaces the
+ * 190k-triangle Colossus that is a ~210 ms frame (4 fps). This replaces the
  * triangle soup with bone-anchored capsules derived from the skin weights,
  * indexed in a small refittable AABB BVH.
  *
@@ -22,7 +22,7 @@
  * Hull derivation, per skinned mesh: every vertex is assigned to its dominant
  * bone, transformed into that bone's BIND space, and the per-bone AABB becomes
  * a capsule along its longest local axis. Unskinned meshes (most of the
- * Thunderjaw is plate geometry parented to the body) and every attached part
+ * Colossus is plate geometry parented to the body) and every attached part
  * holder get one capsule from their local bounding box. Nothing is skinned at
  * query time — two endpoint transforms per hull per refresh, and a refresh
  * only happens for machines a ray actually reaches.
@@ -219,7 +219,7 @@ export class HitHulls {
      *
      * `minCell` is the lever that matters and it was too coarse at 0.45 m.
      * `_cellPlan` stops subdividing once the largest cell side is under
-     * `minCell * 2`, so on the Thunderjaw — whose whole 12.9 m body is ONE
+     * `minCell * 2`, so on the Colossus — whose whole 12.9 m body is ONE
      * skinned mesh over 13 bones — the 200-cell cap never bound and the cells
      * stayed ~0.9 m wide, which is what put its capsule skin a median 0.47 m
      * proud of the sculpt. Halving minCell halves the cell, and the sweep on
@@ -228,7 +228,7 @@ export class HitHulls {
      * 0.12 -> 0.30 m at 0.8 us and 2919. Accuracy stops improving at 0.25 and
      * only the hull count grows. Queries get FASTER as cells tighten (the BVH
      * prunes better), and the cost is build time: 7 ms -> 13 ms for the
-     * Thunderjaw, amortised one machine per frame.
+     * Colossus, amortised one machine per frame.
      * Raising maxScan to 24k buys nothing (0.53 -> 0.54 m on the same sweep). */
     this.maxScan = opts.maxScan ?? 12000;      // vertices sampled per mesh
     this.maxCells = opts.maxCells ?? 400;      // capsules per bone / per mesh
@@ -327,7 +327,7 @@ export class HitHulls {
       /* Re-derive the SEGMENT for the smaller radius. `_capsuleFromBox` insets
        * each end by r, so dropping r without re-insetting would leave the two
        * ends of the cell covered by a cap that is now too small — measured as
-       * new coverage gaps on the Thunderjaw (0 -> 3 of 61 rays) the first time
+       * new coverage gaps on the Colossus (0 -> 3 of 61 rays) the first time
        * this pass shipped. A longer segment can only DECREASE distance to it,
        * so every vertex measured above is still inside. */
       if (rec.half !== undefined) {
@@ -378,7 +378,7 @@ export class HitHulls {
   /**
    * Cell plan for a point cloud: how many slices along each local axis.
    * One capsule per non-empty cell, so a long bone becomes a chain and a
-   * broad one (a Thunderjaw torso is a single 188k-triangle skinned mesh on
+   * broad one (a Colossus torso is a single 188k-triangle skinned mesh on
    * 13 bones) becomes a cluster that hugs the shell instead of one sausage.
    */
   _cellPlan(ex, ey, ez, scale, out) {
