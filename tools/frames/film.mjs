@@ -6,6 +6,8 @@
  *   node tools/frames/film.mjs --port 5270 --baseline          this run becomes the anchors (M0.5)
  *   options: --wait <s> slot wait (default 1800) · --budget <s> Chrome time cap (default 840)
  *            --settle <ms> per-frame settle (default 2600) · --no-review · --status "line 1|line 2"
+ *            --vite-config <file> serve the tree with that Vite config (M0.7: three resolved to another version)
+ *            --label <tag> appended to the run directory name (e.g. r187)
  *
  * The run, in order:
  *   1. the machine guard: memory free >= 50 % (memory_pressure -Q) and pressure level 1, then the
@@ -103,7 +105,9 @@ process.on('exit', () => { releaseSlot(); if (vite) { try { process.kill(-vite.p
 
 /* ---------------------------------------------------------------- run */
 const stamp = utc().replace(/[-:]/g, '');
-const runDir = path.join(RUNS, `${stamp}-${commit}${ONLY ? '-partial' : ''}`);
+const LABEL = flag('--label');
+const VITE_CONFIG = flag('--vite-config');
+const runDir = path.join(RUNS, `${stamp}-${commit}${LABEL ? `-${LABEL}` : ''}${ONLY ? '-partial' : ''}`);
 assertOutsideRepo(runDir, REPO);
 const run = { commit, dirty, branch: git('branch', '--show-current'), tree: REPO, port: PORT, frameset: set.sha256, viewport: set.viewport, startedAt: utc(), only: ONLY ? [...ONLY] : null, frames: [], console: [], errors: [] };
 
@@ -113,7 +117,8 @@ if (!(await takeSlot())) { console.error(`film: SLOT-NOT-AVAILABLE within ${WAIT
 let exitCode = 0;
 try {
   mkdirSync(runDir, { recursive: true });
-  vite = spawn('nice', ['-n', '10', 'npx', 'vite', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: REPO, stdio: 'ignore', detached: true });
+  vite = spawn('nice', ['-n', '10', 'npx', 'vite', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort', ...(VITE_CONFIG ? ['--config', VITE_CONFIG] : [])], { cwd: REPO, stdio: 'ignore', detached: true });
+  if (VITE_CONFIG) run.viteConfig = VITE_CONFIG;
   for (let i = 0; i < 240 && !(await portOpen(PORT)); i++) await sleep(250);
   if (!(await portOpen(PORT))) throw new Error(`vite did not open port ${PORT}`);
 
@@ -142,6 +147,8 @@ try {
   await page.waitForFunction('window.__READY__ === true', { timeout: 240000, polling: 500 });
   await sleep(6000);   // people and the deferred variety stream in behind the first frame
   run.bootSeconds = Math.round((Date.now() - t0) / 1000);
+  run.three = await page.evaluate(() => window.__calShaderPatchAudit?.report?.().revision ?? null).catch(() => null);
+  run.chrome = await browser.version();
   log(`booted in ${run.bootSeconds} s; filming ${frames.length} frames`);
 
   for (const f of frames) {

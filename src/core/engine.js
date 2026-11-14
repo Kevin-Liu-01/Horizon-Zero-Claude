@@ -2728,7 +2728,9 @@ export class Engine {
       this._gpuSamples.push(this.lastGpuMs);
       if (this._gpuSamples.length > 240) this._gpuSamples.shift();
     }
-    while (pending.length > 8) gl.deleteQuery(pending.shift());
+    // M0.8: 32, not 8. With vsync and the frame-rate limit off (how GPU time is measured unpaced) ANGLE/Metal hands
+    // results back more than 8 frames late, and a cap of 8 dropped every one of them
+    while (pending.length > 32) gl.deleteQuery(pending.shift());
   }
 
   /**
