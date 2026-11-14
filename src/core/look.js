@@ -482,7 +482,10 @@ function labStage(c, X, w) {
     // their chroma while sunlit grass and rock tops go pale gold)
     const H = X.high, wc = H.cRange ? 1 - smoothstep(H.cRange[0], H.cRange[1], C0) : 1, hr = H.range;
     const wh = smoothstep(hr[0], hr[1], L0) * (hr.length > 3 ? 1 - smoothstep(hr[2], hr[3], L0) : 1) * wc * w;
-    if (wh > 0) {
+    // fix round 3: `towardRange` [L0, L1, L2, L3] gives the gold pull its own L* band (lit skin and cloth at L* 40-58 turn
+    // gold without the band's chroma cut); default: the band's own weight
+    const tr = H.towardRange, wt = tr ? smoothstep(tr[0], tr[1], L0) * (1 - smoothstep(tr[2], tr[3], L0)) * wc * w : wh;
+    if (wh > 0 || wt > 0) {
       const k = 1 + ((H.chroma ?? 1) - 1) * wh;
       a = a * k + (H.shift ? H.shift[0] : 0) * wh;
       b = b * k + (H.shift ? H.shift[1] : 0) * wh;
@@ -492,7 +495,7 @@ function labStage(c, X, w) {
         let hh = Math.atan2(b, a) * 180 / Math.PI; if (hh < 0) hh += 360;
         let dh = H.toward[0] - hh; if (dh > 180) dh -= 360; if (dh < -180) dh += 360;
         // warm hues only (H.toward[2..3], default 20-110 deg, feather 20): no wrap-around, and the map stays one-to-one
-        const t = dh * H.toward[1] * wh * bandWeight(hh, H.toward[2] ?? 20, H.toward[3] ?? 110, 20) * Math.min(1, C0 / 6) * Math.PI / 180, ct = Math.cos(t), st = Math.sin(t), a1 = a * ct - b * st; b = a * st + b * ct; a = a1;
+        const t = dh * H.toward[1] * wt * bandWeight(hh, H.toward[2] ?? 20, H.toward[3] ?? 110, 20) * Math.min(1, C0 / 6) * Math.PI / 180, ct = Math.cos(t), st = Math.sin(t), a1 = a * ct - b * st; b = a * st + b * ct; a = a1;
       }
     }
     // fix round 2: `warm` [h0, h1, feather, k, Lfrom, Lto] gives warm highlights back the chroma AgX's path to white takes
