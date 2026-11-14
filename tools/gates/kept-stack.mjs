@@ -564,6 +564,13 @@ export const USE_CARRIED = [
  */
 export const PATCHED = [
   {
+    id: 'A72b-accessibility',
+    why: 'the palette clause read --cal-accent, a token the new HUD no longer defines; the colour palettes now re-point the semantic --cal-c-* tokens (src/ui/settings.js PALETTES), so it reads --cal-c-staff',
+    patches: [
+      ["getPropertyValue('--cal-accent')", "getPropertyValue('--cal-c-staff')"],
+    ],
+  },
+  {
     id: 'V21-camera-cover',
     why: 'the shot took a tree collider within 220 m of the old valley origin; on the island it takes the nearest trunk-shaped camera collider to the player (vertical capsule, 0.33 < r <= 1.5 m, >= 2 m tall; trees first)',
     patches: [
