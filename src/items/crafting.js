@@ -157,7 +157,7 @@ export class Crafting {
 
   craftBlocker(id) {
     const r = this._byId.get(id);
-    if (!r) return 'CANNOT CRAFT';
+    if (!r) return 'CANNOT MAKE';
     if (this.inventory.count(id) >= this.capacity(id)) return 'POUCH FULL';
     const miss = this.recipeStatus(id).filter((s) => !s.ok);
     if (!miss.length) return null;

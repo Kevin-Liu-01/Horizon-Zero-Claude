@@ -667,7 +667,7 @@
    ],
    "verdict": "fail"
   },
-  "A100-spear-holster": {
+  "A100-lance-holster": {
    "kind": "action",
    "perRun": [
     "pass",
@@ -676,7 +676,7 @@
    ],
    "verdict": "flaky"
   },
-  "A101-spear-grip": {
+  "A101-lance-grip": {
    "kind": "action",
    "perRun": [
     "pass",
@@ -739,7 +739,7 @@
    ],
    "verdict": "pass"
   },
-  "V46-spear-ready": {
+  "V46-lance-ready": {
    "kind": "visual",
    "verdict": "n/a (R33 c)"
   },
@@ -747,7 +747,7 @@
    "kind": "visual",
    "verdict": "n/a (R33 c)"
   },
-  "V48-spear-holster": {
+  "V48-lance-holster": {
    "kind": "visual",
    "verdict": "n/a (R33 c)"
   },
@@ -1340,7 +1340,7 @@
    ],
    "verdict": "pass"
   },
-  "A70b-fast-travel": {
+  "A70b-node-travel": {
    "kind": "action",
    "perRun": [
     "pass",
@@ -1475,15 +1475,6 @@
    "verdict": "pass"
   },
   "A67-machine-respawn": {
-   "kind": "action",
-   "perRun": [
-    "skipR30",
-    "infra",
-    "skipR30"
-   ],
-   "verdict": "skipR30"
-  },
-  "A64c-silent-apex": {
    "kind": "action",
    "perRun": [
     "skipR30",
@@ -1647,16 +1638,7 @@
    ],
    "verdict": "pass"
   },
-  "A61b-camp-rest-event": {
-   "kind": "action",
-   "perRun": [
-    "pass",
-    "infra",
-    "pass"
-   ],
-   "verdict": "pass"
-  },
-  "A61c-datapoints-unified": {
+  "A61b-rest-event": {
    "kind": "action",
    "perRun": [
     "pass",

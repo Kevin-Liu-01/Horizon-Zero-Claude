@@ -4,7 +4,7 @@
   "identifiers": {
     "about": "Engine identifiers kept as internal names. In code, a listed term that is one of `words` is exempt wherever it appears in an identifier; `exact` names are exempt as whole identifiers. In a string literal, `exact` names are exempt when the string is exactly that name, and `words` when the string is an id or path with no spaces ('trap-x', 'status/x.ogg'); prose strings are never exempt.",
     "words": ["machines", "machine", "tear", "impact", "fire", "freeze", "shock"],
-    "exact": ["isInTallGrass"],
+    "exact": [],
     "apiStrings": ["sawtooth"],
     "apiAbout": "Platform API values that happen to spell a listed term: a string literal that is exactly one of these is exempt (Web Audio OscillatorNode.type)."
   },

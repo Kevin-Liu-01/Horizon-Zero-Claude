@@ -456,7 +456,7 @@ const W0_PLACES = {
   // six grass points spread over the map for near-tier density (A59)
   grassPoints: { points: [[-60, -90], [-30, -40], [88, 34], [-110, -90], [44, -74], [-160, 90]], note: 'six meadow points' },
   // a spot near the rest site facing the map's boundary massif (V33): look.dy is metres above the spot's ground
-  rimView: { x: 22, z: -6, look: { x: 22, z: -330, dy: 120 }, note: 'north of the camp palisade, facing the north rim' },
+  rimView: { x: 22, z: -6, look: { x: 22, z: -330, dy: 120 }, note: 'north of the old home-site palisade, facing the north rim' },
   // one station from which four bearings 90 deg apart run out to different biomes (V44)
   biomeStation: { x: 30, z: -60, note: 'valley-floor station, four bearings 35/125/215/305 deg' },
   // inside the play radius facing the boundary wall the player walks into (A62)
@@ -472,9 +472,9 @@ const W0_PLACES = {
   // a station with open sight lines 240-290 m out on all bearings (A57 aerial perspective)
   aerialStation: { x: 0, z: 0, note: 'map centre with 240-290 m sight lines on 8 bearings' },
   // a low rise open on all four bearings to 150-300 m (V34)
-  midgroundVista: { x: -20, z: 20, note: 'low rise NW of the camp, open on four bearings' },
+  midgroundVista: { x: -20, z: 20, note: 'low rise NW of the old home site, open on four bearings' },
   // where to park the hero out of every GTAO measurement frame
-  gtaoPark: { x: 52, z: 24, note: 'player parking east of the camp, out of the GTAO frames' },
+  gtaoPark: { x: 52, z: 24, note: 'player parking east of the old home site, out of the GTAO frames' },
   // four long cross-map nav legs [x0, z0, x1, z1], each between two walkable land points >= 150 m apart,
   // crossing the valley floor, the river cut and the rock highland (A25b; Round 4's legs: from the
   // open-ground strip, the rest site, the SE rock shelf and a NW meadow point)
@@ -1212,7 +1212,7 @@ const GATES = [
        * apart: the animator really is slow; the box is too wedged to measure
        * (covered by the sim-time SKIP above); or the hero is sprinting INTO
        * something and the gate is measuring a wall. The third is what a
-       * straight-line KeyW sprint from spawn now hits — Round 4 put a camp tent
+       * straight-line KeyW sprint from spawn now hits — Round 4 put a tent
        * a few metres south of the spawn point, and a sprinting:true /
        * moveSpeed:0.29 reading pinned against it looks exactly like a broken
        * animator unless the detail says otherwise.
@@ -2254,7 +2254,7 @@ const GATES = [
         const bucket = (n) => /player|hero/i.test(n) ? 'player'
           : /machine/i.test(n) ? 'machines'
           : /vegetation|grass|tree/i.test(n) ? 'vegetation'
-          : /camp|prop|npc|gather|water/i.test(n) ? 'props'
+          : /settlement|prop|npc|gather|water/i.test(n) ? 'props'
           : /terrain|sky|ridge/i.test(n) ? 'terrainSky' : 'other';
         for (const child of ctx.scene.children) {
           if (!child.visible) continue;
@@ -2292,7 +2292,7 @@ const GATES = [
         return /player|hero/i.test(name) ? 'player'
           : /machine/i.test(name) ? 'machines'
           : /vegetation|grass|tree/i.test(name) ? 'vegetation'
-          : /camp|prop|npc|gather|water/i.test(name) ? 'props'
+          : /settlement|prop|npc|gather|water/i.test(name) ? 'props'
           : /terrain|sky|ridge/i.test(name) ? 'terrainSky' : 'other';
       };
       const attributeCalls = async (frames = 6) => {
@@ -5152,7 +5152,7 @@ const HILLSIDE = `const C = __CTX__, p = C.player, T = C.terrain, K = C.collisio
           if (d < 26 || d > 40) continue;
           const h = T.getHeight(x, z);
           if (K.sphereQuery(x, h + 1, z, 7, [], hider).length) continue;
-          if (T.tallGrassDensity && T.tallGrassDensity(x, z) > 0.12) continue;
+          if (T.reedCoverDensity && T.reedCoverDensity(x, z) > 0.12) continue;
           if (!hill || d > hill.deg) hill = { x, z, deg: +d.toFixed(1), down: Math.atan2(n.x, n.z) };
         }
       }
@@ -5558,16 +5558,16 @@ const GATES = [
       ${FREEZE}
       const C = __CTX__, p = C.player, T = C.terrain;
       freeze();
-      // deterministic patch of tall grass
+      // deterministic patch of reed cover
       let spot = null;
       for (let x = -160; x <= 160 && !spot; x += 2) {
         for (let z = -160; z <= 160; z += 2) {
-          if (!T.isInTallGrass(x, z)) continue;
+          if (!T.isInReedCover(x, z)) continue;
           if (C.collision && C.collision.sphereQuery(x, T.getHeight(x, z) + 1, z, 2.5, [], (c) => c.blocking).length) continue;
           spot = { x, z }; break;
         }
       }
-      if (!spot) return { pass: null, detail: 'SKIP: no tall grass found' };
+      if (!spot) return { pass: null, detail: 'SKIP: no reed cover found' };
       p.position.set(spot.x, 0, spot.z); p.velocity.set(0, 0, 0); p._snapToGround();
       p.camYaw = Math.PI; C.input.keys.clear(); C.input.mouse.buttons = 0;
       if (p.crouching) p.setCrouch(false);
@@ -5585,10 +5585,10 @@ const GATES = [
       // now aim
       C.input.mouse.buttons |= 4;
       await new Promise((r) => setTimeout(r, 600));
-      const stealth = p.crouching && p.inTallGrass;   // machine.js:1174 predicate
+      const stealth = p.crouching && p.inReedCover;   // machine.js:1174 predicate
       const aim = {
         crouching: p.crouching, aiming: p.aiming, crouchAim: p.crouchAim,
-        inTallGrass: p.inTallGrass, stealth,
+        inReedCover: p.inReedCover, stealth,
         pivotH: +p.pivotHeight.toFixed(3),
         pivotAboveFeet: +(p.camPivot.y - p.position.y).toFixed(3),
       };
@@ -5745,7 +5745,7 @@ const GATES = [
        * 1.2 m pivot cap could take the look-up away unseen: from a 1.2 m pivot
        * the 0.9 m minimum boom meets the ground, the ground rotation lifts it
        * 14 deg, and the view hijack used to hand all 14 back out of the aim.
-       * Crouch-aiming from tall grass at a flier is core stealth play, so the
+       * Crouch-aiming from reed cover at a flier is core stealth play, so the
        * same procedure now runs crouched: C, aim, the same sweep, the same
        * servo, the same bars. */
       p.camPitch = 0; p.setCrouch(true);
@@ -6404,12 +6404,12 @@ const GATES = [
           if (d < 26 || d > 40) continue;
           const h = T.getHeight(x, z);
           if (K.sphereQuery(x, h + 1, z, 7, [], hider).length) continue;
-          /* …and out of the tall grass.  Grass is not a camera collider, so a
+          /* …and out of the reed cover.  Grass is not a camera collider, so a
            * staging inside it is UNJUDGEABLE on film — she can be perfectly
            * solid and still invisible behind a curtain of tufts.  That is a
            * real gap (see the doc's known gaps) but it is the vegetation
            * lane's, and filming it here would only hide this lane's result. */
-          if (T.tallGrassDensity && T.tallGrassDensity(x, z) > 0.12) continue;
+          if (T.reedCoverDensity && T.reedCoverDensity(x, z) > 0.12) continue;
           if (!hill || d > hill.deg) hill = { x, z, deg: +d.toFixed(1), down: Math.atan2(n.x, n.z) };
         }
       }
@@ -7136,7 +7136,7 @@ const GATES = [
     title: 'Pitch-clamp framing on FLAT ground, in FOUR run directions (away / left / right / toward the lens) at jog and sprint: the head bone in frame and |NDC x| <= 0.8 on >= 90% of samples, running AWAY her head seen past her shoulders (occlusion-aware) on >= 90%, moving keeps >= 0.75 of the pinned onFrac, pinned >= 0.25, lens >= 0.15 m from her visible mesh, opacity >= 0.98, the view <= 6 deg off the input and the elevation <= 5.5 deg off the request on every judged frame; eight turns out of an ESTABLISHED run (60 frames) keep the lens >= 0.15 m from her mesh and her solid on every frame; RMB out of an established clamp sprint puts the view within 2 deg of the request from the 2nd frame of the draw, no frame stepping it > 3 deg',
     criteria: 'Film: flat open ground, SPRINTING at the pitch clamp (camPitch -1.15, looking steeply up). the hero\'s head, braid, '
       + 'shoulders and upper back are IN THE PICTURE in the lower part of the frame, solid, with sky above, and not pushed to a frame edge. '
-      + 'FAIL if only the bow or spear is visible, if she is off the bottom or side edge, or if the lens is visibly inside her body.',
+      + 'FAIL if only the bow or lance is visible, if she is off the bottom or side edge, or if the lens is visibly inside her body.',
     setup: `__CTX__.input.enabled = true; document.getElementById('hud').style.display = 'none';`,
     settle: 700, timeout: 180000,
     assert: `(async () => {${HERO}
@@ -7943,7 +7943,7 @@ const NEW_GATES = [
    * knuckle <= 0.06 m from the bow's nock whenever the draw is > 0.9. */
   {
     id: 'A-draw-arm-continuity', kind: 'action', lane: 'hero-body', timeout: 2700000,
-    title: 'The draw arm across every aim-weight transition and every camera move, as a matrix. AIM cells: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, strafe right, strafe left, crouched; round 3: crouched strafe right, crouched strafe left, crouched backpedal} x one timeline per cell (raise; draw; loose; RMB up 0.05 s after the loose; re-aim 0.05-0.2 s after the lower; again with RMB up at +0.12 and +0.25 s; a draw cancelled by RMB at full draw; the raise after the cancel; crouch->stand and stand->crouch at full draw; a loose and a rapid re-fire 0.12 s after it; a dodge with RMB+LMB held at full draw and the draw completing after it; the last loose and lower). CAMERA cells: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, crouched, strafe right, strafe left} (and 0.2 standing and strafing) at full draw: camera yaw turns at 1.5, 3, 6 and 10 rad/s each way, each followed by a stop, then camera pitch sweeps at 2, 4 and 8 rad/s there and back, then (round 3) a pitch, a yaw and a combined wiggle, 0.25 rad either side at 6 rad/s peak, three periods each, each followed by a stop. Every sim step from the first RMB: draw elbow and wrist travel <= 0.06 m in character space AND relative to the draw shoulder on every step outside the roll (in the roll, in the chest\'s frame; on a step the camera\'s pitch moves, the travel printed not graded); wrist / middle knuckle / middle fingertip in front of the back of the skull wherever they are at skull height (head-ellipsoid unit y >= -1), and within the head\'s width (|x| < 1) from the neck (y >= -2.4) up; never over the crown (y > 1 within the skull\'s footprint, |x| < 1.3, -1.4 < z < 1.3); whenever the draw is > 0.9 (read after combat\'s update of the same tick): middle knuckle <= 0.06 m from the bow nock, and in the camera cells, once the draw is home (drawS >= 0.98) and while the camera holds its pitch and turns at most 6 rad/s (finding 1), the wrist <= 0.09 m from it and, also once the draw is home (drawS >= 0.98), the forearm <= 20 deg off the real arrow (the bow\'s own draw axis; the ramp\'s last 0.08 reported); pelvis, chest (spine_03) and head <= 0.03 m per 1/60 s on every step outside the roll in the crouched, crouch-moving and strafe cells, the raise and the lower included (from the first RMB until the aim weight, the arm\'s tail, her turn onto the camera or back onto her run and the body governor\'s hold are all over; the kept locomotion\'s own steps after that are printed, bodyStepClipReported): in character space in every such cell, and in the aim cells also against her root in the world (|delta bone - delta root|); in every cell her heading turns <= ' + HEADING_STEP + ' rad per 1/60 s beyond the camera\'s own turn of that step outside the roll; through the dodge drawn, the loose after it and RMB up from a held draw with LMB still down (R63 a: the bow\'s LMB is no spear press) the spear never charges or swings and no strike resolves, and the lance is never posed',
+    title: 'The draw arm across every aim-weight transition and every camera move, as a matrix. AIM cells: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, strafe right, strafe left, crouched; round 3: crouched strafe right, crouched strafe left, crouched backpedal} x one timeline per cell (raise; draw; loose; RMB up 0.05 s after the loose; re-aim 0.05-0.2 s after the lower; again with RMB up at +0.12 and +0.25 s; a draw cancelled by RMB at full draw; the raise after the cancel; crouch->stand and stand->crouch at full draw; a loose and a rapid re-fire 0.12 s after it; a dodge with RMB+LMB held at full draw and the draw completing after it; the last loose and lower). CAMERA cells: camPitch {-1.15, -0.55, 0, 0.75, 1.02} x {standing, jog, crouched, strafe right, strafe left} (and 0.2 standing and strafing) at full draw: camera yaw turns at 1.5, 3, 6 and 10 rad/s each way, each followed by a stop, then camera pitch sweeps at 2, 4 and 8 rad/s there and back, then (round 3) a pitch, a yaw and a combined wiggle, 0.25 rad either side at 6 rad/s peak, three periods each, each followed by a stop. Every sim step from the first RMB: draw elbow and wrist travel <= 0.06 m in character space AND relative to the draw shoulder on every step outside the roll (in the roll, in the chest\'s frame; on a step the camera\'s pitch moves, the travel printed not graded); wrist / middle knuckle / middle fingertip in front of the back of the skull wherever they are at skull height (head-ellipsoid unit y >= -1), and within the head\'s width (|x| < 1) from the neck (y >= -2.4) up; never over the crown (y > 1 within the skull\'s footprint, |x| < 1.3, -1.4 < z < 1.3); whenever the draw is > 0.9 (read after combat\'s update of the same tick): middle knuckle <= 0.06 m from the bow nock, and in the camera cells, once the draw is home (drawS >= 0.98) and while the camera holds its pitch and turns at most 6 rad/s (finding 1), the wrist <= 0.09 m from it and, also once the draw is home (drawS >= 0.98), the forearm <= 20 deg off the real arrow (the bow\'s own draw axis; the ramp\'s last 0.08 reported); pelvis, chest (spine_03) and head <= 0.03 m per 1/60 s on every step outside the roll in the crouched, crouch-moving and strafe cells, the raise and the lower included (from the first RMB until the aim weight, the arm\'s tail, her turn onto the camera or back onto her run and the body governor\'s hold are all over; the kept locomotion\'s own steps after that are printed, bodyStepClipReported): in character space in every such cell, and in the aim cells also against her root in the world (|delta bone - delta root|); in every cell her heading turns <= ' + HEADING_STEP + ' rad per 1/60 s beyond the camera\'s own turn of that step outside the roll; through the dodge drawn, the loose after it and RMB up from a held draw with LMB still down (R63 a: the bow\'s LMB is no lance press) the lance never charges or swings and no strike resolves, and the lance is never posed',
     setup: INPUT_ON, settle: 400,
     assert: placed(['openGround'], `(async () => {${HB}${FLAT_STRIP}
       freeze();
@@ -7969,7 +7969,7 @@ const NEW_GATES = [
         add(2.65, 'lmb-', 'loose'); add(2.77, 'lmb+', 'rapidRefire'); add(4.0, 'lmb-', 'loose2'); add(4.2, 'lmb+');
         add(5.4, 'dodge', 'dodgeDrawn'); add(7.9, 'lmb-', 'looseAfterDodge'); add(8.0, 'rmb-', 'up+0.10');
         s += 8.7;
-        /* RMB up from a held draw with LMB still down: R63 (a), the bow's LMB is no spear press;
+        /* RMB up from a held draw with LMB still down: R63 (a), the bow's LMB is no lance press;
          * the arm and the head clauses graded through it until the bow is stowed */
         add(0, 'rmb+', 'raise'); add(0.45, 'lmb+'); add(1.40, 'rmb-', 'cancelHeld'); add(1.60, 'lmb-'); add(2.4, 'end');
         return { ev, yaw: [], knots: null };
@@ -8021,7 +8021,7 @@ const NEW_GATES = [
         const rd = [0.05, 0.125, 0.2][ci % 3];
         release(); await wait(300); p.setCrouch?.(false);
         // the last cell's lance back on her back, its swing over; a full quiver (the matrix looses five arrows a cell)
-        for (let i = 0; i < 40 && (cmb.melee?.active || cmb.melee?.stance !== 'holstered' || an.melee?.w > 0.02); i++) { cmb.melee?.holsterSpear?.(true); await simWait(0.1, 2000); }
+        for (let i = 0; i < 40 && (cmb.melee?.active || cmb.melee?.stance !== 'holstered' || an.melee?.w > 0.02); i++) { cmb.melee?.holsterLance?.(true); await simWait(0.1, 2000); }
         { const am = cmb.activeWeapon?.activeAmmo; if (am) cmb.ammo[am] = 99; }
         // the cell's ground: the flat strip, run along it whichever key moves her (else the W0 open ground)
         if (strip) {
@@ -8049,12 +8049,12 @@ const NEW_GATES = [
           skull: -9, skullAt: null, nape: -9, napeAt: null, crown: -9, crownAt: null, knFull: 0, knAt: null, wnFull: 0, wnAt: null, foreFull: 0, foreAt: null, fullSteps: 0,
           drawsOver09: 0, dodged: false, crouchSeen: false, standSeen: false, fails: [], byTag: {}, kinds: {}, rawTravel: 0, rawAt: null,
           bodyStep: 0, bodyAt: null, bodyGraded, worldGraded, bodyRel: 0, bodyRelAt: null, headingStep: 0, headingAt: null, camTravelMax: 0, camTravelAt: null, yawTurned: 0, pitchSwept: 0,
-          meleeSteps: 0, meleeAt: null, meleeResolves: 0, spearFails: [], foreHome: 0, foreHomeAt: null, foreRamp: 0, foreRampAt: null,
+          meleeSteps: 0, meleeAt: null, meleeResolves: 0, lanceFails: [], foreHome: 0, foreHomeAt: null, foreRamp: 0, foreRampAt: null,
           lanceHead: -9, lanceHeadAt: null, lanceCrown: -9, lanceStepMax: 0, lanceStepAt: null, lanceInRoll: 0 };
         let label = 'start', tLab = 0, prev = null, wasFull = false, camMoved = false, yawNow = 0;
         const t0 = E.simTime, upd = an.update;
         const failAdd = (k, msg) => { if (M.fails.length < 12) M.fails.push(k + ' ' + msg); };
-        // (the dodge drawn, the loose after it and RMB up from a held draw: the bow's LMB, no spear press — R63 a)
+        // (the dodge drawn, the loose after it and RMB up from a held draw: the bow's LMB, no lance press — R63 a)
         const dodgeLab = () => label === 'dodgeDrawn' || label === 'looseAfterDodge' || label === 'cancelHeld';
         const ml = cmb.melee, mlRes = ml?._resolve;
         if (ml && mlRes) ml._resolve = function (...a) { if (dodgeLab()) { M.meleeResolves++; M.meleeAt = M.meleeAt || ('resolve @' + label + '+' + (E.simTime - t0 - tLab).toFixed(3)); } return mlRes.apply(this, a); };
@@ -8080,8 +8080,8 @@ const NEW_GATES = [
           // (round 3: the roll is p.dodging, as A-dodge-exit-continuity reads it; the crossfade into the gait after the
           // hand-over is graded)
           const roll = !!p.dodging;
-          // the lance layer has the arm: no step of an aim cell stages a spear press (R63 a), so that is the
-          // spear clause's failure, below; its steps are the lance's, the travel printed, the head graded
+          // the lance layer has the arm: no step of an aim cell stages a lance press (R63 a), so that is the
+          // lance clause's failure, below; its steps are the lance's, the travel printed, the head graded
           const lanceArm = !!this.melee?.ok && this.melee.w > 0.02;
           if (lanceArm) { M.lanceInRoll++; M.lanceOutAt = M.lanceOutAt || (label + '+' + (E.simTime - t0 - tLab).toFixed(3) + (roll ? ' roll' : '')); }
           if (prev) {
@@ -8246,9 +8246,9 @@ const NEW_GATES = [
         release(); p.setCrouch?.(false);
         M.travel = r4(M.travel); M.rel = r4(M.rel); M.shoulderStepMax = r4(M.shoulderStepMax); M.bodyStep = r4(M.bodyStep);
         M.yawTurned = +M.yawTurned.toFixed(2); M.pitchSwept = +M.pitchSwept.toFixed(2);
-        /* (the spear clause, R63 a — the bow's LMB is no spear press — named apart so the arm's own clauses
-         * read without it in failingExceptSpear) */
-        if (M.meleeSteps || M.meleeResolves) M.spearFails.push('spearPressFromBowLmb: ' + M.meleeSteps + ' steps charging or swinging, ' + M.meleeResolves + ' strikes resolved, from ' + M.meleeAt);
+        /* (the lance clause, R63 a — the bow's LMB is no lance press — named apart so the arm's own clauses
+         * read without it in failingExceptLance) */
+        if (M.meleeSteps || M.meleeResolves) M.lanceFails.push('lancePressFromBowLmb: ' + M.meleeSteps + ' steps charging or swinging, ' + M.meleeResolves + ' strikes resolved, from ' + M.meleeAt);
         // staging sanity: the cell really drew (five full draws incl. the one through the dodge), dodged, crouched and stood
         if (isCam) {
           if (M.drawsOver09 < 3) M.fails.push('staging: only ' + M.drawsOver09 + ' full draws');
@@ -8257,7 +8257,7 @@ const NEW_GATES = [
           if (crouchCell && (!M.crouchSeen || M.standSeen)) M.fails.push('staging: crouch ' + M.crouchSeen + ' stand ' + M.standSeen);
         } else {
           if (M.drawsOver09 < 5) M.fails.push('staging: only ' + M.drawsOver09 + ' full draws');
-          if (M.lanceInRoll) M.spearFails.push('lance posed: ' + M.lanceInRoll + ' steps from ' + M.lanceOutAt);
+          if (M.lanceInRoll) M.lanceFails.push('lance posed: ' + M.lanceInRoll + ' steps from ' + M.lanceOutAt);
           if (!M.byTag.cancelHeld) M.fails.push('staging: no cancelHeld');
           if (!M.dodged) M.fails.push('staging: no dodge');
           if (!M.crouchSeen || !M.standSeen) M.fails.push('staging: crouch ' + M.crouchSeen + ' stand ' + M.standSeen);
@@ -8273,8 +8273,8 @@ const NEW_GATES = [
         const o = byTag[K] || (byTag[K] = { travel: 0, rel: 0, skull: -9, crown: -9, kn: 0, body: 0 });
         o.travel = Math.max(o.travel, v.travel); o.rel = Math.max(o.rel, v.rel); o.skull = Math.max(o.skull, v.skull); o.crown = Math.max(o.crown, v.crown); o.kn = Math.max(o.kn, v.kn); o.body = Math.max(o.body, v.body);
       }
-      const failing = cells.filter((M) => M.fails.length || M.spearFails.length).map((M) => M.pitch + '/' + M.loco + '/' + M.cell + ': ' + [...M.fails, ...M.spearFails].slice(0, 3).join(' | '));
-      const failingExceptSpear = cells.filter((M) => M.fails.length).map((M) => M.pitch + '/' + M.loco + '/' + M.cell + ': ' + M.fails.slice(0, 3).join(' | '));
+      const failing = cells.filter((M) => M.fails.length || M.lanceFails.length).map((M) => M.pitch + '/' + M.loco + '/' + M.cell + ': ' + [...M.fails, ...M.lanceFails].slice(0, 3).join(' | '));
+      const failingExceptLance = cells.filter((M) => M.fails.length).map((M) => M.pitch + '/' + M.loco + '/' + M.cell + ': ' + M.fails.slice(0, 3).join(' | '));
       const cam = cells.filter((M) => M.cell === 'camera'), aim = cells.filter((M) => M.cell === 'aim');
       const mx = (L, k) => (L.length ? Math.max(...L.map((M) => M[k])) : null);
       const worst = {
@@ -8291,12 +8291,12 @@ const NEW_GATES = [
         bodyStepWorldMaxGraded: mx(cells.filter((M) => M.worldGraded), 'bodyRel'), bodyStepWorldMaxReported: mx(cells.filter((M) => !M.worldGraded && M.cell === 'aim'), 'bodyRel'),
         headingStepMax: mx(cells, 'headingStep'),
         camTravelMaxReported: mx(cam, 'camTravelMax'),
-        spearInDodgeDrawn: aim.reduce((s, M) => s + M.meleeSteps + M.meleeResolves, 0),
+        lanceInDodgeDrawn: aim.reduce((s, M) => s + M.meleeSteps + M.meleeResolves, 0),
         bowToHitMinReported: Math.min(...cells.map((M) => M.bowToHitMin ?? 99)),
       };
       for (const M of cells) delete M.byTag;
       return { pass: cells.length === CELLS.length && failing.length === 0,
-        detail: { bars: { stepM: STEP, knuckleNockM: KN, wristNockM: WN, forearmArrowDeg: FA, bodyStepM: BS, headingStepRad: HS }, strip: strip ? { x: +strip.x.toFixed(1), z: +strip.z.toFixed(1) } : null, worst, byTransition: byTag, failing, failingExceptSpear, spearCells: cells.filter((M) => M.spearFails.length).length, cells } };
+        detail: { bars: { stepM: STEP, knuckleNockM: KN, wristNockM: WN, forearmArrowDeg: FA, bodyStepM: BS, headingStepRad: HS }, strip: strip ? { x: +strip.x.toFixed(1), z: +strip.z.toFixed(1) } : null, worst, byTransition: byTag, failing, failingExceptLance, lanceCells: cells.filter((M) => M.lanceFails.length).length, cells } };
     })()`),
   },
 
@@ -8330,7 +8330,7 @@ const NEW_GATES = [
       const NM = ['pelvis', 'chest', 'head'];
       for (const [name, ks, aimed, act] of ROWS) {
         release(); await wait(300); p.setCrouch?.(false);
-        for (let i = 0; i < 40 && (cmb.melee?.active || cmb.melee?.stance !== 'holstered' || an.melee?.w > 0.02); i++) { cmb.melee?.holsterSpear?.(true); await simWait(0.1, 2000); }
+        for (let i = 0; i < 40 && (cmb.melee?.active || cmb.melee?.stance !== 'holstered' || an.melee?.w > 0.02); i++) { cmb.melee?.holsterLance?.(true); await simWait(0.1, 2000); }
         { const am = cmb.activeWeapon?.activeAmmo; if (am) cmb.ammo[am] = 99; }
         if (strip) {
           p.position.set(strip.x, 0, strip.z); p.velocity.set(0, 0, 0); p._snapToGround();

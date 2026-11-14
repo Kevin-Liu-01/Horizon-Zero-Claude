@@ -124,7 +124,7 @@ export const SALT_FIELD = Object.freeze({
 export const GROUND = Object.freeze({
   openGround: Object.freeze({ x: -164, z: 260, yaw: Math.PI, note: 'flat Pans strip, ±0.06 m over 70 m along +z' }),
   runway: Object.freeze({ x: -164, z: 260, yaw: Math.PI, len: 50, note: 'the same strip, facing +z' }),
-  fightGround: Object.freeze({ x: -164, z: 258, yaw: Math.PI, pitch: 0.05, note: 'flat ground with room for an 8-machine arc' }),
+  fightGround: Object.freeze({ x: -164, z: 258, yaw: Math.PI, pitch: 0.05, note: 'flat ground with room for an arc of 8 Instruments' }),
   duelGround: Object.freeze({ x: -158, z: 262, note: 'flat clear ground' }),
   impactGround: Object.freeze({ x: -170, z: 266, note: 'flat clear ground, the impact/carry film spot' }),
   rangeGround: Object.freeze({ x: -164, z: 236, note: 'flat ground with 55 m of open sight line along +z' }),

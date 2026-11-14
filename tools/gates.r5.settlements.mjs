@@ -56,7 +56,7 @@ const SHEET = `
       const paste = (g, img, x, y, w, h) => { const k = document.createElement('canvas'); k.width = img.width; k.height = img.height; k.getContext('2d').putImageData(img, 0, 0); g.imageSmoothingQuality = 'high'; g.drawImage(k, x, y, w, h); };
       const label = (g, t, x, y) => { g.font = '500 15px "IBM Plex Mono", ui-monospace, Menlo, monospace'; g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(x - 6, y - 16, g.measureText(t).width + 12, 22); g.fillStyle = '#efe9dc'; g.fillText(t, x, y); };
       for (const el of Array.from(document.body.children)) if (el.tagName !== 'CANVAS' && !el.querySelector('canvas')) el.style.visibility = 'hidden';
-      // a sheet is a look at the people: the tall grass, the scatter props and the Round-4 camp are hidden while it is filmed (the
+      // a sheet is a look at the people: the reed cover, the scatter props and the Round-4 home site are hidden while it is filmed (the
       // terrain, the sky, the light and its shadows stay), and the sheet says so
       const studio = (on) => { for (const o of [C.vegetation?.group, C.props?.group, C.settlements?.group]) if (o) o.visible = !on; };
       studio(true);

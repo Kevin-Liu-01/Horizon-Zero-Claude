@@ -568,8 +568,8 @@ export class Progression {
      * Objectives complete IN ORDER (that is what makes the tutorial a
      * tutorial), and the old `_advance` threw away any event that did not
      * match the objective standing at the front of the queue. So the single
-     * most likely path through `lessons-of-the-valley` — Focus-tag the Sentry
-     * you can see while The old guide is still talking — silently lost the scan, and
+     * most likely path through the old tutorial quest (take a Sighting of the
+     * sentry while the guide is still talking) silently lost the scan, and
      * the obvious recovery (tag it again) is a NO-OP because
      * `SightingSystem.tagTarget()` is a toggle: the second press removes the tag
      * and emits nothing. The player was stuck on step 3 with no feedback.
@@ -1377,7 +1377,7 @@ export class Progression {
    * `ctx.props.sites()` registry and is genuinely static, so caching is right
    * for them — but `npc` (port 5218) walks thirteen Old-tribe around rest site, and this
    * lane put four `talk` objectives on the roving ones. Measured: the marker
-   * for "Bring the catch back to Aura" sat frozen while Aura walked 7.8 m away,
+   * for a "bring the catch back" step sat frozen while its person walked 7.8 m away,
    * three times its own 2.5 m ring, so the player stood inside the marker with
    * no TALK prompt. Max roam over 70 s reaches 21.7 m (the old chief).
    *
@@ -2631,7 +2631,7 @@ export class Progression {
               if (legacy) {
                 // Leave `impact` undefined so machine.js still runs its own
                 // compat branch — that branch is also what maps a legacy
-                // `type:'fire'|'shock'|'freeze'` onto elemental buildup, which
+                // arrow `type` (fire, the Dust channel, freeze) onto elemental buildup, which
                 // a resolved-to-impact copy would silently drop.
                 h.baseDamage = scaled;
                 // ...but pin `tear` here, or the derived tear would ride the

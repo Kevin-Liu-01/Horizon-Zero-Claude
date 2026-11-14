@@ -50,14 +50,14 @@ export class CombatFeedback {
         </svg>
       </div>
       <div class="cfx-trap"></div>
-      <div class="cfx-craft">
+      <div class="cfx-make">
         <svg class="cfx-ring" viewBox="0 0 40 40" aria-hidden="true">
           <circle class="bg" cx="20" cy="20" r="16"/>
           <circle class="fg" cx="20" cy="20" r="16"
             stroke-dasharray="100.53" stroke-dashoffset="100.53"/>
         </svg>
         <div class="cfx-ring-ic"></div>
-        <div class="cfx-craft-label"></div>
+        <div class="cfx-make-label"></div>
       </div>
       <div class="cfx-toast"></div>`;
     document.body.appendChild(root);
@@ -66,8 +66,8 @@ export class CombatFeedback {
     this._tick = root.querySelector('.cfx-tick');
     this._ring = root.querySelector('.cfx-ring .fg');
     this._ringIc = root.querySelector('.cfx-ring-ic');
-    this._craft = root.querySelector('.cfx-craft');
-    this._craftLabel = root.querySelector('.cfx-craft-label');
+    this._craft = root.querySelector('.cfx-make');
+    this._craftLabel = root.querySelector('.cfx-make-label');
     this._toast = root.querySelector('.cfx-toast');
     this._trap = root.querySelector('.cfx-trap');
 
@@ -113,7 +113,7 @@ export class CombatFeedback {
       if (def) this._ringIc.style.color = def.color;
     }
     const label = ok
-      ? `CRAFT ${(AMMO[ammoId]?.name ?? '').toUpperCase()}`
+      ? `MAKE ${(AMMO[ammoId]?.name ?? '').toUpperCase()}`
       : (reason || 'MISSING RESOURCES');
     if (this._craftLabel.textContent !== label) this._craftLabel.textContent = label;
   }

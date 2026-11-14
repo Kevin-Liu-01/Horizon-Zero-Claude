@@ -47,7 +47,7 @@ self-report:
 node tools/gates.mjs --port <lane port> --lane <lane>
 ```
 
-The name lints (`node tools/lint/namecheck.mjs --player | --code`) keep the
+The Tier 0 name lint (`npm run tier0`; its term list is private) keeps the
 project's words its own; `node tools/licences/check.mjs` keeps every shipped
 file matched to a licence row.
 

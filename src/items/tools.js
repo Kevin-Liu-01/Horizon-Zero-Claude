@@ -188,7 +188,7 @@ export class Tools {
   }
 
   /**
-   * Shock Wire Trap: spans one tripline across the ground in front of Brea
+   * Jolt Line: spans one line across the ground in front of Brea
    * through `combat.traps` — the lane that owns wires owns the wire.
    */
   _use_trap_shock() {

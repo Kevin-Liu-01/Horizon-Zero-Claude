@@ -1620,10 +1620,10 @@ export class Machine {
 
   /**
    * Damage model v2 — three channels (spec v2):
-   * hit = { point, object, impact, tear, element:'none'|'fire'|'shock'|'freeze',
+   * hit = { point, object, impact, tear, element (none, fire, the Dust channel, freeze),
    *         elementAmount, dir, type }
    * Backward compat: hit.baseDamage (round-1 combat) is treated as impact,
-   * with legacy fire/shock arrow types mapped onto elemental buildup.
+   * with legacy elemental arrow types mapped onto elemental buildup.
    * Returns { damage, tear, weak, killed, tornPart|null, triggeredElement|null }.
    */
   takeDamage(hit) {
@@ -2129,7 +2129,7 @@ export class Machine {
 
     if (sc.dazeT > 0) {
       sc.dazeT -= dt;
-      // shock: frozen — shiver + jittering electric arcs (SPEC: "electric arcs")
+      // Dust daze: frozen — shiver + jittering arcs
       this.body.position.x = (Math.random() - 0.5) * 0.035;
       sc._arcClock -= dt;
       if (sc._arcClock <= 0 && !this.lowLOD) {
@@ -2898,7 +2898,7 @@ export class Machine {
     });
   }
 
-  /** Jittering electric arc streak across the body while shock-dazed. */
+  /** Jittering arc streak across the body while Dust-dazed. */
   _arcFlash(color = VFX_COLORS.bronzeChip) {
     const mat = new THREE.SpriteMaterial({
       map: glowTexture(), color, transparent: true, opacity: 0.95,

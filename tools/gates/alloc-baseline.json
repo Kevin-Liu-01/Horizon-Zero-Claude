@@ -331,7 +331,7 @@
    "measuredKBps": 14.8,
    "gradedKBps": 16.47
   },
-  "update /src/world/camp.js:1153": {
+  "update /src/world/settlements/host.js:1153": {
    "owner": "settlements",
    "kbPerFrame": 0.18,
    "measuredKBps": 9.87,
@@ -415,7 +415,7 @@
    "measuredKBps": 18,
    "gradedKBps": 19.08
   },
-  "tallGrassDensity /src/world/terrain.js:2162": {
+  "reedCoverDensity /src/world/terrain.js:2162": {
    "owner": "terrain",
    "kbPerFrame": 8.27,
    "measuredKBps": 468.04,
@@ -583,7 +583,7 @@
    "measuredKBps": 5.7,
    "gradedKBps": 6.34
   },
-  "_settleSpear /src/entities/anim/meleeLayer.js:2836": {
+  "_settleLance /src/entities/anim/meleeLayer.js:2836": {
    "owner": "melee",
    "kbPerFrame": 0.19,
    "measuredKBps": 10.44,

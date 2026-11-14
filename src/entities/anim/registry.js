@@ -173,7 +173,7 @@ function probePlayerAnimator(ctx) {
 function probeMachineLocal(ctx) {
   const list = ctx?.machines?.list || [];
   const m = list.find((x) => typeof x?._rot === 'function' && x?._rest?.size && x?.root);
-  if (!m) return { reachable: false, why: 'no machine exposes _rot + _rest yet' };
+  if (!m) return { reachable: false, why: 'no Instrument exposes _rot + _rest yet' };
   const bone = [...m._rest.keys()].find((b) => b && b.isBone !== undefined) || [...m._rest.keys()][0];
   if (!bone) return { reachable: false, why: 'empty rest table' };
   const bs = new BoneSpace(m.root);

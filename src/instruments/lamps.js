@@ -237,7 +237,7 @@ export { WEATHER_PERCEPTION, NIGHT_PERCEPTION, perceptionScale } from './lib/wea
 /**
  * Map a machine to its lamp state (bible §7.2 + §7.3).
  *   dark     dead, or blinded: a precise hit on the lamp (`lampDarkT`, 6 s) or
- *            Clouded (the Dust status, engine channel `shock`: `dazeT`)
+ *            Clouded (the Dust status; its engine channel's timer is `dazeT`)
  *   hostile  alert, attack, stagger, downed
  *   wary     suspicious, search
  *   calm     patrol, return

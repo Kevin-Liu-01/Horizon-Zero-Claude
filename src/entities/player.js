@@ -34,7 +34,7 @@ const REST_POS = new THREE.Vector3(REST.x, 0, REST.z);
  *     Brea fades when the lens is forced inside her             (camera-feel-03)
  *
  * Everything the animator reads is unchanged in NAME and meaning:
- *   moveSpeed, heading, crouching, aiming, dodging, dodgeK, inTallGrass, health.
+ *   moveSpeed, heading, crouching, aiming, dodging, dodgeK, inReedCover, health.
  * ======================================================================== */
 
 /* ------------------------------- dodge ---------------------------------- */
@@ -1158,7 +1158,7 @@ export class Player {
     this.gourd = 60;
     this.maxGourd = 100;
     this.healing = false;
-    this.inTallGrass = false;
+    this.inReedCover = false;
 
     // --- camera orbit
     this.camYaw = Math.PI;
@@ -2349,7 +2349,7 @@ void main() {
         : Math.hypot(this.velocity.x, this.velocity.z);
     }
     this._travelled = null;
-    this.inTallGrass = ctx.terrain.isInTallGrass(this.position.x, this.position.z);
+    this.inReedCover = ctx.terrain.isInReedCover(this.position.x, this.position.z);
 
     /* ---- facing: speed->turn curve + input latch (camera-feel-14) ------- */
     /* hero-body targeted fix round 3 (gate judge findings 2 and 7, eng judge finding 6): she TURNS onto the

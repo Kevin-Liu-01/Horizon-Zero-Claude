@@ -829,8 +829,8 @@ export async function panBase(opt = {}) {
   // (C-06: the Starter's top is FITTED, as on the board: it lies close over the chest and falls less from the bust; the
   // sleeved smock keeps its loose hang)
   const drape = sleevesOn
-    ? drapeTable(raw, { apex: [1.26, 1.4], fall: 0.34, minEase: 0.007, margin: (y) => 0.009 + 0.004 * sstep(1.3, 1.22, y) + 0.003 * sstep(1.47, 1.51, y) })
-    : drapeTable(raw, { apex: [1.26, 1.4], fall: 0.2, minEase: 0.004, margin: (y) => 0.0058 - 0.0022 * sstep(1.36, 1.41, y) * sstep(1.48, 1.45, y) + 0.003 * sstep(1.3, 1.22, y) + 0.003 * sstep(1.47, 1.51, y) });
+    ? drapeTable(raw, { crest: [1.26, 1.4], fall: 0.34, minEase: 0.007, margin: (y) => 0.009 + 0.004 * sstep(1.3, 1.22, y) + 0.003 * sstep(1.47, 1.51, y) })
+    : drapeTable(raw, { crest: [1.26, 1.4], fall: 0.2, minEase: 0.004, margin: (y) => 0.0058 - 0.0022 * sstep(1.36, 1.41, y) * sstep(1.48, 1.45, y) + 0.003 * sstep(1.3, 1.22, y) + 0.003 * sstep(1.47, 1.51, y) });
   // (C-06: the Starter's top closes high and round at the front, as on the board, with no keyhole; `keyhole` keeps it)
   const keyhole = !!opt.keyhole;
   const neckY = (d) => mix(keyhole ? 1.432 : 1.466, 1.504, sstep(0.0, keyhole ? 1.3 : 1.5, d)) + 0.011 * sstep(1.7, 3.0, d);

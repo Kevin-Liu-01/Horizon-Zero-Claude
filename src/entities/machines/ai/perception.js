@@ -296,7 +296,7 @@ export class Perception {
     const hSightScale = H ? H.sightScale : 1, hDetectMul = H ? H.detectMul : 1;
     const mSightHalf = m.sightHalf, mSightRange = m.sightRange, mAlive = m.alive, mState = m.state;
     const msHeading = ms.heading, msLampDarkT = ms.lampDarkT, scanOffset = this.scanOffset, msPlayerDist = ms.playerDist;
-    const pOk = H0.pOk, pHealth = H0.pHealth, pCrouch = H0.pCrouch, pTallGrass = H0.pTallGrass, sp = H0.pMoveSpeed;
+    const pOk = H0.pOk, pHealth = H0.pHealth, pCrouch = H0.pCrouch, pReedCover = H0.pReedCover, sp = H0.pMoveSpeed;
     const hostileNow = HOSTILE_STATES.has(mState);
     const mp = m.position;
 
@@ -324,7 +324,7 @@ export class Perception {
     const ignoreStealth = omniPos && !!cOmni && !!cOmni.ignoreStealth;
 
     // ---- the reach (WEATHER: `machines.perception.sightScale`, bible §2.3; a darkened lamp sees nothing, §7.3)
-    const crouch = pCrouch === 1, grass = pTallGrass === 1;
+    const crouch = pCrouch === 1, grass = pReedCover === 1;
     const hidden = crouch && grass;
     const hid = hidden && !ignoreStealth;
     const blind = msLampDarkT > 0;

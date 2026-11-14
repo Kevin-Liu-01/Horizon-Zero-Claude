@@ -1128,8 +1128,8 @@ export class GameAudio {
           z.ensure(k, 'status/burn', m.position.x, y, m.position.z, { volume: 0.55 });
         }
         if (m.dazeT > 0.05) {
-          const k = `shock:${id}`; want.add(k);
-          z.ensure(k, 'status/shock', m.position.x, y, m.position.z, { volume: 0.5 });
+          const k = `dust:${id}`; want.add(k);
+          z.ensure(k, 'status/dust', m.position.x, y, m.position.z, { volume: 0.5 });
         }
         if (m.brittleT > 0.05) {
           const k = `frost:${id}`; want.add(k);
@@ -1140,7 +1140,7 @@ export class GameAudio {
     // anything that was burning and is not any more — including machines that
     // died, were disposed, or walked out of earshot
     for (const id of z.ids()) {
-      if (id.startsWith('burn:') || id.startsWith('shock:') || id.startsWith('frost:')) {
+      if (id.startsWith('burn:') || id.startsWith('dust:') || id.startsWith('frost:')) {
         if (!want.has(id)) z.retire(id, 0.45);
       }
     }
@@ -1730,7 +1730,7 @@ export class GameAudio {
     }
   }
 
-  /** Shock-arrow zap: harsh AM buzz that stutters out. */
+  /** Dust-puff zap: harsh AM buzz that stutters out. */
   _zap(pan, att) {
     const g = this._voice(0.5, att, pan, this.sfxBus);
     if (!g) return;
@@ -2049,7 +2049,7 @@ export class GameAudio {
         this._env(eg3.gain, t, 0.04, 0.002, dec);
         this._osc('sine', 2200 + Math.random() * 3800, t, dec + 0.05, eg3);
       }
-    } else if (/shock|daze|spark/i.test(el)) {
+    } else if (String(el).toLowerCase().split('-').includes('shock') || /daze|spark|dust/i.test(el)) {
       this._zap(pan, a);
       this._zap(pan * 0.5, a * 0.8);
       this._boom(pan, a * 0.9);
@@ -2543,7 +2543,7 @@ export class GameAudio {
       });
       if (machine) {
         if (!ladder) this._clank(this._pan, att, !!weak);
-        if (/shock|spark/i.test(id)) this._zap(this._pan, att);
+        if (String(id).toLowerCase().split('-').includes('shock') || /spark|dust/i.test(id)) this._zap(this._pan, att);
         else if (/fire|blaze/i.test(id)) this._ignite(this._pan, att);
         else if (/freeze|chill/i.test(id)) this._frostHiss(this._pan, att);
         else if (/blast|disc|bomb/i.test(id)) this._explosion(this._pan, att, 0.8);
@@ -2586,7 +2586,7 @@ export class GameAudio {
     /* --- the lance (audio, for `combat`'s melee.js) ----------------------
      *
      * The melee set was rendered into the bank but nothing ever played it, so
-     * the lance — the payoff the stealth grass and the shock-daze exist to set
+     * the lance — the payoff the reed cover and the Dust daze exist to set
      * up — landed in total silence. Four rungs, chosen from the same fields
      * the feedback layer uses so what you hear and what you see agree:
      *
@@ -2739,7 +2739,7 @@ export class GameAudio {
       const nowMs = performance.now();
       if (nowMs - (this._attackCd.get(key) ?? -1e9) >= 800) {
         this._attackCd.set(key, nowMs);
-        const stompy = /stomp|slam|charge|quake|shock/i.test(kind || '');
+        const stompy = /stomp|slam|charge|quake/i.test(kind || '');
         // audio-02 — the species owns the voice now. Eight banks, not two.
         this._combatUntil = Math.max(this._combatUntil, nowMs + 5000);
         const voiced = this._machineVoice(machine, 'strike');
@@ -2891,7 +2891,7 @@ export class GameAudio {
       if (this.zones && machine) {
         const id = this._idOf(machine);
         this.zones.retire(`burn:${id}`, 0.4);
-        this.zones.retire(`shock:${id}`, 0.3);
+        this.zones.retire(`dust:${id}`, 0.3);
         this.zones.retire(`frost:${id}`, 0.4);
       }
     }));
@@ -3220,7 +3220,7 @@ export class GameAudio {
     this._windBpL.frequency.value = 340 + gust * 260;
     this._windBpR.frequency.value = 420 + gust * 300;
     let rustle = gust * gust * 0.028;
-    if (p && p.inTallGrass && p.moveSpeed > 0.5) {
+    if (p && p.inReedCover && p.moveSpeed > 0.5) {
       rustle += clamp(p.moveSpeed / 8.2, 0, 1) * 0.05;
     }
     this.rustleGain.gain.value = rustle;
@@ -3235,7 +3235,7 @@ export class GameAudio {
         this._stridePhase += (sp / (2 * stepLen)) * dt;
         if (this._stridePhase >= 0.5) {
           this._stridePhase -= 0.5;
-          this._footstep(clamp(sp / 8.2, 0, 1), p.crouching, p.inTallGrass);
+          this._footstep(clamp(sp / 8.2, 0, 1), p.crouching, p.inReedCover);
         }
       } else {
         this._stridePhase = 0.38; // next step lands soon after moving again

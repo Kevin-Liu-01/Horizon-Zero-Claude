@@ -502,7 +502,7 @@ const ROWS = [
   /* -------------------------------------------------------------- A59b + A59c + A60 ---- */
   {
     id: 'A59b-cover-honesty-world-ground', kind: 'action', lane: LANE, timeout: 60000,
-    title: 'The concealment field never claims cover the scatter did not plant: every point isInTallGrass() calls hidden carries ≥ 2 tufts/m² planted, and the instances are really there',
+    title: 'The concealment field never claims cover the scatter did not plant: every point isInReedCover() calls hidden carries ≥ 2 tufts/m² planted, and the instances are really there',
     settle: 1500,
     assert: `(async () => {
       const ctx = __CTX__, T = ctx.terrain, V = ctx.vegetation;
@@ -511,17 +511,17 @@ const ROWS = [
       let tall = 0, bad = 0; const worst = [];
       for (let x = -470; x <= 470; x += 4) for (let z = -470; z <= 470; z += 4) {
         if (x * x + z * z > 470 * 470) continue;
-        if (!T.isInTallGrass(x, z)) continue;
+        if (!T.isInReedCover(x, z)) continue;
         tall++;
         const d = V.grassDensityAt(x, z);
         if (d >= 2) continue;
         bad++;
-        if (worst.length < 8) worst.push({ at: [x, z], tall: +T.tallGrassDensity(x, z).toFixed(3), d: +d.toFixed(2), surface: T.surfaceAt(x, z), slope: +T.slopeFast(x, z).toFixed(2) });
+        if (worst.length < 8) worst.push({ at: [x, z], tall: +T.reedCoverDensity(x, z).toFixed(3), d: +d.toFixed(2), surface: T.surfaceAt(x, z), slope: +T.slopeFast(x, z).toFixed(2) });
       }
       // and the plants are real: measured instance density across the hidden ground
       let spots = 0, planted = 0;
       for (let x = -470; x <= 470 && spots < 30; x += 23) for (let z = -470; z <= 470 && spots < 30; z += 23) {
-        if (T.tallGrassDensity(x, z) < 0.7) continue;
+        if (T.reedCoverDensity(x, z) < 0.7) continue;
         const n = V.countGrassNear(x, z, 4), d = n / (Math.PI * 16);
         spots++; planted += d;
       }
@@ -579,7 +579,7 @@ const ROWS = [
           for (let s = 0; s < steps; s++) {
             const u = s / steps, x = a.x + (b.x - a.x) * u, z = a.z + (b.z - a.z) * u;
             total++;
-            if (T.tallGrassDensity(x, z) > 0.45) covered++;
+            if (T.reedCoverDensity(x, z) > 0.45) covered++;
             if (T.slopeFast(x, z) <= 0.9) canStand++;
           }
         }
@@ -846,10 +846,10 @@ const ROWS = [
       for (const g of old) g.traverse((o) => { if (o.isMesh) inOld.add(o); });
       const liveColliders = (C?.colliders || []).filter((c) => (c.ref && inOld.has(c.ref)) || (c.object && inOld.has(c.object))).length;
       const ledges = (P?.rockworks?.ledges?.length || 0) + (P?.placeSystem?.ledges?.length || 0);
-      const camp = ctx.settlements?.group ? ctx.settlements.group.visible : false;
+      const host = ctx.settlements?.group ? ctx.settlements.group.visible : false;
       const ridges = ctx.environment?.ridges ? ctx.environment.ridges.visible : false;
-      const pass = !shown.length && !liveColliders && !ledges && !camp && !ridges;
-      return { pass, detail: { signature: !!P?.megaMeshes, groupsHidden: old.length, shown, liveColliders, ledges, campVisible: camp, ridgesVisible: ridges, oldSite: ctx.terrain.oldSiteRetired } };
+      const pass = !shown.length && !liveColliders && !ledges && !host && !ridges;
+      return { pass, detail: { signature: !!P?.megaMeshes, groupsHidden: old.length, shown, liveColliders, ledges, hostVisible: host, ridgesVisible: ridges, oldSite: ctx.terrain.oldSiteRetired } };
     })()`,
   },
 
@@ -1180,7 +1180,7 @@ function vistaSetup({ hour, weather, shot = 'vista' }) {
  * re-aimed at what stands there. They carry `-pans` ids: `tools/gates.r5.engine-gpu.mjs`
  * keeps the old ids until the orchestrator retires them.
  */
-const POC_RE = /const __POCM = await import\('\/tools\/r5-poc\/poc-biome\.js'\);\s*const pocHeight = __POCM\.height;/;
+const POC_RE = /if \(!window\.__R5BIOME_HOST__\) return [^\n]*\n\s*const pocHeight = null;/;
 const BOOT_RE = /const __pocBoot = async[\s\S]*?const PW = __F\.contentWindow, PB = PW\.__R5BIOME__, E = PB\.engine,/;
 const GAME_KIT = POC_KIT
   .replace(POC_RE, `const __OX = -341, __OZ = 312;

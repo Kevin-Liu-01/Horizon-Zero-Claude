@@ -64,14 +64,14 @@ export const HOT = {
   pHealth: 0.5,
   pMoveSpeed: 0.5,
   pCrouch: 0,
-  pTallGrass: 0,
+  pReedCover: 0,
 };
 
 /**
  * MUTABLE FROM BIRTH (W0b fix round 3). V8 tracks, per field of a map, whether the field has ever been written
  * with a different value ("const" until then). Optimised code that read a const field depends on it staying
  * const — above all for a module object like `HOT`, whose field loads TurboFan folds to constants — and the
- * FIRST store of a different value throws that code away ("dependent field type constness changed"). `pTallGrass`
+ * FIRST store of a different value throws that code away ("dependent field type constness changed"). `pReedCover`
  * stayed 0 until her first run through grass and `pCrouch` until her first crouch, so the first sprint deoptimised
  * every machine function that read them (`_sight`: measured 7-14 KB/s in that window, every run). Each field is
  * therefore written with a different value of the same kind and back, once, at construction: no field of the
@@ -127,7 +127,7 @@ export function refreshHot(ctx) {
     H.pHealth = typeof hp === 'number' ? hp : 0;
     H.pMoveSpeed = typeof sp === 'number' ? sp : 0;
     H.pCrouch = p.crouching ? 1 : 0;
-    H.pTallGrass = p.inTallGrass ? 1 : 0;
+    H.pReedCover = p.inReedCover ? 1 : 0;
   } else {
     H.pOk = 0;
   }

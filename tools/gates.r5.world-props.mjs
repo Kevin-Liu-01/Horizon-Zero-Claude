@@ -814,7 +814,13 @@ const GATES = [
     id: 'A-place-names', kind: 'runner', lane: LANE,
     title: 'Place ids, map labels and place strings of world-props: 0 named lint hits, 0 /spire/i',
     check: async () => {
-      const { loadLexicon, matchTexts } = await import(pathToFileURL(path.join(ROOT, 'tools/lint/namecheck.mjs')).href);
+      // the term list is private (Tier 0 name lint): read from its private path; no list on this machine = PENDING
+      const NL = await import(pathToFileURL(path.join(ROOT, 'tools/tier0/namelint.mjs')).href);
+      const W = await import(pathToFileURL(path.join(ROOT, 'tools/tier0/lib/words.mjs')).href);
+      const wl = NL.wordListPath([]);
+      if (!existsSync(wl)) return { pass: null, detail: 'PENDING: the private term list is not on this machine' };
+      const list = W.parseWordList(readFileSync(wl, 'utf8'));
+      const match = W.makeMatcher([...list.anywhere, ...list.names, ...list.playerVisible]);
       const L = await import(pathToFileURL(path.join(ROOT, 'src/world/sites/layout.js')).href);
       const texts = [];
       const push = (where, t) => texts.push({ where, text: String(t) });
@@ -831,7 +837,7 @@ const GATES = [
         const src = readFileSync(path.join(ROOT, f), 'utf8');
         for (const m of src.matchAll(/(?:name|label|text)\s*:\s*'([^']+)'/g)) { push(f, m[1]); strings.push(m[1]); }
       }
-      const hits = matchTexts(loadLexicon(), texts, 'named');
+      const hits = texts.flatMap((t) => match(t.text).map((term) => ({ where: t.where, n: term.length })));
       const spire = texts.filter((t) => /spire/i.test(t.text));
       return { pass: hits.length === 0 && spire.length === 0, detail: { texts: texts.length, hits, spire, strings: strings.length } };
     },

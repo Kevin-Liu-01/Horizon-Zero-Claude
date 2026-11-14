@@ -203,7 +203,7 @@ export const MEMORY_BUDGETS = Object.freeze({
       { id: 'melee', files: '^/src/entities/anim/(meleeLayer|clipMelee|castLayer)\\.js$|^/src/combat/(melee|lanceStow)\\.js$', lane: 'melee', cls: 'held', barsFrom: 'W1', ruling: 'plan §2 melee (W1, W2)' },
       // world-props W1: fauna.js (R48 c), props.js, props/** except settlement.js / npcs.js (settlements'), sites/**
       { id: 'fauna', files: '^/src/world/fauna\\.js$', lane: 'world-props', cls: 'held', barsFrom: 'W1', ruling: 'R48 (c)' },
-      { id: 'settlements', files: '^/src/world/(camp\\.js$|npc/|settlements/)|^/src/world/props/(settlement|npcs)\\.js$', lane: 'settlements', cls: 'held', barsFrom: 'W2', ruling: 'R48 (c); plan §2 settlements (W2, W4)' },
+      { id: 'settlements', files: '^/src/world/(npc/|settlements/)|^/src/world/props/(settlement|npcs)\\.js$', lane: 'settlements', cls: 'held', barsFrom: 'W2', ruling: 'R48 (c); plan §2 settlements (W2, W4)' },
       { id: 'world-props', files: '^/src/world/props\\.js$|^/src/world/props/|^/src/world/sites/', lane: 'world-props', cls: 'held', barsFrom: 'W1', ruling: 'plan §2 world-props (W1, W3, W4)' },
       // frozen UI engines (plan §1.1): no lane holds them
       { id: 'frozen-ui-engines', files: '^/src/ui/dialogue\\.js$|^/src/items/(interactables|inventory)\\.js$|^/src/audio/(bank|buses|clock|music|probe|spatial|zones)\\.js$|^/src/combat/particles\\.js$', lane: 'FROZEN UI engines (plan §1.1): §11 W1 perf-hygiene grant', barsFrom: null, cls: 'frozen', ruling: 'plan §1.1 (frozen)' },

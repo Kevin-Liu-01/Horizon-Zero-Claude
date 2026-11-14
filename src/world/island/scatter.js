@@ -50,7 +50,7 @@ export function fieldReader(F) {
     const o = (iz * N + ix) * 4;
     R.rock = maskA[o + 1] / 255; R.shingle = maskA[o + 2] / 255; R.silt = maskA[o + 3] / 255;
     R.track = maskB[o + 1] / 255; R.damp = maskB[o + 2] / 255; R.meadow = maskB[o + 3] / 255;
-    // cover bilinear: the same read as terrain.tallGrassDensity, so the field and the plants agree
+    // cover bilinear: the same read as terrain.reedCoverDensity, so the field and the plants agree
     {
       const bx = fx < 0 ? 0 : fx >= N - 1 ? N - 2 : fx | 0, bz = fz < 0 ? 0 : fz >= N - 1 ? N - 2 : fz | 0;
       const tx = fx - bx, tz = fz - bz, q = (bz * N + bx) * 4;

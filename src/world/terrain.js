@@ -30,7 +30,7 @@ import { IslandWater } from './water.js';
  *   terrain.materialAt(x, z)         the ground itself, one of Terrain.MATERIALS
  *   terrain.biomeAt(x, z)            one of Terrain.BIOMES
  *   terrain.biomeWeights(x, z, out)  { pans, holds, malpais, cloudline, flank, caldera }, Σ = 1
- *   terrain.tallGrassDensity(x, z)   0..1 cover; isInTallGrass(x, z) is > 0.45
+ *   terrain.reedCoverDensity(x, z)   0..1 cover; isInReedCover(x, z) is > 0.45
  *   terrain.trench(id)               a tube's polyline (published W1, carved W3)
  *   terrain.water                    the IslandWater (also ctx.water and environment.water)
  *   stampStealthDisc(x, z, r), stealthField(x, z), WORLD_SIZE, WORLD_HALF, PLAY_RADIUS
@@ -398,8 +398,8 @@ export class Terrain {
   }
 
   /* -------------------------------- fields -------------------------------- */
-  tallGrassDensity(x, z) { return maskRead(BAKE.maskB, 0, x, z); }
-  isInTallGrass(x, z) { return maskRead(BAKE.maskB, 0, x, z) > 0.45; }
+  reedCoverDensity(x, z) { return maskRead(BAKE.maskB, 0, x, z); }
+  isInReedCover(x, z) { return maskRead(BAKE.maskB, 0, x, z) > 0.45; }
 
   surfaceAt(x, z) { return SURFACE_EMIT[this.materialAt(x, z)]; }
 
@@ -812,7 +812,7 @@ export class Terrain {
       }
       if (line.length < 4) continue;
       let cov = 0;
-      for (const p of line) if (this.tallGrassDensity(p[0], p[1]) > 0.45) cov++;
+      for (const p of line) if (this.reedCoverDensity(p[0], p[1]) > 0.45) cov++;
       if (cov / line.length >= 0.40) continue;
       const L = line.length, arcs = 3;
       const phase = Math.abs(Math.round(r[0].x * 7 + r[0].z * 3)) % L;

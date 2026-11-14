@@ -674,7 +674,7 @@
     A.ns(0, MDUR, wash, 0.5);
   };
 
-  // The melodic layer that reads as "Horizon": a pentatonic dulcimer figure
+  // The melodic layer that carries the theme: a pentatonic dulcimer figure
   // that never resolves, over a bar-long tail.
   RECIPES['music/pluck-calm'] = (A) => {
     const L = A.pan(-0.35), R = A.pan(0.35), C = A.pan(0.05);
@@ -1065,7 +1065,7 @@
   /* ===================================================================== */
   /*  ELEMENTAL STATUS LOOPS (audio-10)                                    */
   /* ===================================================================== */
-  // Flat-gain, 2.4 s, spatialised on the burning/shocked/frozen machine.
+  // Flat-gain, 2.4 s, spatialised on the burning, dazed or frozen machine.
   RECIPES['status/burn'] = (A) => {
     const dur = 2.4;
     const bed = A.ac.createGain(); bed.gain.value = 0.16;
@@ -1079,7 +1079,7 @@
       A.burst(t, A.rnd(0.012, 0.05), { f: A.rnd(1600, 5600), Q: A.rnd(3, 8), gain: A.rnd(0.04, 0.16), atk: 0.0008 });
     }
   };
-  RECIPES['status/shock'] = (A) => {
+  RECIPES['status/dust'] = (A) => {
     const dur = 2.4;
     // arcing: a buzzing carrier plus randomly retriggered crackles
     const band = A.flt('bandpass', 2600, 2.2);

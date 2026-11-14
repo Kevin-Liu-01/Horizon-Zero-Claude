@@ -91,12 +91,12 @@ function hullRow(R, off, n) {
  * peak (it hangs), a straight run from the top down to the peak (tension), `margin`
  * ease all over, and a low-pass so no body landmark prints through.
  */
-export function drapeTable(T, { apex = [1.24, 1.40], fall = 0.32, margin = () => 0.006, passes = 3, minEase = 0.003 } = {}) {
+export function drapeTable(T, { crest = [1.24, 1.40], fall = 0.32, margin = () => 0.006, passes = 3, minEase = 0.003 } = {}) {
   const { nY, nTh, y0, dy } = T;
   const src = T.R.slice();
   const R = T.R.slice();
   for (let y = 0; y < nY; y++) hullRow(R, y * nTh, nTh);
-  const iA0 = Math.round((apex[0] - y0) / dy), iA1 = Math.round((apex[1] - y0) / dy);
+  const iA0 = Math.round((crest[0] - y0) / dy), iA1 = Math.round((crest[1] - y0) / dy);
   for (let t = 0; t < nTh; t++) {
     let iA = iA0, rA = 0;
     for (let y = iA0; y <= iA1; y++) if (R[y * nTh + t] > rA) { rA = R[y * nTh + t]; iA = y; }

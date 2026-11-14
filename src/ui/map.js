@@ -1094,9 +1094,10 @@ export class WorldMap {
     const p = this.ctx.player;
     const E = p ? Math.round(p.position.x) : 0, N = p ? Math.round(-p.position.z) : 0;
     const pad = (v) => (v < 0 ? '-' : '') + String(Math.abs(v)).padStart(3, '0');
+    const sitesFound = marks.filter((m) => m.kind !== 'machine' && m.kind !== 'quest').length;
     this._stats.innerHTML =
       `<div><b>${String(this._triangles.length).padStart(2, '0')}</b><span>TRIANGLES</span></div>`
-      + `<div><b>${String(marks.filter((m) => m.kind !== 'machine' && m.kind !== 'quest').length).padStart(2, '0')}</b><span>SITES FOUND</span></div>`
+      + `<div><b>${String(sitesFound).padStart(2, '0')}</b><span>SITES FOUND</span></div>`
       + `<div><b>${pad(E)}</b><span>EASTING</span></div>`
       + `<div><b>${pad(N)}</b><span>NORTHING</span></div>`;
     // the trig stations, as a surveyor's table: a pillar reads only once a triangle has used it

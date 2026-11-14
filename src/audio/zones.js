@@ -13,7 +13,7 @@
  *
  *   fire:<n>       braziers and burning props (world-props / rest site)
  *   water:river    the nearest point of open water, re-aimed as you move
- *   burn:<machine> / shock:<machine> / frost:<machine>   elemental status
+ *   burn:<machine> / dust:<machine> / frost:<machine>    elemental status
  *   loot:<machine> the wreck beacon that says "there is something here"
  *
  * Ownership rules, learned from the servo-bed leak this lane already fixed

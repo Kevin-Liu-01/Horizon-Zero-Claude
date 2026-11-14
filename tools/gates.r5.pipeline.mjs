@@ -365,12 +365,12 @@ const BOOT_ROWS = `(async () => {
     r30Machines[m.kind] = (r30Machines[m.kind] || 0) + 1;
     if (!(r30.pending || []).includes(m.modelKind) || !A.models[m.modelKind]) onDeletedBody.push(m.kind);
   }
-  const campNpcs = Array.isArray(__CTX__.settlements?.npcs) ? __CTX__.settlements.npcs.length : 0;
+  const hostNpcs = Array.isArray(__CTX__.settlements?.npcs) ? __CTX__.settlements.npcs.length : 0;
   const pass = loaded.length === specs.length && !failed.length && !!A.models.hero && (r30.deleted || []).length >= 1
     && !unaccounted.length && !unreported.length && !pendingNotReal.length && !ownDeletionPending.length && !falsePositive.length
     && !placeholderEntries.length && !placeholderMeshes.length && !onDeletedBody.length;
   return { pass, detail: { bootRows: specs, loaded, skipped, r30, unaccounted, unreported, pendingNotReal, ownDeletionPending,
-    falsePositive, placeholderEntries, placeholderMeshes: placeholderMeshes.slice(0, 8), r30Machines, onDeletedBody, campNpcs,
+    falsePositive, placeholderEntries, placeholderMeshes: placeholderMeshes.slice(0, 8), r30Machines, onDeletedBody, hostNpcs,
     heroUrl: A.specs.hero?.url ?? null } };
 })()`;
 
@@ -424,10 +424,8 @@ async function r30MergeOrder() {
     return goneReaders.some((b) => new RegExp(`from\\s+['"]\\./${b.replace('.', '\\.')}['"]`).test(t));
   });
   for (const f of chassis) problems.push(`${f} imports a deleted R30 class`);
-  const camp = path.join(ROOT, 'src/world/camp.js');
-  const campGuard = existsSync(camp) ? /if \(this\.ctx\.assets\.models\.npc\) this\._placeNpc\(\)/.test(readFileSync(camp, 'utf8')) : null;
-  if (campGuard === false) problems.push('src/world/camp.js: the npc.glb guard is missing');
-  const detail = { rows, pending, done, chassisImportsOfDeletedClasses: chassis, campGuard, problems,
+  // (M0.3: the Round-4 rest-site file and its npc.glb guard are gone; the settlement host loads the island people)
+  const detail = { rows, pending, done, chassisImportsOfDeletedClasses: chassis, problems,
     why: problems.length ? problems.join('; ')
       : pending.length ? `consistent: ${pending.join(', ')} still served WITH their reader classes (instruments-core's §6 deletion of file + class not merged yet); ${done.join(', ')} gone`
         : `consistent: every R30 file and its reader gone (${done.join(', ')})` };

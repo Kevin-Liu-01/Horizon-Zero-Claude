@@ -118,7 +118,7 @@ const BUILD = [
 
   // --- elemental status loops (audio-10) --------------------------------
   { set: 'status/burn', variants: 1, dur: 2.4, gain: 0.9, loop: true, tags: ['status', 'fire'] },
-  { set: 'status/shock', variants: 1, dur: 2.4, gain: 0.9, loop: true, tags: ['status', 'shock'] },
+  { set: 'status/dust', variants: 1, dur: 2.4, gain: 0.9, loop: true, tags: ['status', 'dust'] },
   { set: 'status/frost', variants: 1, dur: 2.4, gain: 0.9, loop: true, tags: ['status', 'freeze'] },
 
   // --- Brea's harder efforts (audio-03; D2 — still no VO) ---------------
@@ -611,8 +611,8 @@ let total = 0;
 for (const r of results) total += r.bytes;
 
 const LICENSE = 'CC0-1.0';
-const SOURCE = 'https://github.com/Kevin-Liu-01/Horizon-Zero-Claude — synthesized by tools/audio-recipes.js';
-const AUTHOR = 'Horizon Zero Claude (procedurally synthesized, no third-party audio)';
+const SOURCE = 'this repository — synthesized by tools/audio-recipes.js';
+const AUTHOR = 'CALIMA project (procedurally synthesized, no third-party audio)';
 
 const sets = new Map();
 for (const r of results) {
@@ -674,7 +674,7 @@ bursts, inharmonic partial stacks, swept oscillators, AM growls) rendered offlin
 \`OfflineAudioContext\` and encoded to Opus. They were not sampled, recorded or derived from any
 third-party work, so the copyright holder is this project and the dedication below is ours to make.
 
-> To the extent possible under law, the authors of Horizon Zero Claude have waived all copyright
+> To the extent possible under law, the authors of CALIMA have waived all copyright
 > and related or neighbouring rights to the audio files in \`public/audio/\`. See
 > <https://creativecommons.org/publicdomain/zero/1.0/>.
 

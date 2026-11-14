@@ -43,7 +43,7 @@
 /* `combat-onboarding-crafting-feedback` + `combat-wheel-canon-gaps`:
    R is a HOLD, and the hold has to be legible while you hold it. */
 
-#cal-cfx .cfx-craft {
+#cal-cfx .cfx-make {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -54,7 +54,7 @@
   align-items: center;
   gap: 5px;
 }
-#cal-cfx .cfx-craft.on { display: flex; }
+#cal-cfx .cfx-make.on { display: flex; }
 #cal-cfx .cfx-ring { width: 58px; height: 58px; }
 #cal-cfx .cfx-ring circle { fill: none; stroke-width: 3.5; }
 #cal-cfx .cfx-ring .bg { stroke: rgba(239, 230, 213, 0.22); }
@@ -65,7 +65,7 @@
   transform-origin: 50% 50%;
   filter: drop-shadow(0 0 5px rgba(255, 211, 77, 0.6));
 }
-#cal-cfx .cfx-craft.deny .cfx-ring .fg { stroke: var(--cal-danger, #b03a2e); }
+#cal-cfx .cfx-make.deny .cfx-ring .fg { stroke: var(--cal-danger, #b03a2e); }
 #cal-cfx .cfx-ring-ic {
   position: absolute;
   width: 22px;
@@ -73,7 +73,7 @@
   margin-top: 18px;
   color: rgba(239, 230, 213, 0.9);
 }
-#cal-cfx .cfx-craft-label {
+#cal-cfx .cfx-make-label {
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.22em;
@@ -82,7 +82,7 @@
   text-shadow: 0 1px 5px rgba(0, 0, 0, 0.85);
   white-space: nowrap;
 }
-#cal-cfx .cfx-craft.deny .cfx-craft-label { color: var(--cal-danger, #b03a2e); }
+#cal-cfx .cfx-make.deny .cfx-make-label { color: var(--cal-danger, #b03a2e); }
 
 /* -------------------------------- toasts ---------------------------------- */
 /* `ammo-crafted` confirmation, centred under the reticle so it lands in the

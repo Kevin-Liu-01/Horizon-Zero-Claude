@@ -89,7 +89,7 @@ function record(name, err) {
     // survived, and the defect is in the subscriber, not in the emitter
     console.warn(
       `[machine-ai] a "${name}" listener threw and was isolated; `
-      + 'the machine loop continued. Fix the subscriber: ' + stack,
+      + 'the Instrument loop continued. Fix the subscriber: ' + stack,
     );
   }
   rec.count++;

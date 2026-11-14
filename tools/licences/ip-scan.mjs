@@ -246,7 +246,7 @@ export async function selfTest(dir, { planFile = path.join(ROOT, 'docs/ROUND5-PL
     writeFileSync(path.join(dir, 'docs/ROUND5-PIPELINE.md'), 'report\n');            // repository at W0a
     writeSpecs('/models/aloy.glb');
     // base
-    await ipGlb('public/models/control.glb', { title: 'Some Horizon fan model', source: 'https://sketchfab.com/x' });
+    await ipGlb('public/models/control.glb', { title: 'Some fan model (sketchfab rip)', source: 'https://sketchfab.com/x' });
     writeFileSync(path.join(dir, 'public/MANIFEST.md'), '| file | licence |\n|---|---|\n| control.glb | CC-BY-NC-4.0 |\n');
     writeRows([]);
     let r = await scan(dir, { env: {} });
@@ -255,7 +255,7 @@ export async function selfTest(dir, { planFile = path.join(ROOT, 'docs/ROUND5-PL
     rm(path.join(dir, 'public/models/control.glb')); rm(path.join(dir, 'public/MANIFEST.md'));
 
     // the scheduled hero body alone: a valid exception, legacy-source PENDING
-    await ipGlb('public/models/aloy.glb', { title: 'Aloy - Fortnite', source: 'https://sketchfab.com/x', license: 'CC-BY-4.0' });
+    await ipGlb('public/models/aloy.glb', { title: 'IP hero (sketchfab rip)', source: 'https://sketchfab.com/x', license: 'CC-BY-4.0' });
     writeRows([heroRow]);
     r = await scan(dir, { env: {} });
     let c = await check(dir, { env: {} });
@@ -287,7 +287,7 @@ export async function selfTest(dir, { planFile = path.join(ROOT, 'docs/ROUND5-PL
       scanPass: r.pass, legacySource: c.clauses['legacy-source'].status };
 
     // unflagged: the same texture, its row names IP in the title, no ip flag
-    writeRows([heroRow, { id: 'legacy-tex', paths: ['public/textures/fan-rip.png'], title: 'Thunderjaw plate (Horizon fan art)', author: 'x',
+    writeRows([heroRow, { id: 'legacy-tex', paths: ['public/textures/fan-rip.png'], title: 'Fan-art plate (sketchfab rip)', author: 'x',
       source_url: 'x', licence: 'CC0-1.0', legacy: 'r4', delete_at: 'W2 exit', delete_owner: 'x' }]);
     r = await scan(dir, { env: {} });
     c = await check(dir, { env: {} });
@@ -337,9 +337,12 @@ export async function selfTest(dir, { planFile = path.join(ROOT, 'docs/ROUND5-PL
     // pendingOtherLane (fix round 3): an R30 machine GLB another lane deletes this wave with its
     // reader class, shipped WITHOUT a row. Honoured in-wave only; an IP hit when (a) the wave
     // reaches its deadline, (b) its reader class is gone (orphaned), (c) a row appears for it
-    const RL = 'public/models/watcher.glb';
-    const reader = SCHEDULED_IP[RL]?.reader;
-    await ipGlb(RL, { title: 'Redeye Watcher Rig, Horizon Zero Dawn', source: 'https://sketchfab.com/x' });
+    // M0.3: every rowless R30 file is deleted and SCHEDULED_IP holds none, so this control is skipped, not faked
+    const RL = Object.keys(SCHEDULED_IP).find((k) => SCHEDULED_IP[k].rowless);
+    rowless: {
+    if (!RL) { out.pendingOtherLane = { ok: true, skipped: 'no rowless scheduled exception remains (R30 files deleted)' }; break rowless; }
+    const reader = SCHEDULED_IP[RL].reader;
+    await ipGlb(RL, { title: 'Fan machine rig (sketchfab rip)', source: 'https://sketchfab.com/x' });
     mkdirSync(path.dirname(path.join(dir, reader)), { recursive: true });
     writeFileSync(path.join(dir, reader), 'export class W {}\n');
     r = await scan(dir, { env: {} });
@@ -366,6 +369,7 @@ export async function selfTest(dir, { planFile = path.join(ROOT, 'docs/ROUND5-PL
     writeRows([heroRow]);
     rm(path.join(dir, RL)); rm(path.join(dir, reader));
     out.pendingOtherLane = { ok: inWave && atExit && orphaned && withRow, inWave, atExit, orphaned, withRow };
+    }
   } finally { rm(dir, { recursive: true, force: true }); }
   const ok = Object.values(out).every((x) => x.ok);
   return { ok, ...out, ipHits: out.base?.ipHits, noProvenance: out.base?.noProvenance, forbidden: out.base?.forbidden };

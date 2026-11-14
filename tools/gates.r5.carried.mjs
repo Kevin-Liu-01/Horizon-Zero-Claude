@@ -4284,7 +4284,7 @@ const HILLSIDE = `const C = __CTX__, p = C.player, T = C.terrain, K = C.collisio
           if (d < 26 || d > 40) continue;
           const h = T.getHeight(x, z);
           if (K.sphereQuery(x, h + 1, z, 7, [], hider).length) continue;
-          if (T.tallGrassDensity && T.tallGrassDensity(x, z) > 0.12) continue;
+          if (T.reedCoverDensity && T.reedCoverDensity(x, z) > 0.12) continue;
           if (!hill || d > hill.deg) hill = { x, z, deg: +d.toFixed(1), down: Math.atan2(n.x, n.z) };
         }
       }
@@ -4694,7 +4694,7 @@ const GATES = [
       let spot = null;
       for (let x = -160; x <= 160 && !spot; x += 2) {
         for (let z = -160; z <= 160; z += 2) {
-          if (!T.isInTallGrass(x, z)) continue;
+          if (!T.isInReedCover(x, z)) continue;
           if (C.collision && C.collision.sphereQuery(x, T.getHeight(x, z) + 1, z, 2.5, [], (c) => c.blocking).length) continue;
           spot = { x, z }; break;
         }
@@ -4717,10 +4717,10 @@ const GATES = [
       // now aim
       C.input.mouse.buttons |= 4;
       await new Promise((r) => setTimeout(r, 600));
-      const stealth = p.crouching && p.inTallGrass;   // machine.js:1174 predicate
+      const stealth = p.crouching && p.inReedCover;   // machine.js:1174 predicate
       const aim = {
         crouching: p.crouching, aiming: p.aiming, crouchAim: p.crouchAim,
-        inTallGrass: p.inTallGrass, stealth,
+        inReedCover: p.inReedCover, stealth,
         pivotH: +p.pivotHeight.toFixed(3),
         pivotAboveFeet: +(p.camPivot.y - p.position.y).toFixed(3),
       };
@@ -5541,7 +5541,7 @@ const GATES = [
            * solid and still invisible behind a curtain of tufts.  That is a
            * real gap (see the doc's known gaps) but it is the vegetation
            * lane's, and filming it here would only hide this lane's result. */
-          if (T.tallGrassDensity && T.tallGrassDensity(x, z) > 0.12) continue;
+          if (T.reedCoverDensity && T.reedCoverDensity(x, z) > 0.12) continue;
           if (!hill || d > hill.deg) hill = { x, z, deg: +d.toFixed(1), down: Math.atan2(n.x, n.z) };
         }
       }
@@ -7093,9 +7093,9 @@ const STRIPS12 = gridOf(6, 2, 0.46, [
 ]);
 
 const GATES = [
-  /* ------------------------------------------------- A100-spear-holster */
+  /* ------------------------------------------------- A100-lance-holster */
   {
-    id: 'A100-spear-holster', kind: 'action', lane: 'player-melee',
+    id: 'A100-lance-holster', kind: 'action', lane: 'player-melee',
     timeout: 60000, settle: 500,
     title: 'Not in melee: the spear is on a spine socket, diagonal across the upper back, '
       + 'and stays there through idle, sprint and a full bow draw',
@@ -7308,9 +7308,9 @@ const GATES = [
     })()`),
   },
 
-  /* ---------------------------------------------------- A101-spear-grip */
+  /* ---------------------------------------------------- A101-lance-grip */
   {
-    id: 'A101-spear-grip', kind: 'action', lane: 'player-melee',
+    id: 'A101-lance-grip', kind: 'action', lane: 'player-melee',
     timeout: 240000, settle: 500,
     title: 'Ready + every frame of all three lights and the heavy: palm on the haft axis, '
       + 'haft on the hand\'s grip axis, blade forward of the hand — and the FIRST swing from '
@@ -10763,9 +10763,9 @@ const GATES = [
     })()`),
   },
 
-  /* ---------------------------------------------------- V46-spear-ready */
+  /* ---------------------------------------------------- V46-lance-ready */
   {
-    id: 'V46-spear-ready', kind: 'visual', lane: 'player-melee',
+    id: 'V46-lance-ready', kind: 'visual', lane: 'player-melee',
     reference: 'reference/r5/gates-perf/lance-ready-side (A-reference-set, W0b)',
     settle: 400,
     title: 'Melee ready stance, side + front-quarter of ONE frozen frame, judged against '
@@ -11105,9 +11105,9 @@ const GATES = [
     })()`),
   },
 
-  /* -------------------------------------------------- V48-spear-holster */
+  /* -------------------------------------------------- V48-lance-holster */
   {
-    id: 'V48-spear-holster', kind: 'visual', lane: 'player-melee',
+    id: 'V48-lance-holster', kind: 'visual', lane: 'player-melee',
     reference: 'reference/r5/gates-perf/lance-back-carry (A-reference-set, W0b)',
     settle: 400,
     title: 'Sprinting, back view — the stowed spear, judged against the licence-clean lance reference reference/r5/gates-perf/lance-back-carry (A-reference-set, W0b)',
@@ -17335,20 +17335,20 @@ const GATES = [
       if (!w) return { pass: null, detail: 'SKIP: no living sentry (' + KIND.sentry + ') could be staged' };
 
       // 1. find a tall-grass corridor at least 22 m long: sample the valley for
-      //    a start point and a bearing along which isInTallGrass holds the
+      //    a start point and a bearing along which isInReedCover holds the
       //    whole way. This is the cover world-ground owes the stealth loop.
       let corridor = null;
       for (let i = 0; i < 4000 && !corridor; i++) {
         const a = Math.random() * Math.PI * 2;
         const r = 40 + Math.random() * 230;
         const sx = Math.sin(a) * r, sz = Math.cos(a) * r;
-        if (T.tallGrassDensity(sx, sz) < 0.55) continue;
+        if (T.reedCoverDensity(sx, sz) < 0.55) continue;
         for (let k = 0; k < 8; k++) {
           const b = (k / 8) * Math.PI * 2;
           let ok = true;
           for (let d = 0; d <= 22; d += 1) {
             const x = sx + Math.sin(b) * d, z = sz + Math.cos(b) * d;
-            if (!T.isInTallGrass(x, z)) { ok = false; break; }
+            if (!T.isInReedCover(x, z)) { ok = false; break; }
           }
           if (ok) { corridor = { x: sx, z: sz, b }; break; }
         }
@@ -17391,8 +17391,8 @@ const GATES = [
         if (k > 0.5) { w.heading = corridor.b + Math.PI; facedHer++; }
         p.position.set(x, T.getHeight(x, z), z);
         p.setCrouch(true);
-        p.inTallGrass = T.isInTallGrass(x, z);
-        if (!p.inTallGrass) grassMiss++;
+        p.inReedCover = T.isInReedCover(x, z);
+        if (!p.inReedCover) grassMiss++;
         // she is WALKING, so the crouch-walk footstep stimulus must fire; the
         // teleport-per-sample staging cannot produce it on its own
         ctx.machines.noise({ x, z, radius: 2.2, strength: 0.45, kind: 'footstep' });
@@ -22248,7 +22248,7 @@ const __S_shell_menus = await (async () => {
  * added on free ids because the §4 block gives this lane five gates for
  * eleven findings:
  *
- *   A70b-fast-travel   the brazier half of `missing-systems-title-save-brazier-flow`
+ *   A70b-node-travel   the brazier half of `missing-systems-title-save-brazier-flow`
  *   A70c-title-flow    `ui-18` / `onboarding-loop-title-screen` made LITERAL —
  *                      V38 is judged from a PNG, this counts the logos
  *   A72b-accessibility `missing-systems-accessibility`: HUD scale, colourblind
@@ -22529,7 +22529,7 @@ const GATES = [
   /* missing-systems-title-save-brazier-flow — the travel half             */
   /* ===================================================================== */
   {
-    id: 'A70b-fast-travel', kind: 'action', lane: 'shell-menus',
+    id: 'A70b-node-travel', kind: 'action', lane: 'shell-menus',
     title: 'Fast travel: brazier-only, discovered-only, and it actually moves her',
     settle: 900, timeout: 60000,
     assert: `(async () => {${FRAMES}${STORAGE_GUARD}
@@ -25830,7 +25830,7 @@ const GATES = [
         for (let a = 0; a < 6.283 && !best; a += 0.22) {
           for (let r = 2; r < 26; r += 2) {
             const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-            if (T.tallGrassDensity(x, z) > 0.62) { best = [x, z]; break; }
+            if (T.reedCoverDensity(x, z) > 0.62) { best = [x, z]; break; }
           }
         }
         if (!best) continue;
@@ -25906,8 +25906,8 @@ const GATES = [
     assert: `(async () => {
       const ctx = __CTX__;
       const T = ctx.terrain;
-      if (!T || typeof T.tallGrassDensity !== 'function') {
-        return { pass: null, detail: 'SKIP: terrain.tallGrassDensity not published' };
+      if (!T || typeof T.reedCoverDensity !== 'function') {
+        return { pass: null, detail: 'SKIP: terrain.reedCoverDensity not published' };
       }
       const t0 = performance.now();
       while (!ctx.machines?.varietyReady && performance.now() - t0 < 25000) {
@@ -25928,7 +25928,7 @@ const GATES = [
             const u = s / steps;
             const x = a.x + (b.x - a.x) * u, z = a.z + (b.z - a.z) * u;
             total++;
-            if (T.tallGrassDensity(x, z) > 0.45) covered++;
+            if (T.reedCoverDensity(x, z) > 0.45) covered++;
           }
         }
         rows.push({ kind: m.kind, frac: +(covered / total).toFixed(3), samples: total });
@@ -26485,14 +26485,14 @@ const GATES = [
   {
     id: 'A59b-cover-honesty-world-ground', kind: 'action', lane: 'world-ground',
     title: 'The concealment field never claims cover the scatter did not plant: '
-      + 'no point that isInTallGrass() calls hidden sits on forest, snow, ash '
+      + 'no point that isInReedCover() calls hidden sits on forest, snow, ash '
       + 'or scree ground carrying under 2 tufts/m^2',
     timeout: 60000,
     settle: 1200,
     /**
      * THE GATE THE LANE WAS MISSING, AND THE REASON IT COST A JUDGE A ROUND.
      *
-     * `terrain.tallGrassDensity` (what the game calls cover) and
+     * `terrain.reedCoverDensity` (what the game calls cover) and
      * `vegetation.grassDensityAt` (what the game actually plants) are two
      * functions in two files that must describe one piece of ground. Nothing
      * held them together: the biome pass damped the scatter and left the field
@@ -26532,7 +26532,7 @@ const GATES = [
       for (let x = -288; x <= 288; x += 4) {
         for (let z = -288; z <= 288; z += 4) {
           if (x * x + z * z > 288 * 288) continue;
-          if (!T.isInTallGrass(x, z)) continue;
+          if (!T.isInReedCover(x, z)) continue;
           tall++;
           const d = V.grassDensityAt(x, z);
           if (d >= 2) continue;
@@ -26540,7 +26540,7 @@ const GATES = [
           const b = T.biomeAt(x, z);
           by[b] = (by[b] || 0) + 1;
           if (DRY.indexOf(b) >= 0 && worst.length < 10) {
-            worst.push({ at: [x, z], tall: +T.tallGrassDensity(x, z).toFixed(3),
+            worst.push({ at: [x, z], tall: +T.reedCoverDensity(x, z).toFixed(3),
               tuftsPerM2: +d.toFixed(2), biome: b, surface: T.surfaceAt(x, z) });
           }
         }
@@ -27463,7 +27463,7 @@ const GATES = [
        * showed nothing, which is a gate lying to itself.
        *
        * (-20, 20) is the low rise north-west of the camp: 4.3 m of local
-       * relief, tallGrassDensity 0.1, and open on all four bearings. The
+       * relief, reedCoverDensity 0.1, and open on all four bearings. The
        * camera is a plain eye-height camera, not the chase boom, because a
        * vista is what the PLAYER sees, not the back of her head.
        */
@@ -27577,7 +27577,7 @@ const GATES = [
    * whatever runs next.
    */
   {
-    id: 'A61b-camp-rest-event', kind: 'action', lane: 'world-props',
+    id: 'A61b-rest-event', kind: 'action', lane: 'world-props',
     title: 'Resting at the brazier through the shipped UI raises exactly one camp-rest, moves the clock and heals',
     settle: 2400, timeout: 150000,
     assert: `(async () => {

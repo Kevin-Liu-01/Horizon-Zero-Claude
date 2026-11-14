@@ -184,7 +184,7 @@ CC0 recordings from [freesound (CC0 filter)](https://freesound.org/search/?f=lic
 | `rope/tie.ogg` | `rope/tie` | 0.78 s | 5.2 KB | CC0-1.0 | CALIMA project (procedurally synthesized, no third-party audio) | synthesized by tools/audio-recipes.js |
 | `status/burn.ogg` | `status/burn` | 2.40 s | 16.6 KB | CC0-1.0 | CALIMA project (procedurally synthesized, no third-party audio) | synthesized by tools/audio-recipes.js |
 | `status/frost.ogg` | `status/frost` | 2.40 s | 16.6 KB | CC0-1.0 | CALIMA project (procedurally synthesized, no third-party audio) | synthesized by tools/audio-recipes.js |
-| `status/shock.ogg` | `status/shock` | 2.40 s | 16.6 KB | CC0-1.0 | CALIMA project (procedurally synthesized, no third-party audio) | synthesized by tools/audio-recipes.js |
+| `status/dust.ogg` | `status/dust` | 2.40 s | 16.6 KB | CC0-1.0 | CALIMA project (procedurally synthesized, no third-party audio) | synthesized by tools/audio-recipes.js |
 | `trap/place-1.ogg` | `trap/place` | 0.42 s | 3.0 KB | CC0-1.0 | CALIMA project (procedurally synthesized, no third-party audio) | synthesized by tools/audio-recipes.js |
 | `trap/place-2.ogg` | `trap/place` | 0.42 s | 3.0 KB | CC0-1.0 | CALIMA project (procedurally synthesized, no third-party audio) | synthesized by tools/audio-recipes.js |
 | `trap/trigger-1.ogg` | `trap/trigger` | 0.60 s | 4.2 KB | CC0-1.0 | CALIMA project (procedurally synthesized, no third-party audio) | synthesized by tools/audio-recipes.js |

@@ -98,8 +98,9 @@ export class Interactables {
       return (m?.displayName ? `${m.displayName} ${base}` : base).toUpperCase();
     }
     if (entry.machine) {
-      return `${String(entry.machine.displayName ?? entry.machine.kind ?? 'MACHINE')} WRECK`
-        .toUpperCase();
+      const wreck = entry.machine;
+      const label = String(wreck.displayName ?? wreck.kind ?? 'INSTRUMENT');
+      return `${label} WRECK`.toUpperCase();
     }
     const node = entry.gatherNode;
     if (node) {

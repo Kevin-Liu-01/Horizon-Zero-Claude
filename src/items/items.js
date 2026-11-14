@@ -96,7 +96,7 @@ export const ITEMS = {
   blaze: {
     name: 'Vent Resin', category: 'resource', glyph: '◉', color: '#f0a03c',
     rarity: 'common', cap: 100, value: 4,
-    desc: 'Machine fuel, drained from a punctured canister. Volatile enough '
+    desc: 'Instrument fuel, drained from a punctured canister. Volatile enough '
       + 'to carry fire down an arrow shaft.',
   },
   chillwater: {
@@ -119,7 +119,7 @@ export const ITEMS = {
   wire: {
     name: 'Cord', category: 'resource', glyph: '∿', color: '#c9a86a',
     rarity: 'common', cap: 100, value: 3,
-    desc: 'Braided machine filament. Strong past reason, and the only thing '
+    desc: 'Braided Instrument cable. Strong past reason, and the only thing '
       + 'that holds a tripline under load.',
   },
   blastpaste: {
@@ -131,7 +131,7 @@ export const ITEMS = {
   'metal-vessel': {
     name: 'Seed Glass', category: 'resource', glyph: '⬢', color: '#8fa3ad',
     rarity: 'uncommon', cap: 40, value: 12,
-    desc: 'An intact machine container. Old-world work; nobody alive knows '
+    desc: 'An intact Instrument vessel. Survey work; nobody alive knows '
       + 'how to make another one.',
   },
 
@@ -159,7 +159,7 @@ export const ITEMS = {
   rock: {
     name: 'Rock', category: 'tool', glyph: '◗', color: '#9c968a',
     rarity: 'common', cap: 12, value: 0, tags: ['tool', 'lure'],
-    desc: 'A throwing stone. Machines walk toward a noise they cannot see, '
+    desc: 'A throwing stone. Instruments turn toward a noise they cannot see, '
       + 'and away from where you actually are.',
   },
   'potion-vigor': {
@@ -172,20 +172,20 @@ export const ITEMS = {
     name: 'Jolt Line', category: 'tool', glyph: '⌇', color: '#57c8ff',
     rarity: 'uncommon', cap: 10, value: 25, tags: ['tool', 'trap'],
     desc: 'A wire strung between two stakes and fed from a charged cell. '
-      + 'Set it on a route, then make the machine take the route.',
+      + 'Set it on a route, then make the Instrument take the route.',
   },
 
-  /* ---- valuables (machine trophies, docs/research/mechanics.md §5) ---- */
+  /* ---- valuables (parts taken from Instruments) ---- */
   'machine-core': {
     name: 'Escapement Core', category: 'valuable', glyph: '⌬', color: '#59c1c6',
     rarity: 'rare', cap: 30, value: 60,
-    desc: 'The power heart of a heavy machine, still warm. Traders will empty '
+    desc: 'The power heart of a heavy Instrument, still warm. Traders will empty '
       + 'a stall for one.',
   },
   'machine-heart': {
     name: 'Lampglass', category: 'valuable', glyph: '❖', color: '#3d7bd9',
     rarity: 'rare', cap: 30, value: 55,
-    desc: 'A dense drive node. It hums faintly for hours after the machine '
+    desc: 'A dense drive node. It hums faintly for hours after the Instrument '
       + 'stops moving.',
   },
   'luminous-braiding': {
@@ -198,7 +198,7 @@ export const ITEMS = {
     name: 'Ceramic Plate', category: 'valuable', glyph: '❋', color: '#8f7be8',
     rarity: 'veryRare', cap: 30, value: 85,
     desc: 'Braiding grown through with clear crystal. The old world made it; '
-      + 'the machines only carry it.',
+      + 'the Instruments only carry it.',
   },
 
   /* ---- pickup weapons (identity for toasts if combat can't grant them) ---- */
@@ -235,7 +235,7 @@ export const POCKETS = [
   { id: 'ammo',      label: 'AMMO',      glyph: '➳', category: 'ammo' },
   { id: 'tools',     label: 'TOOLS',     glyph: '⚱', category: 'tool' },
   { id: 'valuables', label: 'VALUABLES', glyph: '❖', category: 'valuable' },
-  { id: 'crafting',  label: 'CRAFTING',  glyph: '⚒', category: null },
+  { id: 'crafting',  label: 'MAKING',    glyph: '⚒', category: null },
   { id: 'notebook',  label: 'NOTEBOOK',  glyph: '❐', category: null },
   { id: 'trade',     label: 'TRADE',     glyph: '⚖', category: null },
 ];

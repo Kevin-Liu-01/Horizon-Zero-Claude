@@ -509,8 +509,8 @@ const LEDGER_STAGE = `
 export const POC_KIT = `
   const __EM = await import('/src/core/engine.js');
   const QUALITY_TIERS = __EM.QUALITY_TIERS, ROUND4_HIGH = __EM.ROUND4_HIGH, DEFAULT_TIER = __EM.DEFAULT_TIER;
-  const __POCM = await import('/tools/r5-poc/poc-biome.js');
-  const pocHeight = __POCM.height;
+  if (!window.__R5BIOME_HOST__) return { pass: null, detail: 'SKIP-RETIRED: the Pans POC host (tools/r5-poc, ?poc=biome) was deleted at M0.3 R1; the island re-host is the -pans rows (gates.r5.world-ground.mjs)' };
+  const pocHeight = null;
   const __pocBoot = async (query) => {
     const C = window.__CTX__;
     if (C && C.engine) { C.engine.renderer.setAnimationLoop(null); C.engine.renderer.domElement.style.visibility = 'hidden'; }
@@ -1156,7 +1156,7 @@ const A109_ASSERT = `(async () => {
     const row = { tier: tierName, ao: E.gtao.width + 'x' + E.gtao.height };
     // AO against view distance, binned, read off the AO target (alpha = view distance for this read):
     // the near bins from a contact-rich frame (rocks and column feet at 2-6 m), the far bins from the
-    // mesa frame (the Pans POC has no single frame with both; Round 4's camp frame had)
+    // mesa frame (the Pans POC has no single frame with both; the Round-4 home-site frame had)
     const readBins = (cam) => {
       camAt(...cam);
       E.gtao.enabled = true;
@@ -1355,9 +1355,8 @@ function probeAssert(box) {
       const BOX = ${JSON.stringify(box)};
       const QUIET = ${JSON.stringify(QUIET)};
       const ctx = __CTX__, e = ctx.engine, T = ctx.terrain;
-      let P;
-      try { P = await import('/tools/r5-probes/terrain1024.js'); }
-      catch (err) { return { pass: null, detail: 'SKIP-RETIRED: the W0a terrain probe tools/r5-probes/terrain1024.js was deleted at M0.3 R1' }; }
+      let P = null;   // the W0a terrain probe (tools/r5-probes) was deleted at M0.3 R1
+      if (!P) return { pass: null, detail: 'SKIP-RETIRED: the W0a terrain probe tools/r5-probes/terrain1024.js was deleted at M0.3 R1' };
       const BAR = { buildMs: 600, vertexMB: 24, gpuDeltaMs: 1.5, navMs: 150 };
       const out = { probe: P.PROBE, bars: BAR, quietRules: QUIET, box: BOX };
       const r1 = (v) => (v == null ? null : +v.toFixed(1));

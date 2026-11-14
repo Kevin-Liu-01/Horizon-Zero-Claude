@@ -40,13 +40,14 @@
 import { performance } from 'node:perf_hooks';
 import { mkdirSync, writeFileSync, existsSync, statSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
+import path from 'node:path';
 import sharp from 'sharp';
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const GENERATOR = 'tools/build/ground/lib/ground-proof.mjs';
 const OUT = `${ROOT}public/textures/r5-poc/`;
-const SCRATCH = process.env.R5_SCRATCH
-  || '/private/tmp/claude-501/-Users-kevinliu-Horizon-Zero-Claude/db31a0fa-9701-46f4-8234-5158425c1e49/scratchpad/r5/cc0';
+const SCRATCH = process.env.R5_SCRATCH || path.join(os.tmpdir(), 'calima-r5-cc0');
 const N = 1024;
 const FETCH = !process.argv.includes('--no-fetch');
 mkdirSync(OUT, { recursive: true });

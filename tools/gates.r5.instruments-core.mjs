@@ -11,19 +11,15 @@
  * is merged, drop `--extra`:
  *   node tools/gates.mjs --port 5254 --lane instruments-core
  *
- * WAVE W0a (this file today): the foundations block.
- *   A-no-override        Override mechanic gone (R17), removal-only diff proved
- *   A-no-corruption      corruption gone (R17), 10-min staged run
- *   A-legacy-collapse    legacy kinds reachable only through machines/legacy.js;
- *                        a legacy row + its files deleted in a scratch copy
- *                        boots clean (A1, A20b) with 0 other edits
+ * WAVE W0a: the foundations block. M0.3 (R4a) retired its removal proofs
+ * (A-no-override, A-no-corruption, A-legacy-collapse, A-boot-roster): their
+ * subjects (the Override and corruption systems, the legacy kinds and their
+ * boot roster) are deleted, and the Tier 0 name lint and import graph guard
+ * what they guarded. They are in git history. Kept:
  *   A-roles-published    `ctx.machines.roles` contract (published W0a; the
  *                        gate-roster clause is graded once gates-perf ships it)
  *   A-kind-registration  kind auto-registration: a module dropped into a copy
  *                        registers with 0 kept-file edits (real at W0a)
- *   A-boot-roster        lane guard (fix round 1, not a §9 row): the boot
- *                        roster exists at __READY__ and progression's damage
- *                        wrapper is installed at construction, as in base
  * W0b adds A-lamp-states, A-lamp-canon-distance, A-beams-one-draw,
  * A-perception-weather, A-perk-hooks, A-uv1-survives-fold, A-vfx-palette,
  * A90-rig-reclaim x5, A-kind-block-file.
@@ -55,49 +51,12 @@ import { fileURLToPath } from 'url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rel = (abs) => path.relative(ROOT, abs).split(path.sep).join('/');
 const read = (r) => readFileSync(path.join(ROOT, r), 'utf8');
+/** A file that a removal step may have deleted (M0.3): its text, or '' when it is gone. */
+const readIf = (r) => (existsSync(path.join(ROOT, r)) ? read(r) : '');
 const LANE = 'instruments-core';
 
-/**
- * OLD KIND NAMES COME FROM THE SPEC, NEVER FROM LITERALS HERE (plan §9 "no gate
- * names a species"; gates-perf's `A-gate-preludes` scans this file for quoted
- * Round-4 kind ids): the Round-4 kinds are bible §10.2's "old kind" column (by
- * role), the deleted IP kinds are the `*.js` files of plan §6's first row (R30).
- * The static scans need the names to prove the deletions; no page gate stages
- * one (R28).
- */
-function oldKindVocabulary() {
-  const bible = read('docs/ROUND5-BIBLE.md');
-  const at = bible.indexOf('### 10.2 Machines');
-  const byRole = {};
-  const all = [];
-  for (const line of bible.slice(at, bible.indexOf('\n### ', at + 10)).split('\n')) {
-    const m = /^\| ([^|]+) \| \*\*[A-Za-z]+\*\* \| `([a-z]+)` \|$/.exec(line.trim());
-    if (!m) continue;
-    const names = m[1].split(',').map((w) => w.trim().toLowerCase().replace(/-/g, '')).filter((w) => /^[a-z]+$/.test(w));
-    byRole[m[2]] = names;
-    all.push(...names);
-  }
-  const plan = read('docs/ROUND5-PLAN.md');
-  const s6 = plan.slice(plan.indexOf('## 6. DELETE list'));
-  const row = s6.split('\n').find((l) => /HZD IP/.test(l)) || '';
-  const ip = [...row.matchAll(/`(\w+)\.js`/g)].map((m) => m[1]).filter((k) => k !== 'legacy');
-  return { all: [...new Set(all)], byRole, ip };
-}
-export const OLD_KINDS = oldKindVocabulary();
 /** A quoted kind id for the Round-4 source text a re-stage rewrites (built, so this file holds no literal). */
 const q = (k) => "'" + k + "'";
-
-/** The commit the W0a removal-only pass is measured against (W0-day1 + the port amendment). */
-export const W0A_BASE = '9d3b891';
-
-/** The 14 files of the §1.2 W0a removal-only grant. */
-export const REMOVAL_ONLY_FILES = [
-  'src/audio/audio.js', 'src/combat/melee.js', 'src/core/progression.js',
-  'src/entities/machines/ai/engage.js', 'src/entities/machines/ai/squad.js',
-  'src/entities/machines/ai/stimulus.js', 'src/entities/playerAnimator.js',
-  'src/studio/cast.js', 'src/studio/pose.js', 'src/ui/focus.js', 'src/ui/menu.js',
-  'src/world/props/activities.js', 'src/world/props/places.js', 'src/world/props/tallneck.js',
-];
 
 /* ------------------------------------------------------------------ */
 /* invocation: compute the static halves only when one of ours runs    */
@@ -135,33 +94,6 @@ function walkAll(r, out = []) {
   return out;
 }
 
-let _esbuild = null;
-async function esbuild() {
-  if (!_esbuild) _esbuild = await import('esbuild');
-  return _esbuild;
-}
-const _code = new Map();
-/**
- * The file's CODE: every comment stripped by esbuild's whitespace minifier
- * (identifiers, strings and syntax untouched — no identifier or syntax
- * minification). Without minifyWhitespace esbuild keeps comments in some
- * positions, which is not good enough for the code-only scans (A-no-corruption's
- * identifiers, A-legacy-collapse's kept-file rows, A-no-override's extra code
- * check). A-no-override's §9 bar itself is graded on RAW text (see below).
- */
-async function codeOf(r) {
-  if (_code.has(r)) return _code.get(r);
-  const { transformSync } = await esbuild();
-  let code;
-  try {
-    code = transformSync(read(r), { loader: 'js', legalComments: 'none', minifyWhitespace: true, target: 'esnext' }).code;
-  } catch (e) {
-    code = null;
-  }
-  _code.set(r, code);
-  return code;
-}
-
 /** Regex hits in minified code, reported as a 90-char window around each. */
 function grepCode(code, re) {
   const out = [];
@@ -182,170 +114,6 @@ function grepLines(text, re) {
 
 const git = (...a) => execFileSync('git', ['-C', ROOT, ...a], { maxBuffer: 1 << 28 }).toString();
 
-/** Is `after` obtainable from `before` by deletions alone (a character subsequence)? */
-function isSubsequence(before, after) {
-  let i = 0;
-  for (let j = 0; j < before.length && i < after.length; j++) if (before.charCodeAt(j) === after.charCodeAt(i)) i++;
-  return i === after.length;
-}
-
-/**
- * The removal-only proof. Each granted file's W0a version must be the base with
- * characters deleted and nothing inserted. In later waves hero-body and brand
- * edit `playerAnimator.js` / `menu.js` (plan §3.1), so for a file whose working
- * copy is no longer a subsequence the proof is taken on the FIRST commit after
- * the base that touched it — which is this lane's W0a merge, because the plan
- * merges it before those lanes start.
- */
-function removalOnlyAudit() {
-  const rows = [];
-  let ok = true;
-  let base = null;
-  try { base = git('rev-parse', '--verify', `${W0A_BASE}^{commit}`).trim(); } catch { /* shallow or foreign tree */ }
-  if (!base) return { ok: null, note: `base ${W0A_BASE} not in this repository`, rows };
-  for (const f of REMOVAL_ONLY_FILES) {
-    let before;
-    try { before = git('show', `${base}:${f}`); } catch { rows.push({ f, verdict: 'MISSING-AT-BASE' }); ok = false; continue; }
-    const after = existsSync(path.join(ROOT, f)) ? read(f) : '';
-    if (isSubsequence(before, after)) {
-      rows.push({ f, verdict: 'deletions-only', removedChars: before.length - after.length, against: 'working tree' });
-      continue;
-    }
-    let first = null;
-    try { first = git('log', '--format=%H', '--reverse', `${base}..HEAD`, '--', f).split('\n').filter(Boolean)[0] || null; } catch { /* */ }
-    if (first) {
-      const v = git('show', `${first}:${f}`);
-      if (isSubsequence(before, v)) {
-        rows.push({ f, verdict: 'deletions-only', removedChars: before.length - v.length, against: first.slice(0, 9), laterEdits: 'after the W0a merge (other lanes, or a later grant)' });
-        continue;
-      }
-    }
-    rows.push({ f, verdict: 'HAS-INSERTIONS', at: first ? first.slice(0, 9) : 'working tree' });
-    ok = false;
-  }
-  return { ok, base: base.slice(0, 9), rows };
-}
-
-/* ------------------------------------------------------------------ */
-/* A-no-override — static half                                         */
-/* ------------------------------------------------------------------ */
-/* The §9 regex, verbatim. The bar is "0 matches in `src/**`": it is applied to
- * the RAW text of every file under src/ (every extension, comments included),
- * with no allowlist: a raw hit fails the gate wherever it sits. The code half
- * (comments stripped by esbuild) and the mechanic-identifier scan must also be 0. */
-const OVERRIDE_RE = /override-node|overridden|\bOVERRIDE\b|overrideNode|cauldron-override/;
-const MECHANIC_IDENTIFIERS = /\b(OverrideSystem|canOverride|overrideCfg|_stateOverridden|mountedBy|mountSeat|_mountEntry|dismount)\b|machines\.(override|mount)\b|\.overrides\b/;
-
-async function noOverrideStatic() {
-  const all = walkAll('src');
-  const files = all.filter((f) => /\.(js|mjs)$/.test(f));
-  const rawHits = [];
-  for (const f of all) {
-    for (const h of grepLines(read(f), OVERRIDE_RE)) rawHits.push({ f, ...h });
-  }
-  const codeHits = [];
-  const identHits = [];
-  for (const f of files) {
-    const code = await codeOf(f);
-    if (code == null) { codeHits.push({ f, line: 0, text: 'esbuild could not parse' }); continue; }
-    for (const h of grepCode(code, OVERRIDE_RE)) codeHits.push({ f, ...h });
-    for (const h of grepCode(code, MECHANIC_IDENTIFIERS)) identHits.push({ f, ...h });
-  }
-  return {
-    overrideJsAbsent: !existsSync(path.join(ROOT, 'src/entities/machines/ai/override.js')),
-    filesScanned: all.length, jsFilesParsed: files.length,
-    rawHits, codeHits, identHits,
-    removalOnly: removalOnlyAudit(),
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/* A-no-corruption — static half                                       */
-/* ------------------------------------------------------------------ */
-const CORRUPT_RE = /_updateCorruption|\bcorrupt\b|\buncorrupt\b|ECOSYSTEM\.corruption|\bcorruption\s*:|\bcorrupted\b|_corruptor\b|machine-corrupted|machine-uncorrupted/;
-async function noCorruptionStatic() {
-  const files = walk('src');
-  const hits = [];
-  for (const f of files) {
-    const code = await codeOf(f);
-    if (code == null) { hits.push({ f, line: 0, text: 'esbuild could not parse' }); continue; }
-    for (const h of grepCode(code, CORRUPT_RE)) hits.push({ f, ...h });
-  }
-  return { filesScanned: files.length, codeHits: hits };
-}
-
-/* ------------------------------------------------------------------ */
-/* A-legacy-collapse — static half (import graph + kept-file rows)     */
-/* ------------------------------------------------------------------ */
-const IP_KIND_FILES = OLD_KINDS.ip.map((k) => `src/entities/machines/${k}.js`);
-const LEGACY_DATA_FILES = ['src/entities/machines/rig/shells-expansion.js', 'src/entities/machines/rig/rigs-expansion.js'];
-const KEPT_MACHINE_FILES = [
-  'src/entities/machines/index.js', 'src/entities/machines/machine.js', 'src/entities/machines/autorig.js',
-  'src/entities/machines/variety-assets.js', 'src/entities/machines/parts.js', 'src/entities/machines/gait.js',
-  'src/entities/machines/ai/tables.js', 'src/entities/machines/ai/doctrine.js', 'src/entities/machines/ai/index.js',
-  'src/entities/machines/ai/attacks.js', 'src/entities/machines/ai/perception.js', 'src/entities/machines/ai/squad.js',
-  'src/entities/machines/rig/shells.js', 'src/entities/machines/rig/lod.js',
-];
-
-/** Kind id -> species module, read from legacy.js's own import lines. */
-function legacyModules() {
-  const f = 'src/entities/machines/legacy.js';
-  if (!existsSync(path.join(ROOT, f))) return { kinds: [], modules: [] };
-  const text = read(f);
-  const modules = [];
-  for (const m of text.matchAll(/^import \{ (\w+) \} from '\.\/(\w+)\.js';$/gm)) {
-    if (/^[A-Z]/.test(m[1])) modules.push(`src/entities/machines/${m[2]}.js`);
-  }
-  const kinds = [...text.matchAll(/^ {2}(\w+): \{$/gm)].map((m) => m[1]);
-  return { kinds, modules };
-}
-
-function importsOf(r, text) {
-  const out = [];
-  const re = /(?:import|export)\s[^'"`;]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|^import\s*['"]([^'"]+)['"]/gm;
-  for (const m of text.matchAll(re)) {
-    const spec = m[1] || m[2] || m[3];
-    if (!spec) continue;
-    if (spec.startsWith('.')) out.push(rel(path.resolve(path.join(ROOT, path.dirname(r)), spec)));
-    else if (spec.startsWith('/src/')) out.push(spec.slice(1));
-  }
-  return out;
-}
-
-async function legacyCollapseStatic() {
-  const { kinds, modules } = legacyModules();
-  const legacySet = new Set([...modules, ...LEGACY_DATA_FILES, 'src/entities/machines/legacy.js']);
-  const files = [...walk('src'), ...walk('tools').filter((f) => /^tools\/gates/.test(f) === false)];
-  const strayImports = [];
-  const ipImports = [];
-  for (const f of files) {
-    const text = read(f);
-    for (const imp of importsOf(f, text)) {
-      if (IP_KIND_FILES.includes(imp) || imp === 'src/entities/machines/ai/override.js') ipImports.push({ f, imp });
-      if (!legacySet.has(imp) || legacySet.has(f)) continue;
-      // (index.js reaches legacy.js through a guarded import.meta.glob, the one door, which this static scan does not list)
-      strayImports.push({ f, imp });
-    }
-  }
-  // kept machine files carry no legacy (or IP) kind ROW: no `kind:` key and no
-  // 'kind' string literal in their code
-  const allKinds = [...new Set([...kinds, ...OLD_KINDS.ip, ...OLD_KINDS.all])];
-  const rowRe = new RegExp(`(^|[\\s{,])(${allKinds.join('|')})\\s*:|['"](${allKinds.join('|')})['"]`);
-  const keptRows = [];
-  for (const f of KEPT_MACHINE_FILES) {
-    if (!existsSync(path.join(ROOT, f))) continue;
-    const code = await codeOf(f);
-    if (code == null) { keptRows.push({ f, line: 0, text: 'esbuild could not parse' }); continue; }
-    for (const h of grepCode(code, rowRe)) keptRows.push({ f, ...h });
-  }
-  return {
-    legacyKinds: kinds,
-    legacyModules: modules,
-    ipFilesPresent: IP_KIND_FILES.filter((f) => existsSync(path.join(ROOT, f))),
-    ipImports, strayImports, keptRows,
-    oneDoor: read('src/entities/machines/index.js').includes("import.meta.glob('./legacy.js'"),
-  };
-}
 
 /* ------------------------------------------------------------------ */
 /* scratch-copy probes                                                 */
@@ -495,42 +263,6 @@ async function runInCopy(dir, port, ids, { extra = null } = {}) {
   };
 }
 
-/** Remove one kind's row (and its class import) from a copy's legacy.js. */
-function dropLegacyRow(dir, kind) {
-  const f = path.join(dir, 'src/entities/machines/legacy.js');
-  const lines = readFileSync(f, 'utf8').split('\n');
-  const start = lines.findIndex((l) => l === `  ${kind}: {`);
-  if (start < 0) return { ok: false, note: `no row '${kind}'` };
-  let end = start + 1;
-  while (end < lines.length && lines[end] !== '  },') end++;
-  const row = lines.slice(start, end + 1);
-  const cls = (row.join('\n').match(/^ {4}Cls: (\w+),$/m) || [])[1];
-  const out = lines.filter((l, i) => (i < start || i > end) && !(cls && l === `import { ${cls} } from './${kind}.js';`));
-  writeFileSync(f, out.join('\n'));
-  return { ok: true, removedLines: lines.length - out.length, cls };
-}
-
-/* ------------------------------------------------------------------ */
-/* the static halves, computed once per invocation that needs them     */
-/* ------------------------------------------------------------------ */
-/**
- * The kind that used to corrupt others, read from the W0a base's doctrine
- * (`if (kind === X) { m._corruptor = ... }`), so A-no-corruption stages the old
- * trigger without naming a species here.
- */
-function corruptingKind() {
-  try {
-    const t = git('show', `${W0A_BASE}:src/entities/machines/ai/doctrine.js`);
-    return (/if \(kind === '(\w+)'\) \{\s*m\._corruptor = /.exec(t) || [])[1] || null;
-  } catch { return null; }
-}
-const CORRUPTING_KIND = wanted('A-no-corruption') ? corruptingKind() : null;
-
-const STATIC = {
-  override: wanted('A-no-override') ? await noOverrideStatic() : null,
-  corruption: wanted('A-no-corruption') ? await noCorruptionStatic() : null,
-};
-
 /**
  * gates-perf's role roster (`tools/gate-roster.mjs`, §3.2 consumer of
  * `ctx.machines.roles`): A-roles-published runs its ROSTER prelude in the page.
@@ -550,204 +282,16 @@ async function rosterInfo() {
 }
 const ROSTER_INFO = wanted('A-roles-published') ? await rosterInfo() : null;
 
-/** The static halves, exported so they can be run on their own (`node -e`). */
-export { noOverrideStatic, noCorruptionStatic, legacyCollapseStatic, removalOnlyAudit };
-
 /** Page-side helpers shared by the live halves. */
 const WAIT_BOOT = `
   const M = __CTX__.machines;
   { const t0 = performance.now();
     while (!M.expansionReady && performance.now() - t0 < 90000) await new Promise(r => setTimeout(r, 250)); }`;
 
-/**
- * The two legacy rows the A-legacy-collapse probes delete: one BOOT kind and one
- * deferred kind, read from legacy.js's own rows (the 2nd boot row and the 3rd
- * deferred row: the same two the W0a probes deleted).
- */
-function legacyProbeKinds() {
-  const f = 'src/entities/machines/legacy.js';
-  if (!existsSync(path.join(ROOT, f))) return [];
-  const text = read(f);
-  const rows = [...text.matchAll(/^ {2}(\w+): \{$([\s\S]*?)^ {2}\},$/gm)].map((m) => ({ kind: m[1], boot: /registerAt: 'boot'/.test(m[2]) }));
-  const boot = rows.filter((r) => r.boot), later = rows.filter((r) => !r.boot);
-  return [boot[1]?.kind, later[2]?.kind].filter(Boolean);
-}
-const LEGACY_PROBE_KINDS = legacyProbeKinds();
 /** Wall clock for one nested probe run (two page gates; ~60 s when healthy). */
 const PROBE_DEADLINE = 240000;
 
 const W0A_GATES = [
-  /* ---------------------------------------------------------------- */
-  /* A-legacy-collapse (runner: node only, then probes in a copy)      */
-  /* ---------------------------------------------------------------- */
-  {
-    id: 'A-legacy-collapse', kind: 'runner', lane: LANE, timeout: 900000,
-    title: 'Legacy kinds are reachable only through machines/legacy.js; deleting one legacy row + its files boots clean (A1, A20b) with 0 other edits (x2 kinds), and so does deleting the whole legacy set',
-    check: async ({ PORT }) => {
-      const s = await legacyCollapseStatic();
-      const staticOk = s.ipFilesPresent.length === 0 && s.ipImports.length === 0
-        && s.strayImports.length === 0 && s.keptRows.length === 0 && s.oneDoor && s.legacyKinds.length > 0;
-      const probes = [];
-      for (const kind of LEGACY_PROBE_KINDS) {
-        if (!s.legacyKinds.includes(kind)) { probes.push({ kind, ok: null, note: 'row already gone' }); continue; }
-        const dir = probeRoot(PORT);
-        const species = `src/entities/machines/${kind}.js`;
-        const spec = read('src/entities/machines/legacy.js').match(new RegExp(`^ {2}${kind}: \\{[\\s\\S]*?url: '(/models/[^']+)'`, 'm'));
-        const model = spec ? `public${spec[1]}` : null;
-        makeCopy(dir, { dropModels: model ? [model] : [] });
-        const edit = dropLegacyRow(dir, kind);
-        rmSync(path.join(dir, species), { force: true });
-        // 0 other edits: the copy differs from the tree by exactly the row, its class import, its file, its model
-        const res = edit.ok ? await runInCopy(dir, PORT, ['A1-boot-clean', 'A20b-no-system-errors']) : { ok: false, note: edit.note };
-        probes.push({ kind, deleted: { row: edit.removedLines, file: species, model }, ...res });
-        rmSync(dir, { recursive: true, force: true });
-      }
-      /**
-       * ...and the W2-exit shape (`A-legacy-gone`), proved now: the WHOLE
-       * legacy set gone — legacy.js, both legacy rig data files, every species
-       * module and every legacy model — boots clean on the Instrument kinds
-       * alone. This is what instruments-b's deletion grant will do.
-       */
-      {
-        const dir = probeRoot(PORT);
-        const text = read('src/entities/machines/legacy.js');
-        const models = [...text.matchAll(/^ {4}spec: \{ url: '(\/models\/[^']+)'/gm)].map((m) => `public${m[1]}`);
-        makeCopy(dir, { dropModels: models });
-        const files = ['src/entities/machines/legacy.js', ...LEGACY_DATA_FILES, ...s.legacyModules];
-        for (const f of files) rmSync(path.join(dir, f), { force: true });
-        const res = await runInCopy(dir, PORT, ['A1-boot-clean', 'A20b-no-system-errors']);
-        probes.push({ kind: 'ALL (W2-exit shape)', deleted: { files: files.length, models: models.length }, ...res });
-        rmSync(dir, { recursive: true, force: true });
-      }
-      const probeOk = probes.every((p) => p.ok === true);
-      const pending = probes.some((p) => p.ok === null);
-      return {
-        pass: staticOk && probeOk ? true : (!staticOk || probes.some((p) => p.ok === false)) ? false : (pending ? null : false),
-        detail: { static: s, probes },
-      };
-    },
-  },
-
-  /* ---------------------------------------------------------------- */
-  /* A-no-override                                                    */
-  /* ---------------------------------------------------------------- */
-  {
-    id: 'A-no-override', kind: 'action', lane: LANE, timeout: 180000, settle: 600,
-    title: 'Override is gone (R17): override.js absent, OVERRIDE table undefined, no FSM state overridden/ally/mount, 0 regex hits in the raw text of src/** (comments included, no allowlist), the W0a diff on the 14 granted files is deletions only',
-    assert: `(async () => {
-      const S = ${JSON.stringify(STATIC.override)};
-      if (!S) return { pass: null, detail: 'static half not computed in this invocation' };
-      ${WAIT_BOOT}
-      const T = await import('/src/entities/machines/ai/tables.js');
-      const Mach = await import('/src/entities/machines/machine.js');
-      const live = {
-        tablesOVERRIDE: typeof T.OVERRIDE, overrideCfg: typeof T.overrideCfg,
-        eyeOverride: Mach.EYE_COLORS && 'override' in Mach.EYE_COLORS,
-        protoState: typeof Mach.Machine.prototype._stateOverridden,
-        fsm: Mach.MACHINE_STATES || null,
-        api: ['override', 'canOverride', 'mount', 'dismount', 'overrides', 'mounted'].filter(k => M[k] !== undefined),
-      };
-      // every live kind, every state the FSM can be asked for: never overridden/ally/mount
-      const FORBIDDEN = /overrid|ally|mount/i;
-      const asked = ['patrol', 'suspicious', 'alert', 'search', 'attack', 'return', 'stagger', 'downed', 'overridden', 'ally', 'mount', 'mounted'];
-      const p = __CTX__.player;
-      const kinds = M.kinds.filter(k => M.canSpawn(k));
-      const seen = {};
-      const bad = [];
-      for (const k of kinds) {
-        const m = M.spawn(k, p.position.x + 60, p.position.z + 60);
-        if (!m) continue;
-        seen[k] = [];
-        for (const s of asked) {
-          try { m.forceState(s); } catch (e) { /* a refused state is fine */ }
-          await new Promise(r => setTimeout(r, 40));
-          if (!seen[k].includes(m.state)) seen[k].push(m.state);
-          if (FORBIDDEN.test(m.state)) bad.push(k + ':' + m.state);
-        }
-        // and the machine never targets another machine for the player
-        if (m.ally || m.leader === p || m.followTarget) bad.push(k + ':ally-field');
-        M.sites.dispose(m);
-      }
-      const staticOk = S.overrideJsAbsent && S.rawHits.length === 0 && S.codeHits.length === 0
-        && S.identHits.length === 0 && S.removalOnly.ok === true;
-      const liveOk = live.tablesOVERRIDE === 'undefined' && live.overrideCfg === 'undefined' && !live.eyeOverride
-        && live.protoState === 'undefined' && live.api.length === 0 && bad.length === 0 && kinds.length > 0
-        && Array.isArray(live.fsm) && !live.fsm.some(s => FORBIDDEN.test(s));
-      return { pass: staticOk && liveOk, detail: {
-        static: { overrideJsAbsent: S.overrideJsAbsent, filesScanned: S.filesScanned, jsFilesParsed: S.jsFilesParsed,
-          rawHits: S.rawHits, codeHits: S.codeHits, identHits: S.identHits, removalOnly: S.removalOnly },
-        live, kindsStaged: kinds, statesSeen: seen, forbidden: bad,
-      } };
-    })()`,
-  },
-
-  /* ---------------------------------------------------------------- */
-  /* A-no-corruption (10-minute staged run)                           */
-  /* ---------------------------------------------------------------- */
-  {
-    id: 'A-no-corruption', kind: 'action', lane: LANE, timeout: 720000, settle: 600,
-    title: 'Corruption is gone (R17): _updateCorruption / corrupt / uncorrupt / ECOSYSTEM.corruption absent; no live machine has corrupted === true over a 10-min staged fight',
-    assert: `(async () => {
-      const S = ${JSON.stringify(STATIC.corruption)};
-      if (!S) return { pass: null, detail: 'static half not computed in this invocation' };
-      ${WAIT_BOOT}
-      const T = await import('/src/entities/machines/ai/tables.js');
-      const sq = M.squads;
-      const live = {
-        ecosystemCorruption: T.ECOSYSTEM && 'corruption' in T.ECOSYSTEM,
-        squadsApi: ['corrupt', 'uncorrupt', '_updateCorruption'].filter(k => typeof sq[k] === 'function'),
-      };
-      // STAGE: the one kind that used to corrupt (if it is still a legacy kind)
-      // in a fight, with every other spawnable kind inside the old 25 m radius.
-      const p = __CTX__.player;
-      const cx = p.position.x + 40, cz = p.position.z - 40;
-      const kinds = M.kinds.filter(k => M.canSpawn(k));
-      const OLD_CORRUPTOR = ${JSON.stringify(CORRUPTING_KIND)};
-      const order = OLD_CORRUPTOR && kinds.includes(OLD_CORRUPTOR) ? [OLD_CORRUPTOR, ...kinds.filter(k => k !== OLD_CORRUPTOR)] : kinds;
-      const staged = [];
-      for (let i = 0; i < Math.min(order.length, 7); i++) {
-        const a = (i / 7) * Math.PI * 2;
-        const m = M.spawn(order[i], cx + Math.sin(a) * (i ? 9 : 0), cz + Math.cos(a) * (i ? 9 : 0));
-        if (m) staged.push(m);
-      }
-      let events = 0;
-      const onEv = () => { events++; };
-      __CTX__.events.on('machine-corrupted', onEv);
-      p.position.set(cx + 11, 0, cz); p._snapToGround?.();
-      const t0 = performance.now();
-      let samples = 0, corruptedSeen = 0, corruptorField = 0, maxAlert = 0;
-      const states = {};
-      while (performance.now() - t0 < 600000) {
-        p.health = p.maxHealth;                         // keep the fight going
-        if (__CTX__.state === 'dead' && __CTX__.menus?.respawn) __CTX__.menus.respawn('checkpoint');
-        if (Math.hypot(p.position.x - cx, p.position.z - cz) > 30) { p.position.set(cx + 11, 0, cz); p._snapToGround?.(); }
-        for (const m of staged) {
-          if (!m.alive && !m._disposed && staged.length) { /* corpse: leave it */ }
-          if (m.alive && (m.state === 'patrol' || m.state === 'return')) m.forceState('attack');
-        }
-        let alerted = 0;
-        for (const m of M.list) {
-          if (m.corrupted === true) corruptedSeen++;
-          if (m._corruptor) corruptorField++;
-          if (m.state === 'alert' || m.state === 'attack') alerted++;
-          states[m.state] = (states[m.state] || 0) + 1;
-        }
-        maxAlert = Math.max(maxAlert, alerted);
-        samples++;
-        await new Promise(r => setTimeout(r, 250));
-      }
-      const seconds = Math.round((performance.now() - t0) / 1000);
-      for (const m of staged) M.sites.dispose(m);
-      const staticOk = S.codeHits.length === 0;
-      const liveOk = !live.ecosystemCorruption && live.squadsApi.length === 0
-        && corruptedSeen === 0 && corruptorField === 0 && events === 0 && seconds >= 600 && maxAlert >= 2;
-      return { pass: staticOk && liveOk, detail: {
-        static: S, live, staged: staged.map(m => m.kind), seconds, samples,
-        corruptedSeen, corruptorField, corruptionEvents: events, maxSimultaneouslyEngaged: maxAlert,
-      } };
-    })()`,
-  },
-
   /* ---------------------------------------------------------------- */
   /* A-roles-published (W0a stub; real by the W0 exit)                */
   /* ---------------------------------------------------------------- */
@@ -763,7 +307,7 @@ const W0A_GATES = [
       const legacyMapped = keys.filter(r => R[r] && M.isLegacyKind?.(R[r]));
       const nullWithoutNote = keys.filter(r => R[r] == null && !(N[r] && /R18/.test(N[r])));
       const notLive = keys.filter(r => R[r] && !M.canSpawn(R[r]));
-      const forbidden = keys.filter(r => /charger|burrower|grazer|stalker|watcher|apex|scout/i.test(r));
+      const forbidden = keys.filter(r => !ROLES.includes(r));   // a role id outside the 12 (the Round-4 role names are gone)
       // stage the mapped role: it must spawn as itself and be non-legacy
       let staged = null;
       if (R?.herd) {
@@ -799,72 +343,6 @@ const W0A_GATES = [
     })()`,
   },
 
-  /* ---------------------------------------------------------------- */
-  /* A-boot-roster (lane guard, fix round 1)                          */
-  /* ---------------------------------------------------------------- */
-  /**
-   * THE BOOT CONTRACT the legacy collapse first broke (judge finding,
-   * instruments-core W0a fix round 1). Base built its authored roster in the
-   * `Machines` constructor; `progression.js` installs its difficulty/skill
-   * damage wrapper through `machines.list[0]` when it is constructed, and the
-   * Round-4 suite stages on whatever is alive at `__READY__`. Deferring the
-   * whole roster left the wrapper to a 1 Hz retry (A64b/A64c FAIL) and
-   * A62/A63 with nothing to stage.
-   *
-   * `settle: 0` and no WAIT_BOOT: the assert's first sample is taken the
-   * moment `__READY__` is true. `main.js` sets `__READY__` BEFORE it starts
-   * the frame loop, so no `Progression.update` (and so no hook retry) can
-   * have run by then — a wrapper present at that sample was installed at
-   * construction. Then it waits for the deferred kinds and checks the boot
-   * roster was not spawned twice and the deferred half really landed.
-   */
-  {
-    id: 'A-boot-roster', kind: 'action', lane: LANE, timeout: 120000, settle: 0,
-    title: 'Boot contract: the BOOT_SPECS roster exists at __READY__ (spawned in the Machines constructor) and the progression damage wrapper is installed at construction; the deferred kinds land later without re-spawning it',
-    assert: `(async () => {
-      const C = __CTX__, M = C.machines;
-      const prog = window.__PROG__ || C.progression;
-      const tReady = Math.round(performance.now());
-      const L = await import('/src/entities/machines/legacy.js');
-      const bootKinds = Object.keys(L.BOOT_SPECS || {});
-      const count = (k) => M.list.filter(m => m.kind === k && m.alive && !m._disposed).length;
-      const census = () => Object.fromEntries(bootKinds.map(k => [k, count(k)]));
-      const at = {
-        aliveAtReady: M.list.filter(m => m.alive && !m._disposed).length,
-        perKind: census(),
-        modelsAtReady: bootKinds.filter(k => !!C.assets.models[k]),
-        bootAudit: M.bootAudit ? JSON.parse(JSON.stringify(M.bootAudit.boot)) : null,
-        expansionReadyAtReady: M.expansionReady, varietyReadyAtReady: M.varietyReady,
-        wrapperAtReady: !!prog?._machineProto?.takeDamage?.__calWrapped,
-        hookTriesAtReady: prog?._hookTries ?? null, hookedAtReady: prog?._hooked ?? null,
-        listHead: M.list[0]?.kind ?? null,
-      };
-      const t0 = performance.now();
-      while (!M.expansionReady && performance.now() - t0 < 90000) await new Promise(r => setTimeout(r, 100));
-      const after = {
-        waitedMs: Math.round(performance.now() - t0), expansionReady: M.expansionReady,
-        aliveAfter: M.list.filter(m => m.alive && !m._disposed).length,
-        perKind: census(),
-        deferred: M.bootAudit ? JSON.parse(JSON.stringify(M.bootAudit.deferred)) : null,
-        herdKind: M.roles?.herd ?? null,
-        herdAlive: M.roles?.herd ? count(M.roles.herd) : 0,
-      };
-      const bootRoster = at.bootAudit?.roster ?? 0;
-      const checks = {
-        bootRowsPublished: bootKinds.length > 0,
-        bootModelsAtReady: at.modelsAtReady.length === bootKinds.length,
-        bootKindsSpawnedInCtor: !!at.bootAudit && bootKinds.every(k => at.bootAudit.kinds.includes(k)),
-        rosterAtReady: bootRoster > 0 && at.aliveAtReady >= bootRoster && bootKinds.every(k => at.perKind[k] > 0)
-          && bootKinds.reduce((n, k) => n + at.perKind[k], 0) === bootRoster,
-        wrapperAtConstruction: at.wrapperAtReady === true,
-        deferredLanded: after.expansionReady === true && (after.deferred?.expansion ?? 0) > 0 && after.herdAlive > 0,
-        bootRosterNotRespawned: (after.deferred?.roster ?? -1) === 0
-          && bootKinds.every(k => after.perKind[k] === at.perKind[k]),
-      };
-      return { pass: Object.values(checks).every(Boolean),
-        detail: { checks, tReadyMs: tReady, bootKinds, atReady: at, afterDeferred: after } };
-    })()`,
-  },
 
   /* ---------------------------------------------------------------- */
   /* A-kind-registration (runner: a module dropped into a copy)       */
@@ -1739,8 +1217,10 @@ const A_VFX = (S) => `(async () => {
     const hit = (o) => { try { m.takeDamage(Object.assign({ point: pt.clone(), object: mesh, impact: 5, tear: 0, element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'hunter', baseDamage: 5 }, o)); } catch (e) { ex.push('ERR ' + e.message); } };
     hit({}); ex.push('hit');
     hit({ tear: 400 }); ex.push('tear');
-    for (const el of ['fire', 'freeze', 'shock']) { hit({ element: el, elementAmount: 400 }); ex.push(el); }
-    try { m._explosionFX(pt.clone(), 'fire'); m._explosionFX(pt.clone(), 'freeze'); m._explosionFX(pt.clone(), 'shock'); ex.push('explosions'); } catch (e) { ex.push('ERR explosion ' + e.message); }
+    // the element channels, read from the ammo table (the engine's ids, not spelled here)
+    const ELS = [...new Set(Object.values((await import('/src/combat/weapons.js')).AMMO).map(a => a.element).filter(e => e && e !== 'none'))];
+    for (const el of ELS) { hit({ element: el, elementAmount: 400 }); ex.push(el); }
+    try { for (const el of ELS) m._explosionFX(pt.clone(), el); ex.push('explosions'); } catch (e) { ex.push('ERR explosion ' + e.message); }
     try { m._arcFlash(); ex.push('arc default'); } catch (e) { /* */ }
     try { m._sparkBurst(pt.clone(), 6); ex.push('spark default'); } catch (e) { /* */ }
     // every attack row that carries its own projectile / flash colour fires its flash
@@ -1806,15 +1286,15 @@ const HERD_STAGE = `
       if (!w) { const pp = ctx.player.position; w = ctx.machines.spawn(__herd, pp.x + 24, pp.z + 24); await new Promise(r => setTimeout(r, 900)); }
       if (!w || !w.alive) return { pass: null, detail: 'SKIP: no living ' + __herd + ' (herd role) could be staged' };`;
 /** The Round-4 rows' staging text (their sentry kind, bible §10.2), which the re-stage replaces by role. */
-const OLD_SENTRY = OLD_KINDS.byRole.sentry?.[0] || '';
-const WATCHER_STAGE = `const w = ctx.machines.list.find(m => m.kind === ${q(OLD_SENTRY)} && m.alive);
+const OLD_SENTRY = (/m\.kind === '(\w+)' && m\.alive\);/.exec(rowOf(MAI, 'A37-stealth-approach')?.assert || '') || [])[1] || '';   // read from the source row, never spelled here
+const SENTRY_STAGE = `const w = ctx.machines.list.find(m => m.kind === ${q(OLD_SENTRY)} && m.alive);
       if (!w) return { pass: null, detail: 'SKIP: no living ${OLD_SENTRY}' };`;
 
-const A37_HERD = restage(rowOf(MAI, 'A37-stealth-approach'), [[WATCHER_STAGE, HERD_STAGE]], {
+const A37_HERD = restage(rowOf(MAI, 'A37-stealth-approach'), [[SENTRY_STAGE, HERD_STAGE]], {
   id: shadowId('A37-stealth-approach'), lane: LANE, shadowOf: 'A37-stealth-approach',
-  title: 'Crouched in tall grass, 20 m -> 3 m behind the herd-role Instrument (the Tiller fixture, R28): never leaves patrol/suspicious, suspicion < 0.3',
+  title: 'Crouched in reed cover, 20 m -> 3 m behind the herd-role Instrument (the Tiller fixture, R28): never leaves patrol/suspicious, suspicion < 0.3',
 });
-const A39_HERD = restage(rowOf(MAI, 'A39-detection-curve'), [[WATCHER_STAGE, HERD_STAGE]], {
+const A39_HERD = restage(rowOf(MAI, 'A39-detection-curve'), [[SENTRY_STAGE, HERD_STAGE]], {
   id: shadowId('A39-detection-curve'), lane: LANE, shadowOf: 'A39-detection-curve',
   title: 'Standing still in the herd-role Instrument\'s cone (the Tiller fixture, R28): 30 m suspicious >= 1.5 s / alert 3.0-4.6 s; 10 m alert <= 1.5 s',
 });
@@ -2131,7 +1611,7 @@ const FILM_ROWS = [
   id: `V-lamp-${st}-15m`, kind: 'visual', lane: 'instruments-core-film', timeout: 120000,
   title: `Lamp grammar, ${st}: the herd-role Instrument's drum lamp filmed from 15.0 m on its lens axis (camera.zoom to a 4 deg lens so the iris can be read)`,
   setup: FILM(st), settle: st === 'dark' ? 1600 : 1200,
-  criteria: `${crit}. The lens is a disc behind an iris (shape first), not a glow ball. FAIL if the lens is a soft glow sphere, if the aperture does not match the state, or if any Horizon sensor colour (blue #38c6ff, amber #ffb31f, red #ff2413) appears.`,
+  criteria: `${crit}. The lens is a disc behind an iris (shape first), not a glow ball. FAIL if the lens is a soft glow sphere, if the aperture does not match the state, or if any avoided sensor colour (blue #38c6ff, amber #ffb31f, red #ff2413) appears.`,
 }));
 /* W0b fix round 1: the judge's noon frames, re-filmed at the cited angles (lens turned to the sun, 13:00) */
 FILM_ROWS.push({
@@ -2898,8 +2378,8 @@ async function allocMachines({ PORT }, opts = {}) {
      * The legacy and accessor classes PASS only under an explicit orchestrator ruling recorded in the plan
      *   <!-- r5-ruling ic-alloc-residual=carried -->
      * Without it the gate FAILS on them. A lane frame over the bar fails whatever the plan says. */
-    const residualRuling = /^[ \t]*<!--\s*r5-ruling\s+ic-alloc-residual\s*=\s*carried\s*-->[ \t]*$/m.test(read('docs/ROUND5-PLAN.md'));
-    const legacyFiles = new Set([...read('src/entities/machines/legacy.js').matchAll(/^import \{ [A-Z][A-Za-z]* \} from '\.\/([a-z]+)\.js';$/gm)].map((m) => `/src/entities/machines/${m[1]}.js`));
+    const residualRuling = /^[ \t]*<!--\s*r5-ruling\s+ic-alloc-residual\s*=\s*carried\s*-->[ \t]*$/m.test(readIf('docs/ROUND5-PLAN.md') + readIf('tools/build/sources.rulings.md'));
+    const legacyFiles = new Set([...readIf('src/entities/machines/legacy.js').matchAll(/^import \{ [A-Z][A-Za-z]* \} from '\.\/([a-z]+)\.js';$/gm)].map((m) => `/src/entities/machines/${m[1]}.js`));
     const notLaneCaller = (k) => { const f = String(k).split(' ').slice(-1)[0].replace(/:\d+$/, ''); return !MINE_RE.test(f) || FROZEN_MACHINE_RE.test(f) || legacyFiles.has(f); };
     const accessorShare = new Map();
     for (const w of windows) for (const [g, m] of w.getterCallersRaw) { const e = accessorShare.get(g) || [0, 0]; for (const [c, b] of m) { e[1] += b; if (notLaneCaller(c)) e[0] += b; } accessorShare.set(g, e); }

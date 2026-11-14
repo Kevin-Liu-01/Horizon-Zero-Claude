@@ -9,7 +9,7 @@
  * (measured in `A-vfx-palette`; every value here clears it).
  *
  * Elements per bible §5.8: `fire` = Cinder (#FF7A1A), `freeze` = Brine
- * (#BDE6E3), `shock` = Dust (#C98B4E). Glints are salt crust and bronze chips,
+ * (#BDE6E3), and the third element channel = Dust (#C98B4E). Glints are salt crust and bronze chips,
  * never ice blue.
  */
 export const VFX_COLORS = Object.freeze({
@@ -17,7 +17,7 @@ export const VFX_COLORS = Object.freeze({
   brineHot: 0xf1eee6, brineMid: 0xbde6e3, brineLate: 0x6f9e98,
   dustHot: 0xfff3d8, dustMid: 0xc98b4e, dustLate: 0x6e4a28,
   saltGlint: 0xf3efe4,      // seized-joint crust shatter / crawl glints
-  bronzeChip: 0xe8c48a,     // shock arcs, generic sparks, projectile flashes (was ice blue 0xbfe8ff)
+  bronzeChip: 0xe8c48a,     // daze arcs, generic sparks, projectile flashes (was ice blue 0xbfe8ff)
   beacon: 0xe9c77b,         // loot beacon column (was cyan 0x7fe8ff)
   seizedTint: 0xd6ece6,     // Seized (Brine) tint on plates (was 0xbfe9ff)
   flameLate: 0xc23a10,      // flame licks cool toward cinder, not toward the hostile lamp

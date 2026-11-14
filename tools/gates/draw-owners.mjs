@@ -12,7 +12,7 @@ export const DRAW_OWNERS = Object.freeze([
   { id: 'vegetation', row: 'vegetation chunks', lanes: 'world-ground', re: /^vegetation|^grass|^trees?$|^shrubs?/i },
   { id: 'landmarks-places', row: 'landmarks + places', lanes: 'world-props',
     re: /^(world-)?props?$|landmark|^places?$|^sites?$|^(world-)?rockworks$|^gather-nodes$|^(world-)?activities$|^fieldbooks$|megastructure/i },
-  { id: 'settlement', row: 'settlement kit', lanes: 'settlements', re: /settlement|^(hunter-)?camp$|hamlet/i },
+  { id: 'settlement', row: 'settlement kit', lanes: 'settlements', re: /settlement|hamlet/i },
   { id: 'instruments', row: 'Instruments', lanes: 'instruments lanes (legacy kinds: instruments-core / -b)', re: /^machines?$|^instruments?$|-machine$|-instrument$/i },
   { id: 'lamp-beams', row: 'lamp beams', lanes: 'instruments-core', re: /beam/i },
   { id: 'hero', row: 'Brea + gear', lanes: 'hero-body, armory', re: /^(player|hero|brea)\b/i },

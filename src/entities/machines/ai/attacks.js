@@ -365,10 +365,8 @@ function slam(m, p) {
 }
 
 /**
- * RANGED VOLLEY — the generic the expansion needs and the library did not have
- * (casting-v4.md §2.3/§2.4/§2.5/§2.6/§2.7: freeze-mortar, cannon-burst,
- * shock-volley, homing-blast, corruption-spike, inferno-blast, thunder-clash,
- * shock-blast, bomb-run are all this one shape).
+ * RANGED VOLLEY — one generic for every ranged attack shape (mortar, burst,
+ * volley, homing blast, bombing run): they are all this one shape.
  *
  * Every existing generic is a melee shape — `lunge`/`charge` close the gap,
  * `sweep`/`slam`/`flurry` swing on the spot — so a species whose long rows

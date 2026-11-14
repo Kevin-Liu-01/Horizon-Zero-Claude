@@ -71,7 +71,7 @@ const FRAG = /* glsl */ `
    * wants (2.0, the default, is bit-identical to what every existing burst
    * looked like). BELOW 1 it switches to a hard disc that fades over the outer
    * uEdge of its radius — debris does not want a soft halo: a dark quad with a
-   * quadratic falloff is a smudge, and twenty-seven smudges over a machine
+   * quadratic falloff is a smudge, and twenty-seven smudges over a hull
    * read as smoke, not as torn plate, which is how V28 came back with "no
    * distinct dark plate-chip fragments visible" while twenty-seven of them
    * were on screen.

@@ -27,7 +27,7 @@ const CURRENCY_ID = Object.keys(ITEMS).find((id) => ITEMS[id]?.tags?.includes('c
  *   ctx.machines      list[], m.state / suspicion / lampState / elemental,
  *                     m.parts; event `flagged` / `flag-ended` (perception)
  *   ctx.sighting      tags (Map<Machine, el>), scanTarget
- *   ctx.player        health / maxHealth, gourd / maxGourd, crouching, inTallGrass
+ *   ctx.player        health / maxHealth, gourd / maxGourd, crouching, inReedCover
  *
  * Invariants this file has broken before; each has a gate:
  *   1. `interactables.current` is `{ entry, label, holdProgress }`: the world
@@ -170,6 +170,7 @@ const len2 = (a, b) => Math.sqrt(a * a + b * b);
 const OPACITY_STR = Array.from({ length: 21 }, (_, i) => (i / 20).toFixed(2));
 const POP_STR = Array.from({ length: 11 }, (_, i) => (0.82 + 0.018 * i).toFixed(3));
 const ELEM_KEYS = ['fire', 'freeze', 'shock'];
+const ELEM_LOOK = Object.freeze({ fire: 'cinder', freeze: 'brine', shock: 'dust' });
 function txString(x) {
   const k = Math.round(x * 2);
   let v = TX_MEMO.get(k);
@@ -367,7 +368,7 @@ export class HUD {
     this._questPips = [];          // pooled site / objective marks on the circle
     this._awares = new Map();      // machine -> awareness rod entry
     this._attackFlash = new Map(); // machine -> remaining flash seconds
-    this._elemTrigs = new Map();   // machine -> { fire|shock|freeze: secondsLeft }
+    this._elemTrigs = new Map();   // machine -> { <element>: secondsLeft }
     this._engaged = new Map();     // machine -> plate record
     this._mhbSlots = [];           // pooled projected plates
     this._mhbPick = [null, null, null];   // preallocated cap-3 selection
@@ -619,8 +620,8 @@ export class HUD {
     const wcount = div('cal-wpn-countrow', wrow);
     this._wpnCount = div('cal-wpn-count', wcount, '012');
     // craft hold
-    this._craftEl = div('cal-craft', wpn,
-      '<kbd>R</kbd><div class="cal-craft-bar"><i></i></div><span>MAKE</span>');
+    this._craftEl = div('cal-make', wpn,
+      '<kbd>R</kbd><div class="cal-make-bar"><i></i></div><span>MAKE</span>');
     this._craftFill = this._craftEl.querySelector('i');
     this._craftLabel = this._craftEl.querySelector('span');
 
@@ -680,7 +681,7 @@ export class HUD {
     const elemEls = {};
     for (const e of ['fire', 'freeze', 'shock']) {
       const row = div('cal-elem', elems, `<span>${ELEM_LABEL[e]}</span><div class="cal-elem-rule"><i></i></div>`);
-      row.dataset.e = e;
+      row.dataset.e = ELEM_LOOK[e];   // the bible's names (Cinder, Brine, Dust) for the engine channels
       elemEls[e] = { row, fill: row.querySelector('i'), w: -1, trig: null, shown: null };
     }
     div('cal-mhb-leader', el);
@@ -1761,7 +1762,7 @@ export class HUD {
       }
     }
     fill = clamp01(fill);
-    const hidden = !!(p.crouching && p.inTallGrass) && fill < 0.05;
+    const hidden = !!(p.crouching && p.inReedCover) && fill < 0.05;
     const noise = clamp01((p.moveSpeed ?? 0) / 7) * (p.crouching ? 0.35 : 1);
     const mode = fill >= 0.999 ? 'seen' : hidden ? 'hidden' : fill > AWARE_MIN_SUSPICION ? 'watch' : 'clear';
     // U-02: UNSEEN for 4 s and the vial puts itself away; any reading brings it back (hold H too)

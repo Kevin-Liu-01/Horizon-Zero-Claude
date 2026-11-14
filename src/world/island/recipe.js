@@ -1061,7 +1061,7 @@ export const CISTERN_FIELD = Object.freeze({ u: FU(CISTERN.e, CISTERN.n), v: FV(
 /* ------------------------------------------------------------- ground fields ---- */
 /**
  * Marram cover 0..1 at an engine point: colonies on the dunes and along the Glass, never
- * on the salt field, the beach, the tracks or a site's own ground. `terrain.tallGrassDensity`
+ * on the salt field, the beach, the tracks or a site's own ground. `terrain.reedCoverDensity`
  * reads the baked copy of this (plus the runtime route stamps); the marram scatter plants
  * from the same value, so the field can never claim cover the scatter did not plant.
  */
@@ -1072,7 +1072,7 @@ export function coverAt(x, z) {
   if (c < 7) return 0;
   const pans = biomePans(e, n);
   if (pans < 0.05) return 0;
-  /* colonies 40-90 m across with clearings (A59: a stalker's patch holds ≥ 6 tufts/m², and a
+  /* colonies 40-90 m across with clearings (A59: a stalking patch holds ≥ 6 tufts/m², and a
    * 20 m circle in a colony ≥ 4); dune backs and the plain's hollows, never a uniform sprinkle */
   const colony = ss(-0.13, 0.08, fbm(e * 0.019 + 11, n * 0.019 - 4, 3) - 0.5 + (fbm(e * 0.09, n * 0.09, 2) - 0.5) * 0.24);
   if (colony <= 0) return 0;

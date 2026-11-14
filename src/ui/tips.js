@@ -37,8 +37,8 @@ const WORD_ROWS = [
   ['medicinal herbs?', 'Fog-Water'],
   ['medicine', 'Gourd'],
   // one player word per catalogue item (r1 gate judge: two items printed under one name on a page)
-  ['machine heart', 'Mainspring'],
-  ['machine core', 'Escapement'],
+  ['machine\\W?heart', 'Mainspring'],
+  ['machine\\W?core', 'Escapement'],
   ['(\\w+) lens', '$1 Lampglass'],
   ['hunter bow', 'Sabina Bow'],
   ['sighting bow', 'Sighting Bow'],
@@ -49,7 +49,6 @@ const WORD_ROWS = [
   ['pryburst arrows?', 'Barbed Arrow'],
   ['fire arrows?', 'Cinder-Resin Arrow'],
   ['freeze arrows?', 'Brine-Gourd Arrow'],
-  ['shock arrows?', 'Dust-Puff Arrow'],
   ['blast bomb', 'Cinder Pot'],
   ['blast sling', 'Pots'],
   ['tether', 'Cast Net'],

@@ -6,7 +6,7 @@ import { VFX_COLORS } from '../../../instruments/lib/vfx.js';   // VFX palette d
  * (`perf-tech-07`: "per-particle materials").
  *
  * Round 3 spawned a `THREE.Sprite` with its OWN `SpriteMaterial` for every
- * dust puff, smoke wisp, flame lick and shock arc. Measured on the staged
+ * dust puff, smoke wisp, flame lick and daze arc. Measured on the staged
  * 8-machine fight (`tools/gates.mjs --only A21-real-draw-calls`): **58 live
  * unnamed dust sprites = 58 draw calls**, the single largest term in A21's
  * 157-call overage, plus 58 material allocations per second of combat.

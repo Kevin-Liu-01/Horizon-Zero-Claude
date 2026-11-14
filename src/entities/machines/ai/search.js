@@ -33,7 +33,7 @@ export class Search {
     const m = this.m;
     let s = 0.2 + Math.random() * 0.2;
     const t = m.ctx.terrain;
-    if (t.tallGrassDensity) s += t.tallGrassDensity(x, z) * SEARCH.grassBias * 2;
+    if (t.reedCoverDensity) s += t.reedCoverDensity(x, z) * SEARCH.grassBias * 2;
     const C = m.ctx.collision;
     if (C && C.sphereQuery) {
       const hits = C.sphereQuery(x, t.getHeight(x, z) + 1, z, 3.5, this._out || (this._out = []),

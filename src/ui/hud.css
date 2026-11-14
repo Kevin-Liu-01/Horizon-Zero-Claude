@@ -541,9 +541,9 @@
 .cal-mhb-elems:has(.show) { margin-top: 4px; }
 .cal-elem { display: none; align-items: center; gap: 3px; }
 .cal-elem.show { display: flex; }
-.cal-elem[data-e='fire'] { --c: var(--cal-cinder); }
-.cal-elem[data-e='shock'] { --c: var(--cal-dust); }
-.cal-elem[data-e='freeze'] { --c: var(--cal-brine); }
+.cal-elem[data-e='cinder'] { --c: var(--cal-cinder); }
+.cal-elem[data-e='dust'] { --c: var(--cal-dust); }
+.cal-elem[data-e='brine'] { --c: var(--cal-brine); }
 .cal-elem span { font-family: var(--cal-font-mono); font-weight: 600; font-size: 11px; line-height: 1; color: var(--cal-glass-text); }
 .cal-elem-rule { width: 34px; height: 4px; background: rgba(241, 238, 230, 0.14); }
 .cal-elem-rule i { display: block; height: 100%; transform-origin: 0 50%; background: var(--c); }
@@ -855,17 +855,17 @@ body.cal-sighting .cal-weapon.idle { opacity: 1; }
   font-variant-numeric: tabular-nums;
 }
 .cal-wpn-count.empty { color: var(--cal-c-staff); }
-.cal-craft {
+.cal-make {
   display: flex; align-items: center; gap: calc(7px * var(--s));
   margin-top: calc(4px * var(--s));
   max-height: 0; overflow: hidden; opacity: 0;
   transition: opacity 0.12s ease;
 }
-.cal-craft.on { max-height: calc(24px * var(--s)); opacity: 1; }
-.cal-craft span { font-family: var(--cal-font-ui); font-weight: 600; font-size: max(11px, calc(11px * var(--s))); letter-spacing: var(--cal-track-caps); white-space: nowrap; }
-.cal-craft-bar { flex: 1; height: calc(3px * var(--s)); background: var(--cal-staff-30); }
-.cal-craft-bar i { display: block; height: 100%; transform-origin: 0 50%; transform: scaleX(0); background: var(--cal-staff); }
-.cal-craft.deny .cal-craft-bar i { background: var(--cal-c-staff); }
+.cal-make.on { max-height: calc(24px * var(--s)); opacity: 1; }
+.cal-make span { font-family: var(--cal-font-ui); font-weight: 600; font-size: max(11px, calc(11px * var(--s))); letter-spacing: var(--cal-track-caps); white-space: nowrap; }
+.cal-make-bar { flex: 1; height: calc(3px * var(--s)); background: var(--cal-staff-30); }
+.cal-make-bar i { display: block; height: 100%; transform-origin: 0 50%; transform: scaleX(0); background: var(--cal-staff); }
+.cal-make.deny .cal-make-bar i { background: var(--cal-c-staff); }
 
 /* ------------------------------ pickup chips ---------------------------------- */
 .cal-items {

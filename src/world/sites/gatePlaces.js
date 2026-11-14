@@ -111,7 +111,7 @@ export function buildGatePlaces(ctx, props) {
   look('pansSunset', -226, 186, 1.8, 262, 0, 50, 18.75, 'trade', 'Saltrow\'s rise west over the pans into the sun: the glitter path and the stacks');
   look('meadow', -214, 230, 1.6, 240, 0, 50, 17.5, 'trade', 'the gold meadow belt landward of the pans (world-ground W-06)', { stub: true });
   look('beach', -226, 392, 1.6, 255, -1, 50, 18.25, 'trade', 'the black-sand beach and its surf toward the Ring and the stacks', { stub: true });
-  look('title', -200, 414, 1.7, 335, 2, 40, 18.67, 'trade', 'U-08 title: a rise facing the Ring and the spires; Brea idle (shell-ui W2)', { pose: 'title', stub: true });
+  look('title', -200, 414, 1.7, 335, 2, 40, 18.67, 'trade', 'U-08 title: a rise facing the Ring and the stacks; Brea idle (shell-ui W2)', { pose: 'title', stub: true });
   look('saltrowDusk', salt.x + 30, salt.z + 40, 1.7, 330, 1, 50, 19.5, 'trade', 'Saltrow at dusk (settlements W2)', { stub: true });
   look('craterWall', -350, 300, 1.7, 352, 8, 55, 17.0, 'trade', 'from the salt field over the Gauge to the red tuff wall: beds, talus, tuff blocks, the reservoir pump');
   look('steepFace', P.steepFace?.x ?? -14, (P.steepFace?.z ?? -380) + 40, 1.7, 0, 10, 50, 16.0, 'trade', 'the north-coast scarp (world-ground\'s steepFace row)', { stub: true });

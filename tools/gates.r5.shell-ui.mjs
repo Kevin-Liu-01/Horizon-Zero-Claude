@@ -889,7 +889,7 @@ const A71E = re('A71e-tutorial-cards', {
   ],
 });
 
-const A70B = re('A70b-fast-travel', {
+const A70B = re('A70b-node-travel', {
   patch: [["/BRAZIER/.test(out.awayFromFire.reason)", "/CISTERN/.test(out.awayFromFire.reason)"]],
 });
 

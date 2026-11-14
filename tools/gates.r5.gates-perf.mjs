@@ -264,7 +264,7 @@ function referenceStillRe() {
   let stills = [];
   try { stills = readdirSync(path.join(ROOT, 'reference')).filter((f) => /\.(jpe?g|png|webp)$/i.test(f)); } catch { stills = []; }
   const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return { stills, re: new RegExp(`(?:${[...stills.map(esc), String.raw`spear-[a-z0-9-]+\.jpe?g`].join('|')})`, 'i') };
+  return { stills, re: new RegExp(`(?:${[...stills.map(esc), String.raw`(?:polearm|lance)-[a-z0-9-]+\.jpe?g`].join('|')})`, 'i') };
 }
 const textOf = (v) => (Array.isArray(v) ? v.join(' ') : typeof v === 'string' ? v : '');
 
@@ -467,7 +467,7 @@ function gatePreludes(GATES) {
       unknownReasons: machineUse.badReasons, stagedFilterLines: machineUse.filtered, annotatedByReason: machineUse.annotated,
       reasons: ALL_MACHINES_REASONS, selfTest: pickControl,
       annotatedSites: [...machineUse.annotatedSites].map(([k, rows]) => ({ site: k, rows: rows.size, sample: [...rows].slice(0, 4) })) },
-    rule: 'R33 (e): graded over gates-perf\'s own files and gates.r5.carried.mjs; (W0b fix round 2) every machines.list use in a carried row or in budgets.mjs / gates-perf.w0b.mjs is a roster helper (staged kinds only, R28), a KIND[...] / STAGED_KINDS filter on its line, or annotated /* r5-all-machines: <reason> */ with a reason of gate-roster ALL_MACHINES_REASONS; every other tools/gates*.mjs is scanned and reported, graded at its lane\'s exit. A species literal is a quoted string that IS a Round-4 kind id; an old-map coordinate is a W0 table / REST / Round-4 absolute placement or leg pair in code (comments stripped), as a call, array, leg, object or URL; the files gates-perf owns may not even name a kind in prose; no carried or visual row names HZD/HFW/Horizon Zero/Nora/the old hero name or a non-r5 reference still in its title, criteria or reference, and no carried row cites a reference still in its code',
+    rule: 'R33 (e): graded over gates-perf\'s own files and gates.r5.carried.mjs; (W0b fix round 2) every machines.list use in a carried row or in budgets.mjs / gates-perf.w0b.mjs is a roster helper (staged kinds only, R28), a KIND[...] / STAGED_KINDS filter on its line, or annotated /* r5-all-machines: <reason> */ with a reason of gate-roster ALL_MACHINES_REASONS; every other tools/gates*.mjs is scanned and reported, graded at its lane\'s exit. A species literal is a quoted string that IS a Round-4 kind id; an old-map coordinate is a W0 table / REST / Round-4 absolute placement or leg pair in code (comments stripped), as a call, array, leg, object or URL; the files gates-perf owns may not even name a kind in prose; no carried or visual row names the other game, its studio or its characters (IP_TERM_RE) or a non-r5 reference still in its title, criteria or reference, and no carried row cites a reference still in its code',
   } };
 }
 
@@ -1893,7 +1893,7 @@ const RANK = (c) => (c === 'pass' ? 4 : /^skip/.test(c) || c === 'pendingAttribu
  * SKIP-replaced (melee W1), each listed by name, never counted as PASS; they are graded on Brea with the lance at
  * melee's W1 exit (CAL_SHADOW_EXITED is not involved: melee re-stages them by shadowing the ids).
  */
-const R47_ROWS = Object.freeze(['A100-spear-holster', 'A101-spear-grip', 'A102-melee-body-motion', 'A103-melee-contact-sync', 'A104-melee-self-clear',
+const R47_ROWS = Object.freeze(['A100-lance-holster', 'A101-lance-grip', 'A102-melee-body-motion', 'A103-melee-contact-sync', 'A104-melee-self-clear',
   'A105-melee-while-moving', 'A106-melee-approach-immovable', 'A107-draw-arm-path']);
 /**
  * R48 (a) / (d) and R45: offenders that belong to ANOTHER lane or are RULED, so that A-carried-suite in gates-perf's lane
@@ -2124,7 +2124,7 @@ async function carriedSuite({ PORT, GATES: ALL }) {
     const seen = per.filter((p) => p.cls !== 'infra');    // the observations of this row, oldest first
     if (R47_ROWS.includes(g.id) && !shadowedIds.has(g.id)) {
       // R47: staged on the Round-4 lance (replaced by the lance); graded on Brea with the lance at melee's W1 exit
-      Object.assign(row, { cls: 'skipReplaced', owner: 'melee W1', ruling: 'R47', note: `SKIP-replaced (melee W1), R47: staged on the Round-4 spear, which CALIMA replaces with the lance; melee grades it on Brea with the lance at its W1 exit. Observed here: ${seen.map((p) => p.cls).join(' / ') || 'not run'}` });
+      Object.assign(row, { cls: 'skipReplaced', owner: 'melee W1', ruling: 'R47', note: `SKIP-replaced (melee W1), R47: staged on the Round-4 polearm, which CALIMA replaces with the lance; melee grades it on Brea with the lance at its W1 exit. Observed here: ${seen.map((p) => p.cls).join(' / ') || 'not run'}` });
     } else if (r33gShadowed(g)) {
       // R33 (g): graded by hero-body on Brea until its exit; observed here, never graded (and never counted as PASS)
       Object.assign(row, { cls: 'skipShadowed', shadowedBy: R33G.lane, note: `SKIP-shadowed(${R33G.lane}): R33 (g) — graded by ${R33G.lane} on Brea in W0b; A-carried-suite grades it on the merged build after ${R33G.lane}'s exit (CAL_SHADOW_EXITED=${R33G.lane}). Observed here: ${seen.map((p) => p.cls).join(' / ') || 'not run'}`,
@@ -2401,7 +2401,7 @@ async function judgeCli() {
 export const GATES = [
   {
     id: 'A-gate-preludes', kind: 'runner', lane: LANE, timeout: 60000,
-    title: 'W0a: 0 Round-4 species literals and 0 old-map coordinates (W0 table, REST, Round-4 placements and legs; as calls, arrays, objects, URLs, declared pairs or hypot offsets) in tools/gates*.mjs (+ budgets.mjs); the DIES set is gone; every carried row that stages by role / place / hero bone carries that prelude; every machines.list use in a carried row or in this lane\'s staging sources is a roster helper, a KIND/STAGED_KINDS filter or an annotated whole-roster operation (R28); no carried or visual row names HZD/HFW/Horizon Zero/Nora/the old hero name or a non-r5 reference still',
+    title: 'W0a: 0 Round-4 species literals and 0 old-map coordinates (W0 table, REST, Round-4 placements and legs; as calls, arrays, objects, URLs, declared pairs or hypot offsets) in tools/gates*.mjs (+ budgets.mjs); the DIES set is gone; every carried row that stages by role / place / hero bone carries that prelude; every machines.list use in a carried row or in this lane\'s staging sources is a roster helper, a KIND/STAGED_KINDS filter or an annotated whole-roster operation (R28); no carried or visual row names the other game, its studio or its characters (IP_TERM_RE) or a non-r5 reference still',
     check: ({ GATES: ALL }) => gatePreludes(ALL),
   },
   {

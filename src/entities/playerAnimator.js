@@ -2202,7 +2202,7 @@ export class PlayerAnimator {
     }
 
     // cover grass: sink the stealth crouch a little deeper
-    if (crouchW > 0.01 && p.inTallGrass) {
+    if (crouchW > 0.01 && p.inReedCover) {
       const deep = crouchW * 0.12;
       pdy += -0.5 * deep;
       this._rot(b.thighL, X_AXIS, -0.6 * deep);

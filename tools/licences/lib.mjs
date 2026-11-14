@@ -252,26 +252,6 @@ export const SCHEDULED_IP = {
     delete_at: 'W0a', owner: 'gates-perf',
     why: 'Round-4 lab bake keyed to the IP hero rig\'s bones; deleted with public/anims-hybrid/** at W0a (plan §6)',
   },
-  'public/models/watcher.glb': {
-    delete_at: 'W0a', owner: 'instruments-core', rowless: true, reader: 'src/entities/machines/watcher.js',
-    source: '"Redeye Watcher Rig, Horizon Zero Dawn", JP11555, CC-BY-4.0 (third-party game IP)',
-    why: 'R30 machine GLB, deleted by instruments-core together with its class in W0a (plan §6 row 1)',
-  },
-  'public/models/sawtooth.glb': {
-    delete_at: 'W0a', owner: 'instruments-core', rowless: true, reader: 'src/entities/machines/sawtooth.js',
-    source: '"Sawtooth from Horizon Zero Dawn", Théo Domon, CC-BY-NC-4.0 (game IP, non-commercial)',
-    why: 'R30 machine GLB, deleted by instruments-core together with its class in W0a (plan §6 row 1)',
-  },
-  'public/models/behemoth.glb': {
-    delete_at: 'W0a', owner: 'instruments-core', rowless: true, reader: 'src/entities/machines/behemoth.js',
-    source: '"Behemoth from Horizon Zero Dawn", Théo Domon, CC-BY-NC-4.0 (game IP, non-commercial)',
-    why: 'R30 machine GLB, deleted by instruments-core together with its class in W0a (plan §6 row 1)',
-  },
-  'public/models/thunderjaw.glb': {
-    delete_at: 'W0a', owner: 'instruments-core', rowless: true, reader: 'src/entities/machines/thunderjaw.js',
-    source: '"Thunderjaw from Horizon Zero Dawn", Théo Domon, CC-BY-NC-4.0 (game IP, non-commercial)',
-    why: 'R30 machine GLB, deleted by instruments-core together with its class in W0a (plan §6 row 1)',
-  },
 };
 
 /** The boot rows (`src/core/assets.specs.js`, pure data) or null. */

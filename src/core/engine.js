@@ -268,7 +268,7 @@ export const LOOK_W0 = Object.freeze({
 // (b)'s +6; 0.3 keeps the factors' own wide-mip weighting, +6.7 in f2-b3's sweep); clampK 4.5: the bright-pass limit
 // sits just above L-06's own sun (sunCol x40 = 4.4x the threshold), so a hotter sun stops widening the white core
 // (f2-b4 at 6x: a sun at 40x the threshold still clipped out to 4.3 sun radii)
-// fix round 3: thresholdLstar 94 -> 90 (judge: at 94 = HDR 4.16 the additive campfire, whose particles sum to HDR 2-4, no
+// fix round 3: thresholdLstar 94 -> 90 (judge: at 94 = HDR 4.16 the additive Brazier fire, whose particles sum to HDR 2-4, no
 // longer reached the bright pass and stopped glowing; 90 = HDR 2.37 on the golden set, still above the calm lamp ring's 2.47
 // x the knee's foot and above lit noon ground, L* 86.8); sigmaDiv 2.5: the round blur kernel (_bloomFold)
 export const LOOK_BLOOM = Object.freeze({ strength: 0.48, radius: 0.3, threshold: 1.30, smoothWidth: 0.35,

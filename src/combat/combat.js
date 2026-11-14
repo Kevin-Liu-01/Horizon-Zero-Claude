@@ -640,7 +640,7 @@ export class Combat {
    */
   craftBlocker(ammoId = this.activeWeapon?.activeAmmo) {
     const def = AMMO[ammoId];
-    if (!def?.recipe || !def.batch) return 'CANNOT CRAFT';
+    if (!def?.recipe || !def.batch) return 'CANNOT MAKE';
     if ((this.ammo[ammoId] ?? 0) >= def.cap) return 'QUIVER FULL';
     const miss = this.recipeStatus(ammoId).filter((r) => !r.ok);
     if (miss.length) return 'NEED ' + miss.map((r) => `${r.need - r.have} ${r.id.replace(/-/g, ' ')}`).join(' + ').toUpperCase();
@@ -1043,7 +1043,7 @@ export class Combat {
     c.progress = Math.min(1, c.progress + realDt / CRAFT_HOLD);
     if (c.progress >= 1) {
       if (c.ok) this.craftAmmo(id);
-      else this.feedback.toast(c.blocker || 'CANNOT CRAFT', id, true);
+      else this.feedback.toast(c.blocker || 'CANNOT MAKE', id, true);
       c.progress = 0;
       c.holding = false;
       // require a re-press so a held R does not machine-gun batches
@@ -1899,7 +1899,7 @@ export class Combat {
     }
 
     if (def.burst === 'tear') {
-      // compressed-air pryburst pop: cyan shock puff, no flame, no fire cue
+      // compressed-air pryburst pop: cyan air puff, no flame, no fire cue
       const groundY = ctx.terrain?.getHeight(hit.point.x, hit.point.z) ?? hit.point.y;
       this.blastFx.spawn(hit.point, groundY, def.aoe?.radius ?? 4, 0x9fe8e0);
       this.sparks.burst(hit.point, hit.normal ?? _up, {

@@ -63,7 +63,7 @@ const markKey = (id) => {
   if (/wood|juniper/.test(s)) return 'juniper';
   if (/blaze|resin|cinder|fire/.test(s)) return 'resin';
   if (/chill|brine|freeze/.test(s)) return 'brine';
-  if (/spark|dust|shock/.test(s)) return 'dust';
+  if (s.split('-').includes('shock') || /spark|dust/.test(s)) return 'dust';
   if (/wire|cord|cable|rope/.test(s)) return 'cord';
   if (/lens|lampglass/.test(s)) return 'lampglass';
   if (/heart|core|escapement/.test(s)) return 'escapement';

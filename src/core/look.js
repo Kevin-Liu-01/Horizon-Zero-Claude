@@ -433,7 +433,7 @@ function labStage(c, X, w) {
   if (X.shadow) {
     // fix round 2: `cRange` [C0, C1] keeps the shift to near-neutral darks (full below chroma C0, none above C1): shade
     // and night go rose-violet, while firelit ground, skin and cloth in shadow keep their own warm hue (f2-b1's play
-    // frames: without it the dusk set turned the campfire's pool of light magenta)
+    // frames: without it the dusk set turned the Brazier's pool of light magenta)
     // (the gate covers the warm hues [h0, h1] of cRange[2..3] only, default 20-100 deg: a saturated blue keeps the full shift,
     // so the stage stays invertible where the sRGB floor is close: look.invert)
     const S = X.shadow, cr = S.cRange;
