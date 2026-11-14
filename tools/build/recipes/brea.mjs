@@ -541,7 +541,7 @@ export async function build({ out = ROOT } = {}) {
         xMax: 0.059,
       }),
       scarSeam({ a: scar.a, b: scar.b, color: [150, 106, 86], w: 0.00064, depth: 0.0005 }),
-      inkDots({ dots: [[-0.7075, -0.0445], [-0.6895, -0.0555], [-0.6895, -0.0335]], r: 0.00265, where: (T) => T.X < -0.66 && T.ny > 0.4 }),
+      inkDots({ dots: [[-0.7075, -0.0445], [-0.6895, -0.0555], [-0.6895, -0.0335]], r: 0.0019, where: (T) => T.X < -0.66 && T.ny > 0.4 }),
       // fix round 3 (R69, the turnaround's face: "visible pores, freckling"): freckles and sun specks over the cheeks, the nose and the
       // forehead, thinning toward the jaw and the temples, none on the lips
       freckles({ density: 0.075, r: [0.0004, 0.001], dark: 0.7, zone: (T) => smooth(1.572, 1.592, T.Y) * (1 - smooth(1.70, 1.716, T.Y)) * smooth(-0.004, 0.018, T.Z) * (1 - smooth(0.05, 0.066, Math.abs(T.X)))
