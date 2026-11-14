@@ -539,8 +539,12 @@ export async function build({ out = ROOT } = {}) {
     stowInfo.lance = { butt: start, tip: end, degFromVertical: 34, joint: LANCE_SOCKET, parent: 'spine_02' };
   }
   // bow: the opposite diagonal beneath the lance (right hip -> left shoulder), belly to the back
+  // (W0b targeted fix 4, r1 eng judge: "A-tail-legible passes at the bar's edge": the wrap
+  // tail's free end crossed the upper limb in the front and back silhouettes, reach exactly
+  // 4 px in ~20 % of moments. 28 -> 20 deg from vertical stands the limb 0.06 m further off
+  // that line, 2 px at the sheet's 64 px, and the X with the lance's 34 deg still reads)
   {
-    const ang = 28 * Math.PI / 180;
+    const ang = 20 * Math.PI / 180;
     const d = [Math.sin(ang), Math.cos(ang), 0];
     const ctr = [-0.03, 1.40, 0];
     const half = BOW.length / 2;
@@ -550,7 +554,7 @@ export async function build({ out = ROOT } = {}) {
     const [X, Y, Z] = basisY(d, [0, 0, 1]);
     const g = place(bowGeo().g, X, Y, Z, c);
     pieces.push({ g, joint: 'spine_02', bit: PIECE.bow });
-    stowInfo.bow = { centre: c, degFromVertical: 28, joint: 'spine_02' };
+    stowInfo.bow = { centre: c, degFromVertical: 20, joint: 'spine_02' };
   }
   // quiver: right hip, tilted 20° forward
   {

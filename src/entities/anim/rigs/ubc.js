@@ -160,7 +160,10 @@ export const UBC_TUNE = {
   // (fix round 3: 0.020 -> 0.026, the wrist a little further out of the face:
   // A35's hand-to-Head-joint read 0.1035 at the level aim with the draw no
   // longer sliding back, 3.5 mm over its 0.10 floor)
-  anchorNock: true, handOut: 0.026,
+  // (W0b targeted fix 4: 0.026 -> 0.046, the fist a little further out of the arrow's vertical plane
+  // and the elbow's sideways offset off it down by as much: the forearm against the REAL arrow read
+  // 20.6-21.7 deg with the elbow 0.09 m outside that plane; now <= 19 at every graded row)
+  anchorNock: true, handOut: 0.046,
   // ...and the wrist bent back this much (radians) at full draw, so the
   // knuckles ride outside the jaw and the hooked fingers curl in to the string
   drawWristExt: 0.35,
@@ -172,12 +175,12 @@ export const UBC_TUNE = {
   // dropped the down-aim draw elbow to -0.0307 m against A-draw-elbow-level's
   // -0.03 floor (run f4b)
   behindNockDownY: null,
-  knuckleNock: 0.052,
+  knuckleNock: 0.046,
   // R5 fix round 5 (judge r2, V24-draw-down): a down aim is the LEVEL draw's
   // form turned rigidly onto the aim ray at spine_01 — the archer bending at
   // the hips (playerAnimator `_aimLayer`, `tS`)
   downT: true,
-  downTRoll: 0.5,                                  // (the turn's share of the arrow-roll; see `_aimLayer`)
+  downTRoll: 0,                                    // (the turn's share of the arrow-roll; see `_aimLayer`)
   // ...and an UP aim the same way (judge r2's clauses at all four pitches: at
   // -0.55 the old form put the wrist 0.035 m under the level draw's height at
   // the Head joint): the level form, leaned back rigidly onto the ray
@@ -192,7 +195,10 @@ export const UBC_TUNE = {
   // the string-side clavicle's elevation at full draw (radians): lifts the
   // shoulder joint toward the arrow line (V24 forearm-in-line; A16 holds the
   // elbow at or under that joint)
-  drawShrug: 0.58,
+  // (hero-body targeted fix round 3, gate judge findings 1/3, eng judge finding 3: 0.58 -> 0.8. At 0.58 the held draw's
+  // forearm stood 18-20 deg off the real arrow, the elbow 2 cm under the joint and the cheek 3-6 cm over it, so any
+  // camera turn or strafe crossed the 20 deg bar; with the joint 2 cm higher it reads 9-14 deg held, run w11/d6)
+  drawShrug: 0.8, drawShrugUp: 0.58,
   // the string-side scapula's retraction share at full draw (Round 4: 0.8):
   // with the shoulder lifted, less retraction keeps the elbow inside the
   // 0.10 m behind-the-skull bar (A-draw-elbow-level) with the forearm in line
@@ -220,14 +226,17 @@ export const UBC_TUNE = {
   // (Oct 22 sweep); while aiming on the move the trunk is turned back to it
   // (the strafe / aim-walk loops left it 0.2-0.6 rad short, and the reach
   // clamp slid the draw 8.6-9.0 cm off the anchor)
-  bladeLock: { ref: -0.311, gain: 1 },
+  // (W0b targeted fix 4: the correction turns at most `rate` rad/s)
+  bladeLock: { ref: -0.311, gain: 1, rate: 4 },
   // the draw elbow's form scan (fix round 3; A-draw-elbow-level, R35): the
   // elbow is rolled on its shoulder -> wrist circle to the nearest point
   // inside the aim-frame height band `up` (m about the shoulder line), at
   // least `behindHand` back of the wrist along the arrow and at most
   // `behindHead` past the back of the skull (bars: [-0.03, 0.05], 0.05, 0.20)
   // (`looseDrop`: through the loose the height floor drops this much, m)
-  elbowForm: { up: [-0.022, 0.04], behindHand: 0.072, behindHead: 0.17, looseDrop: 0.15 },
+  // (`fore` [weight, rad], hero-body targeted fix round 3: the forearm along the arrow is a form target too, soft, inside
+  // the same hard bars — the elbow rises to A16's line instead of resting on the band's floor)
+  elbowForm: { up: [-0.022, 0.04], behindHand: 0.072, behindHead: 0.17, looseDrop: 0.15, fore: [3, 0.12] },
   // W0b targeted fix 3 (judges: the draw elbow jumped 0.36-0.47 m in one sim
   // step at the draw onset and every re-nock, the fist went to the back of her
   // neck after the 0.75 loose, the loose elbow read 0.2012 m behind the head
@@ -243,7 +252,67 @@ export const UBC_TUNE = {
   // the rest hold / quiver ride the chest / pelvis (`crouchBody`)
   // (`quiverT` s: the nock beat — down over `qUp` of it, back from `qBack`)
   armFlow: { wristV: 2.7, elbowStep: 0.05, elbowBack: 0.16, formWin: 0.6, renock: true, quiverPole: [-0.9, -0.3, 0.15], crouchBody: true,
-    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true, holdBlade: true, rootGive: 0.012 },
+    quiverT: 0.5, qUp: 0.34, qBack: 0.5, bowOut: 0.09, bowDown: 0.08, bowFwd: 0.06, bowHand: true, kickIn: 0.45, armStep: 0.05, outside: true, holdBlade: true, rootGive: 0.012,
+    // W0b targeted fix 4: the limiters live whenever the aim layer runs and on
+    // the arm's final pose until the free pose is reached (`_armContinuity`,
+    // at least `tailMin` s after the layer stops): the arm steps at most `armStep`
+    // against the draw shoulder and `armStepChar` in character space, its head and
+    // keep violation growing by at most `violStep` a step; the draw arm's target
+    // share eases at `wdaRate`/s between 1 and the aim weight, and the arm is lowered
+    // by its target, not its IK weight (`lowerByTarget`); a rising draw is followed
+    // exactly from drawS 0.88 (`drawRaw`); the bent T comes in at most `tRate` of its
+    // turn per second and turns at most `tSpeed` rad/s (crouched less `tSpeedCrouch`
+    // of that); a hand stalled under the cord's knot goes round it (`knotRound` m a
+    // step); the rest hold and the quiver ride the chest and the pelvis, read against
+    // the standing aim's own offsets (`bodyRef`)
+    // (hero-body targeted fix round 2, `camAim`: the aim point is predicted on this step's camera ray, the
+    // T's ray is low-passed only relative to the camera's, its cap adds the camera's rate, and at a held
+    // full draw the arm's limiter carries last step's arm rigidly with the chest; `crouchOut`: crouched, the T
+    // goes out at its crouched pace and the aim layer runs on until it is out)
+    wdaRate: 4, drawRaw: true, tRate: 3, lowerByTarget: true, armStepChar: 0.055, tSpeed: 3.6, tSpeedCrouch: 0.6, tailMin: 0.35, lanceOpen: 30, knotRound: 0.035, violStep: 0.002, camAim: true, crouchOut: true, camTau: 0.05, bodyChar: true,
+    bodyRef: { chest: [-0.006, -0.032, -0.063], pelvis: [0.002, -0.035, -0.036] } },
+  // W0b targeted fix 4: the aim's trunk starts upright — the pelvis -> neck
+  // line's forward pitch under the aim (radians, character space), standing /
+  // crouched; only an excess is given back (the clip's fold: crouch 45-50 deg,
+  // the jog's lean after a dodge), spread up the spine, the neck and head
+  // taking `gaze` of it back so the gaze holds. Crouched, the chest and the head
+  // also come to the standing draw's own pitch (`chestRef`, `headRef`, the bone's
+  // bind forward in character space), so the form above the waist is the standing
+  // draw's
+  aimTrunk: { up: 0.12, crouch: 0.22, gain: 1, share: [0.25, 0.35, 0.40], shareCrouch: [0.15, 0.35, 0.50], gaze: [0.5, 0.45], chestRef: 0.44, headRef: 0.22 },
+  // W0b targeted fix 4: the crouched aim's body: the pelvis `pelvisY` m up
+  // (character space; the UAL1 crouch stands it at 0.35), `pelvisDown` higher at the
+  // down clamp, tipped `pelvisTilt` rad, coming in over `rampS` s; a crouch toggled
+  // under the aim moves at most `toggleRate` /s, her height at most `liftStep` m per 1/60 s;
+  // at a steep aim she stands up to hold the bow's hand `nearBow` m from the crosshair's ground
+  // hit (see `_crouchAimLayer`, `_crouchAimLift`)
+  // (hero-body targeted fix round 2: crouched, the aim weight goes out at most `outRate` per second, and a
+  // crouch toggled under the aim moves at most `toggleRate` per second, 2.5 before: 0.036 m head steps)
+  crouchAim: { pelvisY: 0.52, pelvisDown: 0.31, pelvisTilt: 0.10, rampS: 0.8, toggleRate: 1.8, liftStep: 0.022, nearBow: 0.57, outRate: 2.0, nearLead: 0.3 },
+  // W0b targeted fix 4: the bent T's reach at the pitch clamps (rad): the turn's
+  // caps, and how much of its pitch the hips carry, the upper back the rest
+  tClamp: { up: 1.2, down: 1.25, yaw: 0.9, hipUp: 0.6, hipDown: 0.95, hipBack: 1.5 },
+  // hero-body targeted fix round 2: the bent T's share of a pitched aim ramps in over these pitches (rad)
+  tRamp: [0.02, 0.2],
+  // hero-body targeted fix round 2: the roll's hand-over to the gait — the pelvis held where it was
+  // rendered on the step the roll ends and handed to the gait's at most `stepM` m per 1/60 s against
+  // her root, over `minS`..`maxS` s; a jump under `minM` m is left alone (see `_rollExit`)
+  // ...and the roll's root follows the pelvis's own travel (`dodgeDist`: player.js DODGE_DIST, the root's
+  // whole roll, m; see the animator's constructor and `rollProgress`)
+  // ...and the governor: through a roll, 0.6 s (`window`) after one or a landing, and whenever she aims or
+  // crouches, the pelvis's world step is held to her root's own step + `govM` per 1/60 s
+  // (hero-body targeted fix round 3: ...and the roll's whole pose weighs down into the gait over `blendS` s, the
+  // clip held at the frame it reached, not scrubbed to its last: see the animator's `update`; and an air slot that
+  // changes under weight, the jump loop to the landing, crossfades over `airX` s: `_airCrossfade`)
+  // (...and `trunk`: the governor's character-space bound holds the pelvis, the chest and the head together, the body
+  // moved as one piece; `trunkWorld`: while the aim turns her, and after a roll or a landing, against her root in the
+  // world as well; it stays on `gvHold` s after it last held anything back)
+  rollExit: { stepM: 0.02, minM: 0.02, minS: 0.2, maxS: 0.8, dodgeDist: 3.4, govM: 0.026, window: 0.6, blendS: 0.45, airX: 0.16, trunk: true, trunkWorld: true, gvHold: 0.3 },
+  // hero-body targeted fix round 3: the aim's way in and out. The aim waits while her heading is still more than
+  // `align` rad (in .. out) off the camera's line (player.js turns her onto it at a rate now); it goes out at most
+  // `rate` per second standing (crouched `crouchAim.outRate`), and the blade's draw share at most `bladeRate`,
+  // both eased in from `ease0` of their rate over `easeS` s
+  aimOut: { align: [0.15, 0.6], rate: 3.5, ease0: 0.25, easeS: 0.1, bladeRate: 2.5 },
   // the string hand's roll at full draw (0..1 of the way to back-of-hand out,
   // palm to the neck): the hooked fingers stand on the vertical string and the
   // ∴ on the back of the right hand faces a side camera (V24)

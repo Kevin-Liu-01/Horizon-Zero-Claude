@@ -106,8 +106,13 @@ export const CHAINS = {
     // 0.25 rad back toward the vertical): in calm air the tail now stands
     // 0.12 m off the side of the head and 0.23 m behind it, outside the bow's
     // limb line, and the trade wind streams the free end out from there
-    points: [[0.052, 1.678, -0.116], [0.113, 1.664, -0.184], [0.169, 1.639, -0.243], [0.201, 1.577, -0.284],
-      [0.226, 1.510, -0.314], [0.246, 1.439, -0.336], [0.260, 1.366, -0.350]],
+    // W0b targeted fix 4 (r1 eng judge: "A-tail-legible passes at the bar's edge"): the free
+    // strip 0.052 m longer, each of its four links by a sixth: with the stowed bow stood off the
+    // front and back views (kit-v0), the side views' reach was the last at the bar: the tail
+    // flies flat at the trade wind's 45 deg, tip 0.27 m behind her, and the stowed kit's line
+    // stands 0.13 m behind her there. 0.054 m along that line is 1-2 px at the sheet's 64 px
+    points: [[0.052, 1.678, -0.116], [0.113, 1.664, -0.184], [0.169, 1.639, -0.243], [0.206, 1.567, -0.291],
+      [0.235, 1.489, -0.326], [0.258, 1.406, -0.352], [0.274, 1.321, -0.368]],
   },
   sashEnd: {
     parent: 'pelvis',
@@ -471,7 +476,8 @@ export async function build({ out = ROOT } = {}) {
       // three pleats (5.5 mm deep, peak to peak) until the strip turns down (it opens over u 0.26-0.46), the free strip tapers from
       // halfway (0.10 m, to 0.07 m at the fringe; a taper from the bend cost A-tail-legible a side-view moment in r3), its section is a gentle cup (curl 0.18), its hems are C-05's 4 mm, and each
       // row is skinned over FOUR joints (cubic B-spline), so the stiff-to-free hand-over drapes over two links instead of folding at one
-      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.2, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0095, along: 17, across: 6, rootBack: 0.014,
+      // r5/int (M0.2): on hero-body's 0.540 m chain (targeted fix 4; was 0.489 m) the fringe fraction is re-derived so it stays 2.5 cm
+      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.540 * S), side: [0.55, 0.65, 0.5], curl: 0.2, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0095, along: 17, across: 6, rootBack: 0.014,
       open: [0.26, 0.46], pleats: 0.00275 / S,
       rootRows: 4, smoothSkin: 4, hem: 0.004, ripple: 0.005 },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
