@@ -87,7 +87,9 @@ async function takeSlot() {
 }
 
 /* ---------------------------------------------------------------- helpers */
-const portOpen = (p) => new Promise((r) => { const s = net.connect(p, '127.0.0.1'); s.once('connect', () => { s.destroy(); r(true); }); s.once('error', () => r(false)); });
+// Vite's "localhost" can bind IPv6 only ([::1]); a port counts as open on either loopback
+const portOn = (p, host) => new Promise((r) => { const s = net.connect(p, host); s.once('connect', () => { s.destroy(); r(true); }); s.once('error', () => r(false)); });
+const portOpen = async (p) => (await portOn(p, '127.0.0.1')) || (await portOn(p, '::1'));
 let vite = null, browser = null, profile = null;
 async function teardown() {
   try { await browser?.close(); } catch { try { browser?.process()?.kill('SIGKILL'); } catch { /* */ } }
@@ -111,7 +113,7 @@ if (!(await takeSlot())) { console.error(`film: SLOT-NOT-AVAILABLE within ${WAIT
 let exitCode = 0;
 try {
   mkdirSync(runDir, { recursive: true });
-  vite = spawn('nice', ['-n', '10', 'npx', 'vite', '--port', String(PORT), '--strictPort'], { cwd: REPO, stdio: 'ignore', detached: true });
+  vite = spawn('nice', ['-n', '10', 'npx', 'vite', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: REPO, stdio: 'ignore', detached: true });
   for (let i = 0; i < 240 && !(await portOpen(PORT)); i++) await sleep(250);
   if (!(await portOpen(PORT))) throw new Error(`vite did not open port ${PORT}`);
 
@@ -136,7 +138,7 @@ try {
   page.on('console', (m) => { if (m.type() === 'error') run.console.push({ frame: current, text: m.text().slice(0, 400) }); });
   page.on('pageerror', (e) => run.console.push({ frame: current, text: 'pageerror: ' + String(e).slice(0, 400) }));
 
-  await page.goto(`http://localhost:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  await page.goto(`http://127.0.0.1:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction('window.__READY__ === true', { timeout: 240000, polling: 500 });
   await sleep(6000);   // people and the deferred variety stream in behind the first frame
   run.bootSeconds = Math.round((Date.now() - t0) / 1000);
