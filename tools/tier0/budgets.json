@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "about": "Tier 0 asset budgets, read from files only (tools/tier0/budgets.mjs). Per-asset caps, the summed resident-texture ledger and the summed shipped-size ledger. Line figures are the plan's estimates; the totals are the caps. Paths are repo-relative prefixes (no globs).",
+  "exit": "M1",
+  "perAsset": {
+    "hero": {
+      "about": "Brea as worn: the body plus one outfit or armour rung, LOD 0.",
+      "body": "public/models/hero/brea.glb",
+      "outfitPrefixes": ["public/models/hero/outfit-", "public/models/armory/armor-"],
+      "maxTriangles": 60000,
+      "maxDraws": 6
+    },
+    "npc": {
+      "about": "Near-tier person (LOD 0 meshes plus any unsuffixed mesh such as a shadow caster). Atlas carriers and the clip pack are not bodies.",
+      "prefix": "public/models/npc/",
+      "notBodies": ["public/models/npc/atlas-", "public/models/npc/npc-clips"],
+      "maxTriangles": 30000,
+      "maxDraws": 4
+    },
+    "instruments": {
+      "about": "Each Instrument model needs a size class; the caps are per class.",
+      "prefix": "public/models/instruments/",
+      "classOf": { "peg": "small", "plumb": "small", "tiller": "medium" },
+      "maxTriangles": { "small": 25000, "medium": 50000, "large": 80000, "colossus": 150000 }
+    },
+    "textures": {
+      "about": "Largest edge of any shipped texture. Uncompressed textures stay at 1024 until KTX2 (M0.10) is in the build; KTX2 textures may be 2048.",
+      "maxEdgeUncompressed": 1024,
+      "maxEdgeKtx2": 2048
+    }
+  },
+  "resident": {
+    "about": "Resident texture memory if every shipped texture is resident at once (no streaming exists yet), identical images counted once. RGBA8 with mips for PNG/JPEG/WebP, 8 bpp with mips for KTX2. Textures built at runtime (sky, LUTs, UI canvases) are not on disk and are not counted.",
+    "capMb": 175,
+    "lines": [
+      { "id": "brea", "label": "Brea: body, outfits and rungs", "prefixes": ["public/models/hero/brea", "public/models/hero/outfit-", "public/models/armory/armor-"], "estimateMb": 25 },
+      { "id": "npc", "label": "people: heads, bodies and outfit atlases", "prefixes": ["public/models/npc/"], "estimateMb": 39 },
+      { "id": "instruments", "label": "Instruments", "prefixes": ["public/models/instruments/"], "estimateMb": 19 },
+      { "id": "ground", "label": "ground layers and far-field tiles", "prefixes": ["public/textures/ground/"], "estimateMb": 27 },
+      { "id": "rock", "label": "rock and landmarks", "prefixes": ["public/models/landmarks/"], "estimateMb": 16 },
+      { "id": "props", "label": "weapons and props", "prefixes": ["public/models/hero/kit/", "public/models/armory/"], "estimateMb": 6 },
+      { "id": "other", "label": "everything else on disk", "prefixes": [""], "estimateMb": 0 }
+    ]
+  },
+  "shipped": {
+    "about": "Bytes that ship: public/ (tracked + untracked-not-ignored) plus the built JS and CSS. With no region streaming yet, the first load is everything the game can fetch at boot, so the static first-load figure is the whole of it; the boot, when it runs, measures what was actually transferred.",
+    "firstLoadCapMb": 60,
+    "totalCapMb": { "M1": 110, "M2": 165, "M3": 220, "M4": 275, "M5": 330 },
+    "lines": [
+      { "id": "brea", "label": "Brea: model, outfit, clips", "prefixes": ["public/models/hero/brea", "public/models/hero/outfit-"], "estimateMb": 10 },
+      { "id": "rungs", "label": "armour rungs", "prefixes": ["public/models/armory/armor-"], "estimateMb": 5 },
+      { "id": "npcModels", "label": "people: models and clips", "prefixes": ["public/models/npc/"], "excludePrefixes": ["public/models/npc/atlas-"], "estimateMb": 14 },
+      { "id": "npcAtlases", "label": "people: outfit atlases", "prefixes": ["public/models/npc/atlas-"], "estimateMb": 18 },
+      { "id": "instruments", "label": "Instruments", "prefixes": ["public/models/instruments/"], "estimateMb": 12 },
+      { "id": "ground", "label": "ground layers and far-field tiles", "prefixes": ["public/textures/ground/"], "estimateMb": 12 },
+      { "id": "rock", "label": "rock and landmarks", "prefixes": ["public/models/landmarks/"], "estimateMb": 10 },
+      { "id": "audio", "label": "audio", "prefixes": ["public/audio/"], "estimateMb": 8 },
+      { "id": "code", "label": "code, fonts, UI", "prefixes": ["dist:", "public/fonts/", "public/favicon"], "estimateMb": 7 },
+      { "id": "other", "label": "everything else", "prefixes": [""], "estimateMb": 0 }
+    ]
+  }
+}

@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "test": "node tools/gates.mjs",
     "gates": "node tools/gates.mjs",
+    "tier0": "node tools/tier0/run.mjs",
     "measure": "node tools/measure-machines.mjs",
     "budgets": "node tools/budgets.mjs",
     "optimize": "node tools/optimize.mjs",

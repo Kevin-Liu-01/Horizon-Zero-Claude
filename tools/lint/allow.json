@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "about": "Exemptions for the Tier 0 name lint (tools/tier0/namelint.mjs). The term list itself is private and is never in this repo. Only engine identifiers and paths are listed here; nothing player-visible may use them.",
+  "identifiers": {
+    "about": "Engine identifiers kept as internal names. In code, a listed term that is one of `words` is exempt wherever it appears in an identifier; `exact` names are exempt as whole identifiers. In a string literal, `exact` names are exempt when the string is exactly that name, and `words` when the string is an id or path with no spaces ('trap-x', 'status/x.ogg'); prose strings are never exempt.",
+    "words": ["machines", "machine", "tear", "impact", "fire", "freeze", "shock"],
+    "exact": ["isInTallGrass"],
+    "apiStrings": ["sawtooth"],
+    "apiAbout": "Platform API values that happen to spell a listed term: a string literal that is exactly one of these is exempt (Web Audio OscillatorNode.type)."
+  },
+  "paths": {
+    "about": "Path segments exempt from the FILE-NAME check only (their contents are still linted).",
+    "segments": ["src/entities/machines/"]
+  },
+  "deferred": {
+    "about": "Files that keep listed terms by plan until a named step removes or rewrites them. Their hits are counted and printed as DEFERRED, never as PASS, and do not fail Tier 0 until that step lands.",
+    "entries": [
+      { "path": "tools/gates.r5.carried.mjs", "until": "R4b", "why": "the carried gate file is cut to the kept-stack rows at R4b" },
+      { "path": "src/studio/", "until": "R4b", "why": "the photo studio is deleted at R4b, after the kept-stack rows are re-staged on the turntable" }
+    ]
+  }
+}
