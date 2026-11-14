@@ -33,7 +33,7 @@ import { Document } from '@gltf-transform/core';
 import {
   ROOT, srcRoot, UBC_DIR, readGltf, cleanDoc, nodeByName, addChain, jointIndex, jointPos, writeSkinned,
   hex, noise3, v3,
-} from '../lib/face.mjs';
+} from '../lib/human/face.mjs';
 import { CHAINS, BODY_HEIGHT } from '../brea.mjs';
 
 export const LANE = 'hero-body';

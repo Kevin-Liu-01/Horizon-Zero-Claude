@@ -16,7 +16,7 @@
  */
 import path from 'node:path';
 import * as THREE from 'three';
-import { readGltf, cleanDoc, UBC_DIR, srcRoot, io } from './kit/face.mjs';
+import { readGltf, cleanDoc, UBC_DIR, srcRoot, io } from '../../lib/human/face.mjs';
 import { checkProvenance, GENERATOR } from '../../../lib/glb.mjs';
 import { Retargeter } from '../../../../../src/entities/anim/retargeter.js';
 import { UAL_TO_UBC, UBC_CONTACTS } from '../../../../../src/entities/anim/rigs/ubc.js';

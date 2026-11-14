@@ -10,7 +10,7 @@
  * re-cut MCO islands; pieces with `trim: true` map straight into the trim band.
  */
 import { Field, V, clamp, emptyPart, gridInto, mix, recomputeNormals, sstep } from './part.mjs';
-import { noise3 } from '../../lib/face.mjs';
+import { noise3 } from '../../lib/human/face.mjs';
 
 export const TAU = Math.PI * 2;
 

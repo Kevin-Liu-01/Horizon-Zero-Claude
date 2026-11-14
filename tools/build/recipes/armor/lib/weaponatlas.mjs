@@ -11,7 +11,7 @@
  * Long cells run along u: a shaft's length maps to u, its round to v.
  */
 import { Trim, fbm, paintAtlas } from './atlas.mjs';
-import { noise3, hex } from '../../lib/face.mjs';
+import { noise3, hex } from '../../lib/human/face.mjs';
 import { clamp, mix, sstep } from './part.mjs';
 
 const W = 1024;

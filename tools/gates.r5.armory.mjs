@@ -565,7 +565,7 @@ function dE2000(c1, c2) {
 const hexRGB = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 /** A GLB's skinned mesh + its base colour texture decoded (node; a runner's reading of the shipped file). */
 async function glbRead(rel) {
-  const { io } = await import(path.join(ROOT, 'tools/build/recipes/lib/face.mjs'));
+  const { io } = await import(path.join(ROOT, 'tools/build/recipes/lib/human/face.mjs'));
   const { createRequire } = await import('node:module');
   const sharp = createRequire(path.join(ROOT, 'package.json'))('sharp');
   const doc = await (await io()).read(path.join(ROOT, rel));
@@ -585,7 +585,7 @@ const A_STARTER_CUT = {
   check: async () => {
     const out = {};
     const P1 = await import(path.join(ROOT, 'tools/build/recipes/outfit-pan-1.mjs'));
-    const { jointPos } = await import(path.join(ROOT, 'tools/build/recipes/lib/face.mjs'));
+    const { jointPos } = await import(path.join(ROOT, 'tools/build/recipes/lib/human/face.mjs'));
     const base = await P1.panBase();
     await P1.panLayout(base.sheetParts, base.trim, base.W, base.H);      // the packed uvs the shipped atlas is painted on
     const parts = base.parts, by = (s) => parts.filter((p) => p.slot === s);

@@ -15,7 +15,7 @@
  * Animation Library 1 + 2. Everything else is procedural. Deterministic: no clocks, no Math.random.
  */
 import path from 'node:path';
-import { ROOT } from './lib/kit/face.mjs';
+import { ROOT } from '../lib/human/face.mjs';
 import { ARCHETYPES } from './lib/archetypes.mjs';
 import { buildNpc } from './lib/human.mjs';
 import { buildFactionAtlas, buildHairAtlas } from './lib/atlas.mjs';

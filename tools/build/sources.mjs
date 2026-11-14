@@ -11,7 +11,7 @@
  *
  * `<dir>` is the lock entry's `dir` (default: the LICENSES.json row id). The
  * four human sources keep the Round-5 proof's short layout, which hero-body's
- * recipes (`tools/build/recipes/lib/face.mjs` srcRoot) read verbatim (W0b fix
+ * recipes (`tools/build/recipes/lib/human/face.mjs` srcRoot) read verbatim (W0b fix
  * round 1; the row-id layout broke them):
  *
  *   row ubc-standard          -> r5-src/ubc/   (Base Characters/…, Hairstyles/…)

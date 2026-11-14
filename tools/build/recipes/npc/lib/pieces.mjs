@@ -9,8 +9,8 @@
  *   surface weights copied from the nearest body vertex (a capelet on the shoulders, a strap)
  *   hanging weights by height on the trunk, then down a dyn_ chain (an apron's flap, a cloak)
  */
-import { v3, smooth, polyline, noise3 } from './kit/face.mjs';
-import { fixWinding } from './kit/wrap.mjs';
+import { v3, smooth, polyline, noise3 } from '../../lib/human/face.mjs';
+import { fixWinding } from '../../lib/human/wrap.mjs';
 import { emptyGeo, blendSkin, recomputeGeoNormals } from './geo.mjs';
 
 const { sub, add, mul, dot, cross, norm } = v3;

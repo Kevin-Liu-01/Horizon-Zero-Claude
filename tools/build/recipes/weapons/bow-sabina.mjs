@@ -13,7 +13,7 @@
  */
 import path from 'node:path';
 import { Document } from '@gltf-transform/core';
-import { ROOT, writeSkinned } from '../lib/face.mjs';
+import { ROOT, writeSkinned } from '../lib/human/face.mjs';
 import { weaponTrim } from '../armor/lib/weaponatlas.mjs';
 import { BOW, BOW_TIP, G, arrowGeo, bowGeo, merge, stave, stringGeo } from '../armor/lib/weapongeo.mjs';
 

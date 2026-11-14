@@ -18,7 +18,7 @@
 import path from 'node:path';
 import {
   ROOT, srcRoot, UBC_DIR, readGltf, cleanDoc, nodeByName, addChain, jointIndex, jointPos, writeSkinned, v3,
-} from '../lib/face.mjs';
+} from '../lib/human/face.mjs';
 import { CHAINS, BODY_HEIGHT } from '../brea.mjs';
 import { panBase } from '../outfit-pan-1.mjs';
 import { G, LANCE, basisY, bowGeo, lanceGeo, lathe, merge, place, stringGeo } from './lib/weapongeo.mjs';

@@ -8,7 +8,7 @@ import path from 'node:path';
 import { EXTMeshoptCompression } from '@gltf-transform/extensions';
 import { dedup, prune, quantize, reorder, unpartition } from '@gltf-transform/functions';
 import { MeshoptEncoder } from 'meshoptimizer';
-import { io, writeSkinned, nodeByName, m4, matToQuat } from '../../lib/face.mjs';
+import { io, writeSkinned, nodeByName, m4, matToQuat } from '../../lib/human/face.mjs';
 import { checkProvenance, GENERATOR } from '../../../lib/glb.mjs';
 import { mergeParts } from './part.mjs';
 

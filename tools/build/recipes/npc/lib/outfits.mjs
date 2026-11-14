@@ -16,8 +16,8 @@
 import { PAN, HOLDS } from './archetypes.mjs';
 import * as P from './pieces.mjs';
 import { uvRect } from './atlas.mjs';
-import { clothTail } from './kit/wrap.mjs';
-import { bun, noise3, smooth } from './kit/face.mjs';
+import { clothTail } from '../../lib/human/wrap.mjs';
+import { bun, noise3, smooth } from '../../lib/human/face.mjs';
 import { ATLAS } from './atlas.mjs';
 
 const mix = (a, b, t) => a + (b - a) * t;

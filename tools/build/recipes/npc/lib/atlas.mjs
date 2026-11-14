@@ -16,10 +16,10 @@
  */
 import sharp from 'sharp';
 import path from 'node:path';
-import { MCO_DIR, readGltf, cleanDoc, noise3, smooth, srcRoot, writeSkinned } from './kit/face.mjs';
-import { webp } from './kit/skin.mjs';
-import { paintClothPanel, paintFrayEnd, WRAP_ATLAS } from './kit/wrap.mjs';
-import { paintCoilTile, paintCoilFringe, paintLockTile, paintLashes } from './kit/hair.mjs';
+import { MCO_DIR, readGltf, cleanDoc, noise3, smooth, srcRoot, writeSkinned } from '../../lib/human/face.mjs';
+import { webp } from '../../lib/human/skin.mjs';
+import { paintClothPanel, paintFrayEnd, WRAP_ATLAS } from '../../lib/human/wrap.mjs';
+import { paintCoilTile, paintCoilFringe, paintLockTile, paintLashes } from '../../lib/human/hair.mjs';
 import { Document } from '@gltf-transform/core';
 
 export const W = 1024;

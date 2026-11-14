@@ -7,7 +7,7 @@
  * wrapped bands crossing the chest, a rope belt, wool puttees to the knee.
  */
 import path from 'node:path';
-import { ROOT, MCO_DIR, hex, srcRoot } from '../lib/face.mjs';
+import { ROOT, MCO_DIR, hex, srcRoot } from '../lib/human/face.mjs';
 import { KEEP_TORSO, cloth, panBase, panFinish, panLayout, PAN_FIT, PAN_SET, seam, salted } from '../outfit-pan-1.mjs';
 import { Trim, fbm, loadRaw, paintAtlas } from './lib/atlas.mjs';
 import { orientOut, ring, strapAlong, TAU } from './lib/garment.mjs';

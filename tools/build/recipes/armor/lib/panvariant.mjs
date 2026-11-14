@@ -6,7 +6,7 @@
  * extra GPU texture.
  */
 import path from 'node:path';
-import { ROOT } from '../../lib/face.mjs';
+import { ROOT } from '../../lib/human/face.mjs';
 import { panBase, panLayout, panFinish, PAN_SET, PAN_FIT } from '../../outfit-pan-1.mjs';
 import { outfitDoc, writeOutfit } from './output.mjs';
 import { recomputeNormals } from './part.mjs';

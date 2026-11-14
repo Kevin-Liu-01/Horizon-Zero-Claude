@@ -8,7 +8,7 @@
 import { panVariant } from './lib/panvariant.mjs';
 import { drapeInto, orientOut, rigid, TAU } from './lib/garment.mjs';
 import { emptyPart, Field, V, mix } from './lib/part.mjs';
-import { ROOT } from '../lib/face.mjs';
+import { ROOT } from '../lib/human/face.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/armory/armor-pan-2.glb'];

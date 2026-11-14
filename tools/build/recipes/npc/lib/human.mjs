@@ -23,15 +23,15 @@ import { joinPrimitives } from '@gltf-transform/functions';
 import {
   srcRoot, UBC_DIR, HAIR_DIR, MCO_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex, stripAlong,
   findLandmarks, GRADED, faceField, applyField, recomputeNormals, refineEdges, smoothNormals, smoothPositions, smooth, noise3, profileMask, iou, writeSkinned,
-} from './kit/face.mjs';
-import { relayoutSkinUV, eyeOpening, TriGrid, triSoup, creases, colourZones, scarSeam } from './kit/skin.mjs';
-import { WRAP_ATLAS, headForm, clothStack, ribbon, ellipsoidForm, underShell, clothTail, vertexAO, rng } from './kit/wrap.mjs';
-import { woundHeadwrap, joinGeos, DEG, rising, compactGeo } from './kit/wrap-head.mjs';
-import { lashCard, scatterAnchors, coilCards, coilField, coilSampler, hairlineLayer, coilTuft } from './kit/hair.mjs';
+} from '../../lib/human/face.mjs';
+import { relayoutSkinUV, eyeOpening, TriGrid, triSoup, creases, colourZones, scarSeam } from '../../lib/human/skin.mjs';
+import { WRAP_ATLAS, headForm, clothStack, ribbon, ellipsoidForm, underShell, clothTail, vertexAO, rng } from '../../lib/human/wrap.mjs';
+import { woundHeadwrap, joinGeos, DEG, rising, compactGeo } from '../../lib/human/wrap-head.mjs';
+import { lashCard, scatterAnchors, coilCards, coilField, coilSampler, hairlineLayer, coilTuft } from '../../lib/human/hair.mjs';
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, browLines, remapEyeUV, primFromGeo,
   cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt, hairShape,
-} from './kit/skin-human.mjs';
+} from '../../lib/human/skin-human.mjs';
 import { emptyGeo, primToGeo, compact, join, filterTris, clipAbsX, clipTopY, soupOf, simplify, simplifySloppy, nearestSkin, dye, lin, tris, recomputeGeoNormals } from './geo.mjs';
 import { ATLAS, uvRect, mcoUV, NEUTRAL, HAIR_NEUTRAL } from './atlas.mjs';
 import { OUTFITS } from './outfits.mjs';

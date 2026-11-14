@@ -18,7 +18,7 @@
  * G = roughness, B = metal.
  */
 import sharp from 'sharp';
-import { noise3 } from '../../lib/face.mjs';
+import { noise3 } from '../../lib/human/face.mjs';
 import { clamp, sstep } from './part.mjs';
 
 export const fbm = (x, y, z, oct = 3) => {

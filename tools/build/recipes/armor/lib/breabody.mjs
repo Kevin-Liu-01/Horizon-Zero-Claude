@@ -13,8 +13,9 @@
  * hide bit, so a cut that bares the arms (C-06's sleeveless Starter) shows them without a rebuild of brea.glb.
  */
 import path from 'node:path';
+import { zstdDecompressSync } from 'node:zlib';
 import sharp from 'sharp';
-import { ROOT, io } from '../../lib/face.mjs';
+import { ROOT, io } from '../../lib/human/face.mjs';
 
 const BREA = () => path.join(ROOT, 'public/models/hero/brea.glb');
 
@@ -25,6 +26,27 @@ const mul4 = (a, b) => {
 };
 
 let _cache = null;
+
+/**
+ * An image's RGB pixels. Since M0.10 the shipped brea.glb carries KTX2: its body colour atlas is RGBA8 + Zstandard
+ * (tools/build/pipeline/ktx2.mjs KEEP_RGBA8), which sharp cannot read, so level 0 is unpacked here. Any other KTX2
+ * payload (UASTC, ETC1S) is refused by name rather than read wrong.
+ */
+export async function rgbOf(bytes) {
+  const b = Buffer.from(bytes);
+  if (b.length > 12 && b.toString('latin1', 1, 7) === 'KTX 20') {
+    const vk = b.readUInt32LE(12), width = b.readUInt32LE(20), height = b.readUInt32LE(24), scheme = b.readUInt32LE(44);
+    if (vk !== 37 && vk !== 43) throw new Error(`[breabody] KTX2 vkFormat ${vk} is not RGBA8: cannot read the body albedo`);
+    const off = Number(b.readBigUInt64LE(80)), len = Number(b.readBigUInt64LE(88));
+    let px = b.subarray(off, off + len);
+    if (scheme === 2) px = zstdDecompressSync(px);
+    else if (scheme !== 0) throw new Error(`[breabody] KTX2 supercompression ${scheme} not handled`);
+    const data = Buffer.alloc(width * height * 3);
+    for (let i = 0; i < width * height; i++) { data[i * 3] = px[i * 4]; data[i * 3 + 1] = px[i * 4 + 1]; data[i * 3 + 2] = px[i * 4 + 2]; }
+    return { data, info: { width, height } };
+  }
+  return sharp(b).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+}
 
 /**
  * @param doc the recipe's glTF document (its skin's joint names give the indices)
@@ -70,7 +92,7 @@ export async function breaBody(doc) {
     const T = prim.getMaterial()?.getBaseColorTexture();
     const lum = new Float32Array(n).fill(1);
     if (T && prim.getAttribute('TEXCOORD_0')) {
-      const { data, info } = await sharp(Buffer.from(T.getImage())).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      const { data, info } = await rgbOf(T.getImage());
       const UV = prim.getAttribute('TEXCOORD_0'), uv = [0, 0];
       for (let i = 0; i < n; i++) {
         UV.getElement(i, uv);

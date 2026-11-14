@@ -7,10 +7,10 @@
  *
  * OUTPUT public/models/hero/brea.glb — ONE skeleton (UBC 65 joints + the dyn_ chains below) and
  * exactly TWO skinned meshes:
- *   Brea_Skin      body + eyes on one 1024² skin atlas (lib/skin.mjs: islands re-packed by
+ *   Brea_Skin      body + eyes on one 1024² skin atlas (lib/human/skin.mjs: islands re-packed by
  *                  density, the face twice the source's texels, the eyes in their own patch)
  *   Brea_HairWrap  wound cloth, coil cards and lash cards on one alpha-cut,
- *                  double-sided 512² atlas with COLOR_0 (lib/wrap.mjs, lib/hair.mjs)
+ *                  double-sided 512² atlas with COLOR_0 (lib/human/wrap.mjs, lib/human/hair.mjs)
  *
  * dyn_ chains (the kept spring solver discovers them by name, class by regex):
  *   dyn_hairKnotTail_01..04 + _end   Head      class hair   (A33-hair-bounce)
@@ -47,15 +47,15 @@ import {
   ROOT, srcRoot, UBC_DIR, HAIR_DIR, MCO_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex,
   findLandmarks, GRADED, faceField, applyField,
   recomputeNormals, refineEdges, smoothNormals, smoothPositions, smooth, profileMask, iou, rle, writeSkinned, v3,
-} from './lib/face.mjs';
-import { relayoutSkinUV, saltPaste, scarSeam, inkDots, freckles, eyeOpening, TriGrid, triSoup } from './lib/skin.mjs';
-import { WRAP_ATLAS } from './lib/wrap.mjs';
-import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/wrap-head.mjs';
-import { lashCard } from './lib/hair.mjs';
+} from './lib/human/face.mjs';
+import { relayoutSkinUV, saltPaste, scarSeam, inkDots, freckles, eyeOpening, TriGrid, triSoup } from './lib/human/skin.mjs';
+import { WRAP_ATLAS } from './lib/human/wrap.mjs';
+import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/human/wrap-head.mjs';
+import { lashCard } from './lib/human/hair.mjs';
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, browLines, remapEyeUV,
   cullUnderWrap, cullEyeBacks, cullEyeUnderLids, reshapeEars, appendCollarLiner, outfitSkinSampler, bakeThinness, bakeZones, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
-} from './lib/skin-human.mjs';
+} from './lib/human/skin-human.mjs';
 
 export const LANE = 'hero-body';
 export const OUTPUTS = ['public/models/hero/brea.glb', 'public/models/hero/brea-clips-ual2.glb'];
@@ -438,7 +438,7 @@ export async function build({ out = ROOT } = {}) {
   for (const [k, c] of Object.entries(CHAINS)) chainIdx[k] = addChain(base, c.names, c.points, c.parent);
   const head = jointIndex(base, 'Head');
 
-  // ---- the wrap: wound cloth on the measured head form (lib/wrap.mjs)
+  // ---- the wrap: wound cloth on the measured head form (lib/human/wrap.mjs)
   const skinJ = bodyPrim.getAttribute('JOINTS_0'), skinW = bodyPrim.getAttribute('WEIGHTS_0');
   const isEar = (p) => Math.abs(p[0]) > 0.0735 && p[1] < 1.70 && p[2] < 0.03;
   const headKeep = (() => {
@@ -690,7 +690,7 @@ async function buildClips(SRC, out) {
   const cand = [path.join(SRC, 'ual2/UAL2_Standard.glb'), path.join(SRC, 'UAL2_Standard.glb')];
   const file = cand.find((f) => existsSync(f));
   if (!file) throw new Error('[brea] UAL2_Standard.glb not found under the sources (ual2/)');
-  const { io } = await import('./lib/face.mjs');
+  const { io } = await import('./lib/human/face.mjs');
   const doc = await (await io()).read(file);
   const root = doc.getRoot();
   for (const a of root.listAnimations()) {

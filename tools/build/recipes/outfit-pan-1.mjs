@@ -34,7 +34,7 @@ import path from 'node:path';
 import {
   ROOT, srcRoot, UBC_DIR, MCO_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex,
   newGeo, appendGeo, stripAlong, bun, hex, noise3, jointPos,
-} from './lib/face.mjs';
+} from './lib/human/face.mjs';
 import { CHAINS } from './brea.mjs';
 import { Field, V, clamp, collapseShort, compact, conform, cutTris, emptyPart, mix, partFromPrim, recomputeNormals, smoothSkin, sstep } from './armor/lib/part.mjs';
 import { Trim, fbm, loadRaw, packAtlas, paintAtlas } from './armor/lib/atlas.mjs';

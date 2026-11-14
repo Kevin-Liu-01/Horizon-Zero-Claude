@@ -4,8 +4,8 @@
  * RGBA. Node only, deterministic.
  */
 import { MeshoptSimplifier } from 'meshoptimizer';
-import { smooth, v3 } from './kit/face.mjs';
-import { TriGrid } from './kit/skin.mjs';
+import { smooth, v3 } from '../../lib/human/face.mjs';
+import { TriGrid } from '../../lib/human/skin.mjs';
 
 export const emptyGeo = () => ({ pos: [], nrm: [], uv: [], jnt: [], wgt: [], col: [], idx: [] });
 
