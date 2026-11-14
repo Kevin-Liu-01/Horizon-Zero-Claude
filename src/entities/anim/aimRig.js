@@ -1857,6 +1857,13 @@ export class AimRig {
    */
   _armContinuity(aimRan) {
     if (!this.T.armFlow?.armStep || !this._armCapN) { this._afEng = false; return; }
+    /* M0 debt, A107's aim stow (M1.3a): a lance HOLSTER owns the right arm on the melee layer's own path,
+     * which carries the R8 elbow bound (meleeLayer `_pathOn`). RMB with the lance out (the quick stow) runs
+     * the aim layer under that holster, and this limiter then held the arm on last step's guard pose: the
+     * elbow 0.30-0.38 m behind the head plane at shoulder height for about ten steps (A107 0.304 idle,
+     * 0.358 jog, bar 0.10). The KeyB holster was never limited; the quick stow is not either now. The
+     * lance's draw out of a lowered bow keeps its limited hand-over below. */
+    if (this.melee?._pathOn && this.melee._prevStance === 'holster' && this.melee.w > 0.5) { this._afLimK = 1; return; }
     // (after the aim layer stops it carries the arm at most `tail` s; a layer that
     // wants the arm for itself takes it at once: the alidade, a climb, a ride, a death)
     if (!aimRan) {
