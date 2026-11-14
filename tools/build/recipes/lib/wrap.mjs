@@ -681,7 +681,7 @@ function creaseSet(seed, count, { sigma = [0.03, 0.09], amp = [0.0003, 0.0009], 
  * Plain weave (warp period 3 px, weft 4 px, per-thread slub), long tension creases, drag
  * folds, a soft frayed selvedge in the alpha at both V edges, optionally a selvedge stripe.
  */
-export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, seed = 1, creases = 6, sigma, amp, mmU = 0.65, mmV = 0.47, fringe = 3, stripe = null, stripeAt = 9, rough = 0.93, shadeK = 1, foldK = 1.5, weave = 1, creaseWander = 1, drag = 1 } = {}) {
+export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, seed = 1, creases = 6, sigma, amp, mmU = 0.65, mmV = 0.47, fringe = 3, stripe = null, stripeAt = 9, rough = 0.93, shadeK = 1, foldK = 1.5, weave = 1, creaseWander = 1, drag = 1, stitch = null, fade = 0 } = {}) {
   const [x0, y0, w, h] = rect;
   const P = period || w;
   const D = hex(dye), D2 = hex(dye2 || dye), D3 = hex(dye3 || dye);
@@ -742,6 +742,24 @@ export function paintClothPanel(buf, { rect, period, W = 512, dye, dye2, dye3, s
       const breakK = 0.45 + 0.55 * warpTone[px];
       r = mix(r, S[0] * shade, breakK); g = mix(g, S[1] * shade, breakK); b = mix(b, S[2] * shade, breakK);
     }
+    // fix round 3 (R69, Kevin's Nov 13 turnaround: "deep violet ... faded at the folds"): the dye bleaches on the fold crowns the sun
+    // and the wear reach, toward a dusty grey-lilac, never white
+    if (fade > 0) { const fk = fade * smooth(0.55, 0.95, lift) * (0.6 + 0.4 * drift2); const gy = (r + g + b) / 3; r = mix(r, gy * 1.18 + 10, fk); g = mix(g, gy * 1.08 + 8, fk); b = mix(b, gy * 1.22 + 12, fk); }
+    // fix round 3 (R69: "thin red-orange thread stitching across the folds"): running stitches of a red-orange thread, a texel wide,
+    // dashes and gaps of their own length, along the turn (rows that wander with the cloth) and a few that cross it on a slant;
+    // each stitch stands a little proud (height) and shades with the fold under it
+    let st = 0;
+    if (stitch) for (const s of stitch.rows) {
+      const yc = s.v * h + (s.slope || 0) * (px - P / 2) + (s.amp || 1.5) * Math.sin(TAU * (px / P * (s.k || 2) + (s.ph || 0)));
+      const d = Math.abs(y - yc);
+      if (d > 1.1) continue;
+      const per = (s.len || 5) + (s.gap || 3), ph = (px + (s.off || 0) + 997) % per, si = Math.floor((px + (s.off || 0) + 997) / per);
+      if (ph >= (s.len || 5)) continue;
+      // a stitch here and there pulled out or never sewn: the line runs and breaks like hand work
+      const hs = Math.sin(si * 12.9898 + s.v * 78.233 + seed * 3.7) * 43758.5453; if (hs - Math.floor(hs) < 0.2) continue;
+      st = Math.max(st, (1 - smooth(0.35, 1.1, d)) * (ph < 0.6 || ph > (s.len || 5) - 0.6 ? 0.55 : 1));
+    }
+    if (st > 0) { const T = hex(stitch.color || '#B8402C'), k = 0.9 * st, sh2 = 0.82 + 0.25 * lift; r = mix(r, T[0] * sh2, k); g = mix(g, T[1] * sh2, k); b = mix(b, T[2] * sh2, k); }
     const hemK = 1 - 0.18 * (1 - smooth(fringe, fringe + 5, dEdge));
     r *= hemK; g *= hemK; b *= hemK;
     // the woven alpha edge: a hem worn soft, not a comb. The edge wanders slowly (the hand-cut hem),

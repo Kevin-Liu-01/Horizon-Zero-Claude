@@ -22,7 +22,7 @@
  *     `bakeThinness`; 1 at <= 5 mm of tissue, 0 at >= 25 mm), tinted (1.0, 0.36, 0.20) x 0.6, seen when the sun is behind;
  *   - C-02: TWO GGX lobes, the second at x0.55 roughness and weight 0.15, under a cavity specular occlusion (AO^2 of the baked
  *     map), and the salt paste's specular x0.3 (its texels are the only ones bright enough to be paste: albedo luminance);
- *   - C-02: a 128^2 tiling micro-pore normal at UV x24 on the face (the `_CALZONE` x weight, x1.2: D-detail-sweep), fading out from 1.5 to 3 m;
+ *   - C-02: a 128^2 tiling micro-pore normal at UV x24 on the face (the `_CALZONE` x weight, x1.3: D-detail-sweep, 0.0115 at 1.0 and 0.0165 at 1.5 against the 0.012 floor), fading out from 1.5 to 3 m;
  *   - C-03: the cornea (`_CALZONE` y) at roughness 0.04 and the lower lid's wet line (z) at 0.10, and two analytic SKY-WINDOW lobes on the
  *     cornea in the sky's hue, faded out with the sky's luminance (gone at night): the bright sky round the sun (the catch-light
  *     in the iris) and the horizon sky, Fresnel-weighted (the wet rim along the cornea's outline in profile).
@@ -138,7 +138,10 @@ void RE_Direct_CalSkin( const in IncidentLight directLight, const in vec3 geomet
 		float rimL = dot( directLight.direction, -geometryViewDir ) * 0.5 + 0.5;
 		// (only where the sun grazes: the shadow map's normal bias leaves a face turned from the sun unshadowed, and a rim there
 		// lit the whole cheek red in a back light)
-		diffuseIrr += c0 * ( 0.55 * calSkinK * sh * rimV * rimV * rimV * rimL * rimL * PI * smoothstep( -0.45, 0.05, nl ) );
+		// fix round 3 (A-hero-rim r3: the body's edge read 0.95 x her interior in a back light): LOOK's formula is the SUN's light,
+		// `sun x calShadow x kRim x ...`, not the sun times the albedo; through the dark skin's albedo it was a tenth of the spec. It is the
+		// sun's colour now, warmed a little by the skin it passes through
+		reflectedLight.directSpecular += c0 * vec3( 1.0, 0.80, 0.66 ) * ( 0.55 * calSkinK * sh * rimV * rimV * rimV * rimL * rimL * smoothstep( -0.45, 0.05, nl ) );
 	}
 	#endif
 	reflectedLight.directDiffuse += diffuseIrr * BRDF_Lambert( material.diffuseColor );
@@ -202,7 +205,7 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
   const U = {
     calSkinK: { value: 1 }, calThinK: { value: low ? 0 : 1 },
     calWrap: { value: new Vector3(0.40, 0.21, 0.14) }, calEdgeKeep: { value: 0.6 },
-    calLobeK: { value: low ? 0 : 1 }, calDetailK: { value: low || medium ? 0 : 1.2 }, calSkyK: { value: 3.0 }, calWinK: { value: 30 },
+    calLobeK: { value: low ? 0 : 1 }, calDetailK: { value: low || medium ? 0 : 1.3 }, calSkyK: { value: 3.0 }, calWinK: { value: 30 },
     calFlat: { value: new Vector4(0.2, 0.2, 0.2, 0) }, calMicro: { value: microTile() },
   };
   microRefs++;
@@ -224,7 +227,7 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
       .replace('#include <lights_fragment_begin>', `${AO_EARLY}\n#include <lights_fragment_begin>`)
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>${SKY_FRAGMENT}`);
   };
-  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calSkin3`;
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calSkin4`;
   material.userData.calSkin = 1;
   material.userData.calSkinU = U;
   // R59 c / LOOK C-01: the hero fill drops once the scatter carries the shadow side (x0.55; fix round 3, was x0.6: off the live sweep, D-skin-sweep, and three readings a run)
@@ -258,7 +261,9 @@ void RE_Direct_CalCloth( const in IncidentLight directLight, const in vec3 geome
 		float nl = dot( geometryNormal, directLight.direction );
 		float rimV = 1.0 - saturate( dot( geometryNormal, geometryViewDir ) );
 		float rimL = dot( directLight.direction, -geometryViewDir ) * 0.5 + 0.5;
-		reflectedLight.directDiffuse += directLight.color * ( ${kRim.toFixed(2)} * calRimK * rimV * rimV * rimV * rimL * rimL * smoothstep( -0.45, 0.05, nl ) ) * material.diffuseColor;
+		// (fix round 3: the sun's light, as LOOK writes it, not the sun times the dark dye: through the violet's albedo the rim was a tenth
+		// of the spec and A-hero-rim read the wrap the same with it on and off)
+		reflectedLight.directSpecular += directLight.color * ( ${kRim.toFixed(2)} * calRimK * rimV * rimV * rimV * rimL * rimL * smoothstep( -0.45, 0.05, nl ) );
 		${velvet ? 'reflectedLight.directDiffuse += directLight.color * ( 1.6 * calRimK * rimV * rimV * rimV * rimV * saturate( ( nl + 0.5 ) / 1.5 ) ) * BRDF_Lambert( material.diffuseColor );' : ''}
 	}
 	#endif

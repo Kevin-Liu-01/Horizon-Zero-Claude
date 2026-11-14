@@ -48,7 +48,7 @@ import {
   findLandmarks, GRADED, faceField, applyField,
   recomputeNormals, refineEdges, smoothNormals, smoothPositions, smooth, profileMask, iou, rle, writeSkinned, v3,
 } from './lib/face.mjs';
-import { relayoutSkinUV, saltPaste, scarSeam, inkDots, eyeOpening, TriGrid, triSoup } from './lib/skin.mjs';
+import { relayoutSkinUV, saltPaste, scarSeam, inkDots, freckles, eyeOpening, TriGrid, triSoup } from './lib/skin.mjs';
 import { WRAP_ATLAS } from './lib/wrap.mjs';
 import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/wrap-head.mjs';
 import { lashCard } from './lib/hair.mjs';
@@ -337,6 +337,12 @@ export async function build({ out = ROOT } = {}) {
       return !(p[1] > 1.565 && ax < 0.03 && p[2] > 0.07);
     },
   });
+  // fix round 3 (the judges: "the ear rim is faceted", detail sheet 'THE EAR' at 0.26 m): the helix and the lobe, the ear's own outline,
+  // take a second, finer split (edges over 4 mm), paid for by the skin the smock now hides under its collar
+  const refinedEar = refineEdges(bodyPrim, {
+    minLen: 0.004, maxEdges: 70,
+    want: (p) => Math.abs(p[0]) > 0.071 && p[1] > 1.592 && p[1] < 1.70 && p[2] > -0.062 && p[2] < 0.012,
+  });
   // the ear's facets and its pointed helix round off, and so do the last corners of the cheek's outline
   smoothPositions(bodyPrim, {
     iters: 3,
@@ -346,6 +352,11 @@ export async function build({ out = ROOT } = {}) {
       const cheek = 0.35 * smooth(0.05, 0.062, ax) * (1 - smooth(0.086, 0.092, ax)) * smooth(1.545, 1.56, p[1]) * (1 - smooth(1.66, 1.68, p[1])) * smooth(-0.01, 0.01, p[2]);
       return Math.max(ear, cheek);
     },
+  });
+  // (fix round 3: and the ear's outline, with its new rows, rounds off once more on its own: the helix keeps no corner at 0.26 m)
+  smoothPositions(bodyPrim, {
+    iters: 4,
+    weight: (p) => smooth(0.071, 0.076, Math.abs(p[0])) * smooth(1.595, 1.605, p[1]) * (1 - smooth(1.695, 1.705, p[1])) * smooth(-0.07, -0.06, p[2]) * (1 - smooth(0.004, 0.014, p[2])),
   });
   { const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0], m = new Uint8Array(P.getCount()); for (let i = 0; i < m.length; i++) { P.getElement(i, q); m[i] = q[1] > 1.5 ? 1 : 0; } recomputeNormals(bodyPrim, m); }
   headW = vertexWeightOf(bodyPrim, headSet);
@@ -460,9 +471,9 @@ export async function build({ out = ROOT } = {}) {
       // three pleats (5.5 mm deep, peak to peak) until the strip turns down (it opens over u 0.26-0.46), the free strip tapers from
       // halfway (0.10 m, to 0.07 m at the fringe; a taper from the bend cost A-tail-legible a side-view moment in r3), its section is a gentle cup (curl 0.18), its hems are C-05's 4 mm, and each
       // row is skinned over FOUR joints (cubic B-spline), so the stiff-to-free hand-over drapes over two links instead of folding at one
-      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.18, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0085, along: 21, across: 5, rootBack: 0.014,
+      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.489 * S), side: [0.55, 0.65, 0.5], curl: 0.2, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0095, along: 17, across: 6, rootBack: 0.014,
       open: [0.26, 0.46], pleats: 0.00275 / S,
-      rootRows: 4, smoothSkin: 4, hem: 0.004, ripple: 0.0042 },
+      rootRows: 4, smoothSkin: 4, hem: 0.004, ripple: 0.005 },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
     tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012 },
   });
@@ -525,16 +536,24 @@ export async function build({ out = ROOT } = {}) {
     marks: [
       saltPaste({
         y: (X) => yS + 0.004 * (X * X) / 0.004,
-        half: (X) => (0.0041 / S) * (1 - 0.1 * smooth(0.02, 0.058, Math.abs(X))),
+        // fix round 3 (R69: the turnaround's stripe is a narrow dry line, about 6 mm, across the bridge and both cheeks): narrower
+        half: (X) => (0.0033 / S) * (1 - 0.1 * smooth(0.02, 0.058, Math.abs(X))),
         xMax: 0.059,
       }),
       scarSeam({ a: scar.a, b: scar.b, color: [150, 106, 86], w: 0.00064, depth: 0.0005 }),
       inkDots({ dots: [[-0.7075, -0.0445], [-0.6895, -0.0555], [-0.6895, -0.0335]], r: 0.00265, where: (T) => T.X < -0.66 && T.ny > 0.4 }),
+      // fix round 3 (R69, the turnaround's face: "visible pores, freckling"): freckles and sun specks over the cheeks, the nose and the
+      // forehead, thinning toward the jaw and the temples, none on the lips
+      freckles({ density: 0.075, r: [0.0004, 0.001], dark: 0.7, zone: (T) => smooth(1.572, 1.592, T.Y) * (1 - smooth(1.70, 1.716, T.Y)) * smooth(-0.004, 0.018, T.Z) * (1 - smooth(0.05, 0.066, Math.abs(T.X)))
+        * (1 - (1 - smooth(0.024, 0.032, Math.abs(T.X))) * (1 - smooth(1.598, 1.606, T.Y))) * (0.55 + 0.45 * smooth(0.012, 0.04, Math.abs(T.X))) }),
     ],
+    // fix round 3 (R69 and R54: the lit cheek read a saturated orange, Lab C 38-45 at hue 46-52, against the turnaround's deep brown at
+    // C 27-35, hue 35-44): the tone a little redder and less saturated at the same lightness
+    tone: '#81594F',
   });
   // fix round 1 (R54: in the wind the carmine lining was the loudest thing on her; the bible keeps carmine an accent): the violet
   // facing turns back over 38 % of the lining at each selvedge, so a quarter of its width shows carmine
-  const wrapTex = await paintWrapAtlas(base, wrapMat, { facing: 0.38 });
+  const wrapTex = await paintWrapAtlas(base, wrapMat, { facing: 0.43 });
 
   // what faces into the head stays out of a sun behind her (after the paint, which reads the true normals)
   leanInwardNormals(bodyPrim, eyesPrim, { L, eyes });
@@ -576,7 +595,11 @@ export async function build({ out = ROOT } = {}) {
     const outJ = sd.getRoot().listSkins()[0].listJoints().map((jn) => jn.getName());
     return outfitSkinSampler(sn.map((n) => n.getMesh().listPrimitives()[0]), outJ, joints, (q) => q[1] > 1.40 && Math.abs(q[0]) < 0.16 && q[2] > -0.16);
   })();
-  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV: collarUV, seg: 19, reach: 1.01, skinAt: smockSkin, drop: 0.014 });
+  // fix round 3 (A-wrap-closed r3: 81-94 px, az 195 / 180, el 1.2 and az 120, el 0.8, between the lid's lip and the wall): the wall's
+  // foot turns in under the lid's lip as a 14 mm floor (flange), so a steep look down between the lid and the wall meets it whatever
+  // the bowed idle does to them (they ride different bones). The wall stays single-sided: drawn two-sided, its chords between columns,
+  // where they cut through the smock's curve, showed outside it as dark shards
+  const liner = appendCollarLiner(bodyPrim, panTris, { darkUV: collarUV, seg: 19, reach: 1.01, skinAt: smockSkin, drop: 0.014, flange: 0.014 });
   // fix round 2, Nov 12 (LOOK C-01): the tissue's thickness behind each vertex, for the skin light's back-transmission (src/hero/skinLook.js)
   // (the ears only: the lips, the nose wings and the lower lids are thin too, with the mouth, the nostrils and the ball a few mm
   // behind them, but in a back light they glowed as a red nostril and a lit lower lid, which the backlit row forbids)
@@ -596,9 +619,15 @@ export async function build({ out = ROOT } = {}) {
   // the collar stands off the neck: a look down inside it meets skin, never a hole through her, so
   // the neck and the top of the chest stay whatever the normal-ray test says
   const insideCollar = (x, y) => y > 1.40 && Math.abs(x) < 0.112;
+  // fix round 3 (the judges' "black void" at the collar, and R54: in the day front, black jagged shapes stood on the smock's chest under
+  // the collar): skin the normal-ray test covers that ALSO has the smock straight above it (its shoulder, its collar stand) is under the
+  // smock, not inside the opening; in the live pose the smock rides lower than the bind and that skin, painted dark by the collar's
+  // contact shade, came through it. It is hidden now; the neck and the skin in the V, with no smock above them, stay
+  const panGrid = new TriGrid(new Float32Array(panTris), 0.03);
+  const underSmock = (q) => panGrid.cast(q[0], q[1] + 0.002, q[2], 0, 1, 0, 0.12, 0.0001) >= 0;
   {
     const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0];
-    for (let i = 0; i < hideArr.length; i++) { P.getElement(i, q); hideArr[i] = i < skirtFrom && hide[i] && !insideCollar(q[0], q[1]) ? 1 : 0; }
+    for (let i = 0; i < hideArr.length; i++) { P.getElement(i, q); hideArr[i] = i < skirtFrom && hide[i] && (!insideCollar(q[0], q[1]) || underSmock(q)) ? 1 : 0; }
   }
   const buf = root.listBuffers()[0];
   bodyPrim.setAttribute('_HIDEMASK', base.createAccessor().setType('SCALAR').setArray(hideArr).setBuffer(buf));
@@ -643,7 +672,7 @@ export async function build({ out = ROOT } = {}) {
     },
   });
   void wrapTex;
-  return { ...stats, face: { deltas: disp, iou: faceRec.iou, graded6mm: faceRec.graded6mm }, targetHeight: +(BODY_HEIGHT * totalH / rawBodyH).toFixed(5), hidden, clips, refined, totalTop: +allBox.max[1].toFixed(5), parts: wrapped.parts, cardTris: cards.idx.length / 3, culled, eyesCulled, handsCut };
+  return { ...stats, face: { deltas: disp, iou: faceRec.iou, graded6mm: faceRec.graded6mm }, targetHeight: +(BODY_HEIGHT * totalH / rawBodyH).toFixed(5), hidden, clips, refined, refinedEar, totalTop: +allBox.max[1].toFixed(5), parts: wrapped.parts, cardTris: cards.idx.length / 3, culled, eyesCulled, handsCut };
 }
 
 /** The native UAL2 clip pack (see UAL2_CLIPS). */

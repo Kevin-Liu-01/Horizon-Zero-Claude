@@ -569,6 +569,35 @@ export function saltPaste({ y, half, xMax, salt = '#EDEAE2', thick = 0.00085, ce
 }
 
 /**
+ * Fix round 3 (R69, Kevin's Nov 13 turnaround: "deep brown skin with visible pores, freckling and a dusty sheen"): small dark freckles and
+ * sun specks, 0.8-1.8 mm across, on a jittered grid `cell` metres apart, kept where `zone(T)` (0..1) wants them and `density` of the
+ * cells hold one. Each speck is projected on the face's dominant plane (front or side), so a speck on the cheek's side is round too.
+ * Deterministic (an integer hash, no Math.random). A layer for `paintHumanSkin({ marks })`.
+ */
+export function freckles({ zone = () => 1, density = 0.42, cell = 0.0021, r = [0.00038, 0.0009], dark = 0.7, seed = 11 } = {}) {
+  const hash = (x, y, k) => { let n = (x * 374761393 + y * 668265263 + (seed + k) * 1442695041) | 0; n = (n ^ (n >>> 13)) * 1274126177 | 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
+  return (T) => {
+    const z = zone(T);
+    if (z <= 0.01) return;
+    const side = Math.abs(T.nx) > Math.abs(T.nz) * 1.2;
+    const a = side ? T.Z : T.X, b = T.Y, ofs = side ? 7 : 0;
+    const gx = Math.floor(a / cell), gy = Math.floor(b / cell);
+    let k = 0;
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const cx = gx + i + ofs * 1000, cy = gy + j;
+      if (hash(cx, cy, 0) > density * z) continue;
+      const px = (gx + i + 0.15 + 0.7 * hash(cx, cy, 1)) * cell, py = (cy + 0.15 + 0.7 * hash(cx, cy, 2)) * cell;
+      const rr = r[0] + (r[1] - r[0]) * Math.pow(hash(cx, cy, 3), 1.6);
+      const d = Math.hypot(a - px, b - py) / rr;
+      if (d < 1.5) k = Math.max(k, (1 - smooth(0.45, 1.5, d)) * (0.45 + 0.55 * hash(cx, cy, 4)));
+    }
+    if (k <= 0) return;
+    const f = 1 - (1 - dark) * k;
+    T.r *= f; T.g *= f * 0.96; T.b *= f * 0.95;
+  };
+}
+
+/**
  * Smooth the source skin wherever `zone(T)` (0..1) wants it: replaces the painted strokes and
  * freckles with the source's soft zones (the pore layer then puts real grain back).
  */

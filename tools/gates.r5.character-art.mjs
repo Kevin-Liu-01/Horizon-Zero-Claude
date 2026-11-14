@@ -54,8 +54,12 @@ const STAGE = (hour, weather, sunOffDeg, windOff = false) => `
       if (an && an._fidgetK != null) { an._fidgetK = 1; an._fidgetT = 1e6; }
       ${windOff ? 'an.setWind(0, 0, 0, 0);' : ''}
       for (let i = 0; i < ${windOff ? 90 : 40}; i++) { p.heading = h; await new Promise((r) => requestAnimationFrame(r)); }
+      // fix round 3 (the judges: "the size of the failure changes between runs", "term (b) lands either side of its floor" on one build):
+      // the idle is frozen at ONE phase, the same in every run, not wherever the boot left it: no blink, the weight shift at its
+      // centre, the idle clip at 1.25 s; then the clock stops and the overlays settle on that pose
+      if (an) { an._blinkT = 1e6; an._blinkK = 1; an._lidBlink = 0; if (an._shiftPh != null) { an._shiftPh = 0; an._shift = 0; } an.mixer?.setTime?.(1.25); }
       if (C.engine) C.engine.timeScale = 0;
-      await new Promise((r) => requestAnimationFrame(r));
+      for (let i = 0; i < 3; i++) { p.heading = h; await new Promise((r) => requestAnimationFrame(r)); }
       const S = await import('/src/hero/sheets.js');
       const T3 = p.position.constructor;
       const head = an.b.head.bone.getWorldPosition(new T3());

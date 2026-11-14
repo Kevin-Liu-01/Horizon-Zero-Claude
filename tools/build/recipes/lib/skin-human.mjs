@@ -480,7 +480,7 @@ export function appendCollarSkirt(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
  * (0 = her front) is under `reach` (the front V stays open), facing the neck. Skinned like the torso under the collar, as the lid is.
  * Call after `appendCollarSkirt`. Returns the first new vertex index.
  */
-export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, seg = 20, reach = 0.45, inset = 0.003, below = 0.003, darkUV, skinAt = null, drop = 0, twoSided = false } = {}) {
+export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.44, seg = 20, reach = 0.45, inset = 0.003, below = 0.003, darkUV, skinAt = null, drop = 0, twoSided = false, flange = 0 } = {}) {
   const grid = new TriGrid(new Float32Array(outfitTris), 0.03);
   const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
   const n0 = P.getCount();
@@ -518,6 +518,11 @@ export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
     const base = n0 + pos.length / 3;
     put(sa * (rB - inset), yBot, centerZ + ca * (rB - inset), -sa, -ca);
     put(sa * (rT - inset), yTop, centerZ + ca * (rT - inset), -sa, -ca);
+    // (fix round 3, `flange`: the wall's foot turns in toward the neck as a floor `flange` wide, under the collar lid's lip, so a steep
+    // look down between the lid and the wall meets it whatever the bowed idle does to the two: they are skinned to different bones)
+    // (the back only, where the lid's lip lies: at the sides the wall's foot is on the smock's sloping shoulder and a floor there
+    // came out through it)
+    if (flange > 0) { const rF = Math.max(0.01, rB - inset - flange * smooth(-0.45, -0.7, ca)); pos.push(sa * rF, yBot, centerZ + ca * rF); nrm.push(0, 1, 0); uv.push(darkUV[0], darkUV[1]); const i0 = (base - n0) * 4; jnt.push(jnt[i0], jnt[i0 + 1], jnt[i0 + 2], jnt[i0 + 3]); wgt.push(wgt[i0], wgt[i0 + 1], wgt[i0 + 2], wgt[i0 + 3]); }
     cols.push(base);
   }
   for (let k = 0; k < seg; k++) {
@@ -532,6 +537,14 @@ export function appendCollarLiner(prim, outfitTris, { centerZ = -0.012, y0 = 1.4
     // (fix round 3, `twoSided`: the wall's back too, on the same vertices; a steep look down past the neck from behind met the wall's
     // back between it and the collar it lines, the last slivers of A-wrap-closed r1-r2 at az 180-195, el 1.2)
     if (twoSided) { if (inward) idx.push(a, a + 1, b, a + 1, b + 1, b); else idx.push(a, b, a + 1, a + 1, b, b + 1); }
+    if (flange > 0) {
+      // the floor faces up: wound so its normal points to +y
+      const fa = a + 2, fb = b + 2, P0 = (q) => [pos[(q - n0) * 3], pos[(q - n0) * 3 + 1], pos[(q - n0) * 3 + 2]];
+      const A0 = P0(a), B0 = P0(b), F0 = P0(fa);
+      const e1 = [B0[0] - A0[0], B0[1] - A0[1], B0[2] - A0[2]], e2 = [F0[0] - A0[0], F0[1] - A0[1], F0[2] - A0[2]];
+      const ny = e1[2] * e2[0] - e1[0] * e2[2];
+      if (ny > 0) idx.push(a, b, fa, fa, b, fb); else idx.push(a, fa, b, fa, fb, b);
+    }
   }
   const grow = (A, add) => { const src = A.getArray(), dst = new src.constructor(src.length + add.length); dst.set(src); dst.set(add, src.length); A.setArray(dst); };
   grow(P, pos); grow(prim.getAttribute('NORMAL'), nrm); grow(prim.getAttribute('TEXCOORD_0'), uv); grow(J, jnt); grow(W, wgt);

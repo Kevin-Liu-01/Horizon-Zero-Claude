@@ -268,13 +268,19 @@ function paintFacing(buf, rect, W, dye, frac) {
 }
 const hexOf = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
-export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = '#6B3F73', dark = '#4A2456', mid = '#63356F', stripe = '#A3213A', lining = ['#A3213A', '#8E1C33', '#B02A43'], facing = 0.3 } = {}) {
+export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = '#6B3F73', dark = '#4A2456', mid = '#63356F', stripe = '#A3213A', lining = ['#A3213A', '#8E1C33', '#B02A43'], facing = 0.3, thread = '#B8442E' } = {}) {
   const A = WRAP_ATLAS, W = A.W;
   const buf = { base: Buffer.alloc(W * W * 4), normal: Buffer.alloc(W * W * 3), orm: Buffer.alloc(W * W * 3) };
   for (let i = 0; i < W * W; i++) { buf.base[i * 4] = 40; buf.base[i * 4 + 1] = 22; buf.base[i * 4 + 2] = 48; buf.base[i * 4 + 3] = 2; buf.normal[i * 3] = 128; buf.normal[i * 3 + 1] = 128; buf.normal[i * 3 + 2] = 255; buf.orm[i * 3] = 255; buf.orm[i * 3 + 1] = 230; }
-  paintClothPanel(buf, { ...A.clothA, W, dye: deep, dye2: mid, dye3: dark, seed: 2, creases: 7, stripe, stripeAt: 8, fringe: 2 });
-  paintClothPanel(buf, { ...A.clothB, W, dye: deep, dye2: dark, dye3: mid, seed: 5, creases: 9, sigma: [0.022, 0.06], amp: [0.00022, 0.00055], fringe: 2, creaseWander: 0.28, drag: 0.35 });
-  paintClothPanel(buf, { ...A.tailA, W, dye: deep, dye2: mid, dye3: violet, seed: 9, creases: 5, mmU: 0.9, mmV: 1.56, sigma: [0.05, 0.16], amp: [0.0006, 0.0014], fringe: 2, stripe, stripeAt: 5 });
+  // fix round 3 (R69, Kevin's Nov 13 turnaround: "thin red-orange thread stitching across the folds", "faded at the folds"): running
+  // stitches along each turn and a few crossing it, and the dye bleached on the fold crowns
+  const rowsA = { color: thread, rows: [{ v: 0.2, amp: 2.2, k: 2, ph: 0.1, len: 8, gap: 4 }, { v: 0.46, amp: 1.6, k: 3, ph: 0.6, len: 7, gap: 4, off: 2 }, { v: 0.72, amp: 2.4, k: 2, ph: 0.35, len: 9, gap: 4, off: 5 },
+    { v: 0.5, amp: 34, k: 1, ph: 0.2, len: 4, gap: 3 }, { v: 0.45, amp: 30, k: 1, ph: 0.72, len: 4, gap: 4, off: 3 }] };
+  const rowsB = { color: thread, rows: [{ v: 0.3, amp: 3, k: 3, ph: 0.4, len: 4, gap: 3 }, { v: 0.66, amp: 2.5, k: 2, ph: 0.8, len: 5, gap: 3, off: 1 }, { v: 0.5, amp: 30, k: 1, ph: 0.45, len: 4, gap: 3 }] };
+  const rowsT = { color: thread, rows: [{ v: 0.26, amp: 1.2, k: 2, ph: 0.3, len: 6, gap: 3 }, { v: 0.74, amp: 1.2, k: 2, ph: 0.75, len: 6, gap: 3, off: 4 }] };
+  paintClothPanel(buf, { ...A.clothA, W, dye: deep, dye2: mid, dye3: dark, seed: 2, creases: 7, stripe, stripeAt: 8, fringe: 2, stitch: rowsA, fade: 0.32, foldK: 2.1 });
+  paintClothPanel(buf, { ...A.clothB, W, dye: deep, dye2: dark, dye3: mid, seed: 5, creases: 9, sigma: [0.022, 0.06], amp: [0.00022, 0.00055], fringe: 2, creaseWander: 0.28, drag: 0.35, stitch: rowsB, fade: 0.28, foldK: 1.9 });
+  paintClothPanel(buf, { ...A.tailA, W, dye: deep, dye2: mid, dye3: violet, seed: 9, creases: 5, mmU: 0.9, mmV: 1.56, sigma: [0.05, 0.16], amp: [0.0006, 0.0014], fringe: 2, stripe, stripeAt: 5, stitch: rowsT, fade: 0.3 });
   paintClothPanel(buf, { ...A.lining, W, dye: lining[0], dye2: lining[1], dye3: lining[2], seed: 13, creases: 3, mmU: 1.2, mmV: 1.56, fringe: 0, weave: 0.25 });
   // the violet is turned back over the lining at both selvedges, a broad facing: the tail's inner face is mostly orchil with a
   // carmine centre (bible §3.4: carmine is 6 % of her), and the binding reads the carmine centre
