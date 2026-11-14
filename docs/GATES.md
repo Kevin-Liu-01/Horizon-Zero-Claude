@@ -79,12 +79,12 @@ rows and the studio is deleted.
 | `A29b-slope-no-ghost` | island |
 | `A30-dodge-window` | island |
 | `A32b-lookup-no-ghost` | island |
-| `A43-corpse-lifecycle` | island |
+| `A43-corpse-lifecycle` | island: the carried row (staged by role); instruments-core's shadow no longer applies |
 | `A44-socket-integrity` | island |
 | `A44b-socket-vertex-integrity` | island |
 | `A45-no-skate-per-species` | island — re-keyed by Instrument role |
 | `A45b-stance-report-integrity` | island |
-| `A45c-foot-continuity` | island |
+| `A45c-foot-continuity` | island: planted Instrument feet read through `debugFeet()` (the handle rig it read ran only on the deleted legacy kinds) |
 | `A46-ground-truth` | island |
 | `A47-corpse-grounded` | island |
 | `A47b-corpse-posed` | island |
@@ -103,7 +103,7 @@ rows and the studio is deleted.
 | `A71d-conc-veil` | island |
 | `A71g-tracker-live` | island |
 | `A72-settings-persist` | island |
-| `A72b-accessibility` | island |
+| `A72b-accessibility` | island: the palette clause reads `--cal-c-staff`, a token the palettes re-point |
 | `A73d-ui-bus` | island |
 | `A74-3d` | island |
 | `A78-cast-states` | turntable: the hold is `forceState` plus the pinned perception fields; no panel |
@@ -134,12 +134,12 @@ rows and the studio is deleted.
 | `A76-footfalls` | island |
 | `A78-loop-reclaim` | island |
 | `A90-memory-stability` | island |
-| `A90-rig-reclaim` | island |
-| `A90b-memory-attribution` | island |
+| `A90-rig-reclaim` | island: the carried row (staged by role); instruments-core's shadow no longer applies |
+| `A90b-memory-attribution` | island: the carried row; its allocation sweep no longer names the absent studio as a root |
 | `V1-sprint-frame` | island |
-| `V2-idle-frame` | island |
+| `V2-idle-frame` | turntable: open ground, reeds hidden, a front three-quarter lens, frozen after 2.5 s of idle |
 | `V3-crouch-stalk` | island |
-| `V4-aim-anchor` | island |
+| `V4-aim-anchor` | island: the aim on open ground with the reeds hidden |
 | `V13-aim-strafe` | island |
 | `V21-camera-cover` | island: the shot stands at the nearest trunk-shaped camera collider to her (the valley's trees are gone) |
 | `V49-draw-from-jog` | island |
