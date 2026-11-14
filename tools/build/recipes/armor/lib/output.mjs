@@ -84,6 +84,14 @@ export function outfitDoc(doc, parts, { name, matName, tex = null, texPrefix = '
   return { node, material: mat, stats: m.ranges };
 }
 
+/** The shortest decimal that reads back to x's float32 (the value a Float32Array or the GPU holds). */
+function f32Text(x) {
+  const f = Math.fround(x);
+  if (f === 0) return 0;
+  for (let p = 1; p <= 9; p++) { const v = Number(f.toPrecision(p)); if (Math.fround(v) === f) return v; }
+  return f;
+}
+
 export async function writeOutfit(doc, file, { recipe, sources, licence, r5Outfit, lean = false }) {
   if (!lean) return writeSkinned(doc, file, { provenance: { recipe, sources, licence }, extras: { r5Outfit } });
   // a geometry-only variant (<= 0.15 MB, plan §4.1): the same writer, a coarser quantiser
@@ -98,6 +106,12 @@ export async function writeOutfit(doc, file, { recipe, sources, licence, r5Outfi
   );
   doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.FILTER });
   const stats = { tris, verts, materials: doc.getRoot().listMaterials().length, meshes: doc.getRoot().listMeshes().length, textures: doc.getRoot().listTextures().length, bones: doc.getRoot().listSkins().reduce((n, s) => n + s.listJoints().length, 0) };
+  // (M0.7, r5/int: Pan III came out 1 KB over its 0.15 MB cap against the integrated body.) A joint's TRS is float32
+  // data written as float64 text ("0.0711912140250206"): write each as the shortest decimal that reads back to the
+  // SAME float32, so the skeleton is unchanged at float32 precision (what the GPU skins with) and the JSON is lighter
+  for (const n of doc.getRoot().listNodes()) {
+    n.setTranslation(n.getTranslation().map(f32Text)).setRotation(n.getRotation().map(f32Text)).setScale(n.getScale().map(f32Text));
+  }
   const asset = doc.getRoot().getAsset();
   asset.generator = GENERATOR;
   asset.extras = { r5Outfit, provenance: prov, r5Stats: stats };
