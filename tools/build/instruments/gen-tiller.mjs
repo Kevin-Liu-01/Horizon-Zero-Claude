@@ -5,8 +5,22 @@
  * W1, plan §2). Original work: no third-party asset is read.
  *
  *   node tools/build/instruments/gen-tiller.mjs [--out <dir>]
- *     -> public/models/instruments/tiller.glb   (hull + sensor, 2 materials)
- *     -> public/models/r5-poc/tiller.glb        (W0 only: the same bytes)
+ *     -> public/models/instruments/tiller.glb   (hull + sensor + LOD1 caster proxy)
+ *
+ * W1 FIDELITY PASS (instruments-a; bible §7.1 "fidelity pass mandatory before a
+ * kind is judged", ROUND5-LOOK I-01 / I-03 / I-04). The proven geometry, rig,
+ * bone order and sockets are unchanged (the kind file's lamp anchor and every
+ * socket land where they did). What changed is the finish, through the shared
+ * kit `tools/build/instruments/parts/kit.mjs`: baked vertex AO (28 rays, 0.4 m),
+ * verdigris in the bronze crevices, a grime/dust band on the lowest 0.6 m,
+ * glaze crazing (roughness 0.15-0.30 by an 8 x 4 palette), the shared decal
+ * atlas on uv1 (a vernier ring round the drum and the hopper, the serial "06"
+ * on the thorax flanks), the `_LAMPPROX` spill field round the drum lamp, an
+ * LOD1 caster proxy at 35 % of the hull's triangles, and the piston rods in a
+ * satin steel instead of mirror chrome (bible §7.1 rule 4: "no chrome"). The
+ * W0 second output `public/models/r5-poc/tiller.glb` is dropped: the kind file
+ * reads the final path, and the poc copy belongs to the `?poc=biome` hook,
+ * which world-ground removes at the W1 exit.
  *
  * TWO OUTPUTS, ONE GLB (fix round 2). instruments-core's W0 fixture
  * (`src/instruments/kinds/tiller.js`, their file until W1) loads
@@ -40,18 +54,17 @@
  * design bounding box [x, y, z] in metres (the kind file's HEIGHT reads [1]).
  */
 import path from 'node:path';
-import { copyFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  THREE, Bucket, V, strut, ball, rbox, torus, cable, plate, lathe, basis,
+  V, strut, ball, rbox, torus, cable, plate, lathe, basis,
   AXIS_Z, AXIS_X, at,
 } from '../lib/hs.mjs';
-import { writeGLB } from '../lib/glb.mjs';
+import { THREE, KBucket as Bucket, mergeLabelled as mergeKit, finish, lod1From, writeInstrument, BAND, bandV, numeralUV } from './parts/kit.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-export const LANE = 'pipeline';          // instruments-a from W1 (plan §2)
+export const LANE = 'instruments-a';     // pipeline's at W0; instruments-a's from W1 (plan §2)
 export const RECIPE = 'tools/build/instruments/gen-tiller.mjs';
-export const OUTPUTS = ['public/models/instruments/tiller.glb', 'public/models/r5-poc/tiller.glb'];
+export const OUTPUTS = ['public/models/instruments/tiller.glb'];
 
 export async function build({ out = ROOT } = {}) {
 
@@ -62,7 +75,7 @@ export async function build({ out = ROOT } = {}) {
   const BRONZE = 0xb18a52;
   const GRAPH = 0x2a2d32;
   const RUBBER = 0x1b1a19;
-  const CHROME = 0xc9ccd0;
+  const CHROME = 0xb9b5ad;   // satin steel (drawn on the graphite slot: bible §7.1 "no chrome")
   const LAMP = 0x1a1208;     // sensor glass albedo (emissive does the work)
 
   /* ------------------------- per-bone buckets ------------------------------ */
@@ -133,20 +146,33 @@ export async function build({ out = ROOT } = {}) {
   for (const s of [1, -1]) {
     for (let i = 0; i < 5; i++) {
       rbox(H('chest'), V(s * 0.432, AXIS_Y - 0.10 + i * 0.045, 0.70), [0.03, 0.022, 0.26], 0.008,
-        { surf: 'graphite', tone: GRAPH, rot: [0, 0, s * -0.2] });
+        { surf: 'graphite', tone: GRAPH, rot: [0, 0, s * -0.2], segs: 1 });
     }
     rbox(H('chest'), V(s * 0.43, AXIS_Y - 0.01, 0.70), [0.02, 0.27, 0.32], 0.01, { surf: 'patina', tone: VERDI, rot: [0, 0, s * -0.2] });
   }
 
+  // the serial "06" in brass on each thorax flank (decal numerals)
+  for (const s of [1, -1]) for (const [j, dgt] of [[0, 0], [1, 6]]) {
+    const c = V(s * 0.448, AXIS_Y + 0.17, 0.98 + (j - 0.5) * 0.075 * -s);
+    const Mp = basis(V(0, 0, -s), V(0, 1, 0), V(s, 0, 0), c);
+    const mk = H('chest').mark();
+    plate(H('chest'), [[-0.032, -0.045], [0.032, -0.045], [0.032, 0.045], [-0.032, 0.045]], 0.006, 0, Mp, { surf: 'bronze', tone: 0xf1eee6, wear: 0.1 });
+    H('chest').decalSince(mk, { frame: Mp, fn: (p) => numeralUV(dgt, (p.x + 0.032) / 0.064, 1 - (p.y + 0.045) / 0.09) });
+  }
+
   /* ------------------------------ hopper ----------------------------------- */
   const HOP = V(0, AXIS_Y + 0.43, 0.0);
+  const hopMk = H('pelvis').mark();
   lathe(H('pelvis'), [
     P(0, 0, 'graphite', GRAPH), P(0.21, 0, 'graphite', GRAPH),
     P(0.23, 0.05, 'glaze', BONE), P(0.27, 0.16, 'glaze', OXBLOOD), P(0.30, 0.25, 'glaze', BONE),
     P(0.335, 0.28, 'bronze', BRONZE), P(0.34, 0.31, 'bronze', BRONZE), P(0.30, 0.32, 'graphite', GRAPH),
     P(0.26, 0.14, 'graphite', GRAPH), P(0, 0.14, 'graphite', GRAPH),
   ], at(HOP.x, HOP.y, HOP.z), { segs: 32, wear: 0.4, crease: 30 });
-  ball(L('pelvis'), V(HOP.x, HOP.y + 0.24, HOP.z), 0.11, { surf: 'lamp', tone: LAMP, w: 14, h: 10 });
+  // the hopper's bronze rim is a graduated circle (vernier ticks, the shared atlas)
+  H('pelvis').decalSince(hopMk, { frame: at(HOP.x, HOP.y, HOP.z), uPeriod: 6, fn: (p) => (p.y > 0.245 && p.y < 0.315 && Math.hypot(p.x, p.z) > 0.29
+    ? [(Math.atan2(p.x, p.z) / (2 * Math.PI) + 0.5) * 6, bandV(BAND.vernier, 0.15 + (0.315 - p.y) / 0.07 * 0.7)] : null) });
+  ball(H('pelvis'), V(HOP.x, HOP.y + 0.24, HOP.z), 0.11, { surf: 'glaze', tone: 0xd8e2cc, w: 14, h: 10, wear: 0.05 });   // the lantern: glaze lit by the spill
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
     cable(H('pelvis'), [
@@ -185,13 +211,17 @@ export async function build({ out = ROOT } = {}) {
     cable(H('neck'), [V(s * 0.12, AXIS_Y + 0.36, 1.02), V(s * 0.15, AXIS_Y + 0.50, 1.22), V(s * 0.11, DRUM.y + 0.10, DRUM.z - 0.18)], 0.022,
       { surf: 'rubber', tone: RUBBER, segs: 10, radial: 6 });
   }
-  // sensor drum (axis X), oxblood survey band
+  // sensor drum (axis X), oxblood survey band; a graduated ring on the bone glaze beside it (decal)
+  const drumM = at(DRUM.x - 0.24, DRUM.y, DRUM.z, AXIS_X.clone());
+  const drumMk = H('head').mark();
   lathe(H('head'), [
     P(0, 0, 'graphite', GRAPH), P(0.19, 0, 'graphite', GRAPH), P(0.215, 0.03, 'glaze', BONE),
     P(0.225, 0.13, 'glaze', BONE), P(0.228, 0.15, 'glaze', OXBLOOD), P(0.228, 0.24, 'glaze', BONE),
     P(0.225, 0.40, 'glaze', BONE), P(0.205, 0.46, 'patina', VERDI), P(0.17, 0.48, 'graphite', GRAPH),
     P(0, 0.48, 'graphite', GRAPH),
-  ], at(DRUM.x - 0.24, DRUM.y, DRUM.z, AXIS_X.clone()), { segs: 32, wear: 0.4 });
+  ], drumM, { segs: 32, wear: 0.4 });
+  H('head').decalSince(drumMk, { frame: drumM, uPeriod: 8, fn: (p) => (p.y > 0.24 && p.y < 0.40 && Math.hypot(p.x, p.z) > 0.2
+    ? [(Math.atan2(p.x, p.z) / (2 * Math.PI) + 0.5) * 8, bandV(BAND.vernier, 0.1 + (p.y - 0.24) / 0.16 * 0.8)] : null) });
   for (const s of [1, -1]) {
     strut(H('head'), V(s * 0.24, DRUM.y, DRUM.z), V(s * 0.33, DRUM.y, DRUM.z), 0.075, 0.075,
       { surf: 'bronze', tone: BRONZE, sides: 14 });
@@ -203,7 +233,7 @@ export async function build({ out = ROOT } = {}) {
     strut(H('head'), c.clone().add(V(0, 0, -0.03)), c.clone().add(V(0, 0, 0.01)), r + 0.02, r + 0.02, { surf: 'graphite', tone: GRAPH, sides: 16 });
     const g = new THREE.SphereGeometry(r, 16, 10);
     g.scale(1, 1, 0.45);
-    L('head').add(g, { matrix: at(c.x, c.y, c.z + 0.012), surf: 'lamp', tone: LAMP });
+    H('head').add(g, { matrix: at(c.x, c.y, c.z + 0.012), surf: 'glaze', tone: 0x30383a, wear: 0.05 });   // glass: lit by the spill
     g.dispose();
   }
   // rangefinder tube on top
@@ -219,6 +249,9 @@ export async function build({ out = ROOT } = {}) {
 
   /* ------------------------------ tail (auger) ----------------------------- */
   const TAIL0 = V(0, AXIS_Y - 0.03, -1.58), TAIL1 = V(0, AXIS_Y - 0.12, -2.00), TIP = V(0, AXIS_Y - 0.34, -2.48);
+  // the auger bit is the TOOL (bible §7.4: "auger (Pry -> no rear attack; drops an auger bit)"): its own node,
+  // unlabelled, mounted by the kind file on the tail2 bone as a component
+  const AUGER = new Bucket('tiller-auger');
   function latheAlong(bucket, a, b, prof, opts) {
     const d = b.clone().sub(a).normalize();
     const m = new THREE.Matrix4().compose(a, new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), d), V(1, 1, 1));
@@ -235,10 +268,10 @@ export async function build({ out = ROOT } = {}) {
     for (let i = 0; i < 7; i++) {
       const h = 0.04 + (i / 7) * (len - 0.1);
       const r = 0.12 * (1 - i / 8);
-      prof.push(P(r, h, 'bronze', BRONZE), P(r * 0.7, h + 0.035, 'chrome', CHROME));
+      prof.push(P(r, h, 'bronze', BRONZE), P(r * 0.7, h + 0.035, 'graphite', CHROME));
     }
-    prof.push(P(0, len, 'chrome', CHROME));
-    latheAlong(H('tail2'), TAIL1, TIP, prof, { segs: 16, wear: 0.5, crease: 25 });
+    prof.push(P(0, len, 'graphite', CHROME));
+    latheAlong(AUGER, TAIL1, TIP, prof, { segs: 16, wear: 0.5, crease: 25 });
   }
 
   /* ------------------------------ legs ------------------------------------- */
@@ -325,7 +358,7 @@ export async function build({ out = ROOT } = {}) {
       strut(H(shin), q.clone().addScaledVector(f2.d, -0.02), q.clone().addScaledVector(f2.d, 0.025), 0.068, 0.064,
         { surf: 'bronze', tone: BRONZE, sides: 12 });
     }
-    strut(H(shin), K.clone().lerp(A, 0.58), A, 0.03, 0.03, { surf: 'chrome', tone: CHROME, sides: 10 });
+    strut(H(shin), K.clone().lerp(A, 0.58), A, 0.03, 0.03, { surf: 'graphite', tone: CHROME, sides: 10 });
     plate(H(shin), [[-0.03, 0.10], [0.03, 0.10], [0.022, 0.48], [-0.022, 0.46]], 0.012, 0.005,
       basis(f2.w, f2.d, f2.out, K.clone().addScaledVector(f2.out, 0.068)), { surf: 'glaze', tone: OXBLOOD, wear: 0.5 });
 
@@ -341,23 +374,23 @@ export async function build({ out = ROOT } = {}) {
       const dir = V(Math.sin(ang), 0, Math.cos(ang));
       const c = PAD.clone().addScaledVector(dir, ang === Math.PI ? 0.15 : 0.17).add(V(0, 0.035, 0));
       rbox(H(foot), c, [0.05, 0.05, ang === Math.PI ? 0.06 : 0.09], 0.015,
-        { surf: 'bronze', tone: BRONZE, wear: 0.7, rot: [0, ang, 0] });
+        { surf: 'bronze', tone: BRONZE, wear: 0.7, rot: [0, ang, 0], segs: 1 });
     }
   }
 
   /* ---------------------------- finishing passes --------------------------- */
-  // grime: dust and soil climb the legs; the body underside is darker
+  // grime: soil climbs the stilts (the kit's AO and dust band do the rest after the recentre)
   const sm = THREE.MathUtils.smoothstep;
   for (const b of hull.values()) {
-    b.shade((x, y) => 0.56 + 0.44 * sm(y, 0.0, 1.1));
+    b.shade((x, y) => 0.70 + 0.30 * sm(y, 0.0, 1.1));
   }
 
   /* ------------------------------ recentre --------------------------------- */
   const box = new THREE.Box3();
-  for (const b of [...hull.values(), ...lamp.values()]) b.bounds(box);
+  for (const b of [...hull.values(), ...lamp.values(), AUGER]) b.bounds(box);
   const cz = (box.min.z + box.max.z) / 2;
   const cx = (box.min.x + box.max.x) / 2;
-  for (const b of [...hull.values(), ...lamp.values()]) b.translate(-cx, -box.min.y, -cz);
+  for (const b of [...hull.values(), ...lamp.values(), AUGER]) b.translate(-cx, -box.min.y, -cz);
   const shift = (v) => [+(v.x - cx).toFixed(4), +(v.y - box.min.y).toFixed(4), +(v.z - cz).toFixed(4)];
   const size = box.getSize(new THREE.Vector3());
 
@@ -388,24 +421,19 @@ export async function build({ out = ROOT } = {}) {
   ];
 
   /* ---------------------- merge per material, label bones ----------------- */
-  function mergeLabelled(map, name) {
-    const out = new Bucket(name);
-    const labels = [];
-    for (const [bone, b] of map) {
-      const idx = BONE_ORDER.indexOf(bone);
-      if (idx < 0) throw new Error(`bone ${bone} not in rig spec`);
-      out.pos.push(...b.pos); out.nor.push(...b.nor); out.col.push(...b.col); out.uv.push(...b.uv);
-      for (let i = 0; i < b.pos.length / 3; i++) labels.push(idx);
-    }
-    out.labels = labels;
-    return out;
-  }
-  const hullAll = mergeLabelled(hull, 'tiller-hull');
-  const lampAll = mergeLabelled(lamp, 'tiller-sensor');
+  const hullAll = mergeKit(hull, BONE_ORDER, 'tiller-hull');
+  const lampAll = mergeKit(lamp, BONE_ORDER, 'tiller-sensor');
+  const LAMP_C = shift(V(DRUM.x, DRUM.y, DRUM.z + 0.24));
+  finish(AUGER, { occluders: [hullAll], rays: 28, dist: 0.4, footBand: 0.6 });
+  const fin = finish(hullAll, { occluders: [lampAll, AUGER], rays: 28, dist: 0.4, footBand: 0.75,
+    lamps: [{ at: LAMP_C, r: 0.2 }, { at: shift(V(HOP.x, HOP.y + 0.24, HOP.z)), r: 0.11 }] });
+  const lod1 = await lod1From(hullAll, 0.32, 'tiller-lod1');   // I-04: LOD1 <= 40 % of LOD0 (A-instr-shadow-lod a)
 
-  const stats = await writeGLB([
-    { bucket: hullAll, material: { name: 'r5-tiller-hull' } },
-    { bucket: lampAll, material: { name: 'r5-tiller-sensor-lens', emissive: [1.0, 0.78, 0.45], baseColor: [0.02, 0.015, 0.01, 1] } },
+  const stats = await writeInstrument([
+    { bucket: hullAll, role: 'hull', material: { name: 'r5-tiller-hull' } },
+    { bucket: lampAll, role: 'sensor', material: { name: 'r5-tiller-sensor-lens', emissive: [1.0, 0.78, 0.45], baseColor: [0.02, 0.015, 0.01, 1] } },
+    { bucket: AUGER, role: 'tool', material: { name: 'r5-tiller-hull', anchor: shift(TAIL1) } },
+    { bucket: lod1, role: 'lod1', material: { name: 'r5-tiller-hull' } },
   ], {
     file: path.join(out, OUTPUTS[0]),
     provenance: { recipe: RECIPE, sources: [], licence: 'project-original' },
@@ -413,23 +441,18 @@ export async function build({ out = ROOT } = {}) {
       r5Rig: rigSpec, r5BoneOrder: BONE_ORDER,
       r5Size: [+size.x.toFixed(4), +size.y.toFixed(4), +size.z.toFixed(4)],
       r5Sockets: {
-        lens: shift(V(DRUM.x, DRUM.y, DRUM.z + 0.24)),
+        lens: LAMP_C,
         lantern: shift(V(HOP.x, HOP.y + 0.24, HOP.z)),
         hopper: shift(V(HOP.x, HOP.y + 0.1, HOP.z)),
         auger: shift(TIP),
+        augerRoot: shift(TAIL1),
       },
       r5Generator: { name: RECIPE, design: 'tiller', licence: 'original work (generated), no third-party assets' },
     },
   });
 
-  // the W0 fixture URL: the same bytes (see the header)
-  for (const extra of OUTPUTS.slice(1)) {
-    mkdirSync(path.dirname(path.join(out, extra)), { recursive: true });
-    copyFileSync(path.join(out, OUTPUTS[0]), path.join(out, extra));
-  }
-
   return {
-    kind: 'tiller', file: OUTPUTS[0], copies: OUTPUTS.slice(1), bytes: stats.bytes, tris: stats.tris, verts: stats.verts,
+    kind: 'tiller', file: OUTPUTS[0], bytes: stats.bytes, tris: stats.tris, meshTris: stats.meshTris, verts: stats.verts, aoMean: +fin.aoMean.toFixed(3),
     materials: stats.materials, textures: stats.textures, bones: BONE_ORDER.length, legs: LEGS.length,
     size: { x: +size.x.toFixed(3), y: +size.y.toFixed(3), z: +size.z.toFixed(3) },
   };

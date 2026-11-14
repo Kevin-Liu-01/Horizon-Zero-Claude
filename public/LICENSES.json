@@ -285,6 +285,36 @@
       "attribution": null
     },
     {
+      "id": "instrument-peg",
+      "paths": [
+        "public/models/instruments/peg.glb"
+      ],
+      "title": "Peg (survey-peg swarm walker; instruments-a W1)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/instruments/gen-peg.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
+      "id": "instrument-plumb",
+      "paths": [
+        "public/models/instruments/plumb.glb"
+      ],
+      "title": "Plumb (walking theodolite, the sentry; instruments-a W1)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/instruments/gen-plumb.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
       "id": "instrument-tiller",
       "paths": [
         "public/models/instruments/tiller.glb",
