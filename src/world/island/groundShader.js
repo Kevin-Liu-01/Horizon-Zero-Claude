@@ -11,7 +11,7 @@
  *   Brine and wet sand mirror THIS sky at THIS hour (world-sky's aerial colours), with no
  *   extra render target.
  *
- * Layer ids: 0 sand, 1 salt, 2 basalt (array 1, 1024²); 3 silt, 4 shingle (array 2, 512²).
+ * Layer ids: 0 sand, 1 salt, 2 basalt, 3 silt, 4 shingle: one array per part, 1024² (M1.1a; 3 and 4 tiled 2 x 2).
  */
 export const GROUND_VERT_PARS = /* glsl */ `
 #include <common>
@@ -58,14 +58,17 @@ export const GROUND_FRAG_PARS = /* glsl */ `
 #include <common>
 varying vec3 vWPos;
 varying vec3 vWNorm;
-uniform highp sampler2DArray tA1;
-uniform highp sampler2DArray tN1;
-uniform highp sampler2DArray tA2;
-uniform highp sampler2DArray tN2;
+/* M1.1a: every layer in one array per part (layers.js LAYER_ARRAY, 1024²); mud and pebble are their 512² sources
+ * tiled 2 x 2, read at uv / 2 (the same texel and mip as the 512² layer at uv) */
+uniform highp sampler2DArray tA;
+uniform highp sampler2DArray tN;
 uniform vec3 uScale1;   // 1/tile: sand, salt, basalt
 uniform vec2 uScale2;   // 1/tile: silt, shingle
-uniform sampler2D tHzA;
-uniform sampler2D tHzB;
+/* M1.1a: one array for the fields the ground reads at world scale (sampler units, TECH §5 lever 5):
+ * layer 0 the periodic noise (128² tiled 4 x 4, so uv / 4 reads the same texel and mip), layers 1-2 the
+ * skyline's eight bearings (512², clamped by hand: the array repeats for the noise) */
+uniform highp sampler2DArray tField;
+#define gNoiseT(uv) texture(tField, vec3((uv) * 0.25, 0.0))
 uniform vec4 uHzW0;     // the light's bearing as weights over the 8 skyline channels
 uniform vec4 uHzW1;
 uniform float uSunTan;  // tan(elevation) of the sun or moon
@@ -74,28 +77,29 @@ uniform float uHzK;     // shadow strength: 1, or the calima's 0.45
 vec3 gN; float gRough; float gAO; float gLiquid; float gSunVis = 1.0;
 /** Is the light above the terrain's skyline here? Long soft shadows from one lookup. */
 float gSkylineVis(vec2 xz) {
-  vec2 uv = xz * uHzWorldInv + 0.5;
-  float a = dot(texture2D(tHzA, uv), uHzW0) + dot(texture2D(tHzB, uv), uHzW1);
+  vec2 uv = clamp(xz * uHzWorldInv + 0.5, vec2(0.5 / 512.0), vec2(1.0 - 0.5 / 512.0));
+  float a = dot(texture(tField, vec3(uv, 1.0)), uHzW0) + dot(texture(tField, vec3(uv, 2.0)), uHzW1);
   a = a * a * 0.9;
   return mix(1.0, smoothstep(a - 0.016, a + 0.034, uSunTan), uHzK);
 }
-uniform sampler2D tNoiseG;   // four octaves of periodic noise in one fetch: R 8, G 16, B 32, A 64 cells a tile
+// tField layer 0: four octaves of periodic noise in one fetch: R 8, G 16, B 32, A 64 cells a tile
 float gScale(int i) { return i == 0 ? uScale1.x : i == 1 ? uScale1.y : i == 2 ? uScale1.z : i == 3 ? uScale2.x : uScale2.y; }
 vec4 gA(int i, vec2 uv, vec2 gx, vec2 gy) {
-  return i < 3 ? textureGrad(tA1, vec3(uv, float(i)), gx, gy) : textureGrad(tA2, vec3(uv, float(i - 3)), gx, gy);
+  float k = i < 3 ? 1.0 : 0.5;
+  return textureGrad(tA, vec3(uv * k, float(i)), gx * k, gy * k);
 }
 vec4 gNm(int i, vec2 uv, vec2 gx, vec2 gy) {
-  return i < 3 ? textureGrad(tN1, vec3(uv, float(i)), gx, gy) : textureGrad(tN2, vec3(uv, float(i - 3)), gx, gy);
+  float k = i < 3 ? 1.0 : 0.5;
+  return textureGrad(tN, vec3(uv * k, float(i)), gx * k, gy * k);
 }
 `;
 
 export const TERRAIN_FRAG_PARS = /* glsl */ `
 ${GROUND_FRAG_PARS}
 varying vec4 vTint;
-uniform sampler2D tMaskA;
-uniform sampler2D tMaskB;
-uniform sampler2D tShore;
-uniform sampler2D tPan;
+/* M1.1a: the four world masks in one array (one sampler unit): 0 mask A, 1 mask B, 2 shore, 3 the pan */
+uniform highp sampler2DArray tMask;
+#define gPanT(uv) texture(tMask, vec3((uv), 3.0))
 uniform vec3 uPanBox;      // x0, z0, 1/size
 uniform float uWorldInv;
 uniform float uTime;
@@ -115,7 +119,7 @@ vec4 gPanCubic(vec2 uv) {
   vec4 c = tc.xxyy + vec2(-0.5, 1.5).xyxy;
   vec4 sm = vec4(cx.xz + cx.yw, cy.xz + cy.yw);
   vec4 o = (c + vec4(cx.yw, cy.yw) / sm) / 512.0;
-  vec4 s0 = texture2D(tPan, o.xz), s1 = texture2D(tPan, o.yz), s2 = texture2D(tPan, o.xw), s3 = texture2D(tPan, o.yw);
+  vec4 s0 = gPanT(o.xz), s1 = gPanT(o.yz), s2 = gPanT(o.xw), s3 = gPanT(o.yw);
   float wx = sm.x / (sm.x + sm.y), wy = sm.z / (sm.z + sm.w);
   return mix(mix(s3, s2, wx), mix(s1, s0, wx), wy);
 }
@@ -133,6 +137,27 @@ vec3 gVoro(vec2 x) {
 }
 `;
 
+/** The crater's bedding, shared by the layered ground and the far field (needs col, pert, slope, wn, xz, vTint). */
+export const STRATA_TERM = /* glsl */ `
+  /* -- strata (W-03 b): the red tuff ring's beds, 0.8-2.5 m, on its steep faces: a palette row
+   *    per bed, a lit lip and a shaded undercut at each bed's top, dark varnish streaks below.
+   *    terrain.beddingAt() is this term's JS mirror (A63) --------------------------------- */
+  float strK = smoothstep(0.55, 0.95, slope) * smoothstep(0.02, 0.25, tk0) * uStrata;
+  if (strK > 0.01) {
+    float bz = vWPos.y + 4.0 * (gNoiseT(xz * 0.0111).r - 0.5) * 2.0;
+    float T = 1.7;
+    float bnd = bz / T, bi = floor(bnd), bf = bnd - bi;
+    float hb = fract(sin(bi * 78.233) * 43758.5453);
+    vec3 bedC = hb < 0.25 ? vec3(0.62, 0.44, 0.34) : hb < 0.55 ? vec3(1.08, 0.86, 0.72) : hb < 0.8 ? vec3(0.84, 0.62, 0.5) : vec3(1.22, 1.06, 0.88);
+    float lip = smoothstep(0.82, 0.97, bf), under = 1.0 - smoothstep(0.0, 0.12, bf);
+    vec2 fall0 = normalize(wn.xz + vec2(1e-5));
+    float varn = gNoiseT(vec2(dot(xz, vec2(-fall0.y, fall0.x)) * 0.09, bz * 0.011)).b;
+    vec3 sc = bedC * (1.0 + 0.22 * lip - 0.3 * under) * (1.0 - 0.28 * smoothstep(0.55, 0.85, varn));
+    col = mix(col, col * sc, strK);
+    pert += vec3(fall0.x, 0.0, fall0.y) * (lip * 0.35 - under * 0.25) * strK;
+  }
+`;
+
 /** Accumulates one layer: albedo into col, world normal offset, rough + AO, height blend. */
 export const TERRAIN_COLOR = /* glsl */ `
 #include <color_fragment>
@@ -141,15 +166,15 @@ export const TERRAIN_COLOR = /* glsl */ `
   vec2 xz = vWPos.xz;
   float dCam = length(vWPos - cameraPosition);
   vec2 muv = xz * uWorldInv + 0.5;
-  vec4 mA = texture2D(tMaskA, muv);
-  vec4 mB = texture2D(tMaskB, muv);
-  vec4 sh = texture2D(tShore, muv);
+  vec4 mA = texture(tMask, vec3(muv, 0.0));
+  vec4 mB = texture(tMask, vec3(muv, 1.0));
+  vec4 sh = texture(tMask, vec3(muv, 2.0));
   vec2 puv = (xz - uPanBox.xy) * uPanBox.z;
   vec4 pan = vec4(0.0);
-  if (puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0) pan = dCam < 110.0 ? gPanCubic(puv) : texture2D(tPan, puv);
+  if (puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0) pan = dCam < 110.0 ? gPanCubic(puv) : gPanT(puv);
 
   float slope = sqrt(max(1.0 - wn.y * wn.y, 0.0)) / max(wn.y, 0.05);
-  vec4 nMac = texture2D(tNoiseG, xz * 0.0039);                 // cells 32, 16, 8, 4 m
+  vec4 nMac = gNoiseT(xz * 0.0039);                 // cells 32, 16, 8, 4 m
   float macA = nMac.r * 0.6 + nMac.b * 0.4;
 
   /* -- the five weights, then the three that survive ----------------------- */
@@ -164,7 +189,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     /* the crust's fine grain: wet patches, sand blown in, drag marks at 1-3 m. Baked at
      * 0.48 m a texel it read as a lattice (A-anti-tile); two rotated lookups here do not */
     vec2 fr = vec2(dot(xz, vec2(0.8, 0.6)), dot(xz, vec2(-0.6, 0.8)));
-    fineN = texture2D(tNoiseG, xz * 0.0625 + 0.17).r * 0.55 + texture2D(tNoiseG, fr * 0.0371 + 0.53).g * 0.45 - 0.5;
+    fineN = gNoiseT(xz * 0.0625 + 0.17).r * 0.55 + gNoiseT(fr * 0.0371 + 0.53).g * 0.45 - 0.5;
     crust = clamp(crust + fineN * 0.26 * inK, 0.0, 1.0);
     brine = clamp(brine + fineN * 0.34 * inK, 0.0, 1.0);
   }
@@ -176,7 +201,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     vec3 vp = gVoro(xz * 0.62 + fineN * 0.9);
     crack = (1.0 - smoothstep(0.0, 0.09 + 0.05 * (1.0 - nk), vp.x)) * nk;
     vec2 fu = uFieldU, fv = vec2(-uFieldU.y, uFieldU.x);
-    float rk = dot(xz, fv) * 1.65 + texture2D(tNoiseG, xz * 0.013).r * 2.2;
+    float rk = dot(xz, fv) * 1.65 + gNoiseT(xz * 0.013).r * 2.2;
     rake = (0.5 + 0.5 * sin(rk * 6.2831853)) * nk * smoothstep(0.35, 0.8, crust);
     crustDet = (vp.z - 0.5) * 0.16 * nk;            // each polygon its own tone
     // Janubio's trampled crust: shallow pits, footprints and drag, 0.3-0.5 m apart, to 35 m
@@ -290,7 +315,7 @@ export const TERRAIN_COLOR = /* glsl */ `
       c = mix(c, c * vec3(0.62, 0.6, 0.58), crack * 0.32);
       c *= 1.0 - 0.2 * pits;
       // wet crust: big damp patches go grey and dull, dry ones stay chalk
-      float dampC = smoothstep(0.55, 0.8, texture2D(tNoiseG, xz * 0.0053 + 0.41).g);
+      float dampC = smoothstep(0.55, 0.8, gNoiseT(xz * 0.0053 + 0.41).g);
       c *= mix(1.0, 0.78, dampC * (1.0 - crack));
     }
     col += c * b;
@@ -308,14 +333,14 @@ export const TERRAIN_COLOR = /* glsl */ `
    *    round the field the ground carries salt stains and dead cells, never a clean rug edge -- */
   if (pan.a < 0.6 && dCam > 45.0 && puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0) {
     float wd = (0.7 + dCam * 0.0075) * uPanBox.z;
-    float nb = max(max(texture2D(tPan, puv + vec2(wd, 0.0)).a, texture2D(tPan, puv - vec2(wd, 0.0)).a),
-                   max(texture2D(tPan, puv + vec2(0.0, wd)).a, texture2D(tPan, puv - vec2(0.0, wd)).a));
+    float nb = max(max(gPanT(puv + vec2(wd, 0.0)).a, gPanT(puv - vec2(wd, 0.0)).a),
+                   max(gPanT(puv + vec2(0.0, wd)).a, gPanT(puv - vec2(0.0, wd)).a));
     float dyk = smoothstep(0.35, 0.75, nb) * (1.0 - inK) * smoothstep(45.0, 110.0, dCam);
     col *= mix(1.0, 0.42, dyk);
   }
   if (sh.a > 0.01) {
     // the field's halo: salt-stained silt, scalded patches, a ghost of a cell (bake: shore.a)
-    float st = sh.a * smoothstep(0.45, 0.75, nMac.g * 0.6 + texture2D(tNoiseG, xz * 0.047 + 0.2).r * 0.4);
+    float st = sh.a * smoothstep(0.45, 0.75, nMac.g * 0.6 + gNoiseT(xz * 0.047 + 0.2).r * 0.4);
     col = mix(col, vec3(0.42, 0.40, 0.37) * (0.7 + 0.5 * macA), st * 0.55 * (1.0 - wRock));
   }
 
@@ -328,9 +353,9 @@ export const TERRAIN_COLOR = /* glsl */ `
     /* the black sand from far off: fabric drawn out along the trade wind, warmer ash in broad
      * patches, and past the plants' range the colonies and the scrub as tone in the ground */
     vec2 wv = vec2(dot(xz, vec2(0.7071, -0.7071)), dot(xz, vec2(0.7071, 0.7071)));
-    vec4 nStreak = texture2D(tNoiseG, vec2(wv.x * 0.0106, wv.y * 0.00137));
+    vec4 nStreak = gNoiseT(vec2(wv.x * 0.0106, wv.y * 0.00137));
     float streak = nStreak.r * 0.6 + nStreak.b * 0.4;
-    vec4 nAsh = texture2D(tNoiseG, xz * 0.00116 + 0.31);
+    vec4 nAsh = gNoiseT(xz * 0.00116 + 0.31);
     float ash = smoothstep(0.42, 0.78, nAsh.r * 0.7 + nAsh.b * 0.3);
     // black sand stays black (W-07, bible 0.02-0.05 linear): structure, not a lift
     vec3 sandTone = mix(vec3(1.0), vec3(1.14, 1.09, 1.04), ash) * (0.74 + 0.34 * streak);
@@ -348,14 +373,14 @@ export const TERRAIN_COLOR = /* glsl */ `
   if (mB.a > 0.01) {
     float mk = smoothstep(0.02, 0.6, mB.a) * (1.0 - wSalt) * (1.0 - wRock);
     float farG = smoothstep(34.0, 54.0, dCam);
-    vec4 gn = texture2D(tNoiseG, xz * 0.0071 + 0.13);
+    vec4 gn = gNoiseT(xz * 0.0071 + 0.13);
     vec3 grass = mix(vec3(0.578, 0.352, 0.074), vec3(0.694, 0.431, 0.117), gn.r);   // #C9A04E..#D9B060
     float wave = sin(dot(xz, vec2(-0.7071, -0.7071)) * 0.21 + uTime * 1.3 + gn.g * 3.0);
     grass *= 0.62 * (1.0 + 0.08 * wave) * (0.72 + 0.5 * gn.b);
-    float clump = smoothstep(0.66, 0.8, texture2D(tNoiseG, xz * 0.0187 + 0.61).a);
+    float clump = smoothstep(0.66, 0.8, gNoiseT(xz * 0.0187 + 0.61).a);
     grass = mix(grass, vec3(0.20, 0.10, 0.30), clump * 0.4 * smoothstep(0.4, 0.7, gn.a));
     // dark culms and gaps between the drifts read as texture from the rim, never a flat fill
-    grass *= 0.68 + 0.42 * smoothstep(0.3, 0.7, texture2D(tNoiseG, xz * 0.061).b);
+    grass *= 0.68 + 0.42 * smoothstep(0.3, 0.7, gNoiseT(xz * 0.061).b);
     vec3 litter = mix(col, vec3(0.085, 0.062, 0.03), 0.65);
     col = mix(col, mix(litter, grass, farG), mk);
     pert *= 1.0 - 0.5 * mk * farG;
@@ -363,7 +388,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   // packed tracks: pale, smooth, salt-dusted
   if (mB.g > 0.01) {
     float tr = smoothstep(0.1, 0.8, mB.g) * (0.6 + 0.4 * macA);
-    col = mix(col, vec3(0.135, 0.122, 0.104) * (0.6 + 0.6 * texture2D(tNoiseG, xz * 0.031).b), tr * 0.8);
+    col = mix(col, vec3(0.135, 0.122, 0.104) * (0.6 + 0.6 * gNoiseT(xz * 0.031).b), tr * 0.8);
     pert *= 1.0 - 0.6 * tr;
     rSum = mix(rSum, 0.82, tr);
   }
@@ -377,23 +402,11 @@ export const TERRAIN_COLOR = /* glsl */ `
     col = mix(col, vTint.rgb * g * (0.82 + 0.36 * macA), tk0 * (1.0 - 0.6 * wRock));
   }
 
-  /* -- strata (W-03 b): the red tuff ring's beds, 0.8-2.5 m, on its steep faces: a palette row
-   *    per bed, a lit lip and a shaded undercut at each bed's top, dark varnish streaks below.
-   *    terrain.beddingAt() is this term's JS mirror (A63) --------------------------------- */
-  float strK = smoothstep(0.55, 0.95, slope) * smoothstep(0.02, 0.25, tk0) * uStrata;
-  if (strK > 0.01) {
-    float bz = vWPos.y + 4.0 * (texture2D(tNoiseG, xz * 0.0111).r - 0.5) * 2.0;
-    float T = 1.7;
-    float bnd = bz / T, bi = floor(bnd), bf = bnd - bi;
-    float hb = fract(sin(bi * 78.233) * 43758.5453);
-    vec3 bedC = hb < 0.25 ? vec3(0.62, 0.44, 0.34) : hb < 0.55 ? vec3(1.08, 0.86, 0.72) : hb < 0.8 ? vec3(0.84, 0.62, 0.5) : vec3(1.22, 1.06, 0.88);
-    float lip = smoothstep(0.82, 0.97, bf), under = 1.0 - smoothstep(0.0, 0.12, bf);
-    vec2 fall0 = normalize(wn.xz + vec2(1e-5));
-    float varn = texture2D(tNoiseG, vec2(dot(xz, vec2(-fall0.y, fall0.x)) * 0.09, bz * 0.011)).b;
-    vec3 sc = bedC * (1.0 + 0.22 * lip - 0.3 * under) * (1.0 - 0.28 * smoothstep(0.55, 0.85, varn));
-    col = mix(col, col * sc, strK);
-    pert += vec3(fall0.x, 0.0, fall0.y) * (lip * 0.35 - under * 0.25) * strK;
-  }
+  /* M1.1a: the strata are drawn live in the far field too (FAR_COLOR): a top-down bake at 1 m a texel cannot
+   * hold a band 1.7 m tall on a near-vertical face, so the bake leaves them out */
+  #ifndef CAL_FAR_BAKE
+  ${STRATA_TERM}
+  #endif
 
   /* -- rills: every real slope is scored down its fall line (gullies on the ring, wash on the
    *    knolls); from 300 m a smooth tinted hill is what reads as CG, a scored one does not -- */
@@ -401,7 +414,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   if (rillK > 0.01) {
     vec2 fall = normalize(wn.xz + vec2(1e-5));
     vec2 q = vec2(dot(xz, vec2(-fall.y, fall.x)), dot(xz, fall));
-    float rill = texture2D(tNoiseG, vec2(q.x * 0.0131, q.y * 0.0019)).b * 0.7 + texture2D(tNoiseG, vec2(q.x * 0.031, q.y * 0.0047) + 0.37).a * 0.3;
+    float rill = gNoiseT(vec2(q.x * 0.0131, q.y * 0.0019)).b * 0.7 + gNoiseT(vec2(q.x * 0.031, q.y * 0.0047) + 0.37).a * 0.3;
     col *= mix(1.0, 0.66 + 0.62 * rill, rillK * 0.85);
   }
 
@@ -414,7 +427,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     vec2 pd = gHash2(floor(xz * 9.0) + 3.1) - 0.5;
     col = mix(col, col * (0.6 + 0.9 * pb.z) + vec3(0.012, 0.011, 0.01) * pb.z, peb * 0.7);
     pert += vec3(pd.x, 0.0, pd.y) * peb * 0.9;
-    float grit = texture2D(tNoiseG, xz * 0.83).a * 0.6 + texture2D(tNoiseG, xz * 1.71 + 0.3).b * 0.4;
+    float grit = gNoiseT(xz * 0.83).a * 0.6 + gNoiseT(xz * 1.71 + 0.3).b * 0.4;
     col *= 1.0 + (grit - 0.5) * 0.42 * gk;
   }
 
@@ -447,7 +460,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     // a dyke is ≈ 0.4 m tall: a band of shadow on the side away from the light
     float L = min(0.42 / max(uSunTan, 0.08), 4.5);
     vec2 toSun = uSunXZ * L * uPanBox.z;
-    float behind = min(texture2D(tPan, puv + toSun).a, texture2D(tPan, puv + toSun * 0.5).a);
+    float behind = min(gPanT(puv + toSun).a, gPanT(puv + toSun * 0.5).a);
     gSunVis *= mix(1.0, smoothstep(0.1, 0.72, behind), smoothstep(70.0, 110.0, dCam));
   }
 
@@ -481,7 +494,7 @@ export const ROCK_COLOR = /* glsl */ `
   vec4 nx = gNm(2, ux, dx.zy, dy.zy), ny = gNm(2, uy, dx.xz, dy.xz), nz = gNm(2, uz, dx.xy, dy.xy);
   vec2 tx = nx.xy * 2.0 - 1.0, ty = ny.xy * 2.0 - 1.0, tz = nz.xy * 2.0 - 1.0;
   vec3 c = pow(a.rgb, vec3(2.2));
-  float mac = texture2D(tNoiseG, vWPos.xz * 0.012 + vWPos.y * 0.007).b;
+  float mac = gNoiseT(vWPos.xz * 0.012 + vWPos.y * 0.007).b;
   c *= (0.78 + 0.5 * mac) * uRockLift;
   // salt rime settles on what faces up; the foot in the swash is wet and black
   float rime = smoothstep(0.78, 0.99, wn.y) * uRime * smoothstep(0.42, 0.72, mac);
@@ -505,4 +518,68 @@ roughnessFactor = clamp(gRough, 0.05, 1.0);
 export const GROUND_NORMAL = /* glsl */ `
 #include <normal_fragment_begin>
 normal = normalize(normal + (viewMatrix * vec4(gN, 0.0)).xyz);
+`;
+
+/**
+ * THE FAR FIELD (M1.1a, TECH §5 lever 4). Past FAR_START a chunk is drawn with one baked albedo and one baked
+ * normal instead of the layered shader. terrain.js bakes them once (`_bakeFarField`): the ground material's own
+ * colour stage, rendered top-down over the world square at 1 m a texel with `dCam` held at FAR_BAKE_D (every
+ * distance fade in TERRAIN_COLOR is saturated there), written out instead of lit. A: albedo (gamma 2.2) and the
+ * liquid (brine, wet sand); N: the perturbed world normal's x and z, roughness, AO. The light stays live: the
+ * skyline's long shadows, the cascades, the rain, the sky in the brine (GROUND_AO).
+ */
+export const FAR_BAKE_D = 200.0;
+export const FAR_FRAG_PARS = /* glsl */ `
+${GROUND_FRAG_PARS}
+varying vec4 vTint;
+uniform sampler2D tFarA;
+uniform sampler2D tFarN;
+uniform float uFarInv;     // 1 / the baked square's side
+uniform float uStrata;
+`;
+export const FAR_COLOR = /* glsl */ `
+#include <color_fragment>
+{
+  vec2 fuv = vec2(vWPos.x * uFarInv + 0.5, 0.5 - vWPos.z * uFarInv);
+  vec4 fa = texture2D(tFarA, fuv), fn = texture2D(tFarN, fuv);
+  vec2 nxz = fn.rg * 2.0 - 1.0;
+  vec3 nW = vec3(nxz.x, sqrt(max(1.0 - dot(nxz, nxz), 0.0)), nxz.y);
+  gN = nW - normalize(vWNorm);
+  gRough = fn.b;
+  gAO = fn.a;
+  gLiquid = fa.a;
+  gSunVis = gSkylineVis(vWPos.xz);
+  vec3 col = pow(fa.rgb, vec3(2.2));
+  #ifdef USE_FOG
+  {
+    float rainW = clamp(calWeather.x, 0.0, 1.0);
+    if (rainW > 0.002) {
+      vec3 wn = normalize(vWNorm);
+      float slope = sqrt(max(1.0 - wn.y * wn.y, 0.0)) / max(wn.y, 0.05);
+      float pool = 1.0 - smoothstep(0.0, 0.35, slope);
+      col *= 1.0 - 0.34 * rainW * (0.45 + 0.55 * pool);
+      gRough *= 1.0 - 0.55 * rainW * pool;
+    }
+  }
+  #endif
+  {
+    vec3 wn = normalize(vWNorm);
+    vec2 xz = vWPos.xz;
+    float slope = sqrt(max(1.0 - wn.y * wn.y, 0.0)) / max(wn.y, 0.05);
+    float tk0 = vTint.a;
+    vec3 pert = vec3(0.0);
+    ${STRATA_TERM}
+    gN += pert;
+  }
+  diffuseColor.rgb = col;
+}
+`;
+/** The bake's output, in place of the lit result (terrain.js renders the colour stage with this). */
+export const FAR_BAKE_OUT = /* glsl */ `
+#include <opaque_fragment>
+{
+  vec3 nW = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+  gl_FragColor = uFarPart < 0.5 ? vec4(pow(clamp(diffuseColor.rgb, 0.0, 1.0), vec3(1.0 / 2.2)), clamp(gLiquid, 0.0, 1.0))
+                                : vec4(nW.xz * 0.5 + 0.5, clamp(roughnessFactor, 0.0, 1.0), clamp(gAO, 0.0, 1.0));
+}
 `;

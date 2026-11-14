@@ -24,8 +24,9 @@
  * filter the GPU's generateMipmap uses), so a texture that mipmapped at runtime before is mipmapped the same way now;
  * an image whose samplers never minify through mips (NEAREST / LINEAR) ships one level.
  *
- * The ground ships as two texture arrays per size, the layout `src/world/island/layers.js` defines
- * (`LAYER_FILES`, `layerArrayUrl`): `public/textures/ground/{big,small}_{a,n}.ktx2`. Their sources are the
+ * The ground ships as one texture array per part, the layout `src/world/island/layers.js` defines
+ * (`LAYER_ARRAY`, `layerArrayUrl`): `public/textures/ground/layers_{a,n}.ktx2`, five layers at 1024², the 512²
+ * sources tiled 2 x 2 into theirs (M1.1a: two sampler units for every ground layer). Their sources are the
  * WebP pairs `tools/build/ground/gen-ground-layers.mjs` writes; when those are not on disk the recipe is run into
  * a scratch root first (it is deterministic and reads no third-party file).
  *
@@ -45,7 +46,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import sharp from 'sharp';
-import { LAYER_FILES, LAYER_SIZE, layerArrayPath } from '../../../src/world/island/layers.js';
+import { LAYER_ARRAY, LAYER_FILES, layerArrayPath } from '../../../src/world/island/layers.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(HERE, '../../..');
@@ -282,14 +283,25 @@ async function groundSourceRoot(root, tmp) {
   return scratch;
 }
 
+/** Tile a square PNG n x n into one image of n times its edge (a periodic layer: the same texels, the same mips). */
+async function tilePng(file, n, out) {
+  const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const w = info.width, W = w * n, big = Buffer.alloc(W * W * 4);
+  for (let y = 0; y < W; y++) data.copy(big, y * W * 4, (y % w) * w * 4, (y % w) * w * 4 + w * 4);
+  for (let y = 0; y < W; y++) for (let k = 1; k < n; k++) big.copy(big, (y * W + k * w) * 4, y * W * 4, y * W * 4 + w * 4);
+  await sharp(big, { raw: { width: W, height: W, channels: 4 } }).png({ compressionLevel: 1 }).toFile(out);
+  return out;
+}
+
 /**
- * Encode the ground texture arrays into `<outRoot>/public/textures/ground/{big,small}_{a,n}.ktx2`.
+ * Encode the ground texture arrays into `<outRoot>/public/textures/ground/layers_{a,n}.ktx2`.
  * @param {{ bin: string, srcRoot: string, outRoot: string, tmp: string, raw?: boolean }} o
  */
 export async function encodeGround({ bin, srcRoot, outRoot, tmp, raw = false }) {
   const src = await groundSourceRoot(srcRoot, tmp);
   const rows = [];
-  for (const [group, ids] of Object.entries(LAYER_FILES)) {
+  const N = LAYER_ARRAY.size, group = LAYER_ARRAY.group, ids = LAYER_ARRAY.ids;
+  {
     for (const part of ['a', 'n']) {
       const pngs = [];
       let alpha = false;
@@ -298,10 +310,11 @@ export async function encodeGround({ bin, srcRoot, outRoot, tmp, raw = false }) 
         const f = groundSource(src, id, part);
         const bytes = readFileSync(f);
         before += bytes.length;
-        const png = path.join(tmp, `ground-${id}-${part}.png`);
+        let png = path.join(tmp, `ground-${id}-${part}.png`);
         const m = await toPng(bytes, png);
-        const N = /** @type {any} */ (LAYER_SIZE)[group];
-        if (m.width !== N || m.height !== N) throw new Error(`${f}: ${m.width}×${m.height}, the array wants ${N}²`);
+        const k = /** @type {any} */ (LAYER_ARRAY.tile)[id] || 1;
+        if (m.width !== m.height || m.width * k !== N) throw new Error(`${f}: ${m.width}×${m.height} tiled ${k}x, the array wants ${N}²`);
+        if (k > 1) png = await tilePng(png, k, path.join(tmp, `ground-${id}-${part}-x${k}.png`));
         alpha ||= m.alpha;
         pngs.push(png);
       }
@@ -313,7 +326,6 @@ export async function encodeGround({ bin, srcRoot, outRoot, tmp, raw = false }) 
       mkdirSync(path.dirname(out), { recursive: true });
       const bytes = ktxCreate({ bin, pngs, out: path.join(tmp, `ground-${group}-${part}.ktx2`), mode, srgb: part === 'a', alpha, mips: true, wrap: true });
       writeFileSync(out, bytes);
-      const N = /** @type {any} */ (LAYER_SIZE)[group];
       rows.push({ file: rel, image: `${ids.join('+')} (${part === 'a' ? 'albedo + height' : 'normal XY, roughness, AO'})`, mode, srgb: part === 'a', alpha,
         mips: true, width: N, height: N, layers: ids.length, bytesBefore: before, bytesAfter: bytes.length,
         gpuBefore: mipBytes(N, N, 4, true) * ids.length, gpuAfter: mipBytes(N, N, gpuBpp(mode, alpha), true) * ids.length });

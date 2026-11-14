@@ -48,6 +48,11 @@ const STREAM = {
   lavender: { src: 'lavender', name: 'lavender', r: 104, cap: 4000, fade: [82, 104], every: 1, sway: 0.5 },
 };
 
+/** M1.1a: the dyke runs are drawn within DYKE_R of the camera and cast within DYKE_SHADOW_R (see _buildDykes):
+ * past them the ground shader's dyke strip (full by 110 m) and its shadow band (from 70 m) carry the field. */
+const DYKE_R = 120;
+const DYKE_SHADOW_R = 80;
+
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
 const _e = new THREE.Euler();
@@ -325,8 +330,7 @@ uniform vec4 uActors[4];
 `;
 const FLORA_FRAG_PARS = /* glsl */ `
 varying vec2 vFloraXZ;
-uniform sampler2D tHzA;
-uniform sampler2D tHzB;
+uniform highp sampler2DArray tField;   // terrain.js: layer 0 noise, 1-2 the skyline (M1.1a)
 uniform vec4 uHzW0;
 uniform vec4 uHzW1;
 uniform float uSunTan;
@@ -337,8 +341,8 @@ uniform float uHzK;
 const FLORA_AO = /* glsl */ `
 #include <aomap_fragment>
 {
-  vec2 hzUv = vFloraXZ * uHzWorldInv + 0.5;
-  float hzA = dot(texture2D(tHzA, hzUv), uHzW0) + dot(texture2D(tHzB, hzUv), uHzW1);
+  vec2 hzUv = clamp(vFloraXZ * uHzWorldInv + 0.5, vec2(0.5 / 512.0), vec2(1.0 - 0.5 / 512.0));
+  float hzA = dot(texture(tField, vec3(hzUv, 1.0)), uHzW0) + dot(texture(tField, vec3(hzUv, 2.0)), uHzW1);
   hzA = hzA * hzA * 0.9;
   float hzV = mix(1.0, smoothstep(hzA - 0.016, hzA + 0.034, uSunTan), uHzK);
   reflectedLight.directDiffuse *= hzV;
@@ -453,7 +457,7 @@ export class Vegetation {
       shader.uniforms.uFade = { value: fade };
       shader.uniforms.uActors = this._uActors;
       const U = this.ctx.terrain.groundUniforms;
-      shader.uniforms.tHzA = U.tHzA; shader.uniforms.tHzB = U.tHzB;
+      shader.uniforms.tField = U.tField;
       shader.uniforms.uHzW0 = U.uHzW0; shader.uniforms.uHzW1 = U.uHzW1;
       shader.uniforms.uSunTan = U.uSunTan; shader.uniforms.uHzWorldInv = U.uHzWorldInv; shader.uniforms.uHzK = U.uHzK;
       shader.vertexShader = shader.vertexShader
@@ -490,8 +494,14 @@ export class Vegetation {
     };
     for (const key of this._streamKeys) {
       const cfg = STREAM[key];
-      const geo = geos[key];
-      this._owned.geo.push(geo);
+      /* M1.1a: welded and indexed. blade() writes each strap corner once per triangle that uses it (12
+       * vertices a two-quad strap where 6 are distinct), and every vertex ran the flora vertex shader (instance
+       * matrix, wind, four displacers, three cascade coordinates). Same positions, colours and normals: the
+       * same pixels, half the vertex work. */
+      const geoFlat = geos[key];
+      const geo = mergeVertices(geoFlat);
+      geo.computeBoundingSphere();
+      this._owned.geo.push(geo, geoFlat);
       const mat = this._floraMaterial(cfg);
       const mesh = new THREE.InstancedMesh(geo, mat, cfg.cap);
       mesh.name = cfg.name;
@@ -503,7 +513,7 @@ export class Vegetation {
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;
       this.group.add(mesh);
-      this._draws[key] = { mesh, cfg, count: 0 };
+      this._draws[key] = { mesh, cfg, count: 0, geoIndexed: geo, geoFlat };
     }
   }
 
@@ -564,6 +574,7 @@ export class Vegetation {
   forceStream(x, z) {
     this._camX = x; this._camZ = z;
     for (const key of this._streamKeys) this._fill(key, x, z, 0, 0);
+    this._fillDykes(x, z, 0, 0);
     this._dirty = false;
   }
 
@@ -657,7 +668,7 @@ export class Vegetation {
   _armCasterRadii() {
     if (this._radiiArmed || !this.ctx.collision) return;
     this._radiiArmed = true;
-    for (const m of [this.rocks, this.columns, this.dykes, this.rakes]) {
+    for (const m of [this.rocks, this.columns, this.rakes]) {
       if (m) m.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), m.userData.__castRadius);
     }
   }
@@ -666,9 +677,96 @@ export class Vegetation {
     const S = this._bake.static;
     this.rocks = this._staticMesh('rocks-basalt', rockGeo(), this._rockMaterial('rock', 0.3, false, 2.2, 1.5), S.rocks, true);
     this.columns = this._staticMesh('rocks-columns', columnGeo(), this._rockMaterial('col', 0.2, false), S.columns, true);
-    this.dykes = this._staticMesh('pan-dykes', wallGeo(), this._rockMaterial('wall', 0.4, false, 4.1, 1.12), S.walls, true);
+    this.dykes = this._buildDykes(S.walls);
     this.rakes = this._staticMesh('salt-rakes', saltGeo(), this._rockMaterial('salt', 0, true), S.heaps, true);
     this._columnData = S.columns;
+  }
+
+  /**
+   * THE DYKES, STREAMED (M1.1a). 2,997 stone runs were one static draw with frustum culling off: every run
+   * drawn in the main view and in each shadow cascade wherever the camera stood (1.08 M triangles a frame at
+   * the Pans). Now each run's matrix is composed once (the same compose `_staticMesh` used: no two runs
+   * alike), and the runs within DYKE_R of the camera, not behind it, are copied into one instance buffer when
+   * the camera has moved (with the flora's re-stream). Past DYKE_R the ground shader's dyke strip carries the
+   * field (groundShader.js: darkened and widened with distance from 45 m, its shadow band from 70 m).
+   */
+  _buildDykes(data) {
+    const n = data.length / STRIDE;
+    if (!n) return null;
+    const W = new Float32Array(n * 16), XZ = new Float32Array(n * 2), tone = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const o = i * STRIDE;
+      const hz = (Math.imul(i + 1, 2654435761) >>> 0) / 4294967296;
+      _p.set(data[o], data[o + 1], data[o + 2]);
+      _e.set(0, data[o + 3] + (hz > 0.5 ? Math.PI : 0), 0);
+      _q.setFromEuler(_e);
+      _s.set(data[o + 4] * (0.92 + 0.16 * ((hz * 7.31) % 1)), data[o + 5] * (0.86 + 0.28 * ((hz * 13.7) % 1)), data[o + 6]);
+      _m.compose(_p, _q, _s).toArray(W, i * 16);
+      XZ[i * 2] = data[o]; XZ[i * 2 + 1] = data[o + 2];
+      tone[i] = data[o + 8];
+    }
+    const geo = wallGeo();
+    this._owned.geo.push(geo);
+    const mesh = new THREE.InstancedMesh(geo, this._rockMaterial('wall', 0.4, false, 4.1, 1.12), n);
+    mesh.name = 'pan-dykes';
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
+    mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    // the engine's caster cull reads distance from the mesh's position minus this radius: the runs follow the camera
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), WORLD_SIZE);
+    // shadow-caster mask: the runs are filled nearest band first, and the shadow passes draw only that band
+    mesh.onBeforeShadow = () => { const D = this._dyke; if (D.streamed) mesh.count = D.casters; };
+    mesh.onAfterShadow = () => { mesh.count = this._dyke.count; };
+    this.group.add(mesh);
+    this._dyke = { W, XZ, tone, skip: new Uint8Array(n), n, r: DYKE_R, rShadow: DYKE_SHADOW_R, streamed: true, count: 0, casters: 0 };
+    return mesh;
+  }
+
+  /** Copy the runs near (cx, cz), not behind the camera, into the dyke draw. No allocation. */
+  _fillDykes(cx, cz, fwdX = 0, fwdZ = 0) {
+    const D = this._dyke, mesh = this.dykes;
+    if (!D || !mesh) return;
+    const M = mesh.instanceMatrix.array, Col = mesh.instanceColor.array, { W, XZ, tone, skip } = D;
+    const r2 = D.streamed ? D.r * D.r : Infinity, s2 = D.streamed ? D.rShadow * D.rShadow : Infinity;
+    let k = 0;
+    // two bands: the casters (within rShadow) first, so the shadow passes can draw a prefix of the buffer
+    for (let band = 0; band < 2; band++) {
+      for (let i = 0; i < D.n; i++) {
+        if (skip[i]) continue;
+        const dx = XZ[i * 2] - cx, dz = XZ[i * 2 + 1] - cz, dd = dx * dx + dz * dz;
+        if (dd > r2 || (band === 0) !== (dd <= s2)) continue;
+        if (D.streamed && dd > 900 && dx * fwdX + dz * fwdZ < -0.42 * Math.sqrt(dd)) continue;
+        for (let j = 0; j < 16; j++) M[k * 16 + j] = W[i * 16 + j];
+        const t = tone[i];
+        Col[k * 3] = t; Col[k * 3 + 1] = t; Col[k * 3 + 2] = t;
+        k++;
+      }
+      if (band === 0) D.casters = k;
+    }
+    D.count = k;
+    mesh.count = k;
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.instanceColor.needsUpdate = true;
+  }
+
+  /**
+   * Runtime switches for the M1.1a A/B (tools/perf/census.mjs), each { id, on(), off() }: 'flora-indexed'
+   * (the four flora kinds drawn from welded, indexed geometry; off = the non-indexed originals, the same
+   * pixels) and 'dykes-streamed' (off = every run, as before).
+   */
+  perfSwitches() {
+    const cam = this.ctx.camera;
+    const fwd = () => { const v = cam.getWorldDirection(this._v); return [v.x, v.z]; };
+    const floraGeo = (indexed) => { for (const key of this._streamKeys) { const D = this._draws[key]; D.mesh.geometry = indexed ? D.geoIndexed : D.geoFlat; } };
+    const dykes = (on) => { if (!this._dyke) return; this._dyke.streamed = on; const [fx, fz] = fwd(); this._fillDykes(cam.position.x, cam.position.z, fx, fz); };
+    return [
+      { id: 'flora-indexed', on: () => floraGeo(true), off: () => floraGeo(false) },
+      { id: 'dykes-streamed', on: () => dykes(true), off: () => dykes(false) },
+    ];
   }
 
   /**
@@ -704,6 +802,13 @@ export class Vegetation {
   _applyKeepouts() {
     const K = this.ctx.props?.keepouts || this.props?.keepouts;
     if (!Array.isArray(K) || !K.length) return;
+    // the streamed dykes honour the keepouts themselves (props.js _clearScatter zeroed them in the static draw)
+    const D = this._dyke;
+    if (D) for (const z of K) {
+      const hard = z.hard ?? z.r ?? 0;
+      if (!(hard > 0)) continue;
+      for (let i = 0; i < D.n; i++) { const dx = D.XZ[i * 2] - z.x, dz = D.XZ[i * 2 + 1] - z.z; if (dx * dx + dz * dz < hard * hard) D.skip[i] = 1; }
+    }
     for (const kind of Object.values(this._bake.kinds)) {
       const a = kind.rec;
       for (const z of K) {
@@ -844,6 +949,7 @@ export class Vegetation {
       this._pending = this._streamKeys.length;
       this._camX = x; this._camZ = z; this._camYaw = yaw;
       this._dirty = false;
+      this._fillDykes(x, z, v.x, v.z);
     }
     if (this._pending > 0) {
       this._fill(this._streamKeys[this._streamI], x, z, v.x, v.z);

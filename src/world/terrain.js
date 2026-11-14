@@ -4,11 +4,11 @@ import { REST_SITE, TUBES, SALT_FIELD } from './island/sites.js';
 import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './island/recipe.js';
 import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, SKYLINE_N, bakeShade, maskTexel } from './island/bake.js';
 import { bakeIsland } from './island/pool.js';
-import { LAYER_FILES } from './island/layers.js';
+import { LAYER_ARRAY } from './island/layers.js';
 import { fieldReader } from './island/scatter.js';
 import {
   GROUND_VERT_PARS, GROUND_VERT_WORLD, TERRAIN_FRAG_PARS, TERRAIN_COLOR,
-  GROUND_ROUGH, GROUND_NORMAL,
+  GROUND_ROUGH, GROUND_NORMAL, FAR_FRAG_PARS, FAR_COLOR, FAR_BAKE_OUT, FAR_BAKE_D,
 } from './island/groundShader.js';
 import { IslandWater } from './water.js';
 
@@ -188,6 +188,24 @@ if (gLiquid > 0.004) {
 const BAKE = await bakeIsland({ layers: false });   // M0.10: the layer arrays are KTX2, loaded by ctx.assets (TEXTURES rows)
 const H = BAKE.H;
 const { side: GS, step: GSTEP, half: GHALF } = GRID;
+
+/* M1.1a: the four world masks live in one buffer, layer after layer, so the ground samples them as one
+ * texture array (one sampler unit). Every reader (maskRead, the stamps, the scatter fields, the water's
+ * shore texture, the gates) keeps reading BAKE.maskA / maskB / shore / pan: they are views of it now. */
+if (PAN_N !== MASK_N) throw new Error(`terrain: the mask array needs PAN_N (${PAN_N}) === MASK_N (${MASK_N})`);
+const MASK_BYTES = MASK_N * MASK_N * 4;
+const MASKS = new Uint8Array(MASK_BYTES * 4);
+['maskA', 'maskB', 'shore', 'pan'].forEach((k, i) => { MASKS.set(BAKE[k], i * MASK_BYTES); BAKE[k] = MASKS.subarray(i * MASK_BYTES, (i + 1) * MASK_BYTES); });
+
+/* M1.1a terrain chunks and LOD (see _buildMesh) */
+const TCHUNK = 64;                       // grid segments per chunk side (124 m); the last row and column are 46
+const TSTRIDES = [1, 2, 4, 8, 16];       // grid steps per quad at each LOD
+const TDEEP = -7;                        // the sea floor under this is under opaque water: never indexed
+const TSKIRT_MAX_ERR = 3;                // m: a stride whose border error is over this is never taken
+const TLOD_PX = 2;                       // device px of height error a coarser stride may project
+const TLOD_M = 60;
+const FAR_START = 250;                   // m: a chunk wholly past this is drawn from the baked far field
+const FAR_N = 1024;                      // texels a side of the far-field bake over the world square (1 m a texel)                       // m a stride: stride s only from 60 s m away (normals and tint keep their density)
 
 /* ---------------------------- fast grid reads (module scope) ---------------------- */
 function gridHeight(x, z) {
@@ -463,6 +481,15 @@ export class Terrain {
       shore: mkMask(BAKE.shore, MASK_N), pan: mkMask(BAKE.pan, PAN_N),
     };
     this._maskData.tex = [this._maskTextures.a, this._maskTextures.b, this._maskTextures.shore];
+    {
+      const t = new THREE.DataArrayTexture(MASKS, MASK_N, MASK_N, 4);
+      t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
+      t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
+      t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+      t.generateMipmaps = false;
+      t.needsUpdate = true;
+      this._maskArray = t;
+    }
     const mkHz = (data) => {
       const t = mkMask(data, SKYLINE_N);
       t.minFilter = THREE.LinearMipmapLinearFilter;
@@ -490,11 +517,9 @@ export class Terrain {
       t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true;
       return t;
     };
-    const T = this.ctx.assets?.textures || {}, nB = LAYER_FILES.big.length, nS = LAYER_FILES.small.length;
-    this._layerTextures = {
-      a1: T.groundA1 || flatArr(nB), n1: T.groundN1 || flatArr(nB),
-      a2: T.groundA2 || flatArr(nS), n2: T.groundN2 || flatArr(nS),
-    };
+    /* M1.1a: one array per part, all five layers at 1024² (layers.js LAYER_ARRAY): two sampler units */
+    const T = this.ctx.assets?.textures || {}, nL = LAYER_ARRAY.ids.length;
+    this._layerTextures = { a: T.groundA || flatArr(nL), n: T.groundN || flatArr(nL) };
     /* Four octaves of periodic value noise in one texture: the ground's macro read costs a few
      * fetches, where sin-hash noise cost forty sines a pixel. */
     {
@@ -527,14 +552,29 @@ export class Terrain {
         return a + (b - a) * ty;
       };
     }
+    /* M1.1a: noise (128² tiled 4 x 4) + the two skyline maps as one 512² array with mips (one sampler unit) */
+    {
+      const N = SKYLINE_N, L = N * N * 4, data = new Uint8Array(L * 3);
+      const src = this._maskTextures.noiseG.image.data, n0 = this._maskTextures.noiseG.image.width;
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        const o = (y * N + x) * 4, q = ((y % n0) * n0 + (x % n0)) * 4;
+        data[o] = src[q]; data[o + 1] = src[q + 1]; data[o + 2] = src[q + 2]; data[o + 3] = src[q + 3];
+      }
+      data.set(BAKE.skylineA, L); data.set(BAKE.skylineB, 2 * L);
+      const t = new THREE.DataArrayTexture(data, N, N, 3);
+      t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+      t.generateMipmaps = true;
+      t.needsUpdate = true;
+      this._fieldArray = t;
+    }
     /** Shared uniform holders: terrain, rocks and salt all read one set. */
     this.groundUniforms = {
-      tA1: { value: this._layerTextures.a1 }, tN1: { value: this._layerTextures.n1 },
-      tA2: { value: this._layerTextures.a2 }, tN2: { value: this._layerTextures.n2 },
+      tA: { value: this._layerTextures.a }, tN: { value: this._layerTextures.n },
       uScale1: { value: new THREE.Vector3(1 / 3.0, 1 / 10.0, 1 / 7.0) },
       uScale2: { value: new THREE.Vector2(1 / 3.5, 1 / 2.6) },
-      tHzA: { value: this._maskTextures.hzA }, tHzB: { value: this._maskTextures.hzB },
-      tNoiseG: { value: this._maskTextures.noiseG },
+      tField: { value: this._fieldArray },
       uHzW0: { value: new THREE.Vector4(0, 1, 0, 0) }, uHzW1: { value: new THREE.Vector4() },
       uSunTan: { value: 1 }, uSunXZ: { value: new THREE.Vector2(0, -1) },
       uHzWorldInv: { value: 1 / WORLD_SIZE }, uHzK: { value: 1 },
@@ -542,45 +582,109 @@ export class Terrain {
   }
 
   /* -------------------------------- the mesh -------------------------------- */
+  /**
+   * THE GROUND AS CHUNKS WITH DISTANCE LOD (M1.1a). One vertex buffer for the whole 1.94 m grid (plus a
+   * skirt node under every chunk-border node), shared by every chunk; each chunk owns one index buffer per
+   * stride (1, 2, 4, 8, 16 grid steps), built on first use. Per frame (`updateLod`) every chunk takes the
+   * coarsest stride whose height error projects under LOD_PX device pixels AND whose quads stay at least
+   * LOD_M metres a stride away (so the per-vertex normal and tint, which carry the shading, are never
+   * stretched near the camera). Chunks are frustum-culled on their own bounds. Skirts (both windings) hang
+   * from every chunk border by twice the worst border error of the strides a chunk may take, so a fine
+   * chunk beside a coarse one shows no crack. The sea floor under −7 m stays out of every index (under
+   * opaque water). `terrain.mesh` is the chunk group; `terrain.groundMaterial` the one material.
+   */
   _buildMesh() {
-    const side = GS, segs = MESH_SEGS, count = side * side;
-    const pos = new Float32Array(count * 3);
+    const side = GS, segs = MESH_SEGS, count = side * side, CH = TCHUNK;
+    const line = (i) => i % CH === 0 || i === segs;
+    const skirtOf = new Int32Array(count).fill(-1);
+    let nS = 0;
+    for (let iz = 0; iz < side; iz++) for (let ix = 0; ix < side; ix++) if (line(ix) || line(iz)) skirtOf[iz * side + ix] = count + nS++;
+    const total = count + nS;
+    const pos = new Float32Array(total * 3);
     for (let iz = 0, i = 0; iz < side; iz++) {
       const z = iz * GSTEP - GHALF;
       for (let ix = 0; ix < side; ix++, i++) {
         pos[i * 3] = ix * GSTEP - GHALF; pos[i * 3 + 1] = H[i]; pos[i * 3 + 2] = z;
       }
     }
-    /* The sea floor below −7 m is under opaque water: its triangles are never drawn, so
-     * the index leaves them out (≈ 45 % of the mesh, and the frame's cheapest saving). */
-    const idx = new Uint32Array(segs * segs * 6);
-    let n = 0;
-    const DEEP = -7;
-    for (let iz = 0; iz < segs; iz++) {
-      for (let ix = 0; ix < segs; ix++) {
-        const a = iz * side + ix, b = a + side, c = b + 1, d = a + 1;
-        if (H[a] < DEEP && H[b] < DEEP && H[c] < DEEP && H[d] < DEEP) continue;
-        idx[n++] = a; idx[n++] = b; idx[n++] = d;
-        idx[n++] = b; idx[n++] = c; idx[n++] = d;
+    const nrm = new Int16Array(total * 4); nrm.set(BAKE.normals);
+    const tint = new Uint8Array(total * 4); tint.set(BAKE.tint);
+
+    /* chunks: node ranges, and per stride the height error over the chunk and over its border */
+    const nC = Math.ceil(segs / CH);
+    const chunks = [];
+    const nodesOf = (a, b, s) => { const o = []; for (let i = a; i < b; i += s) o.push(i); o.push(b); return o; };
+    for (let cz = 0; cz < nC; cz++) {
+      for (let cx = 0; cx < nC; cx++) {
+        const x0 = cx * CH, x1 = Math.min(segs, x0 + CH), z0 = cz * CH, z1 = Math.min(segs, z0 + CH);
+        const C = { cx, cz, x0, x1, z0, z1, err: new Float32Array(TSTRIDES.length), edge: new Float32Array(TSTRIDES.length),
+          lo: Infinity, hi: -Infinity, land: false, geos: new Array(TSTRIDES.length).fill(null), mesh: null, lod: -1, maxLod: 0 };
+        for (let iz = z0; iz <= z1; iz++) for (let ix = x0; ix <= x1; ix++) {
+          const h = H[iz * side + ix];
+          if (h < C.lo) C.lo = h; if (h > C.hi) C.hi = h;
+          if (h >= TDEEP) C.land = true;
+        }
+        for (let k = 1; k < TSTRIDES.length; k++) {
+          const s = TSTRIDES[k], X = nodesOf(x0, x1, s), Z = nodesOf(z0, z1, s);
+          let err = 0, edge = 0;
+          for (let j = 0; j + 1 < Z.length; j++) {
+            const za = Z[j], zb = Z[j + 1];
+            for (let i = 0; i + 1 < X.length; i++) {
+              const xa = X[i], xb = X[i + 1];
+              const ha = H[za * side + xa], hb = H[zb * side + xa], hc = H[zb * side + xb], hd = H[za * side + xb];
+              for (let iz = za; iz <= zb; iz++) {
+                const v = (iz - za) / (zb - za);
+                for (let ix = xa; ix <= xb; ix++) {
+                  const h = H[iz * side + ix];
+                  if (h < TDEEP) continue;
+                  const u = (ix - xa) / (xb - xa);
+                  const g = u + v <= 1 ? ha + (hd - ha) * u + (hb - ha) * v : hc + (hb - hc) * (1 - u) + (hd - hc) * (1 - v);
+                  const e = Math.abs(g - h);
+                  if (e > err) err = e;
+                  if ((ix === x0 || ix === x1 || iz === z0 || iz === z1) && e > edge) edge = e;
+                }
+              }
+            }
+          }
+          C.err[k] = err; C.edge[k] = edge;
+        }
+        // the strides this chunk may ever take: border error under TSKIRT_MAX_ERR
+        let maxLod = 0;
+        for (let k = 1; k < TSTRIDES.length && C.edge[k] <= TSKIRT_MAX_ERR; k++) maxLod = k;
+        C.maxLod = maxLod;
+        C.skirt = 2 * C.edge[maxLod] + 0.3;
+        chunks.push(C);
       }
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('normal', new THREE.BufferAttribute(BAKE.normals, 4, true));
-    geo.setAttribute('aTint', new THREE.BufferAttribute(BAKE.tint, 4, true));
-    geo.setIndex(new THREE.BufferAttribute(idx.slice(0, n), 1));
-    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), MESH_SPAN * 0.75);
-    geo.boundingBox = new THREE.Box3(new THREE.Vector3(-GHALF, -40, -GHALF), new THREE.Vector3(GHALF, 260, GHALF));
+    /* skirt nodes: the deepest skirt any chunk touching the node needs */
+    const skirtDepth = new Float32Array(nS);
+    for (const C of chunks) {
+      for (let iz = C.z0; iz <= C.z1; iz++) for (let ix = C.x0; ix <= C.x1; ix++) {
+        const n = iz * side + ix, s = skirtOf[n];
+        if (s >= 0 && (ix === C.x0 || ix === C.x1 || iz === C.z0 || iz === C.z1)) skirtDepth[s - count] = Math.max(skirtDepth[s - count], C.skirt);
+      }
+    }
+    for (let n = 0; n < count; n++) {
+      const s = skirtOf[n];
+      if (s < 0) continue;
+      pos[s * 3] = pos[n * 3]; pos[s * 3 + 1] = pos[n * 3 + 1] - skirtDepth[s - count]; pos[s * 3 + 2] = pos[n * 3 + 2];
+      for (let k = 0; k < 4; k++) { nrm[s * 4 + k] = nrm[n * 4 + k]; tint[s * 4 + k] = tint[n * 4 + k]; }
+    }
+    const aPos = new THREE.BufferAttribute(pos, 3), aNrm = new THREE.BufferAttribute(nrm, 4, true), aTint = new THREE.BufferAttribute(tint, 4, true);
+    this._attr = { position: aPos, normal: aNrm, aTint, skirtOf, count, side };
 
     const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
-    const U = this.groundUniforms;
-    const mt = this._maskTextures;
-    mat.onBeforeCompile = (shader) => {
+    mat.onBeforeCompile = (shader) => this._groundCompile(shader, null);
+    mat.customProgramCacheKey = () => 'cal-ground-terrain';
+    this.groundMaterial = mat;
+    this._buildChunks(chunks);
+  }
+
+  /** The layered ground shader; `bake` (a { value } part selector) makes the far-field bake variant. */
+  _groundCompile(shader, bake) {
+      const U = this.groundUniforms;
       Object.assign(shader.uniforms, U);
-      shader.uniforms.tMaskA = { value: mt.a };
-      shader.uniforms.tMaskB = { value: mt.b };
-      shader.uniforms.tShore = { value: mt.shore };
-      shader.uniforms.tPan = { value: mt.pan };
+      shader.uniforms.tMask = { value: this._maskArray };
       shader.uniforms.uPanBox = { value: new THREE.Vector3(PAN_BOX.x0, PAN_BOX.z0, 1 / PAN_BOX.size) };
       shader.uniforms.uWorldInv = { value: 1 / WORLD_SIZE };
       shader.uniforms.uTime = this._uTime;
@@ -590,19 +694,198 @@ export class Terrain {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', GROUND_VERT_PARS)
         .replace('#include <worldpos_vertex>', GROUND_VERT_WORLD);
+      let color = TERRAIN_COLOR, pars = TERRAIN_FRAG_PARS;
+      if (bake) {
+        const D = 'float dCam = length(vWPos - cameraPosition);';
+        if (!color.includes(D)) throw new Error('terrain far bake: the dCam anchor moved');
+        color = color.replace(D, `float dCam = ${FAR_BAKE_D.toFixed(1)};`);
+        pars += '\n#define CAL_FAR_BAKE\nuniform float uFarPart;';
+        shader.uniforms.uFarPart = bake;
+      }
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', TERRAIN_FRAG_PARS)
-        .replace('#include <color_fragment>', TERRAIN_COLOR)
+        .replace('#include <common>', pars)
+        .replace('#include <color_fragment>', color)
+        .replace('#include <roughnessmap_fragment>', GROUND_ROUGH)
+        .replace('#include <normal_fragment_begin>', GROUND_NORMAL)
+        .replace('#include <aomap_fragment>', GROUND_AO);
+      if (bake) shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', FAR_BAKE_OUT);
+  }
+
+  _buildChunks(chunks) {
+    const mat = this.groundMaterial;
+    const root = new THREE.Group();
+    root.name = 'terrain-mesh';
+    let tris = 0;
+    for (const C of chunks) {
+      if (!C.land) continue;
+      const box = new THREE.Box3(new THREE.Vector3(C.x0 * GSTEP - GHALF, C.lo - C.skirt - 0.5, C.z0 * GSTEP - GHALF),
+        new THREE.Vector3(C.x1 * GSTEP - GHALF, C.hi + 0.5, C.z1 * GSTEP - GHALF));
+      C.box = box;
+      C.inFar = box.min.x >= -WORLD_HALF && box.max.x <= WORLD_HALF && box.min.z >= -WORLD_HALF && box.max.z <= WORLD_HALF;
+      C.sphere = box.getBoundingSphere(new THREE.Sphere());
+      const g0 = this._chunkGeo(C, 0);
+      tris += g0.userData.tris;
+      const m = new THREE.Mesh(g0, mat);
+      m.name = `terrain-chunk-${C.cx}-${C.cz}`;
+      m.receiveShadow = true;
+      C.mesh = m; C.lod = 0;
+      root.add(m);
+    }
+    this._chunks = chunks.filter((C) => C.land);
+    this.group.add(root);
+    this.mesh = root;
+    this.indexedTriangles = tris;
+    this._lodOn = true;
+    this._lodPx = TLOD_PX;
+    this._lodM = TLOD_M;
+  }
+
+  /**
+   * The far field (M1.1a, TECH §5 lever 4): once, with the renderer, the ground's colour stage is rendered
+   * top-down over the world square into two 1024² targets with mips (groundShader.js FAR_*), and the far
+   * material reads them. Chunks wholly past FAR_START take it in `updateLod`.
+   */
+  _bakeFarField() {
+    const R = this.ctx.renderer;
+    if (this._far || !R || !this._chunks) return;
+    const mk = () => new THREE.WebGLRenderTarget(FAR_N, FAR_N, { type: THREE.UnsignedByteType, depthBuffer: true, generateMipmaps: true,
+      minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping });
+    const rtA = mk(), rtN = mk();
+    const part = { value: 0 };
+    const bake = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
+    bake.toneMapped = false;
+    bake.onBeforeCompile = (shader) => this._groundCompile(shader, part);
+    bake.customProgramCacheKey = () => 'cal-ground-farbake';
+    const scene = new THREE.Scene();
+    for (const C of this._chunks) scene.add(new THREE.Mesh(this._chunkGeo(C, 0), bake));
+    const cam = new THREE.OrthographicCamera(-WORLD_HALF, WORLD_HALF, WORLD_HALF, -WORLD_HALF, 1, 2000);
+    cam.up.set(0, 0, -1); cam.position.set(0, 1000, 0); cam.lookAt(0, 0, 0); cam.updateMatrixWorld(true);
+    const prev = { t: R.getRenderTarget(), auto: R.autoClear, sm: R.shadowMap.autoUpdate, c: R.getClearColor(new THREE.Color()), a: R.getClearAlpha() };
+    const t0 = performance.now();
+    try {
+      R.shadowMap.autoUpdate = false; R.autoClear = true; R.setClearColor(0x000000, 0);
+      part.value = 0; R.setRenderTarget(rtA); R.render(scene, cam);
+      part.value = 1; R.setRenderTarget(rtN); R.render(scene, cam);
+    } finally {
+      R.setRenderTarget(prev.t); R.autoClear = prev.auto; R.shadowMap.autoUpdate = prev.sm; R.setClearColor(prev.c, prev.a);
+      bake.dispose();
+    }
+    const far = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
+    const U = this.groundUniforms;
+    far.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, U);
+      shader.uniforms.tFarA = { value: rtA.texture };
+      shader.uniforms.tFarN = { value: rtN.texture };
+      shader.uniforms.uFarInv = { value: 1 / WORLD_SIZE };
+      shader.uniforms.uStrata = this._uStrata;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', GROUND_VERT_PARS)
+        .replace('#include <worldpos_vertex>', GROUND_VERT_WORLD);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', FAR_FRAG_PARS)
+        .replace('#include <color_fragment>', FAR_COLOR)
         .replace('#include <roughnessmap_fragment>', GROUND_ROUGH)
         .replace('#include <normal_fragment_begin>', GROUND_NORMAL)
         .replace('#include <aomap_fragment>', GROUND_AO);
     };
-    mat.customProgramCacheKey = () => 'cal-ground-terrain';
-    this.mesh = new THREE.Mesh(geo, mat);
-    this.mesh.receiveShadow = true;
-    this.mesh.name = 'terrain-mesh';
-    this.group.add(this.mesh);
-    this.indexedTriangles = n / 3;
+    far.customProgramCacheKey = () => 'cal-ground-far';
+    this.ctx.environment?.registerMaterial?.(far);
+    this._far = { rtA, rtN, material: far, on: true, bakeMs: +(performance.now() - t0).toFixed(1) };
+  }
+
+  /** One chunk's index at stride TSTRIDES[k] over the shared buffer, with its skirts (built once). */
+  _chunkGeo(C, k) {
+    if (C.geos[k]) return C.geos[k];
+    const { side, skirtOf } = this._attr, s = TSTRIDES[k];
+    const nodesOf = (a, b) => { const o = []; for (let i = a; i < b; i += s) o.push(i); o.push(b); return o; };
+    const X = nodesOf(C.x0, C.x1), Z = nodesOf(C.z0, C.z1);
+    const nx = X.length - 1, nz = Z.length - 1;
+    const keep = new Uint8Array(nx * nz);
+    const idx = [];
+    for (let j = 0; j < nz; j++) {
+      const za = Z[j], zb = Z[j + 1];
+      for (let i = 0; i < nx; i++) {
+        const xa = X[i], xb = X[i + 1];
+        let hi = -1e9;
+        for (let iz = za; iz <= zb; iz++) for (let ix = xa; ix <= xb; ix++) { const h = H[iz * side + ix]; if (h > hi) hi = h; }
+        if (hi < TDEEP) continue;
+        keep[j * nx + i] = 1;
+        const a = za * side + xa, b = zb * side + xa, c = zb * side + xb, d = za * side + xb;
+        idx.push(a, b, d, b, c, d);
+      }
+    }
+    const quadTris = idx.length / 3;
+    /* skirts, both windings, under each border edge whose quad is kept */
+    const wall = (p, q) => { const sp = skirtOf[p], sq = skirtOf[q]; idx.push(p, sp, q, q, sp, sq, p, q, sp, q, sq, sp); };
+    for (let i = 0; i < nx; i++) {
+      if (keep[i]) wall(Z[0] * side + X[i], Z[0] * side + X[i + 1]);
+      if (keep[(nz - 1) * nx + i]) wall(Z[nz] * side + X[i], Z[nz] * side + X[i + 1]);
+    }
+    for (let j = 0; j < nz; j++) {
+      if (keep[j * nx]) wall(Z[j] * side + X[0], Z[j + 1] * side + X[0]);
+      if (keep[j * nx + nx - 1]) wall(Z[j] * side + X[nx], Z[j + 1] * side + X[nx]);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', this._attr.position);
+    g.setAttribute('normal', this._attr.normal);
+    g.setAttribute('aTint', this._attr.aTint);
+    g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
+    g.boundingBox = C.box; g.boundingSphere = C.sphere;
+    g.userData.tris = quadTris;
+    C.geos[k] = g;
+    return g;
+  }
+
+  /**
+   * Per frame: each chunk to the coarsest stride that keeps its height error under `_lodPx` device px at its
+   * distance and stays `_lodM` m a stride away from the camera. Allocation-free after the first use of a stride.
+   */
+  updateLod(camera = this.ctx.camera) {
+    if (!this._chunks || !camera) return;
+    const p = camera.position;
+    const persp = camera.isPerspectiveCamera;
+    const hPx = (this.ctx.renderer?.domElement?.height || 1125);
+    const K = persp ? hPx / (2 * Math.tan((camera.fov * Math.PI) / 360)) : 0;
+    let hist = this._lodHist || (this._lodHist = new Int32Array(TSTRIDES.length));
+    hist.fill(0);
+    const F = this._far, farOn = !!(F && F.on && persp);
+    for (const C of this._chunks) {
+      let k = 0, far = false;
+      if ((this._lodOn || farOn) && persp) {
+        const b = C.box;
+        const dx = Math.max(b.min.x - p.x, 0, p.x - b.max.x), dy = Math.max(b.min.y - p.y, 0, p.y - b.max.y), dz = Math.max(b.min.z - p.z, 0, p.z - b.max.z);
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (this._lodOn) for (let j = C.maxLod; j > 0; j--) {
+          if (d >= this._lodM * TSTRIDES[j] && C.err[j] * K <= this._lodPx * d) { k = j; break; }
+        }
+        far = farOn && C.inFar && d >= FAR_START;
+      }
+      hist[k]++;
+      if (k !== C.lod) { C.mesh.geometry = this._chunkGeo(C, k); C.lod = k; }
+      const m = far ? F.material : this.groundMaterial;
+      if (C.mesh.material !== m) C.mesh.material = m;
+    }
+  }
+
+  /** What the chunks draw now (the census and F32 read it). */
+  lodStats() {
+    if (!this._chunks) return null;
+    const by = TSTRIDES.map((s) => ({ stride: s, chunks: 0, tris: 0 }));
+    let tris = 0, far = 0;
+    for (const C of this._chunks) { const g = C.geos[C.lod]; by[C.lod].chunks++; by[C.lod].tris += g.userData.tris; tris += g.userData.tris; if (this._far && C.mesh.material === this._far.material) far++; }
+    return { farChunks: far, farBakeMs: this._far?.bakeMs ?? null, farStart: FAR_START, chunks: this._chunks.length, chunkSegs: TCHUNK, lodOn: this._lodOn, lodPx: this._lodPx, lodM: this._lodM, trisAllChunks: tris, fullResTris: this.indexedTriangles, by };
+  }
+
+  /**
+   * Runtime switches for the M1.1a A/B (tools/perf/census.mjs): each { id, on(), off() }, measured on
+   * against off in one clock state. 'terrain-lod' off = every chunk at full resolution.
+   */
+  perfSwitches() {
+    const cam = () => this.ctx.camera;
+    return [
+      { id: 'terrain-lod', on: () => { this._lodOn = true; this.updateLod(cam()); }, off: () => { this._lodOn = false; this.updateLod(cam()); } },
+      { id: 'terrain-far', on: () => { if (this._far) this._far.on = true; this.updateLod(cam()); }, off: () => { if (this._far) this._far.on = false; this.updateLod(cam()); } },
+    ];
   }
 
   /**
@@ -842,6 +1125,7 @@ export class Terrain {
     }
     _stampPending.length = 0;
     this._maskTextures.b.needsUpdate = true;
+    if (this._maskArray) { this._maskArray.addLayerUpdate(1); this._maskArray.needsUpdate = true; }
     const prev = this._routeCoverStats;
     this._routeCoverStats = {
       discs, texels, vertices: 0, tiles: discs, ms: +(performance.now() - t0).toFixed(1),
@@ -883,7 +1167,7 @@ export class Terrain {
   /** VERTEX COHERENCE AUDIT (`A59c`): the mesh's tint + normals against a fresh bake. */
   vertexColorAudit(stride = 3) {
     let vertices = 0, mismatched = 0, worst = 0, worstAt = null;
-    const tint = this.mesh.geometry.attributes.aTint.array;
+    const tint = this._attr.aTint.array;
     for (let iz = 1; iz < GS - 1; iz += stride * 8) {
       const row = bakeShade(H, iz, iz + 1).tint;
       for (let ix = 1; ix < GS - 1; ix += stride) {
@@ -958,6 +1242,8 @@ export class Terrain {
     if (_stampPending.length) this._drainStamps();
     this._updateSunUniforms();
     this._updateIsles();
+    if (!this._far) this._bakeFarField();
+    this.updateLod();
     const env = this.ctx.environment;
     if (env) {
       /* world-sky's mainland ridges are from the old valley: an island's horizon is the
@@ -975,7 +1261,13 @@ export class Terrain {
    * buffers belong to the module (one island per page load), so references drop and the
    * typed arrays stay valid for a later Terrain on this page.
    */
+  /** Once per rendered frame (main.js): the chunks follow the camera even with time frozen. */
+  interpolate() { this.updateLod(); }
+
   dispose() {
+    for (const C of this._chunks || []) for (const g of C.geos) g?.dispose();
+    this._fieldArray?.dispose(); this._maskArray?.dispose();
+    if (this._far) { this._far.rtA.dispose(); this._far.rtN.dispose(); this._far.material.dispose(); this._far = null; }
     this.water?.dispose?.();
     this.water = null;
     if (this.ctx.water) this.ctx.water = null;

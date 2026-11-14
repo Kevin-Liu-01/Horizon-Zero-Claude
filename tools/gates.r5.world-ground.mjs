@@ -600,7 +600,7 @@ const ROWS = [
     assert: `(async () => {
       const L = await import('/src/world/island/layers.js');
       const G = await import('/src/world/island/groundShader.js');
-      const big = L.LAYER_FILES.big.length, small = L.LAYER_FILES.small.length;
+      const big = L.LAYER_FILES.big.length, small = L.LAYER_FILES.small.length, nArr = L.LAYER_ARRAY.ids.length;
       const src = G.TERRAIN_COLOR;
       // audit: two smallest weights are zeroed, the fetch loop stops at three, triplanar is gated at 0.35
       const zeroLoop = /for \\(int z = 0; z < 2; z\\+\\+\\)/.test(src) && /if \\(n <= 3\\) break;/.test(src);
@@ -619,8 +619,9 @@ const ROWS = [
       }
       const U = T.groundUniforms;
       const pass = big <= 5 && small <= 5 && zeroLoop && stopThree && triGate
-        && U.tA1.value.isDataArrayTexture && U.tA1.value.image.width === 1024 && U.tA2.value.image.width === 512;
-      return { pass, detail: { big, small, zeroLoop, stopThree, triGate, texelsWithFourPlusBeforeZeroing: over, sampled: n, arrays: { a1: U.tA1.value.image.depth, a2: U.tA2.value.image.depth } } };
+        // M1.1a: one array per part, every layer at 1024² (DataArrayTexture, or CompressedArrayTexture from KTX2)
+        && (U.tA.value.isDataArrayTexture || U.tA.value.isCompressedArrayTexture) && U.tA.value.image.width === 1024 && U.tA.value.image.depth === nArr && U.tN.value.image.depth === nArr;
+      return { pass, detail: { big, small, zeroLoop, stopThree, triGate, texelsWithFourPlusBeforeZeroing: over, sampled: n, arrays: { a: U.tA.value.image.depth, n: U.tN.value.image.depth, width: U.tA.value.image.width } } };
     })()`,
   },
   {
