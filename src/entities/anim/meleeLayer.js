@@ -343,8 +343,11 @@ const BEATS = [
     id: 'light-3', clip: [0.05, 0.80], mirror: false, clipW: 0.20,
     release: [0.05, 0.42],
     cock: { hand: [-0.31, 1.28, -0.10], shaft: [0.34, 0.42, 0.84], lh: [0.28, 1.02, 0.20], lhW: 1, lhOn: 0.40, yaw: -0.40, py: -0.26, pitch: -0.06, roll: 0.04, dz: -0.06 },
-    contact: { hand: [-0.22, 1.34, 0.62], shaft: [0.14, -0.26, 0.955], lh: [0.40, 0.98, -0.20], lhW: 0, lhOn: 0.40, yaw: 0.24, py: 0.20, pitch: 0.26, roll: 0.02, dz: 0.12 },
-    follow: { hand: [-0.21, 1.06, 0.46], shaft: [0.26, -0.44, 0.86], lh: [0.38, 0.92, -0.24], lhW: 0, lhOn: 0.40, yaw: 0.18, py: 0.20, pitch: 0.26, roll: -0.04, dz: 0.10 },
+    /* fix round 1 (A102 f1: light-3 and the heavy read as ONE arc, contact pitch -15 vs
+     * -3 deg): the overhand stab drives DOWN through the hull, 30 deg under level, which
+     * is also what tells it from the heavy's level drive in V47's frames */
+    contact: { hand: [-0.22, 1.36, 0.60], shaft: [0.12, -0.50, 0.858], lh: [0.40, 0.98, -0.20], lhW: 0, lhOn: 0.40, yaw: 0.24, py: 0.20, pitch: 0.30, roll: 0.02, dz: 0.12 },
+    follow: { hand: [-0.21, 1.08, 0.48], shaft: [0.24, -0.54, 0.806], lh: [0.38, 0.92, -0.24], lhW: 0, lhOn: 0.40, yaw: 0.18, py: 0.20, pitch: 0.26, roll: -0.04, dz: 0.10 },
   },
 ];
 const HEAVY = {
