@@ -1086,6 +1086,29 @@ export class PlayerAnimator {
       this._toeTips = [tip(b.ballL), tip(b.ballR)];
     }
     this.lastHitClass = 'light';
+    /* M0.7 (r5/int, BACKLOG I3): R48 c again, for the fields hero-body's rounds added later in the frame. Each starts
+     * at the value its readers saw for `undefined` (`?? 0`, `|| 0`, `!x`, `x ? :`, `x?.ok`, `|| (x = ...)`), so no
+     * branch changes; `decimalFields` below makes the numbers decimals. Never read before their first write: `_rhK`,
+     * `_rhD0`, `_rhL0`, `_rhS` (behind `_rhOn`), `_lxFrom`, `_lxW0` (behind `_lxOn`), `_hcS` (set by `_hcSegMin`). */
+    this._aimAlign = 0; this._aiT = 0; this._aoT = 0;                            // `?? 0`
+    this._rhOn = false; this._rhWas = false; this._rhK = 0; this._rhT = 0; this._rhD0 = 0; this._rhL0 = 0; this._rhS = 0;
+    this._cadence = null;
+    this._lxOn = false; this._lxT = 0; this._lxFrom = null; this._lxW0 = 0; this._lxSlot = null; this._lxLastW = 0;   // `_lxLastW ?? 0`
+    this._tuW = 0; this._caA = 0; this._caPoseW = 0;                                // `?? 0`
+    this._aimRan = false;
+    this._bladeSm = null;                                                           // `?? bladeS`
+    this._tAimW = 0;                                                                // `?? 0`
+    this._climbCaught = false;
+    this._gripH = 0;
+    this._trP = null; this._trB = null; this._trOk = false;                         // `|| (x = [...])`, once
+    this.trunkReach = 0.1; this.trunkStep = 0;                                      // player.js: `trunkReach ?? 0.1`, `trunkStep ?? 0`
+    this._gvYaw = 0; this._gvCam = 0; this._gvYawOk = false;
+    this._nlP = 0; this._nlOk = false;
+    this._bsT = 0;                                                                  // `?? 0`
+    this._nat = null;                                                               // `!this._nat`, `this._nat?.ok`
+    this._climbDbg = null; this._caps = null;                                       // `|| (x = ...)`
+    this._fingerTipR = undefined;                                                   // read as `=== undefined` (null = no tip found)
+    this._hcS = 0;
     /* R46: the per-frame fields are born as decimals (see `decimalFields`) */
     decimalFields(this);
     decimalFields(this._stepDbg);
