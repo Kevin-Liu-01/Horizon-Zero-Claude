@@ -416,9 +416,9 @@ function pchip(P, x) {
  *                               mid band scaled by `b` (`a`), then turned by `rotate` degrees (chroma kept)
  *   cool       { range: [L0, L1, L2, L3], cRange: [C0, C1], chroma, shift: [da, db] }   fix round 3: the low-chroma upper
  *                               mids (haze, sky, dust) toward lavender, the cool half of the panels' split
- *   high       { range: [L0, L1(, L2, L3)], chroma, shift: [da, db], cRange: [C0, C1], rotate, warm }   the lit band
+ *   high       { range: [L0, L1(, L2, L3)], chroma, shift: [da, db], cRange: [C0, C1], toward, warm }   the lit band
  *                               (weight 1 below chroma C0, 0 above C1; a 4-entry range fades out again above L2-L3 so
- *                               fire cores keep their chroma); `rotate` turns it toward gold (fix round 3)
+ *                               fire cores keep their chroma); `toward` [hue, k] pulls its hue toward gold (fix round 3)
  *   mid.cRange [C0, C1]         fix round 3: spares saturated cloth (full weight below chroma C0, none above C1)
  * L* is kept by the chroma and shift steps; only `tone` moves it.
  */
@@ -486,8 +486,14 @@ function labStage(c, X, w) {
       const k = 1 + ((H.chroma ?? 1) - 1) * wh;
       a = a * k + (H.shift ? H.shift[0] : 0) * wh;
       b = b * k + (H.shift ? H.shift[1] : 0) * wh;
-      // fix round 3: `rotate` (deg) turns the lit band toward gold (warm light over orange mids over rose shadow)
-      if (H.rotate) { const t = H.rotate * wh * Math.PI / 180, ct = Math.cos(t), st = Math.sin(t), a1 = a * ct - b * st; b = a * st + b * ct; a = a1; }
+      // fix round 3: `toward` [hue, k] pulls the lit band's hue a share k of the way to `hue` (gold: warm light over orange
+      // mids over rose shadow); a pull, not a turn, so a highlight already gold stays gold and never goes lemon-green
+      if (H.toward) {
+        let hh = Math.atan2(b, a) * 180 / Math.PI; if (hh < 0) hh += 360;
+        let dh = H.toward[0] - hh; if (dh > 180) dh -= 360; if (dh < -180) dh += 360;
+        // warm hues only (H.toward[2..3], default 20-110 deg, feather 20): no wrap-around, and the map stays one-to-one
+        const t = dh * H.toward[1] * wh * bandWeight(hh, H.toward[2] ?? 20, H.toward[3] ?? 110, 20) * Math.min(1, C0 / 6) * Math.PI / 180, ct = Math.cos(t), st = Math.sin(t), a1 = a * ct - b * st; b = a * st + b * ct; a = a1;
+      }
     }
     // fix round 2: `warm` [h0, h1, feather, k, Lfrom, Lto] gives warm highlights back the chroma AgX's path to white takes
     // (sunlit gold, fire, sun glow: W0 showed them at C 40-45, AgX at 30-35); gamut-mapped below

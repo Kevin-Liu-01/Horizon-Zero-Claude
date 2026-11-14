@@ -105,7 +105,7 @@ the HDR dump (`tools/look/hdr-look.mjs` and a scratch tuner over the same `look.
 - **Diagnostic** `?look=w0` (on the page, or on the page hosting the Pans POC iframe) boots on the Round-5 W0
   output; the gate block carries `<id>@look-post-w0` twins of A108, A-weak40 and A-lamp-states for that reason.
 
-### 1.2 L-02 / L-14 — the grade (`src/core/look.grade.json` v3)
+### 1.2 L-02 / L-14 — the grade (`src/core/look.grade.json` v4, fix round 3)
 
 Display space after AgX, baked per **grade set** into a 32³ **half-float** RGBA LUT (look.js `gradeSet` →
 `bakeLut`; RGBA8 texels carried up to ±0.5 LSB of rounding each, which trilinear filtering turned into a ripple):
@@ -113,7 +113,46 @@ split tone by luma, a soft-shoulder contrast about a pivot, saturation by luma, 
 stage** `lab` (look.js `labStage`). The four LUTs are baked once at boot; the GPU holds **two slots** (`CAL.lookLutA/B`,
 2 × 256 KB) blended by `uLutMix`, refilled by one 256 KB upload only when a slot's set changes. Vignette 0.28 in the pass.
 
-**The L\*a\*b\* stage after fix round 2** (every term is per set in `look.grade.json`):
+**Fix round 3 (v4): the split by luminance and chroma.** The judges ruled mid b\* and hi10 chroma grade-owned. The panels
+reach their low mid b\* by putting a cool sky beside orange grass:
+- 1-TR's top band is b\* −10.9, over grass at b\* +31–37.
+- 1-TR's lit grass tips are paler (C 25) than its mid grass (C 44).
+
+So v4 splits the colour by luminance and chroma instead of tinting the whole frame. Four terms changed:
+- **`cool` (new): the low-chroma upper mids go lavender.** These are haze, sky and dust at L\* 30–62 with chroma below 14–28;
+  the term is ×0.3 + (5, −20).
+- **`mid`: warm mids turn orange.** a\* ×1.45 and b\* ×0.84, rotated −8°. A chroma gate (`cRange` 40–47, new) spares
+  firelit ground and saturated cloth.
+- **`high`: the lit band goes pale gold.** This covers L\* 48–74, kept below the fire cores. Chroma ×0.3, and the hue is
+  pulled 75 % of the way to 85° (`toward`, warm hues 20–110° only, new).
+- **`shadow`: darks stay rose.**
+
+**A new set, `sunset`, covers 18:30–19:12.** It carries the rosier light between golden and dusk: mids a\* ×1.28 and b\* ×0.36
+over hue 35–100°, `cool` ×0.3 + (7, −16) up to L\* 46–54, and the lit band pulled 85 % of the way to gold. The hour table is
+now golden 16:30 → sunset 18:30–19:12 → dusk 19:45.
+
+**`dusk` turns its dark mids violet.** b\* ×0.05 and −26°; shadows get (+12, −15.5). Firelit ground keeps its orange
+(`cRange` 26–42).
+
+**Probes (HDR through the output at 17:45, W0 / v3 / v4):**
+
+| probe | W0 | v3 | v4 |
+|---|---|---|---|
+| fire dim, C | 45 | 45 | 40 |
+| fire glow, C | 18 | 18 | 18 |
+| firelit ground | C 47, hue 57 | C 46, hue 50 | C 44, hue 51 |
+| orange shirt, hue | 49 | 47 | 50 |
+| sunlit grass | C 43, hue 88 | C 39, hue 73 | C 8, hue 83 |
+
+The sunlit grass is now pale gold.
+
+**Measured on the v3 HDR dump (`f3/dump2`: the new close staging and the play view; `f3/tune2` through look.js) and
+graded in Chrome (§4):**
+- **Grade-owned clauses:** v4 meets every one at field, vista, aim and dusk.
+- **Close:** fails lo20 L\* (staging).
+- **Light-limited clauses:** p99, clip, spread and field lo20 L\* stay out (§5.1).
+
+**The L\*a\*b\* stage after fix round 2** (every term is per set in `look.grade.json`; v4's terms above):
 - `tone` — a monotone cubic on L\* (Fritsch–Carlson): identity below L\* 15 (R68: the toe is not lifted), 30 → 30.6,
   45 → 48.6, 60 → 67.5, 72 → 81, 85 → 92.5, 95 → 98. **`toneC` [15, 45, 0.5]** (new): the lift fades with chroma — full
   for near-neutrals (sky, cloud, salt), half for saturated colours. sRGB holds little chroma for orange at L\* 90, so
@@ -184,6 +223,39 @@ f2-b5 shipped (strength 0.48, radius 0.3, limit 4.5 ×): **+6.6**, clipped reach
 without the limit. Radius 0.3 keeps strength 0.48, so nothing else gets brighter: the lamp halo (c) is 9.1 × its core and
 A-lamp-states passes (f2-b5).
 
+**Fix round 3: a round halo and a fire that glows.**
+
+**The square halo.** Both judges saw a square halo. Its cause is three's blur, not the widest mip alone:
+- three's `getSeperableBlurMaterial` weights each mip with a Gaussian of sigma = the kernel radius, cut at 1 sigma. The
+  edge weight is 0.6, so the kernel is a near-box, and a separable box draws a square.
+- The composite then reads the 80 × 45 and 40 × 23 mips bilinearly, whose iso-lines are also square.
+
+Under the L-07 bloom, `_bloomFold` changes both:
+- Each mip's weights become a Gaussian of sigma = radius / 2.5 (`LOOK_BLOOM.sigmaDiv`), cut at 2.5 sigma. These are
+  uniforms swapped in `_syncLook`, nothing per frame.
+- Mips 3–5 are read with a 4-tap cubic B-spline (`uBSpline`, a composite patch on three's own anchors; `bloomRoundReady`).
+- `?look=w0` keeps three's weights and taps.
+
+An offline model of the chain (`f3/bloomsim.py`) predicted:
+
+| | stock | round kernel |
+|---|---|---|
+| iso-line diagonal / axis | 1.14–1.16 | 1.00–1.03 |
+| reach at 1 % of the peak | 28.6 px | 26.9 px |
+
+The b1b films show the stock halo square and the shipped one round (V-look-highlights, §4.2).
+
+**The fire's glow.** `thresholdLstar` drops from 94 to 90, which is HDR 2.37 on the golden set instead of 4.16.
+- At 94, the judge measured the additive camp fire (particles summing to HDR 2–4) reaching the bright pass only at its
+  hottest pixels.
+- The bright-pass limit stays keyed to the L\* 94 grey (`clampLstar`), so the planted sun is limited exactly as in fix
+  round 2.
+- f3-b1a's sweep (`X-f3-fire-sweep`):
+  - Noon ground: folded bloom 0 at every threshold from 86 to 94.
+  - Fire glow at 17:45: bloom adds 15–18 L\* to the 20–60 px ring at every threshold, against W0's 19.7.
+
+  The flames flicker between captures, so the sweep is noisy. A-look-play-fire freezes the flicker.
+
 ### 1.4 L-16 / L-18 — the ledger and the attribution tools
 
 - `QUALITY_TIERS.<tier>.look` rows (`LOOK_ROWS`, ROUND5-LOOK §4.4) and `LOOK_RULE2` (the two items `high` takes
@@ -204,6 +276,26 @@ A-lamp-states passes (f2-b5).
   the all-hidden floor and the interaction residual. `engine.gpuAttrib(on)` (consecutive timer-query segments with a
   zero-vertex sentinel at the head of the transparent list) is kept and reported raw: on ANGLE/Metal its per-query
   times are not usable (§5.4). `A-gpu-attrib-box` samples the box.
+
+**Fix round 3: the per-pass table sums by construction.** Both judges found the method unable to meet the sum rule. Skip-one
+marginals on the pipelined ANGLE/Metal GPU are superadditive: 1.5 × the frame in f2-b3, 0.39 × in the judge's run, and
+negative rows.
+
+`perPassCumulative` (gpu-attrib-page.mjs) replaces them. It times, on A21's whole-frame timer:
+1. **The floor:** everything off. This is the output pass with AgX, the grade and the fold, plus clears and the present.
+2. **Each pass switched on in turn:** opaque scene, shadow cascades, transparent + additive, GTAO, bloom, SMAA, shafts,
+   overlay.
+
+Each row is the increment its pass adds. The method runs 3 interleaved sweeps with medians per step, so floor + rows =
+the full chain by construction. The full chain is checked against the frame median, timed on its own twice, within 10 %.
+A row below −max(0.15 ms, 3 %) fails `noNegativeRows`.
+
+Two diagnostics are reported, not graded:
+- A reverse-order sweep gives each pass with every later pass on, and the difference between the two orders as an
+  interaction.
+- The skip-one marginals and the raw segment timers.
+
+`tools/look/gpu-attrib.mjs` prints the cumulative table.
 
 **Fix round 1: every written clause.** `abTime` (ab-time-page.mjs) now also grades, per A21 scenario: the frame
 median with every high item on against A21's exit bar (`A21_EXIT_BARS.W1`: vista 17.0, herd 20.0, staged fight
@@ -312,9 +404,11 @@ export function agxLook(x, look, out), agxLookInv(y, look, out), calSigmoid(x), 
        sampleLut(lut, size, c, out), toHalf(v), fromHalf(h),
        calibrateExposure(look), oetf(c), eotf(v), srgbToLab(c, out), labToSrgb(lab, out)
 export const AGX_MIN_EV, AGX_MAX_EV, SH_XMAX, SH_YMAX, SH_A, SH_K, LOOK_DEFAULT, LOOK_EXPOSURE_NOMINAL, SOLVE_MIX_STEP
-// grade set (look.grade.json v2) fields: shadowTint, shadowRange, highlightTint, highlightRange, contrast, pivot, satLuma,
-// satRange, hue[{ from, to, feather, rotate, chroma, minChroma }], edgeChroma, and lab { tone: [[L, L'], ...],
-// shadow: { range, shift: [da, db], chroma }, mid: { range: [4], hue: [h0, h1, feather], b, a }, high: { range, chroma, shift } }
+// grade set (look.grade.json v4) fields: shadowTint, shadowRange, highlightTint, highlightRange, contrast, pivot, satLuma,
+// satRange, hue[{ from, to, feather, rotate, chroma, minChroma }], edgeChroma, and lab { tone: [[L, L'], ...], toneC: [C0, C1, floor],
+// shadow: { range, shift: [da, db], chroma, cRange }, mid: { range: [4], hue: [h0, h1, feather], b, a, rotate, cRange },
+// cool: { range: [4], cRange, chroma, shift } (v4), high: { range: [2 or 4], chroma, shift, cRange, warm, toward: [hue, k, h0?, h1?] } (v4) }
+// sets (v4): golden, sunset (v4), noon, dusk, calima; hours: golden 16:30 -> sunset 18:30-19:12 -> dusk 19:45
 ```
 
 `src/core/engine.js` (G-post):
@@ -333,6 +427,10 @@ engine.benchPass(pass, n = 100)            // L-16: ms per pass render (readback
 engine.holdFrame(on = true)                // U-03: a held render() submits nothing
 engine.bloomClampReady                     // fix round 2: the bright-pass limit is installed (three's high-pass anchor found)
 engine._bloomClampK                        // diagnostic override of LOOK_BLOOM.clampK (0 = no limit; null = shipped); call _syncLook(true)
+engine._bloomThrL                          // fix round 3: diagnostic override of LOOK_BLOOM.thresholdLstar (null = shipped 90)
+engine._bloomRound                         // fix round 3: false = three's stock blur weights and bilinear taps (diagnostic); null = shipped
+engine.bloomRoundReady                     // fix round 3: the round kernel's composite patch is installed (three's anchors found)
+LOOK_BLOOM.{ thresholdLstar: 90, clampLstar: 94, sigmaDiv: 2.5 }   // fix round 3 (§1.3)
 engine.disposeLook()                       // the two LUT slots, the bench target, the shadow depth variants
 engine._depthVariant(mesh)                 // R48 (c): a skinned / instanced / batched caster's shared depth material (cull pass)
 export const QUALITY_TIERS[tier].look, LOOK_ROWS, LOOK_RULE2, LOOK_W0, LOOK_BLOOM,
