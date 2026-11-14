@@ -33,7 +33,7 @@ export const SITES = Object.freeze([
   site('salt-pans', 'salt pans', -320, -293, 1, 'pans'),
   site('the-glass', 'the Glass', -384, -176, 0.5, 'pans'),
   site('organ-shelf', 'Organ Shelf', -219, -341, 1, 'pans'),
-  site('sounding-ring', 'Sounding Ring', -347, -320, 0.5, 'pans'),
+  site('sounding-ring', 'Sounding Ring', -347, -320, 6, 'pans'),   // on its 5-6 m shingle rise (R66 m)
   site('black-sand-beach', 'black-sand beach', -187, -411, 0.5, 'pans'),
   site('ninewalls', 'Ninewalls', -11, -213, 71, 'holds'),
   site('the-boilers', 'the Boilers', -368, -59, 2, 'flank'),
@@ -137,9 +137,15 @@ export const GROUND = Object.freeze({
   parkAway: Object.freeze({ x: -120, z: 230, note: 'open ground far from the Pans frames' }),
   spawnVista: Object.freeze({ x: -283, z: 246, yaw: 2.36, pitch: 0.06, note: 'REST, facing over the pans to the sea' }),
   aaRidgeView: Object.freeze({ x: -405, z: 170, yaw: 0, pitch: -0.05, note: 'the Glass, the tuff ring\'s crest against the sky' }),
-  grassSite: Object.freeze({ x: -92, z: 342, note: 'marram colony, dense' }),
-  tallCover: Object.freeze({ x: -92, z: 342, note: 'marram colony, dense' }),
-  grassPoints: Object.freeze({ points: Object.freeze([[-428, 150], [-422, 198], [-92, 342], [-98, 420]]), note: 'marram colonies' }),
+  grassSite: Object.freeze({ x: -80, z: 412, note: 'marram colony, dense (6.6 tufts/m²)' }),
+  tallCover: Object.freeze({ x: -80, z: 412, note: 'marram colony, dense' }),
+  /* six marram colonies, each ≥ 5 tufts/m² over a 20 m circle on this bake (A59 re-staged) */
+  grassPoints: Object.freeze({ points: Object.freeze([[-254, 178], [-338, 148], [-80, 412], [-122, 304], [-170, 304], [-98, 394]]), note: 'marram colonies' }),
+  /* the red tuff ring (A62, V33, A63 re-staged on the island's one rim) */
+  rimView: Object.freeze({ x: -283, z: 246, look: Object.freeze({ x: -392, z: 104, dy: 9 }), note: 'REST, facing the red tuff ring over the Glass' }),
+  rimFace: Object.freeze({ x: -386, z: 140, look: Object.freeze({ x: -388, z: 88, dy: 14 }), note: 'inside the ring by the Glass, facing its north wall' }),
+  rimStrata: Object.freeze({ x: -386, z: 140, look: Object.freeze({ x: -388, y: 16, z: 88 }), note: 'the ring\'s bedded north wall, 50 m off' }),
+  litMeadowRef: Object.freeze({ x: -200, z: 124, look: Object.freeze({ x: -200, z: 150, dy: -1.6 }), note: 'the golden meadow, lit' }),
   pool: Object.freeze({ x: -384, z: 176, note: 'the Glass' }),
   aerialStation: Object.freeze({ x: -222, z: 183, note: 'Saltrow\'s rise, long sight lines over the pans and the sea' }),
   midgroundVista: Object.freeze({ x: -222, z: 183, note: 'Saltrow\'s rise' }),

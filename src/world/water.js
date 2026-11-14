@@ -34,7 +34,9 @@ uniform float uTime;
 uniform float uLevel;
 uniform float uWorldInv;
 uniform float uPlaneY;
-vec3 wN; float wRough; float wMirror; float wSkyBias = 0.26; float wFresnelMax = 0.5; float wSunPow = 24.0;
+uniform vec2 uRim[32];   // the Glass: the crater's skyline round the lagoon, (tan elevation, metres) per bearing
+uniform vec3 uRimC;      // the Glass's centre (x, level, z)
+vec3 wSkyH; vec3 wN; float wRough; float wMirror; float wSkyBias = 0.26; float wFresnelMax = 0.5; float wSunPow = 24.0; float wSunK = 0.55;
 float wHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float wNoise(vec2 p) {
   vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -58,15 +60,20 @@ const SEA_COLOR = /* glsl */ `
   float outK = smoothstep(0.455, 0.4985, edge);
   float coast = mix(cf.r, -200.0, outK);
   if (coast > 9.0) discard;                 // the sea never stands inland: the Glass has its own surface
+  // nor in the crater round the Glass, wherever its lagoon mask reaches (it has its own water)
+  if (coast > -2.0 && inMap > 0.5 && texture2D(tShore, clamp(muv, 0.0, 1.0)).b > 0.02) discard;
   float off = max(-coast, 0.0), cst = -coast;
   float ground = mix(cf.g, -9.0, outK);
   float sA = abs(atan(p.x, p.y)) * 460.0;
 
   /* the set: three trains of fronts with their own speed, wandering along the shore */
   float along = sin(sA * 0.0173 + 1.3) * 0.62 + sin(sA * 0.0411 + 4.1) * 0.3 + sin(sA * 0.0971 + 2.2) * 0.1;
-  float ph1 = off * 0.052 + uTime * 0.150 + along;
-  float ph2 = off * 0.083 + uTime * 0.205 + along * 1.7 + 2.3;
-  float ph3 = off * 0.137 + uTime * 0.262 + along * 2.3 + 5.1;
+  /* the spacing of the fronts wanders by bearing (refraction round points, shoaling in coves):
+   * one spacing everywhere drew the surf round the island as contour lines from the rim */
+  float spK = 0.78 + 0.44 * (sin(sA * 0.0067 + 0.7) * 0.6 + sin(sA * 0.0193 + 2.9) * 0.4 + 1.0) * 0.5;
+  float ph1 = off * 0.052 * spK + uTime * 0.150 + along;
+  float ph2 = off * 0.083 * spK + uTime * 0.205 + along * 1.7 + 2.3;
+  float ph3 = off * 0.137 * spK + uTime * 0.262 + along * 2.3 + 5.1;
   float w1 = fract(ph1), w2 = fract(ph2), w3 = fract(ph3);
   float id1 = floor(ph1), id2 = floor(ph2);
   float set1 = 0.5 + 0.5 * sin(id1 * 2.4 + 1.3);                // not every wave is big
@@ -75,12 +82,17 @@ const SEA_COLOR = /* glsl */ `
   /* where the waves stand up and break: wider off points, narrower in the coves */
   float breakW = 15.0 + 26.0 * texture2D(tRipple, vec2(sA * 0.0041, 0.13)).a;
   float brk = 1.0 - smoothstep(breakW * 0.62, breakW, off);
-  float swellK = smoothstep(0.0, 6.0, off) * (1.0 - smoothstep(breakW * 1.3, breakW * 2.8, off));
+  float swellK = smoothstep(0.0, 6.0, off) * (1.0 - smoothstep(breakW * 1.1, breakW * 1.9, off))
+              * (0.35 + 0.65 * smoothstep(0.25, 0.7, texture2D(tRipple, vec2(sA * 0.0093, 0.61)).a));
 
   /* the run-up: the waterline itself moves. s is the bore's age at this bit of shore */
+  /* s is the bore's age at this bit of shore. It wraps (fract) along a line of constant bearing,
+   * so every term of s must be 0 at both ends of its cycle: a bore that started at full height
+   * drew that wrap as a dead-straight radial edge across the swash */
   float s = fract(along * 0.5 + uTime * 0.125);
+  float sIn = smoothstep(0.0, 0.07, s) * (1.0 - smoothstep(0.9, 1.0, s));
   float big = 0.62 + 0.38 * sin(floor(along * 0.5 + uTime * 0.125) * 2.4 + 1.3);
-  float runup = 0.26 * exp(-s * 3.4) * (1.0 - smoothstep(0.92, 1.0, s)) * big;
+  float runup = 0.26 * exp(-s * 3.4) * sIn * big;
   float level = uLevel + 0.02 + runup + (texture2D(tRipple, vec2(sA * 0.11, cst * 0.09 + 0.5)).a - 0.5) * 0.05;
   float depth = level - ground;
   float alphaK = smoothstep(0.0, 0.03, depth);
@@ -103,6 +115,8 @@ const SEA_COLOR = /* glsl */ `
     float n3 = nearK > 0.0 ? texture2D(tRipple, vec2(sA * 0.41, (cst + rush * 1.6) * 0.97) + wob * 3.0).b : 0.5;
     lace = mix(n1 * 0.62 + n2 * 0.38, n1 * 0.5 + n2 * 0.34 + n3 * 0.16, nearK);
     float blot = texture2D(tRipple, vec2(sA * 0.014, cst * 0.041 - uTime * 0.012)).a;
+    // streak filaments: drawn out along the shore, thin, the lace's own bright rims
+    float strk = smoothstep(0.55, 0.85, n1 * 0.7 + n2 * 0.3);
 
     /* how much of the surface is white: a crest is nearly solid, what it leaves behind is lace */
     float crest1 = exp(-w1 * 7.5) * smoothstep(0.0, 0.012, w1) * (0.42 + 0.58 * set1) * seg1;
@@ -113,13 +127,14 @@ const SEA_COLOR = /* glsl */ `
     /* Behind a crest the foam is marbling, not a sheet: cover stays under ≈ 0.4, where the lace
      * only lets its bright filaments through (dark water between them). A high cover here
      * read as snow with dark holes in it. */
-    cover = max(cover, min(trail * brk * 0.5, 0.42));
-    // spent bores lie on the shallows as thinning streaks, wider off the points
-    float carpet = (1.0 - smoothstep(0.0, 3.5 + 13.0 * blot, off)) * (0.12 + 0.2 * exp(-s * 1.6)) * (0.55 + 0.6 * blot);
+    cover = max(cover, min(trail * brk * 0.5, 0.42) * (0.35 + 0.65 * strk));
+    /* spent bores lie on the shallows as thin decaying streaks (never a blanket): only the
+     * filaments survive, and only behind the bore that left them */
+    float carpet = (1.0 - smoothstep(0.0, 2.5 + 7.0 * blot, off)) * 0.34 * exp(-s * 2.2) * sIn * strk;
     cover = max(cover, carpet);
     // the leading lip of the swash, a bright thin lacy line. On a flat beach 3.5 cm of water is
     // metres wide: the lip is the first centimetre or two, or it becomes a white field
-    float lipLine = (1.0 - smoothstep(0.0, 0.01 + 0.022 * n2, depth)) * (0.4 + 0.6 * exp(-s * 2.6));
+    float lipLine = (1.0 - smoothstep(0.0, 0.01 + 0.022 * n2, depth)) * (0.25 + 0.75 * exp(-s * 2.6) * sIn);
     cover = max(cover, lipLine * 0.9);
     float foamTex = mix(0.5, lace, laceFar);
     // no cover, no foam: the lace alone must never speckle open water
@@ -161,6 +176,8 @@ const SEA_COLOR = /* glsl */ `
                                  texture2D(tCoastF, clamp(muv + vec2(0.0, 0.004), 0.0, 1.0)).r - cf.r) + vec2(1e-4));
   float waveS = (exp(-w1 * 4.0) - 0.42 * wall) * swellK * (0.4 + 0.6 * set1) + (exp(-w2 * 5.0) - 0.3 * wall2) * swellK * 0.32;
   wN = vec3(rip.x + slopeDir.x * waveS * 0.3, 0.0, rip.y + slopeDir.y * waveS * 0.3) * (1.0 - foam * 0.75);
+  // a film of backwash is glassy: its ripples are a few mm, and big ones broke the sky into blots
+  wN *= mix(0.18, 1.0, smoothstep(0.03, 0.5, depth));
 
   vec3 foamC = vec3(0.86, 0.87, 0.85) * (0.8 + 0.2 * lace);
   diffuseColor.rgb = mix(body, foamC, foam);
@@ -169,6 +186,8 @@ const SEA_COLOR = /* glsl */ `
   // the thinnest backwash glistens, but a full mirror on it painted soft white blots
   wMirror = (1.0 - foam) * mix(0.62, 1.0, smoothstep(0.02, 0.3, depth));
   wSunPow = 24.0;
+  // the far plane's cut (2,400 m) dissolves into the dome behind it: no hard end to the water
+  diffuseColor.a *= 1.0 - smoothstep(2050.0, 2380.0, dCam);
 }
 `;
 
@@ -180,29 +199,35 @@ const GLASS_COLOR = /* glsl */ `
   vec4 sh = texture2D(tShore, clamp(muv, 0.0, 1.0));
   if (sh.b < 0.25) discard;            // only the lagoon: the waterline itself is the mesh's intersection
   float ground = texture2D(tCoastF, clamp(muv, 0.0, 1.0)).g;
-  float depth = uLevel - ground;
+  float depth = max(uLevel - ground, 0.0);
   vec2 drift = vec2(0.004, 0.003) * uTime;
   vec2 r1 = texture2D(tRipple, p * 0.11 + drift).xy * 2.0 - 1.0;
   vec2 r2 = texture2D(tRipple, p * 0.31 - drift * 1.7).xy * 2.0 - 1.0;
   wN = vec3(r1.x * 0.012 + r2.x * 0.007, 0.0, r1.y * 0.012 + r2.y * 0.007);
-  // the Glass: emerald #2F8F6F over a pale bed, shallows turquoise, darkening fast with depth.
-  // El Golfo's green holds at any angle: the sky is a sheen on it, never a wash over it
-  // El Golfo's green is emerald leaning to olive, not a pool's mint
-  vec3 emerald = vec3(0.012, 0.115, 0.040);
-  vec3 shallow = vec3(0.065, 0.27, 0.10);
-  float dk = smoothstep(0.02, 0.45, depth);
-  // the bed shows through in long patches
+  /* El Golfo's lagoon is green in its body, not in its sky: algae water #2F8F6F over a pale bed,
+   * the bed showing for the first metres off the shore, darkening to deep emerald. The colour is
+   * graded by depth through the water (Beer), so the lagoon has a margin, a body and a heart,
+   * never one flat sheet. */
   float bed = texture2D(tRipple, p * 0.019).a;
+  float bed2 = texture2D(tRipple, p * 0.071 + 0.3).a;
+  vec3 bedC = mix(vec3(0.115, 0.118, 0.062), vec3(0.16, 0.15, 0.085), bed2) * (0.75 + 0.5 * bed);
+  vec3 algae = vec3(0.0284, 0.2705, 0.1590) * 0.62;     // #2F8F6F, as the water's own colour
+  vec3 deepC = vec3(0.010, 0.080, 0.042);
+  float tr = exp(-depth * 7.5);                        // what of the bed reaches the eye
+  vec3 body = mix(mix(algae, deepC, smoothstep(0.18, 0.6, depth)), bedC, tr * 0.85);
+  // turbid patches and darker weed beds drift in it: a living colour, not a fill
+  body *= 0.82 + 0.34 * texture2D(tRipple, p * 0.0071 + vec2(0.13, 0.71)).a;
   // wind slicks: calm streaks mirror the sky, rippled ones break it up (never one flat sheet)
   float slick = smoothstep(0.38, 0.66, texture2D(tRipple, vec2(p.x * 0.0083 - p.y * 0.0031, p.y * 0.0062) + drift * 0.4).a);
   wN *= mix(1.7, 0.3, slick);
-  diffuseColor.rgb = mix(shallow, emerald, dk) * (0.8 + 0.38 * bed);
+  diffuseColor.rgb = body;
   diffuseColor.a = 0.985;
   wRough = 0.05;
-  wMirror = 0.62;
+  wMirror = mix(0.30, 0.52, slick);
   wSkyBias = 0.06;
-  wFresnelMax = 1.0;
+  wFresnelMax = 0.72;
   wSunPow = 400.0;
+  wSunK = 0.16;
 }
 `;
 
@@ -222,11 +247,61 @@ const SEA_MIRROR = /* glsl */ `
   vec3 W = normalize(vec3(0.0, 1.0, 0.0) + wN);
   vec3 R = reflect(-V, W);
   float up = clamp(R.y * 1.6 + wSkyBias, 0.0, 1.0);
-  vec3 sky = mix(calFogHorizon, calFogZenith, up);
+  wSkyH = calFogHorizon;
+  vec3 sky = mix(wSkyH, calFogZenith, up);
   float sd = max(dot(R, calSunDir), 0.0);
-  sky += calFogSun * pow(sd, wSunPow) * 0.55;
+  sky += calFogSun * pow(sd, wSunPow) * wSunK;
+#ifdef CAL_GLASS
+  {
+    /* The crater wall in the Glass: the reflected ray's elevation against the crater's own
+     * skyline at that bearing (baked from the heightfield round the lagoon), so the red tuff
+     * hangs upside down in the water under the sky, as at El Golfo. */
+    float hl = length(R.xz);
+    vec2 rd = R.xz / max(hl, 1e-4);
+    float bi = (atan(rd.y, rd.x) / 6.2831853 + 0.5) * 32.0 - 0.5;
+    int i0 = int(floor(bi)) & 31, i1 = (i0 + 1) & 31;
+    vec2 rim = mix(uRim[i0], uRim[i1], fract(bi));
+    float dist = max(rim.y - dot(vWPos.xz - uRimC.xz, rd), 6.0);
+    float tanW = rim.x * rim.y / dist;
+    float tanR = R.y / max(hl, 1e-4);
+    float wallK = smoothstep(tanW + 0.015, tanW - 0.02, tanR) * step(0.02, rim.x);
+    if (wallK > 0.0) {
+      vec3 wn = normalize(vec3(-rd.x, 0.45, -rd.y));
+      float lit = 0.22 + 0.95 * max(dot(wn, calSunDir), 0.0);
+      float f = clamp(tanR / max(tanW, 1e-3), 0.0, 1.0);            // 0 at the waterline, 1 at the rim
+      vec3 tuff = mix(vec3(0.115, 0.047, 0.030), vec3(0.20, 0.085, 0.048), smoothstep(0.15, 0.9, f));
+      tuff *= 0.86 + 0.28 * sin(f * 23.0 + rim.y * 0.07);             // its beds
+      tuff *= 1.0 - 0.45 * smoothstep(0.82, 1.0, f);                   // the dark cap
+      vec3 wall = tuff * (lit * calFogSun * 0.9 + calFogZenith * 0.35);
+      wall = mix(wall, wSkyH * 0.8, 1.0 - exp(-dist * 0.0011));
+      sky = mix(sky, wall, wallK);
+    }
+  }
+#endif
   float F = min(0.02 + 0.98 * pow(1.0 - max(dot(V, W), 0.0), 5.0), wFresnelMax);
   reflectedLight.indirectSpecular += sky * F * wMirror;
+}
+#endif
+`;
+
+/**
+ * The sea line (LOOK W-09, R68 a). The fog carries the far sea to the in-scatter colour, and the
+ * dome's sea-line colour is that colour darkened away from the sun (×0.72, world-sky's dome): the two
+ * met in a full-width tonal band. Past 600 m the sea is drawn to the dome's own sea-line colour at its
+ * bearing, so water and sky meet in a line, not a band.
+ */
+const SEA_LINE = /* glsl */ `
+#include <fog_fragment>
+#ifdef USE_FOG
+{
+  vec3 hd = vWPos - cameraPosition;
+  float hl = length(hd);
+  vec2 hz = normalize(hd.xz + vec2(1e-5)), sz = normalize(calSunDir.xz + vec2(1e-5));
+  float az = max(dot(hz, sz), 0.0);
+  float day = smoothstep(-0.05, 0.12, calSunDir.y);
+  vec3 domeH = wSkyH * mix(0.72, 1.0, pow(az, 2.2)) + calFogSun * pow(az, 6.0) * 0.22 * day;
+  // the sea stays a shade darker than the sky it meets, as a real sea line does
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, domeH * 0.93, smoothstep(600.0, 2300.0, hl) * 0.9);
 }
 #endif
 `;
@@ -307,9 +382,17 @@ export class IslandWater {
     this.pools = this._buildPools();
 
     const shore = terrain._maskTextures.shore, coastF = terrain._maskTextures.coastF;
+    this._rim = this._bakeRim();
     const mk = (colorChunk, levelU, planeY, key) => {
-      const mat = new THREE.MeshStandardMaterial({ roughness: 0.1, metalness: 0, transparent: true, depthWrite: false });
+      /* The water writes depth. GTAO is traced off the scene's shared depth, and with the water
+       * out of it every sea pixel took the AO of the sea floor under it: where the floor's mesh
+       * ends (the −7 m contour, the world square's edge) that AO stepped, and the step was the
+       * seam A-skirt-masked measured (Nov 13). A flat water surface in the depth has no AO. */
+      const mat = new THREE.MeshStandardMaterial({ roughness: 0.1, metalness: 0, transparent: true, depthWrite: true });
+      if (key === 'cal-glass') mat.defines = { CAL_GLASS: '' };
       mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uRim = { value: this._rim.v };
+        shader.uniforms.uRimC = { value: this._rim.c };
         shader.uniforms.tShore = { value: shore };
         shader.uniforms.tCoastF = { value: coastF };
         shader.uniforms.tRipple = { value: this._ripple };
@@ -321,6 +404,7 @@ export class IslandWater {
           .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
           .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
         shader.fragmentShader = shader.fragmentShader
+          .replace('#include <fog_fragment>', SEA_LINE)
           .replace('#include <common>', SEA_PARS)
           .replace('#include <color_fragment>', colorChunk)
           .replace('#include <roughnessmap_fragment>', SEA_ROUGH)
@@ -342,7 +426,9 @@ export class IslandWater {
     this.sea.frustumCulled = false;
     this.group.add(this.sea);
 
-    const gw = this._glass.rx * 2.9, gh = this._glass.rz * 2.9;
+    // big enough for every point the lagoon mask reaches (its outline is warped up to ±0.47 rx):
+    // the shader's mask and the terrain's intersection draw the waterline, never the plane's edge
+    const gw = this._glass.rx * 4.2, gh = this._glass.rz * 4.2;
     const glassGeo = new THREE.PlaneGeometry(gw, gh, 1, 1).rotateX(-Math.PI / 2);
     this.glassMesh = new THREE.Mesh(glassGeo, mk(GLASS_COLOR, this._uGlassLevel, GLASS_LEVEL, 'cal-glass'));
     this.glassMesh.position.set(this._glass.x, GLASS_LEVEL, this._glass.z);
@@ -350,28 +436,30 @@ export class IslandWater {
     this.glassMesh.renderOrder = 1;
     this.group.add(this.glassMesh);
 
-    /* The offing. The far plane (2,400 m) cuts the sea short of where it meets the sky, and the
-     * gap showed the sky dome's underside as a hard band over the water. A ring of open water
-     * stands 2,250 m round the camera, from the sea up to eye height, so its top edge is that
-     * meeting line; it is fogged like the far sea it continues. Placed in onBeforeRender from
-     * the camera the frame is drawn with (a gate's or the title's camera as much as the player's). */
-    const ringGeo = new THREE.CylinderGeometry(2250, 2250, 1, 120, 1, true).translate(0, 0.5, 0);
-    this.offing = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x07192a, side: THREE.BackSide, fog: true }));
-    this.offing.name = 'sea-offing';
-    this.offing.frustumCulled = false;
-    // after the sky dome (radius 1,900 m round the player, no depth write): it must not paint over the ring
-    this.offing.renderOrder = 0.5;
-    this.offing.castShadow = false;
-    this.offing.receiveShadow = false;
-    this.offing.onBeforeRender = (renderer, scene, camera) => {
-      const h = this.offing, c = camera.position;
-      h.position.set(c.x, this.seaLevel, c.z);
-      h.scale.y = Math.max(0.5, c.y - this.seaLevel);
-      h.updateMatrixWorld(true);
-    };
-    this.group.add(this.offing);
+    /* No offing ring: the sea fades into the sky dome itself before the far plane (SEA_COLOR),
+     * so the sea line is the dome's own colour at every bearing (LOOK W-09, R68 a). */
 
     ctx.scene.add(this.group);
+  }
+
+  /**
+   * The crater's skyline round the Glass, for its reflection: per 32 bearings from the lagoon's
+   * centre, the steepest tan(elevation) of the ground above the water and how far off it stands.
+   * Once at boot (≈ 4,000 height reads).
+   */
+  _bakeRim() {
+    const G = this._glass, v = [], T = this.terrain;
+    for (let k = 0; k < 32; k++) {
+      const a = ((k + 0.5) / 32 - 0.5) * Math.PI * 2;
+      const dx = Math.cos(a), dz = Math.sin(a);
+      let best = 0, at = 120;
+      for (let d = 6; d < 300; d += 2.5) {
+        const t = (T.getHeight(G.x + dx * d, G.z + dz * d) - GLASS_LEVEL) / d;
+        if (t > best) { best = t; at = d; }
+      }
+      v.push(new THREE.Vector2(best, at));
+    }
+    return { v, c: new THREE.Vector3(G.x, GLASS_LEVEL, G.z) };
   }
 
   /**
@@ -442,7 +530,7 @@ export class IslandWater {
   update(dt, t) { this.tick(dt, t); }
 
   dispose() {
-    for (const m of [this.sea, this.glassMesh, this.offing]) {
+    for (const m of [this.sea, this.glassMesh]) {
       m.geometry.dispose();
       m.material.dispose();
     }

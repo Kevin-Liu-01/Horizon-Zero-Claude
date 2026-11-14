@@ -7,8 +7,8 @@
  *   shade          Int16 normals (xyz + pad), Uint8 aTint (sRGB rgb + blockout amount)
  *   masks          Uint8 RGBA ×3 at 512² over the world square
  *                    maskA  R sea-lavender colonies  G basalt  B shingle  A wet silt
- *                    maskB  R marram cover  G packed track  B damp ground  A wind-pale sand
- *                    shore  R signed coast distance, saturating 16 m inland  G ground height near the water  B the Glass  A free
+ *                    maskB  R marram cover  G packed track  B damp ground  A the golden meadow (W-06)
+ *                    shore  R signed coast distance, saturating 16 m inland  G ground height near the water  B the Glass  A the field's halo
  *   coast          half-float RG at 512²: signed coast distance and ground height in metres, for the
  *                    surf: its coordinates are read per pixel, and 8-bit steps sheared every foam line
  *   pan            Uint8 RGBA at 512² over PAN_BOX
@@ -219,7 +219,12 @@ export function maskTexel(H, x, z, out) {
   const silt = Math.max((1 - ss(1.0, 1.42, glass)) * 0.95, pans * (1 - ss(0.25, 0.8, h)) * ss(16, 40, c) * (1 - fk));
   // damp dark ground in hollows; wind-pale sand on crests
   const damp = pans * clamp01(1 - h / 2.2) * ss(8, 40, c) * 0.7;
-  const pale = pans * ss(0.46, 0.7, nA) * ss(0.2, 2.6, h);
+  /* the golden meadow (LOOK W-06): the Pans' landward belt behind the salt field, 1.5-26 m up,
+   * in drifts and clearings; never on the field, the tracks, the rock or the Glass's margin.
+   * Scenery, never cover: the stealth field is maskB.R alone (F-4). */
+  const drift = ss(0.3, 0.54, fbm(x * 0.021 + 13, z * 0.021 - 5, 3));
+  const meadow = pans * ss(0.7, 1.6, h) * (1 - ss(22, 30, h)) * ss(16, 30, c) * (1 - fk) * (1 - ss(0.25, 0.5, rock))
+    * (1 - ss(0.4, 0.7, slope)) * (1 - ss(0.2, 0.5, track)) * ss(1.5, 2.2, glass) * (1 - ss(0.2, 0.5, cr)) * drift;
 
   out[0] = clamp255(lav * (1 - fk) * 255);
   out[1] = clamp255(rock * 255);
@@ -229,11 +234,13 @@ export function maskTexel(H, x, z, out) {
   out[4] = slope > 0.88 || rock > 0.48 ? 0 : clamp255(coverAt(x, z) * 255);
   out[5] = clamp255(track * 255);
   out[6] = clamp255(damp * 255);
-  out[7] = clamp255(pale * 255);
+  out[7] = clamp255(meadow * 255);
   out[8] = clamp255(((c - SHORE_ENC.dMin) / (SHORE_ENC.dMax - SHORE_ENC.dMin)) * 255);
   out[9] = clamp255(((h - SHORE_ENC.hMin) / (SHORE_ENC.hMax - SHORE_ENC.hMin)) * 255);
   out[10] = clamp255((1 - ss(1.1, 1.5, glass)) * 255);
-  out[11] = 0;
+  // the field's halo (ground shader): salt stains and dead cells round the field, not in it
+  // (fk is exactly 1 on the field and its dykes, falling over the 12 m round it)
+  out[11] = clamp255(fk * ss(0.0, 0.04, 1 - fk) * 255);
   return out;
 }
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);

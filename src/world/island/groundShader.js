@@ -101,6 +101,36 @@ uniform float uWorldInv;
 uniform float uTime;
 uniform float uSea;
 uniform vec2 uSunXZ;       // unit, toward the light
+uniform vec2 uFieldU;      // the salt field's long axis (the rake runs along it), unit, engine xz
+uniform float uStrata;     // the crater's bedding strength (terrain.setStrataStrength)
+/** The pan texture through a cubic B-spline (4 bilinear taps): its 0.5 contour is a smooth curve,
+ * where the bilinear one stepped along every diagonal cell edge at 0.48 m a texel (V32). */
+vec4 gPanCubic(vec2 uv) {
+  vec2 tc = uv * 512.0 - 0.5;
+  vec2 f = fract(tc); tc -= f;
+  vec4 nx = vec4(1.0, 2.0, 3.0, 4.0) - f.x, ny = vec4(1.0, 2.0, 3.0, 4.0) - f.y;
+  vec4 sx = nx * nx * nx, sy = ny * ny * ny;
+  vec4 cx = vec4(sx.x, sx.y - 4.0 * sx.x, sx.z - 4.0 * sx.y + 6.0 * sx.x, 0.0); cx.w = 6.0 - cx.x - cx.y - cx.z;
+  vec4 cy = vec4(sy.x, sy.y - 4.0 * sy.x, sy.z - 4.0 * sy.y + 6.0 * sy.x, 0.0); cy.w = 6.0 - cy.x - cy.y - cy.z;
+  vec4 c = tc.xxyy + vec2(-0.5, 1.5).xyxy;
+  vec4 sm = vec4(cx.xz + cx.yw, cy.xz + cy.yw);
+  vec4 o = (c + vec4(cx.yw, cy.yw) / sm) / 512.0;
+  vec4 s0 = texture2D(tPan, o.xz), s1 = texture2D(tPan, o.yz), s2 = texture2D(tPan, o.xw), s3 = texture2D(tPan, o.yw);
+  float wx = sm.x / (sm.x + sm.y), wy = sm.z / (sm.z + sm.w);
+  return mix(mix(s3, s2, wx), mix(s1, s0, wx), wy);
+}
+vec2 gHash2(vec2 p) { p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }
+/** Voronoi edge distance (F2 - F1) and the cell's own hash: salt polygons, pebbles. */
+vec3 gVoro(vec2 x) {
+  vec2 n = floor(x), f = x - n;
+  float f1 = 8.0, f2 = 8.0; vec2 id = vec2(0.0);
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(float(i), float(j)), o = gHash2(n + g);
+    vec2 r = g + o - f; float d = dot(r, r);
+    if (d < f1) { f2 = f1; f1 = d; id = n + g; } else if (d < f2) f2 = d;
+  }
+  return vec3(sqrt(f2) - sqrt(f1), sqrt(f1), fract(sin(dot(id, vec2(41.3, 289.1))) * 9137.7));
+}
 `;
 
 /** Accumulates one layer: albedo into col, world normal offset, rough + AO, height blend. */
@@ -116,7 +146,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   vec4 sh = texture2D(tShore, muv);
   vec2 puv = (xz - uPanBox.xy) * uPanBox.z;
   vec4 pan = vec4(0.0);
-  if (puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0) pan = texture2D(tPan, puv);
+  if (puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0) pan = dCam < 110.0 ? gPanCubic(puv) : texture2D(tPan, puv);
 
   float slope = sqrt(max(1.0 - wn.y * wn.y, 0.0)) / max(wn.y, 0.05);
   vec4 nMac = texture2D(tNoiseG, xz * 0.0039);                 // cells 32, 16, 8, 4 m
@@ -137,6 +167,23 @@ export const TERRAIN_COLOR = /* glsl */ `
     fineN = texture2D(tNoiseG, xz * 0.0625 + 0.17).r * 0.55 + texture2D(tNoiseG, fr * 0.0371 + 0.53).g * 0.45 - 0.5;
     crust = clamp(crust + fineN * 0.26 * inK, 0.0, 1.0);
     brine = clamp(brine + fineN * 0.34 * inK, 0.0, 1.0);
+  }
+  /* the crust at 10-60 m (W-08, Janubio): polygon crack ridges 0.8-2.5 m across, rake lines
+   * along the field, footprints and drag on the paths, wet and dry patches: a worked surface */
+  float crustDet = 0.0, rake = 0.0, crack = 0.0, pits = 0.0;
+  if (crust > 0.05 && dCam < 75.0) {
+    float nk = 1.0 - smoothstep(45.0, 75.0, dCam);
+    vec3 vp = gVoro(xz * 0.62 + fineN * 0.9);
+    crack = (1.0 - smoothstep(0.0, 0.09 + 0.05 * (1.0 - nk), vp.x)) * nk;
+    vec2 fu = uFieldU, fv = vec2(-uFieldU.y, uFieldU.x);
+    float rk = dot(xz, fv) * 1.65 + texture2D(tNoiseG, xz * 0.013).r * 2.2;
+    rake = (0.5 + 0.5 * sin(rk * 6.2831853)) * nk * smoothstep(0.35, 0.8, crust);
+    crustDet = (vp.z - 0.5) * 0.16 * nk;            // each polygon its own tone
+    // Janubio's trampled crust: shallow pits, footprints and drag, 0.3-0.5 m apart, to 35 m
+    if (dCam < 35.0) {
+      vec3 vq = gVoro(xz * 2.3 + vp.xy * 0.7);
+      pits = (1.0 - smoothstep(0.05, 0.3, vq.y)) * step(0.45, vq.z) * (1.0 - smoothstep(22.0, 35.0, dCam));
+    }
   }
   float wRock = max(mA.g, smoothstep(0.62, 1.05, slope));
   float wSalt = crust * (1.0 - wRock) * (1.0 - brine * 0.4);
@@ -238,6 +285,13 @@ export const TERRAIN_COLOR = /* glsl */ `
       c *= tintC;
       // and the grain in the crust's own tone: the texture repeats, this does not
       c *= 1.0 + fineN * 0.34;
+      // polygons, their raised white rims with a grey crack in each, and the rake's furrows
+      c *= 1.0 + crustDet - rake * 0.12;
+      c = mix(c, c * vec3(0.62, 0.6, 0.58), crack * 0.32);
+      c *= 1.0 - 0.2 * pits;
+      // wet crust: big damp patches go grey and dull, dry ones stay chalk
+      float dampC = smoothstep(0.55, 0.8, texture2D(tNoiseG, xz * 0.0053 + 0.41).g);
+      c *= mix(1.0, 0.78, dampC * (1.0 - crack));
     }
     col += c * b;
     if (!(keepI[k] == 2 && slopeT > 0.0)) {
@@ -249,10 +303,27 @@ export const TERRAIN_COLOR = /* glsl */ `
   }
   pert *= mix(0.32, 1.0, nearK);
 
+  /* -- the field at range (W-11, Janubio): the dykes are the field's drawing, so past 50 m a
+   *    dyke strip is darkened and widened with distance (its stone is sub-pixel there), and
+   *    round the field the ground carries salt stains and dead cells, never a clean rug edge -- */
+  if (pan.a < 0.6 && dCam > 45.0 && puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0) {
+    float wd = (0.7 + dCam * 0.0075) * uPanBox.z;
+    float nb = max(max(texture2D(tPan, puv + vec2(wd, 0.0)).a, texture2D(tPan, puv - vec2(wd, 0.0)).a),
+                   max(texture2D(tPan, puv + vec2(0.0, wd)).a, texture2D(tPan, puv - vec2(0.0, wd)).a));
+    float dyk = smoothstep(0.35, 0.75, nb) * (1.0 - inK) * smoothstep(45.0, 110.0, dCam);
+    col *= mix(1.0, 0.42, dyk);
+  }
+  if (sh.a > 0.01) {
+    // the field's halo: salt-stained silt, scalded patches, a ghost of a cell (bake: shore.a)
+    float st = sh.a * smoothstep(0.45, 0.75, nMac.g * 0.6 + texture2D(tNoiseG, xz * 0.047 + 0.2).r * 0.4);
+    col = mix(col, vec3(0.42, 0.40, 0.37) * (0.7 + 0.5 * macA), st * 0.55 * (1.0 - wRock));
+  }
+
   /* -- the macro read: nothing is one flat value from 200 m ----------------- */
   col *= 0.8 + 0.42 * macA;
   // wind-pale sand on crests, damp dark hollows
-  col *= 1.0 + 0.5 * mB.a * w[0] - 0.42 * mB.b * w[0];
+  float pale = smoothstep(0.46, 0.7, nMac.r) * smoothstep(0.2, 2.6, vWPos.y);
+  col *= 1.0 + 0.4 * pale * w[0] - 0.42 * mB.b * w[0];
   if (w[0] > 0.02) {
     /* the black sand from far off: fabric drawn out along the trade wind, warmer ash in broad
      * patches, and past the plants' range the colonies and the scrub as tone in the ground */
@@ -261,7 +332,8 @@ export const TERRAIN_COLOR = /* glsl */ `
     float streak = nStreak.r * 0.6 + nStreak.b * 0.4;
     vec4 nAsh = texture2D(tNoiseG, xz * 0.00116 + 0.31);
     float ash = smoothstep(0.42, 0.78, nAsh.r * 0.7 + nAsh.b * 0.3);
-    vec3 sandTone = mix(vec3(1.0), vec3(1.26, 1.17, 1.07), ash) * (0.8 + 0.42 * streak);
+    // black sand stays black (W-07, bible 0.02-0.05 linear): structure, not a lift
+    vec3 sandTone = mix(vec3(1.0), vec3(1.14, 1.09, 1.04), ash) * (0.74 + 0.34 * streak);
     float farK = smoothstep(40.0, 170.0, dCam);
     float scrub = smoothstep(0.54, 0.8, nMac.a * 0.6 + nMac.b * 0.4);
     vec3 sandCol = col * sandTone;
@@ -269,6 +341,24 @@ export const TERRAIN_COLOR = /* glsl */ `
     sandCol = mix(sandCol, vec3(0.17, 0.15, 0.078), mB.r * farK * 0.8);
     sandCol = mix(sandCol, vec3(0.12, 0.095, 0.15), mA.r * farK * (0.18 + 0.3 * nMac.a));
     col = mix(col, sandCol, smoothstep(0.02, 0.5, w[0]));
+  }
+  /* the golden meadow (W-06 R3): past the tufts' ring it is the ground's own tone, cerrillo gold
+   * #C9A04E-#D9B060 in drifts, a ±8 % wind wave running toward 225°, violet speckle where the
+   * viborina clumps; under the near tufts a dark straw litter, so the tufts stand out of it */
+  if (mB.a > 0.01) {
+    float mk = smoothstep(0.02, 0.6, mB.a) * (1.0 - wSalt) * (1.0 - wRock);
+    float farG = smoothstep(34.0, 54.0, dCam);
+    vec4 gn = texture2D(tNoiseG, xz * 0.0071 + 0.13);
+    vec3 grass = mix(vec3(0.578, 0.352, 0.074), vec3(0.694, 0.431, 0.117), gn.r);   // #C9A04E..#D9B060
+    float wave = sin(dot(xz, vec2(-0.7071, -0.7071)) * 0.21 + uTime * 1.3 + gn.g * 3.0);
+    grass *= 0.62 * (1.0 + 0.08 * wave) * (0.72 + 0.5 * gn.b);
+    float clump = smoothstep(0.66, 0.8, texture2D(tNoiseG, xz * 0.0187 + 0.61).a);
+    grass = mix(grass, vec3(0.20, 0.10, 0.30), clump * 0.4 * smoothstep(0.4, 0.7, gn.a));
+    // dark culms and gaps between the drifts read as texture from the rim, never a flat fill
+    grass *= 0.68 + 0.42 * smoothstep(0.3, 0.7, texture2D(tNoiseG, xz * 0.061).b);
+    vec3 litter = mix(col, vec3(0.085, 0.062, 0.03), 0.65);
+    col = mix(col, mix(litter, grass, farG), mk);
+    pert *= 1.0 - 0.5 * mk * farG;
   }
   // packed tracks: pale, smooth, salt-dusted
   if (mB.g > 0.01) {
@@ -287,6 +377,24 @@ export const TERRAIN_COLOR = /* glsl */ `
     col = mix(col, vTint.rgb * g * (0.82 + 0.36 * macA), tk0 * (1.0 - 0.6 * wRock));
   }
 
+  /* -- strata (W-03 b): the red tuff ring's beds, 0.8-2.5 m, on its steep faces: a palette row
+   *    per bed, a lit lip and a shaded undercut at each bed's top, dark varnish streaks below.
+   *    terrain.beddingAt() is this term's JS mirror (A63) --------------------------------- */
+  float strK = smoothstep(0.55, 0.95, slope) * smoothstep(0.02, 0.25, tk0) * uStrata;
+  if (strK > 0.01) {
+    float bz = vWPos.y + 4.0 * (texture2D(tNoiseG, xz * 0.0111).r - 0.5) * 2.0;
+    float T = 1.7;
+    float bnd = bz / T, bi = floor(bnd), bf = bnd - bi;
+    float hb = fract(sin(bi * 78.233) * 43758.5453);
+    vec3 bedC = hb < 0.25 ? vec3(0.62, 0.44, 0.34) : hb < 0.55 ? vec3(1.08, 0.86, 0.72) : hb < 0.8 ? vec3(0.84, 0.62, 0.5) : vec3(1.22, 1.06, 0.88);
+    float lip = smoothstep(0.82, 0.97, bf), under = 1.0 - smoothstep(0.0, 0.12, bf);
+    vec2 fall0 = normalize(wn.xz + vec2(1e-5));
+    float varn = texture2D(tNoiseG, vec2(dot(xz, vec2(-fall0.y, fall0.x)) * 0.09, bz * 0.011)).b;
+    vec3 sc = bedC * (1.0 + 0.22 * lip - 0.3 * under) * (1.0 - 0.28 * smoothstep(0.55, 0.85, varn));
+    col = mix(col, col * sc, strK);
+    pert += vec3(fall0.x, 0.0, fall0.y) * (lip * 0.35 - under * 0.25) * strK;
+  }
+
   /* -- rills: every real slope is scored down its fall line (gullies on the ring, wash on the
    *    knolls); from 300 m a smooth tinted hill is what reads as CG, a scored one does not -- */
   float rillK = smoothstep(0.16, 0.55, slope) * (1.0 - wSalt);
@@ -297,11 +405,25 @@ export const TERRAIN_COLOR = /* glsl */ `
     col *= mix(1.0, 0.66 + 0.62 * rill, rillK * 0.85);
   }
 
+  /* -- the ground at a pace (V32): pebbles at 6-15 cm and grit at 2-3 cm on sand, silt and
+   *    shingle, each pebble with a lit and a shaded side; gone by 16 m, where they are sub-pixel */
+  if (dCam < 16.0 && wSalt < 0.6) {
+    float gk = (1.0 - smoothstep(9.0, 16.0, dCam)) * (1.0 - wSalt) * (1.0 - wRock * 0.7);
+    vec3 pb = gVoro(xz * 9.0);
+    float peb = smoothstep(0.42, 0.3, pb.y) * step(0.58, pb.z) * gk;
+    vec2 pd = gHash2(floor(xz * 9.0) + 3.1) - 0.5;
+    col = mix(col, col * (0.6 + 0.9 * pb.z) + vec3(0.012, 0.011, 0.01) * pb.z, peb * 0.7);
+    pert += vec3(pd.x, 0.0, pd.y) * peb * 0.9;
+    float grit = texture2D(tNoiseG, xz * 0.83).a * 0.6 + texture2D(tNoiseG, xz * 1.71 + 0.3).b * 0.4;
+    col *= 1.0 + (grit - 0.5) * 0.42 * gk;
+  }
+
   /* -- liquid: brine mirrors, the swash zone is wet black glass -------------- */
   float coast = sh.r * 64.0 - 48.0;
   float tide = uSea + 0.26 + 0.09 * sin(uTime * 0.42 + xz.x * 0.03 + xz.y * 0.021);
   float wetSea = (1.0 - smoothstep(tide, tide + 0.34, vWPos.y)) * (1.0 - smoothstep(2.5, 8.5, coast));
-  float wetGlass = sh.b * (1.0 - smoothstep(0.34, 0.78, vWPos.y));
+  // the Glass's margin: a damp band a few metres wide that dries into the sand, no hard ring
+  float wetGlass = sh.b * (1.0 - smoothstep(0.17, 0.46, vWPos.y)) * (0.55 + 0.45 * smoothstep(0.3, 0.7, nMac.b));
   float wet = max(wetSea, wetGlass);
   // a wet ground is dark and flat; brine is thin water on crust, pink where it evaporates
   col *= mix(1.0, 0.42, wet);
@@ -314,7 +436,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   }
   pert *= 1.0 - gLiquid * 0.86;
   // fine black sand has a sheen at a low angle: the sky in it, and the ripples through it
-  gLiquid = max(gLiquid, 0.04 * smoothstep(0.1, 0.7, w[0]));
+  gLiquid = max(gLiquid, 0.025 * smoothstep(0.1, 0.7, w[0]));
   gRough = mix(clamp(rSum, 0.25, 1.0), mix(0.3, 0.07, smoothstep(0.3, 0.9, brine)), gLiquid);
   gAO = mix(1.0, clamp(aoSum, 0.0, 1.0), 0.78);
   col *= mix(1.0, clamp(aoSum * 1.08, 0.0, 1.0), 0.4);

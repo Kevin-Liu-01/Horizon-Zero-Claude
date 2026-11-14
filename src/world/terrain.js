@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { WORLD_SIZE, WORLD_HALF, PLAY_RADIUS, MESH_SPAN, MESH_SEGS } from './island/extent.js';
-import { REST_SITE, TUBES } from './island/sites.js';
+import { REST_SITE, TUBES, SALT_FIELD } from './island/sites.js';
 import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './island/recipe.js';
 import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, SKYLINE_N, bakeShade, maskTexel } from './island/bake.js';
 import { bakeIsland } from './island/pool.js';
@@ -295,8 +295,12 @@ export function biomeGrassDamp(w) { return w && w.pans > 0.5 ? 1 : 0.6; }
  * (1,900 m). Positions are relative to that group.
  */
 const ISLES = [
-  { x: -1010, z: -1080, r: 340, h: 128, seed: 4.1, crater: true },   // NW: the stratovolcano
-  { x: -1440, z: 420, r: 250, h: 34, seed: 9.7, crater: false },     // WSW: a long low isle
+  // NW: the stratovolcano, 7-8 deg over the sea line from the Pans (LOOK L-15: 6-9 deg)
+  { x: -960, z: -1090, r: 300, h: 196, seed: 4.1, kind: 'volcano', NR: 14, NA: 56 },
+  // WSW: a long low tableland with sea cliffs all round
+  { x: -1420, z: 400, r: 225, h: 46, seed: 9.7, kind: 'table', NR: 9, NA: 44 },
+  // SSW: a lone basalt islet, a dark tooth on the haze
+  { x: -640, z: 1360, r: 70, h: 58, seed: 2.3, kind: 'islet', NR: 6, NA: 28 },
 ];
 const ISLE_CARRY = 0.8;
 
@@ -314,6 +318,7 @@ export class Terrain {
     this._colliderTries = 0;
     this._uTime = { value: 0 };
     this._uSea = { value: 0 };
+    this._uStrata = { value: 1 };
     this.bakeStats = BAKE.stats;
     /** Where the Pans' scatter stands (vegetation.js builds its draws from these). */
     this.scatterBake = BAKE.scatter;
@@ -516,6 +521,13 @@ export class Terrain {
       t.generateMipmaps = true;
       t.needsUpdate = true;
       this._maskTextures.noiseG = t;
+      // the R channel read as the shader reads it (repeat, bilinear): beddingAt's mirror
+      this._noiseGAt = (u, v) => {
+        const fx = u * N - 0.5, fy = v * N - 0.5, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+        const at = (i, j) => data[((((j % N) + N) % N) * N + (((i % N) + N) % N)) * 4] / 255;
+        const a = at(ix, iy) + (at(ix + 1, iy) - at(ix, iy)) * tx, b = at(ix, iy + 1) + (at(ix + 1, iy + 1) - at(ix, iy + 1)) * tx;
+        return a + (b - a) * ty;
+      };
     }
     /** Shared uniform holders: terrain, rocks and salt all read one set. */
     this.groundUniforms = {
@@ -575,6 +587,8 @@ export class Terrain {
       shader.uniforms.uWorldInv = { value: 1 / WORLD_SIZE };
       shader.uniforms.uTime = this._uTime;
       shader.uniforms.uSea = this._uSea;
+      shader.uniforms.uFieldU = { value: new THREE.Vector2(SALT_FIELD.ue, -SALT_FIELD.un).normalize() };
+      shader.uniforms.uStrata = this._uStrata;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', GROUND_VERT_PARS)
         .replace('#include <worldpos_vertex>', GROUND_VERT_WORLD);
@@ -593,6 +607,21 @@ export class Terrain {
     this.indexedTriangles = n / 3;
   }
 
+  /**
+   * The crater's bedding (LOOK W-03 b), the JS mirror of the ground shader's strata term: `bh` is
+   * the bed-height coordinate the shader bands (planes of constant y, warped ±4 m over 90 m), and
+   * `thick` the bed thickness. A63 bounds its gradient and renders it on and off.
+   */
+  beddingAt(x, y, z, out) {
+    const o = out || { bh: 0, thick: 0 };
+    const nz = this._noiseGAt ? this._noiseGAt(x * 0.0111, z * 0.0111) : 0.5;
+    o.bh = y + 4.0 * (nz - 0.5) * 2.0;
+    o.thick = 1.7;
+    return o;
+  }
+  /** Strength of the strata term (1 shipped, 0 off): A63's render A/B. */
+  setStrataStrength(k) { this._uStrata.value = Math.max(0, Math.min(1, k)); }
+
   /* -------------------------------- the skirt -------------------------------- */
   /**
    * Sister islands, one merged draw. Their haze is their own: the scene fog at 1.5 km is
@@ -601,45 +630,71 @@ export class Terrain {
    * blue-grey silhouette, calima nearly hides it) and the colour fades to the fog's own colour.
    */
   _buildSkirt() {
-    const NR = 28, NA = 88;
-    const verts = (NR + 1) * NA * ISLES.length;
+    /* LOOK L-15: three basalt silhouettes for the haze to carry, 2-4 k triangles in all. Each is a
+     * polar grid whose rings are packed where the form turns: the sea cliff at the foot (a
+     * 25-40 m wall standing out of the water, so the isle sits ON the sea and never floats), the
+     * concave flank, the notched summit. Bands of ash, tuff and basalt run round them in the
+     * vertex colour, so a lit flank reads as rock at 1.5 km and not as a grey cone. */
+    const RINGS = {
+      volcano: [0, 0.035, 0.08, 0.15, 0.24, 0.34, 0.45, 0.56, 0.67, 0.77, 0.85, 0.895, 0.915, 0.95, 1.0],
+      table: [0, 0.15, 0.32, 0.5, 0.66, 0.78, 0.86, 0.885, 0.93, 1.0],
+      islet: [0, 0.2, 0.45, 0.7, 0.86, 0.93, 1.0],
+    };
+    let verts = 0, tris = 0;
+    for (const I of ISLES) { verts += RINGS[I.kind].length * I.NA; tris += (RINGS[I.kind].length - 1) * I.NA * 2; }
     const pos = new Float32Array(verts * 3), col = new Float32Array(verts * 3), index = [];
     const n = this.noise;
     let base = 0;
-    // lighter than the island's own basalt: at 1.5 km a flank is read by its lit and shaded sides, not its albedo
-    const cA = new THREE.Color('#4a4a4e'), cB = new THREE.Color('#6e675e'), cT = new THREE.Color();
+    const cBasalt = new THREE.Color('#2f2d2f'), cAsh = new THREE.Color('#5c544b'), cTuff = new THREE.Color('#6b4a3a'), cT = new THREE.Color();
     for (const I of ISLES) {
-      for (let r = 0; r <= NR; r++) {
-        const t = r / NR;
+      const TR = RINGS[I.kind], NA = I.NA;
+      for (let r = 0; r < TR.length; r++) {
+        const t = TR[r];
         for (let a = 0; a < NA; a++) {
           const ang = (a / NA) * Math.PI * 2;
           const cs = Math.cos(ang), sn = Math.sin(ang);
-          const wob = 1 + n.fbm(cs * 1.7 + I.seed, sn * 1.7, 3) * 0.28;
+          const wob = 1 + n.fbm(cs * 1.7 + I.seed, sn * 1.7, 3) * 0.3;
           const rr = I.r * wob * t;
-          let h;
-          if (I.crater) {
-            // a stratovolcano's concave flank, with gullies, a notched summit
-            const g = 1 + Math.abs(n.noise2D(cs * 2.2 + I.seed, sn * 2.2 + t)) * 0.1 * t
-              + n.noise2D(cs * 7 + I.seed, sn * 7 + t * 2.5) * 0.16 * t * (1 - t);   // gullies down the flanks
-            h = I.h * Math.pow(1 - t, 1.9) * g - (t < 0.05 ? (0.05 - t) * 160 : 0);
+          const gul = n.noise2D(cs * 9 + I.seed, sn * 9 + t * 3.1);
+          let h, cliff = 0;
+          if (I.kind === 'volcano') {
+            const cliffT = 0.9, cliffH = 32 + 14 * n.noise2D(cs * 3 + I.seed, sn * 3);
+            if (t <= cliffT) {
+              const u = t / cliffT;
+              h = cliffH + (I.h - cliffH) * Math.pow(1 - u, 1.75) * (1 + gul * 0.12 * u * (1 - u) * 4);
+              h -= t < 0.05 ? (0.05 - t) * 520 : 0;                    // the summit crater's notch
+              h += t < 0.09 && cs > 0.4 ? (0.09 - t) * 260 * (cs - 0.4) : 0;   // its broken lip
+            } else {
+              cliff = 1;
+              h = t < 0.92 ? cliffH * 0.96 : -12;
+            }
+          } else if (I.kind === 'table') {
+            const top = I.h * (0.82 + 0.18 * (1 - t * t)) + n.fbm(cs * 2.3 + I.seed, sn * 2.3, 2) * 9;
+            if (t <= 0.86) h = top - gul * 3 * t;
+            else { cliff = 1; h = t < 0.89 ? top * 0.9 : -12; }
           } else {
-            h = I.h * Math.pow(1 - t, 0.8) * (0.62 + 0.38 * (n.fbm(cs * 1.3 + I.seed, sn * 1.3, 2) + 0.5));
+            const u = Math.min(1, t / 0.86);
+            h = I.h * (1 - Math.pow(u, 3.2)) + gul * 5 * u;
+            if (t > 0.86) { cliff = 1; h = t < 0.93 ? I.h * 0.25 : -12; }
           }
-          h -= t > 0.96 ? (t - 0.96) * 60 : 0;
           const o = base + r * NA + a;
-          const px = I.x + cs * rr * (I.crater ? 1 : 1.65), pz = I.z + sn * rr;
-          pos[o * 3] = px; pos[o * 3 + 1] = h - 2; pos[o * 3 + 2] = pz;
-          cT.copy(cA).lerp(cB, Math.min(1, h / (I.h * 0.5) + n.noise2D(px * 0.01, pz * 0.01) * 0.2));
+          const px = I.x + cs * rr * (I.kind === 'table' ? 1.75 : 1), pz = I.z + sn * rr;
+          pos[o * 3] = px; pos[o * 3 + 1] = h; pos[o * 3 + 2] = pz;
+          // beds: ash and tuff bands by height, basalt in the cliffs and the gullies
+          const band = Math.sin(h * 0.19 + n.noise2D(px * 0.006, pz * 0.006) * 2.2);
+          cT.copy(cAsh).lerp(cTuff, Math.max(0, band) * 0.6);
+          cT.lerp(cBasalt, Math.min(1, cliff * 0.8 + Math.max(0, -gul) * 0.5 + (h < 6 ? 0.6 : 0)));
           col[o * 3] = cT.r; col[o * 3 + 1] = cT.g; col[o * 3 + 2] = cT.b;
-          if (r < NR) {
+          if (r < TR.length - 1) {
             const a1 = (a + 1) % NA;
             const p = base + r * NA + a, q = base + r * NA + a1, s = p + NA, u = q + NA;
             index.push(p, s, q, q, s, u);
           }
         }
       }
-      base += (NR + 1) * NA;
+      base += TR.length * NA;
     }
+    this.isleTris = tris;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -653,7 +708,17 @@ export class Terrain {
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform float uIsleVis;')
         .replace('#include <fog_fragment>', `#ifdef USE_FOG
-  gl_FragColor.rgb = mix(fogColor, gl_FragColor.rgb, uIsleVis);
+  {
+    /* The deep band's air (LOOK W-02): the isle takes the sky dome's own sea-line colour, the
+     * sea-level haze thicker than the air at its summit, so the form reads in layers */
+    float hk = smoothstep(-5.0, 150.0, vFogWorldPos.y);
+    float vis = uIsleVis * (0.62 + 0.38 * hk);
+    vec3 dv = normalize(vFogWorldPos - cameraPosition);
+    vec2 hz = normalize(dv.xz + vec2(1e-5)), sz = normalize(calSunDir.xz + vec2(1e-5));
+    float az = max(dot(hz, sz), 0.0);
+    vec3 air = calFogHorizon * mix(0.72, 1.0, pow(az, 2.2)) + calFogSun * pow(az, 6.0) * 0.18;
+    gl_FragColor.rgb = mix(air, gl_FragColor.rgb, vis);
+  }
 #endif`);
     };
     mat.customProgramCacheKey = () => 'cal-sister-isles';
@@ -682,7 +747,8 @@ export class Terrain {
     const fp = this.ctx.environment?.fogParams;
     // the air's own transmittance over 300 m, as a measure of how far one sees today
     const T = fp?.transmittance ? fp.transmittance(300, 6, 6) : 0.6;
-    const vis = Math.max(0, Math.min(0.46, (T - 0.12) * 0.75));
+    // deep band at the W-02 transmittance (0.35-0.55 in clear air), all but gone in calima
+    const vis = Math.max(0, Math.min(0.55, (T - 0.12) * 0.9));
     if (Math.abs(this._isleVis.value - vis) > 0.002) this._isleVis.value = vis;
   }
 

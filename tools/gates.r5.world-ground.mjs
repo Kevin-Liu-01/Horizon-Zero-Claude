@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { placed, placedSetup } from './gate-places.mjs';
 import { GATES as HERO } from './gates.r5.hero-body.mjs';
 import { GATES as CARRIED } from './gates.r5.carried.mjs';
-import { GATES as ENGINE, POC_KIT } from './gates.r5.engine-gpu.mjs';
+import { GATES as ENGINE, POC_KIT, sampleBox, QUIET } from './gates.r5.engine-gpu.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LANE = 'world-ground';
@@ -646,14 +646,14 @@ const ROWS = [
         rows.push({ name: k.name, instances: k.count, draws: all - off, cast: k.castShadow, tris: (k.geometry.index ? k.geometry.index.count : k.geometry.attributes.position.count) / 3 });
       }
       const bad = rows.filter((r) => r.draws > (r.cast ? 4 : 1));
-      const budgets = { 'marram-near': 96, 'marram-far': 18, glasswort: 36, lavender: 60, 'rocks-basalt': 200, 'rocks-columns': 200, 'pan-dykes': 120, 'salt-rakes': 120 };
+      const budgets = { 'marram-near': 96, 'marram-far': 18, cerrillo: 96, glasswort: 36, lavender: 60, 'rocks-basalt': 200, 'rocks-columns': 200, 'pan-dykes': 120, 'salt-rakes': 120 };
       const trisOver = rows.filter((r) => budgets[r.name] != null && r.tris > budgets[r.name]);
       return { pass: !bad.length && rows.length <= 8 && !trisOver.length, detail: { totalCalls: all, kinds: rows.length, rows, bad, trisOver } };
     })()`,
   },
   {
     id: 'A-anti-tile', kind: 'action', lane: LANE, timeout: 90000,
-    title: '256² crop of sand and salt at 20–60 m: no autocorrelation peak > 0.15 at lags 4–64 px (vegetation hidden, the ground alone)',
+    title: '256² crop of sand and salt at 20–60 m: no autocorrelation peak > 0.15 at lags 4–64 px (vegetation hidden, the ground alone), and every crop carries texture: high-pass RMS / mean ≥ 0.036 (half the farthest Janubio crust), so a blank crop FAILS',
     settle: 1200,
     assert: `(async () => {
       const S = await import('/src/world/island/sites.js');
@@ -686,7 +686,12 @@ const ROWS = [
           }
           hp[y * sz + x] = L[y * sz + x] - s / n;
         }
-        let v0 = 0; for (let i = 0; i < hp.length; i++) v0 += hp[i] * hp[i];
+        let v0 = 0, mL = 0; for (let i = 0; i < hp.length; i++) { v0 += hp[i] * hp[i]; mL += L[i]; }
+        /* texture presence (judge, Nov 13): a featureless crop has no peak because it has no
+         * texture, so it must FAIL, not pass. rel = high-pass RMS / mean luminance, measured the
+         * same way on reference/r5/brand/salinas-de-janubio.jpg's crust: 0.072 (far rows) to
+         * 0.189 (near rows); the floor is half the farthest reference crust */
+        const rel = Math.sqrt(v0 / hp.length) / Math.max(1, mL / hp.length);
         v0 = v0 || 1;
         /* The autocorrelation on a 4 px lag lattice. A PEAK is a local maximum: a blurred far
          * texture has a high value at small lags and falls away monotonically, and that is not
@@ -713,7 +718,7 @@ const ROWS = [
           }
           if (isMax && v > peak) { peak = v; peakAt = [lx, ly]; }
         }
-        return { peak: +peak.toFixed(3), at: peakAt, largestAtAnyLag8Up: +top.toFixed(3) };
+        return { peak: +peak.toFixed(3), at: peakAt, largestAtAnyLag8Up: +top.toFixed(3), texRel: +rel.toFixed(4), meanL: +(mL / hp.length).toFixed(1) };
       };
       // salt: the middle of the biggest white cell, looked at along its long axis, so no dyke is in the crop
       const Rc = await import('/src/world/island/recipe.js');
@@ -731,13 +736,15 @@ const ROWS = [
         salt50: acorr(shot(W2.x, W2.z, W0.x, W0.z, 5.2)),
       };
       veg.visible = wasV;
-      const pass = Object.values(sites).every((s) => s.peak <= 0.15);
-      return { pass, detail: { sites } };
+      const FLOOR = 0.036;
+      const blank = Object.entries(sites).filter(([, s]) => !(s.texRel >= FLOOR)).map(([k]) => k);
+      const pass = Object.values(sites).every((s) => s.peak <= 0.15) && !blank.length;
+      return { pass, detail: { sites, texturePresenceFloor: FLOOR, blankCrops: blank } };
     })()`,
   },
   {
     id: 'A-skirt-masked', kind: 'action', lane: LANE, timeout: 60000,
-    title: 'Aerial shot: the far field is masked, not one flat tile; the luminance step across the world-square boundary (mask to far sea), net of the local trend, ≤ 8 %',
+    title: 'Aerial shot: the far field is masked, not one flat tile; the luminance step across the world-square boundary (mask to far sea) ≤ 8 %',
     settle: 1200,
     assert: `(async () => {
       const Ex = await import('/src/world/island/extent.js');
@@ -758,30 +765,34 @@ const ROWS = [
       const V = cam.position.constructor;
       const proj = (x, z) => { const v = new V(x, 0.34, z).project(cam); return [Math.round((v.x * 0.5 + 0.5) * W), Math.round((v.y * 0.5 + 0.5) * H)]; };
       const lum = (x, y) => { const o = (y * W + x) * 4; return buf[o] * 0.3 + buf[o + 1] * 0.59 + buf[o + 2] * 0.11; };
-      /* A seam is a jump AT the boundary: the step across it (6 m either side) net of the local
-       * trend read 12 m further out on both sides. A smooth gradient through the boundary (the
-       * sun's glint on the water at 11:00 falls off across these samples) is not a seam; the raw
-       * step is reported beside it. Bar unchanged. */
+      /* The step across the boundary, 6 m either side, as luminance (the row's measure, §9; the
+       * Nov 6 'net of trend' variant is withdrawn: the judge found the step real). */
       const box = (p) => {
         let l = 0, n = 0;
         for (let k = -3; k <= 3; k++) for (let j = -3; j <= 3; j++) { l += lum(Math.min(W - 1, Math.max(0, p[0] + k)), Math.min(H - 1, Math.max(0, p[1] + j))); n++; }
         return l / n;
       };
-      const steps = [], raw = [];
-      for (let dz = -90; dz <= 90; dz += 18) {
-        const a2 = box(proj(-Ex.WORLD_HALF + 18, Z + dz)), a = box(proj(-Ex.WORLD_HALF + 6, Z + dz));
-        const b = box(proj(-Ex.WORLD_HALF - 6, Z + dz)), b2 = box(proj(-Ex.WORLD_HALF - 18, Z + dz));
-        const mean = Math.max(1, (a + b) * 0.5);
-        const trend = ((a2 - a) + (b - b2)) * 0.5;
-        raw.push(+(Math.abs(a - b) / mean).toFixed(4));
-        steps.push(+(Math.abs((a - b) - trend) / mean).toFixed(4));
-      }
+      const measure = () => {
+        gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        const out = [];
+        for (let dz = -90; dz <= 90; dz += 18) {
+          const a = box(proj(-Ex.WORLD_HALF + 6, Z + dz)), b = box(proj(-Ex.WORLD_HALF - 6, Z + dz));
+          out.push(+(Math.abs(a - b) / Math.max(1, (a + b) * 0.5)).toFixed(4));
+        }
+        return out;
+      };
+      const steps = measure();
       const worst = Math.max(...steps);
-      // the far field carries structure: luminance variance in the island half of the frame is non-trivial
-      let s = 0, ss2 = 0, c = 0;
-      for (let y = 0; y < H; y += 7) for (let x = Math.round(W * 0.6); x < W; x += 7) { const l = lum(x, y); s += l; ss2 += l * l; c++; }
-      const sd = Math.sqrt(Math.max(0, ss2 / c - (s / c) * (s / c)));
-      return { pass: worst <= 0.08 && sd > 1.5, detail: { stepsAcrossBoundary: steps, worst, rawSteps: raw, rawWorst: Math.max(...raw), landSideLumaSd: +sd.toFixed(2) } };
+      // diagnostics (reported, not graded): the same frame with the post chain's AO off, and with the terrain hidden
+      const diag = {};
+      try {
+        const q = E.quality || E._quality, ao = E.gtao || E._gtao || E.passes?.gtao;
+        if (ao && 'enabled' in ao) { const was = ao.enabled; ao.enabled = false; for (let i = 0; i < 3; i++) { E._shadowCullClock = 0; E.render(0.016); } diag.aoOff = Math.max(...measure()); ao.enabled = was; }
+        const tg = ctx.terrain.mesh; tg.visible = false; for (let i = 0; i < 3; i++) { E._shadowCullClock = 0; E.render(0.016); } diag.terrainHidden = Math.max(...measure()); tg.visible = true;
+        for (let i = 0; i < 3; i++) { E._shadowCullClock = 0; E.render(0.016); }
+        gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      } catch (e) { diag.error = String(e.message || e); }
+      return { pass: worst <= 0.08 && sd > 1.5, detail: { stepsAcrossBoundary: steps, worst, landSideLumaSd: +sd.toFixed(2), diag } };
     })()`,
   },
   {
@@ -854,8 +865,21 @@ const ROWS = [
     },
   },
   {
+    /* engine-gpu's box witness, for this row: sampled in node just before the page runs it, and
+     * handed to the row's assert. A quiet box (1-min load < 3, 0 other headless Chromes) grades
+     * the clocks PASS or FAIL; only a loud box leaves them PENDING (judge, Nov 13). */
+    id: 'A-gpu-tier-pans-box', kind: 'runner', lane: LANE, timeout: 15000,
+    title: 'Box witness for A-gpu-tier-pans: 1-min load < 3 and 0 other headless Chromes, sampled in node and handed to the row (its clocks FAIL on a quiet box when over the bars; PENDING only on a loud box)',
+    check({ GATES: all }) {
+      const box = sampleBox();
+      const target = (all || []).find((g) => g.id === 'A-gpu-tier-pans');
+      if (target) target.assert = gpuTierPansAssert(box);
+      return { pass: box.quiet ? true : null, detail: { ...box, handedTo: target ? target.id : null } };
+    },
+  },
+  {
     id: 'A-gpu-tier-pans', kind: 'action', lane: LANE, timeout: 120000,
-    title: 'A-gpu-tier re-run at gatePlaces.vistas.pans, shipped tier at 1600×900: vista GPU median ≤ 13 ms, median fps ≥ 58, p95 ≤ 20 ms (quiet-box terms PENDING under R45 when the box is not quiet)',
+    title: 'A-gpu-tier re-run at gatePlaces.vistas.pans, shipped tier at 1600×900: vista GPU median ≤ 13 ms, median fps ≥ 58, p95 ≤ 20 ms; graded on a quiet box (A-gpu-tier-pans-box, same invocation): FAIL when over, PENDING only when the box is loud or unsampled',
     settle: 2500,
     setup: `(async () => {${FALLBACK_PLACES}
       const ctx = __CTX__; ctx.state = 'playing';
@@ -869,20 +893,7 @@ const ROWS = [
       cam.position.set(P.x, eyeY, P.z); cam.lookAt(P.look.x, P.look.y ?? 0, P.look.z); cam.updateMatrixWorld(true);
       window.__wgCamHold = setInterval(() => { cam.position.set(P.x, eyeY, P.z); cam.lookAt(P.look.x, P.look.y ?? 0, P.look.z); cam.updateMatrixWorld(true); }, 8);
     })()`,
-    assert: `(async () => {
-      const ctx = __CTX__, E = ctx.engine;
-      E.enableGpuTimer?.(true);
-      await new Promise((r) => requestAnimationFrame(r));
-      E.perfReset?.();
-      const t0 = performance.now(); let n = 0, calls = 0, tris = 0;
-      while (performance.now() - t0 < 6000) { await new Promise((r) => requestAnimationFrame(r)); n++; calls = ctx.renderer.info.render.calls; tris = ctx.renderer.info.render.triangles; }
-      const sn = E.perfSnapshot?.(n) || {};
-      clearInterval(window.__wgCamHold);
-      const gpu = sn.medianGpuMs, fps = sn.medianFps ?? (n / 6), p95 = sn.p95FrameMs ?? sn.p95Ms;
-      const w = ctx.renderer.domElement.width;
-      const grade = gpu != null && gpu <= 13 && fps >= 58 && (p95 == null || p95 <= 20);
-      return { pass: grade ? true : null, detail: { medianGpuMs: gpu, fps: fps && +fps.toFixed(1), p95, calls, tris, frames: n, bufferWidth: w, note: grade ? 'in budget' : 'PENDING-quiet-box (R45): graded by the orchestrator on the quiet global run' } };
-    })()`,
+    assert: gpuTierPansAssert(null),
   },
 
   /* ------------------------------------------------------------------ the two films ---- */
@@ -963,12 +974,117 @@ const ROWS = [
     criteria: 'The ground fills the frame from a ~1.5 m eye. PASS: grain, crust and pebbles at two visibly different scales, with normal-mapped relief (a lit and a shaded side on the same bump); the material changes across the frame (salt crust / stone dyke / black sand) rather than one tint fading into another; no tiling. FAIL if it reads as flat interpolated vertex colour, a single low-frequency blotch, or has no relief at grazing light.',
   },
 
-  /* ---------------------------------------------------------- the Round-4 wall's rows ---- */
-  ...['V33-rim', 'A62-rim-face-lit-world-ground', 'A63-bedding-planar-world-ground', 'A61-scree-seated-world-ground', 'A59-grass-coverage', 'V44-biomes'].filter((id) => CARRIED.some((g) => g.id === id)).map((id) => ({
+  /* ------------------------------------------- the Round-4 wall's rows, re-staged ---- */
+  /* A59 and A62 run as carried, on GROUND's re-authored places (sites.js: grassPoints, grassSite,
+   * rimFace, litMeadowRef). V33, A61 and A63 measured subjects the island does not have in that
+   * form (a 150 m alpine wall, `rim-scree` cones, beds 16-40 m thick on a ring of r 300-430), so
+   * they are re-staged here on the red tuff ring, with each row's own test and the subject's
+   * numbers (LOOK W-03: crater beds 0.8-2.5 m). V44 returns at W4 (plan §9). */
+  ...['V44-biomes'].filter((id) => CARRIED.some((g) => g.id === id)).map((id) => ({
     id, kind: 'runner', lane: LANE,
-    title: `SKIP-replaced: ${id} measured the Round-4 valley (the ring wall, its talus, its meadow). The island has none; A59b grades plants against cover, V44-biomes returns at W4 (plan §9)`,
-    check: () => ({ pass: null, detail: 'SKIP-replaced (world-ground): subject deleted with the old landform (plan §6)' }),
+    title: `SKIP-replaced: ${id} returns at W4 with the six biomes (plan §9)`,
+    check: () => ({ pass: null, detail: 'SKIP-replaced (world-ground): V44 is a W4 row' }),
   })),
+  {
+    id: 'V33-rim', kind: 'visual', lane: LANE,
+    reference: 'reference/r5/brand/salinas-de-janubio.jpg (the crater wall behind the pans); reference/r5/gates-perf/strata-talus',
+    title: '[V33 re-staged on the island] From REST at Saltrow toward the red tuff ring over the Glass (gatePlaces.rimView): a bedded tuff wall with ledges, gullies and talus, hazed by distance',
+    settle: 2600, timeout: 60000,
+    setup: `(async () => {${FALLBACK_PLACES}
+      const ctx = __CTX__, cam = ctx.camera, T = ctx.terrain;
+      ctx.environment?.setWeather?.('clear', 0);
+      ctx.environment?.setTime?.(9.0);
+      if (ctx.environment) ctx.environment.timeFrozen = true;
+      const p = ctx.player; p._updateCamera = () => {};
+      if (ctx.studio) ctx.studio.update = () => {};
+      const hud = document.getElementById('hud'); if (hud) hud.style.display = 'none';
+      for (const m of (ctx.machines?.list || [])) { if (m.root) m.root.visible = false; else if (m.group) m.group.visible = false; m.frozen = true; }
+      const RV = ctx.props.gatePlaces.rimView;
+      p.position.set(RV.x + 30, 0, RV.z + 30); p._snapToGround?.();
+      ctx.vegetation?.forceStream?.(RV.x, RV.z);
+      const y = T.getHeight(RV.x, RV.z);
+      const shot = () => { cam.fov = 48; cam.updateProjectionMatrix(); cam.position.set(RV.x, y + 5.0, RV.z); cam.lookAt(RV.look.x, y + RV.look.dy, RV.look.z); cam.updateMatrixWorld(true); };
+      shot(); window.__wgCamHold = setInterval(shot, 8);
+      for (let i = 0; i < 4; i++) { ctx.engine._shadowCullClock = 0; ctx.engine.render(0.05); }
+    })()`,
+    criteria: 'The red tuff ring fills the upper half of the frame across the Glass. PASS: it reads as a bedded volcanic wall, as the crater wall behind Janubio does: horizontal beds and ledges, V gullies, a dark cap, pale talus fans at its foot, sun and shade faces on the same wall, aerial haze separating it from the near ground; 35-45 m of relief from the Glass to the crest. FAIL on a smooth banded hump, a flat unlit backdrop, or a foot with no rock.',
+  },
+  {
+    id: 'A61-scree-seated-world-ground', kind: 'action', lane: LANE, timeout: 60000, settle: 1200,
+    title: '[A61 re-staged on the island] Every talus block at the red tuff ring\'s foot sits ON the ground: no base-ring vertex of a ring rockfall instance floats more than 0.6 m above the terrain',
+    assert: `(async () => {
+      const ctx = __CTX__, T = ctx.terrain;
+      const R = await import('/src/world/island/recipe.js');
+      const im = ctx.vegetation.rocks;
+      if (!im) return { pass: false, detail: 'no rocks-basalt instances' };
+      const pos = im.geometry.attributes.position, mw = im.matrixWorld.elements;
+      let minY = Infinity;
+      for (let i = 0; i < pos.count; i++) minY = Math.min(minY, pos.getY(i));
+      const ring = [];
+      for (let i = 0; i < pos.count; i++) { const y = pos.getY(i); if (y <= minY + 0.12 && Math.hypot(pos.getX(i), pos.getZ(i)) >= 0.5) ring.push([pos.getX(i), y, pos.getZ(i)]); }
+      const m = im.instanceMatrix.array, rows = [];
+      for (let i = 0; i < im.count; i++) {
+        const o = i * 16, cx = m[o + 12] + mw[12], cz = m[o + 14] + mw[14];
+        if (R.authored.crater(cx, cz) < 0.25) continue;
+        let worst = -Infinity;
+        for (const [lx, ly, lz] of ring) {
+          const px = m[o] * lx + m[o + 4] * ly + m[o + 8] * lz + m[o + 12] + mw[12];
+          const py = m[o + 1] * lx + m[o + 5] * ly + m[o + 9] * lz + m[o + 13] + mw[13];
+          const pz = m[o + 2] * lx + m[o + 6] * ly + m[o + 10] * lz + m[o + 14] + mw[14];
+          const gap = py - T.getHeight(px, pz);
+          if (gap > worst) worst = gap;
+        }
+        rows.push(+worst.toFixed(2));
+      }
+      rows.sort((a, b) => b - a);
+      const over = rows.filter((g) => g > 0.6).length;
+      return { pass: rows.length >= 20 && over === 0, detail: { fans: rows.length, over06: over, worst: rows[0], median: rows[rows.length >> 1] } };
+    })()`,
+  },
+  {
+    id: 'A63-bedding-planar-world-ground', kind: 'action', lane: LANE, timeout: 90000, settle: 1500,
+    title: '[A63 re-staged on the island] The red tuff ring\'s bedding term is a set of PLANES, not a wood grain: the bed-height field never climbs faster than 0.9 m per metre walked on the ring\'s steep faces, the beds are 0.8-2.5 m thick (LOOK W-03, crater), and they render (strata on/off: RMS ≥ 0.006, peak ≥ 0.05)',
+    assert: `(async () => {${FALLBACK_PLACES}
+      const ctx = __CTX__, T = ctx.terrain, cam = ctx.camera, renderer = ctx.renderer, gl = renderer.getContext();
+      const R = await import('/src/world/island/recipe.js');
+      if (typeof T.beddingAt !== 'function' || typeof T.setStrataStrength !== 'function') return { pass: false, detail: 'terrain.beddingAt / setStrataStrength not published' };
+      const g = [], th = [], e = 0.5, o = { bh: 0, thick: 0 };
+      for (let z = 40; z <= 290; z += 3) for (let x = -520; x <= -250; x += 3) {
+        if (R.authored.crater(x, z) < 0.3) continue;
+        const y = T.getHeight(x, z);
+        if (T.slopeFast(x, z) < 0.6) continue;
+        T.beddingAt(x, y, z, o); th.push(o.thick);
+        const gx = (T.beddingAt(x + e, y, z, o).bh - T.beddingAt(x - e, y, z, o).bh) / (2 * e);
+        const gz = (T.beddingAt(x, y, z + e, o).bh - T.beddingAt(x, y, z - e, o).bh) / (2 * e);
+        g.push(Math.hypot(gx, gz));
+      }
+      g.sort((a, b) => a - b);
+      const gradMax = g.length ? g[g.length - 1] : null, thickMin = Math.min(...th), thickMax = Math.max(...th);
+      const p = ctx.player; p._updateCamera = () => {};
+      if (ctx.studio) ctx.studio.update = () => {};
+      ctx.environment?.setWeather?.('clear', 0); ctx.environment?.setTime?.(12.0);
+      const hidden = [];
+      for (const gr of [ctx.vegetation?.group, ctx.props?.group, ctx.machines?.group]) if (gr && gr.visible) { gr.visible = false; hidden.push(gr); }
+      const RB = ctx.props.gatePlaces.rimStrata;
+      p.position.set(RB.x + 40, 0, RB.z + 40); p._snapToGround?.();
+      const wy = T.getHeight(RB.x, RB.z);
+      cam.fov = 52; cam.updateProjectionMatrix(); cam.position.set(RB.x, wy + 5.0, RB.z); cam.lookAt(RB.look.x, RB.look.y, RB.look.z); cam.updateMatrixWorld(true);
+      const W = renderer.domElement.width, H = renderer.domElement.height;
+      const grab = () => { for (let i = 0; i < 4; i++) { ctx.engine._shadowCullClock = 0; ctx.engine.render(0.016); } const b = new Uint8Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, b); return b; };
+      let A, B;
+      try { T.setStrataStrength(1); A = grab(); T.setStrataStrength(0); B = grab(); }
+      finally { T.setStrataStrength(1); for (const gr of hidden) gr.visible = true; }
+      let sq = 0, n = 0, peak = 0;
+      for (let sy = Math.round(H * 0.38); sy < Math.round(H * 0.88); sy += 2) for (let sx = Math.round(W * 0.1); sx < Math.round(W * 0.92); sx += 2) {
+        const q = (sy * W + sx) * 4;
+        const d = (0.2126 * (A[q] - B[q]) + 0.7152 * (A[q + 1] - B[q + 1]) + 0.0722 * (A[q + 2] - B[q + 2])) / 255;
+        sq += d * d; n++; if (Math.abs(d) > peak) peak = Math.abs(d);
+      }
+      const bedRms = Math.sqrt(sq / Math.max(1, n));
+      const pass = g.length > 200 && gradMax <= 0.9 && thickMin >= 0.8 && thickMax <= 2.5 && bedRms >= 0.006 && peak >= 0.05;
+      return { pass, detail: { samples: g.length, gradP50: g.length ? +g[g.length >> 1].toFixed(3) : null, gradMax: gradMax && +gradMax.toFixed(3), thick: [thickMin, thickMax], bedRms: +bedRms.toFixed(5), bedPeak: +peak.toFixed(4) } };
+    })()`,
+  },
 
   /* ---------------------------------------------- the kept movement rows, on this ground ---- */
   aliasRow(HERO, 'A18-slope-conform', 'A18-slope-conform-island'),
@@ -976,6 +1092,30 @@ const ROWS = [
   aliasRow(CARRIED, 'A29-slope-limit', 'A29-steep-face'),
   aliasRow(CARRIED, 'A29b-slope-no-ghost', 'A29b-steep-face-moving'),
 ];
+
+/** A-gpu-tier-pans's clocks, graded against the node-side box sample (null: not sampled). */
+function gpuTierPansAssert(box) {
+  return `(async () => {
+      const BOX = ${JSON.stringify(box)}, MAX_AGE = ${QUIET.maxBoxAgeMs};
+      const ctx = __CTX__, E = ctx.engine;
+      E.enableGpuTimer?.(true);
+      await new Promise((r) => requestAnimationFrame(r));
+      E.perfReset?.();
+      const t0 = performance.now(); let n = 0, calls = 0, tris = 0;
+      while (performance.now() - t0 < 6000) { await new Promise((r) => requestAnimationFrame(r)); n++; calls = ctx.renderer.info.render.calls; tris = ctx.renderer.info.render.triangles; }
+      const sn = E.perfSnapshot?.(n) || {};
+      clearInterval(window.__wgCamHold);
+      const gpu = sn.medianGpuMs, fps = sn.medianFps ?? (n / 6), p95 = sn.p95FrameMs ?? sn.p95Ms;
+      const w = ctx.renderer.domElement.width;
+      const within = gpu != null && gpu <= 13 && fps >= 58 && (p95 == null || p95 <= 20);
+      const fresh = BOX && (Date.now() - BOX.sampledAt) <= MAX_AGE;
+      const quiet = !!(fresh && BOX.quiet);
+      const pass = within ? true : quiet ? false : null;
+      return { pass, detail: { medianGpuMs: gpu, fps: fps && +fps.toFixed(1), p95, calls, tris, frames: n, bufferWidth: w,
+        box: BOX ? { load1: BOX.load1, otherHeadlessChromes: BOX.otherHeadlessChromes, quiet: BOX.quiet, ageMs: Date.now() - BOX.sampledAt } : 'not sampled (run A-gpu-tier-pans-box in the same invocation)',
+        note: within ? 'in budget' : quiet ? 'FAIL on a quiet box: over the bar' : 'PENDING: the box was loud or not sampled' } };
+    })()`;
+}
 
 /**
  * Stage a Pans shot: the camera pinned off the chase rig, weather and hour set, the hero
@@ -1161,5 +1301,95 @@ for (const row of [
   ]),
   pansRow('V-gpu-tier-look', 'V-gpu-tier-look-pans'),
 ]) if (row) ROWS.push(row);
+
+/**
+ * A108's crop survey on the island (R49 re-grade; judge, Nov 13). A diagnostic, not a gate bar:
+ * at the shipped tier and DPR 1 it renders candidate frames over this island's own content
+ * (black sand plain, the golden meadow, dunes, the scored outer slopes of the ring and the
+ * Holds) with GTAO off and on, and reports each crop's control and shipped peak with the
+ * instrument's own acorr, so the graded frames can be chosen where the control is clean. The
+ * frames chosen go to the orchestrator for sign-off (R49) before A108-ao-periodicity-pans uses them.
+ */
+{
+  const LOCS = [
+    [-164, 262, 3.0], [-200, 140, 4.0], [-120, 300, 3.0], [-250, 330, 3.5], [-300, 110, 8.0], [-140, 200, 10.0],
+    [-60, 330, 5.0], [-90, 250, 12.0],
+  ];
+  const CAND = [];
+  for (const [x, z, h] of LOCS) for (const yaw of [0, 90, 180, 270]) CAND.push({ cam: P(x, z, h, yaw, -7, 46), at: [x, z, yaw] });
+  const CROPS = { a: [0.5, 0.45], b: [0.3, 0.55], c: [0.7, 0.55], d: [0.5, 0.65], e: [0.5, 0.78] };
+  ROWS.push({
+    id: 'F-a108-survey', kind: 'action', lane: LANE, timeout: 420000, settle: 1500,
+    title: 'Diagnostic (not graded): A108 crop survey on the island\'s content at the shipped tier, DPR 1: control (GTAO off) and shipped peaks per candidate crop, for R49 sign-off',
+    assert: `(async () => {
+      ${GAME_KIT}
+      const CAND = ${JSON.stringify(CAND)}, CROPS = ${JSON.stringify(CROPS)}, S = 256, BAR = 0.15;
+      setTierDpr(QUALITY_TIERS[DEFAULT_TIER], DEFAULT_TIER, 1);
+      const rows = [];
+      for (const c of CAND) {
+        camAt(...c.cam);
+        const got = {};
+        for (const on of [false, true]) {
+          E.gtao.enabled = on; draw(5);
+          for (const k in CROPS) { const L = lumCrop(CROPS[k][0], CROPS[k][1], S); (got[k] = got[k] || {})[on ? 'on' : 'off'] = acorr(L, S).peak; }
+        }
+        E.gtao.enabled = E.tier.gtao;
+        const clean = Object.keys(got).filter((k) => got[k].off < 0.12 && got[k].on < BAR);
+        rows.push({ at: c.at, cam: c.cam, crops: got, clean });
+      }
+      rows.sort((a, b) => b.clean.length - a.clean.length);
+      return { pass: null, detail: { note: 'survey for R49 sign-off', best: rows.slice(0, 12), worstOn: Math.max(...rows.flatMap((r) => Object.values(r.crops).map((g) => g.on))) } };
+    })()`,
+  });
+}
+
+/**
+ * Films at the judges' angles (Nov 13 findings), for reading beside the graded rows: not gates.
+ * Each is [x, z, eye above ground, look x, look y, look z, fov, hour, weather].
+ */
+const FILMS = {
+  'F-film-crater-wall': [-372, 196, 1.7, -392, 14, 96, 50, 7.5, 'trade'],
+  'F-film-golden-glass': [-345, 214, 6.0, -395, 0, 150, 48, 18.2, 'trade'],
+  'F-film-sea-line': [-226, 398, 1.7, -330, 0.6, 520, 52, 7, 'trade'],
+  'F-film-sea-skyline': [-300, 120, 22, -1000, 40, -900, 40, 10, 'trade'],
+  'F-film-run-pans': [-164, 250, 1.7, -164, 0.6, 300, 55, 11, 'trade'],
+  'F-film-inland': [-283, 246, 1.7, -150, 6, 160, 55, 9, 'trade'],
+  'F-film-ring-rise': [-300, 350, 3.0, -347, 6, 320, 50, 8, 'trade'],
+  'F-film-skirt-aerial': [-552, 300, 0, -551.9, 0, 120, 45, 11, 'clear'],
+  'F-film-meadow': [-196, 110, 1.6, -200, 0.4, 170, 55, 17.5, 'trade'],
+  'F-film-salt-near': [0, 0, 1.6, 0, 0, 0, 50, 9.5, 'trade'],
+};
+for (const [id, F] of Object.entries(FILMS)) {
+  ROWS.push({
+    id, kind: 'visual', lane: LANE, timeout: 60000, settle: 2600,
+    reference: 'reference/r5/brand/salinas-de-janubio.jpg',
+    title: `Film (not a gate): ${id.slice(7)} at the Nov 13 judge's angle`,
+    criteria: 'Read beside the graded V-rows; not graded on its own.',
+    setup: `(async () => {${FALLBACK_PLACES}
+      const ctx = __CTX__, cam = ctx.camera, T = ctx.terrain, env = ctx.environment;
+      let F = ${JSON.stringify(F)};
+      if (${JSON.stringify(id)} === 'F-film-salt-near') {
+        const R = await import('/src/world/island/recipe.js'), o = { x: 0, z: 0 }, o2 = { x: 0, z: 0 };
+        const c = R.fieldCells().filter((q) => q.kind === R.PAN.WHITE).sort((p, q) => (q.u1 - q.u0) * (q.v1 - q.v0) - (p.u1 - p.u0) * (p.v1 - p.v0))[0];
+        R.fieldToWorld(c.u0 + 1.5, (c.v0 + c.v1) / 2, o); R.fieldToWorld(c.u1, (c.v0 + c.v1) / 2, o2);
+        F = [o.x, o.z, 1.6, o2.x, T.getHeight(o2.x, o2.z) - 0.4, o2.z, 50, 9.5, 'trade'];
+      }
+      const states = env?.weatherStates || [];
+      env?.setWeather?.(states.includes(F[8]) ? F[8] : 'clear', 0);
+      env?.setTime?.(F[7]); if (env) env.timeFrozen = true;
+      const p = ctx.player; p._updateCamera = () => {};
+      if (ctx.studio) ctx.studio.update = () => {};
+      ctx.state = 'playing';
+      const hud = document.getElementById('hud'); if (hud) hud.style.display = 'none';
+      for (const m of (ctx.machines?.list || [])) { if (m.root) m.root.visible = false; else if (m.group) m.group.visible = false; m.frozen = true; }
+      p.position.set(F[0] + 60, 0, F[1] + 60); p._snapToGround?.();
+      ctx.vegetation?.forceStream?.(F[0], F[1]);
+      const y = ${JSON.stringify(id)} === 'F-film-skirt-aerial' ? 300 : T.getHeight(F[0], F[1]) + F[2];
+      const hold = () => { cam.fov = F[6]; cam.updateProjectionMatrix(); cam.position.set(F[0], y, F[1]); cam.lookAt(F[3], F[4], F[5]); cam.updateMatrixWorld(true); };
+      hold(); window.__wgCamHold = setInterval(hold, 8);
+      for (let i = 0; i < 4; i++) { ctx.engine._shadowCullClock = 0; ctx.engine.render(0.05); }
+    })()`,
+  });
+}
 
 export const GATES = ROWS;
