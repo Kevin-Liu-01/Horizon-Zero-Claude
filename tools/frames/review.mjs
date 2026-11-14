@@ -87,6 +87,8 @@ export async function buildReview({ runDir, date = today(), status = '', setBase
   const cropMan = readJson(path.join(CROPS, 'manifest.json'), { crops: {}, texts: {} });
   const accepted = readJson(path.join(ACCEPTED, 'accepted.json'), {});
   const judge = readJson(path.join(runDir, 'judge.json'), {});
+  // notes.json beside run.json: { "F02": "one honest line on how far today is from the reference", ... }
+  const notes = readJson(path.join(runDir, 'notes.json'), {});
   const out = path.join(REVIEW, date);
   for (const d of ['today', 'anchor', 'sheets']) mkdirSync(path.join(out, d), { recursive: true });
 
@@ -124,7 +126,7 @@ export async function buildReview({ runDir, date = today(), status = '', setBase
       { label: `${f.id} today`, file: src && fr.ok ? src : null, text: fr.error || 'not filmed' },
       { label: `${f.id} ${anchorRel ? anchorLabel : 'no anchor yet'}`, file: anchorRel ? path.join(out, anchorRel) : null, text: 'no anchor yet' },
     ]);
-    rows.push({ f, fr, todayRel, anchorRel, anchorLabel, refs, textRef, j, further });
+    rows.push({ f, fr, todayRel, anchorRel, anchorLabel, refs, textRef, j, further, note: notes[f.id] || null });
   }
   rows.sort((a, b) => (b.further ? 1 : 0) - (a.further ? 1 : 0));
 
@@ -166,6 +168,7 @@ export async function buildReview({ runDir, date = today(), status = '', setBase
     <div class="col"><h3>today</h3>${r.todayRel ? `<a href="${esc(r.todayRel)}"><img src="${esc(r.todayRel)}" alt="today" loading="lazy"></a>` : `<div class="empty">${esc(fr.error || 'not filmed')}</div>`}<p class="dim">${esc(meas)}</p>${stand}</div>
     <div class="col"><h3>last accepted</h3>${r.anchorRel ? `<a href="${esc(r.anchorRel)}"><img src="${esc(r.anchorRel)}" alt="anchor" loading="lazy"></a>` : '<div class="empty">no anchor yet</div>'}<p class="dim">${esc(r.anchorLabel)}</p></div>
   </div>
+  ${r.note ? `<p class="onote"><b>How far from the reference.</b> ${esc(r.note)}</p>` : ''}
   ${judgeHtml}
   <div class="answer" data-id="${esc(f.id)}">
     <label><input type="radio" name="a-${esc(f.id)}" value="accept"> accept</label>
@@ -192,7 +195,7 @@ button{background:#3b3550;color:#fff;border:0;border-radius:6px;padding:7px 14px
 .col img{width:100%;display:block;border-radius:4px;background:#000}figure{margin:0 0 8px}figcaption{font-size:12px;color:#8f8878}.note{color:#b8a98a}
 .empty{aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;background:#1d1d23;border-radius:4px;color:#8f8878;text-align:center;padding:10px}
 .target{font-size:13px;color:#d6cdb9;margin:6px 0}.dim{color:#8f8878;font-size:12px;margin:6px 0}.stand{font-size:12px;color:#e0b070;margin:4px 0 0;padding-left:18px}
-.judge{font-size:13px;border-collapse:collapse;margin-top:8px}.judge td{padding:2px 10px 2px 0}.judge tr.further td:nth-child(2){color:#ff7b6b}.judge tr.closer td:nth-child(2){color:#8fd18f}
+.onote{font-size:14px;color:#e2d6b8;margin:8px 0 0;max-width:110ch}.judge{font-size:13px;border-collapse:collapse;margin-top:8px}.judge td{padding:2px 10px 2px 0}.judge tr.further td:nth-child(2){color:#ff7b6b}.judge tr.closer td:nth-child(2){color:#8fd18f}
 .answer{margin-top:10px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}.answer .why{flex:1;min-width:280px;background:#0f0f12;color:#e9e3d6;border:1px solid #333;border-radius:6px;padding:6px 8px}
 .bad{color:#ff7b6b}@media(max-width:1000px){.cols{grid-template-columns:1fr}}
 </style></head><body><main>
