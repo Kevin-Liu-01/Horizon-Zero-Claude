@@ -1,10 +1,59 @@
-# ROUND 5 — character-art (W1; R54, R56, R58, R59, R63, R64, R66, R67)
+# ROUND 5 — character-art (W1; R54, R56, R58, R59, R63, R64, R66, R67, R69)
 
 Brea's close-up, rebuilt in the recipe, and the kit settlements builds NPCs on (R56, R57 c). Budgets did not move. Fix round 2 answers
 the eight findings of the gate judge and the engineering + film judge. Its first pass (Nov 6-7) was cut off before its final run; this
 lane picked it up on Nov 12, measured it live, fixed what still failed and took the ROUND5-LOOK items this lane owns at the W1 exit
 (C-01, C-04's chunk, and the lash, paste and tail parts of C-02, C-03 and C-05; §2.1 lists what is not built). §0 maps the findings to the work and the numbers, §0.1 keeps the first pass's map, §2 measures the
 final build, §3 is the reusable API (the Nov 12 additions at its end), §4 keeps fix round 1's map.
+
+## 00. Fix round 3 (Nov 13-14), finding by finding
+
+Fix round 3 was started on Nov 13 by an earlier builder, who was cut off by the machine reset after four live runs (w3 r1-r3; r4 never
+started). That builder had already done the following:
+- built C-02: the second lobe, AO² cavity occlusion, the 128² micro-pore normal and the matte paste;
+- built C-03: the `_CALZONE` cornea and tear line, and the two sky-window lobes;
+- registered `A-skin-spec`, `A-eye-catchlight`, `A-hero-rim`, `V-brea-face-keyart` and `V-brea-golden-hour` at LOOK's bars;
+- made the tail a pleated, cupped roll on 4-joint skinning;
+- relit the collar lining with neck skin, and kept part of the cast shadow on the wrapped term (`calEdgeKeep` 0.6).
+
+Its last live run (r3, 16:52Z) read:
+- `A-wrap-closed`: 94 / 81 px, the collar set only (az 195 and 180 at el 1.2, az 120 at el 0.8). The head set was 0 px except one 6 px view.
+- `A-skin-scatter` (b): 5.86 / 4.70 / 5.85 on one build.
+- `A-skin-spec` (c): 0.0062. `A-skin-spec` (d): 2.37.
+- `A-eye-catchlight` (d): 0.38 / 0.44 of the lid columns.
+- `A-hero-rim` (a)-(c): 1.62 / 0.16 / 1.28.
+- `A-hero-draws`: 20,036 tris (the two-sided collar wall pushed her own body to 9,980 against the binding 20 k).
+- `A-tail-legible`: 1 of 24 moments.
+
+This round verified that work, kept what was right, and did the rest. It also read Kevin's Nov 13 turnaround (R69), which is now the
+binding target.
+
+| finding | what was done | measured (offline unless marked) |
+|---|---|---|
+| A-wrap-closed collar (blocker, both judges) | The collar wall's foot now turns in toward the neck as a 14 mm floor under the lid's lip, at the back only (`appendCollarLiner({ flange })`; at the sides a floor came out through the smock's sloping shoulder). A steep look down between the lid and the wall meets it, whatever the bowed idle does to the two (the lid rides the torso, the wall the smock). The wall stays single-sided. Drawn two-sided, the chords between its columns cut through the smock's curve and showed outside it as dark shards (seen in the bind-pose key renders), and it cost the 38 tris that broke `A-hero-draws` in r3. The row's key and radius are unchanged | bind-pose key renders at az 195 / 180, el 1.2, az 120, el 0.8 and az 180, el 0.4: no shard, no notch. Live: §00.1 |
+| black void / black shapes at the collar (major) | The lining texel is the neck's skin (earlier builder). New: skin that the normal-ray test covers AND that has the smock straight above it (its shoulder, its collar stand) is under the smock, not in the opening, so it is hidden. In the live pose the smock rides lower than in the bind, and that skin, painted dark by the collar's contact shade, came through the smock's chest as the black jagged shapes in every day front. The neck and the skin in the V, with no smock above them, stay | 246 more skin tris hidden; live count 9,918 → 9,672 before the ear and the floor spent part of it |
+| A-skin-scatter (b) does not reproduce (blocker, major) | The cause was the STAGING. The idle was frozen wherever the boot left it, so the same build read a shadow cheek of 0.030-0.042 and a fall of 0.47-0.68 between runs. `STAGE` now freezes ONE phase every run: no blink, the weight shift at its centre (`_shiftPh = 0`), the idle clip at 1.25 s, and then the clock stops. The wrap and the fill are the earlier builder's sweep result (0.40 / 0.21 / 0.14, ×0.55), and they sit between r1's 4.06 and r3's 4.70-5.86 | live: §00.1 |
+| LOOK W1-exit gates not registered; C-02 / C-03 not built (major ×2) | Verified the earlier builder's work (all five rows registered, C-02 and C-03 in `skinLook.js`). New: the micro-pore weight is 1.3, for margin on (c): r3's sweep read 0.0115 at 1.0 and 0.0165 at 1.5 against the 0.012 floor. **C-04's rim follows LOOK's formula now: the sun's light, `sun × shadow × kRim × (1-N·V)³ × (L·-V·½+½)²`, not the sun times the albedo.** Through the violet's and the dark skin's albedo the rim had been a tenth of the spec, so r3 read the wrap the same with its rim on and off, 1.617 against 1.622. The skin's rim is warmed (1.0, 0.80, 0.66). `A-tail-flow` / `V-tail-keyart` are not registered: their (b)-(e) are hero-body's 7-link chain, wind and colliders, which have not landed in this tree | live: §00.1 |
+| profile eyes (major) | C-03 (earlier builder): the cornea's sky-window lobe and the wet rim along its outline. r3's profile panels show a glossy dark cornea with a cool highlight and a rim line. `A-eye-catchlight` (c) passed in r3 (rim 0.43 / 0.82 of the outline). The lid shade band is stronger (earlier builder, after r3) for (d) | live: §00.1 |
+| tail and knot ends read as plates (major ×2) | Kept the earlier builder's gathered, pleated root roll, the 4 mm hems, the cup and the tufted fringe. New: 6 columns across the strip (was 5) and 17 rows (was 21), with deeper folds (0.0095) and ripple (0.005), so its section reads as cloth and not as a 5-facet plate (472 tris, was 496). The carmine lining is now a 14 % centre line on the inner face, not a quarter of it (`facing` 0.43). C-05 asks for an edge sliver; the binding still reads the carmine centre. The horizontal root in still air is the chain's own rest line (hero-body's points): see §2.2 | bind-pose renders, back and both sides |
+| R54 / R69: cheap next to the references (major ×2) | **Skin** (turnaround: deep brown, Lab C 27-35 at hue 35-44; ours lit 38-45 at hue 46-52): `tone` `#81594F`, redder and less saturated at the same lightness, which renders C 32 at hue 42 on the lit cheek and C 32 at hue 39 on the shadow cheek. **Freckles and sun specks** over the cheeks, nose and forehead (`freckles`, R69 "freckling"). **Paste:** narrower, 6.6 mm (R69's narrow dry line), with the dry gritty edge kept. **∴:** dots 3.8 mm across (were 5.3). **Ear:** a second, finer edge split on the helix and lobe and four more smoothing passes on the ear alone: the outline is rounder at 0.22 m. **Wrap (R69):** red-orange running stitches along each turn and a few crossing it, the dye bleached on the fold crowns, and deeper fold relief | swatches from offline renders vs the turnaround's face panel. Live: §00.1 |
+
+Budget: her own visible tris 9,839, under the 9,944 that keeps `A-hero-draws`' binding 20 k with the outfit's 7,876 and the kit's 2,180.
+2 draws. `brea.glb` is 660,168 bytes. `namecheck --code` passes at 1371 / 1371.
+
+### 00.1 Live runs
+LIVE_PLACEHOLDER
+
+### 00.2 Still weak next to the turnaround (R69), honestly
+- **Silhouette:** the turnaround's wrap is a bandana tied at the NAPE with two torn tails, and it has no topknot. Ours keeps the bible's
+  §3.5 topknot and the left-rear tail. Changing that is a design call, and it would move `dyn_hairKnotTail` (A33's chain), the
+  bbox top `assets.specs.js` reads and hero-body's chains. It needs an orchestrator ruling: R69 overrides the Nov 6 descriptions, but it
+  does not name the bible's topknot.
+- The turnaround's wrap is bunched cloth with deep folds everywhere. Ours is smoother wound turns: the folds are in the normal map, not in
+  the geometry, because geometry crease changes risk the head set of `A-wrap-closed`, which is at 0 px.
+- No ear stud, no loose cloth ends at the right temple, no violet neck scarf (the scarf belongs to armory's Starter rung).
+- The ear outline still shows a kink or two at 0.22 m.
+- The cord, the smock and the bowed idle head are still R54's weakest things in every close-up; they are armory's and hero-body's (R64).
 
 ## 0. Fix round 2, continued (Nov 12), finding by finding
 
@@ -336,6 +385,22 @@ The visual rows are my own reading; the independent judge grades them (R29).
 - `lib/skin.mjs` `saltPaste`: plates 6.7 mm (cell 150), cracks are shaded grooves 0.5-0.9 mm wide and sparser, the edges bite
   at the finger's scale, albedo capped at (217, 214, 206) with dusty drifts, roughness 0.9. `paintEye`'s lateral white falls
   to about a quarter by the corner.
+
+### API added in fix round 3 (Nov 13-14)
+- `lib/skin.mjs` `freckles({ zone(T) -> 0..1, density = 0.42, cell = 0.0021, r = [0.00038, 0.0009], dark = 0.7, seed = 11 }) -> layer`:
+  dark freckles and sun specks on a jittered grid, each projected on the face's dominant plane (front or side), deterministic. Pass it in
+  `paintHumanSkin({ marks })`. Brea uses density 0.075, r 0.4-1.0 mm, dark 0.7. An NPC with the board's freckled faces (R70) uses the same call.
+- `lib/wrap.mjs` `paintClothPanel(..., { stitch, fade })`:
+  - `stitch: { color, rows: [{ v, amp, k, ph, slope, len, gap, off }] }` paints running stitches a texel wide. Each row wanders with the
+    cloth, its dashes and gaps have their own lengths, and a fifth of the stitches drop out.
+  - `fade` (0..1) bleaches the dye on the fold crowns toward a dusty grey-lilac.
+  - `paintWrapAtlas(doc, mat, { thread = '#B8442E' })` sets the thread.
+- `lib/skin-human.mjs` `appendCollarLiner(..., { flange })`: the wall's foot turns in as a floor `flange` wide, at the back only.
+  `twoSided` stays available but is off: its chords cut through a curved smock.
+- `src/hero/skinLook.js`: the C-04 rim in `applySkinLook` and `applyClothLook` is LOOK's literal formula, the sun's light with no
+  albedo factor (on the skin it is warmed to 1.0 / 0.80 / 0.66). armory's `clothShader.js` gets the same rim through
+  `applyClothLook(material, { rim: 0.40 })`. The program cache key is `calSkin4`, and the micro-pore weight is 1.3.
+- gates: `STAGE` freezes the idle at one phase every run (no blink, the weight shift centred, the idle clip at 1.25 s).
 
 ## 4. Fix round 1, finding by finding
 
