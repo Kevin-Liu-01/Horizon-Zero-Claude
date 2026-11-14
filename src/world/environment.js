@@ -65,9 +65,11 @@ import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 
 const DEG = Math.PI / 180;
 /** Sun arc (L-11): rises 06:00 at bearing 70, culminates 50° up in the SOUTH at the
- *  12:45 solar noon (Orchil is at 28° N), sets 19:30 at bearing 290. */
+ *  12:52 solar noon (Orchil is at 28° N), sets 19:45 at bearing 290, when BIBLE §3.2's night begins.
+ *  M1.1f: was 19:30, which put the sun 1.2° under the sea in F05 (dusk, 19:36): no disc, no glitter path.
+ *  At 19:45 it stands 1.7° up at 19:36 and 17° up at F02's 18:15; low sun 34.6 % of play, night 18.8 %. */
 const SUN_RISE = 6.0;
-const SUN_SET = 19.5;
+const SUN_SET = 19.75;
 const SUN_MAX_ELEV = 50 * DEG;
 const SUN_AZ_START = 70 * DEG;
 const SUN_AZ_SWEEP = 220 * DEG;
@@ -122,23 +124,23 @@ const KEYS = [
   // 16:30 (L-03 new key, the light analyst's row)
   { h: 16.5, sunI: 4.80, sun: '#FFD9A8', hemiI: 0.24, hSky: '#9a8cc0', hGnd: '#6e5640', env: 0.90,
     zen: '#6F7FB8', mid: '#a49fc6', hor: '#E2BBAE', fogH: '#C89A88', fogZ: '#7d82b0', fogSun: '#ffc58c',
-    sea: '#F3DDCF', dens: 0.00118, mist: 0.0008, night: 0.00, ev: 0.10 },
+    sea: '#F3DDCF', dens: 0.00118, mist: 0.0005, night: 0.00, ev: 0.10 },
   // 17:45 (L-03 new key)
   { h: 17.75, sunI: 4.20, sun: '#FFC48A', hemiI: 0.30, hSky: '#9a86b8', hGnd: '#6a4e3a', env: 0.95,
     zen: '#62679f', mid: '#a493b4', hor: '#EBA98C', fogH: '#CF9A80', fogZ: '#6f6f9f', fogSun: '#ffae6a',
-    sea: '#F2CDB6', dens: 0.00122, mist: 0.0011, night: 0.00, ev: 0.15 },
+    sea: '#F2CDB6', dens: 0.00122, mist: 0.0006, night: 0.00, ev: 0.15 },
   // 18:45 golden (bible; zenith #555079 per R66 k)
   { h: 18.75, sunI: 2.80, sun: '#FFB070', hemiI: 0.38, hSky: '#9a7fae', hGnd: '#5a4030', env: 1.00,
     zen: '#555079', mid: '#9a7c98', hor: '#F08A5A', fogH: '#D9A37E', fogZ: '#5c5a85', fogSun: '#ff9a50',
-    sea: '#F2C0A0', dens: 0.00128, mist: 0.0013, night: 0.00, ev: 0.25 },
+    sea: '#F2C0A0', dens: 0.00128, mist: 0.0007, night: 0.00, ev: 0.25 },
   // 19:20 (L-03 new key)
   { h: 19.333, sunI: 1.20, sun: '#FF9B52', hemiI: 0.45, hSky: '#8a76a6', hGnd: '#4a3428', env: 1.00,
-    zen: '#4A4A7C', mid: '#7d6688', hor: '#D97A62', fogH: '#A67C78', fogZ: '#47466e', fogSun: '#ff8a48',
-    sea: '#c79a92', dens: 0.00135, mist: 0.0015, night: 0.12, ev: 0.40 },
+    zen: '#4A4A7C', mid: '#a07a88', hor: '#E8906A', fogH: '#A67C78', fogZ: '#47466e', fogSun: '#ff8a48',
+    sea: '#c79a92', dens: 0.00115, mist: 0.0004, night: 0.12, ev: 0.40 },
   // 19:45 dusk (bible)
   { h: 19.75, sunI: 0.35, sun: '#c46a5a', hemiI: 0.50, hSky: '#6f6a98', hGnd: '#33282a', env: 1.00,
-    zen: '#2F3560', mid: '#574a6c', hor: '#C46A7A', fogH: '#7A6474', fogZ: '#2c2f52', fogSun: '#b06060',
-    sea: '#8d7a8c', dens: 0.00140, mist: 0.0017, night: 0.40, ev: 0.70 },
+    zen: '#2F3560', mid: '#7a5f7c', hor: '#D27A70', fogH: '#7A6474', fogZ: '#2c2f52', fogSun: '#b06060',
+    sea: '#8d7a8c', dens: 0.00120, mist: 0.0006, night: 0.40, ev: 0.70 },
   // hand-over trough 19:54
   { h: 19.9, sunI: 0.10, sun: '#8f7a96', hemiI: 0.55, hSky: '#5a5f88', hGnd: '#2a2426', env: 1.00,
     zen: '#252a50', mid: '#3e3a5c', hor: '#8a5a6c', fogH: '#5f5466', fogZ: '#22284a', fogSun: '#7a5068',
@@ -1382,7 +1384,7 @@ export class Environment {
     fb.x = 0.045 * (1 - w.desat * 0.7) * (1 - k.night * 0.75) * (1 + cal * 0.4);
     fb.z = 0.92;
     const fgU = this.u.calFogG.value;
-    fgU.x = 0.72 + 0.08 * cal; fgU.y = 0.9; fgU.z = 0.20; fgU.w = 0.25;
+    fgU.x = 0.72 + 0.08 * cal; fgU.y = 0.75 + 0.15 * cal;   // M1.1f: the forward lobe 0.9 -> 0.75 in trade air (the low sun's horizon band clipped) fgU.z = 0.20; fgU.w = 0.25;
     const ext = this.u.calFogExt.value;
     ext.set(EXT_TRADE[0] + (EXT_CALIMA[0] - EXT_TRADE[0]) * cal,
       EXT_TRADE[1] + (EXT_CALIMA[1] - EXT_TRADE[1]) * cal,
@@ -1449,6 +1451,8 @@ export class Environment {
     su.uCloud.value.set(w.cloud, w.cloudDark, w.desat, flash);
     su.uStorm.value = w.rain;
     su.uCalima.value.set(cal, dayK);
+    // M1.1f: the cumulus' peach rims belong to a low sun (full below 17.5°, gone above 40°)
+    su.uRim.value = (1 - k.night) * (1 - smooth(0.30, 0.65, this.sunDir.y)) * smooth(-0.04, 0.03, this.sunDir.y);
     su.uCalZen.value.copy(this._calZen);
     su.uCalHor.value.copy(this._calHor);
     su.uFogDens.value = dens / 0.001;
@@ -1513,6 +1517,16 @@ export class Environment {
   /** Bloom threshold by biome and weather, strength by weather; written only on change,
    *  relative to the tier's own values (look-post owns the base, L-07). */
   _applyBloom(cal) {
+    // M1.1f: under the CALIMA look the engine owns the bloom's threshold (keyed to display L*, L-07) and its
+    // strength; this file only scales it per weather through look.bloomScale. Writing threshold and strength
+    // here as well made two owners: whichever wrote last won (the hour snap put the threshold back to an
+    // ACES-era 1.2 until the next look change re-solved it)
+    const L = this.ctx.engine?.look;
+    if (L?.set) {
+      const sc = Math.round(this.w.bloomK * 64) / 64;
+      if (L.bloomScale !== sc) L.set({ bloomScale: sc });
+      return;
+    }
     const b = this.ctx.engine?.bloom, base = this._bloomBase;
     if (!b || !base) return;
     const th = base.threshold + this._biomeBloom * (1 - cal) + CALIMA_BLOOM * cal;
@@ -1910,7 +1924,23 @@ export class Environment {
         uniform vec3 uColor;
         uniform vec4 uParams;
         varying vec2 vUv;
+        // M1.1f (BIBLE §3.2: crepuscular shafts only at real occluder and cloud gaps): how open the sky is round
+        // the sun, from 16 taps on two rings (2.5 % and 6 % of the frame height). A sun in open sky (1) or behind a
+        // solid mass (0) casts no shafts; only a broken edge does: gap = 4 o (1 - o), full at half open
+        float calGap() {
+          float o = 0.0;
+          for (int i = 0; i < 8; i++) {
+            float a = float(i) * 0.7853982;
+            vec2 r = vec2(cos(a) / uParams.w, sin(a));
+            o += step(0.99995, texture2D(tDepth, clamp(uSunUv + r * 0.025, 0.0, 1.0)).x);
+            o += step(0.99995, texture2D(tDepth, clamp(uSunUv + r * 0.060, 0.0, 1.0)).x);
+          }
+          o /= 16.0;
+          return clamp(4.0 * o * (1.0 - o), 0.0, 1.0);
+        }
         void main() {
+          float gap = calGap();
+          if (gap < 0.02) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
           vec2 delta = (vUv - uSunUv) * (1.0 / float(${SAMPLES})) * 0.92;
           vec2 c = vUv;
           float illum = 1.0;
@@ -1924,7 +1954,7 @@ export class Environment {
             illum *= uParams.x;
           }
           acc /= float(${SAMPLES});
-          gl_FragColor = vec4(uColor * min(acc * uParams.y * uParams.z, 0.30), 1.0);
+          gl_FragColor = vec4(uColor * min(acc * uParams.y * uParams.z * gap, 0.30), 1.0);
         }
       `,
     });
@@ -2316,6 +2346,10 @@ export class Environment {
         uCalZen: { value: new THREE.Color(CALIMA.zen) },
         uCalHor: { value: new THREE.Color(CALIMA.hor) },
         uDisc: { value: new THREE.Color(1, 0.4, 0.25) },
+        // M1.1f: the disc's angular radius (rad): 0.5° (a 1° disc, under the 2° bar)
+        uDiscRadius: { value: 0.5 * DEG },
+        // M1.1f: low-sun weight for the cumulus' peach rims (1 at golden hours, 0 with a high sun)
+        uRim: { value: 0 },
         uFogDens: { value: 1 },
         uIbl: { value: 0 },
         uNoise: { value: this._noise },
@@ -2341,6 +2375,7 @@ export class Environment {
         uniform vec4 uCloud;   // coverage, underside darkness, desat, flash
         uniform vec2 uDrift, uCalima;
         uniform vec3 uCalZen, uCalHor, uDisc;
+        uniform float uDiscRadius, uRim;
         uniform sampler2D uNoise;
         uniform vec3 calFogHorizon, calFogZenith, calFogSun;
         uniform vec4 calFogB, calFogG;
@@ -2365,7 +2400,9 @@ export class Environment {
           vec3 horizon = mix(uHorizon * 0.86, uHorizon, pow(az, 2.0));
           vec3 col = mix(horizon, uMid, smoothstep(0.0, 0.30, h));
           col = mix(col, uZenith, smoothstep(0.20, 0.95, h));
-          col += uSunCol * pow(az, 6.0) * (1.0 - smoothstep(0.0, 0.40, h)) * 0.18 * day;
+          // the low band toward the sun glows gold; M1.1f doubles it at golden hours (uRim), but not within ~6° of
+          // the disc, where the corona and the bloom already carry it (a low sun's clipped blob must end inside 4°)
+          col += uSunCol * pow(az, 6.0) * (1.0 - smoothstep(0.0, 0.40, h)) * (0.18 + 0.20 * uRim * (1.0 - pow(sunD, 60.0))) * day;
 
           // ---- calima (L-14): the gradient flattens to ochre, a broad coral glow at the sun
           if (cal > 0.001) {
@@ -2424,7 +2461,12 @@ export class Environment {
             float tr = 1.0;
             float thr = mix(0.58, 0.30, uCloud.x);
             vec3 lit = mix(vec3(1.10, 1.02, 0.94) * (0.55 + 0.45 * uSunCol), vec3(0.050, 0.058, 0.085), uNight);
+            // M1.1f, golden hours (uRim): the heaps toward the sun take the sun's gold, the heaps across the sky from
+            // it fall to a dimmer mauve-rose (the sun grazes them; their lit sides face away from the lens)
+            float toward = pow(sunD, 3.0);
+            lit = mix(lit, lit * mix(vec3(0.74, 0.57, 0.62), vec3(1.14, 0.90, 0.60) * (0.6 + 0.4 * uSunCol), toward), uRim);
             vec3 shadeC = mix(mix(uMid, uHorizon, 0.5) * 0.72, vec3(0.012, 0.015, 0.024), uNight);
+            shadeC = mix(shadeC, shadeC * vec3(0.92, 0.80, 0.88), uRim * (1.0 - toward));
             shadeC = mix(shadeC, vec3(0.26, 0.28, 0.33), uCloud.y);
             float t0 = 1000.0 / d.y;
             for (int k = 0; k < 4; k++) {
@@ -2437,6 +2479,10 @@ export class Environment {
               float up = (fk + 0.5) / 4.0;
               vec3 c = mix(shadeC, lit, smoothstep(0.0, 1.0, up * 0.9 + clamp(sh * 6.0, 0.0, 0.3)));
               c += uSunCol * pow(sunD, 4.0) * 0.35 * day * up;
+              // M1.1f lit cumulus: the thin edge of each heap (sh just over the threshold) catches the low sun
+              // through its fringe: a peach rim, strongest toward the sun, faint on the far side of the sky
+              float rimW = smoothstep(0.0, 0.012, sh) * (1.0 - smoothstep(0.012, 0.075, sh));
+              c += vec3(1.0, 0.66, 0.50) * (0.55 + 0.45 * uSunCol) * rimW * (0.35 + 1.6 * pow(sunD, 6.0)) * uRim * day;
               acc += tr * a * c;
               tr *= 1.0 - a;
             }
@@ -2446,27 +2492,6 @@ export class Environment {
             cc = mix(horizon, cc, haze);
             cc += vec3(0.9, 0.94, 1.0) * uCloud.w * 0.9;
             col = mix(col, cc, cover * smoothstep(0.012, 0.05, d.y));
-          }
-
-          // ---- sun (L-06): 0.5° disc at ×40 HDR with limb darkening, two corona lobes,
-          // a haze glow that grows with the fog; occluded by cloud; none in the IBL
-          float occl = 1.0 - cover * 0.92;
-          if (sd.y > -0.10 && uIbl < 0.5) {
-            float horizonDim = smoothstep(-0.10, 0.06, sd.y);
-            float ang = acos(clamp(sunD, -1.0, 1.0));
-            float rr = ang / 0.00873;               // 0.5° radius
-            float discM = 1.0 - smoothstep(0.85, 1.05, rr);
-            float limb = 1.0 - 0.6 * (1.0 - sqrt(max(0.0, 1.0 - min(rr * rr, 1.0))));
-            float clear = (1.0 - cal) * occl * horizonDim * day;
-            col += uSunCol * 40.0 * discM * limb * clear;
-            col += uSunCol * (pow(sunD, 900.0) * 1.6 + pow(sunD, 64.0) * 0.35) * clear;
-            col += uSunCol * pow(sunD, 8.0) * 0.08 * clamp(uFogDens, 0.5, 4.0) * occl * horizonDim * day * (1.0 - cal);
-            // calima: a soft coral disc that SHOWS as #F2A27E (solved on the CPU)
-            if (cal > 0.001) {
-              float cr = ang / 0.0175;               // 1.0° radius, soft edge
-              float cm = 1.0 - smoothstep(0.80, 1.15, cr);
-              col = mix(col, uDisc, cm * cal * horizonDim * smoothstep(0.0, 0.5, uCalima.y));
-            }
           }
 
           col += vec3(0.80, 0.86, 1.0) * uCloud.w * 0.55;
@@ -2482,6 +2507,29 @@ export class Environment {
             fogC += calFogSun * (hg(calFogG.x, c) * calFogG.y + hg(calFogG.z, c) * calFogG.w) * calFogB.x;
             float k = 1.0 - smoothstep(-0.004, 0.065, d.y);
             col = mix(col, fogC, k);
+          }
+          // ---- sun (L-06; M1.1f): drawn AFTER the horizon hand-over, so a sun 0-4° up keeps its disc instead of
+          // dissolving into the fog's in-scatter. A 0.5° radius disc (a 1° disc) at x40 HDR with limb darkening,
+          // two corona lobes kept inside ~3° (the clipped core must end before 4°), a haze glow that grows with the
+          // fog; occluded by cloud; cut by the horizon line; none in the IBL
+          float occl = 1.0 - cover * 0.92;
+          if (sd.y > -0.10 && uIbl < 0.5) {
+            float horizonDim = smoothstep(-0.10, 0.06, sd.y);
+            float above = smoothstep(-0.0015, 0.0015, d.y);
+            float ang = acos(clamp(sunD, -1.0, 1.0));
+            float rr = ang / uDiscRadius;
+            float discM = 1.0 - smoothstep(0.85, 1.05, rr);
+            float limb = 1.0 - 0.6 * (1.0 - sqrt(max(0.0, 1.0 - min(rr * rr, 1.0))));
+            float clear = (1.0 - cal) * occl * horizonDim * day;
+            col += uSunCol * 40.0 * discM * limb * clear * above;
+            col += uSunCol * (pow(sunD, 2600.0) * 1.1 + pow(sunD, 160.0) * 0.30) * clear;
+            col += uSunCol * pow(sunD, 12.0) * 0.05 * clamp(uFogDens, 0.5, 4.0) * occl * horizonDim * day * (1.0 - cal);
+            // calima: a soft coral disc that SHOWS as #F2A27E (solved on the CPU)
+            if (cal > 0.001) {
+              float cr = ang / 0.0175;               // 1.0° radius, soft edge
+              float cm = 1.0 - smoothstep(0.80, 1.15, cr);
+              col = mix(col, uDisc, cm * cal * horizonDim * smoothstep(0.0, 0.5, uCalima.y));
+            }
           }
           // IBL capture: below the horizon reads the warm ground bounce
           if (uIbl > 0.5) col = mix(col, uGround * 0.55 + calFogHorizon * 0.15, smoothstep(0.0, -0.20, d.y));
