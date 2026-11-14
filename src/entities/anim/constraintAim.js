@@ -71,7 +71,7 @@ export class ConstraintAim {
       Lr: new THREE.Vector3(), Pr: new THREE.Vector3(), Ll: new THREE.Vector3(), Pl: new THREE.Vector3(), framesOk: false,
       // the aim ray and the targets this step (character space), for the gates and the next step
       d: new THREE.Vector3(0, 0, 1), anchor: new THREE.Vector3(), knT: new THREE.Vector3(), hook: new THREE.Vector3(), grip: new THREE.Vector3(),
-      hold: 0, lastLooseT: 1, lastRaw: 0, w: 0, gripDef: 0, tw: 0, twist: 0, reachDef: 0, reachDefMax: 0,
+      hold: 0, lastLooseT: 1, lastRaw: 0, slide: 0, w: 0, gripDef: 0, tw: 0, twist: 0, reachDef: 0, reachDefMax: 0,
       verifyFails: 0, verifyLast: null, solves: 0,
     };
     return C;
@@ -376,6 +376,20 @@ export class ConstraintAim {
     const rawNext = raw > C.lastRaw && raw < 1 ? Math.min(1, 2 * raw - C.lastRaw) : raw;
     C.lastRaw = raw;
     const sDraw = Math.max(rawNext, C.hold);
+    // at a low draw the string is out at the bow, past the draw arm's reach from its shoulder: the bow comes
+    // back along the arrow just far enough for the string hand to hold it, and goes out as the draw builds
+    {
+      const reachR = (this._lenUpR + this._lenLoR) * 0.97;
+      this._charOf(b.upArmR.bone, _S);
+      _a.copy(_G).add(this._cRigNockOff(_d, sDraw, _c)).sub(_hOff).sub(_S);
+      let slide = 0;
+      if (_a.lengthSq() > reachR * reachR) {
+        const ud = _a.dot(_d), disc = ud * ud - _a.lengthSq() + reachR * reachR;
+        slide = Math.max(0, disc > 0 ? ud - Math.sqrt(disc) : ud);
+      }
+      C.slide = slide;
+      _G.addScaledVector(_d, -slide);
+    }
     _N.copy(_G).add(this._cRigNockOff(_d, sDraw, _c));                                  // the nock now
     _T.copy(_N).sub(_hOff);                                                    // the wrist for it
     if (looseOn || C.hold > 0) {
