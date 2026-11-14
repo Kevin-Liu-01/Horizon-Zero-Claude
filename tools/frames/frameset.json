@@ -14,6 +14,9 @@
     "camera.screen": "a full-screen UI state: title | map | crafting | character | sighting",
     "state.pose": "idle | run | draw | crouch | crouchAim | lanceHeavy | sit",
     "state.actors": "people by archetype id and Instruments by kind, placed dist metres from Brea at side degrees (+ her left), facing Brea or the camera",
+    "light": "'studio': flat studio light (Brea alone on a neutral backdrop, a soft key in her frame and an even fill, no grade); absent: the hour's own light",
+    "requires": "content ids the frame needs (saltrow-buildings, saltrow-lamps, breakwater, saltrow-ramp); the filmer probes each and records a missing one as a stand-in",
+    "camera.lensAfterPose": "stage the pose under the chase camera (an aim follows the game camera), then put up this lens once the world is frozen",
     "ref": "crops: masked reference crop ids, first is primary | text: a worded reference id | written: a countable target | measured: rows the filmer reads | bar: an animation bar measured as rows"
   },
   "frames": [
@@ -52,35 +55,36 @@
       "hour": 21.0, "weather": "trade", "at": { "en": [-300, -262] }, "bearing": 45,
       "camera": { "mode": "eye", "eye": 3.0, "pitch": 2, "fov": 50 }, "state": { "pose": "idle", "hud": false, "crowd": true },
       "ref": { "written": "At 21:00 from the breakwater: at least 14 lit windows and the breakwater lamp; no pixel of sky brighter than the brightest window; walls readable as white by lamp spill within 6 m of a window and falling to silhouette beyond; frame mean luminance 4-9 %.", "measured": ["meanLuminance"] },
+      "requires": ["saltrow-buildings", "saltrow-lamps", "breakwater"],
       "note": "The breakwater has no authored coordinate yet: the lens stands on Saltrow's seaward edge (bible E -300, N -262) looking NE." },
 
     { "id": "F08", "subject": "Brea front at 2.5 m, flat light", "in": "M1a",
-      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "light": "studio", "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
       "camera": { "mode": "orbit", "yawRel": 0, "dist": 2.5, "height": 1.0, "target": "body", "fov": 40 }, "state": { "pose": "idle", "hud": false },
-      "ref": { "crops": ["turn-front", "turn-details"] }, "note": "Flat light is approximated by the 13:00 sun until a neutral turntable stage exists (M0.13)." },
+      "ref": { "crops": ["turn-front", "turn-details"] }, "note": "Flat studio light is the filmer's own stage (Brea alone, neutral backdrop, soft key, even fill) until the turntable exists (M0.13)." },
 
     { "id": "F09", "subject": "Brea side at 2.5 m, flat light", "in": "M1a",
-      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "light": "studio", "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
       "camera": { "mode": "orbit", "yawRel": 90, "dist": 2.5, "height": 1.0, "target": "body", "fov": 40 }, "state": { "pose": "idle", "hud": false },
       "ref": { "crops": ["turn-side"] } },
 
     { "id": "F10", "subject": "Brea back at 2.5 m, flat light", "in": "M1a",
-      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "light": "studio", "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
       "camera": { "mode": "orbit", "yawRel": 180, "dist": 2.5, "height": 1.0, "target": "body", "fov": 40 }, "state": { "pose": "idle", "hud": false },
       "ref": { "crops": ["turn-back"] } },
 
     { "id": "F11", "subject": "Brea's face, front", "in": "M0.11 spike, then M1a",
-      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "light": "studio", "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
       "camera": { "mode": "orbit", "yawRel": 0, "dist": 0.8, "height": 1.58, "target": "head", "fov": 30 }, "state": { "pose": "idle", "hud": false, "hideKit": true },
       "ref": { "crops": ["turn-face-front", "key-face-front"] } },
 
     { "id": "F12", "subject": "Brea's face, three-quarter", "in": "M0.11 spike, then M1a",
-      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "light": "studio", "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
       "camera": { "mode": "orbit", "yawRel": 35, "dist": 0.8, "height": 1.58, "target": "head", "fov": 30 }, "state": { "pose": "idle", "hud": false, "hideKit": true },
       "ref": { "crops": ["turn-face-34", "key-face-34"] } },
 
     { "id": "F13", "subject": "Brea's face, profile", "in": "M0.11 spike, then M1a",
-      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "light": "studio", "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
       "camera": { "mode": "orbit", "yawRel": 90, "dist": 0.8, "height": 1.58, "target": "head", "fov": 30 }, "state": { "pose": "idle", "hud": false, "hideKit": true },
       "ref": { "crops": ["turn-face-profile", "key-face-profile"] } },
 
@@ -96,7 +100,7 @@
 
     { "id": "F16", "subject": "full draw, side-on", "in": "M1a",
       "hour": 17.75, "weather": "trade", "at": "place:rangeGround", "bearing": 180,
-      "camera": { "mode": "orbit", "yawRel": 90, "dist": 3.5, "height": 1.3, "target": "body", "fov": 42 }, "state": { "pose": "draw", "hud": false },
+      "camera": { "mode": "orbit", "yawRel": 90, "dist": 3.5, "height": 1.3, "target": "body", "fov": 42, "lensAfterPose": true }, "state": { "pose": "draw", "hud": false },
       "ref": { "crops": ["key-bow"], "bar": "M1.3b draw: index knuckle within 0.03 m of the jaw-corner anchor; 0 frames with a hand behind the head" } },
 
     { "id": "F17", "subject": "full draw, over the shoulder", "in": "M1a",
@@ -133,6 +137,7 @@
       "hour": 18.67, "weather": "trade", "at": { "en": [-290, -252] }, "bearing": 40,
       "camera": { "mode": "eye", "eye": 1.7, "pitch": 4, "fov": 55 }, "state": { "pose": "idle", "hud": false, "crowd": true },
       "ref": { "written": "From the ramp looking up the main street at 18:40: at least 9 buildings in three lime-wash tones, 4 violet balconies, 2 bougainvillea, 2 salt cones, 5 people at work, the guild bell; warm sun on the left faces and violet-rose shadow on the right; no two adjacent buildings with the same roofline height." },
+      "requires": ["saltrow-buildings", "saltrow-ramp"],
       "note": "The ramp has no authored coordinate yet: the lens stands seaward of Saltrow (bible E -290, N -252) looking NE up the town." },
 
     { "id": "F23-plumb", "subject": "the Plumb with Brea at 6 m", "in": "M1a",
@@ -173,8 +178,10 @@
 
     { "id": "F26", "subject": "Sighting on the Gauge", "in": "M1b",
       "hour": 16.0, "weather": "trade", "at": "place:gauge", "approach": { "dist": 12, "bearing": 220 },
-      "camera": { "mode": "screen", "screen": "sighting" }, "state": { "pose": "idle", "hud": true },
-      "ref": { "crops": ["key-sighting"] } },
+      "camera": { "mode": "screen", "screen": "sighting" },
+      "state": { "pose": "idle", "hud": true, "actors": [{ "type": "instrument", "kind": "plumb", "dist": 8, "side": 0, "face": "brea", "standInFor": "the Gauge" }] },
+      "ref": { "crops": ["key-sighting"] },
+      "note": "The Gauge at Sluice 3 is a static prop, not an Instrument the alidade can read, until its kind exists (W2): the card is filmed on a Plumb standing between Brea and the Gauge." },
 
     { "id": "F27", "subject": "map", "in": "M1b",
       "hour": 16.0, "weather": "trade", "at": "rest", "bearing": 200,

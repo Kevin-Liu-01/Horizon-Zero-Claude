@@ -10,6 +10,14 @@
  *
  * Reads only published contracts: ctx.props.gatePlaces, src/world/island/sites.js, ctx.people,
  * ctx.machines, ctx.menus, ctx.sighting, ctx.quickslots, environment.setTime/setWeather.
+ *
+ * Frame options read here beyond the camera/state basics (frameset.json):
+ *   light: 'studio'      flat studio light: everything but Brea hidden, a neutral backdrop, a soft key
+ *                        in her frame and an even fill, the environment's clock and sky stopped, no grade
+ *   requires: [id]       content the frame needs; each id is probed (REQUIRES below) and a missing one
+ *                        is recorded as a stand-in, never filmed as if it were there
+ *   camera.lensAfterPose the pose is staged under the chase camera (an aim follows the game camera),
+ *                        and the frame's own lens is put up only after the world is frozen
  */
 
 export async function stageFrame(f, o = {}) {
@@ -59,6 +67,17 @@ export async function stageFrame(f, o = {}) {
   p.position.set(bx, 0, bz); p.velocity?.set?.(0, 0, 0); p._snapToGround?.();
   p.heading = H; p.camYaw = -B * D2R; p.camPitch = (f.camera?.pitch || 0) * D2R;
 
+  /* ---- 1b. content the frame needs: a missing piece is a stand-in, named ---- */
+  const REQUIRES = {
+    'saltrow-buildings': () => ((C.settlements?.buildings?.length ?? C.settlements?.town?.buildings?.length ?? 0) > 0 ? null
+      : 'Saltrow has no buildings in this build (the town is settlements W2): the frame shows the empty town ground'),
+    'saltrow-lamps': () => ((C.settlements?.lamps?.length ?? C.settlements?.town?.lamps?.length ?? 0) > 0 ? null
+      : 'no lit windows and no breakwater lamp in this build: the written lamp counts cannot be met'),
+    breakwater: () => (GP.breakwater ? null : "no breakwater in this build: the lens stands on Saltrow's seaward edge"),
+    'saltrow-ramp': () => (GP.saltrowRamp ? null : 'no ramp in this build: the lens stands seaward of Saltrow'),
+  };
+  for (const r of f.requires || []) { const why = REQUIRES[r] ? REQUIRES[r]() : `no probe for '${r}' in the filmer`; if (why) standIns.push(why); }
+
   /* ---- 2. when ---- */
   const states = env.weatherStates || [];
   const weather = states.includes(f.weather) ? f.weather : 'trade';
@@ -75,15 +94,83 @@ export async function stageFrame(f, o = {}) {
     for (const m of C.machines?.list || []) if (m.root?.visible) { m.root.visible = false; undo.push(() => { m.root.visible = true; }); }
     for (const q of C.people?.list || []) if (q.group?.visible) { q.group.visible = false; undo.push(() => { q.group.visible = true; }); }
   }
-  // page chrome: hidden unless the frame shows the HUD or a screen
+  // page chrome: hidden unless the frame shows the HUD or a screen. display:none, not visibility: a child
+  // that sets visibility: visible (the tutorial card's .show) paints through a hidden parent, which is how
+  // the baseline's MOVE / SPRINT / BOW cards leaked into no-HUD frames. Only the game's own canvas stays.
+  const gameCanvas = E.renderer?.domElement || null;
+  const hideEl = (el) => { const d = el.style.display; el.style.display = 'none'; undo.push(() => { el.style.display = d; }); };
   const showChrome = !!st.hud || f.camera?.mode === 'screen';
   for (const el of Array.from(document.body.children)) {
-    if (el.tagName === 'CANVAS' || el.querySelector?.('canvas') || el.tagName === 'SCRIPT') continue;
-    const v = el.style.visibility;
-    if (!showChrome) { el.style.visibility = 'hidden'; undo.push(() => { el.style.visibility = v; }); }
+    if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el === gameCanvas || (gameCanvas && el.contains?.(gameCanvas))) continue;
+    if (!showChrome) hideEl(el);
+  }
+  // a screen frame without the HUD (the title): the HUD layer and its tutorial card stay down too
+  if (showChrome && !st.hud) { const hud = document.getElementById('hud'); if (hud) hideEl(hud); }
+  // a tutorial card already queued must not land in a frame meant to have no HUD
+  if (!st.hud && C.hud) {
+    const q0 = C.hud._tipQueue ? C.hud._tipQueue.slice() : null;
+    if (q0) { C.hud._tipQueue.length = 0; undo.push(() => { C.hud._tipQueue.push(...q0); }); }
+    C.hud._dismissTip?.();
   }
   if (st.hud) { const hud = document.getElementById('hud'); if (hud?.classList.contains('hidden')) { hud.classList.remove('hidden'); undo.push(() => hud.classList.add('hidden')); } }
   if (st.hideKit && p.hero?.kit?.setHidden) { const h0 = p.hero.kit.hidden; p.hero.kit.setHidden(3); undo.push(() => p.hero.kit.setHidden(h0)); }
+
+  /* ---- 3b. flat studio light (light: 'studio'): Brea alone on a neutral backdrop, not the island at noon ---- */
+  let studioTick = null;
+  if (f.light === 'studio') {
+    await frames(2);   // the hour above lands once, then the environment's clock and sky stop
+    const sc = C.scene, envUpd = env.update;
+    env.update = function () {}; undo.push(() => { env.update = envUpd; });
+    const bg0 = sc.background, envMap0 = sc.environment, envI0 = sc.environmentIntensity;
+    const Col = env.hemi?.color?.constructor;   // THREE.Color, borrowed: a page.evaluate body cannot import 'three'
+    if (Col) sc.background = new Col('#b4b1ab');
+    sc.environmentIntensity = 0.35;
+    undo.push(() => { sc.background = bg0; sc.environment = envMap0; sc.environmentIntensity = envI0; });
+    if (sc.fog && 'density' in sc.fog) { const d0 = sc.fog.density; sc.fog.density = 0; undo.push(() => { sc.fog.density = d0; }); }
+    // the even fill: the hemisphere at the hero sheets' neutral values (src/hero/sheets.js)
+    const hemi = env.hemi;
+    if (hemi) {
+      const h0 = { c: hemi.color.getHex(), g: hemi.groundColor.getHex(), i: hemi.intensity };
+      hemi.color.setHex(0xfff6e8); hemi.groundColor.setHex(0x8d8272); hemi.intensity = 1.15;
+      undo.push(() => { hemi.color.setHex(h0.c); hemi.groundColor.setHex(h0.g); hemi.intensity = h0.i; });
+    }
+    // the soft key: white, from her front-left and above, fixed in HER frame so every turn of the orbit is lit alike
+    const keyFrom = fw.clone().multiplyScalar(2.0).addScaledVector(left, 1.2).add(new V3(0, 2.2, 0)).normalize();
+    const csm = E.csm || env.csm;
+    if (csm?.lights) {
+      const d0 = csm.lightDirection.clone();
+      const l0 = csm.lights.map((l) => ({ l, c: l.color.getHex(), i: l.intensity }));
+      csm.lightDirection.copy(keyFrom).negate();
+      for (const r of l0) { r.l.color.setHex(0xffffff); r.l.intensity = 2.4; }
+      undo.push(() => { csm.lightDirection.copy(d0); for (const r of l0) { r.l.color.setHex(r.c); r.l.intensity = r.i; } });
+    } else if (env.sun) {
+      const s0 = { c: env.sun.color.getHex(), i: env.sun.intensity, p: env.sun.position.clone() };
+      env.sun.color.setHex(0xffffff); env.sun.intensity = 2.4; env.sun.position.copy(p.position).addScaledVector(keyFrom, 10);
+      undo.push(() => { env.sun.color.setHex(s0.c); env.sun.intensity = s0.i; env.sun.position.copy(s0.p); });
+    }
+    for (const l of env.eyeLights || []) { const i0 = l.intensity; l.intensity = 0; undo.push(() => { l.intensity = i0; }); }
+    if (env.fireLight) { const i0 = env.fireLight.intensity; env.fireLight.intensity = 0; undo.push(() => { env.fireLight.intensity = i0; }); }
+    // no grade: the look's grade sets off, base exposure
+    const L = E.look;
+    if (L?.set) {
+      const g0 = { ev: L.ev, gradeMix: L.gradeMix };
+      E.setLook({ ev: 0, gradeMix: 0 });
+      undo.push(() => E.setLook(g0));
+    }
+    // everything drawn that is not Brea (and what she carries) is hidden, and kept hidden every frame:
+    // terrain chunks and scatter re-show themselves as the lens moves
+    const heroRoot = p.model;
+    const isHers = (o) => { for (let q = o; q; q = q.parent) if (q === heroRoot) return true; return false; };
+    const hidden = new Set();
+    studioTick = () => {
+      sc.traverseVisible((o) => {
+        if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && !hidden.has(o) && !isHers(o)) { o.visible = false; hidden.add(o); }
+      });
+    };
+    studioTick();
+    undo.push(() => { for (const o of hidden) o.visible = true; });
+    standIns.push('flat studio light is the filmer\'s own stage (Brea alone, neutral backdrop) until the turntable exists (M0.13)');
+  }
 
   /* ---- 4. actors, placed in Brea's frame ---- */
   const actors = [];
@@ -96,6 +183,10 @@ export async function stageFrame(f, o = {}) {
       try {
         const q = await withTimeout(C.people.spawn(a.id, { x: ax, z: az, yaw: 0 }), 20000, 'person ' + a.id);
         q.setPosition?.(ax, az);
+        // spawn() places a person in the bind pose (T-pose); stage() starts their script. A filmed person
+        // stands in an idle clip from the moment it lands, and the settle below lets the mixer run it.
+        const idle = q.spec?.clips?.idle || q.spec?.clips?.stage || ['Idle_Loop'];
+        try { q.play?.(idle[0], { fade: 0, offset: 0.25 }); } catch (e) { standIns.push(`person ${a.id}: idle clip did not start (${e.message})`); }
         actors.push({ a, q, x: ax, z: az });
         undo.push(() => { try { C.people.despawn(q); } catch (e) { /* */ } });
       } catch (e) { standIns.push(`person ${a.id} not staged: ${e.message}`); }
@@ -112,6 +203,7 @@ export async function stageFrame(f, o = {}) {
         m.root?.parent?.remove(m.root);
       });
       if (a.state === 'topple') standIns.push(`Instrument '${a.kind}': no topple state yet, filmed standing`);
+      if (a.standInFor) standIns.push(`a ${a.kind} stands in for ${a.standInFor}`);
     }
   }
 
@@ -151,11 +243,11 @@ export async function stageFrame(f, o = {}) {
   const upd0 = p._updateCamera;
   undo.push(() => { p._updateCamera = upd0; });
   const pitchR = (f.camera?.pitch || 0) * D2R;
-  if (mode === 'chase' || mode === 'screen') {
-    p._updateCamera = function (dt, t) { p.camYaw = -B * D2R; p.camPitch = pitchR; if (st.pose !== 'run') p.heading = H; return upd0.call(this, dt, t); };
-  } else {
-    p._updateCamera = function () { if (st.pose !== 'run') p.heading = H; aim(); };
-  }
+  const chaseCam = function (dt, t) { p.camYaw = -B * D2R; p.camPitch = (mode === 'chase' || mode === 'screen') ? pitchR : 0; if (st.pose !== 'run') p.heading = H; const r = upd0.call(this, dt, t); if (studioTick) studioTick(); return r; };
+  const ownLens = function () { if (st.pose !== 'run') p.heading = H; aim(); if (studioTick) studioTick(); };
+  // an aim follows the game camera, so a side-on draw is staged behind her and the side lens goes up frozen
+  const lateLens = !!f.camera?.lensAfterPose && mode !== 'chase' && mode !== 'screen';
+  p._updateCamera = (mode === 'chase' || mode === 'screen' || lateLens) ? chaseCam : ownLens;
   if (mode === 'eye' || mode === 'pov') {
     if (f.camera.hideHero !== false && p.model) { const v = p.model.visible; p.model.visible = false; undo.push(() => { p.model.visible = v; }); }
   }
@@ -171,6 +263,7 @@ export async function stageFrame(f, o = {}) {
       const tx = r.a.face === 'camera' ? lens.pos.x : bx, tz = r.a.face === 'camera' ? lens.pos.z : bz;
       const want = Math.atan2(tx - r.x, tz - r.z);
       r.q.stopWalk?.(); r.q.yaw = want; if (r.q.group) r.q.group.rotation.y = want;
+      if (!r.q.current) standIns.push(`person ${r.a.id}: no clip playing when filmed (bind pose)`);
     }
   }
 
@@ -210,8 +303,15 @@ export async function stageFrame(f, o = {}) {
         if (C.menus.titleStage === 'press') { C.menus._titleAdvance?.(); await sleep(2600); }
       } else standIns.push('no title flow in this build');
     } else if (s === 'sighting') {
-      if (C.sighting?.toggle) { C.sighting.toggle(true); undo.push(() => C.sighting.toggle(false)); await sleep(1800); }
-      else standIns.push('no Sighting in this build');
+      if (C.sighting?.toggle) {
+        C.sighting.toggle(true); undo.push(() => C.sighting.toggle(false));
+        // the card shows after the crosshair dwells on an Instrument (0.4 s): wait for it, up to 6 s
+        const cardUp = () => !!(C.sighting.audit?.().cardVisible ?? C.sighting._card?.classList.contains('show'));
+        const t0 = performance.now();
+        await sleep(1800);
+        while (!cardUp() && performance.now() - t0 < 6000) await sleep(200);
+        if (!cardUp()) standIns.push(`Sighting raised but no card: nothing the alidade reads is under the crosshair (target ${C.sighting.scanTarget?.kind ?? 'none'})`);
+      } else standIns.push('no Sighting in this build');
     } else {
       let tab = s;
       if (s === 'character') { tab = 'inventory'; standIns.push('no Character page yet: the satchel is shown'); }
@@ -225,6 +325,7 @@ export async function stageFrame(f, o = {}) {
   /* ---- 9. freeze and measure ---- */
   E.requestTimeScale('studio', 0);
   undo.push(() => E.requestTimeScale('studio', null));
+  if (lateLens) { p._updateCamera = ownLens; await frames(2); }
   await frames(4);
   const ms = [], calls = [], tris = [];
   for (let i = 0; i < (o.measureFrames ?? 24); i++) {

@@ -16,6 +16,8 @@ const MODES = ['chase', 'eye', 'pov', 'orbit', 'screen'];
 const SCREENS = ['title', 'map', 'crafting', 'character', 'sighting'];
 const POSES = ['idle', 'run', 'draw', 'crouch', 'crouchAim', 'lanceHeavy', 'sit'];
 const WEATHER = ['trade', 'calima', 'fogbank', 'squall'];
+const LIGHTS = ['studio'];
+const REQUIRES = ['saltrow-buildings', 'saltrow-lamps', 'breakwater', 'saltrow-ramp'];   // probed in page.mjs
 
 export function loadFrameSet(file = FRAMESET_PATH) {
   const raw = readFileSync(file);
@@ -43,6 +45,9 @@ export function validate(set) {
     if (c.mode === 'orbit' && !(c.dist > 0)) bad.push(`${at}: orbit needs dist`);
     if (c.mode === 'eye' && f.bearing == null) bad.push(`${at}: eye needs a bearing`);
     if (!POSES.includes(f.state?.pose || 'idle')) bad.push(`${at}: pose must be one of ${POSES.join(', ')}`);
+    if (f.light != null && !LIGHTS.includes(f.light)) bad.push(`${at}: light must be one of ${LIGHTS.join(', ')}`);
+    for (const r of f.requires || []) if (!REQUIRES.includes(r)) bad.push(`${at}: requires '${r}' has no probe (one of ${REQUIRES.join(', ')})`);
+    if (c.lensAfterPose && !['orbit', 'eye', 'pov'].includes(c.mode)) bad.push(`${at}: lensAfterPose needs an orbit, eye or pov lens`);
     const r = f.ref || {};
     if (!r.crops?.length && !r.written && !r.measured?.length && !r.text && !r.bar) bad.push(`${at}: no reference (crops, text, written, measured or bar)`);
   }
