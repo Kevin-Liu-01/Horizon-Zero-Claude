@@ -337,7 +337,7 @@ export const GATES = [
     timeout: 90000, settle: 500,
     title: 'Not in melee (idle, run, sprint, crouch, bow drawn, dodge): the stowed lance, read off the stow kit\'s own skinned vertices, is on a spine socket on the R10 diagonal: midpoint <= 0.30 m from the upper back, 30-60 deg from vertical, blade 0.20-0.70 m over the right shoulder and > 0.15 m right of the spine, tails >= 0.06 m, no intersection with bow or quiver',
     setup: `__CTX__.input.enabled = true;`,
-    assert: placed(['openGround'], `(async () => {${HERO}
+    assert: placed(['openGround'], `(async () => {${HERO}${CANON_SPEEDS}
       const C = __CTX__, p = C.player, an = p.animator;
       if (!an?.debugMelee) return { pass: null, detail: 'SKIP: no animator.debugMelee (melee layer did not build)' };
       const kit = p.hero?.kit, km = kit?.meshes?.[0];
@@ -439,7 +439,8 @@ export const GATES = [
       const draw = rows.find((r) => r.label === 'bow-draw');
       if (!draw?.aiming) bad.push('the bow-draw row never entered aim');
       const sprint = rows.find((r) => r.label === 'sprint');
-      if (!(sprint?.speed > 5.5)) bad.push('the sprint row only reached ' + sprint?.speed + ' m/s');
+      // faster than a jog by a tenth (5.5 m/s at jog 5), derived so A81 sees the canon, not a literal
+      if (!(sprint?.speed > SPD.jog * 1.1)) bad.push('the sprint row only reached ' + sprint?.speed + ' m/s (bar ' + (SPD.jog * 1.1).toFixed(2) + ')');
       return { pass: bad.length === 0, detail: { bad, rows } };
     })()`),
   },

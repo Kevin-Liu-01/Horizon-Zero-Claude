@@ -37,88 +37,120 @@ else a row says.
 **Running rows.** Rows that need a browser run through the one shared gate browser, one session per build, with
 an explicit row list and an explicit port. Lints, licence, budgets, static checks and logic tests run in Node.
 
-## 3. The kept-stack rows (77)
+## 3. The kept-stack rows (77, plus climb, slide and mantle)
 
-These guard the rig, the movement stack, the bow pose, the camera, save and the crash family. Until they are
-re-staged on the turntable and the island (M0.12) they live in `tools/gates.r5.carried.mjs`, which stays runnable
-in full until the engine upgrade (M0.7) and the animator split (M1.3a) have both passed against it. After that
-the carried file is cut to exactly these rows.
+These guard the rig, the movement stack, the bow pose, the camera, save and the crash family. They are staged on
+the island (named places, Instruments by role) or on the gate turntable (`tools/gates/turntable.mjs`); none needs
+the photo studio. The list, the stage of each row and the re-staged versions of the rows that used to drive
+the studio or a deleted host live in `tools/gates/kept-stack.mjs`. Run them, and only them, with
+
+```
+node tools/gates.mjs --port <p> --kept-stack [--only <ids>]
+```
+
+In that run the runner takes the studio out of every page before the row starts and fails any row that reads
+`ctx.studio`. Rows whose only problem was where they stood carry a staging patch there (`PATCHED`): the row's
+own assert with its staging lines swapped, applied by exact text, so a later edit that moves those lines turns the
+row red instead of running the old staging. The re-staged rows (four on the turntable, A22 on the island) keep their ids and bars and replace the
+registered rows only in this run: the
+full carried suite (`tools/gates.r5.carried.mjs`, studio and all) stays runnable until the engine upgrade (M0.7) and
+the animator split (M1.3a) have both passed against it. After that (R4b) the carried file is cut to exactly these
+rows and the studio is deleted.
 
 ### A. Carried rows (51)
 
-| id | note |
+| id | stage |
 |---|---|
-| `A1-boot-clean` | |
-| `A2-dodge-displacement` | |
-| `A4-draw-strength` | |
-| `A5-arrow-fired-event` | |
-| `A6-machine-foot-plant` | |
-| `A9-perf-budget` | re-timed to the frame bar of §1 |
-| `A18-slope-conform` | |
-| `A18b-slope-conform-moving` | |
-| `A20-frame-loop-survives` | |
-| `A20b-no-system-errors` | |
-| `A22-msaa` | |
-| `A22b-fov-recompile` | |
-| `A25b-nav-and-occlusion` | |
-| `A28-jump-arc` | |
-| `A28b-canon-speeds` | |
-| `A29b-slope-no-ghost` | |
-| `A30-dodge-window` | |
-| `A32b-lookup-no-ghost` | |
-| `A43-corpse-lifecycle` | |
-| `A44-socket-integrity` | |
-| `A44b-socket-vertex-integrity` | |
-| `A45-no-skate-per-species` | re-keyed by Instrument role |
-| `A45b-stance-report-integrity` | |
-| `A45c-foot-continuity` | |
-| `A46-ground-truth` | |
-| `A47-corpse-grounded` | |
-| `A47b-corpse-posed` | |
-| `A48-cadence` | |
-| `A50-hulls-visible` | |
-| `A50b-aim-on-drawn-geometry` | |
-| `A53-conc-not-on-sprint` | |
-| `A56-cascades` | |
-| `A58b-surface-audio-world-ground` | |
-| `A59b-cover-honesty-world-ground` | |
-| `A59c-mask-coherence-world-ground` | |
-| `A60-stealth-lanes` | |
-| `A68-no-softlock` | |
-| `A70-hub-tabs` | |
-| `A70c-title-flow` | |
-| `A71d-conc-veil` | |
-| `A71g-tracker-live` | |
-| `A72-settings-persist` | |
-| `A72b-accessibility` | |
-| `A73d-ui-bus` | |
-| `A74-3d` | |
-| `A78-cast-states` | on the turntable |
-| `A79-time-authority` | on the turntable |
-| `A79e-pose-overlay-frozen` | on the turntable |
-| `A79-runner-verdict-line` | |
-| `A80-chrome-profile-hygiene` | |
-| `A81-canon-speed-bands` | |
+| `A1-boot-clean` | island |
+| `A2-dodge-displacement` | island |
+| `A4-draw-strength` | island |
+| `A5-arrow-fired-event` | island |
+| `A6-machine-foot-plant` | island |
+| `A9-perf-budget` | island — re-timed to the frame bar of §1 |
+| `A18-slope-conform` | island |
+| `A18b-slope-conform-moving` | island |
+| `A20-frame-loop-survives` | island |
+| `A20b-no-system-errors` | island |
+| `A22-msaa` | island: the shipped tier's AA chain measured on Brea against the sky (the lane row needed the deleted Pans POC host) |
+| `A22b-fov-recompile` | turntable: the lens holds the spawn-vista view and changes only the FOV |
+| `A25b-nav-and-occlusion` | island: the sightlines use the nearest trunk-shaped occluders to her (the valley's trees are gone) |
+| `A28-jump-arc` | island |
+| `A28b-canon-speeds` | island: runs along a flat 28 m lane, not from a flat point up a grade |
+| `A29b-slope-no-ghost` | island |
+| `A30-dodge-window` | island |
+| `A32b-lookup-no-ghost` | island |
+| `A43-corpse-lifecycle` | island |
+| `A44-socket-integrity` | island |
+| `A44b-socket-vertex-integrity` | island |
+| `A45-no-skate-per-species` | island — re-keyed by Instrument role |
+| `A45b-stance-report-integrity` | island |
+| `A45c-foot-continuity` | island |
+| `A46-ground-truth` | island |
+| `A47-corpse-grounded` | island |
+| `A47b-corpse-posed` | island |
+| `A48-cadence` | island |
+| `A50-hulls-visible` | island |
+| `A50b-aim-on-drawn-geometry` | island |
+| `A53-conc-not-on-sprint` | island |
+| `A56-cascades` | island |
+| `A58b-surface-audio-world-ground` | island |
+| `A59b-cover-honesty-world-ground` | island |
+| `A59c-mask-coherence-world-ground` | island |
+| `A60-stealth-lanes` | island |
+| `A68-no-softlock` | island |
+| `A70-hub-tabs` | island |
+| `A70c-title-flow` | title screen |
+| `A71d-conc-veil` | island |
+| `A71g-tracker-live` | island |
+| `A72-settings-persist` | island |
+| `A72b-accessibility` | island |
+| `A73d-ui-bus` | island |
+| `A74-3d` | island |
+| `A78-cast-states` | turntable: the hold is `forceState` plus the pinned perception fields; no panel |
+| `A79-time-authority` | turntable: the freeze is the engine time authority's top source |
+| `A79e-pose-overlay-frozen` | turntable: a lens at her face drives the animator's own look-at; with the world frozen no bone the animator names may walk (eyes and lids once the rig has them; M0.11) |
+| `A79-runner-verdict-line` | node (runner row, no page) |
+| `A80-chrome-profile-hygiene` | node (runner row, no page) |
+| `A81-canon-speed-bands` | node (runner row, no page) |
 
 ### B. Re-staged rows: rig, bow pose, camera, save, crash family (26)
 
-| id | | id |
-|---|---|---|
-| `A3-sprint-speed` | | `A61-colliders-registered` |
-| `A11-idle-alive` | | `A65-save-restore` |
-| `A15-foot-flat` | | `A76-footfalls` |
-| `A16-draw-anchor` | | `A78-loop-reclaim` |
-| `A17-draw-beats` | | `A90-memory-stability` |
-| `A107-draw-arm-path` | | `A90-rig-reclaim` |
-| `A28-run-cadence` | | `A90b-memory-attribution` |
-| `A31-aim-strafe-skate` | | `V1-sprint-frame` |
-| `A31-crouch-aim` | | `V2-idle-frame` |
-| `A31b-aim-strafe-skate-player-anim` | | `V3-crouch-stalk` |
-| `A32-draw-ramp` | | `V4-aim-anchor` |
-| `A25c-camera-vs-machine` | | `V13-aim-strafe` |
-| `V49-draw-from-jog` | | `V21-camera-cover` |
+| id | stage |
+|---|---|
+| `A3-sprint-speed` | island |
+| `A11-idle-alive` | island |
+| `A15-foot-flat` | island |
+| `A16-draw-anchor` | island |
+| `A17-draw-beats` | island |
+| `A107-draw-arm-path` | island |
+| `A28-run-cadence` | island |
+| `A31-aim-strafe-skate` | island |
+| `A31-crouch-aim` | island |
+| `A31b-aim-strafe-skate-player-anim` | island |
+| `A32-draw-ramp` | island |
+| `A25c-camera-vs-machine` | island |
+| `A61-colliders-registered` | island |
+| `A65-save-restore` | island |
+| `A76-footfalls` | island |
+| `A78-loop-reclaim` | island |
+| `A90-memory-stability` | island |
+| `A90-rig-reclaim` | island |
+| `A90b-memory-attribution` | island |
+| `V1-sprint-frame` | island |
+| `V2-idle-frame` | island |
+| `V3-crouch-stalk` | island |
+| `V4-aim-anchor` | island |
+| `V13-aim-strafe` | island |
+| `V21-camera-cover` | island |
+| `V49-draw-from-jog` | island |
 
-Climb, slide and mantle rows are added to list B by id at M0.12.
+### C. Climb, slide and mantle (added to list B by id at M0.12)
+
+| id | what | stage |
+|---|---|---|
+| `A-climb-1m` | mantle a 1.0 m ledge from a walk and a jog, and the trig-pillar steps | island |
+| `A-slide` | a slide starts on cinder steeper than 28 deg and not on a 35 deg non-cinder face | island |
+| `V-traversal` | ledge climb (pull frame), a cinder slide and a stepped climb, side views | island |
 
 ## 4. The Frame Set (Milestone 1)
 

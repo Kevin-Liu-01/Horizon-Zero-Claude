@@ -22,6 +22,7 @@ import {
   sweepProfiles, profileDir, disposeProfile, installProfileCleanup, countProfiles, guardPort, acquireChromeSlot,
 } from './chrome-profile.mjs';
 import { formatVerdict, writeLine } from './gate-verdict.mjs';
+import { KEPT_STACK, RESTAGED, PATCHED, NO_STUDIO, STUDIO_TOUCHED, STAGE_OF } from './gates/kept-stack.mjs';
 
 /**
  * Round 4 lane gates (D8 module ownership): every lane writes its own gates to
@@ -89,7 +90,31 @@ for (const file of laneFiles) {
     merged.push({ ...g, source: file });
   }
 }
-const GATES = merged;
+/**
+ * `--kept-stack` (M0.12, docs/GATES.md §3): run exactly the kept-stack rows, in their listed order,
+ * with the four studio rows replaced by their turntable versions (same ids) and the studio taken
+ * out of every page before the row runs. Without the flag nothing here changes the suite.
+ */
+const keptStack = args.includes('--kept-stack');
+const restagedById = new Map(RESTAGED.map((g) => [g.id, g]));
+const patchedById = new Map(PATCHED.map((x) => [x.id, x]));
+/** A patched row: its own assert with the staging lines swapped; a patch that does not apply is a FAIL. */
+const patchRow = (g, pt) => {
+  let body = String(g.assert);
+  const missed = pt.patches.filter(([from]) => !body.includes(from)).map(([from]) => from);
+  if (missed.length) {
+    return { id: g.id, kind: 'runner', lane: 'kept-stack', source: g.source,
+      title: `${g.id}: the kept-stack staging patch no longer applies`,
+      check: () => ({ pass: false, detail: { reason: 'staging patch did not apply', missed, why: pt.why } }) };
+  }
+  for (const [from, to] of pt.patches) body = body.split(from).join(to);
+  return { ...g, assert: body, stage: 'island', stagingPatch: pt.why };
+};
+const GATES = keptStack
+  ? merged.map((g) => (restagedById.has(g.id)
+    ? { ...restagedById.get(g.id), source: 'gates/kept-stack.mjs', restages: g.source }
+    : patchedById.has(g.id) ? patchRow(g, patchedById.get(g.id)) : g))
+  : merged;
 // Only the files that actually contributed gates are reported as merged: the
 // old line listed every file it TRIED, including the ones that threw.
 if (loadedFiles.length) console.log(`[gates] merged ${loadedFiles.length} lane file(s): ${loadedFiles.join(', ')}`);
@@ -99,6 +124,16 @@ const only = getFlag('--only', null)?.split(',').map((s) => s.trim());
 const lane = getFlag('--lane', null);
 
 let gates = GATES;
+if (keptStack) {
+  const byId = new Map(GATES.map((g) => [g.id, g]));
+  const absent = KEPT_STACK.filter((id) => !byId.has(id));
+  if (absent.length) {
+    console.error(`[gates] --kept-stack: ${absent.length} kept-stack row(s) are not registered: ${absent.join(', ')}`);
+    process.exit(1);
+  }
+  gates = KEPT_STACK.map((id) => byId.get(id));
+  console.log(`[gates] --kept-stack: ${gates.length} rows (${RESTAGED.length} re-staged, ${PATCHED.length} with a staging patch); the studio is taken out of every page`);
+}
 /**
  * FIX ROUND 2 — a stale gate id in a doc used to look like an empty lane.
  * `--only A27-species-skate` (an id docs/SPEC.md published but that never
@@ -435,6 +470,10 @@ try {
         await page.waitForFunction('window.__READY__ === true', { timeout: 90000 });
       }
 
+      if (keptStack) {
+        res.stage = STAGE_OF(gate);
+        res.noStudio = await withTimeout(page.evaluate(NO_STUDIO), 20000, `${gate.id} no-studio`);
+      }
       if (gate.setup) await withTimeout(page.evaluate(gate.setup), 60000, `${gate.id} setup`);
       await new Promise((r) => setTimeout(r, gate.settle ?? 1200));
 
@@ -473,6 +512,11 @@ try {
       } else {
         res.status = 'NEEDS-JUDGE';
         res.criteria = gate.criteria;
+      }
+
+      if (keptStack) {
+        const touched = await withTimeout(page.evaluate(STUDIO_TOUCHED), 20000, `${gate.id} studio-touched`);
+        if (touched) { res.studioTouched = touched; res.status = 'FAIL'; }
       }
 
       const shotPath = `shots/gates/${gate.id}.png`;
@@ -545,7 +589,7 @@ try {
       // in its PASS line and carry them into report.json — a verdict describing
       // a run that was thrown away.
       for (const k of ['error', 'status', 'detail', 'pass', 'consoleErrors',
-        'systemErrors', 'hookErrors', 'criteria', 'shot']) delete res[k];
+        'systemErrors', 'hookErrors', 'criteria', 'shot', 'noStudio', 'studioTouched']) delete res[k];
       // The re-run's verdict is the gate's verdict, but the operator has to be
       // able to tell "green" from "green on the second browser".
       res.retried = true;
