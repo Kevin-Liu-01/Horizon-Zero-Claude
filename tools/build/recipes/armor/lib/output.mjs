@@ -3,14 +3,56 @@
  * (armory W1). The doc already holds the 65-joint skin (+ any dyn_ chain a piece
  * skins to); the source meshes are replaced by ONE node with ONE primitive.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import sharp from 'sharp';
 import { EXTMeshoptCompression } from '@gltf-transform/extensions';
 import { dedup, prune, quantize, reorder, unpartition } from '@gltf-transform/functions';
 import { MeshoptEncoder } from 'meshoptimizer';
 import { io, writeSkinned, nodeByName, m4, matToQuat } from '../../lib/human/face.mjs';
 import { checkProvenance, GENERATOR } from '../../../lib/glb.mjs';
 import { mergeParts } from './part.mjs';
+import { SETTINGS, ktxBin, readGlb, relayoutBin, writeGlb } from '../../../pipeline/ktx2.mjs';
+
+/**
+ * M1.2d (the M0 debt of A-armory-budget): a set's BASE COLOUR ships as ETC1S (BasisLZ, the top quality level), not
+ * UASTC. Measured on the Starter's 1024² atlas: UASTC (quality 2, zstd 18) is 803 KB alone, over the whole set's 0.8 MB
+ * cap with nothing else in the file, and RDO only takes it to 561 KB (lambda 4); ETC1S is 176 KB at a mean ΔE76 of 2.0
+ * (p95 5.8) against the painted sheet, read at 2.5 m (F08-F10) through the cloth shader's own weave detail. Normal and
+ * ORM stay UASTC (the pipeline's step converts them; an image that is already KTX2 it leaves alone). Same tool, same
+ * flags as tools/build/pipeline/ktx2.mjs (box mips, clamp, sRGB), so the bytes are deterministic.
+ */
+export async function preencodeEtc1s(file, names) {
+  const { json, bin } = readGlb(readFileSync(file));
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'calima-etc1s-'));
+  const replace = new Map(), rows = [];
+  try {
+    for (const [ii, img] of (json.images || []).entries()) {
+      if (!names.includes(img.name) || img.mimeType === 'image/ktx2' || img.bufferView == null) continue;
+      const bv = json.bufferViews[img.bufferView];
+      const bytes = bin.subarray(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength);
+      const png = path.join(tmp, `i${ii}.png`), out = path.join(tmp, `i${ii}.ktx2`);
+      await sharp(bytes).removeAlpha().png({ compressionLevel: 1 }).toFile(png);
+      execFileSync(ktxBin(), ['create', '--format', 'R8G8B8_SRGB', '--assign-tf', 'srgb', '--assign-primaries', 'bt709', '--testrun',
+        ...SETTINGS.mips, '--mipmap-wrap', 'clamp', ...SETTINGS.etc1s, png, out], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const k = readFileSync(out);
+      replace.set(img.bufferView, k);
+      img.mimeType = 'image/ktx2';
+      rows.push({ image: img.name, before: bytes.length, after: k.length });
+    }
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+  if (!replace.size) return rows;
+  for (const t of json.textures || []) {
+    if (t.source == null || json.images[t.source]?.mimeType !== 'image/ktx2') continue;
+    t.extensions = { ...(t.extensions || {}), KHR_texture_basisu: { source: t.source } };
+    delete t.source;
+  }
+  for (const k of ['extensionsUsed', 'extensionsRequired']) json[k] = [...new Set([...(json[k] || []), 'KHR_texture_basisu'])];
+  writeFileSync(file, writeGlb(json, relayoutBin(json, bin, replace)));
+  return rows;
+}
 
 /**
  * A joint at the identity under `parentName` (its inverse bind = the parent's): a socket the runtime poses (armory W1
@@ -92,8 +134,12 @@ function f32Text(x) {
   return f;
 }
 
-export async function writeOutfit(doc, file, { recipe, sources, licence, r5Outfit, lean = false }) {
-  if (!lean) return writeSkinned(doc, file, { provenance: { recipe, sources, licence }, extras: { r5Outfit } });
+export async function writeOutfit(doc, file, { recipe, sources, licence, r5Outfit, lean = false, etc1s = null }) {
+  if (!lean) {
+    const st = await writeSkinned(doc, file, { provenance: { recipe, sources, licence }, extras: { r5Outfit } });
+    if (etc1s) st.etc1s = await preencodeEtc1s(file, etc1s);
+    return st;
+  }
   // a geometry-only variant (<= 0.15 MB, plan §4.1): the same writer, a coarser quantiser
   const prov = checkProvenance({ recipe, sources, licence });
   await doc.transform(dedup(), prune({ keepLeaves: true, keepAttributes: true }), unpartition());

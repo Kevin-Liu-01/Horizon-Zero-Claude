@@ -23,6 +23,7 @@ import { CHAINS, BODY_HEIGHT } from '../brea.mjs';
 import { panBase } from '../outfit-pan-1.mjs';
 import { G, LANCE, basisY, bowGeo, lanceGeo, lathe, merge, place, stringGeo } from './lib/weapongeo.mjs';
 import { paintWeaponAtlas } from './lib/weaponatlas.mjs';
+import { preencodeEtc1s } from './lib/output.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/armory/stowkit.glb'];
@@ -133,6 +134,22 @@ function bracerGeo(cell, r = 0.036, len = 0.17, skinR = null) {
     shell.idx.push(a, b, c, b, d, c);
   }
   merge(g, shell);
+  // (M1.2d, Kevin's Nov 13 turnaround: brass-capped: a brass band round each end of the cuff, standing on the leather)
+  for (const f of [0, 1]) {
+    const SEGB = 12, ring = G();
+    const x0 = f ? len - 0.013 : -0.001, x1 = f ? len + 0.001 : 0.013;
+    for (const [x, dr] of [[x0, 0.0006], [x0 + 0.002, 0.0026], [x1 - 0.002, 0.0026], [x1, 0.0006]]) {
+      for (let k = 0; k <= SEGB; k++) {
+        const th = -0.2 * Math.PI + (k / SEGB) * 1.4 * Math.PI, y = Math.sin(th), z = Math.cos(th);
+        const ff = Math.min(1, Math.max(0, x / len));
+        const rr = (skinR ? Math.max(skinR(ff, th) + 0.0075, r * 0.8) * (1 + 0.04 * Math.pow(Math.abs(ff - 0.12), 1.5)) : r) + dr;
+        ring.pos.push(x, y * rr, z * rr); ring.nrm.push(0, y, z);
+        ring.uv.push(cell('brass')[0] + (k / SEGB) * cell('brass')[2], cell('brass')[1] + (dr > 0.002 ? 0.7 : 0.2) * cell('brass')[3]);
+      }
+    }
+    for (let i = 0; i < 3; i++) for (let k = 0; k < SEGB; k++) { const a = i * (SEGB + 1) + k, b = a + 1, c = a + SEGB + 1, d = c + 1; ring.idx.push(a, b, c, b, d, c); }
+    merge(g, ring);
+  }
   // laces across the open underside
   const cord = cell('cord');
   for (const f of [0.22, 0.5, 0.78]) {
@@ -233,6 +250,41 @@ function cordGeo(P, skins, r, cell, per = 1, ring = 6) {
 function alidadeGeo(cell) {
   const tube = lathe([[0.0085, -0.03], [0.0098, -0.028], [0.0098, -0.024], [0.0080, -0.022], [0.0080, 0.022], [0.0098, 0.024], [0.0098, 0.028], [0.0085, 0.03]], { sides: 12, rect: cell('brass'), cap0: true, cap1: true });
   return place(tube, [0, -1, 0], [1, 0, 0], [0, 0, 1], [0, 0, 0]);
+}
+
+/**
+ * M1.2d: the ring charm on the neck cord (the turnaround's pendant; the Sounding Ring motif): a 2.4 cm brass ring with a
+ * thinner ring tilted inside it and a bail at the top the cord runs through. Local: the ring in the XY plane, the bail's
+ * top at the origin.
+ */
+function ringCharmGeo(cell) {
+  const g = G(), rect = cell('brass');
+  const torus = (R, r, cx, cy, tilt, segs, sides) => {
+    const t = G();
+    for (let i = 0; i <= segs; i++) {
+      const a = (i / segs) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+      for (let k = 0; k <= sides; k++) {
+        const b = (k / sides) * Math.PI * 2, cb = Math.cos(b), sb = Math.sin(b);
+        let p = [(R + r * cb) * ca, (R + r * cb) * sa, r * sb], nn = [cb * ca, cb * sa, sb];
+        const rot = (q) => [q[0], q[1] * Math.cos(tilt) - q[2] * Math.sin(tilt), q[1] * Math.sin(tilt) + q[2] * Math.cos(tilt)];
+        p = rot(p); nn = rot(nn);
+        t.pos.push(p[0] + cx, p[1] + cy, p[2]); t.nrm.push(...nn);
+        t.uv.push(rect[0] + rect[2] * (i / segs), rect[1] + rect[3] * (k / sides));
+      }
+    }
+    for (let i = 0; i < segs; i++) for (let k = 0; k < sides; k++) { const a = i * (sides + 1) + k, b = a + 1, c = a + sides + 1, d = c + 1; t.idx.push(a, c, b, b, c, d); }
+    return t;
+  };
+  merge(g, torus(0.0115, 0.0019, 0, -0.0175, 0, 16, 5));            // the ring
+  merge(g, torus(0.0068, 0.0009, 0, -0.0175, 0.38, 12, 4));         // the tilted inner ring
+  merge(g, torus(0.0028, 0.0011, 0, -0.0035, Math.PI / 2, 8, 4));   // the bail
+  return g;
+}
+
+/** M1.2d: the Alidade's clip on the strap: a leather band round the tube's middle, its ends under the tube. */
+function stripClip(cell, X, Y, Z, c) {
+  const band = lathe([[0.0112, -0.007], [0.0118, -0.006], [0.0118, 0.006], [0.0112, 0.007]], { sides: 10, rect: cell('leatherDark') });
+  return place(band, Y, X, v3.mul(Z, -1), c);
 }
 
 function forearmFrame(doc, bodyPrim) {
@@ -361,13 +413,43 @@ export async function build({ out = ROOT } = {}) {
     pieces.push({ g, joint: 'lowerarm_l', bit: PIECE.bracer });
     stowInfo.bracer = { at: forearm.at, r: forearm.r, joint: 'lowerarm_l' };
   }
-  // ---- alidade: at the cord's end, across the sternum, on its neck cord
+  // ---- M1.2d (Q5): the Alidade rides the RIGHT chest strap of the harness, clipped along it; the neck cord carries the
+  // ring charm (the Sounding Ring motif) at its end. Both keep the alidade bit
   {
     const at = CHAINS.alidadeCord.points[2];
-    pieces.push({ g: place(alidadeGeo(cell), [1, 0, 0], [0, 1, 0], [0, 0, 1], [at[0], at[1] - 0.006, at[2] + 0.004]), joint: 'dyn_alidadeCord_02', bit: PIECE.alidade });
-    stowInfo.alidade = { at, joint: 'dyn_alidadeCord_02' };
+    pieces.push({ g: place(ringCharmGeo(cell), [1, 0, 0], [0, 1, 0], [0, 0, 1], [at[0], at[1] - 0.004, at[2] + 0.004]), joint: 'dyn_alidadeCord_02', bit: PIECE.alidade });
+    const H = base.parts.find((p) => p.slot === 'harness');
+    if (H) {
+      // the right strap's centre line (strapAlong, 3 vertices a row: the middle one), nearest the upper right chest
+      const names = base.doc.getRoot().listSkins()[0].listJoints().map((j) => j.getName());
+      const rowsN = H.pos.length / 9;
+      let best = -1, bd = 9;
+      const want = [-0.07, 1.36, 0.12];
+      for (let r = 1; r < rowsN - 1; r++) {
+        const i = r * 3 + 1;
+        if (H.nrm[i * 3 + 2] < 0.3) continue;
+        const d = Math.hypot(H.pos[i * 3] - want[0], H.pos[i * 3 + 1] - want[1], H.pos[i * 3 + 2] - want[2]);
+        if (d < bd) { bd = d; best = r; }
+      }
+      const C = (r) => [H.pos[(r * 3 + 1) * 3], H.pos[(r * 3 + 1) * 3 + 1], H.pos[(r * 3 + 1) * 3 + 2]];
+      const i = best * 3 + 1;
+      const n = v3.norm([H.nrm[i * 3], H.nrm[i * 3 + 1], H.nrm[i * 3 + 2]]);
+      let X = v3.norm(v3.sub(C(best - 1), C(best + 1)));
+      if (X[1] < 0) X = v3.mul(X, -1);
+      const Y = v3.norm(v3.cross(n, X)), Z = v3.cross(X, Y);
+      const c = v3.add(C(best), v3.mul(Z, 0.0028 + 0.0098 + 0.0012));
+      const sk = [];
+      for (let k = 0; k < 4; k++) if (H.wgt[i * 4 + k] > 0) sk.push([names[H.jnt[i * 4 + k]], H.wgt[i * 4 + k]]);
+      const ag = merge(place(alidadeGeo(cell), X, Y, Z, c), stripClip(cell, X, Y, Z, c));
+      pieces.push({ g: ag, skin: Array.from({ length: ag.pos.length / 3 }, () => sk), bit: PIECE.alidade });
+      stowInfo.alidade = { at: c.map((v) => +v.toFixed(4)), along: X.map((v) => +v.toFixed(4)), on: 'harness, right chest strap', skin: sk };
+    } else {
+      pieces.push({ g: place(alidadeGeo(cell), [1, 0, 0], [0, 1, 0], [0, 0, 1], [at[0], at[1] - 0.006, at[2] + 0.004]), joint: 'dyn_alidadeCord_02', bit: PIECE.alidade });
+      stowInfo.alidade = { at, joint: 'dyn_alidadeCord_02' };
+    }
+    stowInfo.charm = { at, joint: 'dyn_alidadeCord_02' };
     const R = CHAINS.alidadeCord.points[0], M = CHAINS.alidadeCord.points[1];
-    const top = [at[0], at[1] - 0.006 + 0.0095, at[2] + 0.004];
+    const top = [at[0], at[1] - 0.004 + 0.0012, at[2] + 0.004];
     const loop = [[0, 1.517, -0.121], [0.060, 1.512, -0.098], [0.080, 1.503, -0.042], [0.062, 1.490, 0.012], [0.030, 1.470, 0.052], R,
       [-0.030, 1.470, 0.052], [-0.062, 1.490, 0.012], [-0.080, 1.503, -0.042], [-0.060, 1.512, -0.098], [0, 1.517, -0.121]];
     const loopSkin = loop.map((q) => { const w = Math.max(0, Math.min(1, (1.500 - q[1]) / 0.045)); return [['neck_01', 1 - w], ['spine_03', w]]; });
@@ -415,8 +497,12 @@ export async function build({ out = ROOT } = {}) {
   const node = doc.createNode('StowKit').setMesh(doc.createMesh('StowKit').addPrimitive(prim)).setSkin(root.listSkins()[0]);
   nodeByName(doc, 'Armature').addChild(node);
   const S = BODY_HEIGHT / (yR[1] - yR[0]);
-  return writeSkinned(doc, path.join(out, OUTPUTS[0]), {
+  const file = path.join(out, OUTPUTS[0]);
+  const st = await writeSkinned(doc, file, {
     provenance: { recipe: RECIPE, sources: ['armory-generated', 'ubc-standard'], licence: 'project-original' },
     extras: { r5StowKit: { pieces: PIECE, stow: stowInfo, rawToGame: +S.toFixed(6), quiverNocksGame: stowInfo.quiver.nocks.map((v) => +(v * S).toFixed(4)), atlas: 'weapon' } },
   });
+  // (M1.2d: the weapon atlas's base colour as ETC1S: UASTC put the kit at 0.78 MB against its 0.6 MB cap)
+  st.etc1s = await preencodeEtc1s(file, ['weapon-base']);
+  return st;
 }

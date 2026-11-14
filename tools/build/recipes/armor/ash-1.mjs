@@ -326,8 +326,9 @@ export async function build({ out = ROOT } = {}) {
   const hide = panFinish(base, all);
   outfitDoc(doc, all, { name: 'Outfit_Ash_1', matName: 'MI_Ash_1', tex, texPrefix: 'ash', extra: { _AO: ['SCALAR', bakeVertexAO(all, { body: base.bodyPart })] } });
   for (const m of doc.getRoot().listMeshes()) for (const pr of m.listPrimitives()) pr.getAttribute('_AO')?.setNormalized(true);
+  // (M1.2d: the base colour as ETC1S, armor/lib/output.mjs preencodeEtc1s: the M0 debt of its 0.8 MB cap)
   return writeOutfit(doc, path.join(out, OUTPUTS[0]), {
-    recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',
+    recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0', etc1s: ['ash-base'],
     r5Outfit: { ...PAN_SET, set: 'ash', variant: 'ash-1', name: 'Ash Wraps I — Pit Wraps', density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), pieces: ['wrap skirt', 'rust under-layer', 'cowl', 'chest wraps', 'rope belt', 'puttees', 'forearm wraps', 'bracer'], hasAo: true, cut: 'long', hide: { count: hide.count, tris: hide.tris, covered: hide.covered, rle: hide.rle } },
   });
 }

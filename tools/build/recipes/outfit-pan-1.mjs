@@ -46,6 +46,7 @@ import { breaBody, coverMask } from './armor/lib/breabody.mjs';
 import { compassBoss, cordInto, cuff, limbRadius, woundWrap } from './armor/lib/starter.mjs';
 import { sashKnotTied, sashTail } from './armor/lib/sash.mjs';
 import { bakeVertexAO } from './armor/lib/vertexao.mjs';
+import { caseTube, gloveShell, hangPanel, pouchOn, rimTubes, rivetAt, scarfCowl, slungBelt, squarePlate } from './armor/lib/rung1.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/hero/outfit-pan-1.glb'];
@@ -81,6 +82,14 @@ export const COL = {
   // gold-ochre ticks (the graduated-tick family mark)
   trouserBG: hex('#443B35'), bootLeather: hex('#4A3426'), shinWrap: hex('#532A5E'), sashDeep: hex('#62358C'), tick: hex('#B8914A'),
 };
+// M1.2d: the turnaround's palette, as albedo. Set from the F08 refilm's studio-light response (rendered / albedo per
+// material, linear light), so that under the frame set's flat light each material lands on its palette swatch: the top
+// on the orchil violet, the sash panels and the scarf on the deep violet, the shin wraps on the near-black violet, the
+// trousers and boots on the dark brown, the leather straps on the plum
+Object.assign(COL, {
+  smock: hex('#7A3488'), trouserBG: hex('#4A3530'), bootLeather: hex('#57403A'), shinWrap: hex('#4E2C58'), sashDeep: hex('#77307F'),
+  panel: hex('#7A2F86'), scarf: hex('#7C3A84'), print: hex('#B07AA6'), strapLeather: hex('#61403F'),
+});
 
 /** The skeleton + grafted, cut pieces (shared by build() and panBindTriangles()). */
 async function assemble() {
@@ -232,9 +241,10 @@ function leatherStrap(t, o, base, { stitch = true, burn = [104, 84, 64], thread 
 /** Atlas plan of the Pan set: every cell a variant may need is on the sheet from variant I. */
 export function panTrim(W, H, trimH) {
   const T = new Trim(W, H, trimH);
-  const LAP = [40, 36, 36];
+  // (M1.2d: the turnaround's belts are dark plum-brown leather, not black)
+  const LAP = [70, 46, 46];
   T.cell('girdle', 620, 46, (t, o) => {
-    leatherStrap(t, o, LAP, { eS: 5.6, burn: [118, 96, 74], burnW: 3.4 });
+    leatherStrap(t, o, LAP, { eS: 5.6, burn: [152, 122, 94], burnW: 3.6 });
     // the belt bends where it is buckled and worn: soft creases across it, each a shade paler on its ridge
     const cr = Math.abs(Math.sin(t.ax * 0.055 + 1.3 * fbm(t.ax * 0.02, 1.7, 3.3, 2))), crk = sstep(0.93, 0.995, cr) * sstep(4, 9, Math.min(t.y, t.h - 1 - t.y));
     if (crk > 0) { over(o, [70, 62, 56], crk * 0.35); o.h += 0.0004 * crk; }
@@ -243,7 +253,7 @@ export function panTrim(W, H, trimH) {
     if (mid < 1) { const q = 0.8; o.r *= q; o.g *= q; o.b *= q; o.h -= 0.0004; }
     if (mid < 4.5 && (t.x % 70) < 1.4) { const q = 0.82; o.r *= q; o.g *= q; o.b *= q; o.h -= 0.0003; }
   });
-  T.cell('strap', 404, 24, (t, o) => leatherStrap(t, o, [62, 44, 31], { eS: 3.6, per: 4.8 }));
+  T.cell('strap', 404, 24, (t, o) => leatherStrap(t, o, COL.strapLeather, { eS: 3.6, per: 4.8, burn: [150, 118, 92], burnW: 3.2 }));
   T.cell('strapB', 200, 22, (t, o) => leatherStrap(t, o, [38, 35, 36], { stitch: false }));
   T.cell('pouch', 110, 90, (t, o) => {
     leatherStrap(t, o, [78, 56, 38], { stitch: false });
@@ -411,7 +421,7 @@ function smockDye(t, o, seed = 1) {
   // light. They are round now and faint; the warp's streaks stay, the weft's lines go)
   const blot = fbm(t.X * 2.4, t.Y * 2.4, t.Z * 2.4 + 7, 3);
   const fade = sun + 0.07 * sstep(0.46, 0.7, blot);
-  const c = [mix(COL.smock[0], 142, fade), mix(COL.smock[1], 108, fade), mix(COL.smock[2], 136, fade)];
+  const c = [mix(COL.smock[0], 150, fade), mix(COL.smock[1], 104, fade), mix(COL.smock[2], 150, fade)];
   // (armory W1: the Museo Egizio linen beside it has slubs you can count and dye that took along the warp)
   cloth(t, o, c, { slub: 0.07, mottle: 0.06, seed, thread: 0.05, weft: 0.15 });
   const d = fbm(t.X * 3.0, t.Y * 3.0, t.Z * 3.0 + 17, 2);
@@ -494,7 +504,89 @@ export const PAN_PAINTERS = {
       const b = 1 - clamp(Math.abs(sd - 2.6) / 0.7);
       if (b > 0 && ((t.Y * 400 / 3.4) % 1) < 0.58) over(o, [o.r * 1.3 + 8, o.g * 1.3 + 8, o.b * 1.3 + 8], b * 0.3);
     }
-    o.wear = 0.8;
+    // M1.2d: the turnaround's faded print: a survey sheet's contour lines and ticks printed in a pale lavender, worn away
+    // in patches and where the cloth rubs (the harness, the belt, the shoulders)
+    {
+      const f = fbm(t.X * 3.2 + 4.1, t.Y * 3.2, t.Z * 3.2, 3) * 9, c = Math.abs(f - Math.round(f));
+      const worn = sstep(0.38, 0.62, fbm(t.X * 9, t.Y * 9, t.Z * 9 + 3.3, 2)) * sstep(1.16, 1.2, t.Y);
+      const line = (1 - clamp(c / 0.06)) * worn;
+      // every fifth contour carries ticks across it, the cartographer's index line
+      const idx = Math.abs(Math.round(f) % 5) === 0 ? 1 : 0;
+      const tick = idx * (1 - clamp(c / 0.16)) * (((t.Y * 400 / 6) % 1) < 0.25 ? 1 : 0) * worn;
+      over(o, COL.print, Math.max(line * 0.34, tick * 0.3));
+    }
+    o.wear = 1.3;
+  },
+  /** M1.2d: the neck scarf: wound violet cloth bunched in folds, faded on every crest, frayed at its edges. */
+  scarf(t, o) {
+    const S = t.part.scarf, th = Math.atan2(t.Z - S.cz, t.X);
+    cloth(t, o, COL.scarf, { slub: 0.09, mottle: 0.1, seed: 41, thread: 0.07 });
+    // the folds the mesh is cut with (rung1.mjs scarfCowl, seed 2), shaded in the valleys, sun-faded on the crests
+    const f = fold01(noise3(th * 1.8 + 2, t.Y * 62, 3.1)), g = fold01(noise3(th * 5.2, t.Y * 12, 9.7));
+    o.ao *= 1 - 0.32 * sstep(0.35, 0.05, f);
+    over(o, [168, 132, 160], 0.28 * sstep(0.65, 0.95, f) * (0.6 + 0.4 * g));
+    o.h += 0.0024 * (f - 0.5);
+    // a faint print of small marks, as the turnaround's scarf
+    const m = noise3(t.X * 140, t.Y * 140, t.Z * 140);
+    if (m > 0.78) over(o, [196, 150, 96], 0.22 * sstep(0.78, 0.86, m));
+    // frayed at both edges: short loose threads, darker, the hem worn thin
+    if (t.dm < 0.012) {
+      const fr = noise3(th * 90, t.Y * 30, 6.6);
+      const q = 1 - t.dm / 0.012;
+      if (fr > 0.55) over(o, [136, 96, 128], 0.45 * q); else { const k = 1 - 0.25 * q; o.r *= k; o.g *= k; o.b *= k; }
+    }
+    o.rough = 0.92; o.det = 0.85; o.wear = 1.4; o.crease = 0.8;
+  },
+  /**
+   * M1.2d: the hip sash's long panels: deep violet, embroidered in thin gold-ochre (the graduated-tick family mark: a
+   * running line in from each long edge with ticks every 8 mm and a long one every 4 cm, and down the middle the ring
+   * glyph every 11 cm), faded on the fold crests, torn and frayed at the hem, dusty low down.
+   */
+  panel(t, o) {
+    const th = Math.atan2(t.Z + 0.02, t.X);
+    let P = t.part.panels[0], best = 9;
+    for (const q of t.part.panels) { let d = Math.abs(th - q.thC); if (d > Math.PI) d = TAU - d; if (d < best) { best = d; P = q; } }
+    let du = th - P.thC; if (du > Math.PI) du -= TAU; if (du < -Math.PI) du += TAU;
+    const u = du * P.rRef, v = P.yTop - t.Y, tt = clamp(v / (P.yTop - P.yHem)), w = P.halfW * (1 - 0.15 * tt);
+    cloth(t, o, COL.panel, { slub: 0.08, mottle: 0.11, seed: 51 + P.seed, thread: 0.06 });
+    // folds (the mesh's own, rung1.mjs hangPanel): shade in the valleys, fade on the crests
+    const f = fold01(noise3(u * 9 + P.seed * 3.3, t.Y * 1.6, 4.4 + P.seed));
+    o.ao *= 1 - 0.3 * sstep(0.35, 0.05, f) * sstep(0.02, 0.2, v);
+    over(o, [170, 128, 168], 0.3 * sstep(0.6, 0.95, f) * sstep(0.05, 0.3, v));
+    o.h += 0.003 * (f - 0.5);
+    // the embroidery: couched gold-ochre thread, a little proud, dulled where it is worn
+    const e = w - Math.abs(u);
+    const cr = noise3(u * 60, v * 60, 1.9);
+    const thr = (a) => { const k = a * (0.75 + 0.25 * cr) * (1 - 0.55 * sstep(0.7, 0.95, f)); over(o, sc(COL.tick, 0.92 + 0.25 * cr), k); o.h += 0.0004 * k; o.rough = mix(o.rough, 0.62, k); };
+    if (v > 0.03) {
+      const dl = Math.abs(e - 0.013);
+      if (dl < 0.0011) thr(0.9);
+      const ph = ((v / 0.008) % 1 + 1) % 1, long = Math.floor(v / 0.008) % 5 === 0;
+      if (e > 0.013 && e < (long ? 0.027 : 0.019) && ph < 0.14) thr(0.85);
+      // the ring glyph down the middle: a circle, a plumb line through it, a short datum bar under it
+      // (smaller than a stamp, and broken by wear; between them a running script of short strokes)
+      const gk = Math.floor((v - 0.07) / 0.13), gv = ((v - 0.07) % 0.13 + 0.13) % 0.13 - 0.065, rr = Math.hypot(u, gv);
+      if (v > 0.07 && v < (P.yTop - P.yHem) - 0.08) {
+        const live = noise3(u * 40, v * 40, 3.3 + gk) > 0.3 ? 1 : 0.35;
+        if (gk % 2 === 0) {
+          if (Math.abs(rr - 0.0115) < 0.0011) thr(0.85 * live);
+          if (Math.abs(u) < 0.0008 && Math.abs(gv) < 0.019) thr(0.75 * live);
+          if (Math.abs(gv - 0.017) < 0.0008 && Math.abs(u) < 0.007) thr(0.75 * live);
+        } else if (Math.abs(gv) < 0.04 && Math.abs(u) < w - 0.03) {
+          const sv = ((gv + 0.04) / 0.011) % 1, su = noise3(Math.floor((gv + 0.04) / 0.011) * 3.1, gk, 7.7);
+          if (sv < 0.14 && Math.abs(u - (su - 0.5) * 0.02) < 0.006 * (0.4 + su)) thr(0.7 * live);
+        }
+      }
+    }
+    // the torn hem: threads hanging, frayed pale, darker where it drags; dust low down
+    const hemD = t.dm;
+    if (tt > 0.8 && hemD < 0.03) {
+      const fr = noise3(u * 160, t.Y * 8, 2.2), q = 1 - hemD / 0.03;
+      if (fr > 0.52) over(o, [150, 112, 146], 0.5 * q); else { const k = 1 - 0.35 * q; o.r *= k; o.g *= k; o.b *= k; }
+    }
+    const n = fbm(t.X * 7, t.Y * 7, t.Z * 7, 3);
+    over(o, [128, 108, 112], sstep(0.7, 0.42, t.Y) * 0.22 * (0.4 + n));
+    o.rough = 0.9; o.det = 0.8; o.wear = 1.5; o.crease = 0.7;
   },
   skirt(t, o) { skirtPaint(t, o, 0.748, 0.75); },
   /** C-06: the Starter's short peplum under the girdle, the skirt's cloth and turned hem at its own height. */
@@ -1113,8 +1205,15 @@ export async function panBase(opt = {}) {
     n = V.norm(n); c = V.mul(c, 1 / near.length);
     c = [0, c[1], c[2]];
     const sk = clothField.skin(0, c[1], c[2] - 0.01, 4);
-    compassBoss(boss, V.add(c, V.mul(n, 0.0026)), n, [0, 1, 0], trim.rect('bronze'), sk);
-    recomputeNormals(boss);
+    // (M1.2d, Kevin's Nov 13 turnaround: on the Starter the crossing carries a square brass plate, bevelled, with a raised
+    // diamond, a domed stud and a rivet at each corner; the rungs above keep the compass-rose boss)
+    if ((opt.cut || 'starter') === 'starter') {
+      const br = trim.rect('bronze');
+      squarePlate(boss, V.add(c, V.mul(n, 0.0024)), n, [0, 1, 0], { S: 0.028, rect: trim.rect('brass'), rectBright: [br[0], br[1] + br[3] * 0.56, br[2], br[3] * 0.42], sk });
+    } else {
+      compassBoss(boss, V.add(c, V.mul(n, 0.0026)), n, [0, 1, 0], trim.rect('bronze'), sk);
+      recomputeNormals(boss);
+    }
   }
 
   // ---- the salt pouch at the left front hip, rigid on the pelvis, hung off the belt
@@ -1296,7 +1395,8 @@ export async function panBase(opt = {}) {
       const a1 = V.dot(d, along), c1 = V.dot(d, across);
       if (a1 > -0.012 && a1 < 0.05 && Math.abs(c1) < 0.028) out = Math.max(out, V.dot(d, palm));
     }
-    const cTab = V.add(V.add(mid1, V.mul(along, 0.016)), V.mul(palm, out + 0.0016));
+    // (M1.2d: out past the fingerless glove's palm, 1.5 mm over her skin)
+    const cTab = V.add(V.add(mid1, V.mul(along, 0.016)), V.mul(palm, out + 0.0036));
     const rectT = trim.rect('pouch');
     const base = tab.pos.length / 3;
     const NX = 3, NZ = 3;
@@ -1327,7 +1427,16 @@ export async function panBase(opt = {}) {
       // (to 0.195 m: higher, the elbow's crease folds over the wrap's top at full draw)
       const from = 1 - 0.195 / L, to = 1 - 0.006 / L;
       woundWrap(armwrap, R, armSkin, { from, to, off: 0.0024, step: 0.0018, pitch: 0.036, turnsSign: sgn, rings: 15, sides: 12, rect: trim.rect('wrapV') });
-      if (side === 'r') cuff(bracer, R, armSkin, { from: 1 - 0.175 / L, to: 1 - 0.04 / L, off: 0.0062, thick: 0.0028, rings: 8, sides: 16, rect: trim.rect('pouch'), stiff: 0.55, laceAt: Math.PI / 2, laceRect: trim.rect('rope') });
+      if (side === 'r') {
+        // (M1.2d: the turnaround's bracer runs from the wrist most of the way to the elbow, its two ends capped in brass)
+        const b0 = 1 - 0.186 / L, b1 = 1 - 0.028 / L;
+        cuff(bracer, R, armSkin, { from: b0, to: b1, off: 0.0062, thick: 0.0028, rings: 9, sides: 16, rect: trim.rect('pouch'), stiff: 0.55, laceAt: Math.PI / 2, laceRect: trim.rect('rope') });
+        if ((opt.cut || 'starter') === 'starter') {
+          for (const [f0, f1] of [[b0 - 0.002 / L, b0 + 0.013 / L], [b1 - 0.013 / L, b1 + 0.002 / L]]) {
+            cuff(bracer, R, armSkin, { from: f0, to: f1, off: 0.0094, thick: 0.0016, rings: 2, sides: 16, rect: trim.rect('brass'), stiff: 0.55, roll: 0.0008 });
+          }
+        }
+      }
       // (R69: Kevin's Nov 13 turnaround has a violet band on BOTH upper arms)
       {
         const ua = jointPos(doc, `upperarm_${side}`);
@@ -1363,9 +1472,102 @@ export async function panBase(opt = {}) {
   // (the lofts above read the whole garment; its top, hip-high under the skirt's yoke and always covered, need not ship)
   // (C-06: the trousers ship to the waist: with the Starter's peplum their hips show; under the long skirt they are covered)
   const trousersCut = cutTris(trousers, (cx, cy) => cy > 0.42);
-  const parts = [underYoke, smock, binds, ...worn, ...(sleevesOn ? [sleeves] : []), trousersCut, boots, girdle, sashBand, ...(buckle.pos.length ? [buckle, tongue] : []), harnessOn ? harness : sling, sling.extra, boss, pouch, sash, tie, cuffs, straps, tab, armwrap, bracer, armband].filter((p) => p && p.idx.length);
+
+  // ---- M1.2d: the Starter rung to Kevin's Nov 13 turnaround (armor/lib/rung1.mjs). The sheet pieces (scarf, panels)
+  // are built for every cut, so all the Pan rungs pack the same sheet; only the Starter wears them
+  const starter = cut === 'starter';
+  const jp = (n) => jointPos(doc, n);
+  // the neck scarf: a bunched violet cowl over the throat, low in a V on the chest, over the top's neckline
+  const scarf = mk('scarf');
+  scarfCowl(scarf, new Field([fitBody, smock, binds, underYoke, ...(harnessOn ? [harness] : [])], 0.03), J);
+  scarf.density = 0.85;
+  // the hip sash's long panels, front and back, to below the knee, torn at the hem
+  const panels = mk('panel');
+  const hipField = new Field([bodyPart, trousers, ...peplum], 0.04);
+  // (the turnaround: the long embroidered panel over her LEFT thigh, a shorter one over her right)
+  hangPanel(panels, hipField, J, { thC: Math.PI / 2 - 0.42, halfW: 0.085, yTop: 1.082, yHem: 0.4, side: 'l', thighW: 0.75, seed: 1, rag: 0.045, off: 0.011 });
+  hangPanel(panels, hipField, J, { thC: Math.PI / 2 + 0.62, halfW: 0.058, yTop: 1.082, yHem: 0.56, side: 'r', thighW: 0.7, seed: 2, rag: 0.035, off: 0.011, cols: 6, rows: 9 });
+  hangPanel(panels, hipField, J, { thC: -Math.PI / 2 + 0.12, halfW: 0.1, yTop: 1.082, yHem: 0.42, side: 'c', thighW: 0.42, seed: 3, rag: 0.05, off: 0.016 });
+  panels.density = 0.8;
+  // their edges and the scarf's, rolled (no paper edge anywhere)
+  const hems = mk('hems', { trim: true });
+  rimTubes(hems, panels, { r: 0.0017, rect: trim.rect('bind'), skip: (p) => p[1] > 1.06 });
+  rimTubes(hems, scarf, { r: 0.0021, rect: trim.rect('bind') });
+  // fingerless gloves: dark leather from 3 cm up the wrist to half way along the first finger bones, edges rolled
+  const glove = mk('glove', { trim: true });
+  for (const s of ['l', 'r']) gloveShell(glove, fitBody, jp, { side: s, rect: trim.rect('strapB') });
+  recomputeNormals(glove);
+  rimTubes(glove, glove, { r: 0.0013, rect: trim.rect('strapB'), sides: 4, inset: 0.0004 });
+  // rivets down both crossed straps, in pairs, every third row of the strap (none under the plate or the belts)
+  const rivets = mk('rivets', { trim: true });
+  if (harnessOn && starter) {
+    const nRow = harness.pos.length / 9, half = nRow / 2;
+    const plateY = 1.306;
+    for (let s0 of [0, half]) for (let r = 2; r < half - 1; r += 3) {
+      const i = (s0 + r) * 3 + 1;
+      const c = [harness.pos[i * 3], harness.pos[i * 3 + 1], harness.pos[i * 3 + 2]];
+      if (c[1] < 1.15 || (Math.abs(c[1] - plateY) < 0.05 && c[2] > 0)) continue;
+      const nn = V.norm([harness.nrm[i * 3], harness.nrm[i * 3 + 1], harness.nrm[i * 3 + 2]]);
+      const sk = { j: harness.jnt.slice(i * 4, i * 4 + 4), w: harness.wgt.slice(i * 4, i * 4 + 4) };
+      for (const e of [i - 1, i + 1]) {
+        const ep = [harness.pos[e * 3], harness.pos[e * 3 + 1], harness.pos[e * 3 + 2]];
+        rivetAt(rivets, V.add(V.lerp(c, ep, 0.62), V.mul(nn, 0.0004)), nn, { r: 0.0031, h: 0.0019, rect: trim.rect('brass'), sk });
+      }
+    }
+  }
+  // the second belt, slung low and slanted across the hips (lowest at her right front hip), over the panels' tops,
+  // and its two pouches
+  const belt2 = mk('belt2', { trim: true }), pouch2 = mk('pouch2', { trim: true });
+  const slung = slungBelt(belt2, new Field([bodyPart, trousers, ...peplum, panels, sashBand], 0.04), skinOf, { y0: 1.03, amp: 0.038, phi: -Math.PI / 2 + 0.95, h: 0.04, off: 0.006, rect: trim.rect('girdle') });
+  {
+    const pSkin = new Field([bodyPart, trousers], 0.04);
+    for (const [th, hw, hh] of [[Math.PI / 2 + 1.0, 0.037, 0.043], [0.3, 0.031, 0.036]]) {
+      const r = slung.rAt(th) + 0.011, y = slung.yc(th) - 0.052;
+      const pc = [Math.cos(th) * r, y, -0.02 + Math.sin(th) * r];
+      const pX = V.norm([Math.sin(th), 0, -Math.cos(th)]), pZ = V.norm([Math.cos(th), 0, Math.sin(th)]);
+      pouchOn(pouch2, pc, [pX, [0, 1, 0], pZ], { hw, hh, d: 0.012, rect: trim.rect('pouch'), loopRect: trim.rect('strap'), brass: trim.rect('brass'), joint: joints.pelvis, skinField: pSkin });
+    }
+    recomputeNormals(pouch2);
+  }
+  // knee straps: two leather straps round each knee over the trousers, a brass buckle on the outside of each
+  const knee = mk('knee', { trim: true });
+  {
+    const kF = new Field([trousers], 0.03);
+    for (const side of [1, -1]) {
+      const cx = side * 0.111, cz = -0.035;
+      for (const y of [0.592, 0.508]) {
+        limbStrap(knee, kF, skinOf, { cx, cz, y, h: 0.021, off: 0.0032, cols: 14, rect: trim.rect('strap'), tilt: 0.004, tiltTh: Math.PI / 2, keep: (q) => Math.sign(q.x) === side, thick: 0.0022 });
+        const r = kF.radial(y, side > 0 ? 0 : Math.PI, cx, cz, 0.02, 0.35, (q) => Math.sign(q.x) === side) + 0.0068;
+        const bc = [cx + side * r, y, cz];
+        tubeInto(knee, roundRect(bc, [0, 0, 1], [0, 1, 0], 0.0105, 0.0125, 0.003, 1), 0.0016, { sides: 4, closed: true, rect: trim.rect('brass'), skin: skinOf });
+      }
+    }
+    recomputeNormals(knee);
+  }
+  // the survey case (the kite case, Q5): a leather tube with brass caps diagonally across her back, its top at her
+  // left shoulder blade, parallel to the stowed bow
+  const caseP = mk('case', { trim: true });
+  {
+    const ang = 36 * Math.PI / 180, d = [Math.sin(ang), Math.cos(ang), 0], perp = [Math.cos(ang), -Math.sin(ang), 0];
+    const mid = V.add(V.add([-0.02, 1.24, 0], V.mul(d, 0.05)), V.mul(perp, 0.062));
+    const L = 0.38, rC = 0.034;
+    const back = [bodyPart, smock, binds, ...(harnessOn ? [harness] : [sling]), girdle];
+    let zMin = 0;
+    for (let k = 0; k <= 10; k++) {
+      const q = V.add(mid, V.mul(d, (k / 10 - 0.5) * L));
+      for (const P of back) for (let i = 0; i < P.pos.length; i += 3) if (Math.abs(P.pos[i] - q[0]) < 0.045 && Math.abs(P.pos[i + 1] - q[1]) < 0.045 && P.pos[i + 2] < zMin) zMin = P.pos[i + 2];
+    }
+    const zc = zMin - rC - 0.006;
+    const a = [mid[0] - d[0] * L / 2, mid[1] - d[1] * L / 2, zc], b = [mid[0] + d[0] * L / 2, mid[1] + d[1] * L / 2, zc];
+    const sk = skinOf.skin(mid[0], mid[1], zMin + 0.03, 4);
+    caseTube(caseP, a, b, rC, { rects: { leather: trim.rect('pouch'), brass: trim.rect('brass'), strap: trim.rect('strap') }, sk });
+    caseP.caseAxis = { a, b, r: rC };
+  }
+
+  const rung1 = starter ? [scarf, panels, hems, glove, rivets, belt2, pouch2, knee, caseP] : [];
+  const parts = [underYoke, smock, binds, ...worn, ...(sleevesOn ? [sleeves] : []), trousersCut, boots, girdle, sashBand, ...(buckle.pos.length ? [buckle, tongue] : []), harnessOn ? harness : sling, sling.extra, boss, pouch, sash, tie, cuffs, straps, tab, armwrap, bracer, armband, ...rung1].filter((p) => p && p.idx.length);
   // the set's sheet is packed from every cloth piece any Pan rung wears (trim pieces map to the trim band and need none)
-  const sheetParts = [underYoke, smock, ...skirt, ...undr, ...peplum, ...(sleevesOn ? [sleeves] : []), trousersCut, boots];
+  const sheetParts = [underYoke, smock, ...skirt, ...undr, ...peplum, ...(sleevesOn ? [sleeves] : []), trousersCut, boots, scarf, panels];
   return { doc, trim, parts, sheetParts, joints, body, bodyPart, fitBody, clothField, skinOf, W, H, TRIM_H, J, drape };
 }
 
@@ -1427,6 +1629,36 @@ export const PAN_FIT = {
     if (Math.abs(x) > 0.128 && Math.abs(x) < 0.2 && y > 1.37 && y < 1.465 && z > -0.035) return max;
     return y > 1.385 && Math.abs(x) < 0.21 ? (z < -0.02 ? 0.01 : 0.005) : max;
   },
+  // M1.2d: the Starter's own pieces. The gloves carry her hand's own skin and the scarf, the panels and their rolled
+  // edges hang as built (their range of motion is the cloth chains' work, M1.2e); the plate, rivets, case and pouches
+  // are stiff; the slung belt, the knee straps and the rivets stay over what they lie on
+  skip: new Set(['hat', 'glove', 'scarf', 'panel', 'hems', 'case']),
+  stiff: new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes', 'boss', 'rivets', 'pouch2']),
+  over: {
+    sling: ['smock', 'binds'], slider: ['smock', 'binds', 'harness'], sashband: ['skirt', 'peplum'], girdle: ['smock', 'skirt', 'peplum', 'harness'], straps: ['boots'], tie: ['underyoke'], sash: ['skirt', 'peplum'], capelet: ['smock', 'sling', 'binds', 'harness'], ropebelt: ['smock', 'skirt', 'wrap', 'sashband'], harness: ['smock', 'binds'], boss: ['harness'], armband: [], bracer: ['armwrap'],
+    rivets: ['harness'], belt2: ['peplum', 'panel', 'trousers', 'sashband', 'girdle'], pouch2: ['belt2', 'peplum', 'panel', 'trousers'], knee: ['trousers'],
+  },
+};
+
+/**
+ * M1.2d's checklist: the turnaround's Starter pieces and the slots that carry them in this set (the stow kit carries
+ * the left bracer's crescent plate, the ring charm on its cord and the Alidade on the right chest strap).
+ */
+export const STARTER_PIECES = {
+  'sleeveless violet top, faded print': ['smock', 'binds', 'peplum'],
+  'crossed riveted leather harness': ['harness', 'rivets', 'slider'],
+  'square brass plate': ['boss'],
+  'arm bands': ['armband'],
+  'brass-capped bracers, both forearms (crescent plate left)': ['bracer', 'stowkit:bracer'],
+  'fingerless gloves': ['glove'],
+  'two belts with pouches': ['girdle', 'buckle', 'tongue', 'pouch', 'belt2', 'pouch2'],
+  'hip sash, long ragged embroidered panels front and back': ['sashband', 'sash', 'panel', 'hems'],
+  'work trousers with knee straps': ['trousers', 'knee'],
+  'shin wraps': ['boots'],
+  'laced boots': ['boots', 'straps'],
+  'neck scarf': ['scarf', 'hems'],
+  'ring charm on the cord': ['stowkit:alidade'],
+  'survey case (kite case on the back; Alidade on the right chest strap)': ['case', 'stowkit:alidade'],
 };
 
 export const PAN_SET = { set: 'pan', hideBit: HIDE_BIT, chains: ['dyn_sashEnd'], get sashSwing() { return { ...SASH_SWING }; } };
@@ -1466,7 +1698,8 @@ export function panFinish(base, parts) {
   // set culls those faces too, and what shows in the hole is the top's own inner face (the material is double-sided))
   const B = base.fitBody;
   const bra = (i) => B.lum && B.lum[i] < 0.24 && B.pos[i * 3 + 1] > 1.15 && B.pos[i * 3 + 1] < 1.45 && Math.abs(B.pos[i * 3]) < 0.2;
-  return coverMask(B, parts, { skip: new Set(['tab', 'boss', 'slider', 'buckle', 'tongue', 'pouch', 'sash', 'straps', 'tie', 'hat']), also: bra });
+  // (M1.2d: the scarf hides her throat but never the underside of her jaw, which a face camera sees)
+  return coverMask(B, parts, { skip: new Set(['tab', 'boss', 'slider', 'buckle', 'tongue', 'pouch', 'sash', 'straps', 'tie', 'hat', 'panel', 'hems', 'rivets', 'belt2', 'pouch2', 'knee', 'case']), also: bra, keep: (x, y) => y > 1.525 });
 }
 
 export async function build({ out = ROOT } = {}) {
@@ -1487,10 +1720,10 @@ export async function build({ out = ROOT } = {}) {
   for (const m of doc.getRoot().listMeshes()) for (const pr of m.listPrimitives()) pr.getAttribute('_AO')?.setNormalized(true);
   const file = path.join(out, OUTPUTS[0]);
   return writeOutfit(doc, file, {
-    recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0',
+    recipe: RECIPE, sources: ['mco-fantasy-standard', 'ubc-standard', 'brea-generated'], licence: 'CC0-1.0', etc1s: ['pan-base'],
     r5Outfit: {
       ...PAN_SET, variant: 'pan-1', name: "Pan Whites I — Raker's Whites", density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), hasAo: true,
-      pieces: [...new Set(parts.map((p) => p.slot))], cut: 'starter',
+      pieces: [...new Set(parts.map((p) => p.slot))], cut: 'starter', rung1: STARTER_PIECES,
       hide: { count: hide.count, tris: hide.tris, covered: hide.covered, rle: hide.rle },
     },
   });
