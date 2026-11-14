@@ -49,9 +49,10 @@ const glowMats = {
 // pale ash shaft so arrows read against dark machine plating at combat range
 const shaftMat = new THREE.MeshStandardMaterial({ color: 0xc9a86b, roughness: 0.72 });
 const headMats = {
+  // the Reed's bronze head (bible §5.2), a little glint so it still reads in flight
   hunter: new THREE.MeshStandardMaterial({
-    color: 0xc4ced6, metalness: 0.9, roughness: 0.3,
-    emissive: 0xd8ecf4, emissiveIntensity: 0.85,
+    color: 0xb08a45, metalness: 0.9, roughness: 0.34,
+    emissive: 0x8a6a34, emissiveIntensity: 0.45,
   }),
   hardpoint: new THREE.MeshStandardMaterial({
     color: 0x8a4a20, metalness: 0.85, roughness: 0.35,
@@ -79,8 +80,9 @@ const headMats = {
   }),
 };
 const fletchMats = {
+  // reed arrow, orchil-dyed fletching (C-08, ROUND5-LOOK: #6B3F73; only element ammo glows, so no emissive)
   hunter: new THREE.MeshStandardMaterial({
-    color: 0xf7ecd0, roughness: 0.85, emissive: 0x8a7a4e, emissiveIntensity: 0.45,
+    color: 0x6b3f73, roughness: 0.85,
   }),
   hardpoint: new THREE.MeshStandardMaterial({
     color: 0xffb45e, roughness: 0.85, emissive: 0xc86a1e, emissiveIntensity: 0.6,
@@ -318,6 +320,12 @@ function distPointSeg(p, a, b) {
 /** Reusable ray for the hull query — never allocated in the hot path. */
 const _hullRay = { origin: new THREE.Vector3(), direction: new THREE.Vector3() };
 const _hullNormal = new THREE.Vector3();
+/**
+ * The hull raycast's options, reused (A-alloc-rate, R48 c: an object literal per flying arrow per frame). The
+ * terrain march below reads the ground at whole metres first (Smi coordinates cost the call nothing) and walks
+ * the segment with exact reads only when either end is within 1.5 m of the ground: most of a flight is far above it.
+ */
+const _sweepOpts = { far: 1.5, exact: true };
 
 /**
  * Sweep a segment [a -> a + dir*len] against machines + terrain.
@@ -341,7 +349,8 @@ function sweepSegment(ctx, machines, a, dir, len, out) {
   if (hulls && hulls.raycast) {
     _hullRay.origin.copy(a);
     _hullRay.direction.copy(dir);
-    const h = hulls.raycast(_hullRay, { far: len, exact: true });
+    _sweepOpts.far = len;
+    const h = hulls.raycast(_hullRay, _sweepOpts);
     if (h && h.hit) {
       out.dist = h.distance;
       out.object = h.object || null;
@@ -370,7 +379,15 @@ function sweepSegment(ctx, machines, a, dir, len, out) {
     }
   }
   const terr = ctx.terrain;
+  let near = !!terr;
   if (terr) {
+    const lim = len < out.dist ? len : out.dist;
+    const ex = a.x + dir.x * lim, ey = a.y + dir.y * lim, ez = a.z + dir.z * lim;
+    const gA = terr.getHeight(Math.floor(a.x + 0.5) | 0, Math.floor(a.z + 0.5) | 0);
+    const gE = terr.getHeight(Math.floor(ex + 0.5) | 0, Math.floor(ez + 0.5) | 0);
+    near = a.y - gA < 1.5 || ey - gE < 1.5;
+  }
+  if (terr && near) {
     const step = 0.3;
     let sPrev = 0;
     const above0 = a.y > terr.getHeight(a.x, a.z);
@@ -594,7 +611,8 @@ export class ArrowPool {
    */
   releaseOrphans() {
     let freed = 0;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       if (a.fuseM && (a.fuseM._disposed || !a.fuseM.root)) { a.fuseM = null; a.fuseObj = null; }
       const m = a.stuckTo;
       if (!m) continue;
@@ -611,7 +629,8 @@ export class ArrowPool {
   /** Public: drop every arrow riding `machine` (called on corpse reclaim). */
   releaseFrom(machine) {
     let freed = 0;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       if (a.stuckTo === machine) { this._recycle(a); freed++; }
       if (a.fuseM === machine) { a.fuseM = null; a.fuseObj = null; }
     }
@@ -688,7 +707,8 @@ export class ArrowPool {
   _capStuck(machine, keep) {
     if (!machine) return;
     let n = 0, oldest = null;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       if (a.mode !== 'stuck' || a.stuckTo !== machine) continue;
       n++;
       if (a === keep) continue;
@@ -704,7 +724,8 @@ export class ArrowPool {
   audit() {
     let idle = 0, fly = 0, stuck = 0, riding = 0, orphaned = 0, detached = 0, inScene = 0;
     let hosted = 0, overdue = 0, maxAge = 0;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       if (a.mode === 'idle') idle++;
       else if (a.mode === 'fly') fly++;
       else stuck++;
@@ -755,7 +776,8 @@ export class ArrowPool {
   dispose() {
     this._offDisposed?.();
     this._offDisposed = null;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       a.group.parent?.remove(a.group);
       // no-op today (every arrow part is a module singleton) — it is here so a
       // future per-arrow buffer cannot repeat the BombPool leak silently.
@@ -769,7 +791,8 @@ export class ArrowPool {
 
   _alloc() {
     let best = null, bestScore = -1;
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       // prefer idle, then oldest stuck, then oldest flying
       const score = a.mode === 'idle' ? 1e9 : (a.mode === 'stuck' ? 1e5 : 0) + a.age;
       if (score > bestScore) { bestScore = score; best = a; }
@@ -858,7 +881,8 @@ export class ArrowPool {
      */
     this._sweepClock -= dt;
     if (this._sweepClock <= 0) { this._sweepClock = 0.5; this.releaseOrphans(); }
-    for (const a of this.list) {
+    for (let ai = 0; ai < this.list.length; ai++) {
+      const a = this.list[ai];
       if (a.mode === 'idle') continue;
       if (a.mode === 'fly') this._stepFly(a, dt, machines);
       else {
@@ -906,7 +930,8 @@ export class ArrowPool {
     a.fresh = false;
 
     a.vel.y -= this.gravity * dt;
-    a.vel.multiplyScalar(Math.max(0, 1 - this.drag * dt)); // slight drag
+    const dk = 1 - this.drag * dt;                          // slight drag (no Math.max: V8's mid tier boxes it)
+    a.vel.multiplyScalar(dk > 0 ? dk : 0);
     a.pos.addScaledVector(a.vel, dt);
     _dir.copy(a.vel).normalize();
     _newTip.copy(a.pos).addScaledVector(_dir, ARROW_LEN);
@@ -932,8 +957,8 @@ export class ArrowPool {
     // --- tracer trail breadcrumbs
     if (this.trailFx) {
       const col = TRAIL_COLORS[a.type] ?? TRAIL_COLORS.hunter;
-      const n = Math.min(5, Math.max(1, Math.ceil(segLen / 0.4)));
-      const end = Number.isFinite(hitDist) ? hitDist : segLen;
+      let n = Math.ceil(segLen / 0.4) | 0; if (n < 1) n = 1; else if (n > 5) n = 5;
+      const end = hitDist < 1e30 ? hitDist : segLen;
       for (let i = 0; i < n; i++) {
         const s = end * ((i + 0.5) / n);
         _s.copy(_oldTip).addScaledVector(_segDir, s);
@@ -948,7 +973,7 @@ export class ArrowPool {
       }
     }
 
-    if (!Number.isFinite(hitDist)) return;
+    if (!(hitDist < 1e30)) return;
 
     // --- impact
     _hitP.copy(_oldTip).addScaledVector(_segDir, hitDist);
@@ -1059,7 +1084,8 @@ export class BombPool {
 
   fire(origin, dir, speed, type) {
     let best = this.list[0];
-    for (const b of this.list) {
+    for (let bi = 0; bi < this.list.length; bi++) {
+      const b = this.list[bi];
       if (b.mode === 'idle') { best = b; break; }
       if (b.age > best.age) best = b;
     }
@@ -1077,7 +1103,8 @@ export class BombPool {
 
   update(dt, t) {
     const machines = this.ctx.machines?.list;
-    for (const b of this.list) {
+    for (let bi = 0; bi < this.list.length; bi++) {
+      const b = this.list[bi];
       if (b.mode !== 'fly') continue;
       b.age += dt;
       if (b.age > BOMB_LIFE || b.pos.y < -80) { b.mode = 'idle'; b.group.visible = false; continue; }
@@ -1148,7 +1175,8 @@ export class BombPool {
 
   /** Park every projectile and hand the whole pool back to the free list. */
   recycleAll() {
-    for (const b of this.list) { b.mode = 'idle'; b.group.visible = false; }
+    for (let bi = 0; bi < this.list.length; bi++) {
+      const b = this.list[bi]; b.mode = 'idle'; b.group.visible = false; }
   }
 
   /**
@@ -1163,7 +1191,8 @@ export class BombPool {
    */
   audit() {
     let fly = 0, inScene = 0, overdue = 0, maxAge = 0;
-    for (const b of this.list) {
+    for (let bi = 0; bi < this.list.length; bi++) {
+      const b = this.list[bi];
       if (b.mode === 'fly') {
         fly++;
         if (b.age > maxAge) maxAge = b.age;
@@ -1183,7 +1212,8 @@ export class BombPool {
    * of the projectile visuals, survived `Combat.dispose()` (judge finding 2).
    */
   dispose() {
-    for (const b of this.list) {
+    for (let bi = 0; bi < this.list.length; bi++) {
+      const b = this.list[bi];
       b.group.parent?.remove(b.group);
       disposeOwnedUnder(b.group);
       b.mode = 'idle';

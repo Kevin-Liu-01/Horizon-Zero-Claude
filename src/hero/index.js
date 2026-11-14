@@ -18,16 +18,17 @@
  * `player.hero` (this object) is the published surface:
  *   hero.equip(row) / hero.unequip()      outfit sets (rows in rows.js)
  *   hero.kit.setHidden(bits)              PIECE bits (stowkit.js)
+ *   hero.loadout                          armor + weapon variants, perks (loadout.js)
  *   hero.info()                           draws / tris / casters / skeletons
- *   hero.holdPreview()                    the W0 held bow (Sabina blockout), bound for
- *                                         measurement until armory wires bow.js (W1)
  *   hero.dispose()                        everything installHero created
  */
 import { HERO_ROWS, DEFAULT_OUTFIT, BREA_URL } from './rows.js';
 import { HeroOutfit } from './outfit.js';
 import { HeroStowKit, PIECE } from './stowkit.js';
-import { holdPreview, SABINA_URL } from './held.js';
 import { applySkinLook, applyClothLook } from './skinLook.js';
+import { disposeClothDetail } from './clothShader.js';
+import { armoryAssets, adoptWeaponAtlas } from './weaponAtlas.js';
+import { HeroLoadout } from './loadout.js';
 
 /** Noon's ambient (hemisphere intensity x colour luminance): the hero fill is full from here up (R59 c). */
 const FILL_AMBIENT_REF = 0.155;
@@ -65,19 +66,18 @@ export class HeroRig {
       m.castShadow = m.geometry.getAttribute('_hidemask') != null;   // the skin casts; hair+wrap does not
       m.frustumCulled = false;
     }
+    armoryAssets(this.ctx);       // bow.js builds the held weapons from these rows
     this.outfit = new HeroOutfit(this.player);
     if (this.ctx.assets.models[DEFAULT_OUTFIT]) this.outfit.equip(DEFAULT_OUTFIT);
     const kit = this.ctx.assets.models.heroStowKit;
     this.kit = new HeroStowKit(this.player, kit);
     if (kit) this.kit.attach();
+    this.loadout = new HeroLoadout(this);
     this.player._collectMaterials?.();
     // LOOK C-01 (character-art grant): the skin's own light (wrapped scatter, soft terminator, back-transmission) on her live material
     for (const m of this.bodyMeshes) if (m.name === 'Brea_Skin') applySkinLook(m.material, { tier: this.ctx.engine?.quality }); else applyClothLook(m.material, { rim: 0.45 });
     return this;
   }
-
-  /** Bind the v0 Sabina blockout as the held bow (measurement only; see held.js). */
-  holdPreview(url = SABINA_URL) { return holdPreview(this.player, url); }
 
   equip(row) { return this.outfit?.equip(row); }
   unequip() { return this.outfit?.unequip(); }
@@ -94,13 +94,18 @@ export class HeroRig {
       const k = Math.min(1, hemi.intensity * (0.2126 * hemi.color.r + 0.7152 * hemi.color.g + 0.0722 * hemi.color.b) / FILL_AMBIENT_REF);
       for (let i = 0; i < this.bodyMeshes.length; i++) this.bodyMeshes[i].material.emissiveIntensity = k;
     }
-    if (!this._pullApplied) this._applyBowSolve();
     if (!this.kit?.attached) return;
     // the procedural spear melee builds (W1 replaces it) is shown only in her
     // hands: holstered, the stow kit's Shepherd's Lance is the one on her back
     const ml = this.player.animator?.melee;
-    const sp = ml?.spear;
+    const sp = this._lanceProp = ml?.lance ?? ml?.spear ?? null;
     if (sp) sp.visible = sp.parent !== ml.socketBone;
+    // melee's held prop (lanceStow.js, once merged) loads the GLB itself: point it at the
+    // final Shepherd's Lance (plan §1.2, W3 variants go through the same call), give it the atlas
+    const HL = this.ctx.combat?.melee?.lance;
+    if (HL?.setUrl && HL.url !== HERO_ROWS.armoryLanceShepherd.url) HL.setUrl(HERO_ROWS.armoryLanceShepherd.url);
+    const LI = HL?.inner ?? null;
+    if (LI !== this._lanceInner) { this._lanceInner = LI; if (LI) adoptWeaponAtlas(LI); }
     const cmb = this.ctx.combat;
     const stance = cmb?.melee?.stance;
     this._lanceOut = !!stance && stance !== 'holstered';
@@ -129,29 +134,18 @@ export class HeroRig {
     }
     const bits = (this._lanceOut ? PIECE.lance : 0) | (this._bowOut ? PIECE.bow : 0);
     if (bits !== this.kit.hidden) this.kit.setHidden(bits);
+    this.loadout?.update(dt, this._lanceOut, this._bowOut);
     // the stowed lance rides the trunk in the R10 band (carry.js)
     this.kit.solve(this.player.animator, dt);
+    // the sash tails' hang (outfit.js SashSwing)
+    this.outfit?.update(dt);
   }
 
-  /**
-   * W0 BRIDGE (plan §9 A-lmax-solve: "each bow's pull equals the Lmax solution
-   * on Brea"). The bows are combat's objects (`src/combat/bow.js`, armory from
-   * W1); their published contract field `pull` is set ONCE here from the rig
-   * profile's solve (`rigProfile.bow`: pull = drawLength + the bow's restZ),
-   * because bow.js has no owner in W0b. Armory reads `rigProfile.bow` in
-   * bow.js at W1 and this method goes.
-   */
-  _applyBowSolve() {
-    const cmb = this.ctx.combat;
-    const solve = this.player.model.userData?.rigProfile?.bow;
-    if (!cmb?._models || !solve) { if (!solve) this._pullApplied = true; return; }
-    this.bowPulls = {};
-    for (const [id, m] of Object.entries(cmb._models)) {
-      if (!/-bow$/.test(id) || typeof m.pull !== 'number') continue;
-      m.pull = +(solve.drawLength + (m.restZ ?? solve.restZ)).toFixed(4);
-      this.bowPulls[id] = m.pull;
-    }
-    this._pullApplied = true;
+  /** The held lance: `{ group, model, ... }` as bow.js built it (dev / sheets), or null. */
+  heldLance() {
+    const g = this._lanceProp;
+    if (!g) return null;
+    return { group: g, model: g.children[0] };
   }
 
   info() {
@@ -179,8 +173,10 @@ export class HeroRig {
   }
 
   dispose() {
-    const r = { outfit: this.outfit?.unequip() ?? null, kit: this.kit?.dispose() ?? null };
-    this.outfit = null; this.kit = null;
+    const r = { outfit: this.outfit?.dispose() ?? null, kit: this.kit?.dispose() ?? null };
+    this.loadout?.dispose();
+    this.loadout = null; this.outfit = null; this.kit = null;
+    disposeClothDetail();
     return r;
   }
 }

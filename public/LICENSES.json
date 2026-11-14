@@ -19,6 +19,34 @@
       "attribution": null
     },
     {
+      "id": "armory-armor-w1",
+      "paths": [
+        "public/models/armory/armor-*.glb"
+      ],
+      "title": "Armory: Pan Whites II, III and Ash Wraps I: re-cut MCO Peasant pieces (CC0) + procedural garment pieces, project-original paint",
+      "author": "CALIMA project, Quaternius (MCO Fantasy, CC0)",
+      "source_url": "https://quaternius.itch.io/",
+      "licence": "CC0-1.0",
+      "licence_text": "public/models/hero/licences/quaternius-mco-License_Standard.txt",
+      "archive_sha256": "c3468b18871cc8c8f05ab14df7712baf22cb9f389cbd870babf130e595187f70",
+      "archive_bytes": 294347394,
+      "derived_from": "mco-fantasy-standard",
+      "retrieved": "2026-10-22",
+      "modified": "re-cut, re-packed and re-painted by tools/build/recipes/armor/**"
+    },
+    {
+      "id": "armory-weapons-w1",
+      "paths": [
+        "public/models/armory/bow-*.glb",
+        "public/models/armory/lance-*.glb",
+        "public/models/armory/stowkit*.glb"
+      ],
+      "title": "Armory: the Sabina Bow, the Shepherd's Lance and the merged stow kit, on the shared weapon atlas (all procedural)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/recipes/weapons/,tools/build/recipes/armor/stowkit.mjs",
+      "licence": "project-original"
+    },
+    {
       "id": "brea-kit-v0",
       "paths": [
         "public/models/hero/kit/*.glb"
@@ -253,7 +281,7 @@
         "mco-fantasy-standard"
       ],
       "retrieved": "2026-10-22",
-      "modified": "tools/build/recipes/outfit-pan-1.mjs: sleeves cut at the elbow, recoloured per piece into the pan atlas, procedural sash and rolled cuffs added, merged to one mesh, WebP + meshopt",
+      "modified": "tools/build/recipes/outfit-pan-1.mjs: MCO sleeves, trousers, boots and bodice re-cut and re-fitted; the over-smock, skirt panels, girdle, sling, pouch, sash and cuffs lofted procedurally (project-original, no third-party source), re-painted into the Pan atlas, merged to one mesh, fitted to a range of motion, WebP + meshopt",
       "attribution": null
     },
     {

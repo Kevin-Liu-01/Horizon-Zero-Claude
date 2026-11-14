@@ -96,9 +96,17 @@ export class HideMask {
     this.hiddenTris = 0;
   }
 
-  apply(bit) {
+  /**
+   * `own` (optional): the equipped outfit's own cover of this body (`r5Outfit.hide`, decoded once by `ownMask`), one
+   * byte per vertex. When it fits this body it replaces the `_hidemask` bit, so a cut that bares the arms (the
+   * sleeveless Starter, C-06) shows them without a rebuild of the body.
+   */
+  apply(bit, own = null) {
     if (!this.attr || !this.index) return 0;
-    const arr = this.index.array, src = this.full, mask = this.attr.array;
+    const arr = this.index.array, src = this.full;
+    const useOwn = !!own && own.length === this.attr.array.length;
+    const mask = useOwn ? own : this.attr.array;
+    if (useOwn && bit) bit = 1;
     const n = src.length;
     if (!bit) {
       arr.set(src);
@@ -124,4 +132,25 @@ export class HideMask {
 
   /** Triangles drawn right now. */
   visibleTris() { return this.index ? (this.full.length / 3) - this.hiddenTris : 0; }
+
+  /**
+   * An outfit's own cover (`r5Outfit.hide` = { count, tris, rle }: base64 uint16 runs, alternating uncovered and
+   * covered, starting uncovered; tools/build/recipes/armor/lib/breabody.mjs `coverMask`), decoded to one byte per
+   * vertex, or null when it was made for another body (vertex or triangle count differs).
+   */
+  ownMask(hide) {
+    if (!hide?.rle || !this.attr || !this.full) return null;
+    if (hide.count !== this.attr.array.length || hide.tris !== this.full.length / 3) return null;
+    const bin = atob(hide.rle);
+    const runs = new Uint16Array(bin.length >> 1);
+    for (let i = 0; i < runs.length; i++) runs[i] = bin.charCodeAt(i * 2) | (bin.charCodeAt(i * 2 + 1) << 8);
+    const out = new Uint8Array(hide.count);
+    let at = 0;
+    for (let r = 0; r < runs.length; r++) {
+      const v = r & 1, end = Math.min(out.length, at + runs[r]);
+      if (v) out.fill(1, at, end);
+      at = end;
+    }
+    return at === out.length ? out : null;
+  }
 }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeArrow, setArrowType, makeBombVisual, disposeOwnedUnder } from './arrows.js';
+import { heldMaterial, weaponEntry } from '../hero/weaponAtlas.js';
 
 /**
  * Procedural weapon models (spec v2 roster). Local space contract, shared by
@@ -414,6 +415,187 @@ class RecurveBow extends WeaponModel {
   }
 }
 
+/* ------------------------------ the Sabina Bow ---------------------------- */
+
+/**
+ * The Sabina Bow (armory W1; bible §5.2; `public/models/armory/bow-sabina.glb`).
+ * Stave, string and the nocked arrow are ONE mesh on the shared weapon atlas, so
+ * the bow in her hand is ONE draw whatever it is doing (A-gear-draws, R38). The
+ * vertex program reads `_bw` [kind, s]:
+ *   0 stave       s = -1 .. 1 along it: the limbs flex back and the tips draw in
+ *   1 string      s = -1 .. 0 .. 1 tip to tip: tip -> nocking point -> tip
+ *   2, 3, 4       arrow shaft, head, fletching: carried to the nock, hidden with
+ *                 `uArrowOn` 0; head and fletching tinted per ammo
+ *
+ * The model contract is unchanged: `pull` and `restZ` are the solve's (rigProfile
+ * bow: pull = drawLength + restZ), so `getNockWorld` and the animator's nock line
+ * are the numbers A-lmax-solve grades. The string is physical on top of that: it
+ * stays at brace until the nock comes back past it, and only then does it bend and
+ * the limbs flex (full flex exactly at full draw).
+ */
+const SABINA_ROW = 'armoryBowSabina';
+const GRIP_Z = 0.035;              // the stave's belly at the old riser line, in the palm
+const NOCK_Y = 0.018;
+/**
+ * The stave's centre over the model's origin. The base class hangs the model 0.1 m under the
+ * left hand's joint and the animator's solve reads that live (`bow.model.position`,
+ * playerAnimator "nock offset": bow hand = anchor - nockOffset), so the arrow stays where the
+ * draw solve puts it. On Brea her palm stands 0.118-0.146 m over the model's origin: the wrap's
+ * centre goes there, its lower binding just over the arrow. (The arrow belongs ON her knuckles.
+ * Fix round 1 measured lifting the model 0.142 m with the stave lowered to match: the solve
+ * followed it, but the draw arm took a new shape (the right forearm moved 0.385 m), the sleeve cap
+ * stretched 1.71 x, matrix (b) at full draw rose from ~0.4 % to 0.85-1.25 % and A-wrap-clear's
+ * cord came within 0.042 m of the hand. It is reverted: the arm solve is hero-body's; see
+ * docs/ROUND5-ARMORY.md F1.7.)
+ */
+const GRIP_Y = 0.095;
+const AMMO_TINT = {
+  hunter: [0xffffff, 0xffffff], hardpoint: [0xffc890, 0xffd8a8], fire: [0xff9050, 0xffa070],
+  precision: [0xd8f4ff, 0xe4f8ff], tearblast: [0x90e8e0, 0xb0f0e8], shock: [0x90d8ff, 0xb0e0ff], freeze: [0xd8f0ff, 0xe8f6ff],
+};
+class SabinaBow extends WeaponModel {
+  constructor(entry, material) {
+    super();
+    this.group.name = 'sabina-bow';
+    const X = entry.extras?.r5Weapon || {};
+    let src = null;
+    entry.root.traverse((o) => { if (!src && o.isMesh) src = o; });
+    this.sockets = {};
+    src.traverse((o) => { if (o !== src && o.name) this.sockets[o.name] = o.position.clone(); });
+    this.lengthM = X.length;
+    this._tip0Z = X.braceZ;         // the tips' z at brace, mesh space
+    this._tipK = X.tipK; this._tipC = X.tipC;
+    // the per-frame state is ONE vec4 (flex, string z, nocking point y, arrow on): a three.js uniform's `value`
+    // slot holds objects elsewhere, so a number written there is a fresh heap number every frame; a Vector4's
+    // fields take the write in place (A-alloc-rate, R48 c)
+    const U = {
+      uBow: { value: new THREE.Vector4(0, X.braceZ, NOCK_Y - GRIP_Y, 1) },
+      uTip0Z: { value: X.braceZ }, uTipK: { value: X.tipK }, uTipC: { value: X.tipC },
+      uArrowPos: { value: new THREE.Vector3(0, NOCK_Y - GRIP_Y, X.braceZ) },
+      uHeadT: { value: new THREE.Color(0xffffff) }, uFletchT: { value: new THREE.Color(0xffffff) },
+    };
+    this.U = U;
+    material.userData.cacheKey = 'sabina-bow';
+    material.userData.vertexHook = (shader) => {
+      Object.assign(shader.uniforms, U);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>
+attribute vec2 _bw;
+uniform vec4 uBow;
+uniform float uTip0Z, uTipK, uTipC;
+uniform vec3 uArrowPos, uHeadT, uFletchT;
+#define uFlex uBow.x
+#define uStrZ uBow.y
+#define uNockY uBow.z
+#define uArrowOn uBow.w
+varying vec3 vBwTint;`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+  vBwTint = vec3( 1.0 );
+  {
+    float k = _bw.x, s = _bw.y;
+    if ( k < 0.5 ) {
+      float t2 = s * s;
+      transformed.z -= uTipK * uFlex * t2;
+      transformed.y *= 1.0 - uTipC * uFlex * t2;
+    } else if ( k < 1.5 ) {
+      float a = abs( s );
+      float tipZ = uTip0Z - uTipK * uFlex;
+      transformed.y = transformed.y * ( 1.0 - uTipC * uFlex ) + uNockY * ( 1.0 - a );
+      transformed.z += ( tipZ - uTip0Z ) + ( 1.0 - a ) * ( uStrZ - tipZ );
+    } else {
+      transformed = transformed * uArrowOn + uArrowPos;
+      if ( k > 3.5 ) vBwTint = uFletchT; else if ( k > 2.5 ) vBwTint = uHeadT;
+    }
+  }`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vBwTint;')
+        .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.rgb *= vBwTint;');
+    };
+    material.onBeforeCompile = material.userData.vertexHook;
+    material.customProgramCacheKey = () => 'sabina-bow';
+    material.side = THREE.DoubleSide;
+    this.material = material;
+    this.mesh = new THREE.Mesh(src.geometry, material);
+    this.mesh.name = 'bow-sabina';
+    this.mesh.position.y = GRIP_Y;
+    this.mesh.position.z = GRIP_Z;
+    this.mesh.castShadow = false;
+    this.mesh.frustumCulled = false;
+    this.mesh.userData.heroPart = 'held';
+    this.model.add(this.mesh);
+    // the contract's arrow object: its group's visibility is read by the gates, its
+    // own meshes never draw (the shaft is in the bow's mesh); flame and glow sprites stay
+    this.nockArrow = makeArrow({ nock: true });
+    for (const m of [this.nockArrow.group.children[0], this.nockArrow.head, this.nockArrow.fins]) m.visible = false;
+    this.nockArrow.flame.position.set(0, 0.015, X.arrowLen - 0.06);
+    this.nockArrow.glow.position.set(0, 0, X.arrowLen - 0.05);
+    this.model.add(this.nockArrow.group);
+    this._ride = null;
+    this._arrowLen = X.arrowLen;
+    this._finish();
+    // fix round 1 (A-alloc-rate): setDraw runs once a frame; run it through its draws and both arrow states now, so V8
+    // optimizes it before play instead of running it in Sparkplug (a heap number per double) for its first frames
+    for (let i = 0; i < 1600; i++) this.setDraw((i % 9) / 8, (i & 1) === 0);
+    this.setDraw(0, true);
+  }
+
+  setNockRide(p) {
+    if (!p) { this._ride = null; return; }
+    if (!this._ride) this._ride = new THREE.Vector3();
+    this._ride.copy(p);
+  }
+
+  /**
+   * Where the grip is, in the world (hero-body's handover: the animator's nock estimate is
+   * 0.07-0.09 m off the rendered nock; the arm solve can anchor on this instead). No allocation.
+   */
+  getGripWorld(out) {
+    return this.mesh.localToWorld(out.copy(this.sockets.grip));
+  }
+
+  setDraw(draw, showArrow) {
+    const B = this.U.uBow.value, A = this.U.uArrowPos.value;
+    const nz = this.restZ - draw * this.pull;          // model space (the contract)
+    const full = this.restZ - this.pull;
+    const rest = this._tip0Z + GRIP_Z;                 // the braced string, model space
+    // (no Math.min / Math.max and no double through a ternary: V8's mid tier boxes them; fields take writes in place)
+    B.x = 0;
+    if (nz < rest) { B.x = (rest - nz) / (rest - full); if (B.x > 1) B.x = 1; }
+    B.y = rest - GRIP_Z; if (nz < rest) B.y = nz - GRIP_Z;
+    B.z = NOCK_Y - GRIP_Y;                              // the string's nocking point, mesh space
+    B.w = showArrow ? 1 : 0;
+    const G = this.nockArrow.group;
+    G.visible = !!showArrow;
+    if (!showArrow) { A.x = 0; A.y = 0; A.z = 0; return; }
+    const P = G.position;
+    P.x = 0; P.y = NOCK_Y; P.z = nz;
+    if (this._ride) {
+      _rideL.copy(this._ride);
+      this.model.updateWorldMatrix(true, false);
+      this.model.worldToLocal(_rideL);
+      const r = _rideL, l2 = r.x * r.x + r.y * r.y + r.z * r.z;
+      if (l2 === l2 && l2 < 4) { P.x = r.x; P.y = r.y; P.z = r.z; }
+    }
+    A.x = P.x; A.y = P.y - GRIP_Y; A.z = P.z - GRIP_Z;
+    B.z = P.y - GRIP_Y;
+  }
+
+  setArrowType(type) {
+    setArrowType(this.nockArrow, type);
+    // setArrowType only swaps materials and the sprites; the three meshes stay hidden
+    const t = AMMO_TINT[type] || AMMO_TINT.hunter;
+    this.U.uHeadT.value.setHex(t[0]);
+    this.U.uFletchT.value.setHex(t[1]);
+  }
+
+  /** The bow's geometry is the asset row's; only the material clone is this model's. */
+  dispose() {
+    this.group.parent?.remove(this.group);
+    this.material?.dispose();
+    this.material = null;
+  }
+}
+
 /* ------------------------------- blast sling ------------------------------ */
 
 /**
@@ -662,67 +844,74 @@ class Tripcaster extends CasterWeapon {
 /* ---------------------------------- spear --------------------------------- */
 
 /**
- * Aloy's spear (`combat-melee-missing`). Ash haft, leather grip wraps, bone
- * ferrules and a salvaged machine blade with the override prongs at the base.
- * Local space: butt at origin, blade along +Z, total ~1.85 m.
+ * The Shepherd's Lance (armory W1; bible §5.3; `public/models/armory/lance-shepherd.glb`),
+ * authored at its real 1.55 m, one mesh on the shared weapon atlas.
  *
- * Returned as `{ group, model, length, blade }` — `melee.js` parents `group`
- * to the right-hand attach and animates `model`.
+ * Local space as the kept contract: butt at the origin, blade along +Z, returned as
+ * `{ group, model, length, blade }`; melee parents `group` and scales it.
+ *
+ * `melee.js` still multiplies the prop by `SPEAR_SCALE` 0.80 (M9; melee W1 removes
+ * it). Until then the model is authored at real size under that scale: `propScale`
+ * is what the caller will apply, `model.scale` undoes it, and `length` is chosen so
+ * `length * propScale` is the true 1.55 m. When melee removes SPEAR_SCALE it calls
+ * `buildSpear({ propScale: 1 })`, and nothing else changes.
  */
-export function buildSpear() {
+export const LANCE_LENGTH = 1.55;
+export const LANCE_ROW = 'armoryLanceShepherd';
+const LANCE_PROP_SCALE = 0.8;
+
+export function buildSpear({ propScale = LANCE_PROP_SCALE } = {}) {
   const group = new THREE.Group();
   const model = new THREE.Group();
   group.add(model);
-  const L = 1.85;
-
-  const wood = [
-    new THREE.CylinderGeometry(0.014, 0.017, L * 0.76, 6, 1)
-      .rotateX(Math.PI / 2).translate(0, 0, L * 0.38),
-  ];
-  const wraps = [];
-  for (const z of [0.16, 0.30, 0.44]) {
-    wraps.push(new THREE.CylinderGeometry(0.021, 0.021, 0.075, 7, 1)
-      .rotateX(Math.PI / 2).translate(0, 0, z));
+  const entry = weaponEntry(LANCE_ROW);
+  const mat = entry ? heldMaterial('MI_Lance_Held') : null;
+  if (entry && mat) {
+    let src = null;
+    entry.root.traverse((o) => { if (!src && o.isMesh) src = o; });
+    const mesh = new THREE.Mesh(src.geometry, mat);
+    mesh.name = 'lance-shepherd';
+    mesh.rotation.x = Math.PI / 2;      // +Y (butt -> tip) onto +Z
+    mesh.castShadow = false;
+    mesh.frustumCulled = false;
+    mesh.userData.heroPart = 'held';
+    mesh.raycast = NOOP;
+    model.add(mesh);
+    model.scale.setScalar(1 / propScale);
+    const owned = { mat };
+    return {
+      group, model, length: LANCE_LENGTH / propScale, realLength: LANCE_LENGTH, blade: mesh, row: LANCE_ROW,
+      /** The GLB's geometry stays the asset row's; this frees the material. */
+      dispose() { owned.mat?.dispose(); owned.mat = null; group.parent?.remove(group); },
+    };
   }
-  const bone = [
-    // butt cap
-    new THREE.SphereGeometry(0.021, 8, 6).translate(0, 0, 0.012),
-    // ferrule under the head
-    new THREE.CylinderGeometry(0.023, 0.019, 0.09, 8, 1)
-      .rotateX(Math.PI / 2).translate(0, 0, L * 0.755),
-  ];
-  const iron = [
-    // leaf blade: two tapered wedges back to back
-    new THREE.ConeGeometry(0.042, 0.30, 4)
-      .rotateX(Math.PI / 2).translate(0, 0, L * 0.925),
-    new THREE.ConeGeometry(0.042, 0.10, 4)
-      .rotateX(-Math.PI / 2).translate(0, 0, L * 0.80),
-  ];
-  // override prongs — the machine hardware lashed to the haft
-  const prong = [];
-  for (const s of [-1, 1]) {
-    prong.push(new THREE.BoxGeometry(0.012, 0.05, 0.16)
-      .translate(s * 0.036, 0, L * 0.735));
-  }
-  const glow = [
-    new THREE.TorusGeometry(0.026, 0.006, 6, 14).translate(0, 0, L * 0.70),
-  ];
-
-  model.add(bakeMesh(woodPale, wood, true));
-  model.add(bakeMesh(wrapDarkMat, wraps));
-  model.add(bakeMesh(boneMat, bone));
-  const blade = bakeMesh(ironMat, iron, true);
-  model.add(blade);
-  model.add(bakeMesh(bronzeMat, prong));
-  model.add(bakeMesh(tealGlow, glow));
-
-  model.traverse((o) => { o.raycast = NOOP; });
-  return { group, model, length: L, blade };
+  // no kit row (a boot with its assets missing): a plain haft, so melee never has no prop
+  const haft = new THREE.Mesh(new THREE.CylinderGeometry(0.0145, 0.0145, LANCE_LENGTH, 6, 1).rotateX(Math.PI / 2).translate(0, 0, LANCE_LENGTH / 2), woodDark);
+  haft.raycast = NOOP;
+  model.add(haft);
+  model.scale.setScalar(1 / propScale);
+  return { group, model, length: LANCE_LENGTH / propScale, realLength: LANCE_LENGTH, blade: haft };
 }
 
 /* -------------------------------- factory -------------------------------- */
 
-export function buildWeaponModel(id) {
+/**
+ * `opts.bow`: the rig profile's bow solve (`rigProfile.bow`). Every bow reads its pull
+ * from it: pull = drawLength + the bow's restZ (plan A-lmax-solve; this replaces the
+ * W0 bridge `HeroRig._applyBowSolve`).
+ */
+export function buildWeaponModel(id, opts = {}) {
+  const m = makeWeaponModel(id);
+  const solve = opts.bow;
+  if (solve && /-bow$/.test(id) && typeof m.pull === 'number') {
+    if (m instanceof SabinaBow) m.restZ = solve.restZ;
+    m.pull = +(solve.drawLength + m.restZ).toFixed(4);
+    m.setDraw(0, false);
+  }
+  return m;
+}
+
+function makeWeaponModel(id) {
   switch (id) {
     case 'sharpshot-bow':
       // long, black-ash, bone-tipped, one amber sight bead
@@ -747,12 +936,16 @@ export function buildWeaponModel(id) {
     case 'disc-launcher':
       return new DiscLauncher();
     case 'hunter-bow':
-    default:
-      // the Nora starter: dark ash, red leather grip, bone nock guards
+    default: {
+      // the default bow is the Sabina (combat-kit W2 renames the catalog ids)
+      const entry = weaponEntry(SABINA_ROW);
+      const mat = entry ? heldMaterial('MI_Sabina_Held') : null;
+      if (entry && mat) return new SabinaBow(entry, mat);
       return new RecurveBow({
         name: 'hunter-bow', accentMat: boneMat,
         wrapMat: wrapMat, lashMat: boneDarkMat,
       });
+    }
   }
 }
 
