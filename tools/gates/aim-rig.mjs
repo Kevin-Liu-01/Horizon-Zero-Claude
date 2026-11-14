@@ -63,7 +63,8 @@ const matrixRow = (stance) => ({
       const updC = cmb.update.bind(cmb);
       cmb.update = function (dt, ...rest) {
         const r = updC(dt, ...rest);
-        if (sampling && dt > 0) { T = E.simTime - tSim0; M.sample({ T, aiming: !!p.aiming, draw: cmb.drawStrength }); }
+        // (after combat: the bow as it will be drawn this step; every world matrix brought up to this step's pose first)
+        if (sampling && dt > 0) { T = E.simTime - tSim0; p.model.updateMatrixWorld(true); M.sample({ T, aiming: !!p.aiming, draw: cmb.drawStrength }); }
         return r;
       };
       const onFire = () => { if (sampling) M.loose(E.simTime - tSim0); };
