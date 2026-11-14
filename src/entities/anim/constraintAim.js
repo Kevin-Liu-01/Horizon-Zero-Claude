@@ -387,6 +387,17 @@ export class ConstraintAim {
         const ud = _a.dot(_d), disc = ud * ud - _a.lengthSq() + reachR * reachR;
         slide = Math.max(0, disc > 0 ? ud - Math.sqrt(disc) : ud);
       }
+      // ...but never so far that the bow fist comes to her face (a steep up-aim brings the line down past it)
+      if (slide > 0) {
+        this._cRigHead();
+        const keep = R.bowFace ?? 0.3;
+        for (let k = 0; k < 8 && slide > 1e-3; k++) {
+          _b.copy(_G).addScaledVector(_d, -slide);
+          if (_b.distanceTo(_sk) >= keep) break;
+          slide *= 0.7;
+        }
+        if (slide <= 1e-3) slide = 0;
+      }
       C.slide = slide;
       _G.addScaledVector(_d, -slide);
     }
@@ -443,7 +454,7 @@ export class ConstraintAim {
     this._cRigConstrain(_T, 0.1);
     _a.copy(_T).addScaledVector(_kOff, 0.6); _b.copy(_a);
     if (this._cRigConstrain(_a, 0.15)) _T.add(_a.sub(_b));
-    this._cRigConstrain(_W, 0.15);
+    this._cRigConstrain(_W, R.bowKeep ?? 1.0);                                 // (the bow fist is broad: further out)
     // draw pole: the elbow at the shoulder's height in the aim frame, back along the arrow and out
     this._charOf(b.upArmR.bone, _S);
     const L1 = this._lenUpR, L2 = this._lenLoR;
