@@ -895,7 +895,11 @@ export class Combat {
         }
       } else {
         // opening the wheel mid-draw CANCELS the shot instead of loosing it
-        if (this._drawing && aiming && !wheelOpen && this.drawStrength > MIN_LOOSE) this._fire();
+        // M1.3b (Kevin's bar): an arrow leaves only a RAISED, DRAWN bow, as the animator shows it (aim weight
+        // and rendered draw); a release short of that lets the string down and keeps the arrow
+        const an = player?.animator;
+        const raised = !an?.looseReady || an.looseReady();
+        if (this._drawing && aiming && !wheelOpen && this.drawStrength > MIN_LOOSE && raised) this._fire();
         this._drawing = false;
         this.drawStrength = 0;
       }

@@ -16,6 +16,7 @@ import { AimRig } from './anim/aimRig.js';
 import { CarryStow } from './anim/carryStow.js';
 import { MeleeDriver } from './anim/meleeDriver.js';
 import { SecondaryMotion } from './anim/secondaryMotion.js';
+import { ConstraintAim } from './anim/constraintAim.js';
 
 /**
  * PlayerAnimator — Round 4: mocap clip base + procedural overlays.
@@ -159,6 +160,8 @@ export class PlayerAnimator {
       // W0b targeted fix 3 (null = before it): the draw arm's continuity and
       // the loose -> re-nock path (see `_aimLayer`, `_elbowFlow`)
       armFlow: tn?.armFlow ?? null,
+      // M1.3b (null = the aim layer's own arm solve): both arms solved last as a constraint rig (`constraintAim.js`)
+      cRig: tn?.cRig ?? null,
       // W0b targeted fix 4 (null = before it): the aim's trunk starts upright (see `_aimLayer`)
       aimTrunk: tn?.aimTrunk ?? null,
       // ...and the crouched aim's body (null = the Round-4 pose; see `_crouchAimLayer`)
@@ -1390,6 +1393,7 @@ export class PlayerAnimator {
     const tTail = aimW <= 0.01 && !!this.T.armFlow?.crouchOut && this._afOn && this._crouchW > 0.3 && this._qTs.w < 1 - 1e-6
       && !p.dodging && this._dodgeW < 0.05 && !dead && this._carryW < 0.02;
     this._aimRan = aimW > 0.01 || tTail;
+    if (this.T.cRig) this._cRigCapture();
     if (this._aimRan) this._aimLayer(aimW, this._drawS, p, moveW, t);
     // fix round 5: the next aim's T ray starts from its own ray. W0b targeted
     // fix 4: ...and from a ray off HER, not off the grip she had when the layer
@@ -1495,6 +1499,8 @@ export class PlayerAnimator {
     this._armCapture();
     if (aimW > 0.01 && this._knW0 > 0.01 && this.T.armFlow) { _knZ.set(0, 0, 0); this._knuckleTurn(this._knW0, this._drawS, _knZ); }
     if (this._afEng && this.T.armFlow) this._handInFront();
+    /* M1.3b: the aim's arms, solved last as a constraint rig on the pose that will be drawn */
+    if (this.T.cRig) this._cRigPass(aimW, this._drawS, p);
     if (aimW > 0.01) {
       this._rootKeepAudit(this._drawS);
       /* W0b targeted fix 4 (r1 eng judge, the down clamp; A32-draw-ramp `down105`
@@ -1580,4 +1586,4 @@ export class PlayerAnimator {
 }
 
 /* M1.3a: the members moved into the modules above, back on the prototype (a name defined twice throws). */
-installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion);
+installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion, ConstraintAim);

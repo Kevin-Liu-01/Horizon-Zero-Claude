@@ -322,6 +322,24 @@ export const UBC_TUNE = {
   // the hand 0.148 m from the skull there, under the 0.16 ceiling; 0.12 at the
   // 0.75 down aim, over the 0.10 floor)
   anchorPitch: { level: 0.0, up: 0.016, down: -0.012 },
+  /* M1.3b — THE AIM AS A CONSTRAINT RIG (src/entities/anim/constraintAim.js). `jaw`: the jaw-corner anchor,
+   * a point on Brea's skin at the right corner of the jaw (the jaw's angle: the most lateral skin vertex of the
+   * lower jaw at the bone's height), head bind frame from the Head bone; `out` its outward normal; `kOut` how
+   * far off the skin the index knuckle's joint sits on it. `handL` / `handP`: the hook grip as weights of
+   * (arrow, her left, up) for wrist -> knuckles and (her left, arrow, up) for the palm. `bowPole`: (her left,
+   * up, arrow) for the bow elbow. `kick`: the loose's travel back and out. `twist*`: the spine twist that
+   * brings the bow shoulder onto the arrow line when the arm cannot carry the grip (rad, 1/s, m spare).
+   * `limits`: the verify's shoulder swing, anatomical (upper arm in the chest's bind frame: `back` = -z, its
+   * horizontal extension; `up` = +y, its elevation), failures logged, never clamped. */
+  cRig: {
+    jaw: [-0.048, 0.002, -0.012], out: [-1, -0.35, -0.15], kOut: 0.014,
+    handL: [1, 0.5, -0.05], handP: [1, 0, 0],
+    bowPole: [0.55, -0.8, 0.1], bowL: [-0.75, 0.45, 0.3], bowP: [0.8, -0.3, 0],
+    elbowH: -0.01, hookBack: 0.25, kick: 0.07, qOut: 0.16, qFwd: 0.12, blendOut: 0.1, wrapK: 0.7,
+    loose: [0.95, 0.5],
+    twistMax: 0.6, twistRate: 14, twistSpare: 0.006,
+    limits: { draw: { back: 0.95, up: 0.99 }, bow: { back: 0.75, up: 0.99 } },
+  },
   // aim pitch share [spine2, spine3, spine4(=spine_03 again), neck, head]
   pitchShare: [0.36, 0.32, 0.32, 0.0, 0.0],     // (0.14, 0.15, 0.13, 0.2, 0.28)
   pitchLive: true,                                 // about the live char X axis (bind-frame on Round 4)
