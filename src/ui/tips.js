@@ -1,75 +1,218 @@
 /**
- * TIPS  —  lane `shell-menus`  (onboarding-loop-*, ui-18 Field Manual)
+ * TIPS + WORDS  —  lane `shell-ui` (Round 5, W1; bible §8.9, §9.7, §10.3)
  * ===========================================================================
- * The menu-side half of teaching the game. `shell-hud` owns the in-world
- * contextual card queue (`ui-17`); this owns the lines that appear on the
- * SHELL — the title screen, each hub tab, and the death card, where a player is
- * already stopped and reading.
+ * Three things every field-book surface reads, kept in one file so the words
+ * cannot drift between screens:
  *
- * Every line names a mechanic that exists in this build and the key that drives
- * it, read from the owning lane where it publishes one (`items.tools.useKey`,
- * `tools.cycleKeys`) instead of being hard-coded — a tip that prints the wrong
- * key is worse than no tip.
+ *   TUTORIAL_CARDS   the 18 one-shot cards of bible §8.9, in the bible's order,
+ *                    with its text verbatim (`A71e-tutorial-cards` parses the
+ *                    bible's table and compares). `hud.js` shows them;
+ *                    `progression` (W3) raises the beat-bound ones through
+ *                    `ctx.hud.showTip(id)`.
+ *   TIPS             the lines on the SHELL (title, each hub page, the death
+ *                    card), where a player has stopped and is reading.
+ *   fieldWord(text)  the W1 presentation bridge. Engine catalogue names (item
+ *                    ids, the wreck label) are renamed by their owners at W2
+ *                    (combat-kit `items.js`) and W3 (progression), but the
+ *                    field-book UI ships now, so every string another lane
+ *                    hands the UI goes through this before it is painted. When
+ *                    the owners have renamed, each row simply stops matching;
+ *                    the table is deleted at shell-ui's W2 exit.
  *
  * Rotation is deterministic per context (index-based, not random) so a
- * screenshot gate sees the same line twice, and so a player who reopens a tab
- * to re-read something finds it still there.
+ * screenshot gate sees the same line twice.
  */
+
+/* ------------------------------------------------------------------ words */
+
+const WORD_ROWS = [
+  ['metal[ -]shards?', 'Salt'],
+  ['shards?', 'Salt'],
+  ['ridge[ -]?wood', 'Juniper'],
+  ['chillwater', 'Brine'],
+  ['blaze', 'Cinder Resin'],
+  ['sparker', 'Calima Dust'],
+  ['braided wire', 'Bronze Cable'],
+  ['wire', 'Cord'],
+  ['medicinal herbs?', 'Fog-Water'],
+  ['medicine', 'Gourd'],
+  // one player word per catalogue item (r1 gate judge: two items printed under one name on a page)
+  ['machine heart', 'Mainspring'],
+  ['machine core', 'Escapement'],
+  ['(\\w+) lens', '$1 Lampglass'],
+  ['hunter bow', 'Sabina Bow'],
+  ['sharpshot bow', 'Sighting Bow'],
+  ['war bow', 'Cane Recurve'],
+  ['hunter arrows?', 'Reed Arrow'],
+  ['hardpoint arrows?', 'Obsidian Arrow'],
+  ['precision arrows?', 'Sighting Arrow'],
+  ['tearblast arrows?', 'Barbed Arrow'],
+  ['fire arrows?', 'Cinder-Resin Arrow'],
+  ['freeze arrows?', 'Brine-Gourd Arrow'],
+  ['shock arrows?', 'Dust-Puff Arrow'],
+  ['blast bomb', 'Cinder Pot'],
+  ['blast sling', 'Pots'],
+  ['ropecaster', 'Cast Net'],
+  ['spear', 'Lance'],
+  ['datapoints?', 'Field Book'],
+  ['supply crate', 'Salt Cache'],
+  ['supply cache', 'Salt Cache'],
+  ['machines', 'Instruments'],
+  ['machine', 'Instrument'],
+  ['tear', 'Pry'],
+  ['impact', 'Blunt'],
+  ['brittle', 'Seized'],
+  ['camp', 'Cistern'],
+  ['focus', 'Alidade'],
+  ['concentration', 'Steady'],
+  ['silent strike', 'Undercut'],
+  ['critical (?:strike|hit)', 'Felling Blow'],
+  ['tagged', 'Flagged'],
+  ['tag', 'Flag'],
+  ['tallneck', 'Trig Pillar'],
+  ['hunting grounds?', 'Salt Trial'],
+  ['override', 'Pry'],
+].map(([w, rep]) => [new RegExp(`\\b(?:${w})\\b`, 'gi'), rep]);
+
+/** Keep the case of the source: an upper-case label stays upper-case. */
+function caseLike(src, rep) {
+  return src === src.toUpperCase() && /[A-Z]/.test(src) ? rep.toUpperCase() : rep;
+}
+
+const WORD_MEMO = new Map();
+
+/** Engine name -> the bible's player word (§10.3). Pure, so memoized: a label is worded once. */
+export function fieldWord(text) {
+  const raw = String(text ?? '');
+  let s = WORD_MEMO.get(raw);
+  if (s !== undefined) return s;
+  s = raw;
+  for (const [re, rep] of WORD_ROWS) {
+    s = s.replace(re, (m, g1) => caseLike(m, g1 ? rep.replace('$1', g1) : rep));
+  }
+  if (WORD_MEMO.size > 1024) WORD_MEMO.clear();
+  WORD_MEMO.set(raw, s);
+  return s;
+}
+
+/* ------------------------------------------------------- the Instrument card */
+
+/** What each kind's work is, for its card (bible §7.4). A kind may publish `cardWork` / `cardLine` itself. */
+const CARD_WORK = {
+  peg: 'LINE STAKE', plumb: 'LEVEL BOB', tiller: 'SOIL CORE', gauge: 'SLUICE', sickle: 'BOUNDARY CUT',
+  spindle: 'STRING LINE', davit: 'REPAIR HOIST', sonde: 'TETHER SOUNDING', screed: 'CUT AND FILL',
+  kiln: 'GLAZE RAM', dredge: 'BED CUTTER', transit: 'BASELINE',
+};
+
+/** The card's three words: `TILLER`, `SOIL CORE`, `TRANSECT 14` (bible §9.7). Stable for one Instrument. */
+export function cardParts(m) {
+  const name = fieldWord(String(m?.displayName ?? m?.kind ?? 'Instrument')).toUpperCase();
+  const work = String(m?.cardWork ?? CARD_WORK[m?.kind] ?? 'SURVEY').toUpperCase();
+  if (m && m.__transect == null) {
+    const pos = m.position ?? m.root?.position;
+    m.__transect = pos ? (Math.abs(Math.round(pos.x * 3 + pos.z * 7)) % 39) + 1 : 1;
+  }
+  return { name, work, line: `TRANSECT ${String(m?.__transect ?? 1).padStart(2, '0')}` };
+}
+
+export function cardLine(m) {
+  if (m?.cardLine) return String(m.cardLine).toUpperCase();
+  const c = cardParts(m);
+  return `${c.name} · ${c.work} · ${c.line}`;
+}
+
+/* ---------------------------------------------------------- tutorial cards */
+
+/**
+ * Bible §8.9, "Tutorial cards", in order, beat by beat. `text` is the bible's
+ * line verbatim; `title` / `body` are its two halves (a card is a title plus
+ * one line in Plex on field-book paper). `when` raises the cards the HUD can
+ * observe for itself; `beat` is where progression's first-hour chain (W3) calls
+ * `ctx.hud.showTip(id)`.
+ */
+export const TUTORIAL_CARDS = [
+  { id: 'move', beat: '0:00', text: 'Move', title: 'MOVE', body: 'WASD walks.', keys: ['W', 'A', 'S', 'D'],
+    when: (h) => h._t > 2.5 },
+  { id: 'sprint', beat: '0:00', text: 'Sprint (Shift)', title: 'SPRINT', body: 'Hold Shift.', keys: ['SHIFT'],
+    when: (h) => h._t > 9 },
+  { id: 'interact', beat: '0:00', text: 'Interact (E): rake the pan', title: 'INTERACT', body: 'E: rake the pan.', keys: ['E'],
+    when: (h) => !!h.ctx.interactables?.current },
+  { id: 'sighting', beat: '0:05', text: 'Sighting (V): raise the Alidade; read a mark', title: 'SIGHTING', body: 'V: raise the Alidade; read a mark.', keys: ['V', 'T'],
+    when: (h) => h._nearestInstrumentDist < 60 },
+  { id: 'bow', beat: '0:10', text: 'Bow: RMB draw, LMB loose', title: 'BOW', body: 'RMB draw, LMB loose.', keys: ['RMB', 'LMB'],
+    when: (h) => !!h.ctx.player?.aiming },
+  { id: 'barbed', beat: '0:10', text: 'Barbed arrows Pry', title: 'BARBED ARROWS', body: 'Barbed arrows Pry.', keys: ['Z', 'X'] },
+  { id: 'transects', beat: '0:10', text: 'Transects: crossing a live peg line near a Plumb gets you Flagged', title: 'TRANSECTS', body: 'Crossing a live peg line near a Plumb gets you Flagged.', keys: [] },
+  { id: 'steady', beat: '0:10', text: 'Steady: hold Shift while aiming', title: 'STEADY', body: 'Hold Shift while aiming.', keys: ['SHIFT'],
+    when: (h) => !!h.ctx.player?.aiming && h._aimT > 3 },
+  { id: 'climb', beat: '0:18', text: 'Climb (E at a ledge)', title: 'CLIMB', body: 'E at a ledge.', keys: ['E'] },
+  { id: 'triangulate', beat: '0:18', text: 'Triangulate: from a pillar, sight two others', title: 'TRIANGULATE', body: 'From a pillar, sight two others.', keys: ['V'] },
+  { id: 'weak-points', beat: '0:25', text: 'Weak points: the level vial', title: 'WEAK POINTS', body: 'The level vial.', keys: [] },
+  { id: 'pry-bob', beat: '0:25', text: 'Pry the bob', title: 'PRY', body: 'Pry the bob.', keys: [] },
+  { id: 'undercut', beat: '0:25', text: 'Undercut (E behind an unaware Instrument)', title: 'UNDERCUT', body: 'E behind an unaware Instrument.', keys: ['E'] },
+  { id: 'lance', beat: '0:35', text: 'Lance: LMB light, hold for heavy', title: 'LANCE', body: 'LMB light, hold for heavy.', keys: ['LMB'],
+    when: (h) => h._nearestHostileDist < 6 },
+  { id: 'windwall', beat: '0:35', text: 'Windwall: RMB guard, parry by timing, X to plant', title: 'WINDWALL', body: 'RMB guard, parry by timing, X to plant.', keys: ['RMB', 'X'] },
+  { id: 'pots', beat: '0:35', text: 'Pots: F tap to lob, hold to cast', title: 'POTS', body: 'F tap to lob, hold to cast.', keys: ['F'] },
+  { id: 'benchmarks', beat: '0:45', text: 'Benchmarks: hold E for 15 s to re-survey', title: 'BENCHMARKS', body: 'Hold E for 15 s to re-survey.', keys: ['E'] },
+  { id: 'calima', beat: '0:55', text: 'Calima: Instruments see half as far', title: 'CALIMA', body: 'Instruments see half as far.', keys: [],
+    when: (h) => h.ctx.environment?.weather === 'calima' },
+];
+
+/* -------------------------------------------------------------- shell lines */
 
 /** tag: which shell surface a line belongs on. */
 export const TIPS = [
   // --- combat -------------------------------------------------------------
   { tag: 'combat', text: 'Hold <kbd>RMB</kbd> to aim, <kbd>LMB</kbd> to draw. Release at full draw for the damage the shot is worth.' },
-  { tag: 'combat', text: 'Tap <kbd>Shift</kbd> <em>while already aiming</em> for Concentration — time slows and the reticle steadies.' },
-  { tag: 'combat', text: 'Tearblast arrows rip components off a hull. A machine that loses its weapon cannot use it against you.' },
-  { tag: 'combat', text: 'Every machine has a weak point in a different element. Freeze makes a hull brittle; fire cooks a Blaze canister.' },
-  { tag: 'combat', text: '<kbd>LMB</kbd> without aiming swings the spear. Light taps chain; hold for the heavy that staggers.' },
+  { tag: 'combat', text: 'Hold <kbd>Shift</kbd> <em>while already aiming</em> to Steady: a held breath, and the sway goes out of the bow.' },
+  { tag: 'combat', text: 'Barbed arrows Pry. An Instrument that loses a tool cannot use what the tool did.' },
+  { tag: 'combat', text: 'Read the lamp first: open and bone is calm, half-shut and green is wary, a magenta pinhole is on you.' },
+  { tag: 'combat', text: '<kbd>LMB</kbd> without aiming swings the lance. Light strikes chain; hold for the heavy.' },
   // --- stealth ------------------------------------------------------------
-  { tag: 'stealth', text: 'Tall grass hides you while crouched — <kbd>C</kbd> toggles the stalk and it survives aiming.' },
-  { tag: 'stealth', text: 'A machine that hears something it cannot see goes to look. Throw a rock and be somewhere else.' },
-  { tag: 'stealth', text: 'A Silent Strike from behind an unaware machine kills small ones outright.' },
-  // --- focus / world ------------------------------------------------------
-  { tag: 'focus', text: '<kbd>V</kbd> raises the Focus. <kbd>T</kbd> tags what is under the crosshair so you can track it through cover.' },
-  { tag: 'focus', text: 'Focus reveals components, loot and patrol routes. Scan before you shoot, not after.' },
-  { tag: 'focus', text: 'Old-World datapoints are scattered across the valley. The Notebook keeps every one you find.' },
+  { tag: 'stealth', text: 'Tall cover hides you while crouched. <kbd>C</kbd> toggles the stalk and it survives aiming.' },
+  { tag: 'stealth', text: 'An Instrument that hears something it cannot see goes to look. Whistle with <kbd>G</kbd> and be somewhere else.' },
+  { tag: 'stealth', text: 'An Undercut from behind an unaware Instrument fells the small ones outright.' },
+  // --- sighting / world ---------------------------------------------------
+  { tag: 'sighting', text: '<kbd>V</kbd> raises the Alidade. <kbd>T</kbd> Flags what is on the crosshair, so its bearing stays on the circle.' },
+  { tag: 'sighting', text: 'Sighting names components, what they drop and the transects they walk. Read before you loose, not after.' },
+  { tag: 'sighting', text: 'Field Books lie where the first surveyors left them. Every one you find is kept here.' },
   // --- survival -----------------------------------------------------------
-  { tag: 'survival', text: 'Medicinal herbs fill the pouch; hold <kbd>Q</kbd> to spend it. The pouch does not refill on death.' },
-  { tag: 'survival', text: 'Hold <kbd>R</kbd> to craft ammunition from what you are carrying. Ridge-wood and shards are the cheap half.' },
-  { tag: 'survival', text: 'Rest at the campfire to save, pass the hours, and start the hunt in the light you want.' },
+  { tag: 'survival', text: 'Fog-water fills the gourd; hold <kbd>Q</kbd> to drink. It does not refill when you fall.' },
+  { tag: 'survival', text: 'Hold <kbd>R</kbd> to make ammunition from what you carry. Juniper and salt are the cheap half.' },
+  { tag: 'survival', text: 'Rest at the cistern to save, pass the hours and start the day in the light you want.' },
   // --- progression --------------------------------------------------------
-  { tag: 'progression', text: 'Every kill, datapoint and objective pays XP. Levels buy skill points; skill points buy the hunt you prefer.' },
-  { tag: 'progression', text: 'Shards are currency. Sell the lenses and hearts you will never use to the camp trader.' },
-  { tag: 'progression', text: 'Track a quest in the Journal and its objective shows on the compass with the distance.' },
+  { tag: 'progression', text: 'Salt is money. Sell the lampglass and escapements you will not use to the Guild.' },
+  { tag: 'progression', text: 'Track an entry in the log and its bearing shows on the circle with the distance.' },
   // --- traversal ----------------------------------------------------------
-  { tag: 'traversal', text: '<kbd>Space</kbd> jumps and mantles ledges; <kbd>Ctrl</kbd> rolls. A roll is only invulnerable in its middle.' },
+  { tag: 'traversal', text: 'Climb a trig pillar and sight two others: the triangle between the three opens on this sheet.' },
+  { tag: 'traversal', text: '<kbd>Space</kbd> jumps and mantles ledges; <kbd>Ctrl</kbd> rolls. A roll is only safe in its middle.' },
   { tag: 'traversal', text: 'A fall over four metres hurts. Over nine, it kills.' },
 ];
 
 const BY_TAG = TIPS.reduce((m, t) => { (m[t.tag] ||= []).push(t); return m; }, {});
 
-/** Which tag each hub tab reads from. */
+/** Which tag each hub page reads from. */
 export const TAB_TIP_TAG = {
   map: 'traversal',
   quests: 'progression',
   inventory: 'survival',
   crafting: 'survival',
   skills: 'progression',
-  notebook: 'focus',
-  settings: 'focus',
+  notebook: 'sighting',
+  settings: 'sighting',
   title: 'combat',
   death: 'combat',
 };
 
-/** Death lines keyed by what killed you, with a generic fallback. */
+/** Death lines by what felled her (bible §7.4 roster), with a generic fallback. */
 const DEATH_ADVICE = {
-  watcher: 'A Watcher’s eye is its sensor and its weak point. Break it and the alarm never goes out.',
-  strider: 'Striders bolt before they fight. Rope one down or take the shot before it turns.',
-  scrapper: 'Scrappers hunt in threes. Break line of sight and take them one at a time.',
-  sawtooth: 'A Sawtooth commits to its lunge. Roll late, then punish the recovery.',
-  longleg: 'A Longleg’s scream calls the herd. Kill the sacs on its back before it opens its mouth.',
-  glinthawk: 'Glinthawks freeze from above. Bring it down with ice or tear a wing.',
-  behemoth: 'A Behemoth’s cargo clamps are exposed when it charges. Everything else is armour.',
-  thunderjaw: 'Tear a Disc Launcher off a Thunderjaw and it becomes your gun. That is the whole fight.',
+  tiller: 'A Tiller tills what it is told to. Stand off its line and it may never turn to you.',
+  plumb: 'The Plumb is the one that raises the alarm. Shoot the level vial before it reads you.',
+  peg: 'Pegs are nothing alone. Do not cross a live line near whatever is listening to it.',
+  sickle: 'Sickles flank. Keep a wall at your back and take them as they come round it.',
+  screed: 'A Screed cannot stop quickly. Lure it into a crescent wall and strike while it is stunned.',
+  gauge: 'The Gauge floods on its own clock. Read the tide before you stand in its pans.',
 };
 
 export class Tips {
@@ -85,36 +228,22 @@ export class Tips {
     const tag = TAB_TIP_TAG[context] || context;
     const list = BY_TAG[tag] || TIPS;
     const i = (this._counters[tag] = (this._counters[tag] ?? -1) + 1) % list.length;
-    return this._resolve(list[i].text);
+    return list[i].text;
   }
 
-  /** Stable line for a context — the one a screenshot gate will see twice. */
+  /** Stable line for a context: the one a screenshot gate will see twice. */
   peek(context = 'title') {
     const tag = TAB_TIP_TAG[context] || context;
     const list = BY_TAG[tag] || TIPS;
     const i = Math.max(0, this._counters[tag] ?? 0) % list.length;
-    return this._resolve(list[i].text);
+    return list[i].text;
   }
 
   forDeath(killer) {
     const key = String(killer || '').toLowerCase().replace(/[^a-z]/g, '');
-    for (const k of Object.keys(DEATH_ADVICE)) if (key.includes(k)) return this._resolve(DEATH_ADVICE[k]);
+    for (const k of Object.keys(DEATH_ADVICE)) if (key.includes(k)) return DEATH_ADVICE[k];
     return this.pick('death');
   }
 
-  /**
-   * Substitute keys the owning lane publishes, so a rebind or a lane-side
-   * change never leaves a lie on screen.
-   */
-  _resolve(text) {
-    const tools = this.ctx.items?.tools;
-    if (tools) {
-      const use = String(tools.useKey || 'KeyF').replace(/^Key/, '');
-      const cyc = (tools.cycleKeys || []).map((c) => c.replace('BracketLeft', '[').replace('BracketRight', ']'));
-      text = text.replace(/\{tool\}/g, use).replace(/\{cycle\}/g, cyc.join(' / '));
-    }
-    return text;
-  }
-
-  audit() { return { enabled: this.enabled, tips: TIPS.length, counters: { ...this._counters } }; }
+  audit() { return { enabled: this.enabled, tips: TIPS.length, cards: TUTORIAL_CARDS.length, counters: { ...this._counters } }; }
 }

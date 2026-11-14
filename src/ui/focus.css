@@ -1,382 +1,317 @@
-/* Focus v2 UI skin — owned by the focus builder.
-   Namespace: calf- (kept independent of hud.css, which is owned elsewhere).
-   Palette + fonts come from :root vars in style.css. */
+/* THE ALIDADE (lane `shell-ui`, bible §9.7, gates A-sighting + V36-sighting-scan; R66 e).
+   A sepia paper vignette at most 20 % at the corners, a crosshair with stadia
+   hairlines, weak points as cobalt-ink rings on a staff-white casing, components as
+   dashed ink outlines with leader lines to named chips, and ONE glass card that carries
+   the bearing and the range in its header (U-02, U-07). Not violet, not teal, not
+   holographic: no glow anywhere, no scanlines, no additive light. Tokens: src/style.css. */
 
-/* ------------------------------- screen tint ------------------------------- */
-/* Persistent while Focus is ON: cool desaturating veil + purple haze/vignette
-   + ultra-faint holographic scanlines. Plain compositing only (no backdrop
-   filters — those cost real frames fullscreen). */
-/* `ui-10` / V36 — the Round-3 tint was a full-screen violet wash (a flat
-   0.16 grey-violet plate PLUS a radial that reached 0.52 at the corners), so
-   Focus drained the world of colour the moment it came on. It is now a true
-   VIGNETTE: clear through the middle two thirds of the frame, ramping to a
-   hard ceiling of 0.20 at the very corners. The scanline layer stays, at
-   grazing strength, because it is what makes the frame read as a lens.
-   `FocusSystem._vignette()` measures these numbers off the computed style, so
-   the gate and the CSS can never disagree. */
+/* ---------------------------- the paper vignette ------------------------------ */
+/* `SightingSystem._vignette()` measures these numbers off the computed style, so the
+   gate and the CSS can never disagree. Clear through the middle; the world keeps its colour.
+   r1 gate judge: the old ellipse was sized in % of the box (78 % of the WIDTH as a radius), so
+   its outer stops lay far off screen and the edges took 2-3 %. It is sized to the corners now:
+   about 10 % at the middle of each side, 17 % in the corners, with the paper's grain inside the
+   margin at <= 3 % (the two together stay under the 20 % ceiling). */
 .calf-tint {
   position: absolute; inset: 0;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.4s ease;
-  background:
-    repeating-linear-gradient(
-      0deg,
-      rgba(143, 123, 232, 0.018) 0px, rgba(143, 123, 232, 0.018) 1px,
-      transparent 1px, transparent 4px),
-    radial-gradient(ellipse 78% 82% at center,
-      rgba(123, 92, 214, 0.000) 0%,
-      rgba(112, 84, 208, 0.030) 58%,
-      rgba(86, 62, 172, 0.105) 82%,
-      rgba(52, 36, 122, 0.190) 100%);
+  transition: opacity 0.26s ease;
+  background: radial-gradient(ellipse farthest-corner at center,
+    rgba(112, 82, 44, 0) 0%,
+    rgba(112, 82, 44, 0) 42%,
+    rgba(108, 78, 40, 0.06) 60%,
+    rgba(100, 72, 36, 0.12) 76%,
+    rgba(90, 64, 32, 0.155) 90%,
+    rgba(84, 58, 28, 0.17) 100%);
+}
+.calf-tint::after {
+  content: ''; position: absolute; inset: 0;
+  background-image: var(--cal-paper-grain);
+  opacity: 0.2;
+  -webkit-mask-image: radial-gradient(ellipse farthest-corner at center, transparent 48%, #000 92%);
+  mask-image: radial-gradient(ellipse farthest-corner at center, transparent 48%, #000 92%);
 }
 .calf-tint.on { opacity: 1; }
 
-/* ------------------------------- DOM layer -------------------------------- */
-/* Sits UNDER #hud (z-index 40) so HUD chrome always draws above Focus glass. */
+/* the alidade replaces the HUD's own crosshair */
+body.cal-sighting .cal-cross { opacity: 0; }
+
+/* ------------------------------- DOM layer ----------------------------------- */
+/* UNDER #hud (z-index 40), so HUD chrome draws above the alidade. */
 #calf-layer {
   position: fixed; inset: 0;
   pointer-events: none;
   z-index: 39;
-  font-family: var(--font-focus, monospace);
+  font-family: var(--cal-font-mono);
   overflow: hidden;
+  --s: var(--ui-z, 1);
 }
 
-/* small focus reticle at screen center while Focus is on */
+/* the ink layer: leaders + rings, viewport px */
+.calf-ink { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.calf-leader, .calf-leader-u { fill: none; }
+.calf-leader { stroke: var(--cal-ink); stroke-width: 1; }
+.calf-leader-u { stroke: rgba(241, 238, 230, 0.86); stroke-width: 3; }
+.calf-ring { fill: none; stroke: var(--cal-c-weak); stroke-width: 2.25; }
+.calf-ring-u { fill: none; stroke: rgba(241, 238, 230, 0.92); stroke-width: 4.5; }   /* the staff-white casing (U-07) */
+/* the reveals the alidade does not name (U-02): a 6 px ink tick on the find */
+.calf-rtick {
+  position: absolute; left: 0; top: 0;
+  width: 8px; height: 8px; margin: -4px 0 0 -4px;
+  background:
+    linear-gradient(var(--cal-staff), var(--cal-staff)) center / 6px 1.5px no-repeat,
+    linear-gradient(var(--cal-staff), var(--cal-staff)) center / 1.5px 6px no-repeat,
+    linear-gradient(var(--cal-under), var(--cal-under)) center / 8px 3.5px no-repeat,
+    linear-gradient(var(--cal-under), var(--cal-under)) center / 3.5px 8px no-repeat;
+  will-change: transform;
+}
+
+/* --------------------------------- the crosshair ------------------------------ */
 .calf-reticle {
   position: absolute; left: 50%; top: 50%;
-  width: 26px; height: 26px;
-  margin: -13px 0 0 -13px;
+  width: calc(560px * var(--s)); height: calc(380px * var(--s));
+  margin: calc(-190px * var(--s)) 0 0 calc(-280px * var(--s));
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transform: scale(1.018);
+  transition: opacity 0.2s ease, transform 0.26s var(--cal-ease-out);
 }
-.calf-reticle.on { opacity: 0.85; }
-.calf-reticle::before {
-  content: '';
-  position: absolute; inset: 8px;
-  border: 1px solid rgba(180, 162, 255, 0.9);
-  transform: rotate(45deg);
-  box-shadow: 0 0 6px rgba(123, 92, 214, 0.8);
-}
-.calf-reticle::after {
-  content: '';
-  position: absolute; left: 50%; top: 50%;
-  width: 2px; height: 2px; margin: -1px 0 0 -1px;
-  background: #cfc4ff;
-  box-shadow: 0 0 5px #8f7be8;
-}
+.calf-reticle.on { opacity: 1; transform: none; }
+.calf-reticle svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+.calf-reticle path { fill: none; }
+.calf-reticle .u { stroke: rgba(20, 22, 26, 0.58); stroke-width: 2.8; }
+.calf-reticle .t { stroke: var(--cal-staff); stroke-width: 1; }
 
-/* ------------------------------- info card -------------------------------- */
+/* ------------------------------------ the card --------------------------------- */
+/* ONE glass card (U-07, 1-TR), pinned to the right of the frame, a vermilion rule down its left. */
 .calf-card {
   position: absolute;
-  width: 268px;
-  padding: 10px 12px 9px;
-  color: var(--cal-text, #efe6d5);
-  background: rgba(9, 12, 20, 0.9);
-  border: 1px solid rgba(156, 140, 255, 0.62);
-  box-shadow:
-    0 0 16px rgba(123, 92, 214, 0.28),
-    inset 0 0 22px rgba(123, 92, 214, 0.10);
-  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+  right: calc(30px * var(--s)); top: calc(150px * var(--s));
+  width: calc(306px * var(--s));
+  max-height: calc(100vh - 220px * var(--s));
+  overflow: hidden;
+  padding: calc(8px * var(--s)) calc(13px * var(--s)) calc(10px * var(--s)) calc(17px * var(--s));
+  --glass-a: 0.80;
   opacity: 0;
-  transform: translateY(6px);
-  transition: opacity 0.22s ease, transform 0.22s ease;
+  transform: translateX(calc(10px * var(--s)));
+  transition: opacity 0.18s var(--cal-ease-out), transform 0.2s var(--cal-ease-out);
 }
-.calf-card.show {
-  opacity: 1;
-  transform: translateY(0);
-  animation: calf-card-in 0.24s ease;
+.calf-card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: calc(3px * var(--s)); background: var(--cal-c-staff);
 }
-@keyframes calf-card-in {
-  0% { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 0, 0 0); }
-  100% { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%); }
+/* the header: the reading under the crosshair (U-02: the floating box is gone) */
+.calf-card-read {
+  display: flex; align-items: baseline; gap: calc(6px * var(--s));
+  margin-bottom: calc(4px * var(--s));
+  padding-bottom: calc(3px * var(--s));
+  border-bottom: 1px solid var(--cal-glass-line);
+  font-family: var(--cal-font-mono);
+  font-size: calc(12px * var(--s));
+  color: var(--cal-glass-text-2);
 }
-.calf-card::before { /* holographic scanlines inside the card */
-  content: '';
-  position: absolute; inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(0deg,
-    rgba(156, 140, 255, 0.05) 0 1px, transparent 1px 3px);
-}
-.calf-card-accent { /* thin purple energy line down the left edge */
-  position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-  background: linear-gradient(#9c8cff, rgba(106, 90, 224, 0.15));
-  box-shadow: 0 0 8px rgba(143, 123, 232, 0.9);
-}
-.calf-card-head {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 8px;
-}
+.calf-card-read span { font-family: var(--cal-font-ui); font-weight: 600; font-size: calc(11px * var(--s)); letter-spacing: var(--cal-track-caps); }
+.calf-card-read b { font-weight: 600; color: var(--cal-glass-text); font-variant-numeric: tabular-nums; margin-right: calc(8px * var(--s)); }
+.calf-card-read b:last-of-type { margin-right: 0; }
+.calf-card-read i { font-style: normal; }
+.calf-card.show { opacity: 1; transform: none; }
 .calf-name {
-  font-size: 16px; font-weight: 600;
-  letter-spacing: 0.14em;
-  color: #efe9ff;
-  text-shadow: 0 0 8px rgba(143, 123, 232, 0.7);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.calf-lv {
-  font-size: 12px; font-weight: 600;
+  font-family: var(--cal-font-display);
+  font-weight: 600;
+  font-size: calc(22px * var(--s));
+  line-height: 1.05;
   letter-spacing: 0.1em;
-  color: #ffd34d; /* reference component-yellow, replaces mustard */
-  text-shadow: 0 0 6px rgba(255, 211, 77, 0.5);
-  flex: none;
 }
 .calf-class {
-  font-size: 9px; letter-spacing: 0.34em;
-  color: rgba(180, 168, 232, 0.75);
-  margin: 1px 0 6px;
+  display: flex; justify-content: space-between; gap: calc(10px * var(--s));
+  margin-top: calc(2px * var(--s));
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: calc(11.5px * var(--s));
+  letter-spacing: 0.07em;
+  color: var(--cal-glass-text-2);
 }
-.calf-div {
-  height: 1px; margin: 0 0 6px;
-  background: linear-gradient(90deg,
-    rgba(156, 140, 255, 0.65), rgba(156, 140, 255, 0.08));
+/* the graduated bar */
+.calf-bar {
+  position: relative;
+  height: calc(6px * var(--s));
+  margin: calc(6px * var(--s)) 0 calc(7px * var(--s));
+  background: rgba(241, 238, 230, 0.12);
+}
+.calf-bar-fill { position: absolute; inset: 0; display: block; transform-origin: 0 50%; background: var(--cal-staff); transition: transform 0.12s ease-out; }
+.calf-bar-ticks {
+  position: absolute; inset: 0; display: block;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--cal-glass) calc(10% - 1px) 10%);
 }
 .calf-row {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 11px; letter-spacing: 0.14em;
-  margin: 3px 0;
-  color: rgba(239, 230, 213, 0.92);
+  display: flex; align-items: center; gap: calc(8px * var(--s));
+  padding: calc(2px * var(--s)) 0;
+  border-bottom: 1px solid var(--cal-glass-line);
+  font-family: var(--cal-font-ui);
+  font-size: calc(12px * var(--s));
+  letter-spacing: 0.06em;
 }
-.calf-row .calf-lbl {
-  color: rgba(180, 168, 232, 0.8);
-  font-size: 10px; letter-spacing: 0.22em;
-  width: 52px; flex: none;
-}
-.calf-glyph {
-  width: 15px; height: 15px; flex: none;
-  filter: drop-shadow(0 0 4px currentColor);
-}
-.calf-glyph svg { width: 100%; height: 100%; display: block; }
-.calf-g-fire   { color: #f0a03c; }
-.calf-g-freeze { color: #59c1c6; }
-.calf-g-shock  { color: #4fa3e3; }
-.calf-g-none   { color: rgba(239, 230, 213, 0.5); font-size: 11px; width: auto; }
-.calf-comp {
-  margin-top: 5px;
-  color: #ffd34d;
-  text-shadow: 0 0 6px rgba(255, 211, 77, 0.4);
+.calf-row b { font-weight: 600; }
+.calf-lbl {
+  font-family: var(--cal-font-ui);
   font-weight: 600;
+  font-size: calc(11px * var(--s));
+  letter-spacing: var(--cal-track-caps);
+  color: var(--cal-glass-text-2);
+  width: calc(72px * var(--s));
+  white-space: nowrap;
+  flex: none;
 }
-.calf-comp .calf-comp-n { font-size: 13px; margin-right: 5px; }
-
-/* ------------------------------- tag markers ------------------------------- */
-.calf-tag {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  will-change: left, top;
+.calf-lamp { display: inline-flex; align-items: center; gap: calc(9px * var(--s)); }
+.calf-lamp .cal-iris {
+  width: calc(12px * var(--s)); height: calc(12px * var(--s));
+  margin-left: calc(3px * var(--s));
+  border: calc(1.5px * var(--s)) solid var(--lamp);
+  box-shadow: none;
 }
-.calf-diamond {
-  width: 13px; height: 13px;
-  margin: 0 auto;
-  border: 2px solid #ffd34d;
-  background: rgba(255, 211, 77, 0.2);
-  transform: rotate(45deg);
-  box-shadow: 0 0 9px rgba(255, 211, 77, 0.8), inset 0 0 4px rgba(255, 223, 107, 0.55);
-  animation: calf-diamond-pulse 1.6s ease-in-out infinite;
-}
-@keyframes calf-diamond-pulse {
-  0%, 100% { transform: rotate(45deg) scale(1); }
-  50%      { transform: rotate(45deg) scale(0.82); }
-}
-.calf-dist {
-  margin-top: 7px;
-  font-size: 11px; font-weight: 600;
-  letter-spacing: 0.1em;
-  color: #ffd34d;
-  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 10px rgba(255, 211, 77, 0.4);
-}
-.calf-tag.clamped .calf-diamond {
-  border-style: dashed;
-  background: rgba(242, 194, 48, 0.1);
-}
-.calf-tag.clamped .calf-dist { opacity: 0.85; }
-
-/* ========================================================================== */
-/* ui-10 — COMPONENT LIST inside the scan card                                */
-/* ========================================================================== */
-
 .calf-comp-head {
   display: flex; align-items: baseline; justify-content: space-between;
-  margin: 0 0 4px;
+  margin-top: calc(8px * var(--s));
+  padding-bottom: calc(2px * var(--s));
+  border-bottom: 1px solid var(--cal-glass-line);
 }
-.calf-comp-head .calf-lbl {
-  color: rgba(180, 168, 232, 0.8);
-  font-size: 10px; letter-spacing: 0.22em;
-}
-.calf-comp-n {
-  font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
-  color: #ffd34d;
-  text-shadow: 0 0 6px rgba(255, 211, 77, 0.45);
-}
-.calf-comp-list {
-  display: flex; flex-direction: column; gap: 3px;
-  max-height: 46vh; overflow: hidden;
-}
+.calf-comp-head .calf-lbl { width: auto; }
+.calf-comp-n { font-family: var(--cal-font-mono); font-weight: 500; font-size: calc(12px * var(--s)); }
+.calf-comp-list { display: flex; flex-direction: column; max-height: 46vh; overflow: hidden; }
 .calf-comp-row {
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-areas: 'name tags' 'loot loot';
-  gap: 1px 6px;
-  padding: 3px 5px 3px 6px;
-  border-left: 2px solid rgba(255, 211, 77, 0.75);
-  background: linear-gradient(90deg,
-    rgba(255, 211, 77, 0.10), rgba(255, 211, 77, 0.015) 70%, transparent);
+  gap: 0 calc(6px * var(--s));
+  padding: calc(3px * var(--s)) 0 calc(2px * var(--s));
+  border-bottom: 1px solid rgba(241, 238, 230, 0.08);
 }
-.calf-comp-row.torn {
-  border-left-color: rgba(150, 142, 128, 0.55);
-  background: none;
-  opacity: 0.45;
-}
-.calf-comp-name em {
-  font-style: normal;
-  margin-left: 5px;
-  font-size: 9.5px;
-  color: rgba(255, 231, 168, 0.7);
-}
+.calf-comp-row.torn { opacity: 0.45; }
 .calf-comp-name {
   grid-area: name;
-  font-size: 11px; font-weight: 600; letter-spacing: 0.10em;
-  color: #ffd870;
-  text-shadow: 0 0 6px rgba(255, 211, 77, 0.4);
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: calc(12px * var(--s));
+  letter-spacing: 0.06em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.calf-comp-row.torn .calf-comp-name {
-  color: rgba(214, 206, 190, 0.8); text-decoration: line-through;
-}
-.calf-comp-tags { grid-area: tags; display: flex; gap: 3px; flex: none; }
+.calf-comp-name em { font-family: var(--cal-font-mono); font-style: normal; font-weight: 400; margin-left: calc(5px * var(--s)); }
+.calf-comp-row.torn .calf-comp-name { text-decoration: line-through; }
+.calf-comp-tags { grid-area: tags; display: flex; gap: calc(3px * var(--s)); flex: none; }
 .calf-comp-tags i {
+  font-family: var(--cal-font-ui);
   font-style: normal;
-  font-size: 8px; font-weight: 700; letter-spacing: 0.14em;
-  padding: 1px 4px;
-  border: 1px solid currentColor;
-  line-height: 1.25;
+  font-weight: 600;
+  font-size: calc(11px * var(--s));
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+  padding: 0 calc(4px * var(--s));
+  color: var(--cal-glass);
+  background: var(--cal-staff);
 }
-.calf-tag-weak { color: #ff9a5e; }
-.calf-tag-tear { color: #9c8cff; }
-.calf-tag-el.calf-g-fire { color: #f0a03c; }
-.calf-tag-el.calf-g-freeze { color: #59c1c6; }
-.calf-comp-loot {
-  grid-area: loot;
-  display: flex; flex-wrap: wrap; gap: 3px;
-  margin-top: 1px;
-}
+/* WEAK (U-01): a staff-white chip with cobalt text */
+.calf-tag-weak { color: var(--cal-weak-ink) !important; background: var(--cal-weak-chip) !important; }
+.calf-tag-pry { background: var(--cal-c-pry) !important; }
+.calf-comp-loot { grid-area: loot; display: flex; flex-wrap: wrap; gap: 0 calc(8px * var(--s)); margin-top: calc(1px * var(--s)); }
 .calf-loot-chip {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 8.5px; letter-spacing: 0.10em;
-  color: rgba(239, 230, 213, 0.86);
-  padding: 0 3px 0 2px;
-  border-left: 2px solid var(--chip, #efe6d5);
-  background: rgba(239, 230, 213, 0.05);
+  display: inline-flex; align-items: center; gap: calc(3px * var(--s));
+  font-family: var(--cal-font-mono);
+  font-size: calc(11px * var(--s));
+  color: var(--cal-glass-text-2);
 }
-.calf-loot-chip i { font-style: normal; color: var(--chip, #efe6d5); }
+.calf-loot-chip i { display: block; width: calc(12px * var(--s)); height: calc(12px * var(--s)); }
+.calf-loot-chip i svg { display: block; width: 100%; height: 100%; }
 
-/* ========================================================================== */
-/* ui-10 — in-world component labels (yellow, named)                          */
-/* ========================================================================== */
+/* --------------------------------- Flagged marks ------------------------------- */
+.calf-tag {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  text-align: center;
+  will-change: left, top;
+}
+.calf-pennant {
+  width: calc(18px * var(--s)); height: calc(20px * var(--s));
+  margin: 0 auto;
+  background:
+    linear-gradient(var(--cal-staff), var(--cal-staff)) 0 0 / max(1.5px, calc(1.5px * var(--s))) 100% no-repeat;
+  position: relative;
+}
+.calf-pennant::after {
+  content: ''; position: absolute; left: max(1.5px, calc(1.5px * var(--s))); top: 0;
+  width: calc(15px * var(--s)); height: calc(11px * var(--s));
+  background: var(--cal-c-staff);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.calf-dist {
+  margin-top: calc(1px * var(--s));
+  font-family: var(--cal-font-mono);
+  font-weight: 500;
+  font-size: calc(12px * var(--s));
+  color: var(--cal-staff);
+  text-shadow: 0 1px 0 rgba(20, 22, 26, 0.9), 0 0 2px rgba(20, 22, 26, 0.7);
+}
+.calf-tag.clamped .calf-pennant { opacity: 0.72; }
 
+/* -------------------------------- component chips ------------------------------ */
+/* Hung off a leader, named in Chakra caps, what it drops in Plex. */
 .calf-plabel {
   position: absolute;
-  display: flex; align-items: center; gap: 5px;
-  transform: translate(10px, -50%);
-  padding: 1px 6px 1px 3px;
-  font-size: 10px; letter-spacing: 0.14em; line-height: 1.5;
-  color: #ffd870;
+  display: flex; align-items: baseline; gap: 6px;
+  transform: translate(34px, -50%);
+  padding: 1px 6px 0;
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: 11px; letter-spacing: 0.06em; line-height: 1.5;
+  color: var(--cal-ink);
   white-space: nowrap;
-  background: linear-gradient(90deg,
-    rgba(20, 16, 8, 0.72), rgba(20, 16, 8, 0.22));
-  border-left: 2px solid rgba(255, 211, 77, 0.9);
-  text-shadow: 0 0 5px rgba(0, 0, 0, 0.95);
-  opacity: 0.82;
+  color: var(--cal-glass-text);
+  background-color: var(--cal-glass-hud);
+  box-shadow: inset 0 0 0 1px var(--cal-glass-line);
   will-change: left, top;
-}
-.calf-plabel .calf-pdot {
-  width: 5px; height: 5px; flex: none;
-  background: #ffd34d;
-  transform: rotate(45deg);
-  box-shadow: 0 0 7px rgba(255, 211, 77, 0.95);
 }
 .calf-plabel .calf-ploot {
-  font-size: 8.5px; letter-spacing: 0.1em;
-  color: rgba(255, 231, 168, 0.72);
+  font-family: var(--cal-font-mono);
+  font-weight: 400;
+  font-size: 11px; letter-spacing: 0;
+  color: var(--cal-glass-text-2);
 }
 .calf-plabel .calf-ploot:not(:empty)::before { content: '· '; }
-.calf-plabel.is-weak { border-left-color: #ff9a5e; }
-/* Flipped: the label hangs to the LEFT of its anchor with the bracket on the
-   right. `order` (not row-reverse) so the text still reads name-then-loot
-   left to right — reversing the flex axis put the loot in front of the part
-   name, which is the wrong way round for something you scan at a glance. */
-.calf-plabel.flip {
-  transform: translate(calc(-100% - 10px), -50%);
-  border-left: none;
-  border-right: 2px solid rgba(255, 211, 77, 0.9);
-  background: linear-gradient(270deg,
-    rgba(20, 16, 8, 0.72), rgba(20, 16, 8, 0.22));
-  padding: 1px 3px 1px 6px;
-}
-.calf-plabel.flip .calf-pname { order: 1; }
-.calf-plabel.flip .calf-ploot { order: 2; }
-.calf-plabel.flip .calf-pdot  { order: 3; }
-.calf-plabel.flip.is-weak { border-right-color: #ff9a5e; }
-.calf-plabel.flip.hovered { border-right-width: 3px; }
-.calf-plabel.hovered {
-  opacity: 1;
-  font-size: 11px;
-  border-left-width: 3px;
-  background: linear-gradient(90deg,
-    rgba(46, 34, 8, 0.9), rgba(30, 22, 6, 0.35));
-  box-shadow: 0 0 14px rgba(255, 211, 77, 0.28);
-}
-.calf-plabel.hovered .calf-pdot {
-  box-shadow: 0 0 12px rgba(255, 211, 77, 1);
-  animation: calf-diamond-pulse 1.2s ease-in-out infinite;
-}
+/* the weak point's tag: a staff-white chip with cobalt text (U-01, 1-TR's LAMP tag) */
+.calf-plabel.is-weak { color: var(--cal-weak-ink); background-color: var(--cal-weak-chip); box-shadow: 0 1px 0 rgba(20, 22, 26, 0.55); }
+.calf-plabel.is-weak .calf-ploot { color: rgba(44, 79, 138, 0.8); }
+/* flipped: the chip hangs to the LEFT of its anchor; the text still reads name, then loot */
+.calf-plabel.flip { transform: translate(calc(-100% - 34px), -50%); }
+.calf-plabel.hovered { box-shadow: inset 0 0 0 1px var(--cal-select-line); }
 
-/* ========================================================================== */
-/* A63 — LOOT / DATAPOINT / GATHER reveals, projected onto the thing itself   */
-/* ========================================================================== */
-
+/* ------------------------- LOOT / FIELD BOOK / GATHER chips --------------------- */
 .calf-reveal {
   position: absolute;
-  display: flex; align-items: center; gap: 5px;
+  display: flex; align-items: baseline; gap: 5px;
   transform: translate(-50%, -100%);
-  padding: 2px 7px 2px 4px;
-  font-size: 9.5px; letter-spacing: 0.2em; line-height: 1.5;
+  padding: 1px 6px 0;
+  font-family: var(--cal-font-ui);
+  font-weight: 600;
+  font-size: 11px; letter-spacing: 0.08em; line-height: 1.45;
   white-space: nowrap;
-  color: var(--rar, #b8b0a0);
-  background: rgba(6, 12, 14, 0.66);
-  border: 1px solid color-mix(in srgb, var(--rar, #b8b0a0) 62%, transparent);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--rar, #b8b0a0) 26%, transparent);
-  text-shadow: 0 0 6px rgba(0, 0, 0, 0.95);
+  color: var(--cal-glass-text);
+  background-color: var(--cal-glass-hud);
+  box-shadow: inset 0 0 0 1px var(--cal-glass-line), inset 3px 0 0 var(--rar, var(--cal-staff-55));
   will-change: left, top;
-  animation: calf-reveal-in 0.28s ease both;
+  animation: calf-reveal-in 0.2s var(--cal-ease-out) both;
 }
 @keyframes calf-reveal-in {
-  0% { opacity: 0; transform: translate(-50%, -100%) scale(0.86); }
-  100% { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+  0% { opacity: 0; transform: translate(-50%, calc(-100% + 5px)); }
+  100% { opacity: 1; transform: translate(-50%, -100%); }
 }
-.calf-reveal .calf-rmark {
-  width: 6px; height: 6px; flex: none;
-  background: var(--rar, #b8b0a0);
-  transform: rotate(45deg);
-  box-shadow: 0 0 8px var(--rar, #b8b0a0);
-}
+.calf-reveal .calf-rmark { display: none; }
 .calf-reveal .calf-rkind { font-weight: 700; }
 .calf-reveal .calf-rname {
-  font-size: 8.5px; letter-spacing: 0.12em;
-  color: rgba(239, 230, 213, 0.7);
+  font-family: var(--cal-font-mono);
+  font-weight: 400;
+  font-size: 11px; letter-spacing: 0;
+  color: var(--cal-glass-text-2);
   max-width: 190px; overflow: hidden; text-overflow: ellipsis;
 }
 .calf-reveal .calf-rname:not(:empty)::before { content: '· '; }
-.calf-reveal.k-datapoint {
-  color: #7fe8ff;
-  border-color: rgba(127, 232, 255, 0.6);
-  box-shadow: 0 0 14px rgba(127, 232, 255, 0.3);
-}
-.calf-reveal.k-datapoint .calf-rmark { background: #7fe8ff; box-shadow: 0 0 9px #7fe8ff; }
-.calf-reveal.k-gather {
-  color: #7fe0a8;
-  border-color: rgba(127, 224, 168, 0.5);
-}
-.calf-reveal.k-gather .calf-rmark { background: #7fe0a8; box-shadow: 0 0 8px #7fe0a8; }
-.calf-reveal.k-pick-up { color: #f2c230; }
+.calf-reveal.k-field-book { --rar: var(--cal-select-line); }
+.calf-reveal.k-gather { --rar: var(--cal-moss); }

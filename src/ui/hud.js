@@ -1,291 +1,246 @@
 import * as THREE from 'three';
 import './hud.css';
-import { LOOT_POPUP } from './inventory.js';
+import { LOOT_POPUP, itemIcon, itemPlayerName } from './inventory.js';
+import { TUTORIAL_CARDS, fieldWord, cardLine, cardParts } from './tips.js';
+import { COMPASS_PIP } from '../instruments/lamps.js';
+import { ITEMS } from '../items/items.js';
+
+/** The one currency (U-19): the catalogue's own `currency` tag, so no item id is spelled here. */
+const CURRENCY_ID = Object.keys(ITEMS).find((id) => ITEMS[id]?.tags?.includes('currency')) ?? null;
 
 /**
  * ===========================================================================
- * SHELL-HUD — the presentation layer (Round 4, lane `shell-hud`, port 5214)
+ * THE FIELD-BOOK HUD — lane `shell-ui` (Round 5, W1; bible §9.7, plan R55, R57)
  * ===========================================================================
- * Owns `src/ui/hud.js`, `src/ui/hud.css`, `index.html`. Reads other lanes'
- * published surfaces and NEVER writes to them:
+ * The play surface reads as engraved surveying instruments: a levelling staff
+ * for health, a theodolite circle for the compass, a spirit-level vial for
+ * exposure, a hairline breath meter for Steady, paper chips for everything that
+ * has to be read as words. Right angles, hairlines, graduated ticks; Chakra
+ * Petch for labels, IBM Plex Mono for every numeral and every running line.
+ * Nothing hexagonal, nothing rounded, no smoked glass.
  *
- *   ctx.progression   level/xp/skillPoints, quests.*, getMarkers(), events
- *                     `banner` / `xp-gained` / `level-up` / `quest-*`
- *   ctx.items.tools   slots[], index, cooldown, useKey, cycleKeys  (ui-11)
+ * Reads other lanes' published surfaces and never writes to them:
+ *   ctx.progression   tracked quest, getMarkers(), events `banner` / `quest-*`
+ *   ctx.items.tools   slots[], index, cooldown, useKey, cycleKeys
  *   ctx.combat        activeWeapon, activeAmmo, ammo, drawStrength,
- *                     nockProgress, weaponDrawn, steady, craft
- *   ctx.machines      list[], m.state/suspicion/detectFill/elemental
- *   ctx.sighting      tags (Set<Machine>), scanTarget
- *   ctx.player        health/maxHealth, gourd/maxGourd, crouching, inTallGrass
+ *                     nockProgress, steady { active, gauge }, craft
+ *   ctx.machines      list[], m.state / suspicion / lampState / elemental,
+ *                     m.parts; event `flagged` / `flag-ended` (perception)
+ *   ctx.sighting      tags (Map<Machine, el>), scanTarget
+ *   ctx.player        health / maxHealth, gourd / maxGourd, crouching, inTallGrass
  *
- * Round 4 findings closed here (docs/ROUND4-AUDIT.md §2):
- *   ui-04 compass truth      · ui-05 quest tracker + banners
- *   ui-06 projected machine bars (cap 3) · ui-07 red 4-segment health + pouch
- *   ui-08 weapon silhouettes + dots + bracket reticle
- *   ui-11 tools strip        · ui-12 stealth eye     · ui-15 --hud-scale
- *   ui-16 projected prompt   · ui-17 tutorial cards  · ui-19 Conc veil, no kill feed
- *   progression-012 +XP pops · camera-feel-13 (HUD side: hudScale setting)
- *   stealth-awareness-indicator-fidelity · onboarding-loop-objective-guidance
- *   /-stealth-feedback /-crafting-feedback /-healing-readability
- *   combat-concentration-presentation · combat-hit-feedback-faint (numbers)
- *
- * TWO INVARIANTS THIS FILE HAS ALREADY BROKEN ONCE — do not re-break them:
- *   1. `interactables.current` is `{ entry, label, holdProgress }`. The world
- *      position is on `.entry`, NOT on the record. Reading the record made
- *      ui-16's projection branch dead code and parked the prompt on the
- *      screen-fixed fallback it exists to delete. Gate `A71f-interact-anchor`.
- *   2. The vitals' 4 s hide and the quest tracker's 26 s hide are independent
- *      timers and must never share an opacity. The tracker is a SIBLING of
- *      `.cal-vitals` inside `.cal-topleft`; fading `.cal-topleft` zeroes the
- *      tracker in every calm state, boot included. Gate `A71g-tracker-live`.
- *   3. The world-projected layer (`.cal-world`) is scaled ONCE, by the JS
- *      transform. Its stylesheet resets `--s` to 1 so its rules are a base
- *      size; a `calc(Npx * var(--s))` in there is scaled twice (s²) and paints
- *      a 224 px plate at 809 px and 11 px type at 7.7 px. Its multiplier is
- *      `_wscale` (= `_scale` floored at 1), not `_scale`, because that base
- *      type IS the 11 px floor. Gates `A71b-hud-scale-floor` / `A71c`.
+ * Invariants this file has broken before; each has a gate:
+ *   1. `interactables.current` is `{ entry, label, holdProgress }`: the world
+ *      position is on `.entry` (`A71f-interact-anchor`).
+ *   2. The vitals' 4 s hide and the tracker's 26 s hide are independent timers
+ *      and never share an opacity: the tracker is a SIBLING of `.cal-vitals`
+ *      (`A71g-tracker-live`).
+ *   3. The world-projected layer is scaled ONCE, by the JS transform; its sheet
+ *      resets `--s` to 1. Its multiplier is `_wscale` (`_scale` floored at 1)
+ *      because its base type IS the 11 px floor (`A71b-hud-scale-floor`).
  *   4. A world-projected element is anchored by its own transform and nothing
- *      else. `.cal-mhb` carried a -112 px margin AND a translate(-50%): two
- *      centrings, so the plate painted half its width left of its machine at
- *      every scale, and the melee clamp pushed it into the quest tracker it
- *      was written to clear. Gates `A71c-hud-surfaces` (centre vs. re-projected
- *      anchor, two scales) and `A71h-mhb-melee-clear`.
- *   `__HUD_DEBUG__.surfaces()` grades EFFECTIVE opacity (the product up the
- *   ancestor chain) and EFFECTIVE type size (px times the transform chain),
- *   which is what makes (2), (3) and (4) observable at all.
+ *      else (`A71c-hud-surfaces`, `A71h-mhb-melee-clear`).
  *
- * What this lane PUBLISHES back, so no other lane has to edit this file:
- *   ctx.hud.setHudScale(mult)   `shell-menus` binds its accessibility slider
- *                               to this (camera-feel-13); 0.7–2, clamped.
- *   ctx.hud.showTip(id | card)  raise a one-shot tutorial card — an id from
- *                               TIPS below, or {id,title,body,keys} for a
- *                               mechanic this file cannot observe. Returns
- *                               false if that id was already shown.
- *   event `tutorial-tip`        the same call for lanes without a ctx handle:
- *                               emit({ id, title, body, keys }).
- *   ctx.hud.setPaused(on)       pause state when `shell-menus` is absent.
+ * MEMORY. Per-frame paths allocate nothing: the compass is ONE transform on one
+ * prebuilt strip (the Round-4 ribbon wrote ~70 strings a frame); readouts come
+ * from preallocated tables (`BEARING_STR`, `SCALE_X`, `CLIP_R`); slow panels
+ * sample at 10 Hz with numeric dirty checks. Every listener is on ctx.events,
+ * which outlives this object; DOM goes with #hud.
  *
- * Gates: `A71-compass-truth`, `A71b-hud-scale-floor`, `A71c-hud-surfaces`,
- * `A71d-conc-veil`, `A71e-tutorial-cards`, `A71f-interact-anchor`,
- * `A71g-tracker-live`, `A71h-mhb-melee-clear`, `V37-hud-language`
- * (tools/gates.round4.shell-hud.mjs) plus the Round-3 `A1` / `A9` / `A10` /
- * `V10-hud-language` which must keep passing.
+ * PUBLISHED:
+ *   ctx.hud.setHudScale(mult)   0.7-2, clamped (settings binds its slider to it)
+ *   ctx.hud.showTip(id | card)  a one-shot card: an id of TUTORIAL_CARDS, or
+ *                               { id, title, body, keys }. false if already shown.
+ *   event `tutorial-tip`        the same, for lanes without a ctx handle
+ *   ctx.hud.setWaypoint(wp|null)  { x, z, label }; rides the theodolite circle
+ *   ctx.hud.setPaused(on)       routes to the hub
  *
- * Debug probe: `window.__HUD_DEBUG__` (lootSurfaces / compass / surfaces /
- * scale / tips). Gates read it; nothing in the game does.
+ * Debug probe `window.__HUD_DEBUG__`: lootSurfaces / compass / surfaces / scale /
+ * tips / cards. Gates read it; nothing in the game does.
  */
 
 const RAD2DEG = 180 / Math.PI;
 
-/** Legacy kill chain — only the victory trigger survives (progression owns quests). */
-const QUEST = [
-  { kind: 'watcher', need: 4, title: 'THIN THE HERD', detail: 'Destroy the Watchers prowling the meadow' },
-  { kind: 'sawtooth', need: 2, title: 'FANGS OF THE VALLEY', detail: 'Bring down both Sawtooths' },
-  { kind: 'behemoth', need: 1, title: 'THE BULL', detail: 'Topple the Behemoth in the hills' },
-  { kind: 'thunderjaw', need: 1, title: 'SHADOW OF THE APEX', detail: 'Slay the Thunderjaw' },
-];
-
-const LEVELS = { watcher: 5, sawtooth: 15, behemoth: 25, thunderjaw: 27 };
-
-// canon status durations (research: triggered buildup becomes a countdown ring)
+// status durations: a triggered build-up becomes a countdown on its gauge
 const ELEM_TRIG = { fire: 8, shock: 3, freeze: 8 };
-const DEATH_OVERLAY_DELAY = 1400; // ms — let the crumple play before the card
-const COMBAT_IDLE_S = 4;          // dynamic HUD: weapon widget hides after this
-const VITALS_IDLE_S = 4;          // dynamic HUD: full health bar hides after this
-const TRACK_IDLE_S = 26;          // dynamic HUD: quest tracker recedes after this
+const ELEM_LABEL = { fire: 'C', shock: 'D', freeze: 'B' };   // Cinder, Dust, Brine (bible §5.8)
+const COMBAT_IDLE_S = 4;          // dynamic HUD: kit tag hides after this
+const VITALS_IDLE_S = 4;          // dynamic HUD: full health staff hides after this
+const TRACK_IDLE_S = 26;          // dynamic HUD: the field note recedes after this
+const VIAL_IDLE_S = 4;            // U-02: the exposure vial hides after this long UNSEEN
 const GHOST_HOLD_S = 0.45;        // damage-delta ghost lingers before draining
 const GHOST_DRAIN = 55;           // ghost drain rate, % of bar per second
-// toast suppression window after the take-all popup claimed a loot event (ms)
-const LOOT_CLAIM_MS = 400;
-/** ui-16: metres above an interactable's own origin that the [E] ring rides.
- *  Shared by the renderer and the audit so the two can never drift apart. */
-const PROMPT_H = 1.1;
+const LOOT_CLAIM_MS = 400;        // toast suppression after the take-all popup claimed a loot event
+const PROMPT_H = 1.1;             // metres above an interactable the [E] prompt rides
 
-/** ui-06: never more than three projected machine bars on screen at once. */
+/** Never more than three projected Instrument plates on screen at once. */
 const MHB_CAP = 3;
-const MHB_HOLD_S = 5;             // seconds a bar survives after its last hit
-const MHB_RANGE = 120;            // metres past which a bar is not worth drawing
+const MHB_HOLD_S = 5;             // seconds a plate survives after its last hit
+const MHB_RANGE = 120;            // metres past which a plate is not worth drawing
+const MHB_W = 280;                // the plate's base width (CSS); `TILLER · SOIL CORE · TRANSECT 14` on one line
+const MHB_W_COMPACT = 150;        // U-02: the others' plates, name and bar only
 /**
- * ui-06, the melee case. A Sawtooth that closes to 3 m projects its head-anchor
- * far ABOVE the top of the screen, and the plate either vanished or rode up
- * into the compass ribbon — where a plate pinned to the top edge reads as
- * exactly the boss bar this finding deleted. Filmed twice at
- * shots/gates/V37-hud-language.png. The plate is clamped below the ribbon
- * instead, still tracking the machine horizontally, never on the edge.
- *
- * THE CLAMP IS IN PAINTED PIXELS, and the two things it has to clear scale by
- * DIFFERENT multipliers: the top-left HUD furniture scales with `_scale`, the
- * plate itself with `_wscale`. So the pads are split into a base (measured on
- * the furniture at --hud-scale 1) plus the plate's own painted height, instead
- * of one pre-added number that was only true at scale 1:
- *   MHB_TOP_BASE 80  = compass bottom (74) + gap        -> + plate height
- *   MHB_EYE_BASE 147 = stealth-eye bottom (141) + gap   -> + plate height
- * At scale 1 those resolve to the same 121 / 188 px they always did.
+ * The melee clamp is in PAINTED pixels, and the two things it has to clear scale
+ * by different multipliers: the HUD furniture with `_scale`, the plate with
+ * `_wscale`. Bases are measured at --hud-scale 1:
+ *   MHB_TOP_BASE 96   the circle's numerals + gap
+ *   MHB_EYE_BASE 142  the exposure vial's bottom + gap
+ *   MHB_SAFE_L 412    the top-left column's right edge + gap
  */
-const MHB_TOP_BASE = 80;
-const MHB_EYE_BASE = 147;
-/** fallback painted plate height; the real one is measured per slot. */
+const MHB_TOP_BASE = 96;
+const MHB_EYE_BASE = 142;
 const MHB_PLATE_H = 41;
-/**
- * …and once it is clamped it must not print over the vitals + quest tracker,
- * which own the first ~330 px of the top-left (measured tracker rect: x 28..330
- * at scale 1). This is the COLUMN'S RIGHT EDGE plus a gap — the plate's own
- * half-width is added to it, because a plate is centred on its x, not hung off
- * it. Treating this number as the centre parked the box at [132, 356] — i.e.
- * straight through the tracker it was supposed to clear.
- */
-const MHB_SAFE_L = 344;
-/**
- * The stealth eye lives directly under the compass (measured: y 84..141,
- * x centre +/-29, plus its label). A clamped plate whose 224 px body overlaps
- * that column drops below the eye instead of printing across it.
- */
-const MHB_EYE_HALF = 48;
-const MHB_HALF_W = 112;
+const MHB_SAFE_L = 412;
+const MHB_COL_B = 178;            // the column's foot with the field note up
+const MHB_GAP = 4;                // what the plate resolver leaves between two plates
+const MHB_EYE_HALF = 70;
 
-/** stealth-awareness-indicator-fidelity: show from a whisper of suspicion. */
 const AWARE_MIN_SUSPICION = 0.04;
 const AWARE_EDGE_MARGIN = 44;
 
 /**
- * ui-15 — HUD scale. `--hud-scale` is a unitless multiplier applied to every
- * size in hud.css; the 11 px floor is enforced *in CSS* with `max(11px, …)` so
- * a small viewport (or a user who dialled the slider down) can never produce
- * unreadable type. The clamp lives here because CSS cannot divide a length by
- * a length, so a pure-CSS `clamp()` on a viewport RATIO is not expressible.
+ * HUD scale. `--hud-scale` is a unitless multiplier applied to every size in
+ * hud.css; the 11 px floor is enforced IN CSS with `max(11px, ...)`. The clamp is
+ * here because CSS cannot divide a length by a length.
  */
 const HUD_SCALE_MIN = 0.85;
-const HUD_SCALE_MAX = 1.9;
-/**
- * ui-15, the world layer. `.cal-world` resets `--s` to 1, so its type is laid
- * out at its BASE size — and the smallest base size in there is exactly 11 px,
- * the floor itself (`.cal-int-label`, `.cal-objmark-dist/-label`). A transform
- * scale below 1 would therefore paint world-projected type UNDER the floor no
- * matter what the stylesheet promises. The HUD slider may grow these markers;
- * it may not shrink them past legibility. Gate: `A71b-hud-scale-floor`.
- */
+const HUD_SCALE_MAX = 2.4;
+/** The world layer's base type IS the floor, so its transform may not go under 1. */
 const WORLD_SCALE_MIN = 1;
 const HUD_REF_W = 1600;
 const HUD_REF_H = 900;
 
 const TIP_STORE = 'cal.hud.tips.v5';
 
+/* ------------------------------ theodolite circle ------------------------- */
+
+const STRIP_FROM = -100;          // the strip runs -100° .. 460°, so any bearing +- the window stays on it
+const STRIP_TO = 460;
+const PX_PER_DEG = 3.6;
+const STRIP_W = 640;              // base width of the visible window
+const COMPASS_HALF_DEG = 80;      // pips are drawn inside this (the window's ends fade)
+const COMPASS_SPRING_K = 150;     // the limb's inertia: under-damped, a little overshoot
+const COMPASS_SPRING_C = 19;
+const PIP_LABEL_PX = 36;          // two marks closer than this share one distance reading
+
+/** 000 .. 359, preallocated: the readout never builds a string. */
+const BEARING_STR = Array.from({ length: 360 }, (_, i) => String(i).padStart(3, '0'));
+/**
+ * translate3d(x,0,0) strings by half-pixel, built once each. The strip and the pips move
+ * every frame the camera turns; this keeps that path free of string churn. Bounded by the
+ * strip's width in half-pixels, and cleared when the HUD scale changes.
+ */
+const TX_MEMO = new Map();
+/**
+ * A projected element moves by two transforms: X on a zero-size wrapper (`txString`), Y on the
+ * element itself, by whole pixel, built once per y and cleared with TX_MEMO when the scale changes.
+ * So a plate, a mark or a damage number in flight writes strings it already has. Whole pixels
+ * also keep their type crisp.
+ */
+const PLATE_Y = new Map(), CENTRE_Y = new Map(), AWARE_Y = new Map(), DMG_Y = new Map();
+function plateY(y, ws) {
+  let v = PLATE_Y.get(y);
+  if (v === undefined) { v = `translateY(${y}px) scale(${ws.toFixed(3)}) translate(-50%, -100%)`; PLATE_Y.set(y, v); }
+  return v;
+}
+function centreY(y, ws) {
+  let v = CENTRE_Y.get(y);
+  if (v === undefined) { v = `translateY(${y}px) translate(-50%,-50%) scale(${ws.toFixed(3)})`; CENTRE_Y.set(y, v); }
+  return v;
+}
+function awareY(y, sc) {
+  let v = AWARE_Y.get(y);
+  if (v === undefined) { v = `translateY(${y}px) scale(${sc.toFixed(2)})`; AWARE_Y.set(y, v); }
+  return v;
+}
+/**
+ * A damage number's Y and its pop-in, in ONE transform: the pop scales about the number's own
+ * bottom centre (`transform-origin: 50% 100%` in hud.css), never about the layer's corner, so a
+ * number that is still popping already stands where `_dmgClear` put it.
+ */
+function dmgY(y, si) {
+  const key = y * 16 + si;
+  let v = DMG_Y.get(key);
+  if (v === undefined) { v = `translateY(${y}px) translate(-50%,-100%) scale(${POP_STR[si]})`; DMG_Y.set(key, v); }
+  return v;
+}
+/** Math.hypot takes rest arguments and allocates for them; this runs per Instrument per frame. */
+const len2 = (a, b) => Math.sqrt(a * a + b * b);
+/** Number strings for the two per-element style values a damage number animates. */
+const OPACITY_STR = Array.from({ length: 21 }, (_, i) => (i / 20).toFixed(2));
+const POP_STR = Array.from({ length: 11 }, (_, i) => (0.82 + 0.018 * i).toFixed(3));
+const ELEM_KEYS = ['fire', 'freeze', 'shock'];
+function txString(x) {
+  const k = Math.round(x * 2);
+  let v = TX_MEMO.get(k);
+  if (v === undefined) { v = `translate3d(${k / 2}px,0,0)`; TX_MEMO.set(k, v); }
+  return v;
+}
+
+/** Transform and clip strings for 0..100 %, preallocated (the fills never build one). */
+const SCALE_X = Array.from({ length: 101 }, (_, i) => `scaleX(${(i / 100).toFixed(2)})`);
+const SCALE_Y = Array.from({ length: 101 }, (_, i) => `scaleY(${(i / 100).toFixed(2)})`);
+const CLIP_R = Array.from({ length: 101 }, (_, i) => `inset(0 ${100 - i}% 0 0)`);
+
+/**
+ * The strip: one SVG, built once, translated by one transform. A baseline with the
+ * ticks hanging from it, every 5°; numerals every 30°; the four cardinal letters
+ * under their numerals.
+ */
+function buildStrip() {
+  const W = (STRIP_TO - STRIP_FROM) * PX_PER_DEG;
+  const base = 14;                 // the limb's y in the strip: the cardinals ride above it, the marks' band stays clear under the numerals
+  let t5 = '', t10 = '', t30 = '', nums = '', cards = '';
+  for (let a = STRIP_FROM; a <= STRIP_TO; a += 5) {
+    const x = ((a - STRIP_FROM) * PX_PER_DEG).toFixed(1);
+    const norm = ((a % 360) + 360) % 360;
+    if (norm % 30 === 0) {
+      t30 += `M${x} ${base}V${base + 14}`;
+      const cls = norm === 0 ? 'n north' : 'n';
+      nums += `<text class="${cls}" x="${x}" y="${base + 28}">${BEARING_STR[norm]}</text>`;
+      const c = norm === 0 ? 'N' : norm === 90 ? 'E' : norm === 180 ? 'S' : norm === 270 ? 'W' : '';
+      if (c) cards += `<text class="${norm === 0 ? 'c north' : 'c'}" x="${x}" y="${base - 3}">${c}</text>`;
+    } else if (norm % 10 === 0) t10 += `M${x} ${base}V${base + 9}`;
+    else t5 += `M${x} ${base}V${base + 5}`;
+  }
+  const line = `M0 ${base}H${W.toFixed(0)}`;
+  return `<svg class="cal-strip" viewBox="0 0 ${W.toFixed(0)} 52" width="${W.toFixed(0)}" height="52" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">`
+    + `<path class="u" d="${line}${t5}${t10}${t30}"/>`
+    + `<path class="t line" d="${line}"/><path class="t t5" d="${t5}"/><path class="t t10" d="${t10}"/><path class="t t30" d="${t30}"/>`
+    + nums + cards + '</svg>';
+}
+
 /* ------------------------------ glyph library ------------------------------ */
-/* Flat "tribal glyph" icons per docs/research/ui.md — inline SVG, currentColor. */
 
 const P = (d, extra = '') => `<path d="${d}" ${extra}/>`;
-const STROKE = 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"';
+const LINE = 'fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square" stroke-linejoin="miter"';
+const FINE = 'fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="square"';
 
-const GLYPHS = {
-  arrow: P('M12 1 L16 8 H13.4 V16 H10.6 V8 H8 Z') + P('M9.2 17.5 H14.8 L12 22.5 Z'),
-  hardpoint: P('M12 1 L17.4 9 H14 V14.6 H10 V9 H6.6 Z') + P('M8.4 16.8 H15.6 L12 23 Z'),
-  precision: P('M12 0.5 L15 6.2 H13.1 V17.6 H10.9 V6.2 H9 Z') + P('M9.6 19 H14.4 L12 23.5 Z'),
-  fire: P('M12 2 C14.2 6 17 8.4 17 13 A5 5 0 0 1 7 13 C7 9.8 9.2 8.6 9.8 6 C10.9 7.6 11.6 9 12 10.6 C12.9 8.2 11.4 5.2 12 2 Z'),
-  shock: P('M13.2 2 L5 13.4 H10 L8.2 22 L19 9.2 H12.6 Z'),
-  freeze: P('M12 2 V22 M3.3 7 L20.7 17 M20.7 7 L3.3 17 M12 2 L9.5 4.5 M12 2 L14.5 4.5 M12 22 L9.5 19.5 M12 22 L14.5 19.5', STROKE),
-  tearblast: P('M12 2 L13.7 8.6 L19.6 5.4 L15.4 10.6 L22 12 L15.4 13.4 L19.6 18.6 L13.7 15.4 L12 22 L10.3 15.4 L4.4 18.6 L8.6 13.4 L2 12 L8.6 10.6 L4.4 5.4 L10.3 8.6 Z'),
-  blast: '<circle cx="11" cy="14.5" r="7"/>' + P('M11 7.5 V5 C11 3 13 2.2 14.6 3.4 M17.5 2 L19 4.2 M20.5 6 L18 6.4', STROKE),
-  disc: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="12" cy="12" r="3.2"/>',
-  shard: P('M12 2 L19 12 L12 22 L5 12 Z'),
-  wood: P('M5 20 L17 5 M9 21 L19 9 M13.4 9.4 L16 12', STROKE),
-  droplet: P('M12 2 C15 8 19 11 19 15 A7 7 0 0 1 5 15 C5 11 9 8 12 2 Z'),
-  leaf: P('M12 22 C4.5 16 5 6 20 3 C20.5 14 16 20 12 22 Z') + P('M12 21 C12.6 15 14 9.5 17.6 5.8', 'fill="none" stroke="rgba(10,14,12,0.6)" stroke-width="1.4"'),
-  shell: '<circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4.4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="1.5"/>',
-  wire: P('M3 12 C3 8 8 8 8 12 C8 16 12 16 12 12 C12 8 16 8 16 12 C16 16 21 16 21 12', STROKE),
-  lens: '<circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.4"/>',
-  core: P('M12 3 L19 7.5 V16.5 L12 21 L5 16.5 V7.5 Z') + '<circle cx="12" cy="12" r="2.6" fill="rgba(10,14,12,0.6)"/>',
-  rock: P('M4 15.5 L8.4 5.8 L16.6 4.6 L21 12.4 L16 20 L7 19.4 Z') + P('M8.4 5.8 L11.6 12.6 L21 12.4 M11.6 12.6 L7 19.4', 'fill="none" stroke="rgba(10,14,12,0.55)" stroke-width="1.3"'),
-  flask: P('M9.4 2 H14.6 V8 L19.4 17.6 A2.6 2.6 0 0 1 17 21.6 H7 A2.6 2.6 0 0 1 4.6 17.6 L9.4 8 Z') + P('M7.1 13.6 H16.9', 'fill="none" stroke="rgba(10,14,12,0.5)" stroke-width="1.6"'),
-  trap: P('M3 17 H21 M6 17 L6 12 M18 17 V12 M6 12 L12 8 L18 12', STROKE) + P('M9.6 17 L12 12.6 L14.4 17 Z'),
+/** Kit silhouettes, engraved: one line weight, ink on the kit tag's paper. 40x64 viewBox. */
+const KIT_ART = {
+  bow: P('M16 3 C30 14 33 27 33 32 C33 37 30 50 16 61', LINE)
+    + P('M16 3 V61', FINE)
+    + P('M28 29 H35 V35 H28 Z', 'fill="currentColor"')
+    + P('M4 32 H37', FINE) + P('M37 32 L33 29.5 M37 32 L33 34.5', FINE),
+  lance: P('M20 2 L25 15 L20 20 L15 15 Z', 'fill="currentColor"')
+    + P('M20 18 V62', LINE) + P('M15 24 H25', LINE) + P('M17 56 H23 M17 60 H23', FINE),
+  gaff: P('M14 62 V14 C14 5 28 5 28 14 C28 20 21 21 21 16', LINE) + P('M9 44 H19', FINE),
+  windwall: P('M6 18 C14 8 26 8 34 18 L31 44 C25 52 15 52 9 44 Z', LINE) + P('M20 11 V50 M12 26 H28 M12 36 H28', FINE),
+  pot: P('M15 12 H25 L24 19 C33 22 34 40 26 47 H14 C6 40 7 22 16 19 Z', LINE) + P('M13 30 H27', FINE),
+  net: P('M4 18 C14 8 26 8 36 18 L30 50 H10 Z', LINE) + P('M13 14 L18 50 M27 14 L22 50 M7 30 H33 M9 41 H31', FINE),
 };
-
-/** Weapon silhouettes (ui-08) — flat tribal-glyph shapes, 40×64 viewBox. */
-const WEAPON_ART = {
-  'hunter-bow':
-    P('M20 3 C31 13 33.5 27 33.5 32 C33.5 37 31 51 20 61', 'fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"')
-    + P('M20 3 L20 61', 'fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.85"')
-    + P('M28.6 27.4 H34.4 V36.6 H28.6 Z'),
-  'sharpshot-bow':
-    P('M20 1 C33 12 35.5 27 35.5 32 C35.5 37 33 52 20 63', 'fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"')
-    + P('M20 1 L20 63', 'fill="none" stroke="currentColor" stroke-width="1.3" opacity="0.85"')
-    + P('M30 28 H36 V36 H30 Z')
-    + '<circle cx="26" cy="32" r="4.2" fill="none" stroke="currentColor" stroke-width="1.6"/>',
-  'war-bow':
-    P('M20 5 C33 14 35 27 35 32 C35 37 33 50 20 59', 'fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"')
-    + P('M20 5 L20 59', 'fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.85"')
-    + P('M24.4 14 C30 20 31 27 31 32 C31 37 30 44 24.4 50', 'fill="none" stroke="currentColor" stroke-width="1.7" opacity="0.75"')
-    + P('M29.4 27 H35.6 V37 H29.4 Z'),
-  'blast-sling':
-    P('M11 6 L20 30 L29 6', 'fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"')
-    + P('M20 30 L13 45 M20 30 L27 45', 'fill="none" stroke="currentColor" stroke-width="1.6"')
-    + '<circle cx="20" cy="51" r="7.2"/>',
-  'ropecaster':
-    P('M6 22 H34 V30 H6 Z')
-    + P('M8 26 L2 42 M32 26 L38 42', 'fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"')
-    + P('M14 30 H26 V44 H14 Z', 'opacity="0.8"')
-    + P('M2 42 C12 50 28 50 38 42', 'fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.75"'),
-  'tripcaster':
-    P('M8 20 H32 V34 H8 Z')
-    + P('M12 20 V10 M28 20 V10', 'fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"')
-    + P('M12 10 L28 10', 'fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"')
-    + P('M16 34 H24 V48 H16 Z'),
-  'disc-launcher':
-    '<circle cx="20" cy="24" r="11" fill="none" stroke="currentColor" stroke-width="3.4"/>'
-    + '<circle cx="20" cy="24" r="3.4"/>'
-    + P('M15 34 H25 V52 H15 Z'),
-};
-
-function svgIcon(glyph, color) {
-  const body = GLYPHS[glyph] ?? GLYPHS.shard;
-  return `<svg viewBox="0 0 24 24" style="color:${color}" fill="currentColor" ` +
-    `xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
-}
-
-function weaponArt(id) {
-  const body = WEAPON_ART[id] ?? WEAPON_ART['hunter-bow'];
-  return `<svg viewBox="0 0 40 64" fill="currentColor" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
-}
-
-/* ammo id -> glyph + color + display name (v2 roster + round-1 fallbacks) */
-function ammoLook(id) {
-  const s = String(id ?? 'hunter').toLowerCase();
-  if (s.includes('hardpoint')) return { glyph: 'hardpoint', color: '#efe6d5', name: 'Hardpoint Arrow' };
-  if (s.includes('precision')) return { glyph: 'precision', color: '#ffd34d', name: 'Precision Arrow' };
-  if (s.includes('tear')) return { glyph: 'tearblast', color: '#9adfe8', name: 'Tearblast Arrow' };
-  if (s.includes('fire')) return { glyph: 'fire', color: '#f0a03c', name: 'Fire Arrow' };
-  if (s.includes('shock')) return { glyph: 'shock', color: '#4fa3e3', name: 'Shock Arrow' };
-  if (s.includes('freeze') || s.includes('chill')) return { glyph: 'freeze', color: '#59c1c6', name: 'Freeze Arrow' };
-  if (s.includes('blast') || s.includes('bomb')) return { glyph: 'blast', color: '#e8762c', name: 'Blast Bomb' };
-  if (s.includes('rope')) return { glyph: 'wire', color: '#c9a86a', name: 'Rope' };
-  if (s.includes('trip') || s.includes('wire')) return { glyph: 'wire', color: '#e8762c', name: 'Trip Wire' };
-  if (s.includes('disc')) return { glyph: 'disc', color: '#c8a24b', name: 'Disc' };
-  return { glyph: 'arrow', color: '#efe6d5', name: 'Hunter Arrow' };
-}
-
-/* item id -> glyph + color + display name (items builder catalog wins if present) */
-const ITEMS = {
-  'metal-shards': { glyph: 'shard', color: '#c9d4d8', name: 'Metal Shards' },
-  'ridge-wood': { glyph: 'wood', color: '#b08a5a', name: 'Ridge-Wood' },
-  'blaze': { glyph: 'fire', color: '#f0a03c', name: 'Blaze' },
-  'chillwater': { glyph: 'droplet', color: '#59c1c6', name: 'Chillwater' },
-  'sparker': { glyph: 'shock', color: '#4fa3e3', name: 'Sparker' },
-  'echo-shell': { glyph: 'shell', color: '#8f7be8', name: 'Echo Shell' },
-  'wire': { glyph: 'wire', color: '#9aa4a8', name: 'Wire' },
-  'watcher-lens': { glyph: 'lens', color: '#4ec9b0', name: 'Watcher Lens' },
-  'machine-heart': { glyph: 'core', color: '#3d7bd9', name: 'Machine Heart' },
-  'machine-core': { glyph: 'core', color: '#3d7bd9', name: 'Machine Core' },
-  'medicinal-herb': { glyph: 'leaf', color: '#7fb069', name: 'Medicinal Herb' },
-  'blastpaste': { glyph: 'blast', color: '#e8762c', name: 'Blastpaste' },
-  'rock': { glyph: 'rock', color: '#b9bfc4', name: 'Rock' },
-  'potion-vigor': { glyph: 'flask', color: '#7fb069', name: 'Vigour Draught' },
-  'trap-shock': { glyph: 'trap', color: '#4fa3e3', name: 'Shock Wire Trap' },
+const kitArtFor = (id) => {
+  const s = String(id ?? '');
+  const key = /lance|spear/i.test(s) ? 'lance' : /gaff/i.test(s) ? 'gaff' : /windwall/i.test(s) ? 'windwall'
+    : /pot|sling/i.test(s) ? 'pot' : /net|caster/i.test(s) ? 'net' : 'bow';
+  return `<svg viewBox="0 0 40 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${KIT_ART[key]}</svg>`;
 };
 
 function prettify(id) {
   return String(id).replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** `KeyF` / `BracketLeft` / `Digit1` → the glyph a player reads on a key cap. */
+/** `KeyF` / `BracketLeft` / `Digit1` -> the glyph a player reads on a key cap. */
 function keyGlyph(code) {
   const s = String(code ?? '');
   if (/^Key[A-Z]$/.test(s)) return s.slice(3);
@@ -319,35 +274,15 @@ function div(cls, parent, html) {
   return el;
 }
 
-/**
- * ui-17 / onboarding-loop-no-tutorial-hunt — the one-shot contextual card
- * queue. Each entry fires at most once per save (persisted in localStorage),
- * when `when(hud)` first returns true. `keys` render as <kbd> glyphs.
- */
-const TIPS = [
-  { id: 'move', keys: ['W', 'A', 'S', 'D', 'SHIFT'], title: 'MOVE', body: 'WASD walks. Hold SHIFT to sprint.',
-    when: (h) => h._t > 2.5 },
-  { id: 'focus', keys: ['V', 'T'], title: 'THE FOCUS', body: 'Tap V to scan. Look at a machine and press T to tag it — tagged machines show on the compass.',
-    when: (h) => h._nearestHostileDist < 60 },
-  { id: 'aim', keys: ['RMB', 'LMB'], title: 'DRAW THE BOW', body: 'Hold RMB to aim, hold LMB to draw, release to loose. A full draw hits hardest.',
-    when: (h) => h.ctx.player?.aiming },
-  { id: 'conc', keys: ['SHIFT'], title: 'CONCENTRATION', body: 'Tap SHIFT while aiming to slow time. The gauge beside the reticle is what you are spending.',
-    when: (h) => h.ctx.player?.aiming && h._t > 8 },
-  { id: 'stealth', keys: ['C'], title: 'TALL GRASS HIDES YOU', body: 'Crouch in grass and a machine has to be almost on top of you to see you.',
-    when: (h) => h.ctx.player?.inTallGrass },
-  { id: 'spear', keys: ['LMB'], title: 'THE SPEAR', body: 'LMB with the bow lowered swings the spear. Behind an unaware machine it is a Silent Strike.',
-    when: (h) => h._nearestHostileDist < 6 },
-  { id: 'heal', keys: ['Q'], title: 'MEDICINE POUCH', body: 'Hold Q to sip. The green bar under your health is what you have left.',
-    when: (h) => (h.ctx.player?.health ?? 100) < (h.ctx.player?.maxHealth ?? 100) * 0.62 },
-  { id: 'craft', keys: ['R'], title: 'CRAFT ON THE MOVE', body: 'Hold R to craft the ammo you have selected out of your resources.',
-    when: (h) => h._ammoEmpty },
-  { id: 'tools', keys: ['F', '[', ']'], title: 'TOOLS', body: 'F uses the selected tool. [ and ] cycle the strip.',
-    when: (h) => h._toolsReady && h._t > 16 },
-  { id: 'skills', keys: ['K'], title: 'SKILL POINT', body: 'You have a point to spend. Press K to open the skill trees.',
-    when: (h) => (h.ctx.progression?.skillPoints ?? 0) > 0 },
-  { id: 'log', keys: ['J'], title: 'THE HUNT', body: 'J opens the quest log. The tracked objective sits under your health.',
-    when: (h) => !!h.ctx.progression?.tracked && h._t > 12 },
-];
+/** The lamp state of an Instrument: its own lamp, else read off its AI state. */
+function lampStateOf(m) {
+  const s = m.lampState;
+  if (s) return s;
+  if (m.alive === false) return 'dark';
+  if (m.state === 'alert' || m.state === 'attack') return 'hostile';
+  if (m.state === 'suspicious' || m.state === 'search') return 'wary';
+  return 'calm';
+}
 
 export class HUD {
   constructor(ctx) {
@@ -359,104 +294,143 @@ export class HUD {
     this._forceVw = 0;             // debug-only viewport override (see __HUD_DEBUG__)
     this._forceVh = 0;
     this._scale = 1;
-    /** world-projected multiplier — `_scale` floored at WORLD_SCALE_MIN. */
+    /** world-projected multiplier: `_scale` floored at WORLD_SCALE_MIN. */
     this._wscale = 1;
     this._t = 0;
+    this._aimT = 0;
 
     this._v = new THREE.Vector3(); // scratch for projections
     this._v2 = new THREE.Vector3();
 
-    // compass window: ±70° visible, mapped across 480px (edges masked out)
-    this._halfWinDeg = 70;
-    this._pxPerDeg = 3.35;
+    // the theodolite: `_cAngle` is what the limb shows, chasing the camera on a spring
+    this._halfWinDeg = COMPASS_HALF_DEG;
+    this._pxPerDeg = PX_PER_DEG;
+    this._cAngle = null;
+    this._cVel = 0;
+    this._lastStripX = NaN;
+    this._flagged = false;
+    this._lastFlag = null;
+    this._waypoint = null;
 
     // dirty-check caches so per-frame DOM writes only happen on change
     this._lastHp = -1;
     this._lastHpNum = -1;
     this._lastLow = null;
-    this._lastPouch = -1;
-    this._lastPouchPips = -1;
-    this._lastPouchHint = null;
+    this._lastGourd = -1;
+    this._lastGourdNum = -1;
+    this._lastGourdHint = null;
     this._lastHealing = null;
     this._lastIdle = null;
+    this._lastReveal = null;
     this._lastAim = null;
-    this._lastWpnSig = '';
-    this._lastConcSig = '';
-    this._lastIntSig = '';
+    this._lastDraw = -1;
+    this._lastSpread = -1;
+    this._lastBreath = -1;
+    this._lastBreathOn = null;
+    this._lastBreathActive = null;
+    this._lastW = undefined;
+    this._lastAmmoId = undefined;
+    this._lastCount = undefined;
+    this._lastDots = undefined;
+    this._lastDotN = -1;
+    this._lastIntLabel = '';
+    this._lastIntHold = -1;
+    this._lastIntOn = null;
     this._lastBearing = -1;
     this._lastVin = -1;
-    this._lastElemSig = '';
-    this._lastToolSig = '';
-    this._lastXpSig = '';
+    this._lastToolSig = null;
     this._lastTrackSig = '';
-    this._lastEyeSig = '';
-    this._lastObjDiamond = '';
+    this._lastVialMode = '';
+    this._lastVialBubble = -1;
+    this._lastVialNoise = -1;
+    this._lastObjDist = -1;
+    this._lastObjLabel = null;
+    this._lastObjOff = null;
+    this._lastObjOn = false;
     this._lastNock = -1;
 
     this._hurtFlash = 0;
-    this._deathTimer = 0;          // pending death-overlay setTimeout handle
 
-    // damage-delta ghosting (health) & dynamic-HUD vitals timer
+    // damage-delta ghost on the staff, dynamic-HUD vitals timer
     this._hpGhostW = -1;
     this._hpGhostHold = 0;
     this._vitalsIdleT = VITALS_IDLE_S + 1; // boots hidden: full health at spawn
     this._trackIdleT = 0;
     this._reveal = 0;              // hold-H "show HUD" reveal, 0..1
 
-    // Concentration veil ramp (combat-concentration-presentation)
-    this._concVeil = 0;
-    this._concOn = false;
-    this._lastVeil = -1;
-
     // item toasts buffer one microtask so the take-all popup (shown later in
-    // the same synchronous loot stack) can claim the event — see inventory.js
+    // the same synchronous loot stack) can claim the event; see inventory.js
     this._pendingItems = [];
     this._itemFlushQueued = false;
 
     this._pips = new Map();        // machine -> compass pip element
-    this._questPips = [];          // pooled gold objective pips
-    this._awares = new Map();      // machine -> awareness indicator entry
+    this._questPips = [];          // pooled site / objective marks on the circle
+    this._awares = new Map();      // machine -> awareness rod entry
     this._attackFlash = new Map(); // machine -> remaining flash seconds
     this._elemTrigs = new Map();   // machine -> { fire|shock|freeze: secondsLeft }
-    this._engaged = new Map();     // machine -> seconds of bar time left (ui-06)
-    this._mhbSlots = [];           // pooled projected machine bars
+    this._engaged = new Map();     // machine -> plate record
+    this._mhbSlots = [];           // pooled projected plates
     this._mhbPick = [null, null, null];   // preallocated cap-3 selection
     this._mhbPickW = [0, 0, 0];
-    this._anyHostile = false;      // any machine alert/attack this frame
+    this._mhbX = [NaN, NaN, NaN];  // the plate resolver's scratch: painted px, never reallocated
+    this._mhbY = [0, 0, 0];
+    this._mhbC = [0, 0, 0];
+    this._mhbHW = [0, 0, 0];       // each plate's painted half width (full or compact)
+    this._mhbBox = new Float32Array(MHB_CAP * 4);   // each engaged Instrument's screen box
+    this._pipVis = [];             // the marks on the circle this frame (reused)
+    this._scanDt = 0;
+    this._decayFlash = (ttl, m) => {
+      const left = ttl - this._scanDt;
+      if (left <= 0) this._attackFlash.delete(m);
+      else this._attackFlash.set(m, left);
+    };
+    this._decayTrig = (rec, mm) => {
+      let any = false;
+      for (let i = 0; i < ELEM_KEYS.length; i++) {
+        const k = ELEM_KEYS[i], v = rec[k];
+        if (v === undefined) continue;
+        if (v - this._scanDt <= 0) rec[k] = undefined;
+        else { rec[k] = v - this._scanDt; any = true; }
+      }
+      if (!any || mm.alive === false) this._elemTrigs.delete(mm);
+    };
+    this._objQx = NaN; this._objQy = NaN; this._intQx = NaN; this._intQy = NaN;
+    this._anyHostile = false;      // any Instrument alert/attack this frame
     this._nearestHostileDist = Infinity;
+    this._nearestInstrumentDist = Infinity;
     this._combatIdleT = 0;         // seconds since last combat-ish activity
     this._lastWpnIdle = null;
     this._ammoEmpty = false;
     this._toolsReady = false;
 
-    // quest sequencer — progression owns the chain; this only fires victory
-    this._killCounts = Object.create(null);
-    this._stage = 0;
-    this._victoryFired = false;
+    /** Kept false: menu.js and A68 read this latch; the HUD no longer owns an end screen. */
     this._victoryShown = false;
-    this._lastObjTitle = null;
 
     // tutorial card queue
     this._tipSeen = this._loadTips();
     this._tipQueue = [];
     this._tipT = 0;
     this._tipGap = 0;
+    this._tipCur = null;           // the id of the card on screen
+    this._staged = null;           // `stageNote`: a look film's staged beat (?shot only)
 
     this._slowT = 0;               // 10 Hz sampler for the signature-string panels
+    this._marks = null;            // progression.getMarkers(), sampled at 4 Hz
+    this._marksT = 0;
+    this._siteMarks = null;        // discovered sites from the map page, sampled at 1 Hz
+    this._siteMarksT = 0;
     this._trackIdle = null;
-    this._trackSampleT = 0;
     this._lastWid = null;
-    this._lastCraftSig = '';
+    this._lastCraftOn = null;
+    this._lastCraftFill = -1;
+    this._lastCraftLabel = null;
 
     this._build();
     this._applyScale();
     this._bindEvents();
     this._renderTracker(true);
 
-    /**
-     * Gate contract. `lootSurfaces` is Round 3's `A10`; the rest is Round 4's
-     * `A71*` / `V37` reading the same numbers the pixels were drawn from.
-     */
+    /** Gate contract: the same numbers the pixels were drawn from. */
     window.__HUD_DEBUG__ = {
       lootSurfaces: () => ({
         popupVisible: !!LOOT_POPUP.instance?.visible,
@@ -465,12 +439,7 @@ export class HUD {
       compass: () => this._compassAudit(),
       surfaces: () => this._surfaceAudit(),
       scale: () => this._scaleAudit(),
-      /**
-       * ui-15 gate hook (`A71b-hud-scale-floor`). The gate runner pins every
-       * page at 1600x900 from node, so the only way to check the scale model
-       * at 720p or at 4K is to hand the HUD those numbers. `update()` honours
-       * the override until `simulateViewport()` is called with no arguments.
-       */
+      /** The runner pins 1600x900; other viewports are fed through `_applyScale`. */
       simulateViewport: (w, h) => {
         this._forceVw = w > 0 ? Math.round(w) : 0;
         this._forceVh = h > 0 ? Math.round(h) : 0;
@@ -480,8 +449,8 @@ export class HUD {
         return this._scaleAudit();
       },
       tips: () => ({ seen: [...this._tipSeen], queued: this._tipQueue.map((t) => t.id) }),
-      // same entry point the published `ctx.hud.showTip` uses, so the gate
-      // exercises the shipped path rather than a debug-only shortcut
+      cards: () => TUTORIAL_CARDS.map((c) => ({ id: c.id, beat: c.beat, text: c.text, title: c.title, body: c.body })),
+      // same entry point the published `ctx.hud.showTip` uses
       showTip: (id) => this.showTip(id),
       resetTips: () => { this._tipSeen.clear(); this._saveTips(); },
     };
@@ -492,327 +461,257 @@ export class HUD {
   _build() {
     const root = this.rootEl;
 
-    /**
-     * combat-concentration-presentation. The desaturate needs `mix-blend-mode`
-     * against the CANVAS, and #hud (z-index 40, position fixed) is its own
-     * stacking context — a blend inside it can only see #hud's own transparent
-     * background. So the veil is a body-level sibling at z-index 38: below
-     * #hud (40) and Focus's glass (39), above #app. `player-anim`'s NOHUD
-     * recipe hides every body child but #app, so gate films are unaffected.
-     */
-    const veil = document.createElement('div');
-    veil.id = 'cal-veil';
-    veil.innerHTML = '<div class="cal-veil-sat"></div><div class="cal-veil-tint"></div>';
-    document.body.appendChild(veil);
-    this._veilEl = veil;
-    this._veilSat = veil.firstChild;
-    this._veilTint = veil.lastChild;
-
     this._vignette = div('cal-vignette', root);
-    // watcher flash-bang overlay ('watcher-flash' when close + facing it)
+    // a sentry's blind-flash when close and facing it (`watcher-flash`, machine.js)
     this._wflash = div('cal-wflash', root);
 
-    /* ---------------- top-left vitals: health, pouch, tracker -------------- */
+    /* ---------------- top-left: the staff, the gourd, the field note ------- */
     const tl = div('cal-topleft', root);
     this._topleftEl = tl;
 
     /**
-     * The vitals' dynamic hide (4 s, full health) and the tracker's (26 s, no
-     * objective change) are DELIBERATELY different timers, so they cannot
-     * share one opacity: `.cal-topleft.idle` used to zero both, which meant
-     * the quest tracker — including the game's opening instruction at boot,
-     * where `_vitalsIdleT` starts already past threshold — was invisible in
-     * every calm full-health state. The vitals now fade inside their own
-     * wrapper and `.cal-track` is its sibling, owning its own `.idle`.
-     * `.cal-topleft` keeps only position + the `low`/`healing` state classes
-     * its descendant selectors read. Gate: `A71g-tracker-live`.
+     * The vitals' dynamic hide (4 s, full health) and the note's (26 s, no
+     * objective change) are different timers on purpose, so they cannot share
+     * an opacity: the vitals fade inside their own wrapper, and `.cal-track` is
+     * its sibling. Gate: `A71g-tracker-live`.
      */
     const vitals = div('cal-vitals', tl);
     this._vitalsEl = vitals;
 
-    const hrow = div('cal-healthrow', vitals);
-    const hb = div('cal-healthbar', hrow);
-    this._healthGhost = div('cal-healthghost', hb);
-    this._healthFill = div('cal-healthfill', hb);
-    // ui-07: FOUR segments, divided by three hairline ticks
-    for (const pct of [25, 50, 75]) {
-      const seg = div('cal-health-seg', hb);
-      seg.style.left = pct + '%';
-    }
-    this._healthNum = div('cal-health-num', hrow, '<b>100</b><span>/100</span>');
+    const hrow = div('cal-staffrow', vitals);
+    // the emblem (U-06): a broad arrow in a ring, the survey's own mark
+    div('cal-emblem', hrow, '<svg viewBox="0 0 24 24" aria-hidden="true" data-shape="disc">'
+      + '<circle class="u" cx="12" cy="12" r="10.4"/><circle class="t" cx="12" cy="12" r="10.4"/>'
+      + '<path class="a" d="M12 6.5 V17.5 M12 6.5 L7.4 13 M12 6.5 L16.6 13"/></svg>');
+    const staff = div('cal-staff', hrow);
+    this._staffEl = staff;
+    // the empty staff: its ticks stay on the scale, as a surveyor's staff would
+    div('cal-staff-empty', staff, this._staffFace('cal-staff-svg empty'));
+    this._healthGhost = div('cal-staff-ghost', staff);
+    const fillClip = div('cal-staff-fill', staff, this._staffFace('cal-staff-svg'));
+    this._healthFill = fillClip;
+    // the reading index: a tick riding the top edge, settling on a spring curve when HP moves
+    this._staffIndex = div('cal-staff-index', staff);
+    this._healthNum = div('cal-staff-num cal-glass', hrow, '<b>100</b><span>/100</span>');
 
-    const pr = div('cal-pouchrow', vitals);
-    this._pouchRow = pr;
-    const pbar = div('cal-pouchbar', pr);
-    this._pouchFill = div('cal-pouchfill', pbar);
-    this._pouchPips = div('cal-pouchpips', pr);
-    this._pouchKey = document.createElement('kbd');
-    this._pouchKey.className = 'cal-pouch-key';
-    this._pouchKey.textContent = 'Q';
-    pr.appendChild(this._pouchKey);
+    // the hairline beneath the staff: there is no stamina system in the game, so it reads the gourd
+    const gourdLine = div('cal-gourdline', vitals);
+    this._gourdFill = div('cal-gourdline-fill', gourdLine);
 
-    // ui-05: quest tracker UNDER the vitals, not top-right
-    const tr = div('cal-track', tl);
+    const pr = div('cal-chiprow', vitals);
+    this._gourdRow = pr;
+    const gourdChip = div('cal-chip cal-glass cal-gourd', pr,
+      '<span class="cal-chip-l">GOURD</span><b class="cal-chip-n">060</b>');
+    this._gourdChip = gourdChip;
+    this._gourdNum = gourdChip.querySelector('.cal-chip-n');
+    this._gourdKey = document.createElement('kbd');
+    this._gourdKey.className = 'cal-gourd-key';
+    this._gourdKey.textContent = 'Q';
+    gourdChip.appendChild(this._gourdKey);
+    // the one currency (U-06, U-19): salt, counted
+    this._saltChip = div('cal-chip cal-glass cal-salt', pr, '<span class="cal-chip-l">SALT</span><b class="cal-chip-n">000</b>');
+    this._saltNum = this._saltChip.querySelector('.cal-chip-n');
+    this._lastSalt = -1;
+
+    // the field note, UNDER the vitals
+    const tr = div('cal-track cal-glass', tl);
     this._trackEl = tr;
-    div('cal-track-kicker', tr, 'THE HUNT');
+    this._trackKicker = div('cal-track-kicker', tr, 'FIELD NOTE');
     this._trackTitle = div('cal-track-title', tr);
     this._trackObj = div('cal-track-obj', tr);
     this._trackMeta = div('cal-track-meta', tr);
 
-    /* ------------------------------- compass ------------------------------ */
+    /* ------------------------- the theodolite circle ----------------------- */
     const comp = div('cal-compass', root);
+    this._compEl = comp;
     const win = div('cal-compass-window', comp);
-    const track = div('cal-compass-track', win);
-    this._ticks = [];
-    for (let a = 0; a < 360; a += 15) {
-      if (a % 45 === 0) continue;
-      this._ticks.push({ a, el: div('cal-tick', track), label: false, vis: null });
-    }
-    const dirs = [
-      [0, 'N'], [45, 'NE'], [90, 'E'], [135, 'SE'],
-      [180, 'S'], [225, 'SW'], [270, 'W'], [315, 'NW'],
-    ];
-    for (const [a, n] of dirs) {
-      let cls = 'cal-cdir';
-      if (n.length === 1) cls += ' main';
-      if (n === 'N') cls += ' north';
-      this._ticks.push({ a, el: div(cls, track, n), label: true, vis: null });
-    }
-    this._pipLayer = div('cal-compass-pips', win);
-    div('cal-compass-caret', comp);
-    this._bearingEl = div('cal-bearing', comp, '000');
+    this._stripEl = div('cal-compass-track', win, buildStrip());
+    this._pipLayer = div('cal-compass-pips', comp);
+    div('cal-compass-index', comp, '<svg viewBox="0 0 12 20" aria-hidden="true"><path d="M6 19 L1 8 H11 Z"/><path d="M6 0 V8"/></svg>');
+    this._pennantEl = div('cal-pennant', comp, '<svg viewBox="0 0 22 22" aria-hidden="true"><path class="pole" d="M3 1 V21"/><path class="flag" d="M3 2 L20 7 L3 12 Z"/></svg>');
+    this._bearingEl = div('cal-bearing cal-glass', comp, '<b>000</b>');
+    this._bearingNum = this._bearingEl.firstChild;
 
-    // ui-12: stealth eye, directly under the compass
-    const eye = div('cal-eye', root);
-    this._eyeEl = eye;
-    eye.innerHTML =
-      '<svg viewBox="0 0 44 26" xmlns="http://www.w3.org/2000/svg">'
-      + '<path class="lid" d="M2 13 C10 3 34 3 42 13 C34 23 10 23 2 13 Z"/>'
-      + '<circle class="iris" cx="22" cy="13" r="5.6"/>'
-      + '<circle class="pupil" cx="22" cy="13" r="2.3"/>'
-      + '<path class="closed" d="M4 13 C12 19 32 19 40 13"/>'
-      + '</svg>'
-      + '<div class="cal-eye-bars"><i></i><i></i><i></i></div>'
-      + '<div class="cal-eye-label">HIDDEN</div>';
-    this._eyeLabel = eye.querySelector('.cal-eye-label');
-    this._eyeBars = eye.querySelector('.cal-eye-bars');
+    /* -------------------------- the exposure vial -------------------------- */
+    /**
+     * Stealth, read as a spirit level: the bubble sits dead centre while nothing
+     * is on her, runs up the vial as the strongest live detection fills, and
+     * lies under the far graduation when she is spotted. Three sound ticks rise
+     * with how loudly she is moving.
+     */
+    const vial = div('cal-vial', root);
+    this._eyeEl = vial;
+    vial.innerHTML =
+      '<div class="cal-vial-tube"><i class="cal-vial-mid"></i><i class="cal-vial-bubble"></i></div>'
+      + '<div class="cal-vial-row"><span class="cal-eye-label">UNSEEN</span>'
+      + '<span class="cal-eye-bars"><i></i><i></i><i></i></span></div>';
+    this._eyeLabel = vial.querySelector('.cal-eye-label');
+    this._eyeBars = vial.querySelector('.cal-eye-bars');
+    this._vialBubble = vial.querySelector('.cal-vial-bubble');
 
-    /* --------------- projected layers (machine bars, markers) ------------- */
+    /* --------------- projected layers (plates, markers) -------------------- */
     this._worldLayer = div('cal-world', root);
     for (let i = 0; i < MHB_CAP; i++) this._mhbSlots.push(this._makeMhb());
 
-    // in-world objective diamond with metres (onboarding-loop-objective-guidance)
-    this._objDiamond = div('cal-objmark', this._worldLayer,
-      '<div class="cal-objmark-d"><svg viewBox="0 0 24 24"><polygon points="12,1 23,12 12,23 1,12"/></svg></div>'
+    // the objective's broad arrow, with metres
+    this._objWrap = div('cal-px', this._worldLayer);
+    this._objDiamond = div('cal-objmark', this._objWrap,
+      '<div class="cal-objmark-d"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="u" d="M12 22 V3 M12 22 L4 8 M12 22 L20 8"/><path class="t" d="M12 22 V3 M12 22 L4 8 M12 22 L20 8"/></svg></div>'
       + '<div class="cal-objmark-dist">0m</div>'
       + '<div class="cal-objmark-label"></div>');
     this._objDiamondDist = this._objDiamond.querySelector('.cal-objmark-dist');
     this._objDiamondLabel = this._objDiamond.querySelector('.cal-objmark-label');
 
-    // awareness indicator layer (screen-projected, edge-clamped)
+    // awareness rods (screen-projected, edge-clamped)
     this._awareLayer = div('cal-awares', root);
 
     /* ------------------------------ reticle ------------------------------- */
-    // ui-08 bracket reticle: four corner brackets that converge with draw, a
-    // centre dot, and the draw-progress ring behind them. Every stroke is
-    // doubled (dark under, light over) so it reads on sky and on chrome.
+    // An engraved crosshair: horizontal hairs, a vertical hair below, and two
+    // stadia ticks that close on the centre as the draw tightens. Under it the
+    // draw scale (ten graduations) and, while Steady, the breath meter.
     const cross = div('cal-cross', root);
     this._crossEl = cross;
     this._dotEl = div('cal-dot', cross);
-    this._brackets = div('cal-brk', cross);
-    for (const c of ['tl', 'tr', 'bl', 'br']) div('cal-brk-a ' + c, this._brackets);
+    this._brackets = div('cal-stadia', cross);
+    for (const c of ['hl', 'hr', 'vb', 'st', 'sb']) div('cal-hair ' + c, this._brackets);
     this._brkArm = this._brackets.firstElementChild;   // audit probe (0x0 parent)
-    this._ring = div('cal-ring', cross);
-    this._ring.innerHTML =
-      '<svg viewBox="0 0 72 72">' +
-      '<circle class="track-under" cx="36" cy="36" r="26"/>' +
-      '<circle class="track" cx="36" cy="36" r="26"/>' +
-      '<circle class="prog-under" cx="36" cy="36" r="26" transform="rotate(-90 36 36)"/>' +
-      '<circle class="prog" cx="36" cy="36" r="26" transform="rotate(-90 36 36)"/>' +
-      '</svg>';
-    this._prog = this._ring.querySelector('.prog');
-    this._progUnder = this._ring.querySelector('.prog-under');
-    this._ringC = 2 * Math.PI * 26;
-    for (const el of [this._prog, this._progUnder]) {
-      el.style.strokeDasharray = this._ringC.toFixed(2);
-      el.style.strokeDashoffset = this._ringC.toFixed(2);
-    }
-    // re-nock pip: the arrow is still travelling to the string (combat.nockProgress)
+    this._drawEl = div('cal-drawscale', cross);
+    this._drawFill = div('cal-drawscale-fill', this._drawEl);
+    // re-nock: the arrow is still travelling to the string (combat.nockProgress)
     this._nockEl = div('cal-nock', cross);
     this._nockFill = div('cal-nock-fill', this._nockEl);
-    // Concentration gauge: thin yellow vertical drain bar beside the reticle
-    this._concEl = div('cal-conc', cross);
-    this._concFill = div('cal-conc-fill', this._concEl);
+    // Steady (bible §9.7): a hairline breath meter under the reticle. No veil, no desaturation.
+    this._concEl = div('cal-breath', cross, '<div class="cal-breath-rule"><i></i></div><span class="cal-breath-l">BREATH</span>');
+    this._concFill = this._concEl.querySelector('i');
 
     /* ------------------------- interaction prompt ------------------------- */
-    // ui-16: projected AT the interactable, not screen-fixed
-    this._intEl = div('cal-interact', this._worldLayer);
-    this._intRing = div('cal-int-ring', this._intEl);
+    this._intWrap = div('cal-px', this._worldLayer);
+    this._intEl = div('cal-interact', this._intWrap);
     const intKey = document.createElement('kbd');
     intKey.className = 'cal-int-key';
     intKey.textContent = 'E';
-    this._intRing.appendChild(intKey);
-    this._intLabel = div('cal-int-label', this._intEl, 'LOOT');
+    this._intEl.appendChild(intKey);
+    this._intRing = div('cal-int-hold', this._intEl, '<i></i>');
+    this._intHold = this._intRing.firstChild;
+    this._intLabel = div('cal-int-label cal-glass', this._intEl, 'LOOT');
 
-    /* ----------------------- bottom-left: tools strip --------------------- */
-    // ui-11 — data and behaviour belong to `ctx.items.tools`; this owns pixels.
+    /* ----------------------- bottom-left: tool chips ----------------------- */
+    // data and behaviour belong to `ctx.items.tools`; this owns pixels.
     const tools = div('cal-tools', root);
     this._toolsEl = tools;
-    this._toolPrev = div('cal-tool-chev prev', tools, '<span>‹</span><kbd>[</kbd>');
+    this._toolPrev = div('cal-tool-chev prev', tools, '<kbd>[</kbd>');
     this._toolRow = div('cal-tool-row', tools);
-    this._toolNext = div('cal-tool-chev next', tools, '<kbd>]</kbd><span>›</span>');
+    this._toolNext = div('cal-tool-chev next', tools, '<kbd>]</kbd>');
     this._toolSlots = [];
 
-    /* --------------------- bottom-centre: XP + level pip ------------------ */
-    const xp = div('cal-xp', root);
-    this._xpEl = xp;
-    this._xpPip = div('cal-xp-pip', xp, '<span>1</span>');
-    const xpw = div('cal-xp-wrap', xp);
-    const xpl = div('cal-xp-label', xpw);
-    this._xpLeft = document.createElement('span');
-    this._xpLeft.textContent = 'LEVEL 1';
-    this._xpRight = document.createElement('span');
-    this._xpRight.textContent = '0 / 100 XP';
-    xpl.append(this._xpLeft, this._xpRight);
-    const xpb = div('cal-xp-bar', xpw);
-    this._xpFill = div('cal-xp-fill', xpb);
-    this._xpPoints = div('cal-xp-points', xp);
-    // +XP pops (progression-012) replace the kill feed entirely
-    this._xpPops = div('cal-xp-pops', root);
+    // craft / blocked / pocket-full flashes, centre-low
+    this._xpPops = div('cal-flashes', root);
 
-    /* -------------------------- bottom-right: weapon ---------------------- */
-    const wpn = div('cal-weapon', root);
+    /* -------------------------- bottom-right: kit tag ---------------------- */
+    const wpn = div('cal-weapon cal-glass', root);
     this._wpnEl = wpn;
-    const wtop = div('cal-wpn-top', wpn);
-    this._wpnName = div('cal-wpn-name', wtop, 'HUNTER BOW');
-    this._wpnDots = div('cal-wpn-dots', wtop);
     const wrow = div('cal-wpn-row', wpn);
-    this._wpnArt = div('cal-wpn-art', wrow, weaponArt('hunter-bow'));
+    this._wpnArt = div('cal-wpn-art', wrow, kitArtFor('bow'));
     const wmid = div('cal-wpn-mid', wrow);
-    this._wpnAmmoName = div('cal-wpn-ammoname', wmid, 'HUNTER ARROW');
-    const wcount = div('cal-wpn-countrow', wmid);
-    this._wpnGlyph = div('cal-wpn-glyph', wcount, svgIcon('arrow', '#efe6d5'));
-    this._wpnCount = div('cal-wpn-count', wcount, '∞');
-    // craft hold (onboarding-loop-crafting-feedback)
+    this._wpnName = div('cal-wpn-name', wmid, 'SABINA BOW');
+    this._wpnAmmoName = div('cal-wpn-ammoname', wmid, 'REED ARROW');
+    this._wpnDots = div('cal-wpn-dots', wmid);
+    const wcount = div('cal-wpn-countrow', wrow);
+    this._wpnCount = div('cal-wpn-count', wcount, '012');
+    // craft hold
     this._craftEl = div('cal-craft', wpn,
-      '<kbd>R</kbd><div class="cal-craft-bar"><i></i></div><span>CRAFT</span>');
+      '<kbd>R</kbd><div class="cal-craft-bar"><i></i></div><span>MAKE</span>');
     this._craftFill = this._craftEl.querySelector('i');
     this._craftLabel = this._craftEl.querySelector('span');
 
-    // item pickup toasts (bottom-right stack, above the weapon HUD)
+    // item pickup chips (bottom-right stack, above the kit tag)
     this._itemsEl = div('cal-items', root);
 
     /* --------------------------- damage numbers --------------------------- */
     const dl = div('cal-dmglayer', root);
     this._dmgPool = [];
     for (let i = 0; i < 24; i++) {
+      const wrap = div('cal-px', dl);
       this._dmgPool.push({
-        el: div('cal-dmg', dl),
-        active: false, age: 0, dur: 1, drift: 0,
+        wrap, el: div('cal-dmg', wrap),
+        active: false, age: 0, dur: 1, drift: 0, qx: NaN, qy: NaN, si: -1, hw: 0, hh: 0,
         world: new THREE.Vector3(),
       });
     }
 
-    /* ------------------------- banners + tutorial ------------------------- */
+    /* ------------------------- banners + cards ---------------------------- */
     this._bannerEl = div('cal-banners', root);
-    this._tipEl = div('cal-tip', root);
+    this._tipEl = div('cal-tip cal-glass', root);
     this._tipEl.innerHTML =
-      '<div class="cal-bracket tl"></div><div class="cal-bracket br"></div>'
-      + '<div class="cal-tip-title"></div><div class="cal-tip-keys"></div>'
-      + '<div class="cal-tip-body"></div>';
+      '<div class="cal-tip-title"></div><div class="cal-tip-body"></div><div class="cal-tip-keys"></div>';
     this._tipTitle = this._tipEl.querySelector('.cal-tip-title');
     this._tipKeys = this._tipEl.querySelector('.cal-tip-keys');
     this._tipBody = this._tipEl.querySelector('.cal-tip-body');
-
-    /* ----------------------------- end screens ---------------------------- */
-    this._deathEl = div('cal-death', root);
-    div('cal-death-title', this._deathEl, 'YOU DIED');
-    div('cal-death-rule', this._deathEl);
-    div('cal-death-sub', this._deathEl, 'THE CAMPFIRE REKINDLES YOUR SPARK');
-
-    this._victoryEl = div('cal-victory', root);
-    div('cal-victory-kicker', this._victoryEl, 'QUEST COMPLETED');
-    div('cal-victory-title', this._victoryEl, 'VALLEY RECLAIMED');
-    div('cal-victory-line', this._victoryEl);
-    div('cal-victory-sub', this._victoryEl, 'EVERY MACHINE LIES SILENT · THE HUNT IS OVER');
-
-    // pause menu (only HUD child with pointer events) — `shell-menus` replaces
-    // this with the tabbed hub; until then it is the bridge that was here.
-    this._pauseEl = div('cal-pause', root);
-    const pi = div('cal-pause-inner', this._pauseEl);
-    for (const c of ['tl', 'tr', 'bl', 'br']) div('cal-bracket ' + c, pi);
-    div('cal-pause-kicker', pi, 'THE HUNT HOLDS');
-    div('cal-pause-title', pi, 'PAUSED');
-    div('cal-pause-rule', pi);
-    const btn = document.createElement('button');
-    btn.className = 'cal-btn';
-    btn.textContent = 'RESUME THE HUNT';
-    btn.addEventListener('click', () => this.setPaused(false));
-    pi.appendChild(btn);
-    div('cal-pause-hints', pi,
-      '<div><b>WASD</b> Move</div><div><b>SHIFT</b> Sprint · Concentration (aim)</div>' +
-      '<div><b>C</b> Crouch</div><div><b>SPACE / CTRL</b> Dodge roll</div>' +
-      '<div><b>RMB</b> Aim</div><div><b>LMB</b> Draw / loose · Spear</div>' +
-      '<div><b>TAB</b> Weapon wheel (hold)</div><div><b>1–6</b> Weapon quick-slots</div>' +
-      '<div><b>Z / X</b> Cycle ammo</div><div><b>V</b> Focus</div>' +
-      '<div><b>T</b> Tag machine (Focus)</div><div><b>E</b> Interact (hold)</div>' +
-      '<div><b>Q</b> Medicine (hold)</div><div><b>R</b> Craft ammo (hold)</div>' +
-      '<div><b>F</b> Use tool · <b>[ ]</b> Cycle</div><div><b>G</b> Whistle</div>' +
-      '<div><b>H</b> Show HUD (hold)</div><div><b>I</b> Inventory · <b>J</b> Quests · <b>K</b> Skills</div>' +
-      '<div><b>ESC</b> Pause</div>');
   }
 
-  /** One pooled projected machine bar (ui-06): plate, name+LV, bar, elem rings. */
+  /**
+   * One staff face: ten graduations, vermilion and paper, each cut as the E of a real
+   * levelling staff lying on its side: a solid head with two slots out of its lower edge.
+   */
+  _staffFace(cls) {
+    // U-06: 300 x 6, ten vermilion graduations (`.v`) with nine staff-white gaps (`.p`) between them
+    let cells = '', gaps = '';
+    for (let i = 0; i < 10; i++) {
+      cells += `<rect class="v" x="${i * 30 + (i ? 1 : 0)}" y="0" width="${i ? 29 : 30}" height="6"/>`;
+      if (i) gaps += `<rect class="p" x="${i * 30 - 1}" y="0" width="2" height="6"/>`;
+    }
+    return `<svg class="${cls}" viewBox="0 0 300 6" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${cells}${gaps}</svg>`;
+  }
+
+  /** One pooled projected plate: `NAME · WORK · TRANSECT nn`, a graduated bar, status gauges, a leader. */
   _makeMhb() {
-    const el = div('cal-mhb', this._worldLayer);
-    const plate = div('cal-mhb-plate', el);
+    // two transforms, so a moving plate writes memoized strings (X on the wrapper, Y + scale on the plate)
+    const wrap = div('cal-px', this._worldLayer);
+    const el = div('cal-mhb', wrap);
+    const plate = div('cal-mhb-plate cal-glass', el);
     const head = div('cal-mhb-head', plate);
-    const aware = div('cal-mhb-aware', head,
-      '<div class="cal-mhb-aware-circle"></div>'
-      + '<div class="cal-mhb-aware-diamond"><svg viewBox="0 0 30 30">'
-      + '<polygon points="15,1 18.4,9.2 26,5.6 21.4,12.6 29,15 21.4,17.4 26,24.4 18.4,20.8 15,29 11.6,20.8 4,24.4 8.6,17.4 1,15 8.6,12.6 4,5.6 11.6,9.2"/>'
-      + '</svg></div>');
-    const name = div('cal-mhb-name', head, 'MACHINE');
+    const aware = div('cal-iris', head, '<i></i>');
+    const name = div('cal-mhb-name', head, 'INSTRUMENT');
     const bar = div('cal-mhb-bar', plate);
     const ghost = div('cal-mhb-ghost', bar);
     const fill = div('cal-mhb-fill', bar);
-    const elems = div('cal-mhb-elems', el);
+    div('cal-mhb-ticks', bar);
+    const elems = div('cal-mhb-elems', plate);
     const elemEls = {};
-    for (const e of ['fire', 'shock', 'freeze']) {
-      const row = div('cal-elem', elems);
+    for (const e of ['fire', 'freeze', 'shock']) {
+      const row = div('cal-elem', elems, `<span>${ELEM_LABEL[e]}</span><div class="cal-elem-rule"><i></i></div>`);
       row.dataset.e = e;
-      const ring = div('cal-elem-ring', row);
-      div('cal-elem-ic', ring, svgIcon(e, 'currentColor'));
-      elemEls[e] = { row, ring, w: -1, trig: null, shown: null };
+      elemEls[e] = { row, fill: row.querySelector('i'), w: -1, trig: null, shown: null };
     }
+    div('cal-mhb-leader', el);
     return {
-      el, plate, aware, awareCircle: aware.firstChild, name, ghost, fill, elemEls,
-      m: null, vis: null, nameSig: '', w: -1, ghostW: -1, ghostHold: 0, clamped: null,
-      awareSig: '', elemSig: '', h: 0,
+      wrap, el, plate, aware, name, ghost, fill, elemEls,
+      m: null, vis: null, w: -1, ghostW: -1, clamped: null, nolead: null, awareS: '', h: 0, qx: NaN, qy: NaN, atk: false,
     };
   }
 
   /* ------------------------------ HUD scale -------------------------------- */
 
-  /**
-   * ui-15 / camera-feel-13. `--hud-scale` tracks the viewport against the
-   * 1600×900 reference frame, clamped to [0.85, 1.9], times the player's
-   * `ctx.settings.hudScale`. Every text rule in hud.css is `max(11px, …)`, so
-   * the floor is a CSS guarantee rather than a promise made here.
-   */
+  /** `--hud-scale` tracks the viewport against 1600x900, clamped, times the player's preference. */
   _applyScale() {
     const s = this.ctx.settings || (this.ctx.settings = {});
     s.hudScale ??= 1;
     const fit = Math.min(this._vw / HUD_REF_W, this._vh / HUD_REF_H);
     const auto = Math.min(HUD_SCALE_MAX, Math.max(HUD_SCALE_MIN, fit));
-    const v = Math.min(2.6, Math.max(0.7, auto * (Number(s.hudScale) || 1)));
+    const v = Math.min(3, Math.max(0.7, auto * (Number(s.hudScale) || 1)));
     if (Math.abs(v - this._scale) < 0.001) return;
     this._scale = v;
     this._wscale = Math.max(WORLD_SCALE_MIN, v);
     this.rootEl.style.setProperty('--hud-scale', v.toFixed(3));
+    TX_MEMO.clear();
+    PLATE_Y.clear(); CENTRE_Y.clear(); AWARE_Y.clear();
+    for (const slot of this._mhbSlots) { slot.qx = NaN; slot.qy = NaN; }
+    for (const a of this._awares.values()) { a.qx = NaN; a.qy = NaN; }
+    this._objQx = this._objQy = this._intQx = this._intQy = NaN;
+    this._lastStripX = NaN;
   }
 
-  /** Published for `shell-menus`' settings screen (camera-feel-13). */
+  /** Published for the settings page. */
   setHudScale(mult) {
     const s = this.ctx.settings || (this.ctx.settings = {});
     s.hudScale = Math.min(2, Math.max(0.7, Number(mult) || 1));
@@ -820,87 +719,89 @@ export class HUD {
     return s.hudScale;
   }
 
-  /**
-   * PUBLISHED CROSS-LANE API (ui-17 / onboarding-loop-no-tutorial-hunt).
-   *
-   * `TIPS` covers the mechanics this lane can observe for itself, but the
-   * "Lessons of the Valley" chain lives in `progression` and knows things the
-   * HUD cannot infer — which objective just opened, which mechanic it is about
-   * to ask for. Rather than have that lane reach into this file, it calls
-   *
-   *     ctx.hud.showTip('focus')                       // one of the TIPS ids
-   *     ctx.hud.showTip({ id: 'ropecaster', title: 'TIE IT DOWN',
-   *                       body: '…', keys: ['3', 'LMB'] })   // its own card
-   *
-   * or emits `tutorial-tip` with the same argument, for lanes that do not hold
-   * a ctx reference. Cards stay ONE-SHOT per save either way: an id that has
-   * already been shown is refused and the call returns false.
-   */
+  /** Published: a waypoint rides the theodolite circle (`map.js` calls this). */
+  setWaypoint(wp) {
+    this._waypoint = wp && Number.isFinite(wp.x) ? wp : null;
+    if (!this._wpPip) {
+      const el = div('cal-pip wp', this._pipLayer);
+      div('cal-pip-mark', el);
+      this._wpPip = { el, lab: div('cal-pip-dist', el), dist: -1, vis: null };
+    }
+    if (!this._waypoint) { this._wpPip.el.style.visibility = 'hidden'; this._wpPip.vis = false; }
+  }
+
+  /** Published. A one-shot card: an id of TUTORIAL_CARDS or { id, title, body, keys }. */
   showTip(tip) {
     const id = typeof tip === 'string' ? tip : tip?.id;
     if (!id) return false;
-    const built = TIPS.find((t) => t.id === id);
-    // a bare id — or an object carrying nothing but one — means the built-in
+    const built = TUTORIAL_CARDS.find((t) => t.id === id);
+    // a bare id, or an object carrying nothing but one, means the built-in
     if (built && (typeof tip === 'string' || tip.title == null)) return this._queueTip(built);
     if (typeof tip === 'string') return false;         // unknown id, no card to show
     return this._queueTip({
       id: String(id),
-      title: String(tip.title ?? '').toUpperCase(),
-      body: String(tip.body ?? ''),
+      title: fieldWord(String(tip.title ?? '')).toUpperCase(),
+      body: fieldWord(String(tip.body ?? '')),
       keys: Array.isArray(tip.keys) ? tip.keys.map((k) => keyGlyph(k)) : [],
     });
   }
 
   /**
-   * The accumulated transform scale from an element up to <body> — i.e. how
-   * much bigger or smaller the browser PAINTED it than it laid it out.
-   * `seen` is false when nothing in the chain has been transformed yet, so a
-   * caller can tell "measured 1" from "never positioned".
+   * Published (U-17), look films only: under `?shot=1` the field note carries a staged bible §8.9
+   * beat instead of the tracked quest's own text, so a look frame prints CALIMA's quest words only.
+   * `{ kicker, title, objective, meta? }`, or null to hand the note back to progression. Returns
+   * false (and changes nothing) outside `?shot`, so play can never be staged.
    */
+  stageNote(note) {
+    if (!this.ctx.params?.has?.('shot')) return false;
+    this._staged = note && (note.title || note.objective) ? {
+      kicker: String(note.kicker ?? 'FIELD NOTE'),
+      title: String(note.title ?? ''),
+      objective: String(note.objective ?? ''),
+      meta: String(note.meta ?? ''),
+    } : null;
+    this._trackIdleT = 0;
+    this._lastObjLabel = null;
+    this._renderTracker(true);
+    return true;
+  }
+
+  /** How much bigger or smaller the browser PAINTED an element than it laid it out. */
   _paintScale(el) {
     let k = 1, seen = false;
     for (let n = el; n && n !== document.body; n = n.parentElement) {
       const t = getComputedStyle(n).transform;
       if (!t || t === 'none') continue;
       const nums = t.slice(t.indexOf('(') + 1, -1).split(',').map((v) => parseFloat(v));
-      const f = Math.hypot(nums[0], nums[1]);
+      const f = len2(nums[0], nums[1]);
       if (Number.isFinite(f) && f > 0) { k *= f; if (Math.abs(f - 1) > 1e-3) seen = true; }
     }
     return { k, seen };
   }
 
-  /**
-   * ui-15. Reports the EFFECTIVE type size — the stylesheet's px times every
-   * transform between the element and the screen. Reading `fontSize` alone is
-   * how `.cal-mhb-name` shipped a round at a painted 9.35 px while this audit
-   * answered 11: the stylesheet said 11, and the transform that halved it was
-   * invisible from here. For the same reason the probe list now contains the
-   * world-projected layer, which it never did — the blind spot that also let
-   * the ui-16 prompt ride the wrong anchor for a round.
-   */
+  /** The EFFECTIVE type size: the stylesheet's px times every transform up to the screen. */
   _scaleAudit() {
     const W = 'world';                    // scaled by `_wscale` in the transform
     const mhb = this._mhbSlots.find((m) => m.vis) ?? this._mhbSlots[0];
     const dmg = this._dmgPool.find((d) => d.active);
     const probe = [
-      // the <b> is the numeral that carries the font size; the row around it
-      // has none of its own and would report the document default (16 px) at
-      // every scale — i.e. a probe that looks like a HUD that never scales.
       ['health', this._healthNum.querySelector('b')],
+      ['healthMax', this._healthNum.querySelector('span')],
+      ['gourd', this._gourdNum],
+      ['gourdLabel', this._gourdChip.querySelector('.cal-chip-l')],
       ['track', this._trackObj],
-      ['bearing', this._bearingEl],
+      ['bearing', this._bearingNum],
       ['ammoName', this._wpnAmmoName],
-      ['xpLabel', this._xpLeft],
       ['toolCount', this._toolRow.querySelector('.cal-tool-n')],
       ['eye', this._eyeLabel],
       ['tip', this._tipBody],
+      ['breath', this._concEl.querySelector('.cal-breath-l')],
+      ['pipDist', this._pipLayer.querySelector('.cal-pip-dist')],
       ['mhbName', mhb?.name, W],
-      ['mhbLevel', mhb?.name?.querySelector('.lv'), W],
       ['interact', this._intLabel, W],
       ['objDist', this._objDiamondDist, W],
       ['objLabel', this._objDiamondLabel, W],
-      // the damage layer sizes each number inline (already scaled once); the
-      // only transform on it is the pop-in curve, so measurement is the truth.
+      // the damage layer sizes each number inline (already scaled once)
       ['damage', dmg?.el, null],
     ];
     const fonts = {};
@@ -911,8 +812,6 @@ export class HUD {
       if (!el) continue;
       const css = parseFloat(getComputedStyle(el).fontSize) || 0;
       const p = this._paintScale(el);
-      // measured when there IS a transform to measure; otherwise the layer's
-      // declared multiplier, never a silent 1.
       const mult = p.seen ? p.k : (layer === W ? this._wscale : 1);
       const px = css * mult;
       cssFonts[k] = +css.toFixed(2);
@@ -937,35 +836,25 @@ export class HUD {
     const raw = ctx.events;
     /**
      * `src/core/events.js` walks its subscriber set unguarded, so a DOM hiccup
-     * in here would unwind whoever emitted — including `machine-killed` inside
-     * the machine loop. Every listener this lane installs is isolated.
+     * in here would unwind whoever emitted. Every listener here is isolated.
      */
     const on = (name, fn) => raw.on(name, (e) => {
       try { fn(e); } catch (err) { console.warn(`[hud] ${name}:`, err?.message || err); }
     });
     this._on = on;
 
-    // machine-damaged carries the v2 payload extensions (tear/tornPart);
-    // it is the single source for damage numbers so hits never double-pop.
+    // machine-damaged is the single source for damage numbers
     on('machine-damaged', (e) => {
       const m = e?.machine;
       if (!m) return;
       this._combatIdleT = 0;
-      /**
-       * ui-07's dynamic hide is about CALM, and a hit landing is not calm. The
-       * vitals used to key off her own health alone, so a full-health fight —
-       * the normal opening of every encounter — was fought with no health bar
-       * on screen at all, and the bar only appeared once she was already hurt.
-       * Dealing damage pokes the same 4 s window taking damage does.
-       */
+      /** A hit landing is not calm: dealing damage pokes the vitals' 4 s window too. */
       this._vitalsIdleT = 0;
       const rec = this._engage(m);
       rec.hold = MHB_HOLD_S;
       rec.ghostHold = GHOST_HOLD_S;
       rec.hit = performance.now();
       this._spawnDamage(e);
-      // status triggered -> start a local countdown (fire 8s / shock 3s /
-      // freeze 8s); the buildup meter renders it FULL->empty in triggered style
       const trig = e.triggeredElement;
       if (trig && ELEM_TRIG[trig]) {
         let t = this._elemTrigs.get(m);
@@ -994,113 +883,74 @@ export class HUD {
     on('machine-disposed', () => this._reapMachines());
     on('arrow-fired', () => { this._combatIdleT = 0; });
     on('item-gained', (e) => this._itemToast(e));
-    on('inventory-full', (e) => this._flash(`${String(e?.name ?? 'POCKET').toUpperCase()} FULL`, 'warn'));
-    on('herb-gathered', () => { this._pouchRow.classList.remove('pulse'); void this._pouchRow.offsetWidth; this._pouchRow.classList.add('pulse'); });
-    on('ammo-crafted', (e) => this._flash(`+${e?.n ?? 1} ${String(ammoLook(e?.ammo).name).toUpperCase()}`, 'good'));
-    on('item-crafted', (e) => this._flash(`+${e?.n ?? 1} ${String(e?.name ?? 'ITEM').toUpperCase()}`, 'good'));
-    on('tool-blocked', (e) => this._flash(String(e?.reason ?? 'NOT READY').toUpperCase(), 'warn'));
+    on('inventory-full', (e) => this._flash(`${fieldWord(String(e?.name ?? 'POCKET')).toUpperCase()} FULL`, 'warn'));
+    on('herb-gathered', () => { this._gourdChip.classList.remove('pulse'); void this._gourdChip.offsetWidth; this._gourdChip.classList.add('pulse'); });
+    on('ammo-crafted', (e) => this._flash(`+${e?.n ?? 1} ${fieldWord(String(e?.name ?? e?.ammo ?? 'ARROW')).toUpperCase()}`, 'good'));
+    on('item-crafted', (e) => this._flash(`+${e?.n ?? 1} ${fieldWord(String(e?.name ?? 'ITEM')).toUpperCase()}`, 'good'));
+    on('tool-blocked', (e) => this._flash(fieldWord(String(e?.reason ?? 'NOT READY')).toUpperCase(), 'warn'));
     on('player-hurt', () => {
       this._hurtFlash = Math.min(1.2, this._hurtFlash + 0.75);
-      this._hpGhostHold = GHOST_HOLD_S; // red damage-delta ghost on the bar
+      this._hpGhostHold = GHOST_HOLD_S; // the ghost on the staff
       this._combatIdleT = 0;
     });
-    // watcher blind-flash: white screen hit when close + facing the machine
-    on('watcher-flash', (e) => this._watcherFlash(e));
+    on('watcher-flash', (e) => this._lampFlash(e));
     on('player-died', () => {
-      if (this._victoryShown) return; // victory owns the screen — no death card
-      // vignette hits immediately; the overlay waits so the crumple can play
       this._hurtFlash = Math.min(1.4, this._hurtFlash + 1.0);
-      clearTimeout(this._deathTimer);
-      this._deathTimer = setTimeout(() => {
-        if (this._victoryShown || this.ctx.state !== 'dead') return;
-        if (this.ctx.menus) return;                 // shell-menus owns the card
-        this._deathEl.classList.add('show');
-      }, DEATH_OVERLAY_DELAY);
     });
     on('player-respawn', () => {
-      clearTimeout(this._deathTimer);
-      this._deathEl.classList.remove('show');
       this._hurtFlash = 0;
       this._vignette.style.opacity = '0';
       this._lastVin = 0;
-      if (this._victoryShown) {
-        this.ctx.state = 'victory';
-        this.ctx.input.exitPointerLock();
-      }
     });
-    on('checkpoint-loaded', () => {
-      clearTimeout(this._deathTimer);
-      this._deathEl.classList.remove('show');
-      this._hurtFlash = 0;
-    });
-    on('victory', () => this._showVictory());
-    on('victory-resume', () => {
-      this._victoryEl.classList.remove('show');
-      this.rootEl.classList.remove('endgame');
-    });
+    on('checkpoint-loaded', () => { this._hurtFlash = 0; });
     on('game-start', () => this._renderTracker(true));
 
-    /* ---------------- progression: banners, XP, quest tracker -------------- */
+    /* --------------------- progression: banners, field note ---------------- */
     on('banner', (e) => this._banner(e?.title, e?.detail, e?.kind));
-    on('xp-gained', (e) => {
-      if ((e?.amount ?? 0) > 0) this._xpPop(e.amount, e.reason);
-      this._lastXpSig = '';
-    });
-    on('level-up', () => {
-      this._lastXpSig = '';
-      this._xpPip.classList.remove('bump');
-      void this._xpPip.offsetWidth;
-      this._xpPip.classList.add('bump');
-      this._emitUi('ui-confirm');
-    });
-    on('skill-unlocked', () => { this._lastXpSig = ''; });
     for (const n of ['quest-started', 'quest-objective', 'quest-complete', 'quest-tracked', 'objective-changed']) {
       on(n, () => { this._trackIdleT = 0; this._renderTracker(true); });
     }
-    // the event form of `ctx.hud.showTip` — see that method for the contract
+    // the event form of `ctx.hud.showTip`
     on('tutorial-tip', (e) => this.showTip(e?.tip ?? e));
+    // the alidade answers the card that asked for it: raising it puts the SIGHTING card away, so
+    // the card never stands beside the Instrument card it taught (r1 gate judge)
+    on('sighting-on', () => {
+      if (this._tipCur === 'sighting' && this._tipT > 0) this._dismissTip();
+      for (let i = this._tipQueue.length - 1; i >= 0; i--) if (this._tipQueue[i].id === 'sighting') this._tipQueue.splice(i, 1);
+    });
 
-    /* ------------------------------ tools strip --------------------------- */
-    on('tool-selected', () => { this._lastToolSig = ''; this._emitUi('ui-nav'); });
-    on('tool-used', () => { this._lastToolSig = ''; });
+    /* --------------------------- tool chips -------------------------------- */
+    on('tool-selected', () => { this._lastToolSig = null; this._emitUi('ui-nav'); });
+    on('tool-used', () => { this._lastToolSig = null; });
 
-    /* --------------------------- Concentration veil ----------------------- */
-    on('steady-start', () => { this._concOn = true; });
-    on('steady-end', () => { this._concOn = false; });
+    /* ---------------------------- Flagged ---------------------------------- */
+    // the pennant over Brea's mark on the circle (perception.js)
+    on('flagged', () => { this._flagged = true; });
+    on('flag-ended', () => { this._flagged = false; });
 
     /* ------------------------------- input -------------------------------- */
-    ctx.input.onDown('Escape', () => {
-      if (this.ctx.menus) return;                   // shell-menus owns the hub
-      if (this.ctx.state === 'playing') this.setPaused(true);
-      else if (this.ctx.state === 'paused') this.setPaused(false);
-    });
-    // Browsers exit pointer lock on Esc without delivering the keydown —
-    // treat any lock loss during play as a pause request.
+    // Browsers exit pointer lock on Esc without delivering the keydown: any lock
+    // loss during play opens the hub.
     document.addEventListener('pointerlockchange', () => {
-      if (document.pointerLockElement == null &&
-          this.ctx.state === 'playing' &&
-          this.ctx.game?.started &&
-          !this.ctx.menus &&
-          !this.ctx.params.has('shot')) {
-        this.setPaused(true);
+      if (document.pointerLockElement == null
+          && this.ctx.state === 'playing'
+          && this.ctx.game?.started
+          && !this.ctx.params.has('shot')) {
+        this.ctx.menus?.openHub?.();
       }
     });
-    // Esc-unpause can't re-acquire pointer lock (no user activation, and
+    // Unpausing can't always re-acquire pointer lock (no user activation, and
     // browsers enforce a cooldown after Esc). Any click while playing and
     // unlocked counts as the activation we need to restore mouse-look.
     document.addEventListener('mousedown', () => {
-      if (this.ctx.state === 'playing' &&
-          !this.ctx.input.pointerLocked &&
-          !this.ctx.params.has('shot')) {
+      if (this.ctx.state === 'playing'
+          && !this.ctx.input.pointerLocked
+          && !this.ctx.params.has('shot')) {
         this.ctx.input.requestPointerLock();
       }
     });
 
-    /**
-     * ui-07 / research §2 "Holding a show-HUD key temporarily reveals hidden
-     * elements". H is unbound everywhere else in the build (checked against
-     * every `input.onDown` call site) and it is the canon letter.
-     */
+    // H holds the HUD open (the dynamic hides stand aside).
     ctx.input.onDown('KeyH', () => { this._trackIdleT = 0; });
   }
 
@@ -1108,7 +958,7 @@ export class HUD {
     try { this.ctx.events?.emit?.(name, {}); } catch { /* audio not up yet */ }
   }
 
-  /* -------------------------- engaged-machine book -------------------------- */
+  /* -------------------------- engaged-Instrument book ----------------------- */
 
   _engage(m) {
     let rec = this._engaged.get(m);
@@ -1134,107 +984,60 @@ export class HUD {
     for (const m of this._attackFlash.keys()) if (!set.has(m)) this._attackFlash.delete(m);
   }
 
-  /* ------------------------------ pause menu ------------------------------- */
+  /* ------------------------------ pause ------------------------------------ */
 
+  /** The hub owns pause (menu.js); this routes the published call to it. */
   setPaused(on) {
-    const ctx = this.ctx;
+    const ctx = this.ctx, m = ctx.menus;
     if (on) {
-      if (ctx.state !== 'playing') return;
-      ctx.state = 'paused';
-      this._pauseEl.classList.add('show');
-      ctx.input.exitPointerLock();
-      this._emitUi('ui-open');
-    } else {
-      if (ctx.state !== 'paused') return;
+      if (ctx.state === 'playing') m?.openHub?.();
+      return;
+    }
+    if (m?.hubOpen) { m.closeHub(); return; }
+    if (ctx.state === 'paused') {
       ctx.state = 'playing';
-      this._pauseEl.classList.remove('show');
       if (!ctx.params.has('shot')) ctx.input.requestPointerLock();
-      this._emitUi('ui-close');
     }
   }
 
-  /* --------------------------- victory sequencer --------------------------- */
-
-  /**
-   * `progression` owns the quest chain; the only thing that still lives here is
-   * the VICTORY trigger, because nothing else in the build emits it (grep:
-   * `progression.js` only *listens* for `victory`). Killing the Thunderjaw —
-   * or completing the legacy chain — is still what ends the hunt.
-   */
   _onKill(e) {
     const m = e?.machine ?? e ?? {};
-    const kind = m.kind ?? 'machine';
-    this._killCounts[kind] = (this._killCounts[kind] || 0) + 1;
-
     this._engaged.delete(m);
     this._attackFlash.delete(m);
     this._elemTrigs.delete(m);
-
-    while (this._stage < QUEST.length &&
-           (this._killCounts[QUEST[this._stage].kind] || 0) >= QUEST[this._stage].need) {
-      this._stage++;
-    }
-    if (!this._victoryFired && (kind === 'thunderjaw' || this._stage >= QUEST.length)) {
-      this._victoryFired = true;
-      // let the kill explosion breathe before the fanfare
-      setTimeout(() => this.ctx.events.emit('victory'), 1400);
-    }
-  }
-
-  _showVictory() {
-    this._victoryFired = true;
-    this._victoryShown = true;
-    clearTimeout(this._deathTimer);
-    this._pauseEl.classList.remove('show');
-    this._deathEl.classList.remove('show');
-    if (this.ctx.menus) return;                     // shell-menus owns the card
-    this._victoryEl.classList.add('show');
-    // hide every gameplay HUD layer under the overlay (see hud.css)
-    this.rootEl.classList.add('endgame');
-    this.ctx.state = 'victory';
-    this.ctx.input.exitPointerLock();
   }
 
   /* ------------------------------- banners --------------------------------- */
 
-  /** ui-05 — centre banners, rendered from `progression`'s `banner` event. */
+  /** A paper band in the upper third, from progression's `banner` event. */
   _banner(title, detail, kind = 'info') {
     if (!title) return;
     const b = div(`cal-banner k-${kind}`, this._bannerEl);
-    div('b-title', b, String(title));
-    if (detail) div('b-detail', b, String(detail));
-    div('b-rule', b);
+    div('b-title', b).textContent = fieldWord(String(title));
+    if (detail) div('b-detail', b).textContent = fieldWord(String(detail));
     setTimeout(() => b.remove(), 3900);
     while (this._bannerEl.childElementCount > 3) this._bannerEl.firstElementChild.remove();
     this._emitUi(kind === 'death' ? 'ui-error' : 'ui-confirm');
   }
 
-  /** Small centre-bottom flash for craft / pocket-full / tool-blocked. */
+  /** A short chip, centre-low: made / full / blocked. */
   _flash(text, kind = 'info') {
-    const el = div(`cal-flash k-${kind}`, this._xpPops, String(text));
+    const el = div(`cal-flash k-${kind}`, this._xpPops);
+    el.textContent = String(text);
     setTimeout(() => el.remove(), 1900);
     while (this._xpPops.childElementCount > 5) this._xpPops.firstElementChild.remove();
   }
 
-  /** progression-012 — the kill feed is gone; this is what replaced it. */
-  _xpPop(amount, reason) {
-    const el = div('cal-xppop', this._xpPops,
-      `+${amount}<span>XP</span>${reason === 'quest' ? '<i>QUEST</i>' : ''}`);
-    setTimeout(() => el.remove(), 1750);
-    while (this._xpPops.childElementCount > 5) this._xpPops.firstElementChild.remove();
-  }
-
-  /* ------------------------------ item toasts ------------------------------ */
+  /* ------------------------------ item chips -------------------------------- */
 
   /**
-   * Loot-flow decision (round 3): a loot event that opened the take-all popup
-   * renders the POPUP ONLY; item toasts serve auto-pickups and gathers.
-   * interactables.js emits 'item-gained' BEFORE it calls popup.show() in the
-   * same synchronous stack, so toasts are buffered one microtask and dropped
-   * when the popup claimed their ids. (Gate `A10-loot-single-render`.)
+   * A loot event that opened the take-all popup renders the POPUP ONLY; chips
+   * serve auto-pickups and gathers. interactables.js emits 'item-gained' BEFORE
+   * it calls popup.show() in the same synchronous stack, so toasts are buffered
+   * one microtask and dropped when the popup claimed their ids. Gate `A10`.
    */
   _itemToast(e) {
-    let id = e?.id ?? e?.item?.id ?? (typeof e?.item === 'string' ? e.item : null);
+    const id = e?.id ?? e?.item?.id ?? (typeof e?.item === 'string' ? e.item : null);
     const n = e?.count ?? e?.n ?? e?.qty ?? 1;
     if (id == null) return;
     this._pendingItems.push({ id: String(id), n, e });
@@ -1257,17 +1060,7 @@ export class HUD {
   }
 
   _renderItemToast(id, n, e) {
-    const inv = this.ctx.inventory;
-    const cat = inv?.catalog ?? inv?.items;
-    const entry = cat instanceof Map ? cat.get(id) : cat?.[id];
-    const local = ITEMS[id] ?? {};
-    const name = entry?.name ?? e?.name ?? local.name ?? prettify(id);
-    const color = e?.rarityColor ?? entry?.color ?? e?.color ?? local.color ?? '#efe6d5';
-    const glyphKey = entry?.glyph && GLYPHS[entry.glyph] ? entry.glyph : local.glyph;
-    const icon = glyphKey ? svgIcon(glyphKey, color)
-      : e?.glyph ? `<span class="cal-item-tg" style="color:${color}">${e.glyph}</span>`
-        : svgIcon('shard', color);
-
+    const name = itemPlayerName(id, e?.name);
     // merge into the newest row when the same item streams in
     const last = this._itemsEl.lastChild;
     if (last && last.dataset.id === id) {
@@ -1278,7 +1071,8 @@ export class HUD {
     el.className = 'cal-item';
     el.dataset.id = id;
     el.dataset.n = String(n);
-    el.innerHTML = `${icon}<span>${name}</span><b>${n > 0 ? '×' + n : ''}</b>`;
+    el.innerHTML = `<i class="cal-item-ic">${itemIcon(id)}</i><span></span><b>${n > 0 ? '×' + n : ''}</b>`;
+    el.querySelector('span').textContent = name;
     this._itemsEl.appendChild(el);
     while (this._itemsEl.children.length > 5) this._itemsEl.firstChild.remove();
     setTimeout(() => el.remove(), 3050);
@@ -1307,12 +1101,15 @@ export class HUD {
     slot.el.className = 'cal-dmg' + (cls ? ' ' + cls : '');
     slot.el.style.fontSize = px.toFixed(1) + 'px';
     slot.el.style.visibility = 'visible';
+    // the painted box, from Plex Mono's advance (0.6 em) and the chip's padding: read every frame, never measured
+    slot.hw = (String(text).length * px * 0.6 + 12) * 0.5;
+    slot.hh = (px + 6) * 0.5;
   }
 
   /**
-   * combat-hit-feedback-faint. The number is sized by how much of the target it
-   * took off, and a WEAK-POINT hit never renders below 18 px — the audit's
-   * literal floor, checked by `A71c-hud-surfaces`.
+   * Plex Mono (bible §9.7): paper-white for Blunt, a cobalt-on-paper chip for a
+   * weak point (never below 18 px), carmine for Pry. Sized by how much of the
+   * target the hit took off.
    */
   _spawnDamage(e) {
     if (!e) return;
@@ -1329,23 +1126,23 @@ export class HUD {
     const s = this._scale;
     if (dmg > 0) {
       const base = (15 + 30 * Math.pow(frac, 0.55)) * s;
-      // 15 px, not 14: the pop-in curve opens at 0.82x, so a 14 px floor
-      // painted 11.5 px — on the 11 px line rather than clear of it.
+      // 15 px, not 14: the pop-in curve opens at 0.82x
       const px = e.weak ? Math.max(18, base * 1.28) : Math.max(15, base);
       this._popNumber(point, String(dmg), e.weak ? 'weak' : '', e.weak ? 1.15 : 0.92,
-        Math.min(52, px));
+        Math.min(52 * Math.max(1, s), px));
     }
     if (e.tornPart) {
       this._v2.copy(point);
       this._v2.y += 0.42;
-      this._popNumber(this._v2, '+TEAR', 'tear', 1.25, Math.max(18, 22 * s));
+      this._popNumber(this._v2, 'PRY', 'pry', 1.25, Math.max(18, 22 * s));
     }
   }
 
   _updateDamageNumbers(dt) {
     const cam = this.ctx.camera;
     const v = this._v;
-    for (const d of this._dmgPool) {
+    for (let i = 0; i < this._dmgPool.length; i++) {
+      const d = this._dmgPool[i];
       if (!d.active) continue;
       d.age += dt;
       if (d.age >= d.dur) {
@@ -1361,14 +1158,51 @@ export class HUD {
       d.el.style.visibility = 'visible';
       const k = d.age / d.dur;
       const rise = 1 - (1 - k) * (1 - k);
-      const x = (v.x * 0.5 + 0.5) * this._vw + d.drift * rise;
-      const y = (-v.y * 0.5 + 0.5) * this._vh - 44 * rise;
-      const s = k < 0.14 ? 0.82 + 0.18 * (k / 0.14) : 1;
-      d.el.style.transform =
-        `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-100%) scale(${s.toFixed(3)})`;
+      this._dmgClear((v.x * 0.5 + 0.5) * this._vw + d.drift * rise, (-v.y * 0.5 + 0.5) * this._vh - 44 * rise, d.hw, d.hh);
+      const qx = Math.round(this._dmgX), qy = Math.round(this._dmgY);
+      if (qx !== d.qx) { d.qx = qx; d.wrap.style.transform = txString(qx); }
+      const si = k < 0.14 ? Math.round((k / 0.14) * 10) : 10;
+      if (qy !== d.qy || si !== d.si) { d.qy = qy; d.si = si; d.el.style.transform = dmgY(qy, si); }
       const o = k < 0.1 ? k / 0.1 : k > 0.62 ? (1 - k) / 0.38 : 1;
-      d.el.style.opacity = o.toFixed(2);
+      d.el.style.opacity = OPACITY_STR[Math.round(o * 20)];
     }
+  }
+
+  /**
+   * A number belongs to the part that was hit, but what she reads keeps its place: the circle with
+   * the vial's word, the column and every plate. A number that would land on one steps clear of it,
+   * by the same bounds the plates resolve against (`_updateMachineBars`, which runs first this frame).
+   * Writes `_dmgX` and `_dmgY`: this runs per number per frame.
+   */
+  _dmgClear(x, y, hw, hh) {
+    const sc = this._scale, gap = MHB_GAP * sc;
+    // (x, y) is the number's bottom centre (`dmgY`)
+    const h = hh * 2;
+    // the whole circle across the top of the frame, and under its middle the vial
+    if (y - h < MHB_TOP_BASE * sc) y = MHB_TOP_BASE * sc + h + gap;
+    if (Math.abs(x - this._vw * 0.5) < MHB_EYE_HALF * sc + hw && y - h < MHB_EYE_BASE * sc) {
+      y = MHB_EYE_BASE * sc + h + gap;
+    }
+    const colB = this._colFoot(sc);
+    const colR = MHB_SAFE_L * sc;
+    if (x - hw < colR && y - h < colB) {
+      const toRight = colR + hw + gap - x, toBelow = colB + h + gap - y;
+      if (toRight <= toBelow) x += toRight; else y += toBelow;
+    }
+    // a plate can sit under the circle, so the plates are tried after it, twice: stepping below one can land on the next
+    const ws = this._wscale;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < MHB_CAP; i++) {
+        const px = this._mhbX[i];
+        if (px !== px) continue;
+        const py = this._mhbY[i];
+        const ph = (this._mhbSlots[i].h || MHB_PLATE_H) * ws;
+        const halfW = this._mhbHW[i] || MHB_W * 0.5 * ws;
+        if (Math.abs(x - px) < halfW + hw && y > py - ph && y - h < py) y = py + h + gap;
+      }
+    }
+    this._dmgX = x;
+    this._dmgY = y;
   }
 
   /* ------------------------------ frame update ----------------------------- */
@@ -1384,9 +1218,16 @@ export class HUD {
       this._applyScale();
     }
     this._t += dt;
+    this._aimT = p.aiming ? this._aimT + dt : 0;
+    this._marksT -= dt;
+    if (this._marksT <= 0) {
+      this._marksT = 0.25;
+      this._marks = this.ctx.progression?.getMarkers?.() ?? null;
+      this._questKind = this._trackedKillKind();
+    }
     this._scanMachines(dt, p);
     this._updateHealth(dt, p);
-    this._updateCompass(p);
+    this._updateCompass(dt, p);
     this._updateAwareness(dt, p);
     this._updateMachineBars(dt);
     this._updateReticle(p);
@@ -1395,14 +1236,11 @@ export class HUD {
     this._updateObjectiveMark(p);
     this._updateDamageNumbers(dt);
     this._updateVignette(dt, t, p);
-    this._updateConcVeil(dt);
 
     /**
-     * Everything below builds a dirty-check SIGNATURE STRING, which is an
-     * allocation. At 60 fps that is real garbage for panels a player cannot
-     * read changing faster than they can blink, so they run on a 10 Hz
-     * sampler. Anything that has to track the camera (projection, reticle,
-     * bars, numbers) stays above, per frame.
+     * Everything below builds a dirty-check signature, which is an allocation.
+     * At 60 fps that is garbage for panels a player cannot read changing faster
+     * than they can blink, so they run on a 10 Hz sampler.
      */
     this._slowT += dt;
     if (this._slowT < 0.1) return;
@@ -1413,39 +1251,32 @@ export class HUD {
     this._updateWeapon();
     this._updateCraft();
     this._updateTools();
-    this._updateXp();
+    this._updateSalt();
     this._updateTips(sdt);
+  }
+
+  /** The salt count beside the gourd: a string only when the number changes. */
+  _updateSalt() {
+    const n = CURRENCY_ID ? (this.ctx.inventory?.count?.(CURRENCY_ID) ?? 0) : 0;
+    if (n === this._lastSalt) return;
+    this._lastSalt = n;
+    this._saltNum.textContent = String(n).padStart(3, '0');
   }
 
   /**
    * ONE pass over `machines.list` per frame that every consumer below reads
-   * from: hostility, distance, and the cap-3 bar election. No allocation — the
-   * pick arrays are preallocated and overwritten in place.
+   * from: hostility, distance, and the cap-3 plate election. No allocation.
    */
   _scanMachines(dt, p) {
     this._anyHostile = false;
     this._nearestHostileDist = Infinity;
+    this._nearestInstrumentDist = Infinity;
     for (let i = 0; i < MHB_CAP; i++) { this._mhbPick[i] = null; this._mhbPickW[i] = -1; }
 
-    // decay attack-flash + elemental countdowns + engagement holds
-    if (this._attackFlash.size) {
-      for (const [m, ttl] of this._attackFlash) {
-        const left = ttl - dt;
-        if (left <= 0) this._attackFlash.delete(m);
-        else this._attackFlash.set(m, left);
-      }
-    }
-    if (this._elemTrigs.size) {
-      for (const [mm, rec] of this._elemTrigs) {
-        let any = false;
-        for (const k in rec) {
-          rec[k] -= dt;
-          if (rec[k] <= 0) delete rec[k];
-          else any = true;
-        }
-        if (!any || mm.alive === false) this._elemTrigs.delete(mm);
-      }
-    }
+    // decay attack-flash + status countdowns (prebuilt callbacks: no iterator, no key list)
+    this._scanDt = dt;
+    if (this._attackFlash.size) this._attackFlash.forEach(this._decayFlash);
+    if (this._elemTrigs.size) this._elemTrigs.forEach(this._decayTrig);
 
     const list = this.ctx.machines?.list;
     if (!Array.isArray(list)) return;
@@ -1458,7 +1289,8 @@ export class HUD {
       const alive = m.alive !== false;
       const hostile = alive && (m.state === 'alert' || m.state === 'attack');
       const dx = pos.x - px, dz = pos.z - pz;
-      const dist = Math.hypot(dx, dz);
+      const dist = len2(dx, dz);
+      if (alive && dist < this._nearestInstrumentDist) this._nearestInstrumentDist = dist;
       if (hostile) {
         this._anyHostile = true;
         if (dist < this._nearestHostileDist) this._nearestHostileDist = dist;
@@ -1490,7 +1322,7 @@ export class HUD {
 
   /* ----------------------- dynamic HUD: combat idle ------------------------ */
 
-  /** Weapon panel + reticle dot recede when holstered & out of combat ~4s. */
+  /** The kit tag and the reticle dot recede when out of combat for ~4 s. */
   _updateCombatIdle(dt, p) {
     const c = this.ctx.combat;
     const engaged = !!p.aiming
@@ -1510,92 +1342,91 @@ export class HUD {
     }
   }
 
-  /* --------------------------- watcher blind-flash -------------------------- */
+  /* --------------------------- lamp blind-flash ----------------------------- */
 
-  _watcherFlash(e) {
+  _lampFlash(e) {
     const m = e?.machine;
     const p = this.ctx.player;
     if (!m?.position || !p?.position) return;
     const dx = m.position.x - p.position.x;
     const dz = m.position.z - p.position.z;
-    const dist = Math.hypot(dx, dz);
+    const dist = len2(dx, dz);
     if (dist > 12) return;
     const inv = dist > 0.001 ? 1 / dist : 0;
     const facing = (dx * -Math.sin(p.camYaw) + dz * -Math.cos(p.camYaw)) * inv;
     if (facing < 0.2) return;
     const el = this._wflash;
     el.classList.remove('show');
-    void el.offsetWidth; // restart the 1.5s animation
+    void el.offsetWidth; // restart the 1.5 s animation
     el.classList.add('show');
   }
 
-  /* --------------------------- health + pouch ------------------------------ */
+  /* --------------------------- staff + gourd -------------------------------- */
 
   /**
-   * ui-07 / onboarding-loop-healing-readability. RED four-segment bar with HP
-   * numerals, GREEN pouch directly under it with `+` pips for stored medicine
-   * past 100 %, a Q prompt the moment sipping would help, and a hold-H reveal
-   * that overrides the dynamic hide.
+   * The levelling staff (bible §9.7): alternating vermilion and paper
+   * graduations at 10 %, damage eating from the right. The reading index settles
+   * on a spring curve (CSS transition, no per-frame work). A hold-H reveal beats
+   * the dynamic hide.
    */
   _updateHealth(dt, p) {
     const hp = clamp01(p.health / p.maxHealth);
-    const w = Math.round(hp * 200) / 2; // 0.5% granularity
+    const w = Math.round(hp * 100);
     if (w !== this._lastHp) {
       this._lastHp = w;
-      this._healthFill.style.width = w + '%';
+      this._healthFill.style.clipPath = CLIP_R[w];
+      this._staffIndex.style.left = w + '%';
       const low = hp < 0.32;
       if (low !== this._lastLow) {
         this._lastLow = low;
-        this._healthFill.classList.toggle('low', low);
         this._topleftEl.classList.toggle('low', low);
       }
     }
-    const hpNum = Math.max(0, Math.round(p.health));
+    const hpNum = Math.max(0, Math.min(999, Math.round(p.health)));
     if (hpNum !== this._lastHpNum) {
       this._lastHpNum = hpNum;
-      this._healthNum.innerHTML = `<b>${hpNum}</b><span>/${Math.round(p.maxHealth)}</span>`;
+      this._healthNum.firstChild.textContent = BEARING_STR[hpNum] ?? String(hpNum);
+      this._healthNum.lastChild.textContent = '/' + Math.round(p.maxHealth);
     }
 
-    // red damage-delta ghost: holds at pre-hit width, then drains to the fill
+    // the ghost: holds at the pre-hit reading, then drains to the fill
     let gw = this._hpGhostW;
     if (gw < 0 || gw < w) gw = w;
     else if (gw > w) {
       if (this._hpGhostHold > 0) this._hpGhostHold -= dt;
       else gw = Math.max(w, gw - GHOST_DRAIN * dt);
     }
-    const gq = Math.round(gw * 2) / 2;
+    const gq = Math.round(gw);
     if (gq !== this._hpGhostW) {
       this._hpGhostW = gq;
-      this._healthGhost.style.width = gq + '%';
+      this._healthGhost.style.transform = SCALE_X[gq];
     }
 
-    const maxPouch = p.maxGourd || 100;
+    const maxGourd = p.maxGourd || 100;
     const raw = p.gourd ?? 0;
-    const pouch = clamp01(raw / maxPouch);
-    const pw = Math.round(pouch * 100);
-    if (pw !== this._lastPouch) {
-      this._lastPouch = pw;
-      this._pouchFill.style.width = pw + '%';
+    const gourd = clamp01(raw / maxGourd);
+    const pw = Math.round(gourd * 100);
+    if (pw !== this._lastGourd) {
+      this._lastGourd = pw;
+      this._gourdFill.style.transform = SCALE_X[pw];
     }
-    // canon: green "+" pips for stored medicine beyond one full pouch
-    const pips = Math.max(0, Math.min(4, Math.floor(raw / maxPouch)));
-    if (pips !== this._lastPouchPips) {
-      this._lastPouchPips = pips;
-      this._pouchPips.textContent = pips > 0 ? '+'.repeat(pips) : '';
+    const gn = Math.max(0, Math.min(999, Math.round(raw)));
+    if (gn !== this._lastGourdNum) {
+      this._lastGourdNum = gn;
+      this._gourdNum.textContent = BEARING_STR[gn] ?? String(gn);
     }
     const healing = !!p.healing;
     if (healing !== this._lastHealing) {
       this._lastHealing = healing;
-      this._pouchRow.classList.toggle('healing', healing);
+      this._gourdChip.classList.toggle('healing', healing);
       this._topleftEl.classList.toggle('healing', healing);
     }
     const hint = raw > 0.5 && p.health < p.maxHealth * 0.92;
-    if (hint !== this._lastPouchHint) {
-      this._lastPouchHint = hint;
-      this._pouchKey.classList.toggle('show', hint);
+    if (hint !== this._lastGourdHint) {
+      this._lastGourdHint = hint;
+      this._gourdKey.classList.toggle('show', hint);
     }
 
-    // hold-H reveal (research §2) beats the dynamic hide
     const held = !!this.ctx.input?.keys?.has?.('KeyH');
     this._reveal = held ? 1 : Math.max(0, this._reveal - dt * 3);
     const engaged = hp < 0.999 || healing || this._hurtFlash > 0.02
@@ -1606,43 +1437,44 @@ export class HUD {
     const idle = this._vitalsIdleT > VITALS_IDLE_S;
     if (idle !== this._lastIdle) {
       this._lastIdle = idle;
-      // the WRAPPER, not `.cal-topleft` — the tracker is its sibling and runs
-      // its own 26 s timer (see `_build`).
       this._vitalsEl.classList.toggle('idle', idle);
     }
-    this.rootEl.classList.toggle('reveal', this._reveal > 0.01);
+    const reveal = this._reveal > 0.01;
+    if (reveal !== this._lastReveal) {
+      this._lastReveal = reveal;
+      this.rootEl.classList.toggle('reveal', reveal);
+    }
   }
 
-  /* ---------------------------- quest tracker ------------------------------ */
+  /* ---------------------------- the field note ------------------------------ */
 
-  /** ui-05 — reads `ctx.progression`, falls back to the legacy kill chain. */
+  /** Reads `ctx.progression` (real quest data lands with progression, W3). */
   _renderTracker(force) {
     const prog = this.ctx.progression;
     let title = null, obj = null, meta = '';
-    if (prog?.tracked) {
+    const st = this._staged;
+    const kick = st ? st.kicker : 'FIELD NOTE';
+    if (this._trackKicker.textContent !== kick) this._trackKicker.textContent = kick;
+    if (st) {
+      title = st.title; obj = st.objective; meta = st.meta;
+    } else if (prog?.tracked) {
       const s = prog.state(prog.tracked);
       if (s && s.status === 'active') {
         title = s.title;
         const o = s.current;
-        obj = o ? o.label : 'Return to Varl';
+        obj = o ? o.label : 'Report back';
         if (o && o.need > 1) meta = `${o.have} / ${o.need}`;
-        else if (s.progress != null) meta = `${Math.round(s.progress * 100)}%`;
+        else if (s.progress > 0) meta = `${Math.round(s.progress * 100)}%`;
       }
-    }
-    if (!title && this._stage < QUEST.length) {
-      const s = QUEST[this._stage];
-      title = s.title;
-      obj = s.detail;
-      meta = `${Math.min(this._killCounts[s.kind] || 0, s.need)} / ${s.need}`;
     }
     const sig = `${title}|${obj}|${meta}`;
     if (!force && sig === this._lastTrackSig) return;
-    const bump = this._lastTrackSig && this._lastTrackSig.split('|')[1] !== obj;
+    const bump = this._lastTrackSig && this._lastTrackSig.split('|')[1] !== String(obj);
     this._lastTrackSig = sig;
     if (!title) { this._trackEl.classList.add('off'); return; }
     this._trackEl.classList.remove('off');
-    this._trackTitle.textContent = String(title).toUpperCase();
-    this._trackObj.textContent = String(obj ?? '');
+    this._trackTitle.textContent = fieldWord(String(title)).toUpperCase();
+    this._trackObj.textContent = fieldWord(String(obj ?? ''));
     this._trackMeta.textContent = meta;
     this._trackMeta.style.display = meta ? '' : 'none';
     if (bump) {
@@ -1650,18 +1482,19 @@ export class HUD {
       void this._trackEl.offsetWidth;
       this._trackEl.classList.add('bump');
     }
-    if (title !== this._lastObjTitle) {
-      this._lastObjTitle = title;
-      if (!this.ctx.progression) {
-        // legacy chain only: progression emits its own objective-changed
-        this.ctx.events.emit('objective-changed', { title, detail: obj });
-      }
-    }
   }
 
-  /** Dynamic hide: the tracker recedes when nothing has changed for a while. */
+  /** Dynamic hide: the note recedes when nothing has changed for a while. */
   _updateTracker(dt) {
-    this._renderTracker(false);
+    this._trackRenderT = (this._trackRenderT ?? 0) - dt;
+    if (this._trackRenderT <= 0) {
+      this._trackRenderT = 0.5;
+      this._renderTracker(false);
+      // one layout read at 2 Hz: where the column really ends (+ the resolver's gap)
+      const off = this._trackEl.classList.contains('off');
+      const el = off ? this._vitalsEl : this._trackEl;
+      this._colFootPx = el.getBoundingClientRect().bottom + 8 * this._scale;
+    }
     const busy = this._anyHostile || this._reveal > 0.01 || this._trackIdleT < TRACK_IDLE_S;
     this._trackIdleT += dt;
     const idle = !busy;
@@ -1674,45 +1507,57 @@ export class HUD {
   /* -------------------------------- compass -------------------------------- */
 
   /**
-   * ui-04 COMPASS TRUTH. A pip is drawn for a machine only when the player has
-   * EARNED that information:
-   *   · it is Focus-tagged (`ctx.sighting.tags`), or
-   *   · it is the target of the tracked quest objective, or
-   *   · it is currently fighting her (alert/attack, or hit in the last 5 s).
-   * Everything else — the 320 m radar sweep this used to be — is gone. Quest
-   * markers from `progression.getMarkers()` ride the same ribbon in gold.
-   * Gate: `A71-compass-truth`.
+   * THE THEODOLITE CIRCLE. Ticks every 5°, numerals every 30°, a 3-digit bearing
+   * readout, and the limb has inertia: it chases the camera on an under-damped
+   * spring and settles. ONE transform per frame on one prebuilt strip.
+   *
+   * COMPASS TRUTH (`A71-compass-truth`): an Instrument is on the circle only when
+   * the player has EARNED it: Flagged in Sighting (`ctx.sighting.tags`), the
+   * tracked objective's target, or fighting her. A ◆ in its lamp colour, its
+   * iris at the lamp's aperture. Sites ride the same circle: settlement ■,
+   * site ●, benchmark ▲.
    */
-  _updateCompass(p) {
+  _updateCompass(dt, p) {
     const camB = norm360(-p.camYaw * RAD2DEG);
 
-    for (const tk of this._ticks) {
-      const d = wrap180(tk.a - camB);
-      if (Math.abs(d) > this._halfWinDeg) {
-        if (tk.vis !== false) { tk.el.style.visibility = 'hidden'; tk.vis = false; }
-        continue;
+    if (this._cAngle == null || this.ctx.settings?.reducedMotion) {
+      this._cAngle = camB; this._cVel = 0;
+    } else {
+      // a spring on the shortest way round; dt is clamped so a hitch cannot ring it
+      const h = Math.min(0.033, dt);
+      const err = wrap180(camB - this._cAngle);
+      if (Math.abs(err) > 90) { this._cAngle = camB; this._cVel = 0; }
+      else {
+        this._cVel += (COMPASS_SPRING_K * err - COMPASS_SPRING_C * this._cVel) * h;
+        this._cAngle = norm360(this._cAngle + this._cVel * h);
       }
-      if (tk.vis !== true) { tk.el.style.visibility = 'visible'; tk.vis = true; }
-      const x = (d * this._pxPerDeg).toFixed(1);
-      tk.el.style.transform = tk.label
-        ? `translateX(calc(${x}px - 50%))`
-        : `translateX(${x}px)`;
+    }
+    const x = (-(this._cAngle - STRIP_FROM) * PX_PER_DEG + STRIP_W * 0.5) * this._scale;
+    if (Math.abs(x - this._lastStripX) >= 0.25 || this._lastStripX !== this._lastStripX) {
+      this._lastStripX = x;
+      this._stripEl.style.transform = txString(x);
     }
 
     const bi = Math.round(camB) % 360;
     if (bi !== this._lastBearing) {
       this._lastBearing = bi;
-      this._bearingEl.textContent = String(bi).padStart(3, '0');
+      this._bearingNum.textContent = BEARING_STR[bi];
     }
 
-    this._questKind = this._trackedKillKind();
+    const flag = this._flagged || !!this.ctx.machines?.perception?.flagActive;
+    if (flag !== this._lastFlag) {
+      this._lastFlag = flag;
+      this._pennantEl.classList.toggle('show', flag);
+    }
+
     const list = this.ctx.machines?.list;
     if (Array.isArray(list)) {
       const tags = this.ctx.sighting?.tags;
       let questTarget = null;
       if (this._questKind) {
         let bd = Infinity;
-        for (const m of list) {
+        for (let i = 0; i < list.length; i++) {
+          const m = list[i];
           if (m.kind !== this._questKind || m.alive === false) continue;
           const pos = m.position ?? m.root?.position;
           if (!pos) continue;
@@ -1723,13 +1568,15 @@ export class HUD {
       }
       this._questTarget = questTarget;
 
-      let shown = 0;
-      for (const m of list) {
-        const tagged = !!tags?.has?.(m);
+      const pipVis = this._pipVis;
+      let pipN = 0;
+      for (let i = 0; i < list.length; i++) {
+        const m = list[i];
+        const flagged = !!tags?.has?.(m);
         const isQuest = m === questTarget;
         const fighting = this._engaged.has(m)
           || (m.alive !== false && (m.state === 'alert' || m.state === 'attack'));
-        const earned = tagged || isQuest || fighting;
+        const earned = flagged || isQuest || fighting;
         let pip = this._pips.get(m);
         if (!earned) {
           if (pip && pip.vis !== false) { pip.el.style.visibility = 'hidden'; pip.vis = false; }
@@ -1737,8 +1584,8 @@ export class HUD {
         }
         if (!pip) {
           const el = div('cal-pip', this._pipLayer);
-          div('cal-pip-d', el);
-          pip = { el, lab: div('cal-pip-dist', el), s: null, vis: null, dist: -1, k: null };
+          div('cal-iris', el, '<i></i>');
+          pip = { el, lab: div('cal-pip-dist', el), s: null, vis: null, dist: -1, k: null, x: NaN, labOn: true };
           this._pips.set(m, pip);
         }
         const pos = m.position ?? m.root?.position;
@@ -1748,80 +1595,133 @@ export class HUD {
         }
         const dx = pos.x - p.position.x;
         const dz = pos.z - p.position.z;
-        const dist = Math.hypot(dx, dz);
-        const d = wrap180(Math.atan2(dx, -dz) * RAD2DEG - camB);
+        const dist = len2(dx, dz);
+        const d = wrap180(Math.atan2(dx, -dz) * RAD2DEG - this._cAngle);
         if (dist > 320 || Math.abs(d) > this._halfWinDeg) {
           if (pip.vis !== false) { pip.el.style.visibility = 'hidden'; pip.vis = false; }
           continue;
         }
         if (pip.vis !== true) { pip.el.style.visibility = 'visible'; pip.vis = true; }
-        shown++;
-        pip.el.style.transform = `translateX(${(d * this._pxPerDeg).toFixed(1)}px)`;
-        pip.el.style.opacity = Math.max(0.42, Math.min(1, 1.25 - dist / 300)).toFixed(2);
-        const s = (m.state === 'alert' || m.state === 'attack') ? 'hostile'
-          : (m.state === 'suspicious' || m.state === 'search') ? 'wary' : 'calm';
+        pipVis[pipN++] = pip;
+        const px = d * PX_PER_DEG * this._scale;
+        if (Math.abs(px - pip.x) >= 0.5 || pip.x !== pip.x) {
+          pip.x = px;
+          pip.el.style.transform = txString(px);
+        }
+        const s = lampStateOf(m);
         if (pip.s !== s) { pip.s = s; pip.el.dataset.s = s; }
-        const k = tagged ? 'tag' : isQuest ? 'quest' : 'fight';
+        const k = flagged ? 'flag' : isQuest ? 'quest' : 'fight';
         if (pip.k !== k) { pip.k = k; pip.el.dataset.k = k; }
         const di = Math.round(dist);
-        if (di !== pip.dist) { pip.dist = di; pip.lab.textContent = di + 'm'; }
+        if (di !== pip.dist) { pip.dist = di; pip.lab.textContent = di < 360 ? BEARING_STR[di] : String(di); }
       }
-      this._pipCount = shown;
+      // marks that crowd share one reading: the nearest Instrument's
+      const near = PIP_LABEL_PX * this._scale;
+      for (let a = 0; a < pipN; a++) {
+        const pa = pipVis[a];
+        let show = true;
+        for (let b = 0; b < pipN; b++) {
+          if (a === b) continue;
+          const pb = pipVis[b];
+          if (Math.abs(pa.x - pb.x) < near && (pb.dist < pa.dist || (pb.dist === pa.dist && b < a))) { show = false; break; }
+        }
+        if (show !== pa.labOn) { pa.labOn = show; pa.lab.style.visibility = show ? '' : 'hidden'; }
+      }
     }
 
-    this._updateQuestPips(p, camB);
+    this._updateQuestPips(dt, p);
+    this._updateWaypointPip(p);
   }
 
-  /** Which machine kind, if any, the tracked objective is asking her to hunt. */
+  /** Which Instrument kind, if any, the tracked objective is asking her to hunt. */
   _trackedKillKind() {
     const prog = this.ctx.progression;
-    if (prog?.tracked) {
-      const s = prog.state(prog.tracked);
-      const o = s?.current;
-      if (o && (o.type === 'kill' || o.type === 'scan')) {
-        const def = prog.def?.(prog.tracked);
-        const raw = def?.objectives?.find((x) => x.id === o.id);
-        if (raw?.kind) return raw.kind;
-      }
-      return null;
+    if (!prog?.tracked) return null;
+    const s = prog.state(prog.tracked);
+    const o = s?.current;
+    if (o && (o.type === 'kill' || o.type === 'scan')) {
+      const def = prog.def?.(prog.tracked);
+      const raw = def?.objectives?.find((x) => x.id === o.id);
+      if (raw?.kind) return raw.kind;
     }
-    return this._stage < QUEST.length ? QUEST[this._stage].kind : null;
+    return null;
   }
 
-  /** Gold quest-marker pips on the compass ribbon (progression.getMarkers). */
-  _updateQuestPips(p, camB) {
-    const marks = this.ctx.progression?.getMarkers?.();
-    const n = Array.isArray(marks) ? Math.min(marks.length, 6) : 0;
+  /** Objective and site marks on the circle: settlement ■, site ●, benchmark ▲ (pooled). */
+  _updateQuestPips(dt, p) {
+    this._siteMarksT -= dt;
+    if (this._siteMarksT <= 0) {
+      this._siteMarksT = 1;
+      this._siteMarks = this.ctx.menus?.map?.compassMarks?.() ?? null;
+    }
+    const marks = this._marks;
+    const sites = this._siteMarks;
+    const nQ = Array.isArray(marks) ? Math.min(marks.length, 6) : 0;
+    const nS = Array.isArray(sites) ? Math.min(sites.length, 8) : 0;
+    const n = nQ + nS;
     while (this._questPips.length < n) {
       const el = div('cal-pip qm', this._pipLayer);
-      div('cal-pip-d', el);
-      this._questPips.push({ el, lab: div('cal-pip-dist', el), dist: -1, vis: null });
+      div('cal-pip-mark', el);
+      this._questPips.push({ el, lab: div('cal-pip-dist', el), dist: -1, vis: null, x: NaN, shape: '', tracked: null });
     }
     for (let i = 0; i < this._questPips.length; i++) {
       const q = this._questPips[i];
-      const mk = i < n ? marks[i] : null;
+      const mk = i < nQ ? marks[i] : i < n ? sites[i - nQ] : null;
       if (!mk) {
         if (q.vis !== false) { q.el.style.visibility = 'hidden'; q.vis = false; }
         continue;
       }
       const dx = mk.x - p.position.x, dz = mk.z - p.position.z;
-      const dist = Math.hypot(dx, dz);
-      const d = wrap180(Math.atan2(dx, -dz) * RAD2DEG - camB);
+      const dist = len2(dx, dz);
+      const d = wrap180(Math.atan2(dx, -dz) * RAD2DEG - this._cAngle);
       if (Math.abs(d) > this._halfWinDeg) {
         if (q.vis !== false) { q.el.style.visibility = 'hidden'; q.vis = false; }
         continue;
       }
       if (q.vis !== true) { q.el.style.visibility = 'visible'; q.vis = true; }
-      q.el.style.transform = `translateX(${(d * this._pxPerDeg).toFixed(1)}px)`;
-      q.el.dataset.tracked = mk.tracked ? '1' : '0';
+      const px = d * PX_PER_DEG * this._scale;
+      if (Math.abs(px - q.x) >= 0.5 || q.x !== q.x) {
+        q.x = px;
+        q.el.style.transform = txString(px);
+      }
+      const shape = mk.shape ?? (mk.kind === 'settlement' || mk.kind === 'camp' ? 'settlement'
+        : mk.kind === 'benchmark' ? 'benchmark' : i < nQ ? 'objective' : 'site');
+      if (q.shape !== shape) { q.shape = shape; q.el.dataset.shape = shape; }
+      const tr = i < nQ && !!mk.tracked;
+      if (q.tracked !== tr) { q.tracked = tr; q.el.dataset.tracked = tr ? '1' : '0'; }
       const di = Math.round(dist);
-      if (di !== q.dist) { q.dist = di; q.lab.textContent = di + 'm'; }
+      if (di !== q.dist) { q.dist = di; q.lab.textContent = di < 360 ? BEARING_STR[di] : String(di); }
     }
+  }
+
+  _updateWaypointPip(p) {
+    const wp = this._waypoint, q = this._wpPip;
+    if (!wp || !q) return;
+    const dx = wp.x - p.position.x, dz = wp.z - p.position.z;
+    const d = wrap180(Math.atan2(dx, -dz) * RAD2DEG - this._cAngle);
+    const clamped = Math.max(-this._halfWinDeg, Math.min(this._halfWinDeg, d));
+    if (q.vis !== true) { q.el.style.visibility = 'visible'; q.vis = true; }
+    q.el.style.transform = txString(clamped * PX_PER_DEG * this._scale);
+    const di = Math.round(len2(dx, dz));
+    if (di !== q.dist) { q.dist = di; q.lab.textContent = String(di); }
   }
 
   _compassAudit() {
     let pips = 0, quest = 0;
-    for (const [, pip] of this._pips) if (pip.vis) pips++;
+    const styles = [];
+    for (const [, pip] of this._pips) {
+      if (!pip.vis) continue;
+      pips++;
+      const dia = pip.el.querySelector('.cal-iris');
+      const hole = dia?.firstChild;
+      const cs = hole ? getComputedStyle(hole) : null;
+      styles.push({
+        state: pip.s, kind: pip.k,
+        color: cs?.backgroundColor ?? null,
+        apertureCss: cs ? +(parseFloat(cs.width) / Math.max(0.01, dia.clientWidth)).toFixed(2) : null,
+        token: COMPASS_PIP[pip.s] ?? null,
+      });
+    }
     for (const q of this._questPips) if (q.vis) quest++;
     const tags = this.ctx.sighting?.tags;
     const list = this.ctx.machines?.list ?? [];
@@ -1833,71 +1733,79 @@ export class HUD {
       hostile: list.filter((m) => m.alive !== false && (m.state === 'alert' || m.state === 'attack')).length,
       engaged: this._engaged.size,
       questKind: this._questKind ?? null,
+      pipStyles: styles,
+      bearing: this._bearingNum.textContent,
+      flagged: this._pennantEl.classList.contains('show'),
+      limb: +this._cAngle?.toFixed?.(2),
+      waypoint: this._waypoint ? { x: this._waypoint.x, z: this._waypoint.z } : null,
     };
   }
 
-  /* ------------------------------ stealth eye ------------------------------- */
+  /* ------------------------------ the vial --------------------------------- */
 
   /**
-   * ui-12 / onboarding-loop-stealth-feedback. The eye is the answer to "can
-   * they see me right now": it opens with the strongest live detection fill on
-   * any machine, and CLOSES when she is crouched in tall grass with nothing
-   * actively filling. Sound lines rise with how loudly she is moving.
+   * The answer to "can they see me right now": the bubble runs off level with
+   * the strongest live detection. HIDDEN (concealed) -> UNSEEN (in the open,
+   * nobody looking) -> NOTICED (a meter is filling) -> SPOTTED (locked on).
    */
   _updateStealth(dt, p) {
     let fill = 0;
-    let seen = false;
     const list = this.ctx.machines?.list;
     if (Array.isArray(list)) {
       for (let i = 0; i < list.length; i++) {
         const m = list[i];
         if (m.alive === false) continue;
-        if (m.state === 'alert' || m.state === 'attack') { fill = 1; seen = true; break; }
+        if (m.state === 'alert' || m.state === 'attack') { fill = 1; break; }
         const s = m.suspicion ?? 0;
         if (s > fill) fill = s;
-        if ((m.detectFill ?? 0) > 0) seen = true;
       }
     }
     fill = clamp01(fill);
     const hidden = !!(p.crouching && p.inTallGrass) && fill < 0.05;
     const noise = clamp01((p.moveSpeed ?? 0) / 7) * (p.crouching ? 0.35 : 1);
     const mode = fill >= 0.999 ? 'seen' : hidden ? 'hidden' : fill > AWARE_MIN_SUSPICION ? 'watch' : 'clear';
-    const sig = `${mode}|${(fill * 12) | 0}|${(noise * 3) | 0}`;
-    if (sig === this._lastEyeSig) return;
-    this._lastEyeSig = sig;
-    this._eyeEl.dataset.m = mode;
-    this._eyeEl.style.setProperty('--open', fill.toFixed(2));
-    // The ladder has to read in one glance and in one direction:
-    // HIDDEN (concealed) → UNSEEN (in the open, nobody looking) →
-    // NOTICED (a meter is filling on her) → SPOTTED (locked on).
-    // `SEEN…` used to sit in the NOTICED slot and fought `UNSEEN` for meaning.
-    this._eyeLabel.textContent = mode === 'seen' ? 'SPOTTED'
-      : mode === 'watch' ? 'NOTICED' : mode === 'hidden' ? 'HIDDEN' : 'UNSEEN';
-    const bars = this._eyeBars.children;
+    // U-02: UNSEEN for 4 s and the vial puts itself away; any reading brings it back (hold H too)
+    this._vialIdleT = mode === 'clear' ? (this._vialIdleT ?? 0) + dt : 0;
+    const vialIdle = this._vialIdleT > VIAL_IDLE_S;
+    if (vialIdle !== this._lastVialIdle) { this._lastVialIdle = vialIdle; this._eyeEl.classList.toggle('idle', vialIdle); }
+    if (mode !== this._lastVialMode) {
+      this._lastVialMode = mode;
+      this._eyeEl.dataset.m = mode;
+      this._eyeLabel.textContent = mode === 'seen' ? 'SPOTTED'
+        : mode === 'watch' ? 'NOTICED' : mode === 'hidden' ? 'HIDDEN' : 'UNSEEN';
+    }
+    const b = (fill * 20) | 0;
+    if (b !== this._lastVialBubble) {
+      this._lastVialBubble = b;
+      this._eyeEl.style.setProperty('--run', (b / 20).toFixed(2));
+    }
     const lit = Math.round(noise * 3);
-    for (let i = 0; i < bars.length; i++) bars[i].classList.toggle('on', i < lit);
+    if (lit !== this._lastVialNoise) {
+      this._lastVialNoise = lit;
+      const bars = this._eyeBars.children;
+      for (let i = 0; i < bars.length; i++) bars[i].classList.toggle('on', i < lit);
+    }
   }
 
-  /* ------------------------ awareness indicators ---------------------------- */
+  /* ------------------------ awareness rods ---------------------------------- */
 
   _awareEntry(m) {
     let a = this._awares.get(m);
     if (!a) {
-      const el = div('cal-aware', this._awareLayer);
-      div('cal-aware-circle', el);
-      div('cal-aware-diamond', el,
-        '<svg viewBox="0 0 30 30"><polygon points="15,1 18.4,9.2 26,5.6 21.4,12.6 29,15 21.4,17.4 26,24.4 18.4,20.8 15,29 11.6,20.8 4,24.4 8.6,17.4 1,15 8.6,12.6 4,5.6 11.6,9.2"/></svg>');
-      a = { el, circle: el.firstChild, mode: null, frac: -1, vis: null, edge: null, chirped: false };
+      const wrap = div('cal-px', this._awareLayer);
+      const el = div('cal-aware', wrap);
+      const rod = div('cal-aware-rod', el, '<i></i>');
+      div('cal-iris', el, '<i></i>');
+      a = { wrap, el, fill: rod.firstChild, mode: null, frac: -1, vis: null, edge: null, chirped: false, s: '', qx: NaN, qy: NaN };
       this._awares.set(m, a);
     }
     return a;
   }
 
   /**
-   * stealth-awareness-indicator-fidelity — the indicator now appears from
-   * `suspicion > 0.04` (it used to wait for the `suspicious` STATE, which is
-   * `susEnter = 0.5`, i.e. half the detection was invisible), it is 26 px, and
-   * the first frame it appears emits a UI chirp on the audio bus.
+   * A small graduated rod over an Instrument that is starting to notice her: it
+   * appears from `suspicion > 0.04`, fills as the detection does, and becomes the
+   * lamp's iris when it has her. Edge-clamped when off screen.
    */
   _updateAwareness(dt, p) {
     const list = this.ctx.machines?.list;
@@ -1905,12 +1813,13 @@ export class HUD {
     const cam = this.ctx.camera;
     const v = this._v;
 
-    for (const m of list) {
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
       const a = this._awareEntry(m);
 
       let mode = null;
       let frac = 0;
-      if (m.alive !== false) {
+      if (m.alive !== false && m !== this._mhbPick[0] && m !== this._mhbPick[1] && m !== this._mhbPick[2]) {
         const sus = clamp01(m.suspicion ?? 0);
         if (this._attackFlash.has(m)) {
           mode = 'attack';
@@ -1937,7 +1846,7 @@ export class HUD {
       const behind = v.z > 1;
       let x = (v.x * 0.5 + 0.5) * this._vw;
       let y = (-v.y * 0.5 + 0.5) * this._vh;
-      if (behind) { // mirror through screen center so the clamp points backward
+      if (behind) { // mirror through screen centre so the clamp points backward
         x = this._vw - x;
         y = this._vh - y;
       }
@@ -1961,28 +1870,63 @@ export class HUD {
         if (!a.chirped) { a.chirped = true; this._emitUi('ui-nav'); }
       }
       if (a.edge !== edge) { a.edge = edge; a.el.classList.toggle('edge', edge); }
-      a.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${this._scale.toFixed(2)})`;
+      const qx = Math.round(x), qy = Math.round(y);
+      if (qx !== a.qx) { a.qx = qx; a.wrap.style.transform = txString(qx); }
+      if (qy !== a.qy) { a.qy = qy; a.el.style.transform = awareY(qy, this._scale); }
       if (a.mode !== mode) { a.mode = mode; a.el.dataset.m = mode; a.frac = -1; }
+      const s = lampStateOf(m);
+      if (a.s !== s) { a.s = s; a.el.dataset.s = s; }
       if (mode === 'fill' && Math.abs(frac - a.frac) > 0.02) {
         a.frac = frac;
-        a.circle.style.background =
-          `conic-gradient(var(--cal-yellow) ${(frac * 100).toFixed(0)}%, rgba(8, 10, 12, 0.35) 0)`;
+        a.fill.style.transform = SCALE_Y[Math.round(frac * 100)];
       }
     }
   }
 
-  /* --------------------- projected machine health bars ---------------------- */
+  /* --------------------- projected Instrument plates ------------------------ */
 
   /**
-   * ui-06 — the boss bar is gone. Every engaged machine (cap 3, elected in
-   * `_scanMachines`) carries its own plate above its head with name + LV, a
-   * damage-delta ghost, and its elemental rings beside it.
+   * Every engaged Instrument (cap 3, elected in `_scanMachines`) carries its own
+   * paper plate over its working end: its card line, a graduated bar with a ghost,
+   * its status gauges, and a leader down to it.
    */
   _updateMachineBars(dt) {
     const cam = this.ctx.camera;
+    const ws = this._wscale;
+    const sc = this._scale;
+    const X = this._mhbX, Y = this._mhbY, C = this._mhbC, HW = this._mhbHW, B = this._mhbBox;
+    let any = false;
+
+    /* 0. each engaged Instrument's own screen box (feet to head): no plate may cover one (r1 gate judge) */
+    for (let i = 0; i < MHB_CAP; i++) {
+      const m = this._mhbPick[i], o = i * 4;
+      B[o] = 0; B[o + 2] = -1;
+      const pos = m && (m.position ?? m.root?.position);
+      if (!pos) continue;
+      const h = m.height ?? 2.2;
+      this._v.set(pos.x, pos.y, pos.z).project(cam);
+      if (this._v.z > 1) continue;
+      const fx = (this._v.x * 0.5 + 0.5) * this._vw, fy = (-this._v.y * 0.5 + 0.5) * this._vh;
+      this._v.set(pos.x, pos.y + h, pos.z).project(cam);
+      const ty = (-this._v.y * 0.5 + 0.5) * this._vh;
+      const half = Math.max(h * 0.62, (m.bodyRadius ?? 1.2) * 1.4) * (fy - ty) / h;
+      B[o] = fx - half; B[o + 1] = ty; B[o + 2] = fx + half; B[o + 3] = fy;
+    }
+
+    /* 1. where each plate wants to be, in painted pixels: bottom-centre on the head point.
+       U-02: the most recently hit wears the full plate; the others a compact one */
     for (let i = 0; i < MHB_CAP; i++) {
       const slot = this._mhbSlots[i];
       const m = this._mhbPick[i];
+      const compact = i > 0;
+      if (slot.compact !== compact) {
+        slot.compact = compact;
+        slot.el.classList.toggle('compact', compact);
+        slot.m = null; slot.h = 0;     // re-label at the new size
+      }
+      const halfW = (compact ? MHB_W_COMPACT : MHB_W) * 0.5 * ws;
+      HW[i] = halfW;
+      X[i] = NaN;
       if (!m) {
         if (slot.vis !== false) { slot.el.style.visibility = 'hidden'; slot.vis = false; slot.m = null; }
         continue;
@@ -1997,56 +1941,110 @@ export class HUD {
       }
       let x = (this._v.x * 0.5 + 0.5) * this._vw;
       let y = (-this._v.y * 0.5 + 0.5) * this._vh;
-      // Off the sides or off the BOTTOM is genuinely out of frame. Off the top
-      // is a machine standing on top of you — see MHB_TOP_PAD.
+      // off the sides or the BOTTOM is out of frame; off the top is an Instrument standing over her
       if (x < -160 || x > this._vw + 160 || y > this._vh + 80) {
         if (slot.vis !== false) { slot.el.style.visibility = 'hidden'; slot.vis = false; }
         continue;
       }
-      /**
-       * The plate is drawn bottom-centre on (x, y) — `transform-origin: 0 0`
-       * plus `translate(x,y) scale(ws) translate(-50%,-100%)` puts its painted
-       * box at [x - halfW, x + halfW] x [y - h*ws, y]. Every number below is
-       * therefore in PAINTED pixels, mixing the two multipliers honestly:
-       * `_scale` for the HUD furniture it has to clear, `_wscale` for itself.
-       */
-      const ws = this._wscale;
       if (!slot.h) slot.h = slot.el.offsetHeight || MHB_PLATE_H;
-      const halfW = MHB_HALF_W * ws;
       const plateH = slot.h * ws;
-      const topFloor = MHB_TOP_BASE * this._scale + plateH;
-      const clamped = y < topFloor;
-      if (clamped) {
-        const safeL = MHB_SAFE_L * this._scale + halfW;   // LEFT EDGE clears the column
-        if (x < safeL) x = safeL;
-        const overEye = Math.abs(x - this._vw * 0.5) < halfW + MHB_EYE_HALF * this._scale;
-        y = overEye ? MHB_EYE_BASE * this._scale + plateH : topFloor;
+      const topFloor = MHB_TOP_BASE * sc + plateH;
+      // bit 1: off its Instrument's axis or above the frame (the row's "clamped"); bit 2: stepped down its axis
+      let moved = y < topFloor ? 1 : 0;
+      if (moved) y = topFloor;
+      // the fixed instruments keep their place: the column (the staff, the gourd, the note)...
+      const colB = this._colFoot(sc);
+      const colR = MHB_SAFE_L * sc;
+      if (x - halfW < colR && y - plateH < colB) {
+        const toRight = colR + halfW - x, toBelow = colB + plateH - y;
+        if (toRight <= toBelow) { x += toRight; moved |= 1; } else { y += toBelow; moved |= 2; }
       }
-      if (clamped !== slot.clamped) {
-        slot.clamped = clamped;
-        slot.el.classList.toggle('clamped', clamped);
+      // ...and the circle with its vial
+      if (Math.abs(x - this._vw * 0.5) < halfW + MHB_EYE_HALF * sc && y - plateH < MHB_EYE_BASE * sc) {
+        y = MHB_EYE_BASE * sc + plateH;
+        moved |= 2;
+      }
+      X[i] = x; Y[i] = y; C[i] = moved;
+      any = true;
+    }
+    if (!any) return;
+
+    /* 2. a plate never lies on another: the most recently hit holds its place, the others step
+       up over it when there is sky above it, else down */
+    const gap = MHB_GAP * sc;
+    const topFloorK = MHB_TOP_BASE * sc;
+    for (let i = 1; i < MHB_CAP; i++) {
+      if (X[i] !== X[i]) continue;
+      const hi = (this._mhbSlots[i].h || MHB_PLATE_H) * ws;
+      for (let j = 0; j < i; j++) {
+        if (X[j] !== X[j]) continue;
+        const hj = (this._mhbSlots[j].h || MHB_PLATE_H) * ws;
+        const overlapX = Math.abs(X[i] - X[j]) < HW[i] + HW[j] + gap;
+        const overlapY = Y[i] > Y[j] - hj - gap && Y[i] - hi - gap < Y[j];
+        if (overlapX && overlapY) {
+          const up = Y[j] - hj - gap;
+          if (up - hi >= topFloorK && this._plateFree(X[i], up, HW[i], hi)) Y[i] = up; else Y[i] = Y[j] + hi + gap;
+          C[i] |= 2;
+        }
+      }
+    }
+    /* 2b. ...and never on an engaged Instrument: over its head when there is room, else to its nearer side */
+    for (let i = 0; i < MHB_CAP; i++) {
+      if (X[i] !== X[i]) continue;
+      const hi = (this._mhbSlots[i].h || MHB_PLATE_H) * ws;
+      for (let j = 0; j < MHB_CAP; j++) {
+        const o = j * 4;
+        if (B[o + 2] <= B[o]) continue;
+        const l = X[i] - HW[i], r = X[i] + HW[i], t = Y[i] - hi, b = Y[i];
+        if (r < B[o] || l > B[o + 2] || b < B[o + 1] || t > B[o + 3]) continue;
+        const above = B[o + 1] - gap;
+        const sideX = (X[i] < (B[o] + B[o + 2]) * 0.5) ? B[o] - HW[i] - gap : B[o + 2] + HW[i] + gap;
+        if (above - hi >= topFloorK && this._plateFree(X[i], above, HW[i], hi)) C[i] |= 2, Y[i] = above;
+        // the most recently hit keeps its own axis (it only ever rises); the others may step aside
+        else if (i > 0 && this._plateFree(sideX, Y[i], HW[i], hi)) C[i] |= 1, X[i] = sideX;   // off its axis: "clamped"
+        // else: the HUD's own instruments keep their place first
+      }
+    }
+    /* 2c. last word: nothing above leaves a plate on the column or the circle */
+    for (let i = 0; i < MHB_CAP; i++) {
+      if (X[i] !== X[i]) continue;
+      const hi = (this._mhbSlots[i].h || MHB_PLATE_H) * ws;
+      const colB = this._colFoot(sc), colR = MHB_SAFE_L * sc;
+      if (X[i] - HW[i] < colR && Y[i] - hi < colB) {
+        const toRight = colR + HW[i] - X[i], toBelow = colB + hi - Y[i];
+        if (toRight <= toBelow) { X[i] += toRight; C[i] |= 1; } else { Y[i] += toBelow; C[i] |= 2; }
+      }
+      if (Math.abs(X[i] - this._vw * 0.5) < HW[i] + MHB_EYE_HALF * sc && Y[i] - hi < MHB_EYE_BASE * sc) {
+        Y[i] = MHB_EYE_BASE * sc + hi; C[i] |= 2;
+      }
+    }
+
+    /* 3. paint */
+    for (let i = 0; i < MHB_CAP; i++) {
+      if (X[i] !== X[i]) continue;
+      const slot = this._mhbSlots[i];
+      const m = this._mhbPick[i];
+      const clamped = (C[i] & 1) !== 0;
+      if (clamped !== slot.clamped) slot.clamped = clamped;
+      const nolead = C[i] !== 0;       // a plate that has left its anchor has no leader to draw
+      if (nolead !== slot.nolead) {
+        slot.nolead = nolead;
+        slot.el.classList.toggle('clamped', nolead);
       }
       if (slot.vis !== true) { slot.el.style.visibility = 'visible'; slot.vis = true; }
-      // `scale()` BEFORE the -50%/-100% translate, with origin 0 0: the
-      // percentages resolve against the unscaled box and are then scaled with
-      // it, so the anchor stays bottom-centre at every scale. (Scaling last,
-      // with the default centre origin, drifts the plate down by h*(s-1)/2.)
-      slot.el.style.transform =
-        `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${ws.toFixed(3)}) translate(-50%, -100%)`;
+      const qx = Math.round(X[i]), qy = Math.round(Y[i]);
+      if (qx !== slot.qx) { slot.qx = qx; slot.wrap.style.transform = txString(qx); }
+      if (qy !== slot.qy) { slot.qy = qy; slot.el.style.transform = plateY(qy, ws); }
 
       if (slot.m !== m) {
         slot.m = m;
-        slot.w = -1; slot.ghostW = -1; slot.elemSig = ''; slot.awareSig = ''; slot.h = 0;
-        const name = String(m.displayName ?? m.kind ?? 'MACHINE').toUpperCase();
-        const lv = m.level ?? LEVELS[m.kind];
-        slot.name.innerHTML = lv != null
-          ? `<span class="nm">${name}</span><span class="lv">LV ${lv}</span>`
-          : `<span class="nm">${name}</span>`;
+        slot.w = -1; slot.ghostW = -1; slot.awareS = ''; slot.h = 0;
+        slot.name.textContent = slot.compact ? cardParts(m).name : cardLine(m);
       }
 
       const frac = clamp01((m.health ?? 0) / (m.maxHealth || 1));
-      const w = Math.round(frac * 200) / 2;
-      if (w !== slot.w) { slot.w = w; slot.fill.style.width = w + '%'; }
+      const w = Math.round(frac * 100);
+      if (w !== slot.w) { slot.w = w; slot.fill.style.transform = SCALE_X[w]; }
 
       const rec = this._engaged.get(m);
       let gw = slot.ghostW;
@@ -2055,40 +2053,42 @@ export class HUD {
         if (rec && rec.ghostHold > 0) { /* hold */ }
         else gw = Math.max(w, gw - GHOST_DRAIN * dt);
       }
-      const gq = Math.round(gw * 2) / 2;
-      if (gq !== slot.ghostW) { slot.ghostW = gq; slot.ghost.style.width = gq + '%'; }
+      const gq = Math.round(gw);
+      if (gq !== slot.ghostW) { slot.ghostW = gq; slot.ghost.style.transform = SCALE_X[gq]; }
 
-      this._renderAware(slot, m);
+      const s = lampStateOf(m);
+      if (s !== slot.awareS) { slot.awareS = s; slot.aware.dataset.s = s; }
+      // the mark an Instrument with no plate wears for its attack flashes on the plate instead
+      const atk = this._attackFlash.has(m);
+      if (atk !== slot.atk) { slot.atk = atk; slot.el.classList.toggle('attack', atk); }
       this._renderElems(slot, m);
     }
   }
 
-  _renderAware(slot, m) {
-    let aMode = 'calm';
-    let aFrac = 0;
-    if (m.alive !== false) {
-      if (this._attackFlash.has(m)) aMode = 'attack';
-      else if (m.state === 'alert' || m.state === 'attack') aMode = 'alert';
-      else if ((m.suspicion ?? 0) > AWARE_MIN_SUSPICION) {
-        aMode = 'fill';
-        aFrac = clamp01(m.suspicion ?? 0);
-      }
-    }
-    const sig = aMode + ((aFrac * 20) | 0);
-    if (sig === slot.awareSig) return;
-    slot.awareSig = sig;
-    slot.aware.dataset.m = aMode;
-    if (aMode === 'fill') {
-      slot.awareCircle.style.background =
-        `conic-gradient(var(--cal-yellow) ${(aFrac * 100).toFixed(0)}%, rgba(8, 10, 12, 0.4) 0)`;
-    }
+  /**
+   * The top-left column's painted foot (the staff, the chips and the field note), measured at 2 Hz in
+   * `_updateTracker`: the glass note grows with its objective's lines, so a fixed base let a plate
+   * slide under a two-line note (V-hud-glass, W1 fix round 2). Never less than the old base.
+   */
+  _colFoot(sc) {
+    const base = (this._trackEl.classList.contains('off') ? 90 : MHB_COL_B) * sc;
+    return this._colFootPx > base ? this._colFootPx : base;
+  }
+
+  /** A plate (bottom-centre x, y; half width; height) clear of the column and of the circle with its vial. */
+  _plateFree(x, y, hw, h) {
+    const sc = this._scale;
+    const colB = this._colFoot(sc), colR = MHB_SAFE_L * sc;
+    if (x - hw < colR && y - h < colB) return false;
+    if (Math.abs(x - this._vw * 0.5) < hw + MHB_EYE_HALF * sc && y - h < MHB_EYE_BASE * sc) return false;
+    return x - hw > 0 && x + hw < this._vw && y - h >= MHB_TOP_BASE * sc;
   }
 
   _renderElems(slot, m) {
     const el = m.elemental;
     const trigRec = this._elemTrigs.get(m);
-    let sig = '';
-    for (const k of ['fire', 'shock', 'freeze']) {
+    for (let ei = 0; ei < ELEM_KEYS.length; ei++) {
+      const k = ELEM_KEYS[ei];
       const raw = el ? el[k] : null;
       let val = typeof raw === 'number' ? raw : raw?.value ?? raw?.buildup ?? 0;
       if (val > 1.5) val /= 100; // 0..100 scale -> 0..1
@@ -2100,35 +2100,28 @@ export class HUD {
         val = clamp01(cd / ELEM_TRIG[k]); // draining countdown
         trig = true;
       }
-      sig += k + (val * 50 | 0) + (trig ? 'T' : '');
       const e = slot.elemEls[k];
       const shown = val > 0.02 || trig;
-      if (shown !== e.shown) { e.shown = shown; e.row.classList.toggle('show', shown); }
+      if (shown !== e.shown) { e.shown = shown; e.row.classList.toggle('show', shown); slot.h = 0; }
       if (!shown) continue;
       const pw = Math.round(val * 100);
-      if (pw !== e.w || trig !== e.trig) {
-        e.w = pw;
-        const col = trig ? 'var(--cal-ring-cd)' : 'var(--c)';
-        e.ring.style.background =
-          `conic-gradient(${col} ${pw}%, rgba(10, 13, 16, 0.68) 0)`;
-      }
+      if (pw !== e.w) { e.w = pw; e.fill.style.transform = SCALE_X[pw]; }
       if (trig !== e.trig) { e.trig = trig; e.row.classList.toggle('triggered', trig); }
     }
-    slot.elemSig = sig;
-    this._lastElemSig = sig;
   }
 
-  /* ----------------- reticle: brackets, draw ring, gauges ------------------- */
+  /* ----------------- reticle: hairs, stadia, draw scale, breath -------------- */
 
   _updateReticle(p) {
     const aiming = !!p.aiming;
     if (aiming !== this._lastAim) {
       this._lastAim = aiming;
-      this._ring.classList.toggle('show', aiming);
+      this._drawEl.classList.toggle('show', aiming);
       this._brackets.classList.toggle('show', aiming);
-      if (!aiming && this._lastConcSig !== 'off') {
-        this._lastConcSig = 'off';
+      if (!aiming && this._lastBreathOn !== false) {
+        this._lastBreathOn = false;
         this._concEl.classList.remove('show', 'active');
+        this._lastBreathActive = false;
       }
     }
     if (!aiming) {
@@ -2139,56 +2132,63 @@ export class HUD {
     const c = this.ctx.combat;
     const dsRaw = c?.drawStrength;
     const ds = typeof dsRaw === 'number' ? clamp01(dsRaw) : 0;
-    const off = (this._ringC * (1 - ds)).toFixed(1);
-    this._prog.style.strokeDashoffset = off;
-    this._progUnder.style.strokeDashoffset = off;
-    this._prog.classList.toggle('full', ds > 0.985);
-    // ui-08: the brackets close as the draw tightens
-    this._brackets.style.setProperty('--spread', (16 - 9 * ds).toFixed(2) + 'px');
+    const dq = Math.round(ds * 100);
+    if (dq !== this._lastDraw) {
+      this._lastDraw = dq;
+      this._drawFill.style.clipPath = CLIP_R[dq];
+      this._drawEl.classList.toggle('full', dq >= 99);
+      // the stadia close on the centre as the draw tightens (a quarter-pixel at a time)
+      const spread = Math.round((15 - 8 * ds) * 4) / 4;
+      if (spread !== this._lastSpread) {
+        this._lastSpread = spread;
+        this._brackets.style.setProperty('--spread', spread + 'px');
+      }
+    }
 
-    // re-nock pip — the arrow is still travelling from the quiver (combat §1)
+    // re-nock: the arrow is still travelling from the quiver
     const landed = c?.nockLanded;
     const np = landed === false ? clamp01(c?.nockProgress ?? 0) : -1;
-    const nq = np < 0 ? -1 : (np * 20) | 0;
+    const nq = np < 0 ? -1 : Math.round(np * 100);
     if (nq !== this._lastNock) {
       this._lastNock = nq;
       this._nockEl.classList.toggle('show', nq >= 0);
-      if (nq >= 0) this._nockFill.style.width = (np * 100).toFixed(0) + '%';
+      if (nq >= 0) this._nockFill.style.transform = SCALE_X[nq];
     }
 
-    const conc = c?.steady;
-    const gauge = clamp01(conc?.gauge ?? 1);
-    const active = !!conc?.active;
+    // Steady: the breath meter. Shown while it is held or while the breath comes back.
+    const steady = c?.steady;
+    const gauge = clamp01(steady?.gauge ?? 1);
+    const active = !!steady?.active;
     const show = gauge < 0.995 || active;
-    const sig = show ? `${(gauge * 100) | 0}|${active ? 1 : 0}` : 'off';
-    if (sig !== this._lastConcSig) {
-      this._lastConcSig = sig;
+    if (show !== this._lastBreathOn) {
+      this._lastBreathOn = show;
       this._concEl.classList.toggle('show', show);
+    }
+    if (active !== this._lastBreathActive) {
+      this._lastBreathActive = active;
       this._concEl.classList.toggle('active', active);
-      if (show) this._concFill.style.height = ((gauge * 100) | 0) + '%';
+    }
+    const bq = Math.round(gauge * 100);
+    if (bq !== this._lastBreath) {
+      this._lastBreath = bq;
+      this._concFill.style.transform = SCALE_X[bq];
     }
   }
 
-  /* ------------------------------ weapon HUD -------------------------------- */
+  /* ------------------------------ the kit tag -------------------------------- */
 
-  /**
-   * ui-08 — silhouette + ammo/mod dots + count. The dot row is the weapon's
-   * ammo roster (the active one filled): the build has no mod system yet, so
-   * drawing empty "mod slots" would be inventing UI for data that does not
-   * exist. It reads `weapon.mods` first, so the row becomes real mod dots the
-   * moment `combat` publishes them.
-   */
+  /** Silhouette, ammo ticks, a 3-digit count. Combat owns the data. */
   _updateWeapon() {
     const c = this.ctx.combat;
     const w = c?.activeWeapon;
 
-    let ammo = c?.activeAmmo ?? w?.activeAmmo ?? c?.arrowType ?? 'hunter';
+    let ammo = c?.activeAmmo ?? w?.activeAmmo ?? c?.arrowType ?? 'reed';
     let ammoObj = null;
     if (ammo && typeof ammo === 'object') {
       ammoObj = ammo;
-      ammo = ammo.id ?? ammo.name ?? 'hunter';
+      ammo = ammo.id ?? ammo.name ?? 'reed';
     }
-    if (typeof ammo === 'number') ammo = ['hunter', 'fire', 'shock'][ammo] ?? 'hunter';
+    if (typeof ammo === 'number') ammo = 'reed';
     if (!ammoObj && Array.isArray(w?.ammoTypes)) {
       ammoObj = w.ammoTypes.find((a) => a && typeof a === 'object' && (a.id === ammo || a.name === ammo)) ?? null;
     }
@@ -2198,49 +2198,43 @@ export class HUD {
     if (count == null) {
       count = c?.ammo?.[ammo] ?? c?.counts?.[ammo] ?? c?.ammoCounts?.[ammo] ?? c?.arrowCounts?.[ammo];
     }
-    if (count == null && String(ammo) === 'hunter') count = Infinity;
     this._ammoEmpty = typeof count === 'number' && count <= 0;
 
-    const wid = String(w?.id ?? 'hunter-bow');
-    const wName = String(w?.name ?? w?.displayName ?? 'Hunter Bow').toUpperCase();
-    const look = ammoLook(ammo);
-    const ammoName = String(
-      (ammoObj && typeof ammoObj === 'object' ? ammoObj.name : null) ?? look.name,
-    ).toUpperCase();
-    const countText = count === Infinity ? '∞' : count == null ? '—' : String(count | 0);
-
     const dots = Array.isArray(w?.mods) ? w.mods
-      : Array.isArray(w?.ammoTypes) ? w.ammoTypes : [];
-    const dotSig = dots.map((d) => (typeof d === 'string' ? d : d?.id ?? '')).join(',');
+      : Array.isArray(w?.ammoTypes) ? w.ammoTypes : null;
+    // the dirty check is identity + numbers: nothing below runs until one of them moves
+    if (w === this._lastW && ammo === this._lastAmmoId && count === this._lastCount
+      && dots === this._lastDots && (dots?.length ?? 0) === this._lastDotN) return;
+    this._lastW = w; this._lastAmmoId = ammo; this._lastCount = count;
+    this._lastDots = dots; this._lastDotN = dots?.length ?? 0;
 
-    const sig = `${wid}|${wName}|${ammo}|${countText}|${ammoName}|${dotSig}`;
-    if (sig === this._lastWpnSig) return;
-    this._lastWpnSig = sig;
+    const wid = String(w?.id ?? 'bow');
+    const wName = fieldWord(String(w?.name ?? w?.displayName ?? 'Sabina Bow')).toUpperCase();
+    const ammoName = fieldWord(String(
+      (ammoObj && typeof ammoObj === 'object' ? ammoObj.name : null) ?? prettify(ammo),
+    )).toUpperCase();
+    const countText = count === Infinity || count == null ? '---' : String(count | 0).padStart(3, '0');
 
     if (this._lastWid !== wid) {
       this._lastWid = wid;
-      this._wpnArt.innerHTML = weaponArt(wid);
+      this._wpnArt.innerHTML = kitArtFor(wid);
     }
     this._wpnName.textContent = wName;
     this._wpnAmmoName.textContent = ammoName;
-    this._wpnAmmoName.style.color = look.color;
     this._wpnCount.textContent = countText;
     this._wpnCount.classList.toggle('empty', this._ammoEmpty);
-    this._wpnGlyph.innerHTML = svgIcon(look.glyph, look.color);
 
     let html = '';
-    for (const d of dots) {
+    for (const d of dots ?? []) {
       const id = typeof d === 'string' ? d : d?.id ?? '';
-      const l = ammoLook(id);
-      const on = id === ammo;
-      html += `<i class="${on ? 'on' : ''}" style="--c:${l.color}"></i>`;
+      html += `<i class="${id === ammo ? 'on' : ''}"></i>`;
     }
     this._wpnDots.innerHTML = html;
   }
 
-  /* ------------------------------ tools strip -------------------------------- */
+  /* ------------------------------ tool chips --------------------------------- */
 
-  /** ui-11 — pixels only; `ctx.items.tools` owns the data and the behaviour. */
+  /** `ctx.items.tools` owns the data and the behaviour (the Kit Rack's slots land at combat-kit W2). */
   _updateTools() {
     const tools = this.ctx.items?.tools;
     if (!tools || !Array.isArray(tools.slots) || tools.slots.length === 0) {
@@ -2254,17 +2248,18 @@ export class HUD {
     this._toolsReady = true;
     const idx = tools.index | 0;
     const cd = Math.round(clamp01(tools.cooldown ?? 0) * 20);
-    let sig = `${idx}|${cd}|${keyGlyph(tools.useKey)}`;
-    for (const s of tools.slots) sig += `|${s.id}:${s.count}:${s.ready ? 1 : 0}:${s.blocked ? 1 : 0}`;
+    // a rolling number, not a string: this samples at 10 Hz for the whole session
+    let sig = idx * 31 + cd;
+    for (let i = 0; i < tools.slots.length; i++) {
+      const q = tools.slots[i];
+      sig = (Math.imul(sig, 33) + (q.count | 0) * 4 + (q.ready ? 2 : 0) + (q.blocked ? 1 : 0)) | 0;
+    }
     if (sig === this._lastToolSig) return;
     this._lastToolSig = sig;
     this._toolsEl.classList.add('show');
 
     while (this._toolSlots.length < tools.slots.length) {
-      const el = div('cal-tool', this._toolRow);
-      // The angled corner lives on this plate, not on the tile: `clip-path`
-      // clips descendants, and the use-key glyph hangs ABOVE the tile.
-      div('cal-tool-plate', el);
+      const el = div('cal-tool cal-glass', this._toolRow);
       const ic = div('cal-tool-ic', el);
       const n = div('cal-tool-n', el);
       const key = document.createElement('kbd');
@@ -2279,26 +2274,19 @@ export class HUD {
       if (!s) { t.el.style.display = 'none'; continue; }
       t.el.style.display = '';
       const active = i === idx;
-      const local = ITEMS[s.id] ?? {};
-      const glyph = (s.glyph && GLYPHS[s.glyph]) ? s.glyph : local.glyph ?? 'shard';
-      const color = s.rarityColor ?? s.color ?? local.color ?? '#efe6d5';
-      const isig = `${glyph}|${color}`;
-      if (t.sig !== isig) { t.sig = isig; t.ic.innerHTML = svgIcon(glyph, color); }
+      if (t.sig !== s.id) { t.sig = s.id; t.ic.innerHTML = itemIcon(s.id); }
       t.n.textContent = s.count == null ? '' : String(s.count);
       t.el.classList.toggle('active', active);
       t.el.classList.toggle('empty', !s.count);
       t.el.classList.toggle('blocked', !!s.blocked);
-      t.el.title = s.name ?? '';
+      t.el.title = fieldWord(s.name ?? '');
       if (active) {
         t.key.textContent = keyGlyph(tools.useKey);
         t.key.style.display = '';
-        const c = clamp01(tools.cooldown ?? 0);
-        t.sweep.style.background = c > 0.001
-          ? `conic-gradient(rgba(10,13,16,0.72) ${(c * 100).toFixed(0)}%, transparent 0)`
-          : 'none';
+        t.sweep.style.transform = SCALE_Y[Math.round(clamp01(tools.cooldown ?? 0) * 100)];
       } else {
         t.key.style.display = 'none';
-        t.sweep.style.background = 'none';
+        t.sweep.style.transform = SCALE_Y[0];
       }
     }
     const ck = Array.isArray(tools.cycleKeys) ? tools.cycleKeys : ['BracketLeft', 'BracketRight'];
@@ -2306,76 +2294,46 @@ export class HUD {
     this._toolNext.querySelector('kbd').textContent = keyGlyph(ck[1]);
   }
 
-  /* ------------------------------ craft hold -------------------------------- */
+  /* ------------------------------ craft hold --------------------------------- */
 
-  /**
-   * onboarding-loop-crafting-feedback — the hold-R state machine lives in
-   * `combat.craft`; this draws its fill, and says WHY when it is blocked.
-   */
+  /** The hold-R state machine lives in `combat.craft`; this draws its fill and says why it is blocked. */
   _updateCraft() {
     const c = this.ctx.combat?.craft;
     if (!c) {
-      if (this._lastCraftSig !== 'off') { this._lastCraftSig = 'off'; this._craftEl.style.display = 'none'; }
+      if (this._lastCraftOn !== null) { this._lastCraftOn = null; this._craftEl.style.display = 'none'; }
       return;
     }
-    this._craftEl.style.display = '';
-    const prog = clamp01(c.progress ?? 0);
-    const sig = `${c.holding ? 1 : 0}|${(prog * 20) | 0}|${c.ok ? 1 : 0}|${c.blocker ?? ''}`;
-    if (sig === this._lastCraftSig) return;
-    this._lastCraftSig = sig;
-    this._craftEl.classList.toggle('on', !!c.holding);
-    this._craftFill.style.width = (prog * 100).toFixed(0) + '%';
-    this._craftFill.style.background = c.ok === false ? 'var(--cal-alert)' : 'var(--cal-yellow)';
-    this._craftLabel.textContent = c.holding && c.blocker
-      ? String(c.blocker).toUpperCase()
-      : 'CRAFT';
-  }
-
-  /* --------------------------- XP bar + level pip ---------------------------- */
-
-  _updateXp() {
-    const prog = this.ctx.progression;
-    if (!prog) {
-      if (this._lastXpSig !== 'off') { this._lastXpSig = 'off'; this._xpEl.classList.remove('show'); }
-      return;
+    const on = !!c.holding;
+    if (on !== this._lastCraftOn) {
+      this._lastCraftOn = on;
+      this._craftEl.style.display = '';
+      this._craftEl.classList.toggle('on', on);
     }
-    const next = prog.xpToNext;
-    const finite = Number.isFinite(next);
-    const pct = finite ? clamp01(prog.xpIntoLevel / next) : 1;
-    const sig = `${prog.level}|${prog.xpIntoLevel}|${finite ? next : 'max'}|${prog.skillPoints}`;
-    if (sig === this._lastXpSig) return;
-    this._lastXpSig = sig;
-    this._xpEl.classList.add('show');
-    this._xpPip.firstChild.textContent = String(prog.level);
-    this._xpLeft.textContent = `LEVEL ${prog.level}`;
-    this._xpRight.textContent = finite ? `${prog.xpIntoLevel} / ${next} XP` : 'MAX';
-    this._xpFill.style.width = (pct * 100).toFixed(1) + '%';
-    const sp = prog.skillPoints | 0;
-    this._xpPoints.style.display = sp > 0 ? '' : 'none';
-    if (sp > 0) this._xpPoints.innerHTML = `◆ ${sp} SKILL POINT${sp > 1 ? 'S' : ''} <kbd>K</kbd>`;
+    const prog = Math.round(clamp01(c.progress ?? 0) * 100);
+    if (prog !== this._lastCraftFill) {
+      this._lastCraftFill = prog;
+      this._craftFill.style.transform = SCALE_X[prog];
+    }
+    const blocked = on && c.blocker ? fieldWord(String(c.blocker)).toUpperCase() : 'MAKE';
+    if (blocked !== this._lastCraftLabel) {
+      this._lastCraftLabel = blocked;
+      this._craftLabel.textContent = blocked;
+      this._craftEl.classList.toggle('deny', c.ok === false);
+    }
   }
 
-  /* --------------------------- interaction prompt --------------------------- */
+  /* --------------------------- interaction prompt ---------------------------- */
 
-  /** ui-16 — the prompt is projected AT the interactable, not screen-fixed. */
+  /** The prompt is projected AT the interactable (`A71f-interact-anchor`). */
   _updateInteract() {
     const cur = this.ctx.interactables?.current;
     if (!cur) {
-      if (this._lastIntSig !== 'off') {
-        this._lastIntSig = 'off';
+      if (this._lastIntOn !== false) {
+        this._lastIntOn = false;
         this._intEl.classList.remove('show');
       }
       return;
     }
-    const label = String(cur.label ?? 'INTERACT').toUpperCase();
-    const prog = clamp01(cur.holdProgress ?? cur.progress ?? 0);
-
-    // `interactables.current` is the PUBLISHED record `{ entry, label,
-    // holdProgress }` (src/items/interactables.js §contract) — the world
-    // position lives on `.entry`, never on the record itself. Reading the
-    // record made `placed` permanently false and parked the prompt on the
-    // screen-fixed fallback ui-16 exists to delete. `?? cur` keeps a
-    // bare-entry caller working. Gate: `A71f-interact-anchor`.
     const ent = cur.entry ?? cur;
     const pos = ent.position ?? ent.point ?? ent.object?.position ?? ent.mesh?.position;
     let placed = false;
@@ -2385,40 +2343,44 @@ export class HUD {
         const x = (this._v.x * 0.5 + 0.5) * this._vw;
         const y = (-this._v.y * 0.5 + 0.5) * this._vh;
         if (x > -60 && x < this._vw + 60 && y > -40 && y < this._vh + 40) {
-          this._intEl.style.transform =
-            `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-50%) scale(${this._wscale.toFixed(3)})`;
+          this._placeInteract(x, y);
           placed = true;
         }
       }
     }
     if (!placed) {
-      this._intEl.style.transform =
-        `translate(${(this._vw * 0.5).toFixed(1)}px, ${(this._vh * 0.66).toFixed(1)}px) `
-        + `translate(-50%,-50%) scale(${this._wscale.toFixed(3)})`;
+      this._placeInteract(this._vw * 0.5, this._vh * 0.66);
     }
-
-    const sig = `${label}|${(prog * 50) | 0}|${placed ? 1 : 0}`;
-    if (sig === this._lastIntSig) return;
-    this._lastIntSig = sig;
-    this._intEl.classList.add('show');
-    this._intLabel.textContent = label;
-    this._intRing.style.background =
-      `conic-gradient(var(--cal-yellow) ${(prog * 100).toFixed(0)}%, rgba(239, 230, 213, 0.18) 0)`;
+    if (this._lastIntOn !== true) {
+      this._lastIntOn = true;
+      this._intEl.classList.add('show');
+    }
+    const raw = cur.label ?? 'INTERACT';
+    if (raw !== this._lastIntLabel) {
+      this._lastIntLabel = raw;
+      this._intLabel.textContent = fieldWord(String(raw)).toUpperCase();
+    }
+    const prog = Math.round(clamp01(cur.holdProgress ?? cur.progress ?? 0) * 100);
+    if (prog !== this._lastIntHold) {
+      this._lastIntHold = prog;
+      this._intHold.style.transform = SCALE_X[prog];
+    }
   }
 
-  /* ---------------------- in-world objective diamond ------------------------- */
+  _placeInteract(x, y) {
+    const qx = Math.round(x), qy = Math.round(y);
+    if (qx !== this._intQx) { this._intQx = qx; this._intWrap.style.transform = txString(qx); }
+    if (qy !== this._intQy) { this._intQy = qy; this._intEl.style.transform = centreY(qy, this._wscale); }
+  }
 
-  /**
-   * onboarding-loop-objective-guidance — a gold diamond over the tracked
-   * objective with its distance in metres, edge-clamped when off screen so it
-   * always points at where she is supposed to go.
-   */
+  /* ---------------------- the objective's broad arrow ------------------------ */
+
+  /** Over the tracked objective, with its distance in metres, edge-clamped when off screen. */
   _updateObjectiveMark(p) {
-    const prog = this.ctx.progression;
     let mk = null;
-    const marks = prog?.getMarkers?.();
+    const marks = this._marks;
     if (Array.isArray(marks)) {
-      for (const m of marks) { if (m.tracked) { mk = m; break; } }
+      for (let i = 0; i < marks.length; i++) if (marks[i].tracked) { mk = marks[i]; break; }
       if (!mk && marks.length) mk = marks[0];
     }
     let wx, wy, wz, label;
@@ -2426,36 +2388,29 @@ export class HUD {
       wx = mk.x; wy = (mk.y ?? 0) + 2.2; wz = mk.z; label = mk.label ?? '';
     } else if (this._questTarget) {
       const q = this._questTarget.position ?? this._questTarget.root?.position;
-      if (!q) { this._objDiamond.classList.remove('show'); return; }
+      if (!q) { this._objDiamond.classList.remove('show'); this._lastObjOn = false; return; }
       wx = q.x; wy = q.y + (this._questTarget.height ?? 2.2) + 1.8; wz = q.z;
-      label = String(this._questTarget.displayName ?? this._questTarget.kind ?? '').toUpperCase();
+      label = this._questTarget.displayName ?? this._questTarget.kind ?? '';
     } else {
-      if (this._lastObjDiamond !== 'off') {
-        this._lastObjDiamond = 'off';
+      if (this._lastObjOn) {
+        this._lastObjOn = false;
         this._objDiamond.classList.remove('show');
       }
       return;
     }
 
-    const dist = Math.hypot(wx - p.position.x, wz - p.position.z);
+    const dist = len2(wx - p.position.x, wz - p.position.z);
     this._v.set(wx, wy, wz).project(this.ctx.camera);
     const behind = this._v.z > 1;
     let x = (this._v.x * 0.5 + 0.5) * this._vw;
     let y = (-this._v.y * 0.5 + 0.5) * this._vh;
     if (behind) { x = this._vw - x; y = this._vh - y; }
-    /**
-     * The clamp ring is ASYMMETRIC because the HUD owns the top and bottom of
-     * the screen: the compass ribbon runs along the top and the XP bar + level
-     * pip run along the bottom. A symmetric 58 px margin parked the marker
-     * exactly on the XP bar every time the objective was behind her — which is
-     * most of the time — and the label ran straight through "LEVEL 1 … XP".
-     * Filmed at shots/gates/V37-hud-language.png before this.
-     */
-    const mgnX = 58, mgnT = 76, mgnB = 124;
+    /** The clamp ring is asymmetric: the HUD owns the top and bottom of the screen. */
+    const mgnX = 58, mgnT = 120 * this._scale, mgnB = 124 * this._scale;
     const off = behind || x < mgnX || x > this._vw - mgnX || y < mgnT || y > this._vh - mgnB;
     if (off) {
       const cx = this._vw / 2;
-      const cy = (mgnT + (this._vh - mgnB)) / 2;   // centre of the playable ring
+      const cy = (mgnT + (this._vh - mgnB)) / 2;
       const halfY = (this._vh - mgnB - mgnT) / 2;
       const dx = x - cx;
       const dy = behind ? Math.abs(y - cy) + halfY * 0.35 : y - cy;
@@ -2466,19 +2421,22 @@ export class HUD {
       x = cx + dx * k;
       y = cy + dy * k;
     }
-    this._objDiamond.classList.add('show');
-    this._objDiamond.classList.toggle('edge', off);
-    this._objDiamond.style.transform =
-      `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%,-50%) scale(${this._wscale.toFixed(3)})`;
+    if (!this._lastObjOn) { this._lastObjOn = true; this._objDiamond.classList.add('show'); }
+    if (off !== this._lastObjOff) { this._lastObjOff = off; this._objDiamond.classList.toggle('edge', off); }
+    const qx = Math.round(x), qy = Math.round(y);
+    if (qx !== this._objQx) { this._objQx = qx; this._objWrap.style.transform = txString(qx); }
+    if (qy !== this._objQy) { this._objQy = qy; this._objDiamond.style.transform = centreY(qy, this._wscale); }
     const di = Math.round(dist);
-    const sig = `${di}|${label}|${off ? 1 : 0}`;
-    if (sig === this._lastObjDiamond) return;
-    this._lastObjDiamond = sig;
-    this._objDiamondDist.textContent = di + 'm';
-    this._objDiamondLabel.textContent = label;
+    if (di !== this._lastObjDist) { this._lastObjDist = di; this._objDiamondDist.textContent = di + ' m'; }
+    // a staged look film (`stageNote`) names no tracked quest's own mark
+    if (this._staged) label = '';
+    if (label !== this._lastObjLabel) {
+      this._lastObjLabel = label;
+      this._objDiamondLabel.textContent = fieldWord(String(label)).toUpperCase();
+    }
   }
 
-  /* ------------------------- vignette + Conc veil ---------------------------- */
+  /* ------------------------------- vignette --------------------------------- */
 
   _updateVignette(dt, t, p) {
     this._hurtFlash = Math.max(0, this._hurtFlash - dt * 0.9);
@@ -2490,28 +2448,6 @@ export class HUD {
       this._lastVin = o;
       this._vignette.style.opacity = o.toFixed(3);
     }
-  }
-
-  /**
-   * ui-19 / combat-concentration-presentation — Concentration desaturates the
-   * world, cools it, and pulls a vignette in. The ramp is real-time (a 0.22 s
-   * attack, 0.34 s release) and it is driven off the `steady-start` /
-   * `-end` events with a poll on `combat.steady.active` as the belt.
-   */
-  _updateConcVeil(dt) {
-    const active = this._concOn || !!this.ctx.combat?.steady?.active;
-    const target = active ? 1 : 0;
-    const rate = active ? 1 / 0.22 : 1 / 0.34;
-    if (this._concVeil < target) this._concVeil = Math.min(target, this._concVeil + rate * dt);
-    else if (this._concVeil > target) this._concVeil = Math.max(target, this._concVeil - rate * dt);
-    const q = Math.round(this._concVeil * 50) / 50;
-    if (q === this._lastVeil) return;
-    this._lastVeil = q;
-    const on = q > 0.001;
-    this._veilEl.classList.toggle('on', on);
-    if (!on) return;
-    this._veilSat.style.opacity = (q * 0.72).toFixed(3);
-    this._veilTint.style.opacity = q.toFixed(3);
   }
 
   /* ------------------------------ tutorial cards ----------------------------- */
@@ -2537,26 +2473,26 @@ export class HUD {
   }
 
   /**
-   * ui-17 — a one-shot contextual card per mechanic, gated on the mechanic
-   * actually being reachable. Cards never stack: one shows for 6.5 s, the next
-   * follows 0.8 s later.
+   * A one-shot card per mechanic, raised when the mechanic is reachable (bible
+   * §8.9). Cards never stack: one shows for 6.5 s, the next follows 0.8 s later.
    */
   _updateTips(dt) {
     if (this.ctx.state !== 'playing') return;
-    for (const tip of TIPS) {
-      if (this._tipSeen.has(tip.id)) continue;
+    for (const tip of TUTORIAL_CARDS) {
+      if (!tip.when || this._tipSeen.has(tip.id)) continue;
       let ok = false;
       try { ok = !!tip.when(this); } catch { ok = false; }
       if (ok) this._queueTip(tip);
     }
     if (this._tipT > 0) {
       this._tipT -= dt;
-      if (this._tipT <= 0) this._tipEl.classList.remove('show');
+      if (this._tipT <= 0) this._dismissTip();
       return;
     }
     if (this._tipGap > 0) { this._tipGap -= dt; return; }
     const tip = this._tipQueue.shift();
     if (!tip) return;
+    this._tipCur = tip.id;
     this._tipTitle.textContent = tip.title;
     this._tipBody.textContent = tip.body;
     this._tipKeys.innerHTML = tip.keys.map((k) => `<kbd>${k}</kbd>`).join('');
@@ -2566,17 +2502,18 @@ export class HUD {
     this._emitUi('ui-nav');
   }
 
+  /** The card goes: one at a time, auto-dismissed (U-02: <= 1 card, <= 8 s). */
+  _dismissTip() {
+    this._tipT = 0;
+    this._tipCur = null;
+    this._tipEl.classList.remove('show');
+  }
+
   /* -------------------------------- audits ----------------------------------- */
 
   /** Everything `V37-hud-language` / `A71c-hud-surfaces` grade, as numbers. */
   _surfaceAudit() {
-    /**
-     * EFFECTIVE opacity — the product up the ancestor chain to <body>.
-     * Reading only the element's own `opacity` is how a parent at 0 hid the
-     * quest tracker for a whole round while this audit reported it visible:
-     * the tracker's own class said 1, its dead parent said 0. Every `visible`
-     * below is now the composited truth.
-     */
+    /** EFFECTIVE opacity: the product up the ancestor chain to <body>. */
     const eff = (el) => {
       let a = 1;
       for (let n = el; n && n !== document.body; n = n.parentElement) {
@@ -2593,32 +2530,37 @@ export class HUD {
       return r.width > 1 && r.height > 1 && r.right > 0 && r.bottom > 0
         && r.left < this._vw && r.top < this._vh;
     };
-    /** painted box as [l, t, r, b] — integers, viewport pixels. */
+    /** painted box as [l, t, r, b]: integers, viewport pixels. */
     const rect = (el) => {
       const r = el.getBoundingClientRect();
       return [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)];
     };
     const bars = this._mhbSlots.filter((s) => s.vis && vis(s.el));
     const dmgLive = this._dmgPool.filter((d) => d.active);
+    const svg = this._healthFill.querySelector('svg');
+    const cells = svg ? [...svg.querySelectorAll(':scope > rect.v')] : [];
+    const allRects = svg ? [...svg.querySelectorAll(':scope > rect')] : [];
     return {
       health: {
         visible: vis(this._vitalsEl),
         pct: this._lastHp,
         numerals: this._healthNum.textContent.trim(),
-        segments: this._topleftEl.querySelectorAll('.cal-health-seg').length + 1,
-        // the fill is a vertical red gradient, so `backgroundColor` is
-        // transparent — the gate needs the image string to prove it is RED.
-        fillColor: getComputedStyle(this._healthFill).backgroundColor,
-        fillImage: getComputedStyle(this._healthFill).backgroundImage,
+        graduations: cells.length,
+        graduationColors: [...new Set(allRects.map((c) => getComputedStyle(c).fill))],
+        gaps: allRects.length - cells.length,
+        widthPx: Math.round(this._staffEl.getBoundingClientRect().width),
+        heightPx: +this._staffEl.getBoundingClientRect().height.toFixed(1),
         widthPct: +(this._healthFill.getBoundingClientRect().width
-          / Math.max(1, this._healthFill.parentElement.getBoundingClientRect().width) * 100).toFixed(1),
+          / Math.max(1, this._staffEl.getBoundingClientRect().width) * 100).toFixed(1),
+        clip: this._healthFill.style.clipPath,
+        // the painted right edge of the reading, measured
+        indexLeftPct: parseFloat(this._staffIndex.style.left) || 0,
+        rect: rect(this._staffEl),
       },
-      pouch: { visible: vis(this._pouchRow), pct: this._lastPouch, pips: this._lastPouchPips,
-        color: getComputedStyle(this._pouchFill).backgroundColor },
+      gourd: { visible: vis(this._gourdChip), pct: this._lastGourd, num: this._gourdNum.textContent,
+        line: vis(this._gourdFill), rect: rect(this._gourdChip) },
       tracker: {
         visible: vis(this._trackEl),
-        // composited opacity — the number `A71g-tracker-live` grades, so a
-        // parent fading the tracker out again cannot pass unnoticed
         opacity: +eff(this._trackEl).toFixed(3),
         idle: !!this._trackIdle,
         rect: rect(this._trackEl),
@@ -2626,10 +2568,9 @@ export class HUD {
         text: this._trackObj.textContent,
       },
       /**
-       * ui-16 — is the prompt actually ON the interactable? Projected here
-       * from the published record's `.entry` position, independently of what
-       * `_updateInteract` believed, and compared against the painted rect.
-       * `anchored` false means the screen-fixed fallback is showing.
+       * Is the prompt actually ON the interactable? Projected here from the
+       * published record's `.entry`, independently of what `_updateInteract`
+       * believed, and compared against the painted rect.
        */
       interact: (() => {
         const cur = this.ctx.interactables?.current;
@@ -2650,26 +2591,19 @@ export class HUD {
         const cx = r.left + r.width * 0.5, cy = r.top + r.height * 0.5;
         out.world = [Math.round(sx), Math.round(sy)];
         out.painted = [Math.round(cx), Math.round(cy)];
-        out.offsetPx = +Math.hypot(cx - sx, cy - sy).toFixed(1);
+        out.offsetPx = +len2(cx - sx, cy - sy).toFixed(1);
         out.anchored = shown && out.offsetPx < 24;
         return out;
       })(),
       compass: this._compassAudit(),
       eye: { visible: vis(this._eyeEl), mode: this._eyeEl.dataset.m ?? null,
+        idle: this._eyeEl.classList.contains('idle'), idleS: +(this._vialIdleT ?? 0).toFixed(1),
         rect: rect(this._eyeEl), label: this._eyeLabel.textContent },
-      /**
-       * ui-06. `topPx` alone had no horizontal eye at all, which is how a plate
-       * centred TWICE — shifted left by half its own width — passed a whole
-       * round while floating beside its machine over empty forest. `anchorX` is
-       * re-projected here from the machine itself, independently of whatever
-       * `_updateMachineBars` believed, and compared with the painted centre.
-       * A clamped plate is slid clear of the vitals column on purpose, so the
-       * off-axis grade covers the unclamped ones.
-       */
+      /** Painted centre against an anchor re-projected from the Instrument itself. */
       machineBars: (() => {
         const cam = this.ctx.camera;
         const rows = bars.map((b) => {
-          const r = b.el.getBoundingClientRect();
+          const r = b.plate.getBoundingClientRect();
           const row = {
             name: b.name.textContent, clamped: !!b.clamped,
             rect: [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)],
@@ -2691,8 +2625,7 @@ export class HUD {
         });
         const free = rows.filter((r) => !r.clamped && r.dx != null);
         return {
-          visible: bars.length, cap: MHB_CAP, engaged: this._engaged.size,
-          // the top-left column a CLAMPED plate has to slide clear of
+          visible: bars.length, cap: MHB_CAP, engaged: this._engaged.size, baseWidth: MHB_W,
           column: rect(this._topleftEl),
           rects: rows.map((r) => r.rect),
           names: rows.map((r) => r.name),
@@ -2705,36 +2638,45 @@ export class HUD {
       })(),
       tools: { visible: vis(this._toolsEl), slots: this._toolSlots.filter((t) => t.el.style.display !== 'none').length,
         index: this.ctx.items?.tools?.index ?? -1, useKey: keyGlyph(this.ctx.items?.tools?.useKey) },
-      xp: { visible: vis(this._xpEl), level: this.ctx.progression?.level ?? null,
-        text: this._xpRight.textContent },
-      weapon: { visible: vis(this._wpnEl), name: this._wpnName.textContent,
+      weapon: { visible: vis(this._wpnEl), name: this._wpnName.textContent, ammo: this._wpnAmmoName.textContent,
+        count: this._wpnCount.textContent,
         dots: this._wpnDots.childElementCount, art: this._wpnArt.querySelector('svg') != null },
-      // `.cal-cross` is a 0x0 anchor at screen centre — everything it draws is
-      // absolutely positioned off it, so the ANCHOR is never "visible". Grade
-      // the marks: the centre dot and the four corner brackets.
       reticle: (() => {
-        // both `.cal-cross` and `.cal-brk` are 0x0 anchors that everything is
-        // positioned off, so neither is ever "visible" by rect. Grade the marks
-        // themselves, and read the bracket's opacity off its own parent.
+        // the arm is a hairline: 1 px tall on purpose, so its width is what says it is painted
         const brkOn = parseFloat(getComputedStyle(this._brackets).opacity) > 0.04
-          && vis(this._brkArm);
+          && this._brkArm.getBoundingClientRect().width > 1;
         return {
           visible: vis(this._dotEl) || brkOn,
           dot: vis(this._dotEl),
           aiming: !!this.ctx.player?.aiming,
           brackets: brkOn,
+          drawScale: vis(this._drawEl),
         };
       })(),
-      concentration: { veil: +this._concVeil.toFixed(2), on: this._veilEl.classList.contains('on') },
+      /** The breath meter (`A71d-steady-breath-meter`): painted fill against its rule. */
+      breath: (() => {
+        const rule = this._concEl.querySelector('.cal-breath-rule');
+        const rr = rule.getBoundingClientRect();
+        const fr = this._concFill.getBoundingClientRect();
+        return {
+          visible: vis(this._concEl),
+          active: this._concEl.classList.contains('active'),
+          ruleW: +rr.width.toFixed(1), fillW: +fr.width.toFixed(1),
+          fillFrac: rr.width > 0 ? +(fr.width / rr.width).toFixed(3) : 0,
+          belowReticlePx: Math.round(rr.top - this._vh * 0.5),
+          heightPx: +rr.height.toFixed(1),
+        };
+      })(),
       damageNumbers: {
         live: dmgLive.length,
         px: dmgLive.map((d) => Math.round(parseFloat(getComputedStyle(d.el).fontSize) || 0)),
         weakPx: dmgLive.filter((d) => d.el.classList.contains('weak'))
           .map((d) => Math.round(parseFloat(getComputedStyle(d.el).fontSize) || 0)),
+        family: dmgLive[0] ? getComputedStyle(dmgLive[0].el).fontFamily : null,
       },
       banners: this._bannerEl.childElementCount,
-      xpPops: this._xpPops.childElementCount,
-      tip: { visible: vis(this._tipEl), title: this._tipTitle.textContent },
+      flashes: this._xpPops.childElementCount,
+      tip: { visible: vis(this._tipEl), title: this._tipTitle.textContent, body: this._tipBody.textContent },
       killFeed: document.querySelectorAll('.cal-toast').length,
       scale: this._scaleAudit(),
     };

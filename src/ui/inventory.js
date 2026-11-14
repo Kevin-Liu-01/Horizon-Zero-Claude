@@ -1,6 +1,12 @@
 import * as THREE from 'three';
 import './inventory.css';
 import { itemDef, ammoDef, rarityDef, POCKETS } from '../items/items.js';
+import { fieldWord } from './tips.js';
+
+/** The catalogue's lines the bridge cannot word-swap, until combat-kit renames `items.js` (W2). By item id. */
+const ITEM_DESC = {
+  'metal-shards': 'Torn Instrument plating, cut down to trading weight. Every Guild deal is counted in salt.',
+};
 
 /* Reused vectors for the loot-popup projection — no per-frame allocation. */
 const _lootV = new THREE.Vector3();
@@ -8,30 +14,96 @@ const _lootD = new THREE.Vector3();
 const _lootF = new THREE.Vector3();
 
 /**
- * INVENTORY SCREEN + LOOT POPUP  —  lane `focus-items` (port 5212)
+ * THE SATCHEL + THE TAKE-ALL POPUP  —  lane `shell-ui` (bible §9.7; armory takes the
+ * equip panel at W3 under its grant)
  * ===========================================================================
- * Findings closed here:
- *   ui-14              full-screen POCKETS: rarity frames, descriptions,
- *                      capacity bars — not a 640 px modal list
- *   progression-006    capacity readouts + the capacity UPGRADE control, and
- *                      a real CRAFTING pocket
- *   progression-004    the merchant TRADE panel (the economy itself stays in
- *                      `ctx.progression.merchant` — this is only its face)
- *   missing-systems-…  the NOTEBOOK: datapoints, by category, readable
- *   ui-16              the take-all loot popup is PROJECTED onto the
- *                      interactable instead of pinned to a screen corner
- *   onboarding-loop-…  the popup names its source and frames rows by rarity
+ * A field-book page: pocket index down the margin, a grid of specimen cards, a
+ * detail column. Ink on paper, every item a one-weight engraved mark (`itemIcon`),
+ * rarity as an ink colour on the card's edge.
  *
- * The screen is a distinct game state ('inventory'): opening sets ctx.state,
- * exits pointer lock and freezes the world exactly like the pause menu;
- * closes on I / Esc / clicking outside the panel.
+ * The screen is a distinct game state ('inventory'): opening sets ctx.state, exits
+ * pointer lock and freezes the world exactly like the hub; closes on I / Esc /
+ * clicking outside the panel. Opened from the hub it sits in the hub's page body and
+ * the hub keeps the margin (see `body.cal-hub-open` in inventory.css).
  *
- * AMMO reads ctx.combat defensively: round-2 weapons contract
- * (combat.weapons[].ammoTypes + ammo counts) when present, else the round-1
- * arrowCounts map — whatever landed, something correct renders.
- * CRAFTING lists ammo recipes live from combat (`recipeStatus`/`canCraft`/
- * `craftAmmo`), so those numbers can only come from the lane that owns them.
+ * AMMO reads ctx.combat defensively; CRAFTING lists ammo recipes live from combat.
+ * Item names go through `fieldWord` (tips.js) until combat-kit renames the catalogue
+ * at W2.
+ *
+ * PUBLISHED: `itemIcon(id)` -> inline SVG (currentColor); `itemPlayerName(id, fallback)`;
+ * `LOOT_POPUP` (the popup registry the HUD's toast suppression reads, gate A10).
  */
+
+/* ------------------------------- engraved item marks --------------------------- */
+
+const L = 'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter"';
+const F = 'fill="currentColor"';
+const MARKS = {
+  salt: `<path ${L} d="M12 2.5 20 8v8l-8 5.5L4 16V8Z"/><path ${L} d="M4 8l8 5 8-5M12 13v8.5"/>`,
+  juniper: `<path ${L} d="M4 19 17 6"/><path ${L} d="M8 21 20 9"/><path ${L} d="M14 5l5 5M4 15l5 5"/>`,
+  resin: `<path ${F} d="M12 2c1 4.4 5.6 7 5.6 12a5.6 5.6 0 0 1-11.2 0c0-2.8 1.6-4.4 2.4-6.6 1 1.4 1.6 2.8 1.8 4.2 1-2.6.2-6.4 1.4-9.6Z"/>`,
+  brine: `<path ${L} d="M12 3c3 5 6.5 8 6.5 12a6.5 6.5 0 0 1-13 0C5.5 11 9 8 12 3Z"/><path ${L} d="M8.5 15.5a3.5 3.5 0 0 0 3.5 3"/>`,
+  dust: `<rect ${L} x="6.5" y="4" width="11" height="17"/><path ${L} d="M6.5 8.5h11M6.5 12.5h11M6.5 16.5h11M9.5 4V2h5v2"/>`,
+  cord: `<path ${L} d="M3 8c3-3 6-3 9 0s6 3 9 0M3 16c3-3 6-3 9 0s6 3 9 0"/>`,
+  lampglass: `<circle ${L} cx="12" cy="12" r="8.5"/><circle ${F} cx="12" cy="12" r="3.4"/><path ${L} d="M12 1.5v2M12 20.5v2M1.5 12h2M20.5 12h2"/>`,
+  escapement: `<circle ${L} cx="12" cy="12" r="6.5"/><circle ${F} cx="12" cy="12" r="1.7"/><path ${L} d="M12 2v3.5M12 18.5V22M2 12h3.5M18.5 12H22M4.9 4.9l2.5 2.5M16.6 16.6l2.5 2.5M19.1 4.9l-2.5 2.5M7.4 16.6l-2.5 2.5"/>`,
+  gourd: `<path ${L} d="M10.5 2.5h3v4c0 1.2 1 1.8 2 2.6 2.2 1.8 3 4 3 6.2a6.5 6.5 0 0 1-13 0c0-2.2.8-4.4 3-6.2 1-.8 2-1.4 2-2.6Z"/><path ${L} d="M6 14h12"/>`,
+  pot: `<path ${L} d="M9 3h6l-1 3.5c4 1.2 5.5 5 5 8.5-.4 2.8-2 5-3.5 6h-7C7 20 5.4 17.8 5 15c-.5-3.5 1-7.3 5-8.5Z"/><path ${L} d="M6 12.5h12"/>`,
+  arrow: `<path ${L} d="M12 22V4"/><path ${F} d="M12 1l4 7h-8Z"/><path ${L} d="M8.5 22l3.5-3.5 3.5 3.5M8.5 18.5 12 15l3.5 3.5"/>`,
+  barbed: `<path ${L} d="M12 22V6"/><path ${F} d="M12 1l5 9-5-2.5L7 10Z"/><path ${L} d="M8.5 22l3.5-3.5 3.5 3.5"/>`,
+  trap: `<path ${L} d="M3 19h18M6 19v-6M18 19v-6M6 13l6-5 6 5"/><path ${L} d="M12 8V3"/>`,
+  rock: `<path ${L} d="M4 16 8 6l9-1.5L21 13l-5 7.5-9-.5Z"/><path ${L} d="M8 6l3.5 7L21 13M11.5 13 7 20"/>`,
+  ceramic: `<path ${L} d="M3 18 12 4l9 14Z"/><path ${L} d="M8 18l4-7 4 7"/>`,
+  book: `<path ${L} d="M4 3h13l3 3v15H4Z"/><path ${L} d="M8 3v18M11 8h6M11 12h6M11 16h4"/>`,
+  mark: `<path ${L} d="M12 3l9 9-9 9-9-9Z"/>`,
+};
+const markKey = (id) => {
+  const s = String(id ?? '');
+  if (/shard|salt/.test(s)) return 'salt';
+  if (/wood|juniper/.test(s)) return 'juniper';
+  if (/blaze|resin|cinder|fire/.test(s)) return 'resin';
+  if (/chill|brine|freeze/.test(s)) return 'brine';
+  if (/spark|dust|shock/.test(s)) return 'dust';
+  if (/wire|cord|cable|rope/.test(s)) return 'cord';
+  if (/lens|lampglass/.test(s)) return 'lampglass';
+  if (/heart|core|escapement/.test(s)) return 'escapement';
+  if (/herb|moss|root|gourd|potion|flask|draught|medic/.test(s)) return 'gourd';
+  if (/blast|pot|paste/.test(s)) return 'pot';
+  if (/trap/.test(s)) return 'trap';
+  if (/rock/.test(s)) return 'rock';
+  if (/shell|ceramic/.test(s)) return 'ceramic';
+  if (/hardpoint|tear|barbed/.test(s)) return 'barbed';
+  if (/hunter|reed|precision|sighting|arrow/.test(s)) return 'arrow';
+  return 'mark';
+};
+const iconSvg = (key) => `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${MARKS[key] ?? MARKS.mark}</svg>`;
+
+/** An item's engraved mark, inline SVG in currentColor. */
+export function itemIcon(id) { return iconSvg(markKey(id)); }
+
+/** An item's name in the player's words. */
+/**
+ * The Field Books page's headings, by category id: the catalogue's own labels are Round-4 words
+ * until the catalogue is renamed. A category this table does not know is a keeper's record
+ * (bible §6: the Fogcatchers keep the paper field books), so no catalogue label reaches the page.
+ */
+const BOOK_HEADS = { world: 'WORLD', vessels: 'GLAZED VESSELS', machine: 'INSTRUMENT STUDIES' };
+export function bookHeading(id) { return BOOK_HEADS[id] ?? 'FOGCATCHER RECORDS'; }
+
+export function itemPlayerName(id, fallback) { return fieldWord(fallback ?? itemDef(id).name); }
+
+/** Rarity, as an ink on paper (the catalogue's colours were chosen for a dark panel). */
+const RAR_INK = {
+  common: 'var(--cal-ink-62)', uncommon: 'var(--cal-moss)', rare: 'var(--cal-cobalt)',
+  veryRare: 'var(--cal-carmine)', legendary: 'var(--cal-brass)',
+};
+const rarInk = (rar) => RAR_INK[rar?.id] ?? RAR_INK.common;
+
+const CURRENCY = 'metal-shards';
+
+/** Pocket index marks (the catalogue's glyphs are outside the latin subset). */
+const POCKET_MARK = { resources: 'salt', ammo: 'arrow', tools: 'trap', valuables: 'lampglass', crafting: 'escapement', notebook: 'book', trade: 'cord' };
+const POCKET_WORD = { resources: 'STORES', ammo: 'QUIVER', tools: 'TOOLS', valuables: 'SALVAGE', crafting: 'MAKING', notebook: 'FIELD BOOKS', trade: 'TRADE' };
 
 function el(tag, cls, parent, html) {
   const node = document.createElement(tag);
@@ -67,13 +139,11 @@ export class InventoryScreen {
       if (e.target === this.root) this.close(); // click-outside resumes
     });
 
-    const shell = el('div', 'cal-inv-shell', this.root);
-    for (const c of ['tl', 'tr', 'bl', 'br']) el('i', `cal-inv-corner ${c}`, shell);
+    const shell = el('div', 'cal-inv-shell cal-page', this.root);
 
     const head = el('div', 'cal-inv-head', shell);
     const title = el('div', 'cal-inv-titles', head);
-    el('div', 'cal-inv-kicker', title, 'SATCHEL');
-    el('div', 'cal-inv-title', title, 'INVENTORY');
+    el('div', 'cal-inv-title', title, 'SATCHEL');
     this._shardsEl = el('div', 'cal-inv-shards', head, '');
 
     const cols = el('div', 'cal-inv-cols', shell);
@@ -83,8 +153,8 @@ export class InventoryScreen {
     this._railBtns = new Map();
     for (const p of POCKETS) {
       const b = el('button', 'cal-inv-pocket', this._railEl,
-        `<i class="cal-inv-pglyph">${p.glyph}</i>`
-        + `<span class="cal-inv-plabel">${p.label}</span>`
+        `<i class="cal-inv-pglyph">${iconSvg(POCKET_MARK[p.id])}</i>`
+        + `<span class="cal-inv-plabel">${POCKET_WORD[p.id] ?? p.label}</span>`
         + '<span class="cal-inv-pcount"></span>');
       b.addEventListener('click', () => { this.pocket = p.id; this._selected = null; this._render(); });
       this._railBtns.set(p.id, b);
@@ -99,8 +169,8 @@ export class InventoryScreen {
     this._detailEl = el('aside', 'cal-inv-detail', cols);
 
     el('div', 'cal-inv-foot', shell,
-      '<span><kbd>I</kbd> / <kbd>ESC</kbd> RESUME</span>'
-      + '<span>CLICK A POCKET TO SWITCH · CLICK AN ITEM TO INSPECT</span>');
+      '<span><kbd>I</kbd> / <kbd>ESC</kbd> close the satchel</span>'
+      + '<span>A pocket to switch · an item to read it</span>');
   }
 
   _bind() {
@@ -166,12 +236,10 @@ export class InventoryScreen {
     const items = this.ctx.items;
     for (const [id, b] of this._railBtns) b.classList.toggle('active', id === this.pocket);
 
-    // shard counter, top-right — shards ARE the currency (progression-004)
-    const shards = inv?.count?.('metal-shards') ?? 0;
-    const sd = itemDef('metal-shards');
+    // salt, top-right: salt IS the currency
+    const salt = inv?.count?.(CURRENCY) ?? 0;
     this._shardsEl.innerHTML =
-      `<i style="color:${sd.color}">${sd.glyph}</i>`
-      + `<span>${shards}</span><em>SHARDS</em>`;
+      `<i>${iconSvg('salt')}</i><span>${String(salt).padStart(3, '0')}</span><em>SALT</em>`;
 
     // pocket badge counts
     for (const p of POCKETS) {
@@ -218,9 +286,8 @@ export class InventoryScreen {
     if (!cost) { el('span', 'cal-cap-max', bar, 'FULLY UPGRADED'); return; }
     const can = items.canUpgrade(pocketId);
     const b = el('button', `cal-cap-up${can.ok ? '' : ' off'}`, bar,
-      `UPGRADE · <i>${itemDef('metal-shards').glyph}</i>${cost.shards}`
-      + cost.items.map(([id, n]) =>
-        ` · <i style="color:${itemDef(id).color}">${itemDef(id).glyph}</i>${n}`).join(''));
+      `UPGRADE · <i>${iconSvg('salt')}</i>${cost.shards}`
+      + cost.items.map(([id, n]) => ` · <i>${itemIcon(id)}</i>${n}`).join(''));
     b.title = can.ok ? `Raise every cap in this pocket to ×${cost.mult}` : can.reason;
     b.addEventListener('click', () => {
       if (items.upgradeCapacity(pocketId)) this._render();
@@ -247,16 +314,15 @@ export class InventoryScreen {
     const inv = this.ctx.inventory;
     const rows = inv?.items?.(category) ?? [];
 
-    // the medicine pouch belongs at the top of RESOURCES — it is the thing
-    // every herb in this pocket feeds
+    // the gourd belongs at the top of STORES: every fog-water plant here feeds it
     if (category === 'resource') this._pouchMeter();
 
     if (!rows.length) {
       this._empty(category === 'valuable'
-        ? 'NO TROPHIES — MACHINE LENSES, HEARTS AND CORES COLLECT HERE'
+        ? 'Nothing salvaged yet. Lampglass and escapements collect here.'
         : category === 'tool'
-          ? 'NO TOOLS — CRAFT ROCKS, DRAUGHTS AND TRAPS IN THE CRAFTING POCKET'
-          : 'SATCHEL EMPTY');
+          ? 'No tools. Make them in the Making pocket.'
+          : 'The satchel is empty.');
       this._detailHint();
       return;
     }
@@ -286,10 +352,10 @@ export class InventoryScreen {
     const def = itemDef(id);
     const rar = rarityDef(def.rarity);
     const card = el('button', `cal-card r-${rar.id}`, parent);
-    card.style.setProperty('--rar', rar.color);
-    card.style.setProperty('--glow', rar.glow);
-    el('i', 'cal-card-glyph', card, def.glyph).style.color = def.color;
-    el('span', 'cal-card-name', card, esc(def.name.toUpperCase()));
+    card.dataset.item = id;   // the injective-name check of A-ui-words-all reads this
+    card.style.setProperty('--rar', rarInk(rar));
+    el('i', 'cal-card-glyph', card, itemIcon(id));
+    el('span', 'cal-card-name', card, esc(fieldWord(def.name).toUpperCase()));
     el('span', 'cal-card-n', card, String(count));
     if (cap) {
       const bar = el('span', 'cal-card-bar', card);
@@ -305,7 +371,7 @@ export class InventoryScreen {
     const p = this.ctx.player;
     if (!p) return;
     const pouch = el('div', 'cal-pouch', this._bodyEl);
-    el('span', 'cal-pouch-label', pouch, 'MEDICINE POUCH');
+    el('span', 'cal-pouch-label', pouch, 'FOG-WATER GOURD');
     const bar = el('div', 'cal-pouch-bar', pouch);
     const fill = el('div', 'cal-pouch-fill', bar);
     const frac = Math.max(0, Math.min(1, (p.gourd ?? 0) / (p.maxGourd || 100)));
@@ -319,7 +385,7 @@ export class InventoryScreen {
   /* --------------------------------------------------------- detail pane */
 
   _detailHint() {
-    el('div', 'cal-det-hint', this._detailEl, 'NOTHING SELECTED');
+    el('div', 'cal-det-hint', this._detailEl, 'Nothing selected.');
   }
 
   _detailItem(id) {
@@ -328,12 +394,12 @@ export class InventoryScreen {
     const def = itemDef(id);
     const rar = rarityDef(def.rarity);
     const d = this._detailEl;
-    d.style.setProperty('--rar', rar.color);
+    d.style.setProperty('--rar', rarInk(rar));
     el('div', 'cal-det-rar', d, rar.name);
     const head = el('div', 'cal-det-head', d);
-    el('i', 'cal-det-glyph', head, def.glyph).style.color = def.color;
-    el('span', 'cal-det-name', head, esc(def.name.toUpperCase()));
-    el('p', 'cal-det-desc', d, esc(def.desc ?? ''));
+    el('i', 'cal-det-glyph', head, itemIcon(id));
+    el('span', 'cal-det-name', head, esc(fieldWord(def.name).toUpperCase()));
+    el('p', 'cal-det-desc', d, esc(ITEM_DESC[id] ?? fieldWord(def.desc ?? '')));
 
     const cap = items?.capacity ? items.capacity(id) : (def.cap ?? 0);
     const have = inv?.count?.(id) ?? 0;
@@ -341,8 +407,8 @@ export class InventoryScreen {
     this._stat(stats, 'CARRIED', `${have} / ${cap}`);
     this._stat(stats, 'POCKET',
       (items?.POCKETS?.[items.pocketOf(id)]?.label) ?? 'SATCHEL');
-    if (def.pouch) this._stat(stats, 'RESTORES', `${def.pouch} POUCH`);
-    if (def.value) this._stat(stats, 'VALUE', `${def.value} SHARDS EACH`);
+    if (def.pouch) this._stat(stats, 'RESTORES', `${def.pouch} GOURD`);
+    if (def.value) this._stat(stats, 'VALUE', `${def.value} SALT EACH`);
 
     const bar = el('div', 'cal-det-bar', d);
     const fill = el('i', '', bar);
@@ -380,10 +446,10 @@ export class InventoryScreen {
       const def = ammoDef(id);
       const rar = rarityDef(def.rarity);
       const card = el('button', `cal-card r-${rar.id}${active ? ' active' : ''}`, grid);
-      card.style.setProperty('--rar', rar.color);
-      card.style.setProperty('--glow', rar.glow);
-      el('i', 'cal-card-glyph', card, def.glyph).style.color = def.color;
-      el('span', 'cal-card-name', card, esc((name ?? def.name).toUpperCase()));
+      card.dataset.item = 'ammo:' + id;
+      card.style.setProperty('--rar', rarInk(rar));
+      el('i', 'cal-card-glyph', card, itemIcon(id));
+      el('span', 'cal-card-name', card, esc(fieldWord(name ?? def.name).toUpperCase()));
       el('span', 'cal-card-n', card, n == null ? '—' : String(n));
       card.addEventListener('click', () => {
         this._selected = { kind: 'ammo', id }; this._render();
@@ -397,7 +463,7 @@ export class InventoryScreen {
       for (const w of c.weapons) {
         if (!w) continue;
         el('div', 'cal-inv-group', this._bodyEl,
-          esc(String(w.name ?? w.id ?? 'WEAPON').toUpperCase()));
+          esc(fieldWord(String(w.name ?? w.id ?? 'WEAPON')).toUpperCase()));
         // each weapon gets its OWN grid: reusing one node moved every card
         // under the last header instead of grouping them by weapon
         grid = el('div', 'cal-grid', this._bodyEl);
@@ -415,7 +481,7 @@ export class InventoryScreen {
     if (!rendered) {
       for (const id of Object.keys(counts)) push(id, counts[id], c?.arrowType === id);
     }
-    if (!rendered) { this._empty('QUIVER DATA UNAVAILABLE'); this._detailHint(); return; }
+    if (!rendered) { this._empty('The quiver is empty.'); this._detailHint(); return; }
 
     const sel = this._selected?.kind === 'ammo' ? this._selected.id : first;
     this._selected = { kind: 'ammo', id: sel };
@@ -427,32 +493,32 @@ export class InventoryScreen {
     const def = ammoDef(id);
     const rar = rarityDef(def.rarity);
     const d = this._detailEl;
-    d.style.setProperty('--rar', rar.color);
+    d.style.setProperty('--rar', rarInk(rar));
     el('div', 'cal-det-rar', d, rar.name);
     const head = el('div', 'cal-det-head', d);
-    el('i', 'cal-det-glyph', head, def.glyph).style.color = def.color;
-    el('span', 'cal-det-name', head, esc(def.name.toUpperCase()));
+    el('i', 'cal-det-glyph', head, itemIcon(id));
+    el('span', 'cal-det-name', head, esc(fieldWord(def.name).toUpperCase()));
     const stats = el('div', 'cal-det-stats', d);
     this._stat(stats, 'IN QUIVER', String(counts?.[id] ?? '—'));
     const status = typeof c?.recipeStatus === 'function' ? c.recipeStatus(id) : null;
     if (Array.isArray(status) && status.length) {
-      el('div', 'cal-det-sub', d, 'CRAFTS FROM');
+      el('div', 'cal-det-sub', d, 'MADE FROM');
       const list = el('div', 'cal-recipe', d);
       for (const r of status) {
         const rd = itemDef(r.id);
         const row = el('div', `cal-recipe-row${r.ok ? '' : ' short'}`, list);
-        el('i', '', row, rd.glyph).style.color = rd.color;
-        el('span', 'n', row, esc(rd.name.toUpperCase()));
+        el('i', '', row, itemIcon(r.id));
+        el('span', 'n', row, esc(fieldWord(rd.name).toUpperCase()));
         el('span', 'c', row, `${r.have} / ${r.need}`);
       }
       const ok = typeof c?.canCraft === 'function' ? c.canCraft(id) : false;
-      const b = el('button', `cal-det-act${ok ? '' : ' off'}`, d, 'CRAFT');
+      const b = el('button', `cal-det-act${ok ? '' : ' off'}`, d, 'MAKE');
       b.addEventListener('click', () => {
         if (c?.craftAmmo?.(id)) this._render();
-        else this._flash(b, c?.craftBlocker?.(id) ?? 'CANNOT CRAFT');
+        else this._flash(b, fieldWord(c?.craftBlocker?.(id) ?? 'CANNOT MAKE'));
       });
     } else {
-      el('p', 'cal-det-desc', d, 'Found, not made. Machines carry it; you take it.');
+      el('p', 'cal-det-desc', d, 'Found, not made. Instruments carry it; you take it.');
     }
   }
 
@@ -461,9 +527,9 @@ export class InventoryScreen {
   _renderCrafting() {
     const items = this.ctx.items;
     const combat = this.ctx.combat;
-    el('div', 'cal-cap-title', this._capEl, 'WORKBENCH — CRAFT FROM THE SATCHEL');
+    el('div', 'cal-cap-title', this._capEl, 'MAKING: FROM WHAT THE SATCHEL HOLDS');
 
-    // 1) tools & potions this lane owns
+    // 1) tools & draughts
     el('div', 'cal-inv-group', this._bodyEl, 'TOOLS & DRAUGHTS');
     const gridA = el('div', 'cal-grid', this._bodyEl);
     let first = null;
@@ -497,10 +563,10 @@ export class InventoryScreen {
         const def = ammoDef(id);
         const rar = rarityDef(def.rarity);
         const card = el('button', `cal-card r-${rar.id}`, gridB);
-        card.style.setProperty('--rar', rar.color);
-        card.style.setProperty('--glow', rar.glow);
-        el('i', 'cal-card-glyph', card, def.glyph).style.color = def.color;
-        el('span', 'cal-card-name', card, esc(def.name.toUpperCase()));
+        card.dataset.item = 'ammo:' + id;
+        card.style.setProperty('--rar', rarInk(rar));
+        el('i', 'cal-card-glyph', card, itemIcon(id));
+        el('span', 'cal-card-name', card, esc(fieldWord(def.name).toUpperCase()));
         el('span', 'cal-card-n', card, String(combat.ammo?.[id] ?? 0));
         card.classList.toggle('craftable', !!combat.canCraft?.(id));
         card.addEventListener('click', () => {
@@ -524,9 +590,8 @@ export class InventoryScreen {
       if (!cost) { el('span', 'cal-cap-max', row, 'MAX'); continue; }
       const can = items.canUpgrade(pid);
       const b = el('button', `cal-cap-up${can.ok ? '' : ' off'}`, row,
-        `×${cost.mult} · <i>${itemDef('metal-shards').glyph}</i>${cost.shards}`
-        + cost.items.map(([id, n]) =>
-          ` · <i style="color:${itemDef(id).color}">${itemDef(id).glyph}</i>${n}`).join(''));
+        `×${cost.mult} · <i>${iconSvg('salt')}</i>${cost.shards}`
+        + cost.items.map(([id, n]) => ` · <i>${itemIcon(id)}</i>${n}`).join(''));
       b.addEventListener('click', () => {
         if (items.upgradeCapacity(pid)) this._render();
         else this._flash(b, can.reason);
@@ -547,31 +612,31 @@ export class InventoryScreen {
     const def = itemDef(id);
     const rar = rarityDef(def.rarity);
     const d = this._detailEl;
-    d.style.setProperty('--rar', rar.color);
+    d.style.setProperty('--rar', rarInk(rar));
     el('div', 'cal-det-rar', d, rar.name);
     const head = el('div', 'cal-det-head', d);
-    el('i', 'cal-det-glyph', head, def.glyph).style.color = def.color;
-    el('span', 'cal-det-name', head, esc(def.name.toUpperCase()));
+    el('i', 'cal-det-glyph', head, itemIcon(id));
+    el('span', 'cal-det-name', head, esc(fieldWord(def.name).toUpperCase()));
     const r = items?.crafting?.recipe?.(id);
-    el('p', 'cal-det-desc', d, esc(r?.note ?? def.desc ?? ''));
+    el('p', 'cal-det-desc', d, esc(fieldWord(r?.note ?? def.desc ?? '')));
     const stats = el('div', 'cal-det-stats', d);
     this._stat(stats, 'CARRIED',
       `${this.ctx.inventory?.count?.(id) ?? 0} / ${items.capacity(id)}`);
-    this._stat(stats, 'MAKES', `${r?.batch ?? 1} PER CRAFT`);
+    this._stat(stats, 'MAKES', `${r?.batch ?? 1} EACH TIME`);
 
-    el('div', 'cal-det-sub', d, 'CRAFTS FROM');
+    el('div', 'cal-det-sub', d, 'MADE FROM');
     const list = el('div', 'cal-recipe', d);
     for (const s of items.recipeStatus(id)) {
       const row = el('div', `cal-recipe-row${s.ok ? '' : ' short'}`, list);
-      el('i', '', row, s.def.glyph).style.color = s.def.color;
-      el('span', 'n', row, esc(s.def.name.toUpperCase()));
+      el('i', '', row, itemIcon(s.id));
+      el('span', 'n', row, esc(fieldWord(s.def.name).toUpperCase()));
       el('span', 'c', row, `${s.have} / ${s.need}`);
     }
     const ok = items.canCraft(id);
-    const b = el('button', `cal-det-act${ok ? '' : ' off'}`, d, 'CRAFT');
+    const b = el('button', `cal-det-act${ok ? '' : ' off'}`, d, 'MAKE');
     b.addEventListener('click', () => {
       if (items.craft(id)) this._render();
-      else this._flash(b, items.craftBlocker(id) ?? 'CANNOT CRAFT');
+      else this._flash(b, fieldWord(items.craftBlocker(id) ?? 'CANNOT MAKE'));
     });
   }
 
@@ -579,20 +644,20 @@ export class InventoryScreen {
 
   _renderNotebook() {
     const dp = this.ctx.items?.datapoints;
-    if (!dp) { this._empty('NO RECORDS FOUND YET'); this._detailHint(); return; }
+    if (!dp) { this._empty('No Field Books found yet.'); this._detailHint(); return; }
     el('div', 'cal-cap-title', this._capEl,
-      `NOTEBOOK — ${dp.count} OF ${dp.total} RECORDS RECOVERED`);
+      `FIELD BOOKS: ${dp.count} OF ${dp.total} RECOVERED`);
 
     let first = null;
     for (const cat of dp.categories()) {
-      el('div', 'cal-inv-group', this._bodyEl, `${cat.label} · ${cat.have}/${cat.total}`);
+      el('div', 'cal-inv-group', this._bodyEl, `${esc(bookHeading(cat.id))} · ${cat.have}/${cat.total}`);
       const list = el('div', 'cal-notes', this._bodyEl);
       for (const rec of dp.list.filter((r) => r.category === cat.id)) {
         const had = dp.collected.has(rec.id);
         const row = el('button', `cal-note${had ? '' : ' locked'}`, list);
-        el('i', 'cal-note-mark', row, had ? '❐' : '·');
+        el('i', 'cal-note-mark', row, had ? iconSvg('book') : '·');
         el('span', 'cal-note-title', row,
-          had ? esc(rec.title.toUpperCase()) : 'UNRECOVERED RECORD');
+          had ? esc(fieldWord(rec.title).toUpperCase()) : 'NOT YET FOUND');
         if (had) {
           if (!first) first = rec.id;
           row.addEventListener('click', () => {
@@ -608,7 +673,7 @@ export class InventoryScreen {
       ? this._selected.id : first;
     if (!want) {
       el('div', 'cal-det-hint', this._detailEl,
-        'FOCUS REVEALS OLD-WORLD RECORDS. HOLD E TO READ ONE.');
+        'The Alidade shows where Field Books lie. Hold E to read one.');
       return;
     }
     this._selected = { kind: 'record', id: want };
@@ -618,14 +683,14 @@ export class InventoryScreen {
   _detailRecord(rec) {
     if (!rec) { this._detailHint(); return; }
     const d = this._detailEl;
-    d.style.setProperty('--rar', '#7fe8ff');
-    el('div', 'cal-det-rar', d, rec.categoryLabel ?? 'RECORD');
+    d.style.setProperty('--rar', 'var(--cal-cobalt)');
+    el('div', 'cal-det-rar', d, esc(bookHeading(rec.category)));
     const head = el('div', 'cal-det-head', d);
-    el('i', 'cal-det-glyph', head, '❐').style.color = '#7fe8ff';
-    el('span', 'cal-det-name', head, esc(rec.title.toUpperCase()));
-    if (rec.author) el('div', 'cal-det-sub', d, esc(rec.author));
+    el('i', 'cal-det-glyph', head, iconSvg('book'));
+    el('span', 'cal-det-name', head, esc(fieldWord(rec.title).toUpperCase()));
+    if (rec.author) el('div', 'cal-det-sub', d, esc(fieldWord(rec.author)));
     const body = el('div', 'cal-read', d);
-    for (const para of rec.body) el('p', '', body, esc(para));
+    for (const para of rec.body) el('p', '', body, esc(fieldWord(para)));
   }
 
   /* --------------------------------------------------------------- trade */
@@ -635,18 +700,18 @@ export class InventoryScreen {
     const inv = this.ctx.inventory;
     if (!merch) {
       el('div', 'cal-cap-title', this._capEl, 'TRADE');
-      this._empty('NO TRADER IN RANGE — FIND THE CAMP HUNTER');
+      this._empty('No trader in range. Find the Guild at the rest.');
       this._detailHint();
       return;
     }
     el('div', 'cal-cap-title', this._capEl,
-      `TRADE — ${merch.shards?.() ?? inv?.count?.('metal-shards') ?? 0} SHARDS`);
+      `TRADE: ${merch.shards?.() ?? inv?.count?.(CURRENCY) ?? 0} SALT`);
 
     const cols = el('div', 'cal-trade', this._bodyEl);
 
     // --- WARES (buy)
     const buyCol = el('div', 'cal-trade-col', cols);
-    el('h4', '', buyCol, 'HIS WARES');
+    el('h4', '', buyCol, 'WARES');
     const stock = merch.stock?.() ?? [];
     let anyStock = false;
     for (const s of stock) {
@@ -661,13 +726,13 @@ export class InventoryScreen {
         else this._flash(row.querySelector('.cal-trade-price'), out?.reason?.toUpperCase() ?? 'NO');
       });
     }
-    if (!anyStock) el('div', 'cal-inv-empty', buyCol, 'SOLD OUT');
+    if (!anyStock) el('div', 'cal-inv-empty', buyCol, 'Sold out.');
 
     // --- YOURS (sell)
     const sellCol = el('div', 'cal-trade-col', cols);
     el('h4', '', sellCol, 'YOURS TO SELL');
     const sellable = merch.sellable?.() ?? [];
-    if (!sellable.length) el('div', 'cal-inv-empty', sellCol, 'NOTHING HE WANTS');
+    if (!sellable.length) el('div', 'cal-inv-empty', sellCol, 'Nothing the Guild wants.');
     for (const s of sellable) {
       const row = this._tradeRow(sellCol, s.id, s.n, s.price, true, true);
       row.addEventListener('click', () => {
@@ -686,12 +751,12 @@ export class InventoryScreen {
     const def = itemDef(id);
     const rar = rarityDef(def.rarity);
     const row = el('button', `cal-trade-row r-${rar.id}${afford ? '' : ' off'}`, parent);
-    row.style.setProperty('--rar', rar.color);
-    el('i', 'cal-trade-glyph', row, def.glyph).style.color = def.color;
-    el('span', 'cal-trade-name', row, esc(def.name.toUpperCase()));
+    row.dataset.item = id;
+    row.style.setProperty('--rar', rarInk(rar));
+    el('i', 'cal-trade-glyph', row, itemIcon(id));
+    el('span', 'cal-trade-name', row, esc(fieldWord(def.name).toUpperCase()));
     el('span', 'cal-trade-qty', row, `×${qty}`);
-    el('span', 'cal-trade-price', row,
-      `${selling ? '+' : ''}${price} ${itemDef('metal-shards').glyph}`);
+    el('span', 'cal-trade-price', row, `${selling ? '+' : ''}${price} SALT`);
     row.addEventListener('mouseenter', () => {
       this._selected = { kind: 'item', id };
       this._detailEl.innerHTML = '';
@@ -717,15 +782,10 @@ export class InventoryScreen {
 export const LOOT_POPUP = { instance: null };
 
 /**
- * Take-all loot popup — `ui-16` + `onboarding-loop-loot-feel`.
- *
- * Round 3 pinned this to a screen corner and listed bare ids. It now:
- *   · PROJECTS onto the interactable it came from and tracks it every frame
- *     (edge-clamped, so a corpse behind you still parks at the screen edge),
- *   · names the SOURCE ("SAWTOOTH WRECK", "SUPPLY CRATE", the datapoint),
- *   · frames each row by the item's RARITY colour.
- * `visible` / `shownIds` / `shownAt` keep the exact Round-3 shape the HUD's
- * toast suppression and gate A10 read.
+ * Take-all loot popup: a paper chip PROJECTED onto the interactable it came from and
+ * tracking it every frame (edge-clamped). Names the SOURCE, frames each row by rarity
+ * ink. `visible` / `shownIds` / `shownAt` keep the shape the HUD's toast suppression
+ * and gate A10 read.
  */
 export class LootPopup {
   constructor(ctx) {
@@ -734,7 +794,7 @@ export class LootPopup {
     this._kicker = el('div', 'cal-loot-kicker', this.root, 'LOOT');
     this._source = el('div', 'cal-loot-source', this.root, '');
     this._rows = el('div', 'cal-loot-rows', this.root);
-    this._foot = el('div', 'cal-loot-foot', this.root, 'TAKE ALL — AUTO');
+    this._foot = el('div', 'cal-loot-foot', this.root, 'TAKEN');
     this._timer = 0;
     this._anchor = null;         // world position of the source, or null
     this.shownIds = new Set();   // ids of the loot event currently displayed
@@ -752,21 +812,20 @@ export class LootPopup {
   }
 
   show(rows, label = 'LOOT', opts = {}) {
-    this._kicker.textContent = label === 'GATHER' ? 'GATHERED' : label;
-    this._source.textContent = opts.sourceName ?? '';
+    this._kicker.textContent = label === 'GATHER' ? 'GATHERED' : fieldWord(label);
+    this._source.textContent = fieldWord(opts.sourceName ?? '');
     this._source.style.display = opts.sourceName ? '' : 'none';
     this._rows.innerHTML = '';
     for (const r of rows) {
       const def = itemDef(r.id);
       const rar = rarityDef(def.rarity);
       const row = el('div', `cal-loot-row r-${rar.id}`, this._rows);
-      row.style.setProperty('--rar', rar.color);
-      const g = el('span', 'cal-loot-glyph', row, def.glyph);
-      g.style.color = def.color;
-      el('span', 'cal-loot-name', row, esc(def.name.toUpperCase()));
+      row.style.setProperty('--rar', rarInk(rar));
+      el('span', 'cal-loot-glyph', row, itemIcon(r.id));
+      el('span', 'cal-loot-name', row, esc(fieldWord(def.name).toUpperCase()));
       el('span', 'cal-loot-n', row, `×${r.n ?? 1}`);
     }
-    this._foot.textContent = 'TAKE ALL — AUTO';
+    this._foot.textContent = 'TAKEN';
     this._record(rows.map((r) => r.id));
     this._setAnchor(opts.position);
     this._pop();
@@ -776,16 +835,15 @@ export class LootPopup {
   showText(id, text, opts = {}) {
     const def = itemDef(id);
     const rar = rarityDef(def.rarity);
-    this._kicker.textContent = 'FIELD STRIP';
-    this._source.textContent = opts.sourceName ?? '';
+    this._kicker.textContent = 'STRIPPED';
+    this._source.textContent = fieldWord(opts.sourceName ?? '');
     this._source.style.display = opts.sourceName ? '' : 'none';
     this._rows.innerHTML = '';
     const row = el('div', `cal-loot-row r-${rar.id}`, this._rows);
-    row.style.setProperty('--rar', rar.color);
-    const g = el('span', 'cal-loot-glyph', row, def.glyph);
-    g.style.color = def.color;
-    el('span', 'cal-loot-name', row, esc(def.name.toUpperCase()));
-    this._foot.textContent = text;
+    row.style.setProperty('--rar', rarInk(rar));
+    el('span', 'cal-loot-glyph', row, itemIcon(id));
+    el('span', 'cal-loot-name', row, esc(fieldWord(def.name).toUpperCase()));
+    this._foot.textContent = fieldWord(text);
     this._record([id]);
     this._setAnchor(opts.position);
     this._pop();
@@ -822,12 +880,15 @@ export class LootPopup {
     const bh = this.root.offsetHeight || 120;
     sx = Math.min(Math.max(sx, pad + bw * 0.5), w - pad - bw * 0.5);
     sy = Math.min(Math.max(sy, pad + bh), h - pad);
-    this.root.style.left = `${Math.round(sx)}px`;
-    this.root.style.top = `${Math.round(sy)}px`;
+    // the popup is `zoom`ed with the menus (--ui-z), so its own left/top are in zoomed px
+    const z = this._z || 1;
+    this.root.style.left = `${Math.round(sx / z)}px`;
+    this.root.style.top = `${Math.round(sy / z)}px`;
     this.root.classList.toggle('clamped', behind);
   }
 
   _pop() {
+    this._z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-z')) || 1;
     this._timer = 2.8;
     this.root.classList.remove('show');
     void this.root.offsetWidth; // restart the slide-in animation

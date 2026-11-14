@@ -1,64 +1,39 @@
 /**
- * SHELL / MENUS  —  lane `shell-menus`  (port 5215)
+ * THE FIELD BOOK'S SHELL  —  lane `shell-ui` (bible §9.7, plan R55, R57)
  * ===========================================================================
- * The frame around the game: title flow, tabbed pause hub, world map, death and
- * victory cards, settings, credits.
- *
- * Findings closed here: `ui-01` (pause was one Resume button), `ui-02` (no map),
- * `ui-13` (victory soft-locked the session, death lasted 0.7 s), `ui-18` (title
- * was a button and a keybind wall), `progression-003` (shell half: save /
- * continue / no-reload endgame), `progression-014` (title menu + difficulty),
- * `camera-feel-13` (settings-driven sensitivity / invert / FOV),
- * `audio-14` (persisted volume sliders), `missing-systems-accessibility`
- * (HUD scale, colourblind palettes, reduced motion, hold-vs-toggle),
- * `missing-systems-title-save-campfire-flow` and the shell half of
- * `onboarding-loop-title-screen` / `-death-no-stakes`.
+ * The frame around the game: title flow, the hub (a page of the book: a station index
+ * in the margin, the red margin rule, the open page), the survey sheet, death and
+ * victory pages, settings, credits.
  *
  * ---------------------------------------------------------------- ownership
- * This lane owns `src/ui/{menu,map,settings,tips}.js` and `src/style.css`. It
- * touches no other lane's file, and the three places where it has to cooperate
- * with someone else's pixels are all done through published surfaces:
- *
- *   · the hub ROUTES to the owning lane's panel — `progression.openQuestLog()`,
- *     `openSkills()`, `items.openInventory(pocket)`, `items.openNotebook()` —
- *     and keeps its own tab bar above them, so the tabs stay live while the
- *     lane's screen is up. Nothing is re-implemented here.
- *   · `shell-hud` already yields: `hud.js` returns early from its pause card,
- *     death card and victory card when `ctx.menus` exists. The CSS rule in this
- *     lane's own `style.css` (keyed on `body.cal-menus`) is the belt to that
- *     brace — remove the install and the Round-3 shell comes back untouched.
- *   · the waypoint is published as data (`ctx.menus.waypoint` +
- *     `waypoint-set` / `waypoint-cleared`) for `shell-hud`'s compass, and
- *     drawn by this lane's own beacon ONLY while that lane has no
- *     `hud.setWaypoint` (see map.js).
+ * The hub ROUTES to the owning lane's panel (`progression.openQuestLog()`,
+ * `openSkills()`, `items.openInventory(pocket)`, `items.openNotebook()`) and keeps its
+ * margin, head and foot above them; the panel sits in the page body (see
+ * `body.cal-hub-open` in style.css and inventory.css). Nothing is re-implemented here.
+ * The waypoint is published as data (`ctx.menus.map.waypoint` + `waypoint-set` /
+ * `waypoint-cleared`) and rides the theodolite circle (`ctx.hud.setWaypoint`).
  *
  * -------------------------------------------------------------- state model
  * `main.js` simulates `playing | title | dead | victory | studio`; anything else
- * freezes the world. That is the whole pause mechanism and this lane uses it as
- * published:
+ * freezes the world. That is the whole pause mechanism:
  *
- *   'paused'      the hub (the same value the Round-3 HUD used, so its own
- *                 Escape handler stays consistent with ours)
- *   'death-menu'  the death card. NOT 'dead' — and that is load-bearing:
- *                 `player._die()` schedules a 3.2 s `setTimeout` respawn that
- *                 begins `if (this.ctx.state !== 'dead') return;`. Parking the
- *                 state elsewhere is what turns the auto-respawn into a CHOICE
- *                 (`A69-death-choice`) without editing player.js.
- *   'victory'     kept for exactly 3 s, then handed back to 'playing'
- *                 (`A68-no-softlock`).
+ *   'paused'      the hub
+ *   'death-menu'  the death page. NOT 'dead', and that is load-bearing:
+ *                 `player._die()` schedules a 3.2 s `setTimeout` respawn that begins
+ *                 `if (this.ctx.state !== 'dead') return;`. Parking the state elsewhere
+ *                 is what turns the auto-respawn into a CHOICE (`A69-death-choice`).
+ *   'victory'     kept for exactly 3 s, then handed back to 'playing' (`A68-no-softlock`).
  *
  * ------------------------------------------------------------------- input
- * Every menu key is read in the WINDOW CAPTURE phase, before `input.js`'s own
- * window listener, and consumed with `stopImmediatePropagation()` when this
- * lane acts on it. Two reasons: `input.enabled` is false on the title screen
- * (so `input.onDown` cannot see the "press any key"), and `KeyI` / `KeyJ` /
- * `KeyK` already have owners whose handlers would toggle the panel back shut
- * the moment the hub opened it.
+ * Every menu key is read in the WINDOW CAPTURE phase, before `input.js`'s own window
+ * listener, and consumed with `stopImmediatePropagation()` when this lane acts on it:
+ * `input.enabled` is false on the title screen, and `KeyI` / `KeyJ` / `KeyK` already
+ * have owners whose handlers would toggle the panel back shut.
  */
 
 import { SettingsStore, SettingsPanel } from './settings.js';
 import { WorldMap, WaypointBeacon } from './map.js';
-import { Tips } from './tips.js';
+import { Tips, fieldWord } from './tips.js';
 import * as THREE from 'three';
 import { REST } from '../world/island/sites.js';
 
@@ -73,17 +48,69 @@ const el = (tag, cls, parent, html) => {
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 /** Hub tabs. `open` delegates to the owning lane; absent = rendered here. */
+/**
+ * The book's one plate: an engraved theodolite on its tripod, drawn from arithmetic (no
+ * asset, no provenance row), in the ink of the page at the strength of a printed tint.
+ * Returned as a CSS url() for `--cal-plate`; built once.
+ */
+function theodolitePlate() {
+  const f = (v) => v.toFixed(1);
+  let fine = '', med = '', heavy = '';
+  // the vertical circle: two rings, a tick every 5 degrees, spokes
+  const VC = { x: 150, y: 96, r: 46 };
+  for (const r of [VC.r, VC.r - 7, 11]) med += `M${VC.x - r} ${VC.y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
+  for (let a = 0; a < 360; a += 5) {
+    const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180), k = a % 30 === 0 ? 7 : 4;
+    fine += `M${f(VC.x + c * VC.r)} ${f(VC.y + n * VC.r)}L${f(VC.x + c * (VC.r - k))} ${f(VC.y + n * (VC.r - k))}`;
+  }
+  for (let a = 45; a < 360; a += 90) {
+    const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180);
+    med += `M${f(VC.x + c * 11)} ${f(VC.y + n * 11)}L${f(VC.x + c * (VC.r - 7))} ${f(VC.y + n * (VC.r - 7))}`;
+  }
+  // the telescope: object end right, the eyepiece left, hatched along its underside
+  heavy += 'M58 88H204L236 83V109L204 104H58Z M236 80V112H246V80Z M58 90H44V102H58Z M44 88H36V104H44Z';
+  for (let x = 62; x < 204; x += 5) fine += `M${x} 104L${x + 4} 99`;
+  // the level on the tube: its vial and two posts
+  heavy += 'M112 70H188V78H112Z M122 78V88M178 78V88';
+  fine += 'M146 70V78M154 70V78';
+  // the standards
+  heavy += 'M108 170L114 118H124L122 170Z M192 170L186 118H176L178 170Z';
+  // the horizontal limb: two ellipses, ticks between them
+  const H = { x: 150, y: 172, rx: 66, ry: 14 };
+  const ell = (rx, ry) => `M${H.x - rx} ${H.y}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0`;
+  heavy += ell(H.rx, H.ry);
+  med += ell(H.rx - 8, H.ry - 3);
+  for (let a = 0; a < 360; a += 6) {
+    const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180);
+    fine += `M${f(H.x + c * H.rx)} ${f(H.y + n * H.ry)}L${f(H.x + c * (H.rx - 8))} ${f(H.y + n * (H.ry - 3))}`;
+  }
+  // the levelling base and its three screws
+  heavy += 'M112 186H188V194H112Z M118 194V204H126V194M174 194V204H182V194M146 194V206H154V194';
+  heavy += `M92 208a58 8 0 1 0 116 0a58 8 0 1 0 -116 0`;
+  // the tripod: three tapered legs, shoes, a chain between them
+  heavy += 'M108 214L48 408L56 410L120 216Z M192 214L252 408L244 410L180 216Z M144 216L146 418H154L156 216Z';
+  heavy += 'M48 408L42 420M252 408L258 420M150 418V428';
+  med += 'M87 316Q150 340 213 316';
+  for (let y = 226; y < 400; y += 9) { fine += `M${f(149)} ${y}H${f(152)}`; }
+  // the plumb line and its bob
+  const bob = 'M150 204V352M150 352L144 362L150 382L156 362Z';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 432" width="600" height="864"><g fill="none" stroke="#26343F" stroke-linecap="square" opacity="0.2">`
+    + `<path d="${heavy}" stroke-width="1.5"/><path d="${med}" stroke-width="1"/><path d="${fine}" stroke-width="0.6"/></g>`
+    + `<path d="${bob}" fill="none" stroke="#D2452E" stroke-width="1" opacity="0.36"/></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
 const TABS = [
   { id: 'map', key: 'KeyM', hint: 'M', label: 'MAP' },
-  { id: 'quests', key: 'KeyJ', hint: 'J', label: 'QUESTS',
+  { id: 'quests', key: 'KeyJ', hint: 'J', label: 'FIELD LOG',
     open: (ctx) => ctx.progression?.openQuestLog?.() },
-  { id: 'inventory', key: 'KeyI', hint: 'I', label: 'INVENTORY',
+  { id: 'inventory', key: 'KeyI', hint: 'I', label: 'SATCHEL',
     open: (ctx) => ctx.items?.openInventory?.('resources') },
-  { id: 'crafting', key: 'KeyO', hint: 'O', label: 'CRAFTING',
+  { id: 'crafting', key: 'KeyO', hint: 'O', label: 'MAKING',
     open: (ctx) => ctx.items?.openInventory?.('crafting') },
   { id: 'skills', key: 'KeyK', hint: 'K', label: 'SKILLS',
     open: (ctx) => ctx.progression?.openSkills?.() },
-  { id: 'notebook', key: 'KeyN', hint: 'N', label: 'NOTEBOOK',
+  { id: 'notebook', key: 'KeyN', hint: 'N', label: 'FIELD BOOKS',
     open: (ctx) => ctx.items?.openNotebook?.() },
   { id: 'settings', key: 'Comma', hint: ',', label: 'SETTINGS' },
 ];
@@ -308,6 +335,10 @@ export class Menus {
     this._log = [];
     this._logCap = 64;
 
+    this._applyZoom();
+    this._onResize = () => this._applyZoom();
+    window.addEventListener('resize', this._onResize);
+
     this._build();
     this._bindKeys();
     this._bindEvents();
@@ -328,32 +359,44 @@ export class Menus {
   /* DOM                                                                   */
   /* ===================================================================== */
 
+  /** The menus keep their proportions at any window: `--ui-z` drives CSS `zoom` on every menu surface. */
+  _applyZoom() {
+    const z = clamp(Math.min(window.innerWidth / 1600, window.innerHeight / 900), 0.75, 2.6);
+    document.documentElement.style.setProperty('--ui-z', z.toFixed(3));
+  }
+
   _build() {
     this.root = el('div', 'cal-menus-root', document.body);
     this.root.id = 'cal-menus';
 
-    /* ---- hub ---- */
+    /* ---- the hub: [ margin index | head / page / foot ] ---- */
     this.hub = el('div', 'mn-hub', this.root);
     el('div', 'mn-hub-scrim', this.hub);
     const shell = el('div', 'mn-hub-shell', this.hub);
 
-    const head = el('header', 'mn-hub-head', shell);
-    const brand = el('div', 'mn-hub-brand', head);
+    const margin = el('aside', 'mn-hub-margin cal-page', shell);
+    const brand = el('div', 'mn-hub-brand', margin);
     el('div', 'mn-hub-kicker', brand, 'CALIMA');
-    this._hubTitle = el('div', 'mn-hub-title', brand, 'MAP');
-    this._tabsEl = el('nav', 'mn-tabs', head);
+    el('div', 'mn-hub-sheet', brand, 'Orchil survey');
+    this._tabsEl = el('nav', 'mn-tabs', margin);
     this._tabBtns = new Map();
-    for (const t of TABS) {
-      const b = el('button', 'mn-tab', this._tabsEl, `<span>${t.label}</span><kbd>${t.hint}</kbd>`);
+    TABS.forEach((t, i) => {
+      const b = el('button', 'mn-tab', this._tabsEl,
+        `<span class="cal-stn">STN ${String(i + 1).padStart(2, '0')}</span><span>${t.label}</span><kbd>${t.hint}</kbd>`);
       b.dataset.tab = t.id;
       b.addEventListener('click', () => this.setTab(t.id));
       this._tabBtns.set(t.id, b);
-    }
+    });
+    this._marginData = el('div', 'mn-hub-data', margin);
+    document.documentElement.style.setProperty('--cal-plate', theodolitePlate());
+
+    const head = el('header', 'mn-hub-head cal-page', shell);
+    this._hubTitle = el('div', 'mn-hub-title', head, 'MAP');
     this._hubStatus = el('div', 'mn-hub-status', head);
 
-    this.hubBody = el('div', 'mn-hub-body', shell);
+    this.hubBody = el('div', 'mn-hub-body cal-page', shell);
 
-    const foot = el('footer', 'mn-hub-foot', shell);
+    const foot = el('footer', 'mn-hub-foot cal-page', shell);
     this._tipEl = el('div', 'mn-tip', foot);
     const acts = el('div', 'mn-hub-acts', foot);
     this._mkBtn(acts, 'SAVE', () => this.saveGame(), 'small');
@@ -362,11 +405,11 @@ export class Menus {
     this._mkBtn(acts, 'QUIT TO TITLE', () => this.quitToTitle(), 'small danger');
     this._mkBtn(acts, 'RESUME', () => this.closeHub(), 'small primary');
 
-    /* ---- death ---- */
+    /* ---- death: a page torn from the book ---- */
     this.deathEl = el('div', 'mn-death', this.root);
-    const dInner = el('div', 'mn-death-inner', this.deathEl);
-    el('div', 'mn-death-kicker', dInner, 'THE VALLEY TAKES ITS OWN');
-    el('div', 'mn-death-title', dInner, 'YOU DIED');
+    const dInner = el('div', 'mn-death-inner cal-page', this.deathEl);
+    el('div', 'mn-death-kicker', dInner, 'FIELD BOOK, LAST ENTRY');
+    el('div', 'mn-death-title', dInner, 'BREA IS DOWN');
     this._deathKillerEl = el('div', 'mn-death-killer', dInner);
     el('div', 'mn-death-rule', dInner);
     this._deathTip = el('div', 'mn-death-tip', dInner);
@@ -374,20 +417,19 @@ export class Menus {
 
     /* ---- victory ---- */
     this.victoryEl = el('div', 'mn-victory', this.root);
-    const vInner = el('div', 'mn-victory-inner', this.victoryEl);
-    el('div', 'mn-victory-kicker', vInner, 'QUEST COMPLETE');
-    el('div', 'mn-victory-title', vInner, 'VALLEY RECLAIMED');
-    el('div', 'mn-death-rule', vInner);
-    el('div', 'mn-victory-sub', vInner, 'THE HUNT GOES ON — RETURNING YOU TO THE VALLEY');
+    const vInner = el('div', 'mn-victory-inner cal-page', this.victoryEl);
+    el('div', 'mn-victory-kicker', vInner, 'FIELD BOOK');
+    el('div', 'mn-victory-title', vInner, 'SURVEY CLOSED');
+    el('div', 'mn-victory-sub', vInner, 'The island is still there. Returning you to it.');
     this._victoryBar = el('div', 'mn-victory-bar', vInner);
     this._victoryFill = el('i', null, this._victoryBar);
 
-    /* ---- modal (credits / manual / difficulty / settings) ---- */
+    /* ---- modal (credits / manual / new game / settings) ---- */
     this.modalEl = el('div', 'mn-modal', this.root);
-    const mShell = el('div', 'mn-modal-shell', this.modalEl);
+    const mShell = el('div', 'mn-modal-shell cal-page', this.modalEl);
     const mHead = el('header', 'mn-modal-head', mShell);
     this._modalTitle = el('div', 'mn-modal-title', mHead, 'CREDITS');
-    const mClose = el('button', 'mn-x', mHead, '✕');
+    const mClose = el('button', 'mn-x', mHead, 'ESC');
     mClose.addEventListener('click', () => this.closeModal());
     this.modalBody = el('div', 'mn-modal-body', mShell);
     this.modalEl.addEventListener('mousedown', (e) => { if (e.target === this.modalEl) this.closeModal(); });
@@ -452,13 +494,13 @@ export class Menus {
       const it = items[i];
       // field-book stations (bible §9.7): a Plex Mono station number, then the label
       const b = el('button', `mn-title-item${it.disabled ? ' disabled' : ''}`, this.titleMenu,
-        `<span class="cal-stn" aria-hidden="true">${String(i + 1).padStart(2, '0')}</span>${it.label}`);
+        `<span class="cal-stn" aria-hidden="true">STN ${String(i + 1).padStart(2, '0')}</span>${it.label}`);
       if (it.disabled) b.disabled = true;
       else b.addEventListener('click', () => { this._emit('ui-confirm', { label: it.label }); it.fn(); });
     }
     this._titleSave.textContent = info
-      ? `LAST SAVE · LEVEL ${info.level ?? 1} · ${String(info.quest || 'THE VALLEY').toUpperCase()}`
-      : 'NO SAVED HUNT — START A NEW ONE';
+      ? `last entry: ${String(info.quest || 'Orchil').toLowerCase()}`
+      : 'no field book open';
     if (this._titleTip) {
       // the title's own line (brand): CALIMA's words, one per visit, never the
       // shared tip feed (whose Round-4 lines still name the old mechanics)
@@ -1000,6 +1042,7 @@ export class Menus {
   newGame(difficulty) {
     this.ctx.progression?.newGame?.(difficulty);
     this.map.fog.clear();
+    this.map.setTriangles([]);
     this.map.clearWaypoint();
     this._startGame();
     this._log.push({ what: 'new-game', difficulty: difficulty || null });
@@ -1081,6 +1124,7 @@ export class Menus {
     if (this.tab === id && !force && this.delegated === id) return true;
 
     this.tab = id;
+    this.hub.dataset.tab = id;
     for (const [tid, b] of this._tabBtns) b.classList.toggle('on', tid === id);
     this._hubTitle.textContent = tab.label;
     if (this.settings.get('menuTips')) this._tipEl.innerHTML = this.tips.pick(id);
@@ -1162,14 +1206,29 @@ export class Menus {
 
   _paintStatus() {
     if (!this._hubStatus) return;
-    const prog = this.ctx.progression;
     const p = this.ctx.player;
+    const rd = (label, v) => `<span>${label}</span> <b>${v}</b>`;
+    const pad = (n) => String(Math.max(0, Math.round(n))).padStart(3, '0');
     const bits = [];
-    if (prog) bits.push(`<b>LVL ${prog.level}</b>`, `${prog.skillPoints} SP`);
-    if (p) bits.push(`${Math.round(p.health)}/${Math.round(p.maxHealth)} HP`);
-    const shards = this.ctx.inventory?.count?.('metal-shards');
-    if (shards != null) bits.push(`${shards} SHARDS`);
-    this._hubStatus.innerHTML = bits.join('<i>·</i>');
+    if (p) bits.push(rd('HEALTH', `${pad(p.health)}/${Math.round(p.maxHealth)}`), rd('GOURD', pad(p.gourd ?? 0)));
+    const salt = this.ctx.inventory?.count?.('metal-shards');
+    if (salt != null) bits.push(rd('SALT', pad(salt)));
+    this._hubStatus.innerHTML = bits.map((b) => `<div>${b}</div>`).join('');
+
+    // the field data: hour, weather, where she stands, which way she faces
+    const env = this.ctx.environment;
+    const rows = [];
+    if (Number.isFinite(env?.time)) {
+      const hh = Math.floor(env.time) % 24, mm = Math.floor((env.time % 1) * 60);
+      rows.push(['HOUR', `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`]);
+    }
+    if (env?.weather) rows.push(['SKY', String(env.weather).toUpperCase(), 'word']);
+    if (p) {
+      const coord = (v) => `${v < 0 ? '-' : ''}${String(Math.abs(Math.round(v))).padStart(3, '0')}`;
+      const brg = Math.round((((-(p.camYaw ?? 0) * 180 / Math.PI) % 360) + 360) % 360) % 360;
+      rows.push(['E', coord(p.position.x)], ['N', coord(-p.position.z)], ['BRG', String(brg).padStart(3, '0')]);
+    }
+    this._marginData.innerHTML = rows.map(([k, v, c]) => `<span>${k}</span><b${c ? ` class="${c}"` : ''}>${v}</b>`).join('');
   }
 
   saveGame() {
@@ -1204,6 +1263,7 @@ export class Menus {
         'Full manifest: <code>public/LICENSES.json</code> · licence texts: <code>public/licences/</code> and <code>public/fonts/*-OFL.txt</code>');
     } else if (kind === 'manual') {
       this._modalTitle.textContent = 'FIELD MANUAL';
+      this._manualNode ??= document.querySelector('.keybinds-panel');
       if (this._manualNode) this.modalBody.appendChild(this._manualNode);
       else el('div', 'mn-empty', this.modalBody, '<b>FIELD MANUAL</b><span>Controls are listed on the title screen.</span>');
     } else if (kind === 'settings') {
@@ -1213,12 +1273,12 @@ export class Menus {
       this._modalTitle.textContent = 'NEW GAME';
       const list = this.ctx.progression?.DIFFICULTIES || [{ id: 'normal', name: 'Normal' }];
       el('p', 'mn-modal-lead', this.modalBody,
-        'Difficulty scales the damage you take and deal, what the Instruments drop and how fast they notice you. It can be changed later.');
+        'Difficulty scales the damage you take and deal, what the Instruments drop and how fast they notice you.');
       for (const d of list) {
         const row = el('button', 'mn-diff', this.modalBody);
         el('b', null, row, String(d.name).toUpperCase());
         el('span', null, row,
-          `DAMAGE TAKEN ×${(d.damageIn ?? 1).toFixed(2)} · DAMAGE DEALT ×${(d.damageOut ?? 1).toFixed(2)} · XP ×${(d.xp ?? 1).toFixed(2)}`);
+          `damage taken ×${(d.damageIn ?? 1).toFixed(2)} · damage dealt ×${(d.damageOut ?? 1).toFixed(2)}`);
         row.addEventListener('click', () => this.newGame(d.id));
       }
     }
@@ -1274,27 +1334,29 @@ export class Menus {
     const killer = this.deathKiller ?? ctx.progression?.lastKiller ?? this._lastDamageFrom ?? null;
     this.deathKiller = killer;
     this._deathKillerEl.innerHTML = killer
-      ? `KILLED BY <b>${String(killer).toUpperCase()}</b>`
-      : 'THE VALLEY CLAIMED YOU';
+      ? `felled by <b>${fieldWord(String(killer)).toUpperCase()}</b>`
+      : 'the island took her';
     this._deathTip.innerHTML = this.tips.forDeath(killer);
 
     const prog = ctx.progression;
     const info = prog?.hasSave?.() ? prog.saveInfo?.() : null;
     this._deathOpts.innerHTML = '';
     const opts = [
-      { label: 'RELOAD CHECKPOINT',
-        sub: info ? `LEVEL ${info.level ?? 1} · ${String(info.reason || 'checkpoint').toUpperCase()}` : 'NO SAVE — RESPAWN AT CAMP',
+      { label: 'RELOAD THE LAST ENTRY',
+        sub: info ? `from: ${String(info.reason || 'the last entry').toLowerCase()}` : 'no save yet: she wakes at the cistern',
         fn: () => this.respawn('checkpoint') },
-      { label: 'RESPAWN AT CAMP', sub: 'KEEP CHECKPOINT PROGRESS · START AT MOTHER’S WATCH',
+      { label: 'RETURN TO THE CISTERN', mode: 'rest', sub: 'keep what the last entry holds, and start from the rest',
         fn: () => this.respawn('camp') },
-      { label: 'QUIT TO TITLE', sub: 'THE HUNT WAITS', fn: () => this.quitToTitle() },
+      { label: 'QUIT TO TITLE', sub: 'the book stays open', fn: () => this.quitToTitle() },
     ];
-    for (const o of opts) {
+    opts.forEach((o, i) => {
       const b = el('button', 'mn-death-opt', this._deathOpts);
+      if (o.mode) b.dataset.mode = o.mode;
+      el('span', 'cal-stn', b, `STN ${String(i + 1).padStart(2, '0')}`);
       el('b', null, b, o.label);
       el('span', null, b, o.sub);
       b.addEventListener('click', () => { this._emit('ui-confirm', { label: o.label }); o.fn(); });
-    }
+    });
     this.deathEl.classList.add('show');
     this._emit('ui-open', { screen: 'death', killer });
   }
@@ -1703,7 +1765,9 @@ export class Menus {
     window.removeEventListener('keydown', this._onKey, true);
     window.removeEventListener('keyup', this._onKeyUp, true);
     window.removeEventListener('mousedown', this._onClickAnywhere, true);
+    window.removeEventListener('resize', this._onResize);
     this.beacon.dispose();
+    this.map.dispose();
     this.root?.remove();
     document.body.classList.remove('cal-menus', 'cal-hub-open', 'cal-dead', 'cal-title-live');
     if (this.ctx.menus === this) this.ctx.menus = null;
