@@ -797,6 +797,7 @@ Blunt, Charred, Seized, Clouded, Field Book, Gourd, Kit Rack, salt, certificatio
   - **Near offshore stacks** read as bundles of cylinders.
   - **The title** reads as a flat ochre wash.
   world-sky and look-post resolve the haze between them: the aerial term owns distance and the grade owns the shadow tint, so neither lifts black on its own. The fix is graded on the integration frames.
+- **R69 — Kevin's Brea turnaround (Nov 13).** `/Users/kevinliu/.calima-r5/direction/kevin-nov13-brea-turnaround.jpg` (sha256 722ebae7…), with its written breakdown `kevin-nov13-brea-turnaround.md`, is the binding target for Brea's starter look. It shows front, side and back views, three face close-ups, detail crops and a palette. It sits outside the repo under R66(a) and is never committed. It overrides the Nov 6 descriptions where they differ. character-art grades her face, skin, paste, undercut and wrap against it; armory builds the Starter rung (rung 1) to it; hero-body matches her silhouette, with the tail and sash panels as cloth chains. Every V-row on Brea cites it beside the R66 panels. The sleeved smock leaves rung 1.
 - **R30 completion.** The orchestrator deleted the four IP machine GLBs (`watcher`, `sawtooth`, `behemoth`, `thunderjaw`) on main after instruments-core's code removal and pipeline's loader rows merged; `aloy.glb` goes at hero-body's W0b exit as planned.
 
 ## 9. GATE SPEC — the literal acceptance bar per lane
