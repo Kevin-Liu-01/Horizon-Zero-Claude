@@ -448,26 +448,37 @@ export function faceOut(part, field) {
 }
 
 /**
- * Close the small holes in a part (open loops of at most `maxN` points and `maxPerim` metres round, e.g. left by
- * collapsing short edges): a fan from the loop's centre, uv and skin from the loop. Wind with `faceOut` after.
+ * Close the holes in `part` (open loops of at most `maxN` points and `maxPerim` metres round, e.g. torn by collapsing
+ * short edges) with patches in `into`, a trim part: a fan from the loop's centre, uv inside `rectAt(centre)` (a planar
+ * map, 1 cell per 6 cm), skin from the loop. Never in `part` itself: a fan joining two of its uv islands would merge
+ * them in the atlas packing. Wind with `faceOut` after.
  */
-export function fillHoles(part, { maxN = 14, maxPerim = 0.09, where = null } = {}) {
+export function fillHoles(into, part, { maxN = 14, maxPerim = 0.09, minPerim = 0, where = null, rectAt } = {}) {
   let filled = 0;
   for (const run of openEdges(part)) {
     if (run.length < 3 || run.length > maxN) continue;
     let per = 0;
     for (let k = 0; k < run.length; k++) per += V.len(V.sub(run[k].p, run[(k + 1) % run.length].p));
-    if (per > maxPerim) continue;
-    const c = [0, 0, 0], nn = [0, 0, 0], uv = [0, 0];
-    if (where) { const m = [0, 1, 2].map((k) => run.reduce((a, q) => a + q.p[k], 0) / run.length); if (!where(m)) continue; }
-    for (const q of run) { for (let k = 0; k < 3; k++) { c[k] += q.p[k] / run.length; nn[k] += q.n[k]; } uv[0] += part.uv[q.i * 2] / run.length; uv[1] += part.uv[q.i * 2 + 1] / run.length; }
-    const ci = part.pos.length / 3, i0 = run[0].i;
-    part.pos.push(...c); part.nrm.push(...V.norm(nn)); part.uv.push(...uv);
-    for (let k = 0; k < 4; k++) { part.jnt.push(part.jnt[i0 * 4 + k]); part.wgt.push(part.wgt[i0 * 4 + k]); }
-    for (let k = 0; k < run.length; k++) part.idx.push(run[k].i, run[(k + 1) % run.length].i, ci);
+    if (per > maxPerim || per <= minPerim) continue;
+    const c = [0, 0, 0], nn = [0, 0, 0];
+    for (const q of run) for (let k = 0; k < 3; k++) { c[k] += q.p[k] / run.length; nn[k] += q.n[k]; }
+    if (where && !where(c)) continue;
+    const rect = rectAt(c), N = V.norm(nn);
+    const A = V.norm(V.cross(N, Math.abs(N[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), B = V.cross(N, A);
+    const uvOf = (p) => { const d = V.sub(p, c); return [rect[0] + rect[2] * (0.5 + 0.5 * clamp(V.dot(d, A) / 0.06, -1, 1)), rect[1] + rect[3] * (0.5 + 0.5 * clamp(V.dot(d, B) / 0.06, -1, 1))]; };
+    const b0 = into.pos.length / 3;
+    for (const p of [c, ...run.map((q) => q.p)]) {
+      into.pos.push(...p); into.nrm.push(...N); into.uv.push(...uvOf(p));
+    }
+    const i0 = run[0].i;
+    for (let k = 0; k <= run.length; k++) {
+      const src = k === 0 ? i0 : run[k - 1].i;
+      for (let m = 0; m < 4; m++) { into.jnt.push(part.jnt[src * 4 + m]); into.wgt.push(part.wgt[src * 4 + m]); }
+    }
+    for (let k = 0; k < run.length; k++) into.idx.push(b0 + 1 + k, b0 + 1 + ((k + 1) % run.length), b0);
     filled++;
   }
-  part.filled = (part.filled || 0) + filled;
+  into.filled = (into.filled || 0) + filled;
   return filled;
 }
 

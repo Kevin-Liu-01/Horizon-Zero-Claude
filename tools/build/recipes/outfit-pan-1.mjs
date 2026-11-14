@@ -908,10 +908,6 @@ export async function panBase(opt = {}) {
   smoothSkin(boots, { its: 30, k: 0.5 });
   // (M1.2d: collapsing short edges turned some triangles over; the game draws front faces only, so each showed as a
   // hole through the boot and the shin wrap to the backdrop. Every triangle now faces out of the leg under it)
-  // (and the small holes the collapse left are closed: the body under a boot is culled, so each one was a window)
-  fillHoles(boots); fillHoles(trousers);
-  // (the slits the collapse tore down the front of each boot shaft and shin wrap, 0.1-0.35 m round: the windows in F08)
-  fillHoles(boots, { maxN: 16, maxPerim: 0.35, where: ([, y, z]) => y > 0.15 && y < 0.42 && z > -0.05 });
   faceOut(boots, new Field([bodyPart], 0.04));
   faceOut(trousers, new Field([bodyPart], 0.04));
 
@@ -1577,8 +1573,18 @@ export async function panBase(opt = {}) {
     caseP.caseAxis = { a, b, r: rC };
   }
 
+  // (M1.2d: the holes the edge collapse tore in the boots and the shin wraps, closed with patches of the same stuff:
+  // the body under a boot is culled, so each hole was a window to the backdrop in F08)
+  const patches = mk('patches', { trim: true });
+  {
+    const bootR = (c) => (c[1] > 0.292 ? trim.rect('wrapV') : trim.rect('pouch'));
+    fillHoles(patches, boots, { rectAt: bootR });
+    fillHoles(patches, boots, { maxN: 16, maxPerim: 0.35, minPerim: 0.09, where: ([, y, z]) => y > 0.15 && y < 0.42 && z > -0.05, rectAt: bootR });
+    fillHoles(patches, trousers, { rectAt: () => trim.rect('pouch') });
+    faceOut(patches, new Field([bodyPart], 0.04));
+  }
   const rung1 = starter ? [scarf, panels, backs, hems, glove, rivets, belt2, pouch2, knee, caseP] : [];
-  const parts = [underYoke, smock, binds, ...worn, ...(sleevesOn ? [sleeves] : []), trousersCut, boots, girdle, sashBand, ...(buckle.pos.length ? [buckle, tongue] : []), harnessOn ? harness : sling, sling.extra, boss, pouch, sash, tie, cuffs, straps, tab, armwrap, bracer, armband, ...rung1].filter((p) => p && p.idx.length);
+  const parts = [underYoke, smock, binds, ...worn, ...(sleevesOn ? [sleeves] : []), trousersCut, boots, girdle, sashBand, ...(buckle.pos.length ? [buckle, tongue] : []), harnessOn ? harness : sling, sling.extra, boss, pouch, sash, tie, cuffs, straps, tab, armwrap, bracer, armband, patches, ...rung1].filter((p) => p && p.idx.length);
   // the set's sheet is packed from every cloth piece any Pan rung wears (trim pieces map to the trim band and need none)
   const sheetParts = [underYoke, smock, ...skirt, ...undr, ...peplum, ...(sleevesOn ? [sleeves] : []), trousersCut, boots, scarf, panels];
   return { doc, trim, parts, sheetParts, joints, body, bodyPart, fitBody, clothField, skinOf, W, H, TRIM_H, J, drape };
@@ -1647,7 +1653,7 @@ export const PAN_FIT = {
   // M1.2d: the Starter's own pieces. The gloves carry her hand's own skin and the scarf, the panels and their rolled
   // edges hang as built (their range of motion is the cloth chains' work, M1.2e); the plate, rivets, case and pouches
   // are stiff; the slung belt, the knee straps and the rivets stay over what they lie on
-  skip: new Set(['hat', 'glove', 'scarf', 'panel', 'backs', 'hems', 'case']),
+  skip: new Set(['hat', 'glove', 'scarf', 'panel', 'backs', 'hems', 'case', 'patches']),
   stiff: new Set(['buckle', 'tongue', 'slider', 'clasp', 'tab', 'scutes', 'boss', 'rivets', 'pouch2']),
   over: {
     sling: ['smock', 'binds'], slider: ['smock', 'binds', 'harness'], sashband: ['skirt', 'peplum'], girdle: ['smock', 'skirt', 'peplum', 'harness'], straps: ['boots'], tie: ['underyoke'], sash: ['skirt', 'peplum'], capelet: ['smock', 'sling', 'binds', 'harness'], ropebelt: ['smock', 'skirt', 'wrap', 'sashband'], harness: ['smock', 'binds'], boss: ['harness'], armband: [], bracer: ['armwrap'],
@@ -1716,7 +1722,7 @@ export function panFinish(base, parts) {
   // (M1.2d: the scarf hides her throat but never the underside of her jaw, which a face camera sees; and the narrow
   // bands and wraps on her arms no longer cull the skin under them: the band slides on the arm in a pose and the skin it
   // had culled showed the backdrop through her, a pale sliver under every band in the Nov 14 refilm)
-  return coverMask(B, parts, { skip: new Set(['tab', 'boss', 'slider', 'buckle', 'tongue', 'pouch', 'sash', 'straps', 'tie', 'hat', 'panel', 'backs', 'hems', 'rivets', 'belt2', 'pouch2', 'knee', 'case', 'armband', 'armwrap', 'bracer']), also: bra, keep: (x, y) => y > 1.525 });
+  return coverMask(B, parts, { skip: new Set(['tab', 'boss', 'slider', 'buckle', 'tongue', 'pouch', 'sash', 'straps', 'tie', 'hat', 'panel', 'backs', 'hems', 'rivets', 'belt2', 'pouch2', 'knee', 'case', 'armband', 'armwrap', 'bracer', 'patches']), also: bra, keep: (x, y) => y > 1.525 });
 }
 
 export async function build({ out = ROOT } = {}) {
