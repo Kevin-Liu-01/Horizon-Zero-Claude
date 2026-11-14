@@ -13,8 +13,10 @@
  * 2.0 m deep section on a 16 m mean radius), standing 20 deg off vertical
  * (bar 15-25), its foot set 0.8 m into a basalt cradle; the INNER ring 22 m
  * across, hung on two trunnions and turned 52 deg about them. The outer ring is
- * broken through its upper-left quadrant and the broken panels lie in the
- * shingle below. A dim lantern core rides a spindle across the inner ring.
+ * broken through its upper-left quadrant (90 deg, M1.1d) and that quadrant lies
+ * in the salt beside the rise as three 30-deg pieces (the `ring-fallen` node;
+ * the runtime lays them on salt crust). White enamel panels, 9 deg each (30
+ * round the standing ring), separated by 0.62 m seams on dark bronze flanges. A dim lantern core rides a spindle across the inner ring.
  * Three cable stays run to basalt anchor blocks. Never a stone portal: every
  * surface is glaze, bronze, graphite or basalt, and the sky shows through it.
  *
@@ -22,7 +24,7 @@
  * toward the Pans' viewers), the lean takes the top toward -Z. Origin = the
  * ground point under the ring's centre.
  *
- * Two materials (hull palette + lamp), one mesh each: two draws + one caster.
+ * Three nodes (hull, lamp, fallen piece): three draws + two casters.
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,15 +44,17 @@ export const RING = Object.freeze({
   outerMid: 16.0, outerW: 2.0, outerD: 1.6,      // outer edge 17.0 -> 34 m diameter
   innerMid: 10.3, innerW: 1.4, innerD: 1.0,      // outer edge 11.0 -> 22 m diameter
   tiltDeg: 20, sink: 0.8, innerTurnDeg: 52,
-  break0: 3.55, break1: 4.35,                    // the missing arc (lathe phi, rad): upper left
+  break0: 3.165, break1: 4.736,                  // M1.1d: the missing QUADRANT (lathe phi, rad, 90 deg): upper left
+  fallenPieces: 3, fallenArc: 0.5236,            // it lies in the salt as three 30-deg pieces (placed at runtime)
 });
 
 export async function build({ out = ROOT } = {}) {
-  const BONE = 0xe7dccb, CELADON = 0xa9c4b0, OXBLOOD = 0x6e2421, VERDI = 0x4f8f7e, BRONZE = 0xa07a3f, GRAPH = 0x2b2c30;
+  const BONE = 0xeee8dc, CELADON = 0xa9c4b0, OXBLOOD = 0x6e2421, VERDI = 0x4f8f7e, BRONZE = 0xa07a3f, GRAPH = 0x2b2c30;
   const BASALT = 0x3a3a3f, LAMP = 0x1a1208;
   const P = (r, h, surf, tone) => ({ r, h, surf, tone });
   const hull = new Bucket('ring-hull');
   const lamp = new Bucket('ring-lamp');
+  const fallen = new Bucket('ring-fallen');
   const R = rng(7);
   const tilt = THREE.MathUtils.degToRad(RING.tiltDeg);
   const OUT_EDGE = RING.outerMid + RING.outerW / 2;
@@ -71,7 +75,7 @@ export async function build({ out = ROOT } = {}) {
     for (const [p0, p1] of arcs) {
       const len = p1 - p0;
       const panels = Math.max(1, Math.round(THREE.MathUtils.radToDeg(len) / panelDeg));
-      lathe(hull, ringSection(Rm, w, d, glaze), m, { segs: panels * 4, panels, gap: 0.45, phiStart: p0, phiLength: len, wear: 0.55, crease: 30 });
+      lathe(hull, ringSection(Rm, w, d, glaze), m, { segs: panels * 4, panels, gap: 0.62, phiStart: p0, phiLength: len, wear: 0.55, crease: 30 });
       for (let i = 0; i <= panels; i++) {
         const phi = p0 + (i / panels) * len;
         const fl = [P(Rm - w / 2 - 0.1, -d / 2 - 0.08, 'bronze', BRONZE), P(Rm + w / 2 + 0.14, -d / 2 - 0.08, 'bronze', BRONZE),
@@ -101,20 +105,30 @@ export async function build({ out = ROOT } = {}) {
     }
   }
 
-  // the fallen panels, lying in the shingle under the break (left, in front)
-  for (let i = 0; i < 5; i++) {
-    const phi = RING.break0 + 0.08 + i * 0.16;
-    const lay = new THREE.Matrix4().compose(
-      V(-9.5 - i * 2.1 + (R() - 0.5) * 1.6, 0.35 + R() * 0.3, 5.5 + R() * 6.5),
-      new THREE.Quaternion().setFromEuler(new THREE.Euler(0.06 + R() * 0.3, R() * Math.PI, 0.25 + R() * 0.55)),
-      V(1, 1, 1));
-    const piece = lay.multiply(at(0, 0, -RING.outerMid)).multiply(new THREE.Matrix4().makeRotationY(-(phi + 0.07)));
-    lathe(hull, ringSection(RING.outerMid, RING.outerW, RING.outerD, BONE), piece, { segs: 3, phiStart: phi, phiLength: 0.14, wear: 0.95 });
-  }
-  // shards of glaze and a bent flange strap in the shingle
-  for (let i = 0; i < 14; i++) {
-    rbox(hull, V(-6 - R() * 12, 0.08, 2 + R() * 12), [0.3 + R() * 0.9, 0.06 + R() * 0.08, 0.2 + R() * 0.6], 0.02,
-      { surf: i % 3 ? 'glaze' : 'bronze', tone: i % 3 ? BONE : BRONZE, rot: [0, R() * 6, (R() - 0.5) * 0.4], wear: 1, segs: 1 });
+  // M1.1d: the fallen quadrant is its own node, ONE 30-deg piece of the outer ring (panels, flanges,
+  // rivets, a torn strap) lying nearly flat at the origin; the runtime lays three of them in the salt
+  // beside the rise (src/world/sites/landmarks.js), so they rest on the ground wherever the bake puts it
+  {
+    const arc = RING.fallenArc, phi0 = -arc / 2;
+    // the piece lies on its face: the ring axis (lathe +Y) turned to the vertical, the arc's middle at the origin
+    const lay = new THREE.Matrix4().makeRotationX(0.12).multiply(at(0, RING.outerD / 2 + 0.02, -RING.outerMid));
+    const panels = 3;
+    lathe(fallen, ringSection(RING.outerMid, RING.outerW, RING.outerD, BONE), lay, { segs: panels * 4, panels, gap: 0.62, phiStart: phi0, phiLength: arc, wear: 0.95, crease: 30 });
+    for (let i = 0; i <= panels; i++) {
+      const phi = phi0 + (i / panels) * arc, Rm = RING.outerMid, w = RING.outerW, d = RING.outerD;
+      const fl = [P(Rm - w / 2 - 0.1, -d / 2 - 0.08, 'bronze', BRONZE), P(Rm + w / 2 + 0.14, -d / 2 - 0.08, 'bronze', BRONZE),
+        P(Rm + w / 2 + 0.14, d / 2 + 0.08, 'bronze', BRONZE), P(Rm - w / 2 - 0.1, d / 2 + 0.08, 'bronze', BRONZE),
+        P(Rm - w / 2 - 0.1, -d / 2 - 0.08, 'bronze', BRONZE)];
+      lathe(fallen, fl, lay, { segs: 1, phiStart: phi - 0.007, phiLength: 0.014, wear: 0.9 });
+    }
+    // glaze shards and a bent strap round it, in the crust
+    for (let i = 0; i < 9; i++) {
+      const a = R() * Math.PI * 2, rr = 2.5 + R() * 4;
+      rbox(fallen, V(Math.cos(a) * rr, 0.05, Math.sin(a) * rr * 0.6), [0.3 + R() * 0.8, 0.06 + R() * 0.08, 0.2 + R() * 0.5], 0.02,
+        { surf: i % 3 ? 'glaze' : 'bronze', tone: i % 3 ? BONE : BRONZE, rot: [0, R() * 6, (R() - 0.5) * 0.4], wear: 1, segs: 1 });
+    }
+    // salt crust drifted against its upturned edge
+    fallen.shade((x, y) => (y < 0.25 ? 0.82 : 1));
   }
 
   /* ------------------------------ inner ring ------------------------------- */
@@ -197,8 +211,13 @@ export async function build({ out = ROOT } = {}) {
     const d = V(p.x, 0, p.z - footZ * 0.5); d.normalize().multiplyScalar(i === 2 ? 0 : 1);
     return i === 2 ? V(p.x * 0.4, 0, -19) : V(p.x * 1.65, 0, p.z * 1.2 + (i ? 4 : -3));
   });
+  // M1.1d: the anchors stand down the rise's flanks, so each is set on the ground the rise falls to there (the
+  // island recipe's rise: a 5.5 m top flat to 6.5 m, easing to the beach by 27 m; ground origin = the rise top),
+  // a basalt block bedded 2 m into the slope, never floating over it
+  const riseDrop = (x, z) => { const d = Math.hypot(x, z); const t = Math.min(1, Math.max(0, (d - 6.5) / (27 - 6.5))); return -5.5 * (1 - (1 - t * t * (3 - 2 * t))); };
   anchors.forEach((A, i) => {
-    slab(hull, { cx: A.x, cz: A.z, y0: -0.6, thick: 2.2, r: 1.5, aspect: 1.2, yaw: i * 0.7, jag: 0.2, seed: 81 + i, tone: BASALT, bevel: 0.25, rough: 0.06 }, shade);
+    A.y = riseDrop(A.x, A.z);
+    slab(hull, { cx: A.x, cz: A.z, y0: A.y - 2.6, thick: 4.2, r: 1.5, aspect: 1.2, yaw: i * 0.7, jag: 0.2, seed: 81 + i, tone: BASALT, bevel: 0.25, rough: 0.06 }, shade);
     rbox(hull, A.clone().add(V(0, 1.85, 0)), [1.1, 0.45, 1.1], 0.1, { surf: 'bronze', tone: BRONZE, wear: 0.7, rot: [0, i * 0.7, 0] });
     const top = tops[i];
     const mid = top.clone().lerp(A, 0.5); mid.y -= 1.6;
@@ -214,6 +233,7 @@ export async function build({ out = ROOT } = {}) {
   const stats = await writeGLB([
     { bucket: hull, material: { name: 'r5-ring-hull' } },
     { bucket: lamp, material: { name: 'r5-ring-lamp', emissive: [0.95, 0.86, 0.66], baseColor: [0.02, 0.018, 0.012, 1] } },
+    { bucket: fallen, material: { name: 'r5-ring-fallen' } },
   ], {
     file: path.join(out, OUTPUTS[0]),
     provenance: { recipe: RECIPE, sources: [], licence: 'project-original' },

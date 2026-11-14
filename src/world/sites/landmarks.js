@@ -17,8 +17,10 @@ import {
  * the layout places it more than once (pumps, stacks), a Mesh otherwise. The
  * plug and its needle are merged into one mesh (one draw, one caster).
  *
- * Draws (main / caster): Ring 2 / 1, pumps 2 / 1, stacks + arch 4 / 0, Roques
- * 1 / 1. The stacks stand 520-900 m out with no collider; the Ring, the pumps
+ * Draws (main / caster): Ring 3 / 2 (hull, lamp, the fallen quadrant), pumps
+ * 2 / 1, stacks + arch 4 / 0, Roques 1 / 1. M1.1d: the Ring's fallen quadrant
+ * (three 30-deg pieces, the GLB's `ring-fallen` node) is laid at runtime on
+ * salt crust on the side of the break (`_layFallen`). The stacks stand 520-900 m out with no collider; the Ring, the pumps
  * and the Roques register theirs (`colliders()`).
  *
  * Moving parts: the pump rotors turn with the wind (`update`, allocation-free:
@@ -107,6 +109,7 @@ export class Landmarks {
     g.position.set(s.x, y, s.z);
     g.rotation.y = yaw;
     for (const [name, n] of Object.entries(nodes)) {
+      if (name === 'ring-fallen') continue;          // laid in the salt below, in world space
       const mesh = new THREE.Mesh(n.geometry, n.material);
       mesh.name = name;
       const lamp = /lamp/.test(name);
@@ -119,8 +122,56 @@ export class Landmarks {
     this.group.add(g);
     g.updateMatrixWorld(true);
     this.ring = { group: g, info, x: s.x, z: s.z, y, yaw };
+    if (nodes['ring-fallen']) this._layFallen(nodes['ring-fallen'], s, yaw, info);
     this.records.push({ id: 'sounding-ring', name: 'Sounding Ring', kind: 'landmark', x: s.x, z: s.z, y, height: 32.8,
       object: g, design: { tiltDeg: info.tiltDeg, outerDiameter: info.outerDiameter, innerDiameter: info.innerDiameter } });
+  }
+
+  /**
+   * M1.1d: the fallen quadrant, three 30-deg pieces lying in the salt. The break is on the ring's local -X
+   * side (upper left from its face), so the pieces are laid on salt ground on that side: candidates on a
+   * 2 m grid 16-80 m from the ring, kept when the ground under the piece's middle and both its ends
+   * (+-4 m along it) is salt crust; the three nearest to the fall line, at least 8 m apart. One
+   * InstancedMesh (one draw); a low box collider each.
+   */
+  _layFallen(n, s, yaw, info) {
+    const T = this.ctx.terrain;
+    const salt = (x, z) => T?.materialAt ? T.materialAt(x, z) === 'salt' : false;
+    const dx = -Math.cos(yaw), dz = Math.sin(yaw);               // the ring's local -X in the world
+    const cand = [];
+    for (let j = -40; j <= 40; j++) for (let i = -40; i <= 40; i++) {
+      const x = s.x + i * 2, z = s.z + j * 2, d = Math.hypot(x - s.x, z - s.z);
+      if (d < 16 || d > 80) continue;
+      if (!salt(x, z)) continue;
+      const along = ((x - s.x) * dx + (z - s.z) * dz) / d;      // 1 on the fall line
+      cand.push({ x, z, d, score: d * (1.6 - along) });
+    }
+    cand.sort((a, b) => a.score - b.score);
+    const R = (() => { let a = 0x51a7; return () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; }; })();
+    const placed = [];
+    for (const c of cand) {
+      if (placed.length >= (info.fallenPieces || 3)) break;
+      if (placed.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < 8)) continue;
+      const py = R() * Math.PI * 2;
+      const ax = Math.cos(py) * 4, az = -Math.sin(py) * 4;
+      if (!salt(c.x + ax, c.z + az) || !salt(c.x - ax, c.z - az)) continue;
+      placed.push({ x: c.x, z: c.z, yaw: py, tilt: (R() - 0.5) * 0.12 });
+    }
+    if (!placed.length) return;
+    const im = new THREE.InstancedMesh(n.geometry, n.material, placed.length);
+    im.name = 'sounding-ring-landmark-fallen';
+    im.castShadow = true; im.receiveShadow = true;
+    this._own(n.geometry, n.material);
+    placed.forEach((p, i) => {
+      p.y = Math.min(T.getHeight(p.x, p.z), T.getHeight(p.x + Math.cos(p.yaw) * 4, p.z - Math.sin(p.yaw) * 4), T.getHeight(p.x - Math.cos(p.yaw) * 4, p.z + Math.sin(p.yaw) * 4)) - 0.3;
+      _m.compose(_p.set(p.x, p.y, p.z), _q.setFromEuler(new THREE.Euler(p.tilt, p.yaw, p.tilt * 0.5, 'YXZ')), _s.set(1, 1, 1));
+      im.setMatrixAt(i, _m);
+    });
+    im.instanceMatrix.needsUpdate = true;
+    im.computeBoundingSphere();
+    this.group.add(im);
+    this.meshes.ringFallen = im;
+    this.ring.fallen = placed;
   }
 
   /* ------------------------------------------------------------ the pumps */
@@ -223,6 +274,9 @@ export class Landmarks {
     const out = [];
     const M = this.meshes;
     if (M['ring-hull']) out.push({ kind: 'landmark', object: M['ring-hull'], blocking: true, occluder: true });
+    for (const p of this.ring?.fallen || []) {
+      out.push({ kind: 'landmark', ref: M.ringFallen, shape: { type: 'box', c: [p.x, p.y + 0.9, p.z], half: [4.2, 0.6, 1.2], yaw: p.yaw } });
+    }
     if (M.pumpTower) {
       // the cistern is a box; the lattice is four leg capsules (the player walks between them, not through)
       for (let i = 0; i < PUMPS.length; i++) {

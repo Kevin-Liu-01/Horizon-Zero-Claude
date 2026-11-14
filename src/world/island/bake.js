@@ -227,16 +227,19 @@ export function maskTexel(H, x, z, out) {
   const drift = ss(0.2, 0.44, fbm(x * 0.021 + 13, z * 0.021 - 5, 3));
   const meadow = pans * ss(0.3, 0.9, h) * (1 - ss(22, 30, h)) * ss(16, 30, c) * (1 - ss(0.55, 0.92, fk)) * (1 - ss(0.25, 0.5, rock))
     * (1 - ss(0.4, 0.7, slope)) * (1 - ss(0.2, 0.5, track)) * ss(1.5, 2.2, glass) * (1 - ss(0.2, 0.5, cr)) * drift;
+  // M1.1d: the Sounding Ring stands on a GRASSED rise: its top and upper flanks are meadow, above the shingle
+  const rg = authored.ringGrass(x, z) * ss(1.2, 2.6, h) * (1 - ss(0.25, 0.5, rock));
+  const meadowR = Math.max(meadow, rg);
 
   out[0] = clamp255(lav * (1 - fk) * 255);
   out[1] = clamp255(rock * 255);
-  out[2] = clamp255(shingle * (1 - rock) * 255);
+  out[2] = clamp255(shingle * (1 - rock) * (1 - rg) * 255);
   out[3] = clamp255(silt * 255);
   // cover only where the marram can stand (the scatter's own rule: A59b)
   out[4] = slope > 0.88 || rock > 0.48 ? 0 : clamp255(coverAt(x, z) * 255);
   out[5] = clamp255(track * 255);
   out[6] = clamp255(damp * 255);
-  out[7] = clamp255(meadow * 255);
+  out[7] = clamp255(meadowR * 255);
   out[8] = clamp255(((c - SHORE_ENC.dMin) / (SHORE_ENC.dMax - SHORE_ENC.dMin)) * 255);
   out[9] = clamp255(((h - SHORE_ENC.hMin) / (SHORE_ENC.hMax - SHORE_ENC.hMin)) * 255);
   out[10] = clamp255((1 - ss(1.1, 1.5, glass)) * 255);

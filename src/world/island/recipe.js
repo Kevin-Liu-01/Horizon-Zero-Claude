@@ -874,7 +874,7 @@ export function coastD(e, n) {
  * grassed shingle rise on the storm beach. The site is 6 m from the waterline, so the rise
  * brings its own shingle spit: the coast bulges ≈ 24 m seaward round it (surf, wading ring and
  * masks all read coastD, so they follow), and the rise falls to the beach on every side. */
-const RING = { e: -347, n: -320, top: 6.0, r0: 6.5, r1: 27 };
+const RING = { e: -347, n: -320, top: 5.5, r0: 6.5, r1: 27 };   // M1.1d: a 5-6 m rise (5.5 +- 0.2)
 function ringSpit(e, n) {
   const dx = e - RING.e, dz = n - RING.n;
   if (dx > 70 || dx < -70 || dz > 70 || dz < -70) return 0;
@@ -893,6 +893,13 @@ function ringRise(e, n, h, fd) {
   k *= ss(0.8, 7, fd);
   const top = RING.top + (fbm(e * 0.21, n * 0.21 + 3, 2) - 0.5) * 0.35;
   return h + (top - h) * k * k * (3 - 2 * k) * (k < 0.98 ? 1 : 1);
+}
+
+/** M1.1d: how much of the ground is the Ring's GRASSED rise (1 on its top and upper flanks, 0 on the beach). */
+function ringGrass(e, n) {
+  const dx = e - RING.e, dz = n - RING.n;
+  if (dx > RING.r1 || dx < -RING.r1 || dz > RING.r1 || dz < -RING.r1) return 0;
+  return 1 - ss(RING.r0 + 6, RING.r1 - 4, Math.hypot(dx, dz));
 }
 
 const _w = new Float64Array(6);
@@ -1053,6 +1060,7 @@ export const authored = Object.freeze({
   shelf: (x, z) => shelfD(x / S, -z / S),
   fieldK: (x, z) => fieldK(x / S, -z / S),
   glass: (x, z) => glassD(x / S, -z / S),
+  ringGrass: (x, z) => ringGrass(x / S, -z / S),
 });
 
 /** The cistern in the field's frame, for the check script. */
