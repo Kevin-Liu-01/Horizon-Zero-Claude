@@ -73,7 +73,7 @@ export function imageSize(b) {
   const KTX2 = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];
   if (b.length >= 32 && KTX2.every((x, k) => b[k] === x)) {
     // layerCount at byte 32: a texture array (the ground's layers, M0.10) is resident once per layer
-    return { width: dv.getUint32(20, true), height: dv.getUint32(24, true), layers: b.length >= 36 ? Math.max(1, dv.getUint32(32, true)) : 1, mime: 'image/ktx2' };
+    return { width: dv.getUint32(20, true), height: dv.getUint32(24, true), layers: b.length >= 36 ? Math.max(1, dv.getUint32(32, true)) : 1, vkFormat: dv.getUint32(12, true), mime: 'image/ktx2' };
   }
   return null;
 }
@@ -138,7 +138,7 @@ export function inspectGlb(buf) {
     const sz = imageSize(bytes);
     images.push({
       index, mime: sz?.mime || img.mimeType || 'unknown', width: sz?.width || 0, height: sz?.height || 0,
-      bytes: bytes.length, sha1: createHash('sha1').update(bytes).digest('hex'), compressed: sz?.mime === 'image/ktx2',
+      bytes: bytes.length, sha1: createHash('sha1').update(bytes).digest('hex'), compressed: isBlockCompressed(sz),
     });
   });
   return {
@@ -146,6 +146,11 @@ export function inspectGlb(buf) {
     extensions: json.extensionsUsed || [],
   };
 }
+
+/** VK_FORMAT_R8G8B8A8_UNORM / _SRGB: a KTX2 that holds plain RGBA8 (exact tables, images kept uncompressed). */
+const KTX2_RGBA8 = new Set([37, 43]);
+/** True for a KTX2 whose texels are block-compressed on the GPU (Basis: vkFormat 0, or a native block format). */
+export function isBlockCompressed(sz) { return sz?.mime === 'image/ktx2' && !KTX2_RGBA8.has(sz.vkFormat ?? 0); }
 
 /**
  * Resident GPU bytes for one texture with a full mip chain: RGBA8 when it ships as PNG/JPEG/WebP

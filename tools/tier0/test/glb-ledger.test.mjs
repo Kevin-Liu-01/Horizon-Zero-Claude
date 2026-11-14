@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inspectGlb, imageSize, residentBytes, lodOf } from '../lib/glb.mjs';
+import { inspectGlb, imageSize, residentBytes, isBlockCompressed, lodOf } from '../lib/glb.mjs';
 import { lineOf } from '../budgets.mjs';
 
 /** A minimal GLB: one node -> one mesh with two indexed triangle primitives, one embedded PNG header. */
@@ -76,11 +76,14 @@ test('imageSize: WebP lossy / lossless / extended and KTX2 headers', () => {
   ktx.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
   new DataView(ktx.buffer).setUint32(20, 2048, true);
   new DataView(ktx.buffer).setUint32(24, 2048, true);
-  assert.deepEqual(imageSize(ktx), { width: 2048, height: 2048, layers: 1, mime: 'image/ktx2' });
+  assert.deepEqual(imageSize(ktx), { width: 2048, height: 2048, layers: 1, vkFormat: 0, mime: 'image/ktx2' });
   const arr = new Uint8Array(80);   // a 3-layer KTX2 array (M0.10 ground layers): layerCount at byte 32
   arr.set(ktx);
   new DataView(arr.buffer).setUint32(32, 3, true);
-  assert.deepEqual(imageSize(arr), { width: 2048, height: 2048, layers: 3, mime: 'image/ktx2' });
+  assert.deepEqual(imageSize(arr), { width: 2048, height: 2048, layers: 3, vkFormat: 0, mime: 'image/ktx2' });
+  new DataView(arr.buffer).setUint32(12, 43, true);   // VK_FORMAT_R8G8B8A8_SRGB: an RGBA8 KTX2 is resident at 32 bpp
+  assert.equal(isBlockCompressed(imageSize(arr)), false);
+  assert.equal(isBlockCompressed(imageSize(ktx)), true);
   assert.equal(imageSize(new Uint8Array(40)), null);
 });
 

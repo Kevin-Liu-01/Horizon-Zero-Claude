@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { SPECS as CORE_SPECS, ANIMS as CORE_ANIMS, TEXTURES as CORE_TEXTURES, DELETED } from './assets.specs.js';
-import { ktx2Loader, loadKTX2 } from './ktx2.js';
+import { ktx2Loader, loadKTX2, noteTextureSources, textureSource, textureBytes, ktx2Targets } from './ktx2.js';
 
 /**
  * Loads and normalizes all game models.
@@ -247,8 +247,14 @@ export class Assets {
     this.r30 = { deleted: [], pending: [] };
     this.loader = new GLTFLoader();
     this.loader.setMeshoptDecoder(MeshoptDecoder);
+    // every GLB through the shared loader (rows, loadExtra, people bank, lance) records where its textures came from
+    const loadAsync = this.loader.loadAsync.bind(this.loader);
+    this.loader.loadAsync = async (url, onProgress) => { const gltf = await loadAsync(url, onProgress); noteTextureSources(gltf, url); return gltf; };
     /** name -> THREE.Texture from the TEXTURES rows (KTX2; M0.10) */
     this.textures = {};
+    /** the texture rows and the page's KTX2 helpers, for tools that run in the page (ledgers, the M0.10 A/B) */
+    this.textureRows = TEXTURES;
+    this.ktx2 = { load: loadKTX2, source: textureSource, bytes: textureBytes, targets: ktx2Targets };
   }
 
   /**

@@ -106,6 +106,20 @@ export async function loadKTX2(url, { colorSpace = 'file', wrap = 'clamp', aniso
   return tex;
 }
 
+/**
+ * Where a loaded texture came from: GLB url and glTF texture index, keyed by the texture's image source (clones made
+ * for a second UV set or a texture transform share it). Filled by assets.js for every GLB it loads; read by tools
+ * (the M0.10 A/B swaps each texture for its uncompressed twin; ledgers group by file).
+ */
+const SOURCES = new Map();
+export function noteTextureSources(gltf, url) {
+  const assoc = gltf?.parser?.associations;
+  if (!assoc) return;
+  for (const [obj, ref] of assoc) if (obj?.isTexture && ref?.textures != null && obj.source) SOURCES.set(obj.source.uuid, { url, texture: ref.textures });
+}
+/** @returns {{ url: string, texture: number } | null} */
+export function textureSource(t) { return (t?.source && SOURCES.get(t.source.uuid)) || null; }
+
 /** GPU bytes of a texture as uploaded (compressed formats by their block size, mips included). */
 export function textureBytes(t) {
   const img = t.image || {};

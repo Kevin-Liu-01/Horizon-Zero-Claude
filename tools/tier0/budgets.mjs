@@ -12,7 +12,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { listFiles, sizeOf, mb, MB } from './lib/files.mjs';
-import { inspectGlb, imageSize, residentBytes } from './lib/glb.mjs';
+import { inspectGlb, imageSize, residentBytes, isBlockCompressed } from './lib/glb.mjs';
 
 const IMAGE = /\.(png|jpe?g|webp|ktx2)$/i;
 
@@ -58,7 +58,7 @@ export function readAssets(root) {
       const b = readFileSync(path.join(root, f));
       const sz = imageSize(new Uint8Array(b.buffer, b.byteOffset, b.byteLength));
       if (!sz) { errors.push(`${f}: unreadable image header`); continue; }
-      textures.push({ file: f, sha1: `file:${f}`, width: sz.width, height: sz.height, layers: sz.layers || 1, compressed: sz.mime === 'image/ktx2', mime: sz.mime });
+      textures.push({ file: f, sha1: `file:${f}`, width: sz.width, height: sz.height, layers: sz.layers || 1, compressed: isBlockCompressed(sz), mime: sz.mime });
     }
   }
   return { files, glbs, textures, errors };
@@ -119,10 +119,11 @@ export async function runAssetBudgets({ root, assets }) {
     else if (edge > cap) failures.push(`${t.file}: ${t.width}×${t.height} ${t.mime.replace('image/', '')} > ${cap} edge${t.compressed ? '' : ' (uncompressed; KTX2 not in the build yet)'}`);
   }
   const ktx2 = A.textures.filter((t) => t.compressed).length;
+  const ktx2Files = A.textures.filter((t) => t.mime === 'image/ktx2').length;
   return {
     id: 'asset-budgets',
     status: failures.length ? 'FAIL' : 'PASS',
-    summary: `${A.glbs.size} GLBs, ${nTex} textures (${ktx2} KTX2); ${failures.length} over a cap`,
+    summary: `${A.glbs.size} GLBs, ${nTex} textures (${ktx2Files} KTX2, ${ktx2} of them block-compressed); ${failures.length} over a cap`,
     failures,
     notes: rows,
     ms: Date.now() - t0,
