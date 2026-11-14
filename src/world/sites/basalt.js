@@ -10,15 +10,21 @@ import { ORGAN, CRATER } from './layout.js';
  *
  * Columns (bible §8.3 "11 hex clusters", §8.7 "hex basalt columns as natural
  * stairs", ROUND5-LOOK W-05): hexagonal prisms 0.6-1.4 m across, packed in a
- * hex grid, the tallest at each cluster's back stepping down in 0.6-1.3 m
- * risers toward its face, 2-14 m above the ground, with cross-joints every
- * 1-2.5 m, chamfered and tilted tops, salt and lichen on the treads, a wet foot.
- * Each column is one box collider (A24: the player is stopped by one; the
- * mantle climbs the 1 m risers).
+ * hex grid, the tallest at each cluster's back stepping down in 0.55 m risers
+ * toward its face, 2-14 m above the ground, with cross-joints every 0.9-2.4 m.
+ * M1.1c: each column leans (the cluster fans 2-5 deg toward its face), every
+ * jointed segment is jogged and resized a little (no straight outline), each
+ * hex facet has its own tone, the tops are broken (fracture planes up to ~30
+ * deg, a spalled wedge on one column in three), and every cluster has a talus
+ * apron of fallen column segments in front of its face (10 + 1.6 per metre of
+ * its tallest column). Each column is one box collider (A24: the player is
+ * stopped by one; the mantle climbs the risers).
  *
- * Crater rock: ≈ 150 red-tuff blocks on the talus apron and the benches of the
- * high wall (W-03 palette: rust red, cinder, ochre tuff), and seven bedded
- * buttress outcrops at the cliff foot.
+ * Crater rock: ≈ 150 tuff blocks on the talus apron and the benches of the high
+ * wall and seven buttress outcrops at the cliff foot, all BANDED SCORIA (M1.1c):
+ * the blocks carry five beds across them in their vertex colour, the buttresses
+ * are 6-12 beds 0.35-1.2 m thick, each a different scoria colour from the last
+ * (rust red, black cinder, orange, ochre) and set in or out from it.
  *
  * Deterministic (seeded); every geometry and material is owned and disposed.
  */
@@ -46,64 +52,134 @@ function vnoise(x, y) {
 const _c = new THREE.Color();
 const BASALT = [0x3c3b3f, 0x45434a, 0x35353a, 0x4b4846, 0x403f43];
 const TUFF = [0x7a3b2a, 0x8e3b23, 0x9a5a3a, 0x6b3426, 0x8c6a48, 0xa4683f];
+/** M1.1c banded scoria (the crater's beds, the same row as its ground): red, black cinder, orange, ochre. */
+const SCORIA = [0x8e3b23, 0x2e2420, 0xa8562e, 0x5e2a1c, 0xb0703e, 0x3a2622, 0x96452a, 0x6e3a26];
 const D2R = Math.PI / 180;
 
-/** Append one hex column to the flat arrays (non-indexed, flat-ish normals per side). */
-function pushColumn(out, cx, cz, rad, y0, y1, rot, seed, tone) {
+/**
+ * Append one hex column to the flat arrays (non-indexed, flat normals per facet). M1.1c: the column
+ * leans (`lean` [dx, dz] per metre of height: the cluster fans outward, as columns do at a flow front),
+ * every segment between cross-joints is jogged a few centimetres and a few per cent wider or narrower
+ * than the last (so no outline runs straight), each facet carries its own tone (the hexagon reads, not a
+ * cylinder), and the top is BROKEN: a tilted fracture plane (up to ~30 deg), on one column in three a
+ * second step where a wedge has spalled off.
+ */
+function pushColumn(out, cx, cz, rad, y0, y1, rot, seed, tone, lean = [0, 0]) {
   const P = out.pos, N = out.nor, C = out.col;
   const R = mulberry32(seed);
-  const cham = Math.min(0.07 + rad * 0.06, (y1 - y0) * 0.1);
+  const cham = Math.min(0.06 + rad * 0.05, (y1 - y0) * 0.1);
   // cross-joint heights (columnar jointing), measured up from the base
   const rings = [y0];
-  let y = y0 + 0.6 + R() * 1.2;
-  while (y < y1 - cham - 0.6) { rings.push(y); y += 1.9 + R() * 1.8; }
+  let y = y0 + 0.5 + R() * 1.0;
+  while (y < y1 - cham - 0.5) { rings.push(y); y += 0.9 + R() * 1.5; }
   rings.push(y1 - cham);
-  // a broken top: the cap tilts a little
-  const tx = (R() - 0.5) * 0.16, tz = (R() - 0.5) * 0.16;
+  // per segment: a jog and a width (the joint's offset)
+  const seg = rings.map(() => [(R() - 0.5) * 0.09, (R() - 0.5) * 0.09, 0.95 + R() * 0.1]);
+  // the broken top: a fracture plane, steep on some columns
+  const steep = R() < 0.35 ? 0.35 + R() * 0.25 : 0.08 + R() * 0.18;
+  const ta = R() * Math.PI * 2, tx = Math.cos(ta) * steep, tz = Math.sin(ta) * steep;
+  const spall = R() < 0.33;                        // a wedge off one side, a step lower
+  const spA = R() * 6, spD = 0.15 + R() * 0.35;
   _c.setHex(tone).convertSRGBToLinear();
   const br = _c.r, bg = _c.g, bb = _c.b;
   const k0 = 0.86 + R() * 0.28;
-  const corner = (i, r) => { const a = rot + (i / 6) * Math.PI * 2; return [cx + Math.cos(a) * r, cz + Math.sin(a) * r]; };
+  const facetK = [0, 1, 2, 3, 4, 5].map(() => 0.84 + R() * 0.32);
+  const lx = (yy) => (yy - y0) * lean[0], lz = (yy) => (yy - y0) * lean[1];
+  const corner = (i, r, yy, si) => {
+    const a = rot + (i / 6) * Math.PI * 2; const g = seg[si];
+    return [cx + Math.cos(a) * r * g[2] + g[0] + lx(yy), cz + Math.sin(a) * r * g[2] + g[1] + lz(yy)];
+  };
   const tri = (ax, ay, az, bx, by, bz, cx2, cy2, cz2, nx, ny, nz, ka, kb, kc) => {
     P.push(ax, ay, az, bx, by, bz, cx2, cy2, cz2);
     N.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
     C.push(br * ka, bg * ka, bb * ka, br * kb, bg * kb, bb * kb, br * kc, bg * kc, bb * kc);
   };
   const shadeAt = (yy, side) => {
-    // wet foot, cross-joint darkening, vertical streaks, the occasional pale lichen patch
-    let k = k0 * (0.72 + 0.28 * Math.min(1, (yy - y0) / 1.4));
+    // wet foot, vertical streaks
+    let k = k0 * facetK[side] * (0.72 + 0.28 * Math.min(1, (yy - y0) / 1.4));
     k *= 0.9 + 0.2 * vnoise(side * 3.1 + cx * 0.7, yy * 0.4 + cz * 0.7);
     return k;
   };
+  const last = rings.length - 2;
+  // the top surface height at a point (fracture plane, minus the spalled wedge)
+  const topAt = (x, z) => {
+    const dx = x - cx - lx(y1), dz = z - cz - lz(y1);
+    let h = y1 + tx * dx + tz * dz;
+    if (spall && Math.cos(Math.atan2(dz, dx) - spA) > 0.35) h -= spD + 0.2;
+    return h;
+  };
   for (let s = 0; s < 6; s++) {
-    const [ax, az] = corner(s, rad), [bx, bz] = corner(s + 1, rad);
-    const mx = (ax + bx) / 2 - cx, mz = (az + bz) / 2 - cz, ml = Math.hypot(mx, mz) || 1;
-    const nx = mx / ml, nz = mz / ml;
     for (let r = 0; r + 1 < rings.length; r++) {
       const ya = rings[r] + (r ? 0.02 : 0), yb = rings[r + 1] - 0.02;
-      const inA = r ? 0.985 : 1;                          // a slight inset at each joint
-      const [a1x, a1z] = corner(s, rad * inA), [b1x, b1z] = corner(s + 1, rad * inA);
+      const [ax, az] = corner(s, rad, ya, r), [bx, bz] = corner(s + 1, rad, ya, r);
+      const [a2x, a2z] = corner(s, rad, yb, r), [b2x, b2z] = corner(s + 1, rad, yb, r);
+      const mx = (ax + bx) / 2 - cx - lx(ya), mz = (az + bz) / 2 - cz - lz(ya), ml = Math.hypot(mx, mz) || 1;
+      const nx = mx / ml, nz = mz / ml;
       const ka = shadeAt(ya, s), kb = shadeAt(yb, s);
-      tri(a1x, ya, a1z, bx, yb, bz, b1x, ya, b1z, nx, 0, nz, ka, kb, ka);
-      tri(a1x, ya, a1z, ax, yb, az, bx, yb, bz, nx, 0, nz, ka, kb, kb);
-      // the joint itself: a thin dark band
-      if (r + 2 < rings.length) {
-        const yj = rings[r + 1];
-        const kj = kb * 0.55;
-        tri(ax, yb, az, bx, yj + 0.02, bz, bx, yb, bz, nx, 0, nz, kj, kj, kj);
-        tri(ax, yb, az, ax, yj + 0.02, az, bx, yj + 0.02, bz, nx, 0, nz, kj, kj, kj);
+      tri(ax, ya, az, b2x, yb, b2z, bx, ya, bz, nx, 0, nz, ka, kb, ka);
+      tri(ax, ya, az, a2x, yb, a2z, b2x, yb, b2z, nx, 0, nz, ka, kb, kb);
+      // the joint: a thin dark band up to the next segment (it closes the jog between the two)
+      if (r < last) {
+        const yj = rings[r + 1] + 0.02;
+        const [c2x, c2z] = corner(s, rad, yj, r + 1), [d2x, d2z] = corner(s + 1, rad, yj, r + 1);
+        const kj = kb * 0.5;
+        tri(a2x, yb, a2z, d2x, yj, d2z, b2x, yb, b2z, nx, 0, nz, kj, kj, kj);
+        tri(a2x, yb, a2z, c2x, yj, c2z, d2x, yj, d2z, nx, 0, nz, kj, kj, kj);
       }
     }
-    // chamfer + cap (tilted top)
+    // chamfer up to the broken top, then the fracture surface (a fan from the centre)
     const yt = y1 - cham;
-    const hA = y1 + tx * (ax - cx) + tz * (az - cz), hB = y1 + tx * (bx - cx) + tz * (bz - cz);
-    const [ia, iaz] = corner(s, rad - cham), [ib, ibz] = corner(s + 1, rad - cham);
-    const kc = k0 * 1.12;
-    tri(ax, yt, az, ib, hB, ibz, bx, yt, bz, nx * 0.7, 0.7, nz * 0.7, kc, kc * 1.1, kc);
-    tri(ax, yt, az, ia, hA, iaz, ib, hB, ibz, nx * 0.7, 0.7, nz * 0.7, kc, kc * 1.1, kc * 1.1);
-    // the tread: salt / lichen on top, lighter
-    const lich = vnoise(cx * 0.9 + s, cz * 0.9) > 0.62 ? 1.55 : 1.28;
-    tri(cx, y1 + 0.01, cz, ib, hB, ibz, ia, hA, iaz, -tx, 1, -tz, k0 * lich, k0 * 1.2, k0 * 1.2);
+    const [ax, az] = corner(s, rad, yt, last), [bx, bz] = corner(s + 1, rad, yt, last);
+    const [ia, iaz] = corner(s, rad - cham, yt, last), [ib, ibz] = corner(s + 1, rad - cham, yt, last);
+    const hA = Math.max(yt + 0.02, topAt(ia, iaz)), hB = Math.max(yt + 0.02, topAt(ib, ibz));
+    const mx = (ax + bx) / 2 - cx - lx(yt), mz = (az + bz) / 2 - cz - lz(yt), ml = Math.hypot(mx, mz) || 1;
+    const nx = mx / ml, nz = mz / ml;
+    // the side wall rises to the fracture line (a broken column shows its full face up to the break)
+    const kc = k0 * facetK[s];
+    tri(ax, yt, az, ib, hB, ibz, bx, yt, bz, nx, 0.25, nz, kc, kc * 0.95, kc);
+    tri(ax, yt, az, ia, hA, iaz, ib, hB, ibz, nx, 0.25, nz, kc, kc * 0.95, kc * 0.95);
+    // the fracture: fresh, rough, a little lighter than the weathered faces; lichen and salt on the old flat tops
+    const hc = topAt(cx + lx(y1), cz + lz(y1));
+    const lich = steep < 0.2 && vnoise(cx * 0.9 + s, cz * 0.9) > 0.62 ? 1.5 : 1.22;
+    const ux = ib - ia, uy = hB - hA, uz = ibz - iaz, vx = cx + lx(y1) - ia, vy = hc - hA, vz = cz + lz(y1) - iaz;
+    let fx = uy * vz - uz * vy, fy = uz * vx - ux * vz, fz = ux * vy - uy * vx;
+    const fl = Math.hypot(fx, fy, fz) || 1; if (fy < 0) { fx = -fx; fy = -fy; fz = -fz; }
+    tri(cx + lx(y1), hc, cz + lz(y1), ib, hB, ibz, ia, hA, iaz, fx / fl, fy / fl, fz / fl, k0 * lich, k0 * 1.15, k0 * 1.15);
+  }
+}
+
+/**
+ * A fallen column segment (talus): a short hex prism lying on its side, tilted, half sunk.
+ * `m` places it: centre, yaw, roll (the axis tips by `tip` out of horizontal).
+ */
+const _tm = new THREE.Matrix4(), _tv = new THREE.Vector3(), _tn = new THREE.Vector3(), _tq = new THREE.Quaternion(), _te = new THREE.Euler(), _ts = new THREE.Vector3(1, 1, 1);
+function pushTalus(out, x, y, z, rad, len, yaw, tip, roll, tone, R) {
+  const P = out.pos, N = out.nor, C = out.col;
+  _tm.compose(_tv.set(x, y, z), _tq.setFromEuler(_te.set(roll, yaw, Math.PI / 2 + tip, 'YXZ')), _ts);
+  _c.setHex(tone).convertSRGBToLinear();
+  const k0 = 0.8 + R() * 0.3;
+  const h = len / 2, sk = (R() - 0.5) * 0.4;      // a broken, skewed end
+  const v = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2, r = rad * (0.9 + R() * 0.15);
+    v.push([Math.cos(a) * r, -h, Math.sin(a) * r], [Math.cos(a) * r, h + sk * Math.cos(a) * rad, Math.sin(a) * r]);
+  }
+  const put = (a, b, c, k) => {
+    const pa = _tv.set(...a).applyMatrix4(_tm).toArray(), pb = _tv.set(...b).applyMatrix4(_tm).toArray(), pc = _tv.set(...c).applyMatrix4(_tm).toArray();
+    const ux = pb[0] - pa[0], uy = pb[1] - pa[1], uz = pb[2] - pa[2], wx = pc[0] - pa[0], wy = pc[1] - pa[1], wz = pc[2] - pa[2];
+    _tn.set(uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx).normalize();
+    // wound outward: away from the prism's centre (x, y, z)
+    if (_tn.x * (pa[0] + pb[0] + pc[0] - 3 * x) + _tn.y * (pa[1] + pb[1] + pc[1] - 3 * y) + _tn.z * (pa[2] + pb[2] + pc[2] - 3 * z) < 0) {
+      _tn.negate(); P.push(...pa, ...pc, ...pb);
+    } else P.push(...pa, ...pb, ...pc);
+    for (let i = 0; i < 3; i++) { N.push(_tn.x, _tn.y, _tn.z); C.push(_c.r * k, _c.g * k, _c.b * k); }
+  };
+  for (let i = 0; i < 6; i++) {
+    const j = (i + 1) % 6, k = k0 * (0.85 + 0.3 * (i % 2));
+    const a0 = v[i * 2], a1 = v[i * 2 + 1], b0 = v[j * 2], b1 = v[j * 2 + 1];
+    put(a0, b1, b0, k); put(a0, a1, b1, k);
+    put([0, -h, 0], a0, b0, k0 * 1.1);
+    put([0, h, 0], b1, a1, k0 * 1.15);
   }
 }
 
@@ -147,13 +223,32 @@ export function buildOrganShelf(terrain, clusters = ORGAN) {
           terrain.getHeight(x, z + rad), terrain.getHeight(x, z - rad));
         const y0 = g1 - 0.45, y1 = g0 + h;
         const crot = rot + (R() - 0.5) * 0.18;
-        pushColumn(out, x, z, rad, y0, y1, crot, seed + count * 7, BASALT[(count + (R() * 3 | 0)) % BASALT.length]);
+        // the cluster fans out toward its face (2-5 deg), each column a little its own way
+        const fan = 0.035 + 0.05 * Math.max(0, along);
+        const lean = [fx * fan + (R() - 0.5) * 0.03, fz * fan + (R() - 0.5) * 0.03];
+        pushColumn(out, x, z, rad, y0, y1, crot, seed + count * 7, BASALT[(count + (R() * 3 | 0)) % BASALT.length], lean);
         columns.push({ x, z, r: rad, y0, y1, rot: crot, cluster: cl.id });
         hiMax = Math.max(hiMax, h); hiMin = Math.min(hiMin, h);
         count++;
       }
     }
-    report.push({ id: cl.id, columns: count, hMin: +hiMin.toFixed(2), hMax: +hiMax.toFixed(2) });
+    // M1.1c: the talus apron: fallen column segments and spalled blocks spread in front of the face,
+    // densest at the foot, out to 1.8 cluster radii (more under the tall clusters)
+    let talus = 0;
+    const nT = Math.round(10 + cl.top * 1.6);
+    for (let k = 0; k < nT; k++) {
+      const spread = (R() - 0.5) * 2.2;                                   // across the face
+      const outR = cl.r * (0.85 + Math.pow(R(), 1.6) * 1.0);              // out from the centre
+      const sx = -fz, sz = fx;                                            // the face's sideways axis
+      const x = cl.x + fx * outR + sx * spread * cl.r, z = cl.z + fz * outR + sz * spread * cl.r;
+      const g = terrain.getHeight(x, z);
+      const big = R() < 0.35;
+      const rad = (diam * (big ? 0.85 + R() * 0.25 : 0.4 + R() * 0.35)) / 2;
+      const len = big ? 0.7 + R() * 1.8 : 0.3 + R() * 0.6;
+      pushTalus(out, x, g + rad * 0.45, z, rad, len, R() * Math.PI * 2, (R() - 0.5) * 0.5, R() * 1.2, BASALT[(k + 2) % BASALT.length], R);
+      talus++;
+    }
+    report.push({ id: cl.id, columns: count, hMin: +hiMin.toFixed(2), hMax: +hiMax.toFixed(2), talus });
     const mine = columns.filter((c) => c.cluster === cl.id);
     if (mine.length) {
       const y = Math.min(...mine.map((c) => terrain.getHeight(c.x, c.z))), top = Math.max(...mine.map((c) => c.y1));
@@ -189,14 +284,15 @@ function tuffBlockGeo() {
   const ng = g.index ? g.toNonIndexed() : g;
   if (ng !== g) g.dispose();
   ng.computeVertexNormals();
-  // vertex shade: tops lighter (dust), bed lines darker
+  // vertex colour: banded scoria (M1.1c), five beds across a block, tops dusted lighter
   const pos = ng.attributes.position;
   const col = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i);
-    const bed = 0.82 + 0.18 * Math.abs(Math.sin(y * 9.4));
-    const k = bed * (0.86 + 0.24 * (y + 0.6));
-    col[i * 3] = k; col[i * 3 + 1] = k; col[i * 3 + 2] = k;
+    const band = Math.floor((y + 1) * 2.6 + vnoise(pos.getX(i) * 1.3, pos.getZ(i) * 1.3) * 0.6);
+    _c.setHex(SCORIA[((band % SCORIA.length) + SCORIA.length) % SCORIA.length]).convertSRGBToLinear();
+    const k = 0.86 + 0.24 * (y + 0.6);
+    col[i * 3] = _c.r * k; col[i * 3 + 1] = _c.g * k; col[i * 3 + 2] = _c.b * k;
   }
   ng.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return ng;
@@ -229,7 +325,7 @@ export function buildCraterRock(terrain) {
     if (sl > 1.2) continue;
     const big = R() < 0.12;
     const s = big ? 1.6 + R() * 1.8 : 0.35 + Math.pow(R(), 2.2) * 1.4;
-    recs.push({ x, z, h, s, yaw: R() * Math.PI * 2, tilt: (R() - 0.5) * 0.5, tone: TUFF[(R() * TUFF.length) | 0] });
+    recs.push({ x, z, h, s, yaw: R() * Math.PI * 2, tilt: (R() - 0.5) * 0.5, tone: 0.8 + R() * 0.35 });
   }
   const geo = tuffBlockGeo();
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, name: 'r5-tuff' });
@@ -242,7 +338,7 @@ export function buildCraterRock(terrain) {
     _s.set(r.s * (1 + 0.3 * Math.sin(i)), r.s * 0.75, r.s);
     _m.compose(_p, _q, _s);
     blocks.setMatrixAt(i, _m);
-    blocks.setColorAt(i, _c.setHex(r.tone).convertSRGBToLinear());
+    blocks.setColorAt(i, _c.setRGB(r.tone, r.tone, r.tone));   // the block's bands are in its vertices; the instance only varies its brightness
   }
   blocks.instanceMatrix.needsUpdate = true;
   if (blocks.instanceColor) blocks.instanceColor.needsUpdate = true;
@@ -261,13 +357,18 @@ export function buildCraterRock(terrain) {
     const h = terrain.getHeight(x, z);
     if (h < 1 || h > 18) continue;
     if (buttress.some((q) => Math.hypot(q.x - x, q.z - z) < 18)) continue;
+    // M1.1c: banded scoria, 6-12 beds 0.35-1.2 m thick, each a different colour from the last and
+    // set in or out from it (hard cinder beds stand out, soft ash beds are eaten back)
     let y = h - 1.2;
-    const beds = 3 + (R() * 4 | 0);
+    const beds = 6 + (R() * 7 | 0);
     let w = 4.5 + R() * 3.5;
+    let si = (R() * SCORIA.length) | 0;
     for (let i = 0; i < beds; i++) {
-      const t = 0.9 + R() * 2.4;
-      pushSlab(out, x + (R() - 0.5) * 1.5, z + (R() - 0.5) * 1.5, y, t, w, w * (0.5 + R() * 0.3), a + (R() - 0.5) * 0.5, TUFF[(b + i) % TUFF.length], R);
-      y += t; w *= 0.78 + R() * 0.18;
+      const t = 0.35 + R() * 0.85;
+      const rel = i % 2 ? 1.08 + R() * 0.1 : 0.86 + R() * 0.08;
+      si = (si + 1 + ((R() * 3) | 0)) % SCORIA.length;
+      pushSlab(out, x + (R() - 0.5) * 1.0, z + (R() - 0.5) * 1.0, y, t, w * rel, w * rel * (0.5 + R() * 0.3), a + (R() - 0.5) * 0.4, SCORIA[si], R);
+      y += t; w *= 0.88 + R() * 0.1;
     }
     buttress.push({ x, z, top: y });
     b++;
