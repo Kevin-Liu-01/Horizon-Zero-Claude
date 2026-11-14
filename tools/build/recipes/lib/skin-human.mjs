@@ -986,7 +986,7 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
  * lib/hair.mjs, with the eye patch blitted in. `marks` are the character's own layers (a salt
  * line, a scar, a tattoo), painted last. `collar` = flat triangles of the outfit near the neck.
  */
-export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, hairBand = null, temple = templeHair, names = 'human', fill = [0.15, 0.108, 0.09], sclera = [166, 148, 130], eyeSkin = [118, 80, 60] }) {
+export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, hairBand = null, temple = templeHair, names = 'human', fill = [0.15, 0.108, 0.09], sclera = [166, 148, 130], eyeSkin = [118, 80, 60], lid = {} }) {
   const W = 1024, AOW = 512;
   const baseTex = skinMat.getBaseColorTexture(), nTex = skinMat.getNormalTexture(), rTex = skinMat.getMetallicRoughnessTexture();
   const stock = await decodeStockSkin(baseTex.getImage(), nTex.getImage(), rTex.getImage());
@@ -1026,8 +1026,8 @@ export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, 
       },
       flowUV: (T, uv) => { uv[0] = Math.atan2(T.X, -T.Z + 0.001) * 0.09; uv[1] = T.Y; },
     }),
-    lidLines({ open: opens[0], side: 1 }),
-    lidLines({ open: opens[1], side: -1 }),
+    lidLines({ ...lid, open: opens[0], side: 1 }),
+    lidLines({ ...lid, open: opens[1], side: -1 }),
     browLayer({ x0: brows[1].x0, x1: brows[1].x1, line: brows[1].line, side: 1, seed: 17, scar, hair: hairColor }),
     browLayer({ x0: brows[-1].x1, x1: brows[-1].x0, line: brows[-1].line, side: -1, seed: 19, hair: hairColor }),
     ...marks,

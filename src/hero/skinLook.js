@@ -3,7 +3,8 @@
  * (character-art, W1 exit, by grant on src/hero/**).
  *
  *   applySkinLook(material, { tier }) -> material      (idempotent; marks material.userData.calSkin = 1)
- *   skinLookUniforms(material) -> { calSkinK, calThinK, calWrap, calEdgeKeep, calLobeK, calDetailK, calSkyK, calWinK, calFlat } | null
+ *   skinLookUniforms(material) -> { calSkinK, calThinK, calWrap, calEdgeKeep, calLobeK, calDetailK, calSkyK, calWinK, calFlat,
+ *                                   calPreK, calCurvK, calCurvMin, calLobeW } | null
  *                                  (shared uniform objects; gates switch terms off with them)
  *   applyClothLook(material, { rim, velvet }) -> material   (C-04 for cloth, hair, leather)
  *   disposeSkinLook()                                    (frees the shared micro-normal tile; also freed with the last skin)
@@ -26,6 +27,16 @@
  *   - C-03: the cornea (`_CALZONE` y) at roughness 0.04 and the lower lid's wet line (z) at 0.10, and two analytic SKY-WINDOW lobes on the
  *     cornea in the sky's hue, faded out with the sky's luminance (gone at night): the bright sky round the sun (the catch-light
  *     in the iris) and the horizon sky, Fresnel-weighted (the wet rim along the cornea's outline in profile).
+ * M0.11 face spike, iteration 1 (hero-art, Nov 14):
+ *   - PRE-INTEGRATED SCATTERING in place of the wrapped Lambert (calPreK 1; 0 restores the wrap): one lookup in a 64 x 32 half-float
+ *     table by (N.L, curvature), the d'Eon six-Gaussian skin profile integrated round a ring of radius r (Penner's method), its
+ *     widths x3 (PRE_W2 9: the art scale; at the true width a face's curvature barely moves the terminator). Curvature is
+ *     |d N| / |d P| of the interpolated normal, in 1/mm, times calCurvK, over a floor calCurvMin (the softness the wrap gave
+ *     every cheek); the row is sqrt(rInv / 2). Eyes (`_CALZONE` w) take plain Lambert and a neutral, lower fill;
+ *   - the SECOND LOBE is now a true dual lobe: the broad lobe at the map's roughness and a sharp oily lobe at x0.5, mixed by
+ *     calLobeW (0.30) where the old patch mixed 0.15 of a x0.55 lobe;
+ *   - the PORE tile carries its cavity in alpha: the cavity occludes the specular, roughens the pit and darkens the albedo
+ *     a little, so the pores read in the highlight (where skin shows them) and not only in the normal; calDetailK 1.3 -> 1.8.
  * Any other light (a point light, a lamp) keeps the stock Lambert. `_CALZONE` w marks the eyes (never paste, never flattened).
  *
  * The fade clone (src/entities/player.js `_collectMaterials`) owns the material's onBeforeCompile; this composes with whatever
@@ -35,7 +46,7 @@
  *
  * Tiers (LOOK §4.4): low = wrap only, one lobe, no transmission, no detail; medium = no detail normal; high, ultra = all.
  */
-import { DataTexture, RepeatWrapping, LinearMipmapLinearFilter, LinearFilter, RGBAFormat, UnsignedByteType, Vector3, Vector4 } from 'three';
+import { DataTexture, DataUtils, RepeatWrapping, ClampToEdgeWrapping, LinearMipmapLinearFilter, LinearFilter, RGBAFormat, UnsignedByteType, HalfFloatType, Vector3, Vector4 } from 'three';
 
 const TINT = '1.0, 0.36, 0.20';
 const FILL = 0.55;
@@ -72,10 +83,14 @@ function microTile() {
   // and the skin's own relief between them: two octaves of wrapped value noise, 2.3 and 1.1 mm across
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) h[y * N + x] += 0.45 * (vn(x / 16, y / 16, 8, 7) - 0.5) + 0.22 * (vn(x / 8, y / 8, 16, 9) - 0.5);
   const d = new Uint8Array(N * N * 4), k = 0.9;
+  let hMin = Infinity, hMax = -Infinity;
+  for (let i = 0; i < N * N; i++) { if (h[i] < hMin) hMin = h[i]; if (h[i] > hMax) hMax = h[i]; }
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const dx = (h[y * N + (x + 1) % N] - h[y * N + (x + N - 1) % N]) * k, dy = (h[((y + 1) % N) * N + x] - h[((y + N - 1) % N) * N + x]) * k;
     const l = Math.hypot(dx, dy, 1), o = (y * N + x) * 4;
-    d[o] = Math.round((-dx / l * 0.5 + 0.5) * 255); d[o + 1] = Math.round((-dy / l * 0.5 + 0.5) * 255); d[o + 2] = Math.round((1 / l * 0.5 + 0.5) * 255); d[o + 3] = 255;
+    d[o] = Math.round((-dx / l * 0.5 + 0.5) * 255); d[o + 1] = Math.round((-dy / l * 0.5 + 0.5) * 255); d[o + 2] = Math.round((1 / l * 0.5 + 0.5) * 255);
+    // M0.11: the cavity (1 = open skin, 0 = the deepest pit), for the pore's specular occlusion and tone
+    d[o + 3] = Math.round(Math.min(1, Math.max(0, (h[y * N + x] - hMin) / Math.max(1e-6, hMax - hMin) * 1.6 - 0.15)) * 255);
   }
   micro = new DataTexture(d, N, N, RGBAFormat, UnsignedByteType);
   micro.wrapS = micro.wrapT = RepeatWrapping;
@@ -86,7 +101,51 @@ function microTile() {
 }
 export function disposeSkinLook() {
   if (micro) { micro.dispose(); micro = null; }
+  if (preLut) { preLut.dispose(); preLut = null; }
   microRefs = 0;
+}
+
+/**
+ * M0.11: the pre-integrated scattering table (Penner, "Pre-Integrated Skin Shading", GPU Pro 2). Column u = N.L * 0.5 + 0.5, row
+ * v = sqrt(rInv / PRE_RMAX), rInv in 1/mm. Each texel is the d'Eon six-Gaussian profile's ring integral
+ *   D(theta, r) = Int cos+(theta + x) R(2 r sin(x / 2)) dx / Int R(2 r sin(x / 2)) dx,   x in [-pi, pi],
+ * per channel, the profile's variances x PRE_W2. Deterministic, built once on the CPU (about 20 ms), half floats.
+ */
+const PRE_NU = 64, PRE_NV = 32, PRE_RMAX = 2.0, PRE_W2 = 9.0;
+const PROFILE = [[0.0064, [0.233, 0.455, 0.649]], [0.0484, [0.100, 0.336, 0.344]], [0.187, [0.118, 0.198, 0.0]], [0.567, [0.113, 0.007, 0.007]], [1.99, [0.358, 0.004, 0.0]], [7.41, [0.078, 0, 0]]];
+export function preIntegratedTable(NU = PRE_NU, NV = PRE_NV, rMax = PRE_RMAX, w2 = PRE_W2) {
+  const out = new Float32Array(NU * NV * 4), S = 128;
+  const num = [0, 0, 0], den = [0, 0, 0];
+  for (let j = 0; j < NV; j++) {
+    const v = (j + 0.5) / NV, rInv = rMax * v * v, r = rInv > 1e-6 ? 1 / rInv : 1e9;
+    for (let i = 0; i < NU; i++) {
+      const th = Math.acos(((i + 0.5) / NU) * 2 - 1);
+      num[0] = num[1] = num[2] = den[0] = den[1] = den[2] = 0;
+      for (let s = 0; s < S; s++) {
+        const x = -Math.PI + (s + 0.5) / S * 2 * Math.PI, dd = 2 * r * Math.sin(x / 2), c = Math.max(0, Math.cos(th + x));
+        for (const [va, w] of PROFILE) {
+          const vv = va * w2, g = Math.exp(-dd * dd / (2 * vv)) / vv;
+          for (let k = 0; k < 3; k++) { num[k] += c * g * w[k]; den[k] += g * w[k]; }
+        }
+      }
+      const o = (j * NU + i) * 4;
+      for (let k = 0; k < 3; k++) out[o + k] = den[k] > 0 ? num[k] / den[k] : Math.max(0, Math.cos(th));
+      out[o + 3] = 1;
+    }
+  }
+  return out;
+}
+let preLut = null;
+function preTable() {
+  if (preLut) return preLut;
+  const f = preIntegratedTable(), h = new Uint16Array(f.length);
+  for (let i = 0; i < f.length; i++) h[i] = DataUtils.toHalfFloat(f[i]);
+  preLut = new DataTexture(h, PRE_NU, PRE_NV, RGBAFormat, HalfFloatType);
+  preLut.wrapS = preLut.wrapT = ClampToEdgeWrapping;
+  preLut.magFilter = preLut.minFilter = LinearFilter; preLut.generateMipmaps = false;
+  preLut.name = 'calSkinPreLUT';
+  preLut.needsUpdate = true;
+  return preLut;
 }
 
 const PARS_VERTEX = `
@@ -105,19 +164,27 @@ uniform float calEdgeKeep;
 uniform float calLobeK;
 uniform float calSkyK;
 uniform float calWinK;
+uniform float calPreK;
+uniform float calCurvK;
+uniform float calCurvMin;
+uniform float calLobeW;
+uniform sampler2D calPreLUT;
 float calPasteG = 0.0;
 float calAOG = 1.0;
+float calCurv = 0.0;
+float calCavG = 1.0;
 void RE_Direct_CalSkin( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {
 	float nl = dot( geometryNormal, directLight.direction );
 	vec3 irradiance = saturate( nl ) * directLight.color;
 	// LOOK C-02: two lobes (the second x0.55 roughness, weight 0.15), cavity specular occlusion AO^2, the paste's specular x0.3
 	vec3 spec = BRDF_GGX( directLight.direction, geometryViewDir, geometryNormal, material );
 	if ( calLobeK > 0.0 ) {
+		// M0.11: a true dual lobe, the broad one at the map's roughness and a sharp oily one at x0.5 (calLobeW of the energy)
 		PhysicalMaterial m2 = material;
-		m2.roughness = max( material.roughness * 0.55, 0.0525 );
-		spec = mix( spec, BRDF_GGX( directLight.direction, geometryViewDir, geometryNormal, m2 ), 0.15 * calLobeK );
+		m2.roughness = max( material.roughness * 0.5, 0.0525 );
+		spec = mix( spec, BRDF_GGX( directLight.direction, geometryViewDir, geometryNormal, m2 ), calLobeW * calLobeK );
 	}
-	spec *= calAOG * calAOG * mix( 1.0, 0.3, calPasteG );
+	spec *= calAOG * calAOG * mix( 1.0, 0.3, calPasteG ) * calCavG;
 	reflectedLight.directSpecular += irradiance * spec;
 	vec3 diffuseIrr = irradiance;
 	#if NUM_DIR_LIGHTS > 0
@@ -127,6 +194,15 @@ void RE_Direct_CalSkin( const in IncidentLight directLight, const in vec3 geomet
 		float sh = l0 > 1e-5 ? clamp( ( directLight.color.r + directLight.color.g + directLight.color.b ) / l0, 0.0, 1.0 ) : 1.0;
 		vec3 w = calWrap * calSkinK;
 		vec3 wnl = clamp( ( vec3( nl ) + w ) / ( 1.0 + w ), 0.0, 1.0 );
+		// M0.11: the pre-integrated ring integral by (N.L, curvature) in place of the wrap; eyes keep a plain Lambert
+		if ( calPreK > 0.0 ) {
+			float rInv = calCurvMin + calCurv * calCurvK;
+			vec2 uvL = vec2( nl * 0.5 + 0.5, sqrt( clamp( rInv / ${PRE_RMAX.toFixed(1)}, 0.0, 1.0 ) ) );
+			uvL = uvL * vec2( ${((PRE_NU - 1) / PRE_NU).toFixed(6)}, ${((PRE_NV - 1) / PRE_NV).toFixed(6)} ) + vec2( ${(0.5 / PRE_NU).toFixed(6)}, ${(0.5 / PRE_NV).toFixed(6)} );
+			vec3 pre = texture2D( calPreLUT, uvL ).rgb;
+			wnl = mix( wnl, pre, calPreK * calSkinK );
+		}
+		wnl = mix( wnl, vec3( saturate( nl ) ), vCalZone.w );
 		// fix round 3: a part of the cast shadow is kept past the terminator too (keep 0.6), so a face turned from a back sun under
 		// her own nose or brow does not take the red wrap as a smear; the fade still hides the normal-bias seam on the terminator
 		float edge = mix( mix( 1.0, sh, calEdgeKeep ), sh, smoothstep( -0.15, 0.25, nl ) );
@@ -163,8 +239,14 @@ const NORMAL_FRAGMENT = `
 	{
 		float calDet = calDetailK * vCalZone.x * ( 1.0 - smoothstep( 1.5, 3.0, length( vViewPosition ) ) );
 		if ( calDet > 0.001 ) {
-			vec3 mn = texture2D( calMicro, vNormalMapUv * 24.0 ).xyz * 2.0 - 1.0;
+			vec4 mt = texture2D( calMicro, vNormalMapUv * 24.0 );
+			vec3 mn = mt.xyz * 2.0 - 1.0;
 			normal = normalize( normal + tbn * vec3( mn.xy * calDet, 0.0 ) );
+			// M0.11: the pit's cavity shades the highlight, roughens and darkens a little (never the paste, never the eyes)
+			float cav = ( 1.0 - mt.a ) * min( 1.0, calDet ) * ( 1.0 - vCalZone.w ) * ( 1.0 - calPasteG );
+			calCavG = 1.0 - 0.75 * cav;
+			roughnessFactor = min( 1.0, roughnessFactor + 0.12 * cav );
+			diffuseColor.rgb *= 1.0 - 0.10 * cav;
 		}
 	}
 	#endif`;
@@ -172,6 +254,9 @@ const PARS_FRAGMENT_EARLY = `
 uniform float calDetailK;
 uniform sampler2D calMicro;
 uniform vec4 calFlat;`;
+// M0.11: the curvature for the pre-integrated row, in 1/mm, off the interpolated normal before any map (view space, metres)
+const CURV_FRAGMENT = `
+	calCurv = clamp( length( fwidth( normal ) ) / max( length( fwidth( vViewPosition ) ), 1e-6 ) * 0.001, 0.0, 0.5 );`;
 // the baked AO for the cavity specular occlusion, read before the lights run
 const AO_EARLY = `
 	#ifdef USE_AOMAP
@@ -205,8 +290,10 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
   const U = {
     calSkinK: { value: 1 }, calThinK: { value: low ? 0 : 1 },
     calWrap: { value: new Vector3(0.40, 0.21, 0.14) }, calEdgeKeep: { value: 0.6 },
-    calLobeK: { value: low ? 0 : 1 }, calDetailK: { value: low || medium ? 0 : 1.3 }, calSkyK: { value: 3.0 }, calWinK: { value: 30 },
+    calLobeK: { value: low ? 0 : 1 }, calDetailK: { value: low || medium ? 0 : 1.8 }, calSkyK: { value: 3.0 }, calWinK: { value: 30 },
     calFlat: { value: new Vector4(0.2, 0.2, 0.2, 0) }, calMicro: { value: microTile() },
+    // M0.11 (iteration 1): pre-integrated scattering, dual lobe weight
+    calPreK: { value: low ? 0 : 1 }, calCurvK: { value: 6.0 }, calCurvMin: { value: 0.6 }, calLobeW: { value: 0.30 }, calPreLUT: { value: low ? null : preTable() },
   };
   microRefs++;
   const prev = typeof material.onBeforeCompile === 'function' ? material.onBeforeCompile : null;
@@ -222,12 +309,13 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
       .replace('#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>${PARS_FRAGMENT}`)
       .replace('#include <map_fragment>', `#include <map_fragment>${MAP_FRAGMENT}`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>${ROUGH_FRAGMENT}`)
+      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>${CURV_FRAGMENT}`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>${NORMAL_FRAGMENT}`)
-      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n\ttotalEmissiveRadiance = mix( totalEmissiveRadiance, emissive * calFlat.rgb, calFlat.a * ( 1.0 - vCalZone.w ) );`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n\ttotalEmissiveRadiance = mix( totalEmissiveRadiance, emissive * calFlat.rgb, calFlat.a * ( 1.0 - vCalZone.w ) );\n\ttotalEmissiveRadiance = mix( totalEmissiveRadiance, vec3( dot( totalEmissiveRadiance, vec3( 0.3333 ) ) ) * 0.6, vCalZone.w * calPreK );`)
       .replace('#include <lights_fragment_begin>', `${AO_EARLY}\n#include <lights_fragment_begin>`)
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>${SKY_FRAGMENT}`);
   };
-  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calSkin4`;
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calSkin5${low ? 'l' : ''}`;
   material.userData.calSkin = 1;
   material.userData.calSkinU = U;
   // R59 c / LOOK C-01: the hero fill drops once the scatter carries the shadow side (x0.55; fix round 3, was x0.6: off the live sweep, D-skin-sweep, and three readings a run)

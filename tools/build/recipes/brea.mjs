@@ -556,6 +556,9 @@ export async function build({ out = ROOT } = {}) {
     // fix round 3 (R69 and R54: the lit cheek read a saturated orange, Lab C 38-45 at hue 46-52, against the turnaround's deep brown at
     // C 27-35, hue 35-44): the tone a little redder and less saturated at the same lightness
     tone: '#81594F',
+    // M0.11 face spike, iteration 1 (TURN face close-ups: a dark, heavy upper lash line and a shaded lid): the liner 1.8 -> 2.6 mm at
+    // its outer end and near-black, the lashes' shade band on the lid 2.8 -> 3.6 mm
+    lid: { w: 0.0026, shade: 0.0036, ink: '#0F0907' },
   });
   // fix round 1 (R54: in the wind the carmine lining was the loudest thing on her; the bible keeps carmine an accent): the violet
   // facing turns back over 38 % of the lining at each selvedge, so a quarter of its width shows carmine
