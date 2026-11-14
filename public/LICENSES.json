@@ -317,10 +317,9 @@
     {
       "id": "instrument-tiller",
       "paths": [
-        "public/models/instruments/tiller.glb",
-        "public/models/r5-poc/tiller.glb"
+        "public/models/instruments/tiller.glb"
       ],
-      "title": "Tiller (survey walker, W0 staging fixture; r5-poc/ path = the same bytes at the fixture URL until the W0 exit)",
+      "title": "Tiller (survey walker; instruments-a W1)",
       "author": "CALIMA project",
       "source_url": "tools/build/instruments/gen-tiller.mjs",
       "licence": "project-original",
@@ -329,23 +328,6 @@
       "retrieved": null,
       "modified": null,
       "attribution": null
-    },
-    {
-      "id": "landmark-sounding-ring-poc",
-      "paths": [
-        "public/models/r5-poc/sounding-ring.glb"
-      ],
-      "title": "Sounding Ring (biome-vista landmark for ?poc=biome; goes with the ?poc=biome hook at the W1 exit)",
-      "author": "CALIMA project",
-      "source_url": "tools/build/landmarks/gen-sounding-ring.mjs",
-      "licence": "project-original",
-      "licence_text": null,
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": null,
-      "delete_at": "W1 exit",
-      "delete_owner": "world-ground"
     },
     {
       "id": "landmarks-world-props",

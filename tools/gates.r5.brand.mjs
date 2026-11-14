@@ -1223,7 +1223,7 @@ const W0B = [
  */
 const CONTENT_MODULES = [
   '/src/ui/tips.js', '/src/core/progression.js', '/src/combat/weapons.js', '/src/items/items.js', '/src/items/crafting.js',
-  '/src/items/datapoints.js', '/src/world/props/places.js', '/src/world/props/megastructures.js', '/src/world/props/npcs.js',
+  '/src/items/datapoints.js', '/src/world/props/npcs.js',
   '/src/world/npc/waypoints.js', '/src/audio/manifest.js', '/src/audio/music.js', '/src/entities/machines/legacy.js',
   '/src/entities/machines/ai/tables.js', '/src/instruments/roles.js', '/src/studio/pose.js', '/src/studio/cast.js',
   '/src/core/assets.specs.js',

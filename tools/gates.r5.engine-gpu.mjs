@@ -1355,7 +1355,9 @@ function probeAssert(box) {
       const BOX = ${JSON.stringify(box)};
       const QUIET = ${JSON.stringify(QUIET)};
       const ctx = __CTX__, e = ctx.engine, T = ctx.terrain;
-      const P = await import('/tools/r5-probes/terrain1024.js');
+      let P;
+      try { P = await import('/tools/r5-probes/terrain1024.js'); }
+      catch (err) { return { pass: null, detail: 'SKIP-RETIRED: the W0a terrain probe tools/r5-probes/terrain1024.js was deleted at M0.3 R1' }; }
       const BAR = { buildMs: 600, vertexMB: 24, gpuDeltaMs: 1.5, navMs: 150 };
       const out = { probe: P.PROBE, bars: BAR, quietRules: QUIET, box: BOX };
       const r1 = (v) => (v == null ? null : +v.toFixed(1));
