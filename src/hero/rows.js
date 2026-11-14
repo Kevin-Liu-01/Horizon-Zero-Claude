@@ -22,7 +22,7 @@ import { SPECS, ANIMS } from '../core/assets.js';
 /** Brea's body GLB: `targetHeight` makes the BODY 1.72 m (asset extras r5Hero). */
 export const BREA_URL = '/models/hero/brea.glb';
 export const HERO_ROWS = {
-  hero: { url: BREA_URL, targetHeight: 1.77913, yaw: 0, required: true },
+  hero: { url: BREA_URL, targetHeight: 1.75668, yaw: 0, required: true },
   heroOutfitPan1: { url: '/models/hero/outfit-pan-1.glb', targetHeight: 1.72, yaw: 0 },
   // armory W1: the art-pass kit (carries the shared weapon atlas), and the two final
   // held weapons (no textures of their own; their geometry is read, never normalised)

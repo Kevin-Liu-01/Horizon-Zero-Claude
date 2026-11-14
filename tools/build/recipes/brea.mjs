@@ -147,14 +147,18 @@ export const CHAINS = {
 const FACE_MM = {
   noseBridge: { d: [0, 0.6, 6.4], s: 0.0125 },
   noseTip: { d: [0, 3.2, -3.4], s: 0.0098 },
-  cheek: { d: [2.6, 3.0, 5.0], s: 0.0165 },     // mirrored for the right side: the bone comes up and forward, not out
+  // M1.2b (the face spike's note: "the head is narrow and long"; TURN's face is broad at the cheekbones with a defined jaw): the bone
+  // comes OUT as well as up and forward
+  cheek: { d: [4.6, 2.6, 4.6], s: 0.0165 },     // mirrored for the right side
   // mirrored: the angle comes a touch IN and down, so the face tapers to the chin (fix round 1, R54: it read wide). Fix round 2 (the
   // judges: "the lower face is long and heavy in every 3/4"): less of it is DOWN and more is in and forward, so the jaw keeps its
   // defined angle without lengthening the face
-  jaw: { d: [-2.6, -4.4, 3.4], s: 0.0235 },
+  // M1.2b: the angle no longer comes in: a wider, squarer jaw under the wider cheekbones (still >= 6 mm for A-face-delta)
+  jaw: { d: [0.8, -4.4, 4.0], s: 0.0235 },
   // fix round 2: the chin comes UP 3.4 mm against fix round 1 (-1.6 -> +1.8): a shorter lower face, its point kept forward
   chin: { d: [0, 1.8, 6.0], sx: 0.0175, sy: 0.0125, sz: 0.016 },
-  brow: { d: [0, 0.8, 4.4], s: 0.0165 },
+  // M1.2b ("seat the eyes deeper under a stronger brow ridge"): the glabella and both ridges 1 mm further forward
+  brow: { d: [0, 0.8, 5.4], s: 0.0165 },
   upperLip: { d: [0, 1.2, -1.0], s: 0.0085 },
 };
 
@@ -192,7 +196,8 @@ export async function build({ out = ROOT } = {}) {
   // fix round 3 (the judges: "the cornea sits behind the lid line, so a true profile shows no wet bulge"): a taller cornea seated at
   // the limbus (4.0 mm over 0-6.4 mm, was 3.3 mm flat-topped over 1.8-7.4 mm) and ROUND at its peak (a cap, not a plateau): the upper
   // lid's margin sits 2-3 mm above the peak, and on the old plateau the lid there stood level with the peak, so a profile saw only lid
-  const DOME = { height: 0.0040, r0: 0, r1: 0.0064 };
+  // M1.2b (the spike's note: "in profile the eye is a grey sliver; the cornea dome needs to stand further proud"): 4.0 -> 4.6 mm
+  const DOME = { height: 0.0046, r0: 0, r1: 0.0064 };
   const domeAt = (r) => DOME.height * (1 - smooth(DOME.r0, DOME.r1, r));
   const headW2 = (prim, i) => { const p = [0, 0, 0]; prim.getAttribute('POSITION').getElement(i, p); return p[1] > 1.6 && p[2] > 0 && Math.abs(p[0]) < 0.075; };
   const L = findLandmarks(headPts, eyes);
@@ -211,8 +216,8 @@ export async function build({ out = ROOT } = {}) {
   B(L.chin, FM.chin.d, 0.016, [FM.chin.sx, FM.chin.sy, FM.chin.sz]);
   B(L.brow, FM.brow.d, FM.brow.s);
   // the brow ridge runs across both brows, not only the glabella
-  B([L.brow[0] + 0.032, L.brow[1] - 0.004, L.brow[2] - 0.016], [0.6, 0.4, 3.4], 0.014);
-  B([L.brow[0] - 0.032, L.brow[1] - 0.004, L.brow[2] - 0.016], [-0.6, 0.4, 3.4], 0.014);
+  B([L.brow[0] + 0.032, L.brow[1] - 0.004, L.brow[2] - 0.016], [0.6, 0.6, 4.4], 0.014);
+  B([L.brow[0] - 0.032, L.brow[1] - 0.004, L.brow[2] - 0.016], [-0.6, 0.6, 4.4], 0.014);
   B(L.upperLip, FM.upperLip.d, FM.upperLip.s);
   // the alae come in with the tip (no blunt ball nose), and the side walls slim toward the bridge
   const ty = L.noseTip[1], tz = L.noseTip[2];
@@ -236,7 +241,7 @@ export async function build({ out = ROOT } = {}) {
   B([0, ty - 0.0058, tz - 0.0028], [0, 0.55, -0.5], 0.0048);
   // the mandible: one line from the gonion to the chin, a little below the stock edge (fix round 2: half as far down, the face shorter)
   for (const sx of [1, -1]) {
-    B([sx * 0.040, L.chin[1] + 0.012, 0.030], [-sx * 1.1, -1.2, 0.2], 0.0165);
+    B([sx * 0.040, L.chin[1] + 0.012, 0.030], [-sx * 0.2, -1.2, 0.2], 0.0165);
     B([sx * 0.024, L.chin[1] + 0.004, 0.066], [sx * 1.0, -0.5, 1.0], 0.0135);
   }
   // fix round 2 (the judges: "the lips have no volume: no cupid's bow, no philtrum columns, no lower-lip fullness"): the lips are
@@ -261,7 +266,8 @@ export async function build({ out = ROOT } = {}) {
   }
   // fix round 1 (R54, "the face reads wide and flat"): a soft hollow under each cheekbone, so the bone reads as a plane catching
   // the light over a shaded fall to the jaw, and the lower face narrows
-  for (const sx of [1, -1]) B([sx * 0.052, 1.597, 0.036], [-sx * 3.4, 0.2, -1.4], 0.0135);
+  // (M1.2b: a shallower hollow, so the wider bone is not cut back in under it)
+  for (const sx of [1, -1]) B([sx * 0.052, 1.597, 0.036], [-sx * 1.8, 0.2, -1.2], 0.0135);
   // the neck takes a little more body under the jaw, so the head does not sit on a stalk
   for (const sx of [1, -1]) B([sx * 0.038, 1.495, -0.012], [sx * 10.5, 0, 0.8], 0.027);
   B([0, 1.495, 0.035], [0, 0, 3.8], 0.024);
@@ -308,10 +314,11 @@ export async function build({ out = ROOT } = {}) {
       const before = Math.hypot(x - c[0], y - c[1], z - c[2]);
       if (dy > 0.0015 && dy < 0.019) {
         const k = xk * (1 - smooth(0.0055, 0.0165, dy));
-        a[i * 3 + 1] -= mm(1.2) * k; a[i * 3 + 2] += mm(0.28) * k;
+        // M1.2b (the spike's note: "open the eyes about 15 %"): the upper lid comes down 0.6 mm, not 1.2
+        a[i * 3 + 1] -= mm(0.6) * k; a[i * 3 + 2] += mm(0.28) * k;
       } else if (dy < -0.0015 && dy > -0.014) {
         const k = xk * (1 - smooth(0.005, 0.0125, -dy));
-        a[i * 3 + 1] += mm(0.95) * k; a[i * 3 + 2] += mm(0.12) * k;
+        a[i * 3 + 1] += mm(0.5) * k; a[i * 3 + 2] += mm(0.12) * k;
       } else continue;
       if (before < Rb - 0.0002) continue;              // a lid's inner wall behind the ball stays behind it
       const vx = a[i * 3] - c[0], vy = a[i * 3 + 1] - c[1], vz = a[i * 3 + 2] - c[2], d = Math.hypot(vx, vy, vz);
@@ -345,7 +352,8 @@ export async function build({ out = ROOT } = {}) {
   // fix round 3 (the judges: "the ear rim is faceted", detail sheet 'THE EAR' at 0.26 m): the helix and the lobe, the ear's own outline,
   // take a second, finer split (edges over 4 mm), paid for by the skin the smock now hides under its collar
   const refinedEar = refineEdges(bodyPrim, {
-    minLen: 0.004, maxEdges: 70,
+    // (M1.2b: "no polygon edge on the ear rim": the rim takes edges down to 2.6 mm, up to 160 of them)
+    minLen: 0.0026, maxEdges: 160,
     want: (p) => Math.abs(p[0]) > 0.071 && p[1] > 1.592 && p[1] < 1.70 && p[2] > -0.062 && p[2] < 0.012,
   });
   // the ear's facets and its pointed helix round off, and so do the last corners of the cheek's outline
@@ -360,7 +368,7 @@ export async function build({ out = ROOT } = {}) {
   });
   // (fix round 3: and the ear's outline, with its new rows, rounds off once more on its own: the helix keeps no corner at 0.26 m)
   smoothPositions(bodyPrim, {
-    iters: 4,
+    iters: 6,
     weight: (p) => smooth(0.071, 0.076, Math.abs(p[0])) * smooth(1.595, 1.605, p[1]) * (1 - smooth(1.695, 1.705, p[1])) * smooth(-0.07, -0.06, p[2]) * (1 - smooth(0.004, 0.014, p[2])),
   });
   { const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0], m = new Uint8Array(P.getCount()); for (let i = 0; i < m.length; i++) { P.getElement(i, q); m[i] = q[1] > 1.5 ? 1 : 0; } recomputeNormals(bodyPrim, m); }
@@ -419,6 +427,12 @@ export async function build({ out = ROOT } = {}) {
 
   // ---- the guide meshes: the stock brows and the stock hair shell are read, not shipped
   const brows = browLines(browPrim);
+  // M1.2b (the spike's note: "thinner, straighter brows drawn hair by hair at about 60 % of today's density"): each brow's band is
+  // 0.7 of the stock card's height and its arch halved toward the straight line from its inner end to its tail
+  for (const side of [1, -1]) {
+    const b = brows[side], line0 = b.line, ya = line0(b.x0).y, yb = line0(b.x1).y;
+    b.line = (x) => { const q = line0(x), f = (x - b.x0) / (b.x1 - b.x0); return { y: q.y + ((ya + (yb - ya) * f) - q.y) * 0.5, half: q.half * 0.7 }; };
+  }
   // the scar: 3 cm, down from under the wrap, THROUGH the left brow (+x) and out of its lower edge toward the lid (bible §3.5)
   const scar = (() => {
     const xc = 0.0355, l = brows[1].line(xc);
@@ -454,17 +468,23 @@ export async function build({ out = ROOT } = {}) {
   const wrapped = woundHeadwrap({
     headSoup, skin: skinFrom, joint: head, center: skinCenter,
     // the hair and padding the cloth rides on: thin over the brow, fuller over the crown and the back
-    lift: (dx, dy, dz) => 0.0028 + 0.0052 * smooth(0.0, 0.75, dy) + 0.0032 * smooth(0.1, -0.85, dz) + 0.0045 * smooth(0.62, 0.95, dy),
+    // M1.2c (TURN: "layered and bunched"; the wrap stands well out past the temples and the crown, wider than the head): a fuller
+    // padding over the upper sides and the back, kept thin at the low edge so the hems still meet the skin
+    lift: (dx, dy, dz) => 0.0028 + 0.0052 * smooth(0.0, 0.75, dy) + 0.0032 * smooth(0.1, -0.85, dz) + 0.0045 * smooth(0.62, 0.95, dy)
+      + 0.0125 * smooth(0.35, 0.8, Math.abs(dx)) * smooth(0.12, 0.42, dy) + 0.008 * smooth(0.0, -0.7, dz) * smooth(0.1, 0.5, dy) + 0.004 * smooth(0.35, 0.8, dy),
     // the base turn: low edge at +7 deg over the brow, +7 deg over the ears, -29 deg on the nape
-    base: { tiltDeg: 18, warpDeg: -9.5, lowDeg: -2.2, w: 0.25, lift: 0.0012 },
+    // (M1.2c: every hem turns under 4.5 mm, not 2.8-3.2, so the fold edge a close-up sees is a rolled face, not a sheet's edge)
+    base: { tiltDeg: 18, warpDeg: -9.5, lowDeg: -2.2, w: 0.25, lift: 0.0012, hemSink: 0.0045 },
     // two turns crossing over the forehead, each lying on what is under it
     turns: [
-      { phiDeg: 82, tauDeg: 14.5, oDeg: 34, w: 0.225, along: 34, lift: 0.0009, pillow: 0.0026, creaseAmp: 0.0012, seed: 8, flip: true },
-      { phiDeg: -74, tauDeg: 17, oDeg: 36.5, w: 0.235, along: 30, lift: 0.0009, pillow: 0.0028, creaseAmp: 0.0012, seed: 15 },
+      { phiDeg: 82, tauDeg: 14.5, oDeg: 34, w: 0.225, along: 34, lift: 0.0009, pillow: 0.0026, creaseAmp: 0.0012, seed: 8, flip: true, hemSink: 0.0045 },
+      { phiDeg: -74, tauDeg: 17, oDeg: 36.5, w: 0.235, along: 30, lift: 0.0009, pillow: 0.0028, creaseAmp: 0.0012, seed: 15, hemSink: 0.0045 },
     ],
     // the topknot; its top is the bbox top that assets.specs.js's targetHeight is computed from
-    bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, rAxis: 0.0685, topY: 1.82756 },
-    knot: CHAINS.wrapSash.points[0],
+    // M1.2c (TURN: the cloth bunched into a knot at the crown-back, not a tall topknot): the bun is lower, rounder and further back,
+    // leaning back over the occiput; its top (the bbox top, assets.specs.js targetHeight) comes down from 1.8276
+    bun: { c: [0, 1.738, -0.118], axis: [0, 0.48, -0.88], r: 0.057, rAxis: 0.05, topY: 1.8045 },
+    knot: CHAINS.wrapSash.points[0], knotSpec: { r: 0.033, rAxis: 0.029 },
     // the tail: same width, side, cup and twist as hero-body's strip (A-tail-legible grades it)
     tail: { points: CHAINS.wrapSash.points, joints: chainIdx.wrapSash.slice(0, -1),
       // fix round 2, Nov 12 (R66 d, LOOK C-05: "0.09 m wide at the root, 0.06 m before a 2.5 cm frayed fringe"; A-tail-flow a: 0.09 +- 0.01
@@ -477,11 +497,19 @@ export async function build({ out = ROOT } = {}) {
       // halfway (0.10 m, to 0.07 m at the fringe; a taper from the bend cost A-tail-legible a side-view moment in r3), its section is a gentle cup (curl 0.18), its hems are C-05's 4 mm, and each
       // row is skinned over FOUR joints (cubic B-spline), so the stiff-to-free hand-over drapes over two links instead of folding at one
       // r5/int (M0.2): on hero-body's 0.540 m chain (targeted fix 4; was 0.489 m) the fringe fraction is re-derived so it stays 2.5 cm
-      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.540 * S), side: [0.55, 0.65, 0.5], curl: 0.2, twist: Math.PI / 2, gather: 0.3, gatherTo: 0.36, roll: 0.6, fold: 0.0095, along: 17, across: 6, rootBack: 0.014,
+      // M1.2c (TURN: "the tail root a gathered cloth volume"): the root roll is fuller (roll 0.6 -> 0.9, gathered to 0.36 of the width)
+      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.540 * S), side: [0.55, 0.65, 0.5], curl: 0.2, twist: Math.PI / 2, gather: 0.36, gatherTo: 0.36, roll: 0.9, fold: 0.0095, along: 17, across: 6, rootBack: 0.014,
       open: [0.26, 0.46], pleats: 0.00275 / S,
       rootRows: 4, smoothSkin: 4, hem: 0.004, ripple: 0.005 },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
-    tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012 },
+    // (M1.2c: its selvedges are a 3 mm rolled hem, not two faces meeting at a paper edge)
+    tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012, thick: 0.0045, hem: 0.003, smoothSkin: true },
+    // M1.2c (TURN: "loose ends fly at the right temple"): two short torn ends out from under the turns at her right temple (-x),
+    // rigid on the head, both faces with a rolled hem and a frayed tip
+    ends: [
+      { points: [[-0.062, 1.716, 0.014], [-0.086, 1.703, 0.006], [-0.103, 1.680, -0.004], [-0.112, 1.652, -0.016]], width: (u) => 0.026 * (1 - 0.45 * u), side: [0, 0.25, 1], twist: 0.5, curl: 0.18, gather: 0.55, rootBack: 0.014, seed: 63 },
+      { points: [[-0.058, 1.738, 0.004], [-0.084, 1.733, -0.010], [-0.101, 1.716, -0.026]], width: (u) => 0.019 * (1 - 0.4 * u), side: [0, 0.4, 1], twist: -0.4, curl: 0.16, gather: 0.6, rootBack: 0.012, seed: 71, fray: 0.3 },
+    ],
   });
 
   // ---- the skull under the wrap and the backs of the eyes are never seen: they pay for the cloth
@@ -543,7 +571,8 @@ export async function build({ out = ROOT } = {}) {
       saltPaste({
         y: (X) => yS + 0.004 * (X * X) / 0.004,
         // fix round 3 (R69: the turnaround's stripe is a narrow dry line, about 6 mm, across the bridge and both cheeks): narrower
-        half: (X) => (0.0033 / S) * (1 - 0.1 * smooth(0.02, 0.058, Math.abs(X))),
+        // M1.2b (the spike's note: "narrow the paste to the sheet's 6 mm across the bridge"; F11 measured it near 10 mm): 0.0033 -> 0.0022
+        half: (X) => (0.0022 / S) * (1 - 0.1 * smooth(0.02, 0.058, Math.abs(X))),
         xMax: 0.059,
       }),
       scarSeam({ a: scar.a, b: scar.b, color: [150, 106, 86], w: 0.00064, depth: 0.0005 }),
@@ -559,6 +588,12 @@ export async function build({ out = ROOT } = {}) {
     // M0.11 face spike, iteration 1 (TURN face close-ups: a dark, heavy upper lash line and a shaded lid): the liner 1.8 -> 2.6 mm at
     // its outer end and near-black, the lashes' shade band on the lid 2.8 -> 3.6 mm
     lid: { w: 0.0026, shade: 0.0036, ink: '#0F0907' },
+    // M1.2b (the spike's note): brows at 60 % of the strokes and a lighter soft mass; lips from orange to a deep rose-brown; the upper
+    // lid in the skin's own darker brown, not tan; a sclera a touch warmer and lighter, off-white rather than grey
+    brow: { strokes: 190, mass: 0.42, width: 0.00026 },
+    lips: { gain: [0.8, 0.6, 0.63], sat: 0.6 },
+    eyeSkin: [94, 62, 50],
+    sclera: [182, 164, 146],
   });
   // fix round 1 (R54: in the wind the carmine lining was the loudest thing on her; the bible keeps carmine an accent): the violet
   // facing turns back over 38 % of the lining at each selvedge, so a quarter of its width shows carmine
@@ -643,7 +678,8 @@ export async function build({ out = ROOT } = {}) {
   eyesPrim.setAttribute('_HIDEMASK', base.createAccessor().setType('SCALAR').setArray(new Uint8Array(eyesPrim.getAttribute('POSITION').getCount())).setBuffer(buf));
 
   // ---- the hair + wrap primitive (cloth, cards, locks: one material on the 512² atlas)
-  const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, temples: true, twoSided: true });
+  // M1.2b (TURN: "a short dark undercut at the temples and the nape"): the coils cropped to 6-10 mm and lying close
+  const cards = scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, temples: true, twoSided: true, length: [0.006, 0.010], liftTip: [0.0002, 0.0007] });
   const hairGeo = joinGeos([wrapped.geo, cards, ...lashes]);
   const wrapPrim = primFromGeo(base, hairGeo);
 

@@ -36,7 +36,7 @@ export const DEG = Math.PI / 180;
  *   tuft         { points, joints, count, along, width, side } or null (a coil tuft on a chain)
  * Returns { geo, parts, culled, covers(p), lowEdge(p), hemGap(p), soup, center }.
  */
-export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base: B, turns, bun: bunSpec = null, knot: knotAt = null, tail = null, tail2 = null, tuft = null, shell = { seg: 12, rings: 4 } }) {
+export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base: B, turns, bun: bunSpec = null, knot: knotAt = null, knotSpec = null, tail = null, tail2 = null, ends = [], tuft = null, shell = { seg: 12, rings: 4 } }) {
   const A = WRAP_ATLAS, W = A.W;
   const head = joint;
   const form = headForm(headSoup, { center, lift, blur: 2 });
@@ -57,9 +57,9 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
   const baseO = (B.lowDeg * DEG) + baseW;
   const baseWarp = (s) => B.warpDeg * DEG * Math.cos(2 * s);
   add('cap', crownCap(form, { elMin: 18 * DEG, rings: 5, seg: 20, lift: 0.0012, gather: 0.0012, uvRadial: true, joint: head, stack, uv: { rect: [A.clothB.rect[0], A.clothB.rect[1], A.clothB.period, A.clothB.rect[3]], W }, tiltAxis: [0, 0.94, -0.34] }));
-  add('turn1', ribbon(form, { n: baseN, o0: baseO, w: baseW, warp: baseWarp, along: 36, rowsT: rowsBase, lift: B.lift ?? 0.0012, pillow: 0.0024, stack, bridge: 0, hemSink: 0.0028, creases: 3, creaseAmp: 0.0012, seed: 3, joint: head, uv: uvA([0, 1]) }));
+  add('turn1', ribbon(form, { n: baseN, o0: baseO, w: baseW, warp: baseWarp, along: 36, rowsT: rowsBase, lift: B.lift ?? 0.0012, pillow: 0.0024, stack, bridge: 0, hemSink: B.hemSink ?? 0.0028, creases: 3, creaseAmp: 0.0012, seed: 3, joint: head, uv: uvA([0, 1]) }));
   // the crossing turns: each rises across the forehead toward its own side, lying on what is under it
-  const turnParts = turns.map((t, i) => add(`turn${i + 2}`, ribbon(form, { n: rising(t.phiDeg * DEG, t.tauDeg * DEG), o0: t.oDeg * DEG, w: t.w, along: t.along ?? 32, rowsT: rowsBase, lift: t.lift, pillow: t.pillow ?? 0.0026, stack, bridge: t.bridge ?? 0.06, hemSink: 0.0032, creases: 3, creaseAmp: t.creaseAmp ?? 0.0013, seed: t.seed, joint: head, uv: uvA(t.flip ? [1, 0] : [0, 1]) })));
+  const turnParts = turns.map((t, i) => add(`turn${i + 2}`, ribbon(form, { n: rising(t.phiDeg * DEG, t.tauDeg * DEG), o0: t.oDeg * DEG, w: t.w, along: t.along ?? 32, rowsT: rowsBase, lift: t.lift, pillow: t.pillow ?? 0.0026, stack, bridge: t.bridge ?? 0.06, hemSink: t.hemSink ?? 0.0032, creases: 3, creaseAmp: t.creaseAmp ?? 0.0013, seed: t.seed, joint: head, uv: uvA(t.flip ? [1, 0] : [0, 1]) })));
   void turnParts;
   const headParts = parts.length;
 
@@ -105,7 +105,9 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
   let knotForm = null, knotParts = [];
   if (knotAt) {
     const k0 = knotAt;
-    knotForm = ellipsoidForm([k0[0] - 0.009, k0[1] + 0.011, k0[2] + 0.021], { r: 0.0265, rAxis: 0.024, axis: [0.3, 0.8, -0.5], egg: 0.05 });
+    // (`knotSpec`, M1.2c: a character's own knot size and offset; the default is the knot every wrap had)
+    const ks = { off: [-0.009, 0.011, 0.021], r: 0.0265, rAxis: 0.024, ...(knotSpec || {}) };
+    knotForm = ellipsoidForm([k0[0] + ks.off[0], k0[1] + ks.off[1], k0[2] + ks.off[2]], { r: ks.r, rAxis: ks.rAxis, axis: [0.3, 0.8, -0.5], egg: 0.05 });
     const kst = clothStack(knotForm, { azN: 120, elN: 60 });
     const rows = [-1, -0.85, -0.3, 0.3, 0.85, 1];
     // a closed egg inside it: from behind, the far hems would otherwise hang in the air like wires. Fix round 1 (A-wrap-closed): the
@@ -130,12 +132,22 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
   // the other end of the knot: a narrow cloth end, the carmine lining showing where it twists
   if (tail2) {
     add('tail2', clothTail(tail2.points, tail2.joints, {
-      along: tail2.along ?? 8, across: tail2.across ?? 2, width: tail2.width, side: tail2.side, thick: 0.003, curl: tail2.curl ?? 0.12, twist: tail2.twist ?? 0, gather: tail2.gather ?? 0.55, fold: tail2.fold ?? 0.0022, seed: 19, rootBack: tail2.rootBack ?? 0,
+      along: tail2.along ?? 8, across: tail2.across ?? 2, width: tail2.width, side: tail2.side, thick: tail2.thick ?? 0.003, curl: tail2.curl ?? 0.12, twist: tail2.twist ?? 0, gather: tail2.gather ?? 0.55, fold: tail2.fold ?? 0.0022, seed: 19, rootBack: tail2.rootBack ?? 0,
+      hem: tail2.hem ?? 0, smoothSkin: tail2.smoothSkin ?? false,
       uvFront: { rect: A.tailA.rect, period: A.tailA.period, W, pxPerM: 1 / 0.0009, v: [1, 0] },
       uvBack: { rect: A.tailA.rect, period: A.tailA.period, W, pxPerM: 1 / 0.0009, v: [0, 1] },
       uvEnd: A.frayEnd.rect, fray: 0.14,
     }));
   }
+  // M1.2c: loose cloth ends that fly from under the turns (Brea's at the right temple), each rigid on `joint` unless it names its own
+  // joints: { points, width(u), side, thick, hem, curl, twist, gather, fold, along, across, fray, seed }; both faces and a rolled hem
+  ends.forEach((e, i) => add(`end${i + 1}`, clothTail(e.points, e.joints ?? e.points.map(() => head), {
+    along: e.along ?? 8, across: e.across ?? 3, width: e.width, side: e.side, thick: e.thick ?? 0.004, curl: e.curl ?? 0.14, twist: e.twist ?? 0, gather: e.gather ?? 0.6, gatherTo: e.gatherTo ?? 0.2,
+    fold: e.fold ?? 0.003, seed: e.seed ?? 61 + i * 7, rootBack: e.rootBack ?? 0, hem: e.hem ?? 0.0035, ripple: e.ripple ?? 0,
+    uvFront: { rect: A.tailA.rect, period: A.tailA.period, W, pxPerM: 1 / 0.0009, v: [1, 0] },
+    uvBack: { rect: A.lining.rect, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0, 1] },
+    uvEnd: A.frayEnd.rect, fray: e.fray ?? 0.22,
+  })));
   // a tuft of coils on its own chain
   if (tuft) add('locks', coilTuft(tuft.points, tuft.joints, { count: tuft.count ?? 4, along: tuft.along ?? 6, width: tuft.width ?? 0.04, uv: { rect: A.coilTile.rect, period: A.coilTile.period, W }, side: tuft.side ?? [1, 0, 0] }));
 
@@ -146,7 +158,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
   const culled = {};
   const covered = (i) => {
     const g = parts[i];
-    if (g.part === 'tail' || g.part === 'tail2' || g.part === 'locks') return;
+    if (g.part === 'tail' || g.part === 'tail2' || g.part === 'locks' || g.part.startsWith('end')) return;
     const later = [];
     if (i < headParts) { for (let j = i + 1; j < headParts; j++) later.push(parts[j]); }
     const isBun = bunParts.includes(g), isKnot = knotParts.includes(g);

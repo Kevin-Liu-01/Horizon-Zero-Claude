@@ -30,7 +30,7 @@ export const SPECS = {
   // Brea, the protagonist (hero-body W0b; swapped in the R39 merge window,
   // plan §8.3). targetHeight makes her BODY 1.72 m: the GLB's bbox includes
   // the hair (asset extras r5Hero).
-  hero: { url: '/models/hero/brea.glb', targetHeight: 1.77913, yaw: 0, required: true },
+  hero: { url: '/models/hero/brea.glb', targetHeight: 1.75668, yaw: 0, required: true },
   // Her default outfit (Pan Whites I, bible §3.9) and the merged stow kit:
   // boot rows the Player equips synchronously. Never added to the scene:
   // src/hero/{outfit,stowkit}.js bind clones of their meshes to her bones by
@@ -69,11 +69,9 @@ export const DELETED = {};
  *   wrap?        'repeat' | 'clamp' (default)
  *   anisotropy?  default 1
  *   required?    as for model rows
- * The ground's four arrays (world-ground; layout in src/world/island/layers.js) are read by terrain.js.
+ * The ground's two arrays (world-ground; layout in src/world/island/layers.js LAYER_ARRAY) are read by terrain.js.
  */
 export const TEXTURES = {
-  groundA1: { url: '/textures/ground/big_a.ktx2', colorSpace: 'none', wrap: 'repeat', anisotropy: 4, required: true },
-  groundN1: { url: '/textures/ground/big_n.ktx2', colorSpace: 'none', wrap: 'repeat', anisotropy: 4, required: true },
-  groundA2: { url: '/textures/ground/small_a.ktx2', colorSpace: 'none', wrap: 'repeat', anisotropy: 4, required: true },
-  groundN2: { url: '/textures/ground/small_n.ktx2', colorSpace: 'none', wrap: 'repeat', anisotropy: 4, required: true },
+  groundA: { url: '/textures/ground/layers_a.ktx2', colorSpace: 'none', wrap: 'repeat', anisotropy: 4, required: true },
+  groundN: { url: '/textures/ground/layers_n.ktx2', colorSpace: 'none', wrap: 'repeat', anisotropy: 4, required: true },
 };

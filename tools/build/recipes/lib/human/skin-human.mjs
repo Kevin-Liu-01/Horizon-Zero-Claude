@@ -777,7 +777,7 @@ export function compactPrim(prim) {
   prim.getIndices().setArray(out);
 }
 /** Coil cards on the scalp below the wrap, around the ears and down the nape. */
-export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape: shape = hairShape, temples = false, twoSided = false }) {
+export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, hairShape: shape = hairShape, temples = false, twoSided = false, length = [0.012, 0.02], liftTip = [0.0004, 0.0016] }) {
   const A = WRAP_ATLAS;
   const P = bodyPrim.getAttribute('POSITION');
   const verts = [];
@@ -829,14 +829,15 @@ export function scalpCards({ bodyPrim, headW, shellGrid, wrapped, skinJ, skinW, 
     return f;
   };
   // (fix round 1, A-wrap-closed: the cards hug the scalp, so their tips break the hairline over skin, not against the sky)
-  return coilCards(anchors, { flow, skinOf, rect: A.coilFringe.rect, W: A.W, length: [0.012, 0.02], width: [0.011, 0.018], liftTip: [0.0004, 0.0016], twoSided });
+  // (M1.2b: `length` and `liftTip` per character; Brea's undercut is cropped short and lies close)
+  return coilCards(anchors, { flow, skinOf, rect: A.coilFringe.rect, W: A.W, length, width: [0.011, 0.018], liftTip, twoSided });
 }
 
 /**
  * The face layers every human gets, in paint order: the source's strokes smoothed, the make-up
  * off the eyes, the lips toned, the colour zones, pores, squint creases, the nasolabial fold.
  */
-export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
+export function faceLayers({ L, eyes, cheek, mouthBag = null, lips = {} }) {
   const noseT = L.noseTip;
   const faceZone = (T) => (T.Y > 1.45 && Math.abs(T.X) < 0.1 ? 1 : 0);
   const notFeature = (T) => {
@@ -855,7 +856,9 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
     if (under <= 0 && inner <= 0) return;
     // what faces up in there is the nostril's floor: never lit in life, and no pale shard in a frame
     const floor = smooth(-0.15, 0.35, T.ny) * (1 - smooth(0.9, 1.5, d));
-    const m = (1 - 0.16 * under) * (1 - 0.42 * inner) * (1 - 0.6 * core) * (1 - 0.8 * floor);
+    // (M1.2b: "no pure-black shadow pixel on the face in flat light": F11 read 22 nostril pixels at or under 12/255; the core keeps
+    // a warm dark brown, never black)
+    const m = (1 - 0.16 * under) * (1 - 0.36 * inner) * (1 - 0.42 * core) * (1 - 0.6 * floor);
     T.r *= m; T.g *= m * 0.95; T.b *= m * 0.93;
     T.nflat = Math.max(T.nflat, Math.max(inner, floor));
     T.ao = mix(T.ao, Math.max(T.ao, 0.5), inner);      // the hollow's shade is painted, soft: the baked AO would crush it to black
@@ -873,7 +876,7 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
     const nose = Math.hypot(T.X / 0.024, (T.Y - (noseT[1] - 0.012)) / 0.014) < 1;
     const k = (1 - smooth(0.12, 0.3, T.ao)) * (T.nz < 0.25 ? 1 : nose ? 0.6 : 0.12);
     if (k <= 0) return;
-    T.r = mix(T.r, 26, k); T.g = mix(T.g, 14, k); T.b = mix(T.b, 11, k);
+    T.r = mix(T.r, 40, k); T.g = mix(T.g, 24, k); T.b = mix(T.b, 19, k);   // (M1.2b: 26/14/11 printed black in flat light)
     T.rough = mix(T.rough, 0.95, k);
   };
   // the source's normal map was baked against the stock ear's own vertex normals: on the moved, re-split and softened ear it printed
@@ -902,7 +905,8 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
     ears,
     eyeSocketClean({ eyes }),
     // (fix round 2: moist lips, the lower one smoothest, so the sun finds its crest; the reference's lower lip carries a highlight)
-    lipTone({ center: [0, L.upperLip[1] - 0.011, L.upperLip[2] - 0.006], r: [0.036, 0.024, 0.03], rough: 0.34 }),
+    // (`lips`, M1.2b: a character's own lip gain and saturation, e.g. Brea's deep rose-brown in place of the stock's orange)
+    lipTone({ center: [0, L.upperLip[1] - 0.011, L.upperLip[2] - 0.006], r: [0.036, 0.024, 0.03], rough: 0.34, ...lips }),
     colourZones([
       // fix round 2 (the judges: "matte, no specular breakup; the reference's highlights on the cheekbone, nose bridge and lips are
       // missing"): the T-zone, the nose, the cheekbone's crest and the chin carry a real sheen (roughness about 0.34 to 0.42 against
@@ -986,7 +990,7 @@ export function faceLayers({ L, eyes, cheek, mouthBag = null }) {
  * lib/hair.mjs, with the eye patch blitted in. `marks` are the character's own layers (a salt
  * line, a scar, a tattoo), painted last. `collar` = flat triangles of the outfit near the neck.
  */
-export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, hairBand = null, temple = templeHair, names = 'human', fill = [0.15, 0.108, 0.09], sclera = [166, 148, 130], eyeSkin = [118, 80, 60], lid = {} }) {
+export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, L, eyes, brows, shellGrid, occluders, collar = [], opens, marks = [], scar = null, tone = '#8A5A3C', iris = '#3B2A20', amber = '#5E3A20', hairColor = '#15110F', hairShape: shape = hairShape, hairBand = null, temple = templeHair, names = 'human', fill = [0.15, 0.108, 0.09], sclera = [166, 148, 130], eyeSkin = [118, 80, 60], lid = {}, brow = {}, lips = {} }) {
   const W = 1024, AOW = 512;
   const baseTex = skinMat.getBaseColorTexture(), nTex = skinMat.getNormalTexture(), rTex = skinMat.getMetallicRoughnessTexture();
   const stock = await decodeStockSkin(baseTex.getImage(), nTex.getImage(), rTex.getImage());
@@ -1016,7 +1020,7 @@ export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, 
   const cov = blurMasked(rawCov, W, W, validT, 5);
   const cheek = [L.cheekL[0] - 0.004, L.cheekL[1] - 0.004, L.cheekL[2] + 0.004];
   const layers = [
-    ...faceLayers({ L, eyes, cheek, mouthBag: new Set(layout.islands.filter((q) => q.min[1] > 1.56 && q.max[1] < 1.6).map((q) => q.id)) }),
+    ...faceLayers({ L, eyes, cheek, lips, mouthBag: new Set(layout.islands.filter((q) => q.min[1] > 1.56 && q.max[1] < 1.6).map((q) => q.id)) }),
     hairlineLayer({
       sampler, hair: hairColor,
       coverage: (T) => {
@@ -1028,8 +1032,9 @@ export async function paintHumanSkin({ bodyPrim, skinMat, layout, eyeR, EYE_PX, 
     }),
     lidLines({ ...lid, open: opens[0], side: 1 }),
     lidLines({ ...lid, open: opens[1], side: -1 }),
-    browLayer({ x0: brows[1].x0, x1: brows[1].x1, line: brows[1].line, side: 1, seed: 17, scar, hair: hairColor }),
-    browLayer({ x0: brows[-1].x1, x1: brows[-1].x0, line: brows[-1].line, side: -1, seed: 19, hair: hairColor }),
+    // `brow` (M1.2b): a character's own stroke count, soft mass, hair width and length (lib/human/hair.mjs browLayer)
+    browLayer({ x0: brows[1].x0, x1: brows[1].x1, line: brows[1].line, side: 1, seed: 17, scar, hair: hairColor, ...brow }),
+    browLayer({ x0: brows[-1].x1, x1: brows[-1].x0, line: brows[-1].line, side: -1, seed: 19, hair: hairColor, ...brow }),
     ...marks,
   ];
   const toneMaps = seamlessTone(bodyPrim, layout.islands, layout.islandOf, stock, W);
