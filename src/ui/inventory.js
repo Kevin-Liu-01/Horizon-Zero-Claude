@@ -52,7 +52,8 @@ const MARKS = {
   arrow: `<path ${L} d="M12 22V4"/><path ${F} d="M12 1l4 7h-8Z"/><path ${L} d="M8.5 22l3.5-3.5 3.5 3.5M8.5 18.5 12 15l3.5 3.5"/>`,
   barbed: `<path ${L} d="M12 22V6"/><path ${F} d="M12 1l5 9-5-2.5L7 10Z"/><path ${L} d="M8.5 22l3.5-3.5 3.5 3.5"/>`,
   trap: `<path ${L} d="M3 19h18M6 19v-6M18 19v-6M6 13l6-5 6 5"/><path ${L} d="M12 8V3"/>`,
-  rock: `<path ${L} d="M4 16 8 6l9-1.5L21 13l-5 7.5-9-.5Z"/><path ${L} d="M8 6l3.5 7L21 13M11.5 13 7 20"/>`,
+  // a field stone, not a cube: the old six-cornered outline with inner edges read as a hexagon (M1.6g1)
+  rock: `<path ${L} d="M3.5 15C3.5 9.5 8 5.5 13.5 6c5 .5 7.5 4 7 8.5-.5 4-4.5 5.5-9 5.5-5 0-8-1.5-8-5Z"/><path ${L} d="M8.5 11c1.8-1.4 4.2-1.8 6.5-1.2"/>`,
   ceramic: `<path ${L} d="M3 18 12 4l9 14Z"/><path ${L} d="M8 18l4-7 4 7"/>`,
   book: `<path ${L} d="M4 3h13l3 3v15H4Z"/><path ${L} d="M8 3v18M11 8h6M11 12h6M11 16h4"/>`,
   mark: `<path ${L} d="M12 3l9 9-9 9-9-9Z"/>`,

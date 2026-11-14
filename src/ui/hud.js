@@ -4,6 +4,7 @@ import { LOOT_POPUP, itemIcon, itemPlayerName } from './inventory.js';
 import { TUTORIAL_CARDS, fieldWord, cardLine, cardParts } from './tips.js';
 import { COMPASS_PIP } from '../instruments/lamps.js';
 import { ITEMS } from '../items/items.js';
+import { QUICK_SLOTS } from './quickslots.js';
 
 /** The one currency (U-19): the catalogue's own `currency` tag, so no item id is spelled here. */
 const CURRENCY_ID = Object.keys(ITEMS).find((id) => ITEMS[id]?.tags?.includes('currency')) ?? null;
@@ -64,7 +65,7 @@ const RAD2DEG = 180 / Math.PI;
 // status durations: a triggered build-up becomes a countdown on its gauge
 const ELEM_TRIG = { fire: 8, shock: 3, freeze: 8 };
 const ELEM_LABEL = { fire: 'C', shock: 'D', freeze: 'B' };   // Cinder, Dust, Brine (bible §5.8)
-const COMBAT_IDLE_S = 4;          // dynamic HUD: kit tag hides after this
+const COMBAT_IDLE_S = 4;          // dynamic HUD: the kit tag calms (stays) and the crosshair dot hides after this
 const VITALS_IDLE_S = 4;          // dynamic HUD: full health staff hides after this
 const TRACK_IDLE_S = 26;          // dynamic HUD: the field note recedes after this
 const VIAL_IDLE_S = 4;            // U-02: the exposure vial hides after this long UNSEEN
@@ -72,6 +73,19 @@ const GHOST_HOLD_S = 0.45;        // damage-delta ghost lingers before draining
 const GHOST_DRAIN = 55;           // ghost drain rate, % of bar per second
 const LOOT_CLAIM_MS = 400;        // toast suppression after the take-all popup claimed a loot event
 const PROMPT_H = 1.1;             // metres above an interactable the [E] prompt rides
+/**
+ * CALM PLAY IS FOUR SURFACES (BIBLE §18, M1.6g1): top-left (staff, hairline, salt, the field
+ * note and any card under it), the theodolite strip, the tool cells, the weapon tag. The
+ * objective's projected arrow is a fifth, so in calm play the strip's pip carries the
+ * objective and the arrow stands in the world only near it, for a few seconds after the
+ * objective changes, or on the hold-H reveal.
+ */
+const OBJ_NEAR_M = 40;
+const OBJ_FRESH_S = 6;
+/** The lance's in-hand names by family (BIBLE §8.1); the bow's come from `combat.weapons`. */
+const LANCE_NAME = Object.freeze({
+  shepherd: "SHEPHERD'S LANCE", obsidian: 'OBSIDIAN LANCE', counterweight: 'COUNTERWEIGHT LANCE',
+});
 
 /** Never more than three projected Instrument plates on screen at once. */
 const MHB_CAP = 3;
@@ -495,9 +509,11 @@ export class HUD {
     this._staffIndex = div('cal-staff-index', staff);
     this._healthNum = div('cal-staff-num cal-glass', hrow, '<b>100</b><span>/100</span>');
 
-    // the hairline beneath the staff: there is no stamina system in the game, so it reads the gourd
-    const gourdLine = div('cal-gourdline', vitals);
-    this._gourdFill = div('cal-gourdline-fill', gourdLine);
+    // the stamina hairline beneath the staff (BIBLE §18). It reads `player.stamina / maxStamina`
+    // when the player publishes them and stands full until then: there is no stamina system yet.
+    const stamLine = div('cal-stamina', vitals);
+    this._stamFill = div('cal-stamina-fill', stamLine);
+    this._lastStam = -1;
 
     const pr = div('cal-chiprow', vitals);
     this._gourdRow = pr;
@@ -619,6 +635,16 @@ export class HUD {
     this._wpnDots = div('cal-wpn-dots', wmid);
     const wcount = div('cal-wpn-countrow', wrow);
     this._wpnCount = div('cal-wpn-count', wcount, '012');
+    // quick slots 1-4 (M1.6g1): the slot in hand on the lilac line; 3 and 4 empty until earned
+    this._qsEl = div('cal-qs', wpn);
+    this._qsCells = [];
+    for (const q of QUICK_SLOTS) {
+      const c = div('cal-qs-cell' + (q.kind ? '' : ' empty'), this._qsEl,
+        `<b>${q.slot}</b>${q.kind ? `<span>${q.kind === 'bow' ? 'BOW' : 'LANCE'}</span>` : '<span>&nbsp;</span>'}`);
+      c.dataset.slot = String(q.slot);
+      this._qsCells.push(c);
+    }
+    this._lastQs = -1;
     // craft hold
     this._craftEl = div('cal-make', wpn,
       '<kbd>R</kbd><div class="cal-make-bar"><i></i></div><span>MAKE</span>');
@@ -642,7 +668,8 @@ export class HUD {
 
     /* ------------------------- banners + cards ---------------------------- */
     this._bannerEl = div('cal-banners', root);
-    this._tipEl = div('cal-tip cal-glass', root);
+    // the card docks under the field note, in the top-left column: one surface, not a fifth
+    this._tipEl = div('cal-tip cal-glass', this._topleftEl);
     this._tipEl.innerHTML =
       '<div class="cal-tip-title"></div><div class="cal-tip-body"></div><div class="cal-tip-keys"></div>';
     this._tipTitle = this._tipEl.querySelector('.cal-tip-title');
@@ -1234,7 +1261,7 @@ export class HUD {
     this._updateReticle(p);
     this._updateCombatIdle(dt, p);
     this._updateInteract();
-    this._updateObjectiveMark(p);
+    this._updateObjectiveMark(p, dt);
     this._updateDamageNumbers(dt);
     this._updateVignette(dt, t, p);
 
@@ -1338,7 +1365,8 @@ export class HUD {
     const idle = this._combatIdleT > COMBAT_IDLE_S;
     if (idle !== this._lastWpnIdle) {
       this._lastWpnIdle = idle;
-      this._wpnEl.classList.toggle('idle', idle);
+      // M1.6g1: the weapon tag is one of calm play's four surfaces and stays; it only calms
+      this._wpnEl.classList.toggle('calm', idle);
       this._dotEl.classList.toggle('idle', idle);
     }
   }
@@ -1407,9 +1435,13 @@ export class HUD {
     const raw = p.gourd ?? 0;
     const gourd = clamp01(raw / maxGourd);
     const pw = Math.round(gourd * 100);
-    if (pw !== this._lastGourd) {
-      this._lastGourd = pw;
-      this._gourdFill.style.transform = SCALE_X[pw];
+    if (pw !== this._lastGourd) this._lastGourd = pw;
+    // the stamina hairline: full until the player publishes a stamina reading
+    const sMax = p.maxStamina > 0 ? p.maxStamina : 0;
+    const sw = sMax ? Math.round(clamp01((p.stamina ?? sMax) / sMax) * 100) : 100;
+    if (sw !== this._lastStam) {
+      this._lastStam = sw;
+      this._stamFill.style.transform = SCALE_X[sw];
     }
     const gn = Math.max(0, Math.min(999, Math.round(raw)));
     if (gn !== this._lastGourdNum) {
@@ -2181,6 +2213,15 @@ export class HUD {
   /** Silhouette, ammo ticks, a 3-digit count. Combat owns the data. */
   _updateWeapon() {
     const c = this.ctx.combat;
+    // quick slots 1-4: the slot in hand, read from the weapons (ctx.quickslots.activeSlot)
+    const qs = this.ctx.quickslots;
+    const slot = qs?.activeSlot ?? 1;
+    if (slot !== this._lastQs) {
+      this._lastQs = slot;
+      for (const cell of this._qsCells) cell.classList.toggle('on', +cell.dataset.slot === slot);
+    }
+    if (slot === 2) { this._updateLanceTag(c); return; }
+    if (this._wpnEl.classList.contains('melee')) { this._wpnEl.classList.remove('melee'); this._lastW = undefined; }
     const w = c?.activeWeapon;
 
     let ammo = c?.activeAmmo ?? w?.activeAmmo ?? c?.arrowType ?? 'reed';
@@ -2231,6 +2272,21 @@ export class HUD {
       html += `<i class="${id === ammo ? 'on' : ''}"></i>`;
     }
     this._wpnDots.innerHTML = html;
+  }
+
+  /** Slot 2: the lance in hand. Name and engraving; no ammo line, no count (it is never thrown). */
+  _updateLanceTag(c) {
+    const v = c?.melee?.lance?.variant ?? 'shepherd';
+    const wid = 'lance:' + v;
+    if (this._lastWid === wid) return;
+    this._lastWid = wid;
+    this._lastW = undefined;          // the bow's tag repaints in full when slot 1 comes back
+    this._wpnEl.classList.add('melee');
+    this._wpnArt.innerHTML = kitArtFor('lance');
+    this._wpnName.textContent = LANCE_NAME[v] ?? LANCE_NAME.shepherd;
+    this._wpnAmmoName.textContent = '';
+    this._wpnCount.textContent = '';
+    this._wpnDots.innerHTML = '';
   }
 
   /* ------------------------------ tool chips --------------------------------- */
@@ -2377,7 +2433,8 @@ export class HUD {
   /* ---------------------- the objective's broad arrow ------------------------ */
 
   /** Over the tracked objective, with its distance in metres, edge-clamped when off screen. */
-  _updateObjectiveMark(p) {
+  _updateObjectiveMark(p, dt = 0) {
+    this._objFreshT = Math.max(0, (this._objFreshT ?? OBJ_FRESH_S) - dt);
     let mk = null;
     const marks = this._marks;
     if (Array.isArray(marks)) {
@@ -2401,6 +2458,14 @@ export class HUD {
     }
 
     const dist = len2(wx - p.position.x, wz - p.position.z);
+    // calm play: the strip's pip carries a far objective; the arrow stands near it, fresh, or on reveal
+    if (this._staged) label = '';
+    if (label !== this._lastObjLabel) this._objFreshT = OBJ_FRESH_S;
+    const want = dist < OBJ_NEAR_M || this._objFreshT > 0 || this._reveal > 0.01;
+    if (!want) {
+      if (this._lastObjOn) { this._lastObjOn = false; this._objDiamond.classList.remove('show'); }
+      return;
+    }
     this._v.set(wx, wy, wz).project(this.ctx.camera);
     const behind = this._v.z > 1;
     let x = (this._v.x * 0.5 + 0.5) * this._vw;
@@ -2429,8 +2494,6 @@ export class HUD {
     if (qy !== this._objQy) { this._objQy = qy; this._objDiamond.style.transform = centreY(qy, this._wscale); }
     const di = Math.round(dist);
     if (di !== this._lastObjDist) { this._lastObjDist = di; this._objDiamondDist.textContent = di + ' m'; }
-    // a staged look film (`stageNote`) names no tracked quest's own mark
-    if (this._staged) label = '';
     if (label !== this._lastObjLabel) {
       this._lastObjLabel = label;
       this._objDiamondLabel.textContent = fieldWord(String(label)).toUpperCase();
@@ -2512,6 +2575,34 @@ export class HUD {
 
   /* -------------------------------- audits ----------------------------------- */
 
+  /**
+   * M1.6g1: which SURFACES are on screen, grouped by where they stand. A surface is a screen
+   * region the eye has to visit: the top-left column (staff, hairline, salt, field note, a
+   * card), the theodolite strip, the tool cells, the weapon tag, the exposure vial, and every
+   * world-projected mark (the objective's arrow, the prompt, the plates, the rods) on its own.
+   * Calm play passes at four or fewer.
+   */
+  _calmAudit(vis) {
+    const any = (...els) => els.some((e) => e && vis(e));
+    const groups = {
+      topLeft: any(this._vitalsEl, this._trackEl, this._tipEl),
+      compass: any(this._compEl),
+      tools: any(this._toolsEl),
+      weapon: any(this._wpnEl),
+      vial: any(this._eyeEl),
+      reticle: any(this._dotEl) || parseFloat(getComputedStyle(this._brackets).opacity) > 0.04,
+      objective: this._objDiamond.classList.contains('show') && any(this._objDiamond),
+      prompt: this._intEl.classList.contains('show') && any(this._intEl),
+      plates: this._mhbSlots.some((s) => s.vis && vis(s.el)),
+      awareness: [...this._awareLayer.children].some((e) => vis(e)),
+      banners: this._bannerEl.childElementCount > 0,
+      flashes: this._xpPops.childElementCount > 0,
+      pickups: this._itemsEl.childElementCount > 0,
+    };
+    const on = Object.keys(groups).filter((k) => groups[k]);
+    return { surfaces: on.length, on, calm: !this._anyHostile && this._engaged.size === 0 && !this.ctx.player?.aiming };
+  }
+
   /** Everything `V37-hud-language` / `A71c-hud-surfaces` grade, as numbers. */
   _surfaceAudit() {
     /** EFFECTIVE opacity: the product up the ancestor chain to <body>. */
@@ -2559,7 +2650,9 @@ export class HUD {
         rect: rect(this._staffEl),
       },
       gourd: { visible: vis(this._gourdChip), pct: this._lastGourd, num: this._gourdNum.textContent,
-        line: vis(this._gourdFill), rect: rect(this._gourdChip) },
+        rect: rect(this._gourdChip) },
+      stamina: { visible: vis(this._stamFill), pct: this._lastStam,
+        source: this.ctx.player?.maxStamina > 0 ? 'player.stamina' : 'none (full)' },
       tracker: {
         visible: vis(this._trackEl),
         opacity: +eff(this._trackEl).toFixed(3),
@@ -2639,6 +2732,12 @@ export class HUD {
       })(),
       tools: { visible: vis(this._toolsEl), slots: this._toolSlots.filter((t) => t.el.style.display !== 'none').length,
         index: this.ctx.items?.tools?.index ?? -1, useKey: keyGlyph(this.ctx.items?.tools?.useKey) },
+      quickSlots: {
+        active: this._lastQs,
+        cells: this._qsCells.map((c) => ({ slot: +c.dataset.slot, on: c.classList.contains('on'),
+          empty: c.classList.contains('empty'), visible: vis(c), label: c.textContent.trim() })),
+      },
+      calm: this._calmAudit(vis),
       weapon: { visible: vis(this._wpnEl), name: this._wpnName.textContent, ammo: this._wpnAmmoName.textContent,
         count: this._wpnCount.textContent,
         dots: this._wpnDots.childElementCount, art: this._wpnArt.querySelector('svg') != null },

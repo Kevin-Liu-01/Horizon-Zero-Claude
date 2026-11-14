@@ -158,14 +158,14 @@
 }
 .cal-topleft.low .cal-staff-num b { color: #FF8A73; }
 
-/* the hairline beneath the staff */
-.cal-gourdline {
+/* the stamina hairline beneath the staff (BIBLE §18) */
+.cal-stamina {
   position: relative;
   width: calc(300px * var(--s)); height: calc(2px * var(--s)); min-height: 2px;
   margin-top: calc(5px * var(--s)); margin-left: calc(32px * var(--s));
   background: var(--cal-under);
 }
-.cal-gourdline-fill {
+.cal-stamina-fill {
   position: absolute; inset: 0;
   transform-origin: 0 50%;
   background: var(--cal-staff);
@@ -204,13 +204,15 @@
 .cal-gourd-key.show { display: inline-block !important; }
 
 /* -------------------------------- the field note ------------------------------ */
-/* U-06: 340 px of glass, a vermilion rule down its left: kicker Chakra 11, title Chakra
-   600 17, objective Plex 13. Recedes when nothing has changed for a while. */
+/* U-06: 300 px of glass (M1.6g1: 340 -> 300 for the 6 % cover bar), a vermilion rule down its
+   left: kicker Chakra 11, title Chakra 600 16, objective Plex 13. Recedes when nothing has
+   changed for a while. */
 .cal-track {
   position: relative;
-  width: calc(340px * var(--s));
+  width: calc(300px * var(--s));
+  box-sizing: border-box;
   margin-top: calc(12px * var(--s));
-  padding: calc(8px * var(--s)) calc(12px * var(--s)) calc(9px * var(--s)) calc(17px * var(--s));
+  padding: calc(6px * var(--s)) calc(10px * var(--s)) calc(7px * var(--s)) calc(15px * var(--s));
   transition: opacity 0.8s ease;
 }
 .cal-track::before {
@@ -230,17 +232,17 @@
 .cal-track-title {
   font-family: var(--cal-font-ui);
   font-weight: 600;
-  font-size: max(15px, calc(17px * var(--s)));
+  font-size: max(14px, calc(16px * var(--s)));
   letter-spacing: 0.07em;
-  line-height: 1.2;
-  margin-top: calc(2px * var(--s));
+  line-height: 1.15;
+  margin-top: calc(1px * var(--s));
 }
 .cal-track-obj {
   font-family: var(--cal-font-mono);
   font-size: max(12px, calc(13px * var(--s)));
-  line-height: 1.38;
+  line-height: 1.32;
   color: var(--cal-glass-text);
-  margin-top: calc(3px * var(--s));
+  margin-top: calc(2px * var(--s));
 }
 .cal-track-meta {
   font-family: var(--cal-font-mono);
@@ -261,15 +263,8 @@
   width: calc(640px * var(--s));
   height: calc(90px * var(--s));
 }
-/* a soft darkening so hairlines hold on a bright sky; no box, no border, no blur */
-.cal-compass::before {
-  content: ''; position: absolute;
-  left: calc(-80px * var(--s)); right: calc(-80px * var(--s));
-  top: calc(-10px * var(--s)); height: calc(84px * var(--s));
-  background: linear-gradient(180deg, rgba(28, 27, 30, 0.2), rgba(28, 27, 30, 0));
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 22%, #000 78%, transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 22%, #000 78%, transparent 100%);
-}
+/* M1.6g1: no darkening band behind the strip (it alone covered 2.6 % of F03). The hairlines and
+   numerals hold on a bright sky by their own ink underlay (`.u`, the text's paint-order stroke). */
 .cal-compass-window {
   position: absolute; left: 0; right: 0; top: calc(14px * var(--s));
   height: calc(52px * var(--s));
@@ -649,7 +644,7 @@ body.cal-sighting .cal-objmark { opacity: 0; }
   box-shadow: 0 0 0 1px var(--cal-under);
   transition: opacity 0.4s ease;
 }
-.cal-dot.idle { opacity: 0.3; }
+.cal-dot.idle { opacity: 0; }   /* calm play: no crosshair until she is armed or reading (M1.6g1) */
 
 .cal-stadia {
   position: absolute; left: 0; top: 0;
@@ -808,21 +803,46 @@ body.cal-sighting .cal-objmark { opacity: 0; }
 
 .cal-weapon {
   position: absolute; right: calc(30px * var(--s)); bottom: calc(26px * var(--s));
-  width: calc(240px * var(--s)); min-height: calc(56px * var(--s));
-  padding: calc(5px * var(--s)) calc(10px * var(--s)) calc(5px * var(--s)) calc(8px * var(--s));
+  width: calc(228px * var(--s)); min-height: calc(56px * var(--s));
+  box-sizing: border-box;
+  padding: calc(4px * var(--s)) calc(9px * var(--s)) calc(4px * var(--s)) calc(8px * var(--s));
   transition: opacity 0.45s ease;
 }
-/* the tag's foot: a graduated edge, staff white at a third */
-.cal-weapon::before {
-  content: ''; position: absolute; left: calc(8px * var(--s)); right: calc(8px * var(--s)); bottom: calc(3px * var(--s));
-  height: calc(3px * var(--s));
-  background: repeating-linear-gradient(90deg, var(--cal-staff-30) 0 1px, transparent 1px calc(10px * var(--s)));
+/* the tag's foot is the quick-slot row (M1.6g1); the old graduated edge made way for it */
+/* M1.6g1: the tag is one of calm play's four surfaces (BIBLE §18): it stays, quieter */
+.cal-weapon.calm { opacity: 0.86; }
+body.cal-sighting .cal-weapon.calm { opacity: 1; }
+/* slot 2: the lance is never thrown, so there is no ammo line and no count */
+.cal-weapon.melee .cal-wpn-ammoname,
+.cal-weapon.melee .cal-wpn-dots,
+.cal-weapon.melee .cal-wpn-countrow { display: none; }
+
+/* quick slots 1-4 along the tag's head: key numeral and kind; 3 and 4 empty until earned */
+.cal-qs {
+  display: flex; gap: calc(3px * var(--s));
+  margin: calc(2px * var(--s)) 0 calc(1px * var(--s));
 }
-.cal-weapon.idle { opacity: 0; }
-/* 1-TR: with the alidade up she is reading before she looses; the weapon and its count stay in view */
-body.cal-sighting .cal-weapon.idle { opacity: 1; }
+.cal-qs-cell {
+  flex: 1 1 0;
+  display: flex; align-items: baseline; gap: calc(4px * var(--s));
+  padding: 0 calc(4px * var(--s)) calc(1px * var(--s));
+  border-bottom: 1px solid var(--cal-staff-30);
+  color: var(--cal-glass-text-2);
+  white-space: nowrap; overflow: hidden;
+}
+.cal-qs-cell b {
+  font-family: var(--cal-font-mono); font-weight: 600;
+  font-size: max(11px, calc(11px * var(--s))); line-height: 1.2;
+}
+.cal-qs-cell span {
+  font-family: var(--cal-font-ui); font-weight: 600;
+  font-size: max(11px, calc(11px * var(--s))); line-height: 1.2;
+  letter-spacing: var(--cal-track-caps);
+}
+.cal-qs-cell.empty { flex: 0 0 calc(24px * var(--s)); border-bottom-style: dashed; opacity: 0.6; }
+.cal-qs-cell.on { color: var(--cal-glass-text); border-bottom: 2px solid var(--cal-select-line); background: var(--cal-select-fill); }
 .cal-wpn-row { display: flex; align-items: center; gap: calc(9px * var(--s)); }
-.cal-wpn-art { flex: none; width: calc(26px * var(--s)); height: calc(44px * var(--s)); color: var(--cal-staff); }
+.cal-wpn-art { flex: none; width: calc(24px * var(--s)); height: calc(38px * var(--s)); color: var(--cal-staff); }
 .cal-wpn-art svg { width: 100%; height: 100%; display: block; }
 .cal-wpn-mid { flex: 1 1 auto; min-width: 0; }
 .cal-wpn-name {
@@ -972,14 +992,20 @@ body.cal-sighting .cal-weapon.idle { opacity: 1; }
   100% { opacity: 0; }
 }
 
-/* a tutorial card: Plex on glass, a vermilion rule down its left. It lives low on the LEFT,
-   in the column the tools vacated, so it can never stand beside the Sighting card pinned
-   right (r1 gate judge); one at a time, auto-dismissed (U-02). */
+/* a tutorial card: Plex on glass, a vermilion rule down its left. It docks under the field
+   note in the top-left column (M1.6g1: calm play is four surfaces, and a card is part of the
+   column, not a fifth), so it can never stand beside the Sighting card pinned right (r1 gate
+   judge); one at a time, auto-dismissed (U-02). Absolute, so the column's box (the plate
+   resolver's foot) does not grow with a card that is not up. */
 .cal-tip {
   position: absolute;
-  left: calc(30px * var(--s)); bottom: calc(118px * var(--s));
-  width: calc(304px * var(--s));
-  padding: calc(9px * var(--s)) calc(13px * var(--s)) calc(10px * var(--s)) calc(18px * var(--s));
+  left: 0; top: 100%;
+  margin-top: calc(6px * var(--s));
+  width: calc(300px * var(--s));
+  box-sizing: border-box;
+  padding: calc(6px * var(--s)) calc(10px * var(--s)) calc(7px * var(--s)) calc(15px * var(--s));
+  /* the key caps ride beside the title, so a card is two lines, not three */
+  display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: calc(8px * var(--s));
   opacity: 0; visibility: hidden;
   transform: translateX(calc(-10px * var(--s)));
   transition: opacity 0.22s var(--cal-ease-out), transform 0.22s var(--cal-ease-out), visibility 0.22s;
@@ -990,18 +1016,20 @@ body.cal-sighting .cal-weapon.idle { opacity: 1; }
 }
 .cal-tip.show { opacity: 1; visibility: visible; transform: none; }
 .cal-tip-title {
+  grid-column: 1; grid-row: 1;
   font-family: var(--cal-font-ui);
   font-weight: 600;
   font-size: max(13px, calc(15px * var(--s)));
   letter-spacing: 0.1em;
 }
 .cal-tip-body {
+  grid-column: 1 / -1; grid-row: 2;
   font-family: var(--cal-font-mono);
-  font-size: max(12px, calc(13.5px * var(--s)));
-  line-height: 1.42;
-  margin-top: calc(3px * var(--s));
+  font-size: max(12px, calc(13px * var(--s)));
+  line-height: 1.32;
+  margin-top: calc(2px * var(--s));
 }
-.cal-tip-keys { display: flex; gap: calc(4px * var(--s)); margin-top: calc(7px * var(--s)); }
+.cal-tip-keys { grid-column: 2; grid-row: 1; display: flex; gap: calc(3px * var(--s)); }
 .cal-tip-keys:empty { display: none; }
 
 /* ------------------------------------------------------------- reduced motion */

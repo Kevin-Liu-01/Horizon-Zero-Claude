@@ -1,21 +1,29 @@
 /**
- * QUICK SLOTS (M0.3 stand-in; bible §8.5 "quick slots 1-4", the Kit Rack half-ring is M2).
+ * QUICK SLOTS 1-4 (M1.6g1; BIBLE §12 "quick slots 1-4 (1 bow, 2 lance, 3 gaff, 4 pots and net;
+ * empty until earned)"; the Kit Rack half-ring is Milestone 2).
  *
- * Replaces the Round-4 centre radial. The world keeps running; there is no
- * overlay. Two slots are bound today:
+ * No overlay and no pause: the world keeps running. The slots are drawn on the field HUD's
+ * weapon tag (src/ui/hud.js), one cell each, the slot in hand on the lilac selection line.
  *
- *   1  the bow: the lance goes back on her back (the quick stow) and the
- *      first bow in `combat.weapons` is selected
+ *   1  the bow: the lance goes back on her back (the quick stow) and the first bow in
+ *      `combat.weapons` is selected
  *   2  the lance: drawn from the back (`melee.drawLance()`)
+ *   3  the gaff         empty until earned (Ninewalls, Milestone 2)
+ *   4  pots and net     empty until earned
  *
- * Slots 3 and 4 are reserved for the pot and net families (bible §8.1) and do
- * nothing until those exist. Published as `ctx.quickslots`; `open` is always
- * false so systems that pause aiming while a selector is up never block.
+ * An empty slot does nothing and says so (`quick-slot-empty`), so a key press is never silent
+ * to the systems that listen. Published as `ctx.quickslots`; `open` is always false so systems
+ * that pause aiming while a selector is up never block.
  */
 export const QUICK_SLOTS = Object.freeze([
-  { key: 'Digit1', slot: 1, kind: 'bow' },
-  { key: 'Digit2', slot: 2, kind: 'lance' },
+  Object.freeze({ key: 'Digit1', slot: 1, kind: 'bow' }),
+  Object.freeze({ key: 'Digit2', slot: 2, kind: 'lance' }),
+  Object.freeze({ key: 'Digit3', slot: 3, kind: null, earns: 'gaff' }),
+  Object.freeze({ key: 'Digit4', slot: 4, kind: null, earns: 'pots' }),
 ]);
+
+/** The lance is the weapon in hand from the first frame of its draw to the last of its stow. */
+const LANCE_STANCES = new Set(['draw', 'ready', 'swing', 'holster']);
 
 export class QuickSlots {
   constructor(ctx) {
@@ -26,11 +34,30 @@ export class QuickSlots {
     for (const q of QUICK_SLOTS) ctx.input.onDown(q.key, () => { if (inPlay()) this.select(q.slot); });
   }
 
-  /** Select quick slot `n` (1 = bow, 2 = lance). Returns the kind selected, or null. */
+  /** The four slots as the HUD draws them: `{ slot, kind, earned }`. Frozen; never reallocated. */
+  get slots() { return QUICK_SLOTS; }
+
+  /**
+   * The slot whose weapon is in her hands now: 2 while the lance is out (drawing, ready,
+   * swinging or being stowed), else 1. Read from the weapons themselves, not from the last
+   * key, so the lance's own timed stow and an aim that puts it away both show truthfully.
+   */
+  get activeSlot() {
+    const m = this.ctx.combat?.melee;
+    if (m && (m.lanceInHand || LANCE_STANCES.has(m.stance))) return 2;
+    return 1;
+  }
+
+  /** Select quick slot `n` (1 = bow, 2 = lance). Returns the kind selected, or null (empty slot). */
   select(n) {
     const q = QUICK_SLOTS.find((x) => x.slot === n);
     const combat = this.ctx.combat;
-    if (!q || !combat) return null;
+    if (!q) return null;
+    if (!q.kind) {
+      this.ctx.events?.emit?.('quick-slot-empty', { slot: n, earns: q.earns });
+      return null;
+    }
+    if (!combat) return null;
     const melee = combat.melee;
     if (q.kind === 'bow') {
       melee?.holsterLance?.(true);
