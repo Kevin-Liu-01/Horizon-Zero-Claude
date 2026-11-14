@@ -451,7 +451,7 @@ export function faceOut(part, field) {
  * Close the small holes in a part (open loops of at most `maxN` points and `maxPerim` metres round, e.g. left by
  * collapsing short edges): a fan from the loop's centre, uv and skin from the loop. Wind with `faceOut` after.
  */
-export function fillHoles(part, { maxN = 14, maxPerim = 0.09 } = {}) {
+export function fillHoles(part, { maxN = 14, maxPerim = 0.09, where = null } = {}) {
   let filled = 0;
   for (const run of openEdges(part)) {
     if (run.length < 3 || run.length > maxN) continue;
@@ -459,6 +459,7 @@ export function fillHoles(part, { maxN = 14, maxPerim = 0.09 } = {}) {
     for (let k = 0; k < run.length; k++) per += V.len(V.sub(run[k].p, run[(k + 1) % run.length].p));
     if (per > maxPerim) continue;
     const c = [0, 0, 0], nn = [0, 0, 0], uv = [0, 0];
+    if (where) { const m = [0, 1, 2].map((k) => run.reduce((a, q) => a + q.p[k], 0) / run.length); if (!where(m)) continue; }
     for (const q of run) { for (let k = 0; k < 3; k++) { c[k] += q.p[k] / run.length; nn[k] += q.n[k]; } uv[0] += part.uv[q.i * 2] / run.length; uv[1] += part.uv[q.i * 2 + 1] / run.length; }
     const ci = part.pos.length / 3, i0 = run[0].i;
     part.pos.push(...c); part.nrm.push(...V.norm(nn)); part.uv.push(...uv);

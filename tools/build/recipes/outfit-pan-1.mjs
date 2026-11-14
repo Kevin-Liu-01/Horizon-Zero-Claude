@@ -88,7 +88,7 @@ export const COL = {
 // trousers and boots on the dark brown, the leather straps on the plum
 Object.assign(COL, {
   smock: hex('#6E247C'), trouserBG: hex('#4A3530'), bootLeather: hex('#57403A'), shinWrap: hex('#4E2C58'), sashDeep: hex('#77307F'),
-  panel: hex('#7A2F86'), scarf: hex('#6C2874'), print: hex('#A06A98'), strapLeather: hex('#64445A'),
+  panel: hex('#7A2F86'), scarf: hex('#6C2874'), print: hex('#A06A98'), strapLeather: hex('#5A3A44'),
 });
 
 /** The skeleton + grafted, cut pieces (shared by build() and panBindTriangles()). */
@@ -253,7 +253,7 @@ export function panTrim(W, H, trimH) {
     if (mid < 1) { const q = 0.8; o.r *= q; o.g *= q; o.b *= q; o.h -= 0.0004; }
     if (mid < 4.5 && (t.x % 70) < 1.4) { const q = 0.82; o.r *= q; o.g *= q; o.b *= q; o.h -= 0.0003; }
   });
-  T.cell('strap', 404, 24, (t, o) => leatherStrap(t, o, COL.strapLeather, { eS: 3.6, per: 4.8, burn: [150, 118, 92], burnW: 3.2 }));
+  T.cell('strap', 404, 24, (t, o) => leatherStrap(t, o, COL.strapLeather, { eS: 3.6, per: 4.8, burn: [158, 126, 98], burnW: 3.8 }));
   T.cell('strapB', 200, 22, (t, o) => leatherStrap(t, o, [38, 35, 36], { stitch: false }));
   T.cell('pouch', 110, 90, (t, o) => {
     leatherStrap(t, o, [78, 56, 38], { stitch: false });
@@ -513,7 +513,7 @@ export const PAN_PAINTERS = {
       // every fifth contour carries ticks across it, the cartographer's index line
       const idx = Math.abs(Math.round(f) % 5) === 0 ? 1 : 0;
       const tick = idx * (1 - clamp(c / 0.16)) * (((t.Y * 400 / 6) % 1) < 0.25 ? 1 : 0) * worn;
-      over(o, COL.print, Math.max(line * 0.34, tick * 0.3));
+      over(o, COL.print, Math.max(line * 0.46, tick * 0.4));
     }
     o.wear = 1.3;
   },
@@ -910,6 +910,8 @@ export async function panBase(opt = {}) {
   // hole through the boot and the shin wrap to the backdrop. Every triangle now faces out of the leg under it)
   // (and the small holes the collapse left are closed: the body under a boot is culled, so each one was a window)
   fillHoles(boots); fillHoles(trousers);
+  // (the slits the collapse tore down the front of each boot shaft and shin wrap, 0.1-0.35 m round: the windows in F08)
+  fillHoles(boots, { maxN: 16, maxPerim: 0.35, where: ([, y, z]) => y > 0.15 && y < 0.42 && z > -0.05 });
   faceOut(boots, new Field([bodyPart], 0.04));
   faceOut(trousers, new Field([bodyPart], 0.04));
 
