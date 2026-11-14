@@ -142,15 +142,17 @@ export function seaStack(bucket, R, { height = 40, base = 8, seed = 1, caprock =
   const lean = [(R() - 0.5) * 0.08, (R() - 0.5) * 0.08];
   while (y < top - 0.8 && i < 40) {
     const t = Math.max(0, y) / height;
-    const thick = Math.min(top - y, y < 0 ? 4 + R() * 3 : 1.5 + R() * 4.5);
+    const thick = Math.min(top - y, y < 0 ? 4 + R() * 3 : 2.5 + R() * 4.5);
     const taper = 1 - 0.5 * Math.pow(t, 1.4);
     const ledge = R() < 0.18 ? 0.25 + R() * 0.55 : (R() - 0.5) * 0.35;       // mostly flush, a ledge now and then
     const notch = y > 1.2 && y < 4 ? 0.9 : 1;                                  // the wave-cut notch just above the surf
     const r = Math.max(1.4, (base * taper + ledge + (y < 0 ? (-y) * 0.15 : 0)) * notch);
     lx += lean[0] * thick; lz += lean[1] * thick;
     const cx = lx + (twin && t > 0.55 ? -base * 0.3 : 0);
-    slab(bucket, { cx, cz: lz, y0: y, thick: thick + 0.1, r, aspect, outline,
-      yaw: 0, jag: 0.12, seed: seed * 31 + i, tone: bedTone(i), bevel: 0.1, rough: 0.07, sides: 22 }, shade);
+    // each bed: the stack's plan turned a little and scaled a little (beds weather back unevenly), with
+    // rough, non-planar faces, so the stack reads as one rock mass and never as stacked cylinders
+    slab(bucket, { cx: cx + (R() - 0.5) * 0.9, cz: lz + (R() - 0.5) * 0.9, y0: y, thick: thick + 0.1, r: r * (0.92 + R() * 0.16), aspect: aspect * (0.94 + R() * 0.12), outline,
+      yaw: (R() - 0.5) * 0.5, jag: 0.22, seed: seed * 31 + i, tone: bedTone(i), bevel: 0.06, rough: 0.16, sides: 26 }, shade);
     if (twin && t > 0.55) {
       slab(bucket, { cx: lx + base * 0.42, cz: lz, y0: y, thick: thick * 0.95, r: r * 0.55, aspect: 0.85, outline,
         yaw: 1.3, jag: 0.15, seed: seed * 53 + i, tone: bedTone(i + 1), bevel: 0.1, rough: 0.08, sides: 16 }, shade);
