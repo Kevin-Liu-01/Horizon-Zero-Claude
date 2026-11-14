@@ -100,7 +100,8 @@ const restagedById = new Map(RESTAGED.map((g) => [g.id, g]));
 const patchedById = new Map(PATCHED.map((x) => [x.id, x]));
 /** A patched row: its own assert with the staging lines swapped; a patch that does not apply is a FAIL. */
 const patchRow = (g, pt) => {
-  let body = String(g.assert);
+  const field = pt.field || 'assert';
+  let body = String(g[field]);
   const missed = pt.patches.filter(([from]) => !body.includes(from)).map(([from]) => from);
   if (missed.length) {
     return { id: g.id, kind: 'runner', lane: 'kept-stack', source: g.source,
@@ -108,7 +109,7 @@ const patchRow = (g, pt) => {
       check: () => ({ pass: false, detail: { reason: 'staging patch did not apply', missed, why: pt.why } }) };
   }
   for (const [from, to] of pt.patches) body = body.split(from).join(to);
-  return { ...g, assert: body, stage: 'island', stagingPatch: pt.why };
+  return { ...g, [field]: body, stage: 'island', stagingPatch: pt.why };
 };
 const GATES = keptStack
   ? merged.map((g) => (restagedById.has(g.id)

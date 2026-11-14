@@ -521,6 +521,17 @@ export const FLAT_LANE = `function flatLane(len) {
  */
 export const PATCHED = [
   {
+    id: 'V21-camera-cover',
+    why: 'the shot took a tree collider within 220 m of the old valley origin; on the island it takes the nearest trunk-shaped camera collider to the player (vertical capsule, 0.33 < r <= 1.5 m, >= 2 m tall; trees first)',
+    patches: [
+      [".filter((c) => c.kind === 'tree' && Math.hypot(c.ax, c.az) < 220 && c.r > 0.33);",
+        ".filter((c) => c.type === 'capsule' && c.vertical && c.r > 0.33 && c.r <= 1.5 && (c.by - c.ay) >= 2 && c.camera !== false)\n"
+        + "        .map((c) => [c.kind === 'tree' ? 0 : 1, Math.hypot(c.ax - p.position.x, c.az - p.position.z), c.id, c])\n"
+        + "        .sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]).map((r) => r[3]);"],
+    ],
+    field: 'setup',
+  },
+  {
     id: 'A25b-nav-and-occlusion',
     why: 'the trunk sightlines took tree colliders within 220 m of the old valley origin; the island has none there, so they take the nearest trunk-shaped occluders (vertical capsules, r <= 1.2 m, >= 2 m tall; trees first) to the player',
     patches: [
