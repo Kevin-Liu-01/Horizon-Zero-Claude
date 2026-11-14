@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { disposeObjectTree } from '../../../core/assets.js';
+import { installCloth } from '../../../hero/clothShader.js';
 
 /**
  * CALIMA · the NPC bank (settlements; R56; plan §4.1, §4.4, gates A-npc-atlas-resident, A-npc-dispose).
@@ -20,8 +21,13 @@ const NPC_URL = (f) => `/models/npc/${f}.glb`;
 /** Noon's ambient (hemisphere intensity x colour luminance): the fill is full from here up (R59 c; same number as src/hero). */
 const FILL_AMBIENT_REF = 0.155;
 
-function patch(mat, fadeU) {
+/**
+ * `pre` (M1.5b): a dress on a sheet of its own carries Brea's cloth shading (src/hero/clothShader.js: the weave, grain and
+ * brass detail tiled at her size, the cloth rim), run before the fade and fill; it is its own program.
+ */
+function patch(mat, fadeU, pre = null) {
   mat.onBeforeCompile = (shader) => {
+    if (pre) pre(shader);
     shader.uniforms.uNpcFade = fadeU;
     shader.fragmentShader = `uniform float uNpcFade;\n${shader.fragmentShader}`
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -36,7 +42,7 @@ function patch(mat, fadeU) {
     if (uNpcFade >= 0.0 ? npcD >= uNpcFade : npcD < -uNpcFade) discard;
   }`);
   };
-  mat.customProgramCacheKey = () => 'npc-people-1';
+  mat.customProgramCacheKey = pre ? () => 'npc-people-1-cloth' : () => 'npc-people-1';
   return mat;
 }
 
@@ -52,6 +58,8 @@ export class NpcBank {
     /** base material -> its fade pool; any material -> its fade uniform (userData is JSON-cloned by Material.copy: not there). */
     this.pools = new Map();
     this.fadeU = new WeakMap();
+    /** base material -> the cloth hook its program runs first (a dress with its own sheet) */
+    this.preHooks = new WeakMap();
     this.casterMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false });
     this.casterMat.name = 'npc-caster';
     this._fillT = 0;
@@ -61,11 +69,12 @@ export class NpcBank {
   /* ------------------------------------------------------------------ materials */
 
   /** The one patched program + a fade uniform; registered with the sky's cascades and fog. */
-  _own(mat) {
+  _own(mat, pre = null) {
     const fadeU = { value: 1 };
     this.fadeU.set(mat, fadeU);
     mat.side = THREE.FrontSide;
-    patch(mat, fadeU);
+    if (pre) this.preHooks.set(mat, pre);
+    patch(mat, fadeU, pre);
     this.ctx.environment?.registerMaterial?.(mat);
     mat.needsUpdate = true;
     this.liveMats.add(mat);
@@ -84,7 +93,7 @@ export class NpcBank {
     // fading in shows the first `level / N` of the dither; fading out hides the same share (the two never overlap)
     const u = { value: dir > 0 ? level / FADE_LEVELS : -(level / FADE_LEVELS) };
     this.fadeU.set(m, u);
-    patch(m, u);
+    patch(m, u, this.preHooks.get(base) || null);
     this.ctx.environment?.registerMaterial?.(m);
     m.needsUpdate = true;
     pool[k] = m;
@@ -198,7 +207,7 @@ export class NpcBank {
   acquire(id) {
     let e = this.entries.get(id);
     if (e) { e.refs++; return e.promise; }
-    e = { id, refs: 1, scene: null, extras: null, npc: null, skinMat: null, faction: null, promise: null };
+    e = { id, refs: 1, scene: null, extras: null, npc: null, skinMat: null, outfitMat: null, ownOutfit: false, faction: null, promise: null };
     e.promise = (async () => {
       const gltf = await this.ctx.assets.loader.loadAsync(NPC_URL(id));
       const ex = gltf.parser?.json?.asset?.extras || {};
@@ -208,11 +217,23 @@ export class NpcBank {
       e.scene = gltf.scene;
       gltf.scene.traverse((o) => {
         if (o.isSkinnedMesh && /^Skin_/.test(o.name) && !e.skinMat) e.skinMat = o.material;
+        if (o.isSkinnedMesh && o.name === 'Outfit_L0' && !e.outfitMat) e.outfitMat = o.material;
       });
       e.skinMat.name = `npc-skin-${id}`;
       this._own(e.skinMat);
-      // both atlases are held for as long as the archetype is
-      await Promise.all([this.acquireAtlas(e.faction), this.acquireAtlas('hair')]);
+      // M1.5b: a dress on a sheet of its own (Ansel) keeps its own material, with Brea's cloth shading; any other person
+      // wears the faction atlas, resolved here
+      const own = e.npc?.outfitAtlas?.own && e.outfitMat?.map ? e.npc.outfitAtlas : null;
+      if (own) {
+        const m = e.outfitMat;
+        m.name = `npc-outfit-${id}`;
+        m.vertexColors = true;
+        installCloth(m, { rep: own.detailRep ?? 100 });
+        this._own(m, m.userData.vertexHook);
+        e.ownOutfit = true;
+      } else e.outfitMat = null;
+      // the atlases are held for as long as the archetype is
+      await Promise.all([...(e.ownOutfit ? [] : [this.acquireAtlas(e.faction)]), this.acquireAtlas('hair')]);
       return e;
     })();
     this.entries.set(id, e);
@@ -225,8 +246,9 @@ export class NpcBank {
     if (--e.refs > 0) return;
     this.entries.delete(id);
     if (e.skinMat) this._disposeMat(e.skinMat);
+    if (e.outfitMat) this._disposeMat(e.outfitMat);
     if (e.scene) disposeObjectTree(e.scene);
-    if (e.faction) this.releaseAtlas(e.faction);
+    if (e.faction && !e.ownOutfit) this.releaseAtlas(e.faction);
     this.releaseAtlas('hair');
   }
 

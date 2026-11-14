@@ -19,6 +19,7 @@ import { uvRect } from './atlas.mjs';
 import { clothTail } from '../../lib/human/wrap.mjs';
 import { bun, noise3, smooth } from '../../lib/human/face.mjs';
 import { ATLAS } from './atlas.mjs';
+import { matronOutfit } from './matron.mjs';
 
 const mix = (a, b, t) => a + (b - a) * t;
 const panelUV = (name, W = 1024) => ({ rect: ATLAS.sw[name], period: ATLAS.sw[name][2], W, pxPerM: 1 / 0.0016, v: [0, 1] });
@@ -177,8 +178,18 @@ export const OUTFITS = {
     },
   },
 
-  /* 2 — Guild Matron: orchil heavy, a long skirt, a shawl with a carmine edge, the brass guild chain */
+  /*
+   * 2 — Guild Matron Ansel (M1.5b): built on Brea's garment library with a sheet of her own (matron.mjs): the under-tunic, the
+   * shirt, the salt-white robe-vest with its embroidered band and panels, the girdle and the orchil sash, the guild chain,
+   * the key strap. `matronV0` below is the recoloured-stock dress it replaced, kept for the archetype comparison rows.
+   */
   matron: {
+    legsHidden: 1.0,
+    armory: matronOutfit,
+    parts: [],
+    pieces() {},
+  },
+  matronV0: {
     legsHidden: 1.0,
     parts: [
       { part: 'Female_Peasant_Arms', dye: PAN.orchilDeep, target: 3000, cutX: 0.615, cuff: PAN.carmine },

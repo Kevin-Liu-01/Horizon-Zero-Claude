@@ -21,6 +21,7 @@ import { buildNpc } from './lib/human.mjs';
 import { buildFactionAtlas, buildHairAtlas } from './lib/atlas.mjs';
 import { buildClipPack, readClipPack } from './lib/clips.mjs';
 import { existsSync } from 'node:fs';
+import { preencodeEtc1s } from '../armor/lib/output.mjs';
 
 export const LANE = 'settlements';
 const DIR = 'public/models/npc';
@@ -45,7 +46,10 @@ export async function build({ out = ROOT } = {}) {
     if (!want(a.id)) continue;
     clipOf ||= await readClipPack(existsSync(packOut) ? packOut : packShipped);
     const t0 = Date.now();
-    res[a.id] = await buildNpc(a, { file: path.join(out, DIR, `${a.id}.glb`), provenance: prov(['ubc-standard', 'mco-fantasy-standard', 'npc-generated']), log, clipOf });
+    const file = path.join(out, DIR, `${a.id}.glb`);
+    res[a.id] = await buildNpc(a, { file, provenance: prov(['ubc-standard', 'mco-fantasy-standard', 'npc-generated']), log, clipOf });
+    // a dress on a sheet of its own (M1.5b, Ansel): its base colour ships as ETC1S, as Brea's sets do (armor/lib/output.mjs)
+    if (res[a.id].ownOutfit) res[a.id].etc1s = await preencodeEtc1s(file, [`npc-${a.id}-outfit-base`]);
     log(`  ${a.id}: ${Date.now() - t0} ms`);
   }
   return res;

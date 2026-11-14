@@ -74,7 +74,7 @@ export class Person {
     // ONE skeleton for every mesh of this person (a clone gets one per mesh, each with a bone texture)
     const firstMesh = this.meshes.Skin_L0;
     this.skeleton = firstMesh.skeleton;
-    const outfitMat = bank.atlases.get(entry.faction).material, hairMat = bank.atlases.get('hair').material;
+    const outfitMat = entry.outfitMat || bank.atlases.get(entry.faction).material, hairMat = bank.atlases.get('hair').material;
     for (const name in this.meshes) {
       const m = this.meshes[name];
       if (m.skeleton !== this.skeleton) { m.skeleton.dispose(); m.skeleton = this.skeleton; }

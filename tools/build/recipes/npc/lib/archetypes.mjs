@@ -34,7 +34,8 @@ export const ARCHETYPES = [
     id: 'guild-matron', n: 2, name: 'Guild Matron', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.64, age: 63, browK: 0.72,
     tone: '#8E6547', iris: '#3A2A1E', amber: '#6A4A2C', hair: '#6A6660', hairPaint: '#3E3B38', greyHair: true,
     face: { noseBridge: [0, -1.0, 1.5], noseTip: [0, -5.0, 6.0], cheek: [7.0, -3.5, 1.0], jaw: [7.0, -1.5, 2.5], chin: [0, -8.0, 0.5], brow: [0, -2.0, -1.5], upperLip: [0, -3.0, -3.5] },
-    head: { kind: 'wrap', dye: PAN.orchilDeep, lining: PAN.carmine, seed: 22, bun: true, tail: 'left' },
+    // M1.5b (Q6, violet as an accent): the wrap is the guild's salt-white linen, orchil only on its lining and her sash
+    head: { kind: 'wrap', dye: PAN.salt, lining: PAN.orchil, seed: 22, bun: true, tail: 'left' },
     outfit: { key: 'matron' },
     clips: { idle: ['Idle_FoldArms_Loop', 'Idle_Talking_Loop', 'Idle_No_Loop'], walk: { clip: 'Walk_Formal_Loop', ts: 0.85, lean: -0.02, swing: 0.6 } },
   },

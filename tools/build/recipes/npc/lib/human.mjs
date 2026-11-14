@@ -576,7 +576,24 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   const OUT = OUTFITS[spec.outfit.key];
   const pieces = [];   // { geo, dye, hide, noHide, shade, prop }
   let armPose = null;
-  for (const ps of OUT.parts) {
+  // M1.5b: a dress built on Brea's garment library (OUT.armory: matron.mjs), on a sheet of its own. Its joints are the UBC
+  // pack's by name; the sash's swing socket and chain, which only Brea's runtime poses, ride the pelvis
+  let own = null;
+  if (OUT.armory) {
+    own = await OUT.armory();
+    const byName = new Map(root.listSkins()[0].listJoints().map((jn, i) => [jn.getName(), i]));
+    const pel = byName.get('pelvis');
+    const remap = own.jointNames.map((n) => (byName.has(n) ? byName.get(n) : pel));
+    const COVER = new Set(['underyoke', 'smock', 'skirt', 'under', 'sleeves', 'trousers', 'boots', 'vest', 'girdle', 'sashband', 'binds', 'cuffs']);
+    for (const p of own.parts) {
+      const g = { pos: p.pos.slice(), nrm: p.nrm.slice(), uv: p.uv.slice(), jnt: p.jnt.map((j) => remap[j]), wgt: p.wgt.slice(), col: [], idx: p.idx.slice() };
+      // two joints the remap folded together are one influence
+      for (let i = 0; i < g.jnt.length / 4; i++) for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) if (g.wgt[i * 4 + b] > 0 && g.jnt[i * 4 + b] === g.jnt[i * 4 + a]) { g.wgt[i * 4 + a] += g.wgt[i * 4 + b]; g.wgt[i * 4 + b] = 0; g.jnt[i * 4 + b] = 0; }
+      const cover = COVER.has(p.slot);
+      pieces.push({ geo: g, dye: null, hide: cover, noHide: !cover, shade: 1, part: `ansel:${p.slot}` });
+    }
+  }
+  for (const ps of own ? [] : OUT.parts) {
     let g = await loadPart(base, ps, SRC, dy);
     if (ps.cutX) g = clipAbsX(g, ps.cutX);
     if (ps.cutTop) g = clipTopY(g, ps.cutTop);
@@ -637,7 +654,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     palm: (side) => { const c = side === 'r' ? base.getRoot().listSkins()[0].listJoints()[J.hand_r] : base.getRoot().listSkins()[0].listJoints()[J.hand_l]; const w = c.getWorldMatrix(); return [w[12] + (side === 'r' ? -0.072 : 0.072), w[13] - dy - 0.024, w[14] + 0.02]; },
     armPose(o) { armPose = solveArmPose(base, o, dy); },
   };
-  OUT.pieces(ctx);
+  if (!own) OUT.pieces(ctx);
   // the cuffs need the cut geometry
   for (const q of pieces.slice()) if (q.cuff && q.cut) {
     for (const s of [1, -1]) {
@@ -1013,6 +1030,13 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   const skin = root.listSkins()[0];
   const arm = nodeByName(base, 'Armature');
   const outfitMat = base.createMaterial('MI_Npc_Outfit').setMetallicFactor(1).setRoughnessFactor(1);
+  if (own) {
+    // her own sheet: base colour, normal, ORM (R the detail class src/hero/clothShader.js reads, G roughness, B metal; the
+    // contact shade is in COLOR_0), and the faction materials' fill (emissive = base x 0.07, scaled by the scene's ambient)
+    const tex = (name, bytes) => base.createTexture(name).setImage(bytes).setMimeType('image/webp').setURI(`${name}.webp`);
+    const tb = tex(`npc-${spec.id}-outfit-base`, own.tex.base), tn = tex(`npc-${spec.id}-outfit-normal`, own.tex.normal), to = tex(`npc-${spec.id}-outfit-orm`, own.tex.orm);
+    outfitMat.setBaseColorTexture(tb).setNormalTexture(tn).setMetallicRoughnessTexture(to).setEmissiveTexture(tb).setEmissiveFactor([0.07, 0.07, 0.07]).setDoubleSided(false);
+  }
   const hairMat = base.createMaterial('MI_Npc_Hair').setAlphaMode('MASK').setAlphaCutoff(0.5).setDoubleSided(false).setMetallicFactor(1).setRoughnessFactor(1);
   const casterMat = base.createMaterial('MI_Npc_Caster');
   const buf = root.listBuffers()[0];
@@ -1049,6 +1073,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
         pieces: pieces.map((p) => p.part || (p.prop ? `prop:${p.prop}` : 'procedural')).reduce((m, k) => { m[k] = (m[k] || 0) + 1; return m; }, {}),
         layers: pieces.filter((p) => !p.prop && !p.noHide).length,
         procedural: pieces.filter((p) => !p.part).length,
+        outfitAtlas: own ? { own: true, W: 1024, D: +own.D.toFixed(1), detailRep: own.detailRep, trimV: +own.trimV.toFixed(5), slots: own.slots, base: `npc-${spec.id}-outfit-base` } : null,
         head: H.kind, hairParts: wrapped ? wrapped.parts : null, cards: cardCount, culled, eyesCulled,
       },
       r5Face: faceRec,
@@ -1056,7 +1081,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     },
   });
   log(`  ${spec.id}: ${JSON.stringify(tierTris)} ${stats.bytes} B, density ${(densityK + 0.04).toFixed(2)} shrink ${layout.shrink.toFixed(3)}, body box ${bodyBox.lo.toFixed(3)}..${bodyBox.hi.toFixed(3)}`);
-  return { ...stats, tiers: tierTris, face: faceRec.landmarks, iou: faceRec.iou };
+  return { ...stats, tiers: tierTris, face: faceRec.landmarks, iou: faceRec.iou, ownOutfit: !!own };
 }
 
 /**
