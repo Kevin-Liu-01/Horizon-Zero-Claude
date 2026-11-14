@@ -1,97 +1,109 @@
 #!/usr/bin/env node
 /**
- * CALIMA — the PLUMB generator (instruments-a, W1; bible §7.4 #2). Original
- * work: no third-party asset is read.
+ * CALIMA — the PLUMB generator (instruments; BIBLE §7.4 #2, BUILD M1.4c). Original work: no third-party asset is
+ * read. Built from the shared hull kit (`parts/kit.mjs`, M1.4a).
  *
  *   node tools/build/instruments/gen-plumb.mjs [--out <dir>] [--scale <k>]
- *     -> public/models/instruments/plumb.glb   (hull + sensor; a small kind ships no LOD1: ROUND5-LOOK I-04 gives it cascade 0 only)
+ *     -> public/models/instruments/plumb.glb   (hull + vial glass + two tools: the bob and the lamp drum)
  *
- * THE WALKING THEODOLITE (small; the sentry, role `sentry`). Three long staff
- * legs painted as levelling staffs (vermilion / staff-white E pattern, black
- * 1 cm ticks through the shared decal atlas) meet in bronze clevises at a
- * bronze tripod head with a tribrach and three levelling screws; a celadon
- * lamp drum on a short mast turns 360 degrees (the gait's head look); two
- * bronze standards carry the sighting telescope on its trunnion, a graduated
- * vertical circle, and on top the glowing LEVEL VIAL (its weak point: two hits
- * and it cannot find level, so it topples); a bronze plumb bob hangs from the
- * head on 1.2 m of cable — a 2-bone tail the kind file swings as a pendulum.
- * Bible size 2.4 x 2.4 x 3.4 m, <= 15 k tris, <= 18 bones (14 here). The bob is
- * a TOOL (bible §7.3: Pry tears it off; no melee after): its own unlabelled node
- * `plumb-bob`, mounted by the kind file on the `tail2` bone as a component.
+ * THE SENTRY, 3.4 m. Three long graduated staff legs (white enamel, thin vermilion and white graduations and black
+ * ticks as flat ink) hang from gunmetal clevises under a brass tripod head with a tribrach and levelling screws. A
+ * short gunmetal mast carries the head: a GYROSCOPE SPHERE of six white-enamel lune plates riveted over a gunmetal
+ * core, girdled by a brass equatorial ring (vernier engraved, enamel flange tabs, two side wings) and crossed by two
+ * brass gyroscope rings on gunmetal pivots. The LAMP DRUM sits in the ring's front opening (an enamel barrel, a
+ * brass bezel with its vernier, the iris at its face; a sighting telescope and the limb circle beside it: never a
+ * lens on a neck). On top, in a brass cradle, the LEVEL VIAL: a 0.30 m pale-ice glass tube with a bubble, the
+ * weak point (two hits and it cannot find level: it topples). Two antennae with spike finials rise behind it to
+ * 3.40 m. A brass PLUMB BOB hangs from the tripod head on 1.2 m of cable (a 2-bone tail the kind file swings). A
+ * small faded orchil banner hangs at the back. The dust band is the kit's lowest 0.6 m.
  *
- * THE `scale` PARAM (bible: "the same generator at scale 3x and 6.5x walks
- * hull-hidden before the Transit exists"). Every length the generator writes —
- * geometry, rig spec, sockets, r5Size — is multiplied by `scale` at the end,
- * and nothing else depends on it, so a Plumb at scale k is exactly the scale-1
- * Plumb scaled by k. The runtime applies the same param through
- * `src/instruments/kinds/plumb.js` (`opts.scale`), using `scaleRig` from the
- * shared kit, so `A-plumb-scale` grades the generator's own rig at 3 and 6.5
- * without shipping two more GLBs. `--scale` writes a scaled file for review.
+ * Tools (BIBLE §7.3 "Tool ... Pry tears it off"): the bob (`plumb-bob`, on `tail2`) and the lamp drum
+ * (`plumb-drum`, on `head`; torn off, the Plumb has no lamp and cannot Flag). Each is its own unlabelled node.
  *
- * Space: metres, +Y up, +Z forward (the front leg points down +Z; the lamp
- * looks forward), y = 0 at the feet.
+ * THE `scale` PARAM: every length written (geometry, rig, sockets, r5Size) is multiplied by `scale` at the end, so
+ * a Plumb at scale k is the scale-1 Plumb scaled by k; the runtime applies the same through `scaleRig`.
+ *
+ * Space: metres, +Y up, +Z forward (the front leg and the lamp look down +Z), y = 0 at the feet.
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { V, strut, ball, rbox, torus, cable, plate, lathe, basis, at, AXIS_Z, AXIS_X } from '../lib/hs.mjs';
+import { V, strut, ball, rbox, torus, cable, plate, lathe, basis, at } from '../lib/hs.mjs';
 import {
-  THREE, C, KBucket, mergeLabelled, finish, lod1From, writeInstrument, solveKnee, scaleRig,
-  BAND, bandV, wrapDecal, ringDecal, numeralUV,
+  THREE, C, KBucket, mergeLabelled, finish, writeInstrument, solveKnee, scaleRig, numeralUV,
+  resetKitStats, rivet, rivetRing, enamelSphere, limbRing, gyroRing, lampDrum, levelVial, staff, antenna, banner,
 } from './parts/kit.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-export const LANE = 'instruments-a';
+export const LANE = 'instruments';
 export const RECIPE = 'tools/build/instruments/gen-plumb.mjs';
 export const OUTPUTS = ['public/models/instruments/plumb.glb'];
 
-/** Design constants the kind file mirrors (scale 1). */
+/** Design constants (scale 1). */
 export const PLUMB = Object.freeze({
-  headY: 2.28, mastTop: 2.66, drumY: 2.90, drumR: 0.26, lampR: 0.19,
-  vialY: 3.28, bobTopY: 1.08, legSpreadR: 1.24,
+  headY: 1.90,          // top of the tripod head plate
+  sphereY: 2.48, sphereR: 0.42,
+  ringIn: 0.425, ringOut: 0.55,
+  drumBackZ: 0.32, drumR: 0.20, drumDepth: 0.19,
+  vialY: 2.97, vialLen: 0.30, vialR: 0.045,
+  top: 3.40,
+  cable: 1.2, bobLen: 0.36,
+  legSpreadR: 1.20,
 });
 
-export async function build({ out = ROOT, scale = 1, file = null } = {}) {
+export async function build({ out = ROOT, scale = 1, file = null, noDust = false } = {}) {
+  resetKitStats();
   const P = (r, h, surf, tone) => ({ r, h, surf, tone });
   const BONES = [];
-  const hull = new Map(), lamp = new Map();
+  const hull = new Map(), glass = new Map();
   const H = (b) => { if (!hull.has(b)) { hull.set(b, new KBucket(`hull:${b}`)); if (!BONES.includes(b)) BONES.push(b); } return hull.get(b); };
-  const L = (b) => { if (!lamp.has(b)) { lamp.set(b, new KBucket(`lamp:${b}`)); if (!BONES.includes(b)) BONES.push(b); } return lamp.get(b); };
-  const { headY: HEAD_Y, drumY: DRUM_Y, drumR: DRUM_R } = PLUMB;
+  const G = (b) => { if (!glass.has(b)) { glass.set(b, new KBucket(`glass:${b}`)); if (!BONES.includes(b)) BONES.push(b); } return glass.get(b); };
+  const { headY: HEAD_Y, sphereY: SY, sphereR: SR } = PLUMB;
+  const SC = V(0, SY, 0);
 
   /* ----------------------------- tripod head ------------------------------ */
-  // the head plate: bronze, a graphite underside cone the bob cable leaves from
   lathe(H('pelvis'), [
-    P(0, -0.20, 'graphite', C.GRAPH), P(0.05, -0.20, 'graphite', C.GRAPH), P(0.12, -0.12, 'graphite', C.GRAPH),
-    P(0.22, -0.06, 'bronze', C.BRONZE), P(0.31, -0.03, 'bronze', C.BRONZE), P(0.32, 0.00, 'bronze', C.BRONZE),
-    P(0.31, 0.04, 'patina', C.VERDI), P(0.27, 0.06, 'bronze', C.BRONZE), P(0.20, 0.07, 'graphite', C.GRAPH),
-    P(0.20, 0.10, 'bronze', C.BRONZE), P(0, 0.10, 'bronze', C.BRONZE),
-  ], at(0, HEAD_Y, 0), { segs: 36, wear: 0.5, crease: 30 });
-  // the tribrach: a triangular bronze plate with a levelling screw at each corner (knurled graphite knob)
+    P(0, -0.18, 'graphite', C.GUNMETAL), P(0.05, -0.18, 'graphite', C.GUNMETAL), P(0.12, -0.11, 'graphite', C.GUNMETAL),
+    P(0.22, -0.06, 'glaze', C.ENAMEL), P(0.29, -0.035, 'bronze', C.BRASS), P(0.31, -0.01, 'bronze', C.BRASS),
+    P(0.31, 0.02, 'bronze', C.BRASS), P(0.285, 0.04, 'glaze', C.ENAMEL), P(0.19, 0.055, 'glaze', C.ENAMEL),
+    P(0.18, 0.08, 'glaze', C.ENAMEL), P(0, 0.08, 'glaze', C.ENAMEL),
+  ], at(0, HEAD_Y - 0.05, 0), { segs: 36, wear: 0.5, crease: 30 });
+  rivetRing(H('pelvis'), V(0, HEAD_Y - 0.015, 0), V(0, 1, 0), 0.22, 12, 0.01, { phase: 0.26 });
+  // the tribrach: a triangular brass plate on three levelling screws (knurled gunmetal knobs)
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * Math.PI * 2 + Math.PI / 3;
-    const x = Math.sin(a) * 0.17, z = Math.cos(a) * 0.17;
-    strut(H('pelvis'), V(x, HEAD_Y + 0.10, z), V(x, HEAD_Y + 0.20, z), 0.018, 0.018, { surf: 'bronze', tone: C.BRONZE, sides: 8 });
-    strut(H('pelvis'), V(x, HEAD_Y + 0.115, z), V(x, HEAD_Y + 0.15, z), 0.042, 0.042, { surf: 'graphite', tone: C.GRAPH, sides: 12, wear: 0.6 });
+    const x = Math.sin(a) * 0.15, z = Math.cos(a) * 0.15;
+    strut(H('pelvis'), V(x, HEAD_Y + 0.03, z), V(x, HEAD_Y + 0.12, z), 0.016, 0.016, { surf: 'bronze', tone: C.BRASS, sides: 8 });
+    strut(H('pelvis'), V(x, HEAD_Y + 0.045, z), V(x, HEAD_Y + 0.08, z), 0.036, 0.036, { surf: 'graphite', tone: C.GUNMETAL, sides: 12, wear: 0.6 });
   }
-  plate(H('pelvis'), [[0, 0.22], [0.19, -0.11], [-0.19, -0.11]], 0.03, 0.01,
-    basis(V(1, 0, 0), V(0, 0, -1), V(0, 1, 0), V(0, HEAD_Y + 0.215, 0)), { surf: 'bronze', tone: C.BRONZE, wear: 0.6 });
+  plate(H('pelvis'), [[0, 0.2], [0.17, -0.1], [-0.17, -0.1]], 0.025, 0.008,
+    basis(V(1, 0, 0), V(0, 0, -1), V(0, 1, 0), V(0, HEAD_Y + 0.13, 0)), { surf: 'glaze', tone: C.ENAMEL, wear: 0.4 });
+  // a serial on the head's rim, engraved: "06"
+  for (const [k, dgt] of [[-1, 0], [1, 6]]) {
+    const c = V(k * 0.035, HEAD_Y - 0.015, -0.312);
+    const M = basis(V(-1, 0, 0), V(0, 1, 0), V(0, 0, -1), c);
+    const mk = H('pelvis').mark();
+    plate(H('pelvis'), [[-0.026, -0.022], [0.026, -0.022], [0.026, 0.022], [-0.026, 0.022]], 0.004, 0.0, M, { surf: 'bronze', tone: C.ENAMEL, wear: 0.1 });
+    H('pelvis').decalSince(mk, { frame: M, fn: (p) => numeralUV(dgt, (p.x + 0.026) / 0.052, 1 - (p.y + 0.022) / 0.044) });
+  }
   // three clevis lugs on the rim; the legs hang from their pins
   const LEG_AZ = [['MF', 0, 1], ['LH', -2 * Math.PI / 3, -1], ['RH', 2 * Math.PI / 3, -1]];
   for (const [, a] of LEG_AZ) {
     const out_ = V(Math.sin(a), 0, Math.cos(a)), tan = V(Math.cos(a), 0, -Math.sin(a));
-    const c = V(0, HEAD_Y - 0.02, 0).addScaledVector(out_, 0.29);
+    const c = V(0, HEAD_Y - 0.06, 0).addScaledVector(out_, 0.29);
     for (const s of [-1, 1]) {
-      rbox(H('pelvis'), V(0, 0, 0), [0.022, 0.12, 0.11], 0.008,
-        { surf: 'bronze', tone: C.BRONZE, wear: 0.6, matrix: basis(tan, V(0, 1, 0), out_, c.clone().addScaledVector(tan, s * 0.055)) });
+      rbox(H('pelvis'), V(0, 0, 0), [0.02, 0.12, 0.1], 0.007,
+        { surf: 'graphite', tone: C.GUNMETAL, wear: 0.5, segs: 1, matrix: basis(tan, V(0, 1, 0), out_, c.clone().addScaledVector(tan, s * 0.05)) });
     }
   }
+  // the banner: a small faded orchil survey banner on the back of the head (BIBLE banner rule)
+  banner(H('pelvis'), V(0, HEAD_Y - 0.07, -0.335), V(1, 0, 0), { w: 0.17, h: 0.40, out: V(0, 0, -1) });
 
   /* ---------------------------------- legs --------------------------------- */
-  const L1 = 0.70, L2 = 1.74;   // chord 2.35 m: the knee sits just proud of the staff line
+  const L1 = 0.62, L2 = 1.42;
   const LEGS = [];
   for (const [id, a, hinge] of LEG_AZ) {
     const out_ = V(Math.sin(a), 0, Math.cos(a));
-    const hip = V(0, HEAD_Y - 0.05, 0).addScaledVector(out_, 0.29);
+    const hip = V(0, HEAD_Y - 0.09, 0).addScaledVector(out_, 0.29);
     const ankle = V(0, 0.10, 0).addScaledVector(out_, PLUMB.legSpreadR);
     const knee = solveKnee(hip, ankle, hinge, L1, L2);
     const toe = ankle.clone().add(V(0, -0.09, 0)).addScaledVector(out_, 0.06);
@@ -101,201 +113,200 @@ export async function build({ out = ROOT, scale = 1, file = null } = {}) {
     const thigh = `${Lg.id}_thigh`, shin = `${Lg.id}_shin`, foot = `${Lg.id}_foot`;
     const tan = V(Math.cos(Lg.a), 0, -Math.sin(Lg.a));
     // the clevis pin (thigh owns it)
-    strut(H(thigh), Lg.hip.clone().addScaledVector(tan, -0.085), Lg.hip.clone().addScaledVector(tan, 0.085), 0.022, 0.022,
-      { surf: 'graphite', tone: C.GRAPH, sides: 10 });
-    // upper section: twin cheeks (a survey tripod's double rail), staff white with a vermilion band, bronze-capped
+    strut(H(thigh), Lg.hip.clone().addScaledVector(tan, -0.075), Lg.hip.clone().addScaledVector(tan, 0.075), 0.02, 0.02, { surf: 'graphite', tone: C.GUNMETAL, sides: 10 });
+    for (const s of [-1, 1]) rivet(H(thigh), Lg.hip.clone().addScaledVector(tan, s * 0.075), tan.clone().multiplyScalar(s), 0.012);
+    // upper section: twin enamel cheeks (a survey tripod's double rail), brass clamp collars, rivets
     const d1 = Lg.knee.clone().sub(Lg.hip);
     const len1 = d1.length(); d1.normalize();
     const { x: tx, z: w } = frameY(d1, tan);
     for (const s of [-1, 1]) {
-      const c = Lg.hip.clone().addScaledVector(d1, len1 * 0.5).addScaledVector(tx, s * 0.035);
-      const M = basis(tx, d1, w, c);
-      rbox(H(thigh), V(0, 0, 0), [0.03, len1 * 0.92, 0.05], 0.009, { surf: 'glaze', tone: C.STAFF, wear: 0.3, matrix: M, segs: 1 });
-      // one vermilion band per cheek (geometry: a box has no vertices mid-length for a decal to land on)
-      rbox(H(thigh), V(0, len1 * 0.2, 0), [0.034, len1 * 0.14, 0.054], 0.008, { surf: 'glaze', tone: C.VERM, wear: 0.2, matrix: M, segs: 1 });
+      const c = Lg.hip.clone().addScaledVector(d1, len1 * 0.5).addScaledVector(tx, s * 0.038);
+      rbox(H(thigh), V(0, 0, 0), [0.034, len1 * 0.9, 0.062], 0.009, { surf: 'glaze', tone: C.ENAMEL, wear: 0.3, matrix: basis(tx, d1, w, c), segs: 1 });
     }
-    for (const f of [0.08, 0.93]) {
+    for (const f of [0.1, 0.9]) {
       const c = Lg.hip.clone().addScaledVector(d1, len1 * f);
-      rbox(H(thigh), V(0, 0, 0), [0.115, 0.06, 0.065], 0.012, { surf: 'bronze', tone: C.BRONZE, wear: 0.7, matrix: basis(tx, d1, w, c) });
+      rbox(H(thigh), V(0, 0, 0), [0.108, 0.05, 0.064], 0.01, { surf: 'bronze', tone: C.BRASS, wear: 0.7, segs: 1, matrix: basis(tx, d1, w, c) });
+      for (const s of [-1, 1]) rivet(H(thigh), c.clone().addScaledVector(w, 0.032).addScaledVector(tx, s * 0.034), w, 0.009);
     }
-    // the knee: a bronze clamp collar with a wing screw (sagittal pin)
-    strut(H(thigh), Lg.knee.clone().addScaledVector(tan, -0.07), Lg.knee.clone().addScaledVector(tan, 0.07), 0.045, 0.045,
-      { surf: 'graphite', tone: C.GRAPH, sides: 12 });
-    const ws = Lg.knee.clone().addScaledVector(w, 0.06);
-    strut(H(thigh), Lg.knee, ws, 0.012, 0.012, { surf: 'bronze', tone: C.BRONZE, sides: 6 });
-    { const f = frameY(w, tan); plate(H(thigh), [[-0.05, -0.015], [0.05, -0.015], [0.04, 0.015], [-0.04, 0.015]], 0.012, 0.003,
-      basis(f.x, f.y, f.z, ws), { surf: 'bronze', tone: C.BRONZE, wear: 0.6 }); }
-    // the shin: the levelling staff (octagonal, staff white x the E-pattern decal), a bronze sliding collar
+    // the knee: a gunmetal joint with a brass wing screw
+    strut(H(thigh), Lg.knee.clone().addScaledVector(tan, -0.065), Lg.knee.clone().addScaledVector(tan, 0.065), 0.042, 0.042, { surf: 'graphite', tone: C.GUNMETAL, sides: 12 });
+    const ws = Lg.knee.clone().addScaledVector(w, 0.055);
+    strut(H(thigh), Lg.knee, ws, 0.011, 0.011, { surf: 'bronze', tone: C.BRASS, sides: 6 });
+    { const f = frameY(w, tan); plate(H(thigh), [[-0.045, -0.013], [0.045, -0.013], [0.035, 0.013], [-0.035, 0.013]], 0.01, 0.003, basis(f.x, f.y, f.z, ws), { surf: 'bronze', tone: C.BRASS, wear: 0.6 }); }
+    // the shin: a graduated staff (white enamel, thin graduations; ticks on its outer face), brass sliding collars
     const d2 = Lg.ankle.clone().sub(Lg.knee);
     const len2 = d2.length(); d2.normalize();
-    const s0 = Lg.knee.clone().addScaledVector(d2, 0.03), s1 = Lg.knee.clone().addScaledVector(d2, len2 * 0.86);
-    {
-      const { m: M } = alongY(s0, s1);
-      const mk = H(shin).mark();
-      strut(H(shin), s0, s1, 0.042, 0.033, { surf: 'glaze', tone: C.STAFF, sides: 8, wear: 0.25 });
-      H(shin).decalSince(mk, { frame: M, fn: (p) => [((p.y + s0.distanceTo(s1) / 2) / 0.4), bandV(BAND.staff, ((((Math.atan2(p.x, p.z) / (2 * Math.PI) + 0.5 + Lg.a / (2 * Math.PI)) % 1) + 1) % 1) * 0.95 + 0.02)] });
-    }
-    for (const f of [0.0, 0.42]) {
+    const s0 = Lg.knee.clone().addScaledVector(d2, 0.03), s1 = Lg.knee.clone().addScaledVector(d2, len2 * 0.95);
+    staff(H(shin), s0, s1, 0.046, 0.036, { sides: 8, face: Lg.out, phase: 0.13 });
+    for (const f of [0.0, 0.44]) {
       const c = Lg.knee.clone().addScaledVector(d2, len2 * f + 0.02);
-      strut(H(shin), c, c.clone().addScaledVector(d2, 0.06), 0.05, 0.048, { surf: 'bronze', tone: C.BRONZE, sides: 10, wear: 0.6 });
+      strut(H(shin), c, c.clone().addScaledVector(d2, 0.04), 0.053, 0.051, { surf: 'bronze', tone: C.BRASS, sides: 10, wear: 0.6 });
+      rivet(H(shin), c.clone().addScaledVector(d2, 0.02).addScaledVector(Lg.out, 0.052), Lg.out, 0.009);
     }
-    // the shoe: bronze ferrule, a steel point and a graphite disc pad (foot owns it)
+    // the shoe: brass ferrule, a gunmetal disc pad and a steel point (foot owns the pad)
     const fa = Lg.ankle;
-    strut(H(shin), s1, fa.clone().addScaledVector(d2, -0.02), 0.034, 0.03, { surf: 'bronze', tone: C.BRONZE, sides: 10, wear: 0.6 });
-    ball(H(foot), fa, 0.04, { surf: 'graphite', tone: C.GRAPH });
+    strut(H(shin), s1, fa.clone().addScaledVector(d2, -0.02), 0.038, 0.03, { surf: 'bronze', tone: C.BRASS, sides: 10, wear: 0.6 });
+    ball(H(foot), fa, 0.038, { surf: 'graphite', tone: C.GUNMETAL });
     const pad = V(fa.x, 0, fa.z).addScaledVector(Lg.out, 0.03);
     lathe(H(foot), [
-      P(0, 0, 'rubber', C.RUBBER), P(0.085, 0, 'rubber', C.RUBBER), P(0.09, 0.02, 'bronze', C.BRONZE),
-      P(0.06, 0.05, 'bronze', C.BRONZE), P(0.03, 0.06, 'graphite', C.GRAPH), P(0, 0.065, 'graphite', C.GRAPH),
+      P(0, 0, 'rubber', C.RUBBER), P(0.082, 0, 'rubber', C.RUBBER), P(0.087, 0.02, 'graphite', C.GUNMETAL),
+      P(0.058, 0.048, 'graphite', C.GUNMETAL), P(0.03, 0.058, 'bronze', C.BRASS), P(0, 0.062, 'bronze', C.BRASS),
     ], at(pad.x, pad.y, pad.z), { segs: 16, wear: 0.6 });
-    strut(H(foot), fa, V(pad.x, 0.055, pad.z), 0.03, 0.025, { surf: 'graphite', tone: C.GRAPH, sides: 8 });
-    // the spur: a steel point behind the pad (the staff's shoe)
-    strut(H(foot), V(pad.x, 0.05, pad.z).addScaledVector(Lg.out, 0.05), V(pad.x, 0.0, pad.z).addScaledVector(Lg.out, 0.12), 0.016, 0.004,
+    strut(H(foot), fa, V(pad.x, 0.055, pad.z), 0.028, 0.024, { surf: 'graphite', tone: C.GUNMETAL, sides: 8 });
+    strut(H(foot), V(pad.x, 0.05, pad.z).addScaledVector(Lg.out, 0.05), V(pad.x, 0.0, pad.z).addScaledVector(Lg.out, 0.12), 0.015, 0.004,
       { surf: 'graphite', tone: C.CHROME, sides: 6 });
   }
 
-  /* ------------------------------ mast + drum ------------------------------ */
-  strut(H('neck'), V(0, HEAD_Y + 0.21, 0), V(0, PLUMB.mastTop, 0), 0.062, 0.055, { surf: 'graphite', tone: C.GRAPH, sides: 16 });
-  torus(H('neck'), V(0, HEAD_Y + 0.30, 0), 0.068, 0.014, 'y', { surf: 'bronze', tone: C.BRONZE, tube: 6, radial: 20 });
-  // the horizontal circle under the drum: a bronze disc engraved with the vernier (uv1)
+  /* ------------------------------- the mast -------------------------------- */
+  const MAST0 = HEAD_Y + 0.13, MAST1 = SY - SR + 0.02;
+  strut(H('neck'), V(0, MAST0, 0), V(0, MAST1 + 0.02, 0), 0.055, 0.05, { surf: 'graphite', tone: C.GUNMETAL, sides: 16 });
+  torus(H('neck'), V(0, MAST0 + 0.03, 0), 0.06, 0.012, 'y', { surf: 'bronze', tone: C.BRASS, tube: 6, radial: 20 });
+
+  /* ------------------------- the gyroscope-sphere head --------------------- */
+  const HD = H('head');
+  // the horizontal limb circle under the sphere (vernier engraved)
+  limbRing(HD, at(0, MAST1 + 0.005, 0), 0.06, 0.22, 0.03, { ticks: 8, faceSurf: 'glaze', faceTone: C.ENAMEL });
+  // the shell: six enamel lunes over the gunmetal core, seams away from the lamp
+  enamelSphere(HD, SC, SR, { panels: 6, gap: 6, latMin: -62, latMax: 62, phiStart: Math.PI / 6, segs: 48, coreSegs: [20, 12] });
+  // pole bosses: brass rings that close the shell at top and bottom
+  limbRing(HD, at(0, SY + SR * 0.86, 0), 0.03, 0.2, 0.035, { ticks: 6, vernier: false, faceSurf: 'glaze', faceTone: C.ENAMEL });
+  limbRing(HD, at(0, SY - SR * 0.86, 0), 0.03, 0.2, 0.035, { ticks: 6, vernier: false, tone: C.GUNMETAL, surf: 'graphite', faceSurf: 'glaze', faceTone: C.ENAMEL });
+  // the brass equatorial ring, open at the front where the drum sits; its face engraved with the vernier
+  const OPEN = THREE.MathUtils.degToRad(30);
+  limbRing(HD, at(0, SY, 0), PLUMB.ringIn, PLUMB.ringOut, 0.05, { ticks: 24, phiStart: OPEN, phiLength: Math.PI * 2 - 2 * OPEN, segs: 64, faceSurf: 'glaze', faceTone: C.ENAMEL, outerSurf: 'glaze', outerTone: C.ENAMEL });
+  // rivets round the ring's face, none in the opening (rivetRing about +Y puts u at (cos u, 0, -sin u))
+  rivetRing(HD, V(0, SY + 0.026, 0), V(0, 1, 0), (PLUMB.ringIn + PLUMB.ringOut) / 2, 30, 0.01,
+    { skip: (u) => Math.abs(Math.atan2(Math.cos(u), -Math.sin(u))) < OPEN + 0.08 });
+  // flange tabs and two side wings on the ring (enamel plates, brass rivets)
+  for (const [azDeg, len, wid] of [[55, 0.63, 0.13], [-55, 0.63, 0.13], [125, 0.63, 0.13], [-125, 0.63, 0.13], [90, 0.71, 0.17], [-90, 0.71, 0.17], [180, 0.62, 0.12]]) {
+    const az = THREE.MathUtils.degToRad(azDeg);
+    const out_ = V(Math.sin(az), 0, Math.cos(az)), tan = V(Math.cos(az), 0, -Math.sin(az));
+    // outline in (tan, out) with the plate's normal along +Y
+    const Mp = basis(tan, out_.clone(), new THREE.Vector3().crossVectors(tan, out_), V(0, SY, 0));
+    plate(HD, [[-wid / 2, PLUMB.ringOut - 0.04], [wid / 2, PLUMB.ringOut - 0.04], [wid * 0.32, len], [-wid * 0.32, len]], 0.028, 0.006, Mp,
+      { surf: 'glaze', tone: C.ENAMEL, wear: 0.35 });
+    const n = new THREE.Vector3().crossVectors(tan, out_).normalize();
+    const up = n.y > 0 ? n : n.clone().negate();
+    for (const r of [PLUMB.ringOut + 0.03, len - 0.035]) rivet(HD, V(0, SY, 0).addScaledVector(out_, r).addScaledVector(up, 0.016), up, 0.01);
+  }
+  // two gyroscope rings on gunmetal pivots, crossing behind and beside the drum
   {
-    const M = at(0, PLUMB.mastTop - 0.02, 0);
-    const mk = H('head').mark();
-    lathe(H('head'), [
-      P(0, 0, 'graphite', C.GRAPH), P(0.29, 0, 'bronze', C.BRONZE), P(0.30, 0.025, 'bronze', C.BRONZE),
-      P(0.27, 0.04, 'bronze', C.BRONZE), P(0, 0.04, 'bronze', C.BRONZE),
-    ], M, { segs: 48, wear: 0.4, crease: 25 });
-    H('head').decalSince(mk, { frame: M, uPeriod: 8, fn: (p) => (p.y > 0.003 && Math.hypot(p.x, p.z) > 0.26 ? [(Math.atan2(p.x, p.z) / (2 * Math.PI) + 0.5) * 8, bandV(BAND.vernier, 0.35)] : null) });
+    const t1 = THREE.MathUtils.degToRad(16);
+    gyroRing(HD, SC, V(0, -Math.sin(t1), Math.cos(t1)), 0.49, 0.012, { pivot: V(1, 0, 0) });
+    const t2 = THREE.MathUtils.degToRad(55);
+    gyroRing(HD, SC, V(Math.sin(t2), 0.12, Math.cos(t2)).normalize(), 0.475, 0.010, { pivot: V(Math.cos(t2), 0, -Math.sin(t2)) });
   }
-  // the lamp drum: celadon glaze over bronze, an oxblood band, panel seams; the lamp face sits in its front
-  const D0 = DRUM_Y - 0.21, D1 = DRUM_Y + 0.21;
-  lathe(H('head'), [
-    P(0, 0, 'graphite', C.GRAPH), P(DRUM_R - 0.03, 0, 'bronze', C.BRONZE), P(DRUM_R, 0.03, 'glaze', C.CELADON),
-    P(DRUM_R + 0.005, 0.12, 'glaze', C.CELADON), P(DRUM_R + 0.005, 0.135, 'glaze', C.OXBLOOD), P(DRUM_R + 0.005, 0.175, 'glaze', C.OXBLOOD),
-    P(DRUM_R + 0.005, 0.19, 'glaze', C.CELADON), P(DRUM_R, 0.39, 'glaze', C.CELADON), P(DRUM_R - 0.02, 0.42, 'bronze', C.BRONZE),
-    P(0.12, 0.43, 'bronze', C.BRONZE), P(0, 0.43, 'graphite', C.GRAPH),
-  ], at(0, D0, 0), { segs: 40, panels: 4, gap: 1.8, wear: 0.45, phiStart: Math.PI / 4 });
-  lathe(H('head'), [P(DRUM_R - 0.02, 0, 'graphite', C.GRAPH), P(DRUM_R - 0.02, 0.42, 'graphite', C.GRAPH)], at(0, D0, 0), { segs: 20, wear: 0.1 });
-  // the hood over the lamp: a bronze visor plate
-  plate(H('head'), [[-0.2, 0], [0.2, 0], [0.16, 0.12], [-0.16, 0.12]], 0.015, 0.005,
-    basis(V(1, 0, 0), V(0, 0.35, 1).normalize(), V(0, 1, -0.35).normalize(), V(0, D1 - 0.03, DRUM_R - 0.02)), { surf: 'bronze', tone: C.BRONZE, wear: 0.6 });
-  // a serial on the drum's back: "06" engraved in brass (the decal numerals)
-  for (const [k, dgt] of [[-1, 0], [1, 6]]) {
-    const c = V(k * 0.045, DRUM_Y + 0.02, -DRUM_R - 0.006);
-    const M = basis(V(-1, 0, 0), V(0, 1, 0), V(0, 0, -1), c);
-    const mk = H('head').mark();
-    plate(H('head'), [[-0.035, -0.05], [0.035, -0.05], [0.035, 0.05], [-0.035, 0.05]], 0.006, 0.0, M, { surf: 'bronze', tone: C.STAFF, wear: 0.1 });
-    H('head').decalSince(mk, { frame: M, fn: (p) => numeralUV(dgt, (p.x + 0.035) / 0.07, 1 - (p.y + 0.05) / 0.1) });
-  }
-  // the standards: two bronze uprights carrying the telescope trunnion
-  const STD_Y0 = D1, STD_Y1 = D1 + 0.17;
-  for (const s of [-1, 1]) {
-    plate(H('head'), [[-0.06, 0], [0.06, 0], [0.03, 0.2], [-0.03, 0.2]], 0.025, 0.006,
-      basis(V(0, 0, 1), V(0, 1, 0), V(s, 0, 0), V(s * 0.17, STD_Y0 - 0.01, 0)), { surf: 'bronze', tone: C.BRONZE, wear: 0.6 });
-  }
-  strut(H('head'), V(-0.19, STD_Y1, 0), V(0.19, STD_Y1, 0), 0.022, 0.022, { surf: 'graphite', tone: C.GRAPH, sides: 10 });
-  // the vertical circle on the right standard (vernier engraved)
+  // the sighting telescope beside the drum, on a brass bracket (visible instrument parts round the lamp)
   {
-    const M = at(0.20, STD_Y1, 0, AXIS_X.clone());
-    const mk = H('head').mark();
-    lathe(H('head'), [P(0, 0, 'graphite', C.GRAPH), P(0.12, 0, 'bronze', C.BRONZE), P(0.125, 0.02, 'bronze', C.BRONZE), P(0, 0.02, 'bronze', C.BRONZE)], M, { segs: 32, wear: 0.4 });
-    H('head').decalSince(mk, { frame: M, uPeriod: 4, fn: (p) => (Math.hypot(p.x, p.z) > 0.09 ? [(Math.atan2(p.x, p.z) / (2 * Math.PI) + 0.5) * 4, bandV(BAND.vernier, 0.3)] : null) });
+    const TY = SY + 0.235, TX = 0.2;
+    const zs = Math.sqrt(Math.max(0, SR * SR - TX * TX - 0.235 * 0.235));
+    strut(HD, V(TX, TY, zs - 0.06), V(TX, TY, zs + 0.27), 0.03, 0.036, { surf: 'graphite', tone: C.GUNMETAL, sides: 14 });
+    for (const z of [zs - 0.06, zs + 0.1, zs + 0.24]) strut(HD, V(TX, TY, z), V(TX, TY, z + 0.03), 0.044, 0.044, { surf: 'bronze', tone: C.BRASS, sides: 14, wear: 0.6 });
+    ball(HD, V(TX, TY, zs + 0.272), 0.03, { surf: 'glaze', tone: 0x2f3a36, w: 10, h: 6, wear: 0.05 });   // objective glass (dark)
+    rbox(HD, V(TX - 0.02, TY - 0.045, zs + 0.03), [0.03, 0.06, 0.1], 0.006, { surf: 'bronze', tone: C.BRASS, wear: 0.6 });
   }
-  // the telescope: graphite tube, bronze objective + eyepiece rings, on the trunnion
-  strut(H('head'), V(0, STD_Y1, -0.28), V(0, STD_Y1, 0.30), 0.042, 0.052, { surf: 'graphite', tone: C.GRAPH, sides: 16 });
-  for (const z of [-0.28, 0.0, 0.27]) strut(H('head'), V(0, STD_Y1, z), V(0, STD_Y1, z + 0.035), 0.058, 0.058, { surf: 'bronze', tone: C.BRONZE, sides: 16, wear: 0.6 });
-  ball(H('head'), V(0, STD_Y1, 0.31), 0.04, { surf: 'glaze', tone: 0x2f3a36, w: 12, h: 8, wear: 0.05 });   // objective glass (dark, glossy)
-  ball(L('head'), V(0, STD_Y1 + 0.06, -0.29), 0.012, { surf: 'lamp', tone: C.LAMP, w: 8, h: 6 });   // the eyepiece pilot
-  // THE LEVEL VIAL: a glass tube in a bronze cradle across the top — the joint weak point, glowing
+  // THE LEVEL VIAL: the weak point, in a brass cradle on the sphere's crown
   const VY = PLUMB.vialY;
   for (const s of [-1, 1]) {
-    strut(H('head'), V(s * 0.15, STD_Y1 + 0.03, 0), V(s * 0.15, VY, 0), 0.016, 0.016, { surf: 'bronze', tone: C.BRONZE, sides: 8 });
-    strut(H('head'), V(s * 0.205, VY, 0), V(s * 0.17, VY, 0), 0.062, 0.062, { surf: 'bronze', tone: C.BRONZE, sides: 16, wear: 0.6 });
+    const x = s * 0.16, y0 = SY + Math.sqrt(SR * SR - x * x) - 0.03;
+    strut(HD, V(x, y0, 0), V(x, VY - 0.045, 0), 0.016, 0.014, { surf: 'bronze', tone: C.BRASS, sides: 8 });
+    rbox(HD, V(x, VY - 0.035, 0), [0.03, 0.03, 0.09], 0.006, { surf: 'bronze', tone: C.BRASS, wear: 0.6 });
   }
-  rbox(H('head'), V(0, VY - 0.06, 0), [0.40, 0.025, 0.09], 0.008, { surf: 'bronze', tone: C.BRONZE, wear: 0.6 });
-  // the vial glass is glaze on the hull, lit from inside by the lamp's spill (I-01 `_LAMPPROX` = 1 on it): it glows in
-  // the lamp's state colour without adding a second emissive body to the silhouette (A-ip-emissive's area cap)
-  strut(H('head'), V(-0.17, VY, 0), V(0.17, VY, 0), 0.05, 0.05, { surf: 'glaze', tone: 0xdfe8c8, sides: 16, wear: 0.05 });
-  // graduation rings on the vial (graphite hairlines)
-  for (const x of [-0.04, 0.04]) torus(H('head'), V(x, VY, 0), 0.052, 0.005, 'x', { surf: 'graphite', tone: C.GRAPH, tube: 4, radial: 16 });
+  rbox(HD, V(0, VY - 0.07, 0), [0.36, 0.02, 0.07], 0.006, { surf: 'bronze', tone: C.BRASS, wear: 0.6 });
+  const vial = levelVial(HD, G('head'), V(0, VY, 0), V(1, 0, 0), { len: PLUMB.vialLen, r: PLUMB.vialR });
+  // the antennae: one with a cross-arm and the 3.40 m finial, behind the vial; a shorter one off the crown
+  antenna(HD, V(0, VY - 0.07, -0.085), V(0, PLUMB.top, -0.085), { r: 0.012, finial: 0.12, cross: 0.055 });
+  antenna(HD, V(-0.2, SY + 0.31, -0.13), V(-0.3, 3.12, -0.19), { r: 0.009, finial: 0.07 });
+
+  /* ------------------------------- the lamp drum (a tool) ------------------- */
+  const drum = new KBucket('plumb-drum');
+  const DRUM_BACK = V(0, SY, PLUMB.drumBackZ);
+  const dr = lampDrum(drum, DRUM_BACK, V(0, 0, 1), { r: PLUMB.drumR, depth: PLUMB.drumDepth, ticks: 16 });
+  // the drum's hood: an enamel visor over the iris (bow-shaped plate)
+  plate(drum, [[-0.15, 0], [0.15, 0], [0.11, 0.07], [-0.11, 0.07]], 0.012, 0.004,
+    basis(V(1, 0, 0), V(0, 0.3, 1).normalize(), V(0, 1, -0.3).normalize(), V(0, SY + PLUMB.drumR * 1.02, PLUMB.drumBackZ + PLUMB.drumDepth - 0.05)), { surf: 'glaze', tone: C.ENAMEL, wear: 0.4 });
 
   /* --------------------------------- the bob ------------------------------- */
-  const T0 = V(0, HEAD_Y - 0.20, 0), T1 = V(0, HEAD_Y - 0.80, 0), BOB = V(0, PLUMB.bobTopY, 0);
-  cable(H('tail1'), [T0, V(0, (T0.y + T1.y) / 2, 0.001), T1], 0.009, { surf: 'graphite', tone: C.GRAPH, segs: 4, radial: 5 });
-  cable(H('tail2'), [T1, V(0, (T1.y + BOB.y) / 2, 0.001), BOB.clone().add(V(0, 0.03, 0))], 0.009, { surf: 'graphite', tone: C.GRAPH, segs: 4, radial: 5 });
-  // the hanger at the cable's end (hull, tail2): a bronze swivel the bob hangs from (and the socket proxy samples)
-  torus(H('tail2'), BOB.clone().add(V(0, 0.05, 0)), 0.03, 0.008, 'x', { surf: 'bronze', tone: C.BRONZE, tube: 6, radial: 16, wear: 0.6 });
-  strut(H('tail2'), BOB.clone().add(V(0, 0.09, 0)), BOB.clone().add(V(0, 0.035, 0)), 0.014, 0.018, { surf: 'bronze', tone: C.BRONZE, sides: 8, wear: 0.6 });
+  const T0 = V(0, HEAD_Y - 0.23, 0), T1 = V(0, HEAD_Y - 0.83, 0), BOB = V(0, HEAD_Y - 0.23 - PLUMB.cable, 0);
+  cable(H('tail1'), [T0, V(0, (T0.y + T1.y) / 2, 0.001), T1], 0.008, { surf: 'graphite', tone: C.GUNMETAL, segs: 4, radial: 5 });
+  cable(H('tail2'), [T1, V(0, (T1.y + BOB.y) / 2, 0.001), BOB.clone().add(V(0, 0.03, 0))], 0.008, { surf: 'graphite', tone: C.GUNMETAL, segs: 4, radial: 5 });
+  torus(H('tail2'), BOB.clone().add(V(0, 0.05, 0)), 0.028, 0.007, 'x', { surf: 'bronze', tone: C.BRASS, tube: 6, radial: 16, wear: 0.6 });
+  strut(H('tail2'), BOB.clone().add(V(0, 0.09, 0)), BOB.clone().add(V(0, 0.035, 0)), 0.013, 0.017, { surf: 'bronze', tone: C.BRASS, sides: 8, wear: 0.6 });
   const bob = new KBucket('plumb-bob');
   lathe(bob, [
-    P(0, -0.40, 'graphite', C.CHROME), P(0.012, -0.38, 'bronze', C.BRONZE), P(0.07, -0.25, 'bronze', C.BRONZE),
-    P(0.125, -0.12, 'bronze', C.BRONZE), P(0.13, -0.08, 'glaze', C.OXBLOOD), P(0.13, -0.05, 'bronze', C.BRONZE),
-    P(0.10, 0.0, 'bronze', C.BRONZE), P(0.04, 0.02, 'patina', C.VERDI), P(0.03, 0.04, 'bronze', C.BRONZE), P(0, 0.045, 'bronze', C.BRONZE),
+    P(0, -PLUMB.bobLen, 'graphite', C.CHROME), P(0.012, -PLUMB.bobLen + 0.02, 'bronze', C.BRASS), P(0.03, -0.3, 'glaze', C.ENAMEL),
+    P(0.105, -0.14, 'glaze', C.ENAMEL), P(0.12, -0.1, 'glaze', C.ENAMEL), P(0.12, -0.075, 'bronze', C.BRASS), P(0.125, -0.06, 'bronze', C.BRASS),
+    P(0.11, -0.04, 'glaze', C.ENAMEL), P(0.095, -0.01, 'bronze', C.BRASS), P(0.04, 0.012, 'graphite', C.GUNMETAL), P(0.03, 0.035, 'bronze', C.BRASS), P(0, 0.042, 'bronze', C.BRASS),
   ], at(BOB.x, BOB.y, BOB.z), { segs: 24, wear: 0.6, crease: 30 });
+  rivetRing(bob, BOB.clone().add(V(0, -0.068, 0)), V(0, 1, 0), 0.124, 8, 0.008, { radial: true });
 
   /* ------------------------------- recentre -------------------------------- */
-  const all = [...hull.values(), ...lamp.values(), bob];
+  const all = [...hull.values(), ...glass.values(), bob, drum];
   const box = new THREE.Box3();
   for (const b of all) b.bounds(box);
-  const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2, y0 = box.min.y;
+  const cx = (box.min.x + box.max.x) / 2, cz = 0, y0 = box.min.y;   // z stays on the head's axis (the lamp looks down +Z)
   for (const b of all) b.translate(-cx, -y0, -cz);
   const sh = (v) => [+(v.x - cx).toFixed(4), +(v.y - y0).toFixed(4), +(v.z - cz).toFixed(4)];
   const size = box.getSize(new THREE.Vector3());
 
   const rigSpec = {
     spine: [
-      { name: 'pelvis', pos: sh(V(0, HEAD_Y, 0)), r: 0.40 },
-      { name: 'neck', pos: sh(V(0, HEAD_Y + 0.22, 0)), r: 0.12 },
-      { name: 'head', pos: sh(V(0, DRUM_Y, 0)), r: 0.42, tip: sh(V(0, DRUM_Y, 0.45)) },
+      { name: 'pelvis', pos: sh(V(0, HEAD_Y, 0)), r: 0.4 },
+      { name: 'neck', pos: sh(V(0, MAST0 + 0.02, 0)), r: 0.1 },
+      { name: 'head', pos: sh(SC), r: 0.62, tip: sh(V(0, SY, 0.6)) },
     ],
     tail: [
       { name: 'tail1', pos: sh(T0), r: 0.08 },
       { name: 'tail2', pos: sh(T1), r: 0.16 },
     ],
-    legGateY: +(HEAD_Y - 0.10 - y0).toFixed(4),
+    legGateY: +(HEAD_Y - 0.12 - y0).toFixed(4),
     legInboard: 0.18,
     legs: LEGS.map((Lg) => ({
       id: Lg.id, parent: 'pelvis', hinge: Lg.hinge,
       hip: sh(Lg.hip), knee: sh(Lg.knee), ankle: sh(Lg.ankle), toe: sh(Lg.toe),
-      r: 0.14, restFoot: [sh(Lg.ankle)[0], sh(Lg.ankle)[2]],
+      r: 0.13, restFoot: [sh(Lg.ankle)[0], sh(Lg.ankle)[2]],
     })),
   };
   const BONE_ORDER = [
     ...rigSpec.spine.map((s) => s.name), ...rigSpec.tail.map((s) => s.name),
     ...rigSpec.legs.flatMap((l) => [`${l.id}_thigh`, `${l.id}_shin`, `${l.id}_foot`]),
   ];
-  const LAMP_AT = sh(V(0, DRUM_Y, DRUM_R + 0.012));
   const sockets = {
-    lamp: LAMP_AT,
+    lamp: sh(dr.face),
+    lampR: +dr.radius.toFixed(4),
     vial: sh(V(0, VY, 0)),
-    bob: sh(V(0, BOB.y - 0.15, 0)),
+    vialLen: vial.len, vialR: vial.r,
+    bob: sh(V(0, BOB.y - 0.17, 0)),
     bobTop: sh(BOB),
-    drum: sh(V(0, DRUM_Y, 0)),
-    head: sh(V(0, HEAD_Y, 0)),
+    drum: sh(V(0, SY, PLUMB.drumBackZ + PLUMB.drumDepth / 2)),
+    drumBack: sh(DRUM_BACK),
+    head: sh(SC),
+    top: sh(V(0, PLUMB.top, -0.085)),
   };
 
   const hullAll = mergeLabelled(hull, BONE_ORDER, 'plumb-hull');
-  const lampAll = mergeLabelled(lamp, BONE_ORDER, 'plumb-sensor');
-  const fin = finish(hullAll, {
-    occluders: [lampAll, bob], rays: 28, dist: 0.4, footBand: 1.0,
-    lamps: [{ at: LAMP_AT, r: PLUMB.lampR }, { at: sockets.vial, r: 0.06 }],
-  });
-  finish(bob, { occluders: [hullAll], rays: 28, dist: 0.4, footBand: 0.6 });
+  const glassAll = mergeLabelled(glass, BONE_ORDER, 'plumb-vial');
+  const fin = finish(hullAll, { occluders: [glassAll, bob, drum], rays: 28, dist: 0.4, footBand: noDust ? 0 : 0.6, lamps: [], verdigris: 0.3 });
+  finish(bob, { occluders: [hullAll], rays: 28, dist: 0.4, footBand: noDust ? 0 : 0.6, lamps: [], verdigris: 0.3 });
+  finish(drum, { occluders: [hullAll], rays: 28, dist: 0.4, footBand: noDust ? 0 : 0.6, lamps: [], verdigris: 0.3 });
 
-  // the scale param: one multiply over every length written (see the header)
   let rig = rigSpec, sk = sockets, sz = size;
   if (scale !== 1) {
-    for (const b of [hullAll, lampAll, bob]) b.scale(scale);
+    for (const b of [hullAll, glassAll, bob, drum]) b.scale(scale);
     rig = scaleRig(rigSpec, scale);
-    sk = Object.fromEntries(Object.entries(sockets).map(([k, v]) => [k, v.map((x) => +(x * scale).toFixed(4))]));
+    sk = Object.fromEntries(Object.entries(sockets).map(([k, v]) => [k, Array.isArray(v) ? v.map((x) => +(x * scale).toFixed(4)) : +(v * scale).toFixed(4)]));
     sz = size.clone().multiplyScalar(scale);
   }
 
   const target = file || path.join(out, OUTPUTS[0]);
+  const ICE_LIN = new THREE.Color(C.ICE);   // linear (ColorManagement)
   const stats = await writeInstrument([
     { bucket: hullAll, role: 'hull', material: { name: 'r5-plumb-hull' } },
-    { bucket: lampAll, role: 'sensor', material: { name: 'r5-plumb-sensor-glass', emissive: [0.95, 1.0, 0.62], baseColor: [0.02, 0.02, 0.012, 1] } },
+    // the vial: pale-ice glass lit from inside (emissive), the only emissive surface of the model; the lamp's iris is
+    // drawn by the lamp system at the drum's face
+    { bucket: glassAll, role: 'sensor', material: { name: 'r5-plumb-vial-glass', emissive: [ICE_LIN.r, ICE_LIN.g, ICE_LIN.b], baseColor: [0.62, 0.78, 0.76, 1] } },
     { bucket: bob, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.bobTop } },
+    { bucket: drum, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.drumBack } },
   ], {
     file: target,
     provenance: { recipe: RECIPE, sources: [], licence: 'project-original' },
@@ -303,13 +314,14 @@ export async function build({ out = ROOT, scale = 1, file = null } = {}) {
       r5Rig: rig, r5BoneOrder: BONE_ORDER,
       r5Size: [+sz.x.toFixed(4), +sz.y.toFixed(4), +sz.z.toFixed(4)],
       r5Sockets: sk, r5Scale: scale,
-      r5Generator: { name: RECIPE, design: 'plumb', scale, licence: 'original work (generated), no third-party assets' },
+      r5Generator: { name: RECIPE, design: 'plumb', kit: 'M1.4a', scale, licence: 'original work (generated), no third-party assets' },
     },
   });
   return {
     kind: 'plumb', file: path.relative(out, target), bytes: stats.bytes, tris: stats.tris, meshTris: stats.meshTris, verts: stats.verts,
     materials: stats.materials, textures: stats.textures, bones: BONE_ORDER.length, legs: LEGS.length, aoMean: +fin.aoMean.toFixed(3),
     size: { x: +sz.x.toFixed(3), y: +sz.y.toFixed(3), z: +sz.z.toFixed(3) },
+    _buckets: { hullAll, glassAll, bob, drum, sockets: sk, size: sz },
   };
 }
 
@@ -321,18 +333,12 @@ function frameY(d, hint) {
   return { x, y, z };
 }
 
-/** local alongY without importing hs internals twice */
-function alongY(a, b) {
-  const d = new THREE.Vector3().subVectors(b, a);
-  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize());
-  const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
-  return { m: new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)), len: d.length() };
-}
-
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const arg = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? process.argv[i + 1] : null; };
   const outDir = arg('--out') ? path.resolve(arg('--out')) : ROOT;
   const scale = arg('--scale') ? +arg('--scale') : 1;
   const file = scale !== 1 ? path.join(outDir, `plumb-s${scale}.glb`) : null;
-  console.log(JSON.stringify(await build({ out: outDir, scale, file })));
+  const r = await build({ out: outDir, scale, file });
+  delete r._buckets;
+  console.log(JSON.stringify(r));
 }

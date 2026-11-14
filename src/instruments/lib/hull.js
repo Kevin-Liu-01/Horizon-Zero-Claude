@@ -16,7 +16,7 @@ import { HOT } from './hot.js';
  *           the plates round it in its own state colour. `lampColour x gain` is
  *           written once per frame by `machines.lamps` into `machine.lamp.coreU`
  *           (a per-material uniform: no allocation, no point light).
- *   RIM     calRim at kRim 0.35 (I-03): a fresnel edge lit by the sun, stronger
+ *   RIM     calRim at kRim 0.35 (I-03; added to the direct diffuse light, not the emissive, M1.4a): a fresnel edge lit by the sun, stronger
  *           against the light (backlit hulls separate from a golden field). The
  *           sun direction and radiance are the lamp system's own per-frame
  *           uniforms, shared by reference.
@@ -56,7 +56,7 @@ export const HULL_LOOK = Object.freeze({
   flashTint: Object.freeze([1.0, 0.788, 0.565]),   // #FFE6C2 (linear)
 });
 
-const CACHE_KEY = 'cal-instrument-hull-v1';
+const CACHE_KEY = 'cal-instrument-hull-v2';
 
 function patchShader(shader, mat) {
   const u = mat.userData.hullU;
@@ -76,16 +76,21 @@ uniform vec3 uSunRad;
 varying float vLampProx;`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 {
-  // I-01 spill: the lamp lights the plates round it, in its state colour
+  // I-01 spill: the lamp lights the plates round it, in its state colour (only where the model wrote a
+  // _LAMPPROX field: the M1.4a kit writes none, so a kit-built hull has 0 emissive texels)
   totalEmissiveRadiance += vLampProx * vLampProx * uCoreCol * ${HULL_LOOK.spillK.toFixed(3)};
-  // I-03 calRim: a fresnel edge lit by the sun, stronger against the light
+  // P-04 d hull flash: toward warm white (a 70 ms hit response)
+  totalEmissiveRadiance += uFlash * vec3(${HULL_LOOK.flashTint.map((x) => x.toFixed(3)).join(', ')});
+}`)
+    .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+{
+  // I-03 calRim: a fresnel edge lit by the sun, stronger against the light. Sunlight, so it is added to the
+  // direct diffuse light, not to the emissive (M1.4a: no emissive texel outside lamps and vials)
   vec3 cV = normalize(vViewPosition);
   vec3 sV = normalize((viewMatrix * vec4(uSunDirW, 0.0)).xyz);
   float fr = pow(1.0 - saturate(dot(normal, cV)), ${HULL_LOOK.rimPow.toFixed(1)});
   float bk = saturate(-dot(sV, cV)); float back = bk * bk;   // backlight only: a front-lit hull keeps its value
-  totalEmissiveRadiance += fr * back * ${(HULL_LOOK.rimK * Math.PI * 2.5).toFixed(4)} * uSunRad * diffuseColor.rgb;
-  // P-04 d hull flash: toward warm white
-  totalEmissiveRadiance += uFlash * vec3(${HULL_LOOK.flashTint.map((x) => x.toFixed(3)).join(', ')});
+  reflectedLight.directDiffuse += fr * back * ${(HULL_LOOK.rimK * Math.PI * 2.5).toFixed(4)} * uSunRad * diffuseColor.rgb;
 }`);
 }
 

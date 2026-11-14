@@ -29,7 +29,7 @@ import { EXTMeshoptCompression, KHRMeshQuantization, KHRTextureTransform } from 
 import { MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer';
 import { MeshBVH } from 'three-mesh-bvh';
 import sharp from 'sharp';
-import { THREE, Bucket, SURF, PALETTE_W } from '../../lib/hs.mjs';
+import { THREE, Bucket, SURF, PALETTE_W, strut, ball, torus, lathe, plate, basis, V } from '../../lib/hs.mjs';
 import { checkProvenance, GENERATOR } from '../../lib/glb.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -47,6 +47,13 @@ export const C = Object.freeze({
   RUBBER: 0x1b1a19,
   CHROME: 0xb9b5ad,    // piston rods: a warm worn steel, never mirror chrome (bible: "no chrome")
   LAMP: 0x1a1208,      // sensor glass albedo (emissive does the work)
+  // M1.4a hull kit (BIBLE §7.2): white enamel is the dominant hull colour over gunmetal joints, tarnished brass trim
+  ENAMEL: 0xe6dcc8,    // white enamel shell plates
+  GUNMETAL: 0x2b2c30,  // joints, struts, cores
+  BRASS: 0xa07a3f,     // tarnished brass trim, rivets, gimbals (verdigris settles in its crevices: finish())
+  ICE: 0xd6f0ee,       // level-vial glass (no bluer than this; the vial's emissive glass)
+  INK: 0x24211e,       // engraved / painted black ink
+  BANNER: 0x6c5f76,    // faded orchil survey banner (small, desaturated: BIBLE banner rule)
 });
 
 /* ------------------------------------------------------------------ */
@@ -106,8 +113,17 @@ export const BAND = Object.freeze({
   numerals: [32, 64],  // 0-9, dark engraved glyphs on white (multiplies into bronze / glaze)
   vernier: [64, 96],   // graduated circle: long tick / 8, mid / 16, short / 4 px; period = full width
   bands: [96, 128],    // survey bands: vermilion / staff-white halves (u < 0.5 vermilion)
+  grad: [128, 160],    // M1.4a thin graduations on white enamel; period = full width = GRAD_PERIOD m (see gradPx)
   white: [192, 256],   // plain white (every undecorated vertex samples here)
 });
+/**
+ * M1.4a: the thin-graduation band, one period (256 px) = 0.8 m of staff, so 1 px = 3.125 mm.
+ * Every 10 cm a vermilion line 2 px (6 mm) all round; every 40 cm a vermilion band 8 px (25 mm);
+ * on the front face (the first 35 % of the band's height, which the staff decal maps to the leg's
+ * outer face) black ticks every 5 cm, 2 px wide. The widest band is 25 mm (BUILD M1.4a: <= 4 % of a leg).
+ */
+export const GRAD_PERIOD = 0.8;
+export const GRAD_PX = Object.freeze({ minorEvery: 32, minorW: 2, majorEvery: 128, majorW: 8, tickEvery: 16, tickW: 2, tickFace: 0.35 });
 export const WHITE_UV = [0.5, 224 / ATLAS];
 /**
  * uv1 is written as (u / U1_SCALE, v) and the atlas carries KHR_texture_transform scale (U1_SCALE, 1): the
@@ -160,6 +176,18 @@ export function decalAtlasBytes() {
   }
   // survey bands
   for (let y = BAND.bands[0]; y < BAND.bands[1]; y++) for (let x = 0; x < N; x++) set(x, y, x < N / 2 ? VERM : WHITE);
+  // M1.4a thin graduations: white enamel with flat vermilion lines and black ticks (never emissive)
+  const G = GRAD_PX;
+  for (let y = BAND.grad[0]; y < BAND.grad[1]; y++) {
+    const fy = (y - BAND.grad[0]) / (BAND.grad[1] - BAND.grad[0]);
+    for (let x = 0; x < N; x++) {
+      let c = WHITE;
+      if (fy < G.tickFace && x % G.tickEvery < G.tickW) c = INK;
+      if (x % G.minorEvery < G.minorW) c = VERM;
+      if (x % G.majorEvery < G.majorW) c = VERM;
+      set(x, y, c);
+    }
+  }
   return px;
 }
 export async function decalAtlasPNG() {
@@ -302,6 +330,7 @@ function hemiDirs(n) {
  *   aoMin       darkest AO multiplier (0.42)
  *   footBand    metres of the dust/grime band (0.6) and its floor tint
  *   lamps       [{ at: [x, y, z], r }] lamp rims for `_LAMPPROX` (falls to 0 at r + 0.8 m)
+ *   verdigris   scale of the verdigris in bronze crevices (1; the M1.4a kit keeps it to worn edges: 0.3)
  *   proxFar     0.8
  */
 export function finish(hull, opts = {}) {
@@ -362,7 +391,7 @@ export function finish(hull, opts = {}) {
     if (slot === bronzeSlot || slot === patinaSlot) {
       const occl = 1 - ao[i];
       const patch = vnoise(x, y, z, 0.09);
-      const v = Math.min(1, Math.max(0, occl * 3.2 + (patch - 0.36) * 3.0));
+      const v = Math.min(1, Math.max(0, occl * 3.2 + (patch - 0.36) * 3.0)) * (opts.verdigris ?? 1);
       if (v > 0) {
         tmp.setRGB(r, g, b).lerp(verdi.clone().multiplyScalar(0.55 + 0.45 * a), v * 0.85);
         r = tmp.r; g = tmp.g; b = tmp.b;
@@ -567,6 +596,242 @@ export async function writeInstrument(parts, opts) {
     writeFileSync(opts.file, bytes);
   }
   return { bytes: bytes.byteLength, ...stats };
+}
+
+/* ------------------------------------------------------------------ */
+/* M1.4a THE HULL KIT: the shared parts every Instrument is built from  */
+/* ------------------------------------------------------------------ */
+/*
+ * BIBLE §7.2 as parts: white enamel shell plates over gunmetal cores and joints; tarnished brass trim, rivets
+ * (2 cm domes) and gimbals; antennae and spike finials; lamp drums that carry an iris (the lamp system draws the
+ * iris and its barrel at the drum's face); glass level vials (an emissive pale-ice tube in its own bucket, a bubble,
+ * ink rings, a brass cradle); gyroscope rings; graduated staffs with thin vermilion and white graduations as flat
+ * ink (the atlas `grad` band); small faded banners. Nothing here is emissive except a vial's glass, which a caller
+ * puts in the sensor bucket. The dust band on the lowest 0.6 m is `finish()`'s (footBand 0.6).
+ */
+const _Y = new THREE.Vector3(0, 1, 0);
+const _ONE = new THREE.Vector3(1, 1, 1);
+/** The palette slot of each surface name (the uv0.x a checker decodes: slot = floor(u x PALETTE_W)). */
+export const SURF_OF = Object.freeze(Object.fromEntries(Object.entries(SURF).map(([k, v]) => [k, v.slot])));
+/** What the kit built in this process (the M1.4a checker reads it): rivet count and radius, graduated staff lengths. */
+export const kitStats = { rivets: 0, rivetRMin: 1, rivets2cm: 0, staffs: [] };
+/** A generator calls this first: the stats then describe the model it builds. */
+export function resetKitStats() { kitStats.rivets = 0; kitStats.rivetRMin = 1; kitStats.rivets2cm = 0; kitStats.staffs.length = 0; }
+/** A matrix whose local +Y is `n` at point `p`. */
+export function frameOn(p, n) {
+  const q = new THREE.Quaternion().setFromUnitVectors(_Y, n.clone().normalize());
+  return new THREE.Matrix4().compose(p, q, _ONE);
+}
+/** A rivet: a brass dome of radius r (default 0.01 m: 2 cm across) seated on point p with outward normal n. */
+export function rivet(b, p, n, r = 0.01, opts = {}) {
+  kitStats.rivets++; kitStats.rivetRMin = Math.min(kitStats.rivetRMin, r); if (r <= 0.0101) kitStats.rivets2cm++;
+  const g = new THREE.SphereGeometry(r, 6, 2, 0, Math.PI * 2, 0, Math.PI / 2);
+  g.scale(1, 0.65, 1);
+  b.add(g, { surf: 'bronze', tone: C.BRASS, wear: 0.7, ...opts, matrix: frameOn(p.clone().addScaledVector(n, -r * 0.2), n) });
+  g.dispose();
+}
+/** `count` rivets on a circle of radius R about `c` in the plane normal to `axis`; normals along `axis` (face) or radial. */
+export function rivetRing(b, c, axis, R, count, r = 0.01, { radial = false, phase = 0, skip = null } = {}) {
+  const ax = axis.clone().normalize();
+  const e1 = Math.abs(ax.y) < 0.9 ? new THREE.Vector3().crossVectors(ax, _Y).normalize() : new THREE.Vector3(1, 0, 0);
+  const e2 = new THREE.Vector3().crossVectors(ax, e1).normalize();
+  for (let i = 0; i < count; i++) {
+    const u = phase + (i / count) * Math.PI * 2;
+    if (skip && skip(u)) continue;
+    const d = e1.clone().multiplyScalar(Math.cos(u)).addScaledVector(e2, Math.sin(u));
+    rivet(b, c.clone().addScaledVector(d, R), radial ? d : ax, r);
+  }
+}
+/**
+ * The gyroscope-sphere shell: a gunmetal core and `panels` white-enamel lune plates between latitudes latMin..latMax
+ * (degrees), `gap` degree seams showing the core, a turned lip at each plate's top and bottom, and brass rivets down
+ * every seam. `phiStart` turns the seams. Returns the plates' outer radius.
+ */
+export function enamelSphere(b, c, R, { panels = 6, gap = 5, latMin = -66, latMax = 66, phiStart = 0, rivetEvery = 12, segs = 54, coreSegs = [26, 16] } = {}) {
+  ball(b, c, R * 0.955, { surf: 'graphite', tone: C.GUNMETAL, w: coreSegs[0], h: coreSegs[1], wear: 0.3 });
+  const prof = [];
+  const lat = (d) => THREE.MathUtils.degToRad(d);
+  const P = (r, h, surf, tone) => ({ r, h, surf, tone });
+  prof.push(P(R * 0.955 * Math.cos(lat(latMin)), R * 0.955 * Math.sin(lat(latMin)), 'glaze', C.ENAMEL));
+  const steps = 12;
+  for (let i = 0; i <= steps; i++) {
+    const a = lat(latMin + 1.5 + (latMax - latMin - 3) * (i / steps));
+    prof.push(P(R * Math.cos(a), R * Math.sin(a), 'glaze', C.ENAMEL));
+  }
+  prof.push(P(R * 0.955 * Math.cos(lat(latMax)), R * 0.955 * Math.sin(lat(latMax)), 'glaze', C.ENAMEL));
+  lathe(b, prof, new THREE.Matrix4().makeTranslation(c.x, c.y, c.z), { segs, panels, gap, phiStart, wear: 0.35, crease: 50 });
+  // rivets down both edges of every seam (2 cm domes), skipping the equator band a ring will cover
+  const seamHalf = THREE.MathUtils.degToRad(gap / 2 + 2.2);
+  for (let p = 0; p < panels; p++) {
+    const ph = phiStart + (p / panels) * Math.PI * 2;
+    for (const s of [-1, 1]) {
+      const az = ph + s * seamHalf;
+      for (let la = latMin + 8; la <= latMax - 7; la += rivetEvery) {
+        if (Math.abs(la) < 7) continue;
+        const a = lat(la);
+        const n = new THREE.Vector3(Math.cos(a) * Math.sin(az), Math.sin(a), Math.cos(a) * Math.cos(az));
+        rivet(b, c.clone().addScaledVector(n, R), n, 0.01);
+      }
+    }
+  }
+  return R;
+}
+/**
+ * A flat graduated ring (a limb circle / gimbal ring): an annulus rIn..rOut, `h` thick, in the plane normal to the
+ * matrix's local +Y, the vernier engraved on its top face. `phiStart`/`phiLength` leave an opening.
+ */
+export function limbRing(b, matrix, rIn, rOut, h, { surf = 'bronze', tone = C.BRASS, faceSurf = null, faceTone = null, outerSurf = null, outerTone = null, ticks = 12, phiStart = 0, phiLength = Math.PI * 2, segs = 48, vernier = true } = {}) {
+  // the bevels and the inner wall in `surf` (brass edge strips), the two flat faces in `faceSurf` and the outer wall
+  // in `outerSurf` (an enamel ring with brass edges); each defaults to `surf`
+  const R = (r, y) => ({ r, h: y, surf, tone });
+  const F = (r, y) => ({ r, h: y, surf: faceSurf || surf, tone: faceTone ?? tone });
+  const O = (r, y) => ({ r, h: y, surf: outerSurf || surf, tone: outerTone ?? tone });
+  const bev = Math.min(0.006, h * 0.25);
+  const rim = Math.min(0.012, (rOut - rIn) * 0.12);
+  const mk = b.mark();
+  lathe(b, [F(rIn + rim, -h / 2), R(rOut - rim, -h / 2), O(rOut, -h / 2 + bev), R(rOut, h / 2 - bev), F(rOut - rim, h / 2),
+    R(rIn + rim, h / 2), R(rIn, h / 2 - bev), R(rIn, -h / 2 + bev), F(rIn + rim, -h / 2)],
+    matrix, { segs, wear: 0.55, crease: 30, phiStart, phiLength });
+  if (vernier) b.decalSince(mk, { frame: matrix, uPeriod: ticks, fn: (p) => (p.y > h / 2 - 0.001 ? [(Math.atan2(p.x, p.z) / (2 * Math.PI) + 0.5) * ticks, bandV(BAND.vernier, 0.3 + 0.5 * (Math.hypot(p.x, p.z) - rIn) / (rOut - rIn))] : null) });
+}
+/** A gyroscope ring: a brass torus of radius R about `c`, its plane normal to `axis`, with two gunmetal pivot hubs. */
+export function gyroRing(b, c, axis, R, tube = 0.02, { pivot = null, radial = 48 } = {}) {
+  const g = new THREE.TorusGeometry(R, tube, 6, radial);   // in XY, normal +Z
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), axis.clone().normalize());
+  b.add(g, { surf: 'bronze', tone: C.BRASS, wear: 0.6, matrix: new THREE.Matrix4().compose(c, q, _ONE) });
+  g.dispose();
+  if (pivot) {
+    for (const s of [-1, 1]) {
+      const p = c.clone().addScaledVector(pivot, s * R);
+      strut(b, p.clone().addScaledVector(pivot, -0.03 * s), p.clone().addScaledVector(pivot, 0.035 * s), tube * 1.9, tube * 1.6, { surf: 'graphite', tone: C.GUNMETAL, sides: 10 });
+      rivet(b, p.clone().addScaledVector(pivot, 0.035 * s), pivot.clone().multiplyScalar(s), tube * 0.9);
+    }
+  }
+}
+/**
+ * A lamp drum: an enamel barrel on `axis` from `base` (its back), `depth` long, radius r, a brass bezel with the
+ * vernier engraved on its face, and a recessed gunmetal face where the lamp system's iris sits. Returns
+ * { face, radius }: the lamp anchor (body space) and the lens radius to give `addLamp`.
+ */
+export function lampDrum(b, base, axis, { r = 0.2, depth = 0.16, ticks = 16 } = {}) {
+  const P = (rr, y, surf, tone) => ({ r: rr, h: y, surf, tone });
+  const q = new THREE.Quaternion().setFromUnitVectors(_Y, axis.clone().normalize());
+  const M = new THREE.Matrix4().compose(base, q, _ONE);
+  lathe(b, [
+    P(r * 0.7, 0, 'graphite', C.GUNMETAL), P(r * 0.96, 0.004, 'glaze', C.ENAMEL), P(r, 0.02, 'glaze', C.ENAMEL),
+    P(r, depth - 0.045, 'glaze', C.ENAMEL), P(r * 1.04, depth - 0.04, 'glaze', C.ENAMEL), P(r * 1.08, depth - 0.03, 'glaze', C.ENAMEL),
+    P(r * 1.08, depth - 0.008, 'bronze', C.BRASS), P(r * 0.93, depth, 'bronze', C.BRASS), P(r * 0.9, depth - 0.012, 'graphite', C.GUNMETAL),
+    P(0, depth - 0.016, 'graphite', C.GUNMETAL),
+  ], M, { segs: 40, wear: 0.5, crease: 30 });
+  // the vernier on the bezel's face (engraved, uv1)
+  const mk = b.mark();
+  lathe(b, [P(r * 0.93, depth + 0.0005, 'bronze', C.BRASS), P(r * 1.07, depth - 0.0055, 'bronze', C.BRASS)], M, { segs: 40, wear: 0.4 });
+  b.decalSince(mk, { frame: M, uPeriod: ticks, fn: (p) => [(Math.atan2(p.x, p.z) / (2 * Math.PI) + 0.5) * ticks, bandV(BAND.vernier, 0.45)] });
+  // two rivet rings: the bezel and the back flange
+  rivetRing(b, base.clone().addScaledVector(axis, depth - 0.036), axis, r * 1.08, 10, 0.009, { radial: true, phase: 0.3 });
+  rivetRing(b, base.clone().addScaledVector(axis, 0.03), axis, r * 1.0, 8, 0.009, { radial: true });
+  return { face: base.clone().addScaledVector(axis, depth - 0.016), radius: r * 0.9 };
+}
+/**
+ * A level vial on `axis` centred at c: a pale-ice glass tube `len` long in `glass` (the emissive sensor bucket), a
+ * bubble (a glossy blister that reads dark against the lit glass), two ink rings, brass end caps and two saddle
+ * straps in `hull`. Returns { ends: [a, b], len, r }.
+ */
+export function levelVial(hull, glass, c, axis, { len = 0.3, r = 0.045 } = {}) {
+  const ax = axis.clone().normalize();
+  const a = c.clone().addScaledVector(ax, -len / 2), e = c.clone().addScaledVector(ax, len / 2);
+  strut(glass, a, e, r, r, { surf: 'lamp', tone: C.ICE, sides: 18, wear: 0 });
+  for (const [p, s] of [[a, -1], [e, 1]]) {
+    strut(hull, p.clone().addScaledVector(ax, -0.012 * s), p.clone().addScaledVector(ax, 0.03 * s), r * 1.32, r * 1.2, { surf: 'bronze', tone: C.BRASS, sides: 18, wear: 0.6 });
+    strut(hull, p.clone().addScaledVector(ax, 0.03 * s), p.clone().addScaledVector(ax, 0.045 * s), r * 0.7, r * 0.35, { surf: 'bronze', tone: C.BRASS, sides: 12, wear: 0.6 });
+  }
+  const up = Math.abs(ax.y) < 0.9 ? _Y.clone() : new THREE.Vector3(0, 0, 1);
+  for (const f of [-0.06, 0.06]) gyroRing(hull, c.clone().addScaledVector(ax, f), ax, r * 1.02, 0.0045, { radial: 24 });
+  for (const f of [-0.3, 0.3]) {
+    const g = new THREE.TorusGeometry(r * 1.12, 0.009, 4, 20);
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), ax);
+    hull.add(g, { surf: 'bronze', tone: C.BRASS, wear: 0.6, matrix: new THREE.Matrix4().compose(c.clone().addScaledVector(ax, f * len), q, _ONE) });
+    g.dispose();
+  }
+  // the bubble: a flattened blister on top of the tube, a little off centre (the instrument is not quite level)
+  const bg = new THREE.SphereGeometry(1, 12, 6);
+  bg.scale(0.03, 0.012, 0.022);
+  hull.add(bg, { surf: 'glaze', tone: 0xf4f8f6, wear: 0, matrix: new THREE.Matrix4().compose(c.clone().addScaledVector(ax, 0.025).addScaledVector(up, r * 0.86), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), ax), _ONE) });
+  bg.dispose();
+  return { ends: [a, e], len, r };
+}
+/**
+ * A graduated staff a -> b (r0 at a, r1 at b): white enamel, the thin graduations of the atlas `grad` band
+ * wrapped round it (u along the staff in GRAD_PERIOD metres, v round it, ticks on the face toward `face`).
+ */
+export function staff(b, a, e, r0, r1, { sides = 8, face = null, phase = 0 } = {}) {
+  const d = e.clone().sub(a), L = d.length();
+  kitStats.staffs.push(L);
+  d.normalize();
+  const fh = face ? face.clone().addScaledVector(d, -face.dot(d)).normalize() : (Math.abs(d.y) < 0.9 ? _Y.clone() : new THREE.Vector3(0, 0, 1));
+  const x = new THREE.Vector3().crossVectors(d, fh).normalize();
+  const M = basis(x, d, fh, a.clone().add(e).multiplyScalar(0.5));
+  const mk = b.mark();
+  // rows every <= 0.1 m along the staff: the vertex-colour dust band needs vertices where it ends (0.6 m)
+  const cg = new THREE.CylinderGeometry(r1, r0, L, sides, Math.max(1, Math.ceil(L / 0.1)), false);
+  b.add(cg, { surf: 'glaze', tone: C.ENAMEL, wear: 0.25, matrix: M.clone().multiply(new THREE.Matrix4().makeRotationY(Math.PI / sides)) });
+  cg.dispose();
+  b.decalSince(mk, { frame: M, fn: (p) => {
+    const ang = Math.atan2(p.x, p.z) / (2 * Math.PI);   // 0 at the face
+    const fr = ((ang % 1) + 1 + 0.175) % 1;               // the face spans the band's first 35 %
+    return [(p.y + L / 2) / GRAD_PERIOD + phase, bandV(BAND.grad, Math.min(0.98, Math.max(0.02, fr)))];
+  } });
+  return L;
+}
+/** An antenna from `base` up to `top`: a gunmetal rod, brass collars, a spike finial and (optionally) a cross-arm. */
+export function antenna(b, base, top, { r = 0.012, finial = 0.1, cross = 0 } = {}) {
+  const d = top.clone().sub(base), L = d.length();
+  d.normalize();
+  const f0 = top.clone().addScaledVector(d, -finial);
+  strut(b, base, f0, r * 1.2, r, { surf: 'graphite', tone: C.GUNMETAL, sides: 8 });
+  for (const t of [0.0, 0.45]) {
+    const p = base.clone().addScaledVector(d, (L - finial) * t);
+    strut(b, p, p.clone().addScaledVector(d, 0.03), r * 2.0, r * 2.0, { surf: 'bronze', tone: C.BRASS, sides: 10, wear: 0.6 });
+  }
+  ball(b, f0, r * 1.9, { surf: 'bronze', tone: C.BRASS, w: 10, h: 6 });
+  strut(b, f0, top, r * 1.1, 0.0015, { surf: 'bronze', tone: C.BRASS, sides: 8, wear: 0.4 });
+  if (cross > 0) {
+    const p = base.clone().addScaledVector(d, (L - finial) * 0.8);
+    const s = Math.abs(d.y) < 0.9 ? new THREE.Vector3().crossVectors(d, _Y).normalize() : new THREE.Vector3(1, 0, 0);
+    const t2 = new THREE.Vector3().crossVectors(d, s).normalize();
+    for (const ax of [s, t2]) strut(b, p.clone().addScaledVector(ax, -cross), p.clone().addScaledVector(ax, cross), 0.004, 0.004, { surf: 'bronze', tone: C.BRASS, sides: 5 });
+  }
+}
+/**
+ * A small faded survey banner hanging from `top` (its top edge centre): w wide, h long, `right` along its top edge,
+ * a gentle fold and a ragged hem. Matte cloth (`bisque`), desaturated orchil.
+ */
+export function banner(b, top, right, { w = 0.18, h = 0.42, out = null } = {}) {
+  const rx = right.clone().normalize();
+  const n = out ? out.clone().normalize() : new THREE.Vector3().crossVectors(rx, _Y).normalize();
+  const cols = 4, rows = 6, pts = [];
+  for (let j = 0; j <= rows; j++) {
+    const row = [];
+    for (let i = 0; i <= cols; i++) {
+      const u = i / cols - 0.5, v = j / rows;
+      const rag = j === rows ? (i % 2 ? -0.05 : 0.02) * h : 0;
+      const fold = Math.sin(u * Math.PI * 2.2) * 0.018 + v * v * 0.03;
+      row.push(top.clone().addScaledVector(rx, u * w * (1 - 0.08 * v)).addScaledVector(_Y, -(v * h + rag)).addScaledVector(n, fold));
+    }
+    pts.push(row);
+  }
+  const pos = [];
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const A = pts[j][i], B = pts[j][i + 1], Cc = pts[j + 1][i + 1], D = pts[j + 1][i];
+    for (const q of [A, D, B, B, D, Cc, A, B, D, B, Cc, D]) pos.push(q.x, q.y, q.z);   // both faces
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  b.add(g, { surf: 'bisque', tone: C.BANNER, wear: 0.5 });
+  g.dispose();
+  // the hanging rod: a short brass rod along the top edge
+  strut(b, top.clone().addScaledVector(rx, -w * 0.58), top.clone().addScaledVector(rx, w * 0.58), 0.007, 0.007, { surf: 'bronze', tone: C.BRASS, sides: 6 });
 }
 
 /* ------------------------------------------------------------------ */

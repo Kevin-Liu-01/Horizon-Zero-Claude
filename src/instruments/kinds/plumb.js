@@ -11,13 +11,19 @@ import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup } f
 import { scaleRig } from '../lib/scale.js';
 
 /**
- * PLUMB — bible §7.4 #2 (small; the sentry, role `sentry`). instruments-a, W1.
+ * PLUMB — BIBLE §7.4 #2 (small; the sentry, role `sentry`); BUILD M1.4c.
  *
- * A walking theodolite: three levelling-staff legs meet at a bronze tripod head;
- * a celadon lamp drum turns 360 degrees on a short mast (the gait's head look,
- * `lookClampYaw` pi) under a telescope on its standards and a glowing LEVEL VIAL;
- * a bronze plumb bob hangs on 1.2 m of cable, a 2-bone tail swung here as a
- * pendulum. Model: `tools/build/instruments/gen-plumb.mjs`.
+ * Three graduated staff legs meet at a brass tripod head; on a short mast the
+ * head, a gyroscope sphere of white-enamel plates in a brass ring, turns 360
+ * degrees (the gait's head look, `lookClampYaw` pi) with the LAMP DRUM in the
+ * ring's front opening and the glowing LEVEL VIAL in its cradle on the crown; a
+ * brass plumb bob hangs on 1.2 m of cable, a 2-bone tail swung here as a
+ * pendulum. Model: `tools/build/instruments/gen-plumb.mjs` (the M1.4a hull kit).
+ *
+ * Two TOOLS Pry off (BIBLE §7.3, §7.4: "Components: lamp drum (no more
+ * Flagging); plumb bob (no melee)"): the bob (Pendulum and Bob Drop die with
+ * it) and the lamp drum (the lamp goes out for good, so it can never Flag or
+ * throw its Sightline again; its lamp weak point goes with it).
  *
  * Behaviour (bible): stands at survey stations for 8-15 s readings (the drum
  * sweeps); on sighting Brea it FLAGS her (perception row `flags: true`: every
@@ -46,8 +52,11 @@ import { scaleRig } from '../lib/scale.js';
  */
 
 const URL = '/models/instruments/plumb.glb';
-const LAMP_R = 0.20;
-const HEIGHT = 3.408;
+const LAMP_R = 0.18;
+/** The model's height (m) at scale 1: `r5Size[1]` of the GLB (the loader scales the bbox to this, so it must match). */
+const HEIGHT = 3.4033;
+/** The level vial's weak-point sphere (m): it holds the whole 0.30 m tube and its brass caps (BUILD M1.4c: vial >= 0.25 m). */
+const VIAL_WP_R = 0.17;
 const TRI = (k) => ({
   walk: { stride: 0.78 * k, duty: 0.72, lift: 0.14 * k, offsets: { MF: 0, LH: 1 / 3, RH: 2 / 3 } },
   run: { stride: 1.45 * k, duty: 0.6, lift: 0.22 * k, offsets: { MF: 0, LH: 1 / 3, RH: 2 / 3 } },
@@ -69,7 +78,7 @@ export class Plumb extends ExpansionMachine {
       yawFix: 0,
       maxHealth: 190, armor: 0.05, level: 5,
       walkSpeed: 1.1 * rk, runSpeed: 3.8 * rk, turnRate: 1.8 / rk,
-      sightRange: 48, hearRange: 20, eyeHeight: 2.9 * k,
+      sightRange: 48, hearRange: 20, eyeHeight: 2.5 * k,
       attackRange: 3.0 * k, bodyRadius: 0.95 * k,
       ...opts,
     });
@@ -95,10 +104,11 @@ export class Plumb extends ExpansionMachine {
     }
     this._seeded = seedAuthoredWeights(this);
     const bob = detachTool(this, 'plumb-bob');
+    const drum = detachTool(this, 'plumb-drum');
 
-    this.addLamp(sc3(S.lamp), { radius: LAMP_R * k });
-    this.addWeakPoint('lamp', this.body, ...sc3(S.lamp), 0.14 * k, 2.2);
-    this._vialWp = this.addWeakPoint('vial', this.body, ...sc3(S.vial), 0.13 * k, 2.0);
+    this.addLamp(sc3(S.lamp), { radius: (S.lampR || LAMP_R) * k });
+    this._lampWp = this.addWeakPoint('lamp', this.body, ...sc3(S.lamp), 0.16 * k, 2.2);
+    this._vialWp = this.addWeakPoint('vial', this.body, ...sc3(S.vial), VIAL_WP_R * k, 2.0);
     this.lootTable = rollLoot([{ id: 'metal-shards', min: 4, max: 8 }, { id: 'wire', min: 1, max: 3 }]);
 
     attachRigRuntime(this, { quantise: false });
@@ -107,6 +117,12 @@ export class Plumb extends ExpansionMachine {
     this._bob = mountTool(this, bob, {
       name: 'bob', displayName: 'Plumb bob', bone: 'tail2', anchor: entry.tools?.['plumb-bob'] || S.bobTop, scale: k,
       tearHp: 55, linkedAttack: 'pendulum', loot: [{ id: 'plumb-bob', n: 1 }],
+    });
+    // the lamp drum: Pried off, the lamp is gone for good (no Flag, no Sightline); its glass is the loot
+    this._drum = mountTool(this, drum, {
+      name: 'drum', displayName: 'Lamp drum', bone: 'head', anchor: entry.tools?.['plumb-drum'] || S.drumBack || S.drum, scale: k,
+      tearHp: 55, linkedAttack: 'sightline', loot: [{ id: 'lampglass', n: 1 }],
+      onTorn: () => this._lampLost(),
     });
     const T = TRI(k);
     this.gait = new GaitController(this, this.rig, {
@@ -138,6 +154,15 @@ export class Plumb extends ExpansionMachine {
     const r = super.update(dt, t);
     if (this._toppleT >= 0 && this.lowLOD && this.alive) this._poseTopple(dt);
     return r;
+  }
+
+  /** The drum is off: the lamp is gone (dark for good: perception's "a dark lamp cannot Flag"), its weak point too. */
+  _lampLost() {
+    this._noLamp = true;
+    this.lampDarkT = 1e9;
+    if (this._lampWp) this._lampWp.enabled = false;
+    this.manager?.lamps?.detach(this);
+    this.lamp = null;
   }
 
   /** Bob Drop needs the bob too (both bob attacks die with it). */
