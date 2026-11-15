@@ -360,7 +360,11 @@ export async function traversalOverlay(ctx) {
     await simWait(0.3);
     ctx.input.keys.add('KeyW');
     const w0 = E.simTime, r0 = performance.now();
-    while (E.simTime - w0 < 4 && !p.mantling && performance.now() - r0 < 15000) { await frame(); if (p.grounded !== false && p.position.z > z + 1.2) { ctx.input._press?.('Space', { code: 'Space' }); ctx.input.keys.delete('Space'); } }
+    /* (M1a debt, V-traversal at fb6d5f0: still "a wall and two ropes", the mantle never started. Space is pressed the
+     *  way the sweep's A-sweep-climb row presses it, which mantles this ledge in the page: on every grounded step from
+     *  the first (a press 1.3 m short of the face lands before the wall; the buffered press on landing is what takes
+     *  the mantle). 6 s of sim, not 4) */
+    while (E.simTime - w0 < 6 && !p.mantling && performance.now() - r0 < 15000) { await frame(); if (!p.mantling && p.grounded) { ctx.input._press?.('Space', { code: 'Space' }); ctx.input.keys.delete('Space'); } }
     ctx.input.keys.clear();
     if (!p.mantling) console.warn('[V-traversal] the ledge was not mantled');
     // the pull's last frame (fix round 1): both palms still on the top and the
@@ -378,8 +382,12 @@ export async function traversalOverlay(ctx) {
     // a true side view at the ledge's own height, framed on the edge: the wall
     // face, the top, her palms on it and her chest over them
     { const Ed = p.mantleEdge, sx = Ed.dz, sz = -Ed.dx;           // her left
-      const cam = { pos: [Ed.x - sx * 2.6 - Ed.dx * 0.25, Ed.y + 0.35, Ed.z - sz * 2.6 - Ed.dz * 0.25], target: [Ed.x - Ed.dx * 0.1, Ed.y + 0.15, Ed.z - Ed.dz * 0.1] };
-      shots.push(['LEDGE CLIMB (pull: palms on the top, chest over them)', liveShot(cam)]); }
+      // (M1a debt: when no mantle ran the edge is stale and the lens filmed wherever it pointed; then the panel is a
+      //  side view of HER, labelled as a failed mantle, so the sheet shows what happened)
+      const ok = !!Ed?.valid || p.mantling;
+      const cam = ok ? { pos: [Ed.x - sx * 2.6 - Ed.dx * 0.25, Ed.y + 0.35, Ed.z - sz * 2.6 - Ed.dz * 0.25], target: [Ed.x - Ed.dx * 0.1, Ed.y + 0.15, Ed.z - Ed.dz * 0.1] }
+        : camAt(Math.PI / 2, 3.2, 1.1);
+      shots.push([ok ? 'LEDGE CLIMB (pull: palms on the top, chest over them)' : 'LEDGE CLIMB: NO MANTLE (staging failed)', liveShot(cam)]); }
     E.timeScale = 1;
     await simWait(1.0);
     clear(b);
