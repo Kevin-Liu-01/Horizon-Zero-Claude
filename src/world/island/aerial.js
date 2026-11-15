@@ -70,7 +70,10 @@ export function patchAerial(shader) {
  * the same cap as the land it meets (the sea drew the deck uncapped) and a probe can try values. x: the depth allowed per
  * unit of the ray's fall below 1.1 deg (8 = 483283a's), y: the cap (0.6 = 483283a's). A lens below the deck (every
  * ground-level frame) crosses none of it, so only a lens at 105 m or more sees a change */
-export const DECK = { value: new THREE.Vector2(8.0, 0.6) };
+/* Measured as variants at 53c5783 on F32 (the sheet box right of the ridge, L*): 8/0.6 62.5, 8/0.3 61.6, 4/0.3 61.6, 8/0
+ * 59.9; by eye 0.6 and 0.3 both lay a pale band along the ridge line and across the lower slope, and only 0 clears it: the
+ * ground and the sea take none of the deck, the haze that is left is the air's (aerial.js above, the shared fog) */
+export const DECK = { value: new THREE.Vector2(8.0, 0.0) };
 const DECK_ANCHOR = 'calTauC = calFogD.x * calSeg * calWw * calBreak;';
 /** The environment's fog chunk with the deck capped by DECK (needs uDeck declared: patchDeck does both). */
 export function deckFogChunk() {

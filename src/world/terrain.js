@@ -236,8 +236,11 @@ const FAR_N = 1024;                      // texels a side of the far-field bake 
 /* (measured as variants at 5f79f50, F04 still: 1/1 34.7 %, crust box c Lab 82.3 1 2.3; 1.2/1.3 36.9 %; 1.25/1.6 37.3 %,
  * 85.2 0.9 1.5; the grade's shoulder takes most of the gain: the rest is F04's framing, sites.js) */
 /* (M1a debt fix round 1: F04's palette 15.6 at 49aae31, bar 12; the crust boxes L* 74-85 a* 0.9 against the swatch's
- * 56.2 6.5 0.4, and by eye smooth plaster) z the swatch's rose-grey, w the grain's dark gaps (groundShader.js) */
-export const CRUST = { value: new THREE.Vector4(0.9, 0.5, 1, 1) };
+ * 56.2 6.5 0.4, and by eye smooth plaster) z the swatch's rose-grey, w the grain's dark gaps (groundShader.js). Measured as
+ * variants at 53c5783 (F04 palette, crust box c L*, mean luminance): 1.25/1.6/0/0 15.6, 85.1, 42.4 %; 1.1/0.5/1/1 12.4;
+ * 1/0.5/1/0.5 12.2; 1/0.5/1/1 11.7; 0.9/0/0.7/1 11.8; 0.9/0.5/1/1 11.0, 77.0, 33.3 %; 0.8/0.5/1/1 10.3, 75.4, 31.7 %.
+ * The grade's shoulder holds the lit crust high: the gain moves box c only 4.4 L* from 0.8 to 1.1 */
+export const CRUST = { value: new THREE.Vector4(0.8, 0.5, 1, 1) };
 /* (M1a debt fix round 1) the cap is island/aerial.js DECK now, shared with the sea; patchDeck applies it. 483283a's values:
  * 8 x per unit of fall, held to 0.6 */
 
