@@ -21,6 +21,7 @@
 import { staged } from '../gate-roster.mjs';
 import { placed, placedSetup } from '../gate-places.mjs';
 import { TURNTABLE } from './turntable.mjs';
+import { buildMeasure } from './aim-rig/measure.mjs';
 
 /** List A: from the 55 rows the Oct 15 survey classed CARRY (51 kept). */
 export const KEPT_A = [
@@ -802,3 +803,249 @@ export const RESTAGED = [
 
 /** Stage of each row, for docs/GATES.md and the report: 'turntable', 'island', 'title' or 'node'. */
 export const STAGE_OF = (g) => g.stage || (g.kind === 'runner' ? 'node' : g.plain ? 'title' : 'island');
+
+/* ========================================================================================================== */
+/* M1a FREEZE: RESTATED ROWS (docs/GATES.md §3 D)                                                              */
+/* ========================================================================================================== */
+/**
+ * Rows restated at the M1a freeze, with the reason for each in docs/GATES.md §3 D. Unlike RESTAGED and PATCHED
+ * (a `--kept-stack` run only), a restated row replaces the registered row of the same id in EVERY run of
+ * tools/gates.mjs: the restatement is the frozen row. Two forms:
+ *   { id, why, patches: [[from, to], ...] }   the registered row's own assert with exact-text swaps; a swap that no
+ *                                             longer applies turns the row red (the runner's patchRow), never stale
+ *   { id, why, row }                          a whole row in the registered row's place
+ * Bars not named in GATES.md §3 D are untouched.
+ */
+
+/** The M1.3b rig's anchor, read with the rig's own measure (tools/gates/aim-rig/measure.mjs, sent as source) at one
+ * instant: the index knuckle (index_01_r) to the jaw-corner anchor, the string's nocking point to the string fingers'
+ * hook (index_02_r and middle_02_r, midway), the draw elbow's height over the draw shoulder in the aim frame and its
+ * distance behind the wrist along the arrow, and, this step, the hand vertices inside the wrap volume and the hand or
+ * forearm points behind the head. `__hook(nockWorld)` returns them. */
+const HOOK = `
+      const __rsBM = ${String(buildMeasure)};
+      let __rsM = null, __rsB = null;
+      const __hook = (nkWorld) => {
+        const __a = __CTX__.player.animator, __m = __CTX__.player.model, __c = __CTX__.combat;
+        const T3 = __m.position.constructor;
+        if (!__rsM) {
+          __rsM = __rsBM({ an: __a, model: __m, combat: __c }, { Vector3: T3, Quaternion: __m.quaternion.constructor });
+          __rsB = {};
+          __m.traverse((o) => { if (o.isBone) __rsB[o.name] = o; });
+        }
+        __m.updateMatrixWorld(true);
+        const CP = (b) => (b ? __m.worldToLocal(b.getWorldPosition(new T3())) : null);
+        const kn = CP(__rsB.index_01_r), i2 = CP(__rsB.index_02_r), m2 = CP(__rsB.middle_02_r);
+        const jaw = __rsM.jawChar(new T3());
+        const nk = __m.worldToLocal(nkWorld.clone());
+        const dRaw = __a.debugAimRig?.()?.d || __a.debugAim?.()?.d || __a._aimDbg?.d || null;
+        let elbowUpAim = null, elbowBack = null;
+        if (dRaw) {
+          const d = (Array.isArray(dRaw) ? new T3().fromArray(dRaw) : new T3().copy(dRaw)).normalize();
+          const up = new T3(0, 1, 0).addScaledVector(d, -d.y).normalize();
+          const sh = CP(__a.b.upArmR.bone), el = CP(__a.b.loArmR.bone), wr = CP(__a.b.handR.bone);
+          elbowUpAim = +el.clone().sub(sh).dot(up).toFixed(4);
+          elbowBack = +wr.clone().sub(el).dot(d).toFixed(4);
+        }
+        __rsM.begin(); __rsM.sample({ T: 0, aiming: !!__CTX__.player.aiming, draw: __c.drawStrength }); const __s = __rsM.end();
+        return {
+          knuckleJaw: kn ? +kn.distanceTo(jaw).toFixed(4) : null,
+          hookNock: i2 && m2 ? +i2.clone().lerp(m2, 0.5).distanceTo(nk).toFixed(4) : null,
+          elbowUpAim, elbowBack, wrapIn: __s.wrapIn, behind: __s.behind,
+        };
+      };`;
+
+/** The rig's bars (BUILD M1.3b; aim-rig/measure.mjs BARS): the anchor, the hook, the elbow level and back. */
+export const RIG_BARS = Object.freeze({ knuckleJaw: 0.03, hookNock: 0.03, elbowLo: -0.03, elbowHi: 0.05, elbowBack: 0.05 });
+const B = RIG_BARS;
+
+const A16_GRADE_OLD = `r.drawS > 0.9 && r.nockToHand <= 0.09
+        && r.elbowAboveShoulderAimFrame !== null && r.elbowAboveShoulderAimFrame <= 0 && (r.aimPitch !== 0 || r.elbowAboveShoulder <= 0) && r.headClear >= 0.98 && r.launchOffDeg !== null && r.launchOffDeg <= 0.3 && r.knuckleToNock !== null && r.knuckleToNock <= 0.06 && r.fingertipToNock !== null && r.fingertipToNock <= 0.06));`;
+const A16_GRADE_NEW = `r.drawS > 0.9 && r.knuckleJaw !== null && r.knuckleJaw <= ${B.knuckleJaw} && r.hookNock !== null && r.hookNock <= ${B.hookNock}
+        && r.elbowUpAim !== null && r.elbowUpAim >= ${B.elbowLo} && r.elbowUpAim <= ${B.elbowHi} && r.elbowBack !== null && r.elbowBack >= ${B.elbowBack} && r.wrapIn === 0 && r.behind === 0 && r.headClear >= 0.98 && r.launchOffDeg !== null && r.launchOffDeg <= 0.3));`;
+const A16_FAILING_OLD = `failing: bad.map(r => r.tag + ':' + [r.drawS > 0.9 ? null : 'drawS', r.nockToHand <= 0.09 ? null : 'nockToHand', r.elbowAboveShoulderAimFrame !== null && r.elbowAboveShoulderAimFrame <= 0 ? null : 'elbowAboveShoulderAimFrame', r.aimPitch !== 0 || r.elbowAboveShoulder <= 0 ? null : 'elbowAboveShoulderLevel', r.headClear >= 0.98 ? null : 'headClear', r.launchOffDeg !== null && r.launchOffDeg <= 0.3 ? null : 'launch', r.knuckleToNock !== null && r.knuckleToNock <= 0.06 ? null : 'knuckle', r.fingertipToNock !== null && r.fingertipToNock <= 0.06 ? null : 'fingertip'].filter(Boolean).join('+')) }`;
+const A16_FAILING_NEW = `restated: 'M1a freeze (docs/GATES.md 3 D): the anchor is the M1.3b rig hook at the jaw corner. Graded: knuckleJaw (index_01_r to the jaw-corner anchor) <= ${B.knuckleJaw} m, hookNock (string fingers to the nocking point) <= ${B.hookNock} m, elbowUpAim in [${B.elbowLo}, ${B.elbowHi}] m, elbowBack >= ${B.elbowBack} m, wrapIn 0, behind 0, headClear, launch. Reported only: nockToHand (wrist), knuckleToNock, fingertipToNock and the old elbow reads', failing: bad.map(r => r.tag + ':' + [r.crouching !== false ? null : 'notCrouched', r.drawS > 0.9 ? null : 'drawS', r.knuckleJaw !== null && r.knuckleJaw <= ${B.knuckleJaw} ? null : 'knuckleJaw', r.hookNock !== null && r.hookNock <= ${B.hookNock} ? null : 'hookNock', r.elbowUpAim !== null && r.elbowUpAim >= ${B.elbowLo} && r.elbowUpAim <= ${B.elbowHi} ? null : 'elbowLevel', r.elbowBack !== null && r.elbowBack >= ${B.elbowBack} ? null : 'elbowBack', r.wrapIn === 0 ? null : 'handInWrap', r.behind === 0 ? null : 'behindHead', r.headClear >= 0.98 ? null : 'headClear', r.launchOffDeg !== null && r.launchOffDeg <= 0.3 ? null : 'launch'].filter(Boolean).join('+')) }`;
+
+const A32_LOOP_OLD = `          const hr = V(); an.getBoneWorld(HBN('handR'), hr);
+          const d = nk.distanceTo(hr);
+          if (ds > 0.05 && ds < 0.9 && d > ramp) { ramp = d; rampAt = ds; }
+          if (ds >= 0.9) { full = Math.max(full, d); minHand = Math.min(minHand, an.debugArm('r').handHeadUnit); }`;
+const A32_LOOP_NEW = `          const hk = __hook(nk);
+          const d = hk.hookNock ?? 9;
+          if (ds > 0.05 && ds < 0.9 && d > ramp) { ramp = d; rampAt = ds; }
+          if (ds >= 0.9) { full = Math.max(full, d); knMax = Math.max(knMax, hk.knuckleJaw ?? 9); minHand = Math.min(minHand, an.debugArm('r').handHeadUnit); }
+          if (ds > 0.05) { wrapIn += hk.wrapIn; behind += hk.behind; }`;
+const A32_BAD_OLD = `const bad = rows.filter((r) => !(r.rampMaxNockToHand <= 0.09 && r.fullMaxNockToHand <= 0.09
+                                    && r.minHandHeadUnit >= 0.88));`;
+const A32_BAD_NEW = `const bad = rows.filter((r) => !(r.rampMaxNockToHand <= ${B.hookNock} && r.fullMaxNockToHand <= ${B.hookNock}
+                                    && r.fullMaxKnuckleJaw <= ${B.knuckleJaw} && r.wrapInSteps === 0 && r.behindSteps === 0));`;
+const A32_RET_OLD = 'return { pass: bad.length === 0, detail: { rows, failing: bad.map((r) => r.tag) } };';
+const A32_RET_NEW = "return { pass: bad.length === 0, detail: { restated: 'M1a freeze (docs/GATES.md 3 D): rampMaxNockToHand and fullMaxNockToHand are the string fingers hook (index_02_r and middle_02_r, midway) to the nocking point at the current draw, every step of the ramp (draw 0.05-0.9) and of the full draw; fullMaxKnuckleJaw is index_01_r to the jaw-corner anchor; wrapInSteps and behindSteps count hand vertices in the wrap and hand or forearm points behind the head from draw 0.05 on; minHandHeadUnit is reported only', rows, failing: bad.map((r) => r.tag) } };";
+
+const ELB_FORM_OLD = `        r.knuckleToNock != null && r.knuckleToNock <= 0.06 ? null : 'knuckleOffString',
+        r.fingertipToNock != null && r.fingertipToNock <= 0.06 ? null : 'fingertipOffString'].filter(Boolean);`;
+const ELB_FORM_NEW = `        r.knuckleJaw != null && r.knuckleJaw <= ${B.knuckleJaw} ? null : 'knuckleOffJawAnchor',
+        r.hookNock != null && r.hookNock <= ${B.hookNock} ? null : 'stringOffHook', r.wrapIn === 0 ? null : 'handInWrap'].filter(Boolean);`;
+const ELB_WRIST_OLD = `        ...(still(r) ? [!four(r) || r.wristHeadYOffLevelM <= 0.03 ? null : 'wristHeightOffLevel', r.wristHeadFrameOffLevelM <= 0.03 ? null : 'wristOffLevelAnchor'] : []),
+`;
+const ELB_WRIST_NEW = `        /* restated M1a (docs/GATES.md 3 D): the wrist at the level draw's place on the head is reported, not graded; the
+         * anchor is graded in formOf as the index knuckle on the jaw-corner anchor at every pitch */
+`;
+
+/** A70: the K tab, watched while it is pressed and for 30 frames after (console errors, menu warnings, page errors). */
+const A70_WATCH = `const out = { tabs: [] };
+        const __watch = () => {
+          const w = { errs: [] }, ce = console.error, cw = console.warn;
+          console.error = function (...a) { w.errs.push('error: ' + a.map(String).join(' ').slice(0, 200)); return ce.apply(console, a); };
+          console.warn = function (...a) { const t = a.map(String).join(' '); if (/menus|skill/i.test(t)) w.errs.push('warn: ' + t.slice(0, 200)); return cw.apply(console, a); };
+          const onErr = (ev) => w.errs.push('page: ' + String(ev.message || ev).slice(0, 200));
+          window.addEventListener('error', onErr);
+          w.stop = () => { console.error = ce; console.warn = cw; window.removeEventListener('error', onErr); };
+          return w;
+        };`;
+const A70_KEY_OLD = `          key(code); await frames(8);
+          const delegated = m.delegated === id;`;
+const A70_KEY_NEW = `          const __k = id === 'skills' ? __watch() : null;
+          key(code); await frames(8);
+          if (__k) { __k.tabAt8 = m.tab; __k.hubAt8 = m.hubOpen; await frames(30); __k.tabAt38 = m.tab; __k.hubAt38 = m.hubOpen; __k.stop(); }
+          const delegated = m.delegated === id;`;
+const A70_OK_OLD = 'body: m.hubBody.childElementCount, ok: m.tab === id && (delegated || m.hubBody.childElementCount > 0) });';
+const A70_OK_NEW = `body: m.hubBody.childElementCount,
+                          ok: __k ? (__k.tabAt8 === 'skills' && __k.tabAt38 === 'skills' && __k.hubAt8 === true && __k.hubAt38 === true && __k.errs.length === 0)
+                            : (m.tab === id && (delegated || m.hubBody.childElementCount > 0)),
+                          ...(__k ? { restated: 'M1a freeze (docs/GATES.md 3 D): no skill screen exists; K holds the skills tab for 38 frames, the hub open, with no error or menu warning', kTabAt8: __k.tabAt8, kTabAt38: __k.tabAt38, kErrors: __k.errs } : {}) });`;
+
+const A56_DECL_OLD = "let worst = 0, worstName = '', casters = 0, grass = 0, bush = 0, overCount = 0;";
+const A56_DECL_NEW = `let worst = 0, worstName = '', casters = 0, grass = 0, bush = 0, overCount = 0, dykes = 0;
+      const VEG = ['meadow-blades', 'meadow-clumps', 'meadow-cards', 'marram-near', 'glasswort', 'lavender'], veg = {};`;
+const A56_COUNT_OLD = `        if (n.startsWith('grass-chunk') && (o.castShadow || o.userData.__shadowBase)) grass++;
+        if (n.startsWith('bushes-') && (o.castShadow || o.userData.__shadowBase)) bush++;`;
+const A56_COUNT_NEW = `        if (VEG.includes(n)) { const v = (veg[n] = veg[n] || { meshes: 0, casting: 0 }); v.meshes++; if (o.castShadow || o.userData.__shadowBase) { v.casting++; grass++; } }
+        if (n === 'pan-dykes' && (o.castShadow || o.userData.__shadowBase)) dykes++;`;
+const A56_OK_OLD = '&& overCount === 0 && grass > 0 && bush > 0;';
+const A56_OK_NEW = '&& overCount === 0 && VEG.every((k) => veg[k]?.meshes > 0) && grass === 0 && dykes > 0;';
+const A56_DET_OLD = 'grassCasterChunks: grass, bushCasterMeshes: bush,';
+const A56_DET_NEW = "vegetation: veg, vegetationCasting: grass, dykeCasters: dykes, restated: 'M1a freeze (docs/GATES.md 3 D): every island plant kind present by name and none of them casting (TECH 5: grass never casts); the dyke stones cast',";
+
+/** A71d restated: the shipped Steady presentation (BIBLE §9.7: a hairline breath meter, no veil, no desaturation),
+ * the row the HUD's own lane wrote for it (gates.r5.shell-ui.mjs, which does not load), under the kept id. */
+const A71D_STEADY = staged([], `(async () => {
+    const frames = async (n) => { for (let i = 0; i < n; i++) await new Promise(r => requestAnimationFrame(r)); };
+    const wait = (ms) => new Promise(r => setTimeout(r, ms));
+    const hud = window.__HUD_DEBUG__;
+    if (!hud?.surfaces) return { pass: false, detail: 'no window.__HUD_DEBUG__.surfaces' };
+    const c = __CTX__, combat = c.combat;
+    c.input.enabled = true;
+    c.input.mouse.buttons |= 4;                 // aim, through the bit player.js reads
+    await frames(30);
+    if (!c.player.aiming) { c.input.mouse.buttons = 0; return { pass: false, detail: 'staging: RMB did not raise the aim' }; }
+    const before = hud.surfaces().breath;
+    c.input.keys.add('ShiftLeft');              // Steady, on the real edge combat.js arms on
+    const rows = [];
+    const t0 = performance.now();
+    while (performance.now() - t0 < 2600) {
+      await wait(260);
+      const b = hud.surfaces().breath;
+      rows.push({ ms: Math.round(performance.now() - t0), frac: b.fillFrac, gauge: +(combat?.steady?.gauge ?? -1).toFixed(3), active: !!combat?.steady?.active, vis: b.visible, ts: +(c.engine?.timeScale ?? 1).toFixed(3) });
+    }
+    const during = hud.surfaces().breath;
+    /* what the frame paints while Steady is held: no full-screen overlay, no desaturation */
+    const fullscreen = [...document.querySelectorAll('body > *, #hud > *')].filter((n) => {
+      if (n.id === 'app' || n.id === 'hud' || n.id === 'title' || n.id === 'loading' || n.id === 'calf-layer' || n.id === 'cal-menus' || n.id === 'cal-calima') return false;
+      const cs = getComputedStyle(n), r = n.getBoundingClientRect();
+      if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.02) return false;
+      if (r.width < innerWidth * 0.9 || r.height < innerHeight * 0.9) return false;
+      const bg = cs.backgroundColor, img = cs.backgroundImage;
+      return (bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') || img !== 'none' || cs.mixBlendMode !== 'normal';
+    }).map((n) => n.id || n.className);
+    const veil = document.getElementById('cal-veil');
+    const canvas = (c.renderer || c.engine?.renderer)?.domElement || null;
+    const canvasFilter = canvas ? (canvas.style.filter || getComputedStyle(canvas).filter || '') : null;
+    c.input.keys.delete('ShiftLeft');
+    c.input.mouse.buttons &= ~4;
+    await frames(10);
+    const released = !combat?.steady?.active;
+    const fr = rows.map((r) => r.frac);
+    let drains = fr.length >= 5;
+    for (let i = 1; i < fr.length; i++) if (fr[i] > fr[i - 1] + 0.005) drains = false;
+    const checks = {
+      armed: rows.some((r) => r.active),
+      visibleWhileHeld: rows.every((r) => r.vis),
+      drains: drains && fr[fr.length - 1] < fr[0] - 0.08,
+      isTheGauge: rows.every((r) => Math.abs(r.frac - r.gauge) < 0.06),
+      hairline: during.heightPx <= 4,
+      underReticle: during.belowReticlePx > 20 && during.belowReticlePx < 120,
+      noVeilElement: !veil,
+      noFullScreenOverlay: fullscreen.length === 0,
+      noDesaturation: canvasFilter === '' || canvasFilter === 'none',
+      released,
+    };
+    const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+    return { pass: failed.length === 0, detail: { restated: 'M1a freeze (docs/GATES.md 3 D): the veil row restated to the shipped Steady (BIBLE 9.7: a hairline breath meter, no veil, no desaturation)',
+      failed, before, during, rows, fullscreen, canvasFilter, timeScaleWhileHeld: rows[rows.length - 1]?.ts ?? null } };
+  })()`);
+
+export const RESTATED = [
+  {
+    id: 'A16-draw-anchor',
+    why: 'the M1.3b rig holds the string in a hook at the jaw corner (BIBLE 5.2: the draw hand at the cheek); the row measured the wrist and the knuckle against the nock, which the hook puts 0.09-0.12 m apart by design',
+    patches: [
+      ['const V = () => new p.position.constructor();\n      const rows = [];', `const V = () => new p.position.constructor();${HOOK}\n      const rows = [];`],
+      ['        fingertipToNock: (() => { const k = V(), t = V(); return an.debugDrawHand && an.debugDrawHand(k, t) ? +t.distanceTo(nk).toFixed(4) : null; })(),',
+        '        fingertipToNock: (() => { const k = V(), t = V(); return an.debugDrawHand && an.debugDrawHand(k, t) ? +t.distanceTo(nk).toFixed(4) : null; })(),\n        ...__hook(nk),'],
+      [A16_GRADE_OLD, A16_GRADE_NEW],
+      [A16_FAILING_OLD, A16_FAILING_NEW],
+    ],
+  },
+  {
+    id: 'A32-draw-ramp',
+    why: 'the same hook: through the draw ramp the string stays in the string fingers, not at the wrist; at full draw the hand sits at the jaw corner and out of the wrap, not graded by the hand joint against the head ellipsoid',
+    patches: [
+      ['const V = () => new p.position.constructor();\n      const rows = [];', `const V = () => new p.position.constructor();${HOOK}\n      const rows = [];`],
+      ['let ramp = 0, rampAt = 0, minHand = 9, full = 0;', 'let ramp = 0, rampAt = 0, minHand = 9, full = 0, knMax = 0, wrapIn = 0, behind = 0;'],
+      [A32_LOOP_OLD, A32_LOOP_NEW],
+      ['fullMaxNockToHand: +full.toFixed(4), minHandHeadUnit: +minHand.toFixed(3) });',
+        'fullMaxNockToHand: +full.toFixed(4), minHandHeadUnit: +minHand.toFixed(3), fullMaxKnuckleJaw: +knMax.toFixed(4), wrapInSteps: wrapIn, behindSteps: behind });'],
+      [A32_BAD_OLD, A32_BAD_NEW],
+      [A32_RET_OLD, A32_RET_NEW],
+    ],
+  },
+  {
+    id: 'A-draw-elbow-level',
+    why: 'the same hook: the hand on the string and the hand held at the head are graded at the rig anchor (the knuckle on the jaw corner, the string in the fingers hook, the hand out of the wrap); every elbow, chest, behind-the-head, loose, step and crouch clause is unchanged',
+    patches: [
+      ["freeze(); standAt(p, 'openGround'); await wait(300);", `freeze(); standAt(p, 'openGround'); await wait(300);${HOOK}`],
+      ['          fingertipToNock: hasHand ? +ftW.distanceTo(nkW).toFixed(4) : null,', '          fingertipToNock: hasHand ? +ftW.distanceTo(nkW).toFixed(4) : null,\n          ...__hook(nkW),'],
+      [ELB_FORM_OLD, ELB_FORM_NEW],
+      [ELB_WRIST_OLD, ELB_WRIST_NEW],
+    ],
+  },
+  {
+    id: 'A70-hub-tabs',
+    why: 'no skill screen exists and the bible has no skill tree; the K tab must not bounce the hub to another tab or throw',
+    patches: [
+      ['const out = { tabs: [] };', A70_WATCH],
+      [A70_KEY_OLD, A70_KEY_NEW],
+      [A70_OK_OLD, A70_OK_NEW],
+    ],
+  },
+  {
+    id: 'A56-cascades',
+    why: 'the grass and bush clause counted the old valley mesh names; on the island the plants are the meadow rings and the flora kinds, and none casts (TECH 5: grass never casts); the field dyke stones are the low casters',
+    patches: [
+      [A56_DECL_OLD, A56_DECL_NEW],
+      [A56_COUNT_OLD, A56_COUNT_NEW],
+      [A56_OK_OLD, A56_OK_NEW],
+      [A56_DET_OLD, A56_DET_NEW],
+    ],
+  },
+  {
+    id: 'A71d-conc-veil',
+    why: 'the veil it measured is gone by design (BIBLE 9.7: Steady is a hairline breath meter, no veil, no desaturation); the HUD lane replacement row never ran (its file does not load)',
+    row: {
+      id: 'A71d-conc-veil', kind: 'action', lane: 'kept-stack', stage: 'island', timeout: 150000, settle: 1200,
+      title: 'Steady (restated M1a): a hairline breath meter under the reticle drains while it is held and is released after; no veil element, no full-screen overlay, no desaturation',
+      assert: A71D_STEADY,
+    },
+  },
+];

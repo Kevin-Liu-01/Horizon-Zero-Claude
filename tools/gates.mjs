@@ -27,7 +27,7 @@ import {
 } from './chrome-profile.mjs';
 import { formatVerdict, writeLine } from './gate-verdict.mjs';
 import { takeMachineSlot, releaseMachineSlot } from './chrome-slot.mjs';
-import { KEPT_STACK, RESTAGED, PATCHED, USE_CARRIED, NO_STUDIO, STUDIO_TOUCHED, STAGE_OF } from './gates/kept-stack.mjs';
+import { KEPT_STACK, RESTAGED, PATCHED, USE_CARRIED, NO_STUDIO, STUDIO_TOUCHED, STAGE_OF, RESTATED } from './gates/kept-stack.mjs';
 import { GATES as CARRIED_ROWS } from './gates.r5.carried.mjs';
 
 /**
@@ -125,12 +125,25 @@ const patchRow = (g, pt) => {
   for (const [from, to] of pt.patches) body = body.split(from).join(to);
   return { ...g, [field]: body, stage: 'island', stagingPatch: pt.why };
 };
+/**
+ * M1a freeze (docs/GATES.md §3 D): the RESTATED rows replace the registered row of the same id in EVERY run, kept
+ * stack or not (the restatement is the frozen row). A patch that no longer applies is a red runner row, as above.
+ */
+const restatedById = new Map(RESTATED.map((x) => [x.id, x]));
+const restate = (g) => {
+  const r = restatedById.get(g.id);
+  if (!r) return g;
+  if (r.row) return { ...r.row, source: 'gates/kept-stack.mjs', restates: g.source, restated: r.why };
+  const p = patchRow(g, { patches: r.patches, why: r.why });
+  return p.kind === 'runner' ? p : { ...p, stage: g.stage, stagingPatch: undefined, restated: r.why };
+};
+const restatedMerged = merged.map(restate);
 const GATES = keptStack
-  ? merged.map((g) => (restagedById.has(g.id)
+  ? restatedMerged.map((g) => (restagedById.has(g.id)
     ? { ...restagedById.get(g.id), source: 'gates/kept-stack.mjs', restages: g.source }
     : ((b) => (patchedById.has(g.id) ? patchRow(b, patchedById.get(g.id)) : b))(
       carriedById.has(g.id) ? carriedRow(g, carriedById.get(g.id).why) : g)))
-  : merged;
+  : restatedMerged;
 // Only the files that actually contributed gates are reported as merged: the
 // old line listed every file it TRIED, including the ones that threw.
 if (loadedFiles.length) console.log(`[gates] merged ${loadedFiles.length} lane file(s): ${loadedFiles.join(', ')}`);

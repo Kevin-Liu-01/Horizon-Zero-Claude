@@ -152,12 +152,35 @@ rows and the studio is deleted.
 | `A-slide` | a slide starts on cinder steeper than 28 deg and not on a 35 deg non-cinder face | island |
 | `V-traversal` | ledge climb (pull frame), a cinder slide and a stepped climb, side views | island |
 
+### D. Restated at the M1a freeze
+
+Six rows measured something the build no longer has, or a target the canon has since replaced. Each keeps its id
+and is restated below; every bar not named here is unchanged. The restatements live in `tools/gates/kept-stack.mjs`
+(`RESTATED`) and replace the registered row of the same id in **every** run of `tools/gates.mjs`, kept stack or not.
+Four are exact-text swaps on the registered row's own assert, so an edit that moves the swapped lines turns the row
+red instead of running the old bar; two are whole rows.
+
+| id | was | now | why |
+|---|---|---|---|
+| `A16-draw-anchor` | at full draw in each of its 20 cells (four pitches, both clamps, strafing, crouched): wrist ≤ 0.09 m and middle knuckle and fingertip ≤ 0.06 m from the nock; elbow not above the shoulder (aim frame, and character height at pitch 0); arm clear of the head (≥ 0.98); arrow within 0.3° of the crosshair ray | the same cells and instant: the string hand's **index knuckle within 0.03 m of the jaw-corner anchor**; the string's nocking point within 0.03 m of the string fingers' hook (index and middle first joints, midway); **elbow at shoulder height or behind** (aim frame −0.03 to +0.05 m of the shoulder, and ≥ 0.05 m behind the wrist along the arrow); **no hand vertex inside the wrap volume**; no hand or forearm point behind the head; arm clear of the head (≥ 0.98) and the launch clause unchanged. The wrist, knuckle and fingertip distances to the nock and the old elbow reads are still reported | The bow pose of BIBLE §13 puts the draw hand at the cheek: the string sits in a hook of the fingers and the knuckle on the jaw-corner anchor, which holds the wrist 0.09–0.12 m from the nock by design. The row measured that geometry against the old anchor (it failed only on the wrist distance, crouched). Measured with the aim rig's own function (`tools/gates/aim-rig/measure.mjs`). The elbow band is the rig's: it replaces "not above the shoulder (≤ 0)" with "level (−0.03 to +0.05 m) and back" |
+| `A32-draw-ramp` | through the draw ramp (draw 0.05–0.9) and at full draw, the wrist ≤ 0.09 m from the nock; at full draw the hand joint ≥ 0.88 of the head ellipsoid's radius (not inside the skull) | the string fingers' hook ≤ 0.03 m from the nocking point at the current draw on every step of the ramp and of the full draw; at full draw the index knuckle ≤ 0.03 m from the jaw-corner anchor; from draw 0.05 on, 0 hand vertices inside the wrap and 0 hand or forearm points behind the head. The hand joint's head-ellipsoid reading is reported | The same hook: the string travels in the fingers, not at the wrist; a hand resting on the cheek is graded by the wrap volume and the anchor, not by the hand joint's depth in an ellipsoid |
+| `A-draw-elbow-level` (area row, restated with them) | among its clauses: middle knuckle and fingertip ≤ 0.06 m from the nock; at the no-strafe pitches the wrist within 0.03 m of the level draw's height over the head joint and of its place in the head's frame | middle knuckle and fingertip replaced by the index knuckle ≤ 0.03 m from the jaw-corner anchor and the string ≤ 0.03 m from the fingers' hook, and 0 hand vertices in the wrap, at every row; the wrist-at-the-level-place clauses are reported (the anchor is a fixed point on the head, graded at every pitch). Every elbow, chest, behind-the-head, loose, per-step and crouch clause is unchanged | The same hook |
+| `A70-hub-tabs` | each of the seven hub keys opens its tab, the K tab (skills) included, with a panel or a rendered body | as before for M, J, I, O, N and the comma; for K: the hub stays open on the skills tab for 38 frames after the key, with no console error, no menu warning and no page error | The Skills screen of BIBLE §18 (the certification net) does not exist yet and the canon has no skill tree; the old row asked for a screen that is not there. What must hold now is that K neither bounces the hub to the map nor throws |
+| `A56-cascades` | three cascades, near texel ≤ 2 cm, casters culled beyond 120 m, and the old valley's grass and bush meshes (`grass-chunk*`, `bushes-*`) casting | the cascade, texel and cull clauses unchanged; the plant clause names the island's plants: the three meadow rings (`meadow-blades`, `meadow-clumps`, `meadow-cards`) and the flora kinds (`marram-near`, `glasswort`, `lavender`) are all present and **none of them casts**, and the field's dyke stones (`pan-dykes`) cast | The valley meshes are gone; on the island grass never casts by the engine's shadow-caster rule (each plant mesh is built with `castShadow = false`), and the dyke stones are the low casters near the ground |
+| `A71d-conc-veil` | a desaturating, cool-tinted veil element (`#cal-veil`) ramps in on Steady and out after | Steady while aiming (Shift): a hairline breath meter (≤ 4 px) 20–120 px under the reticle is visible while it is held, drains with the gauge (within 0.06) by more than 0.08 over 2.6 s, and is released after; no veil element, no full-screen overlay, no filter on the game canvas | The shipped HUD shows Steady as a hairline breath meter and has no veil by design. This is the HUD lane's own replacement row (it never ran: its file does not load), under the kept id |
+
+`A44`, `A44b`, `A107` and every other kept row are unchanged.
+
 ## 4. The Frame Set (Milestone 1)
 
 Each frame has a fixed camera, hour, weather and state. A frame is judged by comparison: is today's frame closer
 to its target than the last accepted frame, on four points (silhouette and proportion; material and surface;
 light and colour; finish)? An accepted frame becomes the anchor, and a later run that is further on any point is
 a regression. A frame with a written target is accepted when every count and measure in the target is met.
+
+The machine-readable set is `tools/frames/frameset.json`: version 2 at the M1a freeze re-staged F02, F03, F13,
+F14–F19 (and their bar clips) and F32; each change and its reason is in `tools/frames/README.md`. A re-staged frame
+is compared with its anchor knowing the camera moved: the review page labels it.
 
 | frame | subject | in |
 |---|---|---|
