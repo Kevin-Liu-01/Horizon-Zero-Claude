@@ -13,7 +13,7 @@
  *   height        the finial's spike 5.5 m +- 0.1 (BUILD M1.4e)
  *   footprint     3.2 x 2.6 m +- 0.15 (BIBLE §7.4 #4)
  *   wade          the knee seals and the drum's keel above WADE_MAX (1.2 m) with room: it wades to 1.2 m dry
- *   lamp          off the drum's axis and on the drum (no neck)
+ *   lamp          off the drum's axis and on the drum (no neck), on its shoulder: at or above the rim, not mid-wall
  *   enamel        the enamel share of the hull's surface area (white enamel is the dominant hull colour, BIBLE §7.2)
  *   emissive      one emissive material, the lantern glass, no bluer or brighter than #D6F0EE
  *   bones         <= 30
@@ -84,6 +84,7 @@ const rows = [
   { id: 'knee-seals', bar: `lowest seal >= ${WADE_MAX} + 0.15 m`, v: +kneeMin.toFixed(3), pass: kneeMin >= WADE_MAX + 0.15 },
   { id: 'keel', bar: `drum keel >= ${WADE_MAX} + 0.6 m`, v: sockets.drumBottom, pass: sockets.drumBottom >= WADE_MAX + 0.6 },
   { id: 'lamp-off-axis', bar: '|x| >= 0.2 m, on the drum (z within its radius + 0.25)', v: sockets.lamp, pass: Math.abs(sockets.lamp[0]) >= 0.2 && Math.abs(sockets.lamp[2]) <= 0.82 + 0.25 },
+  { id: 'lamp-shoulder', bar: 'lamp centre at or above the drum rim - 0.05 m (the shoulder, not mid-wall)', v: +(sockets.lamp[1] - (sockets.waterline + 0.8)).toFixed(3), pass: sockets.lamp[1] >= sockets.waterline + 0.8 - 0.05 },
   { id: 'enamel-share', bar: '>= 40 % of hull + tools area (white enamel dominant)', v: +(100 * enamel).toFixed(1), pass: enamel >= 0.4 },
   { id: 'emissive', bar: 'one emissive material, the lantern glass, <= #D6F0EE', v: emissive.map((m) => `${m.name} ${m.emissiveFactor.map((x) => x.toFixed(3)).join(',')}`), pass: iceOk },
   { id: 'bones', bar: '<= 30', v: r.bones, pass: r.bones <= 30 },

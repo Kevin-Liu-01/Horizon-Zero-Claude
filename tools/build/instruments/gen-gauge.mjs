@@ -39,12 +39,20 @@ export const LANE = 'instruments';
 export const RECIPE = 'tools/build/instruments/gen-gauge.mjs';
 export const OUTPUTS = ['public/models/instruments/gauge.glb'];
 
+/**
+ * The Gauge's banners (fix round 1: at C.BANNER, L* about 41, they read as mauve smudges against the basalt cliff in
+ * F23-gauge): the same faded orchil, sun-bleached to about L* 62 (C* about 12, still under Brea's violet by the banner
+ * rule), with a pale linen hem band so each one separates from the rock by value.
+ */
+const BANNER_PALE = 0xa392ab;
+
 /** Design constants (before the recentre). */
 export const GAUGE = Object.freeze({
   drumY0: 2.40, drumH: 0.80, drumR: 0.82, keel: 0.16,      // the float drum: cylinder foot, height, radius; keel dome depth
   band: 0.12,                                               // the celadon waterline band at the drum's foot
   tankX: 0.99, tankY: 2.66, tankR: 0.17, tankLen: 1.0,      // the two ballast tanks on the flanks
-  lampX: -0.34, lampY: 2.98, lampBackZ: 0.69, lampR: 0.15, lampDepth: 0.16,
+  lampX: -0.42, lampY: 3.40, lampBackZ: 0.74, lampR: 0.15, lampDepth: 0.16,   // on the drum's rim (shoulder), outboard of the rail
+  trunnionZ: 0.60,                                          // its trunnion on the deck, inside the rail
   pumpX: 0.36,                                              // the brine pump and nozzle (front right)
   mast0: 3.20, mast1: 4.40, mastR: 0.075,                   // the graduated tide staff
   floatY: 3.34, floatR: 0.14,                               // the float ring's rest (its centre) on the staff
@@ -141,12 +149,14 @@ export async function build({ out = ROOT, file = null, noDust = false } = {}) {
   const dr = lampDrum(H('head'), LB, V(0, 0, 1), { r: G.lampR, depth: G.lampDepth, ticks: 16 });
   plate(H('head'), [[-0.13, 0], [0.13, 0], [0.09, 0.07], [-0.09, 0.07]], 0.012, 0.003,
     basis(V(-1, 0, 0), V(0, 0.3, 1).normalize(), V(0, 1, -0.3).normalize(), V(G.lampX, G.lampY + G.lampR * 1.05, G.lampBackZ + G.lampDepth - 0.05)), { surf: 'glaze', tone: C.ENAMEL, wear: 0.4 });
-  // its trunnion: a gunmetal saddle on the drum's shoulder, a brass turret ring
-  const TR = V(G.lampX, Y1 - 0.02, G.lampBackZ - 0.06);
+  // its trunnion: a gunmetal saddle on the deck at the drum's front-left shoulder, a brass turret ring; the lamp drum
+  // stands on it over the rim, outboard of the rail (fix round 1: at mid-wall, between the ballast tanks' brass ends, it
+  // read as a porthole "eye")
+  const TR = V(G.lampX, Y1 + 0.05, G.trunnionZ);
   lathe(H('pelvis'), [P(0.09, -0.02, 'graphite', C.GUNMETAL), P(0.095, 0.0, 'bronze', C.BRASS), P(0.09, 0.018, 'bronze', C.BRASS), P(0, 0.02, 'graphite', C.GUNMETAL)],
     at(TR.x, TR.y, TR.z), { segs: 18, wear: 0.6 });
   rivetRing(H('pelvis'), TR.clone().add(V(0, 0.019, 0)), V(0, 1, 0), 0.075, 6, 0.008);
-  strut(H('head'), TR.clone().add(V(0, 0.01, 0)), V(G.lampX, G.lampY - G.lampR * 0.6, TR.z + 0.06), 0.035, 0.03, { surf: 'graphite', tone: C.GUNMETAL, sides: 10 });
+  strut(H('head'), TR.clone().add(V(0, 0.01, 0)), V(G.lampX, G.lampY - G.lampR * 0.75, G.lampBackZ + 0.03), 0.035, 0.03, { surf: 'graphite', tone: C.GUNMETAL, sides: 10 });
 
   /* ------------------------------- the brine pump and sluice nozzle ---------- */
   const PX = G.pumpX;
@@ -207,7 +217,7 @@ export async function build({ out = ROOT, file = null, noDust = false } = {}) {
       strut(H('pelvis'), V(s * G.yardHalf, G.yardY, 0), V(s * (G.yardHalf + 0.07), G.yardY, 0), 0.01, 0.0015, { surf: 'bronze', tone: C.BRASS, sides: 6 });
       // a stay from the staff to the yard end
       strut(H('pelvis'), V(0, G.yardY - 0.36, 0), V(s * G.yardHalf * 0.8, G.yardY - 0.01, 0), 0.006, 0.006, { surf: 'graphite', tone: C.GUNMETAL, sides: 5 });
-      banner(H('pelvis'), V(s * G.yardHalf * 0.72, G.yardY - 0.035, 0.03), V(1, 0, 0), { w: 0.2, h: 0.74, out: V(0, 0, 1) });
+      banner(H('pelvis'), V(s * G.yardHalf * 0.72, G.yardY - 0.035, 0.03), V(1, 0, 0), { w: 0.2, h: 0.74, out: V(0, 0, 1), tone: BANNER_PALE, hem: C.STAFF });
     }
   }
 
@@ -338,11 +348,14 @@ export async function build({ out = ROOT, file = null, noDust = false } = {}) {
 
   const target = file || path.join(out, OUTPUTS[0]);
   const ICE_LIN = new THREE.Color(C.ICE);   // linear (ColorManagement)
+  // fix round 1: at base colour 0.62 0.78 0.76 the golden sun lit the glass's albedo past its own glow and it rendered
+  // cream (#EBE4D3 in F23-gauge). A dark cold glass leaves the ice emissive (<= #D6F0EE) to carry the colour
+  const GLASS_BASE = [0.07, 0.11, 0.12, 1];
   const stats = await writeInstrument([
     { bucket: hullAll, role: 'hull', material: { name: 'r5-gauge-hull' } },
     // the lantern: pale-ice glass lit from inside (emissive), the only emissive surface; the lamp's iris is drawn by
     // the lamp system at the drum's face
-    { bucket: glassAll, role: 'sensor', material: { name: 'r5-gauge-lantern-glass', emissive: [ICE_LIN.r, ICE_LIN.g, ICE_LIN.b], baseColor: [0.62, 0.78, 0.76, 1] } },
+    { bucket: glassAll, role: 'sensor', material: { name: 'r5-gauge-lantern-glass', emissive: [ICE_LIN.r, ICE_LIN.g, ICE_LIN.b], baseColor: GLASS_BASE } },
     { bucket: FLOAT, role: 'tool', material: { name: 'r5-gauge-hull', anchor: sockets.floatRest } },
     { bucket: GATE, role: 'tool', material: { name: 'r5-gauge-hull', anchor: sockets.gateHinge } },
     { bucket: lod1, role: 'lod1', material: { name: 'r5-gauge-hull' } },

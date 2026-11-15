@@ -62,6 +62,8 @@ const QUAD_WALK = { stride: 1.0, duty: 0.68, lift: 0.2, offsets: { LF: 0, RH: 0.
 const QUAD_RUN = { stride: 1.5, duty: 0.55, lift: 0.26, offsets: { LF: 0, RH: 0.25, RF: 0.5, LH: 0.75 } };
 
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion();
+/** The brine jet: brine-hot white (lib/vfx.js VFX_COLORS.brineHot), normally blended. */
+const JET_COLOR = 0xf1eee6, JET_OPACITY = 0.65;
 
 export class Gauge extends ExpansionMachine {
   constructor(ctx, manager, opts = {}) {
@@ -340,7 +342,13 @@ export class Gauge extends ExpansionMachine {
     }
   }
 
-  /** Brine jet: a pale additive cone out of the nozzle, drawn only while the sluice runs. */
+  /**
+   * Brine jet: a pale cone of falling brine out of the nozzle, drawn only while the sluice runs.
+   * Fix round 1 (F26 at 6358b62): as a plain Mesh under the root the Sighting outline traced it (two dashed loops in
+   * empty air), and as an additive 0.3 cone it was invisible in daylight. It is an effect, not a part of the hull: one
+   * instance of an InstancedMesh (the outline skips instanced kit, `ui/sighting.js _addHull`), drawn normally blended
+   * at 0.55-0.65 so the brine reads as white water.
+   */
   _makeJet(pel, bp) {
     const S = this._S;
     const nd = new THREE.Vector3(...S.nozzleDir).normalize();
@@ -348,8 +356,11 @@ export class Gauge extends ExpansionMachine {
     const len = Math.min(3.2, (S.mouth[1] + 0.1) / Math.max(0.3, -dir.y));
     const geo = new THREE.CylinderGeometry(0.07, 0.24, len, 12, 1, true);
     geo.translate(0, -len / 2, 0);                                            // its top at the mouth, down the cone
-    const mat = new THREE.MeshBasicMaterial({ color: 0xbde6e3, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-    const jet = new THREE.Mesh(geo, mat);
+    const mat = new THREE.MeshBasicMaterial({ color: JET_COLOR, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+    const jet = new THREE.InstancedMesh(geo, mat, 1);
+    jet.setMatrixAt(0, new THREE.Matrix4());
+    jet.instanceMatrix.needsUpdate = true;
+    jet.frustumCulled = false;
     jet.name = 'gauge-jet';
     jet.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
     jet.position.set(S.mouth[0] - bp[0], S.mouth[1] - bp[1], S.mouth[2] - bp[2]);
@@ -407,7 +418,7 @@ export class Gauge extends ExpansionMachine {
     if (jet) {
       const on = gk > 0.35 && this._gateWant > 0;
       jet.visible = on;
-      if (on) jet.material.opacity = 0.3 * Math.min(1, (gk - 0.35) / 0.4) * (0.85 + 0.15 * Math.sin(t * 19));
+      if (on) jet.material.opacity = JET_OPACITY * Math.min(1, (gk - 0.35) / 0.4) * (0.92 + 0.08 * Math.sin(t * 19));
     }
   }
 }

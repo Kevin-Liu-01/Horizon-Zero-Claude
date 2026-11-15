@@ -815,7 +815,7 @@ export function antenna(b, base, top, { r = 0.012, finial = 0.1, cross = 0 } = {
  * A small faded survey banner hanging from `top` (its top edge centre): w wide, h long, `right` along its top edge,
  * a gentle fold and a ragged hem. Matte cloth (`bisque`), desaturated orchil.
  */
-export function banner(b, top, right, { w = 0.18, h = 0.42, out = null } = {}) {
+export function banner(b, top, right, { w = 0.18, h = 0.42, out = null, tone = C.BANNER, hem = null } = {}) {
   const rx = right.clone().normalize();
   const n = out ? out.clone().normalize() : new THREE.Vector3().crossVectors(rx, _Y).normalize();
   const cols = 4, rows = 6, pts = [];
@@ -829,16 +829,21 @@ export function banner(b, top, right, { w = 0.18, h = 0.42, out = null } = {}) {
     }
     pts.push(row);
   }
-  const pos = [];
-  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
-    const A = pts[j][i], B = pts[j][i + 1], Cc = pts[j + 1][i + 1], D = pts[j + 1][i];
-    for (const q of [A, D, B, B, D, Cc, A, B, D, B, Cc, D]) pos.push(q.x, q.y, q.z);   // both faces
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.computeVertexNormals();
-  b.add(g, { surf: 'bisque', tone: C.BANNER, wear: 0.5 });
-  g.dispose();
+  // `hem`: the last row in its own tone (a pale band that separates the cloth from what is behind it by value)
+  const cloth = (j0, j1, t) => {
+    const pos = [];
+    for (let j = j0; j < j1; j++) for (let i = 0; i < cols; i++) {
+      const A = pts[j][i], B = pts[j][i + 1], Cc = pts[j + 1][i + 1], D = pts[j + 1][i];
+      for (const q of [A, D, B, B, D, Cc, A, B, D, B, Cc, D]) pos.push(q.x, q.y, q.z);   // both faces
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    b.add(g, { surf: 'bisque', tone: t, wear: 0.5 });
+    g.dispose();
+  };
+  if (hem == null) cloth(0, rows, tone);
+  else { cloth(0, rows - 1, tone); cloth(rows - 1, rows, hem); }
   // the hanging rod: a short brass rod along the top edge
   strut(b, top.clone().addScaledVector(rx, -w * 0.58), top.clone().addScaledVector(rx, w * 0.58), 0.007, 0.007, { surf: 'bronze', tone: C.BRASS, sides: 6 });
 }

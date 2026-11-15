@@ -72,6 +72,12 @@ const RHY_PULSE = LAMP_RHYTHM.pulseLow, RHY_FLICKER = LAMP_RHYTHM.flickerLow;
 const LAMP_GLASS_GAIN = 2.5;
 /** A precise hit on the lamp darkens it this long (bible §7.3). */
 const LAMP_DARK_S = 6;
+/**
+ * A hit this far outside a weak point's sphere (m) still counts as on it (M1b instruments fix, measured at c5bc670): the
+ * arrow sweep stops an arrow ON the sphere's surface, so a hit point lies at the radius itself and `d^2 <= r^2` split
+ * on the float tie (4 of 10 lamp shots on the Peg counted). Every kind's weak points get it, not only the Peg's.
+ */
+const WEAK_TOUCH = 0.005;
 
 /** Roll a loot spec [{id, n | min/max, chance?}] into concrete [{id, n}]. */
 export function rollLoot(spec) {
@@ -1707,7 +1713,7 @@ export class Machine {
       for (const wp of this.weakPoints) {
         if (wp.enabled === false) continue; // still hidden under armor
         wp.obj.getWorldPosition(_v1);
-        if (_v1.distanceToSquared(hit.point) <= wp.radius * wp.radius) {
+        if (_v1.distanceToSquared(hit.point) <= (wp.radius + WEAK_TOUCH) * (wp.radius + WEAK_TOUCH)) {
           const wm = wp.mult ?? 3;
           mult = Math.max(mult, wm);
           if (wm >= 2) weak = true;

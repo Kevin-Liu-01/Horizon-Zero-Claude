@@ -227,6 +227,7 @@ export async function probe(frame) {
         };
         const o = new THREE.Vector3(from.x, hy(from.x, from.z) + 1.45, from.z);
         const dir = solve(o, aim);
+        const hp0 = new Map(M.list.map((x) => [x, x.health]));
         A.fire(o.clone().addScaledVector(dir, -ALEN), dir, speed, 'hunter', 1);
         const t0 = simNow();
         while (simNow() - t0 < 1.0 && !rec) await raf();
@@ -234,7 +235,9 @@ export async function probe(frame) {
         let dark = null;
         while (simNow() - tHit < 0.5) { await raf(); if (dark === null && LS.stateOf(m) === 'dark') dark = r3(simNow() - tHit); }
         m.takeDamage = td0;
-        return { ...rec, hit: !!rec, dead: !m.alive, darkAfterS: dark, health: r3(m.health) };
+        // whatever else the arrow struck (fix round 1: at 6358b62 the member's shot hit nothing on the member)
+        const struck = M.list.filter((x) => x !== m && hp0.has(x) && x.health < hp0.get(x)).map((x) => ({ kind: x.kind, dFromTarget: r3(x.position.distanceTo(m.position)) }));
+        return { ...rec, hit: !!rec, dead: !m.alive, darkAfterS: dark, health: r3(m.health), struck };
       };
       const shots = [];
       const LX = flat.x - 35, LZ = flat.z - 10;
@@ -272,9 +275,34 @@ export async function probe(frame) {
           still(m, m.position.x, m.position.z, m.heading);
           calm(m);
           const la = lampOf(m);
-          const from = { x: la.x + Math.sin(m.heading) * 12, z: la.z + Math.cos(m.heading) * 12 };
+          // fix round 1: at 6358b62 the shot from 12 m straight ahead of the member's heading never reached it (hit:false,
+          // health untouched). Each candidate bearing is swept first with the game's own hull query (ctx.hitHulls, the
+          // ray the arrow sweep uses) along the solved launch line; what stands in the way of the frontal one is recorded,
+          // and the member is shot from the first bearing whose line reaches its lamp first. A blocked line is a
+          // staging fact (another swarm member abreast, the Plumb), not a lamp miss.
+          const H = C.hitHulls;
+          const lineOf = (bear) => {
+            const from = { x: la.x + Math.sin(bear) * 12, z: la.z + Math.cos(bear) * 12 };
+            const o = new THREE.Vector3(from.x, hy(from.x, from.z) + 1.45, from.z);
+            const dir = solve(o, la), dist = o.distanceTo(la);
+            let first = null;
+            if (H?.raycast) {
+              const h = H.raycast({ origin: o, direction: dir }, { far: dist + 0.3, exact: true });
+              if (h?.hit) first = { kind: h.machine?.kind ?? null, self: h.machine === m, d: r3(h.distance), dLamp: r3(dist - h.distance) };
+            }
+            let ground = false;
+            for (let s = 0.5; s < dist - 0.3; s += 0.5) { const q = o.clone().addScaledVector(dir, s); if (q.y < hy(q.x, q.z)) { ground = true; break; } }
+            return { from, first, ground, clear: !ground && (!first || first.self) };
+          };
+          const offs = [0, 30, -30, 60, -60, 90, -90, 135, -135, 180];
+          const lines = offs.map((o) => ({ off: o, ...lineOf(m.heading + o * Math.PI / 180) }));
+          const pick = lines.find((l) => l.clear) || lines[0];
+          const from = pick.from;
           placeBrea(from.x, from.z); look(m.position.x, m.position.z, 3, 7);
           const r = await shoot(m, from, la);
+          r.bearingOffDeg = pick.off;
+          r.frontal = { first: lines[0].first, ground: lines[0].ground, clear: lines[0].clear };
+          r.linesClear = lines.filter((l) => l.clear).length;
           let lit = 0, n = 0;
           for (const i of ring.ring) if (i >= 0 && S.used[i]) { n++; if (S.liveAttr.array[i] > 0) lit++; }
           // cross its line 10 m from the Plumb
