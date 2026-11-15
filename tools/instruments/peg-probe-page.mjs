@@ -272,8 +272,15 @@ export async function probe(frame) {
         const m = live[0];
         if (m) {
           const ring = S.rings.get(m);
-          still(m, m.position.x, m.position.z, m.heading);
-          calm(m);
+          // regfix 2: the member is held where it stands, as the ten fresh Pegs are, before it is aimed at. At 541f1a6 and
+          // 54ad1d3 it was aimed at the moment still() was called, with its walking speed and its swarm slot still
+          // carrying it: in the 1.5 s of the shot its lamp moved 0.664 m off the aim point (diagAfter.wp.toAimM) and the
+          // arrow, laid on the lamp's old place, passed it (hit false, health 46, ownRay null). Its update still runs
+          // (gait, lamp, transect); only its travel is pinned, every frame, until the shot is read.
+          const hx = m.position.x, hz = m.position.z, hh = m.heading, u0m = m.update;
+          m.update = function (...a) { const ret = u0m.apply(this, a); this._driveT = -1; if (this.sc) this.sc._speed = 0; still(this, hx, hz, hh); return ret; };
+          still(m, hx, hz, hh);
+          for (let q = 0; q < 20; q++) { calm(m); await raf(); }
           const la = lampOf(m);
           // fix round 1: at 6358b62 the shot from 12 m straight ahead of the member's heading never reached it (hit:false,
           // health untouched). Each candidate bearing is swept first with the game's own hull query (ctx.hitHulls, the
@@ -318,6 +325,8 @@ export async function probe(frame) {
           const diag0 = why();
           const r = await shoot(m, from, la);
           if (!r.hit) { r.diagBefore = diag0; r.diagAfter = why(); }
+          m.update = u0m;
+          r.heldSettleFrames = 20;
           r.bearingOffDeg = pick.off;
           r.frontal = { first: lines[0].first, ground: lines[0].ground, clear: lines[0].clear };
           r.linesClear = lines.filter((l) => l.clear).length;
