@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { rollLoot } from '../../entities/machines/machine.js';
 import { buildRig } from '../../entities/machines/autorig.js';
 import { GaitController } from '../../entities/machines/gait.js';
@@ -37,6 +38,9 @@ const LAMP_R = 0.09;
 const LAMP_WP_R = 0.12;
 /** The model's height (m): `r5Size[1]` of the GLB, the ranging pole's spike (the loader scales the bbox to this). */
 const HEIGHT = 1.9;
+/** A hit this far outside the lamp's sphere (m) still counts as on it (the sweep stops arrows on the sphere's surface). */
+const LAMP_TOUCH = 0.005;
+const _lc = new THREE.Vector3();
 /** The mallet's slam (rad, front down): the hammer's face reaches the peg's head (TRANSECT.height - sink). */
 const SLAM = 0.34;
 const QUAD_WALK = { stride: 0.34, duty: 0.6, lift: 0.07, offsets: { LF: 0, RH: 0, RF: 0.5, LH: 0.5 } };   // trot
@@ -110,6 +114,26 @@ export class Peg extends ExpansionMachine {
 
   /** Stand on its feet where it now stands, after a move or turn with the update stopped (lib/kindkit.js `seatFeet`). */
   seatFeet() { return seatFeet(this); }
+
+  /**
+   * The lamp hit, on its boundary (M1.4d, measured at c5bc670): the arrow sweep (core/hitHulls.js) stops an arrow ON
+   * the lamp weak point's sphere, so its hit point lies at the radius itself, and machine.js's weak test
+   * (distance^2 <= radius^2) then fell either side of the float tie: 10 of 10 shots stopped at 0.120 m from the lamp and
+   * 6 of them did 1x damage (health 16, alive). A hit within LAMP_TOUCH of the sphere is moved 6 mm toward its centre
+   * before the base class reads it, so a shot the sweep stopped on the lamp is a lamp hit.
+   */
+  takeDamage(hit) {
+    const wp = this._lampWp, pt = hit && hit.point;
+    if (wp && pt && this.alive && wp.enabled !== false) {
+      wp.obj.getWorldPosition(_lc);
+      const d = _lc.distanceTo(pt);
+      if (d > 1e-6 && d <= wp.radius + LAMP_TOUCH) {
+        const q = pt.clone().lerp(_lc, Math.min(1, 0.006 / d + (d - wp.radius > 0 ? (d - wp.radius) / d : 0)));
+        hit = { ...hit, point: q };
+      }
+    }
+    return super.takeDamage(hit);
+  }
 
   /** Its line dies with it: every peg it drove goes dark and stops counting as a live transect. */
   _die() {
