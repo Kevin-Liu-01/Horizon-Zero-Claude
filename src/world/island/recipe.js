@@ -758,8 +758,16 @@ const PADS = Object.freeze([['rust-cone', 6, 12], ['mistfold', 4, 9], ['pinned-c
     const s = [...SITES, ...TRIG].find((q) => q.id === id);
     return { e: s.e, n: s.n, h: s.h, r0, r1 };
   }));
+/** The T3 ramp's landing: [centre m from its top, half-length m, corner m]; chosen in Node against F32's seam probe
+ * (`crack` rule on a land mask ray-marched from this recipe at F32's lens, the lens moved -1..+1 m in height: widest
+ * crack 2 px or less in every case; 3 px widest 4 without it, the same three pixels the browser probe found). */
+const RAMP_LANDING = Object.freeze([71, 6, 1]);
 const RAMPS = Object.freeze([
-  [282.2, -95, 145, 272, -10, 105],       // Rust Cone, T3
+  // M1a regressions run (ruling 3: F32 shows no crack of any kind wider than 2 px): the T3 ramp levels for a landing
+  // (RAMP_LANDING). Seen from 120 m over T1 (F32), the NW hill's flank (525 m out)
+  // crossed the ramp's rising crest (564 m) in a V whose tip read as a 3-px crack (widest 4) in the seam probe; the
+  // landing turns the V's foot into a level run of crest, so the hill comes down onto a flat
+  [282.2, -95, 145, 272, -10, 105, RAMP_LANDING],       // Rust Cone, T3
   [64, 320, 214, 64, 304, 211.8],        // T4
   [128, 144, 233, 100, 144, 240],        // the Fundamental
   [236, 261, 66, 206, 262, 72],          // Mistfold
@@ -781,7 +789,16 @@ function rampHeight(e, n, h) {
     if (e < Math.min(R[0], R[3]) - 14 || e > Math.max(R[0], R[3]) + 14 || n < Math.min(R[1], R[4]) - 14 || n > Math.max(R[1], R[4]) + 14) continue;
     const q = distToSeg(e, n, R[0], R[1], R[3], R[4]);
     if (q.d >= 13) continue;
-    const hl = R[2] + (R[5] - R[2]) * q.t;
+    let t = q.t;
+    if (R[6]) {
+      // a landing: the run is level over [c - half, c + half] (at the height the ramp had at c) and the two flights
+      // either side take up the drop at their own even grade, the corners rounded over about `corner` m (monotone)
+      const len = Math.hypot(R[3] - R[0], R[4] - R[1]), u = t * len - R[6][0], half = R[6][1], rr = R[6][2];
+      const sm = (x) => (x + Math.sqrt(x * x + rr * rr)) / 2, s0 = sm(-half);
+      const k = u < 0 ? R[6][0] / (R[6][0] - half) : (len - R[6][0]) / (len - R[6][0] - half);
+      t = clamp01((R[6][0] + Math.sign(u) * k * (sm(Math.abs(u) - half) - s0)) / len);
+    }
+    const hl = R[2] + (R[5] - R[2]) * t;
     h += (hl - h) * (1 - ss(3.4, 13, q.d));
   }
   return h;
