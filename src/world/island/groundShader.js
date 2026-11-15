@@ -429,11 +429,16 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   #ifndef CAL_P_NOGRAIN
   if (wSalt > 0.05 && dCam < 12.0 && !gSkip) {
     float sk = (1.0 - smoothstep(6.0, 12.0, dCam)) * wSalt * (1.0 - brine * 0.8);
-    vec4 gA4 = gNoiseT(xz * 0.53 + 0.19), gB4 = gNoiseT(xz * 0.21 + 0.63);
-    float grit = gA4.a, clod = smoothstep(0.25, 0.75, gB4.b);
+    /* each read of the field noise repeats every 1/scale m: two turned reads at incommensurate scales for the clods, so no
+     * one repeat carries more than half the grain (the first pass's single clod read showed at 4.77 m in the top-down) */
+    vec2 xzS = vec2(dot(xz, vec2(0.8, 0.6)), dot(xz, vec2(-0.6, 0.8))), xzT = vec2(dot(xz, vec2(0.276, 0.961)), dot(xz, vec2(-0.961, 0.276)));
+    vec4 gA4 = gNoiseT(xzS * 0.53 + 0.19), gB4 = gNoiseT(xzS * 0.104 + 0.63), gC4 = gNoiseT(xzT * 0.0893 + 0.37);
+    /* (fix round, second pass: at 1 m the crust read L* 84 against the swatch's 55 and the grain barely showed) the gaps
+     * between grains go dark: a sharper grit and clod mask, 0.3 in a gap to 1.05 on a crystal, mean about 0.7 */
+    float grit = smoothstep(0.3, 0.7, gA4.a), clod = smoothstep(0.3, 0.7, 0.5 * gB4.a + 0.5 * gC4.a);
     float sGrain = grit * 0.45 + clod * 0.55;
-    col *= mix(1.0, 0.6 + 0.62 * sGrain, sk);
-    pert += vec3(gA4.r + gB4.g - 1.0, 0.0, gA4.g + gB4.r - 1.0) * 0.45 * sk;
+    col *= mix(1.0, 0.3 + 0.75 * sGrain, sk);
+    pert += vec3(gA4.b + gB4.b - 1.0, 0.0, gA4.g + gC4.b - 1.0) * 0.45 * sk;
   }
   #endif
 
@@ -498,10 +503,13 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     // two incommensurate, turned reads: one read of the periodic noise repeated every 16.4 m (M1.1e tiling check)
     #ifndef CAL_P_NOMTONE
     vec2 xzR = vec2(dot(xz, vec2(0.8, 0.6)), dot(xz, vec2(-0.6, 0.8)));
-    /* M1a fix round (M1.1e: the meadow ground's 40 m top-down read 0.41 at 1 m, the drifts' two reads cut hard by a narrow
-     * smoothstep into 0.5 m blots): a softer ramp and a third, finer read (about 14 cm) so the tone decorrelates within a blot */
-    gTone = 0.68 + 0.42 * smoothstep(0.18, 0.82, 0.36 * gNoiseT(xz * 0.061).b + 0.36 * gNoiseT(xzR * 0.0437 + 0.29).a
-                                                  + 0.28 * gNoiseT(xzR * 0.113 + 0.71).a);
+    /* M1a fix round (M1.1e): inside the meadow (a 40 m square wholly in it) the tone repeated at 16.4 m (autocorrelation
+     * 0.37 at (16.41, 0) m): the field noise repeats every 1/scale metres, and the b read at 0.061 was the drifts' main
+     * read. Now every read repeats past 20 m: two a reads (64 cells a period: 0.36 and 0.33 m blots, periods 22.9 and
+     * 21.3 m) turned 37 and 74 deg, and a b read for the drifts (1.7 m, period 54 m), on a softer ramp */
+    vec2 xzR2 = vec2(dot(xz, vec2(0.276, 0.961)), dot(xz, vec2(-0.961, 0.276)));
+    gTone = 0.68 + 0.42 * smoothstep(0.2, 0.8, 0.42 * gNoiseT(xzR * 0.0437 + 0.29).a + 0.33 * gNoiseT(xzR2 * 0.047 + 0.11).a
+                                                + 0.25 * gNoiseT(xz * 0.0185 + 0.53).b);
     grass *= gTone;
     #endif
     vec3 litter = vec3(0.17, 0.112, 0.02) * (0.82 + 0.3 * gn.b);   // meadow.js: the blade's foot colour, a shade lit
