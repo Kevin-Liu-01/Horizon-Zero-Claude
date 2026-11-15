@@ -535,7 +535,15 @@ DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, m
  *  median 54 / 52 deg (anchor 44 / 40, as it stood 42 / 47). With `airSelf` 1 in motion (the anchor's own) the front
  *  panel still shot out level in one lunge of two (-7 deg)) */
 DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 3.2, airY: true, flut: 2.0, hang: 2, rootK: 3, airSelf: 0.4,
-  moving: { v0: 0.5, v1: 1.5, wind: 1.2, flut: 1, hang: 0, rootK: 0, airSelf: 0.4 } });
+  moving: { v0: 0.5, v1: 1.5, wind: 1.2, flut: 1, hang: 0, rootK: 0, airSelf: 0.4 },
+  /* (M1a regfix 3, F19: in a lance swing the panels fall a little harder and bend less off their rest, so the front
+   *  panel goes forward and down ahead of her front knee in the heavy's lunge, as in the anchor re-filmed at fb6d5f0
+   *  (chord 15-17 deg below horizontal, the hem 25-30), and is never thrown out level. Without it the lunge's panel
+   *  was chaotic: dressed bench, F19's staging, 4-31 deg over ten starts; in the page at d3dd253 17.6 then -2.7 on two
+   *  stagings and a level strip in the film. With 1.0 / 0.35 rad: bench 18-39 deg over 14 starts (median 34); in the
+   *  page 1.0 / 0.38 and 1.1 / 0.35 read 31 deg on every staging. At 1.4 / 0.25 (c0dab09) it hung steeper than the
+   *  anchor, 45 deg past the knee to the ground) */
+  swing: { grav: 1.0, maxAng: 0.35, up: 12 } });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 export const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */
