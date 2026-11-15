@@ -713,7 +713,8 @@ export class SecondaryMotion {
     }
     if (SC) SC.on = scOn;
     this._stL = sL0; this._stR = sR0; this._prevStL = pL0; this._prevStR = pR0;
-    for (let i = 0; i < this._chains.length; i++) this._chains[i].seeded = false;
+    for (let i = 0; i < this._chains.length; i++) { const c = this._chains[i]; c.seeded = false; c.mvK = NaN; c.mvV = NaN; }
+    this._mvSelf = NaN;
   }
 
   _springs(dt, t, ph, speed, moveW, runW) {
@@ -785,6 +786,16 @@ export class SecondaryMotion {
     const windS = Math.sqrt(windX * windX + windZ * windZ);
     const wux = windS > 1e-6 ? windX / windS : 0, wuz = windS > 1e-6 ? windZ / windS : 0;
 
+    /* (M1a regfix 3, A-sweep-wind: `moving` is gated on HER OWN travel. The chain root's speed alone carries the
+     *  idle's weight shift and the trade wind's sway of the hips: standing in still air the panels drifted up to
+     *  15 % into the moving tuning and the left panel's bearing at F02 fell 1.3 deg out of its band. Her covered
+     *  speed (`player.moveSpeed`, low-passed ~0.15 s) must pass 0.25-0.75 m/s, or a swing must be in hand (the
+     *  lunge travels the hips with her feet planted); standing nothing of the moving tuning acts) */
+    const spd = speed > 0 ? speed : 0;
+    this._mvSelf = Number.isFinite(this._mvSelf) ? this._mvSelf + (spd - this._mvSelf) * Math.min(1, dt * 6) : spd;
+    let selfG = (this._mvSelf - 0.25) / 0.5;
+    selfG = selfG <= 0 ? 0 : selfG >= 1 ? 1 : selfG * selfG * (3 - 2 * selfG);
+    if (this.melee?._dbg?.stance === 'swing') selfG = 1;
     for (let ci = 0; ci < this._chains.length; ci++) {
       const c = this._chains[ci];
       const N = c.N, n = c.n, cls = c.cls;
@@ -862,6 +873,7 @@ export class SecondaryMotion {
         const rv = c.mvV = Number.isFinite(c.mvV) ? c.mvV + (rv0 - c.mvV) * Math.min(1, dt * 6) : rv0;
         let tgt = (rv - MV.v0) / (MV.v1 - MV.v0);
         tgt = tgt <= 0 ? 0 : tgt >= 1 ? 1 : tgt * tgt * (3 - 2 * tgt);
+        tgt *= selfG;
         const m0 = Number.isFinite(c.mvK) ? c.mvK : tgt;
         const rate = tgt > m0 ? (MV.up ?? 10) : (MV.down ?? 1.6);
         c.mvK = m0 + (tgt - m0) * Math.min(1, dt * rate);
