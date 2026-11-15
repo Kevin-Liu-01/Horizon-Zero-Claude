@@ -49,6 +49,7 @@ const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[
 const PORT = guardPort(flag('--port'));
 const FRAMES = (flag('--frames', 'F30,F20') || '').split(',').map((s) => s.trim()).filter(Boolean);
 const BUDGET_S = Number(flag('--budget', 840));
+const RESERVE_S = Number(flag('--reserve', 150));   // kept back from the budget for the save-continue row and the close
 const LABEL = flag('--label', 'systems-slice-hour');
 const KIT = !args.includes('--no-kit');   // M1.6j: the kit's verb rows on the frames page (kit-probe-page.mjs)
 const NO_RUN = args.includes('--no-run');  // the frames and rows only
@@ -804,7 +805,7 @@ try {
   if (!report.rows['save-reload'].pass && (await page.evaluate(() => window.__CTX__?.state)) !== 'playing') throw new Error('save-reload left the game off play: the run cannot go on');
 
   let last = null, tries = 0, deaths = 0;
-  while (spent() < BUDGET_S - 150) {
+  while (spent() < BUDGET_S - RESERVE_S) {
     const s = await page.evaluate(probe);
     if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) {
       // played as a player plays it: the death card, then RELOAD THE LAST ENTRY (the one death rule, M1.6f)
