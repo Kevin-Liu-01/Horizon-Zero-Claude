@@ -379,10 +379,10 @@ const HEAVY = {
   id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.18,
   cock: { hand: [-0.26, 1.30, -0.06], shaft: [0.30, 0.42, 0.86], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.52, py: -0.40, pitch: 0.0, roll: 0.08, dz: -0.10 },
   /* fix round 1: the LOWEST, LONGEST drive: the hips sink furthest and travel furthest */
-  /* (the rear fist 0.04 m lower than first keyed: at a jog, upright, the butt end passed 0.156 m from her head
-   * axis at face height, A105's R3 bar 0.16) */
-  contact: { hand: [-0.29, 1.23, 0.03], shaft: [0.25, 0.04, 0.967], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.64, py: 0.14, pitch: 0.44, roll: -0.05, dz: 0.32 },
-  follow: { hand: [-0.29, 1.19, 0.05], shaft: [0.26, -0.04, 0.965], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.62, py: 0.16, pitch: 0.44, roll: -0.08, dz: 0.34 },
+  /* (a fist 0.04 m lower took A105's face clearance at a jog from 0.156 to 0.153 m and put the jogging heavy's
+   * forearm 0.067 m off her belly axis, A104's R9 bar 0.10: kept here; BACKLOG) */
+  contact: { hand: [-0.29, 1.27, 0.03], shaft: [0.25, 0.02, 0.968], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.64, py: 0.14, pitch: 0.44, roll: -0.05, dz: 0.32 },
+  follow: { hand: [-0.29, 1.23, 0.05], shaft: [0.26, -0.06, 0.964], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.62, py: 0.16, pitch: 0.44, roll: -0.08, dz: 0.34 },
 };
 
 /* ------------------- M1.3d: THE BODY PERFORMS THE HEAVY ------------------- */
