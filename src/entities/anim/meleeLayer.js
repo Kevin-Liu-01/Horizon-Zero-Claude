@@ -425,6 +425,12 @@ function mapClip(map, u) {
 }
 HEAVY.hipLead = HIP_LEAD;
 HEAVY.clipMap = HEAVY_CLIP_MAP;
+/* M1a round 2 (backlog: the three light swings shoulders-first by 20-27 ms): the lights' hips lead too, by the
+ * same clock (`LIGHT_LEAD`), and the masked clip's own trunk swing is held back until the hips have turned
+ * (`LIGHT_CLIP_MAP`, as the heavy's) */
+const LIGHT_LEAD = 0.085;
+const LIGHT_CLIP_MAP = [[0, 0], [0.30, 0.20], [0.45, 0.24], [0.62, 0.40], [0.70, 0.68], [1, 1]];
+for (const bt of BEATS) { bt.hipLead = LIGHT_LEAD; bt.clipMap = LIGHT_CLIP_MAP; }
 /**
  * THE UNDERCUT (BIBLE §5.3: "a low two-handed thrust from a crouch, never an
  * overhead stab"). Both hands stay on the haft at its two sockets from the
