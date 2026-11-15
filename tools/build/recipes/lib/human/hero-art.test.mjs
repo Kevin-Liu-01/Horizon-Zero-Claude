@@ -43,7 +43,9 @@ test('A-ear-rim-round: both ears\' side silhouettes within 0.5 px of round at F1
 // (a flat past 3 mm that ends in a turn of 12 deg or more: what reads as a polygon edge; a plain run past 3 mm is any gentle arc,
 // see ear-rim.mjs). The row is in and it FAILS on the shipped ear (corners 1 / 1, kinked runs 5 / 8 at 970a991, all on the back of
 // the helix down to the lobe): it is marked todo so Tier 0 reports it without blocking the merge until the ear is rebuilt.
-test('A-ear-rim-corners: no corner and no kinked straight run on either ear\'s side outline', { todo: 'M1a round 3: the outline faired (lib/human/ear-rim.mjs fairEarOutline): left ear clean, right ear one kinked run of 3.1 mm on the lobe (was 1 corner + 6 and 8 kinked runs)' }, async () => {
+// M1a round 3 fix (the judge at a3b9245: "make it a real row instead of todo"): both outlines clean on the shipped mesh (the right ear
+// faired 12 iterations a round, the left 8; brea.mjs EAR_FAIR), so the row now blocks
+test('A-ear-rim-corners: no corner and no kinked straight run on either ear\'s side outline', async () => {
   const r = await earRim(BREA);
   for (const side of ['left', 'right']) {
     assert.equal(r[side].corners, 0, `${side} ear: corners at ${JSON.stringify(r[side].cornerAt)}`);

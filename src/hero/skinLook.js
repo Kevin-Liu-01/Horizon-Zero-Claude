@@ -152,7 +152,8 @@ const PARS_VERTEX = `
 attribute float _calthin;
 attribute vec4 _calzone;
 varying float vCalThin;
-varying vec4 vCalZone;`;
+varying vec4 vCalZone;
+varying float vCalBlend;`;
 
 const PARS_FRAGMENT = `
 varying float vCalThin;
@@ -251,6 +252,7 @@ const NORMAL_FRAGMENT = `
 	}
 	#endif`;
 const PARS_FRAGMENT_EARLY = `
+varying float vCalBlend;
 uniform float calNormFixK;
 uniform float calDetailK;
 uniform sampler2D calMicro;
@@ -267,10 +269,31 @@ uniform vec4 calFlat;`;
  * about 37 deg, the shading normal turns to the triangle's (fully by 70 deg); a skin whose normals are sound (every other frame,
  * the elbow in F08 at 16 deg) is untouched. The tangent frame's normal follows, so the normal map and the pores sit on it.
  */
+/*
+ * M1a round 3 fix (the judge at a3b9245, F11: "new faceted shading wedges at the inner eye corners and above the upper lip"): the guard
+ * above also took the face, where the skin is sound (one bone) but the mesh is coarse for its curvature: at the inner eye corners and
+ * the philtrum the smooth normal stands past 37 deg off the triangle's, and turning it to the triangle's printed the facets. The guard
+ * is now only for skin whose normal LINEAR BLEND SKINNING has cancelled: `vCalBlend` is the blended normal's length over the weighted
+ * lengths of its bones' own turns (1 on one bone, the face; a sound blend keeps 0.84-0.9; the folded draw elbow 0.17-0.6), and the
+ * guard runs in full under 0.6 and not at all from 0.85.
+ */
+const BLEND_VERTEX = `
+	#ifdef USE_SKINNING
+	{
+		vec3 calT0 = ( bindMatrixInverse * boneMatX * bindMatrix * vec4( calN0, 0.0 ) ).xyz;
+		vec3 calT1 = ( bindMatrixInverse * boneMatY * bindMatrix * vec4( calN0, 0.0 ) ).xyz;
+		vec3 calT2 = ( bindMatrixInverse * boneMatZ * bindMatrix * vec4( calN0, 0.0 ) ).xyz;
+		vec3 calT3 = ( bindMatrixInverse * boneMatW * bindMatrix * vec4( calN0, 0.0 ) ).xyz;
+		float calRef = skinWeight.x * length( calT0 ) + skinWeight.y * length( calT1 ) + skinWeight.z * length( calT2 ) + skinWeight.w * length( calT3 );
+		vCalBlend = length( objectNormal ) / max( calRef, 1e-6 );
+	}
+	#else
+	vCalBlend = 1.0;
+	#endif`;
 const NORMFIX_FRAGMENT = `
 	if ( calNormFixK > 0.0 ) {
 		vec3 calFaceN = normalize( cross( dFdx( vViewPosition ), dFdy( vViewPosition ) ) );
-		float calFix = calNormFixK * ( 1.0 - smoothstep( 0.35, 0.8, dot( normal, calFaceN ) ) );
+		float calFix = calNormFixK * ( 1.0 - smoothstep( 0.6, 0.85, vCalBlend ) ) * ( 1.0 - smoothstep( 0.35, 0.8, dot( normal, calFaceN ) ) );
 		if ( calFix > 0.0 ) {
 			normal = normalize( mix( normal, calFaceN, calFix ) );
 			nonPerturbedNormal = normal;
@@ -328,6 +351,7 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
     Object.assign(shader.uniforms, U);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>${PARS_VERTEX}`)
+      .replace('#include <skinnormal_vertex>', `vec3 calN0 = objectNormal;\n#include <skinnormal_vertex>${BLEND_VERTEX}`)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvCalThin = _calthin;\n\tvCalZone = _calzone;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>${PARS_FRAGMENT_EARLY}`)
@@ -340,7 +364,7 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
       .replace('#include <lights_fragment_begin>', `${AO_EARLY}\n#include <lights_fragment_begin>`)
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>${SKY_FRAGMENT}`);
   };
-  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calSkin6${low ? 'l' : ''}`;
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calSkin7${low ? 'l' : ''}`;
   material.userData.calSkin = 1;
   material.userData.calSkinU = U;
   // R59 c / LOOK C-01: the hero fill drops once the scatter carries the shadow side (x0.55; fix round 3, was x0.6: off the live sweep, D-skin-sweep, and three readings a run)

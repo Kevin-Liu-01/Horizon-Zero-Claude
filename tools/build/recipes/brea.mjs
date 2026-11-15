@@ -53,7 +53,9 @@ import { WRAP_ATLAS } from './lib/human/wrap.mjs';
 import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/human/wrap-head.mjs';
 import { lashCard } from './lib/human/hair.mjs';
 import { fairEarOutline } from './lib/human/ear-rim.mjs';
-const EAR_FAIR = { rounds: 16, iters: 8, ring2: 1 };
+// (M1a round 3 fix: the right ear's lobe kept one or two kinked runs with 8 iterations a round on the shipped grid, and is clean with 12;
+// the left is clean with 8 and kinks with 12: each side its own count, ear-rim.mjs)
+const EAR_FAIR = { rounds: 16, iters: { left: 8, right: 12 }, ring2: 1 };
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, browLines, remapEyeUV,
   cullUnderWrap, cullEyeBacks, cullEyeUnderLids, reshapeEars, appendCollarLiner, outfitSkinSampler, bakeThinness, bakeZones, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
@@ -573,6 +575,12 @@ export async function build({ out = ROOT } = {}) {
       width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.04 / (0.587 * S), side: [0.55, 0.65, 0.5], curl: 0.28, twist: Math.PI / 2, gather: 0.25, gatherTo: 0.36, roll: 1.3, fold: 0.022, along: 37, across: 10, rootBack: 0.014,
       open: [0.202, 0.459], pleats: 0.0036 / S, gatherFree: 0.85,
       rootRows: 10, smoothSkin: 4, hem: 0.004, ripple: 0.012,
+      // M1a round 3 fix (the judge at a3b9245: "a stiff flat strip with a cuff, not gathered cloth" in F10, F12, F13; TURN's knot lets
+      // fall a torn, frayed tail in two loose ends): the root is WRUNG, one full turn about its own line from the knot to the opening,
+      // so it leaves the knot as a twisted rope of cloth, not a level plank; past 0.47 of its length the strip is TORN into two tongues
+      // (a 2-column slit, both torn edges rolled like the selvedges), the right one 18 % shorter of the free length, the two fanning
+      // apart and the short one lying over the long one; each ends in its own frayed fringe
+      wring: 1, split: { at: 0.47, cols: 2, short: 0.82, spread: 0.35, gapW: 0.004, lay: 0.006 },
       // a band of the same cloth bound round the gathered root 6.5 cm out of the knot: the strip is pinched a third narrower under it
       // and puffs out after it (the knot's creased cloth, not a cord)
       cinch: { at: 0.110, w: 0.016 / S, pad: 0.0012 / S, tube: 0.0032 / S } },

@@ -253,7 +253,9 @@ export function fairEarOutline(prim, { cut = 0.0735, y0 = 1.560, y1 = 1.705, z0 
           for (const i of group.get(v)) { pos[i * 3 + 1] = start[v * 3 + 1] + y; pos[i * 3 + 2] = start[v * 3 + 2] + z; }
         }
       };
-      for (let it = 0; it < iters; it++) { step(lambda); step(mu); }
+      // (`iters` may be per side, { left, right }: each ear is faired and read on its own)
+      const nIt = typeof iters === 'object' ? iters[sideName] : iters;
+      for (let it = 0; it < nIt; it++) { step(lambda); step(mu); }
       for (const [v] of inner) moved.add(v);
       if (scale) { const f = read(sideName); L.push(f); if (f < best.faults) best = { faults: f, pos: Float32Array.from(pos), round: round + 1 }; }
     }

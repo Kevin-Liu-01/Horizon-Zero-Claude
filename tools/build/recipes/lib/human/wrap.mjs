@@ -405,7 +405,7 @@ export function cullCovered(g, depth, margin = 0.0009) {
  * in), and the last `fray` of its length mapped to a frayed end cell.
  *   uvFront / uvBack: { rect, period, W, pxPerM, v:[a,b] }, uvEnd: [x, y, w, h] px
  */
-export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, gatherTo = 0.16, roll = 0, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7, rootBack = 0, rootRows = null, smoothSkin = false, hem = 0, ripple = 0, open = null, pleats = 0, cinch = null, gatherFree = 1 } = {}) {
+export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, gatherTo = 0.16, roll = 0, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7, rootBack = 0, rootRows = null, smoothSkin = false, hem = 0, ripple = 0, open = null, pleats = 0, cinch = null, gatherFree = 1, wring = 0, split = null } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const pl = polyline(P);
   const R = rng(seed * 40503);
@@ -428,7 +428,13 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
     const pts = [];
     const frames = [];
     for (let a = 0; a <= along; a++) {
-      const u = uOf(a);
+     const uRow = uOf(a);
+     // (M1a r4 fix, `split`: past split.at the strip is torn into two tongues; the right one (x > 0) is `short` of the free length,
+     // so each tongue is laid on its own point of the chain: the row's frame is taken per column)
+     for (let k = 0; k <= across; k++) {
+      const x = (k / across) * 2 - 1;
+      const sp = split ? smooth(split.at, split.at + 0.08, uRow) : 0;
+      const u = split && x > 0 && uRow > split.at ? split.at + (uRow - split.at) * split.short : uRow;
       let { p, t, seg, f } = pl.at(u);
       // with `smoothSkin` the rest shape follows a Catmull-Rom curve through the chain's points, not their polyline: no corner at a joint
       if (smoothSkin) {
@@ -437,12 +443,15 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
         p = [0, 1, 2].map((k) => 0.5 * (2 * q1[k] + (-q0[k] + q2[k]) * f + (2 * q0[k] - 5 * q1[k] + 4 * q2[k] - q3[k]) * f2 + (-q0[k] + 3 * q1[k] - 3 * q2[k] + q3[k]) * f3));
         t = norm([0, 1, 2].map((k) => 0.5 * ((-q0[k] + q2[k]) + 2 * (2 * q0[k] - 5 * q1[k] + 4 * q2[k] - q3[k]) * f + 3 * (-q0[k] + 3 * q1[k] - 3 * q2[k] + q3[k]) * f2)));
       }
+      const o0 = open ? open[0] : gatherTo * 0.34, o1 = open ? open[1] : gatherTo;
       let sd = norm(sub(side, mul(t, dot(side, t))));
-      if (twist) { const n0 = norm(cross(sd, t)), a2 = twist * u; sd = norm(add(mul(sd, Math.cos(a2)), mul(n0, Math.sin(a2)))); }
+      // (M1a r4 fix, `wring`: the root is wrung, its section turned `wring` full turns about its own line between the knot and the
+      // opening, so it leaves the knot as a twisted rope of cloth and opens face-out as before)
+      const a2 = twist * u + wring * TAU * smooth(0, o1, u);
+      if (a2) { const n0 = norm(cross(sd, t)); sd = norm(add(mul(sd, Math.cos(a2)), mul(n0, Math.sin(a2)))); }
       const nrm = norm(cross(sd, t));
       // fix round 3 (`open`: [u0, u1]): the gathered roll holds until the strip turns down, then opens over [u0, u1], so the stiff,
       // nearly level root reads as a rope of cloth leaving the knot, never a wide plate standing off it
-      const o0 = open ? open[0] : gatherTo * 0.34, o1 = open ? open[1] : gatherTo;
       const rootK = 1 - smooth(open ? o0 : gatherTo * 0.55, o1, u);        // 1 at the knot, 0 on the free strip
       // (`cinch`: the strip is drawn in under the band, a third narrower and flatter there, and puffs out either side of it)
       const pinch = cinch ? 1 - 0.34 * Math.exp(-(((u - cinch.at) / 0.03) ** 2)) + 0.12 * Math.exp(-(((u - cinch.at - 0.06) / 0.04) ** 2)) : 1;
@@ -453,11 +462,14 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
       const back = rootBack * (1 - smooth(0, 0.07, u));
       const p0 = sub(p, mul(t, back));
       const weights = smoothSkin === 4 ? chainW4(joints, seg, f) : smoothSkin ? chainW3(joints, seg, f) : chainW(joints, seg, f);
-      for (let k = 0; k <= across; k++) {
-        const x = (k / across) * 2 - 1;
+      {
+        // (`split`: each tongue takes its own section, cup, seal and ripple across its own width (xl), and the two fan apart)
+        const kc = across >> 1, hk = split ? split.cols >> 1 : 0;
+        const xl = !split ? x : x < 0 ? (k / (kc - hk)) * 2 - 1 : ((k - kc - hk) / (across - kc - hk)) * 2 - 1;
+        const xs = mix(x, Math.max(-1, Math.min(1, xl)), sp);
         // the root is gathered into a closed roll (`roll`: the two faces bulge apart, so it reads as a rope of cloth from
         // both sides under FrontSide), its pleats running along it; the free strip is flat, with folds
-        const cup = curl * (1 - x * x) * hw;
+        const cup = curl * (1 - xs * xs) * hw;
         const lens = sgn * roll * rootK * (1 - x * x) * hw;
         let w = 0;
         for (const q of waves) w += q.a * Math.sin(x * q.f * Math.PI + q.ph + u * q.m) * (0.5 + 0.5 * Math.sin(u * q.m * 2 + q.ph2));
@@ -466,12 +478,17 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
         const pleat = pleats ? rootK * pleats * (k & 1 ? 1 : -1) * (1 - x * x * x * x) * (0.75 + 0.25 * Math.sin(u * 17 + k)) : rootK * hw * 0.16 * Math.sin(x * 7.3 + u * 9 + 1.1);
         // the two faces meet at the selvedges: no slit to see through along the strip's edge (with a `hem`, they stay apart there
         // and the rolled hem below closes it)
-        const seal = hem ? 1 - (x * x * x * x) * (1 - hem / thick) : 1 - x * x * x * x;
-        const rip = ripple ? ripple * smooth(gatherTo, Math.min(1, gatherTo + 0.25), u) * ((1 - x * x) * 0.6 * Math.sin(u * 23 + 0.7) + 0.4 * Math.sin(x * 4.4 + u * 31 + 1.9)) : 0;
-        const off = sgn * thick * 0.5 * seal + cup + lens + pleat + rip + w * (1 - rootK * 0.7) * (0.45 + 0.55 * smooth(0, 0.25, 1 - Math.abs(x)));
-        pts.push(add(add(p0, mul(sd, x * hw)), mul(nrm, off)));
-        frames.push({ u, x, sd, t, nrm, weights });
+        const seal = hem ? 1 - (xs * xs * xs * xs) * (1 - hem / thick) : 1 - xs * xs * xs * xs;
+        const rip = ripple ? ripple * smooth(gatherTo, Math.min(1, gatherTo + 0.25), u) * ((1 - xs * xs) * 0.6 * Math.sin(u * 23 + 0.7) + 0.4 * Math.sin(x * 4.4 + u * 31 + 1.9)) : 0;
+        const off = sgn * thick * 0.5 * seal + cup + lens + pleat + rip + w * (1 - rootK * 0.7) * (0.45 + 0.55 * smooth(0, 0.25, 1 - Math.abs(xs)));
+        // (the tongues fan apart across the strip and the short one lies a little over the long one)
+        const fan = split ? smooth(split.at, 1, u) : 0;
+        const spread = split ? Math.sign(x) * (split.spread * fan * hw + split.gapW * 0.5 * sp) : 0;
+        const lay = split ? (x > 0 ? 1 : -0.4) * split.lay * fan : 0;
+        pts.push(add(add(p0, mul(sd, x * hw + spread)), mul(nrm, off + lay)));
+        frames.push({ u, x, sd, t, nrm, weights, xl: xs });
       }
+     }
     }
     const rows = across + 1;
     const base = g.pos.length / 3;
@@ -490,7 +507,7 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
         let uu, vv;
         if (end && uvEnd) {
           // the end cell: across = its U, along = its V
-          uu = (uvEnd[0] + (k / across) * uvEnd[2]) / W;
+          uu = (uvEnd[0] + (split ? 0.5 + 0.5 * Math.max(-1, Math.min(1, fr.xl)) : k / across) * uvEnd[2]) / W;
           vv = (uvEnd[1] + end.v * uvEnd[3]) / W;
         } else {
           uu = (rect[0] + uPx) / W;
@@ -501,9 +518,13 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
         g.pos.push(...at(a, k)); g.nrm.push(...n); g.uv.push(uu, vv); g.jnt.push(...fr.weights.j); g.wgt.push(...fr.weights.w);
       }
     };
+    const kc = across >> 1, hk = split ? split.cols >> 1 : 0;
+    const aSplit = split ? (() => { let a = 0; while (a < along && uOf(a) < split.at) a++; return a; })() : Infinity;
+    let rowA = 0;
     const quad = () => {
       const c0 = base + col * rows, c1 = base + (col + 1) * rows;
       for (let k = 0; k < across; k++) {
+        if (rowA > aSplit && k >= kc - hk && k < kc + hk) continue;
         const i0 = c0 + k, i1 = i0 + 1, i2 = c1 + k, i3 = i2 + 1;
         if (sgn > 0) g.idx.push(i0, i2, i1, i1, i2, i3); else g.idx.push(i0, i1, i2, i1, i3, i2);
       }
@@ -512,6 +533,7 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
     const lastPlain = Math.max(1, Math.floor(along * (1 - fray)));
     emit(0, uAcc, null);
     for (let a = 1; a <= along; a++) {
+      rowA = a;
       const seg = Math.hypot(...sub(at(a, rows >> 1), at(a - 1, rows >> 1)));
       if (a <= lastPlain || !uvEnd) {
         // fix round 2, Nov 12: the U restarts BEFORE a quad would run past the panel's repeated columns (rect width), not after one has:
@@ -542,10 +564,11 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
       p = [0, 1, 2].map((k) => 0.5 * (2 * q1[k] + (-q0[k] + q2[k]) * f + (2 * q0[k] - 5 * q1[k] + 4 * q2[k] - q3[k]) * f2 + (-q0[k] + 3 * q1[k] - 3 * q2[k] + q3[k]) * f3));
       t = norm([0, 1, 2].map((k) => 0.5 * ((-q0[k] + q2[k]) + 2 * (2 * q0[k] - 5 * q1[k] + 4 * q2[k] - q3[k]) * f + 3 * (-q0[k] + 3 * q1[k] - 3 * q2[k] + q3[k]) * f2)));
     }
-    let sd = norm(sub(side, mul(t, dot(side, t))));
-    if (twist) { const n0 = norm(cross(sd, t)), a2 = twist * u; sd = norm(add(mul(sd, Math.cos(a2)), mul(n0, Math.sin(a2)))); }
-    const nr = norm(cross(sd, t));
     const o0 = open ? open[0] : gatherTo * 0.34, o1 = open ? open[1] : gatherTo;
+    let sd = norm(sub(side, mul(t, dot(side, t))));
+    const a2 = twist * u + wring * TAU * smooth(0, o1, u);
+    if (a2) { const n0 = norm(cross(sd, t)); sd = norm(add(mul(sd, Math.cos(a2)), mul(n0, Math.sin(a2)))); }
+    const nr = norm(cross(sd, t));
     const rootK = 1 - smooth(open ? o0 : gatherTo * 0.55, o1, u);
     const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(o0, o1, u)) * 0.66;
     const back = rootBack * (1 - smooth(0, 0.07, u));
@@ -579,27 +602,46 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
     const [F, Bk] = edges, rows = F.rows;
     const { rect, W } = uvFront;
     const lastPlain = Math.max(1, Math.floor(along * (1 - fray)));
-    for (const k of [0, across]) {
-      const x = (k / across) * 2 - 1;
-      const vEdge = (rect[1] + (k === 0 ? rect[3] - 5 : 5)) / W;
+    // (`split`: the two torn edges of the slit are rolled too, from the slit's top to where the fray begins, and the slit's top is
+    // closed across by a short turned face)
+    const kc = across >> 1, hk = split ? split.cols >> 1 : 0;
+    const aSplit = split ? (() => { let a = 0; while (a < along && uOf(a) < split.at) a++; return a; })() : Infinity;
+    const runs = [[0, 0, -1], [across, 0, 1]];
+    if (split && aSplit < lastPlain) runs.push([kc - hk, aSplit, 1], [kc + hk, aSplit, -1]);
+    for (const [k, aFrom, sgnOut] of runs) {
+      const vEdge = (rect[1] + (sgnOut < 0 ? rect[3] - 5 : 5)) / W;
       const b0 = g.pos.length / 3;
-      for (let a = 0; a <= lastPlain; a++) {
+      // (with a `split`, every rolled edge runs one row on into the fray: a tongue's selvedge is cut there by the fringe's alpha only
+      // a row further on)
+      const aTo = split ? Math.min(along, lastPlain + 1) : lastPlain;
+      for (let a = aFrom; a <= aTo; a++) {
         const fr = F.frames[a * rows + k];
         const pf = F.pts[a * rows + k], pb = Bk.pts[a * rows + k];
         const mid = mul(add(pf, pb), 0.5);
-        const out = mul(fr.sd, Math.sign(x));
+        const out = mul(fr.sd, sgnOut);
         // two rows, their normals turning from the front face's round to the back's: it shades as a rolled hem at one quad a row
         // (on the faces' own edge vertices: a hem set off from them, even by a millimetre, showed the sky between)
         for (const q of [pf, pb]) {
           const up = dot(sub(q, mid), fr.nrm) > 0 ? 1 : -1;
           g.pos.push(...q); g.nrm.push(...norm(add(mul(out, 0.75), mul(fr.nrm, 0.66 * up))));
-          g.uv.push((rect[0] + 3 + (a / lastPlain) * (uvFront.period - 6)) / W, vEdge); g.jnt.push(...fr.weights.j); g.wgt.push(...fr.weights.w);
+          g.uv.push((rect[0] + 3 + (Math.min(a, lastPlain) / lastPlain) * (uvFront.period - 6)) / W, vEdge); g.jnt.push(...fr.weights.j); g.wgt.push(...fr.weights.w);
         }
       }
-      for (let a = 0; a < lastPlain; a++) {
+      for (let a = 0; a < aTo - aFrom; a++) {
         const i0 = b0 + a * 2, i1 = i0 + 2;
-        g.idx.push(i0, i1, i0 + 1, i0 + 1, i1, i1 + 1);
+        if (sgnOut < 0 || k === 0) g.idx.push(i0, i1, i0 + 1, i0 + 1, i1, i1 + 1); else g.idx.push(i0, i0 + 1, i1, i0 + 1, i1 + 1, i1);
       }
+    }
+    if (split && aSplit < lastPlain) {
+      const b0 = g.pos.length / 3;
+      for (let k = kc - hk; k <= kc + hk; k++) {
+        const fr = F.frames[aSplit * rows + k];
+        for (const q of [F.pts[aSplit * rows + k], Bk.pts[aSplit * rows + k]]) {
+          g.pos.push(...q); g.nrm.push(...fr.t); g.uv.push((rect[0] + 3 + ((k - kc + hk) / (2 * hk || 1)) * 6) / W, (rect[1] + 5) / W);
+          g.jnt.push(...fr.weights.j); g.wgt.push(...fr.weights.w);
+        }
+      }
+      for (let k = 0; k < 2 * hk; k++) { const i0 = b0 + k * 2, i1 = i0 + 2; g.idx.push(i0, i0 + 1, i1, i0 + 1, i1 + 1, i1); }
     }
   }
   return g;
