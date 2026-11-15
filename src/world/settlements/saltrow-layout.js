@@ -182,13 +182,14 @@ export const BREAKWATER_LENS = Object.freeze({ ...breakwaterPoint(10, 0), bearin
  * 352-68 view).
  */
 export const CREW = Object.freeze([
-  Object.freeze({ id: 'salt-raker', s: 5.2, r: 6.2, face: { s: 7.6, r: 7.2 }, clip: 'Farm_Harvest', task: "rakes the spill back up the right-hand cone's foot, its seaward side" }),
+  Object.freeze({ id: 'salt-raker', s: 5.2, r: 6.2, face: { s: 7.0, r: 4.2 }, clip: 'Farm_Harvest', task: 'rakes the spilled salt in front of the right-hand cone, side-on to F22' }),
   Object.freeze({ id: 'salt-raker-2', s: 10.4, r: 7.4, face: { s: 7.6, r: 7.2 }, clip: 'Farm_Harvest', task: "rakes the right-hand cone's foot, its uphill side" }),
   // up the street, left: kneeling at l1's wall (F22 x ~680, 19 m)
   Object.freeze({ id: 'boat-caulker', s: 15.5, r: -2.5, face: { s: 15.5, r: -3.4 }, clip: 'Fixing_Kneeling', task: "kneels at l1's wall, mending its plinth" }),
-  // up the street, left of the axis: pushing the salt cart down the street, 11 deg off its axis (F22 x ~740, 25 m;
-  // his hands on the cart's push bar, the cart 1.35 m ahead of him: CART below)
-  Object.freeze({ id: 'salt-porter', s: 23.2, r: -2.3, face: { s: 19.5, r: -1.6 }, clip: 'Push_Loop', alt: 'Farm_Harvest', task: 'pushes the salt cart down the street' }),
+  // up the street, left of the axis: pushing the salt cart UP the street, 17 deg off its axis, so the cart stands
+  // beyond him and his whole body shows (pushing it down toward the lens, at 6ac6ed1, the load hid all of him but his
+  // head); his hands on the cart's push bar, the cart 1.35 m ahead of him: CART below
+  Object.freeze({ id: 'salt-porter', s: 22.0, r: -2.4, face: { s: 26.5, r: -1.0 }, clip: 'Push_Loop', alt: 'Farm_Harvest', task: 'pushes the salt cart up the street' }),
   // up the street, right: kneeling at r3's door step, caulking its sill (F22 x ~830, 35 m)
   Object.freeze({ id: 'boat-caulker-2', s: 31.0, r: 2.3, face: { s: 31.0, r: 3.2 }, clip: 'Fixing_Kneeling', alt: 'Interact', task: "kneels at r3's door, caulking its sill" }),
 ]);

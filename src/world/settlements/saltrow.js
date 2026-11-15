@@ -35,8 +35,10 @@ import { SightingKite } from './saltrow-kite.js';
  * few metres of a window and fall to silhouette beyond (F07's written target). Fix round 1: the moon, the hemisphere
  * fill and the sky IBL lit every lime wall evenly at 21:00 (median Y 0.161 against the mountain's 0.022, houses with no
  * lit window as bright as the rest), so the spill did not show. `uNight` (the environment's nightFactor through the
- * same dusk ramp) now scales the town's own diffuse and specular, direct and indirect, down to NIGHT_LIGHT of the
- * scene's: the emission (the spill) is untouched, so a wall is white by its window and silhouette beyond.
+ * same dusk ramp) now scales the houses' own diffuse and specular, direct and indirect, down to NIGHT_LIGHT of the
+ * scene's: the emission (the spill) is untouched, so a wall is white by its window and silhouette beyond. Only the
+ * houses (aFoot < 98): the breakwater, ramp, cones and cart keep the moon (at 6ac6ed1 the dimmed deck turned the
+ * lower third of F07 black and its mean luminance fell from 6.46 to 4.64 % per pixel).
  *
  * LIME WASH (fix round 1: "the walls are flat planes"): on lime fragments only (vertex colour light and unsaturated)
  * the fragment shader adds wash grain (world-space value noise at 3 and 14 per metre), worn patches where the render
@@ -227,16 +229,16 @@ float calN3(vec3 p) {
   if (lime > 0.0) {
     float g1 = calN3(vCalW * 3.1), g2 = calN3(vCalW * 14.0 + 7.3), pw = calN3(vCalW * 0.85 + 3.7);
     float grain = (g1 - 0.5) * 0.13 + (g2 - 0.5) * 0.08;
-    float worn = smoothstep(0.70, 0.76, pw * 0.75 + g2 * 0.25);
+    float worn = smoothstep(0.73, 0.79, pw * 0.75 + g2 * 0.25);
     float dirtTop = 0.5 + 0.4 * g1;
     float dirt = (1.0 - smoothstep(0.0, dirtTop, vFoot)) * step(-0.5, vFoot);
     vec3 w = c * (1.0 + grain);
-    w = mix(w, c * vec3(0.66, 0.6, 0.53), worn * 0.55);
+    w = mix(w, c * vec3(0.74, 0.71, 0.66), worn * 0.4);
     w = mix(w, c * vec3(0.58, 0.52, 0.46), dirt * 0.6);
     diffuseColor.rgb = mix(c, w, lime);
   }
 }`)
-        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directDiffuse *= uNight; reflectedLight.indirectDiffuse *= uNight;\nreflectedLight.directSpecular *= uNight; reflectedLight.indirectSpecular *= uNight;')
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ float kN = vFoot < 98.0 ? uNight : 1.0;\nreflectedLight.directDiffuse *= kN; reflectedLight.indirectDiffuse *= kN;\nreflectedLight.directSpecular *= kN; reflectedLight.indirectSpecular *= kN; }')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * uSpill * vSpill;');
     };
     m.customProgramCacheKey = () => 'cal-saltrow-body-2';

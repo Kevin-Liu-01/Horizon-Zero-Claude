@@ -87,43 +87,66 @@ export async function probe(frame) {
   const Yof = (a, i) => 0.2126 * LIN[a[i]] + 0.7152 * LIN[a[i + 1]] + 0.0722 * LIN[a[i + 2]];
 
   if (frame.id === 'F07' && town.body) {
+    // the frame as filmed (read back), then one MASK render straight to the canvas (no post): every other object as
+    // it is, the town's body drawn flat red with its window spill in green, its glass flat blue. Town pixels are then
+    // exact: body with spill > 0 = `near` (within 6 m of a lit window: the kit's bake), spill 0 = `far`
     try {
       const A = readback();
-      town.group.visible = false; const B = readback(); town.group.visible = true;
-      const sp0 = town.uSpill.value.clone(); town.uSpill.value.setRGB(0, 0, 0); const Cc = readback(); town.uSpill.value.copy(sp0);
-      town.glass.visible = false; const D = readback(); town.glass.visible = true;
       const { bw, bh } = A;
-      // the houses' screen rectangle (drawing-buffer px, y down), from every footprint corner at foot and parapet
+      const THREE_ = await import('three');
+      const bodyMask = new THREE_.ShaderMaterial({ vertexShader: 'attribute float aSpill; varying float vS; void main(){ vS = aSpill; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'varying float vS; void main(){ gl_FragColor = vec4(1.0, clamp(vS, 0.0, 1.0), 0.0, 1.0); }', toneMapped: false, fog: false });
+      const glassMask = new THREE_.MeshBasicMaterial({ color: 0x0000ff, toneMapped: false, fog: false });
+      const m0 = town.body.material, g0 = town.glass.material;
+      town.body.material = bodyMask; town.glass.material = glassMask;
+      const scene = E.scene || C.scene;
+      const tm = R.toneMapping, cs = R.outputColorSpace;
+      R.toneMapping = THREE_.NoToneMapping; R.outputColorSpace = THREE_.LinearSRGBColorSpace;
+      R.setRenderTarget(null); R.render(scene, cam);
+      const Mk = new Uint8Array(bw * bh * 4);
+      gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, Mk);
+      R.toneMapping = tm; R.outputColorSpace = cs;
+      town.body.material = m0; town.glass.material = g0;
+      bodyMask.dispose(); glassMask.dispose();
+      const near = [], far = [];
+      let glassPx = 0, maxGlassY = 0, bodyPx = 0;
+      // the houses only: the rows of pixels above the breakwater's deck (the town is 120-140 m off; the deck and the
+      // lamp are the near foreground). A body pixel counts when it is pure mask red.
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+        const i = ((bh - 1 - y) * bw + x) * 4;
+        const r = Mk[i], g = Mk[i + 1], b = Mk[i + 2];
+        if (b > 250 && r < 5 && g < 5) { glassPx++; maxGlassY = Math.max(maxGlassY, Yof(A.raw, i)); continue; }
+        if (r > 250 && b < 5) {
+          bodyPx++;
+          (g > 2 ? near : far).push(Yof(A.raw, i));
+        }
+      }
+      // keep only the town's houses: drop pixels nearer than 60 m (the breakwater and its lamp) by a second split:
+      // the probe's rectangle of the houses (drawing-buffer px) bounds them
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const b of town.buildings) {
-        const c = Math.cos(b.yaw), sn = Math.sin(b.yaw);
-        for (const [lx, lz] of [[-b.w / 2, -b.d / 2], [b.w / 2, -b.d / 2], [-b.w / 2, b.d / 2], [b.w / 2, b.d / 2]]) for (const yy of [b.y, b.y + b.h + 3]) {
-          const q = new V3(b.x + c * lx + sn * lz, yy, b.z - sn * lx + c * lz).project(cam);
+      for (const bd of town.buildings) {
+        const c = Math.cos(bd.yaw), sn = Math.sin(bd.yaw);
+        for (const [lx, lz] of [[-bd.w / 2, -bd.d / 2], [bd.w / 2, -bd.d / 2], [-bd.w / 2, bd.d / 2], [bd.w / 2, bd.d / 2]]) for (const yy of [bd.y - 3, bd.y + bd.h + 3]) {
+          const q = new V3(bd.x + c * lx + sn * lz, yy, bd.z - sn * lx + c * lz).project(cam);
           const px = (q.x * 0.5 + 0.5) * bw, py = (0.5 - q.y * 0.5) * bh;
           x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
         }
       }
-      x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(bw - 1, Math.ceil(x1)); y1 = Math.min(bh - 1, Math.ceil(y1));
-      const near = [], far = [];
-      let townPx = 0, glassPx = 0, maxGlassY = 0;
-      const d = (P, Q, i) => Math.max(Math.abs(P[i] - Q[i]), Math.abs(P[i + 1] - Q[i + 1]), Math.abs(P[i + 2] - Q[i + 2]));
-      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const nearH = [], farH = [];
+      for (let y = Math.max(0, y0 | 0); y <= Math.min(bh - 1, Math.ceil(y1)); y++) for (let x = Math.max(0, x0 | 0); x <= Math.min(bw - 1, Math.ceil(x1)); x++) {
         const i = ((bh - 1 - y) * bw + x) * 4;
-        if (d(A.raw, B.raw, i) <= 6) continue;            // not the town
-        townPx++;
-        if (d(A.raw, D.raw, i) > 6) { glassPx++; maxGlassY = Math.max(maxGlassY, Yof(A.raw, i)); continue; }
-        (d(A.raw, Cc.raw, i) > 3 ? near : far).push(Yof(A.raw, i));
+        if (Mk[i] > 250 && Mk[i + 2] < 5) (Mk[i + 1] > 2 ? nearH : farH).push(Yof(A.raw, i));
       }
-      const med = (a) => { if (!a.length) return null; const b = Float32Array.from(a).sort(); return +b[b.length >> 1].toFixed(4); };
-      const pct = (a, q) => { if (!a.length) return null; const b = Float32Array.from(a).sort(); return +b[Math.min(b.length - 1, Math.floor(b.length * q))].toFixed(4); };
+      const med = (a) => { if (!a.length) return null; const q = Float32Array.from(a).sort(); return +q[q.length >> 1].toFixed(4); };
+      const pct = (a, qq) => { if (!a.length) return null; const q = Float32Array.from(a).sort(); return +q[Math.min(q.length - 1, Math.floor(q.length * qq))].toFixed(4); };
       let sumY = 0, sr = 0, sg = 0, sb = 0, n = 0;
       for (let i = 0; i < A.raw.length; i += 4) { sumY += Yof(A.raw, i); sr += A.raw[i]; sg += A.raw[i + 1]; sb += A.raw[i + 2]; n++; }
       const mr = LIN[Math.round(sr / n)], mg = LIN[Math.round(sg / n)], mb = LIN[Math.round(sb / n)];
-      out.walls = { rect: [x0, y0, x1, y1], buffer: [bw, bh], px: { town: townPx, glass: glassPx, near: near.length, far: far.length },
-        medianY: { near: med(near), far: med(far) }, p90Far: pct(far, 0.9), farUnder003: far.length ? +(far.filter((v) => v < 0.03).length / far.length).toFixed(3) : null,
-        maxGlassY: +maxGlassY.toFixed(3), frameY: { perPixel: +(sumY / n * 100).toFixed(2), ofMeans: +((0.2126 * mr + 0.7152 * mg + 0.0722 * mb) * 100).toFixed(2) },
-        uNight: town.uNight?.value ?? null };
-    } catch (e) { out.walls = { error: String(e?.message || e) }; town.group.visible = true; town.glass.visible = true; }
+      out.walls = { houses: { rect: [x0 | 0, y0 | 0, Math.ceil(x1), Math.ceil(y1)], near: nearH.length, far: farH.length, medianY: { near: med(nearH), far: med(farH) }, p25Near: pct(nearH, 0.25), p75Near: pct(nearH, 0.75), p90Far: pct(farH, 0.9), farUnder003: farH.length ? +(farH.filter((v) => v < 0.03).length / farH.length).toFixed(3) : null },
+        allBody: { px: bodyPx, near: near.length, far: far.length, medianY: { near: med(near), far: med(far) } },
+        glass: { px: glassPx, maxY: +maxGlassY.toFixed(3) }, buffer: [bw, bh],
+        frameY: { perPixel: +(sumY / n * 100).toFixed(2), ofMeans: +((0.2126 * mr + 0.7152 * mg + 0.0722 * mb) * 100).toFixed(2) }, uNight: town.uNight?.value ?? null };
+    } catch (e) { out.walls = { error: String(e?.message || e) }; }
   }
 
   if (N && !window.__saltrowNavDone) {
