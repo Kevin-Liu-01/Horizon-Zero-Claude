@@ -100,12 +100,16 @@ export function rimTubes(into, sheet, { r = 0.0016, rect, sides = 4, minLen = 4,
  * front and high at the nape. `field` the surfaces under it (her body, the top, the harness), `J(name)` joint index.
  * A sheet part (metric uv: u round the neck from the nape, v down from the top edge).
  */
-export function scarfCowl(part, field, J, { cols = 44, rows = 14, cz = -0.035, seed = 2, vDrop = 0.046, turns = 2.6, turnAmp = 0.011 } = {}) {
+export function scarfCowl(part, field, J, { cols = 40, rows = 11, cz = -0.035, seed = 2, vDrop = 0.03, turns = 2.2, turnAmp = 0.015 } = {}) {
   // (M1.2d fix round 1, the judge: "the scarf is a smooth bib like a half-disc with a hard rim, covering the upper chest"): it sits
-  // at the throat, its front only 4.6 cm lower than its sides (7.4 before), wound in 2.6 turns that roll round it on a slant, each a
-  // soft bulge 11 mm proud of the valley between them, with vertical gathers, and its lower edge rolled under, not cut off
-  const yBot = (th) => 1.486 - vDrop * Math.max(0, Math.sin(th)) ** 2 + 0.006 * Math.max(0, -Math.sin(th));
-  const yTop = (th) => 1.542 - 0.02 * Math.max(0, Math.sin(th)) ** 2 + 0.008 * Math.max(0, -Math.sin(th));
+  // at the throat, wound in turns that roll round it on a slant, with vertical gathers, and its lower edge rolled under
+  // (M1a round 2, the judge again: "a smooth bib / flange" in F11 and F12): a soft BUNCHED WRAP. It no longer reaches down onto
+  // the chest (its front 3 cm under its sides, not 4.6, and its lowest row tucks back in toward the neck instead of lying out
+  // over the top); the cloth is lumpy rather than smooth: 2.2 fat turns 15 mm proud, each broken along its length into three or
+  // four lumps where the cloth bunched as it was wound (low-frequency bulges round the neck, different per turn), the top edge
+  // uneven by 6 mm, and the profile pinched between turns, so the outline reads as wound cloth from the front and the side
+  const yBot = (th) => 1.49 - vDrop * Math.max(0, Math.sin(th)) ** 2 + 0.006 * Math.max(0, -Math.sin(th));
+  const yTop = (th) => 1.54 - 0.016 * Math.max(0, Math.sin(th)) ** 2 + 0.008 * Math.max(0, -Math.sin(th)) + 0.003 * Math.sin(th * 3 + seed) + 0.003 * noise3(Math.atan2(Math.sin(th), Math.cos(th)) * 2.2, seed, 4.4);
   const keep = (q) => Math.abs(q.x) < 0.12;
   const R = [];
   for (let r = 0; r <= rows; r++) {
@@ -114,25 +118,26 @@ export function scarfCowl(part, field, J, { cols = 44, rows = 14, cz = -0.035, s
       const th = -Math.PI / 2 + TAU * (c % cols) / cols;
       const t = r / rows, y = mix(yTop(th), yBot(th), t);
       const rb = field.radial(y, th, 0, cz, 0.008, 0.22, keep) || 0.06;
-      // bunched: thicker low (three turns of cloth), horizontal folds round it, a few vertical gathers
-      const fz = 0.003 * fold01(noise3(th * 1.8 + seed, y * 62, 3.1)) + 0.003 * fold01(noise3(th * 5.2, y * 12, 7.7 + seed))
-        + turnAmp * (0.5 + 0.5 * Math.cos(TAU * (t * turns + 0.12 * Math.sin(th + seed) + 0.05 * noise3(th * 2.4, seed, 1.3))))
-        + 0.0035 * Math.max(0, Math.sin(th * 7 + seed + 2.1 * noise3(th, y * 20, 5))) * sstep(0.2, 0.9, t);
-      // a cowl lies round the neck: it never spreads out over the shoulders as a collar would (the shoulders' slope is
-      // under its lowest turn, not in its radius)
-      const rMax = 0.064 + 0.5 * Math.max(0, 1.5 - y) + 0.026 * Math.max(0, Math.sin(th)) ** 2;
-      // (and never closer than 11 mm to what it covers: capped tight at the sides, the posed neck and trapezius came
-      // through it in F13 and the scarf showed as a thin collar)
-      row.push(Math.max(Math.min(rb + mix(0.012, 0.024, sstep(0.15, 0.85, t)), rMax + mix(0.008, 0.016, t)), rb + 0.011) + fz);
+      // the turn this row is in, and how far along it the cloth bunched (each turn its own lumps)
+      const tw = t * turns + 0.12 * Math.sin(th + seed) + 0.05 * noise3(th * 2.4, seed, 1.3);
+      const k = Math.floor(tw), roll = 0.5 + 0.5 * Math.cos(TAU * tw);
+      const lump = 0.55 + 0.45 * Math.sin(th * (3 + (k % 2)) + seed * 1.7 + k * 2.3 + 1.4 * noise3(th * 1.3, k, 6.1));
+      const fz = 0.0025 * fold01(noise3(th * 1.8 + seed, y * 62, 3.1)) + 0.0025 * fold01(noise3(th * 5.2, y * 12, 7.7 + seed))
+        + turnAmp * roll * (0.45 + 0.55 * lump)
+        + 0.003 * Math.max(0, Math.sin(th * 7 + seed + 2.1 * noise3(th, y * 20, 5))) * sstep(0.2, 0.9, t);
+      // a wrap lies round the neck: it never spreads out over the shoulders or the chest as a collar or a bib would
+      const rMax = 0.062 + 0.35 * Math.max(0, 1.5 - y) + 0.016 * Math.max(0, Math.sin(th)) ** 2;
+      row.push(Math.max(Math.min(rb + mix(0.011, 0.019, sstep(0.15, 0.85, t)), rMax + mix(0.006, 0.012, t)), rb + 0.011) + fz);
     }
     R.push(row);
   }
-  // cloth falls: going down a row it never comes back in by more than 2 mm, and the bottom row lies out over what it covers
-  for (let r = 1; r <= rows; r++) for (let c = 0; c <= cols; c++) R[r][c] = Math.max(R[r][c], R[r - 1][c] - 0.0032);
-  // the lower edge rolls under: the last row tucks 6 mm in under a lip 2.5 mm proud, so the edge reads as a turned roll of cloth
-  for (let c = 0; c <= cols; c++) { R[rows - 1][c] += 0.0025; R[rows][c] -= 0.006; }
-  // round the neck, low-passed (no shoulder strap prints through)
-  for (let r = 0; r <= rows; r++) for (let s = 0; s < 2; s++) {
+  // cloth falls: going down a row it never comes back in by more than 3 mm, except the last row, which tucks under
+  for (let r = 1; r < rows; r++) for (let c = 0; c <= cols; c++) R[r][c] = Math.max(R[r][c], R[r - 1][c] - 0.0032);
+  // the lower edge rolls under toward the neck: a lip 2 mm proud, then 9 mm back in, so the edge reads as a turned roll of
+  // cloth and no flange stands out over the top
+  for (let c = 0; c <= cols; c++) { R[rows - 1][c] += 0.002; R[rows][c] = Math.min(R[rows][c], R[rows - 1][c]) - 0.009; }
+  // round the neck, low-passed once (no shoulder strap prints through; the lumps survive)
+  for (let r = 0; r <= rows; r++) {
     const o = R[r].slice();
     for (let c = 0; c <= cols; c++) R[r][c] = (o[(c - 1 + cols) % cols] + 2 * o[c % cols] + o[(c + 1) % cols]) / 4;
   }

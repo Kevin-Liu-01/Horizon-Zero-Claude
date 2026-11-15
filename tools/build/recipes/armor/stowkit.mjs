@@ -6,10 +6,11 @@
  * OUTPUT public/models/armory/stowkit.glb — ALL stowed gear as ONE skinned mesh, ONE
  * draw, bound by name to Brea's bones. It carries the shared WEAPON ATLAS (the held
  * bow and lance read its maps at runtime). `_PIECE` bits as v0: 1 lance, 2 bow,
- * 4 quiver + arrows, 8 bracer, 16 alidade + cord. Same placement contract as v0:
+ * 4 quiver + arrows, 8 bracer, 16 alidade; and 32 the ring charm with its neck cord (M1a round 2:
+ * the turnaround's checklist gives the charm its own slot). Same placement contract as v0:
  *   lance  on the `stow_lance` socket the carry solve poses, 34° from vertical, the
  *          bob low at her left hip, the blade above her right shoulder
- *   bow    spine_02, the opposite diagonal beneath the lance, <= 3 cm off the back
+ *   bow    spine_02, the opposite diagonal BENEATH the lance (placed first; the lance clears it where they cross)
  *   quiver pelvis, right hip, tilted 12° forward (W1 exit; was 20)
  *   bracer lowerarm_l, dorsal
  *   alidade dyn_alidadeCord_02, on its neck cord at the sternum
@@ -28,7 +29,7 @@ import { preencodeEtc1s } from './lib/output.mjs';
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/armory/stowkit.glb'];
 const RECIPE = 'tools/build/recipes/armor/stowkit.mjs';
-export const PIECE = { lance: 1, bow: 2, quiver: 4, bracer: 8, alidade: 16 };
+export const PIECE = { lance: 1, bow: 2, quiver: 4, bracer: 8, alidade: 16, charm: 32 };
 export const LANCE_SOCKET = 'stow_lance';
 /** The quiver's hanger joint, a child of `pelvis` at the identity: src/hero/stowkit.js lets it hang from its upper band. */
 export const QUIVER_SOCKET = 'stow_quiver';
@@ -320,39 +321,60 @@ export async function build({ out = ROOT } = {}) {
   for (const n of doc.getRoot().listNodes()) if (n.getMesh()) { n.getMesh().dispose(); n.dispose(); }
   // the surface everything stowed clears: this body, in this outfit
   const base = await panBase();
-  const surf = [];
-  for (const part of [base.bodyPart, ...base.parts]) for (let i = 0; i < part.pos.length; i += 3) surf.push([part.pos[i], part.pos[i + 1], part.pos[i + 2]]);
   addChain(doc, CHAINS.alidadeCord.names, CHAINS.alidadeCord.points, CHAINS.alidadeCord.parent);
   addSocket(doc, LANCE_SOCKET, 'spine_02');
   addSocket(doc, QUIVER_SOCKET, 'pelvis');
-  const backZ = (x, y) => { let z = 0; for (const q of surf) if (Math.abs(q[0] - x) < 0.03 && Math.abs(q[1] - y) < 0.03 && q[2] < z) z = q[2]; return z; };
 
   const pieces = [];
   const stowInfo = {};
-  // ---- lance: 34° from vertical, the bob low at her left hip (+x), rising to her right
-  {
-    const ang = 34 * Math.PI / 180;
-    const d = [-Math.sin(ang), Math.cos(ang), 0];
-    const butt = [0.262, 0.64, 0];
-    const L = LANCE.length;
-    const need = [];
-    for (let t = 0.05; t <= 0.85; t += 0.05) need.push([t, backZ(butt[0] + d[0] * L * t, butt[1] + d[1] * L * t) - 0.04 - LANCE.r - 0.004]);
-    let best = null;
-    for (let i = 0; i < need.length; i++) for (let j = i + 1; j < need.length; j++) {
-      const [ta, za] = need[i], [tb, zb] = need[j];
-      const b = (zb - za) / (tb - ta), a = za - b * ta;
-      if (need.every(([t, z]) => a + b * t <= z + 1e-6)) {
-        const gap = need.reduce((s, [t, z]) => s + (z - (a + b * t)), 0);
-        if (!best || gap < best.gap) best = { a, b, gap };
-      }
+  // M1a round 2 (armory; the judges: "the survey case pushes the stowed bow and lance off her back", F09 and F10): the lance
+  // was fitted 4 cm clear of EVERY layer of the outfit along its diagonal, and at the small of her back that is a 25 cm stack
+  // (the slung second belt over the back panel's top, over the peplum, over the girdle), so its line stood out from her lumbar
+  // and, straight, its butt ended 0.49 m behind her hip. Now each stowed weapon is a line fitted along its diagonal against
+  // what it has to clear, each with its own room: the arms (the hanging upper arm and its band, the forearm, the bracer and
+  // glove) 4 cm, as before, for their swing; her body, the top, the harness, the girdle, the plate, the case and the other
+  // rigid leather 1.5 cm; and the hip sash's cloth (its band, knot and panels with their hems and backs), the peplum and the
+  // slung belt not at all: the weapons ride UNDER the sash and the slung belt at the small of her back, as a carried stave is
+  // tucked under a belt. The bow is fitted first, beneath; the lance after it, 8 mm over the bow's outer face where they cross.
+  const SOFT = new Set(['panel', 'hems', 'backs', 'sash', 'peplum', 'sashband', 'belt2']);
+  const ARM = new Set(['armband', 'armwrap', 'bracer', 'glove']);
+  const lay = [];
+  for (const part of [base.bodyPart, ...base.parts]) {
+    const sl = part.slot || 'body';
+    if (SOFT.has(sl)) continue;
+    for (let i = 0; i < part.pos.length; i += 3) {
+      const x = part.pos[i], y = part.pos[i + 1];
+      const arm = ARM.has(sl) || (part === base.bodyPart && Math.abs(x) > 0.19 && y > 1.0);
+      lay.push([x, y, part.pos[i + 2], arm ? 0.04 : 0.015]);
     }
-    const start = [butt[0], butt[1], best.a];
-    const end = [butt[0] + d[0] * L, butt[1] + d[1] * L, best.a + best.b];
-    const [X, Y, Z] = basisY(v3.sub(end, start), [0, 0, -1]);
-    pieces.push({ g: place(lanceGeo(cell, { lod: 1 }), X, Y, Z, start), joint: LANCE_SOCKET, bit: PIECE.lance });
-    stowInfo.lance = { butt: start, tip: end, degFromVertical: 34, joint: LANCE_SOCKET, parent: 'spine_02' };
   }
-  // ---- bow: the opposite diagonal beneath the lance, belly to her back, strung
+  /** The deepest (most negative z) of `surface z - room` within 3 cm of (x, y); 0 where nothing is. */
+  const clearZ = (x, y) => { let z = 0; for (const q of lay) if (Math.abs(q[0] - x) < 0.03 && Math.abs(q[1] - y) < 0.03 && q[2] - q[3] < z) z = q[2] - q[3]; return z; };
+  /**
+   * The line z = a + b t that stays at or beyond every need [t, z] with the least total gap, and whose two ends (t = t0, t1)
+   * stand no further out than 2 cm past the deepest need: a straight stave that touches her at the buttock and the shoulder
+   * blade would otherwise run on past them and stand off her at its ends (the lance's butt 0.34 m behind her thigh with only
+   * the rooms above). A 2-D linear programme: its optimum is a line through two active constraints, so every such line is tried.
+   */
+  const fitLine = (need, t0, t1) => {
+    const zMin = Math.min(...need.map((q) => q[1])) - 0.02;
+    const ends = [[t0, zMin], [t1, zMin]];
+    const cand = [];
+    const through = ([ta, za], [tb, zb]) => { if (Math.abs(tb - ta) < 1e-9) return; const b = (zb - za) / (tb - ta); cand.push({ a: za - b * ta, b }); };
+    const pts = [...need, ...ends];
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) through(pts[i], pts[j]);
+    const ok = (l, withEnds) => need.every(([t, z]) => l.a + l.b * t <= z + 1e-6) && (!withEnds || ends.every(([t, z]) => l.a + l.b * t >= z - 1e-6));
+    const gap = (l) => need.reduce((s2, [t, z]) => s2 + (z - (l.a + l.b * t)), 0);
+    let best = null;
+    for (const withEnds of [true, false]) {
+      for (const l of cand) if (ok(l, withEnds) && (!best || gap(l) < best.gap)) best = { ...l, gap: gap(l) };
+      if (best) break;
+    }
+    return best;
+  };
+  const bowPts = [];
+  const bowZ = (x, y) => { let z = 9; for (const q of bowPts) if (Math.abs(q[0] - x) < 0.03 && Math.abs(q[1] - y) < 0.03 && q[2] < z) z = q[2]; return z; };
+  // ---- bow: the opposite diagonal BENEATH the lance, belly to her back, strung
   {
     // low and flatter than the lance: only the limb's thin upper end reaches head height, so the
     // chase camera (A-stow-clearance) and the wrap tail (A-tail-legible) have the head clear of the stave
@@ -360,13 +382,36 @@ export async function build({ out = ROOT } = {}) {
     const d = [Math.sin(ang), Math.cos(ang), 0];
     const ctr = [-0.02, 1.24, 0];
     const half = 1.45 / 2;
-    let z = 0;
-    for (let t = -0.85; t <= 0.85; t += 0.1) z = Math.min(z, backZ(ctr[0] + d[0] * half * t, ctr[1] + d[1] * half * t));
-    const c = [ctr[0], ctr[1], z - 0.016];
-    const [X, Y, Z] = basisY(d, [0, 0, 1]);
+    // the stave's centre line 1.6 cm beyond the room it needs (its belly and the string lie toward her)
+    const need = [];
+    for (let t = -0.85; t <= 0.851; t += 0.05) need.push([t, clearZ(ctr[0] + d[0] * half * t, ctr[1] + d[1] * half * t) - 0.016]);
+    const fit = fitLine(need, -1, 1);
+    const c = [ctr[0], ctr[1], fit.a];
+    const dir = v3.norm([d[0] * half, d[1] * half, fit.b]);
+    const [X, Y, Z] = basisY(dir, [0, 0, 1]);
     const g = merge(bowGeo(cell, { lod: 1 }), stringGeo(cell, { lod: 1, live: false }));
-    pieces.push({ g: place(g, X, Y, Z, c), joint: 'spine_02', bit: PIECE.bow });
-    stowInfo.bow = { centre: c, degFromVertical: 36, joint: 'spine_02' };
+    const gb = place(g, X, Y, Z, c);
+    pieces.push({ g: gb, joint: 'spine_02', bit: PIECE.bow });
+    for (let i = 0; i < gb.pos.length; i += 3) bowPts.push([gb.pos[i], gb.pos[i + 1], gb.pos[i + 2]]);
+    stowInfo.bow = { centre: c, lowEnd: v3.sub(c, v3.mul(dir, half)), highEnd: v3.add(c, v3.mul(dir, half)), degFromVertical: 36, joint: 'spine_02' };
+  }
+  // ---- lance: 34° from vertical, the bob low at her left hip (+x), rising to her right; OVER the bow
+  {
+    const ang = 34 * Math.PI / 180;
+    const d = [-Math.sin(ang), Math.cos(ang), 0];
+    const butt = [0.262, 0.64, 0];
+    const L = LANCE.length;
+    const need = [];
+    for (let t = 0.05; t <= 0.85; t += 0.025) {
+      const x = butt[0] + d[0] * L * t, y = butt[1] + d[1] * L * t;
+      need.push([t, Math.min(clearZ(x, y) - LANCE.r - 0.004, bowZ(x, y) - LANCE.r - 0.008)]);
+    }
+    const best = fitLine(need, 0, 1);
+    const start = [butt[0], butt[1], best.a];
+    const end = [butt[0] + d[0] * L, butt[1] + d[1] * L, best.a + best.b];
+    const [X, Y, Z] = basisY(v3.sub(end, start), [0, 0, -1]);
+    pieces.push({ g: place(lanceGeo(cell, { lod: 1 }), X, Y, Z, start), joint: LANCE_SOCKET, bit: PIECE.lance });
+    stowInfo.lance = { butt: start, tip: end, degFromVertical: 34, joint: LANCE_SOCKET, parent: 'spine_02' };
   }
   // ---- quiver: right hip, tilted 12° forward, out past the skirt
   // (W1 exit: 3 cm further back and 8° less forward: its mouth and the arrows stood in the swing of her right forearm,
@@ -414,7 +459,7 @@ export async function build({ out = ROOT } = {}) {
     stowInfo.bracer = { at: forearm.at, r: forearm.r, joint: 'lowerarm_l' };
   }
   // ---- M1.2d (Q5): the Alidade rides the RIGHT chest strap of the harness, clipped along it; the neck cord carries the
-  // ring charm (the Sounding Ring motif) at its end. Both keep the alidade bit
+  // ring charm (the Sounding Ring motif) at its end. The charm and its cord carry their own bit (PIECE.charm)
   {
     const at = CHAINS.alidadeCord.points[2];
     // the charm hangs just under the scarf's front, on the top's surface: rigid on spine_03 (on the swinging chain end it
@@ -424,7 +469,7 @@ export async function build({ out = ROOT } = {}) {
     let zScarf = 9;
     for (const p of base.parts) if (p.slot === 'scarf') for (let i = 0; i < p.pos.length; i += 3) if (Math.abs(p.pos[i]) < 0.015 && p.pos[i + 1] > 1.405 && p.pos[i + 1] < 1.44 && p.pos[i + 2] > 0) zScarf = Math.min(zScarf, p.pos[i + 2]);
     const charmAt = [0, 1.396, (zTop > -9 ? zTop : at[2]) + 0.0048];
-    pieces.push({ g: place(ringCharmGeo(cell), [1, 0, 0], [0, 1, 0], [0, 0, 1], charmAt), joint: 'spine_03', bit: PIECE.alidade });
+    pieces.push({ g: place(ringCharmGeo(cell), [1, 0, 0], [0, 1, 0], [0, 0, 1], charmAt), joint: 'spine_03', bit: PIECE.charm });
     const H = base.parts.find((p) => p.slot === 'harness');
     if (H) {
       // the right strap's centre line (strapAlong, 3 vertices a row: the middle one), nearest the upper right chest
@@ -463,11 +508,11 @@ export async function build({ out = ROOT } = {}) {
       [-0.030, 1.470, 0.052], [-0.062, 1.490, 0.012], [-0.080, 1.503, -0.042], [-0.060, 1.512, -0.098], [0, 1.517, -0.121]]
       .map((q) => (q === R ? q : [q[0] * 0.82, q[1], -0.035 + (q[2] + 0.035) * 0.82]));
     const loopSkin = loop.map((q) => { const w = Math.max(0, Math.min(1, (1.500 - q[1]) / 0.045)); return [['neck_01', 1 - w], ['spine_03', w]]; });
-    pieces.push({ ...cordGeo(loop, loopSkin, CORD_R, cell, 4, 8), bit: PIECE.alidade });
+    pieces.push({ ...cordGeo(loop, loopSkin, CORD_R, cell, 4, 8), bit: PIECE.charm });
     void M;
     const hang = [R, under, top];
     const hangSkin = [[['spine_03', 1]], [['spine_03', 1]], [['spine_03', 1]]];
-    pieces.push({ ...cordGeo(hang, hangSkin, CORD_R, cell, 4, 8), bit: PIECE.alidade });
+    pieces.push({ ...cordGeo(hang, hangSkin, CORD_R, cell, 4, 8), bit: PIECE.charm });
     stowInfo.alidadeCord = { loop: loop.length, hang: hang.length, r: CORD_R };
   }
   const all = G();

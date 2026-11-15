@@ -46,6 +46,7 @@ import { breaBody, coverMask } from './armor/lib/breabody.mjs';
 import { compassBoss, cordInto, cuff, limbRadius, woundWrap } from './armor/lib/starter.mjs';
 import { sashKnotTied, sashTail } from './armor/lib/sash.mjs';
 import { bakeVertexAO } from './armor/lib/vertexao.mjs';
+import { decimateParts } from './armor/lib/decimate.mjs';
 import { backFaces, backUVs, faceOut, fillHoles, caseTube, gloveShell, hangPanel, pouchOn, rimTubes, rivetAt, scarfCowl, slungBelt, squarePlate } from './armor/lib/rung1.mjs';
 
 export const LANE = 'armory';
@@ -95,6 +96,23 @@ Object.assign(COL, {
 // each violet scaled per channel in linear light by sheet / frame, the panel's a little short of the full step so it still reads
 // violet, not brown, beside the trousers
 Object.assign(COL, { panel: hex('#522152'), smock: hex('#5A205D'), scarf: hex('#59235A'), print: hex('#866173') });
+// M1a round 2 (armory; the judge: "the violets are one bright saturated shade"): armor/lib/swatch.mjs now samples FIXED boxes,
+// each on one piece, in the masked turn-front crop and in F08 (the 471b07d review film). There the sheet keeps its layers apart
+// in value and hue: the sash's long front panel is the brightest violet (L* 31), the top a deep red-plum violet (L* 22) under
+// it, the shin wraps darker again, the belt plum leather; F08 had the panel darker than the top (17 against 28) and every violet
+// one hue. Each albedo below is the old one scaled per channel in linear light by sheet / frame (the panel 0.85 of the step),
+// so in F08's studio light the top lands on the sheet's deep plum violet, the panel on its orchil, the belt on its plum leather,
+// the harness a little plummier, the boots a little lighter and less red, and the shin wraps a near-black violet (between the
+// frame's black and the sheet's mid violet)
+Object.assign(COL, {
+  panel: hex('#872D89'), smock: hex('#481941'), strapLeather: hex('#51324A'), bootLeather: hex('#61504F'), shinWrap: hex('#6A3A70'),
+  girdleLeather: hex('#5B374C'),
+  // the hip sash's band and knot a deep violet under the bright panels, and the arm bands and forearm wraps the top's deep
+  // violet (they read as the brightest lilac on her in F08)
+  sashDeep: hex('#4A1D50'), wrapV: hex('#5C2462'),
+  // the embroidery: a gold-ochre that stays gold over the violet at 2.5 m (the thread is drawn 2 texels wide or more, opaque)
+  tick: hex('#D2A04E'),
+});
 
 /** The skeleton + grafted, cut pieces (shared by build() and panBindTriangles()). */
 async function assemble() {
@@ -246,8 +264,8 @@ function leatherStrap(t, o, base, { stitch = true, burn = [104, 84, 64], thread 
 /** Atlas plan of the Pan set: every cell a variant may need is on the sheet from variant I. */
 export function panTrim(W, H, trimH) {
   const T = new Trim(W, H, trimH);
-  // (M1.2d: the turnaround's belts are dark plum-brown leather, not black)
-  const LAP = [70, 46, 46];
+  // (M1.2d: the turnaround's belts are dark plum-brown leather, not black; round 2: the sheet's plum, swatch.mjs)
+  const LAP = COL.girdleLeather;
   T.cell('girdle', 620, 46, (t, o) => {
     leatherStrap(t, o, LAP, { eS: 5.6, burn: [152, 122, 94], burnW: 3.6 });
     // the belt bends where it is buckled and worn: soft creases across it, each a shade paler on its ridge
@@ -358,11 +376,11 @@ export function panTrim(W, H, trimH) {
       const thr = (a) => { over(o, sc(COL.tick, 0.85 + 0.3 * cr), a); o.h += 0.00035 * a; o.rough = mix(o.rough, 0.6, a); };
       for (const lv of lineAt) {
         const dv = Math.abs(t.v - lv) * 44;
-        if (dv < 0.7) thr(0.85 * (1 - dv / 0.7));
+        if (dv < 1.0) thr(0.95 * (1 - 0.4 * dv));
         const inward = lv < 0.5 ? t.v - lv : lv - t.v;
-        const per = 6, ph = ((t.x % per) + per) % per;
-        const long = Math.floor(t.x / per) % 5 === 0;
-        if (inward > 0 && inward < (long ? 0.2 : 0.09) && ph < 0.9) thr(0.75);
+        const per = 8, ph = ((t.x % per) + per) % per;
+        const long = Math.floor(t.x / per) % 4 === 0;
+        if (inward > 0 && inward < (long ? 0.2 : 0.1) && ph < 2.2) thr(0.95);
       }
     }
     const c = fold01(noise3(t.ax * 0.018, t.y * 0.16, 2.9)), c2 = fold01(noise3(t.ax * 0.04, t.y * 0.34, 7.3));
@@ -562,26 +580,31 @@ export const PAN_PAINTERS = {
     over(o, [170, 128, 168], 0.44 * sstep(0.5, 0.95, f) * sstep(0.05, 0.3, v));
     o.h += 0.003 * (f - 0.5);
     // the embroidery: couched gold-ochre thread, a little proud, dulled where it is worn
+    // (M1a round 2, the judge: "the embroidery reads pale pink at 2.5 m": its lines were 1.6-2.2 mm wide on a sheet of 2.6 mm
+    // texels, so each was a fraction of a texel of gold mixed into the violet. Every line is now 5 mm or more (two texels),
+    // the thread nearly opaque and only a little dulled on a fold's crest, so it stays gold-ochre at 2.5 m, where a pixel is
+    // about 2 mm; the ticks every 16 mm, a long one every fourth; the ring glyph 2 cm across)
     const e = w - Math.abs(u);
     const cr = noise3(u * 60, v * 60, 1.9);
-    const thr = (a) => { const k = a * (0.75 + 0.25 * cr) * (1 - 0.55 * sstep(0.7, 0.95, f)); over(o, sc(COL.tick, 0.92 + 0.25 * cr), k); o.h += 0.0004 * k; o.rough = mix(o.rough, 0.62, k); };
+    const thr = (a) => { const k = Math.min(1, a * (0.9 + 0.1 * cr) * (1 - 0.25 * sstep(0.75, 0.97, f))); over(o, sc(COL.tick, 0.9 + 0.18 * cr), k); o.h += 0.0005 * k; o.rough = mix(o.rough, 0.6, k); };
+    const HW = 0.0026;
     if (v > 0.03) {
-      const dl = Math.abs(e - 0.013);
-      if (dl < 0.0011) thr(0.9);
-      const ph = ((v / 0.008) % 1 + 1) % 1, long = Math.floor(v / 0.008) % 5 === 0;
-      if (e > 0.013 && e < (long ? 0.027 : 0.019) && ph < 0.14) thr(0.85);
+      const dl = Math.abs(e - 0.016);
+      if (dl < HW) thr(1 - 0.3 * sstep(HW * 0.6, HW, dl));
+      const ph = ((v / 0.016) % 1 + 1) % 1, long = Math.floor(v / 0.016) % 4 === 0;
+      if (e > 0.016 && e < (long ? 0.036 : 0.026) && ph < 0.32) thr(0.95);
       // the ring glyph down the middle: a circle, a plumb line through it, a short datum bar under it
-      // (smaller than a stamp, and broken by wear; between them a running script of short strokes)
-      const gk = Math.floor((v - 0.07) / 0.13), gv = ((v - 0.07) % 0.13 + 0.13) % 0.13 - 0.065, rr = Math.hypot(u, gv);
+      // (broken by wear; between them a running script of short strokes)
+      const gk = Math.floor((v - 0.07) / 0.15), gv = ((v - 0.07) % 0.15 + 0.15) % 0.15 - 0.075, rr = Math.hypot(u, gv);
       if (v > 0.07 && v < (P.yTop - P.yHem) - 0.08) {
-        const live = noise3(u * 40, v * 40, 3.3 + gk) > 0.3 ? 1 : 0.35;
+        const live = noise3(u * 40, v * 40, 3.3 + gk) > 0.25 ? 1 : 0.5;
         if (gk % 2 === 0) {
-          if (Math.abs(rr - 0.0115) < 0.0011) thr(0.85 * live);
-          if (Math.abs(u) < 0.0008 && Math.abs(gv) < 0.019) thr(0.75 * live);
-          if (Math.abs(gv - 0.017) < 0.0008 && Math.abs(u) < 0.007) thr(0.75 * live);
-        } else if (Math.abs(gv) < 0.04 && Math.abs(u) < w - 0.03) {
-          const sv = ((gv + 0.04) / 0.011) % 1, su = noise3(Math.floor((gv + 0.04) / 0.011) * 3.1, gk, 7.7);
-          if (sv < 0.14 && Math.abs(u - (su - 0.5) * 0.02) < 0.006 * (0.4 + su)) thr(0.7 * live);
+          if (Math.abs(rr - 0.02) < HW) thr(0.95 * live);
+          if (Math.abs(u) < HW && Math.abs(gv) < 0.03) thr(0.9 * live);
+          if (Math.abs(gv - 0.027) < HW && Math.abs(u) < 0.012) thr(0.9 * live);
+        } else if (Math.abs(gv) < 0.045 && Math.abs(u) < w - 0.036) {
+          const sv = ((gv + 0.045) / 0.015) % 1, su = noise3(Math.floor((gv + 0.045) / 0.015) * 3.1, gk, 7.7);
+          if (sv < 0.34 && Math.abs(u - (su - 0.5) * 0.02) < 0.008 * (0.5 + su)) thr(0.85 * live);
         }
       }
     }
@@ -774,7 +797,11 @@ export const ARMHOLE = { y: 1.394, z: -0.055, ry: 0.086, rz: 0.069, xMin: 0.12 }
  * of the hole is scooped, so the arm moves free of it (a smock cut to the shoulder point had the deltoid come forward
  * through its rim in every strike and draw).
  */
-export const ARMHOLE_SL = { y: 1.402, z: -0.024, ry: 0.084, rz: 0.097, xMin: 0.108 };
+export const ARMHOLE_SL = { y: 1.41, z: -0.03, ry: 0.078, rz: 0.086, xMin: 0.108 };
+// (M1a round 2, the judges: "the top's armhole shows skin (the breast) and the backdrop" in F12 and F13): the hole is cut
+// smaller, as the turnaround's fitted top: its foot 1.4 cm higher (1.332, was 1.318) and its front 1.9 cm further back
+// (z 0.056, was 0.073), so at the bust's height the side of the top covers the breast's side to z 0.007 (it ended at
+// 0.041 and left the breast's side in the hole in profile). Its top and the shoulder strap are unchanged
 
 /** Everything of the set's base (shared by the variants): parts, trim, chains, joints. */
 export async function panBase(opt = {}) {
@@ -1227,9 +1254,13 @@ export async function panBase(opt = {}) {
     }
   }
 
-  // ---- the salt pouch at the left front hip, rigid on the pelvis, hung off the belt
-  // on the side of the hip, just behind the seam: out of the thigh's swing and of the arm's
-  const pouchThA = -1.75;
+  // ---- the salt pouch at the left hip, rigid on the pelvis, hung off the belt
+  // (M1a round 2, the judges: "the survey case pushes the stowed bow and lance off her back"; measured, the case was the lesser
+  // part of it: this pouch sat in the small of her back (bearing -1.75), 14 cm proud of the lumbar, exactly where the stowed
+  // lance's diagonal crosses her spine, and the lance's line was fitted out over it, its butt 0.49 m behind her hip. It hangs at
+  // her left hip now, on the side a little forward of the seam, where the turnaround has a pouch on the belt, clear of the lance's
+  // line and of the bow's)
+  const pouchThA = 0.25;
   const POUCH_Y = BELT_Y - 0.092;
   const pr = ring(wornField, POUCH_Y, 64, { keep: () => true, dth: 0.14 })[Math.round(64 * (((pouchThA + Math.PI / 2 + TAU) % TAU) / TAU)) % 64] + 0.009;
   const pc = [Math.cos(pouchThA) * pr, POUCH_Y, -0.02 + Math.sin(pouchThA) * pr];
@@ -1520,7 +1551,8 @@ export async function panBase(opt = {}) {
   const hems = mk('hems', { trim: true });
   // (M1.2d fix round 1, the judge: "seen edge-on, the front panel becomes a thin stick ahead of the leg", "a paper-thin strip" in F09):
   // the panels are heavy cloth, their two faces 2.4 mm apart (1.1 before) and their edges a rolled hem 5.2 mm round on six sides
-  rimTubes(hems, panels, { r: 0.0026, sides: 6, rect: trim.rect('bind'), skip: (p) => p[1] > 1.06 });
+  // (M1a round 2, M1.2g: four sides, not six: a 5 mm roll reads round at 2.5 m either way, and the hems were 1.9 k triangles)
+  rimTubes(hems, panels, { r: 0.0026, sides: 4, rect: trim.rect('bind'), skip: (p) => p[1] > 1.06 });
   rimTubes(hems, scarf, { r: 0.0021, rect: trim.rect('bind') });
   // fingerless gloves: dark leather from 3 cm up the wrist to half way along the first finger bones, edges rolled
   const glove = mk('glove', { trim: true });
@@ -1578,8 +1610,12 @@ export async function panBase(opt = {}) {
   const caseP = mk('case', { trim: true });
   {
     const ang = 36 * Math.PI / 180, d = [Math.sin(ang), Math.cos(ang), 0], perp = [Math.cos(ang), -Math.sin(ang), 0];
-    const mid = V.add(V.add([-0.02, 1.24, 0], V.mul(d, 0.07)), V.mul(perp, 0.082));
-    const L = 0.38, rC = 0.034;
+    // (M1a round 2, the judges: "the survey case pushes the stowed bow and lance off her back"): the stowed lance crossed the
+    // case's lower end (its line passed 2 cm past the cap), so the stow kit's lance stood out over the case. The case is 4 cm
+    // shorter and 4.5 cm higher up its diagonal: its lower cap ends 8.4 cm before the lance's line, its upper cap under her
+    // left shoulder blade; it still lies beside the bow's line (8.2 cm off it), never under it
+    const mid = V.add(V.add([-0.02, 1.24, 0], V.mul(d, 0.115)), V.mul(perp, 0.082));
+    const L = 0.34, rC = 0.034;
     const back = [bodyPart, smock, binds, ...(harnessOn ? [harness] : [sling]), girdle];
     let zMin = 0;
     for (let k = 0; k <= 10; k++) {
@@ -1683,7 +1719,8 @@ export const PAN_FIT = {
 
 /**
  * M1.2d's checklist: the turnaround's Starter pieces and the slots that carry them in this set (the stow kit carries
- * the left bracer's crescent plate, the ring charm on its cord and the Alidade on the right chest strap).
+ * the left bracer's crescent plate, the ring charm on its cord (its own kit bit, `stowkit:charm`, from M1a round 2) and,
+ * listed apart, the Alidade on the right chest strap).
  */
 export const STARTER_PIECES = {
   'sleeveless violet top, faded print': ['smock', 'binds', 'peplum'],
@@ -1698,8 +1735,10 @@ export const STARTER_PIECES = {
   'shin wraps': ['boots'],
   'laced boots': ['boots', 'straps'],
   'neck scarf': ['scarf', 'hems'],
-  'ring charm on the cord': ['stowkit:alidade'],
-  'survey case (kite case on the back; Alidade on the right chest strap)': ['case', 'stowkit:alidade'],
+  'ring charm on the cord': ['stowkit:charm'],
+  'survey case (kite case on the back)': ['case'],
+  // (not on the turnaround's list of 14, carried in the kit: the Alidade on the right chest strap, Q5)
+  'Alidade on the right chest strap': ['stowkit:alidade'],
 };
 
 export const PAN_SET = { set: 'pan', hideBit: HIDE_BIT, chains: ['dyn_sashEnd', 'dyn_panelL', 'dyn_panelR', 'dyn_panelB'], get sashSwing() { return { ...SASH_SWING }; } };
@@ -1748,7 +1787,11 @@ export function panFinish(base, parts) {
     // and the harness lift off it when the arm hangs, and the culled skin there was a window to the backdrop
     // (and the shins and feet keep theirs: the boots and the shin wraps are eased off her through the range of motion (romfit), and a
     // slit the edge collapse left in a boot shaft showed the backdrop through her leg in F08, where now it shows her own shin)
-    keep: (x, y, z) => y > 1.525 || y < 0.43 || (Math.abs(x) > 0.085 && Math.abs(x) < 0.215 && y > 1.375 && y < 1.53 && z > -0.085 && z < 0.045) });
+    // (M1a round 2, the judges: F24's "see-through hole in the vest at the back" and F12/F13's backdrop in the armhole: with the
+    // draw arm up and back the hole opens over her ribs, and the ribs' skin, culled as covered in the bind pose, left the world
+    // showing through her. The side of the ribcage round and under each armhole keeps its skin now; the top lies over it)
+    keep: (x, y, z) => y > 1.525 || y < 0.43 || (Math.abs(x) > 0.085 && Math.abs(x) < 0.215 && y > 1.375 && y < 1.53 && z > -0.085 && z < 0.045)
+      || (Math.abs(x) > 0.1 && Math.abs(x) < 0.2 && y > 1.22 && y <= 1.375 && z > -0.11 && z < 0.06) });
 }
 
 export async function build({ out = ROOT } = {}) {
@@ -1761,6 +1804,10 @@ export async function build({ out = ROOT } = {}) {
     painters: PAN_PAINTERS, srcNormal, trim, salt: COL.salt, curv: { crease: 1, ridge: 0.7 }, q: { base: 95, normal: 88, orm: 84 },
   });
   romFit(parts, base, PAN_FIT);
+  // M1.2g (armory, M1a round 2): Brea's frame budget. The set had grown to 22.3 k triangles against its 16 k cap; every part
+  // is decimated to an error about a pixel at 2.5 m or under, with its open edges locked (armor/lib/decimate.mjs); the
+  // trousers' legs inside the boot shafts and shin wraps and the linen under-collar inside the scarf (never seen) are dropped
+  const dec = await decimateParts(parts, { ...PAN_DECIMATE, cull: PAN_HIDDEN });
   const hide = panFinish(base, parts);
   // the contact shadow every layer casts on the one under it (armor/lib/vertexao.mjs)
   const ao = bakeVertexAO(parts, { body: base.bodyPart });
@@ -1774,6 +1821,20 @@ export async function build({ out = ROOT } = {}) {
       ...PAN_SET, variant: 'pan-1', name: "Pan Whites I — Raker's Whites", density: +layout.D.toFixed(1), detailRep: +((W / layout.D) / 0.026).toFixed(1), hasAo: true,
       pieces: [...new Set(parts.map((p) => p.slot))], cut: 'starter', rung1: STARTER_PIECES,
       hide: { count: hide.count, tris: hide.tris, covered: hide.covered, rle: hide.rle },
+      decimate: { before: dec.before, after: dec.after, error: PAN_DECIMATE.error },
     },
   });
 }
+
+/**
+ * The Starter's decimation (armor/lib/decimate.mjs): 1.5 mm for cloth and leather (under a pixel at 2.5 m, where F08 has about
+ * 2.1 mm a pixel), the boots and gloves 2.5 mm and the trousers 2 mm (low in the frame, their outlines locked), the small hard
+ * pieces near exact (the square plate's diamond and stud, the buckles and their tongues, the slider), the rivets at 0.9 mm
+ * (each keeps its dome).
+ */
+export const PAN_DECIMATE = {
+  error: 0.0015,
+  per: { boots: 0.0025, glove: 0.0025, trousers: 0.002, buckle: 0.0004, slider: 0.0004, tongue: 0.0004, tab: 0.0004, boss: 0.0004, pouch2: 0.0005, rivets: 0.0009 },
+};
+/** Triangles no camera sees once the set is on: the trousers inside the boot shafts (all three corners under 0.40 m) and the linen under-collar, wholly inside the scarf. */
+export const PAN_HIDDEN = (p, [a, b, c]) => p.slot === 'underyoke' || (p.slot === 'trousers' && Math.max(p.pos[a * 3 + 1], p.pos[b * 3 + 1], p.pos[c * 3 + 1]) < 0.40);

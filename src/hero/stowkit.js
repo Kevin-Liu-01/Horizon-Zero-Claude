@@ -5,7 +5,7 @@
  *
  * The kit GLB (tools/build/recipes/weapons/kit-v0.mjs) is ONE skinned mesh
  * whose vertices carry `_piece` (1 lance, 2 bow, 4 quiver + arrows, 8 bracer,
- * 16 alidade). The material's vertex stage collapses every vertex whose piece
+ * 16 alidade, 32 ring charm + cord). The material's vertex stage collapses every vertex whose piece
  * bit is set in `uKitHide` to its bone's origin (degenerate triangles: nothing
  * rasterises), so hiding a piece never adds or removes a draw.
  *
@@ -16,7 +16,8 @@ import * as THREE from 'three';
 import { bindPart, releasePart, boneIndex } from './parts.js';
 import { LanceCarry } from './carry.js';
 
-export const PIECE = { lance: 1, bow: 2, quiver: 4, bracer: 8, alidade: 16 };
+/** Piece bits of the kit's `_piece` attribute (armory M1a round 2: 32 the ring charm and its neck cord, its own checklist slot). */
+export const PIECE = { lance: 1, bow: 2, quiver: 4, bracer: 8, alidade: 16, charm: 32 };
 /** The lance's carry socket joint (kit recipe `LANCE_SOCKET`), a child of `spine_02` at the identity. */
 export const LANCE_SOCKET = 'stow_lance';
 const LANCE_SOCKET_PARENT = 'spine_02';
