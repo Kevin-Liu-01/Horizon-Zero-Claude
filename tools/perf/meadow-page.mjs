@@ -231,7 +231,12 @@ export async function topDown(E, C, x, z, { span = 40, px = 1024 } = {}) {
   C.terrain.updateLod?.(cam0);
   const undo = isolate(C, { keepMeadow: false });
   const water = C.terrain.water;
-  const rt = new T.WebGLRenderTarget(px, px, { depthBuffer: true });
+  /* fix round 1: the capture was 8-bit LINEAR (a render target gets no output transform), so black sand at
+   * 0.02-0.05 linear sat in 5-13 codes and the salt clipped: dark, banded, blurred-looking. It is read as float
+   * now, and each capture is mapped to sRGB with its own exposure (99th percentile luma = 0.9), so the tiling
+   * check sees the texture's structure at any albedo. */
+  const rt = new T.WebGLRenderTarget(px, px, { depthBuffer: true, type: T.FloatType });
+  const fbuf = new Float32Array(px * px * 4);
   const buf = new Uint8Array(px * px * 4);
   try {
     await wait(2);
@@ -239,8 +244,14 @@ export async function topDown(E, C, x, z, { span = 40, px = 1024 } = {}) {
     const prev = R.getRenderTarget();
     R.setRenderTarget(rt); R.clear(true, true, true);
     R.render(S, oc);
-    R.readRenderTargetPixels(rt, 0, 0, px, px, buf);
+    R.readRenderTargetPixels(rt, 0, 0, px, px, fbuf);
     R.setRenderTarget(prev);
+    const lum = new Float32Array(px * px);
+    for (let i = 0; i < px * px; i++) lum[i] = 0.2126 * fbuf[i * 4] + 0.7152 * fbuf[i * 4 + 1] + 0.0722 * fbuf[i * 4 + 2];
+    const srt = Float32Array.from(lum).sort();
+    const p99 = Math.max(srt[Math.floor(srt.length * 0.99)], 1e-6), k = 0.9 / p99;
+    const enc = (v) => { v = Math.max(0, v * k); v = v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055; return Math.min(255, Math.round(v * 255)); };
+    for (let i = 0; i < px * px; i++) { buf[i * 4] = enc(fbuf[i * 4]); buf[i * 4 + 1] = enc(fbuf[i * 4 + 1]); buf[i * 4 + 2] = enc(fbuf[i * 4 + 2]); buf[i * 4 + 3] = 255; }
   } finally {
     undo(); rt.dispose();
     cam0.position.copy(p0); cam0.quaternion.copy(q0); cam0.updateMatrixWorld(); C.terrain.updateLod?.(cam0);

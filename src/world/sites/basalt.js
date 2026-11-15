@@ -14,8 +14,8 @@ import { ORGAN, CRATER } from './layout.js';
  * toward its face, 2-14 m above the ground, with cross-joints every 0.9-2.4 m.
  * M1.1c: each column leans (the cluster fans 2-5 deg toward its face), every
  * jointed segment is jogged and resized a little (no straight outline), each
- * hex facet has its own tone, the tops are broken (fracture planes up to ~30
- * deg, a spalled wedge on one column in three), and every cluster has a talus
+ * hex facet has its own tone, the tops are broken (fracture planes up to ~40
+ * deg, a spalled wedge on one column in two), and every cluster has a talus
  * apron of fallen column segments in front of its face (10 + 1.6 per metre of
  * its tallest column). Each column is one box collider (A24: the player is
  * stopped by one; the mantle climbs the risers).
@@ -76,10 +76,12 @@ function pushColumn(out, cx, cz, rad, y0, y1, rot, seed, tone, lean = [0, 0]) {
   // per segment: a jog and a width (the joint's offset)
   const seg = rings.map(() => [(R() - 0.5) * 0.09, (R() - 0.5) * 0.09, 0.95 + R() * 0.1]);
   // the broken top: a fracture plane, steep on some columns
-  const steep = R() < 0.35 ? 0.35 + R() * 0.25 : 0.08 + R() * 0.18;
+  // M1.1c fix round 1: at 30-60 m against a dusk sky the ~5-30 deg planes still read as flat caps (F05):
+  // half the columns now break at 25-40 deg, the rest at 7-20, and one in two loses a deeper wedge
+  const steep = R() < 0.5 ? 0.47 + R() * 0.37 : 0.12 + R() * 0.24;
   const ta = R() * Math.PI * 2, tx = Math.cos(ta) * steep, tz = Math.sin(ta) * steep;
-  const spall = R() < 0.33;                        // a wedge off one side, a step lower
-  const spA = R() * 6, spD = 0.15 + R() * 0.35;
+  const spall = R() < 0.5;                         // a wedge off one side, a step lower
+  const spA = R() * 6, spD = 0.3 + R() * 0.6;
   _c.setHex(tone).convertSRGBToLinear();
   const br = _c.r, bg = _c.g, bb = _c.b;
   const k0 = 0.86 + R() * 0.28;

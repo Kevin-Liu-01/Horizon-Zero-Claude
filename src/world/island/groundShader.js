@@ -263,9 +263,10 @@ export const TERRAIN_COLOR = /* glsl */ `
         nn = mix(vec4(0.0, 0.0, nx.z * bw.x + ny.z * bw.y + nz.z * bw.z, nx.a * bw.x + ny.a * bw.y + nz.a * bw.z), nn, farN);
       }
     } else {
-      a = gA(i, uv + offA, gx, gy);
+      vec2 uv0 = i == 1 ? uv + offA : uv;
+      a = gA(i, uv0, gx, gy);
       nn = vec4(0.5, 0.5, i == 0 ? 0.877 : i == 1 ? 0.686 : i == 2 ? 0.801 : i == 3 ? 0.539 : 0.631, 0.905);
-      if (farN < 1.0) nn = mix(gNm(i, uv + offA, gx, gy), nn, farN);
+      if (farN < 1.0) nn = mix(gNm(i, uv0, gx, gy), nn, farN);
       if (i == 1 && dCam < 240.0) {
         /* salt: the crust fills whole 20-40 m cells, so any one tile's repeat lines up along a
          * cell (A-anti-tile). A second lookup, rotated 37 degrees at 0.61 of the scale, is always
@@ -278,12 +279,24 @@ export const TERRAIN_COLOR = /* glsl */ `
           n2.xy = (vec2(dot(n2.xy * 2.0 - 1.0, Mr[0]), dot(n2.xy * 2.0 - 1.0, Mr[1]))) * 0.5 + 0.5;
           nn = mix(nn, mix(n2, vec4(0.5, 0.5, 0.686, 0.905), farN), 0.5);
         }
-      } else if (w[i] > 0.18 && dCam < 240.0) {     // past 240 m the mips are a few texels: the seam blend buys nothing
-        vec4 a2 = gA(i, uv + offB, gx, gy);
-        float cdiff = dot(a.rgb - a2.rgb, vec3(0.33));
-        float bl = smoothstep(0.22, 0.78, tf - 0.12 * cdiff);
-        a = mix(a, a2, bl);
-        if (nearK > 0.0) nn = mix(nn, gNm(i, uv + offB, gx, gy), bl);
+      } else if (w[i] > 0.12 && dCam < 240.0) {     // past 240 m the mips are a few texels: a second read buys nothing
+        /* M1.1e anti-tile (fix round 1): one tile and a per-region offset still repeated inside each region (black
+         * sand 0.61 at its 3 m tile in a 40 m top-down). Two incommensurate reads at half each, the second turned and
+         * scaled (sand only a little, so its ripples keep the wind's direction): no region seams, and either repeat
+         * carries a quarter of the variance. The normals' deviation is restored by 1/|f|, so the ripples keep relief. */
+        float ang = i == 0 ? 0.2 : 0.65, k2 = i == 0 ? 0.71 : 0.61;
+        float cs = cos(ang), sn = sin(ang);
+        mat2 Mr = mat2(cs, sn, -sn, cs);
+        vec2 uvR = Mr * uv * k2 + vec2(0.37, 0.73), gxR = Mr * gx * k2, gyR = Mr * gy * k2;
+        float f2 = 0.5 * smoothstep(0.12, 0.24, w[i]) * (1.0 - smoothstep(200.0, 240.0, dCam));
+        a = mix(a, gA(i, uvR, gxR, gyR), f2);
+        if (nearK > 0.0) {
+          vec4 n2 = gNm(i, uvR, gxR, gyR);
+          n2.xy = (vec2(dot(n2.xy * 2.0 - 1.0, Mr[0]), dot(n2.xy * 2.0 - 1.0, Mr[1]))) * 0.5 + 0.5;
+          vec4 nm = mix(nn, n2, f2 * nearK);
+          nm.xy = 0.5 + (nm.xy - 0.5) / length(vec2(1.0 - f2 * nearK, f2 * nearK));
+          nn = nm;
+        }
       }
     }
     keepA[nKeep] = a; keepN[nKeep] = nn; keepW[nKeep] = w[i]; keepI[nKeep] = i; nKeep++;
@@ -371,6 +384,7 @@ export const TERRAIN_COLOR = /* glsl */ `
    * cerrillo gold #C9A04E-#D9B060 in drifts, a ±8 % wind wave running toward 225°, violet speckle where the
    * viborina clumps; inside the rings the ground under the blades is the blades' own foot colour (TECH §5), so a gap
    * between blades reads as shade in grass, never as soil */
+  float canopy = 0.0;
   if (mB.a > 0.01) {
     float mk = smoothstep(0.02, 0.6, mB.a) * (1.0 - wSalt) * (1.0 - wRock);
     float farG = smoothstep(52.0, 82.0, dCam);
@@ -384,14 +398,18 @@ export const TERRAIN_COLOR = /* glsl */ `
     // two incommensurate, turned reads: one read of the periodic noise repeated every 16.4 m (M1.1e tiling check)
     vec2 xzR = vec2(dot(xz, vec2(0.8, 0.6)), dot(xz, vec2(-0.6, 0.8)));
     grass *= 0.68 + 0.42 * smoothstep(0.3, 0.7, 0.5 * gNoiseT(xz * 0.061).b + 0.5 * gNoiseT(xzR * 0.0437 + 0.29).a);
-    vec3 litter = vec3(0.17, 0.104, 0.026) * (0.82 + 0.3 * gn.b);   // meadow.js: the blade's foot colour, a shade lit
+    vec3 litter = vec3(0.17, 0.112, 0.02) * (0.82 + 0.3 * gn.b);   // meadow.js: the blade's foot colour, a shade lit
+    /* M1.1b fix round 1: under the clumps' ring (10-30 m) a gap shows the clumps' own mid tone, not the dark foot:
+     * blade against gap is the contrast that crawls when the lens moves */
+    litter = mix(litter, grass * 0.78, 0.55 * smoothstep(8.0, 30.0, dCam));
     col = mix(col, mix(litter, grass, farG), mk);
+    canopy = mk * (1.0 - farG);
     pert *= 1.0 - mk * mix(0.75, 0.5, farG);
   }
   // packed tracks: pale, smooth, salt-dusted
   if (mB.g > 0.01) {
     float tr = smoothstep(0.1, 0.8, mB.g) * (0.6 + 0.4 * macA);
-    col = mix(col, vec3(0.135, 0.122, 0.104) * (0.6 + 0.6 * gNoiseT(xz * 0.031).b), tr * 0.8);
+    col = mix(col, vec3(0.152, 0.124, 0.088) * (0.6 + 0.6 * gNoiseT(xz * 0.031).b), tr * 0.8);   // warm dust, not grey
     pert *= 1.0 - 0.6 * tr;
     rSum = mix(rSum, 0.82, tr);
   }
@@ -424,7 +442,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   /* -- the ground at a pace (V32): pebbles at 6-15 cm and grit at 2-3 cm on sand, silt and
    *    shingle, each pebble with a lit and a shaded side; gone by 16 m, where they are sub-pixel */
   if (dCam < 16.0 && wSalt < 0.6) {
-    float gk = (1.0 - smoothstep(9.0, 16.0, dCam)) * (1.0 - wSalt) * (1.0 - wRock * 0.7);
+    float gk = (1.0 - smoothstep(9.0, 16.0, dCam)) * (1.0 - wSalt) * (1.0 - wRock * 0.7) * (1.0 - canopy);
     vec3 pb = gVoro(xz * 9.0);
     float peb = smoothstep(0.42, 0.3, pb.y) * step(0.58, pb.z) * gk;
     vec2 pd = gHash2(floor(xz * 9.0) + 3.1) - 0.5;
@@ -456,6 +474,11 @@ export const TERRAIN_COLOR = /* glsl */ `
   gRough = mix(clamp(rSum, 0.25, 1.0), mix(0.3, 0.07, smoothstep(0.3, 0.9, brine)), gLiquid);
   gAO = mix(1.0, clamp(aoSum, 0.0, 1.0), 0.78);
   col *= mix(1.0, clamp(aoSum * 1.08, 0.0, 1.0), 0.4);
+  /* M1.1b fix round 1: the ground under the blades sees little of the (violet) sky and has no sheen: the sky in the
+   * black sand's grazing sheen and the open-sky fill turned the meadow's gaps rose-grey (the soil-coloured pixels) */
+  gAO *= 1.0 - 0.6 * canopy;
+  gLiquid *= 1.0 - canopy;
+  gRough = mix(gRough, 1.0, canopy);
 
   /* -- the long shadows: the land's own, and past the cascades the dykes' ------ */
   gSunVis = gSkylineVis(xz);

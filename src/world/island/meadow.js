@@ -156,6 +156,10 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
   if (vib) hgt *= 1.12;
   // widths: TECH §5's lever when the counts do not close the ground ("blade width and clump width, not count")
   float w0 = kind > 1.5 ? mix(0.26, 0.4, u3) : kind > 0.5 ? mix(0.02, 0.032, u3) : mix(0.008, 0.013, u3);
+  /* M1.1b fix round 1: the clumps crawled at 12-30 m (133 events per mille walking, 342 sprinting): their tips
+   * went sub-pixel. They broaden with distance (about two device px at the foot at 30 m) and taper less */
+  float midK = kind > 0.5 && kind < 1.5 ? smoothstep(10.0, 30.0, dCam) : 0.0;
+  w0 *= 1.0 + 0.6 * midK;
   float yaw = u3 * 6.2831853 + u4 * 1.7;
   vec2 face = vec2(cos(yaw), sin(yaw));
   vec2 rightW = vec2(-face.y, face.x);
@@ -169,7 +173,7 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
     rightW = normalize(rightW + camR * sign(dot(rightW, camR) + 1e-4) * 0.75 * edge);
   }
   // the tip's width: blades taper to a point, clumps and cards stay broad
-  float taper = kind > 1.5 ? 1.0 : kind > 0.5 ? (1.0 - 0.7 * t) : (1.0 - 0.86 * t);
+  float taper = kind > 1.5 ? 1.0 : kind > 0.5 ? (1.0 - 0.7 * (1.0 - 0.45 * midK) * t) : (1.0 - 0.86 * t);
   if (vib) taper = max(taper, 0.55);
   float hw = w0 * taper;
   // wind from 045: a lean to the SW, a sway and a gust wave that run with it (the flora's terms)
@@ -202,8 +206,10 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
   vec2 fn = kind > 1.5 ? toCam / tcl : face * sign(dot(face, toCam) + 1e-4);
   objectNormal = normalize(vec3(fn.x * 0.32 + bend.x * 0.4 * t, 0.9, fn.y * 0.32 + bend.y * 0.4 * t));
   // colour: dark straw at the foot to pale gold at the tip, tone per blade; violet viborina
-  vec3 base = vec3(0.17, 0.104, 0.026) * (0.75 + 0.45 * u3);    // = the ground's meadow litter (groundShader.js)
+  vec3 base = vec3(0.17, 0.112, 0.02) * (0.75 + 0.45 * u3);     // = the ground's meadow litter (groundShader.js)
   vec3 tip = mix(vec3(0.694, 0.431, 0.117), vec3(0.578, 0.352, 0.074), u4) * (0.78 + 0.4 * u2);
+  // and the clumps' foot-to-tip ramp flattens with distance, as the ground under them does (less to crawl)
+  base = mix(base, tip * 0.6, 0.5 * midK);
   tip = mix(tip, vec3(0.62, 0.5, 0.26), 0.25 * step(0.86, u3));          // a few pale, bleached heads
   float ramp = kind > 1.5 ? 0.55 + 0.45 * t : pow(t, 0.8);
   vMColor = mix(base, tip, ramp);
