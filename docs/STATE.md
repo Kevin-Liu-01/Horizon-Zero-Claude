@@ -236,3 +236,112 @@ backlit slabs, no layered vista) and F20 (two small figures behind a foreground 
 - F23 and F24 were re-framed after the freeze (789a0f8) so the Plumb reads at its size; ratified.
 - The vial's weak point is a 0.10 m sphere; a shot that visibly misses the glass must not count.
 - M1.2g "frame totals unchanged" means: Brea within 60 k triangles and 6 draws in F08, and no growth in the F02 and F23 GPU medians from her change, paired at a commit. Studio-frame totals are not a bar.
+
+## M1a round 3 and the exit run (Nov 15 2026)
+
+Round 3 was the last build round of Milestone 1a. The exit run measured `r5/int` at **ec694b7** from a clean
+detached worktree. Its own commits add only `tools/perf/exit-bar.mjs` (04bed32, 7d4856e, 5d61cee, fb6d5f0), so every
+number at those commits is ec694b7's game. Port 5270, one Chrome slot. The box was as quiet as it gets: the
+1-minute load average sits beside every number.
+
+**Tier 0 at ec694b7: PASS, 10 of 10.**
+- `vite build` clean.
+- Name lint: 0 listed-term hits in 630 files.
+- Licences: 219 files against 29 rows.
+- Assets: 0 over a cap.
+- Resident textures: 53.42 MB of 175 MB.
+- Shipped size: 42.52 MB.
+- Import graph clean.
+- 39 Node tests pass, 3 todo: Pan II, Pan III and Ash I were built against an older body.
+- Boot: 2.9 s, 0 errors.
+- Rendered-page name lint: 0.
+
+**The frame bar (TECH §9.1)**, at 1600 × 900 CSS px, DPR 1.25, quality `high`, on an Apple M3 Pro with ANGLE Metal
+and Chrome 151. Tool: `tools/perf/exit-bar.mjs`.
+
+| line | F02 | F23 (Plumb) | F32 | bar | result |
+|---|---|---|---|---|---|
+| median GPU, M0.8 back-to-back readback (submit + GPU, 7 repetitions of 60 frames, vsync off) | 13.1 ms | 13.2 ms | 9.1 ms | ≤ 14 ms | PASS |
+| p95 presented-frame interval over 30 s, vsync on | 17.5 / 17.6 / 17.1 ms | 17.5 / 17.7 ms | 17.6 ms | ≤ 16.7 ms | FAIL as written; see below |
+| frames presented in 30 s; frames over 33 ms | 1799; 0 | 1798; 0 | 1799; 0 | | 59.97 fps, no dropped frame |
+| main-thread JS per frame, p95 | 3.4 ms | 3.5 ms | 3.8 ms | ≤ 8.0 ms | PASS |
+| draws; triangles | 91; 1.41 M | 92; 1.29 M | 96; 0.80 M | ≤ 350; ≤ 6.5 M | PASS |
+
+The load average was 1.8–3.7 during the live windows and 2.3–2.9 during the GPU readings.
+
+**The interval line cannot pass in this harness.** A full-size WebGL canvas that does nothing but clear, run in the
+same headless Chrome, reads p95 17.8 ms over 30 s (1798 frames). Headless Chrome's presentation timestamps jitter by
+about ±1 ms around 16.7 ms, so no page can read ≤ 16.7 ms at p95. The game presents 59.97 frames a second and drops
+none. The line needs a ruling: grade the frame count and frames over 33 ms instead, or measure in a headed browser
+on the display.
+
+**Load and hitches**, on the built game served by `vite preview` (vsync on):
+- Title interactive: 3.04 s cold, 2.85 and 2.63 s warm (bar ≤ 5 s): PASS.
+- New Game to control: 0.41 s cold, 0.24 s warm (bar ≤ 8 s): PASS.
+- First load: 41.05 MB in 212 requests (bar ≤ 60 MB): PASS. Tier 0's boot reads 70.76 MB because it boots the dev
+  server's unbundled modules.
+- 30 s of play right after New Game: 0 frames over 50 ms, 0 over 33 ms. The bar's 10-minute slice run is M1b.
+
+**Frame Set at fb6d5f0:** all 34 frames, 164 s of Chrome, 0 console errors. Each frame is compared with the
+2026-11-14 refilm at b4b46fb and with round 2 at dee526d. No frame is accepted yet.
+- Moved toward its target since round 2:
+  - F04: white crust, the black-sand dyke and a pink brine pond in one frame.
+  - F05: the Organ reads as lit basalt, not black slabs.
+  - F08–F10, F12, F13: the brass on both bracers; the wrap tail wrung at the root and torn into two tongues.
+  - F20: larger figures; Ansel's orchil band and harness.
+  - F30: the Brazier's streaks are gone.
+- The same as round 2: every other frame.
+- Furthest from its target:
+  - F04: the crust reads as smooth plaster; the dyke stones are flat chips; palette 13.2.
+  - F17: crust where the crop has meadow; the pale draw shoulder.
+  - F05: no layered vista and no glitter path.
+
+**Kept-stack rows at fb6d5f0** (two sessions, every row reached): 80 rows, **75 pass**
+(69 action, 6 visual), **3 fail** (A70: K shows the map tab; visual V13: the feet point opposite ways in the strafe
+step; visual V-traversal: the ledge panel frames no Brea), **2 pending** (A9: the gate browser lifts the 1-minute
+load past 3, 59.9 fps; A76: no staged kind declares a size class). Closed since round 2: A17 (follow-through
+0.086 m), A32b, A80, A32 (knuckle to jaw 0.014 m in every cell), A90 (+16 geometries over 30 cycles, bar 40), V1, V3.
+
+**Milestone 1a exit, as measured.** Of the five exit conditions:
+- **Condition 5** passes on GPU, CPU, load, first-load size and resident textures. The p95 interval line waits on
+  the ruling above; the kept-stack rows are listed above.
+- **Conditions 1–3** wait on frame acceptance, which no frame has.
+- **Condition 4** (F32) fails only its LOD-seam line: 3 px, widest 4, against a 2 px bar.
+
+Open frozen rows, with the numbers at the commit named:
+
+| item | row | number |
+|---|---|---|
+| M1.1a | F02 GPU with the look off ≤ 11 ms | 12.0–12.2 ms (159b9fd), 11.5 ms (a000205); no world source changed after 49563ce, which was not measured whole |
+| M1.1b | no crawl in the walking clip at 1 m/s | 12–30 m band 85.8 per mille against the reference's 69.5 (the variant shipped in 49563ce); sprint passes |
+| M1.1e | F04 against the material swatches; 40 m top-downs | crust 25.6 ΔE at 1 m (159b9fd); the brine and Glass swatches fail (a000205); salt-crust top-down 0.540 (bar 0.3) |
+| M1.1f | shade hue within 15° of the crop's, F05 | 15.3° against 41.2° (e02321c) |
+| M1.1g | palette ≤ 12 ΔE, F04 | 13.2 (fb6d5f0); F02 8.3 and F05 11.4 pass |
+| M1.1h | a landmark above her head in F03 | none in frame (fb6d5f0) |
+| M1.1j | no LOD seam over 2 px in F32 | 3 px, widest 4 (a000205) |
+| M1.2e | the panels stream downwind | a panel sways 0.046 m in the wind against 0.046 m still (e3d549b) |
+| M1.2f | the lance steep with the bow beneath it (F10) | still a 45° cross (fb6d5f0) |
+| M1.3b | the elbow row with the restated band | no valid page number since 349ac11; A16's elbow is −0.010 m in the aim frame (e3d549b) |
+| M1.3d | A104, A105 | haft 0.108 m from the head and neck at the holster, forearm 0.049 m from the spine on the jog-heavy recover (bar 0.10; 349ac11); forearm or haft 0.142 m from the head axis while jogging (bar 0.16; e3d549b) |
+| M1.3f | one blend in the sweep | unstow lance into a roll: 1 step with a hand behind the head (e3d549b) |
+| M1.6g1 | HUD cover and surfaces | not measured this round |
+
+Closed this round:
+- **The round-2 blockers:**
+  - Pure-black face pixels: 0 / 0 / 0 on face skin.
+  - The boot swatch: 2.8 ΔE; all five swatches within 10.
+  - A17: the loose follow-through 0.064 m.
+  - A32b: 0 hero materials left with depth writes off.
+  - The last cloth-clipping frame: 0 in every sweep row.
+- The ear rim and the tail root (Node rows).
+- The F05 layers, the Ring rows and line of sight.
+- A-weak40 for the Plumb: 9 of 10 shots stop on the glass.
+- The rivets: 27 of 30, marginal.
+- Ansel's density, budget and layers.
+- Brea's budgets: no GPU growth from her change, paired at 7d263d6 against 87dc149.
+
+**Rulings after the exit run** (the orchestrator):
+- The p95 frame-interval line of TECH §9.1 cannot be met in headless Chrome as written: a WebGL canvas that only clears reads p95 17.8 ms in the same harness. In headless runs the line is graded as "at least 1782 frames presented in 30 s and none over 33 ms"; the literal p95 line is taken in a headed browser on the display at the milestone exit. F02, F23 and F32 pass the headless form (1798-1799 frames, 0 over 33 ms).
+- A9 stays pending inside a kept-stack run (the gate browser itself lifts the load) and is graded in the exit-bar session.
+- main is fast-forwarded to r5/int at fb6d5f0: no frame is accepted yet, so none can have got worse, and every M1a frame is the same or closer than the M0 refilm.
+

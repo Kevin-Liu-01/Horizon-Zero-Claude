@@ -190,3 +190,26 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 | note | F32: no field walls visible from 120 m; a pale haze wedge stands behind the ridge. |
 | note | The lance swing trail still shows as a pale arc in F19. |
 | note | F30: the Brazier draws as bright vertical streaks in the grass. |
+
+## M1a round 3 and exit additions (Nov 15 2026)
+
+| id | sev | area | finding |
+|---|---|---|---|
+| R3-1 | major | engine | TECH §9.1's p95 interval line cannot be met in headless Chrome. A canvas that only clears reads p95 17.8 ms over 30 s; the game reads 17.1–17.7 ms at 59.97 fps with no frame over 33 ms. Needs a ruling on the grading (frame count and frames over 33 ms) or a headed measurement. |
+| R3-2 | major | world | M1.1a: F02 with the look off at 11.5–12.2 ms (a000205, 159b9fd) against 11 ms. 49563ce, the shipped world, was never measured whole. |
+| R3-3 | major | world | M1.1b: the walking clip still crawls at 1 m/s. The 12–30 m band is 1.23× the reference. |
+| R3-4 | major | world, sky-look | F04: the crust reads as smooth plaster (palette 13.2; crust 25.6 ΔE at 1 m). The dyke stones read as flat chips. The salt-crust top-down autocorrelation is 0.54. |
+| R3-5 | major | world | F32: an LOD seam 3–4 px wide against a 2 px bar. |
+| R3-6 | major | sky-look | F05's shade hue is 15.3° against the crop's 41.2°. It moved when the shared ground light changed. |
+| R3-7 | major | hero-anim | A104 and A105 fail. The elbow row has had no valid page number since 349ac11. One sweep blend has a hand behind the head (unstow lance into a roll). The panels do not stream in the wind. |
+| R3-8 | major | hero-anim | F03 has no landmark above her head (M1.1h). |
+| R3-9 | major | armory | F10: the lance and bow cross at 45°. F17 and F24: a pale bulbous draw shoulder. |
+| R3-10 | major | ui | M1.6g1 was not measured this round. F03 shows the first-boot MOVE card as a fifth surface. |
+| R3-11 | note | tools | `face-frames.mjs` counts the wrap tail's torn tongue inside F11's fixed face box: 14 px at fb6d5f0, all cloth. Mask cloth out of the box. |
+| R3-12 | note | instruments | In F24 the Plumb's lamp is lit hostile at fb6d5f0 (dark at dee526d). The frame does not say calm or alert. |
+| R3-13 | note | sky-look | The sky decision (hour keys or the LUT sky) is not yet written in the state file. |
+| R3-14 | note | engine | A9 stays PENDING inside a kept-stack run: the gate browser itself lifts the 1-minute load past 3. |
+
+| R3-15 | major | ui | A70: the K key still shows the map tab (kept-stack row, fb6d5f0). |
+| R3-16 | major | hero-anim | V13: in the aim strafe the feet point opposite ways. V-traversal: the ledge-climb panel does not frame her. |
+| R3-17 | note | engine | Three gate files still fail to load because they read the retired documents (I14). |
