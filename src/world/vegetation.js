@@ -699,7 +699,14 @@ export class Vegetation {
     const D = this._dyke, mesh = this.dykes;
     if (!D || !mesh) return;
     const M = mesh.instanceMatrix.array, Col = mesh.instanceColor.array, { W, XZ, tone, skip } = D;
-    const r2 = D.streamed ? D.r * D.r : Infinity, s2 = D.streamed ? D.rShadow * D.rShadow : Infinity;
+    /* M1.1j fix round 1: from height the field walls outside the pan (no ground-shader strip there) vanished past
+     * DYKE_R in plan (F32, 120 m up). The drawn radius grows with the lens's height over the ground (to +330 m);
+     * the casters' band does not */
+    const cam = this.ctx.camera, T = this.ctx.terrain;
+    const hAG = cam ? Math.max(0, cam.position.y - (T?.getHeight?.(cx, cz) ?? 0)) : 0;
+    D.hAG = hAG;
+    const rDraw = D.r + Math.min(330, Math.max(0, hAG - 8) * 2.8);
+    const r2 = D.streamed ? rDraw * rDraw : Infinity, s2 = D.streamed ? D.rShadow * D.rShadow : Infinity;
     let k = 0;
     // two bands: the casters (within rShadow) first, so the shadow passes can draw a prefix of the buffer
     for (let band = 0; band < 2; band++) {
@@ -913,7 +920,8 @@ export class Vegetation {
     const dx = x - this._camX, dz = z - this._camZ;
     let dy = yaw - this._camYaw;
     if (dy > Math.PI) dy -= Math.PI * 2; else if (dy < -Math.PI) dy += Math.PI * 2;
-    if (this._dirty || dx * dx + dz * dz > 36 || Math.abs(dy) > 0.42) {
+    const dh = this._dyke ? Math.abs(cam.position.y - (this.ctx.terrain?.getHeight?.(x, z) ?? 0) - (this._dyke.hAG ?? 0)) : 0;
+    if (this._dirty || dx * dx + dz * dz > 36 || Math.abs(dy) > 0.42 || dh > 6) {
       this._pending = this._streamKeys.length;
       this._camX = x; this._camZ = z; this._camYaw = yaw;
       this._dirty = false;
