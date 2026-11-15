@@ -5,6 +5,7 @@ import {
   BUILDINGS, CONES, HARBOUR, BREAKWATER_LAMP, BREAKWATER_LENS, GUILD_STUD, STREET, CREW, CART, placeOf, streetPoint, townColliders,
 } from './saltrow-layout.js';
 import { SightingKite } from './saltrow-kite.js';
+import { CRUST } from '../terrain.js';
 
 /**
  * SALTROW (BUILD M1.5a): the Pan Houses town, from the kit `tools/build/settlements/recipes/saltrow-kit.mjs` writes
@@ -46,11 +47,27 @@ import { SightingKite } from './saltrow-kite.js';
  * is thin over the stone (a ~1 m noise past a threshold, grey-ochre), and base dirt: a splashed band over the first
  * 0.5-0.9 m of each house from the `_bone` byte's low nibble (height over its ground floor, `aFoot`; 99 where a
  * piece has no foot).
+ *
+ * SALT CONES (M1b closing fix, F20: "two faceted, untextured salt cones"): the kit's cone is a 72-sided lathe, and its salt
+ * fragments (marked here: aFoot 101) wear the pans' own crust, the ground's salt layer (terrain `_layerTextures`, layer 1,
+ * its 10 m tile and the 0.61-scale rotated second read), its gain, cool and rose-grey (terrain.js CRUST, shared) and its
+ * normal map, projected from above as the ground's is. Not the lime wash, not the base dirt.
+ *
+ * SKY FILL (M1b closing fix, F24: "a flat, backlit block of houses"): against a low sun the town's walls stood in one flat
+ * value. Each house wall now takes the open sky's fill (the hemisphere's sky colour x its intensity x SKY_FILL, most on the
+ * walls turned from the sun, less low down) and its indirect light falls off over its first metres (the ground and the
+ * neighbours hide the sky there): `aH`, each vertex's height over its house's ground floor (the kit's local y).
  */
 const URL = '/models/settlements/saltrow-kit.glb';
 const WARM = new THREE.Color(1.0, 0.62, 0.32);
 /** The share of the scene's light the town keeps at full night (fix round 1, F07: walls beyond a window's spill). */
 const NIGHT_LIGHT = 0.05;
+/** The open sky's fill on a house wall, x the hemisphere's sky colour and intensity (M1b closing fix, F24). */
+const SKY_FILL = 2.0;
+/** The ground's salt layer in its layer array (src/world/island/layers.js: 0 sand, 1 salt) and its tile (terrain uScale1.y). */
+const SALT_LAYER = 1, SALT_TILE = 10.0;
+/** aFoot's mark for a salt fragment of a cone (the kit's `cone` node, its light vertices). */
+const SALT_MARK = 101;
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -70,6 +87,10 @@ function plain(geo) {
   if (pk) for (let i = 0; i < n; i++) { const v = Math.round(pk.getX(i)), f = v & 15; sp[i] = (v >> 4) / 15; ft[i] = f === 15 ? 99 : f * 0.1; }
   geo.setAttribute('aSpill', new THREE.BufferAttribute(sp, 1));
   geo.setAttribute('aFoot', new THREE.BufferAttribute(ft, 1));
+  // the height over the piece's own ground floor (each kit node is modelled with y up from it), before it is placed
+  const hh = new Float32Array(n);
+  for (let i = 0; i < n; i++) hh[i] = geo.attributes.position.getY(i);
+  geo.setAttribute('aH', new THREE.BufferAttribute(hh, 1));
   if (geo.attributes.uv1) geo.deleteAttribute('uv1');
   if (!geo.attributes.color) geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
   if (geo.attributes.color.itemSize === 4) {
@@ -77,7 +98,7 @@ function plain(geo) {
     for (let i = 0; i < n; i++) { c3[i * 3] = c4.getX(i); c3[i * 3 + 1] = c4.getY(i); c3[i * 3 + 2] = c4.getZ(i); }
     geo.setAttribute('color', new THREE.BufferAttribute(c3, 3));
   }
-  for (const name of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv', 'color', 'aSpill', 'aFoot'].includes(name)) geo.deleteAttribute(name);
+  for (const name of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv', 'color', 'aSpill', 'aFoot', 'aH'].includes(name)) geo.deleteAttribute(name);
   return geo;
 }
 
@@ -97,6 +118,12 @@ export class Saltrow {
     this.uGlow = { value: 0 };
     this.uSpill = { value: new THREE.Color(0, 0, 0) };
     this.uNight = { value: 1 };
+    this.uSkyFill = { value: new THREE.Color(0, 0, 0) };
+    this.uSunH = { value: new THREE.Vector2(0, 1) };
+    this.uSaltA = { value: null };
+    this.uSaltN = { value: null };
+    this.uSaltK = { value: new THREE.Vector4(1 / SALT_TILE, SALT_LAYER, 0, 0) };
+    this.skyFill = SKY_FILL;
     this.stats = { loadMs: 0, tris: 0, draws: 0 };
     this.crew = [];
     this._crewAsked = false;
@@ -125,6 +152,11 @@ export class Saltrow {
       if (!kitMat) kitMat = o.material;
       else if (o.material !== kitMat) o.material.dispose?.();
     });
+    // the cone's salt (its light vertices; the rake and its plank stay wood): the crust's mark
+    if (nodes.cone) {
+      const c = nodes.cone.attributes.color, f = nodes.cone.attributes.aFoot;
+      for (let i = 0; i < f.count; i++) if (0.2126 * c.getX(i) + 0.7152 * c.getY(i) + 0.0722 * c.getZ(i) > 0.4) f.setX(i, SALT_MARK);
+    }
     const extras = gltf.parser?.json?.asset?.extras?.r5Saltrow || {};
     this.litWindows = extras.litWindows ?? 0;
 
@@ -202,18 +234,25 @@ export class Saltrow {
     m.vertexColors = true;
     m.side = THREE.FrontSide;
     m.name = 'CAL.saltrow';
-    const U = { uSpill: this.uSpill, uNight: this.uNight };
+    const U = { uSpill: this.uSpill, uNight: this.uNight, uSkyFill: this.uSkyFill, uSunH: this.uSunH, uSaltA: this.uSaltA, uSaltN: this.uSaltN, uSaltK: this.uSaltK, uCrust: CRUST };
     m.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, U);
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float aSpill;\nattribute float aFoot;\nvarying float vSpill;\nvarying float vFoot;\nvarying vec3 vCalW;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSpill = aSpill;\nvFoot = aFoot;\nvCalW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+        .replace('#include <common>', '#include <common>\nattribute float aSpill;\nattribute float aFoot;\nattribute float aH;\nvarying float vSpill;\nvarying float vFoot;\nvarying float vH;\nvarying vec3 vCalW;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSpill = aSpill;\nvFoot = aFoot;\nvH = aH;\nvCalW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>
 uniform vec3 uSpill;
 uniform float uNight;
+uniform vec3 uSkyFill;
+uniform vec2 uSunH;
+uniform highp sampler2DArray uSaltA;
+uniform highp sampler2DArray uSaltN;
+uniform vec4 uSaltK;   // x 1/tile, y layer, z 1 when the ground's layers are bound, w unused
+uniform vec4 uCrust;   // terrain.js CRUST: x gain, y cool, z rose-grey
 varying float vSpill;
 varying float vFoot;
+varying float vH;
 varying vec3 vCalW;
 float calH3(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 float calN3(vec3 p) {
@@ -222,12 +261,29 @@ float calN3(vec3 p) {
              mix(mix(calH3(i + vec3(0, 0, 1)), calH3(i + vec3(1, 0, 1)), f.x), mix(calH3(i + vec3(0, 1, 1)), calH3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
 }`)
         .replace('#include <color_fragment>', `#include <color_fragment>
+// the cones' salt: the pans' crust (the ground's salt layer, its two reads, gain, cool and rose-grey; groundShader.js)
+float calSalt = step(100.0, vFoot) * uSaltK.z;
+vec2 calSuv = vCalW.xz * uSaltK.x;
+vec2 calSgx = dFdx(calSuv), calSgy = dFdy(calSuv);
+vec4 calSn = vec4(0.5, 0.5, 0.686, 0.905);
+if (calSalt > 0.5) {
+  mat2 Mr = mat2(0.8, 0.6, -0.6, 0.8);
+  vec4 sa = textureGrad(uSaltA, vec3(calSuv, uSaltK.y), calSgx, calSgy);
+  sa = mix(sa, textureGrad(uSaltA, vec3(Mr * calSuv * 0.61, uSaltK.y), Mr * calSgx * 0.61, Mr * calSgy * 0.61), 0.5);
+  calSn = textureGrad(uSaltN, vec3(calSuv, uSaltK.y), calSgx, calSgy);
+  vec3 sc = mix(vec3(dot(sa.rgb, vec3(0.2126, 0.7152, 0.0722))), sa.rgb, 0.1) * 0.97 * uCrust.x;
+  sc *= vec3(1.0 - 0.055 * uCrust.y, 1.0 - 0.01 * uCrust.y, 1.0 + 0.075 * uCrust.y);
+  sc *= mix(vec3(1.0), vec3(1.0, 0.82, 0.86), uCrust.z);
+  // the heap's own shading baked in the kit (its damp foot, its mottle) rides on the crust
+  float vk = clamp(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / 0.86, 0.6, 1.2);
+  diffuseColor.rgb = clamp(sc * vk * calSn.a, vec3(0.012), vec3(0.85));
+}
 {
-  // lime wash: light, unsaturated fragments only (not basalt, wood, violet, brass or the bracts)
+  // lime wash: light, unsaturated fragments only (not basalt, wood, violet, brass or the bracts, nor the cones' salt)
   vec3 c = diffuseColor.rgb;
   float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
   float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  float lime = smoothstep(0.30, 0.48, lum) * (1.0 - smoothstep(0.55, 0.72, (mx - mn) / max(mx, 1e-3)));
+  float lime = smoothstep(0.30, 0.48, lum) * (1.0 - smoothstep(0.55, 0.72, (mx - mn) / max(mx, 1e-3))) * step(vFoot, 100.0);
   if (lime > 0.0) {
     float g1 = calN3(vCalW * 3.1), g2 = calN3(vCalW * 14.0 + 7.3), pw = calN3(vCalW * 0.85 + 3.7);
     float grain = (g1 - 0.5) * 0.13 + (g2 - 0.5) * 0.08;
@@ -240,10 +296,32 @@ float calN3(vec3 p) {
     diffuseColor.rgb = mix(c, w, lime);
   }
 }`)
-        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ float kN = vFoot < 98.0 ? uNight : 1.0;\nreflectedLight.directDiffuse *= kN; reflectedLight.indirectDiffuse *= kN;\nreflectedLight.directSpecular *= kN; reflectedLight.indirectSpecular *= kN; }')
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+if (calSalt > 0.5) {
+  // the crust's normal map, projected from above as the ground's is (its x along world x, its y along world z)
+  vec3 nWs = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+  vec2 tS = calSn.xy * 2.0 - 1.0;
+  vec3 pert = vec3(tS.x, 0.0, tS.y);
+  pert -= nWs * dot(nWs, pert);
+  normal = normalize((viewMatrix * vec4(normalize(nWs + pert * 0.95), 0.0)).xyz);
+}`)
+        .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+{ float kN = vFoot < 98.0 ? uNight : 1.0;
+reflectedLight.directDiffuse *= kN; reflectedLight.indirectDiffuse *= kN;
+reflectedLight.directSpecular *= kN; reflectedLight.indirectSpecular *= kN;
+if (vFoot < 98.0) {
+  // the house walls: the open sky's fill, most on a wall turned from the sun, less low down; the indirect light falls off
+  // over the first metres, where the ground and the neighbours hide the sky
+  vec3 nW = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+  float wall = 1.0 - smoothstep(0.35, 0.7, abs(nW.y));
+  float back = clamp(-dot(normalize(nW.xz + vec2(1e-4)), uSunH), 0.0, 1.0);
+  float hK = smoothstep(0.0, 6.0, vH);
+  reflectedLight.indirectDiffuse *= mix(1.0, mix(0.72, 1.06, hK), wall);
+  reflectedLight.indirectDiffuse += diffuseColor.rgb * uSkyFill * wall * (0.35 + 0.65 * back) * mix(0.55, 1.0, hK) * kN;
+} }`)
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * uSpill * vSpill;');
     };
-    m.customProgramCacheKey = () => 'cal-saltrow-body-2';
+    m.customProgramCacheKey = () => 'cal-saltrow-body-3';
     m.needsUpdate = true;
     return m;
   }
@@ -325,6 +403,15 @@ float calN3(vec3 p) {
     // the town's share of the scene's light: 1 by day, NIGHT_LIGHT at full night (the same dusk ramp as the windows)
     const nf = env?.nightFactor ?? 0;
     this.uNight.value = 1 - (1 - NIGHT_LIGHT) * Math.min(k, ss(0.1, 0.85, nf));
+    // the sky's fill on the walls: the hemisphere's sky colour and intensity (it already follows the hour and the weather)
+    const hemi = env?.hemi;
+    if (hemi) this.uSkyFill.value.copy(hemi.color).multiplyScalar(hemi.intensity * this.skyFill);
+    if (env?.sunDir) { const l = Math.hypot(env.sunDir.x, env.sunDir.z) || 1; this.uSunH.value.set(env.sunDir.x / l, env.sunDir.z / l); }
+    // the cones' crust: the ground's layer arrays, once the terrain has them
+    if (!this.uSaltA.value) {
+      const L = this.ctx.terrain?._layerTextures;
+      if (L?.a && L?.n) { this.uSaltA.value = L.a; this.uSaltN.value = L.n; this.uSaltK.value.z = 1; }
+    }
   }
 
   dispose() {

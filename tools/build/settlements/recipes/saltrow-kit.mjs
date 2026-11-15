@@ -487,11 +487,14 @@ function saltCone() {
   const b = new Bucket('cone');
   const R = rng(4242);
   const prof = [];
-  for (let i = 0; i <= 12; i++) {
-    const t = i / 12;
-    prof.push(new THREE.Vector2(Math.max(0.001, (1 - t) * 1.0 + (t < 0.08 ? 0.04 : 0)), t * 1.0));
+  // (M1b closing fix, F20: the cones cut both frame edges at 2-4 m and their 28 sides and 12 rings read as facets) 72 sides and
+  // 24 rings, so the silhouette and the shading read round from a near lens; the crust itself is the runtime's (saltrow.js:
+  // the pans' own salt layer, its tints and grain)
+  for (let i = 0; i <= 24; i++) {
+    const t = i / 24;
+    prof.push(new THREE.Vector2(Math.max(0.001, (1 - t) * 1.0 + (t < 0.08 ? 0.04 * (1 - t / 0.08) : 0)), t * 1.0));
   }
-  const g = new THREE.LatheGeometry(prof, 28);
+  const g = new THREE.LatheGeometry(prof, 72);
   const pa = g.attributes.position;
   for (let i = 0; i < pa.count; i++) {
     const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
@@ -499,6 +502,15 @@ function saltCone() {
     pa.setXYZ(i, x * k, y, z * k);
   }
   g.computeVertexNormals();
+  // the lathe's seam (side 0 and side 72 are the same points) shares one normal, so no crease runs down the heap
+  {
+    const P = prof.length, na = g.attributes.normal, S = 72;
+    for (let i = 0; i < P; i++) {
+      const a = i, c = S * P + i;
+      const x = na.getX(a) + na.getX(c), y = na.getY(a) + na.getY(c), z = na.getZ(a) + na.getZ(c), l = Math.hypot(x, y, z) || 1;
+      na.setXYZ(a, x / l, y / l, z / l); na.setXYZ(c, x / l, y / l, z / l);
+    }
+  }
   b.add(g, { surf: 'bisque', tone: SALT, wear: 0.6, colorFn: (p, n, k) => k * (0.92 + 0.12 * vnoise3(p.x * 6, p.y * 6, p.z * 6)) * (p.y < 0.06 ? 0.86 : 1) });
   g.dispose();
   // a rake left against it, half the cones
