@@ -679,6 +679,32 @@ export function lkBoxes(m) {
 }
 
 /** `Machine._updateParts` as a module function (see HOT PATHS, NO PROTOTYPE LOADS). */
+/**
+ * A kind's animate(), guarded (M1a): an exception in it is never swallowed. The first one from each kind goes to
+ * console.error (the channel the gate runner and the film count) with the kind and the stack; every one is counted in
+ * ANIMATE_ERRORS and on `engine.machineAnimateErrors`. The machine's own update carries on (parts, FX, lamps) and so
+ * does every machine after it in the manager's loop: before, the throw left Machines.update for the system guard,
+ * which only warned once and skipped the rest of the list each frame (a ReferenceError in one kind's animate stopped
+ * its topple with 0 console errors on film). No allocation unless something throws.
+ */
+export const ANIMATE_ERRORS = new Map();
+export function animateM(m, dt, t) {
+  try {
+    m.animate(dt, t);
+  } catch (err) {
+    const kind = m.kind || m.constructor?.name || 'unknown';
+    let rec = ANIMATE_ERRORS.get(kind);
+    if (!rec) {
+      rec = { kind, count: 0, message: String(err?.message || err) };
+      ANIMATE_ERRORS.set(kind, rec);
+      console.error(`[CAL] Instrument kind "${kind}" animate() threw (logged once per kind; counted after):`, err);
+    }
+    rec.count++;
+    const e = m.ctx?.engine;
+    if (e) e.machineAnimateErrors = (e.machineAnimateErrors || 0) + 1;
+  }
+}
+
 export function updatePartsM(m, dt, t) {
   const parts = m.parts;
   for (let i = 0; i < parts.length; i++) {
@@ -2150,7 +2176,7 @@ export class Machine {
     // hit reactions own the frame while a stagger / downed window runs
     if (this.ai.reactions.update(dt)) {
       conformM(this, dt);
-      if (!this.lowLOD) { if (this._hasAnimate) this.animate(dt, t); updatePartsM(this, dt, t); }
+      if (!this.lowLOD) { if (this._hasAnimate) animateM(this, dt, t); updatePartsM(this, dt, t); }
       updateFxM(this, dt);
       updateEyesM(this, dt, t);
       return;
@@ -2169,7 +2195,7 @@ export class Machine {
 
     conformM(this, dt);
     if (!this.lowLOD) {
-      if (this._hasAnimate) this.animate(dt, t);
+      if (this._hasAnimate) animateM(this, dt, t);
       updatePartsM(this, dt, t); // radar spin, canister glow pulses, …
     }
     updateFxM(this, dt);
