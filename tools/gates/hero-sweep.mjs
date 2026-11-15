@@ -18,6 +18,7 @@
  * drawLance / holsterLance); the Instruments frozen.
  */
 import { placed } from '../gate-places.mjs';
+/* (M1.3f fix 1: + the page's mantle, climb and slide, and ten blend-pair rows `A-sweep-blend*`) */
 import { buildSweep } from './hero-sweep/measure.mjs';
 
 const HB = `
@@ -28,7 +29,39 @@ const HB = `
       for (const m of (C.machines?.list || [])) m.update = () => {};
       const keys = C.input.keys;
       const release = () => { keys.clear(); C.input.mouse.buttons = 0; };
-      const buildSweep = ${String(buildSweep)};`;
+      const buildSweep = ${String(buildSweep)};
+      // (M1.3f fix 1: the traversal staging, as A-climb-1m and A-slide stage it)
+      const K = C.collision, TR = C.terrain, made = [];
+      const ledge = async (rise, dist = 3.5) => {
+        const o = PLACE('openGround'), x = o.x, z = o.z + 6, gy = TR.getHeight(x, z);
+        made.push(K.register({ kind: 'prop', shape: { type: 'box', c: [x, gy - 0.5 + (rise + 0.5) / 2, z + dist], half: [1.5, (rise + 0.5) / 2, 1.0] } }));
+        p.position.set(x, 0, z); p.velocity.set(0, 0, 0); p._snapToGround(); p.camYaw = Math.PI; p.heading = 0;
+        await simWait(0.3, 3000);
+      };
+      const climbUp = async () => {
+        keys.add('KeyW'); let up = false; const w0 = E.simTime;
+        while (E.simTime - w0 < 4) { await frame(); if (!p.mantling && !up && p.grounded) { C.input._press?.('Space', { code: 'Space' }); keys.delete('Space'); } if (p.mantling) up = true; if (up && !p.mantling) break; }
+        keys.clear(); await simWait(0.5, 3000);
+        for (const id of made.splice(0)) K.unregister(id);
+        S.mantled = up;
+      };
+      const slideFace = (deg, tol) => {
+        const n = new THREE.Vector3(), sl = (x, z) => { TR.getNormal(x, z, n); return Math.acos(Math.max(-1, Math.min(1, n.y))) * 180 / Math.PI; };
+        const pools = C.environment?.water?.pools || [];
+        const dry = (x, z) => !pools.some((q) => ((x - q.x) / q.rx) ** 2 + ((z - q.z) / q.rz) ** 2 < 1.5);
+        let best = null;
+        for (let x = -320; x <= 320; x += 2.5) for (let z = -320; z <= 320; z += 2.5) {
+          if (Math.hypot(x, z) > 318) continue;
+          const a = sl(x, z); if (Math.abs(a - deg) > tol) continue;
+          TR.getNormal(x, z, n); const l = Math.hypot(n.x, n.z); if (l < 1e-3) continue;
+          const dx = n.x / l, dz = n.z / l; let lo = 99, hi = 0;
+          for (let s = -1.0; s <= 3.0; s += 0.5) { const sd = sl(x + dx * s, z + dz * s); lo = Math.min(lo, sd); hi = Math.max(hi, sd); }
+          if (lo < deg - tol || hi > deg + tol || !dry(x, z)) continue;
+          const spread = hi - lo + Math.abs(a - deg) * 0.5;
+          if (!best || spread < best.spread) best = { x, z, dx, dz, spread };
+        }
+        return best;
+      };`;
 
 /** The clips (page code): each awaits its lead-in with `S.on = false`, then grades with `S.on = true`. */
 const CLIPS = {
@@ -44,6 +77,24 @@ const CLIPS = {
   stowLanceAim: { js: `cmb.melee.drawLance(30); await simWait(1.4); S.on = true; C.input.mouse.buttons |= 4; await simWait(1.2);` },
   unstowBow: { js: `S.on = true; C.input.mouse.buttons |= 4; await simWait(1.2);` },
   stowBow: { js: `C.input.mouse.buttons |= 4; await simWait(1.0); C.input.mouse.buttons &= ~4; S.on = true; const t0 = E.simTime; while (cmb.weaponDrawn && E.simTime - t0 < 8) await frame(); await simWait(1.0);` },
+  // M1.3f fix 1: the traversal clips in the page (the bench had them only): a 0.6 m and a 1.0 m ledge (a collision box
+  // ahead, as A-climb-1m stages it) mantled from a jog, and a slide down a cinder patch on a 30 deg face (A-slide's
+  // search, on this terrain), all graded from the first step of the approach
+  mantle: { cloth: true, js: `await ledge(0.6); S.on = true; await climbUp();` },
+  climb: { cloth: true, js: `await ledge(1.0); S.on = true; await climbUp();` },
+  slide: { cloth: true, js: `const f = slideFace(30, 3); if (!f) { S.skip = 'no 30 deg face'; return; } const pid = p.surfaces.add({ x: f.x + f.dx * 1.2, z: f.z + f.dz * 1.2, r: 4.5, surface: 'cinder' }); try { p.position.set(f.x - f.dx * 0.8, 0, f.z - f.dz * 0.8); p.velocity.set(0, 0, 0); p._snapToGround(); p.camYaw = Math.atan2(f.dx, f.dz) + Math.PI; await simWait(0.3); S.on = true; keys.add('KeyW'); const t0 = E.simTime; let slid = 0; while (E.simTime - t0 < 3.0) { await frame(); if (p.sliding) slid++; } S.slid = slid; } finally { p.surfaces.remove(pid); }` },
+  /* M1.3f fix 1: THE BLEND PAIRS, by name (BUILD M1.3f "every blend pair among them"): each pair is the second clip
+   * pressed while the first is under way, graded through both and the hand-over between them (arms only) */
+  blendRunRoll: { js: `keys.add('KeyW'); await simWait(0.6); S.on = true; p.dodge(); await simWait(1.2);` },
+  blendAimRoll: { js: `C.input.mouse.buttons |= 4; await simWait(0.6); C.input.mouse.buttons |= 1; await simWait(0.5); S.on = true; keys.add('KeyD'); p.dodge(); await simWait(1.0); await simWait(0.6);` },
+  blendRollAim: { js: `keys.add('KeyW'); await simWait(0.4); S.on = true; p.dodge(); await simWait(0.35); C.input.mouse.buttons |= 4; await simWait(0.5); C.input.mouse.buttons |= 1; await simWait(0.9);` },
+  blendUnstowLanceRoll: { js: `S.on = true; cmb.melee.drawLance(30); await simWait(0.25); p.dodge(); await simWait(1.3);` },
+  blendRollUnstowLance: { js: `keys.add('KeyW'); await simWait(0.4); S.on = true; p.dodge(); await simWait(0.4); cmb.melee.drawLance(30); await simWait(1.3);` },
+  blendUnstowBowAim: { js: `S.on = true; C.input.mouse.buttons |= 4; await simWait(0.3); C.input.mouse.buttons |= 1; await simWait(1.2);` },
+  blendAimStowBow: { js: `C.input.mouse.buttons |= 4; await simWait(0.6); C.input.mouse.buttons |= 1; await simWait(0.8); S.on = true; C.input.mouse.buttons = 0; const t0 = E.simTime; while (cmb.weaponDrawn && E.simTime - t0 < 8) await frame(); await simWait(0.6);` },
+  blendLanceToBow: { js: `cmb.melee.drawLance(30); await simWait(1.4); S.on = true; cmb.melee.holsterLance(); await simWait(0.3); C.input.mouse.buttons |= 4; await simWait(1.4);` },
+  blendRollMantle: { js: `await ledge(0.6, 3.2); S.on = true; keys.add('KeyW'); await simWait(0.15); p.dodge(); await climbUp();` },
+  blendSlideRoll: { js: `const f = slideFace(30, 3); if (!f) { S.skip = 'no 30 deg face'; return; } const pid = p.surfaces.add({ x: f.x + f.dx * 1.2, z: f.z + f.dz * 1.2, r: 4.5, surface: 'cinder' }); try { p.position.set(f.x - f.dx * 0.8, 0, f.z - f.dz * 0.8); p.velocity.set(0, 0, 0); p._snapToGround(); p.camYaw = Math.atan2(f.dx, f.dz) + Math.PI; await simWait(0.3); S.on = true; keys.add('KeyW'); const t0 = E.simTime; while (!p.sliding && E.simTime - t0 < 2) await frame(); await simWait(0.5); p.dodge(); await simWait(1.2); } finally { p.surfaces.remove(pid); }` },
   hang: { cloth: true, hang: true, js: `an.setHangPose(true); await simWait(0.5); S.on = true; await simWait(1.0); S.hang = M.hangCheck(); S.bar = an.hangPoseInfo(); S.on = false; an.setHangPose(false);` },
 };
 
@@ -58,7 +109,7 @@ const row = (name) => {
       release(); p.setCrouch?.(false); standAt(p, 'openGround'); p.velocity?.set(0, 0, 0); await simWait(0.6, 6000);
       p.model.updateMatrixWorld(true);
       const M = buildSweep({ an, model: p.model }, THREE);
-      const S = { on: false, hang: null, bar: null };
+      const S = { on: false, hang: null, bar: null, skip: null, mantled: null, slid: null };
       let T0 = null;
       M.begin(${JSON.stringify(name)});
       const updC = cmb.update.bind(cmb);
@@ -67,9 +118,13 @@ const row = (name) => {
         if (S.on && dt > 0) { if (T0 == null) T0 = E.simTime; p.model.updateMatrixWorld(true); M.sample({ T: +(E.simTime - T0).toFixed(3), cloth: ${!!c.cloth}, run: ${!!c.run} }); }
         return r;
       };
-      try { ${c.js} } finally { S.on = false; cmb.update = updC; release(); p.setCrouch?.(false); }
+      try { ${c.js} } finally { S.on = false; cmb.update = updC; release(); p.setCrouch?.(false); for (const id of made.splice(0)) K.unregister(id); if (cmb.melee && cmb.melee.stance !== 'holstered') cmb.melee.holsterLance?.(); }
+      await simWait(0.8, 6000);
       const r = M.end();
+      if (S.skip) return { pass: null, detail: { verdict: 'SKIP-R18 (place): ' + S.skip, ...r } };
       const fails = [];
+      if (S.mantled === false) fails.push('the ledge was not mantled');
+      if (S.slid === 0) fails.push('no slide');
       if (r.frames < 20) fails.push('only ' + r.frames + ' steps graded');
       if (r.behind) fails.push(r.behind + ' behind-head steps');
       if (r.plane) fails.push(r.plane + ' steps above the shoulder behind the head plane');

@@ -1551,6 +1551,8 @@ export class PlayerAnimator {
     // foot lock, the conform) and before the chains, which hang off them
     // (M1.3f: the kite's hang pose blockout, when a gate turns it on, is the last body layer)
     if (this._hangOn) this._hangLayer(1);
+    // (M1.3f fix 1: no hand or forearm over its shoulder behind the head plane in a roll)
+    if (this._dodgeW > 0.02 && !(this.melee?.w > 0.02)) this._rollArmGuard(this._dodgeW);
     this._twistLayer();
 
     /* ------------------ secondary motion: dyn_ spring chains --------------- */

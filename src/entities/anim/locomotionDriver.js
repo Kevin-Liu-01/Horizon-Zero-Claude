@@ -1492,6 +1492,47 @@ export class LocomotionDriver {
       this._rotQL(la, _q4);
     }
   }
+  /**
+   * M1.3f fix 1 — THE ROLL'S ARMS BELOW THE HEAD PLANE. The roll clip tucks both arms, and at its tightest frame a hand
+   * (bench: the left, 0.006 m) or a forearm (page: the right, 0.004 m) came over its own shoulder joint at or behind the
+   * head's frontal plane: "an arm behind the head" by the sweep's measure, for 2-3 steps. Every hand point and the
+   * forearm's quarter points are tested as the sweep does; an arm with one over its shoulder (less 0.03 m) and behind
+   * the plane (plus 0.02 m) has its wrist lowered by the excess and brought 0.03 m forward, re-solved on its own elbow's
+   * pole. Weighted by the roll; nothing outside a roll. No allocation.
+   */
+  _rollArmGuard(w) {
+    if (!(w > 0.02) || !this.b.head || !this.T.headOff) return;
+    const b = this.b, hb = b.head.bone;
+    this._charOf(hb, _rgH);
+    this._liveW(hb, _rgQ); _rgQ.multiply(b.head.invW);
+    _rgF.set(0, 0, 1).applyQuaternion(_rgQ);
+    _rgC.copy(this.T.headOff).applyQuaternion(_rgQ).add(_rgH);           // the skull centre
+    for (let s = 0; s < 2; s++) {
+      const up = s ? b.upArmL : b.upArmR, lo = s ? b.loArmL : b.loArmR, ha = s ? b.handL : b.handR;
+      if (!up || !lo || !ha) continue;
+      const kn = this.bones[s ? 'index_01_l' : 'index_01_r'], tp = this.bones[s ? 'middle_04_leaf_l' : 'middle_04_leaf_r'] || this.bones[s ? 'middle_03_l' : 'middle_03_r'];
+      this._charOf(up.bone, _rgS); this._charOf(lo.bone, _rgE); this._charOf(ha.bone, _rgW);
+      let need = 0;
+      for (let q = 0; q < 6; q++) {
+        if (q === 0) _rgP.copy(_rgW);
+        else if (q === 1) { if (!kn) continue; this._charOf(kn, _rgP); }
+        else if (q === 2) { if (!tp) continue; this._charOf(tp, _rgP); }
+        else _rgP.copy(_rgE).lerp(_rgW, (q - 2) * 0.25);
+        const over = _rgP.y - (_rgS.y - 0.03);
+        if (over <= 0) continue;
+        if (_rgT.subVectors(_rgP, _rgC).dot(_rgF) > 0.02) continue;
+        if (over > need) need = over;
+      }
+      if (need <= 0) continue;
+      _rgT.copy(_rgW); _rgT.y -= need; _rgT.addScaledVector(_rgF, 0.03);
+      _rgP.copy(_rgS).add(_rgW).multiplyScalar(0.5);
+      _rgE.sub(_rgP);
+      if (_rgE.lengthSq() < 1e-8) _rgE.set(s ? 0.7 : -0.7, -0.7, 0);
+      _rgE.normalize();
+      this._ikArm(s ? 'l' : 'r', _rgT, _rgE, w, null);
+    }
+  }
+
 
   /**
    * Run-bob compression (R5, A-run-arms "no prancing"; profile `tune.runBob`).
@@ -1898,3 +1939,7 @@ export class LocomotionDriver {
     return { l: +this._palmEdge(0, E).toFixed(4), r: +this._palmEdge(1, E).toFixed(4), caught: !!this._climbCaught, dbg: this._climbDbg ? { ...this._climbDbg } : null };
   }
 }
+
+// (M1.3f fix 1: `_rollArmGuard`'s scratch)
+const _rgH = new THREE.Vector3(), _rgF = new THREE.Vector3(), _rgC = new THREE.Vector3(), _rgS = new THREE.Vector3(), _rgE = new THREE.Vector3();
+const _rgW = new THREE.Vector3(), _rgP = new THREE.Vector3(), _rgT = new THREE.Vector3(), _rgQ = new THREE.Quaternion();
