@@ -177,6 +177,8 @@ export class TitleStage {
       p.heading = S.heading;
       p.camYaw = S.yaw;
       if ('camPitch' in p) p.camPitch = 0;
+      // off 'playing' the Player steps only her animator (player.js update), so her body is put on her mark here
+      if (p.model) { p.model.position.copy(p.position); p.model.rotation.y = S.heading; }
     }
     const I = this.info;
     I.since = since ?? 0; I.ease = ease;
