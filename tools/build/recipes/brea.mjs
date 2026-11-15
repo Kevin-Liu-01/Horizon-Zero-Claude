@@ -52,6 +52,8 @@ import { relayoutSkinUV, saltPaste, scarSeam, inkDots, freckles, eyeOpening, Tri
 import { WRAP_ATLAS } from './lib/human/wrap.mjs';
 import { woundHeadwrap, joinGeos, paintWrapAtlas } from './lib/human/wrap-head.mjs';
 import { lashCard } from './lib/human/hair.mjs';
+import { fairEarOutline } from './lib/human/ear-rim.mjs';
+const EAR_FAIR = { rounds: 16, iters: 8, ring2: 1 };
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, primFromGeo, browLines, remapEyeUV,
   cullUnderWrap, cullEyeBacks, cullEyeUnderLids, reshapeEars, appendCollarLiner, outfitSkinSampler, bakeThinness, bakeZones, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt,
@@ -191,7 +193,9 @@ const FACE_MM = {
   // angle comes in a millimetre and down a little more
   // M1a fix round 1 (the judge: "a narrower face and a firmer jaw"): the angle comes in 2.4 mm (was 1.0), so the lower face tapers
   // from the cheekbones to a defined chin, and a little less of it is down (6.6 mm in all)
-  jaw: { d: [-2.4, -4.0, 4.6], s: 0.0235 },
+  // M1a round 3 (round 2's judge on F11/F12: "still not the same woman: rounder cheeks"; TURN's lower face tapers from the cheekbones to
+  // a narrow, defined chin): the angle comes in 4.0 mm (was 2.4), a little less of it down and forward
+  jaw: { d: [-4.0, -3.8, 4.4], s: 0.0235 },
   // fix round 2: the chin comes UP 3.4 mm against fix round 1 (-1.6 -> +1.8): a shorter lower face, its point kept forward
   // M1.2b round 2 (F11: the mouth sat at 0.73 of the eye-to-chin height, TURN's at 0.66, a short chin under a long upper lip): the chin
   // comes DOWN 3 mm and a little further forward
@@ -309,7 +313,9 @@ export async function build({ out = ROOT } = {}) {
   // fix round 1 (R54, "the face reads wide and flat"): a soft hollow under each cheekbone, so the bone reads as a plane catching
   // the light over a shaded fall to the jaw, and the lower face narrows
   // (M1.2b: a shallower hollow, so the wider bone is not cut back in under it)
-  for (const sx of [1, -1]) B([sx * 0.052, 1.597, 0.036], [-sx * 1.8, 0.2, -1.2], 0.0135);
+  // (M1a round 3, the judge's "rounder cheeks": the hollow under the bone 1.8 -> 2.8 mm in and 1.2 -> 1.5 mm back, a hair lower, so the
+  // cheek falls away under the bone to the jaw as TURN's does instead of rounding out over it)
+  for (const sx of [1, -1]) B([sx * 0.052, 1.594, 0.036], [-sx * 2.8, 0.2, -1.5], 0.0135);
   // the neck takes a little more body under the jaw, so the head does not sit on a stalk
   for (const sx of [1, -1]) B([sx * 0.038, 1.495, -0.012], [sx * 10.5, 0, 0.8], 0.027);
   B([0, 1.495, 0.035], [0, 0, 3.8], 0.024);
@@ -561,9 +567,12 @@ export async function build({ out = ROOT } = {}) {
       // M1.2c round 2 (the review at 471b07d: "the tail is a stiff flat strip with hard elbows" in F12/F13; TURN's hangs bunched, soft and
       // frayed): the free strip hangs gathered to 0.85 of its cut width (0.085 m, 0.06 m before the fringe) with deeper long folds
       // (0.0095 -> 0.014) and ripple (0.005 -> 0.008), a deeper cup (0.2 -> 0.28) on 8 columns, not 6; the fringe 2.5 -> 4 cm
-      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.04 / (0.587 * S), side: [0.55, 0.65, 0.5], curl: 0.28, twist: Math.PI / 2, gather: 0.25, gatherTo: 0.36, roll: 1.3, fold: 0.014, along: 37, across: 8, rootBack: 0.014,
+      // M1a round 3 (the review at dee526d: "still a stiff flat strip" in F10, F12, F13; TURN's tail hangs bunched, torn and frayed): the
+      // free strip's long folds deeper (0.014 -> 0.022) on 10 columns, not 8, so each fold has a crown and a trough the light reads, its
+      // and its ripple 0.008 -> 0.012 (a 6 cm torn fringe left 18.5 mm of paper edge in A-wrap-fold-edges: the fringe stays 4 cm)
+      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.04 / (0.587 * S), side: [0.55, 0.65, 0.5], curl: 0.28, twist: Math.PI / 2, gather: 0.25, gatherTo: 0.36, roll: 1.3, fold: 0.022, along: 37, across: 10, rootBack: 0.014,
       open: [0.202, 0.459], pleats: 0.0036 / S, gatherFree: 0.85,
-      rootRows: 10, smoothSkin: 4, hem: 0.004, ripple: 0.008,
+      rootRows: 10, smoothSkin: 4, hem: 0.004, ripple: 0.012,
       // a band of the same cloth bound round the gathered root 6.5 cm out of the knot: the strip is pinched a third narrower under it
       // and puffs out after it (the knot's creased cloth, not a cord)
       cinch: { at: 0.110, w: 0.016 / S, pad: 0.0012 / S, tube: 0.0032 / S } },
@@ -584,6 +593,12 @@ export async function build({ out = ROOT } = {}) {
   const eyesCulled = cullEyeBacks(eyesPrim, eyes);
   const handsCut = await simplifyHands(bodyPrim);
   compactPrim(bodyPrim);
+  // (M1a round 3, A-ear-rim-corners): the ear's side outline itself, faired along its own chain on the mesh as it ships (after the
+  // tuck and the cull, whose cut edges are part of what a side lens sees): the surface passes above leave the split midpoints on the
+  // old straight edges, so the helix's back turned at every second vertex (lib/human/ear-rim.mjs fairEarOutline); the faired band's
+  // normals are taken again from its faces
+  const earFair = fairEarOutline(bodyPrim, { ...EAR_FAIR, scale: S });
+  { const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0], m = new Uint8Array(P.getCount()); for (const i of earFair.vertices) m[i] = 1; recomputeNormals(bodyPrim, m); delete earFair.vertices; }
 
   // ---- materials
   const skinMat = root.listMaterials().find((m) => m.getName() === 'MI_Superhero_Female').setName('MI_Brea_Skin');
@@ -790,7 +805,7 @@ export async function build({ out = ROOT } = {}) {
       r5Face: faceRec,
       // M1.2c: the wrap's parts in mesh order (triangles each) and the rolled-hem pass, for lib/human/wrap-edges.mjs
       r5Wrap: { parts: wrapped.parts, bead: wrapped.beadStats },
-      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, eyeUnderLids, handsCut, earTucked, earMoved }, collarLiner: liner, thinness, zones },
+      r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, eyeUnderLids, handsCut, earTucked, earMoved, earFair }, collarLiner: liner, thinness, zones },
     },
   });
   void wrapTex;
