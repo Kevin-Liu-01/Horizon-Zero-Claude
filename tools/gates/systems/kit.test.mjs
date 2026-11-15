@@ -99,6 +99,14 @@ test('the lance Pry finds the nearest tool within reach on a down Instrument, ne
   assert.equal(pryablePart(m, { x: 0, z: 0 }, w)?.name, 'bob');
   assert.equal(pryablePart({ ...m, _toppleT: -1, ai: { reactions: { downedT: 0 } } }, { x: 0, z: 0 }, w), null);
   assert.equal(pryablePart(m, { x: -5, z: 0 }, w), null);
+  // fix 1: with her heading, the tool she faces wins over a nearer one abeam (eafbff2: PRY took the drum beside her)
+  const m2 = { alive: true, _toppleT: 0.5, parts: [
+    { name: 'bob', tearable: true, attached: true, tearHp: 55, w: { x: 1.6, z: 0 } },
+    { name: 'drum', tearable: true, attached: true, tearHp: 55, w: { x: 0, z: -1.4 } },
+  ] };
+  assert.equal(pryablePart(m2, { x: 0, z: 0 }, w)?.name, 'drum');
+  assert.equal(pryablePart(m2, { x: 0, z: 0 }, w, 3.2, Math.PI / 2)?.name, 'bob');
+  assert.equal(pryablePart(m2, { x: 0, z: 0 }, w, 3.2, Math.PI)?.name, 'drum');
 });
 
 test('weak-point rules: the Gauge lists at -40 % speed on its first ballast puncture; the Peg lamp and Plumb vial and lamp are named', () => {

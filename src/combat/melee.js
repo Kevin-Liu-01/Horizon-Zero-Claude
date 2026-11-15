@@ -2497,7 +2497,7 @@ export class Melee {
       for (let i = 0; i < list.length; i++) {
         const m = list[i];
         if (!m || m._disposed || !isDown(m)) continue;
-        const q = pryablePart(m, p.position, (pt) => (pt.mesh ? pt.mesh.getWorldPosition(_pryW) : null));
+        const q = pryablePart(m, p.position, (pt) => (pt.mesh ? pt.mesh.getWorldPosition(_pryW) : null), LANCE_PRY.reach, Number.isFinite(p.heading) ? p.heading : null);
         if (!q) continue;
         q.mesh.getWorldPosition(_pryW);
         const d = Math.hypot(_pryW.x - p.position.x, _pryW.z - p.position.z);

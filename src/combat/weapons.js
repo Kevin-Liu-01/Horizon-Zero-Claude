@@ -218,8 +218,11 @@ export const MELEE = {
   /** Silent Strike (stealth-silent-strike / combat-melee-missing). */
   silent: {
     range: 2.0, rearDot: -0.15, label: 'SILENT STRIKE', hold: 0.2,
-    /** These die outright; everything else takes `heavyFrac` of max health. */
-    instant: [],
+    /** These die outright; everything else takes `heavyFrac` of max health. M1.6j fix 1: the bible's small classes in
+     * the slice (kit.js SMALL_KINDS). melee.js already counted them instant, but progression.js's Silent Strike clamp
+     * reads only this list and capped the stab at 0.8 of max health (152 on a calm Plumb, live at 68c93f5 and
+     * eafbff2: not killed). */
+    instant: ['peg', 'plumb'],
     heavyFrac: 0.55, tear: 90,
   },
   /** Critical Hit on a downed machine. */

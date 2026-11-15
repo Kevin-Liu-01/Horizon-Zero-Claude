@@ -152,15 +152,22 @@ export const SMALL_KINDS = Object.freeze(['peg', 'plumb']);
 export const LANCE_PRY = Object.freeze({ reach: 3.2, hold: 0.3, impact: 12, label: 'PRY' });
 
 /** A tool the lance can Pry from where she stands: the nearest attached tearable part within `reach` of `pos`. */
-export function pryablePart(m, pos, worldOf, reach = LANCE_PRY.reach) {
+export function pryablePart(m, pos, worldOf, reach = LANCE_PRY.reach, heading = null) {
   if (!isDown(m) || !Array.isArray(m.parts)) return null;
-  let best = null, bd = reach * reach;
+  // M1.6j fix 1: with her heading given, the tool she faces wins (distance x (2 - cos of its bearing off her facing):
+  // ahead 1x, abeam 2x, behind 3x). Nearest alone, the live row stood her 1.7 m from a toppled Plumb's bob, facing it,
+  // and PRY took the lamp drum beside her (eafbff2)
+  const fx = heading == null ? 0 : Math.sin(heading), fz = heading == null ? 0 : Math.cos(heading);
+  let best = null, bs = Infinity;
   for (const q of m.parts) {
     if (!q || q.attached === false || !q.tearable || !Number.isFinite(q.tearHp)) continue;
     const w = worldOf(q);
     if (!w) continue;
     const dx = w.x - pos.x, dz = w.z - pos.z, d2 = dx * dx + dz * dz;
-    if (d2 <= bd) { bd = d2; best = q; }
+    if (d2 > reach * reach) continue;
+    const d = Math.sqrt(d2), c = heading == null || d < 1e-6 ? 1 : (dx * fx + dz * fz) / d;
+    const sc = d * (2 - c);
+    if (sc < bs) { bs = sc; best = q; }
   }
   return best;
 }

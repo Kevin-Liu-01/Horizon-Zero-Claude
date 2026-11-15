@@ -52,7 +52,7 @@ const PRELUDE = `
   const raise = async () => { C.input.enabled = true; C.input.mouse.buttons |= 4; for (let i = 0; i < 90 && !(P.aiming && C.combat.nockLanded); i++) await raf(); await frames(8); return !!P.aiming; };
   const lower = async () => { C.input.mouse.buttons &= ~4; await frames(6); };
   /** one real arrow at world point pt (held over for the drop at full draw) */
-  const shoot = async (ammo, pt, waitMs = 650) => {
+  const shoot = async (ammo, pt, waitMs = 650, solve = true) => {
     const cb = C.combat;
     cb.setWeapon('sabina-bow', { silent: true });
     cb.selectAmmo('sabina-bow', ammo);
@@ -67,7 +67,7 @@ const PRELUDE = `
      * (0.5 g tf^2) left the drag's drop and the launch's own lean out */
     const goal = new V(pt.x, pt.y + 0.5 * 9.8 * tf * tf, pt.z), dir = new V(), pos = new V(), vel = new V(), t0 = new V(), t1 = new V(), sg = new V();
     let missM = null;
-    for (let it = 0; it < 8; it++) {
+    for (let it = 0; it < (solve ? 8 : 0); it++) {
       cb.aimPoint.copy(goal);
       const speed = cb._computeShot(def, 1, nock, dir);
       pos.copy(nock); vel.copy(dir).multiplyScalar(speed); t0.copy(pos).addScaledVector(dir, 0.78);
@@ -168,7 +168,7 @@ export async function runKit(page, { sleep, log = () => {} }) {
   await run('reed-peg', () => page.evaluate(ev(`
     const b = base(); const m = spawn('peg', b.x + 12, b.z); place(b.x, b.z, b.x + 12, b.z); await frames(20); await raise();
     let n = 0; const hits = [];
-    while (m.alive !== false && n < 3) { calm(m); const e = await shoot('hunter', wpos(m._lampWp.obj)); n++; hits.push(e.filter((x) => x.n === 'arrow-hit').map((x) => ({ weak: x.weak, dmg: x.dmg && Math.round(x.dmg) }))); }
+    while (m.alive !== false && n < 3) { calm(m); const e = await shoot('hunter', wpos(m._lampWp.obj), 650, false); n++; hits.push(e.filter((x) => x.n === 'arrow-hit').map((x) => ({ weak: x.weak, dmg: x.dmg && Math.round(x.dmg) }))); }
     await lower();
     return { num: { arrowsToKill: m.alive === false ? n : null, hits }, pass: m.alive === false && n === 1, bar: 'one Reed arrow on the lamp kills a Peg' };`)));
 
@@ -207,8 +207,9 @@ export async function runKit(page, { sleep, log = () => {} }) {
     /* Pry: one Barbed arrow on the toppled bob */
     await frames(20);
     let nb = 0;
-    while (bob.attached !== false && nb < 2 && m._toppleT >= 0) { const e = await shoot('hardpoint', wpos(bob.mesh), 300); nb++; }
-    out.barbed = { arrows: nb, bobOff: bob.attached === false, downWhenTorn: m._toppleT >= 0 };
+    const bs = [];
+    while (bob.attached !== false && nb < 2 && m._toppleT >= 0) { const e = await shoot('hardpoint', wpos(bob.mesh), 300); nb++; const h = e.find((x) => x.n === 'arrow-hit'); bs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
+    out.barbed = { arrows: nb, bobOff: bob.attached === false, downWhenTorn: m._toppleT >= 0, struck: bs };
     await lower();
     /* how long it stays down */
     const tl = performance.now();
