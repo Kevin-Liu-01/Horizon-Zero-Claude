@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { BEDS, REED_KIND, REED_MASK } from '../../world/island/reedmask.js';
+import { BEDS, REED_KIND, REED_MASK } from './reedmask.js';
 
 /**
  * THE REEDS, DRAWN FROM THE MASK (BUILD M1.6e). Every cane stands where `mask.cover(x, z)` (the base cover less the

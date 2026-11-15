@@ -1,7 +1,7 @@
 import { ReedMask, BEDS, REED_KIND, COVER_LINE } from '../../world/island/reedmask.js';
 import { GustClock, GUST } from './gust.js';
 import { reedHidden } from './rule.js';
-import { ReedDraw, MAX_BEDS } from './draw.js';
+import { ReedDraw, MAX_BEDS } from '../../world/island/reedDraw.js';
 
 /**
  * REED COVER, LIVE (BUILD M1.6e; bible §14). `installReeds(ctx)` runs in `installGame` and publishes
