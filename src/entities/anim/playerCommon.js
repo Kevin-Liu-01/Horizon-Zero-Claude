@@ -119,6 +119,14 @@ export const _spAcc = new THREE.Quaternion();
 export const _cp0 = new THREE.Vector3();
 /** `_segDistN`'s result: a number `_springs` reads without a boxed return. */
 export const _spNum = new Float64Array(1);
+/** M1.2e fix 1: the sash panels' sheet test (`_sheetPush`): the sheet's normal and lateral axis, the cross-section
+ *  sample and the link's world rotation. */
+export const _shN = new THREE.Vector3();
+export const _shL = new THREE.Vector3();
+export const _shP = new THREE.Vector3();
+export const _shX = new THREE.Vector3();
+export const _shQ = new THREE.Quaternion();
+export const _shQ2 = new THREE.Quaternion();
 /** `_springParentQ`'s rotation matrix. */
 export const _spMq = new THREE.Matrix4();
 export const _cp1 = new THREE.Vector3();

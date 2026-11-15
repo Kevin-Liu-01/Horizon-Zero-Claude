@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import {
   DRIVE_A_MAX, DRIVE_V_MAX, DYN_CLASSES, DYN_FALLBACK, DYN_WIND, KEY, MAX_SUB, PBD_V_MAX, Q_IDENT, RESEAT_D2,
-  SUB_DT, _cp0, _cp1, _cp2, _hcB, _hcC, _hcD1, _hcD2, _hcD3, _hcP, _hcP2, _hcQ, _hcQ2, _hcU, _spA, _spAcc,
+  SUB_DT, _cp0, _cp1, _cp2, _shL, _shN, _shP, _shQ, _shQ2, _shX, _hcB, _hcC, _hcD1, _hcD2, _hcD3, _hcP, _hcP2, _hcQ, _hcQ2, _hcU, _spA, _spAcc,
   _spB, _spC, _spD, _spE, _spMq, _spNum, _spQ, _spQ2, _spQ3, _twA, _twQ, clamp,
 } from './playerCommon.js';
 
@@ -128,6 +128,102 @@ export class SecondaryMotion {
         else B.copy(c.tipOff).applyMatrix4(last.matrixWorld);
         c.seg[j] = Math.max(1e-3, A.distanceTo(B));
       }
+      // M1.2e fix 1: a sash panel is a SHEET, not a strand. Its links carry the sheet's normal (out of the body: her
+      // forward for the front panels, her back for the back one) and its lateral axis in each bone's own frame, from
+      // the bind pose, where every panel hangs flat in her frontal plane; and the sheet's half-width (outfit-pan-1:
+      // front-left 0.09-0.10 m either side of its chain, front-right 0.06-0.08, back 0.12-0.14). `_sheetPush` reads them.
+      if (c.cls.name === 'panel') {
+        const nm = c.links[0].name, back = /panelB/.test(nm);
+        c.shW = /panelL/.test(nm) ? 0.10 : /panelR/.test(nm) ? 0.08 : 0.135;
+        c.shN = new Float32Array(N * 3); c.shL = new Float32Array(N * 3);
+        const mq = this.model.getWorldQuaternion(new THREE.Quaternion());
+        const bq = new THREE.Quaternion(), v = new THREE.Vector3();
+        for (let j = 0; j < N; j++) {
+          c.links[j].bone.getWorldQuaternion(bq).invert();
+          v.set(0, 0, back ? -1 : 1).applyQuaternion(mq).applyQuaternion(bq);
+          c.shN[j * 3] = v.x; c.shN[j * 3 + 1] = v.y; c.shN[j * 3 + 2] = v.z;
+          v.set(1, 0, 0).applyQuaternion(mq).applyQuaternion(bq);
+          c.shL[j * 3] = v.x; c.shL[j * 3 + 1] = v.y; c.shL[j * 3 + 2] = v.z;
+        }
+      }
+    }
+  }
+
+  /**
+   * M1.2e fix 1 — THE PANEL AS A SHEET AGAINST THE LEGS. The panel's chain is its centre line; its cloth spans
+   * `shW` either side of it. Pushing the centre line's particles radially out of a thigh (the strand rule) slid the
+   * chain round to the INSIDE of a striding thigh, 0.106 m off its axis, and left the sheet's outer half through
+   * the leg: measured, a vertex of the left panel 0.0615 m deep in the left thigh at a jog (run, bench, 150 of 180
+   * frames). A flat sheet clears a cylinder only by standing off it along the sheet's own normal: the child particle
+   * (and the segment's middle, at twice the lever) is moved along the link's normal until the sheet's cross-section
+   * through it is outside every body capsule (the legs at their radius, the torso at 0.10 m), then put back on its
+   * parent's sphere; three passes.
+   * `_spC` is the child, `_spB` the link's reference direction, `_spAcc` the chain's accumulated swing. No allocation.
+   */
+  _sheetPush(c, j, pos, i0, caps) {
+    const k = j * 3, sg = c.seg[j], W = c.shW;
+    _shQ._x = c.wq[j * 4]; _shQ._y = c.wq[j * 4 + 1]; _shQ._z = c.wq[j * 4 + 2]; _shQ._w = c.wq[j * 4 + 3];
+    _shQ.premultiply(_spAcc);
+    for (let it = 0; it < 3; it++) {
+      _shX.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
+      const len = _shX.length();
+      if (len < 1e-6) return;
+      _shX.multiplyScalar(1 / len);
+      _shQ2.setFromUnitVectors(_spB, _shX).multiply(_shQ);
+      _shN.set(c.shN[k], c.shN[k + 1], c.shN[k + 2]).applyQuaternion(_shQ2);
+      _shL.set(c.shL[k], c.shL[k + 1], c.shL[k + 2]).applyQuaternion(_shQ2);
+      let push = 0;
+      for (let q = 0; q < 5; q++) {
+        const cap = caps[q];
+        // (the torso at 0.10 m, its belly and seat: the strand rule's 0.155 m with the rest rule stays for it above)
+        let r = q === 0 ? 0.10 : cap.r;
+        _cp0.subVectors(cap.b, cap.a);
+        const l2 = _cp0.lengthSq();
+        // a parent already inside this leg's cross-section (a deep crouch brings the thigh up under the belt, where the
+        // root is fixed): the child may not sink deeper than its parent, and is not thrown out past it (that folded the
+        // long panel up over her belly)
+        {
+          _cp1.set(pos[i0] - cap.a.x, pos[i0 + 1] - cap.a.y, pos[i0 + 2] - cap.a.z);
+          let t = l2 > 1e-9 ? _cp1.dot(_cp0) / l2 : 0;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          _cp1.x -= _cp0.x * t; _cp1.y -= _cp0.y * t; _cp1.z -= _cp0.z * t;
+          const sp = _cp1.dot(_shN), lp = _cp1.dot(_shL);
+          if (sp < r && sp > -r && Math.abs(lp) < W + Math.sqrt(r * r - sp * sp)) r = sp > 0 ? sp : 0;
+        }
+        if (r <= 0) continue;
+        for (let m = 0; m < 2; m++) {
+          const f = m === 0 ? 1 : 0.5;
+          _shP.x = pos[i0] + (_spC.x - pos[i0]) * f; _shP.y = pos[i0 + 1] + (_spC.y - pos[i0 + 1]) * f; _shP.z = pos[i0 + 2] + (_spC.z - pos[i0 + 2]) * f;
+          _cp1.subVectors(_shP, cap.a);
+          let t = l2 > 1e-9 ? _cp1.dot(_cp0) / l2 : 0;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          _cp1.x -= _cp0.x * t; _cp1.y -= _cp0.y * t; _cp1.z -= _cp0.z * t;   // axis -> sample
+          const s = _cp1.dot(_shN);
+          if (s >= r || s <= -r) continue;
+          const l = _cp1.dot(_shL), half = Math.sqrt(r * r - s * s);
+          if (l >= W + half || l <= -W - half) continue;
+          const need = (r - s) / f;
+          if (need > push) push = need;
+        }
+      }
+      if (push <= 0) break;
+      _spC.addScaledVector(_shN, Math.min(push, 0.5 * sg) + 1e-4);
+      _shX.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
+      const l3 = _shX.length();
+      if (l3 < 1e-6) return;
+      _spC.x = pos[i0] + _shX.x * sg / l3; _spC.y = pos[i0 + 1] + _shX.y * sg / l3; _spC.z = pos[i0 + 2] + _shX.z * sg / l3;
+    }
+    // the class's bend limit again (the push may not fold the sheet over its parent: a back panel's hem lifted up its
+    // own back against a calf behind her, standing, before this)
+    _shX.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]).normalize();
+    const lim = c.cls.maxAng * 1.6, dot = _shX.dot(_spB);
+    if (dot < Math.cos(lim)) {
+      _shQ2.setFromUnitVectors(_spB, _shX);
+      const full = 2 * Math.acos(Math.min(1, Math.abs(_shQ2.w)));
+      if (_shQ2.w < 0) { _shQ2.x = -_shQ2.x; _shQ2.y = -_shQ2.y; _shQ2.z = -_shQ2.z; _shQ2.w = -_shQ2.w; }
+      _shQ2.slerp(Q_IDENT, full > 1e-6 ? 1 - lim / full : 1);
+      _shX.copy(_spB).applyQuaternion(_shQ2).normalize();
+      _spC.x = pos[i0] + _shX.x * sg; _spC.y = pos[i0 + 1] + _shX.y * sg; _spC.z = pos[i0 + 2] + _shX.z * sg;
     }
   }
 
@@ -413,18 +509,53 @@ export class SecondaryMotion {
       return { e: c.links[0], side: /panelL/.test(n) ? 'l' : /panelR/.test(n) ? 'r' : 'c', share: /panelL/.test(n) ? 0.75 : /panelR/.test(n) ? 0.70 : 0.42 };
     }));
     if (!P.length) return;
-    const tl = this.b.thighL, tr = this.b.thighR;
-    if (!tl || !tr) return;
-    // the thighs' turns from bind, in the pelvis's frame (their parent): D = q * q_bind^-1
-    _twQ.copy(tl.bindQ).invert(); _spQ2.copy(tl.bone.quaternion).multiply(_twQ);
-    _twQ.copy(tr.bindQ).invert(); _spQ3.copy(tr.bone.quaternion).multiply(_twQ);
+    const tl = this.b.thighL, tr = this.b.thighR, pel = this.b.pelvis;
+    if (!tl || !tr || !pel || !this.b.calfL || !this.b.calfR) return;
+    /* M1.2e fix 1: the thighs' SWING only (bind direction -> current direction in the pelvis's frame, no twist). The
+     * whole turn handed the panels each thigh's twist and spread too: the short right panel lay sideways across her
+     * lap in the sit (its hem 0.32 m to her left), the long left one folded up over her belly in the crouch (its hem
+     * at 1.01 m, the belt at 0.51). And the share now grows with the thigh's FLEXION (0.75 / 0.70 standing, 1.0 from
+     * 60 deg): a raised thigh carries the panel on it instead of rising through it; the back panel takes the swing of
+     * the thigh that is further BEHIND her (0.85 of it; a forward thigh draws it 0.3), not the mean of both, which
+     * swung it forward into the thigh that was back. */
+    const F = this._pfFwd || (this._pfFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(pel.invW).normalize());
+    const fl = this._pfSwing(tl, this.b.calfL, F, _spQ2), fr = this._pfSwing(tr, this.b.calfR, F, _spQ3);
+    // (the share's ramp: smoothstep over 20-60 deg of flexion)
+    let kl = (fl - 0.35) / 0.70, kr = (fr - 0.35) / 0.70;
+    kl = kl <= 0 ? 0 : kl >= 1 ? 1 : kl * kl * (3 - 2 * kl); kr = kr <= 0 ? 0 : kr >= 1 ? 1 : kr * kr * (3 - 2 * kr);
     for (let i = 0; i < P.length; i++) {
       const r = P[i];
-      if (r.side === 'l') _spQ.copy(_spQ2); else if (r.side === 'r') _spQ.copy(_spQ3); else _spQ.copy(_spQ2).slerp(_spQ3, 0.5);
+      let share;
+      if (r.side === 'l') { _spQ.copy(_spQ2); share = r.share + (1 - r.share) * kl; }
+      else if (r.side === 'r') { _spQ.copy(_spQ3); share = r.share + (1 - r.share) * kr; }
+      else {
+        // 0.3 of the mean swing, turning to 0.85 of the further-back thigh's as it goes 0-12 deg behind the bind
+        const back = fl < fr ? fl : fr;
+        _shQ.copy(_spQ2).slerp(_spQ3, 0.5);
+        if (_shQ._w < 0) { _shQ._x = -_shQ._x; _shQ._y = -_shQ._y; _shQ._z = -_shQ._z; _shQ._w = -_shQ._w; }
+        _shQ.slerp(Q_IDENT, 1.0);
+        _shQ2.copy(fl < fr ? _spQ2 : _spQ3);
+        if (_shQ2._w < 0) { _shQ2._x = -_shQ2._x; _shQ2._y = -_shQ2._y; _shQ2._z = -_shQ2._z; _shQ2._w = -_shQ2._w; }
+        _shQ2.slerp(Q_IDENT, 0.15);
+        const wb = back >= 0 ? 0 : back <= -0.08 ? 1 : -back / 0.08;
+        _spQ.copy(_shQ).slerp(_shQ2, wb);
+        share = 1;
+      }
       if (_spQ._w < 0) { _spQ._x = -_spQ._x; _spQ._y = -_spQ._y; _spQ._z = -_spQ._z; _spQ._w = -_spQ._w; }
-      _spQ.slerp(Q_IDENT, 1 - r.share);
+      if (share < 1) _spQ.slerp(Q_IDENT, 1 - share);
       r.e.bone.quaternion.copy(r.e.bindQ).premultiply(_spQ);
     }
+  }
+
+  /** M1.2e fix 1: a thigh's swing from bind in the pelvis's frame (into `out`, no twist) and its flexion (rad, + forward
+   *  of the bind direction about her lateral axis; `F` her forward in the pelvis's frame). No allocation. */
+  _pfSwing(t, calf, F, out) {
+    _shX.copy(calf.bindP).normalize();
+    _shP.copy(_shX).applyQuaternion(t.bindQ);
+    _shN.copy(_shX).applyQuaternion(t.bone.quaternion);
+    out.setFromUnitVectors(_shP, _shN);
+    const fw = _shN.dot(F) - _shP.dot(F) * _shN.dot(_shP);
+    return Math.atan2(fw, _shN.dot(_shP));
   }
 
   /**
@@ -727,7 +858,8 @@ export class SecondaryMotion {
           _spE.x = anim[i1]; _spE.y = anim[i1 + 1]; _spE.z = anim[i1 + 2];
           // (M1.2e, `collide: 3`, the sash panels: the legs at full radius — the panel's rest rides the pelvis, so a
           // striding thigh moves under the rest and the rest rule would let it through)
-          for (let q = 0; q < nc; q++) this._pushOutOfCapsule(_spC, caps[q], cls.collide === 3 && q > 0 ? null : _spE);
+          // (M1.2e fix 1: a panel's legs are the sheet test below, not the strand's radial push)
+          for (let q = 0; q < nc; q++) { if (c.shN && q > 0) break; this._pushOutOfCapsule(_spC, caps[q], cls.collide === 3 && q > 0 ? null : _spE); }
           {
             const ax = _spC.x - pos[i0], ay = _spC.y - pos[i0 + 1], az = _spC.z - pos[i0 + 2];
             const a2 = ax * ax + ay * ay + az * az;
@@ -737,8 +869,28 @@ export class SecondaryMotion {
             }
           }
           { const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg; }
+          // M1.2e fix 1: the wrap tail off the draw arm's UPPER arm too (the hand capsule below is the forearm and the
+          // hand): in the trade wind the tail streams across her right shoulder, standing (bench: 37 of 120 stand
+          // frames, a tail vertex within 0.04 m of the right upper arm's axis). Two passes, each back on the sphere.
+          if (cls.name === 'wrap' && this.b.upArmR && this.b.loArmR) {
+            const U = this._uaCap || (this._uaCap = { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.085 });
+            U.a.setFromMatrixPosition(this.b.upArmR.bone.matrixWorld); U.b.setFromMatrixPosition(this.b.loArmR.bone.matrixWorld);
+            for (let it = 0; it < 2; it++) {
+              if (!this._pushOutOfCapsule(_spC, U, null)) break;
+              _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
+              if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
+              const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg;
+            }
+          }
+          if (c.shN) {
+            this._sheetPush(c, j, pos, i0, caps);
+            _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
+            if (_spA.lengthSq() < 1e-12) _spA.copy(_spB); else _spA.normalize();
+          }
         }
-        if (hcN) {
+        // (M1.2e fix 1: not the sash panels, which lie on the thighs under her hands: seated, the draw hand's capsule
+        // on her lap levered the short right panel up and across to her left hip, into her belly)
+        if (hcN && !c.shN) {
           // push out, put the particle back at its segment length, and repeat:
           // one pass re-projected a strand whose parent sits near the capsule
           // straight back inside it (the sternum cord under a hand crossing
