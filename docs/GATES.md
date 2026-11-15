@@ -169,6 +169,14 @@ red instead of running the old bar; two are whole rows.
 | `A56-cascades` | three cascades, near texel ≤ 2 cm, casters culled beyond 120 m, and the old valley's grass and bush meshes (`grass-chunk*`, `bushes-*`) casting | the cascade, texel and cull clauses unchanged; the plant clause names the island's plants: the three meadow rings (`meadow-blades`, `meadow-clumps`, `meadow-cards`) and the flora kinds (`marram-near`, `glasswort`, `lavender`) are all present and **none of them casts**, and the field's dyke stones (`pan-dykes`) cast | The valley meshes are gone; on the island grass never casts by the engine's shadow-caster rule (each plant mesh is built with `castShadow = false`), and the dyke stones are the low casters near the ground |
 | `A71d-conc-veil` | a desaturating, cool-tinted veil element (`#cal-veil`) ramps in on Steady and out after | Steady while aiming (Shift): a hairline breath meter (≤ 4 px) 20–120 px under the reticle is visible while it is held, drains with the gauge (within 0.06) by more than 0.08 over 2.6 s, and is released after; no veil element, no full-screen overlay, no filter on the game canvas | The shipped HUD shows Steady as a hairline breath meter and has no veil by design. This is the HUD lane's own replacement row (it never ran: its file does not load), under the kept id |
 
+**`A-draw-elbow-level`, M1a round 2 ruling (the orchestrator; applied in round 3).** The full-draw elbow clause
+"≤ 0.20 m behind the back of the skull" is replaced by the rig's band: the draw elbow −0.03 to +0.05 m of the
+shoulder's height in the aim frame (elbow level or back), as `A16` grades it; its distance behind the skull is
+reported. No elbow on the circle that holds the M1.3b form meets the 0.20 m (0.21–0.23 m at every pitch). Through the
+loose the elbow starts where the full draw holds it, so the loose's elbow clause is read against that: no more than
+0.02 m further back than at full draw, or within 0.20 m. (This second sentence extends the ruling to the loose's
+first step and awaits the orchestrator's word.)
+
 `A44`, `A44b`, `A107` and every other kept row are unchanged.
 
 **A measurement re-registered with the Frame Set (M1a round 2; not a bar change).** M1.1g's F02 palette line reads

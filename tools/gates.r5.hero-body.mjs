@@ -10219,6 +10219,25 @@ const byId = (id) => carried.find((g) => g.id === id);
   Object.defineProperty(g, 'assert', { value: a.replace(stage, FLAT_STRIP + "const fs = flatStrip(50); if (!fs) return { pass: null, detail: 'SKIP-R18 (place): no flat, clear 50 m strip' }; p.position.set(fs.x, 0, fs.z); p.velocity.set(0, 0, 0); p._snapToGround(); p.camYaw = fs.yaw; p.camPitch = 0;"), enumerable: true, configurable: true, writable: true });
 }
 {
+  /* M1a r3 (hero-anim): V1 and V3 FILMED FROM HER SIDE. The round-2 review read both off the chase lens, which sits
+   * behind her at her shoulder: the legs fell below the frame and a fore-aft arm swing and a crouch's forward pitch
+   * are both edge-on from behind ("no arm swing or crouch readable"). The rows judge the BODY's motion (as V12 and V13
+   * do, from a locked lens), so once the sprint or the crouch-walk is under way the lens rides beside her: V1 from
+   * her right-front three-quarter, 4.6 m out at hip height, all of her in frame; V3 from her right side, 3.6 m out,
+   * low, so the silhouette's height and the torso's pitch read against the horizon. Input, place and settle unchanged. */
+  const lens = (deg, dist, h, lookH) => ` { const __C = __CTX__, __p = __C.player, __P = Object.getPrototypeOf(__p);
+      __p._updateCamera = function (dt, t) { __P._updateCamera.call(this, dt, t); const cam = this.ctx.camera, hd = this.heading ?? this.model.rotation.y, a = hd - ${deg} * Math.PI / 180;
+        cam.position.set(this.position.x + Math.sin(a) * ${dist}, this.position.y + ${h}, this.position.z + Math.cos(a) * ${dist});
+        cam.lookAt(this.position.x, this.position.y + ${lookH}, this.position.z); cam.updateMatrixWorld(); }; }`;
+  for (const [id, key, args] of [['V1-sprint-frame', "__CTX__.input.keys.add('ShiftLeft');", [55, 4.6, 0.95, 0.85]], ['V3-crouch-stalk', "__CTX__.input.keys.add('KeyW');", [90, 3.6, 0.7, 0.6]]]) {
+    const g = byId(id);
+    const a = Object.getOwnPropertyDescriptor(g, 'setup').value;
+    if (!a.includes(key)) throw new Error(id + ' shape changed');
+    Object.defineProperty(g, 'setup', { value: a.replace(key, key + lens(...args)), enumerable: true, configurable: true, writable: true });
+    g.criteria = g.criteria + ' (M1a r3: filmed from her ' + (id === 'V1-sprint-frame' ? 'right-front three-quarter' : 'right side') + ', the lens riding beside her.)';
+  }
+}
+{
   // V13 (R33 g): the staging ASSERTS the aim state before it films — aim and
   // the strafe key are held every frame until the freeze (one press was lost:
   // the final W0b film showed her strafing with no bow up), and a film whose

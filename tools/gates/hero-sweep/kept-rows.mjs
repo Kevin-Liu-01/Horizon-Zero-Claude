@@ -20,7 +20,9 @@ const restate = (g) => {
   for (const [from, to] of r.patches) body = body.split(from).join(to);
   return { ...g, assert: body, restated: r.why };
 };
-const IDS = ['A107-draw-arm-path', 'A104-melee-self-clear', 'A105-melee-while-moving', 'A32-draw-ramp', 'A-draw-elbow-level', 'A16-draw-anchor'];
+const IDS = ['A107-draw-arm-path', 'A104-melee-self-clear', 'A105-melee-while-moving', 'A32-draw-ramp', 'A-draw-elbow-level', 'A16-draw-anchor', 'A17-draw-beats',
+  // (M1a r3: the visual rows the round-2 review failed, filmed by session.mjs on a fresh page each, not graded)
+  'V1-sprint-frame', 'V3-crouch-stalk', 'V13-aim-strafe', 'V-traversal'];
 const all = [...MELEE, ...BODY];
 export const GATES = IDS.map((id) => all.find((g) => g.id === id)).filter(Boolean).map(restate)
   .map((g) => ({ ...g, setup: `${NO_STUDIO}; ${g.setup || ''}` }));

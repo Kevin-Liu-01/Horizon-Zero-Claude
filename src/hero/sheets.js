@@ -349,14 +349,19 @@ export async function traversalOverlay(ctx) {
   for (const m of ctx.machines?.list || []) m.update = () => {};
   // --- 1. ledge climb, caught mid-pull
   {
-    const x = -60, z = -39, gy = T.getHeight(x, z);
+    // (M1a r3, hero-anim, V-traversal: staged on the gate place `openGround`, as the sweep's ledge rows are; at the
+    //  old fixed spot, x -60 z -39, she never mantled and the panel filmed a wall and two ropes. Space is pressed
+    //  whenever she is on the ground until the mantle starts, as A-sweep-climb does)
+    const og = ctx.props?.gatePlaces?.openGround;
+    const x = og ? og.x : -60, z = og ? og.z + 6 : -39, gy = T.getHeight(x, z);
     const b = box(x, gy + 0.25, z + 3.5, 1.5, 0.75, 1.0);   // a 1.0 m ledge: top 1.0 m over her feet
     p.position.set(x, 0, z); p.velocity.set(0, 0, 0); p._snapToGround(); p.heading = 0; p.camYaw = Math.PI;
     await simWait(0.3);
     ctx.input.keys.add('KeyW');
     const w0 = E.simTime;
-    while (E.simTime - w0 < 4 && !p.mantling) { await frame(); if (p.position.z > z + 1.6) { ctx.input._press?.('Space', { code: 'Space' }); ctx.input.keys.delete('Space'); } }
+    while (E.simTime - w0 < 4 && !p.mantling) { await frame(); if (p.grounded !== false && p.position.z > z + 1.2) { ctx.input._press?.('Space', { code: 'Space' }); ctx.input.keys.delete('Space'); } }
     ctx.input.keys.clear();
+    if (!p.mantling) console.warn('[V-traversal] the ledge was not mantled');
     // the pull's last frame (fix round 1): both palms still on the top and the
     // chest coming over them (A-climb-1m's body-over-hands moment, k ~0.36)
     const an = p.animator;

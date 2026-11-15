@@ -892,6 +892,19 @@ const ELB_WRIST_NEW = `        /* restated M1a (docs/GATES.md 3 D): the wrist at
          * anchor is graded in formOf as the index knuckle on the jaw-corner anchor at every pitch */
 `;
 
+/* M1a round 2 RULING (the orchestrator, docs/STATE.md "M1a round 2"): A-draw-elbow-level's full-draw elbow clause uses
+ * the rig's band, -0.03 to +0.05 m over the draw shoulder in the aim frame (elbow level or back, Kevin's bar), as A16
+ * does; "the elbow <= 0.20 m behind the back of the skull" at full draw is reported. Through the loose the elbow starts
+ * where the full draw holds it (0.21-0.23 m behind), so the loose's elbow clause is graded against that: never more
+ * than 0.02 m further back than at full draw (no swing back past the drawn elbow), the 0.20 m kept where it is the
+ * looser bar. (Round 3 hero-anim; the loose clause's reading needs the orchestrator's word.) */
+const ELB_FULL_OLD = `        r.elbowBehindHead <= 0.20 ? null : 'elbowBehindHead',
+        r.looseSteps >= 6 ? null : 'looseSampled', r.looseMaxHandBehindHead < 0 ? null : 'looseHandBehindSkull',
+        r.looseMaxElbowBehindHead <= 0.20 ? null : 'looseElbowBehindHead',`;
+const ELB_FULL_NEW = `        r.elbowUpAim != null && r.elbowUpAim >= ${B.elbowLo} && r.elbowUpAim <= ${B.elbowHi} ? null : 'elbowOffRigBand',
+        r.looseSteps >= 6 ? null : 'looseSampled', r.looseMaxHandBehindHead < 0 ? null : 'looseHandBehindSkull',
+        r.looseMaxElbowBehindHead <= Math.max(0.20, r.elbowBehindHead + 0.02) ? null : 'looseElbowSwingsBack',`;
+
 /** A70: the K tab, watched while it is pressed and for 30 frames after (console errors, menu warnings, page errors). */
 const A70_WATCH = `const out = { tabs: [] };
         const __watch = () => {
@@ -1012,12 +1025,13 @@ export const RESTATED = [
   },
   {
     id: 'A-draw-elbow-level',
-    why: 'the same hook: the hand on the string and the hand held at the head are graded at the rig anchor (the knuckle on the jaw corner, the string in the fingers hook, the hand out of the wrap); every elbow, chest, behind-the-head, loose, step and crouch clause is unchanged',
+    why: 'the same hook: the hand on the string and the hand held at the head are graded at the rig anchor (the knuckle on the jaw corner, the string in the fingers hook, the hand out of the wrap); every chest, behind-the-head, step and crouch clause is unchanged; M1a round 2 ruling: the full-draw elbow is graded on the rig band (-0.03 to +0.05 m, aim frame), its 0.20 m behind the skull reported, and through the loose the elbow no more than 0.02 m further back than at full draw (or within 0.20 m)',
     patches: [
       ["freeze(); standAt(p, 'openGround'); await wait(300);", `freeze(); standAt(p, 'openGround'); await wait(300);${HOOK}`],
       ['          fingertipToNock: hasHand ? +ftW.distanceTo(nkW).toFixed(4) : null,', '          fingertipToNock: hasHand ? +ftW.distanceTo(nkW).toFixed(4) : null,\n          ...__hook(nkW),'],
       [ELB_FORM_OLD, ELB_FORM_NEW],
       [ELB_WRIST_OLD, ELB_WRIST_NEW],
+      [ELB_FULL_OLD, ELB_FULL_NEW],
     ],
   },
   {

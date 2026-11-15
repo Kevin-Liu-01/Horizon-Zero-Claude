@@ -3,7 +3,8 @@
  * the page rows, the Frame Set frames and the bar clips, on one boot of one page.
  *
  *   node tools/gates/hero-sweep/session.mjs --port 5274 [--rows A-sweep-run,...|all|none] [--extra-rows <file>[,<file>]]
- *        [--frames F14,F15,F10] [--clips run,draw,crouchDraw,melee] [--label <tag>] [--budget <s>]
+ *        [--extra-only <ids>] [--fresh extra|all|none] [--frames F14,F15,F10] [--clips run,draw,crouchDraw,melee]
+ *        [--label <tag>] [--budget <s>]
  *
  *  1. the machine guard (memory free >= 50 %, pressure level 1), then the shared slot <slots>/slot1 (mkdir; owner.txt
  *     "int hero-anim <pid> <utc>"), released (rm -r) the moment the run ends, on every exit path;
@@ -49,7 +50,7 @@ if (rowsFlag !== 'none') rows = rowsFlag === 'all' ? SWEEP.slice() : SWEEP.filte
 for (const f of (flag('--extra-rows') || '').split(',').filter(Boolean)) {
   const want = flag('--extra-only') ? flag('--extra-only').split(',') : null;
   const mod = await import(pathToFileURL(path.resolve(REPO, f)).href);
-  rows.push(...mod.GATES.filter((g) => !want || want.includes(g.id)));
+  rows.push(...mod.GATES.filter((g) => !want || want.includes(g.id)).map((g) => ({ ...g, __extra: true })));
 }
 const set = loadFrameSet();
 const frameIds = (flag('--frames') || '').split(',').filter(Boolean);
@@ -71,6 +72,20 @@ const RESET_HERO = async () => {
   try { if (p.crouching) p.setCrouch?.(false); } catch { /* */ }
   try { p.animator?.setHangPose?.(false); } catch { /* */ }
   try { if (cmb?.melee && cmb.melee.stance !== 'holstered') cmb.melee.holsterLance(true); } catch { /* */ }
+  /* M1a r3 (I24): THE MELEE RESET. The rows share a page, and after A104 and A105 the melee state went on into the
+   * next row (A105 skipped "the guard never came up", A32 and A-draw-elbow-level ran with the lance in hand): the
+   * swing, its charge and buffer, the combo, the queued swing, the aim lock and the Undercut's target are cleared
+   * here, and the stance is walked back to 'holstered' below */
+  try {
+    const m = cmb?.melee;
+    if (m) {
+      if (m.phase && m.phase !== 'idle') { try { m._endSwing?.(); } catch { /* */ } }
+      m.active = false; m.phase = 'idle'; m.heavy = false; m.combo = 0; m._comboT = 0;
+      m._charging = false; m._chargeHold = false; m._chargeT = 0; m._buffered = false; m._lmbWas = false; m._keyWas = false;
+      m._queued = null; m.aimLock = null; m.undercutTarget = null; m._undercutM = null; m._lmbBow = false;
+    }
+  } catch { /* */ }
+  try { p.velocity?.set?.(0, 0, 0); } catch { /* */ }
   if (cmb) { cmb._holsterT = 0; cmb._drawing = false; }
   try { cmb?.arrows?.recycleAll?.(); } catch { /* */ }
   E.requestTimeScale?.('studio', null);
@@ -83,7 +98,8 @@ const RESET_HERO = async () => {
     await new Promise((r) => requestAnimationFrame(r));
   }
   const o = out();
-  return { ...o, clean: !o.bow && !o.lance && !o.aiming && !o.crouching, ms: Math.round(performance.now() - w0) };
+  const st = cmb?.melee?.stance ?? null;
+  return { ...o, stance: st, clean: !o.bow && !o.lance && !o.aiming && !o.crouching && (st == null || st === 'holstered'), ms: Math.round(performance.now() - w0) };
 };
 
 /* ---- 1. guard and slot */
@@ -179,16 +195,51 @@ try {
     } catch (e) { out.frames.push({ id: f.id, ok: false, error: String(e?.message || e).slice(0, 300) }); try { await page.evaluate(unstageFrame); } catch { /* */ } }
   }
 
-  /* ---- rows (each ends with the bow put away and the lance holstered, for the clips after them) */
+  /* ---- rows (each ends with the bow put away and the lance holstered, for the clips after them).
+   * M1a r3 (I24): every row starts from a reset hero and a reset melee state (RESET_HERO), and the --extra rows (the
+   * kept rows, which stage their own melee and bow work) each get a FRESH PAGE: the page is reloaded and booted again
+   * before the row (`--fresh extra`, the default; `--fresh all` reloads before every row, `--fresh none` never). */
+  const FRESH = flag('--fresh', 'extra');
+  const reboot = async () => {
+    const b0 = Date.now();
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
+    await page.waitForFunction('window.__READY__ === true', { timeout: 240000, polling: 500 });
+    await sleep(5000);
+    return Math.round((Date.now() - b0) / 1000);
+  };
+  let rowNo = 0;
   for (const g of rows) {
     current = g.id;
     if (over()) { out.rows.push({ id: g.id, status: 'NOT-RUN', why: 'budget' }); continue; }
+    const fresh = FRESH === 'all' || (FRESH === 'extra' && g.__extra);
+    let rebootS = null, reset = null;
+    try {
+      if (fresh && rowNo > 0) { rebootS = await reboot(); log(`${g.id}: fresh page (${rebootS} s)`); }
+      reset = await page.evaluate(RESET_HERO);
+      if (!reset.clean) log(`${g.id}: hero not clean after the reset (${JSON.stringify(reset)})`);
+    } catch (e) { log(`${g.id}: reset failed: ${String(e?.message || e).slice(0, 200)}`); }
+    rowNo++;
     const r0 = Date.now();
+    if (g.kind === 'visual') {
+      /* M1a r3: a visual row is filmed as gates.mjs films it (its setup, its settle, one screenshot), into the run
+       * dir as <id>.png, for the lane to look at; it is not graded here */
+      try {
+        if (g.setup) await page.evaluate(g.setup);
+        await sleep(g.settle ?? 1500);
+        const shot = await page.screenshot({ type: 'png' });
+        const png = await sharp(shot).resize(vp.width, vp.height, { fit: 'fill' }).png({ compressionLevel: 8 }).toBuffer();
+        writeFileSync(path.join(runDir, `${g.id}.png`), png);
+        const st = await page.evaluate(() => { const p = window.__CTX__.player; return { aiming: !!p.aiming, crouching: !!p.crouching, sprinting: !!p.sprinting, mantling: !!p.mantling, speed: +Math.hypot(p.velocity.x, p.velocity.z).toFixed(2), headY: +((p.animator?.b?.head?.bone?.getWorldPosition?.(p.position.clone())?.y ?? 0) - p.position.y).toFixed(3) }; });
+        out.rows.push({ id: g.id, status: 'VISUAL', seconds: Math.round((Date.now() - r0) / 1000), freshPage: !!rebootS, file: `${g.id}.png`, state: st });
+      } catch (e) { out.rows.push({ id: g.id, status: 'ERROR', error: String(e?.message || e).slice(0, 400) }); }
+      log(`${g.id} filmed`);
+      continue;
+    }
     try {
       if (g.setup) await page.evaluate(g.setup);
       await sleep(g.settle ?? 400);
       const res = await Promise.race([page.evaluate(g.assert), sleep(g.timeout ?? 90000).then(() => ({ pass: false, detail: 'timeout' }))]);
-      out.rows.push({ id: g.id, status: res?.pass === true ? 'PASS' : res?.pass === null ? 'PENDING' : 'FAIL', seconds: Math.round((Date.now() - r0) / 1000), detail: res?.detail });
+      out.rows.push({ id: g.id, status: res?.pass === true ? 'PASS' : res?.pass === null ? 'PENDING' : 'FAIL', seconds: Math.round((Date.now() - r0) / 1000), freshPage: !!rebootS, rebootS, reset, detail: res?.detail });
     } catch (e) { out.rows.push({ id: g.id, status: 'ERROR', error: String(e?.message || e).slice(0, 400) }); }
     const last = out.rows[out.rows.length - 1];
     log(`${g.id} ${last.status} in ${last.seconds ?? '?'} s${last.detail?.fails?.length ? ': ' + last.detail.fails.join('; ') : ''}`);

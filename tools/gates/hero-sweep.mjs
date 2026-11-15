@@ -118,7 +118,7 @@ const row = (name) => {
       const updC = cmb.update.bind(cmb);
       cmb.update = function (dt, ...rest) {
         const r = updC(dt, ...rest);
-        if (S.on && dt > 0) { if (T0 == null) T0 = E.simTime; p.model.updateMatrixWorld(true); M.sample({ T: +(E.simTime - T0).toFixed(3), cloth: ${!!c.cloth}, run: ${!!c.run} }); }
+        if (S.on && dt > 0) { if (T0 == null) T0 = E.simTime; p.model.updateMatrixWorld(true); M.sample({ T: +(E.simTime - T0).toFixed(3), cloth: ${!!c.cloth}, run: ${!!c.run}, aiming: !!p.aiming }); }
         return r;
       };
       try { ${c.js} } finally { S.on = false; cmb.update = updC; release(); p.setCrouch?.(false); for (const id of made.splice(0)) K.unregister(id); if (cmb.melee && cmb.melee.stance !== 'holstered') cmb.melee.holsterLance?.(); }

@@ -83,6 +83,22 @@ export function buildSweep(R, THREE, opts = {}) {
   };
   /** behind the head's frontal plane (through the skull centre): the head-frame depth (m, < 0 behind) */
   const planeDepth = (pChar) => toHead(pChar, tmp3).sub(skullC).z;
+  /* M1a r3 (hero-anim): THE HEAD PLANE AS KEVIN'S BAR READS IT, "never an arm or hand behind the head". The
+   * head-frame plane above tilts with the head: looking up at a ledge it put every point at her shoulders "behind"
+   * it (the page's mantle and climb: a forearm 0.006 m over the shoulder, 0.256 m "behind"). A point now counts when
+   * it is behind BOTH that plane and the vertical one through the skull centre, normal to the head's forward laid
+   * level (`planeDepthLevel`, m, < 0 behind); upside down (the head's up axis under 0.3 of the vertical) the level
+   * plane is undefined and the head-frame plane alone grades. Both depths are reported at the first step. */
+  const _hf = V(), _hu = V(), _sc = V();
+  const headLevel = () => {
+    _hu.set(0, 1, 0).applyQuaternion(hq);
+    _hf.set(0, 0, 1).applyQuaternion(hq); _hf.y = 0;
+    const ok = _hu.y >= 0.3 && _hf.lengthSq() > 1e-4;
+    if (ok) _hf.normalize();
+    _sc.copy(skullC).applyQuaternion(hq).add(hp);
+    return ok;
+  };
+  const planeDepthLevel = (pChar) => tmp3.subVectors(pChar, _sc).dot(_hf);
   const side = (s) => ({
     s, sh: s === 'r' ? an.b.upArmR.bone : an.b.upArmL.bone, el: s === 'r' ? an.b.loArmR.bone : an.b.loArmL.bone, wr: s === 'r' ? an.b.handR.bone : an.b.handL.bone,
     kn: B('index_01_' + s), tip: B('middle_04_leaf_' + s) || B('middle_03_' + s),
@@ -243,9 +259,19 @@ export function buildSweep(R, THREE, opts = {}) {
           const why = behind(q, h);
           if (why) { acc.behind++; if (!acc.behindAt) acc.behindAt = { T: st.T, why, side: S.s, pt: h ? 'hand' : 'forearm' }; break; }
         }
-        for (const [q, h] of armPoints(S)) {
-          if (q.y > sh.y && planeDepth(q) < 0) { acc.plane++; if (!acc.planeAt) acc.planeAt = { T: st.T, side: S.s, pt: h ? 'hand' : 'forearm', aboveSh: +(q.y - sh.y).toFixed(3), depth: +planeDepth(q).toFixed(3) }; break; }
-        }
+        /* M1a r3: the plane on the level head forward (above); not while she tumbles; and not the draw arm while it
+         * holds the string at full aim (the rig's weight >= 0.5): the knuckle on the jaw corner puts the wrist at the
+         * back of the cheek by design, behind the skull centre's plane, and that arm is graded by the anchor rows
+         * (A16, A32, A-draw-elbow-level: the knuckle on the jaw-corner anchor, no hand or forearm point behind the head)
+         * and by the skull test above on every step */
+        const onString = S === SR && (an._cr?.w ?? 0) >= 0.5 && !!st.aiming;
+        if (!onString) {
+          const lvl = headLevel();
+          for (const [q, h] of armPoints(S)) {
+            const dh = planeDepth(q), dl = lvl ? planeDepthLevel(q) : dh;
+            if (q.y > sh.y && dh < 0 && dl < 0) { acc.plane++; if (!acc.planeAt) acc.planeAt = { T: st.T, side: S.s, pt: h ? 'hand' : 'forearm', aboveSh: +(q.y - sh.y).toFixed(3), depthHeadFrame: +dh.toFixed(3), depthLevel: +dl.toFixed(3) }; break; }
+          }
+        } else acc.planeOnString = (acc.planeOnString || 0) + 1;
         const w = CP(S.wr, V());
         acc.overShoulder = Math.max(acc.overShoulder, w.y - sh.y);
       }
