@@ -149,6 +149,7 @@ function preTable() {
 }
 
 const PARS_VERTEX = `
+uniform float calNormFixK;
 attribute float _calthin;
 attribute vec4 _calzone;
 varying float vCalThin;
@@ -263,14 +264,34 @@ uniform vec4 calFlat;`;
  * the interpolated normal stood 35 deg off its triangle's own normal (median; 61-66 of 155 rays over 45, up to 105), and turned a
  * surface facing away from the sun (the triangle's N.L -0.65) to face it (N.L up to +0.79): lit by the sun, its rim and the
  * scatter, the elbow read as a pale bulb on the shadow side of her arm. Not the rim (b53ef67), not the outfit, not the emissive
- * fill (the probe switched each off on the same frame). So where the shading normal and the triangle's own normal disagree past
- * about 37 deg, the shading normal turns to the triangle's (fully by 70 deg); a skin whose normals are sound (every other frame,
- * the elbow in F08 at 16 deg) is untouched. The tangent frame's normal follows, so the normal map and the pores sit on it.
+ * fill (the probe switched each off on the same frame). Two guards, both off with calNormFixK 0:
+ *   - per vertex (NORMFIX_VERTEX): where the blend has lost more than 15 % of its length against the weighted lengths of its own
+ *     terms (a sound skin keeps 0.84-0.90 on every probed frame), the normal turns toward the one its heaviest bone gives it, all
+ *     the way below 55 %: a smooth normal that is one surface's, never the cancelled middle;
+ *   - per pixel (NORMFIX_FRAGMENT): where what is left still stands more than 60 deg off the triangle's own normal (crumpled
+ *     geometry), it turns to the triangle's, fully by 80 deg. The tangent frame's normal follows, so the normal map sits on it.
  */
+const NORMFIX_VERTEX = `
+	#ifdef USE_SKINNING
+	if ( calNormFixK > 0.0 ) {
+		mat4 calB = bindMatrixInverse;
+		vec3 calNx = ( calB * boneMatX * bindMatrix * vec4( calN0, 0.0 ) ).xyz, calNy = ( calB * boneMatY * bindMatrix * vec4( calN0, 0.0 ) ).xyz;
+		vec3 calNz = ( calB * boneMatZ * bindMatrix * vec4( calN0, 0.0 ) ).xyz, calNw = ( calB * boneMatW * bindMatrix * vec4( calN0, 0.0 ) ).xyz;
+		float calSum = skinWeight.x * length( calNx ) + skinWeight.y * length( calNy ) + skinWeight.z * length( calNz ) + skinWeight.w * length( calNw );
+		float calVk = calNormFixK * ( 1.0 - smoothstep( 0.55, 0.85, length( objectNormal ) / max( calSum, 1e-6 ) ) );
+		if ( calVk > 0.0 ) {
+			vec3 calND = calNx; float calW = skinWeight.x;
+			if ( skinWeight.y > calW ) { calND = calNy; calW = skinWeight.y; }
+			if ( skinWeight.z > calW ) { calND = calNz; calW = skinWeight.z; }
+			if ( skinWeight.w > calW ) { calND = calNw; calW = skinWeight.w; }
+			objectNormal = normalize( mix( normalize( objectNormal ), normalize( calND ), calVk ) );
+		}
+	}
+	#endif`;
 const NORMFIX_FRAGMENT = `
 	if ( calNormFixK > 0.0 ) {
 		vec3 calFaceN = normalize( cross( dFdx( vViewPosition ), dFdy( vViewPosition ) ) );
-		float calFix = calNormFixK * ( 1.0 - smoothstep( 0.35, 0.8, dot( normal, calFaceN ) ) );
+		float calFix = calNormFixK * ( 1.0 - smoothstep( 0.17, 0.5, dot( normal, calFaceN ) ) );
 		if ( calFix > 0.0 ) {
 			normal = normalize( mix( normal, calFaceN, calFix ) );
 			nonPerturbedNormal = normal;
@@ -328,6 +349,7 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
     Object.assign(shader.uniforms, U);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>${PARS_VERTEX}`)
+      .replace('#include <skinnormal_vertex>', `#ifdef USE_SKINNING\n\tvec3 calN0 = objectNormal;\n\t#endif\n#include <skinnormal_vertex>${NORMFIX_VERTEX}`)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvCalThin = _calthin;\n\tvCalZone = _calzone;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>${PARS_FRAGMENT_EARLY}`)
@@ -340,7 +362,7 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
       .replace('#include <lights_fragment_begin>', `${AO_EARLY}\n#include <lights_fragment_begin>`)
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>${SKY_FRAGMENT}`);
   };
-  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calSkin6${low ? 'l' : ''}`;
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calSkin7${low ? 'l' : ''}`;
   material.userData.calSkin = 1;
   material.userData.calSkinU = U;
   // R59 c / LOOK C-01: the hero fill drops once the scatter carries the shadow side (x0.55; fix round 3, was x0.6: off the live sweep, D-skin-sweep, and three readings a run)
