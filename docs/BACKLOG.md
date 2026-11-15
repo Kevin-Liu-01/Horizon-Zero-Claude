@@ -136,3 +136,57 @@ Gate ids are the ids in `tools/gates.r5.*.mjs`. Section and milestone references
 | note | Decisions asked: a lamp rule that holds 1.6× HDR breaks its own hue clause; lamp spill 0.35 → 0.2. `A-glb-budget` should budget LOD0 only. |
 | note | A fresh-spawn deoptimisation is not investigated; `A-alloc-rate` is not measured on the Instrument rows. |
 | note | Spawn rows are staging values; placement belongs to the world and settlement areas. Hooks offered: `machines.heightOf(kind)`, `machine.flashPart`, `ctx.terrain.cutCover`, the calima state, `plumb` and `peg` audio sets. |
+
+## M1a round 2 additions (Nov 15 2026)
+
+I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon-distance runs green.
+
+**Section 0 (Integration):**
+
+| # | sev | owner | item |
+|---|---|---|---|
+| I20 | blocker | hero-anim | `A17-draw-beats` regressed between 471b07d and dee526d: the loose's rearward follow-through is 0.0056 m (bar 0.05). |
+| I21 | blocker | armory | `A32b-lookup-no-ghost` regressed: the hero's shadow-proxy material (colour and depth writes off) is listed with her fade materials, so the occluder test counts one depth-off material. Keep it out of the fade list. |
+| I22 | closed | engine | `A80-chrome-profile-hygiene` regressed when the runner took the shared browser slot inside `launchBrowser`; fixed in b8640ed and passing. |
+| I23 | major | engine | Tier 0 skips the headless boot unless `--port` is given; one round-2 commit built clean and threw at boot. Make the boot part of every merge check. |
+| I24 | major | hero-anim, engine | `tools/gates/hero-sweep/session.mjs` shares one page between rows; melee state from one row leaked into the next. One page per row, or a melee reset. |
+| I25 | note | orchestrator | A full kept-stack run takes two browser sessions (about 9 and 12.5 minutes); `A90-memory-stability` alone is about 5 minutes. |
+
+**Section 1 (Hero art):**
+
+| sev | item |
+|---|---|
+| blocker | The face has pure-black pixels again: 12 in F12 and 1 in F13 at dee526d (0 at 970a991). |
+| major | The ear rim still shows a corner and kinked straight runs; the tail is still a stiff strip in profile. |
+
+**Section 2 (Hero animation):**
+
+| sev | item |
+|---|---|
+| blocker | One crouch frame still clips cloth through the body (bar 0). |
+| major | `A32-draw-ramp`: the index knuckle is 0.042-0.050 m from the jaw-corner anchor at full draw (bar 0.03); the fix is in the bow code. |
+| major | The full-draw elbow clause of `A-draw-elbow-level` cannot be met with the rig's draw form; needs a decision at the next freeze. |
+| major | Visual rows `V1`, `V3`, `V13`, `V-traversal` fail; three of them are framing (lens behind her with the legs cut, a ledge panel without her). |
+
+**Section 4 (Armory):**
+
+| sev | item |
+|---|---|
+| blocker | The boots' swatch is 10.1 dE from the sheet (bar 10; 2.0 before the pale laces were added). |
+| major | The draw shoulder reads as a pale rounded blob in the over-the-shoulder frames (F17, F24). |
+| major | The left bracer has no brass cap. |
+| note | The violet ladder is out of order: the sash panel reads lighter and pinker than the sheet. |
+| note | Lance and bow still cross in a 45 deg X on the back, with the bow over the lance. |
+
+**World and sky-look (World and sky-look, Milestone 1a):**
+
+| sev | item |
+|---|---|
+| major | F02 frame time with the look off reads 11.9 / 10.8 ms (bar 11) on the same geometry; settle it on a quiet box. |
+| major | The meadow still crawls in the walking clip. |
+| major | F05: two neighbouring silhouette layers are 0.4 L* apart (bar 6). |
+| major | F04 shows only the salt crust, milky and pink-grey (mean luminance 33.5 %); none of the other ground materials is in frame. |
+| major | Shadow hue on warm shaded ground (skin, straw, sand) falls outside the 280-330 deg band (F02 47.9 deg); decide whether the band applies there. |
+| note | F32: no field walls visible from 120 m; a pale haze wedge stands behind the ridge. |
+| note | The lance swing trail still shows as a pale arc in F19. |
+| note | F30: the Brazier draws as bright vertical streaks in the grass. |

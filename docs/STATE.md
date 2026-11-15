@@ -170,3 +170,69 @@ held free memory at a 55 % median (minimum 45 %) and pressure level 1. Q10.4 (a 
 | **M3 Hour two** | the Survey Kite, the Malpaís and Kiln Yards, four more Instruments |
 | **M4 North and west** | the Cloudline, Mistfold and the Fog Harp, the Drowned Flank, the Dredge |
 | **M5 The end** | the Caldera, the Calibration Yard, the Transit, the Fundamental |
+
+## M1a round 2 (Nov 15 2026)
+
+Review run at **dee526d** on `r5/int`, filmed from a clean detached worktree: all 34 frames of Frame Set v2,
+166 s of the gate browser, 0 console errors. The review page compares each Milestone 1a frame with the
+2026-11-14 refilm at b4b46fb, which is still the anchor for every frame (none is accepted yet). Frame Set v2
+re-staged F02, F03, F13, F14-F19 and F32 (`tools/frames/README.md`), so those frames are compared knowing the camera
+moved.
+
+**Tier 0 at dee526d:** PASS, 8 pass, 0 fail, 1 skipped (boot, not requested): `vite build` clean, name lint 0
+listed-term hits in 627 files, licences 219 files against 29 rows, 0 assets over a cap, resident textures 53.42 MB
+of 175 MB, shipped 42.49 MB, import graph clean, 37 Node tests pass. Nothing needed fixing.
+
+**Kept-stack rows at dee526d** (two sessions, every row reached): 80 rows, 64 pass, 6 fail, 2 pending, 8 visual
+(4 pass, 4 fail on the review lane's reading).
+
+| row | result | number |
+|---|---|---|
+| A17-draw-beats | FAIL, regression since 471b07d | loose follow-through 0.0056 m (bar >= 0.05) |
+| A32b-lookup-no-ghost | FAIL, regression since 471b07d | 1 of 26 hero materials left with depth writes off under an occluder (bar 0): the new shadow-proxy material is counted with her fade materials |
+| A80-chrome-profile-hygiene | FAIL at dee526d, regression; **fixed in b8640ed** (PASS) | the runner's relaunch path moved past the row's static window |
+| A32-draw-ramp | FAIL | index knuckle to the jaw-corner anchor 0.042-0.050 m at full draw in all 6 cells (bar 0.03); the hook stays within 0.014 m of the nock |
+| A90-memory-stability | FAIL | +54 geometries over 30 kill/respawn cycles (bar 40), heap +2.2 % |
+| A70-hub-tabs | FAIL (as before) | the K key shows the map tab, not the skills tab |
+| V1, V3, V13, V-traversal | visual FAIL | V1 and V3: lens behind her with the legs cut, no arm swing or crouch readable; V13: the feet point opposite ways; V-traversal: the ledge panel does not frame her |
+| A9-perf-budget | PENDING (box load 4.83) | 59.9 fps median, p95 17.3 ms, 106 draws |
+| A76-footfalls | PENDING | no staged kind declares a size class |
+
+Closed since round 1: A16-draw-anchor (knuckle to jaw 0.014 m, hook 0.0083 m in all 20 cells), A44 (0 m), A44b
+(worst 0.078 m), A56, A71d and A107 (behind the head in the band at most 0.069 m, bar 0.10) now pass.
+
+**Milestone 1a exit items still open** (numbers at the commit named; no world, sky or Instrument source changed
+between fd97ff9 and dee526d):
+
+| area | open | number |
+|---|---|---|
+| world (M1.1a) | F02 at 11 ms or less with the look off | 11.9 ms (89d1883), 10.8 ms (5507180) on the same geometry; needs a quiet-box run |
+| world (M1.1b) | no crawl on the meadow in the walking clip | fails (aea853c) |
+| world (M1.1c) | each silhouette layer 6 L* from its neighbour in F05 | gaps 23.9 / 10.3 / 0.4 / 6.1 (73a80b7); 5 layers, strata, outline and Organ rows pass |
+| world (M1.1d) | 12 panels countable at 150 m; the fallen quadrant | not counted this round |
+| world (M1.1e) | F04 against the material swatches; no repeat under 20 m | only black sand at 1 m matches; F04 mean luminance 33.5 % (dee526d); salt crust and meadow top-downs to re-read |
+| world (M1.1j) | F32 frame bar | 96 draws, 0.80 M triangles pass (dee526d); timing not on a quiet box; field walls not visible |
+| sky-look (M1.1f) | shadow hue 280-330 deg | F02 47.9 (fd97ff9) fail; F05 314.3 pass; needs a ruling for warm shaded ground |
+| sky-look (M1.1g) | palette within 12 dE | F05 9.8 pass; F02 and F04 to re-read on the re-registered boxes |
+| hero-art (M1.2b) | no pure-black pixel on the face | 0 / 12 / 1 px in F11 / F12 / F13 (dee526d; 0 / 0 / 0 at 970a991): regression |
+| hero-art (M1.2b) | no polygon edge on the ear rim | 1 corner, 6 and 8 kinked runs (dee526d) |
+| hero-art (M1.2c) | the tail a gathered cloth volume | still a stiff strip on film |
+| armory (M1.2d) | five swatches within 10 dE | 4 of 5: boots 10.1 (dee526d; 2.0 at b7695e4): regression |
+| armory (M1.2d) | all 14 pieces | left bracer cap missing |
+| hero-anim (M1.2e) | 0 clipping frames | 1 crouch frame (dee526d) |
+| hero-anim (M1.3b) | knuckle within 0.03 m at full draw | 0.042-0.050 m (A32); A16 passes |
+| hero-anim (M1.3d, M1.3f) | Undercut; head-plane rows; A104 | fail |
+| instruments (M1.4c) | A-weak40:plumb; topple row's gait clause; A90 | fail; topple 4.011 s, vial 0.30 m, 21,674 triangles pass |
+| people (M1.5b) | embroidery at 3 m | not legible; density passes (face 1.051, outfit 1.057 of Brea's) |
+| all (exit 5) | the frame bar in F02 and F23 | not measured on a quiet box this round |
+
+Frames that moved most toward their targets since the refilm: F02 (the Ring, the pans and the sun now in frame,
+warm light, soft cloud), F03 (a sunlit meadow instead of black sand) and F19 (the lance lunge readable head to boots
+on the salt). Furthest from their targets: F04 (one milky crust, none of the other swatch materials), F05 (black
+backlit slabs, no layered vista) and F20 (two small figures behind a foreground blade).
+
+**Rulings taken during round 2** (the orchestrator, recorded so the rows can be graded):
+- Shade hue: the 280-330 deg band in M1.1f contradicts the reference crops, which measure 39-50 deg on warm shaded ground by the same rule. The row is restated: shade hue within 15 deg of the crop's own shade hue, measured by the same rule; never cobalt (no shade pixel of hue 200-260 deg on skin or warm sand). Under this ruling F02's 47.9 deg passes; F05's 314.3 deg is graded against F05's own crop.
+- F23 and F24 were re-framed after the freeze (789a0f8) so the Plumb reads at its size; ratified.
+- The vial's weak point is a 0.10 m sphere; a shot that visibly misses the glass must not count.
+- M1.2g "frame totals unchanged" means: Brea within 60 k triangles and 6 draws in F08, and no growth in the F02 and F23 GPU medians from her change, paired at a commit. Studio-frame totals are not a bar.
