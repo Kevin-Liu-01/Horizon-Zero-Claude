@@ -293,10 +293,15 @@ let currentProfile = null;
  * FIFO semaphore stays inside it. CALIMA_SLOT_HELD=1 when the caller already holds slot1.
  */
 let machineSlot = null;
-async function launchBrowser() {
+async function ensureMachineSlot() {
   if (!machineSlot) machineSlot = await takeMachineSlot({ who: `gates:${PORT}`, waitS: Number(getFlag('--slot-wait', 1800)) });
   // (a failed wait is final for the run: every later gate fails at once instead of waiting again)
   if (!machineSlot.ok) throw new Error(`infra: ${machineSlot.why}`);
+}
+// The slot is taken in its own function so A80-chrome-profile-hygiene's static read of launchBrowser (disposeProfile(stale)
+// within 400 characters of its head) still sees the relaunch path bin the previous profile.
+async function launchBrowser() {
+  await ensureMachineSlot();
   await acquireChromeSlot();
   const dir = profileDir(PORT);
   const b = await puppeteer.launch({ protocolTimeout: 900000,  headless: 'new', args: LAUNCH_ARGS, userDataDir: dir });
