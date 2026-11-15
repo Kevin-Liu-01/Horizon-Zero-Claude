@@ -8,6 +8,8 @@
  *   p.subtitle(lines, speaker)                                 one field turn, queued, 2.6 s + 1.1 s a line
  *   p.brazier({ title, rows, line }) -> Promise<row id | null> the rest dialog (rows: [{ id, label, forecast }])
  *   p.busy                                                     a scene or the Brazier dialog is open
+ *   p.card / p.sub                                             the card up now { who, text, cast } / Brea's turn { name, text }
+ *                                                              (people's faces read them: src/world/npc/people/faces.js, M1.5f)
  *   p.dispose()
  *
  * Keys: E, Space or Enter advance a card; 1-3 pick a station; 1-4 pick a rest row; Escape closes the Brazier dialog.
@@ -107,12 +109,14 @@ export class Presenter {
     return new Promise((resolve) => {
       const queue = scene.cards.slice();
       const stations = Array.isArray(scene.stations) ? scene.stations : null;
+      const cast = [...new Set([...scene.cards, ...(stations || []).flatMap((s) => s.cards || [])].map((c) => c.who))];
       const heard = new Set();
       const show = () => {
         const c = queue.shift();
         if (!c) {
           if (stations && !this._exitPlayed) return choose();
           this.lt.classList.remove('on');
+          this.card = null;
           this._exitPlayed = false;
           this._release();
           resolve({ exit: true });
@@ -122,12 +126,14 @@ export class Presenter {
         this.who.textContent = sp.name;
         el('span', 'sys-sub', this.who, sp.sub || '');
         this.line.textContent = c.lines.join('\n');
+        this.card = { who: c.who, text: c.lines.join(' '), cast };
         this.sts.textContent = '';
         this.nextEl.textContent = next;
         this._pick = null;
         this._advance = show;
       };
       const choose = () => {
+        this.card = null;
         this.sts.textContent = '';
         this.nextEl.textContent = '';
         this._advance = null;
@@ -159,6 +165,7 @@ export class Presenter {
 
   _nextSub() {
     const s = this._subQ.shift();
+    this.sub = s ? { name: s.speaker, text: s.lines.join(' ') } : null;
     if (!s) { this.subt.classList.remove('on'); this._subT = 0; return; }
     this.subt.textContent = '';
     if (s.speaker) el('i', null, this.subt, s.speaker);

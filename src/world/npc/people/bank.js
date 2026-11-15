@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { disposeObjectTree } from '../../../core/assets.js';
 import { installCloth } from '../../../hero/clothShader.js';
 import { applySkinLook } from '../../../hero/skinLook.js';
+import { installFaceGeometry } from './face.js';
 
 /**
  * CALIMA · the NPC bank (settlements; R56; plan §4.1, §4.4, gates A-npc-atlas-resident, A-npc-dispose).
@@ -219,6 +220,8 @@ export class NpcBank {
       e.npc = ex.r5Npc;
       e.faction = ex.r5Npc?.faction;
       e.scene = gltf.scene;
+      // M1.5f: the face rig on the near skin, once per archetype (every person of it shares the geometry)
+      gltf.scene.traverse((o) => { if (o.isSkinnedMesh && o.name === 'Skin_L0') installFaceGeometry(o, ex.r5Paint?.layout?.eyePatch); });
       gltf.scene.traverse((o) => {
         if (o.isSkinnedMesh && /^Skin_/.test(o.name) && !e.skinMat) e.skinMat = o.material;
         if (o.isSkinnedMesh && o.name === 'Outfit_L0' && !e.outfitMat) e.outfitMat = o.material;

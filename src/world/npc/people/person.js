@@ -3,6 +3,7 @@ import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { PersonChains } from './chains.js';
 import { FADE_LEVELS } from './bank.js';
 import { PosePlayer, rotOf } from './pose.js';
+import { Face } from './face.js';
 
 /**
  * CALIMA · one person on the street (settlements; R56; bible §6.2). A clone of an archetype's GLB: ONE
@@ -102,6 +103,10 @@ export class Person {
       [this.meshes.Skin_L1, this.meshes.Outfit_L1].filter(Boolean),
       [this.meshes.Skin_L2, this.meshes.Outfit_L2].filter(Boolean),
     ];
+    // M1.5f: a face alive on the near skin (blinks, looks, speaks: ./faces.js directs it)
+    const sk = this.meshes.Skin_L0;
+    this.face = sk?.geometry.userData.faceRig && sys.faces ? sys.faces.add(new Face(sk, { seed, director: sys.faces, name: this.id })) : null;
+    if (this.face) this.face.person = this;
     this.tier = -1;
     this.fromTier = -1;
     this.fadeT = 0;
@@ -420,6 +425,7 @@ export class Person {
 
   dispose() {
     if (this.colliderId >= 0) { try { this.sys.ctx.collision?.unregister(this.colliderId); } catch { /* gone */ } this.colliderId = -1; this.collider = null; }
+    if (this.face) { this.sys.faces?.remove(this.face); this.face.dispose(); this.face = null; }
     this.pose.dispose();
     this.skeleton.dispose();
     this.group.removeFromParent();
