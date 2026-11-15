@@ -130,7 +130,7 @@
 
     { "id": "F20", "subject": "Ansel beside Brea at 3 m", "in": "M1a",
       "hour": 17.5, "weather": "trade", "at": "rest", "bearing": 200,
-      "camera": { "mode": "orbit", "yawRel": 0, "dist": 5.5, "height": 1.3, "target": { "fwd": 0, "side": 1.5, "up": 1.0 }, "fov": 42 },
+      "camera": { "mode": "orbit", "yawRel": 0, "dist": 4.0, "height": 1.7, "target": { "fwd": 0, "side": 1.5, "up": 1.05 }, "fov": 42 },
       "state": { "pose": "idle", "hud": false, "actors": [ { "type": "person", "id": "guild-matron", "dist": 3, "side": 90, "face": "camera" } ] },
       "ref": { "crops": ["people-lineup"] } },
 

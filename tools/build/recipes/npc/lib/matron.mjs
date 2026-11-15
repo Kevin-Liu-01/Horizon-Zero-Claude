@@ -123,14 +123,21 @@ function skirtPaint(t, o) {
   const worn = (1 - 0.45 * sstep(0.62, 0.92, f)) * (noise3(t.X * 30, t.Y * 30, t.Z * 30 + 5) > 0.22 ? 1 : 0.4);
   // along the edge: round the hem it is the bearing, up a slit it is the height
   const along = up < 0.06 ? th * 0.24 : t.Y;
+  // M1a round 3 (the review at dee526d: "Ansel's embroidery still not legible at 3 m"; PEOPLE's robes carry their gold work on
+  // violet grounds): the skirt's fronts and hem are bound in a band of the orchil, 3.4 cm in from each front edge and 11.5 cm up
+  // from the hem, sun-faded a little where it is worn, and the border and the glyph row are couched on it in the bright gold-ochre
+  // (`tick`); the oatmeal linen between keeps no thread. Gold on violet, as the vest's front band already is
+  const ground = t.Y < 1.07 ? Math.max(sstep(0.036, 0.032, e), sstep(0.119, 0.113, up)) : 0;
+  if (ground > 0) over(o, sc(ANSEL.orchil, 0.94 + 0.12 * cr), ground * (0.82 + 0.18 * worn));
+  const gold = () => (ground > 0.5 ? ANSEL.tick : ANSEL.tickDeep);
   if (t.Y < 1.07) {
     // the border: a couched line 13 mm in from every edge, short ticks every 8 mm standing in from it to the edge, a long
     // one every 4 cm (the graduated-tick family mark), a second line 4 mm inside it
     // M1.5b round 2 (legible at 3 m, where a texel-sized thread is gone: about 2.6 mm a pixel at F20's 3 m): the border's two lines
     // 4 and 3 mm wide (were 3.4 and 2.4), the ticks every 16 mm and 6 mm wide (8 and 2), a long one every 8 cm, in the deeper ochre
-    if (Math.abs(e - 0.015) < 0.002 || Math.abs(e - 0.0235) < 0.0015) thread(o, 0.95 * worn, cr, ANSEL.tickDeep);
+    if (Math.abs(e - 0.015) < 0.002 || Math.abs(e - 0.0235) < 0.0015) thread(o, 0.95 * worn, cr, gold());
     const ph = ((along / 0.016) % 1 + 1) % 1, long = Math.floor(along / 0.016) % 5 === 0;
-    if (e > (long ? 0.002 : 0.006) && e < 0.015 && ph < 0.38) thread(o, 0.9 * worn, cr, ANSEL.tickDeep);
+    if (e > (long ? 0.002 : 0.006) && e < 0.015 && ph < 0.38) thread(o, 0.9 * worn, cr, gold());
     // a row of the ring glyph 6 cm over the hem: a ring, a plumb line through it, a datum bar under it, every 13 cm
     // (round 2: the ring 18 mm across its centre line, was 10.5, its strokes 3.6 and 2.4 mm, was 3.2 and 1.6)
     const gv = up - 0.07;
@@ -138,9 +145,9 @@ function skirtPaint(t, o) {
       const s = th * 0.24, k = Math.floor(s / 0.13), gu = ((s % 0.13) + 0.13) % 0.13 - 0.065;
       const live = noise3(k * 3.7, 1.3, 2.9) > 0.25 ? 1 : 0.45;
       const rr = Math.hypot(gu, gv);
-      if (Math.abs(rr - 0.018) < 0.0018) thread(o, 0.92 * live * worn, cr, ANSEL.tickDeep);
-      if (Math.abs(gu) < 0.0012 && Math.abs(gv) < 0.028) thread(o, 0.85 * live * worn, cr, ANSEL.tickDeep);
-      if (Math.abs(gv + 0.026) < 0.0012 && Math.abs(gu) < 0.011) thread(o, 0.85 * live * worn, cr, ANSEL.tickDeep);
+      if (Math.abs(rr - 0.018) < 0.0018) thread(o, 0.92 * live * worn, cr, gold());
+      if (Math.abs(gu) < 0.0012 && Math.abs(gv) < 0.028) thread(o, 0.85 * live * worn, cr, gold());
+      if (Math.abs(gv + 0.026) < 0.0012 && Math.abs(gu) < 0.011) thread(o, 0.85 * live * worn, cr, gold());
       // between the rings a running script of short strokes
       if (Math.abs(gu) > 0.022 && Math.abs(gu) < 0.05 && Math.abs(gv) < 0.006) {
         const sv = ((gu + 0.065) / 0.0062) % 1, su = noise3(Math.floor((gu + 0.065) / 0.0062) * 2.3, k, 5.1);
@@ -400,7 +407,7 @@ export async function matronOutfit() {
   Object.assign(COL, COL_ANSEL);
   try {
     const base = await panBase({
-      ubcBody: true, cut: 'long', sleeves: true, harness: false, armKit: false, keyhole: false, trim: anselTrim,
+      ubcBody: true, cut: 'long', sleeves: true, harness: true, armKit: false, keyhole: false, trim: anselTrim,
       skirt: { yHem: ROBE_HEM, hem: raggedHem, rows: 12, flare: 0.12, colsPer: 19 },
       under: { yTop: ROBE_HEM + 0.05, yHem: ROBE_HEM - 0.065, rows: 2 },
     });
