@@ -146,7 +146,22 @@ export const CLIPS = {
   blendUnstowLanceRoll: { melee: true, run: (R, S) => { R.melee.drawLance(30); for (let i = 0; i < 15; i++) { step(R); S(); } rollRun(R, S); for (let i = 0; i < 30; i++) { step(R); S(); } } },
   blendRollUnstowLance: { melee: true, run: (R, S) => { for (let i = 0; i < 24; i++) { fwd(R, SPEEDS.jog); step(R); } rollRun(R, S, () => { if (!R._ul && R.player.dodgeK >= 0.48) { R._ul = 1; R.melee.drawLance(30); } }); R._ul = 0; for (let i = 0; i < 60; i++) { step(R); S(); } } },
   sit: { cloth: true, run: (R, S) => { const p = R.player; p.riding = {}; p.grounded = false; for (let i = 0; i < 60; i++) step(R); for (let i = 0; i < 120; i++) { step(R); S(); } p.riding = null; p.grounded = true; } },
+  /* M1a debt (M1.3f): blendUnstowLanceRoll on HALF steps (main.js's smooth step mode splits a long frame into equal
+   * sub-steps; the page's one behind-head step at e3d549b, crown, left hand, came on such a step), the roll on
+   * player.js's own clock and root-motion curve from a standing start, as the page's row runs it */
+  blendUnstowLanceRollHalf: { melee: true, run: (R, S) => { const dt = 1 / 120, p = R.player; R.melee.drawLance(30); for (let i = 0; i < 30; i++) { step(R, dt); S(dt); }
+    p.dodging = true; let tt = 0, prog0 = 0; const hx = Math.sin(p.heading), hz = Math.cos(p.heading);
+    for (;;) { tt += dt; const k = tt / 0.82; if (k >= 1) break; p.dodgeK = k; const prog = R.an.rollProgress(k) ?? k; const st = Math.max(0, prog - prog0) * 3.4; prog0 = prog; p.velocity.set(hx * st / dt, 0, hz * st / dt); p.moveSpeed = st / dt; step(R, dt); S(dt); }
+    p.dodging = false; p.dodgeK = 1; p.velocity.set(0, 0, 0); p.moveSpeed = 0; for (let i = 0; i < 60; i++) { step(R, dt); S(dt); } } },
+  /* M1.3h (the clip audit for the slice's other verbs): the Alidade raise (ctx.sighting.on: the animator's E5 overlay,
+   * right hand to the right eye). Graded: 0 behind and 0 plane steps, and (R.aliFrontMin) the right wrist in front
+   * of the head's frontal plane on every step of the hold (the raise's weight over 0.9) */
+  alidade: { run: (R, S) => { R.ctx.sighting = { on: true }; R.aliFrontMin = 9; for (let i = 0; i < 20; i++) { step(R); S(); }
+    for (let i = 0; i < 120; i++) { step(R); S(); if ((R.an._ali?.w ?? 0) > 0.9) { const h = R.M.hangCheck(); R.aliFrontMin = Math.min(R.aliFrontMin, h.r.front); } }
+    R.ctx.sighting = { on: false }; for (let i = 0; i < 30; i++) { step(R); S(); } R.ctx.sighting = null; } },
 };
+/** M1.3h: the slice's verbs with no clip in the tree yet (a row each, a SKIP until the clip lands). */
+export const VERB_STUBS = { saltRake: 'salt rake (both hands on the rake)', kindle: 'kindle at the Brazier', caneCut: 'cane cut' };
 
 /** a roll (0.82 s, 3.4 m) as player.js runs it; `each` is called every step before it */
 function rollRun(R, S, each = null) {
@@ -268,10 +283,12 @@ async function main() {
     reset(R);
     M.begin(name);
     let T = 0;
-    c.run(R, () => { T += 1 / 60; M.sample({ T: +T.toFixed(3), cloth: c.cloth, run: c.wrists }); });
+    c.run(R, (dt = 1 / 60) => { T += dt; M.sample({ T: +T.toFixed(3), cloth: c.cloth, run: c.wrists }); });
     out.clips[name] = M.end();
+    if (name === 'alidade') { out.clips.alidade.aliFrontMin = +R.aliFrontMin.toFixed(4); console.log('alidade right wrist in front of the head plane, min over the hold', out.clips.alidade.aliFrontMin); }
     if (name === 'hang') { out.clips.hang.hang = R.hangCheck; out.clips.hang.bar = R.hangInfo; console.log('hang', JSON.stringify(R.hangCheck), JSON.stringify(R.hangInfo)); }
   }
+  for (const [k, v] of Object.entries(VERB_STUBS)) if (!flag('--only') || flag('--only').split(',').includes(k)) console.log(k.padEnd(8), 'SKIP: no clip in the tree (' + v + ')');
   if (!flag('--only') || flag('--only').split(',').includes('wind')) { out.wind = windStream(R); for (const w of out.wind) console.log('wind', JSON.stringify(w)); }
   console.log(JSON.stringify({ counts: out.counts, caps: out.caps, idleHash: out.idleHash, armHash: out.armHash, idleVsRef: out.idleVsRef }));
   if (flag('--write-idle-ref')) writeFileSync(flag('--write-idle-ref'), JSON.stringify({ commit: flag('--ref-commit', '?'), handHash: out.idleHash, armHash: out.armHash, handTrace: out.handTrace, armTrace: out.armTrace }));

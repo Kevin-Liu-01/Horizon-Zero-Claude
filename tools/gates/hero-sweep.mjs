@@ -102,7 +102,16 @@ const CLIPS = {
   blendRollMantle: { js: `await ledge(1.4, 4.6); S.on = true; keys.add('KeyW'); await simWait(0.15); p.dodge(); await climbUp();` },
   blendSlideRoll: { js: `const f = slideFace(30, 3); if (!f) { S.skip = 'no 30 deg face'; return; } const pid = p.surfaces.add({ x: f.x + f.dx * 1.2, z: f.z + f.dz * 1.2, r: 4.5, surface: 'cinder' }); try { p.position.set(f.x - f.dx * 0.8, 0, f.z - f.dz * 0.8); p.velocity.set(0, 0, 0); p._snapToGround(); p.camYaw = Math.atan2(f.dx, f.dz) + Math.PI; await simWait(0.3); S.on = true; keys.add('KeyW'); const t0 = E.simTime; while (!p.sliding && E.simTime - t0 < 2) await frame(); await simWait(0.5); p.dodge(); await simWait(1.2); } finally { p.surfaces.remove(pid); }` },
   hang: { cloth: true, hang: true, js: `an.setHangPose(true); await simWait(0.5); S.on = true; await simWait(1.0); S.hang = M.hangCheck(); S.bar = an.hangPoseInfo(); S.on = false; an.setHangPose(false);` },
+  /* M1a debt: blendUnstowLanceRoll's twin on a pressed-and-held roll from a jog (the page's smooth step mode splits
+   * long frames into half steps; the e3d549b behind-head step came on one) */
+  blendUnstowLanceRollJog: { js: `keys.add('KeyW'); await simWait(0.6); S.on = true; cmb.melee.drawLance(30); await simWait(0.25); p.dodge(); await simWait(1.3);` },
+  /* M1.3h, THE CLIP AUDIT FOR THE SLICE'S OTHER VERBS: the Alidade raise (Sighting's own toggle, the animator's E5
+   * overlay): 0 behind and 0 plane steps, and the right wrist in front of the head's frontal plane on every step of
+   * the hold (`aliFrontMin`, the raise's weight over 0.9). Sit is the sit row above. */
+  alidade: { ali: true, js: `C.sighting?.toggle?.(true); S.on = true; await simWait(2.2); C.sighting?.toggle?.(false); await simWait(0.5);` },
 };
+/** M1.3h: the slice's verbs with no clip in the tree yet: a row each that SKIPs, by name, until the clip lands. */
+const VERB_STUBS = { saltRake: 'the salt rake (both hands on the rake)', kindle: 'kindle at the Brazier', caneCut: 'the cane cut' };
 
 const row = (name) => {
   const c = CLIPS[name];
@@ -121,7 +130,8 @@ const row = (name) => {
       const updC = cmb.update.bind(cmb);
       cmb.update = function (dt, ...rest) {
         const r = updC(dt, ...rest);
-        if (S.on && dt > 0) { if (T0 == null) T0 = E.simTime; p.model.updateMatrixWorld(true); M.sample({ T: +(E.simTime - T0).toFixed(3), cloth: ${!!c.cloth}, run: ${!!c.run}, aiming: !!p.aiming }); }
+        if (S.on && dt > 0) { if (T0 == null) T0 = E.simTime; p.model.updateMatrixWorld(true); M.sample({ T: +(E.simTime - T0).toFixed(3), cloth: ${!!c.cloth}, run: ${!!c.run}, aiming: !!p.aiming });
+          ${c.ali ? `if ((an._ali?.w ?? 0) > 0.9) { const h = M.hangCheck(); S.aliN = (S.aliN || 0) + 1; S.aliMin = Math.min(S.aliMin ?? 9, h.r.front); }` : ''} }
         return r;
       };
       try { ${c.js} } finally { S.on = false; cmb.update = updC; release(); p.setCrouch?.(false); for (const id of made.splice(0)) K.unregister(id); if (cmb.melee && cmb.melee.stance !== 'holstered') cmb.melee.holsterLance?.(); }
@@ -136,8 +146,9 @@ const row = (name) => {
       if (r.plane) fails.push(r.plane + ' steps above the shoulder behind the head plane');
       ${c.cloth ? `if (r.clipFrames) fails.push(r.clipFrames + ' clipping frames');` : ''}
       ${c.run ? `if (r.wristMid == null || r.wristMid < 0.10) fails.push('wrist ' + r.wristMid + ' m off the midline'); if (r.foreCase == null || r.foreCase <= 0) fails.push('forearm ' + r.foreCase + ' m off the survey case');` : ''}
+      ${c.ali ? `if (!(S.aliN >= 20)) fails.push('the alidade was raised for only ' + (S.aliN || 0) + ' steps'); else if (!(S.aliMin > 0)) fails.push('the right wrist ' + S.aliMin + ' m behind the head plane during the hold');` : ''}
       ${c.hang ? `const H = S.hang; if (!H || !(H.l.front > 0 && H.r.front > 0 && H.l.belowHeadBoneM >= 0 && H.r.belowHeadBoneM >= 0)) fails.push('hang: ' + JSON.stringify(H));` : ''}
-      return { pass: fails.length === 0, detail: { fails, ...r, hang: S.hang, bar: S.bar, counts: M.counts, caps: M.caps, wrap: an.clothWrapInfo?.() || null } };
+      return { pass: fails.length === 0, detail: { fails, ...r, hang: S.hang, bar: S.bar, aliFrontMin: S.aliMin ?? null, aliSteps: S.aliN ?? null, counts: M.counts, caps: M.caps, wrap: an.clothWrapInfo?.() || null } };
     })()`),
   };
 };
@@ -222,5 +233,54 @@ const windRow = {
     })()`,
 };
 
+const stubRow = (name) => ({
+  id: `A-sweep-${name}`, kind: 'action', lane: 'hero-anim', timeout: 10000,
+  title: `M1.3h clip audit, ${VERB_STUBS[name]}: 0 steps with a hand or forearm behind the head (a stub: no clip in the tree yet)`,
+  assert: `({ pass: null, detail: { verdict: 'SKIP (no clip): ${VERB_STUBS[name]} has no clip in the tree; this row grades it with the sweep when it lands' } })`,
+});
+
+/**
+ * M1a debt (V13, "the feet point opposite ways in the strafe step"), as a NUMBER: V13's own staging (the gate place,
+ * the bow up on RMB, A held 2.4 s, then V13's locked lens at +Z 3.3 m and 0.9 s more), both feet's headings by their
+ * lateral axes (`_footHdg`, char space) and the travel's (`_latMove`) on every step from 0.6 s. PASS: the feet within
+ * 20 deg of each other on every step with the strafe on (`_latK` > 0.5), and each within 45 deg of the travel.
+ */
+const strafeFeetRow = {
+  id: 'A-sweep-strafeFeet', kind: 'action', lane: 'hero-anim', timeout: 60000,
+  title: 'V13 as a number: in the aim side-step both feet point within 20 deg of each other and within 45 deg of the travel on every step',
+  setup: `__CTX__.input.enabled = true;`, settle: 400,
+  assert: placed(['openGround'], `(async () => {
+      const C = __CTX__, p = C.player, an = p.animator, E = C.engine;
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      for (const m of (C.machines?.list || [])) m.update = () => {};
+      if (!an?._footHdg) return { pass: null, detail: 'SKIP: no _footHdg' };
+      const wrap = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+      const deg = (r) => +(r * 180 / Math.PI).toFixed(1);
+      C.input.keys.clear(); C.input.mouse.buttons = 0; p.setCrouch?.(false);
+      standAt(p, 'openGround'); p.camPitch = 0; p.velocity?.set(0, 0, 0);
+      const t0w = performance.now(); while (performance.now() - t0w < 300) await frame();
+      C.input.mouse.buttons |= 4; C.input.keys.add('KeyA');
+      const s0 = E.simTime; let worst = 0, worstAt = null, over = 0, n = 0, trav = 0, lensSet = false; const ucam = p._updateCamera;
+      try {
+        while (E.simTime - s0 < 3.3) {
+          await frame();
+          const t = E.simTime - s0;
+          if (!lensSet && t >= 2.4) { lensSet = true; p._updateCamera = function () { const cam = this.ctx.camera; cam.position.set(this.position.x, this.position.y + 1.0, this.position.z + 3.3); cam.lookAt(this.position.x, this.position.y + 0.82, this.position.z); }; }
+          if (t < 0.6 || !((an._latK ?? 0) > 0.5)) continue;
+          const hL = an._footHdg(0), hR = an._footHdg(1), mv = an._latMove ?? 0;
+          const d = Math.abs(wrap(hL - hR)); n++;
+          if (d > 20 * Math.PI / 180) over++;
+          trav = Math.max(trav, Math.abs(wrap(hL - mv)), Math.abs(wrap(hR - mv)));
+          if (d > worst) { worst = d; worstAt = { t: +t.toFixed(2), hL: deg(hL), hR: deg(hR), travel: deg(mv), stanceL: +(an.loco?.stanceL ?? 0).toFixed(2), stanceR: +(an.loco?.stanceR ?? 0).toFixed(2), heading: deg(p.heading), aiming: !!p.aiming }; }
+        }
+      } finally { p._updateCamera = ucam; C.input.keys.clear(); C.input.mouse.buttons = 0; }
+      const fails = [];
+      if (n < 30) fails.push('only ' + n + ' strafe steps (aiming ' + !!p.aiming + ')');
+      if (over) fails.push(over + ' of ' + n + ' steps with the feet over 20 deg apart (worst ' + deg(worst) + ')');
+      if (trav > Math.PI / 4) fails.push('a foot ' + deg(trav) + ' deg off the travel');
+      return { pass: fails.length === 0, detail: { fails, steps: n, worstFeetDeg: deg(worst), over20: over, worstVsTravelDeg: deg(trav), worstAt } };
+    })()`),
+};
+
 export const SWEEP_CLIPS = Object.keys(CLIPS);
-export const GATES = [...SWEEP_CLIPS.map(row), windRow];
+export const GATES = [...SWEEP_CLIPS.map(row), ...Object.keys(VERB_STUBS).map(stubRow), strafeFeetRow, windRow];
