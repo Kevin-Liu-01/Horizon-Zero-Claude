@@ -59,6 +59,7 @@ const _grip = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _q3 = new THREE.Quaternion();
+const _qCR = new THREE.Quaternion();   // (M1a debt: `_blendCarry` on the carried line)
 const _m4 = new THREE.Matrix4();
 const _seg = new THREE.Vector3();
 const _sgA = new THREE.Vector3();
@@ -82,6 +83,9 @@ const _bcTmp = new THREE.Vector3();
 const _rgDir = new THREE.Vector3();
 /* M1.2f fix 1: the left-led carry's scratch, and the head-plane guard's */
 const _hpP = new THREE.Vector3(), _hpQ = new THREE.Vector3(), _hpC = new THREE.Vector3(), _hpF = new THREE.Vector3();
+/** (M1a debt: `_headPlaneGuard`'s spine axis, and the forearm's clearance of it the search prefers, m) */
+const _hpPel = new THREE.Vector3(), _hpNeck = new THREE.Vector3();
+const HP_FORE_CLEAR = 0.12;
 const _esP = new THREE.Vector3();   // (M1a round 2: `_elbowSettle`'s last rendered elbow)
 const _lcB1 = new THREE.Vector3(), _lcD1 = new THREE.Vector3(), _lcP0 = new THREE.Vector3(), _lcP1 = new THREE.Vector3(), _lcPm = new THREE.Vector3(), _lcDm = new THREE.Vector3();
 /** `_snapPose`'s own shaft scratch (it runs inside `_blend`, before _lerpPose). */
@@ -785,6 +789,8 @@ const SIDE_KEY = {
 const LC_S = 0.42;                 // where the left palm holds the haft (m from the butt)
 const LC_REACH = 0.30;             // the draw: the left hand's reach to the stowed haft ends here (drawK)
 const LC_CARRY = 0.62;             // ...and the carry to the guard's line ends here
+/** M1a debt (A104): the carried haft's clearance of the axial bones on the stow and the unstow (A104 bar 0.12 + 0.02). */
+const LC_CLEAR = 0.14;
 /* The path (char space), chosen by a clearance search on her standing pose (shaft >= 0.10 m off the torso capsule,
  * the head, the right upper arm and the thighs from 8 % of the carry on; the stowed line itself is 0.03 m off her
  * back by design): the left palm out beside her left hip with the haft along her left side under the arm, butt
@@ -1453,6 +1459,24 @@ export class MeleeLayer {
       this._dbg.carryDur = this._carryDur;
     }
     const k = this._carryB;
+    /* M1a debt (M1.3d, A104 "holster: the haft 0.108 m from head/neck/spine"): while the LEFT hand carries the haft
+     * (the stow after the hand-over, `_lc`), the slide out of the capture rides on the carried line instead of
+     * cutting across to it: the capture's offset from the carried pose of the blend's first frame is what is blended
+     * out, applied to this frame's carried pose. The straight lerp from the in-hand capture in front of her to a line
+     * that had already swung round onto her back put the butt through her left flank (dressed bench: 0.109 m from
+     * spine_02 at drawK 0.87, the butt 0.22 m in front of her belly). */
+    if (this._lc?.on && !this._held) {
+      if (!this._carryRel) {
+        this._carryRel = true;
+        this._carryRP.subVectors(this._carryP, g.position);
+        this._carryRQ.copy(g.quaternion).invert().premultiply(this._carryQ);   // capture * authored0^-1
+      }
+      g.position.addScaledVector(this._carryRP, 1 - k);
+      _qCR.identity().slerp(this._carryRQ, 1 - k);
+      g.quaternion.premultiply(_qCR);
+      g.scale.lerp(this._carryS, 1 - k);
+      return;
+    }
     g.position.lerp(this._carryP, 1 - k);
     g.quaternion.slerp(this._carryQ, 1 - k);
     g.scale.lerp(this._carryS, 1 - k);
@@ -1480,6 +1504,8 @@ export class MeleeLayer {
     _m4.decompose(this._carryP, this._carryQ, this._carryS);
     this._carryB = 0;
     this._carryDur = CARRY_T;
+    this._carryRel = false;
+    if (!this._carryRP) { this._carryRP = new THREE.Vector3(); this._carryRQ = new THREE.Quaternion(); }
   }
 
   /** Worst-case travel of the haft's far end across the rest of the blend. */
@@ -3070,6 +3096,31 @@ export class MeleeLayer {
       _lcDm.fromArray(LC_DIR_MID).normalize();
       if (u < 0.5) this._slerpDirV(L.d0, _lcDm, u * 2, L.dir); else this._slerpDirV(_lcDm, _lcD1, u * 2 - 1, L.dir);
       L.butt.copy(L.pt).addScaledVector(L.dir, -LC_S);
+      /* M1a debt (M1.3d, A104 "holster: the haft 0.108 m from head/neck/spine", page): on the stow's last leg the
+       * carried haft swings onto her back across her left flank, butt in front of her belly, and passed 0.109 m from
+       * spine_02 (dressed bench, drawK 0.87; A104's bar 0.12). Where the carried line comes within `LC_CLEAR` of an
+       * axial bone the whole line (and the left palm on it) is moved straight out, level, from the nearest bone by the
+       * shortfall, faded out as the line lands on the stowed one (u -> 0) so the stowed line is unchanged */
+      if (!this._held && u < 1) {
+        const an = this.an;
+        _lcB1.copy(L.butt).addScaledVector(L.dir, this.length);
+        let best = 9;
+        for (let ci = 0; ci < CLEAR_BONES.length; ci++) {
+          const e = an.b[CLEAR_BONES[ci]];
+          if (!e) continue;
+          an._charOf(e.bone, _lcP0);
+          segPointN(L.butt, _lcB1, _lcP0);
+          if (_sgNum[0] < best) { best = _sgNum[0]; _lcPm.subVectors(_segNear, _lcP0); }
+        }
+        const need = (LC_CLEAR - best) * smoothstep(u, 0, 0.12);
+        if (need > 0) {
+          _lcPm.y = 0;
+          if (_lcPm.lengthSq() < 1e-8) _lcPm.set(1, 0, 0);
+          _lcPm.normalize();
+          L.pt.addScaledVector(_lcPm, need); L.butt.addScaledVector(_lcPm, need);
+          this._dbg.leftCarryPush = +need.toFixed(3);
+        }
+      }
     } else {
       L.butt.copy(L.s0); L.dir.copy(L.d0);
       L.pt.copy(L.s0).addScaledVector(L.d0, LC_S);
@@ -3358,6 +3409,11 @@ export class MeleeLayer {
       an._clearArmOfHead(b.upArmR, b.loArmR, b.handR, _hand, _pole, w);
       this._alignHaft(w);
     }
+    /* (M1a debt, A104 "holster: the forearm 0.083 m off the spine", page; 0.084 on the dressed bench at drawK 0.12:
+     *  the holster's first leg leaves the guard with the chest turned toward the hand, and the straight blend to the
+     *  reach pose took the forearm across her chest. While the right hand still holds the haft, the wrist goal is
+     *  moved out from the axis as in a swing, before the path's elbow bound) */
+    if (path && this._held && this._prevStance === 'holster') this._foreGuard(w);
     if (path) this._pathGuard(w);
     else if (this._guardOn) this._foreGuard(w);
     /* THE GUARDS MAY NOT POP: what they added to the table's hand changes by at
@@ -3378,6 +3434,11 @@ export class MeleeLayer {
     } else this._guardOff.subVectors(_hand, _hTab);
     // (M1.2f / M1.3f fix 1: last, the sweep's own head-plane bound on the solved right arm)
     this._headPlaneGuard(w);
+    /* (M1a debt, A104 "jog heavy": the re-solves above (the step limiter's, the head-plane guard's lowered fist) take
+     *  the elbow back to the raw pole and drop the roll `_alignHaft` gave it; at a jog's lean that put the forearm
+     *  0.06 m off the spine axis at the strike (dressed bench; the page read 0.049). In a swing or the guard the elbow
+     *  is rolled clear last, the hand where it is) */
+    if (!path && this._guardOn) this._foreRoll(w);
     // (M1a round 2: ...and on the draw and the holster the elbow comes from where it was drawn last step)
     if (path || this._settleOn) this._elbowSettle(w);
     this._rollOff = false;
@@ -3405,7 +3466,12 @@ export class MeleeLayer {
     // last step's rendered elbow, on this step's shoulder
     _esP.subVectors(an._elbP, an._shP).add(_eS);
     const lim = ELB_SETTLE_V * Math.max(1 / 240, Math.min(this._lastDt || 1 / 60, 1 / 20));
-    if (this._elbowViol(_eE) + this._foreBackViol(_eE, _eH) <= 0 && _eE.distanceTo(_esP) <= lim) { D.elbowSettle = 0; return; }
+    /* (M1a debt, A104 R9: the guard at a jog after a heavy settled the elbow onto her midline, the forearm 0.018 m off
+     *  the pelvis->neck axis on the dressed bench, and the holster's first steps 0.084: the forearm's clearance of that
+     *  axis is part of the settle's bound, `HP_FORE_CLEAR`) */
+    const sp = !this._pathOn && !!(b.pelvis && b.neck1);   // (not on the draw and holster: their path owns the elbow)
+    if (sp) { an._charOf(b.pelvis.bone, _hpPel); an._charOf(b.neck1.bone, _hpNeck); }
+    if (this._elbowViol(_eE) + this._foreBackViol(_eE, _eH) + (sp ? this._foreSpineViol(_eE, _eH) : 0) <= 0 && _eE.distanceTo(_esP) <= lim) { D.elbowSettle = 0; return; }
     _eAx.subVectors(_eH, _eS);
     const d = _eAx.length();
     if (d < 1e-4) return;
@@ -3424,7 +3490,8 @@ export class MeleeLayer {
       const phi = i <= ELB_SETTLE_N / 2 ? i * step : (i - ELB_SETTLE_N) * step;
       _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
       if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
-      const v = this._elbowViol(_eT) + this._foreBackViol(_eT, _eH) + (hp && this._hpBad(_eS, _eT, _eH, _hpC, _hpF) ? ELB_SETTLE_HP : 0);
+      const v = this._elbowViol(_eT) + this._foreBackViol(_eT, _eH) + (hp && this._hpBad(_eS, _eT, _eH, _hpC, _hpF) ? ELB_SETTLE_HP : 0)
+        + (sp ? this._foreSpineViol(_eT, _eH) : 0);
       if (v < leastV) { leastV = v; least = phi; }
       if (v > 0) continue;
       const dp = _eT.distanceTo(_esP), a = Math.abs(phi);
@@ -3439,6 +3506,14 @@ export class MeleeLayer {
     an._rotQL(b.upArmR, _eQ);
     const ro = this._rollOff; this._rollOff = true; this._alignHaft(w); this._rollOff = ro;
     D.elbowSettle = +(phi * 180 / Math.PI).toFixed(1);
+  }
+
+  /** M1a debt: how far the char-space forearm `E` -> `H` comes inside `HP_FORE_CLEAR` of the pelvis->neck axis
+   *  (`_hpPel`, `_hpNeck` current). 0 when clear. No allocation. */
+  _foreSpineViol(E, H) {
+    segSegN(E, H, _hpPel, _hpNeck);
+    const g = _sgNum[0];
+    return g < HP_FORE_CLEAR ? HP_FORE_CLEAR - g : 0;
   }
 
   /** M1a round 2 fix: how far the char-space forearm `E` -> `H` comes inside `ELB_FORE_BACK` of the back half of the
@@ -3527,18 +3602,34 @@ export class MeleeLayer {
     _eU.multiplyScalar(1 / r);
     _eV.crossVectors(_eAx, _eU);
     const step = (2 * Math.PI) / ELB_SAMPLES;
-    for (let i = 1; i <= ELB_SAMPLES / 2; i++) {
-      for (let sg = -1; sg <= 1; sg += 2) {
-        const phi = sg * i * step;
-        _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
-        if (this._hpBad(_eS, _eT, _eH, _hpC, _hpF)) continue;
-        if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
-        _eQ.setFromAxisAngle(_eAx, phi);
-        an._rotQL(b.upArmR, _eQ);
-        const ro = this._rollOff; this._rollOff = true; this._alignHaft(w); this._rollOff = ro;
-        D.headPlaneGuard = (D.headPlaneGuard || 0) + 1;
-        return;
+    /* M1a debt (M1.3d, A104 "jog heavy": the forearm 0.049 m off the pelvis->neck axis in the page, 0.060 on the
+     * dressed bench at the strike): the nearest elbow that clears the head plane was often the one rolled DOWN and IN
+     * in front of her leaning chest, after `_foreGuard` had already run. So the search prefers an elbow whose forearm
+     * also keeps `HP_FORE_CLEAR` off that axis (A104's 0.10 bar plus 0.02), and takes the nearest head-plane-legal
+     * elbow only when no such elbow is on the circle (the old answer). */
+    an._charOf(b.pelvis.bone, _hpPel); an._charOf(b.neck1.bone, _hpNeck);
+    let fallback = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 1; i <= ELB_SAMPLES / 2; i++) {
+        for (let sg = -1; sg <= 1; sg += 2) {
+          const phi = sg * i * step;
+          if (pass === 1 && phi !== fallback) continue;
+          _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
+          if (this._hpBad(_eS, _eT, _eH, _hpC, _hpF)) continue;
+          if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
+          if (pass === 0) {
+            segSegN(_eT, _eH, _hpPel, _hpNeck);
+            if (_sgNum[0] < HP_FORE_CLEAR) { if (fallback === 0) fallback = phi; continue; }
+          }
+          _eQ.setFromAxisAngle(_eAx, phi);
+          an._rotQL(b.upArmR, _eQ);
+          const ro = this._rollOff; this._rollOff = true; this._alignHaft(w); this._rollOff = ro;
+          D.headPlaneGuard = (D.headPlaneGuard || 0) + 1;
+          if (pass === 1) D.headPlaneGuardNearSpine = (D.headPlaneGuardNearSpine || 0) + 1;
+          return;
+        }
       }
+      if (fallback === 0) break;
     }
     D.headPlaneGuardFail = (D.headPlaneGuardFail || 0) + 1;
   }
@@ -3571,6 +3662,64 @@ export class MeleeLayer {
       this._alignHaft(w);
       D.foreGuard = FORE_CLEAR - g;
     }
+  }
+
+  /**
+   * M1a debt (M1.3d, A104 R9 "jog heavy", the page's 0.049 m) — THE FOREARM OFF HER BELLY WITHOUT MOVING THE HAND.
+   * `_foreGuard` moves the wrist goal; after the guards' step limiter has re-solved the arm on the raw pole the
+   * forearm can come back within reach of the pelvis->neck axis with the hand where it should be. Here the upper arm
+   * is rolled about shoulder -> wrist (the wrist and the haft's grip do not move) to the nearest elbow whose forearm
+   * keeps `FORE_CLEAR` off the axis, not through the head and not over the shoulder behind the head plane; the haft
+   * is re-aimed by the forearm and the wrist only. Nothing when the forearm is already clear. No allocation.
+   */
+  _foreRoll(w) {
+    const an = this.an, b = an.b, D = this._dbg;
+    if (w < 0.02 || !b.pelvis || !b.neck1) return;
+    an._charOf(b.upArmR.bone, _eS);
+    an._charOf(b.loArmR.bone, _eE);
+    an._charOf(b.handR.bone, _eH);
+    an._charOf(b.head.bone, _eD);
+    an._charOf(b.pelvis.bone, _hpPel); an._charOf(b.neck1.bone, _hpNeck);
+    segSegN(_eE, _eH, _hpPel, _hpNeck);
+    const g0 = _sgNum[0];
+    if (!(g0 < FORE_CLEAR)) return;
+    const hp = !!an.T.headOff;
+    if (hp) {
+      an._liveW(b.head.bone, _q1); _q1.multiply(b.head.invW);
+      _hpF.set(0, 0, 1).applyQuaternion(_q1);
+      _hpC.copy(an.T.headOff).applyQuaternion(_q1).add(_eD);
+    }
+    _eAx.subVectors(_eH, _eS);
+    const d = _eAx.length();
+    if (d < 1e-4) return;
+    _eAx.multiplyScalar(1 / d);
+    const along = _eT.subVectors(_eE, _eS).dot(_eAx);
+    _eC.copy(_eS).addScaledVector(_eAx, along);
+    _eU.subVectors(_eE, _eC);
+    const r = _eU.length();
+    if (r < 1e-3) return;
+    _eU.multiplyScalar(1 / r);
+    _eV.crossVectors(_eAx, _eU);
+    const step = (2 * Math.PI) / ELB_SETTLE_N;
+    let best = 0, bestG = g0;
+    for (let i = 1; i <= ELB_SETTLE_N / 2; i++) {
+      for (let sg = -1; sg <= 1; sg += 2) {
+        const phi = sg * i * step;
+        _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
+        if (!this._elbowOk(_eT)) continue;
+        if (hp && this._hpBad(_eS, _eT, _eH, _hpC, _hpF)) continue;
+        if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
+        segSegN(_eT, _eH, _hpPel, _hpNeck);
+        const g = _sgNum[0];
+        if (g >= FORE_CLEAR) { best = phi; bestG = g; i = ELB_SETTLE_N; break; }
+        if (g > bestG + 1e-4) { best = phi; bestG = g; }
+      }
+    }
+    if (best === 0) return;
+    _eQ.setFromAxisAngle(_eAx, best);
+    an._rotQL(b.upArmR, _eQ);
+    const ro = this._rollOff; this._rollOff = true; this._alignHaft(w); this._rollOff = ro;
+    D.foreRoll = +(bestG - g0).toFixed(3);
   }
 
   /**
