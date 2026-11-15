@@ -8,6 +8,7 @@
  * (byte for byte, with the comments above each) and are installed onto `PlayerAnimator.prototype` by that
  * file (`installMethods`); `this` is the animator, as before. This class is a carrier and is never constructed.
  */
+import * as THREE from 'three';
 import {
   BOW_ARM_LOCK, HAND_ANCHOR_R, HAND_IN, HEAD_R, QUIVER_T, Q_IDENT, X_AXIS, Y_AXIS, Z_AXIS, _a16U, _afA, _afC,
   _afD, _afE, _afF, _afG, _afH, _afJ, _afJ2, _afK, _afK2, _afL, _afL2, _afM, _afM2, _afP, _afQ, _afQ2, _afQl0,
@@ -2364,7 +2365,32 @@ export class AimRig {
     _ik5.copy(_alV).addScaledVector(_alV2, 0.055).addScaledVector(_alFwd, -0.045);
     _ik5.x -= 0.012;
     _pole.set(-0.35, -0.9, 0.15);
+    _alT.copy(_ik5);                                   // (the IK uses _ik5 as its own scratch)
     this._ikArm('r', _ik5, _pole, w, null);
+    /* M1.3h (the clip audit, "Alidade raise: the hand in front of the face for the whole hold"): the raise put a hand
+     * point 0.002 m BEHIND the plane through the skull centre, over the shoulder (dressed bench: 127 steps of the
+     * hold counted as "a hand behind the head plane"). The wrist goal comes forward along the gaze until the wrist,
+     * the index knuckle and the middle fingertip are `ALI_FRONT` in front of that plane, and the arm is solved again
+     * (twice at most). No allocation. */
+    if (this.T.headOff) {
+      const kn = this.bones.index_01_r, tp = this.bones.middle_04_leaf_r || this.bones.middle_03_r;
+      this._charOf(b.head.bone, _alHp);
+      _alC.copy(this.T.headOff).applyQuaternion(_alQ).add(_alHp);
+      for (let it = 0; it < 2; it++) {
+        let dmin = 9;
+        for (let q = 0; q < 3; q++) {
+          const bn = q === 0 ? b.handR.bone : q === 1 ? kn : tp;
+          if (!bn) continue;
+          this._charOf(bn, _alP);
+          const dq = _alP.sub(_alC).dot(_alFwd);
+          if (dq < dmin) dmin = dq;
+        }
+        if (!(dmin < ALI_FRONT)) break;
+        _alT.addScaledVector(_alFwd, ALI_FRONT - dmin + 0.005);
+        _pole.set(-0.35, -0.9, 0.15);
+        this._ikArm('r', _alT, _pole, w, null);
+      }
+    }
     this._curlFingers(this._fingerR, 0.75 * w, 0.55 * w);
     // ---- the tube target: X = T(centre) R(+X -> gaze) T(-c0); cord bone = X * bind
     // (char space; placed AFTER the springs by `_alidadePlace`, so the cord's
@@ -2645,3 +2671,7 @@ export class AimRig {
     loE.bone.quaternion.multiply(_ikQ3);
   }
 }
+
+/* (M1.3h: the Alidade raise's hand in front of the face, `_alidadeLayer`) */
+const ALI_FRONT = 0.03;
+const _alHp = new THREE.Vector3(), _alC = new THREE.Vector3(), _alP = new THREE.Vector3(), _alT = new THREE.Vector3();
