@@ -22,8 +22,10 @@
  *                    opens, read off the page after a real E hold, and the rules' mode (src/game/brazier)
  *   death-rule       if Brea dies in the run: the stage before, the stage after RELOAD THE LAST ENTRY, and where she
  *                    stands against the Brazier of her last rest
- *   save-continue    after the run: close the tab (quit), open a new one on the same profile, CONTINUE on the title:
- *                    the same stage, satchel, place and hour. A diagnosis is polled while the title is awaited.
+ *   save-reload      right after New Game: quit (the document unloaded), the game opened again in the same tab,
+ *                    CONTINUE on the title: the same stage, satchel, place and hour as the record; the run plays on
+ *   save-continue    the same after the run, on the run's newest record. A diagnosis is polled while the title is
+ *                    awaited (see reloadContinue: a new tab got no animation frames and the title sat in 'idle')
  *
  * Output: a run dir under ~/.calima-r5/review/runs/ (never the repo): report.json, the frames, step shots.
  */
@@ -157,10 +159,10 @@ const keys = (page) => ({
   tap: async (k, ms = 120) => { await page.keyboard.down(k); await sleep(ms); await page.keyboard.up(k); },
 });
 
-async function walkTo(page, K, target, radius, { up = 0, maxS = 150 } = {}) {
+async function walkTo(page, K, target, radius, { up = 0, maxS = 150, sprint = true } = {}) {
   const t0 = Date.now();
   let best = Infinity, bestAt = Date.now(), hop = 0;
-  await K.down('KeyW'); await K.down('ShiftLeft');
+  await K.down('KeyW'); if (sprint) await K.down('ShiftLeft');
   try {
     for (;;) {
       const s = await page.evaluate(probe);
@@ -179,7 +181,7 @@ async function walkTo(page, K, target, radius, { up = 0, maxS = 150 } = {}) {
       await page.evaluate(face, target.x, target.z);
       await sleep(120);
     }
-  } finally { await K.up('ShiftLeft'); await K.up('KeyW'); }
+  } finally { if (sprint) await K.up('ShiftLeft'); await K.up('KeyW'); }
 }
 
 async function playScene(page, K, maxN = 40) {
@@ -298,6 +300,17 @@ async function beat(page, K, s) {
       if (f.why === 'died') return f;
       lampsFight = f;
     }
+    if (st === 'ditch') {
+      // "come down on the Plumb through the lee ditch": crouched, at a walk (C toggles the crouch), as a player stalks
+      // it; sprinting in stood her 9 m from it in the open and it killed her (f90d2b0, 7ae0fd0)
+      const crouched = await page.evaluate(() => !!window.__CTX__.player.crouching);
+      if (!crouched) await K.tap('KeyC');
+      const r = await walkTo(page, K, s.anchor, Math.max(1.5, s.radius - 1), { sprint: false, maxS: 200 });
+      if (await page.evaluate(() => !!window.__CTX__.player.crouching)) await K.tap('KeyC');
+      await sleep(300);
+      await playScene(page, K);
+      return r;
+    }
     const r = await walkTo(page, K, s.anchor, Math.max(1.5, s.radius - 1), { up: s.up });
     await sleep(300);
     await playScene(page, K);
@@ -342,6 +355,72 @@ async function beat(page, K, s) {
   return { ok: false, why: `unknown beat type ${s.type}` };
 }
 
+/**
+ * QUIT AND CONTINUE (M1.6f): read the record Continue will load, unload the document (about:blank: the game is gone,
+ * only localStorage stays), open the game again IN THE SAME TAB, press a key, CONTINUE, and compare the live state
+ * with the record. The same tab, not a new one: at f90d2b0 and before, the save-continue row closed the tab and
+ * opened another, whose title sat in 'idle' for 120 s with no error (3 of 3 runs): the new tab got no animation
+ * frames, so the game's frame loop and the title's presentation loop never ran. A diagnosis is polled while the
+ * title is awaited (animation frames counted from document start, visibility, focus, context loss).
+ */
+async function reloadContinue(page, tag) {
+  const before = await page.evaluate(() => {
+    const C = window.__CTX__, s = C.progression.saves;
+    const n = s.store.continueSlot();
+    const rec = n ? s.store.latest(n) : null;
+    return rec ? { slot: n, stage: rec.quest?.order?.at?.(-1)?.id ?? null, idx: rec.quest?.idx, started: !!rec.quest?.started, salt: rec.satchel['metal-shards'] ?? 0,
+      hour: rec.hour, x: rec.position.x, z: rec.position.z, kind: rec.kind, reason: rec.reason, v: rec.v,
+      keys: Object.keys(localStorage).filter((k) => k.startsWith('cal.v6')) } : null;
+  });
+  const tC = Date.now();
+  await page.goto('about:blank', { waitUntil: 'load', timeout: 30000 });
+  await sleep(400);
+  await page.bringToFront();
+  await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  const diag = [];
+  let titled = false;
+  for (let i = 0; i < 60 && !titled; i++) {
+    const d = await page.evaluate(() => ({ ctx: !!window.__CTX__, state: window.__CTX__?.state ?? null, stage: window.__CTX__?.menus?.titleStage ?? null,
+      load: document.getElementById('load-label')?.dataset?.step ?? null, errs: (window.__GAME__?.systemErrors || []).map((e) => `${e.key}: ${e.message}`).slice(0, 4),
+      raf: window.__raf ?? null, vis: document.visibilityState, focus: document.hasFocus(), titleBuilt: !!window.__CTX__?.menus?._titleBuilt,
+      host: !!document.querySelector('#title .title-inner'), glLost: window.__CTX__?.engine?.renderer?.getContext?.()?.isContextLost?.() ?? null,
+      frames: window.__CTX__?.engine?.frames ?? null })).catch((e) => ({ evalError: String(e).slice(0, 120) }));
+    d.t = Math.round((Date.now() - tC) / 1000);
+    diag.push(d);
+    titled = d.state === 'title' && /press|menu/.test(d.stage || '');
+    if (!titled) await sleep(2000);
+  }
+  const row = { before, diag: diag.filter((d, i) => i % 5 === 0 || i === diag.length - 1), bootS: Math.round((Date.now() - tC) / 1000), sameTab: true };
+  if (!titled) {
+    row.pass = false;
+    row.why = 'the title never came on the second boot (diag holds what the page showed)';
+    row.shot = await shot(page, `${tag}-no-title`);
+    return row;
+  }
+  await sleep(400);
+  if (await page.evaluate(() => window.__CTX__.menus.titleStage === 'press')) await page.keyboard.press('Enter');
+  await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 30000, polling: 50 }).catch(() => {});
+  await sleep(300);
+  row.titleShot = await shot(page, `${tag}-title`);
+  row.titleSave = await page.evaluate(() => document.querySelector('.mn-title-save')?.textContent ?? null);
+  const hadContinue = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent)); if (!b || b.disabled) return false; b.click(); return true; });
+  await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 60000, polling: 50 }).catch(() => {});
+  await sleep(1500);
+  const after = await page.evaluate(() => {
+    const C = window.__CTX__, sp = C.spine, p = C.player;
+    return { state: C.state, idx: sp.idx, started: sp.started, stage: sp.order.at(-1)?.id ?? null, current: sp.current()?.id ?? null, salt: C.inventory.count('metal-shards'),
+      hour: +C.environment.time.toFixed(3), x: +p.position.x.toFixed(3), z: +p.position.z.toFixed(3),
+      note: document.querySelector('.cal-track-obj')?.textContent ?? null, loadedFrom: C.progression.saves.loadedFrom };
+  });
+  Object.assign(row, {
+    after, hadContinue,
+    pass: !!before && hadContinue && after.state === 'playing' && before.idx === after.idx && before.started === after.started && before.salt === after.salt
+      && Math.abs(before.hour - after.hour) < 0.05 && Math.hypot(before.x - after.x, before.z - after.z) < 1.0,
+    shot: await shot(page, `${tag}-continued`),
+  });
+  return row;
+}
+
 /* ---------------------------------------------------------------- main */
 
 try {
@@ -355,7 +434,10 @@ try {
   installProfileCleanup();
   profile = profileDir(PORT);
   browser = await puppeteer.launch({ headless: 'new', userDataDir: profile, protocolTimeout: 240000,
-    args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940'] });
+    // a page the browser thinks is hidden or occluded gets no requestAnimationFrame: the frame loop never runs and the
+    // title never leaves 'idle' (the f90d2b0 save-continue diagnosis: state 'title', stage 'idle', 0 errors, 120 s)
+    args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940',
+      '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling'] });
   report.chrome = await browser.version();
 
   /* ---- A. the systems' frames, staged by the Frame Set's own page.mjs ---- */
@@ -449,6 +531,7 @@ try {
   page.on('pageerror', (e) => report.console.push({ at: 'run', text: `pageerror: ${String(e).slice(0, 300)}` }));
   const K = keys(page);
   await page.evaluateOnNewDocument(`window.__aimPoint = ${aimPoint.toString()};`);
+  await page.evaluateOnNewDocument(() => { window.__raf = 0; const tick = () => { window.__raf++; requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press', { timeout: 240000, polling: 100 });
   await sleep(500);
@@ -473,6 +556,12 @@ try {
   report.rows['brazier-dialog'] = { rows: bz.bz, forecast: bz.bzForecast, shot: await shot(page, 'b01-brazier-dialog') };
   if (bz.busy) await K.tap('Escape');
   await sleep(400);
+
+  // save-reload row, early (so the row is reached whatever the run does later): the New Game's named save, quit,
+  // reopen in the same tab, CONTINUE; the run then plays on from the continued game
+  report.rows['save-reload'] = await reloadContinue(page, 'b02-reload');
+  log(`save-reload: ${report.rows['save-reload'].pass ? 'PASS' : 'FAIL'} (${report.rows['save-reload'].why ?? `boot ${report.rows['save-reload'].bootS} s`})`);
+  if (!report.rows['save-reload'].pass && (await page.evaluate(() => window.__CTX__?.state)) !== 'playing') throw new Error('save-reload left the game off play: the run cannot go on');
 
   let last = null, tries = 0, deaths = 0;
   while (spent() < BUDGET_S - 150) {
@@ -520,58 +609,9 @@ try {
   report.anchors = await page.evaluate(() => window.__CTX__.systemsGame.A);
   report.stopShot = await shot(page, 'b-stop');
 
-  // save-continue row: what the store holds, then QUIT (close the tab), a new tab on the same profile, CONTINUE
-  const before = await page.evaluate(() => {
-    const C = window.__CTX__, s = C.progression.saves;
-    const rec = s.store.latest(s.store.active);
-    return rec ? { stage: rec.quest?.order?.at?.(-1)?.id ?? null, idx: rec.quest?.idx, salt: rec.satchel['metal-shards'] ?? 0, hour: rec.hour, x: rec.position.x, z: rec.position.z, kind: rec.kind, reason: rec.reason, v: rec.v, keys: Object.keys(localStorage).filter((k) => k.startsWith('cal.v6')) } : null;
-  });
-  await page.close();
-  const page2 = await bctx.newPage();
-  await page2.setViewport({ width: 1600, height: 900, deviceScaleFactor: 1.25 });
-  const diag = [];
-  page2.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warn') report.console.push({ at: 'continue', type: m.type(), text: m.text().slice(0, 300) }); });
-  page2.on('pageerror', (e) => report.console.push({ at: 'continue', text: `pageerror: ${String(e).slice(0, 300)}` }));
-  const tC = Date.now();
-  await page2.bringToFront();
-  await page2.evaluateOnNewDocument(() => { window.__raf = 0; const tick = () => { window.__raf++; requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
-  await page2.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 120000 });
-  let titled = false;
-  for (let i = 0; i < 60 && !titled; i++) {
-    const d = await page2.evaluate(() => ({ ctx: !!window.__CTX__, state: window.__CTX__?.state ?? null, stage: window.__CTX__?.menus?.titleStage ?? null,
-      load: document.getElementById('load-label')?.dataset?.step ?? null, errs: (window.__GAME__?.systemErrors || []).map((e) => `${e.key}: ${e.message}`).slice(0, 4),
-      // f90d2b0: state 'title' but titleStage 'idle' for 120 s, no error: is the frame loop running at all?
-      raf: window.__raf ?? null, vis: document.visibilityState, focus: document.hasFocus(), titleBuilt: !!window.__CTX__?.menus?._titleBuilt,
-      host: !!document.querySelector('#title .title-inner'), glLost: window.__CTX__?.engine?.renderer?.getContext?.()?.isContextLost?.() ?? null,
-      frames: window.__CTX__?.engine?.frame ?? window.__GAME__?.frames ?? null })).catch((e) => ({ evalError: String(e).slice(0, 120) }));
-    d.t = Math.round((Date.now() - tC) / 1000);
-    diag.push(d);
-    titled = d.state === 'title' && /press|menu/.test(d.stage || '');
-    if (!titled) await sleep(2000);
-  }
-  report.rows['save-continue'] = { before, diag: diag.filter((d, i) => i % 5 === 0 || i === diag.length - 1), bootS: Math.round((Date.now() - tC) / 1000) };
-  if (titled) {
-    await sleep(400);
-    if (await page2.evaluate(() => window.__CTX__.menus.titleStage === 'press')) await page2.keyboard.press('Enter');
-    await page2.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 30000, polling: 50 }).catch(() => {});
-    await sleep(300);
-    const hadContinue = await page2.evaluate(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent)); if (!b || b.disabled) return false; b.click(); return true; });
-    await page2.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 60000, polling: 50 }).catch(() => {});
-    await sleep(1500);
-    const afterC = await page2.evaluate(() => {
-      const C = window.__CTX__, sp = C.spine, p = C.player;
-      return { idx: sp.idx, stage: sp.order.at(-1)?.id ?? null, salt: C.inventory.count('metal-shards'), hour: +C.environment.time.toFixed(3), x: +p.position.x.toFixed(3), z: +p.position.z.toFixed(3), note: document.querySelector('.cal-track-obj')?.textContent ?? null };
-    });
-    Object.assign(report.rows['save-continue'], {
-      after: afterC, hadContinue,
-      pass: !!before && hadContinue && before.idx === afterC.idx && before.salt === afterC.salt && Math.abs(before.hour - afterC.hour) < 0.05 && Math.hypot(before.x - afterC.x, before.z - afterC.z) < 1.0,
-      shot: await shot(page2, 'c-continued'),
-    });
-  } else {
-    report.rows['save-continue'].pass = false;
-    report.rows['save-continue'].why = 'the title never came on the second boot (diag holds what the page showed)';
-    report.rows['save-continue'].shot = await shot(page2, 'c-no-title');
-  }
+  // save-continue row: what the store holds, then QUIT (the document is unloaded), the same tab opened again on the
+  // game, CONTINUE on the title: the same stage, satchel, place and hour
+  report.rows['save-continue'] = await reloadContinue(page, 'c');
   await bctx.close();
 } catch (e) {
   report.error = String(e?.stack || e).slice(0, 1200);
