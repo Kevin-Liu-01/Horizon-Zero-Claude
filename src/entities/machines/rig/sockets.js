@@ -93,7 +93,9 @@ export function buildHullProxy(machine, opts = {}) {
   const boneOf = new Int32Array(want);
   const bone1Of = new Int32Array(want);
   const w0 = new Float32Array(want);
-  const partOf = new Uint8Array(want);   // 1 = component, not hull
+  // 0 = hull; k > 0 = a component, `machine.parts[k - 1]` (M1a round 2: which part, so a TOOL can be measured as hull
+  // for every socket but its own, `socketReport`)
+  const partOf = new Uint16Array(want);
   const bones = [];
   const boneIndex = new Map();
   let n = 0;
@@ -110,7 +112,7 @@ export function buildHullProxy(machine, opts = {}) {
     const SI = g.attributes.skinIndex;
     const SW = g.attributes.skinWeight;
     const skel = mesh.isSkinnedMesh ? mesh.skeleton : null;
-    const isPart = isPartMesh(mesh) ? 1 : 0;
+    const isPart = partIdOf(mesh, machine);
     // A STATIC mesh parented under a bone (every kitbash shell piece on a
     // GLB-rigged species, and every component socket) rides that bone. Round 4
     // stored it in the MODEL frame, so the proxy said a Wader wing was still
@@ -194,7 +196,7 @@ export function buildHullProxy(machine, opts = {}) {
     const SW = g.attributes.skinWeight;
     const bind = skel ? mesh.bindMatrix : mesh.matrixWorld;
     const rigid = skel ? null : boneAncestor(mesh);
-    const isPart = isPartMesh(mesh) ? 1 : 0;
+    const isPart = partIdOf(mesh, machine);
     const fstride = Math.max(1, Math.floor(faces / Math.max(1, (want - n) / meshes.length)));
     for (let f = 0; f < faces && n < want; f += fstride) {
       let cx = 0, cy = 0, cz = 0, i0 = 0;
@@ -230,7 +232,7 @@ export function buildHullProxy(machine, opts = {}) {
     }
   }
 
-  const proxy = { pos, pos1, boneOf, bone1Of, w0, partOf, bones, count: n, model };
+  const proxy = { pos, pos1, boneOf, bone1Of, w0, partOf, parts: (machine.parts || []).slice(), bones, count: n, model };
   proxy.spacing = proxySpacing(proxy);
   machine.hullProxy = proxy;
   return proxy;
@@ -243,11 +245,29 @@ function boneAncestor(o) {
   return null;
 }
 
-/** Is this mesh a bolted-on component rather than the machine's own hull? */
-function isPartMesh(o) {
+/** 0 for the machine's own hull, else 1 + the index of the bolted-on component this mesh belongs to. */
+function partIdOf(o, machine) {
   let p = o;
-  while (p) { if (p.userData?.part) return true; p = p.parent; }
-  return false;
+  while (p) {
+    if (p.userData?.part) { const i = (machine.parts || []).indexOf(p.userData.part); return i >= 0 ? i + 1 : 1; }
+    p = p.parent;
+  }
+  return 0;
+}
+
+/**
+ * Does sample i count as hull for a socket on part `own` (M1a round 2)? Hull always does. A component does only when it
+ * is a TOOL that stands as hull (`userData.toolHull`: an Instrument's generated tools, `src/instruments/lib/kindkit.js`
+ * mountTool), is still attached, and is not the socket's own part: a lamp weak point on the lamp drum reads the drum,
+ * the drum reads the trunnion it hangs from, and no part vouches for itself. Every other component stays out (the
+ * Round-4 rule), so no other kind's reading changes.
+ */
+function countsAsHull(proxy, i, own) {
+  const k = proxy.partOf ? proxy.partOf[i] : 0;
+  if (!k) return true;
+  if (own === undefined) return false;
+  const part = proxy.parts?.[k - 1];
+  return !!(part && part !== own && part.attached && part.mesh?.userData?.toolHull);
 }
 
 /**
@@ -345,11 +365,11 @@ const _cp = new THREE.Vector3();
  * @returns {{dist:number, sample:number, index:number}}
  *   `dist` is to the surface patch, `sample` to the nearest sample alone.
  */
-export function surfaceDistance(proxy, worldPoint) {
+export function surfaceDistance(proxy, worldPoint, own = undefined) {
   let d0 = Infinity, d1 = Infinity, d2 = Infinity;
   let i0 = -1, i1 = -1, i2 = -1;
   for (let i = 0; i < proxy.count; i++) {
-    if (proxy.partOf && proxy.partOf[i]) continue;
+    if (!countsAsHull(proxy, i, own)) continue;
     hullWorld(proxy, i, _v2);
     const d = _v2.distanceToSquared(worldPoint);
     if (d < d0) { d2 = d1; i2 = i1; d1 = d0; i1 = i0; d0 = d; i0 = i; }
@@ -428,7 +448,7 @@ export function sockets(machine) {
   const out = [];
   for (const p of machine.parts || []) {
     if (p.attached && p.mesh) {
-      out.push({ kind: 'part', name: p.name, obj: p.mesh, radius: proudOf(p.name), proud: proudOf(p.name) });
+      out.push({ kind: 'part', name: p.name, obj: p.mesh, radius: proudOf(p.name), proud: proudOf(p.name), part: p });
     }
   }
   for (const wp of machine.weakPoints || []) {
@@ -526,7 +546,8 @@ export function socketReport(machine) {
   for (const s of sockets(machine)) {
     if (!s.obj) continue;
     s.obj.getWorldPosition(_v);
-    const near = surfaceDistance(proxy, _v);
+    // tools stand as hull for every socket but their own (`countsAsHull`); `null` = no own part
+    const near = surfaceDistance(proxy, _v, s.part || null);
     if (!Number.isFinite(near.dist)) continue;
     const credit = s.radius || 0;
     if (s.proud) proud[`${s.kind}:${s.name}`] = s.proud;

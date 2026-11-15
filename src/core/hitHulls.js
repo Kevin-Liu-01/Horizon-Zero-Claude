@@ -114,6 +114,44 @@ function rayCapsuleT(ox, oy, oz, dx, dy, dz, ax, ay, az, bx, by, bz, r, far) {
   return ta < tb ? ta : tb;
 }
 
+/**
+ * One bone's triangles of a skinned geometry, in that bone's bind frame, as a MeshBVH (`HitHulls._exactBoneT`).
+ * A triangle belongs to the dominant bone of its first corner. null when the bone owns no triangle.
+ */
+const _bv = new THREE.Vector3();
+const _bm = new THREE.Matrix4();
+function buildBoneBVH(geo, bindMatrix, boneInverse, bi) {
+  const pos = geo.attributes.position, si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
+  const idx = geo.index;
+  const tris = idx ? idx.count / 3 : pos.count / 3;
+  const dom = (v) => {
+    let b = si.getX(v), w = sw.getX(v), x = sw.getY(v);
+    if (x > w) { w = x; b = si.getY(v); }
+    x = sw.getZ(v); if (x > w) { w = x; b = si.getZ(v); }
+    x = sw.getW(v); if (x > w) { w = x; b = si.getW(v); }
+    return b;
+  };
+  const keep = [];
+  for (let f = 0; f < tris; f++) {
+    const v0 = idx ? idx.getX(f * 3) : f * 3;
+    if (dom(v0) === bi) keep.push(f);
+  }
+  if (!keep.length) return null;
+  _bm.multiplyMatrices(boneInverse, bindMatrix);
+  const arr = new Float32Array(keep.length * 9);
+  let n = 0;
+  for (const f of keep) {
+    for (let k = 0; k < 3; k++) {
+      const v = idx ? idx.getX(f * 3 + k) : f * 3 + k;
+      _bv.fromBufferAttribute(pos, v).applyMatrix4(_bm);
+      arr[n++] = _bv.x; arr[n++] = _bv.y; arr[n++] = _bv.z;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  return new MeshBVH(g, { targetLeafSize: 12 });
+}
+
 /** Refittable AABB BVH over a fixed set of capsules (median split, depth-first). */
 class HullBVH {
   constructor(n) {
@@ -733,11 +771,22 @@ export class HitHulls {
     const excl = this._excl || (this._excl = []);
     excl.length = 0;
     let acceptedT = far, accepted = null;
-    for (let iter = 0; iter < 5; iter++) {
+    for (let iter = 0; iter < 12; iter++) {
       const h = this._traverse(set, o, d, acceptedT, excl);
       if (!h) break;
       const t = this._lastT;
-      if (h.src !== 'node') { acceptedT = t; accepted = h; break; }
+      if (h.src !== 'node') {
+        /* M1a round 2 (instruments): a SKINNED hull is refined too. Its capsules are fitted to cells of a bone's
+         * whole skin and stood 0.2-0.6 m proud of a small head (the Plumb's sphere, vial and drum), so an arrow
+         * stopped in the air in front of a weak point. The bone's own triangles, rigid in its bind frame
+         * (`_exactBoneT`), decide; every capsule of that bone leaves the search together, so a ray that misses
+         * the bone's metal goes on to whatever lies behind it. A bone with no refinement keeps the capsule. */
+        const t2 = this._exactBoneT(set, h, o, d, far);
+        if (t2 === undefined) { acceptedT = t; accepted = h; break; }
+        for (const q of set.hulls) if (q.src === 'bone' && q.bone === h.bone && q.node === h.node) excl.push(q);
+        if (t2 != null && t2 < acceptedT) { acceptedT = t2; accepted = h; }
+        continue;
+      }
       excl.push(h);
       const t2 = this._exactT(h.node, o, d, far);
       if (t2 != null && t2 < acceptedT) { acceptedT = t2; accepted = h; }
@@ -746,17 +795,59 @@ export class HitHulls {
     return accepted;
   }
 
+  /**
+   * Triangle-exact distance along the ray for ONE BONE of a skinned mesh (M1a round 2, instruments), or null when
+   * the ray misses that bone's triangles; `undefined` when the bone cannot be refined (the capsule stands).
+   *
+   * Every triangle goes to the dominant bone of its first corner and is stored in that bone's BIND frame
+   * (`boneInverse * bindMatrix * v`), the frame `_refresh` already maps to the world for the capsules
+   * (`rec.mat`). That is rigid skinning by the dominant bone, which is how the auto-rig weights a hull (0.85-1.0)
+   * and how `rig/sockets.js` samples it. One BVH per (geometry, bone), built on the first exact query that reaches
+   * the bone and shared by every clone of the kind (clones share the geometry and the bind); CPU only, never
+   * uploaded, released with the geometry (WeakMap).
+   */
+  _exactBoneT(set, h, o, d, far) {
+    const rec = set.bones[h.bone];
+    const sk = rec && rec.sk;
+    const geo = sk && sk.geometry;
+    const skel = sk && sk.skeleton;
+    if (!geo || !skel || !geo.attributes.skinIndex || !geo.attributes.skinWeight) return undefined;
+    if (rec.bi === undefined) rec.bi = skel.bones.indexOf(rec.bone);
+    const bi = rec.bi;
+    if (bi < 0 || !skel.boneInverses[bi]) return undefined;
+    if (!this._boneBvh) this._boneBvh = new WeakMap();
+    let per = this._boneBvh.get(geo);
+    if (!per) { per = new Map(); this._boneBvh.set(geo, per); }
+    let bvh = per.get(bi);
+    if (bvh === undefined) {
+      bvh = buildBoneBVH(geo, sk.bindMatrix, skel.boneInverses[bi], bi);
+      per.set(bi, bvh);
+    }
+    if (!bvh) return undefined;
+    if (!this._inv) { this._inv = new THREE.Matrix4(); this._lray = new THREE.Ray(); }
+    this._inv.copy(rec.mat).invert();
+    this._lray.origin.set(o.x, o.y, o.z);
+    this._lray.direction.set(d.x, d.y, d.z);
+    // Ray.applyMatrix4 moves the origin and re-normalises the direction: a local metre is 1 / scale world metres
+    this._lray.applyMatrix4(this._inv);
+    const s = rec.scale || 1;
+    const hit = bvh.raycastFirst(this._lray, THREE.DoubleSide, 0, far / s);
+    return hit ? hit.distance * s : null;
+  }
+
   /** Triangle-exact distance along the ray for one unskinned mesh, or null. */
   _exactT(node, o, d, far) {
     const geo = node.geometry;
     if (!geo || !geo.attributes.position) return null;
     const tri = geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3;
     if (tri > 60000) return null;                       // not worth a BVH
-    if (!this._bvh) this._bvh = new Map();
-    let bvh = this._bvh.get(geo.uuid);
+    // keyed by the geometry itself (a WeakMap): a disposed machine's own geometry takes its BVH with it (the uuid
+    // Map held every per-machine geometry an arrow ever met, for the page's life)
+    if (!this._bvh) this._bvh = new WeakMap();
+    let bvh = this._bvh.get(geo);
     if (bvh === undefined) {
       bvh = new MeshBVH(geo, { maxLeafTris: 12 });
-      this._bvh.set(geo.uuid, bvh);
+      this._bvh.set(geo, bvh);
     }
     if (!this._inv) { this._inv = new THREE.Matrix4(); this._lray = new THREE.Ray(); }
     this._inv.copy(node.matrixWorld).invert();

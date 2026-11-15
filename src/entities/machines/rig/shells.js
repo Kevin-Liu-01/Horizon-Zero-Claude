@@ -147,8 +147,10 @@ function stampShellUV(geo, slot) {
  * Cloned per machine (never shared) so the frost tint, eye state and death
  * fade systems in `machine.js` keep writing to a material only this machine
  * owns; the two lookup textures are shared by everything.
+ * The default sensor colour is the calm lamp token (bone-gold #F2EAD3, src/instruments/lamps.js LAMP_STATES.calm):
+ * the old default 0x38c6ff is one of the five excluded lamp colours (LAMP_CANON, ΔE2000 0; BACKLOG I17).
  */
-export function shellMaterials(sensorColor = 0x38c6ff) {
+export function shellMaterials(sensorColor = 0xF2EAD3) {
   const tex = shellTextures();
   const m = new THREE.MeshStandardMaterial({
     color: 0xffffff, metalness: 1, roughness: 1,
