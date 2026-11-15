@@ -167,8 +167,11 @@ export const OUTFITS = {
       strapBuckled(ctx, [[0.11, 1.48, -0.02], [0.08, 1.38, 0.13], [-0.04, 1.2, 0.15], [-0.17, 1.06, 0.07]], { width: 0.034, dye: PAN.leather, metal: PAN.brass, bu: 0.42, along: 12 });
       pouch(ctx, { x: -0.185, y: 0.985, z: 0.04, dye: PAN.leather });
       const head = ctx.J.Head;
-      const [top, under] = P.palmHat({ joint: head, uv: ctx.uvOf('palm') });
-      ctx.add(top, { dye: PAN.palm, noHide: true }); ctx.add(under, { dye: PAN.palm, noHide: true });
+      // (M1.5c: a raker who works bareheaded under her wrap, `hat: 'none'`, has no palm hat)
+      if (ctx.spec?.hat !== 'none') {
+        const [top, under] = P.palmHat({ joint: head, uv: ctx.uvOf('palm') });
+        ctx.add(top, { dye: PAN.palm, noHide: true }); ctx.add(under, { dye: PAN.palm, noHide: true });
+      }
       // the rake: slung across her back while she walks, in her right hand while she rakes
       const back = ctx.prop('prop_back', 'spine_03', [0, 1.3, -0.15], [0.12, 1.6, -0.17]);
       for (const g of P.rake({ at: [0, 1.3, -0.165], dir: [0.34, 1, -0.03], joint: back, uvWood: ctx.uvOf('wood'), uvTooth: ctx.uvOf('wood'), L: 1.55 })) ctx.add(g, { dye: PAN.wood, noHide: true, prop: 'prop_back' });
@@ -230,7 +233,13 @@ export const OUTFITS = {
     ],
     pieces(ctx) {
       belt(ctx, { y: 1.025, dye: PAN.leather });
-      sashEnd(ctx, { dye: PAN.carmine, x: 0.17, y: 1.0, z: 0.05 });
+      // (M1.5c, Q6: the Trader's violet sash, the Pan Houses' one accent; was the Holds' carmine)
+      sashEnd(ctx, { dye: PAN.orchil, x: 0.17, y: 1.0, z: 0.05 });
+      // (M1.5c, the Trader calling: a wide straw hat, `hat: 'palm'`)
+      if (ctx.spec?.hat === 'palm') {
+        const [top, under] = P.palmHat({ joint: ctx.J.Head, uv: ctx.uvOf('palm'), rBrim: 0.25 });
+        ctx.add(top, { dye: PAN.palm, noHide: true }); ctx.add(under, { dye: PAN.palm, noHide: true });
+      }
       // the basket's shoulder harness: a padded strap from the left hip over the right shoulder, buckled at the chest
       strapBuckled(ctx, [[0.16, 1.03, 0.09], [0.08, 1.22, 0.15], [-0.07, 1.4, 0.12], [-0.13, 1.5, 0.0], [-0.08, 1.38, -0.14], [0.12, 1.06, -0.11]], { width: 0.04, dye: PAN.leather, metal: PAN.brass, bu: 0.28, along: 20 });
       pouch(ctx, { x: -0.19, y: 0.965, z: 0.03, r: [0.05, 0.06, 0.034], dye: PAN.leather });
@@ -246,8 +255,9 @@ export const OUTFITS = {
   caulker: {
     vNeck: true,
     parts: [
-      { part: 'Male_Peasant_Body', dye: PAN.linenDirty, target: 3400, shade: 0.72, cutX: 0.345, collar: { y0: 1.44, push: 0.012 } },
-      { part: 'Male_Peasant_Arms', dye: PAN.basalt, target: 900, cutX: 0.36, cuff: PAN.basalt, dropMat: /Regular/ },
+      // (M1.5c, Q6 and the Sailor calling: the cream shirt of the Pan Houses, tar only where his work puts it; was grey linen at 0.72)
+      { part: 'Male_Peasant_Body', dye: PAN.linenDirty, target: 3400, shade: 0.92, cutX: 0.345, collar: { y0: 1.44, push: 0.012 } },
+      { part: 'Male_Peasant_Arms', dye: PAN.linenDirty, target: 900, cutX: 0.36, cuff: PAN.orchilDeep, dropMat: /Regular/ },
       { part: 'Male_Peasant_Legs', dye: PAN.tar, target: 1000, shade: 1.6 },
       { part: 'Male_Peasant_Feet', dye: PAN.leather, target: 1400 },
     ],
@@ -268,18 +278,23 @@ export const OUTFITS = {
     },
   },
 
-  /* 5 — Lantern-Keeper: the orchil night cloak on two chains, a hood, a long dark skirt, cane + lantern */
+  /*
+   * 5 — Lantern-Keeper (Mise, the slice's night lookout; M1.5c): the Healer calling (bible §6.1: head wrap, a paste mark, a
+   * layered poncho-shawl, long skirt panels) in the Pan Houses' cloth (Q6): salt-white sleeves and shawl over an oatmeal cloak,
+   * a long grey skirt, the violet only on the shawl's two ends and the cuffs. Cane + lantern. (Before M1.5c: an orchil night cloak,
+   * hood and sleeves, the whole figure violet.)
+   */
   keeper: {
     legsHidden: 1.0,
     parts: [
-      // (a worn charcoal smock replaces the MCO bodice, fix round 1: the night cloak and hood carry the orchil, and she never wears Brea's colours)
-      { part: 'Female_Peasant_Arms', dye: PAN.orchilNight, target: 3400, cutX: 0.615, cuff: PAN.orchilDeep },
+      { part: 'Female_Peasant_Arms', dye: PAN.linen, target: 3400, cutX: 0.615, cuff: PAN.orchil },
       { part: 'Female_Peasant_Feet', dye: PAN.leather, target: 1500, cutTop: 0.2 },
-      { part: 'Female_Ranger_Head_Hood', dye: PAN.orchilNight, target: 1500, swatch: 'felt', noHideOnBody: true, shade: 1.2 },
+      // the hood only on a keeper who wears no wrap
+      { part: 'Female_Ranger_Head_Hood', dye: PAN.linenDirty, target: 1500, swatch: 'felt', noHideOnBody: true, shade: 1.0, when: (spec) => spec.head?.kind === 'hood' },
     ],
     pieces(ctx) {
-      smock(ctx, { dye: '#3A3638', y0: 1.38, y1: 1.06, rHem: 0.18, amp: 0.005, depth: 0.004 });
-      ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.1, y1: 0.08, rHem: 0.29, uv: ctx.rectUV('panelA'), rows: 10, seg: 44, rFloor: 0.18, amp: 0.011, pleats: 9, depth: 0.032, hem: 0.0045, seed: 7 }), { dye: PAN.lapilli, hide: true, shade: 1.3 });
+      smock(ctx, { dye: '#9C9384', y0: 1.38, y1: 1.06, rHem: 0.18, amp: 0.005, depth: 0.004 });
+      ctx.add(P.skirt({ grid: ctx.grid(), J: ctx.J, y0: 1.1, y1: 0.08, rHem: 0.29, uv: ctx.rectUV('panelA'), rows: 10, seg: 44, rFloor: 0.18, amp: 0.011, pleats: 9, depth: 0.032, hem: 0.0045, seed: 7 }), { dye: '#6E675C', hide: true, shade: 1.0 });
       belt(ctx, { y: 1.08, dye: PAN.lapilli, swatch: 'rope', buckle: false, h: 0.024 });
       pouch(ctx, { x: 0.19, y: 1.0, z: 0.05, r: [0.036, 0.046, 0.026], dye: PAN.leather });
       // the cloak: two chains from the shoulder blades, cloth between them
@@ -296,7 +311,17 @@ export const OUTFITS = {
           return v < 0.08 ? trunk(p[1]) : P.blendSkin(trunk(1.36), c, Math.min(1, t * 3));
         },
       });
-      ctx.add(P.twoSided(sheet, { inset: 0.003, shade: 0.5 }), { dye: PAN.orchilNight, shade: 1.25 });
+      ctx.add(P.twoSided(sheet, { inset: 0.003, shade: 0.5 }), { dye: '#B9A682', shade: 1.0 });
+      // the poncho-shawl over it (the Healer's layer): salt-white over the shoulders, its two ends down her front on chains in orchil
+      ctx.add(P.capelet({ grid: ctx.grid(), skinNear: ctx.skinNear, uv: ctx.rectUV('panelC'), rows: 7, seg: 28, phiFB: -36, phiSide: 22 }), { dye: PAN.salt, hide: true });
+      for (const [key, s] of [['shawlEndL', 1], ['shawlEndR', -1]]) {
+        const x = s * 0.09, y = 1.34, z = frontZ(ctx, x, y) + 0.022;
+        const pts = [[x, y, z], [x + s * 0.008, y - 0.1, z + 0.008], [x + s * 0.012, y - 0.2, z + 0.012], [x + s * 0.012, y - 0.31, z + 0.012]];
+        const j = ctx.chain(key, 'spine_03', pts);
+        const r = ATLAS.sw.panelC;
+        ctx.add(clothTail(pts, j, { along: 7, across: 2, width: (u) => 0.07 * (1 - 0.3 * u), side: [1, 0, 0.1], thick: 0.004, curl: 0.06, fold: 0.004, gather: 0.55, gatherTo: 0.24,
+          uvFront: { rect: r, period: r[2], W: 1024, pxPerM: 1 / 0.0016, v: [0, 1] }, uvBack: { rect: r, period: r[2], W: 1024, pxPerM: 1 / 0.0016, v: [0, 1] } }), { dye: PAN.orchil });
+      }
       // a brass cloak pin at the throat
       const zz = frontZ(ctx, 0, 1.39) + 0.012;
       ctx.add(P.lathe({ c: [0, 1.39, zz], axis: [0, 0.1, 1], prof: [[0.016, -0.003], [0.018, 0.002], [0.012, 0.0055], [0.001, 0.006]], seg: 8, skin: P.rigid(ctx.J.spine_03), uv: ctx.uvOf('brass') }), { dye: PAN.brass });

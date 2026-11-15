@@ -14,6 +14,8 @@ import { Person } from './person.js';
  *   spawn(id, opts)           Promise<Person> { x, z, yaw, seed, height, script }
  *   despawn(person)           disposes its mixer + skeleton and releases its archetype and atlases
  *   stage(opts)               Promise: stand a group at the neutral place near REST ({ faction, count })
+ *   cast                      the slice's cast (M1.5c): Lantern-Keeper Mise and the unnamed Pan Houses people
+ *   stageCast(place)          Promise: stand the slice's cast at `place` ({ x, z, r }) the way stage() stands a group
  *   clearStage()              despawn the whole group
  *   stagePlace                { x, z, r, y } the neutral place (found on the live terrain)
  *   tierAt(person, tier)      force a tier for a gate (null: back to distance)
@@ -39,6 +41,13 @@ const NEAR_R = 18, MID_R = 35, HIDE_R = 90, MAX_NEAR = 6, MAX_CAST = 4, HYST = 1
 const STREAM_IN = 130;
 export const ARCHETYPE_IDS = ['salt-raker', 'guild-matron', 'salt-porter', 'boat-caulker', 'lantern-keeper', 'pit-farmer', 'tiller-follower', 'cochineal-picker', 'tube-smith'];
 const PAN_IDS = ARCHETYPE_IDS.slice(0, 5), HOLDS_IDS = ARCHETYPE_IDS.slice(5);
+/**
+ * M1.5c — the slice's cast (tools/build/recipes/npc/lib/archetypes.mjs CAST): Lantern-Keeper Mise ('lantern-keeper') and seven unnamed
+ * Pan Houses people of archetypes 1, 3, 4 and 5 (the Harvester, Trader, Sailor and Healer callings), each with a face and head set of
+ * their own. Where they stand and what they do in Saltrow is the settlements' (M1.5a) and the routines' (M1.5d); the W1 group above
+ * is unchanged, so no kept row's world changes with them.
+ */
+export const SLICE_CAST = ['lantern-keeper', 'salt-raker', 'salt-raker-2', 'salt-porter', 'salt-porter-2', 'boat-caulker', 'boat-caulker-2', 'lantern-keeper-2'];
 
 const _cam = new THREE.Vector3();
 const _probe = new THREE.Vector3();
@@ -49,6 +58,7 @@ export class PeopleSystem {
     this.bank = new NpcBank(ctx);
     this.list = [];
     this.archetypes = ARCHETYPE_IDS;
+    this.cast = SLICE_CAST;
     this.group = new THREE.Group();
     this.group.name = 'people';
     ctx.scene?.add(this.group);
@@ -148,6 +158,9 @@ export class PeopleSystem {
   }
 
   clearStage() { for (const p of this.staged.slice()) this.despawn(p); this.ready = false; }
+
+  /** M1.5c: the slice's cast stood at `place` ({ x, z, r }, found on the live terrain by the caller), scripted as stage() scripts a group. */
+  stageCast(place) { return this.stage({ ids: SLICE_CAST, place: { y: 0, ...place } }); }
 
   /** Idle clips + (for every other person) a walk between two stops on the ring: ≥ 3 clips each, ≥ 4 walkers. */
   _scriptFor(i, a, P) {

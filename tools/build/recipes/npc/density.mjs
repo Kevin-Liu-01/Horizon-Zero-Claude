@@ -16,6 +16,8 @@
  */
 import path from 'node:path';
 import { io, ROOT } from '../lib/human/face.mjs';
+/** The people's GLBs are read under R5_NPC_ROOT when set (a scratch build root, measured before it ships); Brea always from the repo. */
+const NPC_ROOT = process.env.R5_NPC_ROOT || ROOT;
 
 const tri3 = (a, b, c) => {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
@@ -27,7 +29,7 @@ const tri2 = (a, b, c) => 0.5 * Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] -
  * The bind-space matrix of a skinned node's (quantised) positions: the writer folds its dequantisation into the inverse
  * bind matrices, so joint world x inverse bind is the same matrix for every joint in the bind pose.
  */
-function bindMatrix(node) {
+export function bindMatrix(node) {
   const skin = node.getSkin();
   if (!skin) return node.getWorldMatrix();
   const j = skin.listJoints()[0], ibm = skin.getInverseBindMatrices();
@@ -152,7 +154,7 @@ export async function measure({ kind, file, outfitFile = null, outfitTex = null 
 /** Brea against one NPC: the M1.5b ratios. */
 export async function compare(npcId = 'guild-matron') {
   const brea = await measure({ kind: 'hero', file: path.join(ROOT, 'public/models/hero/brea.glb'), outfitFile: path.join(ROOT, 'public/models/hero/outfit-pan-1.glb') });
-  const npc = await measure({ kind: 'npc', file: path.join(ROOT, `public/models/npc/${npcId}.glb`), outfitTex: [1024, 1024] });
+  const npc = await measure({ kind: 'npc', file: path.join(NPC_ROOT, `public/models/npc/${npcId}.glb`), outfitTex: [1024, 1024] });
   const r = (a, b) => (b ? +(a / b).toFixed(3) : null);
   return {
     brea, [npcId]: npc,

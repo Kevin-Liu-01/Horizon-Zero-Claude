@@ -24,7 +24,7 @@ import {
   srcRoot, UBC_DIR, HAIR_DIR, MCO_DIR, readGltf, cleanDoc, nodeByName, graft, addChain, jointIndex, stripAlong,
   findLandmarks, GRADED, faceField, applyField, recomputeNormals, refineEdges, smoothNormals, smoothPositions, smooth, noise3, profileMask, iou, writeSkinned,
 } from '../../lib/human/face.mjs';
-import { relayoutSkinUV, eyeOpening, TriGrid, triSoup, creases, colourZones, scarSeam } from '../../lib/human/skin.mjs';
+import { relayoutSkinUV, eyeOpening, TriGrid, triSoup, creases, colourZones, scarSeam, saltPaste } from '../../lib/human/skin.mjs';
 import { WRAP_ATLAS, headForm, clothStack, ribbon, ellipsoidForm, underShell, clothTail, vertexAO, rng } from '../../lib/human/wrap.mjs';
 import { woundHeadwrap, joinGeos, DEG, rising, compactGeo } from '../../lib/human/wrap-head.mjs';
 import { lashCard, scatterAnchors, coilCards, coilField, coilSampler, hairlineLayer, coilTuft } from '../../lib/human/hair.mjs';
@@ -436,7 +436,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   const SRC = srcRoot();
   const SX = SEX[spec.sex];
   const dy = SX.dy;
-  const R = rng((spec.n * 2654435761) >>> 0);
+  const R = rng(((spec.rngN ?? spec.n) * 2654435761) >>> 0);   // (M1.5c: a second person of one archetype seeds its own)
   const base = await readGltf(path.join(UBC_DIR(SRC), SX.file));
   cleanDoc(base);
   const root = base.getRoot();
@@ -602,7 +602,8 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
       pieces.push({ geo: g, dye: null, hide: cover, noHide: !cover, shade: 1, part: `ansel:${p.slot}` });
     }
   }
-  for (const ps of own ? [] : OUT.parts) {
+  // (M1.5c: `when(spec)` keeps a stock part for some wearers of an outfit only: Mise's head wrap takes the old keeper's hood off)
+  for (const ps of own ? [] : OUT.parts.filter((q) => !q.when || q.when(spec))) {
     let g = await loadPart(base, ps, SRC, dy);
     if (ps.cutX) g = clipAbsX(g, ps.cutX);
     if (ps.cutTop) g = clipTopY(g, ps.cutTop);
@@ -656,7 +657,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     return trunkCache;
   };
   const ctx = {
-    J, grid: gridOf, trunkGrid: trunkGridOf, skinNear, chain, prop,
+    spec, J, grid: gridOf, trunkGrid: trunkGridOf, skinNear, chain, prop,
     add(g, o = {}) { const list = Array.isArray(g) ? g : [g]; for (const q of list) pieces.push({ geo: q, dye: o.dye, hide: !!o.hide, noHide: !!o.noHide, shade: o.shade ?? 1, prop: o.prop || null, stain: o.stain || null }); invalidate(); },
     uvOf,
     rectUV: (name) => { const r = uvRect(name); return (u, v) => [r[0] + u * r[2], r[1] + v * r[3]]; },
@@ -716,6 +717,31 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     const gg = P2.goggles({ joint: head, y, z, dx: 0.034, uvBrass: uvOf('brass'), uvMica: uvOf('brass'), tilt: 0.42 });
     gg.forEach((g, i) => pieces.push({ geo: g, dye: i % 2 === 1 && i < 4 ? '#6F6A58' : '#8A6A3A', hide: false, noHide: true, shade: 1 }));
   }
+  // M1.5c (bible §6.1, the Harvester and the Sailor: hoop earrings): a brass hoop through each lobe, rigid on the head. The lobe is
+  // the lowest ear vertex on its side (the stock ear, `isEar`), the hoop hangs from just inside it in the ear's own plane
+  if (spec.earrings) {
+    const P2 = await import('./pieces.mjs');
+    const BP = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0], lobe = { 1: null, '-1': null };
+    for (let i = 0; i < BP.getCount(); i++) {
+      BP.getElement(i, q);
+      if (!isEar(q) || q[1] < 1.55) continue;
+      const sd = q[0] > 0 ? 1 : -1;
+      if (!lobe[sd] || q[1] < lobe[sd][1]) lobe[sd] = q.slice();
+    }
+    const R = spec.earrings.r ?? 0.011, rw = spec.earrings.wire ?? 0.0013;
+    for (const sd of [1, -1]) {
+      const L0 = lobe[sd];
+      if (!L0) continue;
+      // the hoop's centre under the piercing (2 mm in from the lobe's edge), its plane the ear's (normal along x, tilted out 15 deg)
+      const c = [L0[0] - sd * 0.0015, L0[1] + 0.002 - R, L0[2] + 0.001];
+      const ax = [sd * Math.cos(0.26), 0, Math.sin(0.26)];
+      const e1 = [0, 1, 0], e2 = [ax[1] * e1[2] - ax[2] * e1[1], ax[2] * e1[0] - ax[0] * e1[2], ax[0] * e1[1] - ax[1] * e1[0]];
+      const pts = [];
+      for (let k = 0; k <= 18; k++) { const t = k / 18 * Math.PI * 2; pts.push([c[0] + (e1[0] * Math.cos(t) + e2[0] * Math.sin(t)) * R, c[1] + (e1[1] * Math.cos(t) + e2[1] * Math.sin(t)) * R, c[2] + (e1[2] * Math.cos(t) + e2[2] * Math.sin(t)) * R]); }
+      const g = P2.tube(pts, { r: () => rw, ring: 5, along: 18, cap: false, skin: P2.rigid(head), uv: (u, v) => uvOf('brass')([u, v]) });
+      pieces.push({ geo: g, dye: spec.earrings.dye || '#B08A45', hide: false, noHide: true, shade: 1, part: 'earring' });
+    }
+  }
 
   // ---- the skull under the wrap and the backs of the eyes are never seen; neither is the body under the clothes
   let culled = 0;
@@ -756,7 +782,10 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   // a person whose clothes hide more of the body has the texels for more face: the densest layout that packs
   let layout = null, densityK = 1.3;
   for (; densityK > 0.4 && !layout; densityK -= 0.04) {
-    try { const k = densityK; layout = relayoutSkinUV(bodyPrim, { density: (q) => humanDensity(q) * k, reserve: [{ id: 'eye', w: EYE_PX / 1024, h: EYE_PX / 1024 }], pad: 0.009, elastic: 0.7 * k }); } catch (e) { if (!/does not pack/.test(e.message)) throw e; }
+    // M1.5c (TECH §6 "faces equal to Brea's"): `faceK` scales the face island alone (the shared rule's 2.1), tuned per person to land
+    // its face texel density on Brea's (density.mjs; the layout's densest packing otherwise leaves an open-collared man 22 % short)
+    const fk = spec.faceK ?? 1;
+    try { const k = densityK; layout = relayoutSkinUV(bodyPrim, { density: (q) => { const d = humanDensity(q); return (d === 2.1 ? d * fk : d) * k; }, reserve: [{ id: 'eye', w: EYE_PX / 1024, h: EYE_PX / 1024 }], pad: 0.009, elastic: 0.7 * k }); } catch (e) { if (!/does not pack/.test(e.message)) throw e; }
   }
   if (!layout) throw new Error(`[npc ${spec.id}] the skin atlas does not pack`);
   const eyeR = layout.reserved.eye;
@@ -774,6 +803,12 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   const marks = [...ageLayers({ L, eyes, age: spec.age })];
   if (H.beard) marks.push(beardLayer({ L, eyes, hair: spec.hair, kind: H.beard }));
   if (spec.marks?.tar) marks.push(tarLayer());
+  // M1.5c (bible §6.1: the salt-paste stripe is a Pan Houses working custom against pan glare; a partial mark on others, the full
+  // cheek-to-cheek line is Brea's): Brea's own paint (lib/human/skin.mjs saltPaste) across the bridge, out to `xMax` (Brea 0.059)
+  if (spec.marks?.paste) {
+    const eyeY = (eyes[0][1] + eyes[1][1]) / 2, yS = eyeY - 0.024 / S * 0.98, pm = spec.marks.paste;
+    marks.push(saltPaste({ y: (X) => yS + 0.004 * ((X - (pm.dx || 0)) ** 2) / 0.004, half: (X) => (0.0024 / S) * (1 - 0.1 * smooth(0.02, 0.058, Math.abs(X))), xMax: pm.xMax ?? 0.03 }));
+  }
   if (spec.marks?.carmine) marks.push(carmineLayer());
   if (spec.marks?.burn) marks.push(burnLayer([{ at: [-0.46, 1.42, 0.02], r: [0.05, 0.035, 0.04] }, { at: [0.52, 1.40, 0.0], r: [0.035, 0.03, 0.04] }, { at: [-0.05, 1.615, 0.058], r: [0.016, 0.013, 0.02] }]));
   // the source's forehead reads olive once the cheek is on tone; the forehead comes back to the same skin
@@ -862,7 +897,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
       }
       return true;
     };
-    const anchors = greyHair ? [] : scatterAnchors(grid, { center: [0, 1.66, -0.02], step: H.kind === 'hood' ? 0.2 : 0.1, seed: 5 + spec.n, keep, elMin: -1.2, elMax: 1.45 });
+    const anchors = greyHair ? [] : scatterAnchors(grid, { center: [0, 1.66, -0.02], step: H.kind === 'hood' ? 0.2 : 0.1, seed: 5 + (spec.rngN ?? spec.n), keep, elMin: -1.2, elMax: 1.45 });
     const cards = !anchors.length ? emptyGeo() : coilCards(anchors, { flow: (a, Rr) => { const x = a.p[0], z = a.p[2]; return [Math.sign(x) * 0.25 + (Rr() - 0.5) * 0.8, -0.55, (z > 0 ? 0.3 : -0.8) + (Rr() - 0.5) * 0.7]; }, skinOf, rect: WRAP_ATLAS.coilFringe.rect, W: WRAP_ATLAS.W, ...(H.hair === 'crop' ? CROP : { length: [0.012, 0.02], width: [0.012, 0.02], liftTip: [0.002, 0.0055] }), twoSided: true });
     cardCount = cards.idx.length / 3;
     if (cards.idx.length) hairParts.push(cards);
@@ -900,6 +935,10 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   fixMale(hairGeo, dy);
 
   // ---- the near outfit: contact shade against everything, then the dyes
+  // M1.5c: `spec.dyes` re-dyes one person's copy of a calling's outfit (hex -> hex, upper case keys), so two people of one calling
+  // differ (the Pan Houses' salt-white linen with one violet accent, Q6, in each person's own proportion)
+  const dyeMap = Object.fromEntries(Object.entries(spec.dyes || {}).map(([a, b]) => [a.toUpperCase(), b]));
+  const dyeOf = (h) => (typeof h === 'string' && dyeMap[h.toUpperCase()]) || h;
   {
     const soup = Array.from(triSoup(bodyPrim));
     for (const p of pieces) soupOf(p.geo, soup);
@@ -910,11 +949,11 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
       const keepCol = g.col && g.col.length === (g.pos.length / 3) * 4 ? g.col.slice() : null;
       vertexAO(g, grid, { rays: 24, maxD: 0.05, floor: 0.42, tint: [1, 0.97, 0.95] });
       if (keepCol) for (let i = 0; i < g.col.length; i++) g.col[i] *= keepCol[i];
-      if (p.dye) dye(g, p.dye, NEUTRAL);
+      if (p.dye) dye(g, dyeOf(p.dye), NEUTRAL);
       // a stain over the dye: `stain.at(p)` 0..1 per vertex blends toward the stain's colour (a picker's carmine where her hands
       // wipe and where the hem drags, not a dyed panel)
       if (p.stain) {
-        const sc = lin(p.stain.hex), base = lin(p.dye || '#DEDEDE');
+        const sc = lin(p.stain.hex), base = lin(p.dye ? dyeOf(p.dye) : '#DEDEDE');
         const n = g.pos.length / 3, q = [0, 0, 0];
         for (let i = 0; i < n; i++) {
           q[0] = g.pos[i * 3]; q[1] = g.pos[i * 3 + 1]; q[2] = g.pos[i * 3 + 2];

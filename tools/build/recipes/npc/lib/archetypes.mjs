@@ -23,10 +23,13 @@ export const HOLDS = { lapilli: '#1C1B1E', rust: '#8E3B23', rustDeep: '#6A2A1A',
 
 export const ARCHETYPES = [
   {
+    // (M1.5c: her face read 4.5 mm from Brea's, under the cast's 5.6 mm "alike" line (faces.mjs): a broad face, a low flat nose
+    // and a wide jaw now; hoop earrings and a partial paste mark, the Harvester's)
     id: 'salt-raker', n: 1, name: 'Salt Raker', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.72, age: 34, browK: 0.85,
     tone: '#7F5238', iris: '#2E2018', amber: '#5A381E', hair: '#191310',
-    face: { noseBridge: [0, 0.6, 6.6], noseTip: [0, 2.5, 0.5], cheek: [3.5, 4.0, 4.5], jaw: [-1.0, -6.0, -0.5], chin: [0, -4.5, 5.5], brow: [0, 0.8, 5.0], upperLip: [0, 2.0, 0.5] },
+    face: { noseBridge: [0, -1.5, -2.5], noseTip: [0, -2.5, -3.5], cheek: [6.5, 1.0, 2.0], jaw: [6.5, -2.5, 1.5], chin: [0, -1.5, -2.5], brow: [0, -1.5, 1.5], upperLip: [0, -1.0, 2.0] },
     head: { kind: 'scarf', dye: PAN.linen, lining: PAN.linenDirty, seed: 11, tail: 'left' },
+    earrings: { r: 0.012 }, marks: { paste: { xMax: 0.034 } },
     outfit: { key: 'raker' },
     clips: { idle: ['Farm_Harvest', 'Consume', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.95, lean: 0.105, swing: 0.85 }, carry: 'rake' },
   },
@@ -43,7 +46,9 @@ export const ARCHETYPES = [
     id: 'salt-porter', n: 3, name: 'Salt Porter', faction: 'pan', family: 'Peasant', sex: 'M', height: 1.82, age: 27, browK: 1.0,
     tone: '#7A4C33', iris: '#2A1C14', amber: '#553318', hair: '#15110F',
     face: { noseBridge: [0, 0.5, 5.5], noseTip: [0, 3.0, -1.0], cheek: [3.0, 3.0, 4.0], jaw: [5.5, -4.5, 1.0], chin: [0, -3.0, 6.5], brow: [0, 1.0, 4.0], upperLip: [0, 1.0, -1.0] },
-    head: { kind: 'band', dye: PAN.carmine, lining: PAN.carmine, seed: 33, hair: 'crop', tail: 'left' },
+    // (M1.5c: the Trader's wide straw hat over a salt-white sweatband, the sash orchil; was a carmine band)
+    head: { kind: 'band', dye: PAN.salt, lining: PAN.linenDirty, seed: 33, hair: 'crop', tail: 'left', thin: true },
+    hat: 'palm', faceK: 1.3,
     outfit: { key: 'porter' },
     clips: { idle: ['Consume', 'Yes', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 1.0, lean: 0.03, swing: 1 } },
   },
@@ -51,16 +56,21 @@ export const ARCHETYPES = [
     id: 'boat-caulker', n: 4, name: 'Boat-Caulker', faction: 'pan', family: 'Peasant', sex: 'M', height: 1.74, age: 52, browK: 1.12,
     tone: '#6F4830', iris: '#2E2219', amber: '#5A3C22', hair: '#231F1D',
     face: { noseBridge: [0, -2.0, -1.5], noseTip: [0, -3.5, 3.5], cheek: [7.5, -2.0, -0.5], jaw: [3.0, -1.0, -2.5], chin: [0, -6.5, -1.0], brow: [0, -2.5, 7.5], upperLip: [0, -3.5, 2.5] },
-    head: { kind: 'rag', dye: PAN.basalt, lining: PAN.lapilli, seed: 44, tail: 'right', beard: 'full' },
+    // (M1.5c, Q6 and the Sailor: his rag the orchil accent, a hoop in each ear; was basalt)
+    head: { kind: 'rag', dye: PAN.orchilDeep, lining: PAN.orchilNight, seed: 44, tail: 'right', beard: 'full' },
+    earrings: { r: 0.01 }, faceK: 1.08,
     marks: { tar: true },
     outfit: { key: 'caulker' },
     clips: { idle: ['Fixing_Kneeling', 'Push_Loop', 'Idle_Loop'], stage: ['Fixing_Kneeling', 'Interact', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.9, lean: 0.03, swing: 0.9, stance: 0.06 } },
   },
   {
-    id: 'lantern-keeper', n: 5, name: 'Lantern-Keeper', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.68, age: 68, browK: 0.68,
+    // Lantern-Keeper Mise (bible §6.2; M1.5c): the Healer calling (head wrap, a paste mark, the layered shawl; outfits.mjs keeper),
+    // a salt-white wrap lined in orchil (Q6); was an orchil hood
+    id: 'lantern-keeper', n: 5, name: 'Lantern-Keeper Mise', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.68, age: 68, browK: 0.68,
     tone: '#92694B', iris: '#3F3024', amber: '#6F5233', hair: '#77736C', hairPaint: '#45423E', greyHair: true,
     face: { noseBridge: [0, 1.2, 8.0], noseTip: [0, -2.0, 8.5], cheek: [-4.0, 0.5, -3.0], jaw: [-4.0, -3.0, -3.5], chin: [0, -2.0, 8.0], brow: [0, -1.0, 7.5], upperLip: [0, -1.0, -6.0] },
-    head: { kind: 'hood', hair: 'grey', dye: PAN.orchilNight, lining: PAN.orchilNight, seed: 55 },
+    head: { kind: 'wrap', dye: PAN.salt, lining: PAN.orchil, seed: 55, tail: 'left' },
+    marks: { paste: { xMax: 0.026 } }, faceK: 1.15,
     outfit: { key: 'keeper' },
     clips: { idle: ['Idle_Lantern_Loop', 'Sitting_Idle_Loop', 'Idle_Rail_Call'], stage: ['Idle_Lantern_Loop', 'Idle_Rail_Call', 'Idle_Talking_Loop'], walk: { clip: 'Walk_Loop', ts: 0.75, lean: 0.175, swing: 0.55 }, carry: 'cane' },
   },
@@ -102,6 +112,64 @@ export const ARCHETYPES = [
     outfit: { key: 'smith' },
     clips: { idle: ['TreeChopping_Loop', 'Chest_Open', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.9, lean: 0.04, swing: 0.7 } },
   },
+
+  /*
+   * M1.5c — the slice's cast: unnamed Pan Houses people from archetypes 1, 3, 4 and 5 beside the four above, each a second person of
+   * that archetype's calling (the Harvester, the Trader, the Sailor, the Healer) with a face, age, height, skin, hair, headwear and
+   * earrings of their own, and their own copy of the calling's dress re-dyed (`dyes`), all in salt-white linen with one violet
+   * accent (Q6). `rngN` seeds what the build draws at random (hair cards, wrap creases) apart from the first of the archetype.
+   */
+  {
+    id: 'salt-raker-2', n: 1, rngN: 21, name: 'Salt Raker', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.77, age: 24, browK: 0.8,
+    tone: '#8C5E40', iris: '#33241A', amber: '#5E3C20', hair: '#16100D',
+    face: { noseBridge: [0, 2.0, 7.5], noseTip: [0, 1.5, 6.5], cheek: [-3.0, 2.5, 3.5], jaw: [-5.0, -7.0, -2.0], chin: [0, -8.0, 4.5], brow: [0, 2.0, 2.5], upperLip: [0, -1.5, 1.0] },
+    head: { kind: 'scarf', dye: PAN.salt, lining: PAN.orchil, seed: 121, tail: 'left', knot: true },
+    hat: 'none', earrings: { r: 0.014 }, marks: { paste: { xMax: 0.03, dx: 0.004 } },
+    // her accent the belt and sash's orchil, a brighter one; the apron undyed
+    dyes: { [PAN.orchilDeep]: PAN.orchil, [PAN.salt]: PAN.linen },
+    outfit: { key: 'raker' },
+    clips: { idle: ['Farm_Harvest', 'Idle_Loop', 'Consume'], walk: { clip: 'Walk_Loop', ts: 1.02, lean: 0.07, swing: 0.95 }, carry: 'rake' },
+  },
+  {
+    id: 'salt-porter-2', n: 3, rngN: 23, name: 'Salt Porter', faction: 'pan', family: 'Peasant', sex: 'M', height: 1.76, age: 34, browK: 1.08,
+    tone: '#6A4330', iris: '#271A12', amber: '#4E2F17', hair: '#130F0D',
+    face: { noseBridge: [0, -2.0, 3.0], noseTip: [0, -4.5, 5.0], cheek: [5.5, -2.0, 1.0], jaw: [7.5, -2.0, 2.5], chin: [0, -6.5, 3.0], brow: [0, -1.5, 6.5], upperLip: [0, -2.5, 2.5] },
+    head: { kind: 'band', dye: PAN.orchil, lining: PAN.orchilDeep, seed: 123, hair: 'crop', tail: 'right', beard: 'stubble' },
+    hat: 'none', faceK: 1.3,
+    // no hat: the band is his accent, so the sash is undyed linen
+    dyes: { [PAN.orchil]: PAN.linenDirty, [PAN.linen]: PAN.salt },
+    outfit: { key: 'porter' },
+    clips: { idle: ['Yes', 'Idle_Loop', 'Consume'], walk: { clip: 'Walk_Loop', ts: 0.96, lean: 0.05, swing: 0.95 } },
+  },
+  {
+    id: 'boat-caulker-2', n: 4, rngN: 24, name: 'Boat-Caulker', faction: 'pan', family: 'Peasant', sex: 'M', height: 1.69, age: 46, browK: 1.0,
+    tone: '#7C5034', iris: '#2B1F17', amber: '#583A20', hair: '#1A1513',
+    face: { noseBridge: [0, 1.5, 4.5], noseTip: [0, 4.5, -3.0], cheek: [-2.5, 3.5, 5.0], jaw: [2.5, -5.0, -1.5], chin: [0, 2.0, 7.0], brow: [0, 3.0, 2.0], upperLip: [0, 2.5, -2.0] },
+    head: { kind: 'band', dye: PAN.salt, lining: PAN.linenDirty, seed: 124, hair: 'crop', tail: 'left', beard: 'full' },
+    earrings: { r: 0.011 }, faceK: 1.22,
+    marks: { tar: true },
+    // his violet the cuffs alone; the shirt the cleaner linen
+    dyes: { [PAN.linenDirty]: PAN.linen },
+    outfit: { key: 'caulker' },
+    clips: { idle: ['Push_Loop', 'Fixing_Kneeling', 'Idle_Loop'], stage: ['Interact', 'Fixing_Kneeling', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.94, lean: 0.04, swing: 0.9, stance: 0.05 } },
+  },
+  {
+    id: 'lantern-keeper-2', n: 5, rngN: 25, name: 'Lantern-Keeper', faction: 'pan', family: 'Peasant', sex: 'F', height: 1.65, age: 54, browK: 0.75,
+    tone: '#7A5036', iris: '#2E2219', amber: '#5A3C22', hair: '#2A2420',
+    face: { noseBridge: [0, 0.5, 5.0], noseTip: [0, -1.0, 9.0], cheek: [-4.0, 1.0, -1.0], jaw: [-5.0, -4.0, -2.5], chin: [0, 1.0, 6.0], brow: [0, -2.0, 6.0], upperLip: [0, -2.0, 1.0] },
+    head: { kind: 'scarf', dye: PAN.linen, lining: PAN.orchilDeep, seed: 125, tail: 'right' },
+    earrings: { r: 0.009 }, marks: { paste: { xMax: 0.022, dx: -0.006 } }, faceK: 1.0,
+    // her shawl's ends the deeper orchil, her cloak a little greyer
+    dyes: { [PAN.orchil]: PAN.orchilDeep, '#B9A682': '#A89C84' },
+    outfit: { key: 'keeper' },
+    clips: { idle: ['Idle_Rail_Call', 'Idle_Talking_Loop', 'Idle_Loop'], stage: ['Idle_Talking_Loop', 'Idle_Rail_Call', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.82, lean: 0.09, swing: 0.7 }, carry: 'cane' },
+  },
 ];
+
+/**
+ * The slice's cast (M1.5c): Lantern-Keeper Mise and the unnamed Pan Houses people of archetypes 1, 3, 4 and 5. Guild Matron Ansel
+ * (M1.5b) stands beside them in Saltrow and is not counted here.
+ */
+export const CAST = ['lantern-keeper', 'salt-raker', 'salt-raker-2', 'salt-porter', 'salt-porter-2', 'boat-caulker', 'boat-caulker-2', 'lantern-keeper-2'];
 
 export const byId = Object.fromEntries(ARCHETYPES.map((a) => [a.id, a]));
