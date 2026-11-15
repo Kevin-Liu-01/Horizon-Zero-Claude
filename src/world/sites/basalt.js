@@ -31,6 +31,49 @@ import { ORGAN, CRATER } from './layout.js';
  * Deterministic (seeded); every geometry and material is owned and disposed.
  */
 
+/**
+ * M1a round 3 (M1.1c, F05: "the clusters are near-black backlit slabs"): against a low sun the columns' faces toward the
+ * lens are all in shade, and shade on dark basalt under the dusk grade is black. Two terms the scene's lights do not give:
+ *   BOUNCE  the lit salt and the shelf throw the sun back up: faces that look sideways or down take the sun's colour
+ *           times their own albedo times x (0.25 + 0.75 sqrt(sun height)), more the more they face down, so each hex
+ *           facet keeps its own tone (its vertex colour) instead of one black
+ *   RIM     a backlit column's edges that turn toward the sun catch it at grazing view: (1 - N.V)^3 on the sun's side,
+ *           only when the lens looks toward the sun, times y
+ * ORGAN_LIGHT.value = (bounce, rim, -, -), shared, so a probe can try values on one page.
+ */
+export const ORGAN_LIGHT = { value: new THREE.Vector4(0.55, 1.6, 0, 0) };
+const ORGAN_LIGHT_GLSL = /* glsl */ `
+#include <lights_fragment_end>
+#if NUM_DIR_LIGHTS > 0
+{
+  vec3 oSun = directionalLights[0].direction;
+  vec3 oCol = directionalLights[0].color;
+  vec3 oUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+  vec3 oN = normalize(geometryNormal);
+  float oNu = dot(oN, oUp);
+  float oSunUp = clamp(dot(oSun, oUp), 0.0, 1.0);
+  float oBounce = clamp(0.6 - 0.45 * oNu, 0.0, 1.0) * (0.25 + 0.75 * sqrt(oSunUp));
+  reflectedLight.indirectDiffuse += oCol * BRDF_Lambert(diffuseColor.rgb) * oBounce * uOrganLight.x;
+  float oNv = clamp(dot(oN, geometryViewDir), 0.0, 1.0);
+  vec3 oSh = oSun - oUp * dot(oSun, oUp);
+  oSh = oSh / max(length(oSh), 1e-3);
+  float oSide = clamp(dot(oN, oSh) * 0.8 + 0.2, 0.0, 1.0);
+  float oBack = smoothstep(-0.2, 0.5, -dot(geometryViewDir, oSun));
+  reflectedLight.directDiffuse += oCol * BRDF_Lambert(diffuseColor.rgb) * pow(1.0 - oNv, 3.0) * oSide * oBack * uOrganLight.y;
+}
+#endif`;
+function organLight(mat) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = function (shader, renderer) {
+    if (typeof prev === 'function') prev.call(this, shader, renderer);
+    shader.uniforms.uOrganLight = ORGAN_LIGHT;
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec4 uOrganLight;')
+      .replace('#include <lights_fragment_end>', ORGAN_LIGHT_GLSL);
+  };
+  mat.customProgramCacheKey = () => 'cal-organ-light';
+}
+
 function mulberry32(seed) {
   let a = seed >>> 0;
   return () => {
@@ -299,6 +342,7 @@ export function buildOrganShelf(terrain, clusters = ORGAN) {
   geo.computeBoundingBox();
   geo.computeBoundingSphere();
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.84, metalness: 0.02, name: 'r5-organ-basalt' });
+  organLight(mat);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'organ-shelf-landmark-columns';
   mesh.castShadow = true;

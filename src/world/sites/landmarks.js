@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { patchAerial } from '../island/aerial.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { dequantiseRoot } from '../../core/assets.js';
 import {
@@ -34,6 +35,20 @@ const URL = {
 };
 
 const D2R = Math.PI / 180;
+
+/** M1a round 3 (M1.1c, island/aerial.js): the stacks stand in the distance-graded air; once per material. */
+function aerialOn(mat) {
+  if (!mat || mat.userData.calAerial) return;
+  mat.userData.calAerial = true;
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = function (shader, renderer) {
+    if (typeof prev === 'function') prev.call(this, shader, renderer);
+    patchAerial(shader);
+  };
+  const key = mat.customProgramCacheKey?.bind(mat);
+  mat.customProgramCacheKey = () => `${key ? key() : ''}|cal-aerial`;
+  mat.needsUpdate = true;
+}
 /** Yaw that turns a recipe's local +Z to a compass bearing (engine: x = E, z = -N). */
 export const yawToBearing = (bearingDeg) => Math.PI - bearingDeg * D2R;
 
@@ -220,6 +235,7 @@ export class Landmarks {
       if (!n) continue;
       const im = new THREE.InstancedMesh(n.geometry, n.material, list.length);
       im.name = `skyline-landmark-${kind}`;
+      aerialOn(n.material);
       im.castShadow = false;
       im.receiveShadow = true;
       this._own(n.geometry, n.material);

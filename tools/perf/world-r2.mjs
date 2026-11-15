@@ -47,7 +47,13 @@ assertOutsideRepo(OUT, REPO);
 const FRAMES = flag('--frames', 'F02,F03,F04,F05').split(',').map((s) => s.trim()).filter(Boolean);
 const BUDGET_S = Number(flag('--budget', 600));
 const AB = flag('--ab', 'none');
-const STAB = (flag('--stab', '') || '').split(';').filter(Boolean).map((v) => v.split(',').map(Number));
+/* --stab "x,y,z,w[/a,b,c,d];..." : uStab and (round 3) uStab2 per variant */
+const STAB = (flag('--stab', '') || '').split(';').filter(Boolean).map((v) => v.split('/').map((q) => q.split(',').map(Number)));
+/* M1a round 3: --aerial "amount,start,scale;..." (island/aerial.js) and --organ "bounce,rim;..." (sites/basalt.js) variants
+ * on F05 (layers and a still each); --ring (the Ring's panels at 150 m, the fallen quadrant); --walls (field walls from
+ * 120 m over T1, the far bake) */
+const AER = (flag('--aerial', '') || '').split(';').filter(Boolean).map((v) => v.split(',').map(Number));
+const ORG = (flag('--organ', '') || '').split(';').filter(Boolean).map((v) => v.split(',').map(Number));
 const SHADE = (flag('--shade', '') || '').split(',').filter((v) => v !== '').map(Number);
 const GAP = (flag('--gap', '') || '').split(',').filter((v) => v !== '').map(Number);
 const SET = Object.fromEntries((flag('--set', '') || '').split(',').filter(Boolean).map((kv) => kv.split('=')));
@@ -224,18 +230,19 @@ try {
     }
     // 5. the walk and the sprint per stabiliser variant at 0 samples, and the 4-sample reference
     R.walk = {};
-    const variants = STAB.length ? STAB.map((v) => ({ n: 0, v })) : [{ n: 0, v: null }];
+    const variants = STAB.length ? STAB.map((v) => ({ n: 0, v: v[0], v2: v[1] || null })) : [{ n: 0, v: null }];
     variants.push({ n: 4, v: run.applied.stab, ref: true });
-    for (const { n, v, ref } of variants) {
+    for (const { n, v, v2, ref } of variants) {
       if (spent() > BUDGET_S - 150) { log('walks: budget'); break; }
       for (const [name, speed, fov] of [['walk', 1, null], ['sprint', 6.8, 60]]) {
-        const key = `msaa${n}-${ref ? 'ref' : v ? v.join('/') : 'shipped'}-${name}`;
-        R.walk[key] = await page.evaluate(async (n, v, speed, fov, bearing) => {
+        const key = `msaa${n}-${ref ? 'ref' : v ? v.join('/') + (v2 ? '+' + v2.join('/') : '') : 'shipped'}-${name}`;
+        R.walk[key] = await page.evaluate(async (n, v, v2, speed, fov, bearing) => {
           const M = await import('/tools/perf/meadow-page.mjs'); const C = window.__CTX__, E = C.engine, MD = C.vegetation.meadow;
-          const s0 = MD._u.uStab.value.toArray();
+          const s0 = MD._u.uStab.value.toArray(), s20 = MD._u.uStab2 ? MD._u.uStab2.value.toArray() : null;
           if (v) MD.setStab(...v);
-          try { await M.setMsaa(E, n); const r = M.walk(E, C, { speed, fov, frames: 60, bearing }); return await r; } finally { MD.setStab(...s0); await M.setMsaa(E, 0); }
-        }, n, v, speed, fov, f.bearing);
+          if (v2 && MD.setStab2) MD.setStab2(...v2);
+          try { await M.setMsaa(E, n); const r = M.walk(E, C, { speed, fov, frames: 60, bearing }); return await r; } finally { MD.setStab(...s0); if (s20) MD.setStab2(...s20); await M.setMsaa(E, 0); }
+        }, n, v, v2, speed, fov, f.bearing);
         const w = R.walk[key];
         log(`F02 ${key}: all ${w.eventsPerMille}, mid 12-30 m ${w.bands['mid12-30m'].eventsPerMille}, near ${w.bands['near<12m'].eventsPerMille}, far ${w.bands['far>30m'].eventsPerMille} per mille`);
       }
@@ -247,7 +254,7 @@ try {
           const M = await import('/tools/perf/meadow-page.mjs'); const C = window.__CTX__, E = C.engine;
           const shots = [];
           const m = await M.walk(E, C, { speed, fov, frames: 60, bearing, save: true, onFrame: (k, u) => { if (k % 4 === 0) shots.push(u); } });
-          return { m, shots, stab: C.vegetation.meadow._u.uStab.value.toArray() };
+          return { m, shots, stab: C.vegetation.meadow._u.uStab.value.toArray().concat(C.vegetation.meadow._u.uStab2 ? C.vegetation.meadow._u.uStab2.value.toArray() : []) };
         }, speed, fov, f.bearing);
         R.clip = R.clip || {};
         R.clip[name] = { ...r.m, stab: r.stab, frames: r.shots.length };
@@ -380,6 +387,16 @@ try {
         { id: 'basalt', x: GP.rockShelf?.x ?? -170, z: GP.rockShelf?.z ?? 352 },
         { id: 'glass', x: R.GLASS.e, z: -R.GLASS.n },
       ];
+      /* M1a round 3: the brine pond in F04's frame (recipe.js CELL_KIND, seaward of the salt-pans site's main dyke), 6 m in
+       * from its dyke, and its evaporating pink edge 1.5 m in */
+      const S = await import('/src/world/island/sites.js');
+      const sp = S.siteById('salt-pans');
+      if (sp) {
+        const b = 200 * Math.PI / 180, fx = Math.sin(b), fz = -Math.cos(b);
+        out.push({ id: 'brine-f04', x: sp.x + fx * 12, z: sp.z + fz * 12 });
+        out.push({ id: 'brine-edge-f04', x: sp.x + fx * 7, z: sp.z + fz * 7 });
+        out.push({ id: 'crust-f04', x: sp.x - fx * 0.5, z: sp.z - fz * 0.5 });
+      }
       // a brine cell: the deepest-inside BRINE cell near the field's middle
       let best = null;
       try {
@@ -398,11 +415,12 @@ try {
           const C = window.__CTX__, T = C.terrain, gy = (x, z) => T.getHeight(x, z);
           const ty = Math.max(gy(s0.x, s0.z), s0.id === 'glass' ? 0.16 : -1e9);
           if (dist === 1) return { pos: [s0.x - 0.6, ty + 0.8, s0.z + 0.0], target: [s0.x, ty, s0.z], fov: 50 };
-          for (let b = 0; b < 8; b++) {
-            const a = b * Math.PI / 4, ex = s0.x + 100 * Math.cos(a), ez = s0.z + 100 * Math.sin(a), ey = gy(ex, ez) + 1.7;
-            let ok = ey > ty;
+          // (round 3) 16 bearings, and a lens up to 6 m over the ground where 1.7 m sees no clear line (dunes, a pump base)
+          for (const eye of [1.7, 3, 6]) for (let b = 0; b < 16; b++) {
+            const a = b * Math.PI / 8, ex = s0.x + 100 * Math.cos(a), ez = s0.z + 100 * Math.sin(a), ey = gy(ex, ez) + eye;
+            let ok = ey > ty && gy(ex, ez) > -0.2;
             for (let k = 1; k < 40 && ok; k++) { const t = k / 40, x = ex + (s0.x - ex) * t, z = ez + (s0.z - ez) * t; if (gy(x, z) > ey + (ty - ey) * t - 0.3 && t < 0.97) ok = false; }
-            if (ok) return { pos: [ex, ey, ez], target: [s0.x, ty, s0.z], fov: 10, bearingDeg: b * 45 };
+            if (ok) return { pos: [ex, ey, ez], target: [s0.x, ty, s0.z], fov: 10, bearingDeg: b * 22.5, eye };
           }
           return null;
         }, s0, dist);
@@ -425,6 +443,74 @@ try {
         run.swatches.push({ id: s0.id, dist, file, x: s0.x, z: s0.z, lens: v, labMid40: lab });
         log(`swatch ${s0.id} at ${dist} m: Lab ${lab.join(' ')}`);
       }
+    }
+    await page.evaluate(unstageFrame);
+  }
+
+  /* M1a round 3: F05 per aerial variant (layers + still) and per Organ light variant (still + the Organ's crop) */
+  if ((AER.length || ORG.length) && spent() < BUDGET_S) {
+    await stage('F05');
+    run.F05variants = [];
+    const setV = (a, o) => page.evaluate(async (a, o) => {
+      const A = await import('/src/world/island/aerial.js'); const B = await import('/src/world/sites/basalt.js');
+      const a0 = A.AERIAL.value.toArray(), o0 = B.ORGAN_LIGHT.value.toArray();
+      if (a) A.AERIAL.value.set(a[0], a[1], a[2], 0);
+      if (o) B.ORGAN_LIGHT.value.set(o[0], o[1], 0, 0);
+      return { a0, o0 };
+    }, a, o);
+    const shipped = await setV(null, null);
+    const list = [...AER.map((a) => ({ a, o: null })), ...ORG.map((o) => ({ a: null, o }))];
+    for (const { a, o } of list) {
+      if (spent() > BUDGET_S) break;
+      await setV(a, o);
+      await sleep(400);
+      const key = a ? `aerial-${a.join('_')}` : `organ-${o.join('_')}`;
+      await shot(`F05-${key}.png`);
+      const L = await page.evaluate(async () => { const M = await import('/tools/perf/rock-page.mjs'); const C = window.__CTX__; const r = await M.layers(C.engine, C); delete r.map; return r; });
+      run.F05variants.push({ key, aerial: a, organ: o, layers: L.layers, classes: L.classes.map((c) => [c.class, c.columnsPct, c.rimL]), gaps: L.gaps.map((g) => g.dL), pass: L.pass });
+      log(`F05 ${key}: layers ${L.layers}, rims ${L.classes.map((c) => c.rimL).join(' / ')}, gaps ${L.gaps.map((g) => g.dL).join(' / ')}, pass ${L.pass}`);
+      await setV(shipped.a0, shipped.o0);
+    }
+    await page.evaluate(unstageFrame);
+  }
+  if (has('--ring') && spent() < BUDGET_S) {
+    run.ring = {};
+    for (const id of ['F05', 'F02']) {
+      await stage(id);
+      const r = await page.evaluate(async () => { const M = await import('/tools/perf/rock-page.mjs'); const C = window.__CTX__; return M.ringPanels(C.engine, C, 150); });
+      if (r.crop) { await sharp(Buffer.from(r.crop.b64, 'base64'), { raw: { width: r.crop.w, height: r.crop.h, channels: 3 } }).jpeg({ quality: 90 }).toFile(path.join(OUT, `ring-${id}light-150m.jpg`)); delete r.crop; }
+      run.ring[id] = r;
+      log(`ring at 150 m (${id} light): ${r.panels} panels (${r.keptSamples} samples)`);
+      await page.evaluate(unstageFrame);
+    }
+    await stage('F02');
+    run.ring.site = await page.evaluate(() => {
+      const C = window.__CTX__, r = C.props.landmarkSet.ring, T = C.terrain;
+      return { fallen: (r.fallen || []).map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1), ground: T.materialAt(p.x, p.z), ends: [T.materialAt(p.x + Math.cos(p.yaw) * 4, p.z - Math.sin(p.yaw) * 4), T.materialAt(p.x - Math.cos(p.yaw) * 4, p.z + Math.sin(p.yaw) * 4)] })) };
+    });
+    log(`ring fallen: ${JSON.stringify(run.ring.site)}`);
+    const fl = run.ring.site.fallen[0];
+    if (fl) {
+      const c = await page.evaluate(async (p) => { const M = await import('/tools/perf/rock-page.mjs'); const C = window.__CTX__, T = C.terrain; return M.look(C.engine, C, [p.x + 14, T.getHeight(p.x + 14, p.z + 10) + 1.7, p.z + 10], [p.x, T.getHeight(p.x, p.z) + 0.6, p.z], 46); }, fl);
+      await sharp(Buffer.from(c.b64, 'base64'), { raw: { width: c.w, height: c.h, channels: 3 } }).jpeg({ quality: 88 }).toFile(path.join(OUT, 'look-fallen.jpg'));
+    }
+    await page.evaluate(unstageFrame);
+  }
+  if (has('--walls') && spent() < BUDGET_S) {
+    await stage('F32', 2000);
+    const looks = await page.evaluate(() => {
+      const C = window.__CTX__, T = C.terrain;
+      const t1 = { x: -187, z: 357 }, y = T.getHeight(t1.x, t1.z) + 120;
+      return { far: T._far?.walls || null, looks: [
+        { name: 'walls-120m-enclosures', pos: [t1.x, y, t1.z], target: [-200, T.getHeight(-200, 215), 215] },
+        { name: 'walls-120m-field', pos: [t1.x, y, t1.z], target: [-300, T.getHeight(-300, 290), 290] },
+      ] };
+    });
+    run.walls = { far: looks.far };
+    log(`far-field wall bake: ${JSON.stringify(looks.far)}`);
+    for (const l of looks.looks) {
+      const c = await page.evaluate(async (l) => { const M = await import('/tools/perf/rock-page.mjs'); const C = window.__CTX__; return M.look(C.engine, C, l.pos, l.target, 50); }, l);
+      await sharp(Buffer.from(c.b64, 'base64'), { raw: { width: c.w, height: c.h, channels: 3 } }).jpeg({ quality: 90 }).toFile(path.join(OUT, `look-${l.name}.jpg`));
     }
     await page.evaluate(unstageFrame);
   }

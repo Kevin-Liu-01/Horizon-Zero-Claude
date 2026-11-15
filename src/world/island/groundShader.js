@@ -398,12 +398,15 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
       /* M1a fix round (M1.1e, F04 against the swatch: the crust read a smooth pink glaze, b* 8.1 against the swatch's 1.1,
        * L* 64.8 against 48.9): the texture's cream keeps 45 % of its chroma, the cell's pink reaches the crust at 40 % of its
        * old strength (brine keeps its own, below), and the crust is a shade lower: white salt, grey in its grain */
-      c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.45) * 0.9;
+      /* M1a round 3 (M1.1e: the crust at 1 m read b* 4.9 against the swatch's ~1, F04 a milky pink-grey): the texture's cream
+       * keeps 15 % of its chroma (was 45), a white cell's crust takes no pink (the cell's pink starts at hue 0.15) and a
+       * hair of cool, so raked salt reads white under the noon sun */
+      c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.15) * 0.9;
       /* salt runs white → brine pink → crystalliser rust, by cell */
       float hue = pan.b;
-      vec3 tintC = hue < 0.5 ? mix(vec3(1.0), vec3(0.93, 0.62, 0.52), hue * 0.8)
+      vec3 tintC = hue < 0.5 ? mix(vec3(1.0), vec3(0.93, 0.62, 0.52), smoothstep(0.15, 0.5, hue) * 0.4)
                              : mix(vec3(0.97, 0.85, 0.81), vec3(0.42, 0.13, 0.08), (hue - 0.5) * 2.0);
-      c *= tintC;
+      c *= tintC * mix(vec3(0.985, 1.0, 1.025), vec3(1.0), smoothstep(0.1, 0.3, hue));
       // and the grain in the crust's own tone: the texture repeats, this does not
       c *= 1.0 + fineN * 0.34;
       // polygons, their raised white rims with a grey crack in each, and the rake's furrows
@@ -587,7 +590,15 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   float wetSea = (1.0 - smoothstep(tide, tide + 0.34, vWPos.y)) * (1.0 - smoothstep(2.5, 8.5, coast));
   // the Glass's margin: a damp band a few metres wide that dries into the sand, no hard ring
   float wetGlass = sh.b * (1.0 - smoothstep(0.17, 0.46, vWPos.y)) * (0.55 + 0.45 * smoothstep(0.3, 0.7, nMac.b));
-  float wet = max(wetSea, wetGlass);
+  /* M1a round 3 (M1.1e "black sand with a wet band"): a dyke's sand is wet and dark in a band a metre wide along a brine
+   * pond (the brine creeps into it), read off the pond's brine a metre either side across the dyke */
+  float wetDyke = 0.0;
+  if (inK < 0.6 && dCam < 60.0 && puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0) {
+    vec2 fvT = vec2(-uFieldU.y, uFieldU.x) * (1.15 * uPanBox.z);
+    float gB = max(gPanT(puv + fvT).g, gPanT(puv - fvT).g);
+    wetDyke = smoothstep(0.18, 0.5, gB) * (1.0 - inK) * (1.0 - wRock);
+  }
+  float wet = max(max(wetSea, wetGlass), wetDyke);
   // a wet ground is dark and flat; brine is thin water on crust, pink where it evaporates
   col *= mix(1.0, 0.42, wet);
   gLiquid = max(wet * 0.62, brine);

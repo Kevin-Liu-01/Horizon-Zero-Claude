@@ -519,6 +519,11 @@ function fieldLevel(e, n) {
   return rowLevel(v0 + skewV(u0, v0));
 }
 
+/** Authored cell kinds, field coords (u, skewed v) of a point inside the cell. */
+const CELL_KIND = [
+  { u: -2, v: 8, kind: 2 },      // inland of the main dyke at v 1: WHITE
+  { u: -2, v: -6, kind: 0 },     // seaward of it: BRINE
+];
 let _rows = null;
 let _walls = null;
 function buildField() {
@@ -558,6 +563,16 @@ function buildField() {
       u += w;
     }
     _rows.push({ v0, v1, cells });
+  }
+  /* M1a round 3 (M1.1e, F04 "the Pans at noon, salt and black sand"): the two cells either side of the main dyke at the
+   * salt-pans site are authored, not drawn: inland a raked WHITE crust cell, seaward a BRINE pond, so the site's lens
+   * (bearing 200, looking down) sees the white crust, the dyke's black sand and basalt run, and the brine with its
+   * evaporating pink edge in one frame. The layout's random sequence is untouched (the kinds are set after the draw). */
+  for (const o of CELL_KIND) {
+    for (const row of _rows) {
+      if (o.v < row.v0 || o.v >= row.v1) continue;
+      for (const c of row.cells) if (o.u >= c.u0 && o.u < c.u1) c.kind = o.kind;
+    }
   }
 }
 
@@ -603,6 +618,9 @@ export function panAt(e, n) {
   P.salt = clamp01(f[0] + wob * 0.5 + j1 * 0.24);
   P.brine = clamp01(f[1] + wob * 1.05 - ss(0, 1.8, 2.2 - d) * 0.38 + j2 * 0.22);
   P.hue = clamp01(f[2] + wob * 0.34 + j2 * 0.14);
+  /* M1a round 3 (M1.1e): a brine pond goes pink where it evaporates, at its edge against the dyke (bible: brine pink
+   * #D9B8B0 at the drying margin); its middle stays a grey mirror of the sky */
+  if (c.kind === 0) P.hue = clamp01(P.hue + (1 - ss(0.4, 3.2, d)) * 0.34);
   P.level = c.level;
   P.kind = c.kind;
   return P;

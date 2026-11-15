@@ -108,6 +108,7 @@ varying float vMSeed;
 varying vec2 vFloraXZ;
 uniform vec4 uDebug;              // x: flat colour (no lighting), y: every blade clipped (vertex work only)
 uniform vec4 uStab;               // M1a round 2, the crawl at 12-30 m: x tip light faded, y foot-tip ramp flattened, z clumps wider, w sub-pixel blades to their mean
+uniform vec4 uStab2;              // M1a round 3, the same band: x normals up, y blades square to the lens, z sway damped, w width floor raised
 varying float vMTr;
 uint mPcg(uint v) { uint s = v * 747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u; return (w >> 22u) ^ w; }
 float mU(uint v) { return float(mPcg(v)) * (1.0 / 4294967296.0); }
@@ -165,6 +166,9 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
    * went sub-pixel. They broaden with distance (about two device px at the foot at 30 m) and taper less */
   float midK = kind > 0.5 && kind < 1.5 ? smoothstep(10.0, 30.0, dCam) : 0.0;
   w0 *= 1.0 + (0.6 + 0.9 * uStab.z) * midK;
+  /* M1a round 3 (M1.1b: the walk's 12-30 m band at 1.41 x the 4x MSAA reference): over 8-20 m and on, blades and clumps
+   * (not cards) take the stabiliser's second set. stK is that band's weight */
+  float stK = kind < 1.5 ? smoothstep(8.0, 20.0, dCam) : 0.0;
   float yaw = u3 * 6.2831853 + u4 * 1.7;
   vec2 face = vec2(cos(yaw), sin(yaw));
   vec2 rightW = vec2(-face.y, face.x);
@@ -176,6 +180,8 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
     // edge-on to the lens, a blade turns part-way toward it (it never thins to nothing)
     float edge = 1.0 - abs(dot(rightW, camR));
     rightW = normalize(rightW + camR * sign(dot(rightW, camR) + 1e-4) * 0.75 * edge);
+    // (round 3, y) square to the lens with distance: a blade's projected width no longer swings as the lens walks past it
+    rightW = normalize(mix(rightW, camR * sign(dot(rightW, camR) + 1e-4), uStab2.y * stK));
   }
   // the tip's width: blades taper to a point, clumps and cards stay broad
   float taper = kind > 1.5 ? 1.0 : kind > 0.5 ? (1.0 - 0.7 * (1.0 - (0.45 + 0.4 * uStab.z) * midK) * t) : (1.0 - 0.86 * t);
@@ -187,7 +193,7 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
   float lean = 0.12 + 0.3 * u2;
   float ph = dot(root, uWind) * 0.09 - uTime * 1.5 + root.x * 0.21;
   float gust = 0.55 + 0.45 * sin(dot(root, uWind) * 0.021 - uTime * 0.46);
-  float sway = (sin(ph) * 0.05 + sin(ph * 2.3 + root.y) * 0.02) * (0.4 + gust) * 1.6;
+  float sway = (sin(ph) * 0.05 + sin(ph * 2.3 + root.y) * 0.02 * (1.0 - uStab2.z * stK)) * (0.4 + gust) * 1.6 * (1.0 - 0.6 * uStab2.z * stK);
   vec2 bend = leanDir * lean + uWind * (sway + 0.04 * gust);
   // she parts it as she walks
   vec2 push = vec2(0.0); float press = 0.0;
@@ -206,11 +212,14 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
   float wPx = 2.0 * hw * pxPerM;
   float wPxB = 2.0 * w0 * pxPerM;
   float cov = 1.0;
-  if (uPx.y > 0.5 && kind < 1.5 && side != 0.0 && wPx < 1.0) { cov = max(wPx, 0.0); hw = 0.5 / pxPerM; }
+  float wFloor = 1.0 + uStab2.w * stK;
+  if (uPx.y > 0.5 && kind < 1.5 && side != 0.0 && wPx < wFloor) { cov = max(wPx / wFloor, 0.0); hw = 0.5 * wFloor / pxPerM; }
   mP = spine + vec3(rightW.x, 0.0, rightW.y) * hw * side;
   // shading normal: mostly up (a lit tuft, not a lit card), toward the blade's face and its bend
   vec2 fn = kind > 1.5 ? toCam / tcl : face * sign(dot(face, toCam) + 1e-4);
   objectNormal = normalize(vec3(fn.x * 0.32 + bend.x * 0.4 * t, 0.9, fn.y * 0.32 + bend.y * 0.4 * t));
+  // (round 3, x) the face's sign flips as the lens walks round a blade: with distance the normal goes up, one tone
+  objectNormal = normalize(mix(objectNormal, vec3(0.0, 1.0, 0.0), uStab2.x * stK));
   // colour: dark straw at the foot to pale gold at the tip, tone per blade; violet viborina
   vec3 base = vec3(0.17, 0.112, 0.02) * (0.75 + 0.45 * u3);     // = the ground's meadow litter (groundShader.js)
   vec3 tip = mix(vec3(0.694, 0.431, 0.117), vec3(0.578, 0.352, 0.074), u4) * (0.78 + 0.4 * u2);
@@ -387,6 +396,7 @@ export class Meadow {
       /* M1a round 2: the crawl stabiliser on, all four terms (measured at 889bce2, F02's walk and sprint, 12-30 m: 245 -> 201
        * and 527 -> 508 events per mille at 0 samples; past 30 m 195 -> 35 and 449 -> 223) */
       uStab: { value: new THREE.Vector4(1, 1, 1, 1) },
+      uStab2: { value: new THREE.Vector4(1, 1, 1, 0) },
     };
     this.rings = MEADOW_RINGS.map((ring) => this._buildRing(ring));
     this._frustum = new THREE.Frustum();
@@ -622,6 +632,9 @@ export class Meadow {
 
   /** The crawl stabiliser's four terms (uStab, see MEADOW_BUILD), each 0..1. */
   setStab(x = 0, y = 0, z = 0, w = 0) { this._u.uStab.value.set(x, y, z, w); }
+
+  /** The round-3 set (uStab2: normals up, square to the lens, sway damped, width floor), each 0..1. */
+  setStab2(x = 0, y = 0, z = 0, w = 0) { this._u.uStab2.value.set(x, y, z, w); }
 
   /** Density 0..1 at a point (the vertex shader's read, bilinear). */
   densityAt(x, z) {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { AERIAL, AERIAL_PARS, patchAerial } from './island/aerial.js';
 import { WORLD_SIZE, WORLD_HALF, PLAY_RADIUS, MESH_SPAN, MESH_SEGS } from './island/extent.js';
 import { REST_SITE, TUBES, SALT_FIELD } from './island/sites.js';
 import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './island/recipe.js';
@@ -234,7 +235,11 @@ const DECK_ANCHOR = 'calTauC = calFogD.x * calSeg * calWw * calBreak;';
 function groundFogChunk() {
   const c = THREE.ShaderChunk.fog_fragment;
   if (!c.includes(DECK_ANCHOR)) { console.error('terrain: the cloud-deck anchor in fog_fragment moved; the ground keeps the shared fog'); return c; }
-  return c.replace(DECK_ANCHOR, 'calTauC = min( calFogD.x * calSeg * calWw * calBreak, 36.0 * max( 0.0, - calVd.y - 0.01 ) );');
+  /* M1a round 3 (F32: the pale hard-edged wedge stood on: from 120 m over T1 the land behind the ridge, seen 2-6 deg down
+   * through 300-600 m of deck, went cloud-white (cap 36 x: optical depth 1.8-2.5) beside a clear ridge in front). The cap
+   * is a third as steep (12 x, from 1.2 deg down) and the deck's own depth on a ground ray is held to 1.1, so the far land
+   * keeps a hazed form instead of a white sheet with the ridge's hard outline cut out of it */
+  return c.replace(DECK_ANCHOR, 'calTauC = min( min( calFogD.x * calSeg * calWw * calBreak, 12.0 * max( 0.0, - calVd.y - 0.02 ) ), 1.1 );');
 }
 
 /* ---------------------------- fast grid reads (module scope) ---------------------- */
@@ -745,7 +750,7 @@ export class Terrain {
         .replace('#include <normal_fragment_begin>', GROUND_NORMAL)
         .replace('#include <aomap_fragment>', GROUND_AO);
       if (bake) shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', FAR_BAKE_OUT);
-      else shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', groundFogChunk());
+      else { patchAerial(shader); shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', groundFogChunk()); }
   }
 
   _buildChunks(chunks) {
@@ -823,8 +828,9 @@ export class Terrain {
         .replace('#include <color_fragment>', FAR_COLOR)
         .replace('#include <roughnessmap_fragment>', GROUND_ROUGH)
         .replace('#include <normal_fragment_begin>', GROUND_NORMAL)
-        .replace('#include <aomap_fragment>', GROUND_AO)
-        .replace('#include <fog_fragment>', groundFogChunk());
+        .replace('#include <aomap_fragment>', GROUND_AO);
+      patchAerial(shader);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', groundFogChunk());
     };
     far.customProgramCacheKey = () => 'cal-ground-far';
     this.ctx.environment?.registerMaterial?.(far);
@@ -1086,7 +1092,9 @@ export class Terrain {
     this._isleTick = 29;
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uIsleVis = uVis;
+      shader.uniforms.uAerial = AERIAL;
       shader.fragmentShader = shader.fragmentShader
+        .replace('#include <fog_pars_fragment>', AERIAL_PARS)
         .replace('#include <common>', '#include <common>\nuniform float uIsleVis;')
         .replace('#include <fog_fragment>', `#ifdef USE_FOG
   {
@@ -1105,6 +1113,8 @@ export class Terrain {
     float ac = dot(dv, calSunDir);
     air += calFogSun * (calHG(calFogG.x, ac) * calFogG.y + calHG(calFogG.z, ac) * calFogG.w) * calFogB.x;
     gl_FragColor.rgb = mix(air, gl_FragColor.rgb, vis);
+    /* M1a round 3 (aerial.js): past the stacks and the headlands, the isles the palest layer */
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, air, uAerial.x * (1.0 - exp(-max(dl - uAerial.y, 0.0) / max(uAerial.z, 1.0))));
   }
 #endif`);
     };
