@@ -407,7 +407,7 @@ const HIP_LEAD = 0.085;
 const CROUCH_KEY_DROP = 0.50;
 /** A crouched Undercut keeps this much less of its hip turn and drive than a standing one (the crouch's legs
  *  cannot carry the full 0.36 m lunge; with all of it the left hand was pulled 0.16 m off `grip2`). */
-const UC_CROUCH_HIPS = 0.6;
+const UC_CROUCH_HIPS = 0.9;   // (M1a r3: 0.6 -> 0.9; at 0.6 the left palm was 0.086 m off grip2 at the contact, thrust 30.7 deg)
 const HIP_LEAD_RAMP = 0.10;
 /**
  * THE MASKED CLIP AFTER THE HIPS, NOT BEFORE THEM (M1.3d). `Sword_Attack`'s

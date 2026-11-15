@@ -355,17 +355,19 @@ export async function traversalOverlay(ctx) {
     const og = ctx.props?.gatePlaces?.openGround;
     const x = og ? og.x : -60, z = og ? og.z + 6 : -39, gy = T.getHeight(x, z);
     const b = box(x, gy + 0.25, z + 3.5, 1.5, 0.75, 1.0);   // a 1.0 m ledge: top 1.0 m over her feet
+    if (!(E.timeScale > 0)) E.timeScale = 1;          // (a frozen world never mantles: the loops below would not end)
     p.position.set(x, 0, z); p.velocity.set(0, 0, 0); p._snapToGround(); p.heading = 0; p.camYaw = Math.PI;
     await simWait(0.3);
     ctx.input.keys.add('KeyW');
-    const w0 = E.simTime;
-    while (E.simTime - w0 < 4 && !p.mantling) { await frame(); if (p.grounded !== false && p.position.z > z + 1.2) { ctx.input._press?.('Space', { code: 'Space' }); ctx.input.keys.delete('Space'); } }
+    const w0 = E.simTime, r0 = performance.now();
+    while (E.simTime - w0 < 4 && !p.mantling && performance.now() - r0 < 15000) { await frame(); if (p.grounded !== false && p.position.z > z + 1.2) { ctx.input._press?.('Space', { code: 'Space' }); ctx.input.keys.delete('Space'); } }
     ctx.input.keys.clear();
     if (!p.mantling) console.warn('[V-traversal] the ledge was not mantled');
     // the pull's last frame (fix round 1): both palms still on the top and the
     // chest coming over them (A-climb-1m's body-over-hands moment, k ~0.36)
     const an = p.animator;
-    while (p.mantling && (p.mantleK ?? 0) < 0.6) {
+    const r1 = performance.now();
+    while (p.mantling && (p.mantleK ?? 0) < 0.6 && performance.now() - r1 < 15000) {
       await frame();
       if ((p.mantleK ?? 0) < 0.25) continue;
       const s3 = an.b.spine3.bone.getWorldPosition(new THREE.Vector3());

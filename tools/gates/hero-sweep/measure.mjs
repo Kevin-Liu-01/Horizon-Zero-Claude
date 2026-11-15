@@ -264,12 +264,17 @@ export function buildSweep(R, THREE, opts = {}) {
          * back of the cheek by design, behind the skull centre's plane, and that arm is graded by the anchor rows
          * (A16, A32, A-draw-elbow-level: the knuckle on the jaw-corner anchor, no hand or forearm point behind the head)
          * and by the skull test above on every step */
-        const onString = S === SR && (an._cr?.w ?? 0) >= 0.5 && !!st.aiming;
+        /* (round 3, after the page at d8fddf1: the rig's own weight, not the aim flag: on RMB up after a draw the hand
+         *  is still on the jaw while the rig lets go, blendAimStowBow's first steps; and "at head level" is the
+         *  skull's lower edge or higher, not merely over her own shoulder joint: on the ledge the shoulders sink
+         *  under the hands and a forearm 0.006 m over the shoulder, at her collar, counted as behind the head) */
+        const onString = S === SR && (an._cr?.w ?? 0) >= 0.5;
         if (!onString) {
           const lvl = headLevel();
+          const headLo = _sc.y - HR.y;
           for (const [q, h] of armPoints(S)) {
             const dh = planeDepth(q), dl = lvl ? planeDepthLevel(q) : dh;
-            if (q.y > sh.y && dh < 0 && dl < 0) { acc.plane++; if (!acc.planeAt) acc.planeAt = { T: st.T, side: S.s, pt: h ? 'hand' : 'forearm', aboveSh: +(q.y - sh.y).toFixed(3), depthHeadFrame: +dh.toFixed(3), depthLevel: +dl.toFixed(3) }; break; }
+            if (q.y > sh.y && q.y >= headLo && dh < 0 && dl < 0) { acc.plane++; if (!acc.planeAt) acc.planeAt = { T: st.T, side: S.s, pt: h ? 'hand' : 'forearm', aboveSh: +(q.y - sh.y).toFixed(3), depthHeadFrame: +dh.toFixed(3), depthLevel: +dl.toFixed(3) }; break; }
           }
         } else acc.planeOnString = (acc.planeOnString || 0) + 1;
         const w = CP(S.wr, V());

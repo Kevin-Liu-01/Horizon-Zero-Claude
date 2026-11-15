@@ -158,14 +158,15 @@ try {
   t0 = Date.now();
   browser = await puppeteer.launch({ headless: 'new', userDataDir: profile, protocolTimeout: 240000,
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', `--window-size=${vp.width},${vp.height + 40}`] });
-  const page = await browser.newPage();
+  let page = await browser.newPage();
   await page.setViewport({ width: vp.width, height: vp.height, deviceScaleFactor: vp.dpr || 1 });
-  await page.evaluateOnNewDocument(() => {
+  const WS_STUB = () => {
     const Real = window.WebSocket;
     function Dead() { const t = new EventTarget(); t.readyState = 1; t.send = () => {}; t.close = () => { t.readyState = 3; }; setTimeout(() => t.dispatchEvent(new Event('open')), 0); return t; }
     window.WebSocket = function (url, protocols) { const p = Array.isArray(protocols) ? protocols[0] : protocols; if (p === 'vite-hmr' || (typeof url === 'string' && url.includes('vite'))) return Dead(); return new Real(url, protocols); };
     window.WebSocket.prototype = Real.prototype;
-  });
+  };
+  await page.evaluateOnNewDocument(WS_STUB);
   let current = 'boot';
   page.on('console', (m) => { if (m.type() === 'error') out.console.push({ at: current, text: m.text().slice(0, 300) }); });
   page.on('pageerror', (e) => out.console.push({ at: current, text: 'pageerror: ' + String(e).slice(0, 300) }));
@@ -200,11 +201,22 @@ try {
    * kept rows, which stage their own melee and bow work) each get a FRESH PAGE: the page is reloaded and booted again
    * before the row (`--fresh extra`, the default; `--fresh all` reloads before every row, `--fresh none` never). */
   const FRESH = flag('--fresh', 'extra');
+  /* (round 3, after the run at d8fddf1: a page.reload() left the reloaded page with no animation frames, and every
+   *  row on it hung to its timeout; a fresh page is a NEW TAB, brought to the front, booted as the first one was, and
+   *  the old tab closed) */
   const reboot = async () => {
     const b0 = Date.now();
-    await page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
-    await page.waitForFunction('window.__READY__ === true', { timeout: 240000, polling: 500 });
-    await sleep(5000);
+    const np = await browser.newPage();
+    await np.setViewport({ width: vp.width, height: vp.height, deviceScaleFactor: vp.dpr || 1 });
+    await np.evaluateOnNewDocument(WS_STUB);
+    np.on('console', (m) => { if (m.type() === 'error') out.console.push({ at: current, text: m.text().slice(0, 300) }); });
+    np.on('pageerror', (e) => out.console.push({ at: current, text: 'pageerror: ' + String(e).slice(0, 300) }));
+    await np.goto(`http://127.0.0.1:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    await np.bringToFront();
+    await np.waitForFunction('window.__READY__ === true', { timeout: 240000, polling: 500 });
+    await sleep(6000);
+    const old = page; page = np;
+    try { await old.close(); } catch { /* */ }
     return Math.round((Date.now() - b0) / 1000);
   };
   let rowNo = 0;
