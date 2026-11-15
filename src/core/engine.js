@@ -2327,10 +2327,56 @@ export class Engine {
       console.warn('[CAL] shader warm-up skipped:', err?.message || err);
     }
     const textures = this.warmUpTextures(scene);
+    const geometries = this.warmUpGeometries(scene);
     this.warmUpMs = Math.round(performance.now() - t0);
     this.warmUpPrograms = this.renderer.info.programs?.length ?? 0;
     this.warmUpTexturesUploaded = textures;
-    return { ms: this.warmUpMs, programs: this.warmUpPrograms, textures };
+    this.warmUpGeometriesUploaded = geometries;
+    return { ms: this.warmUpMs, programs: this.warmUpPrograms, textures, geometries };
+  }
+
+  /**
+   * M1a round 3 (A90): upload every geometry in the scene behind the loading bar, the hidden LOD levels included.
+   * The renderer uploads a geometry the first frame it draws it, so a person's L1/L2 skin, outfit, hair and shadow
+   * caster went up the first time the player came near enough (or far enough) to draw them: a hitch on that frame,
+   * and 50 of the 60 geometries A90-memory-stability's geometry ledger (tools/instruments/a90-attrib.gates.mjs) found
+   * first drawn during its loop at 38012bc, all in the scene and none leaked, counted against its 40 bar. Each unique
+   * geometry is drawn once, with one plain material and no culling, into a 1 x 1 target. Returns how many were new.
+   */
+  warmUpGeometries(scene = this.scene) {
+    const r = this.renderer;
+    if (!r || !scene) return 0;
+    const before = r.info.memory.geometries;
+    const geos = new Map();   // geometry -> the object it came from (a morph-target geometry needs its influences)
+    scene.traverse((o) => {
+      if ((o.isMesh || o.isPoints || o.isLine) && o.geometry?.isBufferGeometry && o.geometry.attributes?.position && !geos.has(o.geometry)) geos.set(o.geometry, o);
+    });
+    if (!geos.size) return 0;
+    const rt = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false });
+    const mat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false });
+    const tmp = new THREE.Scene(), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    tmp.matrixWorldAutoUpdate = false;
+    const meshes = [];
+    for (const [g, src] of geos) {
+      const m = new THREE.Mesh(g, mat); m.frustumCulled = false; m.matrixAutoUpdate = false;
+      if (src.morphTargetInfluences) m.morphTargetInfluences = src.morphTargetInfluences;
+      else if (g.morphAttributes && Object.keys(g.morphAttributes).length) continue;
+      tmp.add(m); meshes.push(m);
+    }
+    const prevRT = r.getRenderTarget(), prevShadow = r.shadowMap.autoUpdate;
+    try {
+      r.shadowMap.autoUpdate = false;
+      r.setRenderTarget(rt);
+      r.render(tmp, cam);
+    } catch (err) {
+      console.warn('[CAL] geometry warm-up skipped:', err?.message || err);
+    } finally {
+      r.setRenderTarget(prevRT);
+      r.shadowMap.autoUpdate = prevShadow;
+      for (const m of meshes) tmp.remove(m);
+      rt.dispose(); mat.dispose();
+    }
+    return r.info.memory.geometries - before;
   }
 
   /**
