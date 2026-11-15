@@ -222,6 +222,19 @@ const TLOD_M = 60;
 const FAR_START = 250;                   // m: a chunk wholly past this is drawn from the baked far field
 const FAR_N = 1024;                      // texels a side of the far-field bake over the world square (1 m a texel)                       // m a stride: stride s only from 60 s m away (normals and tint keep their density)
 
+/* M1a round 2 (F32's pale "ghost ridge"): the trade deck (environment.js, 105-150 m on the windward slopes) is optical
+ * depth on the FRAGMENT's ray, and the sky dome draws none. From a lens in or above the deck, windward ground near the
+ * horizon went cloud-white while the sky beside it stayed lavender, so a far peak (the Rust Cone from 120 m over T1)
+ * stood as a flat pale wedge with a hard outline. The ground takes the deck only on rays that look down into it
+ * (full past 6.9 deg below level, none above 1.1 deg below), so a ridge near the skyline keeps the sky's own haze and
+ * the deck still lies over the slopes below the lens. The ground's copy of the chunk only; the sky's chunk is untouched. */
+const DECK_ANCHOR = 'calTauC = calFogD.x * calSeg * calWw * calBreak;';
+function groundFogChunk() {
+  const c = THREE.ShaderChunk.fog_fragment;
+  if (!c.includes(DECK_ANCHOR)) { console.error('terrain: the cloud-deck anchor in fog_fragment moved; the ground keeps the shared fog'); return c; }
+  return c.replace(DECK_ANCHOR, 'calTauC = calFogD.x * calSeg * calWw * calBreak * ( 1.0 - smoothstep( -0.12, -0.02, calVd.y ) );');
+}
+
 /* ---------------------------- fast grid reads (module scope) ---------------------- */
 function gridHeight(x, z) {
   const fx = (x + GHALF) / GSTEP, fz = (z + GHALF) / GSTEP;
@@ -730,6 +743,7 @@ export class Terrain {
         .replace('#include <normal_fragment_begin>', GROUND_NORMAL)
         .replace('#include <aomap_fragment>', GROUND_AO);
       if (bake) shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', FAR_BAKE_OUT);
+      else shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', groundFogChunk());
   }
 
   _buildChunks(chunks) {
@@ -807,11 +821,58 @@ export class Terrain {
         .replace('#include <color_fragment>', FAR_COLOR)
         .replace('#include <roughnessmap_fragment>', GROUND_ROUGH)
         .replace('#include <normal_fragment_begin>', GROUND_NORMAL)
-        .replace('#include <aomap_fragment>', GROUND_AO);
+        .replace('#include <aomap_fragment>', GROUND_AO)
+        .replace('#include <fog_fragment>', groundFogChunk());
     };
     far.customProgramCacheKey = () => 'cal-ground-far';
     this.ctx.environment?.registerMaterial?.(far);
     this._far = { rtA, rtN, material: far, on: true, bakeMs: +(performance.now() - t0).toFixed(1) };
+  }
+
+  /**
+   * M1a round 2 (F32 and the kite): the field walls into the far field. The dyke runs are drawn out to DYKE_R from a
+   * lens on the ground (more from a high one) and the ground shader's strip stands in for them only inside the pan box,
+   * so past that the town's enclosures and the field's outer walls vanished from altitude. Once the scatter has built
+   * the runs, every run is drawn top-down into the far bake (both parts, over the ground's own depth, so it lies on the
+   * ground): dark lava stone in the albedo, flat and rough in the normal part, each run 2.2 x as wide (a 0.6 m wall
+   * keeps a texel at 1 m a texel) and 1.05 x as long (the runs butt). Three regenerates the targets' mips.
+   */
+  _bakeFarWalls() {
+    const F = this._far, R = this.ctx.renderer;
+    if (!F || !R || F.walls) return;
+    const src = this.ctx.vegetation?.wallBakeSource?.();
+    if (!src) { F.wallTries = (F.wallTries || 0) + 1; if (F.wallTries > 900) F.walls = { runs: 0, note: 'no dyke runs to bake' }; return; }
+    const part = { value: 0 };
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uPart: part },
+      vertexShader: /* glsl */`
+        void main() {
+          vec3 p = position; p.x *= 2.2; p.z *= 1.05;
+          gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(p, 1.0);
+        }`,
+      fragmentShader: /* glsl */`
+        uniform float uPart;
+        // A: the far field's encoding, pow(albedo, 1/2.2) and liquid 0; N: up, roughness 0.92, AO 0.7 (the wall's foot)
+        void main() { gl_FragColor = uPart < 0.5 ? vec4(0.205, 0.198, 0.19, 0.0) : vec4(0.5, 0.5, 0.92, 0.7); }`,
+    });
+    const mesh = new THREE.InstancedMesh(src.geometry, mat, src.count);
+    mesh.instanceMatrix.array.set(src.W.subarray(0, src.count * 16));
+    mesh.frustumCulled = false;
+    const scene = new THREE.Scene();
+    scene.add(mesh);
+    const cam = new THREE.OrthographicCamera(-WORLD_HALF, WORLD_HALF, WORLD_HALF, -WORLD_HALF, 1, 2000);
+    cam.up.set(0, 0, -1); cam.position.set(0, 1000, 0); cam.lookAt(0, 0, 0); cam.updateMatrixWorld(true);
+    const prev = { t: R.getRenderTarget(), auto: R.autoClear, sm: R.shadowMap.autoUpdate };
+    const t0 = performance.now();
+    try {
+      R.shadowMap.autoUpdate = false; R.autoClear = false;
+      part.value = 0; R.setRenderTarget(F.rtA); R.render(scene, cam);
+      part.value = 1; R.setRenderTarget(F.rtN); R.render(scene, cam);
+    } finally {
+      R.setRenderTarget(prev.t); R.autoClear = prev.auto; R.shadowMap.autoUpdate = prev.sm;
+      mat.dispose(); mesh.dispose();
+    }
+    F.walls = { runs: src.count, ms: +(performance.now() - t0).toFixed(1) };
   }
 
   /** One chunk's index at stride TSTRIDES[k] over the shared buffer, with its skirts (built once). */
@@ -1028,13 +1089,19 @@ export class Terrain {
         .replace('#include <fog_fragment>', `#ifdef USE_FOG
   {
     /* The deep band's air (LOOK W-02): the isle takes the sky dome's own sea-line colour, the
-     * sea-level haze thicker than the air at its summit, so the form reads in layers */
+     * sea-level haze thicker than the air at its summit, so the form reads in layers. M1a round 2: that
+     * colour is the fog's in-scatter on the isle's ray (the dome's horizon hand-over, water.js SEA_LINE),
+     * not the old stand-in darkened off the sun, and the isle thins further with range (x0.75 by 2.2 km):
+     * the farthest layer is the palest */
     float hk = smoothstep(-5.0, 150.0, vFogWorldPos.y);
-    float vis = uIsleVis * (0.62 + 0.38 * hk);
-    vec3 dv = normalize(vFogWorldPos - cameraPosition);
-    vec2 hz = normalize(dv.xz + vec2(1e-5)), sz = normalize(calSunDir.xz + vec2(1e-5));
-    float az = max(dot(hz, sz), 0.0);
-    vec3 air = calFogHorizon * mix(0.72, 1.0, pow(az, 2.2)) + calFogSun * pow(az, 6.0) * 0.18;
+    vec3 dv = vFogWorldPos - cameraPosition;
+    float dl = max(length(dv), 1e-3);
+    dv /= dl;
+    float vis = uIsleVis * (0.62 + 0.38 * hk) * (1.0 - 0.25 * smoothstep(900.0, 2200.0, dl));
+    float up = clamp(dv.y * 1.55 + 0.10, 0.0, 1.0);
+    vec3 air = mix(calFogHorizon, calFogZenith, up * up);
+    float ac = dot(dv, calSunDir);
+    air += calFogSun * (calHG(calFogG.x, ac) * calFogG.y + calHG(calFogG.z, ac) * calFogG.w) * calFogB.x;
     gl_FragColor.rgb = mix(air, gl_FragColor.rgb, vis);
   }
 #endif`);
@@ -1283,6 +1350,7 @@ export class Terrain {
     this._updateSunUniforms();
     this._updateIsles();
     if (!this._far) this._bakeFarField();
+    else if (!this._far.walls) this._bakeFarWalls();
     this.updateLod();
     const env = this.ctx.environment;
     if (env) {

@@ -379,6 +379,9 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     // the storm-beach cobbles and the pan silt are the island's basalt too: dark, never a grey beach
     if (keepI[k] == 4) c *= 0.5;
     else if (keepI[k] == 3) c *= 0.78;
+    /* M1a round 2: the basalt layer toward the dusk crop (F05's shelf read L* 20-24 against the crop's ~36): the
+     * texture's graphite (mean about sRGB 0x40, 0.05 linear) to weathered, dusty basalt at about 0.1 linear */
+    else if (keepI[k] == 2) c *= 1.9;
     if (keepI[k] == 1) {
       /* salt runs white → brine pink → crystalliser rust, by cell */
       float hue = pan.b;

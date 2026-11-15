@@ -212,7 +212,10 @@ export function maskTexel(H, x, z, out) {
   // basalt: the Shelf's table, steep ground, the reef at the tide line, the crater's crags
   const shelf = ss(-3, 4, sd);
   const reef = pans * (1 - ss(-1.5, 4, Math.abs(c + 3))) * ss(0.56, 0.68, fbm(x * 0.035 + 21, z * 0.035, 3));
-  let rock = Math.max(ss(0.72, 1.15, slope), shelf * ss(0.28, 0.5, nA + 0.14), reef);
+  /* M1a round 2: the Ring's rise ends at the field in a 3-4 m bank at 50-55 deg (F02 faces it); the bank is turf, not
+   * bare rock, so the slope's basalt stands down on the rise and its meadow runs to the bank's foot (rg below) */
+  const ringK = authored.ringGrass(x, z);
+  let rock = Math.max(ss(0.72, 1.15, slope) * (1 - ss(0.3, 0.7, ringK)), shelf * ss(0.28, 0.5, nA + 0.14), reef);
   rock = Math.max(rock, cr * ss(0.95, 1.4, slope) * 0.34);
   // shingle: the storm berm, and a fringe at the shelf's foot
   const berm = pans * ss(2, 7, c) * (1 - ss(10, 22, c)) * ss(0.36, 0.54, fbm(x * 0.03 + 5, z * 0.03 + 2, 2) + nB * 0.12);
@@ -233,7 +236,7 @@ export function maskTexel(H, x, z, out) {
   const meadow = pans * ss(0.3, 0.9, h) * (1 - ss(22, 30, h)) * ss(16, 30, c) * (1 - ss(0.55, 0.92, fk)) * (1 - ss(0.25, 0.5, rock))
     * (1 - ss(0.4, 0.7, slope)) * (1 - ss(0.2, 0.5, track)) * ss(GLASS_RIM, GLASS_RIM + 0.55, glass) * (1 - ss(0.2, 0.5, cr)) * drift;
   // M1.1d: the Sounding Ring stands on a GRASSED rise: its top and upper flanks are meadow, above the shingle
-  const rg = authored.ringGrass(x, z) * ss(1.2, 2.6, h) * (1 - ss(0.25, 0.5, rock));
+  const rg = ringK * ss(0.55, 1.1, h) * (1 - ss(0.25, 0.5, rock));
   const meadowR = Math.max(meadow, rg);
 
   out[0] = clamp255(lav * (1 - fk) * 255);

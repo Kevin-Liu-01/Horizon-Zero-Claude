@@ -400,7 +400,7 @@ export class Meadow {
     if (!Array.isArray(K)) return;
     const N = this._N, cell = WORLD_SIZE / N, D = this._D;
     for (const z of K) {
-      const hard = z.hard ?? z.r ?? 0;
+      const hard = z.meadow ?? z.hard ?? z.r ?? 0;          // a keepout may name its own radius for the meadow
       if (!(hard > 0)) continue;
       const i0 = Math.max(0, Math.floor((z.x - hard + HALF) / cell)), i1 = Math.min(N - 1, Math.ceil((z.x + hard + HALF) / cell));
       const j0 = Math.max(0, Math.floor((z.z - hard + HALF) / cell)), j1 = Math.min(N - 1, Math.ceil((z.z + hard + HALF) / cell));

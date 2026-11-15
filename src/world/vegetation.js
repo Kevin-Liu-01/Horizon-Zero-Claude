@@ -786,6 +786,15 @@ export class Vegetation {
   }
 
   /**
+   * M1a round 2: every dyke run for the far field's one-off wall bake (terrain.js `_bakeFarWalls`): the run's
+   * indexed geometry and all n matrices (not the streamed subset), or null before the scatter has built them.
+   */
+  wallBakeSource() {
+    const D = this._dyke, g = this.dykesFar?.geometry ?? this.dykes?.geometry;
+    return D && g && D.n ? { geometry: g, W: D.W, count: D.n } : null;
+  }
+
+  /**
    * Runtime switches for the M1.1a A/B (tools/perf/census.mjs), each { id, on(), off() }: 'flora-indexed'
    * (the four flora kinds drawn from welded, indexed geometry; off = the non-indexed originals, the same
    * pixels) and 'dykes-streamed' (off = every run, as before).

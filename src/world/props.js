@@ -40,7 +40,7 @@ import { site, CRATER, SITES_OK } from './sites/layout.js';
  *   places: [{ id, name, kind, position, radius, x, z, interactables }]
  *   sites() -> [{ kind, id, x, z, name, done, place? }]       (progression, map)
  *   placeAt(x, z) -> place | null    allocation-free
- *   keepouts: [{ id, x, z, hard, soft, grass }]   ground world-ground's scatter clears
+ *   keepouts: [{ id, x, z, hard, soft, grass, meadow? }]   ground world-ground's scatter clears
  *   seaStacks: [{ x, z, r }]         stack feet for the sea shader's surf (world-ground)
  *   gauge: StaticGauge               readout(), open(), state
  *   survey: { pillars, benchmarks }  sightedFrom(id), rayClear(a, b)
@@ -135,7 +135,9 @@ export class Props {
     for (const p of this.survey.pillars) K.push({ id: p.id, x: p.x, z: p.z, hard: 7, soft: 10, grass: 6 });
     for (const b of this.survey.benchmarks) K.push({ id: b.id, x: b.x, z: b.z, hard: 3.5, soft: 5, grass: 3 });
     const ring = site('sounding-ring');
-    if (ring) K.push({ id: 'sounding-ring', x: ring.x, z: ring.z, hard: 9, soft: 22, grass: 14 });
+    // M1a round 2: the meadow stops at the cradle's own footprint (8.7 x 4.6 m), not the 9 m hard radius, so the rise's
+    // top is grassed to the cradle (round 1 left the whole flat top bare)
+    if (ring) K.push({ id: 'sounding-ring', x: ring.x, z: ring.z, hard: 9, soft: 22, grass: 14, meadow: 5.5 });
     return K;
   }
 

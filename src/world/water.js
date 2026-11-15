@@ -292,10 +292,16 @@ const SEA_MIRROR = /* glsl */ `
 `;
 
 /**
- * The sea line (LOOK W-09, R68 a). The fog carries the far sea to the in-scatter colour, and the
- * dome's sea-line colour is that colour darkened away from the sun (×0.72, world-sky's dome): the two
- * met in a full-width tonal band. Past 600 m the sea is drawn to the dome's own sea-line colour at its
+ * The sea line (LOOK W-09, R68 a). Past 600 m the sea is drawn to the dome's own sea-line colour at its
  * bearing, so water and sky meet in a line, not a band.
+ *
+ * M1a round 2 (M1.1c: F05's two farthest layers, the stacks at 600-1200 m and the sea line at 1.2-4 km,
+ * were 3.5 L* apart and the farther one the DARKER): the dome no longer darkens its sea line away from the
+ * sun; at and below the horizon it IS the fog's in-scatter, forward scatter toward the sun included
+ * (environment.js, "the horizon hand-over"). The old stand-in here (x0.72 off the sun, a narrow sun term)
+ * read up to 20 L* under the sky it met at dusk, so the sea line pulled the far sea darker than its own
+ * haze. Now it is that same in-scatter, a shade darker: the haze grades with distance, the far sea paler
+ * than the near water and the stacks, and the line still meets the sky.
  */
 const SEA_LINE = /* glsl */ `
 #include <fog_fragment>
@@ -303,10 +309,11 @@ const SEA_LINE = /* glsl */ `
 {
   vec3 hd = vWPos - cameraPosition;
   float hl = length(hd);
-  vec2 hz = normalize(hd.xz + vec2(1e-5)), sz = normalize(calSunDir.xz + vec2(1e-5));
-  float az = max(dot(hz, sz), 0.0);
-  float day = smoothstep(-0.05, 0.12, calSunDir.y);
-  vec3 domeH = wSkyH * mix(0.72, 1.0, pow(az, 2.2)) + calFogSun * pow(az, 6.0) * 0.22 * day;
+  vec3 hv = hd / max(hl, 1e-3);
+  float up = clamp(hv.y * 1.55 + 0.10, 0.0, 1.0);
+  vec3 domeH = mix(calFogHorizon, calFogZenith, up * up);
+  float hc = dot(hv, calSunDir);
+  domeH += calFogSun * (calHG(calFogG.x, hc) * calFogG.y + calHG(calFogG.z, hc) * calFogG.w) * calFogB.x;
   // the sea stays a shade darker than the sky it meets, as a real sea line does
   gl_FragColor.rgb = mix(gl_FragColor.rgb, domeH * 0.93, smoothstep(600.0, 2300.0, hl) * 0.9);
 }
