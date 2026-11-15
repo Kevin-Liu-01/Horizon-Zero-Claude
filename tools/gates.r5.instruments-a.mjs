@@ -28,7 +28,11 @@ const FILM = 'instruments-a-film';
  * here from `git show main:src/entities/machines/gait.js` (Nov 12). A main-side change to the frozen file would
  * need this constant re-recorded; 0 = identical, 1 = changed, -1 = unreadable.
  */
-const GAIT_MAIN_SHA256 = '5a58f45630ce904149ab874cfece61ab3cb8aebae73ad8340a0638c1b3d35e95';
+// M1a round 3: re-recorded from main at b4b46fb (`git show main:src/entities/machines/gait.js | shasum -a 256`). Main's
+// gait.js changed after the Nov 12 recording only in M0.3 R2/R3 (4df3aa8, 132180a): 121 comment lines renamed for the
+// name lint, no code. The old constant (5a58f456...) is that pre-M0.3 file, so the clause read "changed" on a gait.js
+// identical to main's. r5/int's gait.js equals main's at 9ab4ed3..c5d9cdb
+const GAIT_MAIN_SHA256 = '390e8fbb6450f266cfaa37f7bdda91dddd2114952049cb259836daa1f3bfdf4c';
 const GAIT_DIFF = (() => {
   try { return createHash('sha256').update(readFileSync(path.join(ROOT, 'src/entities/machines/gait.js'))).digest('hex') === GAIT_MAIN_SHA256 ? 0 : 1; } catch (e) { return -1; }
 })();

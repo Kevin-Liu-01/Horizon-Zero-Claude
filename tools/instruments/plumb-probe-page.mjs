@@ -275,7 +275,52 @@ void main() {
     }
     blobs.sort((a, b) => a - b);
     const med = blobs.length ? blobs[blobs.length >> 1] : 0;
-    return { distM: r3(dist), fov: r3(cv.fov), px2cm: r3(px2cm), smallBrassBlobs: blobs.length, blobSpanMedianPx: med, ringVisibleShare: r3(onRing), ringExpectedRivets: visible, ringResolvedRivets: resolved, ringRunsPx: rv.map((q) => r3(q.len * sampM * pxPerM)).slice(0, 40),
+    /* M1a round 3: THE RING'S RIVETS, ONE BY ONE, ON THE RING. The circle above (ringExpectedRivets/ringResolvedRivets,
+     * kept for comparison) is centred on the gimbal part's ORIGIN, which is its mount on the sphere's equator (the
+     * `gimbalSeat` socket, 0.425 m from the ring's centre), so it ran across the sphere and the lune seams, not the ring.
+     * Here every rivet the generator places (tools/build/instruments/gen-plumb.mjs: 30 on the ring's top face at radius
+     * 0.4875, 36 radial on the outer band at 0.55 minus those under a tab or the trunnion; both 2 cm) is tested where
+     * it is: the ring's centre is the `head` socket in the part's frame. A rivet is VISIBLE when its dome faces the lens
+     * and the sample on its dome lands on the Plumb's brass or enamel (not hidden behind another part); RESOLVED when that
+     * sample is brass and both samples 1 cm beyond its rim, either side along the ring, are enamel */
+    const ring = (() => {
+      const ent = C.assets?.models?.plumb || {}, So = ent.r5Sockets || {};
+      const anc = ent.tools?.['plumb-gimbal'] || So.gimbalSeat || So.head;
+      const hc = So.head || [0, 0, 0];
+      const cx = hc[0] - anc[0], cy = hc[1] - anc[1], cz = hc[2] - anc[2];   // the part's geometry is in scale-1 metres
+      const toCam = new THREE.Vector3(), nW = new THREE.Vector3(), pW = new THREE.Vector3(), q4 = new THREE.Vector3();
+      const nm = new THREE.Matrix3().getNormalMatrix(gim.matrixWorld);
+      const sample = (lx, ly, lz) => { pW.set(lx, ly, lz); gim.localToWorld(pW); q4.copy(pW).project(cv);
+        if (q4.z > 1 || Math.abs(q4.x) > 1 || Math.abs(q4.y) > 1) return null;
+        return classOf(buf, Math.floor((q4.y * 0.5 + 0.5) * bh) * bw + Math.floor((q4.x * 0.5 + 0.5) * bw)); };
+      const course = (R, y, us, radial) => {
+        let vis = 0, res = 0; const miss = [];
+        const dU = (0.01 + 0.01) / R;   // 1 cm past the 1 cm rivet radius
+        for (const u of us) {
+          const d = [Math.cos(u), 0, -Math.sin(u)];
+          nW.set(radial ? d[0] : 0, radial ? 0 : 1, radial ? d[2] : 0).applyMatrix3(nm).normalize();
+          pW.set(cx + d[0] * R, cy + y, cz + d[2] * R); gim.localToWorld(pW);
+          if (toCam.subVectors(cv.position, pW).normalize().dot(nW) < 0.05) continue;   // faces away
+          const out = radial ? 0.004 : 0;   // on the dome: 4 mm proud of the band, or the dome's crown height on the face
+          const at = (uu) => sample(cx + Math.cos(uu) * (R + out), cy + y, cz - Math.sin(uu) * (R + out));
+          const c0 = at(u);
+          if (c0 !== 'brass' && c0 !== 'enamel') continue;   // hidden behind another part, or off the Plumb
+          vis++;
+          if (c0 === 'brass' && at(u - dU) === 'enamel' && at(u + dU) === 'enamel') res++; else miss.push(Math.round(u * 180 / Math.PI));
+        }
+        return { visible: vis, resolved: res, missedAtDeg: miss.slice(0, 24) };
+      };
+      const top = course(0.4875, 0.029, Array.from({ length: 30 }, (_, i) => (i / 30) * Math.PI * 2), false);
+      const TABS = [[55, 0.13], [-55, 0.13], [125, 0.13], [-125, 0.13], [-90, 0.17], [180, 0.12], [90, 0.20]];
+      const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+      const skip = (u) => TABS.some(([az, w]) => Math.abs(wrap(u - (az * Math.PI / 180 - Math.PI / 2))) < (w / 2 + 0.03) / 0.55);
+      const outerU = Array.from({ length: 36 }, (_, i) => Math.PI / 36 + (i / 36) * Math.PI * 2).filter((u) => !skip(u));
+      const outer = course(0.55, 0, outerU, true);
+      const vis = top.visible + outer.visible, res = top.resolved + outer.resolved;
+      return { centreLocal: [r3(cx), r3(cy), r3(cz)], topFace: top, outerBand: outer, visible: vis, resolved: res, share: vis ? r3(res / vis) : null,
+        bar: 'the ring\'s rivets resolve at 6 m: >= 90 % of the visible ones (both courses), each 2 cm dome >= 2 px (px2cm)', pass: vis > 0 && res / vis >= 0.9 && px2cm >= 2 };
+    })();
+    return { distM: r3(dist), fov: r3(cv.fov), px2cm: r3(px2cm), smallBrassBlobs: blobs.length, blobSpanMedianPx: med, ring, ringVisibleShare: r3(onRing), ringExpectedRivets: visible, ringResolvedRivets: resolved, ringRunsPx: rv.map((q) => r3(q.len * sampM * pxPerM)).slice(0, 40),
       bar: '2 cm detail resolves at 6 m: >= 20 separate brass blobs of 2-40 px on the Plumb in the 6 m frame, median span >= 2 px', pass: blobs.length >= 20 && med >= 2,
       headPng: x1 > x0 ? crop(buf, x0, cy0, x1 - x0 + 1, y1 - cy0 + 1, 1) : null };
   });
@@ -444,15 +489,58 @@ void main() {
         mt.health = mt.maxHealth; mt._vialHits = 0;
         return r;
       };
-      // the launch elevation that brings a tip launched from o at `speed` through target point t (the game's own
-      // explicit Euler with its drag, at 1/240 s; the game's fixed step differs by millimetres at 40 m)
+      // the launch elevation that brings the arrow's TIP through target point t, launched (tail) from o at `speed`: the
+      // game's own explicit Euler (arrows.js _stepFly: vel.y -= g h; vel *= 1 - drag h; pos += vel h; the tip is
+      // ARROW_LEN ahead of pos along vel) at the game's step, 1/60 s (main.js FIXED_DT; the substep mode splits a 60 Hz
+      // frame into one such step). M1a round 3: round 2 solved at 1/240 s with the tail as the tip, and the 1/60 s
+      // integrator drops g t h / 2 more (4.2 cm at 40 m): every shot arrived 2-5 cm low and the 0.10 m sphere hid it
+      const STEP = 1 / 60, ALEN_TIP = (await import('/src/combat/arrows.js')).ARROW_LEN;
       const solve = (o, t) => {
         const flatD = Math.hypot(t.x - o.x, t.z - o.z), hx = (t.x - o.x) / flatD, hz = (t.z - o.z) / flatD;
-        const yAt = (el) => { let x = 0, y = o.y, vx = Math.cos(el) * speed, vy = Math.sin(el) * speed; const h = 1 / 240; for (let k = 0; k < 2400; k++) { vy -= g * h; const dk = 1 - drag * h; vx *= dk; vy *= dk; const nx = x + vx * h; if (nx >= flatD) { const f = (flatD - x) / (nx - x); return y + vy * h * f; } x = nx; y += vy * h; } return -1e9; };
+        const yAt = (el) => {
+          let x = 0, y = o.y, vx = Math.cos(el) * speed, vy = Math.sin(el) * speed;
+          const tip = () => { const l = Math.hypot(vx, vy) || 1; return [x + vx / l * ALEN_TIP, y + vy / l * ALEN_TIP]; };
+          let [tx0, ty0] = tip();
+          for (let k = 0; k < 600; k++) {
+            vy -= g * STEP; const dk = 1 - drag * STEP; vx *= dk; vy *= dk; x += vx * STEP; y += vy * STEP;
+            const [tx1, ty1] = tip();
+            if (tx1 >= flatD) { const f = (flatD - tx0) / ((tx1 - tx0) || 1e-9); return ty0 + (ty1 - ty0) * f; }
+            tx0 = tx1; ty0 = ty1;
+          }
+          return -1e9;
+        };
         let lo = -0.3, hi = 0.5;
         for (let it = 0; it < 40; it++) { const mid = (lo + hi) / 2; if (yAt(mid) < t.y) lo = mid; else hi = mid; }
         const el = (lo + hi) / 2;
         return new THREE.Vector3(hx * Math.cos(el), Math.sin(el), hz * Math.cos(el)).normalize();
+      };
+      // the glass tube's axis segment in world (the vial weak point's capsule when it has one, else the tube along the
+      // root's +X, r5Sockets.vialLen long) and the touch distance
+      const GLASS_TOUCH = (mt.ctx?.assets?.models?.plumb?.r5Sockets?.vialR ?? 0.045) + 0.0048 + 0.002;
+      const glassSeg = () => {
+        const w = mt._vialWp, c = wp(w), half = w.half > 0 ? w.half : 0.5 * (mt.ctx?.assets?.models?.plumb?.r5Sockets?.vialLen ?? 0.3);
+        const a = w.axis ? w.axis.clone().multiplyScalar(half).applyMatrix4(w.obj.matrixWorld) : c.clone().add(new THREE.Vector3(half, 0, 0).applyQuaternion(mt.root.getWorldQuaternion(new THREE.Quaternion())));
+        const b = c.clone().multiplyScalar(2).sub(a);
+        return [a, b];
+      };
+      // closest distance between segments p0-p1 and q0-q1
+      const segSegDist = (p0, p1, q0, q1) => {
+        const d1 = p1.clone().sub(p0), d2 = q1.clone().sub(q0), r = p0.clone().sub(q0);
+        const a = d1.dot(d1), e = d2.dot(d2), f = d2.dot(r);
+        let sP, tQ;
+        if (a < 1e-12 && e < 1e-12) return p0.distanceTo(q0);
+        if (a < 1e-12) { sP = 0; tQ = Math.min(1, Math.max(0, f / e)); }
+        else {
+          const c = d1.dot(r);
+          if (e < 1e-12) { tQ = 0; sP = Math.min(1, Math.max(0, -c / a)); }
+          else {
+            const b = d1.dot(d2), den = a * e - b * b;
+            sP = den > 1e-12 ? Math.min(1, Math.max(0, (b * f - c * e) / den)) : 0;
+            tQ = (b * sP + f) / e;
+            if (tQ < 0) { tQ = 0; sP = Math.min(1, Math.max(0, -c / a)); } else if (tQ > 1) { tQ = 1; sP = Math.min(1, Math.max(0, (b - c) / a)); }
+          }
+        }
+        return p0.clone().addScaledVector(d1, sP).distanceTo(q0.clone().addScaledVector(d2, tQ));
       };
       const sets = { centre: 0, ring5cm: 0.05 };
       const res = {};
@@ -476,15 +564,30 @@ void main() {
           rec = null;
           const arrow = A.fire(o.clone().addScaledVector(dir, -ALEN), dir, speed, 'hunter', 1);
           const t0 = E.simTime;
-          let closest = 1e9, cy = null;
+          let closest = 1e9, cy = null, glassD = 1e9, steps = 0;
+          // THE VISIBLE CLAUSE (M1a round 3, the orchestrator's ruling "a shot that visibly misses the glass must not
+          // count"): the closest the arrow's tip path came to the glass tube's axis segment, read each frame from the
+          // tip's swept segment (tip = pos + ARROW_LEN along vel, as the game sweeps it). The arrow touched the glass
+          // when that is within the glass radius plus the shaft's (0.045 + 0.0048 m, +2 mm for the sampled path)
+          const tipOf = (a) => a.pos.clone().addScaledVector(a.vel.clone().normalize(), ALEN_TIP);
+          let prevTip = arrow?.pos ? tipOf(arrow) : null;
           while (E.simTime - t0 < 1.3 && !rec) {
-            calm(mt); await raf();
+            calm(mt); await raf(); steps++;
             if (arrow?.pos) { const vv = wp(mt._vialWp), d = arrow.pos.distanceTo(vv); if (d < closest) { closest = d; cy = r3(arrow.pos.y - vv.y); } }
+            if (arrow?.pos && prevTip) {
+              const tipNow = arrow.mode === 'fly' ? tipOf(arrow) : (rec?.point || tipOf(arrow));
+              glassD = Math.min(glassD, segSegDist(prevTip, rec?.point || tipNow, ...glassSeg()));
+              prevTip = tipNow;
+            }
           }
+          if (rec?.point && prevTip) glassD = Math.min(glassD, segSegDist(prevTip, rec.point, ...glassSeg()));
+          const touched = glassD <= GLASS_TOUCH;
+          const dtMean = steps ? r3((E.simTime - t0) / steps) : null;
           if (!rec) rec = { miss: true, closestTailM: r3(closest), dyAtClosest: cy, mode: arrow?.mode, stuckTo: arrow?.stuckTo?.name || null };
-          list.push(rec && rec.miss ? { bearingDeg: Math.round(i * 36), vial: false, ...rec } : rec ? { bearingDeg: Math.round(i * 36), vial: rec.vial, dVialM: rec.dVial, part: rec.part, obj: rec.obj, offLocal: rec.offLocal } : { bearingDeg: Math.round(i * 36), vial: false, miss: true, headYaw: r3(mt.rig?.bones?.head?.rotation?.y ?? null) });
+          list.push(rec && rec.miss ? { bearingDeg: Math.round(i * 36), vial: false, glassM: r3(glassD), touched, dtMean, ...rec } : rec ? { bearingDeg: Math.round(i * 36), vial: rec.vial, touched, glassM: r3(glassD), dVialM: rec.dVial, part: rec.part, obj: rec.obj, offLocal: rec.offLocal, dtMean } : { bearingDeg: Math.round(i * 36), vial: false, miss: true, headYaw: r3(mt.rig?.bones?.head?.rotation?.y ?? null) });
         }
-        res[name] = { hits: list.filter((x) => x.vial).length, of: 10, shots: list };
+        res[name] = { hits: list.filter((x) => x.vial).length, visibleHits: list.filter((x) => x.vial && x.touched).length,
+          countedVisibleMisses: list.filter((x) => x.vial && !x.touched).length, of: 10, shots: list };
       }
       mt.takeDamage = td0;
       // the capsules near the vial (world -> the Plumb's root frame, relative to the vial): what an arrow can stop on
@@ -494,7 +597,9 @@ void main() {
         caps = C.hitHulls.hulls(mt).map((h) => { const a = toL(h.a), b = toL(h.b); return { name: h.name, part: h.part, r: h.r, a: [r3(a.x), r3(a.y), r3(a.z)], b: [r3(b.x), r3(b.y), r3(b.z)] }; })
           .filter((h) => Math.min(Math.abs(h.a[1]), Math.abs(h.b[1])) < 0.6 || (h.a[1] < 0) !== (h.b[1] < 0));
       } catch (e) { caps = String(e); }
-      return { capsulesNearVial: caps, headYaw: r3(mt.rig?.bones?.head?.rotation?.y ?? null), distM: 40, arrow: 'Reed (hunter) at full draw', speed, vialRadiusM: mt._vialWp.radius, vialLenM: mt.ctx?.assets?.models?.plumb?.r5Sockets?.vialLen ?? null, ...res, bar: 'vial hit by >= 9 of 10 at 40 m (the centre set)', pass: res.centre.hits >= 9 };
+      return { capsulesNearVial: caps, headYaw: r3(mt.rig?.bones?.head?.rotation?.y ?? null), distM: 40, arrow: 'Reed (hunter) at full draw', speed, vialRadiusM: mt._vialWp.radius, vialCapsuleHalfM: mt._vialWp.half ?? null, glassTouchM: r3(GLASS_TOUCH), vialLenM: mt.ctx?.assets?.models?.plumb?.r5Sockets?.vialLen ?? null, ...res,
+        bar: 'A-weak40:plumb: the vial hit by >= 9 of 10 scripted shots at 40 m (the centre set), each a hit the arrow visibly makes on the glass (its tip path within the glass radius + the shaft of the tube\'s axis); a counted hit whose arrow did not touch the glass fails the row',
+        pass: res.centre.visibleHits >= 9 && res.centre.countedVisibleMisses === 0 };
     });
 
     /* ---- the topple clock ---- */

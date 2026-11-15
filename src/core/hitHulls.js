@@ -33,6 +33,8 @@ import { MeshBVH } from 'three-mesh-bvh';
 const _p = new THREE.Vector3();
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
+const _wa = new THREE.Vector3();
+const _wb = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 const _seg = { x: 0, y: 0, z: 0 };
 
@@ -758,7 +760,15 @@ export class HitHulls {
           const w = wps[k];
           if (!w || w.enabled === false || !w.obj || !(w.radius > 0) || w.radius > WP_SWEEP_MAX) continue;
           w.obj.getWorldPosition(_p);
-          const t = raySphereT(o.x, o.y, o.z, d.x, d.y, d.z, _p.x, _p.y, _p.z, w.radius, wBest);
+          let t;
+          if (w.axis && w.half > 0) {
+            /* M1a round 3 (instruments, A-weak40:plumb): a weak point may be a CAPSULE round a thin glass (`axis`, a unit
+             * vector in its node's frame, and `half`, its half-length): the Plumb's 0.30 m vial tube, 0.045 m in radius.
+             * A 0.10 m sphere round it stopped arrows 4-8 cm off the glass and counted them, shots that visibly missed */
+            _wa.copy(w.axis).multiplyScalar(w.half).applyMatrix4(w.obj.matrixWorld);
+            _wb.copy(w.axis).multiplyScalar(-w.half).applyMatrix4(w.obj.matrixWorld);
+            t = rayCapsuleT(o.x, o.y, o.z, d.x, d.y, d.z, _wa.x, _wa.y, _wa.z, _wb.x, _wb.y, _wb.z, w.radius, wBest);
+          } else t = raySphereT(o.x, o.y, o.z, d.x, d.y, d.z, _p.x, _p.y, _p.z, w.radius, wBest);
           if (t >= 0 && t < wBest) { wBest = t; wM = cm[i]; wP = w; }
         }
       }
@@ -783,6 +793,16 @@ export class HitHulls {
     _hit.x = o.x + d.x * t; _hit.y = o.y + d.y * t; _hit.z = o.z + d.z * t;
     _hit.point.set(_hit.x, _hit.y, _hit.z);
     w.obj.getWorldPosition(_a);
+    if (w.axis && w.half > 0) {
+      // a capsule weak point: the normal is off its axis, not off its centre
+      _wa.copy(w.axis).multiplyScalar(w.half).applyMatrix4(w.obj.matrixWorld);
+      _wb.subVectors(_wa, _a);
+      const L2 = _wb.lengthSq();
+      if (L2 > 1e-12) {
+        const u = Math.max(-1, Math.min(1, ((_hit.x - _a.x) * _wb.x + (_hit.y - _a.y) * _wb.y + (_hit.z - _a.z) * _wb.z) / L2));
+        _a.addScaledVector(_wb, u);
+      }
+    }
     _hit.normal.set(_hit.x - _a.x, _hit.y - _a.y, _hit.z - _a.z);
     if (_hit.normal.lengthSq() < 1e-8) _hit.normal.set(-d.x, -d.y, -d.z);
     _hit.normal.normalize();
