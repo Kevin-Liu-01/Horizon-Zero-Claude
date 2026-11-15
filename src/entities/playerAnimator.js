@@ -19,6 +19,9 @@ import { SecondaryMotion } from './anim/secondaryMotion.js';
 import { ConstraintAim } from './anim/constraintAim.js';
 import { HangPose } from './anim/hangPose.js';
 
+/** M1a round 2: after a lance holster the aim rig takes the arms over this long (s), from the hand down her side. */
+const STOW_HANDBACK = 0.22;
+
 /**
  * PlayerAnimator — Round 4: mocap clip base + procedural overlays.
  *
@@ -369,6 +372,7 @@ export class PlayerAnimator {
 
     /* ------------------------------ state ------------------------------- */
     this._moveW = 0; this._runW = 0; this._crouchW = 0; this._aimW = 0;
+    this._stowOwn = 0;               // (M1a round 2: how much of the arms a lance holster still owns over the rig)
     this._dodgeW = 0; this._deadW = 0; this._drawS = 0;
     // legacy Round-3 hit scalar: superseded by the HIT_CLASSES channel in
     // _onDamage / _updateChannels, kept only as a published 0..1 'was hit
@@ -945,7 +949,10 @@ export class PlayerAnimator {
     const crouchW = this._crouchW * (1 - this._deadW);
     const dodgeW = this._dodgeW;
     const carryW = this._carryW * (1 - dodgeW) * (1 - this._deadW);
-    const aimW = this._aimW * (1 - this._dodgeW) * (1 - this._deadW) * (1 - carryW);
+    /* (M1a round 2: no aim in a roll, from its first step: the aim weight is 0 while she rolls and comes back in on its
+     * own ramp after; it read 0.61 mid-roll, the rig's arms riding the tumble) */
+    if (p.dodging) this._aimW = 0;
+    const aimW = p.dodging ? 0 : this._aimW * (1 - this._dodgeW) * (1 - this._deadW) * (1 - carryW);
     const idleW = (1 - moveW) * (1 - this._deadW);
 
     /* ---- character-space acceleration (smoothed) + yaw rate ---- */
@@ -1394,8 +1401,17 @@ export class PlayerAnimator {
     const tTail = aimW <= 0.01 && !!this.T.armFlow?.crouchOut && this._afOn && this._crouchW > 0.3 && this._qTs.w < 1 - 1e-6
       && !p.dodging && this._dodgeW < 0.05 && !dead && this._carryW < 0.02;
     this._aimRan = aimW > 0.01 || tTail;
-    if (this.T.cRig) this._cRigCapture();
-    if (this._aimRan) this._aimLayer(aimW, this._drawS, p, moveW, t);
+    const cRig = !!this.T.cRig;
+    if (cRig) this._cRigCapture();
+    if (this._aimRan) {
+      this._aimLayer(aimW, this._drawS, p, moveW, t);
+      /* M1a round 2: UNDER THE RIG THE OLD AIM LAYER DOES NOT POSE THE ARMS. Its two-bone solves, elbow roll and form,
+       * wrist and root keep-outs were overwritten by the rig whenever the rig solved, and showed through whenever it
+       * stood down (a lance holster under a rising aim: the old draw arm's elbow 0.32 m behind the head at w 0.83).
+       * The arms go back to the pose captured before it (the clip's and the earlier overlays'); its trunk, clavicle and
+       * finger work and the aim ray it keeps stay. */
+      if (cRig) this._cRigUnposeArms();
+    }
     // fix round 5: the next aim's T ray starts from its own ray. W0b targeted
     // fix 4: ...and from a ray off HER, not off the grip she had when the layer
     // stopped (a dodge rolls her 3 m on: that stale world grip aimed the
@@ -1496,17 +1512,27 @@ export class PlayerAnimator {
     // before the chains hang off it: the arm moves at most `armStep` per step
     // relative to the draw shoulder from where it was RENDERED last step, and
     // the arm as it ends this step is captured for the next
-    if (this._afEng) this._armContinuity(this._aimRan);
-    this._armCapture();
-    if (aimW > 0.01 && this._knW0 > 0.01 && this.T.armFlow) { _knZ.set(0, 0, 0); this._knuckleTurn(this._knW0, this._drawS, _knZ); }
-    if (this._afEng && this.T.armFlow) this._handInFront();
+    // (M1a round 2: not under the rig: it solves the arms last on the final pose, blended in and out by the aim
+    // weight, and these limiters' work was overwritten by it, or held a lance holster's arm where it had been)
+    if (!cRig) {
+      if (this._afEng) this._armContinuity(this._aimRan);
+      this._armCapture();
+      if (aimW > 0.01 && this._knW0 > 0.01 && this.T.armFlow) { _knZ.set(0, 0, 0); this._knuckleTurn(this._knW0, this._drawS, _knZ); }
+      if (this._afEng && this.T.armFlow) this._handInFront();
+    } else this._afEng = false;
     /* M1.3b: the aim's arms, solved last as a constraint rig on the pose that will be drawn */
     /* ...but not over a lance holster that owns the right arm (A107's quick stow under a rising aim): the
      * rig restores the clip's arms before it solves, which threw away the holster's own path and its R8 elbow
      * bound (A107 aim-stow: the elbow 0.26-0.36 m behind the head at shoulder height, measured the same with
      * the pre-M1.3d guard, so it came with the rig). It fades in as the holster lets the arm go. */
-    const stowOwn = this.melee?._pathOn && this.melee._prevStance === 'holster' ? Math.min(1, Math.max(0, this.melee.w || 0)) : 0;
-    if (this.T.cRig) this._cRigPass(aimW * (1 - stowOwn), this._drawS, p);
+    /* (M1a round 2: ...for the WHOLE holster, both arms (the left hand carries the haft back to her hip), and handed to
+     * the rig over `STOW_HANDBACK` s after it: the holster ends with the hand down her side, so the rig's raise starts
+     * there) */
+    const holsterOn = !!(this.melee?._pathOn && this.melee._prevStance === 'holster');
+    this._stowOwn = holsterOn ? 1 : Math.max(0, this._stowOwn - dt / STOW_HANDBACK);
+    const stowOwn = this._stowOwn * this._stowOwn * (3 - 2 * this._stowOwn);
+    if (cRig) this._cRigPass(aimW * (1 - stowOwn), this._drawS, p);
+    if (cRig) this._armCapture();
     if (aimW > 0.01) {
       this._rootKeepAudit(this._drawS);
       /* W0b targeted fix 4 (r1 eng judge, the down clamp; A32-draw-ramp `down105`

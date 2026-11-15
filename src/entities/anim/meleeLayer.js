@@ -81,6 +81,7 @@ const _bcTmp = new THREE.Vector3();
 const _rgDir = new THREE.Vector3();
 /* M1.2f fix 1: the left-led carry's scratch, and the head-plane guard's */
 const _hpP = new THREE.Vector3(), _hpQ = new THREE.Vector3(), _hpC = new THREE.Vector3(), _hpF = new THREE.Vector3();
+const _esP = new THREE.Vector3();   // (M1a round 2: `_elbowSettle`'s last rendered elbow)
 const _lcB1 = new THREE.Vector3(), _lcD1 = new THREE.Vector3(), _lcP0 = new THREE.Vector3(), _lcP1 = new THREE.Vector3(), _lcPm = new THREE.Vector3(), _lcDm = new THREE.Vector3();
 /** `_snapPose`'s own shaft scratch (it runs inside `_blend`, before _lerpPose). */
 const _snapD = new THREE.Vector3();
@@ -706,6 +707,22 @@ const ELB_BEHIND = 0.07;
 const ELB_BAND = -0.12;
 /** Elbow-circle samples the guard searches (every 10 deg). */
 const ELB_SAMPLES = 36;
+/**
+ * M1a round 2 (A107, "start every lance holster from the RENDERED arm"): on the draw, the holster and in the guard
+ * (not in a swing), the right elbow travels round its circle (shoulder -> wrist) at most
+ * `ELB_SETTLE_V` m/s from where it was RENDERED last step (rebuilt on this step's shoulder), toward the elbow the
+ * solve chose, and only through elbows the R8 bound and the head-plane test allow. Before it the holster's first
+ * step swapped the guard's pole (down and back) for the path's (forward and out) and dropped the guard's haft roll:
+ * the elbow crossed 0.41 m of her ribs in one step at idle and stood 0.14-0.21 m behind the head at shoulder height
+ * for 2-4 steps at a jog. `ELB_SETTLE_N` samples round the circle (5 deg).
+ */
+const ELB_SETTLE_V = 6.0;
+/** ...where the bound's behind-the-head margin opens below the R8 band by this many m per m (so an elbow rising into
+ *  the band from behind her is brought forward on the way up, not at the band's edge). */
+const ELB_SETTLE_SLOPE = 5;
+/** ...and a head-plane failure (`_hpBad`) counts as this much violation. */
+const ELB_SETTLE_HP = 0.05;
+const ELB_SETTLE_N = 72;
 /** How much of the upper body the draw turns TOWARD the drawing hand: + is
  *  her chest to the LEFT, i.e. the right shoulder forward, which brings the
  *  stowed haft (it rides on `spine_02`, below most of the turn) toward a hand
@@ -894,6 +911,7 @@ export class MeleeLayer {
       yaw: READY.yaw, pitch: READY.pitch, roll: READY.roll,
     };
     this._prevStance = 'holstered';
+    this._settleOn = false;         // (M1a round 2: the guard keeps the elbow settle too, see `_elbowSettle`)
     this._relK = 1;
     this._fracNow = GRIP_FRAC;
     this._pathOn = false;
@@ -1517,6 +1535,8 @@ export class MeleeLayer {
     /* ...and a holster starts where the arm WAS: from the guard, or (round 6)
      * from a follow-through an aim cut short — not from the READY key */
     if (stance === 'holster' && this._prevStance !== 'holster') this._captureHolsterFrom();
+    /* (M1a round 2: the guard keeps the elbow settle too, see `_elbowSettle`) */
+    this._settleOn = stance === 'ready';
     this._prevStance = stance;
     /* the arm path — the draw and the holster — carries the R8 elbow bound */
     this._pathOn = stance === 'draw' || stance === 'holster';
@@ -3230,11 +3250,12 @@ export class MeleeLayer {
     const lift = clamp((_hand.y - 1.02) * 2.2, -0.4, 1);
     const path = this._pathOn;
     if (path) {
-      /* THE DRAW / HOLSTER (round 6, R8): the elbow goes FORWARD and out, in
-       * front of her face-plane, and the hand comes back over the shoulder to
-       * the haft — never the round-5 elbow up behind her head. The pole only
-       * chooses the side of the elbow circle; `_elbowGuard` holds the bound. */
-      _pole.set(-0.50, -0.30, 0.81).normalize();
+      /* THE DRAW / HOLSTER. Round 6 (R8) sent the elbow FORWARD and out (-0.50, -0.30, 0.81), for a hand that
+       * reached back over the shoulder to a haft on her back. M1a round 2: since the left-led carry (5fe854f) the
+       * right fist only travels between the guard and the hand-over line in front of her chest, and a forward pole
+       * on that short, folded arm stood the elbow up level with her shoulder and flipped it across her chest. The
+       * elbow now hangs DOWN and out beside her ribs; `_elbowSettle` brings it there from the guard's elbow. */
+      _pole.set(-0.55, -0.83, 0.05).normalize();
     } else {
       /* a low hand's elbow goes BACK beside the ribs, a raised hand's opens outward:
        * "out" at the guard stood the upper arm level with her shoulder (filmed) */
@@ -3299,7 +3320,76 @@ export class MeleeLayer {
     } else this._guardOff.subVectors(_hand, _hTab);
     // (M1.2f / M1.3f fix 1: last, the sweep's own head-plane bound on the solved right arm)
     this._headPlaneGuard(w);
+    // (M1a round 2: ...and on the draw and the holster the elbow comes from where it was drawn last step)
+    if (path || this._settleOn) this._elbowSettle(w);
     this._rollOff = false;
+  }
+
+  /**
+   * M1a round 2 — THE ELBOW FROM THE RENDERED ARM (see `ELB_SETTLE_V`). The wrist does not move: the upper arm is
+   * rolled about shoulder -> wrist to the legal elbow nearest the solved one that is within this step's travel of
+   * last step's rendered elbow; when none is, to the legal elbow nearest last step's. The haft is re-seated by
+   * pronation and the wrist only. No allocation.
+   */
+  _elbowSettle(w) {
+    const an = this.an, b = an.b, D = this._dbg;
+    if (!(an._armCapN > 0) || w < 0.02 || !b.head) return;
+    an._charOf(b.upArmR.bone, _eS);
+    an._charOf(b.loArmR.bone, _eE);
+    an._charOf(b.handR.bone, _eH);
+    an._charOf(b.head.bone, _eD);
+    const hp = !!an.T.headOff;
+    if (hp) {
+      an._liveW(b.head.bone, _q1); _q1.multiply(b.head.invW);
+      _hpF.set(0, 0, 1).applyQuaternion(_q1);
+      _hpC.copy(an.T.headOff).applyQuaternion(_q1).add(_eD);
+    }
+    // last step's rendered elbow, on this step's shoulder
+    _esP.subVectors(an._elbP, an._shP).add(_eS);
+    const lim = ELB_SETTLE_V * Math.max(1 / 240, Math.min(this._lastDt || 1 / 60, 1 / 20));
+    if (this._elbowViol(_eE) <= 0 && _eE.distanceTo(_esP) <= lim) { D.elbowSettle = 0; return; }
+    _eAx.subVectors(_eH, _eS);
+    const d = _eAx.length();
+    if (d < 1e-4) return;
+    _eAx.multiplyScalar(1 / d);
+    _eC.copy(_eS).addScaledVector(_eAx, _eT.subVectors(_eE, _eS).dot(_eAx));
+    _eU.subVectors(_eE, _eC);
+    const r = _eU.length();
+    if (r < 1e-3) return;
+    _eU.multiplyScalar(1 / r);
+    _eV.crossVectors(_eAx, _eU);
+    const step = (2 * Math.PI) / ELB_SETTLE_N;
+    // a legal elbow within this step's travel, the one nearest the solved elbow; else the legal elbow nearest last
+    // step's (the wrist moved further, or the solve walked into the bound: a jump, counted); else the least violation
+    let best = null, bestA = 9, near = null, nearD = 9, least = null, leastV = 9;
+    for (let i = 0; i < ELB_SETTLE_N; i++) {
+      const phi = i <= ELB_SETTLE_N / 2 ? i * step : (i - ELB_SETTLE_N) * step;
+      _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
+      if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
+      const v = this._elbowViol(_eT) + (hp && this._hpBad(_eS, _eT, _eH, _hpC, _hpF) ? ELB_SETTLE_HP : 0);
+      if (v < leastV) { leastV = v; least = phi; }
+      if (v > 0) continue;
+      const dp = _eT.distanceTo(_esP), a = Math.abs(phi);
+      if (dp <= lim && a < bestA) { bestA = a; best = phi; }
+      if (dp < nearD) { nearD = dp; near = phi; }
+    }
+    const phi = best ?? near ?? least;
+    if (phi == null) { D.elbowSettleFail = (D.elbowSettleFail || 0) + 1; return; }
+    if (best == null) D.elbowSettleFar = (D.elbowSettleFar || 0) + 1;
+    if (Math.abs(phi) < 1e-5) return;
+    _eQ.setFromAxisAngle(_eAx, phi);
+    an._rotQL(b.upArmR, _eQ);
+    const ro = this._rollOff; this._rollOff = true; this._alignHaft(w); this._rollOff = ro;
+    D.elbowSettle = +(phi * 180 / Math.PI).toFixed(1);
+  }
+
+  /** How far char-space elbow `E` is outside the settle's bound (shoulder `_eS`, head `_eD`): over the head, and
+   *  behind it by more than `ELB_BEHIND`, a margin that opens by `ELB_SETTLE_SLOPE` m per m under the R8 band. */
+  _elbowViol(E) {
+    const over = E.y - (_eD.y + ELB_OVER_HEAD);
+    const allow = ELB_BEHIND + ELB_SETTLE_SLOPE * Math.max(0, _eS.y + ELB_BAND - E.y);
+    const beh = (_eD.z - E.z) - allow;
+    return (over > 0 ? over : 0) + (beh > 0 ? beh : 0);
   }
 
   /**

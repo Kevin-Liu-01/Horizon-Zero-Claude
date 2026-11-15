@@ -57,6 +57,13 @@ export class ConstraintAim {
     C.preOk = true;
   }
 
+  /** M1a round 2: the arms back to the pose `_cRigCapture` took (the old aim layer's arm solve, undone under the rig). */
+  _cRigUnposeArms() {
+    const C = this._cr;
+    if (!C || !C.preOk) return;
+    for (let i = 0; i < 6; i++) C.e[i].bone.quaternion.copy(C.pre[i]);
+  }
+
   /** Once: the rig's bones, the hand frames and the audit. */
   _cRigInit() {
     const b = this.b, R = this.T.cRig;
@@ -547,7 +554,9 @@ export class ConstraintAim {
   looseReady() {
     const L = this.T.cRig?.loose;
     if (!L) return true;
-    return this._aimW * (1 - this._dodgeW) >= L[0] && this._drawS >= L[1];
+    // (M1a round 2: the rig's own weight, which a lance holster holds at 0 while its hands are on the haft)
+    const aw = this._cr ? this._cr.w : this._aimW * (1 - this._dodgeW);
+    return aw >= L[0] && this._drawS >= L[1];
   }
 
   /**
