@@ -1552,7 +1552,10 @@ export async function panBase(opt = {}) {
   const panelChain = (k) => { const c = CHAINS[k], j = addChain(doc, c.names, c.points, c.parent); return { joints: j.slice(0, -1), ys: c.points.map((p) => p[1]) }; };
   const chainL = panelChain('panelL'), chainR = panelChain('panelR'), chainB = panelChain('panelB');
   hangPanel(panels, hipField, J, { thC: Math.PI / 2 - 0.42, halfW: 0.085, yTop: 1.082, yHem: 0.4, side: 'l', thighW: 0.75, seed: 1, rag: 0.045, off: 0.011, chain: chainL });
-  hangPanel(panels, hipField, J, { thC: Math.PI / 2 + 0.62, halfW: 0.058, yTop: 1.082, yHem: 0.56, side: 'r', thighW: 0.7, seed: 2, rag: 0.035, off: 0.011, cols: 6, rows: 9, chain: chainR });
+  // (M1a round 3 fix: the short panel's hem 2 cm higher, 0.58 (was 0.56). Rebuilt against the Brea of 7be8f81 or later, the Starter as it
+  // stood put this panel's tip 17 mm into her right shin on one climb frame of the hero-sweep bench (tools/gates/hero-sweep/bench.mjs,
+  // every clip run in order); with the hem at 0.58 the bench reads 0 clipping frames in all 17 clips)
+  hangPanel(panels, hipField, J, { thC: Math.PI / 2 + 0.62, halfW: 0.058, yTop: 1.082, yHem: 0.58, side: 'r', thighW: 0.7, seed: 2, rag: 0.035, off: 0.011, cols: 6, rows: 9, chain: chainR });
   hangPanel(panels, hipField, J, { thC: -Math.PI / 2 + 0.12, halfW: 0.1, yTop: 1.082, yHem: 0.42, side: 'c', thighW: 0.42, seed: 3, rag: 0.05, off: 0.016, chain: chainB });
   panels.density = 0.8;
   recomputeNormals(panels);
