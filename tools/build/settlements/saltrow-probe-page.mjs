@@ -29,7 +29,8 @@ export async function probe(frame) {
     const sx = (p.x * 0.5 + 0.5) * W, sy = (0.5 - p.y * 0.5) * H;
     return sx >= 0 && sx <= W && sy >= 0 && sy <= H ? [Math.round(sx), Math.round(sy)] : null;
   };
-  out.town = { buildings: town.buildings.length, colliders: town.colliderCount ?? null, lamps: town.lamps.map((l) => l.id), litWindows: town.litWindows, tris: Math.round(town.stats.tris), draws: town.stats.draws };
+  out.town = { buildings: town.buildings.length, colliders: town.colliderCount ?? null, lamps: town.lamps.map((l) => l.id), litWindows: town.litWindows, tris: Math.round(town.stats.tris), draws: town.stats.draws,
+    deckY: town.breakwater ? +(town.breakwater.y + 1.3).toFixed(2) : null, lensEyeY: +cam.position.y.toFixed(2) };
   out.crew = town.crew.map((c) => {
     const p = c.person, g = p?.group;
     return { id: c.id, clip: p?.current?.getClip?.().name ?? c.clip, held: c.clip, tier: p?.tier ?? null,

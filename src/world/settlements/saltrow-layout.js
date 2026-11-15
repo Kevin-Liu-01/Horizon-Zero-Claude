@@ -161,8 +161,10 @@ export function breakwaterPoint(along, side = 0) {
 /**
  * F07's lens on the breakwater (frameset F07 stands here): 10 m out on the deck's axis looking up at the town on
  * bearing 50 (the street's middle is on 53.8, 138 m off), the lamp column 7.6 m ahead on 42.3. The deck top is 1.3 m
- * over the root; the live ground under the lens reads -0.7 m (recipe.js heightAt says -2.45: the bake's shore differs),
- * so the frame's eye of 3.65 m over the ground is 1.65 m over the deck (at b4515f1 the eye was 5.4: 3.4 m over it).
+ * over the root, which the runtime seats on the live ground (about 1.7 m there; recipe.js heightAt says -0.14: the
+ * bake's shore differs), and the live ground under the lens reads -0.7 m, so the frame's eye of 5.4 m over the ground
+ * is about 1.7 m over the deck (at 94a4655 an eye of 3.65 put the lens inside the deck slabs). The probe reports the
+ * deck's live height (tools/build/settlements/saltrow-probe-page.mjs town.deckY).
  */
 export const BREAKWATER_LENS = Object.freeze({ ...breakwaterPoint(10, 0), bearing: 50 });
 
