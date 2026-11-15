@@ -237,7 +237,7 @@ export function buildSweep(R, THREE, opts = {}) {
   const begin = (label = '') => {
     acc = { label, frames: 0, behind: 0, behindAt: null, plane: 0, planeAt: null, overShoulder: -9,
       clipFrames: 0, clipAt: null, clipBy: {}, clipDeepest: 0, panelHangMin: 9, clipFramesLine: 0, clipByLine: {},
-      wristMid: 9, foreCase: 9, foreCaseAt: null, quiverClip: 0, drawArmClip: 0 };
+      wristMid: 9, foreCase: 9, foreCaseAt: null, quiverClip: 0, drawArmClip: 0, clipNear: -9, clipNearAt: null };
   };
   const armPoints = (S) => {
     const e = CP(S.el, V()), w = CP(S.wr, V());
@@ -284,11 +284,14 @@ export function buildSweep(R, THREE, opts = {}) {
     if (st.cloth) {
       capsNow();
       let hit = null, deep = 0, hitL = null;
+      let nearNow = -9, nearHit = null;
       const test = (mesh, idx, tag) => {
         for (const i of idx) {
           VP(mesh, i, tmp);
           for (const c of caps) {
             const d = segD(tmp, c.A, c.B);
+            // (M1a r3: the closest any cloth point comes to a graded capsule, m: > 0 is inside, < 0 clear by that much)
+            if (!c.line && c.r - d > nearNow) { nearNow = c.r - d; nearHit = { by: tag, into: c.name, at: tag === 'panel' ? panelInfo.get(i) : undefined }; }
             if (d >= c.r) continue;
             const dd = c.r - d;
             // (the round-1 body: the straight torso and the legs; the graded body: the spine's torso and the legs)
@@ -308,7 +311,17 @@ export function buildSweep(R, THREE, opts = {}) {
       }
       {
         const sh = CP(SR.sh, V()), el = CP(SR.el, V()), wr = CP(SR.wr, V());
-        const chk = (mesh, idx, tag) => { for (const i of idx) { VP(mesh, i, tmp); if (segD(tmp, sh, el) < 0.040 || segD(tmp, el, wr) < 0.032) { acc.drawArmClip++; if (!hit) hit = { by: tag, into: 'drawArm', depthM: null }; if (!hitL) hitL = hit; return; } } };
+        // (M1a r3: how deep and where, on the record; and the nearest approach into clipNear)
+        const chk = (mesh, idx, tag) => {
+          let worst = null;
+          for (const i of idx) {
+            VP(mesh, i, tmp);
+            const du = 0.040 - segD(tmp, sh, el), df = 0.032 - segD(tmp, el, wr), dd = Math.max(du, df);
+            if (dd > nearNow) { nearNow = dd; nearHit = { by: tag, into: du >= df ? 'drawUpperArm' : 'drawForearm', at: tag === 'panel' ? panelInfo.get(i) : undefined }; }
+            if (dd > 0 && (!worst || dd > worst.depthM)) worst = { by: tag, into: 'drawArm', part: du >= df ? 'upper' : 'fore', depthM: +dd.toFixed(4), at: tag === 'panel' ? panelInfo.get(i) : undefined };
+          }
+          if (worst) { acc.drawArmClip++; if (!hit) hit = worst; if (!hitL) hitL = hit; }
+        };
         if (wrap) chk(wrap, tailIdx, 'tail');
         if (outfit && panelIdx.length) chk(outfit, panelIdx, 'panel');
       }
@@ -318,6 +331,7 @@ export function buildSweep(R, THREE, opts = {}) {
       }
       if (hit) { acc.clipFrames++; const key = hit.by + (hit.at ? '(' + hit.at.split('@')[0] + ')' : '') + '>' + hit.into; acc.clipBy[key] = (acc.clipBy[key] || 0) + 1; if (!acc.clipAt) acc.clipAt = { T: st.T, ...hit }; if (deep > acc.clipDeepest) acc.clipWorst = { T: st.T, ...hit }; }
       if (deep > acc.clipDeepest) acc.clipDeepest = deep;
+      if (nearNow > acc.clipNear) { acc.clipNear = nearNow; acc.clipNearAt = { T: st.T, ...nearHit }; }
       for (const pc of panelChains) {
         const r0 = CP(pc.list[0], tmp), r1 = CP(pc.list[pc.list.length - 1], tmp2);
         const k = r0.distanceTo(r1) / pc.rest;
@@ -342,6 +356,7 @@ export function buildSweep(R, THREE, opts = {}) {
     const r = { ...acc };
     r.overShoulder = +r.overShoulder.toFixed(4);
     r.clipDeepest = +r.clipDeepest.toFixed(4);
+    r.clipNear = r.clipNear === -9 ? null : +r.clipNear.toFixed(4);
     r.panelHangMin = r.panelHangMin === 9 ? null : +r.panelHangMin.toFixed(3);
     r.wristMid = r.wristMid === 9 ? null : +r.wristMid.toFixed(4);
     r.foreCase = r.foreCase === 9 ? null : +r.foreCase.toFixed(4);

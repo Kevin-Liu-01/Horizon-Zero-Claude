@@ -3,7 +3,7 @@
  * the page rows, the Frame Set frames and the bar clips, on one boot of one page.
  *
  *   node tools/gates/hero-sweep/session.mjs --port 5274 [--rows A-sweep-run,...|all|none] [--extra-rows <file>[,<file>]]
- *        [--extra-only <ids>] [--fresh extra|all|none] [--frames F14,F15,F10] [--clips run,draw,crouchDraw,melee]
+ *        [--extra-only <ids>] [--fresh extra|all|none] [--frames F14,F15,F10] [--clips run,run3q,draw,crouchDraw,melee] [--clips-first]
  *        [--label <tag>] [--budget <s>]
  *
  *  1. the machine guard (memory free >= 50 %, pressure level 1), then the shared slot <slots>/slot1 (mkdir; owner.txt
@@ -55,12 +55,19 @@ for (const f of (flag('--extra-rows') || '').split(',').filter(Boolean)) {
 const set = loadFrameSet();
 const frameIds = (flag('--frames') || '').split(',').filter(Boolean);
 const frames = set.frames.filter((f) => frameIds.includes(f.id));
+/* M1a r3 (the bar clips, closer): each clip has its own LENS, riding her: `a` the lens's bearing round her from her
+ * front (deg, + to her left; 'side' = square to her on the side the frame's own lens was, '3q' = `q` deg off her
+ * front on that side), `d` m out, `h` m up, aimed at `look` m over her feet, `fov` deg. Today's clips (the frames'
+ * lenses, 3.5-4 m) had her a third of the frame high and her arms did not read; these put her 1.7 m in 1.9-2.3 m
+ * of view. The run is filmed twice, square to her and from three-quarter front; the draws from her right-front
+ * three-quarter (the draw hand, cheek and elbow toward the lens); the lance from three-quarter on the frame's side. */
 const CLIP_DEFS = {
-  // (frame id whose lens is staged with the pose replaced by idle, then the page code performed while recording)
-  run: { frame: 'F15', pose: 'idle', secs: 4.0, js: `C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft'); await w(3.8);` },
-  draw: { frame: 'F16', pose: 'idle', secs: 4.2, aimLens: true, js: `C.input.mouse.buttons |= 4; await w(0.5); C.input.mouse.buttons |= 1; await w(1.8); C.input.mouse.buttons &= ~1; await w(0.6); C.input.mouse.buttons &= ~4; await w(1.0);` },
-  crouchDraw: { frame: 'F18', pose: 'idle', secs: 4.4, aimLens: true, js: `p.setCrouch(true); await w(0.4); C.input.mouse.buttons |= 4; await w(0.5); C.input.mouse.buttons |= 1; C.input.keys.add('KeyD'); await w(1.8); C.input.mouse.buttons &= ~1; await w(0.6); C.input.keys.delete('KeyD'); C.input.mouse.buttons &= ~4; await w(0.8);` },
-  melee: { frame: 'F19', pose: 'idle', secs: 4.4, js: `const mel = C.combat.melee; mel.aimLock = 0; mel.drawLance(30); await w(1.2); C.input.mouse.buttons |= 1; await w(0.9); C.input.mouse.buttons &= ~1; await w(1.0); C.input.mouse.buttons |= 1; await w(0.12); C.input.mouse.buttons &= ~1; await w(1.0);` },
+  // (frame id whose place is staged with the pose replaced by idle, then the page code performed while recording)
+  run: { frame: 'F15', pose: 'idle', secs: 4.0, lens: { a: 'side', d: 2.7, h: 1.05, look: 0.95, fov: 40 }, js: `C.input.keys.add('KeyW'); await w(1.6); C.input.keys.add('ShiftLeft'); await w(2.2);` },
+  run3q: { frame: 'F15', pose: 'idle', secs: 4.0, lens: { a: '3q', q: 40, d: 2.9, h: 1.05, look: 0.95, fov: 40 }, js: `C.input.keys.add('KeyW'); await w(1.6); C.input.keys.add('ShiftLeft'); await w(2.2);` },
+  draw: { frame: 'F16', pose: 'idle', secs: 4.2, aimLens: true, lens: { a: -50, d: 2.5, h: 1.35, look: 1.2, fov: 40 }, js: `C.input.mouse.buttons |= 4; await w(0.5); C.input.mouse.buttons |= 1; await w(1.8); C.input.mouse.buttons &= ~1; await w(0.6); C.input.mouse.buttons &= ~4; await w(1.0);` },
+  crouchDraw: { frame: 'F18', pose: 'idle', secs: 4.4, aimLens: true, lens: { a: -55, d: 2.3, h: 1.0, look: 0.85, fov: 40 }, js: `p.setCrouch(true); await w(0.4); C.input.mouse.buttons |= 4; await w(0.5); C.input.mouse.buttons |= 1; C.input.keys.add('KeyD'); await w(1.8); C.input.mouse.buttons &= ~1; await w(0.6); C.input.keys.delete('KeyD'); C.input.mouse.buttons &= ~4; await w(0.8);` },
+  melee: { frame: 'F19', pose: 'idle', secs: 4.4, lens: { a: '3q', q: 70, d: 3.1, h: 1.2, look: 1.0, fov: 42 }, js: `const mel = C.combat.melee; mel.aimLock = 0; mel.drawLance(30); await w(1.2); C.input.mouse.buttons |= 1; await w(0.9); C.input.mouse.buttons &= ~1; await w(1.0); C.input.mouse.buttons |= 1; await w(0.12); C.input.mouse.buttons &= ~1; await w(1.0);` },
 };
 const clipIds = (flag('--clips') || '').split(',').filter(Boolean);
 /** Between frames (and before the first): input released, no crouch or hang pose, lance holstered, the bow's holster
@@ -196,6 +203,7 @@ try {
     } catch (e) { out.frames.push({ id: f.id, ok: false, error: String(e?.message || e).slice(0, 300) }); try { await page.evaluate(unstageFrame); } catch { /* */ } }
   }
 
+  const runRows = async () => {
   /* ---- rows (each ends with the bow put away and the lance holstered, for the clips after them).
    * M1a r3 (I24): every row starts from a reset hero and a reset melee state (RESET_HERO), and the --extra rows (the
    * kept rows, which stage their own melee and bow work) each get a FRESH PAGE: the page is reloaded and booted again
@@ -260,6 +268,8 @@ try {
   }
   writeFileSync(path.join(runDir, 'rows.json'), JSON.stringify(out.rows, null, 1));
 
+  };
+  const runClips = async () => {
   /* ---- clips: a frame's lens, the world running, the bar performed, the page screencast */
   if (clipIds.length) mkdirSync(clipDir, { recursive: true });
   const cdp = await page.createCDPSession();
@@ -277,15 +287,29 @@ try {
       // draw AWAY from it (run 20261115T044723Z: the draw filmed from behind). The game camera stays behind her on
       // her bearing for the aim (the chase camera at the staged yaw), and the side lens is put up only for the render
       // (engine.render wrapped: the camera moved to the lens, rendered, moved back), riding her position
-      if (d.aimLens) await page.evaluate(() => {
-        const C = window.__CTX__, p = C.player, E = C.engine, cam = C.camera;
-        const off = cam.position.clone().sub(p.position), q = cam.quaternion.clone(), yaw0 = p.camYaw;
-        const P = Object.getPrototypeOf(p), r0 = E.render, u0 = p._updateCamera;
-        p._updateCamera = function (dt, t) { this.camYaw = yaw0; this.camPitch = 0; return P._updateCamera.call(this, dt, t); };
+      /* the clip's lens (CLIP_DEFS), riding her: the game camera is left to the game (and, for the draws, held behind
+       * her on her staged bearing so her aim stays on it: M1.3g round 2), and the lens is put up only for the render
+       * (engine.render wrapped: the camera moved to the lens, rendered, put back) */
+      await page.evaluate((L, holdAim) => {
+        const C = window.__CTX__, p = C.player, E = C.engine, cam = C.camera, V3 = p.position.constructor;
+        const h = p.heading, fwd = new V3(Math.sin(h), 0, Math.cos(h)), left = new V3(Math.cos(h), 0, -Math.sin(h));
+        const off0 = cam.position.clone().sub(p.position);
+        const a0 = Math.atan2(off0.dot(left), off0.dot(fwd)), side = Math.sign(a0) || 1;
+        const a = L.a === 'side' ? side * Math.PI / 2 : L.a === '3q' ? side * (L.q ?? 45) * Math.PI / 180 : L.a * Math.PI / 180;
+        const off = left.clone().multiplyScalar(Math.sin(a) * L.d).addScaledVector(fwd, Math.cos(a) * L.d); off.y = L.h;
+        const yaw0 = p.camYaw, P = Object.getPrototypeOf(p), r0 = E.render, u0 = p._updateCamera;
+        if (holdAim) p._updateCamera = function (dt, t) { this.camYaw = yaw0; this.camPitch = 0; return P._updateCamera.call(this, dt, t); };
         const sp = cam.position.clone(), sq = cam.quaternion.clone();
-        E.render = function (...a) { sp.copy(cam.position); sq.copy(cam.quaternion); cam.position.copy(p.position).add(off); cam.quaternion.copy(q); cam.updateMatrixWorld(); try { return r0.apply(this, a); } finally { cam.position.copy(sp); cam.quaternion.copy(sq); cam.updateMatrixWorld(); } };
+        E.render = function (...args) {
+          sp.copy(cam.position); sq.copy(cam.quaternion); const f0 = cam.fov;
+          cam.position.copy(p.position).add(off); cam.lookAt(p.position.x, p.position.y + L.look, p.position.z);
+          cam.fov = L.fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+          try { return r0.apply(this, args); } finally { cam.position.copy(sp); cam.quaternion.copy(sq); cam.fov = f0; cam.updateProjectionMatrix(); cam.updateMatrixWorld(); }
+        };
         window.__clipLensUndo = () => { E.render = r0; p._updateCamera = u0; };
-      });
+        window.__clipLens = { a0: +(a0 * 180 / Math.PI).toFixed(1), a: +(a * 180 / Math.PI).toFixed(1), d: L.d, h: L.h };
+      }, d.lens, !!d.aimLens);
+      const lensInfo = await page.evaluate(() => window.__clipLens);
       cdp.on('Page.screencastFrame', onFrame);
       await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 85, maxWidth: 1280, maxHeight: 720, everyNthFrame: 1 });
       await page.evaluate(`(async () => { const C = window.__CTX__, p = C.player, E = C.engine; const fr = () => new Promise((r) => requestAnimationFrame(r));
@@ -304,7 +328,7 @@ try {
       const mp4 = path.join(clipDir, `${id}.mp4`);
       execFileSync('nice', ['-n', '10', 'ffmpeg', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'list.txt'), '-vf', 'fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '20', mp4]);
       const span = jpgs.length ? jpgs[jpgs.length - 1].t - jpgs[0].t : 0;
-      out.clips.push({ id, ok: true, file: mp4, frames: jpgs.length, seconds: +span.toFixed(2), fps: span > 0 ? +(jpgs.length / span).toFixed(1) : 0, frame: d.frame });
+      out.clips.push({ id, ok: true, file: mp4, frames: jpgs.length, seconds: +span.toFixed(2), fps: span > 0 ? +(jpgs.length / span).toFixed(1) : 0, frame: d.frame, lens: lensInfo });
       log(`clip ${id}: ${jpgs.length} frames over ${span.toFixed(1)} s -> ${mp4}`);
     } catch (e) {
       try { await cdp.send('Page.stopScreencast'); } catch { /* */ }
@@ -314,6 +338,10 @@ try {
       try { await page.evaluate(unstageFrame); } catch { /* */ }
     }
   }
+  };
+  /* M1a r3: --clips-first films the clips on the page the frames left (before any row's fresh page), so the budget
+   * never cuts them; the rows follow */
+  if (args.includes('--clips-first')) { await runClips(); await runRows(); } else { await runRows(); await runClips(); }
   out.chromeSeconds = Math.round((Date.now() - t0) / 1000);
 } catch (e) {
   out.errors.push(String(e?.stack || e).slice(0, 800));

@@ -62,10 +62,18 @@ export async function makeBench({ melee = false, outfitFile = null } = {}) {
 }
 
 /** One 1/60 s frame, main.js's order: the player stub, the animator, the hero rig (kit, outfit), then combat. */
-export function step(R, dt = 1 / 60, hook = null) {
+/* (M1a r3: --jitter <k> steps at 1/60 s times a factor in [1 - k, 1], every 23rd step a half step, from its own
+ *  stream (--jitter-seed): main.js's smooth step mode splits a long frame into equal sub-steps of at most 1/60 s, so
+ *  the page's steps are 1/60 s or shorter, never longer; its one crouch clip at dee526d came on a step the bench's
+ *  fixed 1/60 s never took) */
+const JIT = Number(flag('--jitter', process.env.BENCH_JITTER || 0));
+const HALF = Number(flag('--half-every', 23));
+let jSeed = Number(flag("--jitter-seed", 0x1234567)) >>> 0, jN = 0;
+const jdt = () => { if (!JIT) return 1 / 60; jSeed = (Math.imul(jSeed, 1103515245) + 12345) >>> 0; const u = jSeed / 4294967296; return (HALF && ++jN % HALF === 0 ? 0.5 : 1 - JIT * u) / 60; };
+export function step(R, dt = jdt(), hook = null) {
   const { player: p, an, model, ctx } = R;
   simMs += dt * 1000;
-  R.t += dt;
+  R.t += dt; R.lastDt = dt;
   if (ctx.engine) ctx.engine.simTime = R.t;
   if (ctx.renderer) ctx.renderer.info.render.frame++;
   if (hook) hook(R, dt);
@@ -107,7 +115,9 @@ export const CLIPS = {
   roll: { cloth: true, run: (R, S) => {
     const p = R.player; for (let i = 0; i < 30; i++) { fwd(R, SPEEDS.jog); step(R); }
     p.dodging = true; const N = Math.round(0.82 * 60);
-    for (let i = 0; i <= N; i++) { p.dodgeK = i / N; fwd(R, 3.4 / 0.82); step(R); S(); }
+    // (--jitter: the roll on the clock, as player.js runs it; else the fixed 1/60 s steps as before)
+    if (JIT) { for (let k = 0; ;) { const dt = jdt(); k = Math.min(1, k + dt / 0.82); p.dodgeK = k; fwd(R, 3.4 / 0.82); step(R, dt); S(); if (k >= 1) break; } }
+    else for (let i = 0; i <= N; i++) { p.dodgeK = i / N; fwd(R, 3.4 / 0.82); step(R); S(); }
     p.dodging = false; p.dodgeK = 1; for (let i = 0; i < 30; i++) { fwd(R, SPEEDS.jog); step(R); S(); }
   } },
   // (M1.2e round 2: 1.4 m, as the page row now stages it: player.js finds no wall under 0.9 m, so 0.6 m never mantled)
@@ -140,14 +150,19 @@ function mantleRun(R, S, rise, clip, dur) {
   p.mantleEdge.dx = Math.sin(p.heading); p.mantleEdge.dz = Math.cos(p.heading); p.mantleEdge.valid = true;
   p.mantling = true; p.mantleClip = clip; p.grounded = false;
   const N = Math.round(dur * 60);
-  for (let i = 0; i <= N; i++) {
-    const k = i / N; p.mantleK = k;
+  // (--jitter: the mantle on the clock, as player.js runs it; else the fixed 1/60 s steps as before)
+  let kc = 0;
+  for (let i = 0; ; i++) {
+    const dt = JIT ? jdt() : 1 / 60;
+    if (JIT) kc = i === 0 ? 0 : Math.min(1, kc + dt / dur);
+    const k = JIT ? kc : i / N; p.mantleK = k;
     const e = k * k * (3 - 2 * k);
     p.position.y = rise * Math.min(1, e * 1.6);
     const f = Math.max(0, (e - 0.35) / 0.65);
     p.position.x = F.x + p.mantleEdge.dx * 0.8 * f; p.position.z = F.z + p.mantleEdge.dz * 0.8 * f;
     p.velocity.set(0, 0, 0);
-    step(R); S();
+    step(R, dt); S();
+    if (JIT ? k >= 1 : i >= N) break;
   }
   p.mantling = false; p.mantleClip = null; p.mantleEdge.valid = false; p.grounded = true;
   for (let i = 0; i < 30; i++) { step(R); S(); }
@@ -246,7 +261,7 @@ async function main() {
   console.log(JSON.stringify({ counts: out.counts, caps: out.caps, idleHash: out.idleHash, armHash: out.armHash, idleVsRef: out.idleVsRef }));
   if (flag('--write-idle-ref')) writeFileSync(flag('--write-idle-ref'), JSON.stringify({ commit: flag('--ref-commit', '?'), handHash: out.idleHash, armHash: out.armHash, handTrace: out.handTrace, armTrace: out.armTrace }));
   for (const [k, r] of Object.entries(out.clips)) {
-    console.log(k.padEnd(8), `frames ${r.frames} behind ${r.behind} plane ${r.plane} overSh ${r.overShoulder} | clip ${r.clipFrames} deep ${r.clipDeepest} ${JSON.stringify(r.clipBy)} worst ${JSON.stringify(r.clipWorst)} hang ${r.panelHangMin}${r.wristMid != null ? ` | wristMid ${r.wristMid} foreCase ${r.foreCase}` : ''}${r.behindAt ? ' behindAt ' + JSON.stringify(r.behindAt) : ''}${r.planeAt ? ' planeAt ' + JSON.stringify(r.planeAt) : ''}`);
+    console.log(k.padEnd(8), `frames ${r.frames} behind ${r.behind} plane ${r.plane} overSh ${r.overShoulder} | clip ${r.clipFrames} deep ${r.clipDeepest} ${JSON.stringify(r.clipBy)} worst ${JSON.stringify(r.clipWorst)} hang ${r.panelHangMin} near ${r.clipNear} ${r.clipNearAt ? JSON.stringify(r.clipNearAt) : ''}${r.wristMid != null ? ` | wristMid ${r.wristMid} foreCase ${r.foreCase}` : ''}${r.behindAt ? ' behindAt ' + JSON.stringify(r.behindAt) : ''}${r.planeAt ? ' planeAt ' + JSON.stringify(r.planeAt) : ''}`);
   }
   if (flag('--json')) writeFileSync(flag('--json'), JSON.stringify(out, null, 1));
 }

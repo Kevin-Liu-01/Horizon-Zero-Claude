@@ -178,7 +178,12 @@ export class SecondaryMotion {
       _shQ2.setFromUnitVectors(_spB, _shX).multiply(_shQ);
       _shN.set(c.shN[k], c.shN[k + 1], c.shN[k + 2]).applyQuaternion(_shQ2);
       _shL.set(c.shL[k], c.shL[k + 1], c.shL[k + 2]).applyQuaternion(_shQ2);
-      let push = 0;
+      /* M1a r3: the push goes out along the sheet's normal (+N, away from her body), EXCEPT when every contact is a leg
+       * standing on the sheet's outer side (its axis past half its radius on +N): then the sheet goes back (-N) by
+       * what that takes, if that is less. Out along +N only, a trailing thigh behind the back panel pushed the panel
+       * on through the thigh to its far side, capped at half a segment a pass: bench, sub-stepped at the page's frame
+       * times, one jog frame in six seeds with the back panel's hem 0.045-0.049 m inside the left thigh */
+      let push = 0, pushNeg = 0, negOk = true;
       for (let q = 0; q < 5; q++) {
         const cap = caps[q];
         // (the torso at 0.10 m, its belly and seat: the strand rule's 0.155 m with the rest rule stays for it above)
@@ -212,10 +217,13 @@ export class SecondaryMotion {
           if (l >= W + half || l <= -W - half) continue;
           const need = (r - s) / f;
           if (need > push) push = need;
+          const needN = (r + s) / f;
+          if (q === 0 || s > -0.5 * r) negOk = false; else if (needN > pushNeg) pushNeg = needN;
         }
       }
       if (push <= 0) break;
-      _spC.addScaledVector(_shN, Math.min(push, 0.5 * sg) + 1e-4);
+      if (negOk && pushNeg < push) _spC.addScaledVector(_shN, -(Math.min(pushNeg, 0.5 * sg) + 1e-4));
+      else _spC.addScaledVector(_shN, Math.min(push, 0.5 * sg) + 1e-4);
       _shX.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
       const l3 = _shX.length();
       if (l3 < 1e-6) return;
@@ -949,7 +957,11 @@ export class SecondaryMotion {
         }
         // (M1.2e fix 1: not the sash panels, which lie on the thighs under her hands: seated, the draw hand's capsule
         // on her lap levered the short right panel up and across to her left hip, into her belly)
-        if (hcN && !c.shN) {
+        // (M1a r3: the panels too while she mantles, climbs or rolls: the climb's hands go down to a ledge at hip
+        //  height past the front panels, and the bench sub-stepped at the page's frame times had the right forearm
+        //  through the right panel's top on one or two climb frames in eight seeds of twelve; seated it stays off them)
+        const pl = this.ctx.player;
+        if (hcN && (!c.shN || pl?.mantling || pl?.dodging)) {
           // push out, put the particle back at its segment length, and repeat:
           // one pass re-projected a strand whose parent sits near the capsule
           // straight back inside it (the sternum cord under a hand crossing
