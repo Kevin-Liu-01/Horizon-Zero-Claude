@@ -70,7 +70,10 @@ const CLIPS = {
   sprint: { cloth: true, run: true, js: `keys.add('KeyW'); keys.add('ShiftLeft'); await simWait(1.0); S.on = true; await simWait(3.0);` },
   crouch: { cloth: true, js: `p.setCrouch(true); await simWait(0.6); S.on = true; await simWait(1.5); keys.add('KeyW'); await simWait(1.5); keys.delete('KeyW'); p.setCrouch(false);` },
   roll: { cloth: true, js: `keys.add('KeyW'); await simWait(0.6); S.on = true; p.dodge(); await simWait(1.2);` },
-  sit: { cloth: true, js: `const q = p.position; const h = p.ride([{ x: q.x, y: q.y + 0.45, z: q.z }, { x: q.x + 0.001, y: q.y + 0.45, z: q.z }], { speed: 0.0001 }); await simWait(0.8); S.on = true; await simWait(2.0); S.on = false; h.cancel();` },
+  /* (M1a debt fix round 1, M1.3h "stowed gear clears the ground ... by >= 2 cm when seated": `gear`, the lowest stowed-gear
+   *  vertex over the terrain under it on every graded step of the seat; the cistern lip is the real Brazier's and is not
+   *  staged here) */
+  sit: { cloth: true, gear: true, js: `const q = p.position; const h = p.ride([{ x: q.x, y: q.y + 0.45, z: q.z }, { x: q.x + 0.001, y: q.y + 0.45, z: q.z }], { speed: 0.0001 }); await simWait(0.8); S.on = true; await simWait(2.0); S.on = false; h.cancel();` },
   unstowLance: { js: `S.on = true; cmb.melee.drawLance(30); await simWait(1.3);` },
   stowLance: { js: `cmb.melee.drawLance(30); await simWait(1.4); S.on = true; cmb.melee.holsterLance(); await simWait(1.3);` },
   unstowLanceJog: { js: `keys.add('KeyW'); await simWait(0.8); S.on = true; cmb.melee.drawLance(30); await simWait(1.3);` },
@@ -126,11 +129,15 @@ const row = (name) => {
       const M = buildSweep({ an, model: p.model }, THREE);
       const S = { on: false, hang: null, bar: null, skip: null, mantled: null, slid: null };
       let T0 = null;
+      ${c.gear ? `const gearMeshes = []; { const roots = []; p.model.traverse((o) => { if (/stowkit/.test(o.userData?.heroPart || '')) roots.push(o); }); if (cmb.bow?.group) roots.push(cmb.bow.group); if (an.melee?.lance) roots.push(an.melee.lance); for (const r of roots) r.traverse((o) => { if (o.isMesh && o.visible !== false && !gearMeshes.includes(o)) gearMeshes.push(o); }); }
+      const gv = new THREE.Vector3();
+      const gearClear = () => { let m = 9; for (const o of gearMeshes) { const P = o.geometry?.attributes?.position; if (!P) continue; o.updateWorldMatrix(true, false); const st = Math.max(1, Math.floor(P.count / 400)); for (let i = 0; i < P.count; i += st) { if (o.isSkinnedMesh) o.getVertexPosition(i, gv); else gv.fromBufferAttribute(P, i); gv.applyMatrix4(o.matrixWorld); const h = gv.y - TR.getHeight(gv.x, gv.z); if (h < m) m = h; } } return m; };` : ''}
       M.begin(${JSON.stringify(name)});
       const updC = cmb.update.bind(cmb);
       cmb.update = function (dt, ...rest) {
         const r = updC(dt, ...rest);
         if (S.on && dt > 0) { if (T0 == null) T0 = E.simTime; p.model.updateMatrixWorld(true); M.sample({ T: +(E.simTime - T0).toFixed(3), cloth: ${!!c.cloth}, run: ${!!c.run}, aiming: !!p.aiming });
+          ${c.gear ? `S.gearMin = Math.min(S.gearMin ?? 9, gearClear());` : ''}
           ${c.ali ? `if ((an._ali?.w ?? 0) > 0.9) { const h = M.hangCheck(); S.aliN = (S.aliN || 0) + 1; S.aliMin = Math.min(S.aliMin ?? 9, h.r.front); }` : ''} }
         return r;
       };
@@ -147,8 +154,9 @@ const row = (name) => {
       ${c.cloth ? `if (r.clipFrames) fails.push(r.clipFrames + ' clipping frames');` : ''}
       ${c.run ? `if (r.wristMid == null || r.wristMid < 0.10) fails.push('wrist ' + r.wristMid + ' m off the midline'); if (r.foreCase == null || r.foreCase <= 0) fails.push('forearm ' + r.foreCase + ' m off the survey case');` : ''}
       ${c.ali ? `if (!(S.aliN >= 20)) fails.push('the alidade was raised for only ' + (S.aliN || 0) + ' steps'); else if (!(S.aliMin > 0)) fails.push('the right wrist ' + S.aliMin + ' m behind the head plane during the hold');` : ''}
+      ${c.gear ? `if (!(S.gearMin >= 0.02)) fails.push('stowed gear ' + (S.gearMin == null ? 'unmeasured' : S.gearMin.toFixed(3) + ' m') + ' over the ground while seated (bar 0.02)');` : ''}
       ${c.hang ? `const H = S.hang; if (!H || !(H.l.front > 0 && H.r.front > 0 && H.l.belowHeadBoneM >= 0 && H.r.belowHeadBoneM >= 0)) fails.push('hang: ' + JSON.stringify(H));` : ''}
-      return { pass: fails.length === 0, detail: { fails, ...r, hang: S.hang, bar: S.bar, aliFrontMin: S.aliMin ?? null, aliSteps: S.aliN ?? null, counts: M.counts, caps: M.caps, wrap: an.clothWrapInfo?.() || null } };
+      return { pass: fails.length === 0, detail: { fails, ...r, hang: S.hang, bar: S.bar, aliFrontMin: S.aliMin ?? null, aliSteps: S.aliN ?? null, gearMinAboveGroundM: S.gearMin == null ? null : +S.gearMin.toFixed(4), counts: M.counts, caps: M.caps, wrap: an.clothWrapInfo?.() || null } };
     })()`),
   };
 };
@@ -260,7 +268,20 @@ const strafeFeetRow = {
       standAt(p, 'openGround'); p.camPitch = 0; p.velocity?.set(0, 0, 0);
       const t0w = performance.now(); while (performance.now() - t0w < 300) await frame();
       C.input.mouse.buttons |= 4; C.input.keys.add('KeyA');
+      let frozenAt = null;
       const s0 = E.simTime; let worst = 0, worstAt = null, over = 0, n = 0, trav = 0, lensSet = false; const ucam = p._updateCamera;
+      const V3 = p.position.constructor, inv = p.model.matrixWorld.clone(), wa = new V3(), wb = new V3(), wt = new V3();
+      const tipOf = (e) => (e?.bone?.children || []).find((o) => o.isBone) || null;
+      const toes = [tipOf(an.b.ballL), tipOf(an.b.ballR)];
+      let bootWorst = 0, bootAt = null, bootOver = 0, bootN = 0;
+      const charOf = (o, out) => out.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv);
+      const bootHdg = (sd) => {
+        p.model.updateMatrixWorld(true); inv.copy(p.model.matrixWorld).invert();
+        charOf((sd ? an.b.footR : an.b.footL).bone, wa); charOf((sd ? an.b.ballR : an.b.ballL).bone, wb);
+        const dx = wb.x - wa.x, dz = wb.z - wa.z, L = wa.distanceTo(wb);
+        if (!(L > 1e-4) || Math.hypot(dx, dz) < 0.4 * L) return null;
+        return Math.atan2(dx, dz);
+      };
       try {
         while (E.simTime - s0 < 3.3) {
           await frame();
@@ -271,14 +292,33 @@ const strafeFeetRow = {
           const d = Math.abs(wrap(hL - hR)); n++;
           if (d > 20 * Math.PI / 180) over++;
           trav = Math.max(trav, Math.abs(wrap(hL - mv)), Math.abs(wrap(hR - mv)));
+          /* (M1a debt fix round 1: the film and this row disagreed at 88b1605. The BOOT's own heading too: ankle -> ball,
+           *  horizontal, char space, on every step the foot is not near vertical (its horizontal part >= 0.4 of it)) */
+          for (const sd of [0, 1]) { const bh = bootHdg(sd); if (bh == null) continue; const o = Math.abs(wrap(bh - mv)); bootN++; if (o > bootWorst) { bootWorst = o; bootAt = { t: +t.toFixed(2), side: sd ? 'R' : 'L', boot: deg(bh), lat: deg(sd ? hR : hL), travel: deg(mv), stance: +((sd ? an.loco?.stanceR : an.loco?.stanceL) ?? 0).toFixed(2) }; } if (o > Math.PI / 4) bootOver++; }
           if (d > worst) { worst = d; worstAt = { t: +t.toFixed(2), hL: deg(hL), hR: deg(hR), travel: deg(mv), stanceL: +(an.loco?.stanceL ?? 0).toFixed(2), stanceR: +(an.loco?.stanceR ?? 0).toFixed(2), heading: deg(p.heading), aiming: !!p.aiming }; }
         }
-      } finally { p._updateCamera = ucam; C.input.keys.clear(); C.input.mouse.buttons = 0; }
+        /* ...and V13's own frozen frame: the world frozen as V13 freezes it, each foot's ankle -> toe tip and the travel
+         * projected through the lens that films it; + = toward screen right (V13: she travels to screen right) */
+        E.timeScale = 0; await frame(); await frame();
+        const cam = C.camera; cam.updateMatrixWorld(); p.model.updateMatrixWorld(true);
+        const scr = (v) => { const q = v.clone().project(cam); return [q.x, q.y]; };
+        const fz = {};
+        for (const sd of [0, 1]) {
+          (sd ? an.b.footR : an.b.footL).bone.getWorldPosition(wa); toes[sd]?.getWorldPosition(wt);
+          const A = scr(wa), T2 = scr(wt);
+          fz[sd ? 'R' : 'L'] = { toeScreenDx: +(T2[0] - A[0]).toFixed(4), toeScreenDy: +(T2[1] - A[1]).toFixed(4), stance: +((sd ? an.loco?.stanceR : an.loco?.stanceL) ?? 0).toFixed(2), lat: deg(an._footHdg(sd)), boot: (() => { const h = bootHdg(sd); return h == null ? null : deg(h); })() };
+        }
+        { const mvw = an._latMove ?? 0; wa.copy(p.position); wb.set(Math.sin(mvw + p.heading), 0, Math.cos(mvw + p.heading)).multiplyScalar(0.5).add(p.position); const A = scr(wa), Bq = scr(wb); fz.travelScreenDx = +(Bq[0] - A[0]).toFixed(4); }
+        frozenAt = fz;
+        E.timeScale = 1;
+      } finally { p._updateCamera = ucam; C.input.keys.clear(); C.input.mouse.buttons = 0; if (!(E.timeScale > 0)) E.timeScale = 1; }
       const fails = [];
       if (n < 30) fails.push('only ' + n + ' strafe steps (aiming ' + !!p.aiming + ')');
+      if (bootOver) fails.push(bootOver + ' of ' + bootN + ' foot-steps with the boot (ankle -> ball) over 45 deg off the travel (worst ' + deg(bootWorst) + ')');
+      if (frozenAt) for (const k of ['L', 'R']) { const f = frozenAt[k]; if (Math.abs(f.toeScreenDx) > 0.004 && Math.sign(f.toeScreenDx) !== Math.sign(frozenAt.travelScreenDx)) fails.push('V13 frame: the ' + k + ' toe points away from the travel on screen'); }
       if (over) fails.push(over + ' of ' + n + ' steps with the feet over 20 deg apart (worst ' + deg(worst) + ')');
       if (trav > Math.PI / 4) fails.push('a foot ' + deg(trav) + ' deg off the travel');
-      return { pass: fails.length === 0, detail: { fails, steps: n, worstFeetDeg: deg(worst), over20: over, worstVsTravelDeg: deg(trav), worstAt } };
+      return { pass: fails.length === 0, detail: { fails, steps: n, worstFeetDeg: deg(worst), over20: over, worstVsTravelDeg: deg(trav), worstAt, bootWorstDeg: deg(bootWorst), bootOver, bootN, bootAt, frozenAt } };
     })()`),
 };
 
