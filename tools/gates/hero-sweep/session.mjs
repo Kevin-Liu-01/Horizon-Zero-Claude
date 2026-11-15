@@ -61,7 +61,7 @@ if (args.includes('--extra-first')) rows = [...rows.filter((g) => g.__extra), ..
  * timeout is 600 s and took 177-178 s at dee526d; with the timeout as the need, A16 and A17 never started at 6448b3d).
  * Seconds measured in the page, with headroom; a row not named here needs min(its timeout, 90 s). A row that overruns is
  * still cut by its own timeout, and the watchdog still ends the session at the budget + 45 s. */
-const EXPECT_S = { 'A-draw-elbow-level': 240, 'A16-draw-anchor': 200, 'A107-draw-arm-path': 60, 'A104-melee-self-clear': 60, 'A105-melee-while-moving': 60, 'A32-draw-ramp': 45, 'A17-draw-beats': 20, 'V-traversal': 60 };
+const EXPECT_S = { 'A-sweep-wind': 30, 'A-draw-elbow-level': 240, 'A16-draw-anchor': 200, 'A107-draw-arm-path': 60, 'A104-melee-self-clear': 60, 'A105-melee-while-moving': 60, 'A32-draw-ramp': 45, 'A17-draw-beats': 20, 'V-traversal': 60 };
 const set = loadFrameSet();
 const frameIds = (flag('--frames') || '').split(',').filter(Boolean);
 const frames = set.frames.filter((f) => frameIds.includes(f.id));
@@ -96,6 +96,11 @@ const RESET_HERO = async () => {
   try {
     const m = cmb?.melee;
     if (m) {
+      /* M1a r3 fix: A104's `pin` (gates.r5.melee.mjs PIN) stubs the melee's own update and poseState on the instance
+       * and never puts them back: at 349ac11 every row after A104 ran with the lance's state machine dead and the
+       * guard pinned in her hands (A105 "the guard never came up"; the holster never ended). The prototype's are
+       * restored here */
+      for (const k of ['update', 'poseState']) if (Object.prototype.hasOwnProperty.call(m, k)) delete m[k];
       if (m.phase && m.phase !== 'idle') { try { m._endSwing?.(); } catch { /* */ } }
       m.active = false; m.phase = 'idle'; m.heavy = false; m.combo = 0; m._comboT = 0;
       m._charging = false; m._chargeHold = false; m._chargeT = 0; m._buffered = false; m._lmbWas = false; m._keyWas = false;
@@ -248,7 +253,7 @@ try {
     current = g.id;
     // (a row starts only if its own timeout, and a fresh page's boot, still fit in the budget: at 6448b3d rows begun
     //  inside it ran to their timeouts and took the session 243 s past the 15-minute cap)
-    const need = Math.min((g.timeout ?? 90000) / 1000, EXPECT_S[g.id] ?? 90) + ((FRESH === 'all' || (FRESH === 'extra' && g.__extra)) ? 60 : 0);
+    const need = Math.min((g.timeout ?? 90000) / 1000, EXPECT_S[g.id] ?? (g.id.startsWith('A-sweep-') ? 20 : 90)) + ((FRESH === 'all' || (FRESH === 'extra' && g.__extra)) ? 60 : 0);
     if (over() || (Date.now() - t0) / 1000 + need > BUDGET_S) { out.rows.push({ id: g.id, status: 'NOT-RUN', why: 'budget' }); continue; }
     const fresh = FRESH === 'all' || (FRESH === 'extra' && g.__extra);
     let rebootS = null, reset = null;
