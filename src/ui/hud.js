@@ -1645,9 +1645,11 @@ export class HUD {
         const s = lampStateOf(m);
         if (pip.s !== s) { pip.s = s; pip.el.dataset.s = s; }
         const k = flagged ? 'flag' : isQuest ? 'quest' : 'fight';
-        if (pip.k !== k) { pip.k = k; pip.el.dataset.k = k; }
-        const di = Math.round(dist);
-        if (di !== pip.dist) { pip.dist = di; pip.lab.textContent = di < 360 ? BEARING_STR[di] : String(di); }
+        if (pip.k !== k) { pip.k = k; pip.el.dataset.k = k; pip.dist = -1; }
+        // M1.6j take a bearing (bible §8.3): the held Instrument's pip reads its BEARING, not its range (the range is
+        // the Back Bearing perk's). Change made by the systems + combat lane in the ui lane's file.
+        const di = k === 'flag' ? 1000 + (Math.round(norm360(Math.atan2(dx, -dz) * RAD2DEG)) % 360) : Math.round(dist);
+        if (di !== pip.dist) { pip.dist = di; pip.lab.textContent = di >= 1000 ? BEARING_STR[di - 1000] : di < 360 ? BEARING_STR[di] : String(di); }
       }
       // marks that crowd share one reading: the nearest Instrument's
       const near = PIP_LABEL_PX * this._scale;

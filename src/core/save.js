@@ -219,7 +219,10 @@ export class SaveSystem {
         if (Number.isFinite(s.pitch)) p.camPitch = s.pitch;
         if (Number.isFinite(s.heading)) p.heading = s.heading;
         p.velocity?.set?.(0, 0, 0);
-        p._snapToGround?.();
+        // the floor search starts at the RECORD's height (M1.6j): from the default 2 m over it the search ray (step-up +
+        // 1.4 m long) stopped 0.6 m above a pillar's deck, she was set on the terrain inside the pillar, and the
+        // collider pushed her 2.2 m off T1 (the save-continue row at 5f4bf42)
+        p._snapToGround?.(Number.isFinite(s.y) ? s.y : undefined);
         this._emit('player-hurt', { health: p.health, max: p.maxHealth });
       });
     }

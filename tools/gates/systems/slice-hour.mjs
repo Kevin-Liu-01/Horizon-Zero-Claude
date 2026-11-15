@@ -41,6 +41,7 @@ import { stageFrame, unstageFrame } from '../../frames/page.mjs';
 import { RUNS, assertOutsideRepo } from '../../frames/paths.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../../chrome-profile.mjs';
 import { takeMachineSlot, releaseMachineSlot } from '../../chrome-slot.mjs';
+import { runKit } from './kit-probe-page.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = process.argv.slice(2);
@@ -49,6 +50,8 @@ const PORT = guardPort(flag('--port'));
 const FRAMES = (flag('--frames', 'F30,F20') || '').split(',').map((s) => s.trim()).filter(Boolean);
 const BUDGET_S = Number(flag('--budget', 840));
 const LABEL = flag('--label', 'systems-slice-hour');
+const KIT = !args.includes('--no-kit');   // M1.6j: the kit's verb rows on the frames page (kit-probe-page.mjs)
+const NO_RUN = args.includes('--no-run');  // the frames and rows only
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[slice-hour ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -88,7 +91,8 @@ const probe = () => {
     bzForecast: busy ? [...document.querySelectorAll('#cal-sys .sys-row small')].map((r) => r.textContent) : [],
     note: document.querySelector('.cal-track-obj')?.textContent ?? null,
     sighting: !!C?.sighting?.on, report: s?.report?.(), salt: C?.inventory?.count?.('metal-shards') ?? null,
-    hp: p ? Math.round(p.health) : null, ammo: C?.combat?.ammo?.hunter ?? null,
+    hp: p ? Math.round(p.health) : null, ammo: C?.combat?.ammo?.hunter ?? null, barbed: C?.combat?.ammo?.hardpoint ?? null,
+    ammoId: C?.combat?.activeWeapon?.activeAmmo ?? null, py: p ? p.position.y : null,
     deathCard: !!document.querySelector('.mn-death.show'),
   };
 };
@@ -184,6 +188,40 @@ async function walkTo(page, K, target, radius, { up = 0, maxS = 150, sprint = tr
   } finally { if (sprint) await K.up('ShiftLeft'); await K.up('KeyW'); }
 }
 
+/**
+ * M1.6j: a long leg is walked along the game's own nav grid (ctx.nav.path, 2 m cells: slope, water, colliders), as a
+ * player picks a way round a wall: one waypoint at a time, the look turned to each (5f4bf42: straight from T1 to the
+ * station she ran into the Organ Shelf's blocks and stuck 101 m short). Straight when the grid has no path.
+ */
+async function walkPath(page, K, target, radius, opts = {}) {
+  const pts = await page.evaluate((tx, tz) => {
+    const C = window.__CTX__, N = C.nav, P = C.player.position;
+    if (!N?.path) return null;
+    const V = P.constructor;
+    const path = N.path(new V(P.x, 0, P.z), new V(tx, 0, tz));
+    if (!path || !path.length) return null;
+    // thin to a waypoint every ~8 m (and every turn of more than 25 deg)
+    const out = [];
+    let last = { x: P.x, z: P.z }, lastDir = null;
+    for (let i = 0; i < path.length; i++) {
+      const q = path[i], dx = q.x - last.x, dz = q.z - last.z, d = Math.hypot(dx, dz);
+      const dir = Math.atan2(dx, dz);
+      const turn = lastDir == null ? 0 : Math.abs(Math.atan2(Math.sin(dir - lastDir), Math.cos(dir - lastDir)));
+      if (d >= 8 || (turn > 0.44 && d > 2.5) || i === path.length - 1) { out.push({ x: q.x, z: q.z }); last = q; lastDir = dir; }
+    }
+    return out;
+  }, target.x, target.z);
+  if (!pts) return { ...(await walkTo(page, K, target, radius, opts)), nav: false };
+  let legs = 0;
+  for (const w of pts.slice(0, -1)) {
+    const r = await walkTo(page, K, w, 2.2, { ...opts, maxS: 40 });
+    legs++;
+    if (!r.ok || r.interrupted) return { ...r, nav: true, legs, of: pts.length };
+  }
+  const r = await walkTo(page, K, target, radius, opts);
+  return { ...r, nav: true, legs: legs + 1, of: pts.length };
+}
+
 async function playScene(page, K, maxN = 40) {
   for (let i = 0; i < maxN; i++) {
     const s = await page.evaluate(probe);
@@ -215,12 +253,14 @@ async function readyBow(page, K) {
  * and backs out when one closes inside 9 m. Every shot: RMB held, the look steered onto the part, Shift (Steady),
  * LMB drawn for 1.0 s with the look kept on the part, then loosed.
  */
-async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false } = {}) {
+async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000 } = {}) {
   const t0 = Date.now();
   const stage0 = (await page.evaluate(probe)).stage;
   let fired = 0, aimed = false;
   await page.mouse.move(800, 450);
-  await readyBow(page, K);
+  if (ammo === 'hunter') await readyBow(page, K); else { await K.tap('Digit1'); await sleep(150); }
+  // the arrow as a player picks it: X (and Z) cycle the bow's ammo (M1.6j: Barbed is the ranged Pry)
+  for (let i = 0; i < 4 && (await page.evaluate(probe)).ammoId !== ammo; i++) { await K.tap('KeyX'); await sleep(150); }
   // puppeteer throws on releasing a button it does not hold: every release is guarded
   const up = async (button) => { try { await page.mouse.up({ button }); } catch { /* not held */ } };
   const release = async () => { if (aimed) { await K.up('ShiftLeft'); await up('left'); await up('right'); aimed = false; } };
@@ -241,25 +281,29 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         await walkTo(page, K, { x: s.p.x + (t.x - s.p.x) * k, z: s.p.z + (t.z - s.p.z) * k }, 3, { maxS: 25 });
         continue;
       }
-      if (t.d < 9 && kind !== 'peg') {
+      if (backOut && t.d < 9 && kind !== 'peg') {
         await release();
         const k = stand / Math.max(1, t.d);
         await walkTo(page, K, { x: t.x + (s.p.x - t.x) * k, z: t.z + (s.p.z - t.z) * k }, 3, { maxS: 12 });
         continue;
       }
-      if ((s.ammo ?? 0) < 1) { await release(); await readyBow(page, K); if ((await page.evaluate(probe)).ammo < 1) return { ok: false, why: 'no arrows to make', fired }; continue; }
-      if (!aimed) { await page.mouse.down({ button: 'right' }); await sleep(380); await K.down('ShiftLeft'); aimed = true; }
+      const have = ammo === 'hardpoint' ? s.barbed : s.ammo;
+      if ((have ?? 0) < 1) { await release(); if (ammo !== 'hunter') return { ok: false, why: `no ${ammo} arrows left`, fired }; await readyBow(page, K); if ((await page.evaluate(probe)).ammo < 1) return { ok: false, why: 'no arrows to make', fired }; continue; }
+      if (!aimed) { await page.mouse.down({ button: 'right' }); await sleep(380); aimed = true; }
+      // M1.6j Steady: a fresh breath for every shot (Shift let go and pressed again while aiming: 4 s of no sway)
+      await K.up('ShiftLeft'); await sleep(50); await K.down('ShiftLeft'); await sleep(60);
       let a = await page.evaluate(aimPoint, t.x, t.y, t.z, 0.35);
       await page.mouse.down({ button: 'left' });
       const tD = Date.now();
-      while (Date.now() - tD < 1000) {
+      while (Date.now() - tD < drawMs) {
         const now = (await page.evaluate(targetsOf, kind, part)).find((q) => q.i === t.i);
         if (!now) break;
         a = await page.evaluate(aimPoint, now.x, now.y, now.z, 0.35);
       }
+      const sw = await page.evaluate(() => { const c = window.__CTX__.combat; return { st: c.steady.phase, sway: +c.sway.deg.toFixed(3) }; });
       await up('left');
       fired++;
-      shots.push({ kind, part, d: +t.d.toFixed(1), aimErr: a.err, hpBefore: t.hp });
+      shots.push({ kind, part, ammo, d: +t.d.toFixed(1), aimErr: a.err, hpBefore: t.hp, down: t.down, steady: sw.st, swayDeg: sw.sway });
       await sleep(380);
     }
   } finally { await release(); }
@@ -307,18 +351,22 @@ async function beat(page, K, s) {
       // she runs down off the shelf to 45 m from the station, then stalks
       const st0 = await page.evaluate(() => window.__CTX__.systemsGame.A.station);
       const d0 = await page.evaluate((a) => { const P = window.__CTX__.player.position; return Math.hypot(P.x - a.x, P.z - a.z); }, st0);
+      let leg0 = null;
       if (d0 > 50) {
         const k = 45 / d0, p0 = (await page.evaluate(probe)).p;
-        const r0 = await walkTo(page, K, { x: st0.x + (p0.x - st0.x) * k, z: st0.z + (p0.z - st0.z) * k }, 3, { maxS: 120 });
-        if (!r0.ok) return { ...r0, why: `run down to 45 m from the station: ${r0.why}` };
+        leg0 = await walkPath(page, K, { x: st0.x + (p0.x - st0.x) * k, z: st0.z + (p0.z - st0.z) * k }, 3, { maxS: 120 });
+        if (!leg0.ok) return { ...leg0, why: `run down to 45 m from the station: ${leg0.why}` };
       }
       const crouched = await page.evaluate(() => !!window.__CTX__.player.crouching);
       if (!crouched) await K.tap('KeyC');
-      const r = await walkTo(page, K, s.anchor, Math.max(1.5, s.radius - 1), { sprint: false, maxS: 200 });
+      // what she walks in on the stalk (M1.6e reed cover): frames hidden by the rule, and the cover kinds under her
+      await page.evaluate(() => { const C = window.__CTX__, R = (window.__stalk = { n: 0, hidden: 0, kinds: {}, on: true }); const f = () => { if (!R.on) return; const p = C.player; R.n++; if (p.reedHidden) R.hidden++; const k = p.reedKind ?? 0; R.kinds[k] = (R.kinds[k] || 0) + 1; requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      const r = await walkPath(page, K, s.anchor, Math.max(1.5, s.radius - 1), { sprint: false, maxS: 200 });
+      const stalk = await page.evaluate(() => { const R = window.__stalk; R.on = false; return { frames: R.n, hidden: R.hidden, kinds: R.kinds }; });
       if (await page.evaluate(() => !!window.__CTX__.player.crouching)) await K.tap('KeyC');
       await sleep(300);
       await playScene(page, K);
-      return r;
+      return { ...r, leg0: leg0 && { nav: leg0.nav, legs: leg0.legs }, stalk };
     }
     const r = await walkTo(page, K, s.anchor, Math.max(1.5, s.radius - 1), { up: s.up });
     await sleep(300);
@@ -326,7 +374,9 @@ async function beat(page, K, s) {
     return r;
   }
   if (s.type === 'talk') {
-    const r = await walkTo(page, K, s.anchor, 2.5);   // the prompt's radius is 3.0; round 1 walked into Mise at 2.0
+    // the prompt's radius is 3.0; round 1 walked into Mise at 2.0. A long way (the return from the station) on the nav grid
+    const far = s.p && s.anchor ? Math.hypot(s.p.x - s.anchor.x, s.p.z - s.anchor.z) : 0;
+    const r = far > 30 ? await walkPath(page, K, s.anchor, 2.5) : await walkTo(page, K, s.anchor, 2.5);
     if (!r.ok) return r;
     await holdE(page, K, 500);
     await sleep(300);
@@ -358,7 +408,14 @@ async function beat(page, K, s) {
   }
   if (s.type === 'kill') {
     if (st === 'topple') return fight(page, K, 'plumb', 'vial', () => 'topple', { stand: 20, maxS: 110 });
-    if (st === 'pry') return fight(page, K, 'plumb', 'bob', () => 'pry', { stand: 16, maxS: 90 });
+    // Pry the bob while it is down (the card): a Barbed arrow is the ranged Pry, from where she stands (no walk-in in the
+    // 4 s it is down); E with the lance is the near one, taken when it lies within reach
+    if (st === 'pry') {
+      const near = await page.evaluate(() => !!window.__CTX__.combat?.melee?.pryTarget);
+      if (near) { await holdE(page, K, 450); await sleep(900); if ((await page.evaluate(probe)).stage !== st) return { ok: true, how: 'lance' }; }
+      const f = await fight(page, K, 'plumb', 'bob', () => 'pry', { stand: 18, maxS: 90, ammo: 'hardpoint', backOut: false, drawMs: 760 });
+      return { ...f, how: 'barbed' };
+    }
     return { ok: false, why: `unknown kill beat ${st}` };
   }
   return { ok: false, why: `unknown beat type ${s.type}` };
@@ -378,7 +435,7 @@ async function reloadContinue(page, tag) {
     const n = s.store.continueSlot();
     const rec = n ? s.store.latest(n) : null;
     return rec ? { slot: n, stage: rec.quest?.order?.at?.(-1)?.id ?? null, idx: rec.quest?.idx, started: !!rec.quest?.started, salt: rec.satchel['metal-shards'] ?? 0,
-      hour: rec.hour, x: rec.position.x, z: rec.position.z, kind: rec.kind, reason: rec.reason, v: rec.v,
+      hour: rec.hour, x: rec.position.x, y: rec.position.y, z: rec.position.z, kind: rec.kind, reason: rec.reason, v: rec.v,
       keys: Object.keys(localStorage).filter((k) => k.startsWith('cal.v6')) } : null;
   });
   const tC = Date.now();
@@ -418,13 +475,15 @@ async function reloadContinue(page, tag) {
   const after = await page.evaluate(() => {
     const C = window.__CTX__, sp = C.spine, p = C.player;
     return { state: C.state, idx: sp.idx, started: sp.started, stage: sp.order.at(-1)?.id ?? null, current: sp.current()?.id ?? null, salt: C.inventory.count('metal-shards'),
-      hour: +C.environment.time.toFixed(3), x: +p.position.x.toFixed(3), z: +p.position.z.toFixed(3),
+      hour: +C.environment.time.toFixed(3), x: +p.position.x.toFixed(3), y: +p.position.y.toFixed(3), z: +p.position.z.toFixed(3),
       note: document.querySelector('.cal-track-obj')?.textContent ?? null, loadedFrom: C.progression.saves.loadedFrom };
   });
+  const dxz = before ? +Math.hypot(before.x - after.x, before.z - after.z).toFixed(3) : null;
+  const dy = before && Number.isFinite(before.y) ? +(after.y - before.y).toFixed(3) : null;
   Object.assign(row, {
-    after, hadContinue,
+    after, hadContinue, dxz, dy,
     pass: !!before && hadContinue && after.state === 'playing' && before.idx === after.idx && before.started === after.started && before.salt === after.salt
-      && Math.abs(before.hour - after.hour) < 0.05 && Math.hypot(before.x - after.x, before.z - after.z) < 1.0,
+      && Math.abs(before.hour - after.hour) < 0.05 && dxz < 1.0 && (dy == null || Math.abs(dy) < 0.5),
     shot: await shot(page, `${tag}-continued`),
   });
   return row;
@@ -529,8 +588,16 @@ try {
         pass: cases.length === 4 && cases.every((c) => (want(c) ? c.mode === 'refused' && c.page.text.includes(six) : c.mode === 'rest' && !c.page.text.includes(six))) };
       log(`brazier-refusal: ${cases.map((c) => `${c.dist}m ${c.state} ${c.lamp} -> ${c.mode}`).join('; ')}`);
     } catch (e) { report.rows['brazier-refusal'] = { error: String(e?.message || e).slice(0, 300) }; }
+    /* the kit's verb rows (M1.6j), staged on the same page */
+    if (KIT) {
+      try {
+        await page.evaluate(`window.__aimPoint = ${aimPoint.toString()};`);
+        report.rows.kit = await runKit(page, { sleep, log });
+      } catch (e) { report.rows.kit = { error: String(e?.message || e).slice(0, 300) }; }
+    }
     await page.close();
   }
+  if (NO_RUN) throw Object.assign(new Error('--no-run'), { noRun: true });
 
   /* ---- B. the run, from the real title, in a clean profile context ---- */
   const bctx = await browser.createBrowserContext();
@@ -607,8 +674,16 @@ try {
     const after = await page.evaluate(probe);
     const row = { stage: s.stage, type: s.type, ok: after.stage !== s.stage, seconds: +((Date.now() - b0) / 1000).toFixed(1), ...r, note: s.note, hp: after.hp };
     if (s.stage === 'cross' && lampsFight) row.lamps = lampsFight;
-    if (row.ok) row.shot = await shot(page, `b-${String(report.beats.length + 2).padStart(2, '0')}-${s.stage}`);
+    // (no still after the topple: the 4 s it lies down are the Pry's)
+    if (row.ok && s.stage !== 'topple') row.shot = await shot(page, `b-${String(report.beats.length + 2).padStart(2, '0')}-${s.stage}`);
     report.beats.push(row);
+    // M1.6j save-continue ON A STRUCTURE: the record the sight stage wrote stands her on T1's deck (5f4bf42: Continue put
+    // her 2.2 m off it); quit, reopen, CONTINUE there, and play on from the continued game
+    if (row.ok && s.stage === 'sight' && !report.rows['save-t1']) {
+      report.rows['save-t1'] = await reloadContinue(page, 'b-t1');
+      log(`save-t1: ${report.rows['save-t1'].pass ? 'PASS' : 'FAIL'} ${JSON.stringify({ dxz: report.rows['save-t1'].dxz, dy: report.rows['save-t1'].dy })}`);
+      if ((await page.evaluate(() => window.__CTX__?.state)) !== 'playing') { report.stoppedAt = 'ditch'; report.why = 'the continue on T1 left the game off play'; break; }
+    }
     if (r.why === 'died') continue;
     if (!row.ok && r.ok === false) { report.stoppedAt = s.stage; report.why = r.why; break; }
   }
@@ -624,8 +699,10 @@ try {
   report.rows['save-continue'] = await reloadContinue(page, 'c');
   await bctx.close();
 } catch (e) {
-  report.error = String(e?.stack || e).slice(0, 1200);
-  log('error', report.error);
+  if (!e?.noRun) {
+    report.error = String(e?.stack || e).slice(0, 1200);
+    log('error', report.error);
+  }
 } finally {
   report.chromeSeconds = Math.round(spent());
   try { await browser?.close(); } catch { /* */ }

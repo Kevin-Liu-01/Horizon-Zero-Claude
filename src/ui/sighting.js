@@ -460,19 +460,22 @@ export class SightingSystem {
     this._offT = Infinity;
   }
 
-  /** Flag / un-Flag the Instrument under the crosshair (T with the alidade up). */
+  /**
+   * TAKE A BEARING (T with the alidade up; BUILD M1.6j, bible §8.3): hold the Instrument under the crosshair as a pip
+   * on the compass strip with its bearing. One at a time (a new one replaces the held one; T on the held one lets it
+   * go), and nothing is drawn in the world: the marker element is kept for the readers of `tags` but never attached.
+   * (Change made by the systems + combat lane in the ui lane's file, M1.6j.)
+   */
   tagTarget() {
     const m = this._target ?? this._pickTarget();
     if (!m) return;
-    if (this._tags.has(m)) {
-      this._tags.get(m)?.remove();
-      this._tags.delete(m);
-      return;
-    }
+    const had = this._tags.has(m);
+    for (const el of this._tags.values()) el?.remove?.();
+    this._tags.clear();
+    if (had) { this.ctx.events.emit('bearing-released', { machine: m }); return; }
     const el = document.createElement('div');
     el.className = 'calf-tag';
     el.innerHTML = '<div class="calf-pennant"></div><div class="calf-dist"></div>';
-    this._layer.appendChild(el);
     this._tags.set(m, el);
     this.ctx.events.emit('machine-tagged', { machine: m });
   }

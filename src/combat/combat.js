@@ -5,6 +5,7 @@ import { buildWeaponModel, weaponAssets, disposeWeaponAssets } from './bow.js';
 import { armoryAssets } from '../hero/weaponAtlas.js';
 import { AMMO, WEAPON_DEFS, DISC_LAUNCHER_DEF } from './weapons.js';
 import { Melee } from './melee.js';
+import { Steady, swayAt, wordOf, tearFor, weakRule } from './kit.js';
 /**
  * The Round-4 trap weapons were deleted at M0.3 R3 (bible §8.1 has no laid trap; Q8). This stand-in keeps the
  * combat paths that asked the trap system a question answered with "nothing placed".
@@ -46,8 +47,10 @@ import { CombatFeedback } from './feedback.js';
  */
 const MIN_LOOSE = 0.02;
 const FOV_HIP = 55;
-const CONC_TIME = 6;         // seconds of Concentration drain (and refill)
-const CONC_TIMESCALE = 0.35;
+/* M1.6j: Steady is the kit's (src/combat/kit.js STEADY: 4 s of no sway, 2 s of shake, no slow motion). The Round-4
+ * Concentration's 0.35 world speed is gone (bible §8.3: "no slow motion"); the 'concentration' time-scale source is
+ * only ever released. */
+const CONC_TIMESCALE = 1;
 /**
  * `combat-bow-stowed-in-combat`. Brea does not put her bow away between
  * arrows. Once she has used a weapon (or a hostile machine is close) she keeps
@@ -118,6 +121,8 @@ const _aimDir = new THREE.Vector3();
 const _neg = new THREE.Vector3();
 const _spawn = new THREE.Vector3();
 const _fireDir = new THREE.Vector3();
+const _swR = new THREE.Vector3();
+const _wkP = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const _oc = new THREE.Vector3();
 const _wp = new THREE.Vector3();
@@ -346,7 +351,11 @@ export class Combat {
     // --- public state
     this.drawStrength = 0;                     // 0..1, animator reads this
     this.aimPoint = new THREE.Vector3();       // camera-ray world hit
-    this.steady = { active: false, gauge: 1 };
+    /** M1.6j Steady (kit.js): `active`, `gauge` (the HUD's breath meter), `t` (s since armed), `phase`. */
+    this.steady = new Steady();
+    /** M1.6j the bow's sway while aiming (kit.js swayAt): radians, and the angle in degrees. 0 in Steady's hold. */
+    this.sway = { yaw: 0, pitch: 0, deg: 0 };
+    this._swayT = 0; this._holdFull = 0; this._swayShot = false;
     /**
      * `combat-no-nock-delay` + the character-lane handoff
      * (docs/ROUND4-CHARACTER.md §9.5). `nockLanded` is FALSE while Brea is
@@ -827,6 +836,7 @@ export class Combat {
 
     // --- Concentration (real-time meter; the world slows, Brea doesn't)
     this._updateConcentration(realDt, playing, aiming);
+    this._updateSway(realDt, aiming);
 
     // --- time scale: `engine.requestTimeScale` is the single authority
     //     (SPEC v4 §4.2 — studio > wheel > hitstop > concentration > legacy)
@@ -899,7 +909,11 @@ export class Combat {
         // and rendered draw); a release short of that lets the string down and keeps the arrow
         const an = player?.animator;
         const raised = !an?.looseReady || an.looseReady();
-        if (this._drawing && aiming && !wheelOpen && this.drawStrength > MIN_LOOSE && raised) this._fire();
+        if (this._drawing && aiming && !wheelOpen && this.drawStrength > MIN_LOOSE && raised) {
+          // M1.6j: the shot the player looses leaves turned by the bow's sway (kit.js; 0 in Steady's hold)
+          this._swayShot = true;
+          try { this._fire(); } finally { this._swayShot = false; }
+        }
         this._drawing = false;
         this.drawStrength = 0;
       }
@@ -1011,18 +1025,8 @@ export class Combat {
       this._hsActive = false;
       e.requestTimeScale('hitstop', null);
     }
-    const target = this.steady.active ? CONC_TIMESCALE : 1;
-    if (this.steady.active || this._concTs < 0.999) {
-      this._concTs = Math.abs(this._concTs - target) < 0.004
-        ? target
-        : THREE.MathUtils.damp(this._concTs, target, 9, realDt);
-      if (!this.steady.active && this._concTs >= 0.999) {
-        this._concTs = 1;
-        e.requestTimeScale('concentration', null);
-      } else {
-        e.requestTimeScale('concentration', this._concTs);
-      }
-    }
+    // M1.6j: Steady has no slow motion (bible §8.3); combat never asks the clock for anything but 1 on its behalf
+    if (this._concTs !== CONC_TIMESCALE) { this._concTs = CONC_TIMESCALE; e.requestTimeScale('concentration', null); }
   }
 
   /**
@@ -1230,30 +1234,35 @@ export class Combat {
    * shell-hud's desaturate + cool-tint + vignette veil can ramp with it.
    */
   _updateConcentration(realDt, playing, aiming) {
+    // M1.6j: Steady (kit.js). Still armed only on a Shift PRESS made while already aiming (A53); a fresh press always
+    // arms a full breath (no cooldown); 4 s of no sway, 2 s of shake, then it lets go. The events keep their names.
     const c = this.steady;
     const code = this.ctx.input.codeFor?.('sprint') || 'ShiftLeft';
     const shiftNow = this.ctx.input.isDown(code) || this.ctx.input.isDown('ShiftLeft');
-    const edge = shiftNow && !this._shiftPrev;
-    const held = playing && aiming && shiftNow;
-    if (!c.active) {
-      // arm ONLY on a Shift press that happens while already aiming
-      if (edge && playing && aiming && c.gauge > 0.05) {
-        c.active = true;
-        this.ctx.events.emit('steady-start', { gauge: c.gauge });
-      } else {
-        c.gauge = Math.min(1, c.gauge + realDt / CONC_TIME);
-      }
-    }
-    if (c.active) {
-      c.gauge -= realDt / CONC_TIME;
-      if (!held || c.gauge <= 0) {
-        c.gauge = Math.max(0, c.gauge);
-        c.active = false;
-        this.ctx.events.emit('steady-end', { gauge: c.gauge });
-      }
-    }
+    // a row may write `active` / `gauge` directly (A53 resets them): the machine reads them as they stand
+    const was = c.active, arms0 = c.arms;
+    c.step(realDt, { aiming, shiftDown: shiftNow, playing });
+    if (c.arms !== arms0) this.ctx.events.emit('steady-start', { gauge: c.gauge });
+    else if (was && !c.active) this.ctx.events.emit('steady-end', { gauge: c.gauge });
     this._shiftPrev = shiftNow;
-    this._concHeldPrev = held;
+    this._concHeldPrev = playing && aiming && shiftNow;
+  }
+
+  /** M1.6j: the bow's sway (kit.js swayAt) on the real clock, while she aims; how long she has held full draw. */
+  _updateSway(realDt, aiming) {
+    this._swayT += realDt;
+    this._holdFull = aiming && this._drawing && this.drawStrength >= 0.999 ? this._holdFull + realDt : 0;
+    swayAt(this._swayT, { aiming, holdFull: this._holdFull, steadyT: this.steady.active ? this.steady.t : -1 }, this.sway);
+  }
+
+  /** Turn a shot's direction by the sway: yaw about world up, pitch about the shot's own right. */
+  _applySway(dir) {
+    const sw = this.sway;
+    if (!sw || (sw.yaw === 0 && sw.pitch === 0)) return;
+    _swR.crossVectors(dir, _up);
+    if (_swR.lengthSq() < 1e-8) return;
+    _swR.normalize();
+    dir.applyAxisAngle(_up, sw.yaw).applyAxisAngle(_swR, sw.pitch).normalize();
   }
 
   /* --------------------------- aim assist ray ---------------------------- */
@@ -1395,6 +1404,7 @@ export class Combat {
 
     this.bow.getNockWorld(ds, _spawn);
     const speed = this._computeShot(def, ds, _spawn, _fireDir);
+    if (this._swayShot) this._applySway(_fireDir);
 
     /**
      * `onboarding-loop-first-kill-trivial` — `_pointBlankHit` is GONE. It swept
@@ -1642,16 +1652,37 @@ export class Combat {
     }
   }
 
-  /** Build the three-channel hit for machine.takeDamage (v2 + legacy). */
-  _buildHit(def, ds, point, object, dir) {
+  /** The weak point (by name) a hit at `point` touched on `m`, nearest first, or null. */
+  _weakAt(m, point) {
+    if (!m?.weakPoints || !point) return null;
+    let best = null, bd = Infinity;
+    for (const wp of m.weakPoints) {
+      if (wp.enabled === false || !wp.obj) continue;
+      wp.obj.getWorldPosition(_wkP);
+      const d = _wkP.distanceTo(point) - (wp.radius ?? 0);
+      if (d <= 0.01 && d < bd) { bd = d; best = wp.name; }
+    }
+    return best;
+  }
+
+  /** Build the three-channel hit for machine.takeDamage (v2 + legacy). M1.6j: the ammo's damage word (kit.js) sets
+   * the tear on the part struck: Blunt 0, Pry the whole tool on a down Instrument. */
+  _buildHit(def, ds, point, object, dir, machine = null) {
     const k = def.drawScaled ? 0.25 + 0.75 * ds : 1;
     const impact = (def.impact ?? 0) * k;
+    const word = wordOf(def.id);
+    let tear = (def.tear ?? 0) * k;
+    if (word) {
+      let o = object, part = null;
+      while (o) { if (o.userData?.part) { part = o.userData.part; break; } o = o.parent; }
+      tear = tearFor(word, machine, part, tear);
+    }
     return {
       point: point.clone(),
       object,
       dir: dir.clone(),
       impact,
-      tear: (def.tear ?? 0) * k,
+      tear, word,
       element: def.element ?? 'none',
       elementAmount: def.elementAmount ?? 0,
       type: def.id,
@@ -1700,8 +1731,10 @@ export class Combat {
       // defensive: machines land concurrently — a mid-integration throw must
       // never kill the combat frame
       try {
-        res = machine.takeDamage(this._buildHit(def, ds, hit.point, hit.object, hit.dir));
+        res = machine.takeDamage(this._buildHit(def, ds, hit.point, hit.object, hit.dir, machine));
       } catch { res = null; }
+      // M1.6j: the slice's weak-point rules (kit.js weakRule: the Gauge's ballast tanks)
+      try { const wr = weakRule(machine, this._weakAt(machine, hit.point)); if (wr) this.ctx.events.emit('weak-rule', { machine, ...wr }); } catch { /* rule only */ }
       damage += Math.round(res?.damage ?? (def.impact ?? 0) * (def.drawScaled ? 0.25 + 0.75 * ds : 1));
       tearTotal += res?.tear ?? 0;
       weak = !!res?.weak;

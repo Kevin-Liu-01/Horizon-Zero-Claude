@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createHeldLance } from './lanceStow.js';
 import { decimalFields } from '../entities/anim/meleeLayer.js';
 import { MELEE } from './weapons.js';
+import { LANCE_PRY, pryablePart, isDown } from './kit.js';
 
 /**
  * THE LANCE (melee W1, on Brea; the state machine is Round 4's, kept).
@@ -59,6 +60,7 @@ const _chest = new THREE.Vector3();
 const _pt = new THREE.Vector3();
 const _n = new THREE.Vector3();
 const _hitDir = new THREE.Vector3();
+const _pryW = new THREE.Vector3();
 const _ray = { origin: new THREE.Vector3(), direction: new THREE.Vector3() };
 const _q = new THREE.Quaternion();
 const _e = new THREE.Euler();
@@ -650,6 +652,18 @@ export class Melee {
     };
     ctx.interactables?.register?.(this._sneak);
     this._sneakRegistered = !!ctx.interactables;
+
+    /* ------------------------------ PRY (M1.6j) ------------------------------
+     * E on a DOWN Instrument (a toppled Plumb, a kind in its downed window) within reach of one of its tools: the
+     * low two-handed thrust (the Undercut's beat) levers the tool off at the contact, in one hit (kit.js). */
+    this._pryM = null;
+    this.pryTarget = null;
+    this._pryE = {
+      position: new THREE.Vector3(), radius: LANCE_PRY.reach + 0.8, label: LANCE_PRY.label, hold: LANCE_PRY.hold,
+      disabled: true, priority: 3, machine: null, part: null,
+      onInteract: () => this.pry(),
+    };
+    ctx.interactables?.register?.(this._pryE);
 
     ctx.events.on('player-died', () => this._cancel());
     /* R48 c: the fields the frame and the first swing used to add, declared (a
@@ -1622,6 +1636,7 @@ export class Melee {
     if (this._scanT <= 0) {
       this._scanT = 0.1;
       this._scanSneak(canSwing || (playing && !wheelOpen));
+      this._scanPry(playing && !wheelOpen);
     }
   }
 
@@ -1781,6 +1796,7 @@ export class Melee {
     this._charging = false;
     this._chargeHold = false;
     this._undercutM = null;
+    this._pryM = null;
     this._buffered = false;
     this.combo = 0;
     this._queued = null;
@@ -1945,6 +1961,11 @@ export class Melee {
     const p = ctx.player;
     if (!p) return;
     this.lastContactGap = null;
+    if (this._pryM) {
+      const pm = this._pryM;
+      this._pryM = null;
+      if (this._pryHit(pm)) return;
+    }
     if (this._undercutM) {
       const um = this._undercutM;
       this._undercutM = null;
@@ -2464,6 +2485,74 @@ export class Melee {
     return { machine: m, pending: true };
   }
 
+  /** M1.6j: the PRY offer, 10 Hz: the nearest down Instrument with a tool within reach of her feet. */
+  _scanPry(enabled) {
+    const ctx = this.ctx, p = ctx.player, e = this._pryE;
+    let m0 = null, part0 = null, bd = Infinity;
+    if (enabled && p && (p.health ?? 1) > 0) {
+      const list = ctx.machines?.list || [];
+      for (let i = 0; i < list.length; i++) {
+        const m = list[i];
+        if (!m || m._disposed || !isDown(m)) continue;
+        const q = pryablePart(m, p.position, (pt) => (pt.mesh ? pt.mesh.getWorldPosition(_pryW) : null));
+        if (!q) continue;
+        q.mesh.getWorldPosition(_pryW);
+        const d = Math.hypot(_pryW.x - p.position.x, _pryW.z - p.position.z);
+        if (d < bd) { bd = d; m0 = m; part0 = q; }
+      }
+    }
+    this.pryTarget = m0 ? { machine: m0, part: part0 } : null;
+    if (m0) {
+      part0.mesh.getWorldPosition(e.position);
+      e.position.y = p.position.y + 0.6;
+      e.disabled = false; e.machine = m0; e.part = part0;
+    } else { e.disabled = true; e.machine = null; e.part = null; }
+  }
+
+  /** The PRY prompt's action: the low thrust, and the tool comes off at its contact (`_resolve`). */
+  pry() {
+    const t = this.pryTarget;
+    if (!t || !isDown(t.machine) || t.part.attached === false) return null;
+    this._pryM = { machine: t.machine, part: t.part, t0: performance.now() };
+    this.drawLance(2.4);
+    this.swing({ undercut: true });
+    this.pryTarget = null;
+    this._pryE.disabled = true;
+    return { machine: t.machine, part: t.part.name, pending: true };
+  }
+
+  /** The Pry's contact: the tool levered off in one hit (kit.js LANCE_PRY), if the Instrument is still down. */
+  _pryHit(pm) {
+    const m = pm?.machine, part = pm?.part;
+    if (!m || m.alive === false || m._disposed || !part || part.attached === false) return null;
+    const ctx = this.ctx;
+    part.mesh.getWorldPosition(_pt);
+    const still = isDown(m);
+    _hitDir.subVectors(_pt, ctx.player.position).setY(0);
+    if (_hitDir.lengthSq() < 1e-6) _hitDir.set(0, 0, 1);
+    _hitDir.normalize();
+    _n.copy(_hitDir).negate();
+    let res = null;
+    try {
+      res = m.takeDamage({
+        point: _pt.clone(), object: part.mesh, dir: _hitDir.clone(),
+        impact: LANCE_PRY.impact, tear: still ? part.tearHp + 1 : 0, element: 'none', elementAmount: 0,
+        type: 'pry', word: 'pry', baseDamage: LANCE_PRY.impact, draw: 1, seen: true,
+      });
+    } catch { res = null; }
+    this._visT = 2.2;
+    this.layer?.onHit?.(true);
+    this.combat?.noteCombatAction?.();
+    this.combat?.impactFeedback?.({
+      point: _pt, normal: _n, machine: m, damage: res?.damage ?? 0, weak: false, tear: res?.tear ?? 0,
+      tornPart: res?.tornPart ?? null, kind: 'tear', maxHealth: m.maxHealth ?? 100, colors: SPARK_STEEL,
+    });
+    const out = { machine: m, part: part.name, torn: !!res?.tornPart, down: still, ms: Math.round(performance.now() - (pm.t0 ?? performance.now())) };
+    ctx.events.emit('pry', out);
+    this._noise('impact', _pt, 0.6);
+    return out;
+  }
+
   /** The carried rows still call these two (see docs/ROUND5-MELEE.md §6). */
   silentStrike() { const m = this.undercutTarget; return m && this._sneakOk(m) ? this._undercutHit(m) : null; }
   get silentTarget() { return this.undercutTarget; }
@@ -2640,6 +2729,8 @@ export class Melee {
     this._queued = null;
     this._sneak.disabled = true;
     this._sneak.machine = null;
+    if (this._pryE) { this._pryE.disabled = true; this._pryE.machine = null; this._pryE.part = null; this.ctx.interactables?.unregister?.(this._pryE); }
+    this._pryM = null;
     this.stance = 'holstered';
     /* THE APPROACH TERM GOES WITH IT (round 5, ruling R4 / M2). These three
      * are what `core/collision.js::_meleeStandoff` keys the term on; left
