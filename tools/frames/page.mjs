@@ -288,8 +288,20 @@ export async function stageFrame(f, o = {}) {
   } else if (pose === 'lanceHeavy') {
     if (C.quickslots?.select) C.quickslots.select(2); else press('Digit2');
     await sleep(900);
-    C.input.mouse.buttons |= 1; await sleep(700); C.input.mouse.buttons &= ~1; await sleep(260);
-    standIns.push('pose lanceHeavy: a held strike filmed at a fixed 0.26 s after release; contact is not detected yet');
+    // (M1.3d, hero-anim) the swing's bearing pinned to her facing, not to the film lens; the held press grows
+    // into the heavy, and the frame freezes on its contact hold (the strike phase from the contact key on)
+    const mel = C.combat?.melee;
+    const lock0 = mel ? mel.aimLock : null;
+    if (mel) { mel.aimLock = 0; undo.push(() => { mel.aimLock = lock0; }); }
+    C.input.mouse.buttons |= 1;
+    let atContact = false;
+    const tH = performance.now();
+    while (performance.now() - tH < 2500) {
+      await frames(1);
+      if (mel?.heavy && mel.phase === 'strike' && mel._phaseEnd > 0 && mel._t / mel._phaseEnd >= 0.62) { atContact = true; break; }
+    }
+    C.input.mouse.buttons &= ~1;
+    if (!atContact) standIns.push('pose lanceHeavy: the heavy\'s contact hold was not reached within 2.5 s; filmed where the swing was');
   } else if (pose === 'sit') {
     standIns.push('pose sit: no seated pose yet, filmed idle');
   }
