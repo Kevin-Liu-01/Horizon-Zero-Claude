@@ -409,7 +409,7 @@ function pchip(P, x) {
  * The L*a*b* stage of a grade set (`set.lab`), weight w (the gamut-edge guard's complement):
  *   tone       [[L, L'], ...]   a monotone curve on L* (identity in the toe, opens the highlights that
  *                               AgX + the look's power 1.22 hold 6-10 L* under the ACES-era frames)
- *   shadow     { range: [L0, L1], shift: [da, db], chroma, cRange }   below L1 (full weight below L0; near-neutrals
+ *   shadow     { range: [L0, L1], shift: [da, db], chroma, cRange, floor }   below L1 (full weight below L0; near-neutrals
  *                               only with cRange [C0, C1]): (a*, b*) scaled
  *                               by `chroma` and shifted by (da, db): ochre and olive shadow toward rose-violet
  *   mid        { range: [L0, L1, L2, L3], hue: [h0, h1, feather], b, a, rotate }   b* (a*) of the warm hues in the
@@ -439,7 +439,11 @@ function labStage(c, X, w) {
     const S = X.shadow, cr = S.cRange;
     let wcs = 1;
     if (cr) { let h0 = Math.atan2(b, a) * 180 / Math.PI; if (h0 < 0) h0 += 360; wcs = 1 - smoothstep(cr[0], cr[1], C0) * bandWeight(h0, cr[2] ?? 20, cr[3] ?? 100, 20); }
-    const ws = (1 - smoothstep(S.range[0], S.range[1], L0)) * wcs * w;
+    // M1.1g fix 1: `floor` [Lf0, Lf1] fades the shift in from the near-blacks (none below Lf0, full above Lf1): a dark
+    // albedo in full sun (black sand at L* 12-18) is a colour, not a shade, and a -40 b* shift turned F03's sunlit sand
+    // navy; the shade of a lighter ground (L* 20-48) keeps the full violet-rose
+    const wf = S.floor ? smoothstep(S.floor[0], S.floor[1], L0) : 1;
+    const ws = (1 - smoothstep(S.range[0], S.range[1], L0)) * wcs * wf * w;
     if (ws > 0) {
       const k = 1 + ((S.chroma ?? 1) - 1) * ws;
       a = a * k + (S.shift ? S.shift[0] : 0) * ws;

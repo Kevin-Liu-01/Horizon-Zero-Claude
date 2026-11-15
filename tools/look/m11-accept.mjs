@@ -58,15 +58,22 @@ export function dE2000(L1, a1, b1, L2, a2, b2) {
 const hueOf = (a, b) => { let h = Math.atan2(b, a) * 180 / Math.PI; if (h < 0) h += 360; return h; };
 
 /* ------------------------------------------------------------ regions (fixed; see the header) */
+/** The M1.1h re-registration (Nov 15): frame boxes of F02 and F05 move down by REG_DY, clamped; `--reg 0` reads the old. */
+const REG_DY = (() => { const i = process.argv.indexOf('--reg'); return i >= 0 ? +process.argv[i + 1] : 0.15; })();
+const reg = (rs) => Object.fromEntries(Object.entries(rs).map(([k, v]) => [k, { ...v, frame: [v.frame[0], Math.min(0.99, v.frame[1] + REG_DY), v.frame[2], Math.min(1, v.frame[3] + REG_DY)], frame0: v.frame }]));
 export const REGIONS = {
-  F02: { crop: 'over-pans-golden', regions: {
+  // RE-REGISTERED Nov 15 (fix round 1, before any tuning): M1.1h (73f60c7) pitched the chase lens 9 deg up out of the
+  // aim, which moved every F02 and F05 frame row down by 0.15 of the frame (the horizon: F02 row 425 -> 560, F05 row
+  // 435 -> 570 of 900, same camera otherwise). Every frame box moves down by REG_DY (clamped to the frame) so it
+  // covers what it covered when the boxes were fixed; the crop boxes are unchanged
+  F02: { crop: 'over-pans-golden', regions: reg({
     sunSky: { ref: [0.62, 0.03, 0.74, 0.13], frame: [0.21, 0.06, 0.33, 0.16] },
     skyAway: { ref: [0.25, 0.00, 0.45, 0.08], frame: [0.45, 0.00, 0.65, 0.08] },
     haze: { ref: [0.50, 0.27, 0.72, 0.37], frame: [0.30, 0.425, 0.50, 0.465] },
     foreground: { ref: [0.03, 0.72, 0.33, 0.88], frame: [0.03, 0.62, 0.33, 0.85] },
     shade: { ref: [0.62, 0.60, 0.88, 0.72], frame: [0.65, 0.45, 0.98, 0.56] },
-  } },
-  F05: { crop: 'key-dusk', regions: {
+  }) },
+  F05: { crop: 'key-dusk', regions: reg({
     sunSky: { ref: [0.30, 0.14, 0.45, 0.26], frame: [0.58, 0.28, 0.72, 0.40] },
     skyAway: { ref: [0.45, 0.00, 0.75, 0.10], frame: [0.30, 0.00, 0.70, 0.10] },
     // (the first box, [0.15, 0.50, 0.30, 0.56], fell on the basalt stacks left of the Ring, not on water: corrected
@@ -74,7 +81,7 @@ export const REGIONS = {
     sea: { ref: [0.00, 0.42, 0.14, 0.58], frame: [0.00, 0.49, 0.14, 0.56] },
     far: { ref: [0.75, 0.32, 0.97, 0.42], frame: [0.82, 0.42, 0.98, 0.50] },
     foreground: { ref: [0.05, 0.90, 0.60, 0.99], frame: [0.10, 0.70, 0.35, 0.95] },
-  } },
+  }) },
   // F04's crop is five material swatches; the frame shows the Pans' ground (salt crust, black sand: world-ground's
   // M1.1e decides which, and the integrated tree moved from salt to black sand at the same camera on Nov 14). Five
   // frame regions; each is compared with the swatch of the material it shows, read from its own L* (>= 40 salt
