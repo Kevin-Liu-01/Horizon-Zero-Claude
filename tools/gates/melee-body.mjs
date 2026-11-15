@@ -66,6 +66,9 @@ const HB = `
         palms: Object.fromEntries(Object.entries(s.palms).map(([k, v]) => [k, { n: v.n, rightSocket: r3(v.rightSocket), leftSocket: r3(v.leftSocket), rightShaft: r3(v.right), leftShaft: r3(v.left) }])),
         contact: { tipY: r3(s.contact.tipY), tip: s.contact.tip.map(r3), levelDeg: r3(s.contact.levelDeg), thrustDeg: r3(s.contact.thrustDeg), pelvisY: r3(s.contact.pel[1]) } });`;
 
+/** The guard as it was before M1.3d (the A/B row puts it back for one pass). */
+const READY_PRE = { hand: [-0.23, 1.12, 0.0], shaft: [0.38, -0.40, 0.83], lhOn: 0.50, yaw: -0.40 };
+
 export const GATES = [
   {
     id: 'A-melee-heavy-body', kind: 'action', lane: 'hero-anim', timeout: 180000,
@@ -127,5 +130,53 @@ export const GATES = [
       } finally { restore(); }
       return { pass: Object.values(runs).every((r) => r.ok), detail: { heavyTipY: r3(heavyTipY), runs } };
     })()`),
+  },
+  {
+    id: 'A-melee-aimstow-ab', kind: 'action', lane: 'hero-anim', timeout: 120000, diagnostic: true,
+    title: 'M1.3d diagnostic (not a bar): A107\'s aim stow (KeyB draw, RMB) with the guard as it is and with the guard as it was before M1.3d, the elbow behind the head at shoulder height and the forearm to the back of the head, idle',
+    setup: `__CTX__.input.enabled = true;`, settle: 400,
+    assert: placed(['openGround'], `(async () => {${HB}
+      freeze();
+      const Rd = mel.layer.tables.READY, keep = JSON.parse(JSON.stringify(Rd));
+      const unit = (v) => { const l = Math.hypot(...v); return v.map((x) => x / l); };
+      const V3 = p.position.constructor;
+      const wE = new V3(), wH = new V3(), wS = new V3(), wW = new V3(), wQ = new V3(), wU = new V3();
+      const inv = p.model.matrixWorld.clone();
+      const tapB = async () => { keys.add('KeyB'); await frame(); await frame(); keys.delete('KeyB'); };
+      const one = async () => {
+        mel.holsterLance(); { const tq = performance.now(); while (mel.stance !== 'holstered' && performance.now() - tq < 3000) await frame(); }
+        standAt(p, 'openGround'); p.velocity?.set(0, 0, 0); await simWait(0.3, 4000);
+        await tapB(); { const tq = performance.now(); while (mel.stance !== 'ready' && performance.now() - tq < 3000) await frame(); }
+        for (let i = 0; i < 8; i++) await frame();
+        let band = -9, back = 9, n = 0;
+        C.input.mouse.buttons |= 4;
+        const tq = performance.now();
+        while (performance.now() - tq < 2500) {
+          await frame();
+          const d = an.debugMelee();
+          if (d && d.stance === 'holster') {
+            n++;
+            p.model.updateWorldMatrix(true, false); inv.copy(p.model.matrixWorld).invert();
+            an.b.loArmR.bone.getWorldPosition(wE).applyMatrix4(inv); an.b.head.bone.getWorldPosition(wH).applyMatrix4(inv);
+            an.b.upArmR.bone.getWorldPosition(wS).applyMatrix4(inv); an.b.handR.bone.getWorldPosition(wW).applyMatrix4(inv);
+            const aboveSh = wE.y - wS.y, behind = wH.z - wE.z;
+            if (aboveSh > 0 || (aboveSh > -0.12 && (an.melee?._dbg?.w ?? 0) >= 0.5)) band = Math.max(band, behind);
+            an._headFrame();
+            for (let k = 0; k <= 10; k++) { wQ.copy(wE).lerp(wW, k / 10); an._headUnit(wQ, wU); const L = wU.length(); const g = (L - 1) * Math.hypot(wU.x / L * 0.105, wU.y / L * 0.135, wU.z / L * 0.115); if (wU.z < 0 && g < back) back = g; }
+          }
+          if (mel.stance === 'holstered' && !(d && d.stance === 'holster')) break;
+        }
+        C.input.mouse.buttons &= ~4;
+        for (let i = 0; i < 10; i++) await frame();
+        return { holsterFrames: n, bandMax: r3(band), backOfHeadMin: r3(back) };
+      };
+      const out = {};
+      try {
+        out.now = await one();
+        Object.assign(Rd, keep, { hand: READY_PRE.hand, shaft: unit(READY_PRE.shaft), lhOn: READY_PRE.lhOn, yaw: READY_PRE.yaw });
+        out.preM13dGuard = await one();
+      } finally { Object.assign(Rd, keep); restore(); }
+      return { pass: null, detail: out };
+    })()`.replace('READY_PRE.hand', JSON.stringify(READY_PRE.hand)).replace('unit(READY_PRE.shaft)', 'unit(' + JSON.stringify(READY_PRE.shaft) + ')').replace('READY_PRE.lhOn', String(READY_PRE.lhOn)).replace('READY_PRE.yaw', String(READY_PRE.yaw))),
   },
 ];

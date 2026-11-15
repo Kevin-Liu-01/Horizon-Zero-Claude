@@ -273,12 +273,13 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
  * lab (f1) measured the left hand sliding to 40-43 % of the haft with the wrist 0.17-0.27 m
  * further forward (doc §6.2). */
 /* M1.3d: BOTH HANDS AT THE SOCKETS (BIBLE §5.3 "weapon gripped at its sockets"). The left palm on the
- * prop's `grip2` mark (`lhOn` = LH_ON_REF, 0.55 of the haft); the rear fist 0.04 m further forward and up, the
- * haft 6 deg less steep and the trunk 0.06 rad more bladed, which is what puts that mark inside her left
- * arm's reach (pose lab: the left palm 0.005 m from the mark, the tip 0.59 m up). */
+ * prop's `grip2` mark (`lhOn` = LH_ON_REF, 0.55 of the haft); the rear fist 0.09 m higher and 0.05 m further
+ * forward and the trunk 0.10 rad more bladed, which is what puts that mark inside her left arm's reach; the haft
+ * a little steeper than before, so the tip stays inside canon M7's 0.35-0.55 m (pose lab: the left palm on the
+ * mark with 0.07 m of reach to spare, the tip 0.46 m up). */
 const READY = {
-  hand: [-0.23, 1.14, 0.04], shaft: [0.34, -0.28, 0.90],
-  lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.5425, yaw: -0.46, py: -0.28, pitch: 0.32, roll: 0.02, dz: 0.0,
+  hand: [-0.24, 1.21, 0.05], shaft: [0.37, -0.46, 0.81],
+  lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.5425, yaw: -0.50, py: -0.28, pitch: 0.32, roll: 0.02, dz: 0.0,
 };
 /**
  * Her legs, per beat. Rotations are char-space radians on thigh, calf and
@@ -371,15 +372,15 @@ const BEATS = [
  * to keep it on; a two-handed polearm thrust does not move the hands on the haft, the BODY carries them. So the
  * rear fist stays at her chest (0.10 m forward), the left arm is the one that is long, on `grip2`, and the reach
  * comes from the lunge (dz 0.32), the trunk's pitch and its turn (left shoulder forward). The rear fist rides
- * at her right side (x -0.26), so the forearm guard (`_foreGuard`) has nothing to push: at x -0.18 it shoved
+ * at her right side (x -0.29), so the forearm guard (`_foreGuard`) has nothing to push: at x -0.18 it shoved
  * the fist 0.15 m out at the contact and fought the recover (the tip jumped 1 m a frame). Pose lab (held keys):
  * the left palm on `grip2` at the cock, the contact and the follow-through, 0.10-0.16 m of reach to spare. */
 const HEAVY = {
   id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.18,
-  cock: { hand: [-0.26, 1.30, -0.06], shaft: [0.30, 0.36, 0.88], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.52, py: -0.40, pitch: 0.0, roll: 0.08, dz: -0.10 },
+  cock: { hand: [-0.26, 1.30, -0.06], shaft: [0.30, 0.42, 0.86], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.52, py: -0.40, pitch: 0.0, roll: 0.08, dz: -0.10 },
   /* fix round 1: the LOWEST, LONGEST drive: the hips sink furthest and travel furthest */
-  contact: { hand: [-0.26, 1.28, 0.02], shaft: [0.22, 0.02, 0.975], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.66, py: 0.14, pitch: 0.44, roll: -0.05, dz: 0.32 },
-  follow: { hand: [-0.26, 1.24, 0.04], shaft: [0.24, -0.06, 0.97], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.64, py: 0.16, pitch: 0.44, roll: -0.08, dz: 0.34 },
+  contact: { hand: [-0.29, 1.27, 0.03], shaft: [0.25, 0.02, 0.968], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.64, py: 0.14, pitch: 0.44, roll: -0.05, dz: 0.32 },
+  follow: { hand: [-0.29, 1.23, 0.05], shaft: [0.26, -0.06, 0.964], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.62, py: 0.16, pitch: 0.44, roll: -0.08, dz: 0.34 },
 };
 
 /* ------------------- M1.3d: THE BODY PERFORMS THE HEAVY ------------------- */
@@ -431,7 +432,7 @@ HEAVY.clipMap = HEAVY_CLIP_MAP;
  */
 const UNDERCUT = {
   id: 'undercut', clip: [0.10, 0.62], mirror: false, clipW: 0.10, hipLead: HIP_LEAD, sinkFirst: true,
-  cock: { hand: [-0.26, 1.00, -0.18], shaft: [0.14, 0.12, 0.98], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.56, py: -0.40, pitch: 0.38, roll: 0.04, dz: -0.06 },
+  cock: { hand: [-0.26, 1.00, -0.28], shaft: [0.14, 0.12, 0.98], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.56, py: -0.40, pitch: 0.38, roll: 0.04, dz: -0.06 },
   contact: { hand: [-0.22, 1.04, 0.0], shaft: [0.12, 0.14, 0.98], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.70, py: 0.10, pitch: 0.44, roll: -0.04, dz: 0.30 },
   follow: { hand: [-0.22, 1.02, 0.02], shaft: [0.12, 0.11, 0.985], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.70, py: 0.12, pitch: 0.44, roll: -0.06, dz: 0.32 },
 };
@@ -1053,6 +1054,8 @@ export class MeleeLayer {
      * weight the pelvis turn was applied at this frame (`_stance`) */
     this._leadK = 1; this._aPh = 'windup'; this._aK = 0; this._hipW = 0; this._keyK = 0;
     this._kA = READY; this._kB = READY; this._kU = 0;
+    /** The tables, for the gates' A/B rows (never written by the game). */
+    this.tables = MELEE_TABLES;
     /** the swing clip last played, its weight and time (the settle fades it out; M1.3d) */
     this._clipLast = null; this._clipLastW = 0; this._clipLastT = 0;
     this._lastDt = 1 / 60;
@@ -1797,7 +1800,9 @@ export class MeleeLayer {
      * STARTS welded (standing) stays welded to its end; one started at a jog (the
      * stance weight already out) is untouched, which is what A105's stride needs
      * (keying it on `_moveW` instead read under 0.30 through jogging swings, f1). */
-    if (stance === 'swing' && !this._weldWas) this._weldSwing = this._stanceW > 0.5;
+    /* (M1.3d: an Undercut thrown while she stands still welds even when the draw's own step has just
+     * unwelded her: thrown out of a draw from the back, the hips and legs never loaded — pelvis 0.74 m) */
+    if (stance === 'swing' && !this._weldWas) this._weldSwing = this._stanceW > 0.5 || (beat === UNDERCUT && (an._moveW || 0) < 0.3);
     else if (stance !== 'swing') this._weldSwing = false;
     this._weldWas = stance === 'swing';
     const welded = ((an._strideT || 0) > 0.10 || this._weldSwing) ? 1 : 0;
