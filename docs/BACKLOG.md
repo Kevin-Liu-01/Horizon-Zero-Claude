@@ -294,3 +294,29 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 - **note** A65 passes only on the runner's retry (four reviews in a row).
 - **note** A45 stance drift 0.046 m and A45b 0.049 m against a bar of 0.06.
 - **closed** F18 and F16 (re-filmed simulation-time anchors), F19, and A45c in this review's session.
+
+## M1b wave 2 additions (Nov 15 2026)
+
+| sev | item | number (c455362 unless named) | owner |
+|---|---|---|---|
+| blocker | Tier 0 name lint | 1 listed term in a test name, `src/ui/quickmake.test.mjs` | ui |
+| blocker | Tier 0 import graph | `src/game/reeds/draw.js` imports three | systems |
+| blocker | Town in accepted frames F15, F16, F18, F19, F20, F24 | further than their anchors; needs a ruling (re-anchor, re-stage, or a finish bar) | settlements, orchestrator |
+| blocker | A16-draw-anchor launch clause | 5 of 20 cells at 0.330-0.378 deg (bar 0.3; 0 at 705c2f2); the bow sway | systems + combat, hero-anim |
+| major | F20 salt cones | faceted, untextured, at both frame edges | settlements |
+| major | F31 reed finish | flat kinked cane strips across the frame | systems |
+| major | A-slice-hour | 11 of 14; stops at topple (the vial masked from 7 stands) | systems + combat |
+| major | Brazier refusal live row | a wary Plumb at 25 m: the rule refuses, the page shows the rest rows | systems |
+| major | M1.6j verb rows | 5 of 8 measured passing; the fixes for the rest are not measured | systems + combat |
+| major | F07 luminance | 3.2 % by the filmer's formula (bar 4-9 %); the formula needs a ruling | settlements, orchestrator |
+| major | F22 "from the ramp" and the sun side | needs a ruling | settlements, orchestrator |
+| major | Crowd violet ratio | 4.40x (bar 5x) | people |
+| major | Ansel standing at her quest spot | 293.5 s (bar 90 s) unless ruled out | people |
+| major | F15 repeat proof after the back-panel tuning | not re-run since the tuning | engine |
+| closed | F15 back sash panel | hangs along the thigh in the full-set session | hero-anim, engine |
+| closed | A70-hub-tabs | PASS | ui |
+| closed | Save-continue on T1 | 0 m off (was 2.2 m) | systems |
+| closed | F21 head-wrap strip | gone | people |
+| closed | F22 and F07 stand-ins | the town stands | settlements |
+| note | Five lanes made small changes in each other's files (listed in each lane's commit message) | | all |
+| note | The UI's title reads the systems subtitle queue's internal fields; replace with an API | | ui, systems |

@@ -706,3 +706,128 @@ fails**, **2 pending**.
   - The F16 and F18 anchors were re-filmed at fb6d5f0 with that staging. The old ones are kept as withdrawn.
 
 **Decision (the orchestrator, PROCESS §2.7):** after four regression runs the only open item is F15's back sash panel, which lifts in a full-set filming session and hangs in a short one at the same source (the cloth is chaotic under her stride and the slate does not yet reset its history). Every kept-stack row that passed at fb6d5f0 passes, and every other accepted frame is the same as its anchor. main is fast-forwarded to r5/int with F15's back panel carried as tracked debt (blocker for the next accepted-frame change, BACKLOG). Its fix: the simulation-time slate resets wind and flutter state and re-seats every cloth chain, then the back panel is tuned in the full session.
+
+## M1b wave 2 (Nov 15 2026)
+
+Five lanes worked in one tree on `r5/int`:
+- F15 debt (engine and hero-anim): the simulation-time slate, the back sash panel.
+- Settlements: M1.5a Saltrow and M1.5e the sighting kite.
+- People: M1.5c the cast, M1.5f faces in dialogue, and the first part of M1.5d.
+- Systems and combat: M1.6e reed cover, M1.6j the slice combat kit, and the slice run.
+- UI: M1.6h the title and New Game, M1.6d the Making ledger and quick-make.
+
+Each lane had a builder, a judge and one fix round. The review measured `r5/int` at **c455362** from a clean detached
+worktree on port 5270, using one Chrome slot. No commit landed during the review.
+
+**Verdict: NOT CLEAN.** Three things block it:
+- Tier 0 fails on two checks.
+- Six accepted frames are further than their anchors. In every one, the cause is the new town standing in or behind
+  the frame.
+- One kept row fails that passed at fb6d5f0: A16-draw-anchor, on its launch clause.
+
+`main` stays on bb02a0f.
+
+**Tier 0 at c455362: FAIL, 8 of 10.**
+- `vite build` OK.
+- **Name lint: 1 hit.** A listed term appears in a test name in `src/ui/quickmake.test.mjs` (since 9ce48f9).
+- **Import graph: 1 broken rule.** `src/game/reeds/draw.js` imports three, and `src/game/` must not (since cff3f97).
+- Licences, asset budgets and the import scan otherwise clean.
+- Resident textures: 61.42 MB of 175 MB. Shipped size: 51.67 MB (first-load cap 60 MB).
+- 98 Node tests pass in 21 files.
+- Boot: 3.7 s, 0 errors, 78.88 MB first load. Rendered-page name lint: 0.
+
+**Frame Set at c455362:** all 34 frames, 200 s of Chrome, 0 console errors. The simulation-time stagings froze at the
+same frame counts as at 705c2f2.
+- **Further than its anchor (regressions):** all six are caused by Saltrow standing where the frames look. Brea's
+  figure, cloth and pose are the same as the anchors in every one.
+  - F15, F16, F18, F19 (silhouette): lime-washed house fronts with basalt quoins and shutters now stand right
+    behind her head, bow and lance. The anchors had the meadow slope and two salt cones there.
+  - F24 (silhouette and finish): a flat, backlit block of houses covers the right third of the horizon, nearer than
+    the Plumb, and hides the sea stack and the sun's glow on the water.
+  - F20 (finish): the frame's place at the cistern is now the foot of the main street. Two faceted, untextured salt
+    cones cut into both frame edges beside the figures. On silhouette F20 is closer: both figures now stand full
+    length, with their legs visible.
+- **Fixed:** F15's back sash panel now hangs along the thigh, as in the anchor, in the full-set session. At 705c2f2
+  it lifted to about 40 deg.
+- **The same as the anchor:** F02, F03, F05, F08, F09, F10, F11, F13, F14, F23 (Plumb). In F05 the town shows small
+  in the far right distance; it is not further.
+- **Moved toward the target:**
+  - F01: the key-art title.
+  - F07: the breakwater lantern, with the town's windows lit far off.
+  - F21: three cast faces, and the head-wrap strip is gone.
+  - F22: the main street replaces the stand-in.
+  - F28: the dark glass Making ledger.
+- **Mixed:** F31. She crouches inside a tall reed bed, which is closer. But the canes read as flat, straight strips
+  with hard kinks that cross the whole frame, so the finish is further than at 705c2f2.
+- Palette: F02 8.2, F04 10.2, F05 11.4. All pass the bar of 12.
+
+**Ruling needed:** the town stands where the bible puts it, so these five background regressions will not go away by
+a fix in one lane. The orchestrator rules on one of these:
+- Re-film those anchors with the town.
+- Re-stage F14-F19 and F24 so their lenses do not look at the town.
+- Set a finish bar the town must meet before it stands in an accepted frame.
+
+F20's salt cones need finish work either way.
+
+**Kept-stack rows at c455362** (two sessions, every row reached): 80 rows. **77 pass** (69 action, 8 visual), **1
+fails**, **2 pending** (A9 and A76, as at fb6d5f0).
+- **Fails, passed before:** A16-draw-anchor.
+  - The launch clause (at most 0.3 deg) fails in 5 of 20 cells, at 0.330-0.378 deg. Every cell read 0 at 705c2f2.
+  - The cause is the bow's new sway from the slice combat kit: a loosed shot leaves turned by the breath.
+  - Every other clause passes: knuckle to jaw 0.014 m, hook 0.008 m, elbow -0.010 m.
+  - The fix is to measure the row on Steady (sway 0) or to restate the clause.
+- **Fixed:** A70-hub-tabs passes. The K key holds the skills tab. It failed at fb6d5f0 and at 705c2f2.
+- A65 passed on its first attempt.
+- Key numbers:
+  - A45c: 2.607 m/s (bar 3).
+  - A107: at most -0.078 m (bar 0.10).
+  - A44b: 0.054 m.
+  - A90: geometries 379 -> 378.
+  - A9 (pending, the box was not quiet): 59.9 fps, 130 draw calls (116 before the town).
+
+**The slice run at c455362: 11 of 14 beats.** The run is driven by input from the real title. It reached wake, rake,
+read, tell, cane, make, mise, cross, climb, sight and ditch, and stopped at topple. Pry and the return were not
+reached.
+- Brea died once at the Peg line. The death card's reload stood her up at the cistern, and she crossed on the second
+  try.
+- On the lee-ditch stalk she was in cover 95 % of the time and hidden 56 % (3886 frames). The Plumb's peak suspicion
+  was 1.25.
+- The topple found no stand from which the vial was unmasked (7 tried), so no shot was loosed.
+- Save rows:
+  - save-reload: PASS.
+  - save-continue on top of T1: PASS, 0 m off. It was 2.2 m off before.
+  - save-continue at the end: PASS.
+  - death rule: PASS.
+- **The live Brazier refusal row fails.** With a wary Plumb at 25 m the rule refuses, but the page that opens shows
+  the rest rows.
+
+**What landed this wave:**
+- **F15 debt:**
+  - The simulation-time slate clears every cloth chain's history and puts her state back to the constructor's
+    before the clocks start.
+  - The back panel falls harder at a run.
+  - Two new film options: `--repeat-only` and `--state-probe`.
+- **Settlements:**
+  - Saltrow stands: 24 buildings in three lime washes, stepped rooflines, violet balconies, bougainvillea, two salt
+    cones, the guild house and bell, the breakwater lantern, and lit windows from dusk.
+  - Colliders and the nav grid.
+  - The sighting kite.
+  - A writer bug that dropped the window-spill attribute is fixed.
+- **People:**
+  - The slice's cast: the lantern keeper and seven Pan Houses people. No two faces are alike.
+  - Faces come alive in dialogue: blinks, gaze, mouth shapes.
+  - Daily routines for the crew and the lamp keeper, and the lookout's warning.
+  - The head-wrap tail hangs.
+- **Systems and combat:**
+  - Reed cover. The gust, lull, meadow and lean rows each pass 10 of 10 (lane numbers).
+  - The slice combat kit: Steady, sway, damage words, Pry, the Gauge's ballast rule, take a bearing.
+  - Save-continue lands exactly on top of structures.
+- **UI:**
+  - The key-art title, New Game's Tolerance card, and a Loading sheet that closes on warm frames.
+  - The Making ledger, and quick-make on a held slot.
+
+**After the review:** the two Tier 0 failures are fixed on r5/int (5c8bdc9 renames a test title; 5dc520b moves the reed drawing to src/world/island/reedDraw.js). Tier 0 passes 10 of 10.
+
+**Rulings (the orchestrator):**
+- Saltrow stands where the bible puts it, so a frame whose only change is the town in its background is not a regression on silhouette. The animation-bar frames F14-F19 are judged on Brea (figure, cloth, pose); their anchors are re-filmed at the head with the town in them, as provisional anchors. F20 and F24 are judged with the town: it must meet their finish (no untextured or faceted salt cones, no flat backlit block) before they are re-anchored.
+- A16-draw-anchor's launch clause is measured on Steady (sway 0): the row tests the draw rig, and the breath sway of the slice combat kit is graded by its own rows.
