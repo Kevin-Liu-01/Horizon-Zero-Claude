@@ -32,7 +32,9 @@ export const SITES = Object.freeze([
   site('saltrow', 'Saltrow', -267, -229, 3, 'pans'),
   // M1a round 3: 8 m inland of the bible's (-320, -293), onto the white cell 3.3 m from the main dyke (recipe.js
   // CELL_KIND), so F04's lens (bearing 200) crosses crust, the dyke's black sand and stone, and a brine pond's edge
-  site('salt-pans', 'salt pans', -318, -285.3, 1, 'pans'),
+  // (M1a debt: F04 34.7 % at fb6d5f0 against the bar's 40 with the dyke's black sand and stone a fifth of the frame) 1.2 m
+  // further inland along the lens's bearing, 4.5 m from the dyke: the dyke and the pond stay in frame, smaller
+  site('salt-pans', 'salt pans', -317.6, -284.2, 1, 'pans'),
   site('the-glass', 'the Glass', -384, -176, 0.5, 'pans'),
   site('organ-shelf', 'Organ Shelf', -219, -341, 1, 'pans'),
   site('sounding-ring', 'Sounding Ring', -347, -320, 6, 'pans'),   // on its 5-6 m shingle rise (R66 m)

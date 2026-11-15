@@ -431,8 +431,11 @@ export class Meadow {
       // (weight 0.85 -> 1, measured as a variant at a000205: walk band 94.1 -> 85.8 per mille, sprint 367 -> 339; F02's
       // 15-30 m band Lab 52.8 -> 50.7 against the near meadow's 41)
       uStand: { value: new THREE.Vector4(0.28, 0.15, 0.012, 1.0) },
-      // M1a debt: the soft edge (x weight, y width in device px, z-w the metres it fades in over); see MEADOW_COLOR
-      uSoft: { value: new THREE.Vector4(0, 1.5, 8, 14) },
+      /* M1a debt: the soft edge (x weight, y width in device px, z-w the metres it fades in over); see MEADOW_COLOR.
+       * Measured as variants at 5f79f50 (F02's walk, 12-30 m band, against the 4x reference's 64.9 per mille): off 85.9,
+       * 1.5 px 79.2, 2.5 px 75.4 (sprint 339 -> 312 against 313); with the stand tone at half weight it read 92.4 (2 px),
+       * so the stand tone stays and the edge is softened instead */
+      uSoft: { value: new THREE.Vector4(1, 2.5, 8, 14) },
     };
     this.rings = MEADOW_RINGS.map((ring) => this._buildRing(ring));
     this._frustum = new THREE.Frustum();

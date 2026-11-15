@@ -313,8 +313,10 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   /* M1a round 3 (F04 and the 1 m swatches: the black sand and the flat basalt read as wood grain and marble, the ripples
    * bent round 2.5-5 m whorls): the displacement is a broad field (16-40 m cells) of up to about 1.3 m, which still moves
    * each 3 m tile off its neighbour by 0.3-0.9 m but bends a ripple no tighter than a dune does */
+  /* (M1a debt: paired with the look off at 5f79f50 the warp cost F02 0.5 ms, iqr 0.2-0.8, where no black sand is near) it
+   * runs to 60 m, faded over 40-60 m: past that a 3 m tile is a few pixels and its repeat is the field's to hide */
   #ifndef CAL_P_NOWARP
-  if (!gSkip && (w[0] > 0.012 || w[2] > 0.012) && dCam < 240.0) { vec4 nw = gNoiseT(xz * 0.025 + 0.77); sWarp = (nw.rg - 0.5) * vec2(2.6, 2.2) + (nw.ba - 0.5) * vec2(0.5, 0.4); }
+  if (!gSkip && (w[0] > 0.012 || w[2] > 0.012) && dCam < 60.0) { vec4 nw = gNoiseT(xz * 0.025 + 0.77); sWarp = ((nw.rg - 0.5) * vec2(2.6, 2.2) + (nw.ba - 0.5) * vec2(0.5, 0.4)) * (1.0 - smoothstep(40.0, 60.0, dCam)); }
   #endif
   vec3 col = vec3(0.0), pert = vec3(0.0);
   float hMax = -9.0, wTot = 0.0, rSum = 0.0, aoSum = 0.0;

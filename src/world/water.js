@@ -297,6 +297,11 @@ const SEA_MIRROR = /* glsl */ `
 #endif
   float F = min(0.02 + 0.98 * pow(1.0 - max(dot(V, W), 0.0), 5.0), wFresnelMax);
   reflectedLight.indirectSpecular += sky * F * wMirror;
+#ifdef CAL_GLASS
+  /* (M1a debt: at 5f79f50 the Glass's own pixels at 100 m read Lab 68.3 -4.8 3.8: at a grazing look the material's own
+   * sky reflection, untinted, is most of the light) the algae water tints the whole mirror toward a grazing look */
+  reflectedLight.indirectSpecular *= mix(vec3(1.0), vec3(0.3, 0.7, 0.5), 1.0 - clamp(dot(V, W) * 4.0, 0.0, 1.0));
+#endif
 }
 #endif
 `;

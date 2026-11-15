@@ -47,7 +47,10 @@ import { ORGAN, CRATER } from './layout.js';
  * layers still 5, gaps 25.9 / 10.8 / 9.4 / 7.6) */
 /* (M1a debt: F05's Organ still read dark brown slabs at fb6d5f0, L* 20 on the right cluster, 18 on the left, against the dusk
  * crop's basalt at about 36) z is the columns' albedo gain, measured as variants; the bounce and rim scale with it */
-export const ORGAN_LIGHT = { value: new THREE.Vector4(18.0, 16.0, 1.0, 0) };
+/* (measured as variants at 5f79f50, F05 still, the right / left cluster's L*: 1.0 26.1 / 24.2, 1.4 28.3 / 25.9, 1.8 30.4 /
+ * 27.7 with the farthest layer gap 7.6 -> 6.3 against the bar's 6; 24/20 at 1.5 31.0 / 28.2, gap 6.1) 1.7: a dusty grey
+ * basalt at 0.17-0.24 linear */
+export const ORGAN_LIGHT = { value: new THREE.Vector4(18.0, 16.0, 1.7, 0) };
 /* (measured: from the SUN's colour the terms changed the Organ crop's L* by 0.1 at 730056d, at 19.6 h the sun is in its
  * hand-over trough; from the fog's horizon colour by 1.0 at 42be5d0, that colour is far below the dome's at dusk). Both
  * terms now scale the column's own sky fill (reflectedLight.indirectDiffuse, which carries the hour's exposure), tinted

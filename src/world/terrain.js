@@ -233,7 +233,9 @@ const FAR_N = 1024;                      // texels a side of the far-field bake 
  * only; the sky's chunk is untouched. */
 /* M1a debt (M1.1e: F04 34.7 % at fb6d5f0 against the bar's 40, the crust b* about 2 against about 1): the salt crust's gain
  * (x) and cool (y, 1 = round 3's tint); the ground shader's uCrust, one shared holder so a probe can try values */
-export const CRUST = { value: new THREE.Vector4(1, 1, 0, 0) };
+/* (measured as variants at 5f79f50, F04 still: 1/1 34.7 %, crust box c Lab 82.3 1 2.3; 1.2/1.3 36.9 %; 1.25/1.6 37.3 %,
+ * 85.2 0.9 1.5; the grade's shoulder takes most of the gain: the rest is F04's framing, sites.js) */
+export const CRUST = { value: new THREE.Vector4(1.25, 1.6, 0, 0) };
 const DECK_ANCHOR = 'calTauC = calFogD.x * calSeg * calWw * calBreak;';
 function groundFogChunk() {
   const c = THREE.ShaderChunk.fog_fragment;
@@ -242,7 +244,10 @@ function groundFogChunk() {
    * through 300-600 m of deck, went cloud-white (cap 36 x: optical depth 1.8-2.5) beside a clear ridge in front). The cap
    * is a third as steep (12 x, from 1.2 deg down) and the deck's own depth on a ground ray is held to 1.1, so the far land
    * keeps a hazed form instead of a white sheet with the ridge's hard outline cut out of it */
-  return c.replace(DECK_ANCHOR, 'calTauC = min( min( calFogD.x * calSeg * calWw * calBreak, 12.0 * max( 0.0, - calVd.y - 0.02 ) ), 1.1 );');
+  /* (M1a debt: F32's pale wedge stayed at fb6d5f0; the aerial term's fade on falling rays, AERIAL_B.y, changed nothing in
+   * F32 at 5f79f50, so the wedge is the deck) the deck on a ground ray two thirds as steep again and held to 0.6 (45 %
+   * of the air's colour at most, was 67 %): a lens at the deck's own height still sees the land through it */
+  return c.replace(DECK_ANCHOR, 'calTauC = min( min( calFogD.x * calSeg * calWw * calBreak, 8.0 * max( 0.0, - calVd.y - 0.02 ) ), 0.6 );');
 }
 
 /* ---------------------------- fast grid reads (module scope) ---------------------- */
