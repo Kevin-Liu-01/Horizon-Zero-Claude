@@ -435,6 +435,9 @@ export async function stageFrame(f, o = {}) {
     // back on her mark
     p.position.set(bx, 0, bz); p.velocity?.set?.(0, 0, 0); p._snapToGround?.();
     p.heading = H; p.camYaw = -B * D2R; if ('moveSpeed' in p) p.moveSpeed = 0;
+    // ...and facing her mark: the travel-facing latch (player.js _latchFacing) keeps the last facing it took, so a
+    // session's first run turned from the constructor's (0, 1) and set off 2 steps later than any later one (60704c3)
+    if ('_faceX' in p) { p._faceX = p._candX = Math.sin(H); p._faceZ = p._candZ = Math.cos(H); p._latchT = 0; }
     const sim = {
       out,
       step(n) {
