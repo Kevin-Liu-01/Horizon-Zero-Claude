@@ -162,6 +162,10 @@ export class Plumb extends ExpansionMachine {
       // the drum carries the lamp, which is drawn at any range: its housing is never size-culled (at 30-40 m the
       // engine's small-mesh cull hid it and left the lamp and its weak point floating, which A44 read as 0.175 m)
       this._drum.mesh.traverse((o) => { o.userData.noSizeCull = true; });
+      // ...and the vial assembly likewise (the glass, its cradle and the standards): the weak point a 40 m shot aims at
+      // must be drawn at 40 m (A44:plumb at spawn read the culled vial 0.253 m off the boxes still drawn)
+      for (const q of [this._vialPart, ...(this.parts || []).filter((p) => p.name === 'mast')]) q?.mesh?.traverse((o) => { o.userData.noSizeCull = true; });
+      if (this._vialGlass) this._vialGlass.userData.noSizeCull = true;
       this._drum.mesh.attach(this._lampWp.obj);
       this._lampWp.obj.userData.noSnap = true;
       if (this._lampAnchor?.isObject3D) this._drum.mesh.attach(this._lampAnchor);
@@ -278,6 +282,16 @@ export class Plumb extends ExpansionMachine {
     let rearZ = 0, frontZ = 0, nr = 0;
     for (const L of legs) { const z = L.restFoot[1]; if (z < 0) { rearZ += z; nr++; } else frontZ = Math.max(frontZ, z); }
     rearZ = nr ? rearZ / nr : -0.6 * k;
+    // round 2: the pivot is the feet's OUTER edge, not their centres: the foot pads reach 0.2-0.25 m past the rest-foot
+    // line, and rotating about the centres put them 0.186 m into the ground while down (A-plumb-topple, grounded)
+    if (pos) {
+      for (let i = 0; i < pos.count; i++) {
+        if (by(i) > 0.15) continue;
+        const z = bz(i) * k;
+        if (z < rearZ && rearZ < 0) rearZ = z;
+        if (z > frontZ && frontZ > 0) frontZ = z;
+      }
+    }
     this._pivotRear = rearZ; this._pivotFront = frontZ;
     const lay = (pz, dir) => {
       if (!pos) return 1.65;

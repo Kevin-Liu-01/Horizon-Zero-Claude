@@ -45,9 +45,9 @@ export const PLUMB = Object.freeze({
   ringIn: 0.425, ringOut: 0.55,
   // the lamp drum rides OUTBOARD on the ring's right trunnion, off the sphere's axis (M1.4a fix 1: a round lit lens
   // centred on the white sphere read as one eye from the front; IP-PRIVATE §P2 bans faces). Round 2: slung LOW on the
-  // trunnion (its top at the ring's plane, its centre 0.17 m under the sphere's equator) and smaller (0.19 -> 0.17 m):
+  // trunnion (its centre 0.17 m under the sphere's equator; the radius stays 0.19 m, the lens is the 40 m weak point):
   // a lantern hung off the gimbal's side, not a disc at eye height beside a round head
-  drumX: 0.80, drumY: -0.17, drumBackZ: -0.07, drumR: 0.17, drumDepth: 0.19,
+  drumX: 0.80, drumY: -0.17, drumBackZ: -0.07, drumR: 0.19, drumDepth: 0.19,
   vialY: 3.21, vialLen: 0.30, vialR: 0.045,
   top: 3.40,
   // fix 1: the bob hangs on a short cable so it shows above the meadow (on 1.2 m it hung at 0.1-0.5 m, in the grass)
