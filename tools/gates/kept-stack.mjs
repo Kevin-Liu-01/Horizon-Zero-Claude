@@ -816,7 +816,8 @@ export const STAGE_OF = (g) => g.stage || (g.kind === 'runner' ? 'node' : g.plai
  * Rows restated at the M1a freeze, with the reason for each in docs/GATES.md §3 D. Unlike RESTAGED and PATCHED
  * (a `--kept-stack` run only), a restated row replaces the registered row of the same id in EVERY run of
  * tools/gates.mjs: the restatement is the frozen row. Two forms:
- *   { id, why, patches: [[from, to], ...] }   the registered row's own assert with exact-text swaps; a swap that no
+ *   { id, why, patches: [[from, to], ...], field? }   the registered row's own assert (or `field`, e.g. 'setup')
+ *                                             with exact-text swaps; a swap that no
  *                                             longer applies turns the row red (the runner's patchRow), never stale
  *   { id, why, row }                          a whole row in the registered row's place
  * Bars not named in GATES.md §3 D are untouched.
@@ -1064,6 +1065,15 @@ export const RESTATED = [
     patches: [
       ["const m = await stageAny({ dx: 30, dz: 30, filter: (x) => typeof x.forceState === 'function' });", A78_CAST],
       ["const detail = 'calm=' + calm", "const detail = 'kind=' + m.kind + ' calm=' + calm"],
+    ],
+  },
+  {
+    id: 'A65-save-restore',
+    field: 'setup',
+    why: "the orchestrator's ruling 4 (M1a regressions run): the row reads the save the game writes, save v6 (BUILD M1.6f): the named record of the active slot (cal.v6.slot<N>.named, through the save system's own read) and its machine roster at legacy.roster. It read cal.save.v5, which nothing writes since 5baa3e7, and failed on a null record (39f7533). The reload, Continue (the title's own call) and every clause are unchanged",
+    patches: [
+      ["const snap = prog.saves.read('cal.save.v5');", "const snap = prog.saves.read();   // restated (GATES 3 D): the v6 named record of the active slot"],
+      ['snap.world.roster', 'snap.legacy.roster'],
     ],
   },
   {
