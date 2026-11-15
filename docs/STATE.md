@@ -505,3 +505,67 @@ fail**, **2 pending** (A9 and A76, as before).
   - The frame set is now v3.
 
 **Ruling (M1.2f):** the bible puts the bow on the opposite diagonal to the lance, so from behind they always cross; "bow beneath" means the bow lies under the lance (nearer her back), not steeper. M1.2f is graded as: lance in its 32-40 deg band, bow on the opposite diagonal beneath the lance, A-stow-clearance passing. F10 as accepted stands.
+
+## M1a regressions run 2 (Nov 15 2026)
+
+Two lanes fixed what was still open at de57067. Hero-anim worked on the sash panels in F15 and F19. Instruments and
+world worked on A90, the Gauge's wade row, the Peg lamp row and the Sluice 3 Gauge on the horizon. The review measured
+`r5/int` at **6511d94** from a clean detached worktree on port 5270, using one Chrome slot.
+
+**Verdict: NOT CLEAN.** One accepted frame is still further from its anchor (F19). One kept row fails that passed
+at fb6d5f0 (A90-memory-stability). `main` stays on fb6d5f0.
+
+**Tier 0 at 6511d94: PASS, 10 of 10.**
+- `vite build` OK.
+- 58 Node tests pass. The import graph is clean.
+- Boot: 2.9 s, 0 errors, 72.19 MB first load. Rendered-page name lint: 0.
+
+**Frame Set at 6511d94:** all 34 frames, 165 s of Chrome, 0 console errors.
+- **Still further than its anchor (regression):** F19. In the lunge, the front sash panel is thrown forward and
+  down past her front knee as a broad fan. The anchor's panel curls down in front of the thigh. This is closer than
+  at de57067, where the panel was a thin level strip, but it is still further than the anchor.
+- **Fixed:** F15. The back panel hangs down and back while she runs, the same as the anchor.
+- **The same as the anchor:** F02, F03, F05, F08, F09, F10, F11, F13, F14, F15, F16, F18, F20, F23 (Plumb), F24.
+- **Small change:** the Sluice 3 Gauge is back on the horizon in F02 and F24. It is now the living Gauge standing at
+  its post, which reads about half as tall as the old static tower.
+- Every other frame is the same as at de57067.
+- Palette: F02 8.2, F04 10.2, F05 11.4. All pass the bar of 12.
+- F15 and F19 cannot yet be repeated. The filmer times the run and the lunge by the wall clock, so each film catches
+  a different point in the stride or swing.
+
+**Kept-stack rows at 6511d94** (two sessions, every row reached): 80 rows. **76 pass** (68 action, 8 visual), **2
+fail**, **2 pending** (A9 and A76, as before). This is the same result as at de57067.
+- **Failing:**
+  - A90-memory-stability: +43 geometries over 30 cycles (bar 40; +16 at fb6d5f0).
+  - A70: the K key shows the map tab, as it did at fb6d5f0.
+- A65 passed only when the runner retried it, for the second review in a row.
+- Key numbers:
+  - A16: knuckle to jaw 0.014 m.
+  - A107: behind the head in the band at most 0.070 m (bar 0.10).
+  - A44b: worst 0.054 m (bar 0.10).
+  - A9 (pending; the machine was busy): 59.9 fps, 116 draws.
+
+**A90 is not a leak, by the instruments lane's attribution.** Of the 61 geometries first drawn during the row, 50 are
+the Saltrow people's level-of-detail meshes. They first draw as Brea walks within 90 m of them. One geometry was
+freed, and none sits outside the scene. The bisect named no commit, because commits that run the same game read
+anywhere from +16 to +34, depending on how much of the world was drawn before the row began. The row needs a ruling:
+either warm the world before counting, or upload those meshes at load.
+
+**Rows outside the kept stack** (the hero-anim lane's numbers at 54ad1d3; the review did not re-run them):
+- A104 fails. The forearm comes within 0.037 m of the spine in the holster case (bar 0.10). It passed at c49cb19.
+- A-sweep-wind fails by 1.3 deg on its bearing at F02. It passed at de57067.
+- A-stow-clearance and A-sweep-climb fail.
+
+**What landed this run:**
+- **Hero-anim:**
+  - As her hips travel, the sash panels' standing wind tuning eases back to the air of the accepted frames.
+  - A probe reads each panel's angle in the F15 run and the F19 lunge.
+- **Instruments and world:**
+  - The keeper Gauge searches the Glass on a 0.5 m grid and stands in its deepest water: 0.767 m, against the
+    deepest 0.785 m. All seven Gauge rows pass.
+  - The Peg probe holds the swarm member still before it aims. All five Peg rows pass, including 10 of 10 lamp kills.
+  - The keeper Gauge stays at its post in frames without a crowd. This changed the filmer (`tools/frames/page.mjs`).
+
+**Rulings after run 2:**
+- A90-memory-stability counts from the end of one warm cycle: the attribution found 61 geometries drawn for the first time during the row (50 of them the Saltrow people's distance meshes as Brea walks within 90 m), none outside the scene. A first draw is not a leak. The row warms one full cycle, then counts 30; the bar (40) is unchanged. The people's distance meshes should also upload behind the loading sheet.
+- F15 and F19 are staged on simulation time at a fixed clip phase, not the wall clock, so they repeat; their anchors are re-filmed at fb6d5f0 with the same staging before the comparison.

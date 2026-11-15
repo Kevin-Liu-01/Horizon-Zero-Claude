@@ -250,3 +250,19 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 | note | The static Sluice 3 Gauge left F02 and F24's horizon | since 39f7533 | instruments |
 | note | F30: pale wedge at the right edge; cistern courses read a little regular | de57067 | systems |
 | closed | F05 Brazier in the vista; F09 studio pennant; A71g; A65 (restated); A44b; A78 (restated); A104; A-melee-undercut; Gauge wade (ruling 1); F32 crack (ruling 3); save-continue hang | as above | - |
+
+## M1a regressions run 2 additions (Nov 15 2026)
+
+| sev | item | number (commit) | owner |
+|---|---|---|---|
+| blocker | F19: the front sash panel is thrown forward past the knee in the lunge (further than its anchor) | 6511d94 | hero-anim |
+| blocker | A90-memory-stability: first-draw uploads of the people's LOD meshes, not a leak; needs a ruling (warm the world first, or upload at load) | +43 geometries, bar 40 (6511d94); +16 at fb6d5f0 | orchestrator, instruments |
+| blocker | A104: forearm to spine 0.037 m in the holster case (bar 0.10); passed at c49cb19 | 54ad1d3 | hero-anim, to bisect |
+| major | F15 and F19 staging is timed by the wall clock, so neither frame repeats; stage them on sim time or a clip phase | 54ad1d3 | frames tooling |
+| major | A-sweep-wind: bearing 179.3 against 180-270 at F02 (passed at de57067); in still air the panels drift partway into the moving tuning | 54ad1d3 | hero-anim |
+| major | A-stow-clearance and A-sweep-climb fail | 54ad1d3 | hero-anim |
+| major | A70: K shows the map tab | 6511d94 | ui |
+| major | M1.2f: graded to the ruling (crossed diagonals, bow nearer her back); F10 not yet re-graded | 6511d94 | hero-anim |
+| note | A65 passes only on the runner's retry (a 45 s screenshot timeout on the first attempt), two reviews running | 6511d94 | engine |
+| note | The Sluice 3 Gauge at its post reads about half the height of the old static tower on the F02 and F24 horizon | 6511d94 | instruments |
+| closed | F15 sash panel; Gauge glassWade row; Peg lamp row; the Sluice 3 Gauge back on the F02 and F24 horizon | 6511d94 | - |
