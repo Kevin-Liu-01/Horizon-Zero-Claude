@@ -55,8 +55,13 @@ const URL = '/models/instruments/plumb.glb';
 const LAMP_R = 0.18;
 /** The model's height (m) at scale 1: `r5Size[1]` of the GLB (the loader scales the bbox to this, so it must match). */
 const HEIGHT = 3.4033;
-/** The level vial's weak-point sphere (m): it holds the whole 0.30 m tube and its brass caps (BUILD M1.4c: vial >= 0.25 m). */
-const VIAL_WP_R = 0.17;
+/**
+ * The level vial's weak-point sphere (m), the arrow sweep's own hit body for the vial (core/hitHulls.js, radius <= 0.35).
+ * M1a r2 fix: 0.17 m (a 0.34 m ball round a 0.30 x 0.09 m tube) let shots that visibly missed the glass count. 0.10 m
+ * holds the tube's middle third and the 3-5 cm low arrivals that slip between the glass and its cradle's crossbar; the
+ * tube's ends are hit on their own triangles (the triangle-exact sweep). BUILD M1.4c: vial >= 0.25 m (the glass).
+ */
+const VIAL_WP_R = 0.10;
 const TRI = (k) => ({
   walk: { stride: 0.78 * k, duty: 0.72, lift: 0.14 * k, offsets: { MF: 0, LH: 1 / 3, RH: 2 / 3 } },
   run: { stride: 1.45 * k, duty: 0.6, lift: 0.22 * k, offsets: { MF: 0, LH: 1 / 3, RH: 2 / 3 } },

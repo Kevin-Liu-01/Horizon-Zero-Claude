@@ -187,6 +187,16 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
   limbRing(GB, at(0, SY, 0), PLUMB.ringIn, PLUMB.ringOut, 0.05, { ticks: 24, segs: 64, faceSurf: 'glaze', faceTone: C.ENAMEL, outerSurf: 'glaze', outerTone: C.ENAMEL });
   // rivets round the ring's face
   rivetRing(GB, V(0, SY + 0.026, 0), V(0, 1, 0), (PLUMB.ringIn + PLUMB.ringOut) / 2, 30, 0.01);
+  // M1a r2 fix (M1.4a "2 cm detail resolves at 6 m"): the face rivets above sit on the ring's TOP face, 2.5 m up, edge-on
+  // or hidden from a standing eye (F23 resolved 4 of them). A second course of 2 cm brass domes on the ring's enamel
+  // OUTER band, radial, where the eye sees them; none under a flange tab or the drum's trunnion (+X). rivetRing's u is
+  // the tab azimuth - 90 deg
+  {
+    const TABS = [[55, 0.13], [-55, 0.13], [125, 0.13], [-125, 0.13], [-90, 0.17], [180, 0.12], [90, 0.20]];
+    const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+    const skip = (u) => TABS.some(([az, w]) => Math.abs(wrap(u - (THREE.MathUtils.degToRad(az) - Math.PI / 2))) < (w / 2 + 0.03) / PLUMB.ringOut);
+    rivetRing(GB, V(0, SY, 0), V(0, 1, 0), PLUMB.ringOut, 36, 0.01, { radial: true, phase: Math.PI / 36, skip });
+  }
   // flange tabs and two side wings on the ring (enamel plates, brass rivets)
   for (const [azDeg, len, wid] of [[55, 0.63, 0.13], [-55, 0.63, 0.13], [125, 0.63, 0.13], [-125, 0.63, 0.13], [-90, 0.71, 0.17], [180, 0.62, 0.12]]) {
     const az = THREE.MathUtils.degToRad(azDeg);
