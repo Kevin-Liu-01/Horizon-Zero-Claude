@@ -12,8 +12,11 @@ import { rotOf } from './pose.js';
 const CLASSES = {
   hair: { k: 95, damp: 0.965, grav: 0.3, air: 0.55, maxAng: 0.95, rootK: 0 },
   cloth: { k: 48, damp: 0.955, grav: 0.34, air: 2.6, maxAng: 0.9, rootK: 0 },
-  // (M1.5c, F21: a bowed head stood the tail up to the rake head; see `hang` in _rest)
-  wrap: { k: 30, damp: 0.955, grav: 0.3, air: 4.4, maxAng: 1.2, rootK: 8, hang: 0.9 },
+  // (M1.5c, F21: a bowed head stood the tail up to the rake head; see `hang` in _rest.) (M1.5c fix, F20: with the head
+  // upright the trade wind (5.5 m/s) held the tail out level from the knot: air 4.4 x 5.5 m/s is 24 m/s2 at the tip against
+  // 2.9 of weight, so Ansel's tail streamed 0.43 m sideways with its tip only 0.24 m under the knot (wrap-tail.test bench).
+  // A knotted linen strip is heavy for the wind it catches: air 0.6, weight 0.9 g, a little more damping)
+  wrap: { k: 30, damp: 0.94, grav: 0.9, air: 0.6, maxAng: 1.2, rootK: 8, hang: 0.9 },
   gear: { k: 110, damp: 0.93, grav: 0.2, air: 0, maxAng: 0.5, rootK: 0 },
   // an apron is heavy and tied: the legs move it, the wind hardly does. A cloak is long and hangs from the shoulders
   apron: { k: 62, damp: 0.945, grav: 0.55, air: 0.5, maxAng: 0.55, rootK: 0 },

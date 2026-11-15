@@ -18,6 +18,8 @@ import { io, ROOT } from '../lib/human/face.mjs';
 import { PersonChains } from '../../../../src/world/npc/people/chains.js';
 
 const PEOPLE = ['boat-caulker', 'salt-raker', 'salt-porter', 'guild-matron'];
+// every shipped person with a wrap tail (the upright row: F20's Ansel and the cast)
+const UPRIGHT = ['guild-matron', 'boat-caulker', 'boat-caulker-2', 'salt-raker', 'salt-raker-2', 'salt-porter', 'salt-porter-2', 'lantern-keeper', 'lantern-keeper-2'];
 const BOWS = [0, 45, 80, 100], YAWS = [0, 90, 180, 270];
 const WIND = { x: -3.9, z: 3.9 };
 
@@ -40,20 +42,26 @@ async function rig(id) {
   return { root, bones, ex, bind };
 }
 
-/** The worst (highest) tip-above-knot over 2-10 s of one bow and bearing, metres. */
-function worst({ root, bones, ex, bind }, bowDeg, yawDeg) {
+/** The worst (highest) tip-above-knot over 2-10 s of one bow and bearing, metres (and, `full`, the worst sideways offset). */
+function worst({ root, bones, ex, bind }, bowDeg, yawDeg, full = false) {
   for (const [b, q] of bind) b.quaternion.copy(q);   // the solver writes the links: every case starts from the bind pose
   root.rotation.set(bowDeg * Math.PI / 180, yawDeg * Math.PI / 180, 0, 'YXZ');
   root.updateMatrixWorld(true);
   const ch = new PersonChains(bones, ex.chains, { worldScale: ex.scale });
   const tail = ch.chains.find((c) => /^(hairTail|wrapSash)$/.test(c.key));
   if (!tail) return null;
-  let hi = -Infinity;
+  const R = new THREE.Vector3(1, 0, 0).applyQuaternion(root.quaternion);   // the body's right, level
+  R.y = 0; R.normalize();
+  let hi = -Infinity, side = 0;
   for (let f = 0; f < 600; f++) {
     ch.dt = 1 / 60; ch.update(WIND); root.updateMatrixWorld(true);
-    if (f >= 120) hi = Math.max(hi, tail.tipPos.y - tail.pos[1]);
+    if (f >= 120) {
+      hi = Math.max(hi, tail.tipPos.y - tail.pos[1]);
+      side = Math.max(side, Math.abs((tail.tipPos.x - tail.pos[0]) * R.x + (tail.tipPos.z - tail.pos[2]) * R.z));
+    }
   }
-  return hi;
+  if (!full) return hi;
+  return { hi, side, len: tail.seg.reduce((a, b) => a + b, 0) };
 }
 
 test('a wrap tail hangs below its knot with the head bowed over work, in the trade wind', async () => {
@@ -68,4 +76,25 @@ test('a wrap tail hangs below its knot with the head bowed over work, in the tra
   assert.ok(rows.length >= PEOPLE.length * BOWS.length * YAWS.length, `cases ${rows.length}`);
   const bad = rows.filter((q) => q.h > -0.05);
   assert.equal(bad.length, 0, `tip above 0.05 m under the knot: ${JSON.stringify(bad)}`);
+});
+
+/*
+ * F20 (M1.5c fix round): with the head upright the tail streamed out level in the trade wind (Ansel at f512e35-0126f5a: tip
+ * 0.24 m under the knot of a 0.514 m tail, 0.43 m to the side; the film showed a stiff streamer at shoulder height). Bar: the
+ * head upright at four bearings, after 2 s the tip is never less than 0.8 of the tail's length under the knot and never more
+ * than 0.15 m to the side of it.
+ */
+test('a wrap tail hangs with the head upright in the trade wind (F20)', async () => {
+  const rows = [];
+  for (const id of UPRIGHT) {
+    const r = await rig(id);
+    for (const yaw of YAWS) {
+      const w = worst(r, 0, yaw, true);
+      if (w) rows.push({ id, yaw, drop: +(-w.hi / w.len).toFixed(3), side: +w.side.toFixed(3) });
+    }
+  }
+  assert.ok(rows.length >= UPRIGHT.length * YAWS.length, `cases ${rows.length}`);
+  const bad = rows.filter((q) => q.drop < 0.8 || q.side > 0.15);
+  assert.equal(bad.length, 0, `tail not hanging: ${JSON.stringify(bad)}`);
+  console.log('upright: drop', Math.min(...rows.map((q) => q.drop)), 'side', Math.max(...rows.map((q) => q.side)));
 });
