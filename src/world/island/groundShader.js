@@ -466,15 +466,8 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     // (round 3 fix) shallower still: 0.62 to 1.04, mean about 0.88
     col *= mix(1.0, 0.62 + 0.42 * sGrain, sk);
     pert += vec3(gA4.b + gB4.b - 1.0, 0.0, gD4.g + gC4.b - 1.0) * 0.45 * sk;
-    /* (round 3 fix, M1.1e "crystalline grain at 1 m") within 5 m the crust is a bed of crystals 1-2 cm across: each its own
-     * tone and tilt (a lit and a shaded facet under the sun), a thin dark seam between them; sub-pixel past 5 m */
-    float ck = (1.0 - smoothstep(2.5, 5.0, dCam)) * sk;
-    if (ck > 0.01) {
-      vec3 cv = gVoro(xzS * 62.0);
-      float ca = cv.z * 40.7;
-      col *= mix(1.0, (0.9 + 0.2 * cv.z) * mix(0.8, 1.0, smoothstep(0.0, 0.07, cv.x)), ck);
-      pert += vec3(cos(ca), 0.0, sin(ca)) * (0.18 + 0.22 * fract(cv.z * 13.1)) * ck;
-    }
+    /* (a 1-2 cm crystal bed from gVoro(xz * 62) was tried at a000205 and taken out: at 1 m it read as a regular honeycomb of
+     * equal cells with a straight shear in it, the cell hash losing precision at coordinates near 20,000) */
   }
   #endif
 

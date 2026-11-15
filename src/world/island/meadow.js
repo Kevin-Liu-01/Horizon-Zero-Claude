@@ -410,7 +410,9 @@ export class Meadow {
       // (round 3, measured at 42be5d0: y and z at 1.4 took the walk's band 156 -> 148 per mille, the sprint's 464 -> 454)
       uStab: { value: new THREE.Vector4(1, 1.4, 1.4, 1) },
       uStab2: { value: new THREE.Vector4(1, 1, 1, 1) },
-      uStand: { value: new THREE.Vector4(0.28, 0.15, 0.012, 0.85) },
+      // (weight 0.85 -> 1, measured as a variant at a000205: walk band 94.1 -> 85.8 per mille, sprint 367 -> 339; F02's
+      // 15-30 m band Lab 52.8 -> 50.7 against the near meadow's 41)
+      uStand: { value: new THREE.Vector4(0.28, 0.15, 0.012, 1.0) },
     };
     this.rings = MEADOW_RINGS.map((ring) => this._buildRing(ring));
     this._frustum = new THREE.Frustum();

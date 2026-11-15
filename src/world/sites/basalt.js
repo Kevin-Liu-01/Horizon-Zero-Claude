@@ -43,7 +43,9 @@ import { ORGAN, CRATER } from './layout.js';
  */
 /* (round 3 fix: the judge's FIX LIST 4, at 159b9fd the Organ crop's mean sRGB went 53 -> 62 from 0/0 to 7/7: the clusters
  * still read as one near-black brown) both terms raised, 4/5 -> 10/9 */
-export const ORGAN_LIGHT = { value: new THREE.Vector4(10.0, 9.0, 0, 0) };
+/* (10/9 -> 18/16, measured as a variant at a000205: the right cluster's crop L* 25.8 -> 27.7, the left 29.4 -> 30.6; F05's
+ * layers still 5, gaps 25.9 / 10.8 / 9.4 / 7.6) */
+export const ORGAN_LIGHT = { value: new THREE.Vector4(18.0, 16.0, 0, 0) };
 /* (measured: from the SUN's colour the terms changed the Organ crop's L* by 0.1 at 730056d, at 19.6 h the sun is in its
  * hand-over trough; from the fog's horizon colour by 1.0 at 42be5d0, that colour is far below the dome's at dusk). Both
  * terms now scale the column's own sky fill (reflectedLight.indirectDiffuse, which carries the hour's exposure), tinted
