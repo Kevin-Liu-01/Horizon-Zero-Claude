@@ -219,7 +219,12 @@ export async function probe(frame) {
       if (m.transparent || m.blending === THREE.AdditiveBlending) objs.push(o); });
     // and every named top-level child of the scene (terrain chunks, the far field, props), hidden in turn
     for (const o of C.scene.children) if (o.visible && !objs.includes(o) && !o.isLight && !o.isCamera && o.name !== 'sky') objs.push(o);
-    for (const o of objs.slice(0, 80)) { o.visible = false; diff('hide ' + (o.name || o.type) + ' <' + (o.parent?.name || '') + '> ' + (m => m.type + (m.blending === THREE.AdditiveBlending ? ' add' : ''))(o.material), grid()); o.visible = true; }
+    for (const o of objs.slice(0, 80)) {
+      const m = o.material, tag = m && !Array.isArray(m) ? m.type + (m.blending === THREE.AdditiveBlending ? ' add' : '') : o.type;
+      const name = 'hide ' + (o.name || o.type) + ' <' + (o.parent?.name || '') + '> ' + tag;
+      o.visible = false;
+      try { diff(name, grid()); } finally { o.visible = true; }   // never leave the world hidden for the frames after
+    }
     E.render(0);
     layers.sort((p, q) => q.mean - p.mean);
     // grids as base64 of int8 (clamped to +-127) so every layer's map fits in run.json

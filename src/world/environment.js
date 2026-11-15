@@ -2496,16 +2496,19 @@ export class Environment {
             vec2 p = d.xz * t0 - uDrift;
             float n = texture2D(uNoise, p * (1.0 / 4200.0)).r;
             float ero = texture2D(uNoise, p * (1.0 / 1150.0) + vec2(0.37, 0.61)).b;
-            float sh = n - thr + (ero - 0.5) * 0.12;
+            // +0.12: the same mean cover as round 1's four slices over the baked noise (0.53 at trade's 0.30, node)
+            float sh = n - thr + 0.12 + (ero - 0.5) * 0.12;
             float a = smoothstep(0.0, 0.15, sh);
             float th = smoothstep(0.02, 0.30, sh);
             vec2 sxz = normalize(sd.xz + vec2(1e-5));
-            float shS = texture2D(uNoise, (p + sxz * 300.0) * (1.0 / 4200.0)).r - thr;
+            float shS = texture2D(uNoise, (p + sxz * 300.0) * (1.0 / 4200.0)).r - thr + 0.12;
             float lightK = clamp(0.60 + (sh - shS) * 5.0, 0.0, 1.0);
             vec3 c = mix(shadeC, lit, clamp(0.30 + 0.70 * lightK - 0.30 * th * (1.0 - lightK), 0.0, 1.0));
-            c += uSunCol * pow(sunD, 4.0) * 0.35 * day * (0.45 + 0.55 * lightK);
+            // the sun's forward glow lights the thin fringe, not a thick core (a silver lining; the core in front of a low
+            // sun must not clip into one blob with the disc)
+            c += uSunCol * pow(sunD, 4.0) * 0.30 * day * (1.0 - 0.7 * th) * (0.45 + 0.55 * lightK);
             float rimW = (1.0 - th) * a;
-            c += vec3(1.0, 0.66, 0.50) * (0.55 + 0.45 * uSunCol) * rimW * (0.30 + 1.5 * pow(sunD, 6.0)) * uRim * day;
+            c += vec3(1.0, 0.66, 0.50) * (0.55 + 0.45 * uSunCol) * rimW * (0.30 + 1.0 * pow(sunD, 6.0)) * uRim * day;
             cover = a * (1.0 - cal);
             float haze = exp(-t0 / 14000.0);
             vec3 cc = mix(horizon, c, haze);
