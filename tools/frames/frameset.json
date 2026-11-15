@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "set": "M1",
   "about": "The Frame Set F01-F32: fixed camera, hour, weather and state per frame, and what each is compared against. Reference crops are named by id only; the masked images live outside the repo (tools/frames/paths.mjs). Read by tools/frames/film.mjs and tools/frames/review.mjs; validated by tools/frames/frameset.mjs.",
   "viewport": { "width": 1600, "height": 900, "dpr": 1.25 },
