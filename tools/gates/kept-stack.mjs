@@ -218,13 +218,18 @@ const A22B_TT = `(async () => {${TURNTABLE}${SLEEP}
   } };
 })()`;
 
+/** A78's cast, restated (docs/GATES.md 3 D, ruling 4): a Plumb, staged by its role (sentry); any other kind is no cast. */
+const A78_CAST = "let m = await stageRole('sentry', { dx: 30, dz: 30, filter: (x) => typeof x.forceState === 'function' }); if (m && m.kind !== 'plumb') m = null;";
+
 /* ------------------------------------------------------------------------------------------ */
 /* A78 on the turntable: a held `attack` on a calm machine 80 m out sticks for a sim second    */
 /* ------------------------------------------------------------------------------------------ */
 const A78_TT = `(async () => {${TURNTABLE}${SLEEP} ${FREEZE} ${PARK}
   const ctx = __CTX__;
-  const m = await stageAny({ dx: 30, dz: 30, filter: (x) => typeof x.forceState === 'function' });
-  if (!m) return noKindsSkip() || { pass: null, detail: 'SKIP: no living machine of a staged kind with forceState' };
+  // RESTATED (docs/GATES.md 3 D; the orchestrator's ruling 4, M1a regressions run): the cast is the Plumb (role sentry), a
+  // kind with an attack state. The first staged kind with forceState became the neutral Gauge (dd5ecaf), which has none
+  ${A78_CAST}
+  if (!m) return noKindsSkip() || { pass: null, detail: 'SKIP: no living Plumb (role sentry) with forceState' };
   freezeAll([m]);
   const p = ctx.player;
   m.position.set(p.position.x + 80, ctx.terrain.getHeight(p.position.x + 80, p.position.z), p.position.z);
@@ -1051,6 +1056,14 @@ export const RESTATED = [
       [A56_COUNT_OLD, A56_COUNT_NEW],
       [A56_OK_OLD, A56_OK_NEW],
       [A56_DET_OLD, A56_DET_NEW],
+    ],
+  },
+  {
+    id: 'A78-cast-states',
+    why: "the orchestrator's ruling 4 (M1a regressions run): the cast is a kind with an attack state, the Plumb (role sentry); the first staged kind with forceState became the neutral Gauge (dd5ecaf: docile, no attack rows until M2.3c), on which forceState('attack') cannot take",
+    patches: [
+      ["const m = await stageAny({ dx: 30, dz: 30, filter: (x) => typeof x.forceState === 'function' });", A78_CAST],
+      ["const detail = 'calm=' + calm", "const detail = 'kind=' + m.kind + ' calm=' + calm"],
     ],
   },
   {

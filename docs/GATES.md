@@ -179,6 +179,13 @@ first step and awaits the orchestrator's word.)
 
 `A44`, `A44b`, `A107` and every other kept row are unchanged.
 
+**Restated in the M1a regressions run (the orchestrator's ruling 4).** Kept ids, restated in
+`tools/gates/kept-stack.mjs` (the registered row by `RESTATED`, the turntable row in its place); every other bar unchanged.
+
+| id | was | now | why |
+|---|---|---|---|
+| `A78-cast-states` | the cast is the first living machine of a staged kind that has `forceState` (or one spawned for the row) | the cast is a **Plumb**, staged by its role (`sentry`): the living one, or one spawned for the row; any other kind is no cast and the row skips by name. The hold, the sim second, the samples, the panel and the release are unchanged; the detail names the kind | M1b added the Gauge (dd5ecaf), which is neutral: docile, no attack rows until M2.3c. It became the first staged kind with `forceState`, and `forceState('attack')` cannot take on a kind with no attack state (39f7533: patrol, hold, patrol). The row tests the director's hold, so its cast must be a kind that has an attack state |
+
 **A measurement re-registered with the Frame Set (M1a round 2; not a bar change).** M1.1g's F02 palette line reads
 five named regions of the frame against the same-named regions of its crop (`tools/look/m11-accept.mjs`). Its frame
 boxes were placed for Frame Set v1's F02 camera; v2 re-staged F02 (the pans with the Ring in frame), so the boxes no
