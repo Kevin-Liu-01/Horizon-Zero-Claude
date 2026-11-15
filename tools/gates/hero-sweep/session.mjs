@@ -61,7 +61,7 @@ if (args.includes('--extra-first')) rows = [...rows.filter((g) => g.__extra), ..
  * timeout is 600 s and took 177-178 s at dee526d; with the timeout as the need, A16 and A17 never started at 6448b3d).
  * Seconds measured in the page, with headroom; a row not named here needs min(its timeout, 90 s). A row that overruns is
  * still cut by its own timeout, and the watchdog still ends the session at the budget + 45 s. */
-const EXPECT_S = { 'A-sweep-wind': 30, 'A-draw-elbow-level': 240, 'A16-draw-anchor': 200, 'A107-draw-arm-path': 60, 'A104-melee-self-clear': 60, 'A105-melee-while-moving': 60, 'A32-draw-ramp': 45, 'A17-draw-beats': 20, 'V-traversal': 60 };
+const EXPECT_S = { 'A-sweep-wind': 30, 'A-draw-elbow-level': 190, 'A16-draw-anchor': 110, 'A107-draw-arm-path': 60, 'A104-melee-self-clear': 60, 'A105-melee-while-moving': 60, 'A32-draw-ramp': 45, 'A17-draw-beats': 20, 'V-traversal': 60 };
 const set = loadFrameSet();
 const frameIds = (flag('--frames') || '').split(',').filter(Boolean);
 const frames = set.frames.filter((f) => frameIds.includes(f.id));
