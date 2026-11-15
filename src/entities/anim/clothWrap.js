@@ -33,9 +33,9 @@ const _x = new THREE.Vector3(), _y = new THREE.Vector3(), _r = new THREE.Vector3
 const _p = new THREE.Vector3(), _ax = new THREE.Vector3(), _bp = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _qp = new THREE.Quaternion(), _qs = new THREE.Quaternion(), _qb = new THREE.Quaternion();
 const _su = new THREE.Vector3(), _sv = new THREE.Vector3();
-const _qp2 = new THREE.Quaternion(), _qb2 = new THREE.Quaternion();
+const _qp2 = new THREE.Quaternion(), _qb2 = new THREE.Quaternion(), _qpi = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 /** The least a span gathers toward its joint (the last resort, panels only). */
-const GATHER_MIN = 0.8;
+const GATHER_MIN = 0.6;
 /** The capsules near the span being solved (its bounding sphere against each, recomputed every step). */
 const _near = new Int8Array(32);
 let _nn = 0;
@@ -153,7 +153,8 @@ export class ClothWrap {
         ds.sort((x, y) => x - y);
         const r = ds[Math.floor(ds.length / 2)];
         W.quiver = { ia, ib, r };
-        W.caps.push({ name: 'quiver', a: null, b: null, A: new THREE.Vector3(), B: new THREE.Vector3(), r0: r - 0.004, rP: r + 0.006, rT: r + 0.002 });
+        // (0.015 over it for the panels: the stow kit swings the quiver after this pass, in the same step)
+        W.caps.push({ name: 'quiver', a: null, b: null, A: new THREE.Vector3(), B: new THREE.Vector3(), r0: r - 0.004, rP: r + 0.015, rT: r + 0.006 });
       }
     }
     const chains = this._chains || [];
@@ -318,7 +319,8 @@ export class ClothWrap {
     _r.sub(_y).normalize();
     _su.set(0, 1, 0).cross(_r); if (_su.lengthSq() < 1e-6) _su.set(1, 0, 0).cross(_r);
     _su.normalize(); _sv.crossVectors(_r, _su).normalize();
-    bone.parent.getWorldQuaternion(_qp).invert();
+    bone.parent.getWorldQuaternion(_qpi);
+    _qp.copy(_qpi).invert();
     let best = base, bq = -1;
     for (let a = 0; a < 8; a++) {
       const ca = Math.cos(a * Math.PI / 4), sa = Math.sin(a * Math.PI / 4);
@@ -328,7 +330,9 @@ export class ClothWrap {
         _q.setFromAxisAngle(_ax, th);
         bone.quaternion.copy(_qs).premultiply(_q);
         bone.updateMatrixWorld(true); this._cwMats(S);
-        const pen = this._cwPen(S, j, caps) + 0.001 * th;   // (a small cost of turning: the nearest way out)
+        // (a small cost of turning, the nearest way out; and for a panel a cost of pointing up: cloth falls)
+        let pen = this._cwPen(S, j, caps) + 0.001 * th;
+        if (!S.tail) { _p.copy(_r).applyQuaternion(_q2.setFromAxisAngle(_bp.copy(_ax).applyQuaternion(_qpi), th)); if (_p.y > 0) pen += 0.02 * _p.y; }
         if (pen < best) { best = pen; bq = a * 4 + m; _qb.copy(bone.quaternion); }
       }
     }
@@ -358,7 +362,7 @@ export class ClothWrap {
         if (L > 1e-6) { _ab.multiplyScalar(W.quiver.r * 0.7 / L); C.A.add(_ab); C.B.sub(_ab); }
       }
     }
-    let pushes = 0, left = 0, deepLeft = 0, gathers = 0, gatherMin = 1;
+    let pushes = 0, left = 0, deepLeft = 0, gathers = 0, gatherMin = 1, shortMax = 0;
     for (let si = 0; si < W.sets.length; si++) {
       const S = W.sets[si], ch = S.chain, N = ch.N;
       let touched = false;
@@ -456,25 +460,33 @@ export class ClothWrap {
       }
       // the last resort (panels only, rare): a span still inside the body after the sweeps GATHERS toward its joint,
       // the cloth bunched up the way a panel caught between a thigh and the belly bunches: the link scaled by s
-      // (0.8 <= s < 1) about its joint, its child given 1/s back so only this span shortens (by 1 - s of its length).
+      // (0.6 <= s < 1) about its joint, its child given 1/s back so only this span shortens (by 1 - s of its length),
+      // the whole panel never by more than 15 % (`shortMax`).
       // `_panelFollow` puts every panel bone's scale back to 1 at the start of the next step.
       if (touched && !S.tail) {
+        let Ltot = 0, short = 0;
+        for (let j = 0; j < N; j++) Ltot += ch.seg[j];
         for (let j = 0; j < N; j++) {
           const k0 = S.gStart[j], k1 = S.gStart[j + 1];
           if (k1 <= k0) continue;
           if (this._cwSpanDeep(S, j, caps) <= 0) continue;
           const bone = ch.links[j].bone, kid = j + 1 < N ? ch.links[j + 1].bone : null;
-          let lo = GATHER_MIN, hi = 1, ok = -1;
+          // (never more than 15 % off the whole panel's length: M1.2e's allowance)
+          const floor = Math.max(GATHER_MIN, 1 - (0.15 - short) * Ltot / ch.seg[j]);
+          if (floor >= 0.999) continue;
+          let lo = floor, hi = 1, ok = -1;
           for (let b = 0; b < 5; b++) {
             const sc = b === 0 ? lo : (lo + hi) / 2;
             bone.scale.setScalar(sc); if (kid) kid.scale.setScalar(1 / sc);
             bone.updateMatrixWorld(true); this._cwMats(S);
             if (this._cwSpanDeep(S, j, caps) <= 0) { ok = sc; lo = sc; } else if (b === 0) break; else hi = sc;
           }
-          const sc = ok > 0 ? ok : GATHER_MIN;
+          const sc = ok > 0 ? ok : floor;
           bone.scale.setScalar(sc); if (kid) kid.scale.setScalar(1 / sc);
           bone.updateMatrixWorld(true); this._cwMats(S);
+          short += (1 - sc) * ch.seg[j] / Ltot;
           gathers++; if (sc < gatherMin) gatherMin = sc;
+          if (short > shortMax) shortMax = short;
         }
       }
       // what is still inside after both sweeps (the published guard; the gate rows grade the real thing)
@@ -498,7 +510,7 @@ export class ClothWrap {
       }
     }
     const st = W.stats;
-    st.frames++; st.pushes = pushes; st.left = left; st.deepLeft = deepLeft; st.gathers = gathers; st.gatherMin = gatherMin;
+    st.frames++; st.pushes = pushes; st.left = left; st.deepLeft = deepLeft; st.gathers = gathers; st.gatherMin = gatherMin; st.shortMax = shortMax; if (!(st.shortMaxEver >= shortMax)) st.shortMaxEver = shortMax;
     if (gathers) { st.gatherFrames = (st.gatherFrames | 0) + 1; if (!(st.gatherMinEver <= gatherMin)) st.gatherMinEver = gatherMin; }
   }
 

@@ -106,7 +106,8 @@ export const CLIPS = {
     for (let i = 0; i <= N; i++) { p.dodgeK = i / N; fwd(R, 3.4 / 0.82); step(R); S(); }
     p.dodging = false; p.dodgeK = 1; for (let i = 0; i < 30; i++) { fwd(R, SPEEDS.jog); step(R); S(); }
   } },
-  mantle: { cloth: true, run: (R, S) => mantleRun(R, S, 0.6, null, 0.42) },
+  // (M1.2e round 2: 1.4 m, as the page row now stages it: player.js finds no wall under 0.9 m, so 0.6 m never mantled)
+  mantle: { cloth: true, run: (R, S) => mantleRun(R, S, 1.4, null, 0.42) },
   climb: { cloth: true, run: (R, S) => mantleRun(R, S, 1.0, 'climb1m', 0.78) },
   slide: { cloth: true, run: (R, S) => {
     const p = R.player; p.sliding = true; for (let i = 0; i < 20; i++) { fwd(R, 2.6); step(R); }

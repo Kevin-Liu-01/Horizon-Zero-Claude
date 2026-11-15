@@ -57,8 +57,8 @@ const frames = set.frames.filter((f) => frameIds.includes(f.id));
 const CLIP_DEFS = {
   // (frame id whose lens is staged with the pose replaced by idle, then the page code performed while recording)
   run: { frame: 'F15', pose: 'idle', secs: 4.0, js: `C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft'); await w(3.8);` },
-  draw: { frame: 'F16', pose: 'idle', secs: 4.2, js: `C.input.mouse.buttons |= 4; await w(0.5); C.input.mouse.buttons |= 1; await w(1.8); C.input.mouse.buttons &= ~1; await w(0.6); C.input.mouse.buttons &= ~4; await w(1.0);` },
-  crouchDraw: { frame: 'F18', pose: 'idle', secs: 4.4, js: `p.setCrouch(true); await w(0.4); C.input.mouse.buttons |= 4; await w(0.5); C.input.mouse.buttons |= 1; C.input.keys.add('KeyD'); await w(1.8); C.input.mouse.buttons &= ~1; await w(0.6); C.input.keys.delete('KeyD'); C.input.mouse.buttons &= ~4; await w(0.8);` },
+  draw: { frame: 'F16', pose: 'idle', secs: 4.2, aimLens: true, js: `C.input.mouse.buttons |= 4; await w(0.5); C.input.mouse.buttons |= 1; await w(1.8); C.input.mouse.buttons &= ~1; await w(0.6); C.input.mouse.buttons &= ~4; await w(1.0);` },
+  crouchDraw: { frame: 'F18', pose: 'idle', secs: 4.4, aimLens: true, js: `p.setCrouch(true); await w(0.4); C.input.mouse.buttons |= 4; await w(0.5); C.input.mouse.buttons |= 1; C.input.keys.add('KeyD'); await w(1.8); C.input.mouse.buttons &= ~1; await w(0.6); C.input.keys.delete('KeyD'); C.input.mouse.buttons &= ~4; await w(0.8);` },
   melee: { frame: 'F19', pose: 'idle', secs: 4.4, js: `const mel = C.combat.melee; mel.aimLock = 0; mel.drawLance(30); await w(1.2); C.input.mouse.buttons |= 1; await w(0.9); C.input.mouse.buttons &= ~1; await w(1.0); C.input.mouse.buttons |= 1; await w(0.12); C.input.mouse.buttons &= ~1; await w(1.0);` },
 };
 const clipIds = (flag('--clips') || '').split(',').filter(Boolean);
@@ -210,6 +210,19 @@ try {
     try {
       await page.evaluate(stageFrame, { ...fr, state: { ...(fr.state || {}), pose: d.pose } }, { settleMs: 1500, measureFrames: 2 });
       await page.evaluate(() => window.__CTX__.engine.requestTimeScale('studio', null));
+      // M1.3g round 2 (the draw clips): her aim follows the game camera, so under the frame's side lens she turned to
+      // draw AWAY from it (run 20261115T044723Z: the draw filmed from behind). The game camera stays behind her on
+      // her bearing for the aim (the chase camera at the staged yaw), and the side lens is put up only for the render
+      // (engine.render wrapped: the camera moved to the lens, rendered, moved back), riding her position
+      if (d.aimLens) await page.evaluate(() => {
+        const C = window.__CTX__, p = C.player, E = C.engine, cam = C.camera;
+        const off = cam.position.clone().sub(p.position), q = cam.quaternion.clone(), yaw0 = p.camYaw;
+        const P = Object.getPrototypeOf(p), r0 = E.render, u0 = p._updateCamera;
+        p._updateCamera = function (dt, t) { this.camYaw = yaw0; this.camPitch = 0; return P._updateCamera.call(this, dt, t); };
+        const sp = cam.position.clone(), sq = cam.quaternion.clone();
+        E.render = function (...a) { sp.copy(cam.position); sq.copy(cam.quaternion); cam.position.copy(p.position).add(off); cam.quaternion.copy(q); cam.updateMatrixWorld(); try { return r0.apply(this, a); } finally { cam.position.copy(sp); cam.quaternion.copy(sq); cam.updateMatrixWorld(); } };
+        window.__clipLensUndo = () => { E.render = r0; p._updateCamera = u0; };
+      });
       cdp.on('Page.screencastFrame', onFrame);
       await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 85, maxWidth: 1280, maxHeight: 720, everyNthFrame: 1 });
       await page.evaluate(`(async () => { const C = window.__CTX__, p = C.player, E = C.engine; const fr = () => new Promise((r) => requestAnimationFrame(r));
@@ -217,7 +230,7 @@ try {
         ${d.js} })()`);
       await cdp.send('Page.stopScreencast');
       cdp.off('Page.screencastFrame', onFrame);
-      await page.evaluate(() => { const C = window.__CTX__; C.input.keys.clear(); C.input.mouse.buttons = 0; C.player.setCrouch?.(false); });
+      await page.evaluate(() => { const C = window.__CTX__; C.input.keys.clear(); C.input.mouse.buttons = 0; C.player.setCrouch?.(false); window.__clipLensUndo?.(); window.__clipLensUndo = null; });
       await page.evaluate(unstageFrame);
       // the frames at their own times, into a 30 fps mp4 (each frame held until the next one's timestamp)
       const dir = path.join(clipDir, id + '-frames'); mkdirSync(dir, { recursive: true });
@@ -233,6 +246,7 @@ try {
     } catch (e) {
       try { await cdp.send('Page.stopScreencast'); } catch { /* */ }
       cdp.off('Page.screencastFrame', onFrame);
+      try { await page.evaluate(() => { window.__clipLensUndo?.(); window.__clipLensUndo = null; }); } catch { /* */ }
       out.clips.push({ id, ok: false, error: String(e?.message || e).slice(0, 300) });
       try { await page.evaluate(unstageFrame); } catch { /* */ }
     }

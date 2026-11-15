@@ -80,7 +80,10 @@ const CLIPS = {
   // M1.3f fix 1: the traversal clips in the page (the bench had them only): a 0.6 m and a 1.0 m ledge (a collision box
   // ahead, as A-climb-1m stages it) mantled from a jog, and a slide down a cinder patch on a 30 deg face (A-slide's
   // search, on this terrain), all graded from the first step of the approach
-  mantle: { cloth: true, js: `await ledge(0.6); S.on = true; await climbUp();` },
+  // (M1.2e round 2: the mantle on a 1.4 m ledge. player.js _mantle probes for the wall at chest height, 0.9 m over her
+  // feet, so the 0.6 m ledge of fix 1 was never mantled in the page (every run since: "the ledge was not mantled");
+  // 1.4 m is a mantle (MANTLE_T), above the climb's 0.82-1.22 m band)
+  mantle: { cloth: true, js: `await ledge(1.4); S.on = true; await climbUp();` },
   climb: { cloth: true, js: `await ledge(1.0); S.on = true; await climbUp();` },
   slide: { cloth: true, js: `const f = slideFace(30, 3); if (!f) { S.skip = 'no 30 deg face'; return; } const pid = p.surfaces.add({ x: f.x + f.dx * 1.2, z: f.z + f.dz * 1.2, r: 4.5, surface: 'cinder' }); try { p.position.set(f.x - f.dx * 0.8, 0, f.z - f.dz * 0.8); p.velocity.set(0, 0, 0); p._snapToGround(); p.camYaw = Math.atan2(f.dx, f.dz) + Math.PI; await simWait(0.3); S.on = true; keys.add('KeyW'); const t0 = E.simTime; let slid = 0; while (E.simTime - t0 < 3.0) { await frame(); if (p.sliding) slid++; } S.slid = slid; } finally { p.surfaces.remove(pid); }` },
   /* M1.3f fix 1: THE BLEND PAIRS, by name (BUILD M1.3f "every blend pair among them"): each pair is the second clip
