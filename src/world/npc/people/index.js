@@ -3,6 +3,7 @@ import { REST_SITE } from '../../island/sites.js';
 import { NpcBank } from './bank.js';
 import { Person } from './person.js';
 import { FaceDirector } from './faces.js';
+import { Routines } from './routines.js';
 
 /**
  * CALIMA · the people of the island (settlements, W1 by R56 + R57 c; bible §6; plan §4.1, §4.2). Every
@@ -22,6 +23,7 @@ import { FaceDirector } from './faces.js';
  *   tierAt(person, tier)      force a tier for a gate (null: back to distance)
  *   info()                    draws, casters, tris, atlases, per person
  *   faces                     M1.5f: the faces' director (./faces.js): Brea's face and every near person's, dialogue and gaze
+ *   routines                  M1.5d: the Saltrow crew's and the lamp keeper's daily loops (./routines.js)
  *   dispose()
  *
  * TIERS (R56). The nearest 6 within 18 m are near tier; then LOD1 to 35 m; LOD2 beyond; hidden past 90 m;
@@ -59,6 +61,7 @@ export class PeopleSystem {
     this.ctx = ctx;
     this.bank = new NpcBank(ctx);
     this.faces = new FaceDirector(ctx);
+    this.routines = new Routines(this);
     this._breaFaceT = 0;
     this.list = [];
     this.archetypes = ARCHETYPE_IDS;
@@ -136,6 +139,7 @@ export class PeopleSystem {
     const k = this.staged.indexOf(p);
     if (k >= 0) this.staged.splice(k, 1);
     this._forced.delete(p);
+    this.routines.remove(p);
     const id = p.archetype;
     p.dispose();
     this.bank.release(id);
@@ -247,6 +251,7 @@ export class PeopleSystem {
     this._stream(dt);
     // M1.5f: Brea's face, once her body stands (tried twice a second until it is there)
     if (!this.faces.brea && !this.faces.breaError && (this._breaFaceT -= dt) <= 0) { this._breaFaceT = 0.5; this.faces.installBrea(); }
+    this.routines.update(dt);
     const list = this.order;
     const n = list.length;
     if (!n) return;
