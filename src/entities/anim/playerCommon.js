@@ -505,7 +505,11 @@ DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, m
  *  in still air (page F02: 0.0456 against 0.0463 m; bench at F02's heading 0.0259 against 0.0332): no visible wind.
  *  Bench at 3.5, F02 / F15 headings: left panel 0.064 / 0.067 m in the wind against 0.051 / 0.041 still, every tip
  *  within 45 deg of SW; 0 clipping frames in every sweep clip) */
-DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 1.2, airY: true, flut: 3.5 });
+/* (M1a debt fix round 1, M1.2e at F02: `wind` 1.2 -> 2.4 1/s. F02's trade wind is 3.65 m/s in the page (F15 5.58), and
+ *  at 1.2 the left panel's tip moved 0.029 m there (page, 88b1605; bar 0.05). Bench at the page's speeds and headings:
+ *  F02 left panel 0.049 -> 0.137 m (bearing 232), F15 0.188 -> 0.275 m (258); 1.8 and 2.0 left F02's left panel at
+ *  0.078 / 0.088 m but bearing 186 / 191, at the edge of SW's 45 deg; 0 clipping frames in every sweep clip) */
+DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 2.4, airY: true, flut: 3.5 });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 export const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */
