@@ -34,7 +34,8 @@ const log = (...a) => console.log(`[sash-probe ${new Date().toISOString().slice(
 const PORT = guardPort(flag('--port'));
 if (PORT === 5173) throw new Error('port 5173 is the owner preview: never');
 const BUDGET_S = Number(flag('--budget', 840));
-const ROOTS = (flag('--roots') || `tree=${REPO}`).split(',').map((s) => { const i = s.indexOf('='); return { label: s.slice(0, i), dir: s.slice(i + 1) }; });
+/* (regfix 4: `label=/abs/tree@F15+F19` names that root's own frames; without `@` the root takes --frames) */
+const ROOTS = (flag('--roots') || `tree=${REPO}`).split(',').map((s) => { const i = s.indexOf('='), j = s.indexOf('@', i); return { label: s.slice(0, i), dir: s.slice(i + 1, j > 0 ? j : undefined), only: j > 0 ? s.slice(j + 1).split('+') : null }; });
 const VARIANTS = flag('--variants') ? JSON.parse(readFileSync(flag('--variants'), 'utf8')) : [{ name: 'as-is', set: {} }];
 const SHOTS = flag('--shots');
 const OUT = flag('--out');
@@ -214,14 +215,16 @@ try {
           log(`${R.label}/${V.name} wind: ${w.pass ? 'PASS' : 'FAIL'} ${JSON.stringify(w.detail?.fails || [])}`);
         }
         let fi = 0;
-        for (const f of frames) {
+        const rootFrames = R.only ? R.only.map((id) => set.frames.find((f) => f.id === id)).filter(Boolean) : frames;
+        for (const f of rootFrames) {
           const key = VR.frames[f.id] ? `${f.id}#${++fi}` : f.id;
           await page.evaluate(SAMPLER_ON);
-          await page.evaluate(stageFrame, f, { settleMs: 2600 });
+          const st = await page.evaluate(stageFrame, f, { settleMs: 2600 });
           const rec = await page.evaluate(SAMPLER_OFF);
           if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, `${R.label}-${V.name}-${key.replace('#', '-')}.png`) }); }
           await page.evaluate(unstageFrame);
           VR.frames[key] = summarize(f.id, rec);
+          VR.frames[key].sim = st?.sim ? { frames: st.sim.frames, clipPhase: st.sim.clipPhase, contactK: st.sim.contactK } : null;
           const fr = VR.frames[key].frozen, sm = VR.frames[key];
           log(`${R.label}/${V.name} ${key}: ` + Object.entries(fr).map(([k, v]) => `${k} ${v.below} (fwd ${v.fwd}, hem ${v.hemBelow}; med ${sm[k]?.belowMed}, p10 ${sm[k]?.belowP10}, <20 ${sm[k]?.under20})`).join('; '));
         }

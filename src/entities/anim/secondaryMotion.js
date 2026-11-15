@@ -912,7 +912,10 @@ export class SecondaryMotion {
       /* (M1a regressions, `airSelf`: how much of the air's drag against the chain's own travel a class takes, x1 by
        *  default. The sash panels take 0.4: at their 3.2 1/s, a jog's own air (5 m/s) held the back panel out level
        *  behind her in F15 (a8ea1bc); 0.4 x 3.2 is the 1.2-1.3 1/s the panels ran on when F15 was accepted) */
-      const as = mvL(cls.airSelf ?? 1, MV?.airSelf);
+      const as0 = mvL(cls.airSelf ?? 1, MV?.airSelf);
+      /* (M1a regfix 4: a class's `swing.airSelf`, when set, is the drag against its own travel while a lance swing is in
+       *  hand, eased by the same `swK` as the swing's fall and bend limit; unset, the swing leaves it alone) */
+      const as = SW && SW.airSelf !== undefined ? as0 + (SW.airSelf - as0) * swK : as0;
       /* (`hangK`: how much of `hang` acts, 1 standing, eased to `moving.hang` (0: none) as she travels. `hangDrag` 0: the
        *  fall with lift takes only the wind's push and flutter, not the air's drag against the panel's own motion: a
        *  lifted panel that lost its drag too kept flying where an inertial fling threw it) */
