@@ -158,17 +158,33 @@ try {
         const t0 = Date.now();
         if (i === 0) await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
         else await page.reload({ waitUntil: 'domcontentloaded', timeout: 180000 });
-        await page.waitForFunction(() => window.__CTX__?.state === 'title' && !document.getElementById('title')?.classList.contains('hidden')
-          && !!document.getElementById('btn-start'), { timeout: 180000, polling: 25 });
+        // title interactive: the title state with the menus' "press any key" stage up (menu.js title flow)
+        await page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press'
+          && !document.getElementById('title')?.classList.contains('hidden'), { timeout: 180000, polling: 25 });
         const titleS = (Date.now() - t0) / 1000;
         await sleep(400);
+        // press any key -> the authored dolly -> the vertical menu (not part of either bar; recorded)
+        const tp = Date.now();
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 60000, polling: 25 });
+        const dollyS = (Date.now() - tp) / 1000;
+        await sleep(300);
+        // New Game to control: NEW GAME, then the first difficulty, to the state `playing` and two drawn frames
         const t1 = Date.now();
-        await page.click('#btn-start');
+        const clicked = await page.evaluate(() => {
+          const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /NEW GAME/.test(x.textContent));
+          if (!b) return false; b.click(); return true;
+        });
+        if (!clicked) throw new Error('no NEW GAME item on the title menu');
+        await page.waitForSelector('.mn-diff', { timeout: 20000 });
+        const tPick = Date.now();
+        await page.evaluate(() => document.querySelector('.mn-diff').click());
         await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 60000, polling: 10 });
         await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
-        const controlS = (Date.now() - t1) / 1000;
+        const controlS = (Date.now() - t1) / 1000, pickS = (Date.now() - tPick) / 1000;
         await sleep(1500);
-        const rec = { load: i + 1, cache: i === 0 ? 'cold (fresh profile)' : 'warm (reload, same browser)', titleInteractiveS: +titleS.toFixed(2), newGameToControlS: +controlS.toFixed(3),
+        const rec = { load: i + 1, cache: i === 0 ? 'cold (fresh profile)' : 'warm (reload, same browser)', titleInteractiveS: +titleS.toFixed(2), titleDollyS: +dollyS.toFixed(2),
+          newGameToControlS: +controlS.toFixed(3), difficultyClickToControlS: +pickS.toFixed(3),
           transferredMB: +(bytes / 1e6).toFixed(2), requests: reqs, servedFromCache: fromCache, load1: load1() };
         if (i === 0) {
           at.v = 'hitch window after New Game';
