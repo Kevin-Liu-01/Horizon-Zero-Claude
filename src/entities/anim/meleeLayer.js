@@ -418,6 +418,13 @@ const ROLL_KEY_OUT = 0.20;
 const UC_CROUCH_HIPS = 0.9;   // (M1a r3: 0.6 -> 0.9; at 0.6 the left palm was 0.086 m off grip2 at the contact, thrust 30.7 deg)
 /** ...and this much less of its hips' turn (M1a r3 fix: the turn apart from the drive; see `update`). */
 const UC_CROUCH_YAW = 0.5;
+/** M1a debt fix 1: the Undercut brings its haft to a left palm that missed its socket by more than this (m)... */
+const UC_SEAT_TOL = 0.025;
+/** ...by at most this much a pass (m). */
+const UC_SEAT_MAX = 0.12;
+/** ...and on the drawn matrices, this many passes. */
+const UC_SEAT_LATE_N = 4;
+const _ucC = new THREE.Vector3(), _ucV = new THREE.Vector3(), _ucP = new THREE.Vector3(), _ucQ = new THREE.Quaternion();
 const HIP_LEAD_RAMP = 0.10;
 /**
  * THE MASKED CLIP AFTER THE HIPS, NOT BEFORE THEM (M1.3d). `Sword_Attack`'s
@@ -1807,6 +1814,29 @@ export class MeleeLayer {
     this._armHullGuard(w, st);
     this._leftCarryHand(u);
     this._solveLeft(w, u);
+    /* M1a debt fix 1 (M1.3d, the crouched Undercut: the left palm 0.084 m off grip2 in the follow-through and
+     * 0.131 m at the contact from the holster, bench at 88b1605). Crouched, the Undercut's sink takes her left
+     * shoulder down and back further than the keys come down, and the left arm, at full reach, stops short of
+     * the haft. The haft is rigid in the right fist, so the fix is to bring the haft to the hand: the right
+     * hand's goal moves by what the left palm missed its socket by (at most UC_SEAT_MAX a pass, two passes),
+     * and both arms are solved again. Only when the left hand is on the haft and missed by more than
+     * UC_SEAT_TOL, so every other swing and every Undercut that seats already is untouched. */
+    D.ucSeat = 0;
+    if (stance === 'swing' && beat === UNDERCUT && this._lhOnW > 0.5) {
+      for (let i = 0; i < 2; i++) {
+        an._charOf(b.handL.bone, _ucC);
+        an._liveW(b.handL.bone, _ucQ);
+        this._gripChar(_grip); this._shaftChar(_a);
+        _ucV.copy(this.palmOffLL).applyQuaternion(_ucQ).add(_ucC).sub(_grip).addScaledVector(_a, -this._lhOnWant);   // palm - its socket
+        const miss = _ucV.length();
+        if (!(miss > UC_SEAT_TOL)) break;
+        if (miss > UC_SEAT_MAX) _ucV.multiplyScalar(UC_SEAT_MAX / miss);
+        _hand.add(_ucV); _lh.add(_ucV);
+        this._solveRight(w, u);
+        this._solveLeft(w, u);
+        D.ucSeat = i + 1;
+      }
+    }
 
     // fists: the drive hand is closed on the haft, the free hand open (canon:
     // "left arm empty, swept back and out, PALM OPEN")
@@ -4015,6 +4045,36 @@ export class MeleeLayer {
     return D.lhPalmErr;
   }
 
+  /**
+   * M1a debt fix 1 (M1.3d), THE SAME ON THE DRAWN MATRICES: the stance's pelvis drop and the conform move her
+   * body after this layer, and through a crouched Undercut's strike they took the left shoulder 0.08-0.10 m
+   * further from the haft than the pose pass solved for (bench: the late reseat read 0.096 m before and after,
+   * its seat capped by her reach). The right fist carries the haft that far toward the left palm (at most
+   * UC_SEAT_MAX a pass, two passes) and the left hand is seated again. Undercut swings only.
+   */
+  _ucSeatLate(an) {
+    const D = this._dbg, b = an.b;
+    D.ucSeatLate = 0;
+    if (D.stance !== 'swing' || D.beat !== 'undercut' || !(this._lhOnW > 0.5)) return;
+    for (let i = 0; i < UC_SEAT_LATE_N; i++) {
+      this._seatLeft(this._lhOnW, this._lhArmW, this._lhOnWant, 0);
+      an._charOf(b.handL.bone, _ucC);
+      an._liveW(b.handL.bone, _ucQ);
+      this._gripChar(_grip); this._shaftChar(_a);
+        _ucV.copy(this.palmOffLL).applyQuaternion(_ucQ).add(_ucC).sub(_grip).addScaledVector(_a, -this._lhOnWant);   // palm - its socket
+      const miss = _ucV.length();
+      if (!(miss > UC_SEAT_TOL)) break;
+      if (miss > UC_SEAT_MAX) _ucV.multiplyScalar(UC_SEAT_MAX / miss);
+      an._charOf(b.handR.bone, _ahG).add(_ucV);
+      const up = Math.max(0, clamp((_ahG.y - 1.02) * 2.2, -0.4, 1));
+      _ucP.set(-0.36 - 0.54 * up, -0.80 + 0.28 * up, -0.62 + 0.28 * up).normalize();
+      an._ikArm('r', _ahG, _ucP, 1, null);
+      this._alignHaft(1);
+      D.ucSeatLate = i + 1;
+    }
+    this._seatLeft(this._lhOnW, this._lhArmW, this._lhOnWant, 0);
+  }
+
   /** The left forearm's distance to her pelvis->neck axis, on the live bones (char). */
   _leftForeGap() {
     const an = this.an, b = an.b;
@@ -4747,6 +4807,7 @@ export class MeleeLayer {
      * own forearm out of the metal (fix round 1: A101 light-2, A104, A106) */
     if (e && this._held && this.w >= 0.2 && this._lhOnW > 1e-3) {
       this._reseatLeft();
+      this._ucSeatLate(an);
       this._leftHullFinal(an);
       this._dbg.forearmToSpineL = this._leftForeGap();
     }

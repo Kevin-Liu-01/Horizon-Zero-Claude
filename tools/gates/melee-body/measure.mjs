@@ -103,6 +103,8 @@ export function buildMeleeMeasure(R, THREE) {
         hip, sh, ua, dR, dL, dmR, dmL, kR, kL, sR, sL, len: L,
         tip: [tip.x, tip.y, tip.z], butt: [butt.x, butt.y, butt.z], dir: [dir.x, dir.y, dir.z], pel: [pel.x, pel.y, pel.z],
         lhW: lay._lhOnW || 0,
+        // the left seat's own numbers (the bench's --trace prints them): wanted / taken / reachable haft fraction, palm error
+        lh: `want ${(lay._lhOnWant || 0).toFixed(3)} on ${(lay._lhSOn || 0).toFixed(3)} far ${(lay._lhSFar || 0).toFixed(3)} err ${(lay._dbg.lhPalmErr || 0).toFixed(3)} pre ${(lay._dbg.lhGapPre || 0).toFixed(3)} post ${(lay._dbg.lhGapPost || 0).toFixed(3)} slide ${lay._dbg.lhSlide || 0} hullL ${lay._dbg.armHullFinalL || 0} uc ${lay._dbg.ucSeat || 0}/${lay._dbg.ucSeatLate || 0}`,
       });
     },
     samples() { return S; },

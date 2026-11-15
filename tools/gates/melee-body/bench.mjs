@@ -207,7 +207,7 @@ async function main() {
       else console.log(fmtSwing(v));
     }
     if (flag('--trace') === id) {
-      for (const s of M.samples()) console.log(s.T.toFixed(3), (s.stance || '').padEnd(7), (s.phase || '').padEnd(7), (s.beat || '').padEnd(8), s.k.toFixed(2), 'hip', s.hip.toFixed(3), 'sh', s.sh.toFixed(3), 'ua', s.ua.toFixed(3), 'dR', s.dR.toFixed(3), 'dL', s.dL.toFixed(3), 'kL', s.kL.toFixed(3), 'sL', s.sL.toFixed(3), 'lhW', s.lhW.toFixed(2), 'tip', s.tip.map((x) => x.toFixed(2)).join(','), 'pelY', s.pel[1].toFixed(3));
+      for (const s of M.samples()) console.log(s.lh ? `${s.lh} |` : '',s.T.toFixed(3), (s.stance || '').padEnd(7), (s.phase || '').padEnd(7), (s.beat || '').padEnd(8), s.k.toFixed(2), 'hip', s.hip.toFixed(3), 'sh', s.sh.toFixed(3), 'ua', s.ua.toFixed(3), 'dR', s.dR.toFixed(3), 'dL', s.dL.toFixed(3), 'kL', s.kL.toFixed(3), 'sL', s.sL.toFixed(3), 'lhW', s.lhW.toFixed(2), 'tip', s.tip.map((x) => x.toFixed(2)).join(','), 'pelY', s.pel[1].toFixed(3));
     }
   }
   if (flag('--json')) writeFileSync(flag('--json'), JSON.stringify(out, null, 1));
