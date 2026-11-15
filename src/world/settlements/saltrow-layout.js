@@ -173,17 +173,36 @@ export const BREAKWATER_LENS = Object.freeze({ ...breakwaterPoint(10, 0), bearin
  * the slice's unnamed Pan Houses cast (src/world/npc/people SLICE_CAST) each at one task, in the street frame
  * (`s` up the street, `r` to its right), facing `face` (a street point). `clip` is the work they do; `alt` if the
  * clip pack has no such clip for their body. Mise and the second keeper stay the quest's and the lamps'.
+ *
+ * Fix round 1 (the judge at 623903a): the porter (PickUp_Table) and the second caulker (Interact) read as two men
+ * standing, one in front of the other at x 829-839 of F22; the two rakers stood 2.1 m from the right cone's centre
+ * (0.6 m from its foot) and overlapped each other and it. Now every clip is one that reads as work at any phase (a
+ * rake, a kneel, a push), each person stands clear of the others on F22's screen, and the rakers work the cone's foot
+ * from 2.6-2.8 m on either side of it (F22 x ~1450 and ~1260; from F20's lens on bearings 71 and 89, outside its
+ * 352-68 view).
  */
 export const CREW = Object.freeze([
-  // two rakers at the right-hand cone, on its street side, in the band F22 sees and F20 does not (F20's lens stands
-  // at s 1.4, r 1.1 and sees bearings 352-68; these stand on 71-79 from it, 67-72 from F22's)
-  Object.freeze({ id: 'salt-raker', s: 9.5, r: 7.2, face: { s: 7.6, r: 7.2 }, clip: 'Farm_Harvest', task: 'rakes the harvest up the right-hand cone' }),
-  Object.freeze({ id: 'salt-raker-2', s: 6.2, r: 5.6, face: { s: 7.6, r: 7.2 }, clip: 'Farm_Harvest', task: 'rakes the right-hand cone from below' }),
-  // up the street, in front of the doors (F20 sees these behind Brea and Ansel: it looks up the same street)
+  Object.freeze({ id: 'salt-raker', s: 5.2, r: 6.2, face: { s: 7.6, r: 7.2 }, clip: 'Farm_Harvest', task: "rakes the spill back up the right-hand cone's foot, its seaward side" }),
+  Object.freeze({ id: 'salt-raker-2', s: 10.4, r: 7.4, face: { s: 7.6, r: 7.2 }, clip: 'Farm_Harvest', task: "rakes the right-hand cone's foot, its uphill side" }),
+  // up the street, left: kneeling at l1's wall (F22 x ~680, 19 m)
   Object.freeze({ id: 'boat-caulker', s: 15.5, r: -2.5, face: { s: 15.5, r: -3.4 }, clip: 'Fixing_Kneeling', task: "kneels at l1's wall, mending its plinth" }),
-  Object.freeze({ id: 'salt-porter', s: 24.0, r: 1.9, face: { s: 24.0, r: 3.6 }, clip: 'PickUp_Table', alt: 'Farm_Harvest', task: "takes up a salt basket from r2's step" }),
-  Object.freeze({ id: 'boat-caulker-2', s: 31.0, r: 2.3, face: { s: 31.0, r: 3.2 }, clip: 'Interact', alt: 'Fixing_Kneeling', task: "works at r3's door" }),
+  // up the street, left of the axis: pushing the salt cart down the street, 11 deg off its axis (F22 x ~740, 25 m;
+  // his hands on the cart's push bar, the cart 1.35 m ahead of him: CART below)
+  Object.freeze({ id: 'salt-porter', s: 23.2, r: -2.3, face: { s: 19.5, r: -1.6 }, clip: 'Push_Loop', alt: 'Farm_Harvest', task: 'pushes the salt cart down the street' }),
+  // up the street, right: kneeling at r3's door step, caulking its sill (F22 x ~830, 35 m)
+  Object.freeze({ id: 'boat-caulker-2', s: 31.0, r: 2.3, face: { s: 31.0, r: 3.2 }, clip: 'Fixing_Kneeling', alt: 'Interact', task: "kneels at r3's door, caulking its sill" }),
 ]);
+
+/**
+ * The porter's salt cart (kit node `cart`: local +z the end he pushes toward, its push bar at -z): 1.35 m ahead of the
+ * porter on his facing, turned the same way. World (x, z) and yaw (three's rotation.y).
+ */
+export const CART = Object.freeze((() => {
+  const c = CREW.find((q) => q.id === 'salt-porter');
+  const a = streetPoint(c.s, c.r), f = streetPoint(c.face.s, c.face.r);
+  const dx = f.x - a.x, dz = f.z - a.z, L = Math.hypot(dx, dz);
+  return { x: +(a.x + dx / L * 1.35).toFixed(3), z: +(a.z + dz / L * 1.35).toFixed(3), yaw: Math.atan2(dx, dz), w: 1.16, d: 1.9, h: 1.25 };
+})());
 
 /**
  * THE SIGHTING KITE (BUILD M1.5e; bible §11 slice 0:00 "A Pan Houses sighting kite flies over Saltrow"): a two-cell
@@ -226,17 +245,21 @@ export function rooflineCheck(tol = 0.25) {
 
 /**
  * Ground the scatter keeps clear (world-props' keepout shape { id, x, z, hard, soft, grass, meadow }): each
- * building's footprint circle and the street every 6 m, so no reed or meadow grass stands in a house or the street.
+ * building's footprint circle, the street every 2 m across its whole width (circles of 3.5 m: clear to 3.2 m either
+ * side of the axis, the house fronts' set), and each salt cone. Fix round 1: at 6 m spacing with 3.2 m circles the
+ * street was clear only 1.1 m either side of its axis between circles, and golden tufts stood in it and through the
+ * left-hand cone in F22.
  */
 export const SALTROW_KEEPOUTS = Object.freeze([
   ...BUILDINGS.map((b) => {
     const p = placeOf(b), r = Math.hypot(b.w, b.d) / 2;
     return Object.freeze({ id: `saltrow-${b.id}`, x: +p.x.toFixed(2), z: +p.z.toFixed(2), hard: r + 0.8, soft: r + 2.4, grass: r + 0.6, meadow: r + 0.4 });
   }),
-  ...Array.from({ length: 12 }, (_, i) => {
-    const p = streetPoint(4 + i * 6, 0);
-    return Object.freeze({ id: `saltrow-street-${i}`, x: +p.x.toFixed(2), z: +p.z.toFixed(2), hard: 3.4, soft: 5, grass: 3.2, meadow: 2.8 });
+  ...Array.from({ length: 23 }, (_, i) => {
+    const p = streetPoint(3 + i * 2, 0);
+    return Object.freeze({ id: `saltrow-street-${i}`, x: +p.x.toFixed(2), z: +p.z.toFixed(2), hard: 3.6, soft: 5, grass: 3.5, meadow: 3.5 });
   }),
+  ...CONES.map((c, i) => Object.freeze({ id: `saltrow-cone-${i}`, x: +c.x.toFixed(2), z: +c.z.toFixed(2), hard: c.r + 0.6, soft: c.r + 1.6, grass: c.r + 0.9, meadow: c.r + 0.9 })),
 ]);
 
 /** REST must stay in the open: the nearest building wall is at least this far from her (m). */
@@ -276,6 +299,10 @@ export function townColliders({ buildings, breakwater = null, ground = () => 0 }
   for (const c of CONES) {
     const y = ground(c.x, c.z);
     out.push({ kind: 'prop', shape: { type: 'capsule', a: [c.x, y, c.z], b: [c.x, y + c.h * 0.45, c.z], radius: c.r * 0.72 } });
+  }
+  {
+    const y = ground(CART.x, CART.z);
+    out.push({ kind: 'prop', shape: { type: 'box', c: [CART.x, y + CART.h / 2, CART.z], half: [CART.w / 2, CART.h / 2, CART.d / 2], yaw: -CART.yaw } });
   }
   const w = breakwater;
   if (w) {

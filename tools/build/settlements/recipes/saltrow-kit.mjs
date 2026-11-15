@@ -20,10 +20,12 @@
  * soot and streaks baked in), roughness/metalness come from the shared 8x1 palette texel (KTX2 after the build's
  * ktx2 step). Nodes, each one mesh:
  *   b-<id>-body    walls, roof, trim, balcony, bell        TEXCOORD_1.x = window spill (0..1): how much a lit window
- *                                                          of the same facade lights this vertex at night
+ *                                                          of the same facade lights this vertex at night;
+ *                                                          TEXCOORD_1.y = height over the house's ground floor (m),
+ *                                                          the runtime's base dirt (99 on pieces without a foot)
  *   b-<id>-glass   window panes and the door lantern       COLOR_0 = the pane's night glow (black = a dark room)
- *   b-<id>-flora   bougainvillea                           (vertex colour, foliage)
- *   cone, ramp, breakwater (body), breakwater-glass (the lamp)
+ *   b-<id>-flora   bougainvillea: bract triads and leaf cards, two-sided, normals out of the wall
+ *   cone, ramp, cart (the porter's salt cart), breakwater (body), breakwater-glass (the lantern's panes)
  * The runtime (src/world/settlements/saltrow.js) seats each on the ground and merges by kind into three draws.
  */
 import path from 'node:path';
@@ -31,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { THREE, Bucket, V, strut, ball, rbox, cable, rng } from '../../lib/hs.mjs';
 import { writeGLB } from '../../lib/glb.mjs';
 import { vnoise3, fbm3 } from '../../landmarks/recipes/lib/rock.mjs';
-import { BUILDINGS, TONES, HARBOUR, CONES, BREAKWATER_LAMP_AT, placeOf } from '../../../../src/world/settlements/saltrow-layout.js';
+import { BUILDINGS, TONES, HARBOUR, CONES, BREAKWATER_LAMP_AT, BREAKWATER_LENS, CART, placeOf } from '../../../../src/world/settlements/saltrow-layout.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 export const LANE = 'settlements';
@@ -201,35 +203,80 @@ function balconyAt(body, F, x, y, w, depth) {
   for (let lx = -w / 2 + 0.16; lx < w / 2 - 0.1; lx += 0.13) add(0.035, 0.78, 0.035, x + lx, y + 0.52, depth - 0.04, ORCHIL, 1.1);
 }
 
+/**
+ * One bougainvillea spray at `m` (a matrix in the facade frame): papery bract triads (three ovate bracts round a point,
+ * magenta) or a leaf (a longer green ovate), each a fan of 5 vertices, two-sided, every vertex normal leaning out of
+ * the wall so both faces take the light like foliage, not like facets. (fix round 1: the faceted icosahedra read as
+ * crystals in F22.)
+ */
+const _o = new THREE.Vector3(), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3(), _nv = new THREE.Vector3();
+function spray(flora, F, lx, ly, lz, r, R) {
+  const leaf = R() < 0.3;
+  const tone = leaf ? LEAF[(R() * LEAF.length) | 0] : BRACT[(R() * BRACT.length) | 0];
+  const pos = [], nor = [];
+  const petal = (cx, cy, cz, ux, uy, uz, len, wid, n) => {
+    // u: the petal's axis; v: across it (perpendicular to u and the normal)
+    _t1.set(ux, uy, uz).normalize();
+    _t2.crossVectors(n, _t1).normalize();
+    const P = (a, b) => [cx + _t1.x * a + _t2.x * b, cy + _t1.y * a + _t2.y * b, cz + _t1.z * a + _t2.z * b];
+    const v0 = [cx, cy, cz], v1 = P(len * 0.35, wid * 0.5), v2 = P(len * 0.8, wid * 0.32), v3 = P(len, 0), v4 = P(len * 0.8, -wid * 0.32), v5 = P(len * 0.35, -wid * 0.5);
+    const fan = [[v0, v1, v2], [v0, v2, v3], [v0, v3, v4], [v0, v4, v5]];
+    for (const [a, b, c] of fan) {
+      pos.push(...a, ...b, ...c, ...a, ...c, ...b);          // both faces
+      for (let k = 0; k < 6; k++) nor.push(n.x, n.y, n.z);
+    }
+  };
+  const groups = leaf ? 1 : 2;
+  for (let g = 0; g < groups; g++) {
+    _o.set(lx + (R() - 0.5) * r * 0.9, ly + (R() - 0.5) * r * 0.7, lz + (R() - 0.5) * r * 0.6);
+    // normal: out of the wall (+z), tilted at random up to ~55 deg
+    _nv.set((R() - 0.5) * 1.3, (R() - 0.35) * 1.1, 1).normalize();
+    const n = _nv.clone();
+    const a0 = R() * Math.PI * 2;
+    const base = new THREE.Vector3(1, 0, 0);
+    if (Math.abs(n.x) > 0.9) base.set(0, 1, 0);
+    const e1 = base.clone().sub(n.clone().multiplyScalar(base.dot(n))).normalize(), e2 = new THREE.Vector3().crossVectors(n, e1);
+    if (leaf) {
+      const u = e1.clone().multiplyScalar(Math.cos(a0)).addScaledVector(e2, Math.sin(a0));
+      petal(_o.x, _o.y, _o.z, u.x, u.y, u.z, r * 1.25, r * 0.6, n);
+    } else {
+      for (let k = 0; k < 3; k++) {
+        const a = a0 + k * 2.094;
+        const u = e1.clone().multiplyScalar(Math.cos(a)).addScaledVector(e2, Math.sin(a));
+        u.addScaledVector(n, 0.35);                         // cupped
+        petal(_o.x, _o.y, _o.z, u.x, u.y, u.z, r * 0.62, r * 0.55, n);
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  const k0 = 0.85 + R() * 0.3;
+  flora.add(geo, { surf: 'bisque', tone, wear: 0.4, matrix: F, colorFn: (p, nn, k) => k * k0 });
+  geo.dispose();
+}
+
 /** Bougainvillea: a twisted trunk up a front corner, a mass over the door and a fall from the parapet. */
 function bougainvillea(flora, body, F, x0, roofY, doorX, R) {
   const at = (lx, ly, lz) => V(lx, ly, lz).applyMatrix4(F);
   const trunk = [];
   for (let i = 0; i <= 8; i++) trunk.push(at(x0 + Math.sin(i * 1.3) * 0.12, PLINTH + i * (roofY - 0.4) / 8, 0.12 + Math.cos(i * 1.1) * 0.05));
   cable(body, trunk, 0.06, { surf: 'bisque', tone: WOOD_DK, wear: 1, segs: 24, radial: 5 });
-  const blob = new THREE.IcosahedronGeometry(1, 0);
-  const put = (lx, ly, lz, r) => {
-    const leaf = R() < 0.3;
-    const tone = leaf ? LEAF[(R() * LEAF.length) | 0] : BRACT[(R() * BRACT.length) | 0];
-    const m = F.clone().multiply(new THREE.Matrix4().compose(V(lx, ly, lz), _q.setFromEuler(_e.set(R() * 3, R() * 3, R() * 3)),
-      new THREE.Vector3(r * (0.8 + R() * 0.4), r * (0.6 + R() * 0.3), r * (0.8 + R() * 0.4))));
-    flora.add(blob, { surf: 'bisque', tone, wear: 0.9, matrix: m });
-  };
+  const put = (lx, ly, lz, r) => spray(flora, F, lx, ly, lz, r * 1.15, R);
   // up the corner: a column thickening toward the top
-  for (let i = 0; i < 70; i++) {
+  for (let i = 0; i < 95; i++) {
     const t = R();
     put(x0 + (R() - 0.5) * (0.5 + t * 0.9), PLINTH + 0.6 + t * (roofY - 0.6), 0.18 + R() * 0.35, 0.16 + R() * 0.12 + t * 0.06);
   }
   // the swag along the parapet toward the door, falling in tongues
   const x1 = doorX;
-  for (let i = 0; i < 110; i++) {
+  for (let i = 0; i < 150; i++) {
     const t = R(), lx = x0 + (x1 - x0) * t * 1.15;
     const fall = Math.pow(R(), 2) * (0.6 + 1.6 * Math.abs(Math.sin(lx * 2.1)));
     put(lx + (R() - 0.5) * 0.4, roofY + 0.1 - fall, 0.2 + R() * 0.38, 0.17 + R() * 0.12);
   }
   // a crown over the parapet edge
-  for (let i = 0; i < 40; i++) put(x0 + (x1 - x0) * R() * 0.9, roofY + 0.25 + R() * 0.35, 0.05 + R() * 0.4, 0.2 + R() * 0.1);
-  blob.dispose();
+  for (let i = 0; i < 55; i++) put(x0 + (x1 - x0) * R() * 0.9, roofY + 0.25 + R() * 0.35, 0.05 + R() * 0.4, 0.2 + R() * 0.1);
 }
 
 /** The brass bell: a lathe profile, mouth down, its crown on a yoke. */
@@ -326,12 +373,21 @@ function building(b, idx) {
     { F: mat(-w / 2, 0, 0, -Math.PI / 2), len: d, front: false, side: -1 },
   ];
   const two = b.h > 5;
+  // (fix round 1, F07) a facade that faces the breakwater lens (within ~70 deg) has its rooms lit 19 in 20: F07 sees
+  // the town 120-140 m off and counted 14 window blobs; the draws of R() are the same, only the odds move
+  const pl = placeOf(b), cyw = Math.cos(pl.yaw), syw = Math.sin(pl.yaw);
+  const tl = { x: BREAKWATER_LENS.x - pl.x, z: BREAKWATER_LENS.z - pl.z }, tlL = Math.hypot(tl.x, tl.z) || 1;
+  const facesLens = (F) => {
+    const n = V(0, 0, 1).transformDirection(F);
+    const wx = cyw * n.x + syw * n.z, wz = -syw * n.x + cyw * n.z;
+    return (wx * tl.x + wz * tl.z) / tlL > 0.34;
+  };
   const doorX = guild ? 0 : (R() < 0.5 ? -1 : 1) * Math.min(1.4, w * 0.18);
   for (const fa of facades) {
     const { F, len } = fa;
     const cols = Math.max(1, Math.floor((len - 1.4) / (guild ? 2.4 : 2.6)));
     const xs = Array.from({ length: cols }, (_, i) => -len / 2 + (i + 0.5) * len / cols);
-    const litOdds = fa.front ? 0.8 : fa.side ? 0.7 : 0.45;
+    const litOdds = facesLens(F) ? 0.95 : fa.front ? 0.8 : fa.side ? 0.7 : 0.45;
     // the party walls of a terrace carry no windows
     if (fa.side && partyWall(b, fa.side)) continue;
     for (const x of xs) {
@@ -414,11 +470,15 @@ function building(b, idx) {
       s += k * (1 / (1 + (r / 1.15) ** 2)) * (1 - r / 6);
     }
     body.uv1[i * 2] = Math.min(1, s);
+    body.uv1[i * 2 + 1] = py;
   }
-  glass.uv1 = new Array((glass.pos.length / 3) * 2).fill(0);
-  flora.uv1 = new Array((flora.pos.length / 3) * 2).fill(0);
+  glass.uv1 = noFoot(glass);
+  flora.uv1 = noFoot(flora);
   return { body, glass, flora, windows: windows.length, lit: lit.length };
 }
+
+/** TEXCOORD_1 for a piece with no spill and no foot: x 0, y 99 (the runtime's base dirt reads y as height). */
+const noFoot = (b) => { const n = b.pos.length / 3, a = new Array(n * 2); for (let i = 0; i < n; i++) { a[i * 2] = 0; a[i * 2 + 1] = 99; } return a; };
 
 /* ------------------------------------------------------------------ props */
 function saltCone() {
@@ -443,7 +503,58 @@ function saltCone() {
   strut(b, V(0.55, 0.0, 0.62), V(0.05, 1.05, 0.12), 0.018, 0.018, { surf: 'bisque', tone: WOOD, wear: 1, sides: 5 });
   box(b, 0.6, 0.03, 0.66, 0.5, 0.05, 0.06, { surf: 'bisque', tone: WOOD_DK, wear: 1, ry: 0.7 });
   void R;
-  b.uv1 = new Array((b.pos.length / 3) * 2).fill(0);
+  b.uv1 = noFoot(b);
+  return b;
+}
+
+/**
+ * The porter's salt cart (layout CART; fix round 1: the porter needs readable work in F22): a plank bed on two big
+ * spoked wheels, low side boards, two legs at the front it rests on, a push bar across the back at 1.05 m, and its
+ * load: linen salt sacks and an open basket heaped with salt. Local +z the end he pushes toward, y 0 the ground.
+ */
+function cart() {
+  const b = new Bucket('cart');
+  const R = rng(515);
+  const { w: W, d: D } = CART;
+  const BED = 0.62, bw = W - 0.16, bl = D - 0.3;
+  box(b, 0, BED, 0.05, bw, 0.07, bl, { surf: 'bisque', tone: WOOD, wear: 1.1 });
+  for (let i = 0; i < 6; i++) box(b, 0, BED + 0.04, 0.05 - bl / 2 + (i + 0.5) * bl / 6, bw - 0.02, 0.012, 0.012, { surf: 'bisque', tone: WOOD_DK, wear: 0.8 });
+  for (const s of [-1, 1]) {
+    box(b, s * (bw / 2 - 0.02), BED + 0.17, 0.05, 0.04, 0.28, bl, { surf: 'bisque', tone: WOOD, wear: 1.2 });          // side boards
+    box(b, s * (bw / 2 - 0.1), BED - 0.08, 0.05, 0.08, 0.1, D, { surf: 'bisque', tone: WOOD_DK, wear: 1.1 });        // the frame rails
+    // the wheel: a rim, a hub, eight spokes
+    const rim = new THREE.TorusGeometry(0.42, 0.035, 5, 20);
+    b.add(rim, { surf: 'bisque', tone: WOOD_DK, wear: 1.2, matrix: mat(s * (W / 2 + 0.02), 0.44, -0.05, Math.PI / 2) });
+    rim.dispose();
+    const tyre = new THREE.TorusGeometry(0.445, 0.012, 4, 20);
+    b.add(tyre, { surf: 'graphite', tone: IRON, wear: 0.6, matrix: mat(s * (W / 2 + 0.02), 0.44, -0.05, Math.PI / 2) });
+    tyre.dispose();
+    strut(b, V(s * (W / 2 - 0.06), 0.44, -0.05), V(s * (W / 2 + 0.1), 0.44, -0.05), 0.07, 0.07, { surf: 'bisque', tone: WOOD_DK, wear: 1, sides: 8 });
+    for (let k = 0; k < 8; k++) {
+      const a = k * Math.PI / 4;
+      strut(b, V(s * (W / 2 + 0.02), 0.44, -0.05), V(s * (W / 2 + 0.02), 0.44 + Math.sin(a) * 0.4, -0.05 + Math.cos(a) * 0.4), 0.018, 0.018, { surf: 'bisque', tone: WOOD_DK, wear: 1, sides: 4 });
+    }
+    // a front leg to rest on, and a push handle up from each back corner
+    strut(b, V(s * (bw / 2 - 0.12), BED - 0.1, D / 2 - 0.2), V(s * (bw / 2 - 0.12), 0.0, D / 2 - 0.12), 0.03, 0.03, { surf: 'bisque', tone: WOOD_DK, wear: 1, sides: 5 });
+    strut(b, V(s * (bw / 2 - 0.06), BED - 0.05, -D / 2 + 0.05), V(s * (bw / 2 - 0.02), 1.06, -D / 2 - 0.2), 0.03, 0.028, { surf: 'bisque', tone: WOOD, wear: 1.1, sides: 6 });
+  }
+  box(b, 0, BED + 0.17, 0.05 + bl / 2, bw, 0.28, 0.04, { surf: 'bisque', tone: WOOD, wear: 1.2 });
+  box(b, 0, BED + 0.17, 0.05 - bl / 2, bw, 0.28, 0.04, { surf: 'bisque', tone: WOOD, wear: 1.2 });
+  strut(b, V(-(bw / 2 + 0.02), 1.06, -D / 2 - 0.2), V(bw / 2 + 0.02, 1.06, -D / 2 - 0.2), 0.03, 0.03, { surf: 'bisque', tone: WOOD_DK, wear: 1.2, sides: 6 });   // push bar
+  // the load: four sacks and a basket of salt
+  const sack = new THREE.SphereGeometry(1, 10, 7);
+  for (const [x, z, ry] of [[-0.24, -0.38, 0.2], [0.25, -0.34, -0.15], [-0.22, 0.12, 0.5], [0.24, 0.22, -0.4]]) {
+    const m = new THREE.Matrix4().compose(V(x, BED + 0.2, z), _q.setFromEuler(_e.set(0.1 * (R() - 0.5), ry, 0.12 * (R() - 0.5))), new THREE.Vector3(0.26, 0.19, 0.34));
+    b.add(sack, { surf: 'bisque', tone: 0xd9cfbc, wear: 0.9, matrix: m, colorFn: (p, n, k) => k * (0.9 + 0.12 * vnoise3(p.x * 9, p.y * 9, p.z * 9)) });
+  }
+  sack.dispose();
+  const basket = new THREE.CylinderGeometry(0.3, 0.22, 0.34, 14, 2, true);
+  b.add(basket, { surf: 'bisque', tone: 0x9a7a4c, wear: 1.2, matrix: mat(0.0, BED + 0.55, 0.62), colorFn: (p, n, k) => k * (0.85 + 0.3 * (Math.sin(p.y * 90) * 0.5 + 0.5)) });
+  basket.dispose();
+  const heap = new THREE.SphereGeometry(0.29, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+  b.add(heap, { surf: 'bisque', tone: SALT, wear: 0.6, matrix: new THREE.Matrix4().compose(V(0, BED + 0.7, 0.62), _q.identity(), new THREE.Vector3(1, 0.55, 1)) });
+  heap.dispose();
+  b.uv1 = noFoot(b);
   return b;
 }
 
@@ -468,7 +579,7 @@ function ramp() {
   }
   // two bollards at the top
   for (const s of [-1, 1]) strut(b, V(s * (W / 2 + 0.6), -0.3, 0.4), V(s * (W / 2 + 0.6), 0.65, 0.4), 0.13, 0.11, { surf: 'graphite', tone: IRON, wear: 0.8, sides: 10 });
-  b.uv1 = new Array((b.pos.length / 3) * 2).fill(0);
+  b.uv1 = noFoot(b);
   return b;
 }
 
@@ -491,24 +602,57 @@ function breakwater() {
     rbox(b, V(x, -0.6 + R() * 1.4 - (Math.abs(x) - W / 2) * 0.5, Math.min(z, L + 1.2)), [sz, sz * 0.8, sz * 1.1], 0.12,
       { surf: 'bisque', tone: R() < 0.3 ? BASALT_HI : BASALT, wear: 1.3, segs: 1, rot: [R() * 0.8, R() * 3, R() * 0.8], colorFn: basaltShade(i) });
   }
-  // the lamp: a lime-washed column, an iron cage, the lantern, at the ROOT on the north-west edge (the layout's
-  // BREAKWATER_LAMP_AT: its `side` is to the right looking out to sea, this local x the other way)
+  // the lamp (fix round 1: the plain white column under a glass cylinder read as a candle): a basalt plinth, a square
+  // lime-washed pier with a basalt cornice, and a lantern on it: an iron base plate, four corner posts and a mullion
+  // on each face, four glazed panes, an iron top plate, a pyramid cap with a ring and finial, and an iron bracket arm
+  // with a hook. At the ROOT on the north-west edge (the layout's BREAKWATER_LAMP_AT: its `side` is to the right
+  // looking out to sea, this local x the other way)
   const lz = BREAKWATER_LAMP_AT.along, lx = -BREAKWATER_LAMP_AT.side;
-  strut(b, V(lx, 1.3, lz), V(lx, 4.1, lz), 0.36, 0.3, { surf: 'bisque', tone: TONES[0], wear: 0.6, sides: 14, colorFn: limeShade(3, 1.3) });
-  strut(b, V(lx, 4.1, lz), V(lx, 4.25, lz), 0.42, 0.42, { surf: 'bisque', tone: BASALT, wear: 1.1, sides: 14 });
-  for (let i = 0; i < 4; i++) {
-    const a = i * Math.PI / 2 + Math.PI / 4;
-    strut(b, V(lx + Math.cos(a) * 0.2, 4.25, lz + Math.sin(a) * 0.2), V(lx + Math.cos(a) * 0.2, 4.95, lz + Math.sin(a) * 0.2), 0.02, 0.02, { surf: 'graphite', tone: IRON, wear: 0.4, sides: 4 });
+  const sq = (y0, y1, r0, r1, o) => {
+    const c = new THREE.CylinderGeometry(r1, r0, y1 - y0, 4, Math.max(1, Math.round((y1 - y0) / 0.4)), false);
+    b.add(c, { ...o, matrix: mat(lx, (y0 + y1) / 2, lz, Math.PI / 4) });
+    c.dispose();
+  };
+  sq(1.3, 1.85, 0.62, 0.6, { surf: 'bisque', tone: BASALT, wear: 1.2, colorFn: basaltShade(17) });
+  sq(1.85, 1.95, 0.56, 0.5, { surf: 'bisque', tone: BASALT_HI, wear: 1.1 });
+  sq(1.95, 3.55, 0.4, 0.34, { surf: 'bisque', tone: TONES[1], wear: 0.6, colorFn: limeShade(3, 1.95) });
+  sq(3.55, 3.7, 0.48, 0.5, { surf: 'bisque', tone: BASALT_HI, wear: 1.1, colorFn: basaltShade(19) });
+  const LB = 3.7, LT = 4.42, LH = LT - LB, half = 0.2;
+  box(b, lx, LB + 0.03, lz, 0.5, 0.06, 0.5, { surf: 'graphite', tone: IRON, wear: 0.5 });
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) box(b, lx + sx * half, LB + LH / 2, lz + sz * half, 0.045, LH, 0.045, { surf: 'graphite', tone: IRON, wear: 0.5 });
+  for (const [sx, sz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    box(b, lx + sx * (half + 0.005), LB + LH / 2, lz + sz * (half + 0.005), sz ? 0.025 : 0.02, LH, sx ? 0.025 : 0.02, { surf: 'graphite', tone: IRON, wear: 0.5 });
+    box(b, lx + sx * (half + 0.005), LB + LH * 0.62, lz + sz * (half + 0.005), sz ? 0.4 : 0.02, 0.02, sx ? 0.4 : 0.02, { surf: 'graphite', tone: IRON, wear: 0.5 });
   }
-  const cap = new THREE.ConeGeometry(0.34, 0.32, 12);
-  b.add(cap, { surf: 'bronze', tone: 0x6e5a3a, wear: 0.9, matrix: mat(lx, 5.1, lz) });
+  box(b, lx, LT + 0.03, lz, 0.52, 0.06, 0.52, { surf: 'graphite', tone: IRON, wear: 0.5 });
+  const cap = new THREE.ConeGeometry(0.4, 0.34, 4);
+  b.add(cap, { surf: 'bronze', tone: 0x5e4c32, wear: 0.9, matrix: mat(lx, LT + 0.06 + 0.17, lz, Math.PI / 4) });
   cap.dispose();
-  const lg = new THREE.CylinderGeometry(0.17, 0.17, 0.6, 12);
-  g.add(lg, { surf: 'glaze', tone: 0xffbe6a, wear: 0, matrix: mat(lx, 4.6, lz), colorFn: () => 1.5 });
+  const fin = new THREE.SphereGeometry(0.05, 8, 6);
+  b.add(fin, { surf: 'bronze', tone: 0x6e5a3a, wear: 0.8, matrix: mat(lx, LT + 0.45, lz) });
+  fin.dispose();
+  const ring = new THREE.TorusGeometry(0.07, 0.012, 4, 12);
+  b.add(ring, { surf: 'graphite', tone: IRON, wear: 0.4, matrix: mat(lx, LT + 0.56, lz) });
+  ring.dispose();
+  // the panes: a glazed box inside the frame, and a smaller hot core (the wick's flame seen through it)
+  const lg = new THREE.BoxGeometry(2 * half - 0.02, LH - 0.04, 2 * half - 0.02);
+  g.add(lg, { surf: 'glaze', tone: 0xffb45e, wear: 0, matrix: mat(lx, LB + LH / 2, lz), colorFn: () => 0.62 });
   lg.dispose();
-  b.uv1 = new Array((b.pos.length / 3) * 2).fill(0);
-  g.uv1 = new Array((g.pos.length / 3) * 2).fill(0);
-  return { body: b, glass: g, lampY: 4.6, lampZ: lz };
+  const core = new THREE.BoxGeometry(0.06, 0.14, 0.06);
+  g.add(core, { surf: 'glaze', tone: 0xffd690, wear: 0, matrix: mat(lx, LB + LH * 0.42, lz), colorFn: () => 1.5 });
+  core.dispose();
+  // lamp spill on its own pier and plinth top (the windows' bake: TEXCOORD_1.x), falling off over ~2.4 m
+  const lampC = V(lx, LB + LH / 2, lz);
+  const n0 = b.pos.length / 3;
+  b.uv1 = noFoot(b);
+  for (let i = 0; i < n0; i++) {
+    const px = b.pos[i * 3], py = b.pos[i * 3 + 1], pz = b.pos[i * 3 + 2];
+    const r = Math.hypot(px - lampC.x, py - lampC.y, pz - lampC.z);
+    if (r > 2.4 || py > LB) continue;
+    b.uv1[i * 2] = Math.min(1, 0.9 / (1 + (r / 0.8) ** 2) * (1 - r / 2.4));
+  }
+  g.uv1 = noFoot(g);
+  return { body: b, glass: g, lampY: LB + LH / 2, lampZ: lz };
 }
 
 /* ------------------------------------------------------------------ build */
@@ -523,8 +667,9 @@ export async function build({ out = ROOT } = {}) {
     stats.windows += r.windows; stats.lit += r.lit;
     stats.buildings[b.id] = { windows: r.windows, lit: r.lit, tris: r.body.triangles + r.glass.triangles + r.flora.triangles };
   });
-  const cone = saltCone(), rp = ramp(), bw = breakwater();
+  const cone = saltCone(), rp = ramp(), bw = breakwater(), ct = cart();
   parts.push({ bucket: cone, material: { name: 'saltrow-kit' } });
+  parts.push({ bucket: ct, material: { name: 'saltrow-kit' } });
   parts.push({ bucket: rp, material: { name: 'saltrow-kit' } });
   parts.push({ bucket: bw.body, material: { name: 'saltrow-kit' } });
   parts.push({ bucket: bw.glass, material: { name: 'saltrow-kit' } });
@@ -540,7 +685,7 @@ export async function build({ out = ROOT } = {}) {
     },
   });
   return { kit: 'saltrow', ...res, reference: undefined, kb: +(res.bytes / 1024).toFixed(1), windows: stats.windows, lit: stats.lit,
-    trisBy: { ...Object.fromEntries(Object.entries(stats.buildings).map(([k, v]) => [k, v.tris])), cone: cone.triangles, ramp: rp.triangles, breakwater: bw.body.triangles } };
+    trisBy: { ...Object.fromEntries(Object.entries(stats.buildings).map(([k, v]) => [k, v.tris])), cone: cone.triangles, cart: ct.triangles, ramp: rp.triangles, breakwater: bw.body.triangles } };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
