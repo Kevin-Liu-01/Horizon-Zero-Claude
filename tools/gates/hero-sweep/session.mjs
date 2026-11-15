@@ -62,6 +62,29 @@ const CLIP_DEFS = {
   melee: { frame: 'F19', pose: 'idle', secs: 4.4, js: `const mel = C.combat.melee; mel.aimLock = 0; mel.drawLance(30); await w(1.2); C.input.mouse.buttons |= 1; await w(0.9); C.input.mouse.buttons &= ~1; await w(1.0); C.input.mouse.buttons |= 1; await w(0.12); C.input.mouse.buttons &= ~1; await w(1.0);` },
 };
 const clipIds = (flag('--clips') || '').split(',').filter(Boolean);
+/** Between frames (and before the first): input released, no crouch or hang pose, lance holstered, the bow's holster
+ * timer spent, stuck arrows recycled; then up to 2 s of game time for the bow and lance to go back on her back.
+ * Returns what was still out (clean: true when nothing). */
+const RESET_HERO = async () => {
+  const C = window.__CTX__, p = C.player, cmb = C.combat, E = C.engine;
+  C.input.keys.clear(); C.input.mouse.buttons = 0;
+  try { if (p.crouching) p.setCrouch?.(false); } catch { /* */ }
+  try { p.animator?.setHangPose?.(false); } catch { /* */ }
+  try { if (cmb?.melee && cmb.melee.stance !== 'holstered') cmb.melee.holsterLance(true); } catch { /* */ }
+  if (cmb) { cmb._holsterT = 0; cmb._drawing = false; }
+  try { cmb?.arrows?.recycleAll?.(); } catch { /* */ }
+  E.requestTimeScale?.('studio', null);
+  const w0 = performance.now();
+  const out = () => ({ bow: !!cmb?.weaponDrawn, lance: !!cmb?.melee?.lanceInHand, aiming: !!p.aiming, crouching: !!p.crouching });
+  while (performance.now() - w0 < 2000) {
+    const o = out();
+    if (!o.bow && !o.lance && !o.aiming && !o.crouching) break;
+    if (cmb) cmb._holsterT = 0;
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+  const o = out();
+  return { ...o, clean: !o.bow && !o.lance && !o.aiming && !o.crouching, ms: Math.round(performance.now() - w0) };
+};
 
 /* ---- 1. guard and slot */
 function memory() {
@@ -138,11 +161,14 @@ try {
   const over = () => (Date.now() - t0) / 1000 > BUDGET_S;
 
   /* ---- frames, first: on the freshly booted page (rows before them left the bow in her hand on the holster
-   * timer and an arrow in the ground) */
+   * timer and an arrow in the ground). Each frame also starts from a reset hero (RESET_HERO below; stageFrame
+   * does the same at its start since frameset v2), so a frame never inherits the one before it. */
   for (const f of frames) {
     current = f.id;
     if (over()) { out.frames.push({ id: f.id, ok: false, error: 'budget' }); continue; }
     try {
+      const rs = await page.evaluate(RESET_HERO);
+      if (!rs.clean) log(`${f.id}: hero not clean after the reset (${JSON.stringify(rs)})`);
       const staged = await page.evaluate(stageFrame, f, { settleMs: 2600 });
       const shot = await page.screenshot({ type: 'png' });
       const png = await sharp(shot).resize(vp.width, vp.height, { fit: 'fill' }).png({ compressionLevel: 8 }).toBuffer();

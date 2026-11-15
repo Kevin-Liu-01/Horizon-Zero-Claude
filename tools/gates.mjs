@@ -2,7 +2,11 @@
  * Round 3 gate runner — literal visual + action quality gates.
  *
  * Usage:
- *   node tools/gates.mjs [--port 5173] [--only A2-dodge-displacement,V1-sprint-frame] [--lane animator]
+ *   node tools/gates.mjs --port <5250-5299> --only A2-dodge-displacement,V1-sprint-frame [--lane animator]
+ *        [--slot-wait <s>]   wait for the machine-wide Chrome slot (default 1800; CALIMA_SLOT_HELD=1 if the caller holds it)
+ *
+ * The runner's own Vite (when nothing serves the port) binds 127.0.0.1 under nice -n 10; the first Chrome waits for
+ * the memory guard and takes <slots>/slot1 (tools/chrome-slot.mjs), held until the run ends.
  *
  * Each gate gets a FRESH page (no state bleed). Action gates auto pass/fail from
  * their assert expression; any console error during a gate fails it. Visual gates
@@ -22,6 +26,7 @@ import {
   sweepProfiles, profileDir, disposeProfile, installProfileCleanup, countProfiles, guardPort, acquireChromeSlot,
 } from './chrome-profile.mjs';
 import { formatVerdict, writeLine } from './gate-verdict.mjs';
+import { takeMachineSlot, releaseMachineSlot } from './chrome-slot.mjs';
 import { KEPT_STACK, RESTAGED, PATCHED, USE_CARRIED, NO_STUDIO, STUDIO_TOUCHED, STAGE_OF } from './gates/kept-stack.mjs';
 import { GATES as CARRIED_ROWS } from './gates.r5.carried.mjs';
 
@@ -197,12 +202,19 @@ function portOpen(port) {
   });
 }
 
+/**
+ * M1a: the runner's own Vite binds 127.0.0.1 and runs under nice -n 10 (the lane rule), in its own process group so
+ * the whole tree (nice -> npx -> node vite) goes when the run ends, on every exit path. A server already on the port
+ * is used as it is and never killed.
+ */
 let viteProc = null;
+const killVite = () => { if (!viteProc) return; try { process.kill(-viteProc.pid, 'SIGTERM'); } catch { try { viteProc.kill(); } catch { /* gone */ } } viteProc = null; };
 if (!(await portOpen(PORT))) {
-  viteProc = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
-    cwd: process.cwd(), stdio: 'ignore', detached: false,
+  viteProc = spawn('nice', ['-n', '10', 'npx', 'vite', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
+    cwd: process.cwd(), stdio: 'ignore', detached: true,
   });
-  for (let i = 0; i < 60; i++) {
+  process.on('exit', killVite);
+  for (let i = 0; i < 240; i++) {
     if (await portOpen(PORT)) break;
     await new Promise((r) => setTimeout(r, 250));
   }
@@ -262,7 +274,16 @@ let currentProfile = null;
  * directory is removed AFTER the new browser exists, so a launch failure never
  * costs us the ability to retry.
  */
+/**
+ * M1a: the machine-wide slot (<slots>/slot1, the memory guard first; tools/chrome-slot.mjs) is taken before the first
+ * Chrome and held across relaunches until the run ends, as film.mjs and the hero session hold it; the runner's own
+ * FIFO semaphore stays inside it. CALIMA_SLOT_HELD=1 when the caller already holds slot1.
+ */
+let machineSlot = null;
 async function launchBrowser() {
+  if (!machineSlot) machineSlot = await takeMachineSlot({ who: `gates:${PORT}`, waitS: Number(getFlag('--slot-wait', 1800)) });
+  // (a failed wait is final for the run: every later gate fails at once instead of waiting again)
+  if (!machineSlot.ok) throw new Error(`infra: ${machineSlot.why}`);
   await acquireChromeSlot();
   const dir = profileDir(PORT);
   const b = await puppeteer.launch({ protocolTimeout: 900000,  headless: 'new', args: LAUNCH_ARGS, userDataDir: dir });
@@ -650,7 +671,8 @@ try {
   // its profile directory is ours to delete. This is the path puppeteer skips.
   disposeProfile(currentProfile);
   currentProfile = null;
-  if (viteProc) viteProc.kill();
+  killVite();
+  releaseMachineSlot();
   writeReport();
 }
 
