@@ -159,7 +159,7 @@
     { "id": "F23-peg", "subject": "the Peg with Brea at 6 m", "in": "M1b",
       "hour": 16.5, "weather": "trade", "at": { "en": [-314.8, -267.0] }, "bearing": 315,
       "camera": { "mode": "orbit", "yawRel": 155, "dist": 4.5, "height": 1.6, "target": { "fwd": 4, "side": 0, "up": 0.8 }, "fov": 50 },
-      "state": { "pose": "idle", "hud": false, "actors": [ { "type": "instrument", "kind": "peg", "dist": 6, "side": 0, "face": "brea" } ] },
+      "state": { "pose": "idle", "hud": false, "actors": [ { "type": "instrument", "kind": "peg", "dist": 6, "side": 0, "face": "brea", "calm": true } ] },
       "ref": { "crops": ["inst-lineup"] }, "note": "The Peg's default form has no board design: scored on material, lamp and finish only; silhouette is 'no reference'. On F14's salt cell (3 m south-east of its middle, facing along it), so the ~1 m meadow no longer hides its legs, mallet and racks." },
 
     { "id": "F23-gauge", "subject": "the Gauge with Brea at 6 m", "in": "M1b",

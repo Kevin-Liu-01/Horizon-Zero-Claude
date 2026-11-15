@@ -284,6 +284,9 @@ export async function stageFrame(f, o = {}) {
       r.m.heading = want; if (r.m.root) { r.m.root.position.set(r.x, ground(r.x, r.z), r.z); r.m.root.rotation.y = want; }
       // (instruments, M1a r2) its feet re-planted under the turned pose before it freezes (src/instruments/lib/kindkit.js seatFeet)
       try { r.m.seatFeet?.(); } catch (e) { standIns.push(`Instrument '${r.a.kind}': seatFeet threw (${e.message})`); }
+      // (instruments, M1b fix round 1) `calm: true`: filmed with its lamp calm. On open crust a Peg 6 m from her sees
+      // her through the settle and was filmed hostile (F23-peg at 8d18c28); the meadow had hidden her
+      if (r.a.calm) { try { r.m.suspicion = 0; if (r.m.sc) r.m.sc.suspicion = 0; r.m._unseenT = 99; if (r.m.state !== 'patrol') r.m.setState?.('patrol'); if (r.m.state !== 'patrol') r.m.state = 'patrol'; } catch (e) { standIns.push(`Instrument '${r.a.kind}': not calmed (${e.message})`); } }
       const u0 = r.m.update; r.m.update = function () {}; undo.push(() => { r.m.update = u0; });
     } else if (r.q) {
       const tx = r.a.face === 'camera' ? lens.pos.x : bx, tz = r.a.face === 'camera' ? lens.pos.z : bz;
