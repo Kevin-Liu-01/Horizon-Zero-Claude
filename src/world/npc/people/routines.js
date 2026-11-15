@@ -45,8 +45,9 @@ export function places() {
     midStreet: (s) => streetPoint(s, 0),
     // the harbour
     ramp, boat, boatL: off(boat, rb - 90, 1.2), boatR: off(boat, rb + 90, 1.2), stern: off(boat, rb + 180, 2.4),
-    // the way down to the harbour from the street's foot: across the open pan edge, clear of Brea's house
-    harbourWay: [off(foot, 235, 30), off(foot, 235, 62)],
+    // the way down to the harbour from the street's foot: across the open pan edge, clear of Brea's house and the pan-edge
+    // house west of the foot (w1: on a straight 235 deg line the walk grazed its corner)
+    harbourWay: [off(foot, 218, 20), off(foot, 233, 55)],
     // the lamp is lit from the beach beside the mole's root (a person walks the ground, never the deck); the water watched
     // from the beach a few metres along it
     lamp: BREAKWATER_LAMP, lampStand: off(BREAKWATER_LAMP, bw + 180, 2.0), beachWatch: off(BREAKWATER_LAMP, bw + 110, 6.0),
@@ -109,6 +110,18 @@ function loops(P) {
       nightFrom: 18.5, nightTo: 6.0,
     },
   };
+}
+
+/**
+ * The waypoints a person takes from `from` to a step: its `via` in order, less the leading ones that lie farther from the
+ * place than the person already is (a keeper at the lamp does not walk up to the street to come back down to it).
+ */
+export function wayOf(from, step) {
+  const via = step.via || [], at = step.at;
+  const d0 = Math.hypot(at.x - from.x, at.z - from.z);
+  let k = 0;
+  while (k < via.length && Math.hypot(at.x - via[k].x, at.z - via[k].z) >= d0) k++;
+  return [...via.slice(k), at];
 }
 
 /** Clips that count as work or seated (stationary inside them is the work, not standing about). */
@@ -182,8 +195,8 @@ export class Routines {
     e.k++;
     e.step = step;
     const p = e.person;
-    // the way: the step's waypoints (if the person is not already past them), then the place
-    e.path = [...(step.via || []), step.at];
+    // the way: the step's waypoints, then the place
+    e.path = wayOf(p.group.position, step);
     e.phase = 'go';
     if (first) {
       // start on the job: put them at the place, already at it
