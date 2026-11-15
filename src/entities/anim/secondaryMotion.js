@@ -713,7 +713,7 @@ export class SecondaryMotion {
     }
     if (SC) SC.on = scOn;
     this._stL = sL0; this._stR = sR0; this._prevStL = pL0; this._prevStR = pR0;
-    for (let i = 0; i < this._chains.length; i++) { const c = this._chains[i]; c.seeded = false; c.mvK = NaN; c.mvV = NaN; }
+    for (let i = 0; i < this._chains.length; i++) { const c = this._chains[i]; c.seeded = false; c.mvK = NaN; c.mvV = NaN; c.swK = NaN; }
     this._mvSelf = NaN;
   }
 
@@ -795,7 +795,8 @@ export class SecondaryMotion {
     this._mvSelf = Number.isFinite(this._mvSelf) ? this._mvSelf + (spd - this._mvSelf) * Math.min(1, dt * 6) : spd;
     let selfG = (this._mvSelf - 0.25) / 0.5;
     selfG = selfG <= 0 ? 0 : selfG >= 1 ? 1 : selfG * selfG * (3 - 2 * selfG);
-    if (this.melee?._dbg?.stance === 'swing') selfG = 1;
+    const swingOn = this.melee?._dbg?.stance === 'swing';
+    if (swingOn) selfG = 1;
     for (let ci = 0; ci < this._chains.length; ci++) {
       const c = this._chains[ci];
       const N = c.N, n = c.n, cls = c.cls;
@@ -857,7 +858,22 @@ export class SecondaryMotion {
        *  a wind (F13 at 4f03003). `stillGrav`: the fall grows as the air drops below the trade wind's speed, x(1 +
        *  stillGrav) in still air, x1 at STILL_REF (2 m/s) and over, so in a calm the tail hangs and in the trade nothing changes) */
       const sg = cls.stillGrav > 0 ? 1 + cls.stillGrav * Math.max(0, 1 - windS / STILL_REF) : 1;
-      const k = cls.stiff, dmp = cls.drag, gy = -9.81 * cls.grav * sg, bg = cls.base;
+      /* (M1a regfix 3, F19, `swing`: while a lance swing is in hand the class eases (up ~0.12 s, down ~0.25 s) to its
+       *  swing's fall (`grav`) and bend limit (`maxAng`). The sash panels in the heavy's lunge were chaotic: the dressed
+       *  bench's F19 (the page's own staging: 0.9 s drawn, the held press, the contact key; ten starts) put the front
+       *  panel's chord 4-32 deg below horizontal at fb6d5f0 and 4-31 at 6a6080c, a level strip thrown ahead of her knee
+       *  in a third of them; with the swing's 1.4 and 0.30 rad, 30-64 deg (median 40) and the hem curling down: the
+       *  panel hangs down in front of her thigh as in the accepted frame, in every start) */
+      let swK = 0;
+      const SW = cls.swing;
+      if (SW) {
+        const tgt = swingOn ? 1 : 0;
+        const s0 = Number.isFinite(c.swK) ? c.swK : tgt;
+        c.swK = s0 + (tgt - s0) * Math.min(1, dt * (tgt > s0 ? (SW.up ?? 8) : (SW.down ?? 4)));
+        swK = c.swK;
+      }
+      const grv = SW && SW.grav !== undefined ? cls.grav + (SW.grav - cls.grav) * swK : cls.grav;
+      const k = cls.stiff, dmp = cls.drag, gy = -9.81 * grv * sg, bg = cls.base;
       /* (M1a regfix 2, `moving`, the sash panels: the air tuning for the standing trade wind (M1.2e: `wind`, `flut`,
        *  `hang`, `rootK`, `airSelf`) eases back to the values the panels ran on when F15 and F19 were accepted as her
        *  hips travel: `moving.v0`-`v1` m/s of the chain root's own speed, smoothed (up in ~0.1 s, down in ~0.6 s after the speed's own ~0.15 s low-pass). Standing
@@ -945,7 +961,7 @@ export class SecondaryMotion {
       /* ---- 6. rebuild root->tip: length, bend limit, collision, rotation ---- */
       pos[0] = anim[0]; pos[1] = anim[1]; pos[2] = anim[2];
       _spAcc.set(0, 0, 0, 1);
-      const maxAng = cls.maxAng, cosMax = Math.cos(maxAng);
+      const maxAng = SW && SW.maxAng !== undefined ? cls.maxAng + (SW.maxAng - cls.maxAng) * swK : cls.maxAng, cosMax = Math.cos(maxAng);
       for (let j = 0; j < N; j++) {
         const i0 = j * 3, i1 = i0 + 3;
         // animated direction of this segment, carried by the parent's rotation
