@@ -69,6 +69,7 @@ export class TitleStage {
     this._hourHeld = null;
     this._fovHeld = null;
     this._rest = false;
+    this._camHeld = null;
   }
 
   /** Where the Ring stands (the place contract's `ring`, else its site). */
@@ -133,6 +134,12 @@ export class TitleStage {
     }
     const cam = ctx.camera;
     if (cam && this._fovHeld == null) this._fovHeld = cam.fov;
+    // her chase lens stands down while the title holds the camera: its occlusion rule dissolved her
+    // (the boom it solved at the cistern read as jammed), and its FOV damp fought the title's lens
+    if (p && !this._camHeld) {
+      this._camHeld = { own: Object.prototype.hasOwnProperty.call(p, '_updateCamera'), fn: p._updateCamera };
+      p._updateCamera = function titleLens(dt, t) { this.fade = 1; this._applyFade?.(dt, t); };
+    }
     this.solve();
   }
 
@@ -155,7 +162,10 @@ export class TitleStage {
     const ease = smooth(k);
     const out = (1 - ease) * F.startExtra;
     const cx = S.cx + S.ux * out, cz = S.cz + S.uz * out;
-    const cy = S.cy + (1 - ease) * F.startRise;
+    // never under the ground on the way in (the rise behind her cistern climbs faster than the lens)
+    const T = ctx.terrain;
+    const floor = T?.getHeight ? T.getHeight(cx, cz) + 0.9 : -Infinity;
+    const cy = Math.max(S.cy + (1 - ease) * F.startRise, floor);
     if (cam) {
       cam.position.set(cx, cy, cz);
       const pitch = (F.pitchDeg - (1 - ease) * 3) * D2R;
@@ -185,6 +195,12 @@ export class TitleStage {
       env.timeFrozen = this._clockHeld;
     }
     if (cam && this._fovHeld != null) { cam.fov = this._fovHeld; cam.updateProjectionMatrix(); }
+    const p = this.ctx.player;
+    if (p && this._camHeld) {
+      if (this._camHeld.own) p._updateCamera = this._camHeld.fn;
+      else delete p._updateCamera;
+    }
+    this._camHeld = null;
     this._clockHeld = null; this._hourHeld = null; this._fovHeld = null; this._rest = false;
   }
 
