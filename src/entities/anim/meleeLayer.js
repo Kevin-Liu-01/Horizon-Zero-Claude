@@ -79,6 +79,9 @@ const _hoPos = new THREE.Vector3();
 const _bcTmp = new THREE.Vector3();
 /** `_reparentGap`'s throwaway direction out-param. */
 const _rgDir = new THREE.Vector3();
+/* M1.2f fix 1: the left-led carry's scratch, and the head-plane guard's */
+const _hpP = new THREE.Vector3(), _hpQ = new THREE.Vector3(), _hpC = new THREE.Vector3(), _hpF = new THREE.Vector3();
+const _lcB1 = new THREE.Vector3(), _lcD1 = new THREE.Vector3(), _lcP0 = new THREE.Vector3(), _lcP1 = new THREE.Vector3(), _lcPm = new THREE.Vector3(), _lcDm = new THREE.Vector3();
 /** `_snapPose`'s own shaft scratch (it runs inside `_blend`, before _lerpPose). */
 const _snapD = new THREE.Vector3();
 /** `_bowSolve`'s copy of the raw escape, kept across the constraint projection. */
@@ -727,6 +730,36 @@ const SIDE_KEY = {
   yaw: 0, pitch: 0, roll: 0,
 };
 
+/* ------------- THE LEFT-LED STOW AND UNSTOW (M1.2f fix 1, BIBLE §5.2) ----------- */
+/**
+ * BIBLE §5.2: "No hand passes behind the head plane to reach the back carry." The stowed haft runs from its butt low
+ * at her LEFT hip (char x +0.34, y 0.60) to the blade over her right shoulder; every point of it a right hand can
+ * reach from in front is above the shoulder and 0.1-0.3 m behind the head's frontal plane (the reach took it at 0.68
+ * of its length, 1.46 m up: the sweep counted 6-19 steps a draw, A107 0.18 m behind the head). So the LEFT hand takes
+ * it, low, where it can: `LC_S` m up the haft from the butt, behind her left hip at belt height; carries it forward
+ * round her left side and up (the shaft's far end clearing her right shoulder as it pivots, `LC_DIR_MID`) to the
+ * guard's own line in front of her; and the right hand takes it there at the butt end, at `GRIP_FRAC`, as it does at
+ * the end of every draw. Stowing reverses it: the right hand brings it to that line and lets go, the left carries it
+ * back round her side onto the stowed line and comes back down her side. Neither hand rises above its shoulder.
+ *
+ * Built on the draw's own machinery: while the carry is on, `_liveSocket` answers with the carried line (`_lc`)
+ * instead of the stowed one, so the prop is posed on it (`_poseHolstered`), the right hand reaches for it
+ * (`_reachPose`) and the hand-over waits for the right hand on it (`_reparentGap`) exactly as they did on the back.
+ */
+const LC_S = 0.42;                 // where the left palm holds the haft (m from the butt)
+const LC_REACH = 0.30;             // the draw: the left hand's reach to the stowed haft ends here (drawK)
+const LC_CARRY = 0.62;             // ...and the carry to the guard's line ends here
+/* The path (char space), chosen by a clearance search on her standing pose (shaft >= 0.10 m off the torso capsule,
+ * the head, the right upper arm and the thighs from 8 % of the carry on; the stowed line itself is 0.03 m off her
+ * back by design): the left palm out beside her left hip with the haft along her left side under the arm, butt
+ * forward and blade back (`LC_SIDE`, `LC_DIR_MID`), then forward to the HAND-OVER line in front of her chest, butt to
+ * her right (`LC_P1`, `LC_D1`), where the right fist takes it at GRIP_FRAC; the draw's own return leg takes it on to
+ * the guard from there, the shaft guard on. */
+const LC_SIDE = [0.50, 1.10, -0.20];
+const LC_DIR_MID = [0.0, 0.259, -0.966];
+const LC_P1 = [0.25, 1.15, 0.45];
+const LC_D1 = [0.75, -0.5, -0.433];
+
 /* ------------- THE STRIKE AIMS AT THE HULL (round 6, ruling R7) ----------- */
 /**
  * The contact keys were authored against a Sentry's chest: the blade lands
@@ -1205,6 +1238,8 @@ export class MeleeLayer {
    * animator step, for the line the hand is going to.
    */
   _liveSocket(outP, outD) {
+    // (M1.2f fix 1: while the left hand carries it, the "socket" is the carried line; see LC_S)
+    if (this._lc?.on) { outP.copy(this._lc.butt); outD.copy(this._lc.dir); return; }
     const c = this._carry;
     if (!c) {
       const an = this.an, K = this._sockBind0;
@@ -1543,6 +1578,7 @@ export class MeleeLayer {
     this._prevBeat = stance === 'swing' ? beat.id : null;
     this._prevPhase = stance === 'swing' ? st.phase : null;
     this._prevSwing = stance === 'swing';
+    this._leftCarry(stance, st);
     const u = this._blend(stance, st, beat);
     /* M1.3d: THE KEYS COME DOWN WITH HER IN A CROUCH. The guard and the beats are authored on a standing
      * body; crouched, her shoulders are 0.55 m lower (measured: right shoulder 1.30 -> 0.75 m holstered, 1.22
@@ -1685,6 +1721,7 @@ export class MeleeLayer {
     /* ...and her ARM stays out of the machine (round 6, S5): the blade may
      * go into the hull it hits, the hand and forearm holding it may not. */
     this._armHullGuard(w, st);
+    this._leftCarryHand(u);
     this._solveLeft(w, u);
 
     // fists: the drive hand is closed on the haft, the free hand open (canon:
@@ -2569,7 +2606,8 @@ export class MeleeLayer {
         frac = gf + (GRIP_FRAC - gf) * smoothstep(k, s0, 1);
       } else {
         frac = gf;
-        const reach = k >= 0.30 ? this._reparentGap(frac) : 9;
+        // (M1.2f fix 1: the right hand takes it only once the left has brought it to the hand-over line)
+        const reach = k >= 0.30 && !(this._lc?.on && this._lc.u < 0.98) ? this._reparentGap(frac) : 9;
         if (this._grabSettle(reach, k)) {
           D.grabReach = reach > 8 ? this._reparentGap(frac) : reach;
           this._grabK = k;
@@ -2927,6 +2965,78 @@ export class MeleeLayer {
   }
 
   /**
+   * M1.2f fix 1 — THE CARRIED LINE (see LC_S). Each step of a draw or a holster: `on` while the left hand has the
+   * haft (or is about to), `u` how far the carry is from the stowed line (0) to the guard's (1), and the line itself,
+   * char space; `hold` the left hand's weight on the haft (its reach in, its letting go). Off otherwise. No allocation.
+   */
+  _leftCarry(stance, st) {
+    const L = this._lc || (this._lc = { on: false, u: 0, hold: 0, butt: new THREE.Vector3(), dir: new THREE.Vector3(),
+      s0: new THREE.Vector3(), d0: new THREE.Vector3(), pt: new THREE.Vector3() });
+    L.on = false;
+    if (!this.lance || (stance !== 'draw' && stance !== 'holster')) { L.hold = 0; L.u = 0; return; }
+    const dk = clamp(st?.drawK ?? 0, 0, 1);
+    let u = 0, hold = 0;
+    if (stance === 'draw') {
+      if (this._held) { u = 1; hold = 1; }
+      else { u = CARRY_EASE(clamp((dk - LC_REACH) / (LC_CARRY - LC_REACH), 0, 1)); hold = CARRY_EASE(clamp(dk / LC_REACH, 0, 1)); }
+    } else {
+      if (this._held) { u = 1; hold = smoothstep(dk, 0.15, 0.40); }
+      else {
+        const r0 = clamp(this._relK ?? 0.62, 0, 0.9), r1 = Math.min(0.97, r0 + 0.30);
+        const k = clamp((dk - r0) / Math.max(0.05, r1 - r0), 0, 1);
+        u = 1 - CARRY_EASE(k);
+        hold = 1 - smoothstep(dk, r1, Math.min(1, r1 + 0.06));
+      }
+    }
+    // the stowed line (the socket's own, the carry off for the read)
+    this._liveSocket(L.s0, L.d0);
+    if (u > 0) {
+      // the hand-over line (LC_P1, LC_D1): the left palm on it LC_S up from the butt
+      _lcD1.fromArray(LC_D1).normalize();
+      _lcP1.fromArray(LC_P1);
+      // the left palm's path: from the stowed haft round her left side to the hand-over line (a quadratic, LC_SIDE)
+      _lcP0.copy(L.s0).addScaledVector(L.d0, LC_S);
+      _lcPm.fromArray(LC_SIDE);
+      const a = (1 - u) * (1 - u), m = 2 * u * (1 - u), c = u * u;
+      L.pt.set(_lcP0.x * a + _lcPm.x * m + _lcP1.x * c, _lcP0.y * a + _lcPm.y * m + _lcP1.y * c, _lcP0.z * a + _lcPm.z * m + _lcP1.z * c);
+      // the shaft: stowed -> up-forward-right -> the guard's, two great-circle legs
+      _lcDm.fromArray(LC_DIR_MID).normalize();
+      if (u < 0.5) this._slerpDirV(L.d0, _lcDm, u * 2, L.dir); else this._slerpDirV(_lcDm, _lcD1, u * 2 - 1, L.dir);
+      L.butt.copy(L.pt).addScaledVector(L.dir, -LC_S);
+    } else {
+      L.butt.copy(L.s0); L.dir.copy(L.d0);
+      L.pt.copy(L.s0).addScaledVector(L.d0, LC_S);
+    }
+    L.u = u; L.hold = hold; L.on = true;
+    this._dbg.leftCarryU = u; this._dbg.leftCarryHold = hold;
+  }
+
+  /** Great-circle interpolation between two unit Vector3 (into `out`). */
+  _slerpDirV(a, b, t, out) {
+    const d = clamp(a.dot(b), -1, 1), th = Math.acos(d);
+    if (th < 1e-5) return out.copy(a);
+    const s = Math.sin(th), ka = Math.sin((1 - t) * th) / s, kb = Math.sin(t * th) / s;
+    return out.set(a.x * ka + b.x * kb, a.y * ka + b.y * kb, a.z * ka + b.z * kb).normalize();
+  }
+
+  /**
+   * M1.2f fix 1: the LEFT hand's goal while the carry is on: its palm on the haft LC_S m up from the butt (on the
+   * carried line, or once the right hand has it, on the held one), weighted by `hold` against the pose's own free
+   * goal. The palm offset is the hand's own (`palmOffLL`, last pose), so the wrist goal sits off the haft by it.
+   */
+  _leftCarryHand(u) {
+    const L = this._lc;
+    if (!L || !L.on || L.hold <= 1e-3) return;
+    if (this._held) { this._gripChar(_lcP0); this._shaftChar(_lcD1); _lcP0.addScaledVector(_lcD1, LC_S - GRIP_FRAC * this.length); }
+    else _lcP0.copy(L.pt);
+    const an = this.an;
+    an._liveW(an.b.handL.bone, _q1);
+    _lcP0.sub(_lcPm.copy(this.palmOffLL).applyQuaternion(_q1));
+    // (on the held haft the seat takes over as the pose's lhW comes up: the free goal is what it leaves from)
+    _lh.lerp(_lcP0, L.hold);
+  }
+
+  /**
    * The over-the-shoulder reach pose, read off the LIVE socket.
    *
    * FIX ROUND 1 aimed the hand and the wrist at where the socket sits in the
@@ -2986,7 +3096,7 @@ export class MeleeLayer {
      * furthest from her back. It costs nothing anywhere else: `grabReach` has
      * been a CONVERGENCE test since round 4 (A102), and a shorter reach
      * converges sooner. */
-    const along = clamp(_a.sub(_grip).dot(_c) / this.length, 0.68, 0.86);
+    const along = this._lc?.on ? GRIP_FRAC : clamp(_a.sub(_grip).dot(_c) / this.length, 0.68, 0.86);
     this._grabFrac = along;
     _grip.addScaledVector(_c, along * this.length);
     /* The goal is the WRIST, but the haft runs through the PALM, so the
@@ -3187,7 +3297,84 @@ export class MeleeLayer {
         this._alignHaft(w);
       } else this._guardOff.copy(_hOff);
     } else this._guardOff.subVectors(_hand, _hTab);
+    // (M1.2f / M1.3f fix 1: last, the sweep's own head-plane bound on the solved right arm)
+    this._headPlaneGuard(w);
     this._rollOff = false;
+  }
+
+  /**
+   * M1.2f / M1.3f fix 1 — NO FOREARM OVER THE SHOULDER BEHIND THE HEAD PLANE, whatever the stance. The guard at a jog
+   * carried the right elbow 0.04-0.06 m over its shoulder and 0.26 m behind the head's frontal plane (bench,
+   * unstow lance from a jog: 10 steps after the draw, in the guard); the draw's R8 bound (`_elbowGuard`) is only on
+   * for the draw and the holster and allows 0.07 m behind the head BONE. This is the sweep's test (the hand and the
+   * forearm's quarter points, over the shoulder less 0.02 m, behind the plane through the skull centre plus 0.02 m):
+   * the upper arm is rolled about shoulder -> wrist to the nearest elbow that passes it (the wrist does not move) and
+   * the haft re-aimed by the forearm and the wrist only. No allocation.
+   */
+  _hpBad(S, E, H, C, F) {
+    for (let q = 0; q < 4; q++) {
+      if (q < 3) _hpP.copy(E).lerp(H, 0.25 * (q + 1)); else _hpP.copy(H);
+      if (_hpP.y > S.y - 0.02 && _hpQ.subVectors(_hpP, C).dot(F) < 0.02) return true;
+    }
+    return false;
+  }
+
+  _headPlaneGuard(w) {
+    const an = this.an, b = an.b, D = this._dbg;
+    if (!an.T.headOff || w < 0.02) return;
+    an._charOf(b.upArmR.bone, _eS);
+    an._charOf(b.loArmR.bone, _eE);
+    an._charOf(b.handR.bone, _eH);
+    an._charOf(b.head.bone, _eD);
+    an._liveW(b.head.bone, _q1); _q1.multiply(b.head.invW);
+    _hpF.set(0, 0, 1).applyQuaternion(_q1);
+    _hpC.copy(an.T.headOff).applyQuaternion(_q1).add(_eD);
+    // the fist itself (the index knuckle, the middle fingertip) over the shoulder behind the plane: the wrist goal
+    // comes down by the excess (an elbow roll cannot move the hand), and the arm is solved again
+    {
+      let over = 0;
+      for (let q = 0; q < 2; q++) {
+        const bn = this._hpBones || (this._hpBones = [an.bones.index_01_r || null, an.bones.middle_04_leaf_r || an.bones.middle_03_r || null]);
+        if (!bn[q]) continue;
+        an._charOf(bn[q], _hpP);
+        const o = _hpP.y - (_eS.y - 0.02);
+        if (o > 0 && _hpQ.subVectors(_hpP, _hpC).dot(_hpF) < 0.02 && o > over) over = o;
+      }
+      if (over > 0) {
+        _hand.y -= over + 0.01;
+        an._ikArm('r', _hand, _pole, w, null);
+        const ro = this._rollOff; this._rollOff = true; this._alignHaft(w); this._rollOff = ro;
+        an._charOf(b.upArmR.bone, _eS); an._charOf(b.loArmR.bone, _eE); an._charOf(b.handR.bone, _eH);
+        D.headPlaneLower = +(over + 0.01).toFixed(3);
+      }
+    }
+    if (!this._hpBad(_eS, _eE, _eH, _hpC, _hpF)) return;
+    _eAx.subVectors(_eH, _eS);
+    const d = _eAx.length();
+    if (d < 1e-4) return;
+    _eAx.multiplyScalar(1 / d);
+    const along = _eT.subVectors(_eE, _eS).dot(_eAx);
+    _eC.copy(_eS).addScaledVector(_eAx, along);
+    _eU.subVectors(_eE, _eC);
+    const r = _eU.length();
+    if (r < 1e-3) return;
+    _eU.multiplyScalar(1 / r);
+    _eV.crossVectors(_eAx, _eU);
+    const step = (2 * Math.PI) / ELB_SAMPLES;
+    for (let i = 1; i <= ELB_SAMPLES / 2; i++) {
+      for (let sg = -1; sg <= 1; sg += 2) {
+        const phi = sg * i * step;
+        _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
+        if (this._hpBad(_eS, _eT, _eH, _hpC, _hpF)) continue;
+        if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
+        _eQ.setFromAxisAngle(_eAx, phi);
+        an._rotQL(b.upArmR, _eQ);
+        const ro = this._rollOff; this._rollOff = true; this._alignHaft(w); this._rollOff = ro;
+        D.headPlaneGuard = (D.headPlaneGuard || 0) + 1;
+        return;
+      }
+    }
+    D.headPlaneGuardFail = (D.headPlaneGuardFail || 0) + 1;
   }
 
   /**

@@ -99,7 +99,8 @@ export class HeroRig {
     // hands: holstered, the stow kit's Shepherd's Lance is the one on her back
     const ml = this.player.animator?.melee;
     const sp = this._lanceProp = ml?.lance ?? ml?.lance ?? null;
-    if (sp) sp.visible = sp.parent !== ml.socketBone;
+    // (hero-anim M1.2f fix 1: and while the left hand carries it to or from the back, `_lc`, when the kit's copy is down)
+    if (sp) sp.visible = sp.parent !== ml.socketBone || !!ml._lc?.on;
     // melee's held prop (lanceStow.js, once merged) loads the GLB itself: point it at the
     // final Shepherd's Lance (plan §1.2, W3 variants go through the same call), give it the atlas
     const HL = this.ctx.combat?.melee?.lance;
