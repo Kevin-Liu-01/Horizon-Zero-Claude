@@ -19,7 +19,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 // the brows and the eyes with their lash lines; set from the 1e345eb film)
 export const FACE = {
   F11: { box: [655, 200, 918, 455], dark: [[662, 222, 758, 298], [798, 222, 895, 298]] },
-  F12: { box: [580, 235, 905, 455], dark: [[576, 262, 640, 315], [640, 238, 765, 290]] },
+  // (M1a fix round 1: c15dd43's narrower face and forward brow put F12's far brow and lash line at x 766-839, y 238-271, past the
+  // second feature box's right edge (765): 423 'black on skin' pixels that were all brow and lash. A third feature box covers the far
+  // eye and brow; the skin box is unchanged)
+  F12: { box: [580, 235, 905, 455], dark: [[576, 262, 640, 315], [640, 238, 765, 290], [765, 215, 850, 285]] },
   // (Frame Set v2's F13 is a true profile, the head's look-at held neutral: the boxes re-set from the f039319 film: the face from under the hairline to the chin, short of the scarf behind the jaw)
   F13: { box: [558, 240, 700, 492], dark: [[560, 255, 620, 305]] },
 };
