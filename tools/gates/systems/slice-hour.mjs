@@ -586,6 +586,7 @@ try {
       last = null; tries = 0;
       continue;
     }
+    if (!s.stage && !s.report?.started) { report.stoppedAt = null; report.why = 'no quest running (the continued game did not restore it)'; break; }
     if (!s.stage || s.stage === 'reward') { report.stoppedAt = 'reward'; report.why = 'quest done'; break; }
     if (s.busy) { await playScene(page, K); continue; }
     if (s.stage === last) tries++; else tries = 0;

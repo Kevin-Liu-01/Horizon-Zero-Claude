@@ -2775,9 +2775,13 @@ export class Progression {
     // A first checkpoint so the very first death has something to roll back to
     // (progression-019: dying before you ever reach a brazier must still cost
     // you the pouch you spent, not hand you a fresh one).
-    if (!this._bootCheckpoint && this._bootT > 1.5) {
+    // M1.6f (systems, smallest change): only once play has begun, and only into a slot that holds no record at all.
+    // It ran 1.5 s into the TITLE and wrote the title's world as the slot's newest record, so the title's own Continue
+    // then loaded that instead of the save (2aec768 save-reload row: the 07:00 New Game save came back at 16:52 with
+    // the quest unstarted)
+    if (!this._bootCheckpoint && this._bootT > 1.5 && this.ctx.state === 'playing') {
       this._bootCheckpoint = true;
-      if (!this.saves.has(SLOT.checkpoint)) this.checkpoint('start');
+      if (!this.saves.has(SLOT.checkpoint) && !this.saves.has(SLOT.main)) this.checkpoint('start');
     }
 
     /* --- goto objectives + markers, 5 Hz, no allocation --- */

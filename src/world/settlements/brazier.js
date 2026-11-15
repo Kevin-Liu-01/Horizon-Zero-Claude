@@ -96,7 +96,7 @@ function cisternGeometry(rng) {
     [1.02, -0.32], [1.02, 0.4], [1.06, 0.41], [1.07, 0.44], [1.07, 0.5], [1.05, 0.53], [1.0, 0.55], [0.86, 0.55],
     [0.82, 0.53], [0.8, 0.5], [0.8, 0.5], [0.79, 0.12],
   ];
-  const SEG = 48, N = 12;            // 12 tiles of masonry round the ring: 0.53 m each on the outer wall
+  const SEG = 48, N = 6;             // 6 tiles of masonry round the ring: 1.07 m each on the outer wall
   const prof = P.map(([r, h]) => new THREE.Vector2(r, h));
   const g = new THREE.LatheGeometry(prof, SEG);
   const pos = g.attributes.position, uv = g.attributes.uv;
@@ -111,7 +111,7 @@ function cisternGeometry(rng) {
     for (let j = 0; j < P.length; j++) {
       const n = i * P.length + j;
       pos.setX(n, pos.getX(n) * k); pos.setZ(n, pos.getZ(n) * k);
-      uv.setXY(n, (i / SEG) * N, L[j] / 0.3);
+      uv.setXY(n, (i / SEG) * N, L[j] / 0.42);
     }
   }
   g.computeVertexNormals();
@@ -177,8 +177,8 @@ void main() {
  * The painted surfaces (browser only), each painted once on a small canvas:
  *   basalt    vesicular, sun-dulled grey-brown: the bowl, its feet and the seat (with `basaltH`, its relief: soft
  *             pits only, so a stone never breaks into black facets under a low fire light)
- *   masonry   the cistern: two courses of dressed stone (basalt and pale tuff) in lime mortar per tile, a running
- *             bond, worn edges (with `masonryH`: the joints sunk, each stone's face a little domed)
+ *   masonry   the cistern: three courses of dressed rubble (basalt and pale tuff) in weathered lime mortar per
+ *             tile, joints drawn per course, worn edges (with `masonryH`: the joints sunk, each stone's face a little domed)
  *   coal      grey ash with glowing cracks (the same canvas is the emissive map)
  */
 let _tex = null;
@@ -209,45 +209,47 @@ function surfaces() {
     gh.fillStyle = pit; gh.beginPath(); gh.arc(x, y, r * 1.4, 0, 6.283); gh.fill();
   }
 
-  // masonry: a 256 x 256 tile is two courses of 0.15 m; stones 0.24-0.3 m long in a running bond
-  const M = 256, mc = canvas(M), mg = mc.getContext('2d'), mh = canvas(M), mhg = mh.getContext('2d');
-  mg.fillStyle = '#c9c0ae'; mg.fillRect(0, 0, M, M);                       // lime mortar
-  mhg.fillStyle = '#3a3a3a'; mhg.fillRect(0, 0, M, M);                     // joints sunk
-  const tones = [[86, 80, 75], [98, 91, 84], [74, 69, 66], [120, 108, 95], [104, 96, 90], [132, 118, 102]];
-  const courses = [[0, 128], [128, 256]];
-  const joints = [[0, 118, 236], [58, 178]];
-  const J = 7;                                                               // joint width (px)
+  // masonry: a 512 x 256 tile is three courses (0.13, 0.16, 0.13 m) of dressed rubble 0.15-0.3 m long, joints
+  // drawn per course by the rng (no brick grid: 39f7533's first film of this lathe read as a regular brick well)
+  const MW = 512, MH = 256, mc = canvas(MW, MH), mg = mc.getContext('2d'), mh = canvas(MW, MH), mhg = mh.getContext('2d');
+  const M = MW;
+  mg.fillStyle = '#9c9486'; mg.fillRect(0, 0, MW, MH);                     // weathered lime mortar
+  mhg.fillStyle = '#3a3a3a'; mhg.fillRect(0, 0, MW, MH);                   // joints sunk
+  const tones = [[86, 80, 75], [98, 91, 84], [74, 69, 66], [112, 102, 92], [92, 86, 82], [120, 108, 96], [80, 76, 74]];
+  const courses = [[0, 80], [80, 176], [176, 256]];
+  const J = 6;                                                               // joint width (px)
   const stoneAt = (x0, x1, y0, y1) => {
     const [r, gg, bb] = tones[(rng() * tones.length) | 0];
-    const k = 0.9 + rng() * 0.2;
+    const k = 0.88 + rng() * 0.24;
+    const dy0 = (rng() - 0.5) * 6, dy1 = (rng() - 0.5) * 6;                 // a hand-laid course wanders
     const draw = (ox) => {
-      const x = x0 + ox + J / 2, y = y0 + J / 2, w = x1 - x0 - J, h = y1 - y0 - J, rr = 9 + rng() * 6;
-      const path = () => { mg.beginPath(); mg.roundRect ? mg.roundRect(x, y, w, h, rr) : mg.rect(x, y, w, h); };
-      mg.fillStyle = `rgb(${r * k | 0},${gg * k | 0},${bb * k | 0})`; path(); mg.fill();
-      // worn, darker edges and a pale weathered face
+      const x = x0 + ox + J / 2, y = y0 + J / 2 + dy0, w = x1 - x0 - J, h = y1 - y0 - J - dy0 + dy1, rr = 10 + rng() * 10;
+      const path = (c) => { c.beginPath(); if (c.roundRect) c.roundRect(x, y, w, h, rr); else c.rect(x, y, w, h); };
+      mg.fillStyle = `rgb(${r * k | 0},${gg * k | 0},${bb * k | 0})`; path(mg); mg.fill();
       const grd = mg.createLinearGradient(0, y, 0, y + h);
-      grd.addColorStop(0, 'rgba(255,248,236,0.10)'); grd.addColorStop(1, 'rgba(20,16,14,0.22)');
-      mg.fillStyle = grd; path(); mg.fill();
-      mhg.beginPath(); mhg.roundRect ? mhg.roundRect(x, y, w, h, rr) : mhg.rect(x, y, w, h);
+      grd.addColorStop(0, 'rgba(255,248,236,0.08)'); grd.addColorStop(1, 'rgba(20,16,14,0.2)');
+      mg.fillStyle = grd; path(mg); mg.fill();
+      path(mhg);
       const hg = mhg.createRadialGradient(x + w / 2, y + h / 2, 2, x + w / 2, y + h / 2, Math.max(w, h) * 0.62);
-      hg.addColorStop(0, '#e6e6e6'); hg.addColorStop(1, '#9a9a9a');
+      hg.addColorStop(0, '#e6e6e6'); hg.addColorStop(1, '#a0a0a0');
       mhg.fillStyle = hg; mhg.fill();
     };
     draw(0);
     if (x1 > M) draw(-M);                                                    // the stone that wraps the tile's edge
   };
-  for (let c = 0; c < 2; c++) {
-    const [y0, y1] = courses[c], js = joints[c];
+  for (const [y0, y1] of courses) {
+    const js = [rng() * 60 | 0];
+    while (js[js.length - 1] < M - 150) js.push(js[js.length - 1] + 70 + (rng() * 70 | 0));
     for (let i = 0; i < js.length; i++) stoneAt(js[i], i + 1 < js.length ? js[i + 1] : js[0] + M, y0, y1);
   }
   // speckle and vesicles over the stones, grime in the joints
   for (let i = 0; i < 1800; i++) {
     const v = 60 + rng() * 90 | 0;
     mg.fillStyle = `rgba(${v},${v - 3},${v - 8},${0.2 + rng() * 0.3})`;
-    mg.fillRect(rng() * M, rng() * M, 1 + rng() * 2, 1 + rng() * 2);
+    mg.fillRect(rng() * MW, rng() * MH, 1 + rng() * 2, 1 + rng() * 2);
   }
   for (let i = 0; i < 90; i++) {
-    const x = rng() * M, y = rng() * M, r = 0.8 + rng() * 2.2;
+    const x = rng() * MW, y = rng() * MH, r = 0.8 + rng() * 2.2;
     mg.fillStyle = 'rgba(36,33,31,0.7)'; mg.beginPath(); mg.arc(x, y, r, 0, 6.283); mg.fill();
     mhg.fillStyle = 'rgba(90,90,90,0.8)'; mhg.beginPath(); mhg.arc(x, y, r, 0, 6.283); mhg.fill();
   }
