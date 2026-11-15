@@ -30,7 +30,8 @@ import { SightingKite } from './saltrow-kite.js';
  * 5210b31-dbb27a6 they took +yaw and stood 2 x yaw, 72 deg, off their walls).
  *
  * NIGHT: a pane's vertex colour is its room's glow (black = a dark room); `uGlow` scales it from dusk (sun under 8 deg)
- * to full at night. The walls carry the kit's baked window spill (TEXCOORD_1.x, renamed `aSpill`): at night each
+ * to full at night. The walls carry the kit's baked window spill (the `_bone` byte's high nibble, `aSpill`; until
+ * fix round 1 it rode TEXCOORD_1, which the GLB writer's prune dropped, so no wall ever received it): at night each
  * wall vertex near a lit window adds its own lime colour x warm x spill to its emission, so walls read white within a
  * few metres of a window and fall to silhouette beyond (F07's written target). Fix round 1: the moon, the hemisphere
  * fill and the sky IBL lit every lime wall evenly at 21:00 (median Y 0.161 against the mountain's 0.022, houses with no
@@ -43,7 +44,8 @@ import { SightingKite } from './saltrow-kite.js';
  * LIME WASH (fix round 1: "the walls are flat planes"): on lime fragments only (vertex colour light and unsaturated)
  * the fragment shader adds wash grain (world-space value noise at 3 and 14 per metre), worn patches where the render
  * is thin over the stone (a ~1 m noise past a threshold, grey-ochre), and base dirt: a splashed band over the first
- * 0.5-0.9 m of each house from TEXCOORD_1.y (height over its ground floor, `aFoot`; 99 where a piece has no foot).
+ * 0.5-0.9 m of each house from the `_bone` byte's low nibble (height over its ground floor, `aFoot`; 99 where a
+ * piece has no foot).
  */
 const URL = '/models/settlements/saltrow-kit.glb';
 const WARM = new THREE.Color(1.0, 0.62, 0.32);
@@ -52,7 +54,7 @@ const NIGHT_LIGHT = 0.14;
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-/** Every attribute as plain Float32 (the merge needs one layout), uv1 -> aSpill (x) and aFoot (y). */
+/** Every attribute as plain Float32 (the merge needs one layout); the kit's `_bone` byte -> aSpill and aFoot. */
 function plain(geo) {
   for (const name of Object.keys(geo.attributes)) {
     const a = geo.attributes[name];
@@ -62,13 +64,13 @@ function plain(geo) {
       geo.setAttribute(name, new THREE.BufferAttribute(out, a.itemSize));
     }
   }
-  const uv1 = geo.attributes.uv1;
+  const pk = geo.attributes._bone;
   const n = geo.attributes.position.count;
   const sp = new Float32Array(n), ft = new Float32Array(n).fill(99);
-  if (uv1) for (let i = 0; i < n; i++) { sp[i] = uv1.getX(i); ft[i] = uv1.getY(i); }
+  if (pk) for (let i = 0; i < n; i++) { const v = Math.round(pk.getX(i)), f = v & 15; sp[i] = (v >> 4) / 15; ft[i] = f === 15 ? 99 : f * 0.1; }
   geo.setAttribute('aSpill', new THREE.BufferAttribute(sp, 1));
   geo.setAttribute('aFoot', new THREE.BufferAttribute(ft, 1));
-  geo.deleteAttribute('uv1');
+  if (geo.attributes.uv1) geo.deleteAttribute('uv1');
   if (!geo.attributes.color) geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
   if (geo.attributes.color.itemSize === 4) {
     const c4 = geo.attributes.color, c3 = new Float32Array(n * 3);

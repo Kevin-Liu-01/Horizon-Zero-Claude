@@ -19,10 +19,12 @@
  * ONE MATERIAL LANGUAGE (tools/build/lib/hs.mjs): albedo is per-vertex colour (lime tone x mottling, rising damp,
  * soot and streaks baked in), roughness/metalness come from the shared 8x1 palette texel (KTX2 after the build's
  * ktx2 step). Nodes, each one mesh:
- *   b-<id>-body    walls, roof, trim, balcony, bell        TEXCOORD_1.x = window spill (0..1): how much a lit window
- *                                                          of the same facade lights this vertex at night;
- *                                                          TEXCOORD_1.y = height over the house's ground floor (m),
- *                                                          the runtime's base dirt (99 on pieces without a foot)
+ *   b-<id>-body    walls, roof, trim, balcony, bell        _BONE (a custom byte; three `_bone`): high nibble the
+ *                                                          window spill x 15 (how much a lit window of the same
+ *                                                          facade lights this vertex at night), low nibble the height
+ *                                                          over the house's ground floor in 0.1 m to 1.4 m (15 = no
+ *                                                          foot: props, flora, glass), the runtime's base dirt.
+ *                                                          (TEXCOORD_1 does not survive writeGLB's prune.)
  *   b-<id>-glass   window panes and the door lantern       COLOR_0 = the pane's night glow (black = a dark room)
  *   b-<id>-flora   bougainvillea: bract triads and leaf cards, two-sided, normals out of the wall
  *   cone, ramp, cart (the porter's salt cart), breakwater (body), breakwater-glass (the lantern's panes)
@@ -673,6 +675,24 @@ export async function build({ out = ROOT } = {}) {
   parts.push({ bucket: rp, material: { name: 'saltrow-kit' } });
   parts.push({ bucket: bw.body, material: { name: 'saltrow-kit' } });
   parts.push({ bucket: bw.glass, material: { name: 'saltrow-kit' } });
+  // (fix round 1) the spill and the foot travel as the one custom byte attribute `_BONE` (three: `_bone`), packed
+  // spill x 15 in the high nibble and the foot (0.1 m steps to 1.4 m; 15 = no foot) in the low: writeGLB's prune()
+  // drops TEXCOORD_1 because no material samples it, so from 5210b31 to 6fcc3be the window spill never reached the
+  // runtime (every wall vertex read 0) and the walls had no falloff to show
+  for (const { bucket: b } of parts) {
+    const n = b.pos.length / 3, u = b.uv1;
+    const L = new Uint8Array(n).fill(15);
+    if (u && u.length === n * 2) {
+      for (let i = 0; i < n; i++) {
+        const sp = Math.round(Math.min(1, Math.max(0, u[i * 2])) * 15);
+        const fy = u[i * 2 + 1];
+        const fq = fy >= 98 ? 15 : Math.min(14, Math.max(0, Math.round(fy / 0.1)));
+        L[i] = sp * 16 + fq;
+      }
+    }
+    b.labels = Array.from(L);
+    delete b.uv1;
+  }
   const res = await writeGLB(parts, {
     file: path.join(out, OUTPUTS[0]),
     provenance: { recipe: RECIPE, sources: [], licence: 'project-original' },
@@ -680,7 +700,7 @@ export async function build({ out = ROOT } = {}) {
       r5Generator: { name: RECIPE, design: 'saltrow-kit', licence: 'original work (generated)' },
       r5Saltrow: {
         buildings: BUILDINGS.length, windows: stats.windows, litWindows: stats.lit, cones: CONES.length,
-        lamp: { y: bw.lampY, z: bw.lampZ }, spill: 'TEXCOORD_1.x', glow: 'COLOR_0 on *-glass',
+        lamp: { y: bw.lampY, z: bw.lampZ }, spill: '_BONE high nibble / 15', foot: '_BONE low nibble x 0.1 m (15: none)', glow: 'COLOR_0 on *-glass',
       },
     },
   });
