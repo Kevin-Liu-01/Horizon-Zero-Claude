@@ -90,6 +90,11 @@ Object.assign(COL, {
   smock: hex('#6E247C'), trouserBG: hex('#4A3530'), bootLeather: hex('#57403A'), shinWrap: hex('#4E2C58'), sashDeep: hex('#77307F'),
   panel: hex('#7A2F86'), scarf: hex('#6C2874'), print: hex('#A06A98'), strapLeather: hex('#5A3A44'),
 });
+// M1.2d fix round 1 (the judge: "the violet still reads as flat, light lilac next to the deep, mottled plum of TURN"; armor/lib/
+// swatch.mjs on the 34fa9eb F08: panel (93,48,97) against the sheet's (58,31,54), dE 10.9; top (95,42,96) against (78,38,71), dE 6.3):
+// each violet scaled per channel in linear light by sheet / frame, the panel's a little short of the full step so it still reads
+// violet, not brown, beside the trousers
+Object.assign(COL, { panel: hex('#522152'), smock: hex('#5A205D'), scarf: hex('#59235A'), print: hex('#866173') });
 
 /** The skeleton + grafted, cut pieces (shared by build() and panBindTriangles()). */
 async function assemble() {
@@ -548,11 +553,13 @@ export const PAN_PAINTERS = {
     for (const q of t.part.panels) { let d = Math.abs(th - q.thC); if (d > Math.PI) d = TAU - d; if (d < best) { best = d; P = q; } }
     let du = th - P.thC; if (du > Math.PI) du -= TAU; if (du < -Math.PI) du += TAU;
     const u = du * P.rRef, v = P.yTop - t.Y, tt = clamp(v / (P.yTop - P.yHem)), w = P.halfW * (1 - 0.15 * tt);
-    cloth(t, o, COL.panel, { slub: 0.08, mottle: 0.11, seed: 51 + P.seed, thread: 0.06 });
+    // (M1.2d fix round 1, the judge: "the deep, mottled plum of TURN"; "the fold fade is faint"): more mottle (0.11 -> 0.18), the
+    // valleys a third darker, and the crests' sun fade over a wider band (from f 0.5, not 0.6) and stronger (0.3 -> 0.44)
+    cloth(t, o, COL.panel, { slub: 0.08, mottle: 0.18, seed: 51 + P.seed, thread: 0.06 });
     // folds (the mesh's own, rung1.mjs hangPanel): shade in the valleys, fade on the crests
     const f = fold01(noise3(u * 9 + P.seed * 3.3, t.Y * 1.6, 4.4 + P.seed));
-    o.ao *= 1 - 0.3 * sstep(0.35, 0.05, f) * sstep(0.02, 0.2, v);
-    over(o, [170, 128, 168], 0.3 * sstep(0.6, 0.95, f) * sstep(0.05, 0.3, v));
+    o.ao *= 1 - 0.38 * sstep(0.35, 0.05, f) * sstep(0.02, 0.2, v);
+    over(o, [170, 128, 168], 0.44 * sstep(0.5, 0.95, f) * sstep(0.05, 0.3, v));
     o.h += 0.003 * (f - 0.5);
     // the embroidery: couched gold-ochre thread, a little proud, dulled where it is worn
     const e = w - Math.abs(u);
@@ -1430,26 +1437,33 @@ export async function panBase(opt = {}) {
       const L = R.F.len;
       // (to 0.195 m: higher, the elbow's crease folds over the wrap's top at full draw)
       const from = 1 - 0.195 / L, to = 1 - 0.006 / L;
-      woundWrap(armwrap, R, armSkin, { from, to, off: 0.0024, step: 0.0018, pitch: 0.036, turnsSign: sgn, rings: 15, sides: 12, rect: trim.rect('wrapV') });
+      woundWrap(armwrap, R, armSkin, { from, to, off: 0.0042, step: 0.0018, pitch: 0.036, turnsSign: sgn, rings: 15, sides: 12, rect: trim.rect('wrapV') });
       if (side === 'r') {
         // (M1.2d: the turnaround's bracer runs from the wrist most of the way to the elbow, its two ends capped in brass)
         const b0 = 1 - 0.186 / L, b1 = 1 - 0.028 / L;
-        cuff(bracer, R, armSkin, { from: b0, to: b1, off: 0.0062, thick: 0.0028, rings: 9, sides: 16, rect: trim.rect('pouch'), stiff: 0.55, laceAt: Math.PI / 2, laceRect: trim.rect('rope') });
+        cuff(bracer, R, armSkin, { from: b0, to: b1, off: 0.0084, thick: 0.0032, rings: 9, sides: 16, rect: trim.rect('pouch'), stiff: 0.55, laceAt: Math.PI / 2, laceRect: trim.rect('rope') });
         if ((opt.cut || 'starter') === 'starter') {
           for (const [f0, f1] of [[b0 - 0.002 / L, b0 + 0.013 / L], [b1 - 0.013 / L, b1 + 0.002 / L]]) {
-            cuff(bracer, R, armSkin, { from: f0, to: f1, off: 0.0094, thick: 0.0016, rings: 2, sides: 16, rect: trim.rect('brass'), stiff: 0.55, roll: 0.0008 });
+            cuff(bracer, R, armSkin, { from: f0, to: f1, off: 0.0122, thick: 0.0022, rings: 2, sides: 16, rect: trim.rect('brass'), stiff: 0.55, roll: 0.0008 });
           }
         }
       }
       // (R69: Kevin's Nov 13 turnaround has a violet band on BOTH upper arms)
+      // (M1.2d fix round 1, the judge: "the arm bands show on neither upper arm in F08-F10", "the bracers read as a narrow outer
+      // plate": since the skin under them is no longer culled, her posed arm came up through a band 3.6 mm off it. The band now
+      // stands 8.8 mm off her and 5 cm wide, the forearm wraps 4.2 mm, the bracer 11.6 mm with its brass caps 2.8 mm proud of it)
       {
         const ua = jointPos(doc, `upperarm_${side}`);
         const onUp = (i) => (side === 'r' ? fitBody.pos[i * 3] < ua[0] + 0.03 : fitBody.pos[i * 3] > ua[0] - 0.03);
         const RU = limbRadius(fitBody, ua, a, { pick: onUp });
-        cuff(armband, RU, armSkin, { from: 0.5, to: 0.5 + 0.045 / RU.F.len, off: 0.0016, thick: 0.002, rings: 4, sides: 12, rect: trim.rect('wrapV'), stiff: 0.2, roll: 0.0012 });
+        cuff(armband, RU, armSkin, { from: 0.46, to: 0.46 + 0.05 / RU.F.len, off: 0.0062, thick: 0.0026, rings: 4, sides: 12, rect: trim.rect('wrapV'), stiff: 0.2, roll: 0.0012 });
       }
     }
     for (const p of [armwrap, bracer, armband]) recomputeNormals(p);
+    // M1.2d fix round 1 (the judge: "the arm bands show on neither upper arm"; "the bracers read as a narrow outer plate"): the cuffs
+    // are wound round the limb's frame, which runs the other way on her right arm, and the game draws front faces only, so a cuff
+    // showed its far inside and hid its near half. Every cuff triangle now faces out of the arm under it
+    for (const p of [armwrap, bracer, armband]) faceOut(p, armSkin);
   }
 
   // (fix round 1) the FRONT of each armhole stands a little off her: at full draw the bow arm's and the draw arm's
@@ -1496,11 +1510,13 @@ export async function panBase(opt = {}) {
   recomputeNormals(panels);
   // their other faces (the game culls back faces: a hanging panel seen from behind needs its own), and the scarf's inside
   const backs = mk('backs', { trim: true });
-  backFaces(backs, panels);
+  backFaces(backs, panels, { inset: 0.0024 });
   backFaces(backs, scarf, { inset: 0.0012 });
   // their edges and the scarf's, rolled (no paper edge anywhere)
   const hems = mk('hems', { trim: true });
-  rimTubes(hems, panels, { r: 0.0017, rect: trim.rect('bind'), skip: (p) => p[1] > 1.06 });
+  // (M1.2d fix round 1, the judge: "seen edge-on, the front panel becomes a thin stick ahead of the leg", "a paper-thin strip" in F09):
+  // the panels are heavy cloth, their two faces 2.4 mm apart (1.1 before) and their edges a rolled hem 5.2 mm round on six sides
+  rimTubes(hems, panels, { r: 0.0026, sides: 6, rect: trim.rect('bind'), skip: (p) => p[1] > 1.06 });
   rimTubes(hems, scarf, { r: 0.0021, rect: trim.rect('bind') });
   // fingerless gloves: dark leather from 3 cm up the wrist to half way along the first finger bones, edges rolled
   const glove = mk('glove', { trim: true });
@@ -1722,7 +1738,13 @@ export function panFinish(base, parts) {
   // (M1.2d: the scarf hides her throat but never the underside of her jaw, which a face camera sees; and the narrow
   // bands and wraps on her arms no longer cull the skin under them: the band slides on the arm in a pose and the skin it
   // had culled showed the backdrop through her, a pale sliver under every band in the Nov 14 refilm)
-  return coverMask(B, parts, { skip: new Set(['tab', 'boss', 'slider', 'buckle', 'tongue', 'pouch', 'sash', 'straps', 'tie', 'hat', 'panel', 'backs', 'hems', 'rivets', 'belt2', 'pouch2', 'knee', 'case', 'armband', 'armwrap', 'bracer', 'patches']), also: bra, keep: (x, y) => y > 1.525 });
+  return coverMask(B, parts, { skip: new Set(['tab', 'boss', 'slider', 'buckle', 'tongue', 'pouch', 'sash', 'straps', 'tie', 'hat', 'panel', 'backs', 'hems', 'rivets', 'belt2', 'pouch2', 'knee', 'case', 'armband', 'armwrap', 'bracer', 'patches']), also: bra,
+    // (M1.2d fix round 1, the judge: "the backdrop shows between the harness or scarf and the shoulder" in F13, "a black triangle and
+    // faceted skin under the scarf edge" in F12): the top of each shoulder, from the neck to the armhole, keeps its skin. The top
+    // and the harness lift off it when the arm hangs, and the culled skin there was a window to the backdrop
+    // (and the shins and feet keep theirs: the boots and the shin wraps are eased off her through the range of motion (romfit), and a
+    // slit the edge collapse left in a boot shaft showed the backdrop through her leg in F08, where now it shows her own shin)
+    keep: (x, y, z) => y > 1.525 || y < 0.43 || (Math.abs(x) > 0.085 && Math.abs(x) < 0.215 && y > 1.375 && y < 1.53 && z > -0.085 && z < 0.045) });
 }
 
 export async function build({ out = ROOT } = {}) {
