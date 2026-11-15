@@ -425,6 +425,10 @@ const UC_SEAT_MAX = 0.12;
 /** ...and on the drawn matrices, this many passes. */
 const UC_SEAT_LATE_N = 4;
 const _ucC = new THREE.Vector3(), _ucV = new THREE.Vector3(), _ucP = new THREE.Vector3(), _ucQ = new THREE.Quaternion();
+/** M1a regressions: the drive arm's elbow pole in a full crouch (character space: out to her right and down, a little forward, not back),
+ *  and how much of the crouch weight blends toward it (see `_solveRight`). */
+const _crPole = new THREE.Vector3(-0.75, -0.65, 0.25).normalize();
+const CROUCH_POLE_K = 1;
 const HIP_LEAD_RAMP = 0.10;
 /**
  * THE MASKED CLIP AFTER THE HIPS, NOT BEFORE THEM (M1.3d). `Sword_Attack`'s
@@ -464,10 +468,16 @@ for (const bt of BEATS) { bt.hipLead = LIGHT_LEAD; bt.clipMap = LIGHT_CLIP_MAP; 
  */
 const UNDERCUT = {
   id: 'undercut', clip: [0.10, 0.62], mirror: false, clipW: 0.10, hipLead: HIP_LEAD, sinkFirst: true,
-  cock: { hand: [-0.26, 1.00, -0.28], shaft: [0.14, 0.12, 0.98], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.56, py: -0.40, pitch: 0.38, roll: 0.04, dz: -0.06 },
-  contact: { hand: [-0.22, 1.04, 0.0], shaft: [0.12, 0.14, 0.98], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.70, py: 0.10, pitch: 0.44, roll: -0.04, dz: 0.30 },
-  follow: { hand: [-0.22, 1.02, 0.02], shaft: [0.12, 0.11, 0.985], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.70, py: 0.12, pitch: 0.44, roll: -0.06, dz: 0.32 },
+  cock: { hand: [-0.24, 1.02, -0.40], shaft: [0.14, 0.12, 0.98], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.56, py: -0.40, pitch: 0.38, roll: 0.04, dz: -0.12 },
+  contact: { hand: [-0.22, 1.04, 0.0], shaft: [0.12, 0.11, 0.98], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.70, py: 0.10, pitch: 0.44, roll: -0.04, dz: 0.30 },
+  follow: { hand: [-0.22, 1.02, 0.02], shaft: [0.12, 0.09, 0.985], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.70, py: 0.12, pitch: 0.44, roll: -0.06, dz: 0.32 },
 };
+/* (M1a regressions, M1.3d, A-melee-undercut in the page: standing from the back the tip met the contact at 1.01 m (bar
+ *  1.0, 39f7533's tree), and from the guard the thrust read 23-27 deg on the dressed bench at page-like steps (bar 25):
+ *  the chamber was reached while the haft was still turning up out of the guard, so the travel the row reads began
+ *  across the haft. The chamber now draws back 0.12 m further (hand z -0.28 -> -0.40, hips dz -0.06 -> -0.12) so the
+ *  haft has its thrust line before the tip turns forward, and the haft at the contact and the follow-through is 1.7 deg
+ *  flatter (y 0.14 -> 0.11, 0.11 -> 0.09): bench, 4 runs each, standing 11-21 deg, tip 0.79-0.87 m) */
 /** Which beat a published melee state plays, and its slot in `_reachSeen`. */
 function beatFor(st) {
   return st.undercut ? UNDERCUT : st.heavy ? HEAVY : BEATS[clamp(st.combo | 0, 0, BEATS.length - 1)];
@@ -3401,6 +3411,15 @@ export class MeleeLayer {
        * "out" at the guard stood the upper arm level with her shoulder (filmed) */
       const up = Math.max(0, lift);
       _pole.set(-0.36 - 0.54 * up, -0.80 + 0.28 * up, -0.62 + 0.28 * up).normalize();
+      /* (M1a regressions, M1.3d, the crouched Undercut in the page: thrust 26.8 deg at 920c509, bar 25). Crouched, her
+       *  trunk pitches forward over her knees and her head comes down in front of her shoulders; a pole "back" in
+       *  character space then stood the elbow up behind her, at or over the lowered head (dressed bench: elbowOverHead
+       *  +0.03 to +0.05 m at the cock and the contact), the forearm and head-plane guards woke on alternate steps, and
+       *  the elbow flipped between two solutions: the haft jumped 0.10-0.26 m in one step and the thrust read 2-51 deg
+       *  run to run (page-like steps, --jitter 0.3). So in a crouch the elbow goes OUT to her right and down, by her
+       *  crouch weight (bench, 6 runs each from the guard and from the back: 4-21 deg) */
+      const cw = this.an._crouchW || 0;
+      if (cw > 1e-3) { _pole.lerp(_crPole, Math.min(1, cw * CROUCH_POLE_K)).normalize(); }
     }
     an._ikArm('r', _hand, _pole, w, null);
     an._clearArmOfHead(b.upArmR, b.loArmR, b.handR, _hand, _pole, w);
