@@ -16,6 +16,7 @@ review root (`$CALIMA_REVIEW`, default `~/.calima-r5/review`); the crop recipe i
 | `node tools/frames/film.mjs --port 5270 --baseline` | the baseline run: its frames become the anchors until a frame is accepted |
 | `node tools/frames/review.mjs [--run <dir>] [--date D]` | rebuild a review page; `--placeholder` builds one from grey placeholders |
 | `node tools/frames/answers.mjs --page <page dir> < answers.txt` | record typed answers; `accept` freezes that frame as the anchor (`--date D` takes that day's newest page) |
+| `node tools/frames/answers.mjs --page <page dir> --prev <earlier page dir> < provisional.txt` | the orchestrator's `provisional` answers (PROCESS §4 two-page rule): the tool checks closer-or-same on all four points and the originality checklist on both pages' judges, freezes the frame as a provisional anchor, marks it on the page and in the repo's `tools/frames/accepted.json`; Kevin's `accept` makes it his, his `closer` or `wrong` withdraws it |
 
 A review page is `<review>/<date>/<run>/index.html`, one folder per film run, so a second run on the
 same day never overwrites the first (pages built before frameset v2 sit directly in `<review>/<date>/`).

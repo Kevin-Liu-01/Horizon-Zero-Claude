@@ -1,0 +1,197 @@
+{
+ "about": "Accepted Frame Set anchors (written by tools/frames/answers.mjs). provisional: PROCESS §4 two-page rule; one word from Kevin overrides it.",
+ "frames": {
+  "F02": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 dee526d closer x4; exit fb6d5f0 closer x4; originality pass both; written target: none (crop comparison only). The 10 s walking clip is not part of this acceptance (M1.1b crawl still fails)"
+  },
+  "F03": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 same/closer/closer/same; exit same/closer/closer/same; originality pass both; written target: none (crop comparison only). M1.1h (a landmark above her head) still fails and stays open"
+  },
+  "F05": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/same/closer/closer; exit same/closer/closer/closer; originality pass both; written target: none (crop comparison only). M1.1f shade hue in F05 still fails and stays open"
+  },
+  "F08": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/closer/same/closer; exit closer/closer/same/closer; originality pass both; written target: none (crop comparison only)"
+  },
+  "F09": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/closer/same/closer; exit closer/closer/same/closer; originality pass both; written target: none (crop comparison only)"
+  },
+  "F10": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 same/closer/same/same; exit closer/closer/same/same; originality pass both; written target: none (crop comparison only). M1.2f (lance steep, bow beneath) still fails and stays open"
+  },
+  "F11": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/same/same/closer; exit closer/closer/same/closer; originality pass both; written target: none (crop comparison only)"
+  },
+  "F13": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/same/same/same; exit closer/closer/same/closer; originality pass both; written target: none (crop comparison only)"
+  },
+  "F14": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/closer/same/closer; exit closer/closer/same/closer; originality pass both; bar (idle hands, pose hash) not failing: A11-idle-alive and V2-idle-frame PASS at fb6d5f0, no failing pose-hash reading on record"
+  },
+  "F15": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/same/same/closer; exit closer/closer/same/closer; originality pass both; bar (wrists beside the body, forearms clear the case) not failing: A-sweep-run PASS (6448b3d), no failing reading since"
+  },
+  "F16": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/same/closer/same; exit closer x4; originality pass both; bar not failing: knuckle to jaw 0.014 m in every cell (A16, A32 PASS at fb6d5f0), A107 behind-head band max 0.068 m (bar 0.10) PASS at fb6d5f0"
+  },
+  "F18": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/same/closer/closer; exit closer/closer/closer/same; originality pass both; bar (no hand or forearm behind the head in any cell) not failing: A16 (20 cells incl. crouched and strafing) and A107 PASS at fb6d5f0"
+  },
+  "F19": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/same/closer/same; exit closer x4; originality pass both; bar not failing: A-melee-heavy-body PASS at 6b9a7a4 (hip lead 81 ms, palms within 0.001 m), not re-measured since"
+  },
+  "F20": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 same/closer/closer/same; exit closer x4; originality pass both; written target: none (crop comparison only)"
+  },
+  "F23-plumb": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/closer/closer/same; exit same x4; originality pass both; written target: none (crop comparison only)"
+  },
+  "F24": {
+   "date": "2026-11-15",
+   "commit": "fb6d5f0",
+   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "provisional": true,
+   "rule": "PROCESS §4 two-page rule",
+   "pages": [
+    "20261115T060956Z-dee526d-m1a-r2-review",
+    "20261115T093344Z-fb6d5f0-m1a-r3-exit"
+   ],
+   "note": "r2 closer/same/closer/same; exit same x4; originality pass both; written target: none (crop comparison only)"
+  }
+ }
+}
