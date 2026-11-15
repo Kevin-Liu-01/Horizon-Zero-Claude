@@ -253,6 +253,14 @@ export class SystemsGame {
     const ev = this.ctx.events;
     if (!ev?.on) return;
     const on = (n, fn) => ev.on(n, (e) => { try { fn(e || {}); } catch (err) { this.listenErrors = (this.listenErrors ?? 0) + 1; this.lastListenError = String(err?.message || err); } });
+    // play began without New Game or Continue (a ?shot page): the field note names the quest, nothing runs (spine.arm).
+    // Registered before the HUD's own game-start listener, so the note it renders is this one. New Game starts the
+    // quest; Continue restores it (the title's Continue fires game-start first, then restores over this).
+    on('game-start', () => {
+      if (this.spine.started) return;
+      this.spine.arm();
+      if (this.ctx.progression) this.ctx.progression.tracked = QUEST_ID;
+    });
     on('machine-killed', (e) => this.spine.notify('machine-killed', { kind: e.machine?.kind }));
     on('plumb-topple', (e) => this.spine.notify('plumb-topple', { kind: e.machine?.kind ?? 'plumb' }));
     on('part-torn', (e) => this.spine.notify('part-torn', { kind: e.machine?.kind, part: e.part?.name ?? e.part?.id }));

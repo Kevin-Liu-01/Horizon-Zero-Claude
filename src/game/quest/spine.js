@@ -9,6 +9,7 @@ import { fill } from '../strings.js';
  *
  *   new QuestSpine({ strings, hooks })
  *   start()                        the 0:00 beat (New Game)
+ *   arm()                          the note only: play began with no New Game or Continue (see arm())
  *   update(dt, world)              world: { near(anchor, r, up) -> bool, aim(target) -> bool, bearing(target) -> deg }
  *   notify(type, payload)          'scene-done' {scene, exit} · 'gathered' {source, n} · 'ammo-crafted' {ammo, n}
  *                                  'machine-killed' {kind} · 'plumb-topple' · 'part-torn' {part, kind} · 'flagged'
@@ -37,6 +38,7 @@ export class QuestSpine {
 
   reset() {
     this.started = false;
+    this.armed = false;
     this.done = false;
     this.rewarded = false;
     this.idx = 0;
@@ -60,6 +62,19 @@ export class QuestSpine {
     this.reset();
     this.started = true;
     this._enter(0);
+    return this;
+  }
+
+  /**
+   * ARMED, not started: the field note names the quest and its first objective, and nothing else runs (no stage is
+   * entered, no turn, card, scene, spawn, timer or checkpoint; update and notify ignore the world). The runtime arms
+   * the spine when play begins without New Game or Continue (a `?shot` page: the Frame Set and the gate rows), so
+   * the field note stands there as the stand-in quest stood before the spine (A71g-tracker-live passed on it at
+   * fb6d5f0; at 39f7533 nothing was tracked there and the note never showed). New Game starts the quest for real.
+   */
+  arm() {
+    if (this.started) return this;
+    this.armed = true;
     return this;
   }
 
@@ -251,6 +266,15 @@ export class QuestSpine {
 
   /** The shape `Progression.state(id)` returns: what src/ui/hud.js's field note reads. */
   hudState() {
+    if (!this.started && this.armed) {
+      const s0 = this.stages.find((s) => !s.optional);
+      const count = s0?.type === 'survey' ? s0.pillars.length : s0?.count;
+      return {
+        id: QUEST_ID, status: 'active', title: this.S.quest.title, armed: true,
+        current: { id: s0?.id ?? 'start', type: s0?.type ?? 'goto', label: s0 ? fill(this.S.stage(s0.id).note, { n: 0, of: count }) : '', have: 0, need: 1 },
+        progress: 0,
+      };
+    }
     if (!this.started) return null;
     const s = this.current();
     return {

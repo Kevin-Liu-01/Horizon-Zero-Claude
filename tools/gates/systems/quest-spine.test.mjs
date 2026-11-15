@@ -186,3 +186,30 @@ test('a crossing under SPOTTED is not "nobody the wiser": seen marks the stage, 
     assert.equal(back.st.cross.seen, seen);
   }
 });
+
+test('armed (play without New Game or Continue): the note names the quest and its first objective, and nothing runs (A71g fix)', () => {
+  const { out, spine } = rig();
+  const w = world();
+  assert.equal(spine.hudState(), null, 'an idle spine shows no note');
+  spine.arm();
+  const h = spine.hudState();
+  assert.ok(h && h.status === 'active' && h.armed === true);
+  assert.equal(h.title, strings().quest.title);
+  assert.ok(h.current.label.length > 0, 'the first objective is named');
+  assert.equal(h.current.id, STAGES[0].id);
+  // the world and the events move nothing while only armed
+  w.at = STAGES[0].anchor;
+  for (let i = 0; i < 120; i++) spine.update(0.1, w.probe);
+  spine.notify('gathered', { source: 'rake', n: 10 });
+  assert.equal(spine.started, false);
+  assert.deepEqual([out.notes, out.cards, out.turns, out.scenes, out.checkpoints, out.spawns].map((a) => a.length), [0, 0, 0, 0, 0, 0]);
+  assert.equal(spine.report().reached.length, 0);
+  // New Game starts it for real; a restore of an unstarted record clears the arm
+  spine.start();
+  assert.equal(spine.armed, false);
+  assert.equal(spine.hudState().armed, undefined);
+  spine.arm();
+  assert.equal(spine.armed, false, 'a started quest is never re-armed');
+  spine.restore({ ...spine.serialize(), started: false });
+  assert.equal(spine.hudState(), null);
+});
