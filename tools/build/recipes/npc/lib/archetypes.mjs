@@ -40,7 +40,10 @@ export const ARCHETYPES = [
     // M1.5b (Q6, violet as an accent): the wrap is the guild's salt-white linen, orchil only on its lining and her sash
     head: { kind: 'wrap', dye: PAN.salt, lining: PAN.orchil, seed: 22, bun: true, tail: 'left' },
     outfit: { key: 'matron' },
-    clips: { idle: ['Idle_FoldArms_Loop', 'Idle_Talking_Loop', 'Idle_No_Loop'], walk: { clip: 'Walk_Formal_Loop', ts: 0.85, lean: -0.02, swing: 0.6 } },
+    // (M1b closing fix: at her quest spot she stood 293.5 s through the two-hour log, bar 90 s outside a working clip) she tallies
+    // the morning's salt between her idle beats ('Interact', a working clip; routines.js WORK_CLIPS); a quest scene with her
+    // in its cast holds her in talk (people/index.js _beat). The first stays the fold-armed stand every frame films her in
+    clips: { idle: ['Idle_FoldArms_Loop', 'Interact', 'Idle_Talking_Loop', 'Interact', 'Idle_No_Loop', 'Interact'], walk: { clip: 'Walk_Formal_Loop', ts: 0.85, lean: -0.02, swing: 0.6 } },
   },
   {
     id: 'salt-porter', n: 3, name: 'Salt Porter', faction: 'pan', family: 'Peasant', sex: 'M', height: 1.82, age: 27, browK: 1.0,

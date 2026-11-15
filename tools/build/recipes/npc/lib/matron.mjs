@@ -127,7 +127,11 @@ function skirtPaint(t, o) {
   // violet grounds): the skirt's fronts and hem are bound in a band of the orchil, 3.4 cm in from each front edge and 11.5 cm up
   // from the hem, sun-faded a little where it is worn, and the border and the glyph row are couched on it in the bright gold-ochre
   // (`tick`); the oatmeal linen between keeps no thread. Gold on violet, as the vest's front band already is
-  const ground = t.Y < 1.07 ? Math.max(sstep(0.036, 0.032, e), sstep(0.119, 0.113, up)) : 0;
+  // (M1b closing fix: the crowd's violet, Brea's 4.40x Ansel's against the bar's 5x, Ansel the most violet of the cast) the
+  // fronts lose their orchil ground (their border is couched on the linen in the deeper ochre, as before round 3) and the hem
+  // band comes down from 11.5 to 8.5 cm, still under the glyph row (its rings 5.2-8.8 cm up; only the top of each plumb line,
+  // to 9.8 cm, runs past it onto the linen); the vest's front band and the sash stay her violet
+  const ground = t.Y < 1.07 ? sstep(0.089, 0.083, up) : 0;
   if (ground > 0) over(o, sc(ANSEL.orchil, 0.94 + 0.12 * cr), ground * (0.82 + 0.18 * worn));
   const gold = () => (ground > 0.5 ? ANSEL.tick : ANSEL.tickDeep);
   if (t.Y < 1.07) {

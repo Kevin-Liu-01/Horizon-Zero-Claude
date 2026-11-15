@@ -221,7 +221,16 @@ export class PeopleSystem {
 
   _beat(p) {
     const dt = this._dt;
-    if (p.frozen || p.walking) return;
+    if (p.frozen) return;
+    // (M1b closing fix) a quest scene with this person in its cast (the presenter's card; src/game/runtime.js people) stops
+    // their work and holds them in talk; when the scene closes their beats go on from the next
+    const SG = this.ctx.systemsGame, card = SG?.present?.card;
+    if (card && SG.people && (card.cast || [card.who]).some((w) => SG.people[w] === p)) {
+      if (!p._talkHeld) { p._talkHeld = true; p.stopWalk(); p.play('Idle_Talking_Loop', { fade: 0.3 }); p.showProps(this._propsFor(p, 'Idle_Talking_Loop')); }
+      return;
+    }
+    if (p._talkHeld) { p._talkHeld = false; this._nextBeat(p); return; }
+    if (p.walking) return;
     p._beatT += dt;
     if (p._beatT < (p._beatEnd || 8)) return;
     const S = p.script;
