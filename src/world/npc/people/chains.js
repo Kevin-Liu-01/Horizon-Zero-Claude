@@ -12,7 +12,8 @@ import { rotOf } from './pose.js';
 const CLASSES = {
   hair: { k: 95, damp: 0.965, grav: 0.3, air: 0.55, maxAng: 0.95, rootK: 0 },
   cloth: { k: 48, damp: 0.955, grav: 0.34, air: 2.6, maxAng: 0.9, rootK: 0 },
-  wrap: { k: 30, damp: 0.955, grav: 0.3, air: 4.4, maxAng: 1.2, rootK: 8 },
+  // (M1.5c, F21: a bowed head stood the tail up to the rake head; see `hang` in _rest)
+  wrap: { k: 30, damp: 0.955, grav: 0.3, air: 4.4, maxAng: 1.2, rootK: 8, hang: 0.9 },
   gear: { k: 110, damp: 0.93, grav: 0.2, air: 0, maxAng: 0.5, rootK: 0 },
   // an apron is heavy and tied: the legs move it, the wind hardly does. A cloak is long and hangs from the shoulders
   apron: { k: 62, damp: 0.945, grav: 0.55, air: 0.5, maxAng: 0.55, rootK: 0 },
@@ -126,9 +127,25 @@ export class PersonChains {
     _q.copy(first.position).applyQuaternion(_qp).multiply(_s).add(_p);
     _qw.copy(_qp);
     c.rest[0] = _q.x; c.rest[1] = _q.y; c.rest[2] = _q.z;
+    const hang = c.cls.hang || 0;
     for (let i = 0; i < c.N; i++) {
       _qw.multiply(c.bindQ[i]);
-      _y.copy(UP).applyQuaternion(_qw).multiplyScalar(c.seg[i]);
+      _y.copy(UP).applyQuaternion(_qw);
+      /* (M1.5c, F21) A HANGING REST. The rest was the authored shape carried rigidly by the head, and the spring to it (k 30,
+       * rootK 8) is ten times the strip's weight: a head bowed over work (the caulker's kneel, a raker's harvest) turned the
+       * tail's down-and-back into up-and-back, and the strip stood up over the crown (F21 at 4175212 and 705c2f2: to the rake
+       * head; Node bench at bind with the body bowed 80 deg: tip 0.12 m ABOVE its knot). A cloth strip has no bending stiffness:
+       * only the knot holds its line. Each link's rest direction now leans toward the plumb by `hang` x (depth)^0.75 (the first
+       * link 22 %, the last 90 %), so the knot keeps its authored exit and the strip hangs from it whatever the head does; the
+       * wind still streams it (the air term is unchanged). */
+      if (hang > 0) {
+        const w = hang * Math.pow((i + 1) / c.N, 0.5);
+        let dx = _y.x * (1 - w), dy = _y.y * (1 - w) - w, dz = _y.z * (1 - w);
+        const l = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (l > 0.2) { dx /= l; dy /= l; dz /= l; } else { dx = 0; dy = -1; dz = 0; }
+        _y.set(dx, dy, dz);
+      }
+      _y.multiplyScalar(c.seg[i]);
       _q.add(_y);
       c.rest[(i + 1) * 3] = _q.x; c.rest[(i + 1) * 3 + 1] = _q.y; c.rest[(i + 1) * 3 + 2] = _q.z;
     }
