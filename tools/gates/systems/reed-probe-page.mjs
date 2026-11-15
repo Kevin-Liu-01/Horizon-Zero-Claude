@@ -24,10 +24,28 @@
  *              F31 is filmed on the uncut mask.
  * Restores the time freeze, the keys, the player, the camera and every machine it made.
  */
+/** Round 2: on any other frame, the share of its pixels the reeds change (the frozen frame rendered with and without
+ * the reed group, no post), and the reed tiles the lens is sent: a frame that should hold no reed reads 0. */
+async function reedPixels(C) {
+  const R = C.reeds, rd = C.engine.renderer, W = 960, H = 540;
+  const THREE = await import('three');
+  const rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.UnsignedByteType, samples: 0 });
+  const prev = rd.getRenderTarget(), on = R.draw.group.visible;
+  const grab = () => { rd.setRenderTarget(rt); rd.clear(); rd.render(C.scene, C.camera); const b = new Uint8Array(W * H * 4); rd.readRenderTargetPixels(rt, 0, 0, W, H, b); return b; };
+  let A, B;
+  try { A = grab(); R.draw.group.visible = false; B = grab(); } finally { R.draw.group.visible = on; rd.setRenderTarget(prev); rt.dispose(); }
+  let n = 0;
+  for (let i = 0; i < W * H * 4; i += 4) if (Math.abs(A[i] - B[i]) + Math.abs(A[i + 1] - B[i + 1]) + Math.abs(A[i + 2] - B[i + 2]) > 24) n++;
+  R.draw.update(0);
+  return { reedPx: n, reedShareOfFrame: Math.round((n / (W * H)) * 1e5) / 1e5, shown: R.draw.stats().shown };
+}
+
 export async function probe(frame) {
-  if (frame?.id !== 'F31' && frame?.id !== 'F03') return { skipped: 'measured on F31 and F03 only' };
   const C = window.__CTX__, E = C.engine, M = C.machines, p = C.player, T = C.terrain, R = C.reeds;
   if (!R) return { error: 'no ctx.reeds: the reed system is not installed' };
+  if (frame?.id !== 'F31' && frame?.id !== 'F03') {
+    try { return { frame: frame?.id, ...(await reedPixels(C)) }; } catch (e) { return { error: String(e?.message || e).slice(0, 300) }; }
+  }
   const RM = await import('/src/world/island/reedmask.js');
   const G = await import('/src/game/reeds/gust.js');
   const LS = M.lamps;
@@ -54,13 +72,46 @@ export async function probe(frame) {
 
   E.requestTimeScale('studio', null);
   try {
+    if (frame.id === 'F03') await guard('pixels', () => reedPixels(C));
     if (frame.id === 'F31') {
       /* ---- the beds ---- */
       await guard('beds', async () => {
         const b = R.mask.bedAt(P0.x, P0.z);
-        let tris = 0; const draw = R.draw.stats();
-        for (const k of Object.keys(draw)) tris += draw[k].instances * draw[k].trisEach;
-        return { mask: R.mask.stats(), draw, triangles: tris, f31: { x: r3(P0.x), z: r3(P0.z), cover: r3(R.mask.cover(P0.x, P0.z)), bed: b ? b.id : null, kind: b ? b.kind : null } };
+        // (round 2: per 40 m tile; `shown` is what the F31 lens is sent, `all` every planted tile)
+        const draw = R.draw.stats();
+        return { mask: R.mask.stats(), tiles: draw.tiles, shown: draw.shown, all: draw.all, triangles: draw.shown.tris, trianglesAll: draw.all.tris, f31: { x: r3(P0.x), z: r3(P0.z), cover: r3(R.mask.cover(P0.x, P0.z)), bed: b ? b.id : null, kind: b ? b.kind : null } };
+      });
+
+      /* ---- F31's "her violet visible through no more than a third of the stems" (round 2: the judge had it by eye) ----
+       * The frozen F31 frame rendered three times by the game's renderer into one 960 x 540 target (no post): all; the
+       * reeds hidden; the reeds and Brea hidden. Her pixels are where the last two differ; of those, the ones the reeds
+       * change are behind stems or leaves. `visibleShare` is what of her still shows (bar <= 0.333). */
+      await guard('violet', async () => {
+        const THREE = await import('three');
+        const rd = E.renderer, cam = C.camera, scene = C.scene, W = 960, H = 540;
+        const rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.UnsignedByteType, samples: 0 });
+        const prevRT = rd.getRenderTarget();
+        const grab = () => { rd.setRenderTarget(rt); rd.clear(); rd.render(scene, cam); const b = new Uint8Array(W * H * 4); rd.readRenderTargetPixels(rt, 0, 0, W, H, b); return b; };
+        const reedsOn = R.draw.group.visible, breaOn = p.model.visible;
+        let A, B, Cc;
+        try {
+          A = grab();
+          R.draw.group.visible = false; B = grab();
+          p.model.visible = false; Cc = grab();
+        } finally { R.draw.group.visible = reedsOn; p.model.visible = breaOn; rd.setRenderTarget(prevRT); rt.dispose(); }
+        const diff = (X, Y, i) => Math.abs(X[i] - Y[i]) + Math.abs(X[i + 1] - Y[i + 1]) + Math.abs(X[i + 2] - Y[i + 2]);
+        let her = 0, hid = 0, x0 = W, x1 = 0, y0 = H, y1 = 0, reedPx = 0;
+        for (let i = 0; i < W * H * 4; i += 4) {
+          if (diff(A, B, i) > 24) reedPx++;
+          if (diff(B, Cc, i) <= 24) continue;
+          her++;
+          const px = (i / 4) % W, py = Math.floor(i / 4 / W);
+          x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+          if (diff(A, B, i) > 24) hid++;
+        }
+        const vs = her ? (her - hid) / her : null;
+        return { herPx: her, hiddenPx: hid, visibleShare: r3(vs), bar: 'visibleShare <= 0.333', pass: vs != null && vs <= 1 / 3 + 1e-9,
+          box: her ? { x: [x0, x1], yFromTop: [H - 1 - y1, H - 1 - y0] } : null, reedShareOfFrame: r3(reedPx / (W * H)) };
       });
 
       /* ---- the path through dense carrizo and the Plumb's stand ---- */
@@ -68,7 +119,9 @@ export async function probe(frame) {
       const GL = 0.16;
       let best = null;
       for (let i = 0; i < 4000 && !best; i++) {
-        const x = R.mask.x0 + 8 + ((i * 0.618034) % 1) * 112, z = R.mask.z0 + 8 + ((i * 0.381966 * 7) % 1) * 112;
+        // (the Glass's 128 m square; round 2's mask is 256 m and reaches the lee ditch)
+        const gx0 = -384 - 56, gz0 = 176 - 56;
+        const x = gx0 + ((i * 0.618034) % 1) * 112, z = gz0 + ((i * 0.381966 * 7) % 1) * 112;
         if (dense(x, z) < 0.8) continue;
         for (let k = 0; k < 12 && !best; k++) {
           const a = k / 12 * Math.PI, dx = Math.sin(a), dz = Math.cos(a), L = 7.5;
@@ -220,7 +273,7 @@ export async function probe(frame) {
         const dense = (x, z) => { const b = R.mask.bedAt(x, z); return b && b.kind === RM.REED_KIND.CARRIZO ? R.mask.cover(x, z) : 0; };
         let line = null;
         for (let i = 0; i < 3000 && !line; i++) {
-          const x = R.mask.x0 + 8 + ((i * 0.618034) % 1) * 112, z = R.mask.z0 + 8 + ((i * 0.2763932) % 1) * 112;
+          const x = -440 + ((i * 0.618034) % 1) * 112, z = 120 + ((i * 0.2763932) % 1) * 112;   // the Glass's square (round 1's mask)
           if (dense(x, z) < 0.9) continue;
           for (let k = 0; k < 12 && !line; k++) {
             const a = k / 12 * Math.PI; let ok = true;

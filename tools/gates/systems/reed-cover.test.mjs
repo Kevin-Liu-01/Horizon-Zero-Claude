@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { heightAt, authored } from '../../../src/world/island/recipe.js';
-import { ReedMask, BEDS, REED_KIND, REED_MASK, COVER_LINE } from '../../../src/world/island/reedmask.js';
+import { ReedMask, BEDS, REED_KIND, REED_MASK, COVER_LINE, DITCH, DITCH_BED } from '../../../src/world/island/reedmask.js';
 import { GustClock, GUST } from '../../../src/game/reeds/gust.js';
 import { reedHidden, inCover } from '../../../src/game/reeds/rule.js';
 import { GLASS_RIM } from '../../../src/world/island/bake.js';
@@ -14,6 +14,7 @@ const mask = new ReedMask(heightAt);
 
 test('one 256 x 256 mask (two bytes a cell) carries carrizo and junco beds by the Glass', () => {
   assert.equal(REED_MASK.n, 256);
+  assert.equal(REED_MASK.cell * REED_MASK.n, REED_MASK.size);
   assert.equal(mask.base.length, 256 * 256 * 2);
   const s = mask.stats();
   assert.ok(s.carrizoM2 > 1500, `carrizo ${s.carrizoM2} m2`);
@@ -24,17 +25,41 @@ test('one 256 x 256 mask (two bytes a cell) carries carrizo and junco beds by th
   assert.equal(mask.bedAt(-406, 196).kind, REED_KIND.CARRIZO);
 });
 
-test('the meadow never hides: no reed cell lies on meadow ground (bake: the meadow starts at the Glass rim 1.95)', () => {
+test('the meadow never hides: no reed cell lies on meadow ground (bake: the meadow starts at the Glass rim 1.95 and never in the salt field, fieldK >= 0.92)', () => {
   let onMeadow = 0, n = 0;
-  for (let j = 0; j < 256; j += 2) for (let i = 0; i < 256; i += 2) {
+  const c = REED_MASK.cell;
+  for (let j = 0; j < 256; j++) for (let i = 0; i < 256; i++) {
     const o = (j * 256 + i) * 2;
     if (!mask.base[o]) continue;
     n++;
-    const x = mask.x0 + (i + 0.5) * 0.5, z = mask.z0 + (j + 0.5) * 0.5;
-    if (authored.glass(x, z) >= GLASS_RIM) onMeadow++;
+    const x = mask.x0 + (i + 0.5) * c, z = mask.z0 + (j + 0.5) * c;
+    if (authored.glass(x, z) >= GLASS_RIM && authored.fieldK(x, z) < 0.92) onMeadow++;
   }
   assert.ok(n > 1000);
   assert.equal(onMeadow, 0);
+});
+
+test('the lee ditch (bible 0:21): junco on the lee side of the station\'s dyke from 14 m past the station, its own bed, >= 60 % of that in cover and >= 30 of the 40 m leading to the stand (22 m from the station) in cover', () => {
+  assert.ok(DITCH, 'the station\'s main dyke was found');
+  assert.ok(DITCH.len > 120, `dyke ${DITCH.len} m`);
+  assert.equal(BEDS[DITCH_BED].kind, REED_KIND.JUNCO);
+  const ex = (DITCH.bx - DITCH.ax) / DITCH.len, ez = (DITCH.bz - DITCH.az) / DITCH.len;
+  // the trade blows from 045 (toward engine -x, +z): the rush stands on the side it blows toward
+  assert.ok(DITCH.nx * -0.7071 + DITCH.nz * 0.7071 > 0.5);
+  const at = (s, d) => [DITCH.ax + ex * s + DITCH.nx * d, DITCH.az + ez * s + DITCH.nz * d];
+  let on = 0, n = 0;
+  const s0 = (DITCH.station.x - DITCH.ax) * ex + (DITCH.station.z - DITCH.az) * ez;
+  for (let s = DITCH.from; s <= DITCH.len; s += 1) { n++; if (mask.cover(...at(s, 3.2)) >= COVER_LINE) on++; }
+  assert.ok(on / n >= 0.6, `ditch in cover ${on}/${n}`);
+  for (let s = DITCH.from; s <= DITCH.len; s += 2) { const b = mask.bedAt(...at(s, 3.2)); if (b) assert.equal(b.id, DITCH_BED); }
+  // nothing of it nearer the Glass than 14 m past the station (the accepted salt-cell frames look that way)
+  for (let s = 30; s < s0 + 13; s += 1) assert.ok(mask.cover(...at(s, 3.2)) === 0, `rush at s ${s}`);
+  // the stage's stand: 22 m along from the station's foot toward the north-east end, and the 40 m before it
+  let run = 0;
+  for (let s = s0 + 22; s <= s0 + 62; s += 1) if (mask.cover(...at(s, 3.2)) >= COVER_LINE) run++;
+  assert.ok(run >= 30, `the last 40 m to the stand: ${run} m in cover`);
+  // the dyke itself (its centre) is open
+  assert.ok(mask.cover(...at(s0 + 30, 0)) < 0.05);
 });
 
 test('the gust clock: 9 s gust and 5 s lull (each +-1), 5-7 and 1.5-3 m/s plateaux, period 14 +-2', () => {

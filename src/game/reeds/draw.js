@@ -6,23 +6,30 @@ import { BEDS, REED_KIND, REED_MASK } from '../../world/island/reedmask.js';
  * THE REEDS, DRAWN FROM THE MASK (BUILD M1.6e). Every cane stands where `mask.cover(x, z)` (the base cover less the
  * Peg cuts) says reed stands, the same value the rule reads: the picture and the rule cannot disagree (TECH §5).
  *
- *   carrizo  a clump of 5 pale canes, 2.3-3.4 m (taller than Brea), two narrow arching leaves each and a nodding buff
- *            plume;
- *            80 triangles. Planted on a jittered 1.3 m grid, kept where a hash is under the cover (thin at a bed's
- *            edge, gone in a cut lane). One InstancedMesh per bed (eight), so a bed outside the lens is culled whole.
- *   junco    a tuft of 14 dark rush stems, 0.7-1.15 m, one tapered sliver each: 14 triangles, on a 0.7 m grid; one
- *            InstancedMesh for the four lee beds.
+ *   carrizo  a clump of 5 pale canes, 2.3-3.4 m (taller than Brea), two narrow arching leaves each (folded on the
+ *            midrib) and a nodding buff plume; 120 triangles. Planted on a jittered 1.3 m grid, kept where a hash is
+ *            under the cover (thin at a bed's edge, gone in a cut lane).
+ *   junco    a tuft of 14 dark rush stems, 0.7-1.15 m, one tapered sliver each: 14 triangles, on a 0.7 m grid (the
+ *            lee hollows by the Glass and the lee ditch on the salt field's outer dyke).
+ *
+ * TILES (M1b round 2). One InstancedMesh per bed and 64 m tile of the mask, each shown only while the lens is within
+ * 66 m of the tile's footprint (the canes are shrunk to their roots from 48 to 64 m): at 2d55d7c the nine bed meshes
+ * and all 122,646 triangles were sent whenever the lens stood within 150 m of the Glass, though nothing past 64 m was
+ * drawn. A tile's own bounding sphere lets the renderer's frustum cull drop the rest.
  *
  * THE LEAN. Each instance carries its bed (`aBed`); `uLean[bed]` is that bed's gust clock lean (src/game/reeds/gust.js),
  * written once a frame. A cane bends downwind (the trade's SW, vegetation's `uWind`) by its height squared: its tip
  * stands about 0.4 m off true in a lull and about 0.95 m in a full gust (a 2.9 m cane), with a flutter that quickens
  * with the gust. Brea and the nearest Instruments part the canes a little (vegetation's four displacers, at a third
- * of the marram's push: the stems stay in front of her). Drawn to 64 m from the lens (shrunk to the root from 48 m).
+ * of the marram's push: the stems stay in front of her). Drawn to 64 m from the lens (shrunk to the root from 48 m),
+ * and shrunk to the root inside 2 m of the lens (round 2: a cane planted at the lens stood across F31's frame).
  *
  * Lit like the island's flora (the same standard material, the land's long shadow from the terrain's skyline
  * texture); casts no shadow (no plant does: A56). Allocation-free per frame.
  */
 const CARRIZO_PITCH = 1.3;
+const TILE = 64;
+const SHOW_M = 66;
 const JUNCO_PITCH = 0.7;
 const MAX_BEDS = 16;
 
@@ -42,26 +49,34 @@ function rand(seed) {
   };
 }
 
-/** A tapered strap from (ox, oy, oz) along a curve: segs quads, indexed; colour ramp c0 -> c1; normals up-biased. */
-function strap(G, o, dir, len, w, segs, c0, c1, droop = 0, rise = 1, taper = 0.75, side = null) {
+/**
+ * A tapered strap from (ox, oy, oz) along a curve: segs quads, indexed; colour ramp c0 -> c1; normals up-biased.
+ * `fold` > 0 (the leaves, M1b round 2): a third, middle row of vertices raised by fold x the half-width, so the blade
+ * is a shallow V along its midrib with its two halves lit apart (flat cards read as paper strips in F31 at 2 m).
+ */
+function strap(G, o, dir, len, w, segs, c0, c1, droop = 0, rise = 1, taper = 0.75, side = null, fold = 0) {
   const [dx, dy, dz] = dir;
   const sx = side ? side[0] : -dz, sz = side ? side[1] : dx;
   const sl = Math.hypot(sx, sz) || 1;
   const base = G.P.length / 3;
+  const cols = fold > 0 ? [-1, 0, 1] : [-1, 1], nc = cols.length;
   for (let s = 0; s <= segs; s++) {
     const t = s / segs;
     // the path: out along dir, rising by `rise`, drooping by droop * t^2 at the end
     const x = o[0] + dx * len * t, z = o[2] + dz * len * t;
     const y = o[1] + dy * len * t * rise - droop * t * t;
     const ww = w * (1 - t * taper) / sl;
-    for (const k of [-1, 1]) {
-      G.P.push(x + sx * ww * k, y, z + sz * ww * k);
-      G.C.push(c0.r + (c1.r - c0.r) * t, c0.g + (c1.g - c0.g) * t, c0.b + (c1.b - c0.b) * t);
-      G.N.push(dx * 0.3 + sz * 0.2 * k, 0.9, dz * 0.3 - sx * 0.2 * k);
+    for (const k of cols) {
+      const lift = k === 0 ? fold * ww * sl : 0;
+      G.P.push(x + sx * ww * k, y + lift, z + sz * ww * k);
+      const sh = k === 0 ? 1.06 : 1;
+      G.C.push((c0.r + (c1.r - c0.r) * t) * sh, (c0.g + (c1.g - c0.g) * t) * sh, (c0.b + (c1.b - c0.b) * t) * sh);
+      if (fold > 0) G.N.push(dx * 0.25 + sx / sl * 0.55 * k, 0.8, dz * 0.25 + sz / sl * 0.55 * k);
+      else G.N.push(dx * 0.3 + sz * 0.2 * k, 0.9, dz * 0.3 - sx * 0.2 * k);
     }
     if (s < segs) {
-      const a = base + s * 2;
-      G.I.push(a, a + 1, a + 3, a, a + 3, a + 2);
+      const a = base + s * nc;
+      for (let c = 0; c < nc - 1; c++) G.I.push(a + c, a + c + 1, a + c + 1 + nc, a + c, a + c + 1 + nc, a + c + nc);
     }
   }
 }
@@ -76,7 +91,7 @@ function geoOf(G) {
   return g;
 }
 
-/** Carrizo: 5 canes x (3-segment cane + 2 two-segment leaves + a plume) = 80 triangles. Pale straw, never gold. */
+/** Carrizo: 5 canes x (3-segment cane + 2 folded two-segment leaves + a plume) = 120 triangles. Pale straw, never gold. */
 export function carrizoGeo(seed = 0xca77) {
   const R = rand(seed), G = { P: [], C: [], N: [], I: [] };
   const cane0 = new THREE.Color('#8d8a68'), cane1 = new THREE.Color('#ddd4b8');
@@ -97,7 +112,7 @@ export function carrizoGeo(seed = 0xca77) {
       const at = [ox + dir[0] * H * t, H * t, oz + dir[2] * H * t];
       const L = 0.75 + R() * 0.4;
       c0.copy(leaf0).multiplyScalar(0.9 + R() * 0.15); c1.copy(leaf1).multiplyScalar(0.92 + R() * 0.12);
-      strap(G, at, [Math.cos(la), 0.7, Math.sin(la)], L, 0.022, 2, c0, c1, 0.55 + R() * 0.25, 1, 0.92);
+      strap(G, at, [Math.cos(la), 0.7, Math.sin(la)], L, 0.022, 2, c0, c1, 0.55 + R() * 0.25, 1, 0.72, null, 0.45);
     }
     const top = [ox + dir[0] * H, H - 0.02, oz + dir[2] * H];
     c0.copy(plume0); c1.copy(plume1);
@@ -146,7 +161,7 @@ vec4 iw = instanceMatrix * vec4(transformed, 1.0);
   vec3 o = instanceMatrix[3].xyz;
   // drawn to 64 m: shrunk to its root between 48 and 64 m from the lens (the belt is not a vista element; the accepted
   // salt-cell frames F14-F19 stand 65 m from the nearest reed, F05 and F20 further)
-  float fade = 1.0 - smoothstep(48.0, 64.0, distance(o, cameraPosition));
+  float fade = (1.0 - smoothstep(48.0, 64.0, distance(o, cameraPosition))) * smoothstep(1.0, 2.0, distance(o.xz, cameraPosition.xz));
   iw.xyz = o + (iw.xyz - o) * fade;
   float sy = length(instanceMatrix[1].xyz);
   float yl = max(iw.y - o.y, 0.0);
@@ -156,7 +171,9 @@ vec4 iw = instanceMatrix * vec4(transformed, 1.0);
   float ph = dot(o.xz, vec2(0.37, 0.61)) + uTime * (1.4 + 1.8 * lean);
   float flut = sin(ph) * 0.05 + sin(ph * 2.7 + o.x) * 0.025;
   // the bend at the tip, metres: a standing lean SW, the gust clock's lean, the flutter
-  float bend = (0.09 + 0.24 * lean + flut * (0.35 + lean)) * uHeight * sy;
+  // (round 2: the standing lean 0.09 -> 0.16 of the height: a 2.9 m cane's tip 0.6 m off true in a lull, 1.2 m in a
+  // gust, so the canes read as leaning SW even from a lens that faces into the trade, as F31's does)
+  float bend = (0.16 + 0.24 * lean + flut * (0.35 + lean)) * uHeight * sy;
   vec2 off = uWind * bend * h2;
   // she and the nearest Instruments part the canes (vegetation's displacers)
   for (int a = 0; a < 4; a++) {
@@ -213,19 +230,24 @@ export class ReedDraw {
     this._own = { geo: [], mat: [] };
     this.meshes = [];
     this.version = -1;
-    this._cx = REED_MASK.size / 2 + mask.x0;
-    this._cz = REED_MASK.size / 2 + mask.z0;
     const geoC = carrizoGeo(), geoJ = juncoGeo();
     this._own.geo.push(geoC, geoJ);
     this.matC = this._material(this.uHeightC, 'cal-reeds-c');
     this.matJ = this._material(this.uHeightJ, 'cal-reeds-j');
     // the plantings, once: [x, z, yaw, scale, bed, keep-hash] per kind, then kept or dropped by the cover
     this.sites = { c: this._sites(REED_KIND.CARRIZO, CARRIZO_PITCH, 11), j: this._sites(REED_KIND.JUNCO, JUNCO_PITCH, 23) };
-    // one mesh per carrizo bed, one for all junco
-    const byBed = new Map();
-    for (const s of this.sites.c) { const b = s[4]; byBed.set(b, (byBed.get(b) || 0) + 1); }
-    for (const [bed, n] of [...byBed.entries()].sort((a, b) => a[0] - b[0])) this._mesh(`reeds-carrizo-${bed}`, geoC, this.matC, n, (s) => s[4] === bed, this.sites.c);
-    if (this.sites.j.length) this._mesh('reeds-junco', geoJ, this.matJ, this.sites.j.length, () => true, this.sites.j);
+    // one mesh per bed and 64 m tile (see TILES)
+    for (const [kind, list, geo, mat] of [['carrizo', this.sites.c, geoC, this.matC], ['junco', this.sites.j, geoJ, this.matJ]]) {
+      const by = new Map();
+      for (const st of list) {
+        const key = `${st[4]}-${Math.floor((st[0] - mask.x0) / TILE)}-${Math.floor((st[1] - mask.z0) / TILE)}`;
+        let g = by.get(key);
+        if (!g) by.set(key, (g = []));
+        g.push(st);
+      }
+      for (const key of [...by.keys()].sort()) this._mesh(`reeds-${kind}-${key}`, geo, mat, by.get(key).length, () => true, by.get(key));
+    }
+    this.shown = 0;
     this.plant();
   }
 
@@ -292,7 +314,10 @@ export class ReedDraw {
     this._own.geo.push(mesh.geometry);
     mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
     this.group.add(mesh);
-    this.meshes.push({ mesh, pick, sites, aBed });
+    // the tile's footprint (its sites, plus a cane's reach), for the distance cull
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const st of sites) { x0 = Math.min(x0, st[0]); z0 = Math.min(z0, st[1]); x1 = Math.max(x1, st[0]); z1 = Math.max(z1, st[1]); }
+    this.meshes.push({ mesh, pick, sites, aBed, box: [x0 - 1.5, z0 - 1.5, x1 + 1.5, z1 + 1.5], n: 0 });
   }
 
   /** Plant (or re-plant after a cut) every mesh from the mask's cover. Cold: boot and at most twice a second. */
@@ -327,7 +352,8 @@ export class ReedDraw {
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       aBed.needsUpdate = true;
       mesh.computeBoundingSphere();
-      mesh.visible = n > 0;
+      D.n = n;
+      mesh.visible = n > 0 && this._near(D);
       total += n;
     }
     this.version = M.version;
@@ -335,23 +361,37 @@ export class ReedDraw {
     return total;
   }
 
-  /** Per frame: re-plant after a cut (at most twice a second), hide the whole belt when the lens is far. */
+  /** The lens is within SHOW_M of this tile's footprint (plan distance). */
+  _near(D) {
+    const cam = this.ctx.camera?.position;
+    if (!cam) return true;
+    const b = D.box;
+    const dx = Math.max(b[0] - cam.x, 0, cam.x - b[2]), dz = Math.max(b[1] - cam.z, 0, cam.z - b[3]);
+    return dx * dx + dz * dz < SHOW_M * SHOW_M;
+  }
+
+  /** Per frame: re-plant after a cut (at most twice a second); show the tiles within SHOW_M of the lens. */
   update(dt) {
     this._replantT = (this._replantT || 0) + dt;
     if (this.mask.version !== this.version && this._replantT > 0.5) { this._replantT = 0; this.plant(); }
-    const cam = this.ctx.camera?.position;
-    if (cam) {
-      const dx = cam.x - this._cx, dz = cam.z - this._cz;
-      const near = dx * dx + dz * dz < 150 * 150;   // the belt's far edge is ~85 m from the centre; drawn to 64 m
-      if (this.group.visible !== near) this.group.visible = near;
+    let shown = 0;
+    for (let i = 0; i < this.meshes.length; i++) {
+      const D = this.meshes[i], on = D.n > 0 && this._near(D);
+      if (D.mesh.visible !== on) D.mesh.visible = on;
+      if (on) shown++;
     }
+    this.shown = shown;
   }
 
+  /** Per tile: instances, triangles each; and what the lens is sent now (tiles shown, their instances and triangles). */
   stats() {
-    const out = {};
-    for (const { mesh } of this.meshes) {
+    const out = { tiles: {}, shown: { meshes: 0, instances: 0, tris: 0 }, all: { meshes: 0, instances: 0, tris: 0 } };
+    for (const D of this.meshes) {
+      const { mesh } = D;
       const tris = (mesh.geometry.index ? mesh.geometry.index.count : mesh.geometry.attributes.position.count) / 3;
-      out[mesh.name] = { instances: mesh.count, trisEach: tris };
+      out.tiles[mesh.name] = { instances: mesh.count, trisEach: tris, shown: mesh.visible };
+      if (D.n > 0) { out.all.meshes++; out.all.instances += mesh.count; out.all.tris += mesh.count * tris; }
+      if (mesh.visible) { out.shown.meshes++; out.shown.instances += mesh.count; out.shown.tris += mesh.count * tris; }
     }
     return out;
   }

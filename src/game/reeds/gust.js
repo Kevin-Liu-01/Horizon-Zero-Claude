@@ -21,7 +21,8 @@
  * (an ease-out over the next 2.5 m/s). So the canes begin to lean 0.8 s before the gust reaches 4 m/s, and they
  * straighten 0.8 s before it falls back through it.
  *
- * Phase: bed i's grid starts at `-((5 i mod 12) / 12) * 14` s: no two of the twelve beds closer than 1.17 s. Plain JS, no THREE (the Node row reads it: tools/gates/systems/reed-cover.test.mjs).
+ * Phase: bed i's grid starts at `-((5 i mod 13) / 13) * 14` s: no two of the thirteen beds (the twelve round the Glass
+ * and the lee ditch, M1b round 2) closer than 1.08 s. Plain JS, no THREE (the Node row reads it: tools/gates/systems/reed-cover.test.mjs).
  */
 export const GUST = Object.freeze({
   on: 4.0,                 // m/s: the line between a lull and a gust (the rule's line)
@@ -36,9 +37,9 @@ export const GUST = Object.freeze({
   leanSpan: 2.5,           // m/s above 4 over which the lean eases to full
 });
 
-/** Beds' phases: index i takes (5 i mod 12) twelfths of a period, so the twelve beds are 1.17 s apart at least and
- * neighbouring beds (consecutive indices round the shore) 5.8 s apart. */
-const PHASES = 12;
+/** Beds' phases: index i takes (5 i mod 13) thirteenths of a period, so the thirteen beds are 1.08 s apart at least and
+ * neighbouring beds (consecutive indices round the shore) 5.4 s apart. */
+const PHASES = 13;
 
 function rand(seed) {
   let a = seed >>> 0;

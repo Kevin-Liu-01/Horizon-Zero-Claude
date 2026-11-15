@@ -6,6 +6,7 @@ import { Presenter } from './present.js';
 import { Braziers } from './brazier/braziers.js';
 import { installReeds } from './reeds/index.js';
 import { REST, TRIG, TRIG_TOP, siteById } from '../world/island/sites.js';
+import { DITCH } from '../world/island/reedmask.js';
 import { SLOT } from '../core/save.js';
 import { vec3 } from '../world/settlements/brazier.js';
 
@@ -88,7 +89,12 @@ export class SystemsGame {
       crossed,
       t1: { x: t1.x, z: t1.z },
       station,
-      ditch: lerp(station, t1, 0.12),
+      // M1b round 2: the lee ditch is the rush on the outer dyke's lee side (reedmask.js DITCH, the dyke the station
+      // stands on): the stage's anchor is in it, 22 m along the dyke from the station toward its north-east end (the
+      // side she comes down from T1; the rush starts at 14 m), and `ditchHead` is where she drops into it, 8 m from
+      // that end. Round 1 stood the anchor on open salt cells 17.6 m from the station (0 of 1963 stalk frames in cover)
+      ditch: DITCH ? this._ditchPoint(22) : lerp(station, t1, 0.12),
+      ditchHead: DITCH ? this._ditchPoint(null, 8) : lerp(station, t1, 0.4),
       'ansel-home': { x: saltrow.x + 3, z: saltrow.z - 2 },
     };
     // aim targets: the Gauge's drum and the pillar tops
@@ -97,6 +103,17 @@ export class SystemsGame {
       gauge: { x: gauge.x, y: (g?.y ?? H(gauge)) + 5.3, z: gauge.z, tol: 7, range: 160 },
     };
     for (const t of TRIG) this.targets[t.id] = { x: t.x, y: H(t) + TRIG_TOP, z: t.z, tol: 2.5, range: 2000 };
+  }
+
+  /**
+   * A point on the lee ditch's rush line (3.2 m off the dyke's centre on its lee side): `fromStation` m along the dyke
+   * from the station's own foot toward the dyke's north-east end, or `fromEnd` m back from that end.
+   */
+  _ditchPoint(fromStation, fromEnd = 0) {
+    const D = DITCH, ex = (D.bx - D.ax) / D.len, ez = (D.bz - D.az) / D.len;
+    const s0 = (D.station.x - D.ax) * ex + (D.station.z - D.az) * ez;
+    const s = fromStation != null ? Math.min(D.len - 2, s0 + fromStation) : D.len - fromEnd;
+    return { x: +(D.ax + ex * s + D.nx * 3.2).toFixed(2), z: +(D.az + ez * s + D.nz * 3.2).toFixed(2) };
   }
 
   /**

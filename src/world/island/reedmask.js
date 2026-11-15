@@ -1,17 +1,27 @@
-import { authored, fbm, ss, GLASS, GLASS_LEVEL } from './recipe.js';
+import { authored, fbm, ss, GLASS, GLASS_LEVEL, fieldWalls, fieldToWorld } from './recipe.js';
 import { ISLAND_SCALE as S } from './extent.js';
+import { siteById } from './sites.js';
 
 /**
  * THE REED COVER MASK (BUILD M1.6e; bible §14 "Reed cover"; TECH §5 "Reed cover reads one 256² mask that both places
  * the reeds and drives the stealth rule, so the picture and the rule cannot disagree").
  *
- * ONE 256 x 256 MASK at 0.5 m a cell (a 128 m square on the Glass's basin), two bytes a cell:
+ * ONE 256 x 256 MASK at 1 m a cell (a 256 m square over the Glass's basin and the salt field's outer dyke), two bytes
+ * a cell (M1b round 2: at 0.5 m it held only the Glass's 128 m square, and the slice's lee ditch, 139.5 m from the
+ * Glass's centre, had no reed: on the 0:21 stalk she was in cover on 0 of 1963 frames):
  *   [0] cover 0..255   how dense the reed stands there (the drawing plants from it, the rule reads it)
  *   [1] bed            which bed the cell belongs to (`BEDS[bed]`: its kind and the seed of its gust clock)
  * Carrizo stands in a belt on the Glass's rim (plan distance 0.96-1.42, dry ground just above the water) in eight
  * beds round the shore; junco stands in the wet hollows on the lee side of the rim (the damp silt behind the dunes,
  * west and south-west of the Glass, never on the meadow). The golden meadow starts at plan distance 1.95
  * (bake.js GLASS_RIM): no cell of this mask is ever on it, and the rule never reads the meadow (it hides nobody).
+ *
+ * THE LEE DITCH (bible §11.2 0:21, "come down on it through the lee ditch's rush"): junco along the salt field's outer
+ * main dyke, the one the Plumb's pan-edge station stands on (the main dyke nearest the station, which runs from the
+ * Glass's south-east rim to the field's north-east end), on its lee side (away from the trade's 045), 1.4-5 m off the
+ * dyke's centre, from 14 m past the station to the field's end, inside the field (never on the meadow). One bed (its
+ * own gust clock), broken where a track crosses and by a few short gaps. The ground is the cell's edge: the ditch itself
+ * is not carved (world lane, BACKLOG).
  *
  * THE CUT LAYER. Peg transects cut 1 m lanes (bible §14 "reed is consumable"): `cutCover([x0, z0, x1, z1], w)`
  * is the world contract the Peg calls (`ctx.terrain.cutCover`, installed by src/game/reeds). Cuts are kept apart
@@ -26,21 +36,78 @@ import { ISLAND_SCALE as S } from './extent.js';
  *
  * Plain JS, no THREE: the Node rows build it from the recipe's own height (tools/gates/systems/reed-cover.test.mjs).
  */
-export const REED_MASK = Object.freeze({ n: 256, cell: 0.5, size: 128 });
+export const REED_MASK = Object.freeze({ n: 256, cell: 1.0, size: 256 });
 export const REED_KIND = Object.freeze({ NONE: 0, CARRIZO: 1, JUNCO: 2, MARRAM: 3 });
 /** A cell counts as cover at or above this (the marram field's own line, terrain.isInReedCover). */
 export const COVER_LINE = 0.45;
 
 const CX = GLASS.e * S, CZ = -GLASS.n * S;
-const X0 = CX - REED_MASK.size / 2, Z0 = CZ - REED_MASK.size / 2;
+/** The mask's centre: the Glass's belt (x -441..-328) and the lee ditch (to the field's north-east end, about -233,
+ * 316) inside one 256 m square. */
+const MX = CX + 49.5 * S, MZ = CZ + 50 * S;
+const X0 = MX - REED_MASK.size / 2, Z0 = MZ - REED_MASK.size / 2;
 const CARRIZO_BEDS = 8;
 const JUNCO_BEDS = 4;
 
-/** The beds: carrizo 0-7 round the Glass (sector k, clockwise from north), junco 8-11 (the lee hollows, by sector). */
+/**
+ * The lee ditch's dyke: [ax, az, bx, bz] in engine metres, and the unit normal toward its lee side. The station is the
+ * slice's own (src/game/runtime.js: the salt-pans site 55 % of the way from Saltrow).
+ */
+export const DITCH = (() => {
+  const sr = siteById('saltrow'), pa = siteById('salt-pans');
+  if (!sr || !pa) return null;
+  const st = { x: sr.x + (pa.x - sr.x) * 0.55, z: sr.z + (pa.z - sr.z) * 0.55 };
+  const a = { x: 0, z: 0 }, b = { x: 0, z: 0 };
+  let best = null;
+  for (const w of fieldWalls()) {
+    if (!w.main) continue;
+    fieldToWorld(w.u0, w.v0, a); fieldToWorld(w.u1, w.v1, b);
+    const ex = b.x - a.x, ez = b.z - a.z, L2 = ex * ex + ez * ez;
+    if (L2 < 400) continue;
+    const t = Math.max(0, Math.min(1, ((st.x - a.x) * ex + (st.z - a.z) * ez) / L2));
+    const d = Math.hypot(st.x - a.x - ex * t, st.z - a.z - ez * t);
+    if (!best || d < best.d) best = { d, ax: a.x, az: a.z, bx: b.x, bz: b.z };
+  }
+  if (!best) return null;
+  const L = Math.hypot(best.bx - best.ax, best.bz - best.az);
+  let nx = -(best.bz - best.az) / L, nz = (best.bx - best.ax) / L;
+  // lee: the side the trade (from 045) blows toward, engine (-0.7071, +0.7071)
+  if (nx * -0.7071 + nz * 0.7071 < 0) { nx = -nx; nz = -nz; }
+  // the rush runs from 14 m past the station's foot to the dyke's north-east end: the stretch she comes down. Nearer
+  // the Glass it would stand 18-25 m behind the accepted salt-cell frames F14-F19 (a Node frustum count over the Frame
+  // Set's lenses); from here it is 0 sites in F16, F17, F19, F23-peg and 6 in F15, 33 m and more from F14 and F18
+  const station = (st.x - best.ax) * (best.bx - best.ax) / L + (st.z - best.az) * (best.bz - best.az) / L;
+  return Object.freeze({ ax: best.ax, az: best.az, bx: best.bx, bz: best.bz, len: L, nx, nz, station: Object.freeze(st), stationS: station, from: station + 14 });
+})();
+/** The ditch's rush band off the dyke's centre (m), its end ramps (m). */
+const DITCH_IN = 1.4, DITCH_OUT = 5.0, DITCH_RAMP = 6;
+
+/** The beds: carrizo 0-7 round the Glass (sector k, clockwise from north), junco 8-11 (the lee hollows, by sector),
+ * junco 12 the lee ditch. */
+export const DITCH_BED = CARRIZO_BEDS + JUNCO_BEDS;
 export const BEDS = Object.freeze([
   ...Array.from({ length: CARRIZO_BEDS }, (_, k) => Object.freeze({ id: k, kind: REED_KIND.CARRIZO, seed: 0x5eed0 + k * 977 })),
   ...Array.from({ length: JUNCO_BEDS }, (_, k) => Object.freeze({ id: CARRIZO_BEDS + k, kind: REED_KIND.JUNCO, seed: 0x7a11c + k * 1213 })),
+  Object.freeze({ id: DITCH_BED, kind: REED_KIND.JUNCO, seed: 0xd17c4, ditch: true }),
 ]);
+
+/** The lee ditch's rush at (x, z), 0..1 (0 off the band). Along the dyke (s from its Glass end) from D.from to its end. */
+export function ditchAt(x, z) {
+  const D = DITCH;
+  if (!D) return 0;
+  const ex = (D.bx - D.ax) / D.len, ez = (D.bz - D.az) / D.len;
+  const s = (x - D.ax) * ex + (z - D.az) * ez;
+  if (s < D.from || s > D.len) return 0;
+  const d = (x - D.ax) * D.nx + (z - D.az) * D.nz;          // + on the lee side
+  if (d < DITCH_IN - 0.6 || d > DITCH_OUT + 0.8) return 0;
+  const band = ss(DITCH_IN - 0.5, DITCH_IN + 0.5, d) * (1 - ss(DITCH_OUT - 0.6, DITCH_OUT + 0.6, d));
+  const ends = ss(D.from, D.from + DITCH_RAMP, s) * (1 - ss(D.len - DITCH_RAMP, D.len, s));
+  // a few short gaps (2-4 m) along it, and thinner stretches: the rush is not a hedge
+  const g = fbm(s * 0.045 + 13.7, 3.3, 2);
+  const gaps = ss(0.3, 0.38, g);
+  const thick = 0.72 + 0.28 * ss(0.4, 0.7, fbm(s * 0.11 - 4.1, d * 0.3 + 9.2, 2));
+  return band * ends * gaps * thick * (1 - ss(0.2, 0.5, authored.track(x, z)));
+}
 
 /** Sector 0..n-1 round the Glass's centre (clockwise from a bearing of 18 deg; engine -z is north), and how far
  * into it (0..1). The 18 deg puts the F31 place (look.reed) in the middle of a bed, not on a strait between two. */
@@ -57,7 +124,12 @@ function sector(x, z, n) {
  */
 function baseAt(x, z, h, sl) {
   const g = authored.glass(x, z);
-  if (g > 1.9 || sl > 0.55) return [0, 0];
+  if (g > 1.9 || sl > 0.55) {
+    // the lee ditch: inside the salt field only (fieldK >= 0.92: never the meadow, bake.js)
+    if (sl > 0.55 || g < 1.95) return [0, 0];
+    const v = ditchAt(x, z);
+    return v > 0.02 && authored.fieldK(x, z) >= 0.92 ? [v, DITCH_BED] : [0, 0];
+  }
   const track = authored.track(x, z);
   const dry = ss(GLASS_LEVEL + 0.02, GLASS_LEVEL + 0.1, h) * (1 - ss(2.6, 3.6, h));
   /* carrizo: the rim belt, in beds 20-35 m long with clearings between them (the gap at a sector's edge is a strait
