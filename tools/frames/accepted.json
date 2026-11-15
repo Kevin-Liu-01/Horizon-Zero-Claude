@@ -124,26 +124,26 @@
   "F16": {
    "date": "2026-11-15",
    "commit": "fb6d5f0",
-   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "run": "20261115T173434Z-fb6d5f0-anchor-restage3-partial-x3",
    "provisional": true,
    "rule": "PROCESS §4 two-page rule",
    "pages": [
     "20261115T060956Z-dee526d-m1a-r2-review",
     "20261115T093344Z-fb6d5f0-m1a-r3-exit"
    ],
-   "note": "r2 closer/same/closer/same; exit closer x4; originality pass both; bar not failing: knuckle to jaw 0.014 m in every cell (A16, A32 PASS at fb6d5f0), A107 behind-head band max 0.068 m (bar 0.10) PASS at fb6d5f0"
+   "note": "RE-FILMED (M1a regfix 4, the orchestrator ruling after regressions run 3): the anchor is fb6d5f0 staged on simulation time (tools/frames/page.mjs 7a at 109930d, copied into a detached fb6d5f0 worktree, never committed there: 1.5 s idle on a re-seated rest after a slate that raises and lowers the bow once, the bow 0.35 s, aim 0.45 s, draw held 1.3 s; 217 sim frames); the second staging of a 3x session, which matched the third on all but 1.74 % of pixels (her box 3.96 %); a session's first staging differs on 6.1 % (the front sash panel hangs instead of standing out). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/closer/same; exit closer x4; originality pass both; bar not failing: knuckle to jaw 0.014 m in every cell (A16, A32 PASS at fb6d5f0), A107 behind-head band max 0.068 m (bar 0.10) PASS at fb6d5f0"
   },
   "F18": {
    "date": "2026-11-15",
    "commit": "fb6d5f0",
-   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "run": "20261115T173434Z-fb6d5f0-anchor-restage3-partial-x3",
    "provisional": true,
    "rule": "PROCESS §4 two-page rule",
    "pages": [
     "20261115T060956Z-dee526d-m1a-r2-review",
     "20261115T093344Z-fb6d5f0-m1a-r3-exit"
    ],
-   "note": "r2 closer/same/closer/closer; exit closer/closer/closer/same; originality pass both; bar (no hand or forearm behind the head in any cell) not failing: A16 (20 cells incl. crouched and strafing) and A107 PASS at fb6d5f0"
+   "note": "RE-FILMED (M1a regfix 4, the orchestrator ruling after regressions run 3): the anchor is fb6d5f0 staged on simulation time, the crouched aim-strafe frozen at gait phase 0.7576 (wanted 0.75: the near knee down toward the lens, the front panel to the ground, as in the wall-clock anchor; 314 sim frames; tools/frames/page.mjs 7a at 109930d, copied into a detached fb6d5f0 worktree, never committed there); the second staging of a 3x session, which matched the third on all but 0.43 % of pixels (her box 1.82 %). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/closer/closer; exit closer/closer/closer/same; originality pass both; bar (no hand or forearm behind the head in any cell) not failing: A16 (20 cells incl. crouched and strafing) and A107 PASS at fb6d5f0"
   },
   "F19": {
    "date": "2026-11-15",

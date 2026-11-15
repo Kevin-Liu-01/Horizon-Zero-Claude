@@ -56,6 +56,15 @@ difference from the first (whole frame and her screen box, share of pixels whose
 The F15 and F19 anchors were re-filmed at fb6d5f0 with this staging (a detached worktree with this `page.mjs` and
 `film.mjs` copied in, never committed there); the old anchors are in `accepted/withdrawn/`.
 
+**Regfix 4:** F16 and F17 (the draw) and F18 (the crouched aim-strafe) are staged the same way, by the orchestrator's
+ruling after regressions run 3. The wall clock's beats become whole steps (the bow 0.35 s, the crouch 0.3 s, the aim
+0.45 s, the draw held 1.3 s, strafing right in the crouch); before them the slate raises the bow once and lowers it
+(the session's first aim sets the bow pose's own fields), steps a fixed 1 s more, and starts the ground conform's
+low-pass from zero. F18 freezes on the first step at or past gait phase 0.75 (the near knee down toward the lens, as
+in the accepted wall-clock anchor; `--clip-phases a,b,...` films repeat k at phase k, which is how 0.75 was chosen).
+The F16 and F18 anchors were re-filmed at fb6d5f0 the same way (F17 is not accepted; its anchor is still the 2026-11-14
+refilm). A filmed person is turned to its mark before the settle, with its chains re-seated on the turned rest.
+
 ## Frame set versions
 
 `frameset.json` carries a `version`. Each change, and why:
