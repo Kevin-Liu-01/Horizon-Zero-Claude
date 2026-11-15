@@ -193,7 +193,7 @@ export function scarfCowl(part, field, J, { cols = 40, rows = 11, cz = -0.035, s
 
 /**
  * M1a fix round 1 (the judge, three rounds running: "a smooth cowl or bib", "a flange", "a collar"): the neck scarf rebuilt
- * as what the turnaround draws, a long length of cloth WOUND loosely round the neck and bunched: `loops` fat rolls of
+ * as what the turnaround draws, a long length of cloth WOUND loosely round the neck and bunched: `loops` (three) fat rolls of
  * cloth, each a closed tube (no open edge, so no paper edge and no inside to see), stacked so each overlaps the one under
  * it, the lowest lying on the trapezius and dipping low in front, the top one under the jaw. Each roll is lumpy along its
  * length (the cloth bunched as it was wound: its cross-section swells and shrinks, 0.55-1.25 of its mean) and creased
@@ -205,12 +205,13 @@ export function scarfRoll(part, field, J, { cols = 36, sides = 7, cz = -0.035, s
   const L = loops || [
     // y(th) of the roll's centre, a = radial half-thickness, b = vertical half-height, slack = how far it stands off the neck
     { y: (th) => 1.474 - 0.04 * front(th) + 0.006 * Math.sin(th + 0.7), a: 0.017, b: 0.024, slack: 0.032, ph: 0.3 },
-    { y: (th) => 1.499 - 0.024 * front(th) - 0.004 * Math.sin(th + 2.1), a: 0.015, b: 0.021, slack: 0.02, ph: 2.2 },
-    { y: (th) => 1.521 - 0.012 * front(th) + 0.004 * Math.sin(th * 2 + 1.0), a: 0.013, b: 0.016, slack: 0.01, ph: 4.1 },
-    { y: (th) => 1.537 - 0.004 * front(th), a: 0.0095, b: 0.0095, slack: 0.003, ph: 5.3 },
+    { y: (th) => 1.499 - 0.026 * front(th) - 0.004 * Math.sin(th + 2.1), a: 0.015, b: 0.021, slack: 0.02, ph: 2.2 },
+    { y: (th) => 1.519 - 0.016 * front(th) + 0.004 * Math.sin(th * 2 + 1.0), a: 0.012, b: 0.013, slack: 0.01, ph: 4.1 },
   ];
   const keep = (q) => Math.abs(q.x) < 0.12;
-  const neck = (y, th, dth = 0.22) => field.radial(y, th, 0, cz, 0.008, dth, keep) || 0.06;
+  // (the neck's radius is read at 1.522 m or under: over it, in front, the field meets her jaw and chin (110-125 mm out at 1.53-1.55
+  // against the throat's 42), and a roll that followed it stood out under her chin as a fin; film at c4aa23c)
+  const neck = (y, th, dth = 0.22) => field.radial(Math.min(y, 1.522), th, 0, cz, 0.008, dth, keep) || 0.06;
   const base0 = part.pos.length / 3;
   const jN = J('neck_01'), jS = J('spine_03'), jCl = J('clavicle_l'), jCr = J('clavicle_r');
   let vBand = 0;
