@@ -6,7 +6,8 @@ import { BEDS, REED_KIND, REED_MASK } from '../../world/island/reedmask.js';
  * THE REEDS, DRAWN FROM THE MASK (BUILD M1.6e). Every cane stands where `mask.cover(x, z)` (the base cover less the
  * Peg cuts) says reed stands, the same value the rule reads: the picture and the rule cannot disagree (TECH §5).
  *
- *   carrizo  a clump of 5 pale canes, 2.3-3.4 m (taller than Brea), two arching leaves each and a buff plume;
+ *   carrizo  a clump of 5 pale canes, 2.3-3.4 m (taller than Brea), two narrow arching leaves each and a nodding buff
+ *            plume;
  *            80 triangles. Planted on a jittered 1.3 m grid, kept where a hash is under the cover (thin at a bed's
  *            edge, gone in a cut lane). One InstancedMesh per bed (eight), so a bed outside the lens is culled whole.
  *   junco    a tuft of 14 dark rush stems, 0.7-1.15 m, one tapered sliver each: 14 triangles, on a 0.7 m grid; one
@@ -14,8 +15,9 @@ import { BEDS, REED_KIND, REED_MASK } from '../../world/island/reedmask.js';
  *
  * THE LEAN. Each instance carries its bed (`aBed`); `uLean[bed]` is that bed's gust clock lean (src/game/reeds/gust.js),
  * written once a frame. A cane bends downwind (the trade's SW, vegetation's `uWind`) by its height squared: its tip
- * stands about 0.35 m off true in a lull and about 0.95 m in a full gust (a 2.9 m cane), with a flutter that quickens
- * with the gust. Brea and the nearest Instruments part the canes (vegetation's four displacers).
+ * stands about 0.4 m off true in a lull and about 0.95 m in a full gust (a 2.9 m cane), with a flutter that quickens
+ * with the gust. Brea and the nearest Instruments part the canes a little (vegetation's four displacers, at a third
+ * of the marram's push: the stems stay in front of her). Drawn to 64 m from the lens (shrunk to the root from 48 m).
  *
  * Lit like the island's flora (the same standard material, the land's long shadow from the terrain's skyline
  * texture); casts no shadow (no plant does: A56). Allocation-free per frame.
@@ -93,13 +95,13 @@ export function carrizoGeo(seed = 0xca77) {
     for (let l = 0; l < 2; l++) {
       const t = 0.42 + l * 0.24 + R() * 0.08, la = a + (l ? Math.PI : 0) + (R() - 0.5) * 1.6;
       const at = [ox + dir[0] * H * t, H * t, oz + dir[2] * H * t];
-      const L = 0.55 + R() * 0.35;
+      const L = 0.75 + R() * 0.4;
       c0.copy(leaf0).multiplyScalar(0.9 + R() * 0.15); c1.copy(leaf1).multiplyScalar(0.92 + R() * 0.12);
-      strap(G, at, [Math.cos(la), 0.55, Math.sin(la)], L, 0.042, 2, c0, c1, 0.32 + R() * 0.2, 1, 0.85);
+      strap(G, at, [Math.cos(la), 0.7, Math.sin(la)], L, 0.022, 2, c0, c1, 0.55 + R() * 0.25, 1, 0.92);
     }
     const top = [ox + dir[0] * H, H - 0.02, oz + dir[2] * H];
     c0.copy(plume0); c1.copy(plume1);
-    strap(G, top, [dir[0] + 0.12, 1, dir[2]], 0.34, 0.06, 1, c0, c1, 0.05, 1, 0.6, side);
+    strap(G, top, [dir[0] - 0.35, 0.8, dir[2] + 0.35], 0.5, 0.034, 1, c0, c1, 0.12, 1, 0.95, side);
   }
   return geoOf(G);
 }
@@ -142,6 +144,10 @@ const REED_PROJECT = /* glsl */ `
 vec4 iw = instanceMatrix * vec4(transformed, 1.0);
 {
   vec3 o = instanceMatrix[3].xyz;
+  // drawn to 64 m: shrunk to its root between 48 and 64 m from the lens (the belt is not a vista element; the accepted
+  // salt-cell frames F14-F19 stand 65 m from the nearest reed, F05 and F20 further)
+  float fade = 1.0 - smoothstep(48.0, 64.0, distance(o, cameraPosition));
+  iw.xyz = o + (iw.xyz - o) * fade;
   float sy = length(instanceMatrix[1].xyz);
   float yl = max(iw.y - o.y, 0.0);
   float hh = clamp(yl / (uHeight * sy), 0.0, 1.25);
@@ -150,14 +156,14 @@ vec4 iw = instanceMatrix * vec4(transformed, 1.0);
   float ph = dot(o.xz, vec2(0.37, 0.61)) + uTime * (1.4 + 1.8 * lean);
   float flut = sin(ph) * 0.05 + sin(ph * 2.7 + o.x) * 0.025;
   // the bend at the tip, metres: a standing lean SW, the gust clock's lean, the flutter
-  float bend = (0.06 + 0.26 * lean + flut * (0.35 + lean)) * uHeight * sy;
+  float bend = (0.09 + 0.24 * lean + flut * (0.35 + lean)) * uHeight * sy;
   vec2 off = uWind * bend * h2;
   // she and the nearest Instruments part the canes (vegetation's displacers)
   for (int a = 0; a < 4; a++) {
     vec2 dv = iw.xz - uActors[a].xy;
     float dl = length(dv) + 1e-3;
     float pu = (1.0 - smoothstep(0.0, uActors[a].z * 1.15, dl)) * uActors[a].w;
-    off += (dv / dl) * pu * 0.9 * hh;
+    off += (dv / dl) * pu * 0.3 * hh;
   }
   iw.xz += off;
   iw.y -= dot(off, off) / max(2.0 * yl, 0.3);
@@ -336,7 +342,7 @@ export class ReedDraw {
     const cam = this.ctx.camera?.position;
     if (cam) {
       const dx = cam.x - this._cx, dz = cam.z - this._cz;
-      const near = dx * dx + dz * dz < 420 * 420;
+      const near = dx * dx + dz * dz < 150 * 150;   // the belt's far edge is ~85 m from the centre; drawn to 64 m
       if (this.group.visible !== near) this.group.visible = near;
     }
   }

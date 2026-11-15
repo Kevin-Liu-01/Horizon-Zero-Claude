@@ -189,7 +189,7 @@ export async function probe(frame) {
           const wantGust = k < 5;
           const w0 = performance.now();
           while (ref.gusting(tc()) !== wantGust && performance.now() - w0 < 20000) { await raf(); }
-          placeBrea(a[0], a[1]); p.setCrouch(true); calm(pl);
+          placeBrea(a[0], a[1]); p.setCrouch(true); still(pl, px, pz); calm(pl);
           for (let q = 0; q < 6; q++) { face(pl, p.position.x, p.position.z); steer(b[0], b[1]); calm(pl); await raf(); }
           const t0 = tc(), r = { gustAtStart: ref.gusting(t0), wind: r3(ref.speed(t0)), tWary: null, hiddenFrames: 0, frames: 0,
             meadow: md?.densityAt ? r3(md.densityAt(p.position.x, p.position.z)) : null, kind: null };
