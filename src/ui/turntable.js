@@ -51,9 +51,10 @@ function arrowItem(type) {
   a.group.rotation.x = -Math.PI / 2;
   a.group.position.y = -a.len / 2;
   g.add(calm(a.group));
-  // tilted off the turning axis so the turn reads as a cone, not a line spinning on itself
-  g.rotation.z = -0.95;
-  return { root: g, size: a.len * 0.9 };
+  // laid well over (63 deg off the turning axis) so it reads along the wide stage and the turn reads as a cone;
+  // framed on its height there (0.35 m), not its length, so the shaft and the head read at ledger size
+  g.rotation.z = -1.1;
+  return { root: g, size: 0.42 };
 }
 
 function potItem(kind) {

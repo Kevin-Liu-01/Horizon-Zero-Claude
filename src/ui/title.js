@@ -45,22 +45,25 @@ export const DOLLY_S = 2.2;
 export const MENU_AT_S = 1.1;
 /** The shot. Screen x is 0 at the left edge and 1 at the right. */
 export const FRAME = Object.freeze({
-  dist: 2.4,         // m, lens to Brea (horizontal) at rest
+  dist: 2.7,         // m, lens to Brea (horizontal) at rest
   height: 1.1,       // m, lens over her feet
   pitchDeg: 9,       // up
   fov: 40,           // vertical, deg
-  heroX: 0.70,       // her body on screen
-  ringX: 0.86,       // the Ring on screen
-  turnDeg: 52,       // she faces this far left of the lens's line (three-quarters from behind)
-  startExtra: 9,     // m further out before the press (horizontal; A70c wants > 6 m of radius drop)
+  heroX: 0.64,       // her body on screen
+  ringX: 0.84,       // the Ring on screen (whole, over her far shoulder; 0.86 cut it at the frame's edge)
+  turnDeg: 80,       // she faces this far left of the lens's line: her cheek and profile edge show and the stowed
+                     // bow stands behind her head (at 52 its stave ran through it); tuned on the fix-1 sweep at d8b05a4
+  startExtra: 9,     // m further out before the press (the least tried; `_clearStart` may stand further out)
   startRise: 2.4,    // m higher before the press (the least rise tried; `_clearStart` may climb)
-  rim: 7,            // the warm rim light's intensity (cd), 0 = off
+  rim: 12,           // the warm rim light's intensity (cd), 0 = off
 });
 /** The rim's colour: low sun through calima, warmer than the lamps' calm bone-gold. */
 const RIM_COLOR = 0xFFC27A;
 /** Dolly starts tried, in order: bearings off the lens's line (deg, + turns toward the lens's right) and rises (m). */
-const START_TURNS = [0, 14, -14, 28, -28, 42, -42];
-const START_RISES = [0, 1.6, 3.2, 4.8];
+const START_TURNS = [0, 15, -15, 30, -30, 45, -45, 60, -60, 75, -75, 90, -90];
+const START_RISES = [0, 2, 4, 6];
+/** How far out the start stands (m, horizontal; A70c wants > 6 m of radius drop and > 8 m of travel). */
+const START_EXTRAS = [9, 12, 15, 18, 21];
 /**
  * A start is clear when no wall the lens sees stands nearer than this (m) inside its view. Around the cistern every
  * bearing 9 m out stands inside or against a house (at 6baf73f's layout the clearest low start saw a wall at 4 m),
@@ -149,7 +152,7 @@ export class TitleStage {
     const ringD = Math.hypot(ring.x - hx, ring.z - hz);
     this.solved = { yaw, cx, cz, cy: hy + F.height, hx, hz, hy, heading, ring: { x: ring.x, z: ring.z, dist: +ringD.toFixed(1) },
       // the start of the dolly: further out along her line to the lens (turned clear of the town), and higher
-      ux: (cx - hx) / F.dist, uz: (cz - hz) / F.dist, rise: F.startRise, start: null };
+      ux: (cx - hx) / F.dist, uz: (cz - hz) / F.dist, extra: F.startExtra, rise: F.startRise, yaw0: yaw, pitch0: F.pitchDeg - 3, start: null };
     this._clearStart(this.solved, gy, tv * aspect);
     return this.solved;
   }
@@ -162,37 +165,41 @@ export class TitleStage {
   _clearStart(S, gy, th) {
     const F = this.frame;
     const boxes = this._townBoxes(gy, S.hx, S.hz);
+    let px = S.uz, pz = -S.ux;
+    if (px * Math.cos(S.yaw) - pz * Math.sin(S.yaw) < 0) { px = -px; pz = -pz; }
     let best = null;
-    for (const rise of START_RISES) {
-      for (const deg of START_TURNS) {
-        const a = deg * D2R, c = Math.cos(a), s = Math.sin(a);
-        // turn u about +y toward the lens's right (cos yaw, -sin yaw) by `deg`: u' = u cos a + p sin a, p the
-        // horizontal perpendicular of u on the right's side
-        let px = S.uz, pz = -S.ux;
-        if (px * Math.cos(S.yaw) - pz * Math.sin(S.yaw) < 0) { px = -px; pz = -pz; }
-        const ux = S.ux * c + px * s, uz = S.uz * c + pz * s;
-        const sx = S.cx + ux * F.startExtra, sz = S.cz + uz * F.startExtra;
-        const sy = Math.max(S.cy + F.startRise + rise, gy(sx, sz) + 0.9);
-        const see = this._fan(boxes, sx, sy, sz, S.yaw, th);
-        const path = this._pathClear(boxes, sx, sy, sz, S.cx, S.cy, S.cz);
-        const score = path ? see : Math.min(see, 1);
-        if (!best || score > best.score + 1e-6) best = { ux, uz, rise: F.startRise + rise, deg, score: +score.toFixed(2), path };
-        if (score >= START_CLEAR) { S.ux = ux; S.uz = uz; S.rise = F.startRise + rise; S.start = { deg, rise: +S.rise.toFixed(2), see: +see.toFixed(2), path, boxes: boxes.length }; this._startPitch(S, gy); return; }
+    for (const extra of START_EXTRAS) {
+      for (const rise of START_RISES) {
+        for (const deg of START_TURNS) {
+          // turn u about +y toward the lens's right by `deg`: u' = u cos a + p sin a (p: u's horizontal perpendicular on the right's side)
+          const a = deg * D2R, c = Math.cos(a), s = Math.sin(a);
+          const ux = S.ux * c + px * s, uz = S.uz * c + pz * s;
+          const sx = S.cx + ux * extra, sz = S.cz + uz * extra;
+          const sy = Math.max(S.cy + F.startRise + rise, gy(sx, sz) + 0.9);
+          // the start lens looks at her (its yaw and pitch ease to the rest lens's over the dolly)
+          const yaw0 = Math.atan2(-(S.hx - sx), -(S.hz - sz));
+          const pitch0 = this._pitchAt(S, sx, sy, sz);
+          const see = this._fan(boxes, sx, sy, sz, yaw0, pitch0, th);
+          const path = this._pathClear(boxes, sx, sy, sz, S.cx, S.cy, S.cz);
+          const score = path ? see : Math.min(see, 1);
+          const cand = { ux, uz, extra, rise: F.startRise + rise, deg, yaw0, pitch0, see, path, score };
+          if (!best || score > best.score + 1e-6) best = cand;
+          if (score >= START_CLEAR) { this._takeStart(S, cand, boxes.length, false); return; }
+        }
       }
     }
-    S.ux = best.ux; S.uz = best.uz; S.rise = best.rise;
-    S.start = { deg: best.deg, rise: +best.rise.toFixed(2), see: best.score, path: best.path, boxes: boxes.length, short: true };
-    this._startPitch(S, gy);
+    this._takeStart(S, best, boxes.length, true);
   }
 
-  /** The start lens's pitch (deg): her chest 7 deg under the middle of the frame, never above the rest pitch less 3. */
-  _startPitch(S, gy) {
-    const F = this.frame;
-    const sx = S.cx + S.ux * F.startExtra, sz = S.cz + S.uz * F.startExtra;
-    const sy = Math.max(S.cy + S.rise, gy(sx, sz) + 0.9);
-    const down = Math.atan2(sy - (S.hy + 1.15), Math.hypot(sx - S.hx, sz - S.hz)) / D2R;
-    S.pitch0 = Math.min(F.pitchDeg - 3, -down + 7);
-    S.start.pitch = +S.pitch0.toFixed(1);
+  _takeStart(S, c, n, short) {
+    S.ux = c.ux; S.uz = c.uz; S.extra = c.extra; S.rise = c.rise; S.yaw0 = c.yaw0; S.pitch0 = c.pitch0;
+    S.start = { deg: c.deg, extra: c.extra, rise: +c.rise.toFixed(2), see: +c.see.toFixed(2), path: c.path, boxes: n, pitch: +c.pitch0.toFixed(1), yaw0: +c.yaw0.toFixed(3), ...(short ? { short: true } : {}) };
+  }
+
+  /** A lens's pitch (deg) that puts her chest 7 deg under the middle of its frame. */
+  _pitchAt(S, x, y, z) {
+    const down = Math.atan2(y - (S.hy + 1.15), Math.hypot(x - S.hx, z - S.hz)) / D2R;
+    return Math.min(this.frame.pitchDeg, -down + 7);
   }
 
   /** Saltrow's footprints within 60 m of her, as 2D boxes with their roof height (m, world). */
@@ -208,18 +215,22 @@ export class TitleStage {
     return out;
   }
 
-  /** The nearest wall a fan of 15 rays across the lens's view meets (m; 40 = none). Roofs under the lens are seen over. */
-  _fan(boxes, x, y, z, yaw, th) {
+  /**
+   * The nearest wall a fan of 15 rays across the lens's view meets (m; 40 = none). A building counts when any of it
+   * stands above the frame's bottom edge at that distance (a roof under a lens that looks down still fills the frame).
+   */
+  _fan(boxes, x, y, z, yaw, pitchDeg, th) {
     const half = Math.atan(th) + 4 * D2R;
+    const lowTan = Math.tan((pitchDeg - this.frame.fov / 2) * D2R);
     let near = 40;
     for (let i = 0; i < 15; i++) {
       const phi = -half + (2 * half * i) / 14;          // + is to the lens's right
       const a = yaw - phi;
       const dx = -Math.sin(a), dz = -Math.cos(a);
       for (const B of boxes) {
-        if (B.top < y - 0.4) continue;
         const t = rayBox(B, x, z, dx, dz);
-        if (t != null && t < near) near = t;
+        if (t == null || t >= near) continue;
+        if (B.top > y + t * lowTan) near = t;
       }
     }
     return near;
@@ -285,7 +296,7 @@ export class TitleStage {
     }
     const k = since == null ? 0 : clamp01(since / DOLLY_S);
     const ease = smooth(k);
-    const out = (1 - ease) * F.startExtra;
+    const out = (1 - ease) * (S.extra ?? F.startExtra);
     const cx = S.cx + S.ux * out, cz = S.cz + S.uz * out;
     // never under the ground on the way in (the rise behind her cistern climbs faster than the lens)
     const T = ctx.terrain;
@@ -294,7 +305,10 @@ export class TitleStage {
     if (cam) {
       cam.position.set(cx, cy, cz);
       const pitch = (F.pitchDeg + (1 - ease) * ((S.pitch0 ?? F.pitchDeg - 3) - F.pitchDeg)) * D2R;
-      cam.rotation.set(pitch, S.yaw, 0, 'YXZ');
+      // the yaw swings from the start lens's (on her) to the rest lens's by the shorter way
+      let dy = S.yaw - (S.yaw0 ?? S.yaw);
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      cam.rotation.set(pitch, S.yaw - (1 - ease) * dy, 0, 'YXZ');
       if (Math.abs(cam.fov - F.fov) > 1e-3) { cam.fov = F.fov; cam.updateProjectionMatrix(); }
       cam.updateMatrixWorld();
     }
