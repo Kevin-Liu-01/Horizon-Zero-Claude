@@ -44,6 +44,7 @@ import { InventoryScreen } from '../ui/inventory.js';
 const STARTING = [
   ['metal-shards', 60],
   ['ridge-wood', 20],
+  ['feather', 6],   // M1.6d: Reed arrows are cane ×2 + gull feather ×1 (BIBLE §16)
   ['blaze', 6],
   ['sparker', 6],
   ['chillwater', 6],

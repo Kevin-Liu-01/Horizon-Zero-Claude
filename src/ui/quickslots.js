@@ -14,6 +14,13 @@
  * An empty slot does nothing and says so (`quick-slot-empty`), so a key press is never silent
  * to the systems that listen. Published as `ctx.quickslots`; `open` is always false so systems
  * that pause aiming while a selector is up never block.
+ *
+ * QUICK-MAKE (M1.6d; BIBLE §9 "hold a quick slot (1-4) for 1.2 s to quick-make a bundle of six for
+ * that slot at normal time; taking damage interrupts it", §16 "quick-make interrupted by damage makes
+ * nothing and loses nothing"). Holding a slot's key runs `QuickMake` on the world's own clock; at
+ * 1.2 s the slot's ammunition is made once through `combat.craftAmmo` (the recipe and its yield of
+ * six are combat's, BIBLE §16). A hit before then cancels it: nothing is spent and nothing is made,
+ * and the key must be pressed again. The HUD draws the hold on the kit tag's MAKE line.
  */
 export const QUICK_SLOTS = Object.freeze([
   Object.freeze({ key: 'Digit1', slot: 1, kind: 'bow' }),
@@ -21,6 +28,51 @@ export const QUICK_SLOTS = Object.freeze([
   Object.freeze({ key: 'Digit3', slot: 3, kind: null, earns: 'gaff' }),
   Object.freeze({ key: 'Digit4', slot: 4, kind: null, earns: 'pots' }),
 ]);
+
+/** Seconds a quick slot is held to make its bundle (BIBLE §9). */
+export const QUICK_MAKE_S = 1.2;
+
+/**
+ * The hold-to-make state machine, pure (no DOM, no three): `press(slot, ammo)` on the key's down edge,
+ * `tick(dt, held)` every simulation step while the world runs, `hit()` when Brea takes damage. `tick`
+ * returns the ammo id to make on the step the hold completes, else null. One completion per press;
+ * an interrupted or completed hold waits for the key to come up before a new press counts.
+ */
+export class QuickMake {
+  constructor(holdS = QUICK_MAKE_S) {
+    this.holdS = holdS;
+    this.slot = 0;          // the slot being held (0 = none)
+    this.ammo = null;       // what that slot makes
+    this.t = 0;             // seconds held
+    this.state = 'idle';    // 'idle' | 'holding' | 'done' | 'interrupted'
+    this.made = 0;          // completions (audit)
+    this.interrupted = 0;   // holds broken off by damage (audit)
+  }
+
+  get progress() { return this.state === 'holding' ? Math.min(1, this.t / this.holdS) : 0; }
+  get holding() { return this.state === 'holding'; }
+
+  press(slot, ammo) {
+    this.slot = slot; this.ammo = ammo || null; this.t = 0;
+    this.state = this.ammo ? 'holding' : 'idle';
+  }
+
+  /** @returns {string|null} the ammo to make now */
+  tick(dt, held) {
+    if (!held) { if (this.state !== 'idle') { this.state = 'idle'; this.slot = 0; this.ammo = null; this.t = 0; } return null; }
+    if (this.state !== 'holding') return null;
+    this.t += Math.max(0, dt || 0);
+    if (this.t + 1e-9 >= this.holdS) { this.state = 'done'; this.made++; return this.ammo; }
+    return null;
+  }
+
+  /** Damage taken: a hold in progress is broken off and makes nothing. */
+  hit() {
+    if (this.state !== 'holding') return false;
+    this.state = 'interrupted'; this.t = 0; this.interrupted++;
+    return true;
+  }
+}
 
 /** The lance is the weapon in hand from the first frame of its draw to the last of its stow. */
 const LANCE_STANCES = new Set(['draw', 'ready', 'swing', 'holster']);
@@ -31,7 +83,27 @@ export class QuickSlots {
     this.open = false;
     this.last = null;
     const inPlay = () => ctx.state === 'playing' || ctx.params.has('shot');
-    for (const q of QUICK_SLOTS) ctx.input.onDown(q.key, () => { if (inPlay()) this.select(q.slot); });
+    this.make = new QuickMake();
+    this.lastMake = null;   // { slot, ammo, ok, n, at } of the last completed hold (audit)
+    for (const q of QUICK_SLOTS) {
+      ctx.input.onDown(q.key, () => {
+        if (!inPlay()) return;
+        this.select(q.slot);
+        this.make.press(q.slot, this.ammoFor(q.slot));
+      });
+    }
+    ctx.events?.on?.('player-damage', () => {
+      if (this.make.hit()) ctx.events?.emit?.('quick-make-interrupted', { slot: this.make.slot });
+    });
+  }
+
+  /** What holding slot `n` makes: the bow's loaded arrow for slot 1; nothing for the lance or an empty slot. */
+  ammoFor(n) {
+    const q = QUICK_SLOTS.find((x) => x.slot === n);
+    if (!q || q.kind !== 'bow') return null;
+    const combat = this.ctx.combat;
+    const bow = combat?.weapons?.find?.((w) => /bow|recurve/.test(w.id));
+    return bow?.activeAmmo ?? 'hunter';
   }
 
   /** The four slots as the HUD draws them: `{ slot, kind, earned }`. Frozen; never reallocated. */
@@ -71,5 +143,23 @@ export class QuickSlots {
     return q.kind;
   }
 
-  update() {}
+  /** Simulation step: runs the hold on the world's clock (the world keeps its pace; nothing pauses). */
+  update(dt) {
+    const ctx = this.ctx;
+    const m = this.make;
+    if (m.state === 'idle') return;
+    const q = QUICK_SLOTS.find((x) => x.slot === m.slot);
+    const playing = ctx.state === 'playing' || ctx.params?.has?.('shot');
+    const held = playing && !!q && !!ctx.input?.isDown?.(q.key);
+    const ammo = m.tick(dt, held);
+    if (!ammo) return;
+    const combat = ctx.combat;
+    const before = combat?.ammo?.[ammo] ?? 0;
+    const blocker = combat?.craftBlocker ? combat.craftBlocker(ammo) : 'CANNOT MAKE';
+    const ok = !blocker && !!combat?.craftAmmo?.(ammo);
+    const n = (combat?.ammo?.[ammo] ?? 0) - before;
+    this.lastMake = { slot: m.slot, ammo, ok, n, blocker: ok ? null : blocker };
+    if (!ok) combat?.feedback?.toast?.(blocker || 'CANNOT MAKE', ammo, true);
+    ctx.events?.emit?.('quick-make', this.lastMake);
+  }
 }

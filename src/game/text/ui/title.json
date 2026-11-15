@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "about": "The title, New Game and Loading screens' words (BIBLE 18). Plain data, read by src/ui/title.js. The five stations and the Tolerance card are the bible's words exactly; the tagline is the one line under the datum rule.",
+  "tagline": "THE ISLAND REMEMBERS",
+  "press": "PRESS ANY KEY",
+  "stations": {
+    "continue": "CONTINUE",
+    "newGame": "NEW GAME",
+    "settings": "SETTINGS",
+    "extras": "EXTRAS",
+    "quit": "QUIT"
+  },
+  "save": {
+    "lastEntry": "last entry · {quest}",
+    "none": "no field book open"
+  },
+  "tolerance": {
+    "head": "TOLERANCE",
+    "lead": "How close the island holds you to the line.",
+    "loose": "LOOSE",
+    "standard": "STANDARD",
+    "fine": "FINE",
+    "begin": "BEGIN",
+    "dials": "TAKEN ×{in} · DEALT ×{out} · SEEN ×{seen}"
+  },
+  "extras": {
+    "head": "EXTRAS",
+    "manual": "FIELD MANUAL",
+    "credits": "CREDITS"
+  },
+  "loading": {
+    "about": "The Loading sheet shows one Field Book line (src/game/text/books/field-books.json 'loading'); this is the sheet's own label.",
+    "sheet": "SHEET 1 · ORCHIL"
+  }
+}

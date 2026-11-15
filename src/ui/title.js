@@ -1,0 +1,340 @@
+import './title.css';
+import TEXT from '../game/text/ui/title.json';
+import BOOKS from '../game/text/books/field-books.json';
+import { REST } from '../world/island/sites.js';
+
+/**
+ * THE TITLE, NEW GAME AND THE LOADING SHEET (M1.6h; BIBLE §18 "Title · New Game · Loading").
+ *
+ * Title: key art at 18:40, golden, not a panel. Our wordmark top-left (the plumb-line I over the datum
+ * rule; no star, no affiliation line), the one tagline line THE ISLAND REMEMBERS left-aligned under the
+ * rule in IBM Plex Mono with no flanking rules, five stations in a left column on a soft scrim
+ * (CONTINUE · NEW GAME · SETTINGS · EXTRAS · QUIT), and Brea three-quarters from behind at the right
+ * with the sea stacks and the Sounding Ring behind her.
+ *
+ * The shot is SOLVED, not searched (the old framing chooser cost about 250 ms in one frame per visit):
+ * Brea stands at her station facing the Ring's side of the sky; the lens is placed so her body lands at
+ * `heroX` of the screen width and the Ring at `ringX`, `dist` metres from her, `height` metres over her
+ * feet, tilted `pitchDeg` up. Three fixed-point passes, no ray casts, no allocation per frame.
+ *
+ * The press beat and the dolly keep the contract `A70c-title-flow` grades: the camera stands `startExtra`
+ * metres further out (and `startRise` higher) until a key is pressed, then closes on her over DOLLY_S on a
+ * smoothstep keyed to the press; the stations arrive 1.1 s after it. `info` carries the authored ease and
+ * radius (camera to Brea, horizontal) for the audit.
+ *
+ * The title holds the world clock at TITLE_HOUR and hands back the hour and the clock it found when it is
+ * left (`leave()`). The hour is set while the clock still runs, so the sky's light probe catches up on its
+ * own round robin (one face a frame) instead of a full re-bake in one frame.
+ *
+ * Loading: a dark map sheet with one triangle being ruled in (its three sides draw with the boot's
+ * progress) and one Field Book line. main.js compiles every program, uploads every texture and every
+ * geometry behind it (engine.warmUp), unchanged; the sheet is built here at module load, before boot runs.
+ */
+
+export const TITLE_HOUR = 18 + 40 / 60;
+export const DOLLY_S = 2.2;
+export const MENU_AT_S = 1.1;
+/** The shot. Screen x is 0 at the left edge and 1 at the right. */
+export const FRAME = Object.freeze({
+  dist: 3.1,         // m, lens to Brea (horizontal) at rest
+  height: 1.32,      // m, lens over her feet
+  pitchDeg: 5,       // up
+  fov: 40,           // vertical, deg
+  heroX: 0.70,       // her body on screen
+  ringX: 0.86,       // the Ring on screen
+  turnDeg: 38,       // she faces this far left of the lens's line (three-quarters from behind)
+  startExtra: 9,     // m further out before the press
+  startRise: 2.4,    // m higher before the press
+});
+
+const D2R = Math.PI / 180;
+const fill = (s, o) => String(s).replace(/\{(\w+)\}/g, (_, k) => (o[k] ?? ''));
+const smooth = (k) => k * k * (3 - 2 * k);
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+export const TITLE_TEXT = TEXT;
+
+/* =========================================================================================== */
+/* the shot                                                                                    */
+/* =========================================================================================== */
+
+export class TitleStage {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.frame = { ...FRAME };
+    this.station = null;      // { x, z } her feet; null = REST
+    this.solved = null;       // { yaw, cx, cz, cy, hx, hz, hy, heading, ring }
+    this.info = { since: 0, ease: 0, radius: 0, camY: 0, pitchDeg: 0 };
+    this._clockHeld = null;
+    this._hourHeld = null;
+    this._fovHeld = null;
+    this._rest = false;
+  }
+
+  /** Where the Ring stands (the place contract's `ring`, else its site). */
+  _ring() {
+    const r = this.ctx.props?.gatePlaces?.ring;
+    if (r && Number.isFinite(r.x)) return r;
+    return { x: REST.x - 60, z: REST.z + 60 };
+  }
+
+  /** Solve the lens for the current frame parameters. Pure arithmetic. */
+  solve() {
+    const ctx = this.ctx, F = this.frame;
+    const st = this.station || REST;
+    const T = ctx.terrain;
+    const gy = (x, z) => (T?.getHeight ? T.getHeight(x, z) : 0);
+    const hx = st.x, hz = st.z, hy = gy(hx, hz);
+    const ring = this._ring();
+    const cam = ctx.camera;
+    const aspect = cam?.aspect || 16 / 9;
+    const tv = Math.tan((F.fov * D2R) / 2), th = tv * aspect;
+    // screen x (0..1) -> NDC (-1..1) -> the tangent off the lens axis, to the right
+    const kb = (F.heroX * 2 - 1) * th, kr = (F.ringX * 2 - 1) * th;
+    // depth along the axis that puts her `dist` m (horizontal) from the lens at tangent kb
+    const db = F.dist / Math.sqrt(1 + kb * kb);
+    let cx = hx, cz = hz, yaw = 0;
+    for (let i = 0; i < 4; i++) {
+      // az(v) = atan2(-vx, -vz) is the yaw whose forward is v; a point at tangent k to the right is at yaw - atan(k)
+      yaw = Math.atan2(-(ring.x - cx), -(ring.z - cz)) + Math.atan(kr);
+      const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+      cx = hx - db * (fx + kb * rx);
+      cz = hz - db * (fz + kb * rz);
+    }
+    // she faces the lens's forward turned turnDeg to the screen's left
+    const fwdYaw = yaw + F.turnDeg * D2R;
+    const vx = -Math.sin(fwdYaw), vz = -Math.cos(fwdYaw);
+    const heading = Math.atan2(vx, vz);
+    const ringD = Math.hypot(ring.x - hx, ring.z - hz);
+    this.solved = { yaw, cx, cz, cy: hy + F.height, hx, hz, hy, heading, ring: { x: ring.x, z: ring.z, dist: +ringD.toFixed(1) },
+      // the start of the dolly: further out along her line to the lens, and higher
+      ux: (cx - hx) / F.dist, uz: (cz - hz) / F.dist };
+    return this.solved;
+  }
+
+  /** Enter the title: her on her station, the hour and the clock borrowed, the lens solved. */
+  begin({ station = null } = {}) {
+    const ctx = this.ctx, env = ctx.environment, p = ctx.player;
+    this.station = station;
+    const st = station || REST;
+    if (p) {
+      p.position.set(st.x, p.position.y, st.z);
+      p._snapToGround?.();
+      p.velocity?.set?.(0, 0, 0);
+      if ('moveSpeed' in p) p.moveSpeed = 0;
+    }
+    if (env && this._clockHeld == null) {
+      this._clockHeld = !!env.timeFrozen;
+      this._hourHeld = env.time;
+      // the hour first, while the clock still runs: the light probe follows on its round robin
+      env.timeFrozen = false;
+      if (Math.abs(env.time - TITLE_HOUR) > 1e-3) env.setTime(TITLE_HOUR);
+      env.timeFrozen = true;
+    }
+    const cam = ctx.camera;
+    if (cam && this._fovHeld == null) this._fovHeld = cam.fov;
+    this.solve();
+  }
+
+  /**
+   * The lens for this frame. `since` is seconds since the press (null = not pressed). Writes the
+   * camera and her facing; mutates `info` in place.
+   */
+  place(since) {
+    const ctx = this.ctx, cam = ctx.camera, p = ctx.player;
+    const S = this.solved || this.solve();
+    const F = this.frame;
+    const env = ctx.environment;
+    // a rest still running when the title came up: the environment drives the hour until it lands,
+    // and THAT hour is the one to hand back
+    if (this._hourHeld != null && env) {
+      if (env.resting) this._rest = true;
+      else if (this._rest) { this._rest = false; this._hourHeld = env.time; env.timeFrozen = false; env.setTime(TITLE_HOUR); env.timeFrozen = true; }
+    }
+    const k = since == null ? 0 : clamp01(since / DOLLY_S);
+    const ease = smooth(k);
+    const out = (1 - ease) * F.startExtra;
+    const cx = S.cx + S.ux * out, cz = S.cz + S.uz * out;
+    const cy = S.cy + (1 - ease) * F.startRise;
+    if (cam) {
+      cam.position.set(cx, cy, cz);
+      const pitch = (F.pitchDeg - (1 - ease) * 3) * D2R;
+      cam.rotation.set(pitch, S.yaw, 0, 'YXZ');
+      if (Math.abs(cam.fov - F.fov) > 1e-3) { cam.fov = F.fov; cam.updateProjectionMatrix(); }
+      cam.updateMatrixWorld();
+    }
+    if (p) {
+      p.heading = S.heading;
+      p.camYaw = S.yaw;
+      if ('camPitch' in p) p.camPitch = 0;
+    }
+    const I = this.info;
+    I.since = since ?? 0; I.ease = ease;
+    I.radius = Math.hypot(cx - S.hx, cz - S.hz);
+    I.camY = cy; I.pitchDeg = F.pitchDeg - (1 - ease) * 3;
+    return I;
+  }
+
+  /** Hand back the clock, the hour and the lens's fov. Idempotent. */
+  leave() {
+    const env = this.ctx.environment, cam = this.ctx.camera;
+    if (this._clockHeld != null && env) {
+      const atTitle = Math.abs(env.time - TITLE_HOUR) < 1e-3;
+      env.timeFrozen = false;
+      if (this._hourHeld != null && atTitle) env.setTime(this._hourHeld);
+      env.timeFrozen = this._clockHeld;
+    }
+    if (cam && this._fovHeld != null) { cam.fov = this._fovHeld; cam.updateProjectionMatrix(); }
+    this._clockHeld = null; this._hourHeld = null; this._fovHeld = null; this._rest = false;
+  }
+
+  audit() {
+    const S = this.solved;
+    return S ? { yaw: +S.yaw.toFixed(4), cam: [+S.cx.toFixed(2), +S.cy.toFixed(2), +S.cz.toFixed(2)], hero: [+S.hx.toFixed(2), +S.hy.toFixed(2), +S.hz.toFixed(2)],
+      heading: +S.heading.toFixed(4), ring: S.ring, frame: { ...this.frame }, station: this.station } : null;
+  }
+}
+
+/* =========================================================================================== */
+/* the title's DOM                                                                             */
+/* =========================================================================================== */
+
+const el = (tag, cls, parent, html) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html != null) e.innerHTML = html;
+  if (parent) parent.appendChild(e);
+  return e;
+};
+
+/**
+ * Build the title's layer inside `#title .title-inner` around the one wordmark index.html already holds.
+ * Returns the nodes menu.js drives: { root, press, menu, save, tag, scrim }.
+ */
+export function buildTitle(host) {
+  document.body.classList.add('cal-t2');
+  const inner = host;
+  const scrim = el('div', 't2-scrim', inner.parentElement || inner);
+  scrim.setAttribute('aria-hidden', 'true');
+  const tag = el('div', 't2-tag', inner, TEXT.tagline);
+  const root = el('div', 'mn-title t2-stations', inner);
+  const press = el('div', 'mn-title-press', root, `<span>${TEXT.press}</span>`);
+  const menu = el('nav', 'mn-title-menu', root);
+  const save = el('div', 'mn-title-save', root);
+  return { root, press, menu, save, tag, scrim };
+}
+
+/** The five stations (BIBLE §18), in order. `fns` maps each key to its action; CONTINUE may be disabled or absent. */
+export function fillStations(menu, { canContinue, showContinue, fns, onPick }) {
+  menu.innerHTML = '';
+  const S = TEXT.stations;
+  const items = [
+    ...(showContinue ? [{ key: 'continue', label: S.continue, disabled: !canContinue }] : []),
+    { key: 'newGame', label: S.newGame },
+    { key: 'settings', label: S.settings },
+    { key: 'extras', label: S.extras },
+    { key: 'quit', label: S.quit },
+  ];
+  items.forEach((it, i) => {
+    const b = el('button', `mn-title-item${it.disabled ? ' disabled' : ''}`, menu,
+      `<span class="cal-stn" aria-hidden="true">STN ${String(i + 1).padStart(2, '0')}</span>${it.label}`);
+    b.dataset.station = it.key;
+    if (it.disabled) b.disabled = true;
+    else b.addEventListener('click', () => { onPick?.(it.label); fns[it.key]?.(); });
+  });
+  return items.length;
+}
+
+/** The save line under the stations. */
+export function saveLine(info, older) {
+  if (info) return fill(TEXT.save.lastEntry, { quest: String(info.quest || 'Orchil').toLowerCase() });
+  return older || TEXT.save.none;
+}
+
+/**
+ * The New Game card: Tolerance (BIBLE §13, §18 "LOOSE · STANDARD · FINE · BEGIN"). `list` is
+ * progression's DIFFICULTIES. BEGIN starts with the choice (STANDARD unless another is picked).
+ * BEGIN also carries `mn-diff`, the class the slice-hour run clicks to start a New Game.
+ */
+export function fillTolerance(body, list, onBegin, initial = 'standard') {
+  const T = TEXT.tolerance;
+  el('div', 't2-card-lead', body, T.lead);
+  let chosen = list.some((d) => d.id === initial) ? initial : (list[0]?.id ?? 'standard');
+  const rows = [];
+  for (const d of list) {
+    const r = el('button', `mn-tol${d.id === chosen ? ' on' : ''}`, body);
+    r.dataset.tol = d.id;
+    el('b', null, r, T[d.id] ?? String(d.name).toUpperCase());
+    el('span', null, r, fill(T.dials, { in: (d.damageIn ?? 1).toFixed(2), out: (d.damageOut ?? 1).toFixed(2), seen: (d.detection ?? 1).toFixed(2) }));
+    r.addEventListener('click', () => { chosen = d.id; for (const x of rows) x.classList.toggle('on', x === r); });
+    rows.push(r);
+  }
+  const begin = el('button', 'mn-tol-begin mn-diff', body, T.begin);
+  begin.addEventListener('click', () => onBegin(chosen));
+  return { rows, begin, get chosen() { return chosen; } };
+}
+
+/** EXTRAS: the Field Manual and the Credits (BIBLE §18 "Extras"). */
+export function fillExtras(body, { manual, credits }) {
+  const E = TEXT.extras;
+  const a = el('button', 'mn-tol t2-extra', body, `<b>${E.manual}</b>`);
+  a.addEventListener('click', manual);
+  const b = el('button', 'mn-tol t2-extra', body, `<b>${E.credits}</b>`);
+  b.addEventListener('click', credits);
+}
+
+/* =========================================================================================== */
+/* the loading sheet (built at module load, before main.js boots)                               */
+/* =========================================================================================== */
+
+/** Contour rings of an island that is not quite Orchil: deterministic, a few hundred bytes. */
+function contours() {
+  let d = '';
+  for (let k = 0; k < 7; k++) {
+    const r = 120 + k * 46;
+    let s = '';
+    for (let i = 0; i <= 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      const w = 1 + 0.16 * Math.sin(a * 3 + k * 0.7) + 0.08 * Math.sin(a * 7 - k) + 0.05 * Math.cos(a * 11 + k * 1.3);
+      const x = 760 + Math.cos(a) * r * w * 1.25, y = 470 + Math.sin(a) * r * w * 0.82;
+      s += `${i ? 'L' : 'M'}${x.toFixed(0)} ${y.toFixed(0)}`;
+    }
+    d += s + 'Z';
+  }
+  return d;
+}
+
+export function buildLoadingSheet() {
+  if (typeof document === 'undefined') return;
+  const L = document.getElementById('loading');
+  if (!L || L.dataset.sheet) return;
+  L.dataset.sheet = '1';
+  L.classList.add('t2-load');
+  const sheet = el('div', 't2-sheet');
+  sheet.setAttribute('aria-hidden', 'true');
+  // three survey stations and the sides between them; each side draws over one third of the boot
+  const A = [520, 610], B = [1010, 300], C = [1120, 700];
+  const side = (p, q, i) => `<line class="t2-side t2-side-${i}" x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" pathLength="1"/>`;
+  const stn = (p, n) => `<g class="t2-stn"><circle cx="${p[0]}" cy="${p[1]}" r="7"/><path d="M${p[0]} ${p[1] - 15}V${p[1] + 15}M${p[0] - 15} ${p[1]}H${p[0] + 15}"/><text x="${p[0] + 14}" y="${p[1] - 12}">T${n}</text></g>`;
+  sheet.innerHTML = `<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+    <defs><pattern id="t2-grid" width="80" height="80" patternUnits="userSpaceOnUse"><path d="M80 0H0V80" fill="none" stroke="rgba(241,238,230,0.05)" stroke-width="1"/></pattern></defs>
+    <rect width="1600" height="900" fill="url(#t2-grid)"/>
+    <path class="t2-contours" d="${contours()}"/>
+    ${side(A, B, 0)}${side(B, C, 1)}${side(C, A, 2)}
+    ${stn(A, 1)}${stn(B, 2)}${stn(C, 6)}
+  </svg>`;
+  L.insertBefore(sheet, L.firstChild);
+  const lines = (BOOKS.books || []).map((b) => b.loading).filter(Boolean);
+  const inner = L.querySelector('.load-inner') || L;
+  el('div', 't2-load-sheetname', inner, TEXT.loading.sheet);
+  el('div', 't2-load-line', inner, lines.length ? lines[Math.floor(Math.random() * lines.length)] : '');
+  // the boot's progress is written on the lockup (`--cal-load`, main.js); the sheet reads the same number
+  const logo = L.querySelector('.cal-logo');
+  if (logo && typeof MutationObserver !== 'undefined') {
+    const mirror = () => { const v = logo.style.getPropertyValue('--cal-load'); if (v) L.style.setProperty('--t2-load', v); };
+    new MutationObserver(mirror).observe(logo, { attributes: true, attributeFilter: ['style'] });
+    mirror();
+  }
+}
+
+buildLoadingSheet();

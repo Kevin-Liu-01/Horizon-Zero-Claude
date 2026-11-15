@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "about": "The Making ledger's words (BIBLE 9, 16, 18). Plain data, read by src/ui/making.js. The two verbs are the bible's: MAKE ×1 and MAKE ×6, and no other. Item rows follow BIBLE 16's table (five arrows, three pots, the net); there is no laid-trap row (Q8). Material names are the island's words, not the item catalogue's.",
+  "head": "MAKING",
+  "sub": "FROM WHAT THE SATCHEL HOLDS",
+  "groups": { "arrows": "ARROWS", "pots": "POTS", "nets": "NETS" },
+  "carried": "CARRIED",
+  "madeFrom": "MADE FROM",
+  "makes": "MAKES {n} EACH TIME",
+  "make1": "MAKE ×1",
+  "make6": "MAKE ×6",
+  "unlearned": "NOT YET IN THE KIT",
+  "full": "CARRIED FULL",
+  "short": "SHORT OF {what}",
+  "made": "+{n} {name}",
+  "quick": "MAKE",
+  "quickInterrupted": "MAKING BROKEN OFF",
+  "rows": [
+    { "id": "reed",     "group": "arrows", "name": "REED ARROW",         "does": "A cane shaft, a gull-feather fletch. Blunt: knocks lamps and vials loose at full draw." },
+    { "id": "barbed",   "group": "arrows", "name": "BARBED ARROW",       "does": "An obsidian barb that stays in. Pry: tears a tool off its Instrument." },
+    { "id": "brine",    "group": "arrows", "name": "BRINE-GOURD ARROW",  "does": "A gourd of brine on the head. Builds Seized: joints stiffen and crack." },
+    { "id": "cinder",   "group": "arrows", "name": "CINDER-RESIN ARROW", "does": "Vent resin that catches on impact. Builds Charred." },
+    { "id": "dust",     "group": "arrows", "name": "DUST-PUFF ARROW",    "does": "Clouds an Instrument: its lamps go blind for 6 s." },
+    { "id": "brinePot", "group": "pots",   "name": "BRINE POT",          "does": "A clay pot of brine mist. Slows, and quenches a firebox." },
+    { "id": "cinderPot","group": "pots",   "name": "CINDER POT",         "does": "A clay pot of resin. Leaves a fire pool where it breaks." },
+    { "id": "dustPot",  "group": "pots",   "name": "DUST POT",           "does": "A dust cloud that blinds and breaks an Instrument's lock." },
+    { "id": "net",      "group": "nets",   "name": "CAST NET",           "does": "Spun out over Pegs and Sickles; it fouls their legs." }
+  ],
+  "planned": {
+    "about": "Recipes for rows the kit cannot make yet (BIBLE 16), shown as tallies so the ledger reads whole.",
+    "brinePot": [["clay", 1], ["metal-shards", 2]],
+    "dustPot": [["pumice", 3]],
+    "net": [["wire", 6], ["sinker", 8]]
+  },
+  "materials": {
+    "ridge-wood": "Cane",
+    "feather": "Gull feather",
+    "obsidian": "Obsidian flake",
+    "wire": "Cord",
+    "chillwater": "Brine",
+    "blaze": "Vent resin",
+    "sparker": "Pumice dust",
+    "metal-shards": "Salt",
+    "echo-shell": "Escapement",
+    "clay": "Clay",
+    "pumice": "Pumice",
+    "sinker": "Basalt sinker"
+  }
+}

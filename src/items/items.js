@@ -93,6 +93,17 @@ export const ITEMS = {
     desc: 'Straight-grained deadfall from the pine stands. Shafts, stakes and '
       + 'trap frames all start here.',
   },
+  // M1.6d (ui lane, smallest change): the two arrow materials of BIBLE §16 the catalogue lacked
+  feather: {
+    name: 'Gull Feather', category: 'resource', glyph: '⟋', color: '#e9e4d8',
+    rarity: 'common', cap: 60, value: 1,
+    desc: 'Gull and shearwater primaries, picked up along the dykes. Every Reed arrow takes one.',
+  },
+  obsidian: {
+    name: 'Obsidian Flake', category: 'resource', glyph: '◭', color: '#2c2a33',
+    rarity: 'common', cap: 60, value: 3,
+    desc: 'Knapped from the black glass of the old flows. A Barbed arrow\'s head is two of them.',
+  },
   blaze: {
     name: 'Vent Resin', category: 'resource', glyph: '◉', color: '#f0a03c',
     rarity: 'common', cap: 100, value: 4,

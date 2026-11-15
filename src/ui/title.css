@@ -1,0 +1,147 @@
+/* ===========================================================================
+   THE TITLE, NEW GAME AND LOADING (M1.6h; BIBLE §18). Overrides the field-book title of src/style.css
+   while `body.cal-t2` is set (src/ui/title.js). Key art, not a panel: the wordmark top-left with the one
+   tagline line under its datum rule, the five stations in a left column on a soft scrim, the world at
+   18:40 behind. Chakra Petch for the wordmark and the stations, IBM Plex Mono for the tagline, the
+   station numbers and the save line. No star, no flanking rules, no affiliation line.
+   =========================================================================== */
+
+/* the overlay is a frame, not a sheet: no fill of its own; the scrim does the reading work */
+body.cal-t2 #title.overlay { display: block; background: none; }
+body.cal-t2 #title .title-inner {
+  position: absolute; left: 0; top: 0;
+  width: calc(100vw / var(--ui-z, 1)); height: calc(100vh / var(--ui-z, 1));
+  padding: 0; text-align: left;
+}
+/* the boot sheet is gone once the title stands (one wordmark on screen, A70c) */
+body.cal-t2 #loading { display: none !important; }
+/* the calima wash and its disc belonged to the old title */
+body.cal-t2 #cal-calima { display: none !important; }
+
+/* the left scrim: a soft violet-dark fall-off under the column, a light veil under the wordmark */
+.t2-scrim {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(22, 18, 30, 0.58) 0%, rgba(22, 18, 30, 0.44) 20%, rgba(22, 18, 30, 0.16) 36%, rgba(22, 18, 30, 0) 48%),
+    linear-gradient(180deg, rgba(22, 18, 30, 0.22) 0%, rgba(22, 18, 30, 0) 30%, rgba(22, 18, 30, 0) 70%, rgba(22, 18, 30, 0.30) 100%);
+}
+
+/* our wordmark, top-left: the plumb-line I and the datum rule; the spark and the broad arrow stay off */
+body.cal-t2 #title .cal-logo {
+  position: absolute; left: 72px; top: 60px;
+  --cal-lk: 78px;
+  padding: 0;
+}
+body.cal-t2 #title .cal-word { justify-content: flex-start; }
+body.cal-t2 #title .cal-spark,
+body.cal-t2 #title .cal-arrow { display: none; }
+body.cal-t2 #title .cal-word > span:not(.cal-i),
+body.cal-t2 #title .cal-plumb,
+body.cal-t2 #title .cal-datum { filter: drop-shadow(0 2px 10px rgba(22, 18, 30, 0.45)); }
+
+/* the one tagline line, left-aligned under the datum rule */
+.t2-tag {
+  position: absolute; left: 72px; top: 158px;
+  font-family: var(--cal-font-mono);
+  font-weight: 500;
+  font-size: 15px; letter-spacing: 0.36em;
+  color: var(--cal-staff);
+  text-shadow: var(--cal-engrave);
+  white-space: nowrap;
+}
+
+/* the five stations, in a left column */
+body.cal-t2 .mn-title.t2-stations {
+  position: absolute; left: 72px; top: 452px;
+  width: 300px; margin: 0;
+}
+body.cal-t2 .mn-title-press { text-align: left; text-indent: 0; letter-spacing: 0.36em; font-size: 13px; }
+body.cal-t2 .mn-title-menu { width: 300px; margin: 0; border-top: 1px solid rgba(241, 238, 230, 0.28); }
+body.cal-t2 .mn-title-item { font-size: 18px; letter-spacing: 0.22em; padding: 10px 12px 9px 10px; border-bottom-color: rgba(241, 238, 230, 0.20); }
+body.cal-t2 .mn-title-item .cal-stn { width: 64px; color: rgba(241, 238, 230, 0.62); }
+body.cal-t2 .mn-title-item::before { background: var(--cal-select-line); width: 2px; }
+body.cal-t2 .mn-title-item:hover, body.cal-t2 .mn-title-item:focus-visible { background: rgba(90, 46, 102, 0.42); }
+body.cal-t2 .mn-title-save { margin-top: 16px; text-align: left; }
+
+/* ---------------------------------------------------------------- the glass cards (New Game, Extras) */
+.mn-modal.t2-glass { background: rgba(14, 11, 20, 0.36); }
+.mn-modal.t2-glass .mn-modal-shell {
+  width: 440px; max-height: none;
+  padding: 0;
+  color: var(--cal-glass-text);
+  background-color: rgba(var(--cal-glass-rgb), var(--cal-glass-a-menu));
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--cal-glass-line);
+}
+.mn-modal.t2-glass .mn-modal-shell::before { display: none; }
+.mn-modal.t2-glass .mn-modal-shell::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  --t: var(--cal-glass-tick);
+  background:
+    linear-gradient(var(--t), var(--t)) left top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 1px 6px no-repeat;
+}
+.mn-modal.t2-glass .mn-modal-head { padding: 18px 22px 12px; border-bottom: 1px solid var(--cal-glass-line); }
+.mn-modal.t2-glass .mn-modal-title { font-size: 20px; letter-spacing: 0.18em; }
+.mn-modal.t2-glass .mn-x { color: var(--cal-glass-text-2); border-color: rgba(241, 238, 230, 0.3); }
+.mn-modal.t2-glass .mn-x:hover { background: rgba(241, 238, 230, 0.1); color: var(--cal-glass-text); }
+.mn-modal.t2-glass .mn-modal-body { padding: 14px 22px 22px; }
+.t2-card-lead { font-family: var(--cal-font-mono); font-size: 13px; line-height: 1.5; color: var(--cal-glass-text-2); margin-bottom: 12px; }
+.mn-tol {
+  position: relative; display: flex; flex-direction: column; gap: 3px;
+  width: 100%; padding: 10px 12px 9px;
+  background: none; border: 0; border-bottom: 1px solid rgba(241, 238, 230, 0.12);
+  color: var(--cal-glass-text); text-align: left; cursor: pointer;
+}
+.mn-tol:first-of-type { border-top: 1px solid rgba(241, 238, 230, 0.12); }
+.mn-tol b { font-family: var(--cal-font-ui); font-weight: 600; font-size: 17px; letter-spacing: 0.2em; }
+.mn-tol span { font-family: var(--cal-font-mono); font-size: 12px; color: var(--cal-glass-text-2); }
+.mn-tol:hover { background: rgba(241, 238, 230, 0.05); }
+.mn-tol.on { background: var(--cal-select-fill); box-shadow: inset 0 1px 0 var(--cal-select-line), inset 0 -1px 0 var(--cal-select-line); }
+/* the chosen class carries a shape as well as a fill: a filled square before the word */
+.mn-tol.on b::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 10px; background: var(--cal-select-line); vertical-align: 2px; }
+.mn-tol-begin {
+  display: block; width: 100%; margin-top: 16px; padding: 11px 12px 10px;
+  background: var(--cal-select-fill); border: 1px solid var(--cal-select-line);
+  color: var(--cal-glass-text);
+  font-family: var(--cal-font-ui); font-weight: 600; font-size: 16px; letter-spacing: 0.3em; cursor: pointer;
+}
+.mn-tol-begin:hover { background: rgba(90, 46, 102, 0.85); }
+
+/* ---------------------------------------------------------------- the loading sheet */
+#loading.t2-load.overlay { background: #120F19; }
+.t2-sheet { position: absolute; inset: 0; pointer-events: none; }
+.t2-sheet svg { width: 100%; height: 100%; display: block; }
+.t2-contours { fill: none; stroke: rgba(216, 204, 228, 0.10); stroke-width: 1.2; }
+.t2-side {
+  stroke: var(--cal-staff, #F1EEE6); stroke-width: 1.6; fill: none;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+}
+.t2-side-0 { stroke-dashoffset: calc(1 - clamp(0, var(--t2-load, 0) * 3, 1)); }
+.t2-side-1 { stroke-dashoffset: calc(1 - clamp(0, var(--t2-load, 0) * 3 - 1, 1)); }
+.t2-side-2 { stroke-dashoffset: calc(1 - clamp(0, var(--t2-load, 0) * 3 - 2, 1)); }
+.t2-stn circle { fill: none; stroke: rgba(241, 238, 230, 0.7); stroke-width: 1.4; }
+.t2-stn path { stroke: rgba(241, 238, 230, 0.35); stroke-width: 1; }
+.t2-stn text { fill: rgba(241, 238, 230, 0.7); font-family: var(--cal-font-mono); font-size: 14px; }
+#loading.t2-load .load-inner {
+  position: absolute; left: 72px; bottom: 64px; text-align: left;
+}
+#loading.t2-load .cal-logo {
+  --cal-lk: 40px;
+  --cal-word-ink: var(--cal-staff);
+  --cal-rule-ink: var(--cal-staff);
+  --cal-rule-track: rgba(241, 238, 230, 0.16);
+  padding: 0 0 6px;
+}
+#loading.t2-load .cal-word { justify-content: flex-start; }
+#loading.t2-load .cal-spark, #loading.t2-load .cal-arrow { display: none; }
+#loading.t2-load #load-label { display: none; }
+.t2-load-sheetname { margin-top: 18px; font-family: var(--cal-font-ui); font-weight: 600; font-size: 11px; letter-spacing: 0.3em; color: rgba(241, 238, 230, 0.55); }
+.t2-load-line { margin-top: 8px; font-family: var(--cal-font-mono); font-size: 14px; color: rgba(241, 238, 230, 0.86); }

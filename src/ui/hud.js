@@ -650,6 +650,7 @@ export class HUD {
       '<kbd>R</kbd><div class="cal-make-bar"><i></i></div><span>MAKE</span>');
     this._craftFill = this._craftEl.querySelector('i');
     this._craftLabel = this._craftEl.querySelector('span');
+    this._craftKey = this._craftEl.querySelector('kbd');
 
     // item pickup chips (bottom-right stack, above the kit tag)
     this._itemsEl = div('cal-items', root);
@@ -2353,9 +2354,22 @@ export class HUD {
 
   /* ------------------------------ craft hold --------------------------------- */
 
-  /** The hold-R state machine lives in `combat.craft`; this draws its fill and says why it is blocked. */
+  /**
+   * The hold-R state machine lives in `combat.craft`; this draws its fill and says why it is blocked.
+   * A held quick slot (M1.6d, `ctx.quickslots.make`) draws on the same line with its slot number on the
+   * key cap; the R hold wins when both run.
+   */
   _updateCraft() {
-    const c = this.ctx.combat?.craft;
+    let c = this.ctx.combat?.craft;
+    const qm = this.ctx.quickslots?.make;
+    let key = 'R';
+    if (qm?.holding && !c?.holding) {
+      const blocker = this.ctx.combat?.craftBlocker?.(qm.ammo) ?? null;
+      c = this._qmView ??= { holding: false, progress: 0, blocker: null, ok: true };
+      c.holding = true; c.progress = qm.progress; c.blocker = blocker; c.ok = !blocker;
+      key = String(qm.slot);
+    }
+    if (this._craftKey && key !== this._lastCraftKey) { this._lastCraftKey = key; this._craftKey.textContent = key; }
     if (!c) {
       if (this._lastCraftOn !== null) { this._lastCraftOn = null; this._craftEl.style.display = 'none'; }
       return;

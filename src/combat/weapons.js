@@ -14,6 +14,8 @@ export const ITEMS = {
   'chillwater': { name: 'Brine Gourd', color: '#bfe6ff' },
   'echo-shell': { name: 'Escapement', color: '#6fd6e8' },
   'wire': { name: 'Cord', color: '#c9a86a' },
+  'feather': { name: 'Gull Feather', color: '#e9e4d8' },
+  'obsidian': { name: 'Obsidian Flake', color: '#2c2a33' },
   'blastpaste': { name: 'Calima Dust', color: '#e8762c' },
 };
 
@@ -22,24 +24,24 @@ export const AMMO = {
     id: 'hunter', name: 'Reed Arrow', weapon: 'sabina-bow',
     impact: 30, tear: 10, element: 'none', elementAmount: 0,
     drawScaled: true, projectile: 'arrow', speed: 62,
-    start: 40, cap: 100, batch: 10,
-    recipe: [['ridge-wood', 2], ['metal-shards', 1]],
+    start: 40, cap: 100, batch: 6,
+    recipe: [['ridge-wood', 2], ['feather', 1]],   // BIBLE §16: cane ×2, gull feather ×1 -> 6 (M1.6d)
     color: '#e8d9b0',
   },
   'hardpoint': {
     id: 'hardpoint', name: 'Barbed Arrow', weapon: 'sabina-bow',
     impact: 55, tear: 60, element: 'none', elementAmount: 0,
     drawScaled: true, projectile: 'arrow', speed: 56,
-    start: 15, cap: 50, batch: 5,
-    recipe: [['ridge-wood', 2], ['metal-shards', 5]],
+    start: 15, cap: 50, batch: 6,
+    recipe: [['ridge-wood', 2], ['feather', 1], ['obsidian', 2]],   // BIBLE §16 (M1.6d)
     color: '#ffb45e',
   },
   'fire': {
     id: 'fire', name: 'Cinder-Resin Arrow', weapon: 'sabina-bow',
     impact: 12, tear: 4, element: 'fire', elementAmount: 50,
     drawScaled: false, projectile: 'arrow', speed: 54,
-    start: 10, cap: 40, batch: 5,
-    recipe: [['ridge-wood', 2], ['blaze', 1]],
+    start: 10, cap: 40, batch: 6,
+    recipe: [['ridge-wood', 2], ['wire', 1], ['blaze', 1]],   // BIBLE §16 (M1.6d)
     color: '#ff7a1e',
   },
   'precision': {
@@ -72,16 +74,16 @@ export const AMMO = {
     id: 'shock', name: 'Dust-Puff Arrow', weapon: 'cane-recurve',
     impact: 10, tear: 4, element: 'shock', elementAmount: 60,
     drawScaled: false, projectile: 'arrow', speed: 52,
-    start: 12, cap: 40, batch: 5,
-    recipe: [['ridge-wood', 2], ['sparker', 1]],
+    start: 12, cap: 40, batch: 6,
+    recipe: [['ridge-wood', 2], ['wire', 1], ['sparker', 1]],   // BIBLE §16 (M1.6d)
     color: '#57c8ff',
   },
   'freeze': {
     id: 'freeze', name: 'Brine-Gourd Arrow', weapon: 'cane-recurve',
     impact: 10, tear: 4, element: 'freeze', elementAmount: 60,
     drawScaled: false, projectile: 'arrow', speed: 52,
-    start: 12, cap: 40, batch: 5,
-    recipe: [['ridge-wood', 2], ['chillwater', 1]],
+    start: 12, cap: 40, batch: 6,
+    recipe: [['ridge-wood', 2], ['wire', 1], ['chillwater', 1]],   // BIBLE §16 (M1.6d)
     color: '#bfe6ff',
   },
   'blast-bomb': {
