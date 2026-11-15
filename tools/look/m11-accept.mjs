@@ -66,13 +66,26 @@ export const REGIONS = {
   // aim, which moved every F02 and F05 frame row down by 0.15 of the frame (the horizon: F02 row 425 -> 560, F05 row
   // 435 -> 570 of 900, same camera otherwise). Every frame box moves down by REG_DY (clamped to the frame) so it
   // covers what it covered when the boxes were fixed; the crop boxes are unchanged
-  F02: { crop: 'over-pans-golden', regions: reg({
+  // FRAME SET v2 (M1a round 2 fix, Nov 15): the freeze re-staged F02 (it faces the pans with the Ring in frame, the sun
+  // at 0.574, 0.289 of the frame), so the round-1 boxes no longer covered what they are named for (sunSky 25 deg left
+  // of the sun, skyAway on the cloud just above it, shade on the sunlit pans). Re-registered by CONTENT before any
+  // re-measure, declared in docs/GATES.md section 3: the two sky boxes keep the crop box's offset from the crop's
+  // sun (0.79, 0.12), scaled by the image width (1600 / 380); haze is the horizon haze left of Brea over the sea;
+  // foreground is the lit meadow (unchanged); shade is the Ring rise's camera-facing slope, the midground ground on
+  // the side away from the sun. The crop boxes are unchanged. `--f02 v1` reads the round-1 boxes
+  F02: { crop: 'over-pans-golden', regions: process.argv.includes('v1') && process.argv.includes('--f02') ? reg({
     sunSky: { ref: [0.62, 0.03, 0.74, 0.13], frame: [0.21, 0.06, 0.33, 0.16] },
     skyAway: { ref: [0.25, 0.00, 0.45, 0.08], frame: [0.45, 0.00, 0.65, 0.08] },
     haze: { ref: [0.50, 0.27, 0.72, 0.37], frame: [0.30, 0.425, 0.50, 0.465] },
     foreground: { ref: [0.03, 0.72, 0.33, 0.88], frame: [0.03, 0.62, 0.33, 0.85] },
     shade: { ref: [0.62, 0.60, 0.88, 0.72], frame: [0.65, 0.45, 0.98, 0.56] },
-  }) },
+  }) : {
+    sunSky: { ref: [0.62, 0.03, 0.74, 0.13], frame: [0.405, 0.20, 0.525, 0.298] },
+    skyAway: { ref: [0.25, 0.00, 0.45, 0.08], frame: [0.036, 0.172, 0.236, 0.247] },
+    haze: { ref: [0.50, 0.27, 0.72, 0.37], frame: [0.03, 0.525, 0.30, 0.575] },
+    foreground: { ref: [0.03, 0.72, 0.33, 0.88], frame: [0.03, 0.77, 0.33, 1.00] },
+    shade: { ref: [0.62, 0.60, 0.88, 0.72], frame: [0.62, 0.565, 0.73, 0.59] },
+  } },
   F05: { crop: 'key-dusk', regions: reg({
     sunSky: { ref: [0.30, 0.14, 0.45, 0.26], frame: [0.58, 0.28, 0.72, 0.40] },
     skyAway: { ref: [0.45, 0.00, 0.75, 0.10], frame: [0.30, 0.00, 0.70, 0.10] },

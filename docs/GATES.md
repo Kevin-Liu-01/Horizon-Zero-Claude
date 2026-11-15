@@ -171,6 +171,15 @@ red instead of running the old bar; two are whole rows.
 
 `A44`, `A44b`, `A107` and every other kept row are unchanged.
 
+**A measurement re-registered with the Frame Set (M1a round 2; not a bar change).** M1.1g's F02 palette line reads
+five named regions of the frame against the same-named regions of its crop (`tools/look/m11-accept.mjs`). Its frame
+boxes were placed for Frame Set v1's F02 camera; v2 re-staged F02 (the pans with the Ring in frame), so the boxes no
+longer covered what they are named for (the sun-side sky box 25 deg from the sun, the sky-away box on the cloud above
+it, the shade box on the sunlit pans). They are re-registered by content: the two sky boxes keep the crop box's offset
+from the crop's sun, scaled by the image width; haze is the horizon haze over the sea; foreground is the lit meadow;
+shade is the Ring rise's slope on the side away from the sun. The crop boxes, the ΔE2000 rule and the ≤ 12 bar are
+unchanged, and `--f02 v1` still reads the old boxes.
+
 ## 4. The Frame Set (Milestone 1)
 
 Each frame has a fixed camera, hour, weather and state. A frame is judged by comparison: is today's frame closer

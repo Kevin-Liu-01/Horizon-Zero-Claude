@@ -2491,6 +2491,9 @@ export class Environment {
             lit = mix(lit, lit * mix(vec3(0.74, 0.57, 0.62), vec3(1.14, 0.90, 0.60) * (0.6 + 0.4 * uSunCol), toward), uRim);
             vec3 shadeC = mix(mix(uMid, uHorizon, 0.5) * 0.72, vec3(0.012, 0.015, 0.024), uNight);
             shadeC = mix(shadeC, shadeC * vec3(0.92, 0.80, 0.88), uRim * (1.0 - toward));
+            // M1a r2 fix: the backlit cores toward a low sun were the horizon's orange x 0.72, a muddy grey-brown above
+            // F02's sun; they keep their value and turn mauve-rose (a backlit heap is grey-violet with a gold edge)
+            shadeC = mix(shadeC, vec3(dot(shadeC, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.12, 0.90, 1.02), 0.6 * uRim * toward);
             shadeC = mix(shadeC, vec3(0.26, 0.28, 0.33), uCloud.y);
             float t0 = 1000.0 / d.y;
             vec2 p = d.xz * t0 - uDrift;
@@ -2510,7 +2513,13 @@ export class Environment {
             // beside the sun clipped and joined the disc's blob out to 10 deg in F02)
             float nearSun = pow(sunD, 60.0);
             c += uSunCol * pow(sunD, 4.0) * 0.30 * day * (1.0 - 0.7 * th) * (0.45 + 0.55 * lightK) * (1.0 - 0.6 * nearSun);
-            float rimW = (1.0 - th) * a;
+            // M1a r2 fix (lit cumulus with PEACH RIMS): the rim was (1 - th) x a, a broad wash over every thin part of a heap
+            // (mushy, no edge). Now a narrow band at the heap's edge (density 0.03-0.15 above the threshold), twice as
+            // strong, and weighted to the edge that faces the sun (the field is thinner a step toward the sun there);
+            // the near-sun damping is unchanged, so the disc's clipped blob keeps its 4 deg bar
+            float edge = a * (1.0 - smoothstep(0.04, 0.16, sh));
+            float sunSide = clamp((n - thr + 0.12 - shS) * 6.0, 0.0, 1.0);
+            float rimW = 2.0 * edge * (0.35 + 0.65 * sunSide);
             c += vec3(1.0, 0.66, 0.50) * (0.55 + 0.45 * uSunCol) * rimW * (0.30 + 1.0 * pow(sunD, 6.0) * (1.0 - 0.85 * nearSun)) * uRim * day;
             cover = a * (1.0 - cal);
             float haze = exp(-t0 / 14000.0);
