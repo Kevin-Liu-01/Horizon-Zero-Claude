@@ -47,6 +47,18 @@ test('each cast member at the M1.5b densities, triangles and draws', async () =>
     if (tris > 30000) bad.push(`${id} triangles ${tris}`);
     const skin = doc.getRoot().listMaterials().find((x) => x.getName() === `MI_Npc_Skin_${id}`);
     if (!skin || skin.getBaseColorTexture()?.getSize()?.[0] !== 1024 || !skin.getNormalTexture()) bad.push(`${id} head set`);
+    // every vertex and normal finite (a NaN normal is a black frame once the bloom spreads it: F21 at 3288669)
+    for (const n of doc.getRoot().listNodes()) for (const pr of n.getMesh()?.listPrimitives() || []) for (const a of ['POSITION', 'NORMAL']) {
+      const arr = pr.getAttribute(a)?.getArray();
+      if (arr && arr.some((v) => !Number.isFinite(v))) bad.push(`${id} ${n.getName()} ${a} not finite`);
+      // a quantised writer stores a NaN normal as a zero vector, which the shader's normalize turns back into NaN
+      if (arr && a === 'NORMAL') {
+        let mx = 0, zero = 0;
+        for (let i = 0; i < arr.length; i += 3) mx = Math.max(mx, Math.hypot(arr[i], arr[i + 1], arr[i + 2]));
+        for (let i = 0; i < arr.length; i += 3) if (Math.hypot(arr[i], arr[i + 1], arr[i + 2]) < 0.1 * mx) zero++;
+        if (zero) bad.push(`${id} ${n.getName()} ${zero} zero normals`);
+      }
+    }
   }
   assert.deepEqual(bad, []);
 });

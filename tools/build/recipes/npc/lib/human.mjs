@@ -738,7 +738,9 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
       const e1 = [0, 1, 0], e2 = [ax[1] * e1[2] - ax[2] * e1[1], ax[2] * e1[0] - ax[0] * e1[2], ax[0] * e1[1] - ax[1] * e1[0]];
       const pts = [];
       for (let k = 0; k <= 18; k++) { const t = k / 18 * Math.PI * 2; pts.push([c[0] + (e1[0] * Math.cos(t) + e2[0] * Math.sin(t)) * R, c[1] + (e1[1] * Math.cos(t) + e2[1] * Math.sin(t)) * R, c[2] + (e1[2] * Math.cos(t) + e2[2] * Math.sin(t)) * R]); }
-      const g = P2.tube(pts, { r: () => rw, ring: 5, along: 18, cap: false, skin: P2.rigid(head), uv: (u, v) => uvOf('brass')([u, v]) });
+      // (`side` the hoop's own axis: tube()'s default frame is the world up, which a hoop's tangent meets twice a turn, and the
+      // ring's frame went NaN there; F21's first film at 3288669 was a black frame, the bloom spreading the NaN)
+      const g = P2.tube(pts, { r: () => rw, ring: 5, along: 18, cap: false, side: ax, skin: P2.rigid(head), uv: (u, v) => uvOf('brass')([u, v]) });
       pieces.push({ geo: g, dye: spec.earrings.dye || '#B08A45', hide: false, noHide: true, shade: 1, part: 'earring' });
     }
   }

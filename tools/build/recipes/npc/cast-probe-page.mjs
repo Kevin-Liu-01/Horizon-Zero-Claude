@@ -70,6 +70,7 @@ export async function probe(frame) {
     for (const q of others) { const v = q.group.visible; q.group.visible = false; undo.push(() => { q.group.visible = v; }); }
     cam.position.set(lensAt.x, ground(lensAt.x, lensAt.z) + 1.2, lensAt.z);
     cam.lookAt(centre.x, ground(centre.x, centre.z) + 1.0, centre.z); cam.fov = 45; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+    out.lens = { at: [lensAt.x, cam.position.y, lensAt.z].map(r3), look: [centre.x, centre.z].map(r3), brea: [B.x, B.y, B.z].map(r3), row: figures.map((f) => ({ id: f.id, at: [f.obj.getWorldPosition(new THREE.Vector3()).x, f.obj.getWorldPosition(new THREE.Vector3()).y, f.obj.getWorldPosition(new THREE.Vector3()).z].map(r3) })) };
     const W = R.domElement.width, H = R.domElement.height;
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const g2 = cv.getContext('2d', { willReadFrequently: true });
