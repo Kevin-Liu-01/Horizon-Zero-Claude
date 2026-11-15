@@ -112,14 +112,14 @@
   "F15": {
    "date": "2026-11-15",
    "commit": "fb6d5f0",
-   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "run": "20261115T154520Z-fb6d5f0-anchor-restage-fb6d5f0-partial-x3",
    "provisional": true,
    "rule": "PROCESS §4 two-page rule",
    "pages": [
     "20261115T060956Z-dee526d-m1a-r2-review",
     "20261115T093344Z-fb6d5f0-m1a-r3-exit"
    ],
-   "note": "r2 closer/same/same/closer; exit closer/closer/same/closer; originality pass both; bar (wrists beside the body, forearms clear the case) not failing: A-sweep-run PASS (6448b3d), no failing reading since"
+   "note": "RE-FILMED (M1a regfix 3, the orchestrator ruling after regressions run 2): the anchor is fb6d5f0 staged on simulation time at gait phase 0.0271 (194 frames: slate, 1.5 s idle, sprint; tools/frames/page.mjs 7a, copied into a detached fb6d5f0 worktree, never committed there); the second staging of that session, which matched the third on all but 0.191 % of pixels (the first: 0.62 %). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/same/closer; exit closer/closer/same/closer; originality pass both; bar (wrists beside the body, forearms clear the case) not failing: A-sweep-run PASS (6448b3d), no failing reading since"
   },
   "F16": {
    "date": "2026-11-15",
@@ -148,14 +148,14 @@
   "F19": {
    "date": "2026-11-15",
    "commit": "fb6d5f0",
-   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "run": "20261115T154520Z-fb6d5f0-anchor-restage-fb6d5f0-partial-x3",
    "provisional": true,
    "rule": "PROCESS §4 two-page rule",
    "pages": [
     "20261115T060956Z-dee526d-m1a-r2-review",
     "20261115T093344Z-fb6d5f0-m1a-r3-exit"
    ],
-   "note": "r2 closer/same/closer/same; exit closer x4; originality pass both; bar not failing: A-melee-heavy-body PASS at 6b9a7a4 (hip lead 81 ms, palms within 0.001 m), not re-measured since"
+   "note": "RE-FILMED (M1a regfix 3, the orchestrator ruling after regressions run 2): the anchor is fb6d5f0 staged on simulation time, frozen at the heavy contact key 0.7143 (187 frames; tools/frames/page.mjs 7a, copied into a detached fb6d5f0 worktree, never committed there); the second staging of that session, which matched the third on all but 0.214 % of pixels. At fb6d5f0 the session first staging differs on 1.67 % (her box 7.2 %: the front sash panel drapes differently on the first heavy of a session). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/closer/same; exit closer x4; originality pass both; bar not failing: A-melee-heavy-body PASS at 6b9a7a4 (hip lead 81 ms, palms within 0.001 m), not re-measured since"
   },
   "F20": {
    "date": "2026-11-15",
