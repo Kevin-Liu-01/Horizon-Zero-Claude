@@ -19,7 +19,7 @@
  *   2. a Vite dev server for THIS tree on --port under nice -n 10 (refuses a busy port and 5173)
  *   3. one headless Chrome, one page, ?shot=1; every frame staged by tools/frames/page.mjs,
  *      screenshotted at the frame set's viewport, unstaged; a frame that throws is recorded, not fatal
- *   4. <review>/runs/<utc>-<commit>/F*.png and run.json; then the review page for today
+ *   4. <review>/runs/<utc>-<commit>/F*.png and run.json; then that run's review page, <review>/<date>/<run>/
  * Chrome time is capped (default 14 min): frames left when the cap hits are marked, not filmed.
  */
 import puppeteer from 'puppeteer';

@@ -1,16 +1,17 @@
 /**
  * Record the reviewer's typed answers for one review page.
  *
- *   node tools/frames/answers.mjs --date 2026-11-14 < answers.txt
- *   node tools/frames/answers.mjs --date 2026-11-14 answers.txt
- *   node tools/frames/answers.mjs --date 2026-11-14 --dry-run < answers.txt
+ *   node tools/frames/answers.mjs --page <review>/<date>/<run> < answers.txt     (a run-unique page, frameset v2)
+ *   node tools/frames/answers.mjs --date 2026-11-14 < answers.txt                a day: its own page if it has one
+ *                                                                              (pages before v2), else its newest run page
+ *   node tools/frames/answers.mjs --page <dir> --dry-run < answers.txt
  *
  * One line per frame: `<frame> accept | closer | wrong[: sentence]` (a dash or colon may separate
  * the sentence; # lines and blank lines are ignored). "accept" freezes that day's filmed frame as
  * the frame's anchor in <review>/accepted/. Every answer is kept in <date>/answers.json and in the
  * running log <review>/answers.log. Lines it cannot read are listed and not applied.
  */
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadFrameSet } from './frameset.mjs';
@@ -37,13 +38,19 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const flag = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
   const date = flag('--date') || today();
   const dry = args.includes('--dry-run');
-  const file = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--date');
+  const file = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--date' && args[i - 1] !== '--page');
   const text = file ? readFileSync(file, 'utf8') : readFileSync(0, 'utf8');
   const set = loadFrameSet();
   const { ok, bad } = parseAnswers(text, new Set(set.frames.map((f) => f.id)));
-  const dir = path.join(REVIEW, date);
+  // the page: --page, else the day's own page (built before frameset v2), else the day's newest run page
+  let dir = flag('--page') ? path.resolve(flag('--page')) : path.join(REVIEW, date);
+  if (!flag('--page') && !existsSync(path.join(dir, 'page.json')) && existsSync(dir)) {
+    const runs = readdirSync(dir).map((d) => path.join(dir, d)).filter((d) => existsSync(path.join(d, 'page.json')));
+    runs.sort((a, b) => statSync(path.join(b, 'page.json')).mtimeMs - statSync(path.join(a, 'page.json')).mtimeMs);
+    if (runs.length) { dir = runs[0]; console.log(`answers: ${date} has ${runs.length} run page(s); using the newest, ${path.basename(dir)} (name one with --page)`); }
+  }
   const page = (() => { try { return JSON.parse(readFileSync(path.join(dir, 'page.json'), 'utf8')); } catch { return null; } })();
-  if (!page) { console.error(`answers: no review page for ${date} at ${dir}`); process.exit(2); }
+  if (!page) { console.error(`answers: no review page at ${dir}`); process.exit(2); }
   const at = new Date().toISOString();
   const accPath = path.join(ACCEPTED, 'accepted.json');
   const accepted = existsSync(accPath) ? JSON.parse(readFileSync(accPath, 'utf8')) : {};
@@ -56,7 +63,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       if (!dry) {
         mkdirSync(ACCEPTED, { recursive: true });
         copyFileSync(fr.src, path.join(ACCEPTED, `${a.id}.png`));
-        accepted[a.id] = { date, commit: page.commit, run: path.basename(page.run), at, provisional: false, note: a.note || null };
+        accepted[a.id] = { date: page.date || date, commit: page.commit, run: path.basename(page.run), at, provisional: false, note: a.note || null };
       }
     }
     done.push(a);
@@ -66,7 +73,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     for (const a of done) prev.answers[a.id] = { verdict: a.verdict, note: a.note, at };
     writeFileSync(path.join(dir, 'answers.json'), JSON.stringify(prev, null, 1));
     writeFileSync(accPath, JSON.stringify(accepted, null, 1));
-    appendFileSync(path.join(REVIEW, 'answers.log'), done.map((a) => `${at}\t${date}\t${page.commit}\t${a.id}\t${a.verdict}\t${a.note}`).join('\n') + (done.length ? '\n' : ''));
+    appendFileSync(path.join(REVIEW, 'answers.log'), done.map((a) => `${at}\t${page.date || date}\t${page.commit}\t${a.id}\t${a.verdict}\t${a.note}\t${path.basename(page.run || '')}`).join('\n') + (done.length ? '\n' : ''));
   }
   console.log(`answers ${date}${dry ? ' (dry run)' : ''}: ${done.length} recorded`
     + ` (${done.filter((a) => a.verdict === 'accept').length} accept, ${done.filter((a) => a.verdict === 'closer').length} closer, ${done.filter((a) => a.verdict === 'wrong').length} wrong)`);

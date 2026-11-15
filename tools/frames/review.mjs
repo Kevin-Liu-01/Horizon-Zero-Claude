@@ -8,9 +8,15 @@
  *   node tools/frames/review.mjs --baseline           also make this run the baseline anchors (M0.5)
  *   node tools/frames/review.mjs --date 2026-11-14 --status "merged: ...|next: ..."
  *
- * Writes <review>/<date>/index.html with today/, anchor/, sheets/ (one image per frame: the same
- * sheet as an image) and answers.txt. Reference crops are linked from <review>/crops/. Nothing is
- * written inside the repo. Answers are recorded by tools/frames/answers.mjs.
+ * Writes <review>/<date>/<run>/index.html (one folder per film run: a second run on the same day gets its own
+ * page and never overwrites the first; rebuilding the SAME run's page refreshes it in place) with today/, anchor/,
+ * sheets/ (one image per frame: the same sheet as an image), answers.txt and page.json. Reference crops are linked
+ * from <review>/crops/. Nothing is written inside the repo. Answers are recorded by tools/frames/answers.mjs.
+ *
+ * The anchor column (frameset v2): the last accepted frame, else the frame from the anchor run (paths.mjs
+ * ANCHOR_RUN: the 2026-11-14 refilm at b4b46fb, which every round-1 judge compared against); the M0.5 baseline is
+ * shown small beneath it. A frame whose definition changed since the anchor run's frame set is marked
+ * "re-staged since the anchor", so a new camera is not read as a regression.
  */
 import sharp from 'sharp';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -18,7 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { loadFrameSet } from './frameset.mjs';
-import { ACCEPTED, BASELINE, CROPS, REVIEW, RUNS, assertOutsideRepo, today } from './paths.mjs';
+import { ACCEPTED, ANCHOR_RUN, BASELINE, CROPS, REVIEW, RUNS, assertOutsideRepo, pageDir, today } from './paths.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -89,8 +95,23 @@ export async function buildReview({ runDir, date = today(), status = '', setBase
   const judge = readJson(path.join(runDir, 'judge.json'), {});
   // notes.json beside run.json: { "F02": "one honest line on how far today is from the reference", ... }
   const notes = readJson(path.join(runDir, 'notes.json'), {});
-  const out = path.join(REVIEW, date);
+  const out = pageDir(runDir, date);
+  assertOutsideRepo(out, REPO);
   for (const d of ['today', 'anchor', 'sheets']) mkdirSync(path.join(out, d), { recursive: true });
+  const cropsRel = path.relative(out, CROPS).split(path.sep).join('/');
+  // the anchor run (a frame not yet accepted is compared with it) and the frame set it was filmed under
+  const anchorDir = path.join(RUNS, ANCHOR_RUN);
+  const anchorRun = readJson(path.join(anchorDir, 'run.json'), null);
+  let anchorSet = null;
+  if (anchorRun?.commit) {
+    try { anchorSet = JSON.parse(execFileSync('git', ['-C', REPO, 'show', `${anchorRun.commit}:tools/frames/frameset.json`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })); } catch { /* not in this clone */ }
+  }
+  const staging = (f) => { if (!f) return null; const { note, subject, in: _in, ref, ...rest } = f; return JSON.stringify(rest); };
+  const restaged = (f) => {
+    if (!anchorSet) return null;
+    const a = anchorSet.frames?.find((x) => x.id === f.id);
+    return !a ? 'new since the anchor' : staging(a) !== staging(f) ? 're-staged since the anchor (frame set v' + (set.version ?? '?') + ')' : null;
+  };
 
   if (setBaseline && !run.placeholder) {
     mkdirSync(BASELINE, { recursive: true });
@@ -109,14 +130,20 @@ export async function buildReview({ runDir, date = today(), status = '', setBase
       todayRel = `today/${f.id}.jpg`;
       await sharp(src).resize(1600, 900, { fit: 'inside' }).jpeg({ quality: 90 }).toFile(path.join(out, todayRel));
     }
-    // anchor: last accepted, else the baseline
-    let anchorRel = null, anchorLabel = 'no anchor yet (no accepted frame, no baseline)';
+    // anchor: last accepted, else the anchor run's frame (the 2026-11-14 refilm); the M0.5 baseline shown small
+    let anchorRel = null, anchorLabel = 'no anchor yet (no accepted frame, no anchor run frame)', baseRel = null;
     const acc = accepted[f.id];
     const accFile = path.join(ACCEPTED, `${f.id}.png`), baseFile = path.join(BASELINE, `${f.id}.png`);
+    const anchorFr = anchorRun?.frames?.find((x) => x.id === f.id && x.ok);
+    const anchorFile = anchorFr?.file ? path.join(anchorDir, anchorFr.file) : null;
     if (acc && existsSync(accFile)) { anchorRel = `anchor/${f.id}.jpg`; anchorLabel = `accepted ${acc.date}${acc.provisional ? ' (provisional, two-page rule)' : ''} at ${acc.commit || '?'}`; await sharp(accFile).jpeg({ quality: 90 }).toFile(path.join(out, anchorRel)); }
-    else if (existsSync(baseFile)) { anchorRel = `anchor/${f.id}.jpg`; anchorLabel = `baseline ${baseline?.commit || ''} (not accepted yet)`; await sharp(baseFile).jpeg({ quality: 90 }).toFile(path.join(out, anchorRel)); }
+    else if (anchorFile && existsSync(anchorFile)) { anchorRel = `anchor/${f.id}.jpg`; anchorLabel = `${ANCHOR_RUN.slice(0, 4)}-${ANCHOR_RUN.slice(4, 6)}-${ANCHOR_RUN.slice(6, 8)} refilm at ${anchorRun.commit || '?'} (not accepted yet)`; await sharp(anchorFile).jpeg({ quality: 90 }).toFile(path.join(out, anchorRel)); }
+    else if (existsSync(baseFile)) { anchorRel = `anchor/${f.id}.jpg`; anchorLabel = `baseline ${baseline?.commit || ''} (not accepted yet; no refilm frame)`; await sharp(baseFile).jpeg({ quality: 90 }).toFile(path.join(out, anchorRel)); }
+    if (existsSync(baseFile) && !anchorLabel.startsWith('baseline')) { baseRel = `anchor/${f.id}-baseline.jpg`; await sharp(baseFile).resize(480, 270, { fit: 'inside' }).jpeg({ quality: 82 }).toFile(path.join(out, baseRel)); }
+    const restage = restaged(f);
+    if (restage && anchorRel && !acc) anchorLabel += ` · ${restage}`;
     // reference
-    const refs = (f.ref?.crops || []).map((id) => ({ id, rel: `../crops/${id}.png`, abs: path.join(CROPS, `${id}.png`), note: cropMan.crops?.[id]?.judgeNote || null, masked: (cropMan.crops?.[id]?.masks || 0) > 0 }));
+    const refs = (f.ref?.crops || []).map((id) => ({ id, rel: `${cropsRel}/${id}.png`, abs: path.join(CROPS, `${id}.png`), note: cropMan.crops?.[id]?.judgeNote || null, masked: (cropMan.crops?.[id]?.masks || 0) > 0 }));
     const textRef = f.ref?.text ? (cropMan.texts?.[f.ref.text]?.text || `(worded reference ${f.ref.text} not found)`) : null;
     const j = judge[f.id] || null;
     const further = j && POINT_KEYS.some((k) => j.points?.[k] === 'further');
@@ -126,7 +153,7 @@ export async function buildReview({ runDir, date = today(), status = '', setBase
       { label: `${f.id} today`, file: src && fr.ok ? src : null, text: fr.error || 'not filmed' },
       { label: `${f.id} ${anchorRel ? anchorLabel : 'no anchor yet'}`, file: anchorRel ? path.join(out, anchorRel) : null, text: 'no anchor yet' },
     ]);
-    rows.push({ f, fr, todayRel, anchorRel, anchorLabel, refs, textRef, j, further, note: notes[f.id] || null });
+    rows.push({ f, fr, todayRel, anchorRel, anchorLabel, baseRel, restage, refs, textRef, j, further, note: notes[f.id] || null });
   }
   rows.sort((a, b) => (b.further ? 1 : 0) - (a.further ? 1 : 0));
 
@@ -136,7 +163,9 @@ export async function buildReview({ runDir, date = today(), status = '', setBase
     ...rows.map((r) => `${r.f.id} `),
   ].join('\n') + '\n';
   writeFileSync(path.join(out, 'answers.txt'), answersTxt);
-  writeFileSync(path.join(out, 'page.json'), JSON.stringify({ date, run: runDir, commit: run.commit, placeholder: !!run.placeholder, frameset: set.sha256, frames: rows.map((r) => ({ id: r.f.id, today: r.todayRel, src: r.fr.file ? path.join(runDir, r.fr.file) : null, ok: !!r.fr.ok })) }, null, 1));
+  writeFileSync(path.join(out, 'page.json'), JSON.stringify({ date, run: runDir, commit: run.commit, placeholder: !!run.placeholder, frameset: set.sha256, framesetVersion: set.version ?? null,
+    anchorRun: anchorRun ? { run: ANCHOR_RUN, commit: anchorRun.commit, frameset: anchorRun.frameset || null } : null, baseline: baseline?.commit || null,
+    frames: rows.map((r) => ({ id: r.f.id, today: r.todayRel, src: r.fr.file ? path.join(runDir, r.fr.file) : null, ok: !!r.fr.ok, anchor: r.anchorLabel, restaged: r.restage || null })) }, null, 1));
 
   const [st1, st2] = String(status || '').split('|');
   const card = (r) => {
@@ -166,7 +195,7 @@ export async function buildReview({ runDir, date = today(), status = '', setBase
   <div class="cols">
     <div class="col"><h3>reference</h3>${refHtml}${words}</div>
     <div class="col"><h3>today</h3>${r.todayRel ? `<a href="${esc(r.todayRel)}"><img src="${esc(r.todayRel)}" alt="today" loading="lazy"></a>` : `<div class="empty">${esc(fr.error || 'not filmed')}</div>`}<p class="dim">${esc(meas)}</p>${stand}</div>
-    <div class="col"><h3>last accepted</h3>${r.anchorRel ? `<a href="${esc(r.anchorRel)}"><img src="${esc(r.anchorRel)}" alt="anchor" loading="lazy"></a>` : '<div class="empty">no anchor yet</div>'}<p class="dim">${esc(r.anchorLabel)}</p></div>
+    <div class="col"><h3>last accepted, else the refilm</h3>${r.anchorRel ? `<a href="${esc(r.anchorRel)}"><img src="${esc(r.anchorRel)}" alt="anchor" loading="lazy"></a>` : '<div class="empty">no anchor yet</div>'}<p class="dim">${esc(r.anchorLabel)}</p>${r.baseRel ? `<a href="${esc(r.baseRel)}"><img class="base" src="${esc(r.baseRel)}" alt="baseline" loading="lazy"></a><p class="dim">M0.5 baseline ${esc(baseline?.commit || '')}</p>` : ''}</div>
   </div>
   ${r.note ? `<p class="onote"><b>How far from the reference.</b> ${esc(r.note)}</p>` : ''}
   ${judgeHtml}
@@ -192,7 +221,7 @@ button{background:#3b3550;color:#fff;border:0;border-radius:6px;padding:7px 14px
 .frame{border-top:1px solid #2c2c35;padding:16px 0 10px}.frame.further{border-left:4px solid #c0392b;padding-left:12px}
 .frame h2{margin:0;font-size:20px;font-weight:500}.frame h2 span{color:#c9c1b0;font-weight:400;margin-left:8px}.meta{color:#8f8878;font-size:13px}
 .cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:10px}.col h3{margin:0 0 6px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#8f8878}
-.col img{width:100%;display:block;border-radius:4px;background:#000}figure{margin:0 0 8px}figcaption{font-size:12px;color:#8f8878}.note{color:#b8a98a}
+.col img{width:100%;display:block;border-radius:4px;background:#000}.col img.base{width:38%;margin-top:6px;opacity:.9}figure{margin:0 0 8px}figcaption{font-size:12px;color:#8f8878}.note{color:#b8a98a}
 .empty{aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;background:#1d1d23;border-radius:4px;color:#8f8878;text-align:center;padding:10px}
 .target{font-size:13px;color:#d6cdb9;margin:6px 0}.dim{color:#8f8878;font-size:12px;margin:6px 0}.stand{font-size:12px;color:#e0b070;margin:4px 0 0;padding-left:18px}
 .onote{font-size:14px;color:#e2d6b8;margin:8px 0 0;max-width:110ch}.judge{font-size:13px;border-collapse:collapse;margin-top:8px}.judge td{padding:2px 10px 2px 0}.judge tr.further td:nth-child(2){color:#ff7b6b}.judge tr.closer td:nth-child(2){color:#8fd18f}
@@ -200,14 +229,14 @@ button{background:#3b3550;color:#fff;border:0;border-radius:6px;padding:7px 14px
 .bad{color:#ff7b6b}@media(max-width:1000px){.cols{grid-template-columns:1fr}}
 </style></head><body><main>
 <h1>CALIMA · Frame Set review · ${esc(date)}</h1>
-<div class="status"><p>${esc(st1 || `run ${path.basename(runDir)} at ${run.commit || '?'}; ${filmed} of ${rows.length} frames filmed${run.chromeSeconds ? `, ${run.chromeSeconds} s of Chrome` : ''}`)}</p><p>${esc(st2 || `frame set ${set.sha256.slice(0, 12)}; frames that got further on a point come first`)}</p></div>
+<div class="status"><p>${esc(st1 || `run ${path.basename(runDir)} at ${run.commit || '?'}${run.dirty ? ' (DIRTY tree)' : ''}; ${filmed} of ${rows.length} frames filmed${run.chromeSeconds ? `, ${run.chromeSeconds} s of Chrome` : ''}`)}</p><p>${esc(st2 || `frame set v${set.version ?? '?'} ${set.sha256.slice(0, 12)}; frames that got further on a point come first`)}</p><p class="dim">The right column is the last accepted frame; until one is accepted, the 2026-11-14 refilm (${esc(anchorRun?.commit || 'not found')}), with the M0.5 baseline small beneath it.</p></div>
 ${run.placeholder ? '<div class="banner">PLACEHOLDER PAGE: no film run yet. The "today" column shows grey placeholders; the filmed page replaces this one.</div>' : ''}
 <div class="how"><b>How to answer.</b> For each frame, one word: <b>accept</b> (freezes today as the anchor), <b>closer</b>, or <b>wrong</b> plus a sentence (it becomes the next direction). Pick below and copy the text, or type the same lines yourself, e.g.<pre>F02 closer
 F08 accept
 F05 wrong: the stacks still read as cylinders</pre>
 <textarea id="answers" spellcheck="false" placeholder="your answers appear here as you pick"></textarea>
 <p><button id="copy">Copy answers</button> <span id="copied" class="dim"></span></p>
-<p class="dim">Recorded with: <code>node tools/frames/answers.mjs --date ${esc(date)} &lt;answers.txt</code>. Silence on two pages running lets the judge's comparison stand, provisionally.</p></div>
+<p class="dim">Recorded with: <code>node tools/frames/answers.mjs --page ${esc(out)} &lt;answers.txt</code>. Silence on two pages running lets the judge's comparison stand, provisionally.</p></div>
 ${rows.map(card).join('\n')}
 </main>
 <script>
