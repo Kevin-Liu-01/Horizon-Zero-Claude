@@ -359,7 +359,13 @@ export function gradeSet(c, s, out) {
       let dh = 0, kc = 1;
       for (let i = 0; i < s.hue.length; i++) {
         const band = s.hue[i];
-        const w = bandWeight(h, band.from, band.to, band.feather) * Math.min(1, C / (band.minChroma || 1)) * (1 - pe);
+        // M1.1g round 2: `cRange` [C0, C1(, C2, C3)] limits a band to saturated colours (none below chroma C0, full
+        // above C1; a 4-entry range fades out again from C2 to C3): the Orchil lift is for the dye, not for a grey stone
+        // or sand the violet-rose shade leans toward its hues, and the gold-light turn back to violet stays off the
+        // gamut-edge lamp magenta (#FF2D8C's round trip)
+        const cr = band.cRange;
+        const w = bandWeight(h, band.from, band.to, band.feather) * Math.min(1, C / (band.minChroma || 1)) * (1 - pe)
+          * (cr ? smoothstep(cr[0], cr[1], C) * (cr.length > 3 ? 1 - smoothstep(cr[2], cr[3], C) : 1) : 1);
         if (w <= 0) continue;
         dh += (band.rotate || 0) * w;
         kc *= 1 + ((band.chroma ?? 1) - 1) * w;

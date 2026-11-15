@@ -15,7 +15,7 @@
  *   }
  * Reads only: window.__CTX__ (engine, camera, environment), /tools/look/three.mjs (the app's own three).
  */
-export async function probe() {
+export async function probe(frame) {
   const C = window.__CTX__, E = C.engine, env = C.environment, cam = C.camera, R = E.renderer;
   const THREE = await import('/tools/look/three.mjs');
   const D2R = Math.PI / 180;
@@ -192,6 +192,41 @@ export async function probe() {
     E.render(0);
     out.hot = { white: base, of: Math.round(bw * bh), rows };
   } catch (e) { out.hot = { error: String(e?.message || e) }; }
+
+  /* ---- round 2: who paints a region. For F19 and F03 (the sun-centred pale arc), each layer switched off in turn
+     (fog in-scatter, sky IBL, hemisphere, shafts, bloom, every visible transparent or additive object) and the
+     canvas luminance it removes, as a 160 x 90 grid of 8-bit differences (base - off, rows top-down) ---- */
+  if (frame && (frame.id === 'F19' || frame.id === 'F03')) try {
+    const gl = R.getContext(), bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
+    const b = new Uint8Array(bw * bh * 4), GW = 160, GH = 90;
+    const grid = () => { E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, b); const g = new Float32Array(GW * GH);
+      for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) { const i = ((bh - 1 - Math.floor((y + 0.5) * bh / GH)) * bw + Math.floor((x + 0.5) * bw / GW)) * 4;
+        g[y * GW + x] = 0.2126 * b[i] + 0.7152 * b[i + 1] + 0.0722 * b[i + 2]; } return g; };
+    const base = grid();
+    const layers = [];
+    const diff = (name, off) => { let s = 0, mx = 0; const d = new Array(GW * GH);
+      for (let i = 0; i < GW * GH; i++) { const v = Math.round(base[i] - off[i]); d[i] = v; s += Math.abs(v); if (Math.abs(v) > Math.abs(mx)) mx = v; }
+      layers.push({ name, mean: Math.round(s / (GW * GH) * 100) / 100, max: mx, grid: d }); };
+    const u = env.u;
+    { const a = u.calFogB.value.x; u.calFogB.value.x = 0; diff('fog in-scatter 0', grid()); u.calFogB.value.x = a; }
+    { const a = u.calFogA.value.x, fd = u.calFogD.value.x; u.calFogD.value.x = 0; diff('cloud sea 0', grid()); u.calFogD.value.x = fd; void a; }
+    { const e = C.scene.environment; C.scene.environment = null; diff('sky IBL off', grid()); C.scene.environment = e; }
+    { const i0 = env.hemi.intensity; env.hemi.intensity = 0; diff('hemisphere 0', grid()); env.hemi.intensity = i0; }
+    { const f0 = env._renderShafts; env._renderShafts = () => {}; diff('shafts off', grid()); env._renderShafts = f0; }
+    { const bs = E.look.bloomScale; E.look.set({ bloomScale: 0 }); diff('bloom 0', grid()); E.look.set({ bloomScale: bs }); }
+    const objs = [];
+    C.scene.traverse((o) => { if (!o.visible || !(o.isMesh || o.isPoints || o.isSprite)) return; const m = o.material; if (!m || Array.isArray(m)) return;
+      if (m.transparent || m.blending === THREE.AdditiveBlending) objs.push(o); });
+    // and every named top-level child of the scene (terrain chunks, the far field, props), hidden in turn
+    for (const o of C.scene.children) if (o.visible && !objs.includes(o) && !o.isLight && !o.isCamera && o.name !== 'sky') objs.push(o);
+    for (const o of objs.slice(0, 80)) { o.visible = false; diff('hide ' + (o.name || o.type) + ' <' + (o.parent?.name || '') + '> ' + (m => m.type + (m.blending === THREE.AdditiveBlending ? ' add' : ''))(o.material), grid()); o.visible = true; }
+    E.render(0);
+    layers.sort((p, q) => q.mean - p.mean);
+    // grids as base64 of int8 (clamped to +-127) so every layer's map fits in run.json
+    const pack = (d) => { const a = new Int8Array(d.length); for (let i = 0; i < d.length; i++) a[i] = Math.max(-127, Math.min(127, d[i]));
+      let s = ''; const u8 = new Uint8Array(a.buffer); for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192)); return btoa(s); };
+    out.paint = { w: GW, h: GH, layers: layers.map((l) => ({ name: l.name, mean: l.mean, max: l.max, grid: pack(l.grid) })) };
+  } catch (e) { out.paint = { error: String(e?.message || e) }; }
 
   const L = E.look;
   out.grade = L ? { setA: L.setA, setB: L.setB, mix: L.lutMix, gradeMix: L.gradeMix, ev: L.ev, exposure: L.exposure, baseExposure: L.baseExposure,

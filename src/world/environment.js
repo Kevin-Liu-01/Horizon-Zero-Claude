@@ -661,6 +661,8 @@ export class Environment {
     this.moonDir = new THREE.Vector3();
     this.lightDir = new THREE.Vector3();
     this.nightFactor = 0;
+    /** M1.1f round 2: a fire light's day weight (0.05 by day, 1 at night, the dusk ramp between): world fires scale by it */
+    this.fireDayK = 1;
     this.sunAboveHorizon = true;
     this._celestialColor = new THREE.Color('#ffc98a');
     this._celestialIntensity = 4.5;
@@ -1710,7 +1712,11 @@ export class Environment {
         src.getWorldPosition(this.fireLight.position);
         const d = this.fireLight.position.distanceTo(ctx.camera.position);
         const dusk = smooth(18.5, 19.75, this._time) * (this._time < 22 ? 1 : 0);
-        let k = Math.max(night, dusk, 1 - smooth(12, 14, d));
+        // M1.1f round 2: by day the near-camera ramp is a twentieth: a fire's pool does not show beside a low sun, and
+        // at 1.2 m (F20, Brea at her rest) the full 26 lit her violet salmon-orange and blew her near side white
+        // published for the Brazier's own light (settlements/host.js): the same day floor
+        this.fireDayK = Math.max(0.05, night, dusk);
+        let k = Math.max(night, dusk, (1 - smooth(12, 14, d)) * this.fireDayK);
         if (d > 40 && night < 0.05 && dusk < 0.05) k = 0;
         this._fireK = k;
       }
@@ -2469,43 +2475,40 @@ export class Environment {
                       cir * 0.22 * (1.0 - uCloud.x * 0.8) * (1.0 - cal));
           }
 
-          // ---- trade stratocumulus (bible §9.4): flat bases on the 1000 m plane, tops
-          // heaped through four slices to 1600 m, drifting SW; hazed with distance
+          // ---- trade cumulus (bible §9.4; M1.1f round 2): ONE soft density field on the 1000 m base plane, drifting
+          // SW and hazed with distance. Round 1 stacked four flat slices with a 0.07 alpha ramp each: hard outlines and
+          // flat fills, a cut-paper layer. Now: a broad field eroded by a finer one (no outline), alpha over a wide
+          // band of density, a thickness from thin rim to heaped core, the heap's own shade from its density a step
+          // toward the sun (the sunward side lit, the far side and a thick base in shade), and the peach rim on the thin
+          // fringe (strongest toward a low sun). Three fetches, was four
           float cover = 0.0;
           if (d.y > 0.012 && cal < 0.98) {
-            vec3 acc = vec3(0.0);
-            float tr = 1.0;
             float thr = mix(0.58, 0.30, uCloud.x);
             vec3 lit = mix(vec3(1.10, 1.02, 0.94) * (0.55 + 0.45 * uSunCol), vec3(0.050, 0.058, 0.085), uNight);
-            // M1.1f, golden hours (uRim): the heaps toward the sun take the sun's gold, the heaps across the sky from
-            // it fall to a dimmer mauve-rose (the sun grazes them; their lit sides face away from the lens)
+            // golden hours (uRim): the heaps toward the sun take the sun's gold, the heaps across the sky from it fall
+            // to a dimmer mauve-rose (the sun grazes them; their lit sides face away from the lens)
             float toward = pow(sunD, 3.0);
             lit = mix(lit, lit * mix(vec3(0.74, 0.57, 0.62), vec3(1.14, 0.90, 0.60) * (0.6 + 0.4 * uSunCol), toward), uRim);
             vec3 shadeC = mix(mix(uMid, uHorizon, 0.5) * 0.72, vec3(0.012, 0.015, 0.024), uNight);
             shadeC = mix(shadeC, shadeC * vec3(0.92, 0.80, 0.88), uRim * (1.0 - toward));
             shadeC = mix(shadeC, vec3(0.26, 0.28, 0.33), uCloud.y);
             float t0 = 1000.0 / d.y;
-            for (int k = 0; k < 4; k++) {
-              float fk = float(k);
-              float hk = 1000.0 + fk * 200.0;
-              vec2 p = d.xz * (hk / d.y) - uDrift;
-              float n = texture2D(uNoise, p * (1.0 / 4200.0)).r;
-              float sh = n - thr - fk * 0.030;
-              float a = smoothstep(0.0, 0.07, sh) * 0.85;
-              float up = (fk + 0.5) / 4.0;
-              vec3 c = mix(shadeC, lit, smoothstep(0.0, 1.0, up * 0.9 + clamp(sh * 6.0, 0.0, 0.3)));
-              c += uSunCol * pow(sunD, 4.0) * 0.35 * day * up;
-              // M1.1f lit cumulus: the thin edge of each heap (sh just over the threshold) catches the low sun
-              // through its fringe: a peach rim, strongest toward the sun, faint on the far side of the sky
-              float rimW = smoothstep(0.0, 0.012, sh) * (1.0 - smoothstep(0.012, 0.075, sh));
-              c += vec3(1.0, 0.66, 0.50) * (0.55 + 0.45 * uSunCol) * rimW * (0.35 + 1.6 * pow(sunD, 6.0)) * uRim * day;
-              acc += tr * a * c;
-              tr *= 1.0 - a;
-            }
-            cover = (1.0 - tr) * (1.0 - cal);
+            vec2 p = d.xz * t0 - uDrift;
+            float n = texture2D(uNoise, p * (1.0 / 4200.0)).r;
+            float ero = texture2D(uNoise, p * (1.0 / 1150.0) + vec2(0.37, 0.61)).b;
+            float sh = n - thr + (ero - 0.5) * 0.12;
+            float a = smoothstep(0.0, 0.15, sh);
+            float th = smoothstep(0.02, 0.30, sh);
+            vec2 sxz = normalize(sd.xz + vec2(1e-5));
+            float shS = texture2D(uNoise, (p + sxz * 300.0) * (1.0 / 4200.0)).r - thr;
+            float lightK = clamp(0.60 + (sh - shS) * 5.0, 0.0, 1.0);
+            vec3 c = mix(shadeC, lit, clamp(0.30 + 0.70 * lightK - 0.30 * th * (1.0 - lightK), 0.0, 1.0));
+            c += uSunCol * pow(sunD, 4.0) * 0.35 * day * (0.45 + 0.55 * lightK);
+            float rimW = (1.0 - th) * a;
+            c += vec3(1.0, 0.66, 0.50) * (0.55 + 0.45 * uSunCol) * rimW * (0.30 + 1.5 * pow(sunD, 6.0)) * uRim * day;
+            cover = a * (1.0 - cal);
             float haze = exp(-t0 / 14000.0);
-            vec3 cc = acc / max(1.0 - tr, 1e-3);
-            cc = mix(horizon, cc, haze);
+            vec3 cc = mix(horizon, c, haze);
             cc += vec3(0.9, 0.94, 1.0) * uCloud.w * 0.9;
             col = mix(col, cc, cover * smoothstep(0.012, 0.05, d.y));
           }
@@ -2538,7 +2541,9 @@ export class Environment {
             float limb = 1.0 - 0.6 * (1.0 - sqrt(max(0.0, 1.0 - min(rr * rr, 1.0))));
             float clear = (1.0 - cal) * occl * horizonDim * day;
             col += uSunCol * 40.0 * discM * limb * clear * above;
-            col += uSunCol * (pow(sunD, 2600.0) * 1.1 + pow(sunD, 160.0) * 0.30) * clear;
+            // round 2: the aureole hugs the disc (pow 12000: half brightness 0.5 deg out; round 1's pow 2600 read as a soft
+            // 2.5 deg glow with no hard disc in F02), the wide lobe a third weaker
+            col += uSunCol * (pow(sunD, 12000.0) * 1.2 + pow(sunD, 160.0) * 0.20) * clear;
             col += uSunCol * pow(sunD, 12.0) * 0.05 * clamp(uFogDens, 0.5, 4.0) * occl * horizonDim * day * (1.0 - cal);
             // calima: a soft coral disc that SHOWS as #F2A27E (solved on the CPU)
             if (cal > 0.001) {

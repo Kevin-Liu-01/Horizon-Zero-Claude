@@ -475,7 +475,7 @@ export class SettlementHost {
           col = mix(col, vec3(0.7, 0.14, 0.03), smoothstep(0.55, 1.0, vLife));
           // white-hot heart early in life so flames punch through daylight
           float hot = core * (1.0 - smoothstep(0.0, 0.45, vLife));
-          col = mix(col, vec3(1.0, 0.96, 0.8), hot * 0.85);
+          col = mix(col, vec3(1.0, 0.86, 0.55), hot * 0.6);   // sky-look: a gold heart, not white-hot (F20)
           float a = core * (1.0 - vLife) * smoothstep(0.0, 0.07, vLife) * vAlpha;
           gl_FragColor = vec4(col * a * 1.55, a);
         }
@@ -666,7 +666,7 @@ export class SettlementHost {
       + 0.13 * Math.sin(t * 11.3)
       + 0.08 * Math.sin(t * 23.7 + 1.3)
       + 0.06 * Math.sin(t * 5.1 + 0.7);
-    this.fireLight.intensity = this._lightBase * f;
+    this.fireLight.intensity = this._lightBase * f * (this.ctx.environment?.fireDayK ?? 1);   // sky-look: by day 0.05 (F20)
     this.fireLight.position.y = this._lightY + 0.06 * Math.sin(t * 9.1);
     this._coalMat.emissiveIntensity = 1.4 + 0.7 * f;
 
