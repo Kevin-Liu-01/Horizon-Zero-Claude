@@ -47,9 +47,19 @@ export const WADE_MAX = 1.2;
 /**
  * What its wade is graded to (m), the orchestrator's ruling 1 (M1a regressions run): the Glass's real deepest water,
  * not 1.2 m. The Glass is 0.62 m at its deepest in the recipe (0.64 m on the render grid) and over 0.6 m across a flat
- * floor about 3 m round; the keeper walks to its deepest 2 m sample (`wadeSpot`) and stands there to read.
+ * floor about 3 m round; the keeper walks to its deepest sample (`wadeSpot`, on a WADE_GRID grid) and stands there
+ * to read, its centre within WADE_ARRIVE of it.
  */
 export const WADE_BAR = 0.6;
+/**
+ * The grid the Glass is searched on for its deepest water (m), and how near its centre comes to that spot (m).
+ * regfix 2: at 541f1a6 the spot was the deepest 2 m sample (0.722 m) and the walk stopped 0.6 m short of it, so its
+ * centre stood in 0.641 m while the Glass's deepest on a 0.5 m grid of the same `depthAt` is 0.785 m, one metre on.
+ */
+export const WADE_GRID = 0.5;
+export const WADE_ARRIVE = 0.15;
+/** How near any other walk ends (m): the station, a `goto`. */
+const ARRIVE = 0.6;
 /** How far ahead of its centre the wade test reads the water (m): the front feet's line. */
 const WADE_LOOK = 1.6;
 /** The tide clock (sim seconds; readings in metres). Phases as fractions of the period. */
@@ -101,6 +111,7 @@ export class Gauge extends ExpansionMachine {
     this._reading = CLOCK.openAt;
     this._wadeStop = null;                       // { x, z, depth } where the last wade stopped short of WADE_MAX
     this._maxDepth = 0.5; this._maxDepth = 0;    // deepest water under its centre since the last reset (m)
+    this._arriveR = 0.5; this._arriveR = ARRIVE; // how near the current walk ends (m)
     this._log = [];                              // (keeper) the clock's events: { t, ev, reading }
     this._clockT = 0.5; this._clockT = 0;
     this._seeded = seedAuthoredWeights(this);
@@ -198,7 +209,7 @@ export class Gauge extends ExpansionMachine {
     const st = this.station;
     if (!st) return;
     this._phi = OPEN_PHASE; this._held = true; this._reading = readingAt(OPEN_PHASE);
-    this._job = 'station'; this._jobT = 0;
+    this._job = 'station'; this._jobT = 0; this._arriveR = ARRIVE;
     this._gateWant = 0; this._gateK = 0;
     this._scripted = false;
     this._log.length = 0;
@@ -249,16 +260,16 @@ export class Gauge extends ExpansionMachine {
   }
 
   /** Walk to (x, z) and stand (a probe / script verb; the wade limit holds). */
-  goto(x, z, then = 'idle') { this._tx = x; this._tz = z; this._job = 'goto'; this._then = then; this._jobT = 0; this._wadeStop = null; }
+  goto(x, z, then = 'idle') { this._tx = x; this._tz = z; this._job = 'goto'; this._then = then; this._jobT = 0; this._wadeStop = null; this._arriveR = ARRIVE; }
 
-  /** The Glass's deepest water it may wade to (cached): pools[0] sampled on a 2 m grid, depth <= WADE_MAX. */
+  /** The Glass's deepest water it may wade to (cached): pools[0] sampled on a WADE_GRID grid, depth <= WADE_MAX. */
   wadeSpot() {
     if (this.manager?._gaugeWade) return this.manager._gaugeWade;
     const W = this._water();
     const G = W?.pools?.[0];
     if (!W || !G) return null;
     let best = null;
-    for (let gx = -G.rx; gx <= G.rx; gx += 2) for (let gz = -G.rz; gz <= G.rz; gz += 2) {
+    for (let gx = -G.rx; gx <= G.rx; gx += WADE_GRID) for (let gz = -G.rz; gz <= G.rz; gz += WADE_GRID) {
       const x = G.x + gx, z = G.z + gz;
       if (W.levelAt(x, z) !== G.level) continue;              // the Glass's own water, not the sea beyond its barrier
       const d = W.depthAt(x, z);
@@ -274,7 +285,7 @@ export class Gauge extends ExpansionMachine {
   _walk(dt) {
     const W = this._water(), p = this.position;
     const dx = this._tx - p.x, dz = this._tz - p.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 0.6) { this.sc._speed += (0 - this.sc._speed) * (1 - Math.exp(-6 * dt)); return 'arrived'; }
+    if (d < this._arriveR) { this.sc._speed += (0 - this.sc._speed) * (1 - Math.exp(-6 * dt)); return 'arrived'; }
     if (W) {
       const h = Math.atan2(dx, dz);
       const ahead = W.depthAt(p.x + Math.sin(h) * WADE_LOOK, p.z + Math.cos(h) * WADE_LOOK);
@@ -341,10 +352,10 @@ export class Gauge extends ExpansionMachine {
     if (cross(CLOCK.closeAt)) this.closeSluice('clock');
     if (cross(CLOCK.leaveAt) && this._job === 'station') {
       const w = this.wadeSpot();
-      if (w) { this._tx = w.x; this._tz = w.z; this._job = 'toGlass'; this._jobT = 0; this._wadeStop = null; this._note('leave', 'clock'); }
+      if (w) { this._tx = w.x; this._tz = w.z; this._job = 'toGlass'; this._jobT = 0; this._wadeStop = null; this._arriveR = WADE_ARRIVE; this._note('leave', 'clock'); }
     }
     if (cross(CLOCK.returnAt) && (this._job === 'wade' || this._job === 'toGlass')) {
-      this._tx = st.x; this._tz = st.z; this._job = 'toStation'; this._jobT = 0; this._note('return', 'clock');
+      this._tx = st.x; this._tz = st.z; this._job = 'toStation'; this._jobT = 0; this._arriveR = ARRIVE; this._note('return', 'clock');
     }
   }
 
