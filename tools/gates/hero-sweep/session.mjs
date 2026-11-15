@@ -82,6 +82,13 @@ const CLIP_DEFS = {
   crouchDraw: { frame: 'F18', pose: 'idle', secs: 4.4, aimLens: true, lens: { a: -55, d: 2.3, h: 1.0, look: 0.85, fov: 40 }, js: `p.setCrouch(true); await w(0.4); C.input.mouse.buttons |= 4; await w(0.5); C.input.mouse.buttons |= 1; C.input.keys.add('KeyD'); await w(1.8); C.input.mouse.buttons &= ~1; await w(0.6); C.input.keys.delete('KeyD'); C.input.mouse.buttons &= ~4; await w(0.8);` },
   melee: { frame: 'F19', pose: 'idle', secs: 4.4, lens: { a: '3q', q: 70, d: 3.1, h: 1.2, look: 1.0, fov: 42 }, js: `const mel = C.combat.melee; mel.aimLock = 0; mel.drawLance(30); await w(1.2); C.input.mouse.buttons |= 1; await w(0.9); C.input.mouse.buttons &= ~1; await w(1.0); C.input.mouse.buttons |= 1; await w(0.12); C.input.mouse.buttons &= ~1; await w(1.0);` },
 };
+/* M1a weapons step 1 (the brief's seam): the handling lane's clips and the cloth lane's are merged in from their own
+ * files; from here on each lane edits only its own file (clips-handling.mjs, clips-cloth.mjs), never this one */
+{
+  const { CLIPS: HANDLING } = await import('./clips-handling.mjs');
+  const { CLIPS: CLOTH } = await import('./clips-cloth.mjs');
+  for (const [k, v] of Object.entries({ ...HANDLING, ...CLOTH })) { if (CLIP_DEFS[k]) throw new Error(`clip ${k} is defined twice`); CLIP_DEFS[k] = v; }
+}
 const clipIds = (flag('--clips') || '').split(',').filter(Boolean);
 /** Between frames (and before the first): input released, no crouch or hang pose, lance holstered, the bow's holster
  * timer spent, stuck arrows recycled; then up to 2 s of game time for the bow and lance to go back on her back.
@@ -171,7 +178,7 @@ process.on('exit', () => { releaseSlot(); if (vite) { try { process.kill(-vite.p
 
 const stamp = utc().replace(/[-:]/g, '');
 const runDir = path.join(RUNS, `${stamp}-${commit}-${LABEL}-partial`);
-const clipDir = path.join(REVIEW, 'clips', stamp);
+const clipDir = path.join(REVIEW, 'clips', stamp + (flag('--clip-tag') ? '-' + flag('--clip-tag') : ''));
 assertOutsideRepo(runDir, REPO); assertOutsideRepo(clipDir, REPO);
 const out = { commit, tree: REPO, port: PORT, startedAt: utc(), rows: [], frames: [], clips: [], console: [], errors: [] };
 
@@ -310,6 +317,7 @@ try {
   /* ---- clips: a frame's lens, the world running, the bar performed, the page screencast */
   if (clipIds.length) mkdirSync(clipDir, { recursive: true });
   const cdp = await page.createCDPSession();
+  const simGrab = { fn: null, pages: new Set() };
   for (const id of clipIds) {
     const d = CLIP_DEFS[id];
     current = 'clip ' + id;
@@ -332,6 +340,7 @@ try {
        * her on her staged bearing so her aim stays on it: M1.3g round 2), and the lens is put up only for the render
        * (engine.render wrapped: the camera moved to the lens, rendered, put back) */
       await page.evaluate((L, holdAim) => {
+        if (L.none) { window.__clipLens = { chase: true }; window.__clipLensUndo = () => {}; return; }
         const C = window.__CTX__, p = C.player, E = C.engine, cam = C.camera, V3 = p.position.constructor;
         const h = p.heading, fwd = new V3(Math.sin(h), 0, Math.cos(h)), left = new V3(Math.cos(h), 0, -Math.sin(h));
         const off0 = cam.position.clone().sub(p.position);
@@ -349,8 +358,44 @@ try {
         };
         window.__clipLensUndo = () => { E.render = r0; p._updateCamera = u0; };
         window.__clipLens = { a0: +(a0 * 180 / Math.PI).toFixed(1), a: +(a * 180 / Math.PI).toFixed(1), d: L.d, h: L.h };
-      }, d.lens, !!d.aimLens);
+      }, d.lens || { none: true }, !!d.aimLens);
       const lensInfo = await page.evaluate(() => window.__clipLens);
+      /* M1a weapons step 1: a clip on SIMULATION time (`sim: true`): the page's loop is stopped and the game's frame is
+       * driven by hand, one 1/60 s frame on a virtual clock per captured image (tools/frames/page.mjs 7a's method), so
+       * the clip is 60 frames a second of sim time whatever the box renders; written at full speed and at quarter speed
+       * from the same captured frames */
+      if (d.sim) {
+        const dir = path.join(clipDir, id + '-frames'); mkdirSync(dir, { recursive: true });
+        let nShot = 0;
+        simGrab.fn = async () => { const r = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 88 }); writeFileSync(path.join(dir, `${String(nShot++).padStart(4, '0')}.jpg`), Buffer.from(r.data, 'base64')); return nShot; };
+        if (!simGrab.pages.has(page)) { await page.exposeFunction('__simGrab', () => simGrab.fn()); simGrab.pages.add(page); }
+        const simInfo = await page.evaluate(() => {
+          const C = window.__CTX__, E = C.engine, G = window.__GAME__;
+          if (!G || typeof G._frame !== 'function' || !E.renderer?.setAnimationLoop) return { ok: false };
+          E.renderer.setAnimationLoop(null);
+          const pnDesc = Object.getOwnPropertyDescriptor(performance, 'now');
+          let vNow = Performance.prototype.now.call(performance);
+          Object.defineProperty(performance, 'now', { configurable: true, writable: true, value: () => vNow });
+          E.clock.oldTime = vNow; G._lastNow = vNow;
+          window.__simStep = () => { vNow += 1000 / 60; G._frame(); };
+          window.__simUndo = () => { if (pnDesc) Object.defineProperty(performance, 'now', pnDesc); else delete performance.now; const n = performance.now(); E.clock.oldTime = n; G._lastNow = n; E.renderer.setAnimationLoop(() => G._frame()); window.__simStep = null; window.__simUndo = null; };
+          return { ok: true };
+        });
+        if (!simInfo.ok) throw new Error('sim clock: no game frame to drive');
+        try {
+          await withTimeout(page.evaluate(`(async () => { const C = window.__CTX__, p = C.player, E = C.engine;
+            const fr = () => new Promise((r) => requestAnimationFrame(r));
+            const w = async (s) => { const n = Math.round(s * 60); for (let i = 0; i < n; i++) { window.__simStep(); await fr(); await window.__simGrab(); } };
+            ${d.js} })()`), 240000, 'sim clip');
+        } finally { await page.evaluate(() => window.__simUndo?.()); }
+        await page.evaluate(() => { const C = window.__CTX__; C.input.keys.clear(); C.input.mouse.buttons = 0; C.player.setCrouch?.(false); window.__clipLensUndo?.(); window.__clipLensUndo = null; });
+        await page.evaluate(unstageFrame);
+        const mp4 = path.join(clipDir, `${id}.mp4`), mp4q = path.join(clipDir, `${id}-quarter.mp4`);
+        for (const [fps, f] of [[60, mp4], [15, mp4q]]) execFileSync('nice', ['-n', '10', 'ffmpeg', '-loglevel', 'error', '-y', '-framerate', String(fps), '-i', path.join(dir, '%04d.jpg'), '-vf', 'format=yuv420p', '-c:v', 'libx264', '-crf', '18', f]);
+        out.clips.push({ id, ok: true, sim: true, file: mp4, quarter: mp4q, frames: nShot, seconds: +(nShot / 60).toFixed(2), fps: 60, frame: d.frame, lens: lensInfo });
+        log(`clip ${id}: ${nShot} sim frames (${(nShot / 60).toFixed(2)} s of sim time) -> ${mp4}`);
+        continue;
+      }
       cdp.on('Page.screencastFrame', onFrame);
       await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 85, maxWidth: 1280, maxHeight: 720, everyNthFrame: 1 });
       await page.evaluate(`(async () => { const C = window.__CTX__, p = C.player, E = C.engine; const fr = () => new Promise((r) => requestAnimationFrame(r));
