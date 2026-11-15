@@ -488,6 +488,11 @@ export class Terrain {
       t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
       t.generateMipmaps = false;
       t.needsUpdate = true;
+      /* three uploads ONLY the listed layers when layerUpdates is non-empty, even on the first upload
+       * after texStorage3D: a stamp drain before the first frame left layers 0, 2 and 3 (mask A, the
+       * shore, the pan) all zero, and the salt crust vanished (M1.1 fix 1). Layer updates only once live. */
+      this._maskArrayLive = false;
+      t.onUpdate = () => { this._maskArrayLive = true; };
       this._maskArray = t;
     }
     const mkHz = (data) => {
@@ -1125,7 +1130,10 @@ export class Terrain {
     }
     _stampPending.length = 0;
     this._maskTextures.b.needsUpdate = true;
-    if (this._maskArray) { this._maskArray.addLayerUpdate(1); this._maskArray.needsUpdate = true; }
+    if (this._maskArray) {
+      if (this._maskArrayLive) this._maskArray.addLayerUpdate(1);
+      this._maskArray.needsUpdate = true;
+    }
     const prev = this._routeCoverStats;
     this._routeCoverStats = {
       discs, texels, vertices: 0, tiles: discs, ms: +(performance.now() - t0).toFixed(1),
