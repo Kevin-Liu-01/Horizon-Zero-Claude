@@ -353,8 +353,13 @@ export async function traversalOverlay(ctx) {
     //  old fixed spot, x -60 z -39, she never mantled and the panel filmed a wall and two ropes. Space is pressed
     //  whenever she is on the ground until the mantle starts, as A-sweep-climb does)
     const og = ctx.props?.gatePlaces?.openGround;
-    const x = og ? og.x : -60, z = og ? og.z + 6 : -39, gy = T.getHeight(x, z);
-    const b = box(x, gy + 0.25, z + 3.5, 1.5, 0.75, 1.0);   // a 1.0 m ledge: top 1.0 m over her feet
+    const x = og ? og.x : -60, z = og ? og.z + 6 : -39;
+    /* (M1a debt fix round 1, hero-anim, smallest change: at 88b1605 the panel filmed a VAULT, her hands at her knees: the
+     *  top was 1.0 m over the ground where she STARTS, and player.js picks the 1 m climb by the rise from where she
+     *  stands at the wall (CLIMB_1M 0.82-1.22 m). The top is now 1.0 m over the ground at the foot of the wall, the highest
+     *  of three samples across her approach) */
+    const gy = Math.max(T.getHeight(x, z + 1.5), T.getHeight(x, z + 1.9), T.getHeight(x, z + 2.3));
+    const b = box(x, gy + 0.25, z + 3.5, 1.5, 0.75, 1.0);   // a 1.0 m ledge: top 1.0 m over the ground at its foot
     if (!(E.timeScale > 0)) E.timeScale = 1;          // (a frozen world never mantles: the loops below would not end)
     p.position.set(x, 0, z); p.velocity.set(0, 0, 0); p._snapToGround(); p.heading = 0; p.camYaw = Math.PI;
     await simWait(0.3);
@@ -387,7 +392,7 @@ export async function traversalOverlay(ctx) {
       const ok = !!Ed?.valid || p.mantling;
       const cam = ok ? { pos: [Ed.x - sx * 2.6 - Ed.dx * 0.25, Ed.y + 0.35, Ed.z - sz * 2.6 - Ed.dz * 0.25], target: [Ed.x - Ed.dx * 0.1, Ed.y + 0.15, Ed.z - Ed.dz * 0.1] }
         : camAt(Math.PI / 2, 3.2, 1.1);
-      shots.push([ok ? 'LEDGE CLIMB (pull: palms on the top, chest over them)' : 'LEDGE CLIMB: NO MANTLE (staging failed)', liveShot(cam)]); }
+      shots.push([ok ? `LEDGE CLIMB (pull: palms on the top, chest over them)${p.mantleClip === 'climb1m' ? '' : ' [VAULT, not the climb]'}` : 'LEDGE CLIMB: NO MANTLE (staging failed)', liveShot(cam)]); }
     E.timeScale = 1;
     await simWait(1.0);
     clear(b);
