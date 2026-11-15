@@ -359,7 +359,7 @@ try {
         writeFileSync(path.join(dir, 'frames.ffconcat'), 'ffconcat version 1.0\n' + list.join('\n') + '\n');
         let mp4 = null;
         try {
-          execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'frames.ffconcat'), '-vsync', 'vfr', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-crf', '18', path.join(OUT, `clip10-${name}.mp4`)]);
+          execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'frames.ffconcat'), '-fps_mode', 'vfr', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-crf', '18', path.join(OUT, `clip10-${name}.mp4`)]);
           mp4 = `clip10-${name}.mp4`;
         } catch (e) { log(`clip10 ${name}: ffmpeg failed ${String(e).slice(0, 200)}`); }
         const span = shots.length > 1 ? shots[shots.length - 1].t - shots[0].t : 0;
