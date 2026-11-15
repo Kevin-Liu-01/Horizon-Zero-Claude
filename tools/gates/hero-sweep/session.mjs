@@ -183,6 +183,9 @@ try {
   out.bootSeconds = Math.round((Date.now() - t0) / 1000);
   log(`booted in ${out.bootSeconds} s: ${rows.length} rows, ${frames.length} frames, ${clipIds.length} clips`);
   const over = () => (Date.now() - t0) / 1000 > BUDGET_S;
+  // (the hard stop: whatever hangs, Chrome is torn down at the budget plus 45 s and the run is written as it stands)
+  const watchdog = setTimeout(async () => { log('WATCHDOG: budget + 45 s, tearing down'); out.errors.push('watchdog'); await teardown(); try { writeFileSync(path.join(runDir, 'run.json'), JSON.stringify({ ...out, chromeSeconds: Math.round((Date.now() - t0) / 1000) }, null, 1)); } catch { /* */ } process.exit(5); }, (BUDGET_S + 45) * 1000);
+  watchdog.unref();
 
   /* ---- frames, first: on the freshly booted page (rows before them left the bow in her hand on the holster
    * timer and an arrow in the ground). Each frame also starts from a reset hero (RESET_HERO below; stageFrame
@@ -208,7 +211,9 @@ try {
    * M1a r3 (I24): every row starts from a reset hero and a reset melee state (RESET_HERO), and the --extra rows (the
    * kept rows, which stage their own melee and bow work) each get a FRESH PAGE: the page is reloaded and booted again
    * before the row (`--fresh extra`, the default; `--fresh all` reloads before every row, `--fresh none` never). */
-  const FRESH = flag('--fresh', 'extra');
+  /* (round 3, after the run at 6448b3d: the new tab hung as the reload did, every row on it to its timeout (A107,
+   *  A104, A105, A32, A-draw-elbow-level), and the session ran 1083 s: a fresh page is now opt-in) */
+  const FRESH = flag('--fresh', 'none');
   /* (round 3, after the run at d8fddf1: a page.reload() left the reloaded page with no animation frames, and every
    *  row on it hung to its timeout; a fresh page is a NEW TAB, brought to the front, booted as the first one was, and
    *  the old tab closed) */
@@ -230,7 +235,10 @@ try {
   let rowNo = 0;
   for (const g of rows) {
     current = g.id;
-    if (over()) { out.rows.push({ id: g.id, status: 'NOT-RUN', why: 'budget' }); continue; }
+    // (a row starts only if its own timeout, and a fresh page's boot, still fit in the budget: at 6448b3d rows begun
+    //  inside it ran to their timeouts and took the session 243 s past the 15-minute cap)
+    const need = ((g.timeout ?? 90000) / 1000) + ((FRESH === 'all' || (FRESH === 'extra' && g.__extra)) ? 60 : 0);
+    if (over() || (Date.now() - t0) / 1000 + need > BUDGET_S) { out.rows.push({ id: g.id, status: 'NOT-RUN', why: 'budget' }); continue; }
     const fresh = FRESH === 'all' || (FRESH === 'extra' && g.__extra);
     let rebootS = null, reset = null;
     try {
