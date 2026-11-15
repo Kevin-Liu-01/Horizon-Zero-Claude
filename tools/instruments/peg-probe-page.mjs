@@ -299,7 +299,25 @@ export async function probe(frame) {
           const pick = lines.find((l) => l.clear) || lines[0];
           const from = pick.from;
           placeBrea(from.x, from.z); look(m.position.x, m.position.z, 3, 7);
+          // regfix 2: why the game's own hull query found nothing on the member from any of ten bearings at 541f1a6
+          // (linesClear 10, first null, hit false): what the query's candidate test and the weak-point sweep read
+          const why = () => {
+            m.root?.updateMatrixWorld?.(true);
+            const cy = m.position.y + (m.height || 2) * 0.5, wp = m._lampWp;
+            const wpW = wp?.obj ? wp.obj.getWorldPosition(new THREE.Vector3()) : null;
+            let inRoot = false; for (let q = wp?.obj; q; q = q.parent) if (q === m.root) { inRoot = true; break; }
+            let inScene = false; for (let q = m.root; q; q = q.parent) if (q === C.scene) { inScene = true; break; }
+            const set = H?.sets?.get?.(m);
+            const o = new THREE.Vector3(from.x, hy(from.x, from.z) + 1.45, from.z), dir = solve(o, la);
+            let own = null; try { const h = H?.raycastMachine?.(m, { origin: o, direction: dir }, o.distanceTo(la) + 0.3); own = h ? { d: r3(h.distance), part: h.part?.name ?? null } : null; } catch (e) { own = 'error: ' + String(e).slice(0, 120); }
+            return { inList: M.list.includes(m), disposed: !!m._disposed, alive: m.alive, state: m.state, rootVisible: !!m.root?.visible, inScene,
+              lampToCentreM: r3(Math.hypot(la.x - m.position.x, la.y - cy, la.z - m.position.z)), candRadiusM: r3(0.5 * Math.max(m.size?.x ?? 2, m.size?.z ?? 2, m.height || 2) + 1.2),
+              wp: wp ? { enabled: wp.enabled, radius: wp.radius, inRoot, toAimM: wpW ? r3(wpW.distanceTo(la)) : null } : null,
+              hullSet: set ? { hulls: set.hulls.length, parts: set.parts, machineParts: m.parts?.length ?? null } : null, ownRay: own };
+          };
+          const diag0 = why();
           const r = await shoot(m, from, la);
+          if (!r.hit) { r.diagBefore = diag0; r.diagAfter = why(); }
           r.bearingOffDeg = pick.off;
           r.frontal = { first: lines[0].first, ground: lines[0].ground, clear: lines[0].clear };
           r.linesClear = lines.filter((l) => l.clear).length;
