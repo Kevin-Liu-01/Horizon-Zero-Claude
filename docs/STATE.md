@@ -345,3 +345,93 @@ Closed this round:
 - A9 stays pending inside a kept-stack run (the gate browser itself lifts the load) and is graded in the exit-bar session.
 - main is fast-forwarded to r5/int at fb6d5f0: no frame is accepted yet, so none can have got worse, and every M1a frame is the same or closer than the M0 refilm.
 
+
+## M1a debt and M1b wave 1 (Nov 15 2026)
+
+Four lanes worked in one tree on `r5/int`: world (M1a debt), hero-anim (M1a debt), instruments (M1.4d the Peg,
+M1.4e the Gauge, M1.4f) and systems (W1 writing, M1.6a the quest spine, M1.6f save v6, M1.6c the Brazier). Each lane
+had a builder, a judge and one fix round. The review measured `r5/int` at **39f7533** from a clean detached worktree,
+port 5270, one Chrome slot.
+
+**Tier 0 at 39f7533: PASS, 10 of 10.**
+- `vite build` clean.
+- Name lint: 0 listed-term hits in 668 files.
+- Licences, assets, import graph: clean.
+- Resident textures: 53.42 MB of 175 MB. Shipped size: 42.92 MB.
+- 56 Node tests pass, 3 todo (Pan II, Pan III and Ash I were built against an older body).
+- Boot: 2.9 s, 0 errors. Rendered-page name lint: 0.
+
+**Frame Set at 39f7533:** all 34 frames, 165 s of Chrome, 0 console errors. Sixteen frames are now compared with their
+provisional anchors at fb6d5f0 (PROCESS §4 two-page rule, recorded in `tools/frames/accepted.json`); the rest with
+the 2026-11-14 refilm.
+- **Got further than the anchor (regressions):**
+  - F05: a Brazier's cistern ring of plain box blocks stands in the foreground beside Brea.
+  - F09: the front sash panel streams forward as a stiff point in the still studio (the new wind coupling).
+- **The same as the anchor:** F02, F03, F08, F10, F11, F13-F16, F18-F20, F23 (Plumb), F24. The salt cells read
+  darker with the new crust grain (3-4 points of mean luminance).
+- **Moved toward the target:**
+  - F04: the palette now passes (10.2 against the bar of 12; 13.2 before). The crust has grain, though it still
+    reads blotchy, and the brine pond left the frame.
+  - F32: the haze band along the ridge is gone.
+  - F23 (Peg), F23 (Gauge), F25, F26: the new Peg and Gauge stand in their frames, and the Sighting card belongs to
+    the live Gauge.
+  - F30: Brea sits at a burning Brazier. The frame's right edge is crowded by an untextured wedge and box blocks.
+- F02 8.2 and F05 11.4 still pass the palette line. Shade hue was not re-read in this round.
+
+**Kept-stack rows at 39f7533** (two sessions, every row reached): 80 rows, **72 pass** (64 action, 8 visual),
+**6 fail**, **2 pending** (A9 and A76, as before).
+- Closed since the exit run: V13 (both feet now point the way she travels) and V-traversal (the ledge panel frames
+  her).
+- New failures since the exit run:
+  - A71g: the field-note tracker never shows.
+  - A65: the row still reads the version-5 save key, and the game now writes save v6.
+  - A44b: the Peg's rack socket is 0.165 m off its drawn vertices (bar 0.10).
+  - A78: the cast-state row picks the neutral Gauge, which has no attack state.
+  - A90: +43 geometries over 30 cycles (bar 40; +16 at the exit run).
+- Still failing: A70 (the K key shows the map tab).
+- Key numbers:
+  - A16: knuckle to jaw 0.014 m in every cell.
+  - A107: behind the head in the band at most 0.066 m (bar 0.10).
+
+**What landed this round:**
+- **World:**
+  - The F04 palette passes.
+  - The F32 haze band is gone.
+  - The violet meadow clumps are back.
+  - The Organ is lighter (L* +1.8).
+  - The Glass mirror is tinted toward emerald at a grazing look.
+  - The meadow's far edge is softened.
+- **Hero-anim:**
+  - The roll blend, the hang pose and the Alidade raise keep both hands in front of the head. The dressed-rig bench
+    reads 0 behind-head steps in 22 clips.
+  - The crouched Undercut seats the haft in the left palm (bench).
+  - V13 and V-traversal pass.
+- **Instruments:**
+  - The Peg is built on the shared hull kit (11/11 model checks). One lamp hit kills it (10 of 10).
+  - The Gauge is a 5.5 m lighthouse on stilts on the same kit (13/13). It runs its tide clock and sluice, and its
+    Sighting card reads TIDE 0.4 m.
+- **Systems:**
+  - The slice's writing is in place as plain data under `src/game/text/` (all 7 writing checks pass).
+  - Raker's Morning runs in the live game.
+  - Save v6 has three slots, silent checkpoints and the one death rule.
+  - The Brazier works: kindle, sit, rest and the refusal near alert Instruments.
+  - 17 Node rows pass.
+
+**Still open, with the commit each number was taken at:**
+
+| item | row | number |
+|---|---|---|
+| M1.1b | no crawl in the walking clip | 1.39x the reference in the 12-30 m band (bar 1.10x; 2be9311, meadow unchanged since) |
+| M1.1e | F04 mean luminance >= 40 % | 31.5 % (39f7533); the brighter crust failed the palette, so the two lines need one answer |
+| M1.1e | salt-crust top-down < 0.3 | not re-read after the grain change |
+| M1.1j | no LOD seam over 2 px in F32 | 0 px between LOD levels; 3 px of sky in a notch between chunks: needs a ruling on what counts as a seam |
+| M1.1a | F02 GPU with the look off <= 11 ms | not measured whole this round |
+| M1.2e | the panels stream in the wind | the coupling now also moves them in the windless studio (F08, F09) |
+| M1.2f | the lance steep with the bow beneath it (F10) | not attempted; still a 45° cross |
+| M1.3d | A104, the Undercut row in the page | both fail (920c509) |
+| M1.3h | rake, kindle, cane-cut clips | the clips do not exist yet |
+| M1.4d | a swarm cuts a 1.0 m lane | 0 of 90 at 8d18c28; fixed in Node only (137b190), not yet filmed |
+| M1.4e | the Gauge wades to 1.2 m | the Glass is 0.64 m deep at most: needs a ruling or a deeper Glass |
+| M1.6a | the slice hour, input-driven | 10 of 14 beats (7ae0fd0) |
+| M1.6f | save and continue in the live game | the reload hangs before the title (3 of 3 runs) |
+| M1.6c | F30 | closer on silhouette and light; the finish is further: an untextured wedge at the right edge, box blocks, faceted stones |

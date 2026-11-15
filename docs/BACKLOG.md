@@ -213,3 +213,22 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 | R3-15 | major | ui | A70: the K key still shows the map tab (kept-stack row, fb6d5f0). |
 | R3-16 | major | hero-anim | V13: in the aim strafe the feet point opposite ways. V-traversal: the ledge-climb panel does not frame her. |
 | R3-17 | note | engine | Three gate files still fail to load because they read the retired documents (I14). |
+
+## M1a debt and M1b wave 1 additions (Nov 15 2026)
+
+| sev | owner | item |
+|---|---|---|
+| blocker | systems | F05 has a Brazier's cistern ring of box blocks in the foreground beside Brea, a regression against its provisional anchor. Keep every Brazier out of the Frame Set's lenses, and texture the blocks. |
+| blocker | hero-anim | The sash wind coupling (2.4 1/s) streams the front panel forward in the windless studio (F09, regression; F08 splayed). Zero the wind in the studio. In the field, stream downwind without a hard point. |
+| blocker | systems | A71g: the field-note tracker never shows (opacity 0) at full health, after the vitals hide, or on a new objective. It passed at fb6d5f0. Likely the quest runtime or the quest-cards change in `src/ui/hud.js`. |
+| blocker | systems | A65 reads the version-5 save key and fails with a null read under save v6. Restate the row to the v6 slot by id at the next freeze, so the kept stack proves the live round trip again. |
+| blocker | instruments | A44b: the Peg's `part:peg-rack` socket is 0.165 m from its drawn vertices (bar 0.10), alive and dead. |
+| blocker | instruments, orchestrator | A78: the cast-state row now picks the Gauge, which has no attack state. Pick a kind with an attack set in the row, or keep neutral kinds out of that role. |
+| blocker | instruments, systems | A90: +43 geometries over 30 kill/respawn cycles (bar 40; +16 at fb6d5f0). Not bisected. The candidates are new since fb6d5f0: the Peg swarm and transect instances, the Gauge and the Braziers. |
+| major | world | M1.1e: F04's luminance (31.5 %) and its palette (10.2, passing) pull against each other. Rule on one target, or make the crust both bright and on the swatch. |
+| major | world | M1.1j: rule whether sky showing through a notch between terrain chunks counts as a seam. The crack count between LOD levels alone is 0 px. |
+| major | instruments, world | M1.4e: the Glass is at most 0.64 m deep, so the Gauge cannot be shown wading to 1.2 m there. |
+| note | orchestrator | F23 (Peg) and F23 (Gauge) were re-staged in `frameset.json` without a version bump. Bump to v3 and add the rows to the README table. |
+| note | all | A "smallest change" in another lane's file must come with that lane's kept rows, run at the commit. A71g and A65 broke through such seams this round. |
+| closed | hero-anim | V13 (feet) and V-traversal (ledge panel framing) pass in the kept stack at 39f7533. |
+| closed | world | F04's palette is 10.2 (bar 12). The F32 haze band along the ridge is gone. |
