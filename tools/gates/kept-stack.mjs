@@ -887,9 +887,32 @@ const B = RIG_BARS;
 const A16_GRADE_OLD = `r.drawS > 0.9 && r.nockToHand <= 0.09
         && r.elbowAboveShoulderAimFrame !== null && r.elbowAboveShoulderAimFrame <= 0 && (r.aimPitch !== 0 || r.elbowAboveShoulder <= 0) && r.headClear >= 0.98 && r.launchOffDeg !== null && r.launchOffDeg <= 0.3 && r.knuckleToNock !== null && r.knuckleToNock <= 0.06 && r.fingertipToNock !== null && r.fingertipToNock <= 0.06));`;
 const A16_GRADE_NEW = `r.drawS > 0.9 && r.knuckleJaw !== null && r.knuckleJaw <= ${B.knuckleJaw} && r.hookNock !== null && r.hookNock <= ${B.hookNock}
-        && r.elbowUpAim !== null && r.elbowUpAim >= ${B.elbowLo} && r.elbowUpAim <= ${B.elbowHi} && r.elbowBack !== null && r.elbowBack >= ${B.elbowBack} && r.wrapIn === 0 && r.behind === 0 && r.headClear >= 0.98 && r.launchOffDeg !== null && r.launchOffDeg <= 0.3));`;
+        && r.elbowUpAim !== null && r.elbowUpAim >= ${B.elbowLo} && r.elbowUpAim <= ${B.elbowHi} && r.elbowBack !== null && r.elbowBack >= ${B.elbowBack} && r.wrapIn === 0 && r.behind === 0 && r.headClear >= 0.98 && r.launchOffDeg !== null && r.launchOffDeg <= 0.3 && r.launchSteady !== null && r.launchSteady.phase === 'hold' && r.launchSteady.swayDeg === 0));`;
 const A16_FAILING_OLD = `failing: bad.map(r => r.tag + ':' + [r.drawS > 0.9 ? null : 'drawS', r.nockToHand <= 0.09 ? null : 'nockToHand', r.elbowAboveShoulderAimFrame !== null && r.elbowAboveShoulderAimFrame <= 0 ? null : 'elbowAboveShoulderAimFrame', r.aimPitch !== 0 || r.elbowAboveShoulder <= 0 ? null : 'elbowAboveShoulderLevel', r.headClear >= 0.98 ? null : 'headClear', r.launchOffDeg !== null && r.launchOffDeg <= 0.3 ? null : 'launch', r.knuckleToNock !== null && r.knuckleToNock <= 0.06 ? null : 'knuckle', r.fingertipToNock !== null && r.fingertipToNock <= 0.06 ? null : 'fingertip'].filter(Boolean).join('+')) }`;
-const A16_FAILING_NEW = `restated: 'M1a freeze (docs/GATES.md 3 D): the anchor is the M1.3b rig hook at the jaw corner. Graded: knuckleJaw (index_01_r to the jaw-corner anchor) <= ${B.knuckleJaw} m, hookNock (string fingers to the nocking point) <= ${B.hookNock} m, elbowUpAim in [${B.elbowLo}, ${B.elbowHi}] m, elbowBack >= ${B.elbowBack} m, wrapIn 0, behind 0, headClear, launch. Reported only: nockToHand (wrist), knuckleToNock, fingertipToNock and the old elbow reads', failing: bad.map(r => r.tag + ':' + [r.crouching !== false ? null : 'notCrouched', r.drawS > 0.9 ? null : 'drawS', r.knuckleJaw !== null && r.knuckleJaw <= ${B.knuckleJaw} ? null : 'knuckleJaw', r.hookNock !== null && r.hookNock <= ${B.hookNock} ? null : 'hookNock', r.elbowUpAim !== null && r.elbowUpAim >= ${B.elbowLo} && r.elbowUpAim <= ${B.elbowHi} ? null : 'elbowLevel', r.elbowBack !== null && r.elbowBack >= ${B.elbowBack} ? null : 'elbowBack', r.wrapIn === 0 ? null : 'handInWrap', r.behind === 0 ? null : 'behindHead', r.headClear >= 0.98 ? null : 'headClear', r.launchOffDeg !== null && r.launchOffDeg <= 0.3 ? null : 'launch'].filter(Boolean).join('+')) }`;
+const A16_FAILING_NEW = `restated: 'M1a freeze (docs/GATES.md 3 D): the anchor is the M1.3b rig hook at the jaw corner. Graded: knuckleJaw (index_01_r to the jaw-corner anchor) <= ${B.knuckleJaw} m, hookNock (string fingers to the nocking point) <= ${B.hookNock} m, elbowUpAim in [${B.elbowLo}, ${B.elbowHi}] m, elbowBack >= ${B.elbowBack} m, wrapIn 0, behind 0, headClear, launch (loosed on Steady: the shot leaves in the hold of Steady, sway 0; M1b wave 2 ruling). Reported only: nockToHand (wrist), knuckleToNock, fingertipToNock and the old elbow reads', failing: bad.map(r => r.tag + ':' + [r.crouching !== false ? null : 'notCrouched', r.drawS > 0.9 ? null : 'drawS', r.knuckleJaw !== null && r.knuckleJaw <= ${B.knuckleJaw} ? null : 'knuckleJaw', r.hookNock !== null && r.hookNock <= ${B.hookNock} ? null : 'hookNock', r.elbowUpAim !== null && r.elbowUpAim >= ${B.elbowLo} && r.elbowUpAim <= ${B.elbowHi} ? null : 'elbowLevel', r.elbowBack !== null && r.elbowBack >= ${B.elbowBack} ? null : 'elbowBack', r.wrapIn === 0 ? null : 'handInWrap', r.behind === 0 ? null : 'behindHead', r.headClear >= 0.98 ? null : 'headClear', r.launchOffDeg !== null && r.launchOffDeg <= 0.3 ? null : 'launch', r.launchSteady !== null && r.launchSteady.phase === 'hold' && r.launchSteady.swayDeg === 0 ? null : 'notOnSteady'].filter(Boolean).join('+')) }`;
+
+/* M1b wave 2 ruling (docs/GATES.md 3 D): the launch clause is measured on Steady (sway 0). The row tests the draw rig;
+ * the slice combat kit's breath sway turns a loosed shot (src/combat/kit.js swayAt, 0 in Steady's hold) and is graded
+ * by its own rows. After the pose is read (unchanged), Shift is pressed while she aims, which arms Steady (combat.js
+ * _updateConcentration: a Shift press made while already aiming); the shot is loosed once Steady is in its hold with
+ * the sway at 0, and the phase and sway at the instant the arrow fires are recorded (launchSteady). Shift is let go
+ * after the shot; the next cell's measure() clears the keys anyway. */
+const A16_LOOSE_OLD = `let fired = null; const h = (e) => { fired = e; }; C.events.on('arrow-fired', h);
+          C.input.mouse.buttons &= ~1;`;
+const A16_LOOSE_NEW = `let fired = null; __lst = null; const h = (e) => { fired = e; __lst = { phase: cmb.steady.phase, swayDeg: cmb.sway.deg, gauge: +cmb.steady.gauge.toFixed(3) }; }; C.events.on('arrow-fired', h);
+          C.input.keys.add('ShiftLeft');
+          const __s0 = performance.now();
+          while (!(cmb.steady.active && cmb.steady.phase === 'hold' && cmb.sway.deg === 0) && performance.now() - __s0 < 1000) await new Promise((r) => requestAnimationFrame(r));
+          C.input.mouse.buttons &= ~1;`;
+const A16_LOOSE_END_OLD = `C.events.off('arrow-fired', h);
+          if (!fired?.dir`;
+const A16_LOOSE_END_NEW = `C.events.off('arrow-fired', h);
+          C.input.keys.delete('ShiftLeft');
+          if (!fired?.dir`;
+const A16_ROW_END_OLD = `* 180 / Math.PI).toFixed(3);
+        })() });`;
+const A16_ROW_END_NEW = `* 180 / Math.PI).toFixed(3);
+        })(), launchSteady: __lst });`;
 
 const A32_LOOP_OLD = `          const hr = V(); an.getBoneWorld(HBN('handR'), hr);
           const d = nk.distanceTo(hr);
@@ -1072,13 +1095,16 @@ const A90_DET_NEW = "const detail = { restated: 'M1a regfix 3 (docs/GATES.md 3 D
 export const RESTATED = [
   {
     id: 'A16-draw-anchor',
-    why: 'the M1.3b rig holds the string in a hook at the jaw corner (BIBLE 5.2: the draw hand at the cheek); the row measured the wrist and the knuckle against the nock, which the hook puts 0.09-0.12 m apart by design',
+    why: 'the M1.3b rig holds the string in a hook at the jaw corner (BIBLE 5.2: the draw hand at the cheek); the row measured the wrist and the knuckle against the nock, which the hook puts 0.09-0.12 m apart by design; M1b wave 2 ruling: the launch clause is measured on Steady (sway 0), since the row tests the draw rig and the breath sway is graded by its own rows',
     patches: [
-      ['const V = () => new p.position.constructor();\n      const rows = [];', `const V = () => new p.position.constructor();${HOOK}\n      const rows = [];`],
+      ['const V = () => new p.position.constructor();\n      const rows = [];', `const V = () => new p.position.constructor();${HOOK}\n      let __lst = null;\n      const rows = [];`],
       ['        fingertipToNock: (() => { const k = V(), t = V(); return an.debugDrawHand && an.debugDrawHand(k, t) ? +t.distanceTo(nk).toFixed(4) : null; })(),',
         '        fingertipToNock: (() => { const k = V(), t = V(); return an.debugDrawHand && an.debugDrawHand(k, t) ? +t.distanceTo(nk).toFixed(4) : null; })(),\n        ...__hook(nk),'],
       [A16_GRADE_OLD, A16_GRADE_NEW],
       [A16_FAILING_OLD, A16_FAILING_NEW],
+      [A16_LOOSE_OLD, A16_LOOSE_NEW],
+      [A16_LOOSE_END_OLD, A16_LOOSE_END_NEW],
+      [A16_ROW_END_OLD, A16_ROW_END_NEW],
     ],
   },
   {
