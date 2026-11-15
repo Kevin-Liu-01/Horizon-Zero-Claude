@@ -2,6 +2,7 @@ import './making.css';
 import TEXT from '../game/text/ui/making.json';
 import { AMMO } from '../combat/weapons.js';
 import { itemIcon } from './inventory.js';
+import { turntable } from './turntable.js';
 
 /**
  * THE MAKING LEDGER (M1.6d; BIBLE §9 "the Making ledger", §16, §18 "Making: MAKE ×1 · MAKE ×6").
@@ -18,8 +19,11 @@ import { itemIcon } from './inventory.js';
  * (`planned`) and NOT YET IN THE KIT, with both verbs off. Every word is from
  * `src/game/text/ui/making.json`.
  *
- * The turntable is drawn, not rendered: the item's line drawing turns about its vertical axis over a
- * ruled floor (a CSS 3D turn of an SVG; no second WebGL context, nothing to compile).
+ * The turntable is rendered (src/ui/turntable.js, fix round 1): the game's own arrow, or the pot or net, turns
+ * in one small WebGL canvas over a ruled ring, with no plate and no glow; the same renderer draws each material's
+ * picture for the recipe tiles (big have / need under each). Where WebGL is missing the line drawing turns instead.
+ * The ledger sits in the hub as glass: on this tab the book's paper steps aside (making.css) and the world shows
+ * through, blurred.
  *
  * Mounted by `Menus.setTab('crafting')` into the hub body (`mount(host)` / `unmount()`); repaints on
  * `ammo-crafted`, `item-gained` and its own buttons. No per-frame work.
@@ -128,6 +132,7 @@ export class MakingLedger {
   }
 
   unmount() {
+    turntable()?.hide?.();
     this.root?.remove();
     this.root = null;
   }
@@ -180,7 +185,8 @@ export class MakingLedger {
     h('div', 'mk-dname', dh, row.name);
     const turn = h('div', 'mk-turn', det);
     h('div', 'mk-floor', turn);
-    h('div', 'mk-spin', turn, drawing(row));
+    const tt = turntable();
+    const stage = h('div', tt ? 'mk-stage' : 'mk-spin', turn, tt ? null : drawing(row));
     h('p', 'mk-does', det, row.does);
 
     const stat = h('div', 'mk-stats', det);
@@ -192,10 +198,12 @@ export class MakingLedger {
     const rec = h('div', 'mk-recipe', det);
     for (const r of s.recipe) {
       const m = h('div', `mk-mat${r.ok ? '' : ' short'}`, rec);
-      h('span', 'mk-ico', m, itemIcon(r.id));
+      m.dataset.mat = r.id;
+      const pic = tt?.icon?.(r.id);
+      if (pic) { const img = h('img', 'mk-pic', m); img.src = pic; img.alt = ''; } else h('span', 'mk-ico', m, itemIcon(r.id));
       h('span', 'mk-mname', m, TEXT.materials[r.id] ?? r.id);
       h('span', 'mk-tallies', m, tallySvg(r.need));
-      h('span', 'mk-have', m, `<b>${r.have}</b> / ${r.need}`);
+      h('span', 'mk-have', m, `<b>${r.have}</b><i>/</i>${r.need}`);
     }
 
     const acts = h('div', 'mk-acts', det);
@@ -207,6 +215,8 @@ export class MakingLedger {
       b6.addEventListener('click', () => this.make(row.id, 6));
     } else { b1.disabled = true; b6.disabled = true; }
     h('div', 'mk-why', det, this.lastMade ?? s.why ?? '');
+    // the item turns once the page is laid out (the canvas sizes itself to its box)
+    if (tt) tt.show(stage, row);
   }
 
   audit() {
@@ -215,6 +225,9 @@ export class MakingLedger {
       return { id: row.id, name: row.name, inKit: s.inKit, carried: s.carried, cap: s.cap, batch: s.batch, can: s.can,
         recipe: s.recipe.map((r) => `${r.id} ${r.have}/${r.need}`) };
     });
-    return { mounted: !!this.root, sel: this.sel, rows, buttons: this.root ? [...this.root.querySelectorAll('.mk-btn')].map((b) => b.textContent) : [] };
+    const tt = this.root ? turntable() : null;
+    return { mounted: !!this.root, sel: this.sel, rows, buttons: this.root ? [...this.root.querySelectorAll('.mk-btn')].map((b) => b.textContent) : [],
+      turntable: tt ? { rendered: !!tt.canvas.isConnected, frames: tt.stats.frames, icons: tt.stats.icons, size: [tt.w, tt.h] } : null,
+      pictures: this.root ? this.root.querySelectorAll('.mk-pic').length : 0 };
   }
 }

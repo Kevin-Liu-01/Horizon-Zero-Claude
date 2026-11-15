@@ -3,6 +3,7 @@ import TEXT from '../game/text/ui/title.json';
 import BOOKS from '../game/text/books/field-books.json';
 import QUEST from '../game/text/quests/rakers-morning.json';
 import { REST } from '../world/island/sites.js';
+import { BUILDINGS, placeOf } from '../world/settlements/saltrow-layout.js';
 
 /**
  * THE TITLE, NEW GAME AND THE LOADING SHEET (M1.6h; BIBLE §18 "Title · New Game · Loading").
@@ -21,7 +22,14 @@ import { REST } from '../world/island/sites.js';
  * The press beat and the dolly keep the contract `A70c-title-flow` grades: the camera stands `startExtra`
  * metres further out (and `startRise` higher) until a key is pressed, then closes on her over DOLLY_S on a
  * smoothstep keyed to the press; the stations arrive 1.1 s after it. `info` carries the authored ease and
- * radius (camera to Brea, horizontal) for the audit.
+ * radius (camera to Brea, horizontal) for the audit. Saltrow stands behind the cistern (settlements, after
+ * this shot was first solved): the dolly's start is CHOSEN clear of it, among a few bearings and rises around
+ * the lens's own line, by a fan of rays across the start lens against the town's footprints (`_clearStart`):
+ * at 273e302 the start stood 7 m from a house wall, which filled the left third of the press frame.
+ *
+ * Light: the low sun is behind her in this shot, so she read flat and dark from behind. While the title
+ * stands it borrows the environment's pooled impact light (`borrowLight`: the light count never changes, so
+ * nothing recompiles) and sets it as a warm low-sun rim ahead of her face, over her leading shoulder.
  *
  * The title holds the world clock at TITLE_HOUR and hands back the hour and the clock it found when it is
  * left (`leave()`). The hour is set while the clock still runs, so the sky's light probe catches up on its
@@ -44,9 +52,22 @@ export const FRAME = Object.freeze({
   heroX: 0.70,       // her body on screen
   ringX: 0.86,       // the Ring on screen
   turnDeg: 52,       // she faces this far left of the lens's line (three-quarters from behind)
-  startExtra: 9,     // m further out before the press
-  startRise: 2.4,    // m higher before the press
+  startExtra: 9,     // m further out before the press (horizontal; A70c wants > 6 m of radius drop)
+  startRise: 2.4,    // m higher before the press (the least rise tried; `_clearStart` may climb)
+  rim: 7,            // the warm rim light's intensity (cd), 0 = off
 });
+/** The rim's colour: low sun through calima, warmer than the lamps' calm bone-gold. */
+const RIM_COLOR = 0xFFC27A;
+/** Dolly starts tried, in order: bearings off the lens's line (deg, + turns toward the lens's right) and rises (m). */
+const START_TURNS = [0, 14, -14, 28, -28, 42, -42];
+const START_RISES = [0, 1.6, 3.2, 4.8];
+/**
+ * A start is clear when no wall the lens sees stands nearer than this (m) inside its view. Around the cistern every
+ * bearing 9 m out stands inside or against a house (at 6baf73f's layout the clearest low start saw a wall at 4 m),
+ * so the start that passes is over the roofs: an aerial start that looks down on her and levels as it closes.
+ */
+const START_CLEAR = 14;
+
 
 const D2R = Math.PI / 180;
 const fill = (s, o) => String(s).replace(/\{(\w+)\}/g, (_, k) => (o[k] ?? ''));
@@ -54,6 +75,23 @@ const smooth = (k) => k * k * (3 - 2 * k);
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 export const TITLE_TEXT = TEXT;
+
+/** A 2D ray (origin x, z; unit direction dx, dz) against a box { x, z, c, s, hw, hd }: the entry distance, or null. */
+function rayBox(B, x, z, dx, dz) {
+  // into the box's frame: local x along (c, -s), local z along (s, c)
+  const ox = (x - B.x) * B.c - (z - B.z) * B.s, oz = (x - B.x) * B.s + (z - B.z) * B.c;
+  const vx = dx * B.c - dz * B.s, vz = dx * B.s + dz * B.c;
+  let t0 = 0, t1 = 40;
+  for (const [o, v, h] of [[ox, vx, B.hw], [oz, vz, B.hd]]) {
+    if (Math.abs(v) < 1e-9) { if (o < -h || o > h) return null; continue; }
+    let a = (-h - o) / v, b = (h - o) / v;
+    if (a > b) { const t = a; a = b; b = t; }
+    if (a > t0) t0 = a;
+    if (b < t1) t1 = b;
+    if (t0 > t1) return null;
+  }
+  return t0;
+}
 
 /* =========================================================================================== */
 /* the shot                                                                                    */
@@ -71,6 +109,7 @@ export class TitleStage {
     this._fovHeld = null;
     this._rest = false;
     this._camHeld = null;
+    this._rim = null;
   }
 
   /** Where the Ring stands (the place contract's `ring`, else its site). */
@@ -109,9 +148,94 @@ export class TitleStage {
     const heading = Math.atan2(vx, vz);
     const ringD = Math.hypot(ring.x - hx, ring.z - hz);
     this.solved = { yaw, cx, cz, cy: hy + F.height, hx, hz, hy, heading, ring: { x: ring.x, z: ring.z, dist: +ringD.toFixed(1) },
-      // the start of the dolly: further out along her line to the lens, and higher
-      ux: (cx - hx) / F.dist, uz: (cz - hz) / F.dist };
+      // the start of the dolly: further out along her line to the lens (turned clear of the town), and higher
+      ux: (cx - hx) / F.dist, uz: (cz - hz) / F.dist, rise: F.startRise, start: null };
+    this._clearStart(this.solved, gy, tv * aspect);
     return this.solved;
+  }
+
+  /**
+   * Choose the dolly's start: the first bearing and rise (START_TURNS x START_RISES) whose lens sees no wall nearer
+   * than START_CLEAR inside its view, and whose path in to the rest lens crosses no building; else the clearest
+   * one. Pure arithmetic over Saltrow's footprints (saltrow-layout.js), once per solve.
+   */
+  _clearStart(S, gy, th) {
+    const F = this.frame;
+    const boxes = this._townBoxes(gy, S.hx, S.hz);
+    let best = null;
+    for (const rise of START_RISES) {
+      for (const deg of START_TURNS) {
+        const a = deg * D2R, c = Math.cos(a), s = Math.sin(a);
+        // turn u about +y toward the lens's right (cos yaw, -sin yaw) by `deg`: u' = u cos a + p sin a, p the
+        // horizontal perpendicular of u on the right's side
+        let px = S.uz, pz = -S.ux;
+        if (px * Math.cos(S.yaw) - pz * Math.sin(S.yaw) < 0) { px = -px; pz = -pz; }
+        const ux = S.ux * c + px * s, uz = S.uz * c + pz * s;
+        const sx = S.cx + ux * F.startExtra, sz = S.cz + uz * F.startExtra;
+        const sy = Math.max(S.cy + F.startRise + rise, gy(sx, sz) + 0.9);
+        const see = this._fan(boxes, sx, sy, sz, S.yaw, th);
+        const path = this._pathClear(boxes, sx, sy, sz, S.cx, S.cy, S.cz);
+        const score = path ? see : Math.min(see, 1);
+        if (!best || score > best.score + 1e-6) best = { ux, uz, rise: F.startRise + rise, deg, score: +score.toFixed(2), path };
+        if (score >= START_CLEAR) { S.ux = ux; S.uz = uz; S.rise = F.startRise + rise; S.start = { deg, rise: +S.rise.toFixed(2), see: +see.toFixed(2), path, boxes: boxes.length }; this._startPitch(S, gy); return; }
+      }
+    }
+    S.ux = best.ux; S.uz = best.uz; S.rise = best.rise;
+    S.start = { deg: best.deg, rise: +best.rise.toFixed(2), see: best.score, path: best.path, boxes: boxes.length, short: true };
+    this._startPitch(S, gy);
+  }
+
+  /** The start lens's pitch (deg): her chest 7 deg under the middle of the frame, never above the rest pitch less 3. */
+  _startPitch(S, gy) {
+    const F = this.frame;
+    const sx = S.cx + S.ux * F.startExtra, sz = S.cz + S.uz * F.startExtra;
+    const sy = Math.max(S.cy + S.rise, gy(sx, sz) + 0.9);
+    const down = Math.atan2(sy - (S.hy + 1.15), Math.hypot(sx - S.hx, sz - S.hz)) / D2R;
+    S.pitch0 = Math.min(F.pitchDeg - 3, -down + 7);
+    S.start.pitch = +S.pitch0.toFixed(1);
+  }
+
+  /** Saltrow's footprints within 60 m of her, as 2D boxes with their roof height (m, world). */
+  _townBoxes(gy, hx, hz) {
+    const out = [];
+    for (const b of BUILDINGS) {
+      const p = placeOf(b);
+      if (Math.hypot(p.x - hx, p.z - hz) > 60) continue;
+      const top = gy(p.x, p.z) + (b.h ?? 4) + (b.step?.h ?? 0);
+      // local +z (the front) is (sin yaw, cos yaw) in the world; local +x is (cos yaw, -sin yaw)
+      out.push({ x: p.x, z: p.z, c: Math.cos(p.yaw), s: Math.sin(p.yaw), hw: p.w / 2 + 0.4, hd: p.d / 2 + 0.4, top });
+    }
+    return out;
+  }
+
+  /** The nearest wall a fan of 15 rays across the lens's view meets (m; 40 = none). Roofs under the lens are seen over. */
+  _fan(boxes, x, y, z, yaw, th) {
+    const half = Math.atan(th) + 4 * D2R;
+    let near = 40;
+    for (let i = 0; i < 15; i++) {
+      const phi = -half + (2 * half * i) / 14;          // + is to the lens's right
+      const a = yaw - phi;
+      const dx = -Math.sin(a), dz = -Math.cos(a);
+      for (const B of boxes) {
+        if (B.top < y - 0.4) continue;
+        const t = rayBox(B, x, z, dx, dz);
+        if (t != null && t < near) near = t;
+      }
+    }
+    return near;
+  }
+
+  /** Whether the straight path from the start lens to the rest lens stays out of every building under its height. */
+  _pathClear(boxes, x0, y0, z0, x1, y1, z1) {
+    for (let k = 0; k <= 12; k++) {
+      const f = k / 12, x = x0 + (x1 - x0) * f, y = y0 + (y1 - y0) * f, z = z0 + (z1 - z0) * f;
+      for (const B of boxes) {
+        if (B.top < y - 0.3) continue;
+        const lx = (x - B.x) * B.c - (z - B.z) * B.s, lz = (x - B.x) * B.s + (z - B.z) * B.c;
+        if (Math.abs(lx) < B.hw + 0.4 && Math.abs(lz) < B.hd + 0.4) return false;
+      }
+    }
+    return true;
   }
 
   /** Enter the title: her on her station, the hour and the clock borrowed, the lens solved. */
@@ -166,10 +290,10 @@ export class TitleStage {
     // never under the ground on the way in (the rise behind her cistern climbs faster than the lens)
     const T = ctx.terrain;
     const floor = T?.getHeight ? T.getHeight(cx, cz) + 0.9 : -Infinity;
-    const cy = Math.max(S.cy + (1 - ease) * F.startRise, floor);
+    const cy = Math.max(S.cy + (1 - ease) * (S.rise ?? F.startRise), floor);
     if (cam) {
       cam.position.set(cx, cy, cz);
-      const pitch = (F.pitchDeg - (1 - ease) * 3) * D2R;
+      const pitch = (F.pitchDeg + (1 - ease) * ((S.pitch0 ?? F.pitchDeg - 3) - F.pitchDeg)) * D2R;
       cam.rotation.set(pitch, S.yaw, 0, 'YXZ');
       if (Math.abs(cam.fov - F.fov) > 1e-3) { cam.fov = F.fov; cam.updateProjectionMatrix(); }
       cam.updateMatrixWorld();
@@ -181,15 +305,36 @@ export class TitleStage {
       // off 'playing' the Player steps only her animator (player.js update), so her body is put on her mark here
       if (p.model) { p.model.position.copy(p.position); p.model.rotation.y = S.heading; }
     }
+    this._placeRim(S);
     const I = this.info;
     I.since = since ?? 0; I.ease = ease;
     I.radius = Math.hypot(cx - S.hx, cz - S.hz);
-    I.camY = cy; I.pitchDeg = F.pitchDeg - (1 - ease) * 3;
+    I.camY = cy; I.pitchDeg = F.pitchDeg + (1 - ease) * ((S.pitch0 ?? F.pitchDeg - 3) - F.pitchDeg);
     return I;
+  }
+
+  /**
+   * The warm rim: the pooled impact light, held while the title stands (re-borrowed as its lease runs out; the
+   * environment skips it while it is lent), ahead of her face and over her leading shoulder, beyond her from the lens.
+   */
+  _placeRim(S) {
+    const env = this.ctx.environment, F = this.frame;
+    if (!env?.borrowLight || !(F.rim > 0)) return;
+    const l = env.borrowLight(500) || this._rim;
+    if (!l) return;
+    this._rim = l;
+    const fx = Math.sin(S.heading), fz = Math.cos(S.heading);        // her forward (heading = atan2(vx, vz))
+    const ax = -Math.sin(S.yaw), az = -Math.cos(S.yaw);              // the lens's forward: beyond her
+    l.position.set(S.hx + fx * 1.15 + ax * 0.9, S.hy + 2.05, S.hz + fz * 1.15 + az * 0.9);
+    l.color.setHex(RIM_COLOR);
+    l.distance = 6;
+    l.decay = 2;
+    if (l.intensity !== F.rim) l.intensity = F.rim;
   }
 
   /** Hand back the clock, the hour and the lens's fov. Idempotent. */
   leave() {
+    if (this._rim) { this._rim.intensity = 0; this._rim = null; }
     const env = this.ctx.environment, cam = this.ctx.camera;
     if (this._clockHeld != null && env) {
       const atTitle = Math.abs(env.time - TITLE_HOUR) < 1e-3;
@@ -210,7 +355,8 @@ export class TitleStage {
   audit() {
     const S = this.solved;
     return S ? { yaw: +S.yaw.toFixed(4), cam: [+S.cx.toFixed(2), +S.cy.toFixed(2), +S.cz.toFixed(2)], hero: [+S.hx.toFixed(2), +S.hy.toFixed(2), +S.hz.toFixed(2)],
-      heading: +S.heading.toFixed(4), ring: S.ring, frame: { ...this.frame }, station: this.station } : null;
+      heading: +S.heading.toFixed(4), ring: S.ring, frame: { ...this.frame }, station: this.station,
+      start: S.start, rim: this._rim ? { on: true, i: this._rim.intensity, at: this._rim.position.toArray().map((v) => +v.toFixed(2)) } : { on: false } } : null;
   }
 }
 

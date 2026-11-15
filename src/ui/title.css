@@ -17,6 +17,8 @@ body.cal-t2 #title .title-inner {
 body.cal-t2 #loading.hidden { display: none !important; }
 /* the calima wash and its disc belonged to the old title */
 body.cal-t2 #cal-calima { display: none !important; }
+/* no field turn, scene line or Brazier dialog speaks on the title (menu.js `_muteFieldLines` drops the queue) */
+body.cal-t2 #cal-sys .sys-subt, body.cal-t2 #cal-sys .sys-lt { display: none !important; }
 
 /* the left scrim: a soft violet-dark fall-off under the column, a light veil under the wordmark */
 .t2-scrim {
@@ -64,29 +66,21 @@ body.cal-t2 .mn-title-item:hover, body.cal-t2 .mn-title-item:focus-visible { bac
 body.cal-t2 .mn-title-save { margin-top: 16px; text-align: left; }
 
 /* ---------------------------------------------------------------- the glass cards (New Game, Extras) */
-.mn-modal.t2-glass { background: rgba(14, 11, 20, 0.36); }
+.mn-modal.t2-glass { background: rgba(14, 11, 20, 0.22); }
+/* glass, not a slab: the 18:40 world shows through it, blurred (a menu, not play: U-01's no-blur rule is for play);
+   a plain 1 px frame and a top highlight, no corner ticks (fix round 1: ticks read close to a notched corner) */
 .mn-modal.t2-glass .mn-modal-shell {
   width: 440px; max-height: none;
   padding: 0;
   color: var(--cal-glass-text);
-  background-color: rgba(var(--cal-glass-rgb), var(--cal-glass-a-menu));
-  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
-  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--cal-glass-line);
+  background-color: rgba(var(--cal-glass-rgb), 0.46);
+  background-image: var(--cal-glass-grain), linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 40%, rgba(0, 0, 0, 0.08));
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+          backdrop-filter: blur(14px) saturate(1.15);
+  box-shadow: inset 0 1px 0 rgba(241, 238, 230, 0.16), inset 0 0 0 1px var(--cal-glass-line), 0 18px 48px rgba(14, 11, 20, 0.35);
 }
-.mn-modal.t2-glass .mn-modal-shell::before { display: none; }
-.mn-modal.t2-glass .mn-modal-shell::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  --t: var(--cal-glass-tick);
-  background:
-    linear-gradient(var(--t), var(--t)) left top / 6px 1px no-repeat,
-    linear-gradient(var(--t), var(--t)) left top / 1px 6px no-repeat,
-    linear-gradient(var(--t), var(--t)) right top / 6px 1px no-repeat,
-    linear-gradient(var(--t), var(--t)) right top / 1px 6px no-repeat,
-    linear-gradient(var(--t), var(--t)) left bottom / 6px 1px no-repeat,
-    linear-gradient(var(--t), var(--t)) left bottom / 1px 6px no-repeat,
-    linear-gradient(var(--t), var(--t)) right bottom / 6px 1px no-repeat,
-    linear-gradient(var(--t), var(--t)) right bottom / 1px 6px no-repeat;
-}
+.mn-modal.t2-glass .mn-modal-shell::before,
+.mn-modal.t2-glass .mn-modal-shell::after { display: none; }
 .mn-modal.t2-glass .mn-modal-head { padding: 18px 22px 12px; border-bottom: 1px solid var(--cal-glass-line); }
 .mn-modal.t2-glass .mn-modal-title { font-size: 20px; letter-spacing: 0.18em; }
 .mn-modal.t2-glass .mn-x { color: var(--cal-glass-text-2); border-color: rgba(241, 238, 230, 0.3); }

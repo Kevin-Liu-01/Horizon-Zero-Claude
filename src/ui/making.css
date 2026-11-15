@@ -1,11 +1,17 @@
 /* ===========================================================================
-   THE MAKING LEDGER (M1.6d; BIBLE §9, §18). Dark glass (#1E1A28 at 0.90, `.cal-glass.menu`), right angles,
-   6 px registration ticks from `.cal-glass::after`; Chakra Petch for labels, IBM Plex Mono for numerals and
-   the plain-words line; the selection is the lilac 1 px line over Orchil Deep. Two columns: the rows with
-   carried / cap on the left, the turntable, the tallies and the two verbs on the right.
+   THE MAKING LEDGER (M1.6d; BIBLE §9, §18). Glass over the world (fix round 1): the hub's paper steps aside on
+   this tab and the ledger is dark violet glass at 0.42 with the world blurred through it (a menu, not play),
+   right angles, a plain 1 px frame; Chakra Petch for labels, IBM Plex Mono for numerals and the plain-words
+   line; the selection is the lilac 1 px line over Orchil Deep. Two columns: the rows with carried / cap on the
+   left; the turntable (a rendered item, src/ui/turntable.js), the material tiles and the two verbs on the right.
    =========================================================================== */
 .mk {
   position: relative;
+  background-color: rgba(var(--cal-glass-rgb), 0.42) !important;
+  background-image: var(--cal-glass-grain), linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 30%, rgba(0, 0, 0, 0.06)) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+          backdrop-filter: blur(16px) saturate(1.1);
+  box-shadow: inset 0 1px 0 rgba(241, 238, 230, 0.14), inset 0 0 0 1px var(--cal-glass-line);
   display: flex; flex-direction: column;
   height: 100%; min-height: 560px;
   box-sizing: border-box;
@@ -65,7 +71,10 @@
 .mk-dhead .mk-ico { width: 26px; height: 26px; }
 .mk-dname { font-family: var(--cal-font-display); font-weight: 600; font-size: 21px; letter-spacing: 0.12em; }
 
-.mk-turn { position: relative; height: 190px; margin: 6px 0 2px; perspective: 520px; }
+.mk-turn { position: relative; height: 200px; margin: 6px 0 2px; perspective: 520px; }
+/* the rendered item: the canvas fills the stage over the ruled ring; nothing glows under it */
+.mk-stage { position: absolute; left: 0; right: 0; top: 0; bottom: 4px; }
+.mk-stage canvas.mk-tt { display: block; width: 100%; height: 100%; }
 .mk-floor {
   position: absolute; left: 50%; bottom: 12px; width: 190px; height: 34px; transform: translateX(-50%);
   border: 1px solid rgba(241, 238, 230, 0.22); border-radius: 50%;
@@ -88,15 +97,20 @@ body.cal-reduced-motion .mk-spin { animation: none; transform: rotateY(28deg); }
 .mk-stat { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(241, 238, 230, 0.08); font-size: 11px; font-weight: 600; letter-spacing: 0.2em; color: var(--cal-glass-text-2); }
 .mk-stat b { font-family: var(--cal-font-mono); font-weight: 500; font-size: 14px; letter-spacing: 0.02em; color: var(--cal-glass-text); }
 .mk-made-head { margin: 12px 0 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.24em; color: var(--cal-glass-text-2); }
-.mk-recipe { display: flex; flex-direction: column; }
+/* the materials as tiles: the material's picture, its name, the tally of what one making takes, and big have / need */
+.mk-recipe { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); border-top: 1px solid rgba(241, 238, 230, 0.10); }
 .mk-mat {
-  display: grid; grid-template-columns: 24px 1fr auto 70px; align-items: center; gap: 10px;
-  padding: 6px 0; border-bottom: 1px solid rgba(241, 238, 230, 0.08);
+  display: grid; grid-template-columns: 58px 1fr; grid-template-rows: auto auto auto; column-gap: 10px; align-items: center;
+  padding: 8px 10px 8px 4px; border-bottom: 1px solid rgba(241, 238, 230, 0.10);
 }
-.mk-mname { font-size: 13px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
+.mk-mat + .mk-mat { border-left: 1px solid rgba(241, 238, 230, 0.10); padding-left: 12px; }
+.mk-pic { grid-row: 1 / span 3; width: 58px; height: 58px; object-fit: contain; }
+.mk-mat > .mk-ico { grid-row: 1 / span 3; width: 34px; height: 34px; }
+.mk-mname { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--cal-glass-text-2); }
 .mk-tallies { display: inline-flex; color: var(--cal-glass-text); }
-.mk-have { font-family: var(--cal-font-mono); font-size: 13px; text-align: right; color: var(--cal-glass-text-2); }
-.mk-have b { font-weight: 500; font-size: 15px; color: var(--cal-glass-text); }
+.mk-have { font-family: var(--cal-font-mono); font-size: 15px; color: var(--cal-glass-text-2); white-space: nowrap; }
+.mk-have b { font-weight: 500; font-size: 26px; line-height: 1.1; color: var(--cal-glass-text); }
+.mk-have i { font-style: normal; margin: 0 5px; }
 /* short of a material: a word on the verbs' line and a struck tally, never colour alone */
 .mk-mat.short .mk-tallies { opacity: 0.55; }
 .mk-mat.short .mk-have b { text-decoration: line-through; text-decoration-thickness: 1px; }
@@ -116,5 +130,38 @@ body.cal-reduced-motion .mk-spin { animation: none; transform: rotateY(28deg); }
 .mk-btn.off, .mk-btn:disabled { opacity: 0.4; cursor: not-allowed; background: transparent; border-style: dashed; }
 .mk-why { min-height: 18px; margin-top: 8px; font-family: var(--cal-font-mono); font-size: 12px; letter-spacing: 0.04em; color: var(--cal-glass-text-2); }
 
+/* ---- the hub on this tab: the book's paper steps aside and the hub is glass over the world (fix round 1: at
+   273e302 the cream paper covered about 40 % of F28 around the dark ledger). The palette's ink tokens are turned
+   to staff white inside the hub, so the index, the head, the foot and their buttons read on glass. ---- */
+.mn-hub[data-tab="crafting"] {
+  --cal-ink: #F1EEE6;
+  --cal-ink-80: rgba(241, 238, 230, 0.80);
+  --cal-ink-62: rgba(241, 238, 230, 0.62);
+  --cal-ink-40: rgba(241, 238, 230, 0.40);
+  --cal-ink-22: rgba(241, 238, 230, 0.22);
+  --cal-ink-10: rgba(241, 238, 230, 0.08);
+  --cal-rule: rgba(241, 238, 230, 0.16);
+  --cal-rule-ruled: transparent;
+  --cal-plate: none;
+}
+.mn-hub[data-tab="crafting"] .mn-hub-scrim { background: rgba(14, 11, 20, 0.30); }
+.mn-hub[data-tab="crafting"] .mn-hub-shell {
+  background: rgba(var(--cal-glass-rgb), 0.30);
+  -webkit-backdrop-filter: blur(10px) saturate(1.05);
+          backdrop-filter: blur(10px) saturate(1.05);
+  box-shadow: inset 0 1px 0 rgba(241, 238, 230, 0.12), inset 0 0 0 1px var(--cal-glass-line), 0 22px 70px rgba(14, 11, 20, 0.45);
+}
+.mn-hub[data-tab="crafting"] .cal-page { background: none; color: var(--cal-glass-text); }
+.mn-hub[data-tab="crafting"] .mn-hub-margin { border-right: 1px solid var(--cal-glass-line); }
+.mn-hub[data-tab="crafting"] .mn-hub-margin::before { opacity: 0.55; }
+.mn-hub[data-tab="crafting"] .mn-hub-foot { border-top-color: var(--cal-glass-line); }
+.mn-hub[data-tab="crafting"] .mn-tab.on,
+.mn-hub[data-tab="crafting"] .mn-tab.on::after { background: var(--cal-select-fill); color: var(--cal-glass-text); }
+.mn-hub[data-tab="crafting"] .mn-tab.on { box-shadow: inset 0 1px 0 var(--cal-select-line), inset 0 -1px 0 var(--cal-select-line); border-bottom-color: transparent; }
+.mn-hub[data-tab="crafting"] .mn-btn.primary { background: var(--cal-select-fill); border-color: var(--cal-select-line); color: var(--cal-glass-text); }
+.mn-hub[data-tab="crafting"] .mn-btn:hover, .mn-hub[data-tab="crafting"] .mn-btn:focus-visible { background: rgba(241, 238, 230, 0.10); color: var(--cal-glass-text); border-color: var(--cal-select-line); }
+
 /* the hub's page body hosts the ledger edge to edge */
 .mn-hub[data-tab="crafting"] .mn-hub-body { padding: 14px 18px 14px 14px; }
+/* a plain 1 px frame: no corner ticks on the ledger (as on the Tolerance card) */
+.mk.cal-glass::after { display: none; }

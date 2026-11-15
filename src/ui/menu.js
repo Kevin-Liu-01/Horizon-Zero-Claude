@@ -329,6 +329,7 @@ export class Menus {
   _enterTitle() {
     const host = document.querySelector('#title .title-inner');
     if (!host) return;
+    this._muteFieldLines();
     if (this._titleBuilt) { this._refreshTitle(); return; }
     this._titleBuilt = true;
     // a QUIT TO TITLE rebuilds the block: drop the previous visit's
@@ -378,6 +379,20 @@ export class Menus {
       onPick: (label) => this._emit('ui-confirm', { label }),
     });
     this._titleSave.textContent = saveLine(info, older);
+  }
+
+  /**
+   * No field turn speaks on the title (M1.6h fix round 1: at 273e302 a QUIT TO TITLE 6 s into play put Brea's
+   * "The house kite's up already." under the wordmark). The quest only turns while playing; what it queued before
+   * the title is dropped here, and title.css hides the subtitle line while `body.cal-t2` stands. The presenter is
+   * the systems lane's (src/game/present.js): its queue is read through optional fields, nothing is added to it.
+   */
+  _muteFieldLines() {
+    const P = this.ctx.systemsGame?.present;
+    if (!P || P.headless) return;
+    if (Array.isArray(P._subQ)) P._subQ.length = 0;
+    if (typeof P._subT === 'number') P._subT = 0;
+    P.subt?.classList?.remove('on');
   }
 
   /** Any key (or click) on the title starts the dolly and reveals the stations. */
