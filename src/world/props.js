@@ -7,6 +7,7 @@ import { buildOrganShelf, buildCraterRock } from './sites/basalt.js';
 import { buildGatePlaces } from './sites/gatePlaces.js';
 import { site, CRATER, SITES_OK } from './sites/layout.js';
 import { BRAZIER_KEEPOUTS } from './settlements/brazier-spots.js';
+import { SALTROW_KEEPOUTS } from './settlements/saltrow-layout.js';
 
 /**
  * WORLD PROPS — Round 5 (lane world-props, plan §2; W1 the Pans' slice).
@@ -140,6 +141,7 @@ export class Props {
     // top is grassed to the cradle (round 1 left the whole flat top bare)
     if (ring) K.push({ id: 'sounding-ring', x: ring.x, z: ring.z, hard: 9, soft: 22, grass: 14, meadow: 5.5 });
     for (const b of BRAZIER_KEEPOUTS) K.push({ ...b });   // M1.6c (systems): trodden ground round Brea's Brazier
+    for (const b of SALTROW_KEEPOUTS) K.push({ ...b });   // M1.5a (settlements): Saltrow's houses and main street
     return K;
   }
 

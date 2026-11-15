@@ -301,13 +301,13 @@
       "attribution": null
     },
     {
-      "id": "instrument-peg",
+      "id": "instrument-gauge",
       "paths": [
-        "public/models/instruments/peg.glb"
+        "public/models/instruments/gauge.glb"
       ],
-      "title": "Peg (survey-peg swarm walker; instruments-a W1)",
+      "title": "Gauge (the tide keeper: a lighthouse on stilts with a lantern-glass mast; M1.4 hull kit, generated)",
       "author": "CALIMA project",
-      "source_url": "tools/build/instruments/gen-peg.mjs",
+      "source_url": "tools/build/instruments/gen-gauge.mjs",
       "licence": "project-original",
       "licence_text": null,
       "archive_sha256": null,
@@ -316,13 +316,13 @@
       "attribution": null
     },
     {
-      "id": "instrument-gauge",
+      "id": "instrument-peg",
       "paths": [
-        "public/models/instruments/gauge.glb"
+        "public/models/instruments/peg.glb"
       ],
-      "title": "Gauge (the tide keeper: a lighthouse on stilts with a lantern-glass mast; M1.4 hull kit, generated)",
+      "title": "Peg (survey-peg swarm walker; instruments-a W1)",
       "author": "CALIMA project",
-      "source_url": "tools/build/instruments/gen-gauge.mjs",
+      "source_url": "tools/build/instruments/gen-peg.mjs",
       "licence": "project-original",
       "licence_text": null,
       "archive_sha256": null,
@@ -487,6 +487,21 @@
       "title": "Pipeline loader fixture (datum probe)",
       "author": "CALIMA project",
       "source_url": "tools/build/pipeline/gen-probe.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
+      "id": "settlements-saltrow-kit",
+      "paths": [
+        "public/models/settlements/*.glb"
+      ],
+      "title": "Saltrow town kit (settlements M1.5a): Pan Houses buildings, guild house and bell, salt cones, boat ramp, breakwater lamp",
+      "author": "CALIMA project",
+      "source_url": "tools/build/settlements/recipes/",
       "licence": "project-original",
       "licence_text": null,
       "archive_sha256": null,

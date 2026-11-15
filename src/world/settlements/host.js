@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { installPeople } from '../npc/people/index.js';
 import { REST_SITE } from '../island/sites.js';
+import { Saltrow } from './saltrow.js';
 
 /**
  * SETTLEMENT HOST at `REST_SITE` (M0.3: the Round-4 rest site renamed and trimmed).
@@ -72,9 +73,16 @@ export class SettlementHost {
     // the nine island people (src/world/npc/people), staged near REST
     this.people = installPeople(ctx);
 
+    // M1.5a: Saltrow, the Pan Houses town (./saltrow.js; the kit tools/build/settlements/recipes/saltrow-kit.mjs)
+    this.town = new Saltrow(ctx, this.group);
+
     ctx.scene.add(this.group);
   }
 
+
+  /** Saltrow's buildings and lamps (M1.5a; empty until the kit has loaded): what the frames and the map read. */
+  get buildings() { return this.town?.buildings ?? []; }
+  get lamps() { return this.town?.lamps ?? []; }
 
   /**
    * The Brazier rest/save interactable (`world-12`, `progression-009`).
@@ -672,6 +680,7 @@ export class SettlementHost {
 
 
     this.people?.update(dt, t);
+    this.town?.update(dt, t);
 
     this._ensureBrazier();
     this._hookProgressionRest();
