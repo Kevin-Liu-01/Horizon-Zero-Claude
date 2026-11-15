@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "board": "Saltrow",
+  "about": "Guild Notices: untimed bounties on the board by the guild-house step. Card head GUILD NOTICE, one verb TAKE, the word 'untimed' printed on every card. Body at most three lines.",
+  "head": "GUILD NOTICE",
+  "verb": "TAKE",
+  "notices": [
+    {
+      "id": "lampglasses",
+      "title": "THREE LAMPGLASSES, ANY KIND",
+      "from": "the Lantern-Keeper, by the Matron's hand",
+      "body": ["The breakwater lens is crazed and the house", "will not buy what can be picked up.", "Whole glass only. Cracked is no use to a lamp."],
+      "ask": "Lampglass ×3",
+      "pays": "SALT ×25 · CORD ×2",
+      "term": "untimed",
+      "done": "Three glasses. Mise will see the beach road again."
+    },
+    {
+      "id": "pins",
+      "title": "PINS OUT OF THE DYKES",
+      "from": "the caulkers of the black beach",
+      "body": ["Every peg in a dyke wall is a leak by winter.", "Draw them once their heads go dark, never lit.", "Bring the pins. Bronze holds a strake."],
+      "ask": "Bronze pin ×12",
+      "pays": "SALT ×20 · CORD ×3",
+      "term": "untimed",
+      "done": "Twelve pins. The dykes are tight and two boats are on the ramp."
+    }
+  ]
+}

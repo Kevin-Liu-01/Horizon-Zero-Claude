@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "set": "W1",
+  "about": "Writing for the slice. Plain data: every player-facing string of 'Raker's Morning' and Saltrow lives in these files and nowhere else. No code here.",
+  "files": {
+    "quest": "quests/rakers-morning.json",
+    "barks": "barks/saltrow.json",
+    "tutorial": "cards/tutorial.json",
+    "sighting": "cards/sighting.json",
+    "books": "books/field-books.json",
+    "notices": "notices/saltrow.json"
+  },
+  "rules": {
+    "lineMax": 58,
+    "cardLinesMax": 3,
+    "breaMeasureShare": 0.5,
+    "about": "A dialogue card is one speaker turn in the lower third: at most three lines, each at most lineMax characters, already broken where they should break. At least half of Brea's turns carry a quantity or a bearing; those turns are marked \"measure\": true and the check (tools/gates/writing-w1.mjs) confirms each marked turn holds a number."
+  },
+  "speakers": {
+    "brea": { "name": "BREA", "sub": "Salt-pan Reckoner" },
+    "ansel": { "name": "ANSEL", "sub": "Guild Matron" },
+    "mise": { "name": "MISE", "sub": "Lantern-Keeper" }
+  },
+  "placeholders": {
+    "about": "Filled by the game at show time. Bearings are three digits, as on the compass strip.",
+    "{bearing}": "the live bearing from Brea to the thing named in the same line",
+    "{n}": "a live count",
+    "{of}": "the count's total",
+    "{key:NAME}": "the key cap bound to that action (alidade, bearing, steady, interact, crouch, slot, pry)"
+  },
+  "worldFacts": {
+    "about": "Fixed numbers in the lines that the world must agree with. Each is from the bible; M1.6a checks them against the built slice and either the world or the line is corrected.",
+    "items": [
+      { "line": "wind at 045", "source": "bible 3.1: NE trade from bearing 045" },
+      { "line": "tide 0.4 m at Sluice 3", "source": "bible 11.2, the 0:05 card" },
+      { "line": "ten baskets; twenty carried; thirty after", "source": "bible 11.2: salt x10 from the rake, salt x20 in the starting loadout" },
+      { "line": "pans to the black beach is bearing 132", "source": "bible 3.4 plan positions (-320,-293) to (-187,-411); re-read at blockout" },
+      { "line": "nine Pegs", "source": "W1's own number; the 0:10 swarm is to be nine, or the line changes" },
+      { "line": "a lit line within twenty paces of a Plumb", "source": "bible 7.4 Peg: within 20 m" },
+      { "line": "Flagged for eight seconds, sixty paces", "source": "bible 7.4 Plumb: 60 m, 8 s" },
+      { "line": "four seconds down", "source": "bible 7.4 Plumb: topples for 4 s" },
+      { "line": "the lamp carries eighty paces", "source": "bible 6.1 Lantern-Keeper: warning within 80 m" },
+      { "line": "the line is a quarter of a metre tall", "source": "bible 3.4 Datum Line: 0.25 m band" },
+      { "line": "third pan cut sixty years ago; 752 years late", "source": "W1's own number; Epoch 812 minus 60" },
+      { "line": "Ansel is sixty-four, Mise sixty-eight", "source": "W1's own numbers inside bible 6.1 age bands (60s, 65+)" },
+      { "line": "fourteen metres of basalt stair to T1", "source": "bible 3.4 Organ Shelf: columns stepping 2 to 14 m" },
+      { "line": "the kite line streams to 225; peg-heads every three paces", "source": "bible 3.1 (wind from 045 streams SW); the peg spacing is W1's own number" },
+      { "line": "thirty salt and the Guild Whites", "source": "bible 11.2 reward: rung 2, salt x30" }
+    ]
+  }
+}

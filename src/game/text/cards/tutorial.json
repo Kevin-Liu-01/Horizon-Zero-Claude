@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "about": "Tutorial cards: one at a time, 8 s, glass, top-left under the field note. HEAD in Chakra Petch caps, body in Plex Mono. A card with no head is a single line in caps. Every card is kept in the Field Manual (Extras). Three are fixed by the bible word for word: make, reeds, brazier.",
+  "cards": [
+    { "id": "salt",     "at": "0:00", "head": "SALT",     "body": "what you rake is what you spend. Nothing else is money." },
+    { "id": "alidade",  "at": "0:05", "head": "ALIDADE",  "body": "hold {key:alidade} to raise it. An Instrument in the hairs shows its card." },
+    { "id": "lamp",     "at": "0:05", "head": "LAMP",     "body": "wide and steady is calm. Half shut and sweeping is wary. A pinhole is hostile." },
+    { "id": "make",     "at": "0:08", "head": "MAKE",     "body": "hold a quick slot to make six", "canon": true },
+    { "id": "transect", "at": "0:10", "head": "TRANSECT", "body": "a lit line of peg-heads. Crossing it near a Plumb draws its lamp." },
+    { "id": "reeds",    "at": "0:10", "head": "",         "body": "REEDS HIDE YOU WHILE THE WIND MOVES THEM", "canon": true },
+    { "id": "steady",   "at": "0:10", "head": "STEADY",   "body": "hold {key:steady} at full draw. The hairs close for as long as the breath lasts." },
+    { "id": "flagged",  "at": "0:10", "head": "FLAGGED",  "body": "a Plumb's sightline has you. For 8 s every Instrument within 60 m knows where you are." },
+    { "id": "pillar",   "at": "0:18", "head": "TRIG PILLAR", "body": "sight two others from the top with {key:bearing}. A closed triangle opens its sheet of the map." },
+    { "id": "weak",     "at": "0:21", "head": "WEAK POINT", "body": "the Alidade rings it. Two hits on a Plumb's level vial and it cannot find level." },
+    { "id": "pry",      "at": "0:21", "head": "PRY",      "body": "while it is down, {key:pry} takes the tool off. What it carried is yours." },
+    { "id": "brazier",  "at": "end",  "head": "BRAZIER",  "body": "rest to choose the light. Resting saves.", "canon": true }
+  ]
+}

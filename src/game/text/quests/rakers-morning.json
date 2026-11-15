@@ -1,0 +1,185 @@
+{
+  "schema": 1,
+  "id": "rakers-morning",
+  "title": "RAKER'S MORNING",
+  "giver": "ansel",
+  "place": "Saltrow",
+  "logSummary": "A wrong tide in the third pan, a pegged line to the black beach, and a Plumb painting Saltrow's own dyke.",
+  "kicker": "FIELD NOTE",
+
+  "stages": [
+    { "id": "wake",   "at": "0:00", "type": "goto",   "note": "Rake the third pan with Matron Ansel", "log": "Walked down to the pans." },
+    { "id": "rake",   "at": "0:00", "type": "gather", "note": "Rake salt from the third pan  {n} / {of}", "log": "Raked ten baskets with Ansel." },
+    { "id": "read",   "at": "0:05", "type": "sight",  "note": "Raise the Alidade and read the Gauge", "log": "Read the Gauge: Sluice 3, open at 0.4 m." },
+    { "id": "tell",   "at": "0:05", "type": "talk",   "note": "Tell Ansel what the Gauge reads", "log": "Told Ansel. The pan is not on its map." },
+    { "id": "cane",   "at": "0:08", "type": "gather", "note": "Cut cane at the dyke  {n} / {of}", "log": "Cut cane at the dyke." },
+    { "id": "make",   "at": "0:08", "type": "gather", "note": "Make a bundle of Reed arrows", "log": "Made six Reed arrows." },
+    { "id": "mise",   "at": "0:10", "type": "talk",   "note": "Ask Mise on the breakwater what came ashore", "log": "Mise counted nine Pegs in at the fourth bell." },
+    { "id": "cross",  "at": "0:10", "type": "goto",   "note": "Cross the Peg line without being Flagged", "log": "Crossed the transect unseen.", "logFlagged": "Crossed the transect. Flagged once." },
+    { "id": "lamps",  "at": "0:10", "type": "kill",   "optional": true, "note": "Put out the Pegs' lamps  {n} / {of}", "log": "Put out {n} Peg lamps." },
+    { "id": "climb",  "at": "0:18", "type": "goto",   "note": "Climb trig pillar T1 on the Organ Shelf", "log": "Climbed T1." },
+    { "id": "sight",  "at": "0:18", "type": "survey", "note": "Sight T2 and T6 from the pillar  {n} / {of}", "log": "Sighted T2 and T6. The first triangle is on the sheet." },
+    { "id": "ditch",  "at": "0:21", "type": "goto",   "note": "Come down on the Plumb through the lee ditch", "log": "Reached the pan-edge station through the rush." },
+    { "id": "topple", "at": "0:21", "type": "kill",   "note": "Topple the Plumb: two hits on the level vial", "log": "Toppled the Plumb." },
+    { "id": "pry",    "at": "0:21", "type": "kill",   "note": "Pry the bob while it is down", "log": "Pried the bob off its cable." },
+    { "id": "return", "at": "0:24", "type": "talk",   "note": "Return to Matron Ansel", "log": "Ansel gave the Guild Whites and thirty salt." }
+  ],
+
+  "closing": {
+    "note": "The Brazier at T1 can be kindled",
+    "reward": ["GUILD WHITES · SCOUT", "SALT ×30"],
+    "logEnd": "The Plumb is down. The line is still on Saltrow's dyke."
+  },
+
+  "scenes": [
+    {
+      "id": "pan",
+      "at": "0:00",
+      "where": "the third pan, 07:00",
+      "cards": [
+        { "who": "ansel", "lines": ["You're late. The crust on the third pan", "set an hour ago. Take the other rake."] },
+        { "who": "brea", "measure": true, "lines": ["The sun's one hand above the breakwater.", "That's on time. You were early."] },
+        { "who": "ansel", "lines": ["I'm sixty-four. Early is all I have left.", "Ten baskets before the porters come."] },
+        { "who": "brea", "measure": true, "lines": ["Ten baskets. Wind's at 045 and steady.", "It'll dry as fast as we lift it."] }
+      ]
+    },
+    {
+      "id": "pan-done",
+      "at": "0:04",
+      "where": "the third pan, after the tenth basket",
+      "cards": [
+        { "who": "ansel", "lines": ["That's ten. Your share is in the tally.", "Salt in the hand is the only kind", "that counts."] },
+        { "who": "brea", "measure": true, "lines": ["Ten in the tally and twenty on my belt.", "Thirty buys cord and leaves change."] }
+      ]
+    },
+    {
+      "id": "flood",
+      "at": "0:05",
+      "where": "the third pan, as the water comes in",
+      "cards": [
+        { "who": "ansel", "lines": ["Brea. The water.", "That's Sluice 3. It isn't due", "until the noon bell."] },
+        { "who": "brea", "measure": true, "lines": ["It's open a full hand,", "and the tide is nowhere near.", "Keep your rake. I'll read it."] }
+      ]
+    },
+    {
+      "id": "tell",
+      "at": "0:05",
+      "where": "the third pan, after the Sighting",
+      "cards": [
+        { "who": "brea", "measure": true, "lines": ["The Gauge has the tide at 0.4 metres.", "It opened Sluice 3 on that."] },
+        { "who": "ansel", "lines": ["It has never opened at 0.4.", "Forty years I have stood in this pan."] },
+        { "who": "brea", "lines": ["It isn't broken. The sea is where", "it says. The ground has moved,", "and the pan was never in its book."] },
+        { "who": "ansel", "lines": ["A morning's salt, gone back to brine.", "Can you bargain with it?", "That is your office."] },
+        { "who": "brea", "lines": ["I can bargain with its clock.", "Not with its map."] }
+      ],
+      "stations": [
+        {
+          "label": "Why the third pan?",
+          "cards": [
+            { "who": "ansel", "lines": ["It's the newest. My mother's house", "cut it. Sixty years of salt off it."] },
+            { "who": "brea", "measure": true, "lines": ["Sixty years is yesterday to them.", "By the Datum that pan is", "752 years late."] }
+          ]
+        },
+        {
+          "label": "Has it done this before?",
+          "cards": [
+            { "who": "ansel", "lines": ["Late by a bell, once or twice.", "Never open on a low tide."] },
+            { "who": "brea", "measure": true, "lines": ["One bell late is a clock.", "This is a level. Different fault,", "and the worse one."] }
+          ]
+        },
+        {
+          "label": "Give me the day.",
+          "exit": true,
+          "cards": [
+            { "who": "brea", "measure": true, "lines": ["Give me one day. I want to see", "what else it is reading."] },
+            { "who": "ansel", "lines": ["Then go armed. Mise has been ringing", "since first light. Something walked", "up the beach in the dark."] }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cane",
+      "at": "0:08",
+      "where": "the third pan, as Brea turns to go",
+      "cards": [
+        { "who": "ansel", "lines": ["And you have twelve arrows.", "That is a short day. There's cane", "standing at the dyke. Cut it."] },
+        { "who": "brea", "measure": true, "lines": ["Six stalks, six shafts.", "I'll cut on the way."] }
+      ]
+    },
+    {
+      "id": "mise",
+      "at": "0:10",
+      "where": "the breakwater lamp",
+      "cards": [
+        { "who": "mise", "lines": ["Reckoner. I counted them in", "at the fourth bell. Nine Pegs,", "out of the surf, in file."] },
+        { "who": "brea", "measure": true, "lines": ["Nine. Where did they start hammering?"] },
+        { "who": "mise", "lines": ["At the pans. They've pegged a line", "clean down to the black beach,", "straight as a taut cord."] },
+        { "who": "brea", "measure": true, "lines": ["Pans to the beach is bearing 132.", "Pegs don't walk a line for themselves.", "Where's the Plumb?"] },
+        { "who": "mise", "lines": ["I haven't seen one. My eyes are", "sixty-eight years old, and the lamp", "was in them all night."] },
+        { "who": "brea", "lines": ["Then I'll look from higher. The pillar", "on the Organ Shelf sees both ends", "of that line."] },
+        { "who": "mise", "lines": ["Mind the peg-heads. Cross a lit line", "near a Plumb and it turns", "its lamp on you."] },
+        { "who": "brea", "measure": true, "lines": ["Inside twenty paces of it, yes.", "I'll cross wide."] },
+        { "who": "mise", "lines": ["The meadow won't hide you.", "The reed at the Glass rim will,", "while the wind is in it."] },
+        { "who": "brea", "measure": true, "lines": ["The wind's good for an hour yet.", "Ring twice if they turn."] }
+      ]
+    },
+    {
+      "id": "return",
+      "at": "0:24",
+      "where": "the guild-house step",
+      "cards": [
+        { "who": "ansel", "lines": ["I watched it go over from this step.", "And I can see the paint from here."] },
+        { "who": "brea", "measure": true, "lines": ["Vermilion, a quarter of a metre tall,", "the whole length of the outer dyke.", "Saltrow is marked for cutting down."] },
+        { "who": "ansel", "lines": ["Marked by what?", "You put the thing on its back."] },
+        { "who": "brea", "lines": ["A Plumb only holds the brush.", "The line stays until that ground", "is made true."] },
+        { "who": "ansel", "lines": ["Then this house needs more than", "a Reckoner who moves pans."] },
+        { "who": "ansel", "lines": ["Take the Guild Whites. Scout's cut.", "And thirty salt. You are on", "the house's business now."] },
+        { "who": "brea", "measure": true, "lines": ["Thirty salt and a hat.", "I have been paid worse."] },
+        { "who": "ansel", "lines": ["Rest first. Your cistern is full", "and the pitch is dry. The pans", "will be here when you wake."] },
+        { "who": "brea", "lines": ["They will. Where they are,", "not where it wants them."] }
+      ]
+    },
+    {
+      "id": "mise-dusk",
+      "at": "evening",
+      "optional": true,
+      "where": "the breakwater lamp, after the Plumb is down",
+      "cards": [
+        { "who": "mise", "lines": ["The lamp's lit. First night in", "forty years I have wanted", "it brighter."] },
+        { "who": "brea", "measure": true, "lines": ["It carries eighty paces.", "That is what you need it for.", "Anything inside that, ring."] },
+        { "who": "mise", "lines": ["And outside it?"] },
+        { "who": "brea", "lines": ["Outside it is my office."] }
+      ]
+    }
+  ],
+
+  "breaAlone": {
+    "about": "Brea's own turns in the field: one card each, shown as a subtitle when its trigger first happens. Each trigger shows once.",
+    "cards": [
+      { "on": "wake", "lines": ["Ash. I slept past the Brazier."] },
+      { "on": "kite-overhead", "measure": true, "lines": ["The house kite's up already.", "Line's streaming to 225.", "Good drying wind."] },
+      { "on": "gauge-seen", "measure": true, "lines": ["One Gauge, at Sluice 3, lamp calm.", "It thinks this is routine."] },
+      { "on": "cane-cut", "measure": true, "lines": ["Six stalks. Straight enough."] },
+      { "on": "transect-seen", "measure": true, "lines": ["Peg-heads every three paces, all lit.", "That is a live line."] },
+      { "on": "meadow", "lines": ["Meadow. Pretty, and no use at all.", "It doesn't hide anybody."] },
+      { "on": "reed-enter", "measure": true, "lines": ["Rush to the shoulder, two hands of wind.", "This will do."] },
+      { "on": "peg-lamp-out", "measure": true, "lines": ["One lamp out. It can hammer blind."] },
+      { "on": "crossed-unseen", "lines": ["Across. Nobody the wiser."] },
+      { "on": "flagged", "measure": true, "lines": ["Flagged. Eight seconds of everything", "inside sixty paces knowing", "where I stand."] },
+      { "on": "t1-top", "measure": true, "lines": ["T1. Fourteen metres of basalt stair", "and one white post.", "Somebody liked a view."] },
+      { "on": "sight-t2", "measure": true, "lines": ["T2, on Ninewalls Rise.", "Bearing {bearing}."] },
+      { "on": "sight-t6", "measure": true, "lines": ["T6, on the West Rim.", "Bearing {bearing}."] },
+      { "on": "triangle", "measure": true, "lines": ["Two bearings and a baseline.", "That is a triangle,", "and the sheet fills in."] },
+      { "on": "skyline", "measure": true, "lines": ["The Ring, the Scar, the rim.", "Three things on this island", "that are dead straight or dead round."] },
+      { "on": "plumb-seen", "measure": true, "lines": ["There. Pan-edge station, bearing {bearing}.", "One Plumb, and the morning's Pegs", "standing round it."] },
+      { "on": "line-seen", "measure": true, "lines": ["It's painting our outer dyke.", "That line sits two hands", "under the dyke top."] },
+      { "on": "line-seen-2", "lines": ["Everything above the paint", "is what it means to take off."] },
+      { "on": "ditch", "measure": true, "lines": ["The lee ditch brings me in", "under its lamp. Two on the vial,", "then the bob while it's down."] },
+      { "on": "vial-hit", "measure": true, "lines": ["One. It's hunting for level."] },
+      { "on": "chime", "lines": ["It has chimed. Here come the Pegs."] },
+      { "on": "toppled", "measure": true, "lines": ["Down. Four seconds. The bob, now."] },
+      { "on": "bob-pried", "lines": ["That's the bob. It swings at", "nobody now."] },
+      { "on": "plumb-dark", "measure": true, "lines": ["One Plumb off its legs.", "The line is still on the wall."] }
+    ]
+  }
+}

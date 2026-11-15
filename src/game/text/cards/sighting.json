@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "about": "Sighting cards: the one glass card shown while an Instrument is in the Alidade's hairs. 'line' is the header exactly as printed (KIND · WORK · VALUE). The rows are LAMP, WEAK and CARRIES and no others. 'lamp' holds one reading per state; the state word is printed, then the reading. 'read' is one plain sentence under the rows.",
+  "cards": [
+    {
+      "id": "gauge",
+      "at": "0:05",
+      "line": "GAUGE · SLUICE 3 · TIDE 0.4 m",
+      "kind": "GAUGE",
+      "work": "TIDE KEEPER",
+      "lamp": {
+        "calm": "CALM · keeping its clock",
+        "wary": "WARY · something is at its pans",
+        "hostile": "HOSTILE · it will clear the sluice",
+        "dark": "DARK"
+      },
+      "weak": ["BALLAST TANKS ×2", "KNEE SEALS ×4"],
+      "carries": ["BRINE PUMP", "MAST"],
+      "read": "It opens and shuts the sluices on its own tide. Leave the pans whole and it leaves you be."
+    },
+    {
+      "id": "plumb",
+      "at": "0:21",
+      "line": "PLUMB · DATUM LINE · OUTER DYKE",
+      "kind": "PLUMB",
+      "work": "SENTRY",
+      "lamp": {
+        "calm": "CALM · taking a reading",
+        "wary": "WARY · sweeping for you",
+        "hostile": "HOSTILE · you are Flagged",
+        "dark": "DARK · it cannot Flag"
+      },
+      "weak": ["LEVEL VIAL · 2 hits topple it", "LAMP DRUM"],
+      "carries": ["LAMP DRUM", "PLUMB BOB"],
+      "read": "It paints the line where the ground is meant to be, and tells every Instrument within 60 m where you stand."
+    }
+  ]
+}

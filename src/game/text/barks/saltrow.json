@@ -1,0 +1,111 @@
+{
+  "schema": 1,
+  "place": "Saltrow",
+  "about": "Townspeople barks: one short line each, said as Brea passes within a few metres, never a conversation. Eight sets. A set is chosen by who is speaking and by 'when'; a line is not repeated until its set is used up. Nobody here is named: the speaker label is the calling.",
+  "sets": [
+    {
+      "id": "rakers-morning",
+      "who": "SALT RAKER",
+      "when": "before the flood (0:00 to 0:05)",
+      "lines": [
+        ["Morning, Reckoner. Crust's good today."],
+        ["Third pan's yours and the Matron's.", "Better you than me."],
+        ["Trade's steady. We'll lift it all by noon."],
+        ["Mind the dyke. I raked that edge."],
+        ["House kite's up. Somebody wants a count."],
+        ["Tell the Gauge to keep its hours, will you?"]
+      ]
+    },
+    {
+      "id": "rakers-flooded",
+      "who": "SALT RAKER",
+      "when": "after Sluice 3 opens (0:05 on)",
+      "lines": [
+        ["A whole morning, back to brine."],
+        ["It opened on a low tide. I saw the ring", "on the mast. Low."],
+        ["Ask it what it wants, Reckoner.", "We'll rake round it."],
+        ["My grandmother said they never", "look at you. They don't. That's the trouble."],
+        ["If the third goes, the fourth is next.", "They share a wall."],
+        ["I'm not angry at it. You can't be.", "I'm angry at the pan for being here."]
+      ]
+    },
+    {
+      "id": "porters",
+      "who": "SALT PORTER",
+      "when": "any time by day",
+      "lines": [
+        ["Two baskets a trip, forty trips.", "Don't make me count again."],
+        ["Coming through. Heavy."],
+        ["Store's dry and the tally's straight.", "Ask the Matron."],
+        ["Salt for cord, salt for bronze.", "Everything on this island weighs the same."],
+        ["Reckoner. Nothing from the third today,", "they tell me."],
+        ["If you're buying, buy before the Holds", "carts come down."]
+      ]
+    },
+    {
+      "id": "caulkers",
+      "who": "BOAT-CAULKER",
+      "when": "on the black beach, once the Pegs have pegged it (0:10 on)",
+      "lines": [
+        ["They came up between the hulls.", "Walked round every one. Polite."],
+        ["There's a peg through my drying rack.", "I'm leaving it. I'm not a fool."],
+        ["Pitch is hot if your hands want blacking."],
+        ["Straight line, hull to pan. I couldn't", "lay a strake that true."],
+        ["Bronze pins, those. Good ones. If any", "should come loose, I'd pay."],
+        ["Boats are still on the map, I'm told.", "Boats move. Lucky us."]
+      ]
+    },
+    {
+      "id": "lookout",
+      "who": "LANTERN-KEEPER",
+      "when": "the warning call: an Instrument within 80 m of the breakwater",
+      "lines": [
+        ["Instrument on the dyke! Off the pans!"],
+        ["Lamp on the beach road. Keep clear of it."],
+        ["Pegs in file, coming up the ramp!"],
+        ["It's wading. Leave the sluice alone."],
+        ["Bell! Bell! Stand out of its line!"],
+        ["It's past. Back to work, the lot of you."]
+      ]
+    },
+    {
+      "id": "town-line",
+      "who": "TOWNSPEOPLE",
+      "when": "once the Datum Line is on the outer dyke (0:21 on)",
+      "lines": [
+        ["That paint wasn't there at breakfast."],
+        ["It's a hand under my doorstep.", "I measured. Twice."],
+        ["Red on the dyke. My mother saw that", "at the old boathouse. Then no boathouse."],
+        ["Can it be scrubbed? I tried. It can't."],
+        ["They've drawn where the ground should be.", "We're standing in the difference."],
+        ["Don't touch it. Don't lean on it.", "Wait for the Reckoner."]
+      ]
+    },
+    {
+      "id": "town-whites",
+      "who": "TOWNSPEOPLE",
+      "when": "after the Plumb is down and Brea wears the Guild Whites",
+      "lines": [
+        ["Whites suit you. The hat most of all."],
+        ["You put it over. I watched from the roof."],
+        ["So it's down. And the line's still there."],
+        ["Scout's cut. The house means it, then."],
+        ["Whatever you do next, do it soon.", "Paint like that doesn't come alone."],
+        ["Reckoner. Thank you. That's all."]
+      ]
+    },
+    {
+      "id": "town-dusk",
+      "who": "TOWNSPEOPLE",
+      "when": "dusk and night",
+      "lines": [
+        ["Lamps in, shutters to. Mise has the watch."],
+        ["Calm lamps out on the Glass tonight.", "Three of them. Wading."],
+        ["Leave a light in the window.", "They don't mind ours."],
+        ["Wind's dropping. Reed won't cover", "a cat in this."],
+        ["Kindle your bowl, Reckoner.", "Tomorrow's long."],
+        ["Bell's quiet. I'll take quiet."]
+      ]
+    }
+  ]
+}
