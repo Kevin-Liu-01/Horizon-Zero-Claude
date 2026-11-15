@@ -71,6 +71,21 @@ export function parseExports(src) {
   for (const m of t.matchAll(/export\s+(?:const|let|var)\s*\{([^}]*)\}/g)) for (const x of m[1].split(',')) { const n = x.split(':').pop()?.split('=')[0].trim(); if (n) set.add(n); }
   for (const m of t.matchAll(/export\s+(?:const|let|var)\s*\[([^\]]*)\]/g)) for (const x of m[1].split(',')) { const n = x.split('=')[0].trim(); if (n) set.add(n); }
   for (const m of t.matchAll(/export\s*\{([^}]*)\}/g)) for (const x of m[1].split(',')) { const n = x.trim().split(/\s+as\s+/).pop()?.trim(); if (n) set.add(n); }
+  // every further declarator of `export const a = 1, b = f(x, y), c;` (depth-0 commas up to the end of the
+  // statement); strings blanked so brackets inside them do not move the depth
+  const u = scanJs(src).map((x) => (x.ctx === 'code' ? x.text : x.text.replace(/[^\n]/g, ' '))).join('');
+  for (const m of u.matchAll(/export\s+(?:const|let|var)\s+[A-Za-z_$][\w$]*/g)) {
+    let depth = 0, last = '';
+    for (let i = m.index + m[0].length; i < u.length; i++) {
+      const c = u[i];
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') { if (--depth < 0) break; }
+      else if (depth === 0 && c === ';') break;
+      else if (depth === 0 && c === '\n' && last !== ',' && !/^\s*,/.test(u.slice(i, i + 200))) break;
+      else if (depth === 0 && c === ',') { const n = /^\s*([A-Za-z_$][\w$]*)/.exec(u.slice(i + 1, i + 200)); if (n) set.add(n[1]); }
+      if (!/\s/.test(c)) last = c;
+    }
+  }
   if (/export\s+default\b/.test(t)) set.add('default');
   for (const m of t.matchAll(/export\s*\*\s*as\s+([\w$]+)\s+from/g)) set.add(m[1]);
   const star = /export\s*\*\s*from/.test(t);

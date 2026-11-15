@@ -51,3 +51,14 @@ test('parseExports: declarations, lists, defaults, star', () => {
   assert.equal(e.star, false);
   assert.equal(parseExports("export * from './m.js';").star, true);
 });
+
+test('parseExports: every declarator of a multi-name const', () => {
+  const e = parseExports([
+    'export const _a = new V(), _b = new V(1, 2), _c = [1, 2], _d = { x: 1, y: 2 };',
+    'export const S = 0.43, T = 0.015',
+    'export let w = f("(", 3), v;',
+    'const notExported = 1, alsoNot = 2;',
+  ].join('\n'));
+  for (const n of ['_a', '_b', '_c', '_d', 'S', 'T', 'w', 'v']) assert.ok(e.set.has(n), n);
+  for (const n of ['notExported', 'alsoNot', 'x', 'y']) assert.ok(!e.set.has(n), n);
+});
