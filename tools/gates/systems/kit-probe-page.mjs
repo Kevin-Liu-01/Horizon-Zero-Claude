@@ -33,7 +33,7 @@ const PRELUDE = `
   if (!K.hooked) {
     K.hooked = true;
     for (const n of ['arrow-hit', 'machine-damaged', 'plumb-topple', 'pry', 'felling-blow', 'undercut', 'weak-rule', 'machine-tagged', 'bearing-released'])
-      C.events.on(n, (e) => K.ev.push({ n, t: performance.now(), s: C.engine?.simTime ?? null, m: e?.machine ?? null, vol: e?.volume ?? null, torn: e?.tornPart?.name ?? (typeof e?.torn === 'boolean' ? e.torn : null), dmg: e?.damage ?? null, tear: e?.tear ?? null, weak: !!e?.weak, rule: e?.rule ?? null, killed: !!e?.killed }));
+      C.events.on(n, (e) => K.ev.push({ n, t: performance.now(), s: C.engine?.simTime ?? null, m: e?.machine ?? null, vol: e?.volume ?? null, kind: e?.machine?.kind ?? null, pt: e?.point ? [Math.round(e.point.x * 100) / 100, Math.round(e.point.y * 100) / 100, Math.round(e.point.z * 100) / 100] : null, torn: e?.tornPart?.name ?? (typeof e?.torn === 'boolean' ? e.torn : null), dmg: e?.damage ?? null, tear: e?.tear ?? null, weak: !!e?.weak, rule: e?.rule ?? null, killed: !!e?.killed }));
   }
   const base = () => { const b = C.braziers?.byId?.('cistern'); return { x: (b?.obj?.position?.x ?? P.position.x) + 30, z: (b?.obj?.position?.z ?? P.position.z) + 12 }; };
   const face = (fx, fz, pitch = 0.05) => { P.camYaw = Math.atan2(-(fx - P.position.x), -(fz - P.position.z)); P.camPitch = pitch; P.heading = Math.atan2(fx - P.position.x, fz - P.position.z); };
@@ -163,20 +163,20 @@ export async function runKit(page, { sleep, log = () => {} }) {
 
   /* ---------------- plumb: reed-blunt, vial-topple, barbed-pry (one Plumb) ---------------- */
   await run('plumb-arrows', () => page.evaluate(ev(`
-    const b = base(); const m = spawn('plumb', b.x + 12, b.z - 2); await frames(30);
-    const la = m.lamp?.anchor ? wpos(m.lamp.anchor) : wpos(m._lampWp.obj);
-    const dx = la.x - m.position.x, dz = la.z - m.position.z, L = Math.hypot(dx, dz) || 1;
-    place(m.position.x + dx / L * 11, m.position.z + dz / L * 11, m.position.x, m.position.z); await frames(10); await raise();
+    // (eeddcb4: stood 11 m off along the lamp's axis, no arrow touched it at all: she stands where the Peg row stood, on
+    // open ground, and the Plumb 24 m out)
+    const b = base(); const m = spawn('plumb', b.x + 24, b.z); place(b.x, b.z, b.x + 24, b.z); await frames(30); await raise();
     const out = {};
     /* Blunt: two Reed arrows on the standing bob */
     const bob = m._bob; const hp0 = bob.tearHp, h0 = m.health; let struck = [];
-    for (let i = 0; i < 2; i++) { calm(m); const e = await shoot('hunter', wpos(bob.mesh)); struck.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? null); }
+    for (let i = 0; i < 2; i++) { calm(m); const e = await shoot('hunter', wpos(bob.mesh)); const h = e.find((x) => x.n === 'arrow-hit'); struck.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
     out.blunt = { bobTearTaken: r3(hp0 - bob.tearHp), bodyDamage: r3(h0 - m.health), struck, bobOn: bob.attached !== false };
     /* the vial: Reed arrows until it topples */
     m.health = m.maxHealth;
     let n = 0, tTop = null, sTop = null; const vh = [];
-    while (!(m._toppleT >= 0) && n < 8) { calm(m); const e = await shoot('hunter', wpos(m._vialWp.obj), 420); n++; vh.push(m._vialHits); const tp = e.find((x) => x.n === 'plumb-topple'); if (tp) { tTop = tp.t; sTop = tp.s; } }
-    out.topple = { arrows: n, vialHitsSeq: vh, toppled: m._toppleT >= 0 };
+    const vs = [];
+    while (!(m._toppleT >= 0) && n < 8) { calm(m); const e = await shoot('hunter', wpos(m._vialWp.obj), 420); n++; vh.push(m._vialHits); const h = e.find((x) => x.n === 'arrow-hit'); vs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); const tp = e.find((x) => x.n === 'plumb-topple'); if (tp) { tTop = tp.t; sTop = tp.s; } }
+    out.topple = { arrows: n, vialHitsSeq: vh, struck: vs, toppled: m._toppleT >= 0 };
     if (!(m._toppleT >= 0)) { await lower(); return { num: out, pass: false, error: 'never toppled' }; }
     tTop = tTop ?? performance.now();
     /* Pry: one Barbed arrow on the toppled bob */

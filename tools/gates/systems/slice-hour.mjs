@@ -253,7 +253,7 @@ async function readyBow(page, K) {
  * and backs out when one closes inside 9 m. Every shot: RMB held, the look steered onto the part, Shift (Steady),
  * LMB drawn for 1.0 s with the look kept on the part, then loosed.
  */
-async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000 } = {}) {
+async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000, tolDeg = 0.35, reach = 70 } = {}) {
   const t0 = Date.now();
   const stage0 = (await page.evaluate(probe)).stage;
   let fired = 0, aimed = false;
@@ -272,8 +272,8 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       if ((Date.now() - t0) / 1000 > maxS) return { ok: !!all, why: `${kind} ${part}: not done in ${maxS} s (${fired} arrows)`, fired };
       if (s.busy) { await release(); await playScene(page, K); continue; }
       // the whole line (all): every live one within 220 m is walked to; one target: the nearest within 70 m
-      const T = (await page.evaluate(targetsOf, kind, part)).filter((t) => t.d < (all ? 220 : 70));
-      if (!T.length) return { ok: !!all, why: all ? null : `no live ${kind} within 70 m`, fired };
+      const T = (await page.evaluate(targetsOf, kind, part)).filter((t) => t.d < (all ? 220 : reach));
+      if (!T.length) return { ok: !!all, why: all ? null : `no live ${kind} within ${reach} m`, fired };
       const t = T[0];
       if (t.d > stand + 6) {
         await release();
@@ -292,13 +292,13 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       if (!aimed) { await page.mouse.down({ button: 'right' }); await sleep(380); aimed = true; }
       // M1.6j Steady: a fresh breath for every shot (Shift let go and pressed again while aiming: 4 s of no sway)
       await K.up('ShiftLeft'); await sleep(50); await K.down('ShiftLeft'); await sleep(60);
-      let a = await page.evaluate(aimPoint, t.x, t.y, t.z, 0.35);
+      let a = await page.evaluate(aimPoint, t.x, t.y, t.z, tolDeg);
       await page.mouse.down({ button: 'left' });
       const tD = Date.now();
       while (Date.now() - tD < drawMs) {
         const now = (await page.evaluate(targetsOf, kind, part)).find((q) => q.i === t.i);
         if (!now) break;
-        a = await page.evaluate(aimPoint, now.x, now.y, now.z, 0.35);
+        a = await page.evaluate(aimPoint, now.x, now.y, now.z, tolDeg);
       }
       const sw = await page.evaluate(() => { const c = window.__CTX__.combat; return { st: c.steady.phase, sway: +c.sway.deg.toFixed(3) }; });
       await up('left');
@@ -407,13 +407,15 @@ async function beat(page, K, s) {
     return { ok: (await page.evaluate(probe)).stage !== st, aims };
   }
   if (s.type === 'kill') {
-    if (st === 'topple') return fight(page, K, 'plumb', 'vial', () => 'topple', { stand: 20, maxS: 110 });
+    // eeddcb4: 21 Steady shots at 9-18 m (sway 0, the look within 0.35 deg) and no vial hit (the head's rings stand
+    // round the glass at that elevation; it killed her): from 28 m, flatter, the look held within 0.08 deg (4 cm)
+    if (st === 'topple') return fight(page, K, 'plumb', 'vial', () => 'topple', { stand: 28, maxS: 110, tolDeg: 0.08, reach: 220 });
     // Pry the bob while it is down (the card): a Barbed arrow is the ranged Pry, from where she stands (no walk-in in the
     // 4 s it is down); E with the lance is the near one, taken when it lies within reach
     if (st === 'pry') {
       const near = await page.evaluate(() => !!window.__CTX__.combat?.melee?.pryTarget);
       if (near) { await holdE(page, K, 450); await sleep(900); if ((await page.evaluate(probe)).stage !== st) return { ok: true, how: 'lance' }; }
-      const f = await fight(page, K, 'plumb', 'bob', () => 'pry', { stand: 18, maxS: 90, ammo: 'hardpoint', backOut: false, drawMs: 760 });
+      const f = await fight(page, K, 'plumb', 'bob', () => 'pry', { stand: 28, maxS: 90, ammo: 'hardpoint', backOut: false, drawMs: 760, tolDeg: 0.1, reach: 220 });
       return { ...f, how: 'barbed' };
     }
     return { ok: false, why: `unknown kill beat ${st}` };
@@ -472,12 +474,20 @@ async function reloadContinue(page, tag) {
   const hadContinue = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent)); if (!b || b.disabled) return false; b.click(); return true; });
   await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 60000, polling: 50 }).catch(() => {});
   await sleep(1500);
-  const after = await page.evaluate(() => {
+  // (eeddcb4: the frame was detached under this read once, after a death and RELOAD earlier in the run: wait and read again)
+  const readAfter = () => page.evaluate(() => {
     const C = window.__CTX__, sp = C.spine, p = C.player;
     return { state: C.state, idx: sp.idx, started: sp.started, stage: sp.order.at(-1)?.id ?? null, current: sp.current()?.id ?? null, salt: C.inventory.count('metal-shards'),
       hour: +C.environment.time.toFixed(3), x: +p.position.x.toFixed(3), y: +p.position.y.toFixed(3), z: +p.position.z.toFixed(3),
       note: document.querySelector('.cal-track-obj')?.textContent ?? null, loadedFrom: C.progression.saves.loadedFrom };
   });
+  let after;
+  try { after = await readAfter(); } catch (e) {
+    row.retried = String(e?.message || e).slice(0, 120);
+    await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 60000, polling: 100 }).catch(() => {});
+    await sleep(1000);
+    after = await readAfter();
+  }
   const dxz = before ? +Math.hypot(before.x - after.x, before.z - after.z).toFixed(3) : null;
   const dy = before && Number.isFinite(before.y) ? +(after.y - before.y).toFixed(3) : null;
   Object.assign(row, {

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createHeldLance } from './lanceStow.js';
 import { decimalFields } from '../entities/anim/meleeLayer.js';
 import { MELEE } from './weapons.js';
-import { LANCE_PRY, pryablePart, isDown } from './kit.js';
+import { LANCE_PRY, pryablePart, isDown, SMALL_KINDS } from './kit.js';
 
 /**
  * THE LANCE (melee W1, on Brea; the state machine is Round 4's, kept).
@@ -663,7 +663,7 @@ export class Melee {
       disabled: true, priority: 3, machine: null, part: null,
       onInteract: () => this.pry(),
     };
-    ctx.interactables?.register?.(this._pryE);
+    this._pryRegistered = !!ctx.interactables?.register?.(this._pryE) || false;
 
     ctx.events.on('player-died', () => this._cancel());
     /* R48 c: the fields the frame and the first swing used to add, declared (a
@@ -2488,6 +2488,9 @@ export class Melee {
   /** M1.6j: the PRY offer, 10 Hz: the nearest down Instrument with a tool within reach of her feet. */
   _scanPry(enabled) {
     const ctx = this.ctx, p = ctx.player, e = this._pryE;
+    // registered late, as the Silent Strike offer is: ctx.interactables is often not up when melee is built (the first
+    // live row offered PRY and an E press did nothing: the entry was never in the registry)
+    if (!this._pryRegistered && ctx.interactables?.register) { ctx.interactables.register(e); this._pryRegistered = true; }
     let m0 = null, part0 = null, bd = Infinity;
     if (enabled && p && (p.health ?? 1) > 0) {
       const list = ctx.machines?.list || [];
@@ -2563,7 +2566,9 @@ export class Melee {
     if (!m || m.alive === false || m._disposed) return null;
     const cfg = MELEE.silent;
     const roles = this.ctx.machines?.roles;
-    const instant = cfg.instant.includes(m.kind) || UNDERCUT_KILLS.some((r) => roles?.[r] === m.kind);
+    // M1.6j: the bible's small classes (the Peg, the Plumb) die outright too, whatever kind the role map gave the role
+    // (the first live row: an Undercut on a calm Plumb took 0.55 of its health, roles.sentry was not the Plumb)
+    const instant = cfg.instant.includes(m.kind) || UNDERCUT_KILLS.some((r) => roles?.[r] === m.kind) || SMALL_KINDS.includes(m.kind);
     const dmg = instant
       ? (m.health ?? 1) * 4 + 1000
       : (m.maxHealth ?? 100) * cfg.heavyFrac;

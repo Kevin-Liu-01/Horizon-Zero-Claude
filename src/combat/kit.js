@@ -145,6 +145,9 @@ export function tearFor(word, m, part, baseTear) {
   return baseTear;
 }
 
+/** The bible's small classes in the slice (§7.4 roster): an Undercut kills them outright. */
+export const SMALL_KINDS = Object.freeze(['peg', 'plumb']);
+
 /** The lance's Pry (E on a down Instrument's tool): one hit takes the tool, and a little body damage. */
 export const LANCE_PRY = Object.freeze({ reach: 3.2, hold: 0.3, impact: 12, label: 'PRY' });
 
