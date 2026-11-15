@@ -20,6 +20,7 @@ const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 
 let simMs = 1000;
+const PAGE_ORDER = args.includes('--page-order') || process.env.BENCH_PAGE_ORDER === '1';
 /* a seeded Math.random: the animator draws its idle's breath, shift, fidget and blink phases from it at construction,
  * so the idle hands' hash (M1.3c) is a function of the code and the assets only */
 let seed = 0x5eed;
@@ -70,11 +71,14 @@ export function step(R, dt = 1 / 60, hook = null) {
   if (hook) hook(R, dt);
   p.position.addScaledVector(p.velocity, dt);
   model.position.copy(p.position); model.rotation.y = p.heading;
-  model.updateMatrixWorld(true);
+  // (--page-order: as the page runs it, the world matrices are last frame's render's while the animator and the hero
+  //  rig run, and are brought up to date only at the render after them)
+  if (!PAGE_ORDER) model.updateMatrixWorld(true);
   p.drawStrength = R.combat.drawStrength;
   an.update(dt, R.t);
   R.hero?.update(dt);
   if (R.melee) R.melee.update(dt, true);
+  if (PAGE_ORDER) model.updateMatrixWorld(true);
 }
 
 export function reset(R) {

@@ -37,7 +37,7 @@ export function buildMeasure(R, THREE) {
     if (!o.isSkinnedMesh) return;
     if (/Brea_Skin|_hidemask/.test(o.name) || o.geometry.getAttribute('_hidemask')) skin = skin || o;
     if (/HairWrap/.test(o.name)) wrap = o;
-    if (/outfit/.test(o.userData?.heroPart || '')) outfit = outfit || o;
+    if (/outfit/.test(o.userData?.heroPart || '') && o.name !== 'Caster' && o.material?.name !== 'hero-caster') outfit = outfit || o;
   });
   if (!skin) model.traverse((o) => { if (!skin && o.isSkinnedMesh && /Skin/.test(o.name)) skin = o; });
   const CH = (w, out) => model.worldToLocal(out.copy(w));

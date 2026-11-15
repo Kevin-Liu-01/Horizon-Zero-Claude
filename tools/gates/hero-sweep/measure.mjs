@@ -41,7 +41,7 @@ export function buildSweep(R, THREE, opts = {}) {
     if (!o.isSkinnedMesh) return;
     if (o.geometry.getAttribute('_hidemask')) skin = skin || o;
     if (/HairWrap/.test(o.name)) wrap = o;
-    if (/outfit/.test(o.userData?.heroPart || '')) outfit = outfit || o;
+    if (/outfit/.test(o.userData?.heroPart || '') && o.name !== 'Caster' && o.material?.name !== 'hero-caster') outfit = outfit || o;
     if (/stowkit/.test(o.userData?.heroPart || '')) kit = kit || o;
   });
   const tmp = V(), tmp2 = V(), tmp3 = V();

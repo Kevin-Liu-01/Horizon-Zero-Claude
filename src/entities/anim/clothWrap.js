@@ -36,6 +36,8 @@ const _su = new THREE.Vector3(), _sv = new THREE.Vector3();
 const _qp2 = new THREE.Quaternion(), _qb2 = new THREE.Quaternion(), _qpi = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 /** The least a span gathers toward its joint (the last resort, panels only). */
 const GATHER_MIN = 0.6;
+/** M1a r2 fix: the most a panel's root joint is lifted off the belt, out of a raised thigh (m). */
+const ROOT_PUSH = 0.08;
 /** The capsules near the span being solved (its bounding sphere against each, recomputed every step). */
 const _near = new Int8Array(32);
 let _nn = 0;
@@ -94,7 +96,10 @@ export class ClothWrap {
       const o = _stack.pop();
       if (o.isSkinnedMesh) {
         const part = o.userData?.heroPart || '';
-        if (!outfit && part.indexOf('outfit') >= 0) outfit = o;
+        // (M1a r2 fix: not the set's shadow Caster, which carries the outfit's heroPart too: the pass found it first
+        //  and wrapped its 11-16 panel vertices while the drawn panels went through her, bench crouch 148 / 180 frames)
+        if (o.name === 'Caster' || o.material?.name === 'hero-caster') { /* the shadow proxy: never drawn */ }
+        else if (!outfit && part.indexOf('outfit') >= 0) outfit = o;
         else if (!kit && part.indexOf('stowkit') >= 0) kit = o;
         else if (!wrap && o.name.indexOf('HairWrap') >= 0) wrap = o;
         else if (!skin && o.geometry.getAttribute('_hidemask')) skin = o;
@@ -118,7 +123,9 @@ export class ClothWrap {
     const byName = (n) => this.bones?.[n] || null;
     const spine = [b.pelvis.bone, byName('spine_01') || b.spine1?.bone, byName('spine_02') || b.spine2?.bone, byName('spine_03') || b.spine3?.bone, neck].filter(Boolean);
     for (const [k, r] of torsoRadii(skin, spine).entries()) {
-      W.caps.push({ name: 'torso' + k, a: spine[k], b: spine[k + 1], A: new THREE.Vector3(), B: new THREE.Vector3(), r0: r, rP: r + 0.012, rT: r + 0.004 });
+      // (M1a r2 fix: margins 0.012 / 0.004 -> 0.016 / 0.008: the grader finds its own torso radii, up to 2.5 mm over
+      //  these on the segment under the chest, and the tails and hems were graded 0.5-0.8 mm inside it)
+      W.caps.push({ name: 'torso' + k, a: spine[k], b: spine[k + 1], A: new THREE.Vector3(), B: new THREE.Vector3(), r0: r, rP: r + 0.016, rT: r + 0.008 });
     }
     const capDef = [
       // [name, a, b, bone regex for the inner radius, margin panels, margin tails]
@@ -223,6 +230,8 @@ export class ClothWrap {
         for (let k = k0; k < k1; k++) { this._cwSkin(S, k, v); rr = Math.max(rr, v.applyMatrix4(inv).distanceTo(c)); }
         S.sph[j * 4] = c.x; S.sph[j * 4 + 1] = c.y; S.sph[j * 4 + 2] = c.z; S.sph[j * 4 + 3] = rr + 0.02;
       }
+      // (M1a r2 fix: the root joint's own place on the belt, so the root push below is undone every step)
+      if (!tail && !chain.links[0]._cwP0) chain.links[0]._cwP0 = chain.links[0].bone.position.clone();
       W.sets.push(S);
     };
     addSet(outfit, 'dyn_panelL', 0.3, false);
@@ -351,6 +360,11 @@ export class ClothWrap {
     if (!this._cw || this._cwT % 30 === 0) this._cwScan();
     const W = this._cw;
     if (!W?.ok) return;
+    /* M1a r2 fix: the layers above write bone quaternions, not world matrices, and in the page the matrices are the
+     * last render's (the player moved the model and every layer re-posed the skeleton since): the capsules and the
+     * cloth were tested where they were a frame ago (bench, page order: 38 clipping frames in a jog, 148 in a crouch,
+     * against 0 with fresh matrices). The whole character's world matrices first, once. */
+    this.model.updateMatrixWorld(true);
     const caps = W.caps;
     for (let q = 0; q < caps.length; q++) {
       const C = caps[q];
@@ -362,12 +376,41 @@ export class ClothWrap {
         if (L > 1e-6) { _ab.multiplyScalar(W.quiver.r * 0.7 / L); C.A.add(_ab); C.B.sub(_ab); }
       }
     }
-    let pushes = 0, left = 0, deepLeft = 0, gathers = 0, gatherMin = 1, shortMax = 0;
+    let pushes = 0, left = 0, deepLeft = 0, gathers = 0, gatherMin = 1, shortMax = 0, rootPush = 0;
     for (let si = 0; si < W.sets.length; si++) {
       const S = W.sets[si], ch = S.chain, N = ch.N;
       let touched = false;
       // (the solver wrote the chain's quaternions, not its matrices: the renderer derives them; this pass reads them)
       ch.links[0].bone.updateMatrixWorld(true);
+      /* M1a r2 fix: A PANEL'S ROOT JOINT OUT OF THE BODY FIRST. In a deep crouch or a climb the raised thigh comes up
+       * through the belt where a front panel hangs (bench, crouch: the right panel's root joint 0.02 m off the thigh's
+       * axis, inside its 0.062 m inner radius), and no turn of a link about a joint that is inside her gets its cloth
+       * out: the pass folded the panel up across her belly into the chest instead. The root is lifted out along the
+       * capsules' normals to the pass radius plus 0.01 m (at most `ROOT_PUSH` m), the belt riding up over the thigh;
+       * `_panelFollow` puts it back on the belt at the start of every step. */
+      if (!S.tail && ch.links[0]._cwP0) {
+        const rb = ch.links[0].bone;
+        _x.setFromMatrixPosition(rb.matrixWorld);
+        _p.set(0, 0, 0);
+        for (let pass = 0; pass < 3; pass++) {
+          let moved = false;
+          _bp.copy(_x).add(_p);
+          for (let q = 0; q < caps.length; q++) {
+            if (caps[q].name === 'quiver') continue;
+            const d = this._cwDepth(_bp, caps[q], caps[q].rP + 0.01);
+            if (d > 0) { _p.addScaledVector(_n, d); _bp.addScaledVector(_n, d); moved = true; }
+          }
+          if (!moved) break;
+        }
+        const L = _p.length();
+        if (L > 1e-5) {
+          if (L > ROOT_PUSH) _p.multiplyScalar(ROOT_PUSH / L);
+          _bp.copy(_x).add(_p);
+          rb.position.copy(rb.parent.worldToLocal(_bp));
+          rb.updateMatrixWorld(true);
+          rootPush = rootPush > L ? rootPush : L;
+        }
+      }
       for (let sweep = 0; sweep < 3; sweep++) {
         let any = false;
         this._cwMats(S);
@@ -510,6 +553,8 @@ export class ClothWrap {
       }
     }
     const st = W.stats;
+    st.rootPush = +rootPush.toFixed(4); if (!(st.rootPushMax >= rootPush)) st.rootPushMax = +rootPush.toFixed(4);
+    if (left) st.leftFrames = (st.leftFrames | 0) + 1;
     st.frames++; st.pushes = pushes; st.left = left; st.deepLeft = deepLeft; st.gathers = gathers; st.gatherMin = gatherMin; st.shortMax = shortMax; if (!(st.shortMaxEver >= shortMax)) st.shortMaxEver = shortMax;
     if (gathers) { st.gatherFrames = (st.gatherFrames | 0) + 1; if (!(st.gatherMinEver <= gatherMin)) st.gatherMinEver = gatherMin; }
   }

@@ -729,6 +729,11 @@ const ELB_SETTLE_SLOPE = 5;
 /** ...and a head-plane failure (`_hpBad`) counts as this much violation. */
 const ELB_SETTLE_HP = 0.05;
 const ELB_SETTLE_N = 72;
+/** M1a round 2 fix: ...and the forearm (elbow -> wrist, 11 points) keeps this far (m, along the ellipsoid's radius) off
+ *  the back half of the head ellipsoid (A107 clause c gates 0.05; the head stabiliser moves the skull after this layer).
+ *  A closer forearm counts as violation by the shortfall. At e935775 a sprint holster read 0.045 (bench). */
+const ELB_FORE_BACK = 0.065;
+const _fbU = new THREE.Vector3(), _fbP = new THREE.Vector3();
 /** How much of the upper body the draw turns TOWARD the drawing hand: + is
  *  her chest to the LEFT, i.e. the right shoulder forward, which brings the
  *  stowed haft (it rides on `spine_02`, below most of the turn) toward a hand
@@ -3353,7 +3358,7 @@ export class MeleeLayer {
     // last step's rendered elbow, on this step's shoulder
     _esP.subVectors(an._elbP, an._shP).add(_eS);
     const lim = ELB_SETTLE_V * Math.max(1 / 240, Math.min(this._lastDt || 1 / 60, 1 / 20));
-    if (this._elbowViol(_eE) <= 0 && _eE.distanceTo(_esP) <= lim) { D.elbowSettle = 0; return; }
+    if (this._elbowViol(_eE) + this._foreBackViol(_eE, _eH) <= 0 && _eE.distanceTo(_esP) <= lim) { D.elbowSettle = 0; return; }
     _eAx.subVectors(_eH, _eS);
     const d = _eAx.length();
     if (d < 1e-4) return;
@@ -3372,7 +3377,7 @@ export class MeleeLayer {
       const phi = i <= ELB_SETTLE_N / 2 ? i * step : (i - ELB_SETTLE_N) * step;
       _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
       if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
-      const v = this._elbowViol(_eT) + (hp && this._hpBad(_eS, _eT, _eH, _hpC, _hpF) ? ELB_SETTLE_HP : 0);
+      const v = this._elbowViol(_eT) + this._foreBackViol(_eT, _eH) + (hp && this._hpBad(_eS, _eT, _eH, _hpC, _hpF) ? ELB_SETTLE_HP : 0);
       if (v < leastV) { leastV = v; least = phi; }
       if (v > 0) continue;
       const dp = _eT.distanceTo(_esP), a = Math.abs(phi);
@@ -3387,6 +3392,24 @@ export class MeleeLayer {
     an._rotQL(b.upArmR, _eQ);
     const ro = this._rollOff; this._rollOff = true; this._alignHaft(w); this._rollOff = ro;
     D.elbowSettle = +(phi * 180 / Math.PI).toFixed(1);
+  }
+
+  /** M1a round 2 fix: how far the char-space forearm `E` -> `H` comes inside `ELB_FORE_BACK` of the back half of the
+   *  head ellipsoid (A107's clause (c), read as the row reads it; `_headFrame` current). 0 when clear. No allocation. */
+  _foreBackViol(E, H) {
+    const an = this.an, R = an.T.headR;
+    if (!R) return 0;
+    let g = 9;
+    for (let i = 0; i <= 10; i++) {
+      _fbP.copy(E).lerp(H, i / 10);
+      an._headUnit(_fbP, _fbU);
+      if (_fbU.z >= 0) continue;
+      const L = _fbU.length();
+      if (L < 1e-6) return ELB_FORE_BACK;
+      const gi = (L - 1) * Math.hypot(_fbU.x / L * R.x, _fbU.y / L * R.y, _fbU.z / L * R.z);
+      if (gi < g) g = gi;
+    }
+    return g < ELB_FORE_BACK ? ELB_FORE_BACK - g : 0;
   }
 
   /** How far char-space elbow `E` is outside the settle's bound (shoulder `_eS`, head `_eD`): over the head, and

@@ -516,7 +516,7 @@ export class SecondaryMotion {
     }));
     if (!P.length) return;
     // (M1.2e round 2: the wrap pass's gather of last frame undone: every panel bone back at scale 1)
-    for (let i = 0; i < P.length; i++) { const L = P[i].c.links; for (let j = 0; j < L.length; j++) L[j].bone.scale.set(1, 1, 1); }
+    for (let i = 0; i < P.length; i++) { const L = P[i].c.links; for (let j = 0; j < L.length; j++) L[j].bone.scale.set(1, 1, 1); if (L[0]._cwP0) L[0].bone.position.copy(L[0]._cwP0); }
     const tl = this.b.thighL, tr = this.b.thighR, pel = this.b.pelvis;
     if (!tl || !tr || !pel || !this.b.calfL || !this.b.calfR) return;
     /* M1.2e fix 1: the thighs' SWING only (bind direction -> current direction in the pelvis's frame, no twist). The
