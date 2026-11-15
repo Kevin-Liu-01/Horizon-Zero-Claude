@@ -74,10 +74,15 @@ export async function loadDressed({ outfitFile = null } = {}) {
     await MeshoptDecoder.ready;
     const A = await loadBrea();
     const { SPECS } = await import(path.join(ROOT, 'src/core/assets.specs.js'));
+    /* (M1a regressions: the game's rows, as src/hero/rows.js applies them to the specs at boot. Without them this bench
+     *  dressed Brea in the pipeline row's v0 kit, hero/kit/stowkit-v0.glb (bow 20 deg, its own lance line), not the
+     *  armory's art-pass kit the page wears, armory/stowkit.glb (bow 36 deg, flat, under the lance)) */
+    const { HERO_ROWS } = await import(path.join(ROOT, 'src/hero/rows.js'));
+    const specOf = (row) => (HERO_ROWS[row] ? { ...SPECS[row], ...HERO_ROWS[row] } : SPECS[row]);
     const parts = {};
     for (const row of ['heroOutfitPan1', 'heroStowKit']) {
-      const spec = SPECS[row];
-      const file = row === 'heroOutfitPan1' && outfitFile ? outfitFile : path.join(PUB, spec.url);
+      const spec = specOf(row);
+      const file = row === 'heroOutfitPan1' && outfitFile ? outfitFile : row === 'heroStowKit' && process.env.HERO_KIT_FILE ? process.env.HERO_KIT_FILE : path.join(PUB, spec.url);
       parts[row] = normalizePart(row, await parse(stripGlb(file)), spec);
     }
     return { ...A, parts };
