@@ -18,6 +18,9 @@
  *            --wall-clock stage the run, the heavy, the draws and the crouched aim on the wall clock, as before
  *                         regfix 3 (page.mjs 7a)
  *            --clip-phases a,b,...  repeat k freezes a sim-time stride (run, crouched aim-strafe) at gait phase k
+ *            --repeat-only a,b,...  with --repeat N, repeats 2..N film only these frames (the selection once first)
+ *            --state-probe  each sim-time staging hashes her animator, player and melee fields at the slate's end and
+ *                         after the idle (run.json frames[].sim.state), to name what one staging carried into the next
  *
  * The run, in order:
  *   1. the machine guard: memory free >= 50 % (memory_pressure -Q) and pressure level 1, then the
@@ -67,6 +70,12 @@ const WALL_CLOCK = args.includes('--wall-clock');
 // --clip-phases a,b,... (regfix 4): repeat k stages a sim-time strafe or run frozen at gait phase k (a probe of where in
 // the stride a frame should freeze; with --repeat N, one phase per repeat)
 const CLIP_PHASES = flag('--clip-phases') ? flag('--clip-phases').split(',').map(Number) : null;
+// --repeat-only a,b,... (M1b, engine): with --repeat N, repeats 2..N film only these frames (after the whole selection
+// once: a full-set session's history before each repeat). --state-probe: each sim-time staging records a hash of every
+// field of her animator, player, melee and the wind at the slate's end and after the idle (page.mjs 7a), so two
+// stagings that differ say which field carried over
+const REPEAT_ONLY = flag('--repeat-only') ? new Set(flag('--repeat-only').split(',').map((s) => s.trim())) : null;
+const STATE_PROBE = args.includes('--state-probe');
 /** Per-pixel difference of two raw RGB buffers (w x h), over the whole frame or a box [x0, y0, x1, y1]: the share of
  * pixels whose largest channel difference passes TH (8-bit), the largest difference, the mean. */
 const DIFF_TH = 10;
@@ -87,7 +96,7 @@ const problems = validate(set);
 if (problems.length) { for (const p of problems) console.error('frameset:', p); process.exit(1); }
 const frames0 = filmOrder(set.frames).filter((f) => !ONLY || ONLY.has(f.id));
 const frames = [];
-for (let r = 1; r <= REPEAT; r++) for (const f of frames0) frames.push(r === 1 ? f : { ...f, _repeat: r });
+for (let r = 1; r <= REPEAT; r++) for (const f of frames0) if (r === 1 || !REPEAT_ONLY || REPEAT_ONLY.has(f.id)) frames.push(r === 1 ? f : { ...f, _repeat: r });
 if (!frames.length) { console.error('film: no frames selected'); process.exit(1); }
 
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -199,7 +208,7 @@ try {
     try {
       const rep = f._repeat || 1;
       const clipPhase = CLIP_PHASES ? CLIP_PHASES[(rep - 1) % CLIP_PHASES.length] : undefined;
-      const staged = await page.evaluate(stageFrame, f, { settleMs: SETTLE_MS, wallClock: WALL_CLOCK, ...(clipPhase != null ? { clipPhase } : {}) });
+      const staged = await page.evaluate(stageFrame, f, { settleMs: SETTLE_MS, wallClock: WALL_CLOCK, ...(STATE_PROBE ? { stateProbe: true } : {}), ...(clipPhase != null ? { clipPhase } : {}) });
       const shot = await page.screenshot({ type: 'png' });
       const img = sharp(shot).resize(vp.width, vp.height, { fit: 'fill' });
       const file = rep === 1 ? `${f.id}.png` : `${f.id}-r${rep}.png`;
@@ -257,7 +266,7 @@ try {
     for (const f of frames0) {
       const shots = run.frames.filter((x) => x.id === f.id && x.ok);
       const first = shots.find((x) => (x.repeat || 1) === 1);
-      if (!first) continue;
+      if (!first || shots.length < 2) continue;
       const rawOf = async (x) => sharp(path.join(runDir, x.file)).removeAlpha().raw().toBuffer();
       const a = await rawOf(first);
       run.repeats[f.id] = [];

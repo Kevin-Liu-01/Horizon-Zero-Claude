@@ -405,6 +405,44 @@ export async function stageFrame(f, o = {}) {
         heading: rn(p.heading), speed: rn(p.moveSpeed ?? 0), gait: an?.loco ? rn(an.loco.phase) : null, melee: m ? [m.stance, m.phase, rn(m._t ?? 0), !!m.heavy, !!m.lance] : null };
     };
     out.digest = { start: digest() };
+    /* (--state-probe) a hash of every field of her animator, the player, melee, the combat state and the wind, two
+     *  levels deep, so two stagings of one frame that differ name the field that carried over from the frame before */
+    const stateHash = () => {
+      const SKIP = new Set(['ctx', 'scene', 'model', 'root', 'group', 'renderer', 'engine', 'camera', 'events', 'audio', 'player', 'animator', 'combat', 'melee', 'parent', 'children', 'input', 'world', 'environment', 'terrain']);
+      const skipObj = (v) => v.isObject3D || v.isMaterial || v.isTexture || v.isBufferGeometry || v.isSkeleton || v.nodeType || typeof v === 'function' || v instanceof WeakMap || v instanceof WeakSet;
+      const sh = (str) => { let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 1000003; return h; };
+      const hv = (v, d, seen) => {
+        if (v == null) return 0.5;
+        const t = typeof v;
+        if (t === 'number') return Number.isFinite(v) ? v : Number.isNaN(v) ? 7.77e5 : 8.88e5 * Math.sign(v);
+        if (t === 'boolean') return v ? 1 : 0;
+        if (t === 'string') return sh(v);
+        if (t !== 'object' || skipObj(v) || seen.has(v) || d > 5) return 0;
+        seen.add(v);
+        if (ArrayBuffer.isView(v)) { let h = 0; for (let i = 0; i < v.length; i++) h += ((i % 97) + 1) * (Number.isFinite(v[i]) ? v[i] : 3.3e3); return h; }
+        if (v._mixer && v._clip) return (v.time || 0) + 3 * (v._effectiveWeight || 0) + 5 * (v.enabled ? 1 : 0) + 7 * (v._effectiveTimeScale || 0);
+        let h = 0, i = 0;
+        const it = v instanceof Map ? v.entries() : v instanceof Set ? [...v].entries() : Object.entries(v);
+        for (const [k, x] of it) { i++; if (typeof k === 'string' && SKIP.has(k)) continue; h += (i % 89 + 1) * hv(x, d + 1, seen) + 1e-3 * sh(String(k)); }
+        return h;
+      };
+      const rn = (v) => (Number.isFinite(v) ? Number(v.toPrecision(12)) : String(v));
+      const map = {};
+      const flat = (obj, pre, lvl, seen) => {
+        if (!obj) return;
+        for (const k of Object.keys(obj)) {
+          if (SKIP.has(k)) continue;
+          const v = obj[k];
+          if (v && typeof v === 'object' && !skipObj(v) && !ArrayBuffer.isView(v) && !(v._mixer && v._clip) && lvl < 2 && !Array.isArray(v) && !v.isVector3 && !v.isQuaternion && !v.isVector2) flat(v, pre + k + '.', lvl + 1, seen);
+          else { const h = hv(v, 0, seen); if (h !== 0 || typeof v !== 'object') map[pre + k] = rn(h); }
+        }
+      };
+      flat(an, 'an.', 0, new WeakSet()); flat(p, 'p.', 0, new WeakSet()); flat(C.combat?.melee, 'mel.', 0, new WeakSet());
+      flat(C.combat, 'cmb.', 1, new WeakSet()); flat(an?.melee, 'anm.', 0, new WeakSet());
+      map['env._gustPhase'] = rn(env._gustPhase); map['env._t'] = rn(env._t); map['env.wind.gust'] = rn(env.wind?.gust);
+      return map;
+    };
+    if (o.stateProbe) out.state = {};
     // a clean slate first, whatever the frame before left: a swing runs out, the lance goes back on her back, no
     // crouch, no aim (up to 4 s of the section; how long it takes is not part of the frame)
     const mel = C.combat?.melee;
@@ -459,7 +497,30 @@ export async function stageFrame(f, o = {}) {
       out.chains = (an._chains || []).length;
     }
     // every cloth and hair chain re-seated on the animated pose of the next step, at rest (as `_warmSprings` ends)
-    const reseat = () => { if (!an) return; for (const c of an._chains || []) { c.seeded = false; c.mvK = NaN; c.mvV = NaN; } if ('_mvSelf' in an) an._mvSelf = NaN; };
+    /* (M1b, engine: F15's back panel lifted in a full-set session and hung in a short one at one commit, 705c2f2.
+     *  The re-seat now clears ALL of a chain's history, not only its particles: `flX`, the flutter's own phase, which a
+     *  run (the wrap's `runFl`) advanced and nothing put back, so every later stride met another phase of the wave;
+     *  `swK`, the lance swing's ease (F19 left it part-way); the moving ease and her own covered speed; the foot-strike
+     *  edges (a step 'landed' on the first frame after the slate when the frame before ended mid-stride). The people's
+     *  chains too (PersonChains: links back on bind, the sub-step remainder and their own wind clock at 0). The air
+     *  needs nothing more: the gust phase starts at 0 with the section's clocks (above), the field she reads is a
+     *  function of the pinned clock, and her gust and flutter gains are constants set once at construction) */
+    const reseat = () => {
+      if (an) {
+        for (const c of an._chains || []) {
+          c.seeded = false; c.mvK = NaN; c.mvV = NaN; c.swK = NaN; c.flX = 0;
+          if (c.vel) c.vel.fill(0); if (c.animVel) c.animVel.fill(0); if (c.acc) c.acc.fill(0);
+        }
+        if ('_mvSelf' in an) an._mvSelf = NaN;
+        if ('_prevStL' in an) { an._prevStL = an._stL; an._prevStR = an._stR; }
+      }
+      for (const q of C.people?.list || []) {
+        const pc = q.chains;
+        if (!pc?.chains) continue;
+        pc.acc = 0; pc.t = 0;
+        for (const c of pc.chains) { try { c.links.forEach((l, i) => l.quaternion.copy(c.bindQ[i])); } catch (e) { /* */ } c.seeded = false; }
+      }
+    };
     reseat();
     // THE LENS'S FIELD OF VIEW, HELD. combat.js eases camera.fov toward the hip FOV every frame on REAL dt, after the
     // player's camera (the frame's own lens) has set the frame's fov, so the filmed fov was 45 plus a share of the
@@ -487,7 +548,7 @@ export async function stageFrame(f, o = {}) {
       },
       // 1.5 s of idle for her body's low-passes to settle, then the chains re-seated once more on that settled pose:
       // the cloth is the part of her that keeps a difference longest, so it starts its motion from rest
-      idle() { sim.step(90); reseat(); sim.step(1); out.digest.idle = digest(); },
+      idle() { if (o.stateProbe) out.state.seated = stateHash(); sim.step(90); reseat(); sim.step(1); out.digest.idle = digest(); if (o.stateProbe) out.state.idle = stateHash(); },
       freeze() { E.requestTimeScale('studio', 0); out.renderScale = E.renderScale ?? null; out.digest.end = digest(); end(); },
     };
     return sim;
