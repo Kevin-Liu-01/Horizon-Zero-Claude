@@ -18,7 +18,7 @@
  * Live rows in the same session (the node --test rows are tools/gates/systems/*.test.mjs):
  *   brazier-dialog   at the cistern on New Game: the dialog's words are four of the bible's six, with a forecast
  *   brazier-refusal  STAGED on the frames page: a real Plumb spawned by the machines system, its AI state set to
- *                    suspicious (wary) / alert (hostile) / patrol (calm) at 25 m and at 80 m; the dialog the Brazier
+ *                    suspicious (wary) and alert (hostile) at 25 m, suspicious at 80 m, patrol at 300 m; the dialog the Brazier
  *                    opens, read off the page after a real E hold, and the rules' mode (src/game/brazier)
  *   death-rule       if Brea dies in the run: the stage before, the stage after RELOAD THE LAST ENTRY, and where she
  *                    stands against the Brazier of her last rest
@@ -216,7 +216,9 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
   let fired = 0, aimed = false;
   await page.mouse.move(800, 450);
   await readyBow(page, K);
-  const release = async () => { if (aimed) { await K.up('ShiftLeft'); await page.mouse.up({ button: 'left' }); await page.mouse.up({ button: 'right' }); aimed = false; } };
+  // puppeteer throws on releasing a button it does not hold: every release is guarded
+  const up = async (button) => { try { await page.mouse.up({ button }); } catch { /* not held */ } };
+  const release = async () => { if (aimed) { await K.up('ShiftLeft'); await up('left'); await up('right'); aimed = false; } };
   try {
     for (;;) {
       const s = await page.evaluate(probe);
@@ -250,7 +252,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         if (!now) break;
         a = await page.evaluate(aimPoint, now.x, now.y, now.z, 0.35);
       }
-      await page.mouse.up({ button: 'left' });
+      await up('left');
       fired++;
       shots.push({ kind, part, d: +t.d.toFixed(1), aimErr: a.err, hpBefore: t.hp });
       await sleep(380);
@@ -398,7 +400,10 @@ try {
       });
       const cases = [];
       if (prep.spawned) {
-        for (const [dist, state] of [[25, 'suspicious'], [25, 'alert'], [25, 'patrol'], [80, 'suspicious']]) {
+        // the calm control stands the Plumb 300 m off: at 25 m its own brain sees her and walks 'patrol' on to alert
+        // between the runner's writes (7ae0fd0: the patrol case read the refusal on the page)
+        for (const [dist, state] of [[25, 'suspicious'], [25, 'alert'], [80, 'suspicious'], [300, 'patrol']]) {
+          for (let k = 0; k < 3 && await page.evaluate(() => !!window.__CTX__.systemsGame?.present?.busy); k++) { await page.keyboard.press('Escape'); await sleep(300); }
           const c = await page.evaluate(async (dist, state) => {
             const C = window.__CTX__, B = C.braziers, home = B.byId('cistern'), m = window.__refusalM;
             const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

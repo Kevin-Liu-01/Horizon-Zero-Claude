@@ -23,6 +23,13 @@ const BASALT_HI = new THREE.Color('#5c5753');
 const RIM = new THREE.Color('#8a8279');
 const WATER = new THREE.Color('#1d2b2e');
 
+/** Repeat the painted basalt `k` times across a part (the map's vesicles are sized for the bowl's 2.8 m round). */
+function uvScale(geo, k) {
+  const uv = geo.attributes.uv;
+  if (uv) for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * k, uv.getY(i) * k);
+  return geo;
+}
+
 function tint(geo, color, jitter, rng) {
   const n = geo.attributes.position.count;
   const c = new Float32Array(n * 3);
@@ -168,7 +175,7 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
     const a = (i / 3) * Math.PI * 2 + 0.3;
     const g = stone(0.16 + rng() * 0.03, rng, 0.75);
     g.translate(Math.cos(a) * 0.27, 0.1, Math.sin(a) * 0.27);
-    parts.push(tint(g, BASALT_HI, 0.12, rng));
+    parts.push(tint(uvScale(g, 2), BASALT_HI, 0.12, rng));
   }
   // the basalt bowl: a lathe, thick-lipped, open to the sky
   const prof = [
@@ -198,7 +205,7 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
     for (let i = 0; i < gp.count; i++) { const k = 0.9 + rng() * 0.2; gp.setXYZ(i, gp.getX(i) * k, gp.getY(i), gp.getZ(i) * k); }
     g.computeVertexNormals();
     g.translate(lx, gy(sw.x, sw.z) - y0 + (SEAT_H + 0.08) / 2 - 0.08, lz);
-    parts.push(tint(g, BASALT_HI, 0.1, rng));
+    parts.push(tint(uvScale(g, 2.5), BASALT_HI, 0.1, rng));
   }
 
   // the cistern beside it: a low ring of dressed stones round dark water, 2.3 m off, never on Brea's spawn
@@ -212,7 +219,7 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
       const g = new THREE.BoxGeometry(0.48, 0.36 + rng() * 0.06, 0.26);
       g.rotateY(-a);
       g.translate(cx + Math.cos(a) * 0.95, 0.17, cz + Math.sin(a) * 0.95);
-      parts.push(tint(g, RIM, 0.14, rng));
+      parts.push(tint(uvScale(g, 4), RIM, 0.14, rng));
     }
     const w = new THREE.CircleGeometry(0.86, 18);
     w.rotateX(-Math.PI / 2);
@@ -224,7 +231,7 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
   const tex = surfaces();
   // basalt: the vertex colours carry each part's tone, the map its vesicles and speckle, the same map its relief
   const stoneMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93, metalness: 0,
-    map: tex.basalt, bumpMap: tex.basalt, bumpScale: 2.2 });
+    map: tex.basalt, bumpMap: tex.basalt, bumpScale: 0.7 });
   const body = new THREE.Mesh(geo, stoneMat);
   body.castShadow = true;
   body.receiveShadow = true;
