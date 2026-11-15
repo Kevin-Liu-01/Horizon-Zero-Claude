@@ -10,16 +10,17 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
  *   b.group         add to the scene
  *   b.setState({ kindled, burning })   ash, coals or flame
  *   b.update(t, camera, dayK)          flame billboard faces the camera; light flickers (no allocation)
- *   b.seat          { x, z, yaw } where Brea sits, 1.1 m off the bowl, facing it
+ *   b.seat          { x, y, z, yaw } where Brea sits: the seat block 1.6 m off the bowl on bearing 200, facing it
  *   b.dispose()
  *
- * Draws: stones + bowl + cistern merged into ONE mesh (vertex colours), the ash/coal disc, the flame quad.
+ * Draws: stones + bowl + cistern merged into ONE mesh (vertex colours over a painted basalt map with its relief), the
+ * ash-and-coal disc (glowing cracks), the flame (three tongues on one billboard), the pool of light on the ground.
  * Light: `sharedLight` (one shadow-free point light for all Braziers, the one fire light the host carried before;
  * the host's own pit is hidden while this stands, see src/game/brazier/braziers.js). `claimLight()` parks it here.
  */
-const BASALT = new THREE.Color('#2b2a2c');
-const BASALT_HI = new THREE.Color('#3b3836');
-const RIM = new THREE.Color('#57524c');
+const BASALT = new THREE.Color('#4a4644');
+const BASALT_HI = new THREE.Color('#5c5753');
+const RIM = new THREE.Color('#8a8279');
 const WATER = new THREE.Color('#1d2b2e');
 
 function tint(geo, color, jitter, rng) {
@@ -52,24 +53,95 @@ function stone(r, rng, squash = 0.7) {
 }
 
 const FLAME_VS = /* glsl */`
-varying vec2 vUv;
-void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+attribute float aSeed;
+varying vec2 vUv; varying float vSeed;
+void main() { vUv = uv; vSeed = aSeed; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+/**
+ * The flame: three tongues of different height and phase, each a soft teardrop with a hot white root, an orange
+ * body and a red tip, licked sideways by noise. Every edge fades (round 1 read as one soft cone in a rectangular
+ * haze: the quad's flat base was cut where the body was widest).
+ */
 const FLAME_FS = /* glsl */`
 uniform float uTime; uniform float uK;
-varying vec2 vUv;
+varying vec2 vUv; varying float vSeed;
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
 void main() {
   vec2 p = vUv; float y = p.y;
-  float w = 0.34 * (1.0 - y) * (0.8 + 0.2 * sin(uTime * 7.0 + y * 6.0));
-  float x = abs(p.x - 0.5 + 0.06 * (n(vec2(y * 4.0, uTime * 2.3)) - 0.5) * y * 2.0);
-  float body = smoothstep(w, w * 0.35, x) * smoothstep(1.0, 0.25, y + 0.25 * n(vec2(p.x * 6.0, uTime * 3.0 - y * 5.0)));
+  float t = uTime * (1.0 + 0.25 * vSeed) + vSeed * 17.0;
+  float lick = (n(vec2(y * 3.0 + vSeed * 5.0, t * 2.1)) - 0.5) * 0.32 * y;
+  float x = abs(p.x - 0.5 - lick);
+  float w = 0.3 * pow(1.0 - y, 0.8) * (0.85 + 0.15 * sin(t * 6.0 + y * 7.0)) * smoothstep(0.0, 0.16, y);
+  float tear = n(vec2(p.x * 7.0, t * 3.4 - y * 6.0));
+  float top = 0.78 + 0.22 * n(vec2(vSeed * 3.0, t * 1.3));
+  float body = smoothstep(w, w * 0.25, x) * smoothstep(top, top * 0.45, y + 0.22 * tear * y);
+  body *= smoothstep(0.0, 0.07, y) * smoothstep(0.0, 0.12, 0.5 - abs(p.x - 0.5));
   if (body < 0.01) discard;
-  vec3 hot = vec3(1.0, 0.86, 0.55), mid = vec3(1.0, 0.52, 0.16), top = vec3(0.75, 0.22, 0.06);
-  vec3 c = mix(hot, mid, smoothstep(0.05, 0.45, y)); c = mix(c, top, smoothstep(0.45, 0.9, y));
-  gl_FragColor = vec4(c * body * uK, body * uK);
+  vec3 root = vec3(1.0, 0.93, 0.74), hot = vec3(1.0, 0.7, 0.3), mid = vec3(0.98, 0.42, 0.1), tip = vec3(0.62, 0.14, 0.04);
+  vec3 c = mix(root, hot, smoothstep(0.02, 0.2, y));
+  c = mix(c, mid, smoothstep(0.2, 0.5, y));
+  c = mix(c, tip, smoothstep(0.5, 0.85, y));
+  float a = body * uK;
+  gl_FragColor = vec4(c * a, a);
 }`;
+
+/** The fire's own pool of light on the trodden ground: warm, round, fading to nothing at 2.4 m (additive). */
+const POOL_VS = /* glsl */`
+varying vec2 vXZ;
+void main() { vXZ = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+const POOL_FS = /* glsl */`
+uniform float uK; uniform float uR;
+varying vec2 vXZ;
+void main() {
+  float d = length(vXZ) / uR;
+  float f = pow(max(0.0, 1.0 - d), 2.2);
+  gl_FragColor = vec4(vec3(1.0, 0.55, 0.22) * f * uK, 1.0);
+}`;
+
+/** Basalt (vesicular, sun-dulled) and ash-and-coal surfaces, painted once on small canvases (browser only). */
+let _tex = null;
+function surfaces() {
+  if (_tex !== null) return _tex;
+  _tex = { basalt: null, coal: null };
+  if (typeof document === 'undefined') return _tex;
+  const rng = rngOf(91);
+  const canvas = (n) => { const c = document.createElement('canvas'); c.width = c.height = n; return c; };
+  // basalt: grey-brown speckle, pale weathering, dark vesicles with a lit lip
+  const b = canvas(256), g = b.getContext('2d');
+  g.fillStyle = '#7d7975'; g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 2600; i++) {
+    const v = 95 + rng() * 80 | 0;
+    g.fillStyle = `rgba(${v},${v - 4},${v - 9},${0.25 + rng() * 0.4})`;
+    g.fillRect(rng() * 256, rng() * 256, 1 + rng() * 3, 1 + rng() * 3);
+  }
+  for (let i = 0; i < 260; i++) {
+    const x = rng() * 256, y = rng() * 256, r = 0.8 + rng() * rng() * 4.5;
+    g.fillStyle = 'rgba(160,152,142,0.55)'; g.beginPath(); g.arc(x + 0.6, y - 0.6, r, 0, 6.283); g.fill();
+    g.fillStyle = 'rgba(28,26,26,0.9)'; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
+  }
+  // ash and coal: grey ash with glowing cracks (the cracks are the emissive map)
+  const c = canvas(128), k = c.getContext('2d');
+  k.fillStyle = '#000'; k.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 46; i++) {
+    let x = 64 + (rng() - 0.5) * 90, y = 64 + (rng() - 0.5) * 90;
+    k.strokeStyle = `rgba(255,${120 + rng() * 90 | 0},40,${0.5 + rng() * 0.5})`;
+    k.lineWidth = 0.8 + rng() * 2.2;
+    k.beginPath(); k.moveTo(x, y);
+    for (let j = 0; j < 4; j++) { x += (rng() - 0.5) * 22; y += (rng() - 0.5) * 22; k.lineTo(x, y); }
+    k.stroke();
+  }
+  for (let i = 0; i < 70; i++) {
+    k.fillStyle = `rgba(255,${150 + rng() * 80 | 0},60,${0.4 + rng() * 0.6})`;
+    k.beginPath(); k.arc(64 + (rng() - 0.5) * 70, 64 + (rng() - 0.5) * 70, 1 + rng() * 3.5, 0, 6.283); k.fill();
+  }
+  const mk = (cv) => { const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; };
+  _tex.basalt = mk(b);
+  _tex.basalt.colorSpace = THREE.SRGBColorSpace;
+  _tex.coal = mk(c);
+  _tex.coal.colorSpace = THREE.SRGBColorSpace;
+  return _tex;
+}
 
 /** The one shared fire light (shadow-free), for src/game/brazier/braziers.js, which may not import three. */
 export function makeFireLight() {
@@ -100,14 +172,34 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
   }
   // the basalt bowl: a lathe, thick-lipped, open to the sky
   const prof = [
-    [0.0, 0.0], [0.16, 0.0], [0.3, 0.05], [0.4, 0.14], [0.44, 0.24], [0.43, 0.27], [0.37, 0.25], [0.3, 0.17], [0.16, 0.12], [0.0, 0.12],
+    [0.0, 0.0], [0.16, 0.0], [0.24, 0.02], [0.31, 0.06], [0.37, 0.1], [0.41, 0.15], [0.44, 0.21], [0.455, 0.25], [0.45, 0.28],
+    [0.42, 0.29], [0.385, 0.27], [0.35, 0.22], [0.3, 0.17], [0.22, 0.135], [0.12, 0.12], [0.0, 0.12],
   ].map(([r, h]) => new THREE.Vector2(r, h));
-  const bowl = new THREE.LatheGeometry(prof, 14);
+  const bowl = new THREE.LatheGeometry(prof, 30);
   bowl.translate(0, 0.2, 0);
   const bp = bowl.attributes.position;
-  for (let i = 0; i < bp.count; i++) { const k = 1 + (rng() - 0.5) * 0.05; bp.setXYZ(i, bp.getX(i) * k, bp.getY(i), bp.getZ(i) * k); }
+  for (let i = 0; i < bp.count; i++) {
+    const a = Math.atan2(bp.getZ(i), bp.getX(i));
+    const k = 1 + 0.025 * Math.sin(a * 5 + 1.3) + 0.018 * Math.sin(a * 11 + 0.4) + (rng() - 0.5) * 0.02;
+    bp.setXYZ(i, bp.getX(i) * k, bp.getY(i) * (1 + (rng() - 0.5) * 0.03), bp.getZ(i) * k);
+  }
   bowl.computeVertexNormals();
   parts.push(tint(bowl, BASALT, 0.1, rng));
+
+  // the seat: a flat basalt block 1.6 m off the bowl on bearing 200 (where F30 stands her), its top 0.42 m up, the
+  // height the seated pose (player.ride's 'sitIdle') rests its pelvis on
+  const SEAT_B = 200 * Math.PI / 180, SEAT_D = 1.6, SEAT_H = 0.42;
+  const sw = { x: x + Math.sin(SEAT_B) * SEAT_D, z: z - Math.cos(SEAT_B) * SEAT_D };
+  {
+    const c = Math.cos(yaw), sn = Math.sin(yaw), dx = sw.x - x, dz = sw.z - z;
+    const lx = dx * c - dz * sn, lz = dx * sn + dz * c;            // world -> group frame (inverse of rotation.y)
+    const g = new THREE.CylinderGeometry(0.21, 0.26, SEAT_H + 0.08, 7, 1);
+    const gp = g.attributes.position;
+    for (let i = 0; i < gp.count; i++) { const k = 0.9 + rng() * 0.2; gp.setXYZ(i, gp.getX(i) * k, gp.getY(i), gp.getZ(i) * k); }
+    g.computeVertexNormals();
+    g.translate(lx, gy(sw.x, sw.z) - y0 + (SEAT_H + 0.08) / 2 - 0.08, lz);
+    parts.push(tint(g, BASALT_HI, 0.1, rng));
+  }
 
   // the cistern beside it: a low ring of dressed stones round dark water, 2.3 m off, never on Brea's spawn
   let cisternAt = null;
@@ -129,40 +221,74 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
   }
   const geo = mergeGeometries(parts, false);
   for (const p of parts) p.dispose();
-  const stoneMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.94, metalness: 0 });
+  const tex = surfaces();
+  // basalt: the vertex colours carry each part's tone, the map its vesicles and speckle, the same map its relief
+  const stoneMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93, metalness: 0,
+    map: tex.basalt, bumpMap: tex.basalt, bumpScale: 2.2 });
   const body = new THREE.Mesh(geo, stoneMat);
   body.castShadow = true;
   body.receiveShadow = true;
   group.add(body);
 
   // ash / coals in the bowl
-  const coalMat = new THREE.MeshStandardMaterial({ color: '#6d6862', roughness: 1, emissive: new THREE.Color('#ff5a1a'), emissiveIntensity: 0 });
-  const coal = new THREE.Mesh(new THREE.CircleGeometry(0.3, 14), coalMat);
+  // grey ash with glowing cracks and live coals (the same canvas is the map and the emissive map): no flat coral disc
+  const coalMat = new THREE.MeshStandardMaterial({ color: '#8a847c', roughness: 1, map: tex.coal, emissiveMap: tex.coal,
+    emissive: new THREE.Color('#ff6a24'), emissiveIntensity: 0 });
+  const coalGeo = new THREE.CircleGeometry(0.32, 20);
+  { const cp = coalGeo.attributes.position; for (let i = 1; i < cp.count; i++) cp.setZ(i, (rng() - 0.3) * 0.035); coalGeo.computeVertexNormals(); }
+  const coal = new THREE.Mesh(coalGeo, coalMat);
   coal.rotation.x = -Math.PI / 2;
   coal.position.y = 0.335;
   group.add(coal);
 
-  // the flame: one camera-facing quad (a crossed pair drew as streaks edge-on, F30 round 1)
+  // the flame: three tongues side by side on one yaw billboard (a crossed pair drew as streaks edge-on, F30 round 1)
   const flameMat = new THREE.ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uK: { value: 0 } },
     vertexShader: FLAME_VS, fragmentShader: FLAME_FS,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   });
-  const flameGeo = new THREE.PlaneGeometry(0.62, 0.95);
-  flameGeo.translate(0, 0.475, 0);
+  const tongues = [[0, 0.5, 0.92, 0.02], [-0.11, 0.38, 0.66, 0.37], [0.12, 0.36, 0.6, 0.71]].map(([ox, w, hgt, sd]) => {
+    const g = new THREE.PlaneGeometry(w, hgt);
+    g.translate(ox, hgt / 2, sd * 0.02);
+    g.setAttribute('aSeed', new THREE.BufferAttribute(new Float32Array(4).fill(sd), 1));
+    return g;
+  });
+  const flameGeo = mergeGeometries(tongues, false);
+  for (const g of tongues) g.dispose();
   const flame = new THREE.Mesh(flameGeo, flameMat);
-  flame.position.y = 0.32;
+  flame.position.y = 0.3;
   flame.renderOrder = 2;
   flame.frustumCulled = false;
   group.add(flame);
+
+  // the pool of light on the trodden ground, draped on the terrain (the point light alone lit nothing visible, F30)
+  const POOL_R = 2.4;
+  const poolGeo = new THREE.CircleGeometry(POOL_R, 28, 0, Math.PI * 2);
+  poolGeo.rotateX(-Math.PI / 2);
+  {
+    const pp = poolGeo.attributes.position;
+    const c = Math.cos(yaw), sn = Math.sin(yaw);
+    for (let i = 0; i < pp.count; i++) {
+      const lx = pp.getX(i), lz = pp.getZ(i);
+      const wx = x + lx * c + lz * sn, wz = z - lx * sn + lz * c;
+      pp.setY(i, gy(wx, wz) - y0 + 0.035);
+    }
+  }
+  const poolMat = new THREE.ShaderMaterial({
+    uniforms: { uK: { value: 0 }, uR: { value: POOL_R } }, vertexShader: POOL_VS, fragmentShader: POOL_FS,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2,
+  });
+  const pool = new THREE.Mesh(poolGeo, poolMat);
+  pool.renderOrder = 1;
+  group.add(pool);
 
   // one fire light for every Brazier (a second point light would recompile and re-cost every lit material):
   // the caller owns it and parks it at the burning Brazier nearest Brea (src/game/brazier/braziers.js)
   const light = sharedLight ?? null;
 
   const state = { kindled: false, burning: false, k: 0 };
-  const seatA = yaw + Math.PI * 0.75;
-  const seat = { x: x + Math.sin(seatA) * 1.1, z: z + Math.cos(seatA) * 1.1, yaw: seatA + Math.PI };
+  // where she sits: on the seat block, facing the bowl (yaw: the heading toward the fire, atan2(dx, dz))
+  const seat = { x: sw.x, z: sw.z, y: gy(sw.x, sw.z) + SEAT_H, yaw: Math.atan2(x - sw.x, z - sw.z) };
 
   return {
     group, seat, cistern: cisternAt, position: new THREE.Vector3(x, y0, z),
@@ -189,7 +315,10 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
       const f = 1 + 0.13 * Math.sin(t * 11.3) + 0.08 * Math.sin(t * 23.7 + 1.3);
       // 7, not 18: at 18 the blades within a metre blew out to white and her violet turned pink (F30 at 4945148)
       if (light && light.userData.owner === group) light.intensity = 7 * state.k * f * dayK;
-      coalMat.emissiveIntensity = state.kindled ? (0.1 + 0.9 * state.k * day) * f : 0;
+      coalMat.emissiveIntensity = state.kindled ? (0.25 + 1.6 * state.k * day) * f : 0;
+      // the pool only shows once the sun is down: by day (dayK 0.05) it is 0.02, at dusk and night up to 0.34
+      poolMat.uniforms.uK.value = 0.34 * state.k * Math.max(0, Math.min(1, dayK)) * (0.9 + 0.1 * f);
+      pool.visible = state.burning;
       if (camera && flame.visible) {
         // yaw-only billboard in the group's frame
         const dx = camera.position.x - group.position.x, dz = camera.position.z - group.position.z;
@@ -201,6 +330,7 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
       geo.dispose(); stoneMat.dispose();
       coal.geometry.dispose(); coalMat.dispose();
       flameGeo.dispose(); flameMat.dispose();
+      poolGeo.dispose(); poolMat.dispose();
     },
   };
 }

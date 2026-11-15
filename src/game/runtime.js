@@ -80,7 +80,7 @@ export class SystemsGame {
       ansel: { x: pans.x + 2.2, z: pans.z + 1.4 },
       gauge,
       cane: lerp(pans, gauge, 0.5),
-      mise: { x: saltrow.x - 6, z: saltrow.z + 4 },
+      mise: this._shoreNear(saltrow) ?? { x: saltrow.x - 6, z: saltrow.z + 4 },
       transect: mid,
       transectA: { x: pans.x, z: pans.z }, transectB: { x: beach.x, z: beach.z },
       crossed,
@@ -95,6 +95,29 @@ export class SystemsGame {
       gauge: { x: gauge.x, y: (g?.y ?? H(gauge)) + 5.3, z: gauge.z, tol: 7, range: 160 },
     };
     for (const t of TRIG) this.targets[t.id] = { x: t.x, y: H(t) + TRIG_TOP, z: t.z, tol: 2.5, range: 2000 };
+  }
+
+  /**
+   * Mise keeps the breakwater lamp (BIBLE 8.6): her anchor is the sea's edge nearest Saltrow, the last dry metre
+   * before the water (round 1 stood her in a meadow 7 m from the street while her note said "on the breakwater").
+   * No breakwater is built yet (settlements); this is where it will meet the sea. 24 bearings, 2 m steps, 160 m.
+   */
+  _shoreNear(c) {
+    const H = (x, z) => this.ctx.terrain?.getHeight?.(x, z);
+    if (H(c.x, c.z) == null) return null;
+    let best = null;
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2, dx = Math.sin(a), dz = Math.cos(a);
+      for (let d = 8; d <= 160; d += 2) {
+        const x = c.x + dx * d, z = c.z + dz * d;
+        const h = H(x, z);
+        if (h < 0) break;                                   // the sea: this bearing's shore was the last dry step
+        if (h > 1.2 || H(x + dx * 3, z + dz * 3) >= 0) continue;
+        if (!best || d < best.d) best = { x: +x.toFixed(2), z: +z.toFixed(2), d };
+        break;
+      }
+    }
+    return best ? { x: best.x, z: best.z } : null;
   }
 
   placeName() {
@@ -165,8 +188,21 @@ export class SystemsGame {
     };
   }
 
+  /**
+   * Rake and cut: the satchel gains the catalogue item (the salt is `metal-shards`, the cane the `ridge-wood`
+   * stand-in until the Making ledger's own cane item, M1.6d), but the toast's name is the writing's
+   * (src/game/text/ui/systems.json `items`), never the catalogue's ("Juniper" for cut cane, systems-1b judge).
+   */
   _gather(source, item) {
-    this.ctx.inventory?.add?.(item, 1);
+    const inv = this.ctx.inventory;
+    const name = this.S.systems.items?.[source] ?? null;
+    if (inv?.counts && name) {
+      const have = inv.counts.get(item) ?? 0;
+      const cap = typeof inv.capacity === 'function' ? inv.capacity(item) : Infinity;
+      const total = Math.min(Number.isFinite(cap) ? cap : Infinity, have + 1);
+      inv.counts.set(item, total);
+      if (total > have) this.ctx.events?.emit?.('item-gained', { id: item, count: total - have, total, name, glyph: null, color: null, rarity: 'common', capped: false });
+    } else inv?.add?.(item, 1);
     this.spine.notify('gathered', { source, n: 1 });
   }
 
@@ -220,6 +256,12 @@ export class SystemsGame {
     on('machine-killed', (e) => this.spine.notify('machine-killed', { kind: e.machine?.kind }));
     on('plumb-topple', (e) => this.spine.notify('plumb-topple', { kind: e.machine?.kind ?? 'plumb' }));
     on('part-torn', (e) => this.spine.notify('part-torn', { kind: e.machine?.kind, part: e.part?.name ?? e.part?.id }));
+    // nothing in the build emits 'part-torn' (audio listens for it; machines report a torn tool on machine-damaged):
+    // the bob torn off the Plumb is read there too (the Pry verb itself is M1.6j's)
+    on('machine-damaged', (e) => {
+      const tp = e.tornPart;
+      if (tp) this.spine.notify('part-torn', { kind: e.machine?.kind, part: tp.name ?? tp.id ?? String(tp) });
+    });
     on('flagged', () => this.spine.notify('flagged'));
     on('plumb-chime', () => this.spine.notify('plumb-chime'));
     on('ammo-crafted', (e) => this.spine.notify('ammo-crafted', { ammo: e.ammo, n: e.n }));
@@ -307,12 +349,34 @@ export class SystemsGame {
     if (home !== this._anselHome) { this._anselHome = home; this._moveAnsel(home ? this.A['ansel-home'] : this.A.ansel); }
   }
 
+  /** Is any live Instrument within 60 m alert or attacking (the HUD's SPOTTED: its meter full)? */
+  _spotted() {
+    const p = this.ctx.player?.position, L = this.ctx.machines?.list;
+    if (!p || !Array.isArray(L)) return false;
+    for (const m of L) {
+      if (!m || m.alive === false || !m.position) continue;
+      if (m.state !== 'alert' && m.state !== 'attack') continue;
+      const dx = m.position.x - p.x, dz = m.position.z - p.z;
+      if (dx * dx + dz * dz < 3600) return true;
+    }
+    return false;
+  }
+
   update(dt, t) {
     if (!this._peopleT) this._peopleT = 0;
+    // the crossing is judged seen the moment the HUD would say SPOTTED (4 Hz check)
+    this._seenT = (this._seenT ?? 0) + dt;
+    if (this._seenT > 0.25) {
+      this._seenT = 0;
+      if (this.ctx.state === 'playing' && this.spine.current()?.flagVariant && this._spotted()) this.spine.notify('seen');
+    }
     this._peopleT += dt;
     // Ansel and Mise stand at their anchors once a run has started (never in a ?shot film: F20/F21 stage their own)
     if (this._peopleT > 2 && this.spine.started) this._stagePeople();
     if (this.ctx.state === 'playing') this.spine.update(dt, this.world);
+    // while the quest runs its own cards (src/game/text/cards) are the only tutorial cards: hud.js reads this flag
+    // and holds the bible-table cards it raises by itself (tips.js), which ran alongside them in round 1
+    if (this.ctx.hud) this.ctx.hud.questCards = !!this.spine.started;
     this.braziers.update(dt, t);
     const now = performance.now();
     const real = this._lastReal ? Math.min(0.1, (now - this._lastReal) / 1000) : 0;

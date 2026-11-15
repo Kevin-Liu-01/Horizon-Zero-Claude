@@ -12,7 +12,7 @@ import { fill } from '../strings.js';
  *   update(dt, world)              world: { near(anchor, r, up) -> bool, aim(target) -> bool, bearing(target) -> deg }
  *   notify(type, payload)          'scene-done' {scene, exit} · 'gathered' {source, n} · 'ammo-crafted' {ammo, n}
  *                                  'machine-killed' {kind} · 'plumb-topple' · 'part-torn' {part, kind} · 'flagged'
- *                                  'plumb-chime' · 'plumb-hit' · 'plumb-dark'
+ *                                  'plumb-chime' · 'plumb-hit' · 'plumb-dark' · 'seen' (spotted, no Flag)
  *   talk(npc) -> scene id | null   the player spoke to npc: the scene to play, or null
  *   hudState()                     the field note in the shape `progression.state()` returns (src/ui/hud.js reads it)
  *   serialize() / restore(data)    plain JSON for save v6
@@ -43,7 +43,7 @@ export class QuestSpine {
     this.t = 0;
     /** @type {Record<string, {state:string, n:number, flagged:boolean, t0:number, t1:number}>} */
     this.st = {};
-    for (const s of this.stages) this.st[s.id] = { state: 'pending', n: 0, flagged: false, t0: -1, t1: -1 };
+    for (const s of this.stages) this.st[s.id] = { state: 'pending', n: 0, flagged: false, seen: false, t0: -1, t1: -1 };
     this.seen = { turns: new Set(), cards: new Set(), scenes: new Set() };
     this.triangles = new Set();
     this.timers = [];
@@ -111,10 +111,11 @@ export class QuestSpine {
     const text = this.S.stage(s.id);
     let line = text.log;
     if (s.flagVariant && rec.flagged && text.logFlagged) line = text.logFlagged;
+    else if (s.flagVariant && rec.seen && text.logSeen) line = text.logSeen;
     this._log(s.id, fill(line, { n: rec.n, of: s.count }));
     if (s.scenes?.done) this._scene(s.scenes.done);
     if (s.turns?.done) this._turn(s.turns.done);
-    if (s.id === 'cross' && !rec.flagged) this._turn('crossed-unseen');
+    if (s.id === 'cross' && !rec.flagged && !rec.seen) this._turn('crossed-unseen');
     if (s.after) this.timers.push({ at: this.t + s.after.delay, turn: s.after.turn, stage: s.id });
     if (s.triangle && !this.triangles.has(s.triangle)) {
       this.triangles.add(s.triangle);
@@ -194,6 +195,8 @@ export class QuestSpine {
       this._turn('flagged');
       return;
     }
+    // spotted (an Instrument alert or attacking within 60 m: the HUD's SPOTTED) without a Flag: the stage was seen
+    if (type === 'seen') { for (const s of act) this.st[s.id].seen = true; return; }
     if (type === 'plumb-chime') { this._turn('chime'); return; }
     if (type === 'plumb-dark') { this._turn('plumb-dark'); return; }
     if (type === 'plumb-hit') {
@@ -267,6 +270,7 @@ export class QuestSpine {
       stages: Object.fromEntries(Object.entries(this.st).map(([k, v]) => [k, v.state])),
       lamps: this.st.lamps?.n ?? 0,
       flaggedCrossing: !!this.st.cross?.flagged,
+      seenCrossing: !!this.st.cross?.seen,
       triangles: [...this.triangles],
       t: +this.t.toFixed(2),
     };
@@ -276,7 +280,7 @@ export class QuestSpine {
     return {
       v: 1, id: QUEST_ID, started: this.started, done: this.done, rewarded: this.rewarded, idx: this.idx,
       t: +this.t.toFixed(2),
-      stages: Object.fromEntries(Object.entries(this.st).map(([k, v]) => [k, [v.state, v.n, v.flagged ? 1 : 0]])),
+      stages: Object.fromEntries(Object.entries(this.st).map(([k, v]) => [k, [v.state, v.n, v.flagged ? 1 : 0, v.seen ? 1 : 0]])),
       surveyed: [...this.surveyed],
       seen: { turns: [...this.seen.turns], cards: [...this.seen.cards], scenes: [...this.seen.scenes] },
       triangles: [...this.triangles],
@@ -299,6 +303,7 @@ export class QuestSpine {
       this.st[k].state = String(v[0]);
       this.st[k].n = v[1] | 0;
       this.st[k].flagged = !!v[2];
+      this.st[k].seen = !!v[3];
     }
     for (const p of (d.surveyed || [])) this.surveyed.add(p);
     for (const k of ['turns', 'cards', 'scenes']) for (const x of (d.seen?.[k] || [])) this.seen[k].add(x);

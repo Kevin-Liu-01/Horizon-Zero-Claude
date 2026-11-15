@@ -396,7 +396,8 @@ export class Menus {
     this.deathEl = el('div', 'mn-death', this.root);
     const dInner = el('div', 'mn-death-inner cal-page', this.deathEl);
     el('div', 'mn-death-kicker', dInner, 'FIELD BOOK, LAST ENTRY');
-    el('div', 'mn-death-title', dInner, 'BREA IS DOWN');
+    // M1.6f (systems, smallest change): the bible's death line (BIBLE 18), from src/game/text/ui/systems.json
+    el('div', 'mn-death-title', dInner, this.ctx?.systemsGame?.S?.systems?.death?.title ?? 'BREA IS DOWN');
     this._deathKillerEl = el('div', 'mn-death-killer', dInner);
     el('div', 'mn-death-rule', dInner);
     this._deathTip = el('div', 'mn-death-tip', dInner);

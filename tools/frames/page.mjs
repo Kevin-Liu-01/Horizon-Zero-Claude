@@ -329,7 +329,9 @@ export async function stageFrame(f, o = {}) {
     C.input.mouse.buttons &= ~1;
     if (!atContact) standIns.push('pose lanceHeavy: the heavy\'s contact hold was not reached within 2.5 s; filmed where the swing was');
   } else if (pose === 'sit') {
-    standIns.push('pose sit: no seated pose yet, filmed idle');
+    // (systems M1.6c, smallest change) the Brazier seats her on its seat block, facing the fire (player.ride 'sitIdle')
+    if (C.braziers?.seatHere?.()) { undo.push(() => C.braziers.stand?.()); await sleep(1200); }
+    else standIns.push('pose sit: no seated pose yet, filmed idle');
   }
 
   /* ---- 8. screens ---- */

@@ -47,3 +47,24 @@ test('the forecast line is one line in the bible\'s form; rest chooses the hour,
   assert.deepEqual(Object.keys(REST_HOURS), ['dawn', 'golden', 'dusk', 'night']);
   assert.ok(REST_HOURS.golden > 18 && REST_HOURS.golden < 19);
 });
+
+test('the refusal reads the lamps as the lamps system does: machines publish no lampState (systems-1b fix)', async () => {
+  // src/game/brazier/braziers.js machinesNear() maps each machine through instruments/lamps.js lampStateFor; round 1
+  // read `m.lampState`, which no machine sets, so every Instrument was calm and the refusal could never fire live
+  const { lampStateFor } = await import('../../../src/instruments/lamps.js');
+  const m = (state) => ({ alive: true, state, x: 25, z: 0 });
+  const read = (mm) => ({ x: mm.x, z: mm.z, lamp: mm.lampState ?? lampStateFor(mm) });
+  assert.equal(lampStateFor(m('suspicious')), 'wary');
+  assert.equal(lampStateFor(m('search')), 'wary');
+  assert.equal(lampStateFor(m('alert')), 'hostile');
+  assert.equal(lampStateFor(m('patrol')), 'calm');
+  assert.equal(lampStateFor({ alive: false, state: 'alert' }), 'dark');
+  const T = loadText().systems;
+  const home = BRAZIERS[0];
+  const at = (mm) => dialogFor(T, home, { lit: new Set(['cistern']), x: 0, z: 0, machines: [read(mm)] });
+  assert.equal(at(m('suspicious')).mode, 'refused');
+  assert.equal(at(m('alert')).line, 'THE LAMPS ARE UP. NO REST HERE.');
+  assert.equal(at(m('patrol')).mode, 'rest');
+  assert.equal(at({ ...m('alert'), x: 61 }).mode, 'rest');
+  assert.equal(at({ ...m('alert'), x: 60 }).mode, 'refused');
+});

@@ -2543,7 +2543,8 @@ export class HUD {
   _updateTips(dt) {
     if (this.ctx.state !== 'playing') return;
     for (const tip of TUTORIAL_CARDS) {
-      if (!tip.when || this._tipSeen.has(tip.id)) continue;
+      // M1.6a (systems, smallest change): while "Raker's Morning" runs, its own cards (src/game/text) are the cards
+      if (!tip.when || this._tipSeen.has(tip.id) || this.questCards) continue;
       let ok = false;
       try { ok = !!tip.when(this); } catch { ok = false; }
       if (ok) this._queueTip(tip);

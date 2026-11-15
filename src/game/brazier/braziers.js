@@ -1,6 +1,8 @@
 import { buildBrazier, makeFireLight } from '../../world/settlements/brazier.js';
 import { BRAZIERS, KINDLE_HOLD, dialogFor, REST_HOURS } from './rules.js';
 import { REST, TRIG } from '../../world/island/sites.js';
+import { HOME_BRAZIER } from '../../world/settlements/brazier-spots.js';
+import { lampStateFor } from '../../instruments/lamps.js';
 
 /**
  * THE BRAZIERS of the slice, live (BUILD M1.6c). Brea's cistern (home: a New Game counts as a rest here) and the
@@ -39,10 +41,9 @@ export class Braziers {
 
   _place(def) {
     const T = this.ctx.terrain;
-    if (def.id === 'cistern') {
-      const fp = this.ctx.settlements?.firePosition;
-      return { x: fp?.x ?? REST.x - 0.6, z: fp?.z ?? REST.z + 0.7, yaw: 0 };
-    }
+    // Brea's own: behind-left of where she wakes, out of F20 (src/world/settlements/brazier-spots.js); the flora's
+    // keepouts are cut round it there before the meadow is scattered
+    if (def.id === 'cistern') return { x: HOME_BRAZIER.x, z: HOME_BRAZIER.z, yaw: HOME_BRAZIER.yaw };
     const t1 = TRIG.find((t) => t.id === 'T1');
     // at the pillar's foot, 7 m to its seaward (south-west) side, on the flattest of four tries
     let best = null;
@@ -93,7 +94,9 @@ export class Braziers {
 
   _restSpot(b, hour) {
     // she stands up where she spawns at home (REST), and at the seat elsewhere
-    const s = b.def.home ? { x: REST.x, z: REST.z, yaw: b.obj.seat.yaw } : b.obj.seat;
+    const st = b.obj.seat, ox = st.x - b.obj.position.x, oz = st.z - b.obj.position.z, oL = Math.hypot(ox, oz) || 1;
+    // (elsewhere: on her feet 0.7 m outboard of the seat block, not inside it)
+    const s = b.def.home ? { x: REST.x, z: REST.z, yaw: st.yaw } : { x: st.x + ox / oL * 0.7, z: st.z + oz / oL * 0.7, yaw: st.yaw };
     const y = this.ctx.terrain?.getHeight?.(s.x, s.z) ?? 0;
     return { id: b.id, x: +s.x.toFixed(3), y: +y.toFixed(3), z: +s.z.toFixed(3), yaw: +(s.yaw ?? 0).toFixed(3), hour: +(+hour).toFixed(3) };
   }
@@ -115,7 +118,9 @@ export class Braziers {
     const out = [];
     for (const m of (this.ctx.machines?.list ?? [])) {
       if (!m || m.alive === false || !m.position) continue;
-      out.push({ x: m.position.x, z: m.position.z, lamp: m.lampState ?? 'calm', kind: m.kind });
+      // the lamp as the lamps system reads it (instruments/lamps.js): machines publish no `lampState`, so reading that
+      // field made every Instrument calm and the refusal could never fire (systems-1b judge, e42e6ba)
+      out.push({ x: m.position.x, z: m.position.z, lamp: m.lampState ?? lampStateFor(m), kind: m.kind });
     }
     return out;
   }
@@ -148,11 +153,14 @@ export class Braziers {
       this.stats.refused++;
       this.ctx.events?.emit?.('brazier-refused', { id, by: d.by?.kind ?? null });
       await this.present.brazier({ title: names[id] ?? '', line: d.line });
+      this.stand();
       return { ok: false, refused: true };
     }
     const choice = await this.present.brazier({ title: names[id] ?? '', rows: d.rows });
-    if (!choice) return { ok: false };
-    return this.rest(id, choice);
+    if (!choice) { this.stand(); return { ok: false }; }
+    const res = await this.rest(id, choice);
+    this.stand();
+    return res;
   }
 
   kindle(id) {
@@ -165,11 +173,37 @@ export class Braziers {
     return { ok: true, kindled: id };
   }
 
+  /**
+   * She sits on the seat block, facing the fire: the published seated hold `player.ride(path, 'sitIdle')` (hero-body)
+   * on a still two-point path (speed 0), so nothing walks her; `stand()` ends it. Round 1 filmed her standing.
+   */
   _sit(b) {
     const p = this.ctx.player;
     this.ash.delete(b.id);   // she lays the coals back up when she sits
     this._sync();
-    p?.sit?.(b.obj.seat);
+    const s = b.obj.seat;
+    if (!p?.ride || !s) return false;
+    const dx = b.obj.position.x - s.x, dz = b.obj.position.z - s.z, L = Math.hypot(dx, dz) || 1;
+    try {
+      this._ride = p.ride([{ x: s.x, y: s.y, z: s.z }, { x: s.x + dx / L * 0.05, y: s.y, z: s.z + dz / L * 0.05 }], { clip: 'sitIdle', speed: 0 });
+      return true;
+    } catch { this._ride = null; return false; }
+  }
+
+  /** She stands up from the seat (after the dialog closes, or a rest ends). */
+  stand() {
+    const p = this.ctx.player;
+    if (this._ride && p?.riding) p.endRide?.('cancel');
+    this._ride = null;
+  }
+
+  /** Published for the Frame Set (F30 "resting at the Brazier"): sit her at the Brazier within 4 m, if one is. */
+  seatHere() {
+    const p = this.ctx.player?.position;
+    if (!p) return false;
+    let best = null, bd = 16;
+    for (const b of this.list) { const d = (b.obj.position.x - p.x) ** 2 + (b.obj.position.z - p.z) ** 2; if (d < bd) { bd = d; best = b; } }
+    return best ? this._sit(best) : false;
   }
 
   /** Rest to `choice` (dawn | golden | dusk | night). Refused again at the moment of resting if lamps came up. */

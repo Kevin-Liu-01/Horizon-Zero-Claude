@@ -6,6 +6,11 @@
     "rake": "RAKE",
     "cut": "CUT CANE"
   },
+  "items": {
+    "about": "What a gather toast names: the writing's word, not the item catalogue's (cut cane is not juniper).",
+    "rake": "Salt",
+    "cane": "Cane"
+  },
   "brazier": {
     "six": {
       "kindle": "KINDLE",

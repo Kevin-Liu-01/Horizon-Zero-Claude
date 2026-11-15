@@ -7,16 +7,23 @@
  *
  *   node tools/gates/systems/slice-hour.mjs --port 5278 [--frames F30,F20] [--budget 840] [--label systems]
  *
- * WHAT DRIVES THE RUN. Keys only, as a player presses them: W and Shift to move, Space to hop a lip, E to talk,
- * rake, cut and sit, V for the Alidade, R to make arrows, digits for dialogue stations. The LOOK is the one stand-in:
- * the runner writes `player.camYaw` / `camPitch` (what the mouse writes), because a headless page has no pointer
- * lock. It never writes a position, never calls the spine, never skips a beat: a beat it cannot play is where the
- * report stops ("no script jumps"). Kinds and verbs owned by later items (the Plumb's topple needs the bow on the
- * vial) end the run honestly.
+ * WHAT DRIVES THE RUN. Keys and mouse buttons only, as a player presses them: W and Shift to move, Space to hop a
+ * lip, E to talk, rake, cut and sit, V for the Alidade, R to make arrows, 1 for the bow, RMB to aim, LMB to draw and
+ * loose, Shift to Steady, digits for dialogue stations. The LOOK is the one stand-in: the runner writes
+ * `player.camYaw` / `camPitch` (what the mouse writes), because a headless page has no pointer lock; an aimed shot
+ * steers that look onto the target by reading the camera's own direction back each frame (aimPoint). It never writes
+ * a position, never calls the spine, never skips a beat: a beat it cannot play is where the report stops ("no script
+ * jumps"). A death is played as a player plays it: the death card, RELOAD THE LAST ENTRY, and on (death-rule row).
  *
  * Live rows in the same session (the node --test rows are tools/gates/systems/*.test.mjs):
  *   brazier-dialog   at the cistern on New Game: the dialog's words are four of the bible's six, with a forecast
- *   save-continue    after the run: reload, CONTINUE on the title, the same stage, satchel, place and hour
+ *   brazier-refusal  STAGED on the frames page: a real Plumb spawned by the machines system, its AI state set to
+ *                    suspicious (wary) / alert (hostile) / patrol (calm) at 25 m and at 80 m; the dialog the Brazier
+ *                    opens, read off the page after a real E hold, and the rules' mode (src/game/brazier)
+ *   death-rule       if Brea dies in the run: the stage before, the stage after RELOAD THE LAST ENTRY, and where she
+ *                    stands against the Brazier of her last rest
+ *   save-continue    after the run: close the tab (quit), open a new one on the same profile, CONTINUE on the title:
+ *                    the same stage, satchel, place and hour. A diagnosis is polled while the title is awaited.
  *
  * Output: a run dir under ~/.calima-r5/review/runs/ (never the repo): report.json, the frames, step shots.
  */
@@ -79,8 +86,54 @@ const probe = () => {
     bzForecast: busy ? [...document.querySelectorAll('#cal-sys .sys-row small')].map((r) => r.textContent) : [],
     note: document.querySelector('.cal-track-obj')?.textContent ?? null,
     sighting: !!C?.sighting?.on, report: s?.report?.(), salt: C?.inventory?.count?.('metal-shards') ?? null,
+    hp: p ? Math.round(p.health) : null, ammo: C?.combat?.ammo?.hunter ?? null,
+    deathCard: !!document.querySelector('.mn-death.show'),
   };
 };
+
+/* in-page: the live Instruments of a kind, nearest first, with the world point a shot should take */
+const targetsOf = (kind, part) => {
+  const C = window.__CTX__, p = C.player.position;
+  const V = C.camera.position.constructor, v = new V();
+  const out = [];
+  for (const m of (C.machines?.list || [])) {
+    if (!m || m.alive === false || m._disposed || m.kind !== kind || !m.position) continue;
+    let o = null;
+    if (part === 'lamp') o = m._lampWp?.obj ?? m.weakPoints?.find((w) => w.name === 'lamp')?.obj;
+    else if (part === 'vial') o = m._vialWp?.obj ?? m.weakPoints?.find((w) => w.name === 'vial')?.obj;
+    else if (part === 'bob') o = m._bob?.attached !== false ? m._bob?.mesh : null;
+    if (o) o.getWorldPosition(v); else v.set(m.position.x, m.position.y + 0.9, m.position.z);
+    out.push({ i: C.machines.list.indexOf(m), x: v.x, y: v.y, z: v.z, d: Math.hypot(m.position.x - p.x, m.position.z - p.z),
+      state: m.state, hp: Math.round(m.health ?? 0), down: (m._toppleT ?? -1) > 0, part: !!o });
+  }
+  return out.sort((a, b) => a.d - b.d);
+};
+
+/** in-page: steer the look (camYaw / camPitch, what the mouse writes) until the camera's own ray is on (x, y, z). */
+async function aimPoint(x, y, z, tolDeg = 0.35) {
+  const C = window.__CTX__, p = C.player, cam = C.camera;
+  const V = cam.position.constructor;
+  const dir = new V(), pos = new V();
+  const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  const read = () => {
+    cam.getWorldPosition(pos); cam.getWorldDirection(dir);
+    const tx = x - pos.x, ty = y - pos.y, tz = z - pos.z, L = Math.hypot(tx, ty, tz) || 1;
+    const yT = Math.atan2(-tx, -tz), yC = Math.atan2(-dir.x, -dir.z);
+    const pT = Math.asin(ty / L), pC = Math.asin(Math.max(-1, Math.min(1, dir.y)));
+    return { dy: wrap(yT - yC), dp: pT - pC, err: Math.hypot(wrap(yT - yC) * Math.cos(pT), pT - pC) * 180 / Math.PI, L };
+  };
+  let r = read();
+  for (let i = 0; i < 12 && r.err > tolDeg; i++) {
+    p.camYaw += r.dy;
+    p.camPitch -= r.dp;   // camPitch grows downward (player.js: -0.8 is the look-up)
+    await raf(); await raf();
+    const r2 = read();
+    if (Math.abs(r2.dp) > Math.abs(r.dp) * 1.5 && Math.abs(r.dp) > 0.01) { p.camPitch += 2 * r.dp; await raf(); await raf(); }
+    r = read();
+  }
+  return { err: +r.err.toFixed(2), dist: +r.L.toFixed(1) };
+}
 
 function face(x, z) {
   const p = window.__CTX__.player;
@@ -88,30 +141,10 @@ function face(x, z) {
 }
 
 async function aimAt(id) {
-  const C = window.__CTX__, g = C.systemsGame, p = C.player, cam = C.camera;
-  const t = g.targets[id];
+  const t = window.__CTX__.systemsGame.targets[id];
   if (!t) return { ok: false };
-  const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
-  p.camYaw = Math.atan2(-(t.x - p.position.x), -(t.z - p.position.z));
-  const V = cam.position.constructor;
-  const dir = new V(), pos = new V(), to = new V();
-  const ang = () => {
-    cam.getWorldPosition(pos); cam.getWorldDirection(dir);
-    to.set(t.x - pos.x, t.y - pos.y, t.z - pos.z).normalize();
-    return Math.acos(Math.max(-1, Math.min(1, dir.dot(to)))) * 180 / Math.PI;
-  };
-  let best = { pitch: p.camPitch, a: 999 };
-  for (let k = -0.7; k <= 0.7; k += 0.035) {
-    p.camPitch = k; await raf(); await raf();
-    const a = ang();
-    if (a < best.a) best = { pitch: k, a };
-  }
-  // fine yaw then
-  p.camPitch = best.pitch;
-  let yaw0 = p.camYaw, by = { yaw: yaw0, a: best.a };
-  for (let d = -0.06; d <= 0.06; d += 0.01) { p.camYaw = yaw0 + d; await raf(); await raf(); const a = ang(); if (a < by.a) by = { yaw: yaw0 + d, a }; }
-  p.camYaw = by.yaw; await raf();
-  return { ok: by.a <= t.tol, angle: +by.a.toFixed(2), tol: t.tol };
+  const r = await window.__aimPoint(t.x, t.y, t.z, 0.3);
+  return { ok: r.err <= t.tol, angle: r.err, tol: t.tol };
 }
 
 /* -------------------------------------------------------------- driver */
@@ -128,7 +161,7 @@ async function walkTo(page, K, target, radius, { up = 0, maxS = 150 } = {}) {
   try {
     for (;;) {
       const s = await page.evaluate(probe);
-      if (s.state === 'dead') return { ok: false, why: 'died' };
+      if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) return { ok: false, why: 'died' };
       if (s.busy) return { ok: true, interrupted: true };
       if (s.state !== 'playing') return { ok: false, why: `the game left play (state ${s.state})` };
       const dx = s.p.x - target.x, dz = s.p.z - target.z, d = Math.hypot(dx, dz);
@@ -159,6 +192,72 @@ async function playScene(page, K, maxN = 40) {
 
 async function holdE(page, K, ms = 650) { await K.down('KeyE'); await sleep(ms); await K.up('KeyE'); await sleep(220); }
 
+let lampsFight = null;
+const shots = [];
+
+/** Bow in hand (slot 1) and Reed arrows on the string; make arrows (hold R) when fewer than 4. */
+async function readyBow(page, K) {
+  let a = (await page.evaluate(probe)).ammo;
+  for (let i = 0; i < 3 && a != null && a < 4; i++) { await K.down('KeyR'); await sleep(1700); await K.up('KeyR'); await sleep(300); a = (await page.evaluate(probe)).ammo; }
+  await K.tap('Digit1');
+  await sleep(250);
+  return a;
+}
+
+/**
+ * Shoot `part` on the nearest live `kind` until the stage moves on (`stageDone()` names the stage that must close),
+ * or, with `all`, until none of that kind is left within 70 m. Brea stands off at `stand` m: she walks in to it,
+ * and backs out when one closes inside 9 m. Every shot: RMB held, the look steered onto the part, Shift (Steady),
+ * LMB drawn for 1.0 s with the look kept on the part, then loosed.
+ */
+async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false } = {}) {
+  const t0 = Date.now();
+  const stage0 = (await page.evaluate(probe)).stage;
+  let fired = 0, aimed = false;
+  await page.mouse.move(800, 450);
+  await readyBow(page, K);
+  const release = async () => { if (aimed) { await K.up('ShiftLeft'); await page.mouse.up({ button: 'left' }); await page.mouse.up({ button: 'right' }); aimed = false; } };
+  try {
+    for (;;) {
+      const s = await page.evaluate(probe);
+      if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) return { ok: false, why: 'died', fired };
+      if (stageDone && s.stage !== stage0) return { ok: true, fired };
+      if ((Date.now() - t0) / 1000 > maxS) return { ok: !!all, why: `${kind} ${part}: not done in ${maxS} s (${fired} arrows)`, fired };
+      if (s.busy) { await release(); await playScene(page, K); continue; }
+      // the whole line (all): every live one within 220 m is walked to; one target: the nearest within 70 m
+      const T = (await page.evaluate(targetsOf, kind, part)).filter((t) => t.d < (all ? 220 : 70));
+      if (!T.length) return { ok: !!all, why: all ? null : `no live ${kind} within 70 m`, fired };
+      const t = T[0];
+      if (t.d > stand + 6) {
+        await release();
+        const k = (t.d - stand) / t.d;
+        await walkTo(page, K, { x: s.p.x + (t.x - s.p.x) * k, z: s.p.z + (t.z - s.p.z) * k }, 3, { maxS: 25 });
+        continue;
+      }
+      if (t.d < 9 && kind !== 'peg') {
+        await release();
+        const k = stand / Math.max(1, t.d);
+        await walkTo(page, K, { x: t.x + (s.p.x - t.x) * k, z: t.z + (s.p.z - t.z) * k }, 3, { maxS: 12 });
+        continue;
+      }
+      if ((s.ammo ?? 0) < 1) { await release(); await readyBow(page, K); if ((await page.evaluate(probe)).ammo < 1) return { ok: false, why: 'no arrows to make', fired }; continue; }
+      if (!aimed) { await page.mouse.down({ button: 'right' }); await sleep(380); await K.down('ShiftLeft'); aimed = true; }
+      let a = await page.evaluate(aimPoint, t.x, t.y, t.z, 0.35);
+      await page.mouse.down({ button: 'left' });
+      const tD = Date.now();
+      while (Date.now() - tD < 1000) {
+        const now = (await page.evaluate(targetsOf, kind, part)).find((q) => q.i === t.i);
+        if (!now) break;
+        a = await page.evaluate(aimPoint, now.x, now.y, now.z, 0.35);
+      }
+      await page.mouse.up({ button: 'left' });
+      fired++;
+      shots.push({ kind, part, d: +t.d.toFixed(1), aimErr: a.err, hpBefore: t.hp });
+      await sleep(380);
+    }
+  } finally { await release(); }
+}
+
 async function beat(page, K, s) {
   const st = s.stage;
   if (s.type === 'goto') {
@@ -177,13 +276,30 @@ async function beat(page, K, s) {
         return r1;
       }
     }
+    const top = await page.evaluate(() => { const P = window.__CTX__.player.position; return P.y - window.__CTX__.terrain.getHeight(P.x, P.z); });
+    if (top > 2) {
+      // on a pillar: down its three steps (a 4 m drop off the top hurts)
+      const ap = await page.evaluate(() => {
+        const C = window.__CTX__, q = C.player.position, P = C.props?.survey?.pillars || [];
+        let best = null, bd = Infinity;
+        for (const p of P) { const d = Math.hypot(p.x - q.x, p.z - q.z); if (d < bd) { bd = d; best = p; } }
+        return best ? { x: best.x + Math.sin(best.yaw) * 8, z: best.z + Math.cos(best.yaw) * 8 } : null;
+      });
+      if (ap) await walkTo(page, K, ap, 2.0, { maxS: 30 });
+    }
+    if (st === 'cross') {
+      // the Peg line: put out the lamps from 26 m before crossing (the optional count, the kill objective live)
+      const f = await fight(page, K, 'peg', 'lamp', null, { stand: 26, maxS: 120, all: true });
+      if (f.why === 'died') return f;
+      lampsFight = f;
+    }
     const r = await walkTo(page, K, s.anchor, Math.max(1.5, s.radius - 1), { up: s.up });
     await sleep(300);
     await playScene(page, K);
     return r;
   }
   if (s.type === 'talk') {
-    const r = await walkTo(page, K, s.anchor, 2.0);
+    const r = await walkTo(page, K, s.anchor, 2.5);   // the prompt's radius is 3.0; round 1 walked into Mise at 2.0
     if (!r.ok) return r;
     await holdE(page, K, 500);
     await sleep(300);
@@ -214,7 +330,9 @@ async function beat(page, K, s) {
     return { ok: (await page.evaluate(probe)).stage !== st, aims };
   }
   if (s.type === 'kill') {
-    return { ok: false, why: `not driven yet: '${st}' needs the bow on the Plumb (aim on a moving weak point; M1.6j's verbs)` };
+    if (st === 'topple') return fight(page, K, 'plumb', 'vial', () => 'topple', { stand: 20, maxS: 110 });
+    if (st === 'pry') return fight(page, K, 'plumb', 'bob', () => 'pry', { stand: 16, maxS: 90 });
+    return { ok: false, why: `unknown kill beat ${st}` };
   }
   return { ok: false, why: `unknown beat type ${s.type}` };
 }
@@ -236,7 +354,7 @@ try {
   report.chrome = await browser.version();
 
   /* ---- A. the systems' frames, staged by the Frame Set's own page.mjs ---- */
-  if (FRAMES.length) {
+  {
     const set = loadFrameSet();
     const page = await browser.newPage();
     await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 1.25 });
@@ -257,6 +375,58 @@ try {
         log(`${id} filmed`);
       } catch (e) { report.frames.push({ id, ok: false, error: String(e?.message || e).slice(0, 300) }); }
     }
+    /* brazier-refusal, STAGED (see the header): a real Plumb at 25 m and 80 m in three AI states */
+    try {
+      const prep = await page.evaluate(async () => {
+        const C = window.__CTX__, B = C.braziers, home = B.byId('cistern');
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        if (!home) return { error: 'no home Brazier' };
+        if (!B.lit.has('cistern')) B.lit.add('cistern');
+        B.ash.delete('cistern'); B._sync();
+        const seat = home.obj.seat, p = C.player;
+        p.position.set(seat.x, 0, seat.z); p.velocity?.set?.(0, 0, 0); p._snapToGround?.();
+        p.camYaw = Math.atan2(-(home.obj.position.x - seat.x), -(home.obj.position.z - seat.z));
+        await sleep(600);
+        const kinds = C.machines?.instrumentKinds || {};
+        const kind = kinds.plumb ? 'plumb' : kinds.peg ? 'peg' : null;
+        if (!kind) return { error: 'no plumb or peg kind registered' };
+        const hx = home.obj.position.x, hz = home.obj.position.z;
+        const m = C.machines.spawn(kind, hx + 25, hz, {});
+        if (!m) return { error: `spawn ${kind} refused` };
+        window.__refusalM = m;
+        return { kind, spawned: true };
+      });
+      const cases = [];
+      if (prep.spawned) {
+        for (const [dist, state] of [[25, 'suspicious'], [25, 'alert'], [25, 'patrol'], [80, 'suspicious']]) {
+          const c = await page.evaluate(async (dist, state) => {
+            const C = window.__CTX__, B = C.braziers, home = B.byId('cistern'), m = window.__refusalM;
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            m.position.set(home.obj.position.x + dist, C.terrain.getHeight(home.obj.position.x + dist, home.obj.position.z), home.obj.position.z);
+            // hold the AI state for the whole E press (its own brain would otherwise walk it on)
+            const hold = setInterval(() => { m.state = state; }, 16);
+            m.state = state;
+            await sleep(700);
+            const d = B.dialog('cistern');
+            const lamp = B.machinesNear().find((x) => Math.abs(x.x - m.position.x) < 0.01)?.lamp ?? null;
+            window.__holdState = hold;
+            return { dist, state, lamp, mode: d?.mode ?? null, line: d?.line ?? null, rows: (d?.rows || []).map((r) => r.label) };
+          }, dist, state);
+          // the E press as a player makes it: sit, the dialog opens, read its words off the page, Escape
+          await page.keyboard.down('KeyE'); await sleep(650); await page.keyboard.up('KeyE'); await sleep(500);
+          c.page = await page.evaluate(() => ({ open: !!window.__CTX__.systemsGame?.present?.busy, text: (document.querySelector('#cal-sys')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 240) }));
+          c.shot = await shot(page, `r-refusal-${c.dist}m-${c.state}`);
+          await page.keyboard.press('Escape'); await sleep(400);
+          await page.evaluate(() => clearInterval(window.__holdState));
+          cases.push(c);
+        }
+      }
+      const six = 'THE LAMPS ARE UP. NO REST HERE.';
+      const want = (c) => (c.dist <= 60 && (c.state === 'suspicious' || c.state === 'alert'));
+      report.rows['brazier-refusal'] = { staged: true, ...prep, cases,
+        pass: cases.length === 4 && cases.every((c) => (want(c) ? c.mode === 'refused' && c.page.text.includes(six) : c.mode === 'rest' && !c.page.text.includes(six))) };
+      log(`brazier-refusal: ${cases.map((c) => `${c.dist}m ${c.state} ${c.lamp} -> ${c.mode}`).join('; ')}`);
+    } catch (e) { report.rows['brazier-refusal'] = { error: String(e?.message || e).slice(0, 300) }; }
     await page.close();
   }
 
@@ -267,6 +437,7 @@ try {
   page.on('console', (m) => { if (m.type() === 'error') report.console.push({ at: 'run', text: m.text().slice(0, 300) }); });
   page.on('pageerror', (e) => report.console.push({ at: 'run', text: `pageerror: ${String(e).slice(0, 300)}` }));
   const K = keys(page);
+  await page.evaluateOnNewDocument(`window.__aimPoint = ${aimPoint.toString()};`);
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press', { timeout: 240000, polling: 100 });
   await sleep(500);
@@ -282,7 +453,9 @@ try {
   report.start = { hour: await page.evaluate(() => window.__CTX__.environment.time), stage: s0.stage, note: s0.note };
   await shot(page, 'b00-new-game');
 
-  // brazier-dialog row: she wakes beside the cistern Brazier; sit, read the dialog, stand without resting
+  // brazier-dialog row: she wakes 3.9 m from the cistern Brazier; walk to it, sit, read the dialog, stand without resting
+  const bzAt = await page.evaluate(() => { const b = window.__CTX__.braziers.byId('cistern'); return b ? { x: b.obj.position.x, z: b.obj.position.z } : null; });
+  if (bzAt) { await walkTo(page, K, bzAt, 1.6, { maxS: 20 }); await sleep(400); }
   await holdE(page, K, 600);
   await sleep(500);
   const bz = await page.evaluate(probe);
@@ -290,10 +463,29 @@ try {
   if (bz.busy) await K.tap('Escape');
   await sleep(400);
 
-  let last = null, tries = 0;
-  while (spent() < BUDGET_S - 120) {
+  let last = null, tries = 0, deaths = 0;
+  while (spent() < BUDGET_S - 150) {
     const s = await page.evaluate(probe);
-    if (s.state === 'dead') { report.stoppedAt = s.stage; report.why = 'Brea died'; break; }
+    if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) {
+      // played as a player plays it: the death card, then RELOAD THE LAST ENTRY (the one death rule, M1.6f)
+      deaths++;
+      const pre = await page.evaluate(() => { const C = window.__CTX__; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), lastRest: C.braziers.lastRest, salt: C.inventory.count('metal-shards') }; });
+      await page.waitForFunction(() => !!document.querySelector('.mn-death.show .mn-death-opt'), { timeout: 15000, polling: 100 }).catch(() => {});
+      await sleep(600);
+      const card = await page.evaluate(() => ({ title: document.querySelector('.mn-death-title')?.textContent ?? null, opts: [...document.querySelectorAll('.mn-death-opt b')].map((b) => b.textContent) }));
+      const cardShot = await shot(page, `d${deaths}-death-card`);
+      if (deaths > 2) { report.stoppedAt = s.stage; report.why = `Brea died ${deaths} times`; break; }
+      const clicked = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-death-opt')].find((x) => /RELOAD THE LAST ENTRY/.test(x.textContent)); if (!b) return false; b.click(); return true; });
+      await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 20000, polling: 100 }).catch(() => {});
+      await sleep(1500);
+      const post = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position, R = C.braziers.lastRest; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), state: C.state, hp: Math.round(C.player.health), salt: C.inventory.count('metal-shards'), fromRest: R ? +Math.hypot(P.x - R.x, P.z - R.z).toFixed(2) : null, rest: R?.id ?? null }; });
+      const row = { death: deaths, at: s.stage, card, clicked, pre, post, cardShot, shot: await shot(page, `d${deaths}-stood-up`),
+        pass: clicked && post.state === 'playing' && post.idx === pre.idx && post.fromRest != null && post.fromRest < 3 };
+      (report.rows['death-rule'] ||= []).push(row);
+      log(`death ${deaths} at ${s.stage}: stood up ${post.fromRest} m from ${post.rest}, stage ${pre.stage} -> ${post.stage}`);
+      last = null; tries = 0;
+      continue;
+    }
     if (!s.stage || s.stage === 'reward') { report.stoppedAt = 'reward'; report.why = 'quest done'; break; }
     if (s.busy) { await playScene(page, K); continue; }
     if (s.stage === last) tries++; else tries = 0;
@@ -303,40 +495,66 @@ try {
     log(`beat ${s.stage} (${s.type})`);
     const r = await beat(page, K, s);
     const after = await page.evaluate(probe);
-    const row = { stage: s.stage, type: s.type, ok: after.stage !== s.stage, seconds: +((Date.now() - b0) / 1000).toFixed(1), ...r, note: s.note };
+    const row = { stage: s.stage, type: s.type, ok: after.stage !== s.stage, seconds: +((Date.now() - b0) / 1000).toFixed(1), ...r, note: s.note, hp: after.hp };
+    if (s.stage === 'cross' && lampsFight) row.lamps = lampsFight;
     if (row.ok) row.shot = await shot(page, `b-${String(report.beats.length + 2).padStart(2, '0')}-${s.stage}`);
     report.beats.push(row);
+    if (r.why === 'died') continue;
     if (!row.ok && r.ok === false) { report.stoppedAt = s.stage; report.why = r.why; break; }
   }
   if (!report.stoppedAt) { report.stoppedAt = (await page.evaluate(probe)).stage; report.why = 'Chrome budget'; }
   const fin = await page.evaluate(probe);
   report.spine = fin.report;
+  report.shots = shots;
+  report.anchors = await page.evaluate(() => window.__CTX__.systemsGame.A);
   report.stopShot = await shot(page, 'b-stop');
 
-  // save-continue row: what the store holds now, then reload, CONTINUE, and compare
+  // save-continue row: what the store holds, then QUIT (close the tab), a new tab on the same profile, CONTINUE
   const before = await page.evaluate(() => {
     const C = window.__CTX__, s = C.progression.saves;
     const rec = s.store.latest(s.store.active);
     return rec ? { stage: rec.quest?.order?.at?.(-1)?.id ?? null, idx: rec.quest?.idx, salt: rec.satchel['metal-shards'] ?? 0, hour: rec.hour, x: rec.position.x, z: rec.position.z, kind: rec.kind, reason: rec.reason, v: rec.v, keys: Object.keys(localStorage).filter((k) => k.startsWith('cal.v6')) } : null;
   });
-  await page.reload({ waitUntil: 'domcontentloaded', timeout: 180000 });
-  await page.waitForFunction(() => window.__CTX__?.state === 'title' && /press|menu/.test(window.__CTX__?.menus?.titleStage || ''), { timeout: 240000, polling: 100 });
-  await sleep(400);
-  if (await page.evaluate(() => window.__CTX__.menus.titleStage === 'press')) await page.keyboard.press('Enter');
-  await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 60000, polling: 50 });
-  await sleep(300);
-  const hadContinue = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent)); if (!b || b.disabled) return false; b.click(); return true; });
-  await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 60000, polling: 50 }).catch(() => {});
-  await sleep(1500);
-  const afterC = await page.evaluate(() => {
-    const C = window.__CTX__, sp = C.spine, p = C.player;
-    return { idx: sp.idx, stage: sp.order.at(-1)?.id ?? null, salt: C.inventory.count('metal-shards'), hour: +C.environment.time.toFixed(3), x: +p.position.x.toFixed(3), z: +p.position.z.toFixed(3), note: document.querySelector('.cal-track-obj')?.textContent ?? null };
-  });
-  report.rows['save-continue'] = {
-    before, after: afterC, hadContinue,
-    pass: !!before && hadContinue && before.idx === afterC.idx && before.salt === afterC.salt && Math.abs(before.hour - afterC.hour) < 0.05 && Math.hypot(before.x - afterC.x, before.z - afterC.z) < 1.0,
-    shot: await shot(page, 'c-continued'),
-  };
+  await page.close();
+  const page2 = await bctx.newPage();
+  await page2.setViewport({ width: 1600, height: 900, deviceScaleFactor: 1.25 });
+  const diag = [];
+  page2.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warn') report.console.push({ at: 'continue', type: m.type(), text: m.text().slice(0, 300) }); });
+  page2.on('pageerror', (e) => report.console.push({ at: 'continue', text: `pageerror: ${String(e).slice(0, 300)}` }));
+  const tC = Date.now();
+  await page2.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  let titled = false;
+  for (let i = 0; i < 60 && !titled; i++) {
+    const d = await page2.evaluate(() => ({ ctx: !!window.__CTX__, state: window.__CTX__?.state ?? null, stage: window.__CTX__?.menus?.titleStage ?? null,
+      load: document.getElementById('load-label')?.dataset?.step ?? null, errs: (window.__GAME__?.systemErrors || []).map((e) => `${e.key}: ${e.message}`).slice(0, 4) })).catch((e) => ({ evalError: String(e).slice(0, 120) }));
+    d.t = Math.round((Date.now() - tC) / 1000);
+    diag.push(d);
+    titled = d.state === 'title' && /press|menu/.test(d.stage || '');
+    if (!titled) await sleep(2000);
+  }
+  report.rows['save-continue'] = { before, diag: diag.filter((d, i) => i % 5 === 0 || i === diag.length - 1), bootS: Math.round((Date.now() - tC) / 1000) };
+  if (titled) {
+    await sleep(400);
+    if (await page2.evaluate(() => window.__CTX__.menus.titleStage === 'press')) await page2.keyboard.press('Enter');
+    await page2.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 30000, polling: 50 }).catch(() => {});
+    await sleep(300);
+    const hadContinue = await page2.evaluate(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent)); if (!b || b.disabled) return false; b.click(); return true; });
+    await page2.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 60000, polling: 50 }).catch(() => {});
+    await sleep(1500);
+    const afterC = await page2.evaluate(() => {
+      const C = window.__CTX__, sp = C.spine, p = C.player;
+      return { idx: sp.idx, stage: sp.order.at(-1)?.id ?? null, salt: C.inventory.count('metal-shards'), hour: +C.environment.time.toFixed(3), x: +p.position.x.toFixed(3), z: +p.position.z.toFixed(3), note: document.querySelector('.cal-track-obj')?.textContent ?? null };
+    });
+    Object.assign(report.rows['save-continue'], {
+      after: afterC, hadContinue,
+      pass: !!before && hadContinue && before.idx === afterC.idx && before.salt === afterC.salt && Math.abs(before.hour - afterC.hour) < 0.05 && Math.hypot(before.x - afterC.x, before.z - afterC.z) < 1.0,
+      shot: await shot(page2, 'c-continued'),
+    });
+  } else {
+    report.rows['save-continue'].pass = false;
+    report.rows['save-continue'].why = 'the title never came on the second boot (diag holds what the page showed)';
+    report.rows['save-continue'].shot = await shot(page2, 'c-no-title');
+  }
   await bctx.close();
 } catch (e) {
   report.error = String(e?.stack || e).slice(0, 1200);

@@ -15,7 +15,7 @@
     { "id": "cane",   "at": "0:08", "type": "gather", "note": "Cut cane at the dyke  {n} / {of}", "log": "Cut cane at the dyke." },
     { "id": "make",   "at": "0:08", "type": "gather", "note": "Make a bundle of Reed arrows", "log": "Made six Reed arrows." },
     { "id": "mise",   "at": "0:10", "type": "talk",   "note": "Ask Mise on the breakwater what came ashore", "log": "Mise counted nine Pegs in at the fourth bell." },
-    { "id": "cross",  "at": "0:10", "type": "goto",   "note": "Cross the Peg line without being Flagged", "log": "Crossed the transect unseen.", "logFlagged": "Crossed the transect. Flagged once." },
+    { "id": "cross",  "at": "0:10", "type": "goto",   "note": "Cross the Peg line without being Flagged", "log": "Crossed the transect unseen.", "logFlagged": "Crossed the transect. Flagged once.", "logSeen": "Crossed the transect. Seen by a Peg." },
     { "id": "lamps",  "at": "0:10", "type": "kill",   "optional": true, "note": "Put out the Pegs' lamps  {n} / {of}", "log": "Put out {n} Peg lamps." },
     { "id": "climb",  "at": "0:18", "type": "goto",   "note": "Climb trig pillar T1 on the Organ Shelf", "log": "Climbed T1." },
     { "id": "sight",  "at": "0:18", "type": "survey", "note": "Sight T2 and T6 from the pillar  {n} / {of}", "log": "Sighted T2 and T6. The first triangle is on the sheet." },

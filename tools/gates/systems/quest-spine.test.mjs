@@ -165,3 +165,24 @@ test('the game code under src/game holds no player-facing English outside src/ga
   }
   assert.deepEqual(bad, []);
 });
+
+test('a crossing under SPOTTED is not "nobody the wiser": seen marks the stage, its log says so (systems-1b fix)', () => {
+  const upTo = RUN.findIndex((s) => s.at === 'crossed');
+  for (const seen of [false, true]) {
+    const { out, spine } = rig();
+    const w = world();
+    spine.start();
+    walk(spine, w, RUN.slice(0, upTo));
+    if (seen) spine.notify('seen');
+    walk(spine, w, [RUN[upTo]]);
+    const log = out.logs.find(([id]) => id === 'cross')?.[1];
+    const unseen = out.turns.some(([on]) => on === 'crossed-unseen');
+    assert.equal(unseen, !seen);
+    assert.equal(log, seen ? 'Crossed the transect. Seen by a Peg.' : 'Crossed the transect unseen.');
+    assert.equal(spine.report().seenCrossing, seen);
+    // a save keeps it
+    const back = rig().spine;
+    back.restore(JSON.parse(JSON.stringify(spine.serialize())));
+    assert.equal(back.st.cross.seen, seen);
+  }
+});
