@@ -232,3 +232,21 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 | note | all | A "smallest change" in another lane's file must come with that lane's kept rows, run at the commit. A71g and A65 broke through such seams this round. |
 | closed | hero-anim | V13 (feet) and V-traversal (ledge panel framing) pass in the kept stack at 39f7533. |
 | closed | world | F04's palette is 10.2 (bar 12). The F32 haze band along the ridge is gone. |
+
+## M1a regressions run additions (Nov 15 2026)
+
+| sev | item | number (commit) | owner |
+|---|---|---|---|
+| blocker | F15: the back sash panel stands out level at the run (further than its anchor) | de57067 | hero-anim |
+| blocker | F19: the front sash panel shoots straight forward in the lunge (further than its anchor) | de57067 | hero-anim |
+| blocker | A90-memory-stability | +43 geometries over 30 cycles, bar 40 (de57067); +16 at fb6d5f0; A90-rig-reclaim +2 | instruments + engine, to bisect |
+| major | A70: K shows the map tab | de57067 | ui |
+| major | M1.6a slice run: 10 of 14 beats; the ditch beat stops 101.4 m short | 5f4bf42; 573c17b not yet run | systems |
+| major | M1.6f save-and-continue after the run: position 2.2 m off | 5f4bf42 | systems |
+| major | M1.2f lance steep, bow beneath it (F10) | needs a ruling | hero-anim |
+| major | Gauge probe glassWade row and Peg lamp row fail | 541f1a6 | instruments |
+| note | A65 passed only after a browser relaunch (a 45 s screenshot timeout on the first attempt) | de57067 | engine |
+| note | A-sweep-wind bearing clause marginal (one fail in five runs) | de57067 | hero-anim |
+| note | The static Sluice 3 Gauge left F02 and F24's horizon | since 39f7533 | instruments |
+| note | F30: pale wedge at the right edge; cistern courses read a little regular | de57067 | systems |
+| closed | F05 Brazier in the vista; F09 studio pennant; A71g; A65 (restated); A44b; A78 (restated); A104; A-melee-undercut; Gauge wade (ruling 1); F32 crack (ruling 3); save-continue hang | as above | - |

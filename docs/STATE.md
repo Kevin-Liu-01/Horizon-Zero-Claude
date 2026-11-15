@@ -435,3 +435,73 @@ the 2026-11-14 refilm.
 | M1.6a | the slice hour, input-driven | 10 of 14 beats (7ae0fd0) |
 | M1.6f | save and continue in the live game | the reload hangs before the title (3 of 3 runs) |
 | M1.6c | F30 | closer on silhouette and light; the finish is further: an untextured wedge at the right edge, box blocks, faceted stones |
+
+## M1a regressions run (Nov 15 2026)
+
+Three lanes fixed the regressions found at 39f7533: systems (the Brazier in F05, A71g, A65, save-and-continue),
+hero-anim (the sash panels in the studio, A104, the Undercut), and instruments with world (A44b, A78, the Gauge's
+wade, F32's crack). The review measured `r5/int` at **de57067** from a clean detached worktree, port 5270, one Chrome
+slot.
+
+**Verdict: NOT CLEAN.** Two accepted frames got further than their anchors (F15, F19), and one kept row fails that
+passed at fb6d5f0 (A90-memory-stability). `main` stays on fb6d5f0.
+
+**Tier 0 at de57067: PASS, 10 of 10.**
+- `vite build` OK.
+- Name lint: 0 listed-term hits in 668 files.
+- Licences, assets, import graph: clean.
+- Resident textures: 53.42 MB of 175 MB. Shipped size: 42.92 MB.
+- 58 Node tests pass. The systems rows pass 19 of 19.
+- Boot: 2.8 s, 0 errors. Rendered-page name lint: 0.
+
+**Frame Set at de57067:** all 34 frames, 165 s of Chrome, 0 console errors. The sixteen accepted frames are compared
+with their provisional anchors at fb6d5f0; the rest with the 2026-11-14 refilm.
+- **Got further than the anchor (regressions):**
+  - F15: the back sash panel stands out level behind her hip as a stiff blade while she runs. It already did so at
+    39f7533, where the review missed it.
+  - F19: in the lunge, the front sash panel shoots straight forward as a long, level strip.
+- **Fixed since 39f7533:** F05 (no Brazier in the vista) and F09 (the front panel hangs again) are the same as their
+  anchors.
+- **The same as the anchor:** F02, F03, F05, F08, F09, F10, F11, F13, F14, F16, F18, F20, F23 (Plumb), F24. In the
+  windless studio the wrap tail now hangs (F08, F10, F13), which is nearer the target. F03 shows its field note again.
+- **Moved toward the target:**
+  - F12: the tail hangs behind the jaw.
+  - F30: the cistern is a dressed stone well behind the bowl. The bowl stands on smooth stones. The box blocks are
+    gone. A pale wedge still fills the right edge.
+- **Small change to watch:** the static Gauge on the horizon at Sluice 3 has been gone from F02 and F24 since
+  39f7533. The living Gauge replaces it only when its keeper spawns.
+- Palette: F02 8.2, F04 10.2, F05 11.4. All pass the bar of 12.
+- F04 luminance (restated: within 5 points of the crop's own mean luminance). The crop reads 6.3 % and the frame
+  31.5 %. The crop is mostly dark swatches, so the two lines pull apart. The palette line wins, and it passes.
+
+**Kept-stack rows at de57067** (two sessions, every row reached): 80 rows. **76 pass** (68 action, 8 visual), **2
+fail**, **2 pending** (A9 and A76, as before).
+- Fixed since 39f7533:
+  - A71g: the field note shows.
+  - A65: restated to the save v6 key. It passed on the runner's retry.
+  - A44b: worst 0.054 m (bar 0.10).
+  - A78: restated to the Plumb. Attack is held for 1.03 s.
+- **Still failing:**
+  - A90-memory-stability: +43 geometries over 30 cycles (bar 40; +16 at fb6d5f0).
+  - A70: the K key still shows the map tab, as it did at fb6d5f0.
+- Key numbers:
+  - A16: knuckle to jaw 0.014 m.
+  - A107: behind the head in the band at most 0.070 m (bar 0.10).
+  - A9 (pending, busy box): 59.9 fps, 116 draws.
+
+**What landed this run:**
+- **Systems:**
+  - The Brazier and cistern are built art and stay out of every accepted frame.
+  - The field note shows when play starts without New Game or Continue.
+  - Continue loads the real save, and save-and-continue no longer hangs.
+- **Hero-anim:**
+  - The studio has no wind.
+  - The Undercut and the melee self-clear rows pass (at c49cb19).
+- **Instruments and world:**
+  - The Peg's rack socket sits on the hull.
+  - A78 is restated to the Plumb.
+  - The Gauge wades 0.64 m into the Glass.
+  - F32 shows no crack (0 px). The fix is a level landing on the Rust Cone's T3 ramp.
+  - The frame set is now v3.
+
+**Ruling (M1.2f):** the bible puts the bow on the opposite diagonal to the lance, so from behind they always cross; "bow beneath" means the bow lies under the lance (nearer her back), not steeper. M1.2f is graded as: lance in its 32-40 deg band, bow on the opposite diagonal beneath the lance, A-stow-clearance passing. F10 as accepted stands.
