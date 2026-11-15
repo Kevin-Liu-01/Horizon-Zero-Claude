@@ -300,6 +300,7 @@ try {
     await page.evaluate(stageFrame, f04, { settleMs: 1500 });
     const sites = await page.evaluate(async () => {
       const S = await import('/src/world/island/sites.js');
+      const R = await import('/src/world/island/recipe.js');
       const C = window.__CTX__, GP = C.props?.gatePlaces || {};
       const sp = S.siteById?.('salt-pans');
       const list = [];
@@ -332,18 +333,22 @@ try {
       // the materials alone (CAL_CAPTURE_LAYER): the black sand and the basalt as layers, at the black-sand site
       list.push({ id: 'sand-layer', x: -200, z: 420, layer: 0 });
       list.push({ id: 'basalt-layer', x: -200, z: 420, layer: 2 });
+      /* M1a round 3 (the review's re-read "inside one pan cell, no dyke"): in situ, an 8 m square wholly inside the white
+       * cell at the salt-pans site (field u -5, v 8.4: 2.3-14.6 m clear of its dykes; the square's diagonal spans 11.2 m) */
+      const o = {}; R.fieldToWorld(-5, 8.4, o);
+      list.push({ id: 'salt-incell', x: +o.x.toFixed(2), z: +o.z.toFixed(2), span: 8 });
       return list;
     });
     run.topdown = [];
     for (const s of sites) {
       const r = await page.evaluate(async (s) => {
         const M = await import('/tools/perf/meadow-page.mjs'); const C = window.__CTX__, E = C.engine;
-        const t = await M.topDown(E, C, s.x, s.z, { span: 40, px: 1024, layer: s.layer ?? null });
+        const t = await M.topDown(E, C, s.x, s.z, { span: s.span ?? 40, px: 1024, layer: s.layer ?? null });
         let bin = ''; const b = t.rgba; for (let i = 0; i < b.length; i += 32768) bin += String.fromCharCode.apply(null, b.subarray(i, i + 32768));
         return { ...s, px: t.px, span: t.span, b64: btoa(bin) };
       }, s);
       const img = await savePng(path.join(OUT, `topdown-${s.id}.png`), r.b64, r.px, r.px);
-      const ac = autocorr(img, r.px, r.px / r.span, { hpM: 2, minM: 1, maxM: 20 });
+      const ac = autocorr(img, r.px, r.px / r.span, { hpM: 2, minM: 1, maxM: Math.min(20, r.span / 2) });
       run.topdown.push({ id: s.id, x: s.x, z: s.z, span: r.span, px: r.px, ...ac });
       log(`topdown ${s.id}: autocorrelation peak ${ac.peak} at ${JSON.stringify(ac.atM)} m`);
     }
