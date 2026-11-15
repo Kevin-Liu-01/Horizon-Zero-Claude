@@ -384,7 +384,9 @@ export class Meadow {
       uPx: { value: new THREE.Vector4(1000, 1, 0, 0) },
       uTime: o.uTime, uWind: o.uWind, uActors: o.uActors,
       uIdPass: { value: 0 }, uTransl: { value: 1.6 }, uDebug: { value: new THREE.Vector4() },
-      uStab: { value: new THREE.Vector4(0, 0, 0, 0) },
+      /* M1a round 2: the crawl stabiliser on, all four terms (measured at 889bce2, F02's walk and sprint, 12-30 m: 245 -> 201
+       * and 527 -> 508 events per mille at 0 samples; past 30 m 195 -> 35 and 449 -> 223) */
+      uStab: { value: new THREE.Vector4(1, 1, 1, 1) },
     };
     this.rings = MEADOW_RINGS.map((ring) => this._buildRing(ring));
     this._frustum = new THREE.Frustum();

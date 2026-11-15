@@ -127,9 +127,13 @@ try {
   });
   let current = 'boot';
   page.on('console', (m) => { if (m.type() === 'error') run.console.push({ at: current, text: m.text().slice(0, 400) }); });
-  page.on('pageerror', (e) => run.console.push({ at: current, text: 'pageerror: ' + String(e).slice(0, 400) }));
+  let bootFail = null;
+  page.on('pageerror', (e) => { run.console.push({ at: current, text: 'pageerror: ' + String(e).slice(0, 400) }); if (current === 'boot') bootFail = e; });
   await page.goto(`http://127.0.0.1:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 180000 });
-  await page.waitForFunction('window.__READY__ === true', { timeout: 300000, polling: 500 });
+  // a boot that throws never reaches __READY__: stop at the first error instead of holding the slot for 5 minutes
+  for (let t = 0; t < 600 && !bootFail; t++) { if (await page.evaluate(() => window.__READY__ === true)) break; await sleep(500); }
+  if (bootFail) throw new Error(`boot failed: ${String(bootFail).slice(0, 300)}`);
+  if (run.console.length) throw new Error(`boot console errors: ${run.console.map((c) => c.text).join(' | ').slice(0, 600)}`);
   run.bootSeconds = Math.round(spent());
   await sleep(4000);
   // runtime settings (the defaults as shipped when absent)

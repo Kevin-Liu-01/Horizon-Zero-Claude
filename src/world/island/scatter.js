@@ -11,7 +11,7 @@
  */
 import { WORLD_SIZE } from './extent.js';
 import { rng, ss, fbm, fieldWalls, fieldToWorld, fieldCells, PAN, authored } from './recipe.js';
-import { GRID, MASK_N, SHORE_ENC } from './bake.js';
+import { GRID, MASK_N, SHORE_ENC, GLASS_RIM } from './bake.js';
 
 export const STRIDE = 9;
 export const TILE = 16;
