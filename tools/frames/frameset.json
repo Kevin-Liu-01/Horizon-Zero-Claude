@@ -34,10 +34,10 @@
       "note": "v2: in the golden meadow at the salt field's south-east end, facing west over the pans: the sun 8 deg right of centre, the Sounding Ring 21 deg right (120 m), the field's cells across the lower frame; horizon about 42 % from the bottom." },
 
     { "id": "F03", "subject": "exploration with the HUD, Brea from behind", "in": "M1a",
-      "hour": 16.5, "weather": "trade", "at": { "en": [-168, -208] }, "bearing": 358,
-      "camera": { "mode": "chase", "pitch": 6 }, "state": { "pose": "idle", "hud": true },
+      "hour": 16.5, "weather": "trade", "at": { "en": [-168, -208] }, "bearing": 6,
+      "camera": { "mode": "chase", "pitch": 4 }, "state": { "pose": "idle", "hud": true },
       "ref": { "crops": ["key-play", "over-explore"] },
-      "note": "v2: in the golden meadow inland of Saltrow (meadow unbroken for 80 m ahead), facing north to the Flank cliffs with the caldera rim at the right, the sun behind her left shoulder." },
+      "note": "v2: in the golden meadow inland of Saltrow (meadow unbroken for 80 m ahead), facing north (bearing 6) up the meadow with the caldera's flank rising above her head on the right, the sun behind her left shoulder; chase pitch 4 puts the horizon under half height." },
 
     { "id": "F04", "subject": "the Pans at noon, salt and black sand", "in": "M1a",
       "hour": 12.5, "weather": "trade", "at": "site:salt-pans", "bearing": 200,
@@ -221,9 +221,9 @@
       "ref": { "written": "Brea crouched in pale carrizo at the Glass rim with a calm Plumb 15 m beyond; the canes taller than her and leaning SW; her violet visible through no more than a third of the stems; water in the lower third; never gold or rust grass." } },
 
     { "id": "F32", "subject": "aerial, 120 m over T1 looking NE across the island", "in": "M1a",
-      "hour": 15.0, "weather": "trade", "at": "trig:T1", "bearing": 55,
-      "camera": { "mode": "eye", "eye": 120, "pitch": -8, "fov": 60 }, "state": { "pose": "idle", "hud": false },
+      "hour": 15.0, "weather": "trade", "at": "trig:T1", "bearing": 65,
+      "camera": { "mode": "eye", "eye": 120, "pitch": -6, "fov": 60 }, "state": { "pose": "idle", "hud": false },
       "ref": { "measured": ["calls<=350", "triangles<=6500000", "frame bar (TECH 9.1)", "no missing terrain chunk", "no LOD seam wider than 2 px"] },
-      "note": "v2: across the island, not into the caldera's slope: the centre line runs over the low saddle north-east of T1 (its skyline 1 deg below the lens) to the east coast at 770 m; the horizon is in frame, so the far field and every LOD ring are drawn." }
+      "note": "v2: across the island, not into the caldera's slope. From 120 m over T1 the caldera and the Roque plug (bearing 17, rising past 200 m within 500 m) fill any view due north-east; at bearing 65 the plug is out of frame, the line of sight runs over the holds to the far coast (a quarter of the frame is land past 500 m or the sea beyond it), and the horizon is in frame, so the far field and every LOD ring are drawn." }
   ]
 }
