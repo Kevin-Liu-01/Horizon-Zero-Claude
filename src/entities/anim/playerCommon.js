@@ -500,7 +500,12 @@ DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, m
  */
 /* (M1.2e round 2: `wind` 0.45 -> 1.2 1/s: at 0.45 the left panel's tip moved 0.009-0.06 m in the trade wind and read
  * as a board; at 1.2 it streams 0.11-0.18 m SW standing where F02 and F15 stand, bench) */
-DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 1.2, airY: true });
+/* (M1a debt, M1.2e "stream SW in the trade wind" in the page: `flut` 3.5, the panels' own gain on the wind's flutter
+ *  (secondaryMotion.js flA; the tail keeps 1). At 1 the wind pressed the left panel to her leg and it swayed LESS than
+ *  in still air (page F02: 0.0456 against 0.0463 m; bench at F02's heading 0.0259 against 0.0332): no visible wind.
+ *  Bench at 3.5, F02 / F15 headings: left panel 0.064 / 0.067 m in the wind against 0.051 / 0.041 still, every tip
+ *  within 45 deg of SW; 0 clipping frames in every sweep clip) */
+DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 1.2, airY: true, flut: 3.5 });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 export const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */

@@ -851,7 +851,7 @@ export class SecondaryMotion {
       const rf = cls.runFl > 0 ? cls.runFl * (rfk < 0 ? 0 : rfk > 1 ? 1 : rfk) : 0;
       c.flX += dt * rf;
       const tf = t + c.flX;
-      const flA = cw > 0 ? (this.wind.flutter || 0) * windS * (1 + rf) : 0, sd = c.seed;
+      const flA = cw > 0 ? (this.wind.flutter || 0) * windS * (1 + rf) * (cls.flut ?? 1) : 0, sd = c.seed;
       for (let s = 0; s < steps; s++) {
         for (let j = 1; j < n; j++) {
           const i0 = j * 3;
