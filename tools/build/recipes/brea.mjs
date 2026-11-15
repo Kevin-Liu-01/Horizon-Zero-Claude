@@ -175,17 +175,24 @@ const FACE_MM = {
   noseTip: { d: [0, 3.2, -3.4], s: 0.0098 },
   // M1.2b (the face spike's note: "the head is narrow and long"; TURN's face is broad at the cheekbones with a defined jaw): the bone
   // comes OUT as well as up and forward
-  cheek: { d: [4.6, 2.6, 4.6], s: 0.0165 },     // mirrored for the right side
+  // M1.2b round 2 (F11 against TURN's front: the face 1.31 times as wide at the cheekbones as brow-to-chin, TURN's 1.19): the bone comes
+  // out half as far and further up and forward, high cheekbones on a narrower face
+  cheek: { d: [2.4, 3.0, 5.0], s: 0.0165 },     // mirrored for the right side
   // mirrored: the angle comes a touch IN and down, so the face tapers to the chin (fix round 1, R54: it read wide). Fix round 2 (the
   // judges: "the lower face is long and heavy in every 3/4"): less of it is DOWN and more is in and forward, so the jaw keeps its
   // defined angle without lengthening the face
   // M1.2b: the angle no longer comes in: a wider, squarer jaw under the wider cheekbones (still >= 6 mm for A-face-delta)
-  jaw: { d: [0.8, -4.4, 4.0], s: 0.0235 },
+  // M1.2b round 2 (TURN: the jaw tapers to a defined chin; F11's jaw was 0.66 of the cheek width at the mouth, wide and round): the
+  // angle comes in a millimetre and down a little more
+  jaw: { d: [-1.0, -4.6, 4.2], s: 0.0235 },
   // fix round 2: the chin comes UP 3.4 mm against fix round 1 (-1.6 -> +1.8): a shorter lower face, its point kept forward
-  chin: { d: [0, 1.8, 6.0], sx: 0.0175, sy: 0.0125, sz: 0.016 },
+  // M1.2b round 2 (F11: the mouth sat at 0.73 of the eye-to-chin height, TURN's at 0.66, a short chin under a long upper lip): the chin
+  // comes DOWN 3 mm and a little further forward
+  chin: { d: [0, -1.2, 6.4], sx: 0.0175, sy: 0.0125, sz: 0.016 },
   // M1.2b ("seat the eyes deeper under a stronger brow ridge"): the glabella and both ridges 1 mm further forward
   brow: { d: [0, 0.8, 5.4], s: 0.0165 },
-  upperLip: { d: [0, 1.2, -1.0], s: 0.0085 },
+  // (round 2: and the mouth up a millimetre, a shorter upper lip)
+  upperLip: { d: [0, 2.2, -0.6], s: 0.0085 },
 };
 
 export async function build({ out = ROOT } = {}) {
@@ -280,12 +287,13 @@ export async function build({ out = ROOT } = {}) {
     for (const sx of [1, -1]) B([sx * 0.0046, 1.5932, 0.095], [0, 0.45, 0.35], 0.0022);
     B([0, 1.5934, 0.0955], [0, -0.35, -0.15], 0.0016);
     // the tubercle: the upper lip's centre full and a little down over the lower
-    B([0, 1.5875, 0.0935], [0, -0.25, 0.75], 0.004, [0.0055, 0.0028, 0.005]);
+    // (M1.2b round 2, TURN's fuller mouth: the tubercle 0.75 -> 1.0 mm and the lower lip's lobes 1.0 -> 1.35 mm forward)
+    B([0, 1.5875, 0.0935], [0, -0.25, 1.0], 0.004, [0.0055, 0.0028, 0.005]);
     // the philtrum: a groove between two columns from the bow's peaks up to the nose
     B([0, 1.599, 0.0925], [0, 0, -0.38], 0.002, [0.0022, 0.0042, 0.004]);
     for (const sx of [1, -1]) B([sx * 0.0052, 1.5985, 0.0932], [0, 0, 0.32], 0.002, [0.0017, 0.0045, 0.004]);
     // the lower lip: fuller, rolled forward and down, two soft lobes, with a real fold under it
-    for (const sx of [1, -1]) B([sx * 0.0068, 1.5778, 0.0905], [0, -0.35, 1.0], 0.005, [0.0075, 0.0042, 0.006]);
+    for (const sx of [1, -1]) B([sx * 0.0068, 1.5778, 0.0905], [0, -0.35, 1.35], 0.005, [0.0075, 0.0042, 0.006]);
     B([0, 1.5655, 0.0828], [0, 0.2, -0.75], 0.004, [0.012, 0.003, 0.006]);
     // the corners tuck in and lift a hair: a closed mouth that rests, not a slot
     for (const sx of [1, -1]) B([sx * 0.0255, lc, 0.0755], [-sx * 0.25, 0.25, -0.55], 0.0038);
@@ -341,10 +349,11 @@ export async function build({ out = ROOT } = {}) {
       if (dy > 0.0015 && dy < 0.019) {
         const k = xk * (1 - smooth(0.0055, 0.0165, dy));
         // M1.2b (the spike's note: "open the eyes about 15 %"): the upper lid comes down 0.6 mm, not 1.2
-        a[i * 3 + 1] -= mm(0.6) * k; a[i * 3 + 2] += mm(0.28) * k;
+        // M1.2b round 2 (F11 against TURN: a heavy, sleepy lid over TURN's open, intent eye): 0.3 mm
+        a[i * 3 + 1] -= mm(0.3) * k; a[i * 3 + 2] += mm(0.28) * k;
       } else if (dy < -0.0015 && dy > -0.014) {
         const k = xk * (1 - smooth(0.005, 0.0125, -dy));
-        a[i * 3 + 1] += mm(0.5) * k; a[i * 3 + 2] += mm(0.12) * k;
+        a[i * 3 + 1] += mm(0.35) * k; a[i * 3 + 2] += mm(0.12) * k;
       } else continue;
       if (before < Rb - 0.0002) continue;              // a lid's inner wall behind the ball stays behind it
       const vx = a[i * 3] - c[0], vy = a[i * 3 + 1] - c[1], vz = a[i * 3 + 2] - c[2], d = Math.hypot(vx, vy, vz);
@@ -461,9 +470,11 @@ export async function build({ out = ROOT } = {}) {
   const brows = browLines(browPrim);
   // M1.2b (the spike's note: "thinner, straighter brows drawn hair by hair at about 60 % of today's density"): each brow's band is
   // 0.7 of the stock card's height and its arch halved toward the straight line from its inner end to its tail
+  // M1.2b round 2 (F11 against TURN: TURN's brows are straight and low on the ridge, right over the lid; F11's sat high with an arch at
+  // the tail): the arch 90 % toward the straight line, the line 1.6 mm lower (2.2 at the tail, which also drops 0.6 mm), the band 0.8
   for (const side of [1, -1]) {
     const b = brows[side], line0 = b.line, ya = line0(b.x0).y, yb = line0(b.x1).y;
-    b.line = (x) => { const q = line0(x), f = (x - b.x0) / (b.x1 - b.x0); return { y: q.y + ((ya + (yb - ya) * f) - q.y) * 0.5, half: q.half * 0.7 }; };
+    b.line = (x) => { const q = line0(x), f = (x - b.x0) / (b.x1 - b.x0), inner = side > 0 ? 1 - f : f; return { y: q.y + ((ya + (yb - ya) * f) - q.y) * 0.9 - 0.0016 - 0.0006 * (1 - inner), half: q.half * 0.8 }; };
   }
   // the scar: 3 cm, down from under the wrap, THROUGH the left brow (+x) and out of its lower edge toward the lid (bible §3.5)
   const scar = (() => {
@@ -499,7 +510,8 @@ export async function build({ out = ROOT } = {}) {
   const skinFrom = (dx, dy, dz) => { const t = skinGridAll.cast(skinCenter[0], skinCenter[1], skinCenter[2], dx, dy, dz, 0.2, 0.01); return t >= 0 ? t : null; };
   const wrapped = woundHeadwrap({
     // M1.2c fix round 1: every open cloth edge a camera can see is rolled under in a 1.7 mm bead (a 3.4 mm fold, never a sheet's edge)
-    bead: { r: 0.0017 / S },
+    // (M1.2c round 2: seen from any of three points along the edge over 256 directions, not the midpoint over 64)
+    bead: { r: 0.0017 / S, samples: [0.15, 0.5, 0.85], dirs: 256 },
     headSoup, skin: skinFrom, joint: head, center: skinCenter,
     // the hair and padding the cloth rides on: thin over the brow, fuller over the crown and the back
     // M1.2c (TURN: "layered and bunched"; the wrap stands well out past the temples and the crown, wider than the head): a fuller
@@ -538,9 +550,12 @@ export async function build({ out = ROOT } = {}) {
       // the free strip's 1.3 rad-per-link bends in the trade wind are traced by rows 1.4 cm apart instead of folding at 3-5 cm facets
       // M1.2e (hero-anim): on the 7-link, 0.587 m chain the fringe stays 2.5 cm, and the root's opening and the cinch stay where
       // they were in metres (their fractions x 0.540 / 0.587); three more rows keep the rows 1.4 cm apart
-      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.587 * S), side: [0.55, 0.65, 0.5], curl: 0.2, twist: Math.PI / 2, gather: 0.25, gatherTo: 0.36, roll: 1.3, fold: 0.0095, along: 37, across: 6, rootBack: 0.014,
-      open: [0.202, 0.459], pleats: 0.0036 / S,
-      rootRows: 10, smoothSkin: 4, hem: 0.004, ripple: 0.005,
+      // M1.2c round 2 (the review at 471b07d: "the tail is a stiff flat strip with hard elbows" in F12/F13; TURN's hangs bunched, soft and
+      // frayed): the free strip hangs gathered to 0.85 of its cut width (0.085 m, 0.06 m before the fringe) with deeper long folds
+      // (0.0095 -> 0.014) and ripple (0.005 -> 0.008), a deeper cup (0.2 -> 0.28) on 8 columns, not 6; the fringe 2.5 -> 4 cm
+      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.04 / (0.587 * S), side: [0.55, 0.65, 0.5], curl: 0.28, twist: Math.PI / 2, gather: 0.25, gatherTo: 0.36, roll: 1.3, fold: 0.014, along: 37, across: 8, rootBack: 0.014,
+      open: [0.202, 0.459], pleats: 0.0036 / S, gatherFree: 0.85,
+      rootRows: 10, smoothSkin: 4, hem: 0.004, ripple: 0.008,
       // a band of the same cloth bound round the gathered root 6.5 cm out of the knot: the strip is pinched a third narrower under it
       // and puffs out after it (the knot's creased cloth, not a cord)
       cinch: { at: 0.110, w: 0.016 / S, pad: 0.0012 / S, tube: 0.0032 / S } },
@@ -622,12 +637,15 @@ export async function build({ out = ROOT } = {}) {
       inkDots({ dots: [[-0.7075, -0.0445], [-0.6895, -0.0555], [-0.6895, -0.0335]], r: 0.0019, where: (T) => T.X < -0.66 && T.ny > 0.4 }),
       // fix round 3 (R69, the turnaround's face: "visible pores, freckling"): freckles and sun specks over the cheeks, the nose and the
       // forehead, thinning toward the jaw and the temples, none on the lips
-      freckles({ density: 0.075, r: [0.0004, 0.001], dark: 0.7, zone: (T) => smooth(1.572, 1.592, T.Y) * (1 - smooth(1.70, 1.716, T.Y)) * smooth(-0.004, 0.018, T.Z) * (1 - smooth(0.05, 0.066, Math.abs(T.X)))
+      // (M1.2b round 2: F11's freckles read as a dense dark speckle over TURN's few: density 0.075 -> 0.045, darkness 0.7 -> 0.5)
+      freckles({ density: 0.045, r: [0.0004, 0.001], dark: 0.5, zone: (T) => smooth(1.572, 1.592, T.Y) * (1 - smooth(1.70, 1.716, T.Y)) * smooth(-0.004, 0.018, T.Z) * (1 - smooth(0.05, 0.066, Math.abs(T.X)))
         * (1 - (1 - smooth(0.024, 0.032, Math.abs(T.X))) * (1 - smooth(1.598, 1.606, T.Y))) * (0.55 + 0.45 * smooth(0.012, 0.04, Math.abs(T.X))) }),
     ],
     // fix round 3 (R69 and R54: the lit cheek read a saturated orange, Lab C 38-45 at hue 46-52, against the turnaround's deep brown at
     // C 27-35, hue 35-44): the tone a little redder and less saturated at the same lightness
-    tone: '#81594F',
+    // M1.2b round 2 (F11 against TURN's front, Lab medians on the cheeks: TURN a* 18-21, b* 18-19, chroma 26-29; F11 a* 16, b* 15-16,
+    // chroma 22-23 at the same L*): the tone redder and warmer at the same lightness, #81594F -> #875446 (Lab 41.1, 19.6, 17.1)
+    tone: '#875446',
     // M0.11 face spike, iteration 1 (TURN face close-ups: a dark, heavy upper lash line and a shaded lid): the liner 1.8 -> 2.6 mm at
     // its outer end and near-black, the lashes' shade band on the lid 2.8 -> 3.6 mm
     lid: { w: 0.0026, shade: 0.0036, ink: '#0F0907' },
@@ -636,14 +654,17 @@ export async function build({ out = ROOT } = {}) {
     // M1.2b fix round 1 (the judge: "the brows are now thinner but also lighter than the dense, dark brows in TURN and KEY"): the thin,
     // straight band stays (0.7 of the stock height, its arch halved) and is filled densely again: 320 strokes in it (190 before, 260 in
     // the full-height band before the spike), a heavier soft mass under them (0.42 -> 0.66) and hairs 0.30 mm wide
-    brow: { strokes: 320, mass: 0.66, width: 0.0003 },
+    // M1.2b round 2 (TURN: "dense, dark" brows): 400 strokes in the straight band and a heavier soft mass (0.66 -> 0.8)
+    brow: { strokes: 400, mass: 0.8, width: 0.0003 },
     lips: { gain: [0.8, 0.6, 0.63], sat: 0.6 },
     eyeSkin: [94, 62, 50],
     sclera: [182, 164, 146],
   });
   // fix round 1 (R54: in the wind the carmine lining was the loudest thing on her; the bible keeps carmine an accent): the violet
   // facing turns back over 38 % of the lining at each selvedge, so a quarter of its width shows carmine
-  const wrapTex = await paintWrapAtlas(base, wrapMat, { facing: 0.43 });
+  // M1.2c round 2 (TURN's tail is violet on both faces, with thin red-orange stitching, no band; F12/F13 read a carmine stripe down
+  // the strip): no selvedge stripe on the tail's outer face, and the facing covers the lining (0.43 -> 0.53)
+  const wrapTex = await paintWrapAtlas(base, wrapMat, { facing: 0.53, tailStripe: null });
 
   // what faces into the head stays out of a sun behind her (after the paint, which reads the true normals)
   leanInwardNormals(bodyPrim, eyesPrim, { L, eyes });

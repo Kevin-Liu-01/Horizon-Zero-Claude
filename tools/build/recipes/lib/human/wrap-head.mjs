@@ -123,7 +123,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
   if (tail) {
     add('tail', clothTail(tail.points, tail.joints, {
       along: tail.along ?? 16, across: tail.across ?? 4, width: tail.width, side: tail.side, thick: tail.thick ?? 0.004, curl: tail.curl ?? 0.10, twist: tail.twist ?? 0, gather: tail.gather ?? 0.7, gatherTo: tail.gatherTo ?? 0.16, roll: tail.roll ?? 0, fold: tail.fold ?? 0.0052, rootBack: tail.rootBack ?? 0,
-      rootRows: tail.rootRows ?? null, smoothSkin: tail.smoothSkin ?? false, hem: tail.hem ?? 0, ripple: tail.ripple ?? 0, open: tail.open ?? null, pleats: tail.pleats ?? 0,
+      rootRows: tail.rootRows ?? null, smoothSkin: tail.smoothSkin ?? false, hem: tail.hem ?? 0, ripple: tail.ripple ?? 0, open: tail.open ?? null, pleats: tail.pleats ?? 0, gatherFree: tail.gatherFree ?? 1,
       cinch: tail.cinch ? { ...tail.cinch, uv: { rect: [A.knotFold.rect[0] + 8, A.knotFold.rect[1] + 8, 120, A.knotFold.rect[3] - 16], W } } : null,
       uvFront: { rect: A.clothA.rect, period: A.clothA.period, W, pxPerM: 1 / 0.00065, v: [1, 0] },
       uvBack: { rect: A.lining.rect, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0, 1] },
@@ -192,7 +192,8 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
     for (const g of parts) for (let t = 0; t < g.idx.length; t++) { const i = g.idx[t]; exSoup.push(g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]); }
     const exGrid = new TriGrid(new Float32Array(exSoup), 0.01);
     const dirs = [];
-    for (let i = 0; i < 64; i++) { const z = 1 - 2 * (i + 0.5) / 64, r = Math.sqrt(1 - z * z), ph = i * 2.399963; dirs.push([r * Math.cos(ph), r * Math.sin(ph), z]); }
+    const ND = bead.dirs ?? 64;
+    for (let i = 0; i < ND; i++) { const z = 1 - 2 * (i + 0.5) / ND, r = Math.sqrt(1 - z * z), ph = i * 2.399963; dirs.push([r * Math.cos(ph), r * Math.sin(ph), z]); }
     const fe = A.frayEnd.rect;
     const inFray = (u, v) => u * W >= fe[0] && u * W < fe[0] + fe[2] && v * W >= fe[1] && v * W <= fe[1] + fe[3];
     const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
@@ -215,14 +216,20 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
       for (const e of edges.values()) {
         if (e.n !== 1) continue;
         const um = (src.uv[e.a * 2] + src.uv[e.b * 2]) / 2, vm = (src.uv[e.a * 2 + 1] + src.uv[e.b * 2 + 1]) / 2;
-        if (inFray(um, vm)) continue;                                   // the alpha-cut fringe: threads, not an edge
         const pa = P(e.a), pb = P(e.b), pc = P(e.c);
+        if (inFray(um, vm)) continue;                                   // the alpha-cut fringe: threads, not an edge
         const ed = v3.sub(pb, pa), el = Math.hypot(...ed); if (el < 1e-6) continue;
         const eu = v3.mul(ed, 1 / el), m = v3.mul(v3.add(pa, pb), 0.5);
+        // M1.2c round 2: an edge is seen when any of `bead.samples` points along it (default its midpoint) escapes along any of the
+        // directions across it; round 1's midpoint-only test missed three tucked edges the close-ups still see (bun1, bun2, knot)
         let seen = false;
-        for (const d of dirs) {
-          if (Math.abs(v3.dot(d, eu)) > 0.5) continue;
-          if (exGrid.cast(m[0] + d[0] * 0.0004, m[1] + d[1] * 0.0004, m[2] + d[2] * 0.0004, d[0], d[1], d[2], bead.reach ?? 0.15, 0.00005) < 0) { seen = true; break; }
+        for (const f of bead.samples ?? [0.5]) {
+          const q = v3.add(pa, v3.mul(ed, f));
+          for (const d of dirs) {
+            if (Math.abs(v3.dot(d, eu)) > 0.5) continue;
+            if (exGrid.cast(q[0] + d[0] * 0.0004, q[1] + d[1] * 0.0004, q[2] + d[2] * 0.0004, d[0], d[1], d[2], bead.reach ?? 0.15, 0.00005) < 0) { seen = true; break; }
+          }
+          if (seen) break;
         }
         if (!seen) continue;
         nEdges++; len += el;
@@ -370,7 +377,7 @@ function paintFacing(buf, rect, W, dye, frac) {
 }
 const hexOf = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
-export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = '#6B3F73', dark = '#4A2456', mid = '#63356F', stripe = '#A3213A', lining = ['#A3213A', '#8E1C33', '#B02A43'], facing = 0.3, thread = '#B8442E' } = {}) {
+export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = '#6B3F73', dark = '#4A2456', mid = '#63356F', stripe = '#A3213A', tailStripe = stripe, lining = ['#A3213A', '#8E1C33', '#B02A43'], facing = 0.3, thread = '#B8442E' } = {}) {
   const A = WRAP_ATLAS, W = A.W;
   const buf = { base: Buffer.alloc(W * W * 4), normal: Buffer.alloc(W * W * 3), orm: Buffer.alloc(W * W * 3) };
   for (let i = 0; i < W * W; i++) { buf.base[i * 4] = 40; buf.base[i * 4 + 1] = 22; buf.base[i * 4 + 2] = 48; buf.base[i * 4 + 3] = 2; buf.normal[i * 3] = 128; buf.normal[i * 3 + 1] = 128; buf.normal[i * 3 + 2] = 255; buf.orm[i * 3] = 255; buf.orm[i * 3 + 1] = 230; }
@@ -382,7 +389,7 @@ export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = 
   const rowsT = { color: thread, rows: [{ v: 0.26, amp: 1.2, k: 2, ph: 0.3, len: 6, gap: 3 }, { v: 0.74, amp: 1.2, k: 2, ph: 0.75, len: 6, gap: 3, off: 4 }] };
   paintClothPanel(buf, { ...A.clothA, W, dye: deep, dye2: mid, dye3: dark, seed: 2, creases: 7, stripe, stripeAt: 8, fringe: 2, stitch: rowsA, fade: 0.32, foldK: 2.1 });
   paintClothPanel(buf, { ...A.clothB, W, dye: deep, dye2: dark, dye3: mid, seed: 5, creases: 9, sigma: [0.022, 0.06], amp: [0.00022, 0.00055], fringe: 2, creaseWander: 0.28, drag: 0.35, stitch: rowsB, fade: 0.28, foldK: 1.9 });
-  paintClothPanel(buf, { ...A.tailA, W, dye: deep, dye2: mid, dye3: violet, seed: 9, creases: 5, mmU: 0.9, mmV: 1.56, sigma: [0.05, 0.16], amp: [0.0006, 0.0014], fringe: 2, stripe, stripeAt: 5, stitch: rowsT, fade: 0.3 });
+  paintClothPanel(buf, { ...A.tailA, W, dye: deep, dye2: mid, dye3: violet, seed: 9, creases: 5, mmU: 0.9, mmV: 1.56, sigma: [0.05, 0.16], amp: [0.0006, 0.0014], fringe: 2, stripe: tailStripe, stripeAt: 5, stitch: rowsT, fade: 0.3 });
   paintClothPanel(buf, { ...A.lining, W, dye: lining[0], dye2: lining[1], dye3: lining[2], seed: 13, creases: 3, mmU: 1.2, mmV: 1.56, fringe: 0, weave: 0.25 });
   // the violet is turned back over the lining at both selvedges, a broad facing: the tail's inner face is mostly orchil with a
   // carmine centre (bible §3.4: carmine is 6 % of her), and the binding reads the carmine centre
@@ -405,4 +412,5 @@ export async function paintWrapAtlas(doc, wrapMat, { deep = '#5A2E66', violet = 
   wrapMat.setEmissiveTexture(baseTex).setEmissiveFactor([0.09, 0.09, 0.09]);      // the same fill as the skin: dark cloth keeps its folds in shade
   return { ok: true };
 }
+
 

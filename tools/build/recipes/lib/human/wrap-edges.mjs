@@ -43,13 +43,29 @@ export async function wrapEdges(file) {
   };
   const nodes = Object.fromEntries(root.listNodes().filter((n) => n.getMesh()).map((n) => [n.getName(), n]));
   const wrap = skinned(nodes.Brea_HairWrap), body = skinned(nodes.Brea_Skin);
-  // the atlas alpha, when the image decodes (a raw build); a shipped KTX2 atlas falls back to the fringe cell
-  let alpha = null, W = 512;
-  try {
-    const sharp = createRequire(path.join(ROOT, 'package.json'))('sharp');
-    const img = wrap.mat.getBaseColorTexture()?.getImage();
-    if (img) { const { data, info } = await sharp(Buffer.from(img)).ensureAlpha().raw().toBuffer({ resolveWithObject: true }); alpha = { data, w: info.width, h: info.height }; W = info.width; }
-  } catch { alpha = null; }
+  // the atlas alpha: a raw build's PNG through sharp, or (M1.2c round 2) the shipped KTX2's level 0 when it is kept RGBA8 + Zstandard
+  // (tools/build/pipeline/ktx2.mjs KEEP_RGBA8 keeps Brea's wrap atlas so); any other atlas falls back to the fringe cell and says so
+  let alpha = null, W = 512, alphaFrom = 'fringe-cell';
+  const img = wrap.mat.getBaseColorTexture()?.getImage();
+  if (img) {
+    try {
+      const sharp = createRequire(path.join(ROOT, 'package.json'))('sharp');
+      const { data, info } = await sharp(Buffer.from(img)).ensureAlpha().raw().toBuffer({ resolveWithObject: true }); alpha = { data, w: info.width, h: info.height }; W = info.width; alphaFrom = 'atlas';
+    } catch { alpha = null; }
+    if (!alpha) {
+      try {
+        const { read } = await import('three/examples/jsm/libs/ktx-parse.module.js');
+        const k = read(img);
+        if (k.vkFormat === 37 || k.vkFormat === 43) {          // R8G8B8A8 UNORM / SRGB
+          const l = k.levels[0];
+          let data = l.levelData;
+          if (k.supercompressionScheme === 2) { const { ZSTDDecoder } = await import('three/examples/jsm/libs/zstddec.module.js'); const z = new ZSTDDecoder(); await z.init(); data = z.decode(l.levelData, l.uncompressedByteLength); }
+          else if (k.supercompressionScheme !== 0) throw new Error('unsupported supercompression');
+          alpha = { data, w: k.pixelWidth, h: k.pixelHeight }; W = k.pixelWidth; alphaFrom = 'atlas-ktx2-rgba8';
+        }
+      } catch { alpha = null; }
+    }
+  }
   const cut = wrap.mat.getAlphaCutoff?.() ?? 0.5;
   const opaqueAt = (u, v) => {
     if (alpha) { const x = Math.min(alpha.w - 1, Math.max(0, Math.floor(u * alpha.w))), y = Math.min(alpha.h - 1, Math.max(0, Math.floor(v * alpha.h))); return alpha.data[(y * alpha.w + x) * 4 + 3] >= cut * 255; }
@@ -77,7 +93,7 @@ export async function wrapEdges(file) {
   for (let i = 0; i < 64; i++) { const z = 1 - 2 * (i + 0.5) / 64, r = Math.sqrt(1 - z * z), ph = i * 2.399963; dirs.push([r * Math.cos(ph), r * Math.sin(ph), z]); }
   const P = (i) => [wrap.pos[i * 3], wrap.pos[i * 3 + 1], wrap.pos[i * 3 + 2]];
   let open = 0, seenN = 0, seenLen = 0, paper = 0, paperLen = 0;
-  const byPart = {};
+  const byPart = {}, list = [];
   for (const e of edges.values()) {
     if (e.n !== 1) continue;
     open++;
@@ -102,9 +118,12 @@ export async function wrapEdges(file) {
     const hc = [0, 1.672 * S, -0.012 * S], rd = m.map((v, k) => v - hc[k]), rl = Math.hypot(...rd), d = rd.map((v) => v / rl);
     const h = grid.cast(m[0] + d[0] * 0.0002, m[1] + d[1] * 0.0002, m[2] + d[2] * 0.0002, d[0], d[1], d[2], 0.012, 0.00005);
     const gap = h < 0 ? 0 : h + 0.0002;
-    if (gap < 0.003) { paper++; paperLen += el; const pn = partOf(e.t / 3); byPart[pn] = (byPart[pn] || 0) + el * 1000; }
+    if (gap < 0.003) {
+      paper++; paperLen += el; const pn = partOf(e.t / 3); byPart[pn] = (byPart[pn] || 0) + el * 1000;
+      list.push({ part: pn, mm: +(el * 1000).toFixed(1), at: m.map((x) => +x.toFixed(4)), uv: [+((wrap.uv[e.p * 2] + wrap.uv[e.q * 2]) / 2 * W).toFixed(1), +((wrap.uv[e.p * 2 + 1] + wrap.uv[e.q * 2 + 1]) / 2 * W).toFixed(1)], gapMm: +(gap * 1000).toFixed(2) });
+    }
   }
-  return { openEdges: open, seenOpenEdges: seenN, seenLengthMm: +(seenLen * 1000).toFixed(1), paperEdges: paper, paperLengthMm: +(paperLen * 1000).toFixed(1), byPartMm: Object.fromEntries(Object.entries(byPart).map(([k, v]) => [k, Math.round(v)])), alphaFrom: alpha ? 'atlas' : 'fringe-cell', bead: ex.r5Wrap?.bead ?? null };
+  return { openEdges: open, seenOpenEdges: seenN, seenLengthMm: +(seenLen * 1000).toFixed(1), paperEdges: paper, paperLengthMm: +(paperLen * 1000).toFixed(1), byPartMm: Object.fromEntries(Object.entries(byPart).map(([k, v]) => [k, Math.round(v)])), alphaFrom, bead: ex.r5Wrap?.bead ?? null, paperList: list };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

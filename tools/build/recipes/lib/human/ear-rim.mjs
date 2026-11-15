@@ -15,8 +15,10 @@ import { fileURLToPath } from 'node:url';
 import { io } from './face.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
+/** F13's lens (tools/frames/frameset.json: 0.8 m, fov 30, 900 px tall): pixels per game metre at the ear. */
+export const PX_PER_M = 900 / (2 * 0.8 * Math.tan(15 * Math.PI / 180));
 
-export async function earRim(file) {
+export async function earRim(file, { chains: wantChains = false } = {}) {
   const THREE = await import('three');
   const doc = await (await io()).read(file);
   const root = doc.getRoot();
@@ -35,7 +37,7 @@ export async function earRim(file) {
     pos[i * 3] = acc.x * S; pos[i * 3 + 1] = acc.y * S; pos[i * 3 + 2] = acc.z * S;
   }
   const I = prim.getIndices().getArray();
-  const CUT = 0.0735 * S, Y0 = 1.585 * S, Y1 = 1.705 * S, Z0 = -0.07 * S, Z1 = 0.02 * S;
+  const CUT = 0.0735 * S, Y0 = 1.560 * S, Y1 = 1.705 * S, Z0 = -0.07 * S, Z1 = 0.02 * S;
   const out = {};
   for (const side of [1, -1]) {
     const inEar = (i) => side * pos[i * 3] > CUT && pos[i * 3 + 1] > Y0 && pos[i * 3 + 1] < Y1 && pos[i * 3 + 2] > Z0 && pos[i * 3 + 2] < Z1;
@@ -64,6 +66,8 @@ export async function earRim(file) {
     const P2 = (i) => [pos[i * 3 + 2], pos[i * 3 + 1]];
     const used = new Set();
     let longest = 0, over3 = 0, corners = 0, total = 0;
+    const chainsOut = [];
+    let facetMax = 0, facetAt = null, facetsOverHalfPx = 0;
     for (const e0 of sil) {
       if (used.has(e0)) continue;
       // go back to a chain end (or round a loop)
@@ -78,6 +82,35 @@ export async function earRim(file) {
         const nx = (adj.get(kk) || []).filter((q) => !used.has(q));
         cur = nx.length === 1 ? nx[0] : null;
       }
+      chainsOut.push(pts);
+      // M1.2b round 2, the round-rim check at F13's lens: a centripetal Catmull-Rom through the chain's vertices is the round rim the
+      // polygon stands for; each edge's FACET is its largest distance to that curve, in F13 pixels (PX_PER_M). A rim reads round when
+      // every facet is under half a pixel (a corner between two long edges bulges the curve away from both)
+      if (pts.length >= 3) {
+        const cr = (p0, p1, p2, p3, t) => {
+          const d = (a, b) => Math.max(1e-9, Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1])));
+          const t0 = 0, t1 = t0 + d(p0, p1), t2 = t1 + d(p1, p2), t3 = t2 + d(p2, p3), u = t1 + (t2 - t1) * t;
+          const L = (a, b, ta, tb) => [0, 1].map((k) => ((tb - u) * a[k] + (u - ta) * b[k]) / (tb - ta));
+          const A1 = L(p0, p1, t0, t1), A2 = L(p1, p2, t1, t2), A3 = L(p2, p3, t2, t3);
+          const B1 = L(A1, A2, t0, t2), B2 = L(A2, A3, t1, t3);
+          return L(B1, B2, t1, t2);
+        };
+        const closed = Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < 1e-6;
+        const at = (i) => { if (closed) return pts[((i % (pts.length - 1)) + (pts.length - 1)) % (pts.length - 1)]; if (i < 0) return [2 * pts[0][0] - pts[1][0], 2 * pts[0][1] - pts[1][1]]; if (i >= pts.length) { const n = pts.length; return [2 * pts[n - 1][0] - pts[n - 2][0], 2 * pts[n - 1][1] - pts[n - 2][1]]; } return pts[i]; };
+        for (let q = 0; q + 1 < pts.length; q++) {
+          const a = pts[q], b = pts[q + 1], el = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          if (el < 1e-6) continue;
+          // (an open chain's end edge takes its missing neighbour mirrored through its end point: a straight continuation)
+          let dev = 0;
+          for (let s = 1; s < 8; s++) {
+            const c = cr(at(q - 1), a, b, at(q + 2), s / 8);
+            const dist = Math.abs((b[0] - a[0]) * (a[1] - c[1]) - (a[0] - c[0]) * (b[1] - a[1])) / el;
+            dev = Math.max(dev, dist);
+          }
+          if (dev > facetMax) { facetMax = dev; facetAt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; }
+          if (dev * PX_PER_M > 0.5) facetsOverHalfPx++;
+        }
+      }
       let run = 0;
       for (let q = 1; q < pts.length; q++) {
         const L = Math.hypot(pts[q][0] - pts[q - 1][0], pts[q][1] - pts[q - 1][1]); total += L;
@@ -90,7 +123,7 @@ export async function earRim(file) {
       }
       if (run > 0.003) over3++; longest = Math.max(longest, run);
     }
-    out[side > 0 ? 'left' : 'right'] = { silhouetteEdges: sil.length, longestStraightMm: +(longest * 1000).toFixed(2), runsOver3mm: over3, corners, meanEdgeMm: +((total / Math.max(1, sil.length)) * 1000).toFixed(2) };
+    out[side > 0 ? 'left' : 'right'] = { silhouetteEdges: sil.length, longestStraightMm: +(longest * 1000).toFixed(2), runsOver3mm: over3, corners, meanEdgeMm: +((total / Math.max(1, sil.length)) * 1000).toFixed(2), facetPx: +(facetMax * PX_PER_M).toFixed(2), facetsOverHalfPx, facetAt: facetAt && facetAt.map((v) => +v.toFixed(4)), ...(wantChains ? { chains: chainsOut } : {}) };
   }
   return out;
 }

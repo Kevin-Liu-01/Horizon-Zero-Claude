@@ -405,7 +405,7 @@ export function cullCovered(g, depth, margin = 0.0009) {
  * in), and the last `fray` of its length mapped to a frayed end cell.
  *   uvFront / uvBack: { rect, period, W, pxPerM, v:[a,b] }, uvEnd: [x, y, w, h] px
  */
-export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, gatherTo = 0.16, roll = 0, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7, rootBack = 0, rootRows = null, smoothSkin = false, hem = 0, ripple = 0, open = null, pleats = 0, cinch = null } = {}) {
+export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, gatherTo = 0.16, roll = 0, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7, rootBack = 0, rootRows = null, smoothSkin = false, hem = 0, ripple = 0, open = null, pleats = 0, cinch = null, gatherFree = 1 } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const pl = polyline(P);
   const R = rng(seed * 40503);
@@ -446,7 +446,9 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
       const rootK = 1 - smooth(open ? o0 : gatherTo * 0.55, o1, u);        // 1 at the knot, 0 on the free strip
       // (`cinch`: the strip is drawn in under the band, a third narrower and flatter there, and puffs out either side of it)
       const pinch = cinch ? 1 - 0.34 * Math.exp(-(((u - cinch.at) / 0.03) ** 2)) + 0.12 * Math.exp(-(((u - cinch.at - 0.06) / 0.04) ** 2)) : 1;
-      const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(o0, o1, u)) * pinch;
+      // (M1.2c round 2, `gatherFree`: the free strip never lies flat to its full cut width; it hangs gathered to that share of it, the
+      // rest standing in its folds, so it reads as soft cloth bunched along its length rather than a flat strip)
+      const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(o0, o1, u)) * pinch * (1 - (1 - gatherFree) * smooth(o0, o1, u));
       // the cloth starts inside the knot: nothing shows a cut edge where it leaves
       const back = rootBack * (1 - smooth(0, 0.07, u));
       const p0 = sub(p, mul(t, back));
@@ -840,7 +842,10 @@ export function paintFrayEnd(buf, { rect, W = 512, dye, seed = 3, rough = 0.92, 
   // TUFTS of 3-7 threads that twist together toward soft points of uneven length, with the odd thread lost; not a comb of even sticks
   const alpha = new Uint8Array(w * h), tone = new Float32Array(w * h).fill(-1);
   const weftAt = []; { let a = 0.40, v = 0; for (let x = 0; x < w; x++) { v += (R() - 0.5) * 0.05; v *= 0.9; a = 0.40 + v + 0.06 * Math.sin(x * 0.11 + seed); weftAt.push(Math.max(0.3, Math.min(0.52, a))); } }
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (y / h < weftAt[x]) { alpha[y * w + x] = 255; tone[y * w + x] = 0.9 + 0.1 * (((x >> 1) + Math.floor(y / 3)) & 1); }
+  // M1.2c round 2: the strip's two selvedges fray as well across the cell (their first and last two columns are cut, the odd weft
+  // thread reaching out): the side edge between the rolled hem's end and the threads read as a cut sheet's edge (wrap-edges.mjs: the
+  // tail, tail2 and end1 tips, 87 mm of paper edge on the raw build)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (y / h < weftAt[x] && ((x >= 2 && x < w - 2) || (y % 7 === 3 && y / h < weftAt[x] - 0.06))) { alpha[y * w + x] = 255; tone[y * w + x] = 0.9 + 0.1 * (((x >> 1) + Math.floor(y / 3)) & 1); }
   let x = 0;
   while (x < w) {
     const n = 3 + Math.floor(R() * 5), len = 0.58 + 0.42 * Math.pow(R(), 0.7), cx = x + n * 1.5, lean = (R() - 0.5) * 3;
