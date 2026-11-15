@@ -65,6 +65,9 @@ export const HOT = {
   pMoveSpeed: 0.5,
   pCrouch: 0,
   pReedCover: 0,
+  /** hidden by the reeds this frame (Smi 0/1; bible §14's rule, src/game/reeds/rule.js, when the reed system set
+   * `player.reedRule`; else the old crouched-in-cover-grass rule) */
+  pReedHide: 0,
 };
 
 /**
@@ -128,6 +131,8 @@ export function refreshHot(ctx) {
     H.pMoveSpeed = typeof sp === 'number' ? sp : 0;
     H.pCrouch = p.crouching ? 1 : 0;
     H.pReedCover = p.inReedCover ? 1 : 0;
+    // M1.6e (systems, smallest change here): the reed rule's verdict, computed by src/game/reeds each frame
+    H.pReedHide = p.reedRule ? (p.reedHidden ? 1 : 0) : (p.crouching && p.inReedCover ? 1 : 0);
   } else {
     H.pOk = 0;
   }

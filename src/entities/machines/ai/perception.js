@@ -296,7 +296,7 @@ export class Perception {
     const hSightScale = H ? H.sightScale : 1, hDetectMul = H ? H.detectMul : 1;
     const mSightHalf = m.sightHalf, mSightRange = m.sightRange, mAlive = m.alive, mState = m.state;
     const msHeading = ms.heading, msLampDarkT = ms.lampDarkT, scanOffset = this.scanOffset, msPlayerDist = ms.playerDist;
-    const pOk = H0.pOk, pHealth = H0.pHealth, pCrouch = H0.pCrouch, pReedCover = H0.pReedCover, sp = H0.pMoveSpeed;
+    const pOk = H0.pOk, pHealth = H0.pHealth, pCrouch = H0.pCrouch, pReedHide = H0.pReedHide, sp = H0.pMoveSpeed;
     const hostileNow = HOSTILE_STATES.has(mState);
     const mp = m.position;
 
@@ -324,8 +324,10 @@ export class Perception {
     const ignoreStealth = omniPos && !!cOmni && !!cOmni.ignoreStealth;
 
     // ---- the reach (WEATHER: `machines.perception.sightScale`, bible §2.3; a darkened lamp sees nothing, §7.3)
-    const crouch = pCrouch === 1, grass = pReedCover === 1;
-    const hidden = crouch && grass;
+    // M1.6e (systems, smallest change here): hidden is bible §14's reed rule (in cover, and still or the wind there at
+    // 4 m/s or more; carrizo standing, junco and marram crouched), judged by src/game/reeds into lib/hot.js `pReedHide`
+    const crouch = pCrouch === 1;
+    const hidden = pReedHide === 1;
     const hid = hidden && !ignoreStealth;
     const blind = msLampDarkT > 0;
     const reach = mSightRange * hSightScale;

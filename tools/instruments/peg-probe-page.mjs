@@ -129,8 +129,8 @@ export async function probe(frame) {
     await guard('lane', async () => {
       const live = typeof T.cutCover === 'function';
       const cov = S.cover;
-      if (live) return { mask: 'terrain.cutCover is live: the world mask is not readable here', pass: null };
-      if (!cov) throw new Error('no stub cover mask (no segment was cut)');
+      if (live && !cov) return { mask: 'terrain.cutCover is live: the world mask is not readable here', pass: null };
+      if (!cov) throw new Error('no cover mask (no segment was cut)');
       const runs = [], ints = [];
       for (let i = 0; i < S.mesh.count; i++) {
         if (!S.used[i] || S.prev[i] < 0 || !six.includes(S.owner[i])) continue;
@@ -141,7 +141,7 @@ export async function probe(frame) {
       }
       const st = (a) => { const b = a.slice().sort((x, y) => x - y); return { n: b.length, min: r3(b[0]), median: r3(b[b.length >> 1]), max: r3(b[b.length - 1]) }; };
       const inBar = runs.filter((w) => Math.abs(w - 1.0) <= 0.2).length;
-      return { mask: 'stub (src/instruments/lib/cover-stub.js: 64 m tiles of 256 x 256 at 0.25 m on the world grid; no reed cover is built)', run: st(runs), integral: st(ints), inBar, of: runs.length, outsideCuts: cov.outside,
+      return { mask: live ? 'the world reed mask\'s cut layer (src/world/island/reedmask.js: 64 m tiles of 256 x 256 at 0.25 m on the world grid)' : 'none', run: st(runs), integral: st(ints), inBar, of: runs.length, outsideCuts: cov.outside,
         bar: 'every sampled cross-section 1.0 m +- 0.2', pass: runs.length > 0 && inBar === runs.length };
     });
 

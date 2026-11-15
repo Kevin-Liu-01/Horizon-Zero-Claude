@@ -4,6 +4,7 @@ import { QuestSpine } from './quest/spine.js';
 import { QUEST_ID } from './quest/plan.js';
 import { Presenter } from './present.js';
 import { Braziers } from './brazier/braziers.js';
+import { installReeds } from './reeds/index.js';
 import { REST, TRIG, TRIG_TOP, siteById } from '../world/island/sites.js';
 import { SLOT } from '../core/save.js';
 import { vec3 } from '../world/settlements/brazier.js';
@@ -13,6 +14,7 @@ import { vec3 } from '../world/settlements/brazier.js';
  * `installGame(ctx)` runs after `installProgression`; it publishes
  *   ctx.spine          the QuestSpine (src/game/quest/spine.js)
  *   ctx.braziers       the Braziers (src/game/brazier/braziers.js)
+ *   ctx.reeds          reed cover, its gust clocks and the stealth rule (src/game/reeds, M1.6e; installed first)
  *   ctx.systemsGame    this runtime: anchors, rung, report(), newGame(), restoreQuest()
  * and adds itself as a system (update at the sim rate; the presenter's subtitles at real time).
  *
@@ -419,6 +421,7 @@ export class SystemsGame {
 }
 
 export function installGame(ctx) {
+  installReeds(ctx);   // M1.6e: reed cover, the gust clock, the rule (src/game/reeds); ctx.terrain.cutCover
   const sys = new SystemsGame(ctx);
   ctx.game?.systems?.push?.(sys);
   return sys;

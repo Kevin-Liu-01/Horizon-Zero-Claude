@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { HOT } from '../lib/hot.js';
 import { hexToRgb, srgbToLinear } from '../lib/color.js';
-import { CoverMaskStub } from '../lib/cover-stub.js';
 
 /**
  * PEG TRANSECTS (instruments-a W1; bible §7.4 #1 "swarms of 3-6 hammer transect
@@ -31,12 +30,12 @@ import { CoverMaskStub } from '../lib/cover-stub.js';
  *     (`aLive`, 1 lit, 0 dark); `setLive(owner, false)` darkens every peg a Peg drove
  *     when it dies, and the crossing test reads only segments whose Peg is alive. The
  *     draw stays one instanced mesh.
- *   - THE COVER MASK STUB. The reed cover (BUILD M1.6e, the world's one 256-square
- *     cover mask) is not built, and the terrain has no `cutCover` yet. Until it does,
- *     the cuts go into `this.cover`, a 256 x 256 stub mask at 0.25 m a cell (64 m
- *     square, anchored on the first cut; `../lib/cover-stub.js`) that nothing else
- *     reads: it hides nobody and draws nothing. It exists so the lane a swarm cuts can
- *     be measured (1.0 m +- 0.2). When `ctx.terrain.cutCover` exists it is used instead.
+ *   - THE COVER MASK. The cuts go into the world's reed cover (BUILD M1.6e,
+ *     src/world/island/reedmask.js; `ctx.terrain.cutCover`, installed by src/game/reeds):
+ *     its cut layer is the stand-in mask this item used to keep here (64 m tiles of
+ *     256 x 256 at 0.25 m on the world grid), now read by the reeds' drawing and the
+ *     stealth rule. `this.cover` reads that cut layer, so the lane a swarm cuts can be
+ *     measured (1.0 m +- 0.2). With no reed system installed, nothing is cut.
  *   - A Peg never drives a peg within `dedupe` m of one of its own (the walk back along
  *     its line re-lays nothing).
  *
@@ -100,7 +99,6 @@ export class TransectSystem {
     this.draws = 0;
     this.drawTotal = 0;
     this.liveAttr = null;
-    this.cover = null;   // the stub cover mask, built on the first cut when the terrain has no cutCover
   }
 
   _build() {
@@ -178,15 +176,9 @@ export class TransectSystem {
     if (i >= this.mesh.count) this.mesh.count = i + 1;
     this.mesh.instanceMatrix.needsUpdate = true;
     this.live++;
-    // F-4: the line cuts the reed (world-ground's contract when it exists; else the stub mask, M1.4d)
-    if (this.prev[i] >= 0) {
-      if (T && typeof T.cutCover === 'function') {
-        try { T.cutCover([this.px[prev], this.pz[prev], x, z], TRANSECT.cutW); this.cuts++; } catch (e) { /* contract not live */ }
-      } else {
-        if (!this.cover) this.cover = new CoverMaskStub();
-        this.cover.cutCover([this.px[prev], this.pz[prev], x, z], TRANSECT.cutW);
-        this.cuts++;
-      }
+    // F-4: the line cuts the reed (the world's contract, M1.6e: src/world/island/reedmask.js)
+    if (this.prev[i] >= 0 && T && typeof T.cutCover === 'function') {
+      try { T.cutCover([this.px[prev], this.pz[prev], x, z], TRANSECT.cutW); this.cuts++; } catch (e) { /* contract not live */ }
     }
     return i;
   }
@@ -299,11 +291,14 @@ export class TransectSystem {
     this.machines.ctx.events?.emit?.('transect-crossed', { x, z });
   }
 
+  /** The world's cut layer (reedmask.js CutLayer: laneAt, cutAt), or null with no reed system. */
+  get cover() { return (HOT.terrain || this.ctx?.terrain)?.reedCover?.cuts || null; }
+
   audit() {
     let lit = 0;
     if (this.liveAttr) for (let i = 0; i < TRANSECT.cap; i++) if (this.used[i] && this.liveAttr.array[i] > 0) lit++;
     return { live: this.live, lit, owners: this.rings.size, drawn: !!this.mesh, count: this.mesh ? this.mesh.count : 0,
-      crossings: this.crossings, raised: this.raised, cuts: this.cuts, draws: this.draws, cover: this.cover ? 'stub' : 'terrain' };
+      crossings: this.crossings, raised: this.raised, cuts: this.cuts, draws: this.draws, cover: this.cover ? 'world' : 'none' };
   }
 
   dispose() {
