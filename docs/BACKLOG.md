@@ -266,3 +266,17 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 | note | A65 passes only on the runner's retry (a 45 s screenshot timeout on the first attempt), two reviews running | 6511d94 | engine |
 | note | The Sluice 3 Gauge at its post reads about half the height of the old static tower on the F02 and F24 horizon | 6511d94 | instruments |
 | closed | F15 sash panel; Gauge glassWade row; Peg lamp row; the Sluice 3 Gauge back on the F02 and F24 horizon | 6511d94 | - |
+
+## M1a regressions run 3 additions (Nov 15 2026)
+
+- **blocker** F15 (accepted frame): the front sash panel is thrown out level at the run, at the anchor's own stride.
+  Cause between fb6d5f0 and 6511d94 (the sash wind commits); bisect them with the simulation-time filmer.
+- **blocker** F18 (accepted frame): stage the crouched aim-strafe on simulation time and re-film its anchor at fb6d5f0
+  with the same filmer; the current filmer catches a standing point of the strafe.
+- **major** A45c-foot-continuity: the Tiller's planted foot reads 1.8-3.6 m/s at 4175212 (bar 3); find what moved it
+  from 0.16 at 6511d94.
+- **major** A-sweep-wind: the still-air sway clause fails 2 of 4 runs (a jolt in the still-air segment).
+- **note** F21: a cloth strip on a person's head wrap stands straight up.
+- **note** A9-perf-budget graded PASS on a quiet box (59.9 fps, 116 draws).
+- **closed** A90-memory-stability (restated row), F19, A104 and A-stow-clearance (lane numbers; A104 needs a few more
+  passing runs before it counts as stable).

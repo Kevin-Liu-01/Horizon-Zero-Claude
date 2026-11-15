@@ -569,3 +569,73 @@ either warm the world before counting, or upload those meshes at load.
 **Rulings after run 2:**
 - A90-memory-stability counts from the end of one warm cycle: the attribution found 61 geometries drawn for the first time during the row (50 of them the Saltrow people's distance meshes as Brea walks within 90 m), none outside the scene. A first draw is not a leak. The row warms one full cycle, then counts 30; the bar (40) is unchanged. The people's distance meshes should also upload behind the loading sheet.
 - F15 and F19 are staged on simulation time at a fixed clip phase, not the wall clock, so they repeat; their anchors are re-filmed at fb6d5f0 with the same staging before the comparison.
+
+## M1a regressions run 3 (Nov 15 2026)
+
+Two lanes worked on what was still open at 6511d94. Hero-anim worked on the sash panels in the lunge (F19), A104, the
+sweep rows and A-stow-clearance. Engine staged F15 and F19 on simulation time, re-filmed their anchors at fb6d5f0 the
+same way, and put A90 on its restated row. The review measured `r5/int` at **4175212** from a clean detached worktree
+on port 5270, using one Chrome slot.
+
+**Verdict: NOT CLEAN.** Two accepted frames are further than their anchors (F15, F18). One kept row failed in its
+session that passed at fb6d5f0 (A45c-foot-continuity; it passed on two re-runs). `main` stays on fb6d5f0.
+
+**Tier 0 at 4175212: PASS, 10 of 10.**
+- `vite build` OK.
+- 58 Node tests pass. The import graph is clean.
+- Boot: 3.2 s, 0 errors, 72.22 MB first load. Rendered-page name lint: 0.
+
+**Frame Set at 4175212:** all 34 frames, 170 s of Chrome, 0 console errors. F15 and F19 are staged on simulation
+time and freeze at the same point as their re-filmed anchors (the run at gait phase 0.0271, the lunge at contact key
+0.7143).
+- **Further than its anchor (regressions):**
+  - F15: while she runs, the front sash panel is thrown forward from the hip as a stiff, level strip, and the back
+    panel flicks up behind. In the anchor the front panel trails down at about 45 deg to below the knee. Both are
+    filmed at the same point of the same stride. The review filmed 6511d94 with the new filmer and saw the same, so
+    the change came in with the sash wind work between fb6d5f0 and 6511d94. The earlier review's "F15 fixed" was one
+    lucky wall-clock film.
+  - F18: in the crouched aim-strafe, both boots now stand side by side and the front panel is flung out sideways. The
+    anchor kneels with the near knee toward the lens, and the panel hangs to the ground. 6511d94 and 662fb68 filmed
+    with the new filmer show the same pose, so the game did not change here; the filmer's new timing catches a
+    different point of the 1.3 s wall-clock strafe. F18 needs simulation-time staging and a re-filmed anchor.
+- **Fixed:** F19. The front panel goes forward and down ahead of her front knee, as in the anchor.
+- **The same as the anchor:** F02, F03, F05, F08, F09, F10, F11, F13, F14, F16, F19, F20, F23 (Plumb), F24.
+- **Small change:** in F21 a cloth strip on the man's head wrap now stands straight up to the rake head.
+- Palette: F02 8.2, F04 10.2, F05 11.4. All pass the bar of 12.
+- The engine lane's repeat test: three films of F15 and F19 at one commit differ on at most 0.6 % of the frame and
+  3 % of her screen box (hair ribbons and panel tips). They are not pixel-identical.
+
+**Kept-stack rows at 4175212** (two sessions, every row reached): 80 rows. **77 pass** (69 action, 8 visual), **2
+fail**, **1 pending** (A76).
+- **Fixed:** A90-memory-stability on its restated row (one warm cycle, then 30 counted): geometries -1 (bar +40),
+  textures -2, heap +0.7 %. The warm cycle itself drew no new geometry; the people's meshes now upload behind the
+  loading sheet.
+- **A9-perf-budget passes** on a quiet box for the first time: median 59.9 fps, 116 draw calls.
+- **Failing:**
+  - A45c-foot-continuity: a Tiller's planted foot slid at 3.56 m/s in one frame (bar 3). Two re-runs passed at 2.99
+    and 1.77 m/s. It read 0.16 at 6511d94 and 1.42 at fb6d5f0. The row is now near its bar.
+  - A70: the K key shows the map tab, as it did at fb6d5f0.
+- A65 passed only when the runner retried it, for the third review in a row.
+- Key numbers:
+  - A16: knuckle to jaw 0.014 m.
+  - A107: behind the head in the band at most 0.067 m (bar 0.10).
+  - A44b: worst 0.054 m (bar 0.10).
+
+**Rows outside the kept stack** (the hero-anim lane's numbers at 0b01237; the review did not re-run them):
+- A104 passes: the haft clears her head, neck and spine by 0.150 m in the second light swing (bar 0.12), and the
+  forearm clears the spine by 0.120 m when holstering (bar 0.10). The haft's last guard now takes up to six passes.
+- A-stow-clearance passes: the head box is covered 0 % at the median and 15.1 % at worst standing (bars 8 and 20 %).
+- A-sweep-wind: its bearing clause passes in every run (194-203 deg, band 180-270), but the row fails 2 of 4 runs on
+  its still-air sway clause.
+- A-sweep-climb passes on fresh pages and failed once on a long shared page.
+
+**What landed this run:**
+- **Hero-anim:**
+  - The sash panels' moving tuning only acts when she herself travels.
+  - In a lance swing the panels fall a little harder and bend less.
+  - The haft's last guard takes up to six passes.
+- **Engine:**
+  - The filmer stages F15 and F19 on simulation time. `film.mjs --repeat N` films a selection N times and reports the
+    pixel difference.
+  - The F15 and F19 anchors were re-filmed at fb6d5f0 with that staging; the old ones are kept as withdrawn.
+  - A90 is restated (one warm cycle), and the people's meshes upload at load.
