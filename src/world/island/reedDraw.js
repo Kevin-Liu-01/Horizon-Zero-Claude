@@ -6,9 +6,9 @@ import { BEDS, REED_KIND, REED_MASK } from './reedmask.js';
  * THE REEDS, DRAWN FROM THE MASK (BUILD M1.6e). Every cane stands where `mask.cover(x, z)` (the base cover less the
  * Peg cuts) says reed stands, the same value the rule reads: the picture and the rule cannot disagree (TECH §5).
  *
- *   carrizo  a clump of 5 pale canes, 2.3-3.4 m (taller than Brea), two narrow arching leaves each (folded on the
- *            midrib) and a nodding buff plume; 120 triangles. Planted on a jittered 1.3 m grid, kept where a hash is
- *            under the cover (thin at a bed's edge, gone in a cut lane).
+ *   carrizo  a clump of 5 pale canes, 2.3-3.4 m (taller than Brea), each tapered on a slight curve, two blade leaves
+ *            arching off its top third (folded on the midrib) and a slim nodding plume; 230 triangles. Planted on a
+ *            jittered 1.3 m grid, kept where a hash is under the cover (thin at a bed's edge, gone in a cut lane).
  *   junco    a tuft of 14 dark rush stems, 0.7-1.15 m, one tapered sliver each: 14 triangles, on a 0.7 m grid (the
  *            lee hollows by the Glass and the lee ditch on the salt field's outer dyke).
  *
@@ -49,38 +49,6 @@ function rand(seed) {
   };
 }
 
-/**
- * A tapered strap from (ox, oy, oz) along a curve: segs quads, indexed; colour ramp c0 -> c1; normals up-biased.
- * `fold` > 0 (the leaves, M1b round 2): a third, middle row of vertices raised by fold x the half-width, so the blade
- * is a shallow V along its midrib with its two halves lit apart (flat cards read as paper strips in F31 at 2 m).
- */
-function strap(G, o, dir, len, w, segs, c0, c1, droop = 0, rise = 1, taper = 0.75, side = null, fold = 0) {
-  const [dx, dy, dz] = dir;
-  const sx = side ? side[0] : -dz, sz = side ? side[1] : dx;
-  const sl = Math.hypot(sx, sz) || 1;
-  const base = G.P.length / 3;
-  const cols = fold > 0 ? [-1, 0, 1] : [-1, 1], nc = cols.length;
-  for (let s = 0; s <= segs; s++) {
-    const t = s / segs;
-    // the path: out along dir, rising by `rise`, drooping by droop * t^2 at the end
-    const x = o[0] + dx * len * t, z = o[2] + dz * len * t;
-    const y = o[1] + dy * len * t * rise - droop * t * t;
-    const ww = w * (1 - t * taper) / sl;
-    for (const k of cols) {
-      const lift = k === 0 ? fold * ww * sl : 0;
-      G.P.push(x + sx * ww * k, y + lift, z + sz * ww * k);
-      const sh = k === 0 ? 1.06 : 1;
-      G.C.push((c0.r + (c1.r - c0.r) * t) * sh, (c0.g + (c1.g - c0.g) * t) * sh, (c0.b + (c1.b - c0.b) * t) * sh);
-      if (fold > 0) G.N.push(dx * 0.25 + sx / sl * 0.55 * k, 0.8, dz * 0.25 + sz / sl * 0.55 * k);
-      else G.N.push(dx * 0.3 + sz * 0.2 * k, 0.9, dz * 0.3 - sx * 0.2 * k);
-    }
-    if (s < segs) {
-      const a = base + s * nc;
-      for (let c = 0; c < nc - 1; c++) G.I.push(a + c, a + c + 1, a + c + 1 + nc, a + c, a + c + 1 + nc, a + c + nc);
-    }
-  }
-}
-
 function geoOf(G) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(G.P, 3));
@@ -91,32 +59,84 @@ function geoOf(G) {
   return g;
 }
 
-/** Carrizo: 5 canes x (3-segment cane + 2 folded two-segment leaves + a plume) = 120 triangles. Pale straw, never gold. */
+/**
+ * A ribbon along a polyline (closing round, M1b): `pts` its centre line, `half` its half-width at each point, `side` the
+ * horizontal unit across it. Two columns, or three with `fold` > 0 (a leaf's midrib raised by fold x the half-width).
+ * `round` (the canes): the two edges' normals lean out to either side, so a cane is lit across its width like a stem
+ * and not as one flat card (F31 at c455362: flat straight strips).
+ */
+function ribbon(G, pts, half, side, c0, c1, { fold = 0, round = 0, along = null } = {}) {
+  const [sx, sz] = side;
+  const base = G.P.length / 3;
+  const cols = fold > 0 ? [-1, 0, 1] : [-1, 1], nc = cols.length;
+  const n = pts.length;
+  for (let s = 0; s < n; s++) {
+    const t = s / (n - 1), [x, y, z] = pts[s], ww = half[s];
+    for (const k of cols) {
+      const lift = k === 0 ? fold * ww : 0;
+      G.P.push(x + sx * ww * k, y + lift, z + sz * ww * k);
+      const sh = k === 0 ? 1.06 : 1;
+      G.C.push((c0.r + (c1.r - c0.r) * t) * sh, (c0.g + (c1.g - c0.g) * t) * sh, (c0.b + (c1.b - c0.b) * t) * sh);
+      if (fold > 0) G.N.push(along[0] * 0.25 + sx * 0.55 * k, 0.8, along[1] * 0.25 + sz * 0.55 * k);
+      else G.N.push(sx * round * k, 0.85, sz * round * k);
+    }
+    if (s < n - 1) {
+      const a = base + s * nc;
+      for (let c = 0; c < nc - 1; c++) G.I.push(a + c, a + c + 1, a + c + 1 + nc, a + c, a + c + 1 + nc, a + c + nc);
+    }
+  }
+}
+
+/**
+ * Carrizo: 5 canes, each a tapered cane on a slight curve (4 segments), two blade leaves arching off its top third
+ * (4 segments, folded on the midrib, broadest a third of the way out and drawn to a point) and a slim nodding plume
+ * (3 segments, pointed at both ends) = 230 triangles. Pale straw with a sage foot, never gold.
+ * (Closing round, F31 at c455362: the canes read as flat straight strips with hard kinks across the frame. The kinks were
+ * the two-segment leaves, out straight then bent down at one joint, set at mid-height across her; the arrowheads were the
+ * one-segment plumes.)
+ */
 export function carrizoGeo(seed = 0xca77) {
   const R = rand(seed), G = { P: [], C: [], N: [], I: [] };
-  const cane0 = new THREE.Color('#8d8a68'), cane1 = new THREE.Color('#ddd4b8');
-  const leaf0 = new THREE.Color('#a5aa8c'), leaf1 = new THREE.Color('#d6d0b6');
+  const cane0 = new THREE.Color('#87896a'), cane1 = new THREE.Color('#ddd4b8');
+  const leaf0 = new THREE.Color('#a3aa8a'), leaf1 = new THREE.Color('#d6d0b6');
   const plume0 = new THREE.Color('#d9cfb6'), plume1 = new THREE.Color('#efe7d6');
   const c0 = new THREE.Color(), c1 = new THREE.Color();
   for (let k = 0; k < 5; k++) {
     const a = (k / 5) * Math.PI * 2 + R() * 0.8, r0 = 0.05 + R() * 0.35;
     const ox = Math.cos(a) * r0, oz = Math.sin(a) * r0;
-    const H = 2.3 + R() * 1.1, tilt = 0.04 + R() * 0.07;
-    const dir = [Math.cos(a) * tilt, 1, Math.sin(a) * tilt];
+    const H = 2.3 + R() * 1.1, tilt = 0.03 + R() * 0.06;
+    // the curve: the cane bows out from its clump, more toward the tip (a quadratic, 3-8 % of its height at the tip)
+    const bow = 0.03 + R() * 0.05, ba = a + (R() - 0.5) * 0.8;
+    const tx = Math.cos(a) * tilt, tz = Math.sin(a) * tilt, bx = Math.cos(ba) * bow, bz = Math.sin(ba) * bow;
+    const at = (t) => [ox + (tx * t + bx * t * t) * H, H * t, oz + (tz * t + bz * t * t) * H];
     const sideA = a + Math.PI / 2 + (R() - 0.5) * 0.6;
     const side = [Math.cos(sideA), Math.sin(sideA)];
     c0.copy(cane0).multiplyScalar(0.88 + R() * 0.2); c1.copy(cane1).multiplyScalar(0.9 + R() * 0.12);
-    strap(G, [ox, 0, oz], dir, H, 0.024, 3, c0, c1, 0, 1, 0.55, side);
+    // the cane: 4 segments, 0.040 m across at the foot drawn down to 0.008 m at the tip
+    const CS = 4, cp = [], ch = [];
+    for (let s = 0; s <= CS; s++) { const t = s / CS; cp.push(at(t)); ch.push(0.020 * (1 - 0.8 * t)); }
+    ribbon(G, cp, ch, side, c0, c1, { round: 0.55 });
+    // two blade leaves off the top third, on opposite sides, arching up and out then over (a smooth parabola, no joint)
     for (let l = 0; l < 2; l++) {
-      const t = 0.42 + l * 0.24 + R() * 0.08, la = a + (l ? Math.PI : 0) + (R() - 0.5) * 1.6;
-      const at = [ox + dir[0] * H * t, H * t, oz + dir[2] * H * t];
-      const L = 0.75 + R() * 0.4;
+      const t0 = 0.66 + l * 0.14 + R() * 0.06, la = a + (l ? Math.PI : 0) + (R() - 0.5) * 1.4;
+      const o = at(t0), L = 0.55 + R() * 0.3, dx = Math.cos(la), dz = Math.sin(la);
+      const rise = 0.55 + R() * 0.25, fall = 0.85 + R() * 0.3, W = 0.020 + R() * 0.006;
+      const LS = 4, lp = [], lh = [];
+      for (let s = 0; s <= LS; s++) {
+        const u = s / LS, r = L * u * (0.95 - 0.15 * u);
+        lp.push([o[0] + dx * r, o[1] + L * (rise * u - fall * u * u), o[2] + dz * r]);
+        // lanceolate: clasping at the cane, broadest a third out, to a point
+        lh.push(W * (u < 0.34 ? 0.55 + 1.32 * u : 1.0 - (u - 0.34) / 0.66 * 0.94));
+      }
       c0.copy(leaf0).multiplyScalar(0.9 + R() * 0.15); c1.copy(leaf1).multiplyScalar(0.92 + R() * 0.12);
-      strap(G, at, [Math.cos(la), 0.7, Math.sin(la)], L, 0.022, 2, c0, c1, 0.55 + R() * 0.25, 1, 0.72, null, 0.45);
+      ribbon(G, lp, lh, [-dz, dx], c0, c1, { fold: 0.45, along: [dx, dz] });
     }
-    const top = [ox + dir[0] * H, H - 0.02, oz + dir[2] * H];
+    // the plume: slim, nodding over to one side, pointed at both ends
+    const top = at(1), pa = a + (R() - 0.5) * 1.2, px = Math.cos(pa), pz = Math.sin(pa), PL = 0.38 + R() * 0.14;
+    const pp = [], ph = [];
+    for (let s = 0; s <= 3; s++) { const u = s / 3; pp.push([top[0] + px * PL * 0.45 * u * u, top[1] - 0.02 + PL * (0.9 * u - 0.3 * u * u), top[2] + pz * PL * 0.45 * u * u]); ph.push(0.024 * Math.sin(Math.PI * (0.12 + 0.8 * u))); }
     c0.copy(plume0); c1.copy(plume1);
-    strap(G, top, [dir[0] - 0.35, 0.8, dir[2] + 0.35], 0.5, 0.034, 1, c0, c1, 0.12, 1, 0.95, side);
+    ribbon(G, pp, ph, [-pz, px], c0, c1, { round: 0.3 });
   }
   return geoOf(G);
 }
