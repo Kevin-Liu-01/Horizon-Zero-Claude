@@ -535,7 +535,18 @@ DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, m
  *  median 54 / 52 deg (anchor 44 / 40, as it stood 42 / 47). With `airSelf` 1 in motion (the anchor's own) the front
  *  panel still shot out level in one lunge of two (-7 deg)) */
 DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 3.2, airY: true, flut: 2.0, hang: 2, rootK: 3, airSelf: 0.4,
-  moving: { v0: 0.5, v1: 1.5, wind: 1.2, flut: 1, hang: 0, rootK: 0, airSelf: 0.4 },
+  /* (M1a regfix 4, F15: in motion the drag against her own travel is the anchor's again (`airSelf` 0.4 -> 1) and the
+   *  panels fall a little harder (`grav` 0.8 -> 1.2). The run's front panel is a chaotic system: the thigh kicks it
+   *  through each stride and the frozen frame catches wherever the kick left it. At 4175212 the sim-time F15 caught it
+   *  thrown out level at hip height. Bisected on the page's own sim-time staging (sash-probe, head's page.mjs, clean
+   *  worktrees): fb6d5f0 front panel 35.7 deg below horizontal, 26ec7f8 35.4 (its back panel's hem flicked up),
+   *  7e3e3df 15.9 with the hem turned up 46 deg (the level strip: the wind coupling 1.2 -> 2.4 1/s). The moving tuning
+   *  took wind and flutter back to the anchor's but kept `airSelf` 0.4 (de57067). Dressed bench, F15's run (sprint to
+   *  the first step at gait phase 0), 90 starts over idle length, wind 5.5-6.5 m/s and three run-up ramps: front panel
+   *  under 25 deg 5 of 90 at 4175212's tuning, 1 with the anchor's air, 0 with this (median 44 deg, the anchor's air
+   *  39; min 36); the back panel above 35 deg below horizontal 1 of 90 (10 at 4175212). In a lance swing `swing`
+   *  keeps the 0.4 and its own fall, so F19 is staged as at 4175212) */
+  moving: { v0: 0.5, v1: 1.5, wind: 1.2, flut: 1, hang: 0, rootK: 0, airSelf: 1, grav: 1.2 },
   /* (M1a regfix 3, F19: in a lance swing the panels fall a little harder and bend less off their rest, so the front
    *  panel goes forward and down ahead of her front knee in the heavy's lunge, as in the anchor re-filmed at fb6d5f0
    *  (chord 15-17 deg below horizontal, the hem 25-30), and is never thrown out level. Without it the lunge's panel
@@ -543,7 +554,7 @@ DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, m
    *  stagings and a level strip in the film. With 1.0 / 0.35 rad: bench 18-39 deg over 14 starts (median 34); in the
    *  page 1.0 / 0.38 and 1.1 / 0.35 read 31 deg on every staging. At 1.4 / 0.25 (c0dab09) it hung steeper than the
    *  anchor, 45 deg past the knee to the ground) */
-  swing: { grav: 1.0, maxAng: 0.35, up: 12 } });
+  swing: { grav: 1.0, maxAng: 0.35, up: 12, airSelf: 0.4 } });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 export const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */

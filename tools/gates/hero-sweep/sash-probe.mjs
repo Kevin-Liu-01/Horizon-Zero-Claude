@@ -200,7 +200,7 @@ try {
     await page.waitForFunction('window.__READY__ === true', { timeout: 240000, polling: 500 });
     await sleep(5000);
     log(`${R.label} (${commit}${dirty ? ', dirty' : ''}) booted`);
-    const vars = /^anchor/.test(R.label) ? [{ name: 'anchor', set: {} }] : VARIANTS;
+    const vars = /^(anchor|at-)/.test(R.label) ? [{ name: 'anchor', set: {} }] : VARIANTS;
     for (const V of vars) {
       if ((Date.now() - t0) / 1000 > BUDGET_S) { RR.variants.push({ name: V.name, error: 'budget' }); continue; }
       const VR = { name: V.name, set: V.set, frames: {} };

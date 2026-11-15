@@ -871,8 +871,6 @@ export class SecondaryMotion {
         c.swK = s0 + (tgt - s0) * Math.min(1, dt * (tgt > s0 ? (SW.up ?? 8) : (SW.down ?? 4)));
         swK = c.swK;
       }
-      const grv = SW && SW.grav !== undefined ? cls.grav + (SW.grav - cls.grav) * swK : cls.grav;
-      const k = cls.stiff, dmp = cls.drag, gy = -9.81 * grv * sg, bg = cls.base;
       /* (M1a regfix 2, `moving`, the sash panels: the air tuning for the standing trade wind (M1.2e: `wind`, `flut`,
        *  `hang`, `rootK`, `airSelf`) eases back to the values the panels ran on when F15 and F19 were accepted as her
        *  hips travel: `moving.v0`-`v1` m/s of the chain root's own speed, smoothed (up in ~0.1 s, down in ~0.6 s after the speed's own ~0.15 s low-pass). Standing
@@ -895,6 +893,11 @@ export class SecondaryMotion {
         mvK = c.mvK;
       }
       const mvL = (a, b) => (MV && b !== undefined ? a + (b - a) * mvK : a);
+      /* (M1a regfix 4: `moving.grav` / `moving.maxAng`, when set, ease the fall and the bend limit as she travels, as
+       *  `swing` does in a lance swing; the swing's values win over them while it is in hand) */
+      const grv0 = mvL(cls.grav, MV?.grav), maxAng0 = mvL(cls.maxAng, MV?.maxAng);
+      const grv = SW && SW.grav !== undefined ? grv0 + (SW.grav - grv0) * swK : grv0;
+      const k = cls.stiff, dmp = cls.drag, gy = -9.81 * grv * sg, bg = cls.base;
       // fix round 4: the air (see `DYN_CLASSES` 'wrap'): this chain's flutter
       // across the gusting wind, and the wrapped root's stiffness profile
       const cw = mvL(cls.wind ?? DYN_WIND[cls.name] ?? 0, MV?.wind), rk = mvL(cls.rootK ?? 0, MV?.rootK), airY = cls.airY ? 1 : 0;
@@ -963,7 +966,7 @@ export class SecondaryMotion {
       /* ---- 6. rebuild root->tip: length, bend limit, collision, rotation ---- */
       pos[0] = anim[0]; pos[1] = anim[1]; pos[2] = anim[2];
       _spAcc.set(0, 0, 0, 1);
-      const maxAng = SW && SW.maxAng !== undefined ? cls.maxAng + (SW.maxAng - cls.maxAng) * swK : cls.maxAng, cosMax = Math.cos(maxAng);
+      const maxAng = SW && SW.maxAng !== undefined ? maxAng0 + (SW.maxAng - maxAng0) * swK : maxAng0, cosMax = Math.cos(maxAng);
       for (let j = 0; j < N; j++) {
         const i0 = j * 3, i1 = i0 + 3;
         // animated direction of this segment, carried by the parent's rotation
