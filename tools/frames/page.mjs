@@ -43,6 +43,14 @@ export async function stageFrame(f, o = {}) {
   if (C.sighting?.on) C.sighting.toggle(false);
   if (C.state !== 'playing') C.state = 'playing';
   E.requestTimeScale('studio', null);
+  // (frameset v2) nothing carried in from what ran before on this page (a frame, a row, a clip): no crouch or hang
+  // pose, the lance holstered, the bow's holster timer spent (an earlier aim left the bow in her hand), no arrow
+  // stuck in the ground
+  try { if (p.crouching) p.setCrouch?.(false); } catch (e) { /* */ }
+  try { p.animator?.setHangPose?.(false); } catch (e) { /* */ }
+  try { if (C.combat?.melee?.lanceInHand || (C.combat?.melee?.stance && C.combat.melee.stance !== 'holstered')) C.combat.melee.holsterLance(true); } catch (e) { /* */ }
+  if (C.combat) { C.combat._holsterT = 0; C.combat._drawing = false; }
+  try { C.combat?.arrows?.recycleAll?.(); } catch (e) { /* */ }
 
   /* ---- 1. where ---- */
   const GP = C.props?.gatePlaces || {};
@@ -92,6 +100,15 @@ export async function stageFrame(f, o = {}) {
   const st = f.state || {};
   if (!st.crowd) {
     for (const m of C.machines?.list || []) if (m.root?.visible) { m.root.visible = false; undo.push(() => { m.root.visible = true; }); }
+    // a hidden machine is also out of play: an alert one in range drew her bow (combat's threat rule) in a frame
+    // that shows no machine; frozen and calm for the frame, restored after
+    for (const m of C.machines?.list || []) {
+      if (m.root?.visible) continue;
+      const u0 = m.update, s0 = m.state;
+      m.update = function () {};
+      if (s0 === 'alert' || s0 === 'attack' || s0 === 'search') m.state = 'patrol';
+      undo.push(() => { m.update = u0; m.state = s0; });
+    }
     for (const q of C.people?.list || []) if (q.group?.visible) { q.group.visible = false; undo.push(() => { q.group.visible = true; }); }
   }
   // page chrome: hidden unless the frame shows the HUD or a screen. display:none, not visibility: a child
@@ -251,6 +268,13 @@ export async function stageFrame(f, o = {}) {
   if (mode === 'eye' || mode === 'pov') {
     if (f.camera.hideHero !== false && p.model) { const v = p.model.visible; p.model.visible = false; undo.push(() => { p.model.visible = v; }); }
   }
+  // camera.lookAt 'off' (frameset v2): her head follows the lens's view direction in play, so a side lens turned
+  // her face away from it (F13 sat past profile); for the frame the look layer runs at weight 0 and damps to rest
+  if (f.camera?.lookAt === 'off' && typeof p.animator?._lookLayer === 'function') {
+    const an = p.animator, ll = an._lookLayer;
+    an._lookLayer = function (w, pl, dt) { return ll.call(this, 0, pl, dt); };
+    undo.push(() => { an._lookLayer = ll; });
+  } else if (f.camera?.lookAt === 'off') standIns.push('camera.lookAt off: the animator has no look layer to hold');
 
   /* ---- 6. settle: streaming, idle, actors land ---- */
   await sleep(o.settleMs ?? 2600);

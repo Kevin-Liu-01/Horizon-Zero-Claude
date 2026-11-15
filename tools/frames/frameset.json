@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "set": "M1",
   "about": "The Frame Set F01-F32: fixed camera, hour, weather and state per frame, and what each is compared against. Reference crops are named by id only; the masked images live outside the repo (tools/frames/paths.mjs). Read by tools/frames/film.mjs and tools/frames/review.mjs; validated by tools/frames/frameset.mjs.",
   "viewport": { "width": 1600, "height": 900, "dpr": 1.25 },
@@ -17,6 +17,7 @@
     "light": "'studio': flat studio light (Brea alone on a neutral backdrop, a soft key in her frame and an even fill, no grade); absent: the hour's own light",
     "requires": "content ids the frame needs (saltrow-buildings, saltrow-lamps, breakwater, saltrow-ramp); the filmer probes each and records a missing one as a stand-in",
     "camera.lensAfterPose": "stage the pose under the chase camera (an aim follows the game camera), then put up this lens once the world is frozen",
+    "camera.lookAt": "'off': her head's camera look-at is held neutral for the frame (the head follows her body, not the lens), so an orbit angle is an angle to her face",
     "ref": "crops: masked reference crop ids, first is primary | text: a worded reference id | written: a countable target | measured: rows the filmer reads | bar: an animation bar measured as rows"
   },
   "frames": [
@@ -26,15 +27,17 @@
       "ref": { "crops": ["over-title", "key-title"] } },
 
     { "id": "F02", "subject": "the Pans at golden hour, the hero frame", "in": "M1a",
-      "hour": 18.25, "weather": "trade", "at": "look.field", "bearing": 300,
-      "camera": { "mode": "chase", "pitch": 2 }, "state": { "pose": "idle", "hud": false },
+      "hour": 18.25, "weather": "trade", "at": { "en": [-228, -338] }, "bearing": 258,
+      "camera": { "mode": "chase", "pitch": 4 }, "state": { "pose": "idle", "hud": false },
       "clip": { "seconds": 10, "walk": "1 m/s, then a sprint", "status": "pending: filmed with the bar clips (M1.3g)" },
-      "ref": { "crops": ["over-pans-golden"] } },
+      "ref": { "crops": ["over-pans-golden"] },
+      "note": "v2: in the golden meadow at the salt field's south-east end, facing west over the pans: the sun 8 deg right of centre, the Sounding Ring 21 deg right (120 m), the field's cells across the lower frame; horizon about 42 % from the bottom." },
 
     { "id": "F03", "subject": "exploration with the HUD, Brea from behind", "in": "M1a",
-      "hour": 16.5, "weather": "trade", "at": "look.pansInland", "bearing": 341.5,
+      "hour": 16.5, "weather": "trade", "at": { "en": [-168, -208] }, "bearing": 358,
       "camera": { "mode": "chase", "pitch": 6 }, "state": { "pose": "idle", "hud": true },
-      "ref": { "crops": ["key-play", "over-explore"] } },
+      "ref": { "crops": ["key-play", "over-explore"] },
+      "note": "v2: in the golden meadow inland of Saltrow (meadow unbroken for 80 m ahead), facing north to the Flank cliffs with the caldera rim at the right, the sun behind her left shoulder." },
 
     { "id": "F04", "subject": "the Pans at noon, salt and black sand", "in": "M1a",
       "hour": 12.5, "weather": "trade", "at": "site:salt-pans", "bearing": 200,
@@ -85,38 +88,45 @@
 
     { "id": "F13", "subject": "Brea's face, profile", "in": "M0.11 spike, then M1a",
       "light": "studio", "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
-      "camera": { "mode": "orbit", "yawRel": 90, "dist": 0.8, "height": 1.58, "target": "head", "fov": 30 }, "state": { "pose": "idle", "hud": false, "hideKit": true },
-      "ref": { "crops": ["turn-face-profile", "key-face-profile"] } },
+      "camera": { "mode": "orbit", "yawRel": 90, "dist": 0.8, "height": 1.58, "target": "head", "fov": 30, "lookAt": "off" }, "state": { "pose": "idle", "hud": false, "hideKit": true },
+      "ref": { "crops": ["turn-face-profile", "key-face-profile"] },
+      "note": "v2: true profile: her head's camera look-at is held neutral (it turned her face away from a side lens, past profile)." },
 
     { "id": "F14", "subject": "idle", "in": "M1a",
-      "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
+      "hour": 13.0, "weather": "trade", "at": { "en": [-316.9, -264.9] }, "bearing": 315,
       "camera": { "mode": "orbit", "yawRel": 20, "dist": 3.2, "height": 1.0, "target": "body", "fov": 40 }, "state": { "pose": "idle", "hud": false },
-      "ref": { "crops": ["turn-front"], "bar": "M1.3c idle: hands unchanged (pose hash)" } },
+      "ref": { "crops": ["turn-front"], "bar": "M1.3c idle: hands unchanged (pose hash)" },
+      "note": "v2: on the raked salt crust of a white pan cell (24 x 11 m inside its dykes), facing along the cell; legs, feet and weapons clear of grass." },
 
     { "id": "F15", "subject": "run, side-on, mid-stride", "in": "M1a",
-      "hour": 13.0, "weather": "trade", "at": "place:runway", "bearing": 180,
+      "hour": 13.0, "weather": "trade", "at": { "en": [-309.9, -271.9] }, "bearing": 315,
       "camera": { "mode": "orbit", "yawRel": 90, "dist": 4.0, "height": 1.0, "target": "body", "fov": 45 }, "state": { "pose": "run", "hud": false },
-      "ref": { "bar": "M1.3c run: wrists beside the body through the cycle; forearms clear the survey case" } },
+      "ref": { "bar": "M1.3c run: wrists beside the body through the cycle; forearms clear the survey case" },
+      "note": "v2: starts 2 m inside the same salt cell's south-east dyke and runs north-west along it (about 9 m in the frame's 1.6 s; the 3.8 s run clip reaches the far dyke)." },
 
     { "id": "F16", "subject": "full draw, side-on", "in": "M1a",
-      "hour": 17.75, "weather": "trade", "at": "place:rangeGround", "bearing": 180,
+      "hour": 17.75, "weather": "trade", "at": { "en": [-316.9, -264.9] }, "bearing": 315,
       "camera": { "mode": "orbit", "yawRel": 90, "dist": 3.5, "height": 1.3, "target": "body", "fov": 42, "lensAfterPose": true }, "state": { "pose": "draw", "hud": false },
-      "ref": { "crops": ["key-bow"], "bar": "M1.3b draw: index knuckle within 0.03 m of the jaw-corner anchor; 0 frames with a hand behind the head" } },
+      "ref": { "crops": ["key-bow"], "bar": "M1.3b draw: index knuckle within 0.03 m of the jaw-corner anchor; 0 frames with a hand behind the head" },
+      "note": "v2: on the raked salt crust of a white pan cell (24 x 11 m inside its dykes), facing along the cell; legs, feet and weapons clear of grass. The lens is on her sunward side." },
 
     { "id": "F17", "subject": "full draw, over the shoulder", "in": "M1a",
-      "hour": 17.75, "weather": "trade", "at": "look.aim", "bearing": 300,
+      "hour": 17.75, "weather": "trade", "at": { "en": [-314.0, -267.8] }, "bearing": 300,
       "camera": { "mode": "chase", "pitch": 0 }, "state": { "pose": "draw", "hud": false },
-      "ref": { "crops": ["inst-wild"] } },
+      "ref": { "crops": ["inst-wild"] },
+      "note": "v2: on the same salt cell, 4 m from its middle toward the south-east dyke so the chase lens stays inside it; the bearing is unchanged." },
 
     { "id": "F18", "subject": "crouch-moving aim", "in": "M1a",
-      "hour": 17.75, "weather": "trade", "at": "place:rangeGround", "bearing": 180,
+      "hour": 17.75, "weather": "trade", "at": { "en": [-316.9, -264.9] }, "bearing": 315,
       "camera": { "mode": "orbit", "yawRel": 60, "dist": 3.5, "height": 0.9, "target": "body", "fov": 42 }, "state": { "pose": "crouchAim", "hud": false },
-      "ref": { "bar": "M1.3b crouch-moving aim: no hand or forearm behind the head in any cell" } },
+      "ref": { "bar": "M1.3b crouch-moving aim: no hand or forearm behind the head in any cell" },
+      "note": "v2: on the raked salt crust of a white pan cell (24 x 11 m inside its dykes), facing along the cell; legs, feet and weapons clear of grass. She strafes right, away from the lens, about 2 m." },
 
     { "id": "F19", "subject": "lance heavy at contact", "in": "M1a",
-      "hour": 17.75, "weather": "trade", "at": "place:duelGround", "bearing": 180,
+      "hour": 17.75, "weather": "trade", "at": { "en": [-316.9, -264.9] }, "bearing": 315,
       "camera": { "mode": "orbit", "yawRel": 90, "dist": 4.0, "height": 1.1, "target": "body", "fov": 45 }, "state": { "pose": "lanceHeavy", "hud": false },
-      "ref": { "text": "stills-melee", "bar": "M1.3d heavy: hips lead the shoulders by 40 ms or more; palms within 0.05 m of the shaft at windup, contact and follow-through" } },
+      "ref": { "text": "stills-melee", "bar": "M1.3d heavy: hips lead the shoulders by 40 ms or more; palms within 0.05 m of the shaft at windup, contact and follow-through" },
+      "note": "v2: on the raked salt crust of a white pan cell (24 x 11 m inside its dykes), facing along the cell; legs, feet and weapons clear of grass." },
 
     { "id": "F20", "subject": "Ansel beside Brea at 3 m", "in": "M1a",
       "hour": 17.5, "weather": "trade", "at": "rest", "bearing": 200,
@@ -211,8 +221,9 @@
       "ref": { "written": "Brea crouched in pale carrizo at the Glass rim with a calm Plumb 15 m beyond; the canes taller than her and leaning SW; her violet visible through no more than a third of the stems; water in the lower third; never gold or rust grass." } },
 
     { "id": "F32", "subject": "aerial, 120 m over T1 looking NE across the island", "in": "M1a",
-      "hour": 15.0, "weather": "trade", "at": "trig:T1", "bearing": 45,
-      "camera": { "mode": "eye", "eye": 120, "pitch": -22, "fov": 60 }, "state": { "pose": "idle", "hud": false },
-      "ref": { "measured": ["calls<=350", "triangles<=6500000", "frame bar (TECH 9.1)", "no missing terrain chunk", "no LOD seam wider than 2 px"] } }
+      "hour": 15.0, "weather": "trade", "at": "trig:T1", "bearing": 55,
+      "camera": { "mode": "eye", "eye": 120, "pitch": -8, "fov": 60 }, "state": { "pose": "idle", "hud": false },
+      "ref": { "measured": ["calls<=350", "triangles<=6500000", "frame bar (TECH 9.1)", "no missing terrain chunk", "no LOD seam wider than 2 px"] },
+      "note": "v2: across the island, not into the caldera's slope: the centre line runs over the low saddle north-east of T1 (its skyline 1 deg below the lens) to the east coast at 770 m; the horizon is in frame, so the far field and every LOD ring are drawn." }
   ]
 }

@@ -48,6 +48,8 @@ export function validate(set) {
     if (f.light != null && !LIGHTS.includes(f.light)) bad.push(`${at}: light must be one of ${LIGHTS.join(', ')}`);
     for (const r of f.requires || []) if (!REQUIRES.includes(r)) bad.push(`${at}: requires '${r}' has no probe (one of ${REQUIRES.join(', ')})`);
     if (c.lensAfterPose && !['orbit', 'eye', 'pov'].includes(c.mode)) bad.push(`${at}: lensAfterPose needs an orbit, eye or pov lens`);
+    if (c.lookAt != null && c.lookAt !== 'off') bad.push(`${at}: camera.lookAt is 'off' or absent`);
+    if (f.at && typeof f.at === 'object' && !(Array.isArray(f.at.en) && f.at.en.length === 2 && f.at.en.every(Number.isFinite))) bad.push(`${at}: an object 'at' is { en: [E, N] }`);
     const r = f.ref || {};
     if (!r.crops?.length && !r.written && !r.measured?.length && !r.text && !r.bar) bad.push(`${at}: no reference (crops, text, written, measured or bar)`);
   }
