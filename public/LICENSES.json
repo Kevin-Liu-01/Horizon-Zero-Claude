@@ -316,6 +316,21 @@
       "attribution": null
     },
     {
+      "id": "instrument-gauge",
+      "paths": [
+        "public/models/instruments/gauge.glb"
+      ],
+      "title": "Gauge (the tide keeper: a lighthouse on stilts with a lantern-glass mast; M1.4 hull kit, generated)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/instruments/gen-gauge.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
       "id": "instrument-plumb",
       "paths": [
         "public/models/instruments/plumb.glb"

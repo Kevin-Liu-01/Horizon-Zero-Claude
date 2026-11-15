@@ -107,6 +107,8 @@ export function cardParts(m) {
     const pos = m.position ?? m.root?.position;
     m.__transect = pos ? (Math.abs(Math.round(pos.x * 3 + pos.z * 7)) % 39) + 1 : 1;
   }
+  // a kind may print its own value in place of the transect (the Gauge: `TIDE 0.4 m`, as printed: not upper-cased)
+  if (m?.cardValue != null) return { name, work, line: String(m.cardValue) };
   return { name, work, line: `TRANSECT ${String(m?.__transect ?? 1).padStart(2, '0')}` };
 }
 

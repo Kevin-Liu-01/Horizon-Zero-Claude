@@ -165,8 +165,8 @@
     { "id": "F23-gauge", "subject": "the Gauge with Brea at 6 m", "in": "M1b",
       "hour": 16.5, "weather": "trade", "at": "place:gauge", "approach": { "dist": 6, "bearing": 220 },
       "camera": { "mode": "orbit", "yawRel": 155, "dist": 4.5, "height": 2.2, "target": { "fwd": 4, "side": 0, "up": 2.0 }, "fov": 55 },
-      "state": { "pose": "idle", "hud": false },
-      "ref": { "crops": ["inst-gauge", "inst-lineup"] }, "note": "The Gauge is the static scripted one at Sluice 3 until the kind exists." },
+      "state": { "pose": "idle", "hud": false, "actors": [ { "type": "instrument", "kind": "gauge", "dist": 6, "side": 0, "face": "brea" } ] },
+      "ref": { "crops": ["inst-gauge", "inst-lineup"] }, "note": "The living Gauge (M1.4e) stands at Sluice 3, 6 m from her, facing her." },
 
     { "id": "F24", "subject": "the Plumb in the meadow, Brea aiming", "in": "M1a",
       "hour": 17.5, "weather": "trade", "at": "look.meadow", "bearing": 240,
@@ -189,9 +189,9 @@
     { "id": "F26", "subject": "Sighting on the Gauge", "in": "M1b",
       "hour": 16.0, "weather": "trade", "at": "place:gauge", "approach": { "dist": 12, "bearing": 220 },
       "camera": { "mode": "screen", "screen": "sighting" },
-      "state": { "pose": "idle", "hud": true, "actors": [{ "type": "instrument", "kind": "plumb", "dist": 8, "side": 0, "face": "brea", "standInFor": "the Gauge" }] },
+      "state": { "pose": "idle", "hud": true, "actors": [{ "type": "instrument", "kind": "gauge", "dist": 12, "side": 0, "face": "brea" }] },
       "ref": { "crops": ["key-sighting"] },
-      "note": "The Gauge at Sluice 3 is a static prop, not an Instrument the alidade can read, until its kind exists (W2): the card is filmed on a Plumb standing between Brea and the Gauge." },
+      "note": "The living Gauge (M1.4e) at Sluice 3, 12 m from her: the alidade reads its card, GAUGE · SLUICE 3 · TIDE 0.4 m." },
 
     { "id": "F27", "subject": "map", "in": "M1b",
       "hour": 16.0, "weather": "trade", "at": "rest", "bearing": 200,
