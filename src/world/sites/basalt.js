@@ -70,9 +70,10 @@ const D2R = Math.PI / 180;
  *
  * M1a round 2 (F05: the near clusters still read as smooth dark slabs in backlight). What reads against a
  * dusk sky is what the SKY lights, so the column's structure is cut where the sky can reach it:
- *  - every cross-joint is a real notch: the segment below ends in a chipped arris bevelled up at about 50 deg
- *    (fresh rock, lit by the sky, a pale line), then a recessed dark groove, then the next segment's foot
- *    bevelled down (in shadow); 6-8 cm each, 4-5 px at 25 m;
+ *  - every cross-joint is a real notch: the segment below ends in a chipped arris bevelled up (fresh rock, a
+ *    little lit by the sky), a hairline groove, the next segment's foot bevelled down (in shadow), 2-4.5 cm
+ *    each; the joints are 1.3-3.9 m apart and each dips a few degrees its own way (square, close joints with
+ *    a broad lit bevel read as stacked drums on the first film);
  *  - each facet is shaded from one arris to the next (weathering runs off one edge), so where two facets meet
  *    the tone steps and every vertical arris draws a line;
  *  - the fracture planes are steeper and more of them (60 % at 27-43 deg), the spalls deeper.
@@ -81,12 +82,15 @@ function pushColumn(out, cx, cz, rad, y0, y1, rot, seed, tone, lean = [0, 0]) {
   const P = out.pos, N = out.nor, C = out.col;
   const R = mulberry32(seed);
   const cham = Math.min(0.06 + rad * 0.05, (y1 - y0) * 0.1);
-  const JC = Math.min(0.085, 0.04 + rad * 0.06), JG = 0.03;        // joint bevel, half the groove
-  // cross-joint heights (columnar jointing), measured up from the base
+  const JC = Math.min(0.045, 0.02 + rad * 0.04), JG = 0.016;       // joint bevel, half the groove
+  // cross-joint heights (columnar jointing), measured up from the base: long and uneven, so a column reads as one
+  // shaft with joints across it, never as a stack of drums
   const rings = [y0];
-  let y = y0 + 0.5 + R() * 1.0;
-  while (y < y1 - cham - 0.6) { rings.push(y); y += 0.9 + R() * 1.5; }
+  let y = y0 + 0.6 + R() * 1.8;
+  while (y < y1 - cham - 0.8) { rings.push(y); y += 1.3 + R() * 2.6; }
   rings.push(y1 - cham);
+  // each cross-joint dips a few degrees its own way (a cooling joint is never square to the column)
+  const tilt = rings.map((_, i) => (i === 0 || i === rings.length - 1) ? [0, 0] : [(R() - 0.5) * 0.26, (R() - 0.5) * 0.26]);
   // per segment: a jog and a width (the joint's offset); small enough that packed neighbours still overlap
   const seg = rings.map(() => [(R() - 0.5) * 0.04, (R() - 0.5) * 0.04, 0.98 + R() * 0.04]);
   // the broken top: a fracture plane, steep on most columns, and a spalled wedge on one in two
@@ -128,27 +132,33 @@ function pushColumn(out, cx, cz, rad, y0, y1, rot, seed, tone, lean = [0, 0]) {
     if (spall && Math.cos(Math.atan2(dz, dx) - spA) > 0.35) h -= spD + 0.2;
     return h;
   };
-  const P3 = (s, r, yy, si) => { const [x, z] = corner(s, r, yy, si); return [x, yy, z]; };
+  // a point on corner s at radius r, `dy` above ring ri's (tilted) plane, with segment si's jog
+  const P3 = (s, r, ri, dy, si) => {
+    const a = rot + (s / 6) * Math.PI * 2, t = tilt[ri];
+    const yy = rings[ri] + dy + rad * (Math.cos(a) * t[0] + Math.sin(a) * t[1]);
+    const [x, z] = corner(s, r, yy, si); return [x, yy, z];
+  };
   const nUp = (nx, nz, up) => { const l = Math.hypot(nx * (1 - up), up, nz * (1 - up)); return [nx * (1 - up) / l, up / l, nz * (1 - up) / l]; };
   for (let s = 0; s < 6; s++) {
     const fl = facetK[s] * 1.1, fr = facetK[s] * 0.86;              // weathering runs off one arris to the next
     for (let r = 0; r + 1 < rings.length; r++) {
-      const ya = rings[r] + (r ? JG + JC : 0), yb = r < last ? rings[r + 1] - JG - JC : rings[r + 1];
-      const a = P3(s, rad, ya, r), b = P3(s + 1, rad, ya, r), c2 = P3(s + 1, rad, yb, r), d = P3(s, rad, yb, r);
+      const da = r ? JG + JC : 0, db = r < last ? -JG - JC : 0;
+      const ya = rings[r] + da, yb = rings[r + 1] + db;
+      const a = P3(s, rad, r, da, r), b = P3(s + 1, rad, r, da, r), c2 = P3(s + 1, rad, r + 1, db, r), d = P3(s, rad, r + 1, db, r);
       const mx = (a[0] + b[0]) / 2 - cx - lx(ya), mz = (a[2] + b[2]) / 2 - cz - lz(ya), ml = Math.hypot(mx, mz) || 1;
       const nx = mx / ml, nz = mz / ml;
       const ka = shadeAt(ya), kb = shadeAt(yb);
       quad(a, b, c2, d, [nx, 0, nz], ka * fl, ka * fr, kb * fl, kb * fr);
       if (r < last) {
-        // the joint: the chipped arris (up, lit by the sky), the groove (dark), the next foot (down, in shadow)
-        const yj = rings[r + 1], ri = rad - JC;
-        const e = P3(s, ri, yj - JG, r), f = P3(s + 1, ri, yj - JG, r);
-        quad(d, c2, f, e, nUp(nx, nz, 0.62), kb * 1.45, kb * 1.3);
-        const g = P3(s, ri, yj + JG, r + 1), h = P3(s + 1, ri, yj + JG, r + 1);
-        quad(e, f, h, g, [nx, 0, nz], kb * 0.38, kb * 0.32);
-        const yn = yj + JG + JC, kn = shadeAt(yn);
-        const i2 = P3(s, rad, yn, r + 1), j2 = P3(s + 1, rad, yn, r + 1);
-        quad(g, h, j2, i2, nUp(nx, nz, -0.55), kn * 0.55, kn * 0.48, kn * 0.8 * fl, kn * 0.8 * fr);
+        // the joint: a thin chipped arris (up, a little lit by the sky), a hairline groove, the next foot (in shadow)
+        const ri = rad - JC, q = r + 1;
+        const e = P3(s, ri, q, -JG, r), f = P3(s + 1, ri, q, -JG, r);
+        quad(d, c2, f, e, nUp(nx, nz, 0.62), kb * 1.2, kb * 1.1);
+        const g = P3(s, ri, q, JG, q), h = P3(s + 1, ri, q, JG, q);
+        quad(e, f, h, g, [nx, 0, nz], kb * 0.5, kb * 0.45);
+        const kn = shadeAt(rings[q] + JG + JC);
+        const i2 = P3(s, rad, q, JG + JC, q), j2 = P3(s + 1, rad, q, JG + JC, q);
+        quad(g, h, j2, i2, nUp(nx, nz, -0.55), kn * 0.7, kn * 0.62, kn * 0.9 * fl, kn * 0.9 * fr);
       }
     }
     // chamfer up to the broken top, then the fracture surface (a fan from the centre)

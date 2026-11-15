@@ -225,14 +225,16 @@ const FAR_N = 1024;                      // texels a side of the far-field bake 
 /* M1a round 2 (F32's pale "ghost ridge"): the trade deck (environment.js, 105-150 m on the windward slopes) is optical
  * depth on the FRAGMENT's ray, and the sky dome draws none. From a lens in or above the deck, windward ground near the
  * horizon went cloud-white while the sky beside it stayed lavender, so a far peak (the Rust Cone from 120 m over T1)
- * stood as a flat pale wedge with a hard outline. The ground takes the deck only on rays that look down into it
- * (full past 6.9 deg below level, none above 1.1 deg below), so a ridge near the skyline keeps the sky's own haze and
- * the deck still lies over the slopes below the lens. The ground's copy of the chunk only; the sky's chunk is untouched. */
+ * stood as a flat pale wedge with a hard outline. The ground's deck depth is capped by how steeply its ray looks down
+ * (none above 0.6 deg below level, 0.35 at 1.1 deg, 1.8 at 3.4 deg, the full deck past about 10 deg), so a ridge near the
+ * skyline keeps the sky's own haze, the deck still lies over the slopes below the lens, and no level line cuts the deck
+ * off (a first cut by a 1.1-6.9 deg ramp on the depth still saturated into a hard edge). The ground's copy of the chunk
+ * only; the sky's chunk is untouched. */
 const DECK_ANCHOR = 'calTauC = calFogD.x * calSeg * calWw * calBreak;';
 function groundFogChunk() {
   const c = THREE.ShaderChunk.fog_fragment;
   if (!c.includes(DECK_ANCHOR)) { console.error('terrain: the cloud-deck anchor in fog_fragment moved; the ground keeps the shared fog'); return c; }
-  return c.replace(DECK_ANCHOR, 'calTauC = calFogD.x * calSeg * calWw * calBreak * ( 1.0 - smoothstep( -0.12, -0.02, calVd.y ) );');
+  return c.replace(DECK_ANCHOR, 'calTauC = min( calFogD.x * calSeg * calWw * calBreak, 36.0 * max( 0.0, - calVd.y - 0.01 ) );');
 }
 
 /* ---------------------------- fast grid reads (module scope) ---------------------- */
