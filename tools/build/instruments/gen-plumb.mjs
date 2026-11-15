@@ -271,7 +271,11 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
   const all = [...hull.values(), ...glass.values(), bob, drum, GB, GR1, GR2, SCP, CR, MS];
   const box = new THREE.Box3();
   for (const b of all) b.bounds(box);
-  const cx = (box.min.x + box.max.x) / 2, cz = 0, y0 = box.min.y;   // z stays on the head's axis (the lamp looks down +Z)
+  // fix 1: centred on the bounding box in x AND z. The loader (core/assets.js normalize) recentres every model on its
+  // box centre, so a model written with z on the head's axis (the tripod's front leg at +1.2 m, the rear pair at -0.6)
+  // was drawn 0.32 m back from its sockets: every mounted part, the vial and lamp weak points and the lamp sat 0.32 m in
+  // front of the skinned hull (the probe found the vial glass 0.324 m behind its cradle)
+  const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2, y0 = box.min.y;
   for (const b of all) b.translate(-cx, -y0, -cz);
   const sh = (v) => [+(v.x - cx).toFixed(4), +(v.y - y0).toFixed(4), +(v.z - cz).toFixed(4)];
   const size = box.getSize(new THREE.Vector3());

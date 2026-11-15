@@ -193,7 +193,7 @@ export async function stageFrame(f, o = {}) {
     } else if (a.type === 'instrument') {
       const can = C.machines?.canSpawn ? C.machines.canSpawn(a.kind) : !!C.machines;
       if (!can) { standIns.push(`no Instrument kind '${a.kind}' in this build`); continue; }
-      const m = C.machines.spawn(a.kind, ax, az, { route: [{ x: ax, z: az }], heading: 0 });
+      const m = C.machines.spawn(a.kind, ax, az, { route: [{ x: ax, z: az }], heading: Math.atan2(bx - ax, bz - az) });   // facing Brea from the start, so its feet plant where they stand (instruments fix 1: turned after the settle, a tripod's feet were 0.14 m into the ground and 0.16 m over it)
       if (!m) { standIns.push(`Instrument '${a.kind}' did not spawn`); continue; }
       actors.push({ a, m, x: ax, z: az });
       undo.push(() => {

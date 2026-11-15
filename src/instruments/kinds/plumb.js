@@ -68,6 +68,7 @@ const _wp = new THREE.Vector3();
 const _va = new THREE.Vector3();
 const _vb = new THREE.Vector3();
 const _q = new THREE.Quaternion();
+const _xAxis = new THREE.Vector3(1, 0, 0);
 /**
  * The vial's own capsule (m, scale 1): the glass tube and its brass caps along the cradle's x axis. A shot whose line
  * would meet it within VIAL_REACH of where it stopped is a vial hit: the vial has priority over the thin standards,

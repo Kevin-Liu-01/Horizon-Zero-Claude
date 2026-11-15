@@ -48,6 +48,7 @@ export async function probe(frame) {
   const meshesOf = (m) => { const a = []; m.root.traverse((o) => { if (o.isMesh && o.visible && !o.userData?.casterProxy && !o.isInstancedMesh && !o.material?.userData?.componentFold) a.push(o); }); return a; };
   const showAll = (list) => { const back = []; for (const o of list) if (o.material && o.material.visible === false) { back.push(o.material); o.material.visible = true; } return () => { for (const mm of back) mm.visible = false; }; };
   const isGlass = (o) => !o.material?.userData?.instrumentHull;
+  const wp0 = (rec) => { rec.obj.updateWorldMatrix(true, false); return rec.obj.getWorldPosition(new THREE.Vector3()); };
 
   await guard('heights', async () => {
     m0.root.updateMatrixWorld(true);
@@ -79,6 +80,20 @@ export async function probe(frame) {
     const fg = feet.length ? feet.reduce((s, f) => s + f.g, 0) / feet.length : g;
     const sunk = feet.length ? Math.min(...feet.map((f) => f.low)) : null;
     return { plumbM: r3(box.max.y - fg), plumbRootGroundM: r3(box.max.y - g), plumbLowM: r3(box.min.y - g), feet: feet.map((f) => ({ name: f.name, lowAboveGroundM: r3(f.low), groundM: r3(f.g - g) })), sunkM: r3(sunk), registryM: m0.height, breaM: brea, ratio: brea ? r3((box.max.y - fg) / brea) : null, distToBreaM: r3(m0.position.distanceTo(p.position)), drawnTris: Math.round(tris), bar: '3.4 +- 0.1 m above the ground under the feet; no foot below its ground by more than 0.03 m' };
+  });
+
+  /* ---- where the head's pieces are (fix 1 diagnosis): the root frame, relative to the head bone ---- */
+  await guard('headGeom', async () => {
+    m0.root.updateMatrixWorld(true);
+    const hb = m0.rig?.bones?.head; if (!hb) throw new Error('no head bone');
+    const H = hb.getWorldPosition(new THREE.Vector3());
+    const rel = (w) => { const a = m0.root.worldToLocal(w.clone()), b = m0.root.worldToLocal(H.clone()); return [r3(a.x - b.x), r3(a.y - b.y), r3(a.z - b.z)]; };
+    const parts = {};
+    for (const q of m0.parts || []) if (q.mesh) parts[q.name] = rel(q.mesh.getWorldPosition(new THREE.Vector3()));
+    const cen = (o, near) => { const v = new THREE.Vector3(), c = new THREE.Vector3(); let n = 0; const pos = o.geometry.attributes.position; for (let i = 0; i < pos.count; i += 1) { if (o.isSkinnedMesh) o.getVertexPosition(i, v); else v.fromBufferAttribute(pos, i); v.applyMatrix4(o.matrixWorld); if (near && v.distanceTo(H) > near) continue; c.add(v); n++; } return n ? rel(c.multiplyScalar(1 / n)) : null; };
+    let glass = null, sphere = null;
+    for (const o of meshesOf(m0)) { if (!o.isSkinnedMesh) continue; if (isGlass(o)) glass = cen(o, 0); else sphere = cen(o, 0.45); }
+    return { headBoneBody: hb.userData.bodyPos, parts, vialWp: rel(wp0(m0._vialWp)), lampWp: rel(wp0(m0._lampWp)), lampAnchor: m0._lampAnchor ? rel(m0._lampAnchor.getWorldPosition(new THREE.Vector3())) : null, glassCentroid: glass, hullNearHeadCentroid: sphere };
   });
 
   /* ---- visible hull classes in the filmed frame ---- */
@@ -235,18 +250,19 @@ void main() {
       if (c === 'brass') { if (!cur) cur = { start: j, len: 0, open: seq[(j - 1 + N) % N] === 'enamel' }; cur.len++; }
       else { if (cur) { cur.close = c === 'enamel'; if (cur.start < N) runs.push(cur); cur = null; } }
     }
-    let visible = 0, resolved = 0;
-    for (let r = 0; r < 30; r++) {
-      const j = Math.round((r / 30) * N) % N;
-      if (seq[j] == null) continue;
-      visible++;
-      if (seq[j] === 'brass' && runs.some((q) => q.open && q.close && ((j - q.start + N) % N) < q.len)) resolved++;
-    }
-    // a 2 cm rivet's size in px at the ring's distance through this lens
-    const dist = head.distanceTo(cv.position), px2cm = (0.02 * k) / (dist * Math.tan(THREE.MathUtils.degToRad(cv.fov) / 2)) * (bh / 2);
-    const lens = runs.filter((q) => q.open && q.close);
-    return { distM: r3(dist), fov: cv.fov, px2cm: r3(px2cm), visibleRivets: visible, resolvedRivets: resolved, meanRunPx: lens.length ? r3(lens.reduce((a, q) => a + q.len * (2 * Math.PI * rm * k / N), 0) / lens.length / (dist * Math.tan(THREE.MathUtils.degToRad(cv.fov) / 2)) * (bh / 2)) : null,
-      bar: '2 cm rivets resolve at 6 m: >= 90 % of the visible rivets read as their own brass run, >= 2 px', pass: visible > 0 && resolved / visible >= 0.9 && px2cm >= 2 };
+    // a 2 cm rivet's size in px at the ring's distance through this lens; a resolved rivet is a brass run between
+    // enamel on the ring's face whose length along the ring is 0.5-2.5 rivet diameters (longer runs are trim, not rivets)
+    const dist = head.distanceTo(cv.position), pxPerM = (bh / 2) / (dist * Math.tan(THREE.MathUtils.degToRad(cv.fov) / 2)), px2cm = 0.02 * k * pxPerM;
+    const sampM = 2 * Math.PI * rm * k / N;
+    const onRing = seq.filter((c) => c != null).length / N;
+    const rv = runs.filter((q) => q.open && q.close && q.len * sampM >= 0.01 * k && q.len * sampM <= 0.05 * k);
+    const visible = Math.round(30 * onRing), resolved = rv.length;
+    let x0 = bw, y0 = bh, x1 = 0, y1 = 0;
+    for (let i = 0; i < bw * bh; i++) { if (buf[i * 4] < 20 && buf[i * 4 + 1] < 20 && buf[i * 4 + 2] < 20) continue; const x = i % bw, y = (i / bw) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    const cy0 = Math.max(0, y1 - Math.round((y1 - y0) * 0.35));
+    return { distM: r3(dist), fov: r3(cv.fov), px2cm: r3(px2cm), ringVisibleShare: r3(onRing), expectedVisibleRivets: visible, resolvedRivets: resolved, runsPx: rv.map((q) => r3(q.len * sampM * pxPerM)).slice(0, 40),
+      bar: '2 cm rivets resolve at 6 m: brass runs between enamel on the ring face for >= 90 % of the rivets on its visible arc, each >= 2 px', pass: visible > 0 && resolved / visible >= 0.9 && px2cm >= 2,
+      headPng: x1 > x0 ? crop(buf, x0, cy0, x1 - x0 + 1, y1 - cy0 + 1, 1) : null };
   });
 
   await guard('emissive', async () => {
@@ -473,14 +489,22 @@ void main() {
       const hull = meshesOf(mt).find((o) => !isGlass(o));
       const hit = () => mt.takeDamage({ point: wp(mt._vialWp), object: hull, impact: 3, tear: 0, element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: -1 }, type: 'arrow' });
       const tilt = () => 2 * Math.acos(Math.min(1, Math.abs(mt.body.quaternion.w)));
-      hit();
+      const diag = [];
+      const snap = (tag) => { const v = wp(mt._vialWp); diag.push({ tag, vialHits: mt._vialHits, toppleT: r3(mt._toppleT), alive: mt.alive, state: mt.state, wpParent: mt._vialWp.obj.parent?.name || null, wp: [r3(v.x - mt.position.x), r3(v.y - mt.position.y), r3(v.z - mt.position.z)] }); };
+      snap('before');
+      hit(); snap('hit1');
       for (let k = 0; k < 12; k++) await raf();
       const afterOne = mt._toppleT >= 0;
       const s0 = E.simTime;
-      hit();
+      hit(); snap('hit2');
       let tDown = null, tUp = null, maxTilt = 0, downedEnd = null;
+      let nAnim = 0, nPose = 0; const an0 = mt.animate, po0 = mt._poseTopple;
+      mt.animate = function (...q) { nAnim++; return an0.apply(this, q); };
+      mt._poseTopple = function (...q) { nPose++; return po0.apply(this, q); };
+      const trace = [];
       while (E.simTime - s0 < 6.5) {
         await raf(); mt.health = mt.maxHealth;
+        if (trace.length < 6) trace.push({ t: r3(E.simTime - s0), toppleT: r3(mt._toppleT), qw: r3(mt.body.quaternion.w), ang: r3(mt._toppleAng), pz: r3(mt._pivotZ), lay: [r3(mt._layRear), r3(mt._layFront)], lowLOD: !!mt.lowLOD, nAnim, nPose, state: mt.state });
         const t = E.simTime - s0, a = tilt();
         if (a > maxTilt) maxTilt = a;
         if (tDown === null && a > 0.5) tDown = t;
@@ -488,7 +512,9 @@ void main() {
         if (tUp === null && tDown !== null && a < 0.03 && mt._toppleT < 0) tUp = t;
         if (tUp !== null && downedEnd !== null) break;
       }
-      return { firstHitTopples: afterOne, fallBeganS: r3(tDown), maxTiltRad: r3(maxTilt), uprightAgainS: r3(tUp), downedStateEndS: r3(downedEnd), bar: '4.0 +- 0.2 s from the second hit to upright', pass: !afterOne && tUp !== null && Math.abs(tUp - 4.0) <= 0.2 };
+      mt.animate = an0; mt._poseTopple = po0;
+      diag.push({ trace });
+      return { diag, firstHitTopples: afterOne, fallBeganS: r3(tDown), maxTiltRad: r3(maxTilt), uprightAgainS: r3(tUp), downedStateEndS: r3(downedEnd), bar: '4.0 +- 0.2 s from the second hit to upright', pass: !afterOne && tUp !== null && Math.abs(tUp - 4.0) <= 0.2 };
     });
 
     /* ---- Pry: the bob and the lamp drum ---- */
