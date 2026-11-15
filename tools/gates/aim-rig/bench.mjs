@@ -24,6 +24,8 @@ import { buildMeasure } from './measure.mjs';
 const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const OLD = args.includes('--old');
+/** --flow: print A-draw-elbow-level's flow readings per cell (`flow`) */
+const FLOW = args.includes('--flow');
 const TRACE = process.env.TRACE || null;
 
 export const STANCES = ['stand', 'crouch'];
@@ -53,7 +55,7 @@ async function main() {
     for (const pitch of pitches) {
       const r = await runCell(R, M, id, pitch);
       out.push(r);
-      const f = r.fails.length ? 'FAIL ' + r.fails.join('; ') : 'pass';
+      const f = (r.fails.length ? 'FAIL ' + r.fails.join('; ') : 'pass') + (FLOW ? `  flow ${JSON.stringify(r.flow)}` : '');
       const K = r.kept; log(`${id.padEnd(22)} p${String(pitch).padStart(5)}  [kept: elbC ${K.elbowCharMax.toFixed(3)} wnF ${K.wristNockFull.toFixed(3)} wnR ${K.wristNockRamp.toFixed(3)} hc ${K.headClearMin.toFixed(2)} hu ${K.handHeadUnitMin.toFixed(2)} q ${K.quiverMin.toFixed(3)} rear ${K.looseRear.toFixed(3)}]  knuckle ${r.knuckleJaw.toFixed(3)}  elbowH [${r.elbowH[0].toFixed(3)},${r.elbowH[1].toFixed(3)}]  elbowBack ${r.elbowBack.toFixed(3)}  bowChest ${r.bowChest.toFixed(3)}  handNock ${r.handNock.toFixed(3)}  wrapIn ${r.wrapIn}  behind ${r.behind}  verify ${r.verifyFails}  ${f}`);
     }
   }
@@ -159,6 +161,7 @@ async function runCell(R, M, id, pitch) {
   const mv = MOVE_DIR[move];
   if (mv) for (let i = 0; i < 30; i++) step(R, 1 / 60, { move: mv });
   M.begin();
+  const FL = { prev: null, stepMax: 0, stepAt: null, looseT: null, lH: -9, lE: -9, fullE: -9, raiseMax: 0, raiseAt: null };
   const sweep = yaw.startsWith('sweep') ? +yaw.slice(5) : 0;
   const yaw0 = p.camYaw;
   const dt = 1 / 60;
@@ -181,6 +184,7 @@ async function runCell(R, M, id, pitch) {
     } else if (sweep && T >= sEnd) p.camYaw = yaw0;
     step(R, dt, { move: mv });
     M.sample({ T, aiming: p.aiming, draw: c.drawStrength });
+    flow(R, FL, T, c.drawStrength, loosed);
     if (TRACE && TRACE === `${id}:${pitch}` && T < +(process.env.TRACE_T || 0.7)) {
       const v = (x) => x.toArray().map((n) => +n.toFixed(2));
       const un = (n) => { const o = new THREE.Vector3(); an._charOf(an.bones[n], o); an._cRigHead(); return v(an._cRigUnit(o)); };
@@ -191,7 +195,36 @@ async function runCell(R, M, id, pitch) {
   }
   const r = M.end();
   r.id = id; r.pitch = pitch; r.loosed = loosed;
+  // M1a r2 fix: A-draw-elbow-level's flow clauses read here as the page row reads them (an.debugArm, an.behindHead):
+  // the elbow and the wrist step relative to the draw shoulder (<= 0.06 m a sim step) from the aim on, the hand
+  // in front of the back of the skull (< 0) and the elbow <= 0.20 m behind it through the loose's 0.3 s, and the
+  // elbow at the full draw before the first loose. Reported beside the M1.3b bars, not graded into `fails`.
+  r.flow = { armStepMaxM: +FL.stepMax.toFixed(4), armStepAt: FL.stepAt, raiseStepMaxM: +FL.raiseMax.toFixed(4), raiseAt: FL.raiseAt,
+    looseHandBehindSkull: +FL.lH.toFixed(4), looseElbowBehindSkull: +FL.lE.toFixed(4), fullElbowBehindSkull: +FL.fullE.toFixed(4) };
   return r;
+}
+
+/** One sim step of the flow readings (see `runCell`). */
+function flow(R, FL, T, draw, loosed) {
+  const { an, player: p } = R;
+  if (!p.aiming || !an.debugArm) { FL.prev = null; return; }
+  const Q = an.debugArm('r');
+  const sh = new THREE.Vector3(Q.shoulder.x, Q.shoulder.y, Q.shoulder.z), el = new THREE.Vector3(Q.elbow.x, Q.elbow.y, Q.elbow.z), ha = new THREE.Vector3(Q.hand.x, Q.hand.y, Q.hand.z);
+  const eR = el.clone().sub(sh), hR = ha.clone().sub(sh);
+  if (FL.prev) {
+    const de = eR.distanceTo(FL.prev.e), dh = hR.distanceTo(FL.prev.h), m = Math.max(de, dh);
+    const at = `${T.toFixed(3)}s ${de >= dh ? 'elbow' : 'wrist'}`;
+    if (m > FL.stepMax) { FL.stepMax = m; FL.stepAt = at; }
+    if (T < 1.0 && m > FL.raiseMax) { FL.raiseMax = m; FL.raiseAt = at; }
+  }
+  if (process.env.FLOW_TRACE && T < +process.env.FLOW_TRACE && T > +(process.env.FLOW_FROM || 0)) { const C = an._cr || {}; console.error(T.toFixed(3), "w", (C.w ?? 0).toFixed(3), "aimW", an._aimW.toFixed(3), "q", an._quiverT.toFixed(2), "draw", draw.toFixed(2), "e", eR.toArray().map((v) => v.toFixed(3)).join(","), "h", hR.toArray().map((v) => v.toFixed(3)).join(","), "step", FL.prev ? Math.max(eR.distanceTo(FL.prev.e), hR.distanceTo(FL.prev.h)).toFixed(3) : "-", "estep", FL.prev ? eR.distanceTo(FL.prev.e).toFixed(3) : "-", "elbLim", (C.elbLim ?? 0).toFixed(3), "rigE", C.lastE ? C.lastE.toArray().map((v) => v.toFixed(3)).join(",") : "-"); }
+  FL.prev = { e: eR, h: hR };
+  if (loosed >= 1 && FL.looseT == null) FL.looseT = T;
+  if (FL.looseT != null && T - FL.looseT <= 0.3 + 1e-6) {
+    FL.lH = Math.max(FL.lH, an.behindHead(ha)); FL.lE = Math.max(FL.lE, an.behindHead(el));
+    if (process.env.LOOSE_TRACE) console.error('loose', (T - FL.looseT).toFixed(3), 'hand', an.behindHead(ha).toFixed(4), 'elbow', an.behindHead(el).toFixed(4), 'looseT', an._looseT.toFixed(2), 'q', an._quiverT.toFixed(2), 'hold', (an._cr?.hold ?? 0).toFixed(2), 'w', (an._cr?.w ?? 0).toFixed(2));
+  }
+  if (!loosed && draw >= 0.999) FL.fullE = Math.max(FL.fullE, an.behindHead(el));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await main();

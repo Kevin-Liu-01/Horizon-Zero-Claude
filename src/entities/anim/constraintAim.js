@@ -32,6 +32,13 @@ import * as THREE from 'three';
 import { clamp, smoothstep } from './playerCommon.js';
 
 const ARM = ['upArmL', 'loArmL', 'handL', 'upArmR', 'loArmR', 'handR'];
+/** M1a r2 fix: the most the draw wrist target and elbow travel per 1/60 s off the draw shoulder (m; the row's bar 0.06). */
+const ARM_STEP = 0.045;
+/** M1a r2 fix: through the loose the wrist stays this far behind the back of the skull's plane at most (m; < 0 is in
+ *  front of it; A-draw-elbow-level wants < 0). */
+const LOOSE_FRONT = -0.012;
+/** ...and after the step limit has held the wrist back toward last step's, at least this far in front (m). */
+const LOOSE_FRONT_HELD = -0.004;
 // scratch (module-local, allocation-free per frame)
 const _S = new THREE.Vector3(), _E = new THREE.Vector3(), _W = new THREE.Vector3(), _T = new THREE.Vector3();
 const _r = new THREE.Vector3(), _p = new THREE.Vector3(), _u1 = new THREE.Vector3(), _u2 = new THREE.Vector3();
@@ -45,6 +52,7 @@ const _hq = new THREE.Quaternion(), _hqi = new THREE.Quaternion(), _Qr = new THR
 const _un = new THREE.Vector3(), _Qc = new THREE.Quaternion(), _qp = new THREE.Quaternion();
 const _sS = new THREE.Vector3(), _sE = new THREE.Vector3(), _sT = new THREE.Vector3(), _sW = new THREE.Vector3(), _sr = new THREE.Vector3();
 const _sp = new THREE.Vector3(), _se = new THREE.Vector3(), _sa = new THREE.Vector3(), _sb = new THREE.Vector3(), _sq = new THREE.Quaternion(), _sq2 = new THREE.Quaternion();
+const _d2 = new THREE.Vector3();
 const wrap = (x) => x - Math.round(x / (2 * Math.PI)) * 2 * Math.PI;
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
 
@@ -80,6 +88,8 @@ export class ConstraintAim {
       d: new THREE.Vector3(0, 0, 1), anchor: new THREE.Vector3(), knT: new THREE.Vector3(), hook: new THREE.Vector3(), grip: new THREE.Vector3(),
       hold: 0, lastLooseT: 1, lastRaw: 0, slide: 0, w: 0, gripDef: 0, tw: 0, twist: 0, reachDef: 0, reachDefMax: 0,
       verifyFails: 0, verifyLast: null, solves: 0,
+      // (M1a r2 fix: the draw arm as rendered last step, off its shoulder, for the step limit; and the clip's arm)
+      lastH: new THREE.Vector3(), lastE: new THREE.Vector3(), lastOk: false, clipH: new THREE.Vector3(), clipE: new THREE.Vector3(), stepLim: 0,
     };
     return C;
   }
@@ -271,7 +281,7 @@ export class ConstraintAim {
     // a new loose: the string hand holds the draw it loosed from until the quiver beat takes it
     if (this._looseT < C.lastLooseT) C.hold = this._looseDraw ?? 1;
     C.lastLooseT = this._looseT;
-    if (w < 0.004) { C.hold = 0; C.tw = 0; C.lastRaw = 0; return; }
+    if (w < 0.004) { C.hold = 0; C.tw = 0; C.lastRaw = 0; C.lastOk = false; return; }
     if (!C.framesOk && !this._cRigFrames()) return;
     const R = this.T.cRig, b = this.b, cmb = this.ctx.combat;
     const e = w >= 0.999 ? 1 : smoothstep(w, 0, 1);
@@ -281,6 +291,7 @@ export class ConstraintAim {
     // ---- the clip's arms: restore, read the hands and elbows the blend starts from
     for (let i = 0; i < 6; i++) C.e[i].bone.quaternion.copy(C.pre[i]);
     this._charOf(b.handR.bone, _Wr); this._charOf(b.loArmR.bone, _Pr);
+    C.clipH.copy(_Wr); C.clipE.copy(_Pr);
     this._charOf(b.handL.bone, _Wl); this._charOf(b.loArmL.bone, _Pl);
     this._liveW(b.handR.bone, _Qc);
     // (the clip's elbow as a pole: elbow minus the shoulder -> wrist line, kept as a direction)
@@ -417,6 +428,7 @@ export class ConstraintAim {
       _a.set(_d.x, 0, _d.z).normalize(); _lat.set(_a.z, 0, -_a.x);
       _T.addScaledVector(_a, -R.kick * lk).addScaledVector(_lat, -R.kick * (R.kickOut ?? 0.8) * lk);
     }
+    const looseHold = looseOn || C.hold > 0;
     if (this._looseT >= 1 && C.hold > 0 && this._quiverT >= 0.5) C.hold = 0;
     // the quiver beat (arrow pulled at the raise and after a loose): down to the hip, out to her right
     if (this._quiverT < 1) {
@@ -432,6 +444,11 @@ export class ConstraintAim {
         _Qr.slerp(_Qc, qw);
       }
     }
+    /* M1a r2 fix: through the loose and its hold the wrist never goes back past the back of her skull
+     * (A-draw-elbow-level: "the hand in front of the back of the skull" for 0.3 s after the release; the kick and
+     * then the quiver beat took the wrist 0.01-0.09 m behind it, 0.198 strafing): it stops `LOOSE_FRONT` m in front
+     * of that plane, the outward and downward parts of the path kept */
+    if (looseHold) this._cRigLooseFront(_T);
     // ---- blend from the clip by the aim weight (targets, not rotations)
     if (e < 1) {
       _T.lerp(_Wr, 1 - e);
@@ -457,6 +474,20 @@ export class ConstraintAim {
       _up.set(0, 1, 0).addScaledVector(_d, -_d.y).normalize(); _lat.crossVectors(_up, _d).normalize();
       _T.addScaledVector(_lat, -R.blendOut * 4 * e * (1 - e));
       _W.addScaledVector(_lat, R.blendOut * 4 * e * (1 - e));
+    }
+    /* M1a r2 fix: THE DRAW ARM'S STEP LIMIT, inside the rig (A-draw-elbow-level: the elbow and the wrist move at most
+     * 0.06 m a sim step relative to the draw shoulder; the aim weight rises 0.15-0.2 a step and the raise put the
+     * elbow 0.11-0.25 m from where it was drawn in one step, bench and page alike). The wrist target travels at most
+     * `ARM_STEP` m per 1/60 s from the wrist as rendered last step (off this step's shoulder; on the rig's first step
+     * from the clip's); the elbow's pole is held the same way below. */
+    {
+      this._charOf(b.upArmR.bone, _S);
+      const dt = this._dtA || 1 / 60;
+      C.stepLim = ARM_STEP * Math.min(3, Math.max(0.25, dt * 60));
+      if (!C.lastOk) { C.lastH.subVectors(C.clipH, _S); C.lastE.subVectors(C.clipE, _S); }
+      _a.subVectors(_T, _S).sub(C.lastH);
+      const m = _a.length();
+      if (m > C.stepLim) _T.copy(_S).add(C.lastH).addScaledVector(_a, C.stepLim / m);
     }
     this._cRigConstrain(_T, 0.1);
     _a.copy(_T).addScaledVector(_kOff, 0.6); _b.copy(_a);
@@ -499,6 +530,55 @@ export class ConstraintAim {
       }
     }
 
+    // (M1a r2 fix: the draw elbow's step limit. The elbows this wrist allows are a circle; if even its point nearest
+    //  the elbow as rendered last step is further than the limit, the wrist target is drawn back toward last step's
+    //  wrist until one is not (halving, four times). Then the pole: the elbow it gives, else the circle's point
+    //  nearest that elbow moved by the limit from last step's, unless that one is behind the head.)
+    {
+      this._charOf(b.upArmR.bone, _S);
+      const l1 = this._lenUpR, l2 = this._lenLoR, lim = C.stepLim;
+      const near = (Tt, out) => {                                              // the circle's point nearest lastE
+        _r.subVectors(Tt, _S); const dd = clamp(_r.length(), Math.abs(l1 - l2) + 0.01, (l1 + l2) * 0.995); _r.normalize();
+        const ca = clamp((l1 * l1 + dd * dd - l2 * l2) / (2 * l1 * dd), -1, 1), sa = Math.sqrt(1 - ca * ca);
+        _c.copy(C.lastE).addScaledVector(_r, -C.lastE.dot(_r));
+        if (_c.lengthSq() < 1e-10) return 9;
+        _c.normalize();
+        out.copy(_r).multiplyScalar(l1 * ca).addScaledVector(_c, l1 * sa);
+        return out.distanceTo(C.lastE);
+      };
+      if (C.lastOk && near(_T, _E) > lim) {
+        _b.copy(_S).add(C.lastH);                                              // last step's wrist
+        _d2.copy(_T);
+        let lo = 0, hi = 1;
+        for (let k = 0; k < 4; k++) { const t = (lo + hi) / 2; _e.copy(_b).lerp(_d2, t); if (near(_e, _E) > lim) hi = t; else lo = t; }
+        _T.copy(_b).lerp(_d2, lo);
+        C.wristHeld = 1 - lo;
+        // (the loose's plane wins over the step)
+        if (looseHold) this._cRigLooseFront(_T, LOOSE_FRONT_HELD);
+        // (...and the head's keep-out wins too: a wrist held back on its way past the nape is pushed out again)
+        this._cRigConstrain(_T, 0.1);
+      } else C.wristHeld = 0;
+      _r.subVectors(_T, _S); const dd = clamp(_r.length(), Math.abs(l1 - l2) + 0.01, (l1 + l2) * 0.995); _r.normalize();
+      const ca = clamp((l1 * l1 + dd * dd - l2 * l2) / (2 * l1 * dd), -1, 1), sa = Math.sqrt(1 - ca * ca);
+      _p.copy(_Pr).addScaledVector(_r, -_Pr.dot(_r));
+      C.elbLim = 0;
+      if (_p.lengthSq() > 1e-10 && sa > 0.05) {
+        _p.normalize();
+        _E.copy(_r).multiplyScalar(l1 * ca).addScaledVector(_p, l1 * sa);          // the elbow off the shoulder
+        _a.subVectors(_E, C.lastE);
+        const m = _a.length();
+        if (m > lim) {
+          _b.copy(C.lastE).addScaledVector(_a, lim / m);                         // where the limit lets it go
+          _c.copy(_b).addScaledVector(_r, -_b.dot(_r));
+          if (_c.lengthSq() > 1e-10) {
+            _c.normalize();
+            _E.copy(_r).multiplyScalar(l1 * ca).addScaledVector(_c, l1 * sa);
+            _E.add(_S);
+            if (!this._cRigBehind(_E, false)) { _Pr.copy(_c); C.elbLim = m; } else C.elbLim = -m;
+          }
+        }
+      }
+    }
     // ---- SOLVE
     if (C.dbgOn) C.dbg = { T: _T.toArray(), W: _W.toArray(), K: _K.toArray(), H: _H.toArray(), G: _G.toArray(), N: _N.toArray(), Pr: _Pr.toArray(), Pl: _Pl.toArray(), kOff: _kOff.toArray(), hOff: _hOff.toArray(), e };
     C.reachDef = this._cRigSolve(3, _T, _Pr, _Qr);
@@ -509,9 +589,20 @@ export class ConstraintAim {
     if (C.dbgOn) { const o = new THREE.Vector3(); C.dbg.after = { hr: this._charOf(b.handR.bone, o).toArray(), er: this._charOf(b.loArmR.bone, o).toArray(), hl: this._charOf(b.handL.bone, o).toArray(), el: this._charOf(b.loArmL.bone, o).toArray() }; }
     // ---- VERIFY (never a clamp): the shoulders' swing limits, nothing behind the head
     this._cRigVerify(w, drawS);
+    // (M1a r2 fix: the draw arm as rendered, for the next step's limit)
+    this._charOf(b.upArmR.bone, _S);
+    this._charOf(b.handR.bone, C.lastH).sub(_S); this._charOf(b.loArmR.bone, C.lastE).sub(_S); C.lastOk = true;
     // the aim layer's diagnostics now describe this rig (the next step's ray starts at this anchor)
     const D = this._aimDbg;
     if (D) { D.anchor.copy(C.hook); this._charOf(b.head.bone, D.headAt); D.d.copy(_d); }
+  }
+
+  /** M1a r2 fix: a char-space wrist target no further back than `LOOSE_FRONT` off the back of the skull's plane. */
+  _cRigLooseFront(P, lim = LOOSE_FRONT) {
+    this._cRigHead();
+    _x.set(0, 0, 1).applyQuaternion(_hq);
+    const bh = -_y.subVectors(P, _sk).dot(_x) - this.T.headR.z;
+    if (bh > lim) P.addScaledVector(_x, bh - lim);
   }
 
   /** Swing limits (upper arm in the chest's frame) and the behind-the-head region; failures are logged. */

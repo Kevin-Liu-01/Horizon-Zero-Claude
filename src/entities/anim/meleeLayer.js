@@ -157,6 +157,9 @@ const _ident = new THREE.Quaternion();
 const _hTab = new THREE.Vector3();
 const _hOff = new THREE.Vector3();
 const _hOffD = new THREE.Vector3();
+/** M1a r2 fix (A104): the right hand's way between her side and the hand-over line bows out through this point
+ *  (table space: her right-front; x and z only). */
+const ROUND_VIA = [-0.34, 0, 0.30];
 /** The identity, as a value (never mutated). */
 function _qi() { return _ident; }
 /**
@@ -2837,6 +2840,11 @@ export class MeleeLayer {
     this._keyK = stance === 'swing' || stance === 'ready' ? 1 : (stance === 'draw' && this._held ? t : 0);
     if (stance === 'swing') this._snapPose(A, B, t);
     this._lerpPose(A, B, t, yawK);
+    /* M1a r2 fix (A104): the right hand's legs between her side and the hand-over line in front of her chest (the
+     * holster after the hand-over, the draw before the grab) went in a straight line, through her belly: the forearm
+     * 0.004 m off the pelvis -> neck axis at a holster's 17th step (bench; the page read 0.001). The hand goes ROUND
+     * her instead, out by her right-front (`ROUND_VIA`). */
+    if ((stance === 'holster' && !this._held) || (stance === 'draw' && !this._held)) this._handRound(A, B, t);
     out.yaw = A.yaw + (B.yaw - A.yaw) * t;
     out.pitch = A.pitch + (B.pitch - A.pitch) * t;
     out.roll = A.roll + (B.roll - A.roll) * t;
@@ -3221,6 +3229,17 @@ export class MeleeLayer {
     const th = Math.acos(d), s = Math.sin(th);
     const ka = Math.sin((1 - t) * th) / s, kb = Math.sin(t * th) / s;
     return out.set(a[0] * ka + b[0] * kb, a[1] * ka + b[1] * kb, a[2] * ka + b[2] * kb).normalize();
+  }
+
+  /** M1a r2 fix: `_hand` on the A -> B leg at t bowed out through `ROUND_VIA` (a quadratic: + 2t(1-t)(via - mid)),
+   *  her right-front, so it goes round her and not through her (see the call). No allocation. */
+  _handRound(A, B, t) {
+    if (!A?.hand || !B?.hand) return;
+    const k = 2 * t * (1 - t);
+    if (k < 1e-4) return;
+    _hand.x += k * (ROUND_VIA[0] - 0.5 * (A.hand[0] + B.hand[0]));
+    _hand.z += k * (ROUND_VIA[2] - 0.5 * (A.hand[2] + B.hand[2]));
+    this._dbg.handRound = +k.toFixed(3);
   }
 
   _lerpPose(A, B, t, yawK = 1) {
@@ -4253,6 +4272,20 @@ export class MeleeLayer {
     _c.subVectors(_tip, _butt).normalize();
     const mid = _mid.copy(_butt).add(_tip).multiplyScalar(0.5);   // NOT _a: reused below
     const f3 = (v) => [+v.x.toFixed(3), +v.y.toFixed(3), +v.z.toFixed(3)];
+    /* M1a r2 fix (A104): with the haft out of the right hand (a holster after the hand-over, a draw before the grab)
+     * `shaftClear` is the REAL prop's clearance of the axial bones, not a haft extended from the empty right fist (it
+     * read 0.081 m in the page for a lance the left hand was already carrying); the fist's reading stays beside it */
+    if (!this._held) {
+      let best = 9;
+      for (let ci = 0; ci < CLEAR_BONES.length; ci++) {
+        const e = an.b[CLEAR_BONES[ci]];
+        if (!e) continue;
+        an._charOf(e.bone, _d);
+        segPointN(_butt, _tip, _d); if (_sgNum[0] < best) best = _sgNum[0];
+      }
+      out.shaftClearFist = out.shaftClear;
+      out.shaftClear = +best.toFixed(4);
+    }
 
     // A101, measured against the live hand rather than the authored grip
     an._charOf(an.b.handR.bone, _b);
