@@ -402,6 +402,9 @@ export const TERRAIN_COLOR = /* glsl */ `
     /* M1.1b fix round 1: under the clumps' ring (10-30 m) a gap shows the clumps' own mid tone, not the dark foot:
      * blade against gap is the contrast that crawls when the lens moves */
     litter = mix(litter, grass * 0.78, 0.55 * smoothstep(8.0, 30.0, dCam));
+    /* and within the blades' ring the gap is the stand's lower golden straw (light through and off the blades),
+     * not its darkest foot: a dark gap falls under the grade's violet floor and reads as soil (M1.1b soil line) */
+    litter = mix(litter, grass * 0.85, 0.5 * (1.0 - smoothstep(8.0, 30.0, dCam)));
     col = mix(col, mix(litter, grass, farG), mk);
     canopy = mk * (1.0 - farG);
     pert *= 1.0 - mk * mix(0.75, 0.5, farG);
@@ -476,15 +479,14 @@ export const TERRAIN_COLOR = /* glsl */ `
   col *= mix(1.0, clamp(aoSum * 1.08, 0.0, 1.0), 0.4);
   /* M1.1b fix round 1: the ground under the blades sees little of the (violet) sky and has no sheen: the sky in the
    * black sand's grazing sheen and the open-sky fill turned the meadow's gaps rose-grey (the soil-coloured pixels) */
-  /* and at the roots of a dense stand 0.4-0.8 m tall the low sun is blocked too: a gap reads as deep shade in grass.
-   * Strongest within the blades' ring; the clumps' ring keeps a lighter gap (their mid tone, above) */
-  float canopyS = canopy * (1.0 - 0.6 * smoothstep(8.0, 30.0, dCam));
-  gAO *= 1.0 - 0.8 * canopyS;
+  /* (measured: darkening the gaps further, sun and sky blocked at the roots, sent them under the grade's blue-violet
+   * floor: soil-coloured 2.1 -> 3.5 %. The gaps are lit; their colour is the stand's own, above) */
+  gAO *= 1.0 - 0.3 * canopy;
   gLiquid *= 1.0 - canopy;
   gRough = mix(gRough, 1.0, canopy);
 
   /* -- the long shadows: the land's own, and past the cascades the dykes' ------ */
-  gSunVis = gSkylineVis(xz) * (1.0 - 0.85 * canopyS);
+  gSunVis = gSkylineVis(xz);
   if (pan.a > 0.01 && dCam > 70.0) {
     // a dyke is ≈ 0.4 m tall: a band of shadow on the side away from the light
     float L = min(0.42 / max(uSunTan, 0.08), 4.5);
