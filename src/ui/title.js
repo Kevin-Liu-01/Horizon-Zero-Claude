@@ -400,5 +400,37 @@ export function holdSheetForWarmFrames() {
   obs.observe(L, { attributes: true, attributeFilter: ['class'] });
 }
 
+/**
+ * Run `fn` behind the Loading sheet (BEGIN and CONTINUE): the sheet goes up, two frames are drawn so it is on
+ * screen, `fn` runs (the New Game's resets, the save's apply, the quest's first spawns: 165 ms of script in one
+ * click at 6f2f50e), and the sheet closes on WARM_FRAMES frames in a row under 33 ms (6 s at most).
+ * Returns a promise of `fn`'s result. Without the sheet (`?shot`, where main.js removed it) `fn` runs at once.
+ */
+export function underSheet(fn) {
+  const L = typeof document !== 'undefined' ? document.getElementById('loading') : null;
+  if (!L) return Promise.resolve(fn());
+  L.classList.remove('hidden');
+  L.style.setProperty('--t2-load', '1');
+  return new Promise((resolve) => {
+    let n = 0;
+    const lift = () => {
+      if (++n < 3) { requestAnimationFrame(lift); return; }
+      let out;
+      try { out = fn(); } finally {
+        const t0 = performance.now();
+        let run = 0, last = t0;
+        const tick = (now) => {
+          const d = now - last; last = now;
+          run = d < 33 ? run + 1 : 0;
+          if (run >= WARM_FRAMES || now - t0 > 6000) { L.classList.add('hidden'); L.dataset.closedAfterMs = String(Math.round(now - t0)); resolve(out); return; }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(lift);
+  });
+}
+
 buildLoadingSheet();
 holdSheetForWarmFrames();

@@ -35,7 +35,7 @@ import { SettingsStore, SettingsPanel } from './settings.js';
 import { WorldMap, WaypointBeacon } from './map.js';
 import { Tips, fieldWord } from './tips.js';
 import { REST } from '../world/island/sites.js';
-import { TitleStage, buildTitle, fillStations, saveLine, fillTolerance, fillExtras, MENU_AT_S, TITLE_HOUR, TITLE_TEXT } from './title.js';
+import { TitleStage, buildTitle, fillStations, saveLine, fillTolerance, fillExtras, MENU_AT_S, TITLE_HOUR, TITLE_TEXT, underSheet } from './title.js';
 import { MakingLedger } from './making.js';
 
 const el = (tag, cls, parent, html) => {
@@ -368,7 +368,8 @@ export class Menus {
       showContinue: !!info || !older,
       canContinue: !!info,
       fns: {
-        continue: () => this.continueGame(),
+        // the start's work runs behind the Loading sheet, which closes on warm frames (M1.6h)
+        continue: () => { this.closeModal(); underSheet(() => this.continueGame()); },
         newGame: () => this.openModal('difficulty'),
         settings: () => this.openModal('settings'),
         extras: () => this.openModal('extras'),
@@ -686,7 +687,7 @@ export class Menus {
       this._modalTitle.textContent = TITLE_TEXT.tolerance.head;
       const list = this.ctx.progression?.DIFFICULTIES || [{ id: 'standard', name: 'Standard' }];
       const cur = this.ctx.progression?.difficulty ?? 'standard';
-      this._tolerance = fillTolerance(this.modalBody, list, (id) => this.newGame(id), cur);
+      this._tolerance = fillTolerance(this.modalBody, list, (id) => { this.closeModal(); underSheet(() => this.newGame(id)); }, cur);
     } else if (kind === 'extras') {
       this._modalTitle.textContent = TITLE_TEXT.extras.head;
       fillExtras(this.modalBody, { manual: () => this.openModal('manual'), credits: () => this.openModal('credits') });
