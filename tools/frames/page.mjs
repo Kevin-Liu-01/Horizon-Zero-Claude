@@ -473,6 +473,42 @@ export async function stageFrame(f, o = {}) {
       slate(60, () => false);
       if (an && '_grnd' in an) { an._grnd = 0; an._grndWant = null; an._grndRate = 0; }
     }
+    /* (M1b, engine: the F15 debt) HER PERSISTENT STATE BACK TO THE CONSTRUCTOR'S, THEN 3 s ON HER MARK. The state
+     *  probe (film.mjs --state-probe, run 20261115T181752Z-2d1a8f6-engine-slate-full-x3) found what the slate let
+     *  through from the frames before: the gait's backpedal mirror (`loco.reverse` holds its value while she stands:
+     *  -0.80 after the full set's crouched strafe, so the next run set off mirrored and froze at another phase, 34 % of
+     *  the frame), the run bob's mean height (`_bobMean`, a 2.5 1/s low-pass: 2 % of the frame before's left after the
+     *  idle), the ground conform (bow poses only until now), the planted foot locks (world anchors from the frame
+     *  before's mark: `replant`, as a respawn), the lateral widen latch, the trunk's step, her local velocity and jerk
+     *  low-passes, the player's bob phase and melee's pelvis-shift history. Each is put back to its constructor value,
+     *  and then she stands on her mark for a fixed 3 s (no input, the clock pinned) so every other low-pass the frame
+     *  before moved (hundreds of fields, most of them read-outs) has decayed before the section's clocks start */
+    const rest0 = () => {
+      const L = an?.loco;
+      if (L) {
+        L.reverse = 1; L._revSign = 1; L.warp = 1; L.freq = 0; L.legYaw = 0; L.hipYaw = 0; L.lateral = 0; L.widen = 0;
+        if (!p.crouching) L.crouchW = 0;
+        L.dodgeW = 0;
+        if (L.w) for (const k in L.w) L.w[k] = k === 'idle' ? 1 : 0;
+      }
+      if (an) {
+        try { an.replant?.(); } catch (e) { /* */ }
+        if ('_grnd' in an) { an._grnd = 0; an._grndWant = null; an._grndRate = 0; }
+        an._bobMean = NaN; if ('trunkStep' in an) an.trunkStep = 0; if ('_trunkPitch0' in an) an._trunkPitch0 = 0;
+        if (Array.isArray(an._widenHold)) an._widenHold.fill(0);
+        for (const k of ['_lvx', '_lvz', '_prevLvx', '_prevLvz', '_jerkX', '_jerkZ', '_yawRate', '_mx', '_latMove', '_moveW', '_runW']) if (k in an) an[k] = 0;
+        if (an.melee && '_pelvisShiftOk' in an.melee) an.melee._pelvisShiftOk = false;
+      }
+      if ('_bobPhase' in p) { p._bobPhase = 0; p._bobK = 0; }
+    };
+    const onMark = () => {
+      p.position.set(bx, 0, bz); p.velocity?.set?.(0, 0, 0); p._snapToGround?.();
+      p.heading = H; p.camYaw = -B * D2R; if ('moveSpeed' in p) p.moveSpeed = 0;
+      if ('_faceX' in p) { p._faceX = p._candX = Math.sin(H); p._faceZ = p._candZ = Math.cos(H); p._latchT = 0; }
+    };
+    C.input.keys.clear(); C.input.mouse.buttons = 0;
+    onMark(); rest0();
+    slate(180, () => false);
     // the section's own clocks start here, after the slate: the random sequence, the gusts, the clouds' drift
     seed = 0x2545F491;
     if (Number.isFinite(env._gustPhase)) env._gustPhase = 0;
@@ -534,7 +570,8 @@ export async function stageFrame(f, o = {}) {
       undo.push(() => { if (d0) Object.defineProperty(cam, 'fov', d0); else delete cam.fov; cam.updateProjectionMatrix(); });
       out.fov = F;
     }
-    // back on her mark
+    // back on her mark (the settle above stood her there; the foot locks re-planted where she stands)
+    try { an?.replant?.(); } catch (e) { /* */ }
     p.position.set(bx, 0, bz); p.velocity?.set?.(0, 0, 0); p._snapToGround?.();
     p.heading = H; p.camYaw = -B * D2R; if ('moveSpeed' in p) p.moveSpeed = 0;
     // ...and facing her mark: the travel-facing latch (player.js _latchFacing) keeps the last facing it took, so a
