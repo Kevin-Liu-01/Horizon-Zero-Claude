@@ -73,8 +73,10 @@ export class SettlementHost {
     // the nine island people (src/world/npc/people), staged near REST
     this.people = installPeople(ctx);
 
-    // M1.5a: Saltrow, the Pan Houses town (./saltrow.js; the kit tools/build/settlements/recipes/saltrow-kit.mjs)
-    this.town = new Saltrow(ctx, this.group);
+    // M1.5a: Saltrow, the Pan Houses town (./saltrow.js; the kit tools/build/settlements/recipes/saltrow-kit.mjs).
+    // Its own group in the scene: the Brazier system hides this host's group (its Round-4 pit gives way to the
+    // Brazier, src/game/brazier/braziers.js), and the town must not go with it.
+    this.town = new Saltrow(ctx, ctx.scene);
 
     ctx.scene.add(this.group);
   }
