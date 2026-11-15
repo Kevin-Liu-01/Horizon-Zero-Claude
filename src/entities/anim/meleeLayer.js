@@ -59,7 +59,8 @@ const _grip = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _q3 = new THREE.Quaternion();
-const _qCR = new THREE.Quaternion();   // (M1a debt: `_blendCarry` on the carried line)
+const _qCR = new THREE.Quaternion();
+const _frQ = [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()];   // (M1a debt: `_foreRoll`'s undo)   // (M1a debt: `_blendCarry` on the carried line)
 const _m4 = new THREE.Matrix4();
 const _seg = new THREE.Vector3();
 const _sgA = new THREE.Vector3();
@@ -3716,9 +3717,21 @@ export class MeleeLayer {
       }
     }
     if (best === 0) return;
+    /* (the roll re-aims the haft through the forearm and the wrist: if that takes the haft nearer her head, neck or
+     *  spine than A104's 0.12 bar plus 0.015, and nearer than it was, the roll is taken back. Page at 88b1605: light-2's
+     *  windup haft 0.112 m) */
+    const gap0 = this._shaftGap();
+    _frQ[0].copy(b.upArmR.bone.quaternion); _frQ[1].copy(b.loArmR.bone.quaternion); _frQ[2].copy(b.handR.bone.quaternion);
     _eQ.setFromAxisAngle(_eAx, best);
     an._rotQL(b.upArmR, _eQ);
     const ro = this._rollOff; this._rollOff = true; this._alignHaft(w); this._rollOff = ro;
+    const gap1 = this._shaftGap();
+    if (gap1 < 0.135 && gap1 < gap0) {
+      b.upArmR.bone.quaternion.copy(_frQ[0]); b.loArmR.bone.quaternion.copy(_frQ[1]); b.handR.bone.quaternion.copy(_frQ[2]);
+      b.handR.bone.updateWorldMatrix(true, true);
+      D.foreRollKept = (D.foreRollKept || 0) + 1;
+      return;
+    }
     D.foreRoll = +(bestG - g0).toFixed(3);
   }
 
