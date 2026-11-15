@@ -168,6 +168,12 @@ reflectedLight.directDiffuse *= gSunVis;
 reflectedLight.directSpecular *= gSunVis * mix(0.2, 1.0, gLiquid);
 reflectedLight.indirectDiffuse *= gAO * 2.3;   // open ground sees the whole sky: shade reads, black sand keeps its grain
 reflectedLight.indirectSpecular *= mix(1.0, gAO, 0.6);
+#ifdef CAL_CAPTURE
+/* the M1.1e tiling capture (tools/perf/meadow-page.mjs topDown): the material alone, albedo under one fixed light
+ * on its own normal, with no sun shadow, skyline, sky or sheen, so the autocorrelation sees texture, not lighting */
+reflectedLight.directDiffuse = diffuseColor.rgb * (0.3 + 0.7 * max(dot(normalize(normal), normalize(vec3(0.35, 0.3, 1.0))), 0.0));
+reflectedLight.directSpecular = vec3(0.0); reflectedLight.indirectDiffuse = vec3(0.0); reflectedLight.indirectSpecular = vec3(0.0);
+#endif
 #ifdef USE_FOG
 if (gLiquid > 0.004) {
   vec3 gV = normalize(cameraPosition - vWPos);

@@ -230,6 +230,10 @@ export async function topDown(E, C, x, z, { span = 40, px = 1024 } = {}) {
   cam0.position.set(x, y + 1.7, z); cam0.lookAt(x, y, z - 10); cam0.updateMatrixWorld();
   C.terrain.updateLod?.(cam0);
   const undo = isolate(C, { keepMeadow: false });
+  // the material alone (terrain.js CAL_CAPTURE): no shadow, skyline, sky or sheen in a tiling check
+  const capMats = new Set();
+  C.terrain.group.traverse((o) => { if (o.isMesh && o.material && !o.material.defines?.CAL_CAPTURE) capMats.add(o.material); });
+  for (const m of capMats) { m.defines = { ...(m.defines || {}), CAL_CAPTURE: 1 }; m.needsUpdate = true; }
   const water = C.terrain.water;
   /* fix round 1: the capture was 8-bit LINEAR (a render target gets no output transform), so black sand at
    * 0.02-0.05 linear sat in 5-13 codes and the salt clipped: dark, banded, blurred-looking. It is read as float
@@ -253,6 +257,7 @@ export async function topDown(E, C, x, z, { span = 40, px = 1024 } = {}) {
     const enc = (v) => { v = Math.max(0, v * k); v = v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055; return Math.min(255, Math.round(v * 255)); };
     for (let i = 0; i < px * px; i++) { buf[i * 4] = enc(fbuf[i * 4]); buf[i * 4 + 1] = enc(fbuf[i * 4 + 1]); buf[i * 4 + 2] = enc(fbuf[i * 4 + 2]); buf[i * 4 + 3] = 255; }
   } finally {
+    for (const m of capMats) { delete m.defines.CAL_CAPTURE; m.needsUpdate = true; }
     undo(); rt.dispose();
     cam0.position.copy(p0); cam0.quaternion.copy(q0); cam0.updateMatrixWorld(); C.terrain.updateLod?.(cam0);
   }

@@ -476,12 +476,15 @@ export const TERRAIN_COLOR = /* glsl */ `
   col *= mix(1.0, clamp(aoSum * 1.08, 0.0, 1.0), 0.4);
   /* M1.1b fix round 1: the ground under the blades sees little of the (violet) sky and has no sheen: the sky in the
    * black sand's grazing sheen and the open-sky fill turned the meadow's gaps rose-grey (the soil-coloured pixels) */
-  gAO *= 1.0 - 0.6 * canopy;
+  /* and at the roots of a dense stand 0.4-0.8 m tall the low sun is blocked too: a gap reads as deep shade in grass.
+   * Strongest within the blades' ring; the clumps' ring keeps a lighter gap (their mid tone, above) */
+  float canopyS = canopy * (1.0 - 0.6 * smoothstep(8.0, 30.0, dCam));
+  gAO *= 1.0 - 0.8 * canopyS;
   gLiquid *= 1.0 - canopy;
   gRough = mix(gRough, 1.0, canopy);
 
   /* -- the long shadows: the land's own, and past the cascades the dykes' ------ */
-  gSunVis = gSkylineVis(xz);
+  gSunVis = gSkylineVis(xz) * (1.0 - 0.85 * canopyS);
   if (pan.a > 0.01 && dCam > 70.0) {
     // a dyke is ≈ 0.4 m tall: a band of shadow on the side away from the light
     float L = min(0.42 / max(uSunTan, 0.08), 4.5);
