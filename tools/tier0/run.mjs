@@ -2,14 +2,19 @@
 /**
  * TIER 0 — the machine checks every merge to the integration branch must pass. One command:
  *
- *   node tools/tier0/run.mjs                      all Node checks (no browser), about 15 s
- *   node tools/tier0/run.mjs --port 5270          ... then one short headless boot on that port
+ *   node tools/tier0/run.mjs                      every Node check, then one short headless boot on a free port
+ *                                                 it picks itself in 5275-5279 (I23: a green build is not a boot)
+ *   node tools/tier0/run.mjs --port 5270          ... the boot on that port instead
  *        [--slot-wait <s>] [--who <name>]         (Chrome slot protocol: see boot.mjs; default wait 1200 s)
  *        [--tree <dir>] [--json <file>] [--no-build]
- *   npm run tier0 -- --port 5270
+ *   node tools/tier0/run.mjs --no-boot            the Node checks only (about 15 s); NOT a merge result: the
+ *                                                 verdict line says so and the exit code is 2 when nothing failed
+ *   npm run tier0
  *
  * Checks, in order: build · name lint · licence manifest · asset budgets · resident-texture ledger ·
- * shipped-size ledger · import graph · node --test · (boot). No frame timing at this tier.
+ * shipped-size ledger · import graph · node --test · boot. No frame timing at this tier. A commit that builds
+ * but throws at boot FAILS Tier 0. A boot the machine guard or the Chrome slot did not allow is PENDING (never
+ * PASS); a merge waits for it.
  * Statuses: PASS · FAIL · PENDING (could not be judged here; never counted as PASS) · SKIP (not run, with why).
  * Exit code 1 when anything FAILs.
  */
@@ -67,16 +72,27 @@ await step('node-test', () => tests.run({ root }));
 const nodeMs = Date.now() - t0;
 console.log(`-- Node checks took ${(nodeMs / 1000).toFixed(1)} s`);
 
-if (argv.includes('--port')) {
+const noBoot = argv.includes('--no-boot');
+if (!noBoot) {
   const boot = await import('./boot.mjs');
-  await step('boot', () => boot.run({ root, argv }));
+  let bootArgv = argv;
+  if (!argv.includes('--port')) {
+    // I23 (M1a round 3): the boot is part of every run. Without --port, the first free port of the Tier 0 range
+    // (5275-5279; never 5173, never another lane's port) is taken here and handed to boot.mjs
+    const port = await boot.pickPort();
+    if (port) { bootArgv = [...argv, '--port', String(port)]; console.log(`-- boot: no --port given, using free port ${port} (5275-5279)`); }
+  }
+  if (!bootArgv.includes('--port')) {
+    const r = { id: 'boot', status: /** @type {const} */ ('PENDING'), summary: 'no free port in 5275-5279 for the boot (all five busy); not a PASS', failures: [] };
+    results.push(r); print(r);
+  } else await step('boot', () => boot.run({ root, argv: bootArgv }));
 } else {
-  const r = { id: 'boot', status: /** @type {const} */ ('SKIP'), summary: 'not requested (pass --port <port> to boot once headless)', failures: [] };
+  const r = { id: 'boot', status: /** @type {const} */ ('SKIP'), summary: '--no-boot: the headless boot was not run, so this is not a merge result', failures: [] };
   results.push(r); print(r);
 }
 
 const count = (/** @type {string} */ s) => results.filter((r) => r.status === s).length;
 const failed = results.filter((r) => r.status === 'FAIL').map((r) => r.id);
-console.log(`TIER 0 ${failed.length ? 'FAIL' : count('PENDING') ? 'PASS with PENDING' : 'PASS'}: ${count('PASS')} pass, ${count('FAIL')} fail${failed.length ? ` (${failed.join(', ')})` : ''}, ${count('PENDING')} pending, ${count('SKIP')} skipped; ${(nodeMs / 1000).toFixed(1)} s Node + ${((Date.now() - t0 - nodeMs) / 1000).toFixed(1)} s boot`);
+console.log(`TIER 0 ${failed.length ? 'FAIL' : noBoot ? 'INCOMPLETE (no boot; not a merge result)' : count('PENDING') ? 'PASS with PENDING' : 'PASS'}: ${count('PASS')} pass, ${count('FAIL')} fail${failed.length ? ` (${failed.join(', ')})` : ''}, ${count('PENDING')} pending, ${count('SKIP')} skipped; ${(nodeMs / 1000).toFixed(1)} s Node + ${((Date.now() - t0 - nodeMs) / 1000).toFixed(1)} s boot`);
 if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ root, at: new Date().toISOString(), results: results.map(({ details, ...r }) => ({ ...r, details })) }, null, 1));
-process.exitCode = failed.length ? 1 : 0;
+process.exitCode = failed.length ? 1 : noBoot ? 2 : 0;

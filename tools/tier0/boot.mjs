@@ -13,6 +13,8 @@
  *     If the guard or the slot does not allow a launch within --slot-wait seconds (default 1200), the boot is
  *     PENDING, never PASS, and nothing is launched.
  *
+ * Without --port (`run.mjs` calls `pickPort` first) the boot takes the first free port of TIER0_PORTS.
+ *
  * What it checks: the page at /?shot=1 reaches `window.__READY__`, then runs 5 s more; any console error,
  * page error, failed request or HTTP >= 400 FAILs. It also reports the bytes transferred (the measured first
  * load) and, when the private word list is present, listed terms in the rendered page text.
@@ -48,6 +50,14 @@ const portOpen = (port) => new Promise((resolve) => {
   s.once('error', () => resolve(false));
 });
 
+/** The Tier 0 boot's own ports (M1a round 3, I23): free of every lane's Vite port and of 5173. */
+export const TIER0_PORTS = [5275, 5276, 5277, 5278, 5279];
+/** The first port of TIER0_PORTS nothing listens on, or null. */
+export async function pickPort() {
+  for (const p of TIER0_PORTS) if (!(await portOpen(p))) return p;
+  return null;
+}
+
 /**
  * @param {{ root: string, argv?: string[] }} o
  * @returns {Promise<import('./lib/files.mjs').CheckResult[]>}
@@ -58,7 +68,7 @@ export async function run({ root, argv = process.argv }) {
   const port = Number(arg(argv, '--port'));
   /** @param {'PASS'|'FAIL'|'PENDING'|'SKIP'} status @param {string} summary @param {string[]} [failures] @param {string[]} [notes] */
   const one = (status, summary, failures = [], notes = []) => [{ id: 'boot', status, summary, failures, notes, ms: Date.now() - t0 }];
-  if (!port) return one('SKIP', 'no --port given: boot not run (Tier 0 boots only on an explicit port)');
+  if (!port) return one('FAIL', 'no --port given and none picked (run.mjs picks a free one in 5275-5279)', ['no port']);
   if (port === 5173) return one('FAIL', 'refusing port 5173 (reserved for the owner\'s preview)', ['--port 5173 refused']);
   if (await portOpen(port)) return one('FAIL', `port ${port} is already in use; not starting a second server`, [`port ${port} busy`]);
 
@@ -159,7 +169,9 @@ export async function run({ root, argv = process.argv }) {
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { treeRoot } = await import('./lib/files.mjs');
-  for (const r of await run({ root: treeRoot() })) {
+  let argv = process.argv;
+  if (!argv.includes('--port')) { const p = await pickPort(); if (p) argv = [...argv, '--port', String(p)]; }
+  for (const r of await run({ root: treeRoot(), argv })) {
     console.log(`${r.status} ${r.id}: ${r.summary}`);
     for (const f of r.failures) console.log('  - ' + f);
   }
