@@ -1114,7 +1114,7 @@ export class Terrain {
     air += calFogSun * (calHG(calFogG.x, ac) * calFogG.y + calHG(calFogG.z, ac) * calFogG.w) * calFogB.x;
     gl_FragColor.rgb = mix(air, gl_FragColor.rgb, vis);
     /* M1a round 3 (aerial.js): past the stacks and the headlands, the isles the palest layer */
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, air, uAerial.x * (1.0 - exp(-max(dl - uAerial.y, 0.0) / max(uAerial.z, 1.0))));
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, air, min(uAerial.x * (1.0 - exp(-max(dl - uAerial.y, 0.0) / max(uAerial.z, 1.0))), uAerial.w));
   }
 #endif`);
     };

@@ -30,9 +30,9 @@ const site = (id, name, e, n, h, biome, extra = {}) => Object.freeze({
 /** Bible §8.4. `h` is the stated height: A-world-size holds the terrain to it ±3 m. */
 export const SITES = Object.freeze([
   site('saltrow', 'Saltrow', -267, -229, 3, 'pans'),
-  // M1a round 3: 7 m inland of the bible's (-320, -293), onto the white cell beside the main dyke (recipe.js CELL_KIND),
-  // so F04's lens (bearing 200) crosses crust, the dyke's black sand and stone, and a brine pond
-  site('salt-pans', 'salt pans', -318.5, -286, 1, 'pans'),
+  // M1a round 3: 8 m inland of the bible's (-320, -293), onto the white cell 3.3 m from the main dyke (recipe.js
+  // CELL_KIND), so F04's lens (bearing 200) crosses crust, the dyke's black sand and stone, and a brine pond's edge
+  site('salt-pans', 'salt pans', -318, -285.3, 1, 'pans'),
   site('the-glass', 'the Glass', -384, -176, 0.5, 'pans'),
   site('organ-shelf', 'Organ Shelf', -219, -341, 1, 'pans'),
   site('sounding-ring', 'Sounding Ring', -347, -320, 6, 'pans'),   // on its 5-6 m shingle rise (R66 m)

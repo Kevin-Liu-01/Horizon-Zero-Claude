@@ -227,6 +227,8 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     fineN = gNoiseT(xz * 0.0625 + 0.17).r * 0.55 + gNoiseT(fr * 0.0371 + 0.53).g * 0.45 - 0.5;
     crust = clamp(crust + fineN * 0.26 * inK, 0.0, 1.0);
     brine = clamp(brine + fineN * 0.34 * inK, 0.0, 1.0);
+    // M1a round 3: a pond's open water carries no crust (its cracks drew through the brine in F04)
+    crust *= 1.0 - smoothstep(0.72, 0.95, brine);
   }
   /* the crust at 10-60 m (W-08, Janubio): polygon crack ridges 0.8-2.5 m across, rake lines
    * along the field, footprints and drag on the paths, wet and dry patches: a worked surface */
@@ -409,7 +411,7 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
       float hue = pan.b;
       vec3 tintC = hue < 0.5 ? mix(vec3(1.0), vec3(0.93, 0.62, 0.52), smoothstep(0.15, 0.5, hue) * 0.4)
                              : mix(vec3(0.97, 0.85, 0.81), vec3(0.42, 0.13, 0.08), (hue - 0.5) * 2.0);
-      c *= tintC * mix(vec3(0.985, 1.0, 1.025), vec3(1.0), smoothstep(0.1, 0.3, hue));
+      c *= tintC * mix(vec3(0.97, 0.995, 1.045), vec3(1.0), smoothstep(0.1, 0.3, hue));
       // and the grain in the crust's own tone: the texture repeats, this does not
       c *= 1.0 + fineN * 0.34;
       // polygons, their raised white rims with a grey crack in each, and the rake's furrows
@@ -443,7 +445,8 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
      * between grains go dark: a sharper grit and clod mask, 0.3 in a gap to 1.05 on a crystal, mean about 0.7 */
     float grit = smoothstep(0.3, 0.7, gA4.a), clod = smoothstep(0.3, 0.7, 0.5 * gB4.a + 0.5 * gC4.a);
     float sGrain = grit * 0.45 + clod * 0.55;
-    col *= mix(1.0, 0.3 + 0.75 * sGrain, sk);
+    // (round 3: F04's mean luminance 32 % against the bar's 40) the gaps a shade less deep: 0.45 to 1.05, mean about 0.8
+    col *= mix(1.0, 0.45 + 0.6 * sGrain, sk);
     pert += vec3(gA4.b + gB4.b - 1.0, 0.0, gA4.g + gC4.b - 1.0) * 0.45 * sk;
   }
   #endif
@@ -609,6 +612,9 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     float hue = pan.b;
     vec3 water = mix(vec3(0.52, 0.56, 0.58), vec3(0.72, 0.5, 0.45), smoothstep(0.1, 0.5, hue));
     water = mix(water, vec3(0.34, 0.12, 0.08), smoothstep(0.55, 0.95, hue));
+    /* M1a round 3 (M1.1e "brine cells that mirror the sky"): open water is dark under its surface, so the sky's
+     * reflection carries it; only the drying margin keeps the pale pink of the crust under a film */
+    water = mix(water, vec3(0.1, 0.11, 0.115), smoothstep(0.75, 0.95, brine) * 0.8);
     col = mix(col, water * (0.72 + 0.4 * macA), brine * 0.62);
   }
   pert *= 1.0 - gLiquid * 0.86;

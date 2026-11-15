@@ -41,11 +41,11 @@ import { ORGAN, CRATER } from './layout.js';
  *           only when the lens looks toward the sun, times y
  * ORGAN_LIGHT.value = (bounce, rim, -, -), shared, so a probe can try values on one page.
  */
-export const ORGAN_LIGHT = { value: new THREE.Vector4(0.9, 1.4, 0, 0) };
-/* (measured at 730056d: a bounce and rim from the SUN's colour changed nothing in F05 (Organ crop L* 19.8 at 0, 0.55
- * and 1.0): at 19.6 h the sun is in its hand-over trough (sunI <= 0.15) and the light on the columns is the sky's.
- * The bounce and the rim take the sky's own horizon colour, the fog's calFogHorizon, which is what the salt flat in front
- * of them reflects, and the sun's forward glow toward the low sun for the rim) */
+export const ORGAN_LIGHT = { value: new THREE.Vector4(4.0, 5.0, 0, 0) };
+/* (measured: from the SUN's colour the terms changed the Organ crop's L* by 0.1 at 730056d, at 19.6 h the sun is in its
+ * hand-over trough; from the fog's horizon colour by 1.0 at 42be5d0, that colour is far below the dome's at dusk). Both
+ * terms now scale the column's own sky fill (reflectedLight.indirectDiffuse, which carries the hour's exposure), tinted
+ * to the horizon's hue: the bounce up to 1 + 0.5 x 4 x 0.62 on a vertical face, the rim 5 x (1 - N.V)^3 on the sun's side */
 const ORGAN_LIGHT_GLSL = /* glsl */ `
 #include <lights_fragment_end>
 #ifdef USE_FOG
@@ -54,16 +54,21 @@ const ORGAN_LIGHT_GLSL = /* glsl */ `
   vec3 oSun = normalize((viewMatrix * vec4(calSunDir, 0.0)).xyz);
   vec3 oN = normalize(geometryNormal);
   float oNu = dot(oN, oUp);
+  vec3 oFill = reflectedLight.indirectDiffuse;
+  float oFillY = max(dot(oFill, vec3(0.2126, 0.7152, 0.0722)), 1e-5);
+  vec3 oHz = calFogHorizon / max(dot(calFogHorizon, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
+  vec3 oGlow = (calFogHorizon + calFogSun * 0.35);
+  oGlow /= max(dot(oGlow, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
   // the salt and the shelf in front throw the horizon's light back up onto faces that look sideways or down
   float oBounce = clamp(0.62 - 0.5 * oNu, 0.0, 1.0);
-  reflectedLight.indirectDiffuse += diffuseColor.rgb * calFogHorizon * oBounce * uOrganLight.x;
+  reflectedLight.indirectDiffuse += oFillY * oHz * oBounce * uOrganLight.x * (diffuseColor.rgb / max(dot(diffuseColor.rgb, vec3(0.333)), 1e-3)) * 0.5;
   // a backlit column's edges on the sun's side catch the glow at grazing view
   float oNv = clamp(dot(oN, geometryViewDir), 0.0, 1.0);
   vec3 oSh = oSun - oUp * dot(oSun, oUp);
   oSh = oSh / max(length(oSh), 1e-3);
   float oSide = clamp(dot(oN, oSh) * 0.8 + 0.2, 0.0, 1.0);
   float oBack = smoothstep(-0.2, 0.5, -dot(geometryViewDir, oSun));
-  reflectedLight.indirectDiffuse += diffuseColor.rgb * (calFogHorizon + calFogSun * 0.35) * pow(1.0 - oNv, 3.0) * oSide * oBack * uOrganLight.y;
+  reflectedLight.indirectDiffuse += oFillY * oGlow * pow(1.0 - oNv, 3.0) * oSide * oBack * uOrganLight.y;
 }
 #endif`;
 function organLight(mat) {

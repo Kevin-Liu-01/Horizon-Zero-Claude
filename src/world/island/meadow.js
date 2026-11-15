@@ -166,9 +166,9 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
    * went sub-pixel. They broaden with distance (about two device px at the foot at 30 m) and taper less */
   float midK = kind > 0.5 && kind < 1.5 ? smoothstep(10.0, 30.0, dCam) : 0.0;
   w0 *= 1.0 + (0.6 + 0.9 * uStab.z) * midK;
-  /* M1a round 3 (M1.1b: the walk's 12-30 m band at 1.41 x the 4x MSAA reference): over 8-20 m and on, blades and clumps
-   * (not cards) take the stabiliser's second set. stK is that band's weight */
-  float stK = kind < 1.5 ? smoothstep(8.0, 20.0, dCam) : 0.0;
+  /* M1a round 3 (M1.1b: the walk's 12-30 m band at 1.41 x the 4x MSAA reference): from 6-14 m on, blades and clumps
+   * (not cards) take the stabiliser's second set. stK is that band's weight (6-14 m: full across the measured band) */
+  float stK = kind < 1.5 ? smoothstep(6.0, 14.0, dCam) : 0.0;
   float yaw = u3 * 6.2831853 + u4 * 1.7;
   vec2 face = vec2(cos(yaw), sin(yaw));
   vec2 rightW = vec2(-face.y, face.x);
@@ -234,7 +234,7 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
     /* (round 3, w) a moving edge between two blades of different tone is what the walk's flicker counts: over the band
      * every blade goes toward one stand tone, the meadow's own mean (no per-blade random) */
     vec3 mStand = mix(vec3(0.17, 0.112, 0.02) * 0.975, mix(vec3(0.694, 0.431, 0.117), vec3(0.578, 0.352, 0.074), 0.5) * 0.98, 0.55);
-    vMColor = mix(vMColor, mStand, uStab2.w * stK * 0.75);
+    vMColor = mix(vMColor, mStand, uStab2.w * stK * 0.85);
   }
   vMTr = 1.0 - uStab.x * smoothstep(8.0, 24.0, dCam);
   // a viborina spike is a straw stem with violet florets on its upper half
@@ -398,7 +398,8 @@ export class Meadow {
       uIdPass: { value: 0 }, uTransl: { value: 1.6 }, uDebug: { value: new THREE.Vector4() },
       /* M1a round 2: the crawl stabiliser on, all four terms (measured at 889bce2, F02's walk and sprint, 12-30 m: 245 -> 201
        * and 527 -> 508 events per mille at 0 samples; past 30 m 195 -> 35 and 449 -> 223) */
-      uStab: { value: new THREE.Vector4(1, 1, 1, 1) },
+      // (round 3, measured at 42be5d0: y and z at 1.4 took the walk's band 156 -> 148 per mille, the sprint's 464 -> 454)
+      uStab: { value: new THREE.Vector4(1, 1.4, 1.4, 1) },
       uStab2: { value: new THREE.Vector4(1, 1, 1, 1) },
     };
     this.rings = MEADOW_RINGS.map((ring) => this._buildRing(ring));
