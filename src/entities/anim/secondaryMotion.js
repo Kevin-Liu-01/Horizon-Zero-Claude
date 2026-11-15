@@ -163,14 +163,14 @@ export class SecondaryMotion {
    * frames). A flat sheet clears a cylinder only by standing off it along the sheet's own normal: the child particle
    * (and the segment's middle, at twice the lever) is moved along the link's normal until the sheet's cross-section
    * through it is outside every body capsule (the legs at their radius, the torso at 0.10 m), then put back on its
-   * parent's sphere; three passes.
+   * parent's sphere; five passes (three before M1a r3).
    * `_spC` is the child, `_spB` the link's reference direction, `_spAcc` the chain's accumulated swing. No allocation.
    */
   _sheetPush(c, j, pos, i0, caps) {
     const k = j * 3, sg = c.seg[j], W = c.shW;
     _shQ._x = c.wq[j * 4]; _shQ._y = c.wq[j * 4 + 1]; _shQ._z = c.wq[j * 4 + 2]; _shQ._w = c.wq[j * 4 + 3];
     _shQ.premultiply(_spAcc);
-    for (let it = 0; it < 3; it++) {
+    for (let it = 0; it < 5; it++) {                                   // (M1a r3: five passes, was three)
       _shX.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
       const len = _shX.length();
       if (len < 1e-6) return;
@@ -187,14 +187,16 @@ export class SecondaryMotion {
         const l2 = _cp0.lengthSq();
         // a parent already inside this leg's cross-section (a deep crouch brings the thigh up under the belt, where the
         // root is fixed): the child may not sink deeper than its parent, and is not thrown out past it (that folded the
-        // long panel up over her belly)
+        // long panel up over her belly). M1a r3: only on the first link, whose parent IS the fixed root; further down
+        // the parent is a particle this pass has already cleared, and the rule held the left panel's middle 0.006 m
+        // (page, dee526d) to 0.024 m (bench) inside the right thigh in the crouch-walk, and 0.014 m in the left shin sat
         {
           _cp1.set(pos[i0] - cap.a.x, pos[i0 + 1] - cap.a.y, pos[i0 + 2] - cap.a.z);
           let t = l2 > 1e-9 ? _cp1.dot(_cp0) / l2 : 0;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
           _cp1.x -= _cp0.x * t; _cp1.y -= _cp0.y * t; _cp1.z -= _cp0.z * t;
           const sp = _cp1.dot(_shN), lp = _cp1.dot(_shL);
-          if (sp < r && sp > -r && Math.abs(lp) < W + Math.sqrt(r * r - sp * sp)) r = sp > 0 ? sp : 0;
+          if (j === 0 && sp < r && sp > -r && Math.abs(lp) < W + Math.sqrt(r * r - sp * sp)) r = sp > 0 ? sp : 0;
         }
         if (r <= 0) continue;
         for (let m = 0; m < 2; m++) {
