@@ -24832,7 +24832,7 @@ const __S_progression = await (async () => {
  */
 
 
-const KEYS = ['cal.save.v5', 'cal.checkpoint.v5', 'cal.meta.v5'];
+const KEYS = ['cal.save.v5', 'cal.checkpoint.v5', 'cal.meta.v5', 'cal.v6.meta', ...[1, 2, 3].flatMap((n) => [`cal.v6.slot${n}.named`, `cal.v6.slot${n}.checkpoint`])];   // M1.6f: save v6 keys (systems)
 
 /**
  * Gates share one browser profile, so localStorage carries between them: a save
@@ -25304,7 +25304,7 @@ const __S_progression_expansion = await (async () => {
  */
 
 
-const KEYS = ['cal.save.v5', 'cal.checkpoint.v5', 'cal.meta.v5'];
+const KEYS = ['cal.save.v5', 'cal.checkpoint.v5', 'cal.meta.v5', 'cal.v6.meta', ...[1, 2, 3].flatMap((n) => [`cal.v6.slot${n}.named`, `cal.v6.slot${n}.checkpoint`])];   // M1.6f: save v6 keys (systems)
 const RESET = `for (const k of ${JSON.stringify(KEYS)}) { try { localStorage.removeItem(k); } catch { /* locked down */ } }`;
 
 /**

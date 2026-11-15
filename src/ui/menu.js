@@ -471,7 +471,7 @@ export class Menus {
     const prog = this.ctx.progression;
     const info = prog?.hasSave?.() ? prog.saveInfo?.() : null;
     const items = [
-      { label: 'CONTINUE', disabled: !info, fn: () => this.continueGame() },
+      ...(info || !prog?.olderSaves?.().length ? [{ label: 'CONTINUE', disabled: !info, fn: () => this.continueGame() }] : []),
       { label: 'NEW GAME', fn: () => this.openModal('difficulty') },
       { label: 'SETTINGS', fn: () => this.openModal('settings') },
       { label: 'FIELD MANUAL', fn: () => this.openModal('manual') },
@@ -485,9 +485,11 @@ export class Menus {
       if (it.disabled) b.disabled = true;
       else b.addEventListener('click', () => { this._emit('ui-confirm', { label: it.label }); it.fn(); });
     }
+    // M1.6f (systems, smallest change): an older-format save is left in storage and named here (BIBLE 17)
+    const older = !info && prog?.olderSaves?.().length ? (this.ctx.systemsGame?.S?.systems?.save?.older ?? null) : null;
     this._titleSave.textContent = info
       ? `last entry: ${String(info.quest || 'Orchil').toLowerCase()}`
-      : 'no field book open';
+      : (older || 'no field book open');
     if (this._titleTip) {
       // the title's own line (brand): CALIMA's words, one per visit, never the
       // shared tip feed (whose Round-4 lines still name the old mechanics)

@@ -18,6 +18,7 @@ import { GameAudio } from './audio/audio.js';
 import { Studio } from './studio/studio.js';
 import { installProgression } from './core/progression.js';
 import { installMenus } from './ui/menu.js';
+import { installGame } from './game/runtime.js';
 
 const params = new URLSearchParams(location.search);
 
@@ -127,7 +128,8 @@ class Game {
     ctx.quickslots = this._add(new QuickSlots(ctx));
     ctx.sighting = this._add(new SightingSystem(ctx));
     ctx.interactables = this._add(new Interactables(ctx));
-    installProgression(ctx); // quests (stand-in table), rest and save, Tolerance (registers its own systems)
+    installProgression(ctx); // rest and save plumbing, Tolerance (registers its own systems)
+    installGame(ctx); // systems: the quest spine, the Braziers, save v6 (src/game/runtime.js)
     ctx.audio = this._add(new GameAudio(ctx));
     ctx.hud = this._add(new HUD(ctx));
     installMenus(ctx); // pause hub, map, settings, title flow, death (registers its own systems)

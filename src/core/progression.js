@@ -406,20 +406,9 @@ export const SELL_VALUES = {
  * merged in at read time by `_dialogueFor`, so that lane can rewrite a line
  * without touching this file and neither lane owns the other's copy.
  */
-export const NPCS = {
-  ansel: {
-    id: 'ansel', name: 'Ansel', title: 'Guild Matron', trade: true,
-    // stand-in anchor beside REST until the settlements place her at the pans (M1.5)
-    fallback: { x: REST_SITE.x + 2.4, z: REST_SITE.z + 1.6 },
-    greeting: [
-      'The third pan will not rake itself, Reckoner.',
-      'Salt first. Questions after.',
-    ],
-    topics: [
-      { id: 'pans', q: 'What needs doing at the pans?', a: 'Rake the third pan with me, then read the sluice. The tide is wrong this morning.' },
-    ],
-  },
-};
+/* M1.6a: Ansel's and Mise's words are the spine's scenes (src/game/text/quests/rakers-morning.json); their prompts
+ * are src/game/runtime.js's. No person speaks from this table any more. */
+export const NPCS = {};
 
 export const NPC_IDS = Object.keys(NPCS);
 
@@ -437,22 +426,9 @@ export const NPC_IDS = Object.keys(NPCS);
  *   kill   { kind?, count }           'machine-killed'
  *   gather { item, count }            'item-gained'
  */
-export const QUESTS = [
-  /* Stand-in table (M0.3): the first two objectives of "Raker's Morning" (bible §11, 0:00-0:05). */
-  {
-    id: 'rakers-morning',
-    title: "Raker's Morning",
-    type: 'main',
-    giver: 'ansel',
-    autoStart: true,
-    summary: 'Ansel is raking the third pan. The tide at Sluice 3 is wrong.',
-    objectives: [
-      { id: 'talk', type: 'talk', npc: 'ansel', label: 'Speak with Ansel' },
-      { id: 'pans', type: 'goto', x: REST_SITE.x + 30, z: REST_SITE.z + 30, radius: 12, label: 'Walk down to the pans' },
-    ],
-    rewards: { xp: 0, shards: 10, items: [] },
-  },
-];
+/* M1.6a: "Raker's Morning" is the quest spine (src/game/quest/, every word in src/game/text/); `state(id)` hands
+ * that id to `ctx.spine`. The stand-in table that stood here is gone; later quests land in src/game/quest/ too. */
+export const QUESTS = [];
 
 /* ========================================================================== */
 /* 7b. SITE RESPAWN POLICY (progression-003, expansion round)                 */
@@ -973,6 +949,8 @@ export class Progression {
 
   /** Full view of one quest: definition + live counters. */
   state(id) {
+    const spine = this.ctx.spine;
+    if (spine && id === spine.id) return spine.hudState();
     const def = QUESTS.find((q) => q.id === id);
     if (!def) return null;
     const st = this.questState.get(id);
@@ -2277,11 +2255,21 @@ export class Progression {
     return this.saves.write(SLOT.checkpoint, reason);
   }
 
-  hasSave() { return this.saves.has(SLOT.main); }
-  saveInfo() { return this.saves.info(SLOT.main); }
+  // M1.6f: Continue loads the newest record (named or silent checkpoint) of the slot it picks (store.continueSlot)
+  hasSave() { return !!this.saves.store?.continueSlot?.(); }
+  saveInfo() {
+    const n = this.saves.store?.continueSlot?.();
+    if (!n) return null;
+    const rec = this.saves.store.latest(n);
+    return rec ? { slot: n, savedAt: rec.savedAt, reason: rec.reason, quest: rec.quest?.id ?? null, hour: rec.hour, difficulty: rec.tolerance, level: 1 } : null;
+  }
+  /** Keys of saves written by an older format: Continue is hidden for them and the title says OLDER SAVE. */
+  olderSaves() { return this.saves.olderSaves?.() ?? []; }
 
   continueGame() {
-    const data = this.saves.read(SLOT.main);
+    const n = this.saves.store?.continueSlot?.();
+    if (n) this.saves.store.setActive(n);
+    const data = n ? this.saves.store.latest(n) : null;
     if (!data) return { ok: false, error: 'no save' };
     const res = this.saves.apply(data);
     this.banner('CONTINUE', `LEVEL ${this.level}`, 'save');
@@ -2318,7 +2306,8 @@ export class Progression {
   }
 
   loadCheckpoint(reason = 'death') {
-    const data = this.saves.read(SLOT.checkpoint) || this.saves.read(SLOT.main);
+    // M1.6f, the one death rule: the newest record's world, Brea standing at the Brazier of her last rest
+    const data = this.saves.deathRecord?.() || this.saves.read(SLOT.checkpoint) || this.saves.read(SLOT.main);
     if (!data) return { ok: false, error: 'no checkpoint' };
     /**
      * Run-level tallies are NOT part of the saved state: deaths and respawns
@@ -2714,6 +2703,9 @@ export class Progression {
     const inter = ctx.interactables;
     if (!inter?.register) return;
 
+    // M1.6c: the Braziers register their own prompts (src/game/brazier/braziers.js); M1.6a: the people's are the runtime's
+    if (ctx.braziers) this._restEntry = this._restEntry || { systems: true };
+    if (!NPCS.ansel) this._npcEntry = this._npcEntry || { systems: true };
     if (!this._restEntry) {
       const fire = ctx.settlements?.firePosition;
       const pos = fire ? fire.clone() : new THREE.Vector3(REST_SITE.x, 0, REST_SITE.z);
