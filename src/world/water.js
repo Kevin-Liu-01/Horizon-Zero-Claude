@@ -330,10 +330,7 @@ const SEA_LINE = /* glsl */ `
   float hc = dot(hv, calSunDir);
   domeH += calFogSun * (calHG(calFogG.x, hc) * calFogG.y + calHG(calFogG.z, hc) * calFogG.w) * calFogB.x;
   // the sea stays a shade darker than the sky it meets, as a real sea line does
-  /* (M1a debt, F32's pale wedge: from 120 m up the sea 1-2 km out lies 3-7 deg below level and took the whole hand-over,
-   * a pale sheet beside the ridge) the hand-over belongs to the sea near the horizon: it fades on a ray falling more
-   * steeply than 2 deg, gone by 7 deg; a lens near the water (every ground-level frame) is unchanged */
-  gl_FragColor.rgb = mix(gl_FragColor.rgb, domeH * 0.93, smoothstep(600.0, 2300.0, hl) * 0.9 * (1.0 - smoothstep(0.035, 0.12, -hv.y)));
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, domeH * 0.93, smoothstep(600.0, 2300.0, hl) * 0.9);
 }
 #endif
 `;
