@@ -203,7 +203,9 @@ try {
         // the noise floor of this frozen frame: a second shot of the same staging, nothing re-staged
         try {
           const raw = async (b) => sharp(b).resize(vp.width, vp.height, { fit: 'fill' }).removeAlpha().raw().toBuffer();
-          const a = await raw(shot), b = await raw(await page.screenshot({ type: 'png' }));
+          const shot2 = await page.screenshot({ type: 'png' });
+          writeFileSync(path.join(runDir, file.replace(/\.png$/, '-floor.png')), await sharp(shot2).resize(vp.width, vp.height, { fit: 'fill' }).png({ compressionLevel: 8 }).toBuffer());
+          const a = await raw(shot), b = await raw(shot2);
           staged.measured.floor = { whole: diffStats(a, b, vp.width, vp.height), hero: staged.heroBox ? diffStats(a, b, vp.width, vp.height, staged.heroBox) : null };
         } catch (e) { staged.measured.floor = { error: String(e?.message || e).slice(0, 200) }; }
       }

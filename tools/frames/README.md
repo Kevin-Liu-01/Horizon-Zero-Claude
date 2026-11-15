@@ -33,6 +33,29 @@ F08 accept
 F05 wrong: one sentence that becomes the next direction
 ```
 
+## Simulation-time staging (M1a regfix 3)
+
+F15 (the run) and F19 (the lance heavy at contact) are staged on **simulation time** (`page.mjs` 7a), by the
+orchestrator's ruling after the M1a regressions run 2: timed by the wall clock, each film caught a different point of
+the stride or the swing. The page's animation loop is stopped and the game's own frame (`main.js` `_frame`) is driven
+one 1/60 s frame at a time on a virtual `performance.now`; Math.random is seeded; the clock the animator, the
+environment, the plants, the terrain and the water read is pinned (it stands still in the frozen frame, so the grass,
+the water and the sky do not move between shots); the gusts and the clouds' drift start at 0; she is put back on her
+mark from a clean slate (a swing run out, the lance drawn and holstered once), the idle's life restarts from its
+constructor values, every cloth and hair chain is re-seated before and after 1.5 s of idle; dynamic resolution is held
+at scale 1, and the camera's fov is held at the frame's own (combat eases it toward the hip FOV on real dt every frame,
+so the filmed fov wandered frame to frame). F15 freezes on the first step at or past gait phase 0 (the left ball
+furthest forward) after at least 1.4 s of sprint; F19 on the first step at or past the heavy's contact key (0.62 of
+the strike). `run.json` carries each staging's `sim` (frames, phase or contact key reached, a digest of her state at the
+start, after the idle and at the freeze). `--wall-clock` films the old way.
+
+`film.mjs --repeat N` films the selection N times in one session, interleaved, and writes each repeat's pixel
+difference from the first (whole frame and her screen box, share of pixels whose largest channel differs by more than
+10 of 255) and each staging's own noise floor (a second shot of the same frozen frame, `<id>-floor.png`) to `run.json`.
+
+The F15 and F19 anchors were re-filmed at fb6d5f0 with this staging (a detached worktree with this `page.mjs` and
+`film.mjs` copied in, never committed there); the old anchors are in `accepted/withdrawn/`.
+
 ## Frame set versions
 
 `frameset.json` carries a `version`. Each change, and why:

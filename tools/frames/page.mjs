@@ -314,13 +314,19 @@ export async function stageFrame(f, o = {}) {
    * (main.js `_frame`: simulate, render, tail) is driven by hand, one 1/60 s frame at a time, on a virtual
    * `performance.now` that advances exactly 1000/60 ms per frame (the loop's clock, melee's held-press charge and
    * its pose stamp all read it). Every input the hero's pose reads from outside her own state is pinned for the
-   * section: Math.random is a seeded generator (the idle's breath, fidget and blink rolls), the time the animator
-   * and the world wind see starts at T0 = 4096 s (the cloth's gusts and the wind field are sines of it), the
-   * environment's gust phase starts at 0, the breath cycle, the gait phase, the idle clip and the melee idle loop
-   * start at 0, and every cloth and hair chain is re-seated on its rest pose (as `_warmSprings` ends) before 0.5 s of
-   * idle. Dynamic resolution is held off (scale 1) for the frame. The section ends frozen (the 'studio' time scale 0)
-   * on a step chosen by the pose's own clock (the gait phase, the swing's contact key), never by elapsed wall time;
-   * then the real clock and the page's loop are put back. `o.wallClock: true` films the old way. */
+   * section: Math.random is a seeded generator (the idle's breath, fidget and blink rolls); the clock `t` that the
+   * animator, the environment (wind field, sky, clouds' uniforms), the vegetation, the terrain and the water read
+   * starts at T0 = 4096 s and advances only with the section's own frames, so it stands still in the frozen frame
+   * (the grass, the water and the sky no longer move between two shots of it); the environment's gust phase and the
+   * clouds' drift start at 0; she is put back on her mark (position, velocity, heading); the breath cycle, the gait
+   * phase, the idle clip and the melee idle loop start at 0; every cloth and hair chain is re-seated on its rest pose
+   * (as `_warmSprings` ends) before 1.5 s of idle and again after it. The camera's fov is held at the frame's own
+   * (combat.js eases it toward the hip FOV on real dt every frame, which made the projection differ frame to frame). Dynamic resolution is held off (scale 1) for the frame. The section
+   * ends frozen (the 'studio' time scale 0) on a step chosen by the pose's own clock (the gait phase, the swing's
+   * contact key), never by elapsed wall time; then the real clock and the page's loop are put back (the systems that
+   * read the pinned clock get the real one again at unstage). `sim.out.digest` hashes her state (bones, chains,
+   * place, gait, swing) at the section's start, after the idle and at the freeze, so a repeat that differs says
+   * where. `o.wallClock: true` films the old way. */
   function simClock() {
     const G = window.__GAME__;
     if (!G || typeof G._frame !== 'function' || !E.clock || !E.renderer?.setAnimationLoop) return null;
@@ -340,29 +346,6 @@ export async function stageFrame(f, o = {}) {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
     E.clock.oldTime = vNow; G._lastNow = vNow;
-    const wall0 = E.wallTime;
-    const tHero = () => T0 + (E.wallTime - wall0);
-    // the hero's pose and the wind she feels read a fixed clock through the section and the frozen frame
-    if (an?.update) { const u0 = an.update; an.update = function (dt, t) { return u0.call(this, dt, tHero()); }; undo.push(() => { an.update = u0; }); }
-    if (env.windAt && f.light !== 'studio') {
-      const w0 = env.windAt;
-      env.windAt = function (x, z, o2) { const t0 = this._t; this._t = tHero(); try { return w0.call(this, x, z, o2); } finally { this._t = t0; } };
-      undo.push(() => { env.windAt = w0; });
-    }
-    if (Number.isFinite(env._gustPhase)) { const g0 = env._gustPhase; env._gustPhase = 0; undo.push(() => { env._gustPhase = g0; }); }
-    if (E.setDynamicResolution) {
-      const d0 = !!E.drsEnabled; E.setDynamicResolution(false);
-      undo.push(() => { if (d0) E.setDynamicResolution(true); });
-    }
-    // the hero's own clocks, from a fixed start
-    if (an) {
-      if ('_breathPh' in an) an._breathPh = 0;
-      if (an.loco) { an.loco.phase = 0; for (const k of ['idle', 'crouchIdle']) if (an.loco.actions?.[k]) an.loco.actions[k].time = 0; }
-      if (an.melee && '_idleT' in an.melee) an.melee._idleT = 0;
-      for (const c of an._chains || []) { c.seeded = false; c.mvK = NaN; c.mvV = NaN; }
-      if ('_mvSelf' in an) an._mvSelf = NaN;
-      out.chains = (an._chains || []).length;
-    }
     let ended = false;
     const end = () => {
       if (ended) return; ended = true;
@@ -373,14 +356,97 @@ export async function stageFrame(f, o = {}) {
       E.renderer.setAnimationLoop(() => G._frame());
     };
     undo.push(end);   // a throw mid-section still gets the loop back
-    return {
+    let simN = 0;
+    const tFix = () => T0 + simN / 60;
+    // the pinned clock: her pose, the wind she feels, the sky, the grass and the water read it through the section
+    // and the frozen frame (each is a phase or a uniform of t in those systems; none keeps a time stamp of it)
+    const pin = (sys) => { if (!sys?.update) return; const u0 = sys.update; sys.update = function (dt) { return u0.call(this, dt, tFix()); }; undo.push(() => { sys.update = u0; }); };
+    pin(an); pin(env); pin(C.vegetation); pin(C.terrain); if (C.water && C.water !== C.terrain?.water) pin(C.water);
+    if (Number.isFinite(env._gustPhase)) { const g0 = env._gustPhase; undo.push(() => { env._gustPhase = g0; }); }
+    const drifts = [env.u?.calCloudDrift?.value, env.sky?.material?.uniforms?.uDrift?.value].filter((v) => v?.isVector2);
+    for (const v of drifts) { const x0 = v.x, y0 = v.y; undo.push(() => v.set(x0, y0)); }
+    const rn = (v) => (Number.isFinite(v) ? Math.round(v * 1e6) / 1e6 : null);
+    const digest = () => {
+      let bh = 0, i = 0, ch = 0;
+      p.model?.traverse((b) => {
+        if (!b.isBone) return;
+        i++; const q = b.quaternion, ps = b.position, v = i * (q.x + 2 * q.y + 3 * q.z + 4 * q.w) + 0.37 * i * (ps.x + ps.y + ps.z);
+        bh += v; if (b.name.startsWith('dyn_')) ch += v;
+      });
+      const m = C.combat?.melee;
+      return { bones: rn(bh), cloth: rn(ch), pos: [rn(p.position.x), rn(p.position.y), rn(p.position.z)], vel: p.velocity ? [rn(p.velocity.x), rn(p.velocity.z)] : null,
+        heading: rn(p.heading), speed: rn(p.moveSpeed ?? 0), gait: an?.loco ? rn(an.loco.phase) : null, melee: m ? [m.stance, m.phase, rn(m._t ?? 0), !!m.heavy, !!m.lance] : null };
+    };
+    out.digest = { start: digest() };
+    // a clean slate first, whatever the frame before left: a swing runs out, the lance goes back on her back, no
+    // crouch, no aim (up to 4 s of the section; how long it takes is not part of the frame)
+    const mel = C.combat?.melee;
+    C.input.keys.clear(); C.input.mouse.buttons = 0;
+    try { if (p.crouching) p.setCrouch?.(false); } catch (e) { /* */ }
+    out.slateFrames = 0;
+    const slate = (n, until) => { for (let i = 0; i < n && !until(); i++) { vNow += SPF; G._frame(); out.slateFrames++; } };
+    const holstered = () => !mel || (!mel.active && mel.stance === 'holstered' && !p.aiming);
+    slate(240, () => { if (mel && !mel.active && mel.stance !== 'holstered' && mel.stance !== 'holster') mel.holsterLance(true); return holstered(); });
+    // ...and the lance drawn and put back once, so the first frame of a session carries the same lance state as any
+    // later one (its hand, carry and stow fields are unset until the first draw)
+    if (mel?.drawLance) {
+      mel.drawLance(0.2);
+      slate(120, () => mel.stance === 'ready' || mel.lanceInHand === true);
+      slate(240, () => { if (!mel.active && mel.stance !== 'holstered' && mel.stance !== 'holster') mel.holsterLance(true); return holstered(); });
+    }
+    // the section's own clocks start here, after the slate: the random sequence, the gusts, the clouds' drift
+    seed = 0x2545F491;
+    if (Number.isFinite(env._gustPhase)) env._gustPhase = 0;
+    for (const v of drifts) v.set(0, 0);
+    if (E.setDynamicResolution) {
+      const d0 = !!E.drsEnabled; E.setDynamicResolution(false);
+      undo.push(() => { if (d0) E.setDynamicResolution(true); });
+    }
+    // the hero's own clocks, from a fixed start
+    if (an) {
+      // the idle's life from the animator's constructor values (breath, weight shift, fidget, blink, settle, exertion,
+      // the pelvis' low-pass); the rolls after this come from the seeded generator
+      const set = (k, v) => { if (k in an) an[k] = v; };
+      set('_breathPh', 0); set('_brNow', 0.4); set('_brLag', 0.4); set('_puff', 0);
+      set('_shiftPh', 0); set('_shift', 0); set('_fidgetT', 6); set('_fidgetK', 1); set('_fidgetKind', 0); set('_idleT', 0);
+      set('_blinkT', 3); set('_blinkK', 1); set('_lidBlink', 0);
+      set('_settleT', 1); set('_settleAmp', 0); set('_prevSpd', 0); set('_recentSpd', 0); set('_strideT', 0);
+      set('_stableX', 0); set('_stableZ', 1); set('_leanAcc', 0); set('_bank', 0);
+      if ('_pelvisRestY' in an) { set('_pelvBase', an._pelvisRestY); set('_pelvBob', 0); set('_headStab', 0); }
+      if (an.loco) { an.loco.phase = 0; for (const k of ['idle', 'crouchIdle']) if (an.loco.actions?.[k]) an.loco.actions[k].time = 0; }
+      if (an.melee && '_idleT' in an.melee) an.melee._idleT = 0;
+      out.chains = (an._chains || []).length;
+    }
+    // every cloth and hair chain re-seated on the animated pose of the next step, at rest (as `_warmSprings` ends)
+    const reseat = () => { if (!an) return; for (const c of an._chains || []) { c.seeded = false; c.mvK = NaN; c.mvV = NaN; } if ('_mvSelf' in an) an._mvSelf = NaN; };
+    reseat();
+    // THE LENS'S FIELD OF VIEW, HELD. combat.js eases camera.fov toward the hip FOV every frame on REAL dt, after the
+    // player's camera (the frame's own lens) has set the frame's fov, so the filmed fov was 45 plus a share of the
+    // difference that depends on how long that frame took: the projection changed frame to frame (measured at
+    // aeeb742: two shots of one frozen F15 differed on 4-34 % of pixels, all at edges). For these frames the
+    // camera's fov is the frame's own, fixed until unstage
+    if (f.camera?.fov) {
+      const d0 = Object.getOwnPropertyDescriptor(cam, 'fov'), F = f.camera.fov;
+      Object.defineProperty(cam, 'fov', { configurable: true, enumerable: true, get: () => F, set: () => {} });
+      cam.updateProjectionMatrix();
+      undo.push(() => { if (d0) Object.defineProperty(cam, 'fov', d0); else delete cam.fov; cam.updateProjectionMatrix(); });
+      out.fov = F;
+    }
+    // back on her mark
+    p.position.set(bx, 0, bz); p.velocity?.set?.(0, 0, 0); p._snapToGround?.();
+    p.heading = H; p.camYaw = -B * D2R; if ('moveSpeed' in p) p.moveSpeed = 0;
+    const sim = {
       out,
       step(n) {
-        for (let i = 0; i < n; i++) { vNow += SPF; G._frame(); out.frames++; }
+        for (let i = 0; i < n; i++) { vNow += SPF; simN++; G._frame(); out.frames++; }
         out.seconds = Math.round(out.frames / 60 * 1000) / 1000;
       },
-      freeze() { E.requestTimeScale('studio', 0); out.renderScale = E.renderScale ?? null; end(); },
+      // 1.5 s of idle for her body's low-passes to settle, then the chains re-seated once more on that settled pose:
+      // the cloth is the part of her that keeps a difference longest, so it starts its motion from rest
+      idle() { sim.step(90); reseat(); sim.step(1); out.digest.idle = digest(); },
+      freeze() { E.requestTimeScale('studio', 0); out.renderScale = E.renderScale ?? null; out.digest.end = digest(); end(); },
     };
+    return sim;
   }
 
   /* ---- 7. pose ---- */
@@ -391,11 +457,11 @@ export async function stageFrame(f, o = {}) {
   if ((pose === 'run' || pose === 'lanceHeavy') && !sim && o.wallClock !== true) standIns.push(`pose ${pose}: the game loop cannot be driven from the page (no __GAME__._frame or engine.clock): staged on the wall clock, it will not repeat`);
   if (pose === 'run') {
     if (sim) {
-      // the run on simulation time: 0.5 s of idle from a re-seated rest, then W + Shift for at least 1.4 s of
+      // the run on simulation time: 1.5 s of idle from a re-seated rest, then W + Shift for at least 1.4 s of
       // simulation, frozen on the first step at or past the master gait phase `clipPhase` (default 0: the left
       // ball furthest forward, the side nearest the side lens; clipLibrary.js phaseOffset)
       const loco = p.animator?.loco;
-      sim.step(30);
+      sim.idle();
       C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft');
       sim.step(84);
       const want = Number.isFinite(st.clipPhase) ? st.clipPhase : 0;
@@ -407,7 +473,7 @@ export async function stageFrame(f, o = {}) {
       }
       sim.freeze();
       sim.out.clipPhase = loco ? Math.round(loco.phase * 1e4) / 1e4 : null; sim.out.clipPhaseWanted = want;
-      if (!loco) standIns.push('pose run: no locomotion blend on the animator; frozen 1.9 s into the run, phase unknown');
+      if (!loco) standIns.push('pose run: no locomotion blend on the animator; frozen 1.4 s into the run, phase unknown');
       else if (!hit) standIns.push(`pose run: the gait phase did not reach ${want} within 1.5 s more; frozen at ${sim.out.clipPhase}`);
     } else { C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft'); await sleep(1600); }
   } else if (pose === 'draw' || pose === 'crouchAim') {
@@ -423,9 +489,9 @@ export async function stageFrame(f, o = {}) {
     p.setCrouch?.(true); await sleep(900);
     if (!p.crouching) standIns.push('pose crouch: crouch did not engage');
   } else if (pose === 'lanceHeavy') {
-    // (regfix 3) on simulation time when the game loop can be driven: 0.5 s of idle from a re-seated rest, the lance
+    // (regfix 3) on simulation time when the game loop can be driven: 1.5 s of idle from a re-seated rest, the lance
     // drawn for 0.9 s, the held press, frozen on the first step at or past the contact key (0.62 of the strike)
-    if (sim) sim.step(30);
+    if (sim) sim.idle();
     if (C.quickslots?.select) C.quickslots.select(2); else press('Digit2');
     if (sim) sim.step(54); else await sleep(900);
     // (M1.3d, hero-anim) the swing's bearing pinned to her facing, not to the film lens; the held press grows
@@ -455,6 +521,10 @@ export async function stageFrame(f, o = {}) {
     if (C.braziers?.seatHere?.()) { undo.push(() => C.braziers.stand?.()); await sleep(1200); }
     else standIns.push('pose sit: no seated pose yet, filmed idle');
   }
+
+  // the section ran ahead of the streaming (she covered 9 m in it): with the world frozen, the page's own loop catches
+  // the terrain, the plants and the shadows up before the shot
+  if (sim) await sleep(o.simSettleMs ?? 2000);
 
   /* ---- 8. screens ---- */
   if (mode === 'screen') {
