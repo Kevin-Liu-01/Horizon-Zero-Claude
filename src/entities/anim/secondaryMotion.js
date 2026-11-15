@@ -856,7 +856,17 @@ export class SecondaryMotion {
         for (let j = 1; j < n; j++) {
           const i0 = j * 3;
           const dj = j / N, kj = rk > 0 ? k * (1 + rk * (1 - dj) * (1 - dj)) : k;
-          const wj = cw * dj;
+          let wj = cw * dj;
+          /* (M1a regressions, M1.2e `hang`, the sash panels: the air presses a plate by the part of it that faces the
+           *  flow, so the push on a particle falls with the lift of the segment above it, cos(lift)^hang: a panel that
+           *  hangs takes the whole push, one lifted to 60 deg a quarter (hang 2), one lifted level none. With the push
+           *  linear in depth and no such fall, a gust swung the whole panel up as one straight board, a pennant) */
+          if (wj > 0 && cls.hang > 0) {
+            const iu = i0 - 3, sgu = c.seg[j - 1];
+            let cu = (pos[iu + 1] - pos[i0 + 1]) / sgu;
+            cu = cu < 0 ? 0 : cu > 1 ? 1 : cu;
+            wj *= cls.hang === 2 ? cu * cu : Math.pow(cu, cls.hang);
+          }
           // the flutter: a wave running DOWN the strand (phase lags with depth),
           // across the wind horizontally and a little vertically
           let fl = 0, fv = 0;

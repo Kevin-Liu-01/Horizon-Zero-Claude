@@ -138,6 +138,9 @@ export async function stageFrame(f, o = {}) {
     await frames(2);   // the hour above lands once, then the environment's clock and sky stop
     const sc = C.scene, envUpd = env.update;
     env.update = function () {}; undo.push(() => { env.update = envUpd; });
+    // (ruling 5: the studio has no wind; the cloth chains read environment.windAt each step, so it answers still air here)
+    const windAt0 = env.windAt;
+    if (windAt0) { env.windAt = function (x, z, out) { if (out) { out.x = 0; out.z = 0; if ('y' in out) out.y = 0; } return 0; }; undo.push(() => { env.windAt = windAt0; }); }
     const bg0 = sc.background, envMap0 = sc.environment, envI0 = sc.environmentIntensity;
     const Col = env.hemi?.color?.constructor;   // THREE.Color, borrowed: a page.evaluate body cannot import 'three'
     if (Col) sc.background = new Col('#b4b1ab');

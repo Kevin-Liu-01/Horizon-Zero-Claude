@@ -177,7 +177,7 @@ const WIND_AT = [
 ];
 const windRow = {
   id: 'A-sweep-wind', kind: 'action', lane: 'hero-anim', timeout: 90000,
-  title: 'M1.2e wind: at F02 and F15 the wrap tail and the three sash panels stream SW in the trade wind (each tip within 45 deg of 225 and of the world downwind); the left panel moves >= 0.05 m and sways more than in still air',
+  title: 'M1.2e wind: at F02 and F15 the wrap tail and the three sash panels stream SW in the trade wind (each tip within 45 deg of 225 and of the world downwind); the left panel moves >= 0.05 m and sways more than in still air; the front panels read as cloth, not pennants (chord lift p95 <= 45 deg, median bend along the chain >= 5 deg)',
   setup: `__CTX__.input.enabled = true;`, settle: 400,
   assert: `(async () => {
       const C = __CTX__, p = C.player, an = p.animator, E = C.engine, env = C.environment;
@@ -188,15 +188,26 @@ const windRow = {
       let SC = 1; try { SC = (await import('/src/world/island/extent.js')).ISLAND_SCALE ?? 1; } catch (e) { /* 1 */ }
       const tips = () => an._chains.filter((c) => /^dyn_(wrapSash|panel[LRB])_01$/.test(c.links[0].name)).map((c) => ({ name: c.links[0].name.replace(/^dyn_|_01$/g, ''), c }));
       const sample = async (sec) => {
-        const acc = {}, sq = {}, rt = {}; let n = 0, wx = 0, wz = 0;
+        const acc = {}, sq = {}, rt = {}, shp = {}; let n = 0, wx = 0, wz = 0;
         const s0 = E.simTime, w0 = performance.now();
         while (E.simTime - s0 < sec && performance.now() - w0 < 20000) {
           await frame(); n++; wx += an.wind.x; wz += an.wind.z;
           for (const t of tips()) { const k = t.c.N * 3; const q = [t.c.pos[k], t.c.pos[k + 1], t.c.pos[k + 2]]; (acc[t.name] ||= [0, 0, 0]); (sq[t.name] ||= [0, 0, 0]); (rt[t.name] ||= [0, 0, 0]); for (let a = 0; a < 3; a++) { acc[t.name][a] += q[a]; sq[t.name][a] += q[a] * q[a]; rt[t.name][a] += t.c.pos[a]; } }
+          for (const t of tips()) { if (!/^panel/.test(t.name)) continue; const s = shapeOf(t.c); const r = (shp[t.name] ||= { lift: [], bend: [] }); r.lift.push(s.lift); r.bend.push(s.bend); }
         }
         const out = {};
         for (const k in acc) { const m = acc[k].map((v) => v / n); out[k] = { m, root: rt[k].map((v) => v / n), sd: Math.sqrt(Math.max(0, sq[k].reduce((s, v, a) => s + v / n - m[a] * m[a], 0))) }; }
-        return { tips: out, n, wind: [wx / n, wz / n] };
+        const pct = (a, q) => { const b = a.slice().sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(q * b.length))]; };
+        const shape = {};
+        for (const k in shp) shape[k] = { liftP50: +pct(shp[k].lift, 0.5).toFixed(1), liftP95: +pct(shp[k].lift, 0.95).toFixed(1), liftMax: +Math.max(...shp[k].lift).toFixed(1), bendP50: +pct(shp[k].bend, 0.5).toFixed(1) };
+        return { tips: out, n, wind: [wx / n, wz / n], shape };
+      };
+      /* (M1a regressions, M1.2e "a panel reads as cloth, bending along its chain", never a stiff pennant: per step, the
+       *  panel's chord from its root to its tip, its lift off the plumb line (deg), and its bend: the lowest segment's lift
+       *  less the top segment's (deg; a board lifted whole bends 0)) */
+      const shapeOf = (c) => {
+        const P = c.pos, N = c.N, ang = (i0, i1) => { const dx = P[i1] - P[i0], dy = P[i1 + 1] - P[i0 + 1], dz = P[i1 + 2] - P[i0 + 2]; return Math.acos(Math.max(-1, Math.min(1, -dy / (Math.hypot(dx, dy, dz) || 1)))) * 180 / Math.PI; };
+        return { lift: ang(0, N * 3), bend: ang((N - 1) * 3, N * 3) - ang(0, 3) };
       };
       const brg = (dx, dz) => { let b = Math.atan2(dx, -dz) * 180 / Math.PI; return b < 0 ? b + 360 : b; };
       const off = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
@@ -234,6 +245,13 @@ const windRow = {
             if (k === 'panelL' && !(a.sd > b.sd)) fails.push(P.id + ' panelL sways ' + a.sd.toFixed(4) + ' in wind, ' + b.sd.toFixed(4) + ' still');
           }
           if (!r.tips.panelL) fails.push(P.id + ': no panelL chain');
+          r.shapeWind = on.shape; r.shapeStill = still.shape;
+          for (const k of ['panelL', 'panelR']) {
+            const sh = on.shape[k];
+            if (!sh) continue;
+            if (sh.liftP95 > 45) fails.push(P.id + ' ' + k + ' lifts ' + sh.liftP95 + ' deg off the plumb (p95; bar 45): a pennant');
+            if (sh.bendP50 < 5) fails.push(P.id + ' ' + k + ' bends ' + sh.bendP50 + ' deg along its chain (median; bar 5): a board');
+          }
           res.push(r);
         }
       } finally { env.windAt = windAt0; env.timeFrozen = frozen0; }

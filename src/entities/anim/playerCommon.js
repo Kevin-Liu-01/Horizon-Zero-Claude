@@ -509,7 +509,16 @@ DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, m
  *  at 1.2 the left panel's tip moved 0.029 m there (page, 88b1605; bar 0.05). Bench at the page's speeds and headings:
  *  F02 left panel 0.049 -> 0.137 m (bearing 232), F15 0.188 -> 0.275 m (258); 1.8 and 2.0 left F02's left panel at
  *  0.078 / 0.088 m but bearing 186 / 191, at the edge of SW's 45 deg; 0 clipping frames in every sweep clip) */
-DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 2.4, airY: true, flut: 3.5 });
+/* (M1a regressions, M1.2e: at 2.4 1/s with `flut` 3.5 and the push linear in depth a gust swung each panel up as one
+ *  straight board: the front panel streamed forward as a stiff pennant in F09 and the back panel stood out level behind
+ *  her in F15. `hang` 2: the air's push on a particle falls with cos^2 of the lift of the segment above it (secondaryMotion
+ *  `_springs`), so a lifted panel takes less of it; `rootK` 3: the top links keep nearer the belt's hang than the lower
+ *  ones (the wrap tail's stiffness profile), so the panel bends along its chain; `flut` 3.5 -> 2.5. Bench (standing,
+ *  3 s at 1/60 s): at a 9 m/s gust on F09's heading the left panel's chord lifts p95 39 deg, max 41 (45 / 58 before),
+ *  its top segment 20 deg and its lowest 46 (a bend, not a board); at F02 (3.65 m/s) the left panel's tip moves
+ *  0.114 m SW (bar 0.05) and sways 0.072 m against 0.044 in still air. The studio frames have no wind at all (ruling 5:
+ *  tools/frames/page.mjs holds environment.windAt at still air under the studio light)) */
+DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 2.4, airY: true, flut: 2.5, hang: 2, rootK: 3 });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 export const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */
