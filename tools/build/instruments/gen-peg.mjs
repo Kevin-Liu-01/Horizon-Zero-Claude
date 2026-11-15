@@ -255,7 +255,12 @@ export async function build({ out = ROOT, file = null, noDust = false } = {}) {
   const sockets = {
     lamp: sh(dr.face), lampR: +dr.radius.toFixed(4),
     mallet: sh(HAM), strike: sh(HAM.clone().add(V(0, -hr, 0))),
-    rack: sh(V(R + 0.05, AY + 0.05, Z0 + L * 0.42)), rackRoot: sh(V(0, AY + 0.05, Z0 + L * 0.42)),
+    rack: sh(V(R + 0.05, AY + 0.05, Z0 + L * 0.42)),
+    // the rack tool's anchor (its part's origin, the socket A44b measures): on the canister's top skin between the two
+    // flank racks (y = AY + R: 0.000 m from the hull's own triangles in Node). Inside the canister on its axis (AY + 0.05)
+    // it read 0.165 m off the hull at 39f7533 (bar 0.10); the rack's geometry is re-centred on the anchor, so it is drawn
+    // where it was
+    rackRoot: sh(V(0, AY + R, Z0 + L * 0.42)),
     poleTop: sh(V(PX, TOP, PZ)), poleFoot: sh(V(PX, PY0, PZ)),
     top: sh(V(PX, TOP, PZ)),
     bodyTop: +(body.max.y - y0).toFixed(4),
