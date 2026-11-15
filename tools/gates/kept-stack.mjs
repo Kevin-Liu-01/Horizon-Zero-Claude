@@ -1004,6 +1004,52 @@ const A71D_STEADY = staged([], `(async () => {
       failed, before, during, rows, fullscreen, canvasFilter, timeScaleWhileHeld: rows[rows.length - 1]?.ts ?? null } };
   })()`);
 
+/* A90-memory-stability (the orchestrator's ruling after the M1a regressions run 2): ONE WARM CYCLE, THEN 30 COUNTED.
+ * The row's baseline was read before its first kill, so everything the loop draws for the first time counted as
+ * growth: at 6511d94 the geometry ledger (tools/instruments/a90-attrib.gates.mjs) found 61 geometries first drawn
+ * during the row, 50 of them the people's distance meshes as Brea walked within 90 m, none outside the scene and one
+ * freed; commits running the same game read +16 to +34 by how much of the world was drawn before the row. A first
+ * draw is not a leak. Restated: one full cycle (kill, walk, respawn, wait) runs before the baseline; then exactly 30
+ * counted cycles (the old 150 s held about 30; capped at 200 s so the 420 s budget holds), the corpse lifecycle and
+ * every bar unchanged (heap < 25 %, geometries <= +40, textures <= +8, objects <= +60; min 25 kills). The warm
+ * cycle's own deltas are reported. */
+const A90_LOOP_OLD = `      if (window.gc) window.gc();
+      await new Promise(res => setTimeout(res, 1500));
+      const a = mem();
+      const t0 = performance.now(); let kills = 0;
+      while (performance.now() - t0 < 150000) {
+        // W0b fix round 2 (R28 + R34): the victim is a STAGED kind's (memVictim: a living one, else one staged for the
+        // loop); Round 4 killed the first living machine of any kind, i.e. the legacy roster first
+        const m = await memVictim();
+        const killedKind = m ? m.kind : null;
+        if (m) { kill(m); kills++; W.kills++; }
+        __CTX__.input.keys.add('KeyW'); await new Promise(res => setTimeout(res, 2500)); __CTX__.input.keys.delete('KeyW');
+        memRespawnAfter(W, killedKind, __CTX__.player.position.x + 30, __CTX__.player.position.z + 30);
+        await new Promise(res => setTimeout(res, 2500));
+      }`;
+const A90_LOOP_NEW = `      // restated (docs/GATES.md 3 D, the A90 warm-cycle ruling): one warm cycle, then 30 counted cycles
+      const cycle = async () => {
+        const m = await memVictim();
+        const killedKind = m ? m.kind : null;
+        if (m) { kill(m); W.kills++; }
+        __CTX__.input.keys.add('KeyW'); await new Promise(res => setTimeout(res, 2500)); __CTX__.input.keys.delete('KeyW');
+        memRespawnAfter(W, killedKind, __CTX__.player.position.x + 30, __CTX__.player.position.z + 30);
+        await new Promise(res => setTimeout(res, 2500));
+        return m ? 1 : 0;
+      };
+      if (window.gc) window.gc();
+      await new Promise(res => setTimeout(res, 1500));
+      const w0 = mem();
+      const warmKills = await cycle();
+      if (window.gc) window.gc();
+      await new Promise(res => setTimeout(res, 1500));
+      const a = mem();
+      const warm = { kills: warmKills, geo: a.geo - w0.geo, tex: a.tex - w0.tex, objs: a.objs - w0.objs, before: w0 };
+      const t0 = performance.now(); let kills = 0, cycles = 0;
+      while (cycles < 30 && performance.now() - t0 < 200000) { kills += await cycle(); cycles++; }`;
+const A90_DET_OLD = "const detail = { kills, workload: W, before: a,";
+const A90_DET_NEW = "const detail = { restated: 'M1a regfix 3 (docs/GATES.md 3 D): one warm cycle, then 30 counted', cycles, loopSeconds: Math.round((performance.now() - t0) / 1000), warm, kills, workload: W, before: a,";
+
 export const RESTATED = [
   {
     id: 'A16-draw-anchor',
@@ -1074,6 +1120,14 @@ export const RESTATED = [
     patches: [
       ["const snap = prog.saves.read('cal.save.v5');", "const snap = prog.saves.read();   // restated (GATES 3 D): the v6 named record of the active slot"],
       ['snap.world.roster', 'snap.legacy.roster'],
+    ],
+  },
+  {
+    id: 'A90-memory-stability',
+    why: "the orchestrator's ruling after the M1a regressions run 2: a first draw is not a leak. The row warms one full cycle (kill, walk, respawn, wait) before its baseline, then counts 30 cycles; every bar is unchanged. At 6511d94, 50 of the 61 geometries first drawn during the row were the people's distance meshes, all in the scene",
+    patches: [
+      [A90_LOOP_OLD, A90_LOOP_NEW],
+      [A90_DET_OLD, A90_DET_NEW],
     ],
   },
   {

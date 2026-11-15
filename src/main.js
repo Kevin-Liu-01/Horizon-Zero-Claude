@@ -137,6 +137,18 @@ class Game {
 
     // perf-tech-10 — compile every program behind the loading bar so the first
     // arrow, the first Focus pulse and the first Colossus do not stall.
+    // M1a regfix 3 (the orchestrator's A90 ruling): the island people's group is fetched from the moment the
+    // settlement host stands (src/world/npc/people/index.js constructor). It is awaited here, behind the loading
+    // sheet and bounded at 8 s, so warmUp's geometry pass (engine.warmUpGeometries) uploads every level of every
+    // person (skin and outfit L0-L2, hair, shadow caster) with the rest of the scene. Before, the group often landed
+    // after both warm-ups and its distance meshes went up the first frame Brea came within 90 m: 50 of the 61
+    // geometries A90-memory-stability's ledger found first drawn during its loop at 6511d94.
+    setLoad(0.9, 'people');
+    {
+      const P = ctx.people, w0 = performance.now();
+      while (P && !P.ready && P._loading && performance.now() - w0 < 8000) await new Promise((r) => setTimeout(r, 50));
+      engine.bootPeopleWait = { ms: Math.round(performance.now() - w0), ready: !!P?.ready, people: P?.list?.length ?? 0 };
+    }
     setLoad(0.93, 'shaders');
     const warm = await engine.warmUp(ctx.scene, ctx.camera);
     setLoad(1, `ready:${warm.programs} programs in ${warm.ms} ms`);

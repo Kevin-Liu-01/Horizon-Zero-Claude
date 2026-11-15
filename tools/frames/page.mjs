@@ -306,12 +306,110 @@ export async function stageFrame(f, o = {}) {
     }
   }
 
+  /* ---- 7a. SIMULATION TIME (M1a regfix 3; the orchestrator's ruling after regressions run 2) ----
+   * F15 (the run) and F19 (the lance heavy's contact) were timed by the wall clock: a 1.6 s sleep with the keys held,
+   * a poll on rAF for the contact key. Headless frames come at 15-60 Hz and the loop sub-steps whatever time passed,
+   * so each film caught a different point of the stride or the swing, and a different integration of the cloth.
+   * Staged here on SIMULATION time instead: the page's own animation loop is stopped and the game's frame
+   * (main.js `_frame`: simulate, render, tail) is driven by hand, one 1/60 s frame at a time, on a virtual
+   * `performance.now` that advances exactly 1000/60 ms per frame (the loop's clock, melee's held-press charge and
+   * its pose stamp all read it). Every input the hero's pose reads from outside her own state is pinned for the
+   * section: Math.random is a seeded generator (the idle's breath, fidget and blink rolls), the time the animator
+   * and the world wind see starts at T0 = 4096 s (the cloth's gusts and the wind field are sines of it), the
+   * environment's gust phase starts at 0, the breath cycle, the gait phase, the idle clip and the melee idle loop
+   * start at 0, and every cloth and hair chain is re-seated on its rest pose (as `_warmSprings` ends) before 0.5 s of
+   * idle. Dynamic resolution is held off (scale 1) for the frame. The section ends frozen (the 'studio' time scale 0)
+   * on a step chosen by the pose's own clock (the gait phase, the swing's contact key), never by elapsed wall time;
+   * then the real clock and the page's loop are put back. `o.wallClock: true` films the old way. */
+  function simClock() {
+    const G = window.__GAME__;
+    if (!G || typeof G._frame !== 'function' || !E.clock || !E.renderer?.setAnimationLoop) return null;
+    const an = p.animator;
+    const out = { frames: 0, seconds: 0 };
+    const T0 = 4096, SPF = 1000 / 60;
+    E.renderer.setAnimationLoop(null);
+    const pnDesc = Object.getOwnPropertyDescriptor(performance, 'now');
+    const realNow = () => Performance.prototype.now.call(performance);
+    let vNow = realNow();
+    Object.defineProperty(performance, 'now', { configurable: true, writable: true, value: () => vNow });
+    const rnd0 = Math.random;
+    let seed = 0x2545F491;
+    Math.random = function () {   // mulberry32
+      seed = (seed + 0x6D2B79F5) >>> 0; let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    E.clock.oldTime = vNow; G._lastNow = vNow;
+    const wall0 = E.wallTime;
+    const tHero = () => T0 + (E.wallTime - wall0);
+    // the hero's pose and the wind she feels read a fixed clock through the section and the frozen frame
+    if (an?.update) { const u0 = an.update; an.update = function (dt, t) { return u0.call(this, dt, tHero()); }; undo.push(() => { an.update = u0; }); }
+    if (env.windAt && f.light !== 'studio') {
+      const w0 = env.windAt;
+      env.windAt = function (x, z, o2) { const t0 = this._t; this._t = tHero(); try { return w0.call(this, x, z, o2); } finally { this._t = t0; } };
+      undo.push(() => { env.windAt = w0; });
+    }
+    if (Number.isFinite(env._gustPhase)) { const g0 = env._gustPhase; env._gustPhase = 0; undo.push(() => { env._gustPhase = g0; }); }
+    if (E.setDynamicResolution) {
+      const d0 = !!E.drsEnabled; E.setDynamicResolution(false);
+      undo.push(() => { if (d0) E.setDynamicResolution(true); });
+    }
+    // the hero's own clocks, from a fixed start
+    if (an) {
+      if ('_breathPh' in an) an._breathPh = 0;
+      if (an.loco) { an.loco.phase = 0; for (const k of ['idle', 'crouchIdle']) if (an.loco.actions?.[k]) an.loco.actions[k].time = 0; }
+      if (an.melee && '_idleT' in an.melee) an.melee._idleT = 0;
+      for (const c of an._chains || []) { c.seeded = false; c.mvK = NaN; c.mvV = NaN; }
+      if ('_mvSelf' in an) an._mvSelf = NaN;
+      out.chains = (an._chains || []).length;
+    }
+    let ended = false;
+    const end = () => {
+      if (ended) return; ended = true;
+      Math.random = rnd0;
+      if (pnDesc) Object.defineProperty(performance, 'now', pnDesc); else delete performance.now;
+      const now = performance.now();
+      E.clock.oldTime = now; G._lastNow = now;
+      E.renderer.setAnimationLoop(() => G._frame());
+    };
+    undo.push(end);   // a throw mid-section still gets the loop back
+    return {
+      out,
+      step(n) {
+        for (let i = 0; i < n; i++) { vNow += SPF; G._frame(); out.frames++; }
+        out.seconds = Math.round(out.frames / 60 * 1000) / 1000;
+      },
+      freeze() { E.requestTimeScale('studio', 0); out.renderScale = E.renderScale ?? null; end(); },
+    };
+  }
+
   /* ---- 7. pose ---- */
   const press = (code) => { window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code })); window.dispatchEvent(new KeyboardEvent('keyup', { code, key: code })); };
   const pose = st.pose || 'idle';
   undo.push(() => { C.input.keys.clear(); C.input.mouse.buttons = 0; if (p.crouching) p.setCrouch?.(false); });
+  const sim = (pose === 'run' || pose === 'lanceHeavy') && o.wallClock !== true ? simClock() : null;
+  if ((pose === 'run' || pose === 'lanceHeavy') && !sim && o.wallClock !== true) standIns.push(`pose ${pose}: the game loop cannot be driven from the page (no __GAME__._frame or engine.clock): staged on the wall clock, it will not repeat`);
   if (pose === 'run') {
-    C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft'); await sleep(1600);
+    if (sim) {
+      // the run on simulation time: 0.5 s of idle from a re-seated rest, then W + Shift for at least 1.4 s of
+      // simulation, frozen on the first step at or past the master gait phase `clipPhase` (default 0: the left
+      // ball furthest forward, the side nearest the side lens; clipLibrary.js phaseOffset)
+      const loco = p.animator?.loco;
+      sim.step(30);
+      C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft');
+      sim.step(84);
+      const want = Number.isFinite(st.clipPhase) ? st.clipPhase : 0;
+      let hit = !loco;
+      for (let i = 0; i < 90 && !hit; i++) {
+        const u0 = loco.phase; sim.step(1); const u1 = loco.phase;
+        const span = ((u1 - u0) % 1 + 1) % 1, past = ((u1 - want) % 1 + 1) % 1;
+        if (span > 0 && span < 0.5 && past <= span) hit = true;
+      }
+      sim.freeze();
+      sim.out.clipPhase = loco ? Math.round(loco.phase * 1e4) / 1e4 : null; sim.out.clipPhaseWanted = want;
+      if (!loco) standIns.push('pose run: no locomotion blend on the animator; frozen 1.9 s into the run, phase unknown');
+      else if (!hit) standIns.push(`pose run: the gait phase did not reach ${want} within 1.5 s more; frozen at ${sim.out.clipPhase}`);
+    } else { C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft'); await sleep(1600); }
   } else if (pose === 'draw' || pose === 'crouchAim') {
     if (C.quickslots?.select) C.quickslots.select(1); else press('Digit1');
     await sleep(350);
@@ -325,8 +423,11 @@ export async function stageFrame(f, o = {}) {
     p.setCrouch?.(true); await sleep(900);
     if (!p.crouching) standIns.push('pose crouch: crouch did not engage');
   } else if (pose === 'lanceHeavy') {
+    // (regfix 3) on simulation time when the game loop can be driven: 0.5 s of idle from a re-seated rest, the lance
+    // drawn for 0.9 s, the held press, frozen on the first step at or past the contact key (0.62 of the strike)
+    if (sim) sim.step(30);
     if (C.quickslots?.select) C.quickslots.select(2); else press('Digit2');
-    await sleep(900);
+    if (sim) sim.step(54); else await sleep(900);
     // (M1.3d, hero-anim) the swing's bearing pinned to her facing, not to the film lens; the held press grows
     // into the heavy, and the frame freezes on its contact hold (the strike phase from the contact key on)
     const mel = C.combat?.melee;
@@ -334,12 +435,20 @@ export async function stageFrame(f, o = {}) {
     if (mel) { mel.aimLock = 0; undo.push(() => { mel.aimLock = lock0; }); }
     C.input.mouse.buttons |= 1;
     let atContact = false;
-    const tH = performance.now();
-    while (performance.now() - tH < 2500) {
-      await frames(1);
-      if (mel?.heavy && mel.phase === 'strike' && mel._phaseEnd > 0 && mel._t / mel._phaseEnd >= 0.62) { atContact = true; break; }
+    const atK = () => !!(mel?.heavy && mel.phase === 'strike' && mel._phaseEnd > 0 && mel._t / mel._phaseEnd >= 0.62);
+    if (sim) {
+      for (let i = 0; i < 150 && !atContact; i++) { sim.step(1); atContact = atK(); }
+      C.input.mouse.buttons &= ~1;
+      sim.freeze();
+      sim.out.contactK = mel && mel._phaseEnd > 0 ? Math.round(mel._t / mel._phaseEnd * 1e4) / 1e4 : null;
+    } else {
+      const tH = performance.now();
+      while (performance.now() - tH < 2500) {
+        await frames(1);
+        if (atK()) { atContact = true; break; }
+      }
+      C.input.mouse.buttons &= ~1;
     }
-    C.input.mouse.buttons &= ~1;
     if (!atContact) standIns.push('pose lanceHeavy: the heavy\'s contact hold was not reached within 2.5 s; filmed where the swing was');
   } else if (pose === 'sit') {
     // (systems M1.6c, smallest change) the Brazier seats her on its seat block, facing the fire (player.ride 'sitIdle')
@@ -386,6 +495,33 @@ export async function stageFrame(f, o = {}) {
     const lf = E.lastFrame || {};
     ms.push(lf.ms); calls.push(lf.calls); tris.push(lf.triangles);
   }
+  // her screen box (viewport CSS px: what she, her kit and her weapons cover, skinned), for diffs read on her alone
+  const heroBox = () => {
+    try {
+      if (!p.model || !p.model.visible) return null;
+      const B = new V3(), lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+      const box = { min: new V3(Infinity, Infinity, Infinity), max: new V3(-Infinity, -Infinity, -Infinity) };
+      p.model.updateMatrixWorld(true);
+      p.model.traverseVisible((m) => {
+        if (!m.isMesh || !m.geometry?.attributes?.position) return;
+        const pos = m.geometry.attributes.position, n = pos.count, stride = Math.max(1, Math.floor(n / 4000));
+        for (let i = 0; i < n; i += stride) {
+          if (m.getVertexPosition) m.getVertexPosition(i, B); else B.fromBufferAttribute(pos, i);
+          B.applyMatrix4(m.matrixWorld);
+          box.min.min(B); box.max.max(B);
+        }
+      });
+      if (!Number.isFinite(box.min.x)) return null;
+      const W = innerWidth, Hh = innerHeight;
+      for (let k = 0; k < 8; k++) {
+        B.set(k & 1 ? box.max.x : box.min.x, k & 2 ? box.max.y : box.min.y, k & 4 ? box.max.z : box.min.z).project(cam);
+        const x = (B.x + 1) / 2 * W, y = (1 - B.y) / 2 * Hh;
+        lo[0] = Math.min(lo[0], x); lo[1] = Math.min(lo[1], y); hi[0] = Math.max(hi[0], x); hi[1] = Math.max(hi[1], y);
+      }
+      const cl = (v, m) => Math.round(Math.max(0, Math.min(m, v)));
+      return [cl(lo[0], W), cl(lo[1], Hh), cl(hi[0], W), cl(hi[1], Hh)];
+    } catch (e) { return null; }
+  };
   const med = (a) => { const b = a.filter(Number.isFinite).sort((x, y) => x - y); return b.length ? b[b.length >> 1] : null; };
   const p95 = (a) => { const b = a.filter(Number.isFinite).sort((x, y) => x - y); return b.length ? b[Math.min(b.length - 1, Math.floor(b.length * 0.95))] : null; };
   const r2 = (v) => (v == null ? null : Math.round(v * 100) / 100);
@@ -394,7 +530,9 @@ export async function stageFrame(f, o = {}) {
     hour: r2(env.time), weather: env.weather, state: C.state,
     camera: { mode, pos: [r2(cam.position.x), r2(cam.position.y), r2(cam.position.z)], fov: cam.fov },
     actors: actors.map((r) => ({ type: r.a.type, id: r.a.id || r.a.kind, x: r2(r.x), z: r2(r.z) })),
-    measured: { frameMsMedian: r2(med(ms)), frameMsP95: r2(p95(ms)), calls: med(calls), triangles: med(tris), samples: ms.length },
+    measured: { frameMsMedian: r2(med(ms)), frameMsP95: r2(p95(ms)), calls: med(calls), triangles: med(tris), samples: ms.length, renderScale: E.renderScale ?? null },
+    sim: sim ? sim.out : null,
+    heroBox: heroBox(),
     standIns,
   };
 }

@@ -2342,6 +2342,8 @@ export class Engine {
    * and 50 of the 60 geometries A90-memory-stability's geometry ledger (tools/instruments/a90-attrib.gates.mjs) found
    * first drawn during its loop at 38012bc, all in the scene and none leaked, counted against its 40 bar. Each unique
    * geometry is drawn once, with one plain material and no culling, into a 1 x 1 target. Returns how many were new.
+   * M1a regfix 3: the people's group was still landing after both warm-ups (50 of 61 at 6511d94), so main.js now
+   * waits for it behind the loading sheet (bounded, `engine.bootPeopleWait`) before the boot warm-up runs this pass.
    */
   warmUpGeometries(scene = this.scene) {
     const r = this.renderer;

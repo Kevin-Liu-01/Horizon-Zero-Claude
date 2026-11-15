@@ -11,6 +11,11 @@
  *            --probe <served path> a page module run after each shot; its probe(frame) result goes in run.json
  *            --hud-twin   for a frame with the HUD: two more shots with the page chrome hidden, so run.json
  *                         carries the share of pixels the HUD changes (measured.hudCover) and <id>-nohud.png
+ *            --repeat N   (M1a regfix 3) film the selected frames N times in the session, interleaved (F15, F19, F15,
+ *                         F19, ...), as <id>.png, <id>-r2.png, ...; each staging also takes a second shot of the same
+ *                         frozen frame (its noise floor), and run.json `repeats` gives, per frame, every repeat's pixel
+ *                         difference from the first over the whole frame and over her screen box (heroBox)
+ *            --wall-clock stage the run and the heavy on the wall clock, as before regfix 3 (page.mjs 7a)
  *
  * The run, in order:
  *   1. the machine guard: memory free >= 50 % (memory_pressure -Q) and pressure level 1, then the
@@ -55,11 +60,29 @@ const PROBE = flag('--probe');
 // frame with the page chrome hidden (display: none; a visible child paints through visibility: hidden); a second
 // chrome-off shot gives the noise floor of the frozen world
 const HUD_TWIN = args.includes('--hud-twin');
+const REPEAT = Math.max(1, Number(flag('--repeat', 1)) | 0);
+const WALL_CLOCK = args.includes('--wall-clock');
+/** Per-pixel difference of two raw RGB buffers (w x h), over the whole frame or a box [x0, y0, x1, y1]: the share of
+ * pixels whose largest channel difference passes TH (8-bit), the largest difference, the mean. */
+const DIFF_TH = 10;
+function diffStats(a, b, w, h, box = null) {
+  const [x0, y0, x1, y1] = box || [0, 0, w, h];
+  let n = 0, over = 0, max = 0, sum = 0;
+  for (let y = Math.max(0, y0); y < Math.min(h, y1); y++) for (let x = Math.max(0, x0); x < Math.min(w, x1); x++) {
+    const i = (y * w + x) * 3;
+    const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]));
+    n++; sum += d; if (d > max) max = d; if (d > DIFF_TH) over++;
+  }
+  return { pxOver: over, pctOver: n ? Math.round(over / n * 1e5) / 1e3 : null, max, meanAbs: n ? Math.round(sum / n * 1e3) / 1e3 : null, px: n, threshold: DIFF_TH };
+}
+const boxUnion = (a, b) => (a && b ? [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])] : a || b || null);
 
 const set = loadFrameSet();
 const problems = validate(set);
 if (problems.length) { for (const p of problems) console.error('frameset:', p); process.exit(1); }
-const frames = filmOrder(set.frames).filter((f) => !ONLY || ONLY.has(f.id));
+const frames0 = filmOrder(set.frames).filter((f) => !ONLY || ONLY.has(f.id));
+const frames = [];
+for (let r = 1; r <= REPEAT; r++) for (const f of frames0) frames.push(r === 1 ? f : { ...f, _repeat: r });
 if (!frames.length) { console.error('film: no frames selected'); process.exit(1); }
 
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -117,9 +140,9 @@ process.on('exit', () => { releaseSlot(); if (vite) { try { process.kill(-vite.p
 const stamp = utc().replace(/[-:]/g, '');
 const LABEL = flag('--label');
 const VITE_CONFIG = flag('--vite-config');
-const runDir = path.join(RUNS, `${stamp}-${commit}${LABEL ? `-${LABEL}` : ''}${ONLY ? '-partial' : ''}`);
+const runDir = path.join(RUNS, `${stamp}-${commit}${LABEL ? `-${LABEL}` : ''}${ONLY ? '-partial' : ''}${REPEAT > 1 ? `-x${REPEAT}` : ''}`);
 assertOutsideRepo(runDir, REPO);
-const run = { commit, dirty, branch: git('branch', '--show-current'), tree: REPO, port: PORT, frameset: set.sha256, viewport: set.viewport, startedAt: utc(), only: ONLY ? [...ONLY] : null, frames: [], console: [], errors: [] };
+const run = { commit, dirty, branch: git('branch', '--show-current'), tree: REPO, port: PORT, frameset: set.sha256, viewport: set.viewport, startedAt: utc(), only: ONLY ? [...ONLY] : null, repeat: REPEAT, wallClock: WALL_CLOCK, frames: [], console: [], errors: [] };
 
 if (await portOpen(PORT)) { console.error(`film: port ${PORT} is already in use; not starting a second server`); process.exit(3); }
 if (!(await takeSlot())) { console.error(`film: SLOT-NOT-AVAILABLE within ${WAIT_S} s (the memory guard or another run holds Chrome)`); process.exit(4); }
@@ -169,12 +192,21 @@ try {
     if (m.level === '4') { run.frames.push({ id: f.id, ok: false, error: 'not filmed: memory pressure critical' }); continue; }
     const fs0 = Date.now();
     try {
-      const staged = await page.evaluate(stageFrame, f, { settleMs: SETTLE_MS });
+      const rep = f._repeat || 1;
+      const staged = await page.evaluate(stageFrame, f, { settleMs: SETTLE_MS, wallClock: WALL_CLOCK });
       const shot = await page.screenshot({ type: 'png' });
       const img = sharp(shot).resize(vp.width, vp.height, { fit: 'fill' });
-      const file = `${f.id}.png`;
+      const file = rep === 1 ? `${f.id}.png` : `${f.id}-r${rep}.png`;
       const png = await img.png({ compressionLevel: 8 }).toBuffer();
       writeFileSync(path.join(runDir, file), png);
+      if (REPEAT > 1) {
+        // the noise floor of this frozen frame: a second shot of the same staging, nothing re-staged
+        try {
+          const raw = async (b) => sharp(b).resize(vp.width, vp.height, { fit: 'fill' }).removeAlpha().raw().toBuffer();
+          const a = await raw(shot), b = await raw(await page.screenshot({ type: 'png' }));
+          staged.measured.floor = { whole: diffStats(a, b, vp.width, vp.height), hero: staged.heroBox ? diffStats(a, b, vp.width, vp.height, staged.heroBox) : null };
+        } catch (e) { staged.measured.floor = { error: String(e?.message || e).slice(0, 200) }; }
+      }
       // mean relative luminance of the frame, in percent (sRGB channel means, linearised)
       const st = await sharp(png).stats();
       const lin = (c) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
@@ -202,7 +234,7 @@ try {
         catch (e) { staged.probe = { error: String(e?.message || e).slice(0, 400) }; }
       }
       const un = await page.evaluate(unstageFrame);
-      run.frames.push({ id: f.id, ok: true, file, seconds: Math.round((Date.now() - fs0) / 100) / 10, ...staged, unstageErrors: un.errors });
+      run.frames.push({ id: f.id, ...(REPEAT > 1 ? { repeat: rep } : {}), ok: true, file, seconds: Math.round((Date.now() - fs0) / 100) / 10, ...staged, unstageErrors: un.errors });
       log(`${f.id} ok in ${((Date.now() - fs0) / 1000).toFixed(1)} s${staged.standIns.length ? ` (${staged.standIns.length} stand-in)` : ''}`);
     } catch (e) {
       run.frames.push({ id: f.id, ok: false, error: String(e?.message || e).slice(0, 400), seconds: Math.round((Date.now() - fs0) / 100) / 10 });
@@ -211,6 +243,26 @@ try {
     }
   }
   run.chromeSeconds = Math.round((Date.now() - t0) / 1000);
+  if (REPEAT > 1) {
+    // every repeat against the first staging of the same frame
+    run.repeats = {};
+    for (const f of frames0) {
+      const shots = run.frames.filter((x) => x.id === f.id && x.ok);
+      const first = shots.find((x) => (x.repeat || 1) === 1);
+      if (!first) continue;
+      const rawOf = async (x) => sharp(path.join(runDir, x.file)).removeAlpha().raw().toBuffer();
+      const a = await rawOf(first);
+      run.repeats[f.id] = [];
+      for (const x of shots) {
+        if (x === first) continue;
+        const b = await rawOf(x), box = boxUnion(first.heroBox, x.heroBox);
+        run.repeats[f.id].push({ repeat: x.repeat, file: x.file, whole: diffStats(a, b, vp.width, vp.height), hero: box ? diffStats(a, b, vp.width, vp.height, box) : null, heroBox: box,
+          sim: x.sim ? { frames: x.sim.frames, clipPhase: x.sim.clipPhase, contactK: x.sim.contactK } : null });
+      }
+      const fmt = (d) => (d ? `${d.pctOver} % over ${d.threshold}, max ${d.max}` : 'n/a');
+      for (const r of run.repeats[f.id]) log(`${f.id} repeat ${r.repeat} vs 1: whole ${fmt(r.whole)}; her box ${fmt(r.hero)}`);
+    }
+  }
 } catch (e) {
   run.errors.push(String(e?.stack || e).slice(0, 800));
   exitCode = 1;
@@ -223,7 +275,7 @@ try {
 const filmed = run.frames.filter((x) => x.ok).length;
 log(`run ${runDir}: ${filmed}/${frames.length} frames filmed, ${run.chromeSeconds ?? '?'} s of Chrome, ${run.console.length} console errors`);
 if (run.chromeSeconds > 900) log('WARNING: over the 15-minute cap');
-if (!args.includes('--no-review') && filmed) {
+if (!args.includes('--no-review') && filmed && REPEAT === 1) {   // a repeat run is a proof, not a review page
   const r = await buildReview({ runDir, status: flag('--status') || '', setBaseline: args.includes('--baseline') });
   log(`review page: ${r.page}`);
 }
