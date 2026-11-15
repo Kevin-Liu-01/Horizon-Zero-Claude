@@ -159,6 +159,40 @@ export async function probe() {
     out.ungraded = { w: OW, h: OH, png: btoa(bin), vignette: L1.vignette, aspect: W / H };
   } catch (e) { out.ungraded = { error: String(e?.message || e) }; }
 
+  /* ---- round 2: who owns the white. Near-white canvas pixels (every channel >= 245) counted with each light,
+     additive or emissive thing within 4 m of the hero switched off in turn (the frame stays frozen; each is
+     restored): F20's white-hot flare at Brea's side ---- */
+  try {
+    const gl = R.getContext(), bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
+    const b = new Uint8Array(bw * bh * 4);
+    const count = () => { E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, b); let n = 0;
+      for (let i = 0; i < b.length; i += 8) if (b[i] >= 245 && b[i + 1] >= 245 && b[i + 2] >= 245) n++; return n * 2; };
+    const hp = C.player?.position || C.player?.mesh?.position;
+    const cands = [];
+    const wp = new THREE.Vector3();
+    if (hp) C.scene.traverse((o) => {
+      if (!o.visible) return;
+      const m = o.material;
+      const add = m && !Array.isArray(m) && m.blending === THREE.AdditiveBlending;
+      const emi = m && !Array.isArray(m) && m.emissive && m.emissiveIntensity > 0 && (m.emissive.r + m.emissive.g + m.emissive.b) > 0;
+      if (!(o.isLight && !o.isDirectionalLight && !o.isHemisphereLight) && !add && !emi) return;
+      o.getWorldPosition(wp);
+      const d = Math.hypot(wp.x - hp.x, wp.z - hp.z);
+      if (d <= 4) cands.push({ o, d });
+    });
+    const base = count();
+    const rows = [];
+    for (const { o, d } of cands.slice(0, 24)) {
+      let off;
+      if (o.isLight) { const i0 = o.intensity; o.intensity = 0; off = count(); o.intensity = i0; }
+      else { o.visible = false; off = count(); o.visible = true; }
+      rows.push({ name: o.name || o.type, type: o.isLight ? o.type + ' ' + Math.round(o.intensity * 10) / 10 : (o.material?.type || o.type),
+        parent: o.parent?.name || '', dist: Math.round(d * 100) / 100, white: off, drop: base - off });
+    }
+    E.render(0);
+    out.hot = { white: base, of: Math.round(bw * bh), rows };
+  } catch (e) { out.hot = { error: String(e?.message || e) }; }
+
   const L = E.look;
   out.grade = L ? { setA: L.setA, setB: L.setB, mix: L.lutMix, gradeMix: L.gradeMix, ev: L.ev, exposure: L.exposure, baseExposure: L.baseExposure,
     bloomScale: L.bloomScale, agx: E._agxOn, uGradeMix: E.grade?.uniforms?.uGradeMix?.value } : null;
