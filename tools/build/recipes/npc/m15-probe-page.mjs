@@ -224,6 +224,10 @@ async function routineLog() {
   const out = {};
   const { WORK_CLIPS, bareClip } = await import('/src/world/npc/people/routines.js');
   try {
+    // the log's clock from the start: a person adopted under the film's own hour (18:40, past the lamp's 18:30) would
+    // begin at the lamp and then walk back up for the log's 18:00
+    let h = 18.0;
+    R.hourOf = () => h;
     R.force = true;
     // the crew from the town and the keeper
     const t0 = performance.now();
@@ -234,8 +238,6 @@ async function routineLog() {
     }
     out.people = R.list.map((e) => e.id);
     if (!R.list.length) return { error: 'nobody adopted', crew: (C.settlements?.town?.crew || []).map((c) => c.id) };
-    let h = 18.0;
-    R.hourOf = () => h;
     for (const e of R.list) PS.tierAt(e.person, 1);
     const Cl = C.collision;
     const probeV = { x: 0, y: 0, z: 0 };

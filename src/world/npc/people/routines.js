@@ -41,7 +41,8 @@ export function places() {
     coneTip: off(coneR, toPans - 40, coneR.r + 0.9), coneTip2: off(coneR, toPans - 80, coneR.r + 1.0), coneR, coneL,
     coneLoad: off(coneL, STREET.bearing + 90, coneL.r + 0.9),   // on the street side (the pan side is Brea's house)
     // up the street: a door step on the right (r2) and one on the left (l2)
-    stepR2: streetPoint(24.0, 1.9), stepL2: streetPoint(21.0, -1.9), stepL1: streetPoint(13.0, -1.9),
+    // (l2's door has its balcony's posts in front of it: the second basket goes to r3's door)
+    stepR2: streetPoint(24.0, 1.9), stepR3: streetPoint(31.0, 1.6), stepL1: streetPoint(13.0, -1.9),
     midStreet: (s) => streetPoint(s, 0),
     // the harbour
     ramp, boat, boatL: off(boat, rb - 90, 1.2), boatR: off(boat, rb + 90, 1.2), stern: off(boat, rb + 180, 2.4),
@@ -79,8 +80,8 @@ function loops(P) {
       { act: 'unload', at: P.stepR2, face: streetPoint(24.0, 3.6), clip: 'PickUp_Table', dur: [5, 7], via: [P.midStreet(2), P.midStreet(24)] },
       { act: 'talk', at: streetPoint(11.0, 1.2), face: streetPoint(11.0, -1.2), clip: 'Idle_Talking_Loop', dur: [12, 20], via: [P.midStreet(24), P.midStreet(11)] },
       { act: 'load', at: P.coneLoad, face: P.coneL, clip: 'PickUp_Table', dur: [5, 7], via: [P.midStreet(2)] },
-      { act: 'unload', at: P.stepL2, face: streetPoint(21.0, -3.6), clip: 'PickUp_Table', dur: [5, 7], via: [P.midStreet(2), P.midStreet(21)] },
-      { act: 'rest', at: streetPoint(5.0, 1.6), face: P.panA, clip: 'Idle_Loop', dur: [10, 16], via: [P.midStreet(21), P.midStreet(5)] },
+      { act: 'unload', at: P.stepR3, face: streetPoint(31.0, 3.2), clip: 'PickUp_Table', dur: [5, 7], via: [P.midStreet(2), P.midStreet(31)] },
+      { act: 'rest', at: streetPoint(5.0, 1.6), face: P.panA, clip: 'Idle_Loop', dur: [10, 16], via: [P.midStreet(31), P.midStreet(5)] },
     ] },
     'boat-caulker': { day: [
       { act: 'caulk', at: P.boatL, face: P.boat, clip: 'Fixing_Kneeling', dur: [30, 42] },
@@ -99,7 +100,7 @@ function loops(P) {
     ] },
     'lantern-keeper-2': {
       day: [
-        { act: 'talk', at: streetPoint(2.0, -1.4), face: streetPoint(4.0, 1.0), clip: 'Idle_Talking_Loop', dur: [14, 22] },
+        { act: 'talk', at: streetPoint(2.0, -1.4), face: streetPoint(4.0, 1.0), clip: 'Idle_Talking_Loop', dur: [14, 22], via: [P.harbourWay[1], P.harbourWay[0], P.midStreet(0)] },
         { act: 'rest', at: streetPoint(8.0, -1.8), face: P.midStreet(8), clip: 'Idle_Loop', dur: [10, 16], via: [P.midStreet(8)] },
         { act: 'call', at: streetPoint(16.0, 0.6), face: P.midStreet(30), clip: 'Idle_Rail_Call', dur: [5, 7], via: [P.midStreet(16)] },
       ],
