@@ -81,6 +81,35 @@ async function readRaw(file) {
   return { data, w: info.width, h: info.height };
 }
 
+/**
+ * M1a round 3 (armory): REGISTRATION. The boxes were drawn on the 471b07d review film; F08's lens is fixed but Brea is not: her idle
+ * phase at the freeze moves her by up to 45 px across and 15 px up and down (the f6c2231 film had her 41 px left of dee526d's, so every
+ * box sat on the next piece over). Before sampling, the F08 boxes are moved by her own offset: across by the centroid of the violet
+ * in the sash band (y 470-560, every panel and the band; 11-14 k pixels) at the hips and above, by the centroid of her left boot (what
+ * is not backdrop in y 780-850, x 590-790: the feet stay planted, 716-726 on five films, while the hips sway 40 px) at the boots, and
+ * between the two in proportion below the hips; up and down by the first row of the head wrap's violet, faded to no shift at her
+ * feet (the soles do not bob). REF is each reading on 471b07d.
+ */
+const REF = { sashX: 803.9, sashY: 515, bootX: 715.7, bootY: 815, wrapTop: 80, feetY: 860 };
+const violetPx = (r, g, b) => r > g + 8 && b > g + 8;
+export function registration(img) {
+  let sx = 0, n = 0;
+  for (let y = 470; y <= 560; y++) for (let x = 600; x <= 1000; x++) { const k = (y * img.w + x) * 3; if (violetPx(img.data[k], img.data[k + 1], img.data[k + 2])) { sx += x; n++; } }
+  let top = -1;
+  for (let y = 40; y < 200 && top < 0; y++) { let m = 0; for (let x = 680; x <= 900; x++) { const k = (y * img.w + x) * 3; if (violetPx(img.data[k], img.data[k + 1], img.data[k + 2])) m++; } if (m > 25) top = y; }
+  let bx = 0, bn = 0;
+  const bg = [img.data[0], img.data[1], img.data[2]];
+  for (let y = 780; y <= 850; y++) for (let x = 590; x <= 790; x++) { const k = (y * img.w + x) * 3; if (Math.abs(img.data[k] - bg[0]) + Math.abs(img.data[k + 1] - bg[1]) + Math.abs(img.data[k + 2] - bg[2]) > 40) { bx += x; bn++; } }
+  const dx = n ? Math.round(sx / n - REF.sashX) : 0, dxFeet = bn ? Math.round(bx / bn - REF.bootX) : dx, dyHead = top >= 0 ? top - REF.wrapTop : 0;
+  const k01 = (v) => Math.max(0, Math.min(1, v));
+  return {
+    dx, dxFeet, dyHead,
+    at: (y) => Math.round(dyHead * k01((REF.feetY - y) / (REF.feetY - REF.wrapTop))),
+    dxAt: (y) => Math.round(dx + (dxFeet - dx) * k01((y - REF.sashY) / (REF.bootY - REF.sashY))),
+  };
+}
+const moved = (boxes, reg) => (reg ? boxes.map(([x0, y0, x1, y1]) => { const yc = (y0 + y1) / 2, dy = reg.at(yc), dx = reg.dxAt(yc); return [x0 + dx, y0 + dy, x1 + dx, y1 + dy]; }) : boxes);
+
 /** Median of the pixels of `boxes` (that pass `cls`): [r, g, b] with .n the pixel count. */
 function medianOf(img, boxes, cls = 'any') {
   const v = [[], [], []], ok = CLS[cls];
@@ -95,8 +124,8 @@ function medianOf(img, boxes, cls = 'any') {
 }
 
 const hex = (c) => '#' + c.map((x) => x.toString(16).padStart(2, '0')).join('');
-const row = (F, C, b) => {
-  const f = medianOf(F, b.f08, b.cls), c = medianOf(C, b.crop, 'any');
+const row = (F, C, b, reg = null) => {
+  const f = medianOf(F, moved(b.f08, reg), b.cls), c = medianOf(C, b.crop, 'any');
   return { frame: hex(f), sheet: hex(c), px: [f.n, c.n], L: [+lab(f)[0].toFixed(1), +lab(c)[0].toFixed(1)], dE: f.n ? +dE2000(f, c).toFixed(1) : null };
 };
 
@@ -105,12 +134,14 @@ export const defaultCrop = () => path.join(process.env.CALIMA_REVIEW || path.joi
 /** { rows: { name: { frame, sheet, px, L, dE } }, within10, plum, ladder }. */
 export async function swatches(runDir, crop = defaultCrop()) {
   const F = await readRaw(path.join(runDir, 'F08.png')), C = await readRaw(crop);
-  const rows = Object.fromEntries(Object.entries(SWATCH_BOXES).map(([k, b]) => [k, row(F, C, b)]));
-  const plum = row(F, C, PLUM_BOX);
-  const ladder = Object.fromEntries(Object.entries(LADDER_BOXES).map(([k, b]) => [k, row(F, C, b)]));
+  const reg = registration(F);
+  const rows = Object.fromEntries(Object.entries(SWATCH_BOXES).map(([k, b]) => [k, row(F, C, b, reg)]));
+  const plum = row(F, C, PLUM_BOX, reg);
+  const ladder = Object.fromEntries(Object.entries(LADDER_BOXES).map(([k, b]) => [k, row(F, C, b, reg)]));
   const rank = (i) => Object.keys(ladder).sort((a, b) => ladder[a].L[i] - ladder[b].L[i]);
   const worst = Math.max(...Object.values(rows).map((r) => r.dE ?? 99), plum.dE ?? 99);
   return {
+    registration: { dx: reg.dx, dxFeet: reg.dxFeet, dyHead: reg.dyHead },
     rows, within10: Object.values(rows).filter((r) => r.dE != null && r.dE <= 10).length, worst: +worst.toFixed(1), plum,
     ladder: { ...ladder, order: { frame: rank(0), sheet: rank(1), same: rank(0).join() === rank(1).join() } },
   };
@@ -124,9 +155,10 @@ export async function show(runDir, outDir, crop = defaultCrop()) {
   const cols = [[0, 255, 0], [255, 255, 0], [0, 255, 255], [255, 0, 0], [255, 128, 0], [255, 255, 255], [0, 0, 255], [255, 0, 255], [0, 128, 255]];
   for (const [file, key, name] of [[path.join(runDir, 'F08.png'), 'f08', 'f08-boxes.png'], [crop, 'crop', 'crop-boxes.png']]) {
     const img = await readRaw(file);
+    const reg = key === 'f08' ? registration(img) : null;
     Object.values(all).forEach((b, i) => {
       const c = cols[i % cols.length];
-      for (const [x0, y0, x1, y1] of b[key]) {
+      for (const [x0, y0, x1, y1] of moved(b[key], reg)) {
         const put = (x, y) => { const k = (y * img.w + x) * 3; img.data[k] = c[0]; img.data[k + 1] = c[1]; img.data[k + 2] = c[2]; };
         for (let x = x0 - 1; x <= x1 + 1; x++) { put(x, y0 - 1); put(x, y1 + 1); }
         for (let y = y0 - 1; y <= y1 + 1; y++) { put(x0 - 1, y); put(x1 + 1, y); }
@@ -145,13 +177,14 @@ export async function show(runDir, outDir, crop = defaultCrop()) {
  */
 export const WEAR_BOXES = { strap: [822, 350, 832, 360], plate: [790, 316, 816, 342], panelFolds: [800, 570, 860, 650] };
 export async function wear(runDir) {
-  const { data, w } = await readRaw(path.join(runDir, 'F08.png'));
+  const img = await readRaw(path.join(runDir, 'F08.png')), { data, w } = img;
+  const reg = registration(img), mv = (b) => moved([b], reg)[0];
   const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
   const L = (x, y) => { const k = (y * w + x) * 3; return 0.2126 * lin(data[k]) + 0.7152 * lin(data[k + 1]) + 0.0722 * lin(data[k + 2]); };
   const ratio = ([x0, y0, x1, y1]) => { const v = []; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) v.push(L(x, y)); v.sort((a, b) => a - b); return +(v[Math.floor(0.9 * (v.length - 1))] / v[Math.floor(0.1 * (v.length - 1))]).toFixed(2); };
-  const [x0, y0, x1, y1] = WEAR_BOXES.panelFolds, cols = [];
+  const [x0, y0, x1, y1] = mv(WEAR_BOXES.panelFolds), cols = [];
   for (let x = x0; x <= x1; x++) { let s = 0; for (let y = y0; y <= y1; y++) s += L(x, y); cols.push(s / (y1 - y0 + 1)); }
-  const out = { strapEdgeWear: ratio(WEAR_BOXES.strap), brassTarnish: ratio(WEAR_BOXES.plate), panelFoldFade: +(Math.max(...cols) / Math.min(...cols)).toFixed(2) };
+  const out = { strapEdgeWear: ratio(mv(WEAR_BOXES.strap)), brassTarnish: ratio(mv(WEAR_BOXES.plate)), panelFoldFade: +(Math.max(...cols) / Math.min(...cols)).toFixed(2) };
   return { ...out, visible: Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v >= 1.3])) };
 }
 
