@@ -581,7 +581,15 @@ void main() {
             }
           }
           if (rec?.point && prevTip) glassD = Math.min(glassD, segSegDist(prevTip, rec.point, ...glassSeg()));
-          const touched = glassD <= GLASS_TOUCH;
+          // touched (M1a round 3, after the first film at 38012bc): the arrow's stop point lies ON THE VIAL's drawn body, read
+          // in the Plumb's root frame from the vial's centre, the tube along +X (gen-plumb.mjs levelVial): the glass
+          // (|x| <= 0.138 m: radial <= the glass's 0.045 + the shaft's 0.0048 + 2 mm) or a brass end cap (0.138-0.200 m:
+          // radial <= the cap's 0.059 + the shaft + 2 mm). From an end-on bearing the cap hides the glass: a shot there
+          // can only strike the cap. The tip-path distance (glassM) is kept as a diagnostic only: it read 0.39 m on
+          // shots stopped 0.05 m from the axis (near-parallel segments), so it does not grade
+          const onVial = (off) => { if (!off) return false; const ax = Math.abs(off[0]), rad = Math.hypot(off[1], off[2]);
+            return ax <= 0.138 ? rad <= 0.045 + 0.0048 + 0.002 : ax <= 0.200 && rad <= 0.059 + 0.0048 + 0.002; };
+          const touched = rec && !rec.miss ? onVial(rec.offLocal) : false;
           const dtMean = steps ? r3((E.simTime - t0) / steps) : null;
           if (!rec) rec = { miss: true, closestTailM: r3(closest), dyAtClosest: cy, mode: arrow?.mode, stuckTo: arrow?.stuckTo?.name || null };
           list.push(rec && rec.miss ? { bearingDeg: Math.round(i * 36), vial: false, glassM: r3(glassD), touched, dtMean, ...rec } : rec ? { bearingDeg: Math.round(i * 36), vial: rec.vial, touched, glassM: r3(glassD), dVialM: rec.dVial, part: rec.part, obj: rec.obj, offLocal: rec.offLocal, dtMean } : { bearingDeg: Math.round(i * 36), vial: false, miss: true, headYaw: r3(mt.rig?.bones?.head?.rotation?.y ?? null) });
@@ -598,7 +606,7 @@ void main() {
           .filter((h) => Math.min(Math.abs(h.a[1]), Math.abs(h.b[1])) < 0.6 || (h.a[1] < 0) !== (h.b[1] < 0));
       } catch (e) { caps = String(e); }
       return { capsulesNearVial: caps, headYaw: r3(mt.rig?.bones?.head?.rotation?.y ?? null), distM: 40, arrow: 'Reed (hunter) at full draw', speed, vialRadiusM: mt._vialWp.radius, vialCapsuleHalfM: mt._vialWp.half ?? null, glassTouchM: r3(GLASS_TOUCH), vialLenM: mt.ctx?.assets?.models?.plumb?.r5Sockets?.vialLen ?? null, ...res,
-        bar: 'A-weak40:plumb: the vial hit by >= 9 of 10 scripted shots at 40 m (the centre set), each a hit the arrow visibly makes on the glass (its tip path within the glass radius + the shaft of the tube\'s axis); a counted hit whose arrow did not touch the glass fails the row',
+        bar: 'A-weak40:plumb: the vial hit by >= 9 of 10 scripted shots at 40 m (the centre set), each stopped on the vial\'s drawn body (the glass, or a brass end cap where it hides the glass); a counted hit stopped in the air beside it fails the row',
         pass: res.centre.visibleHits >= 9 && res.centre.countedVisibleMisses === 0 };
     });
 

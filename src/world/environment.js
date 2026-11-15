@@ -2440,7 +2440,9 @@ export class Environment {
           float gw = uRim * smoothstep(0.03, 0.12, sd.y) * day * (1.0 - cal) * (1.0 - uIbl) * smoothstep(0.02, 0.15, h);
           if (gw > 0.001) {
             float lumC = dot(col, vec3(0.2126, 0.7152, 0.0722));
-            vec3 warmT = mix(vec3(1.22, 0.86, 0.80), vec3(1.30, 0.92, 0.66), pow(az, 2.0));
+            // (after the film at 38012bc: skyAway read Lab 54 10 14 against the crop's 54 19 6, right in value but tan, not
+            // rose: the rose is pinker and the peach is kept to the sun's own azimuth, pow 6 not pow 2)
+            vec3 warmT = mix(vec3(1.34, 0.80, 0.94), vec3(1.30, 0.92, 0.66), pow(az, 6.0));
             col = mix(col, lumC * warmT * mix(1.9, 1.15, pow(az, 3.0)), gw);
           }
 
