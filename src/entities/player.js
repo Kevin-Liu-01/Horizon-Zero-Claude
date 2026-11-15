@@ -432,7 +432,7 @@ const ORBIT_CAPS = [
   ['neck_01', 'head', 0.10], ['head', 'head', 0.14],
 ];
 /** Cloth chains that hang where the lens goes: skirt panels, leg / hip flaps, the sash. */
-const ORBIT_CLOTH = /^dyn_(skirt|legFlap|hipFlap|hipSash)/;
+const ORBIT_CLOTH = /^dyn_(skirt|legFlap|hipFlap|hipSash|panel)/;
 /**
  * …and her HAIR (residue fix round 2): the hair mesh is skinned to these
  * chains and a sprint throws it 0.17 m past the head capsule, a standing

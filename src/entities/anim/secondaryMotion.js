@@ -257,6 +257,10 @@ export class SecondaryMotion {
       { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.155 },
       { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.105 },
       { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.105 },
+      // M1.2e: the shins (knee -> ankle), for the long sash panels that hang below the knee: the booted, wrapped
+      // shin is 0.05-0.06 m round its axis
+      { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.068 },
+      { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.068 },
     ]);
     if (b.pelvis) C[0].a.setFromMatrixPosition(b.pelvis.bone.matrixWorld);
     if (b.head) C[0].b.setFromMatrixPosition(b.head.bone.matrixWorld);
@@ -264,6 +268,9 @@ export class SecondaryMotion {
     if (b.calfL) C[1].b.setFromMatrixPosition(b.calfL.bone.matrixWorld);
     if (b.thighR) C[2].a.setFromMatrixPosition(b.thighR.bone.matrixWorld);
     if (b.calfR) C[2].b.setFromMatrixPosition(b.calfR.bone.matrixWorld);
+    C[3].a.copy(C[1].b); C[4].a.copy(C[2].b);
+    if (b.footL) C[3].b.setFromMatrixPosition(b.footL.bone.matrixWorld); else C[3].b.copy(C[3].a);
+    if (b.footR) C[4].b.setFromMatrixPosition(b.footR.bone.matrixWorld); else C[4].b.copy(C[4].a);
     return C;
   }
 
@@ -388,6 +395,36 @@ export class SecondaryMotion {
     if (d < 1e-5) _cp1.set(0, 0, 1); else _cp1.divideScalar(d);
     p.copy(_cp2).addScaledVector(_cp1, r);
     return true;
+  }
+
+  /**
+   * M1.2e — THE SASH PANELS FOLLOW THE LEGS (`panel` chains: brea.mjs CHAINS.panelL / panelR / panelB). A panel's rest
+   * is hung from the pelvis, but the armory's panels were skinned three quarters to the thigh under them (0.75 left,
+   * 0.70 right, 0.42 back, split by side), and that is what kept a crouched or striding thigh out of them: a rest that
+   * only rides the pelvis hangs straight down THROUGH a crouched thigh (measured: the right panel's second joint
+   * 0.015 m off the thigh's axis), and no collision pass can lift a whole panel out of a leg that has come up under it.
+   * So each panel's first link takes that same share of its thigh's swing about the pelvis (the back panel the mean of
+   * both thighs'), before the solver reads the rest: the authored hang. The chain then adds the air, the inertia and
+   * the legs' push on top. Bind values, no allocation.
+   */
+  _panelFollow() {
+    const P = this._panelRoots || (this._panelRoots = this._chains.filter((c) => c.cls.name === 'panel').map((c) => {
+      const n = c.links[0].name;
+      return { e: c.links[0], side: /panelL/.test(n) ? 'l' : /panelR/.test(n) ? 'r' : 'c', share: /panelL/.test(n) ? 0.75 : /panelR/.test(n) ? 0.70 : 0.42 };
+    }));
+    if (!P.length) return;
+    const tl = this.b.thighL, tr = this.b.thighR;
+    if (!tl || !tr) return;
+    // the thighs' turns from bind, in the pelvis's frame (their parent): D = q * q_bind^-1
+    _twQ.copy(tl.bindQ).invert(); _spQ2.copy(tl.bone.quaternion).multiply(_twQ);
+    _twQ.copy(tr.bindQ).invert(); _spQ3.copy(tr.bone.quaternion).multiply(_twQ);
+    for (let i = 0; i < P.length; i++) {
+      const r = P[i];
+      if (r.side === 'l') _spQ.copy(_spQ2); else if (r.side === 'r') _spQ.copy(_spQ3); else _spQ.copy(_spQ2).slerp(_spQ3, 0.5);
+      if (_spQ._w < 0) { _spQ._x = -_spQ._x; _spQ._y = -_spQ._y; _spQ._z = -_spQ._z; _spQ._w = -_spQ._w; }
+      _spQ.slerp(Q_IDENT, 1 - r.share);
+      r.e.bone.quaternion.copy(r.e.bindQ).premultiply(_spQ);
+    }
   }
 
   /**
@@ -684,11 +721,13 @@ export class SecondaryMotion {
         // place the child at the bind segment length, then bounce it off the body
         { const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg; }
         if (cls.collide) {
-          const nc = cls.collide === 2 ? 3 : 1;
+          const nc = cls.collide === 3 ? 5 : cls.collide === 2 ? 3 : 1;
           // the child's ANIMATED rest, so a capsule can only stop a strand
           // sinking further in than the artist drew it (see _pushOutOfCapsule)
           _spE.x = anim[i1]; _spE.y = anim[i1 + 1]; _spE.z = anim[i1 + 2];
-          for (let q = 0; q < nc; q++) this._pushOutOfCapsule(_spC, caps[q], _spE);
+          // (M1.2e, `collide: 3`, the sash panels: the legs at full radius — the panel's rest rides the pelvis, so a
+          // striding thigh moves under the rest and the rest rule would let it through)
+          for (let q = 0; q < nc; q++) this._pushOutOfCapsule(_spC, caps[q], cls.collide === 3 && q > 0 ? null : _spE);
           {
             const ax = _spC.x - pos[i0], ay = _spC.y - pos[i0 + 1], az = _spC.z - pos[i0 + 2];
             const a2 = ax * ax + ay * ay + az * az;

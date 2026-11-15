@@ -89,7 +89,7 @@ export const CHAINS = {
   },
   wrapSash: {
     parent: 'Head',
-    names: ['dyn_wrapSash_01', 'dyn_wrapSash_02', 'dyn_wrapSash_03', 'dyn_wrapSash_04', 'dyn_wrapSash_05', 'dyn_wrapSash_06', 'dyn_wrapSash_end'],
+    names: ['dyn_wrapSash_01', 'dyn_wrapSash_02', 'dyn_wrapSash_03', 'dyn_wrapSash_04', 'dyn_wrapSash_05', 'dyn_wrapSash_06', 'dyn_wrapSash_07', 'dyn_wrapSash_end'],
     // from the wrap knot at the back-LEFT of the head (+x is her left), down
     // and OUT to the left-rear, never on the draw side: 0.53 m. Fix round 1
     // (V-brea-one-glance cue 2): the first cut lay flat down the spine inside
@@ -111,14 +111,40 @@ export const CHAINS = {
     // front and back views (kit-v0), the side views' reach was the last at the bar: the tail
     // flies flat at the trade wind's 45 deg, tip 0.27 m behind her, and the stowed kit's line
     // stands 0.13 m behind her there. 0.054 m along that line is 1-2 px at the sheet's 64 px
-    points: [[0.052, 1.678, -0.116], [0.113, 1.664, -0.184], [0.169, 1.639, -0.243], [0.206, 1.567, -0.291],
-      [0.235, 1.489, -0.326], [0.258, 1.406, -0.352], [0.274, 1.321, -0.368]],
+    // M1.2e (hero-anim; BUILD: "wrap tail 0.53-0.62 m on 7 links", BIBLE 5.2): the same line, the free strip
+    // resampled from four links into five and carried on 0.048 m straight down from its old end: 7 links, 0.587 m
+    // here, 0.569 m in the game (0.523 m on 6 links before). Straight down, so the tip reaches no further back or out
+    // than it did: the model's bounding box, which assets.js centres her on, keeps its depth (a 9 mm deeper box moved
+    // her 4.5 mm in the game and turned the idle arms' pose hash). The wrapped root (the first two links) is unchanged
+    points: [[0.052, 1.678, -0.116], [0.113, 1.664, -0.184], [0.169, 1.639, -0.243], [0.201, 1.576, -0.285],
+      [0.229, 1.506, -0.318], [0.251, 1.432, -0.344], [0.268, 1.354, -0.362], [0.274, 1.273, -0.36943]],
   },
   sashEnd: {
     parent: 'pelvis',
     names: ['dyn_sashEnd_01', 'dyn_sashEnd_02', 'dyn_sashEnd_03', 'dyn_sashEnd_end'],
     // the linen sash knot at the left hip, hanging 0.24 m
     points: [[0.162, 0.985, 0.060], [0.172, 0.905, 0.066], [0.178, 0.825, 0.066], [0.181, 0.745, 0.062]],
+  },
+  /*
+   * M1.2e (hero-anim): the hip sash's three hanging panels as cloth chains under the pelvis (outfit-pan-1.mjs skins
+   * the panels to them by height, armor/lib/rung1.mjs hangPanel). Each runs down its panel's centre line as hangPanel
+   * lays it (the recipe's own rows, logged once): from the belt (y 1.082) to the torn hem. The long front panel over
+   * her left thigh and the back panel take five links, the short one over her right thigh three.
+   */
+  panelL: {
+    parent: 'pelvis',
+    names: ['dyn_panelL_01', 'dyn_panelL_02', 'dyn_panelL_03', 'dyn_panelL_04', 'dyn_panelL_05', 'dyn_panelL_end'],
+    points: [[0.0759, 1.082, 0.1499], [0.0790, 0.9399, 0.1567], [0.0822, 0.7978, 0.1641], [0.0854, 0.6558, 0.1714], [0.0887, 0.5137, 0.1787], [0.0917, 0.4149, 0.1854]],
+  },
+  panelR: {
+    parent: 'pelvis',
+    names: ['dyn_panelR_01', 'dyn_panelR_02', 'dyn_panelR_03', 'dyn_panelR_end'],
+    points: [[-0.1084, 1.082, 0.1318], [-0.1188, 0.908, 0.1464], [-0.1260, 0.734, 0.1566], [-0.1339, 0.5471, 0.1675]],
+  },
+  panelB: {
+    parent: 'pelvis',
+    names: ['dyn_panelB_01', 'dyn_panelB_02', 'dyn_panelB_03', 'dyn_panelB_04', 'dyn_panelB_05', 'dyn_panelB_end'],
+    points: [[0.0245, 1.082, -0.2236], [0.0291, 0.9441, -0.2607], [0.0300, 0.8062, -0.2688], [0.0314, 0.6683, -0.2800], [0.0328, 0.5303, -0.2917], [0.0337, 0.3914, -0.2996]],
   },
   alidadeCord: {
     parent: 'spine_03',
@@ -510,12 +536,14 @@ export async function build({ out = ROOT } = {}) {
       // F12 and F13"): the root is pinched to a quarter of the width and rolled fuller (roll 0.9 -> 1.3, pleats 2.75 -> 3.6 mm), so it
       // leaves the knot as a twisted rope of cloth that opens over u 0.22-0.50; and the strip has 34 rows, not 17 (10 on the root), so
       // the free strip's 1.3 rad-per-link bends in the trade wind are traced by rows 1.4 cm apart instead of folding at 3-5 cm facets
-      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.540 * S), side: [0.55, 0.65, 0.5], curl: 0.2, twist: Math.PI / 2, gather: 0.25, gatherTo: 0.36, roll: 1.3, fold: 0.0095, along: 34, across: 6, rootBack: 0.014,
-      open: [0.22, 0.50], pleats: 0.0036 / S,
+      // M1.2e (hero-anim): on the 7-link, 0.587 m chain the fringe stays 2.5 cm, and the root's opening and the cinch stay where
+      // they were in metres (their fractions x 0.540 / 0.587); three more rows keep the rows 1.4 cm apart
+      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.587 * S), side: [0.55, 0.65, 0.5], curl: 0.2, twist: Math.PI / 2, gather: 0.25, gatherTo: 0.36, roll: 1.3, fold: 0.0095, along: 37, across: 6, rootBack: 0.014,
+      open: [0.202, 0.459], pleats: 0.0036 / S,
       rootRows: 10, smoothSkin: 4, hem: 0.004, ripple: 0.005,
       // a band of the same cloth bound round the gathered root 6.5 cm out of the knot: the strip is pinched a third narrower under it
       // and puffs out after it (the knot's creased cloth, not a cord)
-      cinch: { at: 0.12, w: 0.016 / S, pad: 0.0012 / S, tube: 0.0032 / S } },
+      cinch: { at: 0.110, w: 0.016 / S, pad: 0.0012 / S, tube: 0.0032 / S } },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
     // (M1.2c: its selvedges are a 3 mm rolled hem, not two faces meeting at a paper edge)
     tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012, thick: 0.0045, hem: 0.003, smoothSkin: true },

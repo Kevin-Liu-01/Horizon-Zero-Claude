@@ -166,7 +166,7 @@ export function scarfCowl(part, field, J, { cols = 44, rows = 14, cz = -0.035, s
  * deep. Skin: the pelvis at the top, the thigh it hangs over taking `thighW` of it at the hem (`side`: 'l', 'r', or
  * 'c' shared by x). A sheet part: u across in metres, v down from its top.
  */
-export function hangPanel(part, field, J, { thC, halfW = 0.09, narrow = 0.15, yTop = 1.075, yHem = 0.42, floorY = 0.82, off = 0.012, flare = 0.05, rows = 12, cols = 8, rag = 0.04, seed = 0, side = 'c', thighW = 0.6, rRef = 0.17 } = {}) {
+export function hangPanel(part, field, J, { thC, halfW = 0.09, narrow = 0.15, yTop = 1.075, yHem = 0.42, floorY = 0.82, off = 0.012, flare = 0.05, rows = 12, cols = 8, rag = 0.04, seed = 0, side = 'c', thighW = 0.6, rRef = 0.17, chain = null } = {}) {
   const cz = -0.02;
   const jP = J('pelvis'), jL = J('thigh_l'), jR = J('thigh_r');
   const hem = (c) => {
@@ -201,7 +201,13 @@ export function hangPanel(part, field, J, { thC, halfW = 0.09, narrow = 0.15, yT
     part.pos.push(...p); part.nrm.push(Math.cos(th), 0, Math.sin(th));
     part.uv.push((c / cols) * 2 * halfW, yTop - y);
     const k = thighW * sstep(0.97, yHem + 0.05, y);
-    if (side === 'c') {
+    if (chain) {
+      // M1.2e (hero-anim): the panel hangs on its own cloth chain (brea.mjs CHAINS.panel*): each span between two of
+      // the chain's joints rides the upper one, blended over a quarter span either side of each joint; the belt row
+      // stays on the pelvis. The legs push the chain (the animator's thigh and shin colliders), not the skin
+      const [j4, w4] = chainSkin(chain, y, jP);
+      part.jnt.push(...j4); part.wgt.push(...w4);
+    } else if (side === 'c') {
       const s = sstep(-0.04, 0.04, p[0]);
       part.jnt.push(jP, jL, jR, 0); part.wgt.push(1 - k, k * s, k * (1 - s), 0);
     } else {
@@ -217,6 +223,23 @@ export function hangPanel(part, field, J, { thC, halfW = 0.09, narrow = 0.15, yT
   }
   (part.panels ||= []).push({ thC, rRef, yTop, yHem, halfW, seed });
   return part;
+}
+
+/**
+ * M1.2e (hero-anim): a hanging sheet's skin at height `y` on a cloth chain `{ joints, ys }` (joint indices root first,
+ * and the joints' heights with the terminator's last): the span below joint i rides joint i, blended linearly with
+ * the joint above over a quarter span either side of each joint; above the root the pelvis takes over within 3 cm.
+ */
+export function chainSkin({ joints, ys }, y, jP) {
+  const n = joints.length;
+  if (y >= ys[0]) return [[jP, joints[0], 0, 0], [1, 0, 0, 0]];
+  if (y > ys[0] - 0.03) { const f = (ys[0] - y) / 0.03; return [[jP, joints[0], 0, 0], [1 - f, f, 0, 0]]; }
+  let i = 0;
+  while (i < n - 1 && y < ys[i + 1]) i++;
+  const span = ys[i] - ys[i + 1], f = (ys[i] - y) / span;
+  if (f < 0.25 && i > 0) { const b = 0.5 + 2 * f; return [[joints[i], joints[i - 1], 0, 0], [b, 1 - b, 0, 0]]; }
+  if (f > 0.75 && i < n - 1) { const b = 0.5 + 2 * (1 - f); return [[joints[i], joints[i + 1], 0, 0], [b, 1 - b, 0, 0]]; }
+  return [[joints[i], 0, 0, 0], [1, 0, 0, 0]];
 }
 
 /**

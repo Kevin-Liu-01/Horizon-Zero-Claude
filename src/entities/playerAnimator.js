@@ -17,6 +17,7 @@ import { CarryStow } from './anim/carryStow.js';
 import { MeleeDriver } from './anim/meleeDriver.js';
 import { SecondaryMotion } from './anim/secondaryMotion.js';
 import { ConstraintAim } from './anim/constraintAim.js';
+import { HangPose } from './anim/hangPose.js';
 
 /**
  * PlayerAnimator — Round 4: mocap clip base + procedural overlays.
@@ -1548,10 +1549,18 @@ export class PlayerAnimator {
     /* --- twist joints: redistribute limb roll across the 26 twist bones ---- */
     // after every solve that can roll a wrist, an ankle or a shoulder (IK, the
     // foot lock, the conform) and before the chains, which hang off them
+    // (M1.3f: the kite's hang pose blockout, when a gate turns it on, is the last body layer)
+    if (this._hangOn) this._hangLayer(1);
     this._twistLayer();
 
     /* ------------------ secondary motion: dyn_ spring chains --------------- */
     if (!this._springsWarm && ++this._springsSeen >= 40) { this._springsWarm = true; this._warmSprings(t, ph); }
+    /* M1.2e: THE WIND INPUT. The chains feel the world's own wind where she stands (environment.windAt: the
+     * weather's direction and speed, its lulls at dawn and dusk and its moving gusts), read in place each frame; with
+     * no world (the Node benches) they keep the default NE trade wind set at construction. */
+    const env = this.ctx.environment;
+    if (env?.windAt && p) env.windAt(p.position.x, p.position.z, this.wind);
+    this._panelFollow();
     this._springs(dt, t, ph, speed, moveW, runW);
     if (this._ali) this._alidadePlace();
 
@@ -1591,4 +1600,4 @@ export class PlayerAnimator {
 }
 
 /* M1.3a: the members moved into the modules above, back on the prototype (a name defined twice throws). */
-installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion, ConstraintAim);
+installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion, ConstraintAim, HangPose);

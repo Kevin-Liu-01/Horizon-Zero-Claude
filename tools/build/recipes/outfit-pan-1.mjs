@@ -1503,9 +1503,13 @@ export async function panBase(opt = {}) {
   const panels = mk('panel');
   const hipField = new Field([bodyPart, trousers, ...peplum], 0.04);
   // (the turnaround: the long embroidered panel over her LEFT thigh, a shorter one over her right)
-  hangPanel(panels, hipField, J, { thC: Math.PI / 2 - 0.42, halfW: 0.085, yTop: 1.082, yHem: 0.4, side: 'l', thighW: 0.75, seed: 1, rag: 0.045, off: 0.011 });
-  hangPanel(panels, hipField, J, { thC: Math.PI / 2 + 0.62, halfW: 0.058, yTop: 1.082, yHem: 0.56, side: 'r', thighW: 0.7, seed: 2, rag: 0.035, off: 0.011, cols: 6, rows: 9 });
-  hangPanel(panels, hipField, J, { thC: -Math.PI / 2 + 0.12, halfW: 0.1, yTop: 1.082, yHem: 0.42, side: 'c', thighW: 0.42, seed: 3, rag: 0.05, off: 0.016 });
+  // M1.2e (hero-anim): each panel on its own cloth chain (brea.mjs CHAINS.panelL / panelR / panelB, the same joints and
+  // binds as brea.glb's, as dyn_sashEnd), so the legs push them and the trade wind streams them
+  const panelChain = (k) => { const c = CHAINS[k], j = addChain(doc, c.names, c.points, c.parent); return { joints: j.slice(0, -1), ys: c.points.map((p) => p[1]) }; };
+  const chainL = panelChain('panelL'), chainR = panelChain('panelR'), chainB = panelChain('panelB');
+  hangPanel(panels, hipField, J, { thC: Math.PI / 2 - 0.42, halfW: 0.085, yTop: 1.082, yHem: 0.4, side: 'l', thighW: 0.75, seed: 1, rag: 0.045, off: 0.011, chain: chainL });
+  hangPanel(panels, hipField, J, { thC: Math.PI / 2 + 0.62, halfW: 0.058, yTop: 1.082, yHem: 0.56, side: 'r', thighW: 0.7, seed: 2, rag: 0.035, off: 0.011, cols: 6, rows: 9, chain: chainR });
+  hangPanel(panels, hipField, J, { thC: -Math.PI / 2 + 0.12, halfW: 0.1, yTop: 1.082, yHem: 0.42, side: 'c', thighW: 0.42, seed: 3, rag: 0.05, off: 0.016, chain: chainB });
   panels.density = 0.8;
   recomputeNormals(panels);
   // their other faces (the game culls back faces: a hanging panel seen from behind needs its own), and the scarf's inside
@@ -1698,7 +1702,7 @@ export const STARTER_PIECES = {
   'survey case (kite case on the back; Alidade on the right chest strap)': ['case', 'stowkit:alidade'],
 };
 
-export const PAN_SET = { set: 'pan', hideBit: HIDE_BIT, chains: ['dyn_sashEnd'], get sashSwing() { return { ...SASH_SWING }; } };
+export const PAN_SET = { set: 'pan', hideBit: HIDE_BIT, chains: ['dyn_sashEnd', 'dyn_panelL', 'dyn_panelR', 'dyn_panelB'], get sashSwing() { return { ...SASH_SWING }; } };
 
 /**
  * Pieces that lie on a cloth ride it (fix round 1, judges: "the binding hangs off the cloth as a separate ribbon behind

@@ -482,6 +482,15 @@ export const CLIMB_CATCH = 0.08;
  * frames, tip 0.058 m per 80 ms), so `runFl` 1.5 scales the flutter with her
  * speed (see `_springs`): 0.08-0.095 m per 80 ms at a sprint, idle unchanged. */
 DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 5.0, rootK: 8, airY: true, runFl: 1.5 });
+/*
+ * M1.2e — THE SASH PANELS (brea.mjs CHAINS.panelL / panelR / panelB; outfit-pan-1 skins the three long hip panels to
+ * them): heavy embroidered cloth hanging from the belt. Heavier and slower than the wrap tail (`grav` 0.75, `stiff`
+ * 26 about the hanging rest, `drag` 4.5), coupled to the air less (`wind` 1.6 1/s: the trade wind streams them SW, by
+ * about a third of the tail's angle), bend limit 0.7 rad per link. `collide: 3`: the torso keeps the rest rule (a
+ * strand never pushed further out than the artist hung it), the thighs and the shins push at FULL radius, because a
+ * panel's rest rides the pelvis and the legs move under it (the rest rule would let a striding thigh through it).
+ */
+DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 0.45, airY: true });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 export const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */

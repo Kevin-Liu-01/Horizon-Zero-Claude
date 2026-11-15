@@ -451,7 +451,7 @@ export function ubcProfile(root, name = 'ubc-brea') {
     // fix round 4: the wrap tail is its own class, 'wrap' — cloth in the world
     // wind with a wrapped (stiff) root (playerAnimator DYN_CLASSES); it replaced
     // fix round 3's character-space `restKick`
-    chainClasses: { gear: '^dyn_alidadeCord', wrap: '^dyn_wrapSash' },
+    chainClasses: { gear: '^dyn_alidadeCord', wrap: '^dyn_wrapSash', panel: '^dyn_panel' },
     // Round-4 bone names kept systems still look up (combat.js bow back-stow)
     boneAliases: { spine_03_08: 'spine_02' },
     handCollider: UBC_HAND_COLLIDER,
