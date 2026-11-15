@@ -140,11 +140,62 @@ export const HARBOUR = Object.freeze({
   breakwater: Object.freeze({ ...E(-376.0, -300.4), bearing: 214, length: 22, width: 3.4 }),
 });
 
-/** The breakwater lamp's world (x, z): its end. */
+/**
+ * The breakwater lamp's world (x, z): a lime-washed column at the mole's ROOT, `along` m out from the shore on its
+ * north-west edge (`side` m; the kit's local x is the negative of this), where Mise lights it from the beach. At the
+ * head it stood behind any lens that looks from the breakwater up at the town (F07's written target: "from the
+ * breakwater: at least 14 lit windows and the breakwater lamp").
+ */
+export const BREAKWATER_LAMP_AT = Object.freeze({ along: 2.5, side: -1.1 });
 export const BREAKWATER_LAMP = Object.freeze((() => {
-  const b = HARBOUR.breakwater, a = b.bearing * D2R;
-  return { x: +(b.x + Math.sin(a) * (b.length - 1.2)).toFixed(3), z: +(b.z - Math.cos(a) * (b.length - 1.2)).toFixed(3) };
+  const b = HARBOUR.breakwater, a = b.bearing * D2R, { along, side } = BREAKWATER_LAMP_AT;
+  return { x: +(b.x + Math.sin(a) * along + Math.cos(a) * side).toFixed(3), z: +(b.z - Math.cos(a) * along + Math.sin(a) * side).toFixed(3) };
 })());
+
+/** A point on the breakwater's deck: `along` m out from the root, `side` m to the right looking out to sea. */
+export function breakwaterPoint(along, side = 0) {
+  const b = HARBOUR.breakwater, a = b.bearing * D2R;
+  return { x: b.x + Math.sin(a) * along + Math.cos(a) * side, z: b.z - Math.cos(a) * along + Math.sin(a) * side };
+}
+
+/**
+ * F07's lens on the breakwater (frameset F07 stands here): 10 m out on the deck's axis looking up at the town on
+ * bearing 50 (the street's middle is on 53.8, 138 m off), the lamp column 7.6 m ahead on 42.3. The deck top is 1.3 m
+ * over the root (the sea floor under the lens is 2.45 m down), so the frame's eye of 5.4 m over the ground is 1.65 m
+ * over the deck.
+ */
+export const BREAKWATER_LENS = Object.freeze({ ...breakwaterPoint(10, 0), bearing: 50 });
+
+/**
+ * The people at work in the street (BUILD M1.5a, F22's written target "5 people at work"), until M1.5d's routines:
+ * the slice's unnamed Pan Houses cast (src/world/npc/people SLICE_CAST) each at one task, in the street frame
+ * (`s` up the street, `r` to its right), facing `face` (a street point). `clip` is the work they do; `alt` if the
+ * clip pack has no such clip for their body. Mise and the second keeper stay the quest's and the lamps'.
+ */
+export const CREW = Object.freeze([
+  // two rakers at the right-hand cone, on its street side, in the band F22 sees and F20 does not (F20's lens stands
+  // at s 1.4, r 1.1 and sees bearings 352-68; these stand on 71-79 from it, 67-72 from F22's)
+  Object.freeze({ id: 'salt-raker', s: 9.5, r: 7.2, face: { s: 7.6, r: 7.2 }, clip: 'Farm_Harvest', task: 'rakes the harvest up the right-hand cone' }),
+  Object.freeze({ id: 'salt-raker-2', s: 6.2, r: 5.6, face: { s: 7.6, r: 7.2 }, clip: 'Farm_Harvest', task: 'rakes the right-hand cone from below' }),
+  // up the street, in front of the doors (F20 sees these behind Brea and Ansel: it looks up the same street)
+  Object.freeze({ id: 'boat-caulker', s: 15.5, r: -2.5, face: { s: 15.5, r: -3.4 }, clip: 'Fixing_Kneeling', task: "kneels at l1's wall, mending its plinth" }),
+  Object.freeze({ id: 'salt-porter', s: 24.0, r: 1.9, face: { s: 24.0, r: 3.6 }, clip: 'PickUp_Table', alt: 'Farm_Harvest', task: "takes up a salt basket from r2's step" }),
+  Object.freeze({ id: 'boat-caulker-2', s: 31.0, r: 2.3, face: { s: 31.0, r: 3.2 }, clip: 'Interact', alt: 'Fixing_Kneeling', task: "works at r3's door" }),
+]);
+
+/**
+ * THE SIGHTING KITE (BUILD M1.5e; bible §11 slice 0:00 "A Pan Houses sighting kite flies over Saltrow"): a two-cell
+ * box kite on a line from a stake on the ridge over the town's upper left, flown in the morning (`hours`). Placed
+ * from the cistern: 70 m off on bearing 16, 19.5 deg up from her eye at REST, over the saddle where the skyline dips
+ * to 10.6 deg (bearings 10-20; the cone stands from 20 to 65 at 20-33 deg), so it reads against the sky. The stake
+ * is 16 m upwind (the trade blows toward 225) under a 45 deg line, 23 m of line. `y` is absolute (m).
+ */
+export const KITE = Object.freeze({
+  x: -264.1, y: 27.4, z: 179.0,
+  anchor: Object.freeze({ x: -252.8, z: 167.7 }),
+  hours: Object.freeze([6.0, 11.5]),
+  size: Object.freeze({ h: 2.1, w: 0.95, cell: 0.62 }),
+});
 
 /** Rows in street order (for the roofline rule): neighbours along each row and across the square. */
 export const ROWS = Object.freeze([
@@ -196,4 +247,36 @@ export function restClearance() {
     best = Math.min(best, Math.hypot(ex, ez));
   }
   return best;
+}
+
+/**
+ * The town's colliders as plain collision descriptors (src/core/collision.js register()): a box per building block
+ * and per raised roof block (kind 'landmark': the roofs are floors), a capsule per salt cone, a box for the mole.
+ * `buildings` are the seated records ({ x, y, z, yaw, w, d, h, step }, yaw as three's rotation.y: local +z the
+ * front), `breakwater` { x, y, z, yaw, length, width } or null, `ground(x, z)` the terrain height.
+ *
+ * Collision's box yaw turns the OTHER way from three's rotation.y (its local frame is world turned by -yaw; props.js
+ * passes -rot for the Organ), so every box here takes -yaw. At 5210b31-dbb27a6 they took +yaw and stood 2 x yaw
+ * (72 deg on the street's bearing) off their walls.
+ */
+export function townColliders({ buildings, breakwater = null, ground = () => 0 }) {
+  const out = [];
+  for (const b of buildings) {
+    out.push({ kind: 'landmark', shape: { type: 'box', c: [b.x, b.y + b.h / 2 - 0.4, b.z], half: [b.w / 2, b.h / 2 + 0.4, b.d / 2], yaw: -b.yaw } });
+    if (b.step) {
+      const s = b.step, sy = Math.sin(b.yaw), cy = Math.cos(b.yaw);
+      const x = b.x + cy * s.x + sy * s.z, z = b.z - sy * s.x + cy * s.z, y0 = b.y + b.h - 0.5;
+      out.push({ kind: 'landmark', shape: { type: 'box', c: [x, y0 + s.h / 2, z], half: [s.w / 2, s.h / 2, s.d / 2], yaw: -b.yaw } });
+    }
+  }
+  for (const c of CONES) {
+    const y = ground(c.x, c.z);
+    out.push({ kind: 'prop', shape: { type: 'capsule', a: [c.x, y, c.z], b: [c.x, y + c.h * 0.45, c.z], radius: c.r * 0.72 } });
+  }
+  const w = breakwater;
+  if (w) {
+    const fx = Math.sin(w.yaw), fz = Math.cos(w.yaw);
+    out.push({ kind: 'landmark', shape: { type: 'box', c: [w.x + fx * w.length / 2, w.y - 1.5, w.z + fz * w.length / 2], half: [w.width / 2, 2.8, w.length / 2], yaw: -w.yaw } });
+  }
+  return out;
 }

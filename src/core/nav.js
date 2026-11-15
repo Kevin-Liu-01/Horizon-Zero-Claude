@@ -233,11 +233,12 @@ export class Nav {
       this._dst = t;
       if (col.type === 'mesh') {
         this.collision.forEachTriangle(col, this._triStamp);
+      } else if (col.type === 'box') {
+        this._box(col, this.agentRadius);
       } else {
         const cx = col.type === 'sphere' ? col.cx : (col.ax + col.bx) * 0.5;
         const cz = col.type === 'sphere' ? col.cz : (col.az + col.bz) * 0.5;
-        const rr = (col.type === 'box' ? Math.hypot(col.hx, col.hz) : col.r) + this.agentRadius;
-        this._disc(cx, cz, rr);
+        this._disc(cx, cz, col.r + this.agentRadius);
       }
     }
     this._dst = prevDst;
@@ -343,10 +344,12 @@ export class Nav {
         if (next < 0) { this._col++; this._tri = 0; } else { this._tri = next; }
         continue;
       }
-      const cx = c.type === 'sphere' ? c.cx : (c.ax + c.bx) * 0.5;
-      const cz = c.type === 'sphere' ? c.cz : (c.az + c.bz) * 0.5;
-      const rr = (c.type === 'box' ? Math.hypot(c.hx, c.hz) : c.r) + pad;
-      this._disc(cx, cz, rr);
+      if (c.type === 'box') this._box(c, pad);
+      else {
+        const cx = c.type === 'sphere' ? c.cx : (c.ax + c.bx) * 0.5;
+        const cz = c.type === 'sphere' ? c.cz : (c.az + c.bz) * 0.5;
+        this._disc(cx, cz, c.r + pad);
+      }
       work += 12;
       this._col++;
     }
@@ -358,6 +361,35 @@ export class Nav {
         this.cost = this._dst;
         this._dst = this.cost;
         this._fields.clear();
+      }
+    }
+  }
+
+  /**
+   * A yaw-box's footprint grown by `pad` (M1.5a settlements, smallest change): the cells whose centre lies within
+   * `pad` of the box's rectangle, in collision's yaw frame. It was the disc round the box's corners, which for
+   * Saltrow's 8 x 7 m houses either side of a 6.6 m street closed the street (a 6.5 m disc from each centre).
+   * Always inside that disc, so it only ever opens cells the disc closed.
+   */
+  _box(c, pad) {
+    const r = Math.hypot(c.hx, c.hz) + pad;
+    const ix0 = Math.max(0, Math.floor((c.cx - r - ORIGIN) / CELL));
+    const ix1 = Math.min(N - 1, Math.ceil((c.cx + r - ORIGIN) / CELL));
+    const iz0 = Math.max(0, Math.floor((c.cz - r - ORIGIN) / CELL));
+    const iz1 = Math.min(N - 1, Math.ceil((c.cz + r - ORIGIN) / CELL));
+    const cs = Math.cos(-c.yaw), sn = Math.sin(-c.yaw), p2 = pad * pad;
+    const dst = this._dst;
+    for (let iz = iz0; iz <= iz1; iz++) {
+      const rz = ORIGIN + iz * CELL - c.cz;
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const rx = ORIGIN + ix * CELL - c.cx;
+        const lx = rx * cs - rz * sn, lz = rx * sn + rz * cs;
+        const ex = Math.max(0, Math.abs(lx) - c.hx), ez = Math.max(0, Math.abs(lz) - c.hz);
+        if (ex * ex + ez * ez > p2) continue;
+        const i = iz * N + ix;
+        if (dst[i] === BLOCKED) continue;
+        dst[i] = BLOCKED;
+        this.stats.stamped++;
       }
     }
   }

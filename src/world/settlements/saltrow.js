@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { dequantiseRoot } from '../../core/assets.js';
 import {
-  BUILDINGS, CONES, HARBOUR, BREAKWATER_LAMP, GUILD_STUD, STREET, placeOf,
+  BUILDINGS, CONES, HARBOUR, BREAKWATER_LAMP, BREAKWATER_LENS, GUILD_STUD, STREET, CREW, placeOf, streetPoint, townColliders,
 } from './saltrow-layout.js';
+import { SightingKite } from './saltrow-kite.js';
 
 /**
  * SALTROW (BUILD M1.5a): the Pan Houses town, from the kit `tools/build/settlements/recipes/saltrow-kit.mjs` writes
@@ -15,11 +16,18 @@ import {
  *   town.lamps                 [{ id, kind, x, y, z }] the breakwater lamp and the guild-house lantern
  *   town.litWindows            how many window panes glow at night (the kit's count)
  *   town.stud                  the guild-house datum stud { x, y, z } (BUILD M1.6b: the home travel node)
+ *   town.crew                  the people at work in the street [{ id, task, clip, person }] (M1.5a; M1.5d's routines
+ *                              take them over): the slice's unnamed cast, spawned once through ctx.people
+ *   town.kite                  the sighting kite (M1.5e, ./saltrow-kite.js)
+ *   town.colliderCount         colliders registered (a box per block and roof block, a capsule per cone, the mole)
  *   town.dispose()
  *
  * DRAWS: the whole town is two meshes. Every building, the salt cones, the ramp and the breakwater are merged in the
  * world frame into ONE vertex-coloured mesh on the kit's one material (palette roughness/metal, KTX2), which casts and
  * takes shadows; every window pane and lamp glass is ONE more mesh (no shadow). 2 draws + 1 shadow caster.
+ *
+ * COLLIDERS: ./saltrow-layout.js townColliders (collision's box yaw turns the other way from three's rotation.y: at
+ * 5210b31-dbb27a6 they took +yaw and stood 2 x yaw, 72 deg, off their walls).
  *
  * NIGHT: a pane's vertex colour is its room's glow (black = a dark room); `uGlow` scales it from dusk (sun under 8 deg)
  * to full at night. The walls carry the kit's baked window spill (TEXCOORD_1.x, renamed `aSpill`): at night each
@@ -73,6 +81,9 @@ export class Saltrow {
     this.uGlow = { value: 0 };
     this.uSpill = { value: new THREE.Color(0, 0, 0) };
     this.stats = { loadMs: 0, tris: 0, draws: 0 };
+    this.crew = [];
+    this._crewAsked = false;
+    this.kite = new SightingKite(ctx, this.group);
     this.ready = this._load().catch((e) => { console.warn('[saltrow] the town did not load', e); return this; });
   }
 
@@ -202,36 +213,58 @@ export class Saltrow {
     return m;
   }
 
-  /** Hand the town's colliders to `collision` once (box per block; the roofs are floors, kind 'landmark'). */
+  /** Hand the town's colliders to `collision` once (./saltrow-layout.js townColliders: a box per block and roof block, the roofs floors). */
   _registerColliders() {
     const C = this.ctx.collision;
     if (this._collidersDone || !C || !this.loaded) return;
     this._collidersDone = true;
-    const add = (d) => { const id = C.register(d); if (Array.isArray(id)) this._colliderIds.push(...id); else if (id >= 0) this._colliderIds.push(id); };
-    for (const b of this.buildings) {
-      const top = b.h;
-      add({ kind: 'landmark', ref: this.body, shape: { type: 'box', c: [b.x, b.y + top / 2 - 0.4, b.z], half: [b.w / 2, top / 2 + 0.4, b.d / 2], yaw: b.yaw } });
-      if (b.step) {
-        const s = b.step, sy = Math.sin(b.yaw), cy = Math.cos(b.yaw);
-        const x = b.x + cy * s.x + sy * s.z, z = b.z - sy * s.x + cy * s.z, y0 = b.y + b.h - 0.5;
-        add({ kind: 'landmark', ref: this.body, shape: { type: 'box', c: [x, y0 + s.h / 2, z], half: [s.w / 2, s.h / 2, s.d / 2], yaw: b.yaw } });
-      }
-    }
-    for (const c of CONES) {
-      const y = this._h(c.x, c.z);
-      add({ kind: 'prop', ref: this.body, shape: { type: 'capsule', a: [c.x, y, c.z], b: [c.x, y + c.h * 0.45, c.z], radius: c.r * 0.72 } });
-    }
-    const w = this.breakwater;
-    if (w) {
-      const fx = Math.sin(w.yaw), fz = Math.cos(w.yaw);
-      add({ kind: 'landmark', ref: this.body, shape: { type: 'box', c: [w.x + fx * w.length / 2, w.y - 1.5, w.z + fz * w.length / 2], half: [w.width / 2, 2.8, w.length / 2], yaw: w.yaw } });
+    for (const d of townColliders({ buildings: this.buildings, breakwater: this.breakwater, ground: (x, z) => this._h(x, z) })) {
+      const id = C.register({ ...d, ref: this.body });
+      if (Array.isArray(id)) this._colliderIds.push(...id); else if (id >= 0) this._colliderIds.push(id);
     }
     this.colliderCount = this._colliderIds.length;
   }
 
-  update() {
+  /**
+   * The people at work (CREW in the layout): spawned once, when the town stands and the people system can take them,
+   * each at its spot facing its work, its work clip held (`_beatEnd` Infinity keeps the people system's idle beats
+   * off them; M1.5d's routines replace this). They stay for the session (the A90 family: nothing outside a machine
+   * root may come and go in the middle of a workload).
+   */
+  _stageCrew() {
+    const P = this.ctx.people;
+    if (this._crewAsked || !P?.spawn) return;
+    this._crewAsked = true;
+    CREW.forEach((c, i) => {
+      const at = streetPoint(c.s, c.r), f = streetPoint(c.face.s, c.face.r);
+      const yaw = Math.atan2(f.x - at.x, f.z - at.z);
+      P.spawn(c.id, { x: at.x, z: at.z, yaw, seed: 211 + i * 29 }).then((p) => {
+        if (this.disposed) { P.despawn?.(p); return; }
+        let clip = c.clip, d = p.play(clip, { fade: 0, offset: (i * 0.31) % 1 });
+        if (!d && c.alt) { clip = c.alt; d = p.play(clip, { fade: 0, offset: (i * 0.31) % 1 }); }
+        if (P._propsFor && p.showProps) p.showProps(P._propsFor(p, clip));
+        p._beatT = 0; p._beatEnd = Infinity;
+        this.crew.push({ id: c.id, task: c.task, clip: d ? clip : null, person: p, x: at.x, z: at.z });
+      }).catch((e) => { this.crew.push({ id: c.id, task: c.task, clip: null, person: null, error: String(e?.message || e) }); });
+    });
+  }
+
+  /** The breakwater and the street's foot as named places for the frames (F07 stands on the breakwater). */
+  _publishPlaces() {
+    const GP = this.ctx.props?.gatePlaces;
+    if (!GP || this._placesDone) return;
+    this._placesDone = true;
+    const L = BREAKWATER_LENS;
+    if (!GP.breakwater) GP.breakwater = { x: L.x, z: L.z, y: (this.breakwater?.y ?? 0) + 1.3, bearing: L.bearing, yaw: -L.bearing * Math.PI / 180, note: 'Saltrow: on the breakwater deck 10 m out, looking up at the town (M1.5a)' };
+    if (!GP.saltrowRamp) GP.saltrowRamp = { x: HARBOUR.ramp.x, z: HARBOUR.ramp.z, bearing: (HARBOUR.ramp.bearing + 180) % 360, note: 'Saltrow: the boat ramp top (M1.5a)' };
+  }
+
+  update(dt = 0) {
+    this.kite?.update(dt);
     if (!this.loaded) return;
     if (!this._collidersDone) this._registerColliders();
+    if (!this._crewAsked) this._stageCrew();
+    if (!this._placesDone) this._publishPlaces();
     const env = this.ctx.environment;
     const sy = env?.sunDir ? env.sunDir.y : 0.5;
     // warm windows from dusk: none above 8 deg of sun, all lit by the time it is 3 deg under
@@ -242,6 +275,9 @@ export class Saltrow {
 
   dispose() {
     this.disposed = true;
+    for (const c of this.crew) if (c.person) this.ctx.people?.despawn?.(c.person);
+    this.crew.length = 0;
+    this.kite?.dispose();
     const C = this.ctx.collision;
     if (C?.unregister && this._colliderIds.length) C.unregister(this._colliderIds);
     this._colliderIds.length = 0;

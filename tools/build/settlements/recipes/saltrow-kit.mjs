@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { THREE, Bucket, V, strut, ball, rbox, cable, rng } from '../../lib/hs.mjs';
 import { writeGLB } from '../../lib/glb.mjs';
 import { vnoise3, fbm3 } from '../../landmarks/recipes/lib/rock.mjs';
-import { BUILDINGS, TONES, HARBOUR, CONES, placeOf } from '../../../../src/world/settlements/saltrow-layout.js';
+import { BUILDINGS, TONES, HARBOUR, CONES, BREAKWATER_LAMP_AT, placeOf } from '../../../../src/world/settlements/saltrow-layout.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 export const LANE = 'settlements';
@@ -472,7 +472,7 @@ function ramp() {
   return b;
 }
 
-/** The breakwater: a basalt mole with armour blocks, its lamp column at the end. Local +z out to sea, top y 1.3. */
+/** The breakwater: a basalt mole with armour blocks, its lamp column at the root. Local +z out to sea, top y 1.3. */
 function breakwater() {
   const b = new Bucket('breakwater'), g = new Bucket('breakwater-glass');
   const { length: L, width: W } = HARBOUR.breakwater;
@@ -491,19 +491,20 @@ function breakwater() {
     rbox(b, V(x, -0.6 + R() * 1.4 - (Math.abs(x) - W / 2) * 0.5, Math.min(z, L + 1.2)), [sz, sz * 0.8, sz * 1.1], 0.12,
       { surf: 'bisque', tone: R() < 0.3 ? BASALT_HI : BASALT, wear: 1.3, segs: 1, rot: [R() * 0.8, R() * 3, R() * 0.8], colorFn: basaltShade(i) });
   }
-  // the lamp: a lime-washed column, an iron cage, the lantern
-  const lz = L - 1.2;
-  strut(b, V(0, 1.3, lz), V(0, 4.1, lz), 0.36, 0.3, { surf: 'bisque', tone: TONES[0], wear: 0.6, sides: 14, colorFn: limeShade(3, 1.3) });
-  strut(b, V(0, 4.1, lz), V(0, 4.25, lz), 0.42, 0.42, { surf: 'bisque', tone: BASALT, wear: 1.1, sides: 14 });
+  // the lamp: a lime-washed column, an iron cage, the lantern, at the ROOT on the north-west edge (the layout's
+  // BREAKWATER_LAMP_AT: its `side` is to the right looking out to sea, this local x the other way)
+  const lz = BREAKWATER_LAMP_AT.along, lx = -BREAKWATER_LAMP_AT.side;
+  strut(b, V(lx, 1.3, lz), V(lx, 4.1, lz), 0.36, 0.3, { surf: 'bisque', tone: TONES[0], wear: 0.6, sides: 14, colorFn: limeShade(3, 1.3) });
+  strut(b, V(lx, 4.1, lz), V(lx, 4.25, lz), 0.42, 0.42, { surf: 'bisque', tone: BASALT, wear: 1.1, sides: 14 });
   for (let i = 0; i < 4; i++) {
     const a = i * Math.PI / 2 + Math.PI / 4;
-    strut(b, V(Math.cos(a) * 0.2, 4.25, lz + Math.sin(a) * 0.2), V(Math.cos(a) * 0.2, 4.95, lz + Math.sin(a) * 0.2), 0.02, 0.02, { surf: 'graphite', tone: IRON, wear: 0.4, sides: 4 });
+    strut(b, V(lx + Math.cos(a) * 0.2, 4.25, lz + Math.sin(a) * 0.2), V(lx + Math.cos(a) * 0.2, 4.95, lz + Math.sin(a) * 0.2), 0.02, 0.02, { surf: 'graphite', tone: IRON, wear: 0.4, sides: 4 });
   }
   const cap = new THREE.ConeGeometry(0.34, 0.32, 12);
-  b.add(cap, { surf: 'bronze', tone: 0x6e5a3a, wear: 0.9, matrix: mat(0, 5.1, lz) });
+  b.add(cap, { surf: 'bronze', tone: 0x6e5a3a, wear: 0.9, matrix: mat(lx, 5.1, lz) });
   cap.dispose();
   const lg = new THREE.CylinderGeometry(0.17, 0.17, 0.6, 12);
-  g.add(lg, { surf: 'glaze', tone: 0xffbe6a, wear: 0, matrix: mat(0, 4.6, lz), colorFn: () => 1.5 });
+  g.add(lg, { surf: 'glaze', tone: 0xffbe6a, wear: 0, matrix: mat(lx, 4.6, lz), colorFn: () => 1.5 });
   lg.dispose();
   b.uv1 = new Array((b.pos.length / 3) * 2).fill(0);
   g.uv1 = new Array((g.pos.length / 3) * 2).fill(0);
