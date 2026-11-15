@@ -57,12 +57,37 @@ const PRELUDE = `
     cb.setWeapon('sabina-bow', { silent: true });
     cb.selectAmmo('sabina-bow', ammo);
     cb.ammo[ammo] = Math.max(cb.ammo[ammo] ?? 0, 12);
-    const nock = new V(); cb.bow.getNockWorld(1, nock);
-    const sp = cb.ammoDefs?.[ammo]?.speed ?? 60;
-    const d = Math.hypot(pt.x - nock.x, pt.y - nock.y, pt.z - nock.z), tf = d / sp;
     face(pt.x, pt.z, P.camPitch);
     cb.drawStrength = 1;
-    cb.aimPoint.set(pt.x, pt.y + 0.5 * 9.8 * tf * tf, pt.z);
+    const nock = new V(); cb.bow.getNockWorld(1, nock);
+    const def = cb.ammoDefs?.[ammo] ?? cb.ammoDefs.hunter;
+    const d = Math.hypot(pt.x - nock.x, pt.y - nock.y, pt.z - nock.z), tf = d / def.speed;
+    /* round 2 fix: the aim point is solved on the game's own flight (combat._computeShot from the nock, arrows.gravity
+     * and .drag at 60 Hz, the tip 0.78 m ahead of the tail) until the tip passes within 5 mm of pt; the flat holdover
+     * (0.5 g tf^2) left the drag's drop and the launch's own lean out */
+    const goal = new V(pt.x, pt.y + 0.5 * 9.8 * tf * tf, pt.z), dir = new V(), pos = new V(), vel = new V(), t0 = new V(), t1 = new V(), sg = new V();
+    let missM = null;
+    for (let it = 0; it < 8; it++) {
+      cb.aimPoint.copy(goal);
+      const speed = cb._computeShot(def, 1, nock, dir);
+      pos.copy(nock); vel.copy(dir).multiplyScalar(speed); t0.copy(pos).addScaledVector(dir, 0.78);
+      let best = Infinity, bp = null;
+      for (let s = 0; s < 150; s++) {
+        vel.y -= cb.arrows.gravity / 60; vel.multiplyScalar(1 - cb.arrows.drag / 60); pos.addScaledVector(vel, 1 / 60);
+        t1.copy(pos).addScaledVector(sg.copy(vel).normalize(), 0.78);
+        sg.subVectors(t1, t0);
+        const L2 = sg.lengthSq(), u = L2 > 1e-12 ? Math.max(0, Math.min(1, ((pt.x - t0.x) * sg.x + (pt.y - t0.y) * sg.y + (pt.z - t0.z) * sg.z) / L2)) : 0;
+        const q = t0.clone().addScaledVector(sg, u), dd = q.distanceTo(pt);
+        if (dd < best) { best = dd; bp = q; }
+        t0.copy(t1);
+        if (t1.distanceTo(nock) > d + 3) break;
+      }
+      missM = best;
+      if (best < 0.005 || !bp) break;
+      goal.sub(bp.sub(pt));
+    }
+    cb.aimPoint.copy(goal);
+    K.lastMiss = missM;
     const n0 = K.ev.length;
     cb._fire();
     await wait(waitMs);

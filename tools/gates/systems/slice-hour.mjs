@@ -52,6 +52,9 @@ const BUDGET_S = Number(flag('--budget', 840));
 const LABEL = flag('--label', 'systems-slice-hour');
 const KIT = !args.includes('--no-kit');   // M1.6j: the kit's verb rows on the frames page (kit-probe-page.mjs)
 const NO_RUN = args.includes('--no-run');  // the frames and rows only
+// --probe <served path> (round 2): a page module whose probe(frame) runs after each frame's shot (as film.mjs --probe),
+// so the reed rows (tools/gates/systems/reed-probe-page.mjs on F31 and F03) share this one Chrome session
+const PROBE = flag('--probe');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[slice-hour ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -144,6 +147,87 @@ async function aimPoint(x, y, z, tolDeg = 0.35) {
   return { err: +r.err.toFixed(2), dist: +r.L.toFixed(1) };
 }
 
+/**
+ * in-page (round 2 fix): steer the look until the arrow THE GAME WOULD LOOSE NOW strikes the part. At eeddcb4 29 of 29
+ * shots at the Plumb's vial (aim error 0.03-0.35 deg, sway 0) struck its body: the look was put on the vial plus a
+ * holdover, but the game looses from the bow's nock toward the reticle's WORLD point (combat._updateAimPoint: the
+ * camera ray's first hull or ground hit), and a held-over look above a 9 cm glass meets nothing for 200 m, so the arrow
+ * flew parallel to the camera ray from the nock, offset by the over-the-shoulder lens. What a player corrects by
+ * watching their arrows, the runner reads ahead: the game's own launch (combat._computeShot from the nock at the
+ * current draw), its own flight (arrows.gravity and arrows.drag at 60 Hz, the tip ARROW_LEN ahead of the tail), and
+ * its own exact sweep (hitHulls.raycast, exact) for what the tip meets first. The goal moves by the miss until the
+ * flight passes within 1 cm of the aim point; if something else is met first, the next point along the glass's axis
+ * is tried. Only the look moves (camYaw / camPitch, through window.__aimPoint); the shot is still loosed by the LMB.
+ */
+async function solveShot(mi, part, tolDeg) {
+  const C = window.__CTX__, cb = C.combat, m = C.machines.list[mi];
+  if (!m || m.alive === false) return null;
+  const V = C.camera.position.constructor;
+  const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
+  const ALEN = 0.78;
+  // only the vial is judged on what the flight meets first (a Peg's lamp and the bob are struck through their hulls)
+  const want = part === 'vial' ? 'weak:vial' : null;
+  const aims = [];
+  if (part === 'vial' && m._vialWp?.obj) {
+    const w = m._vialWp, c = w.obj.getWorldPosition(new V());
+    if (w.axis && w.half > 0) for (const u of [0, 0.45, -0.45, 0.8, -0.8]) aims.push(w.axis.clone().multiplyScalar(w.half * u).applyMatrix4(w.obj.matrixWorld));
+    else aims.push(c);
+  } else {
+    const o = part === 'lamp' ? (m._lampWp?.obj ?? m.weakPoints?.find((w) => w.name === 'lamp')?.obj) : part === 'bob' ? (m._bob?.attached !== false ? m._bob?.mesh : null) : null;
+    aims.push(o ? o.getWorldPosition(new V()) : new V(m.position.x, m.position.y + 0.9, m.position.z));
+  }
+  const sp = new V(), dir = new V(), pos = new V(), vel = new V(), tip0 = new V(), tip1 = new V(), seg = new V();
+  const ray = { origin: new V(), direction: new V() };
+  /* the flight the game would loose now: closest approach to `aim` and the first thing the tip meets */
+  const predict = (aim) => {
+    cb._updateAimPoint();
+    cb.bow.getNockWorld(cb.drawStrength, sp);
+    const def = cb.ammoDefs[cb.activeWeapon?.activeAmmo ?? 'hunter'] ?? cb.ammoDefs.hunter;
+    const speed = cb._computeShot(def, cb.drawStrength, sp, dir);
+    pos.copy(sp); vel.copy(dir).multiplyScalar(speed);
+    tip0.copy(pos).addScaledVector(dir, ALEN);
+    let best = Infinity, bestP = null, first = null, firstD = null;
+    const g = cb.arrows.gravity, dr = cb.arrows.drag, dt = 1 / 60;
+    for (let s = 0; s < 120; s++) {
+      vel.y -= g * dt; vel.multiplyScalar(1 - dr * dt); pos.addScaledVector(vel, dt);
+      tip1.copy(pos).addScaledVector(seg.copy(vel).normalize(), ALEN);
+      // closest point of this tip segment to the aim
+      seg.subVectors(tip1, tip0);
+      const L2 = seg.lengthSq(), u = L2 > 1e-12 ? Math.max(0, Math.min(1, ((aim.x - tip0.x) * seg.x + (aim.y - tip0.y) * seg.y + (aim.z - tip0.z) * seg.z) / L2)) : 0;
+      const q = tip0.clone().addScaledVector(seg, u), d = q.distanceTo(aim);
+      if (d < best) { best = d; bestP = q; }
+      if (!first && L2 > 1e-12) {
+        const L = Math.sqrt(L2);
+        ray.origin.copy(tip0); ray.direction.copy(seg).multiplyScalar(1 / L);
+        const h = C.hitHulls?.raycast?.(ray, { far: L, exact: true });
+        if (h && h.hit) { first = h.machine === m ? (h.name || h.part?.name || 'hull') : `other:${h.machine?.kind ?? '?'}`; firstD = +h.point.distanceTo(aim).toFixed(3); }
+        else {
+          const gy = C.terrain.getHeight(tip1.x, tip1.z);
+          if (tip1.y < gy) first = 'ground';
+        }
+      }
+      tip0.copy(tip1);
+      if (first && tip1.distanceTo(sp) > sp.distanceTo(aim) + 2) break;
+    }
+    return { miss: bestP ? bestP.clone().sub(aim) : new V(), d: best, first, firstD };
+  };
+  let out = null;
+  for (let ai = 0; ai < aims.length; ai++) {
+    const aim = aims[ai], goal = aim.clone();
+    let r = null, err = null;
+    for (let it = 0; it < 7; it++) {
+      err = (await window.__aimPoint(goal.x, goal.y, goal.z, tolDeg)).err;
+      await raf();
+      r = predict(aim);
+      if (r.d < 0.01) break;
+      goal.sub(r.miss);
+    }
+    out = { aimIdx: ai, err, missM: +r.d.toFixed(3), first: r.first, firstD: r.firstD, ds: +cb.drawStrength.toFixed(2) };
+    if (!want || r.first === want) return { ...out, clear: true };
+  }
+  return { ...out, clear: false };
+}
+
 function face(x, z) {
   const p = window.__CTX__.player;
   p.camYaw = Math.atan2(-(x - p.position.x), -(z - p.position.z));
@@ -222,6 +306,46 @@ async function walkPath(page, K, target, radius, opts = {}) {
   return { ...r, nav: true, legs: legs + 1, of: pts.length };
 }
 
+/**
+ * The stalk along the lee ditch (round 2): W held toward the target while the ditch's rush leans (its bed's drawn lean
+ * above its lull value: the cue the canes give a player), let go while it stands. Crouched (the caller's C). The look
+ * is turned to the target each step, as walkTo does.
+ */
+async function stalkTo(page, K, target, radius, maxS = 200) {
+  const t0 = Date.now();
+  let held = false, waits = 0, waitS = 0, tw = 0, best = Infinity, bestAt = Date.now(), hop = 0, leanSince = 0;
+  const leaning = () => page.evaluate(() => {
+    const C = window.__CTX__, R = C.reeds;
+    const bed = R?.mask?.bedAt?.(C.player.position.x, C.player.position.z)?.id ?? 12;
+    return (R?.draw?.uLean?.value?.[bed] ?? 1) > 0.235;
+  });
+  try {
+    for (;;) {
+      const s = await page.evaluate(probe);
+      if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) return { ok: false, why: 'died' };
+      if (s.busy) return { ok: true, interrupted: true, waits, waitS: +waitS.toFixed(1) };
+      if (s.stage !== 'ditch') return { ok: true, waits, waitS: +waitS.toFixed(1) };
+      const d = Math.hypot(s.p.x - target.x, s.p.z - target.z);
+      if (d <= radius) return { ok: true, d, waits, waitS: +waitS.toFixed(1) };
+      if ((Date.now() - t0) / 1000 > maxS) return { ok: false, why: `stalk timed out ${d.toFixed(1)} m short`, d, waits };
+      // the canes lean 0.8 s before the gust reaches 4 m/s: she waits a beat more (1.0 s of lean) before she moves, and
+      // stops the moment they stand (0.8 s before the lull)
+      const lean = await leaning();
+      if (lean && !leanSince) leanSince = Date.now();
+      if (!lean) leanSince = 0;
+      const go = lean && Date.now() - leanSince >= 1000;
+      if (go && !held) { await K.down('KeyW'); held = true; if (tw) { waitS += (Date.now() - tw) / 1000; tw = 0; } }
+      if (!go && held) { await K.up('KeyW'); held = false; waits++; tw = Date.now(); bestAt = Date.now(); }
+      if (held) {
+        if (d < best - 0.5) { best = d; bestAt = Date.now(); }
+        if (Date.now() - bestAt > 4000) { await K.tap('Space', 90); hop++; bestAt = Date.now(); if (hop > 12) return { ok: false, why: `stuck ${d.toFixed(1)} m short`, d }; }
+      }
+      await page.evaluate(face, target.x, target.z);
+      await sleep(100);
+    }
+  } finally { if (held) await K.up('KeyW'); }
+}
+
 async function playScene(page, K, maxN = 40) {
   for (let i = 0; i < maxN; i++) {
     const s = await page.evaluate(probe);
@@ -256,7 +380,7 @@ async function readyBow(page, K) {
 async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000, tolDeg = 0.35, reach = 70 } = {}) {
   const t0 = Date.now();
   const stage0 = (await page.evaluate(probe)).stage;
-  let fired = 0, aimed = false;
+  let fired = 0, aimed = false, blocked = 0;
   await page.mouse.move(800, 450);
   if (ammo === 'hunter') await readyBow(page, K); else { await K.tap('Digit1'); await sleep(150); }
   // the arrow as a player picks it: X (and Z) cycle the bow's ammo (M1.6j: Barbed is the ranged Pry)
@@ -295,16 +419,30 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       let a = await page.evaluate(aimPoint, t.x, t.y, t.z, tolDeg);
       await page.mouse.down({ button: 'left' });
       const tD = Date.now();
-      while (Date.now() - tD < drawMs) {
-        const now = (await page.evaluate(targetsOf, kind, part)).find((q) => q.i === t.i);
-        if (!now) break;
-        a = await page.evaluate(aimPoint, now.x, now.y, now.z, tolDeg);
+      // the draw: the look solved onto the part for the arrow the game would loose now (solveShot), re-solved until the
+      // draw is full and the time is up (the nock moves with the draw)
+      let sol = null;
+      while (Date.now() - tD < drawMs || (sol && sol.ds < 0.99 && Date.now() - tD < drawMs + 800)) {
+        sol = await page.evaluate(solveShot, t.i, part, tolDeg);
+        if (!sol) break;
+      }
+      if (sol && !sol.clear && part !== 'bob') {
+        // every point along the part is masked from here by something else: step round it (20 deg) and draw again
+        await up('left'); await release();
+        blocked++;
+        const s2 = await page.evaluate(probe), ang = Math.atan2(s2.p.x - t.x, s2.p.z - t.z) + (blocked % 2 ? 0.35 : -0.7);
+        await walkTo(page, K, { x: t.x + Math.sin(ang) * stand, z: t.z + Math.cos(ang) * stand }, 2.5, { maxS: 15, sprint: false });
+        if (blocked > 6) return { ok: false, why: `${kind} ${part}: masked from every stand tried (${blocked})`, fired };
+        continue;
       }
       const sw = await page.evaluate(() => { const c = window.__CTX__.combat; return { st: c.steady.phase, sway: +c.sway.deg.toFixed(3) }; });
+      const hp0 = await page.evaluate((i) => { const m = window.__CTX__.machines.list[i]; return m ? { vial: m._vialHits ?? null, hp: Math.round(m.health) } : null; }, t.i);
       await up('left');
       fired++;
-      shots.push({ kind, part, ammo, d: +t.d.toFixed(1), aimErr: a.err, hpBefore: t.hp, down: t.down, steady: sw.st, swayDeg: sw.sway });
-      await sleep(380);
+      await sleep(520);
+      const hp1 = await page.evaluate((i) => { const m = window.__CTX__.machines.list[i]; return m ? { vial: m._vialHits ?? null, hp: Math.round(m.health), down: (m._toppleT ?? -1) >= 0 } : null; }, t.i);
+      shots.push({ kind, part, ammo, d: +t.d.toFixed(1), aimErr: sol?.err ?? a.err, predicted: sol && { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds }, hpBefore: t.hp, down: t.down, steady: sw.st, swayDeg: sw.sway,
+        vialHits: hp1 && hp0 ? [hp0.vial, hp1.down ? 'topple' : hp1.vial] : null, hpAfter: hp1?.hp ?? null });
     }
   } finally { await release(); }
 }
@@ -349,20 +487,30 @@ async function beat(page, K, s) {
       // it; sprinting in stood her 9 m from it in the open and it killed her (f90d2b0, 7ae0fd0)
       // 5f4bf42: crouched all the way from T1 she stuck 101 m short (no hop over the shelf's lips while crouched):
       // she runs down off the shelf to 45 m from the station, then stalks
-      const st0 = await page.evaluate(() => window.__CTX__.systemsGame.A.station);
-      const d0 = await page.evaluate((a) => { const P = window.__CTX__.player.position; return Math.hypot(P.x - a.x, P.z - a.z); }, st0);
+      // M1b round 2: the stalk is IN the lee ditch (reedmask.js DITCH: junco on the station's dyke's lee side). She runs
+      // down off the shelf to the ditch's north-east end (A.ditchHead, about 75 m from the station), drops into the rush
+      // crouched, and walks along it to the stage's stand 16 m from the station while the rush leans (a gust: the
+      // player's cue, the drawn lean of the ditch's bed), stopping where it stands up (a lull: only stillness hides)
+      const A = await page.evaluate(() => window.__CTX__.systemsGame.A);
       let leg0 = null;
-      if (d0 > 50) {
-        const k = 45 / d0, p0 = (await page.evaluate(probe)).p;
-        leg0 = await walkPath(page, K, { x: st0.x + (p0.x - st0.x) * k, z: st0.z + (p0.z - st0.z) * k }, 3, { maxS: 120 });
-        if (!leg0.ok) return { ...leg0, why: `run down to 45 m from the station: ${leg0.why}` };
+      if (A.ditchHead) {
+        leg0 = await walkPath(page, K, A.ditchHead, 3, { maxS: 120 });
+        if (!leg0.ok) return { ...leg0, why: `run down to the ditch's head: ${leg0.why}` };
+      } else {
+        const st0 = A.station, p0 = (await page.evaluate(probe)).p, d0 = Math.hypot(p0.x - st0.x, p0.z - st0.z);
+        if (d0 > 50) {
+          const k = 45 / d0;
+          leg0 = await walkPath(page, K, { x: st0.x + (p0.x - st0.x) * k, z: st0.z + (p0.z - st0.z) * k }, 3, { maxS: 120 });
+          if (!leg0.ok) return { ...leg0, why: `run down to 45 m from the station: ${leg0.why}` };
+        }
       }
       const crouched = await page.evaluate(() => !!window.__CTX__.player.crouching);
       if (!crouched) await K.tap('KeyC');
-      // what she walks in on the stalk (M1.6e reed cover): frames hidden by the rule, and the cover kinds under her
-      await page.evaluate(() => { const C = window.__CTX__, R = (window.__stalk = { n: 0, hidden: 0, kinds: {}, on: true }); const f = () => { if (!R.on) return; const p = C.player; R.n++; if (p.reedHidden) R.hidden++; const k = p.reedKind ?? 0; R.kinds[k] = (R.kinds[k] || 0) + 1; requestAnimationFrame(f); }; requestAnimationFrame(f); });
-      const r = await walkPath(page, K, s.anchor, Math.max(1.5, s.radius - 1), { sprint: false, maxS: 200 });
-      const stalk = await page.evaluate(() => { const R = window.__stalk; R.on = false; return { frames: R.n, hidden: R.hidden, kinds: R.kinds }; });
+      // what she walks in on the stalk (M1.6e reed cover): frames hidden by the rule, the cover kinds under her, and the
+      // frames she was seen moving (in cover in a lull, or out of cover) by the Plumb's suspicion
+      await page.evaluate(() => { const C = window.__CTX__, R = (window.__stalk = { n: 0, hidden: 0, inCover: 0, kinds: {}, susMax: 0, on: true }); const f = () => { if (!R.on) return; const p = C.player; R.n++; if (p.reedHidden) R.hidden++; if ((p.reedCover ?? 0) >= 0.45 && (p.reedKind === 1 || p.reedKind === 2)) R.inCover++; const k = p.reedKind ?? 0; R.kinds[k] = (R.kinds[k] || 0) + 1; const pl = C.systemsGame?.spawned?.plumb?.[0]; if (pl) R.susMax = Math.max(R.susMax, pl.suspicion ?? 0); requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      const r = A.ditchHead ? await stalkTo(page, K, s.anchor, Math.max(1.5, s.radius - 1), 200) : await walkPath(page, K, s.anchor, Math.max(1.5, s.radius - 1), { sprint: false, maxS: 200 });
+      const stalk = await page.evaluate(() => { const R = window.__stalk; R.on = false; return { frames: R.n, hidden: R.hidden, inCover: R.inCover, kinds: R.kinds, susMax: +R.susMax.toFixed(3) }; });
       if (await page.evaluate(() => !!window.__CTX__.player.crouching)) await K.tap('KeyC');
       await sleep(300);
       await playScene(page, K);
@@ -535,8 +683,14 @@ try {
         const staged = await page.evaluate(stageFrame, f, { settleMs: 2600 });
         const buf = await page.screenshot({ type: 'png' });
         await sharp(buf).resize(1600, 900, { fit: 'fill' }).png().toFile(path.join(runDir, `${id}.png`));
+        let pr = null;
+        if (PROBE) {
+          try { pr = await page.evaluate(async (url, fr) => (await import(url)).probe(fr), PROBE, f); }
+          catch (e) { pr = { error: String(e?.message || e).slice(0, 400) }; }
+          log(`${id} probe: ${JSON.stringify(pr).slice(0, 300)}`);
+        }
         await page.evaluate(unstageFrame);
-        report.frames.push({ id, ok: true, file: `${id}.png`, standIns: staged.standIns ?? [] });
+        report.frames.push({ id, ok: true, file: `${id}.png`, standIns: staged.standIns ?? [], ...(pr ? { probe: pr } : {}) });
         log(`${id} filmed`);
       } catch (e) { report.frames.push({ id, ok: false, error: String(e?.message || e).slice(0, 300) }); }
     }
