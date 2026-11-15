@@ -109,6 +109,36 @@ export const REGIONS = {
   } },
 };
 
+/* The RESTATED shade-hue row (the orchestrator's M1a round 2 ruling, docs/STATE.md): "shade hue within 15 deg of the
+ * crop's own shade hue, measured by the same rule; never cobalt (no shade pixel of hue 200-260 deg on skin or warm
+ * sand)". THE CROP'S SHADE HUE by the same rule: the crop has no depth, so its "ground" is a fixed box below its skyline
+ * with the figure (and the panel caption) cut out, fixed here before any tuning; then the darkest 20 % by L* and the hue
+ * of their mean a*, b*, exactly as the frame's. NEVER COBALT, measured: of the frame's shade pixels (the same darkest
+ * 20 % of ground) and of Brea's own darkest 20 % (probe depth under 5 m), the share whose hue is 200-260 deg with
+ * chroma C* >= 8 (a blue, not a grey); bar: under 1 % of each. */
+export const SHADE_CROPS = {
+  F02: { crop: 'over-pans-golden', ground: [0, 0.42, 1, 1], exclude: [[0.36, 0.33, 0.52, 1], [0, 0.86, 0.32, 1]] },
+  F05: { crop: 'key-dusk', ground: [0, 0.45, 1, 1], exclude: [[0.77, 0.40, 0.87, 0.73]] },
+};
+const cropShadeCache = {};
+async function cropShadeHue(id) {
+  const S = SHADE_CROPS[id]; if (!S) return null;
+  if (cropShadeCache[id]) return cropShadeCache[id];
+  const img = await loadRgb(path.join(CROPS, `${S.crop}.png`));
+  const px = [];
+  for (let y = Math.floor(S.ground[1] * img.h); y < Math.ceil(S.ground[3] * img.h); y++) for (let x = Math.floor(S.ground[0] * img.w); x < Math.ceil(S.ground[2] * img.w); x++) {
+    const fx = (x + 0.5) / img.w, fy = (y + 0.5) / img.h;
+    if (S.exclude.some((b) => fx >= b[0] && fx < b[2] && fy >= b[1] && fy < b[3])) continue;
+    const i = (y * img.w + x) * img.ch;
+    px.push(linToLab(LIN[img.data[i]], LIN[img.data[i + 1]], LIN[img.data[i + 2]]));
+  }
+  px.sort((p, q) => p[0] - q[0]);
+  const k = Math.max(1, Math.floor(px.length * 0.2));
+  let a = 0, b = 0, L = 0; for (let j = 0; j < k; j++) { L += px[j][0]; a += px[j][1]; b += px[j][2]; }
+  return (cropShadeCache[id] = { crop: S.crop, n: k, L: r1(L / k), a: r1(a / k), b: r1(b / k), hue: r1(hueOf(a / k, b / k)) });
+}
+const cobaltShare = (labs) => labs.length ? labs.filter((q) => { const h = hueOf(q[1], q[2]); return h >= 200 && h <= 260 && Math.hypot(q[1], q[2]) >= 8; }).length / labs.length : null;
+
 async function loadRgb(file) {
   const { data, info } = await sharp(file).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   return { data, w: info.width, h: info.height, ch: info.channels };
@@ -131,7 +161,9 @@ export async function measureFrame(runDir, fr) {
 /** The same lines on an image already in memory ({ data, w, h, ch }; any size: regions are fractions). */
 export async function measureImage(img, fr, opts = {}) {
   const id = fr.id;
-  const P = fr.probe && !fr.probe.error ? fr.probe : null;
+  // the combined probe (tools/instruments/combo-probe-page.mjs) nests the sky probe under .sky on F23-plumb
+  const P0 = fr.probe?.sky && !fr.probe.depth ? fr.probe.sky : fr.probe;
+  const P = P0 && !P0.error && P0.depth ? P0 : null;
   const res = { id, hour: fr.hour };
 
   /* palette */
@@ -156,10 +188,12 @@ export async function measureImage(img, fr, opts = {}) {
   const depthAt = (x, y) => D.dist[Math.min(D.h - 1, Math.floor(y * sy)) * D.w + Math.min(D.w - 1, Math.floor(x * sx))];
 
   /* shadow hue, contrast */
-  const ground = [];
+  const ground = [], near = [];
   const band = { fore: [], mid: [] };
   for (let y = 0; y < img.h; y += 2) for (let x = 0; x < img.w; x += 2) {
-    const d = depthAt(x, y); if (d < 5) continue;
+    const d = depthAt(x, y);
+    if (d >= 0 && d < 5) { const i = (y * img.w + x) * img.ch; near.push([LIN[img.data[i]], LIN[img.data[i + 1]], LIN[img.data[i + 2]]]); }
+    if (d < 5) continue;
     const i = (y * img.w + x) * img.ch, r = LIN[img.data[i]], g = LIN[img.data[i + 1]], b = LIN[img.data[i + 2]];
     const Y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     ground.push([Y, r, g, b]);
@@ -171,6 +205,17 @@ export async function measureImage(img, fr, opts = {}) {
   for (let j = 0; j < k; j++) { const lab = linToLab(ground[j][1], ground[j][2], ground[j][3]); sL += lab[0]; sa += lab[1]; sb += lab[2]; }
   const hue = hueOf(sa / k, sb / k);
   res.shadow = { n: k, L: r1(sL / k), a: r1(sa / k), b: r1(sb / k), hue: r1(hue), pass: hue >= 280 && hue <= 330 };
+  {
+    // the restated row (SHADE_CROPS above)
+    const shadeLab = []; for (let j = 0; j < k; j++) shadeLab.push(linToLab(ground[j][1], ground[j][2], ground[j][3]));
+    const nearLab = near.map((q) => linToLab(q[0], q[1], q[2])).sort((p, q) => p[0] - q[0]);
+    const nearShade = nearLab.slice(0, Math.max(1, Math.floor(nearLab.length * 0.2)));
+    const ch = await cropShadeHue(id);
+    const dh = ch ? Math.abs(((hue - ch.hue + 540) % 360) - 180) : null;
+    const cg = cobaltShare(shadeLab), cb = near.length >= 50 ? cobaltShare(nearShade) : null;
+    res.shadeR = { crop: ch, frameHue: r1(hue), dHue: r1(dh), cobaltGroundPct: cg == null ? null : r2(100 * cg), cobaltBreaPct: cb == null ? null : r2(100 * cb),
+      pass: ch ? dh <= 15 && (cg ?? 0) < 0.01 && (cb ?? 0) < 0.01 : null };
+  }
   const rms = (a) => { if (a.length < 50) return null; const m = a.reduce((s, v) => s + v, 0) / a.length; const v = a.reduce((s, q) => s + (q - m) ** 2, 0) / a.length; return Math.sqrt(v) / m; };
   const cf = rms(band.fore), cm = rms(band.mid);
   res.contrast = { foreN: band.fore.length, midN: band.mid.length, fore: r2(cf), mid: r2(cm), ratio: cf && cm != null ? r2(cm / cf) : null,
@@ -250,6 +295,7 @@ if (isMain) {
       for (const q of r.palette.regions) console.log(`    ${q.name.padEnd(10)} dE ${String(q.dE).padStart(5)}  frame Lab ${q.frame.join(' ')}  ref ${q.ref.join(' ')}`);
     }
     if (r.shadow) console.log(`  shadow hue ${r.shadow.hue} (L ${r.shadow.L} a ${r.shadow.a} b ${r.shadow.b}) bar 280-330: ${r.shadow.pass ? 'PASS' : 'FAIL'}`);
+    if (r.shadeR) console.log(`  shade hue (restated) ${r.shadeR.frameHue} vs crop ${r.shadeR.crop ? r.shadeR.crop.hue + ' (' + r.shadeR.crop.crop + ', L ' + r.shadeR.crop.L + ')' : 'none'}: dHue ${r.shadeR.dHue ?? '-'} (bar <= 15); cobalt shade ground ${r.shadeR.cobaltGroundPct} %, Brea ${r.shadeR.cobaltBreaPct ?? '-'} % (bar < 1 %): ${r.shadeR.pass == null ? 'n/a (no crop)' : r.shadeR.pass ? 'PASS' : 'FAIL'}`);
     if (r.contrast) console.log(`  contrast fore ${r.contrast.fore} (n ${r.contrast.foreN}) mid150 ${r.contrast.mid} (n ${r.contrast.midN}) ratio ${r.contrast.ratio} bar >= 0.60: ${r.contrast.pass == null ? 'n/a' : r.contrast.pass ? 'PASS' : 'FAIL'}; fog T(150 m) ${r.contrast.t150}, T(30 m) ${r.contrast.t30}`);
     if (r.sun) console.log(`  sun elev ${r.sun.elevDeg} in frame ${r.sun.inFrame} at ${r.sun.px}; disc ${r.sun.discDiameterDeg} deg; clipped blob in the sky ${r.sun.clipPx ?? '-'} px to ${r.sun.clipMaxDeg ?? '-'} deg (with the sea's ${r.sun.clipAllPx ?? '-'} px to ${r.sun.clipAllMaxDeg ?? '-'} deg): ${r.sun.pass == null ? 'n/a' : r.sun.pass ? 'PASS' : 'FAIL'}`);
     if (r.glitter) console.log(`  glitter path L ${r.glitter.pathL} vs sides ${r.glitter.sideL}: dL ${r.glitter.dL} (bar >= 10) ${r.glitter.pass ? 'PASS' : 'FAIL'}`);

@@ -1718,6 +1718,11 @@ export class Environment {
         this.fireDayK = Math.max(0.05, night, dusk);
         let k = Math.max(night, dusk, (1 - smooth(12, 14, d)) * this.fireDayK);
         if (d > 40 && night < 0.05 && dusk < 0.05) k = 0;
+        /* M1a round 3 (F30): no drawn fire, no fire light. The Round-4 rest site's art is retired (terrain.js hides the
+         * settlement host's group, the Brazier with it), but this pooled light kept following its point light: x26 at
+         * 1 m up in waist-high meadow lit the blades within 0.3 m of it to clipped white-gold vertical streaks with no
+         * fire among them. The light follows a source only while the source and every parent of it are visible */
+        for (let o = src; o; o = o.parent) if (o.visible === false) { k = 0; break; }
         this._fireK = k;
       }
       const k = this._fireK;
@@ -2425,6 +2430,19 @@ export class Environment {
           // the low band toward the sun glows gold; M1.1f doubles it at golden hours (uRim), but not within ~6° of
           // the disc, where the corona and the bloom already carry it (a low sun's clipped blob must end inside 4°)
           col += uSunCol * pow(az, 6.0) * (1.0 - smoothstep(0.0, 0.40, h)) * (0.18 + 0.20 * uRim * (1.0 - pow(sunD, 60.0))) * day;
+          // ---- M1a round 3: THE GOLDEN-HOUR GAPS. The clear sky between the cumulus read lavender-periwinkle in F02
+          // (the keys' mauve mid and violet zenith; Lab 45 12 -2 in the skyAway box against the crop's 54 19 6, the
+          // crop's gaps pale rose away from the sun and peach-cream toward it). With a golden sun 7-25 deg up the gaps
+          // take those two tints and are lifted (x1.9 away from the sun's azimuth, x1.15 toward it, where the corona
+          // already carries them); above the horizon band only (the hand-over below stays the fog's), the visible dome
+          // only (uIbl): the sky light on the ground, and with it the shade hue row, is unchanged. F05's sun (1.7 deg)
+          // and every hour without a golden sun are untouched
+          float gw = uRim * smoothstep(0.03, 0.12, sd.y) * day * (1.0 - cal) * (1.0 - uIbl) * smoothstep(0.02, 0.15, h);
+          if (gw > 0.001) {
+            float lumC = dot(col, vec3(0.2126, 0.7152, 0.0722));
+            vec3 warmT = mix(vec3(1.22, 0.86, 0.80), vec3(1.30, 0.92, 0.66), pow(az, 2.0));
+            col = mix(col, lumC * warmT * mix(1.9, 1.15, pow(az, 3.0)), gw);
+          }
 
           // ---- calima (L-14): the gradient flattens to ochre, a broad coral glow at the sun
           if (cal > 0.001) {
@@ -2493,7 +2511,9 @@ export class Environment {
             shadeC = mix(shadeC, shadeC * vec3(0.92, 0.80, 0.88), uRim * (1.0 - toward));
             // M1a r2 fix: the backlit cores toward a low sun were the horizon's orange x 0.72, a muddy grey-brown above
             // F02's sun; they keep their value and turn mauve-rose (a backlit heap is grey-violet with a gold edge)
-            shadeC = mix(shadeC, vec3(dot(shadeC, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.12, 0.90, 1.02), 0.6 * uRim * toward);
+            // M1a round 3: still muddy (a grey-brown heap above F02's sun, mixed half and half with the gold lit side): the
+            // core toward the sun is a clean dusky rose, a quarter lighter, so its mix with the gold side stays warm
+            shadeC = mix(shadeC, vec3(dot(shadeC, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.20, 0.86, 0.96) * 1.25, 0.75 * uRim * toward);
             shadeC = mix(shadeC, vec3(0.26, 0.28, 0.33), uCloud.y);
             float t0 = 1000.0 / d.y;
             vec2 p = d.xz * t0 - uDrift;
@@ -2520,7 +2540,10 @@ export class Environment {
             float edge = a * (1.0 - smoothstep(0.04, 0.16, sh));
             float sunSide = clamp((n - thr + 0.12 - shS) * 6.0, 0.0, 1.0);
             float rimW = 2.0 * edge * (0.35 + 0.65 * sunSide);
-            c += vec3(1.0, 0.66, 0.50) * (0.55 + 0.45 * uSunCol) * rimW * (0.30 + 1.0 * pow(sunD, 6.0) * (1.0 - 0.85 * nearSun)) * uRim * day;
+            // M1a round 3: the near-sun damping of the rim (it was pow 60, half strength 8 deg out, so the heap just
+            // above F02's sun had no peach edge at all) now hugs the disc (pow 400: half at 3 deg, a tenth at 6 deg); the
+            // clipped blob is read from the disc's centre, and the aureole between them does not clip
+            c += vec3(1.0, 0.66, 0.50) * (0.55 + 0.45 * uSunCol) * rimW * (0.30 + 1.25 * pow(sunD, 6.0) * (1.0 - 0.85 * pow(sunD, 400.0))) * uRim * day;
             cover = a * (1.0 - cal);
             float haze = exp(-t0 / 14000.0);
             vec3 cc = mix(horizon, c, haze);
