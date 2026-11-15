@@ -50,7 +50,7 @@ import { SightingKite } from './saltrow-kite.js';
 const URL = '/models/settlements/saltrow-kit.glb';
 const WARM = new THREE.Color(1.0, 0.62, 0.32);
 /** The share of the scene's light the town keeps at full night (fix round 1, F07: walls beyond a window's spill). */
-const NIGHT_LIGHT = 0.14;
+const NIGHT_LIGHT = 0.05;
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
