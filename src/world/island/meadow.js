@@ -323,7 +323,11 @@ else {
     float eU = min(vMUv.x, 1.0 - vMUv.x) / max(fwidth(vMUv.x), 1e-5);
     if (uKind > 0.5) eU = min(eU, (1.0 - vMUv.y) / max(fwidth(vMUv.y), 1e-5));
     float cv = clamp((eU + 0.5) / max(uSoft.y, 0.5), 0.0, 1.0);
-    diffuseColor.rgb = mix(diffuseColor.rgb, uStand.rgb, sK * (1.0 - cv));
+    /* (M1a debt fix round 1: a viborina spike is almost all edge, so the soft edge turned its florets to the gold stand
+     * tone and F02's violet fell from 1.51 % of the meadow to 0.17-0.25 %, a 6x loss of M1.1b's violet clumps) a violet
+     * floret (blue above green in vMColor; straw and gold never are) keeps its own tone at the edge */
+    float vio = clamp((vMColor.b - vMColor.g) * 25.0, 0.0, 1.0);
+    diffuseColor.rgb = mix(diffuseColor.rgb, uStand.rgb, sK * (1.0 - cv) * (1.0 - vio));
   }
   #endif
 }

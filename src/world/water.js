@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { WORLD_SIZE } from './island/extent.js';
 import { COAST, GLASS, GLASS_LEVEL, SEA_LEVEL } from './island/recipe.js';
 import { ISLAND_SCALE as S } from './island/extent.js';
+import { patchDeck } from './island/aerial.js';
 
 /**
  * THE SEA AND THE GLASS (world-ground W1, bible §9.5). The island's signature image is the
@@ -439,6 +440,8 @@ export class IslandWater {
           .replace('#include <roughnessmap_fragment>', SEA_ROUGH)
           .replace('#include <normal_fragment_begin>', SEA_NORMAL)
           .replace('#include <aomap_fragment>', SEA_MIRROR);
+        // M1a debt fix round 1 (F32's pale sheet over the sea): the sea takes the ground's deck cap (island/aerial.js DECK)
+        patchDeck(shader);
       };
       mat.customProgramCacheKey = () => key;
       return mat;

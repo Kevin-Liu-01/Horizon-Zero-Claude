@@ -38,6 +38,7 @@ import { stageFrame, unstageFrame } from '../frames/page.mjs';
 import { loadFrameSet } from '../frames/frameset.mjs';
 import { SLOTS, assertOutsideRepo } from '../frames/paths.mjs';
 import { autocorr } from './autocorr.mjs';
+import { measureImage } from '../look/m11-accept.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
@@ -144,9 +145,19 @@ async function stillStats(file, boxes = {}) {
 /* M1a debt: the boxes those stills are read in. F04: m11-accept's c, d, e (the crust); F05: the two Organ clusters as F05
  * frames them (fractions of the frame, read off the exit run's still at fb6d5f0) */
 const F04_BOXES = { c: [0.35, 0.35, 0.65, 0.60], d: [0.05, 0.65, 0.30, 0.95], e: [0.70, 0.65, 0.95, 0.95] };
+/* M1a debt fix round 1: F32's pale sheet: the sea and coast right of the ridge, and the ridge's own lit slope beside it */
+const F32_BOXES = { sheet: [0.66, 0.5, 0.98, 0.7], coast: [0.6, 0.62, 0.75, 0.8], slope: [0.25, 0.6, 0.45, 0.85] };
 const F05_BOXES = { organRight: [0.6625, 0.378, 0.8125, 0.733], organLeft: [0.15, 0.6, 0.275, 0.756] };
-/* M1a debt: --crust "gain,cool;..." (terrain.js CRUST) variants on F04, each a still read in Node */
+/* M1a debt: --crust "gain,cool[,rose,grain];..." (terrain.js CRUST) variants on F04, each a still read in Node (and, fix
+ * round 1, its M1.1g palette by tools/look/m11-accept.mjs's own rule) */
 const CRU = (flag('--crust', '') || '').split(';').filter(Boolean).map((v) => v.split(',').map(Number));
+/* M1a debt fix round 1: --deck "slope,cap;..." (island/aerial.js DECK) variants on F32 (needs --f32), a still each */
+const DECKV = (flag('--deck', '') || '').split(';').filter(Boolean).map((v) => v.split(',').map(Number));
+async function paletteOf(file, id) {
+  const { data, info } = await sharp(path.join(OUT, file)).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const r = await measureImage({ data, w: info.width, h: info.height, ch: 3 }, { id }, { paletteOnly: true });
+  return r.palette ? { meanDE: r.palette.meanDE, regions: r.palette.regions.map((q) => [q.name, q.dE, ...q.frame]) } : null;
+}
 try {
   vite = spawn('nice', ['-n', '10', 'npx', 'vite', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: REPO, stdio: 'ignore', detached: true });
   for (let i = 0; i < 240 && !(await portOpen(PORT)); i++) await sleep(250);
@@ -391,16 +402,17 @@ try {
     const R = run.frames[id] = {};
     await stage(id);
     await shot(`${id}.png`);
-    if (id === 'F04' || id === 'F05') { R.still = await stillStats(`${id}.png`, id === 'F04' ? F04_BOXES : F05_BOXES); log(`${id} still: ${JSON.stringify(R.still)}`); }
+    if (id === 'F04' || id === 'F05') { R.still = await stillStats(`${id}.png`, id === 'F04' ? F04_BOXES : F05_BOXES); R.still.palette = await paletteOf(`${id}.png`, id); log(`${id} still: ${JSON.stringify(R.still)}`); }
     if (id === 'F04' && CRU.length) {
       R.crust = {};
       const c0 = await page.evaluate(async () => (await import('/src/world/terrain.js')).CRUST.value.toArray());
       for (const c of CRU) {
-        await page.evaluate(async (c) => { (await import('/src/world/terrain.js')).CRUST.value.set(c[0], c[1], 0, 0); }, c);
+        await page.evaluate(async (c) => { (await import('/src/world/terrain.js')).CRUST.value.set(c[0], c[1], c[2] ?? 0, c[3] ?? 0); }, c);
         await sleep(400);
         const file = `F04-crust-${c.join('_')}.png`;
         await shot(file);
         R.crust[c.join('/')] = await stillStats(file, F04_BOXES);
+        R.crust[c.join('/')].palette = await paletteOf(file, 'F04');
         log(`F04 crust ${c.join('/')}: ${JSON.stringify(R.crust[c.join('/')])}`);
       }
       await page.evaluate(async (c0) => { (await import('/src/world/terrain.js')).CRUST.value.set(...c0); }, c0);
@@ -728,9 +740,25 @@ try {
 
   /* M1a fix round (FIX LIST 11): F32's frame bar, the p95 presented-frame interval over 30 s (rAF spacing, the game loop
    * running on the staged frame), the median GPU (back-to-back readback), draws and triangles */
+  if (has('--f32') && DECKV.length && spent() < BUDGET_S) {
+    await stage('F32', 3000);
+    const d0 = await page.evaluate(async () => (await import('/src/world/island/aerial.js')).DECK.value.toArray());
+    run.F32deck = {};
+    for (const d of DECKV) {
+      await page.evaluate(async (d) => { (await import('/src/world/island/aerial.js')).DECK.value.set(d[0], d[1]); }, d);
+      await sleep(400);
+      const file = `F32-deck-${d.join('_')}.png`;
+      await shot(file);
+      run.F32deck[d.join('/')] = await stillStats(file, F32_BOXES);
+      log(`F32 deck ${d.join('/')}: ${JSON.stringify(run.F32deck[d.join('/')])}`);
+    }
+    await page.evaluate(async (d0) => { (await import('/src/world/island/aerial.js')).DECK.value.set(d0[0], d0[1]); }, d0);
+    await page.evaluate(unstageFrame);
+  }
   if (has('--f32') && spent() < BUDGET_S) {
     await stage('F32', 3000);
     await shot('F32.png');
+    run.F32still = await stillStats('F32.png', F32_BOXES);
     const r = await page.evaluate(async () => {
       const P = await import('/tools/perf/census-page.mjs'); const A = await import('/tools/perf/attrib-page.mjs');
       const C = window.__CTX__, E = C.engine;

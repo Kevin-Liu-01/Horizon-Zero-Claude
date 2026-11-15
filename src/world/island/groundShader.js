@@ -75,7 +75,7 @@ uniform float uSunTan;  // tan(elevation) of the sun or moon
 uniform float uHzWorldInv;
 uniform float uHzK;     // shadow strength: 1, or the calima's 0.45
 uniform vec4 uGroundR2; // M1a round 2: x the shade fill's chroma kept out (GROUND_AO), y the meadow gap tone variant
-uniform vec4 uCrust;    // M1a debt: the salt crust's x gain and y cool (1 = round 3's tint) (terrain.js CRUST)
+uniform vec4 uCrust;    // M1a debt: the salt crust's x gain, y cool (1 = round 3's tint), z rose-grey, w grain depth (terrain.js CRUST)
 vec3 gN; float gRough; float gAO; float gLiquid; float gSunVis = 1.0;
 /** Is the light above the terrain's skyline here? Long soft shadows from one lookup. */
 float gSkylineVis(vec2 xz) {
@@ -433,6 +433,10 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
       vec3 tintC = hue < 0.5 ? mix(vec3(1.0), vec3(0.93, 0.62, 0.52), smoothstep(0.15, 0.5, hue) * 0.4)
                              : mix(vec3(0.97, 0.85, 0.81), vec3(0.42, 0.13, 0.08), (hue - 0.5) * 2.0);
       c *= tintC * mix(vec3(1.0 - 0.055 * uCrust.y, 1.0 - 0.01 * uCrust.y, 1.0 + 0.075 * uCrust.y), vec3(1.0), smoothstep(0.1, 0.3, hue));
+      /* (M1a debt fix round 1: F04's palette 15.6 at 49aae31 against the bar's 12, the crust boxes L* 74-85 a* 0.9 against
+       * the swatch's 56.2 6.5 0.4: the swatch's crust is a rose-grey bed of crystals, not chalk) the rose-grey of the
+       * swatch, its linear ratio 1 : 0.78 : 0.83 against the frame's 1 : 0.96 : 0.94, by uCrust.z */
+      c *= mix(vec3(1.0), vec3(1.0, 0.82, 0.86), uCrust.z);
       // and the grain in the crust's own tone: the texture repeats, this does not
       c *= 1.0 + fineN * 0.22;
       // polygons, their raised white rims with a grey crack in each, and the rake's furrows
@@ -471,7 +475,9 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     float sGrain = grit * 0.45 + clod * 0.55;
     // (round 3: F04's mean luminance 32 % against the bar's 40) the gaps a shade less deep: 0.45 to 1.05, mean about 0.8
     // (round 3 fix) shallower still: 0.62 to 1.04, mean about 0.88
-    col *= mix(1.0, 0.62 + 0.42 * sGrain, sk);
+    /* (M1a debt fix round 1: the crust at 1 m read smooth plaster with dark dots, 25.4 dE2000 from the swatch) the gaps go
+     * back down by uCrust.w: 0.62 to 1.04 at 0, 0.32 to 1.10 at 1, so the crystals stand out of dark gaps as the swatch's do */
+    col *= mix(1.0, mix(0.62, 0.32, uCrust.w) + mix(0.42, 0.78, uCrust.w) * sGrain, sk);
     pert += vec3(gA4.b + gB4.b - 1.0, 0.0, gD4.g + gC4.b - 1.0) * 0.45 * sk;
     /* (a 1-2 cm crystal bed from gVoro(xz * 62) was tried at a000205 and taken out: at 1 m it read as a regular honeycomb of
      * equal cells with a straight shear in it, the cell hash losing precision at coordinates near 20,000) */

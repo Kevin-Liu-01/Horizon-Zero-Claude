@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { AERIAL, AERIAL_B, AERIAL_DOME, AERIAL_PARS, patchAerial } from './island/aerial.js';
+import { AERIAL, AERIAL_B, AERIAL_DOME, AERIAL_PARS, patchAerial, patchDeck } from './island/aerial.js';
 import { WORLD_SIZE, WORLD_HALF, PLAY_RADIUS, MESH_SPAN, MESH_SEGS } from './island/extent.js';
 import { REST_SITE, TUBES, SALT_FIELD } from './island/sites.js';
 import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './island/recipe.js';
@@ -235,20 +235,11 @@ const FAR_N = 1024;                      // texels a side of the far-field bake 
  * (x) and cool (y, 1 = round 3's tint); the ground shader's uCrust, one shared holder so a probe can try values */
 /* (measured as variants at 5f79f50, F04 still: 1/1 34.7 %, crust box c Lab 82.3 1 2.3; 1.2/1.3 36.9 %; 1.25/1.6 37.3 %,
  * 85.2 0.9 1.5; the grade's shoulder takes most of the gain: the rest is F04's framing, sites.js) */
-export const CRUST = { value: new THREE.Vector4(1.25, 1.6, 0, 0) };
-const DECK_ANCHOR = 'calTauC = calFogD.x * calSeg * calWw * calBreak;';
-function groundFogChunk() {
-  const c = THREE.ShaderChunk.fog_fragment;
-  if (!c.includes(DECK_ANCHOR)) { console.error('terrain: the cloud-deck anchor in fog_fragment moved; the ground keeps the shared fog'); return c; }
-  /* M1a round 3 (F32: the pale hard-edged wedge stood on: from 120 m over T1 the land behind the ridge, seen 2-6 deg down
-   * through 300-600 m of deck, went cloud-white (cap 36 x: optical depth 1.8-2.5) beside a clear ridge in front). The cap
-   * is a third as steep (12 x, from 1.2 deg down) and the deck's own depth on a ground ray is held to 1.1, so the far land
-   * keeps a hazed form instead of a white sheet with the ridge's hard outline cut out of it */
-  /* (M1a debt: F32's pale wedge stayed at fb6d5f0; the aerial term's fade on falling rays, AERIAL_B.y, changed nothing in
-   * F32 at 5f79f50, so the wedge is the deck) the deck on a ground ray two thirds as steep again and held to 0.6 (45 %
-   * of the air's colour at most, was 67 %): a lens at the deck's own height still sees the land through it */
-  return c.replace(DECK_ANCHOR, 'calTauC = min( min( calFogD.x * calSeg * calWw * calBreak, 8.0 * max( 0.0, - calVd.y - 0.02 ) ), 0.6 );');
-}
+/* (M1a debt fix round 1: F04's palette 15.6 at 49aae31, bar 12; the crust boxes L* 74-85 a* 0.9 against the swatch's
+ * 56.2 6.5 0.4, and by eye smooth plaster) z the swatch's rose-grey, w the grain's dark gaps (groundShader.js) */
+export const CRUST = { value: new THREE.Vector4(0.9, 0.5, 1, 1) };
+/* (M1a debt fix round 1) the cap is island/aerial.js DECK now, shared with the sea; patchDeck applies it. 483283a's values:
+ * 8 x per unit of fall, held to 0.6 */
 
 /* ---------------------------- fast grid reads (module scope) ---------------------- */
 function gridHeight(x, z) {
@@ -759,7 +750,7 @@ export class Terrain {
         .replace('#include <normal_fragment_begin>', GROUND_NORMAL)
         .replace('#include <aomap_fragment>', GROUND_AO);
       if (bake) shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', FAR_BAKE_OUT);
-      else { patchAerial(shader); shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', groundFogChunk()); }
+      else { patchAerial(shader); patchDeck(shader); }
   }
 
   _buildChunks(chunks) {
@@ -839,7 +830,7 @@ export class Terrain {
         .replace('#include <normal_fragment_begin>', GROUND_NORMAL)
         .replace('#include <aomap_fragment>', GROUND_AO);
       patchAerial(shader);
-      shader.fragmentShader = shader.fragmentShader.replace('#include <fog_fragment>', groundFogChunk());
+      patchDeck(shader);
     };
     far.customProgramCacheKey = () => 'cal-ground-far';
     this.ctx.environment?.registerMaterial?.(far);

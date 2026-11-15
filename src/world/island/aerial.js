@@ -64,3 +64,22 @@ export function patchAerial(shader) {
     .replace('#include <fog_pars_fragment>', AERIAL_PARS)
     .replace('#include <fog_fragment>', AERIAL_GLSL);
 }
+
+/* M1a debt fix round 1 (M1.1j: F32's pale sheet over the sea and the coast right of the ridge, the lens 120 m up inside the
+ * trade deck): the ground's cap on the deck's optical depth (terrain.js, round 2) as one shared uniform, so the sea takes
+ * the same cap as the land it meets (the sea drew the deck uncapped) and a probe can try values. x: the depth allowed per
+ * unit of the ray's fall below 1.1 deg (8 = 483283a's), y: the cap (0.6 = 483283a's). A lens below the deck (every
+ * ground-level frame) crosses none of it, so only a lens at 105 m or more sees a change */
+export const DECK = { value: new THREE.Vector2(8.0, 0.6) };
+const DECK_ANCHOR = 'calTauC = calFogD.x * calSeg * calWw * calBreak;';
+/** The environment's fog chunk with the deck capped by DECK (needs uDeck declared: patchDeck does both). */
+export function deckFogChunk() {
+  const c = THREE.ShaderChunk.fog_fragment;
+  if (!c.includes(DECK_ANCHOR)) { console.error('deck cap: the cloud-deck anchor in fog_fragment moved; the shared fog is kept'); return c; }
+  return c.replace(DECK_ANCHOR, 'calTauC = min( min( calFogD.x * calSeg * calWw * calBreak, uDeck.x * max( 0.0, - calVd.y - 0.02 ) ), uDeck.y );');
+}
+/** Patch a material's fragment source (inside onBeforeCompile): its fog_fragment becomes the capped chunk. */
+export function patchDeck(shader, src = '#include <fog_fragment>') {
+  shader.uniforms.uDeck = DECK;
+  shader.fragmentShader = 'uniform vec2 uDeck;\n' + shader.fragmentShader.replace(src, deckFogChunk());
+}
