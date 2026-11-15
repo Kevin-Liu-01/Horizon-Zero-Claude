@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { HOT } from '../lib/hot.js';
 import { hexToRgb, srgbToLinear } from '../lib/color.js';
+import { CoverMaskStub } from '../lib/cover-stub.js';
 
 /**
  * PEG TRANSECTS (instruments-a W1; bible §7.4 #1 "swarms of 3-6 hammer transect
@@ -25,10 +26,24 @@ import { hexToRgb, srgbToLinear } from '../lib/color.js';
  * cut cover along it (`ctx.terrain.cutCover([x0, z0, x1, z1], w)`, world-ground's
  * F-4 contract, called only when it exists).
  *
+ * BUILD M1.4d (instruments, M1b):
+ *   - A LINE IS LIVE WHILE ITS PEG IS. Each peg's head glow is an instance attribute
+ *     (`aLive`, 1 lit, 0 dark); `setLive(owner, false)` darkens every peg a Peg drove
+ *     when it dies, and the crossing test reads only segments whose Peg is alive. The
+ *     draw stays one instanced mesh.
+ *   - THE COVER MASK STUB. The reed cover (BUILD M1.6e, the world's one 256-square
+ *     cover mask) is not built, and the terrain has no `cutCover` yet. Until it does,
+ *     the cuts go into `this.cover`, a 256 x 256 stub mask at 0.25 m a cell (64 m
+ *     square, anchored on the first cut; `../lib/cover-stub.js`) that nothing else
+ *     reads: it hides nobody and draws nothing. It exists so the lane a swarm cuts can
+ *     be measured (1.0 m +- 0.2). When `ctx.terrain.cutCover` exists it is used instead.
+ *   - A Peg never drives a peg within `dedupe` m of one of its own (the walk back along
+ *     its line re-lays nothing).
+ *
  * Per frame: allocation-free (preallocated typed arrays; one Matrix4 scratch).
  */
 export const TRANSECT = Object.freeze({
-  spacing: 2.6, cap: 384, perOwner: 36, segMax: 6.5, crossR: 20, cutW: 1.0,
+  spacing: 2.6, cap: 384, perOwner: 36, segMax: 6.5, crossR: 20, cutW: 1.0, dedupe: 1.3,
   height: 0.46, sink: 0.12, headR: 0.03, glow: 2.4,
 });
 
@@ -84,6 +99,8 @@ export class TransectSystem {
     this.frame = -1;
     this.draws = 0;
     this.drawTotal = 0;
+    this.liveAttr = null;
+    this.cover = null;   // the stub cover mask, built on the first cut when the terrain has no cutCover
   }
 
   _build() {
@@ -92,12 +109,16 @@ export class TransectSystem {
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.0, name: 'peg-transects' });
     const gk = TRANSECT.glow;
     mat.onBeforeCompile = (sh) => {
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aGlow;\nvarying float vGlow;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;');
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aGlow;\nattribute float aLive;\nvarying float vGlow;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow * aLive;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGlow;')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow * vec3(${(lin[0] * gk).toFixed(4)}, ${(lin[1] * gk).toFixed(4)}, ${(lin[2] * gk).toFixed(4)});`);
     };
-    mat.customProgramCacheKey = () => 'cal-peg-transects-v1';
+    mat.customProgramCacheKey = () => 'cal-peg-transects-v2';
+    // a peg's head is lit while the Peg that drove it lives (per instance: no draw, no material per state)
+    this.liveAttr = new THREE.InstancedBufferAttribute(new Float32Array(TRANSECT.cap).fill(1), 1);
+    this.liveAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aLive', this.liveAttr);
     const mesh = new THREE.InstancedMesh(geo, mat, TRANSECT.cap);
     mesh.name = 'peg-transects';
     mesh.count = 0;
@@ -138,6 +159,7 @@ export class TransectSystem {
     const y = T && T.getHeight ? T.getHeight(x, z) : 0;
     this.px[i] = x; this.pz[i] = z;
     this.used[i] = 1; this.owner[i] = owner;
+    if (this.liveAttr) { this.liveAttr.array[i] = owner && owner.alive === false ? 0 : 1; this.liveAttr.needsUpdate = true; }
     const prev = rec.last;
     const dx = prev >= 0 ? x - this.px[prev] : 0, dz = prev >= 0 ? z - this.pz[prev] : 0;
     this.prev[i] = prev >= 0 && this.used[prev] && dx * dx + dz * dz <= TRANSECT.segMax * TRANSECT.segMax ? prev : -1;
@@ -156,11 +178,46 @@ export class TransectSystem {
     if (i >= this.mesh.count) this.mesh.count = i + 1;
     this.mesh.instanceMatrix.needsUpdate = true;
     this.live++;
-    // F-4: the line cuts the reed (world-ground's contract, when it exists)
-    if (this.prev[i] >= 0 && T && typeof T.cutCover === 'function') {
-      try { T.cutCover([this.px[prev], this.pz[prev], x, z], TRANSECT.cutW); this.cuts++; } catch (e) { /* contract not live */ }
+    // F-4: the line cuts the reed (world-ground's contract when it exists; else the stub mask, M1.4d)
+    if (this.prev[i] >= 0) {
+      if (T && typeof T.cutCover === 'function') {
+        try { T.cutCover([this.px[prev], this.pz[prev], x, z], TRANSECT.cutW); this.cuts++; } catch (e) { /* contract not live */ }
+      } else {
+        if (!this.cover) this.cover = new CoverMaskStub();
+        this.cover.cutCover([this.px[prev], this.pz[prev], x, z], TRANSECT.cutW);
+        this.cuts++;
+      }
     }
     return i;
+  }
+
+  /** Is one of `owner`'s own pegs within `r` m of (x, z)? (cold: once per drive) */
+  nearOwn(owner, x, z, r = TRANSECT.dedupe) {
+    const rec = this.rings.get(owner);
+    if (!rec) return false;
+    const r2 = r * r;
+    for (let k = 0; k < rec.ring.length; k++) {
+      const i = rec.ring[k];
+      if (i < 0 || !this.used[i]) continue;
+      const dx = this.px[i] - x, dz = this.pz[i] - z;
+      if (dx * dx + dz * dz < r2) return true;
+    }
+    return false;
+  }
+
+  /** Light or darken every peg `owner` drove (its line is live while it is). Cold: on death. */
+  setLive(owner, live) {
+    const rec = this.rings.get(owner);
+    if (!rec || !this.liveAttr) return 0;
+    let n = 0;
+    for (let k = 0; k < rec.ring.length; k++) {
+      const i = rec.ring[k];
+      if (i < 0 || !this.used[i]) continue;
+      this.liveAttr.array[i] = live ? 1 : 0;
+      n++;
+    }
+    this.liveAttr.needsUpdate = true;
+    return n;
   }
 
   _freeSlot(i) {
@@ -202,6 +259,8 @@ export class TransectSystem {
         for (let i = 0; i < N; i++) {
           const j = this.prev[i];
           if (j < 0 || !this.used[i]) continue;
+          const ow = this.owner[i];
+          if (!ow || ow.alive === false) continue;   // a dead Peg's line is not live
           const ax = this.px[j], az = this.pz[j], bx = this.px[i], bz = this.pz[i];
           // segment-segment intersection (her step vs the line)
           const ex = bx - ax, ez = bz - az;
@@ -241,8 +300,10 @@ export class TransectSystem {
   }
 
   audit() {
-    return { live: this.live, owners: this.rings.size, drawn: !!this.mesh, count: this.mesh ? this.mesh.count : 0,
-      crossings: this.crossings, raised: this.raised, cuts: this.cuts, draws: this.draws };
+    let lit = 0;
+    if (this.liveAttr) for (let i = 0; i < TRANSECT.cap; i++) if (this.used[i] && this.liveAttr.array[i] > 0) lit++;
+    return { live: this.live, lit, owners: this.rings.size, drawn: !!this.mesh, count: this.mesh ? this.mesh.count : 0,
+      crossings: this.crossings, raised: this.raised, cuts: this.cuts, draws: this.draws, cover: this.cover ? 'stub' : 'terrain' };
   }
 
   dispose() {
@@ -252,6 +313,7 @@ export class TransectSystem {
     this.mesh.material.dispose();
     this.mesh.dispose();
     this.mesh = null;
+    this.liveAttr = null;
     this.live = 0;
     this.pegsAlive = 0;   // live Peg machines: the draw lives exactly as long as one does (A90: never a stray object)
     this.used.fill(0);

@@ -6,20 +6,24 @@ import { snapSockets } from '../../entities/machines/rig/sockets.js';
 import { ExpansionMachine } from '../../entities/machines/rig/expansion-base.js';
 import { liftExtras, seedAuthoredWeights, weightAudit } from '../lib/generated.js';
 import { prepareEntry, installHull } from '../lib/hull.js';
-import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup } from '../lib/kindkit.js';
+import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup, seatFeet } from '../lib/kindkit.js';
 import { transectsOf, TRANSECT } from './peg-transect.js';
+import { joinSwarm, leaveSwarm } from './peg-swarm.js';
 
 /**
- * PEG — bible §7.4 #1 (small; the swarm that draws the lines, role `swarm`).
- * instruments-a, W1. Model: `tools/build/instruments/gen-peg.mjs`.
+ * PEG — BIBLE §7.4 #1 (small; the swarm that draws the lines, role `swarm`); BUILD M1.4d.
+ * Model: `tools/build/instruments/gen-peg.mjs`, on the M1.4a hull kit (Q11 default (a)).
  *
- * A milk churn on four short bronze legs: one lamp at the front, a PISTON
- * MALLET on its back, a rack of vermilion/white survey pegs on each flank (the
- * TOOL: Pry -> bronze pins; no Peg Shot after). A swarm of 3-6 walks straight
- * lines and, every `TRANSECT.spacing` metres, stops and DRIVES a peg with the
- * mallet: the pegs are a transect (`./peg-transect.js`: one instanced draw for
- * every peg of every Peg; crossing a line within 20 m of a Plumb raises the Plumb
- * to wary; the line cuts the reed through world-ground's `cutCover`).
+ * A white-enamel canister on four short legs: a small kit LAMP DRUM on the front-left
+ * shoulder (the `head` bone swivels it; off the round cap so it reads as a lamp, not
+ * a lens or an eye), a PISTON MALLET on its back, a rack of vermilion-capped survey
+ * pegs on each flank (the TOOL: Pry -> bronze pins; no Peg Shot after) and a brass
+ * RANGING POLE to 1.90 m. A swarm of 3-6 (`./peg-swarm.js`) walks abreast along one
+ * line and, every `TRANSECT.spacing` metres, each member stops and DRIVES a peg with
+ * the mallet where the hammer lands: the pegs are a transect (`./peg-transect.js`:
+ * one instanced draw for every peg of every Peg; a peg's head glows while its Peg
+ * lives; crossing a live line within 20 m of a Plumb raises the Plumb to wary; the
+ * line cuts a 1 m lane in the cover mask, the stub until the reed cover exists).
  *
  * Attacks (bible): MALLET (the piston arm lifts and slams: a short lunge), PEG
  * SHOT (one peg fired from the rack: a knock), SWARM RUSH (a committed lunge).
@@ -28,11 +32,16 @@ import { transectsOf, TRANSECT } from './peg-transect.js';
  */
 
 const URL = '/models/instruments/peg.glb';
-const LAMP_R = 0.15;
-const HEIGHT = 0.924;
+const LAMP_R = 0.09;
+/** The lamp's weak point (m): the drum's bezel (0.108 m) and a little over; any hit inside it kills (mult 8 x impact). */
+const LAMP_WP_R = 0.12;
+/** The model's height (m): `r5Size[1]` of the GLB, the ranging pole's spike (the loader scales the bbox to this). */
+const HEIGHT = 1.9;
+/** The mallet's slam (rad, front down): the hammer's face reaches the peg's head (TRANSECT.height - sink). */
+const SLAM = 0.34;
 const QUAD_WALK = { stride: 0.34, duty: 0.6, lift: 0.07, offsets: { LF: 0, RH: 0, RF: 0.5, LH: 0.5 } };   // trot
 const QUAD_RUN = { stride: 0.7, duty: 0.44, lift: 0.11, offsets: { LF: 0, RH: 0.04, RF: 0.5, LH: 0.54 } };
-/** The drive: stop, lift the mallet, slam the peg in. */
+/** The drive: stop, lift the mallet, slam the peg in where the hammer lands. */
 export const DRIVE = Object.freeze({ seconds: 0.75, strikeAt: 0.42 });
 
 export class Peg extends ExpansionMachine {
@@ -44,7 +53,7 @@ export class Peg extends ExpansionMachine {
       yawFix: 0,
       maxHealth: 46, armor: 0.0, level: 3,
       walkSpeed: 1.25, runSpeed: 5.2, turnRate: 3.2,
-      sightRange: 26, hearRange: 18, eyeHeight: 0.55,
+      sightRange: 26, hearRange: 18, eyeHeight: 0.8,
       attackRange: 1.5, bodyRadius: 0.45,
       ...opts,
     });
@@ -57,12 +66,16 @@ export class Peg extends ExpansionMachine {
     this._trav = 0.5; this._trav = 0;
     this._lx = 0.5; this._lx = this.position.x;
     this._lz = 0.5; this._lz = this.position.z;
+    this._strikeZ = 0.5; this._strikeZ = Array.isArray(S.strike) ? S.strike[2] - 0.03 : 0.62;
+    this._linesDark = false;
+    joinSwarm(this);
     this._seeded = seedAuthoredWeights(this);
     const rack = detachTool(this, 'peg-rack');
 
-    this.addLamp(S.lamp, { radius: LAMP_R });
-    // any hit on the lamp kills a Peg (bible §7.4 #1)
-    this.addWeakPoint('lamp', this.body, S.lamp[0], S.lamp[1], S.lamp[2], 0.11, 8);
+    this.addLamp(S.lamp, { radius: S.lampR || LAMP_R });
+    // any hit on the lamp kills a Peg (bible §7.4 #1): 8 x the impact of the weakest arrow drawn at all (Reed 30 at
+    // full draw, about a quarter underdrawn: 7.5 x 8 = 60) is over its 46 health
+    this._lampWp = this.addWeakPoint('lamp', this.body, S.lamp[0], S.lamp[1], S.lamp[2], LAMP_WP_R, 8);
     this.lootTable = rollLoot([{ id: 'metal-shards', min: 2, max: 4 }]);
 
     attachRigRuntime(this, { quantise: false });
@@ -75,10 +88,12 @@ export class Peg extends ExpansionMachine {
       walk: QUAD_WALK, run: QUAD_RUN, runRef: 5.2,
       rollAmp: 0.03, impactAmp: 0.04, breatheRate: 1.4, stepDustSpeed: 2.5,
       turnRadius: 0.5, lookClampYaw: 0.7, stanceFlex: 0.06,
-      fidgets: [{ name: 'sniff-line', head: 0.25, dur: 1.4 }],
+      fidgets: [{ name: 'sight-line', head: 0.25, dur: 1.4 }],
     });
     this.gait.update(0.016, 0);
     foldMachineMeshes(this);
+    // the ranging pole and the lamp drum are thin: never size-culled (a swarm reads as a row of poles)
+    this.root.traverse((o) => { if (o.isMesh) o.userData.noSizeCull = true; });
     snapSockets(this);
     installHull(this);
     transectsOf(manager)?.register(this);
@@ -93,6 +108,16 @@ export class Peg extends ExpansionMachine {
 
   onDeathPose(k, deathT) { this.gait.deathPose(k, deathT, 'quad'); }
 
+  /** Stand on its feet where it now stands, after a move or turn with the update stopped (lib/kindkit.js `seatFeet`). */
+  seatFeet() { return seatFeet(this); }
+
+  /** Its line dies with it: every peg it drove goes dark and stops counting as a live transect. */
+  _die() {
+    const r = super._die();
+    if (!this._linesDark) { this._linesDark = true; this.manager?.transects?.setLive(this, false); }
+    return r;
+  }
+
   /** The transect: walk, stop, drive a peg every TRANSECT.spacing metres (calm only). */
   _statePatrol(dt) {
     const sc = this.sc;
@@ -101,8 +126,8 @@ export class Peg extends ExpansionMachine {
       this._driveT += dt;
       sc._speed += (0 - sc._speed) * (1 - Math.exp(-10 * dt));
       if (t0 < DRIVE.strikeAt && this._driveT >= DRIVE.strikeAt) {
-        const h = sc.heading;
-        transectsOf(this.manager)?.add(this, this.position.x + Math.sin(h) * 0.62, this.position.z + Math.cos(h) * 0.62);
+        const h = sc.heading, k = this._strikeZ;
+        transectsOf(this.manager)?.add(this, this.position.x + Math.sin(h) * k, this.position.z + Math.cos(h) * k);
         this._drove++;
       }
       if (this._driveT >= DRIVE.seconds) this._driveT = -1;
@@ -113,7 +138,12 @@ export class Peg extends ExpansionMachine {
     const dx = this.position.x - this._lx, dz = this.position.z - this._lz;
     this._lx = this.position.x; this._lz = this.position.z;
     if (sc._waitT <= 0) this._trav += Math.sqrt(dx * dx + dz * dz);
-    if (this._trav >= TRANSECT.spacing && this.state === 'patrol') { this._trav = 0; this._driveT = 0; }
+    if (this._trav >= TRANSECT.spacing && this.state === 'patrol') {
+      this._trav = 0;
+      // the walk back along its own line lays nothing new
+      const h = sc.heading, k = this._strikeZ;
+      if (!transectsOf(this.manager)?.nearOwn(this, this.position.x + Math.sin(h) * k, this.position.z + Math.cos(h) * k)) this._driveT = 0;
+    }
   }
 
   update(dt, t) {
@@ -125,7 +155,7 @@ export class Peg extends ExpansionMachine {
   /** Its pegs leave the world with it (`ai/sites.js` dispose ends in disposeFx with `_disposed` set). */
   disposeFx(keepBeacon = false) {
     const r = super.disposeFx(keepBeacon);
-    if (this._disposed) this.manager?.transects?.release(this);
+    if (this._disposed) { this.manager?.transects?.release(this); leaveSwarm(this); }
     return r;
   }
 
@@ -141,13 +171,13 @@ export class Peg extends ExpansionMachine {
     const d = this._driveT;
     if (d >= 0) {
       const s = DRIVE.strikeAt;
-      lift = d < s ? -1.0 * Math.sin((d / s) * 1.5708) : 0.32 * Math.max(0, 1 - (d - s) / 0.25);
+      lift = d < s ? -1.0 * Math.sin((d / s) * 1.5708) : SLAM * Math.max(0, 1 - (d - s) / 0.25);
     }
     const a = this._attack;
     if (a !== null && a !== undefined) {
       const g = a.kind === 'mallet' ? this._gMallet : a.kind === 'peg-shot' ? this._gRack : this._gLamp;
       telegraphOnWindup(this, a, g, 0.05);
-      if (a.kind === 'mallet') lift = a.phase === 'windup' ? -1.05 * a.phaseT : a.phase === 'strike' ? -1.05 + 1.4 * a.phaseT : 0.35 * (1 - a.phaseT);
+      if (a.kind === 'mallet') lift = a.phase === 'windup' ? -1.05 * a.phaseT : a.phase === 'strike' ? -1.05 + (1.05 + SLAM) * a.phaseT : SLAM * (1 - a.phaseT);
       else if (a.kind === 'swarm-rush') lift = -0.5 * (a.phase === 'windup' ? a.phaseT : a.phase === 'strike' ? 1 : 1 - a.phaseT);
     }
     if (lift !== 0) gait.rotX(this.rig.tail[0], lift);
@@ -179,6 +209,7 @@ export default {
   },
   audio: { set: 'peg', mass: 'small' },
   doctrine: {
-    spawn: [{ n: 3, x: 40, z: -30, route: 16, routePoints: 2, poi: 'peg-transect' }],
+    // a swarm of four (3-6): spawned in one loop, they join one swarm on the first one's line (./peg-swarm.js)
+    spawn: [{ n: 4, x: 40, z: -30, route: 16, routePoints: 2, poi: 'peg-transect' }],
   },
 };
