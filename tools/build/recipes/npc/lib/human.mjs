@@ -585,6 +585,13 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     own = await OUT.armory();
     const byName = new Map(root.listSkins()[0].listJoints().map((jn, i) => [jn.getName(), i]));
     const pel = byName.get('pelvis');
+    // M1.5b round 2 (the review: "Ansel's sash tails are rigid to the pelvis"): the knot's swing socket becomes a one-link cloth chain
+    // from the knot down the tails (0.32 m), which the people runtime swings as it swings every hanging chain (people/chains.js)
+    if (own.swing) {
+      const k = own.swing, sg = Math.sign(k[0]) || 1;
+      const [sj] = chain('sashSwing', 'pelvis', [k, [k[0] + sg * 0.015, k[1] - 0.32, k[2] + 0.008]]);
+      byName.set('sash_swing', sj);
+    }
     const remap = own.jointNames.map((n) => (byName.has(n) ? byName.get(n) : pel));
     const COVER = new Set(['underyoke', 'smock', 'skirt', 'under', 'sleeves', 'trousers', 'boots', 'vest', 'girdle', 'sashband', 'binds', 'cuffs']);
     for (const p of own.parts) {

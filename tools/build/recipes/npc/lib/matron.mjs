@@ -426,6 +426,8 @@ export async function matronOutfit() {
       detailRep: +((base.W / layout.D) / 0.026).toFixed(1),
       slots: [...new Set(parts.map((p) => p.slot))],
       hip: jointPos(base.doc, 'pelvis'),
+      // (M1.5b round 2: where the sash's knot pivots, so the person build can hang its tails on a chain of their own)
+      swing: jointNames.includes('sash_swing') ? jointPos(base.doc, 'sash_swing') : null,
     };
   } finally {
     Object.assign(COL, saved);
