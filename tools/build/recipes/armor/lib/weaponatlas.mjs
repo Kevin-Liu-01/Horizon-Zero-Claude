@@ -113,7 +113,11 @@ export function weaponTrim() {
     const bev = sstep(0.64, 0.7, t.v), band = sstep(0.865, 0.885, t.v);
     over(o, [246, 220, 168], band * 0.82);
     o.metal = pat < 0.38 && bev < 0.3 ? 0.55 : 1;
-    o.rough = band > 0.5 ? 0.23 + 0.01 * hm : bev > 0.5 ? 0.27 + 0.03 * hm : mix(0.44, 0.3, edge) + 0.16 * (hm - 0.5);
+    // (M1a fix round 1, the judge: "the lance blade blooms white-hot" in F08, F11 and F12: under the frame set's flat studio light
+    // the honed faces at roughness 0.23-0.3 mirrored the bright surround into a white bloom over the whole blade). The flats are
+    // planished bronze at 0.5-0.6, the bevel 0.4, only the 3 mm band honed at 0.32: a glint along the edge, not a lamp
+    o.rough = band > 0.5 ? 0.32 + 0.02 * hm : bev > 0.5 ? 0.4 + 0.04 * hm : mix(0.58, 0.48, edge) + 0.14 * (hm - 0.5);
+    { const q = 0.86; o.r *= q; o.g *= q; o.b *= q; }
     o.h = 0.0006 * (pl - 0.5) * (1 - band) + 0.0005 * (hm - 0.5) * (1 - band); o.det = 0; o.wear = 0.3;
   });
   T.cell('bronzeCast', 96, 96, (t, o) => {

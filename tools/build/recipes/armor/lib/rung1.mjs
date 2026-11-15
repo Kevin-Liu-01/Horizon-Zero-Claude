@@ -75,6 +75,35 @@ export function gloveShell(part, body, jp, { side = 'l', off = 0.0015, rect, cuf
   return part;
 }
 
+/**
+ * A lining on her body (M1a fix round 1, the judge: "skin, the breast, shows in the armhole in profile" in F09 and F13): every
+ * body triangle whose three corners pass `inside(x, y, z)` copied `off` out along its normals with the body's own skin, as the
+ * gloves are, so it never parts from her in any pose. uv planar on (z, y) inside `rect`.
+ */
+export function bodyShell(part, body, inside, { off = 0.002, rect, span = [0.2, 0.2], org = [0, 0] } = {}) {
+  const n = body.pos.length / 3;
+  const ok = new Uint8Array(n);
+  for (let i = 0; i < n; i++) ok[i] = inside(body.pos[i * 3], body.pos[i * 3 + 1], body.pos[i * 3 + 2]) ? 1 : 0;
+  const map = new Int32Array(n).fill(-1);
+  const base = part.pos.length / 3;
+  let count = 0;
+  for (let t = 0; t < body.idx.length; t += 3) {
+    const a = body.idx[t], b = body.idx[t + 1], c = body.idx[t + 2];
+    if (!ok[a] || !ok[b] || !ok[c]) continue;
+    for (const i of [a, b, c]) {
+      if (map[i] >= 0) continue;
+      map[i] = base + count++;
+      const nn = [body.nrm[i * 3], body.nrm[i * 3 + 1], body.nrm[i * 3 + 2]];
+      const p = [body.pos[i * 3] + nn[0] * off, body.pos[i * 3 + 1] + nn[1] * off, body.pos[i * 3 + 2] + nn[2] * off];
+      part.pos.push(...p); part.nrm.push(...nn);
+      part.uv.push(rect[0] + rect[2] * clamp((p[2] - org[0]) / span[0]), rect[1] + rect[3] * clamp((p[1] - org[1]) / span[1]));
+      for (let k = 0; k < 4; k++) { part.jnt.push(body.jnt[i * 4 + k]); part.wgt.push(body.wgt[i * 4 + k]); }
+    }
+    part.idx.push(map[a], map[b], map[c]);
+  }
+  return part;
+}
+
 /* ------------------------------------------------------------------ rolled edges */
 
 /**
@@ -159,6 +188,83 @@ export function scarfCowl(part, field, J, { cols = 40, rows = 11, cz = -0.035, s
   }
   recomputeNormals(part);
   part.scarf = { cz, yTop, yBot };
+  return part;
+}
+
+/**
+ * M1a fix round 1 (the judge, three rounds running: "a smooth cowl or bib", "a flange", "a collar"): the neck scarf rebuilt
+ * as what the turnaround draws, a long length of cloth WOUND loosely round the neck and bunched: `loops` fat rolls of
+ * cloth, each a closed tube (no open edge, so no paper edge and no inside to see), stacked so each overlaps the one under
+ * it, the lowest lying on the trapezius and dipping low in front, the top one under the jaw. Each roll is lumpy along its
+ * length (the cloth bunched as it was wound: its cross-section swells and shrinks, 0.55-1.25 of its mean) and creased
+ * round its cross-section, its inner face flattened onto her (never inside her). Bind space as rung1 (+Z her front).
+ * uv metric: u along the roll, v round its cross-section, each roll in its own band of v.
+ */
+export function scarfRoll(part, field, J, { cols = 36, sides = 7, cz = -0.035, seed = 2, loops = null } = {}) {
+  const front = (th) => Math.max(0, Math.sin(th)) ** 2;
+  const L = loops || [
+    // y(th) of the roll's centre, a = radial half-thickness, b = vertical half-height, slack = how far it stands off the neck
+    { y: (th) => 1.474 - 0.04 * front(th) + 0.006 * Math.sin(th + 0.7), a: 0.017, b: 0.024, slack: 0.032, ph: 0.3 },
+    { y: (th) => 1.499 - 0.024 * front(th) - 0.004 * Math.sin(th + 2.1), a: 0.015, b: 0.021, slack: 0.02, ph: 2.2 },
+    { y: (th) => 1.521 - 0.012 * front(th) + 0.004 * Math.sin(th * 2 + 1.0), a: 0.013, b: 0.016, slack: 0.01, ph: 4.1 },
+    { y: (th) => 1.537 - 0.004 * front(th), a: 0.0095, b: 0.0095, slack: 0.003, ph: 5.3 },
+  ];
+  const keep = (q) => Math.abs(q.x) < 0.12;
+  const neck = (y, th, dth = 0.22) => field.radial(y, th, 0, cz, 0.008, dth, keep) || 0.06;
+  const base0 = part.pos.length / 3;
+  const jN = J('neck_01'), jS = J('spine_03'), jCl = J('clavicle_l'), jCr = J('clavicle_r');
+  let vBand = 0;
+  L.forEach((lp, li) => {
+    const base = part.pos.length / 3;
+    // the neck's own radius at the top roll's height, round the neck: no roll stands further off it than its slack
+    const ring = [];
+    for (let c = 0; c <= cols; c++) {
+      const th = -Math.PI / 2 + TAU * (c % cols) / cols, y = lp.y(th);
+      const lump = 0.9 + 0.35 * Math.sin(th * (3 + li) + lp.ph + seed) * (0.6 + 0.4 * noise3(th * 1.7, li, 2.3 + seed)) + 0.12 * noise3(th * 4.1, li * 3.1, 7.7);
+      const a = lp.a * clamp(lump, 0.55, 1.25), b = lp.b * clamp(0.5 + 0.5 * lump, 0.7, 1.15);
+      const rN = neck(Math.max(y, 1.525), th);
+      const rb = neck(y, th);
+      const rc = Math.min(rb, rN + lp.slack) + a * 0.85;
+      ring.push({ th, y, a, b, rc });
+    }
+    // round the roll, low-passed once (the lumps stay, the steps go)
+    const sm = ring.map((q, c) => {
+      const p = ring[(c - 1 + cols) % cols], n = ring[(c + 1) % cols];
+      return { ...q, rc: (p.rc + 2 * q.rc + n.rc) / 4, a: (p.a + 2 * q.a + n.a) / 4, b: (p.b + 2 * q.b + n.b) / 4 };
+    });
+    let acc = 0;
+    for (let c = 0; c <= cols; c++) {
+      const q = sm[c % cols];
+      if (c) { const p = sm[c - 1]; acc += Math.hypot(q.rc * Math.cos(q.th) - p.rc * Math.cos(p.th), q.y - p.y, q.rc * Math.sin(q.th) - p.rc * Math.sin(p.th)); }
+      const R = [Math.cos(q.th), 0, Math.sin(q.th)];
+      for (let s = 0; s <= sides; s++) {
+        const phi = TAU * (s % sides) / sides;
+        // creases round the cross-section, set by where along the roll they fall (the cloth's own folds)
+        const crease = 1 + 0.16 * fold01(noise3(q.th * 2.6 + li * 5, phi * 0.9, 3.3 + seed)) - 0.08;
+        let rr = q.rc + Math.cos(phi) * q.a * crease;
+        const y = q.y + Math.sin(phi) * q.b * crease;
+        // the inner face lies on her, never in her
+        const rIn = neck(y, q.th, 0.36) + 0.0025;
+        // (and its outer face stays out over a strap under it: a strap never prints through the roll)
+        rr = Math.max(rr, rIn + 0.0015 + 0.7 * q.a * Math.max(0, Math.cos(phi)));
+        const p = [R[0] * rr, y, cz + R[2] * rr];
+        part.pos.push(...p);
+        part.nrm.push(R[0] * Math.cos(phi), Math.sin(phi), R[2] * Math.cos(phi));
+        part.uv.push(acc, vBand + (s / sides) * TAU * 0.5 * (q.a + q.b) / 2 / 1);
+        const wn = sstep(1.47, 1.535, y), cl = (1 - wn) * 0.3 * Math.abs(Math.cos(q.th));
+        part.jnt.push(jN, jS, Math.cos(q.th) >= 0 ? jCl : jCr, 0); part.wgt.push(wn, 1 - wn - cl, cl, 0);
+      }
+    }
+    const cc = sides + 1;
+    for (let c = 0; c < cols; c++) for (let s = 0; s < sides; s++) {
+      const a = base + c * cc + s, b = a + 1, d = a + cc, e = d + 1;
+      part.idx.push(a, b, d, b, e, d);
+    }
+    vBand += TAU * lp.a * 1.3 + 0.01;
+  });
+  void base0;
+  recomputeNormals(part);
+  part.scarf = { cz, yTop: (th) => L[L.length - 1].y(th) + L[L.length - 1].b, yBot: (th) => L[0].y(th) - L[0].b };
   return part;
 }
 

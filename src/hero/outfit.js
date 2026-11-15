@@ -120,6 +120,16 @@ export class SashSwing {
   }
 }
 
+let _casterMat = null;
+/** The one material every hero caster shares: no colour, no depth in the main pass (it is never drawn there). */
+function casterMaterial() {
+  if (!_casterMat) {
+    _casterMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false });
+    _casterMat.name = 'hero-caster';
+  }
+  return _casterMat;
+}
+
 export class HeroOutfit {
   constructor(player) {
     this.player = player;
@@ -144,6 +154,7 @@ export class HeroOutfit {
     this._ensureSockets(entry);
     // the two hero casters (plan §4.1, <= 2 x 3 cascades): body skin + outfit
     this.meshes = bindPart(this.player.model, entry.root, `outfit:${row}`, { castShadow: true });
+    this._bindCaster();
     this._initSwing(entry, meta);
     this.set = meta.set || row;
     this.variant = meta.variant || row;
@@ -214,9 +225,45 @@ export class HeroOutfit {
     return r;
   }
 
+  /**
+   * M1.2g (M1a fix round 1): a set that carries a `Caster` (armor/lib/caster.mjs: her body and the set's large pieces, ~3 k
+   * triangles, a few mm inside her) casts for both her skin and the set: those two stop casting while it is on. The proxy is
+   * never drawn in the main pass (the people's way, src/world/npc/people/person.js) and shares the set mesh's skeleton.
+   */
+  _bindCaster() {
+    const caster = this.meshes.find((m) => m.name === 'Caster');
+    this._caster = caster || null;
+    if (!caster) return;
+    const main = this.meshes.find((m) => m !== caster);
+    if (main && caster.skeleton !== main.skeleton && caster.skeleton.bones.length === main.skeleton.bones.length) {
+      caster.skeleton.dispose();
+      caster.skeleton = main.skeleton;
+    }
+    for (const m of this.meshes) m.castShadow = m === caster;
+    caster.material = casterMaterial();
+    caster.receiveShadow = false;
+    caster.userData.heroCaster = true;
+    const g = caster.geometry;
+    caster.onBeforeRender = () => { g.drawRange.count = -1; };
+    caster.onAfterRender = () => { g.drawRange.count = Infinity; };
+    this._skinCasts(false);
+  }
+
+  /** Brea's own skin (the body mesh with the hide mask) casts or not. */
+  _skinCasts(on) {
+    this.player.model.traverse((o) => { if (o.isSkinnedMesh && o.geometry.getAttribute('_hidemask')) o.castShadow = on; });
+  }
+
   unequip() {
     this.swing = null;
     if (!this.row) return { skeletons: 0 };
+    if (this._caster) {
+      // (the shared skeleton is the set mesh's: released once, with it)
+      const main = this.meshes.find((m) => m !== this._caster);
+      if (main && this._caster.skeleton === main.skeleton) this._caster.skeleton = null;
+      this._caster = null;
+      this._skinCasts(true);
+    }
     const r = releasePart(this.meshes, this.player);
     this.meshes = [];
     this.body?.apply(0);
@@ -234,7 +281,7 @@ export class HeroOutfit {
    */
   _prepare(entry, meta) {
     entry.root.traverse((o) => {
-      if (!o.isSkinnedMesh) return;
+      if (!o.isSkinnedMesh || o.name === 'Caster') return;
       const mat = o.material;
       if (meta.sharedAtlas && !mat.map) {
         let src = null;
@@ -266,10 +313,13 @@ export class HeroOutfit {
   }
 
   info() {
-    let tris = 0;
-    for (const m of this.meshes) tris += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
+    let tris = 0, casterTris = 0;
+    for (const m of this.meshes) {
+      const n = (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
+      if (m === this._caster) casterTris += n; else tris += n;
+    }
     return {
-      row: this.row, set: this.set, variant: this.variant ?? null, meshes: this.meshes.length, tris,
+      row: this.row, set: this.set, variant: this.variant ?? null, meshes: this.meshes.length - (this._caster ? 1 : 0), tris, casterTris,
       bodyVisibleTris: this.body ? this.body.visibleTris() : null,
       bodyHiddenTris: this.body ? this.body.hiddenTris : 0,
     };

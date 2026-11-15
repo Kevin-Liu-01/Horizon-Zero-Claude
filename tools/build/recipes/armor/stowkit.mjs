@@ -434,12 +434,17 @@ export async function build({ out = ROOT } = {}) {
     const NF = 9, NT = 13;
     const tab = new Float64Array(NF * NT);
     {
-      const bp = base.bodyPart.pos;
-      for (let i = 0; i < bp.length; i += 3) {
+      // (M1a fix round 1, the judge: "the left bracer is violet cloth with no brass cap" in F08-F10): the outfit's wound forearm
+      // wrap stands 11-16 mm off her skin, so a cuff 7.5 mm off the skin lay INSIDE the wrap and only its crescent showed through
+      // the violet. The cuff now clears the wrap itself by 2.5 mm (its points count 5 mm less than the skin's +7.5 mm)
+      const wrapL = base.parts.find((p) => p.slot === 'armwrap');
+      const srcs = [[base.bodyPart.pos, 0], ...(wrapL ? [[wrapL.pos, -0.005]] : [])];
+      for (const [bp, adj] of srcs) for (let i = 0; i < bp.length; i += 3) {
+        if (adj && bp[i] < 0) continue;
         const rel = v3.sub([bp[i], bp[i + 1], bp[i + 2]], forearm.at);
         const t = v3.dot(rel, forearm.X) / 0.17;
         if (t < -0.15 || t > 1.15) continue;
-        const y = v3.dot(rel, forearm.Y), z = v3.dot(rel, forearm.Z), rr = Math.hypot(y, z);
+        const y = v3.dot(rel, forearm.Y), z = v3.dot(rel, forearm.Z), rr = Math.hypot(y, z) + adj;
         if (rr > 0.08) continue;
         const ph = Math.atan2(y, z);
         for (let a = 0; a < NF; a++) for (let b = 0; b < NT; b++) {

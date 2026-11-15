@@ -151,7 +151,7 @@ export class HeroRig {
 
   info() {
     const model = this.player.model;
-    let draws = 0, tris = 0, casters = 0;
+    let draws = 0, tris = 0, casters = 0, casterTris = 0;
     const meshes = [];
     const skeletons = new Set();
     model.traverse((o) => {
@@ -162,12 +162,14 @@ export class HeroRig {
       const g = o.geometry;
       const idxN = g.index ? g.index.count : g.attributes.position.count;
       const n = Math.min(idxN, g.drawRange.count) / 3;
+      // (M1.2g: a set's shadow proxy is drawn in the shadow passes only, never in the main pass: not a main draw)
+      if (o.userData.heroCaster) { casters++; casterTris += n; return; }
       draws++; tris += n; if (o.castShadow) casters++;
       if (o.isSkinnedMesh && o.skeleton) skeletons.add(o.skeleton);
       meshes.push({ name: o.name, tris: Math.round(n), cast: o.castShadow, part: o.userData.heroPart || 'body' });
     });
     return {
-      brea: this.isBrea, draws, tris: Math.round(tris), casters, skeletons: skeletons.size, meshes,
+      brea: this.isBrea, draws, tris: Math.round(tris), casters, casterTris: Math.round(casterTris), skeletons: skeletons.size, meshes,
       outfit: this.outfit?.info() ?? null, kit: this.kit?.info() ?? null,
       lanceOut: this._lanceOut, bowOut: this._bowOut,
     };
