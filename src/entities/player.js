@@ -4944,7 +4944,7 @@ void main() {
     /** Delivered forward elevation (rad, + = up): what the gates measure. */
     this.camElev = Math.asin(THREE.MathUtils.clamp(ly, -1, 1));
     this.camElevWant = elevReq;
-    /* M1.1h — THE HORIZON LOW, THE WORLD TALL (no ground-staring). Out of the aim the lens looks
+    /* M1.1h — THE SKYLINE LOW, THE WORLD TALL (no ground-staring). Out of the aim the lens looks
      * `FRAME_TILT` above the axis the player asked for: at the boot pitch (6 deg down) the horizon stands
      * about 45 % of the frame height from the bottom (it stood at 60 %) and she sits in the lower-centre
      * third, the land and sky over her head. The lens does not move; only where it looks. The aim's view is

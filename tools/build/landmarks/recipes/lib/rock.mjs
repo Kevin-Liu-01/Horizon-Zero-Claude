@@ -250,9 +250,9 @@ export function bedSequence(R, { foot = -14, top = 40, thin = 1.4, thick = 3.6, 
  *   seg       radial segments; dy target ring spacing
  *   noise     amplitude of the 3-D displacement (m), at two scales
  *   shade     colour function (p, n, k, bed, u) -> k
- *   cap       close the top: 'apex' (a pinnacle), 'flat' (a cap), or none
+ *   cap       close the top: 'spire' (a pinnacle), 'flat' (a cap), or none
  */
-export function loftBeds(bucket, { beds, radius, centre, outline, seg = 40, dy = 0.45, noise = 0.9, seed = 1, shade, cap = 'apex', capRise = 0.6 }) {
+export function loftBeds(bucket, { beds, radius, centre, outline, seg = 40, dy = 0.45, noise = 0.9, seed = 1, shade, cap = 'spire', capRise = 0.6 }) {
   const TAU = Math.PI * 2;
   const P = (a, y, prof, b) => {
     let [cx, cz] = centre(y);
@@ -333,12 +333,12 @@ export function loftBeds(bucket, { beds, radius, centre, outline, seg = 40, dy =
     const top = prevBed.y1;
     const [cx, cz] = centre(top);
     const rr = radius(top);
-    const apex = cap === 'apex' ? [cx + (fbm3(seed, 1, 2) - 0.5) * rr * 0.6, top + rr * capRise, cz + (fbm3(2, seed, 1) - 0.5) * rr * 0.6] : [cx, top + 0.15, cz];
+    const spire = cap === 'spire' ? [cx + (fbm3(seed, 1, 2) - 0.5) * rr * 0.6, top + rr * capRise, cz + (fbm3(2, seed, 1) - 0.5) * rr * 0.6] : [cx, top + 0.15, cz];
     for (let i = 0; i < prevTop.length; i++) {
       const a = prevTop[i], b2 = prevTop[(i + 1) % prevTop.length];
-      const n = nrm(cross(sub(b2, a), sub(apex, a)));
+      const n = nrm(cross(sub(b2, a), sub(spire, a)));
       const nn = n[1] < 0 ? [-n[0], -n[1], -n[2]] : n;
-      emit(a, apex, b2, nn, nn, nn, 1.2, 1.3, 1.2, prevBed.tone);
+      emit(a, spire, b2, nn, nn, nn, 1.2, 1.3, 1.2, prevBed.tone);
     }
   }
   // colours are final (linear): straight into the bucket, on the stone palette texel
@@ -402,7 +402,7 @@ export function needleStack(bucket, R, { height = 40, base = 7, seed = 1, foot =
   };
   const beds = bedSequence(R, { foot, top: height, thin, thick });
   if (spires < 2) {
-    loftBeds(bucket, { beds, radius: (y) => taper(y, height, base), centre, outline, seed, shade, noise, cap: 'apex', capRise: 0.35 });
+    loftBeds(bucket, { beds, radius: (y) => taper(y, height, base), centre, outline, seed, shade, noise, cap: 'spire', capRise: 0.35 });
     crown(bucket, R, centre(height), taper(height, height, base), height, seed, shade);
   } else {
     // the trunk to the split, then two spires from inside it (their beds continue the trunk's sequence)
@@ -416,7 +416,7 @@ export function needleStack(bucket, R, { height = 40, base = 7, seed = 1, foot =
       const ox = Math.cos(ang) * r0 * 0.48 * s, oz = Math.sin(ang) * r0 * 0.48 * s;
       const sp = beds.filter((b) => b.y1 > ys - 1.2 && b.y0 < H2).map((b) => ({ ...b, y0: Math.max(b.y0, ys - 1.2), y1: Math.min(b.y1, H2) }));
       const c2 = (y) => { const [cx, cz] = centre(y); const t = (y - ys) / (H2 - ys); return [cx + ox * (1 + t * 0.25), cz + oz * (1 + t * 0.25)]; };
-      loftBeds(bucket, { beds: sp, radius: (y) => Math.max(0.45, r0 * sk * (1 - 0.75 * Math.pow(ss(ys, H2 * 1.02, y), 1.15))), centre: c2, outline, seed: seed + s * 13, shade, noise: noise * 0.8, seg: 30, cap: 'apex', capRise: 0.4 });
+      loftBeds(bucket, { beds: sp, radius: (y) => Math.max(0.45, r0 * sk * (1 - 0.75 * Math.pow(ss(ys, H2 * 1.02, y), 1.15))), centre: c2, outline, seed: seed + s * 13, shade, noise: noise * 0.8, seg: 30, cap: 'spire', capRise: 0.4 });
       crown(bucket, R, c2(H2), Math.max(0.45, r0 * sk * 0.25), H2, seed + s, shade);
     }
   }
