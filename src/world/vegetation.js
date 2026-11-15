@@ -738,10 +738,27 @@ export class Vegetation {
     const fwd = () => { const v = cam.getWorldDirection(this._v); return [v.x, v.z]; };
     const floraGeo = (indexed) => { for (const key of this._streamKeys) { const D = this._draws[key]; D.mesh.geometry = indexed ? D.geoIndexed : D.geoFlat; } };
     const dykes = (on) => { if (!this._dyke) return; this._dyke.streamed = on; const [fx, fz] = fwd(); this._fillDykes(cam.position.x, cam.position.z, fx, fz); };
-    return [
+    /* M1a round 2: each static kind's whole draw (main view and cascades) and its casting alone; the streamed flora
+     * kinds; and the meadow's own switches (island/meadow.js) */
+    const vis = (m) => (on) => { if (m) m.visible = on; };
+    const cast = (m) => (on) => { if (m) { m.castShadow = on; m.userData.__shadowBase = on; m.userData.__shadowCulled = false; } };
+    const kinds = [['rocks', this.rocks], ['columns', this.columns], ['dykes', this.dykes], ['rakes', this.rakes]];
+    const out = [
       { id: 'flora-indexed', on: () => floraGeo(true), off: () => floraGeo(false) },
       { id: 'dykes-streamed', on: () => dykes(true), off: () => dykes(false) },
     ];
+    for (const [k, m] of kinds) {
+      if (!m) continue;
+      const v = vis(m), c = cast(m), c0 = m.castShadow;
+      out.push({ id: `${k}-draw`, on: () => v(true), off: () => v(false) });
+      if (c0) out.push({ id: `${k}-cast`, on: () => c(true), off: () => c(false) });
+    }
+    for (const key of this._streamKeys || []) {
+      const D = this._draws[key];
+      if (D?.mesh) out.push({ id: `flora-${key}`, on: () => { D.mesh.visible = true; }, off: () => { D.mesh.visible = false; } });
+    }
+    if (this.meadow?.perfSwitches) out.push(...this.meadow.perfSwitches());
+    return out;
   }
 
   /**

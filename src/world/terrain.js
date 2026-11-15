@@ -168,6 +168,14 @@ reflectedLight.directDiffuse *= gSunVis;
 reflectedLight.directSpecular *= gSunVis * mix(0.2, 1.0, gLiquid);
 reflectedLight.indirectDiffuse *= gAO * 2.3;   // open ground sees the whole sky: shade reads, black sand keeps its grain
 reflectedLight.indirectSpecular *= mix(1.0, gAO, 0.6);
+/* M1a round 2 (uGroundR2.x): the sky's fill on dark ground and stone keeps its light and loses most of its blue: shaded
+ * black sand, basalt and the dykes' shaded faces read blue at golden hour (the grade turns a neutral dark violet-rose,
+ * a blue one stays blue). A brine mirror keeps the sky it mirrors */
+if (uGroundR2.x > 0.0) {
+  vec3 gLw = vec3(0.2126, 0.7152, 0.0722);
+  reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, vec3(dot(reflectedLight.indirectDiffuse, gLw)), uGroundR2.x);
+  reflectedLight.indirectSpecular = mix(reflectedLight.indirectSpecular, vec3(dot(reflectedLight.indirectSpecular, gLw)), uGroundR2.x * (1.0 - smoothstep(0.1, 0.5, gLiquid)));
+}
 #ifdef CAL_CAPTURE
 /* the M1.1e tiling capture (tools/perf/meadow-page.mjs topDown): the material alone, albedo under one fixed light
  * on its own normal, with no sun shadow, skyline, sky or sheen, so the autocorrelation sees texture, not lighting */
@@ -184,6 +192,7 @@ if (gLiquid > 0.004) {
   float gSd = max(dot(gR, calSunDir), 0.0);
   gSky += calFogSun * pow(gSd, 6.0) * 0.55 * smoothstep(0.1, 0.34, gLiquid);
   float gF = 0.02 + 0.98 * pow(1.0 - max(dot(gV, gW), 0.0), 5.0);
+  gSky = mix(gSky, vec3(dot(gSky, vec3(0.2126, 0.7152, 0.0722))), uGroundR2.x * (1.0 - smoothstep(0.1, 0.5, gLiquid)));
   reflectedLight.indirectSpecular += gSky * gF * gLiquid * 0.95;
 }
 #endif
@@ -589,6 +598,7 @@ export class Terrain {
       uHzW0: { value: new THREE.Vector4(0, 1, 0, 0) }, uHzW1: { value: new THREE.Vector4() },
       uSunTan: { value: 1 }, uSunXZ: { value: new THREE.Vector2(0, -1) },
       uHzWorldInv: { value: 1 / WORLD_SIZE }, uHzK: { value: 1 },
+      uGroundR2: { value: new THREE.Vector4(0, 0, 0, 0) },
     };
   }
 
@@ -896,7 +906,23 @@ export class Terrain {
     return [
       { id: 'terrain-lod', on: () => { this._lodOn = true; this.updateLod(cam()); }, off: () => { this._lodOn = false; this.updateLod(cam()); } },
       { id: 'terrain-far', on: () => { if (this._far) this._far.on = true; this.updateLod(cam()); }, off: () => { if (this._far) this._far.on = false; this.updateLod(cam()); } },
+      ...this.groundTermSwitches(),
     ];
+  }
+
+  /**
+   * M1a round 2: the near ground shader term by term (groundShader.js CAL_P_*): each switch's 'off' compiles the
+   * ground material without that term (a define; three caches both programs), so on - off is the term's cost.
+   * 'ground-flat' off draws the whole colour stage as one constant: the stage's whole cost.
+   */
+  groundTermSwitches() {
+    const mat = this.groundMaterial;
+    const def = (k, on) => { const d = { ...(mat.defines || {}) }; if (on) delete d[k]; else d[k] = 1; mat.defines = d; mat.needsUpdate = true; };
+    const T = [['ground-pebbles', 'CAL_P_NOPEB'], ['ground-crust-detail', 'CAL_P_NOCRUST'], ['ground-pits', 'CAL_P_NOPITS'],
+      ['ground-salt-2nd', 'CAL_P_NOSALT2'], ['ground-layer-2nd', 'CAL_P_NOL2'], ['ground-pan-cubic', 'CAL_P_NOCUBIC'],
+      ['ground-field-range', 'CAL_P_NOFIELD'], ['ground-meadow-tone', 'CAL_P_NOMTONE'], ['ground-rills', 'CAL_P_NORILL'],
+      ['ground-colour-stage', 'CAL_P_FLAT']];
+    return T.map(([id, k]) => ({ id, on: () => def(k, true), off: () => def(k, false) }));
   }
 
   /**

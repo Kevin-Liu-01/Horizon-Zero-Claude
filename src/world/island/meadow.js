@@ -107,6 +107,8 @@ varying vec2 vMUv;
 varying float vMSeed;
 varying vec2 vFloraXZ;
 uniform vec4 uDebug;              // x: flat colour (no lighting), y: every blade clipped (vertex work only)
+uniform vec4 uStab;               // M1a round 2, the crawl at 12-30 m: x tip light faded, y foot-tip ramp flattened, z clumps wider, w sub-pixel blades to their mean
+varying float vMTr;
 uint mPcg(uint v) { uint s = v * 747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u; return (w >> 22u) ^ w; }
 float mU(uint v) { return float(mPcg(v)) * (1.0 / 4294967296.0); }
 float mHeight(vec2 xz) {
@@ -142,6 +144,9 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
   float dens = texture2D(tMeadowD, root * uWorldInv + 0.5).r;
   float keepP = dens * kIn * kOut;
   mKeep = u1 < keepP && uDebug.y < 0.5;
+  #ifdef CAL_M_EARLY
+  if (mKeep) {
+  #endif
   // a blade near its threshold is short: blades grow in and out of a ring's band instead of popping
   float grow = smoothstep(0.0, 0.12, keepP - u1);
   float kind = uRing2.y;
@@ -159,7 +164,7 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
   /* M1.1b fix round 1: the clumps crawled at 12-30 m (133 events per mille walking, 342 sprinting): their tips
    * went sub-pixel. They broaden with distance (about two device px at the foot at 30 m) and taper less */
   float midK = kind > 0.5 && kind < 1.5 ? smoothstep(10.0, 30.0, dCam) : 0.0;
-  w0 *= 1.0 + 0.6 * midK;
+  w0 *= 1.0 + (0.6 + 0.9 * uStab.z) * midK;
   float yaw = u3 * 6.2831853 + u4 * 1.7;
   vec2 face = vec2(cos(yaw), sin(yaw));
   vec2 rightW = vec2(-face.y, face.x);
@@ -173,7 +178,7 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
     rightW = normalize(rightW + camR * sign(dot(rightW, camR) + 1e-4) * 0.75 * edge);
   }
   // the tip's width: blades taper to a point, clumps and cards stay broad
-  float taper = kind > 1.5 ? 1.0 : kind > 0.5 ? (1.0 - 0.7 * (1.0 - 0.45 * midK) * t) : (1.0 - 0.86 * t);
+  float taper = kind > 1.5 ? 1.0 : kind > 0.5 ? (1.0 - 0.7 * (1.0 - (0.45 + 0.4 * uStab.z) * midK) * t) : (1.0 - 0.86 * t);
   if (vib) taper = max(taper, 0.55);
   float hw = w0 * taper;
   // wind from 045: a lean to the SW, a sway and a gust wave that run with it (the flora's terms)
@@ -199,6 +204,7 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
   vec4 mvS = modelViewMatrix * vec4(spine, 1.0);
   float pxPerM = uPx.x / max(-mvS.z, 0.05);
   float wPx = 2.0 * hw * pxPerM;
+  float wPxB = 2.0 * w0 * pxPerM;
   float cov = 1.0;
   if (uPx.y > 0.5 && kind < 1.5 && side != 0.0 && wPx < 1.0) { cov = max(wPx, 0.0); hw = 0.5 / pxPerM; }
   mP = spine + vec3(rightW.x, 0.0, rightW.y) * hw * side;
@@ -213,6 +219,12 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
   tip = mix(tip, vec3(0.62, 0.5, 0.26), 0.25 * step(0.86, u3));          // a few pale, bleached heads
   float ramp = kind > 1.5 ? 0.55 + 0.45 * t : pow(t, 0.8);
   vMColor = mix(base, tip, ramp);
+  if (kind < 1.5) {
+    vec3 mMean = mix(base, tip, 0.55);
+    vMColor = mix(vMColor, mMean, uStab.y * 0.7 * smoothstep(8.0, 28.0, dCam));
+    vMColor = mix(vMColor, mMean * 0.92, uStab.w * (1.0 - clamp(wPxB - 1.0, 0.0, 1.0)) * (1.0 - uPx.z));
+  }
+  vMTr = 1.0 - uStab.x * smoothstep(8.0, 24.0, dCam);
   // a viborina spike is a straw stem with violet florets on its upper half
   if (vib) vMColor = mix(vMColor, mix(vec3(0.13, 0.05, 0.2), vec3(0.2, 0.1, 0.32), u2), smoothstep(0.55, 0.7, t));
   vMT = t;
@@ -221,6 +233,9 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
   if (kind > 1.5 && u2 > 0.5) vMUv.x = 1.0 - vMUv.x;
   vMSeed = u3;
   vFloraXZ = root;
+  #ifdef CAL_M_EARLY
+  }
+  #endif
 }
 `;
 const MEADOW_BEGIN = /* glsl */ `vec3 transformed = mP;`;
@@ -243,6 +258,7 @@ varying vec2 vMUv;
 varying float vMSeed;
 varying vec2 vFloraXZ;
 uniform vec4 uDebug;
+varying float vMTr;
 uniform float uKind;
 uniform float uIdPass;
 uniform float uTransl;
@@ -317,7 +333,7 @@ const MEADOW_TRANSL = /* glsl */ `
   vec3 Ls = directionalLights[0].direction;
   vec3 Vv = normalize(vViewPosition);
   float back = clamp(dot(-Vv, Ls), 0.0, 1.0);
-  float tr = back * back * back * smoothstep(0.25, 1.0, vMT) * uTransl * mHzV;
+  float tr = back * back * back * smoothstep(0.25, 1.0, vMT) * uTransl * mHzV * vMTr;
   reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * tr;
 }
 #endif
@@ -368,6 +384,7 @@ export class Meadow {
       uPx: { value: new THREE.Vector4(1000, 1, 0, 0) },
       uTime: o.uTime, uWind: o.uWind, uActors: o.uActors,
       uIdPass: { value: 0 }, uTransl: { value: 1.6 }, uDebug: { value: new THREE.Vector4() },
+      uStab: { value: new THREE.Vector4(0, 0, 0, 0) },
     };
     this.rings = MEADOW_RINGS.map((ring) => this._buildRing(ring));
     this._frustum = new THREE.Frustum();
@@ -520,6 +537,7 @@ export class Meadow {
     }
     // the floor's coverage fade is only meaningful through coverage; without it a floored blade stays solid
     this._u.uPx.value.y = 1;
+    this._u.uPx.value.z = s > 0 && this.a2cBlades ? 1 : 0;
   }
 
   setIdPass(on) { this._u.uIdPass.value = on ? 1 : 0; }
@@ -584,8 +602,24 @@ export class Meadow {
       { id: 'meadow-lighting', on: () => { D.x = 0; }, off: () => { D.x = 1; } },
       { id: 'meadow-raster', on: () => { D.y = 0; }, off: () => { D.y = 1; } },
       { id: 'meadow-shadow-recv', on: () => { for (const R of this.rings) R.mesh.receiveShadow = true; }, off: () => { for (const R of this.rings) R.mesh.receiveShadow = false; } },
+      // M1a round 2: the vertex shader stops at the keep test for a clipped blade (on = the early-out, off = as shipped)
+      { id: 'meadow-vs-early', on: () => this.setEarlyOut(true), off: () => this.setEarlyOut(false), restore: () => this.setEarlyOut(this._early0 ?? false) },
     ];
   }
+
+  /** The vertex shader's early-out for clipped blades (define CAL_M_EARLY): the same pixels, less vertex work. */
+  setEarlyOut(on) {
+    if (this._early0 === undefined) this._early0 = !!this._early;
+    this._early = !!on;
+    for (const R of this.rings) {
+      const d = { ...(R.mat.defines || {}) };
+      if (on) d.CAL_M_EARLY = 1; else delete d.CAL_M_EARLY;
+      R.mat.defines = d; R.mat.needsUpdate = true;
+    }
+  }
+
+  /** The crawl stabiliser's four terms (uStab, see MEADOW_BUILD), each 0..1. */
+  setStab(x = 0, y = 0, z = 0, w = 0) { this._u.uStab.value.set(x, y, z, w); }
 
   /** Density 0..1 at a point (the vertex shader's read, bilinear). */
   densityAt(x, z) {

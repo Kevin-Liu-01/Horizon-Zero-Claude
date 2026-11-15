@@ -74,6 +74,7 @@ uniform vec4 uHzW1;
 uniform float uSunTan;  // tan(elevation) of the sun or moon
 uniform float uHzWorldInv;
 uniform float uHzK;     // shadow strength: 1, or the calima's 0.45
+uniform vec4 uGroundR2; // M1a round 2: x the shade fill's chroma kept out (GROUND_AO), y the meadow gap tone variant
 vec3 gN; float gRough; float gAO; float gLiquid; float gSunVis = 1.0;
 /** Is the light above the terrain's skyline here? Long soft shadows from one lookup. */
 float gSkylineVis(vec2 xz) {
@@ -161,6 +162,9 @@ export const STRATA_TERM = /* glsl */ `
 /** Accumulates one layer: albedo into col, world normal offset, rough + AO, height blend. */
 export const TERRAIN_COLOR = /* glsl */ `
 #include <color_fragment>
+#ifdef CAL_P_FLAT
+diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid = 0.0; gSunVis = 1.0;
+#else
 {
   vec3 wn = normalize(vWNorm);
   vec2 xz = vWPos.xz;
@@ -171,7 +175,13 @@ export const TERRAIN_COLOR = /* glsl */ `
   vec4 sh = texture(tMask, vec3(muv, 2.0));
   vec2 puv = (xz - uPanBox.xy) * uPanBox.z;
   vec4 pan = vec4(0.0);
-  if (puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0) pan = dCam < 110.0 ? gPanCubic(puv) : gPanT(puv);
+  if (puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0) {
+    #ifdef CAL_P_NOCUBIC
+    pan = gPanT(puv);
+    #else
+    pan = dCam < 110.0 ? gPanCubic(puv) : gPanT(puv);
+    #endif
+  }
 
   float slope = sqrt(max(1.0 - wn.y * wn.y, 0.0)) / max(wn.y, 0.05);
   vec4 nMac = gNoiseT(xz * 0.0039);                 // cells 32, 16, 8, 4 m
@@ -196,6 +206,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   /* the crust at 10-60 m (W-08, Janubio): polygon crack ridges 0.8-2.5 m across, rake lines
    * along the field, footprints and drag on the paths, wet and dry patches: a worked surface */
   float crustDet = 0.0, rake = 0.0, crack = 0.0, pits = 0.0;
+  #ifndef CAL_P_NOCRUST
   if (crust > 0.05 && dCam < 75.0) {
     float nk = 1.0 - smoothstep(45.0, 75.0, dCam);
     vec3 vp = gVoro(xz * 0.62 + fineN * 0.9);
@@ -207,9 +218,12 @@ export const TERRAIN_COLOR = /* glsl */ `
     // Janubio's trampled crust: shallow pits, footprints and drag, 0.3-0.5 m apart, to 35 m
     if (dCam < 35.0) {
       vec3 vq = gVoro(xz * 2.3 + vp.xy * 0.7);
+      #ifndef CAL_P_NOPITS
       pits = (1.0 - smoothstep(0.05, 0.3, vq.y)) * step(0.45, vq.z) * (1.0 - smoothstep(22.0, 35.0, dCam));
+      #endif
     }
   }
+  #endif
   float wRock = max(mA.g, smoothstep(0.62, 1.05, slope));
   float wSalt = crust * (1.0 - wRock) * (1.0 - brine * 0.4);
   // a cell's floor is pan silt wherever it is not crust: never dune sand with its ripples
@@ -267,6 +281,7 @@ export const TERRAIN_COLOR = /* glsl */ `
       a = gA(i, uv0, gx, gy);
       nn = vec4(0.5, 0.5, i == 0 ? 0.877 : i == 1 ? 0.686 : i == 2 ? 0.801 : i == 3 ? 0.539 : 0.631, 0.905);
       if (farN < 1.0) nn = mix(gNm(i, uv0, gx, gy), nn, farN);
+      #ifndef CAL_P_NOSALT2
       if (i == 1 && dCam < 240.0) {
         /* salt: the crust fills whole 20-40 m cells, so any one tile's repeat lines up along a
          * cell (A-anti-tile). A second lookup, rotated 37 degrees at 0.61 of the scale, is always
@@ -279,7 +294,10 @@ export const TERRAIN_COLOR = /* glsl */ `
           n2.xy = (vec2(dot(n2.xy * 2.0 - 1.0, Mr[0]), dot(n2.xy * 2.0 - 1.0, Mr[1]))) * 0.5 + 0.5;
           nn = mix(nn, mix(n2, vec4(0.5, 0.5, 0.686, 0.905), farN), 0.5);
         }
-      } else if (w[i] > 0.12 && dCam < 240.0) {     // past 240 m the mips are a few texels: a second read buys nothing
+      } else
+      #endif
+      #ifndef CAL_P_NOL2
+      if (i != 1 && w[i] > 0.12 && dCam < 240.0) {     // past 240 m the mips are a few texels: a second read buys nothing
         /* M1.1e anti-tile (fix round 1): one tile and a per-region offset still repeated inside each region (black
          * sand 0.61 at its 3 m tile in a 40 m top-down). Two incommensurate reads at half each, the second turned and
          * scaled (sand only a little, so its ripples keep the wind's direction): no region seams, and either repeat
@@ -298,6 +316,9 @@ export const TERRAIN_COLOR = /* glsl */ `
           nn = nm;
         }
       }
+      #else
+      {}
+      #endif
     }
     keepA[nKeep] = a; keepN[nKeep] = nn; keepW[nKeep] = w[i]; keepI[nKeep] = i; nKeep++;
     if (nKeep == 3) break;
@@ -344,6 +365,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   /* -- the field at range (W-11, Janubio): the dykes are the field's drawing, so past 50 m a
    *    dyke strip is darkened and widened with distance (its stone is sub-pixel there), and
    *    round the field the ground carries salt stains and dead cells, never a clean rug edge -- */
+  #ifndef CAL_P_NOFIELD
   if (pan.a < 0.6 && dCam > 45.0 && puv.x > 0.0 && puv.x < 1.0 && puv.y > 0.0 && puv.y < 1.0) {
     float wd = (0.7 + dCam * 0.0075) * uPanBox.z;
     float nb = max(max(gPanT(puv + vec2(wd, 0.0)).a, gPanT(puv - vec2(wd, 0.0)).a),
@@ -351,6 +373,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     float dyk = smoothstep(0.35, 0.75, nb) * (1.0 - inK) * smoothstep(45.0, 110.0, dCam);
     col *= mix(1.0, 0.42, dyk);
   }
+  #endif
   if (sh.a > 0.01) {
     // the field's halo: salt-stained silt, scalded patches, a ghost of a cell (bake: shore.a)
     float st = sh.a * smoothstep(0.45, 0.75, nMac.g * 0.6 + gNoiseT(xz * 0.047 + 0.2).r * 0.4);
@@ -393,18 +416,24 @@ export const TERRAIN_COLOR = /* glsl */ `
     float wave = sin(dot(xz, vec2(-0.7071, -0.7071)) * 0.21 + uTime * 1.3 + gn.g * 3.0);
     grass *= 0.62 * (1.0 + 0.08 * wave) * (0.72 + 0.5 * gn.b);
     float clump = smoothstep(0.66, 0.8, gNoiseT(xz * 0.0187 + 0.61).a);
+    vec3 grassNoVio = grass;
     grass = mix(grass, vec3(0.20, 0.10, 0.30), clump * 0.4 * smoothstep(0.4, 0.7, gn.a));
+    float gTone = 1.0;
     // dark culms and gaps between the drifts read as texture from the rim, never a flat fill
     // two incommensurate, turned reads: one read of the periodic noise repeated every 16.4 m (M1.1e tiling check)
+    #ifndef CAL_P_NOMTONE
     vec2 xzR = vec2(dot(xz, vec2(0.8, 0.6)), dot(xz, vec2(-0.6, 0.8)));
-    grass *= 0.68 + 0.42 * smoothstep(0.3, 0.7, 0.5 * gNoiseT(xz * 0.061).b + 0.5 * gNoiseT(xzR * 0.0437 + 0.29).a);
+    gTone = 0.68 + 0.42 * smoothstep(0.3, 0.7, 0.5 * gNoiseT(xz * 0.061).b + 0.5 * gNoiseT(xzR * 0.0437 + 0.29).a);
+    grass *= gTone;
+    #endif
     vec3 litter = vec3(0.17, 0.112, 0.02) * (0.82 + 0.3 * gn.b);   // meadow.js: the blade's foot colour, a shade lit
+    vec3 grassL = mix(grass, grassNoVio * gTone, uGroundR2.y);
     /* M1.1b fix round 1: under the clumps' ring (10-30 m) a gap shows the clumps' own mid tone, not the dark foot:
      * blade against gap is the contrast that crawls when the lens moves */
-    litter = mix(litter, grass * 0.78, 0.55 * smoothstep(8.0, 30.0, dCam));
+    litter = mix(litter, grassL * 0.78, 0.55 * smoothstep(8.0, 30.0, dCam));
     /* and within the blades' ring the gap is the stand's lower golden straw (light through and off the blades),
      * not its darkest foot: a dark gap falls under the grade's violet floor and reads as soil (M1.1b soil line) */
-    litter = mix(litter, grass * 0.85, 0.75 * (1.0 - smoothstep(8.0, 30.0, dCam)));
+    litter = mix(litter, grassL * 0.85, 0.75 * (1.0 - smoothstep(8.0, 30.0, dCam)));
     col = mix(col, mix(litter, grass, farG), mk);
     canopy = mk * (1.0 - farG);
     pert *= 1.0 - mk * mix(0.75, 0.5, farG);
@@ -435,6 +464,9 @@ export const TERRAIN_COLOR = /* glsl */ `
   /* -- rills: every real slope is scored down its fall line (gullies on the ring, wash on the
    *    knolls); from 300 m a smooth tinted hill is what reads as CG, a scored one does not -- */
   float rillK = smoothstep(0.16, 0.55, slope) * (1.0 - wSalt);
+  #ifdef CAL_P_NORILL
+  rillK = 0.0;
+  #endif
   if (rillK > 0.01) {
     vec2 fall = normalize(wn.xz + vec2(1e-5));
     vec2 q = vec2(dot(xz, vec2(-fall.y, fall.x)), dot(xz, fall));
@@ -444,6 +476,7 @@ export const TERRAIN_COLOR = /* glsl */ `
 
   /* -- the ground at a pace (V32): pebbles at 6-15 cm and grit at 2-3 cm on sand, silt and
    *    shingle, each pebble with a lit and a shaded side; gone by 16 m, where they are sub-pixel */
+  #ifndef CAL_P_NOPEB
   if (dCam < 16.0 && wSalt < 0.6) {
     float gk = (1.0 - smoothstep(9.0, 16.0, dCam)) * (1.0 - wSalt) * (1.0 - wRock * 0.7) * (1.0 - canopy);
     vec3 pb = gVoro(xz * 9.0);
@@ -454,6 +487,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     float grit = gNoiseT(xz * 0.83).a * 0.6 + gNoiseT(xz * 1.71 + 0.3).b * 0.4;
     col *= 1.0 + (grit - 0.5) * 0.42 * gk;
   }
+  #endif
 
   /* -- liquid: brine mirrors, the swash zone is wet black glass -------------- */
   float coast = sh.r * 64.0 - 48.0;
@@ -510,6 +544,7 @@ export const TERRAIN_COLOR = /* glsl */ `
   diffuseColor.rgb = clamp(col, vec3(0.012), vec3(0.85));
   gN = pert;
 }
+#endif
 `;
 
 /** The rock scatter's material: basalt triplanar, salt on top, wet at the foot. */

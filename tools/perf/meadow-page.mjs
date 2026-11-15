@@ -117,7 +117,7 @@ function warm(r, g, b) {
   return hgt >= 8 && hgt <= 75;
 }
 
-export async function soil(E, C, { hideHero = true } = {}) {
+export async function soil(E, C, { hideHero = true, mask = false } = {}) {
   const gl = E.renderer.getContext();
   const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
   const undo = isolate(C);
@@ -131,8 +131,12 @@ export async function soil(E, C, { hideHero = true } = {}) {
   } finally { undo(); rt.dispose(); mat.dispose(); }
   let blade = 0, gap = 0, soilPx = 0, soilWide = 0;
   const soilAt = [];
+  // M1a round 2: where the soil-coloured pixels are (red), the rest of the frame dimmed, the other gap pixels as seen
+  const mk = mask ? new Uint8Array(w * h * 4) : null;
   for (let i = 0; i < w * h; i++) {
     const o = i * 4;
+    if (mk) { mk[o] = col[o] >> 2; mk[o + 1] = col[o + 1] >> 2; mk[o + 2] = col[o + 2] >> 2; mk[o + 3] = 255;
+      if (id[o] > 128 && id[o + 1] < 64) { const s = !warm(col[o], col[o + 1], col[o + 2]); mk[o] = s ? 255 : col[o]; mk[o + 1] = s ? 0 : col[o + 1]; mk[o + 2] = s ? 0 : col[o + 2]; } }
     if (id[o + 1] > 192) blade++;
     else if (id[o] > 128 && id[o + 1] < 64) {
       gap++;
@@ -143,7 +147,7 @@ export async function soil(E, C, { hideHero = true } = {}) {
   const area = blade + gap;
   return { pixels: w * h, meadowPx: area, bladePx: blade, groundSeenPx: gap, soilColouredPx: soilPx,
     gapPct: area ? +(100 * gap / area).toFixed(3) : null, soilPct: area ? +(100 * soilPx / area).toFixed(3) : null, soilAt,
-    soilPctWideClass: area ? +(100 * soilWide / area).toFixed(3) : null,
+    soilPctWideClass: area ? +(100 * soilWide / area).toFixed(3) : null, mask: mk, w, h,
     method: 'ID render (blades of rings 0-1 green, ground with meadow density >= 0.5 within 30 m red) and the graded frame, Brea and props hidden; soil-coloured = a red pixel whose graded colour is outside hue 8-75 deg / saturation >= 0.18 and not darker than V 0.07' };
 }
 
