@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "about": "The systems' own words: interaction prompts, the Brazier dialog, the forecast line, save and death lines, the reward card. Plain data. The Brazier's six are the bible's words exactly (BIBLE 17, 18); the forecast line follows the bible's two examples.",
+  "prompts": {
+    "talk": "TALK · {name}",
+    "rake": "RAKE",
+    "cut": "CUT CANE"
+  },
+  "brazier": {
+    "six": {
+      "kindle": "KINDLE",
+      "dawn": "REST UNTIL DAWN",
+      "golden": "REST UNTIL GOLDEN",
+      "dusk": "REST UNTIL DUSK",
+      "night": "REST UNTIL NIGHT",
+      "refused": "THE LAMPS ARE UP. NO REST HERE."
+    },
+    "promptLit": "REST UNTIL …",
+    "names": {
+      "cistern": "BREA'S CISTERN",
+      "t1": "T1 · ORGAN SHELF"
+    }
+  },
+  "forecast": {
+    "about": "One line per chosen hour. {bearing} is three digits, {speed} whole metres a second.",
+    "trade": "TRADE · WIND {bearing} AT {speed} m/s",
+    "calimaSoon": "CALIMA BY NOON",
+    "calima": "CALIMA · DUST AT {speed} m/s",
+    "squall": "SQUALL · WIND {bearing} AT {speed} m/s"
+  },
+  "save": {
+    "older": "OLDER SAVE · NOT READABLE BY THIS BUILD",
+    "lastRest": "LAST REST · {place} · {hour}",
+    "slot": "SLOT {n}"
+  },
+  "death": {
+    "title": "THE LINE IS LOST"
+  },
+  "reward": {
+    "head": "RAKER'S MORNING"
+  },
+  "dialogue": {
+    "next": "▸"
+  }
+}
