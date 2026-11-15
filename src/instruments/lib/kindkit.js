@@ -71,7 +71,9 @@ export function mountTool(machine, mesh, opts) {
   });
   // a tool sits where its generator put it: the socket snap (rig/sockets.js) must not pull it onto a nearer
   // hull sample (a bob on a 9 mm cable snapped onto a leg); it rides its own bone, never re-parented
-  if (part && part.mesh) { part.mesh.userData.noSnap = true; part.mesh.userData.noReparent = true; }
+  // ...and it stands as hull for every OTHER socket (rig/sockets.js `countsAsHull`, read by A44b): the lamp weak point
+  // on the drum reads the drum, the drum reads the trunnion it hangs from; a tool never vouches for itself
+  if (part && part.mesh) { part.mesh.userData.noSnap = true; part.mesh.userData.noReparent = true; part.mesh.userData.toolHull = true; }
   return part;
 }
 
@@ -96,4 +98,43 @@ export function telegraphOnWindup(machine, a, anchor, glintR = 0.07) {
   machine._teleA = a;
   const L = machine.manager?.lamps;
   return L ? L.telegraph(machine, a.windup, anchor, glintR) : false;
+}
+
+/**
+ * Stand a parked Instrument on its feet where it now stands (M1a round 2): every leg in stance at its neutral home
+ * under the CURRENT position and heading, planted on the terrain there, and the gait solved at rest until the pelvis
+ * has followed the plants. For a machine moved or turned with its update stopped (the frame stager turns a staged
+ * Instrument to face Brea after the settle, then freezes it): its feet had been planted for the old heading, and a
+ * tripod on a slope stood one foot 0.14 m into the ground and another as far over it. Cold path; returns the
+ * per-foot gap (foot sole minus terrain, m) after the solve.
+ */
+const _sf = new THREE.Vector3();
+export function seatFeet(machine, steps = 40) {
+  const g = machine?.gait, T = machine?.ctx?.terrain;
+  if (!g?.legs?.length || !T) return null;
+  const off = g.walk?.offsets || {};
+  machine.root.updateMatrixWorld(true);
+  const base = Math.floor(g.phase || 0);
+  const plant = () => {
+    g.phase = base;
+    for (const leg of g.legs) {
+      g._homeWorld(leg, 0, 0, _sf);
+      _sf.y = T.getHeight(_sf.x, _sf.z) + leg.L.ankleH;
+      leg.plant.copy(_sf); leg.target.copy(_sf); leg.swingFrom.copy(_sf);
+      leg.planted = true; leg.inStance = true; leg.reachSwing = false;
+      leg.ph = base + (off[leg.L.id] ?? 0);
+    }
+  };
+  g._lastPos.copy(machine.position); g._lastHeading = machine.heading;
+  g._turnS = 0; g._speedS = 0;
+  const t0 = machine.ctx?.engine?.simTime ?? 0;
+  for (let i = 0; i < steps; i++) {
+    plant();
+    g.update(1 / 60, t0);
+  }
+  machine.root.updateMatrixWorld(true);
+  return g.legs.map((leg) => {
+    leg.L.foot.getWorldPosition(_sf);
+    return +(_sf.y - leg.L.ankleH - T.getHeight(_sf.x, _sf.z)).toFixed(3);
+  });
 }

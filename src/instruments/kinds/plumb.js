@@ -7,7 +7,7 @@ import { snapSockets } from '../../entities/machines/rig/sockets.js';
 import { ExpansionMachine } from '../../entities/machines/rig/expansion-base.js';
 import { liftExtras, seedAuthoredWeights, weightAudit } from '../lib/generated.js';
 import { prepareEntry, installHull, hullOf } from '../lib/hull.js';
-import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup } from '../lib/kindkit.js';
+import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup, seatFeet } from '../lib/kindkit.js';
 import { scaleRig } from '../lib/scale.js';
 
 /**
@@ -65,33 +65,8 @@ const TRI = (k) => ({
 export const TOPPLE = Object.freeze({ fallS: 0.42, downS: 4.0, riseS: 0.6, hits: 2, clearM: 0.02 });
 
 const _wp = new THREE.Vector3();
-const _va = new THREE.Vector3();
-const _vb = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _xAxis = new THREE.Vector3(1, 0, 0);
-/**
- * The vial's own capsule (m, scale 1): the glass tube and its brass caps along the cradle's x axis. A shot whose line
- * would meet it within VIAL_REACH of where it stopped is a vial hit: the vial has priority over the thin standards,
- * antennae and the sphere's crown capsules round it (M1.4c fix 1: 5/10 at 40 m, the arrows stopping on capsules
- * 0.2-0.36 m short of the glass).
- */
-const VIAL_HALF = 0.19, VIAL_CAP_R = 0.07, VIAL_REACH = 0.45;
-
-/** Closest distance between segments p0-p1 and q0-q1 ({x, y, z}): p sampled every 1 cm against q exactly (one call per hit). */
-function segSegDist(p0, p1, q0, q1) {
-  const vx = q1.x - q0.x, vy = q1.y - q0.y, vz = q1.z - q0.z, c = vx * vx + vy * vy + vz * vz;
-  const n = Math.max(2, Math.ceil(Math.hypot(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z) / 0.01));
-  let best = Infinity;
-  for (let i = 0; i <= n; i++) {
-    const s = i / n, px = p0.x + (p1.x - p0.x) * s, py = p0.y + (p1.y - p0.y) * s, pz = p0.z + (p1.z - p0.z) * s;
-    let t = c > 1e-12 ? ((px - q0.x) * vx + (py - q0.y) * vy + (pz - q0.z) * vz) / c : 0;
-    t = t < 0 ? 0 : t > 1 ? 1 : t;
-    const d = Math.hypot(px - q0.x - vx * t, py - q0.y - vy * t, pz - q0.z - vz * t);
-    if (d < best) best = d;
-  }
-  return best;
-}
-
 
 export class Plumb extends ExpansionMachine {
   constructor(ctx, manager, opts = {}) {
@@ -139,6 +114,16 @@ export class Plumb extends ExpansionMachine {
     // the vial's glass is skinned to the head (the `plumb-vial` mesh): a hit on it is a vial hit
     this._vialGlass = null;
     this.model.traverse((o) => { if (!this._vialGlass && o.isMesh && o.name === 'plumb-vial') this._vialGlass = o; });
+    // round 2: the vial is a level glass, not a lamp. Its flat emissive made the machine's eye system take it as a lens
+    // (Machine._collectEmissive), so it glowed in the LAMP's state colour (bone-gold x 2.5 calm, magenta hostile); it
+    // keeps its own pale ice (the GLB's emissive, #D6F0EE) at intensity 1 and goes dark over 0.8 s when the Plumb dies
+    this._vialGlow = null;
+    const vm = this._vialGlass?.material;
+    if (vm && !Array.isArray(vm) && vm.emissive) {
+      this._eyeMats = this._eyeMats.filter((e) => e.mat !== vm);
+      vm.emissiveIntensity = 1;
+      this._vialGlow = { mat: vm, k: 1 };
+    }
     this.lootTable = rollLoot([{ id: 'metal-shards', min: 4, max: 8 }, { id: 'wire', min: 1, max: 3 }]);
 
     attachRigRuntime(this, { quantise: false });
@@ -167,11 +152,16 @@ export class Plumb extends ExpansionMachine {
     // crown 0.31 m below: the vial sphere sat 0.2-0.36 m off the glass, and shots aimed at it flew past the vial
     this.root.updateMatrixWorld(true);
     if (this._vialPart?.mesh) {
+      // the cradle is mounted where it sits on its right standard (round 2): the sphere stays on the glass's centre
+      const va = entry.tools?.['plumb-crown'] || S.vial;
       this._vialPart.mesh.add(this._vialWp.obj);
-      this._vialWp.obj.position.set(0, 0, 0);
+      this._vialWp.obj.position.set((S.vial[0] - va[0]) * k, (S.vial[1] - va[1]) * k, (S.vial[2] - va[2]) * k);
       this._vialWp.obj.userData.noSnap = true;
     }
     if (this._drum?.mesh) {
+      // the drum carries the lamp, which is drawn at any range: its housing is never size-culled (at 30-40 m the
+      // engine's small-mesh cull hid it and left the lamp and its weak point floating, which A44 read as 0.175 m)
+      this._drum.mesh.traverse((o) => { o.userData.noSizeCull = true; });
       this._drum.mesh.attach(this._lampWp.obj);
       this._lampWp.obj.userData.noSnap = true;
       if (this._lampAnchor?.isObject3D) this._drum.mesh.attach(this._lampAnchor);
@@ -199,12 +189,20 @@ export class Plumb extends ExpansionMachine {
 
   weightAudit() { return weightAudit(this); }
 
+  /** Stand on its feet where it now stands, after a move or turn with the update stopped (lib/kindkit.js `seatFeet`). */
+  seatFeet() { return seatFeet(this); }
+
   onDeathPose(k, deathT) { this.gait.deathPose(k, deathT, 'quad'); }
 
   /** A toppled Plumb beyond the animation ring still finishes its fall and stands (animate() is skipped there). */
   update(dt, t) {
     const r = super.update(dt, t);
     if (this._toppleT >= 0 && this.lowLOD && this.alive) this._poseTopple(dt);
+    const g = this._vialGlow;
+    if (g && (this.alive ? g.k !== 1 : g.k > 0)) {
+      g.k = this.alive ? 1 : Math.max(0, g.k - dt / 0.8);
+      g.mat.emissiveIntensity = g.k;
+    }
     return r;
   }
 
@@ -253,18 +251,10 @@ export class Plumb extends ExpansionMachine {
       while (o && !o.userData?.part) o = o.parent;
       if (o?.userData?.part === this._vialPart) vial = true;
     }
-    // the vial's priority: a shot stopped on a thin part in front of it whose line meets the vial's own capsule
-    // within VIAL_REACH is a vial hit (the cradle part's x axis is the tube's)
-    if (!vial && this.alive && pt && hit?.dir && this._vialPart?.mesh && this._vialPart.attached !== false) {
-      const M = this._vialPart.mesh.matrixWorld, e = M.elements, k = this._scale;
-      _wp.setFromMatrixPosition(M);
-      const ax = e[0], ay = e[1], az = e[2], al = Math.hypot(ax, ay, az) || 1;
-      _va.set(_wp.x - ax / al * VIAL_HALF * k, _wp.y - ay / al * VIAL_HALF * k, _wp.z - az / al * VIAL_HALF * k);
-      _vb.set(_wp.x + ax / al * VIAL_HALF * k, _wp.y + ay / al * VIAL_HALF * k, _wp.z + az / al * VIAL_HALF * k);
-      const d = hit.dir, dl = Math.hypot(d.x, d.y, d.z) || 1, r = VIAL_REACH * k;
-      const q1 = { x: pt.x + d.x / dl * r, y: pt.y + d.y / dl * r, z: pt.z + d.z / dl * r };
-      if (segSegDist(pt, q1, _va, _vb) <= VIAL_CAP_R * k) vial = true;
-    }
+    // (round 2) no priority rule: a vial hit is a hit whose point lies in the vial's weak-point sphere or on the vial's own
+    // geometry. The arrow sweep is triangle-exact on the head's skin now (core/hitHulls.js `_exactBoneT`), so a shot no
+    // longer stops in the air short of the glass; one stopped on a part outside that sphere is not a vial hit (the 0.45 m
+    // priority reach of fix 1 counted those)
     const r = super.takeDamage(hit);
     if (vial && this.alive && this._toppleT < 0) {
       this._vialHits++;

@@ -152,7 +152,7 @@
 
     { "id": "F23-plumb", "subject": "the Plumb with Brea at 6 m", "in": "M1a",
       "hour": 16.5, "weather": "trade", "at": "place:openGround", "bearing": 180,
-      "camera": { "mode": "orbit", "yawRel": 155, "dist": 4.5, "height": 2.0, "target": { "fwd": 4, "side": 0, "up": 1.6 }, "fov": 50 },
+      "camera": { "mode": "orbit", "yawRel": 155, "dist": 4.5, "height": 1.8, "target": { "fwd": 5, "side": 0, "up": 1.7 }, "fov": 42 },
       "state": { "pose": "idle", "hud": false, "actors": [ { "type": "instrument", "kind": "plumb", "dist": 6, "side": 0, "face": "brea" } ] },
       "ref": { "crops": ["inst-plumb", "inst-lineup"] } },
 
@@ -171,7 +171,7 @@
     { "id": "F24", "subject": "the Plumb in the meadow, Brea aiming", "in": "M1a",
       "hour": 17.5, "weather": "trade", "at": "look.meadow", "bearing": 240,
       "camera": { "mode": "chase", "pitch": 2 },
-      "state": { "pose": "draw", "hud": false, "actors": [ { "type": "instrument", "kind": "plumb", "dist": 20, "side": 0, "face": "brea" } ] },
+      "state": { "pose": "draw", "hud": false, "actors": [ { "type": "instrument", "kind": "plumb", "dist": 11, "side": -6, "face": "brea" } ] },
       "ref": { "crops": ["inst-wild"] } },
 
     { "id": "F25", "subject": "the Plumb toppling on the dyke with its Peg swarm rushing", "in": "M1b",

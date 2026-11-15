@@ -282,6 +282,8 @@ export async function stageFrame(f, o = {}) {
     if (r.m) {   // an Instrument stands still where it was put, facing Brea
       const want = Math.atan2(bx - r.x, bz - r.z);
       r.m.heading = want; if (r.m.root) { r.m.root.position.set(r.x, ground(r.x, r.z), r.z); r.m.root.rotation.y = want; }
+      // (instruments, M1a r2) its feet re-planted under the turned pose before it freezes (src/instruments/lib/kindkit.js seatFeet)
+      try { r.m.seatFeet?.(); } catch (e) { standIns.push(`Instrument '${r.a.kind}': seatFeet threw (${e.message})`); }
       const u0 = r.m.update; r.m.update = function () {}; undo.push(() => { r.m.update = u0; });
     } else if (r.q) {
       const tx = r.a.face === 'camera' ? lens.pos.x : bx, tz = r.a.face === 'camera' ? lens.pos.z : bz;

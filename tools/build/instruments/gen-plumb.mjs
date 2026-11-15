@@ -44,8 +44,10 @@ export const PLUMB = Object.freeze({
   sphereY: 2.48, sphereR: 0.42,
   ringIn: 0.425, ringOut: 0.55,
   // the lamp drum rides OUTBOARD on the ring's right trunnion, off the sphere's axis (M1.4a fix 1: a round lit lens
-  // centred on the white sphere read as one eye from the front; IP-PRIVATE §P2 bans faces)
-  drumX: 0.80, drumY: 0.03, drumBackZ: -0.07, drumR: 0.19, drumDepth: 0.19,
+  // centred on the white sphere read as one eye from the front; IP-PRIVATE §P2 bans faces). Round 2: slung LOW on the
+  // trunnion (its top at the ring's plane, its centre 0.17 m under the sphere's equator) and smaller (0.19 -> 0.17 m):
+  // a lantern hung off the gimbal's side, not a disc at eye height beside a round head
+  drumX: 0.80, drumY: -0.17, drumBackZ: -0.07, drumR: 0.17, drumDepth: 0.19,
   vialY: 3.21, vialLen: 0.30, vialR: 0.045,
   top: 3.40,
   // fix 1: the bob hangs on a short cable so it shows above the meadow (on 1.2 m it hung at 0.1-0.5 m, in the grass)
@@ -242,12 +244,14 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
   // the drum's hood: an enamel visor over the iris (bow-shaped plate)
   plate(drum, [[-0.15, 0], [0.15, 0], [0.11, 0.07], [-0.11, 0.07]], 0.012, 0.004,
     basis(V(1, 0, 0), V(0, 0.3, 1).normalize(), V(0, 1, -0.3).normalize(), V(DX, DY + PLUMB.drumR * 1.02, PLUMB.drumBackZ + PLUMB.drumDepth - 0.05)), { surf: 'glaze', tone: C.ENAMEL, wear: 0.4 });
-  // the trunnion: a brass yoke from the ring's outer wall to the drum's barrel (two arms and a pivot boss), on the gimbal
+  // the trunnion: a brass yoke from the ring's outer wall to the drum's barrel (two arms and a pivot boss), on the gimbal.
+  // Round 2: the drum hangs below the ring, so the yoke is a hanger: a gunmetal boss out from the ring's wall, then two
+  // brass straps down to the barrel's sides (front and back of the pivot)
   {
-    const zc = PLUMB.drumBackZ + PLUMB.drumDepth * 0.45, xr = PLUMB.ringOut - 0.02, xd = DX - PLUMB.drumR * 0.98;
-    for (const s of [-1, 1]) strut(GB, V(xr, SY + s * 0.075, zc), V(xd + 0.01, DY + s * 0.075, zc), 0.018, 0.016, { surf: 'bronze', tone: C.BRASS, sides: 10, wear: 0.6 });
-    strut(GB, V(xr - 0.01, SY, zc), V(xd + 0.015, DY, zc), 0.034, 0.034, { surf: 'graphite', tone: C.GUNMETAL, sides: 14, wear: 0.5 });
-    for (const s of [-1, 1]) rivet(GB, V(xr + 0.03, SY + s * 0.075, zc + 0.018), V(0, 0, 1), 0.01);
+    const zc = PLUMB.drumBackZ + PLUMB.drumDepth * 0.45, xr = PLUMB.ringOut - 0.02, xp = DX;
+    strut(GB, V(xr - 0.01, SY, zc), V(xp + 0.03, SY, zc), 0.03, 0.03, { surf: 'graphite', tone: C.GUNMETAL, sides: 14, wear: 0.5 });
+    for (const s of [-1, 1]) strut(GB, V(xp, SY + 0.01, zc + s * 0.06), V(xp, DY + PLUMB.drumR * 0.55, zc + s * 0.06), 0.016, 0.014, { surf: 'bronze', tone: C.BRASS, sides: 10, wear: 0.6 });
+    for (const s of [-1, 1]) rivet(GB, V(xr + 0.03, SY + s * 0.024, zc + 0.03), V(0, 0, 1), 0.01);
   }
 
   /* --------------------------------- the bob ------------------------------- */
@@ -311,7 +315,18 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
     bobTop: sh(BOB),
     drum: sh(V(DX, DY, PLUMB.drumBackZ + PLUMB.drumDepth / 2)),
     drumBack: sh(DRUM_BACK),
+    // round 2: the drum's mount is its pivot, where the trunnion's straps meet the barrel (the part rides from there)
+    drumPivot: sh(V(DX, DY + PLUMB.drumR * 0.55, PLUMB.drumBackZ + PLUMB.drumDepth * 0.45)),
     head: sh(SC),
+    // round 2: each fixed head part is mounted where it meets what carries it (A44b reads a part's mount against the
+    // hull and the other tools): the gimbal's inner edge on the sphere's equator, each gyro ring at its pivot in the
+    // gimbal, the telescope's bracket on the shell, the vial's standards at the crown, its cradle on the right standard
+    gimbalSeat: sh(V(0, SY, -PLUMB.ringIn)),
+    gyroAPivot: sh(V(0.47, SY, 0)),
+    gyroBPivot: sh(V(Math.cos(THREE.MathUtils.degToRad(55)) * 0.465, SY, -Math.sin(THREE.MathUtils.degToRad(55)) * 0.465)),
+    scopeSeat: sh(V(0.18, SY + 0.19, 0.315)),
+    mastFoot: sh(V(0.16, SY + Math.sqrt(SR * SR - 0.16 * 0.16) - 0.03, 0)),
+    cradleSeat: sh(V(0.16, VY - 0.05, 0)),
     top: sh(V(0, PLUMB.top, -0.085)),
   };
 
@@ -339,13 +354,13 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
     // drawn by the lamp system at the drum's face
     { bucket: glassAll, role: 'sensor', material: { name: 'r5-plumb-vial-glass', emissive: [ICE_LIN.r, ICE_LIN.g, ICE_LIN.b], baseColor: [0.62, 0.78, 0.76, 1] } },
     { bucket: bob, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.bobTop } },
-    { bucket: drum, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.drumBack } },
-    { bucket: GB, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.head } },
-    { bucket: GR1, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.head } },
-    { bucket: GR2, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.head } },
-    { bucket: SCP, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.head } },
-    { bucket: CR, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.vial } },
-    { bucket: MS, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.head } },
+    { bucket: drum, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.drumPivot } },
+    { bucket: GB, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.gimbalSeat } },
+    { bucket: GR1, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.gyroAPivot } },
+    { bucket: GR2, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.gyroBPivot } },
+    { bucket: SCP, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.scopeSeat } },
+    { bucket: CR, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.cradleSeat } },
+    { bucket: MS, role: 'tool', material: { name: 'r5-plumb-hull', anchor: sk.mastFoot } },
   ], {
     file: target,
     provenance: { recipe: RECIPE, sources: [], licence: 'project-original' },

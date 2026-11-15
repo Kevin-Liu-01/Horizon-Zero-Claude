@@ -554,6 +554,88 @@ void main() {
     cam.position.copy(cam0.pos); cam.quaternion.copy(cam0.q); cam.fov = cam0.fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     await raf();
   }
+  /* ================= round 2: sockets alive and dead, the vial on death, the kill -> dispose cycle ================= */
+  // A44's own measure (each weak point's distance to the nearest VISIBLE mesh's world box, less its radius) and A44b's
+  // (`machine.socketReport()`, the strict vertex form), on a fresh Plumb, alive and 3.2 s after the rows' own kill
+  E.requestTimeScale('studio', null);
+  const disposeSite = (m) => { try { if (M.sites?.dispose) M.sites.dispose(m); else dispose(m); } catch (e) { dispose(m); } };
+  try {
+    await guard('sockets', async () => {
+      const V = THREE.Vector3;
+      const m = M.spawn('plumb', flat.x, flat.z, { route: [{ x: flat.x, z: flat.z }], heading: 0 });
+      for (let i = 0; i < 40; i++) { calm(m); await raf(); }
+      const boxesOf = () => { m.root.updateMatrixWorld(true); const b = []; m.root.traverse((o) => { if (!o.isMesh || !o.geometry || !o.visible) return; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); b.push({ name: o.name || o.type, box: o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld) }); }); return b; };
+      const a44 = () => { const B = boxesOf(), rec = {}; let worst = 0; for (const w of m.weakPoints || []) { const pt = w.obj.getWorldPosition(new V()); let d = 1e9, nm = null; for (const b of B) { const dd = b.box.distanceToPoint(pt); if (dd < d) { d = dd; nm = b.name; } } const gap = Math.max(0, d - (w.radius || 0)); rec[w.name] = { gapM: r3(gap), nearest: nm }; worst = Math.max(worst, gap); } return { worstGapM: r3(worst), points: rec }; };
+      const a44b = () => { const r = m.socketReport?.(); return r ? { worstGapM: r.worstGapM, worstSocket: r.worstSocket, sockets: r.sockets, proudOffsetsM: r.proudOffsetsM } : null; };
+      const vial = () => { let g = null; m.root.traverse((o) => { if (!g && o.isMesh && o.name === 'plumb-vial') g = o; }); if (!g) return null; const e = g.material.emissive; return { emissiveLin: [r3(e.r), r3(e.g), r3(e.b)], intensity: r3(g.material.emissiveIntensity), lit: r3((e.r + e.g + e.b) * g.material.emissiveIntensity) }; };
+      const alive = { a44: a44(), a44b: a44b(), vial: vial(), lamp: LS?.stateOf(m) ?? null };
+      m.takeDamage({ impact: 99999, dir: new V(0, 0, 1), point: m.position.clone() });
+      if (m.alive) m._die();
+      await wait(1200);
+      const vial1s = vial();
+      await wait(2000);
+      const dead = { a44: a44(), a44b: a44b(), vial: vial(), vialAt1_2s: vial1s, lamp: LS?.stateOf(m) ?? null };
+      disposeSite(m);
+      return { alive, dead, bar: 'A44 and A44b: every socket within 0.10 m of the hull, alive and dead; the vial dark once dead',
+        passA44: Math.max(alive.a44.worstGapM, dead.a44.worstGapM) <= 0.1, passA44b: !!alive.a44b && Math.max(alive.a44b.worstGapM, dead.a44b.worstGapM) <= 0.1,
+        vialDark: !!dead.vial && dead.vial.lit < 0.02 };
+    });
+    // A90's workload, one kind at a time, IN VIEW (a machine the lens never sees is never uploaded, so it cannot show
+    // a leak): spawn 9 m from the lens, the row's own kill, 1.5 s, the site lifecycle's dispose; the renderer's
+    // geometry and texture counts against the start of each cycle (three cycles: the first fills per-kind caches), and
+    // every geometry and texture that entered the scene in the cycle and was neither disposed nor left in it
+    await guard('cycle', async () => {
+      const mem = () => [R.info.memory.geometries, R.info.memory.textures];
+      const gy = hy(flat.x, flat.z);
+      p._updateCamera = () => {};
+      cam.fov = 50; cam.updateProjectionMatrix();
+      cam.position.set(flat.x + 6.4, gy + 2.2, flat.z + 6.4); cam.lookAt(flat.x, gy + 1.4, flat.z); cam.updateMatrixWorld();
+      const disposedG = new WeakSet(), disposedT = new WeakSet();
+      const gd = THREE.BufferGeometry.prototype.dispose, td = THREE.Texture.prototype.dispose;
+      THREE.BufferGeometry.prototype.dispose = function () { disposedG.add(this); return gd.call(this); };
+      THREE.Texture.prototype.dispose = function () { disposedT.add(this); return td.call(this); };
+      const label = (o) => { let n = o, mk = null; while (n) { if (n.userData?.machine) { mk = n.userData.machine.kind; break; } n = n.parent; } return `${mk || 'scene'}:${o.name || o.type}`; };
+      const texOf = (mt2, cb) => { if (!mt2) return; for (const k in mt2) { const v = mt2[k]; if (v && v.isTexture) cb(v, k); } if (mt2.uniforms) for (const k in mt2.uniforms) { const v = mt2.uniforms[k]?.value; if (v && v.isTexture) cb(v, 'u.' + k); } };
+      const snap = () => { const g = new Map(), t = new Map(); C.scene.traverse((o) => { if (o.geometry) g.set(o.geometry, label(o) + '|' + o.geometry.type); const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : []; for (const mm of mats) texOf(mm, (tx, k) => t.set(tx, label(o) + '|' + k)); if (o.isSkinnedMesh && o.skeleton?.boneTexture) t.set(o.skeleton.boneTexture, label(o) + '|boneTexture'); }); return { g, t }; };
+      const res = {};
+      try {
+        for (const kind of (M.kinds || []).filter((k) => ['plumb', 'peg', 'tiller'].includes(k))) {
+          const cyc = [];
+          for (let c = 0; c < 3; c++) {
+            for (let i = 0; i < 10; i++) await raf();
+            const before = snap(), m0 = mem(), seenG = new Map(), seenT = new Map();
+            const look = () => { const q = snap(); for (const [k, v] of q.g) if (!before.g.has(k)) seenG.set(k, v); for (const [k, v] of q.t) if (!before.t.has(k)) seenT.set(k, v); };
+            const m = M.spawn(kind, flat.x, flat.z, { route: [{ x: flat.x, z: flat.z }] });
+            if (!m) { cyc.push('spawn failed'); break; }
+            for (let i = 0; i < 30; i++) { await raf(); if (i % 5 === 0) look(); }
+            const m1 = mem();
+            let mesh = null; m.root.traverse((o) => { if (!mesh && o.isMesh) mesh = o; });
+            m.takeDamage({ point: m.position.clone(), object: mesh, impact: 99999, tear: 0, element: 'none', elementAmount: 0, dir: { x: 0, y: 0, z: 1 }, type: 'hunter', baseDamage: 99999 });
+            for (let i = 0; i < 120; i++) { await raf(); if (i % 5 === 0) look(); }
+            const m2 = mem();
+            disposeSite(m);
+            for (let i = 0; i < 30; i++) await raf();
+            const m3 = mem(), after = snap();
+            const leak = [];
+            for (const [k, v] of seenG) if (!disposedG.has(k) && !after.g.has(k)) leak.push('geo ' + v);
+            for (const [k, v] of seenT) if (!disposedT.has(k) && !after.t.has(k)) leak.push('tex ' + v);
+            for (const [k, v] of after.g) if (!before.g.has(k)) leak.push('geo left in scene ' + v);
+            cyc.push({ alive: [m1[0] - m0[0], m1[1] - m0[1]], dead: [m2[0] - m0[0], m2[1] - m0[1]], net: [m3[0] - m0[0], m3[1] - m0[1]], leak });
+          }
+          res[kind] = cyc;
+        }
+      } finally {
+        THREE.BufferGeometry.prototype.dispose = gd; THREE.Texture.prototype.dispose = td;
+        p._updateCamera = upd0;
+      }
+      return { perCycle: res, bar: 'after the first cycle, net 0 geometries and 0 textures per spawn -> kill -> dispose, the machine in view' };
+    });
+  } finally {
+    E.requestTimeScale('studio', 0);
+    p.position.copy(P0); p._snapToGround?.();
+    cam.position.copy(cam0.pos); cam.quaternion.copy(cam0.q); cam.fov = cam0.fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+    await raf();
+  }
   out.totalSeconds = r3((performance.now() - out.t0) / 1000);
   delete out.t0;
   return out;

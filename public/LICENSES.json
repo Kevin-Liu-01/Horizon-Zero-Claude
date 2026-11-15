@@ -320,7 +320,7 @@
       "paths": [
         "public/models/instruments/plumb.glb"
       ],
-      "title": "Plumb (walking theodolite, the sentry; instruments-a W1)",
+      "title": "Plumb (the sentry: gyroscope-sphere head on a survey tripod; M1.4 hull kit, generated)",
       "author": "CALIMA project",
       "source_url": "tools/build/instruments/gen-plumb.mjs",
       "licence": "project-original",
