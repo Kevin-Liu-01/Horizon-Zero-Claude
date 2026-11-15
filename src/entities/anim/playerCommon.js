@@ -535,12 +535,7 @@ DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, m
  *  median 54 / 52 deg (anchor 44 / 40, as it stood 42 / 47). With `airSelf` 1 in motion (the anchor's own) the front
  *  panel still shot out level in one lunge of two (-7 deg)) */
 DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 3.2, airY: true, flut: 2.0, hang: 2, rootK: 3, airSelf: 0.4,
-  moving: { v0: 0.5, v1: 1.5, wind: 1.2, flut: 1, hang: 0, rootK: 0, airSelf: 0.4 },
-  /* (M1a regfix 3, F19: in a lance swing the panels fall harder and bend less off their rest, so the front panel hangs
-   *  down in front of her thigh in the heavy's lunge and is never thrown out level ahead of her knee; secondaryMotion
-   *  `swing`. Dressed bench, F19's staging, ten starts: front panel 30-64 deg below horizontal, median 40, against
-   *  4-31 without) */
-  swing: { grav: 1.4, maxAng: 0.25, up: 12 } });
+  moving: { v0: 0.5, v1: 1.5, wind: 1.2, flut: 1, hang: 0, rootK: 0, airSelf: 0.4 } });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 export const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */
