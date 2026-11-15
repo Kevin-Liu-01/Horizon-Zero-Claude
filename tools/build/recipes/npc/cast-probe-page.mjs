@@ -43,7 +43,9 @@ export async function probe(frame) {
     const slots = [-4, -3, -2, -1, 1, 2, 3, 4, 5];
     const who = ['guild-matron', ...PS.cast];
     const centre = B.clone().addScaledVector(right, 0.5);
-    const lensAt = centre.clone().addScaledVector(fwd, -11);
+    // the lens 11 m off the row on the side the frame's own lens stands; turned to the other side below if the world (Saltrow's
+    // houses and salt cones) hides more of the row from this one
+    let lensAt = centre.clone().addScaledVector(fwd, -11);
     const faceYaw = (x, z) => Math.atan2(lensAt.x - x, lensAt.z - z);
     const figures = [{ id: 'brea', obj: p.model, person: null }];
     for (let i = 0; i < who.length; i++) {
@@ -68,14 +70,41 @@ export async function probe(frame) {
     undo.push(() => { cam.position.copy(cam0.pos); cam.quaternion.copy(cam0.q); cam.fov = cam0.fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld(); });
     const others = (PS.list || []).filter((q) => !figures.some((f) => f.person === q));
     for (const q of others) { const v = q.group.visible; q.group.visible = false; undo.push(() => { q.group.visible = v; }); }
-    cam.position.set(lensAt.x, ground(lensAt.x, lensAt.z) + 1.2, lensAt.z);
-    cam.lookAt(centre.x, ground(centre.x, centre.z) + 1.0, centre.z); cam.fov = 45; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
-    out.lens = { at: [lensAt.x, cam.position.y, lensAt.z].map(r3), look: [centre.x, centre.z].map(r3), brea: [B.x, B.y, B.z].map(r3), row: figures.map((f) => ({ id: f.id, at: [f.obj.getWorldPosition(new THREE.Vector3()).x, f.obj.getWorldPosition(new THREE.Vector3()).y, f.obj.getWorldPosition(new THREE.Vector3()).z].map(r3) })) };
     const W = R.domElement.width, H = R.domElement.height;
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const g2 = cv.getContext('2d', { willReadFrequently: true });
     const grab = () => { g2.drawImage(R.domElement, 0, 0); return g2.getImageData(0, 0, W, H).data; };
     const vis0 = figures.map((f) => f.obj.visible);
+    const putLens = () => {
+      cam.position.set(lensAt.x, ground(lensAt.x, lensAt.z) + 1.3, lensAt.z);
+      cam.lookAt(centre.x, ground(centre.x, centre.z) + 0.95, centre.z); cam.fov = 45; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+    };
+    // how much of the row a lens sees: the pixels the row changes against the row-less render
+    const seen = () => {
+      putLens(); E.render(0); const a = grab();
+      figures.forEach((f) => { f.obj.visible = false; }); E.render(0); const b = grab();
+      figures.forEach((f, i) => { f.obj.visible = vis0[i]; });
+      let n = 0; for (let i = 0; i < a.length; i += 4) if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) > 12) n++;
+      return n;
+    };
+    const near = seen();
+    const lensNear = lensAt.clone();
+    lensAt = centre.clone().addScaledVector(fwd, 11);
+    const far = seen();
+    out.lensChoice = { framesSide: near, otherSide: far };
+    if (far > near * 1.2) {
+      // the row turns to the open side and settles again
+      for (const f of figures) {
+        if (!f.person) continue;
+        const q = f.person, at = q.group.position, y = faceYaw(at.x, at.z);
+        q.yaw = y; q.group.rotation.y = y;
+        try { for (const c of q.chains?.chains || []) { c.links.forEach((l, k) => l.quaternion.copy(c.bindQ[k])); c.seeded = false; } } catch (e) { /* */ }
+      }
+      cam.position.copy(cam0.pos); cam.quaternion.copy(cam0.q); cam.fov = cam0.fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+      await new Promise((r) => setTimeout(r, 2500));
+    } else lensAt = lensNear;
+    putLens();
+    out.lens = { at: [lensAt.x, cam.position.y, lensAt.z].map(r3), look: [centre.x, centre.z].map(r3), brea: [B.x, B.y, B.z].map(r3), row: figures.map((f) => ({ id: f.id, at: [f.obj.getWorldPosition(new THREE.Vector3()).x, f.obj.getWorldPosition(new THREE.Vector3()).y, f.obj.getWorldPosition(new THREE.Vector3()).z].map(r3) })) };
     E.render(0);
     out.crowd = R.domElement.toDataURL('image/jpeg', 0.9);
     const all = grab();
