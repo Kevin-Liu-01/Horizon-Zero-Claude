@@ -100,6 +100,14 @@ const _pNow = new THREE.Vector3();
  *  to be written into `_tPrev` / `_tNow` and wiped the sweep (see `_flashTrail`). */
 const _bGrip = new THREE.Vector3();
 const _bTip = new THREE.Vector3();
+/** The haft's recent directions (grip -> tip, unit, world) with the sim time of each, so the trail spans the angle
+ *  the haft really swept and nothing more (M1a round 3, F19: a 89 deg fan was laid on every beat, a thrust included,
+ *  and its band ran past the tip). A ring of HAFT_N; filled once per swing frame. */
+const HAFT_N = 12;
+const _haft = Array.from({ length: HAFT_N }, () => new THREE.Vector3());
+const _haftT = new Float64Array(HAFT_N);
+const _hG = new THREE.Vector3();
+const _hT = new THREE.Vector3();
 /** `_aimAt`'s predicted contact tip (round 6). */
 const _aTip = new THREE.Vector3();
 const _aSh = new THREE.Vector3();
@@ -613,20 +621,11 @@ export class Melee {
      * V47 films a real contact frame so the trail is judged, not just the
      * pinned poses.
      */
+    /* M1a round 3 (F19): the ring is re-laid on every flash (`_layTrail`) to the angle the haft really swept and to
+     * the blade's own band (inside the tip, never past it); 22 x 2 vertices rewritten, no allocation. */
     const trailGeo = new THREE.RingGeometry(1.36, 1.72, 22, 1, 0, 1.55);
-    /* the smear fades along the sweep and toward the haft, so it reads as the
-     * blade's light on the air and not as a strip of card (melee W1, filmed);
-     * additive, so a black vertex is simply no light */
-    {
-      const P = trailGeo.getAttribute('position'), col = new Float32Array(P.count * 3);
-      for (let i = 0; i < P.count; i++) {
-        const x = P.getX(i), y = P.getY(i);
-        const th = Math.atan2(y, x) / 1.55, r = (Math.hypot(x, y) - 1.36) / 0.36;
-        const a = (1 - th) * (1 - th) * (0.35 + 0.65 * r);
-        col[i * 3] = a; col[i * 3 + 1] = a; col[i * 3 + 2] = a;
-      }
-      trailGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    }
+    trailGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(trailGeo.getAttribute('position').count * 3), 3));
+    this._haftN = 0;
     this._trail = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({
       color: 0xfff0d0, transparent: true, opacity: 0, depthWrite: false, vertexColors: true,
       side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false,
@@ -1596,6 +1595,15 @@ export class Melee {
     if (this.stance === 'swing' && this.layer) {
       _tPrev.copy(_tNow);
       this.layer.tipWorld(_tNow);
+      // the haft's direction this frame (F19 trail: the angle it really swept)
+      if (this.layer.gripWorld?.(_hG)) {
+        _hT.subVectors(_tNow, _hG);
+        if (_hT.lengthSq() > 0.04) {
+          const k = this._haftN % HAFT_N;
+          _haft[k].copy(_hT).normalize(); _haftT[k] = this.ctx.engine?.simTime ?? performance.now() / 1000;
+          this._haftN++;
+        }
+      }
       _pPrev.copy(_pNow);
       if (p) _pNow.copy(p.position);
       /* the swing's tangent (P-04 b, P-05): the last frame the tip really moved, so
@@ -1729,6 +1737,7 @@ export class Melee {
       _tPrev.copy(_tNow);
       if (this.ctx.player) { _pNow.copy(this.ctx.player.position); _pPrev.copy(_pNow); }
     }
+    this._haftN = 0;   // ...and the haft's history (the trail's swept angle)
     this.lastSwingT = performance.now() / 1000;
     // where on the target this beat's blade is going (round 6, R7)
     this._aimAt();
@@ -2588,14 +2597,26 @@ export class Melee {
          * as a 1.5 m opaque white fan over her torso and through the target's
          * leg). */
         _tD.negate();                              // trailing, not leading
+        /* M1a round 3 (F19): THE REAL PATH AND SIZE. The swept angle is the angle between the haft now and the haft
+         * one trail-length ago (`_haft`, sampled each swing frame), in the plane those two directions span; a beat whose
+         * haft turned under 8 deg (a thrust) lays no arc at all, since the blade drew no arc. The band is the blade's:
+         * from 0.30 of the reach (at most 0.45 m) inside the tip out to the tip, never past it, and it no longer grows */
+        const sw = this._sweptHaft(_tC, heavy ? 0.15 : 0.10);
+        if (!sw) { t.visible = false; return; }
+        if (sw.angle > 0) {
+          _tD.copy(sw.from).addScaledVector(_tC, -sw.from.dot(_tC));
+          if (_tD.lengthSq() > 1e-8) _tD.normalize();
+        }
         _tA.crossVectors(_tC, _tD).normalize();    // plane normal (local +Z)
         _m3.set(_tC.x, _tD.x, _tA.x, _tC.y, _tD.y, _tA.y, _tC.z, _tD.z, _tA.z);
         t.quaternion.setFromRotationMatrix(_m4.identity().setFromMatrix3(_m3));
-        this._trailScale = (reach / (L * 0.8)) * (heavy ? 1.1 : 0.95);
+        this._layTrail(reach - Math.min(0.45, 0.30 * reach), reach, sw.angle);
+        this._trailScale = 1;
         placed = true;
       }
     }
     if (!placed) {
+      this._layTrail(1.36, 1.72, 1.55);
       _tA.copy(origin).addScaledVector(dir, heavy ? 1.5 : 1.25);
       t.position.copy(_tA);
       _e.set(0, Math.atan2(dir.x, dir.z), heavy ? -0.55 : 0.75, 'YXZ');
@@ -2635,12 +2656,50 @@ export class Melee {
     this._armM = null;
   }
 
+  /**
+   * The angle the haft swept over the last `span` s (M1a round 3, F19): `{ angle, from }` with `from` the haft's
+   * direction at the start of that span; `null` when it turned under 8 deg (a thrust: no arc), `{ angle: 0 }` when
+   * there is no history (a no-rig or first-frame beat keeps the old 1.55 rad sector on the sweep direction).
+   */
+  _sweptHaft(now, span) {
+    const n = Math.min(this._haftN, HAFT_N);
+    if (n < 2) return { angle: 0, from: null };
+    const last = (this._haftN - 1) % HAFT_N, tNow = _haftT[last];
+    let from = _haft[last];
+    for (let j = 1; j < n; j++) {
+      const k = (this._haftN - 1 - j + HAFT_N * 2) % HAFT_N;
+      from = _haft[k];
+      if (tNow - _haftT[k] >= span) break;
+    }
+    const ang = Math.acos(Math.max(-1, Math.min(1, from.dot(now))));
+    if (ang < 8 * Math.PI / 180) return null;
+    return { angle: Math.min(1.55, ang), from };
+  }
+
+  /** Lay the trail ring from radius r0 to r1 over `ang` rad (0 -> the 1.55 rad default) and bake its fade. */
+  _layTrail(r0, r1, ang) {
+    const a = ang > 0 ? ang : 1.55;
+    const geo = this._trail.geometry, P = geo.getAttribute('position'), C = geo.getAttribute('color');
+    const segs = 22;
+    for (let j = 0; j <= 1; j++) for (let i = 0; i <= segs; i++) {
+      const v = j * (segs + 1) + i, th = i / segs, r = j ? r1 : r0, q = th * a;
+      P.setXYZ(v, Math.cos(q) * r, Math.sin(q) * r, 0);
+      /* the smear fades along the sweep and toward the haft, so it reads as the blade's light on the air and not as
+       * a strip of card (melee W1, filmed); additive, so a black vertex is simply no light */
+      const k = (1 - th) * (1 - th) * (0.35 + 0.65 * j);
+      C.setXYZ(v, k, k, k);
+    }
+    P.needsUpdate = true; C.needsUpdate = true;
+    geo.computeBoundingSphere();
+  }
+
   _updateTrail(realDt) {
     if (!this._trail.visible) return;
     this._trailT += realDt;
     const k = this._trailT / (this._trailDur || 0.12);
     if (k >= 1) { this._trail.visible = false; return; }
-    const s = this._trailScale * (0.86 + 0.26 * k);
+    // the rig-placed smear stays the blade's size (scale 1); only the no-rig fallback still swells
+    const s = this._trailScale === 1 ? 1 : this._trailScale * (0.86 + 0.26 * k);
     this._trail.scale.set(s, s, s);
     this._trail.material.opacity = TRAIL_PEAK * (1 - k) * (1 - k);
   }
