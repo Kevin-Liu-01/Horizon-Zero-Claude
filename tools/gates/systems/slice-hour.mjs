@@ -130,6 +130,7 @@ async function walkTo(page, K, target, radius, { up = 0, maxS = 150 } = {}) {
       const s = await page.evaluate(probe);
       if (s.state === 'dead') return { ok: false, why: 'died' };
       if (s.busy) return { ok: true, interrupted: true };
+      if (s.state !== 'playing') return { ok: false, why: `the game left play (state ${s.state})` };
       const dx = s.p.x - target.x, dz = s.p.z - target.z, d = Math.hypot(dx, dz);
       if (d <= radius && (!up || s.p.y - s.p.g >= 0 || true)) {
         if (!up) return { ok: true, d };
@@ -161,6 +162,21 @@ async function holdE(page, K, ms = 650) { await K.down('KeyE'); await sleep(ms);
 async function beat(page, K, s) {
   const st = s.stage;
   if (s.type === 'goto') {
+    if (s.up) {
+      // a pillar is climbed by its three 1 m steps (src/world/sites/survey.js): come at it from the steps' side
+      const ap = await page.evaluate((x, z) => {
+        const P = window.__CTX__.props?.survey?.pillars || [];
+        let best = null, bd = Infinity;
+        for (const p of P) { const d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; best = p; } }
+        return best ? { x: best.x + Math.sin(best.yaw) * 8, z: best.z + Math.cos(best.yaw) * 8, cx: best.x, cz: best.z } : null;
+      }, s.anchor.x, s.anchor.z);
+      if (ap) {
+        const r0 = await walkTo(page, K, ap, 1.5);
+        if (!r0.ok) return { ...r0, why: `approach to the steps: ${r0.why}` };
+        const r1 = await walkTo(page, K, { x: ap.cx, z: ap.cz }, 1.2, { up: s.up, maxS: 60 });
+        return r1;
+      }
+    }
     const r = await walkTo(page, K, s.anchor, Math.max(1.5, s.radius - 1), { up: s.up });
     await sleep(300);
     await playScene(page, K);
@@ -304,9 +320,9 @@ try {
     return rec ? { stage: rec.quest?.order?.at?.(-1)?.id ?? null, idx: rec.quest?.idx, salt: rec.satchel['metal-shards'] ?? 0, hour: rec.hour, x: rec.position.x, z: rec.position.z, kind: rec.kind, reason: rec.reason, v: rec.v, keys: Object.keys(localStorage).filter((k) => k.startsWith('cal.v6')) } : null;
   });
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 180000 });
-  await page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press', { timeout: 240000, polling: 100 });
+  await page.waitForFunction(() => window.__CTX__?.state === 'title' && /press|menu/.test(window.__CTX__?.menus?.titleStage || ''), { timeout: 240000, polling: 100 });
   await sleep(400);
-  await page.keyboard.press('Enter');
+  if (await page.evaluate(() => window.__CTX__.menus.titleStage === 'press')) await page.keyboard.press('Enter');
   await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 60000, polling: 50 });
   await sleep(300);
   const hadContinue = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent)); if (!b || b.disabled) return false; b.click(); return true; });

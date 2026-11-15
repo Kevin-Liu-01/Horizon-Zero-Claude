@@ -68,7 +68,7 @@ void main() {
   if (body < 0.01) discard;
   vec3 hot = vec3(1.0, 0.86, 0.55), mid = vec3(1.0, 0.52, 0.16), top = vec3(0.75, 0.22, 0.06);
   vec3 c = mix(hot, mid, smoothstep(0.05, 0.45, y)); c = mix(c, top, smoothstep(0.45, 0.9, y));
-  gl_FragColor = vec4(c * body * uK * 1.6, body * uK);
+  gl_FragColor = vec4(c * body * uK, body * uK);
 }`;
 
 /** The one shared fire light (shadow-free), for src/game/brazier/braziers.js, which may not import three. */
@@ -176,16 +176,20 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
     claimLight() {
       if (!light || light.userData.owner === group) return;
       light.userData.owner = group;
-      light.position.set(x, y0 + 0.95, z);
+      light.position.set(x, y0 + 1.4, z);
     },
     update(t, camera, dayK = 1) {
       const want = state.burning ? 1 : 0;
       state.k += (want - state.k) * 0.08;
+      // by day a fire is a faint shimmer (sky-look's fireDayK: 0.05 by day, 1 at night): the flame and coals scale
+      // with it too, so a day frame (F20) never shows a white column and a lit disc (4945148 film)
+      const day = 0.12 + 0.88 * Math.max(0, Math.min(1, dayK));
       flameMat.uniforms.uTime.value = t;
-      flameMat.uniforms.uK.value = state.k;
+      flameMat.uniforms.uK.value = state.k * day;
       const f = 1 + 0.13 * Math.sin(t * 11.3) + 0.08 * Math.sin(t * 23.7 + 1.3);
-      if (light && light.userData.owner === group) light.intensity = 18 * state.k * f * dayK;
-      coalMat.emissiveIntensity = state.kindled ? (0.15 + 1.6 * state.k) * f : 0;
+      // 7, not 18: at 18 the blades within a metre blew out to white and her violet turned pink (F30 at 4945148)
+      if (light && light.userData.owner === group) light.intensity = 7 * state.k * f * dayK;
+      coalMat.emissiveIntensity = state.kindled ? (0.1 + 0.9 * state.k * day) * f : 0;
       if (camera && flame.visible) {
         // yaw-only billboard in the group's frame
         const dx = camera.position.x - group.position.x, dz = camera.position.z - group.position.z;

@@ -78,9 +78,12 @@ export class Presenter {
   _key(e) {
     if (!this.busy || e.repeat) return;
     const c = e.code;
-    if (this._pick && /^Digit[1-4]$/.test(c)) { e.stopPropagation(); this._pick(Number(c.slice(5)) - 1); return; }
-    if (this._advance && (c === 'KeyE' || c === 'Space' || c === 'Enter')) { e.stopPropagation(); e.preventDefault(); this._advance(); return; }
-    if (this._escape && c === 'Escape') { e.stopPropagation(); this._escape(); }
+    // stopImmediatePropagation: the menus listen on the same window (capture) and, once this closes and the state is
+    // 'playing' again, would read the same Escape as "open the hub" (slice-hour run at 4945148)
+    const eat = () => { e.stopImmediatePropagation(); e.preventDefault(); };
+    if (this._pick && /^Digit[1-4]$/.test(c)) { eat(); this._pick(Number(c.slice(5)) - 1); return; }
+    if (this._advance && (c === 'KeyE' || c === 'Space' || c === 'Enter')) { eat(); this._advance(); return; }
+    if (this._escape && c === 'Escape') { eat(); this._escape(); }
   }
 
   _hold() {

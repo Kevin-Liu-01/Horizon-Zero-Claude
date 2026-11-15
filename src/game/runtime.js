@@ -67,7 +67,13 @@ export class SystemsGame {
     const dx = beach.x - pans.x, dz = beach.z - pans.z, L = Math.hypot(dx, dz) || 1;
     const nx = dz / L, nz = -dx / L;   // the side away from Saltrow
     const side = Math.sign((saltrow.x - mid.x) * nx + (saltrow.z - mid.z) * nz) || 1;
-    const crossed = { x: mid.x - nx * side * 25, z: mid.z - nz * side * 25 };
+    // the line runs along the coast: the far side is the beach, so take the widest offset that is still dry ground
+    let crossed = null;
+    for (const d of [25, 18, 12, 8, 5]) {
+      const c = { x: mid.x - nx * side * d, z: mid.z - nz * side * d };
+      if ((ctx.terrain?.getHeight?.(c.x, c.z) ?? 1) > 0.4) { crossed = c; break; }
+    }
+    crossed = crossed || { x: mid.x - nx * side * 5, z: mid.z - nz * side * 5 };
     this.A = {
       rest: { x: REST.x, z: REST.z },
       pans: { x: pans.x, z: pans.z },
@@ -194,7 +200,8 @@ export class SystemsGame {
       const a = this.A.transectA, b = this.A.transectB;
       for (let i = 0; i < 9; i++) {
         const p = lerp(a, b, 0.25 + 0.06 * i);
-        const m = M.spawn('peg', p.x, p.z, { route: [{ x: p.x, z: p.z }, lerp(a, b, 0.3 + 0.06 * i)] });
+        const q = lerp(a, b, 0.3 + 0.06 * i);
+        const m = M.spawn('peg', p.x, p.z, { route: [vec3(p.x, 0, p.z), vec3(q.x, 0, q.z)] });   // machines' routes are Vector3s
         if (m) this.spawned.transect.push(m);
       }
     } else if (what === 'plumb' && has('plumb')) {
