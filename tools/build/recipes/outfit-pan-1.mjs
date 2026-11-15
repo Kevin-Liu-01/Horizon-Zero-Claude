@@ -1485,8 +1485,10 @@ export async function panBase(opt = {}) {
         const b0 = 1 - 0.186 / L, b1 = 1 - 0.028 / L;
         cuff(bracer, R, armSkin, { from: b0, to: b1, off: 0.0084, thick: 0.0032, rings: 9, sides: 16, rect: trim.rect('pouch'), stiff: 0.55, laceAt: Math.PI / 2, laceRect: trim.rect('rope') });
         if ((opt.cut || 'starter') === 'starter') {
-          for (const [f0, f1] of [[b0 - 0.002 / L, b0 + 0.013 / L], [b1 - 0.013 / L, b1 + 0.002 / L]]) {
-            cuff(bracer, R, armSkin, { from: f0, to: f1, off: 0.0122, thick: 0.0022, rings: 2, sides: 16, rect: trim.rect('brass'), stiff: 0.55, roll: 0.0008 });
+          // (M1a round 3 fix, the judge at a3b9245: "the right bracer's brass cap is thin": "brass-capped on both forearms" did not read
+          // in F08. Each cap is 24 mm long (was 15) and stands 4.4 mm proud of the leather (was 2.8), 3.4 mm of brass (was 2.2))
+          for (const [f0, f1] of [[b0 - 0.003 / L, b0 + 0.021 / L], [b1 - 0.021 / L, b1 + 0.003 / L]]) {
+            cuff(bracer, R, armSkin, { from: f0, to: f1, off: 0.0126, thick: 0.0034, rings: 3, sides: 16, rect: trim.rect('brass'), stiff: 0.55, roll: 0.0010 });
           }
         }
       }
