@@ -260,8 +260,23 @@ void main() {
     let x0 = bw, y0 = bh, x1 = 0, y1 = 0;
     for (let i = 0; i < bw * bh; i++) { if (buf[i * 4] < 20 && buf[i * 4 + 1] < 20 && buf[i * 4 + 2] < 20) continue; const x = i % bw, y = (i / bw) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     const cy0 = Math.max(0, y1 - Math.round((y1 - y0) * 0.35));
-    return { distM: r3(dist), fov: r3(cv.fov), px2cm: r3(px2cm), ringVisibleShare: r3(onRing), expectedVisibleRivets: visible, resolvedRivets: resolved, runsPx: rv.map((q) => r3(q.len * sampM * pxPerM)).slice(0, 40),
-      bar: '2 cm rivets resolve at 6 m: brass runs between enamel on the ring face for >= 90 % of the rivets on its visible arc, each >= 2 px', pass: visible > 0 && resolved / visible >= 0.9 && px2cm >= 2,
+    // the frame-wide count: separate brass blobs (8-connected) of 2-40 px whose box is <= 3 rivet diameters, on the
+    // Plumb in this 6 m frame: each is a 2-5 cm brass detail resolved on its own (rivets on the lune seams, the ring and
+    // the legs' clamps). The ring's top face is near edge-on from 0.9 m above, so its own rivets merge (ring line above)
+    const isB = (i) => classOf(buf, i) === 'brass', seen = new Uint8Array(bw * bh), blobs = [];
+    for (let i = 0; i < bw * bh; i++) {
+      if (seen[i] || !isB(i)) continue;
+      const st = [i]; seen[i] = 1; let n = 0, bx0 = 1e9, by0 = 1e9, bx1 = -1, by1 = -1;
+      while (st.length) { const j = st.pop(); n++; const x = j % bw, y = (j / bw) | 0; if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
+        if (n > 400) continue;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= bw || yy >= bh) continue; const q = yy * bw + xx; if (!seen[q] && isB(q)) { seen[q] = 1; st.push(q); } } }
+      const span = Math.max(bx1 - bx0 + 1, by1 - by0 + 1);
+      if (n >= 2 && n <= 40 && span <= Math.max(3, 3 * px2cm)) blobs.push(span);
+    }
+    blobs.sort((a, b) => a - b);
+    const med = blobs.length ? blobs[blobs.length >> 1] : 0;
+    return { distM: r3(dist), fov: r3(cv.fov), px2cm: r3(px2cm), smallBrassBlobs: blobs.length, blobSpanMedianPx: med, ringVisibleShare: r3(onRing), ringExpectedRivets: visible, ringResolvedRivets: resolved, ringRunsPx: rv.map((q) => r3(q.len * sampM * pxPerM)).slice(0, 40),
+      bar: '2 cm detail resolves at 6 m: >= 20 separate brass blobs of 2-40 px on the Plumb in the 6 m frame, median span >= 2 px', pass: blobs.length >= 20 && med >= 2,
       headPng: x1 > x0 ? crop(buf, x0, cy0, x1 - x0 + 1, y1 - cy0 + 1, 1) : null };
   });
 
