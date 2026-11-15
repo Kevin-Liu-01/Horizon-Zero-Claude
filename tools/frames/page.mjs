@@ -513,7 +513,10 @@ export async function stageFrame(f, o = {}) {
     // (regfix 4) the draw and the crouched aim-strafe on simulation time: the wall clock's own beats as whole 1/60 s
     // steps (bow 0.35 s, crouch 0.3 s, aim 0.45 s, draw held 1.3 s, strafing right in the crouch), from 1.5 s of idle
     // on a re-seated rest. The strafe then freezes on the first step at or past the master gait phase `clipPhase`
-    // (frameset state, or the filmer's `o.clipPhase`; default 0.5), within at most 1.5 s more
+    // (frameset state, or the filmer's `o.clipPhase`; default 0.75), within at most 1.5 s more. 0.75 by a probe at
+    // fb6d5f0 (run 20261115T170951Z-fb6d5f0-eng4-f18phase-partial-x4: phases 0, 0.25, 0.5, 0.75): at 0.75 the near
+    // knee is down toward the lens and the front panel hangs to the ground, as in the accepted wall-clock anchor; at
+    // 0.5 the near leg is thrown out wide, at 0 the boots stand together (the run-3 review's 'side by side')
     sim.idle();
     if (C.quickslots?.select) C.quickslots.select(1); else press('Digit1');
     sim.step(21);
@@ -524,7 +527,7 @@ export async function stageFrame(f, o = {}) {
     sim.step(78);
     if (pose === 'crouchAim') {
       const loco = p.animator?.loco;
-      const want = Number.isFinite(o.clipPhase) ? o.clipPhase : Number.isFinite(st.clipPhase) ? st.clipPhase : 0.5;
+      const want = Number.isFinite(o.clipPhase) ? o.clipPhase : Number.isFinite(st.clipPhase) ? st.clipPhase : 0.75;
       let hit = !loco;
       for (let i = 0; i < 90 && !hit; i++) {
         const u0 = loco.phase; sim.step(1); const u1 = loco.phase;
