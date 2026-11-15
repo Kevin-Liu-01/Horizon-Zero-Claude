@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { THREE, Bucket, V, strut, ball, rbox, cable, rng } from '../../lib/hs.mjs';
 import { writeGLB } from '../../lib/glb.mjs';
 import { vnoise3, fbm3 } from '../../landmarks/recipes/lib/rock.mjs';
-import { BUILDINGS, TONES, HARBOUR, CONES } from '../../../../src/world/settlements/saltrow-layout.js';
+import { BUILDINGS, TONES, HARBOUR, CONES, placeOf } from '../../../../src/world/settlements/saltrow-layout.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 export const LANE = 'settlements';
@@ -237,10 +237,11 @@ function bell(body, F, x, y, z) {
   const prof = [[0.0, 0.0], [0.2, 0.0], [0.215, 0.03], [0.19, 0.1], [0.15, 0.22], [0.13, 0.34], [0.11, 0.4], [0.06, 0.43], [0.0, 0.44]]
     .map(([r, h]) => new THREE.Vector2(r, h));
   const g = new THREE.LatheGeometry(prof, 18);
+  g.scale(1.45, 1.45, 1.45);                             // a 0.64 m bell: it reads from the street's foot
   body.add(g, { surf: 'bronze', tone: BRASS, wear: 0.9, matrix: F.clone().multiply(mat(x, y, z)) });
   g.dispose();
-  const M = F.clone().multiply(mat(x, y + 0.5, z));
-  const yoke = new THREE.BoxGeometry(0.62, 0.1, 0.12);
+  const M = F.clone().multiply(mat(x, y + 0.68, z));
+  const yoke = new THREE.BoxGeometry(0.8, 0.12, 0.14);
   body.add(yoke, { surf: 'bisque', tone: WOOD_DK, wear: 1, matrix: M });
   yoke.dispose();
   const clap = new THREE.SphereGeometry(0.045, 8, 6);
@@ -249,6 +250,25 @@ function bell(body, F, x, y, z) {
 }
 
 /* ------------------------------------------------------------------ a building */
+/**
+ * Is a building's side face a party wall? A point 0.4 m out from the face's middle stands inside a neighbour's
+ * footprint. Party walls carry no windows; every other side does (F07 looks up the street at the houses' down-street
+ * ends).
+ */
+function partyWall(b, sideSign) {
+  const p = placeOf(b), c = Math.cos(p.yaw), s = Math.sin(p.yaw);
+  const lx = sideSign * (b.w / 2 + 0.4);
+  const x = p.x + c * lx, z = p.z - s * lx;
+  for (const o of BUILDINGS) {
+    if (o === b) continue;
+    const q = placeOf(o), qc = Math.cos(q.yaw), qs = Math.sin(q.yaw);
+    const dx = x - q.x, dz = z - q.z;
+    const ox = dx * qc - dz * qs, oz = dx * qs + dz * qc;
+    if (Math.abs(ox) <= o.w / 2 + 0.05 && Math.abs(oz) <= o.d / 2 + 0.05) return true;
+  }
+  return false;
+}
+
 function building(b, idx) {
   const R = rng(0x5a17 + idx * 977);
   const body = new Bucket(`b-${b.id}-body`), glass = new Bucket(`b-${b.id}-glass`), flora = new Bucket(`b-${b.id}-flora`);
@@ -311,9 +331,9 @@ function building(b, idx) {
     const { F, len } = fa;
     const cols = Math.max(1, Math.floor((len - 1.4) / (guild ? 2.4 : 2.6)));
     const xs = Array.from({ length: cols }, (_, i) => -len / 2 + (i + 0.5) * len / cols);
-    const litOdds = fa.front ? 0.72 : 0.45;
+    const litOdds = fa.front ? 0.8 : fa.side ? 0.7 : 0.45;
     // the party walls of a terrace carry no windows
-    if (fa.side && !guild && R() < 0.55) continue;
+    if (fa.side && partyWall(b, fa.side)) continue;
     for (const x of xs) {
       // ground floor
       if (!(fa.front && Math.abs(x - doorX) < (guild ? 1.8 : 1.1))) {
@@ -349,7 +369,7 @@ function building(b, idx) {
     L(0, gy + gh, gy + gh + 0.45, 1.2);                                            // the stepped top
     box(body, 0, gy + gh + 0.5, d / 2 - 0.25, 1.36, 0.08, 0.62, { surf: 'bisque', tone: BASALT_HI, wear: 1.1 });
     box(body, 0, gy + gh + 0.02, d / 2 - 0.25, gw + 0.14, 0.08, 0.6, { surf: 'bisque', tone: BASALT_HI, wear: 1.1 });
-    bell(body, F, 0, gy + 0.85, 0);
+    bell(body, F, 0, gy + 0.7, 0);
     // the lantern beside the door: an iron bracket, glazed box, always lit at night
     const lx = 1.55, ly = PLINTH + 2.45;
     box(body, lx, ly + 0.36, d / 2 + 0.22, 0.04, 0.04, 0.44, { surf: 'graphite', tone: IRON, wear: 0.4 });

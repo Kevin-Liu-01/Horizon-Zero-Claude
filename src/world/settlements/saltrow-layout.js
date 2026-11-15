@@ -116,11 +116,14 @@ export const GUILD_STUD = Object.freeze((() => {
   return { x: +p.x.toFixed(3), z: +p.z.toFixed(3) };
 })());
 
-/** Salt cones at the foot of the street, the harvest piled where the pans meet the town. */
+/**
+ * Salt cones at the foot of the street, the harvest piled where the pans meet the town. Two, in the narrow band that
+ * F22 (from the street's foot, bearing 40) sees and F20 (Ansel beside Brea at REST, looking back on bearing 20) does
+ * not: at 032bdca the first three stood right behind Ansel, white linen on white salt.
+ */
 export const CONES = Object.freeze([
-  Object.freeze({ ...streetPoint(6.2, 5.0), r: 1.55, h: 1.9 }),
-  Object.freeze({ ...streetPoint(9.6, 5.9), r: 1.75, h: 2.15 }),
-  Object.freeze({ ...streetPoint(7.0, 8.8), r: 1.3, h: 1.6 }),
+  Object.freeze({ ...streetPoint(7.6, 7.2), r: 1.5, h: 1.85 }),
+  Object.freeze({ ...streetPoint(9.9, 8.7), r: 1.6, h: 2.05 }),
 ]);
 
 /**
