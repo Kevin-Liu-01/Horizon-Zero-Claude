@@ -52,6 +52,8 @@ const MAXCELLS = 200;                // default cells per bone; see HitHulls opt
 // with it. 5 cm against a median surface error of 0.09-0.39 m is noise on the
 // accuracy and the difference between closing a seam and threading it.
 const HULL_SKIN = 0.05;
+// the largest weak-point sphere the exact (arrow) sweep tests as its own body (`raycast`): lamps, vials, small sensors
+const WP_SWEEP_MAX = 0.35;
 const _plan = new Int32Array(3);
 let _cellMin = new Float32Array(MAXCELLS * 3);
 let _cellMax = new Float32Array(MAXCELLS * 3);
@@ -741,8 +743,51 @@ export class HitHulls {
       const h = this._query(cs[i], o, d, best, exact);
       if (h) { best = this._lastT; bestHull = h; bestSet = cs[i]; }
     }
+    /* M1a round 2 (instruments): a SMALL weak point is its own hit body in the exact (arrow) sweep. Its sphere is
+     * the physical hit radius the combat lane aims at (rig/sockets.js counts it as a body, A44 checks it sits on the
+     * hull), and its glass or lens is too thin for a triangle test alone: the Plumb's 9 cm vial tube let a 40 m shot
+     * 4 cm low pass between the glass and its cradle. A ray that enters an enabled weak-point sphere of radius
+     * <= WP_SWEEP_MAX before any hull stops on the sphere; armour-hidden weak points (enabled false) never do. */
+    if (exact) {
+      let wBest = best, wM = null, wP = null;
+      for (let i = 0; i < n; i++) {
+        if (ct[i] >= wBest) break;
+        const wps = cm[i].weakPoints;
+        if (!wps) continue;
+        for (let k = 0; k < wps.length; k++) {
+          const w = wps[k];
+          if (!w || w.enabled === false || !w.obj || !(w.radius > 0) || w.radius > WP_SWEEP_MAX) continue;
+          w.obj.getWorldPosition(_p);
+          const t = raySphereT(o.x, o.y, o.z, d.x, d.y, d.z, _p.x, _p.y, _p.z, w.radius, wBest);
+          if (t >= 0 && t < wBest) { wBest = t; wM = cm[i]; wP = w; }
+        }
+      }
+      if (wP) return this._fillWeak(wM, wP, o, d, wBest);
+    }
     if (!bestHull) return null;
     return this._fill(bestSet, bestHull, o, d, best);
+  }
+
+  /** The shared hit record for a weak-point sphere (see `raycast`): `object` is the weak point's own node, so the
+   *  struck part (if it rides one) is found by the usual `userData.part` walk-up. */
+  _fillWeak(machine, w, o, d, t) {
+    _hit.hit = true;
+    _hit.machine = machine;
+    _hit.hull = null;
+    let n = w.obj, part = null;
+    while (n && n !== machine.root) { if (n.userData && n.userData.part) { part = n.userData.part; break; } n = n.parent; }
+    _hit.part = part && part.attached ? part : null;
+    _hit.object = _hit.part ? _hit.part.mesh : w.obj;
+    _hit.name = 'weak:' + w.name;
+    _hit.distance = t;
+    _hit.x = o.x + d.x * t; _hit.y = o.y + d.y * t; _hit.z = o.z + d.z * t;
+    _hit.point.set(_hit.x, _hit.y, _hit.z);
+    w.obj.getWorldPosition(_a);
+    _hit.normal.set(_hit.x - _a.x, _hit.y - _a.y, _hit.z - _a.z);
+    if (_hit.normal.lengthSq() < 1e-8) _hit.normal.set(-d.x, -d.y, -d.z);
+    _hit.normal.normalize();
+    _hit.nx = _hit.normal.x; _hit.ny = _hit.normal.y; _hit.nz = _hit.normal.z;
+    return _hit;
   }
 
   /** Single-machine query — the cheap path for arrow flight and melee. */
