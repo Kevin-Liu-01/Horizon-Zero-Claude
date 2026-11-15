@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { SEAT, CISTERN, offsetOn } from './brazier-spots.js';
 
 /**
  * THE BRAZIER — the object (BUILD M1.6c; BIBLE 17): a basalt bowl on three stones beside a cistern. Systems' own
@@ -10,25 +11,20 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
  *   b.group         add to the scene
  *   b.setState({ kindled, burning })   ash, coals or flame
  *   b.update(t, camera, dayK)          flame billboard faces the camera; light flickers (no allocation)
- *   b.seat          { x, y, z, yaw } where Brea sits: the seat block 1.6 m off the bowl on bearing 200, facing it
+ *   b.seat          { x, y, z, yaw } where Brea sits: the seat stone 1.6 m off the bowl on bearing 200, facing it
+ *   b.cistern       { x, z, r } the cistern's centre and outer radius (world)
  *   b.dispose()
  *
- * Draws: stones + bowl + cistern merged into ONE mesh (vertex colours over a painted basalt map with its relief), the
- * ash-and-coal disc (glowing cracks), the flame (three tongues on one billboard), the pool of light on the ground.
+ * Draws: the feet stones, the bowl and the seat merged into ONE basalt mesh (vertex colours over a painted basalt map
+ * with its soft relief); the cistern's masonry wall (one lathe, its own dressed-stone map) and its water; the
+ * ash-and-coal disc (glowing cracks); the flame (three tongues on one billboard); the pool of light on the ground.
+ * Where the seat and the cistern stand is ./brazier-spots.js (SEAT, CISTERN: world bearings from the bowl).
  * Light: `sharedLight` (one shadow-free point light for all Braziers, the one fire light the host carried before;
  * the host's own pit is hidden while this stands, see src/game/brazier/braziers.js). `claimLight()` parks it here.
  */
 const BASALT = new THREE.Color('#4a4644');
-const BASALT_HI = new THREE.Color('#5c5753');
-const RIM = new THREE.Color('#8a8279');
-const WATER = new THREE.Color('#1d2b2e');
-
-/** Repeat the painted basalt `k` times across a part (the map's vesicles are sized for the bowl's 2.8 m round). */
-function uvScale(geo, k) {
-  const uv = geo.attributes.uv;
-  if (uv) for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * k, uv.getY(i) * k);
-  return geo;
-}
+const BASALT_HI = new THREE.Color('#57524e');
+const WATER = new THREE.Color('#14201f');
 
 /**
  * Seamless UVs from the position (u = x + z/2, v = y + z/2, per metre x k): the icosahedron's and the cylinder's own
@@ -57,15 +53,76 @@ function rngOf(seed) {
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
 }
 
-/** A rough stone: a low-poly icosahedron with its vertices pushed in and out. */
-function stone(r, rng, squash = 0.7) {
-  const g = new THREE.IcosahedronGeometry(r, 1);
+/**
+ * A field stone, SMOOTH and SEATED (39f7533 F30: the feet were low-poly icosahedra, flat-shaded, and read as black
+ * facets): a subdivided sphere welded so its normals are shared, pushed in and out by a few low waves on its
+ * direction (a lumpy cobble, no spikes), squashed, flattened underneath and sunk `sink` of its height into the
+ * ground, so it sits in the ground instead of balancing on a point. `flatTop` (m above its base) cuts a seat face.
+ */
+function boulder(rx, ry, rz, rng, { detail = 3, sink = 0.28, flatTop = null, lump = 0.13 } = {}) {
+  let g = new THREE.IcosahedronGeometry(1, detail);
+  g.deleteAttribute('normal'); g.deleteAttribute('uv');
+  g = mergeVertices(g);
+  const waves = [];
+  for (let i = 0; i < 5; i++) {
+    const a = rng() * Math.PI * 2, b = Math.acos(rng() * 2 - 1);
+    waves.push({ x: Math.sin(b) * Math.cos(a), y: Math.cos(b), z: Math.sin(b) * Math.sin(a), f: 1.4 + rng() * 2.2, ph: rng() * 6.283, amp: lump / (1 + i * 0.6) });
+  }
   const p = g.attributes.position;
+  const base = -ry * (1 - 2 * sink);           // the ground line in the stone's frame (sink of its height below it)
   for (let i = 0; i < p.count; i++) {
-    const k = 0.82 + rng() * 0.3;
-    p.setXYZ(i, p.getX(i) * k, p.getY(i) * k * squash, p.getZ(i) * k);
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    let k = 1;
+    for (const w of waves) k += w.amp * Math.sin((x * w.x + y * w.y + z * w.z) * w.f + w.ph);
+    let px = x * rx * k, py = y * ry * k, pz = z * rz * k;
+    if (flatTop != null && py - base > flatTop) py = base + flatTop + (py - base - flatTop) * 0.08;
+    p.setXYZ(i, px, py - base, pz);
   }
   g.computeVertexNormals();
+  // planar UVs need a uv attribute to write into
+  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(p.count * 2), 2));
+  return g;
+}
+
+/**
+ * THE CISTERN (BIBLE 17: "a basalt bowl on three stones beside a stone cistern"): a round, hand-built tank of dressed
+ * stone in lime mortar, its wall 0.5 m above the ground and sunk below it, a coping lip that overhangs a little, and
+ * the inner wall down to the water. One lathe (no box blocks: 39f7533 stood eleven dark boxes round a disc, and they
+ * read as blocks in F05 and F30). UVs: u wraps a whole number of masonry tiles round the ring (no seam), v follows the
+ * profile's own length, so the courses run level on the outer wall and the coping reads as its top stones.
+ */
+function cisternGeometry(rng) {
+  const P = [
+    [1.02, -0.32], [1.02, 0.4], [1.06, 0.41], [1.07, 0.44], [1.07, 0.5], [1.05, 0.53], [1.0, 0.55], [0.86, 0.55],
+    [0.82, 0.53], [0.8, 0.5], [0.8, 0.5], [0.79, 0.12],
+  ];
+  const SEG = 48, N = 12;            // 12 tiles of masonry round the ring: 0.53 m each on the outer wall
+  const prof = P.map(([r, h]) => new THREE.Vector2(r, h));
+  const g = new THREE.LatheGeometry(prof, SEG);
+  const pos = g.attributes.position, uv = g.attributes.uv;
+  // path length along the profile (the masonry's v)
+  const L = [0];
+  for (let j = 1; j < P.length; j++) L.push(L[j - 1] + Math.hypot(P[j][0] - P[j - 1][0], P[j][1] - P[j - 1][1]));
+  // hand-built: the ring wanders a few centimetres, periodically, so the seam's two columns stay one
+  const w1 = rng() * 6.283, w2 = rng() * 6.283;
+  for (let i = 0; i <= SEG; i++) {
+    const a = (i / SEG) * Math.PI * 2;
+    const k = 1 + 0.012 * Math.sin(a * 3 + w1) + 0.008 * Math.sin(a * 7 + w2);
+    for (let j = 0; j < P.length; j++) {
+      const n = i * P.length + j;
+      pos.setX(n, pos.getX(n) * k); pos.setZ(n, pos.getZ(n) * k);
+      uv.setXY(n, (i / SEG) * N, L[j] / 0.3);
+    }
+  }
+  g.computeVertexNormals();
+  // the lathe's first and last columns are one seam: share their normals
+  const nrm = g.attributes.normal;
+  for (let j = 0; j < P.length; j++) {
+    const a = j, b = SEG * P.length + j;
+    const x = nrm.getX(a) + nrm.getX(b), y = nrm.getY(a) + nrm.getY(b), z = nrm.getZ(a) + nrm.getZ(b);
+    const l = Math.hypot(x, y, z) || 1;
+    nrm.setXYZ(a, x / l, y / l, z / l); nrm.setXYZ(b, x / l, y / l, z / l);
+  }
   return g;
 }
 
@@ -116,27 +173,85 @@ void main() {
   gl_FragColor = vec4(vec3(1.0, 0.55, 0.22) * f * uK, 1.0);
 }`;
 
-/** Basalt (vesicular, sun-dulled) and ash-and-coal surfaces, painted once on small canvases (browser only). */
+/**
+ * The painted surfaces (browser only), each painted once on a small canvas:
+ *   basalt    vesicular, sun-dulled grey-brown: the bowl, its feet and the seat (with `basaltH`, its relief: soft
+ *             pits only, so a stone never breaks into black facets under a low fire light)
+ *   masonry   the cistern: two courses of dressed stone (basalt and pale tuff) in lime mortar per tile, a running
+ *             bond, worn edges (with `masonryH`: the joints sunk, each stone's face a little domed)
+ *   coal      grey ash with glowing cracks (the same canvas is the emissive map)
+ */
 let _tex = null;
 function surfaces() {
   if (_tex !== null) return _tex;
-  _tex = { basalt: null, coal: null };
+  _tex = { basalt: null, basaltH: null, masonry: null, masonryH: null, coal: null };
   if (typeof document === 'undefined') return _tex;
   const rng = rngOf(91);
-  const canvas = (n) => { const c = document.createElement('canvas'); c.width = c.height = n; return c; };
+  const canvas = (n, m = n) => { const c = document.createElement('canvas'); c.width = n; c.height = m; return c; };
   // basalt: grey-brown speckle, pale weathering, dark vesicles with a lit lip
   const b = canvas(256), g = b.getContext('2d');
+  const bh = canvas(256), gh = bh.getContext('2d');
   g.fillStyle = '#7d7975'; g.fillRect(0, 0, 256, 256);
+  gh.fillStyle = '#b0b0b0'; gh.fillRect(0, 0, 256, 256);
   for (let i = 0; i < 2600; i++) {
-    const v = 95 + rng() * 80 | 0;
+    const v = 95 + rng() * 80 | 0, x = rng() * 256, y = rng() * 256, w = 1 + rng() * 3, h = 1 + rng() * 3;
     g.fillStyle = `rgba(${v},${v - 4},${v - 9},${0.25 + rng() * 0.4})`;
-    g.fillRect(rng() * 256, rng() * 256, 1 + rng() * 3, 1 + rng() * 3);
+    g.fillRect(x, y, w, h);
+    gh.fillStyle = `rgba(${v + 40},${v + 40},${v + 40},0.18)`;
+    gh.fillRect(x, y, w, h);
   }
-  for (let i = 0; i < 260; i++) {
-    const x = rng() * 256, y = rng() * 256, r = 0.8 + rng() * rng() * 4.5;
-    g.fillStyle = 'rgba(160,152,142,0.55)'; g.beginPath(); g.arc(x + 0.6, y - 0.6, r, 0, 6.283); g.fill();
-    g.fillStyle = 'rgba(28,26,26,0.9)'; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
+  for (let i = 0; i < 220; i++) {
+    const x = rng() * 256, y = rng() * 256, r = 0.8 + rng() * rng() * 3.6;
+    g.fillStyle = 'rgba(160,152,142,0.5)'; g.beginPath(); g.arc(x + 0.6, y - 0.6, r, 0, 6.283); g.fill();
+    g.fillStyle = 'rgba(40,37,36,0.8)'; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
+    const pit = gh.createRadialGradient(x, y, 0, x, y, r * 1.4);
+    pit.addColorStop(0, 'rgba(70,70,70,0.9)'); pit.addColorStop(1, 'rgba(176,176,176,0)');
+    gh.fillStyle = pit; gh.beginPath(); gh.arc(x, y, r * 1.4, 0, 6.283); gh.fill();
   }
+
+  // masonry: a 256 x 256 tile is two courses of 0.15 m; stones 0.24-0.3 m long in a running bond
+  const M = 256, mc = canvas(M), mg = mc.getContext('2d'), mh = canvas(M), mhg = mh.getContext('2d');
+  mg.fillStyle = '#c9c0ae'; mg.fillRect(0, 0, M, M);                       // lime mortar
+  mhg.fillStyle = '#3a3a3a'; mhg.fillRect(0, 0, M, M);                     // joints sunk
+  const tones = [[86, 80, 75], [98, 91, 84], [74, 69, 66], [120, 108, 95], [104, 96, 90], [132, 118, 102]];
+  const courses = [[0, 128], [128, 256]];
+  const joints = [[0, 118, 236], [58, 178]];
+  const J = 7;                                                               // joint width (px)
+  const stoneAt = (x0, x1, y0, y1) => {
+    const [r, gg, bb] = tones[(rng() * tones.length) | 0];
+    const k = 0.9 + rng() * 0.2;
+    const draw = (ox) => {
+      const x = x0 + ox + J / 2, y = y0 + J / 2, w = x1 - x0 - J, h = y1 - y0 - J, rr = 9 + rng() * 6;
+      const path = () => { mg.beginPath(); mg.roundRect ? mg.roundRect(x, y, w, h, rr) : mg.rect(x, y, w, h); };
+      mg.fillStyle = `rgb(${r * k | 0},${gg * k | 0},${bb * k | 0})`; path(); mg.fill();
+      // worn, darker edges and a pale weathered face
+      const grd = mg.createLinearGradient(0, y, 0, y + h);
+      grd.addColorStop(0, 'rgba(255,248,236,0.10)'); grd.addColorStop(1, 'rgba(20,16,14,0.22)');
+      mg.fillStyle = grd; path(); mg.fill();
+      mhg.beginPath(); mhg.roundRect ? mhg.roundRect(x, y, w, h, rr) : mhg.rect(x, y, w, h);
+      const hg = mhg.createRadialGradient(x + w / 2, y + h / 2, 2, x + w / 2, y + h / 2, Math.max(w, h) * 0.62);
+      hg.addColorStop(0, '#e6e6e6'); hg.addColorStop(1, '#9a9a9a');
+      mhg.fillStyle = hg; mhg.fill();
+    };
+    draw(0);
+    if (x1 > M) draw(-M);                                                    // the stone that wraps the tile's edge
+  };
+  for (let c = 0; c < 2; c++) {
+    const [y0, y1] = courses[c], js = joints[c];
+    for (let i = 0; i < js.length; i++) stoneAt(js[i], i + 1 < js.length ? js[i + 1] : js[0] + M, y0, y1);
+  }
+  // speckle and vesicles over the stones, grime in the joints
+  for (let i = 0; i < 1800; i++) {
+    const v = 60 + rng() * 90 | 0;
+    mg.fillStyle = `rgba(${v},${v - 3},${v - 8},${0.2 + rng() * 0.3})`;
+    mg.fillRect(rng() * M, rng() * M, 1 + rng() * 2, 1 + rng() * 2);
+  }
+  for (let i = 0; i < 90; i++) {
+    const x = rng() * M, y = rng() * M, r = 0.8 + rng() * 2.2;
+    mg.fillStyle = 'rgba(36,33,31,0.7)'; mg.beginPath(); mg.arc(x, y, r, 0, 6.283); mg.fill();
+    mhg.fillStyle = 'rgba(90,90,90,0.8)'; mhg.beginPath(); mhg.arc(x, y, r, 0, 6.283); mhg.fill();
+  }
+
   // ash and coal: grey ash with glowing cracks (the cracks are the emissive map)
   const c = canvas(128), k = c.getContext('2d');
   k.fillStyle = '#000'; k.fillRect(0, 0, 128, 128);
@@ -152,11 +267,16 @@ function surfaces() {
     k.fillStyle = `rgba(255,${150 + rng() * 80 | 0},60,${0.4 + rng() * 0.6})`;
     k.beginPath(); k.arc(64 + (rng() - 0.5) * 70, 64 + (rng() - 0.5) * 70, 1 + rng() * 3.5, 0, 6.283); k.fill();
   }
-  const mk = (cv) => { const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; };
+  const mk = (cv, color = true) => {
+    const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
+    if (color) t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
   _tex.basalt = mk(b);
-  _tex.basalt.colorSpace = THREE.SRGBColorSpace;
+  _tex.basaltH = mk(bh, false);
+  _tex.masonry = mk(mc);
+  _tex.masonryH = mk(mh, false);
   _tex.coal = mk(c);
-  _tex.coal.colorSpace = THREE.SRGBColorSpace;
   return _tex;
 }
 
@@ -179,73 +299,89 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
   group.position.set(x, y0, z);
   group.rotation.y = yaw;
 
+  // world -> group frame (the inverse of rotation.y), for parts placed by a world bearing
+  const cY = Math.cos(yaw), sY = Math.sin(yaw);
+  const toLocal = (dx, dz) => ({ x: dx * cY - dz * sY, z: dx * sY + dz * cY });
+
   const parts = [];
-  // three stones, 120 degrees apart, the bowl's feet
+  // three field stones, 120 degrees apart, the bowl's feet: smooth, seated in the ground, the bowl resting on them
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * Math.PI * 2 + 0.3;
-    const g = stone(0.16 + rng() * 0.03, rng, 0.75);
-    g.translate(Math.cos(a) * 0.27, 0.1, Math.sin(a) * 0.27);
-    parts.push(tint(uvPlanar(g, 2.6), BASALT_HI, 0.12, rng));
+    const r = 0.17 + rng() * 0.03;
+    const g = boulder(r * 1.05, r * 0.9, r * 0.95, rng, { detail: 3, sink: 0.3, lump: 0.1 });
+    g.rotateY(rng() * 6.283);
+    g.translate(Math.cos(a) * 0.27, 0, Math.sin(a) * 0.27);
+    parts.push(tint(uvPlanar(g, 2.2), BASALT_HI, 0.1, rng));
   }
-  // the basalt bowl: a lathe, thick-lipped, open to the sky
+  // the basalt bowl: a lathe, thick-lipped, open to the sky, its foot on the three stones
   const prof = [
     [0.0, 0.0], [0.16, 0.0], [0.24, 0.02], [0.31, 0.06], [0.37, 0.1], [0.41, 0.15], [0.44, 0.21], [0.455, 0.25], [0.45, 0.28],
     [0.42, 0.29], [0.385, 0.27], [0.35, 0.22], [0.3, 0.17], [0.22, 0.135], [0.12, 0.12], [0.0, 0.12],
   ].map(([r, h]) => new THREE.Vector2(r, h));
-  const bowl = new THREE.LatheGeometry(prof, 30);
+  const bowl = new THREE.LatheGeometry(prof, 36);
   bowl.translate(0, 0.2, 0);
   const bp = bowl.attributes.position;
   for (let i = 0; i < bp.count; i++) {
     const a = Math.atan2(bp.getZ(i), bp.getX(i));
-    const k = 1 + 0.025 * Math.sin(a * 5 + 1.3) + 0.018 * Math.sin(a * 11 + 0.4) + (rng() - 0.5) * 0.02;
-    bp.setXYZ(i, bp.getX(i) * k, bp.getY(i) * (1 + (rng() - 0.5) * 0.03), bp.getZ(i) * k);
+    // periodic in the angle only, so the lathe's seam columns move together (no crack down the bowl)
+    const k = 1 + 0.025 * Math.sin(a * 5 + 1.3) + 0.018 * Math.sin(a * 11 + 0.4);
+    bp.setXYZ(i, bp.getX(i) * k, bp.getY(i), bp.getZ(i) * k);
   }
   bowl.computeVertexNormals();
-  parts.push(tint(bowl, BASALT, 0.1, rng));
+  parts.push(tint(bowl, BASALT, 0.06, rng));
 
-  // the seat: a flat basalt block 1.6 m off the bowl on bearing 200 (where F30 stands her), its top 0.42 m up, the
-  // height the seated pose (player.ride's 'sitIdle') rests its pelvis on
-  const SEAT_B = 200 * Math.PI / 180, SEAT_D = 1.6, SEAT_H = 0.42;
-  const sw = { x: x + Math.sin(SEAT_B) * SEAT_D, z: z - Math.cos(SEAT_B) * SEAT_D };
+  // the seat: a flat-topped basalt boulder SEAT.dist m off the bowl on world bearing SEAT.bearing (where F30 sits
+  // her), its top SEAT.height m up, the height the seated pose (player.ride's 'sitIdle') rests its pelvis on
+  const so = offsetOn(SEAT.bearing, SEAT.dist);
+  const sw = { x: x + so.x, z: z + so.z };
   {
-    const c = Math.cos(yaw), sn = Math.sin(yaw), dx = sw.x - x, dz = sw.z - z;
-    const lx = dx * c - dz * sn, lz = dx * sn + dz * c;            // world -> group frame (inverse of rotation.y)
-    const g = new THREE.CylinderGeometry(0.21, 0.26, SEAT_H + 0.08, 7, 1);
-    const gp = g.attributes.position;
-    for (let i = 0; i < gp.count; i++) { const k = 0.9 + rng() * 0.2; gp.setXYZ(i, gp.getX(i) * k, gp.getY(i), gp.getZ(i) * k); }
-    g.computeVertexNormals();
-    g.translate(lx, gy(sw.x, sw.z) - y0 + (SEAT_H + 0.08) / 2 - 0.08, lz);
-    parts.push(tint(uvPlanar(g, 2.6), BASALT_HI, 0.1, rng));
+    const l = toLocal(so.x, so.z);
+    const g = boulder(0.34, 0.33, 0.29, rng, { detail: 3, sink: 0.26, flatTop: SEAT.height, lump: 0.08 });
+    g.rotateY(rng() * 6.283);
+    g.translate(l.x, gy(sw.x, sw.z) - y0, l.z);
+    parts.push(tint(uvPlanar(g, 2.2), BASALT_HI, 0.08, rng));
   }
 
-  // the cistern beside it: a low ring of dressed stones round dark water, 2.3 m off, never on Brea's spawn
-  let cisternAt = null;
+  // the cistern beside it (see cisternGeometry): its own masonry, never on Brea's spawn, the seat or the bowl
+  let cisternAt = null, cisternGeo = null, waterGeo = null;
   if (cistern) {
-    const cx = -1.6, cz = 1.7;
-    cisternAt = { x: cx, z: cz, r: 0.95 };
-    const ring = 11;
-    for (let i = 0; i < ring; i++) {
-      const a = (i / ring) * Math.PI * 2;
-      const g = new THREE.BoxGeometry(0.48, 0.36 + rng() * 0.06, 0.26);
-      g.rotateY(-a);
-      g.translate(cx + Math.cos(a) * 0.95, 0.17, cz + Math.sin(a) * 0.95);
-      parts.push(tint(uvScale(g, 4), RIM, 0.14, rng));
-    }
-    const w = new THREE.CircleGeometry(0.86, 18);
-    w.rotateX(-Math.PI / 2);
-    w.translate(cx, 0.24, cz);
-    parts.push(tint(w, WATER, 0.02, rng));
+    const co = offsetOn(CISTERN.bearing, CISTERN.dist), l = toLocal(co.x, co.z);
+    const cy = gy(x + co.x, z + co.z) - y0;
+    cisternAt = { x: x + co.x, z: z + co.z, r: CISTERN.r };
+    cisternGeo = cisternGeometry(rng);
+    cisternGeo.translate(l.x, cy, l.z);
+    cisternGeo = tint(cisternGeo, new THREE.Color(1, 1, 1), 0.05, rng);
+    waterGeo = new THREE.CircleGeometry(0.8, 40);
+    waterGeo.rotateX(-Math.PI / 2);
+    waterGeo.translate(l.x, cy + 0.3, l.z);
   }
   const geo = mergeGeometries(parts, false);
   for (const p of parts) p.dispose();
   const tex = surfaces();
-  // basalt: the vertex colours carry each part's tone, the map its vesicles and speckle, the same map its relief
+  // basalt: the vertex colours carry each part's tone, the map its vesicles and speckle, its soft relief map the pits
   const stoneMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93, metalness: 0,
-    map: tex.basalt, bumpMap: tex.basalt, bumpScale: 0.7 });
+    map: tex.basalt, bumpMap: tex.basaltH, bumpScale: 0.35 });
   const body = new THREE.Mesh(geo, stoneMat);
+  body.name = 'brazier-basalt';
   body.castShadow = true;
   body.receiveShadow = true;
   group.add(body);
+  let wall = null, wallMat = null, water = null, waterMat = null;
+  if (cisternGeo) {
+    wallMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0,
+      map: tex.masonry, bumpMap: tex.masonryH, bumpScale: 0.6 });
+    wall = new THREE.Mesh(cisternGeo, wallMat);
+    wall.name = 'brazier-cistern';
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    group.add(wall);
+    // still, dark water a hand below the coping: glossy, so it carries the sky and the fire
+    waterMat = new THREE.MeshStandardMaterial({ color: WATER, roughness: 0.06, metalness: 0.0 });
+    water = new THREE.Mesh(waterGeo, waterMat);
+    water.name = 'brazier-cistern-water';
+    water.receiveShadow = true;
+    group.add(water);
+  }
 
   // ash / coals in the bowl
   // grey ash with glowing cracks and live coals (the same canvas is the map and the emissive map): no flat coral disc
@@ -305,7 +441,7 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
 
   const state = { kindled: false, burning: false, k: 0 };
   // where she sits: on the seat block, facing the bowl (yaw: the heading toward the fire, atan2(dx, dz))
-  const seat = { x: sw.x, z: sw.z, y: gy(sw.x, sw.z) + SEAT_H, yaw: Math.atan2(x - sw.x, z - sw.z) };
+  const seat = { x: sw.x, z: sw.z, y: gy(sw.x, sw.z) + SEAT.height, yaw: Math.atan2(x - sw.x, z - sw.z) };
 
   return {
     group, seat, cistern: cisternAt, position: new THREE.Vector3(x, y0, z),
@@ -345,6 +481,7 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
     dispose() {
       group.removeFromParent();
       geo.dispose(); stoneMat.dispose();
+      if (wall) { cisternGeo.dispose(); wallMat.dispose(); waterGeo.dispose(); waterMat.dispose(); }
       coal.geometry.dispose(); coalMat.dispose();
       flameGeo.dispose(); flameMat.dispose();
       poolGeo.dispose(); poolMat.dispose();

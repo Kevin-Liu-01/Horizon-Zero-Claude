@@ -68,3 +68,40 @@ test('the refusal reads the lamps as the lamps system does: machines publish no 
   assert.equal(at({ ...m('alert'), x: 61 }).mode, 'rest');
   assert.equal(at({ ...m('alert'), x: 60 }).mode, 'refused');
 });
+
+test('where the Braziers stand: off the accepted frames, the cistern clear of F30\'s lens, the seat and her spawn (F05 regression fix)', async () => {
+  const S = await import('../../../src/world/settlements/brazier-spots.js');
+  const { REST, TRIG } = await import('../../../src/world/island/sites.js');
+  const t1 = TRIG.find((t) => t.id === 'T1');
+  const on = S.offsetOn;
+  // F05 (look.vista, bearing 283): 5baa3e7's flattest-of-four put the T1 Brazier at the pillar's (-5, -5), 1 m from her
+  assert.equal(S.clearOfFrames(t1.x - 5, t1.z - 5), false, 'the 39f7533 spot stands in F05');
+  const clear = S.T1_SPOTS.filter((c) => S.clearOfFrames(c.x, c.z));
+  assert.ok(clear.length >= 2, 'the runtime has a choice of spots clear of F05');
+  for (const c of clear) {
+    // F05's chase lens 4.2 m behind her on bearing 283: the bowl and its cistern behind it or > 45 deg off its axis
+    const f = on(283, 1), lx = t1.x - 6 - f.x * 4.2, lz = t1.z - 4 - f.z * 4.2;
+    for (const p of [c, { x: c.x + on(S.CISTERN.bearing, S.CISTERN.dist).x, z: c.z + on(S.CISTERN.bearing, S.CISTERN.dist).z }]) {
+      const dx = p.x - lx, dz = p.z - lz, ahead = dx * f.x + dz * f.z, side = Math.abs(dx * f.z - dz * f.x);
+      assert.ok(ahead < 0 || Math.atan2(side, ahead) * 180 / Math.PI > 45, `T1 spot ${c.x},${c.z} in F05's lens`);
+    }
+  }
+  const H = S.HOME_BRAZIER, C = S.HOME_CISTERN;
+  const seat = { x: H.x + on(S.SEAT.bearing, S.SEAT.dist).x, z: H.z + on(S.SEAT.bearing, S.SEAT.dist).z };
+  const d = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  assert.ok(d(C, H) > S.CISTERN.r + 0.5, 'the cistern clears the bowl');
+  assert.ok(d(C, seat) > S.CISTERN.r + 0.6, 'the cistern clears the seat');
+  assert.ok(d(C, REST) > S.CISTERN.r + 1.0, 'the cistern is never on her spawn');
+  // F30 (at the fire, approach 1.6 m on bearing 200, orbit yawRel 40 at 3.5 m): at 39f7533 the cistern stood 1 m from
+  // the lens and filled the lower right. Now it stands beyond the bowl, at least 4 m out and inside the frame's width
+  const fw = on(20, 1), left = on(290, 1), t = 40 * Math.PI / 180;
+  const lens = { x: seat.x + (fw.x * Math.cos(t) + left.x * Math.sin(t)) * 3.5, z: seat.z + (fw.z * Math.cos(t) + left.z * Math.sin(t)) * 3.5 };
+  assert.ok(d(C, lens) >= 4.0, `cistern ${d(C, lens).toFixed(2)} m from F30's lens`);
+  assert.ok(d(C, lens) > d(H, lens), 'the cistern stands beyond the bowl from F30\'s lens');
+  // F20 (at REST, bearing 200, orbit yawRel 0 at 4 m, looking back at her on bearing 20): bowl and cistern behind it
+  const l20 = { x: REST.x + on(200, 4).x, z: REST.z + on(200, 4).z }, look = on(20, 1);
+  for (const p of [H, C, seat]) assert.ok((p.x - l20.x) * look.x + (p.z - l20.z) * look.z < 0, 'behind F20\'s lens');
+  // the flora keepouts follow the cistern
+  const k = S.BRAZIER_KEEPOUTS.find((x) => x.id === 'brazier-cistern');
+  assert.ok(Math.hypot(k.x - C.x, k.z - C.z) < 0.01 && k.hard >= S.CISTERN.r + 0.4);
+});

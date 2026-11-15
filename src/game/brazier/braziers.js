@@ -1,7 +1,7 @@
 import { buildBrazier, makeFireLight } from '../../world/settlements/brazier.js';
 import { BRAZIERS, KINDLE_HOLD, dialogFor, REST_HOURS } from './rules.js';
-import { REST, TRIG } from '../../world/island/sites.js';
-import { HOME_BRAZIER, BRAZIER_YAW } from '../../world/settlements/brazier-spots.js';
+import { REST } from '../../world/island/sites.js';
+import { HOME_BRAZIER, BRAZIER_YAW, T1_SPOTS, clearOfFrames } from '../../world/settlements/brazier-spots.js';
 import { lampStateFor } from '../../instruments/lamps.js';
 
 /**
@@ -44,14 +44,14 @@ export class Braziers {
     // Brea's own: behind-left of where she wakes, out of F20 (src/world/settlements/brazier-spots.js); the flora's
     // keepouts are cut round it there before the meadow is scattered
     if (def.id === 'cistern') return { x: HOME_BRAZIER.x, z: HOME_BRAZIER.z, yaw: HOME_BRAZIER.yaw };
-    const t1 = TRIG.find((t) => t.id === 'T1');
-    // at the pillar's foot, 7 m to its seaward (south-west) side, on the flattest of four tries
+    // at the pillar's foot, 7 m off it on its landward side, on the flattest spot that no accepted frame's lens sees
+    // (5baa3e7 took the flattest of four round the pillar: its cistern stood in F05's right foreground beside her)
     let best = null;
-    for (const [dx, dz] of [[-5, 5], [5, 5], [-5, -5], [5, -5]]) {
-      const x = t1.x + dx, z = t1.z + dz;
-      const h = T?.getHeight?.(x, z) ?? 0;
-      const s = Math.abs((T?.getHeight?.(x + 1, z) ?? h) - h) + Math.abs((T?.getHeight?.(x, z + 1) ?? h) - h);
-      if (!best || s < best.s) best = { x, z, s };
+    for (const c of T1_SPOTS) {
+      if (!clearOfFrames(c.x, c.z)) continue;
+      const h = T?.getHeight?.(c.x, c.z) ?? 0;
+      const s = Math.abs((T?.getHeight?.(c.x + 1, c.z) ?? h) - h) + Math.abs((T?.getHeight?.(c.x, c.z + 1) ?? h) - h);
+      if (!best || s < best.s) best = { x: c.x, z: c.z, s };
     }
     return { x: best.x, z: best.z, yaw: BRAZIER_YAW };   // (yaw 0.6 stood its cistern ring on the seat block)
   }
