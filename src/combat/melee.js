@@ -394,7 +394,7 @@ const STEP_SPEED = 1.15;
 const STEP_DRIVE_SLACK = 1.25;
 
 /** Peak opacity of the swing smear (was 0.9 — see the geometry comment). */
-const TRAIL_PEAK = 0.32;
+const TRAIL_PEAK = 0.16;   // sky-look M1a round 2: frozen at contact in F19 the 0.32 smear read as a pale halo arc over the far slope
 
 /* ------------------------- the melee approach (F3) ------------------------ */
 /**

@@ -2506,9 +2506,12 @@ export class Environment {
             vec3 c = mix(shadeC, lit, clamp(0.30 + 0.70 * lightK - 0.30 * th * (1.0 - lightK), 0.0, 1.0));
             // the sun's forward glow lights the thin fringe, not a thick core (a silver lining; the core in front of a low
             // sun must not clip into one blob with the disc)
-            c += uSunCol * pow(sunD, 4.0) * 0.30 * day * (1.0 - 0.7 * th) * (0.45 + 0.55 * lightK);
+            // within ~8 deg of the disc the fringe's glow and rim give way to the disc's own aureole (at cffa5a3 lit rims
+            // beside the sun clipped and joined the disc's blob out to 10 deg in F02)
+            float nearSun = pow(sunD, 60.0);
+            c += uSunCol * pow(sunD, 4.0) * 0.30 * day * (1.0 - 0.7 * th) * (0.45 + 0.55 * lightK) * (1.0 - 0.6 * nearSun);
             float rimW = (1.0 - th) * a;
-            c += vec3(1.0, 0.66, 0.50) * (0.55 + 0.45 * uSunCol) * rimW * (0.30 + 1.0 * pow(sunD, 6.0)) * uRim * day;
+            c += vec3(1.0, 0.66, 0.50) * (0.55 + 0.45 * uSunCol) * rimW * (0.30 + 1.0 * pow(sunD, 6.0) * (1.0 - 0.85 * nearSun)) * uRim * day;
             cover = a * (1.0 - cal);
             float haze = exp(-t0 / 14000.0);
             vec3 cc = mix(horizon, c, haze);
