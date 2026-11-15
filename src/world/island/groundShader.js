@@ -404,7 +404,7 @@ export const TERRAIN_COLOR = /* glsl */ `
     litter = mix(litter, grass * 0.78, 0.55 * smoothstep(8.0, 30.0, dCam));
     /* and within the blades' ring the gap is the stand's lower golden straw (light through and off the blades),
      * not its darkest foot: a dark gap falls under the grade's violet floor and reads as soil (M1.1b soil line) */
-    litter = mix(litter, grass * 0.85, 0.5 * (1.0 - smoothstep(8.0, 30.0, dCam)));
+    litter = mix(litter, grass * 0.85, 0.75 * (1.0 - smoothstep(8.0, 30.0, dCam)));
     col = mix(col, mix(litter, grass, farG), mk);
     canopy = mk * (1.0 - farG);
     pert *= 1.0 - mk * mix(0.75, 0.5, farG);
