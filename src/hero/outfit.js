@@ -126,6 +126,11 @@ function casterMaterial() {
   if (!_casterMat) {
     _casterMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false });
     _casterMat.name = 'hero-caster';
+    // (M1a round 3, A32b-lookup-no-ghost: the proxy is not one of her fade materials. The Player's fade scan clones every material
+    // on her and counts the clones; it passes over a material that already carries a `fadeU` (src/entities/player.js
+    // `_collectMaterials`), so this one is never cloned, never dithered and never counted. It draws nothing in the main pass, and
+    // its depth write is off by design, which the row read as a ghosting fade material: 1 of 26 at dee526d)
+    Object.defineProperty(_casterMat.userData, 'fadeU', { value: { value: 1 }, enumerable: false });
   }
   return _casterMat;
 }
