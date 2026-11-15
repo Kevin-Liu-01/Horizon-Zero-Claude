@@ -421,6 +421,20 @@ export async function stageFrame(f, o = {}) {
       slate(120, () => mel.stance === 'ready' || mel.lanceInHand === true);
       slate(240, () => { if (!mel.active && mel.stance !== 'holstered' && mel.stance !== 'holster') mel.holsterLance(true); return holstered(); });
     }
+    // (regfix 4) the draws: the bow raised once and lowered, so the session's first draw carries the same bow state
+    // as any later one (the bow pose's blend, hand and aim fields are unset until the first aim: F16 filmed first in a
+    // session differed from its repeats on 5 % of the frame at fb6d5f0), then a fixed 1 s for what the slate and the
+    // frame before set moving (the lance's carry blend, the bow's holster) to come to rest, and the ground conform's
+    // low-pass from zero (it kept the crouch of the frame before: 1.4 mm of pelvis after the idle)
+    const bowPose = st.pose === 'draw' || st.pose === 'crouchAim';
+    if (bowPose) {
+      if (C.quickslots?.select) C.quickslots.select(1);
+      C.input.mouse.buttons = 4; slate(30, () => false);
+      C.input.mouse.buttons = 0; if (C.combat) C.combat._holsterT = 0;
+      slate(120, () => !p.aiming && !C.combat?.weaponDrawn);
+      slate(60, () => false);
+      if (an && '_grnd' in an) { an._grnd = 0; an._grndWant = null; an._grndRate = 0; }
+    }
     // the section's own clocks start here, after the slate: the random sequence, the gusts, the clouds' drift
     seed = 0x2545F491;
     if (Number.isFinite(env._gustPhase)) env._gustPhase = 0;
