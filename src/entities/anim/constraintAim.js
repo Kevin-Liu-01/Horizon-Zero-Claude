@@ -34,6 +34,8 @@ import { clamp, smoothstep } from './playerCommon.js';
 const ARM = ['upArmL', 'loArmL', 'handL', 'upArmR', 'loArmR', 'handR'];
 /** M1a r2 fix: the most the draw wrist target and elbow travel per 1/60 s off the draw shoulder (m; the row's bar 0.06). */
 const ARM_STEP = 0.036;
+/** M1a r3 fix: the arm as solved may move this many step limits (0.045 m at 60 Hz) before the guard turns it back. */
+const GUARD_K = 1.25;
 /** M1a r2 fix: through the loose the wrist stays this far behind the back of the skull's plane at most (m; < 0 is in
  *  front of it; A-draw-elbow-level wants < 0). */
 const LOOSE_FRONT = -0.012;
@@ -55,6 +57,7 @@ const _un = new THREE.Vector3(), _Qc = new THREE.Quaternion(), _qp = new THREE.Q
 const _sS = new THREE.Vector3(), _sE = new THREE.Vector3(), _sT = new THREE.Vector3(), _sW = new THREE.Vector3(), _sr = new THREE.Vector3();
 const _sp = new THREE.Vector3(), _se = new THREE.Vector3(), _sa = new THREE.Vector3(), _sb = new THREE.Vector3(), _sq = new THREE.Quaternion(), _sq2 = new THREE.Quaternion();
 const _d2 = new THREE.Vector3();
+const _gS = new THREE.Vector3(), _gE = new THREE.Vector3(), _gH = new THREE.Vector3(), _gq = new THREE.Quaternion(), _gq2 = new THREE.Quaternion();
 const wrap = (x) => x - Math.round(x / (2 * Math.PI)) * 2 * Math.PI;
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
 
@@ -92,6 +95,8 @@ export class ConstraintAim {
       verifyFails: 0, verifyLast: null, solves: 0,
       // (M1a r2 fix: the draw arm as rendered last step, off its shoulder, for the step limit; and the clip's arm)
       lastH: new THREE.Vector3(), lastE: new THREE.Vector3(), lastOk: false, clipH: new THREE.Vector3(), clipE: new THREE.Vector3(), stepLim: 0,
+      // (M1a r3 fix: the draw arm's upper and lower arm rotations as rendered last step, char space, for the guard)
+      lastQu: new THREE.Quaternion(), lastQl: new THREE.Quaternion(), guarded: 0, guardMax: 0,
     };
     return C;
   }
@@ -591,6 +596,24 @@ export class ConstraintAim {
     // ---- SOLVE
     if (C.dbgOn) C.dbg = { T: _T.toArray(), W: _W.toArray(), K: _K.toArray(), H: _H.toArray(), G: _G.toArray(), N: _N.toArray(), Pr: _Pr.toArray(), Pl: _Pl.toArray(), kOff: _kOff.toArray(), hOff: _hOff.toArray(), e };
     C.reachDef = this._cRigSolve(3, _T, _Pr, _Qr);
+    /* M1a r3 fix (A-draw-elbow-level, the judge's 0.169 m step at crouch.strafeR, pitch -1.15, after a cell aimed at
+     * +1.02): THE ARM STEP AS SOLVED. The limits above work on targets; the head's keep-out and the loose's plane move
+     * the wrist target again after the wrist was held, and then the elbow's limited pole can still land 0.15 m from
+     * last step's elbow (bench: the elbow 0.167 m in one step at the first draw step, 0.75 of the wrist held). So the
+     * arm as solved is checked: if its elbow or wrist moved more than `GUARD_K` x the step limit off the shoulder, the
+     * upper and lower arm are turned back toward last step's rotations (char space, slerp) until they move that much */
+    if (C.lastOk) {
+      this._charOf(b.upArmR.bone, _gS);
+      this._charOf(b.loArmR.bone, _gE).sub(_gS); this._charOf(b.handR.bone, _gH).sub(_gS);
+      const m = Math.max(_gE.distanceTo(C.lastE), _gH.distanceTo(C.lastH)), lim = C.stepLim * GUARD_K;
+      if (m > lim) {
+        const t = lim / m;
+        this._liveW(b.upArmR.bone, _gq); _gq2.copy(C.lastQu).slerp(_gq, t); this._cRigSetCharQ(C.e[3], _gq2);
+        this._liveW(b.loArmR.bone, _gq); _gq2.copy(C.lastQl).slerp(_gq, t); this._cRigSetCharQ(C.e[4], _gq2);
+        this._cRigSetCharQ(C.e[5], _Qr);
+        C.guarded++; if (m > C.guardMax) C.guardMax = m;
+      }
+    }
     const dl = this._cRigSolve(0, _W, _Pl, _Ql);
     C.reachDef = Math.max(C.reachDef, dl);
     if (w > 0.98 && C.reachDef > C.reachDefMax) C.reachDefMax = C.reachDef;
@@ -601,6 +624,7 @@ export class ConstraintAim {
     // (M1a r2 fix: the draw arm as rendered, for the next step's limit)
     this._charOf(b.upArmR.bone, _S);
     this._charOf(b.handR.bone, C.lastH).sub(_S); this._charOf(b.loArmR.bone, C.lastE).sub(_S); C.lastOk = true;
+    this._liveW(b.upArmR.bone, C.lastQu); this._liveW(b.loArmR.bone, C.lastQl);
     // the aim layer's diagnostics now describe this rig (the next step's ray starts at this anchor)
     const D = this._aimDbg;
     if (D) { D.anchor.copy(C.hook); this._charOf(b.head.bone, D.headAt); D.d.copy(_d); }

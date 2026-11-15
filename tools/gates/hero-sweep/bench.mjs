@@ -138,8 +138,22 @@ export const CLIPS = {
   stowBow: { run: (R, S) => { R.combat.weaponDrawn = 'bow'; for (let i = 0; i < 60; i++) step(R); R.combat.weaponDrawn = false; for (let i = 0; i < 60; i++) { step(R); S(); } } },
   // M1.3f: the kite's hang pose, the static blockout (an.setHangPose), graded by `hangCheck` too
   hang: { cloth: true, run: (R, S) => { R.an.setHangPose(true); for (let i = 0; i < 60; i++) { step(R); S(); } R.hangCheck = R.M.hangCheck(); R.hangInfo = R.an.hangPoseInfo(); R.an.setHangPose(false); } },
+  // (M1a r3 fix: the page's mantle row jogs to the ledge pressing Space, so it JUMPS first where the wall is not yet in
+  //  reach: a jog jump and its landing, then the same from standing, as player.js emits them)
+  jump: { run: (R, S) => { const p = R.player, ev = R.ctx.events; for (let i = 0; i < 30; i++) { fwd(R, SPEEDS.jog * 0.5); step(R); }
+    for (const sp of [SPEEDS.jog * 0.5, 0]) { ev.emit('player-jump', { v0: 5 }); p.grounded = false; for (let i = 0; i < 34; i++) { fwd(R, sp); step(R); S(); } p.grounded = true; ev.emit('player-land', { fall: 1.2 }); for (let i = 0; i < 40; i++) { fwd(R, sp); step(R); S(); } } } },
+  // (M1a r3 fix: the page's two lance-and-roll blend pairs, hero-sweep.mjs blendUnstowLanceRoll / blendRollUnstowLance)
+  blendUnstowLanceRoll: { melee: true, run: (R, S) => { R.melee.drawLance(30); for (let i = 0; i < 15; i++) { step(R); S(); } rollRun(R, S); for (let i = 0; i < 30; i++) { step(R); S(); } } },
+  blendRollUnstowLance: { melee: true, run: (R, S) => { for (let i = 0; i < 24; i++) { fwd(R, SPEEDS.jog); step(R); } rollRun(R, S, () => { if (!R._ul && R.player.dodgeK >= 0.48) { R._ul = 1; R.melee.drawLance(30); } }); R._ul = 0; for (let i = 0; i < 60; i++) { step(R); S(); } } },
   sit: { cloth: true, run: (R, S) => { const p = R.player; p.riding = {}; p.grounded = false; for (let i = 0; i < 60; i++) step(R); for (let i = 0; i < 120; i++) { step(R); S(); } p.riding = null; p.grounded = true; } },
 };
+
+/** a roll (0.82 s, 3.4 m) as player.js runs it; `each` is called every step before it */
+function rollRun(R, S, each = null) {
+  const p = R.player; p.dodging = true; const N = Math.round(0.82 * 60);
+  for (let i = 0; i <= N; i++) { p.dodgeK = i / N; each?.(); fwd(R, 3.4 / 0.82); step(R); S(); }
+  p.dodging = false; p.dodgeK = 1; p.velocity.set(0, 0, 0); p.moveSpeed = 0;
+}
 
 function mantleRun(R, S, rise, clip, dur) {
   const p = R.player;
@@ -207,7 +221,8 @@ export function traceDeg(a, b) {
 export function windStream(R) {
   const an = R.an, out = [];
   const tips = () => an._chains.filter((c) => /wrapSash|panel/.test(c.links[0].name)).map((c) => ({ name: c.links[0].name.replace(/^dyn_|_01$/g, ''), c }));
-  for (const hd of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+  // (M1a r3 fix: + F02's and F15's own headings, bearing 258 and 315 -> heading 180 - bearing: the page row's places)
+  for (const hd of [0, Math.PI / 2, Math.PI, -Math.PI / 2, -78 * Math.PI / 180, -135 * Math.PI / 180]) {
     const mean = {};
     for (const on of [true, false]) {
       reset(R); R.player.heading = hd;

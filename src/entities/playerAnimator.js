@@ -1586,7 +1586,16 @@ export class PlayerAnimator {
     // (M1.3f: the kite's hang pose blockout, when a gate turns it on, is the last body layer)
     if (this._hangOn) this._hangLayer(1);
     // (M1.3f fix 1: no hand or forearm over its shoulder behind the head plane in a roll)
-    if (this._dodgeW > 0.02 && !(this.melee?.w > 0.02)) this._rollArmGuard(this._dodgeW);
+    // (M1a r3 fix: with the lance in her hands too, both wrists moved together and the hands' orientation kept)
+    /* (M1a r3 fix, M1.3f mantle row: ...and in the jump and its landing. The jump clips swing both arms back and up
+     *  over the shoulders behind the head plane (bench `jump`: 17 steps, a forearm 0.035 m over its shoulder 0.29 m
+     *  behind; the page's mantle row jumps where the wall is not yet in reach: its 2 steps). Weighted by the air
+     *  channel's clip weight) */
+    const guardW = Math.max(this._dodgeW, this._airClipW || 0);
+    if (guardW > 0.02) {
+      const rigid = !!(this.melee?.w > 0.02);
+      this._rollArmGuard(guardW, rigid);
+    }
     this._twistLayer();
 
     /* ------------------ secondary motion: dyn_ spring chains --------------- */

@@ -96,7 +96,10 @@ const CLIPS = {
   blendUnstowBowAim: { js: `S.on = true; C.input.mouse.buttons |= 4; await simWait(0.3); C.input.mouse.buttons |= 1; await simWait(1.2);` },
   blendAimStowBow: { js: `C.input.mouse.buttons |= 4; await simWait(0.6); C.input.mouse.buttons |= 1; await simWait(0.8); S.on = true; C.input.mouse.buttons = 0; const t0 = E.simTime; while (cmb.weaponDrawn && E.simTime - t0 < 8) await frame(); await simWait(0.6);` },
   blendLanceToBow: { js: `cmb.melee.drawLance(30); await simWait(1.4); S.on = true; cmb.melee.holsterLance(); await simWait(0.3); C.input.mouse.buttons |= 4; await simWait(1.4);` },
-  blendRollMantle: { js: `await ledge(0.6, 3.2); S.on = true; keys.add('KeyW'); await simWait(0.15); p.dodge(); await climbUp();` },
+  // (M1a r3 fix: the 1.4 m ledge the mantle row stands, its face 3.6 m ahead: the 0.6 m one of fix 1 is under
+  //  player.js's 0.9 m wall probe and was never mantled; the roll's 3.4 m ends at the face and the mantle takes the
+  //  buffered Space on the first legal step after it)
+  blendRollMantle: { js: `await ledge(1.4, 4.6); S.on = true; keys.add('KeyW'); await simWait(0.15); p.dodge(); await climbUp();` },
   blendSlideRoll: { js: `const f = slideFace(30, 3); if (!f) { S.skip = 'no 30 deg face'; return; } const pid = p.surfaces.add({ x: f.x + f.dx * 1.2, z: f.z + f.dz * 1.2, r: 4.5, surface: 'cinder' }); try { p.position.set(f.x - f.dx * 0.8, 0, f.z - f.dz * 0.8); p.velocity.set(0, 0, 0); p._snapToGround(); p.camYaw = Math.atan2(f.dx, f.dz) + Math.PI; await simWait(0.3); S.on = true; keys.add('KeyW'); const t0 = E.simTime; while (!p.sliding && E.simTime - t0 < 2) await frame(); await simWait(0.5); p.dodge(); await simWait(1.2); } finally { p.surfaces.remove(pid); }` },
   hang: { cloth: true, hang: true, js: `an.setHangPose(true); await simWait(0.5); S.on = true; await simWait(1.0); S.hang = M.hangCheck(); S.bar = an.hangPoseInfo(); S.on = false; an.setHangPose(false);` },
 };
@@ -166,14 +169,14 @@ const windRow = {
       let SC = 1; try { SC = (await import('/src/world/island/extent.js')).ISLAND_SCALE ?? 1; } catch (e) { /* 1 */ }
       const tips = () => an._chains.filter((c) => /^dyn_(wrapSash|panel[LRB])_01$/.test(c.links[0].name)).map((c) => ({ name: c.links[0].name.replace(/^dyn_|_01$/g, ''), c }));
       const sample = async (sec) => {
-        const acc = {}, sq = {}; let n = 0, wx = 0, wz = 0;
+        const acc = {}, sq = {}, rt = {}; let n = 0, wx = 0, wz = 0;
         const s0 = E.simTime, w0 = performance.now();
         while (E.simTime - s0 < sec && performance.now() - w0 < 20000) {
           await frame(); n++; wx += an.wind.x; wz += an.wind.z;
-          for (const t of tips()) { const k = t.c.N * 3; const q = [t.c.pos[k], t.c.pos[k + 1], t.c.pos[k + 2]]; (acc[t.name] ||= [0, 0, 0]); (sq[t.name] ||= [0, 0, 0]); for (let a = 0; a < 3; a++) { acc[t.name][a] += q[a]; sq[t.name][a] += q[a] * q[a]; } }
+          for (const t of tips()) { const k = t.c.N * 3; const q = [t.c.pos[k], t.c.pos[k + 1], t.c.pos[k + 2]]; (acc[t.name] ||= [0, 0, 0]); (sq[t.name] ||= [0, 0, 0]); (rt[t.name] ||= [0, 0, 0]); for (let a = 0; a < 3; a++) { acc[t.name][a] += q[a]; sq[t.name][a] += q[a] * q[a]; rt[t.name][a] += t.c.pos[a]; } }
         }
         const out = {};
-        for (const k in acc) { const m = acc[k].map((v) => v / n); out[k] = { m, sd: Math.sqrt(Math.max(0, sq[k].reduce((s, v, a) => s + v / n - m[a] * m[a], 0))) }; }
+        for (const k in acc) { const m = acc[k].map((v) => v / n); out[k] = { m, root: rt[k].map((v) => v / n), sd: Math.sqrt(Math.max(0, sq[k].reduce((s, v, a) => s + v / n - m[a] * m[a], 0))) }; }
         return { tips: out, n, wind: [wx / n, wz / n] };
       };
       const brg = (dx, dz) => { let b = Math.atan2(dx, -dz) * 180 / Math.PI; return b < 0 ? b + 360 : b; };
@@ -200,7 +203,12 @@ const windRow = {
           for (const k in on.tips) {
             const a = on.tips[k], b = still.tips[k];
             const dx = a.m[0] - b.m[0], dz = a.m[2] - b.m[2], B = brg(dx, dz), mv = Math.hypot(dx, dz);
-            r.tips[k] = { bearing: +B.toFixed(1), moveM: +mv.toFixed(3), swayWind: +a.sd.toFixed(4), swayStill: +b.sd.toFixed(4) };
+            /* (M1a r3 fix, recorded only, not graded: how far the chain's ROOT moved between the two windows, and the
+             *  tip's bearing off its own root: the idle's weight shift between the windows moves the hip the panels hang
+             *  from, which the graded bearing above counts as wind) */
+            const rdx = a.root[0] - b.root[0], rdz = a.root[2] - b.root[2];
+            const Br = brg(dx - rdx, dz - rdz);
+            r.tips[k] = { bearing: +B.toFixed(1), moveM: +mv.toFixed(3), swayWind: +a.sd.toFixed(4), swayStill: +b.sd.toFixed(4), rootMoveM: +Math.hypot(rdx, rdz).toFixed(3), bearingOffRoot: +Br.toFixed(1), moveOffRootM: +Math.hypot(dx - rdx, dz - rdz).toFixed(3) };
             if (off(B, 225) > 45) fails.push(P.id + ' ' + k + ' streams to ' + B.toFixed(0));
             if (off(B, down) > 45) fails.push(P.id + ' ' + k + ' ' + B.toFixed(0) + ' vs downwind ' + down.toFixed(0));
             if (k === 'panelL' && mv < 0.05) fails.push(P.id + ' panelL moves ' + mv.toFixed(3) + ' m');

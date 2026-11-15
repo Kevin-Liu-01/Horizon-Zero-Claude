@@ -3,7 +3,7 @@
  * the page rows, the Frame Set frames and the bar clips, on one boot of one page.
  *
  *   node tools/gates/hero-sweep/session.mjs --port 5274 [--rows A-sweep-run,...|all|none] [--extra-rows <file>[,<file>]]
- *        [--extra-only <ids>] [--fresh extra|all|none] [--frames F14,F15,F10] [--clips run,run3q,draw,crouchDraw,melee] [--clips-first]
+ *        [--extra-only <ids>] [--extra-first] [--fresh extra|all|none] [--frames F14,F15,F10] [--clips run,run3q,draw,crouchDraw,melee] [--clips-first]
  *        [--label <tag>] [--budget <s>]
  *
  *  1. the machine guard (memory free >= 50 %, pressure level 1), then the shared slot <slots>/slot1 (mkdir; owner.txt
@@ -32,6 +32,9 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/* M1a r3 fix: a page call that has not answered in `ms` is given up as an error (V-traversal's setup ran to the
+ * 240 s protocol timeout at d8fddf1) */
+const withTimeout = (pr, ms, what) => Promise.race([pr, sleep(ms).then(() => { throw new Error(`${what} timed out after ${Math.round(ms / 1000)} s`); })]);
 const utc = () => new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 const log = (...a) => console.log(`[hero-session ${new Date().toISOString().slice(11, 19)}]`, ...a);
 
@@ -52,6 +55,13 @@ for (const f of (flag('--extra-rows') || '').split(',').filter(Boolean)) {
   const mod = await import(pathToFileURL(path.resolve(REPO, f)).href);
   rows.push(...mod.GATES.filter((g) => !want || want.includes(g.id)).map((g) => ({ ...g, __extra: true })));
 }
+/* M1a r3 fix: --extra-first runs the --extra rows (the kept rows) before the sweep rows */
+if (args.includes('--extra-first')) rows = [...rows.filter((g) => g.__extra), ...rows.filter((g) => !g.__extra)];
+/* M1a r3 fix (the judge's FIX LIST 1): a row's place in the budget is what it TAKES, not its timeout (A-draw-elbow-level's
+ * timeout is 600 s and took 177-178 s at dee526d; with the timeout as the need, A16 and A17 never started at 6448b3d).
+ * Seconds measured in the page, with headroom; a row not named here needs min(its timeout, 90 s). A row that overruns is
+ * still cut by its own timeout, and the watchdog still ends the session at the budget + 45 s. */
+const EXPECT_S = { 'A-draw-elbow-level': 240, 'A16-draw-anchor': 200, 'A107-draw-arm-path': 60, 'A104-melee-self-clear': 60, 'A105-melee-while-moving': 60, 'A32-draw-ramp': 45, 'A17-draw-beats': 20, 'V-traversal': 60 };
 const set = loadFrameSet();
 const frameIds = (flag('--frames') || '').split(',').filter(Boolean);
 const frames = set.frames.filter((f) => frameIds.includes(f.id));
@@ -102,7 +112,8 @@ const RESET_HERO = async () => {
     const o = out();
     if (!o.bow && !o.lance && !o.aiming && !o.crouching) break;
     if (cmb) cmb._holsterT = 0;
-    await new Promise((r) => requestAnimationFrame(r));
+    // (M1a r3 fix: a frame, or 50 ms if the page draws none: this wait can never hang the session)
+    await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); });
   }
   const o = out();
   const st = cmb?.melee?.stance ?? null;
@@ -237,7 +248,7 @@ try {
     current = g.id;
     // (a row starts only if its own timeout, and a fresh page's boot, still fit in the budget: at 6448b3d rows begun
     //  inside it ran to their timeouts and took the session 243 s past the 15-minute cap)
-    const need = ((g.timeout ?? 90000) / 1000) + ((FRESH === 'all' || (FRESH === 'extra' && g.__extra)) ? 60 : 0);
+    const need = Math.min((g.timeout ?? 90000) / 1000, EXPECT_S[g.id] ?? 90) + ((FRESH === 'all' || (FRESH === 'extra' && g.__extra)) ? 60 : 0);
     if (over() || (Date.now() - t0) / 1000 + need > BUDGET_S) { out.rows.push({ id: g.id, status: 'NOT-RUN', why: 'budget' }); continue; }
     const fresh = FRESH === 'all' || (FRESH === 'extra' && g.__extra);
     let rebootS = null, reset = null;
@@ -252,7 +263,7 @@ try {
       /* M1a r3: a visual row is filmed as gates.mjs films it (its setup, its settle, one screenshot), into the run
        * dir as <id>.png, for the lane to look at; it is not graded here */
       try {
-        if (g.setup) await page.evaluate(g.setup);
+        if (g.setup) await withTimeout(page.evaluate(g.setup), g.timeout ?? 90000, 'setup');
         await sleep(g.settle ?? 1500);
         const shot = await page.screenshot({ type: 'png' });
         const png = await sharp(shot).resize(vp.width, vp.height, { fit: 'fill' }).png({ compressionLevel: 8 }).toBuffer();
@@ -264,7 +275,7 @@ try {
       continue;
     }
     try {
-      if (g.setup) await page.evaluate(g.setup);
+      if (g.setup) await withTimeout(page.evaluate(g.setup), g.timeout ?? 90000, 'setup');
       await sleep(g.settle ?? 400);
       const res = await Promise.race([page.evaluate(g.assert), sleep(g.timeout ?? 90000).then(() => ({ pass: false, detail: 'timeout' }))]);
       out.rows.push({ id: g.id, status: res?.pass === true ? 'PASS' : res?.pass === null ? 'PENDING' : 'FAIL', seconds: Math.round((Date.now() - r0) / 1000), freshPage: !!rebootS, rebootS, reset, detail: res?.detail });
@@ -289,6 +300,10 @@ try {
     const jpgs = [];
     const onFrame = async (e) => { jpgs.push({ t: e.metadata.timestamp, data: e.data }); try { await cdp.send('Page.screencastFrameAck', { sessionId: e.sessionId }); } catch { /* */ } };
     try {
+      /* M1a r3 fix (the judge's FIX LIST 11: the run clip had the lance in her hand for most of it, F19's melee state
+       * leaked into it): every clip starts from a reset hero and melee state, as every row and frame does */
+      const rs = await withTimeout(page.evaluate(RESET_HERO), 15000, 'reset');
+      if (!rs.clean) log(`clip ${id}: hero not clean after the reset (${JSON.stringify(rs)})`);
       await page.evaluate(stageFrame, { ...fr, state: { ...(fr.state || {}), pose: d.pose } }, { settleMs: 1500, measureFrames: 2 });
       await page.evaluate(() => window.__CTX__.engine.requestTimeScale('studio', null));
       // M1.3g round 2 (the draw clips): her aim follows the game camera, so under the frame's side lens she turned to

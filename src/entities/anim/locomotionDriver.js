@@ -1500,15 +1500,22 @@ export class LocomotionDriver {
    * the plane (plus 0.02 m) has its wrist lowered by the excess and brought 0.03 m forward, re-solved on its own elbow's
    * pole. Weighted by the roll; nothing outside a roll. No allocation.
    */
-  _rollArmGuard(w) {
+  _rollArmGuard(w, rigid = false) {
     if (!(w > 0.02) || !this.b.head || !this.T.headOff) return;
     const b = this.b, hb = b.head.bone;
     this._charOf(hb, _rgH);
     this._liveW(hb, _rgQ); _rgQ.multiply(b.head.invW);
     _rgF.set(0, 0, 1).applyQuaternion(_rgQ);
     _rgC.copy(this.T.headOff).applyQuaternion(_rgQ).add(_rgH);           // the skull centre
+    /* M1a r3 fix (M1.3f, blendUnstowLanceRoll / blendRollUnstowLance): with the lance in her hands (`rigid`) the guard
+     * runs too, but both wrists move by ONE displacement (the larger arm's) and both hands keep their orientation, so
+     * the lance (parented to the right hand) and the left hand's hold on it travel together: the melee layer holds its
+     * hand goals in character space, so the roll's tuck put the guard's fists (and the draw's reach to the back socket)
+     * over the shoulders behind the tucked head (bench: 1 skull step and 5 plane steps; 3 plane steps) */
+    let needMax = 0;
     for (let s = 0; s < 2; s++) {
       const up = s ? b.upArmL : b.upArmR, lo = s ? b.loArmL : b.loArmR, ha = s ? b.handL : b.handR;
+      _rgNeed[s] = 0;
       if (!up || !lo || !ha) continue;
       const kn = this.bones[s ? 'index_01_l' : 'index_01_r'], tp = this.bones[s ? 'middle_04_leaf_l' : 'middle_04_leaf_r'] || this.bones[s ? 'middle_03_l' : 'middle_03_r'];
       this._charOf(up.bone, _rgS); this._charOf(lo.bone, _rgE); this._charOf(ha.bone, _rgW);
@@ -1523,15 +1530,30 @@ export class LocomotionDriver {
         if (_rgT.subVectors(_rgP, _rgC).dot(_rgF) > 0.02) continue;
         if (over > need) need = over;
       }
+      _rgNeed[s] = need; if (need > needMax) needMax = need;
+    }
+    if (needMax <= 0) return;
+    for (let s = 0; s < 2; s++) {
+      const up = s ? b.upArmL : b.upArmR, lo = s ? b.loArmL : b.loArmR, ha = s ? b.handL : b.handR;
+      if (!up || !lo || !ha) continue;
+      const need = rigid ? needMax : _rgNeed[s];
       if (need <= 0) continue;
+      this._charOf(up.bone, _rgS); this._charOf(lo.bone, _rgE); this._charOf(ha.bone, _rgW);
+      if (rigid) this._liveW(ha.bone, _rgHq);
       _rgT.copy(_rgW); _rgT.y -= need; _rgT.addScaledVector(_rgF, 0.03);
       _rgP.copy(_rgS).add(_rgW).multiplyScalar(0.5);
       _rgE.sub(_rgP);
       if (_rgE.lengthSq() < 1e-8) _rgE.set(s ? 0.7 : -0.7, -0.7, 0);
       _rgE.normalize();
       this._ikArm(s ? 'l' : 'r', _rgT, _rgE, w, null);
+      if (rigid) {
+        // (the hand's own orientation back, as the melee layer posed it: its parent moved under it)
+        this._liveW(ha.bone.parent, _rgQ2);
+        ha.bone.quaternion.copy(_rgQ2.invert().multiply(_rgHq));
+      }
     }
   }
+
 
 
   /**
@@ -1943,3 +1965,4 @@ export class LocomotionDriver {
 // (M1.3f fix 1: `_rollArmGuard`'s scratch)
 const _rgH = new THREE.Vector3(), _rgF = new THREE.Vector3(), _rgC = new THREE.Vector3(), _rgS = new THREE.Vector3(), _rgE = new THREE.Vector3();
 const _rgW = new THREE.Vector3(), _rgP = new THREE.Vector3(), _rgT = new THREE.Vector3(), _rgQ = new THREE.Quaternion();
+const _rgHq = new THREE.Quaternion(), _rgQ2 = new THREE.Quaternion(), _rgNeed = [0, 0];

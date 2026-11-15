@@ -49,6 +49,7 @@ const _b = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _d = new THREE.Vector3();
 const _hand = new THREE.Vector3();
+const _rsA = new THREE.Vector3(), _rsB = new THREE.Vector3();   // (M1a r3 fix: the roll's shoulder follow)
 const _shaft = new THREE.Vector3();
 const _lh = new THREE.Vector3();
 const _pole = new THREE.Vector3();
@@ -405,9 +406,13 @@ const HEAVY = {
 const HIP_LEAD = 0.085;
 /** How far the guard's and the beats' hand goals come down in a full crouch (m; see `update`). */
 const CROUCH_KEY_DROP = 0.50;
+/** M1a r3 fix: how far out to her right (m, char -X) the hand goals go through a roll (see `update`). */
+const ROLL_KEY_OUT = 0.20;
 /** A crouched Undercut keeps this much less of its hip turn and drive than a standing one (the crouch's legs
  *  cannot carry the full 0.36 m lunge; with all of it the left hand was pulled 0.16 m off `grip2`). */
 const UC_CROUCH_HIPS = 0.9;   // (M1a r3: 0.6 -> 0.9; at 0.6 the left palm was 0.086 m off grip2 at the contact, thrust 30.7 deg)
+/** ...and this much less of its hips' turn (M1a r3 fix: the turn apart from the drive; see `update`). */
+const UC_CROUCH_YAW = 0.5;
 const HIP_LEAD_RAMP = 0.10;
 /**
  * THE MASKED CLIP AFTER THE HIPS, NOT BEFORE THEM (M1.3d). `Sword_Attack`'s
@@ -1120,6 +1125,7 @@ export class MeleeLayer {
     /* M1.3d: the hips' lead (`_ahead`): its ramp, the phase it reads, the keys `_swingAt` picked, and the
      * weight the pelvis turn was applied at this frame (`_stance`) */
     this._leadK = 1; this._aPh = 'windup'; this._aK = 0; this._hipW = 0; this._keyK = 0;
+    this._shRef = new THREE.Vector3(); this._shRefOk = false;   // (M1a r3 fix: the shoulders' midpoint upright, char)
     this._kA = READY; this._kB = READY; this._kU = 0;
     /** The tables, for the gates' A/B rows (never written by the game). */
     this.tables = MELEE_TABLES;
@@ -1624,6 +1630,23 @@ export class MeleeLayer {
       const dy = -CROUCH_KEY_DROP * an._crouchW * this._keyK;
       _hand.y += dy; _lh.y += dy;
     }
+    /* M1a r3 fix (M1.3f, blendUnstowLanceRoll): THE KEYS GO WITH HER SHOULDERS IN A ROLL. The roll clip tucks her
+     * (the shoulders 0.3-0.6 m lower and forward), and the guard's fists, held in character space, stood over the
+     * tucked shoulders behind her head (bench: 1 skull step and 5 head-plane steps, the page the same). Through a
+     * roll the hand goals go down as far as the shoulders' midpoint has off where it stands upright (read while she is
+     * not rolling) and out to her right, by the roll's weight */
+    {
+      const dW = an._dodgeW || 0;
+      an._charOf(an.b.upArmR.bone, _rsA); an._charOf(an.b.upArmL.bone, _rsB); _rsA.add(_rsB).multiplyScalar(0.5);
+      if (dW < 0.01) { if (!this._shRefOk) { this._shRef.copy(_rsA); this._shRefOk = true; } else this._shRef.lerp(_rsA, 1 - Math.exp(-12 * dt)); }
+      else if (this._shRefOk && this._keyK > 1e-3) {
+        // (down with the shoulders only, and ROLL_KEY_OUT out to her right: moved with the shoulders' whole travel, or
+        //  down alone, the tucked head came down onto the fists, 1-4 bench steps behind the skull or at the nape; out to
+        //  her right side the haft is carried along her flank, clear of the head's width)
+        _rsA.sub(this._shRef); _rsA.x = -ROLL_KEY_OUT; _rsA.z = 0; _rsA.multiplyScalar(dW * this._keyK);
+        _hand.add(_rsA); _lh.add(_rsA);
+      }
+    }
     /* the recoil: back along the haft, the far end up a touch */
     if (this._recoil > 1e-4) {
       _hand.addScaledVector(_shaft, -this._recoil);
@@ -1889,8 +1912,13 @@ export class MeleeLayer {
       /* (nor a crouch's, nor a roll's) — except the Undercut's, which is thrown FROM a crouch (M1.3d) */
       const crW = (an._crouchW || 0) * (beat === UNDERCUT ? UC_CROUCH_HIPS : 1);
       const hw = w * this._stanceW * (1 - crW) * (1 - (an._dodgeW || 0));
-      this._hipW = hw;
-      this._pelvisYawNow = (u.py || 0) * hw;
+      /* M1a r3 fix (M1.3d, the crouched Undercut: the shoulders led the hips by 46 ms, the hips turning 0.045 rad):
+       * crouched, the Undercut keeps its hips' TURN (`UC_CROUCH_YAW` of it less) apart from its drive forward, which
+       * is what pulled the left hand off `grip2` (UC_CROUCH_HIPS) */
+      const crY = (an._crouchW || 0) * (beat === UNDERCUT ? UC_CROUCH_YAW : 1);
+      const hy = w * this._stanceW * (1 - crY) * (1 - (an._dodgeW || 0));
+      this._hipW = hy;   // (the trunk takes out the turn at the weight the pelvis turned at: M1a r3 fix)
+      this._pelvisYawNow = (u.py || 0) * hy;
       this.pelvisDz = (u.dz || 0) * hw;
       if (this._pelvisYawNow !== 0 && b.pelvis) an._rot(b.pelvis, Y_AXIS, this._pelvisYawNow);
     }
