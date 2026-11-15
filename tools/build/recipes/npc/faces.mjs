@@ -51,6 +51,21 @@ export async function faceOf(id) {
   if (!eyeL[3] || !eyeR[3]) throw new Error(`[faces] ${id}: no eye vertices on the eye patch`);
   const eyes = [eyeL, eyeR].map((c) => [c[0] / c[3], c[1] / c[3], c[2] / c[3]]);
   const L = findLandmarks(head, eyes);
+  /* (M1.5c fix round, judge item 7) The sellion window of findLandmarks is 4 mm either side of the eyes' height on the midline,
+   * and two men's skins (boat-caulker, salt-porter-2) have no midline vertex on the front of the face inside it: the most forward
+   * point it found was the back of the skull, 170 mm behind the eyes, and their distances read 62-71 mm. The bridge is on the
+   * front of the face: if the window found nothing forward of the eyes, take the midline vertex forward of the eyes nearest
+   * their height (the shared lib/human/face.mjs is hero-art's and unchanged). */
+  const eyeZ = (eyes[0][2] + eyes[1][2]) / 2, eyeY = (eyes[0][1] + eyes[1][1]) / 2;
+  if (!L.noseBridge || L.noseBridge[2] < eyeZ) {
+    let best = null;
+    for (const q of head) {
+      if (Math.abs(q[0]) >= 0.008 || q[2] < eyeZ || Math.abs(q[1] - eyeY) > 0.012) continue;
+      const k = Math.abs(q[1] - eyeY) - 0.25 * (q[2] - eyeZ);
+      if (!best || k < best.k) best = { q, k };
+    }
+    if (best) L.noseBridge = [best.q[0], best.q[1], best.q[2]];
+  }
   const o = [(eyes[0][0] + eyes[1][0]) / 2, (eyes[0][1] + eyes[1][1]) / 2, (eyes[0][2] + eyes[1][2]) / 2];
   const pts = {};
   for (const k of KEYS) {
