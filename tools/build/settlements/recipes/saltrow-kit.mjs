@@ -342,10 +342,14 @@ function building(b, idx) {
       }
       // upper floor (the balcony's door takes the middle bay of the front)
       if (two) {
-        const balc = b.balcony && fa.front && Math.abs(x) < len / cols * 0.6;
+        const balc = (b.balcony && fa.front && Math.abs(x) < len / cols * 0.6) || (fa.side && fa.side === b.sideBalcony && Math.abs(x) < 1.5);
         if (!balc) windows.push(windowAt(body, glass, F, x, 4.3, guild ? 0.95 : 0.78, guild ? 1.25 : 1.0, R,
           { lit: guild || R() < litOdds * 0.9, surround: guild, shutters: !guild && R() < 0.5 }));
       }
+    }
+    if (fa.side && fa.side === b.sideBalcony && two) {
+      balconyAt(body, F, 0, 3.05, Math.min(2.6, len - 2.2), 0.85);
+      windows.push(windowAt(body, glass, F, 0, 3.15 + 0.95, 1.0, 1.75, R, { lit: true, shutters: false }));
     }
     if (fa.front) {
       doorAt(body, F, doorX, guild ? 1.7 : 1.05, guild ? 2.45 : 2.1, guild ? WOOD : DOOR[idx % DOOR.length], { surround: guild, double: guild });

@@ -19,6 +19,7 @@ import { REST } from '../island/sites.js';
  *   step     the raised block on the roof { w, d, h (above the main parapet), x, z (centre offset) } or null
  *   balcony  the orchil-violet balcony on the first floor (two-storey houses only)
  *   flora    bougainvillea up the front's right corner and over the door
+ *   sideBalcony  +1 / -1: a second balcony on that side's upper floor (local +x / -x)
  *   kind     'house' | 'guild' | 'brea'
  * No two neighbours along a row share a parapet height (F22's written target): `rooflineCheck()` says so.
  */
@@ -68,7 +69,7 @@ export const BUILDINGS = Object.freeze([
     ['l4', 3.2, 7.4, 8.0, H2 + 0.7, 0, { balcony: true }],
   ]),
   ...row(1, 11.6, [
-    ['r1', 3.4, 7.6, 7.0, H2 - 0.6, 2, { balcony: true }],
+    ['r1', 3.4, 7.6, 7.0, H2 - 0.6, 2, { balcony: true, sideBalcony: 1 }],   // and one on its down-street end (F22)
     ['r2', 3.6, 8.0, 7.4, H1, 0, { step: st(3.2, 3.0, 2.0, 1.8, -1.6), flora: true }],
     ['r3', 3.2, 8.0, 8.0, H2 + 0.4, 1, { balcony: true }],
     ['r4', 3.4, 7.6, 7.0, H1 + 0.8, 2, { step: st(3.0, 3.2, 2.1, -1.8, -1.4) }],
@@ -123,7 +124,9 @@ export const GUILD_STUD = Object.freeze((() => {
  */
 export const CONES = Object.freeze([
   Object.freeze({ ...streetPoint(7.6, 7.2), r: 1.5, h: 1.85 }),
-  Object.freeze({ ...streetPoint(9.9, 8.7), r: 1.6, h: 2.05 }),
+  // the second on the street's left edge before the first house: behind Brea in F20, not behind Ansel; at 580ae44
+  // a second cone on the right stood on the same line of sight from F22 as the first and hid behind it
+  Object.freeze({ ...streetPoint(7.0, -2.7), r: 1.3, h: 1.6 }),
 ]);
 
 /**
