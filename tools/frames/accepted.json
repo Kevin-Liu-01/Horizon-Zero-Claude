@@ -123,39 +123,39 @@
   },
   "F16": {
    "date": "2026-11-15",
-   "commit": "fb6d5f0",
-   "run": "20261115T173434Z-fb6d5f0-anchor-restage3-partial-x3",
+   "commit": "b4d8df9",
+   "run": "20261115T212915Z-b4d8df9-engine-reanchor-town-partial-x3",
    "provisional": true,
    "rule": "PROCESS §4 two-page rule",
    "pages": [
     "20261115T060956Z-dee526d-m1a-r2-review",
     "20261115T093344Z-fb6d5f0-m1a-r3-exit"
    ],
-   "note": "RE-FILMED (M1a regfix 4, the orchestrator ruling after regressions run 3): the anchor is fb6d5f0 staged on simulation time (tools/frames/page.mjs 7a at 109930d, copied into a detached fb6d5f0 worktree, never committed there: 1.5 s idle on a re-seated rest after a slate that raises and lowers the bow once, the bow 0.35 s, aim 0.45 s, draw held 1.3 s; 217 sim frames); the second staging of a 3x session, which matched the third on all but 1.74 % of pixels (her box 3.96 %); a session's first staging differs on 6.1 % (the front sash panel hangs instead of standing out). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/closer/same; exit closer x4; originality pass both; bar not failing: knuckle to jaw 0.014 m in every cell (A16, A32 PASS at fb6d5f0), A107 behind-head band max 0.068 m (bar 0.10) PASS at fb6d5f0"
+   "note": "RE-ANCHORED (the town ruling (M1b wave 2: Saltrow stands where the bible puts it; the animation-bar frames are judged on Brea), filmed on simulation time at b4d8df9 from a clean detached worktree, 3x in one session (217 sim frames each; repeats 1v2 0.002 %, 1v3 0.005 %, 2v3 0.003 % of pixels over 10, the frozen frame's own floor 0 %); her box cropped against the fb6d5f0 anchor: figure, cloth and pose the same, only the town behind her and the crust ~8 levels darker (as at c455362)); the picture is repeat 2 (F16-r2.png) of run 20261115T212915Z-b4d8df9-engine-reanchor-town-partial-x3 at b4d8df9; the anchor at fb6d5f0 is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: RE-FILMED (M1a regfix 4, the orchestrator ruling after regressions run 3): the anchor is fb6d5f0 staged on simulation time (tools/frames/page.mjs 7a at 109930d, copied into a detached fb6d5f0 worktree, never committed there: 1.5 s idle on a re-seated rest after a slate that raises and lowers the bow once, the bow 0.35 s, aim 0.45 s, draw held 1.3 s; 217 sim frames); the second staging of a 3x session, which matched the third on all but 1.74 % of pixels (her box 3.96 %); a session's first staging differs on 6.1 % (the front sash panel hangs instead of standing out). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/closer/same; exit closer x4; originality pass both; bar not failing: knuckle to jaw 0.014 m in every cell (A16, A32 PASS at fb6d5f0), A107 behind-head band max 0.068 m (bar 0.10) PASS at fb6d5f0"
   },
   "F18": {
    "date": "2026-11-15",
-   "commit": "fb6d5f0",
-   "run": "20261115T173434Z-fb6d5f0-anchor-restage3-partial-x3",
+   "commit": "b4d8df9",
+   "run": "20261115T212915Z-b4d8df9-engine-reanchor-town-partial-x3",
    "provisional": true,
    "rule": "PROCESS §4 two-page rule",
    "pages": [
     "20261115T060956Z-dee526d-m1a-r2-review",
     "20261115T093344Z-fb6d5f0-m1a-r3-exit"
    ],
-   "note": "RE-FILMED (M1a regfix 4, the orchestrator ruling after regressions run 3): the anchor is fb6d5f0 staged on simulation time, the crouched aim-strafe frozen at gait phase 0.7576 (wanted 0.75: the near knee down toward the lens, the front panel to the ground, as in the wall-clock anchor; 314 sim frames; tools/frames/page.mjs 7a at 109930d, copied into a detached fb6d5f0 worktree, never committed there); the second staging of a 3x session, which matched the third on all but 0.43 % of pixels (her box 1.82 %). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/closer/closer; exit closer/closer/closer/same; originality pass both; bar (no hand or forearm behind the head in any cell) not failing: A16 (20 cells incl. crouched and strafing) and A107 PASS at fb6d5f0"
+   "note": "RE-ANCHORED (the town ruling (M1b wave 2: Saltrow stands where the bible puts it; the animation-bar frames are judged on Brea), filmed on simulation time at b4d8df9 from a clean detached worktree, 3x in one session (314 sim frames each; repeats 1v3 0.004 %, 1v2 0.058 %, 2v3 0.057 %, floor 0 %: repeat 3 is taken as it matches repeat 1 and repeat 2 is the outlier); her box cropped against the fb6d5f0 anchor: figure, cloth and pose the same (near knee down toward the lens, the front panel to the ground), only the town behind her and the crust ~6 levels darker (as at c455362)); the picture is repeat 3 (F18-r3.png) of run 20261115T212915Z-b4d8df9-engine-reanchor-town-partial-x3 at b4d8df9; the anchor at fb6d5f0 is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: RE-FILMED (M1a regfix 4, the orchestrator ruling after regressions run 3): the anchor is fb6d5f0 staged on simulation time, the crouched aim-strafe frozen at gait phase 0.7576 (wanted 0.75: the near knee down toward the lens, the front panel to the ground, as in the wall-clock anchor; 314 sim frames; tools/frames/page.mjs 7a at 109930d, copied into a detached fb6d5f0 worktree, never committed there); the second staging of a 3x session, which matched the third on all but 0.43 % of pixels (her box 1.82 %). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/closer/closer; exit closer/closer/closer/same; originality pass both; bar (no hand or forearm behind the head in any cell) not failing: A16 (20 cells incl. crouched and strafing) and A107 PASS at fb6d5f0"
   },
   "F19": {
    "date": "2026-11-15",
-   "commit": "fb6d5f0",
-   "run": "20261115T154520Z-fb6d5f0-anchor-restage-fb6d5f0-partial-x3",
+   "commit": "b4d8df9",
+   "run": "20261115T212915Z-b4d8df9-engine-reanchor-town-partial-x3",
    "provisional": true,
    "rule": "PROCESS §4 two-page rule",
    "pages": [
     "20261115T060956Z-dee526d-m1a-r2-review",
     "20261115T093344Z-fb6d5f0-m1a-r3-exit"
    ],
-   "note": "RE-FILMED (M1a regfix 3, the orchestrator ruling after regressions run 2): the anchor is fb6d5f0 staged on simulation time, frozen at the heavy contact key 0.7143 (187 frames; tools/frames/page.mjs 7a, copied into a detached fb6d5f0 worktree, never committed there); the second staging of that session, which matched the third on all but 0.214 % of pixels. At fb6d5f0 the session first staging differs on 1.67 % (her box 7.2 %: the front sash panel drapes differently on the first heavy of a session). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/closer/same; exit closer x4; originality pass both; bar not failing: A-melee-heavy-body PASS at 6b9a7a4 (hip lead 81 ms, palms within 0.001 m), not re-measured since"
+   "note": "RE-ANCHORED (the town ruling (M1b wave 2: Saltrow stands where the bible puts it; the animation-bar frames are judged on Brea), filmed on simulation time at b4d8df9 from a clean detached worktree, 3x in one session (frozen at the heavy contact, 187 sim frames each; repeats 1v2 0.003 %, 1v3 0.004 %, 2v3 0.004 %, floor 0 %); her box cropped against the fb6d5f0 anchor: figure, cloth (both sash panels) and pose the same, only the town behind her and the crust ~9 levels darker (as at c455362)); the picture is repeat 2 (F19-r2.png) of run 20261115T212915Z-b4d8df9-engine-reanchor-town-partial-x3 at b4d8df9; the anchor at fb6d5f0 is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: RE-FILMED (M1a regfix 3, the orchestrator ruling after regressions run 2): the anchor is fb6d5f0 staged on simulation time, frozen at the heavy contact key 0.7143 (187 frames; tools/frames/page.mjs 7a, copied into a detached fb6d5f0 worktree, never committed there); the second staging of that session, which matched the third on all but 0.214 % of pixels. At fb6d5f0 the session first staging differs on 1.67 % (her box 7.2 %: the front sash panel drapes differently on the first heavy of a session). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/closer/same; exit closer x4; originality pass both; bar not failing: A-melee-heavy-body PASS at 6b9a7a4 (hip lead 81 ms, palms within 0.001 m), not re-measured since"
   },
   "F20": {
    "date": "2026-11-15",
