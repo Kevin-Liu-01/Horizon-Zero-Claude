@@ -2,7 +2,7 @@
  * M1.8a EXIT BAR — the frame bar of TECH §9.1 and its CPU, load and hitch budgets, in one Chrome slot session.
  *
  *   node tools/perf/exit-bar.mjs --port 5270 --out <dir outside the repo>
- *        [--frames F02,F23-plumb,F32] [--live-s 30] [--reps 7] [--loads 3] [--no-load] [--slot-wait 1800]
+ *        [--frames F02,F23-plumb,F32] [--live-s 30] [--reps 7] [--loads 3] [--phases load,live,gpu] [--no-load] [--slot-wait 1800]
  *
  * Run it from a CLEAN tree at a commit (tools/perf/clean-measure.sh, or a detached worktree): the commit and the
  * tree's dirty list are written beside every number. It takes the machine guard and Chrome slot 1 itself
@@ -17,7 +17,7 @@
  *      no frame over 50 ms, at most 3 over 33 ms per 10 minutes, scaled to the window).
  *   2. LIVE (dev server, ?shot=1, vsync on): each frame staged as the Frame Set stages it (tools/frames/page.mjs),
  *      then the simulation released and --live-s seconds sampled: the presented-frame interval (rAF spacing; bar
- *      p95 <= 16.7 ms), the main thread's per-frame JS time (engine.lastFrame.jsMs = sim + submit + tail; bar
+ *      p95 <= 16.7 ms; an empty page in the same Chrome is sampled first as the harness's own jitter), the main thread's per-frame JS time (engine.lastFrame.jsMs = sim + submit + tail; bar
  *      p95 <= 8.0 ms), its sim and submit parts, frames over 33 / 50 ms, draws and triangles.
  *   3. GPU (dev server, a second Chrome with vsync and the frame-rate limit off, as M0.8): each frame staged and
  *      frozen, then --reps repetitions of tools/perf/attrib-page.mjs finishFrame (60 frames rendered back to back,
@@ -52,7 +52,8 @@ const FRAMES = flag('--frames', 'F02,F23-plumb,F32').split(',').map((s) => s.tri
 const LIVE_S = Number(flag('--live-s', 30));
 const REPS = Number(flag('--reps', 7));
 const LOADS = Number(flag('--loads', 3));
-const NO_LOAD = args.includes('--no-load');
+const PHASES = new Set(flag('--phases', 'load,live,gpu').split(',').map((x) => x.trim()));
+const NO_LOAD = args.includes('--no-load') || !PHASES.has('load');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const utc = () => new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 const log = (...a) => console.log(`[exit-bar ${new Date().toISOString().slice(11, 19)}]`, ...a);
@@ -120,7 +121,7 @@ const sampleLive = async (seconds) => {
   }
   const q = (a, p) => { const b = a.filter(Number.isFinite).sort((x, y) => x - y); return b.length ? b[Math.min(b.length - 1, Math.floor(b.length * p))] : null; };
   const r2 = (v) => (v == null ? null : Math.round(v * 100) / 100);
-  return { seconds, frames: iv.length,
+  return { seconds, frames: iv.length, fps: Math.round(iv.length / seconds * 100) / 100,
     intervalMs: { median: r2(q(iv, 0.5)), p95: r2(q(iv, 0.95)), p99: r2(q(iv, 0.99)), max: r2(Math.max(...iv)) },
     over: { ms17: iv.filter((v) => v > 17.5).length, ms33: iv.filter((v) => v > 33.4).length, ms50: iv.filter((v) => v > 50).length },
     cpuJsMs: { median: r2(q(js, 0.5)), p95: r2(q(js, 0.95)) }, simMs: { median: r2(q(sim, 0.5)), p95: r2(q(sim, 0.95)) },
@@ -200,8 +201,8 @@ try {
   }
 
   /* ---------------- 2. LIVE presented-frame intervals, vsync on ---------------- */
-  await serve('dev');
-  {
+  if (PHASES.has('live') || PHASES.has('gpu')) await serve('dev');
+  if (PHASES.has('live')) {
     const ph = { phase: 'live', load1Before: load1(), at: utc() };
     const C = await launch([], 'live');
     const at = { v: 'boot' };
@@ -210,6 +211,26 @@ try {
       await page.setViewport(VP);
       await page.evaluateOnNewDocument(deadHmr);
       watch(page, at);
+      // the control: an empty page in the same Chrome, so the harness's own presented-frame jitter is known
+      {
+        const blank = await C.browser.newPage();
+        await blank.setViewport(VP);
+        await blank.goto('data:text/html,<body style="background:%23222"></body>');
+        await sleep(1000);
+        const l0 = load1();
+        const s = await blank.evaluate(async (seconds) => {
+          const raf = () => new Promise((r) => requestAnimationFrame((t) => r(t)));
+          const iv = []; let last = await raf(); const end = performance.now() + seconds * 1000;
+          while (performance.now() < end) { const t = await raf(); iv.push(t - last); last = t; }
+          const q = (a, p) => { const b = a.slice().sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * p))]; };
+          const r2 = (v) => Math.round(v * 100) / 100;
+          return { seconds, frames: iv.length, intervalMs: { median: r2(q(iv, 0.5)), p95: r2(q(iv, 0.95)), p99: r2(q(iv, 0.99)), max: r2(Math.max(...iv)) },
+            over: { ms17: iv.filter((v) => v > 17.5).length, ms33: iv.filter((v) => v > 33.4).length, ms50: iv.filter((v) => v > 50).length } };
+        }, LIVE_S);
+        run.control = { what: 'an empty page (no WebGL) in the live Chrome, same launch flags and size', ...s, load1Before: l0, load1After: load1() };
+        log(`control (empty page): interval median ${s.intervalMs.median} p95 ${s.intervalMs.p95} ms, ${s.frames} frames in ${s.seconds} s (load ${l0})`);
+        await blank.close();
+      }
       await page.goto(`http://127.0.0.1:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 180000 });
       await page.waitForFunction('window.__READY__ === true', { timeout: 300000, polling: 500 });
       await sleep(8000);
@@ -238,7 +259,7 @@ try {
   }
 
   /* ---------------- 3. GPU by the M0.8 back-to-back readback, vsync off ---------------- */
-  {
+  if (PHASES.has('gpu')) {
     const ph = { phase: 'gpu', load1Before: load1(), at: utc() };
     const C = await launch(['--disable-gpu-vsync', '--disable-frame-rate-limit'], 'gpu');
     const at = { v: 'boot' };
