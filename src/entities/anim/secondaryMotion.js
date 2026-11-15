@@ -847,9 +847,30 @@ export class SecondaryMotion {
        *  stillGrav) in still air, x1 at STILL_REF (2 m/s) and over, so in a calm the tail hangs and in the trade nothing changes) */
       const sg = cls.stillGrav > 0 ? 1 + cls.stillGrav * Math.max(0, 1 - windS / STILL_REF) : 1;
       const k = cls.stiff, dmp = cls.drag, gy = -9.81 * cls.grav * sg, bg = cls.base;
+      /* (M1a regfix 2, `moving`, the sash panels: the air tuning for the standing trade wind (M1.2e: `wind`, `flut`,
+       *  `hang`, `rootK`, `airSelf`) eases back to the values the panels ran on when F15 and F19 were accepted as her
+       *  hips travel: `moving.v0`-`v1` m/s of the chain root's own speed, smoothed (up in ~0.1 s, down in ~0.6 s after the speed's own ~0.15 s low-pass). Standing
+       *  she meets only the wind and the panels take it as tuned; running or lunging the body's own travel drives them,
+       *  and the standing tuning held the back panel out level behind her in the run (F15) and flung the front panel
+       *  out level ahead of her in the lunge (F19)) */
+      let mvK = 0;
+      const MV = cls.moving;
+      if (MV) {
+        /* the root's speed low-passed (~0.15 s) first: the idle's one-step spikes (to 0.5-0.9 m/s in the page) eased
+         *  the standing panels toward the moving tuning and took the trade wind's damping off them in still air */
+        const rv0 = Math.sqrt(aVel[0] * aVel[0] + aVel[1] * aVel[1] + aVel[2] * aVel[2]);
+        const rv = c.mvV = Number.isFinite(c.mvV) ? c.mvV + (rv0 - c.mvV) * Math.min(1, dt * 6) : rv0;
+        let tgt = (rv - MV.v0) / (MV.v1 - MV.v0);
+        tgt = tgt <= 0 ? 0 : tgt >= 1 ? 1 : tgt * tgt * (3 - 2 * tgt);
+        const m0 = Number.isFinite(c.mvK) ? c.mvK : tgt;
+        const rate = tgt > m0 ? (MV.up ?? 10) : (MV.down ?? 1.6);
+        c.mvK = m0 + (tgt - m0) * Math.min(1, dt * rate);
+        mvK = c.mvK;
+      }
+      const mvL = (a, b) => (MV && b !== undefined ? a + (b - a) * mvK : a);
       // fix round 4: the air (see `DYN_CLASSES` 'wrap'): this chain's flutter
       // across the gusting wind, and the wrapped root's stiffness profile
-      const cw = cls.wind ?? DYN_WIND[cls.name] ?? 0, rk = cls.rootK ?? 0, airY = cls.airY ? 1 : 0;
+      const cw = mvL(cls.wind ?? DYN_WIND[cls.name] ?? 0, MV?.wind), rk = mvL(cls.rootK ?? 0, MV?.rootK), airY = cls.airY ? 1 : 0;
       // W0b targeted fix (`runFl`, the wrap only): running, she meets her own
       // air, and a cloth strip in a faster flow flaps harder AND faster — the
       // flutter's amplitude and its phase rate grow with her speed (x1 at a
@@ -860,26 +881,33 @@ export class SecondaryMotion {
       const rf = cls.runFl > 0 ? cls.runFl * (rfk < 0 ? 0 : rfk > 1 ? 1 : rfk) : 0;
       c.flX += dt * rf;
       const tf = t + c.flX;
-      const flA = cw > 0 ? (this.wind.flutter || 0) * windS * (1 + rf) * (cls.flut ?? 1) : 0, sd = c.seed;
+      const flA = cw > 0 ? (this.wind.flutter || 0) * windS * (1 + rf) * mvL(cls.flut ?? 1, MV?.flut) : 0, sd = c.seed;
       /* (M1a regressions, `airSelf`: how much of the air's drag against the chain's own travel a class takes, x1 by
        *  default. The sash panels take 0.4: at their 3.2 1/s, a jog's own air (5 m/s) held the back panel out level
        *  behind her in F15 (a8ea1bc); 0.4 x 3.2 is the 1.2-1.3 1/s the panels ran on when F15 was accepted) */
-      const as = cls.airSelf ?? 1;
+      const as = mvL(cls.airSelf ?? 1, MV?.airSelf);
+      /* (`hangK`: how much of `hang` acts, 1 standing, eased to `moving.hang` (0: none) as she travels. `hangDrag` 0: the
+       *  fall with lift takes only the wind's push and flutter, not the air's drag against the panel's own motion: a
+       *  lifted panel that lost its drag too kept flying where an inertial fling threw it) */
+      const hangK = mvL(1, MV?.hang), hd = cls.hangDrag ?? 1;
       for (let s = 0; s < steps; s++) {
         for (let j = 1; j < n; j++) {
           const i0 = j * 3;
           const dj = j / N, kj = rk > 0 ? k * (1 + rk * (1 - dj) * (1 - dj)) : k;
           let wj = cw * dj;
+          const w0 = wj;
           /* (M1a regressions, M1.2e `hang`, the sash panels: the air presses a plate by the part of it that faces the
            *  flow, so the push on a particle falls with the lift of the segment above it, cos(lift)^hang: a panel that
            *  hangs takes the whole push, one lifted to 60 deg a quarter (hang 2), one lifted level none. With the push
            *  linear in depth and no such fall, a gust swung the whole panel up as one straight board, a pennant) */
-          if (wj > 0 && cls.hang > 0) {
+          if (wj > 0 && cls.hang > 0 && hangK > 0) {
             const iu = i0 - 3, sgu = c.seg[j - 1];
             let cu = (pos[iu + 1] - pos[i0 + 1]) / sgu;
             cu = cu < 0 ? 0 : cu > 1 ? 1 : cu;
-            wj *= cls.hang === 2 ? cu * cu : Math.pow(cu, cls.hang);
+            const hf = cls.hang === 2 ? cu * cu : Math.pow(cu, cls.hang);
+            wj *= 1 + (hf - 1) * hangK;
           }
+          const wd = hd ? wj : w0;
           // the flutter: a wave running DOWN the strand (phase lags with depth),
           // across the wind horizontally and a little vertically
           let fl = 0, fv = 0;
@@ -891,10 +919,10 @@ export class SecondaryMotion {
             const i = i0 + a;
             let acc = -kj * (pos[i] - anim[i]) - dmp * (vel[i] - aVel[i]) - aB[i] * bg
               + (a === 1 ? gy : 0);
-            if (wj > 0) {
-              if (a === 0) acc += wj * (windX - wuz * fl - vel[i] * as);
-              else if (a === 2) acc += wj * (windZ + wux * fl - vel[i] * as);
-              else acc += wj * (fv - airY * vel[i]);   // airY: the air resists the strip's vertical flap too
+            if (w0 > 0) {
+              if (a === 0) acc += wj * (windX - wuz * fl) - wd * vel[i] * as;
+              else if (a === 2) acc += wj * (windZ + wux * fl) - wd * vel[i] * as;
+              else acc += wj * fv - wd * airY * vel[i];   // airY: the air resists the strip's vertical flap too
             }
             vel[i] += acc * sdt;
             pos[i] += vel[i] * sdt;
