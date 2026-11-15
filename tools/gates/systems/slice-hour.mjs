@@ -68,7 +68,7 @@ const portOpen = (p) => new Promise((r) => { const s = net.connect(p, '127.0.0.1
 
 const report = { row: 'A-slice-hour (skeleton)', commit, dirty, tree: REPO, port: PORT, startedAt: new Date().toISOString(), frames: [], beats: [], rows: {}, console: [], stoppedAt: null, why: null };
 let vite = null, browser = null, profile = null;
-const T0 = Date.now();
+let T0 = Date.now();   // reset when the Chrome slot is taken: the budget is Chrome's time, not the wait for the slot
 const spent = () => (Date.now() - T0) / 1000;
 
 async function shot(page, name) {
@@ -655,6 +655,8 @@ try {
   if (await portOpen(PORT)) throw new Error(`port ${PORT} already in use`);
   const slot = await takeMachineSlot({ who: `systems slice-hour ${PORT}`, waitS: 1800, log });
   if (!slot.ok) throw new Error(slot.why);
+  T0 = Date.now();
+  report.slotTakenAt = new Date().toISOString();
   vite = spawn('nice', ['-n', '10', 'npx', 'vite', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: REPO, stdio: 'ignore', detached: true });
   for (let i = 0; i < 240 && !(await portOpen(PORT)); i++) await sleep(250);
   if (!(await portOpen(PORT))) throw new Error(`vite did not open ${PORT}`);
