@@ -5,9 +5,8 @@
  *   node tools/build/recipes/armor/lib/swatch.mjs <run dir with F08.png> [--crop <turn-front.png>]
  *
  * The crop is read from the review root ($CALIMA_REVIEW, default ~/.calima-r5/review, crops/turn-front.png); nothing private is
- * in this file. The boxes are [x0, y0, x1, y1] inclusive, in F08's 1600 x 900 frame and in the crop's 310 x 875: the top's violet
- * over her left ribs between the harness straps, the long front panel, the trousers' left thigh, the girdle's leather, the right boot's
- * shaft. They are fixed, so a re-run measures the same cloth.
+ * in this file. Regions are [x0, y0, x1, y1] inclusive, in F08's 1600 x 900 frame and in the crop's 310 x 875: the top (its violet),
+ * the sash panels (violet), the trousers (brown between the panels), the harness leather over the top (brown), the boots (brown).
  */
 import path from 'node:path';
 import os from 'node:os';
@@ -15,12 +14,19 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
+// each swatch: a broad region in each image and the class of pixel it takes there (the median of those pixels): VIOLET (red and blue
+// both 12 over green) or BROWN (red over green over blue, not violet). Brea's idle sway moves her a few pixels between films, so a
+// tight box on one strap or one fold is not a fixed sample; a region and a class are
 export const SWATCH_BOXES = {
-  top: { f08: [812, 338, 838, 360], crop: [143, 226, 160, 240] },
-  panel: { f08: [800, 560, 840, 620], crop: [172, 385, 192, 425] },
-  trousers: { f08: [880, 600, 898, 660], crop: [75, 425, 100, 470] },
-  'belt leather': { f08: [800, 394, 822, 406], crop: [155, 291, 175, 299] },
-  boots: { f08: [665, 800, 700, 840], crop: [50, 780, 75, 810] },
+  top: { f08: [760, 280, 880, 380], crop: [100, 170, 200, 280], cls: 'violet' },
+  panel: { f08: [760, 500, 900, 700], crop: [140, 330, 260, 560], cls: 'violet' },
+  trousers: { f08: [700, 560, 950, 700], crop: [50, 380, 200, 560], cls: 'brown' },
+  'belt leather': { f08: [740, 280, 880, 380], crop: [100, 150, 210, 290], cls: 'brown' },
+  boots: { f08: [620, 770, 960, 890], crop: [30, 730, 260, 860], cls: 'brown' },
+};
+const CLS = {
+  violet: (r, g, b) => r > g + 12 && b > g + 12,
+  brown: (r, g, b) => r > g + 6 && g >= b - 4 && !(b > g + 12) && r < 125,
 };
 
 export function dE2000(c1, c2) {
@@ -50,9 +56,10 @@ async function medians(file, key) {
   const { data, info } = await sharp(file).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const out = {};
   for (const [name, b] of Object.entries(SWATCH_BOXES)) {
-    const [x0, y0, x1, y1] = b[key], v = [[], [], []];
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const k = (y * info.width + x) * 3; for (let c = 0; c < 3; c++) v[c].push(data[k + c]); }
+    const [x0, y0, x1, y1] = b[key], v = [[], [], []], ok = CLS[b.cls];
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const k = (y * info.width + x) * 3; if (!ok(data[k], data[k + 1], data[k + 2])) continue; for (let c = 0; c < 3; c++) v[c].push(data[k + c]); }
     out[name] = v.map((a) => { a.sort((p, q) => p - q); return a[a.length >> 1]; });
+    out[name].n = v[0].length;
   }
   return out;
 }
@@ -60,11 +67,30 @@ async function medians(file, key) {
 /** { name: { frame, sheet, dE } } and the count within 10. */
 export async function swatches(runDir, crop = path.join(process.env.CALIMA_REVIEW || path.join(os.homedir(), '.calima-r5/review'), 'crops/turn-front.png')) {
   const F = await medians(path.join(runDir, 'F08.png'), 'f08'), C = await medians(crop, 'crop');
-  const rows = Object.fromEntries(Object.keys(SWATCH_BOXES).map((k) => [k, { frame: F[k], sheet: C[k], dE: +dE2000(F[k], C[k]).toFixed(1) }]));
+  const rows = Object.fromEntries(Object.keys(SWATCH_BOXES).map((k) => [k, { frame: [...F[k]], sheet: [...C[k]], px: [F[k].n, C[k].n], dE: +dE2000(F[k], C[k]).toFixed(1) }]));
   return { rows, within10: Object.values(rows).filter((r) => r.dE <= 10).length };
+}
+
+/**
+ * M1.2d "leather edge wear, brass tarnish and fold fade each visible at 2.5 m", as contrast in F08 (Brea at about 2.5 m): the
+ * linear-luminance ratio p90 / p10 inside a box on the harness strap below the plate (worn pale edges against the strap's body) and
+ * on the square brass plate (tarnish against polish), and max / min of the column means across the long front panel (the folds'
+ * faded crests against their valleys). A ratio of 1.3 or more is taken as visible (about 0.4 stop).
+ */
+export const WEAR_BOXES = { strap: [822, 350, 832, 360], plate: [790, 316, 816, 342], panelFolds: [800, 570, 860, 650] };
+export async function wear(runDir) {
+  const sharp = createRequire(path.join(ROOT, 'package.json'))('sharp');
+  const { data, info } = await sharp(path.join(runDir, 'F08.png')).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const L = (x, y) => { const k = (y * info.width + x) * 3; return 0.2126 * lin(data[k]) + 0.7152 * lin(data[k + 1]) + 0.0722 * lin(data[k + 2]); };
+  const ratio = ([x0, y0, x1, y1]) => { const v = []; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) v.push(L(x, y)); v.sort((a, b) => a - b); return +(v[Math.floor(0.9 * (v.length - 1))] / v[Math.floor(0.1 * (v.length - 1))]).toFixed(2); };
+  const [x0, y0, x1, y1] = WEAR_BOXES.panelFolds, cols = [];
+  for (let x = x0; x <= x1; x++) { let s = 0; for (let y = y0; y <= y1; y++) s += L(x, y); cols.push(s / (y1 - y0 + 1)); }
+  const out = { strapEdgeWear: ratio(WEAR_BOXES.strap), brassTarnish: ratio(WEAR_BOXES.plate), panelFoldFade: +(Math.max(...cols) / Math.min(...cols)).toFixed(2) };
+  return { ...out, visible: Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v >= 1.3])) };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const a = process.argv.slice(2), ci = a.indexOf('--crop');
-  console.log(JSON.stringify(await swatches(path.resolve(a[0]), ci >= 0 ? path.resolve(a[ci + 1]) : undefined)));
+  console.log(JSON.stringify({ ...(await swatches(path.resolve(a[0]), ci >= 0 ? path.resolve(a[ci + 1]) : undefined)), wear: await wear(path.resolve(a[0])) }));
 }
