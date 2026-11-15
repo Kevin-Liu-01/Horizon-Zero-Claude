@@ -761,7 +761,8 @@ export class Vegetation {
     }
     const { full: geo, lod: geoLod } = wallGeos();
     this._owned.geo.push(geo, geoLod);
-    const wallMat = this._rockMaterial('wall', 0.4, false, 4.1, 1.12);
+    // M1a round 3 (F04: the dyke's stones read pale grey-white, salt over basalt): less rime, darker stone
+    const wallMat = this._rockMaterial('wall', 0.16, false, 4.1, 0.82);
     const mesh = new THREE.InstancedMesh(geo, wallMat, n);
     mesh.name = 'pan-dykes';
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

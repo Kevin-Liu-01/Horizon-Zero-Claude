@@ -296,7 +296,10 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   bool gSkip = mB.a > 0.5 && smoothstep(0.02, 0.6, mB.a) * (1.0 - wSalt) * (1.0 - wRock) > 0.985;
   #endif
   vec2 sWarp = vec2(0.0);
-  if (!gSkip && (w[0] > 0.012 || w[2] > 0.012) && dCam < 240.0) { vec4 nw = gNoiseT(xz * 0.1 + 0.77); sWarp = (nw.rg - 0.5) * vec2(2.0, 1.6); }
+  /* M1a round 3 (F04 and the 1 m swatches: the black sand and the flat basalt read as wood grain and marble, the ripples
+   * bent round 2.5-5 m whorls): the displacement is a broad field (16-40 m cells) of up to about 1.3 m, which still moves
+   * each 3 m tile off its neighbour by 0.3-0.9 m but bends a ripple no tighter than a dune does */
+  if (!gSkip && (w[0] > 0.012 || w[2] > 0.012) && dCam < 240.0) { vec4 nw = gNoiseT(xz * 0.025 + 0.77); sWarp = (nw.rg - 0.5) * vec2(2.6, 2.2) + (nw.ba - 0.5) * vec2(0.5, 0.4); }
   vec3 col = vec3(0.0), pert = vec3(0.0);
   float hMax = -9.0, wTot = 0.0, rSum = 0.0, aoSum = 0.0;
   vec4 keepA[3]; vec4 keepN[3]; float keepW[3]; int keepI[3]; int nKeep = 0;

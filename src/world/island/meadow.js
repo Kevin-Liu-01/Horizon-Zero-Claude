@@ -108,7 +108,7 @@ varying float vMSeed;
 varying vec2 vFloraXZ;
 uniform vec4 uDebug;              // x: flat colour (no lighting), y: every blade clipped (vertex work only)
 uniform vec4 uStab;               // M1a round 2, the crawl at 12-30 m: x tip light faded, y foot-tip ramp flattened, z clumps wider, w sub-pixel blades to their mean
-uniform vec4 uStab2;              // M1a round 3, the same band: x normals up, y blades square to the lens, z sway damped, w width floor raised
+uniform vec4 uStab2;              // M1a round 3, the same band: x normals up, y blades square to the lens, z sway damped, w one stand tone
 varying float vMTr;
 uint mPcg(uint v) { uint s = v * 747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u; return (w >> 22u) ^ w; }
 float mU(uint v) { return float(mPcg(v)) * (1.0 / 4294967296.0); }
@@ -212,8 +212,7 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
   float wPx = 2.0 * hw * pxPerM;
   float wPxB = 2.0 * w0 * pxPerM;
   float cov = 1.0;
-  float wFloor = 1.0 + uStab2.w * stK;
-  if (uPx.y > 0.5 && kind < 1.5 && side != 0.0 && wPx < wFloor) { cov = max(wPx / wFloor, 0.0); hw = 0.5 * wFloor / pxPerM; }
+  if (uPx.y > 0.5 && kind < 1.5 && side != 0.0 && wPx < 1.0) { cov = max(wPx, 0.0); hw = 0.5 / pxPerM; }
   mP = spine + vec3(rightW.x, 0.0, rightW.y) * hw * side;
   // shading normal: mostly up (a lit tuft, not a lit card), toward the blade's face and its bend
   vec2 fn = kind > 1.5 ? toCam / tcl : face * sign(dot(face, toCam) + 1e-4);
@@ -232,6 +231,10 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
     vec3 mMean = mix(base, tip, 0.55);
     vMColor = mix(vMColor, mMean, uStab.y * 0.7 * smoothstep(8.0, 28.0, dCam));
     vMColor = mix(vMColor, mMean * 0.92, uStab.w * (1.0 - clamp(wPxB - 1.0, 0.0, 1.0)) * (1.0 - uPx.z));
+    /* (round 3, w) a moving edge between two blades of different tone is what the walk's flicker counts: over the band
+     * every blade goes toward one stand tone, the meadow's own mean (no per-blade random) */
+    vec3 mStand = mix(vec3(0.17, 0.112, 0.02) * 0.975, mix(vec3(0.694, 0.431, 0.117), vec3(0.578, 0.352, 0.074), 0.5) * 0.98, 0.55);
+    vMColor = mix(vMColor, mStand, uStab2.w * stK * 0.75);
   }
   vMTr = 1.0 - uStab.x * smoothstep(8.0, 24.0, dCam);
   // a viborina spike is a straw stem with violet florets on its upper half
@@ -396,7 +399,7 @@ export class Meadow {
       /* M1a round 2: the crawl stabiliser on, all four terms (measured at 889bce2, F02's walk and sprint, 12-30 m: 245 -> 201
        * and 527 -> 508 events per mille at 0 samples; past 30 m 195 -> 35 and 449 -> 223) */
       uStab: { value: new THREE.Vector4(1, 1, 1, 1) },
-      uStab2: { value: new THREE.Vector4(1, 1, 1, 0) },
+      uStab2: { value: new THREE.Vector4(1, 1, 1, 1) },
     };
     this.rings = MEADOW_RINGS.map((ring) => this._buildRing(ring));
     this._frustum = new THREE.Frustum();
@@ -633,7 +636,7 @@ export class Meadow {
   /** The crawl stabiliser's four terms (uStab, see MEADOW_BUILD), each 0..1. */
   setStab(x = 0, y = 0, z = 0, w = 0) { this._u.uStab.value.set(x, y, z, w); }
 
-  /** The round-3 set (uStab2: normals up, square to the lens, sway damped, width floor), each 0..1. */
+  /** The round-3 set (uStab2: normals up, square to the lens, sway damped, one stand tone), each 0..1. */
   setStab2(x = 0, y = 0, z = 0, w = 0) { this._u.uStab2.value.set(x, y, z, w); }
 
   /** Density 0..1 at a point (the vertex shader's read, bilinear). */

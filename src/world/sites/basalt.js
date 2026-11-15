@@ -41,25 +41,29 @@ import { ORGAN, CRATER } from './layout.js';
  *           only when the lens looks toward the sun, times y
  * ORGAN_LIGHT.value = (bounce, rim, -, -), shared, so a probe can try values on one page.
  */
-export const ORGAN_LIGHT = { value: new THREE.Vector4(0.55, 1.6, 0, 0) };
+export const ORGAN_LIGHT = { value: new THREE.Vector4(0.9, 1.4, 0, 0) };
+/* (measured at 730056d: a bounce and rim from the SUN's colour changed nothing in F05 (Organ crop L* 19.8 at 0, 0.55
+ * and 1.0): at 19.6 h the sun is in its hand-over trough (sunI <= 0.15) and the light on the columns is the sky's.
+ * The bounce and the rim take the sky's own horizon colour, the fog's calFogHorizon, which is what the salt flat in front
+ * of them reflects, and the sun's forward glow toward the low sun for the rim) */
 const ORGAN_LIGHT_GLSL = /* glsl */ `
 #include <lights_fragment_end>
-#if NUM_DIR_LIGHTS > 0
+#ifdef USE_FOG
 {
-  vec3 oSun = directionalLights[0].direction;
-  vec3 oCol = directionalLights[0].color;
   vec3 oUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+  vec3 oSun = normalize((viewMatrix * vec4(calSunDir, 0.0)).xyz);
   vec3 oN = normalize(geometryNormal);
   float oNu = dot(oN, oUp);
-  float oSunUp = clamp(dot(oSun, oUp), 0.0, 1.0);
-  float oBounce = clamp(0.6 - 0.45 * oNu, 0.0, 1.0) * (0.25 + 0.75 * sqrt(oSunUp));
-  reflectedLight.indirectDiffuse += oCol * BRDF_Lambert(diffuseColor.rgb) * oBounce * uOrganLight.x;
+  // the salt and the shelf in front throw the horizon's light back up onto faces that look sideways or down
+  float oBounce = clamp(0.62 - 0.5 * oNu, 0.0, 1.0);
+  reflectedLight.indirectDiffuse += diffuseColor.rgb * calFogHorizon * oBounce * uOrganLight.x;
+  // a backlit column's edges on the sun's side catch the glow at grazing view
   float oNv = clamp(dot(oN, geometryViewDir), 0.0, 1.0);
   vec3 oSh = oSun - oUp * dot(oSun, oUp);
   oSh = oSh / max(length(oSh), 1e-3);
   float oSide = clamp(dot(oN, oSh) * 0.8 + 0.2, 0.0, 1.0);
   float oBack = smoothstep(-0.2, 0.5, -dot(geometryViewDir, oSun));
-  reflectedLight.directDiffuse += oCol * BRDF_Lambert(diffuseColor.rgb) * pow(1.0 - oNv, 3.0) * oSide * oBack * uOrganLight.y;
+  reflectedLight.indirectDiffuse += diffuseColor.rgb * (calFogHorizon + calFogSun * 0.35) * pow(1.0 - oNv, 3.0) * oSide * oBack * uOrganLight.y;
 }
 #endif`;
 function organLight(mat) {

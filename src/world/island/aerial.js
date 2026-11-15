@@ -4,7 +4,7 @@
  * rimmed at the same L* (43.9 / 44.3). On the materials that draw the far forms (the ground and its far field, the sea
  * stacks, the sister isles) the air thickens past `uAerial.y` metres: the colour goes toward the fog's own in-scatter on
  * that ray (horizon to zenith, the sun's forward glow) by `x * (1 - exp(-(d - y) / z))`, so each layer farther out
- * stands paler than the one before it. One shared uniform; `w` unused.
+ * stands paler than the one before it, the less the higher the ray runs. One shared uniform; `w` unused.
  *
  *   AERIAL          { value: Vector4(amount, start m, scale m, 0) }
  *   AERIAL_PARS     the uniform's declaration (after fog_pars_fragment)
@@ -12,7 +12,7 @@
  */
 import * as THREE from 'three';
 
-export const AERIAL = { value: new THREE.Vector4(0.42, 380, 900, 0) };
+export const AERIAL = { value: new THREE.Vector4(0.8, 320, 600, 0) };
 
 export const AERIAL_PARS = /* glsl */ `
 #include <fog_pars_fragment>
@@ -24,7 +24,9 @@ export const AERIAL_GLSL = /* glsl */ `
 {
   vec3 aDv = vFogWorldPos - cameraPosition;
   float aDl = length(aDv);
-  float aK = uAerial.x * (1.0 - exp(-max(aDl - uAerial.y, 0.0) / max(uAerial.z, 1.0)));
+  // thinner with height: the ray's mean height over the sea, e-folding at 220 m (F32's lens is 120 m up)
+  float aK = uAerial.x * (1.0 - exp(-max(aDl - uAerial.y, 0.0) / max(uAerial.z, 1.0)))
+    * exp(-max(0.5 * (cameraPosition.y + vFogWorldPos.y), 0.0) / 220.0);
   if (aK > 0.001) {
     aDv /= max(aDl, 1e-3);
     float aUp = clamp(aDv.y * 1.55 + 0.10, 0.0, 1.0);

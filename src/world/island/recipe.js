@@ -620,7 +620,14 @@ export function panAt(e, n) {
   P.hue = clamp01(f[2] + wob * 0.34 + j2 * 0.14);
   /* M1a round 3 (M1.1e): a brine pond goes pink where it evaporates, at its edge against the dyke (bible: brine pink
    * #D9B8B0 at the drying margin); its middle stays a grey mirror of the sky */
-  if (c.kind === 0) P.hue = clamp01(P.hue + (1 - ss(0.4, 3.2, d)) * 0.34);
+  if (c.kind === 0) {
+    P.hue = clamp01(P.hue + (1 - ss(0.4, 3.2, d)) * 0.34);
+    // (measured at 730056d: the authored pond read as pink cracked crust, L* 70.7 at 1 m) a pond is water over its floor:
+    // a mirror from 2.5 m in, the crust only in its drying margin
+    const pond = ss(0.8, 2.6, d);
+    P.brine = Math.max(P.brine, 0.94 * pond);
+    P.salt *= 1 - 0.85 * pond;
+  }
   P.level = c.level;
   P.kind = c.kind;
   return P;
