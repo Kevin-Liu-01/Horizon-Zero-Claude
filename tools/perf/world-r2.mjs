@@ -16,6 +16,13 @@
  *   node tools/perf/world-r2.mjs --port 5271 --out <dir outside the repo> [--ab ids|all|none] [--stab "x,y,z,w;..."]
  *        [--shade "0,1"] [--gap "0,1"] [--set k=v,...] [--frames F02,F03,F04,F05] [--topdown] [--budget 600]
  *
+ *   M1a debt: --stab takes a fourth group per variant, the meadow's soft edge (uSoft "weight,px,near,far"); --crust
+ *   "gain,cool;..." films F04 per salt-crust variant (terrain.js CRUST) and reads each still in Node (film.mjs's mean
+ *   luminance, the crust boxes' Lab); --organ takes a third value (the Organ's albedo gain) and every F05 variant reads
+ *   the two Organ clusters' Lab; --aerial takes a sixth value (AERIAL_B.y, the fade on falling rays) and, with --f32,
+ *   films F32 per variant; --seams also reports the LOD's own cracks (shipped, not in the one-level render); the glass
+ *   swatch at 100 m reads the Glass's own pixels; --clip10 records the real 10 s walk and sprint as MP4s.
+ *
  *   --set applies runtime settings before anything is measured (terrain.groundUniforms.uGroundR2.x/.y as shade/gap,
  *   meadow stab as "stab=x/y/z/w", meadow early-out as "early=1"): the shipped defaults when absent.
  */
@@ -112,6 +119,34 @@ async function savePng(file, b64, w, h) {
   await sharp(flip, { raw: { width: w, height: h, channels: 4 } }).png().toFile(file);
   return flip;
 }
+/* M1a debt: a still's numbers in Node. meanLuminance is tools/frames/film.mjs's (the sRGB channel means, linearised, in %);
+ * each box [x0, y0, x1, y1] (fractions of the image) is read as the mean in LINEAR sRGB, then CIELAB D65 (m11-accept's rule) */
+async function stillStats(file, boxes = {}) {
+  const { data, info } = await sharp(path.join(OUT, file)).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const W = info.width, H = info.height, lin = (u) => { u /= 255; return u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4); };
+  let sr = 0, sg = 0, sb = 0;
+  for (let i = 0; i < data.length; i += 3) { sr += data[i]; sg += data[i + 1]; sb += data[i + 2]; }
+  const n = data.length / 3;
+  const out = { meanLuminance: Math.round((0.2126 * lin(sr / n) + 0.7152 * lin(sg / n) + 0.0722 * lin(sb / n)) * 1000) / 10, boxes: {} };
+  const fz = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  for (const [k, b] of Object.entries(boxes)) {
+    let r = 0, g = 0, bl = 0, m = 0;
+    for (let y = Math.round(b[1] * H); y < Math.round(b[3] * H); y++) for (let x = Math.round(b[0] * W); x < Math.round(b[2] * W); x++) {
+      const o = (y * W + x) * 3; r += lin(data[o]); g += lin(data[o + 1]); bl += lin(data[o + 2]); m++;
+    }
+    r /= m; g /= m; bl /= m;
+    const X = 0.4124 * r + 0.3576 * g + 0.1805 * bl, Y = 0.2126 * r + 0.7152 * g + 0.0722 * bl, Z = 0.0193 * r + 0.1192 * g + 0.9505 * bl;
+    const fx = fz(X / 0.95047), fy = fz(Y), fzz = fz(Z / 1.08883);
+    out.boxes[k] = [+(116 * fy - 16).toFixed(1), +(500 * (fx - fy)).toFixed(1), +(200 * (fy - fzz)).toFixed(1)];
+  }
+  return out;
+}
+/* M1a debt: the boxes those stills are read in. F04: m11-accept's c, d, e (the crust); F05: the two Organ clusters as F05
+ * frames them (fractions of the frame, read off the exit run's still at fb6d5f0) */
+const F04_BOXES = { c: [0.35, 0.35, 0.65, 0.60], d: [0.05, 0.65, 0.30, 0.95], e: [0.70, 0.65, 0.95, 0.95] };
+const F05_BOXES = { organRight: [0.6625, 0.378, 0.8125, 0.733], organLeft: [0.15, 0.6, 0.275, 0.756] };
+/* M1a debt: --crust "gain,cool;..." (terrain.js CRUST) variants on F04, each a still read in Node */
+const CRU = (flag('--crust', '') || '').split(';').filter(Boolean).map((v) => v.split(',').map(Number));
 try {
   vite = spawn('nice', ['-n', '10', 'npx', 'vite', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: REPO, stdio: 'ignore', detached: true });
   for (let i = 0; i < 240 && !(await portOpen(PORT)); i++) await sleep(250);
@@ -235,26 +270,30 @@ try {
     }
     // 5. the walk and the sprint per stabiliser variant at 0 samples, and the 4-sample reference
     R.walk = {};
-    const variants = STAB.length ? STAB.map((v) => ({ n: 0, v: v[0], v2: v[1] || null, v3: v[2] || null })) : [{ n: 0, v: null }];
+    /* (M1a debt) a fourth group per variant is the soft edge, uSoft "weight,px,near,far" (meadow.js MEADOW_COLOR) */
+    const variants = STAB.length ? STAB.map((v) => ({ n: 0, v: v[0], v2: v[1] || null, v3: v[2] || null, v4: v[3] || null })) : [{ n: 0, v: null }];
     variants.push({ n: 4, v: run.applied.stab, ref: true });
-    for (const { n, v, v2, v3, ref } of variants) {
-      if (v3 && !ref) {
-        await page.evaluate((v3) => { const MD = window.__CTX__.vegetation.meadow; window.__stand0 = MD._u.uStand.value.toArray(); MD.setStand(...v3); }, v3);
-        await sleep(400); await shot(`F02-stand-${v3.join('_')}.png`);
-        await page.evaluate(() => { window.__CTX__.vegetation.meadow.setStand(...window.__stand0); });
+    for (const { n, v, v2, v3, v4, ref } of variants) {
+      if ((v3 || v4) && !ref) {
+        await page.evaluate((v3, v4) => { const MD = window.__CTX__.vegetation.meadow; window.__stand0 = MD._u.uStand.value.toArray(); window.__soft0 = MD._u.uSoft.value.toArray();
+          if (v3) MD.setStand(...v3); if (v4) MD.setSoft(...v4); }, v3, v4);
+        await sleep(400); await shot(`F02-stand-${(v3 || ['-']).join('_')}${v4 ? '-soft-' + v4.join('_') : ''}.png`);
+        await page.evaluate(() => { const MD = window.__CTX__.vegetation.meadow; MD.setStand(...window.__stand0); MD.setSoft(...window.__soft0); });
       }
       if (spent() > BUDGET_S - 150) { log('walks: budget'); break; }
       for (const [name, speed, fov] of [['walk', 1, null], ['sprint', 6.8, 60]]) {
-        const key = `msaa${n}-${ref ? 'ref' : v ? v.join('/') + (v2 ? '+' + v2.join('/') : '') + (v3 ? '+' + v3.join('/') : '') : 'shipped'}-${name}`;
-        R.walk[key] = await page.evaluate(async (n, v, v2, v3, speed, fov, bearing) => {
+        const key = `msaa${n}-${ref ? 'ref' : v ? v.join('/') + (v2 ? '+' + v2.join('/') : '') + (v3 ? '+' + v3.join('/') : '') + (v4 ? '+soft' + v4.join('/') : '') : 'shipped'}-${name}`;
+        R.walk[key] = await page.evaluate(async (n, v, v2, v3, v4, speed, fov, bearing) => {
           const M = await import('/tools/perf/meadow-page.mjs'); const C = window.__CTX__, E = C.engine, MD = C.vegetation.meadow;
           const s0 = MD._u.uStab.value.toArray(), s20 = MD._u.uStab2 ? MD._u.uStab2.value.toArray() : null;
           if (v) MD.setStab(...v);
           if (v2 && MD.setStab2) MD.setStab2(...v2);
           const st0 = MD._u.uStand ? MD._u.uStand.value.toArray() : null;
           if (v3 && MD.setStand) MD.setStand(...v3);
-          try { await M.setMsaa(E, n); const r = M.walk(E, C, { speed, fov, frames: 60, bearing }); return await r; } finally { MD.setStab(...s0); if (s20) MD.setStab2(...s20); if (st0) MD.setStand(...st0); await M.setMsaa(E, 0); }
-        }, n, v, v2, v3, speed, fov, f.bearing);
+          const so0 = MD._u.uSoft ? MD._u.uSoft.value.toArray() : null;
+          if (v4 && MD.setSoft) MD.setSoft(...v4);
+          try { await M.setMsaa(E, n); const r = M.walk(E, C, { speed, fov, frames: 60, bearing }); return await r; } finally { MD.setStab(...s0); if (s20) MD.setStab2(...s20); if (st0) MD.setStand(...st0); if (so0) MD.setSoft(...so0); await M.setMsaa(E, 0); }
+        }, n, v, v2, v3, v4, speed, fov, f.bearing);
         const w = R.walk[key];
         log(`F02 ${key}: all ${w.eventsPerMille}, mid 12-30 m ${w.bands['mid12-30m'].eventsPerMille}, near ${w.bands['near<12m'].eventsPerMille}, far ${w.bands['far>30m'].eventsPerMille} per mille`);
       }
@@ -278,24 +317,62 @@ try {
      * the real F02 clip, 10 s of the game itself from F02's staging, Brea walking (forward + the walk key) and then
      * sprinting (forward + sprint), the chase camera and the whole scene as shipped; a frame every 0.5 s saved, her speed
      * logged. Graded by eye; the crawl number stays the deterministic measure above */
+    /* (M1a debt: at a000205 the clip's speeds read 0 for all 20 stills: the staged frame freezes the game, time scale
+     * 'studio' 0, and the keys were pressed into the frozen frame) staged at F02 for the place, hour and lens, then
+     * UNSTAGED, which gives the game back its clock and its chase camera with Brea where F02 put her; the whole 10 s
+     * recorded by the compositor's own screencast (every presented frame, with its timestamp) and written as an MP4 at
+     * those timestamps (ffmpeg), a still every second kept beside it */
     if (has('--clip10')) {
       R.clip10 = {};
+      const cdp = await page.createCDPSession();
       for (const [name, keys] of [['walk', ['KeyW', 'AltLeft']], ['sprint', ['KeyW', 'ShiftLeft']]]) {
         await page.evaluate(unstageFrame);
         await stage('F02', 1500);
+        await page.evaluate(unstageFrame);
+        await page.evaluate((h) => { const C = window.__CTX__; C.environment.setTime(h); }, f.hour);
         current = `clip10-${name}`;
+        const dir = path.join(OUT, `clip10-${name}`);
+        mkdirSync(dir, { recursive: true });
+        const shots = [];
+        const onFrame = async (ev) => { shots.push({ t: ev.metadata.timestamp, data: ev.data }); try { await cdp.send('Page.screencastFrameAck', { sessionId: ev.sessionId }); } catch { /* */ } };
+        cdp.on('Page.screencastFrame', onFrame);
+        await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 85, maxWidth: 1600, maxHeight: 900, everyNthFrame: 1 });
         await page.evaluate((keys) => { const I = window.__CTX__.input; for (const k of keys) I.keys.add(k); }, keys);
-        const speeds = [];
+        const speeds = [], pos = [];
         const t0 = Date.now();
-        for (let i = 0; i < 20; i++) {
-          while (Date.now() - t0 < i * 500) await sleep(20);
-          await page.screenshot({ path: path.join(OUT, `clip10-${name}-${String(i).padStart(2, '0')}.jpg`), type: 'jpeg', quality: 82 });
-          speeds.push(await page.evaluate(() => { const p = window.__CTX__.player; return +Math.hypot(p.velocity.x, p.velocity.z).toFixed(2); }));
+        while (Date.now() - t0 < 10000) {
+          await sleep(500);
+          const r = await page.evaluate(() => { const p = window.__CTX__.player; return [+Math.hypot(p.velocity.x, p.velocity.z).toFixed(2), +p.position.x.toFixed(2), +p.position.z.toFixed(2)]; });
+          speeds.push(r[0]); pos.push([r[1], r[2]]);
         }
         await page.evaluate((keys) => { const I = window.__CTX__.input; for (const k of keys) I.keys.delete(k); }, keys);
-        R.clip10[name] = { seconds: +((Date.now() - t0) / 1000).toFixed(1), frames: 20, speeds };
-        log(`F02 clip10 ${name}: ${R.clip10[name].seconds} s, speeds ${speeds.join(' ')}`);
+        await cdp.send('Page.stopScreencast');
+        cdp.off('Page.screencastFrame', onFrame);
+        // the MP4 at the frames' own timestamps (ffconcat durations), and one still a second
+        const list = [];
+        for (let i = 0; i < shots.length; i++) {
+          const file = `f${String(i).padStart(4, '0')}.jpg`;
+          writeFileSync(path.join(dir, file), Buffer.from(shots[i].data, 'base64'));
+          const dur = i + 1 < shots.length ? Math.max(0.001, shots[i + 1].t - shots[i].t) : 1 / 60;
+          list.push(`file '${file}'`, `duration ${dur.toFixed(4)}`);
+        }
+        writeFileSync(path.join(dir, 'frames.ffconcat'), 'ffconcat version 1.0\n' + list.join('\n') + '\n');
+        let mp4 = null;
+        try {
+          execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'frames.ffconcat'), '-vsync', 'vfr', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-crf', '18', path.join(OUT, `clip10-${name}.mp4`)]);
+          mp4 = `clip10-${name}.mp4`;
+        } catch (e) { log(`clip10 ${name}: ffmpeg failed ${String(e).slice(0, 200)}`); }
+        const span = shots.length > 1 ? shots[shots.length - 1].t - shots[0].t : 0;
+        for (let s = 0; s <= 10; s++) {
+          const k = shots.findIndex((q) => q.t - shots[0].t >= s);
+          if (k >= 0) writeFileSync(path.join(OUT, `clip10-${name}-${String(s).padStart(2, '0')}s.jpg`), Buffer.from(shots[k].data, 'base64'));
+        }
+        const dist = pos.length > 1 ? Math.hypot(pos[pos.length - 1][0] - pos[0][0], pos[pos.length - 1][1] - pos[0][1]) : 0;
+        R.clip10[name] = { seconds: +((Date.now() - t0) / 1000).toFixed(1), screencastFrames: shots.length, screencastSpanS: +span.toFixed(2),
+          fps: span ? +(shots.length / span).toFixed(1) : 0, mp4, speeds, metres: +dist.toFixed(1) };
+        log(`F02 clip10 ${name}: ${R.clip10[name].seconds} s, ${shots.length} frames over ${R.clip10[name].screencastSpanS} s (${R.clip10[name].fps} fps), ${R.clip10[name].metres} m, speeds ${speeds.join(' ')}`);
       }
+      await cdp.detach();
     }
     await page.evaluate(unstageFrame);
   }
@@ -314,6 +391,20 @@ try {
     const R = run.frames[id] = {};
     await stage(id);
     await shot(`${id}.png`);
+    if (id === 'F04' || id === 'F05') { R.still = await stillStats(`${id}.png`, id === 'F04' ? F04_BOXES : F05_BOXES); log(`${id} still: ${JSON.stringify(R.still)}`); }
+    if (id === 'F04' && CRU.length) {
+      R.crust = {};
+      const c0 = await page.evaluate(async () => (await import('/src/world/terrain.js')).CRUST.value.toArray());
+      for (const c of CRU) {
+        await page.evaluate(async (c) => { (await import('/src/world/terrain.js')).CRUST.value.set(c[0], c[1], 0, 0); }, c);
+        await sleep(400);
+        const file = `F04-crust-${c.join('_')}.png`;
+        await shot(file);
+        R.crust[c.join('/')] = await stillStats(file, F04_BOXES);
+        log(`F04 crust ${c.join('/')}: ${JSON.stringify(R.crust[c.join('/')])}`);
+      }
+      await page.evaluate(async (c0) => { (await import('/src/world/terrain.js')).CRUST.value.set(...c0); }, c0);
+    }
     if (id !== 'F04') {
       R.blue = {};
       for (const x of (SHADE.length ? SHADE : [null])) {
@@ -525,8 +616,30 @@ try {
         const fz = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
         const fx = fz(X / n / 0.95047), fy = fz(Y / n), fzz = fz(Z / n / 1.08883);
         const lab = [+(116 * fy - 16).toFixed(1), +(500 * (fx - fy)).toFixed(1), +(200 * (fy - fzz)).toFixed(1)];
-        run.swatches.push({ id: s0.id, dist, file, x: s0.x, z: s0.z, lens: v, labMid40: lab });
-        log(`swatch ${s0.id} at ${dist} m: Lab ${lab.join(' ')}`);
+        const sw = { id: s0.id, dist, file, x: s0.x, z: s0.z, lens: v, labMid40: lab };
+        /* M1a debt ("the Glass an emerald mirror at range"): at 100 m the middle 40 % is half black sand; the Glass's own
+         * pixels are the ones that change when its water is hidden, read alone (linear mean, then Lab) */
+        if (s0.id === 'glass') {
+          const c2 = await page.evaluate(async (v) => { const M = await import('/tools/perf/rock-page.mjs'); const C = window.__CTX__, g = C.terrain.water?.glassMesh || C.water?.glassMesh;
+            if (!g) return null; g.visible = false; try { return M.look(C.engine, C, v.pos, v.target, v.fov); } finally { g.visible = true; } }, v);
+          if (c2) {
+            const raw2 = Buffer.from(c2.b64, 'base64');
+            let gX = 0, gY = 0, gZ = 0, gn = 0;
+            for (let i = 0; i < raw.length; i += 3) {
+              if (Math.abs(raw[i] - raw2[i]) + Math.abs(raw[i + 1] - raw2[i + 1]) + Math.abs(raw[i + 2] - raw2[i + 2]) < 12) continue;
+              const r = lin(raw[i]), g = lin(raw[i + 1]), b = lin(raw[i + 2]);
+              gX += 0.4124 * r + 0.3576 * g + 0.1805 * b; gY += 0.2126 * r + 0.7152 * g + 0.0722 * b; gZ += 0.0193 * r + 0.1192 * g + 0.9505 * b; gn++;
+            }
+            if (gn) {
+              const gx = fz(gX / gn / 0.95047), gy = fz(gY / gn), gzz = fz(gZ / gn / 1.08883);
+              sw.labGlassOnly = [+(116 * gy - 16).toFixed(1), +(500 * (gx - gy)).toFixed(1), +(200 * (gy - gzz)).toFixed(1)];
+              sw.glassPx = gn;
+              sw.glassHueDeg = +((Math.atan2(sw.labGlassOnly[2], sw.labGlassOnly[1]) * 180 / Math.PI + 360) % 360).toFixed(1);
+            }
+          }
+        }
+        run.swatches.push(sw);
+        log(`swatch ${s0.id} at ${dist} m: Lab ${lab.join(' ')}${sw.labGlassOnly ? `; the Glass alone ${sw.labGlassOnly.join(' ')} (hue ${sw.glassHueDeg} deg, ${sw.glassPx} px)` : ''}`);
       }
     }
     await page.evaluate(unstageFrame);
@@ -539,8 +652,9 @@ try {
     const setV = (a, o) => page.evaluate(async (a, o) => {
       const A = await import('/src/world/island/aerial.js'); const B = await import('/src/world/sites/basalt.js');
       const a0 = A.AERIAL.value.toArray().concat(A.AERIAL_B ? [A.AERIAL_B.value.x] : []), o0 = B.ORGAN_LIGHT.value.toArray();
-      if (a) { A.AERIAL.value.set(a[0], a[1], a[2], a[3] ?? a0[3]); if (A.AERIAL_B && a[4] != null) A.AERIAL_B.value.x = a[4]; }
-      if (o) B.ORGAN_LIGHT.value.set(o[0], o[1], 0, 0);
+      a0.push(A.AERIAL_B ? A.AERIAL_B.value.y : 0);
+      if (a) { A.AERIAL.value.set(a[0], a[1], a[2], a[3] ?? a0[3]); if (A.AERIAL_B && a[4] != null) A.AERIAL_B.value.x = a[4]; if (A.AERIAL_B && a[5] != null) A.AERIAL_B.value.y = a[5]; }
+      if (o) B.ORGAN_LIGHT.value.set(o[0], o[1], o[2] ?? o0[2], 0);
       return { a0, o0 };
     }, a, o);
     const shipped = await setV(null, null);
@@ -551,12 +665,24 @@ try {
       await sleep(400);
       const key = a ? `aerial-${a.join('_')}` : `organ-${o.join('_')}`;
       await shot(`F05-${key}.png`);
+      const still = await stillStats(`F05-${key}.png`, F05_BOXES);
       const L = await page.evaluate(async () => { const M = await import('/tools/perf/rock-page.mjs'); const C = window.__CTX__; const r = await M.layers(C.engine, C); delete r.map; return r; });
-      run.F05variants.push({ key, aerial: a, organ: o, layers: L.layers, classes: L.classes.map((c) => [c.class, c.columnsPct, c.rimL]), gaps: L.gaps.map((g) => g.dL), pass: L.pass });
-      log(`F05 ${key}: layers ${L.layers}, rims ${L.classes.map((c) => c.rimL).join(' / ')}, gaps ${L.gaps.map((g) => g.dL).join(' / ')}, pass ${L.pass}`);
-      await setV(shipped.a0, shipped.o0);
+      run.F05variants.push({ key, aerial: a, organ: o, layers: L.layers, classes: L.classes.map((c) => [c.class, c.columnsPct, c.rimL]), gaps: L.gaps.map((g) => g.dL), pass: L.pass, still });
+      log(`F05 ${key}: layers ${L.layers}, rims ${L.classes.map((c) => c.rimL).join(' / ')}, gaps ${L.gaps.map((g) => g.dL).join(' / ')}, pass ${L.pass}; organ L* ${still.boxes.organRight[0]} / ${still.boxes.organLeft[0]}`);
+      await setV(shipped.a0.slice(0, 5).concat([shipped.a0[5]]), shipped.o0);
     }
     await page.evaluate(unstageFrame);
+    /* M1a debt (M1.1j's pale wedge): F32 per aerial variant, a still each */
+    if (AER.length && has('--f32')) {
+      await stage('F32', 2500);
+      for (const a of AER) {
+        await setV(a, null);
+        await sleep(400);
+        await shot(`F32-aerial-${a.join('_')}.png`);
+        await setV(shipped.a0.slice(0, 5).concat([shipped.a0[5]]), null);
+      }
+      await page.evaluate(unstageFrame);
+    }
   }
   if (has('--ring') && spent() < BUDGET_S) {
     run.ring = {};
@@ -628,13 +754,28 @@ try {
         const land = new Set(); T.group.traverse((o) => { if (o.isMesh && o !== T.isles) land.add(o); });
         const water = new Set(); (T.water?.group || T.water?.mesh)?.traverse?.((o) => { if (o.isMesh) water.add(o); });
         const out = { shipped: P.seams(E, S, (o) => land.has(o) || water.has(o)) };
+        /* M1a debt: the LOD's own seam is a crack in the shipped render that the one-level render does not have; a gap
+         * in both is the geometry's (at a000205 and fb6d5f0 the 3 px, widest 4, were the same 3 pixels in both renders) */
+        const W = await import('/tools/perf/world-r2-page.mjs');
+        const a = W.crackList(E, S, (o) => land.has(o) || water.has(o));
         const lod = T.perfSwitches().find((s) => s.id === 'terrain-lod');
-        if (lod) { lod.off(); for (let i = 0; i < 4; i++) await raf(); out.monolithic = P.seams(E, S, (o) => (T.group.children.includes(o) || land.has(o) || water.has(o)) && o !== T.isles && o.visible); lod.on(); for (let i = 0; i < 4; i++) await raf(); }
+        if (lod) {
+          lod.off(); for (let i = 0; i < 4; i++) await raf();
+          const keepM = (o) => (T.group.children.includes(o) || land.has(o) || water.has(o)) && o !== T.isles && o.visible;
+          out.monolithic = P.seams(E, S, keepM);
+          const b = W.crackList(E, S, keepM);
+          lod.on(); for (let i = 0; i < 4; i++) await raf();
+          const inB = new Set(b.cracks.map((c) => c[0]));
+          const lodOnly = a.cracks.filter((c) => !inB.has(c[0]));
+          out.lodOnly = { crackPx: lodOnly.length, widestPx: lodOnly.reduce((m, c) => Math.max(m, c[1]), 0),
+            at: lodOnly.slice(0, 24).map((c) => [c[0] % a.w, a.h - 1 - Math.floor(c[0] / a.w), c[1]]),
+            bothPx: a.cracks.length - lodOnly.length, method: 'crack pixels of the shipped render that are not cracks in the one-level (terrain-lod off) render' };
+        }
         out.terrainStats = T.lodStats();
         return out;
       });
       const sm = run.F32.seams;
-      log(`F32 seams: shipped crack ${sm.shipped.crackPx} px (widest ${sm.shipped.widestPx}), monolithic crack ${sm.monolithic?.crackPx} px (widest ${sm.monolithic?.widestPx}), land ${sm.shipped.landPx} px`);
+      log(`F32 seams: shipped crack ${sm.shipped.crackPx} px (widest ${sm.shipped.widestPx}), monolithic crack ${sm.monolithic?.crackPx} px (widest ${sm.monolithic?.widestPx}), land ${sm.shipped.landPx} px; LOD's own ${sm.lodOnly?.crackPx} px (widest ${sm.lodOnly?.widestPx}), in both ${sm.lodOnly?.bothPx}`);
     }
     log(`F32: p95 interval ${r.p95} ms (p50 ${r.p50}, ${r.intervals} frames in ${r.seconds} s), GPU median ${r.gpu.medianMs} ms, draws ${r.census.draws}, tris ${r.census.tris}`);
     await page.evaluate(unstageFrame);

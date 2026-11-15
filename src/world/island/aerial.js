@@ -19,6 +19,10 @@ export const AERIAL = { value: new THREE.Vector4(1.0, 450, 450, 0.9) };
  * copy from environment.skyKeys.low, with the dome's own 0.86 -> 1 toward the sun), never darkened by it. AERIAL_B.x is
  * the weight; the start moves out to 450 m (the stacks' 250-600 m layer keeps its own value, the farther ones pale) */
 export const AERIAL_DOME = { value: new THREE.Color(0.75, 0.8, 0.85) };
+/* M1a debt (M1.1j: F32's pale haze wedge behind the ridge, the lens 120 m up): a ray that looks DOWN onto far land from
+ * height crosses less low air than a level ray of the same length, and the lift toward the dome's horizon band (the pale
+ * part) belongs to near-level rays. AERIAL_B.y fades the air on a ray falling more steeply than 2 deg, gone by about 9 deg
+ * (F05's far forms lie within 1 deg of level, F32's far valley 5-10 deg down); 0 = round 3 as shipped */
 export const AERIAL_B = { value: new THREE.Vector4(0.7, 0, 0, 0) };
 
 export const AERIAL_PARS = /* glsl */ `
@@ -36,6 +40,7 @@ export const AERIAL_GLSL = /* glsl */ `
   // thinner with height: the ray's mean height over the sea, e-folding at 220 m (F32's lens is 120 m up)
   float aK = min(uAerial.x * (1.0 - exp(-max(aDl - uAerial.y, 0.0) / max(uAerial.z, 1.0))), uAerial.w)
     * exp(-max(0.5 * (cameraPosition.y + vFogWorldPos.y), 0.0) / 220.0);
+  aK *= 1.0 - uAerialB.y * smoothstep(0.035, 0.16, -aDv.y / max(aDl, 1e-3));
   if (aK > 0.001) {
     aDv /= max(aDl, 1e-3);
     float aUp = clamp(aDv.y * 1.55 + 0.10, 0.0, 1.0);

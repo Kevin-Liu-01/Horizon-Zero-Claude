@@ -75,6 +75,7 @@ uniform float uSunTan;  // tan(elevation) of the sun or moon
 uniform float uHzWorldInv;
 uniform float uHzK;     // shadow strength: 1, or the calima's 0.45
 uniform vec4 uGroundR2; // M1a round 2: x the shade fill's chroma kept out (GROUND_AO), y the meadow gap tone variant
+uniform vec4 uCrust;    // M1a debt: the salt crust's x gain and y cool (1 = round 3's tint) (terrain.js CRUST)
 vec3 gN; float gRough; float gAO; float gLiquid; float gSunVis = 1.0;
 /** Is the light above the terrain's skyline here? Long soft shadows from one lookup. */
 float gSkylineVis(vec2 xz) {
@@ -312,7 +313,9 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   /* M1a round 3 (F04 and the 1 m swatches: the black sand and the flat basalt read as wood grain and marble, the ripples
    * bent round 2.5-5 m whorls): the displacement is a broad field (16-40 m cells) of up to about 1.3 m, which still moves
    * each 3 m tile off its neighbour by 0.3-0.9 m but bends a ripple no tighter than a dune does */
+  #ifndef CAL_P_NOWARP
   if (!gSkip && (w[0] > 0.012 || w[2] > 0.012) && dCam < 240.0) { vec4 nw = gNoiseT(xz * 0.025 + 0.77); sWarp = (nw.rg - 0.5) * vec2(2.6, 2.2) + (nw.ba - 0.5) * vec2(0.5, 0.4); }
+  #endif
   vec3 col = vec3(0.0), pert = vec3(0.0);
   float hMax = -9.0, wTot = 0.0, rSum = 0.0, aoSum = 0.0;
   vec4 keepA[3]; vec4 keepN[3]; float keepW[3]; int keepI[3]; int nKeep = 0;
@@ -420,12 +423,14 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
        * hair of cool, so raked salt reads white under the noon sun */
       /* (round 3 fix: F04 36.9 % against the bar's 40, the crust at 1 m b* 3.1 against ~1 and a blurry grey plaster) a
        * shade brighter (0.9 -> 0.97), cooler on a white cell, and less of the grey mottle below */
-      c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.1) * 0.97;
+      /* (M1a debt: F04 34.7 % at fb6d5f0 against the bar's 40, the crust b* 2 against about 1) the gain and the cool are
+       * uCrust (terrain.js CRUST), measured as variants */
+      c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.1) * 0.97 * uCrust.x;
       /* salt runs white → brine pink → crystalliser rust, by cell */
       float hue = pan.b;
       vec3 tintC = hue < 0.5 ? mix(vec3(1.0), vec3(0.93, 0.62, 0.52), smoothstep(0.15, 0.5, hue) * 0.4)
                              : mix(vec3(0.97, 0.85, 0.81), vec3(0.42, 0.13, 0.08), (hue - 0.5) * 2.0);
-      c *= tintC * mix(vec3(0.945, 0.99, 1.075), vec3(1.0), smoothstep(0.1, 0.3, hue));
+      c *= tintC * mix(vec3(1.0 - 0.055 * uCrust.y, 1.0 - 0.01 * uCrust.y, 1.0 + 0.075 * uCrust.y), vec3(1.0), smoothstep(0.1, 0.3, hue));
       // and the grain in the crust's own tone: the texture repeats, this does not
       c *= 1.0 + fineN * 0.22;
       // polygons, their raised white rims with a grey crack in each, and the rake's furrows

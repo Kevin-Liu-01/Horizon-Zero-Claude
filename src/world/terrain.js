@@ -231,6 +231,9 @@ const FAR_N = 1024;                      // texels a side of the far-field bake 
  * skyline keeps the sky's own haze, the deck still lies over the slopes below the lens, and no level line cuts the deck
  * off (a first cut by a 1.1-6.9 deg ramp on the depth still saturated into a hard edge). The ground's copy of the chunk
  * only; the sky's chunk is untouched. */
+/* M1a debt (M1.1e: F04 34.7 % at fb6d5f0 against the bar's 40, the crust b* about 2 against about 1): the salt crust's gain
+ * (x) and cool (y, 1 = round 3's tint); the ground shader's uCrust, one shared holder so a probe can try values */
+export const CRUST = { value: new THREE.Vector4(1, 1, 0, 0) };
 const DECK_ANCHOR = 'calTauC = calFogD.x * calSeg * calWw * calBreak;';
 function groundFogChunk() {
   const c = THREE.ShaderChunk.fog_fragment;
@@ -619,6 +622,7 @@ export class Terrain {
       uSunTan: { value: 1 }, uSunXZ: { value: new THREE.Vector2(0, -1) },
       uHzWorldInv: { value: 1 / WORLD_SIZE }, uHzK: { value: 1 },
       uGroundR2: { value: new THREE.Vector4(0, 0, 0, 0) },
+      uCrust: CRUST,
     };
   }
 
@@ -992,7 +996,9 @@ export class Terrain {
       ['ground-field-range', 'CAL_P_NOFIELD'], ['ground-meadow-tone', 'CAL_P_NOMTONE'], ['ground-rills', 'CAL_P_NORILL'],
       ['ground-colour-stage', 'CAL_P_FLAT'], ['ground-r2-lod', 'CAL_P_R1LOD'], ['ground-grain', 'CAL_P_NOGRAIN'],
       // M1a round 3 fix (the judge's FIX LIST 1: pair each round-3 addition with the look off)
-      ['ground-aerial', 'CAL_P_NOAER'], ['ground-wet-dyke', 'CAL_P_NOWETD']];
+      ['ground-aerial', 'CAL_P_NOAER'], ['ground-wet-dyke', 'CAL_P_NOWETD'],
+      // M1a debt: the sand's and flat basalt's broad displacement (round 3)
+      ['ground-sand-warp', 'CAL_P_NOWARP']];
     return T.map(([id, k]) => ({ id, on: () => def(k, true), off: () => def(k, false) }));
   }
 

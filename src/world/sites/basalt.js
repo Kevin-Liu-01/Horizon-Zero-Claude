@@ -39,13 +39,15 @@ import { ORGAN, CRATER } from './layout.js';
  *           facet keeps its own tone (its vertex colour) instead of one black
  *   RIM     a backlit column's edges that turn toward the sun catch it at grazing view: (1 - N.V)^3 on the sun's side,
  *           only when the lens looks toward the sun, times y
- * ORGAN_LIGHT.value = (bounce, rim, -, -), shared, so a probe can try values on one page.
+ * ORGAN_LIGHT.value = (bounce, rim, albedo gain, -), shared, so a probe can try values on one page.
  */
 /* (round 3 fix: the judge's FIX LIST 4, at 159b9fd the Organ crop's mean sRGB went 53 -> 62 from 0/0 to 7/7: the clusters
  * still read as one near-black brown) both terms raised, 4/5 -> 10/9 */
 /* (10/9 -> 18/16, measured as a variant at a000205: the right cluster's crop L* 25.8 -> 27.7, the left 29.4 -> 30.6; F05's
  * layers still 5, gaps 25.9 / 10.8 / 9.4 / 7.6) */
-export const ORGAN_LIGHT = { value: new THREE.Vector4(18.0, 16.0, 0, 0) };
+/* (M1a debt: F05's Organ still read dark brown slabs at fb6d5f0, L* 20 on the right cluster, 18 on the left, against the dusk
+ * crop's basalt at about 36) z is the columns' albedo gain, measured as variants; the bounce and rim scale with it */
+export const ORGAN_LIGHT = { value: new THREE.Vector4(18.0, 16.0, 1.0, 0) };
 /* (measured: from the SUN's colour the terms changed the Organ crop's L* by 0.1 at 730056d, at 19.6 h the sun is in its
  * hand-over trough; from the fog's horizon colour by 1.0 at 42be5d0, that colour is far below the dome's at dusk). Both
  * terms now scale the column's own sky fill (reflectedLight.indirectDiffuse, which carries the hour's exposure), tinted
@@ -82,6 +84,7 @@ function organLight(mat) {
     shader.uniforms.uOrganLight = ORGAN_LIGHT;
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec4 uOrganLight;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uOrganLight.z;')
       .replace('#include <lights_fragment_end>', ORGAN_LIGHT_GLSL);
   };
   mat.customProgramCacheKey = () => 'cal-organ-light';

@@ -282,6 +282,8 @@ uniform vec4 uDebug;
 varying float vMTr;
 uniform float uKind;
 uniform float uIdPass;
+uniform vec4 uStand;
+uniform vec4 uSoft;
 uniform float uTransl;
 uniform highp sampler2DArray tField;
 uniform vec4 uHzW0;
@@ -308,7 +310,23 @@ if (uKind > 1.5) {
   float a = clamp((wdt - dx) / aa + 0.5, 0.0, 1.0) * step(vMUv.y, top);
   diffuseColor.a *= a;
 }
-else diffuseColor.a *= vMCov;
+else {
+  diffuseColor.a *= vMCov;
+  /* M1a debt (M1.1b: the walk's 12-30 m band at 1.23-1.43 x the 4x MSAA reference, with no MSAA in the shipped tier): a
+   * blade's or clump's EDGE goes toward the stand's on-screen tone over uSoft.y device px, measured on the blade's own
+   * across-coordinate (and a clump's flat top) by its screen derivative, so a sub-pixel step of the lens moves a soft
+   * edge instead of flipping a pixel between a lit blade and the ground behind it. The blade's middle keeps its own
+   * tone: it is the edge that is softened, not the meadow that is flattened. Faded in over uSoft.z-w metres */
+  #ifndef CAL_M_NOSOFT
+  float sK = uSoft.x * smoothstep(uSoft.z, uSoft.w, length(vViewPosition));
+  if (sK > 0.001) {
+    float eU = min(vMUv.x, 1.0 - vMUv.x) / max(fwidth(vMUv.x), 1e-5);
+    if (uKind > 0.5) eU = min(eU, (1.0 - vMUv.y) / max(fwidth(vMUv.y), 1e-5));
+    float cv = clamp((eU + 0.5) / max(uSoft.y, 0.5), 0.0, 1.0);
+    diffuseColor.rgb = mix(diffuseColor.rgb, uStand.rgb, sK * (1.0 - cv));
+  }
+  #endif
+}
 `;
 const MEADOW_AO = /* glsl */ `
 #include <aomap_fragment>
@@ -413,6 +431,8 @@ export class Meadow {
       // (weight 0.85 -> 1, measured as a variant at a000205: walk band 94.1 -> 85.8 per mille, sprint 367 -> 339; F02's
       // 15-30 m band Lab 52.8 -> 50.7 against the near meadow's 41)
       uStand: { value: new THREE.Vector4(0.28, 0.15, 0.012, 1.0) },
+      // M1a debt: the soft edge (x weight, y width in device px, z-w the metres it fades in over); see MEADOW_COLOR
+      uSoft: { value: new THREE.Vector4(0, 1.5, 8, 14) },
     };
     this.rings = MEADOW_RINGS.map((ring) => this._buildRing(ring));
     this._frustum = new THREE.Frustum();
@@ -633,6 +653,8 @@ export class Meadow {
       // M1a round 2: the vertex shader stops at the keep test for a clipped blade (on = the early-out, off = as shipped)
       // M1a round 3 fix (the judge's FIX LIST 1): the round-3 stabiliser set compiled out (define CAL_M_NOSTAB2)
       { id: 'meadow-stab2', on: () => this._define('CAL_M_NOSTAB2', false), off: () => this._define('CAL_M_NOSTAB2', true) },
+      // M1a debt: the soft edge compiled out (define CAL_M_NOSOFT)
+      { id: 'meadow-soft', on: () => this._define('CAL_M_NOSOFT', false), off: () => this._define('CAL_M_NOSOFT', true) },
       { id: 'meadow-vs-early', on: () => this.setEarlyOut(true), off: () => this.setEarlyOut(false), restore: () => this.setEarlyOut(this._early0 ?? false) },
     ];
   }
@@ -648,6 +670,9 @@ export class Meadow {
 
   /** The stand tone (uStand: rgb and weight). */
   setStand(r, g, b, w = this._u.uStand.value.w) { this._u.uStand.value.set(r, g, b, w); }
+
+  /** The soft edge (uSoft: weight, width in device px, fade-in start and full, metres). */
+  setSoft(x, y = this._u.uSoft.value.y, z = this._u.uSoft.value.z, w = this._u.uSoft.value.w) { this._u.uSoft.value.set(x, y, z, w); }
 
   /** The vertex shader's early-out for clipped blades (define CAL_M_EARLY): the same pixels, less vertex work. */
   setEarlyOut(on) {

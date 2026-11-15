@@ -80,3 +80,49 @@ export async function groundHue(E, C, { mask = false } = {}) {
     method: 'ID render (terrain, the vegetation group\'s static kinds and flora red; meadow green; all else hidden) against the graded frame with the same objects; blue = hue 185-265, S >= 0.2, V >= 0.06; dark mean hue = chroma-weighted circular mean over V < 0.35, S > 0.05' };
 }
 
+
+/**
+ * M1a debt (M1.1j "no LOD seam wider than 2 px"): the crack pixels of one render (tools/perf/census-page.mjs seams' rule:
+ * land and water white over magenta; a gap pixel with land within 3 px on both sides, vertically or horizontally) as a
+ * list of pixel indices with their widths, so the caller can tell the chunk LOD's own cracks (in the shipped render and
+ * not in the one-level render) from gaps the geometry has at any LOD (a notch of sky between two silhouettes).
+ */
+export function crackList(E, scene, keep) {
+  const R = E.renderer, cam = E.camera;
+  const size = R.getDrawingBufferSize(new T.Vector2());
+  const w = size.x, h = size.y;
+  const rt = new T.WebGLRenderTarget(w, h, { depthBuffer: true });
+  const hidden = [];
+  scene.traverse((o) => { if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.visible && !keep(o)) { o.visible = false; hidden.push(o); } });
+  const prev = { bg: scene.background, ov: scene.overrideMaterial, fog: scene.fog, target: R.getRenderTarget(), auto: R.autoClear, sm: R.shadowMap.autoUpdate };
+  const white = new T.MeshBasicMaterial({ color: 0xffffff, side: T.DoubleSide });
+  const buf = new Uint8Array(w * h * 4);
+  try {
+    scene.background = new T.Color(0xff00ff); scene.overrideMaterial = white; scene.fog = null;
+    R.shadowMap.autoUpdate = false;
+    R.setRenderTarget(rt); R.autoClear = true;
+    R.render(scene, cam);
+    R.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+  } finally {
+    scene.background = prev.bg; scene.overrideMaterial = prev.ov; scene.fog = prev.fog;
+    R.setRenderTarget(prev.target); R.autoClear = prev.auto; R.shadowMap.autoUpdate = prev.sm;
+    hidden.forEach((o) => { o.visible = true; });
+    rt.dispose(); white.dispose();
+  }
+  const solid = (x, y) => buf[(y * w + x) * 4 + 1] > 128;
+  const K = 3, cracks = [];
+  let landPx = 0;
+  for (let y = K; y < h - K; y++) {
+    for (let x = K; x < w - K; x++) {
+      if (solid(x, y)) { landPx++; continue; }
+      let up = 0, dn = 0, lf = 0, rg = 0;
+      for (let k = 1; k <= K; k++) {
+        if (!up && solid(x, y + k)) up = k; if (!dn && solid(x, y - k)) dn = k;
+        if (!lf && solid(x - k, y)) lf = k; if (!rg && solid(x + k, y)) rg = k;
+      }
+      const v = up && dn ? up + dn - 1 : 0, hz = lf && rg ? lf + rg - 1 : 0;
+      if (v || hz) cracks.push([y * w + x, Math.min(v || 99, hz || 99)]);
+    }
+  }
+  return { w, h, landPx, cracks };
+}

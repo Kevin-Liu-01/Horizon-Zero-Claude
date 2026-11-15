@@ -288,7 +288,11 @@ const SEA_MIRROR = /* glsl */ `
     }
     /* M1a round 3 fix (the Glass at 100 m read grey, Lab 69.9 -1.6 2.0): the lagoon's algae water tints what it mirrors,
      * so from the shore at a grazing look it is still emerald (El Golfo reads green from every side) */
-    sky *= vec3(0.5, 0.9, 0.72);
+    /* (M1a debt: still pale mint at 100 m, the 1.7 m eye's ray 1 deg off the water: the Fresnel cap made the pale sky the
+     * whole read) toward a grazing look the algae water takes more of what it mirrors: a deeper emerald from about 14 deg
+     * down to grazing, the 1 m look (steeper than that) unchanged */
+    float gGz = 1.0 - clamp(dot(V, W) * 4.0, 0.0, 1.0);
+    sky *= mix(vec3(0.5, 0.9, 0.72), vec3(0.2, 0.62, 0.42), gGz);
   }
 #endif
   float F = min(0.02 + 0.98 * pow(1.0 - max(dot(V, W), 0.0), 5.0), wFresnelMax);
