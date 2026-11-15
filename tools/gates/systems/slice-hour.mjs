@@ -103,7 +103,10 @@ const targetsOf = (kind, part) => {
     else if (part === 'vial') o = m._vialWp?.obj ?? m.weakPoints?.find((w) => w.name === 'vial')?.obj;
     else if (part === 'bob') o = m._bob?.attached !== false ? m._bob?.mesh : null;
     if (o) o.getWorldPosition(v); else v.set(m.position.x, m.position.y + 0.9, m.position.z);
-    out.push({ i: C.machines.list.indexOf(m), x: v.x, y: v.y, z: v.z, d: Math.hypot(m.position.x - p.x, m.position.z - p.z),
+    // the arrow falls (combat/arrows.js: g 9.8, the Reed arrow 62 m/s at full draw): hold over by that fall. Without
+    // it, 30 shots at 29 m with the look within 0.35 deg of the lamp all passed under it (f90d2b0)
+    const dh = Math.hypot(v.x - p.x, v.z - p.z), tf = dh / 62;
+    out.push({ i: C.machines.list.indexOf(m), x: v.x, y: v.y + 0.5 * 9.8 * tf * tf, z: v.z, d: Math.hypot(m.position.x - p.x, m.position.z - p.z),
       state: m.state, hp: Math.round(m.health ?? 0), down: (m._toppleT ?? -1) > 0, part: !!o });
   }
   return out.sort((a, b) => a.d - b.d);
@@ -291,7 +294,7 @@ async function beat(page, K, s) {
     }
     if (st === 'cross') {
       // the Peg line: put out the lamps from 26 m before crossing (the optional count, the kill objective live)
-      const f = await fight(page, K, 'peg', 'lamp', null, { stand: 26, maxS: 120, all: true });
+      const f = await fight(page, K, 'peg', 'lamp', null, { stand: 18, maxS: 120, all: true });
       if (f.why === 'died') return f;
       lampsFight = f;
     }
@@ -395,6 +398,9 @@ try {
         const hx = home.obj.position.x, hz = home.obj.position.z;
         const m = C.machines.spawn(kind, hx + 25, hz, {});
         if (!m) return { error: `spawn ${kind} refused` };
+        // staged: its brain is switched off so the state the row writes is the state the Brazier reads (f90d2b0: at
+        // 25 m its own perception walked 'suspicious' on between writes and the page showed the rest rows)
+        if (m.ai?.tick) m.ai.tick = () => {};
         window.__refusalM = m;
         return { kind, spawned: true };
       });
@@ -527,11 +533,17 @@ try {
   page2.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warn') report.console.push({ at: 'continue', type: m.type(), text: m.text().slice(0, 300) }); });
   page2.on('pageerror', (e) => report.console.push({ at: 'continue', text: `pageerror: ${String(e).slice(0, 300)}` }));
   const tC = Date.now();
+  await page2.bringToFront();
+  await page2.evaluateOnNewDocument(() => { window.__raf = 0; const tick = () => { window.__raf++; requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
   await page2.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 120000 });
   let titled = false;
   for (let i = 0; i < 60 && !titled; i++) {
     const d = await page2.evaluate(() => ({ ctx: !!window.__CTX__, state: window.__CTX__?.state ?? null, stage: window.__CTX__?.menus?.titleStage ?? null,
-      load: document.getElementById('load-label')?.dataset?.step ?? null, errs: (window.__GAME__?.systemErrors || []).map((e) => `${e.key}: ${e.message}`).slice(0, 4) })).catch((e) => ({ evalError: String(e).slice(0, 120) }));
+      load: document.getElementById('load-label')?.dataset?.step ?? null, errs: (window.__GAME__?.systemErrors || []).map((e) => `${e.key}: ${e.message}`).slice(0, 4),
+      // f90d2b0: state 'title' but titleStage 'idle' for 120 s, no error: is the frame loop running at all?
+      raf: window.__raf ?? null, vis: document.visibilityState, focus: document.hasFocus(), titleBuilt: !!window.__CTX__?.menus?._titleBuilt,
+      host: !!document.querySelector('#title .title-inner'), glLost: window.__CTX__?.engine?.renderer?.getContext?.()?.isContextLost?.() ?? null,
+      frames: window.__CTX__?.engine?.frame ?? window.__GAME__?.frames ?? null })).catch((e) => ({ evalError: String(e).slice(0, 120) }));
     d.t = Math.round((Date.now() - tC) / 1000);
     diag.push(d);
     titled = d.state === 'title' && /press|menu/.test(d.stage || '');

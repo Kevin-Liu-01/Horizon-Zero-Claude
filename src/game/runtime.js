@@ -297,6 +297,20 @@ export class SystemsGame {
   restoreQuest(q, triangles) {
     if (q) this.spine.restore(q);
     else this.spine.reset();
+    // what the current stage spawned is the quest's, not a site's: the roster restore does not bring it back, so a
+    // Continue onto 'topple' would find no Plumb. Spawn it again if none of it is standing.
+    const cur = this.spine.current();
+    if (cur?.spawn) {
+      const live = (this.spawned[cur.spawn] || []).filter((m) => m && m.alive !== false && !m._disposed);
+      this.spawned[cur.spawn] = live;
+      if (!live.length) this._spawn(cur.spawn);
+    }
+    // stages after a spawn stage need its spawn too (topple and pry stand on the ditch's Plumb)
+    if (cur && !cur.spawn && (cur.id === 'topple' || cur.id === 'pry')) {
+      const live = (this.spawned.plumb || []).filter((m) => m && m.alive !== false && !m._disposed);
+      this.spawned.plumb = live;
+      if (!live.length) this._spawn('plumb');
+    }
     for (const t of (triangles || [])) this.spine.triangles.add(t);
     if (this.ctx.progression) this.ctx.progression.tracked = this.spine.started ? QUEST_ID : this.ctx.progression.tracked;
     this._syncEntries();

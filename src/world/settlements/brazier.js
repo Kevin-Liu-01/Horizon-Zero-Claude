@@ -30,6 +30,16 @@ function uvScale(geo, k) {
   return geo;
 }
 
+/**
+ * Seamless UVs from the position (u = x + z/2, v = y + z/2, per metre x k): the icosahedron's and the cylinder's own
+ * UVs have seams, and the relief map's slope across a seam drew the feet stones as black shards (f90d2b0 F30).
+ */
+function uvPlanar(geo, k) {
+  const p = geo.attributes.position, uv = geo.attributes.uv;
+  if (uv) for (let i = 0; i < uv.count; i++) uv.setXY(i, (p.getX(i) + p.getZ(i) * 0.5) * k, (p.getY(i) + p.getZ(i) * 0.5) * k);
+  return geo;
+}
+
 function tint(geo, color, jitter, rng) {
   const n = geo.attributes.position.count;
   const c = new Float32Array(n * 3);
@@ -175,7 +185,7 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
     const a = (i / 3) * Math.PI * 2 + 0.3;
     const g = stone(0.16 + rng() * 0.03, rng, 0.75);
     g.translate(Math.cos(a) * 0.27, 0.1, Math.sin(a) * 0.27);
-    parts.push(tint(uvScale(g, 2), BASALT_HI, 0.12, rng));
+    parts.push(tint(uvPlanar(g, 2.6), BASALT_HI, 0.12, rng));
   }
   // the basalt bowl: a lathe, thick-lipped, open to the sky
   const prof = [
@@ -205,7 +215,7 @@ export function buildBrazier({ terrain, x, z, yaw = 0, cistern = true, seed = 7,
     for (let i = 0; i < gp.count; i++) { const k = 0.9 + rng() * 0.2; gp.setXYZ(i, gp.getX(i) * k, gp.getY(i), gp.getZ(i) * k); }
     g.computeVertexNormals();
     g.translate(lx, gy(sw.x, sw.z) - y0 + (SEAT_H + 0.08) / 2 - 0.08, lz);
-    parts.push(tint(uvScale(g, 2.5), BASALT_HI, 0.1, rng));
+    parts.push(tint(uvPlanar(g, 2.6), BASALT_HI, 0.1, rng));
   }
 
   // the cistern beside it: a low ring of dressed stones round dark water, 2.3 m off, never on Brea's spawn

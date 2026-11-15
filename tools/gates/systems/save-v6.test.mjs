@@ -125,3 +125,24 @@ test('a damaged or newer record is refused without a throw', () => {
   const res = store.write(makeRecord(state(), { slot: 1 }));
   assert.equal(res.ok, false);
 });
+
+test('a stage checkpoint restores onto the NEXT stage, live, not the finished one (systems-1b fix: died at the ditch, wedged on sight)', () => {
+  const recs = [];
+  const sp = new QuestSpine({ strings: strings(), hooks: { checkpoint: (r) => recs.push([r, JSON.parse(JSON.stringify(sp.serialize()))]) } });
+  sp.start();
+  const w = { near: (a) => a === 'pans', aim: () => false, bearing: () => 0 };
+  sp.update(0.1, w);                       // wake done -> rake entered, then the checkpoint
+  const [reason, rec] = recs.at(-1);
+  assert.equal(reason, 'stage:wake');
+  const back = new QuestSpine({ strings: strings(), hooks: {} });
+  back.restore(rec);
+  assert.equal(back.current().id, 'rake');
+  assert.equal(back.st.rake.state, 'active');
+  // an older record written the old way (the finished stage still current) steps on too
+  const old = JSON.parse(JSON.stringify(rec));
+  old.idx = 0;
+  const back2 = new QuestSpine({ strings: strings(), hooks: {} });
+  back2.restore(old);
+  assert.equal(back2.current().id, 'rake');
+  assert.equal(back2.st.rake.state, 'active');
+});

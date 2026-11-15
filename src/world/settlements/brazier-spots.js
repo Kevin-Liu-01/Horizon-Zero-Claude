@@ -8,7 +8,9 @@ import { REST } from '../island/sites.js';
  * her: F20 (Ansel beside Brea at 3 m, bearing 200) films her FACE from about 4 m along her forward f, so whatever
  * stands behind her is in its frame. The pit's spot put the bowl in its bottom-left corner (systems-1b judge,
  * e42e6ba); f -3 put the cistern ring behind her in view (7ae0fd0 film). At f +6.5, r -1.0 the bowl is 2.5 m behind
- * F20's lens, and yaw 23 deg turns the cistern ring (local -1.6, +1.7) 2.3 m further along f.
+ * F20's lens (f90d2b0 film: nothing of it in F20). yaw 293 deg turns the cistern ring (local -1.6, +1.7) 2.3 m to
+ * the bowl's left (-r): yaw 23 put it 2.3 m along f, which is where the seat block stands (bearing 200, 1.6 m), and
+ * she sat inside the ring in F30 (f90d2b0). Ring to seat is now 2.8 m centre to centre (ring radius 0.95).
  */
 const B = 200 * Math.PI / 180;                       // F20's bearing: forward (sin B, -cos B), right (-cos B, -sin B)
 const F = { x: Math.sin(B), z: -Math.cos(B) };
@@ -16,7 +18,10 @@ const R = { x: -Math.cos(B), z: -Math.sin(B) };
 const along = (f, r) => ({ x: REST.x + F.x * f + R.x * r, z: REST.z + F.z * f + R.z * r });
 
 const home = along(6.5, -1.0);
-export const HOME_BRAZIER = Object.freeze({ x: +home.x.toFixed(3), z: +home.z.toFixed(3), yaw: 23 * Math.PI / 180 });
+export const HOME_BRAZIER = Object.freeze({ x: +home.x.toFixed(3), z: +home.z.toFixed(3), yaw: 293 * Math.PI / 180 });
+
+/** Every Brazier's yaw: the cistern ring to the left of the seat line (bearing 200), never on the seat. */
+export const BRAZIER_YAW = 293 * Math.PI / 180;
 
 /** The cistern ring's centre in world space (buildBrazier's local -1.6, +1.7 turned by yaw). */
 const cy = Math.cos(HOME_BRAZIER.yaw), sy = Math.sin(HOME_BRAZIER.yaw);

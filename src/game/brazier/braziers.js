@@ -1,7 +1,7 @@
 import { buildBrazier, makeFireLight } from '../../world/settlements/brazier.js';
 import { BRAZIERS, KINDLE_HOLD, dialogFor, REST_HOURS } from './rules.js';
 import { REST, TRIG } from '../../world/island/sites.js';
-import { HOME_BRAZIER } from '../../world/settlements/brazier-spots.js';
+import { HOME_BRAZIER, BRAZIER_YAW } from '../../world/settlements/brazier-spots.js';
 import { lampStateFor } from '../../instruments/lamps.js';
 
 /**
@@ -53,7 +53,7 @@ export class Braziers {
       const s = Math.abs((T?.getHeight?.(x + 1, z) ?? h) - h) + Math.abs((T?.getHeight?.(x, z + 1) ?? h) - h);
       if (!best || s < best.s) best = { x, z, s };
     }
-    return { x: best.x, z: best.z, yaw: 0.6 };
+    return { x: best.x, z: best.z, yaw: BRAZIER_YAW };   // (yaw 0.6 stood its cistern ring on the seat block)
   }
 
   _build() {

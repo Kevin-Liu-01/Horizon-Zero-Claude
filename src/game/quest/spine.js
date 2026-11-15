@@ -130,8 +130,11 @@ export class QuestSpine {
         if (wr.n > 0) this._log(w.id, fill(this.S.stage(w.id).log, { n: wr.n, of: w.count }));
       }
     }
-    if (s.checkpoint) this._hook('checkpoint', `stage:${s.id}`);
+    // the silent checkpoint is written AFTER the next stage is entered: written before, the record held the finished
+    // stage as current, and a death or Continue restored a quest wedged on a stage that can never complete again
+    // (f90d2b0 film: died at the ditch, stood up on 'sight' done, no way on)
     if (!s.optional) this._enter(this.idx + 1);
+    if (s.checkpoint) this._hook('checkpoint', `stage:${s.id}`);
   }
 
   _finish() {
@@ -310,6 +313,17 @@ export class QuestSpine {
     for (const t of (d.triangles || [])) this.triangles.add(t);
     this.order = Array.isArray(d.order) ? d.order.slice() : [];
     this.log = Array.isArray(d.log) ? d.log.slice() : [];
+    // an older record may hold a finished stage as current (written before the next was entered): step on to the
+    // first unfinished one and make it active, quietly (its cards, turns and scenes are not replayed; its spawn is
+    // the runtime's, restoreQuest)
+    if (this.started && !this.done) {
+      let i = this.idx;
+      while (this.stages[i] && (this.stages[i].optional || ['done', 'skipped'].includes(this.st[this.stages[i].id].state))) i++;
+      this.idx = i;
+      const cur = this.stages[i];
+      if (!cur) { this.done = true; this.idx = this.stages.length; }
+      else if (this.st[cur.id].state === 'pending') { this.st[cur.id].state = 'active'; this.st[cur.id].t0 = this.t; }
+    }
     this._note();
     return true;
   }
