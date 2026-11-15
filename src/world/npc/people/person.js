@@ -267,9 +267,14 @@ export class Person {
         let turn = want - this.yaw;
         while (turn > Math.PI) turn -= TAU;
         while (turn < -Math.PI) turn += TAU;
-        const maxTurn = 1.5 * step;
+        // M1.5d: within 1.5 m of the mark a person turns faster and slows while the mark is off to the side, so a walk that
+        // starts facing away ends at the mark (at 1.5 rad/s and a stride of 1.2 m/s the turning circle is 1.6 m across and
+        // the routine log caught people circling a mark they never reached)
+        const close = dx * dx + dz * dz < 2.25 && Math.abs(turn) > 0.6;
+        const maxTurn = (close ? 5 : 1.5) * step;
         this.yaw += Math.max(-maxTurn, Math.min(maxTurn, turn));
         this.group.rotation.y = this.yaw;
+        if (close) d *= Math.max(0.15, Math.cos(turn));
         const px = this.group.position.x + Math.sin(this.yaw) * d, pz = this.group.position.z + Math.cos(this.yaw) * d;
         this.group.position.x = px; this.group.position.z = pz;
         this.travelled += d;

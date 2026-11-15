@@ -47,7 +47,8 @@ async function faceCapture() {
   try {
     F.installBrea();
     if (!F.brea) return { error: `no face on Brea: ${F.breaError}` };
-    let ansel = (PS.list || []).find((q) => q.archetype === 'guild-matron');
+    // F20's own Ansel: the film hides every person it found and then stands its actors, so the shown one
+    let ansel = (PS.list || []).filter((q) => q.archetype === 'guild-matron' && q.group.visible).pop();
     if (!ansel) { ansel = await PS.spawn('guild-matron', { x: p.position.x + 2, z: p.position.z, yaw: 0, seed: 64 }); undo.push(() => PS.despawn(ansel)); }
     if (!ansel.face) return { error: 'Ansel has no face' };
     const a0 = F.alive; F.alive = true; undo.push(() => { F.alive = a0; });
@@ -65,6 +66,7 @@ async function faceCapture() {
     try { for (const c of ansel.chains?.chains || []) { c.links.forEach((l, k) => l.quaternion.copy(c.bindQ[k])); c.seeded = false; } } catch (e) { /* */ }
     try { ansel.play('Idle_Talking_Loop', { fade: 0, offset: 0.1 }); } catch (e) { /* */ }
     PS.tierAt(ansel, 0); undo.push(() => PS.tierAt(ansel, null));
+    const vis0 = ansel.group.visible; ansel.group.visible = true; undo.push(() => { ansel.group.visible = vis0; });
     p.position.set(B.x, ground(B.x, B.z), B.z); p.heading = yb;
     out.place = { ansel: [A.x, A.z].map((v) => +v.toFixed(2)), brea: [B.x, B.z].map((v) => +v.toFixed(2)), apartM: 1.5 };
     // the lens: over her right shoulder on Ansel's face; it holds her heading
@@ -72,8 +74,8 @@ async function faceCapture() {
     const fwd = new THREE.Vector3(Math.sin(yb), 0, Math.cos(yb));
     const ots = () => {
       const g = ground(B.x, B.z);
-      cam.position.set(B.x - fwd.x * 0.85 + right.x * -0.42, g + 1.68, B.z - fwd.z * 0.85 + right.z * -0.42);
-      cam.lookAt(A.x, ground(A.x, A.z) + 1.5, A.z); if (cam.fov !== 40) { cam.fov = 40; cam.updateProjectionMatrix(); } cam.updateMatrixWorld();
+      cam.position.set(B.x - fwd.x * 0.9 + right.x * 0.62, g + 1.62, B.z - fwd.z * 0.9 + right.z * 0.62);
+      cam.lookAt(A.x, ground(A.x, A.z) + 1.48, A.z); if (cam.fov !== 34) { cam.fov = 34; cam.updateProjectionMatrix(); } cam.updateMatrixWorld();
     };
     const upd0 = p._updateCamera; undo.push(() => { p._updateCamera = upd0; });
     p._updateCamera = function () { p.heading = yb; ots(); };
@@ -220,7 +222,7 @@ async function routineLog() {
   const R = PS?.routines;
   if (!R) return { error: 'no routines' };
   const out = {};
-  const { WORK_CLIPS } = await import('/src/world/npc/people/routines.js');
+  const { WORK_CLIPS, bareClip } = await import('/src/world/npc/people/routines.js');
   try {
     R.force = true;
     // the crew from the town and the keeper
@@ -239,7 +241,7 @@ async function routineLog() {
     const probeV = { x: 0, y: 0, z: 0 };
     const V = (await import('/tools/look/three.mjs')).Vector3;
     const pv = new V(), up = new V(), lo = new V();
-    const logs = R.list.map((e) => ({ id: e.id, acts: [], lastAct: null, changes: 0, still: 0, maxStill: 0, stillClip: null, anchor: null, noClip: 0, tpose: 0, inside: 0, wet: 0, samples: 0, walked: 0, last: null, night: 0 }));
+    const logs = R.list.map((e) => ({ id: e.id, acts: [], lastAct: null, changes: 0, still: 0, maxStill: 0, stillClip: null, anchor: null, noClip: 0, tpose: 0, inside: 0, wet: 0, walkRun: 0, maxWalk: 0, samples: 0, walked: 0, last: null, night: 0 }));
     const sea = C.water?.seaLevel ?? C.terrain?.seaLevel ?? null;
     const dt = 1 / 30;
     let simT = 0, nextSample = 0, steps = 0;
@@ -255,16 +257,19 @@ async function routineLog() {
           L.samples++;
           if (e.night) L.night++;
           if (sea != null && g.y < sea - 0.05) L.wet++;
-          const clip = p.current?.getClip().name || null;
+          const clip = bareClip(p.current?.getClip().name) || null;
           if (!clip) L.noClip++;
-          // the bind pose: both upper arms within 15 deg of level
+          // the bind pose: both upper arms within 15 deg of level AND out to the sides (|dot with the person's side| > 0.85;
+          // a push holds them level but forward)
           let level = 0;
+          const sx = Math.cos(p.yaw), sz = -Math.sin(p.yaw);
           for (const nm of ['upperarm_l', 'upperarm_r']) {
             const ua = p.bones[nm], la = p.bones[nm.replace('upper', 'lower')];
             if (!ua || !la) continue;
             ua.getWorldPosition(up); la.getWorldPosition(lo); lo.sub(up);
-            const el = Math.asin(Math.max(-1, Math.min(1, lo.y / (lo.length() || 1)))) / D2R;
-            if (Math.abs(el) < 15) level++;
+            const L = lo.length() || 1;
+            const el = Math.asin(Math.max(-1, Math.min(1, lo.y / L))) / D2R;
+            if (Math.abs(el) < 15 && Math.abs((lo.x * sx + lo.z * sz) / L) > 0.85) level++;
           }
           if (level === 2) L.tpose++;
           // activity changes (walking between is not an activity)
@@ -274,12 +279,14 @@ async function routineLog() {
           L.last = { x: g.x, z: g.z };
           const working = clip && WORK_CLIPS.has(clip);
           if (!L.anchor || Math.hypot(g.x - L.anchor.x, g.z - L.anchor.z) > 0.25 || working) { L.anchor = { x: g.x, z: g.z }; L.still = 0; }
-          else { L.still += 0.25; if (L.still > L.maxStill) { L.maxStill = L.still; L.stillClip = clip; } }
+          else { L.still += 0.25; if (L.still > L.maxStill) { L.maxStill = L.still; L.stillClip = clip; L.stillAt = { x: +g.x.toFixed(2), z: +g.z.toFixed(2), act: e.act, h: +h.toFixed(3) }; } }
+          // the longest walk (a walk that never ends is a person circling a mark)
+          if (e.act === 'walk') { L.walkRun += 0.25; L.maxWalk = Math.max(L.maxWalk, L.walkRun); } else L.walkRun = 0;
           // inside a static blocking collider (the town, the breakwater): never another person
           if (Cl?.resolveCapsule) {
             pv.set(g.x, g.y, g.z);
             const r = Cl.resolveCapsule(pv, 0.25, 1.6, { passes: 1, filter: (c) => c.blocking && c.kind !== 'npc' && !c.dynamic });
-            if (r?.hit) L.inside++;
+            if (r?.hit) { L.inside++; if (!L.insideAt) L.insideAt = { x: +g.x.toFixed(2), z: +g.z.toFixed(2), act: e.act, kind: r.collider?.kind ?? null, id: r.collider?.id ?? null }; }
           }
         });
       }
@@ -287,7 +294,7 @@ async function routineLog() {
     }
     out.hours = [18.0, +h.toFixed(3)];
     out.simSeconds = +simT.toFixed(1);
-    out.log = logs.map((L) => ({ id: L.id, changes: L.changes, acts: L.acts, maxStationaryOutsideWorkS: L.maxStill, stillClip: L.stillClip, noClipSamples: L.noClip, bindPoseSamples: L.tpose,
+    out.log = logs.map((L) => ({ id: L.id, changes: L.changes, acts: L.acts, maxStationaryOutsideWorkS: L.maxStill, stillClip: L.stillClip, stillAt: L.stillAt || null, longestWalkS: L.maxWalk, insideAt: L.insideAt || null, noClipSamples: L.noClip, bindPoseSamples: L.tpose,
       insideColliderSamples: L.inside, belowSeaSamples: L.wet, samples: L.samples, walkedM: +L.walked.toFixed(1), nightSamples: L.night }));
     void probeV;
   } catch (e) {

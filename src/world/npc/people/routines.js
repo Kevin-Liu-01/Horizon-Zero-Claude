@@ -38,7 +38,7 @@ export function places() {
     // the pan edge below the town, along the line to the pans: 14-24 m out from the street's foot
     panA: off(foot, toPans - 8, 15), panB: off(foot, toPans + 6, 19), panC: off(foot, toPans - 2, 24),
     // the right-hand cone: a tipping place on its pan side
-    coneTip: off(coneR, toPans - 40, coneR.r + 0.9), coneR, coneL,
+    coneTip: off(coneR, toPans - 40, coneR.r + 0.9), coneTip2: off(coneR, toPans - 80, coneR.r + 1.0), coneR, coneL,
     coneLoad: off(coneL, STREET.bearing + 90, coneL.r + 0.9),   // on the street side (the pan side is Brea's house)
     // up the street: a door step on the right (r2) and one on the left (l2)
     stepR2: streetPoint(24.0, 1.9), stepL2: streetPoint(21.0, -1.9), stepL1: streetPoint(13.0, -1.9),
@@ -69,10 +69,10 @@ function loops(P) {
     ] },
     'salt-raker-2': { day: [
       { act: 'rake', at: P.panC, face: off(P.panC, P.toPans, 3), clip: 'Farm_Harvest', dur: [30, 44] },
-      { act: 'carry', at: off(P.coneTip, S, 1.4), face: P.coneR, clip: 'PickUp_Table', dur: [5, 7] },
-      { act: 'drink', at: off(P.coneTip, S + 120, 2.6), face: P.panC, clip: 'Consume', dur: [6, 9] },
+      { act: 'carry', at: P.coneTip2, face: P.coneR, clip: 'PickUp_Table', dur: [5, 7] },
+      { act: 'drink', at: off(P.coneTip2, P.toPans, 2.4), face: P.panC, clip: 'Consume', dur: [6, 9] },
       { act: 'rake', at: P.panA, face: off(P.panA, P.toPans + 20, 3), clip: 'Farm_Harvest', dur: [30, 44] },
-      { act: 'carry', at: off(P.coneTip, S, 1.4), face: P.coneR, clip: 'PickUp_Table', dur: [5, 7] },
+      { act: 'carry', at: P.coneTip2, face: P.coneR, clip: 'PickUp_Table', dur: [5, 7] },
     ] },
     'salt-porter': { day: [
       { act: 'load', at: P.coneLoad, face: P.coneL, clip: 'PickUp_Table', dur: [5, 7] },
@@ -92,6 +92,8 @@ function loops(P) {
     'boat-caulker-2': { day: [
       { act: 'caulk', at: P.boatR, face: P.boat, clip: 'Fixing_Kneeling', dur: [28, 40] },
       { act: 'inspect', at: off(P.boatR, HARBOUR.ramp.bearing, 1.6), face: P.boat, clip: 'Interact', dur: [5, 7] },
+      { act: 'rock', at: P.stern, face: P.boat, clip: 'Push_Loop', dur: [8, 12] },
+      { act: 'caulk', at: off(P.boatR, HARBOUR.ramp.bearing + 180, 1.0), face: P.boat, clip: 'Fixing_Kneeling', dur: [28, 40] },
       { act: 'fetch', at: P.stepL1, face: streetPoint(13.0, -3.6), clip: 'PickUp_Table', dur: [5, 7], via: [P.harbourWay[1], P.harbourWay[0], P.midStreet(0), P.midStreet(13)] },
       { act: 'rock', at: P.stern, face: P.boat, clip: 'Push_Loop', dur: [8, 12], via: [P.midStreet(13), P.midStreet(0), P.harbourWay[0], P.harbourWay[1]] },
     ] },
@@ -124,7 +126,10 @@ export function wayOf(from, step) {
   return [...via.slice(k), at];
 }
 
-/** Clips that count as work or seated (stationary inside them is the work, not standing about). */
+/** A clip's name without the body's prefix ('F|Farm_Harvest' -> 'Farm_Harvest'). */
+export const bareClip = (name) => (name ? name.replace(/^[FM]\|/, '') : name);
+
+/** Clips that count as work or seated (stationary inside them is the work, not standing about). Bare names. */
 export const WORK_CLIPS = new Set(['Farm_Harvest', 'Fixing_Kneeling', 'Push_Loop', 'PickUp_Table', 'Interact', 'Idle_Lantern_Loop',
   'Idle_Rail_Loop', 'Idle_Rail_Call', 'Sitting_Idle_Loop', 'Sitting_Talking_Loop', 'TreeChopping_Loop', 'Farm_Watering', 'Farm_PlantSeed', 'Chest_Open']);
 
@@ -250,7 +255,7 @@ export class Routines {
 
   /** The log's surface: per person what they are doing now. */
   info() {
-    return this.list.map((e) => ({ id: e.id, act: e.act, clip: e.person.current?.getClip().name || null, phase: e.phase, night: !!e.night, x: +e.person.group.position.x.toFixed(2), z: +e.person.group.position.z.toFixed(2) }));
+    return this.list.map((e) => ({ id: e.id, act: e.act, clip: bareClip(e.person.current?.getClip().name) || null, phase: e.phase, night: !!e.night, x: +e.person.group.position.x.toFixed(2), z: +e.person.group.position.z.toFixed(2) }));
   }
 
   remove(person) {
