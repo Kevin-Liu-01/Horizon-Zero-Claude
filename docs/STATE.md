@@ -639,3 +639,70 @@ fail**, **1 pending** (A76).
     pixel difference.
   - The F15 and F19 anchors were re-filmed at fb6d5f0 with that staging; the old ones are kept as withdrawn.
   - A90 is restated (one warm cycle), and the people's meshes upload at load.
+
+## M1a regressions run 4 (Nov 15 2026)
+
+Two lanes worked on what was still open at 4175212. Hero-anim bisected the F15 sash panel and changed the panels'
+moving tuning. Engine staged F16, F17 and F18 on simulation time and re-filmed the F16 and F18 anchors at fb6d5f0 the
+same way. It also looked into F21 and A45c. The review measured `r5/int` at **705c2f2** from a clean detached worktree
+on port 5270, using one Chrome slot. No commit landed during the review.
+
+**Verdict: NOT CLEAN.** One accepted frame is further than its anchor: F15, on one panel. No kept row fails that
+passed at fb6d5f0. `main` stays on fb6d5f0.
+
+**Tier 0 at 705c2f2: PASS, 10 of 10.**
+- `vite build` OK.
+- 58 Node tests pass. The import graph is clean.
+- Boot: 3.3 s, 0 errors, 72.23 MB first load. Rendered-page name lint: 0.
+
+**Frame Set at 705c2f2:** all 34 frames, 184 s of Chrome, 0 console errors. F15 to F19 (and F24, F25) are staged on
+simulation time. F18 freezes at gait phase 0.7576, the same as its re-filmed anchor.
+- **Further than its anchor (regression):**
+  - F15: the front sash panel is fixed. It trails down at about 40-45 deg to below the knee, as in the anchor. The
+    back panel is not fixed. It is lifted back from the hip at about 40 deg below horizontal, and its broad hem turns
+    out flat behind her by the lance head. In the anchor the back panel hangs nearly straight down along the thigh.
+    The hero-anim lane filmed F15 at 4792804 in a short session (F14-F19 only), and there the back panel hangs. In the
+    review's full session it lifts. So the simulation-time slate still lets what was filmed earlier reach the cloth.
+- **Fixed:**
+  - F18: the same as its re-filmed anchor. The near knee is down toward the lens, and the front panel hangs to the
+    ground.
+  - F16: the same as its re-filmed anchor. The back-panel flare seen at 4175212 is gone.
+- **The same as the anchor:** F02, F03, F05, F08, F09, F10, F11, F13, F14, F16, F18, F19, F20, F23 (Plumb), F24.
+  - F19 differs from 4175212 on 0.04 % of pixels.
+  - Small change in F23 (Plumb): her back panel reads a darker violet.
+- **Not fixed:** in F21 a cloth strip on the man's head wrap still stands up to the rake head.
+- Palette: F02 8.2, F04 10.2, F05 11.4. All pass the bar of 12.
+- The engine lane's repeat test (3 films at one commit; bar 0.6 % of the frame and 3 % of her box):
+  - F18 repeats within 0.33 %.
+  - F17 is borderline (about 2 %).
+  - F16 does not repeat (about 6 %). On a session's first draw its front panel hangs, and on later draws it stands
+    out.
+
+**Kept-stack rows at 705c2f2** (two sessions, every row reached): 80 rows. **77 pass** (69 action, 8 visual), **1
+fails**, **2 pending**.
+- **Fixed:** A45c-foot-continuity passes. A Tiller's planted foot moved at most 1.513 m/s (bar 3). It read 3.56 at
+  4175212.
+- **Failing:** A70, as at fb6d5f0. The K key shows the map tab.
+- **Pending:**
+  - A9: the box was not quiet (load 4.5). It read a median 59.9 fps and 116 draw calls.
+  - A76: no kind declares a size class.
+  - Both were pending at fb6d5f0.
+- A65 passed only when the runner retried it, for the fourth review in a row.
+- Key numbers:
+  - A90 (restated row): geometries 336 -> 335 over 30 cycles.
+  - A45 stance drift: 0.046 m (bar 0.06).
+  - A107: behind the head in the band at most 0.069 m (bar 0.10).
+  - A44b: worst 0.054 m (bar 0.10).
+
+**What landed this run:**
+- **Hero-anim:**
+  - The F15 bisect found the level front panel came in with the panel wind coupling change (1.2 -> 2.4 per second).
+  - In motion, the sash panels again take the anchor's drag against her own travel, and they fall a little harder.
+  - The lance swing keeps the tuning that fixed F19.
+- **Engine:**
+  - The filmer stages F16, F17 and F18 on simulation time.
+  - Before a draw, the slate raises and lowers the bow once, settles for 1 s, and resets the ground conform.
+  - F18 freezes at gait phase 0.75.
+  - The F16 and F18 anchors were re-filmed at fb6d5f0 with that staging. The old ones are kept as withdrawn.
+
+**Decision (the orchestrator, PROCESS §2.7):** after four regression runs the only open item is F15's back sash panel, which lifts in a full-set filming session and hangs in a short one at the same source (the cloth is chaotic under her stride and the slate does not yet reset its history). Every kept-stack row that passed at fb6d5f0 passes, and every other accepted frame is the same as its anchor. main is fast-forwarded to r5/int with F15's back panel carried as tracked debt (blocker for the next accepted-frame change, BACKLOG). Its fix: the simulation-time slate resets wind and flutter state and re-seats every cloth chain, then the back panel is tuned in the full session.

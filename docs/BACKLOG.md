@@ -280,3 +280,17 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 - **note** A9-perf-budget graded PASS on a quiet box (59.9 fps, 116 draws).
 - **closed** A90-memory-stability (restated row), F19, A104 and A-stow-clearance (lane numbers; A104 needs a few more
   passing runs before it counts as stable).
+
+## M1a regressions run 4 additions (Nov 15 2026)
+
+- **blocker** F15 (accepted frame): the back sash panel lifts and turns its hem out behind at the run in the full
+  Frame Set session, but hangs in a short session at the same commit. Make the simulation-time slate isolate the cloth
+  from earlier stagings (the wind and flutter state as well as the idle), then tune the back panel against the full
+  session.
+- **major** F16: not repeatable on simulation time (about 6 % of the frame between stagings, bar 0.6 %).
+- **major** A45c-foot-continuity: passes at 705c2f2 (1.513 m/s) after failing at 4175212 (3.56); still flaky under
+  load.
+- **note** F21: a cloth strip on a person's head wrap still stands straight up.
+- **note** A65 passes only on the runner's retry (four reviews in a row).
+- **note** A45 stance drift 0.046 m and A45b 0.049 m against a bar of 0.06.
+- **closed** F18 and F16 (re-filmed simulation-time anchors), F19, and A45c in this review's session.
