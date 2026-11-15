@@ -1500,7 +1500,12 @@ export class PlayerAnimator {
     if (aimW > 0.01 && this._knW0 > 0.01 && this.T.armFlow) { _knZ.set(0, 0, 0); this._knuckleTurn(this._knW0, this._drawS, _knZ); }
     if (this._afEng && this.T.armFlow) this._handInFront();
     /* M1.3b: the aim's arms, solved last as a constraint rig on the pose that will be drawn */
-    if (this.T.cRig) this._cRigPass(aimW, this._drawS, p);
+    /* ...but not over a lance holster that owns the right arm (A107's quick stow under a rising aim): the
+     * rig restores the clip's arms before it solves, which threw away the holster's own path and its R8 elbow
+     * bound (A107 aim-stow: the elbow 0.26-0.36 m behind the head at shoulder height, measured the same with
+     * the pre-M1.3d guard, so it came with the rig). It fades in as the holster lets the arm go. */
+    const stowOwn = this.melee?._pathOn && this.melee._prevStance === 'holster' ? Math.min(1, Math.max(0, this.melee.w || 0)) : 0;
+    if (this.T.cRig) this._cRigPass(aimW * (1 - stowOwn), this._drawS, p);
     if (aimW > 0.01) {
       this._rootKeepAudit(this._drawS);
       /* W0b targeted fix 4 (r1 eng judge, the down clamp; A32-draw-ramp `down105`
