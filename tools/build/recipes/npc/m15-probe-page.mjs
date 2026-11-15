@@ -256,6 +256,7 @@ async function routineLog() {
           const L = logs[k], p = e.person, g = p.group.position;
           L.samples++;
           if (e.night) L.night++;
+          if (e.id === 'lantern-keeper-2' && (L.samples % 20 === 1)) (L.trace ||= []).push([+h.toFixed(2), +g.x.toFixed(1), +g.z.toFixed(1), e.act, e.phase, p.walkTarget ? [+p.walkTarget.x.toFixed(1), +p.walkTarget.z.toFixed(1)] : null, +(p.speed || 0).toFixed(2)]);
           if (sea != null && g.y < sea - 0.05) L.wet++;
           const clip = bareClip(p.current?.getClip().name) || null;
           if (!clip) L.noClip++;
@@ -294,7 +295,7 @@ async function routineLog() {
     }
     out.hours = [18.0, +h.toFixed(3)];
     out.simSeconds = +simT.toFixed(1);
-    out.log = logs.map((L) => ({ id: L.id, changes: L.changes, acts: L.acts, maxStationaryOutsideWorkS: L.maxStill, stillClip: L.stillClip, stillAt: L.stillAt || null, longestWalkS: L.maxWalk, insideAt: L.insideAt || null, noClipSamples: L.noClip, bindPoseSamples: L.tpose,
+    out.log = logs.map((L) => ({ id: L.id, changes: L.changes, acts: L.acts, maxStationaryOutsideWorkS: L.maxStill, stillClip: L.stillClip, stillAt: L.stillAt || null, longestWalkS: L.maxWalk, insideAt: L.insideAt || null, noClipSamples: L.noClip, bindPoseSamples: L.tpose, putOnMark: R.list.find((e) => e.id === L.id)?.stuck || 0, trace: L.trace || null,
       insideColliderSamples: L.inside, belowSeaSamples: L.wet, samples: L.samples, walkedM: +L.walked.toFixed(1), nightSamples: L.night }));
     void probeV;
   } catch (e) {

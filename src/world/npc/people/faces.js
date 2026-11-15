@@ -70,6 +70,8 @@ export class FaceDirector {
   }
 
   direct() {
+    // at rest (a ?shot film): nobody looks at anyone (a person's head look reads its face's target)
+    if (!this.live()) { for (let i = 0; i < this.list.length; i++) this.list[i].target = null; return; }
     const P = this.ctx.systemsGame?.present;
     const card = P?.card || null, sub = P?.sub || null;
     if (card !== this._card) {

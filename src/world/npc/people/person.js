@@ -317,6 +317,13 @@ export class Person {
         while (off < -Math.PI) off += TAU;
         if (Math.abs(off) < 1.9) want = Math.max(-LOOK_MAX, Math.min(LOOK_MAX, off));
       }
+      // M1.5f: when the eyes are on someone, the head takes what the clip's own head swing leaves of the turn (the eyes
+      // report the target's yaw from the head; the head holds while that is inside 10 deg and turns by what is past it)
+      const F = this.face;
+      if (F && F.target && F.alive) {
+        const r = F.wantY, past = Math.abs(r) > 0.17 ? r - Math.sign(r) * 0.17 : 0;
+        want = Math.max(-LOOK_MAX, Math.min(LOOK_MAX, this.lookYaw + past));
+      }
     }
     this.lookYaw += (want - this.lookYaw) * Math.min(1, LOOK_RATE * dt);
     if (Math.abs(this.lookYaw) < 0.002 || !this.neck || !this.head) return;

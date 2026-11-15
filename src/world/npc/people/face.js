@@ -562,6 +562,7 @@ export class Face {
     this.wanderT = 1 + this.rand() * 2;
     this.yaw = 0; this.pitch = 0; this.verge = 0;
     this.target = null;       // a Vector3 the eyes are on (world), or null
+    this.wantY = 0;           // the target's yaw from the head's forward (rad), last frame
     this.speech = null;       // { track, t0 }
     this.mouth = [0, 0, 0, 0];
     this._shape = [0, 0, 0, 0];
@@ -680,6 +681,8 @@ export class Face {
       wantY = this.wander[0]; wantP = this.wander[1];
     }
     wantY += this.sac[0]; wantP += this.sac[1];
+    // where the target is from the head now (the person's head look reads this: past the cone the head turns to it)
+    this.wantY = this.target ? wantY : 0;
     // inside the 25 deg cone
     const off = Math.hypot(wantY, wantP);
     if (off > CONE) { wantY *= CONE / off; wantP *= CONE / off; }

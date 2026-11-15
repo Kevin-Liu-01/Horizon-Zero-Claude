@@ -50,7 +50,7 @@ export function places() {
     harbourWay: [off(foot, 218, 20), off(foot, 233, 55)],
     // the lamp is lit from the beach beside the mole's root (a person walks the ground, never the deck); the water watched
     // from the beach a few metres along it
-    lamp: BREAKWATER_LAMP, lampStand: off(BREAKWATER_LAMP, bw + 180, 2.0), beachWatch: off(BREAKWATER_LAMP, bw + 110, 6.0),
+    lamp: BREAKWATER_LAMP, lampStand: off(BREAKWATER_LAMP, bw + 180, 3.2), beachWatch: off(BREAKWATER_LAMP, bw + 110, 6.0),
     beachCall: off(BREAKWATER_LAMP, bw + 140, 4.0), sea: breakwaterPoint(30, 0),
     toPans,
   };
@@ -218,6 +218,8 @@ export class Routines {
     const q = e.path.shift();
     if (!q || Math.hypot(q.x - p.group.position.x, q.z - p.group.position.z) < 0.35) { this._arrive(e); return; }
     e.act = 'walk';
+    e.goT = 0;
+    e.goLimit = Math.hypot(q.x - p.group.position.x, q.z - p.group.position.z) / 0.4 + 10;
     p.showProps(this.sys._propsFor(p, 'walk'));
     p.walkTo(q.x, q.z, () => this._go(e));
   }
@@ -245,7 +247,13 @@ export class Routines {
     if (this._checkT <= 0) { this._checkT = 1; this._gather(); }
     for (let i = 0; i < this.list.length; i++) {
       const e = this.list[i];
-      if (e.phase !== 'do') continue;
+      if (e.phase !== 'do') {
+        // a walk that does not end: the leg's length at 0.4 m/s plus 10 s, then the person is put on the mark (counted)
+        e.goT = (e.goT || 0) + dt;
+        const W = e.person.walkTarget;
+        if (W && e.goT > (e.goLimit || 60)) { e.stuck = (e.stuck || 0) + 1; e.person.setPosition(W.x, W.z); const then = W.then; e.person.stopWalk(); then?.(e.person); }
+        continue;
+      }
       e.t += dt;
       // the lamp: at the turn of night a keeper goes to it whatever they were doing
       const night = this._night(e.R);
@@ -255,7 +263,7 @@ export class Routines {
 
   /** The log's surface: per person what they are doing now. */
   info() {
-    return this.list.map((e) => ({ id: e.id, act: e.act, clip: bareClip(e.person.current?.getClip().name) || null, phase: e.phase, night: !!e.night, x: +e.person.group.position.x.toFixed(2), z: +e.person.group.position.z.toFixed(2) }));
+    return this.list.map((e) => ({ id: e.id, act: e.act, stuck: e.stuck || 0, clip: bareClip(e.person.current?.getClip().name) || null, phase: e.phase, night: !!e.night, x: +e.person.group.position.x.toFixed(2), z: +e.person.group.position.z.toFixed(2) }));
   }
 
   remove(person) {
