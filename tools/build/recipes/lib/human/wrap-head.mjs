@@ -36,7 +36,7 @@ export const DEG = Math.PI / 180;
  *   tuft         { points, joints, count, along, width, side } or null (a coil tuft on a chain)
  * Returns { geo, parts, culled, covers(p), lowEdge(p), hemGap(p), soup, center }.
  */
-export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base: B, turns, bun: bunSpec = null, knot: knotAt = null, knotSpec = null, tail = null, tail2 = null, ends = [], tuft = null, shell = { seg: 12, rings: 4 } }) {
+export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base: B, turns, bun: bunSpec = null, knot: knotAt = null, knotSpec = null, tail = null, tail2 = null, ends = [], tuft = null, shell = { seg: 12, rings: 4 }, bead = null }) {
   const A = WRAP_ATLAS, W = A.W;
   const head = joint;
   const form = headForm(headSoup, { center, lift, blur: 2 });
@@ -124,6 +124,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
     add('tail', clothTail(tail.points, tail.joints, {
       along: tail.along ?? 16, across: tail.across ?? 4, width: tail.width, side: tail.side, thick: tail.thick ?? 0.004, curl: tail.curl ?? 0.10, twist: tail.twist ?? 0, gather: tail.gather ?? 0.7, gatherTo: tail.gatherTo ?? 0.16, roll: tail.roll ?? 0, fold: tail.fold ?? 0.0052, rootBack: tail.rootBack ?? 0,
       rootRows: tail.rootRows ?? null, smoothSkin: tail.smoothSkin ?? false, hem: tail.hem ?? 0, ripple: tail.ripple ?? 0, open: tail.open ?? null, pleats: tail.pleats ?? 0,
+      cinch: tail.cinch ? { ...tail.cinch, uv: { rect: [A.knotFold.rect[0] + 8, A.knotFold.rect[1] + 8, 120, A.knotFold.rect[3] - 16], W } } : null,
       uvFront: { rect: A.clothA.rect, period: A.clothA.period, W, pxPerM: 1 / 0.00065, v: [1, 0] },
       uvBack: { rect: A.lining.rect, period: A.lining.period, W, pxPerM: 1 / 0.0012, v: [0, 1] },
       uvEnd: A.frayEnd.rect, fray: tail.fray ?? 0.1,
@@ -182,6 +183,95 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
     add('shell', underShell(form, { axis: baseN, oMin: (s) => lowO(s) + 0.055, seg: shell.seg, rings: shell.rings, joint: head, W, uv: [s0[0], s0[1] + 40, 40, 40], at: (dx, dy, dz) => stack.skinAt(dx, dy, dz) - 0.0018 }));
   }
 
+  // M1.2c fix round 1 (`bead`: { r } raw metres; the judge: "every fold edge at least 3 mm thick", 773 mm of visible edges under it):
+  // every open cloth edge a camera can see gets a rolled hem: a closed roll of radius r under the edge, so the edge a close-up sees is a
+  // rounded fold 2r thick, never a cut sheet (tools/build/recipes/lib/human/wrap-edges.mjs measures it)
+  let beadStats = null;
+  if (bead) {
+    const exSoup = Array.from(headSoup);
+    for (const g of parts) for (let t = 0; t < g.idx.length; t++) { const i = g.idx[t]; exSoup.push(g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]); }
+    const exGrid = new TriGrid(new Float32Array(exSoup), 0.01);
+    const dirs = [];
+    for (let i = 0; i < 64; i++) { const z = 1 - 2 * (i + 0.5) / 64, r = Math.sqrt(1 - z * z), ph = i * 2.399963; dirs.push([r * Math.cos(ph), r * Math.sin(ph), z]); }
+    const fe = A.frayEnd.rect;
+    const inFray = (u, v) => u * W >= fe[0] && u * W < fe[0] + fe[2] && v * W >= fe[1] && v * W <= fe[1] + fe[3];
+    const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
+    let nEdges = 0, len = 0;
+    const r = bead.r;
+    for (const src of parts) {
+      if (src.part === 'locks') continue;
+      const P = (i) => [src.pos[i * 3], src.pos[i * 3 + 1], src.pos[i * 3 + 2]];
+      const key = (i) => `${Math.round(src.pos[i * 3] * 1e5)},${Math.round(src.pos[i * 3 + 1] * 1e5)},${Math.round(src.pos[i * 3 + 2] * 1e5)}`;
+      const edges = new Map(), ends = new Map(), runs = [];
+      for (let t = 0; t < src.idx.length; t += 3) {
+        const tri = [src.idx[t], src.idx[t + 1], src.idx[t + 2]];
+        for (let k = 0; k < 3; k++) {
+          const a = tri[k], b = tri[(k + 1) % 3], c = tri[(k + 2) % 3];
+          const ka = key(a), kb = key(b); if (ka === kb) continue;
+          const id = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+          const e = edges.get(id) || { n: 0, a, b, c }; e.n++; edges.set(id, e);
+        }
+      }
+      for (const e of edges.values()) {
+        if (e.n !== 1) continue;
+        const um = (src.uv[e.a * 2] + src.uv[e.b * 2]) / 2, vm = (src.uv[e.a * 2 + 1] + src.uv[e.b * 2 + 1]) / 2;
+        if (inFray(um, vm)) continue;                                   // the alpha-cut fringe: threads, not an edge
+        const pa = P(e.a), pb = P(e.b), pc = P(e.c);
+        const ed = v3.sub(pb, pa), el = Math.hypot(...ed); if (el < 1e-6) continue;
+        const eu = v3.mul(ed, 1 / el), m = v3.mul(v3.add(pa, pb), 0.5);
+        let seen = false;
+        for (const d of dirs) {
+          if (Math.abs(v3.dot(d, eu)) > 0.5) continue;
+          if (exGrid.cast(m[0] + d[0] * 0.0004, m[1] + d[1] * 0.0004, m[2] + d[2] * 0.0004, d[0], d[1], d[2], bead.reach ?? 0.15, 0.00005) < 0) { seen = true; break; }
+        }
+        if (!seen) continue;
+        nEdges++; len += el;
+        // the face's outward normal (the vertex normals' side) and the in-plane direction away from the triangle, summed per end so
+        // the beads of a boundary run join into one rolled hem
+        const ka = key(e.a), kb = key(e.b);
+        let o = v3.norm(v3.cross(eu, v3.norm(v3.add([src.nrm[e.a * 3], src.nrm[e.a * 3 + 1], src.nrm[e.a * 3 + 2]], [src.nrm[e.b * 3], src.nrm[e.b * 3 + 1], src.nrm[e.b * 3 + 2]]))));
+        if (v3.dot(o, v3.sub(pc, m)) > 0) o = v3.mul(o, -1);
+        for (const [k, vi] of [[ka, e.a], [kb, e.b]]) {
+          const vtx = ends.get(k) || { vi, o: [0, 0, 0], row: -1 };
+          vtx.o = v3.add(vtx.o, v3.mul(o, el)); ends.set(k, vtx);
+        }
+        runs.push([ka, kb]);
+      }
+      // a closed roll: six rows round a circle of radius r under the edge, the first row the sheet's own edge, the last joining it
+      const ROWS = 6;
+      for (const vtx of ends.values()) {
+        const vi = vtx.vi, p = P(vi), n = v3.norm([src.nrm[vi * 3], src.nrm[vi * 3 + 1], src.nrm[vi * 3 + 2]]);
+        let o = v3.sub(vtx.o, v3.mul(n, v3.dot(vtx.o, n))); o = v3.norm(o);
+        const c = v3.sub(p, v3.mul(n, r));
+        vtx.c = c; vtx.n = n; vtx.o2 = o;
+        vtx.row = g.pos.length / 3;
+        for (let k = 0; k < ROWS; k++) {
+          const th = (k / ROWS) * 2 * Math.PI, rd = v3.add(v3.mul(n, Math.cos(th)), v3.mul(o, Math.sin(th)));
+          g.pos.push(...(k === 0 ? p : v3.add(c, v3.mul(rd, r)))); g.nrm.push(...rd); g.uv.push(src.uv[vi * 2], src.uv[vi * 2 + 1]);
+          g.jnt.push(src.jnt[vi * 4], src.jnt[vi * 4 + 1], src.jnt[vi * 4 + 2], src.jnt[vi * 4 + 3]);
+          g.wgt.push(src.wgt[vi * 4], src.wgt[vi * 4 + 1], src.wgt[vi * 4 + 2], src.wgt[vi * 4 + 3]);
+        }
+      }
+      const deg = new Map();
+      for (const [ka, kb] of runs) {
+        const i = ends.get(ka).row, j = ends.get(kb).row;
+        for (let k = 0; k < ROWS; k++) { const k1 = (k + 1) % ROWS; g.idx.push(i + k, j + k, i + k1, i + k1, j + k, j + k1); }
+        deg.set(ka, (deg.get(ka) || 0) + 1); deg.set(kb, (deg.get(kb) || 0) + 1);
+      }
+      // where a run of seen edges ends, the roll is capped (a fan on its centre), so it never shows its own open ring
+      for (const [k, d] of deg) {
+        if (d !== 1) continue;
+        const vtx = ends.get(k), ci = g.pos.length / 3, vi = vtx.vi;
+        g.pos.push(...vtx.c); g.nrm.push(...vtx.o2); g.uv.push(src.uv[vi * 2], src.uv[vi * 2 + 1]);
+        g.jnt.push(src.jnt[vi * 4], src.jnt[vi * 4 + 1], src.jnt[vi * 4 + 2], src.jnt[vi * 4 + 3]);
+        g.wgt.push(src.wgt[vi * 4], src.wgt[vi * 4 + 1], src.wgt[vi * 4 + 2], src.wgt[vi * 4 + 3]);
+        for (let q = 0; q < ROWS; q++) g.idx.push(ci, vtx.row + q, vtx.row + (q + 1) % ROWS);
+      }
+    }
+    if (g.idx.length) add('hems', g);
+    beadStats = { edges: nEdges, lengthMm: +(len * 1000).toFixed(1) };
+  }
+
   // contact shadow between the layers: every part against all of them + the head
   const soup = Array.from(headSoup);
   for (const g of parts) for (let t = 0; t < g.idx.length; t++) { const i = g.idx[t]; soup.push(g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]); }
@@ -202,7 +292,7 @@ export function woundHeadwrap({ headSoup, skin = null, joint, center, lift, base
     return a2 > lowO2 + 0.13;
   };
   const stats = Object.fromEntries(parts.map((g) => [g.part, g.idx.length / 3]));
-  return { geo, parts: stats, culled, covers, form, stack, center, soup: new Float32Array(soup.slice(headSoup.length)), lowEdge: (p) => {
+  return { geo, parts: stats, beadStats, culled, covers, form, stack, center, soup: new Float32Array(soup.slice(headSoup.length)), lowEdge: (p) => {
     const d = v3.norm([p[0] - center[0], p[1] - center[1], p[2] - center[2]]);
     const s = sAround(baseN, d);
     return Math.asin(Math.max(-1, Math.min(1, v3.dot(d, baseN)))) - (baseO - baseW + baseWarp(s));

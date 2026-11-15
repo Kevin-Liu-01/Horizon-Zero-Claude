@@ -405,7 +405,7 @@ export function cullCovered(g, depth, margin = 0.0009) {
  * in), and the last `fray` of its length mapped to a frayed end cell.
  *   uvFront / uvBack: { rect, period, W, pxPerM, v:[a,b] }, uvEnd: [x, y, w, h] px
  */
-export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, gatherTo = 0.16, roll = 0, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7, rootBack = 0, rootRows = null, smoothSkin = false, hem = 0, ripple = 0, open = null, pleats = 0 } = {}) {
+export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.09, side = [1, 0, 0], thick = 0.004, curl = 0.1, twist = 0, gather = 0.62, gatherTo = 0.16, roll = 0, fold = 0.006, uvFront, uvBack, uvEnd = null, fray = 0.08, seed = 7, rootBack = 0, rootRows = null, smoothSkin = false, hem = 0, ripple = 0, open = null, pleats = 0, cinch = null } = {}) {
   const g = { pos: [], nrm: [], uv: [], jnt: [], wgt: [], idx: [] };
   const pl = polyline(P);
   const R = rng(seed * 40503);
@@ -444,7 +444,9 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
       // nearly level root reads as a rope of cloth leaving the knot, never a wide plate standing off it
       const o0 = open ? open[0] : gatherTo * 0.34, o1 = open ? open[1] : gatherTo;
       const rootK = 1 - smooth(open ? o0 : gatherTo * 0.55, o1, u);        // 1 at the knot, 0 on the free strip
-      const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(o0, o1, u));
+      // (`cinch`: the strip is drawn in under the band, a third narrower and flatter there, and puffs out either side of it)
+      const pinch = cinch ? 1 - 0.34 * Math.exp(-(((u - cinch.at) / 0.03) ** 2)) + 0.12 * Math.exp(-(((u - cinch.at - 0.06) / 0.04) ** 2)) : 1;
+      const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(o0, o1, u)) * pinch;
       // the cloth starts inside the knot: nothing shows a cut edge where it leaves
       const back = rootBack * (1 - smooth(0, 0.07, u));
       const p0 = sub(p, mul(t, back));
@@ -524,6 +526,49 @@ export function clothTail(P, joints, { along = 16, across = 4, width = () => 0.0
         emit(a, 0, { v: (a - lastPlain) / (along - lastPlain) });
         quad();
       }
+    }
+  }
+  // M1.2c fix round 1 (`cinch`: { at, w, pad, tube, uv: { rect, W } }): a band of cloth bound round the gathered root just outside the knot,
+  // so the root reads as cloth pinched and gathered under the knot, not a strip leaving it. A closed, rounded band (a flattened torus) on
+  // the root's own frame and skinning, its section a superellipse round the roll (half-width hw + pad across, the roll's bulge + pad through)
+  if (cinch) {
+    const u = cinch.at, segN = 18, ringN = 6;
+    let { p, t, seg, f } = pl.at(u);
+    if (smoothSkin) {
+      const n = P.length - 1, q0 = P[Math.max(0, seg - 1)], q1 = P[seg], q2 = P[Math.min(n, seg + 1)], q3 = P[Math.min(n, seg + 2)];
+      const f2 = f * f, f3 = f2 * f;
+      p = [0, 1, 2].map((k) => 0.5 * (2 * q1[k] + (-q0[k] + q2[k]) * f + (2 * q0[k] - 5 * q1[k] + 4 * q2[k] - q3[k]) * f2 + (-q0[k] + 3 * q1[k] - 3 * q2[k] + q3[k]) * f3));
+      t = norm([0, 1, 2].map((k) => 0.5 * ((-q0[k] + q2[k]) + 2 * (2 * q0[k] - 5 * q1[k] + 4 * q2[k] - q3[k]) * f + 3 * (-q0[k] + 3 * q1[k] - 3 * q2[k] + q3[k]) * f2)));
+    }
+    let sd = norm(sub(side, mul(t, dot(side, t))));
+    if (twist) { const n0 = norm(cross(sd, t)), a2 = twist * u; sd = norm(add(mul(sd, Math.cos(a2)), mul(n0, Math.sin(a2)))); }
+    const nr = norm(cross(sd, t));
+    const o0 = open ? open[0] : gatherTo * 0.34, o1 = open ? open[1] : gatherTo;
+    const rootK = 1 - smooth(open ? o0 : gatherTo * 0.55, o1, u);
+    const hw = width(u) * 0.5 * (gather + (1 - gather) * smooth(o0, o1, u)) * 0.66;
+    const back = rootBack * (1 - smooth(0, 0.07, u));
+    const c = sub(p, mul(t, back));
+    const ax = hw + cinch.pad, az = roll * rootK * hw + thick * 0.5 + cinch.pad;
+    const weights = smoothSkin === 4 ? chainW4(joints, seg, f) : smoothSkin ? chainW3(joints, seg, f) : chainW(joints, seg, f);
+    const b0 = g.pos.length / 3, { rect, W } = cinch.uv;
+    for (let i = 0; i <= segN; i++) {
+      const th = (i / segN) * TAU, ct = Math.cos(th), st = Math.sin(th);
+      // a superellipse round the roll (exponent 2.6: fuller at the selvedges than an ellipse, so it sits on the hems)
+      const e = 2 / 2.6, cx = Math.sign(ct) * Math.abs(ct) ** e, cz = Math.sign(st) * Math.abs(st) ** e;
+      const rim = add(mul(sd, ax * cx), mul(nr, az * cz));
+      const outN = norm(add(mul(sd, cx / ax), mul(nr, cz / az)));
+      for (let j = 0; j <= ringN; j++) {
+        const ph = (j / ringN) * TAU, along = Math.cos(ph) * cinch.w * 0.5, rad = Math.sin(ph) * cinch.tube;
+        const q = add(add(c, rim), add(mul(t, along), mul(outN, rad)));
+        g.pos.push(...q); g.nrm.push(...norm(add(mul(t, Math.cos(ph)), mul(outN, Math.sin(ph) + 0.0001))));
+        g.uv.push((rect[0] + 2 + (i / segN) * (rect[2] - 4)) / W, (rect[1] + 2 + (j / ringN) * (rect[3] - 4)) / W);
+        g.jnt.push(...weights.j); g.wgt.push(...weights.w);
+      }
+    }
+    const R2 = ringN + 1;
+    for (let i = 0; i < segN; i++) for (let j = 0; j < ringN; j++) {
+      const a0 = b0 + i * R2 + j, a1 = a0 + 1, c0 = a0 + R2, c1 = c0 + 1;
+      g.idx.push(a0, c0, a1, a1, c0, c1);
     }
   }
   // the rolled hems: at each selvedge a strip from the front face's edge round to the back face's, its normals turning out, mapped a

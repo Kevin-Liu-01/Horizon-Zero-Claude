@@ -351,9 +351,13 @@ export async function build({ out = ROOT } = {}) {
   });
   // fix round 3 (the judges: "the ear rim is faceted", detail sheet 'THE EAR' at 0.26 m): the helix and the lobe, the ear's own outline,
   // take a second, finer split (edges over 4 mm), paid for by the skin the smock now hides under its collar
-  const refinedEar = refineEdges(bodyPrim, {
-    // (M1.2b: "no polygon edge on the ear rim": the rim takes edges down to 2.6 mm, up to 160 of them)
-    minLen: 0.0026, maxEdges: 160,
+  // (M1.2b: "no polygon edge on the ear rim": the rim takes edges down to 2.6 mm, up to 160 of them)
+  // (M1.2b fix round 1, the judge: "straight segments and corners at the lobe and at the back of the helix" in F13: one pass halves an
+  // edge once, so the rim's 5-7 mm edges came out 2.5-3.5 mm. Three passes now, each halving every edge over 2.2 mm, so the outline
+  // the smoothing below rounds has edges under 2.2 mm (lib/human/ear-rim.mjs measures its straight runs))
+  let refinedEar = 0;
+  for (let pass = 0; pass < 3; pass++) refinedEar += refineEdges(bodyPrim, {
+    minLen: 0.0022, maxEdges: 700,
     want: (p) => Math.abs(p[0]) > 0.071 && p[1] > 1.592 && p[1] < 1.70 && p[2] > -0.062 && p[2] < 0.012,
   });
   // the ear's facets and its pointed helix round off, and so do the last corners of the cheek's outline
@@ -367,8 +371,10 @@ export async function build({ out = ROOT } = {}) {
     },
   });
   // (fix round 3: and the ear's outline, with its new rows, rounds off once more on its own: the helix keeps no corner at 0.26 m)
+  // (M1.2b fix round 1: 6 -> 16 iterations: on the rim's finer edges a step moves a vertex less, and the helix's back and the lobe
+  // kept their straight sides and their point)
   smoothPositions(bodyPrim, {
-    iters: 6,
+    iters: 16,
     weight: (p) => smooth(0.071, 0.076, Math.abs(p[0])) * smooth(1.595, 1.605, p[1]) * (1 - smooth(1.695, 1.705, p[1])) * smooth(-0.07, -0.06, p[2]) * (1 - smooth(0.004, 0.014, p[2])),
   });
   { const P = bodyPrim.getAttribute('POSITION'), q = [0, 0, 0], m = new Uint8Array(P.getCount()); for (let i = 0; i < m.length; i++) { P.getElement(i, q); m[i] = q[1] > 1.5 ? 1 : 0; } recomputeNormals(bodyPrim, m); }
@@ -466,6 +472,8 @@ export async function build({ out = ROOT } = {}) {
   const skinGridAll = new TriGrid(new Float32Array(triSoup(bodyPrim, (a, b, c) => headW[a] > 0.5 || headW[b] > 0.5 || headW[c] > 0.5)), 0.016);
   const skinFrom = (dx, dy, dz) => { const t = skinGridAll.cast(skinCenter[0], skinCenter[1], skinCenter[2], dx, dy, dz, 0.2, 0.01); return t >= 0 ? t : null; };
   const wrapped = woundHeadwrap({
+    // M1.2c fix round 1: every open cloth edge a camera can see is rolled under in a 1.7 mm bead (a 3.4 mm fold, never a sheet's edge)
+    bead: { r: 0.0017 / S },
     headSoup, skin: skinFrom, joint: head, center: skinCenter,
     // the hair and padding the cloth rides on: thin over the brow, fuller over the crown and the back
     // M1.2c (TURN: "layered and bunched"; the wrap stands well out past the temples and the crown, wider than the head): a fuller
@@ -498,9 +506,16 @@ export async function build({ out = ROOT } = {}) {
       // row is skinned over FOUR joints (cubic B-spline), so the stiff-to-free hand-over drapes over two links instead of folding at one
       // r5/int (M0.2): on hero-body's 0.540 m chain (targeted fix 4; was 0.489 m) the fringe fraction is re-derived so it stays 2.5 cm
       // M1.2c (TURN: "the tail root a gathered cloth volume"): the root roll is fuller (roll 0.6 -> 0.9, gathered to 0.36 of the width)
-      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.540 * S), side: [0.55, 0.65, 0.5], curl: 0.2, twist: Math.PI / 2, gather: 0.36, gatherTo: 0.36, roll: 0.9, fold: 0.0095, along: 17, across: 6, rootBack: 0.014,
-      open: [0.26, 0.46], pleats: 0.00275 / S,
-      rootRows: 4, smoothSkin: 4, hem: 0.004, ripple: 0.005 },
+      // M1.2c fix round 1 (judge: "the root leaves the knot as a flat, wide strip, not pinched or gathered"; "hard polygon elbows in
+      // F12 and F13"): the root is pinched to a quarter of the width and rolled fuller (roll 0.9 -> 1.3, pleats 2.75 -> 3.6 mm), so it
+      // leaves the knot as a twisted rope of cloth that opens over u 0.22-0.50; and the strip has 34 rows, not 17 (10 on the root), so
+      // the free strip's 1.3 rad-per-link bends in the trade wind are traced by rows 1.4 cm apart instead of folding at 3-5 cm facets
+      width: (u) => (0.10 - 0.03 * smooth(0.5, 0.97, u)) / S, fray: 0.025 / (0.540 * S), side: [0.55, 0.65, 0.5], curl: 0.2, twist: Math.PI / 2, gather: 0.25, gatherTo: 0.36, roll: 1.3, fold: 0.0095, along: 34, across: 6, rootBack: 0.014,
+      open: [0.22, 0.50], pleats: 0.0036 / S,
+      rootRows: 10, smoothSkin: 4, hem: 0.004, ripple: 0.005,
+      // a band of the same cloth bound round the gathered root 6.5 cm out of the knot: the strip is pinched a third narrower under it
+      // and puffs out after it (the knot's creased cloth, not a cord)
+      cinch: { at: 0.12, w: 0.016 / S, pad: 0.0012 / S, tube: 0.0032 / S } },
     // the other end of the topknot's cloth rides the knot-tail chain (A33-hair-bounce reads the chain): no coil tuft
     // (M1.2c: its selvedges are a 3 mm rolled hem, not two faces meeting at a paper edge)
     tail2: { points: CHAINS.hairKnotTail.points, joints: chainIdx.hairKnotTail.slice(0, -1), width: (u) => 0.040 * (1 - 0.25 * u), side: [1, 0, 0.2], twist: 0.9, curl: 0.14, gather: 0.5, rootBack: 0.012, thick: 0.0045, hem: 0.003, smoothSkin: true },
@@ -590,7 +605,10 @@ export async function build({ out = ROOT } = {}) {
     lid: { w: 0.0026, shade: 0.0036, ink: '#0F0907' },
     // M1.2b (the spike's note): brows at 60 % of the strokes and a lighter soft mass; lips from orange to a deep rose-brown; the upper
     // lid in the skin's own darker brown, not tan; a sclera a touch warmer and lighter, off-white rather than grey
-    brow: { strokes: 190, mass: 0.42, width: 0.00026 },
+    // M1.2b fix round 1 (the judge: "the brows are now thinner but also lighter than the dense, dark brows in TURN and KEY"): the thin,
+    // straight band stays (0.7 of the stock height, its arch halved) and is filled densely again: 320 strokes in it (190 before, 260 in
+    // the full-height band before the spike), a heavier soft mass under them (0.42 -> 0.66) and hairs 0.30 mm wide
+    brow: { strokes: 320, mass: 0.66, width: 0.0003 },
     lips: { gain: [0.8, 0.6, 0.63], sat: 0.6 },
     eyeSkin: [94, 62, 50],
     sclera: [182, 164, 146],
@@ -713,11 +731,13 @@ export async function build({ out = ROOT } = {}) {
         hideBits: { 'pan-1': 1 }, hiddenByPan1: hidden,
       },
       r5Face: faceRec,
+      // M1.2c: the wrap's parts in mesh order (triangles each) and the rolled-hem pass, for lib/human/wrap-edges.mjs
+      r5Wrap: { parts: wrapped.parts, bead: wrapped.beadStats },
       r5Paint: { ...skinImg.stats, layout: { shrink: +layout.shrink.toFixed(3), eyePatch: eyeR }, culled: { underWrap: culled, eyeBacks: eyesCulled, eyeUnderLids, handsCut, earTucked, earMoved }, collarLiner: liner, thinness, zones },
     },
   });
   void wrapTex;
-  return { ...stats, face: { deltas: disp, iou: faceRec.iou, graded6mm: faceRec.graded6mm }, targetHeight: +(BODY_HEIGHT * totalH / rawBodyH).toFixed(5), hidden, clips, refined, refinedEar, totalTop: +allBox.max[1].toFixed(5), parts: wrapped.parts, cardTris: cards.idx.length / 3, culled, eyesCulled, handsCut };
+  return { ...stats, face: { deltas: disp, iou: faceRec.iou, graded6mm: faceRec.graded6mm }, targetHeight: +(BODY_HEIGHT * totalH / rawBodyH).toFixed(5), hidden, clips, refined, refinedEar, totalTop: +allBox.max[1].toFixed(5), parts: wrapped.parts, bead: wrapped.beadStats, cardTris: cards.idx.length / 3, culled, eyesCulled, handsCut };
 }
 
 /** The native UAL2 clip pack (see UAL2_CLIPS). */
