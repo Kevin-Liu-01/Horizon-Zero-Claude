@@ -148,7 +148,7 @@
       "camera": { "mode": "eye", "eye": 1.7, "pitch": 4, "fov": 55 }, "state": { "pose": "idle", "hud": false, "crowd": true },
       "ref": { "written": "From the ramp looking up the main street at 18:40: at least 9 buildings in three lime-wash tones, 4 violet balconies, 2 bougainvillea, 2 salt cones, 5 people at work, the guild bell; warm sun on the left faces and violet-rose shadow on the right; no two adjacent buildings with the same roofline height." },
       "requires": ["saltrow-buildings", "saltrow-ramp"],
-      "note": "The ramp has no authored coordinate yet: the lens stands seaward of Saltrow (bible E -290, N -252) looking NE up the town." },
+      "note": "The lens stands at the foot of the main street (bible E -290, N -252: 3.4 m below the street's origin, 1.25 m left of its axis; src/world/settlements/saltrow-layout.js STREET), looking up it on bearing 40. It is not on the ramp: the boat ramp stands on the shore 105 m away on bearing 235 and cannot see up the street. 'From the ramp' and the sun-side clause wait on the orchestrator's ruling (settlements fix round 1): at 18:40 the sun is on bearing 272.7 at 12.2 deg, so looking up the street the right-hand row (its faces on bearing 306, 33 deg off the sun) is the lit one and the left-hand row (on 126) is in shade; a lens in the guild square looking down the street on 216 puts the lit row on the left." },
 
     { "id": "F23-plumb", "subject": "the Plumb with Brea at 6 m", "in": "M1a",
       "hour": 16.5, "weather": "trade", "at": "place:openGround", "bearing": 180,
