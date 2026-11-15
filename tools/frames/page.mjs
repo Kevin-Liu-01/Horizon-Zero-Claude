@@ -212,7 +212,8 @@ export async function stageFrame(f, o = {}) {
         q.setPosition?.(ax, az);
         // spawn() places a person in the bind pose (T-pose); stage() starts their script. A filmed person
         // stands in an idle clip from the moment it lands, and the settle below lets the mixer run it.
-        const idle = q.spec?.clips?.idle || q.spec?.clips?.stage || ['Idle_Loop'];
+        // an actor's own `clip` (people, M1.5c fix round: F21's faces stand upright, not bowed over work) before the person's idle
+        const idle = a.clip ? [a.clip] : q.spec?.clips?.idle || q.spec?.clips?.stage || ['Idle_Loop'];
         try { q.play?.(idle[0], { fade: 0, offset: 0.25 }); } catch (e) { standIns.push(`person ${a.id}: idle clip did not start (${e.message})`); }
         actors.push({ a, q, x: ax, z: az });
         undo.push(() => { try { C.people.despawn(q); } catch (e) { /* */ } });

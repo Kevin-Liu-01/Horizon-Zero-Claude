@@ -138,9 +138,9 @@
       "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,
       "camera": { "mode": "pov", "eye": 1.6, "pitch": 0, "fov": 30 },
       "state": { "pose": "idle", "hud": false, "actors": [
-        { "type": "person", "id": "salt-raker", "dist": 1.9, "side": 13, "face": "brea" },
-        { "type": "person", "id": "boat-caulker", "dist": 1.9, "side": 0, "face": "brea" },
-        { "type": "person", "id": "pit-farmer", "dist": 1.9, "side": -13, "face": "brea" } ] },
+        { "type": "person", "id": "salt-porter-2", "dist": 2.2, "side": 16, "face": "brea", "clip": "Idle_Loop" },
+        { "type": "person", "id": "lantern-keeper", "dist": 2.2, "side": 0, "face": "brea", "clip": "Idle_Loop" },
+        { "type": "person", "id": "boat-caulker-2", "dist": 2.2, "side": -16, "face": "brea", "clip": "Idle_Loop" } ] },
       "ref": { "crops": ["people-faces"] } },
 
     { "id": "F22", "subject": "a Saltrow street at golden hour", "in": "M1b",

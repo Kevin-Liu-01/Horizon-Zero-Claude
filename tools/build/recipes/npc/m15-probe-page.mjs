@@ -222,6 +222,7 @@ async function routineLog() {
   const R = PS?.routines;
   if (!R) return { error: 'no routines' };
   const out = {};
+  const questSpawned = [];
   const { WORK_CLIPS, bareClip } = await import('/src/world/npc/people/routines.js');
   try {
     // the log's clock from the start: a person adopted under the film's own hour (18:40, past the lamp's 18:30) would
@@ -238,12 +239,22 @@ async function routineLog() {
     }
     out.people = R.list.map((e) => e.id);
     if (!R.list.length) return { error: 'nobody adopted', crew: (C.settlements?.town?.crew || []).map((c) => c.id) };
-    for (const e of R.list) PS.tierAt(e.person, 1);
+    // (M1.5c/d fix round, judge item 9) Mise and Ansel are in the log too: the quest's (runtime.js _stagePeople stands them at
+    // their anchors and the people system's idle beats run them); spawned here the same way if the film has not
+    const SG = C.systemsGame, quest = [];
+    for (const [who, arche, yaw, seed] of [['mise', 'lantern-keeper', 0.8, 68], ['ansel', 'guild-matron', 2.2, 64]]) {
+      let q = SG?.people?.[who];
+      if (!q && SG?.A?.[who] && PS.spawn) { q = await PS.spawn(arche, { x: SG.A[who].x, z: SG.A[who].z, yaw, seed }); questSpawned.push(q); }
+      if (q) { q.group.visible = true; q._beatT = 0; q._beatEnd = 0; quest.push({ id: who, e: null, person: q }); }
+    }
+    out.quest = quest.map((t) => ({ id: t.id, spawnedByProbe: questSpawned.includes(t.person) }));
+    const tracked = [...R.list.map((e) => ({ id: e.id, e, person: e.person })), ...quest];
+    for (const t of tracked) PS.tierAt(t.person, 1);
     const Cl = C.collision;
     const probeV = { x: 0, y: 0, z: 0 };
     const V = (await import('/tools/look/three.mjs')).Vector3;
     const pv = new V(), up = new V(), lo = new V();
-    const logs = R.list.map((e) => ({ id: e.id, acts: [], lastAct: null, changes: 0, still: 0, maxStill: 0, stillClip: null, anchor: null, noClip: 0, tpose: 0, inside: 0, wet: 0, walkRun: 0, maxWalk: 0, samples: 0, walked: 0, last: null, night: 0 }));
+    const logs = tracked.map((t) => ({ id: t.id, acts: [], lastAct: null, changes: 0, still: 0, maxStill: 0, stillClip: null, anchor: null, noClip: 0, tpose: 0, inside: 0, wet: 0, walkRun: 0, maxWalk: 0, samples: 0, walked: 0, last: null, night: 0 }));
     const sea = C.water?.seaLevel ?? C.terrain?.seaLevel ?? null;
     const dt = 1 / 30;
     let simT = 0, nextSample = 0, steps = 0;
@@ -254,8 +265,9 @@ async function routineLog() {
       steps++;
       if (simT >= nextSample) {
         nextSample += 0.25;
-        R.list.forEach((e, k) => {
-          const L = logs[k], p = e.person, g = p.group.position;
+        tracked.forEach((T, k) => {
+          const L = logs[k], p = T.person, g = p.group.position;
+          const e = T.e || { id: T.id, night: false, phase: p.walking ? 'go' : 'do', act: p.walking ? 'walk' : (bareClip(p.current?.getClip().name) || 'none') };
           L.samples++;
           if (e.night) L.night++;
           if (e.id === 'lantern-keeper-2' && (L.samples % 20 === 1)) (L.trace ||= []).push([+h.toFixed(2), +g.x.toFixed(1), +g.z.toFixed(1), e.act, e.phase, p.walkTarget ? [+p.walkTarget.x.toFixed(1), +p.walkTarget.z.toFixed(1)] : null, +(p.speed || 0).toFixed(2)]);
@@ -297,14 +309,72 @@ async function routineLog() {
     }
     out.hours = [18.0, +h.toFixed(3)];
     out.simSeconds = +simT.toFixed(1);
-    out.log = logs.map((L) => ({ id: L.id, changes: L.changes, acts: L.acts, maxStationaryOutsideWorkS: L.maxStill, stillClip: L.stillClip, stillAt: L.stillAt || null, longestWalkS: L.maxWalk, insideAt: L.insideAt || null, noClipSamples: L.noClip, bindPoseSamples: L.tpose, putOnMark: R.list.find((e) => e.id === L.id)?.stuck || 0, trace: L.trace || null,
+    out.log = logs.map((L) => ({ id: L.id, changes: L.changes, acts: L.acts, maxStationaryOutsideWorkS: L.maxStill, stillClip: L.stillClip, stillAt: L.stillAt || null, longestWalkS: L.maxWalk, insideAt: L.insideAt || null, noClipSamples: L.noClip, bindPoseSamples: L.tpose, putOnMark: R.list.find((e) => e.id === L.id)?.stuck || 0, quest: quest.some((t) => t.id === L.id), trace: L.trace || null,
       insideColliderSamples: L.inside, belowSeaSamples: L.wet, samples: L.samples, walkedM: +L.walked.toFixed(1), nightSamples: L.night }));
     void probeV;
+    out.lookout = await lookoutTrials(C, R, env, () => h, (v) => { h = v; });
   } catch (e) {
     out.error = String(e?.stack || e).slice(0, 600);
   } finally {
     R.hourOf = null;
     for (const e of R.list) PS.tierAt(e.person, null);
+    for (const q of questSpawned) { try { PS.despawn(q); } catch (e) { /* */ } }
   }
   return out;
+}
+
+/**
+ * M1.5d: the lookout's warning, live (src/world/npc/people/lookout.js). A real Instrument (the first kind this build spawns of
+ * plumb, peg, gauge) is put 130 m from the lamp keeper, held there until the lookout is armed, then walked straight at her at
+ * 1-6 m/s; each step the people system runs at 1/30 s and the Instrument's position is written before it. The delay is from
+ * the first step the Instrument stood at 80 m or nearer to the step the 'npc-warning' event came. Ten trials, by day (12:00)
+ * and at night (19:00) in turn. Bar: within 3 s.
+ */
+async function lookoutTrials(C, R, env, getH, setH) {
+  const PS = C.people, M = C.machines, LK = R.lookout;
+  if (!LK) return { error: 'no lookout' };
+  const keeper = () => R.list.find((e) => e.id === 'lantern-keeper-2');
+  if (!keeper()) return { error: 'no keeper adopted' };
+  const kinds = ['plumb', 'peg', 'gauge'].filter((k) => (M?.canSpawn ? M.canSpawn(k) : !!M));
+  if (!kinds.length) return { error: 'no Instrument kind spawns in this build' };
+  const kp = keeper().person.group.position;
+  const m = M.spawn(kinds[0], kp.x + 130, kp.z, { route: [{ x: kp.x + 130, z: kp.z }], heading: 0 });
+  if (!m) return { error: `${kinds[0]} did not spawn` };
+  const evs = [];
+  const ev = C.events, emit0 = ev?.emit;
+  if (ev) ev.emit = function (name, o) { if (name === 'npc-warning' || name === 'npc-all-clear') evs.push({ name, t: simT, ...o }); return emit0?.apply(this, arguments); };
+  let simT = 0;
+  const dt = 1 / 30;
+  const put = (x, z) => { m.position.x = x; m.position.z = z; if (m.root) { m.root.position.x = x; m.root.position.z = z; } };
+  const step = () => { setH(getH() + env.clockRate(getH()) * dt); simT += dt; PS.update(dt, simT); };
+  const rows = [];
+  try {
+    for (let k = 0; k < 10; k++) {
+      setH(k % 2 ? 19.0 : 12.0);
+      // away, until armed (the all-clear needs 10 s past 100 m)
+      for (let i = 0; i < 30 * 12 || (!LK.armed && i < 30 * 40); i++) { const p = keeper().person.group.position, b = (k * 37 + 11) * D2R; put(p.x + Math.sin(b) * 130, p.z + Math.cos(b) * 130); step(); if (i % 120 === 0) await sleep(0); }
+      const others = () => { const p = keeper().person.group.position; let b = Infinity; for (const o of M.list) if (o !== m && o.alive !== false && !o._disposed && o.position) b = Math.min(b, Math.hypot(o.position.x - p.x, o.position.z - p.z)); return +b.toFixed(1); };
+      if (!LK.armed) { rows.push({ k, error: 'not armed', nearestOtherM: others() }); continue; }
+      const speed = 1 + k * 0.55;
+      let crossed = null, fired = null, dNow = null;
+      const n0 = evs.filter((e) => e.name === 'npc-warning').length;
+      for (let i = 0; i < 30 * 60 && fired === null; i++) {
+        const p = keeper().person.group.position, dx = p.x - m.position.x, dz = p.z - m.position.z, d = Math.hypot(dx, dz);
+        if (d > 5) put(m.position.x + dx / d * speed * dt, m.position.z + dz / d * speed * dt);
+        const p2 = keeper().person.group.position;
+        dNow = Math.hypot(m.position.x - p2.x, m.position.z - p2.z);
+        if (crossed === null && dNow <= 80) crossed = simT;
+        step();
+        if (evs.filter((e) => e.name === 'npc-warning').length > n0) fired = simT;
+        if (i % 120 === 0) await sleep(0);
+      }
+      const w = evs.filter((e) => e.name === 'npc-warning')[n0];
+      rows.push({ k, hour: k % 2 ? 19 : 12, speed: +speed.toFixed(2), crossedS: crossed, delayS: crossed !== null && fired !== null ? +(fired - crossed).toFixed(3) : null, atM: w?.d ?? null, line: w?.line?.join(' ') ?? null, nearestOtherM: others(), keeperAct: keeper().act, keeperClip: keeper().person.current?.getClip().name || null });
+    }
+  } finally {
+    if (ev) ev.emit = emit0;
+    try { const L = M.list, i = L.indexOf(m); if (i >= 0) L.splice(i, 1); m.dispose?.(); m.root?.parent?.remove(m.root); } catch (e) { /* */ }
+  }
+  const d = rows.map((r) => r.delayS).filter((x) => x != null);
+  return { kind: kinds[0], trials: rows.length, fired: d.length, maxDelayS: d.length ? Math.max(...d) : null, bar: 3, rows, allClears: evs.filter((e) => e.name === 'npc-all-clear').length };
 }

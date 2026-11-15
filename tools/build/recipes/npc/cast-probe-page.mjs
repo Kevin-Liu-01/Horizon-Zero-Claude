@@ -105,30 +105,49 @@ export async function probe(frame) {
     } else lensAt = lensNear;
     putLens();
     out.lens = { at: [lensAt.x, cam.position.y, lensAt.z].map(r3), look: [centre.x, centre.z].map(r3), brea: [B.x, B.y, B.z].map(r3), row: figures.map((f) => ({ id: f.id, at: [f.obj.getWorldPosition(new THREE.Vector3()).x, f.obj.getWorldPosition(new THREE.Vector3()).y, f.obj.getWorldPosition(new THREE.Vector3()).z].map(r3) })) };
-    E.render(0);
-    out.crowd = R.domElement.toDataURL('image/jpeg', 0.9);
-    const all = grab();
-    figures.forEach((f) => { f.obj.visible = false; });
-    E.render(0);
-    const bg = grab();
-    const rows = [];
-    for (const f of figures) {
-      f.obj.visible = true;
+    // (M1.5c fix round, judge item 8) the crowd measured twice: in the world as it stands, and with the town hidden (Saltrow's
+    // houses and cones hid lantern-keeper-2 and most of Ansel at 600521b), so every figure of the ten is whole in the frame; each
+    // row also reports its area in the world against its area in the open (the share of the figure the world hides)
+    const measure = (key) => {
       E.render(0);
-      const px = grab();
-      let area = 0, violet = 0, violetInCrowd = 0;
-      for (let i = 0; i < px.length; i += 4) {
-        if (Math.max(Math.abs(px[i] - bg[i]), Math.abs(px[i + 1] - bg[i + 1]), Math.abs(px[i + 2] - bg[i + 2])) <= 12) continue;
-        area++;
-        if (VIOLET(px[i], px[i + 1], px[i + 2])) { violet++; if (VIOLET(all[i], all[i + 1], all[i + 2])) violetInCrowd++; }
+      const crowd = R.domElement.toDataURL('image/jpeg', 0.9);
+      const all = grab();
+      figures.forEach((f) => { f.obj.visible = false; });
+      E.render(0);
+      const bg = grab();
+      const rows = [];
+      for (const f of figures) {
+        f.obj.visible = true;
+        E.render(0);
+        const px = grab();
+        let area = 0, violet = 0, violetInCrowd = 0;
+        for (let i = 0; i < px.length; i += 4) {
+          if (Math.max(Math.abs(px[i] - bg[i]), Math.abs(px[i + 1] - bg[i + 1]), Math.abs(px[i + 2] - bg[i + 2])) <= 12) continue;
+          area++;
+          if (VIOLET(px[i], px[i + 1], px[i + 2])) { violet++; if (VIOLET(all[i], all[i + 1], all[i + 2])) violetInCrowd++; }
+        }
+        rows.push({ id: f.id, areaPx: area, violetPx: violet, violetInCrowdPx: violetInCrowd, violetShare: r3(violet / Math.max(1, area)) });
+        f.obj.visible = false;
       }
-      rows.push({ id: f.id, areaPx: area, violetPx: violet, violetInCrowdPx: violetInCrowd, violetShare: r3(violet / Math.max(1, area)) });
-      f.obj.visible = false;
-    }
-    figures.forEach((f, i) => { f.obj.visible = vis0[i]; });
-    const brea = rows.find((r) => r.id === 'brea');
-    const maxOther = rows.filter((r) => r.id !== 'brea').reduce((m, r) => (r.violetPx > m.violetPx ? r : m), { violetPx: 0, id: null });
-    out.violet = { frame: { W, H, lensM: 11, fov: 45 }, rows, brea: brea.violetPx, maxOther: { id: maxOther.id, px: maxOther.violetPx }, ratio: r3(brea.violetPx / Math.max(1, maxOther.violetPx)), bar: 5 };
+      figures.forEach((f, i) => { f.obj.visible = vis0[i]; });
+      const brea = rows.find((r) => r.id === 'brea');
+      const maxOther = rows.filter((r) => r.id !== 'brea').reduce((m, r) => (r.violetPx > m.violetPx ? r : m), { violetPx: 0, id: null });
+      return { crowd, v: { key, frame: { W, H, lensM: 11, fov: 45 }, rows, brea: brea.violetPx, maxOther: { id: maxOther.id, px: maxOther.violetPx }, ratio: r3(brea.violetPx / Math.max(1, maxOther.violetPx)), bar: 5 } };
+    };
+    const inWorld = measure('world');
+    out.crowd = inWorld.crowd;
+    out.violet = inWorld.v;
+    const town = [];
+    C.scene?.traverse?.((o) => { if (o.name === 'settlement-host' || o.name === 'saltrow') town.push(o); });
+    const town0 = town.map((o) => o.visible);
+    town.forEach((o) => { o.visible = false; });
+    try {
+      const open = measure('open');
+      out.crowdOpen = open.crowd;
+      out.violetOpen = open.v;
+      out.violetOpen.townHidden = town.map((o) => o.name);
+      for (const r of out.violet.rows) { const o = open.v.rows.find((x) => x.id === r.id); r.openAreaPx = o?.areaPx ?? null; r.seenShare = o?.areaPx ? r3(r.areaPx / o.areaPx) : null; }
+    } finally { town.forEach((o, k) => { o.visible = town0[k]; }); }
 
     // ---- per person: tier, clip, draws, triangles
     out.people = figures.filter((f) => f.person && PS.cast.includes(f.id)).map((f) => {
