@@ -680,7 +680,9 @@ const A45C_ISLAND = `(async () => {
       await new Promise((r) => setTimeout(r, 2200));
     }
     const prev = {};
-    let prevT = performance.now(), samples = 0, plantedPairs = 0, kFrame = 0, kMps = 0, moved = 0;
+    const startState = { state: m.state ?? null, speed: m._speed != null ? +(+m._speed).toFixed(2) : null, at: [+m.position.x.toFixed(1), +m.position.z.toFixed(1)],
+      bootPeopleWait: __CTX__.engine?.bootPeopleWait ?? null };
+    let prevT = performance.now(), samples = 0, plantedPairs = 0, kFrame = 0, kMps = 0, moved = 0, slips = 0, kAt = null;
     let sx = m.position.x, sz = m.position.z;
     const t0 = performance.now();
     while (performance.now() - t0 < 5000) {
@@ -688,22 +690,39 @@ const A45C_ISLAND = `(async () => {
       const now = performance.now(), dt = Math.max(1e-3, (now - prevT) / 1000);
       prevT = now; samples++;
       moved += Math.hypot(m.position.x - sx, m.position.z - sz); sx = m.position.x; sz = m.position.z;
-      for (const f of m.debugFeet()) {
+      const feet = m.debugFeet();
+      for (let fi = 0; fi < feet.length; fi++) {
+        const f = feet[fi];
         const on = f.planted && Math.abs(f.world.y - T.getHeight(f.world.x, f.world.z)) <= 0.25;
         const q = prev[f.name];
         if (on && q) {
           const step = Math.hypot(f.world.x - q.x, f.world.y - q.y, f.world.z - q.z);
           plantedPairs++;
+          if (step > 0.02) slips++;
           if (step > kFrame) kFrame = step;
-          if (step / dt > kMps) kMps = step / dt;
+          if (step / dt > kMps) {
+            kMps = step / dt;
+            // (regfix 4, diagnosis only; not graded) what the worst planted pair stood in: the rendered frame's
+            // wall time and sim steps, the machine's state and speed, the leg's reach use and stance time, how far
+            // the solved foot sat from its plant, and whether the plant itself moved (a re-plant inside one stance)
+            const L = m.gait?.legs?.[fi], E = __CTX__.engine;
+            kAt = { foot: f.name, stepM: +step.toFixed(4), wallDtMs: +(dt * 1000).toFixed(2), simSteps: E?.steps ?? null,
+              frameMs: E?.lastFrame?.ms != null ? +(+E.lastFrame.ms).toFixed(2) : null, state: m.state ?? null,
+              speed: m._speed != null ? +(+m._speed).toFixed(2) : null, reachK: L ? +(+L.reachK).toFixed(3) : null,
+              stanceT: L ? +(+L.stanceT).toFixed(3) : null, plantId: f.plantId ?? null, prevPlantId: q.plantId ?? null,
+              offPlantM: L ? +Math.hypot(f.world.x - L.plant.x, f.world.z - L.plant.z).toFixed(4) : null,
+              plantMovedM: L && q.px != null ? +Math.hypot(L.plant.x - q.px, L.plant.z - q.pz).toFixed(4) : null };
+          }
           if (step > worstFrameM) { worstFrameM = step; worstAt = kind + ':' + f.name; }
           if (step / dt > worstMps) worstMps = step / dt;
         }
-        prev[f.name] = on ? { x: f.world.x, y: f.world.y, z: f.world.z } : null;
+        const L = m.gait?.legs?.[fi];
+        prev[f.name] = on ? { x: f.world.x, y: f.world.y, z: f.world.z, plantId: f.plantId, px: L ? L.plant.x : null, pz: L ? L.plant.z : null } : null;
       }
     }
     if (moved < 0.4 || plantedPairs < 20) { out[kind] = { skipped: 'idle', movedM: +moved.toFixed(2), plantedPairs }; continue; }
-    out[kind] = { worstPlantedFrameM: +kFrame.toFixed(4), worstPlantedMps: +kMps.toFixed(3), plantedPairs, frames: samples, movedM: +moved.toFixed(2) };
+    out[kind] = { worstPlantedFrameM: +kFrame.toFixed(4), worstPlantedMps: +kMps.toFixed(3), plantedPairs, frames: samples, movedM: +moved.toFixed(2),
+      slipsOver2cm: slips, worstPair: kAt, startState: startState };
     measured++;
   }
   const need = Math.min(2, species.size);

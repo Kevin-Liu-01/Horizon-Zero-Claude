@@ -287,6 +287,26 @@ export async function stageFrame(f, o = {}) {
   } else if (f.camera?.lookAt === 'off') standIns.push('camera.lookAt off: the animator has no look layer to hold');
 
   /* ---- 6. settle: streaming, idle, actors land ---- */
+  // (M1a regfix 4, F21) a person is turned to face its mark BEFORE the settle, not after it. spawn() stands them at
+  // yaw 0 and the turn below came after the 2.6 s settle, a few frames before the freeze: their dyn_ chains (a head
+  // wrap's tail, hair, a cloak) are solved in world space, so the tail was left where it hung before the turn and the
+  // frozen frame caught it mid-whip (F21 at 4175212: the raker's wrap tail stood straight up to his rake head; at
+  // 6511d94 and 662fb68 filmed with the same filmer it was a loop; at 6511d94's review it hung down). The mark is
+  // known here for every lens but the chase (Brea's own place, or the lens, which `aim` puts up from her mark).
+  const facePoint = (r) => {
+    if (r.a.face !== 'camera') return { x: bx, z: bz };
+    if (mode === 'chase' || mode === 'screen' || lateLens) return null;
+    aim(); return { x: lens.pos.x, z: lens.pos.z };
+  };
+  for (const r of actors) {
+    if (!r.q) continue;
+    const t = facePoint(r);
+    if (!t) continue;
+    const want = Math.atan2(t.x - r.x, t.z - r.z);
+    r.q.yaw = want; if (r.q.group) { r.q.group.rotation.y = want; r.q.group.updateMatrixWorld?.(true); }
+    // the chains start from the turned pose's rest, so the settle hangs them under gravity from there
+    try { for (const c of r.q.chains?.chains || []) { c.links.forEach((l, i) => l.quaternion.copy(c.bindQ[i])); c.seeded = false; } } catch (e) { /* */ }
+  }
   await sleep(o.settleMs ?? 2600);
   for (const r of actors) {
     if (r.m) {   // an Instrument stands still where it was put, facing Brea
@@ -301,10 +321,17 @@ export async function stageFrame(f, o = {}) {
     } else if (r.q) {
       const tx = r.a.face === 'camera' ? lens.pos.x : bx, tz = r.a.face === 'camera' ? lens.pos.z : bz;
       const want = Math.atan2(tx - r.x, tz - r.z);
+      let turn = Math.abs(want - (r.q.yaw ?? 0)) % (2 * Math.PI); if (turn > Math.PI) turn = 2 * Math.PI - turn;
       r.q.stopWalk?.(); r.q.yaw = want; if (r.q.group) r.q.group.rotation.y = want;
+      // a turn left this late (the chase lens: its mark is known only now) re-seats the chains and lets them hang
+      if (turn > 0.05) {
+        try { for (const c of r.q.chains?.chains || []) { c.links.forEach((l, i) => l.quaternion.copy(c.bindQ[i])); c.seeded = false; } } catch (e) { /* */ }
+        r.lateTurn = true;
+      }
       if (!r.q.current) standIns.push(`person ${r.a.id}: no clip playing when filmed (bind pose)`);
     }
   }
+  if (actors.some((r) => r.lateTurn)) await sleep(1500);
 
   /* ---- 7a. SIMULATION TIME (M1a regfix 3; the orchestrator's ruling after regressions run 2) ----
    * F15 (the run) and F19 (the lance heavy's contact) were timed by the wall clock: a 1.6 s sleep with the keys held,
@@ -456,8 +483,11 @@ export async function stageFrame(f, o = {}) {
   const press = (code) => { window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code })); window.dispatchEvent(new KeyboardEvent('keyup', { code, key: code })); };
   const pose = st.pose || 'idle';
   undo.push(() => { C.input.keys.clear(); C.input.mouse.buttons = 0; if (p.crouching) p.setCrouch?.(false); });
-  const sim = (pose === 'run' || pose === 'lanceHeavy') && o.wallClock !== true ? simClock() : null;
-  if ((pose === 'run' || pose === 'lanceHeavy') && !sim && o.wallClock !== true) standIns.push(`pose ${pose}: the game loop cannot be driven from the page (no __GAME__._frame or engine.clock): staged on the wall clock, it will not repeat`);
+  // (regfix 4: F16, F17 and F18 too, the orchestrator's ruling after regressions run 3: F18's 1.3 s wall-clock strafe
+  // caught a different point of the crouched stride in every film)
+  const SIM_POSES = ['run', 'lanceHeavy', 'draw', 'crouchAim'];
+  const sim = SIM_POSES.includes(pose) && o.wallClock !== true ? simClock() : null;
+  if (SIM_POSES.includes(pose) && !sim && o.wallClock !== true) standIns.push(`pose ${pose}: the game loop cannot be driven from the page (no __GAME__._frame or engine.clock): staged on the wall clock, it will not repeat`);
   if (pose === 'run') {
     if (sim) {
       // the run on simulation time: 1.5 s of idle from a re-seated rest, then W + Shift for at least 1.4 s of
@@ -467,7 +497,7 @@ export async function stageFrame(f, o = {}) {
       sim.idle();
       C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft');
       sim.step(84);
-      const want = Number.isFinite(st.clipPhase) ? st.clipPhase : 0;
+      const want = Number.isFinite(o.clipPhase) ? o.clipPhase : Number.isFinite(st.clipPhase) ? st.clipPhase : 0;
       let hit = !loco;
       for (let i = 0; i < 90 && !hit; i++) {
         const u0 = loco.phase; sim.step(1); const u1 = loco.phase;
@@ -479,6 +509,35 @@ export async function stageFrame(f, o = {}) {
       if (!loco) standIns.push('pose run: no locomotion blend on the animator; frozen 1.4 s into the run, phase unknown');
       else if (!hit) standIns.push(`pose run: the gait phase did not reach ${want} within 1.5 s more; frozen at ${sim.out.clipPhase}`);
     } else { C.input.keys.add('KeyW'); C.input.keys.add('ShiftLeft'); await sleep(1600); }
+  } else if ((pose === 'draw' || pose === 'crouchAim') && sim) {
+    // (regfix 4) the draw and the crouched aim-strafe on simulation time: the wall clock's own beats as whole 1/60 s
+    // steps (bow 0.35 s, crouch 0.3 s, aim 0.45 s, draw held 1.3 s, strafing right in the crouch), from 1.5 s of idle
+    // on a re-seated rest. The strafe then freezes on the first step at or past the master gait phase `clipPhase`
+    // (frameset state, or the filmer's `o.clipPhase`; default 0.5), within at most 1.5 s more
+    sim.idle();
+    if (C.quickslots?.select) C.quickslots.select(1); else press('Digit1');
+    sim.step(21);
+    if (pose === 'crouchAim') { p.setCrouch?.(true); sim.step(18); }
+    C.input.mouse.buttons |= 4; sim.step(27);
+    C.input.mouse.buttons |= 1;
+    if (pose === 'crouchAim') C.input.keys.add('KeyD');
+    sim.step(78);
+    if (pose === 'crouchAim') {
+      const loco = p.animator?.loco;
+      const want = Number.isFinite(o.clipPhase) ? o.clipPhase : Number.isFinite(st.clipPhase) ? st.clipPhase : 0.5;
+      let hit = !loco;
+      for (let i = 0; i < 90 && !hit; i++) {
+        const u0 = loco.phase; sim.step(1); const u1 = loco.phase;
+        const span = ((u1 - u0) % 1 + 1) % 1, past = ((u1 - want) % 1 + 1) % 1;
+        if (span > 0 && span < 0.5 && past <= span) hit = true;
+      }
+      sim.out.clipPhase = loco ? Math.round(loco.phase * 1e4) / 1e4 : null; sim.out.clipPhaseWanted = want;
+      if (!loco) standIns.push('pose crouchAim: no locomotion blend on the animator; frozen 1.3 s into the strafe, phase unknown');
+      else if (!hit) standIns.push(`pose crouchAim: the gait phase did not reach ${want} within 1.5 s more; frozen at ${sim.out.clipPhase}`);
+    }
+    sim.out.aiming = !!p.aiming;
+    sim.freeze();
+    if (!p.aiming) standIns.push(`pose ${pose}: the aim did not engage`);
   } else if (pose === 'draw' || pose === 'crouchAim') {
     if (C.quickslots?.select) C.quickslots.select(1); else press('Digit1');
     await sleep(350);

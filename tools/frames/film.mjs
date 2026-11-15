@@ -15,7 +15,9 @@
  *                         F19, ...), as <id>.png, <id>-r2.png, ...; each staging also takes a second shot of the same
  *                         frozen frame (its noise floor), and run.json `repeats` gives, per frame, every repeat's pixel
  *                         difference from the first over the whole frame and over her screen box (heroBox)
- *            --wall-clock stage the run and the heavy on the wall clock, as before regfix 3 (page.mjs 7a)
+ *            --wall-clock stage the run, the heavy, the draws and the crouched aim on the wall clock, as before
+ *                         regfix 3 (page.mjs 7a)
+ *            --clip-phases a,b,...  repeat k freezes a sim-time stride (run, crouched aim-strafe) at gait phase k
  *
  * The run, in order:
  *   1. the machine guard: memory free >= 50 % (memory_pressure -Q) and pressure level 1, then the
@@ -62,6 +64,9 @@ const PROBE = flag('--probe');
 const HUD_TWIN = args.includes('--hud-twin');
 const REPEAT = Math.max(1, Number(flag('--repeat', 1)) | 0);
 const WALL_CLOCK = args.includes('--wall-clock');
+// --clip-phases a,b,... (regfix 4): repeat k stages a sim-time strafe or run frozen at gait phase k (a probe of where in
+// the stride a frame should freeze; with --repeat N, one phase per repeat)
+const CLIP_PHASES = flag('--clip-phases') ? flag('--clip-phases').split(',').map(Number) : null;
 /** Per-pixel difference of two raw RGB buffers (w x h), over the whole frame or a box [x0, y0, x1, y1]: the share of
  * pixels whose largest channel difference passes TH (8-bit), the largest difference, the mean. */
 const DIFF_TH = 10;
@@ -193,7 +198,8 @@ try {
     const fs0 = Date.now();
     try {
       const rep = f._repeat || 1;
-      const staged = await page.evaluate(stageFrame, f, { settleMs: SETTLE_MS, wallClock: WALL_CLOCK });
+      const clipPhase = CLIP_PHASES ? CLIP_PHASES[(rep - 1) % CLIP_PHASES.length] : undefined;
+      const staged = await page.evaluate(stageFrame, f, { settleMs: SETTLE_MS, wallClock: WALL_CLOCK, ...(clipPhase != null ? { clipPhase } : {}) });
       const shot = await page.screenshot({ type: 'png' });
       const img = sharp(shot).resize(vp.width, vp.height, { fit: 'fill' });
       const file = rep === 1 ? `${f.id}.png` : `${f.id}-r${rep}.png`;
