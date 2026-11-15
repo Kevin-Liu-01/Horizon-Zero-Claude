@@ -41,7 +41,10 @@ const over = (o, c, a) => { o.r += (c[0] - o.r) * a; o.g += (c[1] - o.g) * a; o.
 /** Ansel's cloth, as albedo (the Pan Houses' salt-white linen with one orchil accent; bible §4). */
 export const ANSEL = {
   robe: hex('#B9A682'), shirt: hex('#DCD5C5'), tunic: hex('#9C9384'), trousers: hex('#4B4A4F'), boot: hex('#5B4334'),
-  wraps: hex('#7D7468'), orchil: hex('#6B3F73'), orchilDeep: hex('#4F2A5C'), tick: hex('#B8914A'), strap: hex('#5C3D29'),
+  // (M1.5b fix round 1, the judge: "her violet accent is almost invisible" at 3 m in F20; Q6): the orchil a step brighter and more
+  // saturated (#6B3F73 -> #7E3A92, the band's deep ground #4F2A5C -> #63287A), still darker than Brea's own violet, and the front band
+  // 3.8 cm wide (2.8 before), so it reads as a stripe down her front at 3 m
+  wraps: hex('#7D7468'), orchil: hex('#7E3A92'), orchilDeep: hex('#63287A'), tick: hex('#B8914A'), strap: hex('#5C3D29'),
   iron: hex('#4A4744'),
 };
 /** What the Pan painters read, set to Ansel's cloth while her sheet is drafted and painted (restored after). */
@@ -270,7 +273,7 @@ function robeVest(base, parts) {
     const cy = run.reduce((a, q) => a + q.p[1], 0) / run.length, cx = run.reduce((a, q) => a + q.p[0], 0) / run.length;
     if (cy < 1.19) continue;
     if (Math.abs(cx) > 0.1) bindingOn(band, run, vSkin, vSkin, { rect: base.trim.rect('bind'), w: 0.0085, lift: 0.0014, under: 0.3, edge: 0.001, smooth: 0 });
-    else bindingOn(band, run, vSkin, vSkin, { rect: base.trim.rect('capelet'), tile: 0.085, w: 0.028, lift: 0.0018, under: 0.2, edge: 0.0016, smooth: 1, center: (q) => (q[1] < 1.42 ? [0, q[1], q[2] - 0.1] : [0, 1.57, -0.02]) });
+    else bindingOn(band, run, vSkin, vSkin, { rect: base.trim.rect('capelet'), tile: 0.085, w: 0.038, lift: 0.0018, under: 0.2, edge: 0.0016, smooth: 1, center: (q) => (q[1] < 1.42 ? [0, q[1], q[2] - 0.1] : [0, 1.57, -0.02]) });
   }
   recomputeNormals(band);
   rideOn(band, [vest]);
