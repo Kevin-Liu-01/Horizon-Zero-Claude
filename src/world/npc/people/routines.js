@@ -11,7 +11,7 @@ import { siteById } from '../../island/sites.js';
  *   rakers     rake a pan at the town's edge, carry the basket to the right-hand cone and tip it, now and then a drink
  *   porters    load a basket at a cone, carry it up the street on the shoulder, set it down at a door, back down, a word
  *   caulkers   at the boat ramp: caulk kneeling, rock the hull, look along the seam; one goes up to the street for pitch
- *   keeper     by day a word at the street's foot and a rest; from 18:30 to 06:00 lights the breakwater lamp from the
+ *   keeper     by day at the harbour: a word with the caulkers, a rest on the beach, a call to the boats; from 18:30 to 06:00 lights the breakwater lamp from the
  *              beach at the mole's root, watches the water along the beach and calls, comes back to tend the lamp
  * A step is { act, at, face, clip, dur: [lo, hi] }; `act` is what the log counts (walking between is 'walk').
  * Mise is the quest's (src/game/runtime.js stands her at her anchor) and is not driven here.
@@ -99,10 +99,11 @@ function loops(P) {
       { act: 'rock', at: P.stern, face: P.boat, clip: 'Push_Loop', dur: [8, 12], via: [P.midStreet(13), P.midStreet(0), P.harbourWay[0], P.harbourWay[1]] },
     ] },
     'lantern-keeper-2': {
+      // the keeper keeps to the harbour: a word with the caulkers at the ramp, a rest on the beach, a call to the boats
       day: [
-        { act: 'talk', at: streetPoint(2.0, -1.4), face: streetPoint(4.0, 1.0), clip: 'Idle_Talking_Loop', dur: [14, 22], via: [P.harbourWay[1], P.harbourWay[0], P.midStreet(0)] },
-        { act: 'rest', at: streetPoint(8.0, -1.8), face: P.midStreet(8), clip: 'Idle_Loop', dur: [10, 16], via: [P.midStreet(8)] },
-        { act: 'call', at: streetPoint(16.0, 0.6), face: P.midStreet(30), clip: 'Idle_Rail_Call', dur: [5, 7], via: [P.midStreet(16)] },
+        { act: 'talk', at: off(P.ramp, HARBOUR.ramp.bearing + 90, 4.0), face: P.boat, clip: 'Idle_Talking_Loop', dur: [14, 22] },
+        { act: 'rest', at: off(P.lamp, HARBOUR.breakwater.bearing + 150, 7.0), face: P.sea, clip: 'Idle_Loop', dur: [10, 16] },
+        { act: 'call', at: P.beachCall, face: P.sea, clip: 'Idle_Rail_Call', dur: [5, 7] },
       ],
       night: [
         { act: 'light', at: P.lampStand, face: P.lamp, clip: 'Idle_Lantern_Loop', dur: [14, 20], via: [P.midStreet(0), P.harbourWay[0], P.harbourWay[1]] },

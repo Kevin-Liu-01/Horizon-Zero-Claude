@@ -253,7 +253,8 @@ export function buildFaceRig(P0, index, eye, head) {
       const lat = uu < b0 ? 1 - smooth(0, 6, b0 - uu) : uu > b1 ? 1 - smooth(0, 6, uu - b1) : 1;
       if (lat <= 0) continue;
       let dth;
-      if (th >= tm) dth = -(tu - close) * lat * (1 - smooth(tu + 10 * D2R, tu + 48 * D2R, th));
+      // (the brows stay: nothing more than 11-19 mm over the ball's centre moves; ef3cdaf's shut lid pulled Ansel's brows down)
+      if (th >= tm) dth = -(tu - close) * lat * (1 - smooth(tu + 10 * D2R, tu + 48 * D2R, th)) * (1 - smooth(0.011 * K, 0.019 * K, y));
       else dth = (close - tl) * lat * (1 - smooth(-(tl - 6 * D2R), -(tl - 30 * D2R), -th));
       if (Math.abs(dth) < 1e-5) continue;
       moved++;

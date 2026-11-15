@@ -325,7 +325,8 @@ export class Person {
         want = Math.max(-LOOK_MAX, Math.min(LOOK_MAX, this.lookYaw + past));
       }
     }
-    this.lookYaw += (want - this.lookYaw) * Math.min(1, LOOK_RATE * dt);
+    // (eyes on someone: the head keeps up with the clip's own swing, 3x the rate)
+    this.lookYaw += (want - this.lookYaw) * Math.min(1, (this.face?.target ? 3 * LOOK_RATE : LOOK_RATE) * dt);
     if (Math.abs(this.lookYaw) < 0.002 || !this.neck || !this.head) return;
     for (let i = 0; i < 2; i++) {
       const b = i ? this.head : this.neck, share = i ? 0.55 : 0.45;
