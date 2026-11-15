@@ -60,13 +60,13 @@
     },
     {
      "name": "Orchil kept under gold",
-     "from": 345,
-     "to": 15,
-     "feather": 12,
-     "rotate": -10,
+     "from": 348,
+     "to": 14,
+     "feather": 10,
+     "rotate": -22,
      "chroma": 1,
      "minChroma": 6,
-     "cRange": [20, 32, 50, 62]
+     "cRange": [18, 30, 50, 62]
     }
    ],
    "lab": {
@@ -153,13 +153,13 @@
     },
     {
      "name": "Orchil kept under gold",
-     "from": 345,
-     "to": 15,
-     "feather": 12,
-     "rotate": -10,
+     "from": 348,
+     "to": 14,
+     "feather": 10,
+     "rotate": -22,
      "chroma": 1,
      "minChroma": 6,
-     "cRange": [20, 32, 50, 62]
+     "cRange": [18, 30, 50, 62]
     }
    ],
    "lab": {
@@ -400,7 +400,7 @@
   [23, "dusk"]
  ],
  "tuning": "M1.1g (Nov 14, v5, sky-look): four hour sets, dawn, golden, noon and dusk (plus calima), tuned at the Pans on r5/int against the masked crops' sampled swatches (tools/look/m11-accept.mjs: five regions per frame, mean dE2000 <= 12) and BIBLE 3.2's violet-rose shadow (the darkest fifth of the ground at hue 280-330). golden is fitted on F02 (18:15), dusk on F05 (19:36), noon is v4's (F04, 12:30, already inside the bar), dawn is golden turned cooler and pinker (no dawn frame in the set: untuned). The fit ran offline on the frames' ungraded readback (tools/look/grade-sim.mjs) and was checked on filmed frames. What v4 did that v5 undoes: its mid band took 64 % of the warm b* out of every mid tone (sunset mid.b 0.36), so lit grass and sand went from gold to brown-grey, and its shadow shift stopped at rose (hue ~355); its tone curve lifted L* 72 to 81, which pushed warm sky past the red channel's ceiling round a low sun (a 6 deg clipped blob at dusk). The v4 'sunset' set is folded into golden.",
- "tuning2": "M1.1g round 2 (Nov 15, v6, sky-look): the judges read cobalt shade (F19, F03) and blue-violet grey sand and track (F02, F03, F17, F20, F24, F25), and hot-pink or salmon violets (F14, F20). The cause was golden's shadow stage: its warm term moved every warm dark (skin, straw, sand, basalt in shade; L* 20-40, C* 10-25) by b* -40, to hue 287-300 at C* 25-40; and the Orchil band lifted any colour at hue 290-340 above C* 6 by x1.7, a grey stone the shade had leaned violet included. v6: the shade shift is (6, -6) at chroma 0.6 (a neutral dark goes violet at hue 303-315 and C* 7-9, a warm sand in shade rose at hue 350) and only for low-chroma darks (full below C* 10, none above 22 for hues 285-100: skin, cloth and warm sand in shade keep their own hue), the warm term a gentle rose lean (3, -2); the Orchil lift is x1.3 for saturated colours only (C* 14-26 ramp), and golden and dusk turn saturated rose-reds at 345-15 deg 10 deg back toward violet (C* 20-32 ramp up, 50-62 down so the gamut-edge lamp magenta keeps its round trip; a violet dye under a gold sun renders at hue 0-20). dawn's shift (6, -16) is (6, -8) with the same chroma gate; noon's warm shade spares violets (gate hues 285-100). Checked offline on the probed film 20261115T031932Z-37564cf-sky-r2-base-partial (tools/look/grade-sim.mjs): pixels the grade turns blue (graded hue 240-305, C* >= 12) F19 5.5 % -> 0, F20 7.5 % -> 0, F02 0.9 % -> 0, F03 8.8 % -> 0.8 %.",
+ "tuning2": "M1.1g round 2 (Nov 15, v6, sky-look): the judges read cobalt shade (F19, F03) and blue-violet grey sand and track (F02, F03, F17, F20, F24, F25), and hot-pink or salmon violets (F14, F20). The cause was golden's shadow stage: its warm term moved every warm dark (skin, straw, sand, basalt in shade; L* 20-40, C* 10-25) by b* -40, to hue 287-300 at C* 25-40; and the Orchil band lifted any colour at hue 290-340 above C* 6 by x1.7, a grey stone the shade had leaned violet included. v6: the shade shift is (6, -6) at chroma 0.6 (a neutral dark goes violet at hue 303-315 and C* 7-9, a warm sand in shade rose at hue 350) and only for low-chroma darks (full below C* 10, none above 22 for hues 285-100: skin, cloth and warm sand in shade keep their own hue), the warm term a gentle rose lean (3, -2); the Orchil lift is x1.3 for saturated colours only (C* 14-26 ramp), and golden and dusk turn saturated rose-reds at 348-14 deg (feather 10) 22 deg back toward violet (C* 18-30 ramp up, 50-62 down so the gamut-edge lamp magenta keeps its round trip; a violet dye under a gold sun renders at hue 0-20). dawn's shift (6, -16) is (6, -8) with the same chroma gate; noon's warm shade spares violets (gate hues 285-100). Checked offline on the probed film 20261115T031932Z-37564cf-sky-r2-base-partial (tools/look/grade-sim.mjs): pixels the grade turns blue (graded hue 240-305, C* >= 12) F19 5.5 % -> 0, F20 7.5 % -> 0, F02 0.9 % -> 0, F03 8.8 % -> 0.8 %.",
  "hourEv": [[0, 1.3], [5, 1.3], [5.5, 0.7], [7, 0.25], [9.5, 0], [15.5, 0], [16.5, 0.1], [17.75, 0.15], [18.75, 0.25], [19.33, 0.4], [19.75, 0.7], [21, 1.3]],
  "hourEvAbout": "ROUND5-LOOK L-03 EV offsets (noon 0, 16:30 +0.10, 17:45 +0.15, 18:45 +0.25, 19:20 +0.40, 19:45 +0.70, night +1.30); the morning half mirrors them (look-post). engine.setLookHour applies them unless called with { ev: false } (world-sky owns L-03 and may pass its own)."
 }
