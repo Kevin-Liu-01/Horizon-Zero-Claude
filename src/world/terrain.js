@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { AERIAL, AERIAL_PARS, patchAerial } from './island/aerial.js';
+import { AERIAL, AERIAL_B, AERIAL_DOME, AERIAL_PARS, patchAerial } from './island/aerial.js';
 import { WORLD_SIZE, WORLD_HALF, PLAY_RADIUS, MESH_SPAN, MESH_SEGS } from './island/extent.js';
 import { REST_SITE, TUBES, SALT_FIELD } from './island/sites.js';
 import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './island/recipe.js';
@@ -990,7 +990,9 @@ export class Terrain {
     const T = [['ground-pebbles', 'CAL_P_NOPEB'], ['ground-crust-detail', 'CAL_P_NOCRUST'], ['ground-pits', 'CAL_P_NOPITS'],
       ['ground-salt-2nd', 'CAL_P_NOSALT2'], ['ground-layer-2nd', 'CAL_P_NOL2'], ['ground-pan-cubic', 'CAL_P_NOCUBIC'],
       ['ground-field-range', 'CAL_P_NOFIELD'], ['ground-meadow-tone', 'CAL_P_NOMTONE'], ['ground-rills', 'CAL_P_NORILL'],
-      ['ground-colour-stage', 'CAL_P_FLAT'], ['ground-r2-lod', 'CAL_P_R1LOD'], ['ground-grain', 'CAL_P_NOGRAIN']];
+      ['ground-colour-stage', 'CAL_P_FLAT'], ['ground-r2-lod', 'CAL_P_R1LOD'], ['ground-grain', 'CAL_P_NOGRAIN'],
+      // M1a round 3 fix (the judge's FIX LIST 1: pair each round-3 addition with the look off)
+      ['ground-aerial', 'CAL_P_NOAER'], ['ground-wet-dyke', 'CAL_P_NOWETD']];
     return T.map(([id, k]) => ({ id, on: () => def(k, true), off: () => def(k, false) }));
   }
 
@@ -1093,6 +1095,8 @@ export class Terrain {
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uIsleVis = uVis;
       shader.uniforms.uAerial = AERIAL;
+      shader.uniforms.uAerialB = AERIAL_B;
+      shader.uniforms.uAerialDome = AERIAL_DOME;
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <fog_pars_fragment>', AERIAL_PARS)
         .replace('#include <common>', '#include <common>\nuniform float uIsleVis;')
@@ -1112,6 +1116,9 @@ export class Terrain {
     vec3 air = mix(calFogHorizon, calFogZenith, up * up);
     float ac = dot(dv, calSunDir);
     air += calFogSun * (calHG(calFogG.x, ac) * calFogG.y + calHG(calFogG.z, ac) * calFogG.w) * calFogB.x;
+    // M1a round 3 fix (aerial.js AERIAL_B): the air on a low ray lifted toward the dome's own horizon band
+    { vec2 iz = normalize(dv.xz + vec2(1e-5)), sz = normalize(calSunDir.xz + vec2(1e-5)); float az = max(dot(iz, sz), 0.0);
+      air = mix(air, max(air, uAerialDome * mix(0.86, 1.0, az * az)), uAerialB.x * (1.0 - up)); }
     gl_FragColor.rgb = mix(air, gl_FragColor.rgb, vis);
     /* M1a round 3 (aerial.js): past the stacks and the headlands, the isles the palest layer */
     gl_FragColor.rgb = mix(gl_FragColor.rgb, air, min(uAerial.x * (1.0 - exp(-max(dl - uAerial.y, 0.0) / max(uAerial.z, 1.0))), uAerial.w));
@@ -1343,6 +1350,8 @@ export class Terrain {
   }
 
   update(dt, t) {
+    // M1a round 3 fix (island/aerial.js): the far air's dome colour is the sky's own live horizon key
+    if (!this._aerialDomeLive) { const k = this.ctx.environment?.skyKeys; if (k?.low) { AERIAL_DOME.value = k.low; this._aerialDomeLive = true; } }
     if (!this._colliderIds && this._colliderTries < 600) {
       this._colliderTries++;
       if (this.ctx.collision) this._registerColliders();

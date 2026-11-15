@@ -109,6 +109,7 @@ varying vec2 vFloraXZ;
 uniform vec4 uDebug;              // x: flat colour (no lighting), y: every blade clipped (vertex work only)
 uniform vec4 uStab;               // M1a round 2, the crawl at 12-30 m: x tip light faded, y foot-tip ramp flattened, z clumps wider, w sub-pixel blades to their mean
 uniform vec4 uStab2;              // M1a round 3, the same band: x normals up, y blades square to the lens, z sway damped, w one stand tone
+uniform vec4 uStand;              // M1a round 3 fix: the stand tone (rgb) and its weight (w)
 varying float vMTr;
 uint mPcg(uint v) { uint s = v * 747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u; return (w >> 22u) ^ w; }
 float mU(uint v) { return float(mPcg(v)) * (1.0 / 4294967296.0); }
@@ -168,7 +169,11 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
   w0 *= 1.0 + (0.6 + 0.9 * uStab.z) * midK;
   /* M1a round 3 (M1.1b: the walk's 12-30 m band at 1.41 x the 4x MSAA reference): from 6-14 m on, blades and clumps
    * (not cards) take the stabiliser's second set. stK is that band's weight (6-14 m: full across the measured band) */
+  #ifdef CAL_M_NOSTAB2
+  float stK = 0.0;                // the A/B: the round-3 set compiled out
+  #else
   float stK = kind < 1.5 ? smoothstep(6.0, 14.0, dCam) : 0.0;
+  #endif
   float yaw = u3 * 6.2831853 + u4 * 1.7;
   vec2 face = vec2(cos(yaw), sin(yaw));
   vec2 rightW = vec2(-face.y, face.x);
@@ -233,8 +238,12 @@ vec3 mP = vec3(0.0); vec3 objectNormal = vec3(0.0, 1.0, 0.0); bool mKeep = false
     vMColor = mix(vMColor, mMean * 0.92, uStab.w * (1.0 - clamp(wPxB - 1.0, 0.0, 1.0)) * (1.0 - uPx.z));
     /* (round 3, w) a moving edge between two blades of different tone is what the walk's flicker counts: over the band
      * every blade goes toward one stand tone, the meadow's own mean (no per-blade random) */
-    vec3 mStand = mix(vec3(0.17, 0.112, 0.02) * 0.975, mix(vec3(0.694, 0.431, 0.117), vec3(0.578, 0.352, 0.074), 0.5) * 0.98, 0.55);
-    vMColor = mix(vMColor, mStand, uStab2.w * stK * 0.85);
+    /* (round 3 fix: past about 15 m F02's meadow read as a pale washed-out strip, Lab 56.7 13.8 22.4 against the near
+     * meadow's 45.1 22.4 37.4: the stand tone was the blades' own mean, but the near meadow's mean on screen holds its dark
+     * feet and the gaps between blades, and the up-turned normals take the whole violet sky fill). The tone is that
+     * on-screen mean: 0.6 of the old luminance, richer in chroma (uStand, so a probe can try others); it also narrows the
+     * step from a blade to the ground between, which is what the walk's crawl counts */
+    vMColor = mix(vMColor, uStand.rgb, uStab2.w * stK * uStand.w);
   }
   vMTr = 1.0 - uStab.x * smoothstep(8.0, 24.0, dCam);
   // a viborina spike is a straw stem with violet florets on its upper half
@@ -401,6 +410,7 @@ export class Meadow {
       // (round 3, measured at 42be5d0: y and z at 1.4 took the walk's band 156 -> 148 per mille, the sprint's 464 -> 454)
       uStab: { value: new THREE.Vector4(1, 1.4, 1.4, 1) },
       uStab2: { value: new THREE.Vector4(1, 1, 1, 1) },
+      uStand: { value: new THREE.Vector4(0.28, 0.15, 0.012, 0.85) },
     };
     this.rings = MEADOW_RINGS.map((ring) => this._buildRing(ring));
     this._frustum = new THREE.Frustum();
@@ -619,9 +629,23 @@ export class Meadow {
       { id: 'meadow-raster', on: () => { D.y = 0; }, off: () => { D.y = 1; } },
       { id: 'meadow-shadow-recv', on: () => { for (const R of this.rings) R.mesh.receiveShadow = true; }, off: () => { for (const R of this.rings) R.mesh.receiveShadow = false; } },
       // M1a round 2: the vertex shader stops at the keep test for a clipped blade (on = the early-out, off = as shipped)
+      // M1a round 3 fix (the judge's FIX LIST 1): the round-3 stabiliser set compiled out (define CAL_M_NOSTAB2)
+      { id: 'meadow-stab2', on: () => this._define('CAL_M_NOSTAB2', false), off: () => this._define('CAL_M_NOSTAB2', true) },
       { id: 'meadow-vs-early', on: () => this.setEarlyOut(true), off: () => this.setEarlyOut(false), restore: () => this.setEarlyOut(this._early0 ?? false) },
     ];
   }
+
+  /** Set or clear one define on every ring's material. */
+  _define(k, on) {
+    for (const R of this.rings) {
+      const d = { ...(R.mat.defines || {}) };
+      if (on) d[k] = 1; else delete d[k];
+      R.mat.defines = d; R.mat.needsUpdate = true;
+    }
+  }
+
+  /** The stand tone (uStand: rgb and weight). */
+  setStand(r, g, b, w = this._u.uStand.value.w) { this._u.uStand.value.set(r, g, b, w); }
 
   /** The vertex shader's early-out for clipped blades (define CAL_M_EARLY): the same pixels, less vertex work. */
   setEarlyOut(on) {

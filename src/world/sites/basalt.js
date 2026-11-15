@@ -41,14 +41,16 @@ import { ORGAN, CRATER } from './layout.js';
  *           only when the lens looks toward the sun, times y
  * ORGAN_LIGHT.value = (bounce, rim, -, -), shared, so a probe can try values on one page.
  */
-export const ORGAN_LIGHT = { value: new THREE.Vector4(4.0, 5.0, 0, 0) };
+/* (round 3 fix: the judge's FIX LIST 4, at 159b9fd the Organ crop's mean sRGB went 53 -> 62 from 0/0 to 7/7: the clusters
+ * still read as one near-black brown) both terms raised, 4/5 -> 10/9 */
+export const ORGAN_LIGHT = { value: new THREE.Vector4(10.0, 9.0, 0, 0) };
 /* (measured: from the SUN's colour the terms changed the Organ crop's L* by 0.1 at 730056d, at 19.6 h the sun is in its
  * hand-over trough; from the fog's horizon colour by 1.0 at 42be5d0, that colour is far below the dome's at dusk). Both
  * terms now scale the column's own sky fill (reflectedLight.indirectDiffuse, which carries the hour's exposure), tinted
  * to the horizon's hue: the bounce up to 1 + 0.5 x 4 x 0.62 on a vertical face, the rim 5 x (1 - N.V)^3 on the sun's side */
 const ORGAN_LIGHT_GLSL = /* glsl */ `
 #include <lights_fragment_end>
-#ifdef USE_FOG
+#if defined(USE_FOG) && !defined(CAL_O_NOLIGHT)
 {
   vec3 oUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
   vec3 oSun = normalize((viewMatrix * vec4(calSunDir, 0.0)).xyz);

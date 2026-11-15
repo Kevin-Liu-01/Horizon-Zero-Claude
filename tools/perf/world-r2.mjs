@@ -47,9 +47,10 @@ assertOutsideRepo(OUT, REPO);
 const FRAMES = flag('--frames', 'F02,F03,F04,F05').split(',').map((s) => s.trim()).filter(Boolean);
 const BUDGET_S = Number(flag('--budget', 600));
 const AB = flag('--ab', 'none');
-/* --stab "x,y,z,w[/a,b,c,d];..." : uStab and (round 3) uStab2 per variant */
+/* --stab "x,y,z,w[/a,b,c,d[/r,g,b,w]];..." : uStab, (round 3) uStab2 and (round 3 fix) uStand per variant; with a stand
+ * tone the variant also films F02 (F02-stand-<r_g_b_w>.png) */
 const STAB = (flag('--stab', '') || '').split(';').filter(Boolean).map((v) => v.split('/').map((q) => q.split(',').map(Number)));
-/* M1a round 3: --aerial "amount,start,scale;..." (island/aerial.js) and --organ "bounce,rim;..." (sites/basalt.js) variants
+/* M1a round 3: --aerial "amount,start,scale[,cap[,dome]];..." (island/aerial.js; dome = AERIAL_B.x, round 3 fix) and --organ "bounce,rim;..." (sites/basalt.js) variants
  * on F05 (layers and a still each); --ring (the Ring's panels at 150 m, the fallen quadrant); --walls (field walls from
  * 120 m over T1, the far bake) */
 const AER = (flag('--aerial', '') || '').split(';').filter(Boolean).map((v) => v.split(',').map(Number));
@@ -184,6 +185,10 @@ try {
       out.censusLookOff = P.census(E, S).totals;
       if (!abIds || abIds.length) {
         const sw = [...T.perfSwitches(), ...C.vegetation.perfSwitches()];
+        // M1a round 3 fix: the Organ's light terms compiled out (sites/basalt.js CAL_O_NOLIGHT)
+        const om = C.props?.organ?.mesh?.material;
+        if (om) { const def = (on) => { const d = { ...(om.defines || {}) }; if (on) delete d.CAL_O_NOLIGHT; else d.CAL_O_NOLIGHT = 1; om.defines = d; om.needsUpdate = true; };
+          sw.push({ id: 'organ-light', on: () => def(true), off: () => def(false) }); }
         const list = abIds ? abIds.map((id) => sw.find((s) => s.id === id)).filter(Boolean) : sw;
         out.abIds = list.map((s) => s.id);
         out.ab = await P.toggles(E, list, { n: 24, pairs: 5 });
@@ -230,19 +235,26 @@ try {
     }
     // 5. the walk and the sprint per stabiliser variant at 0 samples, and the 4-sample reference
     R.walk = {};
-    const variants = STAB.length ? STAB.map((v) => ({ n: 0, v: v[0], v2: v[1] || null })) : [{ n: 0, v: null }];
+    const variants = STAB.length ? STAB.map((v) => ({ n: 0, v: v[0], v2: v[1] || null, v3: v[2] || null })) : [{ n: 0, v: null }];
     variants.push({ n: 4, v: run.applied.stab, ref: true });
-    for (const { n, v, v2, ref } of variants) {
+    for (const { n, v, v2, v3, ref } of variants) {
+      if (v3 && !ref) {
+        await page.evaluate((v3) => { const MD = window.__CTX__.vegetation.meadow; window.__stand0 = MD._u.uStand.value.toArray(); MD.setStand(...v3); }, v3);
+        await sleep(400); await shot(`F02-stand-${v3.join('_')}.png`);
+        await page.evaluate(() => { window.__CTX__.vegetation.meadow.setStand(...window.__stand0); });
+      }
       if (spent() > BUDGET_S - 150) { log('walks: budget'); break; }
       for (const [name, speed, fov] of [['walk', 1, null], ['sprint', 6.8, 60]]) {
-        const key = `msaa${n}-${ref ? 'ref' : v ? v.join('/') + (v2 ? '+' + v2.join('/') : '') : 'shipped'}-${name}`;
-        R.walk[key] = await page.evaluate(async (n, v, v2, speed, fov, bearing) => {
+        const key = `msaa${n}-${ref ? 'ref' : v ? v.join('/') + (v2 ? '+' + v2.join('/') : '') + (v3 ? '+' + v3.join('/') : '') : 'shipped'}-${name}`;
+        R.walk[key] = await page.evaluate(async (n, v, v2, v3, speed, fov, bearing) => {
           const M = await import('/tools/perf/meadow-page.mjs'); const C = window.__CTX__, E = C.engine, MD = C.vegetation.meadow;
           const s0 = MD._u.uStab.value.toArray(), s20 = MD._u.uStab2 ? MD._u.uStab2.value.toArray() : null;
           if (v) MD.setStab(...v);
           if (v2 && MD.setStab2) MD.setStab2(...v2);
-          try { await M.setMsaa(E, n); const r = M.walk(E, C, { speed, fov, frames: 60, bearing }); return await r; } finally { MD.setStab(...s0); if (s20) MD.setStab2(...s20); await M.setMsaa(E, 0); }
-        }, n, v, v2, speed, fov, f.bearing);
+          const st0 = MD._u.uStand ? MD._u.uStand.value.toArray() : null;
+          if (v3 && MD.setStand) MD.setStand(...v3);
+          try { await M.setMsaa(E, n); const r = M.walk(E, C, { speed, fov, frames: 60, bearing }); return await r; } finally { MD.setStab(...s0); if (s20) MD.setStab2(...s20); if (st0) MD.setStand(...st0); await M.setMsaa(E, 0); }
+        }, n, v, v2, v3, speed, fov, f.bearing);
         const w = R.walk[key];
         log(`F02 ${key}: all ${w.eventsPerMille}, mid 12-30 m ${w.bands['mid12-30m'].eventsPerMille}, near ${w.bands['near<12m'].eventsPerMille}, far ${w.bands['far>30m'].eventsPerMille} per mille`);
       }
@@ -260,6 +272,29 @@ try {
         R.clip[name] = { ...r.m, stab: r.stab, frames: r.shots.length };
         for (let i = 0; i < r.shots.length; i++) writeFileSync(path.join(OUT, `clip-${name}-${String(i * 4).padStart(2, '0')}.jpg`), Buffer.from(r.shots[i].split(',')[1], 'base64'));
         log(`F02 clip ${name} (stab ${r.stab}): ${r.m.eventsPerMille} per mille, mid ${r.m.bands['mid12-30m'].eventsPerMille}, ${r.shots.length} frames saved`);
+      }
+    }
+    /* M1a round 3 fix (the judge's FIX LIST 2: the clip was a 1 s isolated render, black sky, Brea and the Ring hidden):
+     * the real F02 clip, 10 s of the game itself from F02's staging, Brea walking (forward + the walk key) and then
+     * sprinting (forward + sprint), the chase camera and the whole scene as shipped; a frame every 0.5 s saved, her speed
+     * logged. Graded by eye; the crawl number stays the deterministic measure above */
+    if (has('--clip10')) {
+      R.clip10 = {};
+      for (const [name, keys] of [['walk', ['KeyW', 'AltLeft']], ['sprint', ['KeyW', 'ShiftLeft']]]) {
+        await page.evaluate(unstageFrame);
+        await stage('F02', 1500);
+        current = `clip10-${name}`;
+        await page.evaluate((keys) => { const I = window.__CTX__.input; for (const k of keys) I.keys.add(k); }, keys);
+        const speeds = [];
+        const t0 = Date.now();
+        for (let i = 0; i < 20; i++) {
+          while (Date.now() - t0 < i * 500) await sleep(20);
+          await page.screenshot({ path: path.join(OUT, `clip10-${name}-${String(i).padStart(2, '0')}.jpg`), type: 'jpeg', quality: 82 });
+          speeds.push(await page.evaluate(() => { const p = window.__CTX__.player; return +Math.hypot(p.velocity.x, p.velocity.z).toFixed(2); }));
+        }
+        await page.evaluate((keys) => { const I = window.__CTX__.input; for (const k of keys) I.keys.delete(k); }, keys);
+        R.clip10[name] = { seconds: +((Date.now() - t0) / 1000).toFixed(1), frames: 20, speeds };
+        log(`F02 clip10 ${name}: ${R.clip10[name].seconds} s, speeds ${speeds.join(' ')}`);
       }
     }
     await page.evaluate(unstageFrame);
@@ -352,6 +387,27 @@ try {
       run.topdown.push({ id: s.id, x: s.x, z: s.z, span: r.span, px: r.px, ...ac });
       log(`topdown ${s.id}: autocorrelation peak ${ac.peak} at ${JSON.stringify(ac.atM)} m`);
     }
+    /* M1a round 3 fix (FIX LIST 6, 11): which term carries the salt squares' peak: each re-read with the crust's detail
+     * (cracks, rake, pits: CAL_P_NOCRUST) and with the grain (CAL_P_NOGRAIN) compiled out */
+    if (has('--topdown-ab')) {
+      for (const s of sites.filter((q) => /^salt-(incell|cell|crust)$/.test(q.id))) {
+        for (const k of ['CAL_P_NOCRUST', 'CAL_P_NOGRAIN']) {
+          const r = await page.evaluate(async (s, k) => {
+            const M = await import('/tools/perf/meadow-page.mjs'); const C = window.__CTX__, E = C.engine, mat = C.terrain.groundMaterial;
+            const d0 = mat.defines; mat.defines = { ...(d0 || {}), [k]: 1 }; mat.needsUpdate = true;
+            try {
+              const t = await M.topDown(E, C, s.x, s.z, { span: s.span ?? 40, px: 1024, layer: s.layer ?? null });
+              let bin = ''; const b = t.rgba; for (let i = 0; i < b.length; i += 32768) bin += String.fromCharCode.apply(null, b.subarray(i, i + 32768));
+              return { px: t.px, span: t.span, b64: btoa(bin) };
+            } finally { mat.defines = d0; mat.needsUpdate = true; }
+          }, s, k);
+          const img = await savePng(path.join(OUT, `topdown-${s.id}-${k}.png`), r.b64, r.px, r.px);
+          const ac = autocorr(img, r.px, r.px / r.span, { hpM: 2, minM: 1, maxM: Math.min(20, r.span / 2) });
+          run.topdown.push({ id: `${s.id}-${k}`, x: s.x, z: s.z, span: r.span, px: r.px, ...ac });
+          log(`topdown ${s.id} (${k}): autocorrelation peak ${ac.peak} at ${JSON.stringify(ac.atM)} m`);
+        }
+      }
+    }
     await page.evaluate(unstageFrame);
   }
   /* M1a fix round: F05's silhouette layers (tools/perf/rock-page.mjs layers, the frozen rule), the Organ's foot (FIX LIST 8) */
@@ -359,7 +415,31 @@ try {
     await stage('F05');
     const L = await page.evaluate(async () => { const M = await import('/tools/perf/rock-page.mjs'); const C = window.__CTX__; const r = await M.layers(C.engine, C); delete r.map; return r; });
     run.F05layers = L;
-    log(`F05 layers ${L.layers}, gaps ${L.gaps.map((g) => g.dL).join(' / ')}, pass ${L.pass}`);
+    log(`F05 layers ${L.layers}, rims ${L.classes.map((c) => c.rimL).join(' / ')}, gaps ${L.gaps.map((g) => g.dL).join(' / ')}, pass ${L.pass}`);
+    /* M1a round 3 fix (FIX LIST 9: strata at 200 m and the Ring's line of sight were UNMEASURED): tools/perf/rock-page.mjs's
+     * probes, as tools/perf/rock.mjs runs them, in F05's light */
+    if (has('--rock')) {
+      const ids = await page.evaluate(() => window.__CTX__.props.landmarkSet.stacks.filter((s) => /^stack-/.test(s.id)).map((s) => s.id));
+      run.strataF05 = [];
+      for (const id of ids) {
+        const r = await page.evaluate(async (id) => { const M = await import('/tools/perf/rock-page.mjs'); const C = window.__CTX__; const rec = C.props.landmarkSet.stacks.find((s) => s.id === id); return M.strata(C.engine, C, rec); }, id);
+        if (r.crop) { await sharp(Buffer.from(r.crop.b64, 'base64'), { raw: { width: r.crop.w, height: r.crop.h, channels: 3 } }).jpeg({ quality: 88 }).toFile(path.join(OUT, `strata-F05-${id}.jpg`)); delete r.crop; }
+        run.strataF05.push(r);
+      }
+      log(`strata F05: ${run.strataF05.map((r) => `${r.id} ${r.bands}`).join(', ')}`);
+      run.sight = await page.evaluate(async () => {
+        const M = await import('/tools/perf/rock-page.mjs'); const S = await import('/src/world/island/sites.js');
+        const C = window.__CTX__, E = C.engine, T = C.terrain;
+        const t1 = S.TRIG[0], beach = S.siteById('black-sand-beach'), salt = S.siteById('saltrow');
+        const ring = C.props.landmarkSet.ring; const dx = ring.x - salt.x, dz = ring.z - salt.z, dl = Math.hypot(dx, dz);
+        let ramp = null; for (let s = 0; s < dl; s += 1) { const x = salt.x + dx / dl * s, z = salt.z + dz / dl * s; if (T.getHeight(x, z) < 1.2) { ramp = { x, z }; break; } }
+        const top = (S.TRIG_TOP ?? 4) + 1.7;
+        return [M.sight(E, C, { x: t1.x, z: t1.z, eye: top }, 'T1 (on the pillar)'), M.sight(E, C, { x: t1.x + 3, z: t1.z + 3 }, 'T1 (at its foot)'),
+          ramp ? M.sight(E, C, ramp, `Saltrow ramp stand-in (${ramp.x.toFixed(0)}, ${ramp.z.toFixed(0)})`) : { station: 'Saltrow ramp', error: 'no shore found' },
+          beach ? M.sight(E, C, beach, 'black-sand beach (site)') : { station: 'black-sand beach', error: 'no site' }, M.sight(E, C, { x: -200, z: 414 }, 'beach (look.pansInland)')];
+      });
+      log(`sight: ${run.sight.map((s) => `${s.station} ${s.open}/${s.of}${s.error ? ' ' + s.error : ''}`).join('; ')}`);
+    }
     await page.evaluate(unstageFrame);
     const looks = await page.evaluate(() => {
       const C = window.__CTX__, T = C.terrain, O = C.props.organ;
@@ -421,7 +501,7 @@ try {
           const ty = Math.max(gy(s0.x, s0.z), s0.id === 'glass' ? 0.16 : -1e9);
           if (dist === 1) return { pos: [s0.x - 0.6, ty + 0.8, s0.z + 0.0], target: [s0.x, ty, s0.z], fov: 50 };
           // (round 3) 16 bearings, and a lens up to 6 m over the ground where 1.7 m sees no clear line (dunes, a pump base)
-          for (const eye of [1.7, 3, 6]) for (let b = 0; b < 16; b++) {
+          for (const eye of [1.7, 3, 6, 10, 16]) for (let b = 0; b < 16; b++) {
             const a = b * Math.PI / 8, ex = s0.x + 100 * Math.cos(a), ez = s0.z + 100 * Math.sin(a), ey = gy(ex, ez) + eye;
             let ok = ey > ty && gy(ex, ez) > -0.2;
             for (let k = 1; k < 40 && ok; k++) { const t = k / 40, x = ex + (s0.x - ex) * t, z = ez + (s0.z - ez) * t; if (gy(x, z) > ey + (ty - ey) * t - 0.3 && t < 0.97) ok = false; }
@@ -458,8 +538,8 @@ try {
     run.F05variants = [];
     const setV = (a, o) => page.evaluate(async (a, o) => {
       const A = await import('/src/world/island/aerial.js'); const B = await import('/src/world/sites/basalt.js');
-      const a0 = A.AERIAL.value.toArray(), o0 = B.ORGAN_LIGHT.value.toArray();
-      if (a) A.AERIAL.value.set(a[0], a[1], a[2], a[3] ?? a0[3]);
+      const a0 = A.AERIAL.value.toArray().concat(A.AERIAL_B ? [A.AERIAL_B.value.x] : []), o0 = B.ORGAN_LIGHT.value.toArray();
+      if (a) { A.AERIAL.value.set(a[0], a[1], a[2], a[3] ?? a0[3]); if (A.AERIAL_B && a[4] != null) A.AERIAL_B.value.x = a[4]; }
       if (o) B.ORGAN_LIGHT.value.set(o[0], o[1], 0, 0);
       return { a0, o0 };
     }, a, o);
@@ -538,6 +618,24 @@ try {
       return { intervals: d.length, seconds: +((ts[ts.length - 1] - ts[0]) / 1000).toFixed(1), p50: q(0.5), p95: q(0.95), p99: q(0.99), max: +s[s.length - 1].toFixed(2), over16_7: d.filter((x) => x > 16.7).length, census: cen.all, gpu };
     });
     run.F32 = r;
+    /* M1a round 3 fix (FIX LIST 9: F32's missing chunk and LOD seam were UNMEASURED): tools/perf/census-page.mjs's seam
+     * probe, as tools/perf/census.mjs runs it (land and water white over magenta; a gap pixel with land within 3 px on both
+     * sides is a crack), with the chunk LOD on (shipped) and off (one level everywhere) */
+    if (has('--seams')) {
+      run.F32.seams = await page.evaluate(async () => {
+        const P = await import('/tools/perf/census-page.mjs'); const C = window.__CTX__, E = C.engine, S = C.scene, T = C.terrain;
+        const raf = () => new Promise((res) => requestAnimationFrame(() => res()));
+        const land = new Set(); T.group.traverse((o) => { if (o.isMesh && o !== T.isles) land.add(o); });
+        const water = new Set(); (T.water?.group || T.water?.mesh)?.traverse?.((o) => { if (o.isMesh) water.add(o); });
+        const out = { shipped: P.seams(E, S, (o) => land.has(o) || water.has(o)) };
+        const lod = T.perfSwitches().find((s) => s.id === 'terrain-lod');
+        if (lod) { lod.off(); for (let i = 0; i < 4; i++) await raf(); out.monolithic = P.seams(E, S, (o) => (T.group.children.includes(o) || land.has(o) || water.has(o)) && o !== T.isles && o.visible); lod.on(); for (let i = 0; i < 4; i++) await raf(); }
+        out.terrainStats = T.lodStats();
+        return out;
+      });
+      const sm = run.F32.seams;
+      log(`F32 seams: shipped crack ${sm.shipped.crackPx} px (widest ${sm.shipped.widestPx}), monolithic crack ${sm.monolithic?.crackPx} px (widest ${sm.monolithic?.widestPx}), land ${sm.shipped.landPx} px`);
+    }
     log(`F32: p95 interval ${r.p95} ms (p50 ${r.p50}, ${r.intervals} frames in ${r.seconds} s), GPU median ${r.gpu.medianMs} ms, draws ${r.census.draws}, tris ${r.census.tris}`);
     await page.evaluate(unstageFrame);
   }

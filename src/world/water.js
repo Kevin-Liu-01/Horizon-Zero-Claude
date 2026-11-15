@@ -203,7 +203,9 @@ const GLASS_COLOR = /* glsl */ `
   vec2 drift = vec2(0.004, 0.003) * uTime;
   vec2 r1 = texture2D(tRipple, p * 0.11 + drift).xy * 2.0 - 1.0;
   vec2 r2 = texture2D(tRipple, p * 0.31 - drift * 1.7).xy * 2.0 - 1.0;
-  wN = vec3(r1.x * 0.012 + r2.x * 0.007, 0.0, r1.y * 0.012 + r2.y * 0.007);
+  /* M1a round 3 fix (M1.1e "the Glass as a still emerald mirror": at 1 m it read a mottled green cloud, the ripples breaking
+   * the sky into blots): a still lagoon's ripples are a third as deep */
+  wN = vec3(r1.x * 0.012 + r2.x * 0.007, 0.0, r1.y * 0.012 + r2.y * 0.007) * 0.35;
   /* El Golfo's lagoon is green in its body, not in its sky: algae water #2F8F6F over a pale bed,
    * the bed showing for the first metres off the shore, darkening to deep emerald. The colour is
    * graded by depth through the water (Beer), so the lagoon has a margin, a body and a heart,
@@ -216,16 +218,17 @@ const GLASS_COLOR = /* glsl */ `
   float tr = exp(-depth * 7.5);                        // what of the bed reaches the eye
   vec3 body = mix(mix(algae, deepC, smoothstep(0.18, 0.6, depth)), bedC, tr * 0.85);
   // turbid patches and darker weed beds drift in it: a living colour, not a fill
-  body *= 0.82 + 0.34 * texture2D(tRipple, p * 0.0071 + vec2(0.13, 0.71)).a;
+  body *= 0.9 + 0.18 * texture2D(tRipple, p * 0.0071 + vec2(0.13, 0.71)).a;
   // wind slicks: calm streaks mirror the sky, rippled ones break it up (never one flat sheet)
   float slick = smoothstep(0.38, 0.66, texture2D(tRipple, vec2(p.x * 0.0083 - p.y * 0.0031, p.y * 0.0062) + drift * 0.4).a);
-  wN *= mix(1.7, 0.3, slick);
+  wN *= mix(1.2, 0.3, slick);
   diffuseColor.rgb = body;
   diffuseColor.a = 0.985;
   wRough = 0.05;
   wMirror = mix(0.30, 0.52, slick);
   wSkyBias = 0.06;
-  wFresnelMax = 0.72;
+  // (round 3 fix: grey at 100 m, a* -1.6: at a grazing look the sky's reflection was the whole read) the mirror's cap lower
+  wFresnelMax = 0.5;
   wSunPow = 400.0;
   wSunK = 0.16;
 }
@@ -283,6 +286,9 @@ const SEA_MIRROR = /* glsl */ `
       wall = mix(wall, wSkyH * 0.8, 1.0 - exp(-dist * 0.0011));
       sky = mix(sky, wall, wallK);
     }
+    /* M1a round 3 fix (the Glass at 100 m read grey, Lab 69.9 -1.6 2.0): the lagoon's algae water tints what it mirrors,
+     * so from the shore at a grazing look it is still emerald (El Golfo reads green from every side) */
+    sky *= vec3(0.5, 0.9, 0.72);
   }
 #endif
   float F = min(0.02 + 0.98 * pow(1.0 - max(dot(V, W), 0.0), 5.0), wFresnelMax);
