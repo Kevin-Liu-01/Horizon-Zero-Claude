@@ -215,7 +215,10 @@ try {
       {
         const blank = await C.browser.newPage();
         await blank.setViewport(VP);
-        await blank.goto('data:text/html,<body style="background:%23222"></body>');
+        // a full-size WebGL canvas cleared to a new colour every frame: a page that presents every frame and costs nothing
+        await blank.goto('data:text/html,<body style="margin:0"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas></body>');
+        await blank.evaluate(() => { const c = document.getElementById('c'); c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio;
+          const gl = c.getContext('webgl2'); let k = 0; const f = () => { k = (k + 1) % 256; gl.clearColor(k / 255, 0.2, 0.3, 1); gl.clear(gl.COLOR_BUFFER_BIT); requestAnimationFrame(f); }; requestAnimationFrame(f); });
         await sleep(1000);
         const l0 = load1();
         const s = await blank.evaluate(async (seconds) => {
@@ -227,7 +230,7 @@ try {
           return { seconds, frames: iv.length, intervalMs: { median: r2(q(iv, 0.5)), p95: r2(q(iv, 0.95)), p99: r2(q(iv, 0.99)), max: r2(Math.max(...iv)) },
             over: { ms17: iv.filter((v) => v > 17.5).length, ms33: iv.filter((v) => v > 33.4).length, ms50: iv.filter((v) => v > 50).length } };
         }, LIVE_S);
-        run.control = { what: 'an empty page (no WebGL) in the live Chrome, same launch flags and size', ...s, load1Before: l0, load1After: load1() };
+        run.control = { what: 'a WebGL canvas at the bar size cleared every frame, in the live Chrome (same launch flags)', ...s, load1Before: l0, load1After: load1() };
         log(`control (empty page): interval median ${s.intervalMs.median} p95 ${s.intervalMs.p95} ms, ${s.frames} frames in ${s.seconds} s (load ${l0})`);
         await blank.close();
       }
