@@ -1532,7 +1532,13 @@ export class LocomotionDriver {
       }
       _rgNeed[s] = need; if (need > needMax) needMax = need;
     }
-    if (needMax <= 0) return;
+    if (needMax > 0) this._rollArmPlaneFix(w, rigid, needMax);
+    for (let it = 0; it < 3 && this._rollCrownGuard(w, rigid); it++) { /* re-tested after each solve */ }
+  }
+
+  /** (the plane pass of `_rollArmGuard`: each wrist lowered by its need, the larger for both when `rigid`) */
+  _rollArmPlaneFix(w, rigid, needMax) {
+    const b = this.b;
     for (let s = 0; s < 2; s++) {
       const up = s ? b.upArmL : b.upArmR, lo = s ? b.loArmL : b.loArmR, ha = s ? b.handL : b.handR;
       if (!up || !lo || !ha) continue;
@@ -1552,6 +1558,79 @@ export class LocomotionDriver {
         ha.bone.quaternion.copy(_rgQ2.invert().multiply(_rgHq));
       }
     }
+  }
+
+  /**
+   * M1a debt (M1.3f, blendUnstowLanceRoll): THE ROLL'S HANDS OFF THE CROWN. In the somersault the head turns over in
+   * about 0.08 s, and with the lance in her hands the left hand's goal (held in character space) sweeps across the top
+   * of the inverted skull: on half steps (the page's smooth step mode) a hand point lands in the sweep's crown column
+   * (head-ellipsoid units |x| < 1, -1.4 < z < 0.8, y > 1) or behind the skull / at the nape for one step (page: crown,
+   * left hand, T 0.473; bench at 1/120 s: 1-2 steps). Each hand point (wrist, index knuckle, middle tip) and forearm
+   * point (a quarter, half and three quarters) in that region is moved out by the shorter exit: out to the side
+   * (|x| to 1.08) or, from the crown only, forward past the face (z to 0.9). One displacement per arm (the larger
+   * point's, along the worst point's exit), both arms by the larger one when `rigid` (the lance in her hands), the
+   * hand's orientation kept when `rigid`. Weighted by the roll. No allocation.
+   */
+  _rollCrownGuard(w, rigid) {
+    const b = this.b, hb = b.head.bone, HR = this.T.headR;
+    if (!HR) return;
+    this._charOf(hb, _rgH);
+    this._liveW(hb, _rgQ); _rgQ.multiply(b.head.invW);
+    _rgQi.copy(_rgQ).invert();
+    let best = -1, bestM = 0;
+    for (let s = 0; s < 2; s++) {
+      _rcD[s].set(0, 0, 0); _rcM[s] = 0;
+      const up = s ? b.upArmL : b.upArmR, lo = s ? b.loArmL : b.loArmR, ha = s ? b.handL : b.handR;
+      if (!up || !lo || !ha) continue;
+      const kn = this.bones[s ? 'index_01_l' : 'index_01_r'], tp = this.bones[s ? 'middle_04_leaf_l' : 'middle_04_leaf_r'] || this.bones[s ? 'middle_03_l' : 'middle_03_r'];
+      this._charOf(lo.bone, _rgE); this._charOf(ha.bone, _rgW);
+      // pass 1: the worst point's exit (axis and sign, head frame); pass 2: the largest move along it
+      let axis = -1, sign = 0, worst = 0;
+      for (let pass = 0; pass < 2; pass++) {
+        let m = 0;
+        for (let q = 0; q < 6; q++) {
+          if (q === 0) _rgP.copy(_rgW);
+          else if (q === 1) { if (!kn) continue; this._charOf(kn, _rgP); }
+          else if (q === 2) { if (!tp) continue; this._charOf(tp, _rgP); }
+          else _rgP.copy(_rgE).lerp(_rgW, (q - 2) * 0.25);
+          const hand = q < 3;
+          _rgT.subVectors(_rgP, _rgH).applyQuaternion(_rgQi).sub(this.T.headOff);
+          const ux = _rgT.x / HR.x, uy = _rgT.y / HR.y, uz = _rgT.z / HR.z;
+          const crown = Math.abs(ux) < 1 && uz > -1.4 && uz < 0.8 && uy > 1;
+          const skull = uz < -1 && Math.abs(ux) < 1 && uy >= -1;
+          const nape = hand && uz < -1 && uz > -2.5 && Math.abs(ux) < 1 && uy > -2.4;
+          if (!crown && !skull && !nape) continue;
+          if (pass === 0) {
+            const side = (1.08 - Math.abs(ux)) * HR.x, fwd = crown ? (0.9 - uz) * HR.z : 9;
+            const e = Math.min(side, fwd);
+            if (e > worst) { worst = e; if (side <= fwd) { axis = 0; sign = ux >= 0 ? 1 : -1; } else { axis = 2; sign = 1; } }
+          } else {
+            const e = axis === 0 ? (1.08 - sign * ux) * HR.x : (0.9 - uz) * HR.z;
+            if (e > m) m = e;
+          }
+        }
+        if (pass === 0 && axis < 0) break;
+        if (pass === 1) { _rcM[s] = m; _rcD[s].set(axis === 0 ? sign : 0, 0, axis === 2 ? 1 : 0).applyQuaternion(_rgQ).multiplyScalar(m); }
+      }
+      if (_rcM[s] > bestM) { bestM = _rcM[s]; best = s; }
+    }
+    if (best < 0) return false;
+    for (let s = 0; s < 2; s++) {
+      const up = s ? b.upArmL : b.upArmR, lo = s ? b.loArmL : b.loArmR, ha = s ? b.handL : b.handR;
+      if (!up || !lo || !ha) continue;
+      const d = rigid ? _rcD[best] : _rcD[s];
+      if (!(d.lengthSq() > 0)) continue;
+      this._charOf(up.bone, _rgS); this._charOf(lo.bone, _rgE); this._charOf(ha.bone, _rgW);
+      if (rigid) this._liveW(ha.bone, _rgHq);
+      _rgT.copy(_rgW).addScaledVector(d, 1.0);
+      _rgP.copy(_rgS).add(_rgW).multiplyScalar(0.5);
+      _rgE.sub(_rgP);
+      if (_rgE.lengthSq() < 1e-8) _rgE.set(s ? 0.7 : -0.7, -0.7, 0);
+      _rgE.normalize();
+      this._ikArm(s ? 'l' : 'r', _rgT, _rgE, w, null);
+      if (rigid) { this._liveW(ha.bone.parent, _rgQ2); ha.bone.quaternion.copy(_rgQ2.invert().multiply(_rgHq)); }
+    }
+    return true;
   }
 
 
@@ -1966,3 +2045,5 @@ export class LocomotionDriver {
 const _rgH = new THREE.Vector3(), _rgF = new THREE.Vector3(), _rgC = new THREE.Vector3(), _rgS = new THREE.Vector3(), _rgE = new THREE.Vector3();
 const _rgW = new THREE.Vector3(), _rgP = new THREE.Vector3(), _rgT = new THREE.Vector3(), _rgQ = new THREE.Quaternion();
 const _rgHq = new THREE.Quaternion(), _rgQ2 = new THREE.Quaternion(), _rgNeed = [0, 0];
+// (M1a debt: `_rollCrownGuard`'s scratch)
+const _rgQi = new THREE.Quaternion(), _rcD = [new THREE.Vector3(), new THREE.Vector3()], _rcM = [0, 0];

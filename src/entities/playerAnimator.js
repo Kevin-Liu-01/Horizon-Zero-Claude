@@ -1618,6 +1618,10 @@ export class PlayerAnimator {
     // scan of 32 hair bones and does nothing unless a strand is inside 0.078 m
     // of the haft, which at idle/walk/run/sprint it never is.
     this.melee?.postFix?.();
+    /* (M1a debt, M1.3f blendUnstowLanceRoll: the haft's last fix above moves the hands on the pose the renderer draws,
+     *  after the roll's guards, and on the somersault's fastest steps it put the left hand back over the inverted crown
+     *  for one step: the crown guard again on the final pose, in a roll or a jump only) */
+    if (guardW > 0.02) for (let it = 0; it < 3 && this._rollCrownGuard(guardW, !!(this.melee?.w > 0.02)); it++) { /* re-tested */ }
     /* M1.2e round 2: the cloth wrap pass (anim/clothWrap.js): the sash panels and the wrap's tails, as they will be
      * skinned, out of the legs, the torso, the quiver and the draw arm, after every layer that moves a bone they hang
      * from or a capsule they meet */
