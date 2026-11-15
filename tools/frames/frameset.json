@@ -56,10 +56,10 @@
 
     { "id": "F07", "subject": "Saltrow at night, lamps", "in": "M1b",
       "hour": 21.0, "weather": "trade", "at": { "en": [-381.6, -308.7] }, "bearing": 50,
-      "camera": { "mode": "eye", "eye": 5.4, "pitch": 2, "fov": 50 }, "state": { "pose": "idle", "hud": false, "crowd": true },
+      "camera": { "mode": "eye", "eye": 3.65, "pitch": 2, "fov": 50 }, "state": { "pose": "idle", "hud": false, "crowd": true },
       "ref": { "written": "At 21:00 from the breakwater: at least 14 lit windows and the breakwater lamp; no pixel of sky brighter than the brightest window; walls readable as white by lamp spill within 6 m of a window and falling to silhouette beyond; frame mean luminance 4-9 %.", "measured": ["meanLuminance"] },
       "requires": ["saltrow-buildings", "saltrow-lamps", "breakwater"],
-      "note": "On the breakwater deck 10 m out from its root (src/world/settlements/saltrow-layout.js BREAKWATER_LENS), looking up at the town on bearing 50; the eye is 5.4 m over the sea floor, 1.65 m over the deck. Until M1.5a placed the breakwater the lens stood on Saltrow's seaward edge (bible E -300, N -262) looking NE." },
+      "note": "On the breakwater deck 10 m out from its root (src/world/settlements/saltrow-layout.js BREAKWATER_LENS), looking up at the town on bearing 50; the eye is 3.65 m over the live ground under the lens (-0.7 m at b4515f1), 1.65 m over the deck. Until M1.5a placed the breakwater the lens stood on Saltrow's seaward edge (bible E -300, N -262) looking NE." },
 
     { "id": "F08", "subject": "Brea front at 2.5 m, flat light", "in": "M1a",
       "light": "studio", "hour": 13.0, "weather": "trade", "at": "place:openGround", "bearing": 180,

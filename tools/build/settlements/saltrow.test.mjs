@@ -136,6 +136,21 @@ test('the sighting kite: its line clear of the ground, against the sky from the 
   let sky = -90;
   for (let r = 20; r < 1500; r += 5) sky = Math.max(sky, Math.atan2(heightAt(REST.x + Math.sin(bear * D2R) * r, REST.z - Math.cos(bear * D2R) * r) - eye, r) / D2R);
   assert.ok(el > sky + 3, `the kite at ${el.toFixed(1)} deg, the skyline behind it at ${sky.toFixed(1)}`);
+  // and over the roofs between: every block (and raised roof block, and the guild's gable) on the sight line from her eye
+  let roof = -90;
+  for (let r = 1; r < d; r += 0.25) {
+    const x = REST.x + Math.sin(bear * D2R) * r, z = REST.z - Math.cos(bear * D2R) * r;
+    for (const b of BUILDINGS) {
+      const p = placeOf(b), c = Math.cos(p.yaw), s = Math.sin(p.yaw), dx = x - p.x, dz = z - p.z;
+      const lx = dx * c - dz * s, lz = dx * s + dz * c;
+      if (Math.abs(lx) > b.w / 2 || Math.abs(lz) > b.d / 2) continue;
+      const fy = heightAt(p.x + s * (b.d / 2 + 0.4), p.z + c * (b.d / 2 + 0.4)) + 0.04;
+      let top = fy + b.h + (b.kind === 'guild' ? 2.2 : 0);
+      if (b.step && Math.abs(lx - b.step.x) <= b.step.w / 2 && Math.abs(lz - b.step.z) <= b.step.d / 2) top = fy + b.h - 0.5 + b.step.h;
+      roof = Math.max(roof, Math.atan2(top - (eye - 0.1), r) / D2R);
+    }
+  }
+  assert.ok(el > roof + 3, `the kite at ${el.toFixed(1)} deg behind roofs at ${roof.toFixed(1)} deg from the cistern`);
   assert.ok(el < 26, `the kite ${el.toFixed(1)} deg up from the cistern: over a chase lens's top edge`);
   assert.ok(KITE.y - heightAt(KITE.x, KITE.z) > 12, 'the kite flies under 12 m');
   // over the town: within 30 m of its nearest building

@@ -11,7 +11,7 @@
  *     nav:   { streetOpen: k of n street-axis cells open, housesShut: k of n house centres blocked, path: points }
  *     kite:  { flying, at, line }                                        in this frame's hour
  *     kiteView (only on the LAST frame of the run, `frame.id === 'F24'` or `'F22'` when F24 is not filmed):
- *        the view from the cistern at 07:00 (the lens 3.4 m behind REST, 2.3 m up, looking on bearing 22, 8 deg up,
+ *        the view from the cistern at 07:00 (the lens 3.4 m behind REST, 2.3 m up, looking on bearing 24, 8 deg up,
  *        55 deg): { onScreen: [x, y] (CSS px), sizePx, occluded, elevDeg, png (800 x 450, base64) }
  *   }
  * Reads window.__CTX__ only; changes the hour and the lens for the kite view after the frame is filmed.
@@ -58,7 +58,7 @@ export async function probe(frame) {
       env.setWeather?.('trade', 0);
       env.setTime(7.0);
       K.update(0.016);
-      const B = 22, fw = { x: Math.sin(B * D2R), z: -Math.cos(B * D2R) };
+      const B = 24, fw = { x: Math.sin(B * D2R), z: -Math.cos(B * D2R) };
       const gy = C.terrain.getHeight(REST.x, REST.z);
       const pos = new V3(REST.x - fw.x * 3.4, gy + 2.3, REST.z - fw.z * 3.4);
       const pitch = 8 * D2R;

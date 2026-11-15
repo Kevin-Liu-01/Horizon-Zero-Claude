@@ -161,8 +161,8 @@ export function breakwaterPoint(along, side = 0) {
 /**
  * F07's lens on the breakwater (frameset F07 stands here): 10 m out on the deck's axis looking up at the town on
  * bearing 50 (the street's middle is on 53.8, 138 m off), the lamp column 7.6 m ahead on 42.3. The deck top is 1.3 m
- * over the root (the sea floor under the lens is 2.45 m down), so the frame's eye of 5.4 m over the ground is 1.65 m
- * over the deck.
+ * over the root; the live ground under the lens reads -0.7 m (recipe.js heightAt says -2.45: the bake's shore differs),
+ * so the frame's eye of 3.65 m over the ground is 1.65 m over the deck (at b4515f1 the eye was 5.4: 3.4 m over it).
  */
 export const BREAKWATER_LENS = Object.freeze({ ...breakwaterPoint(10, 0), bearing: 50 });
 
@@ -185,14 +185,16 @@ export const CREW = Object.freeze([
 
 /**
  * THE SIGHTING KITE (BUILD M1.5e; bible §11 slice 0:00 "A Pan Houses sighting kite flies over Saltrow"): a two-cell
- * box kite on a line from a stake on the ridge over the town's upper left, flown in the morning (`hours`). Placed
- * from the cistern: 70 m off on bearing 16, 19.5 deg up from her eye at REST, over the saddle where the skyline dips
- * to 10.6 deg (bearings 10-20; the cone stands from 20 to 65 at 20-33 deg), so it reads against the sky. The stake
- * is 16 m upwind (the trade blows toward 225) under a 45 deg line, 23 m of line. `y` is absolute (m).
+ * box kite on a line from a stake on the ridge over the town's upper left, flown in the morning (`hours`). Placed from
+ * the cistern: 70 m off on bearing 24, 24.5 deg up from her eye at REST, in the one window where it clears both the
+ * near roofs and the skyline: from her eye the left-hand houses stand to 23-26 deg on bearings 0-20 and the cone to
+ * 25-33 deg on 28-48, while on 22-26 the roofs reach 18-20 and the skyline (the cone's left flank) 15-20. At b4515f1
+ * it flew on bearing 16 at 19.5 deg and the probe's lens at the cistern saw l2's roof in front of it. The stake is
+ * 20.5 m upwind (the trade blows toward 225) under a 45 deg line, 29 m of line. `y` is absolute (m).
  */
 export const KITE = Object.freeze({
-  x: -264.1, y: 27.4, z: 179.0,
-  anchor: Object.freeze({ x: -252.8, z: 167.7 }),
+  x: -254.9, y: 34.4, z: 182.4,
+  anchor: Object.freeze({ x: -240.5, z: 167.9 }),
   hours: Object.freeze([6.0, 11.5]),
   size: Object.freeze({ h: 2.1, w: 0.95, cell: 0.62 }),
 });
