@@ -1,6 +1,7 @@
 import './title.css';
 import TEXT from '../game/text/ui/title.json';
 import BOOKS from '../game/text/books/field-books.json';
+import QUEST from '../game/text/quests/rakers-morning.json';
 import { REST } from '../world/island/sites.js';
 
 /**
@@ -36,13 +37,13 @@ export const DOLLY_S = 2.2;
 export const MENU_AT_S = 1.1;
 /** The shot. Screen x is 0 at the left edge and 1 at the right. */
 export const FRAME = Object.freeze({
-  dist: 3.1,         // m, lens to Brea (horizontal) at rest
-  height: 1.32,      // m, lens over her feet
-  pitchDeg: 5,       // up
+  dist: 2.4,         // m, lens to Brea (horizontal) at rest
+  height: 1.1,       // m, lens over her feet
+  pitchDeg: 9,       // up
   fov: 40,           // vertical, deg
   heroX: 0.70,       // her body on screen
   ringX: 0.86,       // the Ring on screen
-  turnDeg: 38,       // she faces this far left of the lens's line (three-quarters from behind)
+  turnDeg: 52,       // she faces this far left of the lens's line (three-quarters from behind)
   startExtra: 9,     // m further out before the press
   startRise: 2.4,    // m higher before the press
 });
@@ -232,8 +233,10 @@ const el = (tag, cls, parent, html) => {
 export function buildTitle(host) {
   document.body.classList.add('cal-t2');
   const inner = host;
-  const scrim = el('div', 't2-scrim', inner.parentElement || inner);
+  const holder = inner.parentElement || inner;
+  const scrim = el('div', 't2-scrim');
   scrim.setAttribute('aria-hidden', 'true');
+  holder.insertBefore(scrim, holder.firstChild);   // under the wordmark and the stations, not over them
   const tag = el('div', 't2-tag', inner, TEXT.tagline);
   const root = el('div', 'mn-title t2-stations', inner);
   const press = el('div', 'mn-title-press', root, `<span>${TEXT.press}</span>`);
@@ -265,7 +268,10 @@ export function fillStations(menu, { canContinue, showContinue, fns, onPick }) {
 
 /** The save line under the stations. */
 export function saveLine(info, older) {
-  if (info) return fill(TEXT.save.lastEntry, { quest: String(info.quest || 'Orchil').toLowerCase() });
+  if (info) {
+    const name = info.quest === QUEST.id ? QUEST.title : (info.quest || 'Orchil');
+    return fill(TEXT.save.lastEntry, { quest: String(name).toLowerCase() });
+  }
   return older || TEXT.save.none;
 }
 
@@ -355,4 +361,44 @@ export function buildLoadingSheet() {
   }
 }
 
+/**
+ * The sheet closes on warm frames, not on the boot's last line. main.js hides the sheet the moment its warm-up
+ * returns and starts the frame loop; the first frames of the world still paid for what a compile cannot do ahead
+ * (measured at b3c6642: a 2,075 ms first frame, then the deferred warm-up of the late Instrument kinds, 307 ms).
+ * So while the sheet is up the hide is held: the sheet stays until the deferred warm-up has run (or 8 s have
+ * passed) and the loop has drawn WARM_FRAMES frames in a row each under 33 ms, then it closes (12 s at most).
+ */
+const WARM_FRAMES = 8;
+export function holdSheetForWarmFrames() {
+  if (typeof document === 'undefined') return;
+  const L = document.getElementById('loading');
+  if (!L || L.dataset.hold) return;
+  L.dataset.hold = '1';
+  let releasing = false, released = false;
+  const obs = new MutationObserver(() => {
+    if (released || !L.classList.contains('hidden') || releasing) return;
+    L.classList.remove('hidden');
+    releasing = true;
+    const t0 = performance.now();
+    let warmed = false, run = 0, last = t0;
+    window.__CTX__?.events?.on?.('warm-up-complete', () => { warmed = true; });
+    const tick = (now) => {
+      const d = now - last; last = now;
+      run = d < 33 ? run + 1 : 0;
+      const waited = now - t0;
+      const ready = (warmed || waited > 8000 || !window.__CTX__?.machines) && run >= WARM_FRAMES;
+      if (ready || waited > 12000) {
+        released = true; obs.disconnect();
+        L.dataset.closedAfterMs = String(Math.round(waited));
+        L.classList.add('hidden');
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  obs.observe(L, { attributes: true, attributeFilter: ['class'] });
+}
+
 buildLoadingSheet();
+holdSheetForWarmFrames();

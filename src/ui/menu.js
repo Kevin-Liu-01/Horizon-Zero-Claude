@@ -1109,8 +1109,12 @@ export class Menus {
 
   audit() {
     const ctx = this.ctx;
+    // the Loading sheet stands over the title until it closes on warm frames (src/ui/title.js): what it covers is not seen
+    const sheet = document.getElementById('loading');
+    const sheetUp = !!sheet && !sheet.classList.contains('hidden') && getComputedStyle(sheet).display !== 'none';
     const vis = (n) => {
       if (!n) return false;
+      if (sheetUp && !sheet.contains(n)) return false;
       const r = n.getBoundingClientRect();
       return r.width > 2 && r.height > 2 && +getComputedStyle(n).opacity > 0.05;
     };

@@ -13,8 +13,8 @@ body.cal-t2 #title .title-inner {
   width: calc(100vw / var(--ui-z, 1)); height: calc(100vh / var(--ui-z, 1));
   padding: 0; text-align: left;
 }
-/* the boot sheet is gone once the title stands (one wordmark on screen, A70c) */
-body.cal-t2 #loading { display: none !important; }
+/* the boot sheet is gone once it has closed over a warm title (one wordmark on screen, A70c) */
+body.cal-t2 #loading.hidden { display: none !important; }
 /* the calima wash and its disc belonged to the old title */
 body.cal-t2 #cal-calima { display: none !important; }
 
