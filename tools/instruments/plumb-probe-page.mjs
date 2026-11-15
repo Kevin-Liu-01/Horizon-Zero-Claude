@@ -293,22 +293,37 @@ void main() {
       const sample = (lx, ly, lz) => { pW.set(lx, ly, lz); gim.localToWorld(pW); q4.copy(pW).project(cv);
         if (q4.z > 1 || Math.abs(q4.x) > 1 || Math.abs(q4.y) > 1) return null;
         return classOf(buf, Math.floor((q4.y * 0.5 + 0.5) * bh) * bw + Math.floor((q4.x * 0.5 + 0.5) * bw)); };
+      /* M1a round 3 fix: OCCLUSION. A rivet hidden behind the sphere sampled the sphere's own enamel, so it passed the
+       * "lands on brass or enamel" test, counted as visible and failed as unresolved (at 38012bc all 30 top-face rivets
+       * counted visible from 0.9 m above, the far half of the ring behind the sphere among them). A rivet is now visible
+       * only when nothing of the Plumb lies between the lens and its dome: a ray from the lens to the dome sample meets
+       * the Plumb's meshes first within 1.5 cm of it. The old count is kept beside it (visibleOld / resolvedOld) */
+      const rc = new THREE.Raycaster(), rcMeshes = meshesOf(m0), rcDir = new THREE.Vector3();
+      const occluded = (p) => { const D = cv.position.distanceTo(p); rcDir.subVectors(p, cv.position).normalize(); rc.set(cv.position, rcDir); rc.near = 0; rc.far = D + 0.05;
+        const h = rc.intersectObjects(rcMeshes, false); return h.length > 0 && h[0].distance < D - 0.015; };
       const course = (R, y, us, radial) => {
-        let vis = 0, res = 0; const miss = [];
+        let vis = 0, res = 0, visOld = 0, resOld = 0; const miss = [], per = [];
         const dU = (0.01 + 0.01) / R;   // 1 cm past the 1 cm rivet radius
         for (const u of us) {
           const d = [Math.cos(u), 0, -Math.sin(u)];
           nW.set(radial ? d[0] : 0, radial ? 0 : 1, radial ? d[2] : 0).applyMatrix3(nm).normalize();
           pW.set(cx + d[0] * R, cy + y, cz + d[2] * R); gim.localToWorld(pW);
-          if (toCam.subVectors(cv.position, pW).normalize().dot(nW) < 0.05) continue;   // faces away
+          const facing = toCam.subVectors(cv.position, pW).normalize().dot(nW);
+          if (facing < 0.05) continue;   // faces away
           const out = radial ? 0.004 : 0;   // on the dome: 4 mm proud of the band, or the dome's crown height on the face
           const at = (uu) => sample(cx + Math.cos(uu) * (R + out), cy + y, cz - Math.sin(uu) * (R + out));
           const c0 = at(u);
-          if (c0 !== 'brass' && c0 !== 'enamel') continue;   // hidden behind another part, or off the Plumb
+          if (c0 !== 'brass' && c0 !== 'enamel') continue;   // off the Plumb, or behind a part of another class
+          const ok = c0 === 'brass' && at(u - dU) === 'enamel' && at(u + dU) === 'enamel';
+          visOld++; if (ok) resOld++;
+          const dome = new THREE.Vector3(cx + Math.cos(u) * (R + out), cy + y, cz - Math.sin(u) * (R + out)); gim.localToWorld(dome);
+          const hid = occluded(dome);
+          per.push({ deg: Math.round(u * 180 / Math.PI), facing: r3(facing), hidden: hid, resolved: ok });
+          if (hid) continue;
           vis++;
-          if (c0 === 'brass' && at(u - dU) === 'enamel' && at(u + dU) === 'enamel') res++; else miss.push(Math.round(u * 180 / Math.PI));
+          if (ok) res++; else miss.push(Math.round(u * 180 / Math.PI));
         }
-        return { visible: vis, resolved: res, missedAtDeg: miss.slice(0, 24) };
+        return { visible: vis, resolved: res, visibleOld: visOld, resolvedOld: resOld, missedAtDeg: miss.slice(0, 24), per };
       };
       const top = course(0.4875, 0.029, Array.from({ length: 30 }, (_, i) => (i / 30) * Math.PI * 2), false);
       const TABS = [[55, 0.13], [-55, 0.13], [125, 0.13], [-125, 0.13], [-90, 0.17], [180, 0.12], [90, 0.20]];
@@ -317,7 +332,11 @@ void main() {
       const outerU = Array.from({ length: 36 }, (_, i) => Math.PI / 36 + (i / 36) * Math.PI * 2).filter((u) => !skip(u));
       const outer = course(0.55, 0, outerU, true);
       const vis = top.visible + outer.visible, res = top.resolved + outer.resolved;
+      // diagnostic for a ruling (not the bar): the share among unhidden rivets whose dome faces the lens within 60 deg
+      const f60 = [...top.per, ...outer.per].filter((q) => !q.hidden && q.facing >= 0.5);
       return { centreLocal: [r3(cx), r3(cy), r3(cz)], topFace: top, outerBand: outer, visible: vis, resolved: res, share: vis ? r3(res / vis) : null,
+        visibleOld: top.visibleOld + outer.visibleOld, resolvedOld: top.resolvedOld + outer.resolvedOld,
+        facing60: { visible: f60.length, resolved: f60.filter((q) => q.resolved).length },
         bar: 'the ring\'s rivets resolve at 6 m: >= 90 % of the visible ones (both courses), each 2 cm dome >= 2 px (px2cm)', pass: vis > 0 && res / vis >= 0.9 && px2cm >= 2 };
     })();
     return { distM: r3(dist), fov: r3(cv.fov), px2cm: r3(px2cm), smallBrassBlobs: blobs.length, blobSpanMedianPx: med, ring, ringVisibleShare: r3(onRing), ringExpectedRivets: visible, ringResolvedRivets: resolved, ringRunsPx: rv.map((q) => r3(q.len * sampM * pxPerM)).slice(0, 40),
@@ -581,14 +600,17 @@ void main() {
             }
           }
           if (rec?.point && prevTip) glassD = Math.min(glassD, segSegDist(prevTip, rec.point, ...glassSeg()));
-          // touched (M1a round 3, after the first film at 38012bc): the arrow's stop point lies ON THE VIAL's drawn body, read
-          // in the Plumb's root frame from the vial's centre, the tube along +X (gen-plumb.mjs levelVial): the glass
-          // (|x| <= 0.138 m: radial <= the glass's 0.045 + the shaft's 0.0048 + 2 mm) or a brass end cap (0.138-0.200 m:
-          // radial <= the cap's 0.059 + the shaft + 2 mm). From an end-on bearing the cap hides the glass: a shot there
-          // can only strike the cap. The tip-path distance (glassM) is kept as a diagnostic only: it read 0.39 m on
-          // shots stopped 0.05 m from the axis (near-parallel segments), so it does not grade
+          // touched (M1a round 3 fix, after the judge): the arrow's stop point lies ON THE GLASS, read in the Plumb's root
+          // frame from the vial's centre, the tube along +X (gen-plumb.mjs levelVial): |x| <= the glass's half-length
+          // + 2 mm and off the axis by no more than the glass's own radius there (its rounded ends: kit.mjs VIAL_PROFILE,
+          // copied below) + the Reed shaft's 0.0048 + 2 mm. Glass only: b6e2135 also counted the brass end caps, a rule
+          // changed after the measurement with no ruling; the caps are gone from the model and the rule is back to glass
+          const VP = [[0, 1], [0.66, 0.987], [0.88, 0.94], [1, 0.86]];   // kit.mjs VIAL_PROFILE, the +end: [r / R, x / half]
+          const glassR = (ax, R, half) => { const t = ax / half; if (t <= VP[3][1]) return R; if (t >= 1) return 0;
+            for (let j = 0; j < 3; j++) { const [r1, h1] = VP[j], [r0, h0] = VP[j + 1]; if (t >= h0 && t <= h1) return R * (r0 + (r1 - r0) * (t - h0) / (h1 - h0)); } return 0; };
+          const SOCK = mt.ctx?.assets?.models?.plumb?.r5Sockets || {}, GR = SOCK.vialR ?? 0.045, GH = 0.5 * (SOCK.vialLen ?? 0.3);
           const onVial = (off) => { if (!off) return false; const ax = Math.abs(off[0]), rad = Math.hypot(off[1], off[2]);
-            return ax <= 0.138 ? rad <= 0.045 + 0.0048 + 0.002 : ax <= 0.200 && rad <= 0.059 + 0.0048 + 0.002; };
+            return ax <= GH + 0.002 && rad <= glassR(Math.min(ax, GH), GR, GH) + 0.0048 + 0.002; };
           const touched = rec && !rec.miss ? onVial(rec.offLocal) : false;
           const dtMean = steps ? r3((E.simTime - t0) / steps) : null;
           if (!rec) rec = { miss: true, closestTailM: r3(closest), dyAtClosest: cy, mode: arrow?.mode, stuckTo: arrow?.stuckTo?.name || null };
@@ -606,7 +628,7 @@ void main() {
           .filter((h) => Math.min(Math.abs(h.a[1]), Math.abs(h.b[1])) < 0.6 || (h.a[1] < 0) !== (h.b[1] < 0));
       } catch (e) { caps = String(e); }
       return { capsulesNearVial: caps, headYaw: r3(mt.rig?.bones?.head?.rotation?.y ?? null), distM: 40, arrow: 'Reed (hunter) at full draw', speed, vialRadiusM: mt._vialWp.radius, vialCapsuleHalfM: mt._vialWp.half ?? null, glassTouchM: r3(GLASS_TOUCH), vialLenM: mt.ctx?.assets?.models?.plumb?.r5Sockets?.vialLen ?? null, ...res,
-        bar: 'A-weak40:plumb: the vial hit by >= 9 of 10 scripted shots at 40 m (the centre set), each stopped on the vial\'s drawn body (the glass, or a brass end cap where it hides the glass); a counted hit stopped in the air beside it fails the row',
+        bar: 'A-weak40:plumb: the vial hit by >= 9 of 10 scripted shots at 40 m (the centre set), each stopped ON THE GLASS (within the glass\'s own radius + the shaft + 2 mm); a counted hit stopped anywhere else fails the row',
         pass: res.centre.visibleHits >= 9 && res.centre.countedVisibleMisses === 0 };
     });
 

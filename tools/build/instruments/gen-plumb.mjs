@@ -232,7 +232,7 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
   // THE LEVEL VIAL: the weak point, on two slender brass standards above the sphere's crown (a short mast topped by
   // the vial). Its cradle (caps, saddles, rings, bubble, crossbar) is its own node, the vial's hit volume (the kind file
   // mounts it as the `vial` part); the standards and the antennae are another (`plumb-mast`): thin capsules round each
-  const VY = PLUMB.vialY;
+  const VY = PLUMB.vialY, ANT_X = 0.10;
   for (const s of [-1, 1]) {
     const x = s * 0.16, y0 = SY + Math.sqrt(SR * SR - x * x) - 0.03;
     strut(MS, V(x, y0, 0), V(x, VY - 0.045, 0), 0.016, 0.014, { surf: 'bronze', tone: C.BRASS, sides: 8 });
@@ -240,8 +240,10 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
   }
   rbox(CR, V(0, VY - 0.07, 0), [0.36, 0.02, 0.07], 0.006, { surf: 'bronze', tone: C.BRASS, wear: 0.6 });
   const vial = levelVial(CR, G('head'), V(0, VY, 0), V(1, 0, 0), { len: PLUMB.vialLen, r: PLUMB.vialR });
-  // the antennae: one with a cross-arm and the 3.40 m finial, behind the vial; a shorter one off the crown
-  antenna(MS, V(0, VY - 0.07, -0.085), V(0, PLUMB.top, -0.085), { r: 0.012, finial: 0.12, cross: 0.055 });
+  // the antennae: one with a cross-arm and the 3.40 m finial, behind the vial; a shorter one off the crown. Round 3
+  // fix (A-weak40:plumb): the tall one stands 0.10 m off the vial's centre along the tube (it stood square behind the
+  // centre, so a shot from across the tube, 87 deg off its axis, stopped on it: the scripted 72 deg bearing)
+  antenna(MS, V(ANT_X, VY - 0.07, -0.085), V(ANT_X, PLUMB.top, -0.085), { r: 0.012, finial: 0.12, cross: 0.055 });
   antenna(MS, V(-0.175, VY - 0.07, -0.03), V(-0.19, 3.17, -0.04), { r: 0.009, finial: 0.07 });
 
   /* ------------------------------- the lamp drum (a tool) ------------------- */
@@ -337,7 +339,7 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
     scopeSeat: sh(V(0.18, SY + 0.19, 0.315)),
     mastFoot: sh(V(0.16, SY + Math.sqrt(SR * SR - 0.16 * 0.16) - 0.03, 0)),
     cradleSeat: sh(V(0.16, VY - 0.05, 0)),
-    top: sh(V(0, PLUMB.top, -0.085)),
+    top: sh(V(0.10, PLUMB.top, -0.085)),
   };
 
   const hullAll = mergeLabelled(hull, BONE_ORDER, 'plumb-hull');

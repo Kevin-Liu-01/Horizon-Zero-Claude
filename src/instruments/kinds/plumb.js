@@ -69,8 +69,14 @@ const VIAL_WP_R = 0.10;
  * glass. The 0.10 m sphere stopped arrows 4-8 cm in the air in front of the tube and counted them.
  */
 const VIAL_CAP_R = 0.050;
-/** What else counts as the vial: a hit on the cradle's caps and bands, within this of the glass's axis segment. */
-const VIAL_BAND_R = 0.062;
+/**
+ * What else counts as the vial (round 3 fix): a hit on one of the two slim brass bands ON the glass (gen-plumb.mjs
+ * levelVial, at +-0.07 m, 3.5 mm proud): within VIAL_BAND_AX of the glass's centre along its axis and VIAL_BAND_R of the
+ * axis. The glass's ends are glass now (no brass caps), so nothing else on the cradle (saddles, crossbar, standards)
+ * counts: a shot stopped there visibly misses the glass.
+ */
+const VIAL_BAND_R = 0.058;
+const VIAL_BAND_AX = 0.08;
 const TRI = (k) => ({
   walk: { stride: 0.78 * k, duty: 0.72, lift: 0.14 * k, offsets: { MF: 0, LH: 1 / 3, RH: 2 / 3 } },
   run: { stride: 1.45 * k, duty: 0.6, lift: 0.22 * k, offsets: { MF: 0, LH: 1 / 3, RH: 2 / 3 } },
@@ -175,8 +181,12 @@ export class Plumb extends ExpansionMachine {
       // the capsule (see VIAL_CAP_R): the glass's axis is the model's +X at the vial (gen-plumb.mjs levelVial), carried
       // into the weak point's own frame once, in the bind pose; the head turns it with the glass from then on
       const S0 = entry.r5Sockets || {};
-      this._vialWp.half = 0.5 * (S0.vialLen || 0.30);
+      // round 3 fix: the capsule's half-length is the glass's half-length LESS its radius, so its rounded tip ends at the
+      // glass's own tip (0.15 m) and never stops an arrow in the air past the glass (half 0.15 reached 0.20 m, over the
+      // old brass caps; the judge measured it). The glass's rounded ends are hit on their own triangles as well
       this._vialWp.radius = Math.max(VIAL_CAP_R, (S0.vialR || 0.045) + 0.005) * k;
+      // (`half` is in the weak point's own frame, scale-1 metres: hitHulls carries it through its matrixWorld, x k)
+      this._vialWp.half = Math.max(0.01, 0.5 * (S0.vialLen || 0.30) - this._vialWp.radius / k);
       this.root.updateMatrixWorld(true);
       const qo = this._vialWp.obj.getWorldQuaternion(new THREE.Quaternion()), qr = this.root.getWorldQuaternion(new THREE.Quaternion());
       this._vialWp.axis = new THREE.Vector3(1, 0, 0).applyQuaternion(qr).applyQuaternion(qo.invert()).normalize();
@@ -274,20 +284,34 @@ export class Plumb extends ExpansionMachine {
     return _wp.addScaledVector(_wa, u).distanceTo(pt);
   }
 
+  /** `pt` in the vial glass's frame: [along its axis from the glass's centre, off the axis] (world metres). */
+  _vialAxial(pt) {
+    const wp = this._vialWp;
+    wp.obj.getWorldPosition(_wp);
+    if (!wp.axis || !(wp.half > 0)) return [0, _wp.distanceTo(pt)];
+    _wa.copy(wp.axis).multiplyScalar(wp.half).applyMatrix4(wp.obj.matrixWorld).sub(_wp).normalize();
+    const dx = pt.x - _wp.x, dy = pt.y - _wp.y, dz = pt.z - _wp.z;
+    const ax = dx * _wa.x + dy * _wa.y + dz * _wa.z;
+    return [ax, Math.sqrt(Math.max(0, dx * dx + dy * dy + dz * dz - ax * ax))];
+  }
+
   /** Two level-vial hits: it cannot find level, and it topples (E10). */
   takeDamage(hit) {
     let vial = false;
     const wp = this._vialWp, pt = hit && hit.point;
     // (round 3) a vial hit is a hit ON THE GLASS: its own triangles, or a point within the capsule round the tube's axis
-    // (the weak point's own body) or on the cradle's caps and bands round it (VIAL_BAND_R). A hit on the cradle's
-    // saddles or crossbar, or anywhere else near the vial, visibly misses the glass and is not a vial hit
+    // (the weak point's own body, which ends at the glass's tips), or on one of the two bands on the glass (VIAL_BAND_*).
+    // A hit on the cradle's saddles or crossbar, or anywhere else near the vial, visibly misses the glass: not a vial hit
     const near = this.alive && wp && pt ? this._vialAxisDist(pt) : Infinity;
     if (wp && near <= wp.radius + 1e-4) vial = true;
     if (this.alive && hit?.object && this._vialPart) {
       if (hit.object === this._vialGlass || hit.object.name === 'plumb-vial') vial = true;
       let o = hit.object;
       while (o && !o.userData?.part) o = o.parent;
-      if (o?.userData?.part === this._vialPart && near <= VIAL_BAND_R * (this._scale || 1)) vial = true;
+      if (o?.userData?.part === this._vialPart && pt) {
+        const k = this._scale || 1, [ax, rad] = this._vialAxial(pt);
+        if (Math.abs(ax) <= VIAL_BAND_AX * k && rad <= VIAL_BAND_R * k) vial = true;
+      }
     }
     // (round 2) no priority rule: a vial hit is a hit whose point lies in the vial's weak-point sphere or on the vial's own
     // geometry. The arrow sweep is triangle-exact on the head's skin now (core/hitHulls.js `_exactBoneT`), so a shot no

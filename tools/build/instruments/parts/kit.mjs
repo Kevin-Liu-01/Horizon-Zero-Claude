@@ -733,32 +733,41 @@ export function lampDrum(b, base, axis, { r = 0.2, depth = 0.16, ticks = 16 } = 
   return { face: base.clone().addScaledVector(axis, depth - 0.016), radius: r * 0.9 };
 }
 /**
- * A level vial on `axis` centred at c: a pale-ice glass tube `len` long in `glass` (the emissive sensor bucket), a
- * bubble (a glossy blister that reads dark against the lit glass), two ink rings, brass end caps and two saddle
- * straps in `hull`. Returns { ends: [a, b], len, r }.
+ * A level vial on `axis` centred at c: a pale-ice glass AMPOULE `len` long in `glass` (the emissive sensor bucket): a
+ * tube of radius r whose ends round off in glass (VIAL_PROFILE), a bubble (a glossy blister that reads dark against
+ * the lit glass) and two slim brass bands on the tube in `hull`. Returns { ends: [a, b], len, r, profile }.
+ *
+ * M1a round 3 fix (A-weak40:plumb, ruling "a shot that visibly misses the glass must not count"): the ends are GLASS,
+ * not brass. Brass end caps (r x 1.32, 0.042 m deep over each end) hid the glass from every bearing within about 21 deg
+ * of the tube's axis: a shot aimed at the vial's centre from there can only strike a cap (at 38012bc, 4 of the 10
+ * scripted 40 m bearings, 15 and 21 deg off the axis, stopped on a cap). With glass ends a centre shot meets glass from
+ * every bearing: inside 17 deg of the axis on the rounded end, beyond it on the tube. The bands sit at +-0.07 m, where
+ * no bearing under 31 deg reaches them before the glass (the old rings at +-0.06 and +-0.09 m are gone).
  */
+export const VIAL_PROFILE = Object.freeze([[0, 1], [0.66, 0.987], [0.88, 0.94], [1, 0.86], [1, -0.86], [0.88, -0.94], [0.66, -0.987], [0, -1]]);
 export function levelVial(hull, glass, c, axis, { len = 0.3, r = 0.045 } = {}) {
   const ax = axis.clone().normalize();
   const a = c.clone().addScaledVector(ax, -len / 2), e = c.clone().addScaledVector(ax, len / 2);
-  strut(glass, a, e, r, r, { surf: 'lamp', tone: C.ICE, sides: 18, wear: 0 });
-  for (const [p, s] of [[a, -1], [e, 1]]) {
-    strut(hull, p.clone().addScaledVector(ax, -0.012 * s), p.clone().addScaledVector(ax, 0.03 * s), r * 1.32, r * 1.2, { surf: 'bronze', tone: C.BRASS, sides: 18, wear: 0.6 });
-    strut(hull, p.clone().addScaledVector(ax, 0.03 * s), p.clone().addScaledVector(ax, 0.045 * s), r * 0.7, r * 0.35, { surf: 'bronze', tone: C.BRASS, sides: 12, wear: 0.6 });
-  }
-  const up = Math.abs(ax.y) < 0.9 ? _Y.clone() : new THREE.Vector3(0, 0, 1);
-  for (const f of [-0.06, 0.06]) gyroRing(hull, c.clone().addScaledVector(ax, f), ax, r * 1.02, 0.0045, { radial: 24 });
-  for (const f of [-0.3, 0.3]) {
-    const g = new THREE.TorusGeometry(r * 1.12, 0.009, 4, 20);
+  // the lathe's +Y along the axis: x' and z' any frame square to it
+  const t1 = Math.abs(ax.y) < 0.9 ? new THREE.Vector3().crossVectors(_Y, ax).normalize() : new THREE.Vector3(1, 0, 0);
+  const t2 = new THREE.Vector3().crossVectors(t1, ax).normalize();
+  const M = basis(t1, ax, t2, c);
+  // VIAL_PROFILE is [radius / r, position / (len / 2)], from the +end round to the -end (outward normals)
+  lathe(glass, VIAL_PROFILE.map(([rr, hh]) => ({ r: rr * r, h: hh * len / 2, surf: 'lamp', tone: C.ICE })).reverse(), M, { segs: 18, wear: 0, crease: 50 });
+  // two slim brass bands on the tube (the cradle's grip): 3.5 mm proud of the glass
+  for (const f of [-0.07, 0.07]) {
+    const g = new THREE.TorusGeometry(r + 0.0015, 0.0035, 4, 20);
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), ax);
-    hull.add(g, { surf: 'bronze', tone: C.BRASS, wear: 0.6, matrix: new THREE.Matrix4().compose(c.clone().addScaledVector(ax, f * len), q, _ONE) });
+    hull.add(g, { surf: 'bronze', tone: C.BRASS, wear: 0.6, matrix: new THREE.Matrix4().compose(c.clone().addScaledVector(ax, f), q, _ONE) });
     g.dispose();
   }
+  const up = Math.abs(ax.y) < 0.9 ? _Y.clone() : new THREE.Vector3(0, 0, 1);
   // the bubble: a flattened blister on top of the tube, a little off centre (the instrument is not quite level)
   const bg = new THREE.SphereGeometry(1, 12, 6);
   bg.scale(0.03, 0.012, 0.022);
   hull.add(bg, { surf: 'glaze', tone: 0xf4f8f6, wear: 0, matrix: new THREE.Matrix4().compose(c.clone().addScaledVector(ax, 0.025).addScaledVector(up, r * 0.86), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), ax), _ONE) });
   bg.dispose();
-  return { ends: [a, e], len, r };
+  return { ends: [a, e], len, r, profile: VIAL_PROFILE };
 }
 /**
  * A graduated staff a -> b (r0 at a, r1 at b): white enamel, the thin graduations of the atlas `grad` band
