@@ -20,9 +20,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 export const FACE = {
   F11: { box: [655, 200, 918, 455], dark: [[662, 222, 758, 298], [798, 222, 895, 298]] },
   F12: { box: [580, 235, 905, 455], dark: [[576, 262, 640, 315], [640, 238, 765, 290]] },
-  F13: { box: [570, 240, 760, 455], dark: [[575, 265, 625, 305]] },
+  // (Frame Set v2's F13 is a true profile, the head's look-at held neutral: the boxes re-set from the f039319 film: the face from under the hairline to the chin, short of the scarf behind the jaw)
+  F13: { box: [558, 240, 700, 492], dark: [[560, 255, 620, 305]] },
 };
-export const EYE13 = [588, 274, 622, 296];
+export const EYE13 = [583, 276, 618, 304];
 
 export async function faceFrames(run) {
   const sharp = createRequire(path.join(ROOT, 'package.json'))('sharp');
