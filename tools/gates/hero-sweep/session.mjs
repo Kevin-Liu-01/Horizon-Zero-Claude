@@ -64,7 +64,7 @@ if (args.includes('--extra-first')) rows = [...rows.filter((g) => g.__extra), ..
  * timeout is 600 s and took 177-178 s at dee526d; with the timeout as the need, A16 and A17 never started at 6448b3d).
  * Seconds measured in the page, with headroom; a row not named here needs min(its timeout, 90 s). A row that overruns is
  * still cut by its own timeout, and the watchdog still ends the session at the budget + 45 s. */
-const EXPECT_S = { 'A-sweep-wind': 30, 'A-draw-elbow-level': 190, 'A16-draw-anchor': 110, 'A107-draw-arm-path': 60, 'A104-melee-self-clear': 60, 'A105-melee-while-moving': 60, 'A32-draw-ramp': 45, 'A17-draw-beats': 20, 'V-traversal': 60 };
+const EXPECT_S = { 'A-sweep-wind': 30, 'A-draw-elbow-level': 190, 'A16-draw-anchor': 110, 'A107-draw-arm-path': 60, 'A104-melee-self-clear': 60, 'A105-melee-while-moving': 60, 'A32-draw-ramp': 45, 'A17-draw-beats': 20, 'V-traversal': 60, 'A-stow-clearance': 200 };
 const set = loadFrameSet();
 const frameIds = (flag('--frames') || '').split(',').filter(Boolean);
 const frames = set.frames.filter((f) => frameIds.includes(f.id));
@@ -290,7 +290,9 @@ try {
     try {
       if (g.setup) await withTimeout(page.evaluate(g.setup), g.timeout ?? 90000, 'setup');
       await sleep(g.settle ?? 400);
-      const res = await Promise.race([page.evaluate(g.assert), sleep(g.timeout ?? 90000).then(() => ({ pass: false, detail: 'timeout' }))]);
+      let res = await Promise.race([page.evaluate(g.assert), sleep(g.timeout ?? 90000).then(() => ({ pass: false, detail: 'timeout' }))]);
+      /* (M1a regfix 3: a row cut by its timeout reports where it was, when it marks its progress in window.__rowProg) */
+      if (res?.detail === 'timeout') { try { res = { pass: false, detail: { timeout: true, at: await withTimeout(page.evaluate(() => window.__rowProg ?? null), 5000, 'progress') } }; } catch { /* */ } }
       out.rows.push({ id: g.id, status: res?.pass === true ? 'PASS' : res?.pass === null ? 'PENDING' : 'FAIL', seconds: Math.round((Date.now() - r0) / 1000), freshPage: !!rebootS, rebootS, reset, detail: res?.detail });
     } catch (e) { out.rows.push({ id: g.id, status: 'ERROR', error: String(e?.message || e).slice(0, 400) }); }
     const last = out.rows[out.rows.length - 1];
