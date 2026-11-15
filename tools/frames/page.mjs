@@ -498,6 +498,15 @@ export async function stageFrame(f, o = {}) {
         if (Array.isArray(an._widenHold)) an._widenHold.fill(0);
         for (const k of ['_lvx', '_lvz', '_prevLvx', '_prevLvz', '_jerkX', '_jerkZ', '_yawRate', '_mx', '_latMove', '_moveW', '_runW']) if (k in an) an[k] = 0;
         if (an.melee && '_pelvisShiftOk' in an.melee) an.melee._pelvisShiftOk = false;
+        /* (the run and the heavy only: the bow poses keep the slate's one raise above) her bow as if never drawn: the
+         *  bow's stow path (`_bp`, built on first use, its blend and grab fixed by the first aim), the elbow form's
+         *  costs (`_efS`) and the wrist reference the aim set. Short session at 2857771: F15 filmed before any draw hung
+         *  its back panel along the thigh, as the anchor (filmed in a session with no draw); filmed after F16's draw it
+         *  lifted to the review's 40 deg with the hem turned out flat */
+        if (!bowPose) {
+          an._bp = null; an._wrRefOk = false; an._gripE = 0; an._gripH = 0; if ('_qbF' in an) an._qbF = 1;
+          if (an._efS) Object.assign(an._efS, { r: 0, shU: 0, shY: 0, hR: 0, hdF: 0, hD: 0, lo: 0, hi: 0, bh: 0, bd: 0, drop: 0, r52: 1, out: 0, shL: 0 });
+        }
       }
       if ('_bobPhase' in p) { p._bobPhase = 0; p._bobK = 0; }
     };
