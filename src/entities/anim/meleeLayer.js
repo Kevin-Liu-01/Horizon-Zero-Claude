@@ -272,9 +272,13 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
  * 50-60 % of the haft with the tip at 0.35-0.55 m, and her arm is 0.475 m; the pose
  * lab (f1) measured the left hand sliding to 40-43 % of the haft with the wrist 0.17-0.27 m
  * further forward (doc §6.2). */
+/* M1.3d: BOTH HANDS AT THE SOCKETS (BIBLE §5.3 "weapon gripped at its sockets"). The left palm on the
+ * prop's `grip2` mark (`lhOn` = LH_ON_REF, 0.55 of the haft); the rear fist 0.04 m further forward and up, the
+ * haft 6 deg less steep and the trunk 0.06 rad more bladed, which is what puts that mark inside her left
+ * arm's reach (pose lab: the left palm 0.005 m from the mark, the tip 0.59 m up). */
 const READY = {
-  hand: [-0.23, 1.12, 0.0], shaft: [0.38, -0.40, 0.83],
-  lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.50, yaw: -0.40, py: -0.28, pitch: 0.32, roll: 0.02, dz: 0.0,
+  hand: [-0.23, 1.14, 0.04], shaft: [0.34, -0.28, 0.90],
+  lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.5425, yaw: -0.46, py: -0.28, pitch: 0.32, roll: 0.02, dz: 0.0,
 };
 /**
  * Her legs, per beat. Rotations are char-space radians on thigh, calf and
@@ -315,6 +319,8 @@ const STANCE = {
    * every light): r1/r2b read its pinned hips 0.643 / 0.669 m against light-3's 0.722 / 0.701, so the
    * margin was the run's noise. Both knees bend further and the long stab stands 0.015 m taller. */
   heavy: { thighL: -1.00, thighR: 0.50, calfL: 1.20, calfR: 0.30, footL: -0.28, footR: -0.50, abd: 0.18, dx: -0.03, dy: -0.32 },
+  /* M1.3d: the Undercut, standing, is the lowest of all (from a crouch the crouch owns the legs) */
+  undercut: { thighL: -1.08, thighR: 0.56, calfL: 1.34, calfR: 0.42, footL: -0.30, footR: -0.52, abd: 0.20, dx: -0.02, dy: -0.37 },
 };
 /** How much of a beat's stance is on at clip progress `cu` (0 cock .. 1 end). */
 const STANCE_ENV = (cu) => (
@@ -323,10 +329,20 @@ const STANCE_ENV = (cu) => (
       : cu <= 0.82 ? 1
         : 1 - smoothstep((cu - 0.82) / 0.18, 0, 1)
 );
+/** M1.3d: the Undercut sinks INTO its chamber (full by the cock) and holds there, so the thrust that follows
+ *  runs level along the haft instead of dropping through it (the default envelope loads the legs from the
+ *  cock to the contact, which on a 0.37 m sink put the blade's last 0.1 s 48 deg off its own axis). */
+const STANCE_SINK = (cu) => (
+  cu <= 0.30 ? smoothstep(cu / 0.30, 0, 1)
+    : cu <= 0.82 ? 1
+      : 1 - smoothstep((cu - 0.82) / 0.18, 0, 1)
+);
 const BEATS = [
   {
     id: 'light-1', clip: [0.10, 0.62], mirror: false, clipW: 0.16,
-    cock: { hand: [-0.29, 1.24, -0.24], shaft: [0.40, 0.47, 0.79], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.50, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
+    /* M1.3d: the press's cock is the chamber a held press grows into the heavy from, so both hands are at
+     * their sockets in it (the left on `grip2`: it was 0.12 m short of it, and the heavy's windup started there) */
+    cock: { hand: [-0.29, 1.24, -0.24], shaft: [0.40, 0.47, 0.79], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.46, py: -0.34, pitch: 0.02, roll: 0.05, dz: -0.07 },
     /* fix round 1: a LEVEL THRUST, the front arm long and the hips driven over the lead foot */
     contact: { hand: [-0.12, 1.10, 0.45], shaft: [0.06, 0.05, 0.997], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.34, yaw: -0.42, py: 0.08, pitch: 0.45, roll: -0.04, dz: 0.22 },
     follow: { hand: [-0.13, 1.06, 0.46], shaft: [0.16, -0.20, 0.966], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.36, yaw: -0.42, py: 0.06, pitch: 0.42, roll: -0.06, dz: 0.20 },
@@ -350,13 +366,80 @@ const BEATS = [
     follow: { hand: [-0.21, 1.08, 0.48], shaft: [0.24, -0.54, 0.806], lh: [0.38, 0.92, -0.24], lhW: 0, lhOn: 0.40, yaw: 0.18, py: 0.20, pitch: 0.26, roll: -0.04, dz: 0.10 },
   },
 ];
+/* M1.3d: THE HEAVY IS DRIVEN BY THE BODY WITH BOTH HANDS AT THE SOCKETS. Round 5's drive pushed the rear
+ * fist out to arm's length at shoulder height (0.47 m forward) and slid the left hand back to 0.39 of the haft
+ * to keep it on; a two-handed polearm thrust does not move the hands on the haft, the BODY carries them. So the
+ * rear fist stays at her chest (0.10 m forward), the left arm is the one that is long, on `grip2`, and the reach
+ * comes from the lunge (dz 0.32), the trunk's pitch and its turn (left shoulder forward). The rear fist rides
+ * at her right side (x -0.26), so the forearm guard (`_foreGuard`) has nothing to push: at x -0.18 it shoved
+ * the fist 0.15 m out at the contact and fought the recover (the tip jumped 1 m a frame). Pose lab (held keys):
+ * the left palm on `grip2` at the cock, the contact and the follow-through, 0.10-0.16 m of reach to spare. */
 const HEAVY = {
   id: 'heavy', clip: [0.0, 0.92], mirror: false, clipW: 0.18,
-  cock: { hand: [-0.28, 1.31, -0.12], shaft: [0.32, 0.46, 0.83], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.38, yaw: -0.46, py: -0.36, pitch: -0.10, roll: 0.08, dz: -0.10 },
+  cock: { hand: [-0.26, 1.30, -0.06], shaft: [0.30, 0.36, 0.88], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.52, py: -0.40, pitch: 0.0, roll: 0.08, dz: -0.10 },
   /* fix round 1: the LOWEST, LONGEST drive: the hips sink furthest and travel furthest */
-  contact: { hand: [-0.13, 1.28, 0.47], shaft: [0.10, -0.12, 0.988], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.44, py: 0.12, pitch: 0.55, roll: -0.05, dz: 0.26 },
-  follow: { hand: [-0.15, 1.16, 0.46], shaft: [0.22, -0.36, 0.906], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.30, yaw: -0.40, py: 0.10, pitch: 0.50, roll: -0.08, dz: 0.22 },
+  contact: { hand: [-0.26, 1.28, 0.02], shaft: [0.22, 0.02, 0.975], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.66, py: 0.14, pitch: 0.44, roll: -0.05, dz: 0.32 },
+  follow: { hand: [-0.26, 1.24, 0.04], shaft: [0.24, -0.06, 0.97], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.64, py: 0.16, pitch: 0.44, roll: -0.08, dz: 0.34 },
 };
+
+/* ------------------- M1.3d: THE BODY PERFORMS THE HEAVY ------------------- */
+/**
+ * HIPS FIRST (BUILD M1.3d, BIBLE §5.3 voice 5). The pelvis plays its beat
+ * `HIP_LEAD` seconds AHEAD of the trunk and the arms: its turn, its drive
+ * forward and the legs' load are read off the same keys at the clock plus the
+ * lead (`_ahead`), and the spine takes the difference out (`update`), so the
+ * shoulders stay on the beat's own clock and the blade still lands at the
+ * contact fraction. Ramped in over `HIP_LEAD_RAMP` from a beat's first frame,
+ * so a beat that starts out of another never jumps its hips.
+ */
+const HIP_LEAD = 0.085;
+/** How far the guard's and the beats' hand goals come down in a full crouch (m; see `update`). */
+const CROUCH_KEY_DROP = 0.50;
+/** A crouched Undercut keeps this much less of its hip turn and drive than a standing one (the crouch's legs
+ *  cannot carry the full 0.36 m lunge; with all of it the left hand was pulled 0.16 m off `grip2`). */
+const UC_CROUCH_HIPS = 0.6;
+const HIP_LEAD_RAMP = 0.10;
+/**
+ * THE MASKED CLIP AFTER THE HIPS, NOT BEFORE THEM (M1.3d). `Sword_Attack`'s
+ * own trunk swing (about 0.3 rad of the shoulders) sits at clip progress
+ * 0.24-0.36, i.e. AROUND the cock: measured on the heavy, it turned the
+ * shoulders 0.14 s before the hips. On the heavy the clip's progress is
+ * re-mapped (piecewise linear, default progress -> clip progress) so its swing
+ * starts once the hips have, and the trunk unwinds hips -> chest -> arms.
+ */
+const HEAVY_CLIP_MAP = [[0, 0], [0.30, 0.21], [0.42, 0.22], [0.62, 0.36], [0.68, 0.68], [1, 1]];
+function mapClip(map, u) {
+  if (!map) return u;
+  for (let i = 1; i < map.length; i++) {
+    const a = map[i - 1], b = map[i];
+    if (u <= b[0]) return a[1] + (b[1] - a[1]) * ((u - a[0]) / Math.max(1e-6, b[0] - a[0]));
+  }
+  return map[map.length - 1][1];
+}
+HEAVY.hipLead = HIP_LEAD;
+HEAVY.clipMap = HEAVY_CLIP_MAP;
+/**
+ * THE UNDERCUT (BIBLE §5.3: "a low two-handed thrust from a crouch, never an
+ * overhead stab"). Both hands stay on the haft at its two sockets from the
+ * chamber to the follow-through; the hands chamber back low at the right hip
+ * with the blade level, the hips turn and drive first, and the haft runs
+ * forward along its own axis, slightly UP into the underside it is aimed at:
+ * the chamber, the contact and the follow-through share one haft line (pose
+ * lab: the chamber's tip sits 0.54 m behind the contact's on it), and the
+ * left palm is on `grip2` in all three with 0.08-0.31 m of reach to spare.
+ * It plays on light-3's clock (`melee.js` fires it with `undercut`).
+ */
+const UNDERCUT = {
+  id: 'undercut', clip: [0.10, 0.62], mirror: false, clipW: 0.10, hipLead: HIP_LEAD, sinkFirst: true,
+  cock: { hand: [-0.26, 1.00, -0.18], shaft: [0.14, 0.12, 0.98], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.56, py: -0.40, pitch: 0.38, roll: 0.04, dz: -0.06 },
+  contact: { hand: [-0.22, 1.04, 0.0], shaft: [0.12, 0.14, 0.98], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.70, py: 0.10, pitch: 0.44, roll: -0.04, dz: 0.30 },
+  follow: { hand: [-0.22, 1.02, 0.02], shaft: [0.12, 0.11, 0.985], lh: [0.2, 0.95, 0.2], lhW: 1, lhOn: 0.5425, yaw: -0.70, py: 0.12, pitch: 0.44, roll: -0.06, dz: 0.32 },
+};
+/** Which beat a published melee state plays, and its slot in `_reachSeen`. */
+function beatFor(st) {
+  return st.undercut ? UNDERCUT : st.heavy ? HEAVY : BEATS[clamp(st.combo | 0, 0, BEATS.length - 1)];
+}
+function beatSlot(heavy, combo, uc) { return uc ? 4 : heavy ? 3 : clamp(combo | 0, 0, 2); }
 /** How far before `CONTACT_K` the contact key is reached; it is then HELD for
  *  the rest of the strike window. See `_blend`. 0.16 -> 0.10 in fix pass 1: the
  *  hold is still 0.030 s of a 0.10 s strike, and the 0.006 s it gives back goes
@@ -718,12 +801,12 @@ function unit(v) {
   return [v[0] / l, v[1] / l, v[2] / l];
 }
 /** The tables, for the gates and the offline rig tools (never written at runtime). */
-export const MELEE_TABLES = { READY, BEATS, HEAVY, STANCE };
+export const MELEE_TABLES = { READY, BEATS, HEAVY, UNDERCUT, STANCE, HIP_LEAD };
 
 for (const k of ['hand', 'shaft', 'lh']) {
   if (READY[k] && k === 'shaft') READY[k] = unit(READY[k]);
 }
-for (const beat of [...BEATS, HEAVY]) {
+for (const beat of [...BEATS, HEAVY, UNDERCUT]) {
   for (const key of ['cock', 'contact', 'follow']) beat[key].shaft = unit(beat[key].shaft);
 }
 
@@ -782,7 +865,7 @@ export class MeleeLayer {
     this._handLast = new THREE.Vector3();
     this._handLastOk = false;
     /** per beat (L1, L2, L3, heavy): the reach the contact really achieved */
-    this._reachSeen = new Float32Array(4);
+    this._reachSeen = new Float32Array(5);
     this._pullNow = 0;
     /* how far the animator moved her drive SHOULDER after this layer last
      * frame — the stance's pelvis offset through the ground conform's clamp
@@ -965,7 +1048,13 @@ export class MeleeLayer {
      * optimised reader of the old one is thrown away on the frame it appears);
      * the pose records are born decimal like the rest (`decimalFields`). */
     this._windFrom = decimalFields({ hand: [0.5, 0, 0], shaft: [0.5, 0, 1], lh: [0.5, 0, 0], lhOn: 0, lhW: 0, yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0 });
-    this._u = decimalFields({ yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0, lhOn: 0, lhW: 0, clipU: 0, armLift: 0 });
+    this._u = decimalFields({ yaw: 0, pitch: 0, roll: 0, py: 0, dz: 0, lhOn: 0, lhW: 0, clipU: 0, armLift: 0, pyNom: 0, legU: 0 });
+    /* M1.3d: the hips' lead (`_ahead`): its ramp, the phase it reads, the keys `_swingAt` picked, and the
+     * weight the pelvis turn was applied at this frame (`_stance`) */
+    this._leadK = 1; this._aPh = 'windup'; this._aK = 0; this._hipW = 0; this._keyK = 0;
+    this._kA = READY; this._kB = READY; this._kU = 0;
+    /** the swing clip last played, its weight and time (the settle fades it out; M1.3d) */
+    this._clipLast = null; this._clipLastW = 0; this._clipLastT = 0;
     this._lastDt = 1 / 60;
     this._prevPhase = null;
     this._prevSwing = false;
@@ -980,6 +1069,7 @@ export class MeleeLayer {
     this._lhOnWant = 0;
     this._lhSOn = 0;
     this._lhReachLack = 0;
+    this._lhSFar = 0.25;
     this._lhFree = new THREE.Vector3();
     this._weldSwing = false;
     this._weldWas = false;
@@ -1424,7 +1514,7 @@ export class MeleeLayer {
     }
 
     /* ------------------------ resolve the beat ------------------------ */
-    const beat = st.heavy ? HEAVY : BEATS[clamp(st.combo | 0, 0, BEATS.length - 1)];
+    const beat = beatFor(st);
     D.beat = stance === 'swing' ? beat.id : 'ready';
     /* A NEW SWING STARTS FROM WHERE SHE IS (a combo cuts in on a recover, a held
      * light turns into a heavy): the cock leg opens from the last pose drawn,
@@ -1442,10 +1532,23 @@ export class MeleeLayer {
         } else this._windOn = false;
       }
     } else if (stance !== 'swing') this._windOn = false;
+    /* M1.3d: the hips' lead ramps in from each beat's first frame (see `HIP_LEAD_RAMP`) */
+    if (stance === 'swing' && st.phase === 'windup' && (this._prevBeat !== beat.id || this._prevPhase !== 'windup')) this._leadK = 0;
+    else if (stance === 'swing') this._leadK = Math.min(1, this._leadK + dt / HIP_LEAD_RAMP);
     this._prevBeat = stance === 'swing' ? beat.id : null;
     this._prevPhase = stance === 'swing' ? st.phase : null;
     this._prevSwing = stance === 'swing';
     const u = this._blend(stance, st, beat);
+    /* M1.3d: THE KEYS COME DOWN WITH HER IN A CROUCH. The guard and the beats are authored on a standing
+     * body; crouched, her shoulders are 0.55 m lower (measured: right shoulder 1.30 -> 0.75 m holstered, 1.22
+     * -> 0.66 m in the guard), so the standing keys put both fists level with her head and the arms reached
+     * UP for them. The hand goals drop with the crouch (the Undercut is thrown from one, BIBLE §5.3), by as
+     * much of the pose as is the keys: the draw's reach and the holster read the live socket and are not
+     * lowered, the draw's return leg into the guard is lowered as it arrives there. */
+    if ((an._crouchW || 0) > 1e-3 && this._keyK > 1e-3) {
+      const dy = -CROUCH_KEY_DROP * an._crouchW * this._keyK;
+      _hand.y += dy; _lh.y += dy;
+    }
     /* the recoil: back along the haft, the far end up a touch */
     if (this._recoil > 1e-4) {
       _hand.addScaledVector(_shaft, -this._recoil);
@@ -1476,7 +1579,15 @@ export class MeleeLayer {
     if (stance === 'swing') {
       const cw = beat.clipW * w;
       const t = beat.clip[0] + (beat.clip[1] - beat.clip[0]) * u.clipU;
-      this._clipWeights(beat.mirror ? this._clipNames.mirror : this._clipNames.swing, cw, t);
+      const nm = beat.mirror ? this._clipNames.mirror : this._clipNames.swing;
+      this._clipWeights(nm, cw, t);
+      this._clipLast = nm; this._clipLastW = cw; this._clipLastT = t;
+    } else if (stance === 'ready' && this._settleT < SETTLE_T && this._clipLast) {
+      /* M1.3d: THE SWING CLIP HANDS OVER TO THE GUARD'S IDLE CLIP OVER THE SETTLE, not in one frame: the
+       * swap turned her shoulders 0.24 rad between two frames at the end of every swing (measured on the
+       * Undercut's last swing frame -> first guard frame). */
+      const kS = CARRY_EASE(clamp(this._settleT / SETTLE_T, 0, 1));
+      this._clipWeights(this._clipLast, this._clipLastW * (1 - kS), this._clipLastT, this._clipNames.idle, 0.22 * w * kS);
     } else {
       this._clipWeights(null, 0, 0, this._clipNames.idle, 0.22 * w);
     }
@@ -1489,7 +1600,10 @@ export class MeleeLayer {
     /* --------------------- procedural torso rotation ------------------ */
     // spine_01..03 carry the twist over the hips, which is the axis A102 measures
     // (pelvis -> spine_03); the pelvis's own turn is `_stance`'s, above.
-    const yaw = u.yaw * w, roll = u.roll * w;
+    /* M1.3d: the hips ran ahead of the trunk (`_ahead`); the spine takes out what they turned beyond the
+     * beat's own clock, at the weight the pelvis was turned at, so the shoulders stay on the beat's clock */
+    const lagYaw = stance === 'swing' ? (u.pyNom || 0) * this._hipW - (this._pelvisYawNow || 0) : 0;
+    const yaw = u.yaw * w + lagYaw, roll = u.roll * w;
     // budgeted against the stride's own lean while she is moving (JOG_TORSO_CAP)
     /* ...plus the LEAN INTO a target the blade cannot otherwise reach (round
      * 6, R7): reach comes from the spine and the step (canon, R3), so when
@@ -1583,7 +1697,7 @@ export class MeleeLayer {
      * swing (shoulder to posed tip), per beat, and handed to `_aimAt`. */
     if (stance === 'swing' && st.phase === 'strike'
         && (st.k ?? 0) >= Math.max(0.10, (st.contactK ?? 0.7) - HIT_LEAD) && this.lance) {
-      const i = st.heavy ? 3 : clamp(st.combo | 0, 0, 2);
+      const i = beatSlot(st.heavy, st.combo, st.undercut);
       this.tipWorld(_eT);
       this.an.b.upArmR.bone.getWorldPosition(_eS);
       // the arm's OWN reach: learned only off contacts the aim did not have
@@ -1599,8 +1713,8 @@ export class MeleeLayer {
 
   /** The shoulder-to-tip reach this beat's contact actually achieved on the
    *  last swings, metres, or 0 before it has been seen (round 6). */
-  contactReach(heavy, combo) {
-    return this._reachSeen ? this._reachSeen[heavy ? 3 : clamp(combo | 0, 0, 2)] : 0;
+  contactReach(heavy, combo, uc = false) {
+    return this._reachSeen ? this._reachSeen[beatSlot(heavy, combo, uc)] : 0;
   }
 
   /**
@@ -1694,8 +1808,10 @@ export class MeleeLayer {
      * rotations below are authored on the turned pelvis. Standing only: a stride
      * owns its hips (`_stanceW` is 0 at a jog). */
     {
-      /* (nor a crouch's, nor a roll's) */
-      const hw = w * this._stanceW * (1 - (an._crouchW || 0)) * (1 - (an._dodgeW || 0));
+      /* (nor a crouch's, nor a roll's) — except the Undercut's, which is thrown FROM a crouch (M1.3d) */
+      const crW = (an._crouchW || 0) * (beat === UNDERCUT ? UC_CROUCH_HIPS : 1);
+      const hw = w * this._stanceW * (1 - crW) * (1 - (an._dodgeW || 0));
+      this._hipW = hw;
       this._pelvisYawNow = (u.py || 0) * hw;
       this.pelvisDz = (u.dz || 0) * hw;
       if (this._pelvisYawNow !== 0 && b.pelvis) an._rot(b.pelvis, Y_AXIS, this._pelvisYawNow);
@@ -1714,7 +1830,8 @@ export class MeleeLayer {
      * by the end of the recover. Round 4 scaled one key by an envelope, so the
      * knees straightened at the top of every swing and bent again for the strike. */
     const want = live ? w * this._stanceW * (1 - 0.8 * tall) * (1 - (an._crouchW || 0)) * (1 - (an._dodgeW || 0)) : 0;
-    const mixT = stance === 'swing' ? STANCE_ENV(u.clipU) : 0;
+    /* (M1.3d: the legs load on the hips' clock, `legU`, ahead of the trunk's) */
+    const mixT = stance === 'swing' ? (beat.sinkFirst ? STANCE_SINK(u.legU) : STANCE_ENV(u.legU)) : 0;
     /* THE KEY OUTLIVES THE SWING BY AS LONG AS THE UNWIND TAKES: the rate limit
      * below is in RENDERED frames, so on a loaded box the mix can still be finite
      * when the state machine returns to the guard, and dropping the key there
@@ -1861,9 +1978,9 @@ export class MeleeLayer {
    * The key's hand plus the haft ahead of the grip, turned by the swing
    * bearing the layer is currently carrying. No allocation.
    */
-  contactTipWorld(heavy, combo, out) {
+  contactTipWorld(heavy, combo, out, uc = false) {
     if (!this.ok) return false;
-    const beat = heavy ? HEAVY : BEATS[clamp(combo | 0, 0, BEATS.length - 1)];
+    const beat = uc ? UNDERCUT : heavy ? HEAVY : BEATS[clamp(combo | 0, 0, BEATS.length - 1)];
     const c = beat.contact;
     const L = (1 - this.gripFrac) * this.length;
     out.set(c.hand[0] + c.shaft[0] * L, c.hand[1] + c.shaft[1] * L, c.hand[2] + c.shaft[2] * L + (c.dz || 0));
@@ -2146,7 +2263,7 @@ export class MeleeLayer {
     const an = this.an;
     an.b.upArmR.bone.getWorldPosition(_eS);
     _eT.set(st.aimX, st.aimY, st.aimZ);
-    const i = st.heavy ? 3 : clamp(st.combo | 0, 0, 2);
+    const i = beatSlot(st.heavy, st.combo, st.undercut);
     const reach = this._reachSeen[i] > 0.3 ? this._reachSeen[i] : 1.6;
     const short = _eT.distanceTo(_eS) - reach;
     const lean = clamp(short * AIM_LEAN_GAIN, 0, AIM_LEAN_MAX) * aw;
@@ -2239,9 +2356,9 @@ export class MeleeLayer {
 
   /** This beat's CONTACT key wrist, world (melee.js `_aimAt` predicts where
    *  the fist lands when the swing is bent onto a target). No allocation. */
-  contactHandWorld(heavy, combo, out) {
+  contactHandWorld(heavy, combo, out, uc = false) {
     if (!this.ok) return false;
-    const beat = heavy ? HEAVY : BEATS[clamp(combo | 0, 0, BEATS.length - 1)];
+    const beat = uc ? UNDERCUT : heavy ? HEAVY : BEATS[clamp(combo | 0, 0, BEATS.length - 1)];
     const c = beat.contact;
     out.set(c.hand[0], c.hand[1], c.hand[2] + (c.dz || 0));
     if (Math.abs(this._aimYaw) > 1e-3) out.applyAxisAngle(Y_AXIS, this._aimYaw);
@@ -2302,7 +2419,7 @@ export class MeleeLayer {
      * gives back the overshoot (<= `AIM_PULL_MAX`), so the tip lands on the
      * skin instead of passing through a Raptor's chest into the air behind
      * it. The reach is the one this beat has actually been seen to land at. */
-    const iB = st.heavy ? 3 : clamp(st.combo | 0, 0, 2);
+    const iB = beatSlot(st.heavy, st.combo, st.undercut);
     const reachNow = this._reachSeen[iB] > 0.3 ? this._reachSeen[iB] : lu - 0.15;
     const over = reachNow - lv;
     if (over > 0) {
@@ -2630,62 +2747,9 @@ export class MeleeLayer {
         yawK = 0;
       }
     } else if (stance === 'swing') {
-      if (phase === 'windup') {
-        /* THE COCK IS REACHED AT `WINDUP_COCK` AND THE RELEASE STARTS THERE
-         * (fix pass 1, finding F1 — see the constant for the measurement). The
-         * pose leg that lands the blade is 132 ms long now instead of 54, and
-         * it does not step at the phase boundary: at windup k = 1 it is exactly
-         * `STRIKE_PRE` of the way from cock to contact, which is where the
-         * strike branch below starts. */
-        if (k <= WINDUP_COCK) {
-          A = this._windOn ? this._windFrom : READY; B = beat.cock; t = WINDUP_EASE(k / WINDUP_COCK); clipU = 0.30 * t;
-        } else {
-          A = beat.cock; B = beat.contact;
-          t = STRIKE_PRE * ((k - WINDUP_COCK) / (1 - WINDUP_COCK));
-          clipU = 0.30 + 0.38 * t;
-        }
-      } else if (phase === 'strike') {
-        /* THE FOLLOW-THROUGH BELONGS TO `recover`, NOT TO THE TAIL OF THE
-         * STRIKE (fix round 4, F3) — and the canon says so.
-         *
-         * `lance-canon.md` §3 films cocked->contact at 0.15 s and
-         * contact->follow-through at 0.20 s. This lane's phases are
-         * `windup 0.15 / strike 0.10 / recover 0.26`: the 0.20 s of
-         * follow-through is `recover`'s length, not the back third of a 0.10 s
-         * strike. Round 3 crammed both into the strike, and that had a
-         * measurable cost, not just a stylistic one. `melee.js` resolves the
-         * hit at `CONTACT_K` of the strike but can only do it on a rendered
-         * frame, and `poseState` extrapolates the pose up to 50 ms forward to
-         * cover the animator running first — 50 ms is HALF a strike window, so
-         * on a slow frame the pose the hit was measured against was already
-         * the follow-through. Filmed on A103: the blade tip read (1.29, 0.64,
-         * 0.99) in character space — swept out to her left and down, the
-         * follow key — on a swing whose contact key is (0.0, 1.0, 1.95), and
-         * the reach came back at 0.98-1.11 m instead of -0.05 m.
-         *
-         * So: the strike reaches the contact key at `cK - HIT_LEAD` and HOLDS
-         * it — an impact hold, which is what a lance landing on metal should
-         * have — and `recover` plays contact -> follow -> guard. Phase
-         * durations, `CONTACT_K`, the combo window and the damage are all
-         * untouched; what moves is which key each phase interpolates. */
-        const kA = Math.max(0.10, cK - HIT_LEAD);
-        if (k <= kA) {
-          A = beat.cock; B = beat.contact;
-          t = STRIKE_PRE + (1 - STRIKE_PRE) * STRIKE_EASE(k / kA);
-          clipU = 0.30 + 0.38 * t;
-        } else { A = beat.contact; B = beat.contact; t = 0; clipU = 0.68; }
-      } else if (k <= RECOVER_FOLLOW) {
-        // recover, first leg: contact -> follow-through (the canon's ~0.20 s)
-        const u2 = k / RECOVER_FOLLOW;
-        A = beat.contact; B = beat.follow; t = FOLLOW_EASE(u2); clipU = 0.68 + 0.14 * t;
-      } else {
-        /* ...AND THE RETURN TO GUARD FINISHES IN THE GUARD (fix pass 1). It
-         * gets `RETURN_IN_SWING` of the chord here and the rest in the `ready`
-         * branch above, from a snapshot of this pose — see `SETTLE_T`. */
-        const u2 = (k - RECOVER_FOLLOW) / (1 - RECOVER_FOLLOW);
-        A = beat.follow; B = READY; t = RETURN_IN_SWING * CARRY_EASE(u2);
-        clipU = 0.82 + 0.18 * smoothstep(u2, 0, 0.6);
-      }
+      /* the keys and the blend at the beat's own clock (`_swingAt`; the comments live there) */
+      t = this._swingAt(beat, phase, k, cK);
+      A = this._kA; B = this._kB; clipU = this._kU;
     } else if (stance === 'ready' && this._settleT < SETTLE_T && this._swingOut) {
       /* THE POST-SWING SETTLE. `_swingOut` is the pose the last rendered swing
        * frame drew, captured below, so this leg starts exactly where the swing
@@ -2693,6 +2757,8 @@ export class MeleeLayer {
       A = this._swingOut; B = READY; t = CARRY_EASE(clamp(this._settleT / SETTLE_T, 0, 1));
     }
 
+    /* (M1.3d: how much of this pose is the authored keys, which a crouch lowers — see `update`) */
+    this._keyK = stance === 'swing' || stance === 'ready' ? 1 : (stance === 'draw' && this._held ? t : 0);
     if (stance === 'swing') this._snapPose(A, B, t);
     this._lerpPose(A, B, t, yawK);
     out.yaw = A.yaw + (B.yaw - A.yaw) * t;
@@ -2707,9 +2773,118 @@ export class MeleeLayer {
     if (beat.release && A === beat.cock && B === beat.contact) {
       out.lhW = 1 - smoothstep(t, beat.release[0], beat.release[1]);
     }
+    /* M1.3d: the left hand stays at its cock socket until the release is under way (the windup's tail, and the
+     * held cock a heavy grows out of, park at STRIKE_PRE of this leg), and a light's slide down the haft runs in
+     * the strike: the held press had the left palm 0.10 m off `grip2` when the heavy took over. */
+    if (stance === 'swing' && A === beat.cock && B === beat.contact) {
+      out.lhOn = A.lhOn + (B.lhOn - A.lhOn) * smoothstep(t, STRIKE_PRE, 1);
+      if (this._swingOut) this._swingOut.lhOn = out.lhOn;   // (the pose a heavy or a combo starts from)
+    }
     out.clipU = clipU;
+    out.legU = clipU;
+    out.pyNom = out.py;
+    /* M1.3d: HIPS FIRST. The pelvis turn, its drive and the legs' load read the same beat `HIP_LEAD` s on;
+     * the spine takes the difference out (`update`, `lagYaw`) so the shoulders keep the beat's clock. */
+    if (stance === 'swing' && beat.hipLead) {
+      this._ahead(st, beat.hipLead * this._leadK);
+      const tH = this._swingAt(beat, this._aPh, this._aK, cK);
+      const HA = this._kA, HB = this._kB;
+      out.py = (HA.py || 0) + ((HB.py || 0) - (HA.py || 0)) * tH;
+      out.dz = (HA.dz || 0) + ((HB.dz || 0) - (HA.dz || 0)) * tH;
+      out.legU = this._kU;
+      /* ...and the snapshot a combo or the settle starts from is the pose DRAWN: the hips where they are,
+       * the trunk's turn net of them (see `_snapPose`) */
+      const so = this._swingOut;
+      if (so) { so.yaw += out.pyNom - out.py; so.py = out.py; so.dz = out.dz; }
+    }
+    if (stance === 'swing' && beat.clipMap) out.clipU = mapClip(beat.clipMap, clipU);
     out.armLift = (_hand.y - 1.0) * 2;
     return out;
+  }
+
+  /**
+   * The swing's two keys and the blend between them at (`phase`, `k`): A and B into `_kA` / `_kB`, the
+   * beat's default clip progress into `_kU`; returns t. Split out of `_blend` (M1.3d) so the hips can read
+   * the same beat at a later clock (`_ahead`). Nothing allocates.
+   */
+  _swingAt(beat, phase, k, cK) {
+    let A = READY, B = READY, t = 0, clipU = 0;
+    if (phase === 'windup') {
+      /* THE COCK IS REACHED AT `WINDUP_COCK` AND THE RELEASE STARTS THERE
+       * (fix pass 1, finding F1 — see the constant for the measurement). The
+       * pose leg that lands the blade is 132 ms long now instead of 54, and
+       * it does not step at the phase boundary: at windup k = 1 it is exactly
+       * `STRIKE_PRE` of the way from cock to contact, which is where the
+       * strike branch below starts. */
+      if (k <= WINDUP_COCK) {
+        A = this._windOn ? this._windFrom : READY; B = beat.cock; t = WINDUP_EASE(k / WINDUP_COCK); clipU = 0.30 * t;
+      } else {
+        A = beat.cock; B = beat.contact;
+        t = STRIKE_PRE * ((k - WINDUP_COCK) / (1 - WINDUP_COCK));
+        clipU = 0.30 + 0.38 * t;
+      }
+    } else if (phase === 'strike') {
+      /* THE FOLLOW-THROUGH BELONGS TO `recover`, NOT TO THE TAIL OF THE
+       * STRIKE (fix round 4, F3) — and the canon says so.
+       *
+       * `lance-canon.md` §3 films cocked->contact at 0.15 s and
+       * contact->follow-through at 0.20 s. This lane's phases are
+       * `windup 0.15 / strike 0.10 / recover 0.26`: the 0.20 s of
+       * follow-through is `recover`'s length, not the back third of a 0.10 s
+       * strike. Round 3 crammed both into the strike, and that had a
+       * measurable cost, not just a stylistic one. `melee.js` resolves the
+       * hit at `CONTACT_K` of the strike but can only do it on a rendered
+       * frame, and `poseState` extrapolates the pose up to 50 ms forward to
+       * cover the animator running first — 50 ms is HALF a strike window, so
+       * on a slow frame the pose the hit was measured against was already
+       * the follow-through. Filmed on A103: the blade tip read (1.29, 0.64,
+       * 0.99) in character space — swept out to her left and down, the
+       * follow key — on a swing whose contact key is (0.0, 1.0, 1.95), and
+       * the reach came back at 0.98-1.11 m instead of -0.05 m.
+       *
+       * So: the strike reaches the contact key at `cK - HIT_LEAD` and HOLDS
+       * it — an impact hold, which is what a lance landing on metal should
+       * have — and `recover` plays contact -> follow -> guard. Phase
+       * durations, `CONTACT_K`, the combo window and the damage are all
+       * untouched; what moves is which key each phase interpolates. */
+      const kA = Math.max(0.10, cK - HIT_LEAD);
+      if (k <= kA) {
+        A = beat.cock; B = beat.contact;
+        t = STRIKE_PRE + (1 - STRIKE_PRE) * STRIKE_EASE(k / kA);
+        clipU = 0.30 + 0.38 * t;
+      } else { A = beat.contact; B = beat.contact; t = 0; clipU = 0.68; }
+    } else if (k <= RECOVER_FOLLOW) {
+      // recover, first leg: contact -> follow-through (the canon's ~0.20 s)
+      const u2 = k / RECOVER_FOLLOW;
+      A = beat.contact; B = beat.follow; t = FOLLOW_EASE(u2); clipU = 0.68 + 0.14 * t;
+    } else {
+      /* ...AND THE RETURN TO GUARD FINISHES IN THE GUARD (fix pass 1). It
+       * gets `RETURN_IN_SWING` of the chord here and the rest in the `ready`
+       * branch above, from a snapshot of this pose — see `SETTLE_T`. */
+      const u2 = (k - RECOVER_FOLLOW) / (1 - RECOVER_FOLLOW);
+      A = beat.follow; B = READY; t = RETURN_IN_SWING * CARRY_EASE(u2);
+      clipU = 0.82 + 0.18 * smoothstep(u2, 0, 0.6);
+    }
+    this._kA = A; this._kB = B; this._kU = clipU;
+    return t;
+  }
+
+  /**
+   * Where the beat will be `lead` seconds on (M1.3d, `HIP_LEAD`), from the published phase durations: into
+   * `_aPh` / `_aK`. A held cock (`st.hold`) does not run on into the strike, and the recover ends the beat.
+   */
+  _ahead(st, lead) {
+    let ph = st.phase || 'idle';
+    let k = clamp(st.k ?? 0, 0, 1);
+    let d = st.dur > 1e-4 ? st.dur : 0;
+    if (d <= 0 || lead <= 0) { this._aPh = ph; this._aK = k; return; }
+    let tau = k * d + lead;
+    for (let i = 0; i < 3; i++) {
+      if (tau <= d || (ph !== 'windup' && ph !== 'strike') || (ph === 'windup' && st.hold)) break;
+      tau -= d;
+      if (ph === 'windup') { ph = 'strike'; d = st.durS > 1e-4 ? st.durS : 0.10; } else { ph = 'recover'; d = st.durR > 1e-4 ? st.durR : 0.30; }
+    }
+    this._aPh = ph; this._aK = clamp(tau / d, 0, 1);
   }
 
   /**
@@ -3279,6 +3454,7 @@ export class MeleeLayer {
     const bd = _b.dot(_a), disc = bd * bd - (_b.lengthSq() - reach * reach);
     const sFar = disc >= 0 ? -bd + Math.sqrt(disc) : -bd;
     this._lhReachLack = disc >= 0 ? 0 : Math.sqrt(-disc);
+    this._lhSFar = sFar;   // M1.3d: how far along the haft the left arm could reach this frame (the rows read the margin)
     if (sOn > sFar) sOn = sFar;
     if (sOn < LH_ON_MIN) sOn = LH_ON_MIN;
     D.lhOnNow = sOn;

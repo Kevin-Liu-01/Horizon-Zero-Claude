@@ -577,7 +577,15 @@ export class Melee {
       stance: 'holstered', drawK: 0, phase: 'idle', k: 0,
       combo: 0, heavy: false, aimYaw: 0, contactK: CONTACT_K,
       aimOk: false, aimX: 0, aimY: 0, aimZ: 0,
+      /* M1.3d: this phase's length and the next two's (the hips read the beat ahead of the trunk), a held
+       * cock, and the Undercut's own beat */
+      dur: 0.25, durS: 0.25, durR: 0.25, hold: false, undercut: false,
     };
+    /** M1.3d: the swing in flight is the Undercut (a low two-handed thrust; meleeLayer `UNDERCUT`). Set by
+     *  `_fire` from `_ucNext` (what `swing({ undercut })` asked for), and kept until the next `_fire`, so the
+     *  frame after the swing ends (stance still 'swing') still poses the Undercut's last frame. */
+    this._ucBeat = false;
+    this._ucNext = false;
 
     /* ------------------------------ the model ---------------------------- */
     this.lance = createHeldLance(ctx);
@@ -713,6 +721,14 @@ export class Melee {
     s.contactK = CONTACT_K;
     s.aimOk = this.aimOk && this.stance === 'swing';
     s.aimX = this.aimPoint.x; s.aimY = this.aimPoint.y; s.aimZ = this.aimPoint.z;
+    {
+      const c = this.heavy ? MELEE.heavy : MELEE.light, i = this._i ?? 0;
+      s.dur = this._phaseEnd;
+      s.durS = this.heavy ? c.strike : (c.strike[i] ?? 0.1);
+      s.durR = this.heavy ? c.recover * this._heavyTime() : (c.recover[i] ?? 0.3);
+      s.hold = !!this._chargeHold;
+      s.undercut = this._ucBeat;
+    }
     /* ...AND THE EXTRAPOLATION MAY NOT OUTRUN THE PHASE (fix round 4, F3).
      * A flat 50 ms is half of a 0.10 s strike window: on a loaded frame the
      * pose published for the hit was a whole beat ahead of the clock that
@@ -1016,9 +1032,9 @@ export class Melee {
     const m = this.approachMachine;
     const lay = this.layer;
     if (!m || !lay || !lay.ok || m.alive === false) return;
-    if (!lay.contactTipWorld(this.heavy, this._i ?? 0, _aTip)) return;
+    if (!lay.contactTipWorld(this.heavy, this._i ?? 0, _aTip, this._ucBeat)) return;
     if (!lay.shoulderWorld(_aSh)) return;
-    if (!lay.contactHandWorld(this.heavy, this._i ?? 0, _aKeyH)) return;
+    if (!lay.contactHandWorld(this.heavy, this._i ?? 0, _aKeyH, this._ucBeat)) return;
     const hulls = this._hullSet(m);
     if (!hulls || !hulls.length) return;
     /* THE NEAREST PART OF THE MACHINE THE BLADE CAN GET TO, not the nearest
@@ -1036,7 +1052,7 @@ export class Melee {
     /* the reach this beat has ACTUALLY landed at (the arm clamps short of
      * some keys), once one has been seen; the key's own until then, less the
      * typical clamp */
-    const seen = typeof lay.contactReach === 'function' ? lay.contactReach(this.heavy, this._i ?? 0) : 0;
+    const seen = typeof lay.contactReach === 'function' ? lay.contactReach(this.heavy, this._i ?? 0, this._ucBeat) : 0;
     const reach = seen > 0.3 ? seen : keyReach - 0.15;
     this._aimReach = reach;
     const pa = Math.asin(Math.max(-1, Math.min(1, _aDir.y)));
@@ -1615,8 +1631,10 @@ export class Melee {
    *
    * @returns {boolean} false only when a swing is already committed.
    */
-  swing({ heavy = false } = {}) {
+  swing({ heavy = false, undercut = false } = {}) {
     if (this.active && this.phase !== 'recover') return false;
+    /* M1.3d: the Undercut is its own beat (a low two-handed thrust) on light-3's clock */
+    if (undercut) { this._ucNext = true; this.combo = 2; heavy = false; } else this._ucNext = false;
     if (!this.ready) {
       this.drawLance();
       this._queued = { heavy };
@@ -1690,6 +1708,7 @@ export class Melee {
   }
 
   _fire(heavy) {
+    this._ucBeat = this._ucNext && !heavy; this._ucNext = false;
     const c = heavy ? MELEE.heavy : MELEE.light;
     const i = heavy ? 0 : Math.min(this.combo, MELEE.light.damage.length - 1);
     this.active = true;
@@ -1740,6 +1759,7 @@ export class Melee {
    *  what `_fire` sets a few frames later. */
   _preLunge(heavy) {
     this.heavy = !!heavy;
+    this._ucBeat = this._ucNext && !heavy;   // (M1.3d: aim the beat that is about to fire)
     this._i = heavy ? 0 : Math.min(this.combo, MELEE.light.damage.length - 1);
     this._aimAt();
     this._lungeIn();
@@ -1748,6 +1768,7 @@ export class Melee {
   _cancel() {
     this.active = false;
     this.phase = 'idle';
+    this._ucBeat = false; this._ucNext = false;
     this._charging = false;
     this._chargeHold = false;
     this._undercutM = null;
@@ -2427,9 +2448,8 @@ export class Melee {
     const m = this.undercutTarget;
     if (!m || !this._sneakOk(m)) return null;
     this._undercutM = m;
-    this.combo = 2;
     this.drawLance(2.4);
-    this.swing({ heavy: false });
+    this.swing({ undercut: true });
     this.undercutTarget = null;
     this._sneak.disabled = true;
     return { machine: m, pending: true };
