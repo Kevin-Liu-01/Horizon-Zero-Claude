@@ -12,8 +12,12 @@
  *   clock     one full period of its tide clock, fast-forwarded (the keeper stepped at 20 Hz): it shuts the sluice,
  *             walks to the Glass, wades to the Glass's deepest water, reads, walks back, and opens Sluice 3 again by its
  *             clock at its 0.4 m reading; the deepest water under it, its keel's height over the water
- *   wadeMax   a second Gauge walked from the beach toward 1.5 m+ of sea: where it stops, the depth under each foot
- *             (bar: deepest foot 1.2 m +- 0.1, never over 1.25) and its keel over the water
+ *   glassWade the wade, graded to the Glass's real deepest water (the orchestrator's ruling 1, M1a regressions run: >= 0.6 m;
+ *             the Glass is 0.62-0.64 m, so 1.2 m cannot be reached there): from that period, the water under its centre
+ *             and under each foot while it stands at its wade spot, against the deepest water of the Glass on a 0.5 m
+ *             grid (bar: centre >= WADE_BAR 0.6 m, within 0.05 m of the Glass's deepest; keel and seals dry)
+ *   wadeMax   the LIMIT, on the sea (no longer the wade's grade): a second Gauge walked from the beach toward 1.5 m+ of
+ *             sea stops before any foot is over 1.25 m, keel dry; the deepest foot is reported
  *   ramp      the mast seen from Saltrow's ramp (F22's lens point, eye 1.7 m): rays to the staff, lantern and finial,
  *             through the terrain (sampled every 0.25 m) and every visible non-instanced mesh; the mast's height in px
  *             in a 1080-px-tall frame at fov 55
@@ -113,6 +117,7 @@ export async function probe(frame) {
       const S = K._S;
       const N = Math.ceil((GK.CLOCK.period * 1.02) / 0.05);
       let maxDepth = 0, minKeel = 1e9, minKneeDry = 1e9, wadeArrive = null, nearSpot = 1e9;
+      const wade = { frames: 0, centreMin: 1e9, centreMax: 0, feet: null };   // while it stands at its wade spot (job 'wade')
       const track = [];
       const w0 = performance.now();
       for (let i = 0; i < N; i++) {
@@ -126,6 +131,10 @@ export async function probe(frame) {
           minKneeDry = Math.min(minKneeDry, K.position.y + Math.min(...S.knees.map((k) => k[1])) - 0.06 - lvl);
         }
         if (spot) { const ds = Math.hypot(x - spot.x, z - spot.z); if (ds < nearSpot) nearSpot = ds; if (K._job === 'wade' && wadeArrive === null) wadeArrive = r3(tS); }
+        if (K._job === 'wade') {
+          wade.frames++; wade.centreMin = Math.min(wade.centreMin, d); wade.centreMax = Math.max(wade.centreMax, d);
+          if (!wade.feet && wade.frames >= 40) { K.root.updateMatrixWorld(true); wade.feet = feet(K).map((f) => r3(W.depthAt(f.x, f.z))); }
+        }
         if (i % 400 === 0) track.push([r3(x), r3(z), K._job, r3(K._reading)]);
       }
       const log = K._log.slice();
@@ -134,8 +143,29 @@ export async function probe(frame) {
       return { simS: r3(N * 0.05), wallS: r3((performance.now() - w0) / 1000), log, wadeSpot: spot ? { x: r3(spot.x), z: r3(spot.z), depth: r3(spot.depth) } : null,
         nearestToSpotM: r3(nearSpot), wadeArriveS: wadeArrive, maxDepthUnderIt: r3(maxDepth), keelOverWaterMin: minKeel < 1e8 ? r3(minKeel) : null, kneeSealsOverWaterMin: minKneeDry < 1e8 ? r3(minKneeDry) : null,
         backAtStationM: r3(back), reopenReading: reopen.length ? reopen[0].reading : null, track,
+        wade: { frames: wade.frames, centreMinM: wade.frames ? r3(wade.centreMin) : null, centreMaxM: wade.frames ? r3(wade.centreMax) : null, feetM: wade.feet },
         bar: 'shuts, walks to the Glass, wades to its deepest water (within 1 m of the spot), dry keel and seals, back at Sluice 3 (< 1.5 m) and opens by its clock at 0.40 +- 0.01',
         pass: log.some((e) => e.ev === 'close') && log.some((e) => e.ev === 'wade') && nearSpot <= 1.0 && minKeel > 0 && minKneeDry > 0 && back < 1.5 && reopen.length >= 1 && Math.abs(reopen[0].reading - 0.4) <= 0.01 };
+    });
+
+    /* ---- the wade, graded to the Glass's real deepest water (ruling 1) ---- */
+    await guard('glassWade', async () => {
+      const c = out.clock;
+      if (!c || c.error) throw new Error('no clock period to read the wade from');
+      const G = W?.pools?.[0];
+      if (!G) throw new Error('no Glass (water pools[0])');
+      let deep = 0, at = null;
+      for (let gx = -G.rx; gx <= G.rx; gx += 0.5) for (let gz = -G.rz; gz <= G.rz; gz += 0.5) {
+        const x = G.x + gx, z = G.z + gz;
+        if (W.levelAt(x, z) !== G.level) continue;
+        const d = W.depthAt(x, z);
+        if (d > deep) { deep = d; at = { x: r3(x), z: r3(z) }; }
+      }
+      const w = c.wade || {};
+      return { glassDeepestM: r3(deep), glassDeepestAt: at, wadeSpot: c.wadeSpot, standFrames: w.frames, centreMinM: w.centreMinM, centreMaxM: w.centreMaxM, feetM: w.feetM,
+        keelOverWaterMin: c.keelOverWaterMin, kneeSealsOverWaterMin: c.kneeSealsOverWaterMin,
+        bar: 'stands at its wade spot in >= ' + GK.WADE_BAR + ' m under its centre, within 0.05 m of the Glass\'s deepest water; keel and seals dry (ruling 1)',
+        pass: w.frames > 0 && w.centreMinM !== null && w.centreMinM >= GK.WADE_BAR && w.centreMinM >= deep - 0.05 && c.keelOverWaterMin > 0 && c.kneeSealsOverWaterMin > 0 };
     });
 
     /* ---- the wade limit, on the sea ---- */
@@ -169,8 +199,8 @@ export async function probe(frame) {
       const lvl = W.levelAt(tester.position.x, tester.position.z) ?? 0;
       return { bearing: best.b, shoreM: best.shore, startM: s0, stoppedAfterS: blockedAt, stop: tester._wadeStop, feetDepths: fd, deepestFoot: deepest,
         centreDepth: r3(W.depthAt(tester.position.x, tester.position.z)), keelOverWater: r3(tester.position.y + tester._S.drumBottom - lvl),
-        bar: 'stops with its deepest foot at 1.2 m +- 0.1 (never over 1.25); keel dry',
-        pass: blockedAt !== null && deepest !== null && Math.abs(deepest - 1.2) <= 0.1 && deepest <= 1.25 && tester.position.y + tester._S.drumBottom - lvl > 0 };
+        bar: 'the limit (ruling 1: the wade is graded on the Glass, not here): it stops before any foot is over 1.25 m; keel dry',
+        pass: blockedAt !== null && deepest !== null && deepest <= 1.25 && tester.position.y + tester._S.drumBottom - lvl > 0 };
     });
 
     /* ---- the mast from Saltrow's ramp ---- */

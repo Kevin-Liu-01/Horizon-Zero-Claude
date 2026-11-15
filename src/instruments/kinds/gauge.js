@@ -26,8 +26,8 @@ import { GAUGE as SITE, fieldPoint } from '../../world/sites/layout.js';
  * reading(phi) = mean - amp cos(2 pi phi) over `CLOCK.period` sim seconds, shown by the float ring on the staff and on
  * its Sighting card (`GAUGE · SLUICE 3 · TIDE 0.4 m`). Over one period the KEEPER (the one Gauge the world spawns,
  * at Sluice 3) opens the sluice when its reading rises through 0.4 m (the wrong tide: the Pan Houses open at the
- * flood), shuts it at `CLOCK.closeAt`, walks to the Glass at `CLOCK.leaveAt`, wades in to its deepest water (never
- * deeper than WADE_MAX: the knee seals stay dry), stands reading there, and walks back by `CLOCK.returnAt`.
+ * flood), shuts it at `CLOCK.closeAt`, walks to the Glass at `CLOCK.leaveAt`, wades in to its deepest water (>= WADE_BAR,
+ * never deeper than WADE_MAX: the knee seals stay dry), stands reading there, and walks back by `CLOCK.returnAt`.
  *
  * THE SCRIPTED WRONG TIDE (bible §8.9 beat 0:05). Until Brea first comes within `SITE.trigger` m of Sluice 3 the clock
  * is HELD at its opening reading (0.4 m) and the keeper stands at the sluice; that first approach opens Sluice 3 (the
@@ -42,8 +42,14 @@ import { GAUGE as SITE, fieldPoint } from '../../world/sites/layout.js';
 const URL = '/models/instruments/gauge.glb';
 /** The model's height (m): `r5Size[1]`, the finial's spike (the loader scales the bbox to this). */
 const HEIGHT = 5.5;
-/** Deepest water it walks into (m): the knee seals sit 1.5 m up (bible: "wades to 1.2 m"). */
+/** Deepest water it ever walks into (m), a LIMIT: the knee seals sit 1.5 m up (bible: "wades to 1.2 m"). */
 export const WADE_MAX = 1.2;
+/**
+ * What its wade is graded to (m), the orchestrator's ruling 1 (M1a regressions run): the Glass's real deepest water,
+ * not 1.2 m. The Glass is 0.62 m at its deepest in the recipe (0.64 m on the render grid) and over 0.6 m across a flat
+ * floor about 3 m round; the keeper walks to its deepest 2 m sample (`wadeSpot`) and stands there to read.
+ */
+export const WADE_BAR = 0.6;
 /** How far ahead of its centre the wade test reads the water (m): the front feet's line. */
 const WADE_LOOK = 1.6;
 /** The tide clock (sim seconds; readings in metres). Phases as fractions of the period. */
