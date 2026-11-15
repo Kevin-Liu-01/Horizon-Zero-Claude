@@ -1,5 +1,6 @@
 import { streetPoint, CONES, HARBOUR, BREAKWATER_LAMP, breakwaterPoint, STREET } from '../../settlements/saltrow-layout.js';
 import { siteById } from '../../island/sites.js';
+import { Lookout } from './lookout.js';
 
 /**
  * CALIMA · daily routines for the slice's cast (people; BUILD M1.5d, first part). `ctx.people.routines`.
@@ -150,6 +151,8 @@ export class Routines {
     this._adopted = new Set();
     this._keeper = null;
     this._checkT = 0;
+    /** M1.5d: the keeper's warning when an Instrument comes within 80 m (lookout.js; the people system hands it the lines) */
+    this.lookout = new Lookout(this);
   }
 
   live() { return this.force || !this.ctx.params?.has?.('shot'); }
@@ -263,6 +266,7 @@ export class Routines {
       const night = this._night(e.R);
       if (e.t >= e.end || (e.R.night && night !== e.night)) this._next(e);
     }
+    this.lookout.update(dt);
   }
 
   /** The log's surface: per person what they are doing now. */

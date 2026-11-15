@@ -4,6 +4,7 @@ import { NpcBank } from './bank.js';
 import { Person } from './person.js';
 import { FaceDirector } from './faces.js';
 import { Routines } from './routines.js';
+import { TEXT } from '../../../game/text.js';
 
 /**
  * CALIMA · the people of the island (settlements, W1 by R56 + R57 c; bible §6; plan §4.1, §4.2). Every
@@ -62,6 +63,8 @@ export class PeopleSystem {
     this.bank = new NpcBank(ctx);
     this.faces = new FaceDirector(ctx);
     this.routines = new Routines(this);
+    // the lookout's lines are writing's (src/game/text/barks/saltrow.json, set 'lookout'; the last is the all-clear)
+    this.routines.lookout.lines = TEXT.barks?.sets?.find((x) => x.id === 'lookout')?.lines || null;
     this._breaFaceT = 0;
     this.list = [];
     this.archetypes = ARCHETYPE_IDS;
