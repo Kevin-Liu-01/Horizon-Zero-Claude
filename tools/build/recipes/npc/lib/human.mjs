@@ -30,7 +30,7 @@ import { woundHeadwrap, joinGeos, DEG, rising, compactGeo } from '../../lib/huma
 import { lashCard, scatterAnchors, coilCards, coilField, coilSampler, hairlineLayer, coilTuft } from '../../lib/human/hair.mjs';
 import {
   humanDensity, vertexWeightOf, eyeCentres, eyeFrontZ, movedMask, browLines, remapEyeUV, primFromGeo,
-  cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt, hairShape,
+  cullUnderWrap, cullEyeBacks, simplifyHands, compactPrim, scalpCards, paintHumanSkin, hairBandUnderHem, corneaDome, leanInwardNormals, tuckUnderCloth, appendCollarSkirt, hairShape, bakeThinness, bakeZones,
 } from '../../lib/human/skin-human.mjs';
 import { emptyGeo, primToGeo, compact, join, filterTris, clipAbsX, clipTopY, soupOf, simplify, simplifySloppy, nearestSkin, dye, lin, tris, recomputeGeoNormals } from './geo.mjs';
 import { ATLAS, uvRect, mcoUV, NEUTRAL, HAIR_NEUTRAL } from './atlas.mjs';
@@ -394,7 +394,9 @@ function wrapSpec(kind, H, chainTail) {
   const base = {
     // a headscarf: low on the nape, cut across the brow, two soft crossing turns
     scarf: { lift, base: { tiltDeg: 14, warpDeg: -7, lowDeg: -6, w: 0.28, lift: 0.0012 }, turns: [{ phiDeg: 68, tauDeg: 11, oDeg: 30, w: 0.24, along: 30, lift: 0.0009, pillow: 0.0028, creaseAmp: 0.0013, seed: H.seed + 1, flip: true }], knot: chainTail.points[0], tail },
-    wrap: { lift, base: { tiltDeg: 18, warpDeg: -9.5, lowDeg: -2.2, w: 0.25, lift: 0.0012 }, turns: [{ phiDeg: 82, tauDeg: 14.5, oDeg: 34, w: 0.225, along: 32, lift: 0.0009, pillow: 0.0026, creaseAmp: 0.0012, seed: H.seed + 1, flip: true }, { phiDeg: -74, tauDeg: 17, oDeg: 36.5, w: 0.235, along: 28, lift: 0.0009, pillow: 0.0028, creaseAmp: 0.0012, seed: H.seed + 2 }], bun: { c: [0, 1.7605, -0.100], axis: [0, 0.70, -0.71], r: 0.0605, rAxis: 0.0685, topY: 1.82756 }, knot: chainTail.points[0], tail },
+    // (M1.5b round 2: off the old tall topknot onto Brea's M1.2c knot: lower, rounder, further back over the occiput, topY 1.8276 ->
+    // 1.8045, with her smaller knot form; the same raw head frame as hers)
+    wrap: { lift, base: { tiltDeg: 18, warpDeg: -9.5, lowDeg: -2.2, w: 0.25, lift: 0.0012 }, turns: [{ phiDeg: 82, tauDeg: 14.5, oDeg: 34, w: 0.225, along: 32, lift: 0.0009, pillow: 0.0026, creaseAmp: 0.0012, seed: H.seed + 1, flip: true }, { phiDeg: -74, tauDeg: 17, oDeg: 36.5, w: 0.235, along: 28, lift: 0.0009, pillow: 0.0028, creaseAmp: 0.0012, seed: H.seed + 2 }], bun: { c: [0, 1.738, -0.118], axis: [0, 0.48, -0.88], r: 0.057, rAxis: 0.05, topY: 1.8045 }, knot: chainTail.points[0], knotSpec: { r: 0.033, rAxis: 0.029 }, tail },
     // a rag tied low and tight: a working man's
     rag: { lift: (dx, dy, dz) => 0.0018 + 0.002 * smooth(0, 0.8, dy), base: { tiltDeg: 8, warpDeg: -5, lowDeg: 8, w: 0.32, lift: 0.001 }, turns: [{ phiDeg: 15, tauDeg: 8, oDeg: 22, w: 0.2, along: 28, lift: 0.0008, pillow: 0.002, creaseAmp: 0.0016, seed: H.seed + 1 }], knot: chainTail.points[0], tail: { ...tail, width: (u) => 0.058 * (1 - 0.25 * u) } },
     // a wool cap: full, soft, sits on the head like a bag
@@ -792,6 +794,20 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     marks, tone: spec.tone, iris: spec.iris, amber: spec.amber, hairColor: spec.hairPaint || spec.hair,
   });
   leanInwardNormals(bodyPrim, eyesPrim, { L, eyes });
+  // M1.5b round 2 (TECH §6: "every shader written for Brea applies to NPCs unchanged"): the skin light's two baked inputs, as Brea's
+  // recipe bakes them (src/hero/skinLook.js reads _CALTHIN for the ears' back-transmission and _CALZONE for the face's pore detail, the
+  // cornea and the lower lid's wet line, and the eyes). Brea's regions are written about her eyes (eye height 1.656, front 0.063 raw),
+  // so they follow a person's own head: the face from 108 mm under the eyes to 69 mm over them, the ears' thin tissue beside them
+  {
+    const eY = (eyes[0][1] + eyes[1][1]) / 2, eZ = (eyes[0][2] + eyes[1][2]) / 2;
+    bakeThinness(base, bodyPrim, { scale: S, zero: [eyesPrim], keep: (p) => p[1] > eY - 0.106 && p[1] < eY + 0.064 && Math.abs(p[0]) > 0.062 && p[2] < eZ - 0.033 });
+    const RB = 0.0165, domeAt = (r) => 0.0033 * (1 - smooth(0.0018, 0.0074, r));      // corneaDome's defaults, as built above
+    bakeZones(base, bodyPrim, eyesPrim, {
+      eyes, sphereZ: eyeSphereZ,
+      face: (p) => smooth(eY - 0.108, eY - 0.090, p[1]) * (1 - smooth(eY + 0.044, eY + 0.069, p[1])) * smooth(eZ - 0.067, eZ - 0.051, p[2]) * (1 - smooth(0.058, 0.068, Math.abs(p[0]))),
+      ball: (p) => { const e = eyes[p[0] > 0 ? 0 : 1], v = [p[0] - e[0], p[1] - e[1], p[2] - eyeSphereZ]; return Math.hypot(...v) - (RB + (v[2] > 0 ? domeAt(Math.hypot(v[0], v[1])) : 0)); },
+    });
+  }
   const darkUV = (() => {
     const Q = bodyPrim.getAttribute('POSITION'), U = bodyPrim.getAttribute('TEXCOORD_0'), q = [0, 0, 0], u = [0, 0];
     let best = -1, bz = 9;

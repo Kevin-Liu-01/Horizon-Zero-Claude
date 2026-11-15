@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { disposeObjectTree } from '../../../core/assets.js';
 import { installCloth } from '../../../hero/clothShader.js';
+import { applySkinLook } from '../../../hero/skinLook.js';
 
 /**
  * CALIMA · the NPC bank (settlements; R56; plan §4.1, §4.4, gates A-npc-atlas-resident, A-npc-dispose).
@@ -25,7 +26,7 @@ const FILL_AMBIENT_REF = 0.155;
  * `pre` (M1.5b): a dress on a sheet of its own carries Brea's cloth shading (src/hero/clothShader.js: the weave, grain and
  * brass detail tiled at her size, the cloth rim), run before the fade and fill; it is its own program.
  */
-function patch(mat, fadeU, pre = null) {
+function patch(mat, fadeU, pre = null, key = null) {
   mat.onBeforeCompile = (shader) => {
     if (pre) pre(shader);
     shader.uniforms.uNpcFade = fadeU;
@@ -42,7 +43,7 @@ function patch(mat, fadeU, pre = null) {
     if (uNpcFade >= 0.0 ? npcD >= uNpcFade : npcD < -uNpcFade) discard;
   }`);
   };
-  mat.customProgramCacheKey = pre ? () => 'npc-people-1-cloth' : () => 'npc-people-1';
+  mat.customProgramCacheKey = key ? () => key : pre ? () => 'npc-people-1-cloth' : () => 'npc-people-1';
   return mat;
 }
 
@@ -55,6 +56,8 @@ export class NpcBank {
     this.clipPromise = null;
     /** Every live material (base + fade pool), for the fill's once-per-tick write. */
     this.liveMats = new Set();
+    /** base material -> its own program key, when its hook makes a program of its own (the skin light) */
+    this.preKeys = new WeakMap();
     /** base material -> its fade pool; any material -> its fade uniform (userData is JSON-cloned by Material.copy: not there). */
     this.pools = new Map();
     this.fadeU = new WeakMap();
@@ -69,12 +72,13 @@ export class NpcBank {
   /* ------------------------------------------------------------------ materials */
 
   /** The one patched program + a fade uniform; registered with the sky's cascades and fog. */
-  _own(mat, pre = null) {
+  _own(mat, pre = null, key = null) {
     const fadeU = { value: 1 };
     this.fadeU.set(mat, fadeU);
     mat.side = THREE.FrontSide;
     if (pre) this.preHooks.set(mat, pre);
-    patch(mat, fadeU, pre);
+    if (key) this.preKeys.set(mat, key);
+    patch(mat, fadeU, pre, key);
     this.ctx.environment?.registerMaterial?.(mat);
     mat.needsUpdate = true;
     this.liveMats.add(mat);
@@ -93,7 +97,7 @@ export class NpcBank {
     // fading in shows the first `level / N` of the dither; fading out hides the same share (the two never overlap)
     const u = { value: dir > 0 ? level / FADE_LEVELS : -(level / FADE_LEVELS) };
     this.fadeU.set(m, u);
-    patch(m, u, this.preHooks.get(base) || null);
+    patch(m, u, this.preHooks.get(base) || null, this.preKeys.get(base) || null);
     this.ctx.environment?.registerMaterial?.(m);
     m.needsUpdate = true;
     pool[k] = m;
@@ -220,7 +224,20 @@ export class NpcBank {
         if (o.isSkinnedMesh && o.name === 'Outfit_L0' && !e.outfitMat) e.outfitMat = o.material;
       });
       e.skinMat.name = `npc-skin-${id}`;
-      this._own(e.skinMat);
+      // M1.5b round 2 (TECH §6: every shader written for Brea applies to NPCs unchanged): Brea's skin light (pre-integrated
+      // scattering, the dual lobe, the pores, the ears' transmission, the wet cornea) on every person's skin. The near tier carries the
+      // recipe's baked _CALTHIN / _CALZONE (lib/human: bakeThinness, bakeZones); a far tier, or a person built before them, gets
+      // zeros (no pore detail, no transmission, skin everywhere), so a tier change keeps the same light
+      const tier = this.ctx.engine?.quality || 'high';
+      gltf.scene.traverse((o) => {
+        if (!o.isSkinnedMesh || !/^Skin_/.test(o.name)) return;
+        const g = o.geometry, n = g.getAttribute('position').count;
+        if (!g.getAttribute('_calzone')) g.setAttribute('_calzone', new THREE.BufferAttribute(new Uint8Array(n * 4), 4, true));
+        if (!g.getAttribute('_calthin')) g.setAttribute('_calthin', new THREE.BufferAttribute(new Uint8Array(n), 1, true));
+      });
+      applySkinLook(e.skinMat, { tier });
+      const skinHook = e.skinMat.onBeforeCompile, skinMat = e.skinMat;
+      this._own(e.skinMat, (shader) => skinHook.call(skinMat, shader), `npc-people-1-skin${tier === 'low' ? 'l' : ''}`);
       // M1.5b: a dress on a sheet of its own (Ansel) keeps its own material, with Brea's cloth shading; any other person
       // wears the faction atlas, resolved here
       const own = e.npc?.outfitAtlas?.own && e.outfitMat?.map ? e.npc.outfitAtlas : null;

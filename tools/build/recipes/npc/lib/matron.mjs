@@ -44,7 +44,9 @@ export const ANSEL = {
   // (M1.5b fix round 1, the judge: "her violet accent is almost invisible" at 3 m in F20; Q6): the orchil a step brighter and more
   // saturated (#6B3F73 -> #7E3A92, the band's deep ground #4F2A5C -> #63287A), still darker than Brea's own violet, and the front band
   // 3.8 cm wide (2.8 before), so it reads as a stripe down her front at 3 m
-  wraps: hex('#7D7468'), orchil: hex('#7E3A92'), orchilDeep: hex('#63287A'), tick: hex('#B8914A'), strap: hex('#5C3D29'),
+  // (M1.5b round 2, the review: "embroidery not legible at 3 m": the gold-ochre on the oatmeal robe stood 5 L* off it; the robe's own
+  // embroidery takes a deeper ochre, `tickDeep`, about 20 L* under the linen, the bright `tick` stays on the dark orchil band)
+  wraps: hex('#7D7468'), orchil: hex('#7E3A92'), orchilDeep: hex('#63287A'), tick: hex('#B8914A'), tickDeep: hex('#8A5D1E'), strap: hex('#5C3D29'),
   iron: hex('#4A4744'),
 };
 /** What the Pan painters read, set to Ansel's cloth while her sheet is drafted and painted (restored after). */
@@ -64,8 +66,8 @@ const ARMHOLE_V = { y: 1.37, z: -0.045, ry: 0.118, rz: 0.098, xMin: 0.124 };
 /* ------------------------------------------------------------------ painting */
 
 /** The gold-ochre thread, couched: a little proud, dulled where it is worn. */
-function thread(o, a, cr) {
-  over(o, sc(ANSEL.tick, 0.86 + 0.3 * cr), a);
+function thread(o, a, cr, col = ANSEL.tick) {
+  over(o, sc(col, 0.86 + 0.3 * cr), a);
   o.h += 0.0004 * a; o.rough = mix(o.rough, 0.6, a); o.det = mix(o.det, 0.2, a);
 }
 
@@ -124,18 +126,21 @@ function skirtPaint(t, o) {
   if (t.Y < 1.07) {
     // the border: a couched line 13 mm in from every edge, short ticks every 8 mm standing in from it to the edge, a long
     // one every 4 cm (the graduated-tick family mark), a second line 4 mm inside it
-    if (Math.abs(e - 0.013) < 0.0017 || Math.abs(e - 0.019) < 0.0012) thread(o, 0.92 * worn, cr);
-    const ph = ((along / 0.008) % 1 + 1) % 1, long = Math.floor(along / 0.008) % 5 === 0;
-    if (e > (long ? 0.002 : 0.006) && e < 0.013 && ph < 0.24) thread(o, 0.85 * worn, cr);
+    // M1.5b round 2 (legible at 3 m, where a texel-sized thread is gone: about 2.6 mm a pixel at F20's 3 m): the border's two lines
+    // 4 and 3 mm wide (were 3.4 and 2.4), the ticks every 16 mm and 6 mm wide (8 and 2), a long one every 8 cm, in the deeper ochre
+    if (Math.abs(e - 0.015) < 0.002 || Math.abs(e - 0.0235) < 0.0015) thread(o, 0.95 * worn, cr, ANSEL.tickDeep);
+    const ph = ((along / 0.016) % 1 + 1) % 1, long = Math.floor(along / 0.016) % 5 === 0;
+    if (e > (long ? 0.002 : 0.006) && e < 0.015 && ph < 0.38) thread(o, 0.9 * worn, cr, ANSEL.tickDeep);
     // a row of the ring glyph 6 cm over the hem: a ring, a plumb line through it, a datum bar under it, every 13 cm
-    const gv = up - 0.062;
-    if (Math.abs(gv) < 0.03 && e > 0.02) {
+    // (round 2: the ring 18 mm across its centre line, was 10.5, its strokes 3.6 and 2.4 mm, was 3.2 and 1.6)
+    const gv = up - 0.07;
+    if (Math.abs(gv) < 0.04 && e > 0.026) {
       const s = th * 0.24, k = Math.floor(s / 0.13), gu = ((s % 0.13) + 0.13) % 0.13 - 0.065;
       const live = noise3(k * 3.7, 1.3, 2.9) > 0.25 ? 1 : 0.45;
       const rr = Math.hypot(gu, gv);
-      if (Math.abs(rr - 0.0105) < 0.0016) thread(o, 0.85 * live * worn, cr);
-      if (Math.abs(gu) < 0.0008 && Math.abs(gv) < 0.017) thread(o, 0.75 * live * worn, cr);
-      if (Math.abs(gv + 0.0155) < 0.0008 && Math.abs(gu) < 0.0065) thread(o, 0.75 * live * worn, cr);
+      if (Math.abs(rr - 0.018) < 0.0018) thread(o, 0.92 * live * worn, cr, ANSEL.tickDeep);
+      if (Math.abs(gu) < 0.0012 && Math.abs(gv) < 0.028) thread(o, 0.85 * live * worn, cr, ANSEL.tickDeep);
+      if (Math.abs(gv + 0.026) < 0.0012 && Math.abs(gu) < 0.011) thread(o, 0.85 * live * worn, cr, ANSEL.tickDeep);
       // between the rings a running script of short strokes
       if (Math.abs(gu) > 0.022 && Math.abs(gu) < 0.05 && Math.abs(gv) < 0.006) {
         const sv = ((gu + 0.065) / 0.0062) % 1, su = noise3(Math.floor((gu + 0.065) / 0.0062) * 2.3, k, 5.1);
@@ -201,7 +206,8 @@ function anselTrim(W, H, trimH) {
   T.cells.get('capelet').painter = (t, o) => {
     t.X = t.ax * 0.012; t.Y = t.ay * 0.012; t.Z = 0; t.d = 99;
     // (the trim, Q6: the band's ground is the deep orchil, the one violet on her besides the sash and the wrap's lining)
-    cloth(t, o, sc(ANSEL.orchilDeep, 1.05), { slub: 0.07, mottle: 0.08, seed: 23, thread: 0.04 });
+    // (M1.5b round 2, Q6: "her violet accent nearly invisible" in F20's gold light: the ground the brighter orchil, not the deep)
+    cloth(t, o, sc(ANSEL.orchil, 1.08), { slub: 0.07, mottle: 0.08, seed: 23, thread: 0.04 });
     const cr = noise3(t.ax * 0.07, t.ay * 0.07, 1.9);
     const worn = noise3(t.ax * 0.03, t.ay * 0.03, 4.4) > 0.24 ? 1 : 0.45;
     const v = t.v, x = t.x;
@@ -272,8 +278,11 @@ function robeVest(base, parts) {
   for (const run of openEdges(vest)) {
     const cy = run.reduce((a, q) => a + q.p[1], 0) / run.length, cx = run.reduce((a, q) => a + q.p[0], 0) / run.length;
     if (cy < 1.19) continue;
-    if (Math.abs(cx) > 0.1) bindingOn(band, run, vSkin, vSkin, { rect: base.trim.rect('bind'), w: 0.0085, lift: 0.0014, under: 0.3, edge: 0.001, smooth: 0 });
-    else bindingOn(band, run, vSkin, vSkin, { rect: base.trim.rect('capelet'), tile: 0.085, w: 0.038, lift: 0.0018, under: 0.2, edge: 0.0016, smooth: 1, center: (q) => (q[1] < 1.42 ? [0, q[1], q[2] - 0.1] : [0, 1.57, -0.02]) });
+    // (M1.5b round 2, the review: "a bright jagged sliver where the vest's armhole binding meets the sleeve cap": the armhole binding is
+    // smoothed along its run as the front band is, and stands 2.4 mm proud of the vest, not 1.4, so the shirt's sleeve cap under it
+    // never cuts through its edge; the front band 5 cm wide, was 3.8, so the orchil reads as a stripe down her front at 3 m)
+    if (Math.abs(cx) > 0.1) bindingOn(band, run, vSkin, vSkin, { rect: base.trim.rect('bind'), w: 0.0085, lift: 0.0024, under: 0.3, edge: 0.001, smooth: 2 });
+    else bindingOn(band, run, vSkin, vSkin, { rect: base.trim.rect('capelet'), tile: 0.085, w: 0.05, lift: 0.0018, under: 0.2, edge: 0.0016, smooth: 1, center: (q) => (q[1] < 1.42 ? [0, q[1], q[2] - 0.1] : [0, 1.57, -0.02]) });
   }
   recomputeNormals(band);
   rideOn(band, [vest]);
