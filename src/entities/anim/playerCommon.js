@@ -526,7 +526,7 @@ DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, m
  *  beside the idle's weight shift (page, c49cb19 / cad69ac: bearing 226, 188, 178 against the bar's 180-270). Bench at
  *  3.2: F02's heading 219 deg, 0.13 m (232, 0.14 at 2.4), every heading within 15 deg of SW; a 9 m/s gust on F09's
  *  heading lifts the left panel's chord p95 38 deg, max 41) */
-DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 3.2, airY: true, flut: 2.0, hang: 2, rootK: 3 });
+DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 3.2, airY: true, flut: 2.0, hang: 2, rootK: 3, airSelf: 0.4 });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 export const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */

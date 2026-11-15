@@ -861,6 +861,10 @@ export class SecondaryMotion {
       c.flX += dt * rf;
       const tf = t + c.flX;
       const flA = cw > 0 ? (this.wind.flutter || 0) * windS * (1 + rf) * (cls.flut ?? 1) : 0, sd = c.seed;
+      /* (M1a regressions, `airSelf`: how much of the air's drag against the chain's own travel a class takes, x1 by
+       *  default. The sash panels take 0.4: at their 3.2 1/s, a jog's own air (5 m/s) held the back panel out level
+       *  behind her in F15 (a8ea1bc); 0.4 x 3.2 is the 1.2-1.3 1/s the panels ran on when F15 was accepted) */
+      const as = cls.airSelf ?? 1;
       for (let s = 0; s < steps; s++) {
         for (let j = 1; j < n; j++) {
           const i0 = j * 3;
@@ -888,8 +892,8 @@ export class SecondaryMotion {
             let acc = -kj * (pos[i] - anim[i]) - dmp * (vel[i] - aVel[i]) - aB[i] * bg
               + (a === 1 ? gy : 0);
             if (wj > 0) {
-              if (a === 0) acc += wj * (windX - wuz * fl - vel[i]);
-              else if (a === 2) acc += wj * (windZ + wux * fl - vel[i]);
+              if (a === 0) acc += wj * (windX - wuz * fl - vel[i] * as);
+              else if (a === 2) acc += wj * (windZ + wux * fl - vel[i] * as);
               else acc += wj * (fv - airY * vel[i]);   // airY: the air resists the strip's vertical flap too
             }
             vel[i] += acc * sdt;
