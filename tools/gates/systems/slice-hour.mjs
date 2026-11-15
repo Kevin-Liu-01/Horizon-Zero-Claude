@@ -303,6 +303,15 @@ async function beat(page, K, s) {
     if (st === 'ditch') {
       // "come down on the Plumb through the lee ditch": crouched, at a walk (C toggles the crouch), as a player stalks
       // it; sprinting in stood her 9 m from it in the open and it killed her (f90d2b0, 7ae0fd0)
+      // 5f4bf42: crouched all the way from T1 she stuck 101 m short (no hop over the shelf's lips while crouched):
+      // she runs down off the shelf to 45 m from the station, then stalks
+      const st0 = await page.evaluate(() => window.__CTX__.systemsGame.A.station);
+      const d0 = await page.evaluate((a) => { const P = window.__CTX__.player.position; return Math.hypot(P.x - a.x, P.z - a.z); }, st0);
+      if (d0 > 50) {
+        const k = 45 / d0, p0 = (await page.evaluate(probe)).p;
+        const r0 = await walkTo(page, K, { x: st0.x + (p0.x - st0.x) * k, z: st0.z + (p0.z - st0.z) * k }, 3, { maxS: 120 });
+        if (!r0.ok) return { ...r0, why: `run down to 45 m from the station: ${r0.why}` };
+      }
       const crouched = await page.evaluate(() => !!window.__CTX__.player.crouching);
       if (!crouched) await K.tap('KeyC');
       const r = await walkTo(page, K, s.anchor, Math.max(1.5, s.radius - 1), { sprint: false, maxS: 200 });
