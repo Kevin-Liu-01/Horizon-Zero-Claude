@@ -26,6 +26,8 @@ const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[
 const OLD = args.includes('--old');
 /** --flow: print A-draw-elbow-level's flow readings per cell (`flow`) */
 const FLOW = args.includes('--flow');
+/** --old-string: the string linear in combat's draw to 1 (before M1a r3) */
+const OLD_STRING = args.includes('--old-string');
 const TRACE = process.env.TRACE || null;
 
 export const STANCES = ['stand', 'crouch'];
@@ -44,6 +46,7 @@ async function main() {
   console.log = log; console.table = table; console.warn = warn;
   if (OLD) R.an.T.cRig = null;
   const M = buildMeasure(R, THREE);
+  R.M = M;
   const want = flag('--cells');
   const cells = [];
   for (const s of STANCES) for (const m of MOVES) for (const y of YAWS) cells.push(`${s}.${m}.${y}`);
@@ -65,7 +68,7 @@ async function main() {
 }
 
 /** Reset her to standing, unaimed, at the origin facing +Z, and settle. */
-function reset(R) {
+export function reset(R) {
   const { player: p, combat: c, an } = R;
   p.position.set(0, 0, 0); p.velocity.set(0, 0, 0); p.heading = 0; p.camYaw = Math.PI; p.camPitch = 0;
   p.aiming = false; p.crouching = false; p.crouchAim = false; p.moveSpeed = 0; p.dodging = false;
@@ -76,7 +79,7 @@ function reset(R) {
 }
 
 /** One 1/60 s step of the stand-ins and the real animator. */
-function step(R, dt, cam = null) {
+export function step(R, dt, cam = null) {
   const { player: p, combat: c, an, model, camera } = R;
   R.t += dt;
   // player.js: heading onto the camera while aiming (AIM_TURN 12 rad/s)
@@ -140,10 +143,13 @@ export function makeBow(R) {
   model.rotation.z = 0.22; model.position.y = -0.1; group.add(model);
   const restZ = 0.055, pull = +(0.527 + restZ).toFixed(4);
   const nockLocal = new THREE.Object3D(); model.add(nockLocal);
+  // (M1a r3: the Sabina's string reaches the anchor at combat's draw `fullAt`, src/combat/bow.js stringDraw)
+  const fullAt = OLD_STRING ? 1 : 0.9;
+  const stringDraw = (d) => (d >= fullAt ? 1 : d <= 0 ? 0 : d / fullAt);
   return {
-    group, model, restZ, pull, draw: 0,
+    group, model, restZ, pull, fullAt, stringDraw, draw: 0,
     /** the string's nocking point, world (= the nocked arrow's nock: the Sabina carries it there) */
-    getNockWorld(draw, out) { nockLocal.position.set(0, 0.018, restZ - draw * pull); nockLocal.updateWorldMatrix(true, false); return out.setFromMatrixPosition(nockLocal.matrixWorld); },
+    getNockWorld(draw, out) { nockLocal.position.set(0, 0.018, restZ - stringDraw(draw) * pull); nockLocal.updateWorldMatrix(true, false); return out.setFromMatrixPosition(nockLocal.matrixWorld); },
   };
 }
 
@@ -161,7 +167,7 @@ async function runCell(R, M, id, pitch) {
   const mv = MOVE_DIR[move];
   if (mv) for (let i = 0; i < 30; i++) step(R, 1 / 60, { move: mv });
   M.begin();
-  const FL = { prev: null, stepMax: 0, stepAt: null, looseT: null, lH: -9, lE: -9, fullE: -9, raiseMax: 0, raiseAt: null };
+  const FL = { prev: null, stepMax: 0, stepAt: null, looseT: null, lH: -9, lE: -9, fullE: -9, raiseMax: 0, raiseAt: null, kn90: 0, kn90At: null, rear: 0, h0: null };
   const sweep = yaw.startsWith('sweep') ? +yaw.slice(5) : 0;
   const yaw0 = p.camYaw;
   const dt = 1 / 60;
@@ -200,7 +206,10 @@ async function runCell(R, M, id, pitch) {
   // in front of the back of the skull (< 0) and the elbow <= 0.20 m behind it through the loose's 0.3 s, and the
   // elbow at the full draw before the first loose. Reported beside the M1.3b bars, not graded into `fails`.
   r.flow = { armStepMaxM: +FL.stepMax.toFixed(4), armStepAt: FL.stepAt, raiseStepMaxM: +FL.raiseMax.toFixed(4), raiseAt: FL.raiseAt,
-    looseHandBehindSkull: +FL.lH.toFixed(4), looseElbowBehindSkull: +FL.lE.toFixed(4), fullElbowBehindSkull: +FL.fullE.toFixed(4) };
+    looseHandBehindSkull: +FL.lH.toFixed(4), looseElbowBehindSkull: +FL.lE.toFixed(4), fullElbowBehindSkull: +FL.fullE.toFixed(4),
+    // (M1a r3: A32's reading, the index knuckle to the jaw-corner anchor on every step with combat's draw >= 0.9
+    //  before the first loose; A17's, the wrist's char -z travel in the 0.26 s after the loose)
+    knuckleJaw90: +FL.kn90.toFixed(4), knuckleJaw90At: FL.kn90At, looseRearM: +FL.rear.toFixed(4) };
   return r;
 }
 
@@ -222,9 +231,16 @@ function flow(R, FL, T, draw, loosed) {
   if (loosed >= 1 && FL.looseT == null) FL.looseT = T;
   if (FL.looseT != null && T - FL.looseT <= 0.3 + 1e-6) {
     FL.lH = Math.max(FL.lH, an.behindHead(ha)); FL.lE = Math.max(FL.lE, an.behindHead(el));
-    if (process.env.LOOSE_TRACE) console.error('loose', (T - FL.looseT).toFixed(3), 'hand', an.behindHead(ha).toFixed(4), 'elbow', an.behindHead(el).toFixed(4), 'looseT', an._looseT.toFixed(2), 'q', an._quiverT.toFixed(2), 'hold', (an._cr?.hold ?? 0).toFixed(2), 'w', (an._cr?.w ?? 0).toFixed(2));
+    if (process.env.LOOSE_TRACE) console.error('loose', (T - FL.looseT).toFixed(3), 'hand', an.behindHead(ha).toFixed(4), 'rear', FL.h0 ? (FL.h0.z - ha.z).toFixed(4) : '-', 'y', ha.y.toFixed(3), 'held', (an._cr?.wristHeld ?? 0).toFixed(2), 'elbow', an.behindHead(el).toFixed(4), 'looseT', an._looseT.toFixed(2), 'q', an._quiverT.toFixed(2), 'hold', (an._cr?.hold ?? 0).toFixed(2), 'w', (an._cr?.w ?? 0).toFixed(2));
   }
   if (!loosed && draw >= 0.999) FL.fullE = Math.max(FL.fullE, an.behindHead(el));
+  if (!loosed && draw >= 0.9) {
+    const kn = new THREE.Vector3(); an._charOf(an.bones.index_01_r, kn);
+    const kj = kn.distanceTo(R.M.jawChar(new THREE.Vector3()));
+    if (kj > FL.kn90) { FL.kn90 = kj; FL.kn90At = `${T.toFixed(3)}s draw ${draw.toFixed(2)}`; }
+  }
+  if (!loosed) FL.h0 = ha.clone();
+  if (FL.looseT != null && T - FL.looseT <= 0.26 + 1e-6 && FL.h0) FL.rear = Math.max(FL.rear, FL.h0.z - ha.z);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await main();

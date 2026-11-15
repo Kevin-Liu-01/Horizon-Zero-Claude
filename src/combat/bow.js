@@ -172,6 +172,17 @@ class WeaponModel {
     this.group.add(this.model);
     this.restZ = 0.055;
     this.pull = 0.52;
+    /** M1a r3 (hero-anim, M1.3b / A32): the draw at which the string reaches the anchor. Combat's draw (the shot's
+     * power) builds 0..1; the string is on the jaw from `fullAt` on and the rest of the build is the archer's
+     * hold at the anchor (the knuckle sat 0.042-0.050 m short of the jaw corner at draw 0.9-0.97). The geometric
+     * nock, the string and the animator's nock line all read `stringDraw(draw)`. */
+    this.fullAt = 1;
+  }
+
+  /** The string's travel 0..1 for combat's draw 0..1: linear up to `fullAt`, held at the anchor after it. */
+  stringDraw(draw) {
+    const f = this.fullAt;
+    return draw >= f ? 1 : draw <= 0 ? 0 : draw / f;
   }
 
   _finish() {
@@ -235,7 +246,7 @@ class WeaponModel {
   }
 
   _nockLocal(draw, out) {
-    out.set(0, 0.018, this.restZ - draw * this.pull);
+    out.set(0, 0.018, this.restZ - this.stringDraw(draw) * this.pull);
     return out;
   }
 }
@@ -257,6 +268,7 @@ class RecurveBow extends WeaponModel {
     const accentMat = opts.accentMat ?? tealGlow;
     this.group.name = opts.name ?? 'bow';
     this.pull = opts.pull ?? 0.52;
+    this.fullAt = 0.9;
 
     // --- limbs: mirrored recurve spline
     const half = [
@@ -390,7 +402,7 @@ class RecurveBow extends WeaponModel {
   }
 
   setDraw(draw, showArrow) {
-    const nz = this.restZ - draw * this.pull;
+    const nz = this.restZ - this.stringDraw(draw) * this.pull;
     _nock.set(0, 0.018, nz);
     setSegment(this.strTop, this._tipTop, _nock, STRING_R);
     setSegment(this.strBot, _nock, this._tipBot, STRING_R);
@@ -457,6 +469,7 @@ class SabinaBow extends WeaponModel {
   constructor(entry, material) {
     super();
     this.group.name = 'sabina-bow';
+    this.fullAt = 0.9;
     const X = entry.extras?.r5Weapon || {};
     let src = null;
     entry.root.traverse((o) => { if (!src && o.isMesh) src = o; });
@@ -555,7 +568,7 @@ varying vec3 vBwTint;`)
 
   setDraw(draw, showArrow) {
     const B = this.U.uBow.value, A = this.U.uArrowPos.value;
-    const nz = this.restZ - draw * this.pull;          // model space (the contract)
+    const nz = this.restZ - this.stringDraw(draw) * this.pull;   // model space (the contract)
     const full = this.restZ - this.pull;
     const rest = this._tip0Z + GRIP_Z;                 // the braced string, model space
     // (no Math.min / Math.max and no double through a ternary: V8's mid tier boxes them; fields take writes in place)

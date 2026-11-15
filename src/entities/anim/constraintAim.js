@@ -33,12 +33,14 @@ import { clamp, smoothstep } from './playerCommon.js';
 
 const ARM = ['upArmL', 'loArmL', 'handL', 'upArmR', 'loArmR', 'handR'];
 /** M1a r2 fix: the most the draw wrist target and elbow travel per 1/60 s off the draw shoulder (m; the row's bar 0.06). */
-const ARM_STEP = 0.045;
+const ARM_STEP = 0.036;
 /** M1a r2 fix: through the loose the wrist stays this far behind the back of the skull's plane at most (m; < 0 is in
  *  front of it; A-draw-elbow-level wants < 0). */
 const LOOSE_FRONT = -0.012;
 /** ...and after the step limit has held the wrist back toward last step's, at least this far in front (m). */
 const LOOSE_FRONT_HELD = -0.004;
+/** M1a r3 (A17): how far the loose's kick may slide down the back of the skull's plane (m), so it travels back. */
+const KICK_SLIDE = 0.26;
 // scratch (module-local, allocation-free per frame)
 const _S = new THREE.Vector3(), _E = new THREE.Vector3(), _W = new THREE.Vector3(), _T = new THREE.Vector3();
 const _r = new THREE.Vector3(), _p = new THREE.Vector3(), _u1 = new THREE.Vector3(), _u2 = new THREE.Vector3();
@@ -309,6 +311,7 @@ export class ConstraintAim {
     C.cant = bow?.model?.rotation?.z ?? 0.22;
     C.gX = bow?.model?.position?.x ?? 0; C.gY = bow?.model?.position?.y ?? -0.1; C.gZ = bow?.model?.position?.z ?? 0;
     C.restZ = bow?.restZ ?? 0.055; C.pull = bow?.pull ?? 0.582;
+    C.fullAt = bow?.fullAt ?? 1;                                               // (M1a r3: the string on the jaw from here)
     this._cRigGrip();
     // ---- SPINE TWIST: the trunk turns about the aim's up axis until the bow arm carries the grip all but
     // locked (the bow shoulder onto the arrow line, as an archer stands), and no further than the shoulder's
@@ -393,7 +396,8 @@ export class ConstraintAim {
     const raw = cmb ? clamp(cmb.drawStrength ?? drawS, 0, 1) : drawS;
     const rawNext = raw > C.lastRaw && raw < 1 ? Math.min(1, 2 * raw - C.lastRaw) : raw;
     C.lastRaw = raw;
-    const sDraw = Math.max(rawNext, C.hold);
+    // (M1a r3, A32: the string's travel, the bow's own `stringDraw`: on the anchor from combat's draw `fullAt` on)
+    const sDraw = Math.min(1, Math.max(rawNext, C.hold) / C.fullAt);
     // at a low draw the string is out at the bow, past the draw arm's reach from its shoulder: the bow comes
     // back along the arrow just far enough for the string hand to hold it, and goes out as the draw builds
     {
@@ -422,11 +426,16 @@ export class ConstraintAim {
     _N.copy(_G).add(this._cRigNockOff(_d, sDraw, _c));                                  // the nock now
     _T.copy(_N).sub(_hOff);                                                    // the wrist for it
     if (looseOn || C.hold > 0) {
-      // the loose: the hand kicks back along the arrow and OUT, away from her face, then settles
-      const lk = this._looseT < 0.35 ? smoothstep(this._looseT, 0, 0.35) : 1 - smoothstep(this._looseT, 0.35, 1);
+      // the loose: the hand kicks back along the arrow and OUT, away from her face. M1a r3 (A17): and it STAYS
+      // there (it used to come back onto the jaw by the loose's end, 0.15 s) until the re-nock's beat carries it
+      // on down to the hip quiver: the release flows into the reach for the next arrow
+      const lk = smoothstep(this._looseT, 0, 0.6);
       // (along the arrow's level heading, never up the back of a down aim)
       _a.set(_d.x, 0, _d.z).normalize(); _lat.set(_a.z, 0, -_a.x);
       _T.addScaledVector(_a, -R.kick * lk).addScaledVector(_lat, -R.kick * (R.kickOut ?? 0.8) * lk);
+      // (M1a r3, A17: the kicked hand slides down the back of the skull's plane before the re-nock's beat takes it
+      //  on to the quiver, so the beat starts from there and the path goes on down, never back up the neck)
+      this._cRigLooseFront(_T, LOOSE_FRONT, KICK_SLIDE * lk);
     }
     const looseHold = looseOn || C.hold > 0;
     if (this._looseT >= 1 && C.hold > 0 && this._quiverT >= 0.5) C.hold = 0;
@@ -554,7 +563,7 @@ export class ConstraintAim {
         _T.copy(_b).lerp(_d2, lo);
         C.wristHeld = 1 - lo;
         // (the loose's plane wins over the step)
-        if (looseHold) this._cRigLooseFront(_T, LOOSE_FRONT_HELD);
+        if (looseHold) this._cRigLooseFront(_T, LOOSE_FRONT_HELD, KICK_SLIDE);
         // (...and the head's keep-out wins too: a wrist held back on its way past the nape is pushed out again)
         this._cRigConstrain(_T, 0.1);
       } else C.wristHeld = 0;
@@ -597,11 +606,19 @@ export class ConstraintAim {
     if (D) { D.anchor.copy(C.hook); this._charOf(b.head.bone, D.headAt); D.d.copy(_d); }
   }
 
-  /** M1a r2 fix: a char-space wrist target no further back than `LOOSE_FRONT` off the back of the skull's plane. */
-  _cRigLooseFront(P, lim = LOOSE_FRONT) {
+  /** M1a r2 fix: a char-space wrist target no further back than `LOOSE_FRONT` off the back of the skull's plane.
+   *  M1a r3 (A17): with `slide` > 0, a target behind that plane first slides DOWN it, at most `slide` m: the
+   *  plane leans with the head (her cheek is down on the arrow at a level aim, the head's forward 0.32 down),
+   *  so the hand can go back past the jaw as it goes down beside her neck, and stays in front of the back of the
+   *  skull. Only what the slide cannot take is pushed forward along the head's forward, as before. */
+  _cRigLooseFront(P, lim = LOOSE_FRONT, slide = 0) {
     this._cRigHead();
     _x.set(0, 0, 1).applyQuaternion(_hq);
-    const bh = -_y.subVectors(P, _sk).dot(_x) - this.T.headR.z;
+    let bh = -_y.subVectors(P, _sk).dot(_x) - this.T.headR.z;
+    if (bh > lim && slide > 0 && _x.y < -0.08) {
+      const dn = Math.min(slide, (bh - lim) / -_x.y);
+      P.y -= dn; bh += _x.y * dn;
+    }
     if (bh > lim) P.addScaledVector(_x, bh - lim);
   }
 

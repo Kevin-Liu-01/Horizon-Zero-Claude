@@ -872,7 +872,7 @@ export class PlayerAnimator {
       this._quiverT = 0;                 // bow comes up -> pull an arrow
       this._reNock = false;
       this._rnL = false; this._rnHold = false;
-    } else if (this._reNock && aimUp && this._looseT >= 0.4) {
+    } else if (this._reNock && aimUp && this._looseT >= 0.8) {   // (M1a r3, A17: 0.4 -> 0.8, the kick out first)
       this._quiverT = 0;                 // ...and re-nock after the loose
       this._reNock = false;
       this._rnL = true;
