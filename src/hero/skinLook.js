@@ -18,7 +18,7 @@
  *     faded in past N.L 0.25 so the shadow map's normal-bias seam does not print a hard edge along the terminator, and
  *     (fix round 3) part of it is KEPT below that, mix(mix(1, sh, keep), sh, smoothstep(-0.15, 0.25, N.L)), keep 0.6: a face
  *     turned from a back sun under her own nose or brow no longer catches the red wrap as a smear;
- *   - C-04's sun-rim, pow(1 - N.V, 3) x pow(L.-V x 0.5 + 0.5, 2) x sun x shadow x 0.55, inside the same term;
+ *   - C-04's sun-rim, pow(1 - N.V, 5) (M1a fix round 1; LOOK's 3 capped the whole deltoid in F17) x pow(L.-V x 0.5 + 0.5, 2) x sun x shadow x 0.55, inside the same term;
  *   - BACK-TRANSMISSION through the ears from the baked `_CALTHIN` vertex attribute (recipe lib/skin-human.mjs
  *     `bakeThinness`; 1 at <= 5 mm of tissue, 0 at >= 25 mm), tinted (1.0, 0.36, 0.20) x 0.6, seen when the sun is behind;
  *   - C-02: TWO GGX lobes, the second at x0.55 roughness and weight 0.15, under a cavity specular occlusion (AO^2 of the baked
@@ -217,7 +217,11 @@ void RE_Direct_CalSkin( const in IncidentLight directLight, const in vec3 geomet
 		// fix round 3 (A-hero-rim r3: the body's edge read 0.95 x her interior in a back light): LOOK's formula is the SUN's light,
 		// 'sun x calShadow x kRim x ...', not the sun times the albedo; through the dark skin's albedo it was a tenth of the spec. It is the
 		// sun's colour now, warmed a little by the skin it passes through
-		reflectedLight.directSpecular += c0 * vec3( 1.0, 0.80, 0.66 ) * ( 0.55 * calSkinK * sh * rimV * rimV * rimV * rimL * rimL * smoothstep( -0.45, 0.05, nl ) );
+		// (M1a fix round 1, the judge: "the draw shoulder is a pale bulbous blob" in F17, over the shoulder into a low sun: the rim at
+		// rimV^3 covered the whole deltoid seen from behind (rimV 0.6-0.8 over most of a round muscle at that view, 0.2-0.5 of the sun's
+		// light on a skin whose own light is a tenth of it). At rimV^5 the true outline keeps 0.77-0.9 of it and the cap 0.08-0.3)
+		float rimV5 = rimV * rimV * rimV * rimV * rimV;
+		reflectedLight.directSpecular += c0 * vec3( 1.0, 0.80, 0.66 ) * ( 0.55 * calSkinK * sh * rimV5 * rimL * rimL * smoothstep( -0.45, 0.05, nl ) );
 	}
 	#endif
 	reflectedLight.directDiffuse += diffuseIrr * BRDF_Lambert( material.diffuseColor );

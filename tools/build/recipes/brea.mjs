@@ -171,26 +171,34 @@ export const CHAINS = {
  * still moves >= 6 mm (A-face-delta); the eye sockets stay rigid.
  */
 const FACE_MM = {
-  noseBridge: { d: [0, 0.6, 6.4], s: 0.0125 },
-  noseTip: { d: [0, 3.2, -3.4], s: 0.0098 },
+  // M1a fix round 1 (the judge on F13: "the nose and brow ridge barely project against the crop's strong profile"): the bridge comes
+  // 1.4 mm further forward and the tip no longer goes BACK 3.4 mm but forward 1.8 mm (it is lifted as before), so the profile's nose
+  // stands out from the cheek's line as TURN's does
+  noseBridge: { d: [0, 0.4, 7.8], s: 0.0125 },
+  noseTip: { d: [0, 3.0, 1.8], s: 0.0098 },
   // M1.2b (the face spike's note: "the head is narrow and long"; TURN's face is broad at the cheekbones with a defined jaw): the bone
   // comes OUT as well as up and forward
   // M1.2b round 2 (F11 against TURN's front: the face 1.31 times as wide at the cheekbones as brow-to-chin, TURN's 1.19): the bone comes
   // out half as far and further up and forward, high cheekbones on a narrower face
-  cheek: { d: [2.4, 3.0, 5.0], s: 0.0165 },     // mirrored for the right side
+  // M1a fix round 1 (the judge on F11/F12: "the face is still wide and round with a soft jaw"): the bone comes out 1 mm, not 2.4,
+  // and a little more up and forward (6.4 mm in all: A-face-delta keeps it graded)
+  cheek: { d: [1.0, 3.3, 5.4], s: 0.0165 },     // mirrored for the right side
   // mirrored: the angle comes a touch IN and down, so the face tapers to the chin (fix round 1, R54: it read wide). Fix round 2 (the
   // judges: "the lower face is long and heavy in every 3/4"): less of it is DOWN and more is in and forward, so the jaw keeps its
   // defined angle without lengthening the face
   // M1.2b: the angle no longer comes in: a wider, squarer jaw under the wider cheekbones (still >= 6 mm for A-face-delta)
   // M1.2b round 2 (TURN: the jaw tapers to a defined chin; F11's jaw was 0.66 of the cheek width at the mouth, wide and round): the
   // angle comes in a millimetre and down a little more
-  jaw: { d: [-1.0, -4.6, 4.2], s: 0.0235 },
+  // M1a fix round 1 (the judge: "a narrower face and a firmer jaw"): the angle comes in 2.4 mm (was 1.0), so the lower face tapers
+  // from the cheekbones to a defined chin, and a little less of it is down (6.6 mm in all)
+  jaw: { d: [-2.4, -4.0, 4.6], s: 0.0235 },
   // fix round 2: the chin comes UP 3.4 mm against fix round 1 (-1.6 -> +1.8): a shorter lower face, its point kept forward
   // M1.2b round 2 (F11: the mouth sat at 0.73 of the eye-to-chin height, TURN's at 0.66, a short chin under a long upper lip): the chin
   // comes DOWN 3 mm and a little further forward
   chin: { d: [0, -1.2, 6.4], sx: 0.0175, sy: 0.0125, sz: 0.016 },
   // M1.2b ("seat the eyes deeper under a stronger brow ridge"): the glabella and both ridges 1 mm further forward
-  brow: { d: [0, 0.8, 5.4], s: 0.0165 },
+  // (M1a fix round 1, F13: the brow ridge stands 1.6 mm further forward over the eye, as the profile crop's)
+  brow: { d: [0, 0.7, 7.0], s: 0.0165 },
   // (round 2: and the mouth up a millimetre, a shorter upper lip)
   upperLip: { d: [0, 2.2, -0.6], s: 0.0085 },
 };
