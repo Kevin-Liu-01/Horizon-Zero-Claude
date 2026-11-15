@@ -922,12 +922,19 @@ export class Combat {
      * hostile is inside THREAT_RANGE.  The 14/s fade crossfades hand <-> back.
      */
     this._updateWield(realDt, playing, aiming);
-    const wield = this.weaponDrawn || (isDisc && playing);
-    this._bowVis += ((wield ? 1 : 0) - this._bowVis) * (1 - Math.exp(-14 * realDt));     // MathUtils.damp, inline
+    /* M1a round 2 (hero-anim, BIBLE §5.2): the animator's authored stow and unstow decides when the bow is in her hand
+     * (the hand takes it off her back at waist height and sets it back there): no scale fade, and while the path runs
+     * the bow rides the hand from its place on her back (`bowPathPose`). Null: no path (the old crossfade). */
+    const anB = isDisc ? null : this.ctx.player?.animator;
+    const pathHand = anB?.bowInHand ? anB.bowInHand() : null;
+    const wield = (pathHand ?? this.weaponDrawn) || (isDisc && playing);
+    if (pathHand !== null) this._bowVis = wield ? 1 : 0;
+    else this._bowVis += ((wield ? 1 : 0) - this._bowVis) * (1 - Math.exp(-14 * realDt));     // MathUtils.damp, inline
     const vis = this._bowVis;
     const model = this.bow;
     if (wield || vis > 0.5) {
       this._placeInHand(model, aiming, ammoId, cam);      // (reads `_bowVis`)
+      if (pathHand !== null) anB.bowPathPose?.(model.group);
     } else {
       this._placeOnBack(model, 1 - vis, isDisc);
     }

@@ -373,6 +373,8 @@ export class PlayerAnimator {
     /* ------------------------------ state ------------------------------- */
     this._moveW = 0; this._runW = 0; this._crouchW = 0; this._aimW = 0;
     this._stowOwn = 0;               // (M1a round 2: how much of the arms a lance holster still owns over the rig)
+    this._bp = null;                 // (M1a round 2: the bow's stow / unstow path, carryStow.js)
+    this._bpHand = new THREE.Vector3(); this._bpHandOk = false;   // (...the left hand as rendered last step)
     this._dodgeW = 0; this._deadW = 0; this._drawS = 0;
     // legacy Round-3 hit scalar: superseded by the HIT_CLASSES channel in
     // _onDamage / _updateChannels, kept only as a published 0..1 'was hit
@@ -1431,9 +1433,13 @@ export class PlayerAnimator {
     const bowOut = !!this.ctx.combat?.weaponDrawn && !heavy && !dead;
     this._carryBowW = damp(this._carryBowW,
       bowOut && !p.aiming && !p.dodging ? 1 : 0, bowOut ? 7 : 5, dt);
+    // (M1a round 2: while the bow's authored unstow runs it owns the left arm; the lowered carry takes it from there)
+    if (this._bp?.mode === 1) this._carryBowW = 0;
     if (this._carryBowW > 0.01) {
       this._bowCarryLayer(this._carryBowW * (1 - aimW) * (1 - dodgeW) * (1 - this._deadW), p, t);
     }
+    /* M1a round 2 (BIBLE §5.2): the bow's stow and unstow path, on combat's `weaponDrawn` edges (carryStow.js) */
+    this._bowPathLayer(bowOut, dt);
     /* ============ OVERLAY 4b: the alidade raise (Sighting, E5) ============ */
     // right hand to the right eye, the brass tube at the eye; not while the
     // bow is up, the lance is out or she is rolling. Rate 14/s: down in < 0.3 s.
@@ -1528,11 +1534,12 @@ export class PlayerAnimator {
     /* (M1a round 2: ...for the WHOLE holster, both arms (the left hand carries the haft back to her hip), and handed to
      * the rig over `STOW_HANDBACK` s after it: the holster ends with the hand down her side, so the rig's raise starts
      * there) */
-    const holsterOn = !!(this.melee?._pathOn && this.melee._prevStance === 'holster');
+    const holsterOn = !!(this.melee?._pathOn && this.melee._prevStance === 'holster') || (this._bp?.mode ?? 0) > 0;
     this._stowOwn = holsterOn ? 1 : Math.max(0, this._stowOwn - dt / STOW_HANDBACK);
     const stowOwn = this._stowOwn * this._stowOwn * (3 - 2 * this._stowOwn);
-    if (cRig) this._cRigPass(aimW * (1 - stowOwn), this._drawS, p);
-    if (cRig) this._armCapture();
+    // (M1a round 2: the rig blends from the arms as they stand now: the lance's and the bow's paths included)
+    if (cRig) { this._cRigCapture(); this._cRigPass(aimW * (1 - stowOwn), this._drawS, p); this._armCapture(); }
+    if (b.handL) { this._charOf(b.handL.bone, this._bpHand); this._bpHandOk = true; }
     if (aimW > 0.01) {
       this._rootKeepAudit(this._drawS);
       /* W0b targeted fix 4 (r1 eng judge, the down clamp; A32-draw-ramp `down105`
