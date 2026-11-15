@@ -459,7 +459,7 @@ try {
     const setV = (a, o) => page.evaluate(async (a, o) => {
       const A = await import('/src/world/island/aerial.js'); const B = await import('/src/world/sites/basalt.js');
       const a0 = A.AERIAL.value.toArray(), o0 = B.ORGAN_LIGHT.value.toArray();
-      if (a) A.AERIAL.value.set(a[0], a[1], a[2], 0);
+      if (a) A.AERIAL.value.set(a[0], a[1], a[2], a[3] ?? a0[3]);
       if (o) B.ORGAN_LIGHT.value.set(o[0], o[1], 0, 0);
       return { a0, o0 };
     }, a, o);
