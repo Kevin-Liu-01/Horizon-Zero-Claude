@@ -498,7 +498,9 @@ DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, m
  * strand never pushed further out than the artist hung it), the thighs and the shins push at FULL radius, because a
  * panel's rest rides the pelvis and the legs move under it (the rest rule would let a striding thigh through it).
  */
-DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 0.45, airY: true });
+/* (M1.2e round 2: `wind` 0.45 -> 1.2 1/s: at 0.45 the left panel's tip moved 0.009-0.06 m in the trade wind and read
+ * as a board; at 1.2 it streams 0.11-0.18 m SW standing where F02 and F15 stand, bench) */
+DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 1.2, airY: true });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 export const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */

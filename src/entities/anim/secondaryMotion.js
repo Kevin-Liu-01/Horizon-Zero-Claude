@@ -13,6 +13,12 @@ import {
   _spB, _spC, _spD, _spE, _spMq, _spNum, _spQ, _spQ2, _spQ3, _twA, _twQ, clamp,
 } from './playerCommon.js';
 
+/** M1.2e round 2: the largest share of a thigh's swing a front panel's root takes (rad; `_panelFollow`). */
+const PF_MAX = 70 * Math.PI / 180;
+/** M1.2e round 2: the most a panel link's rest turns toward hanging from the link above it (rad; `_panelDrape`). */
+const PANEL_DRAPE = 0.45;
+const _pdQ = new THREE.Quaternion(), _pdI = new THREE.Quaternion();
+
 export class SecondaryMotion {
   /**
    * The chain a gate stages by class (`chainOf('hair')` = the knot tail on
@@ -506,9 +512,11 @@ export class SecondaryMotion {
   _panelFollow() {
     const P = this._panelRoots || (this._panelRoots = this._chains.filter((c) => c.cls.name === 'panel').map((c) => {
       const n = c.links[0].name;
-      return { e: c.links[0], side: /panelL/.test(n) ? 'l' : /panelR/.test(n) ? 'r' : 'c', share: /panelL/.test(n) ? 0.75 : /panelR/.test(n) ? 0.70 : 0.42 };
+      return { c, e: c.links[0], side: /panelL/.test(n) ? 'l' : /panelR/.test(n) ? 'r' : 'c', share: /panelL/.test(n) ? 0.75 : /panelR/.test(n) ? 0.70 : 0.42 };
     }));
     if (!P.length) return;
+    // (M1.2e round 2: the wrap pass's gather of last frame undone: every panel bone back at scale 1)
+    for (let i = 0; i < P.length; i++) { const L = P[i].c.links; for (let j = 0; j < L.length; j++) L[j].bone.scale.set(1, 1, 1); }
     const tl = this.b.thighL, tr = this.b.thighR, pel = this.b.pelvis;
     if (!tl || !tr || !pel || !this.b.calfL || !this.b.calfR) return;
     /* M1.2e fix 1: the thighs' SWING only (bind direction -> current direction in the pelvis's frame, no twist). The
@@ -543,7 +551,56 @@ export class SecondaryMotion {
       }
       if (_spQ._w < 0) { _spQ._x = -_spQ._x; _spQ._y = -_spQ._y; _spQ._z = -_spQ._z; _spQ._w = -_spQ._w; }
       if (share < 1) _spQ.slerp(Q_IDENT, 1 - share);
+      /* M1.2e round 2: a front panel rides its thigh's swing up to 70 deg, no further. Past that (the ledge climb's knee
+       * to the chest, the roll's tuck, the crouch's deepest) the thigh rises into her belly and a panel laid along it
+       * is laid into the crease between them, which no turn of the cloth can get out of (bench: 0.06-0.08 m inside the
+       * belly, the wrap pass stalled at 0.02); the cloth slides off the thigh's top and hangs over its front instead. */
+      if (r.side !== 'c') {
+        const full = 2 * Math.acos(Math.min(1, _spQ._w));
+        if (full > PF_MAX) _spQ.slerp(Q_IDENT, 1 - PF_MAX / full);
+      }
       r.e.bone.quaternion.copy(r.e.bindQ).premultiply(_spQ);
+      if (r.side !== 'c') this._panelDrape(r.c);
+    }
+  }
+
+  /**
+   * M1.2e round 2 — THE FRONT PANELS' REST DRAPES. Below its root, each link's rest turns toward hanging (world down) by up
+   * to `PANEL_DRAPE` rad from the link above it: a panel laid forward along a raised thigh (the crouch, the sit, the
+   * climb) falls over the knee instead of standing out past it as a straight board, and in a roll it hangs toward
+   * the ground. (Not the back panel: hung straight down in a crouch or a slide its hem goes into the ground under her;
+   * it keeps riding the thigh that is further back.) Hanging already (standing, walking, running), its rest is unchanged: the turn toward down is the
+   * angle the link is off down, which is about 0 there. The solver then adds the air, the inertia and the legs on
+   * top of this rest. No allocation.
+   */
+  _panelDrape(c) {
+    const N = c.N;
+    if (N < 2) return;
+    const root = c.links[0].bone;
+    root.parent.getWorldQuaternion(_shQ);
+    _shQ.multiply(root.quaternion);                     // the root link's world rotation
+    for (let j = 1; j < N; j++) {
+      const e = c.links[j], bone = e.bone;
+      bone.quaternion.copy(e.bindQ);
+      // this link's direction in its own frame (to the next joint, or the tip), then in the world
+      if (j + 1 < N) _shX.copy(c.links[j + 1].bone.position); else _shX.copy(c.tipOff);
+      if (_shX.lengthSq() < 1e-10) { _shQ.multiply(bone.quaternion); continue; }
+      _shX.normalize();
+      _shQ2.copy(_shQ).multiply(bone.quaternion);
+      _shN.copy(_shX).applyQuaternion(_shQ2);
+      const ang = Math.acos(Math.max(-1, Math.min(1, -_shN.y)));
+      if (ang > 0.02) {
+        _shL.set(_shN.z, 0, -_shN.x);                   // d x (0, -1, 0)
+        if (_shL.lengthSq() > 1e-10) {
+          _shL.normalize();
+          const t = ang < PANEL_DRAPE ? ang : PANEL_DRAPE;
+          // the world turn conjugated into the parent link's frame
+          _shP.copy(_shL).applyQuaternion(_pdI.copy(_shQ).invert());
+          _pdQ.setFromAxisAngle(_shP, t);
+          bone.quaternion.premultiply(_pdQ);
+        }
+      }
+      _shQ.multiply(bone.quaternion);
     }
   }
 

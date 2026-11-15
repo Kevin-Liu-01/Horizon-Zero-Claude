@@ -19,7 +19,8 @@
  *     vertices (the outfit's, weighted >= 0.5 to a `dyn_panel` chain, or before the panels had chains: the pelvis-
  *     and-thigh-skinned sheet below the belt, found at bind) against the body's capsules (torso pelvis -> neck,
  *     each thigh hip -> knee, each shin knee -> ankle) at the body's INNER radius (the 20th percentile of the skin's
- *     own distance to that axis at bind, less 5 mm: a point inside it is inside her), the stowed quiver (its own
+ *     own distance to that axis at bind, less 5 mm: a point inside it is inside her; the torso as four segments up
+ *     her spine since M1.2e round 2, the round-1 straight torso graded beside it as `clipFramesLine`), the stowed quiver (its own
  *     vertices' axis and radius) and the draw arm (right upper arm and forearm, 0.040 / 0.032 m);
  *   - a frame with any such point is a clipping frame.
  *   - the panels' hang: each panel's root-to-hem straight length over its bind length (M1.2e: >= 0.85 in a crouch
@@ -89,14 +90,41 @@ export function buildSweep(R, THREE, opts = {}) {
   const SR = side('r'), SL = side('l');
 
   /* ---------------- the body capsules at the skin's inner radius (bind) */
+  /* M1.2e round 2: the TORSO follows her spine: four segments, pelvis -> spine_01 -> spine_02 -> spine_03 -> neck,
+   * each at the inner radius of the torso skin nearest to it (the 20th percentile less 5 mm, as every capsule here).
+   * The single straight pelvis -> neck capsule of round 1 cut through her own body whenever she bent: measured on the
+   * bench, 28 % of her own torso skin more than 2 cm inside it in the ledge climb, 26 % in the roll and the slide, 19 %
+   * in the crouch (2.1 % standing), so the belt on her belly, where the panels hang, was "inside her". The four
+   * segments: 3.4 % standing, 4.1-6.1 % in those clips. The straight capsule is still graded beside it
+   * (`clipFramesLine`, `clipByLine`: the round-1 body), so both numbers are on the record. */
+  const spineB = [an.b.pelvis.bone, B('spine_01') || an.b.spine1?.bone, B('spine_02') || an.b.spine2?.bone, B('spine_03') || an.b.spine3?.bone, an.b.neck1?.bone || headB].filter(Boolean);
   const capDefs = [
-    ['torso', an.b.pelvis.bone, an.b.neck1?.bone || headB, /^(pelvis|spine_0[1-5])/],
     ['thighL', an.b.thighL.bone, an.b.calfL.bone, /^thigh_.*l$|^thigh_l$/],
     ['thighR', an.b.thighR.bone, an.b.calfR.bone, /^thigh_.*r$|^thigh_r$/],
     ['shinL', an.b.calfL.bone, an.b.footL.bone, /^calf_.*l$|^calf_l$/],
     ['shinR', an.b.calfR.bone, an.b.footR.bone, /^calf_.*r$|^calf_r$/],
   ];
   const caps = [];
+  {
+    // the straight round-1 torso (line only) and the spine's four segments (radii from the skin nearest each)
+    const w = weightTo(skin, /^(pelvis|spine_0[1-5])/), idx = pick(w, 0.9, 1);
+    const A = CP(an.b.pelvis.bone, V()), Bp = CP(an.b.neck1?.bone || headB, V()), ds = [];
+    const segP = spineB.map((b) => CP(b, V()));
+    const buckets = segP.slice(1).map(() => []);
+    for (const i of idx) {
+      VP(skin, i, tmp);
+      const t = segT(tmp, A, Bp); if (t > 0.08 && t < 0.92) ds.push(segD(tmp, A, Bp));
+      let bs = -1, bd = 9, bt = 0;
+      for (let k = 0; k + 1 < segP.length; k++) { const d = segD(tmp, segP[k], segP[k + 1]); if (d < bd) { bd = d; bs = k; bt = segT(tmp, segP[k], segP[k + 1]); } }
+      if (bs >= 0 && bt > 0.08 && bt < 0.92) buckets[bs].push(bd);
+    }
+    ds.sort((x, y) => x - y);
+    caps.push({ name: 'torso', a: an.b.pelvis.bone, b: an.b.neck1?.bone || headB, A, B: Bp, r: +((ds.length ? ds[Math.floor(ds.length * 0.2)] - 0.005 : 0.08)).toFixed(4), line: true });
+    for (let k = 0; k + 1 < spineB.length; k++) {
+      const d = buckets[k].sort((x, y) => x - y);
+      caps.push({ name: 'torso', seg: k, a: spineB[k], b: spineB[k + 1], A: segP[k], B: segP[k + 1], r: +((d.length ? d[Math.floor(d.length * 0.2)] - 0.005 : 0.08)).toFixed(4), spine: true });
+    }
+  }
   for (const [name, a, b, re] of capDefs) {
     const A = CP(a, V()), Bp = CP(b, V());
     const w = weightTo(skin, re), idx = pick(w, 0.9, 1), ds = [];
@@ -192,7 +220,7 @@ export function buildSweep(R, THREE, opts = {}) {
   let acc = null;
   const begin = (label = '') => {
     acc = { label, frames: 0, behind: 0, behindAt: null, plane: 0, planeAt: null, overShoulder: -9,
-      clipFrames: 0, clipAt: null, clipBy: {}, clipDeepest: 0, panelHangMin: 9,
+      clipFrames: 0, clipAt: null, clipBy: {}, clipDeepest: 0, panelHangMin: 9, clipFramesLine: 0, clipByLine: {},
       wristMid: 9, foreCase: 9, foreCaseAt: null, quiverClip: 0, drawArmClip: 0 };
   };
   const armPoints = (S) => {
@@ -224,13 +252,18 @@ export function buildSweep(R, THREE, opts = {}) {
     }
     if (st.cloth) {
       capsNow();
-      let hit = null, deep = 0;
+      let hit = null, deep = 0, hitL = null;
       const test = (mesh, idx, tag) => {
         for (const i of idx) {
           VP(mesh, i, tmp);
           for (const c of caps) {
             const d = segD(tmp, c.A, c.B);
-            if (d < c.r) { const dd = c.r - d; if (dd > deep) { deep = dd; hit = { by: tag, into: c.name, depthM: +dd.toFixed(4), at: tag === 'panel' ? panelInfo.get(i) : undefined }; } }
+            if (d >= c.r) continue;
+            const dd = c.r - d;
+            // (the round-1 body: the straight torso and the legs; the graded body: the spine's torso and the legs)
+            if (!c.spine && (!hitL || dd > hitL.depthM)) hitL = { by: tag, into: c.name, depthM: +dd.toFixed(4), at: tag === 'panel' ? panelInfo.get(i) : undefined };
+            if (c.line) continue;
+            if (dd > deep) { deep = dd; hit = { by: tag, into: c.name, depthM: +dd.toFixed(4), at: tag === 'panel' ? panelInfo.get(i) : undefined }; }
           }
         }
       };
@@ -238,15 +271,19 @@ export function buildSweep(R, THREE, opts = {}) {
       if (outfit && panelIdx.length) test(outfit, panelIdx, 'panel');
       // the quiver and the draw arm
       if (kit && quiverIdx.length && axisOf(kit, quiverIdx, quiverAxis)) {
-        const chk = (mesh, idx, tag) => { for (const i of idx) { VP(mesh, i, tmp); const d = segD(tmp, quiverAxis.a, quiverAxis.b); if (d < quiverAxis.r - 0.004) { acc.quiverClip++; if (!hit) hit = { by: tag, into: 'quiver', depthM: +(quiverAxis.r - d).toFixed(4) }; return; } } };
+        const chk = (mesh, idx, tag) => { for (const i of idx) { VP(mesh, i, tmp); const d = segD(tmp, quiverAxis.a, quiverAxis.b); if (d < quiverAxis.r - 0.004) { acc.quiverClip++; if (!hit) hit = { by: tag, into: 'quiver', depthM: +(quiverAxis.r - d).toFixed(4) }; if (!hitL) hitL = hit; return; } } };
         if (outfit && panelIdx.length) chk(outfit, panelIdx, 'panel');
         if (wrap) chk(wrap, tailIdx, 'tail');
       }
       {
         const sh = CP(SR.sh, V()), el = CP(SR.el, V()), wr = CP(SR.wr, V());
-        const chk = (mesh, idx, tag) => { for (const i of idx) { VP(mesh, i, tmp); if (segD(tmp, sh, el) < 0.040 || segD(tmp, el, wr) < 0.032) { acc.drawArmClip++; if (!hit) hit = { by: tag, into: 'drawArm', depthM: null }; return; } } };
+        const chk = (mesh, idx, tag) => { for (const i of idx) { VP(mesh, i, tmp); if (segD(tmp, sh, el) < 0.040 || segD(tmp, el, wr) < 0.032) { acc.drawArmClip++; if (!hit) hit = { by: tag, into: 'drawArm', depthM: null }; if (!hitL) hitL = hit; return; } } };
         if (wrap) chk(wrap, tailIdx, 'tail');
         if (outfit && panelIdx.length) chk(outfit, panelIdx, 'panel');
+      }
+      if (hitL) {
+        const lh = hitL || hit;
+        if (lh) { acc.clipFramesLine++; const key = lh.by + (lh.at ? '(' + lh.at.split('@')[0] + ')' : '') + '>' + lh.into; acc.clipByLine[key] = (acc.clipByLine[key] || 0) + 1; }
       }
       if (hit) { acc.clipFrames++; const key = hit.by + (hit.at ? '(' + hit.at.split('@')[0] + ')' : '') + '>' + hit.into; acc.clipBy[key] = (acc.clipBy[key] || 0) + 1; if (!acc.clipAt) acc.clipAt = { T: st.T, ...hit }; if (deep > acc.clipDeepest) acc.clipWorst = { T: st.T, ...hit }; }
       if (deep > acc.clipDeepest) acc.clipDeepest = deep;
@@ -311,6 +348,6 @@ export function buildSweep(R, THREE, opts = {}) {
 
   /** the panels' vertices at bind (char space) and their panel, for a control run (`opts.panelBind`) */
   const panelBindList = () => panelIdx.map((i) => { VP(outfit, i, tmp); return [tmp.x, tmp.y, tmp.z, panelInfo.get(i)]; });
-  return { panelBindList, begin, sample, end, hashReset, hashPose, hashHex, hangCheck, useBones, tracePose, caps: caps.map((c) => ({ name: c.name, r: c.r })),
+  return { panelBindList, begin, sample, end, hashReset, hashPose, hashHex, hangCheck, useBones, tracePose, caps: caps.map((c) => ({ name: c.name + (c.seg != null ? c.seg : c.line ? 'Line' : ''), r: c.r })),
     counts: { tail: tailIdx.length, knot: knotIdx.length, panel: panelIdx.length, panelMode, panelChains: panelChains.map((p) => p.stem), quiver: quiverIdx.length, case: caseIdx.length, handBones: handBones.length } };
 }

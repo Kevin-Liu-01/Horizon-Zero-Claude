@@ -131,10 +131,85 @@ const row = (name) => {
       ${c.cloth ? `if (r.clipFrames) fails.push(r.clipFrames + ' clipping frames');` : ''}
       ${c.run ? `if (r.wristMid == null || r.wristMid < 0.10) fails.push('wrist ' + r.wristMid + ' m off the midline'); if (r.foreCase == null || r.foreCase <= 0) fails.push('forearm ' + r.foreCase + ' m off the survey case');` : ''}
       ${c.hang ? `const H = S.hang; if (!H || !(H.l.front > 0 && H.r.front > 0 && H.l.belowHeadBoneM >= 0 && H.r.belowHeadBoneM >= 0)) fails.push('hang: ' + JSON.stringify(H));` : ''}
-      return { pass: fails.length === 0, detail: { fails, ...r, hang: S.hang, bar: S.bar, counts: M.counts, caps: M.caps } };
+      return { pass: fails.length === 0, detail: { fails, ...r, hang: S.hang, bar: S.bar, counts: M.counts, caps: M.caps, wrap: an.clothWrapInfo?.() || null } };
     })()`),
   };
 };
 
+/**
+ * M1.2e round 2 — THE TRADE WIND IN THE PAGE (`A-sweep-wind`): standing where F02 and F15 stand (Frame Set v2: their
+ * bible (E, N), bearing and hour, the trade weather), the tips of the wrap tail and the three sash panels over 3 s in
+ * the world's own wind (environment.windAt, read by the animator each step) against 3 s with that wind held at 0
+ * (windAt stubbed to still air), 1.5 s to settle before each. Per tip: the bearing its mean moves toward, how far
+ * (m), and its sway (the tip's standard deviation, m) in the wind and in still air. The world's downwind bearing
+ * is read off the wind the animator was handed.
+ * PASS, at both places: every tip streams within 45 deg of SW (225) and within 45 deg of the world's downwind; the
+ * left panel's tip moves >= 0.05 m and sways more in the wind than in still air.
+ */
+const WIND_AT = [
+  { id: 'F02', en: [-228, -338], bearing: 258, hour: 18.25 },
+  { id: 'F15', en: [-309.9, -271.9], bearing: 315, hour: 13.0 },
+];
+const windRow = {
+  id: 'A-sweep-wind', kind: 'action', lane: 'hero-anim', timeout: 90000,
+  title: 'M1.2e wind: at F02 and F15 the wrap tail and the three sash panels stream SW in the trade wind (each tip within 45 deg of 225 and of the world downwind); the left panel moves >= 0.05 m and sways more than in still air',
+  setup: `__CTX__.input.enabled = true;`, settle: 400,
+  assert: `(async () => {
+      const C = __CTX__, p = C.player, an = p.animator, E = C.engine, env = C.environment;
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      const simWait = async (sec, capMs = 20000) => { const s0 = E.simTime, w0 = performance.now(); while (E.simTime - s0 < sec && performance.now() - w0 < capMs) await frame(); return E.simTime - s0; };
+      for (const m of (C.machines?.list || [])) m.update = () => {};
+      C.input.keys.clear(); C.input.mouse.buttons = 0; p.setCrouch?.(false);
+      let SC = 1; try { SC = (await import('/src/world/island/extent.js')).ISLAND_SCALE ?? 1; } catch (e) { /* 1 */ }
+      const tips = () => an._chains.filter((c) => /^dyn_(wrapSash|panel[LRB])_01$/.test(c.links[0].name)).map((c) => ({ name: c.links[0].name.replace(/^dyn_|_01$/g, ''), c }));
+      const sample = async (sec) => {
+        const acc = {}, sq = {}; let n = 0, wx = 0, wz = 0;
+        const s0 = E.simTime, w0 = performance.now();
+        while (E.simTime - s0 < sec && performance.now() - w0 < 20000) {
+          await frame(); n++; wx += an.wind.x; wz += an.wind.z;
+          for (const t of tips()) { const k = t.c.N * 3; const q = [t.c.pos[k], t.c.pos[k + 1], t.c.pos[k + 2]]; (acc[t.name] ||= [0, 0, 0]); (sq[t.name] ||= [0, 0, 0]); for (let a = 0; a < 3; a++) { acc[t.name][a] += q[a]; sq[t.name][a] += q[a] * q[a]; } }
+        }
+        const out = {};
+        for (const k in acc) { const m = acc[k].map((v) => v / n); out[k] = { m, sd: Math.sqrt(Math.max(0, sq[k].reduce((s, v, a) => s + v / n - m[a] * m[a], 0))) }; }
+        return { tips: out, n, wind: [wx / n, wz / n] };
+      };
+      const brg = (dx, dz) => { let b = Math.atan2(dx, -dz) * 180 / Math.PI; return b < 0 ? b + 360 : b; };
+      const off = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+      const places = ${JSON.stringify(WIND_AT)};
+      const res = [], fails = [];
+      const windAt0 = env.windAt, frozen0 = env.timeFrozen;
+      try {
+        env.timeFrozen = true;
+        for (const P of places) {
+          env.setWeather?.('trade', 0); env.setTime?.(P.hour);
+          const H = Math.PI - P.bearing * Math.PI / 180;
+          p.position.set(P.en[0] * SC, 0, -P.en[1] * SC); p.velocity?.set?.(0, 0, 0); p._snapToGround?.();
+          p.heading = H; p.camYaw = -P.bearing * Math.PI / 180;
+          env.windAt = windAt0;
+          await simWait(1.5);
+          const on = await sample(3.0);
+          env.windAt = function (x, z, out) { out.x = 0; out.z = 0; return out; };
+          await simWait(1.5);
+          const still = await sample(3.0);
+          env.windAt = windAt0;
+          const down = brg(on.wind[0], on.wind[1]), speed = Math.hypot(on.wind[0], on.wind[1]);
+          const r = { at: P.id, worldDownwind: +down.toFixed(1), windMs: +speed.toFixed(2), tips: {} };
+          for (const k in on.tips) {
+            const a = on.tips[k], b = still.tips[k];
+            const dx = a.m[0] - b.m[0], dz = a.m[2] - b.m[2], B = brg(dx, dz), mv = Math.hypot(dx, dz);
+            r.tips[k] = { bearing: +B.toFixed(1), moveM: +mv.toFixed(3), swayWind: +a.sd.toFixed(4), swayStill: +b.sd.toFixed(4) };
+            if (off(B, 225) > 45) fails.push(P.id + ' ' + k + ' streams to ' + B.toFixed(0));
+            if (off(B, down) > 45) fails.push(P.id + ' ' + k + ' ' + B.toFixed(0) + ' vs downwind ' + down.toFixed(0));
+            if (k === 'panelL' && mv < 0.05) fails.push(P.id + ' panelL moves ' + mv.toFixed(3) + ' m');
+            if (k === 'panelL' && !(a.sd > b.sd)) fails.push(P.id + ' panelL sways ' + a.sd.toFixed(4) + ' in wind, ' + b.sd.toFixed(4) + ' still');
+          }
+          if (!r.tips.panelL) fails.push(P.id + ': no panelL chain');
+          res.push(r);
+        }
+      } finally { env.windAt = windAt0; env.timeFrozen = frozen0; }
+      return { pass: fails.length === 0, detail: { fails, places: res } };
+    })()`,
+};
+
 export const SWEEP_CLIPS = Object.keys(CLIPS);
-export const GATES = SWEEP_CLIPS.map(row);
+export const GATES = [...SWEEP_CLIPS.map(row), windRow];
