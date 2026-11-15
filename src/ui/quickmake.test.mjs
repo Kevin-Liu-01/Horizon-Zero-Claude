@@ -90,7 +90,7 @@ test('slot 2 (the lance) and the empty slots make nothing', () => {
   assert.equal(w.counts.get('feather'), 6);
 });
 
-test('the state machine alone', () => {
+test('the quick-make states alone', () => {
   const m = new QuickMake();
   m.press(1, 'hunter');
   let got = null;
