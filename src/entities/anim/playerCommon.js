@@ -489,7 +489,11 @@ export const CLIMB_CATCH = 0.08;
  * coupling held the strip taut at a sprint (V23: one flat strip in all three
  * frames, tip 0.058 m per 80 ms), so `runFl` 1.5 scales the flutter with her
  * speed (see `_springs`): 0.08-0.095 m per 80 ms at a sprint, idle unchanged. */
-DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 5.0, rootK: 8, airY: true, runFl: 1.5 });
+/* (M1a regressions, ruling 5: in still air the stiffness held the tail on its authored rest, streaming level behind
+ *  her head as if in a wind (F13, F09 at 4f03003, the studio's air held still). `stillGrav` 14: in a dead calm its fall
+ *  grows to x15 (secondaryMotion `_springs`; nothing at 2 m/s and over). Bench, heading 0: the tail's chord 49 deg off
+ *  the plumb in still air before, 25 after; 25-27 in the trade wind, unchanged) */
+DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 5.0, rootK: 8, airY: true, runFl: 1.5, stillGrav: 14 });
 /*
  * M1.2e — THE SASH PANELS (brea.mjs CHAINS.panelL / panelR / panelB; outfit-pan-1 skins the three long hip panels to
  * them): heavy embroidered cloth hanging from the belt. Heavier and slower than the wrap tail (`grav` 0.75, `stiff`

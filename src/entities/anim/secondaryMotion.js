@@ -19,6 +19,10 @@ const PF_MAX = 70 * Math.PI / 180;
 const PANEL_DRAPE = 0.45;
 const _pdQ = new THREE.Quaternion(), _pdI = new THREE.Quaternion();
 
+/** M1a regressions: the air speed (m/s) at and over which a class's `stillGrav` adds nothing (every world wind the
+ *  Frame Set stands in reads 3.6-6.2 m/s: only a dead calm, the studio's, is touched). */
+const STILL_REF = 2.0;
+
 export class SecondaryMotion {
   /**
    * The chain a gate stages by class (`chainOf('hair')` = the knot tail on
@@ -837,7 +841,12 @@ export class SecondaryMotion {
       }
 
       /* ---- 5. integrate the free particles ---- */
-      const k = cls.stiff, dmp = cls.drag, gy = -9.81 * cls.grav, bg = cls.base;
+      /* (M1a regressions, ruling 5 "the studio has no wind: cloth stands still there": the wrap tail's authored rest is
+       *  the tail streaming back, which its stiffness holds, so in still air it stood out level behind her head as if in
+       *  a wind (F13 at 4f03003). `stillGrav`: the fall grows as the air drops below the trade wind's speed, x(1 +
+       *  stillGrav) in still air, x1 at STILL_REF (2 m/s) and over, so in a calm the tail hangs and in the trade nothing changes) */
+      const sg = cls.stillGrav > 0 ? 1 + cls.stillGrav * Math.max(0, 1 - windS / STILL_REF) : 1;
+      const k = cls.stiff, dmp = cls.drag, gy = -9.81 * cls.grav * sg, bg = cls.base;
       // fix round 4: the air (see `DYN_CLASSES` 'wrap'): this chain's flutter
       // across the gusting wind, and the wrapped root's stiffness profile
       const cw = cls.wind ?? DYN_WIND[cls.name] ?? 0, rk = cls.rootK ?? 0, airY = cls.airY ? 1 : 0;
