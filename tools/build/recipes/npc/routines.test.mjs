@@ -13,6 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Routines, WORK_CLIPS, places, wayOf } from '../../../../src/world/npc/people/routines.js';
 import { SALTROW_KEEPOUTS, CREW, streetPoint } from '../../../../src/world/settlements/saltrow-layout.js';
+import { heightAt } from '../../../../src/world/island/recipe.js';
 
 const SUN_RISE = 6.6, SUN_SET = 19.6;   // near enough for the rate's shape; the exact hours are the environment's
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -111,4 +112,14 @@ test('no place or walk through a building of Saltrow', () => {
     if (d < k.hard - 0.6 && !endIn) hit.push(`${g.id} -> ${g.step}: ${k.id} ${d.toFixed(2)} m`);
   }
   assert.deepEqual(hit, []);
+});
+
+test('every place stands on dry ground (the island heights over the sea at 0)', () => {
+  const mod = new Routines({ ctx: { params: null }, _propsFor: () => [] });
+  mod.adopt({ group: { position: { x: 0, z: 0 }, rotation: {} }, seed: 1, setPosition() {}, play: () => 1, showProps() {}, stopWalk() {}, walkTo() {}, _beatT: 0 }, 'salt-raker');
+  const wet = [];
+  for (const [id, loop] of Object.entries(mod.L)) for (const list of [loop.day, loop.night].filter(Boolean)) for (const s of list) {
+    for (const q of [s.at, ...(s.via || [])]) { const h = heightAt(q.x, q.z); if (!(h > 0.1)) wet.push(`${id} ${s.act}: ${h.toFixed(2)} m at ${q.x.toFixed(1)}, ${q.z.toFixed(1)}`); }
+  }
+  assert.deepEqual(wet, []);
 });

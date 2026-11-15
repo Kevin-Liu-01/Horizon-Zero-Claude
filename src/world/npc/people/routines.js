@@ -51,8 +51,10 @@ export function places() {
     harbourWay: [off(foot, 218, 20), off(foot, 233, 55)],
     // the lamp is lit from the beach beside the mole's root (a person walks the ground, never the deck); the water watched
     // from the beach a few metres along it
-    lamp: BREAKWATER_LAMP, lampStand: off(BREAKWATER_LAMP, bw + 180, 3.2), beachWatch: off(BREAKWATER_LAMP, bw + 110, 6.0),
-    beachCall: off(BREAKWATER_LAMP, bw + 140, 4.0), sea: breakwaterPoint(30, 0),
+    // (measured on the island's own heights, src/world/island/recipe.js heightAt: the lamp's column stands at -0.5 m on the
+    // mole; the dry beach is the 30-120 deg side of it; at 1281757 the watch and the call stood in the sea)
+    lamp: BREAKWATER_LAMP, lampStand: off(BREAKWATER_LAMP, 60, 4.0), beachWatch: off(BREAKWATER_LAMP, 100, 9.0),
+    beachCall: off(BREAKWATER_LAMP, 40, 7.0), beachRest: off(BREAKWATER_LAMP, 75, 12.0), sea: breakwaterPoint(30, 0),
     toPans,
   };
 }
@@ -102,7 +104,7 @@ function loops(P) {
       // the keeper keeps to the harbour: a word with the caulkers at the ramp, a rest on the beach, a call to the boats
       day: [
         { act: 'talk', at: off(P.ramp, HARBOUR.ramp.bearing + 90, 4.0), face: P.boat, clip: 'Idle_Talking_Loop', dur: [14, 22] },
-        { act: 'rest', at: off(P.lamp, HARBOUR.breakwater.bearing + 150, 7.0), face: P.sea, clip: 'Idle_Loop', dur: [10, 16] },
+        { act: 'rest', at: P.beachRest, face: P.sea, clip: 'Idle_Loop', dur: [10, 16] },
         { act: 'call', at: P.beachCall, face: P.sea, clip: 'Idle_Rail_Call', dur: [5, 7] },
       ],
       night: [
