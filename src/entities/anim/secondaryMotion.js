@@ -144,6 +144,7 @@ export class SecondaryMotion {
       // front-left 0.09-0.10 m either side of its chain, front-right 0.06-0.08, back 0.12-0.14). `_sheetPush` reads them.
       if (c.cls.name === 'panel') {
         const nm = c.links[0].name, back = /panelB/.test(nm);
+        c.back = back;
         c.shW = /panelL/.test(nm) ? 0.10 : /panelR/.test(nm) ? 0.08 : 0.135;
         c.shN = new Float32Array(N * 3); c.shL = new Float32Array(N * 3);
         const mq = this.model.getWorldQuaternion(new THREE.Quaternion());
@@ -896,7 +897,20 @@ export class SecondaryMotion {
       /* (M1a regfix 4: `moving.grav` / `moving.maxAng`, when set, ease the fall and the bend limit as she travels, as
        *  `swing` does in a lance swing; the swing's values win over them while it is in hand) */
       const grv0 = mvL(cls.grav, MV?.grav), maxAng0 = mvL(cls.maxAng, MV?.maxAng);
-      const grv = SW && SW.grav !== undefined ? grv0 + (SW.grav - grv0) * swK : grv0;
+      let grv = SW && SW.grav !== undefined ? grv0 + (SW.grav - grv0) * swK : grv0;
+      /* (M1b, the F15 debt: `backRun`, the back panel only, at a run: its fall eases to `backRun.grav` over `v0`-`v1` m/s
+       *  of her speed, times the moving ease. In the sprint the back panel was bistable: from states equal to 1e-7 the
+       *  page's F15 froze it hanging along the thigh in one staging and lifted to 40 deg with its hem turned out flat in
+       *  the next (full and short sessions at 21ca75c). Dressed bench, F15's sprint, 54 starts (idle 1-2.25 s, wind
+       *  5.5-6.5 m/s, three run-up ramps): chord min 41.6 deg, hem min -17.5 (turned up) at 1.2; with 2.0 min 61.8,
+       *  hem min 34.3, the front panels unchanged. Under 3 m/s nothing changes: the crouched strafe (F18), the lunge
+       *  (F19: 1.15 m/s, and the swing's own fall wins in it) and every standing frame keep their tuning) */
+      const BR = cls.backRun;
+      if (BR && c.back && speed > BR.v0 && mvK > 0) {
+        let kr = (speed - BR.v0) / (BR.v1 - BR.v0);
+        kr = kr >= 1 ? 1 : kr * kr * (3 - 2 * kr);
+        grv += (BR.grav - grv) * kr * mvK * (1 - swK);
+      }
       const k = cls.stiff, dmp = cls.drag, gy = -9.81 * grv * sg, bg = cls.base;
       // fix round 4: the air (see `DYN_CLASSES` 'wrap'): this chain's flutter
       // across the gusting wind, and the wrapped root's stiffness profile

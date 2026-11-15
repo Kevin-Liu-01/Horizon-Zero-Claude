@@ -494,7 +494,11 @@ export async function stageFrame(f, o = {}) {
       if (an) {
         try { an.replant?.(); } catch (e) { /* */ }
         if ('_grnd' in an) { an._grnd = 0; an._grndWant = null; an._grndRate = 0; }
-        an._bobMean = NaN; if ('trunkStep' in an) an.trunkStep = 0; if ('_trunkPitch0' in an) an._trunkPitch0 = 0;
+        an._bobMean = NaN; if ('trunkStep' in an) an.trunkStep = 0;
+        /* the run bob's keep is read at a run's first steps before that run sets it (locomotionDriver `keepEff`): after
+         *  F19's lunge it held the jog's 0.25 into F15's sprint (constructor: the sprint's keep), and F15 filmed after
+         *  F19 lifted its back panel (full set at 21ca75c, the third staging; the first two, 0.42, hung it) */
+        an._bobKeep = an.T?.runBob ? an.T.runBob.keep : 0.5; if ('_trunkPitch0' in an) an._trunkPitch0 = 0;
         if (Array.isArray(an._widenHold)) an._widenHold.fill(0);
         for (const k of ['_lvx', '_lvz', '_prevLvx', '_prevLvz', '_jerkX', '_jerkZ', '_yawRate', '_mx', '_latMove', '_moveW', '_runW']) if (k in an) an[k] = 0;
         if (an.melee && '_pelvisShiftOk' in an.melee) an.melee._pelvisShiftOk = false;
