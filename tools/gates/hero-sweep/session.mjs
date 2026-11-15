@@ -55,6 +55,9 @@ for (const f of (flag('--extra-rows') || '').split(',').filter(Boolean)) {
   const mod = await import(pathToFileURL(path.resolve(REPO, f)).href);
   rows.push(...mod.GATES.filter((g) => !want || want.includes(g.id)).map((g) => ({ ...g, __extra: true })));
 }
+/* M1a regfix 2: a row id named by two --extra-rows files runs once, from the first file that names it (kept-rows.mjs's
+ * restated A104 / A105 before gates.r5.melee.mjs's own, when that file is passed for A-stow-clearance) */
+{ const seen = new Set(); rows = rows.filter((g) => (seen.has(g.id) ? false : (seen.add(g.id), true))); }
 /* M1a r3 fix: --extra-first runs the --extra rows (the kept rows) before the sweep rows */
 if (args.includes('--extra-first')) rows = [...rows.filter((g) => g.__extra), ...rows.filter((g) => !g.__extra)];
 /* M1a r3 fix (the judge's FIX LIST 1): a row's place in the budget is what it TAKES, not its timeout (A-draw-elbow-level's
