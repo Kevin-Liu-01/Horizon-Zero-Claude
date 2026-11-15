@@ -4914,9 +4914,14 @@ export class MeleeLayer {
     this._dbg.armHullFinalLeft = worst;
   }
 
-  /** The hand guard's three passes (see `postFix`). */
+  /** The hand guard's passes (see `postFix`).
+   *  (M1a regfix 3, A104 light-2: three passes of at most 0.30 rad each could not bring back a haft that came into the
+   *  last pass far inside. Page probe at e4e0511, fresh page: on the second sim step of one rendered frame of light-2's
+   *  strike the haft came in 0.038 m off her spine and left the three passes at 0.087 against the 0.12 bar (the step
+   *  before it 0.054 -> 0.149). Up to six passes now; a pass is spent only while there is a deficit, so a haft that
+   *  already clears costs one scan, as before) */
   _handOffSelf(an, e) {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 6; i++) {
       const push = this._clearDeficit();
       if (push <= 0) break;
       // rotate the haft about the hand until the offending point clears
