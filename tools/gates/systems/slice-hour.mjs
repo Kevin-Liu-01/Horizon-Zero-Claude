@@ -229,6 +229,64 @@ async function solveShot(mi, part, tolDeg) {
   return { ...out, clear: false };
 }
 
+/**
+ * in-page (closing round): where can a player stand to see the Plumb's level vial? At c455362 the topple stepped round
+ * the Plumb 20 deg at a time on a 28 m circle from wherever the ditch left her, on the dyke's lee side below its crest,
+ * and the vial was masked from all 7 stands. This scans the ground round the Plumb (every 15 deg at 12-30 m) as a
+ * player would look for an opening: from each open nav cell (ctx.nav: slope, water, colliders) it flies the arrow the
+ * game would loose at full draw (a parabola from the nock's height to the glass, the game's own gravity) and asks what
+ * it meets first, segment by segment: the terrain (the arrow's own ground test) and the Instruments' hulls
+ * (hitHulls.raycast, exact, the arrow sweep). A stand counts the glass points (centre and +-45 % along the tube) the
+ * flight reaches first. Ranked by that count, then by the walk from where she is. Read-only: it moves nothing.
+ */
+function scanStands(mi, avoid = [], dists = [12, 15, 18, 22, 26, 30]) {
+  const C = window.__CTX__, m = C.machines.list[mi], wp = m?._vialWp;
+  if (!m || m.alive === false || !wp?.obj) return null;
+  const V = C.camera.position.constructor, N = C.nav, T = C.terrain, HH = C.hitHulls, P = C.player.position, cb = C.combat;
+  let nockH = 1.45;
+  try { const nk = new V(); cb.bow.getNockWorld(1, nk); const h = nk.y - P.y; if (h > 0.8 && h < 2.2) nockH = h; } catch { /* the default */ }
+  const g = cb?.arrows?.gravity ?? 9.8;
+  const aims = [];
+  if (wp.axis && wp.half > 0) for (const u of [0, 0.45, -0.45]) aims.push(wp.axis.clone().multiplyScalar(wp.half * u).applyMatrix4(wp.obj.matrixWorld));
+  else aims.push(wp.obj.getWorldPosition(new V()));
+  const c = aims[0];
+  const ray = { origin: new V(), direction: new V() }, a = new V(), b = new V(), o = new V();
+  const out = [], why = {};
+  for (let deg = 0; deg < 360; deg += 15) {
+    const ang = deg * Math.PI / 180;
+    for (const d of dists) {
+      const gx = c.x + Math.sin(ang) * d, gz = c.z + Math.cos(ang) * d;
+      if (avoid.some((q) => Math.hypot(q.x - gx, q.z - gz) < 4)) { why.tried = (why.tried || 0) + 1; continue; }
+      if (N?.blockedAt?.(gx, gz)) { why.blocked = (why.blocked || 0) + 1; continue; }
+      const gy = T.getHeight(gx, gz);
+      o.set(gx, gy + nockH, gz);
+      let clear = 0, first = null;
+      for (const aim of aims) {
+        const L = o.distanceTo(aim), tf = L / 62, NS = 12;
+        let hit = null;
+        a.copy(o);
+        for (let i = 1; i <= NS && !hit; i++) {
+          const u = i / NS, t = u * tf;
+          b.lerpVectors(o, aim, u); b.y += 0.5 * g * t * (tf - t);
+          if (i < NS && b.y < T.getHeight(b.x, b.z)) { hit = 'ground'; break; }
+          ray.origin.copy(a); ray.direction.subVectors(b, a);
+          const sl = ray.direction.length();
+          ray.direction.multiplyScalar(1 / sl);
+          const h = HH?.raycast?.(ray, { far: sl + (i === NS ? 0.25 : 0), exact: true });
+          if (h && h.hit) hit = h.machine === m ? (h.name || h.part?.name || 'hull') : `other:${h.machine?.kind ?? '?'}`;
+          a.copy(b);
+        }
+        if (hit === 'weak:vial') clear++;
+        else if (!first) first = hit || 'nothing';
+      }
+      if (!clear) { why[first] = (why[first] || 0) + 1; continue; }
+      out.push({ x: +gx.toFixed(2), z: +gz.toFixed(2), deg, d, clear, of: aims.length, walk: +Math.hypot(gx - P.x, gz - P.z).toFixed(1), dy: +(c.y - gy).toFixed(2) });
+    }
+  }
+  out.sort((p, q) => (q.clear - p.clear) || (p.walk - q.walk));
+  return { stands: out.slice(0, 6), open: out.length, masked: why, vial: { x: +c.x.toFixed(2), y: +c.y.toFixed(2), z: +c.z.toFixed(2) }, nockH: +nockH.toFixed(2) };
+}
+
 function face(x, z) {
   const p = window.__CTX__.player;
   p.camYaw = Math.atan2(-(x - p.position.x), -(z - p.position.z));
@@ -381,7 +439,9 @@ async function readyBow(page, K) {
 async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000, tolDeg = 0.35, reach = 70 } = {}) {
   const t0 = Date.now();
   const stage0 = (await page.evaluate(probe)).stage;
-  let fired = 0, aimed = false, blocked = 0;
+  let fired = 0, aimed = false, blocked = 0, stand0 = null;
+  const tried = [];
+  const scans = [];
   await page.mouse.move(800, 450);
   if (ammo === 'hunter') await readyBow(page, K); else { await K.tap('Digit1'); await sleep(150); }
   // the arrow as a player picks it: X (and Z) cycle the bow's ammo (M1.6j: Barbed is the ranged Pry)
@@ -393,20 +453,34 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
     for (;;) {
       const s = await page.evaluate(probe);
       if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) return { ok: false, why: 'died', fired };
-      if (stageDone && s.stage !== stage0) return { ok: true, fired };
-      if ((Date.now() - t0) / 1000 > maxS) return { ok: !!all, why: `${kind} ${part}: not done in ${maxS} s (${fired} arrows)`, fired };
+      if (stageDone && s.stage !== stage0) return { ok: true, fired, ...(scans.length ? { scans } : {}) };
+      if ((Date.now() - t0) / 1000 > maxS) return { ok: !!all, why: `${kind} ${part}: not done in ${maxS} s (${fired} arrows)`, fired, ...(scans.length ? { scans } : {}) };
       if (s.busy) { await release(); await playScene(page, K); continue; }
       // the whole line (all): every live one within 220 m is walked to; one target: the nearest within 70 m
       const T = (await page.evaluate(targetsOf, kind, part)).filter((t) => t.d < (all ? 220 : reach));
       if (!T.length) return { ok: !!all, why: all ? null : `no live ${kind} within ${reach} m`, fired };
       const t = T[0];
-      if (t.d > stand + 6) {
+      // the vial (closing round): she goes to a stand the scan finds open (scanStands), not round a fixed circle
+      if (part === 'vial' && !stand0) {
+        await release();
+        const sc = await page.evaluate(scanStands, t.i, tried);
+        scans.push(sc && { open: sc.open, masked: sc.masked, vial: sc.vial, nockH: sc.nockH, best: sc.stands[0] ?? null, from: { x: +s.p.x.toFixed(1), z: +s.p.z.toFixed(1) } });
+        const best = sc?.stands?.[0];
+        if (!best) return { ok: false, why: `${kind} ${part}: no open stand found round it (${JSON.stringify(sc?.masked ?? {})})`, fired, scans };
+        stand0 = best;
+        tried.push({ x: best.x, z: best.z });
+        const w = best.walk > 30 ? await walkPath(page, K, best, 1.5, { maxS: 60, sprint: true }) : await walkTo(page, K, best, 1.5, { maxS: 30, sprint: best.walk > 8 });
+        if (w.why === 'died') return { ok: false, why: 'died', fired, scans };
+        continue;
+      }
+      if (part !== 'vial' && t.d > stand + 6) {
         await release();
         const k = (t.d - stand) / t.d;
         await walkTo(page, K, { x: s.p.x + (t.x - s.p.x) * k, z: s.p.z + (t.z - s.p.z) * k }, 3, { maxS: 25 });
         continue;
       }
       if (backOut && t.d < 9 && kind !== 'peg') {
+        if (part === 'vial') { stand0 = null; continue; }   // it closed on her: scan again from here
         await release();
         const k = stand / Math.max(1, t.d);
         await walkTo(page, K, { x: t.x + (s.p.x - t.x) * k, z: t.z + (s.p.z - t.z) * k }, 3, { maxS: 12 });
@@ -431,9 +505,12 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         // every point along the part is masked from here by something else: step round it (20 deg) and draw again
         await up('left'); await release();
         blocked++;
-        const s2 = await page.evaluate(probe), ang = Math.atan2(s2.p.x - t.x, s2.p.z - t.z) + (blocked % 2 ? 0.35 : -0.7);
+        const s2 = await page.evaluate(probe);
+        shots.push({ kind, part, blocked: true, d: +t.d.toFixed(1), at: { x: +s2.p.x.toFixed(1), z: +s2.p.z.toFixed(1) }, predicted: { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds }, aimErr: sol.err });
+        if (blocked > 6) return { ok: false, why: `${kind} ${part}: masked from every stand tried (${blocked})`, fired, scans };
+        if (part === 'vial') { stand0 = null; continue; }   // the next open stand the scan finds
+        const ang = Math.atan2(s2.p.x - t.x, s2.p.z - t.z) + (blocked % 2 ? 0.35 : -0.7);
         await walkTo(page, K, { x: t.x + Math.sin(ang) * stand, z: t.z + Math.cos(ang) * stand }, 2.5, { maxS: 15, sprint: false });
-        if (blocked > 6) return { ok: false, why: `${kind} ${part}: masked from every stand tried (${blocked})`, fired };
         continue;
       }
       const sw = await page.evaluate(() => { const c = window.__CTX__.combat; return { st: c.steady.phase, sway: +c.sway.deg.toFixed(3) }; });
@@ -718,6 +795,20 @@ try {
         // staged: its brain is switched off so the state the row writes is the state the Brazier reads (f90d2b0: at
         // 25 m its own perception walked 'suspicious' on between writes and the page showed the rest rows)
         if (m.ai?.tick) m.ai.tick = () => {};
+        // closing round: the state machine runs in the machine's own update (machine.js: _stateSuspicious walks a
+        // 'suspicious' whose suspicion is under 0.06 on to 'return' in the next frame), so at c455362 the 25 m wary
+        // case read 'refused' from the runner and the E press a frame later opened the rest rows. While a case is
+        // staged, every update ends with the staged state and a suspicion that holds it (0.6 wary, 1 hostile): the
+        // Brazier reads it the same in every frame, as it would a Plumb that stays wary
+        const upd = m.update.bind(m);
+        m.update = (dt, t) => {
+          upd(dt, t);
+          const st = window.__stagedState;
+          if (!st || m.alive === false) return;
+          const sus = st === 'suspicious' ? 0.6 : st === 'alert' ? 1 : 0;
+          if (m.sc) m.sc.suspicion = sus; else m.suspicion = sus;
+          if (m.state !== st) m.state = st;
+        };
         window.__refusalM = m;
         return { kind, spawned: true };
       });
@@ -731,9 +822,14 @@ try {
             const C = window.__CTX__, B = C.braziers, home = B.byId('cistern'), m = window.__refusalM;
             const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
             m.position.set(home.obj.position.x + dist, C.terrain.getHeight(home.obj.position.x + dist, home.obj.position.z), home.obj.position.z);
-            // hold the AI state for the whole E press (its own brain would otherwise walk it on)
-            const hold = setInterval(() => { m.state = state; }, 16);
+            // hold the AI state for the whole E press (its own brain would otherwise walk it on): set once through the
+            // machine's own setState, then re-asserted at the end of each of its updates (see the spawn above)
+            window.__stagedState = state;
+            m.setState?.(state);
+            const sus0 = state === 'suspicious' ? 0.6 : state === 'alert' ? 1 : 0;
+            if (m.sc) m.sc.suspicion = sus0; else m.suspicion = sus0;
             m.state = state;
+            const hold = setInterval(() => { m.state = state; }, 16);
             await sleep(700);
             const d = B.dialog('cistern');
             const lamp = B.machinesNear().find((x) => Math.abs(x.x - m.position.x) < 0.01)?.lamp ?? null;
@@ -745,14 +841,17 @@ try {
           c.page = await page.evaluate(() => ({ open: !!window.__CTX__.systemsGame?.present?.busy, text: (document.querySelector('#cal-sys')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 240) }));
           c.shot = await shot(page, `r-refusal-${c.dist}m-${c.state}`);
           await page.keyboard.press('Escape'); await sleep(400);
-          await page.evaluate(() => clearInterval(window.__holdState));
+          await page.evaluate(() => { clearInterval(window.__holdState); window.__stagedState = null; });
           cases.push(c);
         }
       }
       const six = 'THE LAMPS ARE UP. NO REST HERE.';
       const want = (c) => (c.dist <= 60 && (c.state === 'suspicious' || c.state === 'alert'));
       report.rows['brazier-refusal'] = { staged: true, ...prep, cases,
-        pass: cases.length === 4 && cases.every((c) => (want(c) ? c.mode === 'refused' && c.page.text.includes(six) : c.mode === 'rest' && !c.page.text.includes(six))) };
+        // a refusal shows the bible's one line and no rest row; a rest shows the four rows and not the line
+        pass: cases.length === 4 && cases.every((c) => (want(c)
+          ? c.mode === 'refused' && c.page.open && c.page.text.includes(six) && !/REST UNTIL/.test(c.page.text)
+          : c.mode === 'rest' && c.page.open && !c.page.text.includes(six) && (c.page.text.match(/REST UNTIL/g) || []).length === 4)) };
       log(`brazier-refusal: ${cases.map((c) => `${c.dist}m ${c.state} ${c.lamp} -> ${c.mode}`).join('; ')}`);
     } catch (e) { report.rows['brazier-refusal'] = { error: String(e?.message || e).slice(0, 300) }; }
     /* the kit's verb rows (M1.6j), staged on the same page */
