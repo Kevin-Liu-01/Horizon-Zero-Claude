@@ -99,11 +99,18 @@ export async function stageFrame(f, o = {}) {
   /* ---- 3. who else is in frame: nothing roams unless the frame asks for the crowd ---- */
   const st = f.state || {};
   if (!st.crowd) {
-    for (const m of C.machines?.list || []) if (m.root?.visible) { m.root.visible = false; undo.push(() => { m.root.visible = true; }); }
+    // regfix 2 (instruments, smallest change in this file): the world's keeper Gauge at its post at Sluice 3 is a
+    // landmark, not a roamer: it stays in frame where the static stand-in stood until dd5ecaf retired it (F02's and
+    // F24's horizon in the accepted anchors), back at its station, held and frozen below with the rest. A frame that
+    // stages its own Gauge (F23-gauge, F26, which stand Brea at Sluice 3) shows only that one.
+    const K = C.machines?._gaugeKeeper;
+    const keepK = !!K && K.alive && !K._disposed && !(st.actors || []).some((a) => a.kind === 'gauge');
+    if (keepK) { try { K._resetKeeper?.(); K.root?.updateMatrixWorld?.(true); } catch (e) { /* */ } }
+    for (const m of C.machines?.list || []) if (m.root?.visible && !(keepK && m === K)) { m.root.visible = false; undo.push(() => { m.root.visible = true; }); }
     // a hidden machine is also out of play: an alert one in range drew her bow (combat's threat rule) in a frame
     // that shows no machine; frozen and calm for the frame, restored after
     for (const m of C.machines?.list || []) {
-      if (m.root?.visible) continue;
+      if (m.root?.visible && !(keepK && m === K)) continue;
       const u0 = m.update, s0 = m.state;
       m.update = function () {};
       if (s0 === 'alert' || s0 === 'attack' || s0 === 'search') m.state = 'patrol';
