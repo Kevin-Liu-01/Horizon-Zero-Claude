@@ -296,6 +296,9 @@ try {
       out.rows.push({ id: g.id, status: res?.pass === true ? 'PASS' : res?.pass === null ? 'PENDING' : 'FAIL', seconds: Math.round((Date.now() - r0) / 1000), freshPage: !!rebootS, rebootS, reset, detail: res?.detail });
     } catch (e) { out.rows.push({ id: g.id, status: 'ERROR', error: String(e?.message || e).slice(0, 400) }); }
     const last = out.rows[out.rows.length - 1];
+    /* (M1a regfix 3: written after every row, so a session the watchdog ends keeps every row it finished; at c0dab09 a
+     *  fresh tab hung on its first row and the watchdog's run.json was all that was left) */
+    try { mkdirSync(runDir, { recursive: true }); writeFileSync(path.join(runDir, 'rows.json'), JSON.stringify(out.rows, null, 1)); } catch { /* */ }
     log(`${g.id} ${last.status} in ${last.seconds ?? '?'} s${last.detail?.fails?.length ? ': ' + last.detail.fails.join('; ') : ''}`);
     try { await page.evaluate(() => { const C = window.__CTX__; C.input.keys.clear(); C.input.mouse.buttons = 0; C.player.setCrouch?.(false); C.player.animator?.setHangPose?.(false); C.combat?.melee?.holsterLance?.(); if (C.combat) C.combat._holsterT = 0; }); } catch { /* */ }
     await sleep(300);
