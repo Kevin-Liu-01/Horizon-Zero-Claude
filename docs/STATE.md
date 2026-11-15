@@ -831,3 +831,95 @@ reached.
 **Rulings (the orchestrator):**
 - Saltrow stands where the bible puts it, so a frame whose only change is the town in its background is not a regression on silhouette. The animation-bar frames F14-F19 are judged on Brea (figure, cloth, pose); their anchors are re-filmed at the head with the town in them, as provisional anchors. F20 and F24 are judged with the town: it must meet their finish (no untextured or faceted salt cones, no flat backlit block) before they are re-anchored.
 - A16-draw-anchor's launch clause is measured on Steady (sway 0): the row tests the draw rig, and the breath sway of the slice combat kit is graded by its own rows.
+
+## M1b closing run (Nov 15 2026)
+
+A short closing run before the budget pause. Three lanes fixed only what the wave-2 review named:
+- Engine: A16-draw-anchor measured on Steady, and the animation-bar anchors re-filmed with the town (the ruling).
+- Settlements and people: F20's salt cones, F24's backlit town, the crowd's violet, Ansel at her quest spot.
+- Systems: the slice run's topple, the Brazier refusal page, the reed canes in F31.
+
+The review measured `r5/int` at **6fa199d** from a clean detached worktree on port 5270, using one Chrome slot. No
+commit landed during the review.
+
+**Verdict: NOT CLEAN.** Two things block it:
+- One accepted frame is still further than its anchor: **F24**. The town still stands as a flat block over the right
+  third of the horizon, nearer than the Plumb, and hides the sea stack and the sun's glow on the water.
+- The slice run still plays **11 of 14** beats and stops at the topple.
+
+Everything else that blocked c455362 is fixed. No kept row fails. `main` stays on bb02a0f.
+
+**Tier 0 at 6fa199d: PASS, 10 of 10.**
+- `vite build` OK. Name lint 0 hits. Licences, asset budgets and the import graph clean.
+- Resident textures: 61.42 MB of 175 MB. Shipped size: 51.69 MB (first-load cap 60 MB).
+- 98 Node tests pass in 21 files.
+- Boot: 3.8 s, 0 errors, 78.94 MB first load. Rendered-page name lint: 0.
+
+**Frame Set at 6fa199d:** all 34 frames, 200 s of Chrome, 0 console errors. The simulation-time stagings froze at the
+same frame counts as at c455362.
+- **Further than its anchor (regression):** F24 (silhouette and finish). The walls now read pale lime instead of dull
+  pink, but the block is still flat, with heavy regular quoins and no window detail.
+- **No longer further:**
+  - F20: the two salt cones are now round and wear the pans' own crust. They still cut both frame edges, and the
+    light is still pushed orange-red. F20 is not yet re-anchored.
+  - F15: Brea's figure, cloth and stride are the same as her anchor. Under the town ruling, the houses behind her are
+    not a regression. Her anchor is not yet re-filmed with the town.
+  - F16, F18, F19: the same as their new anchors, re-filmed with the town at b4d8df9.
+- **The same as the anchor:** F02, F03, F05, F08, F09, F10, F11, F13, F14, F23 (Plumb).
+- **Moved toward the target since c455362:**
+  - F22: the salt cones wear the pans' crust.
+  - F31: the reed canes taper on a slight curve and end in arching blade leaves and slim plumes. The flat, kinked
+    strips are gone.
+- Every other frame is the same as at c455362.
+- Palette: F02 8.2, F04 10.2, F05 11.4. All pass the bar of 12.
+
+**Kept-stack rows at 6fa199d** (two sessions, every row reached): 80 rows. **78 pass** (70 action, 8 visual), **0
+fail**, **2 pending** (A9 and A76, as before).
+- **Fixed:** A16-draw-anchor passes 20 of 20 cells. Each shot is loosed in Steady's hold (sway 0) and leaves at 0.000
+  deg. Knuckle to jaw 0.014 m, hook 0.008 m, elbow -0.010 m.
+- No row fails that passed before.
+- Key numbers:
+  - A45c: 2.114 m/s (bar 3).
+  - A107: at most 0.062 m behind the band (bar 0.10).
+  - A44b: 0.054 m.
+  - A90: geometries 379 -> 378.
+  - A9 (pending, the box was not quiet): 59.9 fps, 130 draw calls.
+
+**The slice run at 6fa199d: 11 of 14 beats.** The run is driven by input from the real title. It reached wake, rake,
+read, tell, cane, make, mise, cross, climb, sight and ditch, and stopped at topple. Pry and the return were not
+reached.
+- At the Peg line she lost 86 of 100 hp. She reached the topple at 14 hp and died at its first shot. The death card's
+  reload stood her up at the cistern.
+- On the second try the runner loosed 6 shots at the vial from 29-32 m. Each was solved with the vial first, on
+  Steady. None hit. The Plumb's health did not change.
+- In the systems lane's own run at de71979 the topple played (4 shots, 70 s) and the run reached 12. That did not
+  reproduce here.
+- Live rows:
+  - Brazier refusal: **PASS**. With a wary or hostile Plumb at 25 m, the page shows only the refusal line.
+  - save-reload: PASS.
+  - save-continue on top of T1: PASS, 0 m off.
+  - death rule: PASS.
+  - save-continue at the end: **not reached**. The shared memory guard closed Chrome as the reload began.
+
+**What landed:**
+- **Engine:**
+  - A16-draw-anchor's launch clause is measured on Steady (`launchSteady`, `notOnSteady`).
+  - F16, F18 and F19 are re-anchored with the town.
+  - `answers.mjs --reanchor` records a ruling's re-anchor from a clean film run.
+- **Settlements:**
+  - The salt cones are a 72-sided, 24-ring lathe dressed in the pans' crust.
+  - House walls in shade take the sky's fill, and their indirect light falls off near the ground.
+- **People:**
+  - Ansel's robe fronts lose their violet ground: the crowd's violet ratio is 7.30x (bar 5x).
+  - Ansel tallies between her idle beats. A quest card holds her in talk, and her loop goes on after it. Her longest
+    stand is now 8.75 s (bar 90 s).
+- **Systems:**
+  - The topple's stand search.
+  - The Brazier refusal page.
+  - Carrizo canes with taper, curve, blade leaves and a plume. The reed rows still pass 10 of 10.
+
+**Rulings needed:**
+- F20: re-anchor it with the town now, or first move the cones off the frame edges and fix the light.
+- F14 and F15: re-film their anchors at the head, on simulation time, in a quiet session.
+
+**Decision (the orchestrator, PROCESS §2.7):** Tier 0 passes 10 of 10 and the kept stack is 78 of 80 with 0 failing (the best yet). The open items are F24's town block (the town is canon; its finish must reach F24 before re-anchoring), the slice run at 11 of 14 beats (the topple: aim and arrow flight disagree at the vial), Peg-line damage in the slice, and F14/F15 re-anchoring. None is a kept-row regression; main is fast-forwarded to r5/int with these carried as tracked debt. New build work pauses until the weekly budget resets.

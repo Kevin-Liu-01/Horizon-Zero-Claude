@@ -320,3 +320,20 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 | closed | F22 and F07 stand-ins | the town stands | settlements |
 | note | Five lanes made small changes in each other's files (listed in each lane's commit message) | | all |
 | note | The UI's title reads the systems subtitle queue's internal fields; replace with an API | | ui, systems |
+
+## M1b closing run additions (Nov 15 2026)
+
+| sev | item | number (commit) | owner |
+|---|---|---|---|
+| blocker | F24: the town block over the right third of the horizon, nearer than the Plumb | further than the anchor at 6fa199d; walls now pale lime, no window detail | settlements |
+| major | A-slice-hour 14/14 | 11/14 at 6fa199d. The topple: 6 shots solved onto the vial (predicted miss 0.026-0.031 m) landed 0 hits. 12/14 in the lane's de71979 run | systems |
+| major | The topple's shot solve and the game's flight disagree, or the solve's miss is larger than the vial | 0 of 7 vial shots hit | systems |
+| major | Damage at the Peg line in the slice run | 100 -> 14 hp over 27 shots (95 hp at c455362) | systems, instruments |
+| major | F20: the cones still cut both frame edges; the light is pushed orange-red | not re-anchored | settlements, people |
+| major | F14, F15 anchors not re-filmed with the town | engine lane's films ran into history; its session was cut by the memory guard | engine |
+| major | F20 GPU 16.2 ms (bar 16.7) | back-to-back readback at 6fa199d (lane); not attributed | settlements |
+| major | F31: her violet visible through the stems 0.984 (bar <= 1/3) | since fabb8b8 | systems |
+| note | save-continue at the end of the slice: not reached at 6fa199d, failed in the lane's run; both cut by the memory guard | re-run in a quiet session | systems |
+| note | Ansel's tally clip reads as pointing more than tallying | people |
+| note | F14: the crust in her lens reads grey-pink against the anchor's white | judged same; look again at re-anchor | world |
+| closed | Tier 0 10/10; A16 20/20 on Steady; F15/F16/F18/F19 under the town ruling; F20 cone finish; crowd violet 7.30x; Ansel 8.75 s; Brazier refusal; F31 canes | 6fa199d | all |
