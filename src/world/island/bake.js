@@ -22,6 +22,9 @@ import { heightAt, biomesAt, authored, coverAt, ss, fbm, GLASS_LEVEL } from './r
 import { SALT_FIELD as SF } from './sites.js';
 
 export const MASK_N = 512;
+/** The Glass's rim, in its normalised plan distance (1 on the shoreline): the reed belt reaches 1.9 (recipe.js coverAt);
+ * no meadow (bake) and no glasswort (scatter.js) inside it. */
+export const GLASS_RIM = 1.95;
 export const PAN_N = 512;
 /** World box of the pan texture (x0, z0, size), metres. */
 export const PAN_BOX = Object.freeze({ x0: -434 * S, z0: 144 * S, size: 244 * S });
@@ -219,6 +222,8 @@ export function maskTexel(H, x, z, out) {
   const silt = Math.max((1 - ss(1.0, 1.42, glass)) * 0.95, pans * (1 - ss(0.25, 0.8, h)) * ss(16, 40, c) * (1 - fk));
   // damp dark ground in hollows; wind-pale sand on crests
   const damp = pans * clamp01(1 - h / 2.2) * ss(8, 40, c) * 0.7;
+  /* M1a round 2 (F31's written target: never gold or rust grass at the Glass rim): the meadow starts outside the rim's
+   * reed belt (the marram's Glass band ends at glass 1.9, recipe.js coverAt), where it overlapped from 1.5 before */
   /* the golden meadow (LOOK W-06): the Pans' landward belt behind the salt field, 1.5-26 m up,
    * in drifts and clearings; never on the field, the tracks, the rock or the Glass's margin.
    * Scenery, never cover: the stealth field is maskB.R alone (F-4). */
@@ -226,7 +231,7 @@ export function maskTexel(H, x, z, out) {
    * outer 9 m), wider drifts and fewer clearings */
   const drift = ss(0.2, 0.44, fbm(x * 0.021 + 13, z * 0.021 - 5, 3));
   const meadow = pans * ss(0.3, 0.9, h) * (1 - ss(22, 30, h)) * ss(16, 30, c) * (1 - ss(0.55, 0.92, fk)) * (1 - ss(0.25, 0.5, rock))
-    * (1 - ss(0.4, 0.7, slope)) * (1 - ss(0.2, 0.5, track)) * ss(1.5, 2.2, glass) * (1 - ss(0.2, 0.5, cr)) * drift;
+    * (1 - ss(0.4, 0.7, slope)) * (1 - ss(0.2, 0.5, track)) * ss(GLASS_RIM, GLASS_RIM + 0.55, glass) * (1 - ss(0.2, 0.5, cr)) * drift;
   // M1.1d: the Sounding Ring stands on a GRASSED rise: its top and upper flanks are meadow, above the shingle
   const rg = authored.ringGrass(x, z) * ss(1.2, 2.6, h) * (1 - ss(0.25, 0.5, rock));
   const meadowR = Math.max(meadow, rg);

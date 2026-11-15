@@ -88,6 +88,7 @@ export function scatterTile(kind, tx, tz, R, out) {
     } else if (kind === 'glasswort') {
       if (F.slope > 0.5 || F.rock > 0.3 || F.track > 0.3 || F.h > 2.8) continue;
       if (authored.pan(x, z).kind >= 0) continue;      // the cells are worked ground: nothing grows in them
+      if (authored.glass(x, z) < GLASS_RIM) continue;   // the Glass's rim is reed ground (F31: no rust grass)
       const margin = Math.max(F.silt, F.damp * 1.1) * (1 - F.cover);
       if (margin <= 0.08) continue;
       d = margin * 1.5 * ss(0.38, 0.62, fbm(x * 0.05 + 2, z * 0.05, 3));

@@ -248,12 +248,12 @@ try {
     log(`F03 soil ${R.soil.soilPct} %, grass submitted ${R.grass.submittedTris}`);
     await page.evaluate(unstageFrame);
   }
-  for (const id of ['F04', 'F05']) {
+  for (const id of ['F04', 'F05', 'F20', 'F24', 'F25', 'F31']) {
     if (!FRAMES.includes(id) || spent() > BUDGET_S) continue;
     const R = run.frames[id] = {};
     await stage(id);
     await shot(`${id}.png`);
-    if (id === 'F05') {
+    if (id !== 'F04') {
       R.blue = {};
       for (const x of (SHADE.length ? SHADE : [null])) {
         R.blue[`shade${x}`] = await page.evaluate(async (x) => {
@@ -261,7 +261,7 @@ try {
           const x0 = U.x; if (x != null) U.x = x;
           try { const s = await W.groundHue(C.engine, C); delete s.mask; return s; } finally { U.x = x0; }
         }, x);
-        log(`F05 blue (shade ${x}): ${R.blue[`shade${x}`].bluePct} %, dark mean hue ${R.blue[`shade${x}`].darkMeanHue}`);
+        log(`${id} blue (shade ${x}): ${R.blue[`shade${x}`].bluePct} %, dark mean hue ${R.blue[`shade${x}`].darkMeanHue}`);
       }
     }
     await page.evaluate(unstageFrame);
@@ -281,13 +281,16 @@ try {
       list.push({ id: 'black-sand', x: -200, z: 420 });
       list.push({ id: 'basalt-shelf', x: GP.rockShelf?.x ?? -170, z: GP.rockShelf?.z ?? 352 });
       list.push({ id: 'meadow-ground', x: -246, z: 257 });
+      // the materials alone (CAL_CAPTURE_LAYER): the black sand and the basalt as layers, at the black-sand site
+      list.push({ id: 'sand-layer', x: -200, z: 420, layer: 0 });
+      list.push({ id: 'basalt-layer', x: -200, z: 420, layer: 2 });
       return list;
     });
     run.topdown = [];
     for (const s of sites) {
       const r = await page.evaluate(async (s) => {
         const M = await import('/tools/perf/meadow-page.mjs'); const C = window.__CTX__, E = C.engine;
-        const t = await M.topDown(E, C, s.x, s.z, { span: 40, px: 1024 });
+        const t = await M.topDown(E, C, s.x, s.z, { span: 40, px: 1024, layer: s.layer ?? null });
         let bin = ''; const b = t.rgba; for (let i = 0; i < b.length; i += 32768) bin += String.fromCharCode.apply(null, b.subarray(i, i + 32768));
         return { ...s, px: t.px, span: t.span, b64: btoa(bin) };
       }, s);

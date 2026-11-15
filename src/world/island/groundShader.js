@@ -165,6 +165,24 @@ export const TERRAIN_COLOR = /* glsl */ `
 #ifdef CAL_P_FLAT
 diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid = 0.0; gSunVis = 1.0;
 #else
+/* M1a round 2 (F02 at 11 ms with the look off): the near ground's distance LOD. The normal maps give way to their
+ * per-layer means over 85-115 m (was 150-190), the second anti-tile reads fade out over 100-130 m (was 200-240), the
+ * pan's cubic read stops at 60 m (was 110); and ground the meadow wholly covers skips the layer stack (its colour is the
+ * meadow's own tone either way). The far-field bake and CAL_P_R1LOD (the A/B) keep round 1's distances */
+#if defined(CAL_P_R1LOD) || defined(CAL_FAR_BAKE)
+#define G_CUBIC_D 110.0
+#define G_FARN0 150.0
+#define G_FARN1 190.0
+#define G_SEC0 200.0
+#define G_SEC1 240.0
+#define G_R1 1
+#else
+#define G_CUBIC_D 60.0
+#define G_FARN0 85.0
+#define G_FARN1 115.0
+#define G_SEC0 100.0
+#define G_SEC1 130.0
+#endif
 {
   vec3 wn = normalize(vWNorm);
   vec2 xz = vWPos.xz;
@@ -179,7 +197,7 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     #ifdef CAL_P_NOCUBIC
     pan = gPanT(puv);
     #else
-    pan = dCam < 110.0 ? gPanCubic(puv) : gPanT(puv);
+    pan = dCam < G_CUBIC_D ? gPanCubic(puv) : gPanT(puv);
     #endif
   }
 
@@ -215,11 +233,14 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     float rk = dot(xz, fv) * 1.65 + gNoiseT(xz * 0.013).r * 2.2;
     rake = (0.5 + 0.5 * sin(rk * 6.2831853)) * nk * smoothstep(0.35, 0.8, crust);
     crustDet = (vp.z - 0.5) * 0.16 * nk;            // each polygon its own tone
-    // Janubio's trampled crust: shallow pits, footprints and drag, 0.3-0.5 m apart, to 35 m
+    /* Janubio's trampled crust: shallow pits, footprints and drag, 0.3-0.5 m apart, to 35 m. M1a round 2: soft-edged
+     * blots from two reads of the periodic noise, irregular and of mixed size; the Voronoi discs they replace, each
+     * kept or dropped by its own cell's hash, were cut along straight bisectors where two overlapped (the round stamp
+     * blotches with flat sides in F04), and cost a 3 x 3 cell search per pixel */
     if (dCam < 35.0) {
-      vec3 vq = gVoro(xz * 2.3 + vp.xy * 0.7);
       #ifndef CAL_P_NOPITS
-      pits = (1.0 - smoothstep(0.05, 0.3, vq.y)) * step(0.45, vq.z) * (1.0 - smoothstep(22.0, 35.0, dCam));
+      float pn = gNoiseT(xz * 0.31 + vp.xy * 0.05 + 0.23).b * 0.65 + gNoiseT(xz * 0.157 + 0.61).a * 0.35;
+      pits = smoothstep(0.6, 0.74, pn) * (1.0 - smoothstep(22.0, 35.0, dCam));
       #endif
     }
   }
@@ -252,15 +273,31 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   /* past 190 m a normal map's mips are its own mean: the per-layer mean (measured off the
    * shipped _n textures) stands in for the fetch, faded in over 150-190 m so no seam shows.
    * At the Pans vista that is most of the frame: it is the ground's largest GPU saving. */
-  float farN = smoothstep(150.0, 190.0, dCam);
+  float farN = smoothstep(G_FARN0, G_FARN1, dCam);
 
+  /* M1a round 2 (M1.1e: black sand repeated at its 3 m tile, autocorrelation 0.61 in a 40 m top-down; basalt 0.48 at its
+   * 7 m tile): the sand's and the flat basalt's reads are displaced by a smooth field of up to about 0.7 m (2.5-5 m
+   * cells), so a tile never lines up with itself a tile away; ripples and joints bend a little with it */
+  #ifdef CAL_CAPTURE_LAYER
+  /* the M1.1e material capture (tools/perf/meadow-page.mjs topDown { layer }): one layer alone, no overlays */
+  for (int i = 0; i < 5; i++) w[i] = i == CAL_CAPTURE_LAYER ? 1.0 : 0.0;
+  wSalt = w[1]; wRock = w[2]; mB = vec4(0.0); sh.a = 0.0; brine = 0.0;
+  #endif
+  #ifdef G_R1
+  bool gSkip = false;
+  #else
+  bool gSkip = mB.a > 0.5 && smoothstep(0.02, 0.6, mB.a) * (1.0 - wSalt) * (1.0 - wRock) > 0.985;
+  #endif
+  vec2 sWarp = vec2(0.0);
+  if (!gSkip && (w[0] > 0.012 || w[2] > 0.012) && dCam < 240.0) { vec4 nw = gNoiseT(xz * 0.1 + 0.77); sWarp = (nw.rg - 0.5) * vec2(2.0, 1.6); }
   vec3 col = vec3(0.0), pert = vec3(0.0);
   float hMax = -9.0, wTot = 0.0, rSum = 0.0, aoSum = 0.0;
   vec4 keepA[3]; vec4 keepN[3]; float keepW[3]; int keepI[3]; int nKeep = 0;
   for (int i = 0; i < 5; i++) {
+    if (gSkip) break;
     if (w[i] < 0.012) continue;
     float sc = gScale(i);
-    vec2 uv = xz * sc, gx = dpx * sc, gy = dpy * sc;
+    vec2 uv = (i == 0 || i == 2 ? xz + sWarp : xz) * sc, gx = dpx * sc, gy = dpy * sc;
     vec4 a, nn;
     if (i == 2 && slopeT > 0.0) {
       /* triplanar: basalt on real slopes only */
@@ -282,22 +319,27 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
       nn = vec4(0.5, 0.5, i == 0 ? 0.877 : i == 1 ? 0.686 : i == 2 ? 0.801 : i == 3 ? 0.539 : 0.631, 0.905);
       if (farN < 1.0) nn = mix(gNm(i, uv0, gx, gy), nn, farN);
       #ifndef CAL_P_NOSALT2
-      if (i == 1 && dCam < 240.0) {
+      if (i == 1 && dCam < G_SEC1) {
+        #ifdef G_R1
+        float kS2 = 0.5;
+        #else
+        float kS2 = 0.5 * (1.0 - smoothstep(G_SEC0, G_SEC1, dCam));
+        #endif
         /* salt: the crust fills whole 20-40 m cells, so any one tile's repeat lines up along a
          * cell (A-anti-tile). A second lookup, rotated 37 degrees at 0.61 of the scale, is always
          * half the read: two incommensurate repeats, neither strong. Its normal is turned back. */
         mat2 Mr = mat2(0.8, 0.6, -0.6, 0.8);
         vec2 uvR = Mr * uv * 0.61 + offB, gxR = Mr * gx * 0.61, gyR = Mr * gy * 0.61;
-        a = mix(a, gA(1, uvR, gxR, gyR), 0.5);
+        a = mix(a, gA(1, uvR, gxR, gyR), kS2);
         if (farN < 1.0) {
           vec4 n2 = gNm(1, uvR, gxR, gyR);
           n2.xy = (vec2(dot(n2.xy * 2.0 - 1.0, Mr[0]), dot(n2.xy * 2.0 - 1.0, Mr[1]))) * 0.5 + 0.5;
-          nn = mix(nn, mix(n2, vec4(0.5, 0.5, 0.686, 0.905), farN), 0.5);
+          nn = mix(nn, mix(n2, vec4(0.5, 0.5, 0.686, 0.905), farN), kS2);
         }
       } else
       #endif
       #ifndef CAL_P_NOL2
-      if (i != 1 && w[i] > 0.12 && dCam < 240.0) {     // past 240 m the mips are a few texels: a second read buys nothing
+      if (i != 1 && w[i] > 0.12 && dCam < G_SEC1) {     // past 240 m the mips are a few texels: a second read buys nothing
         /* M1.1e anti-tile (fix round 1): one tile and a per-region offset still repeated inside each region (black
          * sand 0.61 at its 3 m tile in a 40 m top-down). Two incommensurate reads at half each, the second turned and
          * scaled (sand only a little, so its ripples keep the wind's direction): no region seams, and either repeat
@@ -306,7 +348,7 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
         float cs = cos(ang), sn = sin(ang);
         mat2 Mr = mat2(cs, sn, -sn, cs);
         vec2 uvR = Mr * uv * k2 + vec2(0.37, 0.73), gxR = Mr * gx * k2, gyR = Mr * gy * k2;
-        float f2 = 0.5 * smoothstep(0.12, 0.24, w[i]) * (1.0 - smoothstep(200.0, 240.0, dCam));
+        float f2 = 0.5 * smoothstep(0.12, 0.24, w[i]) * (1.0 - smoothstep(G_SEC0, G_SEC1, dCam));
         a = mix(a, gA(i, uvR, gxR, gyR), f2);
         if (nearK > 0.0) {
           vec4 n2 = gNm(i, uvR, gxR, gyR);
@@ -323,6 +365,7 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     keepA[nKeep] = a; keepN[nKeep] = nn; keepW[nKeep] = w[i]; keepI[nKeep] = i; nKeep++;
     if (nKeep == 3) break;
   }
+  if (gSkip) { col = vec3(0.04); rSum = 0.877; aoSum = 0.81; }   // the sand layer's means: the meadow's tone replaces the colour below
   float hBest = -9.0;
   for (int k = 0; k < nKeep; k++) hBest = max(hBest, (keepA[k].a * 2.0 - 1.0) + keepW[k] * 1.6);
   float bs = 1e-4; float bl[3];
@@ -385,7 +428,7 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   // wind-pale sand on crests, damp dark hollows
   float pale = smoothstep(0.46, 0.7, nMac.r) * smoothstep(0.2, 2.6, vWPos.y);
   col *= 1.0 + 0.4 * pale * w[0] - 0.42 * mB.b * w[0];
-  if (w[0] > 0.02) {
+  if (w[0] > 0.02 && !gSkip) {
     /* the black sand from far off: fabric drawn out along the trade wind, warmer ash in broad
      * patches, and past the plants' range the colonies and the scrub as tone in the ground */
     vec2 wv = vec2(dot(xz, vec2(0.7071, -0.7071)), dot(xz, vec2(0.7071, 0.7071)));
@@ -477,10 +520,11 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   /* -- the ground at a pace (V32): pebbles at 6-15 cm and grit at 2-3 cm on sand, silt and
    *    shingle, each pebble with a lit and a shaded side; gone by 16 m, where they are sub-pixel */
   #ifndef CAL_P_NOPEB
-  if (dCam < 16.0 && wSalt < 0.6) {
+  if (dCam < 16.0 && wSalt < 0.6 && !gSkip) {
     float gk = (1.0 - smoothstep(9.0, 16.0, dCam)) * (1.0 - wSalt) * (1.0 - wRock * 0.7) * (1.0 - canopy);
     vec3 pb = gVoro(xz * 9.0);
-    float peb = smoothstep(0.42, 0.3, pb.y) * step(0.58, pb.z) * gk;
+    // M1a round 2: a pebble fades out before its cell's edge, so two overlapping discs never meet on a straight cut
+    float peb = smoothstep(0.42, 0.3, pb.y) * smoothstep(0.02, 0.16, pb.x) * step(0.58, pb.z) * gk;
     vec2 pd = gHash2(floor(xz * 9.0) + 3.1) - 0.5;
     col = mix(col, col * (0.6 + 0.9 * pb.z) + vec3(0.012, 0.011, 0.01) * pb.z, peb * 0.7);
     pert += vec3(pd.x, 0.0, pd.y) * peb * 0.9;
@@ -544,6 +588,14 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   diffuseColor.rgb = clamp(col, vec3(0.012), vec3(0.85));
   gN = pert;
 }
+#undef G_CUBIC_D
+#undef G_FARN0
+#undef G_FARN1
+#undef G_SEC0
+#undef G_SEC1
+#ifdef G_R1
+#undef G_R1
+#endif
 #endif
 `;
 

@@ -53,6 +53,13 @@ const STREAM = {
  * past them the ground shader's dyke strip (full by 110 m) and its shadow band (from 70 m) carry the field. */
 const DYKE_R = 120;
 const DYKE_SHADOW_R = 80;
+/** M1a round 2: within DYKE_NEAR the runs are the faceted stones ('pan-dykes'); past it the same stones indexed
+ * ('pan-dykes-far', wallGeos), in the main view and the cascades. */
+const DYKE_NEAR = 26;
+/** M1a round 2: past 30 m a flora tile or a dyke run more than 84 deg off the lens's heading is not drawn (was 115 deg:
+ * about a third of what was submitted stood outside the frame's sides). The stream re-fills on a 24 deg turn, so the
+ * margin past the widest lens (half of 92 deg) still covers a turn and a tile's own width. */
+const SIDE_COS = 0.1;
 
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
@@ -210,7 +217,21 @@ function columnGeo() {
   return g;
 }
 
-function wallGeo() {
+/**
+ * The run's stones twice (M1a round 2): `full`, the faceted non-indexed 120 triangles (360 vertices) of V32, and
+ * `lod`, the same six stones from the same random draws, indexed (72 vertices) with each stone's ellipsoid normal: the
+ * same outline and the same depth in a cascade, a fifth of the vertex work. Past DYKE_NEAR the facets are under a pixel.
+ */
+function wallGeos() {
+  const lods = [];
+  const full = wallGeo(lods);
+  const lod = mergeGeometries(lods, false);
+  for (const g of lods) g.dispose();
+  lod.computeBoundingSphere();
+  return { full, lod };
+}
+
+function wallGeo(lodParts = null) {
   /* One 1.1 m run of a dry-stone dyke, 120 triangles: six angular lava stones in two courses
    * (three footings, three capstones breaking joint), overlapping the next run at both ends so
    * the runs butt into one unbroken low wall ≈ 0.6 m wide and 0.3-0.45 m tall. Faceted, not
@@ -239,7 +260,16 @@ function wallGeo() {
     g.rotateZ((R() - 0.5) * 0.22);
     g.translate(x, y, z);
     const f = g.toNonIndexed();
-    g.dispose();
+    if (lodParts) {
+      const P0 = g.attributes.position, N0 = new Float32Array(P0.count * 3), Q0 = new THREE.Vector3();
+      for (let k = 0; k < P0.count; k++) {
+        Q0.fromBufferAttribute(P0, k);
+        Q0.set((Q0.x - x) / (sx * sx), (Q0.y - y) / (sy * sy), (Q0.z - z) / (sz * sz)).normalize();
+        N0[k * 3] = Q0.x; N0[k * 3 + 1] = Q0.y; N0[k * 3 + 2] = Q0.z;
+      }
+      g.setAttribute('normal', new THREE.BufferAttribute(N0, 3));
+      lodParts.push(g);
+    } else g.dispose();
     /* Weathered, not cut: each vertex's normal leans 62 % toward the stone's own ellipsoid
      * normal and keeps 38 % of its face's, so the stone reads rounded with soft arrises at 1.5 m
      * (V32: flat facets read as crystal shards), while the 20 faces still give a broken outline.
@@ -384,6 +414,7 @@ export class Vegetation {
     this._owned = { geo: [], mat: [] };
     this._draws = {};
     this._streamKeys = Object.keys(STREAM);
+    this._sideCos = SIDE_COS;
     this._streamI = 0;
     this._camX = 1e9; this._camZ = 1e9; this._camYaw = 1e9;
     this._dirty = true;
@@ -504,7 +535,7 @@ export class Vegetation {
         const dT = cxT * cxT + czT * czT;
         if (dT > (r + 12) * (r + 12)) continue;
         // behind the camera, beyond arm's length: skip the tile (a turn re-fills within a frame or two)
-        if (dT > 900 && cxT * fwdX + czT * fwdZ < -0.42 * Math.sqrt(dT)) continue;
+        if (dT > 900 && (fwdX || fwdZ) && cxT * fwdX + czT * fwdZ < this._sideCos * Math.sqrt(dT)) continue;
         const ti = tz * TILE_N + tx;
         let a = rec, i0 = start[ti], i1 = start[ti + 1];
         if (over) {
@@ -673,9 +704,10 @@ export class Vegetation {
       XZ[i * 2] = data[o]; XZ[i * 2 + 1] = data[o + 2];
       tone[i] = data[o + 8];
     }
-    const geo = wallGeo();
-    this._owned.geo.push(geo);
-    const mesh = new THREE.InstancedMesh(geo, this._rockMaterial('wall', 0.4, false, 4.1, 1.12), n);
+    const { full: geo, lod: geoLod } = wallGeos();
+    this._owned.geo.push(geo, geoLod);
+    const wallMat = this._rockMaterial('wall', 0.4, false, 4.1, 1.12);
+    const mesh = new THREE.InstancedMesh(geo, wallMat, n);
     mesh.name = 'pan-dykes';
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
@@ -690,15 +722,30 @@ export class Vegetation {
     mesh.onBeforeShadow = () => { const D = this._dyke; if (D.streamed) mesh.count = D.casters; };
     mesh.onAfterShadow = () => { mesh.count = this._dyke.count; };
     this.group.add(mesh);
-    this._dyke = { W, XZ, tone, skip: new Uint8Array(n), n, r: DYKE_R, rShadow: DYKE_SHADOW_R, streamed: true, count: 0, casters: 0 };
+    // the far runs: the same stones indexed, filled nearest band first (its casters are a prefix too)
+    const far = new THREE.InstancedMesh(geoLod, wallMat, n);
+    far.name = 'pan-dykes-far';
+    far.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    far.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
+    far.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    far.count = 0;
+    far.castShadow = true;
+    far.receiveShadow = true;
+    far.frustumCulled = false;
+    geoLod.boundingSphere = new THREE.Sphere(new THREE.Vector3(), WORLD_SIZE);
+    far.onBeforeShadow = () => { far.count = this._dyke.farCasters; };
+    far.onAfterShadow = () => { far.count = this._dyke.farCount; };
+    this.group.add(far);
+    this.dykesFar = far;
+    this._dyke = { W, XZ, tone, skip: new Uint8Array(n), n, r: DYKE_R, rShadow: DYKE_SHADOW_R, rNear: DYKE_NEAR, streamed: true, count: 0, casters: 0, farCount: 0, farCasters: 0 };
     return mesh;
   }
 
   /** Copy the runs near (cx, cz), not behind the camera, into the dyke draw. No allocation. */
   _fillDykes(cx, cz, fwdX = 0, fwdZ = 0) {
-    const D = this._dyke, mesh = this.dykes;
+    const D = this._dyke, mesh = this.dykes, far = this.dykesFar;
     if (!D || !mesh) return;
-    const M = mesh.instanceMatrix.array, Col = mesh.instanceColor.array, { W, XZ, tone, skip } = D;
+    const { W, XZ, tone, skip } = D;
     /* M1.1j fix round 1: from height the field walls outside the pan (no ground-shader strip there) vanished past
      * DYKE_R in plan (F32, 120 m up). The drawn radius grows with the lens's height over the ground (to +330 m);
      * the casters' band does not */
@@ -707,25 +754,35 @@ export class Vegetation {
     D.hAG = hAG;
     const rDraw = D.r + Math.min(330, Math.max(0, hAG - 8) * 2.8);
     const r2 = D.streamed ? rDraw * rDraw : Infinity, s2 = D.streamed ? D.rShadow * D.rShadow : Infinity;
-    let k = 0;
-    // two bands: the casters (within rShadow) first, so the shadow passes can draw a prefix of the buffer
-    for (let band = 0; band < 2; band++) {
+    /* M1a round 2: two meshes, each filled casters first so its shadow passes draw a prefix. Near (within rNear, and
+     * every run when not streamed): the faceted stones ('pan-dykes'). Past it the same stones indexed ('pan-dykes-far') */
+    const n2 = D.streamed ? D.rNear * D.rNear : Infinity;
+    const put = (m, k, i) => {
+      const M = m.instanceMatrix.array, Col = m.instanceColor.array;
+      for (let j = 0; j < 16; j++) M[k * 16 + j] = W[i * 16 + j];
+      const t = tone[i];
+      Col[k * 3] = t; Col[k * 3 + 1] = t; Col[k * 3 + 2] = t;
+    };
+    let kn = 0, kf = 0;
+    for (let band = 0; band < 4; band++) {
       for (let i = 0; i < D.n; i++) {
         if (skip[i]) continue;
         const dx = XZ[i * 2] - cx, dz = XZ[i * 2 + 1] - cz, dd = dx * dx + dz * dz;
-        if (dd > r2 || (band === 0) !== (dd <= s2)) continue;
-        if (D.streamed && dd > 900 && dx * fwdX + dz * fwdZ < -0.42 * Math.sqrt(dd)) continue;
-        for (let j = 0; j < 16; j++) M[k * 16 + j] = W[i * 16 + j];
-        const t = tone[i];
-        Col[k * 3] = t; Col[k * 3 + 1] = t; Col[k * 3 + 2] = t;
-        k++;
+        if (dd > r2) continue;
+        const b = (dd <= n2 ? 0 : 2) + (dd <= s2 ? 0 : 1);
+        if (b !== band) continue;
+        if (D.streamed && dd > 900 && (fwdX || fwdZ) && dx * fwdX + dz * fwdZ < this._sideCos * Math.sqrt(dd)) continue;
+        if (band < 2) put(mesh, kn++, i); else if (far) put(far, kf++, i);
       }
-      if (band === 0) D.casters = k;
+      if (band === 0) D.casters = kn;
+      if (band === 2) D.farCasters = kf;
     }
-    D.count = k;
-    mesh.count = k;
+    D.count = kn;
+    D.farCount = kf;
+    mesh.count = kn;
     mesh.instanceMatrix.needsUpdate = true;
     mesh.instanceColor.needsUpdate = true;
+    if (far) { far.count = kf; far.instanceMatrix.needsUpdate = true; far.instanceColor.needsUpdate = true; }
   }
 
   /**
@@ -738,14 +795,24 @@ export class Vegetation {
     const fwd = () => { const v = cam.getWorldDirection(this._v); return [v.x, v.z]; };
     const floraGeo = (indexed) => { for (const key of this._streamKeys) { const D = this._draws[key]; D.mesh.geometry = indexed ? D.geoIndexed : D.geoFlat; } };
     const dykes = (on) => { if (!this._dyke) return; this._dyke.streamed = on; const [fx, fz] = fwd(); this._fillDykes(cam.position.x, cam.position.z, fx, fz); };
+    const sideCull = (c) => {
+      this._sideCos = c;
+      const [fx, fz] = fwd(), x = cam.position.x, z = cam.position.z;
+      for (const key of this._streamKeys) this._fill(key, x, z, fx, fz);
+      this._fillDykes(x, z, fx, fz);
+    };
     /* M1a round 2: each static kind's whole draw (main view and cascades) and its casting alone; the streamed flora
      * kinds; and the meadow's own switches (island/meadow.js) */
     const vis = (m) => (on) => { if (m) m.visible = on; };
     const cast = (m) => (on) => { if (m) { m.castShadow = on; m.userData.__shadowBase = on; m.userData.__shadowCulled = false; } };
-    const kinds = [['rocks', this.rocks], ['columns', this.columns], ['dykes', this.dykes], ['rakes', this.rakes]];
+    const kinds = [['rocks', this.rocks], ['columns', this.columns], ['dykes', this.dykes], ['dykes-far', this.dykesFar], ['rakes', this.rakes]];
     const out = [
       { id: 'flora-indexed', on: () => floraGeo(true), off: () => floraGeo(false) },
       { id: 'dykes-streamed', on: () => dykes(true), off: () => dykes(false) },
+      // M1a round 2: off = round 1's side cull (115 deg), on = 84 deg (SIDE_COS)
+      { id: 'flora-side-cull', on: () => sideCull(SIDE_COS), off: () => sideCull(-0.42) },
+      // M1a round 2: off = every drawn run as the faceted stones (round 1), on = the far runs indexed (wallGeos)
+      { id: 'dykes-lod', on: () => { if (this._dyke) { this._dyke.rNear = DYKE_NEAR; dykes(true); } }, off: () => { if (this._dyke) { this._dyke.rNear = 1e5; dykes(true); } } },
     ];
     for (const [k, m] of kinds) {
       if (!m) continue;
