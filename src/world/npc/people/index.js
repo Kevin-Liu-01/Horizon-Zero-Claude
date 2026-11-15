@@ -130,6 +130,10 @@ export class PeopleSystem {
     this.group.add(p.group);
     this.list.push(p);
     this.order.push(p);
+    // (M1.5d fix round) a person stands in a clip from the moment they land: with no clip a spawned person held the bind pose until
+    // the first idle beat (8 s; the c8daf8a log caught Mise and Ansel, spawned by the quest's staging, in it for 33 samples).
+    // A caller that has its own clip (a stage script, the routines, a film actor) plays it over this one
+    if (!p.current) this._nextBeat(p);
     return p;
   }
 

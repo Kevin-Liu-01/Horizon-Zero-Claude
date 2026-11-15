@@ -340,6 +340,12 @@ async function lookoutTrials(C, R, env, getH, setH) {
   const kp = keeper().person.group.position;
   const m = M.spawn(kinds[0], kp.x + 130, kp.z, { route: [{ x: kp.x + 130, z: kp.z }], heading: 0 });
   if (!m) return { error: `${kinds[0]} did not spawn` };
+  // every live Instrument already near her (the film's world: at c8daf8a one stood 33-38 m from her the whole log, so she warned
+  // once at the start and the trials found her never armed): reported, and the trials' lookout sees only the trial's Instrument
+  const kp0 = keeper().person.group.position;
+  const resident = M.list.filter((o) => o !== m && o.alive !== false && !o._disposed && o.position).map((o) => ({ kind: o.kind, d: +Math.hypot(o.position.x - kp0.x, o.position.z - kp0.z).toFixed(1), state: o.state ?? null })).sort((a, b) => a.d - b.d).slice(0, 5);
+  const warnedBefore = LK.warnings.slice(0, 8);
+  const src0 = LK.source; LK.source = [m]; LK.armed = true; LK.inRangeAt = null;
   const evs = [];
   const ev = C.events, emit0 = ev?.emit;
   if (ev) ev.emit = function (name, o) { if (name === 'npc-warning' || name === 'npc-all-clear') evs.push({ name, t: simT, ...o }); return emit0?.apply(this, arguments); };
@@ -373,8 +379,9 @@ async function lookoutTrials(C, R, env, getH, setH) {
     }
   } finally {
     if (ev) ev.emit = emit0;
+    LK.source = src0;
     try { const L = M.list, i = L.indexOf(m); if (i >= 0) L.splice(i, 1); m.dispose?.(); m.root?.parent?.remove(m.root); } catch (e) { /* */ }
   }
   const d = rows.map((r) => r.delayS).filter((x) => x != null);
-  return { kind: kinds[0], trials: rows.length, fired: d.length, maxDelayS: d.length ? Math.max(...d) : null, bar: 3, rows, allClears: evs.filter((e) => e.name === 'npc-all-clear').length };
+  return { resident, warnedBefore, kind: kinds[0], trials: rows.length, fired: d.length, maxDelayS: d.length ? Math.max(...d) : null, bar: 3, rows, allClears: evs.filter((e) => e.name === 'npc-all-clear').length };
 }
