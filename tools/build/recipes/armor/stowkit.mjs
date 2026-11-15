@@ -22,7 +22,7 @@ import {
 } from '../lib/human/face.mjs';
 import { CHAINS, BODY_HEIGHT } from '../brea.mjs';
 import { panBase } from '../outfit-pan-1.mjs';
-import { G, LANCE, basisY, bowGeo, lanceGeo, lathe, merge, place, stringGeo } from './lib/weapongeo.mjs';
+import { G, LANCE, BOW_TIP, basisY, bowGeo, lanceGeo, lathe, merge, place, stave, stringGeo } from './lib/weapongeo.mjs';
 import { paintWeaponAtlas } from './lib/weaponatlas.mjs';
 import { preencodeEtc1s } from './lib/output.mjs';
 
@@ -130,9 +130,12 @@ function bracerGeo(cell, r = 0.036, len = 0.17, skinR = null) {
       shell.uv.push(rect[0] + f * rect[2], rect[1] + (k / SEG) * rect[3]);
     }
   }
+  // (M1a round 3, the 14-piece checklist: "the left bracer's brass cap is missing"): the cuff and its two brass bands were wound
+  // facing IN (the normal of (a, b, c) here is -radial), so with every GLB material front-sided (core/assets.js) the leather and the
+  // brass were culled from outside and only the crescent, wound the other way, showed on the forearm wrap. Wound facing out now
   for (let i = 0; i < ROWS; i++) for (let k = 0; k < SEG; k++) {
     const a = i * (SEG + 1) + k, b = a + 1, c = a + SEG + 1, d = c + 1;
-    shell.idx.push(a, b, c, b, d, c);
+    shell.idx.push(a, c, b, b, c, d);
   }
   merge(g, shell);
   // (M1.2d, Kevin's Nov 13 turnaround: brass-capped: a brass band round each end of the cuff, standing on the leather)
@@ -148,7 +151,7 @@ function bracerGeo(cell, r = 0.036, len = 0.17, skinR = null) {
         ring.uv.push(cell('brass')[0] + (k / SEGB) * cell('brass')[2], cell('brass')[1] + (dr > 0.002 ? 0.7 : 0.2) * cell('brass')[3]);
       }
     }
-    for (let i = 0; i < 3; i++) for (let k = 0; k < SEGB; k++) { const a = i * (SEGB + 1) + k, b = a + 1, c = a + SEGB + 1, d = c + 1; ring.idx.push(a, b, c, b, d, c); }
+    for (let i = 0; i < 3; i++) for (let k = 0; k < SEGB; k++) { const a = i * (SEGB + 1) + k, b = a + 1, c = a + SEGB + 1, d = c + 1; ring.idx.push(a, c, b, b, c, d); }
     merge(g, ring);
   }
   // laces across the open underside
@@ -374,26 +377,45 @@ export async function build({ out = ROOT } = {}) {
   };
   const bowPts = [];
   const bowZ = (x, y) => { let z = 9; for (const q of bowPts) if (Math.abs(q[0] - x) < 0.03 && Math.abs(q[1] - y) < 0.03 && q[2] < z) z = q[2]; return z; };
-  // ---- bow: the opposite diagonal BENEATH the lance, belly to her back, strung
+  // ---- bow: the opposite diagonal BENEATH the lance, strung, lying FLAT on her back
+  // (M1a round 3, the review at dee526d: "lance and bow cross in a 45 deg X with the bow over the lance", F10; BIBLE §5.2 "bow on the
+  // opposite diagonal beneath it"): the bow stood on edge, its back to her and its string 12-16 cm out behind her, so in F09 the string
+  // was the outermost line and in F10 it crossed OVER the lance. It lies flat on her back now, in the plane of her back: the string
+  // along the old diagonal (its tips where they were: the lower one at her right hip, the upper one over her left shoulder), the stave
+  // bowed 12 cm down and to her left of it (over the survey case, which lies inside the bow's curve), so from behind it reads as a
+  // bow, stave and string, under the steep lance, which is fitted over every part of it. Measured on the build: the outermost point
+  // of the back carry 0.30 m behind her (the lance's butt; it was the bow's string, 0.35 m), the lance 4-5 cm further out than it
+  // was (it now clears the bow's stave over the case), and the waist band of the lower limb, where the left hand takes the bow
+  // (carryStow.js reads it off this piece), 17 cm nearer her left side (x -0.18 -> -0.01)
   {
-    // low and flatter than the lance: only the limb's thin upper end reaches head height, so the
-    // chase camera (A-stow-clearance) and the wrap tail (A-tail-legible) have the head clear of the stave
     const ang = 36 * Math.PI / 180;
     const d = [Math.sin(ang), Math.cos(ang), 0];
-    const ctr = [-0.02, 1.24, 0];
+    // in the plane of her back, square to the diagonal: toward her left and down (the side the stave bows to)
+    const pIn = [Math.cos(ang), -Math.sin(ang), 0];
+    const line = [-0.02, 1.24, 0];                  // the string's middle (the old stave's centre)
+    const tipOff = -BOW_TIP.z;                      // the grip stands this far from the string, in the bow's plane
+    const ctr = v3.add(line, v3.mul(pIn, tipOff));
     const half = 1.45 / 2;
-    // the stave's centre line 1.6 cm beyond the room it needs (its belly and the string lie toward her)
+    // the room each part needs, at its own place in the plane: the stave's half-width now lies across her back's depth (2.6 cm at
+    // the widest limb), the string 6 mm
     const need = [];
-    for (let t = -0.85; t <= 0.851; t += 0.05) need.push([t, clearZ(ctr[0] + d[0] * half * t, ctr[1] + d[1] * half * t) - 0.016]);
+    for (let t = -0.85; t <= 0.851; t += 0.05) {
+      const sv = stave(t);
+      const along = sv[1], off = sv[2];            // off <= 0: toward the string
+      const ps = v3.add(ctr, v3.add(v3.mul(d, along), v3.mul(pIn, off)));
+      const pr = v3.add(line, v3.mul(d, along));
+      need.push([t, Math.min(clearZ(ps[0], ps[1]) - 0.026, clearZ(pr[0], pr[1]) - 0.006)]);
+    }
     const fit = fitLine(need, -1, 1);
     const c = [ctr[0], ctr[1], fit.a];
     const dir = v3.norm([d[0] * half, d[1] * half, fit.b]);
-    const [X, Y, Z] = basisY(dir, [0, 0, 1]);
+    const [X, Y, Z] = basisY(dir, pIn);            // the bow's local +Z (its back, away from the string) toward her left and down
     const g = merge(bowGeo(cell, { lod: 1 }), stringGeo(cell, { lod: 1, live: false }));
     const gb = place(g, X, Y, Z, c);
     pieces.push({ g: gb, joint: 'spine_02', bit: PIECE.bow });
     for (let i = 0; i < gb.pos.length; i += 3) bowPts.push([gb.pos[i], gb.pos[i + 1], gb.pos[i + 2]]);
-    stowInfo.bow = { centre: c, lowEnd: v3.sub(c, v3.mul(dir, half)), highEnd: v3.add(c, v3.mul(dir, half)), degFromVertical: 36, joint: 'spine_02' };
+    const tipAt = (t) => { const sv = stave(t); return v3.add(c, v3.add(v3.mul(Y, sv[1]), v3.mul(Z, sv[2]))); };
+    stowInfo.bow = { centre: c, lowEnd: tipAt(-1), highEnd: tipAt(1), degFromVertical: 36, flat: true, joint: 'spine_02' };
   }
   // ---- lance: 34° from vertical, the bob low at her left hip (+x), rising to her right; OVER the bow
   {

@@ -114,6 +114,16 @@ Object.assign(COL, {
   // the embroidery: a gold-ochre that stays gold over the violet at 2.5 m (the thread is drawn 2 texels wide or more, opaque)
   tick: hex('#D2A04E'),
 });
+// M1a round 3 (armory; the review at dee526d: "boots 10.1 dE from the sheet, L* 30.2 against 17.1"): the boots were never dark. The
+// round-2 reading of 2.0 (b7695e4) was its fixed box landing on a shaded strap in that frame's idle phase; every film since shows a
+// pale grey-taupe leather (L* 29-33 on the shaft). The leather is scaled per channel in linear light by sheet / frame on the
+// shaft (0.41, 0.35, 0.35), to the sheet's heavy dark brown
+Object.assign(COL, { bootLeather: hex('#3F2E2E') });
+// M1a round 3 (armory; the judges: "the panel reads pink-violet", and the ladder out of the sheet's order in F08: the head wrap
+// L* 31.1 over the panel's 30.5, where the sheet has the panel the brightest violet): the panel's albedo scaled per channel in
+// linear light by (sheet's panel, a shade brighter, hue -33) / F08's front panel at dee526d (109,51,103 -> 116,50,118): brighter
+// and bluer, so the panel stays the brightest violet on her and turns from pink toward the sheet's orchil
+Object.assign(COL, { panel: hex('#BB35D1') });
 
 /** The skeleton + grafted, cut pieces (shared by build() and panBindTriangles()). */
 async function assemble() {
@@ -1617,9 +1627,10 @@ export async function panBase(opt = {}) {
     }
     recomputeNormals(knee);
   }
-  // (M1a fix round 1, the judge: "the boots show straps but no laces"): laced boots, as the turnaround: a pale cord crossed up
+  // (M1a fix round 1, the judge: "the boots show straps but no laces"): laced boots, as the turnaround: a cord crossed up
   // the front of each boot from the instep up the shaft to 18 cm, five crossings, each eyelet pair 3.0-3.4 cm apart, the cord 3 mm
-  // round and standing 2 mm off the leather (the boots are the dark brown; the cord the rope's pale hemp reads on them at 2.5 m)
+  // round and standing 2 mm off the leather. (M1a round 3: a mid-brown leather thong, the pouch's leather, not the rope's pale
+  // hemp: on the dark boots the hemp crosses read as a pale lattice at 2.5 m and lifted the boots' swatch)
   const laces = mk('laces', { trim: true });
   {
     const bp = boots.pos, nB = bp.length / 3;
@@ -1644,12 +1655,12 @@ export async function panBase(opt = {}) {
         for (const [p0, p1] of [[a.l, b.r], [a.r, b.l]]) {
           // the cord lies ON the leather all the way across (sampled at five points, each 3 mm over the boot's front there)
           const pts = [0, 0.25, 0.5, 0.75, 1].map((t) => { const q = V.lerp(p0, p1, t); return [q[0], q[1], Math.max(q[2], frontAt(q[0], q[1]) + 0.003)]; });
-          tubeInto(laces, pts, 0.0015, { sides: 3, rect: trim.rect('rope'), skin: skinOf });
+          tubeInto(laces, pts, 0.0015, { sides: 3, rect: trim.rect('pouch'), skin: skinOf });
         }
       }
       // the bow at the top
       const top = rows[rows.length - 1];
-      if (top) for (const s2 of [-1, 1]) tubeInto(laces, [top.c, [top.c[0] + s2 * 0.014, top.y + 0.004, top.c[2] + 0.004], [top.c[0] + s2 * 0.006, top.y - 0.012, top.c[2] + 0.003]], 0.0015, { sides: 3, rect: trim.rect('rope'), skin: skinOf });
+      if (top) for (const s2 of [-1, 1]) tubeInto(laces, [top.c, [top.c[0] + s2 * 0.014, top.y + 0.004, top.c[2] + 0.004], [top.c[0] + s2 * 0.006, top.y - 0.012, top.c[2] + 0.003]], 0.0015, { sides: 3, rect: trim.rect('pouch'), skin: skinOf });
     }
     recomputeNormals(laces);
   }
@@ -1838,7 +1849,10 @@ export function panFinish(base, parts) {
     // (M1a round 2, the judges: F24's "see-through hole in the vest at the back" and F12/F13's backdrop in the armhole: with the
     // draw arm up and back the hole opens over her ribs, and the ribs' skin, culled as covered in the bind pose, left the world
     // showing through her. The side of the ribcage round and under each armhole keeps its skin now; the top lies over it)
-    keep: (x, y, z) => y > 1.525 || y < 0.43 || (Math.abs(x) > 0.085 && Math.abs(x) < 0.215 && y > 1.375 && y < 1.53 && z > -0.085 && z < 0.045)
+    // (M1a round 3: but not the feet. Below 15 cm her foot's skin came through the decimated boot (2.5 mm error) at the toe, the
+    // heel and the outer ankle: the salmon blotches on both boots in every F08-F10 since round 1. The boot's foot is closed; the
+    // slits were in the shaft, which keeps the skin under it)
+    keep: (x, y, z) => y > 1.525 || (y < 0.43 && y > 0.15) || (Math.abs(x) > 0.085 && Math.abs(x) < 0.215 && y > 1.375 && y < 1.53 && z > -0.085 && z < 0.045)
       || (Math.abs(x) > 0.1 && Math.abs(x) < 0.2 && y > 1.22 && y <= 1.375 && z > -0.11 && z < 0.06) });
 }
 

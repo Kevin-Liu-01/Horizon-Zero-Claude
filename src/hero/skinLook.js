@@ -3,7 +3,7 @@
  * (character-art, W1 exit, by grant on src/hero/**).
  *
  *   applySkinLook(material, { tier }) -> material      (idempotent; marks material.userData.calSkin = 1)
- *   skinLookUniforms(material) -> { calSkinK, calThinK, calWrap, calEdgeKeep, calLobeK, calDetailK, calSkyK, calWinK, calFlat,
+ *   skinLookUniforms(material) -> { calSkinK, calThinK, calNormFixK, calWrap, calEdgeKeep, calLobeK, calDetailK, calSkyK, calWinK, calFlat,
  *                                   calPreK, calCurvK, calCurvMin, calLobeW } | null
  *                                  (shared uniform objects; gates switch terms off with them)
  *   applyClothLook(material, { rim, velvet }) -> material   (C-04 for cloth, hair, leather)
@@ -251,9 +251,34 @@ const NORMAL_FRAGMENT = `
 	}
 	#endif`;
 const PARS_FRAGMENT_EARLY = `
+uniform float calNormFixK;
 uniform float calDetailK;
 uniform sampler2D calMicro;
 uniform vec4 calFlat;`;
+/*
+ * M1a round 3 (the pale bulb over the draw shoulder in F17 and F24): at full draw her right elbow is folded to about 150 deg and
+ * its skin is weighted 0.3-0.7 between the upper arm and the forearm. Linear blend skinning blends the two bones' turns of each
+ * vertex normal, and there the two turned normals all but cancel (the blend's length falls to 0.17-0.6 of a unit): normalised,
+ * what is left points anywhere. Measured on that frame (tools/build/recipes/lib/human/arm-probe-page.mjs, f6c2231): over the elbow
+ * the interpolated normal stood 35 deg off its triangle's own normal (median; 61-66 of 155 rays over 45, up to 105), and turned a
+ * surface facing away from the sun (the triangle's N.L -0.65) to face it (N.L up to +0.79): lit by the sun, its rim and the
+ * scatter, the elbow read as a pale bulb on the shadow side of her arm. Not the rim (b53ef67), not the outfit, not the emissive
+ * fill (the probe switched each off on the same frame). So where the shading normal and the triangle's own normal disagree past
+ * about 37 deg, the shading normal turns to the triangle's (fully by 70 deg); a skin whose normals are sound (every other frame,
+ * the elbow in F08 at 16 deg) is untouched. The tangent frame's normal follows, so the normal map and the pores sit on it.
+ */
+const NORMFIX_FRAGMENT = `
+	if ( calNormFixK > 0.0 ) {
+		vec3 calFaceN = normalize( cross( dFdx( vViewPosition ), dFdy( vViewPosition ) ) );
+		float calFix = calNormFixK * ( 1.0 - smoothstep( 0.35, 0.8, dot( normal, calFaceN ) ) );
+		if ( calFix > 0.0 ) {
+			normal = normalize( mix( normal, calFaceN, calFix ) );
+			nonPerturbedNormal = normal;
+			#if defined( USE_NORMALMAP_TANGENTSPACE ) || defined( USE_CLEARCOAT_NORMALMAP ) || defined( USE_ANISOTROPY )
+			tbn[ 2 ] = normal;
+			#endif
+		}
+	}`;
 // M0.11: the curvature for the pre-integrated row, in 1/mm, off the interpolated normal before any map (view space, metres)
 const CURV_FRAGMENT = `
 	calCurv = clamp( length( fwidth( normal ) ) / max( length( fwidth( vViewPosition ) ), 1e-6 ) * 0.001, 0.0, 0.5 );`;
@@ -288,7 +313,7 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
   if (!material || material.userData.calSkin === 1) return material;
   const low = tier === 'low', medium = tier === 'medium';
   const U = {
-    calSkinK: { value: 1 }, calThinK: { value: low ? 0 : 1 },
+    calSkinK: { value: 1 }, calThinK: { value: low ? 0 : 1 }, calNormFixK: { value: 1 },
     calWrap: { value: new Vector3(0.40, 0.21, 0.14) }, calEdgeKeep: { value: 0.6 },
     calLobeK: { value: low ? 0 : 1 }, calDetailK: { value: low || medium ? 0 : 1.8 }, calSkyK: { value: 3.0 }, calWinK: { value: 30 },
     calFlat: { value: new Vector4(0.2, 0.2, 0.2, 0) }, calMicro: { value: microTile() },
@@ -309,13 +334,13 @@ export function applySkinLook(material, { tier = 'high' } = {}) {
       .replace('#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>${PARS_FRAGMENT}`)
       .replace('#include <map_fragment>', `#include <map_fragment>${MAP_FRAGMENT}`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>${ROUGH_FRAGMENT}`)
-      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>${CURV_FRAGMENT}`)
+      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>${NORMFIX_FRAGMENT}${CURV_FRAGMENT}`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>${NORMAL_FRAGMENT}`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n\ttotalEmissiveRadiance = mix( totalEmissiveRadiance, emissive * calFlat.rgb, calFlat.a * ( 1.0 - vCalZone.w ) );\n\ttotalEmissiveRadiance = mix( totalEmissiveRadiance, vec3( dot( totalEmissiveRadiance, vec3( 0.3333 ) ) ) * 0.6, vCalZone.w * calPreK );`)
       .replace('#include <lights_fragment_begin>', `${AO_EARLY}\n#include <lights_fragment_begin>`)
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>${SKY_FRAGMENT}`);
   };
-  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calSkin5${low ? 'l' : ''}`;
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|calSkin6${low ? 'l' : ''}`;
   material.userData.calSkin = 1;
   material.userData.calSkinU = U;
   // R59 c / LOOK C-01: the hero fill drops once the scatter carries the shadow side (x0.55; fix round 3, was x0.6: off the live sweep, D-skin-sweep, and three readings a run)

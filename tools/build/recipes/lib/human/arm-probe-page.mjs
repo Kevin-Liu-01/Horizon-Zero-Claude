@@ -13,8 +13,8 @@
  *            bones that weigh on the hit triangles
  *   looks:   the mean 8-bit colour in a 24 px box on that elbow with her skin terms switched off one at a time (the same frozen
  *            frame, re-rendered), and a 140 px crop of each (`crops`, base64 RGBA, bottom-up rows) for the eye
- *   bracer:  (F08, F09) the left forearm: per (along, around) bin the stow kit's bracer radius and the outfit's largest
- *            radius off the lowerarm_l -> hand_l axis, both skinned as drawn; the bins where the outfit stands over the bracer
+ *   bracer:  (F08, F09) the left forearm: per (along, around) bin the stow kit's bracer radius and the outfit's forearm wrap's
+ *            largest radius off the lowerarm_l -> hand_l axis, both skinned as drawn; the bins where the wrap stands over the bracer
  * }
  * Reads only: window.__CTX__ and the app's own modules. Changes nothing it does not restore before it returns.
  */
@@ -121,6 +121,7 @@ export async function probe(frame) {
     const variants = [
       ['base', null, null],
       ['emissive 0', () => { const k = mat.emissiveIntensity; mat.emissiveIntensity = 0; return () => { mat.emissiveIntensity = k; }; }],
+      ['calNormFixK 0 (the skinned normal as blended)', () => { if (!U.calNormFixK) return () => {}; const k = U.calNormFixK.value; U.calNormFixK.value = 0; return () => { U.calNormFixK.value = k; }; }],
       ['calSkinK 0 (stock lambert, no rim)', () => { const k = U.calSkinK.value; U.calSkinK.value = 0; return () => { U.calSkinK.value = k; }; }],
       ['calPreK 0 (wrap, no pre-integration)', () => { const k = U.calPreK.value; U.calPreK.value = 0; return () => { U.calPreK.value = k; }; }],
       ['calLobeK 0', () => { if (!U.calLobeK) return () => {}; const k = U.calLobeK.value; U.calLobeK.value = 0; return () => { U.calLobeK.value = k; }; }],
@@ -169,7 +170,11 @@ export async function probe(frame) {
       };
       const PC = kit?.geometry.getAttribute('_piece');
       const kb = kit && PC ? bin(kit, (i) => (Math.round(PC.getX(i)) & 8) !== 0) : new Map();
-      const ob = fit ? bin(fit) : new Map();
+      // the outfit's forearm wrap only: vertices weighted >= 0.6 to the left forearm and hand (not the panels and belts the hanging
+      // hand lies beside)
+      const fsi = fit?.geometry.getAttribute('skinIndex'), fsw = fit?.geometry.getAttribute('skinWeight'), fb = fit?.skeleton.bones;
+      const onArm = (i) => { let w = 0; for (let k = 0; k < 4; k++) if (/^(lowerarm|hand|.*_l_?twist|lowerarm_twist).*l$|^(lowerarm_l|hand_l)$/.test(fb[fsi.getComponent(i, k)]?.name || '')) w += fsw.getComponent(i, k); return w >= 0.6; };
+      const ob = fit ? bin(fit, onArm) : new Map();
       const rows = [];
       for (const [k, e] of kb) { const o = ob.get(k); rows.push({ bin: k, bracer: [r3(e.min * 1000), r3(e.max * 1000)], outfitMax: o ? r3(o.max * 1000) : null, over: o ? r3((o.max - e.max) * 1000) : null }); }
       rows.sort((p1, p2) => (p2.over ?? -99) - (p1.over ?? -99));
