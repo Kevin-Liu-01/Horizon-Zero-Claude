@@ -317,6 +317,7 @@ function patchShaderChunks() {
   uniform vec3 calCloudSeaCol;
   uniform vec3 calSunDir;
   uniform vec3 calCamPos;
+  uniform float calSpecCap;
   // scale (1/m), coverage, strength, softness
   uniform vec4 calCloudA;
   uniform vec2 calCloudDrift;
@@ -499,6 +500,9 @@ const _oetf = (x) => (x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) 
 const _sat = (x) => Math.min(1, Math.max(0, x));
 const _m3 = [0, 0, 0];
 const det = (a0, a1, a2, b0, b1, b2, c0, c1, c2) => a0 * (b1 * c2 - b2 * c1) - a1 * (b0 * c2 - b2 * c0) + a2 * (b0 * c1 - b1 * c0);
+/** M1.1f fix 1: the display L* the sea's sun specular is held under (calSpecCap; 93 ~ sRGB 232 on a neutral). */
+const SPEC_CAP_LSTAR = 93;
+
 /** CPU mirror of engine.js's OutputGradeShader (ACES at exposure, sRGB, contrast, lift,
  *  saturation, split tone; no vignette). `out` gets display sRGB 0..1. No allocation. */
 function displayOf(lin, exposure, G, out) {
@@ -643,6 +647,12 @@ export class Environment {
       calSunCol: { value: new THREE.Color() },
       /** the sun disc's HDR radiance (sunCol × 40 × visibility), for sea glitter (W-09) */
       calSunRad: { value: new THREE.Color() },
+      /**
+       * M1.1f fix 1: the scene-linear level (before exposure) that shows at display L* SPEC_CAP_LSTAR through the look
+       * in force (look.hdrForLstar). The sea's sun specular is knee-compressed under it (water.js), so a glitter path's
+       * core stays below the display's clip (F05: its clipped column joined the sun's blob and reached 5.75 deg)
+       */
+      calSpecCap: { value: 8.0 },
     };
     this.uniforms = this.u;
 
@@ -1462,6 +1472,12 @@ export class Environment {
     // the sun disc's HDR radiance, published for the sea's glitter path (W-09)
     const vis = (1 - k.night) * smooth(-0.02, 0.04, this.sunDir.y) * (1 - w.cloud * 0.5) * (1 - cal);
     this.u.calSunRad.value.copy(k.sunC).multiplyScalar(40 * vis);
+    // the sea's specular ceiling, re-solved only when the look's solve version moves (exposure, sets, mix)
+    const LK = this.ctx.engine?.look;
+    if (LK && typeof LK.hdrForLstar === 'function' && LK.solveVersion !== this._specCapV) {
+      this._specCapV = LK.solveVersion;
+      this.u.calSpecCap.value = LK.hdrForLstar(SPEC_CAP_LSTAR);
+    }
 
     /* ---- motes (P-09) ---- */
     const mu = this._moteMat.uniforms;

@@ -243,6 +243,13 @@ const SEA_MIRROR = /* glsl */ `
 #include <aomap_fragment>
 #ifdef USE_FOG
 {
+  // sky-look M1.1f fix 1: the sun's specular knee-compressed under calSpecCap (environment.js: the HDR level that
+  // shows at display L* 93), so the glitter path's core never clips and never joins the sun's clipped blob
+  {
+    vec3 ds = reflectedLight.directSpecular;
+    float m = max(ds.r, max(ds.g, ds.b)), K = calSpecCap * 0.55;
+    if (m > K) reflectedLight.directSpecular = ds * ((K + (m - K) / (1.0 + (m - K) / (calSpecCap - K))) / m);
+  }
   vec3 V = normalize(cameraPosition - vWPos);
   vec3 W = normalize(vec3(0.0, 1.0, 0.0) + wN);
   vec3 R = reflect(-V, W);
