@@ -105,6 +105,10 @@ const RESET_HERO = async () => {
       m.active = false; m.phase = 'idle'; m.heavy = false; m.combo = 0; m._comboT = 0;
       m._charging = false; m._chargeHold = false; m._chargeT = 0; m._buffered = false; m._lmbWas = false; m._keyWas = false;
       m._queued = null; m.aimLock = null; m.undercutTarget = null; m._undercutM = null; m._lmbBow = false;
+      /* (M1a r3 fix: the holster is asked for again AFTER the swing is cleared: holsterLance returns while a swing is
+       *  active, so asked before it, a lance left in the guard by A105 stayed in her hand: A32 at e3d549b started
+       *  with stance 'ready', the lance in hand) */
+      if (m.stance !== 'holstered' && m.stance !== 'holster') m.holsterLance?.(true);
     }
   } catch { /* */ }
   try { p.velocity?.set?.(0, 0, 0); } catch { /* */ }
@@ -117,6 +121,7 @@ const RESET_HERO = async () => {
     const o = out();
     if (!o.bow && !o.lance && !o.aiming && !o.crouching) break;
     if (cmb) cmb._holsterT = 0;
+    try { const m = cmb?.melee; if (m && !m.active && m.stance !== 'holstered' && m.stance !== 'holster') m.holsterLance?.(true); } catch { /* */ }
     // (M1a r3 fix: a frame, or 50 ms if the page draws none: this wait can never hang the session)
     await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); });
   }
