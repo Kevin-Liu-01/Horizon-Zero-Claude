@@ -240,6 +240,21 @@ try {
         log(`F02 ${key}: all ${w.eventsPerMille}, mid 12-30 m ${w.bands['mid12-30m'].eventsPerMille}, near ${w.bands['near<12m'].eventsPerMille}, far ${w.bands['far>30m'].eventsPerMille} per mille`);
       }
     }
+    // 6. M1a fix round (FIX LIST 3): the clip itself at the shipped stabiliser, every 4th frame of the walk and the sprint saved
+    if (has('--clip')) {
+      for (const [name, speed, fov] of [['walk', 1, null], ['sprint', 6.8, 60]]) {
+        const r = await page.evaluate(async (speed, fov, bearing) => {
+          const M = await import('/tools/perf/meadow-page.mjs'); const C = window.__CTX__, E = C.engine;
+          const shots = [];
+          const m = await M.walk(E, C, { speed, fov, frames: 60, bearing, save: true, onFrame: (k, u) => { if (k % 4 === 0) shots.push(u); } });
+          return { m, shots, stab: C.vegetation.meadow._u.uStab.value.toArray() };
+        }, speed, fov, f.bearing);
+        R.clip = R.clip || {};
+        R.clip[name] = { ...r.m, stab: r.stab, frames: r.shots.length };
+        for (let i = 0; i < r.shots.length; i++) writeFileSync(path.join(OUT, `clip-${name}-${String(i * 4).padStart(2, '0')}.jpg`), Buffer.from(r.shots[i].split(',')[1], 'base64'));
+        log(`F02 clip ${name} (stab ${r.stab}): ${r.m.eventsPerMille} per mille, mid ${r.m.bands['mid12-30m'].eventsPerMille}, ${r.shots.length} frames saved`);
+      }
+    }
     await page.evaluate(unstageFrame);
   }
 
@@ -285,6 +300,28 @@ try {
       list.push({ id: 'black-sand', x: -200, z: 420 });
       list.push({ id: 'basalt-shelf', x: GP.rockShelf?.x ?? -170, z: GP.rockShelf?.z ?? 352 });
       list.push({ id: 'meadow-ground', x: -246, z: 257 });
+      /* M1a fix round (the judge's FIX LIST 4 and 5): the two failing squares straddled the field's walls and the meadow's edge,
+       * whose straight lines correlate along their own length. Re-sited: the crust in situ centred on the F14-F19 white cell
+       * (24 x 11 m, so the square still crosses its dykes), the crust as a material (CAL_CAPTURE_LAYER 1: a dry white cell's
+       * crust over the whole square), and the meadow ground at the first square found wholly inside the meadow (density
+       * >= 0.9 at every 4 m sample over 44 m, no pan cell) */
+      list.push({ id: 'salt-cell', x: -316.9, z: 264.9 });
+      list.push({ id: 'salt-layer', x: -316.9, z: 264.9, layer: 1 });
+      const MD = C.vegetation.meadow;
+      let found = null;
+      const near = [[-168, 178], [-168, 208], [-200, 190], [-228, 338], [-246, 300], [-150, 160], [-190, 230], [-260, 230]];
+      for (const [cx0, cz0] of near) {
+        for (let r = 0; r <= 40 && !found; r += 8) for (let a = 0; a < 8 && !found; a++) {
+          const cx = cx0 + r * Math.cos(a * Math.PI / 4), cz = cz0 + r * Math.sin(a * Math.PI / 4);
+          let ok = true;
+          for (let j = -22; j <= 22 && ok; j += 4) for (let i = -22; i <= 22 && ok; i += 4) {
+            if (!(MD.densityAt(cx + i, cz + j) >= 0.9)) ok = false;
+          }
+          if (ok) found = { x: Math.round(cx), z: Math.round(cz) };
+        }
+        if (found) break;
+      }
+      if (found) list.push({ id: 'meadow-interior', ...found });
       // the materials alone (CAL_CAPTURE_LAYER): the black sand and the basalt as layers, at the black-sand site
       list.push({ id: 'sand-layer', x: -200, z: 420, layer: 0 });
       list.push({ id: 'basalt-layer', x: -200, z: 420, layer: 2 });
@@ -303,6 +340,114 @@ try {
       run.topdown.push({ id: s.id, x: s.x, z: s.z, span: r.span, px: r.px, ...ac });
       log(`topdown ${s.id}: autocorrelation peak ${ac.peak} at ${JSON.stringify(ac.atM)} m`);
     }
+    await page.evaluate(unstageFrame);
+  }
+  /* M1a fix round: F05's silhouette layers (tools/perf/rock-page.mjs layers, the frozen rule), the Organ's foot (FIX LIST 8) */
+  if (has('--layers') && spent() < BUDGET_S) {
+    await stage('F05');
+    const L = await page.evaluate(async () => { const M = await import('/tools/perf/rock-page.mjs'); const C = window.__CTX__; const r = await M.layers(C.engine, C); delete r.map; return r; });
+    run.F05layers = L;
+    log(`F05 layers ${L.layers}, gaps ${L.gaps.map((g) => g.dL).join(' / ')}, pass ${L.pass}`);
+    await page.evaluate(unstageFrame);
+    const looks = await page.evaluate(() => {
+      const C = window.__CTX__, T = C.terrain, O = C.props.organ;
+      const tall = O.clusterRecs.reduce((a, c) => (c.height > a.height ? c : a));
+      const g = (x, z) => T.getHeight(x, z);
+      return [
+        { name: 'organ-foot', pos: [tall.x + 13, g(tall.x + 13, tall.z + 9) + 1.2, tall.z + 9], target: [tall.x, g(tall.x, tall.z) + 1.0, tall.z] },
+        { name: 'organ-foot-b', pos: [tall.x - 12, g(tall.x - 12, tall.z + 11) + 1.2, tall.z + 11], target: [tall.x, g(tall.x, tall.z) + 1.0, tall.z] },
+      ];
+    });
+    for (const l of looks) {
+      const c = await page.evaluate(async (l) => { const M = await import('/tools/perf/rock-page.mjs'); const C = window.__CTX__; return M.look(C.engine, C, l.pos, l.target, 50); }, l);
+      await sharp(Buffer.from(c.b64, 'base64'), { raw: { width: c.w, height: c.h, channels: 3 } }).jpeg({ quality: 88 }).toFile(path.join(OUT, `look-${l.name}.jpg`));
+    }
+  }
+
+  /* M1a fix round (FIX LIST 7, M1.1e "F04 against the swatches at 1 m and at 100 m"): each material at noon (F04's hour and
+   * weather), from 1 m (lens 0.8 m up, 0.6 m back, fov 50) and from 100 m (eye 1.7 m, fov 10, the first of eight bearings
+   * whose sight line clears the ground by 0.3 m), Brea hidden. Lab of the middle 40 % is read in Node */
+  if (has('--swatches') && spent() < BUDGET_S) {
+    const f04 = set.frames.find((x) => x.id === 'F04');
+    await page.evaluate(stageFrame, f04, { settleMs: 1500 });
+    current = 'swatches';
+    const sites = await page.evaluate(async () => {
+      const R = await import('/src/world/island/recipe.js');
+      const C = window.__CTX__, GP = C.props?.gatePlaces || {};
+      const out = [
+        { id: 'salt-crust', x: -316.9, z: 264.9 },
+        { id: 'black-sand', x: -200, z: 420 },
+        { id: 'basalt', x: GP.rockShelf?.x ?? -170, z: GP.rockShelf?.z ?? 352 },
+        { id: 'glass', x: R.GLASS.e, z: -R.GLASS.n },
+      ];
+      // a brine cell: the deepest-inside BRINE cell near the field's middle
+      let best = null;
+      try {
+        for (let n = -330; n <= -230; n += 3) for (let e = -380; e <= -250; e += 3) {
+          const P = R.panAt(e, n);
+          if (P.kind === R.PAN.BRINE && P.edge > 3 && (!best || P.edge > best.edge)) best = { e, n, edge: P.edge };
+        }
+      } catch (err) { /* */ }
+      if (best) out.push({ id: 'brine-cell', x: best.e, z: -best.n });
+      return out;
+    });
+    run.swatches = [];
+    for (const s0 of sites) {
+      for (const dist of [1, 100]) {
+        const v = await page.evaluate((s0, dist) => {
+          const C = window.__CTX__, T = C.terrain, gy = (x, z) => T.getHeight(x, z);
+          const ty = Math.max(gy(s0.x, s0.z), s0.id === 'glass' ? 0.16 : -1e9);
+          if (dist === 1) return { pos: [s0.x - 0.6, ty + 0.8, s0.z + 0.0], target: [s0.x, ty, s0.z], fov: 50 };
+          for (let b = 0; b < 8; b++) {
+            const a = b * Math.PI / 4, ex = s0.x + 100 * Math.cos(a), ez = s0.z + 100 * Math.sin(a), ey = gy(ex, ez) + 1.7;
+            let ok = ey > ty;
+            for (let k = 1; k < 40 && ok; k++) { const t = k / 40, x = ex + (s0.x - ex) * t, z = ez + (s0.z - ez) * t; if (gy(x, z) > ey + (ty - ey) * t - 0.3 && t < 0.97) ok = false; }
+            if (ok) return { pos: [ex, ey, ez], target: [s0.x, ty, s0.z], fov: 10, bearingDeg: b * 45 };
+          }
+          return null;
+        }, s0, dist);
+        if (!v) { run.swatches.push({ id: s0.id, dist, error: 'no clear sight line' }); continue; }
+        const c = await page.evaluate(async (v) => { const M = await import('/tools/perf/rock-page.mjs'); const C = window.__CTX__; return M.look(C.engine, C, v.pos, v.target, v.fov); }, v);
+        const file = `swatch-${s0.id}-${dist}m.jpg`;
+        const raw = Buffer.from(c.b64, 'base64');
+        await sharp(raw, { raw: { width: c.w, height: c.h, channels: 3 } }).jpeg({ quality: 90 }).toFile(path.join(OUT, file));
+        // Lab (D65) of the middle 40 %
+        const x0 = Math.round(c.w * 0.3), x1 = Math.round(c.w * 0.7), y0 = Math.round(c.h * 0.3), y1 = Math.round(c.h * 0.7);
+        const lin = (u) => { u /= 255; return u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4); };
+        let X = 0, Y = 0, Z = 0, n = 0;
+        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+          const o = (y * c.w + x) * 3, r = lin(raw[o]), g = lin(raw[o + 1]), b = lin(raw[o + 2]);
+          X += 0.4124 * r + 0.3576 * g + 0.1805 * b; Y += 0.2126 * r + 0.7152 * g + 0.0722 * b; Z += 0.0193 * r + 0.1192 * g + 0.9505 * b; n++;
+        }
+        const fz = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+        const fx = fz(X / n / 0.95047), fy = fz(Y / n), fzz = fz(Z / n / 1.08883);
+        const lab = [+(116 * fy - 16).toFixed(1), +(500 * (fx - fy)).toFixed(1), +(200 * (fy - fzz)).toFixed(1)];
+        run.swatches.push({ id: s0.id, dist, file, x: s0.x, z: s0.z, lens: v, labMid40: lab });
+        log(`swatch ${s0.id} at ${dist} m: Lab ${lab.join(' ')}`);
+      }
+    }
+    await page.evaluate(unstageFrame);
+  }
+
+  /* M1a fix round (FIX LIST 11): F32's frame bar, the p95 presented-frame interval over 30 s (rAF spacing, the game loop
+   * running on the staged frame), the median GPU (back-to-back readback), draws and triangles */
+  if (has('--f32') && spent() < BUDGET_S) {
+    await stage('F32', 3000);
+    await shot('F32.png');
+    const r = await page.evaluate(async () => {
+      const P = await import('/tools/perf/census-page.mjs'); const A = await import('/tools/perf/attrib-page.mjs');
+      const C = window.__CTX__, E = C.engine;
+      const ts = [];
+      const t0 = performance.now();
+      await new Promise((res) => { const tick = (t) => { ts.push(t); if (t - t0 < 30000) requestAnimationFrame(tick); else res(); }; requestAnimationFrame(tick); });
+      const d = []; for (let i = 1; i < ts.length; i++) d.push(ts[i] - ts[i - 1]);
+      const s = d.slice().sort((a, b) => a - b), q = (p) => +s[Math.min(s.length - 1, Math.floor(p * s.length))].toFixed(2);
+      const cen = P.census(E, C.scene);
+      const gpu = await A.finishFrame(E, 60);
+      return { intervals: d.length, seconds: +((ts[ts.length - 1] - ts[0]) / 1000).toFixed(1), p50: q(0.5), p95: q(0.95), p99: q(0.99), max: +s[s.length - 1].toFixed(2), over16_7: d.filter((x) => x > 16.7).length, census: cen.all, gpu };
+    });
+    run.F32 = r;
+    log(`F32: p95 interval ${r.p95} ms (p50 ${r.p50}, ${r.intervals} frames in ${r.seconds} s), GPU median ${r.gpu.medianMs} ms, draws ${r.census.draws}, tris ${r.census.tris}`);
     await page.evaluate(unstageFrame);
   }
 } catch (e) {

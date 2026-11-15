@@ -984,7 +984,7 @@ export class Terrain {
     const T = [['ground-pebbles', 'CAL_P_NOPEB'], ['ground-crust-detail', 'CAL_P_NOCRUST'], ['ground-pits', 'CAL_P_NOPITS'],
       ['ground-salt-2nd', 'CAL_P_NOSALT2'], ['ground-layer-2nd', 'CAL_P_NOL2'], ['ground-pan-cubic', 'CAL_P_NOCUBIC'],
       ['ground-field-range', 'CAL_P_NOFIELD'], ['ground-meadow-tone', 'CAL_P_NOMTONE'], ['ground-rills', 'CAL_P_NORILL'],
-      ['ground-colour-stage', 'CAL_P_FLAT'], ['ground-r2-lod', 'CAL_P_R1LOD']];
+      ['ground-colour-stage', 'CAL_P_FLAT'], ['ground-r2-lod', 'CAL_P_R1LOD'], ['ground-grain', 'CAL_P_NOGRAIN']];
     return T.map(([id, k]) => ({ id, on: () => def(k, true), off: () => def(k, false) }));
   }
 

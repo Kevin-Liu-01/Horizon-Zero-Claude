@@ -212,6 +212,13 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   float inK = smoothstep(0.38, 0.62, pan.a);
   float crust = pan.a > 0.004 ? clamp(pan.r / pan.a, 0.0, 1.0) * inK : 0.0;
   float brine = pan.a > 0.004 ? clamp(pan.g / pan.a, 0.0, 1.0) * inK : 0.0;
+  #ifdef CAL_CAPTURE_LAYER
+  #if CAL_CAPTURE_LAYER == 1
+  /* the M1.1e salt-crust material capture: the crust as it is inside a dry white cell, everywhere in the square (no dyke,
+   * cell edge or brine), so a 40 m top-down reads the crust's own repeat, not the field's walls */
+  inK = 1.0; crust = 1.0; brine = 0.0; pan = vec4(1.0, 0.0, 0.0, 1.0);
+  #endif
+  #endif
   float fineN = 0.0;
   if (pan.a > 0.01) {
     /* the crust's fine grain: wet patches, sand blown in, drag marks at 1-3 m. Baked at
@@ -298,6 +305,11 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     if (w[i] < 0.012) continue;
     float sc = gScale(i);
     vec2 uv = (i == 0 || i == 2 ? xz + sWarp : xz) * sc, gx = dpx * sc, gy = dpy * sc;
+    /* M1a fix round (F04's crust ridges in stair steps at 2-3 m): magnified past 1.7 px a texel, the salt normals' steep
+     * plate ridges showed their texels and compression blocks under the sun's highlight. Where a texel is magnified the
+     * normal reads take mip 1 (the gradient raised to two texels a pixel), so a ridge is a smooth fold; the albedo keeps mip 0 */
+    vec2 gxN = gx, gyN = gy;
+    if (i == 1) { float kM = max(1.0, 2.0 / max(max(length(gx), length(gy)) * 1024.0, 1e-3)); gxN *= kM; gyN *= kM; }
     vec4 a, nn;
     if (i == 2 && slopeT > 0.0) {
       /* triplanar: basalt on real slopes only */
@@ -317,7 +329,7 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
       vec2 uv0 = i == 1 ? uv + offA : uv;
       a = gA(i, uv0, gx, gy);
       nn = vec4(0.5, 0.5, i == 0 ? 0.877 : i == 1 ? 0.686 : i == 2 ? 0.801 : i == 3 ? 0.539 : 0.631, 0.905);
-      if (farN < 1.0) nn = mix(gNm(i, uv0, gx, gy), nn, farN);
+      if (farN < 1.0) nn = mix(gNm(i, uv0, gxN, gyN), nn, farN);
       #ifndef CAL_P_NOSALT2
       if (i == 1 && dCam < G_SEC1) {
         #ifdef G_R1
@@ -332,7 +344,7 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
         vec2 uvR = Mr * uv * 0.61 + offB, gxR = Mr * gx * 0.61, gyR = Mr * gy * 0.61;
         a = mix(a, gA(1, uvR, gxR, gyR), kS2);
         if (farN < 1.0) {
-          vec4 n2 = gNm(1, uvR, gxR, gyR);
+          vec4 n2 = gNm(1, uvR, Mr * gxN * 0.61, Mr * gyN * 0.61);
           n2.xy = (vec2(dot(n2.xy * 2.0 - 1.0, Mr[0]), dot(n2.xy * 2.0 - 1.0, Mr[1]))) * 0.5 + 0.5;
           nn = mix(nn, mix(n2, vec4(0.5, 0.5, 0.686, 0.905), farN), kS2);
         }
@@ -383,10 +395,14 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
      * texture's graphite (mean about sRGB 0x40, 0.05 linear) to weathered, dusty basalt at about 0.1 linear */
     else if (keepI[k] == 2) c *= 1.9;
     if (keepI[k] == 1) {
+      /* M1a fix round (M1.1e, F04 against the swatch: the crust read a smooth pink glaze, b* 8.1 against the swatch's 1.1,
+       * L* 64.8 against 48.9): the texture's cream keeps 45 % of its chroma, the cell's pink reaches the crust at 40 % of its
+       * old strength (brine keeps its own, below), and the crust is a shade lower: white salt, grey in its grain */
+      c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.45) * 0.9;
       /* salt runs white → brine pink → crystalliser rust, by cell */
       float hue = pan.b;
-      vec3 tintC = hue < 0.5 ? mix(vec3(1.0), vec3(0.93, 0.62, 0.52), hue * 2.0)
-                             : mix(vec3(0.93, 0.62, 0.52), vec3(0.42, 0.13, 0.08), (hue - 0.5) * 2.0);
+      vec3 tintC = hue < 0.5 ? mix(vec3(1.0), vec3(0.93, 0.62, 0.52), hue * 0.8)
+                             : mix(vec3(0.97, 0.85, 0.81), vec3(0.42, 0.13, 0.08), (hue - 0.5) * 2.0);
       c *= tintC;
       // and the grain in the crust's own tone: the texture repeats, this does not
       c *= 1.0 + fineN * 0.34;
@@ -407,6 +423,19 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     aoSum += (keepN[k].a * 2.0 - 1.0) * b;
   }
   pert *= mix(0.32, 1.0, nearK);
+  /* M1a fix round (M1.1e: the swatch's crust is granular, crystals and clods 2-20 cm with dark gaps between them; F04 read a
+   * glaze): within 12 m the crust takes a grain, crystal grit at about 3 cm and clods at about 15 cm, each darkening its
+   * gaps and tilting the lit faces. Past 12 m it is under a pixel and the texture's own grit carries it */
+  #ifndef CAL_P_NOGRAIN
+  if (wSalt > 0.05 && dCam < 12.0 && !gSkip) {
+    float sk = (1.0 - smoothstep(6.0, 12.0, dCam)) * wSalt * (1.0 - brine * 0.8);
+    vec4 gA4 = gNoiseT(xz * 0.53 + 0.19), gB4 = gNoiseT(xz * 0.21 + 0.63);
+    float grit = gA4.a, clod = smoothstep(0.25, 0.75, gB4.b);
+    float sGrain = grit * 0.45 + clod * 0.55;
+    col *= mix(1.0, 0.6 + 0.62 * sGrain, sk);
+    pert += vec3(gA4.r + gB4.g - 1.0, 0.0, gA4.g + gB4.r - 1.0) * 0.45 * sk;
+  }
+  #endif
 
   /* -- the field at range (W-11, Janubio): the dykes are the field's drawing, so past 50 m a
    *    dyke strip is darkened and widened with distance (its stone is sub-pixel there), and
@@ -469,7 +498,10 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     // two incommensurate, turned reads: one read of the periodic noise repeated every 16.4 m (M1.1e tiling check)
     #ifndef CAL_P_NOMTONE
     vec2 xzR = vec2(dot(xz, vec2(0.8, 0.6)), dot(xz, vec2(-0.6, 0.8)));
-    gTone = 0.68 + 0.42 * smoothstep(0.3, 0.7, 0.5 * gNoiseT(xz * 0.061).b + 0.5 * gNoiseT(xzR * 0.0437 + 0.29).a);
+    /* M1a fix round (M1.1e: the meadow ground's 40 m top-down read 0.41 at 1 m, the drifts' two reads cut hard by a narrow
+     * smoothstep into 0.5 m blots): a softer ramp and a third, finer read (about 14 cm) so the tone decorrelates within a blot */
+    gTone = 0.68 + 0.42 * smoothstep(0.18, 0.82, 0.36 * gNoiseT(xz * 0.061).b + 0.36 * gNoiseT(xzR * 0.0437 + 0.29).a
+                                                  + 0.28 * gNoiseT(xzR * 0.113 + 0.71).a);
     grass *= gTone;
     #endif
     vec3 litter = vec3(0.17, 0.112, 0.02) * (0.82 + 0.3 * gn.b);   // meadow.js: the blade's foot colour, a shade lit
@@ -523,12 +555,17 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   /* -- the ground at a pace (V32): pebbles at 6-15 cm and grit at 2-3 cm on sand, silt and
    *    shingle, each pebble with a lit and a shaded side; gone by 16 m, where they are sub-pixel */
   #ifndef CAL_P_NOPEB
-  if (dCam < 16.0 && wSalt < 0.6 && !gSkip) {
-    float gk = (1.0 - smoothstep(9.0, 16.0, dCam)) * (1.0 - wSalt) * (1.0 - wRock * 0.7) * (1.0 - canopy);
+  /* M1a fix round (F04's round half-lit discs with straight cuts): the pebbles were laid on the pans' cells too, wherever
+   * brine pulled the crust's weight under 0.6, and each took its tilt from the SQUARE grid cell under the pixel, not its own
+   * Voronoi cell, so a disc that crossed a grid line was lit on one side of it and shaded on the other. A cell's floor (crust,
+   * brine or silt) has no pebbles now, and a pebble's tilt is its own cell's hash */
+  if (dCam < 16.0 && wSalt < 0.6 && inK < 0.98 && !gSkip) {
+    float gk = (1.0 - smoothstep(9.0, 16.0, dCam)) * (1.0 - wSalt) * (1.0 - wRock * 0.7) * (1.0 - canopy) * (1.0 - inK);
     vec3 pb = gVoro(xz * 9.0);
     // M1a round 2: a pebble fades out before its cell's edge, so two overlapping discs never meet on a straight cut
     float peb = smoothstep(0.42, 0.3, pb.y) * smoothstep(0.02, 0.16, pb.x) * step(0.58, pb.z) * gk;
-    vec2 pd = gHash2(floor(xz * 9.0) + 3.1) - 0.5;
+    float pa = pb.z * 40.7;
+    vec2 pd = vec2(cos(pa), sin(pa)) * (0.22 + 0.28 * fract(pb.z * 17.3));
     col = mix(col, col * (0.6 + 0.9 * pb.z) + vec3(0.012, 0.011, 0.01) * pb.z, peb * 0.7);
     pert += vec3(pd.x, 0.0, pd.y) * peb * 0.9;
     float grit = gNoiseT(xz * 0.83).a * 0.6 + gNoiseT(xz * 1.71 + 0.3).b * 0.4;
