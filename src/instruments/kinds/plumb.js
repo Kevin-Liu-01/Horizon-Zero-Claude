@@ -68,7 +68,13 @@ const VIAL_WP_R = 0.10;
  * glass radius (0.045 m) plus the Reed arrow's shaft (0.0048 m), so an arrow stops on it only where it touches the
  * glass. The 0.10 m sphere stopped arrows 4-8 cm in the air in front of the tube and counted them.
  */
-const VIAL_CAP_R = 0.050;
+/**
+ * Round 3 fix, second film: the capsule is the glass's radius + 3 mm (0.048 m), not 0.050. At e02321c one of the 10
+ * centre shots stopped on the 0.050 capsule 0.052 m off the axis as the probe reads it (in the Plumb's root frame; the
+ * head's idle tilt is the likely 1-2 mm), past the row's touch line (glass + shaft 0.0048 + 2 mm = 0.0518). At 0.048
+ * a stop point has 3.8 mm of margin to that line; a shaft grazing the glass closer than 3 mm still stops on it.
+ */
+const VIAL_CAP_PAD = 0.003;
 /**
  * What else counts as the vial (round 3 fix): a hit on one of the two slim brass bands ON the glass (gen-plumb.mjs
  * levelVial, at +-0.07 m, 3.5 mm proud): within VIAL_BAND_AX of the glass's centre along its axis and VIAL_BAND_R of the
@@ -178,13 +184,13 @@ export class Plumb extends ExpansionMachine {
       this._vialPart.mesh.add(this._vialWp.obj);
       this._vialWp.obj.position.set((S.vial[0] - va[0]) * k, (S.vial[1] - va[1]) * k, (S.vial[2] - va[2]) * k);
       this._vialWp.obj.userData.noSnap = true;
-      // the capsule (see VIAL_CAP_R): the glass's axis is the model's +X at the vial (gen-plumb.mjs levelVial), carried
+      // the capsule (see VIAL_CAP_PAD): the glass's axis is the model's +X at the vial (gen-plumb.mjs levelVial), carried
       // into the weak point's own frame once, in the bind pose; the head turns it with the glass from then on
       const S0 = entry.r5Sockets || {};
       // round 3 fix: the capsule's half-length is the glass's half-length LESS its radius, so its rounded tip ends at the
       // glass's own tip (0.15 m) and never stops an arrow in the air past the glass (half 0.15 reached 0.20 m, over the
       // old brass caps; the judge measured it). The glass's rounded ends are hit on their own triangles as well
-      this._vialWp.radius = Math.max(VIAL_CAP_R, (S0.vialR || 0.045) + 0.005) * k;
+      this._vialWp.radius = ((S0.vialR || 0.045) + VIAL_CAP_PAD) * k;
       // (`half` is in the weak point's own frame, scale-1 metres: hitHulls carries it through its matrixWorld, x k)
       this._vialWp.half = Math.max(0.01, 0.5 * (S0.vialLen || 0.30) - this._vialWp.radius / k);
       this.root.updateMatrixWorld(true);
