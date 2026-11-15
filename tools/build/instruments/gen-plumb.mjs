@@ -43,10 +43,13 @@ export const PLUMB = Object.freeze({
   headY: 1.90,          // top of the tripod head plate
   sphereY: 2.48, sphereR: 0.42,
   ringIn: 0.425, ringOut: 0.55,
-  drumBackZ: 0.32, drumR: 0.20, drumDepth: 0.19,
+  // the lamp drum rides OUTBOARD on the ring's right trunnion, off the sphere's axis (M1.4a fix 1: a round lit lens
+  // centred on the white sphere read as one eye from the front; IP-PRIVATE §P2 bans faces)
+  drumX: 0.80, drumY: 0.03, drumBackZ: -0.07, drumR: 0.19, drumDepth: 0.19,
   vialY: 3.21, vialLen: 0.30, vialR: 0.045,
   top: 3.40,
-  cable: 1.2, bobLen: 0.36,
+  // fix 1: the bob hangs on a short cable so it shows above the meadow (on 1.2 m it hung at 0.1-0.5 m, in the grass)
+  cable: 0.30, bobLen: 0.44, bobR: 1.25,
   legSpreadR: 1.20,
 });
 
@@ -63,7 +66,7 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
   /* ----------------------------- tripod head ------------------------------ */
   lathe(H('pelvis'), [
     P(0, -0.18, 'graphite', C.GUNMETAL), P(0.05, -0.18, 'graphite', C.GUNMETAL), P(0.12, -0.11, 'graphite', C.GUNMETAL),
-    P(0.22, -0.06, 'glaze', C.ENAMEL), P(0.29, -0.035, 'bronze', C.BRASS), P(0.31, -0.01, 'bronze', C.BRASS),
+    P(0.22, -0.06, 'glaze', C.ENAMEL), P(0.29, -0.035, 'glaze', C.ENAMEL), P(0.31, -0.012, 'glaze', C.ENAMEL), P(0.312, -0.004, 'bronze', C.BRASS),
     P(0.31, 0.02, 'bronze', C.BRASS), P(0.285, 0.04, 'glaze', C.ENAMEL), P(0.19, 0.055, 'glaze', C.ENAMEL),
     P(0.18, 0.08, 'glaze', C.ENAMEL), P(0, 0.08, 'glaze', C.ENAMEL),
   ], at(0, HEAD_Y - 0.05, 0), { segs: 36, wear: 0.5, crease: 30 });
@@ -138,7 +141,7 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
     const len2 = d2.length(); d2.normalize();
     const s0 = Lg.knee.clone().addScaledVector(d2, 0.03), s1 = Lg.knee.clone().addScaledVector(d2, len2 * 0.95);
     staff(H(shin), s0, s1, 0.046, 0.036, { sides: 8, face: Lg.out, phase: 0.13 });
-    for (const f of [0.0, 0.44]) {
+    for (const f of [0.44]) {   // one sliding collar per staff (fix 1: brass trim, not brass sleeves)
       const c = Lg.knee.clone().addScaledVector(d2, len2 * f + 0.02);
       strut(H(shin), c, c.clone().addScaledVector(d2, 0.04), 0.053, 0.051, { surf: 'bronze', tone: C.BRASS, sides: 10, wear: 0.6 });
       rivet(H(shin), c.clone().addScaledVector(d2, 0.02).addScaledVector(Lg.out, 0.052), Lg.out, 0.009);
@@ -159,7 +162,8 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
 
   /* ------------------------------- the mast -------------------------------- */
   const MAST0 = HEAD_Y + 0.13, MAST1 = SY - SR + 0.02;
-  strut(H('neck'), V(0, MAST0, 0), V(0, MAST1 + 0.02, 0), 0.055, 0.05, { surf: 'graphite', tone: C.GUNMETAL, sides: 16 });
+  // an enamel sleeve over the gunmetal mast (fix 1: the visible hull's enamel share had 0.8 points of margin)
+  strut(H('neck'), V(0, MAST0, 0), V(0, MAST1 + 0.02, 0), 0.055, 0.05, { surf: 'glaze', tone: C.ENAMEL, sides: 16, wear: 0.4 });
   torus(H('neck'), V(0, MAST0 + 0.03, 0), 0.06, 0.012, 'y', { surf: 'bronze', tone: C.BRASS, tube: 6, radial: 20 });
 
   /* ------------------------- the gyroscope-sphere head --------------------- */
@@ -167,7 +171,7 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
   // the horizontal limb circle under the sphere (vernier engraved)
   limbRing(HD, at(0, MAST1 + 0.005, 0), 0.06, 0.22, 0.03, { ticks: 8, faceSurf: 'glaze', faceTone: C.ENAMEL });
   // the shell: six enamel lunes over the gunmetal core, seams away from the lamp
-  enamelSphere(HD, SC, SR, { panels: 6, gap: 6, latMin: -62, latMax: 62, phiStart: Math.PI / 6, segs: 48, coreSegs: [20, 12] });
+  enamelSphere(HD, SC, SR, { panels: 6, gap: 3, latMin: -62, latMax: 62, phiStart: Math.PI / 6, segs: 48, coreSegs: [20, 12] });
   // pole bosses: brass rings that close the shell at top and bottom
   limbRing(HD, at(0, SY + SR * 0.86, 0), 0.03, 0.2, 0.035, { ticks: 6, vernier: false, faceSurf: 'glaze', faceTone: C.ENAMEL });
   limbRing(HD, at(0, SY - SR * 0.86, 0), 0.03, 0.2, 0.035, { ticks: 6, vernier: false, tone: C.GUNMETAL, surf: 'graphite', faceSurf: 'glaze', faceTone: C.ENAMEL });
@@ -177,14 +181,12 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
   const GB = new KBucket('plumb-gimbal');
   // the two gyroscope rings: fixed parts too, each its own node (thin capsules round each ring)
   const GR1 = new KBucket('plumb-gyro-a'), GR2 = new KBucket('plumb-gyro-b');
-  // the brass equatorial ring, open at the front where the drum sits; its face engraved with the vernier
-  const OPEN = THREE.MathUtils.degToRad(30);
-  limbRing(GB, at(0, SY, 0), PLUMB.ringIn, PLUMB.ringOut, 0.05, { ticks: 24, phiStart: OPEN, phiLength: Math.PI * 2 - 2 * OPEN, segs: 64, faceSurf: 'glaze', faceTone: C.ENAMEL, outerSurf: 'glaze', outerTone: C.ENAMEL });
-  // rivets round the ring's face, none in the opening (rivetRing about +Y puts u at (cos u, 0, -sin u))
-  rivetRing(GB, V(0, SY + 0.026, 0), V(0, 1, 0), (PLUMB.ringIn + PLUMB.ringOut) / 2, 30, 0.01,
-    { skip: (u) => Math.abs(Math.atan2(Math.cos(u), -Math.sin(u))) < OPEN + 0.08 });
+  // the brass equatorial ring, closed all round (the drum is outboard on its right trunnion); its face engraved
+  limbRing(GB, at(0, SY, 0), PLUMB.ringIn, PLUMB.ringOut, 0.05, { ticks: 24, segs: 64, faceSurf: 'glaze', faceTone: C.ENAMEL, outerSurf: 'glaze', outerTone: C.ENAMEL });
+  // rivets round the ring's face
+  rivetRing(GB, V(0, SY + 0.026, 0), V(0, 1, 0), (PLUMB.ringIn + PLUMB.ringOut) / 2, 30, 0.01);
   // flange tabs and two side wings on the ring (enamel plates, brass rivets)
-  for (const [azDeg, len, wid] of [[55, 0.63, 0.13], [-55, 0.63, 0.13], [125, 0.63, 0.13], [-125, 0.63, 0.13], [90, 0.71, 0.17], [-90, 0.71, 0.17], [180, 0.62, 0.12]]) {
+  for (const [azDeg, len, wid] of [[55, 0.63, 0.13], [-55, 0.63, 0.13], [125, 0.63, 0.13], [-125, 0.63, 0.13], [-90, 0.71, 0.17], [180, 0.62, 0.12]]) {
     const az = THREE.MathUtils.degToRad(azDeg);
     const out_ = V(Math.sin(az), 0, Math.cos(az)), tan = V(Math.cos(az), 0, -Math.sin(az));
     // outline in (tan, out) with the plate's normal along +Y
@@ -231,26 +233,39 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
   antenna(MS, V(-0.175, VY - 0.07, -0.03), V(-0.19, 3.17, -0.04), { r: 0.009, finial: 0.07 });
 
   /* ------------------------------- the lamp drum (a tool) ------------------- */
+  // a lantern on a trunnion OUTBOARD of the ring's right side, its axis along +Z: from the front the sphere shows a
+  // closed enamel face with its gimbal ring across it, and the lamp stands off to one side (no face)
   const drum = new KBucket('plumb-drum');
-  const DRUM_BACK = V(0, SY, PLUMB.drumBackZ);
+  const DX = PLUMB.drumX, DY = SY + PLUMB.drumY;
+  const DRUM_BACK = V(DX, DY, PLUMB.drumBackZ);
   const dr = lampDrum(drum, DRUM_BACK, V(0, 0, 1), { r: PLUMB.drumR, depth: PLUMB.drumDepth, ticks: 16 });
   // the drum's hood: an enamel visor over the iris (bow-shaped plate)
   plate(drum, [[-0.15, 0], [0.15, 0], [0.11, 0.07], [-0.11, 0.07]], 0.012, 0.004,
-    basis(V(1, 0, 0), V(0, 0.3, 1).normalize(), V(0, 1, -0.3).normalize(), V(0, SY + PLUMB.drumR * 1.02, PLUMB.drumBackZ + PLUMB.drumDepth - 0.05)), { surf: 'glaze', tone: C.ENAMEL, wear: 0.4 });
+    basis(V(1, 0, 0), V(0, 0.3, 1).normalize(), V(0, 1, -0.3).normalize(), V(DX, DY + PLUMB.drumR * 1.02, PLUMB.drumBackZ + PLUMB.drumDepth - 0.05)), { surf: 'glaze', tone: C.ENAMEL, wear: 0.4 });
+  // the trunnion: a brass yoke from the ring's outer wall to the drum's barrel (two arms and a pivot boss), on the gimbal
+  {
+    const zc = PLUMB.drumBackZ + PLUMB.drumDepth * 0.45, xr = PLUMB.ringOut - 0.02, xd = DX - PLUMB.drumR * 0.98;
+    for (const s of [-1, 1]) strut(GB, V(xr, SY + s * 0.075, zc), V(xd + 0.01, DY + s * 0.075, zc), 0.018, 0.016, { surf: 'bronze', tone: C.BRASS, sides: 10, wear: 0.6 });
+    strut(GB, V(xr - 0.01, SY, zc), V(xd + 0.015, DY, zc), 0.034, 0.034, { surf: 'graphite', tone: C.GUNMETAL, sides: 14, wear: 0.5 });
+    for (const s of [-1, 1]) rivet(GB, V(xr + 0.03, SY + s * 0.075, zc + 0.018), V(0, 0, 1), 0.01);
+  }
 
   /* --------------------------------- the bob ------------------------------- */
-  const T0 = V(0, HEAD_Y - 0.23, 0), T1 = V(0, HEAD_Y - 0.83, 0), BOB = V(0, HEAD_Y - 0.23 - PLUMB.cable, 0);
+  const T0 = V(0, HEAD_Y - 0.23, 0), BOB = V(0, HEAD_Y - 0.23 - PLUMB.cable, 0), T1 = V(0, (T0.y + BOB.y) / 2, 0);
+  const BH = PLUMB.bobLen / 0.36, BR = PLUMB.bobR;   // the bob's lathe is drawn at 0.36 m and scaled
   cable(H('tail1'), [T0, V(0, (T0.y + T1.y) / 2, 0.001), T1], 0.008, { surf: 'graphite', tone: C.GUNMETAL, segs: 4, radial: 5 });
   cable(H('tail2'), [T1, V(0, (T1.y + BOB.y) / 2, 0.001), BOB.clone().add(V(0, 0.03, 0))], 0.008, { surf: 'graphite', tone: C.GUNMETAL, segs: 4, radial: 5 });
   torus(H('tail2'), BOB.clone().add(V(0, 0.05, 0)), 0.028, 0.007, 'x', { surf: 'bronze', tone: C.BRASS, tube: 6, radial: 16, wear: 0.6 });
   strut(H('tail2'), BOB.clone().add(V(0, 0.09, 0)), BOB.clone().add(V(0, 0.035, 0)), 0.013, 0.017, { surf: 'bronze', tone: C.BRASS, sides: 8, wear: 0.6 });
   const bob = new KBucket('plumb-bob');
+  // polished brass with one enamel band (the crop's signature brass bob), drawn at 0.36 m and scaled by BH, BR
+  const Pb = (r, h, surf, tone) => P(r * BR, h * BH, surf, tone);
   lathe(bob, [
-    P(0, -PLUMB.bobLen, 'graphite', C.CHROME), P(0.012, -PLUMB.bobLen + 0.02, 'bronze', C.BRASS), P(0.03, -0.3, 'glaze', C.ENAMEL),
-    P(0.105, -0.14, 'glaze', C.ENAMEL), P(0.12, -0.1, 'glaze', C.ENAMEL), P(0.12, -0.075, 'bronze', C.BRASS), P(0.125, -0.06, 'bronze', C.BRASS),
-    P(0.11, -0.04, 'glaze', C.ENAMEL), P(0.095, -0.01, 'bronze', C.BRASS), P(0.04, 0.012, 'graphite', C.GUNMETAL), P(0.03, 0.035, 'bronze', C.BRASS), P(0, 0.042, 'bronze', C.BRASS),
-  ], at(BOB.x, BOB.y, BOB.z), { segs: 24, wear: 0.6, crease: 30 });
-  rivetRing(bob, BOB.clone().add(V(0, -0.068, 0)), V(0, 1, 0), 0.124, 8, 0.008, { radial: true });
+    Pb(0, -0.36, 'graphite', C.CHROME), Pb(0.012, -0.34, 'bronze', C.BRASS), Pb(0.03, -0.3, 'bronze', C.BRASS),
+    Pb(0.105, -0.14, 'bronze', C.BRASS), Pb(0.12, -0.1, 'glaze', C.ENAMEL), Pb(0.12, -0.075, 'glaze', C.ENAMEL), Pb(0.125, -0.06, 'bronze', C.BRASS),
+    Pb(0.11, -0.04, 'bronze', C.BRASS), Pb(0.095, -0.01, 'bronze', C.BRASS), Pb(0.04, 0.012, 'graphite', C.GUNMETAL), Pb(0.03, 0.035, 'bronze', C.BRASS), Pb(0, 0.042, 'bronze', C.BRASS),
+  ], at(BOB.x, BOB.y, BOB.z), { segs: 24, wear: 0.35, crease: 30 });
+  rivetRing(bob, BOB.clone().add(V(0, -0.068 * BH, 0)), V(0, 1, 0), 0.124 * BR, 8, 0.008, { radial: true });
 
   /* ------------------------------- recentre -------------------------------- */
   const all = [...hull.values(), ...glass.values(), bob, drum, GB, GR1, GR2, SCP, CR, MS];
@@ -288,9 +303,9 @@ export async function build({ out = ROOT, scale = 1, file = null, noDust = false
     lampR: +dr.radius.toFixed(4),
     vial: sh(V(0, VY, 0)),
     vialLen: vial.len, vialR: vial.r,
-    bob: sh(V(0, BOB.y - 0.17, 0)),
+    bob: sh(V(0, BOB.y - 0.17 * BH, 0)),
     bobTop: sh(BOB),
-    drum: sh(V(0, SY, PLUMB.drumBackZ + PLUMB.drumDepth / 2)),
+    drum: sh(V(DX, DY, PLUMB.drumBackZ + PLUMB.drumDepth / 2)),
     drumBack: sh(DRUM_BACK),
     head: sh(SC),
     top: sh(V(0, PLUMB.top, -0.085)),

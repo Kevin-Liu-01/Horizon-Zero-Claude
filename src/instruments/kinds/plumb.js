@@ -65,8 +65,31 @@ const TRI = (k) => ({
 export const TOPPLE = Object.freeze({ fallS: 0.42, downS: 4.0, riseS: 0.6, hits: 2, clearM: 0.02 });
 
 const _wp = new THREE.Vector3();
+const _va = new THREE.Vector3();
+const _vb = new THREE.Vector3();
 const _q = new THREE.Quaternion();
-const _xAxis = new THREE.Vector3(1, 0, 0);
+/**
+ * The vial's own capsule (m, scale 1): the glass tube and its brass caps along the cradle's x axis. A shot whose line
+ * would meet it within VIAL_REACH of where it stopped is a vial hit: the vial has priority over the thin standards,
+ * antennae and the sphere's crown capsules round it (M1.4c fix 1: 5/10 at 40 m, the arrows stopping on capsules
+ * 0.2-0.36 m short of the glass).
+ */
+const VIAL_HALF = 0.19, VIAL_CAP_R = 0.07, VIAL_REACH = 0.45;
+
+/** Closest distance between segments p0-p1 and q0-q1 ({x, y, z}): p sampled every 1 cm against q exactly (one call per hit). */
+function segSegDist(p0, p1, q0, q1) {
+  const vx = q1.x - q0.x, vy = q1.y - q0.y, vz = q1.z - q0.z, c = vx * vx + vy * vy + vz * vz;
+  const n = Math.max(2, Math.ceil(Math.hypot(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z) / 0.01));
+  let best = Infinity;
+  for (let i = 0; i <= n; i++) {
+    const s = i / n, px = p0.x + (p1.x - p0.x) * s, py = p0.y + (p1.y - p0.y) * s, pz = p0.z + (p1.z - p0.z) * s;
+    let t = c > 1e-12 ? ((px - q0.x) * vx + (py - q0.y) * vy + (pz - q0.z) * vz) / c : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const d = Math.hypot(px - q0.x - vx * t, py - q0.y - vy * t, pz - q0.z - vz * t);
+    if (d < best) best = d;
+  }
+  return best;
+}
 
 
 export class Plumb extends ExpansionMachine {
@@ -112,6 +135,9 @@ export class Plumb extends ExpansionMachine {
     this.addLamp(sc3(S.lamp), { radius: (S.lampR || LAMP_R) * k });
     this._lampWp = this.addWeakPoint('lamp', this.body, ...sc3(S.lamp), 0.16 * k, 2.2);
     this._vialWp = this.addWeakPoint('vial', this.body, ...sc3(S.vial), VIAL_WP_R * k, 2.0);
+    // the vial's glass is skinned to the head (the `plumb-vial` mesh): a hit on it is a vial hit
+    this._vialGlass = null;
+    this.model.traverse((o) => { if (!this._vialGlass && o.isMesh && o.name === 'plumb-vial') this._vialGlass = o; });
     this.lootTable = rollLoot([{ id: 'metal-shards', min: 4, max: 8 }, { id: 'wire', min: 1, max: 3 }]);
 
     attachRigRuntime(this, { quantise: false });
@@ -135,6 +161,20 @@ export class Plumb extends ExpansionMachine {
       tearHp: 55, linkedAttack: 'sightline', loot: [{ id: 'lampglass', n: 1 }],
       onTorn: () => this._lampLost(),
     });
+    // fix 1: the vial and lamp weak points and the lamp anchor ride their own parts. On the body they were reparented
+    // by the rig and then SNAPPED onto the nearest hull sample (rig/sockets.js), which for the vial is the sphere's
+    // crown 0.31 m below: the vial sphere sat 0.2-0.36 m off the glass, and shots aimed at it flew past the vial
+    this.root.updateMatrixWorld(true);
+    if (this._vialPart?.mesh) {
+      this._vialPart.mesh.add(this._vialWp.obj);
+      this._vialWp.obj.position.set(0, 0, 0);
+      this._vialWp.obj.userData.noSnap = true;
+    }
+    if (this._drum?.mesh) {
+      this._drum.mesh.attach(this._lampWp.obj);
+      this._lampWp.obj.userData.noSnap = true;
+      if (this._lampAnchor?.isObject3D) this._drum.mesh.attach(this._lampAnchor);
+    }
     const T = TRI(k);
     this.gait = new GaitController(this, this.rig, {
       walk: T.walk, run: T.run, runRef: this.runSpeed,
@@ -207,9 +247,22 @@ export class Plumb extends ExpansionMachine {
     }
     // a hit on the vial's own hit volume (the glass and its caps) is a vial hit too
     if (this.alive && hit?.object && this._vialPart) {
+      if (hit.object === this._vialGlass || hit.object.name === 'plumb-vial') vial = true;
       let o = hit.object;
       while (o && !o.userData?.part) o = o.parent;
       if (o?.userData?.part === this._vialPart) vial = true;
+    }
+    // the vial's priority: a shot stopped on a thin part in front of it whose line meets the vial's own capsule
+    // within VIAL_REACH is a vial hit (the cradle part's x axis is the tube's)
+    if (!vial && this.alive && pt && hit?.dir && this._vialPart?.mesh && this._vialPart.attached !== false) {
+      const M = this._vialPart.mesh.matrixWorld, e = M.elements, k = this._scale;
+      _wp.setFromMatrixPosition(M);
+      const ax = e[0], ay = e[1], az = e[2], al = Math.hypot(ax, ay, az) || 1;
+      _va.set(_wp.x - ax / al * VIAL_HALF * k, _wp.y - ay / al * VIAL_HALF * k, _wp.z - az / al * VIAL_HALF * k);
+      _vb.set(_wp.x + ax / al * VIAL_HALF * k, _wp.y + ay / al * VIAL_HALF * k, _wp.z + az / al * VIAL_HALF * k);
+      const d = hit.dir, dl = Math.hypot(d.x, d.y, d.z) || 1, r = VIAL_REACH * k;
+      const q1 = { x: pt.x + d.x / dl * r, y: pt.y + d.y / dl * r, z: pt.z + d.z / dl * r };
+      if (segSegDist(pt, q1, _va, _vb) <= VIAL_CAP_R * k) vial = true;
     }
     const r = super.takeDamage(hit);
     if (vial && this.alive && this._toppleT < 0) {

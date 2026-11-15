@@ -58,7 +58,27 @@ export async function probe(frame) {
     if (p.model) { const bb = new THREE.Box3().setFromObject(p.model); brea = r3(bb.max.y - hy(p.position.x, p.position.z)); }
     let tris = 0;
     for (const o of meshesOf(m0)) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
-    return { plumbM: r3(box.max.y - g), plumbLowM: r3(box.min.y - g), registryM: m0.height, breaM: brea, ratio: brea ? r3((box.max.y - g) / brea) : null, distToBreaM: r3(m0.position.distanceTo(p.position)), drawnTris: Math.round(tris), bar: '3.4 +- 0.1 m' };
+    // fix 1: the ground under each FOOT, not under the root (the legs stand 1.2 m out; on a slope the root's ground
+    // is not the feet's). Each skinned hull vertex goes to its nearest foot (xz); per foot, the lowest vertex against
+    // the terrain there: below 0 is sunk. The height is the top above the feet's mean ground.
+    const feet = (m0.debugFeet?.() || []).map((f) => ({ name: f.name, x: f.world.x, z: f.world.z, low: Infinity, g: hy(f.world.x, f.world.z) }));
+    if (feet.length) {
+      const v = new THREE.Vector3();
+      for (const o of meshesOf(m0)) {
+        if (!o.isSkinnedMesh || isGlass(o)) continue;
+        const pos = o.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld);
+          if (v.y - g > 0.6) continue;
+          let best = null, bd = 1e9;
+          for (const f of feet) { const d = (v.x - f.x) ** 2 + (v.z - f.z) ** 2; if (d < bd) { bd = d; best = f; } }
+          if (best && bd < 0.36 && v.y - best.g < best.low) best.low = v.y - best.g;
+        }
+      }
+    }
+    const fg = feet.length ? feet.reduce((s, f) => s + f.g, 0) / feet.length : g;
+    const sunk = feet.length ? Math.min(...feet.map((f) => f.low)) : null;
+    return { plumbM: r3(box.max.y - fg), plumbRootGroundM: r3(box.max.y - g), plumbLowM: r3(box.min.y - g), feet: feet.map((f) => ({ name: f.name, lowAboveGroundM: r3(f.low), groundM: r3(f.g - g) })), sunkM: r3(sunk), registryM: m0.height, breaM: brea, ratio: brea ? r3((box.max.y - fg) / brea) : null, distToBreaM: r3(m0.position.distanceTo(p.position)), drawnTris: Math.round(tris), bar: '3.4 +- 0.1 m above the ground under the feet; no foot below its ground by more than 0.03 m' };
   });
 
   /* ---- visible hull classes in the filmed frame ---- */
@@ -116,7 +136,8 @@ void main() {
     cx.imageSmoothingEnabled = false; cx.drawImage(tmp, 0, 0, w * scale, h * scale);
     return cv.toDataURL('image/png');
   }
-  await guard('visible', async () => {
+  /** The class image of the Plumb through camera `cv`: the frame's depth first, then the Plumb's meshes in the class shader. */
+  function classFrame(cv) {
     const rt = new THREE.WebGLRenderTarget(bw, bh, { depthBuffer: true });
     const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
     const scene = C.scene;
@@ -126,7 +147,7 @@ void main() {
     // then the colour cleared to black and the depth kept
     R.setRenderTarget(rt); R.setClearColor(0x000000, 1); R.clear(true, true, true);
     R.autoClear = false;
-    R.render(scene, cam);
+    R.render(scene, cv);
     R.setRenderTarget(rt); R.clear(true, false, false);
     R.autoClear = prevAuto;
     void prevO; void prevBg;
@@ -139,13 +160,33 @@ void main() {
     // the component fold's merged mesh is hidden for this pass (its proxies draw instead)
     m0.root.traverse((o) => { if (o.isMesh && o.material?.userData?.componentFold && o.visible) { hidden.push(o); o.visible = false; } });
     R.autoClear = false;
-    R.render(scene, cam);
+    R.render(scene, cv);
     R.autoClear = prevAuto;
     for (const [o, mm] of swaps) { o.material.dispose(); o.material = mm; }
     for (const o of hidden) o.visible = true;
     R.setRenderTarget(prevRT); R.setClearColor(cc0, ca0);
     const buf = readRT(rt);
     rt.dispose(); black.dispose();
+    return buf;
+  }
+  const classOf = (buf, i) => {
+    const r = buf[i * 4], g = buf[i * 4 + 1], b = buf[i * 4 + 2];
+    if (r < 20 && g < 20 && b < 20) return null;
+    let best = null, bd = 1e9;
+    for (const [k, c] of CLS) { const d = Math.abs(r - c[0] * 255) + Math.abs(g - c[1] * 255) + Math.abs(b - c[2] * 255); if (d < bd) { bd = d; best = k; } }
+    return bd > 60 ? null : best;
+  };
+  await guard('visible', async () => {
+    const buf = classFrame(cam);
+    // fix 1: the lamp system draws its iris over the drum's face; that disc is lamp, not hull (it was classed enamel)
+    let lx = -1, ly = -1, lr = 0;
+    if (m0._lampAnchor && !m0._noLamp) {
+      const w = m0._lampAnchor.getWorldPosition(new THREE.Vector3()), q = w.clone().project(cam);
+      const S = C.assets.models.plumb.r5Sockets, rad = (S.lampR || 0.18) * (m0._scale || 1);
+      lx = (q.x * 0.5 + 0.5) * bw; ly = (q.y * 0.5 + 0.5) * bh;
+      lr = rad / (w.distanceTo(cam.position) * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2)) * (bh / 2);
+    }
+    let lampPx = 0;
     const n = {}; let hull = 0, x0 = bw, y0 = bh, x1 = 0, y1 = 0;
     for (let i = 0; i < bw * bh; i++) {
       const r = buf[i * 4], g = buf[i * 4 + 1], b = buf[i * 4 + 2];
@@ -153,6 +194,7 @@ void main() {
       let best = null, bd = 1e9;
       for (const [k, c] of CLS) { const d = Math.abs(r - c[0] * 255) + Math.abs(g - c[1] * 255) + Math.abs(b - c[2] * 255); if (d < bd) { bd = d; best = k; } }
       if (bd > 60) continue;   // not a class colour
+      if (lr > 0 && Math.hypot((i % bw) + 0.5 - lx, ((i / bw) | 0) + 0.5 - ly) <= lr) { lampPx++; continue; }
       n[best] = (n[best] || 0) + 1;
       if (best !== 'glass') hull++;
       const x = i % bw, y = (i / bw) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
@@ -160,7 +202,51 @@ void main() {
     const share = {};
     for (const [k] of CLS) if (k !== 'glass') share[k] = hull ? Math.round(1000 * (n[k] || 0) / hull) / 10 : null;
     const pad = 6; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(bw - 1, x1 + pad); y1 = Math.min(bh - 1, y1 + pad);
-    return { hullPx: hull, glassPx: n.glass || 0, sharePct: share, bar: 'enamel 55-75 % of visible hull', pass: share.enamel >= 55 && share.enamel <= 75, idPng: crop(buf, x0, y0, x1 - x0 + 1, y1 - y0 + 1, 2) };
+    return { hullPx: hull, glassPx: n.glass || 0, lampFacePxExcluded: lampPx, lampFaceRadiusPx: r3(lr), sharePct: share, bar: 'enamel 55-75 % of visible hull', pass: share.enamel >= 55 && share.enamel <= 75, idPng: crop(buf, x0, y0, x1 - x0 + 1, y1 - y0 + 1, 2) };
+  });
+
+  /* ---- 2 cm detail at 6 m, in a frame (fix 1: it was computed only) ----
+   * The F23 lens (its fov, the drawing buffer), 6 m from the head on the F23 camera's side and 0.9 m above it, so the
+   * gimbal ring's top face shows; the Plumb drawn in the class shader. Along the ring's rivet circle (30 brass rivets,
+   * 2 cm, on the enamel face) the samples that land on the ring read brass or enamel; each brass run between enamel
+   * is one rivet resolved. Bar: the rivets on the visible arc resolve (>= 90 %) and each spans >= 2 px. */
+  await guard('detail6m', async () => {
+    const gim = (m0.parts || []).find((q) => q.name === 'gimbal')?.mesh;
+    if (!gim) throw new Error('no gimbal part');
+    const head = gim.getWorldPosition(new THREE.Vector3());
+    const dir = cam.position.clone().sub(head); dir.y = 0; dir.normalize();
+    const cv = cam.clone(); cv.position.copy(head).addScaledVector(dir, 6.0); cv.position.y += 0.9; cv.lookAt(head); cv.updateMatrixWorld(true); cv.updateProjectionMatrix();
+    const buf = classFrame(cv);
+    const k = m0._scale || 1, rm = (0.425 + 0.55) / 2, N = 1440, v = new THREE.Vector3();
+    const seq = [];
+    for (let j = 0; j < N; j++) {
+      const u = (j / N) * Math.PI * 2;
+      v.set(rm * Math.cos(u), 0.034, -rm * Math.sin(u)); gim.localToWorld(v);
+      const q = v.clone().project(cv);
+      if (q.z > 1 || Math.abs(q.x) > 1 || Math.abs(q.y) > 1) { seq.push(null); continue; }
+      const x = Math.floor((q.x * 0.5 + 0.5) * bw), y = Math.floor((q.y * 0.5 + 0.5) * bh);
+      const c = classOf(buf, y * bw + x);
+      seq.push(c === 'brass' || c === 'enamel' ? c : null);
+    }
+    // the visible arc: rivets whose centre sample lands on the ring; resolved: their sample is brass, in a run bounded by enamel
+    const runs = []; let cur = null;
+    for (let j = 0; j < N * 2; j++) {
+      const c = seq[j % N];
+      if (c === 'brass') { if (!cur) cur = { start: j, len: 0, open: seq[(j - 1 + N) % N] === 'enamel' }; cur.len++; }
+      else { if (cur) { cur.close = c === 'enamel'; if (cur.start < N) runs.push(cur); cur = null; } }
+    }
+    let visible = 0, resolved = 0;
+    for (let r = 0; r < 30; r++) {
+      const j = Math.round((r / 30) * N) % N;
+      if (seq[j] == null) continue;
+      visible++;
+      if (seq[j] === 'brass' && runs.some((q) => q.open && q.close && ((j - q.start + N) % N) < q.len)) resolved++;
+    }
+    // a 2 cm rivet's size in px at the ring's distance through this lens
+    const dist = head.distanceTo(cv.position), px2cm = (0.02 * k) / (dist * Math.tan(THREE.MathUtils.degToRad(cv.fov) / 2)) * (bh / 2);
+    const lens = runs.filter((q) => q.open && q.close);
+    return { distM: r3(dist), fov: cv.fov, px2cm: r3(px2cm), visibleRivets: visible, resolvedRivets: resolved, meanRunPx: lens.length ? r3(lens.reduce((a, q) => a + q.len * (2 * Math.PI * rm * k / N), 0) / lens.length / (dist * Math.tan(THREE.MathUtils.degToRad(cv.fov) / 2)) * (bh / 2)) : null,
+      bar: '2 cm rivets resolve at 6 m: >= 90 % of the visible rivets read as their own brass run, >= 2 px', pass: visible > 0 && resolved / visible >= 0.9 && px2cm >= 2 };
   });
 
   await guard('emissive', async () => {
