@@ -12,6 +12,7 @@
 import { WORLD_SIZE } from './extent.js';
 import { rng, ss, fbm, fieldWalls, fieldToWorld, fieldCells, PAN, authored } from './recipe.js';
 import { GRID, MASK_N, SHORE_ENC, GLASS_RIM } from './bake.js';
+import { HOME_BRAZIER, SEAT, CISTERN as CISTERN_AT, offsetOn } from '../settlements/brazier-spots.js';
 
 export const STRIDE = 9;
 export const TILE = 16;
@@ -116,6 +117,15 @@ const ENCLOSURES = [
 ];
 
 /** Static instanced kinds for the whole Pans. */
+/** A salt cone of scale `s` (foot radius up to 1.1 s, vegetation.js saltGeo) clear of the home Brazier's seat, bowl and cistern. */
+const _seatAt = offsetOn(SEAT.bearing, SEAT.dist), _cisAt = offsetOn(CISTERN_AT.bearing, CISTERN_AT.dist);
+function coneClear(x, z, s) {
+  const foot = 1.1 * s, bx = HOME_BRAZIER.x, bz = HOME_BRAZIER.z;
+  return Math.hypot(x - (bx + _seatAt.x), z - (bz + _seatAt.z)) >= foot + 2.0
+    && Math.hypot(x - bx, z - bz) >= foot + 1.6
+    && Math.hypot(x - (bx + _cisAt.x), z - (bz + _cisAt.z)) >= foot + CISTERN_AT.r + 0.5;
+}
+
 export function scatterStatic(R) {
   const r = rng(0x0b5a17);
   const rocks = [], columns = [], walls = [], heaps = [];
@@ -220,7 +230,13 @@ export function scatterStatic(R) {
     let u = cu;
     for (let k = 0; k < count; k++) {
       const s = 2.1 + r() * 0.9;
-      fieldToWorld(u, cv + (r() - 0.5) * 0.6, P);
+      const v = cv + (r() - 0.5) * 0.6;
+      fieldToWorld(u, v, P);
+      // (people M1.3h fix round 2, the smallest change: the home Brazier's seat stood inside the second cone of the middle
+      // group, and Brea seated read as sitting in it; a cone steps back along the row, toward the one before it, until its
+      // foot clears the seat, the bowl and the cistern: back, not on, so it stays behind F20's and F30's lenses. The same
+      // r() draws, in the same order)
+      for (let n = 0; n < 40 && !coneClear(P.x, P.z, s); n++) { u -= 0.5; fieldToWorld(u, v, P); }
       heaps.push(P.x, R.hAt(P.x, P.z) - 0.05, P.z, r() * 6.28, s, s * (0.72 + r() * 0.1), s, 0, 1.0);
       u += s * 2.3 + 0.5 + r() * 1.6;
     }
