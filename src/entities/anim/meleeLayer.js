@@ -157,7 +157,7 @@ const _ahG = new THREE.Vector3();
 const _ahQi = new THREE.Quaternion();
 /** the left hand's late seat (fix round 1): palm goal, haft butt / tip, knuckle centre */
 const _slG = new THREE.Vector3();
-const _rohP = new THREE.Vector3(), _rohA = new THREE.Vector3();   // (`_rightOnHaft`)
+const _rohP = new THREE.Vector3(), _rohA = new THREE.Vector3(), _rohD = new THREE.Vector3();   // (`_rightOnHaft`)
 const _lohD = new THREE.Vector3(), _qRO = new THREE.Quaternion();
 const _lohP = new THREE.Vector3(), _lohA = new THREE.Vector3(), _lohQ = new THREE.Quaternion(), _lohQ2 = new THREE.Quaternion();   // (`_leftOnHaft`)
 const _slB = new THREE.Vector3();
@@ -325,6 +325,8 @@ const HAFT_D = 0.024;
 const TAKE_WAIT = 0.10;
 /** ...within (m): the palm's axis point on the socket (W1's bar is 0.010) */
 const TAKE_TOL = 0.006;
+/** ...and the right wrist's goal on its way onto the haft moves at most this a 1/60 s step (m; W3's bar is 0.08) */
+const ROH_STEP = 0.065;
 /** M1a weapons round 2 (W3/W10: a wrist <= 0.06-0.08 m a step): the stow's right-fist leg to the hand-over line ends here
  *  (holster k; was 0.62) and the left fist's carry back to the keeper takes this much of it after the let-go (was 0.30) */
 const STOW_HO = 0.45, STOW_CARRY = 0.42;
@@ -830,7 +832,7 @@ const LC_S = SOCKETS.lance.butt.p[1];   // where the left palm holds the haft (m
  * the left hand's reach ends at 0.24 of the draw and its carry at 0.56 (were 0.30 / 0.70), so the right fist has the
  * last 0.44 of the draw (0.13 s) to bring the haft from the hand-over into the guard, where the turn is (W3) */
 const LC_REACH = 0.25;             // the draw: the left hand's reach to the stowed haft ends here (drawK; M1a weapons round 2: 0.20 -> 0.25)
-const LC_CARRY = 0.70;             // ...and the carry to the hand-over line ends here (M1a weapons round 2: 0.56 -> 0.70, W3/W10: the left's path is the long one)
+const LC_CARRY = 0.62;             // ...and the carry to the hand-over line ends here (M1a weapons round 2: 0.56 -> 0.70, W3/W10: the left's path is the long one)
 /** M1a weapons step 1: the butt-first slide out of the keeper, down the stowed line (m), over this much of the carry */
 const LC_AXIAL = 0.17, LC_AXIAL_U = 0.30;
 const _capA = new THREE.Vector3(), _capB = new THREE.Vector3();
@@ -872,7 +874,7 @@ const LC_SP = {
 /** The right fist's way from the hand-over to the guard (and back on the stow): the haft still upright, the fist at
  *  her right front; the hips lead the turn into the guard (`py`), the left hand off the haft until the guard. */
 const PULL_VIA = {
-  hand: [-0.21, 1.10, 0.32], shaft: [0.134, 0.605, 0.785], lh: [0.16, 1.08, 0.32], lhW: 0, lhOn: 0.5425,
+  hand: [-0.17, 1.12, 0.29], shaft: [0.134, 0.605, 0.785], lh: [0.16, 1.08, 0.32], lhW: 0, lhOn: 0.5425,
   yaw: -0.05, py: -0.12, pitch: 0.12, roll: 0.03, dz: 0.0,
 };
 /** where on the pull (0..1) the fist is at `PULL_VIA` */
@@ -3537,18 +3539,24 @@ export class MeleeLayer {
   _rightOnHaft(stance, w) {
     const L = this._lc, an = this.an, b = an.b, D = this._dbg;
     D.rTakeMiss = -1;
-    if (!L || !L.on || this._held || stance !== 'draw' || !this.gripR || typeof an._handOnStave !== 'function') return;
-    const k = smoothstep(L.u, 0.55, 0.92) * w;
-    if (k <= 1e-3) return;
-    _rohP.copy(L.butt).addScaledVector(L.dir, GRIP_FRAC * this.length);
+    if (!L || !L.on || this._held || stance !== 'draw' || !this.gripR || typeof an._handOnStave !== 'function') { this._rohOk = false; return; }
+    // (from the carry's start: the hand is steered onto the haft's path a little more each step, never more than
+    //  ROH_STEP a step beyond where the pose put it: weighted in late it threw the wrist 0.26 m in a step, W3)
+    const k = smoothstep(this._stDrawK ?? 0, 0.04, 0.40) * w;
+    if (k <= 1e-3 || !L.hoB) { this._rohOk = false; return; }
+    // (the hand-over line as planned, then, as the carry arrives, the haft where the left fist has it)
+    const ka = smoothstep(L.u, 0.5, 0.95);
+    _rohP.copy(L.hoB).lerp(L.butt, ka); _rohD.copy(L.hoD).lerp(L.dir, ka).normalize();
+    _rohP.addScaledVector(_rohD, GRIP_FRAC * this.length);
     for (let pass = 0; pass < 2; pass++) {
-      an._handOnStave(L.dir, 1, _lohQ, 'r');
+      an._handOnStave(_rohD, 1, _lohQ, 'r');
       an._liveW(b.handR.bone, _q1);
       _lohQ2.copy(_q1).slerp(_lohQ, k);
       _c.copy(this.haftOffL).applyQuaternion(_lohQ2);
       _eC.subVectors(_rohP, _c);
       an._charOf(b.handR.bone, _rohA);
       _rohA.lerp(_eC, k);
+      if (this._rohOk) { const d = _rohA.distanceTo(this._rohPrev), mx = ROH_STEP * (this._lastDt || 1 / 60) * 60; if (d > mx) _rohA.lerpVectors(this._rohPrev, _rohA, mx / d); }
       an._ikArm('r', _rohA, _pole, w, null);
       an._clearArmOfHead(b.upArmR, b.loArmR, b.handR, _rohA, _pole, w);
       an._liveW(b.handR.bone, _q1);
@@ -3558,6 +3566,8 @@ export class MeleeLayer {
     _rohA.add(_c.copy(this.haftOffL).applyQuaternion(_q1));
     D.rTakeMiss = +_rohA.distanceTo(_rohP).toFixed(4);
     this._handQ.copy(_q1);
+    if (!this._rohPrev) this._rohPrev = new THREE.Vector3();
+    an._charOf(b.handR.bone, this._rohPrev); this._rohOk = true;
   }
 
   /**
