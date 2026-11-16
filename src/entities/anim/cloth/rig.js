@@ -100,6 +100,8 @@ export const PANEL_AIR = { panelL: -1, panelR: -1, panelB: -1 };
  *  the most a particle moves for one vertex in one round (m), how near a particle's inner surface its vertices are
  *  tested (m), and more margin on the quiver (m: its axis is two rim vertices found at bind; the grader finds its own
  *  each frame, and in a roll a tail vertex 2 cm clear of ours was 8 mm inside its) */
+/** (fix round 1) The tail's reach in the drawing pass against the torso (m from its inner surface; the quiver keeps VPASS's). */
+export const TAIL_VP_REACH = 0.025;
 export const VPASS = { on: true, iters: 6, margin: 0.004, maxStep: 0.1, reach: 0.06, quiver: 0.012 };
 /** (fix round 1) the tail's own air: cd 0.4 (the linen's 0.7), `edge` 0.8 of its face-on drag edge-on (a wrung strip
  *  this narrow twists to the flow: at 0 a wind from her side met it edge-on and lifted it 2-6 deg at 5.5 m/s), the air's
@@ -108,7 +110,7 @@ export const TAILC = { off: 0.028, hard: 0.052, tongueMin: 0.78, air: 0.4, yaw: 
 /** hangPanel's cylinder centre (bind space z) */
 const PANEL_CZ = -0.02;
 
-const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _mb = new THREE.Matrix4();
+const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _mb = new THREE.Matrix4();
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _vs = new THREE.Vector3();
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _qa = new Float64Array(4);
@@ -869,6 +871,9 @@ export class BreaCloth {
       // (fix round 1, cost: a sleeping piece that did not ride this frame keeps its bones on the armature)
       if (!only && P.asleep && !P.rode) continue;
       const C = P.C, R = P.R, x = P.x, F0 = P.F0, s = P.root.s;
+      // (fix round 1: the tail's bones hang under the kept chain's root, dyn_wrapSash_01: their local matrix is that bone's
+      //  inverse times the frame)
+      const Ap = P.boneParent ? _m3.copy(P.boneParent.matrixWorld).invert().elements : A;
       for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
         const i = c + r * C, bi = P.boneOf[i];
         if (bi < 0) continue;
@@ -895,10 +900,10 @@ export class BreaCloth {
         W[8] = r02; W[9] = r12; W[10] = r22; W[11] = 0; W[12] = px; W[13] = py; W[14] = pz; W[15] = 1;
         for (let col = 0; col < 4; col++) {
           const w0 = W[col * 4], w1 = W[col * 4 + 1], w2 = W[col * 4 + 2], w3 = W[col * 4 + 3];
-          L[col * 4] = A[0] * w0 + A[4] * w1 + A[8] * w2 + A[12] * w3;
-          L[col * 4 + 1] = A[1] * w0 + A[5] * w1 + A[9] * w2 + A[13] * w3;
-          L[col * 4 + 2] = A[2] * w0 + A[6] * w1 + A[10] * w2 + A[14] * w3;
-          L[col * 4 + 3] = A[3] * w0 + A[7] * w1 + A[11] * w2 + A[15] * w3;
+          L[col * 4] = Ap[0] * w0 + Ap[4] * w1 + Ap[8] * w2 + Ap[12] * w3;
+          L[col * 4 + 1] = Ap[1] * w0 + Ap[5] * w1 + Ap[9] * w2 + Ap[13] * w3;
+          L[col * 4 + 2] = Ap[2] * w0 + Ap[6] * w1 + Ap[10] * w2 + Ap[14] * w3;
+          L[col * 4 + 3] = Ap[3] * w0 + Ap[7] * w1 + Ap[11] * w2 + Ap[15] * w3;
         }
       }
     }
@@ -918,6 +923,10 @@ export class BreaCloth {
       // (fix round 1: + the four torso segments: crouched from a fresh start the tail's strip went 2.5 mm into her back on
       //  93 of 180 frames of the Node sweep's crouch (tail>torso) with every particle clear)
       P.vpMask = tail ? ['quiver', 'torso0', 'torso1', 'torso2', 'torso3'].reduce((m, k) => m | (this.bits[k] || 0), 0) : P.mask;
+      // (...within TAIL_VP_REACH of the torso's inner surface only: at the full reach (0.06) every frame of the tail lying
+      //  on her back was skinned and tested, 0.24 ms of the frame standing in the trade wind; at 0.025 0.09 ms, and the
+      //  crouch, sit and climb hold 0 (at 0.02 the crouch's 93 frames came back))
+      P.vpReach = tail ? TAIL_VP_REACH : 0;
       const mesh = tail ? this.meshes.wrap : this.meshes.outfit;
       const g = mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, pos = g.attributes.position;
       const bones = mesh.skeleton.bones, invs = mesh.skeleton.boneInverses, partOf = new Map();
@@ -977,7 +986,7 @@ export class BreaCloth {
             const px = x[i * 3] + ro[i * 3] - ax, py = x[i * 3 + 1] + ro[i * 3 + 1] - ay, pz = x[i * 3 + 2] + ro[i * 3 + 2] - az, l2 = dx * dx + dy * dy + dz * dz;
             let t = l2 > 1e-12 ? (px * dx + py * dy + pz * dz) / l2 : 0;
             t = t < 0 ? 0 : t > 1 ? 1 : t;
-            const ex = px - dx * t, ey = py - dy * t, ez = pz - dz * t, rr = K.ri0 + (K.ri1 - K.ri0) * t + slack + (K.kitIdx ? VPASS.quiver : 0);
+            const ex = px - dx * t, ey = py - dy * t, ez = pz - dz * t, rr = K.ri0 + (K.ri1 - K.ri0) * t + (K.kitIdx ? slack + VPASS.quiver : P.vpReach > 0 ? P.vpReach + VPASS.margin : slack);
             if (ex * ex + ey * ey + ez * ez < rr * rr) { dm[i] |= 1 << (c & 31); anyD = true; }
           }
         }
@@ -1081,6 +1090,11 @@ export class BreaCloth {
         else ts.push(names.indexOf(nm) / (names.length - 1));
       }
       this.adapters.push({ P, ch, ts });
+      // (fix round 1: the TAIL's cl_ bones under the kept chain's root, dyn_wrapSash_01, not the armature: a reader that
+      //  scales that root to ~0 to take the tail out of a render (src/hero/sheets.js tailLegibility, A-tail-legible:
+      //  0 tail pixels in every view at fc6c916) takes the drawn tail out with it, as the chain-skinned tail did. The
+      //  chains are driven before the bones each frame (update, reset))
+      if (P.kind === 'tail' && ch.links[0]?.bone) { P.boneParent = ch.links[0].bone; for (const b of P.bones) P.boneParent.add(b); }
     }
   }
 
@@ -1154,14 +1168,16 @@ export class BreaCloth {
     S.wind.x = Number.isFinite(wind?.x) ? wind.x : 0; S.wind.z = Number.isFinite(wind?.z) ? wind.z : 0;
     S.update(dt, t);
     const k2 = pf ? S.clock() : 0;
-    this._writeBones();
-    const k3 = pf ? S.clock() : 0;
-    if (VPASS.on) this._vertexPass();
-    const k4 = pf ? S.clock() : 0;
+    // (fix round 1: the kept chains first (they read the particles only): the tail's cl_ bones hang under its chain's
+    //  root, so they are written against that root's place this frame, and the drawing pass skins them there)
     this._driveChains();
+    const k3 = pf ? S.clock() : 0;
+    this._writeBones();
+    const k4 = pf ? S.clock() : 0;
+    if (VPASS.on) this._vertexPass();
     if (S.clock) S.ringPut(S.clock() - t0);
     // (a bench's breakdown of the frame, when it hands an object: roots, colliders, solve, bones, sheet pass, chains)
-    if (pf) { const k5 = S.clock(); pf.roots = (pf.roots || 0) + k0 - t0; pf.coll = (pf.coll || 0) + k1 - k0; pf.solve = (pf.solve || 0) + k2 - k1; pf.bones = (pf.bones || 0) + k3 - k2; pf.vpass = (pf.vpass || 0) + k4 - k3; pf.chains = (pf.chains || 0) + k5 - k4; pf.n = (pf.n || 0) + 1; }
+    if (pf) { const k5 = S.clock(); pf.roots = (pf.roots || 0) + k0 - t0; pf.coll = (pf.coll || 0) + k1 - k0; pf.solve = (pf.solve || 0) + k2 - k1; pf.chains = (pf.chains || 0) + k3 - k2; pf.bones = (pf.bones || 0) + k4 - k3; pf.vpass = (pf.vpass || 0) + k5 - k4; pf.n = (pf.n || 0) + 1; }
   }
 
   /** The deterministic reset (the sim-time slate): roots and colliders read now, the settle, the bones written. */
@@ -1175,8 +1191,8 @@ export class BreaCloth {
     for (const r of S.roots) { decomp(r.bone, _pp, _pq); r.primed = false; ClothSystem.setRoot(r, _pp[0], _pp[1], _pp[2], _pq, _vs.x, 1 / 60); }
     this._updateColliders(1 / 60);
     S.reset(t);
-    this._writeBones();
     this._driveChains();
+    this._writeBones();
   }
 
   digest() { return this.ok ? this.sys.digest() : null; }

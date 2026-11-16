@@ -164,7 +164,7 @@ export class ClothPiece {
     // (declared here, set by the rig: one shape for every piece)
     this._act = null; this.fwd = new Float64Array([0, 0, 1]); this.lee = 0; this.stem = ''; this.kind = '';
     this.pinMask = 0; this.hard = 0.015; this.hardC = null; this.edges = false; this.edgesLegs = false; this.airK = 1; this.plumbCos = -2; this.rode = true; this.rideP = new Float64Array(3); this.rideQ = new Float64Array(4); this.cd = null; this.edge = null; this.aMax = null;
-    this.boneOf = null; this.bones = null; this.f0 = null; this.verts = null;
+    this.boneOf = null; this.bones = null; this.boneParent = null; this.vpReach = 0; this.f0 = null; this.verts = null;
     // (round 3, cost: every field the rig and the solver set later, declared here: one shape for every piece)
     this.bindG = null; this.yTop = 0; this.yBot = 0; this.thLo = null; this.thHi = null;
     this.pl = null; this.pc = null; this.hardHits = 0; this.qlOk = false; this.sAl = null; this.sAc = null; this.sRs = null; this.sEd = null;

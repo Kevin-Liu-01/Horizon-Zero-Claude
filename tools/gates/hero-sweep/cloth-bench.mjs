@@ -541,9 +541,9 @@ if (ROWS.includes('C10') && MODE === 2) {
   staged(R, { wind: [135, 5.5] });
   const C = rig(R);
   const take = () => { C.sys.ringN = 0; C.sys.ringI = 0; };
-  take();
+  take(); C._prof = args.includes('--prof') ? {} : null;
   for (let i = 0; i < 600; i++) step(R);
-  res.standTrade = C.sys.timing(); unstage(R);
+  res.standTrade = { ...C.sys.timing(), partsMs: C._prof && Object.fromEntries(Object.entries(C._prof).filter(([k]) => k !== 'n').map(([k, v]) => [k, rnd(v / C._prof.n, 4)])) }; C._prof = null; unstage(R);
   staged(R, {}); R.player.sprinting = true; take(); C._prof = args.includes('--prof') ? {} : null;
   for (let i = 0; i < 600; i++) { go(R, SPEEDS.sprint); step(R); }
   res.sprint = { ...C.sys.timing(), partsMs: C._prof && Object.fromEntries(Object.entries(C._prof).filter(([k]) => k !== 'n').map(([k, v]) => [k, rnd(v / C._prof.n, 4)])) }; C._prof = null; R.player.sprinting = false; unstage(R);
