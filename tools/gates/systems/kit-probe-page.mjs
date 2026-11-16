@@ -285,13 +285,17 @@ export async function runKit(page, { sleep, log = () => {} }) {
     const b = base(); const m = spawn('plumb', b.x + 20, b.z); place(b.x, b.z, b.x + 20, b.z); await frames(40); await raise();
     const E = C.engine, cam = C.camera, cb = C.combat, env = C.environment;
     m.root.updateMatrixWorld(true);
-    const aim = new V(m.position.x, m.position.y + 1.7, m.position.z);
-    // the nodes sampled: the 10 nearest the aim point (bones and part nodes), so the struck one is among them
+    // the shot goes at the body (the rig's chest: the Plumb's drum, high on its tripod; r1 aimed 1.7 m up and struck
+    // a thigh, which the body's kick does not move)
+    const chest = m.rig?.chest ?? m.rig?.head ?? null;
+    const aim = chest ? chest.getWorldPosition(new V()) : new V(m.position.x, m.position.y + 0.75 * (m.height ?? 3.4), m.position.z);
+    // the nodes sampled: the body's chain (spine, neck, head) and the 10 bones and part nodes nearest the aim point
+    const LEG = /thigh|shin|calf|foot|toe|ankle|knee|leg/i;
     const nodes = [];
     m.root.traverse((o) => { if (o !== m.root && (o.isBone || o.userData?.part)) nodes.push(o); });
     const wp = new V();
     nodes.sort((p, q) => p.getWorldPosition(wp).distanceTo(aim) - q.getWorldPosition(new V()).distanceTo(aim));
-    const pick = nodes.slice(0, 10);
+    const pick = [...new Set([...(m.rig?.spine ?? []), m.rig?.neck, m.rig?.head, ...nodes.slice(0, 10)].filter(Boolean))];
     let hull = null; m.root.traverse((o) => { if (!hull && o.isMesh && o.material?.userData?.hullU) hull = o; });
     const inv = new C.camera.matrixWorld.constructor(), mw = new C.camera.matrixWorld.constructor();
     const Q = C.camera.quaternion.constructor, q = new Q(), qr = new Q();
@@ -324,7 +328,8 @@ export async function runKit(page, { sleep, log = () => {} }) {
     const pre = S[Math.max(0, i0)];
     m.root.updateMatrixWorld(true);
     let ni = 0, nd = Infinity;
-    pick.forEach((o, i) => { const d = o.getWorldPosition(new V()).distanceTo(hp); if (d < nd) { nd = d; ni = i; } });
+    // the struck part: the sampled node nearest the hit that is not a leg (the legs are planted by their IK)
+    pick.forEach((o, i) => { if (LEG.test(o.name || '')) return; const d = o.getWorldPosition(new V()).distanceTo(hp); if (d < nd) { nd = d; ni = i; } });
     const dev = (s, r) => { const a = s.ps[ni], dx = a[0] - r[0], dy = a[1] - r[1], dz = a[2] - r[2]; const dot = Math.abs(a[3] * r[3] + a[4] * r[4] + a[5] * r[5] + a[6] * r[6]); return [Math.hypot(dx, dy, dz), 2 * Math.acos(Math.min(1, dot)) * 180 / Math.PI]; };
     const r0 = pre.ps[ni];
     // its own idle motion over the 0.4 s before the hit (breath, fidgets): the noise a settle is judged against
