@@ -72,8 +72,12 @@ const SPILL_POW = 1.45;
  * 1.2-1.9 % per pixel): the breakwater lamp lights its own deck. A point light by hand on the non-house pieces only
  * (aFoot >= 98: the breakwater, ramp, cones and cart): Lambert to the lantern, 1 / (1 + (r / LAMP_R)^2), gone by
  * LAMP_CUT m; the pier and plinth under the lantern keep their baked spill (nothing inside 0.75 m of its axis). */
-const LAMP_TINT = new THREE.Color(1.0, 0.76, 0.5);
-const LAMP_GAIN = 8.0, LAMP_R = 2.4, LAMP_CUT = 13.0;
+const LAMP_TINT = new THREE.Color(1.0, 0.82, 0.62);
+const LAMP_GAIN = 10.0, LAMP_R = 2.4, LAMP_CUT = 13.0;
+/* (step 4: at 4a896cb, gain 8 over r 2.4 m, the deck under the lens still read 130 sRGB against 198 at the lamp's foot,
+ * a tan floor: through the night exposure and AgX a 6x fall in light reads as 2.5x. The pool now ends on the deck: the
+ * light fades out between LAMP_POOL[0] and [1] m from the lantern's axis, so the deck under the lens is the moon's) */
+const LAMP_POOL = [2.2, 5.0];
 /** The share of the scene's light the town keeps at full night (fix round 1, F07: walls beyond a window's spill). */
 const NIGHT_LIGHT = 0.05;
 /** The open sky's fill on a house wall, x the hemisphere's sky colour and intensity (M1b closing fix, F24). */
@@ -138,6 +142,7 @@ export class Saltrow {
     this.spillGain = SPILL_GAIN;
     this.lampGain = LAMP_GAIN;
     this.uLampR2 = { value: LAMP_R * LAMP_R };
+    this.uLampPool = { value: new THREE.Vector2(LAMP_POOL[0], LAMP_POOL[1]) };
     this.uSkyFill = { value: new THREE.Color(0, 0, 0) };
     this.uSunH = { value: new THREE.Vector2(0, 1) };
     this.uSaltA = { value: null };
@@ -254,7 +259,7 @@ export class Saltrow {
     m.vertexColors = true;
     m.side = THREE.FrontSide;
     m.name = 'CAL.saltrow';
-    const U = { uLampR2: this.uLampR2, uLamp: this.uLamp, uLampCol: this.uLampCol, uSpillPow: this.uSpillPow, uSpill: this.uSpill, uNight: this.uNight, uSkyFill: this.uSkyFill, uSunH: this.uSunH, uSaltA: this.uSaltA, uSaltN: this.uSaltN, uSaltK: this.uSaltK, uCrust: CRUST };
+    const U = { uLampPool: this.uLampPool, uLampR2: this.uLampR2, uLamp: this.uLamp, uLampCol: this.uLampCol, uSpillPow: this.uSpillPow, uSpill: this.uSpill, uNight: this.uNight, uSkyFill: this.uSkyFill, uSunH: this.uSunH, uSaltA: this.uSaltA, uSaltN: this.uSaltN, uSaltK: this.uSaltK, uCrust: CRUST };
     m.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, U);
       shader.vertexShader = shader.vertexShader
@@ -267,6 +272,7 @@ uniform float uNight;
 uniform vec4 uLamp;      // the breakwater lantern's world position (xyz) and its strength (w)
 uniform vec3 uLampCol;
 uniform float uLampR2;   // LAMP_R squared
+uniform vec2 uLampPool;  // the pool's fade, metres from the lantern's axis
 uniform float uSpillPow;
 uniform vec3 uSkyFill;
 uniform vec2 uSunH;
@@ -356,7 +362,7 @@ if (vFoot > 97.5 && uLamp.w > 0.0) {
   float r = length(tl), ax = length(tl.xz);
   vec3 nWl = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
   float lam = max(dot(nWl, tl / max(r, 1e-3)), 0.0);
-  float fall = 1.0 / (1.0 + (r * r) / uLampR2) * (1.0 - smoothstep(${(LAMP_CUT * 0.65).toFixed(2)}, ${LAMP_CUT.toFixed(2)}, r));
+  float fall = 1.0 / (1.0 + (r * r) / uLampR2) * (1.0 - smoothstep(${(LAMP_CUT * 0.65).toFixed(2)}, ${LAMP_CUT.toFixed(2)}, r)) * (1.0 - smoothstep(uLampPool.x, uLampPool.y, ax));
   totalEmissiveRadiance += diffuseColor.rgb * uLampCol * uLamp.w * lam * fall * smoothstep(0.65, 0.85, ax);
 }`);
     };

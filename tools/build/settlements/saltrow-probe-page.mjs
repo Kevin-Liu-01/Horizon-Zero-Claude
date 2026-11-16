@@ -152,9 +152,9 @@ export async function probe(frame) {
        * of the top quarter (the sky). Each variant is put back before the next. The shipped one is listed first. */
       try {
         const L = E.look;
-        const v0 = { pow: town.uSpillPow.value, spill: town.spillGain, lamp: town.lampGain, lr2: town.uLampR2?.value ?? 5.76, bloom: L?.bloomScale ?? null };
+        const v0 = { pow: town.uSpillPow.value, spill: town.spillGain, lamp: town.lampGain, lr2: town.uLampR2?.value ?? 5.76, pool: town.uLampPool?.value.clone() ?? null, bloom: L?.bloomScale ?? null };
         const VARS = [{ id: 'shipped' }, { id: 'lamp0', lamp: 0 },
-          ...[1.8, 2.4, 3.0].flatMap((r) => [5, 8, 12].map((g) => ({ id: `lamp${g}-r${r}`, lamp: g, lr: r }))), { id: 'pow1', pow: 1.0 },
+          ...[[1.6, 3.5], [2.2, 5.0], [3.0, 7.0]].flatMap((p) => [7, 10, 14].map((g) => ({ id: `lamp${g}-pool${p[1]}`, lamp: g, pool: p }))), { id: 'pow1', pow: 1.0 },
           { id: 'pow2', pow: 2.0 }, { id: 'spill0.6', spill: 0.6 }, { id: 'bloom1', bloom: (v0.bloom ?? 1) / 0.45 }, { id: 'bloom0.25', bloom: (v0.bloom ?? 1) * 0.55 }];
         out.walls.variants = [];
         for (const v of VARS) {
@@ -162,6 +162,7 @@ export async function probe(frame) {
           if (v.spill != null) town.spillGain = v.spill;
           if (v.lamp != null) town.lampGain = v.lamp;
           if (v.lr != null) town.uLampR2.value = v.lr * v.lr;
+          if (v.pool) town.uLampPool.value.set(v.pool[0], v.pool[1]);
           town.update(0);
           if (v.bloom != null && L?.set) L.set({ bloomScale: v.bloom });
           const B = readback();
@@ -174,10 +175,10 @@ export async function probe(frame) {
           for (let i = 0; i < B.raw.length; i += 4) { sY += Yof(B.raw, i); r2 += B.raw[i]; g2 += B.raw[i + 1]; b2 += B.raw[i + 2]; m2++; }
           for (let y = 0; y < (bh >> 2); y++) for (let x = 0; x < bw; x++) { const i = ((bh - 1 - y) * bw + x) * 4; skyMax = Math.max(skyMax, 0.2126 * B.raw[i] + 0.7152 * B.raw[i + 1] + 0.0722 * B.raw[i + 2]); }
           const om = (0.2126 * LIN[Math.round(r2 / m2)] + 0.7152 * LIN[Math.round(g2 / m2)] + 0.0722 * LIN[Math.round(b2 / m2)]) * 100;
-          out.walls.variants.push({ id: v.id, pow: town.uSpillPow.value, spill: town.spillGain, lamp: town.lampGain, lampR: +Math.sqrt(town.uLampR2?.value ?? 0).toFixed(2), bloom: L?.bloomScale ?? null,
+          out.walls.variants.push({ id: v.id, pow: town.uSpillPow.value, spill: town.spillGain, lamp: town.lampGain, lampR: +Math.sqrt(town.uLampR2?.value ?? 0).toFixed(2), pool: town.uLampPool ? town.uLampPool.value.toArray() : null, bloom: L?.bloomScale ?? null,
             frameY: { ofMeans: +om.toFixed(2), perPixel: +(sY / m2 * 100).toFixed(2) }, medianY: { near: med(nr), far: med(fr) }, p90Far: pct(fr, 0.9), skyTopQuarterMaxLuma: +skyMax.toFixed(1) });
           if (v.lamp != null) out.walls.variants[out.walls.variants.length - 1].png = await pngOf(B, 640, 360);
-          town.uSpillPow.value = v0.pow; town.spillGain = v0.spill; town.lampGain = v0.lamp; town.uLampR2.value = v0.lr2; town.update(0);
+          town.uSpillPow.value = v0.pow; town.spillGain = v0.spill; town.lampGain = v0.lamp; town.uLampR2.value = v0.lr2; if (v0.pool) town.uLampPool.value.copy(v0.pool); town.update(0);
           if (v.bloom != null && L?.set) L.set({ bloomScale: v0.bloom });
         }
         readback();
