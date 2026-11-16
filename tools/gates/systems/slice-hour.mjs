@@ -26,6 +26,12 @@
  *                    CONTINUE on the title: the same stage, satchel, place and hour as the record; the run plays on
  *   save-continue    the same after the run, on the run's newest record. A diagnosis is polled while the title is
  *                    awaited (see reloadContinue: a new tab got no animation frames and the title sat in 'idle')
+ *   death-staged     with --death-at <stage>: the death is staged there (her own takeDamage), then played as above;
+ *                    the death-rule row records the stand-up at the Brazier (full health, the stage kept, the satchel
+ *                    and Gourd of the newest record, within 3 m of the Brazier of her last rest)
+ *   site-clock       after the run (M1.6n): the dyke Plumb (the quest's own) killed if it still stands, its wreck aged
+ *                    out, 13 hours put on the site clock (STAGED), the clock swept: the dyke Plumb must not return; a
+ *                    control Plumb spawned 150 m behind the camera and cleared the same way must
  *
  * Output: a run dir under ~/.calima-r5/review/runs/ (never the repo): report.json, the frames, step shots.
  */
@@ -68,6 +74,11 @@ const WEAR = flag('--wear');
 const WEAR_AT = flag('--wear-at');
 const NO_REFUSAL = args.includes('--no-refusal');
 const KIT_ONLY = flag('--kit-only') ? new Set(flag('--kit-only').split(',').map((x) => x.trim())) : null;
+// M1b round 3: --death-at <stage>: when the run reaches that stage, Brea is killed (STAGED: her own takeDamage, the
+// real death path after it) and the run plays the death as a player does (the card, RETURN TO THE LAST BRAZIER) and on
+// to the end: the death-rule row on demand, mid-slice. --no-site-clock skips the site-clock row after the run
+const DEATH_AT = flag('--death-at');
+const SITE_CLOCK = !args.includes('--no-site-clock');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[slice-hour ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -1086,7 +1097,7 @@ try {
   log(`save-reload: ${report.rows['save-reload'].pass ? 'PASS' : 'FAIL'} (${report.rows['save-reload'].why ?? `boot ${report.rows['save-reload'].bootS} s`})`);
   if (!report.rows['save-reload'].pass && (await page.evaluate(() => window.__CTX__?.state)) !== 'playing') throw new Error('save-reload left the game off play: the run cannot go on');
 
-  let last = null, tries = 0, deaths = 0;
+  let last = null, tries = 0, deaths = 0, stagedDeath = false;
   while (spent() < BUDGET_S - RESERVE_S) {
     const s = await page.evaluate(probe);
     if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) {
@@ -1106,14 +1117,17 @@ try {
         : await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-death-opt')].find((x) => /RETURN TO THE LAST BRAZIER/.test(x.textContent)); if (!b) return false; b.click(); return true; });
       await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 20000, polling: 100 }).catch(() => {});
       await sleep(1500);
-      const post = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position, R = C.braziers.lastRest; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), state: C.state, hp: Math.round(C.player.health), salt: C.inventory.count('metal-shards'), gourd: Math.round(C.player.gourd ?? 0),
+      const post = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position, R = C.braziers.lastRest; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), state: C.state, hp: Math.round(C.player.health), maxHp: Math.round(C.player.maxHealth), salt: C.inventory.count('metal-shards'), gourd: Math.round(C.player.gourd ?? 0),
         satchel: Object.fromEntries(Object.keys(C.progression.saves.store.latest(C.progression.saves.store.continueSlot())?.satchel || {}).map((k) => [k, C.inventory.count(k)])),
         fromRest: R ? +Math.hypot(P.x - R.x, P.z - R.z).toFixed(2) : null, rest: R?.id ?? null }; });
       const rec = pre.record;
       const satchelKept = !!rec && Object.entries(rec.satchel || {}).every(([k, v]) => (post.satchel?.[k] ?? 0) === v) && post.salt === rec.salt;
       const gourdKept = !!rec && Math.abs(post.gourd - rec.gourd) <= 1;
-      const row = { death: deaths, at: s.stage, card, clicked, pre, post, satchelKept, gourdKept, cardShot, shot: await shot(page, `d${deaths}-stood-up`),
-        pass: clicked && post.state === 'playing' && post.idx === pre.idx && post.fromRest != null && post.fromRest < 3 && satchelKept && gourdKept };
+      const row = { death: deaths, at: s.stage, staged: report.rows['death-staged']?.at === s.stage && !report.rows['death-staged'].played, card, clicked, pre, post, satchelKept, gourdKept, cardShot, shot: await shot(page, `d${deaths}-stood-up`),
+        // she stands up at the Brazier of her last rest at full health (format.js deathRecord), on the stage she died on
+        hpFull: post.hp >= post.maxHp - 0.5,
+        pass: clicked && post.state === 'playing' && post.idx === pre.idx && post.fromRest != null && post.fromRest < 3 && satchelKept && gourdKept && post.hp >= post.maxHp - 0.5 };
+      if (row.staged) report.rows['death-staged'].played = true;
       (report.rows['death-rule'] ||= []).push(row);
       log(`death ${deaths} at ${s.stage}: stood up ${post.fromRest} m from ${post.rest}, stage ${pre.stage} -> ${post.stage}`);
       last = null; tries = 0;
@@ -1125,6 +1139,16 @@ try {
     if (s.stage === last) tries++; else tries = 0;
     if (tries > 1) { report.stoppedAt = s.stage; report.why = report.beats.at(-1)?.why || 'no progress'; break; }
     last = s.stage;
+    if (DEATH_AT && s.stage === DEATH_AT && !stagedDeath) {
+      // the staged death: her own damage path (player.takeDamage -> _die), so the card, the park and the respawn are the game's
+      stagedDeath = true;
+      report.rows['death-staged'] = { at: s.stage, ...(await page.evaluate(() => { const C = window.__CTX__, P = C.player;
+        const hp = Math.round(P.health); P.takeDamage(P.health + 50, 'staged'); return { hpBefore: hp, hpAfter: Math.round(P.health), state: C.state }; })) };
+      log(`death staged at ${s.stage}: ${JSON.stringify(report.rows['death-staged'])}`);
+      await page.waitForFunction(() => window.__CTX__.state === 'dead' || window.__CTX__.state === 'death-menu' || !!document.querySelector('.mn-death.show'), { timeout: 10000, polling: 100 }).catch(() => {});
+      last = null; tries = 0;
+      continue;
+    }
     const b0 = Date.now();
     log(`beat ${s.stage} (${s.type})`);
     const r = await beat(page, K, s);
@@ -1153,6 +1177,56 @@ try {
   report.reward = await page.evaluate(() => { const C = window.__CTX__, L = C.player?.hero?.loadout;
     return { armor: L?.armorId ?? null, perk: L?.perk ?? null, rung: C.systemsGame?.rung ?? null, flagDuration: C.machines?.perception?.flagDuration ?? null, rewarded: !!C.spine?.rewarded, done: !!C.spine?.done }; }).catch((e) => ({ error: String(e).slice(0, 160) }));
   report.anchors = await page.evaluate(() => window.__CTX__.systemsGame.A);
+  if (DEATH_AT && report.rows['death-staged']) {
+    const ds = report.rows['death-staged'], dr = (report.rows['death-rule'] || []).find((r) => r.staged);
+    ds.row = dr ? { pass: dr.pass, fromRest: dr.post.fromRest, rest: dr.post.rest, hp: dr.post.hp, stage: dr.post.stage, satchelKept: dr.satchelKept, gourdKept: dr.gourdKept } : null;
+    ds.pass = !!dr?.pass && report.stoppedAt === 'reward';
+  }
+  if (SITE_CLOCK) {
+    report.rows['site-clock'] = await page.evaluate(async () => {
+      const C = window.__CTX__, R = C.siteRefill, K = C.siteClock, A = C.systemsGame?.A, M = C.machines;
+      if (!R || !K || !A || !M?.sites) return { error: 'no site clock in this build' };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = A.station, V = C.player.position.constructor;
+      const kill = (m) => { try { m.takeDamage({ impact: 1e7, tear: 0, point: null, object: null, dir: { x: 0, y: 0, z: 1 }, seen: true }); } catch { /* */ } };
+      const dykeSites = () => M.sites.sites.filter((s) => s && s.kind === 'plumb' && s.questOwned && Math.hypot(s.x - st.x, s.z - st.z) < 3);
+      const row = { questDone: !!C.spine?.done, hours0: +K.hours.toFixed(3) };
+      row.dykeBefore = dykeSites().map((s) => ({ id: s.id, pending: s.pending, alive: !!s.machine && s.machine.alive !== false }));
+      // STAGED: the dyke Plumb killed if it still stands (the run walks away from it), a control Plumb spawned 150 m behind
+      // the camera and killed, and both wrecks aged out by the machines' own debug hook (SiteManager.advance)
+      for (const s of dykeSites()) if (s.machine && s.machine.alive !== false) kill(s.machine);
+      const cd = new V(); C.camera.getWorldDirection(cd); cd.y = 0; cd.normalize();
+      // on dry ground: straight behind, then turned up to 40 deg either way, 150 m then 120 m off
+      const P = C.player.position;
+      let cx = null, cz = null;
+      for (const d of [150, 120]) for (const a of [0, 20, -20, 40, -40]) {
+        if (cx != null) break;
+        const r = a * Math.PI / 180, bx = -(cd.x * Math.cos(r) - cd.z * Math.sin(r)), bz = -(cd.x * Math.sin(r) + cd.z * Math.cos(r));
+        const x = P.x + bx * d, z = P.z + bz * d;
+        if ((C.terrain?.getHeight?.(x, z) ?? -1) > 0.5) { cx = x; cz = z; }
+      }
+      row.control = cx != null ? { x: +cx.toFixed(1), z: +cz.toFixed(1), fromHer: +Math.hypot(cx - P.x, cz - P.z).toFixed(1) } : { error: 'no dry ground behind her' };
+      const ctl = cx != null ? M.spawn('plumb', cx, cz, {}) : null;
+      if (ctl?.ai) ctl.ai.tick = () => {};
+      await sleep(300);
+      if (ctl) kill(ctl);
+      await sleep(300);
+      M.sites.advance(100, 1);
+      const ids = () => ({ dyke: dykeSites().map((s) => s.id), ctl: ctl?._site?.id ?? null });
+      const at = (id) => { const s = M.sites.sites.find((x) => x.id === id); return s ? { id, pending: s.pending, back: !!s.machine && s.machine.alive !== false, respawnAt: Number.isFinite(s.respawnAt) ? +s.respawnAt.toFixed(1) : String(s.respawnAt), verdict: K.verdict(id, R.world) } : null; };
+      const I = ids();
+      row.beforeClock = { dyke: I.dyke.map(at), ctl: at(I.ctl) };
+      K.advance(13);   // STAGED: 13 hours on the site clock
+      row.swept = R.sweep();
+      row.afterClock = { hours: +K.hours.toFixed(3), dyke: I.dyke.map(at), ctl: at(I.ctl) };
+      row.log = R.log.slice(-4);
+      row.pass = row.questDone && I.dyke.length >= 1 && row.afterClock.dyke.every((d) => d && d.pending && !d.back && d.verdict.why === 'quest')
+        && !!row.afterClock.ctl && row.afterClock.ctl.back && !row.beforeClock.ctl?.back;
+      row.bar = 'after the quest and 13 h on the site clock: the dyke Plumb is not back (the quest\'s own); a cleared site Plumb 150 m behind her is';
+      return row;
+    }).catch((e) => ({ error: String(e?.message || e).slice(0, 300) }));
+    log(`site-clock: ${report.rows['site-clock'].pass ? 'PASS' : 'FAIL'} ${JSON.stringify(report.rows['site-clock']).slice(0, 400)}`);
+  }
   report.stopShot = await shot(page, 'b-stop');
   if (PAD) report.pad = { ...(await padState(page)), presses: await page.evaluate(() => window.__pad?.presses ?? null), stickSteps: await page.evaluate(() => window.__pad?.stickSteps ?? 0), keyboardUsed: false };
 

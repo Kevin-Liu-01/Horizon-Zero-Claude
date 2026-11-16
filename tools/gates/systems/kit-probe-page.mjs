@@ -55,8 +55,31 @@ const PRELUDE = `
   const shoot = async (ammo, pt, waitMs = 650, solve = true) => {
     aimFor(ammo, pt, solve);
     const n0 = K.ev.length;
+    const AP = C.combat.arrows, flying = new Set(AP.list.filter((x) => x.mode === 'fly'));
     C.combat._fire();
-    await wait(waitMs);
+    // M1b round 3 (reed-peg and plumb-arrows failing at 375c3ff: arrows the game's own flight says meet the part
+    // struck nothing or the ground beyond): the arrow actually loosed, followed frame by frame: its launch against the
+    // solve's, its closest approach to the point, how it ended, and the frames' clock
+    const a = AP.list.find((x) => x.mode === 'fly' && !flying.has(x)) ?? null;
+    const fl = a ? { p0: [r3(a.pos.x), r3(a.pos.y), r3(a.pos.z)], v0: [r3(a.vel.x), r3(a.vel.y), r3(a.vel.z)], dirDot: K.lastDir ? r3(a.vel.clone().normalize().dot(K.lastDir)) : null,
+      near: Infinity, nearAge: null, frames: 0, ages: [], end: null } : { none: true };
+    const tw = performance.now(), q = new V();
+    let last = a ? a.pos.clone() : null;
+    while (performance.now() - tw < waitMs) {
+      await raf();
+      if (!a || fl.end) continue;
+      fl.frames++;
+      if (fl.ages.length < 6) fl.ages.push(r3(a.age));
+      // the closest approach of the tail's step to pt
+      const d = new V().subVectors(a.pos, last), L2 = d.lengthSq();
+      const u = L2 > 1e-12 ? Math.max(0, Math.min(1, q.subVectors(pt, last).dot(d) / L2)) : 0;
+      const dd = q.copy(last).addScaledVector(d, u).distanceTo(pt);
+      if (dd < fl.near) { fl.near = r3(dd); fl.nearAge = r3(a.age); }
+      last.copy(a.pos);
+      if (a.mode !== 'fly') fl.end = { mode: a.mode, at: [r3(a.pos.x), r3(a.pos.y), r3(a.pos.z)], on: a.stuckTo?.kind ?? a.stuckTo?.machine?.kind ?? null, age: r3(a.age) };
+    }
+    if (a && !fl.end) fl.end = { mode: a.mode, at: [r3(a.pos.x), r3(a.pos.y), r3(a.pos.z)], age: r3(a.age) };
+    K.lastFlight = fl;
     return K.ev.slice(n0);
   };
   /**
@@ -118,6 +141,7 @@ const PRELUDE = `
     {
       const def2 = cb.ammoDefs?.[ammo] ?? cb.ammoDefs.hunter, d2 = new V(), cd = new V();
       const sp2 = cb._computeShot(def2, 1, nock, d2);
+      K.lastDir = d2.clone();
       C.camera.getWorldDirection(cd);
       const st = C.engine?.steps || 1, pr = cb.arrows.predict?.(nock, d2, sp2, { dt: 1 / 60 / Math.max(1, st), aim: pt });
       K.lastShot = { nock: [r3(nock.x), r3(nock.y), r3(nock.z)], fromP: r3(nock.distanceTo(P.position)), camDot: r3(d2.dot(cd)),
@@ -201,9 +225,11 @@ export async function runKit(page, { sleep, log = () => {}, only = null }) {
   await run('reed-peg', () => page.evaluate(ev(`
     const b = base(); const m = spawn('peg', b.x + 12, b.z); place(b.x, b.z, b.x + 12, b.z); await frames(20); await raise();
     let n = 0; const hits = [];
-    while (m.alive !== false && n < 3) { calm(m); const e = await shoot('hunter', wpos(m._lampWp.obj), 650, false); n++; hits.push(e.filter((x) => x.n === 'arrow-hit').map((x) => ({ weak: x.weak, dmg: x.dmg && Math.round(x.dmg) }))); }
+    const diag = [];
+    while (m.alive !== false && n < 3) { calm(m); const lp = wpos(m._lampWp.obj); const e = await shoot('hunter', lp, 650, false); n++; hits.push(e.filter((x) => x.n === 'arrow-hit').map((x) => ({ weak: x.weak, dmg: x.dmg && Math.round(x.dmg), kind: x.kind, pt: x.pt })));
+      diag.push({ lamp: [r3(lp.x), r3(lp.y), r3(lp.z)], shot: K.lastShot, flight: K.lastFlight }); }
     await lower();
-    return { num: { arrowsToKill: m.alive === false ? n : null, hits }, pass: m.alive === false && n === 1, bar: 'one Reed arrow on the lamp kills a Peg' };`)));
+    return { num: { arrowsToKill: m.alive === false ? n : null, hits }, diag, pass: m.alive === false && n === 1, bar: 'one Reed arrow on the lamp kills a Peg' };`)));
 
   /* ---------------- gauge-ballast ---------------- */
   await run('gauge-ballast', () => page.evaluate(ev(`
@@ -228,14 +254,15 @@ export async function runKit(page, { sleep, log = () => {}, only = null }) {
     /* Blunt: two Reed arrows on the standing bob */
     const bob = m._bob; const hp0 = bob.tearHp, h0 = m.health; let struck = [];
     const diag = [];
-    for (let i = 0; i < 2; i++) { calm(m); const e = await shoot('hunter', wpos(bob.mesh)); diag.push({ ...K.lastShot, hitPt: e.find((x) => x.n === 'arrow-hit')?.pt ?? null }); const h = e.find((x) => x.n === 'arrow-hit'); struck.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
+    for (let i = 0; i < 2; i++) { calm(m); const e = await shoot('hunter', wpos(bob.mesh)); diag.push({ ...K.lastShot, hitPt: e.find((x) => x.n === 'arrow-hit')?.pt ?? null, flight: K.lastFlight }); const h = e.find((x) => x.n === 'arrow-hit'); struck.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
     out.blunt = { bobTearTaken: r3(hp0 - bob.tearHp), bodyDamage: r3(h0 - m.health), struck, bobOn: bob.attached !== false, diag, bobAt: (() => { const q = wpos(bob.mesh); return [r3(q.x), r3(q.y), r3(q.z)]; })(), herAt: [r3(P.position.x), r3(P.position.y), r3(P.position.z)] };
     /* the vial: Reed arrows until it topples */
     m.health = m.maxHealth;
     let n = 0, tTop = null, sTop = null; const vh = [];
     const vs = [];
-    while (!(m._toppleT >= 0) && n < 8) { calm(m); const e = await shoot('hunter', wpos(m._vialWp.obj), 420); n++; vh.push(m._vialHits); const h = e.find((x) => x.n === 'arrow-hit'); vs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); const tp = e.find((x) => x.n === 'plumb-topple'); if (tp) { tTop = tp.t; sTop = tp.s; } }
-    out.topple = { arrows: n, vialHitsSeq: vh, struck: vs, toppled: m._toppleT >= 0 };
+    const vd = [];
+    while (!(m._toppleT >= 0) && n < 8) { calm(m); const e = await shoot('hunter', wpos(m._vialWp.obj), 420); n++; vh.push(m._vialHits); vd.push({ first: K.lastShot?.first ?? null, predMissM: K.lastShot?.predMissM ?? null, flight: K.lastFlight }); const h = e.find((x) => x.n === 'arrow-hit'); vs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); const tp = e.find((x) => x.n === 'plumb-topple'); if (tp) { tTop = tp.t; sTop = tp.s; } }
+    out.topple = { arrows: n, vialHitsSeq: vh, struck: vs, toppled: m._toppleT >= 0, diag: vd };
     if (!(m._toppleT >= 0)) { await lower(); return { num: out, pass: false, error: 'never toppled' }; }
     tTop = tTop ?? performance.now();
     /* Pry: one Barbed arrow on the toppled bob */
