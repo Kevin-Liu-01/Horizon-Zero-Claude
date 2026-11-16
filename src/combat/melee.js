@@ -786,6 +786,7 @@ export class Melee {
 
   /** Ask for the lance. Returns the seconds until it is swingable. */
   drawLance(hold = READY_HOLD) {
+    this._holsterQ = null;         // (M1a weapons fix 1: asking for the lance again cancels a stow held for the draw's end)
     this._readyT = Math.max(this._readyT, hold);
     if (this.stance === 'ready' || this.stance === 'swing') return 0;
     if (this.stance === 'draw') return DRAW_T - this._drawT;
@@ -804,6 +805,19 @@ export class Melee {
   holsterLance(fast = false, calm = false) {
     if (this.stance === 'holstered' || this.stance === 'holster') return;
     if (this.active) return;
+    /* M1a weapons fix 1 (hero-anim; W10, "abort before the commit, never a cut"): a stow asked during the draw before
+     * the left hand has taken the haft ends the draw: the lance never left its keeper. (The holster entered at the
+     * draw's mirror point stood the untaken lance 1.27 m off her back for three steps: B or an aim at 0.05 s.) */
+    if (this.stance === 'draw') {
+      const lay = this.layer;
+      if (lay?.ok && lay.lanceOwner && lay.lanceOwner() === 'carry') {
+        this.stance = 'holstered'; this._drawT = 0; this._readyT = 0; this._queued = null; this._keyGuard = false; this._holsterQ = null;
+        return;
+      }
+      /* (...and after the take the draw holds its course to the guard, then stows: "hold after it". Entered at the draw's
+       *  mirror point it threw the wrist 0.38-0.41 m a step, W10 lanceDraw/opposite @4-5) */
+      if (lay?.ok && lay.lanceOwner) { this._holsterQ = { fast, calm }; return; }
+    }
     this._keyGuard = false;
     this._holsterDur = fast ? HOLSTER_T_AIM : calm ? HOLSTER_T_CALM : HOLSTER_T;
     this._drawT = this.stance === 'draw'
@@ -879,6 +893,8 @@ export class Melee {
           this._readyT = Math.max(this._readyT, READY_HOLD);
           this._drawLunged = false;
           if (this._queued) { const q = this._queued; this._queued = null; this._fire(q.heavy); }
+          // (M1a weapons fix 1: a stow asked after the take runs now, from the guard)
+          if (this._holsterQ) { const h = this._holsterQ; this._holsterQ = null; this.holsterLance(h.fast, h.calm); }
         }
       }
     } else if (this.stance === 'holster') {
