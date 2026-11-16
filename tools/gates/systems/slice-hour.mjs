@@ -916,7 +916,16 @@ try {
   await page.evaluateOnNewDocument(`window.__aimPoint = ${aimPoint.toString()};`);
   await page.evaluateOnNewDocument(() => { window.__raf = 0; const tick = () => { window.__raf++; requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
-  await page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press', { timeout: 240000, polling: 100 });
+  // M1b: at bab1f0c the run's page sat 240 s short of the title's 'press' with no console error (the frames page had
+  // booted in the same session): what it was doing is recorded, and the page is loaded once more before giving up
+  const atPress = () => page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press', { timeout: 150000, polling: 100 });
+  try { await atPress(); } catch (e) {
+    report.titleWait = await page.evaluate(() => ({ ctx: !!window.__CTX__, state: window.__CTX__?.state ?? null, stage: window.__CTX__?.menus?.titleStage ?? null,
+      load: document.querySelector('#loading, .loading, .mn-load')?.textContent?.slice(0, 120) ?? null, raf: window.__raf ?? null, vis: document.visibilityState })).catch((x) => ({ evalError: String(x).slice(0, 200) }));
+    log(`title not reached in 150 s: ${JSON.stringify(report.titleWait)}; loading the page again`);
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 180000 });
+    await atPress();
+  }
   await sleep(500);
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 60000, polling: 50 });
