@@ -192,12 +192,16 @@ async function solveShot(mi, part, tolDeg) {
   if (!m || m.alive === false) return null;
   const V = C.camera.position.constructor;
   const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
-  // the target's motion and the engine's sub-step, measured (8 frames)
-  const p0 = m.position.clone(), s0 = E.simTime, dts = [];
+  // the target's motion and the engine's sub-step, measured (8 frames). M1b round 3: the motion of the PART's own node,
+  // not the root's (the kit at 3e04504: a calm Plumb's vial moved 1.09 m in a second with its root speed reading 0; at
+  // 9f8bc85 the topple's 16 vial shots from 28-47 m, each read as a hit on the root's ride, all missed)
+  const node = part === 'vial' ? m._vialWp?.obj : part === 'bob' ? (m._bob?.attached !== false ? m._bob?.mesh : null) : part === 'lamp' ? (m._lampWp?.obj ?? m.weakPoints?.find((w) => w.name === 'lamp')?.obj) : null;
+  const where = () => (node ? node.getWorldPosition(new V()) : m.position.clone());
+  const p0 = where(), s0 = E.simTime, dts = [];
   let sPrev = s0;
   for (let i = 0; i < 8; i++) { await raf(); const st = E.steps || 0; if (st > 0 && E.simTime > sPrev) dts.push((E.simTime - sPrev) / st); sPrev = E.simTime; }
-  const span = E.simTime - s0;
-  const ride = span > 0.02 ? { x: (m.position.x - p0.x) / span, y: 0, z: (m.position.z - p0.z) / span } : { x: 0, y: 0, z: 0 };
+  const span = E.simTime - s0, p1 = where();
+  const ride = span > 0.02 ? { x: (p1.x - p0.x) / span, y: (p1.y - p0.y) / span, z: (p1.z - p0.z) / span } : { x: 0, y: 0, z: 0 };
   dts.sort((a, b) => a - b);
   const dt = dts.length ? dts[dts.length >> 1] : 1 / 60;
   const lat = 2 * (span > 0 ? span / 8 : 1 / 60);
@@ -265,7 +269,7 @@ async function solveShot(mi, part, tolDeg) {
     const def = cb.ammoDefs[cb.activeWeapon?.activeAmmo ?? 'hunter'] ?? cb.ammoDefs.hunter;
     const speed = cb._computeShot(def, cb.drawStrength, sp, dir);
     // + the release: the LMB the runner lets go after this solve reaches the game a frame or two later
-    const k = E.simTime - t0 + lat, at = { x: aim.x + ride.x * k, y: aim.y, z: aim.z + ride.z * k };
+    const k = E.simTime - t0 + lat, at = { x: aim.x + ride.x * k, y: aim.y + ride.y * k, z: aim.z + ride.z * k };
     const r = cb.arrows.predict(sp, dir, speed, { dt, maxT: 1.6, ride, aim: at });
     return { miss: new V(r.dx, r.dy, r.dz), d: r.d, first: r.hit ? (r.machine === m ? r.hit : r.hit === 'ground' ? 'ground' : `other:${r.machine?.kind ?? '?'}`) : null, t: r.tAim, at };
   };
@@ -274,7 +278,7 @@ async function solveShot(mi, part, tolDeg) {
     const aim = aims[ai];
     // the first look: the aim point where it will be when the arrow arrives (lead), the drop held over
     const tf0 = sp.copy(aim).distanceTo(C.camera.position) / 62;
-    const goal = new V(aim.x + ride.x * tf0, aim.y + 0.5 * 9.8 * tf0 * tf0, aim.z + ride.z * tf0);
+    const goal = new V(aim.x + ride.x * tf0, aim.y + ride.y * tf0 + 0.5 * 9.8 * tf0 * tf0, aim.z + ride.z * tf0);
     let r = null, err = null;
     for (let it = 0; it < 8; it++) {
       err = (await window.__aimPoint(goal.x, goal.y, goal.z, tolDeg)).err;
@@ -285,7 +289,7 @@ async function solveShot(mi, part, tolDeg) {
     }
     const met = want && r.first && (want === 'bob' ? /bob/i.test(r.first) : r.first === want);
     out = { aimIdx: ai, err, missM: +r.d.toFixed(3), first: r.first, ds: +cb.drawStrength.toFixed(2), dt: +dt.toFixed(4),
-      ride: +Math.hypot(ride.x, ride.z).toFixed(2), tf: r.t != null ? +r.t.toFixed(3) : null, steady: cb.steady?.phase ?? null, sway: +(cb.sway?.deg ?? 0).toFixed(3) };
+      ride: +Math.hypot(ride.x, ride.y, ride.z).toFixed(2), tf: r.t != null ? +r.t.toFixed(3) : null, steady: cb.steady?.phase ?? null, sway: +(cb.sway?.deg ?? 0).toFixed(3) };
     if (!want || met) return { ...out, clear: true };
   }
   return { ...out, clear: false };

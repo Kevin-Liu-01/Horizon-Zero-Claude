@@ -53,6 +53,21 @@ const PRELUDE = `
   const lower = async () => { C.input.mouse.buttons &= ~4; await frames(6); };
   /** one real arrow at world point pt (held over for the drop at full draw) */
   const shoot = async (ammo, pt, waitMs = 650, solve = true, track = null) => {
+    // M1b round 3: a staged Instrument with its brain off still walks and sways (the calm Plumb's vial moved 1.09 m in
+    // a second at 3e04504, a Peg's lamp 0.18 m in a 0.2 s flight): the shot LEADS the target's own node, its velocity
+    // read over 6 frames on the simulation clock, by the flight time to it (twice: the time depends on the lead)
+    if (track) {
+      const p0 = wpos(track), s0 = C.engine?.simTime ?? performance.now() / 1000;
+      await frames(6);
+      const p1 = wpos(track), s1 = C.engine?.simTime ?? performance.now() / 1000, dts = s1 - s0;
+      const v = dts > 1e-3 ? p1.clone().sub(p0).multiplyScalar(1 / dts) : new V();
+      const nk = new V(); C.combat.bow.getNockWorld(1, nk);
+      const sp = (C.combat.ammoDefs?.[ammo] ?? C.combat.ammoDefs.hunter).speed;
+      let aimAt = p1.clone();
+      for (let i = 0; i < 2; i++) { const tf = aimAt.distanceTo(nk) / (sp * 0.97); aimAt = p1.clone().addScaledVector(v, tf); }
+      K.lead = { v: [r3(v.x), r3(v.y), r3(v.z)], speed: r3(v.length()), by: r3(aimAt.distanceTo(p1)) };
+      pt = aimAt;
+    } else K.lead = null;
     aimFor(ammo, pt, solve);
     const n0 = K.ev.length;
     const AP = C.combat.arrows, flying = new Set(AP.list.filter((x) => x.mode === 'fly'));
@@ -79,6 +94,7 @@ const PRELUDE = `
       if (a.mode !== 'fly') fl.end = { mode: a.mode, at: [r3(a.pos.x), r3(a.pos.y), r3(a.pos.z)], on: a.stuckTo?.kind ?? a.stuckTo?.machine?.kind ?? null, age: r3(a.age) };
     }
     if (a && !fl.end) fl.end = { mode: a.mode, at: [r3(a.pos.x), r3(a.pos.y), r3(a.pos.z)], age: r3(a.age) };
+    if (K.lead) fl.lead = K.lead;
     K.lastFlight = fl;
     return K.ev.slice(n0);
   };
