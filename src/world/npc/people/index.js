@@ -286,6 +286,7 @@ export class PeopleSystem {
       ax = G.wx(i); az = G.wz(i);
     }
     const moved = Math.hypot(ax - g.x, az - g.z) > 0.35;
+    const why = [];
     const open = (x, z) => {
       if (G) return G.contains(x, z, G.cell) && !G.blockedAt(x, z) && G.lineOpen(ax, az, x, z);
       const Cl = this.ctx.collision, W = this.ctx.water, T = this.ctx.terrain;
@@ -295,8 +296,9 @@ export class PeopleSystem {
       for (let k = 1; k <= n; k++) {
         const px = ax + (x - ax) * k / n, pz = az + (z - az) * k / n;
         _probe.set(px, T.getHeight(px, pz), pz);
-        if (Cl.resolveCapsule(_probe, 0.25, 1.6, { passes: 1, filter: (c) => c.blocking && c.kind !== 'npc' && !c.dynamic })?.hit) return false;
-        if (W?.depthAt && W.depthAt(px, pz) > 0.02) return false;
+        const hit = Cl.resolveCapsule(_probe, 0.25, 1.6, { passes: 1, filter: (c) => c.blocking && c.kind !== 'npc' && !c.dynamic });
+        if (hit?.hit) { why.push(`${k}/${n} ${hit.collider?.kind || 'collider'}${hit.collider?.id != null ? '#' + hit.collider.id : ''}`); return false; }
+        if (W?.depthAt && W.depthAt(px, pz) > 0.02) { why.push(`${k}/${n} water ${W.depthAt(px, pz).toFixed(2)}`); return false; }
       }
       return true;
     };
@@ -309,7 +311,7 @@ export class PeopleSystem {
         if (open(x, z)) { stops.push({ x, z }); break; }
       }
     }
-    if (!stops.length) { p._tetherNo = G ? 'no open spot on the walk grid' : 'no open spot off the grid'; return null; }
+    if (!stops.length) { p._tetherNo = G ? 'no open spot on the walk grid' : `no open spot off the grid at (${ax.toFixed(1)}, ${az.toFixed(1)}): ${why.slice(0, 16).join('; ')}`; return null; }
     const home = { x: ax, z: az };
     const loop = stops.length > 1 ? [stops[0], home, stops[1], home] : [stops[0], home];
     // off the grid's open cells where they stand: home first
