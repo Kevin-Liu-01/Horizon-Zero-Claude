@@ -660,15 +660,6 @@ export class CarryStow {
       const inHand = B.mode === 2 && B.owner === 'handL';
       B.mode = 1; B.tempo = 'ask'; B.T = BOW_UNSTOW.ask;
       B.t = inHand ? phaseEnd(B.T, 'C') : 0;
-      /* M1a weapons fix round 1 (W7, swap 2 to 1: 0.717 s, band 0.45-0.65): a hand that is already near the limb (it has
-       * just seated the lance's butt at her left hip) does not spend the whole reach getting there: the reach starts as far
-       * in as its distance allows at the palm plan's speed (x 1.3 for the path's bend). The plan is rate bound and the take
-       * waits for the palm on its socket, so a shorter reach is never a jump */
-      if (!inHand && B.kit) {
-        this._bowKitNow(_bpQ2, _bpC); this._bowSockMesh(0, _bpG); this._bowPt(_bpQ2, _bpC, B.kitS, _bpG.x, _bpG.y, _bpG.z, _bpT);
-        const tB = phaseEnd(B.T, 'B'), need = 1.3 * B.from.distanceTo(_bpT) / (PALM_STEP * 60);
-        if (need < tB) B.t = tB - need;
-      }
       if (inHand) B.qGrab.copy(B.q);
       if (!inHand) B.curl = Math.min(B.curl, CURL.open + 0.2);
     } else {
