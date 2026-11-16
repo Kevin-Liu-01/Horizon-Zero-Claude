@@ -75,3 +75,13 @@ test('Sighting: the card carries take a bearing (T)', () => {
   assert.match(SIGHT, /TAKE A BEARING/);
   assert.match(SIGHT, /BEARING HELD/);
 });
+
+test('title: field turns are dropped through the presenter API, not its internals', async () => {
+  assert.ok(!/_subQ|_subT/.test(MENU), 'menu.js reads no presenter internals');
+  assert.match(MENU, /present\?\.clearSubtitles\?\.\(\)/);
+  const { Presenter } = await import('../game/present.js');
+  const P = new Presenter({});
+  P._subQ.push({ lines: ['x'], speaker: 'BREA' }); P._subT = 2; P.sub = { name: 'BREA', text: 'x' };
+  P.clearSubtitles();
+  assert.equal(P._subQ.length, 0); assert.equal(P._subT, 0); assert.equal(P.sub, null);
+});
