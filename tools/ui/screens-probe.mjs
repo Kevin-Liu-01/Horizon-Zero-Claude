@@ -64,6 +64,7 @@ const WORDS = {
   'title-settings': ['GRAPHICS', 'CONTROLS', 'READING'],
   character: ['BREA · SALT-PAN RECKONER', 'WEAR'],
   dialogue: [],
+  'dialogue-stations': [],
   death: ['THE LINE IS LOST', 'RETURN TO THE LAST BRAZIER', 'QUIT TO TITLE'],
   contextLost: ['DISPLAY RESET · RESUMING'],
   unsupported: ['CALIMA NEEDS WEBGL 2'],
@@ -219,17 +220,38 @@ try {
   await C(() => window.__CTX__.menus.closeHub(true));
   await sleep(800);
 
-  // ---- the dialogue lower-third: Ansel
-  res.dialogueOpen = await C(() => window.__CTX__.progression?.talkTo?.('ansel') ?? false);
-  await sleep(1200);
-  await screen('dialogue', '#cal-dlg', '#cal-dlg .dlg-card', () => {
-    const lines = document.querySelector('#cal-dlg .dlg-line'); const lh = lines ? parseFloat(getComputedStyle(lines).lineHeight) : 0;
-    return { state: window.__CTX__.state, lineRows: lines && lh ? Math.round(lines.getBoundingClientRect().height / lh) : null,
-      choices: [...document.querySelectorAll('#cal-dlg .dlg-choices > *')].map((c) => c.innerText.replace(/\s+/g, ' ').trim()) };
+  // ---- the dialogue lower-third (the systems presenter's #cal-sys .sys-lt): Ansel's first card, then her stations
+  const ltRead = () => C(() => {
+    const P = window.__CTX__.systemsGame?.present, lt = document.querySelector('#cal-sys .sys-lt'), ln = document.querySelector('#cal-sys .sys-line');
+    const lh = ln ? parseFloat(getComputedStyle(ln).lineHeight) : 0;
+    return { state: window.__CTX__.state, on: !!lt?.classList.contains('on'), busy: !!P?.busy, who: document.querySelector('#cal-sys .sys-who')?.innerText ?? '',
+      lineRows: ln && lh ? Math.round(ln.getBoundingClientRect().height / lh) : null, lineText: ln?.innerText ?? '',
+      stations: [...document.querySelectorAll('#cal-sys .sys-st')].map((r) => r.innerText.replace(/\s+/g, ' ').trim()) };
   });
-  await C(() => window.__CTX__.progression?.dialogueUI?.close?.());
-  await sleep(600);
-  await C(() => { if (window.__CTX__.state !== 'playing') window.__CTX__.state = 'playing'; });
+  res.dialogueOpen = await C(() => { const G = window.__CTX__.systemsGame; if (!G?.talk) return false; G.talk('ansel'); return true; });
+  await sleep(1400);
+  res.dialogueCards = [await ltRead()];
+  await screen('dialogue', '#cal-sys', '#cal-sys .sys-lt', ltRead);
+  // advance to her stations (at most 12 cards), shooting the first station list
+  for (let i = 0; i < 12; i++) {
+    const r = await ltRead();
+    if (r.stations.length || !r.on) break;
+    await C(() => document.querySelector('#cal-sys .sys-lt')?.click());
+    await sleep(500);
+    res.dialogueCards.push(await ltRead());
+  }
+  const rs = await ltRead();
+  if (rs.stations.length) await screen('dialogue-stations', '#cal-sys', '#cal-sys .sys-lt', ltRead);
+  // out: the exit station when there is one, then every card after it
+  for (let i = 0; i < 16; i++) {
+    const r = await ltRead();
+    if (!r.on) break;
+    if (r.stations.length) await C(() => { const st = [...document.querySelectorAll('#cal-sys .sys-st')]; st[st.length - 1]?.click(); });
+    else await C(() => document.querySelector('#cal-sys .sys-lt')?.click());
+    await sleep(400);
+  }
+  res.dialogueAfter = await ltRead();
+  await C(() => { if (window.__CTX__.state !== 'playing' && !window.__CTX__.systemsGame?.present?.busy) window.__CTX__.state = 'playing'; });
 
   // ---- the death card
   await C(() => { const p = window.__CTX__.player; p.health = 0; window.__CTX__.events.emit('player-died', { from: null }); });

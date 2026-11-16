@@ -2,7 +2,11 @@ import * as THREE from 'three';
 import './inventory.css';
 import { itemDef, ammoDef, rarityDef } from '../items/items.js';
 import { fieldWord } from './tips.js';
+import BOOKS from '../game/text/books/field-books.json';
 import { turntable } from './turntable.js';
+
+/** `n / 24`: the Field Books found, of the bible's twenty-four (BIBLE 8.5, 18). */
+const bookCount = (n) => BOOKS.reader.count.replace('{n}', String(n));
 
 /** The catalogue's lines the bridge cannot word-swap, until combat-kit renames `items.js` (W2). By item id. */
 const ITEM_DESC = {
@@ -256,7 +260,8 @@ export class InventoryScreen {
       all: kinds(['resource', 'valuable', 'tool']),
       tools: kinds(['tool']),
       resources: kinds(['resource', 'valuable']),
-      notebook: items?.fieldbooks ? `${items.fieldbooks.count}/${items.fieldbooks.total}` : '',
+      // BIBLE 18 "Field Book reader": n / 24, of the bible's twenty-four (the build places fewer)
+      notebook: bookCount(items?.fieldbooks?.count ?? 0),
     };
     for (const p of SATCHEL) {
       const badge = this._railBtns.get(p.id)?.lastElementChild;
@@ -546,9 +551,9 @@ export class InventoryScreen {
 
   _renderNotebook() {
     const dp = this.ctx.items?.fieldbooks;
+    // BIBLE 18 "Field Book reader": FIELD BOOKS · n / 24 (the reader's own words, src/game/text/books/field-books.json)
+    el('div', 'cal-cap-title', this._capEl, `${BOOKS.reader.head} · ${bookCount(dp?.count ?? 0)}`);
     if (!dp) { this._empty('No Field Books found yet.'); this._detailHint(); return; }
-    el('div', 'cal-cap-title', this._capEl,
-      `FIELD BOOKS: ${dp.count} OF ${dp.total} RECOVERED`);
 
     let first = null;
     for (const cat of dp.categories()) {

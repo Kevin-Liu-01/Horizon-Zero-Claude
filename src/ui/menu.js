@@ -753,6 +753,8 @@ export class Menus {
     this.deathKiller = this.ctx.progression?.lastKiller ?? this._lastDamageFrom ?? null;
     this.closeModal();
     if (this.hubOpen) this.closeHub(true);
+    // her field line does not run on under THE LINE IS LOST (the screens probe at 0123497 filmed it below the card)
+    try { this.ctx.systemsGame?.present?.clearSubtitles?.(); } catch { /* the presenter is optional */ }
     document.body.classList.add('cal-dead');
     this._log.push({ what: 'death', killer: this.deathKiller });
     this._trimLog();

@@ -243,7 +243,8 @@ body.cal-gs .mn-diff:hover { background: var(--gs-sel-fill); color: var(--gs-tex
 body.cal-gs .controls-grid { color: var(--gs-text); }
 
 /* ============================================================ death card */
-body.cal-gs .mn-death { background: rgba(14, 11, 20, 0.30); }
+/* the world freezes and frosts behind the card too (BIBLE 18 shared rules; the grey of BIBLE 13 stays under it) */
+body.cal-gs .mn-death { background: rgba(14, 11, 20, 0.30); -webkit-backdrop-filter: var(--gs-frost); backdrop-filter: var(--gs-frost); }
 body.cal-gs .mn-death-inner {
   width: 560px;
   padding: 30px 34px 26px;
