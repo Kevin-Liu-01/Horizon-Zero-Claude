@@ -252,6 +252,12 @@ try {
   await page.waitForFunction(() => !!document.querySelector('#cal-sys .sys-lt.on'), { timeout: 8000, polling: 100 }).catch(() => {});
   await sleep(900);
   res.dialogueCards = [await ltRead()];
+  // 'tell' opens on Brea's line: on to Ansel's first card, which is the shot
+  for (let i = 0; i < 6 && !/ANSEL/.test(res.dialogueCards.at(-1).who); i++) {
+    await C(() => document.querySelector('#cal-sys .sys-lt')?.click());
+    await sleep(600);
+    res.dialogueCards.push(await ltRead());
+  }
   await screen('dialogue', '#cal-sys', '#cal-sys .sys-lt', ltRead);
   // advance to her stations (at most 12 cards), shooting the first station list
   for (let i = 0; i < 12; i++) {
@@ -325,10 +331,12 @@ try {
         const B = [...document.querySelectorAll('.cal-banner, .pg-banner')].filter((b) => /CONTINUE/.test(b.querySelector('.b-title')?.textContent ?? ''));
         const b = B[0];
         if (!b) return { state: window.__CTX__?.state ?? null, banner: null };
-        const rc = b.getBoundingClientRect(), cs = getComputedStyle(b);
-        const top = document.elementFromPoint(rc.left + rc.width / 2, rc.top + rc.height / 2);
+        const cs = getComputedStyle(b);
+        // the HUD takes no pointer (elementFromPoint looks through it): what can cover the banner is the Loading sheet
+        const ld = document.getElementById('loading'), lcs = ld ? getComputedStyle(ld) : null;
+        const sheet = !!ld && !ld.classList.contains('hidden') && lcs.display !== 'none' && lcs.visibility !== 'hidden' && +lcs.opacity > 0.05;
         return { state: window.__CTX__.state, banner: { title: b.querySelector('.b-title')?.textContent ?? '', detail: b.querySelector('.b-detail')?.textContent ?? '', cls: b.className,
-          onTop: !!top && (top === b || b.contains(top)), opacity: +cs.opacity, coveredBy: top && top !== b && !b.contains(top) ? `${top.tagName.toLowerCase()}#${top.id}.${String(top.className).split(' ')[0]}` : null } };
+          onTop: !sheet, opacity: +cs.opacity, coveredBy: sheet ? `div#loading (opacity ${(+lcs.opacity).toFixed(2)})` : null } };
       }).catch(() => null);
       if (r) seen.push({ t: Date.now() - tc, ...r });
       if (r?.banner?.onTop && r.banner.opacity > 0.5 && !shotName) shotName = await shot('continueBanner');
