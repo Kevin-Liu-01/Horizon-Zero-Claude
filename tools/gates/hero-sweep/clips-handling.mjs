@@ -29,10 +29,19 @@ export const CLIPS = {
     js: `${RESET} await w(0.2); ${K1} await w(0.7); C.combat._holsterT = 0.001; await w(0.8);` },
   hHandLance: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 115, d: 0.9, h: 0.95, look: 0.9, fov: 45 },
     js: `${RESET} await w(0.2); ${K2} await w(0.7); mel.holsterLance(); await w(0.8);` },
-  // 7. all six transitions through the game's chase camera
-  hChase: { sim: true, frame: 'F16', pose: 'idle', lens: null,
+  // 7. all six transitions from behind her (M1a weapons fix 1, the judge: the staged game camera showed her in profile,
+  //    "brief ruling 2 is not met"; a lens riding her from straight behind at the chase camera's height and distance)
+  hChase: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 180, d: 3.4, h: 1.7, look: 1.15, fov: 50 },
     js: `${RESET} await w(0.3); ${K1} await w(1.0); C.combat._holsterT = 0.001; await w(0.9); ${K2} await w(1.0); mel.holsterLance(); await w(0.9); ${K1} await w(0.9); ${K2} await w(1.2); ${K1} await w(1.3);` },
   // 8. at a jog: both swaps, a sprint stow, and each held carry at a run
   hJog: { sim: true, frame: 'F15', pose: 'idle', lens: { a: 'side', d: 3.0, h: 1.1, look: 0.95, fov: 42 },
     js: `${RESET} C.input.keys.add('KeyW'); await w(0.6); ${K1} await w(1.2); ${K2} await w(1.4); ${K1} await w(2.2); ${K2} await w(1.0); C.input.keys.add('ShiftLeft'); await w(2.0);` },
+  /* 8b. (M1a weapons fix 1, the judge: "the required five seconds of each held carry at a run were not filmed") the bow
+   *     held at a run for five seconds (key 1, the timer kept up), then the lance held at a run for five (key 2 held) */
+  hHeld: { sim: true, frame: 'F15', pose: 'idle', lens: { a: 'side', d: 3.0, h: 1.1, look: 0.95, fov: 42 },
+    js: `${RESET} C.input.keys.add('KeyW'); await w(0.6); ${K1} for (let i = 0; i < 10; i++) { C.combat.noteCombatAction?.(); await w(0.5); } ${K2} mel.drawLance(30); await w(5.5);` },
+  /* 9. a roll during each draw, once before the grip and once after: the bow (key 1, the roll at 0.08 s and at 0.30 s)
+   *    and the lance (key 2, at 0.03 s and at 0.20 s); her left side */
+  hRoll: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 90, d: 3.4, h: 1.2, look: 0.9, fov: 46 },
+    js: `${RESET} await w(0.3); ${K1} await w(0.08); p.dodge(); await w(1.4); C.combat._holsterT = 0.001; await w(1.2); ${K1} await w(0.30); p.dodge(); await w(1.4); C.combat._holsterT = 0.001; await w(1.2); ${K2} await w(0.03); p.dodge(); await w(1.4); mel.holsterLance(); await w(1.0); ${K2} await w(0.20); p.dodge(); await w(1.4); mel.holsterLance(); await w(1.0);` },
 };
