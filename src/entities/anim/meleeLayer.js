@@ -834,6 +834,16 @@ const LC_SIDE = [0.40, 1.04, 0.02];
 const LC_DIR_MID = [-0.10, 0.99, 0.08];
 const LC_P1 = [0.14, 1.18, 0.38];
 const LC_D1 = [-0.06, 0.91, 0.40];
+/**
+ * ...the same four keys as offsets in spine_02's frame (char metres from the bone, in its char-space turn), read off
+ * the dressed bench in her standing idle at 7204598 (`LC_SIDE` .. `LC_D1` there). A capture at run time took whatever
+ * pose the layer first ran in: a first draw taken crouched captured a crouched trunk and put every later standing draw
+ * 15 deg off its path (dressed bench, the crouched case run first).
+ */
+const LC_SP = {
+  side: [0.3667, -0.0531, -0.1422], mid: [-0.0856, 0.9885, 0.1249],
+  p1: [0.1958, 0.0758, 0.2713], d1: [0.0280, 0.9040, 0.4266],
+};
 /** The right fist's way from the hand-over to the guard (and back on the stow): the haft still upright, the fist at
  *  her right front; the hips lead the turn into the guard (`py`), the left hand off the haft until the guard. */
 const PULL_VIA = {
@@ -1729,7 +1739,6 @@ export class MeleeLayer {
     this._prevBeat = stance === 'swing' ? beat.id : null;
     this._prevPhase = stance === 'swing' ? st.phase : null;
     this._prevSwing = stance === 'swing';
-    if (!this._lcK) this._lcCapture();
     this._leftCarry(stance, st);
     const u = this._blend(stance, st, beat);
     /* M1.3d: THE KEYS COME DOWN WITH HER IN A CROUCH. The guard and the beats are authored on a standing
@@ -3041,6 +3050,10 @@ export class MeleeLayer {
 
     /* (M1.3d: how much of this pose is the authored keys, which a crouch lowers — see `update`) */
     this._keyK = stance === 'swing' || stance === 'ready' ? 1 : (stance === 'draw' && this._held ? t : 0);
+    /* (M1a weapons step 2: on the draw's pull and the stow's guard leg, `PULL_VIA` is an authored key too: the leg from the
+     *  live hand-over line to it lowers by its t, the leg from it on (or from the guard to it) is all keys) */
+    if (stance === 'draw' && this._held && A === PULL_VIA) this._keyK = 1;
+    else if (stance === 'holster' && this._held) this._keyK = B === PULL_VIA ? 1 : 1 - t;
     if (stance === 'swing') this._snapPose(A, B, t);
     this._lerpPose(A, B, t, yawK);
     /* M1a r2 fix (A104): the right hand's legs between her side and the hand-over line in front of her chest (the
@@ -3314,25 +3327,17 @@ export class MeleeLayer {
     this._dbg.leftCarryU = u; this._dbg.leftCarryHold = hold;
   }
 
-  /** M1a weapons step 2: the path keys as offsets in spine_02's frame, captured once on the first step she stands
-   *  still (`update` calls this every step until it has them: she spawns standing, so it is her first frames, before any
-   *  draw; a draw taken at a run or crouched then rides the trunk too). Null until then. */
+  /** M1a weapons step 2: the path keys as offsets in spine_02's frame (char metres, `LC_SP`), as vectors, once. */
   _lcCapture() {
     if (this._lcK) return this._lcK;
-    const an = this.an, sp = an.b.spine2?.bone;
-    if (!sp || (an._moveW || 0) > 0.05 || (an._crouchW || 0) > 0.05 || (an._dodgeW || 0) > 0.05) return null;
-    const K = this._lcK = { side: new THREE.Vector3(), mid: new THREE.Vector3(), p1: new THREE.Vector3(), d1: new THREE.Vector3() };
-    an._charOf(sp, _lcB1); an._liveW(sp, _q1); _q2.copy(_q1).invert();
-    K.side.fromArray(LC_SIDE).sub(_lcB1).applyQuaternion(_q2); K.p1.fromArray(LC_P1).sub(_lcB1).applyQuaternion(_q2);
-    K.mid.fromArray(LC_DIR_MID).normalize().applyQuaternion(_q2); K.d1.fromArray(LC_D1).normalize().applyQuaternion(_q2);
-    return K;
+    return (this._lcK = { side: new THREE.Vector3().fromArray(LC_SP.side), mid: new THREE.Vector3().fromArray(LC_SP.mid).normalize(),
+      p1: new THREE.Vector3().fromArray(LC_SP.p1), d1: new THREE.Vector3().fromArray(LC_SP.d1).normalize() });
   }
 
   /**
    * M1a weapons step 2: the carried path's keys this step, char space, into `_lcPm` (LC_SIDE), `_lcDm` (LC_DIR_MID),
-   * `_lcP1` (LC_P1) and `_lcD1` (LC_D1). They are authored on her standing idle and ride spine_02: captured once as
-   * offsets in that bone's frame the first time she draws standing still, and carried by its live pose from then on (a
-   * crouch, a lean or a run's trunk carries the path). Until a capture they are the authored numbers. No allocation.
+   * `_lcP1` (LC_P1) and `_lcD1` (LC_D1). They are authored on her standing idle and ride spine_02 (`LC_SP`): carried by
+   * its live pose, so a crouch, a lean or a run's trunk carries the path. No allocation.
    */
   _lcKeysNow() {
     const an = this.an, sp = an.b.spine2?.bone;
