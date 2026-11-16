@@ -355,7 +355,8 @@ if (ROWS.includes('C8') || ROWS.includes('C3') || ROWS.includes('C9') || ROWS.in
    let st = { edge: 0, path: 0, boneScaleDev: 0 }, crossed = 0, edgeOver = 0, nFr = 0;
    for (let sI = 0; sI < STARTS; sI++) {
     await fresh();
-    staged(R, {});
+    // (round 3: --heading <deg>: her heading for C8; 0, the row's, runs with the trade wind 45 deg off her back)
+    staged(R, { heading: Number(flag('--heading', 0)) * Math.PI / 180 });
     R.player.sprinting = sprint;
     for (let i = 0; i < 90 + 7 * sI; i++) { go(R, speed); step(R); }
     const tr = [];

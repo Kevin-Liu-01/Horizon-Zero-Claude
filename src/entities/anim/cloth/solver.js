@@ -549,7 +549,8 @@ export class ClothSystem {
       if (w[i] === 0) continue;
       const o = i * KMAX, nk = pc[i];
       let bdy = 0;
-      for (let sw = 0; sw < 2; sw++) for (let a2 = 0; a2 < nk; a2++) {
+      // (the second time round only if the first pushed: round 3, cost)
+      for (let sw = 0; sw < 2 && (sw === 0 || bdy > 0); sw++) for (let a2 = 0; a2 < nk; a2++) {
         const c = pl[o + a2], K = C[c];
         if (!(K.ri0 > 0)) continue;
         const B = K.box, qx = x[i * 3], qy = x[i * 3 + 1], qz = x[i * 3 + 2];
