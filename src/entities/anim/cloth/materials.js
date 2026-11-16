@@ -21,7 +21,10 @@ export const MATERIALS = {
     //  brief's bands, 5.5 m/s 25-50 deg and 9 m/s 45-70 standing, 30-65 at a sprint, on the bench at this commit)
     // (step 2: kd 5 (was 3) and a kick limit of 1.5 m/s: at a sprint the tongues crossed in 10-35 frames of 240 and the
     //  tail whipped to 64-81 deg; here 0 crossed, 34 deg mean, 37 at worst)
-    areal: 0.35, hem: 1.0, shear: 2e-2, bendAlong: 1.0, bendAcross: 0.5, kd: 5.0, mu: 0.45, cd: 0.7, cl: 0.3, slack: 1.03,
+    // (round 4: kd 8 (was 5). Resting on her back with friction 0.45, a 1e-4 m nudge to the tail was still 2.6e-5 m after
+    //  1 s standing (C11, bar 1e-5); here 6.6e-6. The flutter at a run 0.051 -> 0.036 m RMS, at a sprint 0.052 -> 0.038
+    //  (C8, bar 0.04); its lift in the wind table moves by 0-4 deg)
+    areal: 0.35, hem: 1.0, shear: 2e-2, bendAlong: 1.0, bendAcross: 0.5, kd: 8.0, mu: 0.45, cd: 0.7, cl: 0.3, slack: 1.03,
     share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0, vRel: 1.5,
   },
   // Brea's sash panels: embroidered, lined linen, heavy at the hem (the couched border)

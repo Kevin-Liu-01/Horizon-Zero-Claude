@@ -539,6 +539,7 @@ if (ROWS.includes('C11') && MODE === 2) {
     res.resetAfterHistory = { clean: A.an.clothDigest(), afterSprint: B.an.clothDigest(), identical: A.an.clothDigest() === B.an.clothDigest() };
   }
   // the nudge: 1e-4 m to every free particle, standing in still air, against the same run without it, after 1 s
+  const nudgeBy = {};
   const nudge = async (sprintFirst) => {
     const run = async (dn) => {
       const Q = await makeBench(); Q.an.setWind(0, 0);
@@ -551,11 +552,12 @@ if (ROWS.includes('C11') && MODE === 2) {
       return C.pieces.map((P) => Float64Array.from(P.x));
     };
     const x0 = await run(false), x1 = await run(true);
-    let m = 0; x0.forEach((a, k) => { for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i] - x1[k][i])); });
+    let m = 0; x0.forEach((a, k) => { let mk = 0; for (let i = 0; i < a.length; i++) mk = Math.max(mk, Math.abs(a[i] - x1[k][i])); m = Math.max(m, mk); (nudgeBy[sprintFirst ? 'sprint' : 'stand'] ||= []).push(rnd(mk, 7)); });
     return m;
   };
   res.nudgeStanding1s = rnd(await nudge(false), 7);
   res.nudgeSprint1s = rnd(await nudge(true), 7);
+  res.nudgeByPiece = nudgeBy;
   out.rows.C11 = res;
 }
 
