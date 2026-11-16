@@ -354,3 +354,16 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 | major | slice kit | reed-peg and plumb-arrows rows fail | systems |
 | note | slice session | a frames-plus-run session never reached the title (loading sheet 150 s, twice) | systems |
 | note | A70-hub-tabs | its text was changed 7 -> 8 tabs by the ui lane; the row tests seven keys; needs a ruling | orchestrator |
+
+## Wave 3 regressions run additions (Nov 16 2026)
+
+| severity | item | measured at | owner |
+|---|---|---|---|
+| major | F19: at the heavy's contact the rear sash panel streams out level behind her; unchanged since 375c3ff | f2ad55f film, 0.00 % of pixels from 375c3ff | hero-anim, cloth |
+| major | W1: the bow's reverse-grip take at the small of the back and the two-hand regrip (wave 3 ruling); not started | - | hero-anim |
+| major | weapons bench: 187 failing clauses in 26 cases (wrist, aim from stowed, swaps at a jog, W10, times) | f2ad55f Node | hero-anim |
+| minor | A100-A106, A-stow-clearance: no page result since ff3afb9 (the fresh-page session hangs) | - | hero-anim |
+| minor | the screens probe's dialogue shot does not show the dialogue; the CONTINUE banner not yet seen live | 4c28601 | ui |
+| closed | A107-draw-arm-path: 3 of 3 page runs pass (worst 0.069 m, bar 0.10); the bench 18/18 and the page bench 14/14 | f2ad55f | hero-anim |
+| closed | W6: the light swing from a sprint or jog click: 0 behind-head and 0 head-plane steps | f2ad55f Node | hero-anim |
+| closed | Tier 0 name lint 0 hits; A70 eight tabs; the CONTINUE banner names the save (in code) | f2ad55f | ui |

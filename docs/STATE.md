@@ -1165,3 +1165,127 @@ two kept sessions, the slice, two clip sessions and the stills, and A107's bisec
 - W10, interrupts: the 0.06 m per step bar applies to a jump against the sequence's own planned motion (the rendered wrist against where the authored path puts it that step), not to the authored path's own speed; W7's draw band stands.
 - A70-hub-tabs: the hub has eight tabs since the Character page (P); the row tests eight keys.
 - main stays on 5170040 until A107 (a hand behind the head, the owner's bar) passes again.
+
+## Wave 3 regressions run (Nov 16 2026)
+
+A short regression run after the wave 3 review. Two lanes fixed named items in one tree on `r5/int`:
+- Animation:
+  - A107: the lance draw's right-hand re-solve undid the elbow bound.
+  - W6: in the light swing from a sprint click, the left fist rode over her head.
+  - F19's rear panel and W1 (the bow's reverse-grip take and regrip) were also named. They were not fixed.
+- UI:
+  - The Tier 0 name lint.
+  - The screens probe's dialogue step and Field Log words.
+  - The CONTINUE banner's level.
+  - A70's eight tabs.
+
+Commits: `45bb9ed`, `3f7356b`, `4c28601` (UI), `b286cdc`, `f2ad55f` (animation).
+
+The review measured `r5/int` at **f2ad55f** from clean detached worktrees on port 5270, using one Chrome slot. No
+commit landed during the review.
+
+**Verdict: NOT CLEAN, on one item.** **F19** is still further than its anchor. At the heavy's contact the rear sash
+panel streams out nearly level behind her. The frame at f2ad55f is pixel-identical to the frame at 375c3ff: the run
+named it, and it is not fixed.
+
+Everything else the run had to hold, holds:
+- The kept stack has 0 failing rows.
+- Tier 0 passes 10 of 10.
+- No accepted frame changed.
+
+**A107 passes again (3 of 3 page runs).** It was the condition for moving `main` off 5170040.
+
+**Tier 0 at f2ad55f: PASS, 10 of 10.**
+- `vite build` OK (3.88 MB of code).
+- Name lint: 0 hits in 749 files.
+- Licences: 225 files against 31 rows. Asset budgets clean. Import graph: 198 modules, 0 broken.
+- Resident textures 61.42 MB of 175 MB. Shipped 51.78 MB (first-load cap 60 MB).
+- 124 Node tests pass in 26 files.
+- Boot: 3.7 s, 0 errors, 80.93 MB first load. Rendered-page name lint: 0.
+
+**Frame Set at f2ad55f:** all 34 frames, 200 s of Chrome, 0 console errors. The simulation-time stagings froze at the
+same frame counts as at 375c3ff (F15 194, F16 217, F17 217, F18 314, F19 187, F24 217, F25 217).
+- **No accepted frame changed.** Each frame was compared with the 375c3ff film (the same world) and with its anchor.
+  - The simulation-time frames are within the noise floor of 375c3ff: F15 0.09 %, F16 0.00 %, F17 0.11 %, F18 0.02 %,
+    F19 0.00 % of pixels.
+  - The wall-clock frames differ only by the grass, the reeds, the clouds and the idle. Their differences are the same
+    size as between the fac4167 and 375c3ff films.
+- **Further than the anchor:**
+  - F19: the rear panel, as above. It has not changed since 375c3ff.
+  - F24: the town block. It has not changed since 6fa199d.
+- **The same as the anchor:** F02, F03, F05, F08, F09, F10, F11, F13, F14, F15, F16, F18, F20 (judged with the town),
+  F23 (Plumb).
+- **Cloth frames (F08-F10, F14, F15):** the same as their anchors. The game still ships the old cloth (flag off).
+- **Weapon-handling frames:** F16 is the same as its anchor, and F10's carry is unchanged.
+- **Closer than the anchor, as at 375c3ff:** F27, F28, F29 (the glass hub).
+
+**Kept-stack rows at f2ad55f** (two sessions, every row reached): 80 rows. **79 pass** (71 action, 8 visual), **0
+fail**, **1 pending** (A76: no staged kind declares a size class).
+- **Changed since 375c3ff:**
+  - A107-draw-arm-path FAIL -> PASS.
+  - A9-perf-budget PENDING -> PASS: 59.9 fps median on a quiet box, 130 draw calls, scene GPU 19.74 ms.
+- **A107 ran three times, once per Chrome run, all PASS.** "Behind" is the worst elbow behind the head plane in the
+  band:
+
+  | run | jog behind | sprint behind | elbow over the head (worst) | forearm off the back of the head (least) |
+  |---|---|---|---|---|
+  | 1 | 0.068 m | 0.046 m | -0.068 m | 0.199 m |
+  | 2 | 0.066 m | 0.068 m | -0.015 m | 0.187 m |
+  | 3 | 0.069 m | 0.060 m | -0.027 m | 0.214 m |
+
+  The bar is 0.10 m. The bars for the other two columns are elbow at most head + 0.05 m and forearm at least 0.05 m.
+- **A107's Node benches at f2ad55f** (re-run by the review):
+  - The bench: 18 of 18 cycles pass.
+  - `--page`: 14 of 14 stagings pass (worst 0.07 m).
+- **Key numbers:**
+  - A16: knuckle to jaw 0.014 m, hook 0.008 m, launch 0 deg.
+  - A17: loose 0.076 m behind.
+  - A44b: 0.054 m.
+  - A90: geometries 379 -> 378.
+  - A70: eight keys, P opens the Character page.
+- **The visual rows:** V1, V2, V3, V4, V13, V21, V49 and V-traversal look the same as their 375c3ff shots.
+  - V49 at the head: both elbows stay under the top of her head in all 12 tiles, and no forearm crosses the back of
+    her head.
+  - The last tiles show the low guard.
+
+**Weapons rows** (the Node handling bench at f2ad55f, re-run by the review):
+- **187 failing clauses in 26 cases** (375c3ff: 189 in 26).
+- Two clauses no longer fail:
+  - clickSprint: "1 behind-head and 4 head-plane steps".
+  - clickJog: "0 behind-head and 1 head-plane steps".
+- Every other clause of every case is the same, line for line.
+- The rest of the wave 3 open list stands:
+  - the bow wrist and its measure;
+  - the aim from stowed;
+  - the swaps at a jog;
+  - W10;
+  - the bow unstow and swap 2 to 1 times.
+- W1's reverse-grip take and regrip, per the wave 3 ruling, was not started.
+
+**Not measured in this review:**
+- The cloth bench.
+- The slice run.
+- The clip pages.
+- The screens probe: the UI lane ran it at 4c28601. Nothing it measures changed between 4c28601 and f2ad55f.
+- The lane page rows outside the kept stack: A100-A106 and A-stow-clearance.
+- The CONTINUE banner on screen. It is in the code at 3f7356b, but no run has pressed Continue.
+
+**Chrome used:** about 30 minutes over 5 launches.
+- Tier 0 boot: 10 s.
+- The Frame Set: 200 s.
+- Kept session 1: 9.7 min. Kept session 2: 15.3 min.
+- Two single-row A107 runs: 35 s and 33 s.
+
+That is over the 15-minute cap: the two kept sessions alone take about 25 minutes.
+
+**Open, for the next round:**
+- F19: the rear panel at the heavy's contact. Make it the same as its anchor and keep the round-2 lance path.
+- W1: the reverse-grip take and the two-hand regrip.
+- The remaining weapons clauses (above).
+- The lane page rows A100-A106 and A-stow-clearance, never re-run since ff3afb9.
+  - The animation lane's session with every row on a fresh page hung.
+  - Run them on shared pages, in one session.
+- UI: the dialogue shot does not show the dialogue. See the CONTINUE banner live.
+- F24's town block (standing).
+
+**Decision (the orchestrator):** Tier 0 passes 10 of 10 and the kept stack is 79 of 80 with 0 failing (A9 passes on a quiet box for the first time; A107 passes three runs of three). The one open frame, F19's sash panel at the heavy's contact, is a cloth-and-handling frame, which the owner's direction allows to change while that work goes on; it is carried as debt with its cause (the lead foot's step timing at the contact). main is fast-forwarded to r5/int.
