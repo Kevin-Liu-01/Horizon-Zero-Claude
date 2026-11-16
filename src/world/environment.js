@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
+import { AERIAL_B, AERIAL_B_LIFT } from './island/aerial.js';
 
 /**
  * ROUND 5 — lane `world-sky` (docs/ROUND5-PLAN.md §2, §9 "world-sky"; the look items are
@@ -161,6 +162,18 @@ const KEYS = [
 const CALIMA = Object.freeze({
   zen: '#B9875C', hor: '#D2A274', fog: '#C98B4E', disc: '#F2A27E', sun: '#F7B276', haze: '#D58A63',
 });
+/**
+ * M1.1i (BUILD: F06 "visibility 120-180 m"): the dust's own extinction, not a multiple of the hour's. A level ray at eye
+ * height on the Pans keeps 5 % of a dark target's contrast at CALIMA_VIS metres (the meteorological optical range,
+ * transmittance 0.05: tau = ln 20), whatever the hour key's or the biome's density; the main layer's 1/140 m height
+ * falloff still thins it over high ground. The max opacity rises to CALIMA_OPACITY so the far field is gone, not a
+ * veiled 8 % of itself (trade keeps 0.92). The forward-scatter lobes shrink to CALIMA_LOBE of their weight (a dust sun
+ * is a disc with a tight aureole: no glow past 6 deg) and the dome's coral aureole hugs the disc (_buildSky).
+ */
+const CALIMA_VIS = 150;
+const CALIMA_DENS = Math.log(20) / CALIMA_VIS;
+const CALIMA_OPACITY = 0.997;
+const CALIMA_LOBE = 0.12;
 
 /**
  * Weather states (bible §2.3). Multipliers/targets applied on top of the hour key,
@@ -178,7 +191,9 @@ const W_TRADE = { sunMul: 1.00, hemiMul: 1.00, cloud: 0.30, cloudDark: 0.30, den
 const WEATHER = {
   trade: W_TRADE,
   // bible: fog Calima Ochre ×4, coral disc, shadow strength 0.45, perception 0.5; L-14: EV +0.15, bloom ×1.25
-  calima: { ...W_TRADE, sunMul: 0.70, hemiMul: 1.40, cloud: 0.05, cloudDark: 0.20, densMul: 4.00, mist: 0.6, windMS: 2.5, wind: 0.50, gust: 0.20, shaft: 0.35, cloudShadow: 0.00, calima: 1, perception: 0.5, shadowK: 0.45, seaCloud: 0.4, ev: 0.15, bloomK: 1.25 },
+  // M1.1i: the density is the dust's own (CALIMA_DENS, blended by the calima weight in _applyFull), so densMul stays 1;
+  // the bloom is the disc's only (x0.5: no bloom halo past 6 deg), not L-14's x1.25; shafts off (no gaps in a dust pall)
+  calima: { ...W_TRADE, sunMul: 0.70, hemiMul: 1.40, cloud: 0.05, cloudDark: 0.20, densMul: 1.00, mist: 0.6, windMS: 2.5, wind: 0.50, gust: 0.20, shaft: 0.00, cloudShadow: 0.00, calima: 1, perception: 0.5, shadowK: 0.45, seaCloud: 0.4, ev: 0.15, bloomK: 0.50 },
   // bible: height fog below 150 m ×3 (the main layer; the 14 m valley mist ×8 makes the low white bank), perception 0.5 inside the bank
   fogbank: { ...W_TRADE, sunMul: 0.55, hemiMul: 1.40, cloud: 0.70, cloudDark: 0.35, densMul: 3.00, mist: 8.0, windMS: 1.5, wind: 0.35, gust: 0.15, shaft: 0.50, desat: 0.30, cloudShadow: 0.10, fogbank: 1, perception: 0.5, shadowK: 0.70, seaCloud: 1.6, ev: 0.10, bloomK: 0.80 },
   // bible: rare, rain on the windward side only, perception 0.8 (fog ×1.6 is this lane's)
@@ -1386,7 +1401,9 @@ export class Environment {
     this.ctx.scene.environmentIntensity = k.env * (0.6 + 0.4 * w.hemiMul);
 
     /* ---- fog / aerial perspective (L-05) ---- */
-    const dens = k.dens * w.densMul * this._biomeDens;
+    // M1.1i: calima replaces the hour's air with the dust's own extinction (CALIMA_DENS: CALIMA_VIS metres of sight)
+    const densT = k.dens * w.densMul * this._biomeDens;
+    const dens = densT + (CALIMA_DENS - densT) * cal;
     const fa = this.u.calFogA.value;
     fa.x = dens; fa.y = FOG_HEIGHT_FALLOFF; fa.z = FOG_HEIGHT_REF; fa.w = 0;
     const fc = this.u.calFogC.value;
@@ -1394,9 +1411,16 @@ export class Environment {
     fc.y = MIST_FALLOFF; fc.z = MIST_FLOOR; fc.w = 0.45;
     const fb = this.u.calFogB.value;
     fb.x = 0.045 * (1 - w.desat * 0.7) * (1 - k.night * 0.75) * (1 + cal * 0.4);
-    fb.z = 0.92;
+    fb.z = 0.92 + (CALIMA_OPACITY - 0.92) * cal;
     const fgU = this.u.calFogG.value;
-    fgU.x = 0.72 + 0.08 * cal; fgU.y = 0.75 + 0.15 * cal;   // M1.1f: the forward lobe 0.9 -> 0.75 in trade air (the low sun's horizon band clipped) fgU.z = 0.20; fgU.w = 0.25;
+    // M1.1f: the forward lobe 0.9 -> 0.75 in trade air (the low sun's horizon band clipped); the second lobe stays
+    // (0.20, 0.25). M1.1i: in the dust both lobes keep CALIMA_LOBE of their weight (was x1.2: a glow 20 deg wide round
+    // a low sun)
+    fgU.x = 0.72 + 0.08 * cal; fgU.y = 0.75 * (1 - (1 - CALIMA_LOBE) * cal);
+    fgU.w = 0.25 * (1 - (1 - CALIMA_LOBE) * cal);
+    // M1.1i: the aerial lift toward the dome's horizon band (island/aerial.js) is clear air's: the dome's band is the
+    // hour key's, so in calima it lifted the far forms to a pale ice cone on an amber horizon (F06 at f2ad55f)
+    AERIAL_B.value.x = AERIAL_B_LIFT * (1 - cal);
     const ext = this.u.calFogExt.value;
     ext.set(EXT_TRADE[0] + (EXT_CALIMA[0] - EXT_TRADE[0]) * cal,
       EXT_TRADE[1] + (EXT_CALIMA[1] - EXT_TRADE[1]) * cal,
@@ -2449,7 +2473,19 @@ export class Environment {
           // ---- calima (L-14): the gradient flattens to ochre, a broad coral glow at the sun
           if (cal > 0.001) {
             vec3 cg = mix(uCalHor, uCalZen, smoothstep(0.0, 0.75, h)) * uCalima.y;
-            cg += uDisc * 0.10 * pow(sunD, 10.0) * uCalima.y;
+            // M1.1i: the dome IS the dust: the fog's own in-scatter on this ray (the terms fog_fragment uses), so a ridge
+            // past the visibility (all in-scatter, no surface) has no outline against the sky; the old ochre gradient
+            // stands only for the dome's top, where no ground is ever drawn
+            {
+              float dup = clamp(d.y * 1.55 + 0.10, 0.0, 1.0);
+              vec3 dust = mix(calFogHorizon, calFogZenith, dup * dup);
+              float dc = dot(d, sd);
+              dust += calFogSun * (hg(calFogG.x, dc) * calFogG.y + hg(calFogG.z, dc) * calFogG.w) * calFogB.x;
+              cg = mix(dust, cg, smoothstep(0.45, 0.95, h));
+            }
+            // M1.1i: the coral aureole hugs the disc (pow 2000: half at 1.5 deg, 6 % at 3 deg, nothing by 6 deg); it
+            // was pow 10 (a tenth of the disc's colour still 45 % up at 20 deg: a glow over a third of the sky)
+            cg += uDisc * 0.22 * pow(sunD, 2000.0) * uCalima.y;
             col = mix(col, cg, cal);
           }
 

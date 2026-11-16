@@ -51,7 +51,11 @@ import { ORGAN, CRATER } from './layout.js';
  * 27.7 with the farthest layer gap 7.6 -> 6.3 against the bar's 6; 24/20 at 1.5 31.0 / 28.2, gap 6.1. At 2be9311 1.7 took
  * the 600-1200 m layer's rim within 5.4 L* of the 1200-4000 m layer's (M1.1c's 6 failed); 1.5 5.7, 1.3 6.0, 1.1 6.3; the
  * same at 27b94ca) 1.3, the most M1.1c's layer gap allows: a dusty basalt at about 0.13-0.18 linear */
-export const ORGAN_LIGHT = { value: new THREE.Vector4(18.0, 16.0, 1.3, 0) };
+/* (M1a world debt, round 2: F05's near clusters still read as dark slabs at f2ad55f, L* 22 right / 20 left against the crop's
+ * basalt at 33-36; the farther clusters are what held the gain at 1.3, through the far layer gaps) w is a NEAR gain: within
+ * 140 m of the lens the albedo gain and the bounce and rim terms are x (1 + w), fading out by 320 m, so a cluster in the
+ * F05 foreground is lit and every layer past 320 m keeps exactly its round-3 value */
+export const ORGAN_LIGHT = { value: new THREE.Vector4(18.0, 16.0, 1.3, 0.6) };
 /* (measured: from the SUN's colour the terms changed the Organ crop's L* by 0.1 at 730056d, at 19.6 h the sun is in its
  * hand-over trough; from the fog's horizon colour by 1.0 at 42be5d0, that colour is far below the dome's at dusk). Both
  * terms now scale the column's own sky fill (reflectedLight.indirectDiffuse, which carries the hour's exposure), tinted
@@ -60,12 +64,13 @@ const ORGAN_LIGHT_GLSL = /* glsl */ `
 #include <lights_fragment_end>
 #if defined(USE_FOG) && !defined(CAL_O_NOLIGHT)
 {
+  float oNearK = 1.0 + uOrganLight.w * (1.0 - smoothstep(140.0, 320.0, length(vFogWorldPos - cameraPosition)));
   vec3 oUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
   vec3 oSun = normalize((viewMatrix * vec4(calSunDir, 0.0)).xyz);
   vec3 oN = normalize(geometryNormal);
   float oNu = dot(oN, oUp);
   vec3 oFill = reflectedLight.indirectDiffuse;
-  float oFillY = max(dot(oFill, vec3(0.2126, 0.7152, 0.0722)), 1e-5);
+  float oFillY = max(dot(oFill, vec3(0.2126, 0.7152, 0.0722)), 1e-5) * oNearK;
   vec3 oHz = calFogHorizon / max(dot(calFogHorizon, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
   vec3 oGlow = (calFogHorizon + calFogSun * 0.35);
   oGlow /= max(dot(oGlow, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
@@ -88,7 +93,7 @@ function organLight(mat) {
     shader.uniforms.uOrganLight = ORGAN_LIGHT;
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec4 uOrganLight;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uOrganLight.z;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uOrganLight.z;\n#ifdef USE_FOG\ndiffuseColor.rgb *= 1.0 + uOrganLight.w * (1.0 - smoothstep(140.0, 320.0, length(vFogWorldPos - cameraPosition)));\n#endif')
       .replace('#include <lights_fragment_end>', ORGAN_LIGHT_GLSL);
   };
   mat.customProgramCacheKey = () => 'cal-organ-light';

@@ -23,7 +23,10 @@ export const AERIAL_DOME = { value: new THREE.Color(0.75, 0.8, 0.85) };
  * height crosses less low air than a level ray of the same length, and the lift toward the dome's horizon band (the pale
  * part) belongs to near-level rays. AERIAL_B.y fades the air on a ray falling more steeply than 2 deg, gone by about 9 deg
  * (F05's far forms lie within 1 deg of level, F32's far valley 5-10 deg down); 0 = round 3 as shipped */
-export const AERIAL_B = { value: new THREE.Vector4(0.7, 0, 0, 0) };
+export const AERIAL_B_LIFT = 0.7;
+/* M1.1i: x is written per hour by the environment as AERIAL_B_LIFT x (1 - the calima weight): the dome's horizon band it
+ * lifts toward is the clear-air hour key's, and in the dust it painted far forms pale ice on an amber horizon */
+export const AERIAL_B = { value: new THREE.Vector4(AERIAL_B_LIFT, 0, 0, 0) };
 
 export const AERIAL_PARS = /* glsl */ `
 #include <fog_pars_fragment>
