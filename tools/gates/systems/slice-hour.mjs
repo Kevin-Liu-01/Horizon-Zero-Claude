@@ -530,6 +530,8 @@ async function drink(page, K, to = 90, maxMs = 6000) {
 }
 
 let lampsFight = null;
+/** M1b round 3: the farthest stand the topple shoots the Plumb's vial from (m). */
+const VIAL_MAX_D = 24;
 const shots = [];
 
 /** Bow in hand (slot 1) and Reed arrows on the string; make arrows (hold R) when fewer than 4. */
@@ -594,10 +596,10 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         });
         let sc = null;
         if (ditchPts) {
-          const dsc = await page.evaluate(scanStands, t.i, tried, undefined, ditchPts.filter((q) => { const d = Math.hypot(q.x - t.x, q.z - t.z); return d >= 10 && d <= 34; }));
+          const dsc = await page.evaluate(scanStands, t.i, tried, undefined, ditchPts.filter((q) => { const d = Math.hypot(q.x - t.x, q.z - t.z); return d >= 10 && d <= VIAL_MAX_D; }));
           if (dsc) { (ditchScans ||= []).push({ of: dsc.of, open: dsc.open, masked: dsc.masked, stands: dsc.stands.slice(0, 3) }); if (dsc.stands[0] && dsc.stands[0].clear >= 2) sc = dsc; }
         }
-        if (!sc) sc = await page.evaluate(scanStands, t.i, tried);
+        if (!sc) sc = await page.evaluate(scanStands, t.i, tried, [12, 15, 18, 22]);
         scans.push(sc && { open: sc.open, masked: sc.masked, vial: sc.vial, nockH: sc.nockH, best: sc.stands[0] ?? null, from: { x: +s.p.x.toFixed(1), z: +s.p.z.toFixed(1) } });
         const best = sc?.stands?.[0];
         if (!best) return { ok: false, why: `${kind} ${part}: no open stand found round it (${JSON.stringify(sc?.masked ?? {})})`, fired, scans };
@@ -607,6 +609,10 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         if (w.why === 'died') return { ok: false, why: 'died', fired, scans };
         continue;
       }
+      // M1b round 3: the vial is shot from VIAL_MAX_D at most. At a8c0b83 fifteen vial shots from 33-57 m (flights of
+      // 0.6-0.93 s, the solve itself 3-8 cm off a glass 4.5 cm in radius) were loosed and met nothing at all; every shot
+      // from 11-22 m in the same build's runs struck the vial. When the Plumb's walk has taken it past that, scan again
+      if (part === 'vial' && stand0 && t.d > VIAL_MAX_D + 3) { await release(); stand0 = null; continue; }
       if (part !== 'vial' && t.d > stand + 6) {
         await release();
         const k = (t.d - stand) / t.d;
