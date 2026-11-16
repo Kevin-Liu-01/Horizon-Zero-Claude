@@ -96,8 +96,12 @@ export function buildBuses(ac, { volumes = DEFAULT_VOLUMES, ir = null, analyser 
   comp.release.value = LIMITER.release;
   wire(comp, ac.destination, 'comp', 'destination');
 
+  // fix round 1: the compressor's automatic makeup gain is taken back in front of it (src/audio/slice/mix.js LIMITER),
+  // so below the ceiling the limiter is unity and the walk's measured loudness is the mix's own
+  const limiterTrim = g(LIMITER.trim);
+  wire(limiterTrim, comp, 'limiterTrim', 'comp');
   const master = g(volumes.muted ? 0 : volumes.master);
-  wire(master, comp, 'master', 'comp');
+  wire(master, limiterTrim, 'master', 'limiterTrim');
 
   // The world low-pass. 20 kHz = open; Concentration walks it down to ~420 Hz.
   const worldLP = ac.createBiquadFilter();
@@ -167,7 +171,7 @@ export function buildBuses(ac, { volumes = DEFAULT_VOLUMES, ir = null, analyser 
   };
 
   return {
-    ac, comp, master, worldLP,
+    ac, comp, limiterTrim, master, worldLP,
     graph: { edges, pathFrom },
     sfxBus, ambBus, voiceBus, uiBus, musicBus, instBus, breaBus,
     sfxVol, ambVol, voiceVol, uiVol, musicVol,

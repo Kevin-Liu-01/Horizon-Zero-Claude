@@ -168,7 +168,8 @@ class Mixer {
 
 /** The DynamicsCompressor as a safety limiter (threshold, ratio; peak-follower with its attack and release). */
 function limit(chs) {
-  const th = Math.pow(10, LIMITER.threshold / 20);
+  // the node's effective behaviour (src/audio/slice/mix.js LIMITER): unity below the ceiling, limiting above it
+  const th = Math.pow(10, LIMITER.ceiling / 20);
   const aK = 1 - Math.exp(-1 / (LIMITER.attack * SR)), rK = 1 - Math.exp(-1 / (LIMITER.release * SR));
   let env = 0, engaged = 0;
   const n = chs[0].length;

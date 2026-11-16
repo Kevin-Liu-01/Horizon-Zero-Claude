@@ -50,7 +50,26 @@ export const MUSIC = Object.freeze({
   trim: 0.21,
 });
 
-export const LIMITER = Object.freeze({ threshold: -3, knee: 0, ratio: 20, attack: 0.002, release: 0.2 });
+/**
+ * The DynamicsCompressor's automatic makeup gain (dB) for a hard knee: Web Audio (Chromium's DynamicsCompressorKernel)
+ * multiplies the output by (1 / g0)^0.6, g0 the static curve's gain at 0 dBFS in, T (1 - 1/ratio) in dB. Fix round 1:
+ * the walk through the game's own graph (A-audio-walk-graph at 92ee330) came out 2.8 dB louder than the model, 1.7 dB
+ * of it this gain (threshold -3, ratio 20), which the model's limiter never had.
+ */
+export function compressorMakeupDb(threshold, ratio) { return -0.6 * threshold * (1 - 1 / ratio); }
+
+/**
+ * The master's safety limiter. `ceiling`: the level (dBFS, before the limiter) above which it limits. The node's own
+ * threshold is set below it so that, after its makeup gain, it begins at the ceiling (T + makeup(T) = ceiling), and a
+ * fixed trim of -makeup in front of it (src/audio/buses.js limiterTrim) makes it unity below the ceiling.
+ */
+const L_CEIL = -3, L_RATIO = 20;
+const L_T = L_CEIL / (1 - 0.6 * (1 - 1 / L_RATIO));
+export const LIMITER = Object.freeze({
+  ceiling: L_CEIL, knee: 0, ratio: L_RATIO, attack: 0.002, release: 0.2,
+  threshold: +L_T.toFixed(3), makeupDb: +compressorMakeupDb(L_T, L_RATIO).toFixed(3),
+  trim: +Math.pow(10, -compressorMakeupDb(L_T, L_RATIO) / 20).toFixed(5),
+});
 
 /**
  * Ambience levels by place (bed gains on the ambience bus, before the trim): the selector cross-fades these.
