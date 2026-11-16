@@ -345,6 +345,12 @@ const HANDOVER_SNAP = 0.010;
 const LANCE_R = { butt: SOCKETS.lance.butt.r, grip: SOCKETS.lance.grip.r, fore: SOCKETS.lance.fore.r };
 /** The left hand never slides closer to the right hand than this (m). */
 const LH_ON_MIN = 0.14;
+/** M1a regressions (W6): the left fist's slide down the haft off her head, a step (m), and the margin its head tests keep
+ *  (m; a quarter of it in the head ellipsoid's unit radii for the crown) */
+const LH_SLIDE_STEP = 0.06;
+const LH_HEAD_MARGIN = 0.03;
+const _lgS = new THREE.Vector3(), _lgE = new THREE.Vector3(), _lgW = new THREE.Vector3(), _lgC = new THREE.Vector3(), _lgF = new THREE.Vector3();
+const _lgL = new THREE.Vector3(), _lgU = new THREE.Vector3(), _lgP = new THREE.Vector3(), _lgQ = new THREE.Vector3();
 /** The recoil on a hit: metres back along the haft, and its decay (1/s). */
 const RECOIL_LIGHT = 0.045;
 const RECOIL_HEAVY = 0.085;
@@ -4549,6 +4555,79 @@ export class MeleeLayer {
     this._lhOnWant = (u.lhOn || 0) * (this._lhK || 1);
     this._lhFree.copy(_lh);
     this._seatLeft(on, w, this._lhOnWant, 0);
+    /* M1a regressions (W6, the owner's bar "never an arm or hand behind the head"): in a swing or the guard the left
+     * fist rides the haft's fore grip, and where the haft stands up past her head (light-1's cock from a sprint click:
+     * the stride leans her 42-46 deg and the wrist cannot level the haft) that grip was over her crown and behind the
+     * head plane (handling bench clickSprint at 4c28601: 1 behind-head and 4 head-plane steps). The fist slides down
+     * the haft toward the right one, LH_SLIDE_STEP at a time, to the first place clear of the head (the sweep's crown
+     * and head-plane tests, with LH_HEAD_MARGIN); the late re-seats keep that place. */
+    this._leftHeadSlide(on, w);
+  }
+
+  /**
+   * M1a regressions (W6): the slide itself (see `_solveLeft`), run on the pose pass and again on the drawn matrices in
+   * `postFix` (the haft guards there turn the haft after the pose pass). Down the haft to `LH_ON_MIN`; if the fist is
+   * still at her head there, it lets go of the haft and drops to its free goal held under its shoulder (the lance stays
+   * in the right fist). No allocation.
+   */
+  _leftHeadSlide(on, w) {
+    const D = this._dbg;
+    if (!(on > 1e-3) || !(this._prevStance === 'swing' || this._prevStance === 'ready') || !this._leftHeadBad()) return;
+    let sOn = this._lhSOn ?? this._lhOnWant;
+    while (sOn > LH_ON_MIN + 1e-4) {
+      sOn = Math.max(LH_ON_MIN, sOn - LH_SLIDE_STEP);
+      this._seatLeft(on, w, sOn, 0);
+      if (!this._leftHeadBad()) break;
+    }
+    this._lhOnWant = this._lhSOn;
+    D.lhHeadSlides = (D.lhHeadSlides || 0) + 1;
+    if (!this._leftHeadBad()) return;
+    const an = this.an, b = an.b;
+    an._charOf(b.upArmL.bone, _lgS);
+    _lh.copy(this._lhFree);
+    if (_lh.y > _lgS.y - 0.08) _lh.y = _lgS.y - 0.08;
+    _pole.set(0.72, -0.62, -0.18).normalize();
+    an._ikArm('l', _lh, _pole, w, null);
+    an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, w);
+    this._lhOnW = 0;
+    D.lhHeadRelease = (D.lhHeadRelease || 0) + 1;
+    if (this._leftHeadBad()) D.lhHeadFail = (D.lhHeadFail || 0) + 1;
+  }
+
+  /**
+   * M1a regressions (W6): is any point of the left hand (wrist, index knuckle, middle fingertip) or forearm (a quarter,
+   * half and three quarters down it) over the crown or behind the skull (the hand: or at the nape), or above its shoulder joint and the skull's lower edge behind the
+   * head's frontal plane (head-frame and level)? The handling bench's `measure.mjs` tests, with `LH_HEAD_MARGIN`. Char
+   * space, the bones as posed now. No allocation.
+   */
+  _leftHeadBad() {
+    const an = this.an, b = an.b, T = an.T;
+    if (!T.headOff || !T.headR || typeof an._headUnit !== 'function' || !b.upArmL || !b.loArmL || !b.handL) return false;
+    an._headFrame();
+    an._charOf(b.upArmL.bone, _lgS); an._charOf(b.loArmL.bone, _lgE); an._charOf(b.handL.bone, _lgW);
+    an._charOf(b.head.bone, _lgC);
+    an._liveW(b.head.bone, _q1); _q1.multiply(b.head.invW);
+    _lgF.set(0, 0, 1).applyQuaternion(_q1);
+    _lgL.copy(_lgF); _lgL.y = 0;
+    const lvl = _lgL.lengthSq() > 1e-4; if (lvl) _lgL.normalize();
+    _lgC.add(_lgU.copy(T.headOff).applyQuaternion(_q1));
+    const headLo = _lgC.y - T.headR.y, M = LH_HEAD_MARGIN;
+    const bn = this._lgBones || (this._lgBones = [an.bones.index_01_l || null, an.bones.middle_04_leaf_l || an.bones.middle_03_l || null]);
+    for (let q = 0; q < 6; q++) {
+      if (q === 0) _lgP.copy(_lgW);
+      else if (q < 3) { if (!bn[q - 1]) continue; an._charOf(bn[q - 1], _lgP); }
+      else _lgP.copy(_lgE).lerp(_lgW, 0.25 * (q - 2));
+      an._headUnit(_lgP, _lgU);
+      const ax = Math.abs(_lgU.x) < 1 + M * 4;
+      if (ax && _lgU.z > -1.4 - M * 4 && _lgU.z < 0.8 + M * 4 && _lgU.y > 1 - M * 4) return true;       // the crown
+      if (ax && _lgU.z < -1 + M * 4 && _lgU.y >= -1 - M * 4) return true;                                // the skull
+      if (q < 3 && ax && _lgU.z < -1 + M * 4 && _lgU.z > -2.5 - M * 4 && _lgU.y > -2.4 - M * 4) return true;  // the nape (the hand)
+      if (_lgP.y > _lgS.y - M && _lgP.y >= headLo - M) {
+        _lgQ.subVectors(_lgP, _lgC);
+        if (_lgQ.dot(_lgF) < M && (!lvl || _lgQ.dot(_lgL) < M)) return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -5385,6 +5464,7 @@ export class MeleeLayer {
       this._reseatLeft();
       this._ucSeatLate(an);
       this._leftHullFinal(an);
+      this._leftHeadSlide(this._lhOnW, this._lhArmW);   // (M1a regressions, W6: on the drawn matrices too)
       this._dbg.forearmToSpineL = this._leftForeGap();
     }
     /* THE BRAID GIVES WAY LAST, because the hand moved the haft above it.
