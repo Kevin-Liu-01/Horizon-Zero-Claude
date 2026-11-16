@@ -836,14 +836,15 @@ const LC_P1 = [0.14, 1.18, 0.38];
 const LC_D1 = [-0.06, 0.91, 0.40];
 /**
  * ...the same four keys as offsets in spine_02's frame (char metres from the bone, in its char-space turn), read off
- * the dressed bench in her standing idle at 7204598 (`LC_SIDE` .. `LC_D1` there), then the upright key moved 0.05 m
- * further out and its shaft 5 deg forward (part 3: A104's holster read the haft 0.015-0.018 m off the ponytail on the
- * page at 686dd1a against its 0.02 bar; dressed bench 0.051 -> 0.091 m on the asked stow). A capture at run time took whatever
+ * the dressed bench in her standing idle at 7204598 (`LC_SIDE` .. `LC_D1` there), then the upright key moved 0.07 m
+ * further out and its shaft leaning 8 deg AWAY from her head (parts 3-4: A104's holster read the haft 0.015-0.018 m off
+ * the ponytail on the page at 686dd1a against its 0.02 bar, and a forward lean at 9358f47 read 0.114 m off her axial
+ * bones against 0.12; dressed bench, the asked stow: hair 0.051 -> 0.093 m, head/neck 0.163 -> 0.209 m). A capture at run time took whatever
  * pose the layer first ran in: a first draw taken crouched captured a crouched trunk and put every later standing draw
  * 15 deg off its path (dressed bench, the crouched case run first).
  */
 const LC_SP = {
-  side: [0.42, -0.06, -0.12], mid: [0.02, 0.98, 0.18],
+  side: [0.44, -0.06, -0.13], mid: [0.06, 0.99, 0.12],
   p1: [0.1958, 0.0758, 0.2713], d1: [0.0280, 0.9040, 0.4266],
 };
 /** The right fist's way from the hand-over to the guard (and back on the stow): the haft still upright, the fist at
@@ -854,6 +855,8 @@ const PULL_VIA = {
 };
 /** where on the pull (0..1) the fist is at `PULL_VIA` */
 const PULL_VIA_T = 0.40;
+/** how far the fist bows out to her right between the guard and `PULL_VIA` (m, at the leg's middle) */
+const PULL_BOW = 0.08;
 /**
  * M1a weapons step 2 (W11 step 2: "prop cant overshoot 1-4 deg, inside 0.5 deg within 6 steps"): the draw's pull
  * levels the haft 3 deg PAST the guard's line (and the fist 5 % past the guard's place), and the guard settles back
@@ -3063,6 +3066,13 @@ export class MeleeLayer {
      * 0.004 m off the pelvis -> neck axis at a holster's 17th step (bench; the page read 0.001). The hand goes ROUND
      * her instead, out by her right-front (`ROUND_VIA`). */
     if ((stance === 'holster' && !this._held) || (stance === 'draw' && !this._held)) this._handRound(A, B, t);
+    /* M1a weapons step 2 (part 4, A104 "holster: the haft came within 0.114 m of head/neck/spine" on the page at
+     * 9358f47): between the guard and `PULL_VIA` the butt swings from behind her right hip to her right front; the fist
+     * bows out to her right on that leg (`PULL_BOW` at its middle) so the butt goes round her hip, not past her pelvis */
+    if ((pullLeg && A === PULL_VIA) || (stance === 'holster' && this._held && B === PULL_VIA)) {
+      const k = 4 * t * (1 - t) * PULL_BOW;
+      _hand.x -= k; _hand.z += 0.5 * k;
+    }
     out.yaw = A.yaw + (B.yaw - A.yaw) * t;
     out.pitch = A.pitch + (B.pitch - A.pitch) * t;
     out.roll = A.roll + (B.roll - A.roll) * t;
