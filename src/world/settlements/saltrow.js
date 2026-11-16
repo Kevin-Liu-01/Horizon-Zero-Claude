@@ -70,7 +70,7 @@ const SPILL_POW = 1.45;
  * (aFoot >= 98: the breakwater, ramp, cones and cart): Lambert to the lantern, 1 / (1 + (r / LAMP_R)^2), gone by
  * LAMP_CUT m; the pier and plinth under the lantern keep their baked spill (nothing inside 0.75 m of its axis). */
 const LAMP_TINT = new THREE.Color(1.0, 0.76, 0.5);
-const LAMP_GAIN = 6.0, LAMP_R = 3.4, LAMP_CUT = 13.0;
+const LAMP_GAIN = 10.0, LAMP_R = 4.0, LAMP_CUT = 13.0;
 /** The share of the scene's light the town keeps at full night (fix round 1, F07: walls beyond a window's spill). */
 const NIGHT_LIGHT = 0.05;
 /** The open sky's fill on a house wall, x the hemisphere's sky colour and intensity (M1b closing fix, F24). */
@@ -434,7 +434,9 @@ if (vFoot > 97.5 && uLamp.w > 0.0) {
     const k = ss(0.14, -0.05, sy);
     this.uGlow.value = 3.4 * k;
     this.uSpill.value.copy(SPILL_TINT).multiplyScalar(this.spillGain * k);
-    const lamp = this.lamps[0];
+    // the breakwater's lamp by its kind: lamps[0] is the guild lantern, 130 m up the street (at 9a52361 the pool was
+    // centred there and the deck took none of it: F07 read the same at lamp gain 0 and 14)
+    const lamp = this._bwLamp || (this._bwLamp = this.lamps.find((l) => l.kind === 'breakwater'));
     if (lamp) this.uLamp.value.set(lamp.x, lamp.y, lamp.z, this.lampGain * k);
     // the town's share of the scene's light: 1 by day, NIGHT_LIGHT at full night (the same dusk ramp as the windows)
     const nf = env?.nightFactor ?? 0;

@@ -153,7 +153,7 @@ export async function probe(frame) {
       try {
         const L = E.look;
         const v0 = { pow: town.uSpillPow.value, spill: town.spillGain, lamp: town.lampGain, bloom: L?.bloomScale ?? null };
-        const VARS = [{ id: 'shipped' }, { id: 'lamp0', lamp: 0 }, { id: 'lamp10', lamp: 10 }, { id: 'lamp14', lamp: 14 }, { id: 'pow1', pow: 1.0 },
+        const VARS = [{ id: 'shipped' }, { id: 'lamp0', lamp: 0 }, { id: 'lamp6', lamp: 6 }, { id: 'lamp16', lamp: 16 }, { id: 'lamp24', lamp: 24 }, { id: 'pow1', pow: 1.0 },
           { id: 'pow2', pow: 2.0 }, { id: 'spill0.6', spill: 0.6 }, { id: 'bloom1', bloom: (v0.bloom ?? 1) / 0.45 }, { id: 'bloom0.25', bloom: (v0.bloom ?? 1) * 0.55 }];
         out.walls.variants = [];
         for (const v of VARS) {

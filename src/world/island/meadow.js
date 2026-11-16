@@ -464,7 +464,9 @@ export class Meadow {
        * so the stand tone stays and the edge is softened instead. At 483283a (reference 58.7): 2.5 px over 8-14 m 75.4,
        * 4 px 73.6, 6 px 72.5, 8 px 71.9, 4 px over 5-12 m 61.4 (sprint 276 against 287): the band's near edge is what
        * crawled. 4 px over 5-12 m */
-      uSoft: { value: new THREE.Vector4(1, 4, 5, 12) },
+      // (wave 4 fix, measured as variants at 9a52361 against the 4x reference's 65.2 per mille, the soft edge now off under
+      // MSAA: 6 px over 4-12 m 58.9, 4 px over 3-10 m 56.7, sprint 267.7 against 312.3; the band's near edge again)
+      uSoft: { value: new THREE.Vector4(1, 4, 3, 10) },
     };
     this.ringTable = meadowRingsFor(ctx.engine?.quality, ctx.engine?.tier?.look?.meadow);
     this.rings = this.ringTable.map((ring) => this._buildRing(ring));
