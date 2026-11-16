@@ -50,7 +50,7 @@ async function verbStills() {
       for (let i = 0; i < times.length; i++) {
         const w0 = performance.now();
         while ((an.verbInfo()?.t ?? 0) < times[i] && performance.now() - w0 < 8000) await new Promise((res) => requestAnimationFrame(res));
-        out.info[verb].at.push(an.verbInfo());
+        out.info[verb].at.push(JSON.parse(JSON.stringify(an.verbInfo())));
         out.stills[`${verb}-${i}-front`] = shoot(-35, 2.1, 0.95, 0.75);
         out.stills[`${verb}-${i}-side`] = shoot(80, 2.0, 0.9, 0.7);
       }
