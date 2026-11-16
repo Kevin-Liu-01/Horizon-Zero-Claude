@@ -43,7 +43,8 @@ export async function probe(frame) {
       const g = o.geometry, idx = g.index, n = idx ? idx.count : g.attributes.position.count;
       const dr = g.drawRange, start = dr.start, end = Math.min(n, dr.start + (Number.isFinite(dr.count) ? dr.count : n));
       const piece = g.getAttribute('_piece') || g.getAttribute('_PIECE');
-      const hide = o.material?.userData?.clothU?.uHidePiece?.value | 0;
+      // (the piece bits the outfit hides now: the loadout's own, since the fade clone of the material carries no uniform)
+      const hide = /^outfit:/.test(o.userData?.heroPart || '') ? (L._pieceBits > 0 ? L._pieceBits : 0) : (o.material?.userData?.clothU?.uHidePiece?.value | 0);
       const vis = (i) => !(piece && hide && ((Math.round(piece.getX(i)) & hide) !== 0));
       const pos = (i, t) => { if (o.isSkinnedMesh && o.getVertexPosition) o.getVertexPosition(i, t); else t.fromBufferAttribute(g.attributes.position, i); return t.applyMatrix4(o.matrixWorld); };
       for (let k = start; k + 2 < end; k += 3) {
