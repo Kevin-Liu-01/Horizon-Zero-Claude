@@ -1,9 +1,9 @@
 /**
- * THE FIELD BOOK'S SHELL  —  lane `shell-ui` (bible §9.7, plan R55, R57)
+ * THE GLASS SHELL  —  lane `ui` (BIBLE 18; BUILD M1.6g2)
  * ===========================================================================
- * The frame around the game: title flow, the hub (a page of the book: a station index
- * in the margin, the red margin rule, the open page), the survey sheet, death and
- * victory pages, settings, credits.
+ * The frame around the game: title flow, the hub (full-width dark glass, top tabs with a lilac underline, the
+ * page, a foot with the last rest), the map, settings, Continue and the three slots, the death card, the
+ * context-lost card, credits and the Field Manual. Every menu surface is glass (src/ui/glass.css).
  *
  * ---------------------------------------------------------------- ownership
  * The hub ROUTES to the owning lane's panel (`progression.openQuestLog()`,
@@ -37,6 +37,8 @@ import { Tips, fieldWord } from './tips.js';
 import { REST } from '../world/island/sites.js';
 import { TitleStage, buildTitle, fillStations, saveLine, fillTolerance, fillExtras, MENU_AT_S, TITLE_HOUR, TITLE_TEXT, underSheet } from './title.js';
 import { MakingLedger } from './making.js';
+import './glass.css';
+import { fillSlots, fillManualCards, ContextCard, RESUME_FLAG } from './slots.js';
 
 const el = (tag, cls, parent, html) => {
   const n = document.createElement(tag);
@@ -47,60 +49,15 @@ const el = (tag, cls, parent, html) => {
 };
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+/** HH:MM from a decimal hour. */
+const hhmm = (h) => {
+  const t = ((Number(h) || 0) % 24 + 24) % 24;
+  let hh = Math.floor(t), mm = Math.round((t - hh) * 60);
+  if (mm === 60) { mm = 0; hh = (hh + 1) % 24; }
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+};
 
 /** Hub tabs. `open` delegates to the owning lane; absent = rendered here. */
-/**
- * The book's one plate: an engraved theodolite on its tripod, drawn from arithmetic (no
- * asset, no provenance row), in the ink of the page at the strength of a printed tint.
- * Returned as a CSS url() for `--cal-plate`; built once.
- */
-function theodolitePlate() {
-  const f = (v) => v.toFixed(1);
-  let fine = '', med = '', heavy = '';
-  // the vertical circle: two rings, a tick every 5 degrees, spokes
-  const VC = { x: 150, y: 96, r: 46 };
-  for (const r of [VC.r, VC.r - 7, 11]) med += `M${VC.x - r} ${VC.y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
-  for (let a = 0; a < 360; a += 5) {
-    const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180), k = a % 30 === 0 ? 7 : 4;
-    fine += `M${f(VC.x + c * VC.r)} ${f(VC.y + n * VC.r)}L${f(VC.x + c * (VC.r - k))} ${f(VC.y + n * (VC.r - k))}`;
-  }
-  for (let a = 45; a < 360; a += 90) {
-    const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180);
-    med += `M${f(VC.x + c * 11)} ${f(VC.y + n * 11)}L${f(VC.x + c * (VC.r - 7))} ${f(VC.y + n * (VC.r - 7))}`;
-  }
-  // the telescope: object end right, the eyepiece left, hatched along its underside
-  heavy += 'M58 88H204L236 83V109L204 104H58Z M236 80V112H246V80Z M58 90H44V102H58Z M44 88H36V104H44Z';
-  for (let x = 62; x < 204; x += 5) fine += `M${x} 104L${x + 4} 99`;
-  // the level on the tube: its vial and two posts
-  heavy += 'M112 70H188V78H112Z M122 78V88M178 78V88';
-  fine += 'M146 70V78M154 70V78';
-  // the standards
-  heavy += 'M108 170L114 118H124L122 170Z M192 170L186 118H176L178 170Z';
-  // the horizontal limb: two ellipses, ticks between them
-  const H = { x: 150, y: 172, rx: 66, ry: 14 };
-  const ell = (rx, ry) => `M${H.x - rx} ${H.y}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0`;
-  heavy += ell(H.rx, H.ry);
-  med += ell(H.rx - 8, H.ry - 3);
-  for (let a = 0; a < 360; a += 6) {
-    const c = Math.cos(a * Math.PI / 180), n = Math.sin(a * Math.PI / 180);
-    fine += `M${f(H.x + c * H.rx)} ${f(H.y + n * H.ry)}L${f(H.x + c * (H.rx - 8))} ${f(H.y + n * (H.ry - 3))}`;
-  }
-  // the levelling base and its three screws
-  heavy += 'M112 186H188V194H112Z M118 194V204H126V194M174 194V204H182V194M146 194V206H154V194';
-  heavy += `M92 208a58 8 0 1 0 116 0a58 8 0 1 0 -116 0`;
-  // the tripod: three tapered legs, shoes, a chain between them
-  heavy += 'M108 214L48 408L56 410L120 216Z M192 214L252 408L244 410L180 216Z M144 216L146 418H154L156 216Z';
-  heavy += 'M48 408L42 420M252 408L258 420M150 418V428';
-  med += 'M87 316Q150 340 213 316';
-  for (let y = 226; y < 400; y += 9) { fine += `M${f(149)} ${y}H${f(152)}`; }
-  // the plumb line and its bob
-  const bob = 'M150 204V352M150 352L144 362L150 382L156 362Z';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 432" width="600" height="864"><g fill="none" stroke="#26343F" stroke-linecap="square" opacity="0.2">`
-    + `<path d="${heavy}" stroke-width="1.5"/><path d="${med}" stroke-width="1"/><path d="${fine}" stroke-width="0.6"/></g>`
-    + `<path d="${bob}" fill="none" stroke="#D2452E" stroke-width="1" opacity="0.36"/></svg>`;
-  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
-}
-
 const TABS = [
   { id: 'map', key: 'KeyM', hint: 'M', label: 'MAP' },
   { id: 'quests', key: 'KeyJ', hint: 'J', label: 'FIELD LOG',
@@ -222,7 +179,10 @@ export class Menus {
     this._build();
     this._bindKeys();
     this._bindEvents();
-    document.body.classList.add('cal-menus');
+    // BIBLE 18 "Context lost": DISPLAY RESET · RESUMING (src/ui/slots.js)
+    this.contextCard = new ContextCard(this);
+    // M1.6g2: the glass shell (src/ui/glass.css) is scoped under this class
+    document.body.classList.add('cal-menus', 'cal-gs');
 
     // presentation loop: must run while the simulation is frozen
     this._raf = (now) => {
@@ -241,7 +201,8 @@ export class Menus {
 
   /** The menus keep their proportions at any window: `--ui-z` drives CSS `zoom` on every menu surface. */
   _applyZoom() {
-    const z = clamp(Math.min(window.innerWidth / 1600, window.innerHeight / 900), 0.75, 2.6);
+    // READING's UI scale (src/ui/settings.js `uiScale`) multiplies the window's own
+    const z = clamp(Math.min(window.innerWidth / 1600, window.innerHeight / 900), 0.75, 2.6) * (this.ctx.settings?.uiScale ?? 1);
     document.documentElement.style.setProperty('--ui-z', z.toFixed(3));
   }
 
@@ -249,48 +210,45 @@ export class Menus {
     this.root = el('div', 'cal-menus-root', document.body);
     this.root.id = 'cal-menus';
 
-    /* ---- the hub: [ margin index | head / page / foot ] ---- */
+    /* ---- the hub (M1.6g2, BIBLE 18): full-width glass; top tabs with a lilac underline; the page; a foot ---- */
     this.hub = el('div', 'mn-hub', this.root);
     el('div', 'mn-hub-scrim', this.hub);
     const shell = el('div', 'mn-hub-shell', this.hub);
 
-    const margin = el('aside', 'mn-hub-margin cal-page', shell);
-    const brand = el('div', 'mn-hub-brand', margin);
-    el('div', 'mn-hub-kicker', brand, 'CALIMA');
-    el('div', 'mn-hub-sheet', brand, 'Orchil survey');
-    this._tabsEl = el('nav', 'mn-tabs', margin);
+    const head = el('header', 'mn-hub-head', shell);
+    el('div', 'mn-hub-brand', head, 'CALIMA');
+    this._tabsEl = el('nav', 'mn-tabs', head);
     this._tabBtns = new Map();
-    TABS.forEach((t, i) => {
-      const b = el('button', 'mn-tab', this._tabsEl,
-        `<span class="cal-stn">STN ${String(i + 1).padStart(2, '0')}</span><span>${t.label}</span><kbd>${t.hint}</kbd>`);
+    TABS.forEach((t) => {
+      const b = el('button', 'mn-tab', this._tabsEl, `<span>${t.label}</span><kbd>${t.hint}</kbd>`);
       b.dataset.tab = t.id;
       b.addEventListener('click', () => this.setTab(t.id));
       this._tabBtns.set(t.id, b);
     });
-    this._marginData = el('div', 'mn-hub-data', margin);
-    document.documentElement.style.setProperty('--cal-plate', theodolitePlate());
-
-    const head = el('header', 'mn-hub-head cal-page', shell);
-    this._hubTitle = el('div', 'mn-hub-title', head, 'MAP');
     this._hubStatus = el('div', 'mn-hub-status', head);
 
-    this.hubBody = el('div', 'mn-hub-body cal-page', shell);
+    // the page's own line: its name, then the field data a surveyor heads a page with
+    const sub = el('div', 'mn-hub-sub', shell);
+    this._hubTitle = el('div', 'mn-hub-title', sub, 'MAP');
+    this._marginData = el('div', 'mn-hub-data', sub);
 
-    const foot = el('footer', 'mn-hub-foot cal-page', shell);
+    this.hubBody = el('div', 'mn-hub-body', shell);
+
+    const foot = el('footer', 'mn-hub-foot', shell);
     this._tipEl = el('div', 'mn-tip', foot);
+    // BIBLE 17: the foot reads LAST REST · place · hour, and offers SAVE only within 12 m of a lit Brazier
+    this._restEl = el('div', 'mn-hub-rest', foot);
     const acts = el('div', 'mn-hub-acts', foot);
-    this._mkBtn(acts, 'SAVE', () => this.saveGame(), 'small');
-    this._mkBtn(acts, 'CREDITS', () => this.openModal('credits'), 'small');
+    this._saveBtn = this._mkBtn(acts, 'SAVE', () => this.saveGame(), 'small');
     this._mkBtn(acts, 'FIELD MANUAL', () => this.openModal('manual'), 'small');
     this._mkBtn(acts, 'QUIT TO TITLE', () => this.quitToTitle(), 'small danger');
     this._mkBtn(acts, 'RESUME', () => this.closeHub(), 'small primary');
 
-    /* ---- death: a page torn from the book ---- */
+    /* ---- death (BIBLE 13, 18): one glass card, THE LINE IS LOST, two stations ---- */
     this.deathEl = el('div', 'mn-death', this.root);
-    const dInner = el('div', 'mn-death-inner cal-page', this.deathEl);
-    el('div', 'mn-death-kicker', dInner, 'FIELD BOOK, LAST ENTRY');
-    // M1.6f (systems, smallest change): the bible's death line (BIBLE 18), from src/game/text/ui/systems.json
-    el('div', 'mn-death-title', dInner, this.ctx?.systemsGame?.S?.systems?.death?.title ?? 'BREA IS DOWN');
+    const dInner = el('div', 'mn-death-inner', this.deathEl);
+    // M1.6f (systems): the bible's death line, from src/game/text/ui/systems.json
+    el('div', 'mn-death-title', dInner, this.ctx?.systemsGame?.S?.systems?.death?.title ?? 'THE LINE IS LOST');
     this._deathKillerEl = el('div', 'mn-death-killer', dInner);
     el('div', 'mn-death-rule', dInner);
     this._deathTip = el('div', 'mn-death-tip', dInner);
@@ -357,6 +315,10 @@ export class Menus {
     this._titleT = 0;
     this._dollyT = 0;
     this.titleStageShot.place(null);
+    // a graphics reset that could not restore reloaded the page: Continue runs by itself (src/ui/slots.js)
+    let resume = false;
+    try { resume = sessionStorage.getItem(RESUME_FLAG) === '1'; sessionStorage.removeItem(RESUME_FLAG); } catch { /* storage off */ }
+    if (resume && this.ctx.progression?.hasSave?.()) queueMicrotask(() => underSheet(() => this.continueGame()));
   }
 
   _refreshTitle() {
@@ -370,7 +332,8 @@ export class Menus {
       canContinue: !!info,
       fns: {
         // the start's work runs behind the Loading sheet, which closes on warm frames (M1.6h)
-        continue: () => { this.closeModal(); underSheet(() => this.continueGame()); },
+        // BIBLE 18 "Continue and save slots": CONTINUE opens the three slot cards
+        continue: () => this.openModal('slots'),
         newGame: () => this.openModal('difficulty'),
         settings: () => this.openModal('settings'),
         extras: () => this.openModal('extras'),
@@ -654,6 +617,42 @@ export class Menus {
       rows.push(['E', coord(p.position.x)], ['N', coord(-p.position.z)], ['BRG', String(brg).padStart(3, '0')]);
     }
     this._marginData.innerHTML = rows.map(([k, v, c]) => `<span>${k}</span><b${c ? ` class="${c}"` : ''}>${v}</b>`).join('');
+
+    this._paintFoot();
+  }
+
+  /** The words of the systems lane (src/game/text/ui/systems.json), when it is installed. */
+  get _sysText() { return this.ctx.systemsGame?.S?.systems ?? null; }
+
+  /** The last rest's Brazier, by its name (BIBLE 17), or ''. */
+  _restPlace() {
+    const lr = this.ctx.braziers?.lastRest;
+    if (!lr) return '';
+    return this._sysText?.brazier?.names?.[lr.id] ?? '';
+  }
+
+  /** A lit Brazier within 12 m of her (BIBLE 17: the hub offers SAVE only there). */
+  _nearLitBrazier() {
+    const B = this.ctx.braziers, p = this.ctx.player?.position;
+    if (!B?.list || !p) return false;
+    for (const b of B.list) {
+      if (!B.lit?.has?.(b.id) || !b.obj?.position) continue;
+      if (Math.hypot(b.obj.position.x - p.x, b.obj.position.z - p.z) <= 12) return true;
+    }
+    return false;
+  }
+
+  /** The hub foot: LAST REST · place · hour, and SAVE only by a lit Brazier. */
+  _paintFoot() {
+    const lr = this.ctx.braziers?.lastRest;
+    const place = this._restPlace();
+    const tpl = this._sysText?.save?.lastRest ?? 'LAST REST · {place} · {hour}';
+    this._restEl.textContent = lr && place
+      ? tpl.replace('{place}', place).replace('{hour}', hhmm(lr.hour))
+      : '';
+    // without the systems lane (a bare page) there is no Brazier to stand by: SAVE stays as it was
+    const gated = !!this.ctx.braziers?.list;
+    this._saveBtn.classList.toggle('mn-hidden', gated && !this._nearLitBrazier());
   }
 
   saveGame() {
@@ -676,6 +675,7 @@ export class Menus {
     this.modalEl.classList.add('show');
     // M1.6h: the New Game card and EXTRAS are glass cards over the title (src/ui/title.css)
     this.modalEl.classList.toggle('t2-glass', kind === 'difficulty' || kind === 'extras');
+    this.modalEl.dataset.kind = kind;
     if (kind === 'credits') {
       this._modalTitle.textContent = 'CREDITS';
       for (const sec of CREDITS) {
@@ -692,8 +692,18 @@ export class Menus {
     } else if (kind === 'manual') {
       this._modalTitle.textContent = 'FIELD MANUAL';
       this._manualNode ??= document.querySelector('.keybinds-panel');
-      if (this._manualNode) this.modalBody.appendChild(this._manualNode);
-      else el('div', 'mn-empty', this.modalBody, '<b>FIELD MANUAL</b><span>Controls are listed on the title screen.</span>');
+      // BIBLE 18 "Extras": the Field Manual is the tutorial cards, then the keys
+      fillManualCards(this.modalBody, this._manualNode);
+    } else if (kind === 'slots') {
+      this._modalTitle.textContent = 'CONTINUE';
+      this._slots = fillSlots(this.modalBody, {
+        menus: this,
+        onContinue: (n) => {
+          this.ctx.progression?.saves?.useSlot?.(n);
+          this.closeModal();
+          underSheet(() => this.continueGame());
+        },
+      });
     } else if (kind === 'settings') {
       this._modalTitle.textContent = 'SETTINGS';
       this.settingsPanel.mount(this.modalBody);
@@ -763,23 +773,20 @@ export class Menus {
       : 'the island took her';
     this._deathTip.innerHTML = this.tips.forDeath(killer);
 
-    const prog = ctx.progression;
-    const info = prog?.hasSave?.() ? prog.saveInfo?.() : null;
+    // BIBLE 13: exactly two stations. RETURN TO THE LAST BRAZIER is the one death rule (BIBLE 17): the newest
+    // record's world and satchel, Brea standing at the Brazier of her last rest, at the hour of her death
+    // (progression.loadCheckpoint('death') over src/game/save's deathRecord).
+    const place = this._restPlace();
     this._deathOpts.innerHTML = '';
     const opts = [
-      { label: 'RELOAD THE LAST ENTRY',
-        sub: info ? `from: ${String(info.reason || 'the last entry').toLowerCase()}` : 'no save yet: she wakes at the cistern',
-        fn: () => this.respawn('checkpoint') },
-      { label: 'RETURN TO THE CISTERN', mode: 'rest', sub: 'keep what the last entry holds, and start from the rest',
-        fn: () => this.respawn('rest') },
-      { label: 'QUIT TO TITLE', sub: 'the book stays open', fn: () => this.quitToTitle() },
+      { label: 'RETURN TO THE LAST BRAZIER', sub: place || '', fn: () => this.respawn('checkpoint') },
+      { label: 'QUIT TO TITLE', sub: '', fn: () => this.quitToTitle() },
     ];
     opts.forEach((o, i) => {
       const b = el('button', 'mn-death-opt', this._deathOpts);
-      if (o.mode) b.dataset.mode = o.mode;
-      el('span', 'cal-stn', b, `STN ${String(i + 1).padStart(2, '0')}`);
+      el('span', 'cal-stn', b, String(i + 1));
       el('b', null, b, o.label);
-      el('span', null, b, o.sub);
+      if (o.sub) el('span', null, b, o.sub);
       b.addEventListener('click', () => { this._emit('ui-confirm', { label: o.label }); o.fn(); });
     });
     this.deathEl.classList.add('show');
@@ -940,6 +947,14 @@ export class Menus {
         return;
       }
 
+      // BIBLE 12: Q and E cycle the hub tabs
+      if (this.hubOpen && (code === 'KeyQ' || code === 'KeyE')) {
+        const i = TABS.findIndex((t) => t.id === this.tab);
+        const n = TABS.length;
+        this.setTab(TABS[(i + (code === 'KeyE' ? 1 : n - 1)) % n].id);
+        this._consume(e);
+        return;
+      }
       const tab = TAB_BY_KEY.get(code);
       if (!tab) return;
       if (this.hubOpen) {
@@ -1181,6 +1196,8 @@ export class Menus {
         canvasFilter: ctx.renderer?.domElement?.style?.filter ?? '',
       },
       victory: { t: +this._victoryT.toFixed(2), visible: vis(this.victoryEl) },
+      contextLost: this.contextCard?.audit?.() ?? null,
+      slots: this.modal === 'slots' ? this._slots?.audit?.() ?? null : null,
       map: this.map.audit(),
       beacon: this.beacon.audit(),
       settings: this.settings.audit(),
@@ -1196,9 +1213,10 @@ export class Menus {
     window.removeEventListener('mousedown', this._onClickAnywhere, true);
     window.removeEventListener('resize', this._onResize);
     this.beacon.dispose();
+    this.contextCard?.dispose();
     this.map.dispose();
     this.root?.remove();
-    document.body.classList.remove('cal-menus', 'cal-hub-open', 'cal-dead', 'cal-title-live', 'cal-t2');
+    document.body.classList.remove('cal-menus', 'cal-gs', 'cal-hub-open', 'cal-dead', 'cal-title-live', 'cal-t2');
     if (this.ctx.menus === this) this.ctx.menus = null;
   }
 }

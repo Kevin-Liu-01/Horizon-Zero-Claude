@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import './inventory.css';
-import { itemDef, ammoDef, rarityDef, POCKETS } from '../items/items.js';
+import { itemDef, ammoDef, rarityDef } from '../items/items.js';
 import { fieldWord } from './tips.js';
+import { turntable } from './turntable.js';
 
 /** The catalogue's lines the bridge cannot word-swap, until combat-kit renames `items.js` (W2). By item id. */
 const ITEM_DESC = {
@@ -93,18 +94,26 @@ export function bookHeading(id) { return BOOK_HEADS[id] ?? 'FOGCATCHER RECORDS';
 
 export function itemPlayerName(id, fallback) { return fieldWord(fallback ?? itemDef(id).name); }
 
-/** Rarity, as an ink on paper (the catalogue's colours were chosen for a dark panel). */
-const RAR_INK = {
-  common: 'var(--cal-ink-62)', uncommon: 'var(--cal-moss)', rare: 'var(--cal-cobalt)',
-  veryRare: 'var(--cal-carmine)', legendary: 'var(--cal-brass)',
-};
-const rarInk = (rar) => RAR_INK[rar?.id] ?? RAR_INK.common;
+/** No coloured rarity tiers (IP rule): every card carries the same glass frame line. */
+const rarInk = () => 'var(--cal-glass-line)';
 
 const CURRENCY = 'metal-shards';
 
-/** Pocket index marks (the catalogue's glyphs are outside the latin subset). */
-const POCKET_MARK = { resources: 'salt', ammo: 'arrow', tools: 'trap', valuables: 'lampglass', crafting: 'escapement', notebook: 'book', trade: 'cord' };
-const POCKET_WORD = { resources: 'STORES', ammo: 'QUIVER', tools: 'TOOLS', valuables: 'SALVAGE', crafting: 'MAKING', notebook: 'FIELD BOOKS', trade: 'TRADE' };
+/**
+ * The satchel's tabs (M1.6g2, BIBLE 18: ALL · WEAPONS · TOOLS · STORES · FIELD BOOKS · TRADE). The catalogue's own
+ * pockets fold into them: the quiver into WEAPONS, salvage into STORES; Making is its own hub tab.
+ */
+const SATCHEL = [
+  { id: 'all', word: 'ALL', mark: 'mark' },
+  { id: 'weapons', word: 'WEAPONS', mark: 'arrow' },
+  { id: 'tools', word: 'TOOLS', mark: 'trap' },
+  { id: 'resources', word: 'STORES', mark: 'salt' },
+  { id: 'notebook', word: 'FIELD BOOKS', mark: 'book' },
+  { id: 'trade', word: 'TRADE', mark: 'cord' },
+];
+/** An older pocket id (items lane, the hub, a Field Book pickup) to its tab. */
+const POCKET_ALIAS = { ammo: 'weapons', valuables: 'resources', crafting: 'all' };
+const tabOf = (id) => (SATCHEL.some((p) => p.id === id) ? id : (POCKET_ALIAS[id] ?? null));
 
 function el(tag, cls, parent, html) {
   const node = document.createElement(tag);
@@ -149,14 +158,13 @@ export class InventoryScreen {
 
     const cols = el('div', 'cal-inv-cols', shell);
 
-    // --- left rail: pockets
+    // --- the tabs, across the top of the page (a lilac underline on the open one)
     this._railEl = el('nav', 'cal-inv-rail', cols);
     this._railBtns = new Map();
-    for (const p of POCKETS) {
+    for (const p of SATCHEL) {
       const b = el('button', 'cal-inv-pocket', this._railEl,
-        `<i class="cal-inv-pglyph">${iconSvg(POCKET_MARK[p.id])}</i>`
-        + `<span class="cal-inv-plabel">${POCKET_WORD[p.id] ?? p.label}</span>`
-        + '<span class="cal-inv-pcount"></span>');
+        `<span class="cal-inv-plabel">${p.word}</span><span class="cal-inv-pcount"></span>`);
+      b.dataset.pocket = p.id;
       b.addEventListener('click', () => { this.pocket = p.id; this._selected = null; this._render(); });
       this._railBtns.set(p.id, b);
     }
@@ -199,7 +207,7 @@ export class InventoryScreen {
 
   open(pocket) {
     const ctx = this.ctx;
-    if (pocket && POCKETS.some((p) => p.id === pocket)) this.pocket = pocket;
+    if (pocket && tabOf(pocket)) this.pocket = tabOf(pocket);
     if (ctx.state !== 'playing' && ctx.state !== 'inventory') return false;
     ctx.state = 'inventory';
     this._open = true;
@@ -242,58 +250,32 @@ export class InventoryScreen {
     this._shardsEl.innerHTML =
       `<i>${iconSvg('salt')}</i><span>${String(salt).padStart(3, '0')}</span><em>SALT</em>`;
 
-    // pocket badge counts
-    for (const p of POCKETS) {
-      const b = this._railBtns.get(p.id);
-      const badge = b?.lastElementChild;
-      if (!badge) continue;
-      if (p.category && p.category !== 'ammo') {
-        badge.textContent = String((inv?.items?.(p.category) ?? []).length || '');
-      } else if (p.id === 'notebook') {
-        const dp = items?.fieldbooks;
-        badge.textContent = dp ? `${dp.count}/${dp.total}` : '';
-      } else badge.textContent = '';
+    // tab counts: the kinds carried, and the Field Books found
+    const kinds = (cats) => cats.reduce((n, c) => n + ((inv?.items?.(c) ?? []).length), 0);
+    const counts = {
+      all: kinds(['resource', 'valuable', 'tool']),
+      tools: kinds(['tool']),
+      resources: kinds(['resource', 'valuable']),
+      notebook: items?.fieldbooks ? `${items.fieldbooks.count}/${items.fieldbooks.total}` : '',
+    };
+    for (const p of SATCHEL) {
+      const badge = this._railBtns.get(p.id)?.lastElementChild;
+      if (badge) badge.textContent = counts[p.id] ? String(counts[p.id]) : '';
     }
 
     this._capEl.innerHTML = '';
     this._bodyEl.innerHTML = '';
     this._detailEl.innerHTML = '';
+    turntable()?.hide?.();
 
     switch (this.pocket) {
-      case 'ammo': this._renderAmmo(); break;
-      case 'tools': this._renderPocket('tool', 'tools'); break;
-      case 'valuables': this._renderPocket('valuable', 'valuables'); break;
-      case 'crafting': this._renderCrafting(); break;
+      case 'all': this._renderPocket(['resource', 'valuable', 'tool'], true); break;
+      case 'weapons': this._renderAmmo(); break;
+      case 'tools': this._renderPocket(['tool']); break;
       case 'notebook': this._renderNotebook(); break;
       case 'trade': this._renderTrade(); break;
-      default: this._renderPocket('resource', 'resources'); break;
+      default: this._renderPocket(['resource', 'valuable']); break;
     }
-  }
-
-  /* ---------------------------------------------------- capacity header */
-
-  _capacityHeader(pocketId) {
-    const items = this.ctx.items;
-    if (!items?.upgradeCost) return;
-    const def = items.POCKETS?.[pocketId];
-    const tier = items.capacityTier(pocketId);
-    const cost = items.upgradeCost(pocketId);
-    const bar = el('div', 'cal-cap', this._capEl);
-    el('span', 'cal-cap-label', bar, def?.label ?? 'CAPACITY');
-    const pips = el('span', 'cal-cap-pips', bar);
-    for (let i = 0; i < 3; i++) el('i', i < tier ? 'on' : '', pips);
-    el('span', 'cal-cap-tier', bar, tier ? `TIER ${tier}` : 'BASE');
-
-    if (!cost) { el('span', 'cal-cap-max', bar, 'FULLY UPGRADED'); return; }
-    const can = items.canUpgrade(pocketId);
-    const b = el('button', `cal-cap-up${can.ok ? '' : ' off'}`, bar,
-      `UPGRADE · <i>${iconSvg('salt')}</i>${cost.shards}`
-      + cost.items.map(([id, n]) => ` · <i>${itemIcon(id)}</i>${n}`).join(''));
-    b.title = can.ok ? `Raise every cap in this pocket to ×${cost.mult}` : can.reason;
-    b.addEventListener('click', () => {
-      if (items.upgradeCapacity(pocketId)) this._render();
-      else this._flash(b, can.reason);
-    });
   }
 
   _flash(node, text) {
@@ -310,43 +292,72 @@ export class InventoryScreen {
 
   /* ------------------------------------------------------- item pockets */
 
-  _renderPocket(category, pocketId) {
-    this._capacityHeader(pocketId);
+  _renderPocket(categories, withAmmo = false) {
     const inv = this.ctx.inventory;
-    const rows = inv?.items?.(category) ?? [];
+    const rows = categories.flatMap((c) => inv?.items?.(c) ?? []);
 
     // the gourd belongs at the top of STORES: every fog-water plant here feeds it
-    if (category === 'resource') this._pouchMeter();
+    if (categories.includes('resource')) this._pouchMeter();
 
-    if (!rows.length) {
-      this._empty(category === 'valuable'
-        ? 'Nothing salvaged yet. Lampglass and escapements collect here.'
-        : category === 'tool'
-          ? 'No tools. Make them in the Making pocket.'
-          : 'The satchel is empty.');
+    const ammo = withAmmo ? this._ammoList() : [];
+    if (!rows.length && !ammo.length) {
+      this._empty(categories.length === 1 && categories[0] === 'tool'
+        ? 'No tools yet.'
+        : 'The satchel is empty.');
       this._detailHint();
       return;
     }
 
     const grid = el('div', 'cal-grid', this._bodyEl);
     let first = null;
-    for (const r of rows) {
-      const card = this._itemCard(grid, r.id, r.count, r.cap);
-      if (!first) first = { kind: 'item', id: r.id };
-      card.addEventListener('click', () => {
-        this._selected = { kind: 'item', id: r.id };
-        this._render();
-      });
-      if (this._selected?.kind === 'item' && this._selected.id === r.id) {
-        card.classList.add('sel');
-      }
-    }
-    if (!this._selected || this._selected.kind !== 'item'
-      || !rows.some((r) => r.id === this._selected.id)) {
+    const pick = (sel, card) => {
+      if (!first) first = sel;
+      card.addEventListener('click', () => { this._selected = sel; this._render(); });
+      if (this._selected?.kind === sel.kind && this._selected.id === sel.id) card.classList.add('sel');
+    };
+    for (const r of rows) pick({ kind: 'item', id: r.id }, this._itemCard(grid, r.id, r.count, r.cap));
+    for (const a of ammo) pick({ kind: 'ammo', id: a.id }, this._ammoCard(grid, a));
+    const ok = this._selected && ((this._selected.kind === 'item' && rows.some((r) => r.id === this._selected.id))
+      || (this._selected.kind === 'ammo' && ammo.some((a) => a.id === this._selected.id)));
+    if (!ok) {
       this._selected = first;
       grid.firstElementChild?.classList.add('sel');
     }
-    this._detailItem(this._selected.id);
+    if (this._selected.kind === 'ammo') this._detailAmmo(this._selected.id, this._ammoCounts());
+    else this._detailItem(this._selected.id);
+  }
+
+  /** The quiver's arrows, one entry per kind the bows take. */
+  _ammoCounts() {
+    const c = this.ctx.combat;
+    return (c && (c.ammo || c.arrowCounts)) || {};
+  }
+
+  _ammoList() {
+    const c = this.ctx.combat;
+    const counts = this._ammoCounts();
+    const out = [];
+    const seen = new Set();
+    for (const w of (Array.isArray(c?.weapons) ? c.weapons : [])) {
+      for (const a of (Array.isArray(w?.ammoTypes) ? w.ammoTypes : [])) {
+        const id = typeof a === 'string' ? a : a?.id;
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        out.push({ id, n: counts[id] ?? (typeof a === 'object' ? a.count ?? a.n ?? null : null), name: typeof a === 'object' ? a.name : null });
+      }
+    }
+    if (!out.length) for (const id of Object.keys(counts)) out.push({ id, n: counts[id], name: null });
+    return out;
+  }
+
+  _ammoCard(parent, a) {
+    const def = ammoDef(a.id);
+    const card = el('button', 'cal-card', parent);
+    card.dataset.item = 'ammo:' + a.id;
+    el('i', 'cal-card-glyph', card, itemIcon(a.id));
+    el('span', 'cal-card-name', card, esc(fieldWord(a.name ?? def.name).toUpperCase()));
+    el('span', 'cal-card-n', card, a.n == null ? '—' : String(a.n));
+    return card;
   }
 
   _itemCard(parent, id, count, cap) {
@@ -396,10 +407,10 @@ export class InventoryScreen {
     const rar = rarityDef(def.rarity);
     const d = this._detailEl;
     d.style.setProperty('--rar', rarInk(rar));
-    el('div', 'cal-det-rar', d, rar.name);
     const head = el('div', 'cal-det-head', d);
     el('i', 'cal-det-glyph', head, itemIcon(id));
     el('span', 'cal-det-name', head, esc(fieldWord(def.name).toUpperCase()));
+    this._turn(id);
     el('p', 'cal-det-desc', d, esc(ITEM_DESC[id] ?? fieldWord(def.desc ?? '')));
 
     const cap = items?.capacity ? items.capacity(id) : (def.cap ?? 0);
@@ -426,6 +437,14 @@ export class InventoryScreen {
         if (tools.index === i) { b.classList.add('on'); b.textContent = 'EQUIPPED'; }
       }
     }
+  }
+
+  /** The detail column's turntable (BIBLE 18): the item itself, turning, lit, on no plate. */
+  _turn(id, ammo = false) {
+    const tt = turntable();
+    if (!tt?.showId) return;
+    const stage = el('div', 'cal-det-turn', this._detailEl);
+    tt.showId(stage, id, ammo);
   }
 
   _stat(parent, k, v) {
@@ -495,10 +514,10 @@ export class InventoryScreen {
     const rar = rarityDef(def.rarity);
     const d = this._detailEl;
     d.style.setProperty('--rar', rarInk(rar));
-    el('div', 'cal-det-rar', d, rar.name);
     const head = el('div', 'cal-det-head', d);
     el('i', 'cal-det-glyph', head, itemIcon(id));
     el('span', 'cal-det-name', head, esc(fieldWord(def.name).toUpperCase()));
+    this._turn(id, true);
     const stats = el('div', 'cal-det-stats', d);
     this._stat(stats, 'IN QUIVER', String(counts?.[id] ?? '—'));
     const status = typeof c?.recipeStatus === 'function' ? c.recipeStatus(id) : null;
@@ -521,124 +540,6 @@ export class InventoryScreen {
     } else {
       el('p', 'cal-det-desc', d, 'Found, not made. Instruments carry it; you take it.');
     }
-  }
-
-  /* ------------------------------------------------------------ crafting */
-
-  _renderCrafting() {
-    const items = this.ctx.items;
-    const combat = this.ctx.combat;
-    el('div', 'cal-cap-title', this._capEl, 'MAKING: FROM WHAT THE SATCHEL HOLDS');
-
-    // 1) tools & draughts
-    el('div', 'cal-inv-group', this._bodyEl, 'TOOLS & DRAUGHTS');
-    const gridA = el('div', 'cal-grid', this._bodyEl);
-    let first = null;
-    for (const r of (items?.recipes?.() ?? [])) {
-      const ok = items.canCraft(r.id);
-      const card = this._itemCard(gridA, r.id,
-        this.ctx.inventory?.count?.(r.id) ?? 0, items.capacity(r.id));
-      card.classList.toggle('craftable', ok);
-      card.addEventListener('click', () => {
-        this._selected = { kind: 'recipe', id: r.id }; this._render();
-      });
-      if (this._selected?.kind === 'recipe' && this._selected.id === r.id) card.classList.add('sel');
-      if (!first) first = { kind: 'recipe', id: r.id };
-    }
-
-    // 2) ammo recipes, live from combat
-    const ammoIds = [];
-    if (Array.isArray(combat?.weapons)) {
-      for (const w of combat.weapons) {
-        for (const a of (Array.isArray(w?.ammoTypes) ? w.ammoTypes : [])) {
-          const id = typeof a === 'string' ? a : a?.id;
-          if (id && !ammoIds.includes(id)
-            && (combat.recipeStatus?.(id) ?? []).length) ammoIds.push(id);
-        }
-      }
-    }
-    if (ammoIds.length) {
-      el('div', 'cal-inv-group', this._bodyEl, 'AMMUNITION');
-      const gridB = el('div', 'cal-grid', this._bodyEl);
-      for (const id of ammoIds) {
-        const def = ammoDef(id);
-        const rar = rarityDef(def.rarity);
-        const card = el('button', `cal-card r-${rar.id}`, gridB);
-        card.dataset.item = 'ammo:' + id;
-        card.style.setProperty('--rar', rarInk(rar));
-        el('i', 'cal-card-glyph', card, itemIcon(id));
-        el('span', 'cal-card-name', card, esc(fieldWord(def.name).toUpperCase()));
-        el('span', 'cal-card-n', card, String(combat.ammo?.[id] ?? 0));
-        card.classList.toggle('craftable', !!combat.canCraft?.(id));
-        card.addEventListener('click', () => {
-          this._selected = { kind: 'ammo', id }; this._render();
-        });
-        if (this._selected?.kind === 'ammo' && this._selected.id === id) card.classList.add('sel');
-        if (!first) first = { kind: 'ammo', id };
-      }
-    }
-
-    // 3) capacity upgrades — every pocket, in one place
-    el('div', 'cal-inv-group', this._bodyEl, 'CARRY CAPACITY');
-    const caps = el('div', 'cal-caps', this._bodyEl);
-    for (const [pid, pdef] of Object.entries(items?.POCKETS ?? {})) {
-      const tier = items.capacityTier(pid);
-      const cost = items.upgradeCost(pid);
-      const row = el('div', 'cal-caps-row', caps);
-      el('span', 'cal-caps-name', row, pdef.label);
-      const pips = el('span', 'cal-cap-pips', row);
-      for (let i = 0; i < 3; i++) el('i', i < tier ? 'on' : '', pips);
-      if (!cost) { el('span', 'cal-cap-max', row, 'MAX'); continue; }
-      const can = items.canUpgrade(pid);
-      const b = el('button', `cal-cap-up${can.ok ? '' : ' off'}`, row,
-        `×${cost.mult} · <i>${iconSvg('salt')}</i>${cost.shards}`
-        + cost.items.map(([id, n]) => ` · <i>${itemIcon(id)}</i>${n}`).join(''));
-      b.addEventListener('click', () => {
-        if (items.upgradeCapacity(pid)) this._render();
-        else this._flash(b, can.reason);
-      });
-    }
-
-    if (!this._selected || !['recipe', 'ammo'].includes(this._selected.kind)) {
-      this._selected = first;
-    }
-    if (!this._selected) { this._detailHint(); return; }
-    if (this._selected.kind === 'ammo') {
-      this._detailAmmo(this._selected.id, combat?.ammo ?? combat?.arrowCounts ?? {});
-    } else this._detailRecipe(this._selected.id);
-  }
-
-  _detailRecipe(id) {
-    const items = this.ctx.items;
-    const def = itemDef(id);
-    const rar = rarityDef(def.rarity);
-    const d = this._detailEl;
-    d.style.setProperty('--rar', rarInk(rar));
-    el('div', 'cal-det-rar', d, rar.name);
-    const head = el('div', 'cal-det-head', d);
-    el('i', 'cal-det-glyph', head, itemIcon(id));
-    el('span', 'cal-det-name', head, esc(fieldWord(def.name).toUpperCase()));
-    const r = items?.crafting?.recipe?.(id);
-    el('p', 'cal-det-desc', d, esc(fieldWord(r?.note ?? def.desc ?? '')));
-    const stats = el('div', 'cal-det-stats', d);
-    this._stat(stats, 'CARRIED',
-      `${this.ctx.inventory?.count?.(id) ?? 0} / ${items.capacity(id)}`);
-    this._stat(stats, 'MAKES', `${r?.batch ?? 1} EACH TIME`);
-
-    el('div', 'cal-det-sub', d, 'MADE FROM');
-    const list = el('div', 'cal-recipe', d);
-    for (const s of items.recipeStatus(id)) {
-      const row = el('div', `cal-recipe-row${s.ok ? '' : ' short'}`, list);
-      el('i', '', row, itemIcon(s.id));
-      el('span', 'n', row, esc(fieldWord(s.def.name).toUpperCase()));
-      el('span', 'c', row, `${s.have} / ${s.need}`);
-    }
-    const ok = items.canCraft(id);
-    const b = el('button', `cal-det-act${ok ? '' : ' off'}`, d, 'MAKE');
-    b.addEventListener('click', () => {
-      if (items.craft(id)) this._render();
-      else this._flash(b, fieldWord(items.craftBlocker(id) ?? 'CANNOT MAKE'));
-    });
   }
 
   /* ------------------------------------------------------------ notebook */

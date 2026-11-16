@@ -130,38 +130,6 @@ body.cal-reduced-motion .mk-spin { animation: none; transform: rotateY(28deg); }
 .mk-btn.off, .mk-btn:disabled { opacity: 0.4; cursor: not-allowed; background: transparent; border-style: dashed; }
 .mk-why { min-height: 18px; margin-top: 8px; font-family: var(--cal-font-mono); font-size: 12px; letter-spacing: 0.04em; color: var(--cal-glass-text-2); }
 
-/* ---- the hub on this tab: the book's paper steps aside and the hub is glass over the world (fix round 1: at
-   273e302 the cream paper covered about 40 % of F28 around the dark ledger). The palette's ink tokens are turned
-   to staff white inside the hub, so the index, the head, the foot and their buttons read on glass. ---- */
-.mn-hub[data-tab="crafting"] {
-  --cal-ink: #F1EEE6;
-  --cal-ink-80: rgba(241, 238, 230, 0.80);
-  --cal-ink-62: rgba(241, 238, 230, 0.62);
-  --cal-ink-40: rgba(241, 238, 230, 0.40);
-  --cal-ink-22: rgba(241, 238, 230, 0.22);
-  --cal-ink-10: rgba(241, 238, 230, 0.08);
-  --cal-rule: rgba(241, 238, 230, 0.16);
-  --cal-rule-ruled: transparent;
-  --cal-plate: none;
-}
-.mn-hub[data-tab="crafting"] .mn-hub-scrim { background: rgba(14, 11, 20, 0.30); }
-.mn-hub[data-tab="crafting"] .mn-hub-shell {
-  background: rgba(var(--cal-glass-rgb), 0.30);
-  -webkit-backdrop-filter: blur(10px) saturate(1.05);
-          backdrop-filter: blur(10px) saturate(1.05);
-  box-shadow: inset 0 1px 0 rgba(241, 238, 230, 0.12), inset 0 0 0 1px var(--cal-glass-line), 0 22px 70px rgba(14, 11, 20, 0.45);
-}
-.mn-hub[data-tab="crafting"] .cal-page { background: none; color: var(--cal-glass-text); }
-.mn-hub[data-tab="crafting"] .mn-hub-margin { border-right: 1px solid var(--cal-glass-line); }
-.mn-hub[data-tab="crafting"] .mn-hub-margin::before { opacity: 0.55; }
-.mn-hub[data-tab="crafting"] .mn-hub-foot { border-top-color: var(--cal-glass-line); }
-.mn-hub[data-tab="crafting"] .mn-tab.on,
-.mn-hub[data-tab="crafting"] .mn-tab.on::after { background: var(--cal-select-fill); color: var(--cal-glass-text); }
-.mn-hub[data-tab="crafting"] .mn-tab.on { box-shadow: inset 0 1px 0 var(--cal-select-line), inset 0 -1px 0 var(--cal-select-line); border-bottom-color: transparent; }
-.mn-hub[data-tab="crafting"] .mn-btn.primary { background: var(--cal-select-fill); border-color: var(--cal-select-line); color: var(--cal-glass-text); }
-.mn-hub[data-tab="crafting"] .mn-btn:hover, .mn-hub[data-tab="crafting"] .mn-btn:focus-visible { background: rgba(241, 238, 230, 0.10); color: var(--cal-glass-text); border-color: var(--cal-select-line); }
-
-/* the hub's page body hosts the ledger edge to edge */
-.mn-hub[data-tab="crafting"] .mn-hub-body { padding: 14px 18px 14px 14px; }
+/* the hub around this page is the glass shell (src/ui/glass.css, M1.6g2) */
 /* a plain 1 px frame: no corner ticks on the ledger (as on the Tolerance card) */
 .mk.cal-glass::after { display: none; }

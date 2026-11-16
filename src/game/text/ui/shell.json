@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "about": "The glass shell's own words (M1.6g2, BIBLE 18): the Continue and save slots, the context-lost card, the unsupported-browser page and the Field Manual. Plain data, read by src/ui/. The listed words are the bible's exactly.",
+  "slots": {
+    "head": "CONTINUE",
+    "slot": "SLOT {n}",
+    "continue": "CONTINUE",
+    "erase": "ERASE",
+    "eraseHold": "hold",
+    "empty": "EMPTY",
+    "order": "THIRD ORDER",
+    "orderSecond": "SECOND ORDER",
+    "hectares": "{ha} ha",
+    "lead": "Three field books. CONTINUE opens the one you choose; hold ERASE to clear one."
+  },
+  "contextLost": {
+    "line": "DISPLAY RESET · RESUMING",
+    "sub": "The graphics card dropped the picture. The world waits until it is back.",
+    "reload": "Reloading the last record."
+  },
+  "unsupported": {
+    "line": "CALIMA NEEDS WEBGL 2",
+    "missing": "Missing here: {what}.",
+    "try": [
+      "Open the game in a current Chrome, Edge, Firefox or Safari.",
+      "Turn on hardware acceleration in the browser's settings, then restart the browser.",
+      "Update the graphics driver, or try another computer."
+    ]
+  },
+  "manual": {
+    "cards": "FIELD CARDS",
+    "keys": "KEYS"
+  }
+}

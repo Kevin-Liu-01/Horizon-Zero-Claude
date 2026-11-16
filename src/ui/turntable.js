@@ -246,6 +246,7 @@ class Turntable {
 
   /** The row's item: arrows by combat's ammo id, pots and the net by the row id. */
   itemFor(row) {
+    if (row._it) return row._it;
     if (row.group === 'arrows') return this._item(`a:${row.ammo || 'hunter'}`, () => arrowItem(row.ammo || 'hunter'));
     if (row.group === 'pots') return this._item(`p:${row.id}`, () => potItem(row.id));
     return this._item('n', netItem);
@@ -291,6 +292,20 @@ class Turntable {
     };
     if (this.raf) cancelAnimationFrame(this.raf);
     loop();
+  }
+
+  /**
+   * The satchel's detail column (M1.6g2, BIBLE 18 "detail column with a turntable"): any item by its catalogue id.
+   * An arrow by combat's ammo id, the cinder pot, else the island material's own model (a plain stone where the
+   * catalogue has none yet).
+   */
+  showId(host, id, ammo = false) {
+    const row = ammo ? { group: 'arrows', ammo: id }
+      : /pot|bomb/.test(String(id)) ? { group: 'pots', id: 'cinderPot' }
+        : null;
+    if (row) return this.show(host, row);
+    const it = this._item(`m:${id}`, () => materialItem(id));
+    return this.show(host, { group: '_m', _it: it });
   }
 
   hide() {

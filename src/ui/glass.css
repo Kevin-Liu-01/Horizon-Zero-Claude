@@ -1,0 +1,493 @@
+/* ===========================================================================
+   THE GLASS SHELL (M1.6g2; BIBLE 18 "Shared rules", BIBLE 10 "UI").
+
+   Every menu is dark violet glass #1E1A28 at 0.90, right angles, 6 px L-shaped registration ticks at the
+   corners, the lilac #D8CCE4 selection line over Orchil Deep, Chakra Petch for display, labels and menus,
+   IBM Plex Mono for numerals, body and dialogue. The world freezes and frosts behind every menu. The field
+   book's cream paper and its red margin rule are retired from every menu surface.
+
+   The book's paper rules live in src/style.css (another lane's file): nothing there is edited. Every rule
+   here is scoped under `body.cal-gs` (set by src/ui/menu.js), one class more specific than the rule it
+   replaces. Inside a menu surface the ink tokens turn to staff white, so a rule written for ink on paper
+   reads as staff white on glass; the few states drawn as "ink fill, staff text" become the selection
+   (Orchil Deep fill, lilac line) here.
+   =========================================================================== */
+
+body.cal-gs {
+  --gs-fill: rgba(var(--cal-glass-rgb), var(--cal-glass-a-menu));
+  --gs-line: var(--cal-glass-line);
+  --gs-tick: var(--cal-glass-tick);
+  --gs-text: var(--cal-glass-text);
+  --gs-text-2: var(--cal-glass-text-2);
+  --gs-sel-line: var(--cal-select-line);
+  --gs-sel-fill: var(--cal-select-fill);
+  --gs-frost: blur(14px) saturate(0.9);
+  /* the hub is full width: the delegated pages (satchel, Field Log, skills) sit under its two head rows */
+  --mn-inset-x: 0px;
+  --mn-inset-y: 0px;
+  --mn-margin-w: 0px;
+  --mn-head-h: 100px;
+  --mn-foot-h: 48px;
+}
+
+/* the ink tokens on glass: staff white at the same strengths */
+body.cal-gs .cal-menus-root,
+body.cal-gs .cal-inv,
+body.cal-gs #cal-prog .pg-overlay,
+body.cal-gs #cal-prog .sk-overlay,
+body.cal-gs #cal-dlg {
+  --cal-ink: #F1EEE6;
+  --cal-ink-80: rgba(241, 238, 230, 0.80);
+  --cal-ink-62: rgba(241, 238, 230, 0.62);
+  --cal-ink-40: rgba(241, 238, 230, 0.40);
+  --cal-ink-22: rgba(241, 238, 230, 0.22);
+  --cal-ink-10: rgba(241, 238, 230, 0.08);
+  --cal-rule: rgba(241, 238, 230, 0.16);
+  --cal-rule-ruled: transparent;
+  --cal-plate: none;
+  color: var(--gs-text);
+}
+
+/* one material for a menu surface */
+body.cal-gs .cal-page,
+body.cal-gs .mn-hub-shell,
+body.cal-gs .mn-modal-shell,
+body.cal-gs .mn-death-inner,
+body.cal-gs .mn-victory-inner {
+  background-color: var(--gs-fill);
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  background-attachment: scroll;
+  color: var(--gs-text);
+}
+
+/* the registration ticks: eight 1 px strokes, 6 px long, at the four corners */
+body.cal-gs .mn-hub-body::after,
+body.cal-gs .mn-modal-shell::after,
+body.cal-gs .mn-death-inner::after,
+body.cal-gs .mn-victory-inner::after,
+body.cal-gs .cal-inv-shell::after,
+body.cal-gs #cal-prog .pg-panel::after,
+body.cal-gs #cal-sys .sys-lt::after,
+body.cal-gs .gs-card::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  --t: var(--gs-tick);
+  background:
+    linear-gradient(var(--t), var(--t)) left top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 1px 6px no-repeat;
+}
+
+/* ---------------------------------------------------------------- buttons */
+body.cal-gs .cal-menus-root .mn-btn { color: var(--gs-text); border-color: rgba(241, 238, 230, 0.34); background: transparent; }
+body.cal-gs .cal-menus-root .mn-btn:hover,
+body.cal-gs .cal-menus-root .mn-btn:focus-visible { background: rgba(241, 238, 230, 0.08); color: var(--gs-text); border-color: var(--gs-sel-line); }
+body.cal-gs .cal-menus-root .mn-btn.primary { background: var(--gs-sel-fill); border-color: var(--gs-sel-line); color: var(--gs-text); }
+body.cal-gs .cal-menus-root .mn-btn.danger:hover { background: rgba(241, 238, 230, 0.08); border-color: var(--gs-sel-line); }
+body.cal-gs .cal-menus-root kbd,
+body.cal-gs .cal-inv kbd,
+body.cal-gs #cal-prog kbd,
+body.cal-gs #cal-dlg kbd {
+  color: var(--gs-text); background: rgba(241, 238, 230, 0.06);
+  border: 1px solid rgba(241, 238, 230, 0.34); border-bottom-width: 1px;
+}
+
+/* =================================================================== hub */
+
+/* the world freezes and frosts behind it */
+body.cal-gs .mn-hub-scrim {
+  background: rgba(14, 11, 20, 0.30);
+  -webkit-backdrop-filter: var(--gs-frost);
+          backdrop-filter: var(--gs-frost);
+}
+body.cal-gs .mn-hub.delegated .mn-hub-scrim { opacity: 1; }
+
+/* full-width glass: [ brand | tabs | status ] / [ page name | field data ] / page / foot */
+body.cal-gs .mn-hub-shell {
+  inset: 0;
+  grid-template-columns: 1fr;
+  grid-template-rows: 58px 42px 1fr var(--mn-foot-h);
+  grid-template-areas: 'head' 'sub' 'body' 'foot';
+  box-shadow: none;
+  animation: gs-in 0.18s var(--cal-ease-out) both;
+}
+@keyframes gs-in { from { opacity: 0; } to { opacity: 1; } }
+/* a delegated page draws its own glass under the head: the shell keeps the head and foot only */
+body.cal-gs .mn-hub.delegated .mn-hub-shell { background: none; }
+body.cal-gs .mn-hub.delegated .mn-hub-head,
+body.cal-gs .mn-hub.delegated .mn-hub-sub,
+body.cal-gs .mn-hub.delegated .mn-hub-foot { background-color: var(--gs-fill); background-image: var(--cal-glass-grain); }
+
+body.cal-gs .mn-hub-head {
+  grid-area: head;
+  display: grid; grid-template-columns: 180px 1fr auto; align-items: stretch; gap: 0;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--gs-line);
+}
+body.cal-gs .mn-hub-head::after { display: none; }
+body.cal-gs .mn-hub-brand {
+  align-self: center;
+  padding: 0; margin: 0; border: 0;
+  font-family: var(--cal-font-display); font-weight: 600;
+  font-size: 18px; letter-spacing: 0.24em;
+  color: var(--gs-text);
+}
+body.cal-gs .mn-tabs { flex-direction: row; justify-content: center; align-items: stretch; gap: 2px; flex: none; }
+body.cal-gs .mn-tab {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 14px;
+  border: 0; border-bottom: 0;
+  background: transparent;
+  font-family: var(--cal-font-ui); font-weight: 600;
+  font-size: 13px; letter-spacing: 0.14em;
+  color: var(--gs-text-2);
+}
+body.cal-gs .mn-tab:hover { background: rgba(241, 238, 230, 0.05); color: var(--gs-text); }
+body.cal-gs .mn-tab kbd { font-size: 10px; padding: 0 4px; min-width: 0; color: var(--gs-text-2); border-color: rgba(241, 238, 230, 0.22); background: none; }
+/* the open page: staff white and a 2 px lilac underline on the head's bottom rule */
+body.cal-gs .mn-tab.on { background: transparent; color: var(--gs-text); }
+body.cal-gs .mn-tab.on::after {
+  content: ''; position: absolute; left: 10px; right: 10px; top: auto; bottom: -1px; width: auto; height: 2px;
+  background: var(--gs-sel-line);
+}
+body.cal-gs .mn-tab.on kbd { color: var(--gs-text); border-color: rgba(216, 204, 228, 0.6); }
+body.cal-gs .mn-hub-status { align-self: center; gap: 18px; color: var(--gs-text-2); }
+body.cal-gs .mn-hub-status b { color: var(--gs-text); }
+body.cal-gs .mn-hub-status span { color: var(--gs-text-2); }
+
+body.cal-gs .mn-hub-sub {
+  grid-area: sub;
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--gs-line);
+  pointer-events: auto;
+}
+body.cal-gs .mn-hub-title {
+  font-family: var(--cal-font-display); font-weight: 600;
+  font-size: 20px; letter-spacing: 0.16em; line-height: 1;
+  color: var(--gs-text);
+}
+body.cal-gs .mn-hub-data {
+  margin: 0; padding: 0; border: 0;
+  display: flex; align-items: baseline; gap: 6px 10px;
+}
+body.cal-gs .mn-hub-data span { font-family: var(--cal-font-ui); font-weight: 600; font-size: 11px; letter-spacing: 0.14em; color: var(--gs-text-2); }
+body.cal-gs .mn-hub-data b { font-family: var(--cal-font-mono); font-weight: 500; font-size: 12px; color: var(--gs-text); margin-right: 12px; }
+body.cal-gs .mn-hub-data b.word { font-family: var(--cal-font-ui); font-size: 11px; letter-spacing: 0.14em; }
+
+body.cal-gs .mn-hub-body {
+  grid-area: body;
+  position: relative;
+  padding: 18px 32px 14px;
+  background: none;
+}
+body.cal-gs .mn-hub.delegated .mn-hub-body { visibility: hidden; }
+body.cal-gs .mn-hub-foot {
+  grid-area: foot;
+  display: flex; align-items: center; gap: 20px;
+  padding: 0 32px;
+  border-top: 1px solid var(--gs-line);
+}
+body.cal-gs .mn-tip { color: var(--gs-text-2); }
+body.cal-gs .mn-hub-rest {
+  flex: none;
+  font-family: var(--cal-font-ui); font-weight: 600; font-size: 11px; letter-spacing: 0.16em;
+  color: var(--gs-text-2);
+}
+body.cal-gs .mn-empty { color: var(--gs-text-2); }
+
+/* ============================================================ the map tab */
+body.cal-gs .mn-map-frame { border: 1px solid var(--gs-line); outline: 0; }
+body.cal-gs .mn-map-tip { background: var(--gs-fill); color: var(--gs-text); box-shadow: inset 0 0 0 1px var(--gs-sel-line); }
+body.cal-gs .mn-map-stats b { color: var(--gs-text); }
+body.cal-gs .mn-map-stations td { border-bottom-color: rgba(241, 238, 230, 0.08); }
+body.cal-gs .mn-map-leg-text { color: var(--gs-text); font-family: var(--cal-font-ui); font-weight: 600; letter-spacing: 0.12em; }
+
+/* ======================================================= settings controls */
+body.cal-gs .mn-range {
+  background:
+    linear-gradient(90deg, var(--gs-sel-line) 0 var(--k, 0%), rgba(241, 238, 230, 0.22) var(--k, 0%) 100%) 0 100% / 100% 2px no-repeat,
+    repeating-linear-gradient(90deg, rgba(241, 238, 230, 0.4) 0 1px, transparent 1px 10%) 0 100% / 100% 7px no-repeat;
+}
+body.cal-gs .mn-range::-webkit-slider-thumb { background: var(--gs-sel-line); border: 1px solid var(--cal-glass); }
+body.cal-gs .mn-range::-moz-range-thumb { background: var(--gs-sel-line); border: 1px solid var(--cal-glass); }
+body.cal-gs .mn-toggle { color: var(--gs-text-2); border-color: rgba(241, 238, 230, 0.34); }
+body.cal-gs .mn-toggle.on { background: var(--gs-sel-fill); border-color: var(--gs-sel-line); color: var(--gs-text); }
+body.cal-gs .mn-seg { border-color: rgba(241, 238, 230, 0.34); }
+body.cal-gs .mn-seg-btn { color: var(--gs-text-2); border-right-color: rgba(241, 238, 230, 0.16); }
+body.cal-gs .mn-seg-btn.on { background: var(--gs-sel-fill); color: var(--gs-text); box-shadow: inset 0 -1px 0 var(--gs-sel-line), inset 0 1px 0 var(--gs-sel-line); }
+body.cal-gs .mn-bind { color: var(--gs-text); background: rgba(241, 238, 230, 0.06); border: 1px solid rgba(241, 238, 230, 0.34); }
+body.cal-gs .mn-bind:hover { background: rgba(241, 238, 230, 0.12); border-color: var(--gs-sel-line); }
+body.cal-gs .mn-bind.wait { background: var(--gs-sel-fill); border-color: var(--gs-sel-line); color: var(--gs-text); }
+body.cal-gs .mn-set-pending { color: var(--gs-text-2); border-color: rgba(241, 238, 230, 0.3); }
+
+/* ================================================================ modals */
+body.cal-gs .mn-modal {
+  background: rgba(14, 11, 20, 0.30);
+  -webkit-backdrop-filter: var(--gs-frost);
+          backdrop-filter: var(--gs-frost);
+}
+body.cal-gs .mn-modal-shell { padding-left: 0; box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--gs-line); }
+body.cal-gs .mn-modal-shell::before { display: none; }
+body.cal-gs .mn-modal-head { padding: 18px 24px 12px; border-bottom-color: var(--gs-line); }
+body.cal-gs .mn-modal-body { padding: 14px 24px 22px; }
+body.cal-gs .mn-x { color: var(--gs-text-2); border-color: rgba(241, 238, 230, 0.3); }
+body.cal-gs .mn-x:hover { background: rgba(241, 238, 230, 0.1); color: var(--gs-text); }
+body.cal-gs .mn-diff:hover { background: var(--gs-sel-fill); color: var(--gs-text); }
+body.cal-gs .controls-grid { color: var(--gs-text); }
+
+/* ============================================================ death card */
+body.cal-gs .mn-death { background: rgba(14, 11, 20, 0.30); }
+body.cal-gs .mn-death-inner {
+  width: 560px;
+  padding: 30px 34px 26px;
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--gs-line);
+}
+body.cal-gs .mn-death-inner::before { display: none; }
+body.cal-gs .mn-death-title {
+  font-family: var(--cal-font-display); font-weight: 600;
+  font-size: 40px; letter-spacing: 0.14em; line-height: 1.05;
+  margin: 0 0 8px;
+  color: var(--gs-text);
+}
+body.cal-gs .mn-death-killer { color: var(--gs-text-2); }
+body.cal-gs .mn-death-killer b { color: var(--gs-text); }
+body.cal-gs .mn-death-rule { background: var(--gs-line); }
+body.cal-gs .mn-death-tip { color: var(--gs-text-2); }
+body.cal-gs .mn-death-opts { border-top-color: var(--gs-line); }
+body.cal-gs .mn-death-opt { grid-template-columns: 34px 1fr; border-bottom-color: var(--gs-line); padding: 11px 10px 10px; color: var(--gs-text); }
+body.cal-gs .mn-death-opt .cal-stn { color: var(--gs-text-2); font-size: 12px; padding-top: 2px; }
+body.cal-gs .mn-death-opt:hover,
+body.cal-gs .mn-death-opt:focus-visible { background: var(--gs-sel-fill); color: var(--gs-text); box-shadow: inset 0 1px 0 var(--gs-sel-line), inset 0 -1px 0 var(--gs-sel-line); outline: none; }
+body.cal-gs .mn-death-opt:hover .cal-stn,
+body.cal-gs .mn-death-opt:hover span { color: var(--gs-text); }
+body.cal-gs .mn-death-opt b { font-size: 15px; letter-spacing: 0.16em; }
+body.cal-gs .mn-death-opt span:not(.cal-stn) { color: var(--gs-text-2); }
+
+/* ============================================================ victory card */
+body.cal-gs .mn-victory { background: rgba(14, 11, 20, 0.30); }
+body.cal-gs .mn-victory-inner { padding: 24px 34px 22px; box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--gs-line); }
+body.cal-gs .mn-victory-inner::before { display: none; }
+body.cal-gs .mn-victory-title { color: var(--gs-text); font-weight: 600; letter-spacing: 0.12em; }
+body.cal-gs .mn-victory-sub { color: var(--gs-text-2); }
+body.cal-gs .mn-victory-bar { background: rgba(241, 238, 230, 0.16); }
+body.cal-gs .mn-victory-bar i { background: var(--gs-sel-line); }
+
+/* ================================================ the Field Log (hub page) */
+body.cal-gs #cal-prog .pg-overlay { background: rgba(14, 11, 20, 0.30); }
+body.cal-gs #cal-prog .pg-panel,
+body.cal-gs #cal-prog .sk-panel {
+  position: relative;
+  background-color: var(--gs-fill);
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  border: 0;
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--gs-line);
+  color: var(--gs-text);
+}
+body.cal-gs.cal-hub-open #cal-prog .pg-overlay,
+body.cal-gs.cal-hub-open #cal-prog .sk-overlay { background: none; }
+body.cal-gs.cal-hub-open #cal-prog .pg-panel,
+body.cal-gs.cal-hub-open #cal-prog .sk-panel {
+  position: absolute;
+  left: 0; right: 0;
+  top: var(--mn-head-h); bottom: var(--mn-foot-h);
+  padding: 18px 32px 14px;
+  box-shadow: none;
+  background: none;
+}
+body.cal-gs.cal-hub-open #cal-prog .pg-panel::after { display: none; }
+body.cal-gs #cal-prog .pg-head,
+body.cal-gs #cal-prog .sk-title { color: var(--gs-text); border-bottom-color: var(--gs-line); }
+body.cal-gs #cal-prog .pg-q-tag { background: transparent; color: var(--gs-text-2); border: 1px solid rgba(241, 238, 230, 0.3); }
+body.cal-gs #cal-prog .pg-btn:hover,
+body.cal-gs #cal-prog .pg-btn.primary { background: var(--gs-sel-fill); color: var(--gs-text); border-color: var(--gs-sel-line); }
+body.cal-gs #cal-prog .pg-choice:hover { background: var(--gs-sel-fill); color: var(--gs-text); }
+body.cal-gs #cal-prog .pg-foot kbd { color: var(--gs-text); background: rgba(241, 238, 230, 0.06); }
+
+/* =========================================================== dialogue (lower-third) */
+/* the systems lane's scene lower-third (src/game/present.js `#cal-sys`): the same glass and ticks */
+body.cal-gs #cal-sys .sys-lt,
+body.cal-gs #cal-sys .sys-bz {
+  background-color: var(--gs-fill);
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--gs-line);
+  color: var(--gs-text);
+}
+body.cal-gs #cal-sys .sys-tick { display: none; }
+body.cal-gs #cal-sys .sys-bz::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  --t: var(--gs-tick);
+  background:
+    linear-gradient(var(--t), var(--t)) left top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 1px 6px no-repeat;
+}
+body.cal-gs #cal-sys .sys-who { font-family: var(--cal-font-display); font-weight: 600; font-size: 14px; letter-spacing: 0.16em; }
+body.cal-gs #cal-sys .sys-sub { font-family: var(--cal-font-ui); color: var(--gs-text-2); opacity: 1; }
+body.cal-gs #cal-sys .sys-line { font-family: var(--cal-font-mono); font-size: 15px; line-height: 1.5; color: var(--gs-text); }
+body.cal-gs #cal-sys .sys-st { padding: 2px 0 2px 2px; }
+body.cal-gs #cal-sys .sys-st b { font-family: var(--cal-font-mono); font-weight: 500; color: var(--gs-text-2); opacity: 1; }
+body.cal-gs #cal-sys .sys-st:hover { background: var(--gs-sel-fill); box-shadow: inset 0 -1px 0 var(--gs-sel-line), inset 0 1px 0 var(--gs-sel-line); }
+body.cal-gs #cal-sys .sys-next { color: var(--gs-text-2); opacity: 1; }
+body.cal-gs #cal-sys .sys-row:hover,
+body.cal-gs #cal-sys .sys-row.sel { background: var(--gs-sel-fill); box-shadow: inset 0 -1px 0 var(--gs-sel-line), inset 0 1px 0 var(--gs-sel-line); }
+
+/* the conversation card (src/ui/dialogue.js, `#cal-dlg`): the same lower-third */
+body.cal-gs #cal-dlg .dlg-who { margin-left: 0; padding: 4px 14px 3px 12px; background: var(--gs-fill); box-shadow: inset 0 0 0 1px var(--gs-line); }
+body.cal-gs #cal-dlg .dlg-name { color: var(--gs-text); }
+body.cal-gs #cal-dlg .dlg-role { color: var(--gs-text-2); }
+body.cal-gs #cal-dlg .dlg-card {
+  padding-left: 22px;
+  background-color: var(--gs-fill);
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  border: 0;
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--gs-line);
+  color: var(--gs-text);
+}
+body.cal-gs #cal-dlg .dlg-card::before {
+  left: 0; top: 0; right: 0; bottom: 0; width: auto; height: auto; border: 0;
+  --t: var(--gs-tick);
+  background:
+    linear-gradient(var(--t), var(--t)) left top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 1px 6px no-repeat;
+}
+body.cal-gs #cal-dlg .dlg-line { color: var(--gs-text); }
+body.cal-gs #cal-dlg .dlg-choice { color: var(--gs-text); border-bottom-color: rgba(241, 238, 230, 0.08); }
+body.cal-gs #cal-dlg .dlg-choice:hover,
+body.cal-gs #cal-dlg .dlg-choice.sel { background: var(--gs-sel-fill); color: var(--gs-text); box-shadow: inset 0 -1px 0 var(--gs-sel-line), inset 0 1px 0 var(--gs-sel-line); }
+body.cal-gs #cal-dlg .dlg-key { color: var(--gs-text); border-color: rgba(241, 238, 230, 0.34); background: none; }
+body.cal-gs #cal-dlg .dlg-choice:hover .dlg-key,
+body.cal-gs #cal-dlg .dlg-choice.sel .dlg-key { background: none; color: var(--gs-text); border-color: var(--gs-sel-line); }
+body.cal-gs #cal-dlg .dlg-hint { color: var(--gs-text-2); }
+body.cal-gs #cal-dlg .dlg-foot kbd { color: var(--gs-text); background: rgba(var(--cal-glass-rgb), 0.7); border-color: rgba(241, 238, 230, 0.4); }
+
+/* ========================================== cards of this lane (slots, manual, context lost) */
+body.cal-gs .gs-card {
+  position: relative;
+  background-color: var(--gs-fill);
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--gs-line);
+  color: var(--gs-text);
+}
+
+/* ======================================================== the Field Log page (src/ui/quests.js) */
+body.cal-gs #cal-prog .fl-log { max-width: 980px; }
+body.cal-gs #cal-prog .fl-quest { padding: 4px 0 14px; margin-bottom: 14px; border-bottom: 1px solid var(--gs-line); }
+body.cal-gs #cal-prog .fl-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 10px; }
+body.cal-gs #cal-prog .fl-title { font-family: var(--cal-font-display); font-weight: 600; font-size: 18px; letter-spacing: 0.14em; color: var(--gs-text); }
+body.cal-gs #cal-prog .fl-quest.tracked .fl-title { font-size: 24px; }
+body.cal-gs #cal-prog .fl-tag { font-family: var(--cal-font-ui); font-weight: 600; font-size: 11px; letter-spacing: 0.16em; color: var(--gs-text); padding: 1px 7px; box-shadow: inset 0 -2px 0 var(--gs-sel-line); }
+body.cal-gs #cal-prog .fl-track {
+  font-family: var(--cal-font-ui); font-weight: 600; font-size: 11px; letter-spacing: 0.16em;
+  color: var(--gs-text); background: none; border: 1px solid rgba(241, 238, 230, 0.34); padding: 3px 10px 2px; cursor: pointer;
+}
+body.cal-gs #cal-prog .fl-track:hover { background: var(--gs-sel-fill); border-color: var(--gs-sel-line); }
+/* the stages: a ruled list, one hairline under each */
+body.cal-gs #cal-prog .fl-stages { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--gs-line); }
+body.cal-gs #cal-prog .fl-stage {
+  display: grid; grid-template-columns: 26px 1fr; align-items: baseline;
+  padding: 7px 4px 6px; border-bottom: 1px solid rgba(241, 238, 230, 0.08);
+  font-family: var(--cal-font-mono); font-size: 14px; line-height: 1.4; color: var(--gs-text);
+}
+body.cal-gs #cal-prog .fl-stage.done { color: var(--gs-text-2); }
+body.cal-gs #cal-prog .fl-stage.next { background: var(--gs-sel-fill); box-shadow: inset 2px 0 0 var(--gs-sel-line); }
+body.cal-gs #cal-prog .fl-stage.ahead { display: block; padding-left: 30px; font-style: italic; font-size: 12px; color: var(--gs-text-2); }
+body.cal-gs #cal-prog .fl-mark { font-family: var(--cal-font-mono); color: var(--gs-text-2); }
+body.cal-gs #cal-prog .fl-stage.next .fl-mark { color: var(--gs-text); }
+body.cal-gs #cal-prog .fl-sub { margin: 18px 0 6px; font-family: var(--cal-font-ui); font-weight: 600; font-size: 11px; letter-spacing: 0.22em; color: var(--gs-text-2); }
+body.cal-gs #cal-prog .fl-done { display: flex; gap: 12px; padding: 5px 4px 4px; border-bottom: 1px solid rgba(241, 238, 230, 0.08); font-family: var(--cal-font-ui); font-weight: 600; font-size: 13px; letter-spacing: 0.12em; color: var(--gs-text-2); }
+body.cal-gs #cal-prog .fl-tick { font-family: var(--cal-font-mono); }
+/* the hub already names the page: the panel's own head and foot step aside there */
+body.cal-gs.cal-hub-open #cal-prog .pg-head,
+body.cal-gs.cal-hub-open #cal-prog .pg-foot { display: none; }
+
+/* ============================================================== settings pages (src/ui/settings.js) */
+body.cal-gs .gs-settings { display: flex; flex-direction: column; height: 100%; overflow: hidden; padding-right: 0; }
+body.cal-gs .gs-set-tabs { flex: none; display: flex; align-items: stretch; gap: 2px; border-bottom: 1px solid var(--gs-line); margin-bottom: 16px; }
+body.cal-gs .gs-set-tab {
+  position: relative; padding: 8px 16px 9px; background: none; border: 0; cursor: pointer;
+  font-family: var(--cal-font-ui); font-weight: 600; font-size: 13px; letter-spacing: 0.16em; color: var(--gs-text-2);
+}
+body.cal-gs .gs-set-tab:hover { color: var(--gs-text); background: rgba(241, 238, 230, 0.05); }
+body.cal-gs .gs-set-tab.on { color: var(--gs-text); }
+body.cal-gs .gs-set-tab.on::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; background: var(--gs-sel-line); }
+body.cal-gs .gs-set-tabs .mn-set-foot { margin-left: auto; flex-direction: row; align-items: center; }
+body.cal-gs .gs-set-pages { flex: 1; min-height: 0; overflow-y: auto; padding-right: 8px; }
+body.cal-gs .gs-set-page { display: none; }
+body.cal-gs .gs-set-page.on { display: block; columns: 2 420px; column-gap: 48px; }
+body.cal-gs .gs-set-page .mn-set-group { break-inside: avoid; }
+body.cal-gs .gs-set-page .mn-set-binds { break-inside: auto; }
+body.cal-gs .mn-set-title { color: var(--gs-text); border-bottom-color: var(--gs-line); }
+body.cal-gs .gs-bind-head { display: flex; align-items: center; justify-content: space-between; }
+body.cal-gs .mn-set-row { border-bottom-color: rgba(241, 238, 230, 0.08); }
+body.cal-gs .mn-set-label { color: var(--gs-text); }
+body.cal-gs .mn-set-val, body.cal-gs .mn-set-hint, body.cal-gs .mn-set-note, body.cal-gs .mn-set-pad { color: var(--gs-text-2); }
+body.cal-gs .gs-set-pend { break-inside: avoid; margin-top: 4px; }
+body.cal-gs .mn-modal .gs-settings { height: min(70vh, 640px); }
+
+/* ============================================================== reading: subtitles (BIBLE 18) */
+body.cal-gs.cal-subs-off #cal-sys .sys-subt { display: none; }
+body.cal-gs.cal-subs-s #cal-sys .sys-subt { font-size: 13px; }
+body.cal-gs.cal-subs-m #cal-sys .sys-subt { font-size: 15px; }
+body.cal-gs.cal-subs-l #cal-sys .sys-subt { font-size: 19px; }
+body.cal-gs.cal-subs-s #cal-sys .sys-line { font-size: 13px; }
+body.cal-gs.cal-subs-l #cal-sys .sys-line { font-size: 18px; }
+body.cal-gs.cal-subs-back #cal-sys .sys-subt { padding: 6px 14px 7px; background: rgba(var(--cal-glass-rgb), 0.70); text-shadow: none; }
+
+/* ========================================================== Continue and the three slots (src/ui/slots.js) */
+body.cal-gs .mn-modal[data-kind='slots'] .mn-modal-shell,
+body.cal-gs .mn-modal[data-kind='manual'] .mn-modal-shell { width: min(980px, 90%); }
+body.cal-gs .gs-slot-lead { margin-bottom: 14px; color: var(--gs-text-2); font-family: var(--cal-font-mono); font-size: 13px; }
+body.cal-gs .gs-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+body.cal-gs .gs-slot { display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 12px; }
+body.cal-gs .gs-slot.cont { box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--gs-sel-line); }
+body.cal-gs .gs-slot-head { font-family: var(--cal-font-display); font-weight: 600; font-size: 16px; letter-spacing: 0.2em; }
+body.cal-gs .gs-slot-thumb { display: block; width: 100%; aspect-ratio: 16 / 9; height: auto; box-shadow: inset 0 0 0 1px var(--gs-line); }
+body.cal-gs .gs-slot-empty { padding: 14px 0; font-family: var(--cal-font-ui); font-weight: 600; font-size: 12px; letter-spacing: 0.2em; color: var(--gs-text-2); }
+body.cal-gs .gs-slot-lines { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; padding-top: 2px; border-top: 1px solid var(--gs-line); }
+body.cal-gs .gs-slot-place { grid-column: 1 / -1; padding-top: 6px; font-family: var(--cal-font-ui); font-weight: 600; font-size: 13px; letter-spacing: 0.12em; }
+body.cal-gs .gs-slot-hour, body.cal-gs .gs-slot-ha { font-family: var(--cal-font-mono); font-size: 13px; }
+body.cal-gs .gs-slot-hour { grid-column: 2; grid-row: 2; text-align: right; }
+body.cal-gs .gs-slot-order { grid-column: 1; grid-row: 2; font-family: var(--cal-font-ui); font-weight: 600; font-size: 11px; letter-spacing: 0.16em; color: var(--gs-text-2); }
+body.cal-gs .gs-slot-ha { grid-column: 1; color: var(--gs-text-2); }
+body.cal-gs .gs-slot-acts { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; }
+body.cal-gs .gs-slot-go, body.cal-gs .gs-slot-erase {
+  position: relative; flex: 1; padding: 7px 8px 6px; cursor: pointer; overflow: hidden;
+  font-family: var(--cal-font-ui); font-weight: 600; font-size: 12px; letter-spacing: 0.16em; color: var(--gs-text);
+  background: none; border: 1px solid rgba(241, 238, 230, 0.34);
+}
+body.cal-gs .gs-slot-go { background: var(--gs-sel-fill); border-color: var(--gs-sel-line); }
+body.cal-gs .gs-slot-go:hover { background: rgba(90, 46, 102, 0.85); }
+body.cal-gs .gs-slot-erase i { font-style: normal; font-family: var(--cal-font-mono); font-weight: 400; letter-spacing: 0; color: var(--gs-text-2); }
+body.cal-gs .gs-slot-erase b { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--gs-sel-line); transform: scaleX(0); transform-origin: 0 50%; }
+
+/* ========================================================== the Field Manual's cards */
+body.cal-gs .gs-man-head { margin: 4px 0 10px; font-family: var(--cal-font-ui); font-weight: 600; font-size: 11px; letter-spacing: 0.22em; color: var(--gs-text-2); }
+body.cal-gs .gs-man-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+body.cal-gs .gs-man-card { padding: 9px 12px 10px; }
+body.cal-gs .gs-man-title { font-family: var(--cal-font-ui); font-weight: 600; font-size: 13px; letter-spacing: 0.14em; margin-bottom: 3px; }
+body.cal-gs .gs-man-body { font-family: var(--cal-font-mono); font-size: 12px; line-height: 1.45; color: var(--gs-text); }
+body.cal-gs .gs-man-body.caps { font-family: var(--cal-font-ui); font-weight: 600; letter-spacing: 0.1em; }
+
+/* ========================================================== DISPLAY RESET · RESUMING */
+body.cal-gs .gs-ctx { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; pointer-events: auto;
+  background: rgba(14, 11, 20, 0.30); -webkit-backdrop-filter: var(--gs-frost); backdrop-filter: var(--gs-frost); z-index: 9; }
+body.cal-gs .gs-ctx.show { display: flex; }
+body.cal-gs .gs-ctx-card { width: 460px; padding: 22px 26px 20px; }
+body.cal-gs .gs-ctx-line { font-family: var(--cal-font-display); font-weight: 600; font-size: 22px; letter-spacing: 0.16em; }
+body.cal-gs .gs-ctx-sub { margin-top: 8px; font-family: var(--cal-font-mono); font-size: 13px; line-height: 1.5; color: var(--gs-text-2); }

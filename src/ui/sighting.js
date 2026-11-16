@@ -472,12 +472,13 @@ export class SightingSystem {
     const had = this._tags.has(m);
     for (const el of this._tags.values()) el?.remove?.();
     this._tags.clear();
-    if (had) { this.ctx.events.emit('bearing-released', { machine: m }); return; }
+    if (had) { this.ctx.events.emit('bearing-released', { machine: m }); this._paintTake(this._cardM); return; }
     const el = document.createElement('div');
     el.className = 'calf-tag';
     el.innerHTML = '<div class="calf-pennant"></div><div class="calf-dist"></div>';
     this._tags.set(m, el);
     this.ctx.events.emit('machine-tagged', { machine: m });
+    this._paintTake(this._cardM);
   }
 
   /* ------------------------------ on/off flow ------------------------------ */
@@ -578,6 +579,11 @@ export class SightingSystem {
     this._brgEl = this._card.querySelector('.calf-brg');
     this._dstEl = this._card.querySelector('.calf-dst');
     this._cardBody = this._card.querySelector('.calf-card-body');
+    // M1.6g2: the card's foot names the verb, and says when the Instrument in the hairs is the one held
+    this._takeEl = document.createElement('div');
+    this._takeEl.className = 'calf-take';
+    this._takeState = null;
+    this._card.appendChild(this._takeEl);
     this._layer.appendChild(this._card);
 
     // pooled component chips: no element churn while the alidade sweeps across a herd
@@ -1500,7 +1506,20 @@ export class SightingSystem {
       this._cardLamp = null;
       this._cardBody.innerHTML = this._cardHTML(m);
     }
+    this._paintTake(m);
     this._card.classList.add('show');
+  }
+
+  /** The card's foot: `T TAKE A BEARING`, or `BEARING HELD` when the Instrument in the hairs is the held one. */
+  _paintTake(m) {
+    if (!this._takeEl) return;
+    const held = !!m && this._tags.has(m);
+    const s = held ? 'held' : 'take';
+    if (this._takeState === s) return;
+    this._takeState = s;
+    this._takeEl.innerHTML = held
+      ? '<kbd>T</kbd><span class="calf-take-on">BEARING HELD</span><i>on the compass strip</i>'
+      : '<kbd>T</kbd><span>TAKE A BEARING</span>';
   }
 
   _hideCard(instant = false) {

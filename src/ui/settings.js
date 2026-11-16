@@ -20,7 +20,7 @@
  * panel prints that, so the screen never claims an effect it does not have.
  */
 
-import { ACTIONS, ACTION_PAD } from '../core/input.js';
+import { ACTIONS, ACTION_PAD, DEFAULT_BINDS } from '../core/input.js';
 
 const STORE_KEY = 'cal.settings.v5';
 
@@ -54,7 +54,49 @@ const AUDIO_BUSES = ['master', 'music', 'sfx', 'ambience', 'voice', 'ui'];
  * apply: (value, ctx, store) — runs on load and on every change.
  */
 export const SCHEMA = [
-  { group: 'CONTROLS', rows: [
+  /* ---------------------------------------------------------------- GRAPHICS (BIBLE 18 "Settings: graphics") */
+  { group: 'GRAPHICS', page: 'graphics', rows: [
+    // the engine's own tiers (engine.setQuality). A ?q= page parameter (the gates, the filmer) always wins, and the
+    // shipped tier is never re-applied over itself: only a tier the player chose is applied
+    { id: 'tier', kind: 'choice', label: 'Tier', dflt: 'high',
+      options: [['high', 'HIGH'], ['medium', 'MEDIUM'], ['low', 'LOW']],
+      apply: (v, ctx) => {
+        if (ctx.params?.has?.('q')) return;
+        const e = ctx.engine;
+        if (e?.setQuality && e.quality !== v && (v !== 'high' || e.quality === 'medium' || e.quality === 'low')) e.setQuality(v);
+      } },
+    { id: 'resScale', kind: 'slider', label: 'Resolution scale', min: 0.5, max: 1, step: 0.05, dflt: 1, pending: true,
+      fmt: (v) => `${Math.round(v * 100)}%`, apply: (v, ctx) => { ctx.settings.resScale = v; } },
+    { id: 'shadows', kind: 'choice', label: 'Shadows', dflt: 'on', pending: true,
+      options: [['on', 'ON'], ['off', 'OFF']], apply: (v, ctx) => { ctx.settings.shadows = v; } },
+    { id: 'motionBlur', kind: 'toggle', label: 'Motion blur', dflt: false, pending: true,
+      apply: (v, ctx) => { ctx.settings.motionBlur = !!v; } },
+    // dflt 55 = player.js FOV_BASE: the neutral position is the value the build ships with
+    { id: 'fov', kind: 'slider', label: 'Field of view', min: 50, max: 95, step: 1, dflt: 55,
+      fmt: (v) => `${v | 0}°`, apply: (v, ctx) => { ctx.settings.fov = v; } },
+    { id: 'cameraShake', kind: 'slider', label: 'Camera shake', min: 0, max: 1.5, step: 0.05, dflt: 1,
+      fmt: (v) => `${Math.round(v * 100)}%`,
+      apply: (v, ctx, s) => { ctx.settings.cameraShake = s.get('reducedMotion') ? 0 : v; } },
+    { id: 'fovPunch', kind: 'slider', label: 'FOV punch', min: 0, max: 1.5, step: 0.05, dflt: 1, pending: true,
+      fmt: (v) => `${Math.round(v * 100)}%`, apply: (v, ctx) => { ctx.settings.fovPunch = v; } },
+    // LIVE: the output pass reads engine.look.vignette every frame; OFF holds it at 0, ON hands the look's value back
+    { id: 'vignette', kind: 'toggle', label: 'Vignette', dflt: true,
+      apply: (v, ctx) => {
+        const L = ctx.engine?.look;
+        if (!L) return;
+        if (!v) { if (L._vignetteHeld == null) L._vignetteHeld = L.vignette; L.vignette = 0; }
+        else if (L._vignetteHeld != null) { L.vignette = L._vignetteHeld; L._vignetteHeld = null; }
+      } },
+    { id: 'reducedMotion', kind: 'toggle', label: 'Reduced motion', dflt: false,
+      note: 'Stills the camera shake, the compass inertia and every UI animation.',
+      apply: (v, ctx, s) => {
+        ctx.settings.reducedMotion = !!v;
+        ctx.settings.cameraShake = v ? 0 : s.get('cameraShake');
+        document.body.classList.toggle('cal-reduced-motion', !!v);
+      } },
+  ] },
+  /* ---------------------------------------------------------------- CONTROLS (BIBLE 18 "Settings: controls") */
+  { group: 'CONTROLS', page: 'controls', rows: [
     { id: 'sensitivity', kind: 'slider', label: 'Look sensitivity', min: 0.25, max: 3, step: 0.05, dflt: 1,
       fmt: (v) => `${v.toFixed(2)}×`, apply: (v, ctx) => { ctx.settings.sensitivity = v; } },
     { id: 'padSensitivity', kind: 'slider', label: 'Gamepad sensitivity', min: 0.25, max: 3, step: 0.05, dflt: 1,
@@ -63,29 +105,39 @@ export const SCHEMA = [
       apply: (v, ctx) => { ctx.settings.invertY = !!v; } },
     { id: 'padDeadzone', kind: 'slider', label: 'Stick deadzone', min: 0.05, max: 0.4, step: 0.01, dflt: 0.16,
       fmt: (v) => v.toFixed(2), apply: (v, ctx) => { ctx.settings.padDeadzone = v; } },
+    { id: 'cameraSmoothing', kind: 'slider', label: 'Camera smoothing', min: 0, max: 1.5, step: 0.05, dflt: 1,
+      fmt: (v) => `${Math.round(v * 100)}%`, apply: (v, ctx) => { ctx.settings.cameraSmoothing = v; } },
+    // BIBLE 18: hold or toggle for aim, Steady and re-survey. Stored; the body still reads them as holds
     { id: 'holdAim', kind: 'choice', label: 'Aim', dflt: 'hold', pending: true,
       options: [['hold', 'HOLD'], ['toggle', 'TOGGLE']],
       apply: (v, ctx) => { ctx.settings.holdAim = v; } },
-    { id: 'holdSprint', kind: 'choice', label: 'Sprint', dflt: 'hold', pending: true,
+    { id: 'holdSteady', kind: 'choice', label: 'Steady', dflt: 'hold', pending: true,
       options: [['hold', 'HOLD'], ['toggle', 'TOGGLE']],
-      apply: (v, ctx) => { ctx.settings.holdSprint = v; } },
+      apply: (v, ctx) => { ctx.settings.holdSteady = v; } },
+    { id: 'holdResurvey', kind: 'choice', label: 'Re-survey', dflt: 'hold', pending: true,
+      options: [['hold', 'HOLD'], ['toggle', 'TOGGLE']],
+      apply: (v, ctx) => { ctx.settings.holdResurvey = v; } },
     // LIVE: `menu.js` releases the crouch on the KeyC up-edge when this reads 'hold'.
     { id: 'holdCrouch', kind: 'choice', label: 'Crouch', dflt: 'toggle',
       options: [['hold', 'HOLD'], ['toggle', 'TOGGLE']],
       note: 'Toggle is the default; HOLD releases her on key-up.',
       apply: (v, ctx) => { ctx.settings.holdCrouch = v; } },
   ] },
-  { group: 'CAMERA', rows: [
-    // dflt 55 = player.js FOV_BASE: the neutral position is the value the build ships with
-    { id: 'fov', kind: 'slider', label: 'Field of view', min: 50, max: 95, step: 1, dflt: 55,
-      fmt: (v) => `${v | 0}°`, apply: (v, ctx) => { ctx.settings.fov = v; } },
-    { id: 'cameraShake', kind: 'slider', label: 'Camera shake', min: 0, max: 1.5, step: 0.05, dflt: 1,
+  /* ---------------------------------------------------------------- READING (BIBLE 18 "Settings: reading") */
+  { group: 'READING', page: 'reading', rows: [
+    // LIVE: the field-turn subtitle and the dialogue lower-third read these body classes (src/ui/glass.css)
+    { id: 'subtitles', kind: 'toggle', label: 'Subtitles', dflt: true,
+      note: 'With the speaker\'s name.',
+      apply: (v) => { document.body.classList.toggle('cal-subs-off', !v); } },
+    { id: 'subSize', kind: 'choice', label: 'Subtitle size', dflt: 'm',
+      options: [['s', 'SMALL'], ['m', 'MEDIUM'], ['l', 'LARGE']],
+      apply: (v) => { for (const k of ['s', 'm', 'l']) document.body.classList.toggle(`cal-subs-${k}`, v === k); } },
+    { id: 'subBacking', kind: 'toggle', label: 'Subtitle backing', dflt: false,
+      apply: (v) => { document.body.classList.toggle('cal-subs-back', !!v); } },
+    // LIVE: every menu surface scales with the window (`--ui-z`, menu.js); this multiplies it
+    { id: 'uiScale', kind: 'slider', label: 'UI scale', min: 0.8, max: 1.3, step: 0.05, dflt: 1,
       fmt: (v) => `${Math.round(v * 100)}%`,
-      apply: (v, ctx, s) => { ctx.settings.cameraShake = s.get('reducedMotion') ? 0 : v; } },
-    { id: 'cameraSmoothing', kind: 'slider', label: 'Camera smoothing', min: 0, max: 1.5, step: 0.05, dflt: 1,
-      fmt: (v) => `${Math.round(v * 100)}%`, apply: (v, ctx) => { ctx.settings.cameraSmoothing = v; } },
-  ] },
-  { group: 'INTERFACE', rows: [
+      apply: (v, ctx) => { ctx.settings.uiScale = v; ctx.menus?._applyZoom?.(); } },
     // `hud.setHudScale(mult)` folds this into its viewport auto scale and writes `--hud-scale`
     { id: 'hudScale', kind: 'slider', label: 'HUD scale', min: 0.8, max: 1.4, step: 0.05, dflt: 1,
       fmt: (v) => `${Math.round(v * 100)}%`,
@@ -97,17 +149,10 @@ export const SCHEMA = [
     { id: 'colourblind', kind: 'choice', label: 'Colour palette', dflt: 'off',
       options: [['off', 'DEFAULT'], ['protanopia', 'PROTAN'], ['deuteranopia', 'DEUTAN'], ['tritanopia', 'TRITAN']],
       apply: (v) => applyPalette(v) },
-    { id: 'reducedMotion', kind: 'toggle', label: 'Reduced motion', dflt: false,
-      note: 'Stills the camera shake, the compass inertia and every UI animation.',
-      apply: (v, ctx, s) => {
-        ctx.settings.reducedMotion = !!v;
-        ctx.settings.cameraShake = v ? 0 : s.get('cameraShake');
-        document.body.classList.toggle('cal-reduced-motion', !!v);
-      } },
     { id: 'menuTips', kind: 'toggle', label: 'Show menu tips', dflt: true,
       apply: (v, ctx) => { ctx.settings.menuTips = !!v; } },
   ] },
-  { group: 'AUDIO', rows: AUDIO_BUSES.map((bus) => ({
+  { group: 'AUDIO', page: 'audio', rows: AUDIO_BUSES.map((bus) => ({
     id: `vol_${bus}`, kind: 'slider', label: bus === 'ui' ? 'Interface' : bus === 'sfx' ? 'Effects' : bus[0].toUpperCase() + bus.slice(1),
     // defaults mirror audio/buses.js DEFAULT_VOLUMES exactly
     min: 0, max: 1, step: 0.02,
@@ -119,6 +164,9 @@ export const SCHEMA = [
       apply: (v, ctx) => { ctx.audio?.setMuted?.(!!v); } },
   ]) },
 ];
+
+/** The settings pages, in order (BIBLE 18: GRAPHICS, CONTROLS with REBIND and RESET, READING; and the sound). */
+export const PAGES = [['graphics', 'GRAPHICS'], ['controls', 'CONTROLS'], ['reading', 'READING'], ['audio', 'AUDIO']];
 
 function applyPalette(name) {
   const root = document.documentElement;
@@ -292,32 +340,55 @@ export class SettingsPanel {
     this._unsub = store.onChange((id) => { if (id === '*') this.refresh(); });
   }
 
+  /**
+   * The panel (M1.6g2): its pages as tabs across the top with the lilac underline (GRAPHICS · CONTROLS · READING ·
+   * AUDIO), one page at a time. CONTROLS carries every key under REBIND, with RESET. Every row of every page is
+   * built (hidden pages stay in the DOM), so a gate or a reader finds any control by its id on any page.
+   */
   mount(host) {
-    this.root = el('div', 'mn-settings', host);
+    this.root = el('div', 'mn-settings gs-settings', host);
     this._rowEls.clear();
-    // three columns: how it handles, how it sounds and restores, the keys. Every row on the page.
-    const colA = el('div', 'mn-set-col', this.root);
-    const colB = el('div', 'mn-set-col', this.root);
-    const colC = el('div', 'mn-set-col', this.root);
+    const tabs = el('nav', 'gs-set-tabs', this.root);
+    const pages = el('div', 'gs-set-pages', this.root);
+    this._pages = new Map();
+    this._pageBtns = new Map();
+    for (const [id, word] of PAGES) {
+      const b = el('button', 'gs-set-tab', tabs, word);
+      b.dataset.page = id;
+      b.addEventListener('click', () => this.showPage(id));
+      this._pageBtns.set(id, b);
+      this._pages.set(id, el('div', 'gs-set-page', pages));
+    }
     for (const group of SCHEMA) {
-      const sec = el('section', 'mn-set-group', group.group === 'AUDIO' ? colB : colA);
+      const page = this._pages.get(group.page) ?? this._pages.get('graphics');
+      const sec = el('section', 'mn-set-group', page);
       el('h3', 'mn-set-title', sec, group.group);
       for (const row of group.rows) this._buildRow(sec, row);
+      if (group.page === 'graphics' || group.page === 'reading') {
+        el('div', 'mn-set-note gs-set-pend', page, 'A row marked STORED is kept for the next build; this one does not apply it yet.');
+      }
     }
-    this._buildBinds(colC);
-    const foot = el('div', 'mn-set-foot', colB);
+    this._buildBinds(this._pages.get('controls'));
+    const foot = el('div', 'mn-set-foot', tabs);
     const reset = el('button', 'mn-btn small', foot, 'RESTORE DEFAULTS');
     reset.addEventListener('click', () => { this.store.reset(); this.refresh(); });
-    el('div', 'mn-set-note', foot,
-      'Saved on this device and restored the next time you play.');
+    this.showPage(this._page ?? 'graphics');
     return this.root;
+  }
+
+  showPage(id) {
+    if (!this._pages?.has(id)) return false;
+    this._page = id;
+    for (const [k, n] of this._pages) n.classList.toggle('on', k === id);
+    for (const [k, b] of this._pageBtns) b.classList.toggle('on', k === id);
+    return true;
   }
 
   _buildRow(sec, row) {
     const r = el('div', `mn-set-row ${row.kind}`, sec);
     const label = el('label', 'mn-set-label', r, row.label);
     // what the game does today, in the player's words: the toggle is stored, the body still holds
-    if (row.pending) el('span', 'mn-set-pending', label, 'HOLD ONLY');
+    if (row.pending) el('span', 'mn-set-pending', label, 'STORED');
     const ctrl = el('div', 'mn-set-ctrl', r);
     let read;
 
@@ -377,7 +448,10 @@ export class SettingsPanel {
     const names = ACTIONS;
     const sec = el('section', 'mn-set-group mn-set-binds', host);
     sec.dataset.rebind = 'list';
-    el('h3', 'mn-set-title', sec, 'KEYS');
+    const bh = el('h3', 'mn-set-title gs-bind-head', sec, 'REBIND');
+    const rst = el('button', 'mn-btn small', bh, 'RESET');
+    rst.addEventListener('click', (e) => { e.stopPropagation(); this._resetBinds(); });
+    el('div', 'mn-set-note', sec, 'Click a key, then press the new one. A gamepad button drives the key beside it.');
     const word = (a) => BIND_WORD[a] ?? a.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
     for (const action of names) {
       const r = el('div', 'mn-set-row', sec);
@@ -391,6 +465,15 @@ export class SettingsPanel {
       this._rowEls.set(`bind:${action}`, paint);
       paint();
     }
+  }
+
+  /** RESET: every key back to the build's default. */
+  _resetBinds() {
+    const input = this.ctx.input;
+    if (!input?.bind) return;
+    for (const action of ACTIONS) if (DEFAULT_BINDS[action]) input.bind(action, DEFAULT_BINDS[action]);
+    if (input.settings?.binds) input.settings.binds = {};
+    this.refresh();
   }
 
   _captureBind(action, btn, paint) {

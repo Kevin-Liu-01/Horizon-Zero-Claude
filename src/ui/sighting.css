@@ -315,3 +315,20 @@ body.cal-sighting .cal-cross { opacity: 0; }
 .calf-reveal .calf-rname:not(:empty)::before { content: '· '; }
 .calf-reveal.k-field-book { --rar: var(--cal-select-line); }
 .calf-reveal.k-gather { --rar: var(--cal-moss); }
+
+/* M1.6g2: the card's foot, the take-a-bearing verb (BIBLE 8.3, 12: T while Sighting) */
+.calf-take {
+  display: flex; align-items: center; gap: calc(8px * var(--s));
+  margin-top: calc(6px * var(--s)); padding-top: calc(5px * var(--s));
+  border-top: 1px solid var(--cal-glass-line);
+  font-family: var(--cal-font-ui); font-weight: 600;
+  font-size: calc(11px * var(--s)); letter-spacing: var(--cal-track-caps);
+  color: var(--cal-glass-text-2);
+}
+.calf-take kbd {
+  font-family: var(--cal-font-mono); font-weight: 500; font-size: calc(10px * var(--s));
+  padding: 0 calc(4px * var(--s)); color: var(--cal-glass-text);
+  border: 1px solid rgba(241, 238, 230, 0.34); background: none;
+}
+.calf-take-on { color: var(--cal-glass-text); box-shadow: inset 0 -2px 0 var(--cal-select-line); }
+.calf-take i { font-style: normal; font-family: var(--cal-font-mono); font-weight: 400; letter-spacing: 0; }

@@ -468,10 +468,8 @@ export class QuestLogUI {
     const on = (name, fn) => ctx.events?.on?.(name, (payload) => {
       try { fn(payload); } catch (err) { console.warn(`[quests] ${name}:`, err?.message || err); }
     });
-    on('xp-gained', ({ amount, reason } = {}) => {
-      if (amount > 0) this.toast(`+${amount} XP${reason === 'quest' ? '  QUEST' : ''}`);
-      this.refreshXp();
-    });
+    // no XP toast: growth is by survey acts, never a counter on screen (BIBLE 15; IP rule)
+    on('xp-gained', () => this.refreshXp());
     on('player-died', () => this._forceClose());
     on('victory', () => this._forceClose());
   }
@@ -588,55 +586,91 @@ export class QuestLogUI {
 
   /* --------------------------------- log ---------------------------------- */
 
+  /**
+   * THE FIELD LOG (M1.6g2, BIBLE 18 "Field Log": the hub's quest page; one tracked quest, its stages as a ruled
+   * list, completed quests below; FIELD LOG · TRACK). The slice's quest is the systems lane's spine (`ctx.spine`,
+   * src/game/quest/spine.js), read through its own outputs; any quest in progression's own book is listed after it.
+   * Stages show as far as she has reached: the ones done, then the one she is on. No reward line (the bible's
+   * growth is by survey acts, not by a counter).
+   */
   openLog() {
-    if (!this._open('quests', 'JOURNAL',
-      '<span><kbd>J</kbd>CLOSE</span><span><kbd>K</kbd>SKILLS</span><span>CLICK A QUEST TO TRACK IT</span>')) return;
+    if (!this._open('quests', 'FIELD LOG', '<span><kbd>J</kbd>CLOSE</span><span>TRACK A QUEST TO HOLD IT IN THE FIELD NOTE</span>')) return;
     this._renderLog();
   }
 
-  _renderLog() {
+  /** Every quest the log can show, as { id, title, done, tracked, stages: [{ label, state }] }. */
+  _logQuests() {
     const p = this.prog;
-    const body = this._body;
-    body.innerHTML = '';
-    const groups = [
-      ['ACTIVE', p.quests.active()],
-      ['AVAILABLE', p.quests.offered()],
-      ['COMPLETED', p.quests.completed()],
-    ];
-    let any = false;
-    for (const [label, rows] of groups) {
-      if (!rows.length) continue;
-      any = true;
-      el('div', 'pg-sub', body, label);
-      for (const q of rows) this._questRow(body, q, label);
+    const out = [];
+    const sp = this.ctx.spine;
+    if (sp && (sp.started || sp.armed)) {
+      const stages = [];
+      for (const s of sp.stages) {
+        if (s.optional) continue;
+        const rec = sp.st?.[s.id];
+        const state = rec?.state === 'done' ? 'done' : rec?.state === 'active' ? 'next' : 'pending';
+        const text = sp.S?.stage?.(s.id)?.note ?? s.id;
+        const of = s.type === 'survey' ? (s.pillars?.length ?? 0) : (s.count ?? 0);
+        stages.push({ label: String(text).replace('{n}', String(rec?.n ?? 0)).replace('{of}', String(of)), state });
+      }
+      out.push({ id: sp.id, title: sp.S?.quest?.title ?? sp.id, done: !!sp.done, tracked: p.tracked === sp.id || !p.tracked, stages, track: () => { p.tracked = sp.id; } });
     }
-    if (!any) el('div', 'pg-q-sum', body, 'No quests. Speak to Ansel at the pans.');
+    const seen = new Set(out.map((q) => q.id));
+    for (const q of [...(p.quests?.active?.() ?? []), ...(p.quests?.completed?.() ?? [])]) {
+      if (seen.has(q.id)) continue;
+      seen.add(q.id);
+      out.push({
+        id: q.id, title: q.title, done: q.status === 'done', tracked: !!q.tracked,
+        stages: (q.objectives ?? []).map((o) => ({
+          label: `${o.label}${o.need > 1 ? `  ${o.have}/${o.need}` : ''}`,
+          state: o.done ? 'done' : (q.current && o.id === q.current.id ? 'next' : 'pending'),
+        })),
+        track: () => p.track?.(q.id),
+      });
+    }
+    return out;
   }
 
-  _questRow(parent, q, group) {
-    const row = el('div', `pg-quest${q.tracked ? ' tracked' : ''}${q.status === 'done' ? ' done' : ''}`, parent);
-    const title = el('div', 'pg-q-title', row);
-    el('span', null, title, q.title.toUpperCase());
-    el('span', `pg-q-tag ${q.type}`, title, q.type.toUpperCase());
-    if (q.tracked) el('span', 'pg-q-tag', title, 'TRACKED');
-    el('div', 'pg-q-sum', row, q.summary || '');
-    for (const o of q.objectives) {
-      const isNext = !o.done && q.current && o.id === q.current.id;
-      const line = el('div', `pg-obj${o.done ? ' done' : ''}${isNext ? ' next' : ''}`, row);
-      el('span', 'mark', line, o.done ? '✓' : (isNext ? '▶' : '·'));
-      const count = o.need > 1 ? `  ${o.have}/${o.need}` : '';
-      el('span', null, line, `${o.label}${count}`);
+  _renderLog() {
+    const body = this._body;
+    body.innerHTML = '';
+    const all = this._logQuests();
+    const open = all.filter((q) => !q.done);
+    const done = all.filter((q) => q.done);
+    const tracked = open.find((q) => q.tracked) ?? open[0] ?? null;
+    if (!all.length) { el('div', 'pg-q-sum', body, 'Nothing in the log yet.'); return; }
+    const wrap = el('div', 'fl-log', body);
+    if (tracked) this._logQuest(wrap, tracked, true);
+    for (const q of open) if (q !== tracked) this._logQuest(wrap, q, false);
+    if (done.length) {
+      el('div', 'fl-sub', wrap, 'COMPLETED');
+      for (const q of done) {
+        const row = el('div', 'fl-done', wrap);
+        el('span', 'fl-tick', row, '✓');
+        el('span', null, row, String(q.title).toUpperCase());
+      }
     }
-    const r = q.rewards || {};
-    const bits = [];
-    if (r.xp) bits.push(`${r.xp} XP`);
-    if (r.shards) bits.push(`${r.shards} SHARDS`);
-    if (r.skillPoints) bits.push(`${r.skillPoints} SKILL POINT${r.skillPoints > 1 ? 'S' : ''}`);
-    for (const it of (r.items || [])) bits.push(`${it.n}× ${it.id.replace(/-/g, ' ').toUpperCase()}`);
-    if (bits.length) el('div', 'pg-rewards', row, `REWARD  ·  ${bits.join('  ·  ')}`);
+  }
 
-    if (group === 'ACTIVE') row.addEventListener('click', () => { this.prog.track(q.id); this._renderLog(); });
-    if (group === 'AVAILABLE') row.addEventListener('click', () => { this.prog.startQuest(q.id); this._renderLog(); });
+  _logQuest(parent, q, isTracked) {
+    const box = el('section', `fl-quest${isTracked ? ' tracked' : ''}`, parent);
+    const head = el('div', 'fl-head', box);
+    el('div', 'fl-title', head, String(q.title).toUpperCase());
+    if (isTracked) el('span', 'fl-tag', head, 'TRACKED');
+    else {
+      const b = el('button', 'fl-track', head, 'TRACK');
+      b.addEventListener('click', () => { q.track(); this.refresh?.(); this._renderLog(); });
+    }
+    const list = el('ol', 'fl-stages', box);
+    const reached = q.stages.filter((s) => s.state !== 'pending');
+    const shown = isTracked ? reached : reached.filter((s) => s.state === 'next');
+    shown.forEach((s) => {
+      const li = el('li', `fl-stage ${s.state}`, list);
+      el('span', 'fl-mark', li, s.state === 'done' ? '✓' : '▸');
+      el('span', 'fl-text', li, s.label);
+    });
+    const ahead = q.stages.length - reached.length;
+    if (isTracked && ahead > 0) el('li', 'fl-stage ahead', list, `${ahead} more stage${ahead > 1 ? 's' : ''} ahead`);
   }
 
   /* ------------------------------- dialogue -------------------------------- */
@@ -681,7 +715,7 @@ export class QuestLogUI {
     choices.push({ label: '“Show me what you have to trade.”', hint: 'TRADE', run: () => this.openTrade() });
     if (active.length) {
       choices.push({
-        label: '“What am I supposed to be doing?”', hint: 'JOURNAL',
+        label: '“What am I supposed to be doing?”', hint: 'FIELD LOG',
         run: () => this.openLog(),
       });
     }
@@ -764,7 +798,7 @@ export class QuestLogUI {
     const info = p.saveInfo();
     if (info) {
       el('div', 'pg-sub', body,
-        `LAST SAVE — LEVEL ${info.level} · ${new Date(info.savedAt).toLocaleTimeString()}`);
+        `LAST SAVE · ${new Date(info.savedAt).toLocaleTimeString()}`);
     }
     const row = el('div', 'pg-row', body);
     const bSave = el('button', 'pg-btn primary', row, 'SAVE PROGRESS');
@@ -776,7 +810,7 @@ export class QuestLogUI {
     bRest.addEventListener('click', () => { p.rest(6.2); this.close(); });
     const bSkills = el('button', 'pg-btn', row, 'SKILLS');
     bSkills.addEventListener('click', () => { this.close(); p.openSkills(); });
-    const bLog = el('button', 'pg-btn', row, 'JOURNAL');
+    const bLog = el('button', 'pg-btn', row, 'FIELD LOG');
     bLog.addEventListener('click', () => this.openLog());
 
     el('div', 'pg-sub', body, 'DIFFICULTY').style.marginTop = '18px';

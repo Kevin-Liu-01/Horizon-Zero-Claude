@@ -1,7 +1,8 @@
-/* THE SATCHEL + THE TAKE-ALL POPUP (lane `shell-ui`, bible §9.7). A field-book page:
-   pocket index in the margin, specimen cards, a detail column. Ink on paper; rarity is
-   an ink colour on the card's edge. Chakra Petch for labels, Plex Mono for numerals and
-   running text. Tokens and the page background live in src/style.css (`.cal-page`). */
+/* THE SATCHEL + THE TAKE-ALL POPUP (lane `ui`; BIBLE 18 "Satchel"). Dark glass (M1.6g2): the tabs
+   ALL · WEAPONS · TOOLS · STORES · FIELD BOOKS · TRADE across the top with a lilac underline, a five-column
+   grid of cards, a detail column with a turntable. No coloured rarity tiers. Chakra Petch for labels, Plex
+   Mono for numerals and running text. The glass section at the end of this file restyles the page rules
+   above it; the take-all popup at the very end is unchanged. */
 
 /* ================================= screen ================================= */
 
@@ -379,6 +380,94 @@ body.cal-hub-open .cal-inv-cols { margin-top: 0; }
   font-size: var(--cal-type-micro);
   color: var(--cal-ink-80);
 }
+
+/* =============================================================== the glass page (M1.6g2) */
+body.cal-gs .cal-inv { background: rgba(14, 11, 20, 0.30); -webkit-backdrop-filter: var(--gs-frost); backdrop-filter: var(--gs-frost); }
+body.cal-gs.cal-hub-open .cal-inv { background: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+body.cal-gs .cal-inv .cal-inv-shell {
+  background-color: var(--gs-fill);
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  background-attachment: scroll;
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--gs-line);
+  padding: 18px 32px 12px;
+}
+body.cal-gs.cal-hub-open .cal-inv .cal-inv-shell { background: none; box-shadow: none; }
+body.cal-gs.cal-hub-open .cal-inv .cal-inv-shell::after { display: none; }
+body.cal-gs .cal-inv-head { border-bottom-color: var(--gs-line); }
+
+body.cal-gs .cal-inv-cols { grid-template-columns: minmax(0, 1fr) 330px; grid-template-rows: auto minmax(0, 1fr); gap: 0 28px; }
+body.cal-gs .cal-inv-rail {
+  grid-column: 1 / -1;
+  flex-direction: row; gap: 2px;
+  margin-bottom: 14px;
+  border-top: 0; border-bottom: 1px solid var(--gs-line);
+}
+body.cal-gs .cal-inv-pocket {
+  position: relative;
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 8px 14px 9px;
+  border-bottom: 0;
+  font-size: 13px; letter-spacing: 0.14em;
+  color: var(--gs-text-2);
+}
+body.cal-gs .cal-inv-pocket:hover { background: rgba(241, 238, 230, 0.05); color: var(--gs-text); }
+body.cal-gs .cal-inv-pocket.active { background: none; color: var(--gs-text); }
+body.cal-gs .cal-inv-pocket.active::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; background: var(--gs-sel-line); }
+body.cal-gs .cal-inv-pcount { color: var(--gs-text-2); }
+
+/* five columns of cards */
+body.cal-gs .cal-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+body.cal-gs .cal-card {
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'g c' 'n n' 'b b';
+  row-gap: 6px;
+  padding: 10px 10px 9px;
+  min-height: 92px;
+  color: var(--gs-text);
+  background: rgba(241, 238, 230, 0.035);
+  border: 0;
+  box-shadow: inset 0 0 0 1px rgba(241, 238, 230, 0.14);
+}
+body.cal-gs .cal-card:hover { background: rgba(241, 238, 230, 0.07); transform: none; box-shadow: inset 0 0 0 1px rgba(241, 238, 230, 0.3); }
+body.cal-gs .cal-card.sel { background: var(--gs-sel-fill); outline: 0; box-shadow: inset 0 0 0 1px var(--gs-sel-line); }
+body.cal-gs .cal-card-glyph { width: 28px; height: 28px; color: var(--gs-text); }
+body.cal-gs .cal-card-name { font-size: 12px; letter-spacing: 0.1em; white-space: nowrap; }
+body.cal-gs .cal-card-n { align-self: start; font-size: 15px; }
+body.cal-gs .cal-card-bar { height: 2px; margin-top: 0; background: rgba(241, 238, 230, 0.14); }
+body.cal-gs .cal-card-bar i { background: var(--gs-sel-line); }
+body.cal-gs .cal-card.full .cal-card-n { color: var(--gs-text); }
+body.cal-gs .cal-card.full .cal-card-n::after { content: ' FULL'; font-family: var(--cal-font-ui); font-size: 10px; letter-spacing: 0.12em; color: var(--gs-text-2); }
+body.cal-gs .cal-card.active::after { border-top-color: var(--gs-sel-line); }
+body.cal-gs .cal-inv-group { color: var(--gs-text-2); border-bottom-color: var(--gs-line); }
+body.cal-gs .cal-pouch { border-bottom-color: var(--gs-line); }
+body.cal-gs .cal-pouch-bar { background: rgba(241, 238, 230, 0.12); outline: 1px solid rgba(241, 238, 230, 0.3); }
+body.cal-gs .cal-pouch-fill { background: var(--cal-lamp-calm); }
+
+/* the detail column, with the turntable */
+body.cal-gs .cal-inv-detail { padding: 2px 0 0 22px; border-left: 1px solid var(--gs-line); }
+body.cal-gs .cal-det-head { margin: 0 0 4px; }
+body.cal-gs .cal-det-glyph { width: 26px; height: 26px; }
+body.cal-gs .cal-det-name { font-size: 20px; letter-spacing: 0.12em; }
+body.cal-gs .cal-det-turn { position: relative; height: 190px; margin: 2px 0 8px; box-shadow: inset 0 -1px 0 var(--gs-line); }
+body.cal-gs .cal-det-turn canvas { display: block; width: 100%; height: 100%; }
+body.cal-gs .cal-det-desc { color: var(--gs-text); }
+body.cal-gs .cal-det-stats { border-top-color: var(--gs-line); }
+body.cal-gs .cal-det-stat { border-bottom-color: rgba(241, 238, 230, 0.08); }
+body.cal-gs .cal-det-stat .k { color: var(--gs-text-2); }
+body.cal-gs .cal-det-bar { background: rgba(241, 238, 230, 0.12); }
+body.cal-gs .cal-det-bar i { background: var(--gs-sel-line); }
+body.cal-gs .cal-det-act { color: var(--gs-text); background: var(--gs-sel-fill); border: 1px solid var(--gs-sel-line); }
+body.cal-gs .cal-det-act:hover { background: rgba(90, 46, 102, 0.85); border-color: var(--gs-sel-line); }
+body.cal-gs .cal-det-act.off { color: var(--gs-text-2); background: none; border: 1px dashed rgba(241, 238, 230, 0.3); }
+body.cal-gs .cal-det-act.on { color: var(--gs-text); background: none; border-color: var(--gs-sel-line); }
+body.cal-gs .cal-det-act.deny { background: none; color: var(--gs-text); border-color: var(--gs-sel-line); }
+body.cal-gs .cal-recipe { border-top-color: var(--gs-line); }
+body.cal-gs .cal-recipe-row.short .c { color: var(--gs-text); text-decoration: underline 1px var(--gs-sel-line); }
+body.cal-gs .cal-note.sel { background: var(--gs-sel-fill); color: var(--gs-text); box-shadow: inset 0 0 0 1px var(--gs-sel-line); }
+body.cal-gs .cal-trade-col h4 { border-bottom-color: var(--gs-line); }
+body.cal-gs .cal-trade-row { border-left: 0; }
+body.cal-gs .cal-trade-price.deny { color: var(--gs-text); }
+body.cal-gs .cal-inv-foot { border-top-color: var(--gs-line); color: var(--gs-text-2); }
 
 /* ========================= the take-all popup (a paper chip) ================= */
 

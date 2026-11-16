@@ -1,21 +1,20 @@
 /**
- * THE SURVEY SHEET  —  lane `shell-ui` (bible §9.7, §8.4, §8.5; gates A-map-triangles,
- * V-map, A70, A70b)
+ * THE SURVEY SHEET  —  lane `ui` (BIBLE 18 "Map"; gates A-map-triangles, V-map, A70, A70b)
  * ===========================================================================
- * Not a minimap: a page of the field book. Paper, a graticule, the coastline with its
- * waterlines and depth soundings offshore. That is ALL it shows at the start. Everything
- * else is earned: climb a trig pillar, sight two others, and the triangle between the
- * three opens: a cleaner wash of paper with the contours inked in (every 5 m, index
- * every 25 m), its place names in Chakra Petch, the Datum Line regions in vermilion.
+ * Not a minimap: the hub's map page, glass (M1.6g2). Unrevealed land in slate, hill-shaded, with a staff-white
+ * coastline and faint waterlines; that is all it shows at the start, with the Braziers she has seen. Everything
+ * else is earned: climb a trig pillar, sight two others, and the triangle between the three opens in a dark
+ * painted relief with the contours in (every 5 m, index every 25 m), its place names in Chakra Petch, the Datum
+ * regions in vermilion. The legend is the bible's eight words.
  *
  * Layers, bottom to top:
- *   1. base sheet (baked)   paper, grain, graticule, coast, waterlines, soundings, cartouche
- *   2. revealed triangles   a wash, then the baked ink layer through a clip of the union
+ *   1. base sheet (baked)   sea, slate relief, graticule, coast, waterlines, soundings, cartouche
+ *   2. revealed triangles   the painted relief and contours (the baked ink layer) through a clip of the union
  *   3. Datum Line           vermilion, inside the surveyed area (`ctx.datum`, world-ground W2)
  *   4. sight lines + pillars
  *   5. sites                inside a surveyed triangle
  *   6. objectives           `progression.getMarkers()`, the same list the circle draws
- *   7. Flagged Instruments  `sighting.tags` only: the sheet is not a radar
+ *   7. Braziers; the bearing-held Instrument (`sighting.tags`, one at a time): the sheet is not a radar
  *   8. Brea, the waypoint
  *
  * COST. The bake runs once per session, time-sliced to 6 ms a frame (heightfield, then
@@ -42,11 +41,18 @@ const MAP_PX = 1400;                    // canvas pixels per axis
 const STORE_KEY = 'cal.map.v5';
 const K = MAP_PX / 690;                 // canvas px per screen px at 1600x900: every drawn size is in screen px x K
 
-const INK = '#26343F';
-const PAPER = '#E2D3B0';
-const COBALT = '#2C4F8A';
-const VERMILION = '#D2452E';
+/*
+ * M1.6g2 (BIBLE 18 "Map"): the sheet is glass now, not paper. Dark painted relief inside the revealed triangles;
+ * unrevealed land in slate with a staff-white coastline; the Datum regions in vermilion. `INK` is the colour of a
+ * mark and its word on the dark sheet (staff white); `HALO` the dark ground a word is cut out of.
+ */
+const INK = '#F1EEE6';
+const HALO = 'rgba(20,18,28,0.88)';
+const SEA = '#16141F';
+const COBALT = '#8FA9D8';
+const VERMILION = '#E0573C';
 const STAFF = '#F1EEE6';
+const PAPER = HALO;
 const FONT_LABEL = '"Chakra Petch", "Arial Narrow", sans-serif';
 const FONT_MONO = '"IBM Plex Mono", ui-monospace, Menlo, monospace';
 
@@ -202,58 +208,73 @@ export class MapBake {
 
   get progress() { return clamp(this.rows / this.total, 0, 1); }
 
-  /** Paper, grain, foxing, graticule, margin numbers, cartouche, scale, north. */
-  _paintBaseStatic() {
-    const g = this.base.getContext('2d');
-    g.fillStyle = PAPER;
-    g.fillRect(0, 0, MAP_PX, MAP_PX);
-
-    // grain: one small noise tile, tiled
-    const tile = document.createElement('canvas');
-    tile.width = tile.height = 192;
-    const tg = tile.getContext('2d');
-    const img = tg.createImageData(192, 192);
-    for (let i = 0; i < img.data.length; i += 4) {
-      const n = hash2(i * 0.37, i * 0.11);
-      img.data[i] = 96; img.data[i + 1] = 74; img.data[i + 2] = 44;
-      img.data[i + 3] = n * 20;
+  /**
+   * The relief as an N x N picture: hill shade from the north-west over a colour by height. `mode` 'slate' is the
+   * unrevealed land (one cool grey, shaded); 'paint' is the revealed land (sand by the water, meadow olive, umber
+   * flanks, ash up on the caldera), shaded the same way. The sea is left clear.
+   */
+  _relief(mode) {
+    const N = BAKE_N, W = N + 1, H = this._h;
+    const tmp = document.createElement('canvas');
+    tmp.width = tmp.height = N;
+    const tg = tmp.getContext('2d');
+    const img = tg.createImageData(N, N);
+    const sea = this.seaLevel;
+    const step = WORLD_SIZE / N;
+    const BANDS = [[0, [176, 164, 138]], [3, [120, 112, 70]], [30, [104, 98, 60]], [70, [108, 82, 60]], [140, [116, 100, 96]], [260, [138, 128, 132]]];
+    const tint = (y) => {
+      const h = y - sea;
+      let i = 0;
+      while (i < BANDS.length - 1 && h > BANDS[i + 1][0]) i++;
+      const [h0, c0] = BANDS[i], [h1, c1] = BANDS[Math.min(i + 1, BANDS.length - 1)];
+      const t = h1 > h0 ? clamp((h - h0) / (h1 - h0), 0, 1) : 0;
+      return [c0[0] + (c1[0] - c0[0]) * t, c0[1] + (c1[1] - c0[1]) * t, c0[2] + (c1[2] - c0[2]) * t];
+    };
+    for (let iz = 0; iz < N; iz++) {
+      for (let ix = 0; ix < N; ix++) {
+        const i = iz * W + ix;
+        const y = H[i];
+        const o = (iz * N + ix) * 4;
+        if (y <= sea) { img.data[o + 3] = 0; continue; }
+        const dx = (H[i + 1] - y) / step, dz = (H[i + W] - y) / step;
+        // lit from the north-west: a slope facing it brightens, the far side darkens
+        const lit = clamp(1 + (-dx * 0.75 - dz * 0.75) * 1.1, 0.35, 1.45);
+        let c;
+        if (mode === 'slate') { const v = 74 * lit; c = [v * 0.92, v * 0.98, v * 1.08]; }
+        else { const t = tint(y); c = [t[0] * 0.62 * lit, t[1] * 0.62 * lit, t[2] * 0.62 * lit]; }
+        img.data[o] = clamp(c[0], 0, 255); img.data[o + 1] = clamp(c[1], 0, 255); img.data[o + 2] = clamp(c[2], 0, 255);
+        img.data[o + 3] = 255;
+      }
     }
     tg.putImageData(img, 0, 0);
-    g.fillStyle = g.createPattern(tile, 'repeat');
+    return tmp;
+  }
+
+  /** The sea, the slate land, the graticule and its margin numbers. */
+  _paintBaseStatic() {
+    const g = this.base.getContext('2d');
+    g.fillStyle = SEA;
     g.fillRect(0, 0, MAP_PX, MAP_PX);
-    // foxing + the edge of the page
-    const fox = (cx, cy, r, a) => {
-      const f = g.createRadialGradient(cx, cy, 0, cx, cy, r);
-      f.addColorStop(0, `rgba(137,96,44,${a})`);
-      f.addColorStop(1, 'rgba(137,96,44,0)');
-      g.fillStyle = f;
-      g.fillRect(0, 0, MAP_PX, MAP_PX);
-    };
-    fox(MAP_PX * 0.14, MAP_PX * 0.1, MAP_PX * 0.2, 0.09);
-    fox(MAP_PX * 0.88, MAP_PX * 0.82, MAP_PX * 0.24, 0.11);
-    fox(MAP_PX * 0.62, MAP_PX * 0.3, MAP_PX * 0.1, 0.05);
-    const edge = g.createRadialGradient(MAP_PX / 2, MAP_PX / 2, MAP_PX * 0.42, MAP_PX / 2, MAP_PX / 2, MAP_PX * 0.74);
-    edge.addColorStop(0, 'rgba(110,82,44,0)');
-    edge.addColorStop(1, 'rgba(110,82,44,0.22)');
-    g.fillStyle = edge;
-    g.fillRect(0, 0, MAP_PX, MAP_PX);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(this._relief('slate'), 0, 0, MAP_PX, MAP_PX);
 
     // the graticule: every 100 m, heavier every 500 m
     const toPx = (w) => ((w + WORLD_HALF) / WORLD_SIZE) * MAP_PX;
     g.save();
     g.lineWidth = 0.6 * K;
-    g.strokeStyle = 'rgba(44,79,138,0.16)';
+    g.strokeStyle = 'rgba(241,238,230,0.06)';
     const from = Math.ceil(-WORLD_HALF / 100) * 100;
     for (let m = from; m <= WORLD_HALF; m += 100) {
       const p = toPx(m);
-      g.globalAlpha = m % 500 === 0 ? 1.7 : 1;
+      g.globalAlpha = m % 500 === 0 ? 1.8 : 1;
       g.beginPath(); g.moveTo(p, 0); g.lineTo(p, MAP_PX); g.stroke();
       g.beginPath(); g.moveTo(0, p); g.lineTo(MAP_PX, p); g.stroke();
     }
     g.globalAlpha = 1;
     // margin numbers, in Plex: eastings along the foot, northings up the left
     g.font = `400 ${9.5 * K}px ${FONT_MONO}`;
-    g.fillStyle = 'rgba(38,52,63,0.62)';
+    g.fillStyle = 'rgba(241,238,230,0.42)';
     g.textBaseline = 'alphabetic';
     for (let m = from; m <= WORLD_HALF; m += 100) {
       const p = toPx(m);
@@ -263,7 +284,6 @@ export class MapBake {
       g.fillText(String(-m), 3 * K, p - 2 * K);                               // N (engine z = -N)
     }
     g.restore();
-
   }
 
   /** North and the cartouche, painted last, over the soundings. */
@@ -272,74 +292,58 @@ export class MapBake {
     // north: a broad arrow, as the benchmarks are cut
     g.save();
     g.translate(MAP_PX - 30 * K, 40 * K);
-    g.strokeStyle = INK; g.lineWidth = 1.6 * K; g.lineCap = 'square';
+    g.strokeStyle = STAFF; g.lineWidth = 1.6 * K; g.lineCap = 'square';
     g.beginPath();
     g.moveTo(0, 22 * K); g.lineTo(0, -8 * K);
     g.moveTo(0, -8 * K); g.lineTo(-7 * K, 8 * K);
     g.moveTo(0, -8 * K); g.lineTo(7 * K, 8 * K);
     g.stroke();
     g.font = `600 ${14 * K}px ${FONT_LABEL}`;
-    g.fillStyle = INK; g.textAlign = 'center';
+    g.fillStyle = STAFF; g.textAlign = 'center';
     g.fillText('N', 0, -13 * K);
     g.restore();
 
-    // the cartouche
-    const cw = 204 * K, ch = 72 * K, cx = 34 * K, cy = 12 * K;   // top left: open sea on Orchil
+    // the cartouche: a small glass card, top left over open sea
+    const cw = 204 * K, ch = 66 * K, cx = 34 * K, cy = 12 * K;
     g.save();
-    g.fillStyle = 'rgba(226,211,176,0.94)';
+    g.fillStyle = 'rgba(30,26,40,0.90)';
     g.fillRect(cx, cy, cw, ch);
-    g.strokeStyle = INK; g.lineWidth = 1 * K;
+    g.strokeStyle = 'rgba(241,238,230,0.16)'; g.lineWidth = 1 * K;
     g.strokeRect(cx, cy, cw, ch);
-    g.strokeStyle = VERMILION; g.lineWidth = 0.8 * K;
-    g.beginPath(); g.moveTo(cx + 9 * K, cy); g.lineTo(cx + 9 * K, cy + ch); g.moveTo(cx + 11.5 * K, cy); g.lineTo(cx + 11.5 * K, cy + ch); g.stroke();
-    g.fillStyle = INK; g.textAlign = 'left';
-    g.font = `600 ${21 * K}px ${FONT_LABEL}`;
-    g.fillText('ORCHIL', cx + 19 * K, cy + 25 * K);
-    g.font = `400 ${10.5 * K}px ${FONT_MONO}`;
-    g.fillText('survey sheet, contours 5 m', cx + 19 * K, cy + 39 * K);
+    // registration ticks at its corners
+    g.strokeStyle = 'rgba(241,238,230,0.62)';
+    g.beginPath();
+    for (const [x, y, sx, sy] of [[cx, cy, 1, 1], [cx + cw, cy, -1, 1], [cx, cy + ch, 1, -1], [cx + cw, cy + ch, -1, -1]]) {
+      g.moveTo(x + sx * 6 * K, y); g.lineTo(x, y); g.lineTo(x, y + sy * 6 * K);
+    }
+    g.stroke();
+    g.fillStyle = STAFF; g.textAlign = 'left';
+    g.font = `600 ${20 * K}px ${FONT_LABEL}`;
+    if ('letterSpacing' in g) g.letterSpacing = `${(0.14 * 20 * K).toFixed(1)}px`;
+    g.fillText('ORCHIL', cx + 12 * K, cy + 24 * K);
+    if ('letterSpacing' in g) g.letterSpacing = '0px';
+    g.font = `400 ${10 * K}px ${FONT_MONO}`;
+    g.fillStyle = 'rgba(241,238,230,0.66)';
+    g.fillText('survey sheet, contours 5 m', cx + 12 * K, cy + 38 * K);
     // the scale: a little levelling staff, 0 to 200 m
-    // ...as long as the scale fits the cartouche: a 720 m sheet draws 200 m wider than the box
     const barM = (200 / WORLD_SIZE) * MAP_PX > cw - 30 * K ? 100 : 200;
-    const bw = (barM / WORLD_SIZE) * MAP_PX, bx = cx + 19 * K, by = cy + 49 * K, bh = 5 * K;
+    const bw = (barM / WORLD_SIZE) * MAP_PX, bx = cx + 12 * K, by = cy + 45 * K, bh = 4 * K;
     for (let i = 0; i < 4; i++) {
       g.fillStyle = i % 2 ? STAFF : VERMILION;
       g.fillRect(bx + (bw / 4) * i, by, bw / 4, bh);
     }
-    g.strokeStyle = INK; g.lineWidth = 0.8 * K;
-    g.strokeRect(bx, by, bw, bh);
-    g.fillStyle = INK; g.font = `400 ${9.5 * K}px ${FONT_MONO}`;
+    g.fillStyle = 'rgba(241,238,230,0.66)'; g.font = `400 ${9 * K}px ${FONT_MONO}`;
     g.textAlign = 'left'; g.fillText('0', bx, by + bh + 10 * K);
     g.textAlign = 'right'; g.fillText(`${barM} m`, bx + bw, by + bh + 10 * K);
     g.restore();
   }
 
-  /** Sepia relief for the inked layer: slope shaded from the north-west, low resolution, smoothed up. */
+  /** The revealed land: the painted relief, into the ink layer (drawn through the triangles' clip). */
   _paintShade() {
-    const N = BAKE_N, W = N + 1, H = this._h;
-    const tmp = document.createElement('canvas');
-    tmp.width = tmp.height = N;
-    const tg = tmp.getContext('2d');
-    const img = tg.createImageData(N, N);
-    const sea = this.seaLevel;
-    const step = WORLD_SIZE / N;
-    for (let iz = 0; iz < N; iz++) {
-      for (let ix = 0; ix < N; ix++) {
-        const i = iz * W + ix;
-        const y = H[i];
-        const o = (iz * N + ix) * 4;
-        if (y <= sea) { img.data[o + 3] = 0; continue; }
-        const dx = (H[i + 1] - y) / step, dz = (H[i + W] - y) / step;
-        const lit = clamp((dx * 0.7 + dz * 0.7) * 0.9, -1, 1);
-        // the shadow side darkens in sepia; the lit side stays paper
-        img.data[o] = 88; img.data[o + 1] = 62; img.data[o + 2] = 36;
-        img.data[o + 3] = lit > 0 ? lit * 96 : 0;
-      }
-    }
-    tg.putImageData(img, 0, 0);
     const g = this.ink.getContext('2d');
     g.imageSmoothingEnabled = true;
     g.imageSmoothingQuality = 'high';
-    g.drawImage(tmp, 0, 0, MAP_PX, MAP_PX);
+    g.drawImage(this._relief('paint'), 0, 0, MAP_PX, MAP_PX);
   }
 
   /** Marching squares, row by row: the coast + waterlines onto the base, the contours onto the ink. */
@@ -381,14 +385,14 @@ export class MapBake {
             }
           }
         }
-        gi.strokeStyle = 'rgba(38,52,63,0.40)';
+        gi.strokeStyle = 'rgba(16,14,22,0.30)';
         gi.lineWidth = 0.42 * K;
         gi.stroke(minor);
-        gi.strokeStyle = 'rgba(38,52,63,0.80)';
+        gi.strokeStyle = 'rgba(16,14,22,0.58)';
         gi.lineWidth = 0.8 * K;
         gi.stroke(index);
         for (let k = 0; k < WATERLINES.length; k++) {
-          gb.strokeStyle = `rgba(44,79,138,${WATERLINES[k][1]})`;
+          gb.strokeStyle = `rgba(241,238,230,${(WATERLINES[k][1] * 0.32).toFixed(3)})`;
           gb.lineWidth = 0.5 * K;
           gb.stroke(water[k]);
         }
@@ -424,7 +428,7 @@ export class MapBake {
       gi.globalCompositeOperation = 'destination-out';
       gi.fillRect(-11 * K, -5 * K, 22 * K, 10 * K);
       gi.globalCompositeOperation = 'source-over';
-      gi.fillStyle = 'rgba(38,52,63,0.86)';
+      gi.fillStyle = 'rgba(241,238,230,0.80)';
       gi.fillText(String(l.L), 0, 0);
       gi.restore();
     }
@@ -436,7 +440,7 @@ export class MapBake {
       // depth soundings offshore, chart style: scattered italic numerals in cobalt
       gb.font = `italic 400 ${9.5 * K}px ${FONT_MONO}`;
       gb.textAlign = 'center'; gb.textBaseline = 'middle';
-      gb.fillStyle = 'rgba(44,79,138,0.72)';
+      gb.fillStyle = 'rgba(241,238,230,0.24)';
       const stride = Math.round(BAKE_N / 21);
       for (let iz = stride; iz < BAKE_N; iz += stride) {
         for (let ix = stride; ix < BAKE_N; ix += stride) {
@@ -544,29 +548,30 @@ export class FogOfWar {
 /* the sheet                                                                 */
 /* ========================================================================= */
 
-/** Legend + side-panel marks, drawn with the same geometry the canvas uses. */
+/** The legend (BIBLE 18 "Map", exactly its words), drawn with the same geometry the canvas uses. */
 const LEGEND = [
-  ['settlement', 'SETTLEMENT'],
+  ['objective', 'MAIN OBJECTIVE'],
   ['site', 'SITE'],
+  ['settlement', 'SETTLEMENT'],
   ['benchmark', 'BENCHMARK'],
   ['pillar', 'TRIG PILLAR'],
-  ['position', 'POSITION'],
-  ['objective', 'OBJECTIVE'],
-  ['machine', 'FLAGGED INSTRUMENT'],
-  ['datum', 'DATUM LINE'],
+  ['brazier', 'BRAZIER'],
+  ['waypoint', 'WAYPOINT'],
+  ['danger', 'DANGER'],
 ];
 const legendSvg = (k) => {
   const s = (d, x = '') => `<svg viewBox="0 0 16 14" aria-hidden="true"><path d="${d}" ${x}/></svg>`;
-  const ink = 'fill="#26343F"', line = 'fill="none" stroke="#26343F" stroke-width="1.5"';
+  const ink = `fill="${STAFF}"`, line = `fill="none" stroke="${STAFF}" stroke-width="1.5"`;
   if (k === 'settlement') return s('M3 2h10v10H3Z', ink);
   if (k === 'site') return s('M8 2.500a4.500 4.500 0 1 1 0 9 4.500 4.500 0 0 1 0-9Z', line);
   if (k === 'benchmark') return s('M8 2 13 12H3Z', ink);
   if (k === 'pillar') return s('M8 13V2M8 2 3.500 10M8 2l4.500 8', line);
-  if (k === 'position') return s('M8 1 13.500 13 8 9.500 2.500 13Z', 'fill="#D2452E" stroke="#26343F" stroke-width="0.8" stroke-linejoin="miter"');
-  if (k === 'objective') return s('M8 13V2M8 13 3.500 5M8 13l4.500-8', 'fill="none" stroke="#D2452E" stroke-width="1.8"');
-  if (k === 'machine') return s('M8 1.500 14.500 7 8 12.500 1.500 7Z', 'fill="#2B2C30" stroke="#26343F" stroke-width="1"');
-  return s('M1 7h14', 'fill="none" stroke="#D2452E" stroke-width="2.4"');
+  if (k === 'objective') return s('M8 13V2M8 13 3.500 5M8 13l4.500-8', `fill="none" stroke="${VERMILION}" stroke-width="1.8"`);
+  if (k === 'brazier') return s('M3 8h10l-2 4H5ZM8 7.500C6 5.500 7.500 4 8 1.500 8.500 4 10 5.500 8 7.500Z', `fill="${BRAZIER_LIT}"`);
+  if (k === 'waypoint') return s('M4.500 3.500h7v7h-7ZM8 0v3M8 11v3M1 7h3M12 7h3', `fill="none" stroke="${COBALT}" stroke-width="1.4"`);
+  return s('M1 1h14v12H1Z', `fill="rgba(224,87,60,0.22)" stroke="${VERMILION}" stroke-width="1.6"`);
 };
+const BRAZIER_LIT = '#F2B45A';
 
 export class WorldMap {
   constructor(ctx, menus) {
@@ -691,7 +696,7 @@ export class WorldMap {
       el('span', 'mn-map-leg-text', row, label);
     }
     el('div', 'mn-set-note', side,
-      'Climb a trig pillar and sight two others: the triangle between the three opens on this sheet. Click for a waypoint; right-click clears it. From the cistern you can travel to a surveyed site you have walked.');
+      'Climb a trig pillar and sight two others: the triangle between the three opens on this sheet. Click for a waypoint; right-click clears it.');
 
     this.canvas.addEventListener('mousemove', (e) => this._onHover(e));
     this.canvas.addEventListener('mouseleave', () => { this._hover = null; this._tip.style.display = 'none'; this.draw(); });
@@ -755,7 +760,16 @@ export class WorldMap {
       }
     } catch { /* progression may be mid-refresh */ }
 
-    // only what the alidade has Flagged, never a live radar of the roster
+    // the Braziers (BIBLE 17): lit ones are a tally of progress across the island
+    const B = ctx.braziers;
+    for (const b of (B?.list ?? [])) {
+      const at = b.obj?.position;
+      if (!at) continue;
+      const name = ctx.systemsGame?.S?.systems?.brazier?.names?.[b.id] ?? 'BRAZIER';
+      out.push({ kind: 'brazier', x: at.x, z: at.z, name, lit: !!B.lit?.has?.(b.id), done: false });
+    }
+
+    // the Instrument held by take-a-bearing (BIBLE 8.3): one, never a live radar of the roster
     const tags = ctx.sighting?.tags;
     if (tags && typeof tags.forEach === 'function') {
       tags.forEach((_v, m) => {
@@ -775,6 +789,7 @@ export class WorldMap {
    */
   visibleMarkers() {
     return this.markers().filter((m) => m.kind === 'quest' || m.kind === 'machine'
+      || (m.kind === 'brazier' && (m.lit || this.fog.seenAt(m.x, m.z)))
       || this._inTriangles(m.x, m.z));
   }
 
@@ -827,7 +842,7 @@ export class WorldMap {
     // 1: the base sheet; it fills in as the bake streams
     g.drawImage(this.bake.base, 0, 0);
     if (!this.bake.ready) {
-      g.fillStyle = 'rgba(226,211,176,0.82)';
+      g.fillStyle = SEA;
       g.fillRect(0, MAP_PX * this.bake.progress, MAP_PX, MAP_PX);
     }
 
@@ -838,8 +853,6 @@ export class WorldMap {
       g.beginPath();
       for (const t of this._triangles) this._tracePath(g, t);
       g.clip('nonzero');
-      g.fillStyle = 'rgba(241,238,230,0.42)';
-      g.fillRect(0, 0, MAP_PX, MAP_PX);
       g.drawImage(this.bake.ink, 0, 0);
       painted.ink = true;
       // 3: the Datum Line in vermilion, only where the survey has reached
@@ -970,7 +983,7 @@ export class WorldMap {
     if ('letterSpacing' in g) g.letterSpacing = `${(track * size * K).toFixed(2)}px`;
     g.lineJoin = 'round';
     g.lineWidth = 3.2 * K;
-    g.strokeStyle = 'rgba(232,221,192,0.94)';
+    g.strokeStyle = HALO;
     g.strokeText(text, x, y);
     g.fillStyle = fill;
     g.fillText(text, x, y);
@@ -1029,7 +1042,7 @@ export class WorldMap {
     const pt = this.worldToMap(q.x, q.z);
     g.save();
     g.lineCap = 'square';
-    g.strokeStyle = 'rgba(232,221,192,0.94)'; g.lineWidth = 4 * K;
+    g.strokeStyle = HALO; g.lineWidth = 4 * K;
     g.beginPath(); g.moveTo(pt.x, pt.y + 7 * K); g.lineTo(pt.x, pt.y - 7 * K); g.moveTo(pt.x - 5 * K, pt.y + 2 * K); g.lineTo(pt.x, pt.y - 7 * K); g.lineTo(pt.x + 5 * K, pt.y + 2 * K); g.stroke();
     g.strokeStyle = INK; g.lineWidth = 1.8 * K;
     g.beginPath(); g.moveTo(pt.x, pt.y + 7 * K); g.lineTo(pt.x, pt.y - 7 * K); g.moveTo(pt.x - 5 * K, pt.y + 2 * K); g.lineTo(pt.x, pt.y - 7 * K); g.lineTo(pt.x + 5 * K, pt.y + 2 * K); g.stroke();
@@ -1046,9 +1059,9 @@ export class WorldMap {
     // where she stands her dart is wider than the mark: its name keeps a clear gap from her
     const her = this._herPt, herOn = her && Math.hypot(pt.x - her.x, pt.y - her.y) < 8 * K ? 3 * K : 0;
     if (m.kind === 'settlement') {
-      g.strokeStyle = 'rgba(232,221,192,0.94)'; g.lineWidth = 2.4 * K;
+      g.strokeStyle = HALO; g.lineWidth = 2.4 * K;
       g.strokeRect(pt.x - r, pt.y - r, r * 2, r * 2);
-      g.fillStyle = m.done ? 'rgba(38,52,63,0.5)' : INK;
+      g.fillStyle = m.done ? 'rgba(241,238,230,0.5)' : INK;
       g.fillRect(pt.x - r, pt.y - r, r * 2, r * 2);
       this._name(g, String(m.name).toUpperCase(), pt, r + 5 * K + herOn, 12.5, 700, INK, true);
     } else if (m.kind === 'quest') {
@@ -1076,14 +1089,27 @@ export class WorldMap {
       g.strokeStyle = INK; g.lineWidth = 1 * K; g.stroke();
       if (ap > 0) { g.beginPath(); g.arc(pt.x, pt.y, d * 0.55 * ap + 0.5, 0, Math.PI * 2); g.fillStyle = col; g.fill(); }
       this._name(g, String(m.name).toUpperCase(), pt, d + 4 * K, 11, 600, INK, true);
+    } else if (m.kind === 'brazier') {
+      // a fire bowl; lit, a flame stands in it
+      const w = 6 * K;
+      g.beginPath(); g.moveTo(pt.x - w, pt.y); g.lineTo(pt.x + w, pt.y); g.lineTo(pt.x + w * 0.6, pt.y + w * 0.8); g.lineTo(pt.x - w * 0.6, pt.y + w * 0.8); g.closePath();
+      g.lineWidth = 3 * K; g.strokeStyle = HALO; g.stroke();
+      g.fillStyle = m.lit ? BRAZIER_LIT : 'rgba(241,238,230,0.55)'; g.fill();
+      if (m.lit) {
+        g.beginPath(); g.moveTo(pt.x, pt.y - 1 * K);
+        g.quadraticCurveTo(pt.x - 4.5 * K, pt.y - 5 * K, pt.x, pt.y - 11 * K);
+        g.quadraticCurveTo(pt.x + 4.5 * K, pt.y - 5 * K, pt.x, pt.y - 1 * K);
+        g.fill();
+      }
+      this._name(g, String(m.name).toUpperCase(), pt, w + 5 * K + herOn, 11, 600);
     } else if (m.kind === 'benchmark') {
       g.beginPath(); g.moveTo(pt.x, pt.y - r); g.lineTo(pt.x + r, pt.y + r); g.lineTo(pt.x - r, pt.y + r); g.closePath();
       g.fillStyle = INK; g.fill();
       this._name(g, String(m.name).toUpperCase(), pt, r + 5 * K, 11);
     } else {
       g.beginPath(); g.arc(pt.x, pt.y, r * 0.86, 0, Math.PI * 2);
-      g.lineWidth = 3.4 * K; g.strokeStyle = 'rgba(232,221,192,0.94)'; g.stroke();
-      g.lineWidth = 1.5 * K; g.strokeStyle = m.done ? 'rgba(38,52,63,0.5)' : INK; g.stroke();
+      g.lineWidth = 3.4 * K; g.strokeStyle = HALO; g.stroke();
+      g.lineWidth = 1.5 * K; g.strokeStyle = m.done ? 'rgba(241,238,230,0.5)' : INK; g.stroke();
       this._name(g, String(m.name).toUpperCase(), pt, r + 4 * K + herOn, 11, 500);
     }
     g.restore();
@@ -1117,7 +1143,7 @@ export class WorldMap {
     const travel = sel
       ? `<div class="mn-map-wp-site"><b>${String(sel.name).toUpperCase()}</b></div>`
         + `<button class="mn-btn small${gate.ok ? ' primary' : ' off'}" id="mn-wp-travel"`
-        + `${gate.ok ? '' : ' disabled'}>${gate.ok ? 'TRAVEL' : gate.reason}</button>`
+        + `${gate.ok ? '' : ' disabled'}>${gate.ok ? `WALK THE LINE TO ${String(sel.name).toUpperCase()}` : gate.reason}</button>`
       : '';
     if (!this.waypoint) {
       this._wpBox.innerHTML = `<div class="mn-map-wp-empty">NO WAYPOINT</div>${travel}`;
