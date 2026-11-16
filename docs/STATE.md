@@ -1025,3 +1025,143 @@ the Frame Set, two kept sessions and three clip sessions.
 
 **Decision (the orchestrator):** no regression and the kept stack unchanged (78/80, 0 failing); the weapon handling at the head is better than at 6782b47 by every row (key 1 readies the bow; swaps are stow-then-draw with 0 steps holding both; the lance is drawn butt-first, 146 deg of turn against about 270 before), so main is fast-forwarded. The new cloth solver stays behind ?cloth=2 until C8 (stretch) and C10 (cost) pass. The open rows above are the next round.
 
+
+## Wave 3: weapons round 2, cloth round 2, the glass shell, the slice (Nov 16 2026)
+
+Four lanes worked in one tree on `r5/int`, each with a builder, a judge and one fix round:
+- Weapons: hands on the grips (W1), the lance path (W4), interrupts (W10), V49 restated for the left-hand draw.
+- Cloth: stretch, size, cost and the run on the grid solver, still behind `?cloth=2`.
+- UI: M1.6g2 every menu dark glass, M1.6i the Character page.
+- Systems: the slice run, M1.3e hit feel, M1.6l rung 2 (the Scout) as the quest's reward.
+
+The review measured `r5/int` at **375c3ff** from clean detached worktrees on port 5270, using one Chrome slot. No
+commit landed during the review.
+
+**Verdict: NOT CLEAN.** Two things block it:
+- **A kept row fails that passed at fac4167: A107-draw-arm-path.** In a bow draw from a sprint or a jog, the draw
+  elbow, up at shoulder height, sits 0.10-0.22 m behind her head (bar 0.10). It failed in both runs at 375c3ff.
+- **Tier 0 fails on the name lint:** one hit, a listed word in a string in `tools/ui/screens-probe.mjs` (since
+  0123497).
+
+Neither build lane met its exit, but both moved a long way. The slice run plays all 14 beats for the first time in a
+review. No accepted frame changed outside cloth and weapon handling.
+
+**Tier 0 at 375c3ff: FAIL, 9 of 10.**
+- `vite build` OK (3.88 MB of code).
+- **Name lint: 1 hit** (above).
+- Licences: 225 files against 31 rows. Asset budgets clean. Import graph: 198 modules, 0 broken.
+- Resident textures 61.42 MB of 175 MB. Shipped 51.78 MB (first-load cap 60 MB).
+- 124 Node tests pass in 26 files.
+- Boot: 3.8 s, 0 errors, 80.89 MB first load. Rendered-page name lint: 0.
+
+**Frame Set at 375c3ff:** all 34 frames, 201 s of Chrome, 0 console errors. The simulation-time stagings froze at the
+same frame counts as at fac4167.
+- **No accepted frame changed outside cloth and weapon handling.** Every frame was compared with the fac4167 film (the
+  same world) and with its anchor.
+- **Cloth frames (F08-F10, F14, F15):** the same as their anchors. The game still ships the old cloth (flag off), so
+  against the masked turnaround crops they are the same, not closer.
+- **Weapon-handling frames:** F16 the same. F10's carry is unchanged (M1.2f still a 45 degree cross). **F19 is
+  further on cloth:** at the heavy's contact the rear sash panel now streams out nearly level behind her. Her pose and
+  the freeze frame are the same; the swing path changed in weapons round 2.
+- **Closer:** F27 (the map in the glass hub, the island as a hillshade), F28 (Making in the glass hub), F29 (the
+  Character page).
+- F24 is still further than its anchor (the town block; unchanged since 6fa199d).
+- The CONTINUE banner reads "CONTINUE · LEVEL 1" (`src/core/progression.js`, an old line). The game has no levels; the
+  banner should name the save instead.
+
+**Kept-stack rows at 375c3ff** (two sessions, every row reached): 80 rows. **77 pass** (69 action, 8 visual), **1
+fails**, **2 pending** (A9: the box was not quiet, 59.9 fps and 130 draws; A76: no staged kind declares a size class).
+- **Fails, passed before:** A107-draw-arm-path (above).
+  - One row per Chrome run, clean worktrees: 0526400 pass (0.067 m), 1411107 pass twice, 4e74b78 fail twice, e5173d8
+    fail, 375c3ff fail twice.
+  - 4e74b78 is the cloth fix round's C8 commit. It changes only files under `src/entities/anim/cloth/` that do not run
+    with the flag off, and no mechanism was found. The attribution is unproven; the failure is real.
+- Key numbers: A16 knuckle to jaw 0.014 m, hook 0.008 m, launch 0 deg; A17 loose 0.075 m behind; A44b 0.054 m; A45c
+  2.131 m/s (bar 3); A90 geometries 379 -> 378.
+- **V49 (restated for the left-hand butt-first draw) passes on its new clauses.** Both elbows stay under the top of her
+  head, no forearm crosses the back of the head, the lance leaves her back continuously, and the last tile has it in
+  her right hand in the low guard, still jogging.
+- A65 needed one runner retry (a screenshot timeout), then passed.
+
+**Weapons rows** (Node handling bench at 375c3ff; case by case identical to the lane's 0908d3a).
+- **Failing clauses: 189 in 26 cases.** Round 1 (c944133) had 368 in 24; on the same 24 cases, 163.
+- **Now on the grips:**
+  - The lance haft lies in both fists: palm 0.0005 m along the haft (was 0.055-0.063 m), fingertips 0.006 m, no joint
+    inside.
+  - The bow's palm faces its grip: 9.0 deg (bar 10; was 93).
+- **The lance path:** the draw turns 131.8 deg (bar 140; was 146), the blade stays 0.126 m over the knee. Swap 1 to 2
+  turns it 137.9 deg (was 171).
+- **Still failing:**
+  - The bow hand's wrist: 92 deg of deviation (bar 30). Its flexion reads 178.5 deg (bar 60; was 5.4), which the
+    close clip does not show, so the measure may have flipped a sign.
+  - The aim from stowed: the bow turns 126 deg in one step (bar 10).
+  - At a jog: the swaps turn the lance 174 deg and the bow jumps 0.35-0.49 m at its grip or release.
+  - A light swing from a sprint click has 1 step behind the head plane and 4 on it.
+  - Times: bow unstow 0.433 s (band 0.30-0.40); swap 2 to 1 0.717 s (band 0.45-0.65).
+  - **W10: 776 of 876 interrupt runs fail** (round 1: 784 of 848). Roll and strike fail in every run.
+
+**Cloth rows** (Node cloth bench at 375c3ff, the grid solver, `?cloth=2`):
+- **Pass:**
+  - Stretch: 1.021 at a run and a sprint, 0 frames over 1.03 (was 1.38).
+  - The run: no front hem ahead of the knee at a run or a sprint (was 32 % at a run); flutter 0.026-0.039 m.
+  - Cost p95: 0.080 ms standing, 0.153 ms at a sprint (bar 0.18).
+  - Repeatability: bit-identical digests; a nudge settles to 6.6e-6 m in 1 s.
+- **Still failing:**
+  - Asleep cost: 0.076 ms (bar 0.01); no piece ever sleeps standing (hem speed 0.006-0.019 m/s, bar 0.005).
+  - Sprint mean cost: 0.134 ms (bar 0.12).
+  - Run-stop: little or no swing past rest, and 1.1-2.5 s to settle (band 0.5-1.1).
+  - Turn: 1.5 s to settle (bar 0.9). Landing: the back panel rises 1 deg in the fall (bar 10).
+  - The tail sits at 26.7 deg at a sprint (band 30-65).
+  - Clipping with the old wrap pass off: 55 frames (lane number).
+- The flag stays off, and the old path stays in the tree.
+
+**The slice run at 375c3ff: 14 of 14 beats, no death.** The run is driven by input from the real title.
+- Wake, rake, read (Gauge 0.19 deg), tell, cane, make, mise.
+- Cross: hp 100 -> 59 (it was 100 -> 14 at 6fa199d).
+- Climb, and sight (T2 0.23 deg, T6 0.28 deg).
+- Ditch: in cover 76 % and hidden 69 % of 5657 frames, peak suspicion 0.181, one drink.
+- Topple in 4 shots. Pry with one Barbed arrow. Return. Reward: the Scout with Shrug.
+- Live rows:
+  - save-reload: PASS.
+  - save-continue on top of T1: PASS, 0 m off.
+  - save-continue at the end: **PASS**, 0.33 m off, and she stands up in the Scout.
+  - Brazier refusal: PASS.
+- The first session (with the frames, the rung-2 probe and the kit rows) never reached the title: the loading sheet
+  stayed up for 150 s, twice. A `--run-only` session then ran clean.
+- Kit rows: reed-peg and plumb-arrows fail. Steady, bearing, gauge-ballast, lance-pry, felling-blow, undercut and both
+  hit-feel rows pass. Hit feel: the struck body moves 0.183 m and settles in 288 ms (arrow); 0.108 m, 102 ms (lance).
+
+**Rung 2 (the Scout) at 375c3ff:**
+- At 20 m its outline differs from the Starter's by 1 - IoU 0.069 / 0.061 / 0.046 (front, three-quarter, side).
+- Shrug: the Flag lasts 3 s against 8 s.
+- 0 head-wrap vertices show through the hat in play.
+- The quest's reward puts it on, and CONTINUE keeps it.
+
+**The glass shell:** every probed screen is #1E1A28 at 0.90: satchel, Field Log, Field Books, the four settings pages,
+Extras, Field Manual, Credits, Settings from the title, and Character.
+- The probe stopped at the dialogue step on its own bug, so the death card, the context-lost card and the unsupported
+  page were not shot.
+- The Field Log page's visible text does not carry "FIELD LOG".
+
+**Clip review for the owner:** a second page sets round 1 (the first page's after clips) beside round 2 (375c3ff) for
+12 weapons clips and 13 cloth clips. Stills of the glass screens and the Scout are on the same page. Each clip and
+still has its measured rows and a line for accept, closer or wrong.
+
+**Chrome used:** about 57 minutes over 13 launches. That is over the 15-minute cap: the review asked for the Frame Set,
+two kept sessions, the slice, two clip sessions and the stills, and A107's bisect added seven short runs.
+
+**Open, for the next round:**
+- A107: a deterministic reproduction (sim time or Node) at 1411107 and 4e74b78, then the fix.
+- Tier 0: the name lint hit in the screens probe.
+- Weapons: the bow wrist (and its measure), the aim from stowed, the swaps at a jog, W10, the sprint click's
+  behind-head step, the five lane page rows (A100, A101, A103, A106, A-stow-clearance) never re-run after ff3afb9.
+- Cloth: sleep (C2, C10 asleep), run-stop and turn settle (C4, C5), the tail at a sprint, clipping with the old pass
+  off (C1), the crowd cost. F19's rear panel at contact.
+- UI: the screens probe's dialogue bug, the Field Log words, the CONTINUE banner's level, the ruling on A70's text.
+- Systems: the kit's reed-peg and plumb-arrows rows; the slice session that never reached the title.
+
+**Rulings after wave 3 (the orchestrator):**
+- W1, the bow take: the stowed bow's diagonal makes an index-up take at waist height unreachable with a natural wrist. The take is a reverse grip at the small of the back, then a two-hand regrip in front of the hip on the way to the carry; W1's wrist bar is graded after the regrip, and the take is graded on palm contact and no joint inside the bow.
+- W10, interrupts: the 0.06 m per step bar applies to a jump against the sequence's own planned motion (the rendered wrist against where the authored path puts it that step), not to the authored path's own speed; W7's draw band stands.
+- A70-hub-tabs: the hub has eight tabs since the Character page (P); the row tests eight keys.
+- main stays on 5170040 until A107 (a hand behind the head, the owner's bar) passes again.

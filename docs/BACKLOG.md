@@ -337,3 +337,20 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 | note | Ansel's tally clip reads as pointing more than tallying | people |
 | note | F14: the crust in her lens reads grey-pink against the anchor's white | judged same; look again at re-anchor | world |
 | closed | Tier 0 10/10; A16 20/20 on Steady; F15/F16/F18/F19 under the town ruling; F20 cone finish; crowd violet 7.30x; Ansel 8.75 s; Brazier refusal; F31 canes | 6fa199d | all |
+
+## Wave 3 additions (Nov 16 2026)
+
+| sev | row | what | owner |
+|---|---|---|---|
+| blocker | A107-draw-arm-path | fails at 375c3ff (0.10-0.22 m behind the head, bar 0.10); bisect by commit points at 4e74b78, a cloth-only change that should not run with the flag off: reproduce on sim time first | weapons, cloth |
+| blocker | Tier 0 name lint | `tools/ui/screens-probe.mjs` NEVER list holds a listed word | ui |
+| major | CONTINUE banner | reads "LEVEL 1" (`src/core/progression.js` continueGame) | systems, ui |
+| major | F19 | the rear sash panel streams level at the heavy's contact since weapons round 2 | weapons, cloth |
+| major | W1 bow wrist | deviation 92 deg; flexion 178.5 deg reads as a measure flip | weapons |
+| major | W6 sprint click | 1 behind-head step in the light swing from a sprint click (bench) | weapons |
+| major | W10 | 776 of 876 interrupt runs fail | weapons |
+| major | C10 asleep, C2 | the panels never sleep standing (0.076 ms, bar 0.01) | cloth |
+| major | screens probe | stops at the dialogue step ("C is not defined"); death, context-lost and unsupported unshot | ui |
+| major | slice kit | reed-peg and plumb-arrows rows fail | systems |
+| note | slice session | a frames-plus-run session never reached the title (loading sheet 150 s, twice) | systems |
+| note | A70-hub-tabs | its text was changed 7 -> 8 tabs by the ui lane; the row tests seven keys; needs a ruling | orchestrator |
