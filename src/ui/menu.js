@@ -100,7 +100,8 @@ const REST_PT = { x: REST.x, z: REST.z };
  */
 // <credits:generated>
 const CREDITS_LICENSED = [
-  { head: 'CODE (MIT)', rows: [
+  { head: 'CODE (MIT, APACHE-2.0)', rows: [
+    ['Basis Universal transcoder (the KTX2 texture transcoder, shipped with three r169) — Binomial LLC and the Basis Universal contributors (https://github.com/BinomialLLC/basis_universal)', ''],
     ['meshoptimizer decoder © 2016–2022 Arseny Kapoulkine (MIT)', ''],
     ['three-mesh-bvh © 2018 Garrett Johnson (MIT)', ''],
     ['three.js © 2010–2024 three.js authors (MIT)', ''],

@@ -24,7 +24,8 @@ import { loadManifest, ROOT } from './lib.mjs';
 
 const GROUPS = [
   { key: 'cc-by', head: 'Attribution required (CC BY)', test: (r) => /^CC-BY-/.test(r.licence) },
-  { key: 'code', head: 'Code (MIT)', test: (r) => r.licence === 'MIT' },
+  // Apache-2.0 (the Basis Universal transcoder) asks for its notice as MIT does: listed with the code (M1a ui fix 1)
+  { key: 'code', head: 'Code (MIT, Apache-2.0)', test: (r) => r.licence === 'MIT' || r.licence === 'Apache-2.0' },
   { key: 'ofl', head: 'Typefaces (SIL Open Font License 1.1)', test: (r) => r.licence === 'OFL-1.1' },
   { key: 'cc0', head: 'Thanks (CC0, no attribution required)', test: (r) => r.licence === 'CC0-1.0' },
 ];
