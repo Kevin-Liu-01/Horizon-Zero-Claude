@@ -53,6 +53,7 @@ const RESERVE_S = Number(flag('--reserve', 150));   // kept back from the budget
 const LABEL = flag('--label', 'systems-slice-hour');
 const KIT = !args.includes('--no-kit');   // M1.6j: the kit's verb rows on the frames page (kit-probe-page.mjs)
 const NO_RUN = args.includes('--no-run');  // the frames and rows only
+const RUN_ONLY = args.includes('--run-only');  // the run and its save rows only (no frames page)
 // --probe <served path> (round 2): a page module whose probe(frame) runs after each frame's shot (as film.mjs --probe),
 // so the reed rows (tools/gates/systems/reed-probe-page.mjs on F31 and F03) share this one Chrome session
 const PROBE = flag('--probe');
@@ -788,7 +789,9 @@ try {
   report.chrome = await browser.version();
 
   /* ---- A. the systems' frames, staged by the Frame Set's own page.mjs ---- */
-  {
+  // --run-only (M1b): no frames page at all (no frames, no staged rows, no kit): one game loaded in the session, not
+  // two, for a machine short of memory
+  if (!RUN_ONLY) {
     const set = loadFrameSet();
     const page = await browser.newPage();
     await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 1.25 });
