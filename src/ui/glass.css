@@ -104,7 +104,9 @@ body.cal-gs .mn-hub-scrim {
   -webkit-backdrop-filter: var(--gs-frost);
           backdrop-filter: var(--gs-frost);
 }
-body.cal-gs .mn-hub.delegated .mn-hub-scrim { opacity: 1; }
+/* a delegated page (satchel, Field Log, Field Books) lies UNDER the menus root (z 46 and 60 against 70): the scrim
+   steps aside so it is not blurred, and the page draws its own glass and frost in the body's place */
+body.cal-gs .mn-hub.delegated .mn-hub-scrim { opacity: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
 
 /* full-width glass: [ brand | tabs | status ] / [ page name | field data ] / page / foot */
 body.cal-gs .mn-hub-shell {
@@ -297,7 +299,8 @@ body.cal-gs.cal-hub-open #cal-prog .sk-panel {
   top: var(--mn-head-h); bottom: var(--mn-foot-h);
   padding: 18px 32px 14px;
   box-shadow: none;
-  background: none;
+  -webkit-backdrop-filter: var(--gs-frost);
+          backdrop-filter: var(--gs-frost);
 }
 body.cal-gs.cal-hub-open #cal-prog .pg-panel::after { display: none; }
 body.cal-gs #cal-prog .pg-head,
