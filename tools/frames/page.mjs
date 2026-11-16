@@ -742,7 +742,7 @@ export async function stageFrame(f, o = {}) {
       } else standIns.push('no Sighting in this build');
     } else {
       let tab = s;
-      if (s === 'character') { tab = 'inventory'; standIns.push('no Character page yet: the satchel is shown'); }
+      if (s === 'character' && !C.menus?.character) { tab = 'inventory'; standIns.push('no Character page yet: the satchel is shown'); }
       const ok = C.menus?.openHub ? C.menus.openHub(tab) : false;
       if (!ok) standIns.push(`screen ${s} did not open`);
       else undo.push(() => C.menus.closeHub(true));

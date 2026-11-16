@@ -18,10 +18,10 @@ const SIGHT = src('sighting.js');
 
 const quoted = (s) => [...s.matchAll(/'([^'\n]*)'/g)].map((m) => m[1]);
 
-test('hub: the tab words, in the bible order (CHARACTER waits for M1.6i)', () => {
+test('hub: the tab words, in the bible order', () => {
   const block = MENU.slice(MENU.indexOf('const TABS = ['), MENU.indexOf('];', MENU.indexOf('const TABS = [')));
   const labels = [...block.matchAll(/label: '([A-Z ]+)'/g)].map((m) => m[1]);
-  assert.deepEqual(labels, ['MAP', 'FIELD LOG', 'SATCHEL', 'MAKING', 'SKILLS', 'FIELD BOOKS', 'SETTINGS']);
+  assert.deepEqual(labels, ['MAP', 'FIELD LOG', 'SATCHEL', 'MAKING', 'CHARACTER', 'SKILLS', 'FIELD BOOKS', 'SETTINGS']);
 });
 
 test('death: THE LINE IS LOST and exactly two stations, RETURN TO THE LAST BRAZIER / QUIT TO TITLE', () => {

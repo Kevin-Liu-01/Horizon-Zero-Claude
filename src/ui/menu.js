@@ -37,6 +37,7 @@ import { Tips, fieldWord } from './tips.js';
 import { REST } from '../world/island/sites.js';
 import { TitleStage, buildTitle, fillStations, saveLine, fillTolerance, fillExtras, MENU_AT_S, TITLE_HOUR, TITLE_TEXT, underSheet } from './title.js';
 import { MakingLedger } from './making.js';
+import { CharacterPage } from './character.js';
 import './glass.css';
 import { fillSlots, fillManualCards, ContextCard, RESUME_FLAG } from './slots.js';
 
@@ -66,6 +67,8 @@ const TABS = [
     open: (ctx) => ctx.items?.openInventory?.('resources') },
   // M1.6d: the Making ledger is this lane's own page (src/ui/making.js), mounted in the hub body
   { id: 'crafting', key: 'KeyO', hint: 'O', label: 'MAKING' },
+  // M1.6i: the Character page is this lane's own page (src/ui/character.js): the worn set on a turntable, the rungs
+  { id: 'character', key: 'KeyP', hint: 'P', label: 'CHARACTER' },
   { id: 'skills', key: 'KeyK', hint: 'K', label: 'SKILLS',
     open: (ctx) => ctx.progression?.openSkills?.() },
   { id: 'notebook', key: 'KeyN', hint: 'N', label: 'FIELD BOOKS',
@@ -144,6 +147,7 @@ export class Menus {
     this.settingsPanel = new SettingsPanel(ctx, this.settings);
     this.beacon = new WaypointBeacon(ctx, this.map);
     this.making = new MakingLedger(ctx);
+    this.character = new CharacterPage(ctx);
     this.titleStageShot = new TitleStage(ctx);
 
     this.hubOpen = false;
@@ -347,15 +351,11 @@ export class Menus {
   /**
    * No field turn speaks on the title (M1.6h fix round 1: at 273e302 a QUIT TO TITLE 6 s into play put Brea's
    * "The house kite's up already." under the wordmark). The quest only turns while playing; what it queued before
-   * the title is dropped here, and title.css hides the subtitle line while `body.cal-t2` stands. The presenter is
-   * the systems lane's (src/game/present.js): its queue is read through optional fields, nothing is added to it.
+   * the title is dropped here through the presenter's own `clearSubtitles()` (src/game/present.js, the systems
+   * lane's), and title.css hides the subtitle line while `body.cal-t2` stands.
    */
   _muteFieldLines() {
-    const P = this.ctx.systemsGame?.present;
-    if (!P || P.headless) return;
-    if (Array.isArray(P._subQ)) P._subQ.length = 0;
-    if (typeof P._subT === 'number') P._subT = 0;
-    P.subt?.classList?.remove('on');
+    this.ctx.systemsGame?.present?.clearSubtitles?.();
   }
 
   /** Any key (or click) on the title starts the dolly and reveals the stations. */
@@ -542,6 +542,7 @@ export class Menus {
       if (id === 'map') this.map.mount(this.hubBody);
       else if (id === 'settings') this.settingsPanel.mount(this.hubBody);
       else if (id === 'crafting') this.making.mount(this.hubBody);
+      else if (id === 'character') this.character.mount(this.hubBody);
     }
     this._paintStatus();
     this._emit('ui-nav', { tab: id });
@@ -559,6 +560,7 @@ export class Menus {
     if (this.settingsPanel.root?.parentNode === this.hubBody) this.settingsPanel.dispose();
     if (this.map.root?.parentNode === this.hubBody) this.map.unmount();
     if (this.making.root?.parentNode === this.hubBody) this.making.unmount();
+    if (this.character.root?.parentNode === this.hubBody) this.character.unmount();
     this.hubBody.innerHTML = '';
   }
 
@@ -966,7 +968,7 @@ export class Menus {
       }
       // M opens the hub straight onto the map from play; the other keys belong
       // to their own lanes while the hub is closed.
-      if ((tab.id === 'map' || tab.id === 'crafting') && ctx.state === 'playing') {
+      if ((tab.id === 'map' || tab.id === 'crafting' || tab.id === 'character') && ctx.state === 'playing') {
         this.openHub(tab.id);
         this._consume(e);
       }
@@ -1075,6 +1077,10 @@ export class Menus {
       this._dolly(dt);
     }
 
+    // the Character page's stage lens: the last camera write of the frame when the systems tick (a ?shot film);
+    // under a plain pause no system ticks, and _present() writes it
+    if (this.hubOpen && this.tab === 'character') this.character.lens.apply();
+
     if (state === 'playing') {
       this.map.track(dt);
       if (this._lastState !== 'playing') this._paintStatus();
@@ -1122,6 +1128,7 @@ export class Menus {
     this.beacon.update(now);
 
     if (this.hubOpen && this.tab === 'map' && this.map.canvas && !this.map.bake.ready) this.map.draw();
+    if (this.hubOpen && this.tab === 'character') this.character.tick(dtReal);
     if (this.hubOpen && (now - (this._statusT || 0)) > 700) {
       this._statusT = now;
       this._paintStatus();
@@ -1199,6 +1206,7 @@ export class Menus {
       contextLost: this.contextCard?.audit?.() ?? null,
       slots: this.modal === 'slots' ? this._slots?.audit?.() ?? null : null,
       map: this.map.audit(),
+      character: this.character.audit(),
       beacon: this.beacon.audit(),
       settings: this.settings.audit(),
       tips: this.tips.audit(),
@@ -1215,6 +1223,7 @@ export class Menus {
     this.beacon.dispose();
     this.contextCard?.dispose();
     this.map.dispose();
+    this.character.dispose();
     this.root?.remove();
     document.body.classList.remove('cal-menus', 'cal-gs', 'cal-hub-open', 'cal-dead', 'cal-title-live', 'cal-t2');
     if (this.ctx.menus === this) this.ctx.menus = null;

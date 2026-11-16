@@ -6,6 +6,7 @@
  *
  *   p.scene(scene, speakers, { next }) -> Promise<{ exit }>   plays cards; stations as numbered choices
  *   p.subtitle(lines, speaker)                                 one field turn, queued, 2.6 s + 1.1 s a line
+ *   p.clearSubtitles()                                         drop the queue and take the turn showing down (the title)
  *   p.brazier({ title, rows, line }) -> Promise<row id | null> the rest dialog (rows: [{ id, label, forecast }])
  *   p.busy                                                     a scene or the Brazier dialog is open
  *   p.card / p.sub                                             the card up now { who, text, cast } / Brea's turn { name, text }
@@ -161,6 +162,14 @@ export class Presenter {
     if (this.headless) return;
     this._subQ.push({ lines, speaker });
     if (this._subT <= 0) this._nextSub();
+  }
+
+  /** Drop every queued field turn and take the one showing down (the title calls it: no field turn speaks there). */
+  clearSubtitles() {
+    this._subQ.length = 0;
+    this._subT = 0;
+    this.sub = null;
+    if (!this.headless) this.subt.classList.remove('on');
   }
 
   _nextSub() {

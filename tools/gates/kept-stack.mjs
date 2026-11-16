@@ -1133,11 +1133,12 @@ export const RESTATED = [
   },
   {
     id: 'A70-hub-tabs',
-    why: 'no skill screen exists and the bible has no skill tree; the K tab must not bounce the hub to another tab or throw',
+    why: 'no skill screen exists and the bible has no skill tree; the K tab must not bounce the hub to another tab or throw. M1b (M1.6i): BIBLE 18 hub has eight tabs, CHARACTER the fifth; the count clause reads 8, every keyed clause is unchanged',
     patches: [
       ['const out = { tabs: [] };', A70_WATCH],
       [A70_KEY_OLD, A70_KEY_NEW],
       [A70_OK_OLD, A70_OK_NEW],
+      ['&& out.open.tabsVisible === true && out.open.count === 7', '&& out.open.tabsVisible === true && out.open.count === 8'],
     ],
   },
   {

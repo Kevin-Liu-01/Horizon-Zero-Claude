@@ -1,0 +1,150 @@
+/* ===========================================================================
+   THE CHARACTER PAGE (M1.6i; BIBLE §8.4, §18 "Character"). The hub's glass steps aside on this tab: the head,
+   the page line and the foot keep their glass, and the page draws three glass surfaces of its own (the rung's
+   detail, the customization, the row of eight rung cards) around a clear stage where Brea stands in the frozen
+   world, turning. Dark violet glass #1E1A28 at 0.90 with the world frosted through it, right angles, 6 px
+   registration ticks, the lilac 1 px selection line over Orchil Deep; Chakra Petch for labels, IBM Plex Mono for
+   numerals and plain words. A locked rung is one black silhouette.
+   =========================================================================== */
+
+/* the hub on this tab: no full-screen frost, no full-width fill; the bands keep theirs */
+body.cal-gs .mn-hub[data-tab='character'] .mn-hub-scrim { opacity: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
+body.cal-gs .mn-hub[data-tab='character'] .mn-hub-shell { background: none; }
+body.cal-gs .mn-hub[data-tab='character'] .mn-hub-head,
+body.cal-gs .mn-hub[data-tab='character'] .mn-hub-sub,
+body.cal-gs .mn-hub[data-tab='character'] .mn-hub-foot {
+  background-color: var(--gs-fill); background-image: var(--cal-glass-grain);
+  -webkit-backdrop-filter: var(--gs-frost); backdrop-filter: var(--gs-frost);
+}
+body.cal-gs .mn-hub[data-tab='character'] .mn-hub-body { padding: 14px 32px 14px; }
+body.cal-gs .mn-hub[data-tab='character'] .mn-hub-body::after { display: none; }
+
+.ch {
+  position: relative;
+  display: grid; height: 100%;
+  grid-template-columns: 330px minmax(0, 1fr) 290px;
+  grid-template-rows: minmax(0, 1fr) 222px;
+  grid-template-areas: 'left stage right' 'cards cards cards';
+  gap: 14px;
+  color: var(--cal-glass-text);
+  font-family: var(--cal-font-ui);
+}
+
+/* one glass surface */
+.ch-col, .ch-card {
+  position: relative;
+  background-color: rgba(var(--cal-glass-rgb), var(--cal-glass-a-menu));
+  background-image: var(--cal-glass-grain), var(--cal-glass-grad);
+  -webkit-backdrop-filter: blur(14px) saturate(0.9);
+          backdrop-filter: blur(14px) saturate(0.9);
+  box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--cal-glass-line);
+}
+.ch-col::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  --t: var(--cal-glass-tick);
+  background:
+    linear-gradient(var(--t), var(--t)) left top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right top / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) left bottom / 1px 6px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 6px 1px no-repeat,
+    linear-gradient(var(--t), var(--t)) right bottom / 1px 6px no-repeat;
+}
+
+/* ---- left: the header, the selected rung, WEAR ---- */
+.ch-left { grid-area: left; display: flex; flex-direction: column; padding: 18px 20px 18px; min-height: 0; }
+.ch-head {
+  font-family: var(--cal-font-display); font-weight: 600;
+  font-size: 19px; letter-spacing: 0.16em; line-height: 1.25;
+  padding-bottom: 12px; border-bottom: 1px solid var(--cal-glass-line);
+}
+.ch-detail { flex: 1; padding-top: 14px; min-height: 0; }
+.ch-tier { display: flex; align-items: baseline; gap: 12px; }
+.ch-tier span { font-family: var(--cal-font-mono); font-size: 12px; letter-spacing: 0.06em; color: var(--cal-glass-text-2); }
+.ch-tier b { font-weight: 600; font-size: 13px; letter-spacing: 0.24em; }
+.ch-name { margin-top: 8px; font-family: var(--cal-font-display); font-weight: 600; font-size: 26px; letter-spacing: 0.06em; line-height: 1.1; }
+.ch-tagline { margin-top: 6px; font-family: var(--cal-font-mono); font-size: 13px; color: var(--cal-glass-text-2); }
+.ch-perk { margin-top: 18px; padding: 10px 0 0; border-top: 1px solid var(--cal-glass-line); }
+.ch-perk span { display: block; font-weight: 600; font-size: 11px; letter-spacing: 0.24em; color: var(--cal-glass-text-2); }
+.ch-perk b { display: block; margin-top: 4px; font-weight: 600; font-size: 15px; letter-spacing: 0.18em; }
+.ch-perk p { margin: 6px 0 0; font-family: var(--cal-font-mono); font-size: 12.5px; line-height: 1.5; color: var(--cal-glass-text); }
+.ch-swatches { display: flex; align-items: center; gap: 4px; }
+.ch-swatches i { display: block; width: 12px; height: 12px; box-shadow: inset 0 0 0 1px rgba(241, 238, 230, 0.28); }
+.ch-swatches.big { margin-top: 16px; gap: 6px; }
+.ch-swatches.big i { width: 22px; height: 22px; }
+.ch-swatches .ch-k { margin-right: 8px; font-weight: 600; font-size: 11px; letter-spacing: 0.24em; color: var(--cal-glass-text-2); }
+.ch-acts { padding-top: 12px; border-top: 1px solid var(--cal-glass-line); }
+.ch-wear {
+  display: block; width: 100%; padding: 11px 12px 10px;
+  background: var(--cal-select-fill); border: 1px solid var(--cal-select-line);
+  color: var(--cal-glass-text);
+  font-family: var(--cal-font-ui); font-weight: 600; font-size: 16px; letter-spacing: 0.3em; cursor: pointer;
+}
+.ch-wear:hover { background: rgba(90, 46, 102, 0.85); }
+.ch-wear.off { background: transparent; border-color: rgba(241, 238, 230, 0.22); color: rgba(241, 238, 230, 0.36); cursor: default; }
+.ch-why { min-height: 18px; margin-top: 8px; font-family: var(--cal-font-mono); font-size: 12px; color: var(--cal-glass-text-2); }
+/* WORN carries a shape as well as its word: the filled square of the worn card */
+.ch-why.worn { color: var(--cal-glass-text); letter-spacing: 0.2em; font-family: var(--cal-font-ui); font-weight: 600; }
+.ch-why.worn::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 8px; background: var(--cal-select-line); vertical-align: 1px; }
+
+/* ---- the stage: clear, with a ruled floor line; the world's edges fall off toward the glass ---- */
+.ch-stage {
+  grid-area: stage; position: relative; min-height: 0;
+  cursor: grab; touch-action: none;
+  background: radial-gradient(ellipse 62% 74% at 50% 52%, rgba(14, 11, 20, 0) 58%, rgba(14, 11, 20, 0.42) 100%);
+  box-shadow: inset 0 0 0 1px rgba(241, 238, 230, 0.10);
+}
+.ch-stage:active { cursor: grabbing; }
+.ch-stage::before, .ch-stage::after {
+  content: ''; position: absolute; left: 50%; width: 1px; background: rgba(241, 238, 230, 0.22); pointer-events: none;
+}
+.ch-stage::before { top: 0; height: 10px; }
+.ch-stage::after { bottom: 0; height: 10px; }
+.ch-stage-hint {
+  position: absolute; right: 12px; bottom: 10px;
+  font-weight: 600; font-size: 10px; letter-spacing: 0.24em; color: rgba(241, 238, 230, 0.55);
+  text-shadow: var(--cal-engrave-s);
+  pointer-events: none;
+}
+
+/* ---- right: customization ---- */
+.ch-right { grid-area: right; padding: 18px 20px; min-height: 0; }
+.ch-sub { font-weight: 600; font-size: 12px; letter-spacing: 0.24em; padding-bottom: 10px; border-bottom: 1px solid var(--cal-glass-line); }
+.ch-crow { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 0 9px; border-bottom: 1px solid rgba(241, 238, 230, 0.08); }
+.ch-crow span { font-weight: 600; font-size: 11px; letter-spacing: 0.2em; color: var(--cal-glass-text-2); align-self: center; }
+.ch-crow b { font-family: var(--cal-font-mono); font-weight: 500; font-size: 12px; display: flex; align-items: center; gap: 8px; }
+.ch-crow b i { display: block; width: 12px; height: 12px; box-shadow: inset 0 0 0 1px rgba(241, 238, 230, 0.3); }
+.ch-crow em { grid-column: 1 / -1; font-style: normal; font-family: var(--cal-font-mono); font-size: 11px; color: var(--cal-glass-text-2); }
+/* locked by the bible, not by the player: a small padlock shape beside the word */
+.ch-crow.locked span::after {
+  content: ''; display: inline-block; width: 7px; height: 6px; margin-left: 8px; vertical-align: 0;
+  border: 1px solid rgba(241, 238, 230, 0.6); border-top-width: 3px;
+}
+.ch-crow.none b { color: rgba(241, 238, 230, 0.36); }
+.ch-note { margin: 12px 0 0; font-family: var(--cal-font-mono); font-size: 12px; line-height: 1.5; color: var(--cal-glass-text-2); }
+
+/* ---- the eight rung cards ---- */
+.ch-cards { grid-area: cards; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px; min-height: 0; }
+.ch-card {
+  display: flex; flex-direction: column; align-items: stretch;
+  padding: 9px 10px 10px; border: 0; text-align: left; cursor: pointer;
+  color: var(--cal-glass-text); font-family: var(--cal-font-ui);
+  min-width: 0;
+}
+.ch-card:hover { background-color: rgba(var(--cal-glass-rgb), 0.94); box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px rgba(241, 238, 230, 0.34); }
+.ch-card.on { box-shadow: inset 0 0 0 1px var(--cal-select-line), inset 0 -2px 0 var(--cal-select-line); }
+.ch-card.worn { background-color: rgba(90, 46, 102, 0.52); }
+.ch-card-top { display: flex; align-items: baseline; gap: 8px; }
+.ch-n { font-family: var(--cal-font-mono); font-size: 11px; color: var(--cal-glass-text-2); }
+.ch-t { font-weight: 600; font-size: 12px; letter-spacing: 0.18em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-mark { margin-left: auto; width: 7px; height: 7px; background: var(--cal-select-line); align-self: center; }
+.ch-card-fig { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; padding: 4px 0; }
+.ch-fig { height: 112px; width: auto; display: block; }
+.ch-card.locked .ch-card-fig { background: linear-gradient(180deg, rgba(241, 238, 230, 0.05), rgba(241, 238, 230, 0.02)); }
+.ch-card.locked .ch-t { color: var(--cal-glass-text-2); }
+.ch-card-name { font-weight: 600; font-size: 12.5px; letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch-card.locked .ch-card-name { font-size: 11px; letter-spacing: 0.24em; color: rgba(241, 238, 230, 0.5); }
+.ch-card-tag { margin-top: 2px; font-family: var(--cal-font-mono); font-size: 10.5px; color: var(--cal-glass-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch-card .ch-swatches { margin-top: 6px; }

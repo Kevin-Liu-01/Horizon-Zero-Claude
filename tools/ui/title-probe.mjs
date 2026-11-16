@@ -9,7 +9,9 @@
  *   B. QUIT TO TITLE -> press -> NEW GAME -> BEGIN, 6 s of play (shots: the press beat, the stations, the Tolerance card)
  *   C. SAVE, QUIT TO TITLE -> press -> CONTINUE, 6 s of play
  * then the Making ledger (shot and audit: the turntable rendered, the material pictures) and quick-make (hold 1 for
- * 1.3 s; hold again and take a 1 HP hit at 0.6 s). With --variants and VARIANTS='[{frame:{...}}, ...]' it re-solves
+ * 1.3 s; hold again and take a 1 HP hit at 0.6 s), then the Character page (M1.6i: P from play; rung 2 before it is
+ * hers, then staged as the quest's reward; WEAR to rung 2, to rung 1 and to rung 2 again, each with its frames;
+ * Escape hands the lens and her heading back). With --variants and VARIANTS='[{frame:{...}}, ...]' it re-solves
  * the title shot for each and shoots the rest frame and the press frame (tuning; not a measurement).
  *
  * Frame time is the rAF interval (vsync-locked in headless Chrome: a stall shows, GPU cost does not; see
@@ -211,6 +213,51 @@ try {
   res.qm2 = await read();
   res.qmAudit = await C(() => ({ made: window.__CTX__.quickslots?.make?.made, interrupted: window.__CTX__.quickslots?.make?.interrupted }));
   log('quick-make', JSON.stringify([res.qm0, res.qm1, res.qm2, res.qmAudit]));
+
+  // M1.6i the Character page: P from play; the header, the eight cards, the locked silhouettes; WEAR swaps rung 1 and 2
+  await sleep(600);
+  const lensRead = () => C(() => { const c = window.__CTX__.camera, p = window.__CTX__.player;
+    return { cam: [c.position.x, c.position.y, c.position.z].map((v) => +v.toFixed(3)), fov: +c.fov.toFixed(2), heading: +(p.heading ?? 0).toFixed(4), rotY: +p.model.rotation.y.toFixed(4) }; });
+  const ch = res.character = { before: await lensRead() };
+  await C(() => { window.__ft.length = 0; });
+  await page.keyboard.press('KeyP');
+  await sleep(1600);
+  await shot('07-character');
+  ch.open = await C(() => { const M = window.__CTX__.menus; return { hub: M.hubOpen, tab: M.tab, state: window.__CTX__.state, tabs: M.audit().tabs, page: M.character.audit() }; });
+  // rung 2 before it is hers: WEAR stays off
+  ch.notOwned = await C(async () => { const M = window.__CTX__.menus;
+    document.querySelector('.ch-card[data-rung="scout"]')?.click(); await new Promise((r) => setTimeout(r, 200));
+    const b = document.querySelector('button.ch-wear'); const on = !!b && !b.disabled; b?.click(); await new Promise((r) => setTimeout(r, 600));
+    return { wearOn: on, why: document.querySelector('.ch-why')?.textContent ?? '', armorId: M.character.audit().armorId }; });
+  // staged: the quest's reward (systems publish rung 'scout' and 'rung-granted' when Raker's Morning pays)
+  await C(() => { const G = window.__CTX__.systemsGame; if (G) G.rung = 'scout'; window.__CTX__.events.emit('rung-granted', { rung: 'scout' }); });
+  const wearSwap = async (rung) => {
+    const t = await C(() => performance.now());
+    await C((r) => { document.querySelector(`.ch-card[data-rung="${r}"]`)?.click(); }, rung);
+    await sleep(250);
+    const pressed = await C(() => { const b = document.querySelector('button.ch-wear'); const on = !!b && !b.disabled; b?.click(); return on; });
+    await page.waitForFunction((r) => window.__CTX__.menus.character.audit().worn === r && !window.__CTX__.menus.character.busy, { timeout: 20000, polling: 50 }, rung).catch(() => {});
+    await sleep(1500);
+    return C(([r, t0, wasOn]) => { const a = window.__CTX__.menus.character.audit(); const L = window.__CTX__.player.hero.loadout;
+      const fr = window.__ft.filter(([tt]) => tt > t0);
+      return { rung: r, wearOn: wasOn, worn: a.worn, armorId: a.armorId, perk: L?.perk ?? null, row: window.__CTX__.player.hero.outfit?.row ?? null,
+        log: a.log.slice(-1)[0] ?? null, frames: fr.length, over50: fr.filter(([, d]) => d > 50).length, max: fr.reduce((m, f) => Math.max(m, f[1]), 0),
+        cards: a.cards.map((c) => `${c.rung}:${c.state}`) }; }, [rung, t, pressed]);
+  };
+  ch.toRung2 = await wearSwap('scout');
+  await shot('08-character-rung2');
+  ch.toRung1 = await wearSwap('starter');
+  await shot('09-character-rung1');
+  ch.toRung2again = await wearSwap('scout');
+  ch.page = await C(() => window.__CTX__.menus.character.audit());
+  await page.keyboard.press('Escape');
+  await sleep(800);
+  ch.after = await lensRead();
+  ch.closed = await C(() => ({ hub: window.__CTX__.menus.hubOpen, state: window.__CTX__.state }));
+  // put her back in rung 1 for the rest of the session
+  await C(() => window.__CTX__.player.hero.loadout.equipArmor('pan-1'));
+  log('character', JSON.stringify({ open: { tab: ch.open.tab, locked: ch.open.page.locked, silhouettes: ch.open.page.silhouettes, head: ch.open.page.head },
+    notOwned: ch.notOwned, toRung2: ch.toRung2, toRung1: ch.toRung1 }));
   res.chromeS = (Date.now() - t0) / 1000;
 } catch (e) {
   res.error = String(e?.stack || e).slice(0, 800);

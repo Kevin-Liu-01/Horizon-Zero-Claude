@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "about": "The Character page's words (BIBLE 8.4, 18 'Character'). Plain data, read by src/ui/character.js. The page's one verb is the bible's: WEAR. The rungs follow BIBLE 8.4's table in order: tier label and tagline, in-world name, verb perk. A locked rung shows only its number, its tier label and a black silhouette. No level, no experience, no points and no purchase anywhere on this page.",
+  "tab": "CHARACTER",
+  "head": "BREA · SALT-PAN RECKONER",
+  "worn": "WORN",
+  "wear": "WEAR",
+  "locked": "LOCKED",
+  "rung": "RUNG {n}",
+  "perk": "PERK",
+  "colours": "COLOURS",
+  "turn": "DRAG TO TURN",
+  "fitting": "FITTING …",
+  "notOwned": "Not hers yet: {how}",
+  "custom": {
+    "head": "CUSTOMIZATION",
+    "wrap": "WRAP",
+    "wrapValue": "ORCHIL VIOLET",
+    "wrapLocked": "the wrap's violet is hers on every rung",
+    "rows": ["WRAP STYLE", "HALF-CAPE", "TRIM", "COLOUR SCHEME"],
+    "none": "No variants are cut for this rung yet."
+  },
+  "rungs": [
+    { "id": "starter",   "n": 1, "tier": "STARTER",   "tagline": "Trusted gear for the long road.", "name": "Raker's Whites",
+      "perk": "BRINE-WADE", "does": "Wading brine adds no Brine build-up and no wet-step noise.", "how": "she starts in it.",
+      "swatches": ["#6B3F73", "#D9CFBA", "#6E4A2F", "#3B3A36"] },
+    { "id": "scout",     "n": 2, "tier": "SCOUT",     "tagline": "See farther.", "name": "Guild Whites",
+      "perk": "SHRUG", "does": "A Plumb's Flag on her lasts 3 s, not 8.", "how": "Ansel gives it for Raker's Morning.",
+      "swatches": ["#6B3F73", "#E6DCC4", "#7A5634", "#4A3F45", "#C9B27A"] },
+    { "id": "reckoner",  "n": 3, "tier": "RECKONER",  "tagline": "Track deeper.", "name": "Brine-Cured" },
+    { "id": "veil",      "n": 4, "tier": "VEIL",      "tagline": "Move unseen.", "name": "Pit Wraps" },
+    { "id": "pioneer",   "n": 5, "tier": "PIONEER",   "tagline": "Build forward.", "name": "Lattice Quilt" },
+    { "id": "vanguard",  "n": 6, "tier": "VANGUARD",  "tagline": "Hold the line.", "name": "Celadon Lamellar" },
+    { "id": "arcane",    "n": 7, "tier": "ARCANE",    "tagline": "Read the old marks.", "name": "Oxblood Lamellar" },
+    { "id": "celestial", "n": 8, "tier": "CELESTIAL", "tagline": "Fix by the stars.", "name": "the Datum Plate" }
+  ]
+}
