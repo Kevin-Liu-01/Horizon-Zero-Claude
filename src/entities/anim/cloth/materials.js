@@ -29,8 +29,15 @@ export const MATERIALS = {
     // (step 2, WEIGHT: kd 6 (was 4), friction 0.3 (was 0.5: a lined panel slides off a rising thigh instead of riding it
     //  up), and the KICK limit `vRel` 0.8 m/s: a knee that shoves the panel moves it but cannot fling it; at a sprint the
     //  front hems' flutter fell from 0.13-0.19 m RMS to 0.06-0.09 and their forward chord from 29-31 deg to 12-20)
-    areal: 0.90, hem: 1.6, shear: 5e-3, bendAlong: 0.25, bendAcross: 0.12, kd: 6.0, mu: 0.30, cd: 1.0, cl: 0.25, slack: 1.03,
-    share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0.65, vRel: 0.8,
+    // (round 2, the KNEES: friction 0.05 (was 0.3; the lining slides on the trousers, so a rising thigh lifts a panel
+    //  without dragging it up and forward with it), kick limit 0.3 m/s (was 0.8) outward and `vBack` 0.6 m/s on the way
+    //  back to its bind place, kd 8 (was 6). Bench, six starts each, front hems more than 0.05 m ahead of the knee plane
+    //  at a sprint: 1.5 / 12.1 % of frames -> 0 / 0 %, sprint flutter L 0.11 -> 0.05 m, R 0.058 -> 0.026 m; at a run
+    //  still 20-27 / 11 %, the round-2 result has the numbers at its commit)
+    areal: 0.90, hem: 1.6, shear: 5e-3, bendAlong: 0.25, bendAcross: 0.12, kd: 8.0, mu: 0.05, cd: 1.0, cl: 0.25, slack: 1.03,
+    // (round 2, the TURN: yaw share 0.3 (was 0.6): a 180 deg turn on the spot in 0.5 s, the hems lagged 49 / 28 / 29 deg,
+    //  band 8-25; here 16.7 / 13.3 / 17.4)
+    share: { lin: 0.35, vert: 0.8, yaw: 0.3 }, vFedMax: 1.2, air: 0.65, vRel: 0.3, vBack: 0.6,
   },
   felt: {
     areal: 0.80, hem: 1.2, shear: 2e-3, bendAlong: 0.07, bendAcross: 0.05, kd: 5.0, mu: 0.60, cd: 0.6, cl: 0.15, slack: 1.02,

@@ -27,6 +27,8 @@ import { at, collideCapsule, collideGround, pushOut } from './colliders.js';
 import { aeroForces } from './aero.js';
 
 const G = 9.81;
+/** The most root vertical acceleration (m/s2) the carried share's gravity takes in one frame (a landing from 1.2 m: 290). */
+const AY_MAX = 400;
 /** Constraint, attachment and collider passes a substep (step 2: the colliders in every pass; with them only in the last,
  *  the last distance pass undid a thigh's push and the cloth stretched 1.4-1.5 x at a run). */
 const ITERS = 2;
@@ -38,7 +40,7 @@ export function makeRoot(name) {
     name, p: new Float64Array(3), q: new Float64Array(4), s: 1, pp: new Float64Array(3), pq: new Float64Array(4), ps: 1,
     // this substep's interpolated frame
     ip: new Float64Array(3), iq: new Float64Array(4),
-    vFed: new Float64Array(3), vPrev: new Float64Array(3), acc: 0, primed: false, jumped: false, yawD: 0,
+    vFed: new Float64Array(3), vPrev: new Float64Array(3), acc: 0, ay: 0, primed: false, jumped: false, yawD: 0,
     _fedFrame: -1, bone: null,
   };
 }
@@ -174,12 +176,14 @@ export class ClothSystem {
     if (r.primed) { r.pp.set(r.p); r.pq.set(r.q); r.ps = r.s; }
     r.p[0] = px; r.p[1] = py; r.p[2] = pz; r.q[0] = q[0]; r.q[1] = q[1]; r.q[2] = q[2]; r.q[3] = q[3]; r.s = s;
     r.jumped = false;
-    if (!r.primed) { r.pp.set(r.p); r.pq.set(r.q); r.ps = s; r.primed = true; r.vFed.fill(0); r.vPrev.fill(0); return; }
+    if (!r.primed) { r.pp.set(r.p); r.pq.set(r.q); r.ps = s; r.primed = true; r.vFed.fill(0); r.vPrev.fill(0); r.ay = 0; return; }
     const dx = r.p[0] - r.pp[0], dy = r.p[1] - r.pp[1], dz = r.p[2] - r.pp[2];
-    if (dx * dx + dy * dy + dz * dz > RESEAT_D * RESEAT_D) { r.jumped = true; r.vFed.fill(0); r.vPrev.fill(0); return; }
+    if (dx * dx + dy * dy + dz * dz > RESEAT_D * RESEAT_D) { r.jumped = true; r.vFed.fill(0); r.vPrev.fill(0); r.ay = 0; return; }
     const k = dt > 0 ? 1 / dt : 0;
     const vx = dx * k, vy = dy * k, vz = dz * k;
     r.acc = r.acc * 0.8 + 0.2 * Math.sqrt((vx - r.vPrev[0]) ** 2 + (vy - r.vPrev[1]) ** 2 + (vz - r.vPrev[2]) ** 2) * k;
+    // (the root's vertical acceleration this frame, for the carried share's gravity: clamped, a guard against a re-seat)
+    { let a = (vy - r.vPrev[1]) * k; a = a > AY_MAX ? AY_MAX : a < -AY_MAX ? -AY_MAX : a; r.ay = a; }
     r.vPrev[0] = vx; r.vPrev[1] = vy; r.vPrev[2] = vz;
   }
 
@@ -280,6 +284,11 @@ export class ClothSystem {
     // (her own travel as air: v holds the lag part of it already; `mat.air` more of the fed root velocity is met as wind)
     aeroForces(p, this.wind.x - mat.air * r.vFed[0], this.wind.z - mat.air * r.vFed[2], t);
     const damp = Math.exp(-mat.kd * h);
+    // (round 2, the FALL: the carried share of her vertical travel moves the particles by position, so its acceleration
+    //  never reached them, but gravity did in full: in a fall the cloth sank relative to her at (1 - vert) g / kd, the
+    //  opposite of cloth in a fall. The particles' own gravity takes the carried share of her vertical acceleration:
+    //  in free fall they keep with her, on landing they carry their whole fall's momentum on into the overshoot)
+    const gEff = G + (1 - sh.vert) * r.ay;
     const C = this.colliders, mask = p.mask, offC = p.offC;
     // the piece's colliders this frame (by the cull: the collider's swept sphere against the piece's bound)
     let bx0 = 9e9, bx1 = -9e9, by0 = 9e9, by1 = -9e9, bz0 = 9e9, bz1 = -9e9;
@@ -334,7 +343,7 @@ export class ClothSystem {
         x[q] += cx; x[q + 1] += cy; x[q + 2] += cz;
         // ---- predict
         const im = w[i];
-        let vx = v[q] + h * p.f[q] * im, vy = v[q + 1] + h * (p.f[q + 1] * im - G), vz = v[q + 2] + h * p.f[q + 2] * im;
+        let vx = v[q] + h * p.f[q] * im, vy = v[q + 1] + h * (p.f[q + 1] * im - gEff), vz = v[q + 2] + h * p.f[q + 2] * im;
         vx = rfx + (vx - rfx) * damp; vy = rfy + (vy - rfy) * damp; vz = rfz + (vz - rfz) * damp;
         v[q] = vx; v[q + 1] = vy; v[q + 2] = vz;
         xp[q] = x[q]; xp[q + 1] = x[q + 1]; xp[q + 2] = x[q + 2];
@@ -399,7 +408,10 @@ export class ClothSystem {
       //      panel's hem folded round the shin in a crouch). Each structural edge against its ends' inner surfaces: where
       //      the edge's closest point to the axis is inside `ri + hard / 2`, both ends go out along that normal, by their
       //      share of the deficit; the particle pass after it still has the last word on every particle
-      if (hardNow && it === IT - 1 && p.edges) this._edges(p, C, pl, pc, KMAX);
+      // (round 2: every substep, not the frame's last only: pushed on the last substep alone, an edge from the belt row over
+      //  a crouched thigh threw its free end out by up to 1 / 0.15 x the deficit each frame and the substeps between let it
+      //  back: the row buzzed at the kick limit for good, 0.3 m/s with her held still in a crouch, and never slept)
+      if (it === IT - 1 && p.edges) this._edges(p, C, pl, pc, KMAX);
       // ---- colliders (every pass: the constraints and the body agree before the velocity is read): the ground first, then the body (the body wins), a pinched particle stops
       if (it === IT - 1 || this.collideEvery) for (let i = 0; i < N; i++) {
         if (w[i] === 0) continue;
@@ -437,7 +449,7 @@ export class ClothSystem {
       }
       }
       // ---- velocity
-      const ih = 1 / h, vRel = mat.vRel || 0;
+      const ih = 1 / h, vRel = mat.vRel || 0, vBack = mat.vBack || vRel, q0 = p.q0;
       for (let i = 0; i < N; i++) {
         const q = i * 3;
         if (p.pinch[i]) { v[q] = rfx; v[q + 1] = 0; v[q + 2] = rfz; continue; }
@@ -448,7 +460,17 @@ export class ClothSystem {
         // knee that shoves a panel moves it (the position is the collider's) without flinging it on past the leg
         if (vRel > 0) {
           const ex = vx - rfx, ey = vy - rfy, ez = vz - rfz, e2 = ex * ex + ey * ey + ez * ez;
-          if (e2 > vRel * vRel) { const f = vRel / Math.sqrt(e2); vx = rfx + ex * f; vy = rfy + ey * f; vz = rfz + ez * f; }
+          if (e2 > vRel * vRel) {
+            // (round 2: a particle on its way BACK toward its bind place on the root is held to `vBack`, not vRel: a panel a
+            //  knee carried forward falls back as fast as gravity and the air take it; at a run the front-left hem hung
+            //  0.15-0.2 m ahead of a knee that had already gone back, returning at the kick limit)
+            let lim = vRel;
+            if (vBack !== vRel) {
+              qrot(r.iq, q0[q] * rs, q0[q + 1] * rs, q0[q + 2] * rs, _n, 0);
+              if ((x[q] - r.ip[0] - _n[0]) * ex + (x[q + 1] - r.ip[1] - _n[1]) * ey + (x[q + 2] - r.ip[2] - _n[2]) * ez < 0) lim = vBack;
+            }
+            if (e2 > lim * lim) { const f = lim / Math.sqrt(e2); vx = rfx + ex * f; vy = rfy + ey * f; vz = rfz + ez * f; }
+          }
         }
         v[q] = vx; v[q + 1] = vy; v[q + 2] = vz;
       }
@@ -501,7 +523,7 @@ export class ClothSystem {
   reset(t = 0) {
     const wx = this.wind.x, wz = this.wind.z;
     this.wind.x = 0; this.wind.z = 0;
-    for (const r of this.roots) { r.pp.set(r.p); r.pq.set(r.q); r.ps = r.s; r.vFed.fill(0); r.vPrev.fill(0); r.acc = 0; r.jumped = false; }
+    for (const r of this.roots) { r.pp.set(r.p); r.pq.set(r.q); r.ps = r.s; r.vFed.fill(0); r.vPrev.fill(0); r.acc = 0; r.ay = 0; r.jumped = false; }
     for (const C of this.colliders) { C.pa.set(C.a); C.pb.set(C.b); C.va.fill(0); C.vb.fill(0); C.mv = 0; C.stamp++; }
     for (const p of this.pieces) { this._seat(p); p.contact.fill(0); p.pinch.fill(0); p.asleep = false; p.stillT = 0; }
     const per = 4, frames = Math.ceil(RESET_SUBSTEPS / per);

@@ -172,11 +172,14 @@ function maxSpeed(R) {
 const out = { mode: MODE, rows: {} };
 // (tuning: --mat '{"lined":{"kd":6}}' merges into the materials before the rig is built; --solver '{"iters":3}' into the
 //  system after it is)
-if (flag('--mat')) { const { MATERIALS } = await import('../../../src/entities/anim/cloth/materials.js'); for (const [k, v] of Object.entries(JSON.parse(flag('--mat')))) { const sh = v.share; Object.assign(MATERIALS[k], v); if (sh) MATERIALS[k].share = { ...MATERIALS[k].share, ...sh }; } }
-const R = await makeBench();
-
-const PR = clothProbe(R);
-R.an.setWind(45 * Math.PI / 180, 5.5);
+if (flag('--mat')) { const { MATERIALS } = await import('../../../src/entities/anim/cloth/materials.js'); for (const [k, v] of Object.entries(JSON.parse(flag('--mat')))) { const sh0 = MATERIALS[k].share; Object.assign(MATERIALS[k], v); if (v.share) MATERIALS[k].share = { ...sh0, ...v.share }; } }
+let R = null, PR = null;
+// (round 2: every row on a FRESH bench, its clocks at 0 and the animator new: a row's numbers no longer depend on which
+//  rows ran before it in the process; at a2bcf20 C8's sprint read stretch 1.83 alone and 1.95, tongues crossed in 20
+//  frames, after C3-C7 had run on the same rig)
+const fresh = async () => { R = await makeBench(); PR = clothProbe(R); R.an.setWind(45 * Math.PI / 180, 5.5); return R; };
+await fresh();
+const STARTS = Number(flag('--starts', 6));
 const rnd = (x, n = 3) => (x == null || !Number.isFinite(x) ? x : +x.toFixed(n));
 const pieceNames = ['panelL', 'panelR', 'panelB', 'wrapSash'];
 
@@ -184,6 +187,7 @@ const pieceNames = ['panelL', 'panelR', 'panelB', 'wrapSash'];
 // stepped: what the row asks, "2 s after reset" in still air); IDLE: the idle running (her breath and weight shift move
 // the pelvis 0.02-0.05 m/s: reported, the hem cannot be under 0.005 m/s in the world while the body under it moves)
 if (ROWS.includes('C2')) {
+  await fresh();
   const res = {};
   for (const held of MODE === 2 ? [true, false] : [false]) for (const st of ['stand', 'crouch', 'sit']) {
     staged(R, { crouch: st === 'crouch', sit: st === 'sit' });
@@ -224,6 +228,7 @@ if (ROWS.includes('C2')) {
 
 // C4: run-stop (sprint, release)
 if (ROWS.includes('C4')) {
+  await fresh();
   staged(R, {});
   R.an.setWind(0, 0);
   R.player.sprinting = true;
@@ -253,6 +258,7 @@ if (ROWS.includes('C4')) {
 
 // C5: turn on the spot (180 deg in 0.5 s) and the 1.2 m landing
 if (ROWS.includes('C5')) {
+  await fresh();
   const res = {};
   staged(R, {}); R.an.setWind(0, 0);
   for (let i = 0; i < 30; i++) step(R);
@@ -302,6 +308,7 @@ if (ROWS.includes('C5')) {
 
 // C6: the wind table, standing
 if (ROWS.includes('C6')) {
+  await fresh();
   const res = {};
   const meanRun = (wrel, speed) => {
     staged(R, { wind: [wrel, speed] });
@@ -337,17 +344,24 @@ if (ROWS.includes('C6')) {
 const motion = {};
 if (ROWS.includes('C8') || ROWS.includes('C3') || ROWS.includes('C9') || ROWS.includes('C7')) {
   for (const [name, speed, sprint] of [['run', SPEEDS.jog, false], ['sprint', SPEEDS.sprint, true]]) {
+   // (round 2: STARTS starts, each on a fresh bench, the lead-in 90 + 7 k frames, so the window opens at other phases of
+   //  the stride; every frame of every start is graded, the per-start numbers kept in `starts`)
+   const per = [];
+   let st = { edge: 0, path: 0, boneScaleDev: 0 }, crossed = 0, edgeOver = 0, nFr = 0;
+   for (let sI = 0; sI < STARTS; sI++) {
+    await fresh();
     staged(R, {});
     R.player.sprinting = sprint;
-    for (let i = 0; i < 90; i++) { go(R, speed); step(R); }
-    const tr = []; let st = { edge: 0, path: 0, boneScaleDev: 0 }, crossed = 0;
+    for (let i = 0; i < 90 + 7 * sI; i++) { go(R, speed); step(R); }
+    const tr = [];
     for (let i = 0; i < 240; i++) {
       go(R, speed); step(R); const F = frameRead(R, PR); tr.push(F);
-      const s = stretch(R); if (s) { st.edge = Math.max(st.edge, s.edge); st.path = Math.max(st.path, s.path); st.boneScaleDev = Math.max(st.boneScaleDev, s.boneScaleDev); }
+      const s = stretch(R); if (s) { st.edge = Math.max(st.edge, s.edge); st.path = Math.max(st.path, s.path); st.boneScaleDev = Math.max(st.boneScaleDev, s.boneScaleDev); if (s.edge > 1.03) edgeOver++; }
       const c = tonguesCrossed(R); if (c) crossed++;
+      nFr++;
     }
     R.player.sprinting = false;
-    const r = { stretch: MODE === 2 ? { edge: rnd(st.edge, 4), path: rnd(st.path, 4), boneScaleDev: rnd(st.boneScaleDev, 5) } : null, tonguesCrossedFrames: MODE === 2 ? crossed : null };
+    const r = {};
     // front hems against the knee plane (every hem vertex), and the chords
     for (const k of pieceNames) {
       const S = PR.sets[k];
@@ -372,16 +386,30 @@ if (ROWS.includes('C8') || ROWS.includes('C3') || ROWS.includes('C9') || ROWS.in
         fwdLiftMaxDeg: rnd(Math.max(...fwd), 1), angMeanDeg: rnd(ang.reduce((a, b) => a + b, 0) / ang.length, 1), angMaxDeg: rnd(Math.max(...ang), 1),
         aheadOfKneeFrac: S.front ? rnd(ahead / tr.length, 3) : null, aheadOfKneeMaxM: S.front ? rnd(maxAhead) : null,
         flutterRmsM: rnd(rms, 4), flutterPeakHz: bestF, strideS: rnd(bestLag / 60), strideRepeatRmsM: rnd(Math.sqrt(sr / Math.max(1, sn)), 4),
+        _ahead: ahead, _n: tr.length,
       };
     }
-    motion[name] = r;
+    per.push(r);
     unstage(R);
+   }
+   // over the starts: the knee plane over every frame; the worst start's lifts, flutter and stride repeat; the mean angle
+   const r = { stretch: MODE === 2 ? { edge: rnd(st.edge, 4), path: rnd(st.path, 4), boneScaleDev: rnd(st.boneScaleDev, 5), framesOver103: edgeOver, frames: nFr } : null, tonguesCrossedFrames: MODE === 2 ? crossed : null, starts: STARTS };
+   for (const k of pieceNames) {
+     const q = per.map((p) => p[k]), mx = (f) => Math.max(...q.map(f)), mn = (f) => Math.min(...q.map(f)), av = (f) => q.reduce((a, b) => a + f(b), 0) / q.length;
+     r[k] = {
+       fwdLiftMaxDeg: rnd(mx((x) => x.fwdLiftMaxDeg), 1), angMeanDeg: rnd(av((x) => x.angMeanDeg), 1), angMeanMinDeg: rnd(mn((x) => x.angMeanDeg), 1), angMaxDeg: rnd(mx((x) => x.angMaxDeg), 1),
+       aheadOfKneeFrac: PR.sets[k].front ? rnd(q.reduce((a, b) => a + b._ahead, 0) / q.reduce((a, b) => a + b._n, 0), 3) : null, aheadOfKneeMaxM: PR.sets[k].front ? rnd(mx((x) => x.aheadOfKneeMaxM)) : null,
+       flutterRmsM: rnd(mx((x) => x.flutterRmsM), 4), flutterRmsMinM: rnd(mn((x) => x.flutterRmsM), 4), flutterPeakHz: [...new Set(q.map((x) => x.flutterPeakHz))], strideS: rnd(av((x) => x.strideS)), strideRepeatRmsM: rnd(mx((x) => x.strideRepeatRmsM), 4),
+     };
+   }
+   motion[name] = r;
   }
   out.rows.C8 = motion;
 }
 
 // C7: not a board (crouch, sit, 5.5 m/s wind): rows' non-planarity on the rendered vertices, hem twist, chord / path
 if (ROWS.includes('C7')) {
+  await fresh();
   const res = {};
   const v = new THREE.Vector3();
   const rowRms = (mesh, idx) => {
@@ -431,6 +459,7 @@ if (ROWS.includes('C7')) {
 
 // C10: cost (ring-buffer timing, grid solver), 600 frames standing in the trade wind and 600 at a sprint; asleep
 if (ROWS.includes('C10') && MODE === 2) {
+  await fresh();
   const res = {};
   staged(R, { wind: [135, 5.5] });
   const C = rig(R);
@@ -446,7 +475,7 @@ if (ROWS.includes('C10') && MODE === 2) {
   take(); for (let i = 0; i < 600; i++) step(R);
   res.asleepStill = { ...C.sys.timing(), asleep: C.pieces.map((p) => p.asleep) }; unstage(R);
   for (const k in res) for (const q of ['mean', 'p50', 'p95', 'max']) if (res[k]?.[q] != null) res[k][q] = rnd(res[k][q], 4);
-  res.particles = C.pieces.reduce((a, p) => a + p.n, 0); res.pinned = C.pieces.reduce((a, p) => a + p.n - p.bones.length, 0); res.clBones = C.bones.length;
+  res.particles = C.pieces.reduce((a, p) => a + p.n, 0); res.pinned = C.pieces.reduce((a, p) => { let k = 0; for (let i = 0; i < p.n; i++) if (p.w[i] === 0) k++; return a + k; }, 0); res.clBones = C.bones.length;
   res.joints = {}; R.model.traverse((o) => { if (o.isSkinnedMesh) res.joints[o.name] = o.skeleton.bones.length; });
   out.rows.C10 = res;
 }
