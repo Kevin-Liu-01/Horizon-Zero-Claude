@@ -130,6 +130,9 @@ export class ClothPiece {
     this._act = null; this.fwd = new Float64Array([0, 0, 1]); this.lee = 0; this.stem = ''; this.kind = '';
     this.pinMask = 0; this.hard = 0.015; this.hardC = null; this.edges = false; this.edgesLegs = false; this.airK = 1;
     this.boneOf = null; this.bones = null; this.f0 = null; this.verts = null;
+    // (round 3, cost: every field the rig and the solver set later, declared here: one shape for every piece)
+    this.bindG = null; this.yTop = 0; this.yBot = 0; this.thLo = null; this.thHi = null;
+    this.pl = null; this.pc = null; this.hardHits = 0; this.qlOk = false; this.sAl = null; this.sAc = null; this.sRs = null; this.sEd = null;
   }
 
   /** The pins and (when `all`) every particle to their bind place on the root's frame at substep fraction f. */
@@ -171,6 +174,8 @@ export class ClothSystem {
     /** constraint, attachment and collider passes a substep, and whether the colliders run in every pass (else the last) */
     this.iters = ITERS; this.collideEvery = true;
     /** the strain limit (x rest) after the colliders, and its sweeps (0: off) */
+    /** the substep (s): SUB_H unless a caller sets another */
+    this.subH = SUB_H;
     this.strain = STRAIN; this.strainIters = STRAIN_ITERS; this.strainPost = STRAIN_POST; this.hardRounds = HARD_ROUNDS; this.endStrain = true;
   }
 
@@ -198,7 +203,7 @@ export class ClothSystem {
   update(dt, t) {
     const t0 = this.clock ? this.clock() : 0;
     if (!(dt > 0)) dt = 1 / 60;
-    let n = Math.round(dt / SUB_H);
+    let n = Math.round(dt / this.subH);
     n = n < 1 ? 1 : n > SUB_MAX ? SUB_MAX : n;
     const h = dt / n;
     this.lastSub = n;
@@ -215,6 +220,10 @@ export class ClothSystem {
       this._stepPiece(p, dt, t, n, h);
       // the sleep clock: every particle still RELATIVE TO ITS ROOT (its place in the root's frame moved under SLEEP_V
       // this frame: an idle's sway carries the cloth, it does not keep it awake), still air, a calm root
+      // (round 3: the particles are read only when the air and the root are calm: in the trade wind or on the move the
+      //  piece cannot sleep, and the per-particle turn into the root's frame was a third of the standing frame's cost)
+      if (!(ws < SLEEP_WIND && r.acc < SLEEP_ACC)) { p.stillT = 0; p.qlOk = false; continue; }
+      if (!p.qlOk) { this._rootLocalNow(p); p.qlOk = true; p.stillT = 0; continue; }
       let vmax = 0;
       const q = r.q, ql = p.ql, x = p.x;
       const iqx = -q[0], iqy = -q[1], iqz = -q[2], iqw = q[3], is = 1 / r.s;
@@ -233,6 +242,13 @@ export class ClothSystem {
     }
     this.frames++; this.subTotal += n;
     if (this.clock) { const ms = this.clock() - t0; this.ring[this.ringI] = ms; this.ringI = (this.ringI + 1) % this.ring.length; if (this.ringN < this.ring.length) this.ringN++; }
+  }
+
+  /** Every particle's place in its root's frame now, into `ql` (the sleep clock's last frame). */
+  _rootLocalNow(p) {
+    const r = p.root, q = r.q, ql = p.ql, x = p.x, is = 1 / r.s;
+    _iq[0] = -q[0]; _iq[1] = -q[1]; _iq[2] = -q[2]; _iq[3] = q[3];
+    for (let i = 0; i < p.n; i++) { const k = i * 3; qrot(_iq, (x[k] - r.p[0]) * is, (x[k + 1] - r.p[1]) * is, (x[k + 2] - r.p[2]) * is, ql, k); }
   }
 
   /** A prop capsule moving inside a sleeping piece's reach wakes it. */
@@ -302,7 +318,7 @@ export class ClothSystem {
     for (let i = 0; i < N; i++) { const q = i * 3; if (x[q] < bx0) bx0 = x[q]; if (x[q] > bx1) bx1 = x[q]; if (x[q + 1] < by0) by0 = x[q + 1]; if (x[q + 1] > by1) by1 = x[q + 1]; if (x[q + 2] < bz0) bz0 = x[q + 2]; if (x[q + 2] > bz1) bz1 = x[q + 2]; }
     const pcx = (bx0 + bx1) / 2 + cx * n, pcy = (by0 + by1) / 2 + cy * n, pcz = (bz0 + bz1) / 2 + cz * n;
     const pr = Math.sqrt((bx1 - bx0) ** 2 + (by1 - by0) ** 2 + (bz1 - bz0) ** 2) / 2 + 0.06 + Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const act = p._act || (p._act = new Int32Array(C.length + 1));
+    const act = p._act && p._act.length > C.length ? p._act : (p._act = new Int32Array(C.length + 1));
     let na = 0;
     for (let c = 0; c < C.length; c++) {
       const K = C[c];
@@ -323,8 +339,12 @@ export class ClothSystem {
       let k = 0;
       for (let a2 = 0; a2 < na && k < KMAX; a2++) {
         const K = C[act[a2]];
-        const m = (K.r0 > K.r1 ? K.r0 : K.r1) + PL_MARGIN + pv + K.mv;
-        if (segD2(K.a, K.b, px, py, pz) < m * m || segD2(K.pa, K.pb, px, py, pz) < m * m) pl[i * KMAX + k++] = act[a2];
+        // (round 3, cost: first the collider's swept bounding sphere, then this frame's segment with the frame's travel
+        //  of its ends added (2 mv), not both frames' segments: half the per-particle tests, and most fail the sphere)
+        const m = (K.r0 > K.r1 ? K.r0 : K.r1) + PL_MARGIN + pv + 2 * K.mv;
+        const ex = px - K.cx, ey = py - K.cy, ez = pz - K.cz, er = K.cr + PL_MARGIN + pv;
+        if (ex * ex + ey * ey + ez * ez > er * er) continue;
+        if (segD2(K.a, K.b, px, py, pz) < m * m) pl[i * KMAX + k++] = act[a2];
       }
       pc[i] = k;
     }
@@ -639,10 +659,13 @@ export class ClothSystem {
   }
 
   _edges(p, C, pl, pc, KMAX, legsOnly = false) {
-    const x = p.x, w = p.w, ci = p.ci, ca = p.ca, ck = p.ck, nc = p.nc, hh = p.hard * 0.5;
+    const x = p.x, w = p.w, ci = p.ci, hh = p.hard * 0.5;
+    // (round 3, cost: the structural edges' list, built once)
+    if (!p.sEd) { const l = []; for (let e = 0; e < p.nc; e++) if (p.ca[e] === 0 && p.ck[e] === 0) l.push(e); p.sEd = Int32Array.from(l); }
+    const SE = p.sEd;
     let moved = 0;
-    for (let e = 0; e < nc; e++) {
-      if (ca[e] !== 0 || ck[e] !== 0) continue;
+    for (let k = 0; k < SE.length; k++) {
+      const e = SE[k];
       const i = ci[e * 2], j = ci[e * 2 + 1], wi = w[i], wj = w[j];
       if (wi + wj === 0) continue;
       // the colliders of the free end (or either), inner surfaces only

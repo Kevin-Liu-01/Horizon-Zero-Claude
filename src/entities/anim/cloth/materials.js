@@ -51,8 +51,10 @@ export const MATERIALS = {
 /** Air density, kg/m3. */
 export const RHO = 1.2;
 /** The substep (s), and the most substeps a frame takes. (Step 2: 1/180 s, 3 at 60 Hz, the brief's first cut for C10;
- *  was 1/240.) */
-export const SUB_H = 1 / 180;
+ *  was 1/240. Round 3: 1/120 s, 2 at 60 Hz: Node bench, the edges 1.028 / 1.024 x rest at a run / sprint (two starts),
+ *  the front hems ahead of the knee plane at a sprint 0 % (1/180: 39 %), the Node sweep's clip frames 75 (1/180: 69).
+ *  With 1 constraint pass a substep the front-left panel flipped up over her thigh at a sprint, 111-178 deg.) */
+export const SUB_H = 1 / 120;
 export const SUB_MAX = 8;
 /** A particle's speed cap (m/s): a guard, not a working limit. */
 export const V_CAP = 12;

@@ -15,7 +15,7 @@
  * lower foot. Per-frame cost: one ClothSystem per near person, 7-30 particles at 3 substeps. No allocation per frame.
  */
 import * as THREE from 'three';
-import { MATERIALS } from './materials.js';
+import { MATERIALS, SUB_H } from './materials.js';
 import { realClock } from './mode.js';
 import { ClothPiece, ClothSystem, makeRoot } from './solver.js';
 import { makeCollider, setEnds } from './colliders.js';
@@ -27,6 +27,8 @@ export const CLASS = (key) => {
   if (/^cloak[LR]$/.test(key)) return { mat: 'felt', width: 0.2, kind: 'cloak' };
   return null;
 };
+/** the far LOD: a tick longer than LOD_DT (s; the people's 30 Hz past 8 m) is solved at SUB_FAR (s) substeps */
+const LOD_DT = 1 / 45, SUB_FAR = 1 / 60;
 /** each kind's share of the air (aero.js P.airK) */
 const AIR_K = { tail: 0.3, apron: 0.4, cloak: 0.5 };
 /** collider radii at scale 1 (m) */
@@ -215,6 +217,9 @@ export class StrandCloth {
     for (const r of S.roots) { decomp(r.bone, _pp, _pq); ClothSystem.setRoot(r, _pp[0], _pp[1], _pp[2], _pq, this.S, dt); }
     this._colliders(dt);
     S.wind.x = wx; S.wind.z = wz;
+    // (round 3, LOD by distance: a person past 8 m is posed at 30 Hz (people/index.js), and the cloth keeps time with
+    //  that tick; there it takes substeps of 1/60 s, not 1/120: half the solve, at a size the eye cannot read)
+    S.subH = dt > LOD_DT ? SUB_FAR : SUB_H;
     S.update(dt, t);
     for (const { P, cols } of this.groups) {
       for (let c = 0; c < cols.length; c++) {

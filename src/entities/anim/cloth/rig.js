@@ -71,7 +71,7 @@ export function setClothMode(an, m) {
 /** The pieces this rig owns, by the old chain stem. */
 export const OWNED = ['dyn_panelL', 'dyn_panelR', 'dyn_panelB', 'dyn_wrapSash'];
 
-const PANELS = [
+export const PANELS = [
   { stem: 'dyn_panelB', name: 'panelB', C: 5, R: 7 },
   { stem: 'dyn_panelL', name: 'panelL', C: 4, R: 7 },
   { stem: 'dyn_panelR', name: 'panelR', C: 4, R: 5 },

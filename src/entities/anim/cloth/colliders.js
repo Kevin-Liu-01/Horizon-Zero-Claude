@@ -22,6 +22,9 @@ export function makeCollider(name, bit, r0, r1, src) {
     primed: false, hits: 0, mv: 0, stamp: 0, atF: -1, atH: -1, atS: -1,
     // the frame's bounding sphere of the swept segment (for the per-piece cull)
     cx: 0, cy: 0, cz: 0, cr: 0,
+    // (round 3, cost: every field the rig sets, declared here, so every collider has one shape and the solver's loads
+    //  stay monomorphic)
+    boneA: null, boneB: null, leg: false, headUp: 0, up: 0, kitIdx: null, kit: null, prop: null,
   };
 }
 
