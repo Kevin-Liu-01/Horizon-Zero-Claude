@@ -36,7 +36,10 @@ export const MATERIALS = {
     areal: 0.90, hem: 1.6, shear: 5e-3, bendAlong: 0.25, bendAcross: 0.12, kd: 8.0, mu: 0.05, cd: 1.0, cl: 0.25, slack: 1.03,
     // (round 2, the TURN: yaw share 0.3 (was 0.6): a 180 deg turn on the spot in 0.5 s, the hems lagged 49 / 28 / 29 deg,
     //  band 8-25; here 16.7 / 13.3 / 17.4)
-    share: { lin: 0.35, vert: 0.8, yaw: 0.3 }, vFedMax: 1.2, air: 0.65, vRel: 0.3,
+    // (round 3: yaw 0.2, was 0.3: at the body's own size (the rest lengths follow her scale) the front-left hem lagged a
+    //  180 deg turn on the spot by 30 deg, band 8-25; here 13.5 / 8.4 / 14.8 (L / R / back). The tail's 0.6 stays: 0.35
+    //  crossed its tongues at a sprint)
+    share: { lin: 0.35, vert: 0.8, yaw: 0.2 }, vFedMax: 1.2, air: 0.65, vRel: 0.3,
   },
   felt: {
     areal: 0.80, hem: 1.2, shear: 2e-3, bendAlong: 0.07, bendAcross: 0.05, kd: 5.0, mu: 0.60, cd: 0.6, cl: 0.15, slack: 1.02,
