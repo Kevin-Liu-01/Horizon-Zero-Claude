@@ -42,6 +42,7 @@ import { RUNS, assertOutsideRepo } from '../../frames/paths.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../../chrome-profile.mjs';
 import { takeMachineSlot, releaseMachineSlot } from '../../chrome-slot.mjs';
 import { runKit } from './kit-probe-page.mjs';
+import { installPad, padKeys, padState, uiChoose } from '../../reach/pad-driver.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = process.argv.slice(2);
@@ -54,6 +55,9 @@ const LABEL = flag('--label', 'systems-slice-hour');
 const KIT = !args.includes('--no-kit');   // M1.6j: the kit's verb rows on the frames page (kit-probe-page.mjs)
 const NO_RUN = args.includes('--no-run');  // the frames and rows only
 const RUN_ONLY = args.includes('--run-only');  // the run and its save rows only (no frames page)
+// --pad (M1.6m, engine lane): the run is driven by a synthetic pad in the page (tools/reach/pad-driver.mjs): every key
+// and mouse button the run presses is the pad's control for it, and the menus are walked with the D-pad and A
+const PAD = args.includes('--pad');
 // --probe <served path> (round 2): a page module whose probe(frame) runs after each frame's shot (as film.mjs --probe),
 // so the reed rows (tools/gates/systems/reed-probe-page.mjs on F31 and F03) share this one Chrome session
 const PROBE = flag('--probe');
@@ -366,9 +370,10 @@ async function aimAt(id) {
 
 /* -------------------------------------------------------------- driver */
 
-const keys = (page) => ({
+const keys = (page) => (PAD ? padKeys(page) : {
   down: (k) => page.keyboard.down(k), up: (k) => page.keyboard.up(k),
   tap: async (k, ms = 120) => { await page.keyboard.down(k); await sleep(ms); await page.keyboard.up(k); },
+  mouse: (button, isDown) => (isDown ? page.mouse.down({ button }) : page.mouse.up({ button })),
 });
 
 async function walkTo(page, K, target, radius, { up = 0, maxS = 150, sprint = true } = {}) {
@@ -536,7 +541,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
   // the arrow as a player picks it: X (and Z) cycle the bow's ammo (M1.6j: Barbed is the ranged Pry)
   for (let i = 0; i < 4 && (await page.evaluate(probe)).ammoId !== ammo; i++) { await K.tap('KeyX'); await sleep(150); }
   // puppeteer throws on releasing a button it does not hold: every release is guarded
-  const up = async (button) => { try { await page.mouse.up({ button }); } catch { /* not held */ } };
+  const up = async (button) => { try { await K.mouse(button, false); } catch { /* not held */ } };
   const release = async () => { if (aimed) { await K.up('ShiftLeft'); await up('left'); await up('right'); aimed = false; } };
   try {
     for (;;) {
@@ -600,7 +605,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       }
       const have = ammo === 'hardpoint' ? s.barbed : s.ammo;
       if ((have ?? 0) < 1) { await release(); if (ammo !== 'hunter') return { ok: false, why: `no ${ammo} arrows left`, fired }; await readyBow(page, K); if ((await page.evaluate(probe)).ammo < 1) return { ok: false, why: 'no arrows to make', fired }; continue; }
-      if (!aimed) { await page.mouse.down({ button: 'right' }); await sleep(380); aimed = true; }
+      if (!aimed) { await K.mouse('right', true); await sleep(380); aimed = true; }
       // M1b: a player looses on the Plumb while it stands for a reading (8-15 s at each survey station), not while it
       // walks: the runner holds the aim (no draw, no Steady spent) up to 9 s for it to stop; the solve leads it if not
       const still = part === 'vial' ? await page.evaluate(waitStill, t.i, 9000) : null;
@@ -608,7 +613,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       // M1.6j Steady: a fresh breath for every shot (Shift let go and pressed again while aiming: 4 s of no sway)
       await K.up('ShiftLeft'); await sleep(50); await K.down('ShiftLeft'); await sleep(60);
       let a = await page.evaluate(aimPoint, t.x, t.y, t.z, tolDeg);
-      await page.mouse.down({ button: 'left' });
+      await K.mouse('left', true);
       const tD = Date.now();
       // the draw: the look solved onto the part for the arrow the game would loose now (solveShot), re-solved until the
       // draw is full and the time is up (the nock moves with the draw)
@@ -836,12 +841,14 @@ async function reloadContinue(page, tag) {
     return row;
   }
   await sleep(400);
-  if (await page.evaluate(() => window.__CTX__.menus.titleStage === 'press')) await page.keyboard.press('Enter');
+  if (await page.evaluate(() => window.__CTX__.menus.titleStage === 'press')) { if (PAD) await padKeys(page).tap('Enter'); else await page.keyboard.press('Enter'); }
   await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 30000, polling: 50 }).catch(() => {});
   await sleep(300);
   row.titleShot = await shot(page, `${tag}-title`);
   row.titleSave = await page.evaluate(() => document.querySelector('.mn-title-save')?.textContent ?? null);
-  const hadContinue = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent)); if (!b || b.disabled) return false; b.click();
+  const hadContinue = PAD
+    ? !!(await uiChoose(page, /CONTINUE/, { sel: '.mn-title-item' })) && (await sleep(600), !!(await uiChoose(page, /CONTINUE/, { sel: '.gs-slot.cont .gs-slot-go' })))
+    : await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent)); if (!b || b.disabled) return false; b.click();
     // M1.6g2 (BIBLE 18): CONTINUE opens the three slot cards; the marked one is the slot Continue loads
     const go = document.querySelector('.gs-slot.cont .gs-slot-go'); if (!go) return false; go.click(); return true; });
   await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 60000, polling: 50 }).catch(() => {});
@@ -1032,6 +1039,7 @@ try {
   page.on('console', (m) => { if (m.type() === 'error') report.console.push({ at: 'run', text: m.text().slice(0, 300) }); });
   page.on('pageerror', (e) => report.console.push({ at: 'run', text: `pageerror: ${String(e).slice(0, 300)}` }));
   const K = keys(page);
+  if (PAD) { await page.evaluateOnNewDocument(installPad); report.input = 'pad'; }
   await page.evaluateOnNewDocument(`window.__aimPoint = ${aimPoint.toString()};`);
   await page.evaluateOnNewDocument(() => { window.__raf = 0; const tick = () => { window.__raf++; requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
@@ -1046,12 +1054,14 @@ try {
     await atPress();
   }
   await sleep(500);
-  await page.keyboard.press('Enter');
+  if (PAD) await K.tap('Enter'); else await page.keyboard.press('Enter');
   await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 60000, polling: 50 });
   await sleep(300);
-  await page.evaluate(() => [...document.querySelectorAll('.mn-title-item')].find((x) => /NEW GAME/.test(x.textContent))?.click());
+  if (PAD) report.padNewGame = await uiChoose(page, /NEW GAME/, { sel: '.mn-title-item' });
+  else await page.evaluate(() => [...document.querySelectorAll('.mn-title-item')].find((x) => /NEW GAME/.test(x.textContent))?.click());
   await page.waitForSelector('.mn-diff', { timeout: 20000 });
-  await page.evaluate(() => document.querySelector('.mn-diff').click());
+  if (PAD) { await sleep(500); report.padBegin = await uiChoose(page, /BEGIN/, { sel: '.mn-diff' }); }
+  else await page.evaluate(() => document.querySelector('.mn-diff').click());
   await page.waitForFunction(() => window.__CTX__?.state === 'playing' && window.__CTX__?.spine?.started, { timeout: 60000, polling: 50 });
   await sleep(2500);
   const s0 = await page.evaluate(probe);
@@ -1090,7 +1100,8 @@ try {
       const card = await page.evaluate(() => ({ title: document.querySelector('.mn-death-title')?.textContent ?? null, opts: [...document.querySelectorAll('.mn-death-opt b')].map((b) => b.textContent) }));
       const cardShot = await shot(page, `d${deaths}-death-card`);
       if (deaths > 2) { report.stoppedAt = s.stage; report.why = `Brea died ${deaths} times`; break; }
-      const clicked = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-death-opt')].find((x) => /RETURN TO THE LAST BRAZIER/.test(x.textContent)); if (!b) return false; b.click(); return true; });
+      const clicked = PAD ? !!(await uiChoose(page, /RETURN TO THE LAST BRAZIER/, { sel: '.mn-death-opt' }))
+        : await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-death-opt')].find((x) => /RETURN TO THE LAST BRAZIER/.test(x.textContent)); if (!b) return false; b.click(); return true; });
       await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 20000, polling: 100 }).catch(() => {});
       await sleep(1500);
       const post = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position, R = C.braziers.lastRest; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), state: C.state, hp: Math.round(C.player.health), salt: C.inventory.count('metal-shards'), gourd: Math.round(C.player.gourd ?? 0),
@@ -1141,6 +1152,7 @@ try {
     return { armor: L?.armorId ?? null, perk: L?.perk ?? null, rung: C.systemsGame?.rung ?? null, flagDuration: C.machines?.perception?.flagDuration ?? null, rewarded: !!C.spine?.rewarded, done: !!C.spine?.done }; }).catch((e) => ({ error: String(e).slice(0, 160) }));
   report.anchors = await page.evaluate(() => window.__CTX__.systemsGame.A);
   report.stopShot = await shot(page, 'b-stop');
+  if (PAD) report.pad = { ...(await padState(page)), presses: await page.evaluate(() => window.__pad?.presses ?? null), keyboardUsed: false };
 
   // save-continue row: what the store holds, then QUIT (the document is unloaded), the same tab opened again on the
   // game, CONTINUE on the title: the same stage, satchel, place and hour

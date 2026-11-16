@@ -8,7 +8,8 @@
  *   title:  EXTRAS (the card), its FIELD MANUAL and CREDITS, SETTINGS from the title
  *   play:   the hub's SATCHEL, FIELD LOG, FIELD BOOKS, SETTINGS (GRAPHICS · CONTROLS · READING · AUDIO), CHARACTER
  *           (the frost cut round the stage), the dialogue lower-third (Ansel), the death card, the context-lost card
- *           (a real WEBGL_lose_context, then its restore), and the unsupported-browser page (?unsupported=1)
+ *           (a real WEBGL_lose_context, then its restore), the CONTINUE banner live (a save, the game opened again,
+ *           CONTINUE; the banner's words and whether it is on top), and the unsupported-browser page (?unsupported=1)
  *
  * Per screen: the shot; every listed word of its §18 row found or not in the screen's visible text (innerText, so CSS
  * text-transform counts as shown); the screen's own surface (computed background colour and alpha, backdrop
@@ -242,8 +243,14 @@ try {
       stations: [...document.querySelectorAll('#cal-sys .sys-st')].map((r) => r.innerText.replace(/\s+/g, ' ').trim()) };
   });
   ltRead.node = true;   // a Node function: screen() calls it, not page.evaluate (the 375c3ff run died on 'C is not defined')
-  res.dialogueOpen = await C(() => { const G = window.__CTX__.systemsGame; if (!G?.talk) return false; G.talk('ansel'); return true; });
-  await sleep(1400);
+  // M1.6m (engine lane): Ansel's own scene ('tell'), played through the runtime's scene queue. G.talk('ansel') plays a
+  // scene only at a talk stage of hers, and a New Game stands at 'wake': at 4c28601 it played nothing and the shot
+  // showed Brea's field-turn subtitle. The field turn is cleared first so the lower third is the only line on screen.
+  res.dialogueOpen = await C(() => { const G = window.__CTX__.systemsGame; const sc = G?.S?.scene?.('tell');
+    if (!G?._playScene || !sc) return { ok: false, why: !sc ? 'no scene tell' : 'no _playScene' };
+    G.present?.clearSubtitles?.(); G._playScene('tell', sc); return { ok: true, who: sc.cards?.[0]?.who ?? null, cards: sc.cards?.length ?? 0 }; });
+  await page.waitForFunction(() => !!document.querySelector('#cal-sys .sys-lt.on'), { timeout: 8000, polling: 100 }).catch(() => {});
+  await sleep(900);
   res.dialogueCards = [await ltRead()];
   await screen('dialogue', '#cal-sys', '#cal-sys .sys-lt', ltRead);
   // advance to her stations (at most 12 cards), shooting the first station list
@@ -295,6 +302,45 @@ try {
   });
   await shot('contextRestored');
   log('context', JSON.stringify({ loss: res.ctxLoss, restore: res.ctxRestore }));
+
+  // ---- the CONTINUE banner, live (M1.6m, engine lane): a named save, the game opened again, CONTINUE on the title and
+  // the marked slot's card; then the banner is read every 100 ms for 6 s from the moment play resumes: its words, and
+  // whether it is on top where it stands (the Loading sheet over it would hide it)
+  res.continueBanner = await (async () => {
+    const saved = await C(() => { const r = window.__CTX__.progression.save('probe'); const p = window.__CTX__.player.position; return { ok: !!r?.ok, hour: window.__CTX__.environment.time, at: [p.x, p.z] }; });
+    await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    await waitPress();
+    await sleep(1200);
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 60000, polling: 50 });
+    await sleep(600);
+    await station('continue');
+    await sleep(800);
+    const went = await C(() => { const go = document.querySelector('.gs-slot.cont .gs-slot-go'); if (!go) return false; go.click(); return true; });
+    const seen = [];
+    let shotName = null;
+    const tc = Date.now();
+    for (let i = 0; i < 160; i++) {
+      const r = await C(() => {
+        const B = [...document.querySelectorAll('.cal-banner, .pg-banner')].filter((b) => /CONTINUE/.test(b.querySelector('.b-title')?.textContent ?? ''));
+        const b = B[0];
+        if (!b) return { state: window.__CTX__?.state ?? null, banner: null };
+        const rc = b.getBoundingClientRect(), cs = getComputedStyle(b);
+        const top = document.elementFromPoint(rc.left + rc.width / 2, rc.top + rc.height / 2);
+        return { state: window.__CTX__.state, banner: { title: b.querySelector('.b-title')?.textContent ?? '', detail: b.querySelector('.b-detail')?.textContent ?? '', cls: b.className,
+          onTop: !!top && (top === b || b.contains(top)), opacity: +cs.opacity, coveredBy: top && top !== b && !b.contains(top) ? `${top.tagName.toLowerCase()}#${top.id}.${String(top.className).split(' ')[0]}` : null } };
+      }).catch(() => null);
+      if (r) seen.push({ t: Date.now() - tc, ...r });
+      if (r?.banner?.onTop && r.banner.opacity > 0.5 && !shotName) shotName = await shot('continueBanner');
+      if (seen.length > 8 && seen.slice(-1)[0]?.state === 'playing' && Date.now() - tc > 6000 + (seen.find((x) => x.state === 'playing')?.t ?? 0)) break;
+      await sleep(100);
+    }
+    const firstPlay = seen.find((x) => x.state === 'playing')?.t ?? null;
+    const shown = seen.filter((x) => x.banner?.onTop && x.banner.opacity > 0.5);
+    return { saved, went, firstPlayMs: firstPlay, words: seen.find((x) => x.banner)?.banner ?? null, shownMs: shown.length ? [shown[0].t, shown.at(-1).t] : null,
+      coveredBy: [...new Set(seen.map((x) => x.banner?.coveredBy).filter(Boolean))], shot: shotName, samples: seen.filter((x, i) => i % 5 === 0).slice(0, 24) };
+  })();
+  log('continue banner', JSON.stringify({ words: res.continueBanner.words, shownMs: res.continueBanner.shownMs, coveredBy: res.continueBanner.coveredBy, firstPlayMs: res.continueBanner.firstPlayMs }));
 
   // ---- the unsupported-browser page
   await page.goto(`http://127.0.0.1:${PORT}/?unsupported=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
