@@ -10,6 +10,10 @@
  *                          ├── musicVol ← musicDuck ← musicLP ← musicBus
  *                          └── uiVol    ←── uiBus
  *
+ * THE SIX BUSES (TECH §14, BUILD M1.6k): ambience · world SFX · Instruments · Brea · UI · music, under master. The
+ * Instruments bus shares the SFX slider and Brea's bus the voice slider (the six persisted sliders stay as they were,
+ * so a saved setting keeps its meaning); each bus has its own gain node, so the mix can set them apart.
+ *
  * Three deliberate routing decisions:
  *  - **`worldLP` sits over the whole diegetic world**, not just the music, so
  *    Concentration muffles footsteps, machines and reverb together
@@ -23,6 +27,7 @@
  */
 
 import { clockFor } from './clock.js';
+import { LIMITER } from './slice/mix.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -81,12 +86,14 @@ export function buildBuses(ac, { volumes = DEFAULT_VOLUMES, ir = null, analyser 
     return from;
   };
 
+  // BUILD M1.6k: a safety limiter above the slice walk's loudest moments (src/audio/slice/mix.js LIMITER), not a
+  // compressor shaping the mix: the walk is mixed to -18 LUFS with its true peak under -1 dB before it gets here
   const comp = ac.createDynamicsCompressor();
-  comp.threshold.value = -16;
-  comp.knee.value = 10;
-  comp.ratio.value = 5;
-  comp.attack.value = 0.004;
-  comp.release.value = 0.24;
+  comp.threshold.value = LIMITER.threshold;
+  comp.knee.value = LIMITER.knee;
+  comp.ratio.value = LIMITER.ratio;
+  comp.attack.value = LIMITER.attack;
+  comp.release.value = LIMITER.release;
   wire(comp, ac.destination, 'comp', 'destination');
 
   const master = g(volumes.muted ? 0 : volumes.master);
@@ -107,6 +114,8 @@ export function buildBuses(ac, { volumes = DEFAULT_VOLUMES, ir = null, analyser 
   const ambDuck = g(1); wire(ambDuck, ambVol, 'ambDuck', 'ambVol');
   const ambBus = g(1); wire(ambBus, ambDuck, 'ambBus', 'ambDuck');
   const voiceBus = g(1); wire(voiceBus, voiceVol, 'voiceBus', 'voiceVol');
+  const instBus = g(1); wire(instBus, sfxVol, 'instBus', 'sfxVol');
+  const breaBus = g(1); wire(breaBus, voiceVol, 'breaBus', 'voiceVol');
 
   // music keeps its own low-pass (score ducks earlier and harder than the
   // world does) but re-enters at master, above worldLP, so the two filters
@@ -160,7 +169,7 @@ export function buildBuses(ac, { volumes = DEFAULT_VOLUMES, ir = null, analyser 
   return {
     ac, comp, master, worldLP,
     graph: { edges, pathFrom },
-    sfxBus, ambBus, voiceBus, uiBus, musicBus,
+    sfxBus, ambBus, voiceBus, uiBus, musicBus, instBus, breaBus,
     sfxVol, ambVol, voiceVol, uiVol, musicVol,
     ambDuck, musicDuck, musicLP,
     reverbSend, convolver, fxReturn,
@@ -170,6 +179,8 @@ export function buildBuses(ac, { volumes = DEFAULT_VOLUMES, ir = null, analyser 
       if (category === 'ambience') return ambBus;
       if (category === 'voice') return voiceBus;
       if (category === 'ui') return uiBus;
+      if (category === 'inst') return instBus;
+      if (category === 'brea') return breaBus;
       return sfxBus;
     },
   };

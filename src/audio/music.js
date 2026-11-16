@@ -53,17 +53,18 @@ import { clockFor } from './clock.js';
 export const BPM = 96;
 export const BEAT = 60 / BPM;   // 0.625 s
 export const BAR = BEAT * 4;    // 2.5 s
-export const PHRASE = BAR * 4;  // 10.0 s — the rendered stem length
+export const PHRASE = BAR * 8;  // 20.0 s — the rendered stem length (src/audio/slice/recipes.js MUSIC: 8 bars)
 
-/** stem key -> bank set id. The key is what the mix table and gates speak. */
+/**
+ * stem key -> bank set id. BUILD M1.6k (TECH §14 "music"): ONE cue, the Pans theme, in four phase-locked stems: plucked
+ * strings and a whistle line, and its tension layer (a pedal and a ratchet) that comes up while lamps are up. No
+ * drums, no choir.
+ */
 export const STEM_SETS = {
-  pad: 'music/pad-calm',
-  pluck: 'music/pluck-calm',
-  drone: 'music/drone-tense',
-  perc: 'music/perc-tense',
-  drums: 'music/drums-combat',
-  bass: 'music/bass-combat',
-  lead: 'music/lead-combat',
+  strings: 'music/strings',
+  whistle: 'music/whistle',
+  pedal: 'music/pedal',
+  ratchet: 'music/ratchet',
 };
 
 export const STATES = ['calm', 'suspicious', 'combat', 'resolve'];
@@ -75,10 +76,12 @@ export const STATES = ['calm', 'suspicious', 'combat', 'resolve'];
  * kit so the low end never drops out mid-transition.
  */
 export const MIX = {
-  calm: { pad: 0.9, pluck: 0.75, drone: 0, perc: 0, drums: 0, bass: 0, lead: 0 },
-  suspicious: { pad: 0.34, pluck: 0, drone: 0.95, perc: 0.6, drums: 0, bass: 0, lead: 0 },
-  combat: { pad: 0, pluck: 0, drone: 0.42, perc: 0, drums: 1, bass: 0.92, lead: 0.78 },
-  resolve: { pad: 0.72, pluck: 0.4, drone: 0.18, perc: 0, drums: 0, bass: 0, lead: 0 },
+  calm: { strings: 0.9, whistle: 0.8, pedal: 0, ratchet: 0 },
+  // lamps up (wary): the ratchet tension layer swells over the strings; hostile: the tension mix at the calm theme's
+  // loudness, which the music bus then ducks 6 dB (src/audio/slice/director.js; TECH §14)
+  suspicious: { strings: 0.6, whistle: 0, pedal: 0.55, ratchet: 3.1 },
+  combat: { strings: 0.3, whistle: 0, pedal: 0.5, ratchet: 1.2 },
+  resolve: { strings: 0.85, whistle: 0.5, pedal: 0.15, ratchet: 0 },
 };
 
 /**

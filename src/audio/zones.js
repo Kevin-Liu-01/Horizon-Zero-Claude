@@ -32,6 +32,7 @@
 
 import { SpatialChain, LoopEmitter } from './spatial.js';
 import { clockFor } from './clock.js';
+import { NEAR_CAP, distanceGain } from './slice/mix.js';
 
 const MAX_CHAINS = 14;
 
@@ -120,6 +121,8 @@ export class ZoneEmitters {
     if (opts.reverb != null) chain.send.gain.value = opts.reverb;
     const loop = new LoopEmitter(this.ac, first.buffer, chain.input, {
       gain: 0, xf: opts.xf ?? 0.9, rate: opts.rate ?? 1,
+      // the slice's bank loops are seamless (one looping source); a set row says so with `loop: true`
+      native: opts.native ?? !!first.row.loop, tau: opts.tau ?? 0.25,
     });
     loop.start();
     loop.volume = (opts.volume ?? 0.4) * (first.row.gain ?? 1);
@@ -167,7 +170,8 @@ export class ZoneEmitters {
       const c = e.chain;
       if (occA) c.updateOcclusion(collision, L.x, L.y, L.z, nowMs, occA, occB);
       c.smoothOcclusion(rdt);
-      c.applyDistance(L.x, L.y, L.z, L.fx, L.fy, L.fz);
+      const d = c.applyDistance(L.x, L.y, L.z, L.fx, L.fy, L.fz);
+      e.loop.cap = NEAR_CAP / distanceGain(d);       // BUILD M1.6k: the near cap, as a one-shot's
     }
   }
 

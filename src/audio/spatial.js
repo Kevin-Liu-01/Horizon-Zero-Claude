@@ -24,13 +24,17 @@
  * AudioBufferSourceNode (unavoidable — they are single-use) and nothing else.
  */
 
+import { ATTEN } from './slice/mix.js';
+
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-/** Distance at which the air-absorption low-pass halves its cutoff. */
-export const AIR_HALF_DISTANCE = 26;
-export const REF_DISTANCE = 2.0;
-export const ROLLOFF = 0.9;
-export const MAX_DISTANCE = 600;
+/* TECH §14 attenuation (BUILD M1.6k): inverse distance, reference 2 m, rolloff 1 — from the slice's mix table, which the
+ * offline rows read too. The air's high-cut halves every 110 m (was 26 m: a 311 Hz guild bell at 300 m was cut to
+ * 180 Hz, i.e. silenced, which no air does). */
+export const AIR_HALF_DISTANCE = ATTEN.airHalf;
+export const REF_DISTANCE = ATTEN.ref;
+export const ROLLOFF = ATTEN.rolloff;
+export const MAX_DISTANCE = ATTEN.max;
 
 /** Cutoff for a source `d` metres away with occlusion factor `occ` (0..1). */
 export function airCutoff(d, occ = 0) {
@@ -289,7 +293,12 @@ export class SpatialPool {
  * `xf` seconds do not. Used for ambience beds and machine servo loops.
  */
 export class LoopEmitter {
-  constructor(ac, buffer, dest, { gain = 0.2, xf = 1.1, rate = 1 } = {}) {
+  /**
+   * `native`: the buffer is already a seamless loop (every loop of the slice's bank is: src/audio/slice/recipes.js
+   * loopify), so ONE looping source plays it; the overlapping copies below are for a buffer whose ends do not meet.
+   * `tau`: the volume's smoothing time constant (s).
+   */
+  constructor(ac, buffer, dest, { gain = 0.2, xf = 1.1, rate = 1, native = false, tau = 0.25 } = {}) {
     this.ac = ac;
     this.buffer = buffer;
     this.out = ac.createGain();
@@ -298,6 +307,8 @@ export class LoopEmitter {
     this.target = gain;
     this.xf = Math.min(xf, buffer.duration * 0.35);
     this.rate = rate;
+    this.native = !!native;
+    this.tau = tau;
     this._sources = [];
     this._next = 0;
     this.playing = false;
@@ -307,6 +318,19 @@ export class LoopEmitter {
     if (this.playing) return;
     this.playing = true;
     this._next = Math.max(when, this.ac.currentTime) + 0.02;
+    if (this.native) {
+      const s = this.ac.createBufferSource();
+      s.buffer = this.buffer;
+      s.loop = true;
+      s.playbackRate.value = this.rate;
+      s.connect(this.out);
+      // a random start phase, so two emitters of one loop never play in step
+      s.start(this._next, Math.random() * this.buffer.duration);
+      this._sources.push({ s, g: null, until: Infinity });
+      this._applied = Math.min(this.target, this._cap ?? Infinity);
+      this.out.gain.setTargetAtTime(this._applied, this._next, this.tau);
+      return;
+    }
     this._schedule();
     this._schedule();
   }
@@ -333,7 +357,7 @@ export class LoopEmitter {
 
   /** Keep two sources in flight; call from the audio system's update(). */
   pump(lookahead = 1.5) {
-    if (!this.playing) return;
+    if (!this.playing || this.native) return;
     const now = this.ac.currentTime;
     // A backgrounded tab freezes update(); without this the catch-up loop
     // schedules every missed pass at a start time in the past, and Web Audio
@@ -353,10 +377,28 @@ export class LoopEmitter {
     // automation events onto the param over a long session
     if (Math.abs(v - this.target) < 1e-4) return;
     this.target = v;
-    this.out.gain.setTargetAtTime(v, this.ac.currentTime, 0.25);
+    this._apply();
   }
 
   get volume() { return this.target; }
+
+  /**
+   * The near cap (BUILD M1.6k, src/audio/slice/mix.js NEAR_CAP): the most this loop may play at, set by whoever
+   * positions it from its distance. Re-applied only on a change of more than 3 %.
+   */
+  set cap(c) {
+    const was = this._cap ?? Infinity;
+    if (Math.abs(c - was) <= 0.03 * Math.min(c, was)) return;
+    this._cap = c;
+    this._apply();
+  }
+
+  _apply() {
+    const v = Math.min(this.target, this._cap ?? Infinity);
+    if (this._applied !== undefined && Math.abs(v - this._applied) < 1e-4) return;
+    this._applied = v;
+    this.out.gain.setTargetAtTime(v, this.ac.currentTime, this.tau);
+  }
 
   stop(fade = 0.6) {
     if (!this.playing) return;
@@ -379,7 +421,8 @@ export class LoopEmitter {
     this.stop(0);
     for (const e of this._sources) {
       try { e.s.stop(); } catch { /* already stopped */ }
-      try { e.g.disconnect(); } catch { /* torn down */ }
+      try { e.g?.disconnect(); } catch { /* torn down */ }
+      try { e.s.disconnect(); } catch { /* torn down */ }
     }
     this._sources.length = 0;
     try { this.out.disconnect(); } catch { /* torn down */ }

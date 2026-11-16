@@ -33,6 +33,8 @@ import { SpatialPool, SpatialChain, LoopEmitter, syncListener } from './spatial.
 import { probeSpatial, probeBuffer, bandDistance, beatGrid } from './probe.js';
 import { MusicDirector, BEAT } from './music.js';
 import { ZoneEmitters } from './zones.js';
+import { SliceAudio } from './slice/director.js';
+import { FOLEY, cappedGain } from './slice/mix.js';
 
 const PENTA = [220.0, 261.63, 293.66, 329.63, 392.0, 440.0]; // A min pentatonic
 const VOICE_CAP = 24;
@@ -56,14 +58,12 @@ const WEIGHT = {
   sentry: 'light', swarm: 'light', spotter: 'light', herd: 'medium', flanker: 'medium',
   keeper: 'medium', duelist: 'medium', heavy: 'heavy', artillery: 'heavy', colossus: 'heavy',
 };
-/** Roles with their own voice and idle sets; any other role speaks with the sentry's. */
-const VOICE_ROLES = ['sentry', 'herd', 'swarm', 'heavy'];
 /** A machine's role, read from the Instrument registry (`machines.roleOf`). */
 const roleOf = (ctx, machine) => String(ctx.machines?.roleOf?.(machine?.kind) || '');
 /** Biome beds, cross-faded one-at-a-time by `_pickBed()` (`audio-11`). */
-const BEDS = [
-  'amb/meadow', 'amb/river', 'amb/forest', 'amb/night', 'amb/ridge',
-];
+/* BUILD M1.6k: the Round-4 biome beds are gone from the bank; the slice's places (the Pans, Saltrow, the shore, the
+ * trade wind, wind in cane) are mixed by src/audio/slice/director.js. */
+const BEDS = [];
 /** Per-bed level: a brazier is a presence, a night bed is a floor. */
 const BED_GAIN = {
   'amb/brazier': 0.5, 'amb/river': 0.46, 'amb/ridge': 0.44,
@@ -88,7 +88,7 @@ const SURFACE_SET = {
   cobble: 'foot/cobble', stone: 'foot/cobble',
   gravel: 'foot/gravel', scree: 'foot/gravel', shale: 'foot/gravel',
   rock: 'foot/rock', metal: 'foot/rock',
-  snow: 'foot/snow', ice: 'foot/snow',
+  snow: 'foot/rock', ice: 'foot/rock',
 };
 /**
  * Weapon id fragment -> bow set (`audio-13`).
@@ -98,10 +98,8 @@ const SURFACE_SET = {
  * harpoon launcher twanged like a short bow.
  */
 function bowSetFor(id) {
-  const s = String(id || '').toLowerCase();
-  if (/sharp|precision|marks|sighting/.test(s)) return 'sighting';
-  if (/war|heavy|tear|rope|recurve/.test(s)) return 'recurve';
-  return 'sabina';
+  // BUILD M1.6k: the slice has one bow and one bow set (bow/nock, draw, creak, loose, flyby, hit, hit-weak, miss)
+  return String(id || '') ? 'bow' : 'bow';
 }
 
 /** Weapons that put an arrow on a string — the only ones that nock. */
@@ -320,6 +318,9 @@ export class GameAudio {
     // until its buffer lands, so nothing is ever silent while it downloads.
     this.bankReady = this.bank.load(ac).then((b) => {
       this._startBeds();
+      // BUILD M1.6k: the slice's places, Instruments, work and lamp chirps
+      this.slice = new SliceAudio(this);
+      this.slice.start();
       this.zones = new ZoneEmitters(ac, buses, this.bank);
       // audio-01 — the composed score replaces the procedural one the moment
       // its stems are decoded. If any stem is missing the director reports
@@ -816,7 +817,9 @@ export class GameAudio {
     // one BufferSource + one gain per playback: sources are single-use, and the
     // gain is what lets the pool fade this exact voice out if it gets stolen
     const vg = this.ac.createGain();
-    vg.gain.value = (opts.volume ?? 1) * (picked.row.gain ?? 1);
+    // BUILD M1.6k: the near cap (src/audio/slice/mix.js cappedGain): a cue loud enough to carry its range is held to
+    // unity after the distance law when it plays close
+    vg.gain.value = cappedGain((opts.volume ?? 1) * (picked.row.gain ?? 1), chain.dist);
     vg.connect(chain.input);
     const src = this.ac.createBufferSource();
     src.buffer = picked.buffer;
@@ -844,7 +847,9 @@ export class GameAudio {
     if (!picked) { this._sampleCounts.missing++; return false; }
     const bus = opts.category === 'ui' ? this.uiBus
       : opts.category === 'ambience' ? this.ambBus
-        : opts.category === 'voice' ? this.voiceBus : this.sfxBus;
+        : opts.category === 'voice' ? this.voiceBus
+          : opts.category === 'brea' ? this.buses.breaBus
+            : opts.category === 'inst' ? this.buses.instBus : this.sfxBus;
     const g = this._voice(picked.buffer.duration + 0.1, (opts.volume ?? 1) * (picked.row.gain ?? 1), opts.pan || 0, bus);
     if (!g) return false;
     const src = this.ac.createBufferSource();
@@ -1215,8 +1220,8 @@ export class GameAudio {
    */
   _effort(hard = false, volume = 1) {
     const set = hard ? 'brea/effort-hard' : 'brea/effort';
-    if (!this.play2D(set, { volume: 0.5 * volume, category: 'voice', rate: 0.96 + Math.random() * 0.1 })) {
-      this.play2D('brea/effort', { volume: 0.45 * volume, category: 'voice' });
+    if (!this.play2D(set, { volume: 0.5 * volume, category: 'brea', rate: 0.96 + Math.random() * 0.1 })) {
+      this.play2D('brea/effort', { volume: 0.45 * volume, category: 'brea' });
     }
     this._exertion = Math.min(1, this._exertion + (hard ? 0.28 : 0.16));
   }
@@ -1257,11 +1262,11 @@ export class GameAudio {
     if (bow !== this._nockBow) { this._nockBow = bow; this._nockPrev = false; this._drawPrev = false; }
 
     const nocked = !!cb.nockLanded;
-    if (nocked && !this._nockPrev) this.play2D(`bow/${bow}/nock`, { volume: 0.42 });
+    if (nocked && !this._nockPrev) this.play2D('bow/nock', { volume: 1, category: 'brea' });
     this._nockPrev = nocked;
 
     const drawing = (cb.drawStrength ?? 0) > 0.02;
-    if (drawing && !this._drawPrev) this.play2D(`bow/${bow}/draw`, { volume: 0.36 });
+    if (drawing && !this._drawPrev) this.play2D('bow/draw', { volume: 1, category: 'brea' });
     this._drawPrev = drawing;
   }
 
@@ -1278,10 +1283,10 @@ export class GameAudio {
     if (this._breathT > 0) return;
     if (this._exertion > 0.62) {
       this._breathT = 2.1 + Math.random() * 0.9;
-      this.play2D('brea/breath-hard', { volume: 0.34 + this._exertion * 0.2, category: 'voice' });
+      this.play2D('brea/breath-hard', { volume: 0.34 + this._exertion * 0.2, category: 'brea' });
     } else if (this._exertion > 0.3) {
       this._breathT = 3.4 + Math.random() * 1.6;
-      this.play2D('brea/breath-out', { volume: 0.22, category: 'voice' });
+      this.play2D('brea/breath-out', { volume: 0.22, category: 'brea' });
     } else {
       this._breathT = 2.5;
     }
@@ -1317,9 +1322,9 @@ export class GameAudio {
   }
 
   _speciesSet(machine, phase) {
-    const role = roleOf(this.ctx, machine);
-    const k = VOICE_ROLES.includes(role) ? role : 'sentry';
-    return `voice/${k}/${phase}`;
+    // BUILD M1.6k: Instrument voices are chimes, ratchets, escapements, whine and clinks (inst/windup, inst/strike);
+    // the slice's kinds voice their own attacks (src/audio/slice/director.js attackPhase)
+    return `inst/${phase === 'windup' ? 'windup' : 'strike'}`;
   }
 
   _weightOf(machine) { return WEIGHT[roleOf(this.ctx, machine)] || 'medium'; }
@@ -1335,7 +1340,7 @@ export class GameAudio {
     if (!pos) return false;
     const heavy = this._weightOf(machine) === 'heavy';
     return this.playAt(this._speciesSet(machine, phase), pos, {
-      category: 'voice',
+      category: 'inst',
       volume: (opts.volume ?? 1) * (heavy ? 1 : 0.85),
       priority: opts.priority ?? (heavy ? PRI.big : PRI.voice),
       rate: opts.rate ?? (0.97 + Math.random() * 0.06),
@@ -1355,6 +1360,8 @@ export class GameAudio {
    * second while the FSM settles on a lead.
    */
   _warble(machine, lost = false) {
+    // BUILD M1.6k: a lamp-state change chirps (src/audio/slice/director.js); suspicion has no second voice
+    if (this.slice?.ready) return false;
     if (!machine?.position) return false;
     const nowMs = performance.now();
     if (nowMs - (this._warbleCd.get(machine) ?? -1e9) < 1600) return false;
@@ -1392,13 +1399,12 @@ export class GameAudio {
       // you a machine was near; eight tell you WHICH, which is the information
       // a stealth approach is actually played on. `machine/servo-loop` stays
       // as the fallback for a kind the bank has no bed for.
-      const role = roleOf(this.ctx, machine);
-      const first = (VOICE_ROLES.includes(role) && this.bank.first(`idle/${role}`))
-        || this.bank.first('machine/servo-loop');
+      const kindIdle = this.slice?.idleSet(machine);
+      const first = (kindIdle && this.bank.first(kindIdle)) || this.bank.first('inst/servo');
       if (!first) return;
       const chain = this._loopChain();
       if (!chain) return;
-      chain.route('ambience');
+      chain.route('inst');
       chain.busy = true;
       chain.priority = PRI.ambience;
       chain.startedAt = this._mono();
@@ -1410,12 +1416,13 @@ export class GameAudio {
       chain.source = null;
       // the composed beds are already pitched per species, so the old
       // rate hack (0.7 / 1.15) would now detune them off their own identity
-      const speciesBed = first.row.set.startsWith('idle/');
+      const speciesBed = first.row.set !== 'inst/servo';
       const loop = new LoopEmitter(this.ac, first.buffer, chain.input, {
         gain: 0, xf: 0.8, rate: speciesBed ? 1 : (this._weightOf(machine) === 'heavy' ? 0.7 : 1.15),
+        native: !!first.row.loop,
       });
       loop.start();
-      loop.volume = (this._weightOf(machine) === 'heavy' ? 0.5 : 0.32) * (first.row.gain ?? 1);
+      loop.volume = (speciesBed ? 1 : (this._weightOf(machine) === 'heavy' ? 0.5 : 0.32)) * (first.row.gain ?? 1);
       chain.loop = loop;
       this._machineLoops.set(machine, { loop, chain });
       this._rebuildLoopList();
@@ -1562,15 +1569,20 @@ export class GameAudio {
     if (this.bank.has(set)) {
       this._counts.steps++;
       const played = this.play2D(set, {
-        volume: (crouched ? 0.24 : 0.42 + speedN * 0.42),
+        volume: FOLEY.step(speedN, crouched),
         rate: 0.93 + Math.random() * 0.14,
+        category: 'brea',
       });
-      // gear foley on the harder strides
-      if (played && !crouched && speedN > 0.45 && Math.random() < 0.55) {
-        this.play2D(speedN > 0.8 ? 'gear/heavy' : 'gear/light',
-          { volume: 0.2 + speedN * 0.2, rate: 0.95 + Math.random() * 0.1 });
+      // BUILD M1.6k: cloth on every other step, the wrap's flap and the quiver on sprint steps (src/audio/slice/mix.js)
+      if (played) {
+        const k = (this._stepN = (this._stepN || 0) + 1);
+        if (k % 2 === 0) this.play2D('cloth/brush', { volume: FOLEY.cloth(speedN, crouched), rate: 0.94 + Math.random() * 0.12, category: 'brea' });
+        if (!crouched && speedN >= FOLEY.flapFrom) {
+          if (k % 4 === 1) this.play2D('cloth/flap', { volume: FOLEY.cloth(speedN, false), category: 'brea' });
+          if (k % 3 === 0) this.play2D('gear/light', { volume: FOLEY.gear(speedN), rate: 0.95 + Math.random() * 0.1, category: 'brea' });
+        }
+        return;
       }
-      if (played) return;
     }
     const g = this._voice(0.4, 1, 0, this.sfxBus);
     if (!g) return;
@@ -2505,7 +2517,7 @@ export class GameAudio {
         // fallback so a failed download never silences the weapon.
         const bow = bowSetFor(weapon || this.ctx.combat?.weapon?.id || type);
         const s = clamp(drawStrength ?? 0.6, 0.15, 1);
-        if (!this.play2D(`bow/${bow}/release`, { volume: 0.45 + s * 0.5, rate: 0.96 + s * 0.1 })) {
+        if (!this.play2D('bow/loose', { volume: 0.55 + s * 0.45, rate: 0.96 + s * 0.1, category: 'brea' })) {
           this._bowRelease(s);
         } else {
           this._pendingFlyby = { bow, at: performance.now() + 90 };
@@ -2516,13 +2528,13 @@ export class GameAudio {
     // Per-weapon nock / re-nock / dry-fire (audio-13). combat may not emit
     // these yet; the listeners are the contract, harmless until it does.
     ev.on('arrow-nocked', armed(({ weapon } = {}) => {
-      this.play2D(`bow/${bowSetFor(weapon)}/nock`, { volume: 0.5 });
+      this.play2D('bow/nock', { volume: 1, category: 'brea' });
     }));
     ev.on('arrow-draw', armed(({ weapon } = {}) => {
-      this.play2D(`bow/${bowSetFor(weapon)}/draw`, { volume: 0.4 });
+      this.play2D('bow/draw', { volume: 1, category: 'brea' });
     }));
     ev.on('weapon-empty', armed(({ weapon } = {}) => {
-      this.play2D(`bow/${bowSetFor(weapon)}/empty`, { volume: 0.55 });
+      this.play2D('bow/empty', { volume: 1, category: 'brea' });
     }));
 
     ev.on('arrow-hit', armed(({ point, machine, weak, type, damage } = {}) => {
@@ -2532,11 +2544,13 @@ export class GameAudio {
       // audio-10 — a four-rung ladder instead of one clank. The rung is chosen
       // from the same numbers the damage numbers use, so what you hear and what
       // you read agree.
+      // BUILD M1.6k: into an Instrument (its weak point: the Plumb's vial glass, else the lens), or into the ground
       const rung = machine
-        ? (weak ? 'hit/crit' : (damage ?? 0) >= 25 ? 'hit/crunch' : (damage ?? 0) >= 8 ? 'hit/thunk' : 'hit/plink')
-        : point ? ((damage ?? 0) >= 15 ? 'hit/flesh-hard' : 'hit/flesh-soft') : null;
+        ? (weak ? (this.slice ? this.slice.weakSet(machine) : 'bow/hit-weak') : 'bow/hit')
+        : point ? 'bow/miss' : null;
       const ladder = rung && this.playAt(rung, point, {
-        volume: weak ? 1 : 0.85,
+        category: 'sfx',
+        volume: weak ? 1 : 0.75 + 0.25 * clamp((damage ?? 10) / 25, 0, 1),
         priority: weak ? PRI.big : PRI.hit,
         rate: 0.95 + Math.random() * 0.1,
         duck: weak ? 0.35 : 0,
@@ -2563,8 +2577,14 @@ export class GameAudio {
       if (nowMs - this._partTornMs < 120) return;
       this._partTornMs = nowMs;
       at(pos);
-      this._partTorn(this._pan, Math.max(this._att, 0.45));
+      if (!(pos && this.playAt('lance/pry', pos, { category: 'sfx', volume: 1, priority: PRI.big }))) this._partTorn(this._pan, Math.max(this._att, 0.45));
     };
+    // BUILD M1.6k: Pry (melee.js 'pry') and the felling blow are voiced by the lance's own cues
+    ev.on('pry', armed((e = {}) => partTornAt(e?.point ?? e?.machine?.position ?? this.ctx.player?.position ?? null)));
+    ev.on('felling-blow', armed((e = {}) => {
+      const pos = e.machine?.position ?? null;
+      if (pos) this.playAt('lance/heavy', pos, { category: 'sfx', volume: 1, priority: PRI.big, duck: 0.3 });
+    }));
     ev.on('part-torn', armed((e = {}) =>
       partTornAt(e?.point ?? e?.machine?.position ?? e?.part?.mesh?.position ?? null)));
 
@@ -2604,13 +2624,16 @@ export class GameAudio {
     ev.on('melee-hit', armed((e = {}) => {
       const pos = e.point ?? e.machine?.position ?? null;
       at(pos, 0.8);
-      const rung = e.crit ? 'melee/crit' : e.heavy ? 'melee/heavy' : 'melee/light';
-      // air first, contact over it — one swing, not two events
-      this.playAt('melee/whoosh', pos, {
-        volume: e.heavy ? 0.7 : 0.5, priority: PRI.hit,
-        rate: e.heavy ? 0.92 : 1.06 + Math.random() * 0.08,
-      });
+      const rung = e.crit || e.heavy ? 'lance/heavy' : 'lance/hit';
+      // BUILD M1.6k: the swing's air is played on the strike phase itself (src/audio/slice/director.js), hit or miss
+      if (!this.slice?.ready) {
+        this.playAt('lance/swing', pos, {
+          volume: e.heavy ? 0.9 : 0.7, priority: PRI.hit, category: 'brea',
+          rate: e.heavy ? 0.92 : 1.06 + Math.random() * 0.08,
+        });
+      }
       const hit = this.playAt(rung, pos, {
+        category: 'sfx',
         volume: e.crit ? 1 : e.heavy ? 0.95 : 0.8,
         priority: e.crit ? PRI.big : PRI.hit,
         rate: 0.96 + Math.random() * 0.08,
@@ -2623,8 +2646,8 @@ export class GameAudio {
     ev.on('undercut', armed((e = {}) => {
       const pos = e.machine?.position ?? null;
       at(pos, 0.75);
-      if (!this.playAt('melee/silent', pos, {
-        volume: 0.85, priority: PRI.big, duck: 0.3,
+      if (!this.playAt('lance/heavy', pos, {
+        volume: 0.6, priority: PRI.big, duck: 0.3, category: 'sfx',
       })) this._clank(this._pan, 0.5, true);
     }));
 
@@ -2694,7 +2717,10 @@ export class GameAudio {
     }));
 
     // Focus tag marker placed (focus builder emits 'machine-tagged')
-    ev.on('machine-tagged', armed(() => this._tagBlip()));
+    ev.on('machine-tagged', armed(() => {
+      this._tagBlip();
+      this.play2D('alidade/bearing', { category: 'brea', volume: 1 });   // a bearing taken (BUILD M1.6k)
+    }));
 
     // Sentry blinding strobe — machines builder may emit this; the
     // optional-chained position read keeps it harmless if it never fires.
@@ -2705,6 +2731,7 @@ export class GameAudio {
 
     // v2: Focus mode hum (focus builder emits these; harmless if absent)
     ev.on('sighting-on', armed(() => {
+      this.play2D('alidade/raise', { category: 'brea', volume: 1 });     // the Alidade raised (BUILD M1.6k)
       this._focusOn = true;
       this._counts.focusToggles++;
       this._focus();
@@ -2715,11 +2742,9 @@ export class GameAudio {
     }));
 
     ev.on('machine-alerted', armed(({ machine } = {}) => {
+      // BUILD M1.6k: the lamp's hostile chirp is the alarm (src/audio/slice/director.js); no second alarm cue
       at(machine?.position ?? null);
-      this.playAt('machine/alarm', machine?.position, {
-        volume: 0.85, priority: PRI.voice, duck: 0.3, height: 1.2,
-      });
-      this._sting(this._pan, Math.max(this._att, 0.5));
+      if (!this.slice?.ready) this._sting(this._pan, Math.max(this._att, 0.5));
       this._lastTenseT = this._t;
       this._combatUntil = Math.max(this._combatUntil, performance.now() + 5000);
     }));
@@ -2742,6 +2767,8 @@ export class GameAudio {
         const stompy = /stomp|slam|charge|quake/i.test(kind || '');
         // audio-02 — the species owns the voice now. Eight banks, not two.
         this._combatUntil = Math.max(this._combatUntil, nowMs + 5000);
+        // the slice's kinds are voiced per attack phase (src/audio/slice/director.js)
+        if (this.slice?.ready && this.slice.idleSet(machine)) { this._lastTenseT = this._t; return; }
         const voiced = this._machineVoice(machine, 'strike');
         if (!voiced) {
           if (stompy || (big && !kind)) this._boom(this._pan, Math.max(this._att, 0.4));
@@ -2775,7 +2802,9 @@ export class GameAudio {
       if (nowMs - last < 90) return;
       if (keyed) this._footfallCd.set(m, nowMs); else this._footfallCdAnon = nowMs;
       const cls = this._weightOf(m);
-      if (!this.playAt(`mstep/${cls}`, pos, {
+      const kindStep = this.slice?.stepSet(m);
+      if (!this.playAt(kindStep || `mstep/${cls}`, pos, {
+        category: 'inst',
         volume: cls === 'heavy' ? 1 : 0.75,
         priority: PRI.machineStep,
         rate: 0.94 + Math.random() * 0.12,
@@ -2793,10 +2822,10 @@ export class GameAudio {
       if (nowMs - this._staggerMs < 140) return;
       this._staggerMs = nowMs;
       const pos = e.point || e.machine?.position;
-      this.playAt('machine/stagger', pos, {
-        volume: 0.95, priority: PRI.voice, duck: 0.4, duckHold: 0.5,
+      this.playAt('inst/stagger', pos, {
+        volume: 1, priority: PRI.voice, duck: 0.4, duckHold: 0.5, category: 'inst',
       });
-      this._machineVoice(e.machine, 'strike', { volume: 0.5, rate: 0.82 });
+      if (!this.slice?.idleSet(e.machine)) this._machineVoice(e.machine, 'strike', { volume: 0.5, rate: 0.82 });
     }));
 
     // machine-ai: FSM transition — { machine, from, to }
@@ -2814,11 +2843,11 @@ export class GameAudio {
         this._warble(m, false);
         this._suspectUntil = Math.max(this._suspectUntil, nowMs + 4000);
       } else if (to === 'alert' || to === 'alarm') {
-        this.playAt('machine/alarm', pos, { volume: 0.9, priority: PRI.voice, duck: 0.3 });
+        // BUILD M1.6k: the lamp's hostile chirp is the alarm
         this._lastTenseT = this._t;
         this._combatUntil = Math.max(this._combatUntil, nowMs + 5000);
       } else if (to === 'attack' || to === 'combat' || to === 'engage') {
-        this._machineVoice(m, 'windup', { volume: 0.9, duck: 0.3 });
+        if (!this.slice?.idleSet(m)) this._machineVoice(m, 'windup', { volume: 0.9, duck: 0.3 });
         this._lastTenseT = this._t;
         this._combatUntil = Math.max(this._combatUntil, nowMs + 5000);
       } else if ((to === 'idle' || to === 'patrol' || to === 'calm')
@@ -2840,12 +2869,8 @@ export class GameAudio {
       if (nowMs - ((keyed ? this._scanCd.get(m) : this._scanCdAnon) ?? -1e9) < 700) return;
       if (keyed) this._scanCd.set(m, nowMs); else this._scanCdAnon = nowMs;
       const pos = e.position || m?.position;
-      if (!this.playAt('machine/scan-ping', pos, {
-        volume: 0.7, priority: PRI.machineStep, rate: e.hit ? 1.12 : 1,
-      })) {
-        at(pos);
-        this._radarChirp(0.06, this._pan);
-      }
+      // BUILD M1.6k: a scan is not voiced (the lamp's chirps carry the Instruments' state)
+      if (!this.slice?.ready && pos) { at(pos); this._radarChirp(0.06, this._pan); }
     }));
 
     // machine-ai: multi-part attacks — { machine, attack, phase, index }
@@ -2856,7 +2881,9 @@ export class GameAudio {
       if (phase === 'windup' || phase === 'strike') {
         this._combatUntil = Math.max(this._combatUntil, performance.now() + 5000);
       }
-      if (phase === 'windup') {
+      if (this.slice?.ready && this.slice.attackPhase(e)) {
+        // a kind of the slice: its own cue (peg/mallet, peg/shot, peg/rush, plumb/bob)
+      } else if (phase === 'windup') {
         this._machineVoice(e.machine, 'windup', { volume: 0.85, duck: 0.22 });
       } else if (phase === 'strike') {
         // per-projectile: index > 0 means a volley, so drop the roar and let
@@ -2871,10 +2898,10 @@ export class GameAudio {
       at(machine?.position ?? null);
       const w = this._weightOf(machine);
       const size = w === 'heavy' ? 1.4 : w === 'medium' ? 1.15 : 1;
-      this._explosion(this._pan, Math.max(this._att, 0.5), size);
-      // audio-06 — death is not one explosion: the reactor spins down after it
-      this.playAt('machine/powerdown', machine?.position, {
-        volume: 0.9, priority: PRI.death, height: 1.0,
+      // BUILD M1.6k: an Instrument is stopped, not blown up: its escapement runs out and a last chime falls
+      if (!this.slice?.ready) this._explosion(this._pan, Math.max(this._att, 0.5), size);
+      this.playAt('inst/powerdown', machine?.position, {
+        category: 'inst', volume: 1, priority: PRI.death, height: 1.0,
         rate: size > 1.2 ? 0.78 : 1, duck: 0.35, duckHold: 0.8,
       });
       // the servo bed must die with the machine — and its chain must come back
@@ -2898,10 +2925,10 @@ export class GameAudio {
 
     ev.on('player-hurt', armed(() => {
       // D2: no VO. Breath and effort only.
-      this.play2D('brea/hurt', { volume: 0.75, category: 'voice', duck: 0.25 });
+      this.play2D('brea/hurt', { volume: 0.75, category: 'brea', duck: 0.25 });
       this._hurt();
     }));
-    ev.on('player-dodge', armed(() => this.play2D('brea/effort', { volume: 0.55, category: 'voice' })));
+    ev.on('player-dodge', armed(() => this.play2D('brea/effort', { volume: 0.55, category: 'brea' })));
     // Heal audio keys off player.healing edges observed in update() — the
     // pouch drains continuously, so count-based chimes would spam.
     ev.on('player-died', armed(() => {
@@ -2931,7 +2958,8 @@ export class GameAudio {
       const pos = e.position || e.machine?.position;
       if (!pos) return;
       const strength = clamp(e.strength ?? 0.5, 0.1, 1);
-      this.playAt('machine/collapse', pos, {
+      this.playAt('inst/collapse', pos, {
+        category: 'inst',
         volume: 0.55 + strength * 0.5,
         priority: PRI.death,
         rate: 1.12 - strength * 0.34,      // a Colossus lands slower than a Sentry
@@ -2957,22 +2985,27 @@ export class GameAudio {
     ev.on('machine-disposed', armed((e = {}) => quietBeacon(e.machine)));
 
     /* ----- Brea: effort on the verbs that cost something (audio-03) ----- */
-    ev.on('player-jump', armed(() => { this._airborne = true; this._effort(false, 0.8); }));
+    ev.on('player-jump', armed(() => {
+      this._airborne = true; this._effort(false, 0.8);
+      this.play2D('cloth/flap', { category: 'brea', volume: 0.8 });
+    }));
     ev.on('player-land', armed((e = {}) => {
       const hard = this._airborne && ((e.fallHeight ?? e.height ?? 0) > 2.4 || (e.impact ?? 0) > 0.5);
       this._airborne = false;
       // the boots land whatever the drop was; the grunt is only for a real fall
-      this.play2D(this._footSet(), { volume: hard ? 0.65 : 0.42, rate: 0.9 });
-      this.play2D('gear/heavy', { volume: hard ? 0.4 : 0.22 });
+      this.play2D(this._footSet(), { volume: hard ? 1 : 0.8, rate: 0.9, category: 'brea' });
+      this.play2D('gear/heavy', { volume: hard ? 1 : 0.6, category: 'brea' });
+      this.play2D('cloth/flap', { volume: hard ? 1 : 0.7, category: 'brea' });
       if (hard) this._effort(true, 1);
     }));
     ev.on('player-mantle', armed(() => this._effort(true, 0.85)));
     ev.on('player-splash', armed((e = {}) => {
       const v = clamp(e.speed ? e.speed / 6 : 0.6, 0.25, 1);
-      this.play2D('foot/water', { volume: 0.4 + v * 0.4, rate: 0.92 + Math.random() * 0.14 });
+      this.play2D('foot/water', { volume: 0.6 + v * 0.4, rate: 0.92 + Math.random() * 0.14, category: 'brea' });
     }));
     ev.on('player-crouch', armed((e = {}) => {
-      this.play2D('gear/light', { volume: e?.crouching === false ? 0.18 : 0.26 });
+      this.play2D('gear/light', { volume: e?.crouching === false ? 0.6 : 0.8, category: 'brea' });
+      this.play2D('cloth/brush', { volume: 0.8, category: 'brea' });
     }));
 
     /* ------- discovery stingers on the score (audio-01, audio-12) ------- */
@@ -2988,14 +3021,25 @@ export class GameAudio {
      * they stay crisp under Concentration and answer to their own slider.
      * `shell-menus` / `shell-hud` emit them; unemitted names cost nothing.
      * ------------------------------------------------------------------- */
-    ev.on('ui-nav', armed(() => this._uiBlip(1520, 0.03, 0.05)));
-    ev.on('ui-confirm', armed(() => this._uiBlip(880, 0.05, 0.1, 1320)));
-    ev.on('ui-back', armed(() => this._uiBlip(660, 0.045, 0.09, 440)));
-    ev.on('ui-error', armed(() => this._uiBlip(220, 0.06, 0.16, 165)));
-    ev.on('ui-open', armed(() => this._wheelWhoosh(true)));
-    ev.on('ui-close', armed(() => this._wheelWhoosh(false)));
-    ev.on('inventory-open', armed(() => this._uiBlip(1180, 0.04, 0.08, 1560)));
-    ev.on('inventory-close', armed(() => this._uiBlip(1180, 0.035, 0.08, 780)));
+    // BUILD M1.6k: glass ticks from the bank (ui/*); the synthesized blip stays as the fallback until it decodes
+    const glass = (set, fallback) => () => { if (!this.play2D(set, { category: 'ui', volume: 1 })) fallback(); };
+    ev.on('ui-nav', armed((e = {}) => glass(e?.tab ? (e.tab === 'map' ? 'ui/map' : 'ui/tab') : 'ui/tick', () => this._uiBlip(1520, 0.03, 0.05))()));
+    ev.on('ui-confirm', armed(glass('ui/select', () => this._uiBlip(880, 0.05, 0.1, 1320))));
+    ev.on('ui-back', armed(glass('ui/back', () => this._uiBlip(660, 0.045, 0.09, 440))));
+    ev.on('ui-error', armed(glass('ui/error', () => this._uiBlip(220, 0.06, 0.16, 165))));
+    ev.on('ui-open', armed((e = {}) => glass(e?.screen === 'hub' && (e.tab || 'map') === 'map' ? 'ui/map' : 'ui/open', () => this._wheelWhoosh(true))()));
+    ev.on('ui-close', armed(glass('ui/close', () => this._wheelWhoosh(false))));
+    ev.on('inventory-open', armed(glass('ui/open', () => this._uiBlip(1180, 0.04, 0.08, 1560))));
+    ev.on('inventory-close', armed(glass('ui/close', () => this._uiBlip(1180, 0.035, 0.08, 780))));
+    ev.on('triangle-closed', armed(() => this.play2D('ui/triangle', { category: 'ui', volume: 1 })));
+    ev.on('save-written', armed(() => this.play2D('ui/save', { category: 'ui', volume: 1 })));
+
+    /* ---------------- the slice's own events (BUILD M1.6k) ---------------- */
+    ev.on('plumb-chime', armed((e = {}) => this.slice?.plumbChime(e)));
+    ev.on('plumb-topple', armed((e = {}) => this.slice?.plumbTopple(e)));
+    ev.on('gauge-sluice', armed((e = {}) => this.slice?.sluice(e)));
+    ev.on('brazier-kindled', armed((e = {}) => this.slice?.kindled(e)));
+    ev.on('brazier-rest-start', armed(() => this.slice?.restStart()));
   }
 
   /** Concentration slow-mo entered/left (idempotent; event + poll driven). */
@@ -3186,7 +3230,7 @@ export class GameAudio {
 
     // arrow flyby trails the release by ~90 ms (audio-13)
     if (this._pendingFlyby && nowMs > this._pendingFlyby.at) {
-      this.play2D(`bow/${this._pendingFlyby.bow}/flyby`, { volume: 0.32, pan: 0.15 });
+      this.play2D('bow/flyby', { volume: 1, pan: 0.15, category: 'brea' });
       this._pendingFlyby = null;
     }
   }
@@ -3215,15 +3259,19 @@ export class GameAudio {
       + 0.1 * Math.sin(t * 0.83 + 4.2), 0, 1,
     );
     this._gust = gust;
-    this.windGain.gain.value = 0.05 + gust * 0.11;
-    this.rumbleGain.gain.value = 0.02 + gust * gust * 0.09;
+    const sliceOn = !!this.slice?.ready;
+    // BUILD M1.6k: the slice's places carry the wind (amb/pans, amb/trade, wind in cane); the procedural wind bed is
+    // the no-bank fallback only
+    this.windGain.gain.value = sliceOn ? 0 : 0.05 + gust * 0.11;
+    this.rumbleGain.gain.value = sliceOn ? 0 : 0.02 + gust * gust * 0.09;
     this._windBpL.frequency.value = 340 + gust * 260;
     this._windBpR.frequency.value = 420 + gust * 300;
     let rustle = gust * gust * 0.028;
     if (p && p.inReedCover && p.moveSpeed > 0.5) {
       rustle += clamp(p.moveSpeed / 8.2, 0, 1) * 0.05;
     }
-    this.rustleGain.gain.value = rustle;
+    this.rustleGain.gain.value = sliceOn ? 0 : rustle;
+    if (sliceOn) this.slice.update(rdt, playing);
 
     // --- footsteps synced to the animator gait (same formula, one footfall
     //     per half stride cycle): stepLen = clamp(0.5+0.3*v, 0.6, 1.92),
@@ -3259,7 +3307,11 @@ export class GameAudio {
 
     // --- bow creak follows drawStrength (lazy: combat builds after audio);
     //     hard-muted outside 'playing' so it can't drone over death/pause
-    if (ctx.state !== 'playing' || (p && p.health <= 0)) {
+    if (sliceOn) {
+      // with the slice's bank up, the bow's hold creak is the bank's bow/creak loop (src/audio/slice/director.js)
+      if (this._creakLevel > 0 || this.creakGain.gain.value > 0) this._killCreak();
+      this._prevDraw = 0;
+    } else if (ctx.state !== 'playing' || (p && p.health <= 0)) {
       this._killCreak();
       this._prevDraw = 0;
     } else {
@@ -3378,7 +3430,8 @@ export class GameAudio {
     this._birdT -= dt;
     if (this._birdT <= 0) {
       this._birdT = 7 + Math.random() * 12;
-      if (this._tension < 0.3) this._bird();
+      // BUILD M1.6k: the slice's birds are its gulls (src/audio/slice/director.js)
+      if (this._tension < 0.3 && !sliceOn) this._bird();
     }
 
     // --- ambient pentatonic plucks
@@ -3395,7 +3448,7 @@ export class GameAudio {
     if (this._radarT <= 0) {
       this._radarT = 2.0 + Math.random() * 1.4;
       const w = this._sentry;
-      if (w && w.alive && this._sentryDist < 35) {
+      if (w && w.alive && this._sentryDist < 35 && !sliceOn) {
         this._spatial(w.position);
         const vol = 0.03 + 0.09 * (1 - this._sentryDist / 35);
         this._radarChirp(vol, this._pan);

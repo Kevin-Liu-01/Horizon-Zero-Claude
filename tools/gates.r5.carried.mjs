@@ -28000,7 +28000,7 @@ const GATES = [
       ${ARM}
       const a = await _arm();
       if (!a.ac) return { pass: null, detail: 'SKIP: no AudioContext' };
-      if (!a.bank.has('machine/servo-loop')) return { pass: null, detail: 'SKIP: no machine/servo-loop cue' };
+      if (!a.bank.has('inst/servo')) return { pass: null, detail: 'SKIP: no inst/servo cue' };
       const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       /**
        * Poll, never sleep a fixed span: a chain is released on the first

@@ -376,22 +376,19 @@
       "attribution": null
     },
     {
-      "id": "legacy-audio",
+      "id": "slice-audio",
       "paths": [
         "public/audio/**"
       ],
-      "title": "Synthesized audio bank (sets named by role, M0.3)",
-      "author": "CALIMA project (tools/audio-bank.mjs + tools/audio-recipes.js)",
-      "source_url": "tools/audio-bank.mjs",
+      "title": "The slice's audio bank (BUILD M1.6k): synthesized by src/audio/slice/recipes.js, rendered by tools/gates/audio/build-bank.mjs; Brea's breath and effort set kept from M0.3",
+      "author": "CALIMA project",
+      "source_url": "src/audio/slice/recipes.js",
       "licence": "project-original",
       "licence_text": null,
       "archive_sha256": null,
       "retrieved": null,
       "modified": null,
-      "attribution": null,
-      "legacy": "r4",
-      "delete_at": "W3 exit (regenerated under new set names)",
-      "delete_owner": "audio"
+      "attribution": null
     },
     {
       "id": "mco-fantasy-standard",
