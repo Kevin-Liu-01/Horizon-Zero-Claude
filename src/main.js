@@ -19,6 +19,7 @@ import { Studio } from './studio/studio.js';
 import { installProgression } from './core/progression.js';
 import { installMenus } from './ui/menu.js';
 import { installGame } from './game/runtime.js';
+import { webglSupport, showUnsupported } from './ui/unsupported.js';
 
 const params = new URLSearchParams(location.search);
 
@@ -85,6 +86,9 @@ class Game {
 
   async boot() {
     const ctx = this.ctx;
+    // M1.6g2 (BIBLE 18): a plain page when WebGL 2 or a needed extension is missing (?unsupported=1 shows it)
+    const support = webglSupport();
+    if (!support.ok || params.has('unsupported')) { showUnsupported(support); return; }
     const engine = new Engine(document.getElementById('app'), {
       quality: ctx.settings.quality,
       // screenshots and gates must be deterministic: never resample under them

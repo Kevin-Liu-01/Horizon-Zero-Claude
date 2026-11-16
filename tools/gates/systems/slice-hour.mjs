@@ -727,7 +727,9 @@ async function reloadContinue(page, tag) {
   await sleep(300);
   row.titleShot = await shot(page, `${tag}-title`);
   row.titleSave = await page.evaluate(() => document.querySelector('.mn-title-save')?.textContent ?? null);
-  const hadContinue = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent)); if (!b || b.disabled) return false; b.click(); return true; });
+  const hadContinue = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent)); if (!b || b.disabled) return false; b.click();
+    // M1.6g2 (BIBLE 18): CONTINUE opens the three slot cards; the marked one is the slot Continue loads
+    const go = document.querySelector('.gs-slot.cont .gs-slot-go'); if (!go) return false; go.click(); return true; });
   await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 60000, polling: 50 }).catch(() => {});
   await sleep(1500);
   // (eeddcb4: the frame was detached under this read once, after a death and RELOAD earlier in the run: wait and read again)
