@@ -22,7 +22,9 @@ export const TURB = 0.15;
  */
 export function aeroForces(P, wx, wz, t) {
   const x = P.x, v = P.v, f = P.f, nrm = P.nrm, A = P.area, n = P.n, mat = P.mat;
-  const cd = mat.cd, cl = mat.cl;
+  // (P.airK: a piece's share of the sheet's air, 1 for Brea's cloth; the people's strands stand for a whole tail or
+  //  apron with a handful of particles and catch less, cloth/strands.js)
+  const cd = mat.cd, cl = mat.cl, airK = P.airK ?? 1;
   const ws = Math.sqrt(wx * wx + wz * wz);
   const lee = P.lee || 0, ux0 = ws > 1e-6 ? wx / ws : 0, uz0 = ws > 1e-6 ? wz / ws : 0, rx = P.root.p[0], rz = P.root.p[2];
   for (let i = 0; i < n; i++) {
@@ -56,7 +58,7 @@ export function aeroForces(P, wx, wz, t) {
         if (s2 < sh) sh = s2;
       }
     }
-    const q = 0.5 * RHO * A[i] * u2 * sh;
+    const q = 0.5 * RHO * A[i] * u2 * sh * airK;
     const dr = cd * (c < 0 ? -c : c), li = cl * c;
     f[k] = q * (dr * hx + li * (nx - c * hx));
     f[k + 1] = q * (dr * hy + li * (ny - c * hy));

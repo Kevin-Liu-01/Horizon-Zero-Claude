@@ -577,7 +577,9 @@ export class BreaCloth {
     const P = new ClothPiece({ name, mat, C, R, X, Q0, root, pinned, cons, lraPin, mass, area, mask, off, offPerCollider: this._offFit(X, pinned, mask, off, root), ground: false });
     // (the tongues' minimum: a little under their bind distance, so the pair never crosses but may close)
     for (let c = 0; c < P.nc; c++) if (P.ck[c] === 1) P.cr[c] *= 0.7;
-    P.fwd = fwd; P.stem = stem; P.kind = 'tail'; P.lee = 0;   // (the head is narrower than the tail's swing: no lee)
+    P.fwd = fwd; P.stem = stem; P.kind = 'tail'; P.lee = 0;
+    // (step 2: 0.65 of the air: with the heavier damping the tail stood at 59-60 deg in 5.5 m/s from her front, band 25-50)
+    P.airK = 0.65;   // (the head is narrower than the tail's swing: no lee)
     // (the tail's strip is 0.09 m wide and cupped about the two particles of a row: its edges stand 0.02 m off them)
     // (step 2: 0.052, was 0.030: the strip's cupped edge, or the strip turned edge-on, still met the grader's torso by
     //  1.6-5 mm standing and in a crouch)

@@ -21,12 +21,14 @@ import { ClothPiece, ClothSystem, makeRoot } from './solver.js';
 import { makeCollider, setEnds } from './colliders.js';
 
 /** which chains go on the solver, and as what */
-const CLASS = (key) => {
+export const CLASS = (key) => {
   if (/^(hairTail|wrapSash|sashEnd|sashSwing|shawlEnd[LR])$/.test(key)) return { mat: 'coarseLinen', width: 0.08, kind: 'tail' };
   if (/^apron[LR]$/.test(key)) return { mat: 'leather', width: 0.16, kind: 'apron' };
   if (/^cloak[LR]$/.test(key)) return { mat: 'felt', width: 0.2, kind: 'cloak' };
   return null;
 };
+/** each kind's share of the air (aero.js P.airK) */
+const AIR_K = { tail: 0.3, apron: 0.4, cloak: 0.5 };
 /** collider radii at scale 1 (m) */
 const RAD = { thigh: [0.085, 0.07], shin: [0.06, 0.048], torso: [0.13, 0.13], head: [0.095, 0.095] };
 
@@ -155,6 +157,9 @@ export class StrandCloth {
     P.kind = cl.kind; P.stem = cols[0].key; P.lee = 0;
     // (a long link's chord cuts a leg its two particles clear: the edge pass for the sheets hung over the legs)
     P.hard = 0.01 * S; P.edges = cl.kind !== 'tail';
+    // (the air: F21 at 8b28266 filmed the people's tails streaming level in the 5.5 m/s trade wind, pennants; a knotted
+    //  strip on a person hangs and swings (AIR_K, tuned on the people bench: the tip 0.25-0.35 m under its knot at 5.5 m/s))
+    P.airK = AIR_K[cl.kind] ?? 1;
     // her forward in the root's space: the root bone's +Z (the rigs' bones are authored +Y along the bone)
     P.fwd[0] = 0; P.fwd[1] = 0; P.fwd[2] = 1;
     this.sys.addPiece(P);

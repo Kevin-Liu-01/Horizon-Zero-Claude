@@ -121,7 +121,7 @@ export class ClothPiece {
     this.restScale = 1;
     // (declared here, set by the rig: one shape for every piece)
     this._act = null; this.fwd = new Float64Array([0, 0, 1]); this.lee = 0; this.stem = ''; this.kind = '';
-    this.pinMask = 0; this.hard = 0.015; this.hardC = null; this.edges = false;
+    this.pinMask = 0; this.hard = 0.015; this.hardC = null; this.edges = false; this.airK = 1;
     this.boneOf = null; this.bones = null; this.f0 = null; this.verts = null;
   }
 
