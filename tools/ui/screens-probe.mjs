@@ -19,7 +19,7 @@
  *   node tools/ui/screens-probe.mjs --port 5263 --label fix1
  */
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,8 @@ import puppeteer from 'puppeteer';
 import { takeMachineSlot, releaseMachineSlot } from '../chrome-slot.mjs';
 import { profileDir, disposeProfile, installProfileCleanup, guardPort } from '../chrome-profile.mjs';
 import { RUNS } from '../frames/paths.mjs';
+import { wordListPath } from '../tier0/namelint.mjs';
+import { parseWordList, makeMatcher } from '../tier0/lib/words.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const arg = (k, d = null) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
@@ -69,8 +71,13 @@ const WORDS = {
   contextLost: ['DISPLAY RESET · RESUMING'],
   unsupported: ['CALIMA NEEDS WEBGL 2'],
 };
-/** Words that must NOT show on a shell screen (IP-PRIVATE P2: no level, XP, points or purchase; no rarity tiers). */
-const NEVER = ['XP', 'LEVEL UP', 'SKILL POINTS', 'UPGRADE', 'COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'PURCHASE'];
+/** Words that must NOT show on a shell screen (IP-PRIVATE P2: no level, XP, points or purchase; no rarity tiers). The
+ * listed terms of the private name-lint list are checked on every screen's full visible text as well (`listed`), from
+ * the one place the lint reads them (tools/tier0/namelint.mjs wordListPath); a word that list carries is not spelled
+ * here, so this file stays clean under the lint it tests for. */
+const NEVER = ['XP', 'LEVEL UP', 'SKILL POINTS', 'UPGRADE', 'COMMON', 'UNCOMMON', 'RARE', 'LEGENDARY', 'PURCHASE'];
+const WL = wordListPath();
+const LISTED = existsSync(WL) ? (() => { const L = parseWordList(readFileSync(WL, 'utf8')); return makeMatcher([...L.anywhere, ...L.names, ...L.playerVisible]); })() : null;
 
 let vite = null, browser = null, profile = null;
 const done = async () => {
@@ -107,11 +114,13 @@ try {
     window.WebSocket.prototype = Real.prototype;
     // the in-page audit: words, the surface's glass, paper boxes, fonts
     window.__audit = (rootSel, surfSel, words, never) => {
-      const root = typeof rootSel === 'string' ? document.querySelector(rootSel) : document.body;
+      // a list of roots: their texts are read together (a hub page under the hub's own title line); the first is audited
+      const roots = (Array.isArray(rootSel) ? rootSel : [rootSel]).map((s) => (typeof s === 'string' ? document.querySelector(s) : document.body));
+      const root = roots[roots.length - 1];
       if (!root) return { found: false, rootSel };
       const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
         return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity > 0.05 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth; };
-      const text = (root.innerText || '').replace(/\s+/g, ' ').trim();
+      const text = roots.filter(Boolean).map((r) => r.innerText || '').join(' ').replace(/\s+/g, ' ').trim();
       const rgba = (s) => { const m = /rgba?\(([^)]+)\)/.exec(s || ''); if (!m) return null; const v = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r: v[0], g: v[1], b: v[2], a: v.length > 3 ? v[3] : 1 }; };
       const surf = surfSel ? document.querySelector(surfSel) : root;
       const scs = surf ? getComputedStyle(surf) : null;
@@ -141,20 +150,23 @@ try {
         surface: surf ? { sel: surfSel, bg: scs.backgroundColor, rgb: sbg ? [sbg.r, sbg.g, sbg.b] : null, a: sbg?.a ?? null,
           glass: !!sbg && Math.abs(sbg.r - 30) <= 2 && Math.abs(sbg.g - 26) <= 2 && Math.abs(sbg.b - 40) <= 2 && Math.abs(sbg.a - 0.9) < 0.02,
           backdrop: scs.backdropFilter || scs.webkitBackdropFilter || 'none', bgImage: scs.backgroundImage.slice(0, 80) } : null,
-        paper, red, fonts, text: text.slice(0, 600),
+        paper, red, fonts, text: text.slice(0, 600), fullText: text,
       };
     };
   });
   const C = (fn, a) => page.evaluate(fn, a);
   const shot = async (name) => { const f = path.join(OUT, `${name}.png`); await page.screenshot({ path: f }); log('shot', name); return path.basename(f); };
   /** One screen: shoot it, audit it in the page. */
+  /** `extra` is a page function (run in the page), or a Node function marked `.node` (it calls C itself). */
   const screen = async (name, rootSel, surfSel, extra = null) => {
     const file = await shot(name);
     const a = await C(([r, s, w, n]) => window.__audit(r, s, w, n), [rootSel, surfSel, WORDS[name] ?? [], NEVER]);
-    const x = extra ? await C(extra) : null;
-    res.screens[name] = { shot: file, ...a, ...(x ? { extra: x } : {}) };
+    const x = extra ? (extra.node ? await extra() : await C(extra)) : null;
+    const listed = LISTED && a.fullText ? LISTED(a.fullText) : null;
+    delete a.fullText;
+    res.screens[name] = { shot: file, ...a, listed, ...(x ? { extra: x } : {}) };
     const miss = Object.entries(a.words || {}).filter(([, v]) => !v).map(([k]) => k);
-    log(name, JSON.stringify({ found: a.found, missing: miss, never: a.never, glass: a.surface?.glass, bg: a.surface?.bg, paper: a.paper?.length, red: a.red?.length, fonts: a.fonts }));
+    log(name, JSON.stringify({ found: a.found, missing: miss, never: a.never, listed: listed ? listed.length : 'no list', glass: a.surface?.glass, bg: a.surface?.bg, paper: a.paper?.length, red: a.red?.length, fonts: a.fonts }));
     return a;
   };
   const station = (key) => C((k) => [...document.querySelectorAll('.mn-title-item')].find((x) => x.dataset.station === k)?.click(), key);
@@ -199,7 +211,8 @@ try {
   await screen('satchel', '.cal-inv', '.cal-inv-shell', () => ({ tab: window.__CTX__.menus.tab, state: window.__CTX__.state,
     tabs: [...document.querySelectorAll('.cal-inv .cal-inv-pocket')].map((t) => t.innerText.trim()).filter(Boolean) }));
   await hub('quests');
-  await screen('fieldLog', '#cal-prog .pg-overlay', '#cal-prog .pg-panel', () => ({ tab: window.__CTX__.menus.tab, state: window.__CTX__.state }));
+  // the hub names the page on its own title line (the panel's own head steps aside in the hub): read both
+  await screen('fieldLog', ['.mn-hub .mn-hub-title', '#cal-prog .pg-overlay'], '#cal-prog .pg-panel', () => ({ tab: window.__CTX__.menus.tab, state: window.__CTX__.state }));
   await hub('notebook');
   await screen('fieldBooks', '.cal-inv', '.cal-inv-shell', () => ({ tab: window.__CTX__.menus.tab, state: window.__CTX__.state }));
   await hub('settings');
@@ -228,6 +241,7 @@ try {
       lineRows: ln && lh ? Math.round(ln.getBoundingClientRect().height / lh) : null, lineText: ln?.innerText ?? '',
       stations: [...document.querySelectorAll('#cal-sys .sys-st')].map((r) => r.innerText.replace(/\s+/g, ' ').trim()) };
   });
+  ltRead.node = true;   // a Node function: screen() calls it, not page.evaluate (the 375c3ff run died on 'C is not defined')
   res.dialogueOpen = await C(() => { const G = window.__CTX__.systemsGame; if (!G?.talk) return false; G.talk('ansel'); return true; });
   await sleep(1400);
   res.dialogueCards = [await ltRead()];
