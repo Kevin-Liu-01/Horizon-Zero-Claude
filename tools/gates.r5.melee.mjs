@@ -3602,8 +3602,11 @@ export const GATES = [
         await grabNow();
         e.timeScale = 1;
       };
-      await drawRow(() => lockCam(-1.1, 1.7, 1.7, 1.35, 42));
-      await drawRow(() => lockCam(-2.0, 0.1, 1.5, 1.25, 42));
+      // (M1a weapons fix round 1: the row as restated in docs/GATES.md (RESTATED): the left hand does the reaching since
+      //  332e470, so the twelve tiles are shot from her LEFT rear three-quarter and her LEFT side; the old right-side
+      //  cameras mirrored)
+      await drawRow(() => lockCam(1.1, 1.7, 1.7, 1.35, 42));
+      await drawRow(() => lockCam(2.0, 0.1, 1.5, 1.25, 42));
       C.input.keys.clear();
       show();
       e.timeScale = 0;

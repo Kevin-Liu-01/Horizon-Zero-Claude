@@ -3070,7 +3070,10 @@ export class MeleeLayer {
      * margin — and anything worse than that waits for the clock. */
     /* M1a weapons round 2 (W1, W2 at the hand-over): taking the haft from the LEFT fist (the carry), the right takes it
      * on its socket: within `HANDOVER_SNAP` (the convergence path then needs the same; the clock's escape stays) */
-    const carry = !!this._lc?.on && !this._held && this._prevStance === 'draw' && !this._urgent;
+    /* (M1a weapons fix round 1, FIX LIST 6: the click's urgent draw took the haft by GRAB_SNAP, the right palm 0.0256 m
+     *  along the haft off lance.grip (W1, and W2's owner change outside an event): it takes it on its socket too; the
+     *  clock's escape below still bounds the wait) */
+    const carry = !!this._lc?.on && !this._held && this._prevStance === 'draw';
     const settled = carry ? reach <= HANDOVER_SNAP || (this._gsN >= 6 && this._gsStall >= 3 && reach <= 0.03)
       : reach <= GRAB_SNAP || (this._gsN >= 4 && this._gsStall >= 2 && reach <= 0.20);
     this.needsGrab = !settled;
