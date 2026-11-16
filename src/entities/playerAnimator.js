@@ -1467,6 +1467,7 @@ export class PlayerAnimator {
     if (this.melee?.ok) {
       this.melee.step(dt);
       this.melee.update(dt, this.ctx.combat?.melee?.poseState?.() ?? null);
+      this.melee.publishPropCap?.();            // (M1a weapons step 1: the held lance's capsule for the cloth)
       /* THE LANCE'S OWN STANCE ASKS FOR A PELVIS OFFSET (fix pass 2, melee
        * `STANCE`). The melee layer bends the knees for the beat it is playing;
        * a bent knee with the hips held up lifts the foot off the floor, so the

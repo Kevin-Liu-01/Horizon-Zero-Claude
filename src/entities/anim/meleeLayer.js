@@ -1,3 +1,4 @@
+import { setPropCap, clearPropCap } from './cloth/propCaps.js';
 import * as THREE from 'three';
 import { ClipLayerSet } from './clipLayer.js';
 import { register } from './registry.js';
@@ -806,7 +807,10 @@ const SIDE_KEY = {
  */
 const LC_S = 0.42;                 // where the left palm holds the haft (m from the butt)
 const LC_REACH = 0.30;             // the draw: the left hand's reach to the stowed haft ends here (drawK)
-const LC_CARRY = 0.62;             // ...and the carry to the guard's line ends here
+const LC_CARRY = 0.70;             // ...and the carry to the guard's line ends here
+/** M1a weapons step 1: the butt-first slide out of the keeper, down the stowed line (m), over this much of the carry */
+const LC_AXIAL = 0.15, LC_AXIAL_U = 0.15;
+const _capA = new THREE.Vector3(), _capB = new THREE.Vector3();
 /** M1a debt (A104): the carried haft's clearance of the axial bones on the stow and the unstow (A104 bar 0.12 + 0.02). */
 const LC_CLEAR = 0.14;
 /* The path (char space), chosen by a clearance search on her standing pose (shaft >= 0.10 m off the torso capsule,
@@ -3130,12 +3134,17 @@ export class MeleeLayer {
       _lcP1.fromArray(LC_P1);
       // the left palm's path: from the stowed haft round her left side to the hand-over line (a quadratic, LC_SIDE)
       _lcP0.copy(L.s0).addScaledVector(L.d0, LC_S);
+      /* M1a weapons step 1 (the brief's W4): BUTT FIRST OUT OF THE KEEPER. The first `LC_AXIAL_U` of the carry slides the
+       * haft LC_AXIAL m down its own stowed line (the palm with it, no turn), so it leaves its mount along its axis before
+       * it pivots about the fist; the rest of the carry is the old path, re-timed onto what is left of u */
+      const ua = u < LC_AXIAL_U ? u / LC_AXIAL_U : 1, ur = u < LC_AXIAL_U ? 0 : (u - LC_AXIAL_U) / (1 - LC_AXIAL_U);
+      _lcP0.addScaledVector(L.d0, -LC_AXIAL * smoothstep(ua, 0, 1));
       _lcPm.fromArray(LC_SIDE);
-      const a = (1 - u) * (1 - u), m = 2 * u * (1 - u), c = u * u;
+      const a = (1 - ur) * (1 - ur), m = 2 * ur * (1 - ur), c = ur * ur;
       L.pt.set(_lcP0.x * a + _lcPm.x * m + _lcP1.x * c, _lcP0.y * a + _lcPm.y * m + _lcP1.y * c, _lcP0.z * a + _lcPm.z * m + _lcP1.z * c);
       // the shaft: stowed -> up-forward-right -> the guard's, two great-circle legs
       _lcDm.fromArray(LC_DIR_MID).normalize();
-      if (u < 0.5) this._slerpDirV(L.d0, _lcDm, u * 2, L.dir); else this._slerpDirV(_lcDm, _lcD1, u * 2 - 1, L.dir);
+      if (ur < 0.5) this._slerpDirV(L.d0, _lcDm, ur * 2, L.dir); else this._slerpDirV(_lcDm, _lcD1, ur * 2 - 1, L.dir);
       L.butt.copy(L.pt).addScaledVector(L.dir, -LC_S);
       /* M1a debt (M1.3d, A104 "holster: the haft 0.108 m from head/neck/spine", page): on the stow's last leg the
        * carried haft swings onto her back across her left flank, butt in front of her belly, and passed 0.109 m from
@@ -3168,6 +3177,32 @@ export class MeleeLayer {
     }
     L.u = u; L.hold = hold; L.on = true;
     this._dbg.leftCarryU = u; this._dbg.leftCarryHold = hold;
+  }
+
+  /**
+   * M1a weapons step 1 (handling.js's one-owner rule): who holds the lance this step. 'handL' from the LEFT hand's take
+   * (the carried line leaves the stowed one) until the right fist has it, 'handR' from the hand-over, 'carry' on her back.
+   * The left owns it again on the stow from the right's let-go until it is seated and let go (`_lc.hold` under 0.5).
+   */
+  lanceOwner() {
+    if (this._held) return 'handR';
+    const L = this._lc;
+    if (L?.on && (L.u > 1e-4 || (this._prevStance === 'holster' && L.hold > 0.5))) return 'handL';
+    return 'carry';
+  }
+
+  /**
+   * M1a weapons step 1: the cloth's `heldLance` capsule (cloth/propCaps.js) while the prop is out of its keeper (in a
+   * hand, or carried round her side), from the drawn prop: butt to tip, world. Off on her back (the kit's own line is
+   * `stowLance`, from the carry solve).
+   */
+  publishPropCap() {
+    const g = this.lance;
+    const out = !!g && (g.parent !== this.socketBone || !!this._lc?.on) && this.lanceOwner() !== 'carry';
+    if (!out) { clearPropCap(this.an, 'heldLance'); return; }
+    g.updateWorldMatrix(true, false);
+    _capA.set(0, 0, 0).applyMatrix4(g.matrixWorld); _capB.set(0, 0, this._localLen).applyMatrix4(g.matrixWorld);
+    setPropCap(this.an, 'heldLance', _capA, _capB, 0.03);
   }
 
   /** Great-circle interpolation between two unit Vector3 (into `out`). */

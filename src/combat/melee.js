@@ -287,7 +287,10 @@ const ARC_REACH_K = 0.80;
  * reproduced (2.11 m). A longer draw is fewer radians per frame at every frame
  * rate and is inside the band §4 gives.
  */
-const DRAW_T = 0.26;
+const DRAW_T = 0.30;
+/* M1a weapons step 1 (hero-anim; Kevin Nov 15 "unsheathing them and getting them into position ... improved a lot"):
+ * 0.26 -> 0.30, the top of R5's 0.26-0.30 for a click, so the haft's carry round her side turns fewer degrees a step
+ * (the weapons brief W3: <= 24 deg a step asked; 35.8 at 0.26). */
 /* ROUND 6 (ruling R5): 0.30 -> 0.26. The draw now ENDS on the grip being
  * rigid at its fraction (the hand-over blend is the pull leg, meleeLayer
  * `handoverDone`), where round 5 declared it over on the clock and let the
@@ -769,7 +772,10 @@ export class Melee {
    *  while it is (round 6: never both in hand). */
   get lanceInHand() {
     const lay = this.layer;
-    if (lay && lay.ok) return !!lay._held;
+    /* M1a weapons step 1 (hero-anim; the smallest change in combat's file): in EITHER hand. The left hand carries the
+     * haft round her side before the right takes it (and after it lets go on the stow); keyed on the right fist alone,
+     * the bow came into that same left hand while it still had the lance (key 2 with the bow out: 14 steps of both) */
+    if (lay && lay.ok) return lay.lanceOwner ? lay.lanceOwner() !== 'carry' : !!lay._held;
     return this.stance !== 'holstered';
   }
 
@@ -816,7 +822,10 @@ export class Melee {
 
     const stanceDt = this._stanceTick(realDt);
     if (this.stance === 'draw') {
-      this._drawT += stanceDt;
+      /* M1a weapons step 1 (hero-anim): the left hand that takes the haft may still have the bow (key 2 with the bow
+       * out): the draw's clock waits for the bow's release (the animator's handling, carryStow.js), then runs */
+      const bowHeld = this.ctx.player?.animator?.bowInHand?.() === true;
+      if (!bowHeld) this._drawT += stanceDt;
       /* THE STEP-IN STARTS WITH THE DRAW (round 6, R7 on the real input
        * path). A click from holstered plays the draw first (ruling R5), and
        * where she stopped walking up to a big machine is its FULL standoff —

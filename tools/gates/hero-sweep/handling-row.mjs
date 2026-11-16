@@ -166,9 +166,11 @@ export function gradeCase(kind, L, meta = {}) {
       if (c > 0.5) fail(`W5 curl ${c.toFixed(2)} while the limb slides (bar 0.5)`);
     }
     if (bowGrip > 0) {
-      const t0 = L[bowGrip - 1].bowTip, ax = nrm(sub(L[bowGrip - 1].bowTip, L[bowGrip - 1].bowLimb || L[bowGrip - 1].bowTip));
+      // (in the carry frame, spine_02's: the keeper rides it)
+      // (from the grip step on: the step across the owner change is W2's)
+      const t0 = L[bowGrip].bowTipSp, ax = nrm(sub(L[bowGrip - 1].bowTipSp, L[bowGrip - 1].bowLowSp));
       let worst = 0;
-      for (let i = bowGrip; i < n; i++) { const mv = sub(L[i].bowTip, t0), m = len(mv); if (m > 0.10) break; if (m > 0.01 && L[i - 1].bowLimb) { const a = ang(mv, ax); worst = Math.max(worst, Math.min(a, 180 - a)); } }
+      for (let i = bowGrip + 1; i < n; i++) { const mv = sub(L[i].bowTipSp, t0), m = len(mv); if (m > 0.10) break; if (m > 0.01) { const a = ang(mv, ax); worst = Math.max(worst, Math.min(a, 180 - a)); } }
       out.W5 = { ...(out.W5 || {}), first10cmOffKeeperDeg: r3(worst) };
       if (worst > 5) fail(`W5 the bow's first 0.10 m ${worst.toFixed(1)} deg off its keeper axis (bar 5)`);
     }

@@ -135,6 +135,8 @@ export class QuickSlots {
       melee?.holsterLance?.(true);
       const bow = combat.weapons?.find((w) => /bow|recurve/.test(w.id));
       if (bow) combat.setWeapon(bow.id);
+      // (M1a weapons step 1, hero-anim: key 1 READIES the bow, after the lance is back on her back; it raised nothing)
+      combat.noteCombatAction?.();
     } else if (q.kind === 'lance') {
       melee?.drawLance?.();
     }

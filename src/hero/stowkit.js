@@ -342,6 +342,14 @@ export class HeroStowKit {
    * the carry solve. Off while the stowed lance is collapsed (drawn).
    */
   solve(an, dt) {
+    /* M1a weapons step 1: the bow's OWNER (the animator's handling, carryStow.js) decides which Sabina is drawn this step,
+     * the kit's on her back or combat's in her hand. hero/index.js set the bits from combat's bow as it was LAST step
+     * (combat runs after the player), so the grab drew both bows for a frame and the release neither */
+    const own = an?.bowInHand ? an.bowInHand() : null;
+    if (own !== null && this.attached) {
+      const want = own ? (this.hidden | PIECE.bow) : (this.hidden & ~PIECE.bow);
+      if (want !== this.hidden) this.setHidden(want);
+    }
     const SC = an?._stowCap;
     if (SC) SC.on = false;
     // fix round 1: the first frame warms the per-frame solves so V8 optimizes them before play (carry.js `warm`)

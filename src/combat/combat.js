@@ -951,6 +951,11 @@ export class Combat {
       if (pathHand !== null) anB.bowPathPose?.(model.group);
     } else {
       this._placeOnBack(model, 1 - vis, isDisc);
+      /* M1a weapons step 1 (hero-anim; the smallest change in combat's file): under the animator's handling the bow on her
+       * back is the stow kit's Sabina, shown or hidden the same step the hand lets go or takes it (stowkit.js `solve`).
+       * This procedural one keeps its transform there but is never drawn: shown for the step of a release, it stood at
+       * combat's own back pose, 0.6 m from the kit's, for a frame before hero/index.js hid it */
+      if (pathHand !== null) model.group.visible = false;
     }
 
     // --- trajectory preview (lobbed weapons while aiming)
@@ -1079,7 +1084,9 @@ export class Combat {
      * melee cuts the recover and stows the lance fast, and the bow comes up
      * the frame the lance is back on its socket. */
     // lanceStow.js `lanceOut(melee)` once melee's module is on main (plan §1.2; the two read the same flag)
-    const lanceOut = !!this.melee && !!this.melee.lanceInHand;
+    /* (M1a weapons step 1, hero-anim: a draw asked for counts as out, so the bow is stowed first, and the lance's draw
+     *  waits for its release: melee.js `_advanceStance`) */
+    const lanceOut = !!this.melee && (!!this.melee.lanceInHand || this.melee.stance === 'draw');
     if (aiming || this._drawing) this._holsterT = HOLSTER_TIME;
     else this._holsterT = Math.max(0, this._holsterT - realDt);
 

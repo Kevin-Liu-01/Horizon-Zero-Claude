@@ -147,6 +147,7 @@ function record(t) {
     r.bowAxis = [r.bowTip[0] - lo[0], r.bowTip[1] - lo[1], r.bowTip[2] - lo[2]]; r.bowLimb = null; r.bowGrip = null;
   }
   r.bowTipSp = toSp(r.bowTip);
+  r.bowLowSp = toSp([r.bowTip[0] - r.bowAxis[0], r.bowTip[1] - r.bowAxis[1], r.bowTip[2] - r.bowAxis[2]]);
   const H = NEW ? an.handlingInfo() : null;
   r.bowOwner = held ? 'handL' : 'carry';
   r.bowSock = H?.bow?.sockChar ? H.bow.sockChar.slice() : null;

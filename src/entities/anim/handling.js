@@ -27,8 +27,8 @@ function table(phases, ev) {
  * loosened fist to the riser while she brings it to the low carry (E), and settles (F).
  */
 export const BOW_UNSTOW = {
-  ask: table([['A', 0.033], ['B', 0.100], ['C', 0.034], ['D', 0.100], ['E', 0.083], ['F', 0.017]], { grip: 'C' }),
-  timer: table([['A', 0.050], ['B', 0.133], ['C', 0.050], ['D', 0.133], ['E', 0.100], ['F', 0.033]], { grip: 'C' }),
+  ask: table([['A', 0.017], ['B', 0.117], ['C', 0.033], ['D', 0.100], ['E', 0.100], ['F', 0.017]], { grip: 'C' }),
+  timer: table([['A', 0.033], ['B', 0.133], ['C', 0.050], ['D', 0.133], ['E', 0.133], ['F', 0.033]], { grip: 'C' }),
 };
 /*
  * THE BOW'S STOW. The fist loosens and the bow runs down through it to the limb (A, B), she carries it back past the hip
@@ -37,7 +37,7 @@ export const BOW_UNSTOW = {
  */
 export const BOW_STOW = {
   ask: table([['A', 0.033], ['B', 0.067], ['C', 0.100], ['D', 0.050], ['E', 0.083]], { release: 'D' }),
-  timer: table([['A', 0.050], ['B', 0.100], ['C', 0.133], ['D', 0.067], ['E', 0.117]], { release: 'D' }),
+  timer: table([['A', 0.033], ['B', 0.100], ['C', 0.117], ['D', 0.067], ['E', 0.150]], { release: 'D' }),
 };
 
 /** Finger curl targets (0 open .. 1 closed) and the most the curl may change in one second. */
