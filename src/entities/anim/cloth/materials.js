@@ -43,7 +43,11 @@ export const MATERIALS = {
     //  with lift, a front panel pressed back by the air rode a sprinting thigh up to 60-70 deg and stayed there). The
     //  fronts are backstopped at her frontal plane (rig.js BACKSTOP): pressed back, the long front-left slipped between
     //  her legs. Node bench, six starts: hems ahead of the knee plane at a run 0 / 0 %, at a sprint 0 / 0 %)
-    areal: 0.90, hem: 1.6, shear: 5e-3, bendAlong: 0.25, bendAcross: 0.12, kd: 8.0, mu: 0.05, cd: 1.0, cl: 0, slack: 1.03, vFall: 1.0,
+    // (round 5, the SWING: the kick limit holds only a particle a collider touched in the last `kickHold` substeps (0.2 s);
+    //  a free one swings up to `vSwing` 1.0 m/s. At 0.3 m/s for every particle a panel trailing 0.2-0.4 m behind her at a
+    //  sprint came back at that speed when she stopped and settled 1.8-1.95 s after the stop (C4); here 0.33-0.65 s.
+    //  1.5 m/s, or kd 6 with it, made the front panels at a sprint chaotic: a 1e-4 m nudge 0.01-0.1 m after 1 s (C11))
+    areal: 0.90, hem: 1.6, shear: 5e-3, bendAlong: 0.25, bendAcross: 0.12, kd: 8.0, mu: 0.05, cd: 1.0, cl: 0, slack: 1.03, vFall: 1.0, vSwing: 1.0, kickHold: 24,
     // (round 2, the TURN: yaw share 0.3 (was 0.6): a 180 deg turn on the spot in 0.5 s, the hems lagged 49 / 28 / 29 deg,
     //  band 8-25; here 16.7 / 13.3 / 17.4)
     // (round 3: yaw 0.2, was 0.3: at the body's own size (the rest lengths follow her scale) the front-left hem lagged a
@@ -76,7 +80,13 @@ export const V_CAP = 12;
  *  the root's travel; an idle's breath and weight shift put her head at 0.2-1.0 m/s2 and her pelvis at 0.06-0.2
  *  (bench, standing), so at 0.2 nothing standing would ever sleep: the stillness is read in the root's frame instead, and
  *  the root's own acceleration only wakes a piece past 1.0.) */
-export const SLEEP_V = 0.01, SLEEP_T = 0.5, SLEEP_WIND = 0.3, SLEEP_ACC = 1.0;
+export const SLEEP_V = 0.01, SLEEP_T = 1.0, SLEEP_WIND = 0.3, SLEEP_ACC = 1.0;
+/** (round 5) The sleep through an idle (solver.js, ClothPiece.qe): every free particle within SLEEP_D (m) of its running
+ *  mean (time constant SLEEP_EMA, s) in the level frame for SLEEP_T; calm also asks the root under SLEEP_RV (m/s) and
+ *  turning under SLEEP_YAW (rad/s). Asleep, it blends from where it was to its mean over SLEEP_BLEND (s), and wakes when
+ *  the root's up has turned past acos(SLEEP_TILT) from the one it slept with or a body collider comes more than SLEEP_PEN
+ *  (m) into the soft surface at a sleeping particle (less: the particle is put back on it). */
+export const SLEEP_D = 0.01, SLEEP_EMA = 0.15, SLEEP_RV = 0.3, SLEEP_YAW = 0.5, SLEEP_BLEND = 0.12, SLEEP_TILT = Math.cos(12 * Math.PI / 180), SLEEP_PEN = 0.02;
 /** The reset's settle: substeps at the frame's substep with the wind at 0 and the colliders in place (2 s). */
 export const RESET_SUBSTEPS = 480;
 /** A root that moves further than this in one frame (m) re-seats the piece (as RESEAT_D2 for the chains). */

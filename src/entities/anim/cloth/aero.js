@@ -18,9 +18,9 @@ export const TURB = 0.15;
 
 /**
  * Accumulate the aero force (N) on every free particle of piece P into P.f (Float64Array 3n, overwritten).
- * `wx`, `wz` the world wind (m/s) at her; `t` sim time (s).
+ * `wx`, `wz` the world wind (m/s) at her; `t` sim time (s); `wy` the air of her own vertical travel (round 5: a fall).
  */
-export function aeroForces(P, wx, wz, t) {
+export function aeroForces(P, wx, wz, t, wy = 0) {
   const x = P.x, v = P.v, f = P.f, nrm = P.nrm, A = P.area, n = P.n, mat = P.mat;
   // (P.airK: a piece's share of the sheet's air, 1 for Brea's cloth; the people's strands stand for a whole tail or
   //  apron with a handful of particles and catch less, cloth/strands.js)
@@ -43,7 +43,7 @@ export function aeroForces(P, wx, wz, t) {
       ty = Math.sin(py * 3.1 + t * 4.7 + px) * 0.3 * TURB * ws;
     }
     if (P.w[i] === 0) continue;
-    let ux = wx + tx, uy = ty, uz = wz + tz;
+    let ux = wx + tx, uy = wy + ty, uz = wz + tz;
     ux -= v[k]; uy -= v[k + 1]; uz -= v[k + 2];
     const u2 = ux * ux + uy * uy + uz * uz;
     if (u2 < 1e-8) continue;

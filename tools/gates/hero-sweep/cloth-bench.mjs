@@ -262,7 +262,9 @@ if (ROWS.includes('C4')) {
     let settle = null;
     for (let i = f.length - 1; i > 0; i--) { const d = Math.abs(f[i] - fin), v = Math.abs(f[i] - f[i - 1]) * 60; if (d > 0.01 || v > 0.02) { settle = tr[i].t - tr[0].t + 1 / 60; break; } }
     let cross = 0; for (let i = 1; i < f.length; i++) if ((f[i] - fin) * (f[i - 1] - fin) < 0 && Math.abs(f[i] - fin) + Math.abs(f[i - 1] - fin) > 0.01) cross++;
-    res[k] = { overshootM: rnd(peak), peakAfterStopS: peakT != null && tStop != null ? rnd(peakT - tStop) : null, settleS: rnd(settle), crossings: cross };
+    // (round 5: settleAfterStopS, the same settle read from the stop (the pelvis under 0.3 m/s), as the row's peak is: the
+    //  brief's 0.5-1.1 s band follows "after the pelvis is under 0.3 m/s"; settleS, from the release, kept beside it)
+    res[k] = { overshootM: rnd(peak), peakAfterStopS: peakT != null && tStop != null ? rnd(peakT - tStop) : null, settleS: rnd(settle), settleAfterStopS: settle != null && tStop != null ? rnd(settle - (tStop - tr[0].t)) : null, crossings: cross };
     if (TRACE) TRACE.push({ g: 'C4', k, f: f.map((x) => rnd(x - fin, 4)) });
   }
   res.stopS = tStop != null ? rnd(tStop - tr[0].t) : null;
@@ -280,16 +282,47 @@ if (ROWS.includes('C5')) {
   const bear0 = {};
   for (const k of pieceNames) { const d = F0.pieces[k].H.clone().sub(F0.pelvis); bear0[k] = Math.atan2(d.x, d.z) - R.player.heading; }
   const h0 = R.player.heading, tr = [];
+  // (round 5: the pelvis's own yaw beside the commanded heading: the row reads the hems' lag behind the PELVIS yaw, and
+  //  through an idle the pelvis turns 3-6 deg off her heading and back, which read as cloth lag at a 2 deg settle bar)
+  const pq = () => R.an.b.pelvis.bone.getWorldQuaternion(new THREE.Quaternion());
+  const fLoc = new THREE.Vector3(Math.sin(h0), 0, Math.cos(h0)).applyQuaternion(pq().invert());
+  const yawP = () => { const f = fLoc.clone().applyQuaternion(pq()); return Math.atan2(f.x, f.z); };
+  const yawP0 = yawP(), bear0P = {};
+  for (const k of pieceNames) { const d = F0.pieces[k].H.clone().sub(F0.pelvis); bear0P[k] = Math.atan2(d.x, d.z) - yawP0; }
+  // (round 5: and the TWIST, the hem's across (its left corner to its right) about the vertical against the belt row's
+  //  across: the hem's yaw lag on the panel itself. The bearing about the pelvis moves 7 deg for 2 cm of the idle's weight
+  //  shift under a hem 0.15 m off the pelvis's axis, so it never read settled at 2 deg while the cloth hung still)
+  const twist = (k) => { const S = PR.sets[k]; if (!S.hemL) return null;
+    const a = PR.cen(S.mesh, S.hemL, new THREE.Vector3()), b = PR.cen(S.mesh, S.hemR, new THREE.Vector3());
+    const tl = PR.cen(S.mesh, S.top.slice(0, Math.ceil(S.top.length / 3)), new THREE.Vector3()), trr = PR.cen(S.mesh, S.top.slice(-Math.ceil(S.top.length / 3)), new THREE.Vector3());
+    const d = Math.atan2(b.x - a.x, b.z - a.z) - Math.atan2(trr.x - tl.x, trr.z - tl.z); return Math.atan2(Math.sin(d), Math.cos(d)); };
+  const tw0 = {}; for (const k of pieceNames) tw0[k] = twist(k);
   for (let i = 1; i <= 120; i++) {
     if (i <= 30) R.player.heading = h0 + Math.PI * (i / 30);
-    step(R); tr.push(frameRead(R, PR));
+    step(R); const F = frameRead(R, PR); F.yawP = yawP(); F.tw = {}; for (const k of pieceNames) F.tw[k] = twist(k); tr.push(F);
   }
   for (const k of pieceNames) {
     let peak = 0, settle = null;
     const lag = tr.map((F) => { const d = F.pieces[k].H.clone().sub(F.pelvis); let a = (R.player.heading - (h0 + Math.PI * Math.min(1, (F.t - tr[0].t + 1 / 60) * 2))) ; let b = Math.atan2(d.x, d.z) - bear0[k] - (h0 + Math.PI * Math.min(1, (F.t - tr[0].t + 1 / 60) * 2)); b = Math.atan2(Math.sin(b), Math.cos(b)); return deg(b); });
     for (const l of lag) if (Math.abs(l) > Math.abs(peak)) peak = l;
     for (let i = lag.length - 1; i >= 30; i--) if (Math.abs(lag[i]) > 2) { settle = (i + 1 - 30) / 60; break; }
-    res['turn_' + k] = { peakLagDeg: rnd(peak, 1), settleAfterTurnS: settle ?? 0 };
+    const lagP = tr.map((F) => { const d = F.pieces[k].H.clone().sub(F.pelvis); let b = Math.atan2(d.x, d.z) - bear0P[k] - F.yawP; b = Math.atan2(Math.sin(b), Math.cos(b)); return deg(b); });
+    let peakP = 0, settleP = null;
+    for (const l of lagP) if (Math.abs(l) > Math.abs(peakP)) peakP = l;
+    for (let i = lagP.length - 1; i >= 30; i--) if (Math.abs(lagP[i]) > 2) { settleP = (i + 1 - 30) / 60; break; }
+    let settlePF = 0; { const fin = lagP[lagP.length - 1]; for (let i = lagP.length - 1; i >= 30; i--) if (Math.abs(lagP[i] - fin) > 2) { settlePF = (i + 1 - 30) / 60; break; } }
+    let peakT = null, settleT = null;
+    if (tw0[k] != null) {
+      const lt = tr.map((F) => { let d = F.tw[k] - tw0[k]; d = Math.atan2(Math.sin(d), Math.cos(d)); return deg(d); });
+      peakT = 0; for (const l of lt) if (Math.abs(l) > Math.abs(peakT)) peakT = l;
+      settleT = 0; for (let i = lt.length - 1; i >= 30; i--) if (Math.abs(lt[i]) > 2) { settleT = (i + 1 - 30) / 60; break; }
+      // (and to its FINAL twist, as C4 reads the run-stop: within 2 deg of the window's last frame. A panel resting on the
+      //  hips can keep a few degrees of twist after a half turn; the row asks when it stops moving)
+      const fin = lt[lt.length - 1]; var settleTF = 0; for (let i = lt.length - 1; i >= 30; i--) if (Math.abs(lt[i] - fin) > 2) { settleTF = (i + 1 - 30) / 60; break; }
+      if (TRACE) TRACE.push({ g: 'C5tw', k, lag: lt.map((x) => rnd(x, 1)) });
+    }
+    res['turn_' + k] = { peakLagDeg: rnd(peak, 1), settleAfterTurnS: settle ?? 0, endLagDeg: rnd(lag[lag.length - 1], 1), peakLagPelvisDeg: rnd(peakP, 1), settleAfterTurnPelvisS: settleP ?? 0, settleAfterTurnPelvisFinalS: settlePF, endLagPelvisDeg: rnd(lagP[lagP.length - 1], 1), peakTwistDeg: peakT == null ? null : rnd(peakT, 1), settleTwistS: settleT, settleTwistFinalS: peakT == null ? null : settleTF };
+    if (TRACE) TRACE.push({ g: 'C5', k, lag: lag.map((x) => rnd(x, 1)), lagP: lagP.map((x) => rnd(x, 1)) });
   }
   unstage(R);
   // landing: a fall from 1.2 m (free fall, 0.49 s), then the landing
@@ -305,8 +338,10 @@ if (ROWS.includes('C5')) {
   for (let i = 0; i < 200; i++) {
     if (!p.grounded) { vy -= 9.81 / 60; p.velocity.set(0, vy, 0); if (p.position.y + vy / 60 <= 0) { p.velocity.set(0, 0, 0); p.position.y = 0; p.grounded = true; ev?.emit?.('player-land', { fall: 1.2 }); trl.landI = i; } }
     else p.velocity.set(0, 0, 0);
-    step(R); trl.push(frameRead(R, PR));
+    step(R); const F = frameRead(R, PR); trl.push(F);
+    if (TRACE) { const C = rig(R); F.asleep = C ? C.pieces.map((q) => (q.asleep ? 1 : 0)).join('') : ''; F.acc = C ? rnd(C.rootP.acc, 2) : null; }
   }
+  if (TRACE) TRACE.push({ g: 'C5land', landI: trl.landI, f: trl.map((F) => [rnd(F.pieces.panelL.H.y - F.pos.y), rnd(F.pieces.panelB.H.y - F.pos.y), rnd(F.pieces.wrapSash.H.y - F.pos.y), F.asleep, F.acc]) });
   for (const k of pieceNames) {
     const a0 = deg(pre.pieces[k].ang);
     let rise = 0; for (let i = 0; i < trl.landI; i++) rise = Math.max(rise, deg(trl[i].pieces[k].ang) - a0);
@@ -314,7 +349,11 @@ if (ROWS.includes('C5')) {
     const fin = yRel[yRel.length - 1];
     let under = 0; for (let i = trl.landI; i < yRel.length; i++) under = Math.min(under, yRel[i] - fin);
     let settle = null; for (let i = yRel.length - 1; i > trl.landI; i--) if (Math.abs(yRel[i] - fin) > 0.01 || Math.abs(yRel[i] - yRel[i - 1]) * 60 > 0.02) { settle = (i - trl.landI) / 60; break; }
-    res['land_' + k] = { riseInFallDeg: rnd(rise, 1), overshootDownM: rnd(under), settleS: settle ?? 0 };
+    // (round 5: settleBeltS, the hem's height against its own belt row, as C4 reads the run-stop since round 4: against
+    //  her feet the idle's pelvis bob, 1 cm, kept every hem from reading settled to the window's end, asleep or not)
+    const yB = trl.map((F) => F.pieces[k].H.y - F.pieces[k].T.y), finB = yB[yB.length - 1];
+    let settleB = null; for (let i = yB.length - 1; i > trl.landI; i--) if (Math.abs(yB[i] - finB) > 0.01 || Math.abs(yB[i] - yB[i - 1]) * 60 > 0.02) { settleB = (i - trl.landI) / 60; break; }
+    res['land_' + k] = { riseInFallDeg: rnd(rise, 1), overshootDownM: rnd(under), settleS: settle ?? 0, settleBeltS: rnd(settleB ?? 0) };
   }
   out.rows.C5 = res;
   unstage(R);

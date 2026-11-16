@@ -89,7 +89,11 @@ export const PANEL_AIR = { panelL: -1, panelR: -1, panelB: -1 };
 /** The tongues' minimum distance, over their bind distance (round 3: 0.78, was 0.7 of a bind distance the oversized
  *  lengths made 10 % wider: at the body's own scale 0.7 let the tongues cross in 46-48 of 1440 run and sprint frames) */
 /** The tail's stand-off off every collider and its hard margin over the grader's inner surfaces (m), and `tongueMin` */
-export const TAILC = { off: 0.028, hard: 0.052, tongueMin: 0.78 };
+/** (round 5) `air`: the share of her travel the tail meets as air (ClothPiece.air; its material's is 0): at 0 it hung
+ *  26.6 deg off plumb at a sprint (band 30-65) and 23 at a run, a strip with no travel in it; `yaw`: its yaw share
+ *  (ClothPiece.yawS; the material's 0.6, the people's wraps keep it): at 0.6 a half turn on the spot left it 23 deg off
+ *  the pelvis 1.5 s on, with nothing but her back to turn it back */
+export const TAILC = { off: 0.028, hard: 0.052, tongueMin: 0.78, air: 0.4, yaw: 0.35 };
 /** hangPanel's cylinder centre (bind space z) */
 const PANEL_CZ = -0.02;
 
@@ -662,6 +666,7 @@ export class BreaCloth {
     P.fwd = fwd; P.stem = stem; P.kind = 'tail'; P.lee = 0; P.sQ = sQ;
     // (step 2: 0.65 of the air: with the heavier damping the tail stood at 59-60 deg in 5.5 m/s from her front, band 25-50)
     P.airK = 0.65;   // (the head is narrower than the tail's swing: no lee)
+    P.air = TAILC.air; P.yawS = TAILC.yaw;
     // (the tail's strip is 0.09 m wide and cupped about the two particles of a row: its edges stand 0.02 m off them)
     // (step 2: 0.052, was 0.030: the strip's cupped edge, or the strip turned edge-on, still met the grader's torso by
     //  1.6-5 mm standing and in a crouch)

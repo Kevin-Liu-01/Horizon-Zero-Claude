@@ -22,7 +22,7 @@
  * `reset()` is deterministic: every particle to its bind place on the root as it is now, velocities 0, then
  * RESET_SUBSTEPS substeps in still air with the root and the colliders held. No Math.random, no wall clock.
  */
-import { SUB_H, SUB_MAX, V_CAP, SLEEP_V, SLEEP_T, SLEEP_WIND, SLEEP_ACC, RESET_SUBSTEPS, RESEAT_D } from './materials.js';
+import { SUB_H, SUB_MAX, V_CAP, SLEEP_D, SLEEP_T, SLEEP_WIND, SLEEP_ACC, SLEEP_RV, SLEEP_YAW, SLEEP_EMA, SLEEP_BLEND, SLEEP_TILT, SLEEP_PEN, RESET_SUBSTEPS, RESEAT_D } from './materials.js';
 import { at, collideCapsule, collideGround, pushOut } from './colliders.js';
 import { aeroForces } from './aero.js';
 
@@ -84,11 +84,25 @@ export class ClothPiece {
     this.x = new Float64Array(n * 3); this.xp = new Float64Array(n * 3); this.v = new Float64Array(n * 3);
     this.f = new Float64Array(n * 3); this.nrm = new Float64Array(n * 3);
     this.q0 = new Float64Array(n * 3);         // bind place on the root (root-local, unscaled)
-    this.qs = new Float64Array(n * 3);         // asleep: the place on the root it sleeps at
-    this.ql = new Float64Array(n * 3);         // last frame's place in the root's frame (the sleep clock)
+    this.qs = new Float64Array(n * 3);         // asleep: the place on the root it sleeps at (root-local, unscaled)
+    /* (round 5, SLEEP THROUGH THE IDLE) the LEVEL frame: the pins' centroid on the root, turned by the root's yaw only.
+     * An idle sways her pelvis 2-5 deg/s and 2-5 cm/s; the hanging cloth stays near plumb and lags the belt by a
+     * centimetre, so in the root's frame (or any frame on her) it never stands still (0.02-0.15 m/s) and nothing slept.
+     * The sleep clock reads each particle's place in the level frame against its own running mean (`qe`, SLEEP_EMA):
+     * a piece whose every particle stays within SLEEP_D of its mean for SLEEP_T sleeps at the mean (`qk`), and asleep it
+     * rides the level frame (rows 2 down: they stay plumb while the pelvis tilts) or the root (the row under the pins) */
+    this.qe = new Float64Array(n * 3);         // the running mean of each particle's place in the level frame
+    this.qk = new Float64Array(n * 3);         // asleep: the place in the level frame it sleeps at
+    this.qi = new Float64Array(n * 3);         // asleep: its place in the level frame as it fell asleep (the blend's start)
+    this.pc0 = new Float64Array(3);            // the pins' centroid, root-local (unscaled)
+    this.rowW = new Float64Array(R);           // a row's share of the level frame asleep (the rest rides the root)
+    this.pw = new Float64Array(n);             // asleep: each particle's share of the level frame (0 where it lay on her)
+    this.qSleep = new Float64Array(4);         // the root's turn as the piece fell asleep
+    this.near = null; this.nearPen = null; this.nearN = 0;          // asleep: (particle, collider) pairs within reach of each other
+    this.sleepAge = 0; this.qeOk = false; this.dev = 0; this.wakeWhy = 0; this.wakeI = -1; this.wakeC = -1;
     this.relV = 0;
     this.w = new Float64Array(n); this.m = new Float64Array(n); this.area = new Float64Array(n);
-    this.contact = new Uint8Array(n); this.pinch = new Uint8Array(n);
+    this.contact = new Uint8Array(n); this.pinch = new Uint8Array(n); this.ct = new Uint8Array(n);
     /** per particle, the deepest the rendered mesh lies INSIDE the grid's surface near it at bind (m: the mesh's own folds,
      *  their valleys): the colliders hold the particle that much further off, so the valley, not the grid, meets the body */
     this.pIn = new Float64Array(n); this.cells = false; this.teth = null;
@@ -99,6 +113,8 @@ export class ClothPiece {
     this.backstop = -1e9;
     /** the share of her travel this piece meets as air, over its material's `air` (round 4; -1: the material's) */
     this.air = -1;
+    /** its yaw share over its material's (round 5; -1: the material's) */
+    this.yawS = -1;
     // root-local bind places: given (`Q0`, then X is the canonical grid, Q0 x the root's scale, and every length below
     // is a function of the assets only: the same bits whatever pose the rig was built in), or q0 = R^-1 (X - p) / s
     if (Q0) this.q0.set(Q0);
@@ -109,6 +125,10 @@ export class ClothPiece {
     for (let i = 0; i < n; i++) { this.w[i] = pinned[i] ? 0 : 1 / mass[i]; this.m[i] = mass[i]; this.area[i] = area[i]; }
     this.placeOnRoot(root.p, root.q, root.s, true);
     this.xp.set(this.x);
+    { let np = 0; for (let i = 0; i < n; i++) if (this.w[i] === 0) { np++; for (let a = 0; a < 3; a++) this.pc0[a] += this.q0[i * 3 + a]; }
+      if (np) for (let a = 0; a < 3; a++) this.pc0[a] /= np;
+      let r0 = 0; while (r0 < R) { let free = false; for (let c = 0; c < C; c++) if (this.w[c + r0 * C] !== 0) free = true; if (free) break; r0++; }
+      for (let r = 0; r < R; r++) this.rowW[r] = r < r0 ? 0 : r === r0 ? 0.5 : 1; }
     const nc = cons.length;
     this.ci = new Int32Array(nc * 2); this.cr = new Float64Array(nc); this.ca = new Float64Array(nc); this.ck = new Uint8Array(nc);
     for (let c = 0; c < nc; c++) {
@@ -206,6 +226,10 @@ export class ClothSystem {
     // (the root's vertical acceleration this frame, for the carried share's gravity: clamped, a guard against a re-seat)
     { let a = (vy - r.vPrev[1]) * k; a = a > AY_MAX ? AY_MAX : a < -AY_MAX ? -AY_MAX : a; r.ay = a; }
     r.vPrev[0] = vx; r.vPrev[1] = vy; r.vPrev[2] = vz;
+    // (round 5: the turn about world up this frame, for the sleep's calm test: the twist of q pq^-1 about y)
+    { const a = r.q, b = r.pq, bx = -b[0], by = -b[1], bz = -b[2], bw = b[3];
+      const y = a[3] * by + a[1] * bw + a[2] * bx - a[0] * bz, w = a[3] * bw - a[0] * bx - a[1] * by - a[2] * bz;
+      let d = 2 * Math.atan2(y, w); if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; r.yawD = d; }
   }
 
   /** One frame of sim time `dt` (s) at sim clock `t` (s). */
@@ -221,43 +245,37 @@ export class ClothSystem {
     for (let pi = 0; pi < P.length; pi++) {
       const p = P[pi], r = p.root;
       if (r.jumped) { this._seat(p); continue; }
-      // ---- sleep
+      // ---- sleep (round 5: the level frame, see ClothPiece.qe)
+      const calm = ws < SLEEP_WIND && r.acc < SLEEP_ACC && r.vPrev[0] * r.vPrev[0] + r.vPrev[1] * r.vPrev[1] + r.vPrev[2] * r.vPrev[2] < SLEEP_RV * SLEEP_RV && Math.abs(r.yawD) < SLEEP_YAW * dt;
       if (p.asleep) {
-        if (ws >= SLEEP_WIND || r.acc >= SLEEP_ACC || this._propNear(p)) { p.asleep = false; p.wakes++; p.stillT = 0; }
-        else { p.placeOnRoot(r.p, r.q, r.s, 2); p.xp.set(p.x); continue; }
+        let why = !calm ? 1 : this._propNear(p) ? 2 : this._tilted(p) ? 3 : 0;
+        if (!why) { this._ride(p, dt); if (this._legsIn(p)) why = 4; else continue; }
+        p.wakeWhy = why; this._wake(p);
       }
       this._stepPiece(p, dt, t, n, h);
-      // the sleep clock: every particle still RELATIVE TO ITS ROOT (its place in the root's frame moved under SLEEP_V
-      // this frame: an idle's sway carries the cloth, it does not keep it awake), still air, a calm root
-      // (round 3: the particles are read only when the air and the root are calm: in the trade wind or on the move the
-      //  piece cannot sleep, and the per-particle turn into the root's frame was a third of the standing frame's cost)
-      if (!(ws < SLEEP_WIND && r.acc < SLEEP_ACC)) { p.stillT = 0; p.qlOk = false; continue; }
-      if (!p.qlOk) { this._rootLocalNow(p); p.qlOk = true; p.stillT = 0; continue; }
-      let vmax = 0;
-      const q = r.q, ql = p.ql, x = p.x;
-      const iqx = -q[0], iqy = -q[1], iqz = -q[2], iqw = q[3], is = 1 / r.s;
-      _iq[0] = iqx; _iq[1] = iqy; _iq[2] = iqz; _iq[3] = iqw;
+      if (!calm) { p.stillT = 0; p.qeOk = false; continue; }
+      this._levelFrame(p);
+      const x = p.x, qe = p.qe, w = p.w, lc = _lf[3], ls = _lf[4], is = 1 / r.s;
+      const a = 1 - Math.exp(-dt / SLEEP_EMA);
+      let dmax = 0;
       for (let i = 0; i < p.n; i++) {
-        const k = i * 3;
-        qrot(_iq, (x[k] - r.p[0]) * is, (x[k + 1] - r.p[1]) * is, (x[k + 2] - r.p[2]) * is, _n, 0);
-        if (p.w[i] !== 0) { const a = (_n[0] - ql[k]) ** 2 + (_n[1] - ql[k + 1]) ** 2 + (_n[2] - ql[k + 2]) ** 2; if (a > vmax) vmax = a; }
-        ql[k] = _n[0]; ql[k + 1] = _n[1]; ql[k + 2] = _n[2];
+        if (w[i] === 0) continue;
+        const k = i * 3, ex = x[k] - _lf[0], ey = x[k + 1] - _lf[1], ez = x[k + 2] - _lf[2];
+        // (into the level frame: the inverse of the yaw turn, unscaled)
+        const ux = (ex * lc - ez * ls) * is, uy = ey * is, uz = (ex * ls + ez * lc) * is;
+        if (!p.qeOk) { qe[k] = ux; qe[k + 1] = uy; qe[k + 2] = uz; continue; }
+        const dx = ux - qe[k], dy = uy - qe[k + 1], dz = uz - qe[k + 2];
+        qe[k] += a * dx; qe[k + 1] += a * dy; qe[k + 2] += a * dz;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > dmax) dmax = d2;
       }
-      p.relV = Math.sqrt(vmax) / dt;
-      if (p.relV < SLEEP_V && ws < SLEEP_WIND && r.acc < SLEEP_ACC) {
-        p.stillT += dt;
-        if (p.stillT >= SLEEP_T) this._sleep(p);
-      } else p.stillT = 0;
+      if (!p.qeOk) { p.qeOk = true; p.stillT = 0; continue; }
+      p.dev = Math.sqrt(dmax) * r.s;
+      if (p.dev < SLEEP_D) { p.stillT += dt; if (p.stillT >= SLEEP_T) this._sleep(p); }
+      else p.stillT = 0;
     }
     this.frames++; this.subTotal += n;
     if (this.clock) { const ms = this.clock() - t0; this.ring[this.ringI] = ms; this.ringI = (this.ringI + 1) % this.ring.length; if (this.ringN < this.ring.length) this.ringN++; }
-  }
-
-  /** Every particle's place in its root's frame now, into `ql` (the sleep clock's last frame). */
-  _rootLocalNow(p) {
-    const r = p.root, q = r.q, ql = p.ql, x = p.x, is = 1 / r.s;
-    _iq[0] = -q[0]; _iq[1] = -q[1]; _iq[2] = -q[2]; _iq[3] = q[3];
-    for (let i = 0; i < p.n; i++) { const k = i * 3; qrot(_iq, (x[k] - r.p[0]) * is, (x[k + 1] - r.p[1]) * is, (x[k + 2] - r.p[2]) * is, ql, k); }
   }
 
   /** A prop capsule moving inside a sleeping piece's reach wakes it. */
@@ -266,8 +284,10 @@ export class ClothSystem {
     for (let c = 0; c < C.length; c++) {
       const K = C[c];
       if (!K.on || !K.swept || !(p.mask & K.bit)) continue;
-      const s = Math.max(Math.abs(K.va[0]), Math.abs(K.va[1]), Math.abs(K.va[2]), Math.abs(K.vb[0]), Math.abs(K.vb[1]), Math.abs(K.vb[2]));
-      if (s < 0.05) continue;
+      // (round 5: its ends' speed against the root's: the stowed lance and bow ride her back through an idle's sway)
+      const rv = p.root.vPrev;
+      const s = Math.max(Math.abs(K.va[0] - rv[0]), Math.abs(K.va[1] - rv[1]), Math.abs(K.va[2] - rv[2]), Math.abs(K.vb[0] - rv[0]), Math.abs(K.vb[1] - rv[1]), Math.abs(K.vb[2] - rv[2]));
+      if (s < 0.15) continue;
       const k = 0; // the piece's first pin as its place
       const dx = K.cx - p.x[k], dy = K.cy - p.x[k + 1], dz = K.cz - p.x[k + 2];
       if (dx * dx + dy * dy + dz * dz < (K.cr + 0.8) ** 2) return true;
@@ -275,21 +295,123 @@ export class ClothSystem {
     return false;
   }
 
+  /** The piece's level frame now into _lf: origin (the pins' centroid on the root, world), cos and sin of the root's yaw. */
+  _levelFrame(p) {
+    const r = p.root, c = p.pc0;
+    qrot(r.q, c[0] * r.s, c[1] * r.s, c[2] * r.s, _lf, 0);
+    _lf[0] += r.p[0]; _lf[1] += r.p[1]; _lf[2] += r.p[2];
+    const y = yawOf(r.q, p.fwd);
+    _lf[3] = Math.cos(y); _lf[4] = Math.sin(y);
+  }
+
+  /** Asleep: every free particle at its sleep place, rows under the pins' own row in the level frame (plumb while the
+   *  pelvis tilts), the row under the pins half on the root; the pins on the root. Costs two turns a particle. */
+  _ride(p, dt) {
+    const r = p.root;
+    p.placeOnRoot(r.p, r.q, r.s, false);
+    this._levelFrame(p);
+    p.sleepAge += dt;
+    const f = p.sleepAge >= SLEEP_BLEND ? 1 : p.sleepAge / SLEEP_BLEND;
+    const x = p.x, qk = p.qk, qi = p.qi, qs = p.qs, w = p.w, pw = p.pw, lc = _lf[3], ls = _lf[4], s = r.s;
+    for (let i = 0; i < p.n; i++) {
+      if (w[i] === 0) continue;
+      const k = i * 3, wr = pw[i];
+      let ux = qk[k], uy = qk[k + 1], uz = qk[k + 2];
+      if (f < 1) { ux = qi[k] + (ux - qi[k]) * f; uy = qi[k + 1] + (uy - qi[k + 1]) * f; uz = qi[k + 2] + (uz - qi[k + 2]) * f; }
+      const lx = _lf[0] + (ux * lc + uz * ls) * s, ly = _lf[1] + uy * s, lz = _lf[2] + (-ux * ls + uz * lc) * s;
+      if (wr >= 1) { x[k] = lx; x[k + 1] = ly; x[k + 2] = lz; continue; }
+      qrot(r.q, qs[k] * s, qs[k + 1] * s, qs[k + 2] * s, x, k);
+      x[k] = (x[k] + r.p[0]) * (1 - wr) + lx * wr; x[k + 1] = (x[k + 1] + r.p[1]) * (1 - wr) + ly * wr; x[k + 2] = (x[k + 2] + r.p[2]) * (1 - wr) + lz * wr;
+    }
+    p.xp.set(x);
+  }
+
+  /** The root has turned more than SLEEP_TILT off the up it slept with (a slow bend: no acceleration wakes it). */
+  _tilted(p) {
+    const r = p.root;
+    qrot(r.q, 0, 1, 0, _n, 0); const ax = _n[0], ay = _n[1], az = _n[2];
+    qrot(p.qSleep, 0, 1, 0, _n, 0);
+    return ax * _n[0] + ay * _n[1] + az * _n[2] < SLEEP_TILT;
+  }
+
+  /** Asleep, the body still has the last word: a sleeping particle a body collider has come into (the idle's weight shift
+   *  under a front panel, her back under the tail) is put back on the soft surface, positions only (the ride rebuilds it
+   *  next frame); one it has come more than SLEEP_PEN into wakes the piece. */
+  _legsIn(p) {
+    const N = p.near, C = this.colliders, x = p.x;
+    for (let k = 0; k < p.nearN; k++) {
+      const i = N[k * 2], K = C[N[k * 2 + 1]];
+      if (!K.on) continue;
+      const q = i * 3, ax = K.a[0], ay = K.a[1], az = K.a[2], dx = K.b[0] - ax, dy = K.b[1] - ay, dz = K.b[2] - az;
+      const px = x[q] - ax, py = x[q + 1] - ay, pz = x[q + 2] - az, l2 = dx * dx + dy * dy + dz * dz;
+      let t = l2 > 1e-12 ? (px * dx + py * dy + pz * dz) / l2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const ex = px - dx * t, ey = py - dy * t, ez = pz - dz * t, rr = K.r0 + (K.r1 - K.r0) * t + (p.offC ? p.offC[N[k * 2 + 1]] : p.off);
+      // (against the depth it slept at: awake, the strain limit can hold a particle a centimetre or two inside the soft
+      //  surface, over a crouched thigh)
+      const r2 = rr - p.nearPen[k], d2 = ex * ex + ey * ey + ez * ez;
+      if (d2 >= r2 * r2 || d2 < 1e-14) continue;
+      const d = Math.sqrt(d2);
+      if (r2 - d > SLEEP_PEN) { p.wakeI = i; p.wakeC = N[k * 2 + 1]; return true; }
+      const f = (r2 - d) / d;
+      x[q] += ex * f; x[q + 1] += ey * f; x[q + 2] += ez * f;
+    }
+    return false;
+  }
+
+  _wake(p) {
+    p.asleep = false; p.wakes++; p.stillT = 0; p.qeOk = false;
+    // (the velocity it wakes with: the root's, as the asleep cloth rode it)
+    const r = p.root, v = p.v;
+    for (let i = 0; i < p.n; i++) { const k = i * 3; v[k] = r.vPrev[0]; v[k + 1] = r.vPrev[1]; v[k + 2] = r.vPrev[2]; }
+  }
+
   _sleep(p) {
-    // the place on the root each particle sleeps at (root-local, unscaled)
-    const r = p.root, iq = _iq;
+    // the place each particle sleeps at: its running mean in the level frame (qk), and the same place on the root (qs)
+    const r = p.root, iq = _iq, x = p.x, qk = p.qk, qi = p.qi, lc = _lf[3], ls = _lf[4], s = r.s, is = 1 / s;
     iq[0] = -r.q[0]; iq[1] = -r.q[1]; iq[2] = -r.q[2]; iq[3] = r.q[3];
+    qk.set(p.qe);
     for (let i = 0; i < p.n; i++) {
       const k = i * 3;
-      qrot(iq, (p.x[k] - r.p[0]) / r.s, (p.x[k + 1] - r.p[1]) / r.s, (p.x[k + 2] - r.p[2]) / r.s, p.qs, k);
+      const ex = x[k] - _lf[0], ey = x[k + 1] - _lf[1], ez = x[k + 2] - _lf[2];
+      qi[k] = (ex * lc - ez * ls) * is; qi[k + 1] = ey * is; qi[k + 2] = (ex * ls + ez * lc) * is;
+      if (p.w[i] === 0) { qk[k] = qi[k]; qk[k + 1] = qi[k + 1]; qk[k + 2] = qi[k + 2]; }
+      const ux = qk[k], uy = qk[k + 1], uz = qk[k + 2];
+      const wx = _lf[0] + (ux * lc + uz * ls) * s - r.p[0], wy = _lf[1] + uy * s - r.p[1], wz = _lf[2] + (-ux * ls + uz * lc) * s - r.p[2];
+      qrot(iq, wx * is, wy * is, wz * is, p.qs, k);
     }
-    p.v.fill(0); p.asleep = true; p.sleeps++;
+    p.qSleep.set(r.q);
+    // (a particle lying on her, a front panel over a crouched thigh, rides the root: it lies where the body is, not plumb)
+    for (let i = 0; i < p.n; i++) p.pw[i] = p.contact[i] ? 0 : p.rowW[(i / p.C) | 0];
+    // the (particle, collider) pairs a knee could bring together: within the piece's lists last frame
+    const KM = PL_K, pl = p.pl, pc = p.pc;
+    if (!p.near) { p.near = new Int32Array(p.n * KM * 2); p.nearPen = new Float64Array(p.n * KM); }
+    let m = 0;
+    if (pl) for (let i = 0; i < p.n; i++) {
+      if (p.w[i] === 0) continue;
+      for (let a = 0; a < pc[i]; a++) {
+        const c = pl[i * KM + a], K = this.colliders[c];
+        if (K.swept) continue;
+        p.near[m * 2] = i; p.near[m * 2 + 1] = c;
+        // its depth into the soft surface as it falls asleep (at the sleep place: qs on the root now)
+        qrot(r.q, p.qs[i * 3] * s, p.qs[i * 3 + 1] * s, p.qs[i * 3 + 2] * s, _n, 0);
+        const ax = K.a[0], ay = K.a[1], az = K.a[2], dx = K.b[0] - ax, dy = K.b[1] - ay, dz = K.b[2] - az;
+        const px = _n[0] + r.p[0] - ax, py = _n[1] + r.p[1] - ay, pz = _n[2] + r.p[2] - az, l2 = dx * dx + dy * dy + dz * dz;
+        let t = l2 > 1e-12 ? (px * dx + py * dy + pz * dz) / l2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const d = Math.hypot(px - dx * t, py - dy * t, pz - dz * t), rr = K.r0 + (K.r1 - K.r0) * t + (p.offC ? p.offC[c] : p.off);
+        p.nearPen[m] = rr > d ? rr - d : 0;
+        m++;
+      }
+    }
+    p.nearN = m;
+    p.v.fill(0); p.asleep = true; p.sleeps++; p.sleepAge = 0;
   }
 
   _seat(p) {
     const r = p.root;
     p.placeOnRoot(r.p, r.q, r.s, true);
-    p.xp.set(p.x); p.v.fill(0); p.asleep = false; p.stillT = 0;
+    p.xp.set(p.x); p.v.fill(0); p.asleep = false; p.stillT = 0; p.qeOk = false;
   }
 
   _stepPiece(p, dt, t, n, h) {
@@ -315,13 +437,15 @@ export class ClothSystem {
     const cx = (dx - sh.lin * r.vFed[0] * dt) / n, cy = (dy - sh.vert * r.vFed[1] * dt) / n, cz = (dz - sh.lin * r.vFed[2] * dt) / n;
     let yaw = yawOf(r.q, p.fwd) - yawOf(r.pq, p.fwd);
     if (yaw > Math.PI) yaw -= 2 * Math.PI; else if (yaw < -Math.PI) yaw += 2 * Math.PI;
-    const cyaw = (1 - sh.yaw) * yaw / n, cs = Math.cos(cyaw), sn = Math.sin(cyaw);
+    const cyaw = (1 - (p.yawS >= 0 ? p.yawS : sh.yaw)) * yaw / n, cs = Math.cos(cyaw), sn = Math.sin(cyaw);
     const rfx = sh.lin * r.vFed[0], rfy = sh.vert * r.vFed[1], rfz = sh.lin * r.vFed[2];
     // ---- the air, once a frame
     p.normals();
     // (her own travel as air: v holds the lag part of it already; `mat.air` more of the fed root velocity is met as wind)
     const air = p.air >= 0 ? p.air : mat.air;
-    aeroForces(p, this.wind.x - air * r.vFed[0], this.wind.z - air * r.vFed[2], t);
+    // (round 5, the FALL's air: the carried share of her vertical travel moves the particles by position, so it was never
+    //  in their velocity and never met as air: in a 1.2 m drop the panels rose 1-4 deg (C5, bar 10). It is met in full)
+    aeroForces(p, this.wind.x - air * r.vFed[0], this.wind.z - air * r.vFed[2], t, -(1 - sh.vert) * r.vFed[1]);
     const damp = Math.exp(-mat.kd * h);
     // (round 2, the FALL: the carried share of her vertical travel moves the particles by position, so its acceleration
     //  never reached them, but gravity did in full: in a fall the cloth sank relative to her at (1 - vert) g / kd, the
@@ -500,10 +624,15 @@ export class ClothSystem {
         if ((hr < this.hardRounds - 1 || this.endStrain) && this.strainPost > 0) this._strain(p, this.strain, this.strainPost);
       }
       // ---- velocity
-      const ih = 1 / h, vRel = mat.vRel || 0, vFall = mat.vFall || vRel;
+      const ih = 1 / h, vRel0 = mat.vRel || 0, vFall0 = mat.vFall || vRel0, vSw = mat.vSwing || 0, ct = p.ct, ctN = mat.kickHold || 0;
       for (let i = 0; i < N; i++) {
         const q = i * 3;
         if (p.pinch[i]) { v[q] = rfx; v[q + 1] = 0; v[q + 2] = rfz; continue; }
+        // (round 5, the SWING: the kick limit holds a particle a collider has touched in the last `kickHold` substeps (a
+        //  knee's shove); a free one swings up to `vSwing`. At vRel for every particle a panel trailing 0.2-0.4 m behind
+        //  her at a sprint came back at 0.3 m/s when she stopped, 1.3-2.5 s, and never passed its rest)
+        let vRel = vRel0, vFall = vFall0;
+        if (vSw > 0) { if (p.contact[i]) ct[i] = ctN; else if (ct[i] > 0) ct[i]--; if (ct[i] === 0) { vRel = vSw; vFall = vSw > vFall0 ? vSw : vFall0; } }
         let vx = (x[q] - xp[q]) * ih, vy = (x[q + 1] - xp[q + 1]) * ih, vz = (x[q + 2] - xp[q + 2]) * ih;
         const s2 = vx * vx + vy * vy + vz * vz;
         if (s2 > V_CAP * V_CAP) { const f = V_CAP / Math.sqrt(s2); vx *= f; vy *= f; vz *= f; }
@@ -767,7 +896,7 @@ export class ClothSystem {
     this.wind.x = 0; this.wind.z = 0;
     for (const r of this.roots) { r.pp.set(r.p); r.pq.set(r.q); r.ps = r.s; r.vFed.fill(0); r.vPrev.fill(0); r.acc = 0; r.ay = 0; r.jumped = false; }
     for (const C of this.colliders) { C.pa.set(C.a); C.pb.set(C.b); C.va.fill(0); C.vb.fill(0); C.mv = 0; C.stamp++; }
-    for (const p of this.pieces) { this._seat(p); p.contact.fill(0); p.pinch.fill(0); p.asleep = false; p.stillT = 0; }
+    for (const p of this.pieces) { this._seat(p); p.contact.fill(0); p.pinch.fill(0); p.ct.fill(0); p.asleep = false; p.stillT = 0; }
     const per = 4, frames = Math.ceil(RESET_SUBSTEPS / per);
     for (let f = 0; f < frames; f++) for (const p of this.pieces) this._stepPiece(p, per * SUB_H, t, per, SUB_H);
     for (const p of this.pieces) { p.v.fill(0); p.xp.set(p.x); p.stillT = 0; }
@@ -793,7 +922,7 @@ export class ClothSystem {
     return { n, mean: s / n, p50: a[Math.floor(n * 0.5)], p95: a[Math.min(n - 1, Math.floor(n * 0.95))], max: a[n - 1] };
   }
 }
-const _iq = new Float64Array(4);
+const _iq = new Float64Array(4), _lf = new Float64Array(5);
 /** Per-particle collider lists: at most PL_K a particle, within the collider's radius + PL_MARGIN (the most stand-off a
  *  piece uses, 0.03, the hard margin, and a little) + the frame's travel. */
 const PL_K = 16, PL_MARGIN = 0.06;
