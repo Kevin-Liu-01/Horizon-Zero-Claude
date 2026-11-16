@@ -1770,6 +1770,10 @@ export class LocomotionDriver {
       // the aim is held (fix 4: as the bow lowers the clamp blends back in by
       // its own (1 - aimW) weight, and `_armContinuity` carries the arm)
       if (s === 1 && this._afOn && this._afFull) continue;
+      // (M1a weapons round 3, hero-anim: an arm the weapon handling holds (the bow's unstow or stow, the right on the bow in
+      //  a regrip) is the handling's; the clamp comes back in as the handling lets it go, `_runArmK`)
+      const ws = w * (this._runArmK ? this._runArmK[s] : 1);
+      if (ws < 1e-3) continue;
       // (0) swing centre (fix round 1, V12 "one elbow driven back past the hip
       // line"): the UAL1 jog/sprint swing is centred forward on this rig —
       // the wrist reached 0.47 m ahead of the hip and never got behind it, the
@@ -1777,7 +1781,7 @@ export class LocomotionDriver {
       // about the character's lateral axis (back for a hanging bone), so the
       // whole fore-aft arc moves back past the hip; the clamps below still
       // hold the wrist low and off the midline.
-      if (R.swingBack) this._rotL(up, X_AXIS, R.swingBack * w);
+      if (R.swingBack) this._rotL(up, X_AXIS, R.swingBack * ws);
       this._charOf(up.bone, _sg0); this._charOf(lo.bone, _sg1); this._charOf(ha.bone, _sg2);
       // (1) height
       const excess = _sg2.y - (_sg0.y - R.wristDrop);
@@ -1792,7 +1796,7 @@ export class LocomotionDriver {
           _v6.crossVectors(_v5, _v4);                    // d(wrist)/d(theta) for +theta
           const dy = -_v6.y;                             // the height change per radian when opening
           if (dy < -1e-3) {
-            const ang = Math.min(0.7, excess / -dy) * w;
+            const ang = Math.min(0.7, excess / -dy) * ws;
             _q3.setFromAxisAngle(_v5, -ang);
             this._rotQL(lo, _q3);
           }
@@ -1810,7 +1814,7 @@ export class LocomotionDriver {
         if (L > 0.1) {
           const e0 = Math.asin(clamp(_v3.y / L, -1, 1));
           const e1 = Math.asin(clamp(-R.wristDrop / L, -1, 1));
-          const ang = Math.min(0.9, e0 - e1) * w;
+          const ang = Math.min(0.9, e0 - e1) * ws;
           _v4.set(0, 1, 0).cross(_v3);                   // +ang about Y x r lowers r
           if (ang > 1e-3 && _v4.lengthSq() > 1e-8) {
             _v4.normalize();
@@ -1824,7 +1828,7 @@ export class LocomotionDriver {
       const gap = sgn * (_sg2.x - midX);
       if (gap < R.midGap) {
         const arm = Math.max(0.2, Math.hypot(_sg2.x - _sg0.x, _sg2.y - _sg0.y));
-        const ang = Math.min(0.5, (R.midGap - gap) / arm) * w;
+        const ang = Math.min(0.5, (R.midGap - gap) / arm) * ws;
         this._rotL(up, Z_AXIS, sgn * ang);
       }
     }

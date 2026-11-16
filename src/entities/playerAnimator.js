@@ -1471,6 +1471,10 @@ export class PlayerAnimator {
     // midline). Weighted in from a jog; never while aiming, carrying or rolling.
     if (this.T.runArms) {
       const rw = smoothstep(speed, 2.5, 4.5) * (1 - aimW) * (1 - carryW) * (1 - dodgeW) * (1 - this._deadW) * (1 - (this._ali?.w ?? 0));
+      // (M1a weapons round 3: not on an arm the bow's handling holds; back in over 0.2 s as it lets go, locomotionDriver)
+      const K = this._runArmK || (this._runArmK = [1, 1]), bp = this._bp;
+      K[0] = bp && bp.mode ? 0 : Math.min(1, K[0] + dt / 0.2);
+      K[1] = bp && bp.rOn ? 0 : Math.min(1, K[1] + dt / 0.2);
       if (rw > 0.01) this._runArmClamp(rw);
     }
 
@@ -1556,6 +1560,7 @@ export class PlayerAnimator {
     // (M1a round 2: the rig blends from the arms as they stand now: the lance's and the bow's paths included)
     if (cRig) { this._cRigCapture(); this._cRigPass(aimW * (1 - stowOwn), this._drawS, p); this._armCapture(); }
     if (b.handL) { this._charOf(b.handL.bone, this._bpHand); this._bpHandOk = true; }
+    if (b.handR) { (this._bpHandR || (this._bpHandR = new THREE.Vector3())); this._charOf(b.handR.bone, this._bpHandR); }
     if (aimW > 0.01) {
       this._rootKeepAudit(this._drawS);
       /* W0b targeted fix 4 (r1 eng judge, the down clamp; A32-draw-ramp `down105`

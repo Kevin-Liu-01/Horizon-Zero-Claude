@@ -121,6 +121,7 @@ const _rvA = new THREE.Vector3(), _rvB = new THREE.Vector3(), _rvC = new THREE.V
 const _rvT = new THREE.Vector3(), _rvU = new THREE.Vector3(), _rvO = new THREE.Vector3(), _rvP = new THREE.Vector3();
 const _rvQ = new THREE.Quaternion(), _rvQ2 = new THREE.Quaternion(), _rvQ3 = new THREE.Quaternion(), _rvQ4 = new THREE.Quaternion();
 const _rhA = new THREE.Vector3(), _rhB = new THREE.Vector3(), _rhQ = new THREE.Quaternion(), _rhQ2 = new THREE.Quaternion();
+const _rdP = new THREE.Vector3(), _rdQ = new THREE.Quaternion(), _rdQ2 = new THREE.Quaternion(), _rdD = new THREE.Quaternion();
 /** M1a weapons round 3: the carried stave's band off the forearm (deg), `_bowCarryAxis` */
 const CARRY_STAVE_F = [60, 92];
 /** the carry's forearm (char, elbow to wrist, the carry layer's IK standing): the unstow plans the carry's line off it */
@@ -463,6 +464,7 @@ export class CarryStow {
     const b = this.b;
     if (!b.handL || !b.upArmL) return 0;
     B.simT += dt;
+    this._bowRide(B);
     if (want !== B.was) this._bowRequest(want);
     B.was = want;
     this._bowCapStowed();
@@ -873,6 +875,8 @@ export class CarryStow {
       // (the regrip starts the right hand: only from the reverse take, not from a stow turned back in the carry's fist)
       const go = stow ? regrip && B.t < tR && !B.revOk && !B.stowD0 : regrip && B.t >= tGrip - 0.117 && B.t < phaseEnd(T, 'D') && B.gripKind !== 'norm';
       if (!go) { B.rw = 0; B.rHold = false; return; }
+      // (from the hand as it was drawn last step: later layers, a run's arm clamp, move the clip's)
+      if (this._bpHandR) _rhB.copy(this._bpHandR).add(_rhA.copy(mel.palmOffL).applyQuaternion(_rhQ2));
       B.rOn = 1; B.rp.copy(_rhB); B.rq.copy(_rhQ2); B.rw = 1; B.rc = 0; B.rBack = 0; B.rRel = 0;
       // (the elbow's pole starts where the clip's elbow stands off the shoulder-wrist line, and turns to the reach's)
       if (!B.rpole) B.rpole = new THREE.Vector3();
@@ -908,7 +912,8 @@ export class CarryStow {
       this._handOnStave(_rhA, 1, _rhQ, 'r');
       want = _rvU.copy(_rvT).sub(_rvC.copy(GR.axis).sub(mel.palmOffL).applyQuaternion(B.rq));     // the right palm's goal
       // the fingers close once the palm is on its goal and the bow is in the left's fist and round
-      const on = (B.rMiss ?? 9) < 0.012 && (B.rTurnMiss ?? 9) < 0.1 && B.owner === 'handL' && (stow ? B.pose === 'hand' && B.pp.distanceTo(B.palm) < 0.01 : B.pose === 'rev' && B.t >= phaseEnd(T, 'D') - 0.05);
+      // (once the fingers have started to close they go on closing: the close is not undone by a jog's bob)
+      const on = ((B.rMiss ?? 9) < (B.rc > CURL.open + 0.1 ? 0.035 : 0.022)) && (B.rTurnMiss ?? 9) < 0.1 && B.owner === 'handL' && (stow ? B.pose === 'hand' && B.pp.distanceTo(B.palm) < 0.01 : B.pose === 'rev' && B.t >= phaseEnd(T, 'D') - 0.05);
       B.rcT = on ? CURL.closed : CURL.open;
     } else {
       // letting go: open, then back to the clip's hand
@@ -950,6 +955,25 @@ export class CarryStow {
       B.orgDrawnR = (B.orgDrawnR || new THREE.Vector3()).copy(B.relRP).applyQuaternion(_rhQ2).add(_rhB);
     }
     B.rHold = B.rOn === 1 && B.rHeld && B.rc >= 0.8;
+  }
+
+  /**
+   * M1a weapons round 3 (the swaps and draws at a jog): the palm plans ride her trunk. Each step spine_02's move since the
+   * last (as the clip and the earlier layers leave it, before this layer's reach turn) carries both palm plans with it, so
+   * a jog's bob and sway do not leave the hands behind their goals (the right missed the bow's upper limb by 0.02-0.03 m
+   * and never closed on it); the plans' own bound is their motion on her.
+   */
+  _bowRide(B) {
+    const sp = this.b.spine2?.bone;
+    if (!sp) return;
+    this._charOf(sp, _rdP); this._liveW(sp, _rdQ);
+    if (B.rideOk && (B.mode || B.rOn)) {
+      _rdD.copy(_rdQ).multiply(_rdQ2.copy(B.rideQ).invert());
+      if (B.mode) B.pp.sub(B.rideP).applyQuaternion(_rdD).add(_rdP);
+      if (B.rOn) B.rp.sub(B.rideP).applyQuaternion(_rdD).add(_rdP);
+    }
+    if (!B.rideP) { B.rideP = new THREE.Vector3(); B.rideQ = new THREE.Quaternion(); }
+    B.rideP.copy(_rdP); B.rideQ.copy(_rdQ); B.rideOk = true;
   }
 
   /** M1a weapons round 3: the regrip's place for the left palm (char): off spine_02, so a crouch or a lean carries it. */
