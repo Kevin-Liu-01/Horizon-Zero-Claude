@@ -342,15 +342,15 @@ export class CarryStow {
         _bpD.set(0, 1, 0).applyQuaternion(kitQ);
         B.qMid.setFromUnitVectors(_bpD, MID_STAVE).multiply(kitQ);
         if (B.t < tD) {
-          B.keep = KEEPER_SLIDE * _sm(kd / 0.45);
-          _bpQ4.copy(kitQ).slerp(B.qMid, _sm((kd - 0.45) / 0.55));
+          B.keep = KEEPER_SLIDE * _sm(kd / 0.35);
+          _bpQ4.copy(kitQ).slerp(B.qMid, _sm((kd - 0.35) / 0.65));
         } else {
           B.keep = KEEPER_SLIDE;
           _bpQ4.copy(B.qMid).slerp(_bpQ3, _sm(ke));
         }
         // the pivot is about the FIST: out of the keeper, the stave is kept 60-100 deg off the forearm (as rendered last
         // step), so the wrist never folds as the arm swings round her hip (W1); let go of as the carry's line is reached
-        if (kd >= 0.45 && B.faOk) this._staveOffForearm(_bpQ4, B.fa, 1 - _sm((ke - 0.2) / 0.5));
+        if (kd >= 0.35 && B.faOk) this._staveOffForearm(_bpQ4, B.fa, 1 - _sm((ke - 0.2) / 0.5));
         // the bow turns no faster than the rate bound (W3)
         const maxA = RATE.bowDeg * Math.PI / 180 * dt;
         const a = B.q.angleTo(_bpQ4);
@@ -359,7 +359,7 @@ export class CarryStow {
         this._bowSockMesh(0, _bpG);
         this._bowPt(kitQ, kitO, B.kitS, _bpG.x, _bpG.y, _bpG.z, _bpT);
         _bpE.set(0, -1, 0).applyQuaternion(kitQ);
-        _bpT.addScaledVector(_bpE, B.keep * _sm(kd / 0.45));
+        _bpT.addScaledVector(_bpE, B.keep * _sm(kd / 0.35));
         this._bowPointNowPast(_bpA);
         // (the carry's palm: its wrist goal plus the palm, the hand laid along the carried stave)
         _bpD.set(0, 1, 0).applyQuaternion(_bpQ3);
@@ -367,7 +367,7 @@ export class CarryStow {
         _bpB.fromArray(CARRY_GRIP); _bpB.y -= 0.30 * this._crouchW;
         _bpB.add(_bpE.copy(palmOff).applyQuaternion(_bpQ4));
         // (the fist stays at her back through the slide and the start of the pivot, then travels past the hip to the carry)
-        if (B.t < tD) _bpP.lerpVectors(_bpT, _bpA, 0.5 * _sm((kd - 0.5) / 0.5));
+        if (B.t < tD) _bpP.lerpVectors(_bpT, _bpA, 0.5 * _sm((kd - 0.4) / 0.6));
         else bez(_bpP.lerpVectors(_bpT, _bpA, 0.5), _bpA, _bpB, _sm(ke), _bpP);
         B.palm.copy(_bpP);
         // E: the fist loosens and the limb runs through it to the riser; closes on the riser as E ends
@@ -378,7 +378,9 @@ export class CarryStow {
         // the bow hands over to combat's carry placement over E's second half (bowPathPose)
         B.blendC = _sm((ke - 0.4) / 0.6);
         // (ready only once the bow lies on the carry's line: combat's carry takes it from there with no turn)
-        if (B.t >= T.total && B.q.angleTo(_bpQ3) < 0.05) { B.mode = 0; B.readyAt = B.simT; this._carryBowW = 1; }
+        /* (M1a weapons step 2: within 5 deg of the carry's line, half the W3 step bar: combat's carry takes the last of it in
+         *  one step; at 3 deg the rate bound's tail held the unstow to 0.45-0.47 s, W7's band 0.30-0.40) */
+        if (B.t >= T.total && B.q.angleTo(_bpQ3) < 0.087) { B.mode = 0; B.readyAt = B.simT; this._carryBowW = 1; }
         // (held at the carry through F until the bow lies on the carry's line; the carry layer takes the arm at weight 1)
         w = 1;
       }

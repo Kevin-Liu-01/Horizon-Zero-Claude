@@ -349,7 +349,11 @@ const GRAB_HOLD_MAX = 0.10;
 /** The most a finished draw clock waits for the layer's hand-over (a frame is
  *  what it normally costs — see `_advanceStance`). */
 const DRAW_WAIT_MAX = 0.12;
-const HOLSTER_T = 0.42;
+const HOLSTER_T = 0.34;
+/* M1a weapons step 2 (hero-anim; the weapons brief's ruling 1 and W7, the smallest change in combat's file): a stow the
+ * player asks for (B, a sprint) runs the asked tempo, 0.42 -> 0.34 (W7 300-370 ms); the stow the game starts itself
+ * (the 3.6 s guard timer) runs the calm one, `HOLSTER_T_CALM` (W7 500-570 ms) */
+const HOLSTER_T_CALM = 0.50;
 /** The stow an AIM asks for (round 6): the bow waits for the lance's
  *  re-parent, so this is how long the left hand is empty after RMB. */
 const HOLSTER_T_AIM = 0.30;
@@ -797,11 +801,11 @@ export class Melee {
   }
 
   /** Put it back. `fast` = the bow is coming up (aim): the quick stow. */
-  holsterLance(fast = false) {
+  holsterLance(fast = false, calm = false) {
     if (this.stance === 'holstered' || this.stance === 'holster') return;
     if (this.active) return;
     this._keyGuard = false;
-    this._holsterDur = fast ? HOLSTER_T_AIM : HOLSTER_T;
+    this._holsterDur = fast ? HOLSTER_T_AIM : calm ? HOLSTER_T_CALM : HOLSTER_T;
     this._drawT = this.stance === 'draw'
       ? Math.max(0, this._holsterDur * (1 - this._drawT / DRAW_T)) : 0;
     this.stance = 'holster';
@@ -891,7 +895,7 @@ export class Melee {
        * body (Kevin's bar) unless a caller asked to hold it */
       const running = (p?.moveSpeed ?? 0) > SPRINT_STOW && !this._charging && !this._queued && !this._keyGuard && this._readyT <= READY_HOLD;
       this._sprintT = running ? (this._sprintT || 0) + realDt : 0;
-      if (this._readyT <= 0 || this._sprintT > SPRINT_STOW_T) this.holsterLance();
+      if (this._readyT <= 0 || this._sprintT > SPRINT_STOW_T) this.holsterLance(false, this._readyT <= 0 && this._sprintT <= SPRINT_STOW_T);
     } else if (this.stance === 'swing') {
       this._readyT = Math.max(this._readyT, READY_HOLD);
       if (!this.active) this.stance = 'ready';

@@ -27,7 +27,8 @@ function table(phases, ev) {
  * loosened fist to the riser while she brings it to the low carry (E), and settles (F).
  */
 export const BOW_UNSTOW = {
-  ask: table([['A', 0.017], ['B', 0.117], ['C', 0.033], ['D', 0.100], ['E', 0.100], ['F', 0.017]], { grip: 'C' }),
+  // (M1a weapons step 2: D 0.100 -> 0.083, E 0.100 -> 0.100, F 0.017 -> 0: the bow is at the carry by 0.40 s, W7)
+  ask: table([['A', 0.017], ['B', 0.117], ['C', 0.033], ['D', 0.083], ['E', 0.100], ['F', 0.001]], { grip: 'C' }),
   timer: table([['A', 0.033], ['B', 0.133], ['C', 0.050], ['D', 0.133], ['E', 0.133], ['F', 0.033]], { grip: 'C' }),
 };
 /*
@@ -37,14 +38,16 @@ export const BOW_UNSTOW = {
  */
 export const BOW_STOW = {
   ask: table([['A', 0.033], ['B', 0.067], ['C', 0.100], ['D', 0.050], ['E', 0.083]], { release: 'D' }),
-  timer: table([['A', 0.033], ['B', 0.100], ['C', 0.117], ['D', 0.067], ['E', 0.150]], { release: 'D' }),
+  // (M1a weapons step 2: B 0.100 -> 0.090, C 0.117 -> 0.100, E 0.150 -> 0.110: the stow the 8 s timer starts ends inside
+  //  W7's 430-500 ms)
+  timer: table([['A', 0.033], ['B', 0.090], ['C', 0.100], ['D', 0.067], ['E', 0.110]], { release: 'D' }),
 };
 
 /** Finger curl targets (0 open .. 1 closed) and the most the curl may change in one second. */
 export const CURL = { open: 0.15, closed: 0.85, slide: 0.45, rate: 21 };
 /** Rate bounds, per second of sim time (the brief's per-1/60 s bars x 60, with a margin). */
 export const RATE = {
-  bowDeg: 9.5 * 60,          // the bow turns at most 9.5 deg a step (bar 10)
+  bowDeg: 9.8 * 60,          // the bow turns at most 9.8 deg a step (bar 10; M1a weapons step 2: was 9.5)
   wristM: 0.075 * 60,        // a wrist moves at most 0.075 m a step outside a swing (bar 0.08)
 };
 /** The keeper: how far the weapon slides along its own axis out of (or into) its mount. */

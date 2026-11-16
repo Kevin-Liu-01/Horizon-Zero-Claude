@@ -223,6 +223,30 @@ export function gradeCase(kind, L, meta = {}) {
       }
     }
     out.W11 = { spineYawPeakDeg: r3(sp), headYawMaxDeg: r3(hd), elbowPoleDegStepMax: r3(pole) };
+    /* M1a weapons step 2 (W11's step-2 clauses, graded on the lance draw): the prop's cant overshoot past the guard's
+     * line (the largest angle off the final line after the haft first stops closing on it) and the steps it takes from
+     * that peak back inside 0.5 deg; the hips' lead (s): when the pelvis has made half its turn from the request to the
+     * end against when the shoulder line has */
+    if (kind === 'lanceDraw' || kind === 'click') {
+      const held = L.filter((r) => r.lanceVis === 'held');
+      const iT = held.findIndex((r) => r.lanceOwner === 'handR' || r.lanceOwner === 'both');
+      if (kind === 'lanceDraw' && iT >= 0) {
+        // the signed angle off the final (guard) line in the plane the pull turns it in: + short of it, - past it
+        const g = nrm(sub(held[held.length - 1].lanceTip, held[held.length - 1].lanceButt)), d0 = nrm(sub(held[iT].lanceTip, held[iT].lanceButt));
+        const cr = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+        const nn = nrm(cr(d0, g));
+        const sg = held.slice(iT).map((r) => { const d = nrm(sub(r.lanceTip, r.lanceButt)); return Math.atan2(dot(cr(d, g), nn), dot(d, g)) * D; });
+        let mn = 0, mnI = -1; for (let i = 0; i < sg.length; i++) if (sg[i] < mn) { mn = sg[i]; mnI = i; }
+        let back = null; if (mnI >= 0) for (let i = mnI; i < sg.length; i++) if (Math.abs(sg[i]) <= 0.5) { back = i - mnI; break; }
+        out.W11.overshootDeg = r3(-mn); out.W11.settleSteps = back;
+        if (!(-mn >= 1 && -mn <= 4)) fail(`W11 cant overshoot ${(-mn).toFixed(2)} deg (band 1-4)`);
+        if (back == null || back > 6) fail(`W11 settle ${back} steps back inside 0.5 deg (bar 6)`);
+      }
+      const half = (k) => { const v0 = L[0][k], v1 = L[n - 1][k], m = (v0 + v1) / 2; if (Math.abs(v1 - v0) < 2) return null; for (let i = 0; i < n; i++) if ((v1 > v0 ? L[i][k] >= m : L[i][k] <= m)) return L[i].t; return null; };
+      const hp = half('pelvisYaw'), hs = half('shoulderYaw');
+      out.W11.hipLeadS = hp != null && hs != null ? r3(hs - hp) : null;
+      if (out.W11.hipLeadS == null || out.W11.hipLeadS < 0.040) fail(`W11 hip lead ${out.W11.hipLeadS} s (bar >= 0.040)`);
+    }
     // (the lance's guard turns her trunk by design (meleeLayer STANCE): the band is the draw's own reach additive, graded on
     //  the bow's unstow, where nothing else turns her)
     if (kind === 'bowUnstow') { if (sp < 5 || sp > 10) fail(`W11 spine yaw peak ${sp.toFixed(1)} deg (band 5-10)`); }

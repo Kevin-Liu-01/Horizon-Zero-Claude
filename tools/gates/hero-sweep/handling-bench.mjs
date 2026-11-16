@@ -114,6 +114,11 @@ const ch = (bone, off = null) => { if (off) { bone.updateWorldMatrix(true, false
 const chW = (w) => _v.copy(w).applyMatrix4(_inv).toArray();
 const toSp = (c) => _v.fromArray(c).applyMatrix4(model.matrixWorld).applyMatrix4(_sp).toArray();
 const yawOf = (bone) => { an._liveW(bone, _q); _v.set(0, 0, 1).applyQuaternion(_q); return Math.atan2(_v.x, _v.z) * D; };
+const segPt = (p, a, c) => { const ab = [c[0] - a[0], c[1] - a[1], c[2] - a[2]], ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
+  const t = Math.max(0, Math.min(1, (ab[0] * ap[0] + ab[1] * ap[1] + ab[2] * ap[2]) / (ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2 || 1)));
+  return Math.hypot(ap[0] - ab[0] * t, ap[1] - ab[1] * t, ap[2] - ab[2] * t); };
+/** segment-segment distance by sampling the first (11 points; a gate-free self check) */
+const segSeg = (a0, a1, b0, b1) => { let m = 9; for (let i = 0; i <= 10; i++) { const t = i / 10; m = Math.min(m, segPt([a0[0] + (a1[0] - a0[0]) * t, a0[1] + (a1[1] - a0[1]) * t, a0[2] + (a1[2] - a0[2]) * t], b0, b1)); } return m; };
 function wristAngles(s) {
   const b = an.b, up = s === 'L' ? b.loArmL : b.loArmR, ha = s === 'L' ? b.handL : b.handR;
   const el = new THREE.Vector3(), wr = new THREE.Vector3(), kn = new THREE.Vector3();
@@ -168,6 +173,19 @@ function record(t) {
   r.lanceOwner = ml?._held ? (lHold ? 'both' : 'handR') : lHold && lanceHeldVis ? 'handL' : 'carry';
   if (NEW && typeof ml?.lanceOwner === 'function') r.lanceOwner = ml.lanceOwner();
   r.stance = mel.stance; r.swing = !!mel.active;
+  /* M1a weapons step 2: the visible haft's clearance of her axial bones (A104's list: head, neck, spine, pelvis) and of
+   * her thighs (bone to segment, char m), and the bone it is nearest */
+  r.lanceAxialM = null; r.lanceAxialBone = null; r.lanceThighM = null;
+  if (r.lanceVis === 'held') {
+    for (const k of ['head', 'neck1', 'neck2', 'spine5', 'spine4', 'spine3', 'spine2', 'spine1', 'pelvis']) {
+      const e = b[k]; if (!e) continue; const d = segPt(ch(e.bone), r.lanceButt, r.lanceTip);
+      if (r.lanceAxialM == null || d < r.lanceAxialM) { r.lanceAxialM = +d.toFixed(4); r.lanceAxialBone = k; }
+    }
+    for (const [a, c] of [[b.thighL, b.calfL], [b.thighR, b.calfR]]) {
+      if (!a || !c) continue; const d = segSeg(ch(a.bone), ch(c.bone), r.lanceButt, r.lanceTip);
+      if (r.lanceThighM == null || d < r.lanceThighM) r.lanceThighM = +d.toFixed(4);
+    }
+  }
   // the arms
   const pal = (s) => { const hb = s === 'L' ? b.handL.bone : b.handR.bone; const off = s === 'L' ? ml.palmOffLL : ml.palmOffL; return ch(hb, off); };
   r.palmL = pal('L'); r.palmR = pal('R');
@@ -178,6 +196,9 @@ function record(t) {
   [r.wristFlexL, r.wristDevL] = wristAngles('L');
   r.kneeY = Math.min(ch(b.calfL.bone)[1], ch(b.calfR.bone)[1]);
   r.spineYaw = yawOf(sp); r.headYaw = yawOf(b.head.bone);
+  // (M1a weapons step 2, W11's step-2 clauses: the pelvis's yaw and the shoulder line's, char deg)
+  r.pelvisYaw = yawOf(b.pelvis.bone);
+  r.shoulderYaw = Math.atan2(-(r.shL[2] - r.shR[2]), r.shL[0] - r.shR[0]) * D;
   r.aimW = an.aimWeight ?? 0; r.aimGate = H ? H.aimGate : 1;
   return r;
 }
@@ -199,6 +220,14 @@ const CASES = {
   heldBowRun: { kind: 'held', tempo: 'ask', jog: true, pre: () => settleBowOut(SPEEDS.jog), go: () => { emu.holsterT = 30; }, secs: 2.0, speed: SPEEDS.jog },
   heldBowSprint: { kind: 'held', tempo: 'ask', jog: true, pre: () => { R.player.sprinting = true; settleBowOut(SPEEDS.sprint); }, go: () => { emu.holsterT = 30; }, secs: 2.0, speed: SPEEDS.sprint, post: () => { R.player.sprinting = false; } },
   heldLanceRun: { kind: 'held', tempo: 'ask', jog: true, pre: () => settleLanceOut(SPEEDS.jog), go: () => { R.melee._readyT = 30; }, secs: 2.0, speed: SPEEDS.jog },
+  /* M1a weapons step 2 (the brief: "draws on the move (walk, run, crouch)"): the draws with her already walking, jogging
+   * or crouched (a lead-in of 40 steps at that gait first) */
+  lanceDrawWalk: { kind: 'lanceDraw', tempo: 'ask', pre: () => { for (let i = 0; i < 40; i++) tick(SPEEDS.walk); }, go: key2, secs: 0.8, speed: SPEEDS.walk },
+  lanceDrawJog: { kind: 'lanceDraw', tempo: 'ask', jog: true, pre: () => { for (let i = 0; i < 40; i++) tick(SPEEDS.jog); }, go: key2, secs: 0.8, speed: SPEEDS.jog },
+  lanceDrawCrouch: { kind: 'lanceDraw', tempo: 'ask', pre: () => { R.player.crouching = true; for (let i = 0; i < 40; i++) tick(0); }, go: key2, secs: 0.8, post: () => { R.player.crouching = false; } },
+  bowUnstowWalk: { kind: 'bowUnstow', tempo: 'ask', pre: () => { for (let i = 0; i < 40; i++) tick(SPEEDS.walk); }, go: () => { emu.holsterT = 8; }, secs: 0.9, speed: SPEEDS.walk },
+  bowUnstowJog: { kind: 'bowUnstow', tempo: 'ask', jog: true, pre: () => { for (let i = 0; i < 40; i++) tick(SPEEDS.jog); }, go: () => { emu.holsterT = 8; }, secs: 0.9, speed: SPEEDS.jog },
+  bowUnstowCrouch: { kind: 'bowUnstow', tempo: 'ask', pre: () => { R.player.crouching = true; for (let i = 0; i < 40; i++) tick(0); }, go: () => { emu.holsterT = 8; }, secs: 0.9, post: () => { R.player.crouching = false; } },
 };
 
 const only = flag('--only') ? flag('--only').split(',') : Object.keys(CASES);
