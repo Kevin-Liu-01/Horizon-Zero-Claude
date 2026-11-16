@@ -2272,7 +2272,16 @@ export class Progression {
     const data = n ? this.saves.store.latest(n) : null;
     if (!data) return { ok: false, error: 'no save' };
     const res = this.saves.apply(data);
-    this.banner('CONTINUE', `LEVEL ${this.level}`, 'save');
+    // the save's quest and hour (the game has no levels): "RAKER'S MORNING · 07:00"
+    const quest = this.ctx.spine?.S?.quest?.title ?? data.quest?.id ?? '';
+    let hour = '';
+    if (data.hour != null && Number.isFinite(Number(data.hour))) {   // HH:MM as the slot cards print it (src/ui/slots.js)
+      const t = ((Number(data.hour) % 24) + 24) % 24;
+      let hh = Math.floor(t), mm = Math.round((t - hh) * 60);
+      if (mm === 60) { mm = 0; hh = (hh + 1) % 24; }
+      hour = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+    this.banner('CONTINUE', [String(quest).toUpperCase(), hour].filter(Boolean).join(' · '), 'save');
     return res;
   }
 
