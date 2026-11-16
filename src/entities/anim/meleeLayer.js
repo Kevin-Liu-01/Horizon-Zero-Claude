@@ -1,4 +1,5 @@
 import { setPropCap, clearPropCap } from './cloth/propCaps.js';
+import { SOCKETS } from '../../hero/sockets.js';
 import * as THREE from 'three';
 import { ClipLayerSet } from './clipLayer.js';
 import { register } from './registry.js';
@@ -156,6 +157,9 @@ const _ahG = new THREE.Vector3();
 const _ahQi = new THREE.Quaternion();
 /** the left hand's late seat (fix round 1): palm goal, haft butt / tip, knuckle centre */
 const _slG = new THREE.Vector3();
+const _rohP = new THREE.Vector3(), _rohA = new THREE.Vector3();   // (`_rightOnHaft`)
+const _lohD = new THREE.Vector3(), _qRO = new THREE.Quaternion();
+const _lohP = new THREE.Vector3(), _lohA = new THREE.Vector3(), _lohQ = new THREE.Quaternion(), _lohQ2 = new THREE.Quaternion();   // (`_leftOnHaft`)
 const _slB = new THREE.Vector3();
 const _slT = new THREE.Vector3();
 const _slP = new THREE.Vector3();
@@ -312,6 +316,19 @@ const TAIL_RE = /^dyn_(wrapSash|sashEnd|hairKnotTail)/;
 const LH_ON_REF = 0.5425;
 /** Her wrist to the palm's centre on the haft (m; measured on the UBC hand). */
 const LH_PALM = 0.075;
+/** M1a weapons round 2: the haft's axis off the palm point along the palm's normal (m; see `haftOffL`) */
+const HAFT_D = 0.024;
+/** ...and the most the draw waits at the left fist's take for the palm on its socket (s; melee.js holds its clock) */
+const TAKE_WAIT = 0.10;
+/** ...within (m): the palm's axis point on the socket (W1's bar is 0.010) */
+const TAKE_TOL = 0.006;
+/** M1a weapons round 2 (W3/W10: a wrist <= 0.06-0.08 m a step): the stow's right-fist leg to the hand-over line ends here
+ *  (holster k; was 0.62) and the left fist's carry back to the keeper takes this much of it after the let-go (was 0.30) */
+const STOW_HO = 0.45, STOW_CARRY = 0.42;
+/** ...and the right fist's take from the left at the hand-over: the butt where the right fist would hold it, within (m) */
+const HANDOVER_SNAP = 0.010;
+/** ...and the haft's radius at the three sockets (m, the handling rows' own: sockets.js r at the prop's scale) */
+const LANCE_R = { butt: SOCKETS.lance.butt.r, grip: SOCKETS.lance.grip.r, fore: SOCKETS.lance.fore.r };
 /** The left hand never slides closer to the right hand than this (m). */
 const LH_ON_MIN = 0.14;
 /** The recoil on a hit: metres back along the haft, and its decay (1/s). */
@@ -805,7 +822,7 @@ const SIDE_KEY = {
  * instead of the stowed one, so the prop is posed on it (`_poseHolstered`), the right hand reaches for it
  * (`_reachPose`) and the hand-over waits for the right hand on it (`_reparentGap`) exactly as they did on the back.
  */
-const LC_S = 0.42;                 // where the left palm holds the haft (m from the butt)
+const LC_S = SOCKETS.lance.butt.p[1];   // where the left palm holds the haft (m from the butt; sockets.js, M1a weapons round 2: 0.42 -> 0.50)
 /* M1a weapons step 2 (hero-anim; Kevin Nov 15: "unsheathing them and getting them into position ... improved a lot"):
  * the left hand's reach ends at 0.24 of the draw and its carry at 0.56 (were 0.30 / 0.70), so the right fist has the
  * last 0.44 of the draw (0.13 s) to bring the haft from the hand-over into the guard, where the turn is (W3) */
@@ -1139,6 +1156,24 @@ export class MeleeLayer {
       this.palmOffLL = new THREE.Vector3(-this.palmOffL.x, this.palmOffL.y, this.palmOffL.z);
     }
 
+    /* M1a weapons round 2 (W1, the lance's three sockets): THE HAFT LIES ON THE PALM, NOT THROUGH IT. `palmOffL` is the
+     * palm point on the hand's bone line, 2 cm inside the palm's skin; the haft ran through it, so the closed fingers
+     * lay inside the haft (W1: 60-700 joint-steps a case) and the palm had no side to face it (91.6 deg). The haft's
+     * axis now lies `HAFT_D` off the palm point along the palm's normal (`haftOffL`, `haftOffLL`, hand-local metres),
+     * every place the haft is put in or read off a hand, and the fingers are solved closed on its surface
+     * (`an._grip`, carryStow.js). `HAFT_D` is held to 0.024 m by A101's knuckle-line bar (the knuckle line's midpoint
+     * 0.015 m distal of the palm point: 0.028 m off the axis against 0.03). */
+    this.haftOffL = this.palmOffL.clone(); this.haftOffLL = this.palmOffLL.clone();
+    this._relDB = new THREE.Vector3(); this._relDQ = new THREE.Quaternion(); this._relCap = null; this._relOffOn = false; this._lReadBack = false;
+    this.gripR = null; this.gripLButt = null; this.gripLFore = null;
+    if (typeof an._grip === 'function' && an._fingerR?.length >= 12 && an._fingerL?.length >= 12) {
+      this.gripR = an._grip('r', 'lanceR', this.palmOffL, this.gripDirL, HAFT_D, LANCE_R.grip);
+      this.gripLFore = an._grip('l', 'lanceFore', this.palmOffLL, this.gripDirLL, HAFT_D, LANCE_R.fore);
+      this.gripLButt = an._grip('l', 'lanceButt', this.palmOffLL, this.gripDirLL, HAFT_D, LANCE_R.butt);
+      this.haftOffL.copy(this.gripR.axis);
+      this.haftOffLL.copy(this.gripLFore.axis);
+    }
+
     /* ---------------------- the back socket, from the rest pose ----------- */
     const spineE = b.spine2 || b.spine4;
     this.socketBone = spineE.bone;
@@ -1404,6 +1439,8 @@ export class MeleeLayer {
     g.position.copy(_b.subVectors(_grip, _a)).applyQuaternion(_q2).multiplyScalar(1 / bs);
     _q3.setFromUnitVectors(Z_AXIS, _c);
     g.quaternion.copy(_q2).multiply(_q3);
+    // (M1a weapons round 2: in the left fist the haft is where the fist is, `_leftOnHaft`; no slide out of a capture)
+    if (this._lReadBack) { this._carryB = 1; return; }
     this._blendCarry(g);
   }
 
@@ -1507,7 +1544,7 @@ export class MeleeLayer {
     g.scale.set(inv, inv, inv);
     g.quaternion.copy(this.gripQ);
     // butt = palm - frac * L * shaftDir, in hand-local metres, then / scale
-    _a.copy(this.gripDirL).multiplyScalar(-frac * this.length).add(this.palmOffL);
+    _a.copy(this.gripDirL).multiplyScalar(-frac * this.length).add(this.haftOffL);
     g.position.copy(_a).multiplyScalar(1 / s);
     this._blendCarry(g);
   }
@@ -1673,10 +1710,15 @@ export class MeleeLayer {
 
     /* THE DRAW STARTS WHERE THE ARM IS (round 6): capture it on the first
      * frame of a draw, before this layer has touched the arm. */
-    if (stance === 'draw' && this._prevStance !== 'draw') this._captureFrom();
+    if (stance === 'draw' && this._prevStance !== 'draw') {
+      this._captureFrom();
+      /* M1a weapons round 2: the left fist's take is an event (`_leftOnHaft`); a draw that reverses a stow the left
+       * hand still holds has it already */
+      this._lTaken = this._prevStance === 'holster' && this.lanceOwner() === 'handL'; this._takeWaitT = 0;
+    }
     /* ...and a holster starts where the arm WAS: from the guard, or (round 6)
      * from a follow-through an aim cut short — not from the READY key */
-    if (stance === 'holster' && this._prevStance !== 'holster') this._captureHolsterFrom();
+    if (stance === 'holster' && this._prevStance !== 'holster') { this._captureHolsterFrom(); this._lSeated = false; this._takeWaitT = 0; }
     /* (M1a round 2: the guard keeps the elbow settle too, see `_elbowSettle`) */
     this._settleOn = stance === 'ready';
     this._prevStance = stance;
@@ -1699,7 +1741,7 @@ export class MeleeLayer {
      * pose now, so there is nothing to blend away from), and the holster
      * hands it back only after the hand has come down her side (see `_blend`). */
     const want = stance === 'holstered' ? 0
-      : stance === 'draw' ? smoothstep(st.drawK ?? 0, 0.0, 0.20)
+      : stance === 'draw' ? smoothstep(st.drawK ?? 0, 0.0, LC_REACH - 0.06)
         : stance === 'holster' ? 1 - smoothstep(st.drawK ?? 0, 0.86, 1.0)
           : 1;
     this.w = damp(this.w, want, stance === 'holstered' ? 9 : (stance === 'draw' ? 30 : 16), dt);
@@ -1744,6 +1786,7 @@ export class MeleeLayer {
     this._prevBeat = stance === 'swing' ? beat.id : null;
     this._prevPhase = stance === 'swing' ? st.phase : null;
     this._prevSwing = stance === 'swing';
+    this._stDrawK = clamp(st?.drawK ?? 0, 0, 1);
     this._leftCarry(stance, st);
     const u = this._blend(stance, st, beat);
     /* M1.3d: THE KEYS COME DOWN WITH HER IN A CROUCH. The guard and the beats are authored on a standing
@@ -1890,6 +1933,7 @@ export class MeleeLayer {
       if (_shaft.y > rise) { _shaft.y = rise; _shaft.normalize(); }
     }
     this._solveRight(w, u);
+    this._rightOnHaft(stance, w);
     /* THE CONTACT LANDS WHERE IT WAS AIMED (round 6, R7): the aim above bent
      * the beat's KEY toward the target, but the arm does not reach every key
      * and the wrist does not turn every haft, so the posed tip can sit 0.2-0.3
@@ -1907,6 +1951,7 @@ export class MeleeLayer {
     this._leftCarryHand(u);
     this._lhRate(stance, dt);
     this._solveLeft(w, u);
+    this._leftOnHaft(stance, w);
     /* M1a debt fix 1 (M1.3d, the crouched Undercut: the left palm 0.084 m off grip2 in the follow-through and
      * 0.131 m at the contact from the holster, bench at 88b1605). Crouched, the Undercut's sink takes her left
      * shoulder down and back further than the keys come down, and the left arm, at full reach, stops short of
@@ -1920,7 +1965,7 @@ export class MeleeLayer {
         an._charOf(b.handL.bone, _ucC);
         an._liveW(b.handL.bone, _ucQ);
         this._gripChar(_grip); this._shaftChar(_a);
-        _ucV.copy(this.palmOffLL).applyQuaternion(_ucQ).add(_ucC).sub(_grip).addScaledVector(_a, -this._lhOnWant);   // palm - its socket
+        _ucV.copy(this.haftOffLL).applyQuaternion(_ucQ).add(_ucC).sub(_grip).addScaledVector(_a, -this._lhOnWant);   // palm - its socket
         const miss = _ucV.length();
         if (!(miss > UC_SEAT_TOL)) break;
         if (miss > UC_SEAT_MAX) _ucV.multiplyScalar(UC_SEAT_MAX / miss);
@@ -1951,8 +1996,12 @@ export class MeleeLayer {
       this._curlR = this._curlR + clamp(tR - this._curlR, -cr, cr);
       this._curlL = this._curlL + clamp(tL - this._curlL, -cr, cr);
     }
-    an._curlFingers(an._fingerR, this._curlR * w, this._curlR * 0.88 * w);
-    an._curlFingers(an._fingerL, this._curlL * w, (this._curlL * 0.91) * w);
+    /* M1a weapons round 2 (W1): the four fingers close ON the haft's surface (`an._grip`'s solved curls, at the curl's
+     * share of closed), the thumb over them; with no solved grip (another rig) the old curl */
+    if (this.gripR) an._wrapFingers('r', this.gripR, this._curlR / 0.85, this._curlR * 0.88 * w, w);
+    else an._curlFingers(an._fingerR, this._curlR * w, this._curlR * 0.88 * w);
+    if (this.gripLFore) an._wrapFingers('l', this._lc?.on && !this._held ? this.gripLButt : this.gripLFore, this._curlL / 0.85, this._curlL * 0.91 * w, w);
+    else an._curlFingers(an._fingerL, this._curlL * w, (this._curlL * 0.91) * w);
 
     this._measure();
     this._settleLance(stance, st);
@@ -2564,7 +2613,7 @@ export class MeleeLayer {
     // the posed tip, char space
     an._charOf(b.handR.bone, _eH);
     an._liveW(b.handR.bone, _q1);
-    _eC.copy(this.gripDirL).multiplyScalar((1 - this._fracNow) * this.length).add(this.palmOffL)
+    _eC.copy(this.gripDirL).multiplyScalar((1 - this._fracNow) * this.length).add(this.haftOffL)
       .applyQuaternion(_q1).add(_eH);
     an._charOf(b.upArmR.bone, _eS);
     an.model.updateWorldMatrix(true, false);
@@ -2792,7 +2841,7 @@ export class MeleeLayer {
     const an = this.an, b = an.b, D = this._dbg;
     an._charOf(b.handR.bone, _eH);
     an._liveW(b.handR.bone, _q1);
-    _eC.copy(this.gripDirL).multiplyScalar((1 - this._fracNow) * this.length).add(this.palmOffL)
+    _eC.copy(this.gripDirL).multiplyScalar((1 - this._fracNow) * this.length).add(this.haftOffL)
       .applyQuaternion(_q1).add(_eH);
     this._postShift(_eD); _eC.add(_eD);
     an.model.updateWorldMatrix(true, false);
@@ -2852,7 +2901,14 @@ export class MeleeLayer {
         const reach = k >= 0.30 ? this._reparentGap(frac) : 9;
         const give = this._grabSettle(reach, k);
         holstered = !!give;
-        if (give) { D.grabReach = reach > 8 ? this._reparentGap(frac) : reach; this._relK = k; }
+        if (give) {
+          D.grabReach = reach > 8 ? this._reparentGap(frac) : reach; this._relK = k;
+          // (M1a weapons round 2: where the haft is as the right lets it go, at the left fist's socket: the carry back starts there)
+          if (!this._relCap) this._relCap = { pt: new THREE.Vector3(), dir: new THREE.Vector3() };
+          this._gripChar(this._relCap.pt); this._shaftChar(this._relCap.dir);
+          this._relCap.pt.addScaledVector(this._relCap.dir, LC_S - GRIP_FRAC * this.length);
+          this._relOffOn = false;
+        }
       }
     } else if (stance !== 'holstered') {
       holstered = false;
@@ -2865,6 +2921,10 @@ export class MeleeLayer {
      * teleport would be — rather than on the residual the arm left, which is
      * `grabReach` above and is a reach quality, not a discontinuity. */
     const changing = this._held === holstered;   // this frame flips the parent
+    /* M1a weapons round 2 (W1, W2 at the hand-over): taken from the LEFT fist, the haft is first posed where that fist
+     * holds it THIS step (the carried line read back off the hand), then captured: the capture read last step's pose,
+     * one step of the carry (0.05-0.08 m) behind the hand that took it */
+    if (changing && !holstered && this._lc?.on) this._poseHolstered();
     if (changing) this._preHandover(_hoPos);
     if (holstered) { this._toBack(); if (stance !== 'holstered' || changing) this._poseHolstered(); }
     else { this._toHand(); this._poseHeld(frac); }
@@ -2950,8 +3010,11 @@ export class MeleeLayer {
      * leave the reach flat while the hand is still half a metre out. So the
      * convergence exit only fires under 0.20 m — inside A102's 0.25 m bar with
      * margin — and anything worse than that waits for the clock. */
-    const settled = reach <= GRAB_SNAP
-      || (this._gsN >= 4 && this._gsStall >= 2 && reach <= 0.20);
+    /* M1a weapons round 2 (W1, W2 at the hand-over): taking the haft from the LEFT fist (the carry), the right takes it
+     * on its socket: within `HANDOVER_SNAP` (the convergence path then needs the same; the clock's escape stays) */
+    const carry = !!this._lc?.on && !this._held && this._prevStance === 'draw';
+    const settled = carry ? reach <= HANDOVER_SNAP || (this._gsN >= 6 && this._gsStall >= 3 && reach <= 0.03)
+      : reach <= GRAB_SNAP || (this._gsN >= 4 && this._gsStall >= 2 && reach <= 0.20);
     this.needsGrab = !settled;
     if (!settled && k < 0.999) return false;
     this._grabReset();
@@ -3017,7 +3080,7 @@ export class MeleeLayer {
        * nine, and the tip's worst per-frame travel across the re-parent drops
        * by a third. */
       if (this._held) {
-        A = this._holsterFrom; B = this._reachPose(); t = CARRY_EASE(clamp(dk / 0.62, 0, 1));
+        A = this._holsterFrom; B = this._reachPose(); t = CARRY_EASE(clamp(dk / STOW_HO, 0, 1));
         yawK = 1 - t;
         /* M1a weapons step 2: the stow comes up out of the guard through `PULL_VIA` (the haft stood up at her right
          * front) to the hand-over line, the reverse of the draw's pull */
@@ -3272,16 +3335,20 @@ export class MeleeLayer {
       } else {
         /* (M1a weapons step 2: the carry starts from rest, smoothstep, so the haft does not jump at the left hand's
          *  take: W2's 0.088 m at the take was CARRY_EASE's linear start under the keeper slide) */
-        u = trapEase(clamp((dk - LC_REACH) / (LC_CARRY - LC_REACH), 0, 1)); hold = CARRY_EASE(clamp(dk / LC_REACH, 0, 1));
+        u = trapEase(clamp((dk - LC_REACH) / (LC_CARRY - LC_REACH), 0, 1)); hold = CARRY_EASE(clamp(dk / (LC_REACH - 0.04), 0, 1));
+        // (M1a weapons round 2: the haft leaves its keeper only once the fist has taken it, `_leftOnHaft`)
+        if (!this._lTaken) u = 0;
       }
     } else {
       // (the stow: the left hand comes onto the haft as the right fist brings it upright to the hand-over line)
-      if (this._held) { u = 1; hold = smoothstep(dk, 0.40, 0.60); }
+      if (this._held) { u = 1; hold = smoothstep(dk, STOW_HO - 0.20, STOW_HO - 0.03); this._relOffOn = false; }
       else {
-        const r0 = clamp(this._relK ?? 0.62, 0, 0.9), r1 = Math.min(0.97, r0 + 0.30);
+        const r0 = clamp(this._relK ?? STOW_HO, 0, 0.9), r1 = Math.min(0.97, r0 + STOW_CARRY);
         const k = clamp((dk - r0) / Math.max(0.05, r1 - r0), 0, 1);
         u = 1 - trapEase(k);   // (M1a weapons step 2: seated from rest, not at CARRY_EASE's end slope)
-        hold = 1 - smoothstep(dk, r1, Math.min(1, r1 + 0.06));
+        // (M1a weapons round 2: the fist lets go only once the haft is seated, `_leftOnHaft`, and from then)
+        const rs = this._lSeated ? Math.max(r1, this._seatK ?? r1) : 9;
+        hold = 1 - smoothstep(dk, rs, Math.min(1.08, rs + 0.15));
       }
     }
     // the stowed line (the socket's own, the carry off for the read)
@@ -3306,6 +3373,22 @@ export class MeleeLayer {
       this._slerpDirV(_lcDm, _lcD1, ur, L.dir);
       this._slerpDirV(_lcB1, L.dir, ur, L.dir);
       L.butt.copy(L.pt).addScaledVector(L.dir, -LC_S);
+      /* M1a weapons round 2 (W1, W2 at the stow's let-go): the left fist carries the haft back FROM WHERE THE RIGHT LET IT
+       * GO, not from the planned hand-over line (0.05-0.08 m and some degrees off it): the difference at the let-go is
+       * carried and taken out over the first half of the carry back */
+      if (stance === 'holster' && !this._held && this._relCap) {
+        if (!this._relOffOn) {
+          this._relOffOn = true;
+          this._relDB.subVectors(this._relCap.pt, L.pt);
+          this._relDQ.setFromUnitVectors(L.dir, this._relCap.dir);
+        }
+        const f = 1 - smoothstep(1 - u, 0, 0.55);
+        if (f > 1e-4) {
+          L.pt.addScaledVector(this._relDB, f);
+          _qRO.identity().slerp(this._relDQ, f); L.dir.applyQuaternion(_qRO).normalize();
+          L.butt.copy(L.pt).addScaledVector(L.dir, -LC_S);
+        }
+      }
       /* M1a debt (M1.3d, A104 "holster: the haft 0.108 m from head/neck/spine", page): on the stow's last leg the
        * carried haft swings onto her back across her left flank, butt in front of her belly, and passed 0.109 m from
        * spine_02 (dressed bench, drawK 0.87; A104's bar 0.12). Where the carried line comes within `LC_CLEAR` of an
@@ -3371,6 +3454,8 @@ export class MeleeLayer {
   lanceOwner() {
     if (this._held) return 'handR';
     const L = this._lc;
+    // (M1a weapons round 2: seated on the stow, the haft is the keeper's from the step the fist starts to open)
+    if (L?.on && this._prevStance === 'holster' && this._lSeated && L.u <= 1e-4 && L.hold < 0.999) return 'carry';
     if (L?.on && (L.u > 1e-4 || (this._prevStance === 'holster' && L.hold > 0.5))) return 'handL';
     return 'carry';
   }
@@ -3409,9 +3494,126 @@ export class MeleeLayer {
     else _lcP0.copy(L.pt);
     const an = this.an;
     an._liveW(an.b.handL.bone, _q1);
-    _lcP0.sub(_lcPm.copy(this.palmOffLL).applyQuaternion(_q1));
+    _lcP0.sub(_lcPm.copy(this.haftOffLL).applyQuaternion(_q1));
     // (on the held haft the seat takes over as the pose's lhW comes up: the free goal is what it leaves from)
+    if (!this._lhFreeC) this._lhFreeC = new THREE.Vector3();
+    this._lhFreeC.copy(_lh);
     _lh.lerp(_lcP0, L.hold);
+  }
+
+  /**
+   * M1a weapons round 2 (W1 at the hand-over): as the left fist brings the haft to the hand-over line the RIGHT hand
+   * closes on it as a grip, on the haft where the left fist has it (`_lc`, read back off the left hand): its grip axis
+   * along the haft, the straightest wrist about it, the axis on the palm's side at `lance.grip`. Round 1 sent the wrist
+   * at the pose's hand-over goal with the hand turned to the pose's shaft, and took the haft from 0.09-0.11 m (the
+   * capture's slide out of that read 0.05 m along the haft off the socket for ten steps). Weighted in over the carry's
+   * last part; the hand-over itself waits for the palm on its socket (`_grabSettle`'s carry bar).
+   */
+  _rightOnHaft(stance, w) {
+    const L = this._lc, an = this.an, b = an.b, D = this._dbg;
+    D.rTakeMiss = -1;
+    if (!L || !L.on || this._held || stance !== 'draw' || !this.gripR || typeof an._handOnStave !== 'function') return;
+    const k = smoothstep(L.u, 0.55, 0.92) * w;
+    if (k <= 1e-3) return;
+    _rohP.copy(L.butt).addScaledVector(L.dir, GRIP_FRAC * this.length);
+    for (let pass = 0; pass < 2; pass++) {
+      an._handOnStave(L.dir, 1, _lohQ, 'r');
+      an._liveW(b.handR.bone, _q1);
+      _lohQ2.copy(_q1).slerp(_lohQ, k);
+      _c.copy(this.haftOffL).applyQuaternion(_lohQ2);
+      _eC.subVectors(_rohP, _c);
+      an._charOf(b.handR.bone, _rohA);
+      _rohA.lerp(_eC, k);
+      an._ikArm('r', _rohA, _pole, w, null);
+      an._clearArmOfHead(b.upArmR, b.loArmR, b.handR, _rohA, _pole, w);
+      an._liveW(b.handR.bone, _q1);
+      an.space.setCharQ(b.handR, _lohQ2.copy(_q1).slerp(_lohQ, k));
+    }
+    an._charOf(b.handR.bone, _rohA); an._liveW(b.handR.bone, _q1);
+    _rohA.add(_c.copy(this.haftOffL).applyQuaternion(_q1));
+    D.rTakeMiss = +_rohA.distanceTo(_rohP).toFixed(4);
+    this._handQ.copy(_q1);
+  }
+
+  /**
+   * M1a weapons round 2 (W1 at the left hand's take; W2: the haft moves only with the hand that owns it). Round 1 sent
+   * the left WRIST at the carried line with the hand turned however the clip left it: the palm faced away from the haft
+   * (134-147 deg off), its point 0.05-0.11 m along the haft off its socket, and the haft was posed on the planned line
+   * whatever the hand did. Now the hand is a GRIP on the haft: its grip axis along the line (index toward the blade), the
+   * roll that keeps the wrist straightest (`_handOnStave`), the haft's axis on the palm's side (`haftOffLL`), solved
+   * twice (the roll reads the forearm the solve leaves). Once the left hand owns the haft (the carry under way) the
+   * carried line is read back OFF THE HAND as it was solved, so the haft is where the fist is, exactly; before the take
+   * (the reach) and after the release the hand closes on the line the haft is on. Runs after `_solveLeft`, before
+   * `_settleLance` poses the prop. Returns the palm's miss (m) on its socket this step, or -1 when off the haft.
+   */
+  /** The carried line read back off the left fist as it stands now (char): its axis point, its grip axis. */
+  _leftReadBack() {
+    const L = this._lc, an = this.an, b = an.b;
+    an._charOf(b.handL.bone, L.pt);
+    an._liveW(b.handL.bone, _q1);
+    L.pt.add(_c.copy(this.haftOffLL).applyQuaternion(_q1));
+    L.dir.copy(this.gripDirLL).applyQuaternion(_q1).normalize();
+    L.butt.copy(L.pt).addScaledVector(L.dir, -LC_S);
+  }
+
+  _leftOnHaft(stance, w) {
+    const L = this._lc, an = this.an, b = an.b, D = this._dbg;
+    this.needsTake = false;
+    this._lReadBack = false;
+    if (!L || !L.on || L.hold <= 1e-3 || !this.gripLButt || typeof an._handOnStave !== 'function' || !this._lhFreeC) { D.lTakeMiss = -1; return -1; }
+    // (on the stow, while the right fist still has it, the left closes on the held haft at its socket)
+    if (this._held && stance !== 'holster') { D.lTakeMiss = -1; return -1; }
+    // (the hand's weight on the haft is the carry's own `hold`, not the layer's fade-in: the fist that has the haft has it)
+    const h = clamp(L.hold, 0, 1), wa = Math.max(w, h);
+    if (this._held) { this._gripChar(_lohP); this._shaftChar(_lohD); _lohP.addScaledVector(_lohD, LC_S - GRIP_FRAC * this.length); }
+    else { _lohP.copy(L.pt); _lohD.copy(L.dir); }
+    _pole.set(0.72, -0.62, -0.18).normalize();
+    /* the shoulder comes down and back toward the haft as the fist reaches past the arm's comfortable length (the left
+     * clavicle, at most 0.20 rad down and 0.22 back: about 0.03 m each at the shoulder joint) */
+    if (b.clavL) {
+      an._charOf(b.upArmL.bone, _c);
+      const kc = h * clamp((_lohP.distanceTo(_c) - 0.40) / 0.08, 0, 1);
+      if (kc > 1e-3) {
+        an._liveW(b.clavL.bone, _q1);
+        _q1.premultiply(_q3.setFromAxisAngle(Y_AXIS, 0.22 * kc)).premultiply(_q2.setFromAxisAngle(Z_AXIS, -0.20 * kc));
+        an.space.setCharQ(b.clavL, _q1);
+      }
+      D.lTakeClav = +kc.toFixed(3);
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      an._handOnStave(_lohD, 1, _lohQ);
+      an._liveW(b.handL.bone, _q1);
+      _lohQ2.copy(_q1).slerp(_lohQ, h);
+      _c.copy(this.haftOffLL).applyQuaternion(_lohQ2);
+      _eC.subVectors(_lohP, _c);
+      _lh.copy(this._lhFreeC).lerp(_eC, h);
+      an._ikArm('l', _lh, _pole, wa, null);
+      an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, wa);
+      an._liveW(b.handL.bone, _q1);
+      an.space.setCharQ(b.handL, _lohQ2.copy(_q1).slerp(_lohQ, h));
+    }
+    // the axis point the fist actually holds (char)
+    an._charOf(b.handL.bone, _lohA);
+    an._liveW(b.handL.bone, _q1);
+    _lohA.add(_c.copy(this.haftOffLL).applyQuaternion(_q1));
+    const miss = _lohA.distanceTo(_lohP);
+    D.lTakeMiss = +miss.toFixed(4);
+    an._charOf(b.upArmL.bone, _c); D.lTakeGoalM = +_eC.distanceTo(_c).toFixed(4); D.lTakeH = +h.toFixed(3);
+    // the haft goes where the fist is, once the fist owns it
+    if (this.lanceOwner() === 'handL' && h >= 0.999) { this._lReadBack = true; this._leftReadBack(); }
+    // (the free goal's rate bound carries on from the goal the fist was given, not from the free pose's own path)
+    if (this._lhPrev) { this._lhPrev.copy(_lh); this._lhPrevOk = true; }
+    // the draw's clock waits at the end of the reach until the fist is on its socket (`melee.js`, bounded): the take
+    if (stance === 'draw' && !this._lTaken && (this._stDrawK ?? 0) >= LC_REACH - 0.04) {
+      if (miss <= TAKE_TOL || this._takeWaitT > TAKE_WAIT) this._lTaken = true;
+      else { this.needsTake = true; this._takeWaitT += this._lastDt || 0; }
+    }
+    // ...and on the stow, at the seat: the fist lets go of the haft once it is on its line in the keeper
+    if (stance === 'holster' && !this._held && !this._lSeated && L.u <= 1e-4) {
+      if (miss <= TAKE_TOL || this._takeWaitT > TAKE_WAIT) { this._lSeated = true; this._seatK = this._stDrawK ?? 0; }
+      else { this.needsTake = true; this._takeWaitT += this._lastDt || 0; }
+    }
+    return miss;
   }
 
   /**
@@ -3458,7 +3660,14 @@ export class MeleeLayer {
     /* M1a weapons step 2: while the left hand brings the haft round (not yet in the right fist), the right hand goes
      * for where it will be handed over (the hand-over line, `_lcKeysNow`), not for the moving line: from her back the
      * moving line would draw the right hand round behind her first */
-    if (this._lc?.on && !this._held && this._lc.hoB) { _grip.copy(this._lc.hoB); _c.copy(this._lc.hoD); }
+    if (this._lc?.on && !this._held && this._lc.hoB) {
+      _grip.copy(this._lc.hoB); _c.copy(this._lc.hoD);
+      /* M1a weapons round 2 (W1 at the hand-over): as the carry arrives the right hand goes for the haft where the
+       * left fist HAS it (the carried line read back off the hand, `_leftOnHaft`), not for the planned line: the two
+       * stood 0.05 m apart along the haft at the take, and the slide out of that was the right palm off its socket */
+      const k = smoothstep(this._lc.u, 0.5, 0.95);
+      if (k > 0) { _grip.lerp(this._lc.butt, k); _c.lerp(this._lc.dir, k).normalize(); }
+    }
     /* WHERE ON THE HAFT SHE TAKES IT — the point the hand can actually reach.
      *
      * Fix round 1: a fixed `GRAB_FRAC` asks the arm for one point behind her
@@ -3509,7 +3718,7 @@ export class MeleeLayer {
      * target oscillates (filmed: the gap went from 0.10 m to 0.24 m and the
      * grab stopped closing at all). One frame of lag on a wrist that is
      * already holding still is nothing. */
-    _grip.sub(_b.copy(this.palmOffL).applyQuaternion(this._handQ));
+    _grip.sub(_b.copy(this.haftOffL).applyQuaternion(this._handQ));
     p.hand[0] = _grip.x; p.hand[1] = _grip.y; p.hand[2] = _grip.z;
     p.shaft[0] = _c.x; p.shaft[1] = _c.y; p.shaft[2] = _c.z;
     return p;
@@ -4274,7 +4483,7 @@ export class MeleeLayer {
     _slG.copy(_d);
     for (let pass = 0; pass < 5; pass++) {
       an._liveW(b.handL.bone, _q1);
-      _c.copy(this.palmOffLL).applyQuaternion(_q1);
+      _c.copy(this.haftOffLL).applyQuaternion(_q1);
       _eC.subVectors(_slG, _c);                       // the wrist goal on the haft
       _lh.copy(this._lhFree).lerp(_eC, on);
       an._ikArm('l', _lh, _pole, w, null);
@@ -4299,7 +4508,7 @@ export class MeleeLayer {
     /* one last small correction: whatever the turn moved the palm by */
     an._charOf(b.handL.bone, _c);
     an._liveW(b.handL.bone, _q1);
-    _b.copy(this.palmOffLL).applyQuaternion(_q1).add(_c);
+    _b.copy(this.haftOffLL).applyQuaternion(_q1).add(_c);
     D.lhPalmErr = _b.distanceTo(_slG);
     return D.lhPalmErr;
   }
@@ -4320,7 +4529,7 @@ export class MeleeLayer {
       an._charOf(b.handL.bone, _ucC);
       an._liveW(b.handL.bone, _ucQ);
       this._gripChar(_grip); this._shaftChar(_a);
-        _ucV.copy(this.palmOffLL).applyQuaternion(_ucQ).add(_ucC).sub(_grip).addScaledVector(_a, -this._lhOnWant);   // palm - its socket
+        _ucV.copy(this.haftOffLL).applyQuaternion(_ucQ).add(_ucC).sub(_grip).addScaledVector(_a, -this._lhOnWant);   // palm - its socket
       const miss = _ucV.length();
       if (!(miss > UC_SEAT_TOL)) break;
       if (miss > UC_SEAT_MAX) _ucV.multiplyScalar(UC_SEAT_MAX / miss);
@@ -4590,7 +4799,7 @@ export class MeleeLayer {
     const an = this.an, bone = an.b.handR.bone;
     an._charOf(bone, out);
     an._liveW(bone, _q1);
-    _b.copy(this.palmOffL).applyQuaternion(_q1);
+    _b.copy(this.haftOffL).applyQuaternion(_q1);
     return out.add(_b);
   }
 
@@ -4701,7 +4910,7 @@ export class MeleeLayer {
     an._charOf(handBone, _a);
     an._liveW(handBone, _q2);
     _a.add(_c.copy(this.gripDirL).multiplyScalar(-frac * this.length)
-      .add(this.palmOffL).applyQuaternion(_q2));
+      .add(this.haftOffL).applyQuaternion(_q2));
     // holstered: the BOUNDED socket's butt point — the same one `_poseHolstered`
     // writes, so this is the gap the hand-over would actually see
     this._liveSocket(_c, _rgDir);
@@ -5047,7 +5256,9 @@ export class MeleeLayer {
      * the stowed prop again here, off the final matrices, makes the bound and
      * the measurement the same statement. It is an absolute local write, so
      * doing it twice costs one `_liveSocket` and changes nothing else. */
-    if (this.lance && !this._held && this._dbg.stance !== 'holstered') this._poseHolstered();
+    // (M1a weapons round 2: in the left fist the haft is read back off the fist as it is drawn: the pelvis offset, the
+    //  conform and the head stabiliser have moved the body since the pose pass)
+    if (this.lance && !this._held && this._dbg.stance !== 'holstered') { if (this._lReadBack && this._lc?.on) this._leftReadBack(); this._poseHolstered(); }
     /* the pelvis shift the animator really applied after this layer this
      * frame (stance offset + conform clamp), for next frame's arm checks */
     if (this.w > 0.001 && this.an.b.upArmR) {

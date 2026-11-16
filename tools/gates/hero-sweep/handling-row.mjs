@@ -118,7 +118,8 @@ export function gradeCase(kind, L, meta = {}) {
   // socket, bar 0.010) and radially (reported); the palm normal toward the centreline; fingertips and joints on the haft
   // (sockets.js r) once the hand has held it 2 steps; the close: the drawn curl rising over >= 2 steps into the take
   {
-    const LR = { butt: 0.0145, grip: 0.0173, fore: 0.0162 };
+    // (the haft's surface radius at each socket, sockets.js r; M1a weapons round 2: read from the table, the butt socket moved)
+    const LR = meta.lanceR || { butt: 0.0145, grip: 0.0173, fore: 0.0162 };
     const W = {};
     const hold = (key, side, sock, pred) => {
       let along = 0, rad = 0, nMax = 0, tipMax = 0, inside = 0, n2 = 0, run = 0;

@@ -257,13 +257,15 @@ export class CarryStow {
    * other way round), its fingers turned about the stave to lie as near the forearm's line as they can (the straightest
    * wrist that holds it). Into `out` (char).
    */
-  _handOnStave(axis, sigma, out) {
-    const b = this.b, g = this.melee?.gripDirLL;
-    const fL = this._bpFingerL || (this._bpFingerL = (() => { const mid = b.handL.bone.children.find((c) => c.isBone && /^middle_01/.test(c.name)); return mid ? mid.position.clone().normalize() : new THREE.Vector3(0, 1, 0); })());
+  _handOnStave(axis, sigma, out, side = 'l') {
+    const b = this.b, R = side === 'r', g = R ? this.melee?.gripDirL : this.melee?.gripDirLL;
+    const hE = R ? b.handR : b.handL, lE = R ? b.loArmR : b.loArmL;
+    const key = R ? '_bpFingerR' : '_bpFingerL';
+    const fL = this[key] || (this[key] = (() => { const mid = hE.bone.children.find((c) => c.isBone && /^middle_01/.test(c.name)); return mid ? mid.position.clone().normalize() : new THREE.Vector3(0, 1, 0); })());
     _gaE.copy(axis).multiplyScalar(sigma).normalize();
     _gaQ.setFromUnitVectors(_gaD.copy(g || Z_AXIS).normalize(), _gaE);
     // the forearm's line, elbow to wrist
-    this._charOf(b.loArmL.bone, _gaF); this._charOf(b.handL.bone, _gaW);
+    this._charOf(lE.bone, _gaF); this._charOf(hE.bone, _gaW);
     _gaW.sub(_gaF).normalize();
     _gaF.copy(fL).applyQuaternion(_gaQ);
     _gaF.addScaledVector(_gaE, -_gaF.dot(_gaE)); _gaW.addScaledVector(_gaE, -_gaW.dot(_gaE));
@@ -689,6 +691,132 @@ export class CarryStow {
     this._ikArm('r', _grip, _pole, w, null);
     this._curlFingers(this._fingerL, 0.55 * w, 0.35 * w);
     this._curlFingers(this._fingerR, 0.55 * w, 0.35 * w);
+  }
+
+  /* ---------------- THE GRIP: the palm's frame and fingers closed ON a cylinder (M1a weapons round 2) ----------------
+   * Round 1 closed every finger by one fixed curl about its own axis, and the weapon's axis ran through the palm point
+   * (the bone line, 2 cm inside the palm): the fingers closed into the haft (W1: 60-700 finger joint-steps inside it, tips
+   * 0.04-0.10 m off its surface) and the palm had no side (the palm-normal clause read 91.6 deg on every held step).
+   * Now a hand holds a cylinder on its palm side: the axis lies `D` off the palm point along the palm's normal, and each
+   * finger's two joints are solved (once a grip, in the hand's own frame) so its tip closes on the surface past the axis
+   * and no joint is inside it. The palm normal is the one the rows read: the way the four fingers' first segments bend
+   * off the line wrist-to-knuckle. */
+
+  /** Hand-local palm normal (unit; the fingers' bend side), `side` 'l' | 'r'. Cached. With curls `c1` (one a finger). */
+  _palmN(side, c1 = null) {
+    const key = side === 'l' ? '_pnL' : '_pnR';
+    if (!c1 && this[key]) return this[key];
+    const list = side === 'l' ? this._fingerL : this._fingerR;
+    const n = new THREE.Vector3(), f = new THREE.Vector3(), d = new THREE.Vector3(), q = new THREE.Quaternion();
+    for (let i = 0; i < 4 && i * 3 + 1 < list.length; i++) {
+      const e1 = list[i * 3], e2 = list[i * 3 + 1];
+      if (e1.isThumb || e2.isThumb) break;
+      f.copy(e1.bone.position).normalize();
+      q.copy(e1.bindQ).multiply(_q1.setFromAxisAngle(e1.curlAxis || Z_AXIS, c1 ? c1[i] : 0.6));
+      d.copy(e2.bone.position).applyQuaternion(q);
+      n.add(d.addScaledVector(f, -d.dot(f)).normalize());
+    }
+    n.normalize();
+    if (!c1) this[key] = n;
+    return n;
+  }
+
+  /** The hand bone's world scale over the model's (hand-local units -> char metres). */
+  _handScale(side) {
+    const hb = (side === 'l' ? this.b.handL : this.b.handR).bone;
+    hb.updateWorldMatrix(true, false);
+    _gaW.setFromMatrixScale(hb.matrixWorld);
+    return _gaW.x / (this.model.getWorldScale(_gaF).x || 1);
+  }
+
+  /**
+   * Solve the four fingers closed on a cylinder in the HAND's frame: axis through `pt` (char metres, hand-rotated, as
+   * `palmOffL` is) along unit `dir`, radius `r` (m). Each finger's first joint and its middle joint (the end joint
+   * follows at 0.9) are searched on a grid: the tip (the row's: the end joint plus 0.85 of the middle segment past it)
+   * on the surface 4 mm out, past the axis's plane, every joint at least 3 mm outside. Returns [c1, c2] x 4. Cold (once
+   * a grip).
+   */
+  _wrapSolve(side, pt, dir, r, nrm) {
+    const list = side === 'l' ? this._fingerL : this._fingerR;
+    const s = this._handScale(side);
+    const out = new Float32Array(8);
+    const P1 = new THREE.Vector3(), P2 = new THREE.Vector3(), P3 = new THREE.Vector3(), T = new THREE.Vector3();
+    const R1 = new THREE.Quaternion(), R2 = new THREE.Quaternion(), Rc = new THREE.Quaternion(), v = new THREE.Vector3();
+    const dist = (p) => { v.subVectors(p, pt); v.addScaledVector(dir, -v.dot(dir)); return v.length() - r; };
+    for (let i = 0; i < 4 && i * 3 + 2 < list.length; i++) {
+      const e1 = list[i * 3], e2 = list[i * 3 + 1], e3 = list[i * 3 + 2];
+      if (e1.isThumb) break;
+      let best = 1e9, b1 = 0.8, b2 = 0.8;
+      P1.copy(e1.bone.position).multiplyScalar(s);
+      const d1 = dist(P1);
+      for (let c1 = -0.2; c1 <= 1.7001; c1 += 0.05) {
+        R1.copy(e1.bindQ).multiply(Rc.setFromAxisAngle(e1.curlAxis || Z_AXIS, c1));
+        P2.copy(e2.bone.position).multiplyScalar(s).applyQuaternion(R1).add(P1);
+        const d2 = dist(P2);
+        for (let c2 = 0; c2 <= 1.9001; c2 += 0.05) {
+          R2.copy(R1).multiply(e2.bindQ).multiply(Rc.setFromAxisAngle(e2.curlAxis || Z_AXIS, c2));
+          P3.copy(e3.bone.position).multiplyScalar(s).applyQuaternion(R2).add(P2);
+          const d3 = dist(P3);
+          T.subVectors(P3, P2).multiplyScalar(0.85).add(P3);
+          const dt = dist(T);
+          let sc = Math.abs(dt - 0.004) + 0.002 * (c1 + c2);
+          const jm = Math.min(d1, d2, d3);
+          if (jm < 0.003) sc += 1 + (0.003 - jm) * 50;
+          // (the tip closes round the far side of the axis, not onto the near face of it)
+          v.subVectors(T, pt);
+          if (v.dot(nrm) < 0) sc += 0.5 - v.dot(nrm) * 10;
+          if (sc < best) { best = sc; b1 = c1; b2 = c2; }
+        }
+      }
+      out[i * 2] = b1; out[i * 2 + 1] = b2;
+    }
+    return out;
+  }
+
+  /**
+   * The grip's cylinder axis point (char metres, hand-rotated: the hand's local frame as `palmOffL` is) for a palm point
+   * `palm` and an axis `dir` (both hand-local), `D` (m) off the palm along its normal square to the axis. Into `out`.
+   */
+  _gripAxisPt(n, palm, dir, D, out) {
+    _gaE.copy(n).addScaledVector(dir, -n.dot(dir)).normalize();
+    return out.copy(palm).addScaledVector(_gaE, D);
+  }
+
+  /**
+   * A grip, built once and cached by `key`: the fingers' curls for a cylinder `D` off the palm point `palm` along `dir`
+   * (hand-local), radius `r`. Three passes (the palm normal the rows read depends on the first joints' curls). Returns
+   * { curls, axis (hand-local metric point), n (palm normal), D, r }.
+   */
+  _grip(side, key, palm, dir, D, r) {
+    const G = this._grips || (this._grips = {});
+    if (G[key]) return G[key];
+    const pt = new THREE.Vector3(), d = dir.clone().normalize();
+    let curls = null, n = this._palmN(side).clone();
+    for (let pass = 0; pass < 3; pass++) {
+      if (curls) n = this._palmN(side, [curls[0], curls[2], curls[4], curls[6]]);
+      this._gripAxisPt(n, palm, d, D, pt);
+      curls = this._wrapSolve(side, pt, d, r, n);
+    }
+    return (G[key] = { curls, axis: pt.clone(), n: n.clone(), D, r, dir: d });
+  }
+
+  /**
+   * Close a hand's four fingers on a solved grip: each finger's joints SET to its bind turn plus its share of the solved
+   * curl (`amt` 0 open .. 1 closed on the surface), the thumb added over it. Earlier layers' finger curls are replaced
+   * (the hand holds a weapon: one finger pose).
+   */
+  _wrapFingers(side, grip, amt, thumbCurl, w = 1) {
+    const list = side === 'l' ? this._fingerL : this._fingerR;
+    if (!grip || w <= 1e-3) return;
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      if (e.isThumb) { _q1.setFromAxisAngle(e.curlAxis || Z_AXIS, thumbCurl * w); e.bone.quaternion.multiply(_q1); continue; }
+      const f = (i / 3) | 0, j = i % 3;
+      const c = (j === 0 ? grip.curls[f * 2] : j === 1 ? grip.curls[f * 2 + 1] : 0.9 * grip.curls[f * 2 + 1]) * amt;
+      _q1.setFromAxisAngle(e.curlAxis || Z_AXIS, c);
+      _gaR.copy(e.bindQ).multiply(_q1);
+      if (w >= 0.999) e.bone.quaternion.copy(_gaR); else e.bone.quaternion.slerp(_gaR, w);
+    }
   }
 
   _curlFingers(list, curl, thumbCurl) {

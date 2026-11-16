@@ -418,7 +418,7 @@ for (let i = 0; i < N; i++) {
 const m = M.end();
 L[L.length - 1].behind = m.behind; L[L.length - 1].plane = m.plane;
 c.post?.();
-const g = gradeCase(c.kind, L, { tempo: c.tempo, jog: !!c.jog, w9: c.w9 ?? null, name: CASE });
+const g = gradeCase(c.kind, L, { tempo: c.tempo, jog: !!c.jog, w9: c.w9 ?? null, name: CASE, lanceR: { butt: SOCKETS.lance.butt.r, grip: SOCKETS.lance.grip.r, fore: SOCKETS.lance.fore.r } });
 g.measure = { behind: m.behind, plane: m.plane, overShoulder: m.overShoulder, behindAt: m.behindAt, planeAt: m.planeAt };
 const res = { newHandling: NEW, g };
 if (flag('--w10-len') !== null || args.includes('--w10-len')) {

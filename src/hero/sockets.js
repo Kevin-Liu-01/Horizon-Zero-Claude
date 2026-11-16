@@ -26,8 +26,10 @@ export const SOCKETS = Object.freeze({
     tip: Object.freeze([0, 0.7421, -0.1239]),
   }),
   lance: Object.freeze({
-    /** the left hand's take on the stowed haft, 0.42 m up from the butt cap (meleeLayer LC_S) */
-    butt: Object.freeze({ p: [0, 0.42, 0], axis: [0, 1, 0], r: 0.0145 }),
+    /** the left hand's take on the stowed haft (meleeLayer LC_S). M1a weapons round 2: 0.42 -> 0.50 m up from the butt
+     *  cap. Stowed, 0.42 lay 0.49 m from her left shoulder against an arm of 0.47 m (the fist stopped 0.05-0.08 m short
+     *  of it, W1); 0.50 is 0.45 m off, below the shoulder blade at belt height, with room for the keeper slide */
+    butt: Object.freeze({ p: [0, 0.50, 0], axis: [0, 1, 0], r: 0.0142 }),
     /** the right fist's grip (the GLB's own `grip` node, gripFrac 0.2) */
     grip: Object.freeze({ p: [0, 0.31, 0], axis: [0, 1, 0], r: 0.0173 }),
     /** the off hand in the guard (the GLB's `grip2`) */

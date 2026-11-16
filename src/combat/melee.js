@@ -288,6 +288,11 @@ const ARC_REACH_K = 0.80;
  * rate and is inside the band §4 gives.
  */
 const DRAW_T = 0.30;
+/* M1a weapons round 2 (hero-anim; the weapons rows W3 and W10: a wrist moves at most 0.06-0.08 m a step outside a swing,
+ * so an interrupt is never hidden in the draw's own speed): the draw the player asks for (key 2, B) takes 0.40 s, the top
+ * of W7's 0.30-0.40 s; a draw that a strike asked for (a click from holstered: R5, click to the first swing frame
+ * 0.25-0.35 s) keeps `DRAW_T`. Chosen as the draw starts (`drawLance`); a strike asked mid-draw does not change it. */
+const DRAW_T_ASK = 0.40;
 /* M1a weapons step 1 (hero-anim; Kevin Nov 15 "unsheathing them and getting them into position ... improved a lot"):
  * 0.26 -> 0.30, the top of R5's 0.26-0.30 for a click, so the haft's carry round her side turns fewer degrees a step
  * (the weapons brief W3: <= 24 deg a step asked; 35.8 at 0.26). */
@@ -349,6 +354,8 @@ const GRAB_HOLD_MAX = 0.10;
 /** The most a finished draw clock waits for the layer's hand-over (a frame is
  *  what it normally costs — see `_advanceStance`). */
 const DRAW_WAIT_MAX = 0.12;
+/** M1a weapons round 2: the most the draw's clock waits for the left fist on the haft at its take (s) */
+const TAKE_WAIT_MAX = 0.10;
 const HOLSTER_T = 0.34;
 /* M1a weapons step 2 (hero-anim; the weapons brief's ruling 1 and W7, the smallest change in combat's file): a stow the
  * player asks for (B, a sprint) runs the asked tempo, 0.42 -> 0.34 (W7 300-370 ms); the stow the game starts itself
@@ -677,7 +684,7 @@ export class Melee {
      * field added later is a new hidden class for every optimised reader) */
     if (!('layer' in this)) this.layer = null;
     if (!('_hand' in this)) this._hand = null;
-    this._keyGuard = false; this._holsterDur = HOLSTER_T; this._drawWait = 0; this._sprintT = 0;
+    this._keyGuard = false; this._drawDur = DRAW_T_ASK; this._holsterDur = HOLSTER_T; this._drawWait = 0; this._sprintT = 0;
     this._aimReach = 0; this._armM = null; this._armT = 0; this._frameCap = 0.5;
     if (!('_drive' in this)) this._drive = null;
     this._i = 0; this._trailDur = 0.12; this._trailScale = 1;
@@ -756,7 +763,7 @@ export class Melee {
      * latency and never becomes a prediction. */
     const cap = Math.min(ahead, this._phaseEnd * 0.30);
     s.k = this._phaseEnd > 1e-4 ? Math.min(1, (this._t + cap) / this._phaseEnd) : 0;
-    const dur = this.stance === 'draw' ? DRAW_T : (this._holsterDur || HOLSTER_T);
+    const dur = this.stance === 'draw' ? this._drawDur : (this._holsterDur || HOLSTER_T);
     s.drawK = Math.min(1, (this._drawT + ahead) / dur);
     return s;
   }
@@ -789,16 +796,19 @@ export class Melee {
     this._holsterQ = null;         // (M1a weapons fix 1: asking for the lance again cancels a stow held for the draw's end)
     this._readyT = Math.max(this._readyT, hold);
     if (this.stance === 'ready' || this.stance === 'swing') return 0;
-    if (this.stance === 'draw') return DRAW_T - this._drawT;
+    if (this.stance === 'draw') return this._drawDur - this._drawT;
     // reverse a holster in progress rather than restarting the draw
+    // (the tempo: a strike asked with it (a click's press, `_charging`) is urgent; the rest is the asked draw)
+    const dur = this._charging || this._queued ? DRAW_T : DRAW_T_ASK;
     if (this.stance === 'holster') {
-      this._drawT = Math.max(0, DRAW_T * (1 - this._drawT / (this._holsterDur || HOLSTER_T)));
+      this._drawT = Math.max(0, dur * (1 - this._drawT / (this._holsterDur || HOLSTER_T)));
     } else {
       this._drawT = 0;
     }
+    this._drawDur = dur;
     this.stance = 'draw';
     this._drawLunged = false;
-    return DRAW_T - this._drawT;
+    return this._drawDur - this._drawT;
   }
 
   /** Put it back. `fast` = the bow is coming up (aim): the quick stow. */
@@ -821,7 +831,7 @@ export class Melee {
     this._keyGuard = false;
     this._holsterDur = fast ? HOLSTER_T_AIM : calm ? HOLSTER_T_CALM : HOLSTER_T;
     this._drawT = this.stance === 'draw'
-      ? Math.max(0, this._holsterDur * (1 - this._drawT / DRAW_T)) : 0;
+      ? Math.max(0, this._holsterDur * (1 - this._drawT / this._drawDur)) : 0;
     this.stance = 'holster';
     this._readyT = 0;
     this._queued = null;
@@ -843,7 +853,13 @@ export class Melee {
       /* M1a weapons step 1 (hero-anim): the left hand that takes the haft may still have the bow (key 2 with the bow
        * out): the draw's clock waits for the bow's release (the animator's handling, carryStow.js), then runs */
       const bowHeld = this.ctx.player?.animator?.bowInHand?.() === true;
-      if (!bowHeld) this._drawT += stanceDt;
+      /* M1a weapons round 2 (hero-anim; W2 at the left hand's take, the smallest change in combat's file): ...and at the
+       * end of the left hand's reach the clock waits (at most TAKE_WAIT_MAX) until the fist is on the haft's socket
+       * (meleeLayer `needsTake`), so the haft leaves its keeper in the fist, not 0.02-0.07 m from it */
+      const lay0 = this.layer;
+      const takeWait = !!(lay0?.ok && lay0.needsTake) && (this._takeWait || 0) < TAKE_WAIT_MAX;
+      if (takeWait) this._takeWait = (this._takeWait || 0) + stanceDt; else if (!lay0?.needsTake) this._takeWait = 0;
+      if (!bowHeld && !takeWait) this._drawT += stanceDt;
       /* THE STEP-IN STARTS WITH THE DRAW (round 6, R7 on the real input
        * path). A click from holstered plays the draw first (ruling R5), and
        * where she stopped walking up to a big machine is its FULL standoff —
@@ -861,7 +877,7 @@ export class Melee {
         // again each frame of the draw until it takes)
         this._drawLunged = !!this._drive;
       }
-      if (this._drawT >= DRAW_T && this._waitForHand(stanceDt)) {
+      if (this._drawT >= this._drawDur && this._waitForHand(stanceDt)) {
         /* 0.75, not 0.985, and the 0.985 was a real bug: `poseState` adds up
          * to 50 ms of extrapolation on top of `_drawT` before dividing by
          * `DRAW_T`, so a clock parked at 0.985 still published `drawK` 1.0 and
@@ -869,9 +885,9 @@ export class Melee {
          * hold did nothing and `grabReach` came out at 0.70 m. The pose leg is
          * complete by `drawK` 0.55, so parking at 0.75 changes no pose; it
          * only hands the arm more frames. */
-        this._drawT = DRAW_T * 0.75;
-      } else if (this._drawT >= DRAW_T) {
-        this._drawT = DRAW_T;
+        this._drawT = this._drawDur * 0.75;
+      } else if (this._drawT >= this._drawDur) {
+        this._drawT = this._drawDur;
         this._grabHold = 0;
         /* THE DRAW IS NOT OVER UNTIL THE GRIP IS (round 6, ruling R5). The
          * r5 skeptic's first LMB from holstered swung while the haft was
@@ -898,7 +914,11 @@ export class Melee {
         }
       }
     } else if (this.stance === 'holster') {
-      this._drawT += stanceDt;
+      // (M1a weapons round 2: at the seat the clock waits, bounded, for the left fist with the haft on its line)
+      const lay1 = this.layer;
+      const seatWait = !!(lay1?.ok && lay1.needsTake) && (this._takeWait || 0) < TAKE_WAIT_MAX;
+      if (seatWait) this._takeWait = (this._takeWait || 0) + stanceDt; else if (!lay1?.needsTake) this._takeWait = 0;
+      if (!seatWait) this._drawT += stanceDt;
       const HT = this._holsterDur || HOLSTER_T;
       if (this._drawT >= HT && this._waitForHand(stanceDt)) {
         this._drawT = HT * 0.75;
@@ -1688,8 +1708,10 @@ export class Melee {
     /* M1.3d: the Undercut is its own beat (a low two-handed thrust) on light-3's clock */
     if (undercut) { this._ucNext = true; this.combo = 2; heavy = false; } else this._ucNext = false;
     if (!this.ready) {
+      const fresh = this.stance !== 'draw';
       this.drawLance();
       this._queued = { heavy };
+      if (fresh) this._drawDur = DRAW_T;   // (M1a weapons round 2: a strike's draw is the urgent one)
       return true;
     }
     return this._fire(heavy);
