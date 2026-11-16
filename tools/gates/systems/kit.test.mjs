@@ -107,6 +107,11 @@ test('the lance Pry finds the nearest tool within reach on a down Instrument, ne
   assert.equal(pryablePart(m2, { x: 0, z: 0 }, w)?.name, 'drum');
   assert.equal(pryablePart(m2, { x: 0, z: 0 }, w, 3.2, Math.PI / 2)?.name, 'bob');
   assert.equal(pryablePart(m2, { x: 0, z: 0 }, w, 3.2, Math.PI)?.name, 'drum');
+  // M1b: on a Plumb the bob is the tool the Pry goes for first (its score halved): the nearer drum loses to it, unless
+  // she faces the drum with the bob abeam
+  const m3 = { ...m2, kind: 'plumb' };
+  assert.equal(pryablePart(m3, { x: 0, z: 0 }, w)?.name, 'bob');
+  assert.equal(pryablePart(m3, { x: 0, z: 0 }, w, 3.2, Math.PI)?.name, 'drum');
 });
 
 test('weak-point rules: the Gauge lists at -40 % speed on its first ballast puncture; the Peg lamp and Plumb vial and lamp are named', () => {

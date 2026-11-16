@@ -219,7 +219,10 @@ export async function runKit(page, { sleep, log = () => {} }) {
     await frames(20);
     let nb = 0;
     const bs = [];
-    while (bob.attached !== false && nb < 2 && m._toppleT >= 0) { const e = await shoot('hardpoint', wpos(bob.mesh), 300); nb++; const h = e.find((x) => x.n === 'arrow-hit'); bs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
+    // M1b: at the bob's middle and a little up its upper side (its mesh's origin is the top it hangs from; lying on the
+    // ground, its lower side is behind the ground: bab1f0c struck the ground, then nothing)
+    const bobMid = (up) => { const c = new V(); let n = 0; bob.mesh.traverse((o) => { if (o.isMesh && o.geometry) { if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); c.add(o.geometry.boundingSphere.center.clone().applyMatrix4(o.matrixWorld)); n++; } }); if (n) c.multiplyScalar(1 / n); else c.copy(wpos(bob.mesh)); c.y += up; return c; };
+    while (bob.attached !== false && nb < 2 && m._toppleT >= 0) { const e = await shoot('hardpoint', bobMid(0.07 * nb), 300); nb++; const h = e.find((x) => x.n === 'arrow-hit'); bs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
     out.barbed = { arrows: nb, bobOff: bob.attached === false, downWhenTorn: m._toppleT >= 0, struck: bs };
     await lower();
     /* how long it stays down */

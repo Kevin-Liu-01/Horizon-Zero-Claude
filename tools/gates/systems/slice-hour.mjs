@@ -178,12 +178,20 @@ async function solveShot(mi, part, tolDeg) {
   dts.sort((a, b) => a - b);
   const dt = dts.length ? dts[dts.length >> 1] : 1 / 60;
   const lat = 2 * (span > 0 ? span / 8 : 1 / 60);
-  const want = part === 'vial' ? 'weak:vial' : null;
+  const want = part === 'vial' ? 'weak:vial' : part === 'bob' ? 'bob' : null;
   const aims = [];
   if (part === 'vial' && m._vialWp?.obj) {
     const w = m._vialWp, c = w.obj.getWorldPosition(new V());
     if (w.axis && w.half > 0) for (const u of [0, 0.45, -0.45, 0.8, -0.8]) aims.push(w.axis.clone().multiplyScalar(w.half * u).applyMatrix4(w.obj.matrixWorld));
     else aims.push(c);
+  } else if (part === 'bob' && m._bob?.mesh && m._bob.attached !== false) {
+    // M1b: the bob's own middle (its mesh's origin is the top it hangs from, inside the tail: de71979's Barbed arrow
+    // met rig_tail2), then points up its upper side (a toppled Plumb's bob lies on the ground: bab1f0c's kit Barbed
+    // arrows met the ground first)
+    const c = new V(); let n = 0;
+    m._bob.mesh.traverse((o) => { if (o.isMesh && o.geometry) { if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); c.add(o.geometry.boundingSphere.center.clone().applyMatrix4(o.matrixWorld)); n++; } });
+    if (n) c.multiplyScalar(1 / n); else m._bob.mesh.getWorldPosition(c);
+    for (const up of [0, 0.07, 0.14]) aims.push(c.clone().setY(c.y + up));
   } else {
     const o = part === 'lamp' ? (m._lampWp?.obj ?? m.weakPoints?.find((w) => w.name === 'lamp')?.obj) : part === 'bob' ? (m._bob?.attached !== false ? m._bob?.mesh : null) : null;
     aims.push(o ? o.getWorldPosition(new V()) : new V(m.position.x, m.position.y + 0.9, m.position.z));
@@ -215,9 +223,10 @@ async function solveShot(mi, part, tolDeg) {
       if (r.d < 0.01) break;
       goal.sub(r.miss);
     }
+    const met = want && r.first && (want === 'bob' ? /bob/i.test(r.first) : r.first === want);
     out = { aimIdx: ai, err, missM: +r.d.toFixed(3), first: r.first, ds: +cb.drawStrength.toFixed(2), dt: +dt.toFixed(4),
       ride: +Math.hypot(ride.x, ride.z).toFixed(2), tf: r.t != null ? +r.t.toFixed(3) : null, steady: cb.steady?.phase ?? null, sway: +(cb.sway?.deg ?? 0).toFixed(3) };
-    if (!want || r.first === want) return { ...out, clear: true };
+    if (!want || met) return { ...out, clear: true };
   }
   return { ...out, clear: false };
 }

@@ -152,6 +152,14 @@ export const SMALL_KINDS = Object.freeze(['peg', 'plumb']);
 export const LANCE_PRY = Object.freeze({ reach: 3.2, hold: 0.3, impact: 12, label: 'PRY' });
 
 /** A tool the lance can Pry from where she stands: the nearest attached tearable part within `reach` of `pos`. */
+/**
+ * M1b: the tool a kind's Pry goes for first (bible 11.2: "Pry the bob while it is down"): its score is halved. At
+ * 6dda887 and bab1f0c the kit's lance-pry row stood her 1.7 m from a toppled Plumb's bob, facing it, and PRY took the
+ * lamp drum, which lies beside the bob's line on the ground (the slice's pry stage waits for the bob only).
+ */
+export const PRY_FIRST = Object.freeze({ plumb: 'bob' });
+const PRY_FIRST_K = 0.5;
+
 export function pryablePart(m, pos, worldOf, reach = LANCE_PRY.reach, heading = null) {
   if (!isDown(m) || !Array.isArray(m.parts)) return null;
   // M1.6j fix 1: with her heading given, the tool she faces wins (distance x (2 - cos of its bearing off her facing):
@@ -159,6 +167,7 @@ export function pryablePart(m, pos, worldOf, reach = LANCE_PRY.reach, heading = 
   // and PRY took the lamp drum beside her (eafbff2)
   const fx = heading == null ? 0 : Math.sin(heading), fz = heading == null ? 0 : Math.cos(heading);
   let best = null, bs = Infinity;
+  const first = PRY_FIRST[m.kind] ?? null;
   for (const q of m.parts) {
     if (!q || q.attached === false || !q.tearable || !Number.isFinite(q.tearHp)) continue;
     const w = worldOf(q);
@@ -166,7 +175,7 @@ export function pryablePart(m, pos, worldOf, reach = LANCE_PRY.reach, heading = 
     const dx = w.x - pos.x, dz = w.z - pos.z, d2 = dx * dx + dz * dz;
     if (d2 > reach * reach) continue;
     const d = Math.sqrt(d2), c = heading == null || d < 1e-6 ? 1 : (dx * fx + dz * fz) / d;
-    const sc = d * (2 - c);
+    const sc = d * (2 - c) * (q.name === first ? PRY_FIRST_K : 1);
     if (sc < bs) { bs = sc; best = q; }
   }
   return best;
