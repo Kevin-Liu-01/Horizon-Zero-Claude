@@ -1176,6 +1176,32 @@ export const RESTATED = [
     ],
   },
   {
+    id: 'V49-draw-from-jog',
+    field: 'setup',
+    why: "M1a weapons round 2 (the orchestrator's task): the draw it films is the canon's left-hand butt-first draw (BIBLE 5.2: the left hand takes the haft by the butt at the left hip, swings it forward and up under the left arm, the right joins in front of the chest). The row described and filmed the old right-hand reach over the right shoulder; it films the same twelve tiles from her LEFT rear three-quarter and her LEFT side and grades the left arm's path. Every failure clause is unchanged",
+    patches: [
+      ['await drawRow(() => lockCam(-1.1, 1.7, 1.7, 1.35, 42));', 'await drawRow(() => lockCam(1.1, 1.7, 1.7, 1.35, 42));   // restated (GATES 3 D): her LEFT rear three-quarter'],
+      ['await drawRow(() => lockCam(-2.0, 0.1, 1.5, 1.25, 42));', 'await drawRow(() => lockCam(2.0, 0.1, 1.5, 1.25, 42));   // restated: her LEFT side'],
+      ['"REAR3/4 ', '"L REAR3/4 '],
+      ['"SIDE ', '"L SIDE '],
+    ],
+    set: {
+      title: 'Drawing the lance at a jog, frame by frame (restated M1a weapons round 2) — her LEFT rear-3/4 and LEFT side — the left hand takes the haft by the butt at the left hip and swings it forward and up under the left arm, the right joins in front of the chest; no arm ever up behind her head',
+      criteria: 'Twelve captioned tiles, two rows of six, of ONE real draw each (the lance key, pressed mid-jog; ruling R8): ROW 1 from her LEFT rear-3/4, ROW 2 from her LEFT side, '
+        + 'each at draw 0.10 / 0.25 / 0.40 / 0.55 / 0.75 and the first guard frame (the draw is played at time scale 0.25 and frozen on each tile\'s frame; the caption prints the drawK actually posed). '
+        + 'The draw is the canon\'s (BIBLE 5.2, restated in docs/GATES.md 3 D): the LEFT hand reaches back at the left hip and takes the haft low, by the butt end; carries it forward and up under the left arm, '
+        + 'the blade end clearing her right shoulder as the shaft pivots; the RIGHT hand joins on the haft in front of the chest and brings it into the low guard. '
+        + 'Judge against the owner\'s standing complaints ("arm literally behind head", "arms crossing into her body") and the licence-clean lance reference reference/r5/gates-perf/lance-back-carry (A-reference-set, W0b). PASS requires ALL of: '
+        + '(1) in every tile BOTH elbows are at or below the top of her head and, whenever one is up at shoulder height, beside or IN FRONT of her head — never up behind it; '
+        + '(2) from the rear-3/4 row no forearm lies across the back of her head or neck; the left hand goes back to the haft at her left hip, low, never over a shoulder; '
+        + '(3) neither arm is folded across her chest; '
+        + '(4) the lance comes off her back continuously — it never appears in a new place between two tiles — and ends in her right hand in the low guard (blade forward-down) in the last tile of each row; '
+        + '(5) she is still jogging (stride visible, torso leaning with the run). '
+        + 'FAIL on any elbow up behind the head, a forearm across the back of the head, the spear popping between tiles, or the bow in either hand. '
+        + 'A107 measures the same frames numerically (elbow <= head + 0.05 m; above the shoulder, <= 0.10 m behind the head plane).',
+    },
+  },
+  {
     id: 'A71d-conc-veil',
     why: 'the veil it measured is gone by design (BIBLE 9.7: Steady is a hairline breath meter, no veil, no desaturation); the HUD lane replacement row never ran (its file does not load)',
     row: {

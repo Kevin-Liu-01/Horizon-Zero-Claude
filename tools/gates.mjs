@@ -135,7 +135,8 @@ const restate = (g) => {
   if (!r) return g;
   if (r.row) return { ...r.row, source: 'gates/kept-stack.mjs', restates: g.source, restated: r.why };
   const p = patchRow(g, { patches: r.patches, why: r.why, field: r.field });
-  return p.kind === 'runner' ? p : { ...p, stage: g.stage, stagingPatch: undefined, restated: r.why };
+  // (M1a weapons round 2: a restatement may also replace whole text fields, `set`: a visual row's title and criteria)
+  return p.kind === 'runner' ? p : { ...p, ...(r.set || {}), stage: g.stage, stagingPatch: undefined, restated: r.why };
 };
 const restatedMerged = merged.map(restate);
 const GATES = keptStack
