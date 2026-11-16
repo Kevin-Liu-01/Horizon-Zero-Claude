@@ -66,6 +66,11 @@ body.cal-t2 .mn-title-item:hover, body.cal-t2 .mn-title-item:focus-visible { bac
 body.cal-t2 .mn-title-save { margin-top: 16px; text-align: left; }
 
 /* ---------------------------------------------------------------- the glass cards (New Game, Extras) */
+/* the title is key art: the card does not frost the whole frame (glass.css's menu frost is for play); it stands
+   beside the stations, clear of Brea and the Ring, and frosts only what lies behind itself */
+body.cal-t2 .mn-modal.t2-glass { background: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+body.cal-t2 .mn-modal.t2-glass[data-kind='difficulty'],
+body.cal-t2 .mn-modal.t2-glass[data-kind='extras'] { align-items: flex-start; justify-content: flex-start; padding: 404px 0 0 420px; box-sizing: border-box; }
 .mn-modal.t2-glass { background: rgba(14, 11, 20, 0.22); }
 /* glass, not a slab: the 18:40 world shows through it, blurred (a menu, not play: U-01's no-blur rule is for play);
    a plain 1 px frame and a top highlight, no corner ticks (fix round 1: ticks read close to a notched corner) */
@@ -73,7 +78,8 @@ body.cal-t2 .mn-title-save { margin-top: 16px; text-align: left; }
   width: 440px; max-height: none;
   padding: 0;
   color: var(--cal-glass-text);
-  background-color: rgba(var(--cal-glass-rgb), 0.46);
+  /* BIBLE 18: glass #1E1A28 at 0.90 in menus */
+  background-color: rgba(var(--cal-glass-rgb), var(--cal-glass-a-menu));
   background-image: var(--cal-glass-grain), linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 40%, rgba(0, 0, 0, 0.08));
   -webkit-backdrop-filter: blur(14px) saturate(1.15);
           backdrop-filter: blur(14px) saturate(1.15);
