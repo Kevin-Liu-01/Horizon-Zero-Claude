@@ -96,7 +96,11 @@ export class SiteClock {
    */
   clear(site, { at = this.hours, quest = false, emptiedBy = null } = {}) {
     if (!site || site.id == null) return null;
-    const had = this.cleared.get(site.id);
+    let had = this.cleared.get(site.id);
+    // an entry a record left under this id for ANOTHER site (site ids are handed out in spawn order, and a Continue
+    // spawns in another order) is not this site's: at 80ca7f1 a Plumb killed after a Continue inherited a quest Peg's
+    // 'quest' mark through its id and never returned
+    if (had && (had.kind !== String(site.kind ?? had.kind) || Math.hypot(num(site.x, had.x) - had.x, num(site.z, had.z) - had.z) > 1)) had = null;
     const e = {
       id: site.id, kind: String(site.kind ?? had?.kind ?? ''), x: num(site.x, had?.x), z: num(site.z, had?.z),
       at: had ? had.at : num(at, this.hours), quest: !!(quest || had?.quest), emptiedBy: emptiedBy ?? had?.emptiedBy ?? null,

@@ -237,6 +237,13 @@ test('live: a kill a running stage asks for is a quest emptying the site; a pend
   R.sweep();
   assert.equal(clock.get(tiller._site.id).at, 5);
   assert.equal(tiller._site.respawnAt, Infinity);
+  // a kill under an id a record's entry left for another site (another kind, or another place) starts its own entry
+  clock.cleared.set(77, { id: 77, kind: 'peg', x: 5, z: 5, at: 0, quest: true, emptiedBy: null });
+  const ctl = clock.clear({ id: 77, kind: 'plumb', x: 300, z: 300 });
+  assert.equal(ctl.quest, false);
+  assert.equal(ctl.at, clock.hours);
+  clock.cleared.set(78, { id: 78, kind: 'plumb', x: 5, z: 5, at: 0, quest: true, emptiedBy: null });
+  assert.equal(clock.clear({ id: 78, kind: 'plumb', x: 5.5, z: 5 }).quest, true, 'the same site (within 1 m) keeps its mark');
   // a record's entry left under an id that now names another site is not trusted
   clock.cleared.set(tiller._site.id, { id: tiller._site.id, kind: 'screed', x: 0, z: 0, at: -100, quest: false, emptiedBy: null });
   clock.advance(1);
