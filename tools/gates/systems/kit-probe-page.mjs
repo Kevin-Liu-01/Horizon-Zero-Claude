@@ -88,6 +88,16 @@ const PRELUDE = `
     }
     cb.aimPoint.copy(goal);
     K.lastMiss = missM;
+    // M1b diagnosis (6dda887: the Plumb rows' arrows struck the ground or nothing): what the game will loose now, read
+    // with its own flight (arrows.predict on the engine's sub-step): the launch, the camera's agreement and first contact
+    {
+      const def2 = cb.ammoDefs?.[ammo] ?? cb.ammoDefs.hunter, d2 = new V(), cd = new V();
+      const sp2 = cb._computeShot(def2, 1, nock, d2);
+      C.camera.getWorldDirection(cd);
+      const st = C.engine?.steps || 1, pr = cb.arrows.predict?.(nock, d2, sp2, { dt: 1 / 60 / Math.max(1, st), aim: pt });
+      K.lastShot = { nock: [r3(nock.x), r3(nock.y), r3(nock.z)], fromP: r3(nock.distanceTo(P.position)), camDot: r3(d2.dot(cd)),
+        first: pr?.hit ?? null, firstKind: pr?.machine?.kind ?? null, predMissM: pr ? r3(pr.d) : null, solveMissM: missM != null ? r3(missM) : null };
+    }
     const n0 = K.ev.length;
     cb._fire();
     await wait(waitMs);
@@ -194,8 +204,9 @@ export async function runKit(page, { sleep, log = () => {} }) {
     const out = {};
     /* Blunt: two Reed arrows on the standing bob */
     const bob = m._bob; const hp0 = bob.tearHp, h0 = m.health; let struck = [];
-    for (let i = 0; i < 2; i++) { calm(m); const e = await shoot('hunter', wpos(bob.mesh)); const h = e.find((x) => x.n === 'arrow-hit'); struck.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
-    out.blunt = { bobTearTaken: r3(hp0 - bob.tearHp), bodyDamage: r3(h0 - m.health), struck, bobOn: bob.attached !== false };
+    const diag = [];
+    for (let i = 0; i < 2; i++) { calm(m); const e = await shoot('hunter', wpos(bob.mesh)); diag.push({ ...K.lastShot, hitPt: e.find((x) => x.n === 'arrow-hit')?.pt ?? null }); const h = e.find((x) => x.n === 'arrow-hit'); struck.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
+    out.blunt = { bobTearTaken: r3(hp0 - bob.tearHp), bodyDamage: r3(h0 - m.health), struck, bobOn: bob.attached !== false, diag, bobAt: (() => { const q = wpos(bob.mesh); return [r3(q.x), r3(q.y), r3(q.z)]; })(), herAt: [r3(P.position.x), r3(P.position.y), r3(P.position.z)] };
     /* the vial: Reed arrows until it topples */
     m.health = m.maxHealth;
     let n = 0, tTop = null, sTop = null; const vh = [];
@@ -313,6 +324,7 @@ export async function runKit(page, { sleep, log = () => {} }) {
     await frames(30);
     /* one hit */
     const e1 = await shoot('hunter', aim, 700);
+    const d1 = K.lastShot;
     const hit = e1.find((x) => x.n === 'machine-damaged') || e1.find((x) => x.n === 'arrow-hit');
     const tHit = hit ? hit.t : null;
     /* four more, 0.25 s apart: the freeze budget */
@@ -321,7 +333,7 @@ export async function runKit(page, { sleep, log = () => {} }) {
     await wait(700);
     on = false;
     await lower();
-    if (tHit == null) return { pass: false, error: 'the first arrow struck nothing', struck: e1.map((x) => x.n) };
+    if (tHit == null) return { pass: false, error: 'the first arrow struck nothing', struck: e1.map((x) => x.n), shot: d1 };
     const hp = hit.pt ? new V(...hit.pt) : aim;
     // the struck node: the sampled node nearest the hit point at the hit
     const i0 = S.findIndex((s) => s.t >= tHit) - 1;
@@ -360,7 +372,7 @@ export async function runKit(page, { sleep, log = () => {} }) {
     const num = { struckNode: pick[ni].name || pick[ni].type, nodeFromHitM: r3(nd), vol: hit.vol ?? null, kick: hf?.kick ?? null,
       peakM: r3(peakM), peakDeg: r3(peakDeg), settleMs, idleNoiseM: r3(noiseM), idleNoiseDeg: r3(noiseDeg),
       freezeMs: perHit, freezeMaxMs: Math.max(0, ...perHit), freezeWindowMaxMs: Math.round(winMax), freezesGiven: (cb.hitFeel?.freezes ?? []).slice(-5).map((f) => Math.round(f.given * 1000)),
-      punchMaxDeg: r3(punchMax), fovDevDeg: r3(fovDev), flashFrames, lightMax: r3(lightMax), lightOffMs, frames: S.length };
+      punchMaxDeg: r3(punchMax), fovDevDeg: r3(fovDev), flashFrames, lightMax: r3(lightMax), lightOffMs, frames: S.length, shot: d1 };
     const parts = { kick: (peakM >= 0.03 || peakDeg >= 4), settle: settleMs != null && settleMs <= 400, freeze: num.freezeMaxMs <= 120 && num.freezeWindowMaxMs <= 180 && perHit.length > 0,
       punch: punchMax > 0 && punchMax <= 2 && fovDev <= 2, flash: flashFrames >= 1 && flashFrames <= 3, light: lightMax > 0 };
     return { num, parts, pass: Object.values(parts).every(Boolean),
