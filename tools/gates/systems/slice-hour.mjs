@@ -101,7 +101,8 @@ const spent = () => (Date.now() - T0) / 1000;
 
 async function shot(page, name) {
   try {
-    const buf = await page.screenshot({ type: 'png' });
+    await page.evaluate(() => window.__hitchMark?.(1)).catch(() => {});
+    const buf = await page.screenshot({ type: 'png' }).finally(() => page.evaluate(() => window.__hitchMark?.(0)).catch(() => {}));
     await sharp(buf).resize(1600, 900, { fit: 'fill' }).jpeg({ quality: 82 }).toFile(path.join(runDir, `${name}.jpg`));
     return `${name}.jpg`;
   } catch (e) { return null; }
@@ -868,7 +869,8 @@ async function beat(page, K, s) {
 /** fix round 1: the mean luminance (0-255) of the page's middle band (30-70 % of its height), from a screenshot. */
 async function lumBand(page) {
   try {
-    const buf = await page.screenshot({ type: 'png' });
+    await page.evaluate(() => window.__hitchMark?.(1)).catch(() => {});
+    const buf = await page.screenshot({ type: 'png' }).finally(() => page.evaluate(() => window.__hitchMark?.(0)).catch(() => {}));
     const { data, info } = await sharp(buf).greyscale().raw().toBuffer({ resolveWithObject: true });
     let sum = 0, n = 0;
     for (let y = Math.floor(info.height * 0.3); y < Math.floor(info.height * 0.7); y++) for (let x = 0; x < info.width; x++) { sum += data[y * info.width + x]; n++; }
@@ -1139,6 +1141,26 @@ try {
   if (PAD) { await page.evaluateOnNewDocument(installPad); report.input = 'pad'; }
   await page.evaluateOnNewDocument(`window.__aimPoint = ${aimPoint.toString()};`);
   await page.evaluateOnNewDocument(() => { window.__raf = 0; const tick = () => { window.__raf++; requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
+  // M1.8b (the exit run): TECH 9.1's hitch budget in the slice run. Every presented-frame interval while the game is in
+  // 'playing' (the loading sheet closed), per document; intervals that end inside one of this runner's own screenshots
+  // (shot, lumBand: a compositor readback the player never causes) or on the frame after it are counted apart as 'tool'
+  await page.evaluateOnNewDocument(() => {
+    const H = (window.__hitch = { n: 0, ms: 0, max: 0, over33: [], over50: 0, tool: 0, toolOver33: 0, pause: 0, skip: false, last: 0, was: false });
+    window.__hitchMark = (on) => { if (on) H.pause++; else { H.pause = Math.max(0, H.pause - 1); H.skip = true; } };
+    const tick = (t) => {
+      const C = window.__CTX__, playing = C?.state === 'playing';
+      if (H.last && playing && H.was) {
+        const d = t - H.last;
+        if (H.pause || H.skip) { H.tool++; if (d > 33.4) H.toolOver33++; if (!H.pause) H.skip = false; }
+        else { H.n++; H.ms += d; if (d > H.max) H.max = d; if (d > 50) H.over50++;
+          if (d > 33.4 && H.over33.length < 200) H.over33.push({ t: +(t / 1000).toFixed(2), ms: +d.toFixed(1), stage: C.spine?.current?.()?.id ?? null }); }
+      }
+      H.was = playing; H.last = t; requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const hitchSegs = (report.hitch = { note: 'presented-frame intervals in play (state playing), one segment per document; tool = inside or right after a runner screenshot', segments: [] });
+  const takeHitch = async (tag) => { const h = await page.evaluate(() => { const H = window.__hitch; return H ? { n: H.n, s: +(H.ms / 1000).toFixed(1), maxMs: +H.max.toFixed(1), over33: H.over33.length, over50: H.over50, list: H.over33, tool: H.tool, toolOver33: H.toolOver33 } : null; }).catch(() => null); if (h) hitchSegs.segments.push({ tag, ...h }); };
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   // M1b: at bab1f0c the run's page sat 240 s short of the title's 'press' with no console error (the frames page had
   // booted in the same session): what it was doing is recorded, and the page is loaded once more before giving up
@@ -1177,6 +1199,7 @@ try {
 
   // save-reload row, early (so the row is reached whatever the run does later): the New Game's named save, quit,
   // reopen in the same tab, CONTINUE; the run then plays on from the continued game
+  await takeHitch('new-game');
   report.rows['save-reload'] = await reloadContinue(page, 'b02-reload');
   log(`save-reload: ${report.rows['save-reload'].pass ? 'PASS' : 'FAIL'} (${report.rows['save-reload'].why ?? `boot ${report.rows['save-reload'].bootS} s`})`);
   if (!report.rows['save-reload'].pass && (await page.evaluate(() => window.__CTX__?.state)) !== 'playing') throw new Error('save-reload left the game off play: the run cannot go on');
@@ -1272,6 +1295,9 @@ try {
     if (!row.ok && r.ok === false) { report.stoppedAt = s.stage; report.why = r.why; break; }
   }
   if (!report.stoppedAt) { report.stoppedAt = (await page.evaluate(probe)).stage; report.why = 'Chrome budget'; }
+  // M1.8b: the run's segment ends with the run, before the staged rows after it (site clock, death-after)
+  await takeHitch('run');
+  { const S = hitchSegs.segments; hitchSegs.total = { s: +S.reduce((a, x) => a + x.s, 0).toFixed(1), frames: S.reduce((a, x) => a + x.n, 0), over33: S.reduce((a, x) => a + x.over33, 0), over50: S.reduce((a, x) => a + x.over50, 0), maxMs: Math.max(0, ...S.map((x) => x.maxMs)), tool: S.reduce((a, x) => a + x.tool, 0) }; }
   const fin = await page.evaluate(probe);
   report.spine = fin.report;
   report.shots = shots;
