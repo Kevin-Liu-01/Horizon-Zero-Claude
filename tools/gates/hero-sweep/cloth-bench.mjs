@@ -113,7 +113,7 @@ const setWindRel = (R, relDeg, speed) => {
   R.an.wind.x = -Math.sin(h) * speed; R.an.wind.z = -Math.cos(h) * speed;
 };
 const SOLVER = flag('--solver') ? JSON.parse(flag('--solver')) : null;
-const rig = (R) => { const c = peekClothRig(R.an); if (c && SOLVER && !c._tuned) { Object.assign(c.sys, SOLVER); c._tuned = true; } return c; };
+const rig = (R) => { const c = peekClothRig(R.an); if (c && SOLVER && !c._tuned) { Object.assign(c.sys, SOLVER); c._tuned = true; } if (c && args.includes('--nosleep') && !c._ns) { c._ns = true; c.sys._sleep = () => {}; } return c; };
 const clothReset = (R) => { R.model.updateMatrixWorld(true); if (MODE === 2) { rig(R); R.an.clothReset(R.t); } };
 
 function staged(R, { crouch = false, sit = false, heading = 0, wind = [0, 0] } = {}) {
@@ -219,6 +219,10 @@ if (ROWS.includes('C2')) {
     }
     r.asleepAt = asleepAt; r.maxSpeedAfter1p5 = C ? rnd(ms15, 4) : null; r.maxSpeedWho = who15;
     if (C) r.asleep = C.pieces.map((p) => p.asleep);
+    // (fix round 1: which columns hang FREE: no particle of the column on a collider (contact, or within the kick hold)
+    //  in the last awake frame; the plumb bar is for those. Per piece, per column: the chord's angle from plumb, deg, and
+    //  whether it touches)
+    if (C) r.columns = Object.fromEntries(C.pieces.map((P) => [P.name, Array.from({ length: P.C }, (_, c) => { const a = c * 3, b = (c + (P.R - 1) * P.C) * 3, dx = P.x[b] - P.x[a], dy = P.x[b + 1] - P.x[a + 1], dz = P.x[b + 2] - P.x[a + 2]; let t = 0; for (let k = 1; k < P.R; k++) { const i = c + k * P.C; if (P.contact[i] || P.ct[i] > 0) t++; } return [rnd(deg(Math.acos(-dy / Math.hypot(dx, dy, dz))), 1), t]; })]));
     res[(held ? 'held_' : 'idle_') + st] = r;
     unstage(R);
   }
@@ -539,9 +543,9 @@ if (ROWS.includes('C10') && MODE === 2) {
   take();
   for (let i = 0; i < 600; i++) step(R);
   res.standTrade = C.sys.timing(); unstage(R);
-  staged(R, {}); R.player.sprinting = true; take();
+  staged(R, {}); R.player.sprinting = true; take(); C._prof = args.includes('--prof') ? {} : null;
   for (let i = 0; i < 600; i++) { go(R, SPEEDS.sprint); step(R); }
-  res.sprint = C.sys.timing(); R.player.sprinting = false; unstage(R);
+  res.sprint = { ...C.sys.timing(), partsMs: C._prof && Object.fromEntries(Object.entries(C._prof).filter(([k]) => k !== 'n').map(([k, v]) => [k, rnd(v / C._prof.n, 4)])) }; C._prof = null; R.player.sprinting = false; unstage(R);
   staged(R, {}); R.an.setWind(0, 0);
   for (let i = 0; i < 120; i++) step(R);
   const wk0 = C.pieces.map((p) => p.wakes), aw = C.pieces.map(() => 0);
@@ -617,6 +621,30 @@ if (ROWS.includes('C11') && MODE === 2) {
   res.nudgeSprint1s = rnd(await nudge(true), 7);
   res.nudgeByPiece = nudgeBy;
   out.rows.C11 = res;
+}
+
+// C3 / C9 over EVERY clip (fix round 1): the sweep bench's own clips (bench.mjs CLIPS: stand, run, sprint, crouch and
+// crouch-walk, roll, mantle, climb, slide, sit, the stows and unstows, the jump and its landing, the blends), each on a
+// fresh bench with the lance (`melee`), every graded frame read for the structural edges and column paths against rest
+// (C3, bar 1.03), the bones' scale, and the tongues' order (C9). --c3-only a,b limits the clips
+if ((ROWS.includes('C3all') || ROWS.includes('C9all')) && MODE === 2) {
+  const { CLIPS } = await import('./bench.mjs');
+  const { buildSweep } = await import('./measure.mjs');
+  const want = flag('--c3-only') ? flag('--c3-only').split(',') : Object.keys(CLIPS);
+  const res = {};
+  let worst = { edge: 0, path: 0, scale: 0, crossed: 0, frames: 0 };
+  for (const name of want) {
+    const c = CLIPS[name]; if (!c) continue;
+    R = await makeBench({ melee: true }); R.an.setWind(45 * Math.PI / 180, 5.5); R.M = buildSweep(R, THREE);
+    reset(R);
+    const r = { edge: 0, path: 0, boneScaleDev: 0, over103: 0, tonguesCrossed: 0, frames: 0 };
+    c.run(R, () => { const s = stretch(R); if (s) { r.edge = Math.max(r.edge, s.edge); r.path = Math.max(r.path, s.path); r.boneScaleDev = Math.max(r.boneScaleDev, s.boneScaleDev); if (s.edge > 1.03 || s.path > 1.03) r.over103++; } if (tonguesCrossed(R)) r.tonguesCrossed++; r.frames++; });
+    for (const k of ['edge', 'path']) r[k] = rnd(r[k], 4); r.boneScaleDev = rnd(r.boneScaleDev, 5);
+    res[name] = r;
+    worst = { edge: Math.max(worst.edge, r.edge), path: Math.max(worst.path, r.path), scale: Math.max(worst.scale, r.boneScaleDev), crossed: worst.crossed + r.tonguesCrossed, over: (worst.over || 0) + r.over103, frames: worst.frames + r.frames };
+  }
+  res.worst = worst;
+  out.rows.C3all = res;
 }
 
 if (STRETCH_LOG) out.stretchLog = STRETCH_LOG;
