@@ -24,7 +24,10 @@ export function aeroForces(P, wx, wz, t, wy = 0) {
   const x = P.x, v = P.v, f = P.f, nrm = P.nrm, A = P.area, n = P.n, mat = P.mat;
   // (P.airK: a piece's share of the sheet's air, 1 for Brea's cloth; the people's strands stand for a whole tail or
   //  apron with a handful of particles and catch less, cloth/strands.js)
-  const cd = mat.cd, cl = mat.cl, airK = P.airK ?? 1, shC = mat.shelter ?? SHELTER;
+  // (fix round 1, EDGE: a sheet edge-on to the flow still takes `edge` of its face-on drag (skin friction, the flutter and
+  //  the twist a grid this coarse cannot hold): at 0 a side wind met the tail's strip edge-on and lifted it 2-6 deg at
+  //  5.5 m/s (C6, band 25-50), and the back panel's hem went 54 deg off downwind at 2.5 m/s from her side)
+  const cd = P.cd ?? mat.cd, cl = mat.cl, airK = P.airK ?? 1, shC = mat.shelter ?? SHELTER, ed = P.edge ?? mat.edge ?? 0, aMax = P.aMax ?? mat.aMax ?? 0;
   const ws = Math.sqrt(wx * wx + wz * wz);
   const lee = P.lee || 0, ux0 = ws > 1e-6 ? wx / ws : 0, uz0 = ws > 1e-6 ? wz / ws : 0, rx = P.root.p[0], rz = P.root.p[2];
   const C = P.C || 1;
@@ -61,9 +64,12 @@ export function aeroForces(P, wx, wz, t, wy = 0) {
       }
     }
     const q = 0.5 * RHO * A[i] * u2 * sh * airK;
-    const dr = cd * (c < 0 ? -c : c), li = cl * c;
-    f[k] = q * (dr * hx + li * (nx - c * hx));
-    f[k + 1] = q * (dr * hy + li * (ny - c * hy));
-    f[k + 2] = q * (dr * hz + li * (nz - c * hz));
+    const ac = c < 0 ? -c : c, dr = cd * (ac + ed * (1 - ac)), li = cl * c;
+    let fx = q * (dr * hx + li * (nx - c * hx)), fy = q * (dr * hy + li * (ny - c * hy)), fz = q * (dr * hz + li * (nz - c * hz));
+    // (fix round 1, aMax: the air's acceleration on a particle is held under `aMax` m/s2 (a material's, 0 = none): a
+    //  narrow strip in a strong wind stops taking more once it streams; at 9 m/s the tail's turbulence peaks lifted it
+    //  to 83-90 deg from plumb, C6's cap 80)
+    if (aMax > 0) { const m = P.m[i], a2 = (fx * fx + fy * fy + fz * fz) / (m * m); if (a2 > aMax * aMax) { const g = aMax / Math.sqrt(a2); fx *= g; fy *= g; fz *= g; } }
+    f[k] = fx; f[k + 1] = fy; f[k + 2] = fz;
   }
 }

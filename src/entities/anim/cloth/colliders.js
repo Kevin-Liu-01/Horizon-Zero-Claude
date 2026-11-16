@@ -37,9 +37,9 @@ export function setEnds(C, ax, ay, az, bx, by, bz, dt) {
   const k = dt > 0 ? 1 / dt : 0;
   for (let i = 0; i < 3; i++) { C.va[i] = (C.a[i] - C.pa[i]) * k; C.vb[i] = (C.b[i] - C.pb[i]) * k; }
   // the swept segment's bounding sphere (both frames' ends)
+  // (fix round 1: no array a call; `[C.a, C.b, C.pa, C.pb]` here was an allocation per collider per frame, C10's 0 bytes)
   let mx = 9e9, Mx = -9e9, my = 9e9, My = -9e9, mz = 9e9, Mz = -9e9;
-  const ends = [C.a, C.b, C.pa, C.pb];
-  for (let e = 0; e < 4; e++) { const p = ends[e]; if (p[0] < mx) mx = p[0]; if (p[0] > Mx) Mx = p[0]; if (p[1] < my) my = p[1]; if (p[1] > My) My = p[1]; if (p[2] < mz) mz = p[2]; if (p[2] > Mz) Mz = p[2]; }
+  for (let e = 0; e < 4; e++) { const p = e === 0 ? C.a : e === 1 ? C.b : e === 2 ? C.pa : C.pb; if (p[0] < mx) mx = p[0]; if (p[0] > Mx) Mx = p[0]; if (p[1] < my) my = p[1]; if (p[1] > My) My = p[1]; if (p[2] < mz) mz = p[2]; if (p[2] > Mz) Mz = p[2]; }
   C.cx = (mx + Mx) / 2; C.cy = (my + My) / 2; C.cz = (mz + Mz) / 2;
   // the most either end moved this frame, plus the sweep allowance (for the per-particle lists)
   C.mv = Math.sqrt(Math.max((C.a[0] - C.pa[0]) ** 2 + (C.a[1] - C.pa[1]) ** 2 + (C.a[2] - C.pa[2]) ** 2, (C.b[0] - C.pb[0]) ** 2 + (C.b[1] - C.pb[1]) ** 2 + (C.b[2] - C.pb[2]) ** 2)) * 0.5;

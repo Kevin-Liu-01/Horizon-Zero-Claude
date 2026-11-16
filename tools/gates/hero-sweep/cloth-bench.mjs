@@ -239,13 +239,21 @@ if (ROWS.includes('C2')) {
 // C4: run-stop (sprint, release)
 if (ROWS.includes('C4')) {
   await fresh();
-  staged(R, {});
-  R.an.setWind(0, 0);
+  // (--c4-wind deg,speed: the run-stop in a wind relative to her facing, the page's staging stands in the trade wind)
+  const c4w = flag('--c4-wind') ? flag('--c4-wind').split(',').map(Number) : [0, 0];
+  staged(R, { wind: c4w });
+  // (fix round 1: REST, the hem's place against its belt row standing in still air 2 s after the reset (the idle
+  //  running), so the settle and the overshoot read against rest, not against the window's last frame: a panel asleep
+  //  flared out of plumb read "settled" against itself)
+  const restF = {}, restAng = {};
+  { let acc = null; for (let i = 0; i < 150; i++) { still(R); step(R); if (i >= 120) { const F = frameRead(R, PR); acc ||= Object.fromEntries(pieceNames.map((k) => [k, { f: 0, a: 0 }])); for (const k of pieceNames) { acc[k].f += F.pieces[k].H.clone().sub(F.pieces[k].T).dot(F.f) / 30; acc[k].a += deg(F.pieces[k].ang) / 30; } } }
+    for (const k of pieceNames) { restF[k] = acc[k].f; restAng[k] = acc[k].a; } }
   R.player.sprinting = true;
   for (let i = 0; i < 150; i++) { go(R, SPEEDS.sprint); step(R); }
   R.player.sprinting = false;
   const tr = [];
-  for (let i = 0; i < 150; i++) { still(R); step(R); tr.push(frameRead(R, PR)); }
+  for (let i = 0; i < 150; i++) { still(R); step(R); tr.push(frameRead(R, PR));
+    if (args.includes('--c4-log') && i % 10 === 9) { const F = tr[tr.length - 1], C = rig(R); console.log('c4', i + 1, pieceNames.map((k) => `${k} a${deg(F.pieces[k].ang).toFixed(0)} f${deg(F.pieces[k].fwd).toFixed(0)} l${deg(F.pieces[k].lat).toFixed(0)}`).join(' | '), C ? C.pieces.map((p) => (p.asleep ? 'Z' : '.')).join('') : ''); } }
   const res = {};
   // the pelvis under 0.3 m/s
   let tStop = null;
@@ -256,7 +264,8 @@ if (ROWS.includes('C4')) {
     //  her: the idle after the stop sways her pelvis 1-2 cm over her feet, and against the ground the hem never read
     //  settled, 2.3-2.5 s, the window's end, for every piece. --c4-ground reads it as before)
     const f = tr.map((F) => F.pieces[k].H.clone().sub(args.includes('--c4-ground') ? F.pos : F.pieces[k].T).dot(F.f));
-    const fin = f[f.length - 1];
+    // (fix round 1: against REST unless --c4-final asks for the old read against the window's last frame)
+    const fin = args.includes('--c4-final') ? f[f.length - 1] : restF[k], finEnd = f[f.length - 1];
     let peak = 0, peakT = null;
     for (let i = 0; i < f.length; i++) if (f[i] - fin > peak) { peak = f[i] - fin; peakT = tr[i].t; }
     let settle = null;
@@ -264,10 +273,13 @@ if (ROWS.includes('C4')) {
     let cross = 0; for (let i = 1; i < f.length; i++) if ((f[i] - fin) * (f[i - 1] - fin) < 0 && Math.abs(f[i] - fin) + Math.abs(f[i - 1] - fin) > 0.01) cross++;
     // (round 5: settleAfterStopS, the same settle read from the stop (the pelvis under 0.3 m/s), as the row's peak is: the
     //  brief's 0.5-1.1 s band follows "after the pelvis is under 0.3 m/s"; settleS, from the release, kept beside it)
-    res[k] = { overshootM: rnd(peak), peakAfterStopS: peakT != null && tStop != null ? rnd(peakT - tStop) : null, settleS: rnd(settle), settleAfterStopS: settle != null && tStop != null ? rnd(settle - (tStop - tr[0].t)) : null, crossings: cross };
+    const L = tr[tr.length - 1];
+    res[k] = { overshootM: rnd(peak), peakAfterStopS: peakT != null && tStop != null ? rnd(peakT - tStop) : null, settleS: rnd(settle), settleAfterStopS: settle != null && tStop != null ? rnd(settle - (tStop - tr[0].t)) : null, crossings: cross,
+      endOffRestM: rnd(finEnd - restF[k]), endAngDeg: rnd(deg(L.pieces[k].ang), 1), restAngDeg: rnd(restAng[k], 1) };
     if (TRACE) TRACE.push({ g: 'C4', k, f: f.map((x) => rnd(x - fin, 4)) });
   }
   res.stopS = tStop != null ? rnd(tStop - tr[0].t) : null;
+  { const C = rig(R); if (C) res.asleepAtEnd = C.pieces.map((p) => p.asleep); }
   out.rows.C4 = res;
   unstage(R);
 }
@@ -376,7 +388,9 @@ if (ROWS.includes('C6')) {
     return acc;
   };
   const calm = meanRun(0, 0);
-  for (const wrel of [0, 90, 180, 270]) for (const sp of [2.5, 5.5, 9]) {
+  // (--c6-list "147:4.2,147:8": other bearings and speeds than the table's, for a look)
+  const C6L = flag('--c6-list') ? flag('--c6-list').split(',').map((q) => q.split(':').map(Number)) : [0, 90, 180, 270].flatMap((a) => [2.5, 5.5, 9].map((sp) => [a, sp]));
+  for (const [wrel, sp] of C6L) {
     const m = meanRun(wrel, sp);
     // downwind in the world: the wind blows from wrel toward her
     const h = R.player.heading + wrel * Math.PI / 180, dw = new THREE.Vector3(-Math.sin(h), 0, -Math.cos(h));
@@ -530,8 +544,13 @@ if (ROWS.includes('C10') && MODE === 2) {
   res.sprint = C.sys.timing(); R.player.sprinting = false; unstage(R);
   staged(R, {}); R.an.setWind(0, 0);
   for (let i = 0; i < 120; i++) step(R);
-  take(); for (let i = 0; i < 600; i++) step(R);
-  res.asleepStill = { ...C.sys.timing(), asleep: C.pieces.map((p) => p.asleep) }; unstage(R);
+  const wk0 = C.pieces.map((p) => p.wakes), aw = C.pieces.map(() => 0);
+  // (fix round 1: the frames with every piece asleep through the frame (asleep before and after it), timed on their own:
+  //  the row's "asleep" cost; the window's whole mean, wakes and all, stays beside it)
+  const asl = [];
+  take(); C._prof = args.includes('--prof') ? {} : null; for (let i = 0; i < 600; i++) { const a0 = C.pieces.every((p) => p.asleep); step(R); C.pieces.forEach((p, k) => { if (!p.asleep) aw[k]++; }); if (a0 && C.pieces.every((p) => p.asleep)) asl.push(C.sys.ring[(C.sys.ringI + C.sys.ring.length - 1) % C.sys.ring.length]); }
+  { const q = asl.slice().sort((a, b) => a - b); res.allAsleepFrames = { n: q.length, mean: rnd(q.reduce((a, b) => a + b, 0) / Math.max(1, q.length), 4), p50: rnd(q[q.length >> 1], 4), p95: rnd(q[Math.floor(q.length * 0.95)], 4) }; }
+  res.asleepStill = { ...C.sys.timing(), asleep: C.pieces.map((p) => p.asleep), wakes: C.pieces.map((p, k) => p.wakes - wk0[k]), awakeFrames: aw, wakeWhy: C.pieces.map((p) => p.wakeWhy), partsMs: C._prof && Object.fromEntries(Object.entries(C._prof).filter(([k]) => k !== 'n').map(([k, v]) => [k, rnd(v / C._prof.n, 4)])) }; C._prof = null; unstage(R);
   for (const k in res) for (const q of ['mean', 'p50', 'p95', 'max']) if (res[k]?.[q] != null) res[k][q] = rnd(res[k][q], 4);
   res.particles = C.pieces.reduce((a, p) => a + p.n, 0); res.pinned = C.pieces.reduce((a, p) => { let k = 0; for (let i = 0; i < p.n; i++) if (p.w[i] === 0) k++; return a + k; }, 0); res.clBones = C.bones.length;
   res.joints = {}; R.model.traverse((o) => { if (o.isSkinnedMesh) res.joints[o.name] = o.skeleton.bones.length; });

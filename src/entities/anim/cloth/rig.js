@@ -85,6 +85,8 @@ export const TETHER = { on: false, u: 0.75, slack: 0.02, alpha: 0.02 };
 /** Round 4: the front panels' backstop, m in front of the pelvis root's frontal plane (solver.js ClothPiece.backstop), and
  *  each panel's share of her travel met as air where it is not its material's (solver.js ClothPiece.air; -1: the material's) */
 export const BACKSTOP = { front: 0.0 };
+/** (fix round 1) The most a free column's chord may stand off plumb (deg) for its piece to sleep (solver.js _plumb). */
+export const SLEEP_PLUMB = { panel: 10, tail: 20 };
 export const PANEL_AIR = { panelL: -1, panelR: -1, panelB: -1 };
 /** The tongues' minimum distance, over their bind distance (round 3: 0.78, was 0.7 of a bind distance the oversized
  *  lengths made 10 % wider: at the body's own scale 0.7 let the tongues cross in 46-48 of 1440 run and sprint frames) */
@@ -98,7 +100,10 @@ export const PANEL_AIR = { panelL: -1, panelR: -1, panelB: -1 };
  *  tested (m), and more margin on the quiver (m: its axis is two rim vertices found at bind; the grader finds its own
  *  each frame, and in a roll a tail vertex 2 cm clear of ours was 8 mm inside its) */
 export const VPASS = { on: true, iters: 6, margin: 0.004, maxStep: 0.1, reach: 0.06, quiver: 0.012 };
-export const TAILC = { off: 0.028, hard: 0.052, tongueMin: 0.78, air: 0.4, yaw: 0.35 };
+/** (fix round 1) the tail's own air: cd 0.4 (the linen's 0.7), `edge` 0.8 of its face-on drag edge-on (a wrung strip
+ *  this narrow twists to the flow: at 0 a wind from her side met it edge-on and lifted it 2-6 deg at 5.5 m/s), the air's
+ *  acceleration held under `aMax` 20 m/s2 (at 9 m/s its turbulence peaks stood it at 83-90 deg from plumb, C6 cap 80) */
+export const TAILC = { off: 0.028, hard: 0.052, tongueMin: 0.78, air: 0.4, yaw: 0.35, cd: 0.4, edge: 0.8, aMax: 20 };
 /** hangPanel's cylinder centre (bind space z) */
 const PANEL_CZ = -0.02;
 
@@ -194,6 +199,7 @@ export class BreaCloth {
     this.sys = new ClothSystem();
     // (the timing clock: the bench hands its own, as its performance.now is the sim clock)
     this.sys.clock = realClock();
+    this._prof = null;
     this.ok = false; this.err = null;
     this.pieces = []; this.bones = []; this.adapters = [];
     try { this._build(); this.ok = true; } catch (e) { this.err = String(e && e.stack || e); this.ok = false; }
@@ -337,12 +343,13 @@ export class BreaCloth {
     this.groundBit = 0;
   }
 
-  _updateColliders(dt) {
+  _updateColliders(dt, body = true, bodyOnly = false) {
     const S = this.sys, model = this.model, an = this.an;
     const P = propCaps(an);
     // (until the weapons lane writes stowLance, the stow kit's `_stowCap` stands in for it)
     const SC = an._stowCap;
     for (const C of S.colliders) {
+      if (C.prop ? bodyOnly : !body) continue;
       if (C.prop) {
         const s = C.prop;
         if (C.name === 'stowLance' && !s.set && SC) {
@@ -442,6 +449,8 @@ export class BreaCloth {
     const off = 0.010;
     const P = new ClothPiece({ name, mat, C, R, X, Q0, root, pinned, cons, lraPin, mass, area, mask, off, offPerCollider: this._offFit(X, pinned, mask, off, root) });
     P.fwd = fwd; P.stem = stem; P.kind = 'panel'; P.lee = 0.17; P.edges = true; P.sQ = sQ;
+    // (fix round 1: no sleep with a free column more than SLEEP_PLUMB.panel deg off plumb, solver.js _plumb)
+    P.plumbCos = Math.cos(SLEEP_PLUMB.panel * Math.PI / 180);
     P.edgesLegs = stem !== 'dyn_panelB';   // (the fronts over the thighs: their leg edges every substep, solver.js)
     // (round 4: the fronts never slip between her legs to the back: solver.js ClothPiece.backstop)
     if (stem !== 'dyn_panelB') P.backstop = BACKSTOP.front;
@@ -672,10 +681,10 @@ export class BreaCloth {
     const P = new ClothPiece({ name, mat, C, R, X, Q0, root, pinned, cons, lraPin, mass, area, mask, off, offPerCollider: this._offFit(X, pinned, mask, off, root), ground: false });
     // (the tongues' minimum: a little under their bind distance, so the pair never crosses but may close)
     for (let c = 0; c < P.nc; c++) if (P.ck[c] === 1) P.cr[c] *= TAILC.tongueMin;
-    P.fwd = fwd; P.stem = stem; P.kind = 'tail'; P.lee = 0; P.sQ = sQ;
+    P.fwd = fwd; P.stem = stem; P.kind = 'tail'; P.lee = 0; P.sQ = sQ; P.plumbCos = Math.cos(SLEEP_PLUMB.tail * Math.PI / 180);
     // (step 2: 0.65 of the air: with the heavier damping the tail stood at 59-60 deg in 5.5 m/s from her front, band 25-50)
     P.airK = 0.65;   // (the head is narrower than the tail's swing: no lee)
-    P.air = TAILC.air; P.yawS = TAILC.yaw;
+    P.air = TAILC.air; P.yawS = TAILC.yaw; P.cd = TAILC.cd; P.edge = TAILC.edge; P.aMax = TAILC.aMax;
     // (the tail's strip is 0.09 m wide and cupped about the two particles of a row: its edges stand 0.02 m off them)
     // (step 2: 0.052, was 0.030: the strip's cupped edge, or the strip turned edge-on, still met the grader's torso by
     //  1.6-5 mm standing and in a crouch)
@@ -856,6 +865,8 @@ export class BreaCloth {
     const arm = this.armRoot, A = _m2.copy(arm.matrixWorld).invert().elements, AW = arm.matrixWorld.elements;
     for (const P of this.pieces) {
       if (only && P !== only) continue;
+      // (fix round 1, cost: a sleeping piece that did not ride this frame keeps its bones on the armature)
+      if (!only && P.asleep && !P.rode) continue;
       const C = P.C, R = P.R, x = P.x, F0 = P.F0, s = P.root.s;
       for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
         const i = c + r * C, bi = P.boneOf[i];
@@ -1130,13 +1141,24 @@ export class BreaCloth {
     propCaps(this.an).dt = dt;
     for (const r of S.roots) { decomp(r.bone, _pp, _pq); ClothSystem.setRoot(r, _pp[0], _pp[1], _pp[2], _pq, _vs.x, dt); }
     this._allAsleep = this.pieces.every((P) => P.asleep);
-    this._updateColliders(dt);
+    const pf = this._prof, k0 = pf ? S.clock() : 0;
+    // (fix round 1, cost: with every piece asleep the body's colliders are read only when the solver first asks for them
+    //  (a ride's body check, a piece waking); the props every frame, for the wake test)
+    this._collDt = dt;
+    if (this._allAsleep) { this._updateColliders(dt, false); S.collFresh = false; S.lazyColl = this._collFn || (this._collFn = () => this._updateColliders(this._collDt, true, true)); }
+    else { this._updateColliders(dt); S.collFresh = true; }
+    const k1 = pf ? S.clock() : 0;
     S.wind.x = Number.isFinite(wind?.x) ? wind.x : 0; S.wind.z = Number.isFinite(wind?.z) ? wind.z : 0;
     S.update(dt, t);
+    const k2 = pf ? S.clock() : 0;
     this._writeBones();
+    const k3 = pf ? S.clock() : 0;
     if (VPASS.on) this._vertexPass();
+    const k4 = pf ? S.clock() : 0;
     this._driveChains();
     if (S.clock) S.ringPut(S.clock() - t0);
+    // (a bench's breakdown of the frame, when it hands an object: roots, colliders, solve, bones, sheet pass, chains)
+    if (pf) { const k5 = S.clock(); pf.roots = (pf.roots || 0) + k0 - t0; pf.coll = (pf.coll || 0) + k1 - k0; pf.solve = (pf.solve || 0) + k2 - k1; pf.bones = (pf.bones || 0) + k3 - k2; pf.vpass = (pf.vpass || 0) + k4 - k3; pf.chains = (pf.chains || 0) + k5 - k4; pf.n = (pf.n || 0) + 1; }
   }
 
   /** The deterministic reset (the sim-time slate): roots and colliders read now, the settle, the bones written. */
