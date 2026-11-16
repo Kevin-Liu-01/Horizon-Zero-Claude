@@ -205,6 +205,9 @@ export class CharacterPage {
 
   unmount() {
     this.lens.end();
+    if (this._scrim) for (const k of ['--ch-l', '--ch-t', '--ch-r', '--ch-b']) this._scrim.style.removeProperty(k);
+    this._scrim = null;
+    this._cut = null;
     if (this._onKey) window.removeEventListener('keydown', this._onKey);
     this._onKey = null;
     this.root?.remove();
@@ -217,6 +220,26 @@ export class CharacterPage {
     if (!this.lens.on && this._stage?.isConnected) this.lens.begin(this._stage);
     this.lens.tick(dt);
     this.lens.apply();
+    this._cutFrost();
+  }
+
+  /**
+   * The hub's frost is cut by the stage's box (character.css): the world frosts behind every surface and margin of
+   * the page, and stands clear only where she does. Percentages of the scrim's own box, written only on a change.
+   */
+  _cutFrost() {
+    const st = this._stage;
+    const scrim = this._scrim ??= this.root?.closest('.mn-hub')?.querySelector('.mn-hub-scrim') ?? null;
+    if (!st?.isConnected || !scrim) return;
+    const a = scrim.getBoundingClientRect(), b = st.getBoundingClientRect();
+    if (a.width < 1 || a.height < 1) return;
+    const pc = (v, o, n) => `${(((v - o) / n) * 100).toFixed(2)}%`;
+    const key = `${pc(b.left, a.left, a.width)} ${pc(b.top, a.top, a.height)} ${pc(b.right, a.left, a.width)} ${pc(b.bottom, a.top, a.height)}`;
+    if (key === this._cut) return;
+    this._cut = key;
+    const [l, t, r, bt] = key.split(' ');
+    const S = scrim.style;
+    S.setProperty('--ch-l', l); S.setProperty('--ch-t', t); S.setProperty('--ch-r', r); S.setProperty('--ch-b', bt);
   }
 
   /** WEAR: put the rung on her through armory's loadout. Resolves true when she wears it. */
@@ -352,6 +375,7 @@ export class CharacterPage {
       buttons: R ? [...R.querySelectorAll('button.ch-wear')].map((b) => ({ text: b.textContent, on: !b.disabled })) : [],
       busy: this.busy,
       lens: { ...this.lens.info },
+      frostCut: this._cut ?? null,
       log: this._log.slice(),
     };
   }

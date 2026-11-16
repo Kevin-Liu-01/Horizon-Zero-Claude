@@ -2,13 +2,20 @@
    THE CHARACTER PAGE (M1.6i; BIBLE §8.4, §18 "Character"). The hub's glass steps aside on this tab: the head,
    the page line and the foot keep their glass, and the page draws three glass surfaces of its own (the rung's
    detail, the customization, the row of eight rung cards) around a clear stage where Brea stands in the frozen
-   world, turning. Dark violet glass #1E1A28 at 0.90 with the world frosted through it, right angles, 6 px
+   world, turning; the world is frosted everywhere but the stage. Dark violet glass #1E1A28 at 0.90 with the world frosted through it, right angles, 6 px
    registration ticks, the lilac 1 px selection line over Orchil Deep; Chakra Petch for labels, IBM Plex Mono for
    numerals and plain words. A locked rung is one black silhouette.
    =========================================================================== */
 
-/* the hub on this tab: no full-screen frost, no full-width fill; the bands keep theirs */
-body.cal-gs .mn-hub[data-tab='character'] .mn-hub-scrim { opacity: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* the hub on this tab: the world frosts behind every surface and margin of the page (BIBLE 18: the world freezes
+   and frosts behind every menu), but not inside the stage, where she stands clear. The scrim keeps its frost and
+   is cut by the stage's box (an even-odd hole; --ch-l/t/r/b are set by src/ui/character.js as percentages of the
+   scrim, so the UI scale's zoom cannot misplace it). No full-width fill; the bands keep theirs. */
+body.cal-gs .mn-hub[data-tab='character'] .mn-hub-scrim {
+  clip-path: polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0,
+    var(--ch-l, 0%) var(--ch-t, 0%), var(--ch-r, 0%) var(--ch-t, 0%), var(--ch-r, 0%) var(--ch-b, 0%),
+    var(--ch-l, 0%) var(--ch-b, 0%), var(--ch-l, 0%) var(--ch-t, 0%));
+}
 body.cal-gs .mn-hub[data-tab='character'] .mn-hub-shell { background: none; }
 body.cal-gs .mn-hub[data-tab='character'] .mn-hub-head,
 body.cal-gs .mn-hub[data-tab='character'] .mn-hub-sub,
