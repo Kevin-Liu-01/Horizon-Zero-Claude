@@ -578,7 +578,9 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
     for (;;) {
       const s = await page.evaluate(probe);
       if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) return { ok: false, why: 'died', fired };
-      if (stageDone && s.stage !== stage0) return { ok: true, fired, ...(scans.length ? { scans } : {}), ...(ditchScans ? { ditchScans } : {}) };
+      // (fix round 1: at ae86348 the topple stage closed on the topple before the loop read the Plumb down, so b-13 was
+      // never filmed: the still is taken here too, when the stage that closed is the vial's)
+      if (stageDone && s.stage !== stage0) { const toppleShot = untilDown ? await shot(page, 'b-13-topple') : undefined; return { ok: true, fired, ...(toppleShot ? { toppleShot } : {}), ...(scans.length ? { scans } : {}), ...(ditchScans ? { ditchScans } : {}) }; }
       if ((Date.now() - t0) / 1000 > maxS) return { ok: !!all, why: `${kind} ${part}: not done in ${maxS} s (${fired} arrows)`, fired, ...(scans.length ? { scans } : {}) };
       if (s.busy) { await release(); await playScene(page, K); continue; }
       // the whole line (all): every live one within 220 m is walked to; one target: the nearest within 70 m
