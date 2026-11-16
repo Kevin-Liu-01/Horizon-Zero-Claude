@@ -1958,8 +1958,13 @@ export class MeleeLayer {
       const rise = 1 - (1 - STRIDE_SHAFT_RISE) * this._strideW;
       if (_shaft.y > rise) { _shaft.y = rise; _shaft.normalize(); }
     }
-    this._solveRight(w, u);
-    this._rightOnHaft(stance, w);
+    /* M1a weapons round 3: while the bow's two-hand regrip has the right hand (carryStow `bowRightBusy`: the stow ahead of a
+     * swap to the lance), the right arm is the bow's; the lance, still on her back, waits for the bow's release */
+    const bowR = an.bowRightBusy?.() === true && !this._held;
+    if (!bowR) {
+      this._solveRight(w, u);
+      this._rightOnHaft(stance, w);
+    }
     /* THE CONTACT LANDS WHERE IT WAS AIMED (round 6, R7): the aim above bent
      * the beat's KEY toward the target, but the arm does not reach every key
      * and the wrist does not turn every haft, so the posed tip can sit 0.2-0.3
@@ -2030,7 +2035,8 @@ export class MeleeLayer {
     }
     /* M1a weapons round 2 (W1): the four fingers close ON the haft's surface (`an._grip`'s solved curls, at the curl's
      * share of closed), the thumb over them; with no solved grip (another rig) the old curl */
-    if (this.gripR) an._wrapFingers('r', this.gripR, this._curlR / 0.85, this._curlR * 0.88 * w, w);
+    if (bowR) { /* (the bow's regrip has the right fingers) */ }
+    else if (this.gripR) an._wrapFingers('r', this.gripR, this._curlR / 0.85, this._curlR * 0.88 * w, w);
     else an._curlFingers(an._fingerR, this._curlR * w, this._curlR * 0.88 * w);
     if (bowL) { /* (the bow's fingers) */ }
     else if (this.gripLFore) an._wrapFingers('l', this._lc?.on && !this._held ? this.gripLButt : this.gripLFore, this._curlL / 0.85, this._curlL * 0.91 * w, w);
