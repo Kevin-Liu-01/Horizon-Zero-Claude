@@ -31,7 +31,7 @@ import { outfitDoc, writeOutfit } from './lib/output.mjs';
 import { emptyPart, Field, V, mix, sstep, recomputeNormals } from './lib/part.mjs';
 import { romFit } from './lib/romfit.mjs';
 import { bakeVertexAO } from './lib/vertexao.mjs';
-import { rimTubes, faceOut } from './lib/rung1.mjs';
+import { rimTubes, faceOut, backFaces } from './lib/rung1.mjs';
 import { openEdges } from './lib/smock.mjs';
 import { limbRadius } from './lib/starter.mjs';
 import { TAU } from './lib/garment.mjs';
@@ -162,9 +162,10 @@ function hatInto(part, band, F, fit, rects, joint, bit) {
     part.jnt.push(joint, 0, 0, 0); part.wgt.push(1, 0, 0, 0);
   }
   const cc = S + 1;
+  // (wound so the weave's outside faces out: the game draws front faces only; the brim's underside is `hatBacks`)
   for (let r = 0; r < rings.length - 1; r++) for (let k = 0; k < S; k++) {
     const a = base + r * cc + k, b = a + 1, d = a + cc, e = d + 1;
-    part.idx.push(a, b, d, b, e, d);
+    part.idx.push(a, d, b, b, d, e);
   }
   part.pieceBit = bit;
   // the band: a violet ribbon round the crown's foot, standing 2.5 mm proud of the weave, 2.2 cm tall
@@ -179,7 +180,7 @@ function hatInto(part, band, F, fit, rects, joint, bit) {
   }
   for (let r = 0; r < bandRows.length - 1; r++) for (let k = 0; k < S; k++) {
     const a = bb + r * cc + k, b = a + 1, d = a + cc, e = d + 1;
-    band.idx.push(a, b, d, b, e, d);
+    band.idx.push(a, d, b, b, d, e);
   }
   band.pieceBit = bit;
 }
@@ -456,7 +457,11 @@ export async function scoutParts() {
     const h = emptyPart('hat', { trim: true }), b = emptyPart('hatband', { trim: true });
     hatInto(h, b, Fr, fit, rects, joint, bit);
     recomputeNormals(h); recomputeNormals(b);
-    hats.push(h, b);
+    // the other face of the weave (the brim's underside, seen from her eye height and below; the crown's inside), 1.5 mm in
+    const back = emptyPart('hatback', { trim: true });
+    backFaces(back, h, { inset: 0.0015 });
+    back.pieceBit = bit;
+    hats.push(h, b, back);
   }
   const added = [vest, vestRim, guard, guardRim, legs, ...hats];
   return { base, under, added, layout, fit };
