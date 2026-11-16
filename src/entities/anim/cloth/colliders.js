@@ -29,10 +29,16 @@ export function makeCollider(name, bit, r0, r1, src) {
 }
 
 /** Shift this frame's ends to last frame's and write the new ones (world, m). */
+/** (fix round 1) A collider end that moves further than this in one frame (m) has jumped (as the roots' RESEAT_D). */
+const JUMP_D = 1.0;
 export function setEnds(C, ax, ay, az, bx, by, bz, dt) {
   if (C.primed) { C.pa[0] = C.a[0]; C.pa[1] = C.a[1]; C.pa[2] = C.a[2]; C.pb[0] = C.b[0]; C.pb[1] = C.b[1]; C.pb[2] = C.b[2]; }
   C.a[0] = ax; C.a[1] = ay; C.a[2] = az; C.b[0] = bx; C.b[1] = by; C.b[2] = bz;
   C.stamp++;
+  // (fix round 1: an end that moved more than JUMP_D this frame is a jump (a teleport, a frame's staging), not a sweep:
+  //  primed again where it is. A prop capsule a frame behind her after a teleport came 60 m in one frame, 1800 m/s, and
+  //  its sweep allowance (speed x h / 2, 7.5 m) flung every panel up to 55-83 deg)
+  if (C.primed) { const da = (C.a[0] - C.pa[0]) ** 2 + (C.a[1] - C.pa[1]) ** 2 + (C.a[2] - C.pa[2]) ** 2, db = (C.b[0] - C.pb[0]) ** 2 + (C.b[1] - C.pb[1]) ** 2 + (C.b[2] - C.pb[2]) ** 2; if (da > JUMP_D * JUMP_D || db > JUMP_D * JUMP_D) C.primed = false; }
   if (!C.primed) { C.pa.set(C.a); C.pb.set(C.b); C.primed = true; }
   const k = dt > 0 ? 1 / dt : 0;
   for (let i = 0; i < 3; i++) { C.va[i] = (C.a[i] - C.pa[i]) * k; C.vb[i] = (C.b[i] - C.pb[i]) * k; }

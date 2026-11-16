@@ -915,7 +915,9 @@ export class BreaCloth {
       // (the tail: against the quiver only (its strip sits on the quiver's rim in a roll); its 0.052 m hard margin holds
       //  its cupped edges off her back and head)
       const tail = P.kind === 'tail';
-      P.vpMask = tail ? (this.bits.quiver || 0) : P.mask;
+      // (fix round 1: + the four torso segments: crouched from a fresh start the tail's strip went 2.5 mm into her back on
+      //  93 of 180 frames of the Node sweep's crouch (tail>torso) with every particle clear)
+      P.vpMask = tail ? ['quiver', 'torso0', 'torso1', 'torso2', 'torso3'].reduce((m, k) => m | (this.bits[k] || 0), 0) : P.mask;
       const mesh = tail ? this.meshes.wrap : this.meshes.outfit;
       const g = mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, pos = g.attributes.position;
       const bones = mesh.skeleton.bones, invs = mesh.skeleton.boneInverses, partOf = new Map();

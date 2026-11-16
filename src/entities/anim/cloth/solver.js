@@ -29,6 +29,8 @@ import { aeroForces } from './aero.js';
 const G = 9.81;
 /** (fix round 1) Asleep, the ride again once the root has moved RIDE_D (m) or turned acos(RIDE_COS) x 2 from its last. */
 const RIDE_D = 0.002, RIDE_COS = Math.cos(0.25 * Math.PI / 360);
+/** (fix round 1) The settle a piece gets after a jump, substeps (1 s at SUB_H): the reset's is RESET_SUBSTEPS (2 s). */
+const JUMP_SETTLE = 120;
 /** The most root vertical acceleration (m/s2) the carried share's gravity takes in one frame (a landing from 1.2 m: 290). */
 const AY_MAX = 400;
 /** Constraint, attachment and collider passes a substep (step 2: the colliders in every pass; with them only in the last,
@@ -253,7 +255,12 @@ export class ClothSystem {
     const ws = Math.sqrt(this.wind.x * this.wind.x + this.wind.z * this.wind.z);
     for (let pi = 0; pi < P.length; pi++) {
       const p = P[pi], r = p.root;
-      if (r.jumped) { this._seat(p); continue; }
+      // (fix round 1: a jump (a teleport, a frame's staging) seats the piece and SETTLES it in still air with the colliders
+      //  where they are now, JUMP_SETTLE substeps, as the reset does, so it hangs at rest from the first frame. At fc6c916,
+      //  seated on its bind place, the next frame met a prop capsule still 60 m behind (colliders.js JUMP_D, the cause):
+      //  the back panel swung up to 74-102 deg, twisted through -136 deg as it came down, and could sleep twisted (the
+      //  studio frames F09 and F10, filmed after F02's field))
+      if (r.jumped) { this._fresh(); this._seat(p); this._settle(p, t); continue; }
       // ---- sleep (round 5: the level frame, see ClothPiece.qe)
       const calm = ws < SLEEP_WIND && r.acc < SLEEP_ACC && r.vPrev[0] * r.vPrev[0] + r.vPrev[1] * r.vPrev[1] + r.vPrev[2] * r.vPrev[2] < SLEEP_RV * SLEEP_RV && Math.abs(r.yawD) < SLEEP_YAW * dt;
       if (p.asleep) {
@@ -969,6 +976,19 @@ export class ClothSystem {
     const per = 4, frames = Math.ceil(RESET_SUBSTEPS / per);
     for (let f = 0; f < frames; f++) for (const p of this.pieces) this._stepPiece(p, per * SUB_H, t, per, SUB_H);
     for (const p of this.pieces) { p.v.fill(0); p.xp.set(p.x); p.stillT = 0; }
+    this.wind.x = wx; this.wind.z = wz;
+  }
+
+  /** One piece seated after a jump, settled: its root held where it is now, the colliders' sweeps cleared, still air. */
+  _settle(p, t) {
+    const r = p.root, wx = this.wind.x, wz = this.wind.z;
+    this.wind.x = 0; this.wind.z = 0;
+    r.pp.set(r.p); r.pq.set(r.q); r.ps = r.s; r.vFed.fill(0); r.vPrev.fill(0); r.acc = 0; r.ay = 0;
+    for (const C of this.colliders) { C.pa.set(C.a); C.pb.set(C.b); C.va.fill(0); C.vb.fill(0); C.mv = 0; C.stamp++; }
+    p.contact.fill(0); p.pinch.fill(0); p.ct.fill(0); p.ro.fill(0);
+    const per = 4, frames = Math.ceil(JUMP_SETTLE / per);
+    for (let f = 0; f < frames; f++) this._stepPiece(p, per * SUB_H, t, per, SUB_H);
+    p.v.fill(0); p.xp.set(p.x); p.stillT = 0; p.qeOk = false;
     this.wind.x = wx; this.wind.z = wz;
   }
 
