@@ -464,7 +464,6 @@ export class CarryStow {
     const b = this.b;
     if (!b.handL || !b.upArmL) return 0;
     B.simT += dt;
-    this._bowRide(B);
     if (want !== B.was) this._bowRequest(want);
     B.was = want;
     this._bowCapStowed();
@@ -502,6 +501,8 @@ export class CarryStow {
     const yaw = this._bowYawAt(T) * (1 - Math.min(1, 2 * aimW));
     B.yaw = yaw;
     if (Math.abs(yaw) > 1e-5) { this._rot(b.spine2, Y_AXIS, yaw); if (b.neck1) this._rot(b.neck1, Y_AXIS, -yaw); }
+    // (the plans ride spine_02 as it stands now, the reach's turn in it: the keeper on her back turns with it)
+    this._bowRide(B);
     const palmOff = this._bowPalmOff();
     this._liveW(b.handL.bone, _bpQ);                // the hand as it stands this step (clip and earlier layers)
     const kitQ = _bpQ2, kitO = _bpC;
@@ -557,6 +558,10 @@ export class CarryStow {
         const kd = clamp((B.t - tGrip) / (tD - tGrip), 0, 1), kr = clamp((B.t - tD) / (tR - tD), 0, 1);
         // (the keeper slide, SLIDE_S from the grip; then the swing round her hip, `kp`, to the end of D)
         const ks = clamp((B.t - tGrip) / SLIDE_S, 0, 1), kp = clamp((B.t - tGrip - SLIDE_S) / Math.max(1e-3, tD - tGrip - SLIDE_S), 0, 1);
+        // (the swing round her hip waits until the fist HAS slid it out, not only the clock: crouched the palm's plan was
+        //  0.02 m short of the keeper's end when the turn began, and the bow's tip left it 74 deg off its axis, W5)
+        if (ks >= 1 && !B.slid && ((B.pp.distanceTo(B.palm) < 0.006 && (B.palmMiss ?? 9) < 0.01) || B.t >= tGrip + 3 * SLIDE_S)) B.slid = true;
+        const slid = !!B.slid;
         // the carry's line (combat's carry, its axis) and the bow turned onto it as the left fist will hold it there
         // (off the carry's own forearm, not the moving one: the live forearm turned with the bow and the target ran ahead)
         this._bowCarryAxis(_rvB, _caF.fromArray(CARRY_FA).normalize());
@@ -564,7 +569,7 @@ export class CarryStow {
         // about it as the carry's fist holds it (so the hand-over to that fist is still); the rate bound makes it even
         this._handOnStave(_rvB, 1, _rvQ);
         this._bowForHand(_rvQ, 1, _rvQ4);
-        if (ks < 1) _bpQ4.copy(B.qGrab); else _bpQ4.copy(_rvQ4);
+        if (!slid) _bpQ4.copy(B.qGrab); else _bpQ4.copy(_rvQ4);
         const maxA = RATE.bowDeg * Math.PI / 180 * dt;
         const a = B.q.angleTo(_bpQ4);
         if (a > maxA) B.q.slerp(_bpQ4, maxA / a); else B.q.copy(_bpQ4);
@@ -591,7 +596,7 @@ export class CarryStow {
           _rvS.addScaledVector(_rvC.set(0, -1, 0).applyQuaternion(B.qGrab), KEEPER_SLIDE * ks * ks * ks * (ks * (ks * 6 - 15) + 10));
           _rvT.set(LP[0], LP[1], LP[2]).multiplyScalar(B.scale).applyQuaternion(B.q).add(_rvO);   // ...at the carry
           this._bowPointNowPast(_bpA);
-          if (ks < 1) _rvU.copy(_rvS);
+          if (!slid) _rvU.copy(_rvS);
           else bez(_rvS, _bpA, _rvT, _sm(kp), _rvU);
           // the palm: the limb's point less the fist's palm-to-axis offset as the fist holds it this step
           _bpP.copy(_rvU).sub(_rvC.copy(GL.axis).sub(palmOff).applyQuaternion(B.hq));
@@ -922,7 +927,8 @@ export class CarryStow {
       _rhQ.copy(_rhQ2);
       want = B.rRel < 0.034 ? _rvU.copy(B.rp) : _rvU.copy(_rhB);
     }
-    stepToward(B.rp, want, PALM_STEP * dt * 60);
+    // (the way back to her swing at a little under the palm's bound: the fist turns back as it goes, W3's wrist)
+    stepToward(B.rp, want, (B.rOn === 2 ? PALM_STEP_E : PALM_STEP) * dt * 60);
     const a = B.rq.angleTo(_rhQ), mx = HAND_TURN * dt * 60;
     if (a > mx) B.rq.slerp(_rhQ, mx / a); else B.rq.copy(_rhQ);
     const cr = CURL.rate * dt;
@@ -971,6 +977,8 @@ export class CarryStow {
       _rdD.copy(_rdQ).multiply(_rdQ2.copy(B.rideQ).invert());
       if (B.mode) B.pp.sub(B.rideP).applyQuaternion(_rdD).add(_rdP);
       if (B.rOn) B.rp.sub(B.rideP).applyQuaternion(_rdD).add(_rdP);
+      // (the keeper's line the reverse fist slides the bow out along rides her back too, until the bow is clear of it)
+      if (B.mode === 1 && B.owner === 'handL' && B.pose === 'rev') { B.org0.sub(B.rideP).applyQuaternion(_rdD).add(_rdP); B.qGrab.premultiply(_rdD); }
     }
     if (!B.rideP) { B.rideP = new THREE.Vector3(); B.rideQ = new THREE.Quaternion(); }
     B.rideP.copy(_rdP); B.rideQ.copy(_rdQ); B.rideOk = true;
@@ -1062,7 +1070,7 @@ export class CarryStow {
       B.t = inHand ? phaseEnd(B.T, 'R') : 0;
       if (inHand) { B.qGrab.copy(B.q); B.hqRevOk = false; }
       else { B.hqRevOk = false; B.gripKind = null; }
-      B.rHeld = false; B.rWait = 0; B.lWait = 0; B.orgROk = false; B.revPalmOk = false; B.qDrawnR = null; B.orgDrawnR = null;
+      B.rHeld = false; B.rWait = 0; B.lWait = 0; B.orgROk = false; B.revPalmOk = false; B.qDrawnR = null; B.orgDrawnR = null; B.slid = inHand;
       if (!inHand) B.curl = Math.min(B.curl, CURL.open + 0.2);
     } else {
       // the lance asked for (key 2) is the player's request; the 8 s timer is the game's
@@ -1145,6 +1153,19 @@ export class CarryStow {
   bowRightBusy() {
     const B = this._bp;
     return !!B && B.rOn === 1;
+  }
+
+  /**
+   * M1a weapons round 3 (W8; A32's ramp from stowed): does the nock's clock wait this step? While the aim's gate is shut,
+   * and, through a raise that waited on the unstow, until the quiver beat that started with it is `nockTime` from its
+   * end: the arrow reaches the string as the hand brings it back there (combat started the draw with the hand still on
+   * its way back from the quiver: the string hook 0.071 m off the nock at draw 0.07, A32 at 53e8186).
+   */
+  bowNockHold(nockTime = 0.42) {
+    if (this.bowAimGate() < 1) return true;
+    if (!this._gateRaise) return false;
+    const qT = this.T?.armFlow?.quiverT ?? 0.34;
+    return (this._quiverT ?? 1) < 1 - nockTime / qT;
   }
 
   /** Is the bow in her hand this step (combat shows its own bow on the hand node while true)? Null: no sequence yet. */

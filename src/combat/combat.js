@@ -1012,7 +1012,7 @@ export class Combat {
      * nock's clock starts when the animator's aim gate opens (the bow in her hand at the end of its unstow, carryStow
      * `bowAimGate`), as the quiver beat does; from the carry it is open, as before */
     const anG = this.ctx.player?.animator;
-    if (anG?.bowAimGate && anG.bowAimGate() < 1) this._nockT = nockTime;
+    if (anG?.bowNockHold ? anG.bowNockHold(nockTime) : (anG?.bowAimGate && anG.bowAimGate() < 1)) this._nockT = nockTime;
     this._nockT = Math.max(0, this._nockT - realDt);
     this.nockLanded = this._nockT <= 0;
     this.nockProgress = nockTime <= 0 ? 1 : 1 - this._nockT / nockTime;

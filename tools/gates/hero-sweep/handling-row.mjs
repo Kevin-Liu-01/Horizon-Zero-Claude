@@ -454,18 +454,23 @@ export function gradeCase(kind, L, meta = {}) {
  * The ruling: "the 0.06 m per step bar applies to a jump against the sequence's own planned motion (the rendered wrist
  * against where the authored path puts it that step), not to the authored path's own speed". `ref` is the same sequence
  * run UNINTERRUPTED (the authored path, step for step; handling-bench.mjs records it in its own process). The jump at a
- * step is how far either wrist's offset from the authored path changes in that step, |(R[i+1] - A[i+1]) - (R[i] - A[i])|:
- * across the interrupt step (k to k + 1) and over the 4 steps after it (no blend shorter than 4 steps: a cut shows as one
- * step's jump inside them). Swing steps are left out after the interrupt step, as before. The raw per-step wrist travel
- * (the old reading) is reported beside it. Without `ref` the old reading is graded.
+ * step is how far either wrist's motion that step departs from an authored path's motion that step: the sequence's own
+ * (`ref`, the same sequence uninterrupted) or the interrupt's own (`iref`, the same interrupt from the case's start state
+ * with the sequence never asked for), whichever the wrist follows more closely, |(R[i+1] - R[i]) - (P[j+1] - P[j])|:
+ * across the interrupt step (k to k + 1) and over the 4 steps after it (no blend shorter than 4 steps: a cut between the
+ * two shows as one step's jump inside them). Swing steps are left out after the interrupt step, as before. The raw
+ * per-step wrist travel (the old reading) is reported beside it. Without `ref` the old reading is graded.
  */
-export function gradeInterrupt(L, k, g, ref = null) {
+export function gradeInterrupt(L, k, g, ref = null, iref = null) {
   const fails = [];
   const keep = (g.fails || []).filter((f) => /^W2 |^W6 /.test(f));
   for (const f of keep) fails.push(f);
   let across = 0, after = 0, jA = 0, jAf = 0;
-  const off = (i, s) => (ref && ref[i] ? sub(L[i][s], ref[i][s]) : [0, 0, 0]);
-  const jump = (i, s) => len(sub(off(i + 1, s), off(i, s)));
+  /* the step's jump against an authored path P: |(R[i+1] - R[i]) - (P[i+1] - P[i])|; P the uninterrupted sequence (`ref`,
+   * the same steps) or the interrupt's own motion from the case's start (`iref`, its steps from the injection). The
+   * smaller of the two: the rendered wrist following either authored path is not a jump; leaving both is */
+  const dJ = (P, i, j, s) => { const a = P[j], b2 = P[j + 1]; if (!a || !b2) return 9; return len(sub(sub(L[i + 1][s], L[i][s]), sub(b2[s], a[s]))); };
+  const jump = (i, s) => Math.min(ref ? dJ(ref, i, i, s) : 9, iref ? dJ(iref, i, i - k, s) : 9);
   const hasRef = !!(ref && ref.length > k + 1);
   for (const s of ['wristL', 'wristR']) {
     if (L[k + 1] && L[k]) { across = Math.max(across, dist(L[k][s], L[k + 1][s])); if (hasRef) jA = Math.max(jA, jump(k, s)); }

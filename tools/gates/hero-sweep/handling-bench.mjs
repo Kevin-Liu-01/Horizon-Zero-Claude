@@ -80,7 +80,15 @@ if (!CASE) {
       const steps = n || Math.round(ref.r?.len ?? 30);
       const refF = path.join(tmp, `ref_${sq}.json`);
       writeFileSync(refF, JSON.stringify((ref.log || []).map((r) => ({ t: r.t, wristL: r.wristL, wristR: r.wristR }))));
-      for (const kind of W10_KINDS) for (let k = 0; k <= steps; k++) { keys.push([sq, kind, k]); tasks.push(() => runChild(['--case', sq, '--inject', `${kind}@${k}`, '--ref', refF])); }
+      /* (...and the interrupt's own authored motion: the same interrupt from the case's start state with the sequence never
+       *  asked for, injected at its step 0; a jump is graded against whichever of the two authored paths the rendered
+       *  wrist follows more closely that step, so neither path's own speed counts, and a cut between them does) */
+      for (const kind of W10_KINDS) {
+        const iref = await runChild(['--case', sq, '--w10-iref', kind]);
+        const irefF = path.join(tmp, `iref_${sq}_${kind}.json`);
+        writeFileSync(irefF, JSON.stringify((iref.log || []).map((r) => ({ t: r.t, wristL: r.wristL, wristR: r.wristR }))));
+        for (let k = 0; k <= steps; k++) { keys.push([sq, kind, k]); tasks.push(() => runChild(['--case', sq, '--inject', `${kind}@${k}`, '--ref', refF, '--iref', irefF])); }
+      }
     }
     console.log(`W10: ${tasks.length} runs, ${jobs} at once`);
     const R10 = await pool(tasks);
@@ -177,7 +185,7 @@ function combatStep(dt) {
   else {
     if (!emu.wasAim) { emu.nockT = 0.42; emu.wasAim = true; }
     // (M1a weapons round 3: combat holds the nock's clock while the animator's aim gate is shut, `bowAimGate`)
-    if (an.bowAimGate && an.bowAimGate() < 1) emu.nockT = 0.42;
+    if (an.bowNockHold ? an.bowNockHold(0.42) : (an.bowAimGate && an.bowAimGate() < 1)) emu.nockT = 0.42;
     emu.nockT = Math.max(0, emu.nockT - dt); emu.nockLanded = emu.nockT <= 0;
   }
   C.nockLanded = emu.nockLanded; C.nockProgress = p.aiming ? 1 - emu.nockT / 0.42 : 0;
@@ -427,7 +435,8 @@ CASES.swap12Jog.w9 = 'lance'; CASES.swap21Jog.w9 = 'bow';
 
 /* ---- W10: an interrupt injected at step k of a sequence (`--inject kind@k`) */
 const OPP = { bowUnstow: () => { emu.holsterT = 0; }, bowStowTimer: () => { emu.holsterT = 8; }, lanceDraw: () => R.melee.holsterLance(), lanceStowAsk: () => R.melee.drawLance(), lanceStowTimer: () => R.melee.drawLance(), swap12: key1, swap21: key2 };
-const inj = flag('--inject') ? { kind: flag('--inject').split('@')[0], at: Number(flag('--inject').split('@')[1]) } : null;
+const IREF = flag('--w10-iref');
+const inj = flag('--inject') ? { kind: flag('--inject').split('@')[0], at: Number(flag('--inject').split('@')[1]) } : IREF ? { kind: IREF, at: 0 } : null;
 let rollK = -1;
 function inject(i) {
   if (!inj) return;
@@ -456,7 +465,7 @@ c.pre();
 if (NEW && an._bp && typeof an._bowKitInit === 'function' && (an._bp.mode ?? 0) === 0 && an._bp.owner !== 'handL') { an._bowKitInit(); if (an._bp.kit) KITF = { q: an._bp.kitQ.clone(), o: an._bp.kitO.clone(), s: an._bp.kitS }; }
 const spd = c.speed ?? (c.jog ? SPEEDS.jog : 0);
 M.begin(CASE);
-c.go();
+if (!IREF) c.go();
 const L = [];
 const N = Math.round((c.secs + (inj || args.includes('--w10-ref') ? 0.6 : 0)) * 60);
 for (let i = 0; i < N; i++) {
@@ -477,7 +486,7 @@ if (flag('--w10-len') !== null || args.includes('--w10-len')) {
   const w = g.W7 || {}; const t = w.lanceReadyS ?? w.bowReadyS ?? w.bowStowS ?? w.lanceStowS ?? c.secs;
   res.len = Math.round(Math.min(c.secs, t) * 60);
 }
-if (inj) res.w10 = gradeInterrupt(L, inj.at, g, flag('--ref') ? JSON.parse(readFileSync(flag('--ref'), 'utf8')) : null);
+if (inj && !IREF) res.w10 = gradeInterrupt(L, inj.at, g, flag('--ref') ? JSON.parse(readFileSync(flag('--ref'), 'utf8')) : null, flag('--iref') ? JSON.parse(readFileSync(flag('--iref'), 'utf8')) : null);
 if (flag('--log-to')) writeFileSync(flag('--log-to'), JSON.stringify(L));
 console.log(`@@RESULT ${JSON.stringify(res)}`);
 process.exit(0);
