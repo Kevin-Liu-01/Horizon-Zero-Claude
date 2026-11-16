@@ -259,7 +259,7 @@ export class SliceVerbs {
     if (!S || !(S.w > 0.002)) return;
     const w = smooth(S.w);
     if (S.V.prop === 'rake') this._rakeLayer(S, w);
-    else if (S.V.left && S.t >= S.V.left * S.len && w > 0.5) { this._verbProps(S.V.prop); this._verbPropShow(S.V.leftProp); }
+    else if (S.V.left && S.t >= S.V.left * S.len && w > 0.5) { this._verbProps(S.V.prop); this._verbPropShow(S.V.leftProp); this._caneUp(); }
     else this._verbProps(S.V.prop);
     if (S.V.prop !== 'rake') {
       this._curlFingers(this._fingerR, 1.15 * w, 0.8 * w);
@@ -373,6 +373,20 @@ export class SliceVerbs {
     return m;
   }
 
+  /**
+   * The gathered cane stands up out of the left fist (fix round 2: along the fist's axis it ran level, through her body,
+   * like a spear): its stalks turned every frame to her up, leaning a little ahead and out to her left (char space).
+   */
+  _caneUp() {
+    const c = this._vb?.props?.cane, hand = this.bones.hand_l;
+    if (!c || !hand) return;
+    hand.getWorldQuaternion(_q);
+    _q.invert();
+    this.model.getWorldQuaternion(_q2);
+    _d2.set(0.15, 0.93, 0.33).normalize().applyQuaternion(_q2).applyQuaternion(_q);
+    c.quaternion.setFromUnitVectors(_up, _d2);
+  }
+
   /** Show one more prop (after `_verbProps`). */
   _verbPropShow(kind) { const m = this._verbPropMesh(kind); if (m) m.visible = true; }
 
@@ -406,4 +420,4 @@ export class SliceVerbs {
   }
 }
 
-const _p2 = new THREE.Vector3();
+const _p2 = new THREE.Vector3(), _d2 = new THREE.Vector3(), _q2 = new THREE.Quaternion();

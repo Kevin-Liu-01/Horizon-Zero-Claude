@@ -45,7 +45,12 @@ async function verbStills() {
     return grab();
   };
   const home = { x: p.position.x, z: p.position.z, heading: p.heading };
-  const standAt = async (x, z, heading) => { p.position.set(x, 0, z); p.velocity?.set(0, 0, 0); p._snapToGround?.(); p.heading = heading; await sleep(500); };
+  // (fix round 2) the staged frame holds her on its own heading every tick (tools/frames/page.mjs, the lens update): at
+  // 85a4b8c the kindle was filmed with her back to the bowl. While a verb is staged elsewhere its heading is held instead
+  let want = null;
+  const uc0 = p._updateCamera;
+  p._updateCamera = function (...a) { const r = uc0.apply(this, a); if (want != null) p.heading = want; return r; };
+  const standAt = async (x, z, heading) => { p.position.set(x, 0, z); p.velocity?.set(0, 0, 0); p._snapToGround?.(); p.heading = heading; want = heading; await sleep(500); };
   /** the cane: the nearest carrizo bed cell to the slice's cut-cane spot whose edge she can stand at, facing in */
   const caneSpot = () => {
     const RC = C.terrain?.reedCover, W = C.water;
@@ -84,7 +89,7 @@ async function verbStills() {
           face = { x: o.x, z: o.z };
           stage = { at: 'home Brazier bowl', dBowlM: +Math.hypot(o.x - x, o.z - z).toFixed(2) };
         } else stage = { at: 'F14 crust', error: 'no home Brazier' };
-      } else if (Math.hypot(p.position.x - home.x, p.position.z - home.z) > 0.5) await standAt(home.x, home.z, home.heading);
+      } else if (Math.hypot(p.position.x - home.x, p.position.z - home.z) > 0.5) { await standAt(home.x, home.z, home.heading); want = null; }
       // stand still a moment, then the verb
       await sleep(400);
       const len = an.playVerb(verb, face ? { face } : {});
@@ -93,7 +98,7 @@ async function verbStills() {
       for (let i = 0; i < times.length; i++) {
         const w0 = performance.now();
         while ((an.verbInfo()?.t ?? 0) < times[i] && performance.now() - w0 < 8000) await new Promise((res) => requestAnimationFrame(res));
-        out.info[verb].at.push(JSON.parse(JSON.stringify(an.verbInfo())));
+        out.info[verb].at.push({ ...JSON.parse(JSON.stringify(an.verbInfo())), heading: +p.heading.toFixed(3), facing: face ? +(Math.atan2(face.x - p.position.x, face.z - p.position.z) - p.heading).toFixed(3) : null });
         if (verb === 'rake') {
           // the head on the ground about 1.6 m ahead: both lenses 3.0 m out, the frame's centre 0.8 m ahead of her
           out.stills[`${verb}-${i}-front`] = shoot(-40, 3.0, 1.0, 0.55, 46, 0.8);
@@ -107,6 +112,7 @@ async function verbStills() {
       while (an.verbInfo()?.w > 0 && performance.now() - w1 < 8000) await new Promise((res) => requestAnimationFrame(res));
     }
     // the Alidade raised: a lens at her face, front-right
+    want = null;
     C.sighting?.toggle?.(true);
     await sleep(1200);
     out.stills['alidade-front'] = shoot(-30, 1.3, 1.55, 1.5, 34);
@@ -129,6 +135,7 @@ async function verbStills() {
   } catch (e) {
     out.error = String(e?.stack || e).slice(0, 600);
   } finally {
+    p._updateCamera = uc0;
     cam.position.copy(c0); cam.quaternion.copy(q0); cam.fov = fov0; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     E.requestTimeScale('studio', ts0 ?? 0);
   }
