@@ -57,6 +57,13 @@ const RUN_ONLY = args.includes('--run-only');  // the run and its save rows only
 // --probe <served path> (round 2): a page module whose probe(frame) runs after each frame's shot (as film.mjs --probe),
 // so the reed rows (tools/gates/systems/reed-probe-page.mjs on F31 and F03) share this one Chrome session
 const PROBE = flag('--probe');
+// fix round: --wear <armour id> [--wear-at <frame id>]: she puts it on (as film.mjs --wear) before that frame (the first
+// if no --wear-at), so the frames before it film her as the run starts her; --no-refusal skips the staged brazier-refusal
+// row; --kit-only <ids> runs only those kit rows (a fix round re-runs only the failed rows)
+const WEAR = flag('--wear');
+const WEAR_AT = flag('--wear-at');
+const NO_REFUSAL = args.includes('--no-refusal');
+const KIT_ONLY = flag('--kit-only') ? new Set(flag('--kit-only').split(',').map((x) => x.trim())) : null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[slice-hour ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -96,7 +103,7 @@ const probe = () => {
     bzForecast: busy ? [...document.querySelectorAll('#cal-sys .sys-row small')].map((r) => r.textContent) : [],
     note: document.querySelector('.cal-track-obj')?.textContent ?? null,
     sighting: !!C?.sighting?.on, report: s?.report?.(), salt: C?.inventory?.count?.('metal-shards') ?? null,
-    hp: p ? Math.round(p.health) : null, ammo: C?.combat?.ammo?.hunter ?? null, barbed: C?.combat?.ammo?.hardpoint ?? null,
+    hp: p ? Math.round(p.health) : null, gourd: p ? Math.round(p.gourd ?? 0) : null, ammo: C?.combat?.ammo?.hunter ?? null, barbed: C?.combat?.ammo?.hardpoint ?? null,
     ammoId: C?.combat?.activeWeapon?.activeAmmo ?? null, py: p ? p.position.y : null,
     deathCard: !!document.querySelector('.mn-death.show'),
   };
@@ -179,7 +186,7 @@ async function solveShot(mi, part, tolDeg) {
   dts.sort((a, b) => a - b);
   const dt = dts.length ? dts[dts.length >> 1] : 1 / 60;
   const lat = 2 * (span > 0 ? span / 8 : 1 / 60);
-  const want = part === 'vial' ? 'weak:vial' : part === 'bob' ? 'bob' : null;
+  const want = part === 'vial' ? 'weak:vial' : part === 'bob' ? 'bob' : part === 'lamp' ? 'weak:lamp' : null;
   const aims = [];
   if (part === 'vial' && m._vialWp?.obj) {
     const w = m._vialWp, c = w.obj.getWorldPosition(new V());
@@ -192,7 +199,44 @@ async function solveShot(mi, part, tolDeg) {
     const c = new V(); let n = 0;
     m._bob.mesh.traverse((o) => { if (o.isMesh && o.geometry) { if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); c.add(o.geometry.boundingSphere.center.clone().applyMatrix4(o.matrixWorld)); n++; } });
     if (n) c.multiplyScalar(1 / n); else m._bob.mesh.getWorldPosition(c);
-    for (const up of [0, 0.07, 0.14]) aims.push(c.clone().setY(c.y + up));
+    // M1b fix round: points ON the bob a flight from her nock reaches first (bab1f0c's kit row: the Barbed arrow at the
+    // bob's middle, and 7 cm up it, met the ground, then nothing): its vertices drawn 35 % in toward the middle, each
+    // flown on the game's gravity from the nock (the ground march and the hulls' exact sweep, as scanStands does),
+    // the clear ones nearest the middle first; the middle and its upper side after them
+    const HH = C.hitHulls, T = C.terrain, nk = new V();
+    try { cb.bow.getNockWorld(1, nk); } catch { nk.copy(C.player.position); nk.y += 1.45; }
+    const cand = [];
+    m._bob.mesh.updateMatrixWorld(true);
+    m._bob.mesh.traverse((o) => {
+      const pa = o.isMesh && o.geometry?.attributes?.position;
+      if (!pa) return;
+      const step = Math.max(1, Math.floor(pa.count / 48));
+      for (let i = 0; i < pa.count; i += step) {
+        const q = new V().fromBufferAttribute(pa, i);
+        if (o.isSkinnedMesh && o.applyBoneTransform) o.applyBoneTransform(i, q);
+        q.applyMatrix4(o.matrixWorld);
+        cand.push(q.lerp(c, 0.35));
+      }
+    });
+    const ray = { origin: new V(), direction: new V() }, a = new V(), b = new V(), g = cb.arrows?.gravity ?? 9.8;
+    const clearTo = (aim) => {
+      const L = nk.distanceTo(aim), tf = L / 56, NS = 12;
+      a.copy(nk);
+      for (let i = 1; i <= NS; i++) {
+        const u = i / NS, t = u * tf;
+        b.lerpVectors(nk, aim, u); b.y += 0.5 * g * t * (tf - t);
+        if (i < NS && b.y < T.getHeight(b.x, b.z)) return false;
+        ray.origin.copy(a); ray.direction.subVectors(b, a);
+        const sl = ray.direction.length(); ray.direction.multiplyScalar(1 / sl);
+        const h = HH?.raycast?.(ray, { far: sl + (i === NS ? 0.08 : 0), exact: true });
+        if (h && h.hit) return h.machine === m && /bob/i.test(h.name || h.part?.name || '');
+        a.copy(b);
+      }
+      return false;
+    };
+    const ok = cand.filter((q) => clearTo(q)).sort((p, q) => p.distanceTo(c) - q.distanceTo(c));
+    for (const q of ok.slice(0, 3)) aims.push(q);
+    for (const up of [0, 0.07]) aims.push(c.clone().setY(c.y + up));
   } else {
     const o = part === 'lamp' ? (m._lampWp?.obj ?? m.weakPoints?.find((w) => w.name === 'lamp')?.obj) : part === 'bob' ? (m._bob?.attached !== false ? m._bob?.mesh : null) : null;
     aims.push(o ? o.getWorldPosition(new V()) : new V(m.position.x, m.position.y + 0.9, m.position.z));
@@ -439,6 +483,30 @@ async function playScene(page, K, maxN = 40) {
 
 async function holdE(page, K, ms = 650) { await K.down('KeyE'); await sleep(ms); await K.up('KeyE'); await sleep(220); }
 
+/**
+ * M1b fix round: DRINK, as a player does (hold Q: the gourd into health, 16 hp/s, player.js). At 6fa199d she came off
+ * the Peg line on 14 hp with 60 in the gourd and walked into the ditch's fight on it (topple: died); at 9cae8d6 she
+ * died at the line with the gourd full. Held until `to` hp, the gourd empty, or `maxMs`.
+ */
+const drinks = [];
+async function drink(page, K, to = 90, maxMs = 6000) {
+  let s = await page.evaluate(probe);
+  if (s.hp == null || s.hp >= to || (s.gourd ?? 0) < 1) return null;
+  const r = { stage: s.stage, hp0: s.hp, gourd0: s.gourd };
+  const t0 = Date.now();
+  await K.down('KeyQ');
+  try {
+    while (Date.now() - t0 < maxMs) {
+      await sleep(200);
+      s = await page.evaluate(probe);
+      if (s.state === 'dead' || s.deathCard || s.hp >= to || (s.gourd ?? 0) < 1) break;
+    }
+  } finally { await K.up('KeyQ'); }
+  Object.assign(r, { hp1: s.hp, gourd1: s.gourd, ms: Date.now() - t0 });
+  drinks.push(r);
+  return r;
+}
+
 let lampsFight = null;
 const shots = [];
 
@@ -457,7 +525,7 @@ async function readyBow(page, K) {
  * and backs out when one closes inside 9 m. Every shot: RMB held, the look steered onto the part, Shift (Steady),
  * LMB drawn for 1.0 s with the look kept on the part, then loosed.
  */
-async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000, tolDeg = 0.35, reach = 70, near = null, nearR = 0 } = {}) {
+async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000, tolDeg = 0.35, reach = 70, near = null, nearR = 0, untilDown = false, whileDown = false, breakOffHp = 0 } = {}) {
   const t0 = Date.now();
   const stage0 = (await page.evaluate(probe)).stage;
   let fired = 0, aimed = false, blocked = 0, stand0 = null, ditchScans = null;
@@ -482,6 +550,13 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       const T = (await page.evaluate(targetsOf, kind, part)).filter((t) => t.d < (all ? 220 : reach) && (!near || Math.hypot(t.x - near.x, t.z - near.z) <= nearR));
       if (!T.length) return { ok: !!all, why: all ? null : `no live ${kind} within ${reach} m`, fired };
       const t = T[0];
+      // M1b fix round: the pry beat's two halves (the vial until it is down; the bob while it is down)
+      if (untilDown && t.down) { await release(); return { ok: true, fired, down: true, ...(scans.length ? { scans } : {}) }; }
+      if (whileDown && !t.down) { await release(); return { ok: false, why: `${kind} stood up`, fired, stoodUp: true }; }
+      // M1b fix round: drink between shots (never in the 4 s a Plumb is down: they are the Pry's), and on the Peg line
+      // break off and cross when the gourd is dry and the staff low (the lamps are the stage's optional count)
+      if (!whileDown && s.hp != null && s.hp < 55 && (s.gourd ?? 0) >= 1) { await release(); await drink(page, K, 92); continue; }
+      if (breakOffHp && s.hp != null && s.hp < breakOffHp && (s.gourd ?? 0) < 1) { await release(); return { ok: true, fired, brokeOff: s.hp, ...(scans.length ? { scans } : {}) }; }
       // the vial (closing round): she goes to a stand the scan finds open (scanStands), not round a fixed circle
       if (part === 'vial' && !stand0) {
         await release();
@@ -538,11 +613,14 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       // the draw: the look solved onto the part for the arrow the game would loose now (solveShot), re-solved until the
       // draw is full and the time is up (the nock moves with the draw)
       let sol = null;
-      while (Date.now() - tD < drawMs || (sol && sol.ds < 0.99 && Date.now() - tD < drawMs + 800)) {
+      // M1b fix round: a lamp shot is held (drawn, the look re-solved) up to 1.5 s more while the flight the game would
+      // loose meets something else first (6fa199d: 9 of 27 Peg shots were loosed on a flight the runner itself read as
+      // 'ground' or the Peg's pelvis; 6 Pegs took 27 arrows)
+      while (Date.now() - tD < drawMs || (sol && sol.ds < 0.99 && Date.now() - tD < drawMs + 800) || (part === 'lamp' && sol && !sol.clear && Date.now() - tD < drawMs + 1500)) {
         sol = await page.evaluate(solveShot, t.i, part, tolDeg);
         if (!sol) break;
       }
-      if (sol && !sol.clear && part !== 'bob') {
+      if (sol && !sol.clear && part !== 'bob' && part !== 'lamp') {
         // every point along the part is masked from here by something else: step round it (20 deg) and draw again
         await up('left'); await release();
         blocked++;
@@ -601,7 +679,9 @@ async function beat(page, K, s) {
       // swarms of three 53 m apart now (game/runtime.js), and at 9cae8d6 walking the whole 178 m line to each swarm in
       // turn killed her (22 arrows, 100 -> 0)
       const mid = await page.evaluate(() => window.__CTX__.systemsGame.A.transect);
-      const f = await fight(page, K, 'peg', 'lamp', null, { stand: 18, maxS: 120, all: true, near: mid, nearR: 40 });
+      // fix round: she drinks under 55 hp between shots, and breaks off to cross under 30 hp with the gourd dry
+      await drink(page, K, 95);
+      const f = await fight(page, K, 'peg', 'lamp', null, { stand: 18, maxS: 120, all: true, near: mid, nearR: 40, breakOffHp: 30 });
       if (f.why === 'died') return f;
       lampsFight = f;
     }
@@ -627,6 +707,8 @@ async function beat(page, K, s) {
           if (!leg0.ok) return { ...leg0, why: `run down to 45 m from the station: ${leg0.why}` };
         }
       }
+      // fix round: a full staff before the stalk (6fa199d walked into the ditch's fight on 14 hp and died there)
+      await drink(page, K, 98);
       const crouched = await page.evaluate(() => !!window.__CTX__.player.crouching);
       if (!crouched) await K.tap('KeyC');
       // what she walks in on the stalk (M1.6e reed cover): frames hidden by the rule, the cover kinds under her, and the
@@ -686,8 +768,25 @@ async function beat(page, K, s) {
     if (st === 'pry') {
       const near = await page.evaluate(() => !!window.__CTX__.combat?.melee?.pryTarget);
       if (near) { await holdE(page, K, 450); await sleep(900); if ((await page.evaluate(probe)).stage !== st) return { ok: true, how: 'lance' }; }
-      const f = await fight(page, K, 'plumb', 'bob', () => 'pry', { stand: 28, maxS: 90, ammo: 'hardpoint', backOut: false, drawMs: 760, tolDeg: 0.1, reach: 220 });
-      return { ...f, how: 'barbed' };
+      // fix round: up to three cycles of [the vial with Reed arrows until it is down] -> [Barbed on the bob while it is
+      // down]: a Plumb that stands up again before the bob comes off is toppled again, as a player would (at bab1f0c's
+      // kit row two Barbed arrows missed the lying bob and it stood up; the live beat then shot Barbed at a standing bob)
+      const cycles = [];
+      for (let cy = 0; cy < 3; cy++) {
+        const T0 = (await page.evaluate(targetsOf, 'plumb', 'vial')).filter((t) => t.d < 220);
+        if (!T0.length) return { ok: false, why: 'no live plumb to pry', cycles, how: 'barbed' };
+        if (!T0[0].down) {
+          const v = await fight(page, K, 'plumb', 'vial', () => 'pry', { stand: 28, maxS: 80, tolDeg: 0.08, reach: 220, untilDown: true });
+          cycles.push({ vial: { ok: v.ok, fired: v.fired, why: v.why ?? null } });
+          if (v.why === 'died') return { ...v, cycles, how: 'barbed' };
+          if (!v.down) { if ((await page.evaluate(probe)).stage !== st) return { ok: true, cycles, how: 'barbed' }; continue; }
+        }
+        const f = await fight(page, K, 'plumb', 'bob', () => 'pry', { stand: 28, maxS: 30, ammo: 'hardpoint', backOut: false, drawMs: 760, tolDeg: 0.1, reach: 220, whileDown: true });
+        cycles.push({ barbed: { ok: f.ok, fired: f.fired, why: f.why ?? null } });
+        if (f.why === 'died') return { ...f, cycles, how: 'barbed' };
+        if ((await page.evaluate(probe)).stage !== st) return { ok: true, cycles, how: 'barbed' };
+      }
+      return { ok: false, why: 'the bob still on after three topples', cycles, how: 'barbed' };
     }
     return { ok: false, why: `unknown kill beat ${st}` };
   }
@@ -808,6 +907,18 @@ try {
     for (const id of FRAMES) {
       const f = set.frames.find((x) => x.id === id);
       if (!f) { report.frames.push({ id, ok: false, error: 'not in the Frame Set' }); continue; }
+      if (WEAR && !report.wear && (!WEAR_AT || WEAR_AT === id)) {
+        report.wear = await page.evaluate(async (wid) => {
+          const C = window.__CTX__, L = C?.player?.hero?.loadout;
+          if (!L?.equipArmor) return { error: 'no loadout' };
+          if (C.systemsGame && wid === 'pan-2') C.systemsGame.rung = 'scout';
+          const info = await L.equipArmor(wid);
+          C.player.hero.update?.(0);
+          return { at: null, armorId: L.armorId, perk: L.perk, row: info?.row ?? null, flagDuration: C.machines?.perception?.flagDuration ?? null };
+        }, WEAR).catch((e) => ({ error: String(e?.message || e).slice(0, 200) }));
+        report.wear.at = id;
+        log(`wearing ${WEAR} from ${id}: ${JSON.stringify(report.wear)}`);
+      }
       try {
         const staged = await page.evaluate(stageFrame, f, { settleMs: 2600 });
         const buf = await page.screenshot({ type: 'png' });
@@ -824,7 +935,7 @@ try {
       } catch (e) { report.frames.push({ id, ok: false, error: String(e?.message || e).slice(0, 300) }); }
     }
     /* brazier-refusal, STAGED (see the header): a real Plumb at 25 m and 80 m in three AI states */
-    try {
+    if (!NO_REFUSAL) try {
       const prep = await page.evaluate(async () => {
         const C = window.__CTX__, B = C.braziers, home = B.byId('cistern');
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -907,7 +1018,7 @@ try {
     if (KIT) {
       try {
         await page.evaluate(`window.__aimPoint = ${aimPoint.toString()};`);
-        report.rows.kit = await runKit(page, { sleep, log });
+        report.rows.kit = await runKit(page, { sleep, log, only: KIT_ONLY });
       } catch (e) { report.rows.kit = { error: String(e?.message || e).slice(0, 300) }; }
     }
     await page.close();
@@ -969,7 +1080,11 @@ try {
     if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) {
       // played as a player plays it: the death card, then RETURN TO THE LAST BRAZIER (the one death rule, M1.6f; BIBLE 13's two stations, M1.6g2)
       deaths++;
-      const pre = await page.evaluate(() => { const C = window.__CTX__; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), lastRest: C.braziers.lastRest, salt: C.inventory.count('metal-shards') }; });
+      // fix round (the judge at 24419e9: the row did not check the satchel): the newest record (BIBLE 13: "the world and
+      // satchel as of the newest record"), read before the card is answered, is what she must stand up with
+      const pre = await page.evaluate(() => { const C = window.__CTX__, S = C.progression.saves.store, n = S.continueSlot(), rec = n ? S.latest(n) : null;
+        return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), lastRest: C.braziers.lastRest, salt: C.inventory.count('metal-shards'), gourd: Math.round(C.player.gourd ?? 0),
+          record: rec ? { kind: rec.kind, reason: rec.reason, salt: rec.satchel?.['metal-shards'] ?? 0, satchel: rec.satchel, gourd: Math.round(rec.vitals?.gourd ?? 0), ammo: rec.ammo } : null }; });
       await page.waitForFunction(() => !!document.querySelector('.mn-death.show .mn-death-opt'), { timeout: 15000, polling: 100 }).catch(() => {});
       await sleep(600);
       const card = await page.evaluate(() => ({ title: document.querySelector('.mn-death-title')?.textContent ?? null, opts: [...document.querySelectorAll('.mn-death-opt b')].map((b) => b.textContent) }));
@@ -978,9 +1093,14 @@ try {
       const clicked = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-death-opt')].find((x) => /RETURN TO THE LAST BRAZIER/.test(x.textContent)); if (!b) return false; b.click(); return true; });
       await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 20000, polling: 100 }).catch(() => {});
       await sleep(1500);
-      const post = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position, R = C.braziers.lastRest; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), state: C.state, hp: Math.round(C.player.health), salt: C.inventory.count('metal-shards'), fromRest: R ? +Math.hypot(P.x - R.x, P.z - R.z).toFixed(2) : null, rest: R?.id ?? null }; });
-      const row = { death: deaths, at: s.stage, card, clicked, pre, post, cardShot, shot: await shot(page, `d${deaths}-stood-up`),
-        pass: clicked && post.state === 'playing' && post.idx === pre.idx && post.fromRest != null && post.fromRest < 3 };
+      const post = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position, R = C.braziers.lastRest; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), state: C.state, hp: Math.round(C.player.health), salt: C.inventory.count('metal-shards'), gourd: Math.round(C.player.gourd ?? 0),
+        satchel: Object.fromEntries(Object.keys(C.progression.saves.store.latest(C.progression.saves.store.continueSlot())?.satchel || {}).map((k) => [k, C.inventory.count(k)])),
+        fromRest: R ? +Math.hypot(P.x - R.x, P.z - R.z).toFixed(2) : null, rest: R?.id ?? null }; });
+      const rec = pre.record;
+      const satchelKept = !!rec && Object.entries(rec.satchel || {}).every(([k, v]) => (post.satchel?.[k] ?? 0) === v) && post.salt === rec.salt;
+      const gourdKept = !!rec && Math.abs(post.gourd - rec.gourd) <= 1;
+      const row = { death: deaths, at: s.stage, card, clicked, pre, post, satchelKept, gourdKept, cardShot, shot: await shot(page, `d${deaths}-stood-up`),
+        pass: clicked && post.state === 'playing' && post.idx === pre.idx && post.fromRest != null && post.fromRest < 3 && satchelKept && gourdKept };
       (report.rows['death-rule'] ||= []).push(row);
       log(`death ${deaths} at ${s.stage}: stood up ${post.fromRest} m from ${post.rest}, stage ${pre.stage} -> ${post.stage}`);
       last = null; tries = 0;
@@ -1015,6 +1135,10 @@ try {
   const fin = await page.evaluate(probe);
   report.spine = fin.report;
   report.shots = shots;
+  report.drinks = drinks;
+  // fix round: the reward, live (M1.6l: the Scout is the reward of Raker's Morning): what she wears when the run ends
+  report.reward = await page.evaluate(() => { const C = window.__CTX__, L = C.player?.hero?.loadout;
+    return { armor: L?.armorId ?? null, perk: L?.perk ?? null, rung: C.systemsGame?.rung ?? null, flagDuration: C.machines?.perception?.flagDuration ?? null, rewarded: !!C.spine?.rewarded, done: !!C.spine?.done }; }).catch((e) => ({ error: String(e).slice(0, 160) }));
   report.anchors = await page.evaluate(() => window.__CTX__.systemsGame.A);
   report.stopShot = await shot(page, 'b-stop');
 
