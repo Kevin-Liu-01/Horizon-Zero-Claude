@@ -53,6 +53,31 @@ const PRELUDE = `
   const lower = async () => { C.input.mouse.buttons &= ~4; await frames(6); };
   /** one real arrow at world point pt (held over for the drop at full draw) */
   const shoot = async (ammo, pt, waitMs = 650, solve = true) => {
+    aimFor(ammo, pt, solve);
+    const n0 = K.ev.length;
+    C.combat._fire();
+    await wait(waitMs);
+    return K.ev.slice(n0);
+  };
+  /**
+   * fix round: of the points cand (world), the first whose flight (the game's own: arrows.predict from the nock, after
+   * the same solve shoot makes) meets a part whose name matches re; null if none does. Nothing is fired.
+   */
+  const pickOn = (ammo, cand, re, max = 24) => {
+    for (const q of cand.slice(0, max)) { aimFor(ammo, q, true); if (K.lastShot?.first && re.test(K.lastShot.first)) return q; }
+    return null;
+  };
+  /** fix round: points over a part's meshes (its vertices drawn k of the way in toward their middle), nearest the middle first. */
+  const pointsOn = (root, k = 0.35, per = 48) => {
+    const c = new V(), out = []; let n = 0;
+    root.updateMatrixWorld(true);
+    root.traverse((o) => { const pa = o.isMesh && o.geometry?.attributes?.position; if (!pa) return; const st = Math.max(1, Math.floor(pa.count / per));
+      for (let i = 0; i < pa.count; i += st) { const q = new V().fromBufferAttribute(pa, i); if (o.isSkinnedMesh && o.applyBoneTransform) o.applyBoneTransform(i, q); q.applyMatrix4(o.matrixWorld); out.push(q); c.add(q); n++; } });
+    if (!n) return [wpos(root)];
+    c.multiplyScalar(1 / n);
+    return [c.clone(), ...out.map((q) => q.lerp(c, k)).sort((p, q) => p.distanceTo(c) - q.distanceTo(c))];
+  };
+  const aimFor = (ammo, pt, solve = true) => {
     const cb = C.combat;
     cb.setWeapon('sabina-bow', { silent: true });
     cb.selectAmmo('sabina-bow', ammo);
@@ -98,18 +123,16 @@ const PRELUDE = `
       K.lastShot = { nock: [r3(nock.x), r3(nock.y), r3(nock.z)], fromP: r3(nock.distanceTo(P.position)), camDot: r3(d2.dot(cd)),
         first: pr?.hit ?? null, firstKind: pr?.machine?.kind ?? null, predMissM: pr ? r3(pr.d) : null, solveMissM: missM != null ? r3(missM) : null };
     }
-    const n0 = K.ev.length;
-    cb._fire();
-    await wait(waitMs);
-    return K.ev.slice(n0);
+    return K.lastShot;
   };
 `;
 
 const ev = (code) => `(async () => { ${PRELUDE} ${code} })()`;
 
-export async function runKit(page, { sleep, log = () => {} }) {
+export async function runKit(page, { sleep, log = () => {}, only = null }) {
   const rows = {};
   const run = async (id, fn) => {
+    if (only && !only.has(id)) return;
     const t0 = Date.now();
     try { rows[id] = await fn(); } catch (e) { rows[id] = { pass: false, error: String(e?.message || e).slice(0, 300) }; }
     rows[id].seconds = Math.round((Date.now() - t0) / 100) / 10;
@@ -221,9 +244,19 @@ export async function runKit(page, { sleep, log = () => {} }) {
     const bs = [];
     // M1b: at the bob's middle and a little up its upper side (its mesh's origin is the top it hangs from; lying on the
     // ground, its lower side is behind the ground: bab1f0c struck the ground, then nothing)
+    const cb0 = C.combat;
     const bobMid = (up) => { const c = new V(); let n = 0; bob.mesh.traverse((o) => { if (o.isMesh && o.geometry) { if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); c.add(o.geometry.boundingSphere.center.clone().applyMatrix4(o.matrixWorld)); n++; } }); if (n) c.multiplyScalar(1 / n); else c.copy(wpos(bob.mesh)); c.y += up; return c; };
-    while (bob.attached !== false && nb < 2 && m._toppleT >= 0) { const e = await shoot('hardpoint', bobMid(0.07 * nb), 300); nb++; const h = e.find((x) => x.n === 'arrow-hit'); bs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
-    out.barbed = { arrows: nb, bobOff: bob.attached === false, downWhenTorn: m._toppleT >= 0, struck: bs };
+    // fix round: the point is one the game's own flight reaches first (pickOn over the bob's surface), and the row waits
+    // for the arrow to land (Barbed flies 56 m/s: 24 m is 0.43 s, and bab1f0c waited 300 ms, so its second arrow left
+    // before the first had landed)
+    const picks = [];
+    while (bob.attached !== false && nb < 2 && m._toppleT >= 0) {
+      cb0.setWeapon('sabina-bow', { silent: true }); cb0.selectAmmo('sabina-bow', 'hardpoint'); cb0.ammo.hardpoint = Math.max(cb0.ammo.hardpoint ?? 0, 12);
+      const q = pickOn('hardpoint', pointsOn(bob.mesh), /bob/i) ?? bobMid(0.07 * nb);
+      picks.push({ at: [r3(q.x), r3(q.y), r3(q.z)], first: K.lastShot?.first ?? null, predMissM: K.lastShot?.predMissM ?? null });
+      const e = await shoot('hardpoint', q, 900); nb++; const h = e.find((x) => x.n === 'arrow-hit'); bs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit'));
+    }
+    out.barbed = { arrows: nb, bobOff: bob.attached === false, downWhenTorn: m._toppleT >= 0, struck: bs, picks };
     await lower();
     /* how long it stays down */
     const tl = performance.now();
@@ -294,92 +327,157 @@ export async function runKit(page, { sleep, log = () => {} }) {
   });
 
   /* ---------------- hit-feel (M1.3e) ---------------- */
-  await run('hit-feel', () => page.evaluate(ev(`
+  /*
+   * Fix round (the judge at 24419e9): the row measured a node 1.93 m from where the arrow struck (the gimbal's origin),
+   * and that node's own idle motion (a fidget: 0.023 m / 10.3 deg in the 0.4 s before the hit) was larger than the
+   * "kick". Now:
+   *   - the STRUCK POINT itself is followed: the hit point, fixed in the frame of the part the hull names (the event's
+   *     volume: part-<name> or rig_<bone>), read every rendered frame relative to the Instrument's root;
+   *   - the staged Plumb's idle fidgets are held off for the row (gait._fidgetT; its brain is already off): the idle the
+   *     settle is judged against is then its breath and look, measured over the 0.4 s before the hit and reported;
+   *   - the burst (seven arrows 0.13 s apart) reports each arrow's hit and the freeze the hit-feel ledger gave it
+   *     (combat.hitFeel.freezes), and the 1 s window is summed over both the sampled time scale and that ledger;
+   *   - the lance is measured the same way (hit-feel-lance: a real LMB on a standing Plumb at 2.3 m).
+   */
+  const HF = `
+    const hfStage = (m) => {
+      const g = m.gait; if (g) { g._fidget = null; g._fidgetK = 0; g._fidgetT = 1e9; }
+      const objs = [...new Set([...(m.rig?.spine ?? []), m.rig?.neck, m.rig?.head, ...(m.parts || []).map((p) => p.mesh)].filter(Boolean))];
+      const hullMats = new Set(); m.root.traverse((o) => { if (o.isMesh) for (const mt of [].concat(o.material || [])) if (mt?.userData?.hullU?.uFlash) hullMats.add(mt); });
+      const inv = new C.camera.matrixWorld.constructor(), rel = new C.camera.matrixWorld.constructor();
+      const E = C.engine, cam = C.camera, cb = C.combat, env = C.environment;
+      const S = []; const st = { on: true, S, objs };
+      const tick = () => {
+        if (!st.on) return;
+        m.root.updateMatrixWorld(true);
+        inv.copy(m.root.matrixWorld).invert();
+        const ms = objs.map((o) => { rel.multiplyMatrices(inv, o.matrixWorld); return Array.from(rel.elements); });
+        let fl = 0; for (const mt of hullMats) fl = Math.max(fl, mt.userData.hullU.uFlash.value || 0);
+        S.push({ t: performance.now(), ts: E.timeScale ?? 1, fov: cam.fov, punch: cb._fovPunchOn ?? 0, flash: fl, light: env?.eyeLights?.[1]?.intensity ?? null, frame: E.frames, ms });
+        calm(m); if (m.gait) m.gait._fidgetT = 1e9;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      return st;
+    };
+    const hfAnalyse = (st, m, hit, tHit, tEnd, t0row) => {
+      const S = st.S, objs = st.objs, M4 = C.camera.matrixWorld.constructor, Q = C.camera.quaternion.constructor;
+      const vol = hit.vol || '';
+      let so = null;
+      if (/^part-/.test(vol)) so = (m.parts || []).find((p) => 'part-' + p.name === vol)?.mesh ?? null;
+      else if (/^rig_/.test(vol)) so = m.rig?.bones?.[vol.slice(4)] ?? null;
+      const hp = hit.pt ? new V(...hit.pt) : null;
+      let si = so ? objs.indexOf(so) : -1;
+      const i0 = Math.max(0, S.findIndex((s) => s.t >= tHit) - 1), pre = S[i0];
+      const mat = (s, i) => new M4().fromArray(s.ms[i]);
+      m.root.updateMatrixWorld(true);
+      const hpr = hp ? hp.clone().applyMatrix4(new M4().copy(m.root.matrixWorld).invert()) : null;
+      if (si < 0 && hpr) { let bd = Infinity; objs.forEach((o, i) => { const d = new V().setFromMatrixPosition(mat(pre, i)).distanceTo(hpr); if (d < bd) { bd = d; si = i; } }); }
+      if (si < 0 || !hpr) return { error: 'no struck part or point', vol };
+      const lp = hpr.clone().applyMatrix4(mat(pre, si).invert());
+      const q0 = new Q().setFromRotationMatrix(mat(pre, si)), q = new Q();
+      const p0 = lp.clone().applyMatrix4(mat(pre, si));
+      const dev = (s) => { const M = mat(s, si); const p = lp.clone().applyMatrix4(M); q.setFromRotationMatrix(M); return [p.distanceTo(p0), 2 * Math.acos(Math.min(1, Math.abs(q.dot(q0)))) * 180 / Math.PI]; };
+      const idle = S.filter((s) => s.t < tHit && s.t >= tHit - 400).map(dev);
+      const noiseM = Math.max(0, ...idle.map((x) => x[0])), noiseDeg = Math.max(0, ...idle.map((x) => x[1]));
+      const in80 = S.filter((s) => s.t >= tHit && s.t <= tHit + 80).map(dev);
+      const peakM = Math.max(0, ...in80.map((x) => x[0])), peakDeg = Math.max(0, ...in80.map((x) => x[1]));
+      const after = S.filter((s) => s.t >= tHit && s.t < tEnd).map((s) => ({ dt: s.t - tHit, d: dev(s) }));
+      let settleMs = null;
+      for (let i = 0; i < after.length; i++) { if (after.slice(i).every((a) => a.d[0] <= noiseM + 0.01 && a.d[1] <= noiseDeg + 1)) { settleMs = Math.round(after[i].dt); break; } }
+      const trace = after.filter((a, i) => i % 3 === 0).slice(0, 40).map((a) => [Math.round(a.dt), r3(a.d[0]), Math.round(a.d[1] * 10) / 10]);
+      // the freezes: spans of frames under time scale 0.5 (real ms), each run one freeze
+      const runs = []; let cur = null;
+      for (let i = 1; i < S.length; i++) { const fz = S[i - 1].ts < 0.5; if (fz) { if (!cur) cur = { s: S[i - 1].t, e: S[i].t }; else cur.e = S[i].t; } else if (cur) { runs.push(cur); cur = null; } }
+      if (cur) runs.push(cur);
+      const win = (rs) => { let w = 0; for (const r of rs) { const a0 = r.s, a1 = a0 + 1000; let sum = 0; for (const x of rs) { const a = Math.max(x.s, a0), b = Math.min(x.e, a1); if (b > a) sum += b - a; } w = Math.max(w, sum); } return w; };
+      const perHit = runs.map((r) => Math.round(r.e - r.s));
+      const led = (C.combat.hitFeel?.freezes ?? []).filter((f) => f.s * 1000 >= t0row).map((f) => ({ s: f.s * 1000, e: f.e * 1000, asked: Math.round(f.asked * 1000), given: Math.round(f.given * 1000) }));
+      const ledRuns = led.filter((f) => f.given > 0).map((f) => ({ s: f.s, e: f.s + f.given }));
+      const fov0 = pre.fov;
+      const punchMax = Math.max(0, ...S.filter((s) => s.t >= tHit).map((s) => s.punch));
+      const fovDev = Math.max(0, ...S.filter((s) => s.t >= tHit && s.t <= tHit + 400).map((s) => Math.abs(s.fov - fov0)));
+      const flashFrames = new Set(S.filter((s) => s.t >= tHit && s.t < tEnd && s.flash > 0).map((s) => s.frame)).size;
+      const lightMax = Math.max(0, ...S.filter((s) => s.t >= tHit && s.t < tHit + 200).map((s) => s.light ?? 0));
+      const lightOffMs = (() => { const f = S.find((s) => s.t > tHit + 20 && (s.light ?? 0) === 0); return f ? Math.round(f.t - tHit) : null; })();
+      const node = objs[si];
+      // the body above (the rig's head bone origin): what the gait's flinch moves when the struck part is a planted leg
+      const hi = m.rig?.head ? objs.indexOf(m.rig.head) : -1;
+      let body = null;
+      if (hi >= 0) {
+        const hp0 = new V().setFromMatrixPosition(mat(pre, hi)), hq0 = new Q().setFromRotationMatrix(mat(pre, hi)), hq = new Q();
+        const bd = (s) => { const M = mat(s, hi); hq.setFromRotationMatrix(M); return [new V().setFromMatrixPosition(M).distanceTo(hp0), 2 * Math.acos(Math.min(1, Math.abs(hq.dot(hq0)))) * 180 / Math.PI]; };
+        const bi = S.filter((s) => s.t < tHit && s.t >= tHit - 400).map(bd), b8 = S.filter((s) => s.t >= tHit && s.t <= tHit + 80).map(bd);
+        body = { peakM: r3(Math.max(0, ...b8.map((x) => x[0]))), peakDeg: r3(Math.max(0, ...b8.map((x) => x[1]))), idleM: r3(Math.max(0, ...bi.map((x) => x[0]))), idleDeg: r3(Math.max(0, ...bi.map((x) => x[1]))) };
+      }
+      return { struck: node.name || node.type, vol, body, pointFromNodeM: r3(lp.length()), peakM: r3(peakM), peakDeg: r3(peakDeg), settleMs, idleNoiseM: r3(noiseM), idleNoiseDeg: r3(noiseDeg),
+        peakOverIdle: r3(Math.max(peakM / Math.max(noiseM, 1e-4), peakDeg / Math.max(noiseDeg, 1e-3))), trace,
+        freezeMs: perHit, freezeMaxMs: Math.max(0, ...perHit), freezeWindowMaxMs: Math.round(win(runs)), ledger: led.map((f) => ({ at: Math.round(f.s - tHit), asked: f.asked, given: f.given })),
+        ledgerWindowMaxMs: Math.round(win(ledRuns)), ledgerMaxMs: Math.max(0, ...led.map((f) => f.given)),
+        punchMaxDeg: r3(punchMax), fovDevDeg: r3(fovDev), flashFrames, lightMax: r3(lightMax), lightOffMs, frames: S.length, kick: C.combat.hitFeel?.last?.kick ?? null };
+    };
+    const hfParts = (n, { melee = false, burst = true } = {}) => ({
+      kick: (n.peakM >= 0.03 || n.peakDeg >= 4) && (n.peakM > n.idleNoiseM + 0.01 || n.peakDeg > n.idleNoiseDeg + 1),
+      settle: n.settleMs != null && n.settleMs <= 400,
+      freeze: n.freezeMaxMs > 0 && n.freezeMaxMs <= 120 && n.freezeWindowMaxMs <= 180 && n.ledgerWindowMaxMs <= 180 && (!burst || n.burstHits >= 2),
+      punch: n.punchMaxDeg > 0 && n.punchMaxDeg <= 2 && n.fovDevDeg <= 2,
+      flash: n.flashFrames >= 1 && n.flashFrames <= 3,
+      light: n.lightMax > 0,
+    });
+  `;
+
+  await run('hit-feel', () => page.evaluate(ev(`${HF}
     // a calm Plumb 20 m out on open ground; one Reed arrow on its body, then seven more 0.13 s apart (the 1 s budget)
+    const t0row = performance.now();
     const b = base(); const m = spawn('plumb', b.x + 20, b.z); place(b.x, b.z, b.x + 20, b.z); await frames(40); await raise();
-    const E = C.engine, cam = C.camera, cb = C.combat, env = C.environment;
     m.root.updateMatrixWorld(true);
-    // the shot goes at the body (the rig's chest: the Plumb's drum, high on its tripod; r1 aimed 1.7 m up and struck
-    // a thigh, which the body's kick does not move)
     const chest = m.rig?.chest ?? m.rig?.head ?? null;
     const aim = chest ? chest.getWorldPosition(new V()) : new V(m.position.x, m.position.y + 0.75 * (m.height ?? 3.4), m.position.z);
-    // the nodes sampled: the body's chain (spine, neck, head) and the 10 bones and part nodes nearest the aim point
-    const LEG = /thigh|shin|calf|foot|toe|ankle|knee|leg/i;
-    const nodes = [];
-    m.root.traverse((o) => { if (o !== m.root && (o.isBone || o.userData?.part)) nodes.push(o); });
-    const wp = new V();
-    nodes.sort((p, q) => p.getWorldPosition(wp).distanceTo(aim) - q.getWorldPosition(new V()).distanceTo(aim));
-    const pick = [...new Set([...(m.rig?.spine ?? []), m.rig?.neck, m.rig?.head, ...nodes.slice(0, 10)].filter(Boolean))];
-    let hull = null; m.root.traverse((o) => { if (!hull && o.isMesh && o.material?.userData?.hullU) hull = o; });
-    const inv = new C.camera.matrixWorld.constructor(), mw = new C.camera.matrixWorld.constructor();
-    const Q = C.camera.quaternion.constructor, q = new Q(), qr = new Q();
-    const S = (window.__HF = []); let on = true;
-    const tick = () => {
-      if (!on) return;
-      m.root.updateMatrixWorld(true);
-      inv.copy(m.root.matrixWorld).invert();
-      const ps = pick.map((o) => { mw.multiplyMatrices(inv, o.matrixWorld); const p = new V().setFromMatrixPosition(mw); q.setFromRotationMatrix(mw); return [p.x, p.y, p.z, q.x, q.y, q.z, q.w]; });
-      S.push({ t: performance.now(), ts: E.timeScale ?? 1, fov: cam.fov, punch: cb._fovPunchOn ?? 0, flash: hull ? hull.material.userData.hullU.uFlash.value : null, light: env?.eyeLights?.[1]?.intensity ?? null, frame: E.frames, ps });
-      calm(m);
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-    await frames(30);
-    /* one hit */
+    const st = hfStage(m);
+    await frames(40);
     const e1 = await shoot('hunter', aim, 700);
     const d1 = K.lastShot;
     const hit = e1.find((x) => x.n === 'machine-damaged') || e1.find((x) => x.n === 'arrow-hit');
-    const tHit = hit ? hit.t : null;
-    /* four more, 0.25 s apart: the freeze budget */
     const tB = performance.now();
-    for (let i = 0; i < 7; i++) { calm(m); await shoot('hunter', aim, 130); }
-    await wait(700);
-    on = false;
+    const burst = [];
+    for (let i = 0; i < 7; i++) { calm(m); const e = await shoot('hunter', aim, 130); burst.push(e.filter((x) => x.n === 'machine-damaged' || x.n === 'arrow-hit').map((x) => x.n === 'machine-damaged' ? (x.vol || 'hull') : 'arrow-hit:' + (x.kind ?? 'world'))); }
+    await wait(800);
+    st.on = false;
     await lower();
-    if (tHit == null) return { pass: false, error: 'the first arrow struck nothing', struck: e1.map((x) => x.n), shot: d1 };
-    const hp = hit.pt ? new V(...hit.pt) : aim;
-    // the struck node: the sampled node nearest the hit point at the hit
-    const i0 = S.findIndex((s) => s.t >= tHit) - 1;
-    const pre = S[Math.max(0, i0)];
-    m.root.updateMatrixWorld(true);
-    let ni = 0, nd = Infinity;
-    // the struck part: the sampled node nearest the hit that is not a leg (the legs are planted by their IK)
-    pick.forEach((o, i) => { if (LEG.test(o.name || '')) return; const d = o.getWorldPosition(new V()).distanceTo(hp); if (d < nd) { nd = d; ni = i; } });
-    const dev = (s, r) => { const a = s.ps[ni], dx = a[0] - r[0], dy = a[1] - r[1], dz = a[2] - r[2]; const dot = Math.abs(a[3] * r[3] + a[4] * r[4] + a[5] * r[5] + a[6] * r[6]); return [Math.hypot(dx, dy, dz), 2 * Math.acos(Math.min(1, dot)) * 180 / Math.PI]; };
-    const r0 = pre.ps[ni];
-    // its own idle motion over the 0.4 s before the hit (breath, fidgets): the noise a settle is judged against
-    const idle = S.filter((s) => s.t < tHit && s.t >= tHit - 400).map((s) => dev(s, r0));
-    const noiseM = Math.max(0, ...idle.map((x) => x[0])), noiseDeg = Math.max(0, ...idle.map((x) => x[1]));
-    const in80 = S.filter((s) => s.t >= tHit && s.t <= tHit + 80).map((s) => dev(s, r0));
-    const peakM = Math.max(0, ...in80.map((x) => x[0])), peakDeg = Math.max(0, ...in80.map((x) => x[1]));
-    const after = S.filter((s) => s.t >= tHit && s.t < tB).map((s) => ({ dt: s.t - tHit, d: dev(s, r0) }));
-    // settled: the first time from which it stays within its idle noise + 1 cm and + 1 deg until the next shot
-    let settleMs = null;
-    for (let i = 0; i < after.length; i++) { if (after.slice(i).every((a) => a.d[0] <= noiseM + 0.01 && a.d[1] <= noiseDeg + 1)) { settleMs = Math.round(after[i].dt); break; } }
-    // the freezes: spans of frames under timeScale 0.5 (real ms), each run of them one freeze
-    const runs = []; let cur = null;
-    for (let i = 1; i < S.length; i++) { const fz = S[i - 1].ts < 0.5; if (fz) { if (!cur) cur = { s: S[i - 1].t, e: S[i].t }; else cur.e = S[i].t; } else if (cur) { runs.push(cur); cur = null; } }
-    if (cur) runs.push(cur);
-    const perHit = runs.map((r) => Math.round(r.e - r.s));
-    let winMax = 0;
-    for (const r of runs) { const w0 = r.s, w1 = w0 + 1000; let sum = 0; for (const x of runs) { const a = Math.max(x.s, w0), b2 = Math.min(x.e, w1); if (b2 > a) sum += b2 - a; } winMax = Math.max(winMax, sum); }
-    // the FOV punch: the lens's offset (combat._fovPunchOn) and the lens itself against its value at the hit
-    const fov0 = pre.fov;
-    const punchMax = Math.max(0, ...S.map((s) => s.punch));
-    const fovDev = Math.max(0, ...S.filter((s) => s.t >= tHit && s.t <= tHit + 400).map((s) => Math.abs(s.fov - fov0)));
-    // the hull flash: rendered frames with the flash up after the first hit (before the burst)
-    const flashFrames = new Set(S.filter((s) => s.t >= tHit && s.t < tB && s.flash > 0).map((s) => s.frame)).size;
-    const lightMax = Math.max(0, ...S.filter((s) => s.t >= tHit && s.t < tHit + 200).map((s) => s.light ?? 0));
-    const lightOffMs = (() => { const f = S.find((s) => s.t > tHit + 20 && (s.light ?? 0) === 0); return f ? Math.round(f.t - tHit) : null; })();
-    const hf = cb.hitFeel?.last ?? null;
-    const num = { struckNode: pick[ni].name || pick[ni].type, nodeFromHitM: r3(nd), vol: hit.vol ?? null, kick: hf?.kick ?? null,
-      peakM: r3(peakM), peakDeg: r3(peakDeg), settleMs, idleNoiseM: r3(noiseM), idleNoiseDeg: r3(noiseDeg),
-      freezeMs: perHit, freezeMaxMs: Math.max(0, ...perHit), freezeWindowMaxMs: Math.round(winMax), freezesGiven: (cb.hitFeel?.freezes ?? []).slice(-5).map((f) => Math.round(f.given * 1000)),
-      punchMaxDeg: r3(punchMax), fovDevDeg: r3(fovDev), flashFrames, lightMax: r3(lightMax), lightOffMs, frames: S.length, shot: d1 };
-    const parts = { kick: (peakM >= 0.03 || peakDeg >= 4), settle: settleMs != null && settleMs <= 400, freeze: num.freezeMaxMs <= 120 && num.freezeWindowMaxMs <= 180 && perHit.length > 0,
-      punch: punchMax > 0 && punchMax <= 2 && fovDev <= 2, flash: flashFrames >= 1 && flashFrames <= 3, light: lightMax > 0 };
-    return { num, parts, pass: Object.values(parts).every(Boolean),
-      bar: 'a struck part moves >= 3 cm or turns >= 4 deg within 80 ms and settles (back within its idle motion + 1 cm / 1 deg) within 400 ms; freeze <= 120 ms per hit and <= 180 ms in any 1 s; FOV punch <= 2 deg; flash <= 3 frames; an impact light' };`)));
+    if (!hit) return { pass: false, error: 'the first arrow struck nothing', struck: e1.map((x) => x.n), shot: d1 };
+    const num = hfAnalyse(st, m, hit, hit.t, tB, t0row);
+    if (num.error) return { pass: false, error: num.error, num };
+    num.burst = burst; num.burstHits = K.ev.filter((x) => x.n === 'machine-damaged' && x.m === m && x.t >= tB).length; num.shot = d1;
+    const parts = hfParts(num);
+    return { num, parts, pass: Object.values(parts).every(Boolean), staged: 'calm Plumb, brain off, idle fidgets held off for the row',
+      bar: 'the struck point moves >= 3 cm or turns >= 4 deg within 80 ms, clear of its idle motion (+1 cm / +1 deg), and settles back within its idle motion + 1 cm / 1 deg within 400 ms; freeze <= 120 ms per hit and <= 180 ms in any 1 s (sampled and ledger, with >= 2 burst hits); FOV punch <= 2 deg; flash <= 3 frames; an impact light' };`)));
+
+  /* ---------------- hit-feel-lance (M1.3e, F19's hit) ---------------- */
+  await run('hit-feel-lance', async () => {
+    const st0 = await page.evaluate(ev(`${HF}
+      window.__HFL = null;
+      const b = base(); const m = spawn('plumb', b.x + 6, b.z + 16); await frames(30); K.m = m; calm(m);
+      const c = wpos(m.body || m.root), dx = P.position.x - c.x, dz = P.position.z - c.z, L = Math.hypot(dx, dz) || 1;
+      place(c.x + dx / L * 2.3, c.z + dz / L * 2.3, c.x, c.z); P.camPitch = 0.1; C.input.enabled = true;
+      await frames(20);
+      window.__HFL = { st: hfStage(m), t0row: performance.now() };
+      await frames(30);
+      return { weapon: C.combat.activeWeapon?.id ?? null, d: r3(Math.hypot(P.position.x - c.x, P.position.z - c.z)) };`));
+    await page.mouse.move(800, 450);
+    await page.mouse.down({ button: 'left' }); await sleep(120); await page.mouse.up({ button: 'left' });
+    await sleep(1600);
+    return page.evaluate(ev(`${HF}
+      const m = K.m, HL = window.__HFL; HL.st.on = false;
+      const hit = K.ev.find((x) => x.n === 'machine-damaged' && x.m === m && x.t >= HL.t0row);
+      if (!hit) return { pass: false, error: 'the swing struck nothing', staged: ${JSON.stringify(st0)}, evs: K.ev.filter((x) => x.t >= HL.t0row).map((x) => x.n) };
+      const num = hfAnalyse(HL.st, m, hit, hit.t, performance.now(), HL.t0row);
+      if (num.error) return { pass: false, error: num.error, num };
+      num.staged = ${JSON.stringify(st0)}; num.damage = Math.round(hit.dmg ?? 0);
+      const parts = hfParts(num, { melee: true, burst: false });
+      return { num, parts, pass: Object.values(parts).every(Boolean), staged: 'calm standing Plumb at 2.3 m, brain off, idle fidgets held off; a real LMB',
+        bar: 'as hit-feel, for one lance hit (the lance flashes its own hit)' };`));
+  });
+
 
   return rows;
 }

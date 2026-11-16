@@ -13,6 +13,12 @@
  *            health (machine-ai's flinch threshold, whose event nothing consumed). The amount is KICK.min (a plink)
  *            up to 1 with the share of health the hit took; the direction is the blow's own (the arrow's flight, the
  *            lance from her chest to the point) in the body's frame.
+ *            Fix round 1: and the whole rig ROCKS away from the blow about its feet (the rig root, which nothing else
+ *            writes: KICK.tiltDeg x the amount, more on a short body, up in KICK.rise and back at KICK.decay/s on the real
+ *            clock, so it is settled inside 0.4 s; the legs' IK keeps the feet planted). The gait's channel alone did
+ *            not move a struck part for a blow from the front: its pitch away from the blow (-0.38 x the amount at the
+ *            head) and its wince (the head's droop, +0.35 x the amount) cancel there, and at bab1f0c the row's struck
+ *            part moved less in 80 ms than its own idle fidget did in 0.4 s.
  *   PUNCH    the lens widens by at most FOV.max (1.6 deg) and comes back: up in FOV.rise, back over FOV.fall (real
  *            time, so the freeze cannot hold it). Folded into combat's aim FOV ease as an offset (`fovPunch`).
  *   FLASH    the hull's warm flash (`machine.flashPart`, instruments' lib/hull.js), which shows for at most three
@@ -29,11 +35,14 @@ import * as THREE from 'three';
 // cap: what one hit may ask (s); it is released by the first frame past its end, so it is held up to a frame longer:
 // 0.100 + a 16.7 ms frame stays under the 120 ms bar
 export const HS = Object.freeze({ cap: 0.100, window: 0.180, min: 0.020, late: 0.007, slack: 0.016, scale: 0.03 });
-export const KICK = Object.freeze({ min: 0.3, perShare: 2.2 });
+export const KICK = Object.freeze({ min: 0.3, perShare: 2.2, tiltDeg: 3, refH: 2.5, rise: 0.03, decay: 10, life: 0.7 });
 export const FOV = Object.freeze({ max: 1.6, base: 0.6, perK: 1.4, rise: 0.035, fall: 0.2 });
 export const LIGHT = Object.freeze({ ms: 110, base: 14, perK: 26, off: 0.35, color: '#FFB070', distance: 6 });
 
 const _d = new THREE.Vector3();
+const _ax = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+const _UP = new THREE.Vector3(0, 1, 0);
 
 export class HitFeel {
   constructor(ctx, combat) {
@@ -46,6 +55,42 @@ export class HitFeel {
     this._lI = 0;
     this.last = null;
     this.freezes = [];
+    this._rocks = [];       // { m, node, base (quaternion), axis (node's parent frame), amp (rad), t0 }
+  }
+
+  /** The rig rocks away from the blow (see KICK): `dirW` the blow's horizontal direction in the world, `kick` 0..1. */
+  _rock(m, dirW, kick, now) {
+    const node = m?.rig?.root, par = node?.parent;
+    if (!node || !par) return;
+    // the tilt's axis: up x the blow, so the top moves along the blow; in the parent's frame
+    _ax.crossVectors(_UP, dirW);
+    if (_ax.lengthSq() < 1e-10) return;
+    _ax.normalize();
+    par.getWorldQuaternion(_q).invert();
+    _ax.applyQuaternion(_q);
+    const h = Math.max(0.5, m.height ?? KICK.refH);
+    const amp = THREE.MathUtils.degToRad(KICK.tiltDeg) * kick * Math.max(1, KICK.refH / h);
+    let r = null;
+    for (const x of this._rocks) if (x.m === m) { r = x; break; }
+    if (!r) { r = { m, node, base: node.quaternion.clone(), axis: new THREE.Vector3(), amp: 0, t0: 0 }; this._rocks.push(r); }
+    r.axis.copy(_ax);
+    r.amp = amp;
+    r.t0 = now;
+  }
+
+  _updateRocks(now) {
+    const R = this._rocks;
+    for (let i = R.length - 1; i >= 0; i--) {
+      const r = R[i], t = now - r.t0;
+      if (r.m.alive === false || r.m._disposed || t >= KICK.life || !r.node.parent) {
+        if (r.node.parent) r.node.quaternion.copy(r.base);
+        R.splice(i, 1);
+        continue;
+      }
+      const a = t < KICK.rise ? Math.sin((t / KICK.rise) * Math.PI / 2) : Math.exp(-(t - KICK.rise) * KICK.decay);
+      _q.setFromAxisAngle(r.axis, r.amp * a);
+      r.node.quaternion.copy(r.base).premultiply(_q);
+    }
   }
 
   /** What the last second's freezes leave (s), counted on the lance's ring (see the header). */
@@ -117,6 +162,7 @@ export class HitFeel {
         hitDir = h - Math.atan2(_d.x, _d.z);
         kick = Math.min(1, KICK.min + KICK.perShare * Math.max(0, o.share ?? 0));
         if (kick > (pose.hit || 0)) { pose.hit = kick; pose.hitDir = hitDir; }
+        this._rock(m, _d.normalize(), kick, now);
       }
     }
     /* PUNCH */
@@ -157,6 +203,7 @@ export class HitFeel {
 
   /** Per frame (combat.update, real clock): the impact light falls to 0 and is let go. */
   update(now) {
+    if (this._rocks.length) this._updateRocks(now);
     const l = this._light;
     if (!l) return;
     const u = (now - this._lT) / (LIGHT.ms / 1000);
@@ -166,6 +213,8 @@ export class HitFeel {
   }
 
   dispose() {
+    for (const r of this._rocks) if (r.node.parent) r.node.quaternion.copy(r.base);
+    this._rocks.length = 0;
     if (this._light) { this._light.intensity = 0; this._light = null; }
   }
 }
