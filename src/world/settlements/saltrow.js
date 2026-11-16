@@ -33,7 +33,7 @@ import { CRUST } from '../terrain.js';
  * NIGHT: a pane's vertex colour is its room's glow (black = a dark room); `uGlow` scales it from dusk (sun under 8 deg)
  * to full at night. The walls carry the kit's baked window spill (the `_bone` byte's high nibble, `aSpill`; until
  * fix round 1 it rode TEXCOORD_1, which the GLB writer's prune dropped, so no wall ever received it): at night each
- * wall vertex near a lit window adds its own lime colour x warm x spill to its emission, so walls read white within a
+ * wall vertex near a lit window adds its own lime colour x warm-white x spill^SPILL_POW to its emission, so walls read white within a
  * few metres of a window and fall to silhouette beyond (F07's written target). Fix round 1: the moon, the hemisphere
  * fill and the sky IBL lit every lime wall evenly at 21:00 (median Y 0.161 against the mountain's 0.022, houses with no
  * lit window as bright as the rest), so the spill did not show. `uNight` (the environment's nightFactor through the
@@ -59,7 +59,18 @@ import { CRUST } from '../terrain.js';
  * neighbours hide the sky there): `aH`, each vertex's height over its house's ground floor (the kit's local y).
  */
 const URL = '/models/settlements/saltrow-kit.glb';
-const WARM = new THREE.Color(1.0, 0.62, 0.32);
+/* wave 4 fix (F07 judge: "whole facades glow an even amber under a bloom haze"): a lime wall by its window reads WHITE,
+ * warm-white, not amber (the pane keeps its own amber glow), and the bake's summed spill goes through a contrast curve
+ * (SPILL_POW) so each window lights its own pool and the wall between two windows stays darker than either pool. */
+const SPILL_TINT = new THREE.Color(1.0, 0.8, 0.58);
+const SPILL_GAIN = 0.78;
+const SPILL_POW = 1.45;
+/* wave 4 fix (F07 mean luminance at the 4.0 % edge; the lower third of the frame, the breakwater's deck and armour, at
+ * 1.2-1.9 % per pixel): the breakwater lamp lights its own deck. A point light by hand on the non-house pieces only
+ * (aFoot >= 98: the breakwater, ramp, cones and cart): Lambert to the lantern, 1 / (1 + (r / LAMP_R)^2), gone by
+ * LAMP_CUT m; the pier and plinth under the lantern keep their baked spill (nothing inside 0.75 m of its axis). */
+const LAMP_TINT = new THREE.Color(1.0, 0.76, 0.5);
+const LAMP_GAIN = 6.0, LAMP_R = 3.4, LAMP_CUT = 13.0;
 /** The share of the scene's light the town keeps at full night (fix round 1, F07: walls beyond a window's spill). */
 const NIGHT_LIGHT = 0.05;
 /** The open sky's fill on a house wall, x the hemisphere's sky colour and intensity (M1b closing fix, F24). */
@@ -118,6 +129,11 @@ export class Saltrow {
     this.uGlow = { value: 0 };
     this.uSpill = { value: new THREE.Color(0, 0, 0) };
     this.uNight = { value: 1 };
+    this.uLamp = { value: new THREE.Vector4(0, -999, 0, 0) };
+    this.uLampCol = { value: LAMP_TINT.clone() };
+    this.uSpillPow = { value: SPILL_POW };
+    this.spillGain = SPILL_GAIN;
+    this.lampGain = LAMP_GAIN;
     this.uSkyFill = { value: new THREE.Color(0, 0, 0) };
     this.uSunH = { value: new THREE.Vector2(0, 1) };
     this.uSaltA = { value: null };
@@ -234,7 +250,7 @@ export class Saltrow {
     m.vertexColors = true;
     m.side = THREE.FrontSide;
     m.name = 'CAL.saltrow';
-    const U = { uSpill: this.uSpill, uNight: this.uNight, uSkyFill: this.uSkyFill, uSunH: this.uSunH, uSaltA: this.uSaltA, uSaltN: this.uSaltN, uSaltK: this.uSaltK, uCrust: CRUST };
+    const U = { uLamp: this.uLamp, uLampCol: this.uLampCol, uSpillPow: this.uSpillPow, uSpill: this.uSpill, uNight: this.uNight, uSkyFill: this.uSkyFill, uSunH: this.uSunH, uSaltA: this.uSaltA, uSaltN: this.uSaltN, uSaltK: this.uSaltK, uCrust: CRUST };
     m.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, U);
       shader.vertexShader = shader.vertexShader
@@ -244,6 +260,9 @@ export class Saltrow {
         .replace('#include <common>', `#include <common>
 uniform vec3 uSpill;
 uniform float uNight;
+uniform vec4 uLamp;      // the breakwater lantern's world position (xyz) and its strength (w)
+uniform vec3 uLampCol;
+uniform float uSpillPow;
 uniform vec3 uSkyFill;
 uniform vec2 uSunH;
 uniform highp sampler2DArray uSaltA;
@@ -287,6 +306,12 @@ if (calSalt > 0.5) {
   if (lime > 0.0) {
     float g1 = calN3(vCalW * 3.1), g2 = calN3(vCalW * 14.0 + 7.3), pw = calN3(vCalW * 0.85 + 3.7);
     float grain = (g1 - 0.5) * 0.13 + (g2 - 0.5) * 0.08;
+    // wave 4 fix (F24 judge: "the walls still flat plaster" at 27-45 m, where the 3 and 14 per metre grain is a pixel or
+    // less): a coat renewed in patches about a metre across (+-6 %), and rain runs, thin and tall, darkening the wash
+    // under the parapet and fading out toward the foot
+    float g0 = calN3(vCalW * 1.15 + 11.0);
+    float run = calN3(vec3((vCalW.x + vCalW.z) * 2.6, vCalW.y * 0.3, 5.0));
+    grain += (g0 - 0.5) * 0.12 - smoothstep(0.58, 0.82, run) * 0.08 * smoothstep(0.8, 3.0, vH);
     float worn = smoothstep(0.73, 0.79, pw * 0.75 + g2 * 0.25);
     float dirtTop = 0.5 + 0.4 * g1;
     float dirt = (1.0 - smoothstep(0.0, dirtTop, vFoot)) * step(-0.5, vFoot);
@@ -319,9 +344,18 @@ if (vFoot < 98.0) {
   reflectedLight.indirectDiffuse *= mix(1.0, mix(0.72, 1.06, hK), wall);
   reflectedLight.indirectDiffuse += diffuseColor.rgb * uSkyFill * wall * (0.35 + 0.65 * back) * mix(0.55, 1.0, hK) * kN;
 } }`)
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * uSpill * vSpill;');
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+totalEmissiveRadiance += vColor.rgb * uSpill * pow(clamp(vSpill, 0.0, 1.0), uSpillPow);
+if (vFoot > 97.5 && uLamp.w > 0.0) {
+  vec3 tl = uLamp.xyz - vCalW;
+  float r = length(tl), ax = length(tl.xz);
+  vec3 nWl = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+  float lam = max(dot(nWl, tl / max(r, 1e-3)), 0.0);
+  float fall = 1.0 / (1.0 + (r * r) / ${(LAMP_R * LAMP_R).toFixed(3)}) * (1.0 - smoothstep(${(LAMP_CUT * 0.65).toFixed(2)}, ${LAMP_CUT.toFixed(2)}, r));
+  totalEmissiveRadiance += diffuseColor.rgb * uLampCol * uLamp.w * lam * fall * smoothstep(0.65, 0.85, ax);
+}`);
     };
-    m.customProgramCacheKey = () => 'cal-saltrow-body-3';
+    m.customProgramCacheKey = () => 'cal-saltrow-body-4';
     m.needsUpdate = true;
     return m;
   }
@@ -399,7 +433,9 @@ if (vFoot < 98.0) {
     // warm windows from dusk: none above 8 deg of sun, all lit by the time it is 3 deg under
     const k = ss(0.14, -0.05, sy);
     this.uGlow.value = 3.4 * k;
-    this.uSpill.value.copy(WARM).multiplyScalar(0.62 * k);
+    this.uSpill.value.copy(SPILL_TINT).multiplyScalar(this.spillGain * k);
+    const lamp = this.lamps[0];
+    if (lamp) this.uLamp.value.set(lamp.x, lamp.y, lamp.z, this.lampGain * k);
     // the town's share of the scene's light: 1 by day, NIGHT_LIGHT at full night (the same dusk ramp as the windows)
     const nf = env?.nightFactor ?? 0;
     this.uNight.value = 1 - (1 - NIGHT_LIGHT) * Math.min(k, ss(0.1, 0.85, nf));

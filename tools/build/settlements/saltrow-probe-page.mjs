@@ -146,6 +146,39 @@ export async function probe(frame) {
         allBody: { px: bodyPx, near: near.length, far: far.length, medianY: { near: med(near), far: med(far) } },
         glass: { px: glassPx, maxY: +maxGlassY.toFixed(3) }, buffer: [bw, bh],
         frameY: { perPixel: +(sumY / n * 100).toFixed(2), ofMeans: +((0.2126 * mr + 0.7152 * mg + 0.0722 * mb) * 100).toFixed(2) }, uNight: town.uNight?.value ?? null };
+      /* wave 4 fix (world lane, F07): the same frame re-rendered per variant of the town's night light (the spill's curve
+       * and gain, the breakwater lamp's pool, the night bloom), each read as the frame is: the frame's mean luminance by
+       * the filmer's formula and per pixel, the houses' near/far wall medians on the same mask, and the brightest pixel
+       * of the top quarter (the sky). Each variant is put back before the next. The shipped one is listed first. */
+      try {
+        const L = E.look;
+        const v0 = { pow: town.uSpillPow.value, spill: town.spillGain, lamp: town.lampGain, bloom: L?.bloomScale ?? null };
+        const VARS = [{ id: 'shipped' }, { id: 'lamp0', lamp: 0 }, { id: 'lamp10', lamp: 10 }, { id: 'lamp14', lamp: 14 }, { id: 'pow1', pow: 1.0 },
+          { id: 'pow2', pow: 2.0 }, { id: 'spill0.6', spill: 0.6 }, { id: 'bloom1', bloom: (v0.bloom ?? 1) / 0.45 }, { id: 'bloom0.25', bloom: (v0.bloom ?? 1) * 0.55 }];
+        out.walls.variants = [];
+        for (const v of VARS) {
+          if (v.pow != null) town.uSpillPow.value = v.pow;
+          if (v.spill != null) town.spillGain = v.spill;
+          if (v.lamp != null) town.lampGain = v.lamp;
+          town.update(0);
+          if (v.bloom != null && L?.set) L.set({ bloomScale: v.bloom });
+          const B = readback();
+          const nr = [], fr = [];
+          for (let y = Math.max(0, y0 | 0); y <= Math.min(bh - 1, Math.ceil(y1)); y++) for (let x = Math.max(0, x0 | 0); x <= Math.min(bw - 1, Math.ceil(x1)); x++) {
+            const i = ((bh - 1 - y) * bw + x) * 4;
+            if (Mk[i] > 250 && Mk[i + 2] < 5) (Mk[i + 1] > 2 ? nr : fr).push(Yof(B.raw, i));
+          }
+          let sY = 0, r2 = 0, g2 = 0, b2 = 0, m2 = 0, skyMax = 0;
+          for (let i = 0; i < B.raw.length; i += 4) { sY += Yof(B.raw, i); r2 += B.raw[i]; g2 += B.raw[i + 1]; b2 += B.raw[i + 2]; m2++; }
+          for (let y = 0; y < (bh >> 2); y++) for (let x = 0; x < bw; x++) { const i = ((bh - 1 - y) * bw + x) * 4; skyMax = Math.max(skyMax, 0.2126 * B.raw[i] + 0.7152 * B.raw[i + 1] + 0.0722 * B.raw[i + 2]); }
+          const om = (0.2126 * LIN[Math.round(r2 / m2)] + 0.7152 * LIN[Math.round(g2 / m2)] + 0.0722 * LIN[Math.round(b2 / m2)]) * 100;
+          out.walls.variants.push({ id: v.id, pow: town.uSpillPow.value, spill: town.spillGain, lamp: town.lampGain, bloom: L?.bloomScale ?? null,
+            frameY: { ofMeans: +om.toFixed(2), perPixel: +(sY / m2 * 100).toFixed(2) }, medianY: { near: med(nr), far: med(fr) }, p90Far: pct(fr, 0.9), skyTopQuarterMaxLuma: +skyMax.toFixed(1) });
+          town.uSpillPow.value = v0.pow; town.spillGain = v0.spill; town.lampGain = v0.lamp; town.update(0);
+          if (v.bloom != null && L?.set) L.set({ bloomScale: v0.bloom });
+        }
+        readback();
+      } catch (e) { out.walls.variantsError = String(e?.message || e); }
     } catch (e) { out.walls = { error: String(e?.message || e) }; }
   }
 

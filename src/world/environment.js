@@ -223,6 +223,8 @@ const BIOME_IDS = Object.freeze(Object.keys(BIOMES));
 const R4_BIOME = Object.freeze({ meadow: 'pans', marsh: 'flank', forest: 'cloudline', ash: 'malpais', scree: 'holds', snow: 'caldera' });
 const CALIMA_EV = 0.15;          // L-03 (the bible's +0.2 is superseded by the look spec)
 const CALIMA_BLOOM = -0.15;
+/** The bloom's share of its strength at full night (wave 4 fix, F07's haze over the town). */
+const NIGHT_BLOOM = 0.45;
 /** EV may move at most this much per update (A-biome-grade ≤ 0.05 EV per frame). */
 const EV_STEP_MAX = 0.04;
 const EV_RATE = 0.6;             // EV per second when it is moving
@@ -1568,7 +1570,10 @@ export class Environment {
     // ACES-era 1.2 until the next look change re-solved it)
     const L = this.ctx.engine?.look;
     if (L?.set) {
-      const sc = Math.round(this.w.bloomK * 64) / 64;
+      /* wave 4 fix (F07: "a bloom haze hangs over the town block"; the far walls' median read 0.08 linear inside the town's
+       * box at uNight 0.05, the haze of 150 lit panes 130 m off): at night the bloom keeps NIGHT_BLOOM of its strength */
+      const nb = Math.min(1, Math.max(0, (this.nightFactor - 0.55) / 0.37)), nk = nb * nb * (3 - 2 * nb);   // dusk keeps all of it
+      const sc = Math.round(this.w.bloomK * (1 - (1 - NIGHT_BLOOM) * nk) * 64) / 64;
       if (L.bloomScale !== sc) L.set({ bloomScale: sc });
       return;
     }

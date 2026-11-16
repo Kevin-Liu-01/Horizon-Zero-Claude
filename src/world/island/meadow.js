@@ -114,7 +114,7 @@ uniform vec4 uHGrid;              // side, 1 / step, half, -
 uniform float uWorldInv;
 uniform vec4 uRing;               // rIn, rOut, bandIn, bandOut
 uniform vec4 uRing2;              // chunk size, kind (0 blade, 1 clump, 2 card), chunk-index offset, -
-uniform vec4 uPx;                 // device px a metre at depth 1, width floor on, -, -
+uniform vec4 uPx;                 // device px a metre at depth 1, width floor on, a2c blades, a multisampled target
 uniform float uTime;
 uniform vec2 uWind;
 uniform vec4 uActors[4];
@@ -302,6 +302,7 @@ uniform float uKind;
 uniform float uIdPass;
 uniform vec4 uStand;
 uniform vec4 uSoft;
+uniform vec4 uPx;
 uniform float uTransl;
 uniform highp sampler2DArray tField;
 uniform vec4 uHzW0;
@@ -336,7 +337,11 @@ else {
    * edge instead of flipping a pixel between a lit blade and the ground behind it. The blade's middle keeps its own
    * tone: it is the edge that is softened, not the meadow that is flattened. Faded in over uSoft.z-w metres */
   #ifndef CAL_M_NOSOFT
-  float sK = uSoft.x * smoothstep(uSoft.z, uSoft.w, length(vViewPosition));
+  /* (wave 4 fix) the soft edge is the no-MSAA path's stand-in for coverage, as the sub-pixel mean (uStab.w) is: with a
+   * multisampled target (uPx.w 1) the samples resolve the edge and the soft edge stands aside. Until then it ran under
+   * 4x MSAA too, so the 4x reference the crawl bar is read against carried it (2be9311: reference 64.9 -> 44.2 per mille
+   * in the 12-30 m band, the shipped walk 85.9 -> 61.4) */
+  float sK = uSoft.x * (1.0 - uPx.w) * smoothstep(uSoft.z, uSoft.w, length(vViewPosition));
   if (sK > 0.001) {
     float eU = min(vMUv.x, 1.0 - vMUv.x) / max(fwidth(vMUv.x), 1e-5);
     if (uKind > 0.5) eU = min(eU, (1.0 - vMUv.y) / max(fwidth(vMUv.y), 1e-5));
@@ -614,6 +619,7 @@ export class Meadow {
     // the floor's coverage fade is only meaningful through coverage; without it a floored blade stays solid
     this._u.uPx.value.y = 1;
     this._u.uPx.value.z = s > 0 && this.a2cBlades ? 1 : 0;
+    this._u.uPx.value.w = s > 0 ? 1 : 0;
   }
 
   setIdPass(on) { this._u.uIdPass.value = on ? 1 : 0; }
