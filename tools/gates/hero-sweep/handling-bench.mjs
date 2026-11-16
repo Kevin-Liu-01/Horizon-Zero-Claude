@@ -71,9 +71,16 @@ if (!CASE) {
     const tasks = [], keys = [];
     for (const sq of seqs) {
       // the sequence's own length first (to its W7 end, at most its record): every step of it gets each interrupt
+      /* M1a weapons round 3 (W10 restated, the wave 3 ruling: "the 0.06 m per step bar applies to a jump against the
+       * sequence's own planned motion (the rendered wrist against where the authored path puts it that step), not to the
+       * authored path's own speed"): the same run also records the sequence UNINTERRUPTED over the interrupt runs' length
+       * (the authored path, step by step), and each interrupt run is graded against it */
       const n = Math.round(Number(flag('--w10-steps', 0)) || 0);
-      const steps = n || Math.round(((await runChild(['--case', sq, '--w10-len'])).r?.len ?? 30));
-      for (const kind of W10_KINDS) for (let k = 0; k <= steps; k++) { keys.push([sq, kind, k]); tasks.push(() => runChild(['--case', sq, '--inject', `${kind}@${k}`])); }
+      const ref = await runChild(['--case', sq, '--w10-len', '--w10-ref']);
+      const steps = n || Math.round(ref.r?.len ?? 30);
+      const refF = path.join(tmp, `ref_${sq}.json`);
+      writeFileSync(refF, JSON.stringify((ref.log || []).map((r) => ({ t: r.t, wristL: r.wristL, wristR: r.wristR }))));
+      for (const kind of W10_KINDS) for (let k = 0; k <= steps; k++) { keys.push([sq, kind, k]); tasks.push(() => runChild(['--case', sq, '--inject', `${kind}@${k}`, '--ref', refF])); }
     }
     console.log(`W10: ${tasks.length} runs, ${jobs} at once`);
     const R10 = await pool(tasks);
@@ -83,12 +90,14 @@ if (!CASE) {
       e.runs++;
       if (!r) { e.fails++; e.failList.push(`@${k}: no result`); return; }
       const w = r.w10;
-      if (w.wristAcrossM > e.worstWristM) { e.worstWristM = w.wristAcrossM; e.worstAt = k; }
+      if (w.jumpAcrossM > e.worstWristM) { e.worstWristM = w.jumpAcrossM; e.worstAt = k; }
+      e.worstRawM = Math.max(e.worstRawM || 0, w.wristAcrossM);
       if (w.fails.length) { e.fails++; if (e.failList.length < 6) e.failList.push(`@${k}: ${w.fails.join('; ')}`); }
     });
     let tot = 0, bad = 0;
-    for (const [key, e] of Object.entries(w10)) { tot += e.runs; bad += e.fails; e.worstWristM = +e.worstWristM.toFixed(4); console.log(`W10 ${key.padEnd(24)} ${e.fails ? 'FAIL' : 'pass'} ${e.fails}/${e.runs} runs fail; worst wrist across the step ${e.worstWristM} m @${e.worstAt}`); for (const f of e.failList) console.log(`    - ${f}`); }
+    for (const [key, e] of Object.entries(w10)) { tot += e.runs; bad += e.fails; e.worstWristM = +e.worstWristM.toFixed(4); console.log(`W10 ${key.padEnd(24)} ${e.fails ? 'FAIL' : 'pass'} ${e.fails}/${e.runs} runs fail; worst jump against the planned path ${e.worstWristM} m @${e.worstAt} (raw wrist step ${+(e.worstRawM || 0).toFixed(4)} m)`); for (const f of e.failList) console.log(`    - ${f}`); }
     out.W10 = { runs: tot, failRuns: bad, bySeq: w10 };
+    console.log(`W10: ${bad} of ${tot} runs fail`);
   }
   rmSync(tmp, { recursive: true, force: true });
   if (flag('--json')) writeFileSync(flag('--json'), JSON.stringify(out, null, 1));
@@ -165,7 +174,12 @@ function combatStep(dt) {
   const lanceOut = !!mel.lanceInHand || (NEW && mel.stance === 'draw');
   // (_updateNock: the arrow lands on the string 0.42 s after the raise; lowered, it goes back in the quiver)
   if (!p.aiming) { emu.nockT = 0.42; emu.nockLanded = false; emu.wasAim = false; }
-  else { if (!emu.wasAim) { emu.nockT = 0.42; emu.wasAim = true; } emu.nockT = Math.max(0, emu.nockT - dt); emu.nockLanded = emu.nockT <= 0; }
+  else {
+    if (!emu.wasAim) { emu.nockT = 0.42; emu.wasAim = true; }
+    // (M1a weapons round 3: combat holds the nock's clock while the animator's aim gate is shut, `bowAimGate`)
+    if (an.bowAimGate && an.bowAimGate() < 1) emu.nockT = 0.42;
+    emu.nockT = Math.max(0, emu.nockT - dt); emu.nockLanded = emu.nockT <= 0;
+  }
   C.nockLanded = emu.nockLanded; C.nockProgress = p.aiming ? 1 - emu.nockT / 0.42 : 0;
   // (the draw: aiming with LMB held arms it the step after the nock lands, then 0.70 s to full)
   const lmb = !!(R.ctx.input.mouse.buttons & 1);
@@ -273,6 +287,13 @@ function record(t) {
   r.bowSock = H?.bow?.sockChar ? H.bow.sockChar.slice() : null;
   r.bowS = H ? H.bow.s : null; r.bowPhase = H ? H.bow.phase : (an._bp?.mode ? `m${an._bp.mode}` : '');
   r.curlL = H ? H.bow.curl : null;
+  // (M1a weapons round 3: the bow's hand-over to combat's placement, 0 posed from the fist .. 1 combat's: the raised aim)
+  r.bowAimK = H ? (H.bow.aimK ?? 0) : 0;
+  // (M1a weapons round 3, the reverse take and the two-hand regrip: which grip holds the bow, the handling's socket normal,
+  //  the right hand on the upper limb)
+  r.bowGripKind = H ? (H.bow.gripKind ?? null) : null;
+  r.bowSockNH = H?.bow?.sockN ? H.bow.sockN.slice() : null;
+  r.rightHold = H ? !!H.bow.rightHold : false; r.rightMiss = H ? H.bow.rightMiss ?? null : null;
   r.bowReady = NEW ? (H.bow.mode === 0 && held) : (!!an._bp && an._bp.mode === 0 && held);
   r.bowHome = NEW ? (H.bow.mode === 0 && !held) : (!!an._bp && an._bp.mode === 0 && !held);
   // the lance
@@ -437,7 +458,7 @@ const spd = c.speed ?? (c.jog ? SPEEDS.jog : 0);
 M.begin(CASE);
 c.go();
 const L = [];
-const N = Math.round((c.secs + (inj ? 0.6 : 0)) * 60);
+const N = Math.round((c.secs + (inj || args.includes('--w10-ref') ? 0.6 : 0)) * 60);
 for (let i = 0; i < N; i++) {
   c.each?.(i);
   inject(i);
@@ -456,7 +477,7 @@ if (flag('--w10-len') !== null || args.includes('--w10-len')) {
   const w = g.W7 || {}; const t = w.lanceReadyS ?? w.bowReadyS ?? w.bowStowS ?? w.lanceStowS ?? c.secs;
   res.len = Math.round(Math.min(c.secs, t) * 60);
 }
-if (inj) res.w10 = gradeInterrupt(L, inj.at, g);
+if (inj) res.w10 = gradeInterrupt(L, inj.at, g, flag('--ref') ? JSON.parse(readFileSync(flag('--ref'), 'utf8')) : null);
 if (flag('--log-to')) writeFileSync(flag('--log-to'), JSON.stringify(L));
 console.log(`@@RESULT ${JSON.stringify(res)}`);
 process.exit(0);

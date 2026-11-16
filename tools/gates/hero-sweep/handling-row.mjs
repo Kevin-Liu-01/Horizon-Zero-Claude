@@ -71,19 +71,32 @@ export function gradeCase(kind, L, meta = {}) {
       let pmax = 0, axMax = 0, flex = 0, dev = 0, sockMax = 0, sockN = 0;
       /* (M1a weapons fix 1: W1 is the handling's grip; under the raised aim (aim weight over 0.5) combat places the bow at
        *  the hand's origin for the draw solve (`_placeInHand`'s aimed branch), so those steps are reported, not graded) */
-      let aimPalm = 0;
+      /* (M1a weapons round 3: ...and the steps of the bow's hand-over between the fist's carry and that placement, `bowAimK`
+       *  over 0: the raise out of the carry and the lowering back into it; reported as palmInRaiseMaxM / axisInRaiseMaxDeg) */
+      let aimPalm = 0, raisePalm = 0, raiseAx = 0, raiseN = 0, regripN = 0, revFlex = 0, revDev = 0, revN = 0;
+      const inAim = (r) => (r.aimW ?? 0) > 0.5 || (r.bowAimK ?? 0) > 0.01;
       for (let i = a; i < b; i++) {
         const r = L[i];
         if (r.bowVis === 'held' && r.bowLimb && (r.aimW ?? 0) > 0.5 && r.bowSock) aimPalm = Math.max(aimPalm, dist(r.palmBowL, r.bowSock));
-        if (r.bowVis !== 'held' || !r.bowLimb || (r.aimW ?? 0) > 0.5) continue;
+        if (r.bowVis === 'held' && r.bowLimb && (r.aimW ?? 0) <= 0.5 && (r.bowAimK ?? 0) > 0.01) {
+          raiseN++; if (r.bowSock) raisePalm = Math.max(raisePalm, dist(r.palmBowL, r.bowSock));
+          const g = ang(r.gripAxL, r.bowAxis); raiseAx = Math.max(raiseAx, Math.min(g, 180 - g));
+        }
+        if (r.bowVis !== 'held' || !r.bowLimb || inAim(r)) continue;
+        /* (M1a weapons round 3, the wave 3 ruling: the left hand OPEN in the two-hand regrip (the right holds the bow, W5)
+         *  is not on the bow; those steps are counted, not graded for the grip) */
+        if (r.bowGripKind === 'regrip') { regripN++; continue; }
         // the palm on the stave between the limb socket and the riser (generic: any design)
         pmax = Math.max(pmax, segDist(r.palmBowL, r.bowLimb, r.bowGrip));
         if (r.bowSock) { sockMax = Math.max(sockMax, dist(r.palmBowL, r.bowSock)); sockN++; }
         // the grip axis along the stave (either way round)
         const g = ang(r.gripAxL, r.bowAxis); axMax = Math.max(axMax, Math.min(g, 180 - g));
+        /* (the ruling: "W1's wrist bar is graded after the regrip, and the take is graded on palm contact and no joint
+         *  inside the bow": the wrist on the steps the carry's fist holds it, 'norm'; the reverse take's reported) */
+        if (r.bowGripKind === 'rev') { revFlex = Math.max(revFlex, Math.abs(r.wristFlexL)); revDev = Math.max(revDev, Math.abs(r.wristDevL)); revN++; continue; }
         flex = Math.max(flex, Math.abs(r.wristFlexL)); dev = Math.max(dev, Math.abs(r.wristDevL));
       }
-      out.W1 = { palmInAimMaxM: aimPalm ? r4(aimPalm) : null, palmToStaveMaxM: r4(pmax), palmToSocketMaxM: sockN ? r4(sockMax) : null, gripAxisToStaveMaxDeg: r3(axMax), wristFlexMaxDeg: r3(flex), wristDevMaxDeg: r3(dev) };
+      out.W1 = { regripOpenSteps: regripN, reverseSteps: revN, reverseWristFlexMaxDeg: revN ? r3(revFlex) : null, reverseWristDevMaxDeg: revN ? r3(revDev) : null, raiseSteps: raiseN, palmInRaiseMaxM: raiseN ? r4(raisePalm) : null, axisInRaiseMaxDeg: raiseN ? r3(raiseAx) : null, palmInAimMaxM: aimPalm ? r4(aimPalm) : null, palmToStaveMaxM: r4(pmax), palmToSocketMaxM: sockN ? r4(sockMax) : null, gripAxisToStaveMaxDeg: r3(axMax), wristFlexMaxDeg: r3(flex), wristDevMaxDeg: r3(dev) };
       // the close: curl from open to closed over >= 2 steps ending on the grip step
       if (bowGrip > 0 && L[bowGrip].curlL != null) {
         let k = bowGrip; while (k > 0 && L[k - 1].curlL != null && L[k - 1].curlL < L[k].curlL - 1e-4) k--;
@@ -95,9 +108,11 @@ export function gradeCase(kind, L, meta = {}) {
       let nMax = 0, nN = 0, tipMax = 0, inside = 0, closedN = 0;
       for (let i = a; i < b; i++) {
         const r = L[i];
-        if (r.bowVis !== 'held' || !r.bowLineA || r.curlL == null || r.curlL < 0.8 || (r.aimW ?? 0) > 0.5) continue;
+        if (r.bowVis !== 'held' || !r.bowLineA || r.curlL == null || r.curlL < 0.8 || inAim(r) || r.bowGripKind === 'regrip') continue;
         closedN++;
-        if (r.palmNL && r.bowSockN) { nMax = Math.max(nMax, ang(r.palmNL, r.bowSockN)); nN++; }
+        // (the socket's normal as the handling reports it when it knows it: the reverse take's, from the palm onto the limb)
+        const sn = r.bowSockNH || r.bowSockN;
+        if (r.palmNL && sn) { nMax = Math.max(nMax, ang(r.palmNL, sn)); nN++; }
         const rad = segDist(r.palmBowL, r.bowLimbC, r.bowLimbC) < segDist(r.palmBowL, r.bowGripC, r.bowGripC) ? r.bowRLimb : r.bowRGrip;
         for (const F of (r.fingL || []).slice(0, 4)) {
           for (let j = 0; j < 4; j++) { const d = segDist(F[j], r.bowLineA, r.bowLineB) - rad; if (j < 3 && d < 0) inside++; if (j === 3) tipMax = Math.max(tipMax, Math.abs(d)); }
@@ -260,6 +275,14 @@ export function gradeCase(kind, L, meta = {}) {
   }
   // ---- W5 the bow's regrip
   {
+    /* (M1a weapons round 3, the wave 3 ruling: the regrip is TWO-HANDED: on every step the left is open in it, the right
+     *  holds the bow's upper limb, closed on it) */
+    const rg = L.filter((r) => r.bowGripKind === 'regrip' && r.bowVis === 'held');
+    if (rg.length) {
+      const bad = rg.filter((r) => !r.rightHold).length;
+      out.W5two = { regripSteps: rg.length, rightNotHolding: bad };
+      if (bad) fail(`W5 the left open in the regrip on ${bad} of ${rg.length} steps without the right hand on the bow`);
+    }
     const sl = L.filter((r) => r.bowS != null && r.bowS > 0.001 && r.bowS < 0.999 && r.bowVis === 'held');
     if (sl.length) {
       let d = 0, c = 0; for (const r of sl) { d = Math.max(d, r.bowSock ? dist(r.palmBowL, r.bowSock) : segDist(r.palmBowL, r.bowLimb, r.bowGrip)); if (r.curlL != null) c = Math.max(c, r.curlL); }
@@ -424,22 +447,36 @@ export function gradeCase(kind, L, meta = {}) {
 }
 
 /**
- * W10 (M1a weapons fix 1): an interrupt injected at step `k` (the record runs on 0.6 s past the case). W2's ownership
- * (both weapons in hands, the jumps at owner changes, an owner change outside an event) and W6's head-plane and shoulder
- * clauses hold over the whole run; either wrist moves <= 0.06 m across the interrupt step (k to k + 1); and no blend
- * shorter than 4 steps: either wrist moves <= 0.06 m a step over the 4 steps after it too (a cut would show as one
- * step's jump inside them).
+ * W10 (M1a weapons fix 1; RESTATED in weapons round 3 per the wave 3 ruling): an interrupt injected at step `k` (the
+ * record runs on 0.6 s past the case). W2's ownership (both weapons in hands, the jumps at owner changes, an owner change
+ * outside an event) and W6's head-plane and shoulder clauses hold over the whole run.
+ *
+ * The ruling: "the 0.06 m per step bar applies to a jump against the sequence's own planned motion (the rendered wrist
+ * against where the authored path puts it that step), not to the authored path's own speed". `ref` is the same sequence
+ * run UNINTERRUPTED (the authored path, step for step; handling-bench.mjs records it in its own process). The jump at a
+ * step is how far either wrist's offset from the authored path changes in that step, |(R[i+1] - A[i+1]) - (R[i] - A[i])|:
+ * across the interrupt step (k to k + 1) and over the 4 steps after it (no blend shorter than 4 steps: a cut shows as one
+ * step's jump inside them). Swing steps are left out after the interrupt step, as before. The raw per-step wrist travel
+ * (the old reading) is reported beside it. Without `ref` the old reading is graded.
  */
-export function gradeInterrupt(L, k, g) {
+export function gradeInterrupt(L, k, g, ref = null) {
   const fails = [];
   const keep = (g.fails || []).filter((f) => /^W2 |^W6 /.test(f));
   for (const f of keep) fails.push(f);
-  let across = 0, after = 0;
+  let across = 0, after = 0, jA = 0, jAf = 0;
+  const off = (i, s) => (ref && ref[i] ? sub(L[i][s], ref[i][s]) : [0, 0, 0]);
+  const jump = (i, s) => len(sub(off(i + 1, s), off(i, s)));
+  const hasRef = !!(ref && ref.length > k + 1);
   for (const s of ['wristL', 'wristR']) {
-    if (L[k + 1] && L[k]) across = Math.max(across, dist(L[k][s], L[k + 1][s]));
-    for (let i = k + 1; i <= k + 4 && i + 1 < L.length; i++) if (!L[i + 1].swing && !L[i].swing) after = Math.max(after, dist(L[i][s], L[i + 1][s]));
+    if (L[k + 1] && L[k]) { across = Math.max(across, dist(L[k][s], L[k + 1][s])); if (hasRef) jA = Math.max(jA, jump(k, s)); }
+    for (let i = k + 1; i <= k + 4 && i + 1 < L.length; i++) {
+      if (L[i + 1].swing || L[i].swing) continue;
+      after = Math.max(after, dist(L[i][s], L[i + 1][s]));
+      if (hasRef && ref[i + 1]) jAf = Math.max(jAf, jump(i, s));
+    }
   }
-  if (across > 0.06) fails.push(`wrist ${across.toFixed(3)} m across the interrupt step`);
-  if (after > 0.06) fails.push(`wrist ${after.toFixed(3)} m a step within 4 steps after it`);
-  return { wristAcrossM: r4(across), wristAfterM: r4(after), fails };
+  const a = hasRef ? jA : across, b = hasRef ? jAf : after;
+  if (a > 0.06) fails.push(`wrist ${a.toFixed(3)} m ${hasRef ? 'off the authored path' : ''} across the interrupt step`);
+  if (b > 0.06) fails.push(`wrist ${b.toFixed(3)} m ${hasRef ? 'off the authored path' : ''} a step within 4 steps after it`);
+  return { jumpAcrossM: r4(a), jumpAfterM: r4(b), wristAcrossM: r4(across), wristAfterM: r4(after), againstRef: hasRef, fails };
 }

@@ -22,6 +22,8 @@ import { ClothWrap } from './anim/clothWrap.js';
 
 /** M1a round 2: after a lance holster the aim rig takes the arms over this long (s), from the hand down her side. */
 const STOW_HANDBACK = 0.22;
+/** M1a weapons round 3: the aim weight's rise (per s) through a raise that waited on the bow's unstow (`_gateRaise`) */
+const GATE_RAISE = 4.0;
 
 /**
  * PlayerAnimator — Round 4: mocap clip base + procedural overlays.
@@ -811,6 +813,16 @@ export class PlayerAnimator {
       g -= Math.round(g / (2 * Math.PI)) * 2 * Math.PI;
       aimTo = 1 - smoothstep(Math.abs(g), AO.align[0], AO.align[1]);
     }
+    /* M1a weapons round 3 (W3/W8): the aim waits for the bow. From stowed the aim rig raised the empty left hand while the
+     * unstow held the bow behind her, and the path's end handed the bow to the raised aim in one step (126 deg). While the
+     * bow is not yet in her left hand at the end of its unstow the aim weight's target is held at 0 (carryStow
+     * `bowAimGate`); the quiver beat starts, and combat's nock clock runs, when it opens */
+    this._bowGate = (p.aiming && !this.ctx.combat?.activeWeapon?.heavy && this.bowAimGate) ? this.bowAimGate() : 1;
+    if (this._bowGate < 1) aimTo = Math.min(aimTo, this._bowGate);
+    // (...the raise that follows comes up out of the carry: the carry stays under it, faded by the aim weight alone, and
+    //  the aim weight rises at most GATE_RAISE a second: the 13/s damp and the carry's own 7/s fade together moved the
+    //  bow hand 0.086 m in a step, W3)
+    if (!p.aiming) this._gateRaise = false; else if (this._bowGate < 1) this._gateRaise = true;
     this._aimAlign = aimTo;
     const aw0 = this._aimW;
     this._aimW = damp(this._aimW, aimTo, this.T.crouchAim && aimHold ? 13 - 7.5 * this._crouchW : 13, dt);
@@ -824,6 +836,7 @@ export class PlayerAnimator {
      * `aimOut.easeS` s from `ease0` of the rate, so the step the aim starts to go is no jump either) */
     // (...and, with `aimOut.inRate`, the way IN standing is capped the same way, eased in: its 13/s first step took a
     // fifth of the stance, the chest blade and the bent T at once out of a sideways run)
+    if (this._gateRaise && this._aimW > aw0) this._aimW = Math.min(this._aimW, aw0 + GATE_RAISE * dt);
     if (AO?.inRate && this._aimW > aw0) {
       this._aiT = (this._aiT ?? 0) + dt;
       const eI = Math.min(1, AO.ease0 + (1 - AO.ease0) * this._aiT / AO.easeS);
@@ -867,7 +880,8 @@ export class PlayerAnimator {
     // 0.18). The reach for an arrow is a beat of the AIM RAISE, not of the
     // draw, and after a loose it belongs to the follow-through. Both edges
     // happen while the string is slack, which is the whole point.
-    const aimUp = p.aiming && !dead;
+    // (M1a weapons round 3: ...and only once the bow is in her hand, `_bowGate`: the beat is the raise's)
+    const aimUp = p.aiming && !dead && (this._bowGate ?? 1) >= 1;
     if (aimUp && !this._prevAiming) {
       this._quiverT = 0;                 // bow comes up -> pull an arrow
       this._reNock = false;
@@ -1433,7 +1447,7 @@ export class PlayerAnimator {
     // flag and already parents the bow to the left hand while `weaponDrawn`)
     const bowOut = !!this.ctx.combat?.weaponDrawn && !heavy && !dead;
     this._carryBowW = damp(this._carryBowW,
-      bowOut && !p.aiming && !p.dodging ? 1 : 0, bowOut ? 7 : 5, dt);
+      bowOut && (!p.aiming || this._gateRaise) && !p.dodging ? 1 : 0, bowOut ? 7 : 5, dt);
     // (M1a round 2: while the bow's authored unstow runs it owns the left arm; the lowered carry takes it from there)
     if (this._bp?.mode === 1) this._carryBowW = 0;
     if (this._carryBowW > 0.01) {
