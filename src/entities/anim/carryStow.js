@@ -721,7 +721,9 @@ export class CarryStow {
     const node = group.parent, mdl = group.children[0], mesh = mdl?.children?.[0];
     if (!mdl || !mesh) return;
     // (the raised aim places the bow on the aim rig's own line: combat's; nothing here moves it)
-    const aimed = B.mode === 0 && (!!this.ctx.player?.aiming || (this.aimWeight ?? 0) > 0.02);
+    // (...and in the carry only while the carry layer holds the arm: through a roll or a death the clip has the hand, and
+    //  combat's own carry placement holds the bow off her heading as before (A100's dodge: the kit's lance tipped to 87 deg)
+    const aimed = B.mode === 0 && (!!this.ctx.player?.aiming || (this.aimWeight ?? 0) > 0.02 || (this._carryBowW ?? 0) < 0.98 || (this._dodgeW ?? 0) > 0.01);
     const cmb = this.ctx.combat;
     /* M1a weapons round 2 (W1, W2): the bow is posed FROM THE HAND that holds it, as drawn: its turn the one the fist
      * holds it in (`_bowForHand`), its socket on the palm. Round 1 posed it on the plan beside the hand (the palm 0.03-0.19
@@ -885,7 +887,7 @@ export class CarryStow {
           const dt = dist(T);
           let sc = Math.abs(dt - 0.004) + 0.002 * (c1 + c2);
           const jm = Math.min(d1, d2, d3);
-          if (jm < 0.003) sc += 1 + (0.003 - jm) * 50;
+          if (jm < 0.0015) sc += 1 + (0.0015 - jm) * 50;
           // (the tip closes round the far side of the axis, not onto the near face of it)
           v.subVectors(T, pt);
           if (v.dot(nrm) < 0) sc += 0.5 - v.dot(nrm) * 10;

@@ -765,6 +765,8 @@ export class Melee {
     s.k = this._phaseEnd > 1e-4 ? Math.min(1, (this._t + cap) / this._phaseEnd) : 0;
     const dur = this.stance === 'draw' ? this._drawDur : (this._holsterDur || HOLSTER_T);
     s.drawK = Math.min(1, (this._drawT + ahead) / dur);
+    // (M1a weapons round 2: the urgent draw, a strike's, does not wait on the grips: R5's click-to-swing 0.25-0.35 s)
+    s.urgent = this.stance === 'draw' && this._drawDur < DRAW_T_ASK;
     return s;
   }
 

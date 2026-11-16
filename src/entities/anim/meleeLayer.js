@@ -321,6 +321,10 @@ const LH_ON_REF = 0.5425;
 const LH_PALM = 0.075;
 /** M1a weapons round 2: the haft's axis off the palm point along the palm's normal (m; see `haftOffL`) */
 const HAFT_D = 0.024;
+/** ...for the LEFT hand (the off hand on the haft through the swings): 0.010 m, so A101's two-handed clause (the left knuckle
+ *  line's centre within 0.05 m of the haft, its seat through light-1 and light-2 read 0.051-0.073 at fd1851f with 0.024)
+ *  keeps its margin; the knuckle joints stay 0.018 m off the axis, outside the haft (r 0.014-0.016) */
+const HAFT_D_L = 0.010;
 /** ...and the most the draw waits at the left fist's take for the palm on its socket (s; melee.js holds its clock) */
 const TAKE_WAIT = 0.10;
 /** ...within (m): the palm's axis point on the socket (W1's bar is 0.010) */
@@ -1175,8 +1179,8 @@ export class MeleeLayer {
     this.gripR = null; this.gripLButt = null; this.gripLFore = null;
     if (typeof an._grip === 'function' && an._fingerR?.length >= 12 && an._fingerL?.length >= 12) {
       this.gripR = an._grip('r', 'lanceR', this.palmOffL, this.gripDirL, HAFT_D, LANCE_R.grip);
-      this.gripLFore = an._grip('l', 'lanceFore', this.palmOffLL, this.gripDirLL, HAFT_D, LANCE_R.fore);
-      this.gripLButt = an._grip('l', 'lanceButt', this.palmOffLL, this.gripDirLL, HAFT_D, LANCE_R.butt);
+      this.gripLFore = an._grip('l', 'lanceFore', this.palmOffLL, this.gripDirLL, HAFT_D_L, LANCE_R.fore);
+      this.gripLButt = an._grip('l', 'lanceButt', this.palmOffLL, this.gripDirLL, HAFT_D_L, LANCE_R.butt);
       this.haftOffL.copy(this.gripR.axis);
       this.haftOffLL.copy(this.gripLFore.axis);
     }
@@ -1794,6 +1798,7 @@ export class MeleeLayer {
     this._prevPhase = stance === 'swing' ? st.phase : null;
     this._prevSwing = stance === 'swing';
     this._stDrawK = clamp(st?.drawK ?? 0, 0, 1);
+    this._urgent = !!st?.urgent;
     this._leftCarry(stance, st);
     const u = this._blend(stance, st, beat);
     /* M1.3d: THE KEYS COME DOWN WITH HER IN A CROUCH. The guard and the beats are authored on a standing
@@ -3029,7 +3034,7 @@ export class MeleeLayer {
      * margin — and anything worse than that waits for the clock. */
     /* M1a weapons round 2 (W1, W2 at the hand-over): taking the haft from the LEFT fist (the carry), the right takes it
      * on its socket: within `HANDOVER_SNAP` (the convergence path then needs the same; the clock's escape stays) */
-    const carry = !!this._lc?.on && !this._held && this._prevStance === 'draw';
+    const carry = !!this._lc?.on && !this._held && this._prevStance === 'draw' && !this._urgent;
     const settled = carry ? reach <= HANDOVER_SNAP || (this._gsN >= 6 && this._gsStall >= 3 && reach <= 0.03)
       : reach <= GRAB_SNAP || (this._gsN >= 4 && this._gsStall >= 2 && reach <= 0.20);
     this.needsGrab = !settled;
@@ -3672,7 +3677,7 @@ export class MeleeLayer {
     if (this._lhPrev) { this._lhPrev.copy(_lh); this._lhPrevOk = true; }
     // the draw's clock waits at the end of the reach until the fist is on its socket (`melee.js`, bounded): the take
     if (stance === 'draw' && !this._lTaken && (this._stDrawK ?? 0) >= LC_REACH - 0.04) {
-      if (miss <= TAKE_TOL || this._takeWaitT > TAKE_WAIT) this._lTaken = true;
+      if (miss <= TAKE_TOL || this._takeWaitT > TAKE_WAIT || this._urgent) this._lTaken = true;
       else { this.needsTake = true; this._takeWaitT += this._lastDt || 0; }
     }
     // ...and on the stow, at the seat: the fist lets go of the haft once it is on its line in the keeper
