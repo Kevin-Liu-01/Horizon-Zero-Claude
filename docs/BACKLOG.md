@@ -367,3 +367,18 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 | closed | A107-draw-arm-path: 3 of 3 page runs pass (worst 0.069 m, bar 0.10); the bench 18/18 and the page bench 14/14 | f2ad55f | hero-anim |
 | closed | W6: the light swing from a sprint or jog click: 0 behind-head and 0 head-plane steps | f2ad55f Node | hero-anim |
 | closed | Tier 0 name lint 0 hits; A70 eight tabs; the CONTINUE banner names the save (in code) | f2ad55f | ui |
+
+## Wave 4 additions (Nov 16 2026)
+
+| sev | item | detail |
+|---|---|---|
+| blocker | Organ near gain in accepted frames | F14 and F23-plumb further outside the cloth since 3058d33 |
+| major | slice steadiness | 1 of 2 runs at 9f8bc85: a 19-arrow topple, a death at the return, the driver stuck 5.7 m short |
+| major | W7 slower than round 2 | RMB from stowed to loosable 1.40 s (baseline 0.867); swap 1 to 2 0.817 s (was 0.650) |
+| major | lane page rows | A100 dodge holster, A103 blade short, A-draw-elbow-level arm step and loose elbow |
+| major | cloth page rows clip | A-sweep-crouch 1, -roll 2, -climb 1 at 9f8bc85 (0 at f59f6d9) |
+| major | never-restored reload | the world draws black under the HUD at 9f8bc85 |
+| major | FOV slider | camera fov 77.6 for a slider at 80 |
+| major | rulings | F05 and town re-anchors; the crawl's reference; F07's wall-spill measure; chosen audio ranges |
+| note | A9 | pending twice on a shared box |
+| note | A-tail-legible, A-wrap-clear | not run at 9f8bc85 |

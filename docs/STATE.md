@@ -1289,3 +1289,104 @@ That is over the 15-minute cap: the two kept sessions alone take about 25 minute
 - F24's town block (standing).
 
 **Decision (the orchestrator):** Tier 0 passes 10 of 10 and the kept stack is 79 of 80 with 0 failing (A9 passes on a quiet box for the first time; A107 passes three runs of three). The one open frame, F19's sash panel at the heavy's contact, is a cloth-and-handling frame, which the owner's direction allows to change while that work goes on; it is carried as debt with its cause (the lead foot's step timing at the contact). main is fast-forwarded to r5/int.
+
+## Wave 4: cloth on, weapons round 3, calima and night, slice audio, robustness (Nov 16 2026)
+
+Five lanes worked in one tree on `r5/int`, each with a builder, a judge and one fix round:
+- Cloth: the grid cloth turned on by default (4d11034); `?cloth=` no longer switches it (bbf9755) and `clothWrap.js`
+  is deleted. Sleep, the free swing at a stop, a collision pass on the drawn sheet, the teleport fling, the tail's air.
+- Weapons round 3: the bow's reverse-grip take at the small of the back and the two-hand regrip before the hip (the
+  wave 3 ruling); the aim from stowed waits for the bow; the guard on the move; the click's urgent draw on its socket.
+- World and sky (M1.1i): the calima's own air and a night grade set; F07's breakwater lamp and the town's windows; the
+  F24 town finish (roof huts, quoins, wash); the Organ's near gain.
+- Audio (M1.6k): the slice bank (77 counted cues, six buses, the cue director, the theme), live rows, the walk through
+  the game's own audio graph.
+- Robustness (M1.6m): context loss and restore, the pad, hold-or-toggle and the sliders, the colour-vision check, the
+  `medium` and `low` tiers.
+
+The review measured `r5/int` at **9f8bc85** from clean detached worktrees on port 5270, using one Chrome slot.
+Commits from the next wave began landing on `r5/int` during the review (from 21:09 UTC); none of them is measured here.
+
+**Verdict: NOT CLEAN.**
+- **Accepted frames changed outside cloth and weapon handling.** The Organ's near gain (3058d33) turned the basalt
+  columns pale in F14 and rust-coloured in F23-plumb (further on material in both). F05 changed the same way; its
+  Organ was the world lane's own row, and the light is judged slightly closer, but it needs a word or a re-anchor. The
+  town finish (9a52361) changed the town behind F15, F16, F18, F19, F20 and F24 (judged on the figures under the town
+  ruling).
+- **The slice is not steady: 1 of 2 runs reached the reward.** Run 1 died at the start of the return after a
+  19-arrow topple (4 at 375c3ff) and the driver then stuck 5.7 m short of the quest giver: 13 of 14. Run 2 played
+  14 of 14.
+- A9-perf-budget could not be graded (the shared box was not quiet in either of two runs).
+
+What holds: Tier 0 10 of 10; no kept row fails; A107 and V49 pass; the audio passes on the live game; tiers, the pad
+and the colour-vision check pass.
+
+**Tier 0 at 9f8bc85: PASS, 10 of 10.**
+- `vite build` OK (3.92 MB of code). Name lint: 0 hits in 775 files.
+- Licences: 231 files against 31 rows. Asset budgets clean. Import graph: 200 modules, 0 broken.
+- Resident textures 61.42 MB of 175 MB. Shipped 53.14 MB (first-load cap 60 MB).
+- 142 Node tests pass in 29 files. Boot: 3.8 s, 0 errors, 82.95 MB first load. Rendered-page name lint: 0.
+
+**Frame Set at 9f8bc85:** all 34 frames, 201 s of Chrome, 0 console errors. The simulation-time stagings froze at the
+same frame counts as before (F15 194, F16 217, F17 217, F18 314, F19 187, F24 217, F25 217).
+- Further outside the cloth: F14 and F23-plumb (the Organ). Changed: F05 (the Organ and the town).
+- Cloth frames (F08-F10, F13, F14): the cloth now hangs plumb and straighter; against the masked turnaround crops the
+  same, not closer (still flat sheets without folds or a ragged hem).
+- F19: closer than round 2 (the rear panel no longer streams out level at the contact); about the same as its anchor.
+- F06: closer (the island inside the dust). F07: closer to its written target (mean luminance 5.0 %, about 25 lit
+  window blobs, the lamp a pool on its deck).
+
+**Kept-stack rows at 9f8bc85** (two sessions, every row reached): 80 rows. **78 pass** (70 action, 8 visual), **0
+fail**, **2 pending** (A9: load 3.9 and 3.55 on a shared box; A76: no staged kind declares a size class).
+- A16: knuckle to jaw 0.014 m, hook 0.008 m, launch 0 deg. A17: loose 0.083 m behind.
+- A107: 0.063 m behind the head at a sprint, -0.015 m at a jog (bar 0.10). A90: geometries 383 -> 382.
+- V49: both elbows under the top of her head in all 12 tiles, no forearm behind the head, the low guard last.
+
+**Weapons** (Node handling bench at 9f8bc85): 139 failing clauses in 25 of 26 cases; behind-head steps 0.
+- Done: the reverse-grip take and the two-hand regrip; the aim from stowed no longer jumps.
+- Slower than round 2: bow unstow 0.483 s (band 0.30-0.40); swap 1 to 2 0.817 s (round 2: 0.650, in band); RMB from
+  stowed to loosable 1.40 s against 0.867 s (bar: no later than the baseline).
+- W10: 681 of 988 interrupt runs fail. W11: head yaw up to 13.7 deg (bar 3).
+- Lane page rows at 9f8bc85: A100 (the dodge's holster), A103 (the blade short of the hull) and A-draw-elbow-level
+  fail; A101, A102, A104, A105, A106, A-stow-clearance and A-heavy-two-hand pass.
+
+**Cloth** (Node cloth bench at 9f8bc85, the game's cloth):
+- Pass: standing rest and sleep (asleep at 1.02 s, free columns within 3.1 deg, tail 11.0 deg); the tail at a sprint
+  (59.3 deg, band 30-65); the back panel at a sprint (38.7 deg); fronts never ahead of the knee; repeatability; the
+  all-asleep cost (0.008 ms).
+- Fail: crouch and sit rest (13-25 deg from plumb); the run-stop (1.9 s to settle, little overshoot); the turn (1.5 s);
+  the landing; wind headings; stretch over every clip (worst 1.080); cost (0.19 ms mean, bar 0.12, now timing the
+  whole cloth frame); clipping (5 frames in Node; the page rows crouch 1, roll 2, climb 1).
+
+**World and sky (M1.1i):** F06 visibility 165 m rendered (band 120-180), the fog model 151 m; the sun a 2 deg disc with
+no bloom past 2 deg; sight ranges x0.5 in the calima. F07 mean luminance 5.0 % (band 4-9).
+
+**Audio (M1.6k):** every line passes. 77 counted cues; 77 of 77 audible at range (offline model); the walk through the
+game's own audio graph -17.3 LUFS and -2.3 dBTP; chirps 20 of 20 on three kinds; the gust heard 1.00 s before cover
+opens (median of 6); bank 3.53 MB. No one has listened yet.
+
+**Robustness (M1.6m):**
+- Pass: the restore (playing 0.89 s after it, 1.08 dE2000 from the frame before the loss); tiers (F02 GPU+submit
+  high 12.9 ms, medium 12.6, low 10.2; both boot clean); the pad and its right stick; the colour-vision check.
+- Fail: the reload after a context that never comes back draws a black world under the HUD in this run (it drew at
+  e885a00); the FOV slider row (asked 80, read 77.6).
+- Not re-run: the slice on a pad.
+
+**The slice at 9f8bc85:** run 1 13 of 14 (death at the return, then stuck); run 2 14 of 14 (cross hp 100 -> 68, topple
+in 5 arrows, return 20.4 s, the Scout given; save-continue at the end 0.324 m off).
+
+**Chrome used:** about 74 minutes over 14 launches (cap 15): the Frame Set, two kept sessions, the lane rows, two
+slice runs, the weapons and cloth clips, the reach rows, the screens probe, the audio rows, the weather probe and an
+A9 retry.
+
+**Open, for the next round:**
+- The Organ's near gain: keep it out of F14 and F23-plumb (or re-anchor them by decision); F05 and the town re-tone
+  need a decision on their anchors.
+- The slice's steadiness: the long topple (the slower raise from stowed is a suspect) and the return driver stuck
+  after a death.
+- Weapons: W7 times (the aim from stowed, the swaps, the bow unstow), W10, W11, A100, A103, A-draw-elbow-level.
+- Cloth: crouch and sit rest, run-stop and turn settle, the landing, wind, stretch in the roll, climb and blends, cost,
+  clipping in the page rows; A-tail-legible and A-wrap-clear at the head.
+- Robustness: the black world after the never-restored reload; the FOV slider.
+
+**After the review (the orchestrator):** the Organ's near gain (3058d33) turned the columns pale in F14 and rust in F23-plumb, accepted frames outside the weather's scope; it is off at 25b1603 (ORGAN_LIGHT.w 0), and F05 keeps the earlier albedo gain. main is moved to the reviewed commit 9f8bc85 plus that change (b422167 on main); the kept stack at 9f8bc85 is 78/80 with 0 failing. Open: the slice reached the reward in 1 of 2 runs (the topple took 19 arrows in one), the weapons times regressed (aim from stowed 1.40 s), cloth cost and settle rows, A-sweep-wind needs restating for the new cloth, the FOV slider row.
