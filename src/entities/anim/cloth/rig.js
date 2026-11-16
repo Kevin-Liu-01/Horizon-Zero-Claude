@@ -77,6 +77,11 @@ const PANELS = [
   { stem: 'dyn_panelR', name: 'panelR', C: 4, R: 5 },
 ];
 const TAIL = { stem: 'dyn_wrapSash', name: 'wrapSash', C: 2, R: 8, wrung: 3, split: 0.47 };
+/** The front panels' thigh tether (cloth round 3): the row nearest `u` down the thigh (0 hip, 1 knee), `slack` m of play,
+ *  `alpha` its XPBD compliance (m/N). OFF: tied to its thigh, a front panel goes forward with that thigh, and the hem
+ *  ahead of the forward knee's plane at a run (trade wind from behind her, the C8 staging; hem particles, one start) went
+ *  from 61 / 38 % of frames (L / R) to 98-100 / 70-77 % at every compliance tried (2e-2 to 2e-4) and at u 0.5. */
+export const TETHER = { on: false, u: 0.75, slack: 0.02, alpha: 0.02 };
 /** hangPanel's cylinder centre (bind space z) */
 const PANEL_CZ = -0.02;
 
@@ -425,7 +430,64 @@ export class BreaCloth {
       if (!mesh) continue;
       for (const v of clothVerts(mesh, stem)) { const p = par(v.g), q = st(p); P.verts.push({ mesh, i: v.i, s: q.s, t: q.t }); }
     }
+    // (round 3) the mesh's own folds: how deep each particle's cells hold the rendered sheet INSIDE the grid's surface at
+    // bind (the back panel's valleys 2-3.4 cm in at s 0.64): the colliders hold those particles that much further off
+    P.pIn = this._foldDepth(P, main.map((v) => ({ g: v.g, w: v.w, ...st(par(v.g)) })), G, C, R);
+    P.cells = false;
+    // (round 3) a front panel's knee row tethered to the front of its own thigh
+    if (stem !== 'dyn_panelB' && TETHER.on) this._tether(P, Xw, stem === 'dyn_panelL' ? 'thighL' : 'thighR');
     S.addPiece(P); this.pieces.push(P);
+  }
+
+  /** The thigh tether (cloth round 3): the panel row nearest `TETHER.u` down the thigh (hip 0, knee 1) at bind, each of
+   *  its particles tied to its own bind place on the thigh, read in the thigh's frame (along the axis; toward her forward
+   *  and to her side of it), so the panel lies on the front of the thigh it hangs over and goes where that thigh goes,
+   *  instead of swinging on as a pendulum from the belt. Soft (`alpha`) and one-sided (`slack`). Read in the bind pose. */
+  _tether(P, Xw, legName) {
+    const b = this.an.b, leg = legName === 'thighL' ? [b.thighL.bone, b.calfL.bone] : [b.thighR.bone, b.calfR.bone];
+    const col = this.sys.colliders.findIndex((c) => c.name === legName);
+    if (col < 0) return;
+    const A = boneWorld(leg[0], new THREE.Vector3()), B = boneWorld(leg[1], new THREE.Vector3()), D = B.clone().sub(A), L = D.length(), ax = D.clone().divideScalar(L);
+    const fw = new THREE.Vector3(0, 0, 1).transformDirection(this.model.matrixWorld);
+    const f = fw.clone().addScaledVector(ax, -fw.dot(ax)).normalize(), sd = new THREE.Vector3().crossVectors(ax, f);
+    // the row: its mean height nearest the thigh's point at u
+    const yT = A.y + D.y * TETHER.u;
+    let best = -1, bd = 9;
+    for (let r = 1; r < P.R; r++) { let y = 0; for (let c = 0; c < P.C; c++) y += Xw[(c + r * P.C) * 3 + 1] / P.C; if (Math.abs(y - yT) < bd) { bd = Math.abs(y - yT); best = r; } }
+    const idx = [], cols = [], us = [], as = [], bs = [];
+    for (let c = 0; c < P.C; c++) {
+      const i = c + best * P.C, X = new THREE.Vector3(Xw[i * 3], Xw[i * 3 + 1], Xw[i * 3 + 2]), rel = X.clone().sub(A);
+      const u = rel.dot(ax) / L, rv = rel.clone().addScaledVector(ax, -u * L);
+      idx.push(i); cols.push(col); us.push(u); as.push(rv.dot(f)); bs.push(rv.dot(sd));
+    }
+    P.teth = { n: idx.length, idx: Int32Array.from(idx), col: Int32Array.from(cols), u: Float64Array.from(us), a: Float64Array.from(as), b: Float64Array.from(bs), slack: TETHER.slack, alpha: TETHER.alpha, row: best };
+  }
+
+  /** Per particle, the deepest a vertex of its cells (bilinear weight >= 0.15, its weight on the piece's chain >= 0.3)
+   *  lies inside the grid's bind surface along the cell's outward normal (away from the panels' cylinder axis), capped at
+   *  0.04 m. The bind grid `G` and the vertices `V` ({ g, w, s, t }) are both in the mesh's bind space. */
+  _foldDepth(P, V, G, C, R) {
+    const out = new Float64Array(C * R);
+    const g = (i, k) => G[i * 3 + k];
+    for (const v of V) {
+      if (v.w < 0.3) continue;
+      const s = Math.max(0, Math.min(1, v.s)) * (C - 1), t = Math.max(0, Math.min(1, v.t)) * (R - 1);
+      const c0 = Math.min(C - 2, Math.floor(s)), r0 = Math.min(R - 2, Math.floor(t)), fs = s - c0, ft = t - r0;
+      const a = c0 + r0 * C, b = a + 1, d = a + C, e = d + 1;
+      const wts = [(1 - fs) * (1 - ft), fs * (1 - ft), (1 - fs) * ft, fs * ft], ids = [a, b, d, e];
+      let bx = 0, by = 0, bz = 0;
+      for (let k = 0; k < 4; k++) { bx += g(ids[k], 0) * wts[k]; by += g(ids[k], 1) * wts[k]; bz += g(ids[k], 2) * wts[k]; }
+      const ux = g(b, 0) - g(a, 0), uy = g(b, 1) - g(a, 1), uz = g(b, 2) - g(a, 2), vx = g(d, 0) - g(a, 0), vy = g(d, 1) - g(a, 1), vz = g(d, 2) - g(a, 2);
+      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      if (nx * bx + nz * (bz - PANEL_CZ) < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      const sn = (v.g.x - bx) * nx + (v.g.y - by) * ny + (v.g.z - bz) * nz;
+      if (sn >= 0) continue;
+      const dep = Math.min(0.04, -sn);
+      for (let k = 0; k < 4; k++) if (wts[k] >= 0.15 && dep > out[ids[k]]) out[ids[k]] = dep;
+    }
+    for (let i = 0; i < out.length; i++) out[i] = Math.round(out[i] * 1e4) / 1e4;
+    return out;
   }
 
   /** The bind grid `G` (the mesh's bind space) on the root bone: root-local places Q0 = (root's inverse bind) x
@@ -572,7 +634,9 @@ export class BreaCloth {
     }
     for (let r = 0; r < R - 2; r++) for (let c = 0; c < C; c++) cons.push([I(c, r), I(c, r + 2), mat.bendAlong, 0]);
     const bits = this.bits;
-    const mask = ['torso1', 'torso2', 'torso3', 'neck', 'head', 'upArmL', 'upArmR', 'foreArmR', 'handR', 'foreArmL', 'quiver', 'stowLance', 'stowBow', 'heldLance', 'heldBow'].reduce((m, k) => m | (bits[k] || 0), 0);
+    // (round 3: + the lower back and the thighs: crouched, her back level, the tail falls onto the small of her back, and
+    //  in a deep crouch over her hip onto the left thigh (Node sweep with the wrap pass off: 41 crouch frames))
+    const mask = ['torso0', 'torso1', 'torso2', 'torso3', 'thighL', 'thighR', 'neck', 'head', 'upArmL', 'upArmR', 'foreArmR', 'handR', 'foreArmL', 'quiver', 'stowLance', 'stowBow', 'heldLance', 'heldBow'].reduce((m, k) => m | (bits[k] || 0), 0);
     // (step 2: 0.028, was 0.020: the strip turned edge-on to the back in a crouch put its edge, 0.045 m off its two
     //  particles, inside the grader's torso)
     const off = 0.028;
@@ -663,11 +727,17 @@ export class BreaCloth {
         const si = new THREE.BufferAttribute(new Uint16Array(si0.count * 4), 4), sw = new THREE.BufferAttribute(new Float32Array(sw0.count * 4), 4);
         for (let i = 0; i < si0.count; i++) for (let k = 0; k < 4; k++) { si.setComponent(i, k, si0.getComponent(i, k)); sw.setComponent(i, k, sw0.getComponent(i, k)); }
         let touched = 0;
+        // (round 3: a vertex two pieces claim (the front panels meet at her centre, 1-2 cm of shared border) is skinned
+        //  by both at once: one after the other, the second re-read the source weights and put the first piece's share
+        //  back on its old dyn_ chain bone, which the adapter drives from that piece's centre column; that vertex rode
+        //  a bone 0.1 m away and went 3 mm into her torso through a crouch)
+        const claims = new Map();
         for (const P of g.pieces) for (const v of P.verts) {
           if (v.mesh !== mesh) continue;
-          this._skinVertex(P, v, g.sk, idxOf, si0, sw0, si, sw);
-          touched++;
+          if (!claims.has(v.i)) claims.set(v.i, []);
+          claims.get(v.i).push([P, v]);
         }
+        for (const [vi, list] of claims) { this._skinVertex(list, vi, g.sk, idxOf, si0, sw0, si, sw); touched++; }
         if (!touched && mesh !== [...g.meshes][0]) { /* a sharer with no cloth: same attributes, new skeleton */ }
         const ng = new THREE.BufferGeometry();
         for (const k in geo.attributes) ng.setAttribute(k, k === 'skinIndex' ? si : k === 'skinWeight' ? sw : geo.attributes[k]);
@@ -682,33 +752,39 @@ export class BreaCloth {
     }
   }
 
-  _skinVertex(P, v, sk0, idxOf, si0, sw0, si, sw) {
-    const C = P.C, R = P.R;
-    let s = Math.max(0, Math.min(1, v.s)) * (C - 1), t = Math.max(0, Math.min(1, v.t)) * (R - 1);
-    let c0 = Math.min(C - 2, Math.floor(s)), r0 = Math.min(R - 2, Math.floor(t));
-    if (C === 1) c0 = 0;
-    const fs = s - c0, ft = t - r0;
-    const rootIdx = sk0.bones.findIndex((b) => b.name === P.root.bone.name);
+  /** Vertex `vi`'s skin: its weight on each claiming piece's old chain (`P.stem`) goes to the four particles of its cell
+   *  in that piece (bilinear); every other weight stays where it was (a knot's on the head, a belt's on the pelvis). */
+  _skinVertex(list, vi, sk0, idxOf, si0, sw0, si, sw) {
     const inf = new Map();
     const addW = (bi, w) => { if (w > 1e-6) inf.set(bi, (inf.get(bi) || 0) + w); };
-    // the vertex's weight off the old chain stays where it was (a knot's on the head)
-    let wc = 0;
     const bn = sk0.bones;
+    const wcOf = new Array(list.length).fill(0);
     for (let k = 0; k < 4; k++) {
-      const b = si0.getComponent(v.i, k), w = sw0.getComponent(v.i, k);
-      if ((bn[b]?.name || '').startsWith(P.stem)) wc += w; else addW(b, w);
+      const b = si0.getComponent(vi, k), w = sw0.getComponent(vi, k), nm = bn[b]?.name || '';
+      const m = list.findIndex(([P]) => nm.startsWith(P.stem));
+      if (m >= 0) wcOf[m] += w; else addW(b, w);
     }
-    const corner = (c, r, w) => {
-      const i = c + r * C;
-      if (P.boneOf[i] < 0) addW(rootIdx, w * wc);
-      else addW(idxOf.get(P.bones[P.boneOf[i]]), w * wc);
-    };
-    corner(c0, r0, (1 - fs) * (1 - ft)); corner(c0 + 1, r0, fs * (1 - ft)); corner(c0, r0 + 1, (1 - fs) * ft); corner(c0 + 1, r0 + 1, fs * ft);
-    const list = [...inf.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
-    let tot = 0; for (const [, w] of list) tot += w;
+    list.forEach(([P, v], m) => {
+      const C = P.C, R = P.R, wc = wcOf[m];
+      if (!(wc > 0)) return;
+      const s = Math.max(0, Math.min(1, v.s)) * (C - 1), t = Math.max(0, Math.min(1, v.t)) * (R - 1);
+      let c0 = Math.min(C - 2, Math.floor(s));
+      const r0 = Math.min(R - 2, Math.floor(t));
+      if (C === 1) c0 = 0;
+      const fs = s - c0, ft = t - r0;
+      const rootIdx = sk0.bones.findIndex((b) => b.name === P.root.bone.name);
+      const corner = (c, r, w) => {
+        const i = c + r * C;
+        if (P.boneOf[i] < 0) addW(rootIdx, w * wc);
+        else addW(idxOf.get(P.bones[P.boneOf[i]]), w * wc);
+      };
+      corner(c0, r0, (1 - fs) * (1 - ft)); corner(c0 + 1, r0, fs * (1 - ft)); corner(c0, r0 + 1, (1 - fs) * ft); corner(c0 + 1, r0 + 1, fs * ft);
+    });
+    const out = [...inf.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+    let tot = 0; for (const [, w] of out) tot += w;
     for (let k = 0; k < 4; k++) {
-      const e = list[k];
-      si.setComponent(v.i, k, e ? e[0] : 0); sw.setComponent(v.i, k, e ? e[1] / tot : 0);
+      const e = out[k];
+      si.setComponent(vi, k, e ? e[0] : 0); sw.setComponent(vi, k, e ? e[1] / tot : 0);
     }
   }
 

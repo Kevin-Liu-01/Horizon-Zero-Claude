@@ -19,6 +19,10 @@ const PF_MAX = 70 * Math.PI / 180;
 /** M1.2e round 2: the most a panel link's rest turns toward hanging from the link above it (rad; `_panelDrape`). */
 const PANEL_DRAPE = 0.45;
 const _pdQ = new THREE.Quaternion(), _pdI = new THREE.Quaternion();
+/** M1a cloth round 3: the knot tail's stand-off over the grader's inner radius of her torso (m): its strip is 4 cm wide
+ *  and turned on its chain, so its vertices stand up to 2.5 cm off the particle line. */
+const KNOT_STAND = 0.03;
+const _kA = new THREE.Vector3(), _kB = new THREE.Vector3();
 
 /** M1a regressions: the air speed (m/s) at and over which a class's `stillGrav` adds nothing (every world wind the
  *  Frame Set stands in reads 3.6-6.2 m/s: only a dead calm, the studio's, is touched). */
@@ -75,6 +79,8 @@ export class SecondaryMotion {
       const side = /_r_|_r$|_r[0-9]/.test(root) ? -1 : 1;
       this._chains.push({
         cls, links, side, seed: (h % 1000) / 1000 * Math.PI * 2, flX: 0,
+        // (M1a cloth round 3: the knot tail, held off her back by `_knotOffBack` under the grid cloth)
+        knot: /^dyn_hairKnotTail/.test(root),
         // published summary scalars (gate A33-rig-finite reads these): the
         // tip's world-plane offset from its animated rest and its velocity.
         ax: 0, az: 0, vx: 0, vz: 0,
@@ -370,6 +376,35 @@ export class SecondaryMotion {
    * the skirt and the pouches can actually reach. Live bone positions, so a
    * crouch or a roll moves them.
    */
+  /** M1a cloth round 3: the knot tail's particle `_spC` (child of link j) out of the torso's four spine segments (the cloth
+   *  rig's colliders torso0-3: their ends from the bones now, their inner radii the grader's) by KNOT_STAND, and back on
+   *  its parent's sphere; two passes. No allocation. */
+  _knotOffBack(CL, c, j, pos, i0) {
+    const T = CL.torso || (CL.torso = CL.sys.colliders.filter((K) => /^torso\d$/.test(K.name) && K.boneA && K.boneB));
+    for (let it = 0; it < 2; it++) {
+      let hit = false;
+      for (let q = 0; q < T.length; q++) {
+        const K = T[q];
+        _kA.setFromMatrixPosition(K.boneA.matrixWorld); _kB.setFromMatrixPosition(K.boneB.matrixWorld);
+        const dx = _kB.x - _kA.x, dy = _kB.y - _kA.y, dz = _kB.z - _kA.z, l2 = dx * dx + dy * dy + dz * dz;
+        const px = _spC.x - _kA.x, py = _spC.y - _kA.y, pz = _spC.z - _kA.z;
+        let t = l2 > 1e-9 ? (px * dx + py * dy + pz * dz) / l2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const nx = px - dx * t, ny = py - dy * t, nz = pz - dz * t, d = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        const r = K.ri0 + (K.ri1 - K.ri0) * t + KNOT_STAND;
+        if (d >= r || d < 1e-7) continue;
+        const f = (r - d) / d;
+        _spC.x += nx * f; _spC.y += ny * f; _spC.z += nz * f;
+        hit = true;
+      }
+      if (!hit) break;
+      const ax = _spC.x - pos[i0], ay = _spC.y - pos[i0 + 1], az = _spC.z - pos[i0 + 2], a = Math.sqrt(ax * ax + ay * ay + az * az);
+      if (a < 1e-9) break;
+      const sg = c.seg[j] / a;
+      _spC.x = pos[i0] + ax * sg; _spC.y = pos[i0 + 1] + ay * sg; _spC.z = pos[i0 + 2] + az * sg;
+    }
+  }
+
   _bodyCapsules() {
     const b = this.b, C = this._caps || (this._caps = [
       { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.155 },
@@ -1068,6 +1103,13 @@ export class SecondaryMotion {
               const sg = c.seg[j]; _spC.x = pos[i0] + _spA.x * sg; _spC.y = pos[i0 + 1] + _spA.y * sg; _spC.z = pos[i0 + 2] + _spA.z * sg;
             }
           }
+          /* M1a cloth round 3: the KNOT TAIL off her back with the cloth wrap pass gone. The strand's rest rides the head, so
+           * in a crouch or a slide (the head forward and down, the upper back rounded under it) the rest itself is inside
+           * her and the rest rule above lets the strand in with it (the Node sweep with clothWrap.js off: 133 crouch
+           * frames, 3.2 cm deep). Under the grid cloth (`CL`) each knot-tail particle is pushed out of the four torso
+           * segments up her spine at the grader's own inner radius (cloth/rig.js innerTorso) plus KNOT_STAND, whatever
+           * its rest, then put back on its parent's sphere; twice round */
+          if (CL && c.knot) this._knotOffBack(CL, c, j, pos, i0);
           if (c.shN) {
             this._sheetPush(c, j, pos, i0, caps);
             _spA.set(_spC.x - pos[i0], _spC.y - pos[i0 + 1], _spC.z - pos[i0 + 2]);
