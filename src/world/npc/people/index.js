@@ -264,8 +264,9 @@ export class PeopleSystem {
    * (M1.5d fix round 2) THE ANCHOR'S SHORT ROUTINE for a person with no script of their own: src/game/runtime.js stands
    * Mise and Ansel at their quest anchors and the idle beats ran them on one spot for two in-game hours (the 731b21a log:
    * walkedM 0, 36 clip flips). Every other beat they walk 2.4-3.4 m to a spot beside the anchor, stand a beat there, and
-   * walk back; two spots on opposite sides when both are open. A spot is open when the walk grid round it holds it and the
-   * straight leg to it (`lineOpen`), or, off every walk grid, when a 0.25 m capsule marched along the leg every 0.25 m
+   * walk back; two spots on opposite sides when both are open. Home is the anchor, or the walk grid's open cell nearest it
+   * (within 3 m) when the anchor's own cell is shut. A spot is open when the walk grid round it holds it and the
+   * straight leg from home to it (`lineOpen`), or, off every walk grid, when a 0.25 m capsule marched along the leg every 0.25 m
    * touches no static blocking collider and no water. None open: they stand at the anchor as before. Made once, on the
    * first beat that asks, from where they stand then. Live only (`routines.live()`): in a ?shot film they stand.
    */
@@ -274,14 +275,24 @@ export class PeopleSystem {
     p._tether = null;
     const R = this.routines;
     R.grid?.();
-    const g = p.group.position, ax = g.x, az = g.z;
+    const g = p.group.position;
+    let ax = g.x, az = g.z;
     const G = this.ctx.nav?.walkGridAt?.(ax, az) || null;
+    // (the 85a4b8c film: Mise's anchor is the shore's last dry step, a cell the walk grid shuts, so no spot was open from
+    // it and she never moved) the routine's home is the open cell nearest the anchor, within 3 m
+    if (G) {
+      const i = G.nearestOpen(ax, az, 6);
+      if (i < 0 || Math.hypot(G.wx(i) - ax, G.wz(i) - az) > 3) { p._tetherNo = 'no open walk-grid cell within 3 m'; return null; }
+      ax = G.wx(i); az = G.wz(i);
+    }
+    const moved = Math.hypot(ax - g.x, az - g.z) > 0.35;
     const open = (x, z) => {
-      if (G) return G.contains(x, z, G.cell) && !G.blockedAt(ax, az) && !G.blockedAt(x, z) && G.lineOpen(ax, az, x, z);
+      if (G) return G.contains(x, z, G.cell) && !G.blockedAt(x, z) && G.lineOpen(ax, az, x, z);
       const Cl = this.ctx.collision, W = this.ctx.water, T = this.ctx.terrain;
       if (!Cl?.resolveCapsule || !T) return false;
       const L = Math.hypot(x - ax, z - az), n = Math.max(1, Math.ceil(L / 0.25));
-      for (let k = 0; k <= n; k++) {
+      // (from the first step off the spot they stand on: the spot itself is where the quest put them)
+      for (let k = 1; k <= n; k++) {
         const px = ax + (x - ax) * k / n, pz = az + (z - az) * k / n;
         _probe.set(px, T.getHeight(px, pz), pz);
         if (Cl.resolveCapsule(_probe, 0.25, 1.6, { passes: 1, filter: (c) => c.blocking && c.kind !== 'npc' && !c.dynamic })?.hit) return false;
@@ -298,9 +309,12 @@ export class PeopleSystem {
         if (open(x, z)) { stops.push({ x, z }); break; }
       }
     }
-    if (!stops.length) return null;
+    if (!stops.length) { p._tetherNo = G ? 'no open spot on the walk grid' : 'no open spot off the grid'; return null; }
     const home = { x: ax, z: az };
-    p._tether = { anchor: home, grid: !!G, stops: stops.length > 1 ? [stops[0], home, stops[1], home] : [stops[0], home], i: 0, n: 0 };
+    const loop = stops.length > 1 ? [stops[0], home, stops[1], home] : [stops[0], home];
+    // off the grid's open cells where they stand: home first
+    if (moved) loop.unshift(loop.pop());
+    p._tether = { anchor: home, grid: !!G, stops: loop, i: 0, n: 0 };
     return p._tether;
   }
 

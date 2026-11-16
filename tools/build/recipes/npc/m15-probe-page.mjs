@@ -313,6 +313,8 @@ async function routineLog() {
       }
       if (steps % 240 === 0) await sleep(0);
     }
+    // (fix round 2) the quest pair's anchor routine (index.js _tether): its home and spots, or why it has none
+    out.tether = quest.map((t) => ({ id: t.id, routine: t.person._tether ? { grid: t.person._tether.grid, home: t.person._tether.anchor, stops: t.person._tether.stops.length } : null, none: t.person._tetherNo || null }));
     out.hours = [18.0, +h.toFixed(3)];
     out.simSeconds = +simT.toFixed(1);
     out.log = logs.map((L) => ({ id: L.id, changes: L.changes, acts: L.acts, maxStationaryOutsideWorkS: L.maxStill, stillClip: L.stillClip, stillAt: L.stillAt || null, longestWalkS: L.maxWalk, insideAt: L.insideAt || null, noClipSamples: L.noClip, bindPoseSamples: L.tpose, putOnMark: R.list.find((e) => e.id === L.id)?.stuck || 0, quest: quest.some((t) => t.id === L.id), trace: L.trace || null,
