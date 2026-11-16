@@ -152,7 +152,8 @@ export function buildSweep(R, THREE, opts = {}) {
   const capsNow = () => { for (const c of caps) { CP(c.a, c.A); CP(c.b, c.B); } };
 
   /* ---------------- the cloth points */
-  const tailW = wrap ? weightTo(wrap, /^dyn_wrapSash_0[2-9]/) : null;
+  // (M1a cloth step 1: or the grid cloth's bones below the knot row, as the chain's _02 on)
+  const tailW = wrap ? weightTo(wrap, /^dyn_wrapSash_0[2-9]|^cl_wrapSash_\d+_[1-9]/) : null;
   const tailIdx = tailW ? pick(tailW, 0.5, 2) : [];
   const knotW = wrap ? weightTo(wrap, /^dyn_hairKnotTail_0[2-9]/) : null;
   const knotIdx = knotW ? pick(knotW, 0.5, 2) : [];
@@ -160,15 +161,15 @@ export function buildSweep(R, THREE, opts = {}) {
   const panelInfo = new Map();
   const panelChains = [];
   if (outfit) {
-    const pw = weightTo(outfit, /^dyn_panel/);
+    const pw = weightTo(outfit, /^(dyn|cl)_panel/);   // (M1a cloth step 1: or the grid cloth's bones)
     panelIdx = pick(pw, 0.5, 1);
     // which panel each vertex is on and its height at bind (for the report)
     {
       const bn = outfit.skeleton.bones.map((x) => x.name), si = outfit.geometry.attributes.skinIndex, sw = outfit.geometry.attributes.skinWeight;
       for (const i of panelIdx) {
         let best = '', bw = 0;
-        for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k), n = bn[si.getComponent(i, k)] || ''; if (/^dyn_panel/.test(n) && w > bw) { bw = w; best = n; } }
-        VP(outfit, i, tmp); panelInfo.set(i, best.replace(/^dyn_(panel[A-Za-z])_.*$/, '$1') + '@' + tmp.y.toFixed(2));
+        for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k), n = bn[si.getComponent(i, k)] || ''; if (/^(dyn|cl)_panel/.test(n) && w > bw) { bw = w; best = n; } }
+        VP(outfit, i, tmp); panelInfo.set(i, best.replace(/^(?:dyn|cl)_(panel[A-Za-z])_.*$/, '$1') + '@' + tmp.y.toFixed(2));
       }
     }
     if (panelIdx.length) {

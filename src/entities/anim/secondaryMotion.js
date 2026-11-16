@@ -12,6 +12,7 @@ import {
   SUB_DT, _cp0, _cp1, _cp2, _shL, _shN, _shP, _shQ, _shQ2, _shX, _hcB, _hcC, _hcD1, _hcD2, _hcD3, _hcP, _hcP2, _hcQ, _hcQ2, _hcU, _spA, _spAcc,
   _spB, _spC, _spD, _spE, _spMq, _spNum, _spQ, _spQ2, _spQ3, _twA, _twQ, clamp,
 } from './playerCommon.js';
+import { clothRigOf, peekClothRig, setClothMode } from './cloth/rig.js';
 
 /** M1.2e round 2: the largest share of a thigh's swing a front panel's root takes (rad; `_panelFollow`). */
 const PF_MAX = 70 * Math.PI / 180;
@@ -525,6 +526,7 @@ export class SecondaryMotion {
    * the legs' push on top. Bind values, no allocation.
    */
   _panelFollow() {
+    if (peekClothRig(this)) return;      // (M1a cloth step 1: `?cloth=2`, the grid solver owns the panels)
     const P = this._panelRoots || (this._panelRoots = this._chains.filter((c) => c.cls.name === 'panel').map((c) => {
       const n = c.links[0].name;
       return { c, e: c.links[0], side: /panelL/.test(n) ? 'l' : /panelR/.test(n) ? 'r' : 'c', share: /panelL/.test(n) ? 0.75 : /panelR/.test(n) ? 0.70 : 0.42 };
@@ -716,7 +718,21 @@ export class SecondaryMotion {
     this._stL = sL0; this._stR = sR0; this._prevStL = pL0; this._prevStR = pR0;
     for (let i = 0; i < this._chains.length; i++) { const c = this._chains[i]; c.seeded = false; c.mvK = NaN; c.mvV = NaN; c.swK = NaN; }
     this._mvSelf = NaN;
+    const CR = peekClothRig(this);
+    if (CR) CR.reset(t);
   }
+
+  /** M1a cloth step 1: the grid cloth's state (null with the flag off). See `_springs` and cloth/rig.js. */
+  clothInfo() { const R = peekClothRig(this); return R ? R.info() : null; }
+
+  /** M1a cloth step 1: the grid cloth's deterministic reset (the sim-time slate); false with the flag off. */
+  clothReset(t = 0) { const R = peekClothRig(this); if (!R) return false; R.reset(t); return true; }
+
+  /** M1a cloth step 1: switch the grid cloth on (2) or off (0) at run time (the A/B clips). */
+  setClothMode(m) { const r = setClothMode(this, m); this._cwOff = false; if (this._cw) this._cw = null; return r; }
+
+  /** M1a cloth step 1: the grid cloth's particle digest (null with the flag off). */
+  clothDigest() { const R = peekClothRig(this); return R ? R.digest() : null; }
 
   _springs(dt, t, ph, speed, moveW, runW) {
     // Sanitise, then integrate. Every force below multiplies into a quaternion
@@ -758,6 +774,10 @@ export class SecondaryMotion {
       H.active = true; H.pushes = 0; H.minAxis = Infinity; H.segMin = Infinity; H.ticks++;
     }
     const SC = this._stowCap;
+    /* M1a cloth step 1: under `?cloth=2` (cloth/rig.js) Brea's sash panels and the wrap's tail are cloth on the grid
+     * solver (src/entities/anim/cloth/), built on the first call; their `dyn_` chains are then driven from it
+     * (`clothOwned`) and skipped by the chain loop below. With the flag off this is null and nothing else changes */
+    const CL = clothRigOf(this);
 
     // per-foot plant edges -> the flick that runs up a strand once per step.
     // Sized so the impulse alone is worth ~4-6 cm of tip travel on the
@@ -800,6 +820,7 @@ export class SecondaryMotion {
     if (swingOn) selfG = 1;
     for (let ci = 0; ci < this._chains.length; ci++) {
       const c = this._chains[ci];
+      if (c.clothOwned) continue;          // (M1a cloth step 1: driven from the grid cloth below)
       const N = c.N, n = c.n, cls = c.cls;
       const pos = c.pos, vel = c.vel, anim = c.anim, aPrev = c.animPrev, aVel = c.animVel;
 
@@ -1216,5 +1237,6 @@ export class SecondaryMotion {
         c.ax = 0; c.az = 0; c.vx = 0; c.vz = 0;
       }
     }
+    if (CL) CL.update(dt, t, this.wind);
   }
 }

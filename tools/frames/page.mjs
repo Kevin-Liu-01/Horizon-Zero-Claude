@@ -403,7 +403,9 @@ export async function stageFrame(f, o = {}) {
       });
       const m = C.combat?.melee;
       return { bones: rn(bh), cloth: rn(ch), pos: [rn(p.position.x), rn(p.position.y), rn(p.position.z)], vel: p.velocity ? [rn(p.velocity.x), rn(p.velocity.z)] : null,
-        heading: rn(p.heading), speed: rn(p.moveSpeed ?? 0), gait: an?.loco ? rn(an.loco.phase) : null, melee: m ? [m.stance, m.phase, rn(m._t ?? 0), !!m.heavy, !!m.lance] : null };
+        heading: rn(p.heading), speed: rn(p.moveSpeed ?? 0), gait: an?.loco ? rn(an.loco.phase) : null, melee: m ? [m.stance, m.phase, rn(m._t ?? 0), !!m.heavy, !!m.lance] : null,
+        // (M1a cloth step 1, the cloth lane's smallest change: the grid cloth's particle digest, null with it off)
+        grid: an?.clothDigest ? an.clothDigest() : null };
     };
     out.digest = { start: digest() };
     /* (--state-probe) a hash of every field of her animator, the player, melee, the combat state and the wind, two
@@ -563,6 +565,9 @@ export async function stageFrame(f, o = {}) {
         }
         if ('_mvSelf' in an) an._mvSelf = NaN;
         if ('_prevStL' in an) { an._prevStL = an._stL; an._prevStR = an._stR; }
+        // (M1a cloth step 1, the cloth lane's smallest change: the grid cloth, `?cloth=2`, reset deterministically on this
+        //  pose: every particle on its bind place, 2 s of settle in still air; nothing with it off)
+        try { p.model?.updateMatrixWorld?.(true); an.clothReset?.(0); } catch (e) { /* */ }
       }
       for (const q of C.people?.list || []) {
         const pc = q.chains;

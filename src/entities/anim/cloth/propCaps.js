@@ -5,14 +5,16 @@
  * the lance in hand and the bow in hand. Each slot is two end points (world metres), a radius, an `on` flag and the
  * two ends' velocities (m/s, world). The weapons lane only CALLS `setPropCap` (and `clearPropCap`); the cloth lane
  * only READS the slots (`propCaps(an)`), once a frame, before its substeps. The velocities are taken here from the
- * last call's end points and the animator's own sim dt (`an._propCapDt`, written by the cloth each frame; 1/60 s
- * until then), never from the wall clock, so the sim-time slate repeats.
+ * last call's end points and the animator's own sim dt (`propCaps(an).dt`, written by the cloth each frame; 1/60 s
+ * until then), never from the wall clock, so the sim-time slate repeats. The slots live in a WeakMap keyed by the
+ * animator, so no field is added to it (a new field re-shapes the animator's record, R48 c).
  *
  * A slot that is not set this frame keeps its last end points and its `on` flag: a caller that stops holding a prop
  * clears it. No allocation after the first call on an animator.
  */
 
 export const PROP_SLOTS = ['stowLance', 'stowBow', 'heldLance', 'heldBow'];
+const _slots = new WeakMap();
 
 function makeSlot(name) {
   return {
@@ -26,10 +28,11 @@ function makeSlot(name) {
 
 /** The animator's four slots (created on first use). */
 export function propCaps(an) {
-  let P = an._propCaps;
+  let P = _slots.get(an);
   if (!P) {
-    P = an._propCaps = { list: PROP_SLOTS.map(makeSlot) };
+    P = { list: PROP_SLOTS.map(makeSlot), dt: 1 / 60 };
     for (const s of P.list) P[s.name] = s;
+    _slots.set(an, P);
   }
   return P;
 }
@@ -40,10 +43,10 @@ export function propCaps(an) {
  * call over the animator's sim dt; a slot just turned on starts at rest.
  */
 export function setPropCap(an, slot, a, b, r) {
-  const S = propCaps(an)[slot];
+  const PC = propCaps(an), S = PC[slot];
   if (!S) throw new Error(`[cloth] no prop slot "${slot}"`);
   if (!a || !b || !(r > 0)) { S.on = false; S.primed = false; return S; }
-  const dt = an._propCapDt > 0 ? an._propCapDt : 1 / 60;
+  const dt = PC.dt > 0 ? PC.dt : 1 / 60;
   if (S.on && S.primed) {
     S.va.x = (a.x - S.pa.x) / dt; S.va.y = (a.y - S.pa.y) / dt; S.va.z = (a.z - S.pa.z) / dt;
     S.vb.x = (b.x - S.pb.x) / dt; S.vb.y = (b.y - S.pb.y) / dt; S.vb.z = (b.z - S.pb.z) / dt;

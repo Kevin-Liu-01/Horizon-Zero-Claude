@@ -27,6 +27,7 @@
  * The outfit and the hair wrap are looked for again every 30 frames (a swap rebinds them), without a closure.
  */
 import * as THREE from 'three';
+import { peekClothRig } from './cloth/rig.js';
 
 const _m = [];            // per set: the skinning matrices of the bones its vertices use (Matrix4, sized at init)
 const _x = new THREE.Vector3(), _y = new THREE.Vector3(), _r = new THREE.Vector3(), _n = new THREE.Vector3();
@@ -234,10 +235,13 @@ export class ClothWrap {
       if (!tail && !chain.links[0]._cwP0) chain.links[0]._cwP0 = chain.links[0].bone.position.clone();
       W.sets.push(S);
     };
-    addSet(outfit, 'dyn_panelL', 0.3, false);
-    addSet(outfit, 'dyn_panelR', 0.3, false);
-    addSet(outfit, 'dyn_panelB', 0.3, false);
-    addSet(wrap, 'dyn_wrapSash', 0.3, true);
+    // (M1a cloth step 1: under `?cloth=2` the panels and the wrap's tail are the grid solver's; this pass keeps the knot tail)
+    if (!peekClothRig(this)) {
+      addSet(outfit, 'dyn_panelL', 0.3, false);
+      addSet(outfit, 'dyn_panelR', 0.3, false);
+      addSet(outfit, 'dyn_panelB', 0.3, false);
+      addSet(wrap, 'dyn_wrapSash', 0.3, true);
+    }
     addSet(wrap, 'dyn_hairKnotTail', 0.3, true);
     W.ok = W.sets.length > 0;
     return W;
