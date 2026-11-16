@@ -182,16 +182,16 @@
    "note": "r2 closer/closer/closer/same; exit same x4; originality pass both; written target: none (crop comparison only)"
   },
   "F24": {
-   "date": "2026-11-15",
-   "commit": "fb6d5f0",
-   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "date": "2026-11-16",
+   "commit": "6a8496c",
+   "run": "20261116T175331Z-6a8496c-world-m11i-s3-partial-x2",
    "provisional": true,
    "rule": "PROCESS §4 two-page rule",
    "pages": [
     "20261115T060956Z-dee526d-m1a-r2-review",
     "20261115T093344Z-fb6d5f0-m1a-r3-exit"
    ],
-   "note": "r2 closer/same/closer/same; exit same x4; originality pass both; written target: none (crop comparison only)"
+   "note": "RE-ANCHORED (the town ruling (M1b wave 2: Saltrow stands where the bible puts it; F24 is judged with the town once it meets the frame's finish). Filmed at 6a8496c from a clean worktree, sim-time staging 217 frames, repeat 2 of 2 (repeats differ 0.95 % of pixels over 10 levels, the noise floor of one staging 0.52 %). Outside the town everything is the same as at f2ad55f (1.64 % of pixels over 10 levels outside the town's box, the grass and the Plumb's own idle; Brea's box 1.86 %): Brea's draw, the Plumb at 12.7 m (the nearest subject; the nearest house is 32 m off), the meadow and the sky. The town's finish at 6a8496c: roof huts step the rooflines of ten houses, quoins in four weathered tones with one course in four washed over, each house's wash +-6 %, windows with sills, frames and shutters on the facades the lens sees; it reads as separate whitewashed houses, no longer one flat backlit block. Silhouette: the town covers the right third where the anchor showed the sea stack and the sun on the water; under the ruling that is not counted. Originality checklist: pass (no lens on a neck, no animal or humanoid body, no red lamp, no listed word)); the picture is repeat 2 (F24-r2.png) of run 20261116T175331Z-6a8496c-world-m11i-s3-partial-x2 at 6a8496c; the anchor at fb6d5f0 is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/closer/same; exit same x4; originality pass both; written target: none (crop comparison only)"
   }
  }
 }
