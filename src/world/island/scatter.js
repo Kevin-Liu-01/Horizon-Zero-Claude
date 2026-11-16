@@ -121,9 +121,9 @@ const ENCLOSURES = [
 const _seatAt = offsetOn(SEAT.bearing, SEAT.dist), _cisAt = offsetOn(CISTERN_AT.bearing, CISTERN_AT.dist);
 function coneClear(x, z, s) {
   const foot = 1.1 * s, bx = HOME_BRAZIER.x, bz = HOME_BRAZIER.z;
-  return Math.hypot(x - (bx + _seatAt.x), z - (bz + _seatAt.z)) >= foot + 2.0
-    && Math.hypot(x - bx, z - bz) >= foot + 1.6
-    && Math.hypot(x - (bx + _cisAt.x), z - (bz + _cisAt.z)) >= foot + CISTERN_AT.r + 0.5;
+  return Math.hypot(x - (bx + _seatAt.x), z - (bz + _seatAt.z)) >= foot + 2.5
+    && Math.hypot(x - bx, z - bz) >= foot + 3.0
+    && Math.hypot(x - (bx + _cisAt.x), z - (bz + _cisAt.z)) >= foot + CISTERN_AT.r + 1.0;
 }
 
 export function scatterStatic(R) {
@@ -233,11 +233,13 @@ export function scatterStatic(R) {
       const v = cv + (r() - 0.5) * 0.6;
       fieldToWorld(u, v, P);
       // (people M1.3h fix round 2, the smallest change: the home Brazier's seat stood inside the second cone of the middle
-      // group, and Brea seated read as sitting in it; a cone steps back along the row, toward the one before it, until its
-      // foot clears the seat, the bowl and the cistern: back, not on, so it stays behind F20's and F30's lenses. The same
-      // r() draws, in the same order)
-      for (let n = 0; n < 40 && !coneClear(P.x, P.z, s); n++) { u -= 0.5; fieldToWorld(u, v, P); }
-      heaps.push(P.x, R.hAt(P.x, P.z) - 0.05, P.z, r() * 6.28, s, s * (0.72 + r() * 0.1), s, 0, 1.0);
+      // group, and Brea seated read as sitting in it. A cone whose foot does not clear the seat, the bowl and the cistern
+      // steps back along the row at most 1 m; still not clear, it is not piled (stepped further it crowds the hearth or
+      // merges into the cone before it, 3-4.6 m off). The same r() draws, in the same order)
+      let n = 0;
+      for (; n < 2 && !coneClear(P.x, P.z, s); n++) { u -= 0.5; fieldToWorld(u, v, P); }
+      const yaw = r() * 6.28, sy = s * (0.72 + r() * 0.1);
+      if (coneClear(P.x, P.z, s)) heaps.push(P.x, R.hAt(P.x, P.z) - 0.05, P.z, yaw, s, sy, s, 0, 1.0);
       u += s * 2.3 + 0.5 + r() * 1.6;
     }
   }
