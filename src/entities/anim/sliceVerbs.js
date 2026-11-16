@@ -181,10 +181,12 @@ export class SliceVerbs {
     const V = VERBS[name];
     const p = this.ctx.player;
     if (!V || !p) return 0;
-    if (this._verbBlocked(p)) return 0;
+    const S = this._vb || (this._vb = { name: null, on: false, t: 0, w: 0, len: 0, a: null, actions: {}, info: null, props: {}, counts: {}, refused: {} });
+    // (fix round 2: per verb how many started and the last refusal, for the slice run's log)
+    if (this._verbBlocked(p)) { S.refused[name] = 'blocked'; return 0; }
     const clip = this._verbClip(V.clip);
-    if (!clip) return 0;
-    const S = this._vb || (this._vb = { name: null, on: false, t: 0, w: 0, len: 0, a: null, actions: {}, info: null, props: {} });
+    if (!clip) { S.refused[name] = 'no clip'; return 0; }
+    S.counts[name] = (S.counts[name] || 0) + 1;
     let a = S.actions[V.clip];
     if (!a) {
       a = this.mixer.clipAction(clip);
@@ -208,7 +210,7 @@ export class SliceVerbs {
   verbInfo() {
     const S = this._vb;
     if (!S) return null;
-    return { name: S.name, on: S.on, t: +S.t.toFixed(3), w: +S.w.toFixed(3), len: S.len, started: S.started || 0, rake: S.info };
+    return { name: S.name, on: S.on, t: +S.t.toFixed(3), w: +S.w.toFixed(3), len: S.len, started: S.started || 0, counts: S.counts, refused: S.refused, rake: S.info };
   }
 
   _verbBlocked(p) {
