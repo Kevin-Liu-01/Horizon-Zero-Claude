@@ -195,13 +195,17 @@ export default {
   tables: {
     perception: { gain: 2.4, periphRange: 7, scanSweep: 0.7, scanPeriod: 3.2, contactRange: 2.2 },
     engage: { archetype: 'pack', band: [1.2, 7], orbitSpeed: 1.2, backSpeed: 1.1 },
+    // M1b (systems, the smallest change here): the slice's first fight. A Peg's blows are 6 / 5 / 7 (mallet, Peg Shot,
+    // Swarm Rush; were 9 / 8 / 10): a swarm of three that reaches her takes about a fifth of her 100, not a third, and
+    // the Peg Shot keeps its knock. At 6fa199d the slice run lost 86 of 100 hp at the Peg line; the slice now also
+    // brings its nine in as three swarms of three (src/game/runtime.js)
     attacks: [
       { id: 'mallet', min: 0, max: 2.0, cd: 2.4, score: 1.0, generic: 'lunge',
-        params: { damage: 9, windup: 0.5, strike: 0.18, recover: 0.5, dash: 0.6, range: 1.5 } },
+        params: { damage: 6, windup: 0.5, strike: 0.18, recover: 0.5, dash: 0.6, range: 1.5 } },
       { id: 'peg-shot', min: 3.0, max: 14, cd: 3.6, score: 0.9, generic: 'volley',
-        params: { damage: 8, windup: 0.55, strike: 0.12, recover: 0.6, shots: 1, range: 14, arcDeg: 10, knock: 3 } },
+        params: { damage: 5, windup: 0.55, strike: 0.12, recover: 0.6, shots: 1, range: 14, arcDeg: 10, knock: 3 } },
       { id: 'swarm-rush', min: 1.7, max: 9, cd: 4.4, score: 0.8, generic: 'lunge',
-        params: { damage: 10, windup: 0.46, strike: 0.3, recover: 0.6, dash: 3.2, range: 1.6 } },
+        params: { damage: 7, windup: 0.46, strike: 0.3, recover: 0.6, dash: 3.2, range: 1.6 } },
     ],
     attackMode: 'table',
     react: { staggerFrac: 0.3, downedFrac: 0.6 },
