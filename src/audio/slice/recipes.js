@@ -202,6 +202,32 @@ export const GEAR = {
   },
 };
 
+/* ------------------------------------------------------------------ the Making (Brea bus, 8 m) */
+
+export const MAKE = {
+  /**
+   * Quick-make (TECH §14 cue list; BIBLE §9 "hold a quick slot for 1.2 s to quick-make a bundle"): a bundle of six
+   * done: two cane shafts knocked square against each other, the binding twine pulled tight round them, and the
+   * fletching combed straight with a thumb. Wood, twine and feather only.
+   */
+  quick: (seed) => {
+    const r = rng(seed);
+    const sec = 0.62;
+    const o = buf(sec);
+    mixIn(o, wood(0.12, r, 760 + r() * 60, 0.03), 0, 0.9);
+    mixIn(o, wood(0.12, r, 690 + r() * 60, 0.028), 0.075, 0.75);
+    // the twine: a short rasp with a fast flutter, pulled tight (rising centre)
+    const tw = pink(0.2, r);
+    biquad(tw, 'bp', (k) => lerp(900, 1600, k), 2.2);
+    shape(tw, (t) => Math.pow(Math.max(0, Math.sin(TAU * 38 * t)), 2) * Math.sin(Math.PI * Math.min(1, t / 0.2)));
+    mixIn(o, gain(tw, 3.2), 0.2);
+    // the fletching combed: a soft rising zip of feather barbs
+    const zip = grains(0.16, r, { count: 70, span: 0.14, f: 5200, spread: 0.4, decay: 0.0012, amp: 0.4, env: (u) => Math.sin(Math.PI * u) });
+    mixIn(o, zip, 0.43);
+    return fades(firm(o, 2.0));
+  },
+};
+
 /* ------------------------------------------------------------------ the bow (Brea bus; hit/miss at the target) */
 
 export const BOW = {

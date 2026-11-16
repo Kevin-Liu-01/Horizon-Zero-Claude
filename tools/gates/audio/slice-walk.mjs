@@ -13,8 +13,10 @@
  * the pumps to Sluice 3 as it opens, the Alidade on a Plumb, a crouch in the cane at the Glass through two gusts, the
  * dyke fight (a Plumb and three Pegs: chirps, mallet, shot, rush, four arrows, the vial, the topple, the lance), and
  * back to the Brazier to kindle, rest, open the map and save. The walk is a script of the slice's events at their
- * distances, NOT a capture of the running game: headless Chrome renders no samples from a live AudioContext (no
- * output device), so the live mix cannot be recorded there. What is left out is said in the report (`notModelled`).
+ * distances, NOT a capture of the running game. What is left out is said in the report (`notModelled`). The same walk
+ * through the game's OWN graph (GameAudio on an OfflineAudioContext: HRTF, the reverb, the real DynamicsCompressor, the
+ * Round-4 synth voices that still play) is the row A-audio-walk-graph (tools/gates/audio/walk-graph.mjs, fix round 1):
+ * that row is the loudness and true-peak acceptance; this model stays for the audibility rows and the music's place.
  *
  * WHAT IS MEASURED. Integrated loudness (BS.1770-4) and true peak (4x) of the master after the safety limiter; the
  * ambience and music buses' loudness in the calm stretches (the 8 dB rule) and the music's level in the hostile
@@ -266,6 +268,7 @@ function script() {
   E.push([158.6, 'gear/heavy', {}]);
   // the Brazier, the rest, the map, the triangle, the save
   E.push([177, 'brazier/kindle', { d: 2.5, az: 0.4 }]);
+  E.push([179.3, 'make/quick', {}]);              // a bundle quick-made at the Brazier
   E.push([181, 'brazier/rest', {}]);
   E.push([184, 'ui/open', {}]); E.push([184.4, 'ui/map', {}]); E.push([185.2, 'ui/tab', {}]); E.push([185.8, 'ui/tick', {}]);
   E.push([186.5, 'ui/triangle', {}]); E.push([188, 'ui/select', {}]); E.push([188.3, 'ui/save', {}]); E.push([189, 'ui/close', {}]);
@@ -340,22 +343,27 @@ export function renderWalk() {
 }
 
 /* ------------------------------------------------------------------ audibility at range */
-function placeBed(place) {
-  // the bed a cue is heard over: the place's own bed at full level plus the trade wind as it stands there
+/** The beds playing in each place, at their levels there (the director's _places at full town / shore / open pans). */
+const PLACE_BEDS = {
+  pans: [['amb/pans', 1], ['amb/trade', 1]],
+  saltrow: [['amb/saltrow', 1], ['amb/trade', 0.4], ['amb/pans', 0.2]],
+  shore: [['amb/shore', 1], ['amb/pans', 1], ['amb/trade', 1]],
+};
+/** Octave-band levels (dB) of a set of beds, mono, 8 s, through the ambience bus's fixed gain. */
+function bedBands(list) {
   const sec = 8;
   const n = sec * SR;
   const mono = new Float32Array(n);
-  const add = (set, lvl) => {
+  for (const [set, lvl] of list) {
     const row = SETS[set][0];
     const x = decode(row.file);
     const g = (row.gain ?? 1) * lvl * busGain('ambience');
     for (let i = 0; i < n; i++) mono[i] += 0.5 * (x[0][i % x[0].length] + (x[1] || x[0])[i % x[0].length]) * g;
-  };
-  if (place === 'saltrow') { add('amb/saltrow', 1); add('amb/trade', 0.4); add('amb/pans', 0.2); }
-  else if (place === 'shore') { add('amb/shore', 1); add('amb/pans', 1); add('amb/trade', 1); }
-  else { add('amb/pans', 1); add('amb/trade', 1); }
+  }
   return bandLevels(mono, 0, sec);
 }
+/** The bed a cue is heard over: the place's own beds at their levels there. */
+function placeBed(place) { return bedBands(PLACE_BEDS[place]); }
 
 export function audibility() {
   const beds = { pans: placeBed('pans'), saltrow: placeBed('saltrow'), shore: placeBed('shore') };
@@ -388,11 +396,18 @@ export function audibility() {
     for (const f of BANDS) { const m = lv[f] - bed[f]; if (m > best) { best = m; at = f; } }
     const abs = Math.max(...BANDS.map((f) => lv[f]));
     if (c.bed) {
-      // a bed IS the floor its place's cues are heard over: it is audible when it plays above -50 dB in some band
-      rows.push({ set: c.set, bus: c.bus, range: 0, place: c.place, bed: true, levelDb: +abs.toFixed(1), audible: abs > -50 });
+      // a bed is heard over the OTHER beds of its place (fix round 1: a margin, not a pass by definition): its own
+      // full level against the rest of what plays there, band by band, 3 dB in some band
+      const others = PLACE_BEDS[c.place || 'pans'].filter(([s]) => s !== c.set);
+      const own = bedBands([[c.set, 1]]);
+      const rest = bedBands(others);
+      let bm = -Infinity, bat = 0;
+      for (const f of BANDS) { const m = own[f] - rest[f]; if (m > bm) { bm = m; bat = f; } }
+      rows.push({ set: c.set, bus: c.bus, range: 0, rangeFrom: c.rangeFrom, place: c.place, bed: true, over: others.map(([s, l]) => `${s}x${l}`).join('+'),
+        marginDb: +bm.toFixed(1), band: bat, levelDb: +abs.toFixed(1), audible: bm >= 3 && abs > -50 });
       continue;
     }
-    rows.push({ set: c.set, bus: c.bus, range: r, place: c.place, marginDb: +best.toFixed(1), band: at, levelDb: +abs.toFixed(1), audible: best >= 3 && abs > -80 });
+    rows.push({ set: c.set, bus: c.bus, range: r, rangeFrom: c.rangeFrom, place: c.place, marginDb: +best.toFixed(1), band: at, levelDb: +abs.toFixed(1), audible: best >= 3 && abs > -80 });
   }
   return rows;
 }

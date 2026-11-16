@@ -5,9 +5,9 @@ Every file in `public/audio/` is **synthesized by this repository's own code** a
 
 | field | value |
 |---|---|
-| files | 159 |
-| sets | 91 (76 counted slice cues) |
-| total size | 3.52 MB (budget 8 MB in Milestone 1) |
+| files | 161 |
+| sets | 92 (77 counted slice cues) |
+| total size | 3.53 MB (budget 8 MB in Milestone 1) |
 | format | Ogg Opus, 48 kHz (48 kb/s mono point sources, 96 kb/s stereo beds and music) |
 | recipes | `src/audio/slice/recipes.js` (deterministic; seeds per set in `tools/gates/audio/build-bank.mjs`) |
 | cue list | `src/audio/slice/cues.js` (bus, range, place, level) |
@@ -56,6 +56,8 @@ Brea's breath and effort set (`brea/`) is the existing synthesized set, kept unt
 | `gear/light-2.ogg` | `gear/light` | 1 | 0.30 s | 3.7 KB | brea |
 | `gear/heavy-1.ogg` | `gear/heavy` | 1 | 0.40 s | 2.6 KB | brea |
 | `gear/heavy-2.ogg` | `gear/heavy` | 1 | 0.40 s | 2.5 KB | brea |
+| `make/quick-1.ogg` | `make/quick` | 1 | 0.62 s | 4.9 KB | brea |
+| `make/quick-2.ogg` | `make/quick` | 1 | 0.62 s | 4.9 KB | brea |
 | `bow/nock-1.ogg` | `bow/nock` | 1 | 0.18 s | 2.1 KB | brea |
 | `bow/nock-2.ogg` | `bow/nock` | 1 | 0.18 s | 2.0 KB | brea |
 | `bow/draw.ogg` | `bow/draw` | 1 | 0.85 s | 5.1 KB | brea |

@@ -9,8 +9,9 @@
  *                    a manifest row (no stray, no Round-4 set left on disk)
  *   chirp-20-of-20   20 lamp-state changes (four Instruments at 10-40 m, each calm -> wary -> hostile -> wary -> calm ->
  *                    dark) through the director's own poll: 20 chirps, each the new state's
- *   gust-lead-0.8    the cane bed rendered from the shipped recipes and levels, driven by a bed's gust clock: in every
- *                    cycle the gust is heard (+6 dB over the lull) at least 0.8 s before the wind reaches 4 m/s
+ *   gust-lead-0.8    the cane bed rendered from the shipped recipes and levels, driven by each bed's gust clock (all 13
+ *                    beds, in trade weather, on a calima day (8 s lull) and at night (7 s gust)): in every cycle the gust
+ *                    is heard (+6 dB over the lull) at least 0.8 s before the wind reaches 4 m/s
  *
  * Loudness, true peak, the music's place and each cue's audibility at its range are measured by the offline walk
  * (tools/gates/audio/slice-walk.mjs), which decodes the shipped Ogg files with ffmpeg; that run is not a Tier 0 row.
@@ -125,43 +126,66 @@ test('chirp-20-of-20: a chirp on every lamp-state change', () => {
   assert.deepEqual(played, want);
 });
 
-test('gust-lead-0.8: the gust is heard 0.8 s or more before cover opens, every cycle', () => {
+/** The cane bed's level envelope (dB, 50 ms windows) over [t0, t1) from one bed's clock, as the director drives it. */
+function caneEnvelope(clock, t0, t1, G, L, gustGain, lullGain) {
   const SR = 48000;
+  const n = Math.round((t1 - t0) * SR);
+  // the director's rule: levels read 20 times a second from the wind CANE_LEAD ahead, each loop's volume smoothed with
+  // its time constant (0.06 s gust, 0.12 s lull), the loops' row gains
+  const kG = 1 - Math.exp(-1 / (0.06 * SR)), kL = 1 - Math.exp(-1 / (0.12 * SR));
+  let vg = 0, vl = 0, tg = 0, tl = 0;
+  const env = [];
+  let acc = 0, cnt = 0;
+  const W = Math.round(0.05 * SR);
+  for (let i = 0; i < n; i++) {
+    const t = t0 + i / SR;
+    if (i % (SR / 20) === 0) { const lv = caneLevels(clock.speed(t + CANE_LEAD)); tg = lv.gust; tl = lv.lull; }
+    vg += (tg - vg) * kG; vl += (tl - vl) * kL;
+    const s = G[i % G.length] * vg * gustGain + L[i % L.length] * vl * lullGain;
+    acc += s * s; cnt++;
+    if (cnt === W) { env.push(10 * Math.log10(acc / cnt + 1e-12)); acc = 0; cnt = 0; }
+  }
+  return env;
+}
+
+/** Every gust's lead over [t0, t1): { leads, rises } (lead: s the gust is heard before the wind passes 4 m/s). */
+export function gustLeads(clock, t0, t1, G, L, gustGain, lullGain) {
+  const env = caneEnvelope(clock, t0, t1, G, L, gustGain, lullGain);
+  const at = (t) => env[Math.max(0, Math.min(env.length - 1, Math.floor((t - t0) / 0.05)))];
+  const med = (a, b) => { const v = []; for (let t = a; t < b; t += 0.05) v.push(at(t)); v.sort((x, y) => x - y); return v[v.length >> 1]; };
+  const leads = [], rises = [];
+  for (const sp of clock.spans(t0 + 6, t1 - 4).filter((q) => q.gust && q.start >= t0 + 5 && q.start <= t1 - 4)) {
+    const T = sp.start;                                       // the wind rises through 4 m/s: cover opens
+    const lull = med(T - 4, T - 2.6), full = med(T + 1, T + 3);
+    rises.push(+(full - lull).toFixed(1));
+    let onset = null;
+    for (let t = T - 4; t < T + 2; t += 0.05) if (at(t) >= lull + 6) { onset = t; break; }
+    leads.push(onset == null ? null : +(T - onset).toFixed(2));
+  }
+  return { leads, rises };
+}
+
+const MOODS = { trade: { calima: false, night: false }, calima: { calima: true, night: false }, night: { calima: false, night: true } };
+
+test('gust-lead-0.8: the gust is heard 0.8 s or more before cover opens, every cycle, every bed, every mood', () => {
   const gustCue = CUES.find((c) => c.set === 'amb/cane-gust'), lullCue = CUES.find((c) => c.set === 'amb/cane-lull');
   const g = renderCue(gustCue, 0).chs, l = renderCue(lullCue, 0).chs;
   const mono = (x) => x[0].map((v, i) => 0.5 * (v + x[1][i]));
   const G = mono(g), L = mono(l);
-  for (const bed of [BEDS[0], BEDS[3], BEDS[9]]) {
-    const clock = new GustClock(bed.seed, bed.id);
-    const t0 = 30, t1 = t0 + 6 * 14;
-    const n = Math.round((t1 - t0) * SR);
-    // the director's rule: levels read 20 times a second from the wind 0.8 s ahead, each loop's volume smoothed with
-    // its time constant (0.06 s gust, 0.12 s lull), the loops' row gains
-    const kG = 1 - Math.exp(-1 / (0.06 * SR)), kL = 1 - Math.exp(-1 / (0.12 * SR));
-    let vg = 0, vl = 0, tg = 0, tl = 0;
-    const env = [];
-    let acc = 0, cnt = 0;
-    const W = Math.round(0.05 * SR);
-    for (let i = 0; i < n; i++) {
-      const t = t0 + i / SR;
-      if (i % (SR / 20) === 0) { const lv = caneLevels(clock.speed(t + CANE_LEAD)); tg = lv.gust; tl = lv.lull; }
-      vg += (tg - vg) * kG; vl += (tl - vl) * kL;
-      const s = G[i % G.length] * vg * gustCue.gain + L[i % L.length] * vl * lullCue.gain;
-      acc += s * s; cnt++;
-      if (cnt === W) { env.push(10 * Math.log10(acc / cnt + 1e-12)); acc = 0; cnt = 0; }
+  assert.equal(BEDS.length, 13, 'the thirteen beds (twelve round the Glass and the lee ditch)');
+  const all = [];
+  for (const [mood, m] of Object.entries(MOODS)) {
+    for (const bed of BEDS) {
+      const clock = new GustClock(bed.seed, bed.id, () => m);
+      const period = (m.night ? 7 : 9) + (m.calima ? 8 : 5);
+      const t0 = 30, t1 = t0 + 6 * period;
+      const { leads, rises } = gustLeads(clock, t0, t1, G, L, gustCue.gain, lullCue.gain);
+      assert.ok(leads.length >= 4, `${mood} bed ${bed.id}: ${leads.length} gusts`);
+      for (const r of rises) assert.ok(r > 10, `${mood} bed ${bed.id}: the gust is only ${r} dB over the lull`);
+      for (const d of leads) assert.ok(d != null && d >= 0.8 && d <= 2.5, `${mood} bed ${bed.id}: heard ${d} s before cover opens (want 0.8-2.5): ${leads.join(', ')}`);
+      all.push(...leads.map((d, i) => ({ mood, bed: bed.id, d, rise: rises[i] })));
     }
-    const at = (t) => env[Math.max(0, Math.min(env.length - 1, Math.floor((t - t0) / 0.05)))];
-    const med = (a, b) => { const v = []; for (let t = a; t < b; t += 0.05) v.push(at(t)); v.sort((x, y) => x - y); return v[v.length >> 1]; };
-    const leads = [];
-    for (const sp of clock.spans(t0 + 6, t1 - 4).filter((q) => q.gust && q.start >= t0 + 5 && q.start <= t1 - 4)) {
-      const T = sp.start;                                       // the wind rises through 4 m/s: cover opens
-      const lull = med(T - 4, T - 2.6), full = med(T + 1, T + 3);
-      assert.ok(full - lull > 10, `bed ${bed.id}: the gust is only ${(full - lull).toFixed(1)} dB over the lull`);
-      let onset = null;
-      for (let t = T - 4; t < T + 2; t += 0.05) if (at(t) >= lull + 6) { onset = t; break; }
-      leads.push(+(T - onset).toFixed(2));
-    }
-    assert.ok(leads.length >= 4, `bed ${bed.id}: ${leads.length} gusts`);
-    for (const d of leads) assert.ok(d >= 0.8 && d <= 2.5, `bed ${bed.id}: heard ${d} s before cover opens (want 0.8-2.5): ${leads.join(', ')}`);
   }
+  const by = (k) => { const v = all.filter((x) => x.mood === k).map((x) => x.d).sort((a, b) => a - b); return { n: v.length, min: v[0], median: v[v.length >> 1], max: v[v.length - 1], beds: new Set(all.filter((x) => x.mood === k).map((x) => x.bed)).size, minRiseDb: Math.min(...all.filter((x) => x.mood === k).map((x) => x.rise)) }; };
+  console.log(`# gust-lead-0.8: ${JSON.stringify({ trade: by('trade'), calima: by('calima'), night: by('night') })}`);
 });

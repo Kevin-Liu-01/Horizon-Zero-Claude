@@ -21,9 +21,23 @@
 export const BUSES = ['ambience', 'sfx', 'inst', 'brea', 'ui', 'music'];
 
 /** Every folder public/audio/ may contain (the allowlist the disk is held to). */
-export const FOLDERS = ['amb', 'foot', 'cloth', 'gear', 'bow', 'lance', 'alidade', 'lamp', 'plumb', 'peg', 'gauge', 'inst', 'mstep', 'saltrow', 'brazier', 'ui', 'music', 'brea'];
+export const FOLDERS = ['amb', 'foot', 'cloth', 'gear', 'make', 'bow', 'lance', 'alidade', 'lamp', 'plumb', 'peg', 'gauge', 'inst', 'mstep', 'saltrow', 'brazier', 'ui', 'music', 'brea'];
 
 const P = (o) => Object.assign({ n: 1, ch: 1, loop: false, peak: -1, gain: 1, place: 'pans', counted: true }, o);
+
+/**
+ * Where a cue's range comes from (fix round 1, M1.6k): TECH §14 "attenuation" names five ranges (footsteps 25 m, the
+ * survey chirp 40 m, the Plumb chime 80 m, the guild bell 300 m; surf as a bed keyed to the waterline) and the BIBLE
+ * none. Every other range in this table was CHOSEN by the audio lane and waits for the orchestrator's approval
+ * (`RANGE_FROM` 'chosen'); 2D cues (range 0) are heard at the listener and have none.
+ */
+export const TECH_RANGES = Object.freeze({ 'foot/': 25, 'lamp/': 40, 'plumb/chime': 80, 'saltrow/bell': 300 });
+export function rangeFromOf(c) {
+  if (c.bed) return c.set === 'amb/shore' ? 'TECH §14 (surf: a bed keyed to the waterline)' : 'bed (no range)';
+  if (!c.range) return '2D (heard at the listener)';
+  for (const [k, m] of Object.entries(TECH_RANGES)) if (c.set.startsWith(k)) return c.range === m ? 'TECH §14' : `TECH §14 says ${m} m`;
+  return 'chosen (awaiting approval)';
+}
 
 export const CUES = [
   /* footsteps on seven surfaces (25 m): terrain.surfaceAt -> SURFACE_SET in audio.js */
@@ -39,6 +53,8 @@ export const CUES = [
   P({ set: 'cloth/flap', recipe: ['CLOTH', 'flap'], n: 3, bus: 'brea', range: 12, gain: 0.9, on: 'sprint steps, a hop, a landing: the wrap flaps' }),
   P({ set: 'gear/light', recipe: ['GEAR', 'light'], n: 2, bus: 'brea', range: 12, gain: 0.6, on: 'the quiver on a crouch and on sprint steps' }),
   P({ set: 'gear/heavy', recipe: ['GEAR', 'heavy'], n: 2, bus: 'brea', range: 15, gain: 0.85, on: 'the lance haft on a landing' }),
+  /* the Making: quick-make (TECH §14 cue list) */
+  P({ set: 'make/quick', recipe: ['MAKE', 'quick'], n: 2, bus: 'brea', range: 8, gain: 0.6, on: 'ammo-crafted: a bundle made (a held quick slot, or the Making)' }),
   /* the bow */
   P({ set: 'bow/nock', recipe: ['BOW', 'nock'], n: 2, bus: 'brea', range: 8, gain: 0.4, on: 'an arrow nocked' }),
   P({ set: 'bow/draw', recipe: ['BOW', 'draw'], bus: 'brea', range: 10, gain: 0.55, on: 'the draw begins' }),
@@ -92,8 +108,8 @@ export const CUES = [
   P({ set: 'mstep/medium', recipe: ['MSTEP', 'medium'], n: 3, bus: 'inst', range: 40, gain: 0.9, counted: false, on: 'footfall, medium class' }),
   P({ set: 'mstep/heavy', recipe: ['MSTEP', 'heavy'], n: 3, bus: 'inst', range: 60, gain: 1.2, counted: false, on: 'footfall, heavy class' }),
   /* places: ambience beds and their layers */
-  P({ set: 'amb/pans', bed: true, recipe: ['AMB', 'pans'], ch: 2, loop: true, bus: 'ambience', range: 0, lufs: -20, gain: 0.5, on: 'the bed on the Pans and the meadow' }),
-  P({ set: 'amb/trade', bed: true, recipe: ['AMB', 'trade'], ch: 2, loop: true, bus: 'ambience', range: 0, lufs: -20, gain: 0.32, on: 'the trade wind layer (follows the wind)' }),
+  P({ set: 'amb/pans', bed: true, recipe: ['AMB', 'pans'], ch: 2, loop: true, bus: 'ambience', range: 0, lufs: -20, gain: 0.4, on: 'the bed on the Pans and the meadow' }),
+  P({ set: 'amb/trade', bed: true, recipe: ['AMB', 'trade'], ch: 2, loop: true, bus: 'ambience', range: 0, lufs: -20, gain: 0.48, on: 'the trade wind layer (follows the wind)' }),
   P({ set: 'amb/saltrow', bed: true, recipe: ['AMB', 'saltrow'], ch: 2, loop: true, bus: 'ambience', range: 0, lufs: -20, gain: 0.5, place: 'saltrow', on: 'the bed in Saltrow' }),
   P({ set: 'amb/shore', bed: true, recipe: ['AMB', 'shore'], ch: 2, loop: true, bus: 'ambience', range: 0, lufs: -20, gain: 0.55, place: 'shore', on: 'surf, keyed to the distance from the waterline' }),
   P({ set: 'amb/cane-gust', recipe: ['AMB', 'caneGust'], ch: 2, loop: true, bus: 'ambience', range: 15, lufs: -20, gain: 0.9, on: 'wind in cane, the gust: rises 0.8 s before cover opens' }),
@@ -129,6 +145,8 @@ export const CUES = [
     set: `brea/${k}`, recipe: null, keep: true, bus: 'brea', range: 0, gain: 0.9, counted: false, on: 'Brea\'s breath and efforts (kept set)',
   })),
 ];
+
+for (const c of CUES) c.rangeFrom = rangeFromOf(c);
 
 export const CUE_BY_SET = new Map(CUES.map((c) => [c.set, c]));
 

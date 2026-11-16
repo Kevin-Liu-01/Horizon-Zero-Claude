@@ -2706,7 +2706,12 @@ export class GameAudio {
       if (this.ctx.state === 'playing') this._wheelWhoosh(false);
     }));
     ev.on('weapon-switch', armed(() => this._switchClick()));
-    ev.on('ammo-crafted', armed(() => this._craftSound()));
+    // BUILD M1.6k (TECH §14 cue list, quick-make): a bundle made is the bank's make/quick (cane, twine and feather);
+    // the synthesized taps stay as the no-bank fallback
+    ev.on('ammo-crafted', armed(() => {
+      if (this.play2D('make/quick', { category: 'brea', volume: 1, rate: 0.97 + Math.random() * 0.06 })) this._counts.crafts++;
+      else this._craftSound();
+    }));
     ev.on('steady-start', armed(() => this._concSet(true)));
     ev.on('steady-end', armed(() => this._concSet(false)));
 
