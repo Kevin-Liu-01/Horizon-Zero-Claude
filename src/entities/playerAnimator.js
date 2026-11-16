@@ -18,6 +18,7 @@ import { MeleeDriver } from './anim/meleeDriver.js';
 import { SecondaryMotion } from './anim/secondaryMotion.js';
 import { ConstraintAim } from './anim/constraintAim.js';
 import { HangPose } from './anim/hangPose.js';
+import { SliceVerbs } from './anim/sliceVerbs.js';
 
 /** M1a round 2: after a lance holster the aim rig takes the arms over this long (s), from the hand down her side. */
 const STOW_HANDBACK = 0.22;
@@ -1084,6 +1085,7 @@ export class PlayerAnimator {
       if (this._lxOn) this._airCrossfade(dt, p, dead);
       if (LX) { const aS = this._airSlot ? this.loco.actions[this._airSlot] : null; this._lxLastW = aS ? aS.weight : 0; }
       this._nativeLayer(p, dt, dead);
+      this._verbNative(p, dt, dead);     // M1.3h: the slice's verbs (anim/sliceVerbs.js)
       this.mixer.update(dt);
       this.rest.snapshotClip();
     } else {
@@ -1604,6 +1606,8 @@ export class PlayerAnimator {
     // foot lock, the conform) and before the chains, which hang off them
     // (M1.3f: the kite's hang pose blockout, when a gate turns it on, is the last body layer)
     if (this._hangOn) this._hangLayer(1);
+    // (M1.3h: the slice's verbs' arms on the rake and their props, anim/sliceVerbs.js)
+    if (this._vb) this._verbLayer();
     // (M1.3f fix 1: no hand or forearm over its shoulder behind the head plane in a roll)
     // (M1a r3 fix: with the lance in her hands too, both wrists moved together and the hands' orientation kept)
     /* (M1a r3 fix, M1.3f mantle row: ...and in the jump and its landing. The jump clips swing both arms back and up
@@ -1670,4 +1674,4 @@ export class PlayerAnimator {
 }
 
 /* M1.3a: the members moved into the modules above, back on the prototype (a name defined twice throws). */
-installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion, ConstraintAim, HangPose);
+installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion, ConstraintAim, HangPose, SliceVerbs);

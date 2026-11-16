@@ -160,8 +160,9 @@ export const CLIPS = {
     for (let i = 0; i < 120; i++) { step(R); S(); if ((R.an._ali?.w ?? 0) > 0.9) { const h = R.M.hangCheck(); R.aliFrontMin = Math.min(R.aliFrontMin, h.r.front); } }
     R.ctx.sighting = { on: false }; for (let i = 0; i < 30; i++) { step(R); S(); } R.ctx.sighting = null; } },
 };
-/** M1.3h: the slice's verbs with no clip in the tree yet (a row each, a SKIP until the clip lands). */
-export const VERB_STUBS = { saltRake: 'salt rake (both hands on the rake)', kindle: 'kindle at the Brazier', caneCut: 'cane cut' };
+/** M1.3h: the slice's verbs with no clip in the tree yet: none (src/entities/anim/sliceVerbs.js; their rows are
+ *  ./verbs-bench.mjs in Node and the page's A-sweep-saltRake, -kindle, -caneCut). */
+export const VERB_STUBS = {};
 
 /** a roll (0.82 s, 3.4 m) as player.js runs it; `each` is called every step before it */
 function rollRun(R, S, each = null) {
