@@ -44,7 +44,7 @@ const TRIGGER_ON = 0.55;
 const TRIGGER_OFF = 0.35;
 
 /** Default action -> code table.  `settings.binds` overrides entries by name. */
-const DEFAULT_BINDS = {
+export const DEFAULT_BINDS = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
   jump: 'Space', dodge: 'ControlLeft', sprint: 'ShiftLeft', walk: 'AltLeft',
   crouch: 'KeyC', heal: 'KeyQ', interact: 'KeyE', focus: 'KeyV',
