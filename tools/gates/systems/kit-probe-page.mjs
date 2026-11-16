@@ -42,11 +42,14 @@ const PRELUDE = `
     const m = C.machines.spawn(kind, x, z, {});
     if (!m) return null;
     if (m.ai) m.ai.tick = () => {};
-    try { m.state = 'patrol'; m.suspicion = 0; } catch { /* */ }
+    try { m.state = 'patrol'; m.suspicion = 0; if (m.sc) m.sc._waitT = 1e6; } catch { /* */ }
     K.staged.push(m);
     return m;
   };
-  const calm = (m) => { try { if (m.alive !== false && m.state !== 'downed' && !(m._toppleT >= 0)) { m.state = 'patrol'; } m.suspicion = 0; if (m.sc) m.sc.suspicion = 0; } catch { /* */ } };
+  // M1b round 3: calm and STILL: the patrol's own wait at a waypoint, held (machine.js _statePatrol: the speed decays to 0
+  // and the route is not walked; a brain switched off alone left a Peg walking at 1.6-1.9 m/s and a Plumb's vial
+  // moving 1.09 m a second, and the kit's arrows met the ground behind them)
+  const calm = (m) => { try { if (m.alive !== false && m.state !== 'downed' && !(m._toppleT >= 0)) { m.state = 'patrol'; } m.suspicion = 0; if (m.sc) { m.sc.suspicion = 0; m.sc._waitT = Math.max(m.sc._waitT ?? 0, 1e6); } } catch { /* */ } };
   const wpos = (o) => o.getWorldPosition(new V());
   const r3 = (v) => Math.round(v * 1000) / 1000;
   const raise = async () => { C.input.enabled = true; C.input.mouse.buttons |= 4; for (let i = 0; i < 90 && !(P.aiming && C.combat.nockLanded); i++) await raf(); await frames(8); return !!P.aiming; };
