@@ -2895,6 +2895,9 @@ export class MeleeLayer {
     if (stance === 'draw') {
       if (this._held) {
         holstered = false;
+        // (M1a weapons round 2, W10: in the fist already (a stow reversed) there is no hand-over to wait for: a stale
+        //  `needsGrab` from the stow parked melee's clock at 0.75 again and again, the pull replayed every sixth step)
+        this.needsGrab = false;
         const g0 = clamp(this._grabK ?? 0.55, 0, 0.95);
         const s0 = g0 + SLIDE_START * (1 - g0);
         frac = gf + (GRIP_FRAC - gf) * smoothstep(k, s0, 1);
@@ -3454,6 +3457,27 @@ export class MeleeLayer {
     }
     L.u = u; L.hold = hold; L.on = true;
     this._dbg.leftCarryU = u; this._dbg.leftCarryHold = hold;
+  }
+
+  /**
+   * M1a weapons round 2 (W10, the opposite request: a draw asked during a stow): the draw's clock (drawK) at the point of
+   * the draw that holds the lance where the stow, at its own `hk`, has it: the right fist on its leg from the guard is the
+   * draw's pull run back, the left fist's carry back is the draw's carry at the same `u`, and once it is seated the draw
+   * starts over. melee.js used the mirror of the clock, and the two paths are not timed alike since the draw was re-keyed
+   * (the stow's let-go at 0.45, the draw's hand-over at 0.62): the reversed draw started 0.3-0.45 m off the rendered arm.
+   */
+  drawKForStow(hk) {
+    const L = this._lc;
+    if (this._held) {
+      const g = clamp(this._grabK ?? LC_CARRY, 0, 0.95), f = clamp(hk / STOW_HO, 0, 1);
+      return g + (1 - g) * (1 - f);
+    }
+    if (L?.on && L.u > 1e-4) {
+      let lo = 0, hi = 1;
+      for (let i = 0; i < 12; i++) { const m = 0.5 * (lo + hi); if (trapEase(m) < L.u) lo = m; else hi = m; }
+      return LC_REACH + (LC_CARRY - LC_REACH) * 0.5 * (lo + hi);
+    }
+    return 0;
   }
 
   /** M1a weapons step 2: the path keys as offsets in spine_02's frame (char metres, `LC_SP`), as vectors, once. */

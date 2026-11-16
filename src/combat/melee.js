@@ -801,7 +801,11 @@ export class Melee {
     // (the tempo: a strike asked with it (a click's press, `_charging`) is urgent; the rest is the asked draw)
     const dur = this._charging || this._queued ? DRAW_T : DRAW_T_ASK;
     if (this.stance === 'holster') {
-      this._drawT = Math.max(0, dur * (1 - this._drawT / (this._holsterDur || HOLSTER_T)));
+      /* (M1a weapons round 2, hero-anim, W10: at the draw's own point that holds the lance where the stow has it, the
+       *  layer's `drawKForStow`; the clock's mirror where the layer cannot say) */
+      const hk = this._drawT / (this._holsterDur || HOLSTER_T), lay = this.layer;
+      const k = lay?.ok && typeof lay.drawKForStow === 'function' ? lay.drawKForStow(hk) : null;
+      this._drawT = k != null ? Math.max(0, k * dur) : Math.max(0, dur * (1 - hk));
     } else {
       this._drawT = 0;
     }
