@@ -17,8 +17,10 @@
 export const MATERIALS = {
   // the wrap's tail and the people's wraps: coarse linen, light, stiff to bend across (wrung), easy along
   coarseLinen: {
-    areal: 0.35, hem: 1.0, shear: 2e-2, bendAlong: 1.0, bendAcross: 0.5, kd: 3.0, mu: 0.45, cd: 0.8, cl: 0.3, slack: 1.03,
-    share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0.65,
+    // (the tail rides her head in its own wake: none of her travel past the lag share is met as air; cd 0.7 holds the
+    //  brief's bands, 5.5 m/s 25-50 deg and 9 m/s 45-70 standing, 30-65 at a sprint, on the bench at this commit)
+    areal: 0.35, hem: 1.0, shear: 2e-2, bendAlong: 1.0, bendAcross: 0.5, kd: 3.0, mu: 0.45, cd: 0.7, cl: 0.3, slack: 1.03,
+    share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0,
   },
   // Brea's sash panels: embroidered, lined linen, heavy at the hem (the couched border)
   lined: {
