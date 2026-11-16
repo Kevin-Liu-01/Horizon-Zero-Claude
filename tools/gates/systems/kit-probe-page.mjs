@@ -38,18 +38,18 @@ const PRELUDE = `
   const base = () => { const b = C.braziers?.byId?.('cistern'); return { x: (b?.obj?.position?.x ?? P.position.x) + 30, z: (b?.obj?.position?.z ?? P.position.z) + 12 }; };
   const face = (fx, fz, pitch = 0.05) => { P.camYaw = Math.atan2(-(fx - P.position.x), -(fz - P.position.z)); P.camPitch = pitch; P.heading = Math.atan2(fx - P.position.x, fz - P.position.z); };
   const place = (x, z, fx, fz) => { P.position.set(x, H(x, z) + 0.05, z); P.velocity?.set?.(0, 0, 0); P._snapToGround?.(); face(fx, fz); };
-  const spawn = (kind, x, z) => {
+  const spawn = (kind, x, z, still = false) => {
     const m = C.machines.spawn(kind, x, z, {});
     if (!m) return null;
     if (m.ai) m.ai.tick = () => {};
-    try { m.state = 'patrol'; m.suspicion = 0; if (m.sc) m.sc._waitT = 1e6; } catch { /* */ }
+    try { m.state = 'patrol'; m.suspicion = 0; if (still) { m.__still = true; if (m.sc) m.sc._waitT = 1e6; } } catch { /* */ }
     K.staged.push(m);
     return m;
   };
-  // M1b round 3: calm and STILL: the patrol's own wait at a waypoint, held (machine.js _statePatrol: the speed decays to 0
+  // M1b round 3: calm, and STILL for the rows that stage it (spawn(..., true): reed-peg, plumb-arrows): the patrol's own wait at a waypoint, held (machine.js _statePatrol: the speed decays to 0
   // and the route is not walked; a brain switched off alone left a Peg walking at 1.6-1.9 m/s and a Plumb's vial
   // moving 1.09 m a second, and the kit's arrows met the ground behind them)
-  const calm = (m) => { try { if (m.alive !== false && m.state !== 'downed' && !(m._toppleT >= 0)) { m.state = 'patrol'; } m.suspicion = 0; if (m.sc) { m.sc.suspicion = 0; m.sc._waitT = Math.max(m.sc._waitT ?? 0, 1e6); } } catch { /* */ } };
+  const calm = (m) => { try { if (m.alive !== false && m.state !== 'downed' && !(m._toppleT >= 0)) { m.state = 'patrol'; } m.suspicion = 0; if (m.sc) { m.sc.suspicion = 0; if (m.__still) m.sc._waitT = Math.max(m.sc._waitT ?? 0, 1e6); } } catch { /* */ } };
   const wpos = (o) => o.getWorldPosition(new V());
   const r3 = (v) => Math.round(v * 1000) / 1000;
   const raise = async () => { C.input.enabled = true; C.input.mouse.buttons |= 4; for (let i = 0; i < 90 && !(P.aiming && C.combat.nockLanded); i++) await raf(); await frames(8); return !!P.aiming; };
@@ -66,9 +66,11 @@ const PRELUDE = `
       const v = dts > 1e-3 ? p1.clone().sub(p0).multiplyScalar(1 / dts) : new V();
       const nk = new V(); C.combat.bow.getNockWorld(1, nk);
       const sp = (C.combat.ammoDefs?.[ammo] ?? C.combat.ammoDefs.hunter).speed;
-      let aimAt = p1.clone();
-      for (let i = 0; i < 2; i++) { const tf = aimAt.distanceTo(nk) / (sp * 0.97); aimAt = p1.clone().addScaledVector(v, tf); }
-      K.lead = { v: [r3(v.x), r3(v.y), r3(v.z)], speed: r3(v.length()), by: r3(aimAt.distanceTo(p1)) };
+      // the aimed point rides with the node (it may be a point ON the part, not its origin)
+      const now = pt.clone().add(p1.clone().sub(p0));
+      let aimAt = now.clone();
+      for (let i = 0; i < 2; i++) { const tf = aimAt.distanceTo(nk) / (sp * 0.97); aimAt = now.clone().addScaledVector(v, tf); }
+      K.lead = { v: [r3(v.x), r3(v.y), r3(v.z)], speed: r3(v.length()), by: r3(aimAt.distanceTo(pt)) };
       pt = aimAt;
     } else K.lead = null;
     aimFor(ammo, pt, solve);
@@ -242,10 +244,18 @@ export async function runKit(page, { sleep, log = () => {}, only = null }) {
 
   /* ---------------- reed-peg ---------------- */
   await run('reed-peg', () => page.evaluate(ev(`
-    const b = base(); const m = spawn('peg', b.x + 12, b.z); place(b.x, b.z, b.x + 12, b.z); await frames(20); await raise();
+    // M1b round 3: the Peg stands still (spawn's still) and she stands 12 m in FRONT of its lamp, on dry ground, the shot on
+    // a point of the lamp the game's own flight reaches first (pickOn): standing still, the Peg kept whatever way it had
+    // turned, and at 5faec96 two arrows at the lamp's middle from behind its shoulder met its body (30 each, not weak)
+    const b = base(); const m = spawn('peg', b.x + 12, b.z, true); await frames(30);
+    const h = m.sc ? m.sc.heading : (m.heading ?? 0);
+    let at = null;
+    for (const da of [0, 0.5, -0.5, 1.0, -1.0]) { const x = m.position.x + Math.sin(h + da) * 12, z = m.position.z + Math.cos(h + da) * 12; if (H(x, z) > 0.3) { at = { x, z }; break; } }
+    at = at ?? { x: b.x, z: b.z };
+    place(at.x, at.z, m.position.x, m.position.z); await frames(10); await raise();
     let n = 0; const hits = [];
     const diag = [];
-    while (m.alive !== false && n < 3) { calm(m); const lp = wpos(m._lampWp.obj); const e = await shoot('hunter', lp, 650, false, m._lampWp.obj); n++; hits.push(e.filter((x) => x.n === 'arrow-hit').map((x) => ({ weak: x.weak, dmg: x.dmg && Math.round(x.dmg), kind: x.kind, pt: x.pt })));
+    while (m.alive !== false && n < 3) { calm(m); const lp = pickOn('hunter', pointsOn(m._lampWp.obj), /weak:lamp/) ?? wpos(m._lampWp.obj); const e = await shoot('hunter', lp, 650, true, m._lampWp.obj); n++; hits.push(e.filter((x) => x.n === 'arrow-hit').map((x) => ({ weak: x.weak, dmg: x.dmg && Math.round(x.dmg), kind: x.kind, pt: x.pt })));
       diag.push({ lamp: [r3(lp.x), r3(lp.y), r3(lp.z)], shot: K.lastShot, flight: K.lastFlight }); }
     await lower();
     return { num: { arrowsToKill: m.alive === false ? n : null, hits }, diag, pass: m.alive === false && n === 1, bar: 'one Reed arrow on the lamp kills a Peg' };`)));
@@ -268,7 +278,7 @@ export async function runKit(page, { sleep, log = () => {}, only = null }) {
   await run('plumb-arrows', () => page.evaluate(ev(`
     // (eeddcb4: stood 11 m off along the lamp's axis, no arrow touched it at all: she stands where the Peg row stood, on
     // open ground, and the Plumb 24 m out)
-    const b = base(); const m = spawn('plumb', b.x + 24, b.z); place(b.x, b.z, b.x + 24, b.z); await frames(30); await raise();
+    const b = base(); const m = spawn('plumb', b.x + 24, b.z, true); place(b.x, b.z, b.x + 24, b.z); await frames(30); await raise();
     const out = {};
     /* Blunt: two Reed arrows on the standing bob */
     const bob = m._bob; const hp0 = bob.tearHp, h0 = m.health; let struck = [];
