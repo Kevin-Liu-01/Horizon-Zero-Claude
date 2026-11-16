@@ -42,7 +42,7 @@ export const OUTPUTS = ['public/models/armory/armor-pan-2.glb'];
 const RECIPE = 'tools/build/recipes/armor/pan-2.mjs';
 export const HAT_ON_HEAD = 32, HAT_ON_BACK = 64, HAT_ON_BACK_LOW = 128;
 /** The hat: brim radius, the brim plane's height over her crown, its tilt (front down), the crown's clearance over the wrap. */
-export const HAT = { brimR: 0.232, brimY: 1.722, cz: -0.036, tilt: 0.06, clear: 0.01, crownMin: 0.104, topMin: 0.14, sides: 20 };
+export const HAT = { brimR: 0.236, brimY: 1.722, cz: -0.046, tilt: 0.06, clear: 0.01, crownMin: 0.104, topMin: 0.14, sides: 20, knotRoom: 0.03 };
 /** The vest: its offset over the top, the hem, the front opening (|x| of the edge at the neck and at the hem), and how far it stays off the top's armholes and neckline. */
 export const VEST = { off: 0.0028, hemY: 1.156, edgeNeck: 0.07, edgeHem: 0.112, rimClear: 0.016 };
 /** The shoulder guard's three lames along the left upper arm (t: share of shoulder -> elbow; ph about the arm, 0 = front, PI/2 = up in bind). */
@@ -114,6 +114,12 @@ function fitCrown(wrap, F) {
       if (d < (TAU / S) * 0.9) need[k] = Math.max(need[k], r + HAT.clear);
     }
     if (r < HAT.crownMin + 0.04) top = Math.max(top, l[1] + HAT.clear);
+  }
+  // the knot's own tail (a dyn_ chain behind the head, hanging through the crown's opening) swings back in idle and at a
+  // run: the crown gives it room behind her, most straight back (F10 at 5ab397d: violet through the crown's back)
+  for (let k = 0; k < S; k++) {
+    let d = Math.abs((k / S) * TAU - 1.5 * Math.PI); d = Math.min(d, TAU - d);
+    need[k] += HAT.knotRoom * sstep(1.0, 0.25, d);
   }
   // round the bearings (two passes), never in under what a sector needs
   for (let pass = 0; pass < 2; pass++) {
