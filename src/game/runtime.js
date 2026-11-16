@@ -148,7 +148,9 @@ export class SystemsGame {
         const x = c.x + dx * d, z = c.z + dz * d;
         const h = H(x, z);
         if (h < 0) break;                                   // the sea: this bearing's shore was the last dry step
-        if (h > 1.2 || H(x + dx * 3, z + dz * 3) >= 0) continue;
+        // (people M1.5d fix round 2, the smallest change: at 3 m from the sea the spot stood in 0.11 m of water, 20fe91e film;
+        // the most landward step within 6 m of the sea that stands dry)
+        if (h > 1.2 || H(x + dx * 6, z + dz * 6) >= 0 || (this.ctx.water?.depthAt?.(x, z) ?? 0) > 0.02) continue;
         if (!best || d < best.d) best = { x: +x.toFixed(2), z: +z.toFixed(2), d };
         break;
       }
