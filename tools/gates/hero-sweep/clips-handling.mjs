@@ -40,6 +40,11 @@ export const CLIPS = {
    *     held at a run for five seconds (key 1, the timer kept up), then the lance held at a run for five (key 2 held) */
   hHeld: { sim: true, frame: 'F15', pose: 'idle', lens: { a: 'side', d: 3.0, h: 1.1, look: 0.95, fov: 42 },
     js: `${RESET} C.input.keys.add('KeyW'); await w(0.6); ${K1} for (let i = 0; i < 10; i++) { C.combat.noteCombatAction?.(); await w(0.5); } ${K2} mel.drawLance(30); await w(5.5);` },
+  /* 10. (M1a weapons round 2) the interrupts, close on the hands from her left front (1.9 m): a stow asked mid-draw (the
+   *     draw holds its course to the guard, then stows), the draw asked again mid-stow (it turns back at the point of
+   *     the draw that holds the lance where the stow had it), then the bow asked mid-stow of the lance (key 1) */
+  hIntr: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 45, d: 1.9, h: 1.2, look: 1.0, fov: 42 },
+    js: `${RESET} await w(0.3); ${K2} await w(0.15); mel.holsterLance(); await w(0.9); mel.drawLance(); await w(0.9); mel.holsterLance(); await w(0.18); ${K1} await w(1.4);` },
   /* 9. a roll during each draw, once before the grip and once after: the bow (key 1, the roll at 0.08 s and at 0.30 s)
    *    and the lance (key 2, at 0.03 s and at 0.20 s); her left side */
   hRoll: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 90, d: 3.4, h: 1.2, look: 0.9, fov: 46 },
