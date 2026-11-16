@@ -501,9 +501,12 @@ export class CarryStow {
       return REACH_YAW * 0.4 * (1 - _sm((t - tD) / (tE - tD)));
     }
     if (B.mode === 2) {
-      const tA = phaseEnd(T, 'A'), tC = phaseEnd(T, 'C'), tD = phaseEnd(T, 'D');
-      if (t < tD) return REACH_YAW * _sm((t - tA) / (tC - tA));
-      return REACH_YAW * (1 - _sm((t - tD) / (T.total - tD)));
+      /* (M1a weapons round 2: the stow turns her trunk half as far as the unstow's reach: the hand only seats the bow, and
+       *  every degree of it turns the lance on her back with her, which a swap to the lance counts in its turn, W4) */
+      /* (...and it is back to her line by the release: a lance drawn next is taken off a still trunk, W4's first 0.15 m) */
+      const tA = phaseEnd(T, 'A'), tB = phaseEnd(T, 'B'), tD = phaseEnd(T, 'D'), Y = REACH_YAW * 0.5;
+      if (t < tB) return Y * _sm((t - tA) / (tB - tA));
+      return Y * (1 - _sm((t - tB) / (tD - tB)));
     }
     return 0;
   }
