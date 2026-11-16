@@ -1133,13 +1133,15 @@ export const RESTATED = [
   },
   {
     id: 'A70-hub-tabs',
-    why: 'no skill screen exists and the bible has no skill tree; the K tab must not bounce the hub to another tab or throw. M1b (M1.6i): BIBLE 18 hub has eight tabs, CHARACTER the fifth; the count clause reads 8, every keyed clause is unchanged',
+    why: "no skill screen exists and the bible has no skill tree; the K tab must not bounce the hub to another tab or throw. M1b (M1.6i): BIBLE 18 hub has eight tabs, CHARACTER the fifth; the count clause reads 8. Wave-3 ruling (the orchestrator): the row tests eight keys: P opens the Character page (a local tab, rendered in the hub body), graded as M, O and the comma are; every other keyed clause is unchanged",
     patches: [
       ['const out = { tabs: [] };', A70_WATCH],
       [A70_KEY_OLD, A70_KEY_NEW],
       [A70_OK_OLD, A70_OK_NEW],
       ['&& out.open.tabsVisible === true && out.open.count === 7', '&& out.open.tabsVisible === true && out.open.count === 8'],
+      ["['KeyK','skills'],['KeyN','notebook'],['Comma','settings']];", "['KeyP','character'],['KeyK','skills'],['KeyN','notebook'],['Comma','settings']];"],
     ],
+    set: { title: 'Escape opens an 8-tab hub; M/J/I/O/P/K/N/, each open theirs; a map click plants a compass waypoint in metres' },
   },
   {
     id: 'A56-cascades',
