@@ -18,7 +18,6 @@ import { MeleeDriver } from './anim/meleeDriver.js';
 import { SecondaryMotion } from './anim/secondaryMotion.js';
 import { ConstraintAim } from './anim/constraintAim.js';
 import { HangPose } from './anim/hangPose.js';
-import { ClothWrap } from './anim/clothWrap.js';
 
 /** M1a round 2: after a lance holster the aim rig takes the arms over this long (s), from the hand down her side. */
 const STOW_HANDBACK = 0.22;
@@ -1642,10 +1641,8 @@ export class PlayerAnimator {
      *  after the roll's guards, and on the somersault's fastest steps it put the left hand back over the inverted crown
      *  for one step: the crown guard again on the final pose, in a roll or a jump only) */
     if (guardW > 0.02) for (let it = 0; it < 3 && this._rollCrownGuard(guardW, !!(this.melee?.w > 0.02)); it++) { /* re-tested */ }
-    /* M1.2e round 2: the cloth wrap pass (anim/clothWrap.js): the sash panels and the wrap's tails, as they will be
-     * skinned, out of the legs, the torso, the quiver and the draw arm, after every layer that moves a bone they hang
-     * from or a capsule they meet */
-    this._clothWrap();
+    /* (M1a cloth fix round 1: the cloth wrap pass (anim/clothWrap.js) is gone with the old cloth path; the grid cloth's
+     *  drawing pass (anim/cloth/rig.js _vertexPass) holds the panels and the tail off the body) */
 
     /* hero-body targeted fix round 3: how far her trunk stands off her root (the furthest of the pelvis, the chest
      * and the head, horizontally, character metres): player.js turns her onto the camera no faster than that
@@ -1673,4 +1670,4 @@ export class PlayerAnimator {
 }
 
 /* M1.3a: the members moved into the modules above, back on the prototype (a name defined twice throws). */
-installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion, ConstraintAim, HangPose, ClothWrap);
+installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion, ConstraintAim, HangPose);

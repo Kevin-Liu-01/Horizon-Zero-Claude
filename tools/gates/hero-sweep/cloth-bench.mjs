@@ -1,7 +1,7 @@
 /**
  * M1a cloth step 1 (cloth lane): the cloth rows of the brief (C2-C11), in Node, on Brea dressed (`bench.mjs`), at
  * 60 Hz of sim time, graded on the RENDERED cloth: every panel's and the tail's vertices CPU-skinned
- * (`SkinnedMesh.getVertexPosition`, three's own skinning), so today's chains (`--mode 0`, the C0 baseline) and the grid
+ * (`SkinnedMesh.getVertexPosition`, three's own skinning), so the old chains (`--mode 0`, the C0 baseline, before fix round 1 took that path out) and the grid
  * solver (`--mode 2`, `?cloth=2`) are read the same way. Particle rows (stretch, tongues, sleep, digests, the ring
  * buffer's timing) exist only on the grid solver and are reported as n/a on mode 0.
  *

@@ -59,7 +59,8 @@ export function peekClothRig(an) { return _rigs.get(an) || null; }
 /** Switch an animator's cloth at run time (the A/B clips): 2 builds the grid cloth on the next frame, 0 takes it off and
  *  gives the panels and the tail back to their chains (meshes, skeletons and chains as they were). */
 export function setClothMode(an, m) {
-  m = Number(m) || 0;
+  // (fix round 1: the grid cloth is the only cloth; a request for 0 keeps it)
+  m = 2;
   const r = _rigs.get(an);
   _modes.set(an, m);
   if (m === 2) { if (!r) _rigs.delete(an); return m; }

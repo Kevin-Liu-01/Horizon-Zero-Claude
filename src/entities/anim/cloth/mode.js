@@ -1,22 +1,13 @@
 /**
  * CLOTH: the flag, on its own (no three.js), so the people's chains can read it without loading Brea's rig.
  */
-/** The flag: 2 = the grid solver drives Brea's sash panels and wrap tail and the people's strands. ON BY DEFAULT since
- *  cloth round 5; 0 (the old chains and clothWrap.js, for the before-and-after clips while they are in the tree) by
- *  `?cloth=0` in the page's address, CALIMA_CLOTH=0 in Vite's environment (vite.config.js defines `__CALIMA_CLOTH__`), or
- *  `globalThis.__CALIMA_CLOTH = 0` (the Node benches). */
+/** The flag: 2 = the grid solver drives Brea's sash panels and wrap tail and the people's strands. The only cloth since
+ *  cloth fix round 1 (the old chains' panel path and clothWrap.js are gone): `?cloth=0`, CALIMA_CLOTH=0 and
+ *  `globalThis.__CALIMA_CLOTH = 0` no longer turn it off (the C0 baseline and the before-and-after clips were recorded
+ *  at 6782b47 and 20261116T004625Z). Kept as a function so the people's chains read it as before. */
 export function clothMode() {
-  if (globalThis.__CALIMA_CLOTH != null) return Number(globalThis.__CALIMA_CLOTH) || 0;
-  // eslint-disable-next-line no-undef
-  if (typeof __CALIMA_CLOTH__ !== 'undefined' && __CALIMA_CLOTH__) return Number(__CALIMA_CLOTH__) || 0;
-  try {
-    const s = globalThis.location?.search || '';
-    const m = /[?&]cloth=(\d+)/.exec(s);
-    if (m) return Number(m[1]);
-  } catch { /* no location */ }
   return 2;
 }
-
 
 /** The timing clock for the ring buffers: the bench's own (`__clothClock`), else the browser's REAL clock, even under the
  *  sim-time slate (which pins `performance.now` to the virtual clock, so the ring would read 0 ms). */
