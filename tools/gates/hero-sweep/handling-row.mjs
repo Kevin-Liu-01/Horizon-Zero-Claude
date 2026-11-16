@@ -231,9 +231,21 @@ export function gradeCase(kind, L, meta = {}) {
   // ---- W4 the lance's path (draw and stow): total shaft rotation, the blade over the knee, the first 0.15 m axial
   if (/lance|swap/.test(kind) && !meta.w9mid) {
     let tot = 0, low = 9, lowAt = null;
-    const vis = L.filter((r) => r.lanceVis === 'held');
+    /* M1a weapons fix round 1: the PATH, as the brief words it ("from the stowed line to the guard line"): a draw's record
+     * ends at its first ready step (the guard up), a stow's at holstered. Round 2 summed every held step of the record, so
+     * at a jog the guard's own bob after the draw (0.43 s of the 0.8 s record) counted as path: lanceDrawJog 269 deg, and the
+     * guard's tip under the knee of the jog's raised leg (t 0.567, the draw ready at 0.417). The whole record's figures stay
+     * reported beside it (recordRotDeg, recordBladeOverKneeMinM) */
+    const isStow = kind === 'lanceStow' || kind === 'swap21';
+    const pe = first(L, (r) => (isStow ? r.stance === 'holstered' : r.stance === 'ready' || r.stance === 'swing'));
+    const pathEnd = pe >= 0 ? pe + 1 : n;
+    const vis = L.slice(0, pathEnd).filter((r) => r.lanceVis === 'held');
     for (let i = 1; i < vis.length; i++) tot += ang(sub(vis[i - 1].lanceTip, vis[i - 1].lanceButt), sub(vis[i].lanceTip, vis[i].lanceButt));
     for (const r of vis) { const m = r.lanceTip[1] - r.kneeY; if (m < low) { low = m; lowAt = r3(r.t); } }
+    let recTot = 0, recLow = 9;
+    { const all = L.filter((r) => r.lanceVis === 'held');
+      for (let i = 1; i < all.length; i++) recTot += ang(sub(all[i - 1].lanceTip, all[i - 1].lanceButt), sub(all[i].lanceTip, all[i].lanceButt));
+      for (const r of all) recLow = Math.min(recLow, r.lanceTip[1] - r.kneeY); }
     let axial = null;
     if (lanceTake > 0) {
       const b0 = L[lanceTake - 1].lanceButt, d0 = nrm(sub(L[lanceTake - 1].lanceTip, b0));
@@ -241,7 +253,7 @@ export function gradeCase(kind, L, meta = {}) {
       for (let i = lanceTake; i < n; i++) { const mv = sub(L[i].lanceButt, b0), m = len(mv); if (m > 0.15) break; if (m > 0.01) { const a = ang(mv, d0); worst = Math.max(worst, Math.min(a, 180 - a)); } }
       axial = r3(worst);
     }
-    out.W4 = { shaftRotTotalDeg: r3(tot), bladeOverKneeMinM: r3(low), bladeLowAt: lowAt, first15cmOffAxisDeg: axial };
+    out.W4 = { shaftRotTotalDeg: r3(tot), bladeOverKneeMinM: r3(low), bladeLowAt: lowAt, first15cmOffAxisDeg: axial, pathEndT: pe >= 0 ? r3(L[pe].t) : null, recordRotDeg: r3(recTot), recordBladeOverKneeMinM: r3(recLow) };
     if (tot > 140) fail(`W4 the shaft turned ${tot.toFixed(0)} deg in all (bar 140)`);
     if (low < 0) fail(`W4 the blade ${(-low).toFixed(3)} m under the knee (t ${lowAt})`);
     if (axial != null && axial > 5) fail(`W4 the first 0.15 m ${axial} deg off the shaft's axis (bar 5)`);

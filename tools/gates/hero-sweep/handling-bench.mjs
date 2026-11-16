@@ -185,6 +185,7 @@ const key2 = () => { R.melee.drawLance(); };                                    
 const fwd = (speed) => { const p = R.player; p.velocity.set(Math.sin(p.heading) * speed, 0, Math.cos(p.heading) * speed); p.moveSpeed = speed; };
 function tick(speed = 0) { if (speed) fwd(speed); step(R); combatStep(1 / 60); }
 
+let KITF = null;
 /* ---- the kit's stowed bow: its top end and its line in spine_02's frame (once, at the first reset's pose) */
 let KIT = null;
 function kitInit() {
@@ -198,6 +199,8 @@ function kitInit() {
   let far2 = 0, B = null; for (const p of pts) { const d = p.distanceTo(A); if (d > far2) { far2 = d; B = p; } }
   const wA = sp.localToWorld(A.clone()), wB = sp.localToWorld(B.clone());
   KIT = wA.y > wB.y ? { top: A, low: B } : { top: B, low: A };
+  // (M1a weapons fix round 1: the sequence's kit frame, estimated here once, off the same pose: the W2 reading of the stowed bow)
+  if (NEW && typeof an._bowKitInit === 'function') { an._bowPathState?.(); an._bowKitInit(); const B = an._bp; if (B?.kit) KITF = { q: B.kitQ.clone(), o: B.kitO.clone(), s: B.kitS }; }
 }
 
 /* ---- the step record */
@@ -242,6 +245,26 @@ function record(t) {
   } else {
     r.bowTip = chW(sp.localToWorld(_v.copy(KIT.top))); const lo = chW(sp.localToWorld(_v.copy(KIT.low)));
     r.bowAxis = [r.bowTip[0] - lo[0], r.bowTip[1] - lo[1], r.bowTip[2] - lo[2]]; r.bowLimb = null; r.bowGrip = null;
+    /* M1a weapons fix round 1 (W2 at the bow's grip and release): the SAME points as the held bow's (SOCKETS.bow.tip and the
+     * mesh's [0, +-0.6, 0]), placed on the stowed bow by the sequence's own kit frame (carryStow `_bowKitNow`, `_bowPt`).
+     * Round 2 compared the kit piece's farthest vertices with the held bow's socket tip: the 0.0416-0.0437 m "jump" at
+     * every grip lay along the stave (-0.0436 of 0.0437 m) between two different points (the axes 1.448 m and 1.163 m long).
+     * The farthest-vertex reading is kept as bowTipKitVtx. */
+    r.bowTipKitVtx = r.bowTip;
+    // (the kit frame is the sequence's estimate off the posed kit, re-taken at each request: it moved 0.0076 m between the
+    //  reset's estimate and the request's. One snapshot a case, the first the bench sees, so the stowed bow reads still)
+    const B = an._bp;
+    if (B?.kit && B.kitQ && B.kitO && !KITF) KITF = { q: B.kitQ.clone(), o: B.kitO.clone(), s: B.kitS };
+    if (KITF) {
+      // (in spine_02's own units, as the kit is: carryStow `_bowKitInit` keeps kitO there and kitS in metres a mesh unit)
+      sp.updateWorldMatrix(true, false); _ws.setFromMatrixScale(sp.matrixWorld);
+      const u = _ws.x / (model.getWorldScale(_v).x || 1);
+      const at = (x, y, z) => chW(sp.localToWorld(new THREE.Vector3(x, y, z).multiplyScalar(KITF.s / u).applyQuaternion(KITF.q).add(KITF.o)));
+      const T = SOCKETS.bow.tip;
+      r.bowTip = at(T[0], T[1], T[2]);
+      const hi = at(0, 0.6, 0), lo2 = at(0, -0.6, 0);
+      r.bowAxis = [hi[0] - lo2[0], hi[1] - lo2[1], hi[2] - lo2[2]];
+    }
   }
   r.bowTipSp = toSp(r.bowTip);
   r.bowLowSp = toSp([r.bowTip[0] - r.bowAxis[0], r.bowTip[1] - r.bowAxis[1], r.bowTip[2] - r.bowAxis[2]]);
@@ -349,6 +372,10 @@ const CASES = {
   swap12Jog: { kind: 'swap12', tempo: 'ask', jog: true, pre: () => settleBowOut(SPEEDS.jog), go: key2, secs: 1.2 },
   swap21Jog: { kind: 'swap21', tempo: 'ask', jog: true, pre: () => settleLanceOut(SPEEDS.jog), go: key1, secs: 1.4 },
   click: { kind: 'click', tempo: 'ask', pre: () => {}, go: () => { R.ctx.input.mouse.buttons = 1; }, secs: 0.7, each: (i) => { if (i === 3) R.ctx.input.mouse.buttons = 0; } },
+  /* M1a weapons fix round 1 (A101's from-holstered rows at a jog and a sprint: 0.60 / 0.58 s in the page at ff3afb9, R5
+   * 0.25-0.35; the Node click was idle only) */
+  clickJog: { kind: 'click', tempo: 'ask', jog: true, pre: () => { for (let i = 0; i < 60; i++) tick(SPEEDS.jog); }, go: () => { R.ctx.input.mouse.buttons = 1; }, secs: 0.9, speed: SPEEDS.jog, each: (i) => { if (i === 3) R.ctx.input.mouse.buttons = 0; } },
+  clickSprint: { kind: 'click', tempo: 'ask', jog: true, pre: () => { R.player.sprinting = true; for (let i = 0; i < 60; i++) tick(SPEEDS.sprint); }, go: () => { R.ctx.input.mouse.buttons = 1; }, secs: 0.9, speed: SPEEDS.sprint, each: (i) => { if (i === 3) R.ctx.input.mouse.buttons = 0; }, post: () => { R.player.sprinting = false; } },
   heldBowRun: { kind: 'held', tempo: 'ask', jog: true, pre: () => settleBowOut(SPEEDS.jog), go: () => { emu.holsterT = 30; }, secs: 2.0, speed: SPEEDS.jog },
   heldBowSprint: { kind: 'held', tempo: 'ask', jog: true, pre: () => { R.player.sprinting = true; settleBowOut(SPEEDS.sprint); }, go: () => { emu.holsterT = 30; }, secs: 2.0, speed: SPEEDS.sprint, post: () => { R.player.sprinting = false; } },
   heldLanceRun: { kind: 'held', tempo: 'ask', jog: true, pre: () => settleLanceOut(SPEEDS.jog), go: () => { R.melee._readyT = 30; }, secs: 2.0, speed: SPEEDS.jog },
@@ -404,6 +431,8 @@ if (!c) { console.log(`@@RESULT ${JSON.stringify({ error: `no case ${CASE}` })}`
 reset(R); emu.holsterT = 0; for (let i = 0; i < 40; i++) tick();
 kitInit();
 c.pre();
+// (the sequence's kit frame as it stands at the request, after the lead-in: a jog's pose is not the reset's)
+if (NEW && an._bp && typeof an._bowKitInit === 'function' && (an._bp.mode ?? 0) === 0 && an._bp.owner !== 'handL') { an._bowKitInit(); if (an._bp.kit) KITF = { q: an._bp.kitQ.clone(), o: an._bp.kitO.clone(), s: an._bp.kitS }; }
 const spd = c.speed ?? (c.jog ? SPEEDS.jog : 0);
 M.begin(CASE);
 c.go();
