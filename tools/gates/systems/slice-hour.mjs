@@ -366,7 +366,9 @@ async function waitStill(mi, ms) {
     for (let i = 0; i < 10; i++) await raf();
     const span = E.simTime - s;
     v = span > 0.02 ? Math.hypot(m.position.x - p.x, m.position.z - p.z) / span : 0;
-    if (v < 0.12 || performance.now() - t0 > ms) break;
+    // M1b round 3: and not while it staggers from the last hit (4c5384a: a shot loosed into the stagger after the first vial
+    // hit, read as a hit on the vial, met nothing)
+    if ((v < 0.12 && m.state !== 'stagger') || performance.now() - t0 > ms) break;
   }
   return { waitedS: +((performance.now() - t0) / 1000).toFixed(1), speed: v == null ? null : +v.toFixed(2), state: m?.state ?? null };
 }
@@ -614,7 +616,14 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         continue;
       }
       if (backOut && t.d < 9 && kind !== 'peg') {
-        if (part === 'vial') { stand0 = null; continue; }   // it closed on her: scan again from here
+        if (part === 'vial') {
+          // it closed on her (M1b round 3): from inside 9 m its head masks the vial (4c5384a: seven stands at 9-13 m, each
+          // masked by rig_head when she got there). Back out to 18 m, then scan again from there
+          await release();
+          const k = 18 / Math.max(1, t.d);
+          await walkTo(page, K, { x: t.x + (s.p.x - t.x) * k, z: t.z + (s.p.z - t.z) * k }, 3, { maxS: 12 });
+          stand0 = null; continue;
+        }
         await release();
         const k = stand / Math.max(1, t.d);
         await walkTo(page, K, { x: t.x + (s.p.x - t.x) * k, z: t.z + (s.p.z - t.z) * k }, 3, { maxS: 12 });
@@ -648,8 +657,12 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         blocked++;
         const s2 = await page.evaluate(probe);
         shots.push({ kind, part, blocked: true, d: +t.d.toFixed(1), at: { x: +s2.p.x.toFixed(1), z: +s2.p.z.toFixed(1) }, predicted: { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds }, aimErr: sol.err });
-        if (blocked > 6) return { ok: false, why: `${kind} ${part}: masked from every stand tried (${blocked})`, fired, scans, ditchScans };
-        if (part === 'vial') { stand0 = null; continue; }   // the next open stand the scan finds
+        if (blocked > (part === 'vial' ? 12 : 6)) return { ok: false, why: `${kind} ${part}: masked from every stand tried (${blocked})`, fired, scans, ditchScans };
+        if (part === 'vial') {
+          // the next open stand the scan finds; masked at close range (its head before the vial), back out to 18 m first
+          if (t.d < 13) { const k = 18 / Math.max(1, t.d); await walkTo(page, K, { x: t.x + (s2.p.x - t.x) * k, z: t.z + (s2.p.z - t.z) * k }, 3, { maxS: 12 }); }
+          stand0 = null; continue;
+        }
         const ang = Math.atan2(s2.p.x - t.x, s2.p.z - t.z) + (blocked % 2 ? 0.35 : -0.7);
         await walkTo(page, K, { x: t.x + Math.sin(ang) * stand, z: t.z + Math.cos(ang) * stand }, 2.5, { maxS: 15, sprint: false });
         continue;
