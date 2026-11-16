@@ -82,6 +82,10 @@ const TAIL = { stem: 'dyn_wrapSash', name: 'wrapSash', C: 2, R: 8, wrung: 3, spl
  *  ahead of the forward knee's plane at a run (trade wind from behind her, the C8 staging; hem particles, one start) went
  *  from 61 / 38 % of frames (L / R) to 98-100 / 70-77 % at every compliance tried (2e-2 to 2e-4) and at u 0.5. */
 export const TETHER = { on: false, u: 0.75, slack: 0.02, alpha: 0.02 };
+/** Round 4: the front panels' backstop, m in front of the pelvis root's frontal plane (solver.js ClothPiece.backstop), and
+ *  each panel's share of her travel met as air where it is not its material's (solver.js ClothPiece.air; -1: the material's) */
+export const BACKSTOP = { front: 0.0 };
+export const PANEL_AIR = { panelL: -1, panelR: -1, panelB: -1 };
 /** The tongues' minimum distance, over their bind distance (round 3: 0.78, was 0.7 of a bind distance the oversized
  *  lengths made 10 % wider: at the body's own scale 0.7 let the tongues cross in 46-48 of 1440 run and sprint frames) */
 /** The tail's stand-off off every collider and its hard margin over the grader's inner surfaces (m), and `tongueMin` */
@@ -426,6 +430,9 @@ export class BreaCloth {
     const P = new ClothPiece({ name, mat, C, R, X, Q0, root, pinned, cons, lraPin, mass, area, mask, off, offPerCollider: this._offFit(X, pinned, mask, off, root) });
     P.fwd = fwd; P.stem = stem; P.kind = 'panel'; P.lee = 0.17; P.edges = true; P.sQ = sQ;
     P.edgesLegs = stem !== 'dyn_panelB';   // (the fronts over the thighs: their leg edges every substep, solver.js)
+    // (round 4: the fronts never slip between her legs to the back: solver.js ClothPiece.backstop)
+    if (stem !== 'dyn_panelB') P.backstop = BACKSTOP.front;
+    P.air = PANEL_AIR[name] ?? -1;
     P.pinMask = (bits.thighL || 0) | (bits.thighR || 0);
     // (the hard pass's margin: a cell's chord sag on the inner thigh, 0.12 m along a row over a 0.078 m radius, 0.028 m
     //  (a sit, a crouch: the columns lie across the thigh), + 2 mm; under the trousers' own surface, 0.096-0.105 m)

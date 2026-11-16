@@ -127,6 +127,8 @@ function unstage(R) { const p = R.player; p.crouching = false; p.riding = null; 
 
 /* ------------------------------------------------------------------ particle reads (grid solver only) */
 const STRETCH_LOG = args.includes('--stretch-log') ? {} : null;
+// (--trace <file>: C8's per-frame hem and knee reads, forward of her root, for a look at where the hems pass the knees)
+const TRACE = flag('--trace') ? [] : null;
 function stretch(R) {
   const C = rig(R); if (!C) return null;
   let edge = 0, path = 0;
@@ -166,10 +168,10 @@ function tonguesCrossed(R) {
   for (let r = 4; r < P.R; r++) if (Math.sign(side(P.x, r)[0]) !== P._bindSide[r]) crossed++;
   return crossed;
 }
-function maxSpeed(R) {
+function maxSpeed(R, who = null) {
   const C = rig(R); if (!C) return null;
   let m = 0;
-  for (const P of C.pieces) for (let i = 0; i < P.n; i++) if (P.w[i] !== 0) m = Math.max(m, Math.hypot(P.v[i * 3], P.v[i * 3 + 1], P.v[i * 3 + 2]));
+  for (const P of C.pieces) for (let i = 0; i < P.n; i++) if (P.w[i] !== 0) { const s = Math.hypot(P.v[i * 3], P.v[i * 3 + 1], P.v[i * 3 + 2]); if (s > m) { m = s; if (who) { who.piece = P.name; who.i = i; who.row = Math.floor(i / P.C); who.col = i % P.C; who.contact = P.contact[i]; who.pinch = P.pinch[i]; } } }
   return m;
 }
 
@@ -178,6 +180,9 @@ const out = { mode: MODE, rows: {} };
 // (tuning: --mat '{"lined":{"kd":6}}' merges into the materials before the rig is built; --solver '{"iters":3}' into the
 //  system after it is)
 if (flag('--mat')) { const { MATERIALS } = await import('../../../src/entities/anim/cloth/materials.js'); for (const [k, v] of Object.entries(JSON.parse(flag('--mat')))) { const sh0 = MATERIALS[k].share; Object.assign(MATERIALS[k], v); if (v.share) MATERIALS[k].share = { ...sh0, ...v.share }; } }
+if (flag('--tether')) { const m = await import('../../../src/entities/anim/cloth/rig.js'); Object.assign(m.TETHER, JSON.parse(flag('--tether'))); }
+if (flag('--panel-air')) { const m = await import('../../../src/entities/anim/cloth/rig.js'); Object.assign(m.PANEL_AIR, JSON.parse(flag('--panel-air'))); }
+if (flag('--backstop')) { const m = await import('../../../src/entities/anim/cloth/rig.js'); m.BACKSTOP.front = Number(flag('--backstop')); }
 let R = null, PR = null;
 // (round 2: every row on a FRESH bench, its clocks at 0 and the animator new: a row's numbers no longer depend on which
 //  rows ran before it in the process; at a2bcf20 C8's sprint read stretch 1.83 alone and 1.95, tongues crossed in 20
@@ -197,13 +202,13 @@ if (ROWS.includes('C2')) {
   for (const held of MODE === 2 ? [true, false] : [false]) for (const st of ['stand', 'crouch', 'sit']) {
     staged(R, { crouch: st === 'crouch', sit: st === 'sit' });
     const C = rig(R);
-    const tr = []; let asleepAt = null, ms15 = 0;
+    const tr = []; let asleepAt = null, ms15 = 0, who15 = null;
     for (let i = 1; i <= 120; i++) {
       if (held) { R.t += 1 / 60; R.model.updateMatrixWorld(true); C.update(1 / 60, R.t, R.an.wind); }
       else step(R);
       tr.push(frameRead(R, PR));
       if (C && asleepAt == null && C.pieces.every((p) => p.asleep)) asleepAt = i / 60;
-      if (i > 90 && C) ms15 = Math.max(ms15, maxSpeed(R));
+      if (i > 90 && C) { const wh = {}, m = maxSpeed(R, wh); if (m > ms15) { ms15 = m; who15 = wh; } }
     }
     const L = tr[tr.length - 1], Lp = tr[tr.length - 2];
     const r = {};
@@ -212,7 +217,7 @@ if (ROWS.includes('C2')) {
       const rel = L.pieces[k].H.clone().sub(L.pieces[k].T).distanceTo(Lp.pieces[k].H.clone().sub(Lp.pieces[k].T)) * 60;
       r[k] = { angDeg: rnd(deg(L.pieces[k].ang), 1), fwdDeg: rnd(deg(L.pieces[k].fwd), 1), latDeg: rnd(deg(L.pieces[k].lat), 1), hemSpeed: rnd(L.pieces[k].H.distanceTo(Lp.pieces[k].H) * 60, 4), hemSpeedRel: rnd(rel, 4) };
     }
-    r.asleepAt = asleepAt; r.maxSpeedAfter1p5 = C ? rnd(ms15, 4) : null;
+    r.asleepAt = asleepAt; r.maxSpeedAfter1p5 = C ? rnd(ms15, 4) : null; r.maxSpeedWho = who15;
     if (C) r.asleep = C.pieces.map((p) => p.asleep);
     res[(held ? 'held_' : 'idle_') + st] = r;
     unstage(R);
@@ -247,7 +252,10 @@ if (ROWS.includes('C4')) {
   for (let i = 1; i < tr.length; i++) { const v = tr[i].pelvis.distanceTo(tr[i - 1].pelvis) * 60; if (tStop == null && v < 0.3) tStop = tr[i].t; }
   for (const k of pieceNames) {
     // the hem in her frame (forward, m) relative to its last value
-    const f = tr.map((F) => F.pieces[k].H.clone().sub(F.pos).dot(F.f));
+    // (round 4: the hem against its own belt row (the tail's: below its wrung root), not against the ground point under
+    //  her: the idle after the stop sways her pelvis 1-2 cm over her feet, and against the ground the hem never read
+    //  settled, 2.3-2.5 s, the window's end, for every piece. --c4-ground reads it as before)
+    const f = tr.map((F) => F.pieces[k].H.clone().sub(args.includes('--c4-ground') ? F.pos : F.pieces[k].T).dot(F.f));
     const fin = f[f.length - 1];
     let peak = 0, peakT = null;
     for (let i = 0; i < f.length; i++) if (f[i] - fin > peak) { peak = f[i] - fin; peakT = tr[i].t; }
@@ -255,6 +263,7 @@ if (ROWS.includes('C4')) {
     for (let i = f.length - 1; i > 0; i--) { const d = Math.abs(f[i] - fin), v = Math.abs(f[i] - f[i - 1]) * 60; if (d > 0.01 || v > 0.02) { settle = tr[i].t - tr[0].t + 1 / 60; break; } }
     let cross = 0; for (let i = 1; i < f.length; i++) if ((f[i] - fin) * (f[i - 1] - fin) < 0 && Math.abs(f[i] - fin) + Math.abs(f[i - 1] - fin) > 0.01) cross++;
     res[k] = { overshootM: rnd(peak), peakAfterStopS: peakT != null && tStop != null ? rnd(peakT - tStop) : null, settleS: rnd(settle), crossings: cross };
+    if (TRACE) TRACE.push({ g: 'C4', k, f: f.map((x) => rnd(x - fin, 4)) });
   }
   res.stopS = tStop != null ? rnd(tStop - tr[0].t) : null;
   out.rows.C4 = res;
@@ -358,10 +367,14 @@ if (ROWS.includes('C8') || ROWS.includes('C3') || ROWS.includes('C9') || ROWS.in
     // (round 3: --heading <deg>: her heading for C8; 0, the row's, runs with the trade wind 45 deg off her back)
     staged(R, { heading: Number(flag('--heading', 0)) * Math.PI / 180 });
     R.player.sprinting = sprint;
-    for (let i = 0; i < 90 + 7 * sI; i++) { go(R, speed); step(R); }
+    for (let i = 0; i < 90 + 7 * sI; i++) {
+      go(R, speed); step(R);
+      if (TRACE) { const F = frameRead(R, PR), kn = (b) => b.getWorldPosition(new THREE.Vector3()).sub(R.player.position).dot(F.f); TRACE.push({ g: name + '-lead', s: sI, i, kL: rnd(kn(R.an.b.calfL.bone)), kR: rnd(kn(R.an.b.calfR.bone)), hL: rnd(F.pieces.panelL.H.clone().sub(F.pos).dot(F.f)), hR: rnd(F.pieces.panelR.H.clone().sub(F.pos).dot(F.f)), yR: rnd(F.pieces.panelR.H.y - F.pos.y), fR: rnd(deg(F.pieces.panelR.fwd), 1), v: rnd(R.player.moveSpeed, 2), pR: (() => { const P = rig(R)?.pieces.find((q) => q.name === 'panelR'); if (!P) return null; const o = []; for (let i = 0; i < P.n; i++) { const q = i * 3; o.push([rnd((P.x[q] - R.player.position.x) * F.f.x + (P.x[q + 2] - R.player.position.z) * F.f.z, 2), rnd(P.x[q + 1] - R.player.position.y, 2), P.contact[i]]); } return o; })() }); }
+    }
     const tr = [];
     for (let i = 0; i < 240; i++) {
       go(R, speed); step(R); const F = frameRead(R, PR); tr.push(F);
+      if (TRACE) { const kn = (b) => b.getWorldPosition(new THREE.Vector3()).sub(R.player.position).dot(F.f); TRACE.push({ g: name, s: sI, i, kL: rnd(kn(R.an.b.calfL.bone)), kR: rnd(kn(R.an.b.calfR.bone)), hL: rnd(F.pieces.panelL.H.clone().sub(F.pos).dot(F.f)), hR: rnd(F.pieces.panelR.H.clone().sub(F.pos).dot(F.f)), tL: rnd(F.pieces.panelL.T.clone().sub(F.pos).dot(F.f)), yL: rnd(F.pieces.panelL.H.y - F.pos.y), fL: rnd(deg(F.pieces.panelL.fwd), 1) }); }
       const s = stretch(R); if (s) { st.edge = Math.max(st.edge, s.edge); st.path = Math.max(st.path, s.path); st.boneScaleDev = Math.max(st.boneScaleDev, s.boneScaleDev); if (s.edge > 1.03) edgeOver++; }
       const c = tonguesCrossed(R); if (c) crossed++;
       nFr++;
@@ -550,3 +563,4 @@ if (STRETCH_LOG) out.stretchLog = STRETCH_LOG;
 for (const [id, row] of Object.entries(out.rows)) for (const [k, v] of Object.entries(row)) console.log(id.padEnd(4), k.padEnd(18), JSON.stringify(v));
 if (STRETCH_LOG) console.log('STRETCH', JSON.stringify(Object.entries(STRETCH_LOG).sort((a, b) => b[1] - a[1]).slice(0, 20)));
 if (flag('--json')) writeFileSync(flag('--json'), JSON.stringify(out, null, 1));
+if (TRACE) writeFileSync(flag('--trace'), JSON.stringify(TRACE));

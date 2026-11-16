@@ -92,6 +92,13 @@ export class ClothPiece {
     /** per particle, the deepest the rendered mesh lies INSIDE the grid's surface near it at bind (m: the mesh's own folds,
      *  their valleys): the colliders hold the particle that much further off, so the valley, not the grid, meets the body */
     this.pIn = new Float64Array(n); this.cells = false; this.teth = null;
+    /** the BACKSTOP (round 4): a front panel never passes behind the plane through its root square to the root's
+     *  forward, `backstop` m in front of it (scaled with the root); -1e9: off. Her legs stand between the panels and the
+     *  back: with the air of her own travel pressing a front panel back, it slipped round a thigh's inside and was caught
+     *  behind it (a sprint, the hem 0.15 m behind her root, the chord 40 deg back) */
+    this.backstop = -1e9;
+    /** the share of her travel this piece meets as air, over its material's `air` (round 4; -1: the material's) */
+    this.air = -1;
     // root-local bind places: given (`Q0`, then X is the canonical grid, Q0 x the root's scale, and every length below
     // is a function of the assets only: the same bits whatever pose the rig was built in), or q0 = R^-1 (X - p) / s
     if (Q0) this.q0.set(Q0);
@@ -313,7 +320,8 @@ export class ClothSystem {
     // ---- the air, once a frame
     p.normals();
     // (her own travel as air: v holds the lag part of it already; `mat.air` more of the fed root velocity is met as wind)
-    aeroForces(p, this.wind.x - mat.air * r.vFed[0], this.wind.z - mat.air * r.vFed[2], t);
+    const air = p.air >= 0 ? p.air : mat.air;
+    aeroForces(p, this.wind.x - air * r.vFed[0], this.wind.z - air * r.vFed[2], t);
     const damp = Math.exp(-mat.kd * h);
     // (round 2, the FALL: the carried share of her vertical travel moves the particles by position, so its acceleration
     //  never reached them, but gravity did in full: in a fall the cloth sank relative to her at (1 - vert) g / kd, the
@@ -468,6 +476,7 @@ export class ClothSystem {
         if (g > 0 && bdy > 0) p.pinch[i] = 1;
       }
       }
+      if (p.backstop > -1e8) this._backstop(p, r);
       // ---- the STRAIN LIMIT (round 3): after the colliders, every structural edge back to at most `strain` x its rest.
       //      The colliders have the last word in each pass above, and a thigh or the hips under a panel pushed its
       //      particles apart along the row (C8: edges at 1.38 x rest in 967 of 1440 run frames at 5170040, the across
@@ -491,7 +500,7 @@ export class ClothSystem {
         if ((hr < this.hardRounds - 1 || this.endStrain) && this.strainPost > 0) this._strain(p, this.strain, this.strainPost);
       }
       // ---- velocity
-      const ih = 1 / h, vRel = mat.vRel || 0;
+      const ih = 1 / h, vRel = mat.vRel || 0, vFall = mat.vFall || vRel;
       for (let i = 0; i < N; i++) {
         const q = i * 3;
         if (p.pinch[i]) { v[q] = rfx; v[q + 1] = 0; v[q + 2] = rfz; continue; }
@@ -500,9 +509,16 @@ export class ClothSystem {
         if (s2 > V_CAP * V_CAP) { const f = V_CAP / Math.sqrt(s2); vx *= f; vy *= f; vz *= f; }
         // the KICK limit: a heavy sheet's speed relative to the frame it is carried in stays under `mat.vRel` (m/s), so a
         // knee that shoves a panel moves it (the position is the collider's) without flinging it on past the leg
+        // (round 4: the FALL is not a kick. Its downward part relative to the frame is held to `mat.vFall` on its own (the
+        //  material's vRel if it names none, as before): at 0.3 m/s a lined panel a rising thigh had lifted took a second
+        //  or more to come down, the hem rode on ahead of the knee through a run's stride (C8) and settled in 2+ s (C4))
         if (vRel > 0) {
-          const ex = vx - rfx, ey = vy - rfy, ez = vz - rfz, e2 = ex * ex + ey * ey + ez * ez;
-          if (e2 > vRel * vRel) { const f = vRel / Math.sqrt(e2); vx = rfx + ex * f; vy = rfy + ey * f; vz = rfz + ez * f; }
+          const ex = vx - rfx, ez = vz - rfz;
+          let ey = vy - rfy, fy = 0;
+          if (ey < 0 && vFall > vRel) { fy = ey < -vFall ? -vFall : ey; ey = 0; }
+          const e2 = ex * ex + ey * ey + ez * ez;
+          if (e2 > vRel * vRel) { const f = vRel / Math.sqrt(e2); vx = rfx + ex * f; vy = rfy + ey * f + fy; vz = rfz + ez * f; }
+          else vy = rfy + ey + fy;
         }
         v[q] = vx; v[q + 1] = vy; v[q + 2] = vz;
       }
@@ -538,6 +554,26 @@ export class ClothSystem {
       if (Cc <= 0) continue;
       const dl = Cc / (w[i] + T.alpha * ih2) * w[i];
       x[q] -= ex / d * dl; x[q + 1] -= ey / d * dl; x[q + 2] -= ez / d * dl;
+    }
+  }
+
+  /** The backstop (see ClothPiece): every free particle of the piece in front of the root's frontal plane. */
+  _backstop(p, r) {
+    // (level: her forward in the ground's plane. The pelvis pitches forward 10-20 deg at a run, and a plane square to its
+    //  own forward let a hem 0.6 m under it lie 0.1-0.2 m behind her; off where the pelvis is far from upright, a roll)
+    qrot(r.iq, 0, 1, 0, _n, 0);
+    if (_n[1] < 0.6) return;
+    qrot(r.iq, p.fwd[0], p.fwd[1], p.fwd[2], _n, 0);
+    const hl = Math.sqrt(_n[0] * _n[0] + _n[2] * _n[2]);
+    if (hl < 1e-3) return;
+    const nx = _n[0] / hl, ny = 0, nz = _n[2] / hl, ox = r.ip[0], oy = r.ip[1], oz = r.ip[2], d0 = p.backstop * (p.restScale || 1);
+    const x = p.x, w = p.w, N = p.n;
+    for (let i = 0; i < N; i++) {
+      if (w[i] === 0) continue;
+      const q = i * 3, d = (x[q] - ox) * nx + (x[q + 1] - oy) * ny + (x[q + 2] - oz) * nz;
+      if (d >= d0) continue;
+      const e = d0 - d;
+      x[q] += nx * e; x[q + 1] += ny * e; x[q + 2] += nz * e;
     }
   }
 

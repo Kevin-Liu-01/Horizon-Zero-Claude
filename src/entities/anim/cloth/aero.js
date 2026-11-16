@@ -24,7 +24,7 @@ export function aeroForces(P, wx, wz, t) {
   const x = P.x, v = P.v, f = P.f, nrm = P.nrm, A = P.area, n = P.n, mat = P.mat;
   // (P.airK: a piece's share of the sheet's air, 1 for Brea's cloth; the people's strands stand for a whole tail or
   //  apron with a handful of particles and catch less, cloth/strands.js)
-  const cd = mat.cd, cl = mat.cl, airK = P.airK ?? 1;
+  const cd = mat.cd, cl = mat.cl, airK = P.airK ?? 1, shC = mat.shelter ?? SHELTER;
   const ws = Math.sqrt(wx * wx + wz * wz);
   const lee = P.lee || 0, ux0 = ws > 1e-6 ? wx / ws : 0, uz0 = ws > 1e-6 ? wz / ws : 0, rx = P.root.p[0], rz = P.root.p[2];
   const C = P.C || 1;
@@ -50,7 +50,7 @@ export function aeroForces(P, wx, wz, t) {
     const um = Math.sqrt(u2), hx = ux / um, hy = uy / um, hz = uz / um;
     const nx = nrm[k], ny = nrm[k + 1], nz = nrm[k + 2];
     const c = hx * nx + hy * ny + hz * nz;
-    let sh = P.contact[i] ? SHELTER : 1;
+    let sh = P.contact[i] ? shC : 1;
     if (lee > 0 && ws > 1e-3) {
       const dx = x[k] - rx, dz = x[k + 2] - rz, al = dx * ux0 + dz * uz0, la = Math.abs(dx * uz0 - dz * ux0);
       if (al > 0) {

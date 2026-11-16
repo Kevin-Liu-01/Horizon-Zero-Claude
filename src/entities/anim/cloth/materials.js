@@ -33,13 +33,20 @@ export const MATERIALS = {
     //  without dragging it up and forward with it), the kick limit 0.3 m/s (was 0.8), kd 8 (was 6). Bench (six starts
     //  each, fresh rigs) at a sprint: front hems more than 0.05 m ahead of the knee plane in 1.5 / 12.1 % of frames ->
     //  0 / 0 %, hem flutter L 0.11 -> 0.04 m, R 0.058 -> 0.022 m. At a run they still are, ~20 % (the result has the numbers))
-    areal: 0.90, hem: 1.6, shear: 5e-3, bendAlong: 0.25, bendAcross: 0.12, kd: 8.0, mu: 0.05, cd: 1.0, cl: 0.25, slack: 1.03,
+    // (round 4, the RUN: at a run with the trade wind 45 deg off her back the air of her travel met the panels at ~1 m/s,
+    //  and the hem a thigh had pushed forward came back down at the kick limit, 0.3 m/s: it hung 0.1-0.2 m ahead of the
+    //  knees as they crossed, 22-23 % of frames (bar 2 %). The fall is no longer a kick (`vFall` 1.0 m/s, solver.js), the
+    //  panels meet 1.6 x her travel as air (`air`; the brief leaves the share free per material), and no lift (`cl` 0:
+    //  with lift, a front panel pressed back by the air rode a sprinting thigh up to 60-70 deg and stayed there). The
+    //  fronts are backstopped at her frontal plane (rig.js BACKSTOP): pressed back, the long front-left slipped between
+    //  her legs. Node bench, six starts: hems ahead of the knee plane at a run 0 / 0 %, at a sprint 0 / 0 %)
+    areal: 0.90, hem: 1.6, shear: 5e-3, bendAlong: 0.25, bendAcross: 0.12, kd: 8.0, mu: 0.05, cd: 1.0, cl: 0, slack: 1.03, vFall: 1.0,
     // (round 2, the TURN: yaw share 0.3 (was 0.6): a 180 deg turn on the spot in 0.5 s, the hems lagged 49 / 28 / 29 deg,
     //  band 8-25; here 16.7 / 13.3 / 17.4)
     // (round 3: yaw 0.2, was 0.3: at the body's own size (the rest lengths follow her scale) the front-left hem lagged a
     //  180 deg turn on the spot by 30 deg, band 8-25; here 13.5 / 8.4 / 14.8 (L / R / back). The tail's 0.6 stays: 0.35
     //  crossed its tongues at a sprint)
-    share: { lin: 0.35, vert: 0.8, yaw: 0.2 }, vFedMax: 1.2, air: 0.65, vRel: 0.3,
+    share: { lin: 0.35, vert: 0.8, yaw: 0.2 }, vFedMax: 1.2, air: 1.6, vRel: 0.3,
   },
   felt: {
     areal: 0.80, hem: 1.2, shear: 2e-3, bendAlong: 0.07, bendAcross: 0.05, kd: 5.0, mu: 0.60, cd: 0.6, cl: 0.15, slack: 1.02,
