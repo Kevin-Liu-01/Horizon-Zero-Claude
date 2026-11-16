@@ -188,6 +188,10 @@ try {
   await sleep(2600);
   res.continueEnabled = await C(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => x.dataset.station === 'continue'); return !!b && !b.disabled; });
   await station('continue');
+  // M1.6g2 (BIBLE 18): CONTINUE opens the three slot cards; the marked card's CONTINUE loads its record
+  await sleep(500);
+  await shot('04b-slots');
+  res.slotCard = await C(() => { const go = document.querySelector('.gs-slot.cont .gs-slot-go'); go?.click(); return !!go; });
   await waitPlaying();
   await segment('C_quit_continue');
   await shot('05-play');
