@@ -55,7 +55,7 @@ import { ORGAN, CRATER } from './layout.js';
  * basalt at 33-36; the farther clusters are what held the gain at 1.3, through the far layer gaps) w is a NEAR gain: within
  * 140 m of the lens the albedo gain and the bounce and rim terms are x (1 + w), fading out by 320 m, so a cluster in the
  * F05 foreground is lit and every layer past 320 m keeps exactly its round-3 value */
-export const ORGAN_LIGHT = { value: new THREE.Vector4(18.0, 16.0, 1.3, 0.6) };
+export const ORGAN_LIGHT = { value: new THREE.Vector4(18.0, 16.0, 1.3, 0.0) };
 /* (measured: from the SUN's colour the terms changed the Organ crop's L* by 0.1 at 730056d, at 19.6 h the sun is in its
  * hand-over trough; from the fog's horizon colour by 1.0 at 42be5d0, that colour is far below the dome's at dusk). Both
  * terms now scale the column's own sky fill (reflectedLight.indirectDiffuse, which carries the hour's exposure), tinted
