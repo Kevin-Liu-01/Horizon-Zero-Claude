@@ -162,6 +162,11 @@ if (keptStack) {
     process.exit(1);
   }
   gates = KEPT_STACK.map((id) => byId.get(id));
+  /* (M1a weapons round 3, hero-anim, the smallest change: `--only` may name registered rows outside the kept stack, e.g.
+   *  the weapons lane's A100-A106 and A-stow-clearance; they run after the kept ones on the same kept-stack pages, the
+   *  studio taken out first as for every kept row) */
+  const extraOnly = (getFlag('--only', null)?.split(',').map((x) => x.trim()) || []).filter((id) => !KEPT_STACK.includes(id) && byId.has(id));
+  for (const id of extraOnly) gates.push(byId.get(id));
   console.log(`[gates] --kept-stack: ${gates.length} rows (${RESTAGED.length} re-staged, ${PATCHED.length} with a staging patch); the studio is taken out of every page`);
 }
 /**

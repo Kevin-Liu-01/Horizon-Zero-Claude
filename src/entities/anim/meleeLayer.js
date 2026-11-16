@@ -1997,7 +1997,11 @@ export class MeleeLayer {
      * and both arms are solved again. Only when the left hand is on the haft and missed by more than
      * UC_SEAT_TOL, so every other swing and every Undercut that seats already is untouched. */
     D.ucSeat = 0;
-    if (stance === 'swing' && beat === UNDERCUT && this._lhOnW > 0.5) {
+    /* (M1a weapons round 3, the guard on the move (W1 lance fore: the left palm 0.15-0.21 m off its socket at a jog, the
+     *  stride taking her left shoulder back out of reach of the guard's fore grip): the same seat, the haft brought to the
+     *  hand, in the guard too whenever she moves) */
+    const seatGuard = stance === 'ready' && !this.active && (an._moveW || 0) > 0.2;
+    if (((stance === 'swing' && beat === UNDERCUT) || seatGuard) && this._lhOnW > 0.5) {
       for (let i = 0; i < 2; i++) {
         an._charOf(b.handL.bone, _ucC);
         an._liveW(b.handL.bone, _ucQ);
@@ -2006,6 +2010,8 @@ export class MeleeLayer {
         const miss = _ucV.length();
         if (!(miss > UC_SEAT_TOL)) break;
         if (miss > UC_SEAT_MAX) _ucV.multiplyScalar(UC_SEAT_MAX / miss);
+        // (the guard's seat never lifts the right fist past 0.06 m under its shoulder: the owner's bar, heldLanceRun)
+        if (seatGuard) { an._charOf(b.upArmR.bone, _ucC); _ucV.y = Math.min(_ucV.y, Math.max(0, _ucC.y - 0.06 - _hand.y)); }
         _hand.add(_ucV); _lh.add(_ucV);
         this._solveRight(w, u);
         this._solveLeft(w, u);
@@ -4708,7 +4714,9 @@ export class MeleeLayer {
   _ucSeatLate(an) {
     const D = this._dbg, b = an.b;
     D.ucSeatLate = 0;
-    if (D.stance !== 'swing' || D.beat !== 'undercut' || !(this._lhOnW > 0.5)) return;
+    // (M1a weapons round 3: ...and the guard on the move, as on the pose pass)
+    const guardMove = D.stance === 'ready' && !this.active && (an._moveW || 0) > 0.2;
+    if ((!guardMove && (D.stance !== 'swing' || D.beat !== 'undercut')) || !(this._lhOnW > 0.5)) return;
     for (let i = 0; i < UC_SEAT_LATE_N; i++) {
       this._seatLeft(this._lhOnW, this._lhArmW, this._lhOnWant, 0);
       an._charOf(b.handL.bone, _ucC);
@@ -4718,8 +4726,11 @@ export class MeleeLayer {
       const miss = _ucV.length();
       if (!(miss > UC_SEAT_TOL)) break;
       if (miss > UC_SEAT_MAX) _ucV.multiplyScalar(UC_SEAT_MAX / miss);
-      an._charOf(b.handR.bone, _ahG).add(_ucV);
-      const up = Math.max(0, clamp((_ahG.y - 1.02) * 2.2, -0.4, 1));
+      an._charOf(b.handR.bone, _ahG);
+      if (guardMove) { an._charOf(b.upArmR.bone, _ucC); _ucV.y = Math.min(_ucV.y, Math.max(0, _ucC.y - 0.06 - _ahG.y)); }
+      _ahG.add(_ucV);
+      // (the guard's: the elbow kept down and back, the guard's own pole, not the raised strike's)
+      const up = guardMove ? 0 : Math.max(0, clamp((_ahG.y - 1.02) * 2.2, -0.4, 1));
       _ucP.set(-0.36 - 0.54 * up, -0.80 + 0.28 * up, -0.62 + 0.28 * up).normalize();
       an._ikArm('r', _ahG, _ucP, 1, null);
       this._alignHaft(1);
