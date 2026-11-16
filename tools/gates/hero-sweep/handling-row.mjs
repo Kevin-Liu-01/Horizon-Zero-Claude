@@ -311,6 +311,9 @@ export function gradeCase(kind, L, meta = {}) {
     let overH = -9, overAt = null, overSwing = -9, overAim = -9, overN = 0;
     for (const r of L) for (const s2 of ['L', 'R']) {
       const sh = r['sh' + s2][1], h = Math.max(r['wrist' + s2][1], r['elbow' + s2][1], r['palm' + s2][1]) - sh;
+      // (M1a weapons round 3: in a roll the shoulder line tumbles with her: "above its shoulder joint" in her frame is not
+      //  the bar there; the roll's own arm guard (the head plane, the crown) is the sweep's rows' and stays in `behind`)
+      if (r.dodging) continue;
       if (r.swing) overSwing = Math.max(overSwing, h);
       else if ((r.aimW ?? 0) > 0.5) overAim = Math.max(overAim, h);
       else { if (h > overH) { overH = h; overAt = { t: r3(r.t), side: s2 }; } if (h > 0) overN++; }

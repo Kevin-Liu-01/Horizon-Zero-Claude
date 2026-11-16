@@ -27,6 +27,13 @@ export const CLIPS = {
   // 6. the hand, close (0.8 m): the grab at the bow's limb, then at the lance's haft
   hHandBow: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 150, d: 0.85, h: 1.05, look: 0.98, fov: 45 },
     js: `${RESET} await w(0.2); ${K1} await w(0.7); C.combat._holsterT = 0.001; await w(0.8);` },
+  /* 6b. (M1a weapons round 3, the wave 3 ruling) the bow's reverse take at the small of her back, from behind her left
+   *     (close), then the two-hand regrip in front of her hip from her front-left (close): key 1 out, the timer's stow
+   *     back. The hands toward the lens in each */
+  hTakeRev: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 165, d: 1.0, h: 1.05, look: 0.98, fov: 45 },
+    js: `${RESET} await w(0.2); ${K1} await w(0.8); C.combat._holsterT = 0.001; await w(1.0);` },
+  hRegrip: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 25, d: 1.15, h: 1.05, look: 0.98, fov: 45 },
+    js: `${RESET} await w(0.2); ${K1} await w(0.8); C.combat._holsterT = 0.001; await w(1.0);` },
   hHandLance: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 115, d: 0.9, h: 0.95, look: 0.9, fov: 45 },
     js: `${RESET} await w(0.2); ${K2} await w(0.7); mel.holsterLance(); await w(0.8);` },
   // 7. all six transitions from behind her (M1a weapons fix 1, the judge: the staged game camera showed her in profile,

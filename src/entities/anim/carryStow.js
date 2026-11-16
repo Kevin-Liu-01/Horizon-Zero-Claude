@@ -90,6 +90,8 @@ const BOW_UNSTOW_R = {
 const PALM_STEP_E = 0.058;
 /** the keeper slide's time from the grip (s): 0.10 m down the limb before the bow turns at all (W5) */
 const SLIDE_S = 0.055;
+/** M1a weapons round 3 (W10): a roll takes the sequence's arm over this long, and gives it back over it after (s) */
+const ROLL_IN_S = 0.2;
 /** the most each regrip hand-off waits on its hand (s of the sequence's clock) */
 const REGRIP_WAIT = 0.083, REGRIP_WAIT_L = 0.15;
 /** the bow's axis off the carry's line (rad) under which the left closes the carry's way (W1's wrist from there) */
@@ -469,7 +471,22 @@ export class CarryStow {
     this._bowCapStowed();
     if (B.mode === 0) { B.w = 0; B.inHand = B.owner === 'handL'; B.phase = ''; B.yaw = 0; this._bowRightHand(dt); return 0; }
     if (!B.kit) { this._bowKitInit(); if (!B.kit) { B.mode = 0; B.owner = want ? 'handL' : 'carry'; B.inHand = want; return 0; } }
-    B.t += dt; B.frames++;
+    /* M1a weapons round 3 (W10, a roll mid-sequence: "the arm goes to the roll over 5 f ... the sequence resumes at its
+     * present phase on landing"): while she rolls the sequence's clock holds and its arm weight goes out over ROLL_IN_S,
+     * so the roll's own clip takes the arm (a bow in the fist rides it, posed from the fist); after the roll the palm's
+     * plan starts again from the hand as drawn and the weight comes back in over the same time */
+    const rolling = !!this.ctx.player?.dodging;
+    B.rollK = clamp((B.rollK || 0) + (rolling ? 1 : -1) * dt / ROLL_IN_S, 0, 1);
+    if (rolling && !B.rollWas && this._bpHandOk) B.rollFrom = true;
+    B.rollWas = rolling;
+    if (B.rollK > 0 && this._bpHandOk) {
+      // (the plan follows the drawn hand while the roll has it)
+      this._liveW(b.handL.bone, _bpQ);
+      B.pp.copy(this._bpHand).add(_bpE.copy(this._bowPalmOff()).applyQuaternion(_bpQ));
+      if (B.rOn && this._bpHandR && this.melee?.palmOffL) { this._liveW(b.handR.bone, _bpQ); B.rp.copy(this._bpHandR).add(_bpE.copy(this.melee.palmOffL).applyQuaternion(_bpQ)); }
+    }
+    if (B.rollK < 0.5) B.t += dt;
+    B.frames++;
     /* M1a weapons round 2 (W2 at the grip): the take is an event on the hand, not the clock: at the end of the close the
      * sequence waits (at most BOW_TAKE_WAIT) until the palm is on the limb's socket, so the bow leaves the keeper in the
      * fist, not beside it */
@@ -498,7 +515,7 @@ export class CarryStow {
     // the trunk's reach first (the stowed bow rides spine_02, so every goal below is read after it): spine_02 turns the
     // left shoulder back, the neck takes the turn back out so the head stays on its line; faded out under the aim (W11)
     const aimW = this.aimWeight ?? 0;
-    const yaw = this._bowYawAt(T) * (1 - Math.min(1, 2 * aimW));
+    const yaw = this._bowYawAt(T) * (1 - Math.min(1, 2 * aimW)) * (1 - _sm(B.rollK || 0));
     B.yaw = yaw;
     if (Math.abs(yaw) > 1e-5) { this._rot(b.spine2, Y_AXIS, yaw); if (b.neck1) this._rot(b.neck1, Y_AXIS, -yaw); }
     // (the plans ride spine_02 as it stands now, the reach's turn in it: the keeper on her back turns with it)
@@ -792,7 +809,7 @@ export class CarryStow {
     _bpQ3.copy(_bpQ);
     for (let pass = 0; pass < 2; pass++) {
       _bpT.copy(B.palm).sub(_bpE.copy(palmOff).applyQuaternion(B.hq));
-      this._ikArm('l', _bpT, B.pole, w, null);
+      this._ikArm('l', _bpT, B.pole, w * (1 - _sm(B.rollK || 0)), null);
       if (pass === 0) {
         let kq = 0;
         if ((B.mode === 1 || B.mode === 2) && B.hqMode) {
@@ -820,7 +837,8 @@ export class CarryStow {
     B.tgt.copy(_bpT);
     // (M1a weapons round 3: in the regrip, the left fist's turn off the one that holds the bow on its riser, this step)
     B.lTurnMiss = B.mode && B.pose === 'right' ? B.hq.angleTo(B.hqWant) : 9;
-    if (rot > 1e-3 && w > 1e-3) { this._liveW(b.handL.bone, _bpQ3); this.space.setCharQ(b.handL, _bpQ3.slerp(_bpQ4, Math.min(1, w))); }
+    const wr = w * (1 - _sm(B.rollK || 0));
+    if (rot > 1e-3 && wr > 1e-3) { this._liveW(b.handL.bone, _bpQ3); this.space.setCharQ(b.handL, _bpQ3.slerp(_bpQ4, Math.min(1, wr))); }
     // the palm's miss on its plan (the take waits on it)
     this._charOf(b.handL.bone, _bpA); this._liveW(b.handL.bone, _bpQ3);
     const atKeeper = (B.mode === 1 && B.owner === 'carry') || (B.mode === 1 && B.pose === 'right') || (B.mode === 2 && B.owner === 'handL' && (B.pose === 'right' || B.t >= phaseEnd(T, 'D')));
@@ -936,7 +954,7 @@ export class CarryStow {
     if (B.rOn === 2 && B.rRel >= 0.034 && B.rp.distanceTo(_rhB) < 0.03) B.rBack = Math.min(1, B.rBack + dt / 0.067);
     B.rw = 1 - _sm(B.rBack);
     if (B.rOn === 2 && B.rBack >= 1) { B.rOn = 0; B.rw = 0; B.rHold = false; return; }
-    const w = B.rw;
+    const w = B.rw * (1 - _sm(B.rollK || 0));
     _rhA.copy(B.rp).sub(_rvC.copy(mel.palmOffL).applyQuaternion(B.rq));                        // the wrist's goal
     turnToward(B.rpole, _rvC.fromArray(BOW_POLE_R).normalize(), 0.2 * dt * 60);
     this._ikArm('r', _rhA, B.rpole, w, null);
