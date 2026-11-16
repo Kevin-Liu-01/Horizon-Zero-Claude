@@ -93,6 +93,11 @@ export const PANEL_AIR = { panelL: -1, panelR: -1, panelB: -1 };
  *  26.6 deg off plumb at a sprint (band 30-65) and 23 at a run, a strip with no travel in it; `yaw`: its yaw share
  *  (ClothPiece.yawS; the material's 0.6, the people's wraps keep it): at 0.6 a half turn on the spot left it 23 deg off
  *  the pelvis 1.5 s on, with nothing but her back to turn it back */
+/** (round 5) the rendered sheet's last word (BreaCloth._vertexPass): on, its rounds, its margin over the inner surfaces,
+ *  the most a particle moves for one vertex in one round (m), how near a particle's inner surface its vertices are
+ *  tested (m), and more margin on the quiver (m: its axis is two rim vertices found at bind; the grader finds its own
+ *  each frame, and in a roll a tail vertex 2 cm clear of ours was 8 mm inside its) */
+export const VPASS = { on: true, iters: 6, margin: 0.004, maxStep: 0.1, reach: 0.06, quiver: 0.012 };
 export const TAILC = { off: 0.028, hard: 0.052, tongueMin: 0.78, air: 0.4, yaw: 0.35 };
 /** hangPanel's cylinder centre (bind space z) */
 const PANEL_CZ = -0.02;
@@ -241,6 +246,7 @@ export class BreaCloth {
     this._rebind();
     // ---- the kept chains: driven from the centre columns
     this._buildAdapters();
+    this._buildVertexPass();
   }
 
   /* ------------------------------------------------------------------ colliders */
@@ -349,6 +355,9 @@ export class BreaCloth {
         continue;
       }
       if (C.kitIdx) {
+        // (round 5, cost: the quiver is read off the stow kit's skinned vertices; with every piece asleep only the legs'
+        //  wake test runs, and the quiver keeps last frame's place)
+        if (this._allAsleep && C.primed) continue;
         C.kit.getVertexPosition(C.kitIdx[0], _v1); C.kit.localToWorld(_v1);
         C.kit.getVertexPosition(C.kitIdx[1], _v2); C.kit.localToWorld(_v2);
         C.on = C.kit.visible !== false && C.kit.parent != null;
@@ -702,19 +711,28 @@ export class BreaCloth {
       P.bones = [];
       P.f0 = new Float64Array(P.n * 4);     // the bind frame's inverse rotation (quaternion), per particle
       this._frames(P, P.f0, true);
+      // (round 5) and the same as a 3x3, the bind basis [X Y Z] transposed, row-major: _writeBones' F0
+      P.F0 = new Float64Array(P.n * 9);
+      for (let i = 0; i < P.n; i++) {
+        _q1.set(P.f0[i * 4], P.f0[i * 4 + 1], P.f0[i * 4 + 2], P.f0[i * 4 + 3]);
+        const e = _mb.makeRotationFromQuaternion(_q1).elements;   // (the inverse bind rotation, column-major)
+        P.F0[i * 9] = e[0]; P.F0[i * 9 + 1] = e[4]; P.F0[i * 9 + 2] = e[8];
+        P.F0[i * 9 + 3] = e[1]; P.F0[i * 9 + 4] = e[5]; P.F0[i * 9 + 5] = e[9];
+        P.F0[i * 9 + 6] = e[2]; P.F0[i * 9 + 7] = e[6]; P.F0[i * 9 + 8] = e[10];
+      }
       // (every particle a bone, the pinned row's too: a pin pushed off the belt by a thigh carries its cloth with it)
       for (let i = 0; i < P.n; i++) {
         const c = i % P.C, r = Math.floor(i / P.C);
         const bone = new THREE.Bone();
         bone.name = `cl_${P.name}_${c}_${r}`;
-        bone.matrixAutoUpdate = true;
+        bone.matrixAutoUpdate = false;
         arm.add(bone);
         P.boneOf[i] = P.bones.length;
         P.bones.push(bone);
         this.bones.push(bone);
       }
     }
-    this._writeBones(true);
+    this._writeBones();
     // the meshes to re-skin, grouped by their skeleton
     const groups = new Map();
     for (const P of this.pieces) for (const v of P.verts) {
@@ -831,29 +849,201 @@ export class BreaCloth {
   }
 
   /** Every cl_ bone to its particle: position, the frame turn from bind, the root's scale. */
-  _writeBones() {
-    const arm = this.armRoot;
-    _m2.copy(arm.matrixWorld).invert();
-    arm.matrixWorld.decompose(_v1, _q2, _vs);
-    const ps = _vs.x;
-    _q2.invert();                      // the armature's world rotation, inverse
-    const fr = this._fr || (this._fr = new Float64Array(64 * 4));
+  _writeBones(only = null) {
+    // (round 5, cost: the frame straight into each bone's matrix, no quaternions and no compose: 31 -> ~10 us a frame.
+    //  World rotation = the particle's frame now x its bind frame transposed (F0, row-major 3x3), scaled by the root's
+    //  scale; the bone's local matrix is the armature's inverse times that; matrixAutoUpdate is off on cl_ bones)
+    const arm = this.armRoot, A = _m2.copy(arm.matrixWorld).invert().elements, AW = arm.matrixWorld.elements;
     for (const P of this.pieces) {
-      this._frames(P, fr, false);
-      const s = P.root.s / ps;
-      for (let i = 0; i < P.n; i++) {
-        const bi = P.boneOf ? P.boneOf[i] : -1;
+      if (only && P !== only) continue;
+      const C = P.C, R = P.R, x = P.x, F0 = P.F0, s = P.root.s;
+      for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+        const i = c + r * C, bi = P.boneOf[i];
         if (bi < 0) continue;
-        const bone = P.bones[bi];
-        _v1.set(P.x[i * 3], P.x[i * 3 + 1], P.x[i * 3 + 2]).applyMatrix4(_m2);
-        bone.position.copy(_v1);
-        _q1.set(fr[i * 4], fr[i * 4 + 1], fr[i * 4 + 2], fr[i * 4 + 3]);
-        _qa[0] = P.f0[i * 4]; _qa[1] = P.f0[i * 4 + 1]; _qa[2] = P.f0[i * 4 + 2]; _qa[3] = P.f0[i * 4 + 3];
-        bone.quaternion.copy(_q2).multiply(_q1).multiply(_q.set(_qa[0], _qa[1], _qa[2], _qa[3]));
-        bone.scale.set(s, s, s);
-        bone.matrix.compose(bone.position, bone.quaternion, bone.scale);
-        bone.matrixWorld.multiplyMatrices(arm.matrixWorld, bone.matrix);
+        const u0 = (r > 0 ? r - 1 : r) * C + c, u1 = (r < R - 1 ? r + 1 : r) * C + c;
+        const s0 = r * C + (c > 0 ? c - 1 : c), s1 = r * C + (c < C - 1 ? c + 1 : c);
+        // Y up the cloth, X across, Z = X x Y (as _frames)
+        let yx = x[u0 * 3] - x[u1 * 3], yy = x[u0 * 3 + 1] - x[u1 * 3 + 1], yz = x[u0 * 3 + 2] - x[u1 * 3 + 2];
+        let l = Math.sqrt(yx * yx + yy * yy + yz * yz) || 1; yx /= l; yy /= l; yz /= l;
+        let xx = x[s1 * 3] - x[s0 * 3], xy = x[s1 * 3 + 1] - x[s0 * 3 + 1], xz = x[s1 * 3 + 2] - x[s0 * 3 + 2];
+        let d = xx * yx + xy * yy + xz * yz; xx -= d * yx; xy -= d * yy; xz -= d * yz;
+        l = xx * xx + xy * xy + xz * xz;
+        if (l < 1e-12) { xx = 1 - yx * yx; xy = -yx * yy; xz = -yx * yz; l = xx * xx + xy * xy + xz * xz || 1; }
+        l = Math.sqrt(l); xx /= l; xy /= l; xz /= l;
+        const zx = xy * yz - xz * yy, zy = xz * yx - xx * yz, zz = xx * yy - xy * yx;
+        // world rotation Rw = [X Y Z] F0 (F0 = the bind basis transposed, row-major), times the scale
+        const o = i * 9;
+        const r00 = (xx * F0[o] + yx * F0[o + 3] + zx * F0[o + 6]) * s, r01 = (xx * F0[o + 1] + yx * F0[o + 4] + zx * F0[o + 7]) * s, r02 = (xx * F0[o + 2] + yx * F0[o + 5] + zx * F0[o + 8]) * s;
+        const r10 = (xy * F0[o] + yy * F0[o + 3] + zy * F0[o + 6]) * s, r11 = (xy * F0[o + 1] + yy * F0[o + 4] + zy * F0[o + 7]) * s, r12 = (xy * F0[o + 2] + yy * F0[o + 5] + zy * F0[o + 8]) * s;
+        const r20 = (xz * F0[o] + yz * F0[o + 3] + zz * F0[o + 6]) * s, r21 = (xz * F0[o + 1] + yz * F0[o + 4] + zz * F0[o + 7]) * s, r22 = (xz * F0[o + 2] + yz * F0[o + 5] + zz * F0[o + 8]) * s;
+        const ro = P.ro, px = x[i * 3] + ro[i * 3], py = x[i * 3 + 1] + ro[i * 3 + 1], pz = x[i * 3 + 2] + ro[i * 3 + 2];
+        const bone = P.bones[bi], W = bone.matrixWorld.elements, L = bone.matrix.elements;
+        // (column-major, three's layout)
+        W[0] = r00; W[1] = r10; W[2] = r20; W[3] = 0; W[4] = r01; W[5] = r11; W[6] = r21; W[7] = 0;
+        W[8] = r02; W[9] = r12; W[10] = r22; W[11] = 0; W[12] = px; W[13] = py; W[14] = pz; W[15] = 1;
+        for (let col = 0; col < 4; col++) {
+          const w0 = W[col * 4], w1 = W[col * 4 + 1], w2 = W[col * 4 + 2], w3 = W[col * 4 + 3];
+          L[col * 4] = A[0] * w0 + A[4] * w1 + A[8] * w2 + A[12] * w3;
+          L[col * 4 + 1] = A[1] * w0 + A[5] * w1 + A[9] * w2 + A[13] * w3;
+          L[col * 4 + 2] = A[2] * w0 + A[6] * w1 + A[10] * w2 + A[14] * w3;
+          L[col * 4 + 3] = A[3] * w0 + A[7] * w1 + A[11] * w2 + A[15] * w3;
+        }
       }
+    }
+    void AW;
+  }
+
+
+  /* ------------------------------------------------------------------ the rendered sheet (round 5) */
+  /** Per piece, the vertices the sweep's grader reads (weighted >= 0.5 to the piece's cl_ bones, on the outfit or the
+   *  wrap; the caster is the same skin) with their four influences: the bone, its weight, the vertex in that bone's bind
+   *  space (u = boneInverse x bindMatrix x v), and the particle the bone follows (-1: a body bone). */
+  _buildVertexPass() {
+    for (const P of this.pieces) {
+      // (the tail: against the quiver only (its strip sits on the quiver's rim in a roll); its 0.052 m hard margin holds
+      //  its cupped edges off her back and head)
+      const tail = P.kind === 'tail';
+      P.vpMask = tail ? (this.bits.quiver || 0) : P.mask;
+      const mesh = tail ? this.meshes.wrap : this.meshes.outfit;
+      const g = mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, pos = g.attributes.position;
+      const bones = mesh.skeleton.bones, invs = mesh.skeleton.boneInverses, partOf = new Map();
+      for (let i = 0; i < P.n; i++) if (P.boneOf[i] >= 0) partOf.set(P.bones[P.boneOf[i]], i);
+      const rec = [];
+      for (const vo of P.verts) {
+        if (vo.mesh !== mesh) continue;
+        const inf = [];
+        let wc = 0;
+        for (let k = 0; k < 4; k++) {
+          const w = sw.getComponent(vo.i, k);
+          if (!(w > 0)) continue;
+          const bi = si.getComponent(vo.i, k), b = bones[bi];
+          _v1.fromBufferAttribute(pos, vo.i).applyMatrix4(mesh.bindMatrix).applyMatrix4(invs[bi]);
+          const pi = partOf.has(b) ? partOf.get(b) : -1;
+          if (pi >= 0) wc += w;
+          inf.push([b, w, _v1.x, _v1.y, _v1.z, pi]);
+        }
+        if (wc < 0.5) continue;
+        rec.push(inf);
+      }
+      const n = rec.length, V = { n, bone: new Array(n * 4).fill(null), w: new Float64Array(n * 4), u: new Float64Array(n * 12), part: new Int32Array(n * 4).fill(-1) };
+      rec.forEach((inf, j) => inf.forEach(([b, w, ux, uy, uz, pi], k) => { V.bone[j * 4 + k] = b; V.w[j * 4 + k] = w; V.u[j * 12 + k * 3] = ux; V.u[j * 12 + k * 3 + 1] = uy; V.u[j * 12 + k * 3 + 2] = uz; V.part[j * 4 + k] = pi; }));
+      P.vp = V;
+    }
+  }
+
+  /** THE RENDERED SHEET'S LAST WORD (round 5), for the drawing only: the pushes go into each particle's drawing offset
+   *  (ClothPiece.ro, cleared every frame), the bones stand there, the simulation never sees them (pushed into the
+   *  particles, the solve pulled them back each frame: a front panel over a sitting thigh buzzed at 0.1-0.5 m/s). The particles stand off the body's inner surfaces, but the sheet the
+   *  sweep grades is the skinned mesh between them: a cell across a thigh tucked into a roll or a climb, or a hem vertex
+   *  a frame's turn swings off its bone, went 2-5 cm inside a thigh with every particle clear (Node sweep with
+   *  clothWrap.js off: 20-40 clip frames in the crouch, roll, climb, slide and sit). Each vertex of a cell with a
+   *  particle in contact is skinned as the renderer will (bone world x u), tested against the inner surfaces of its
+   *  particle's colliders (+ VPASS.margin), and its cell's free particles move by the least change that takes it out;
+   *  the bones are written again. VPASS.iters rounds. Positions only: no velocity is made. */
+  _vertexPass() {
+    const S = this.sys, C = S.colliders, KM = 16, slack = VPASS.reach + VPASS.margin;
+    for (const P of this.pieces) {
+      const V = P.vp; if (!V || !P.pl || P.asleep) continue;
+      const x = P.x, w = P.w, N = P.n;
+      // (cost: per particle, the colliders whose inner surface it is within `reach` of (a vertex lies at most a few
+      //  centimetres off its cell's particles), as a bit mask over the piece's list; a vertex none of whose free corners
+      //  has one is not skinned. At a sprint the fronts ride the thighs every frame: 190 us a frame without it)
+      const dm = P.vdm || (P.vdm = new Int32Array(N)), act = P.vact || (P.vact = new Int32Array(V.n));
+      const ro = P.ro; ro.fill(0);
+      // (each round from scratch: a push out of one surface can put a corner into another, a thigh's into her belly)
+      const scan = () => {
+        let anyD = false;
+        for (let i = 0; i < N; i++) {
+          dm[i] = 0;
+          if (w[i] === 0) continue;
+          for (let c = 0; c < C.length; c++) {
+            const K = C[c];
+            if (!K.on || !(K.ri0 > 0) || !(P.vpMask & K.bit)) continue;
+            const ax = K.a[0], ay = K.a[1], az = K.a[2], dx = K.b[0] - ax, dy = K.b[1] - ay, dz = K.b[2] - az;
+            const px = x[i * 3] + ro[i * 3] - ax, py = x[i * 3 + 1] + ro[i * 3 + 1] - ay, pz = x[i * 3 + 2] + ro[i * 3 + 2] - az, l2 = dx * dx + dy * dy + dz * dz;
+            let t = l2 > 1e-12 ? (px * dx + py * dy + pz * dz) / l2 : 0;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            const ex = px - dx * t, ey = py - dy * t, ez = pz - dz * t, rr = K.ri0 + (K.ri1 - K.ri0) * t + slack + (K.kitIdx ? VPASS.quiver : 0);
+            if (ex * ex + ey * ey + ez * ez < rr * rr) { dm[i] |= 1 << (c & 31); anyD = true; }
+          }
+        }
+        let n = 0;
+        if (anyD) for (let j = 0; j < V.n; j++) {
+          let m = 0;
+          for (let k = 0; k < 4; k++) { const pi = V.part[j * 4 + k]; if (pi >= 0) m |= dm[pi]; }
+          if (m) act[n++] = j;
+        }
+        return n;
+      };
+      let na = scan();
+      if (!na) continue;
+      let woke = false;
+      for (let it = 0; it < VPASS.iters && na > 0; it++) {
+        let nn = 0, movedAny = false;
+        for (let q = 0; q < na; q++) {
+          const j = act[q];
+          let m = 0;
+          for (let k = 0; k < 4; k++) { const pi = V.part[j * 4 + k]; if (pi >= 0) m |= dm[pi]; }
+          // the vertex as the renderer will skin it
+          let vx = 0, vy = 0, vz = 0;
+          for (let k = 0; k < 4; k++) {
+            const b = V.bone[j * 4 + k]; if (!b) continue;
+            const e = b.matrixWorld.elements, ww = V.w[j * 4 + k], ux = V.u[j * 12 + k * 3], uy = V.u[j * 12 + k * 3 + 1], uz = V.u[j * 12 + k * 3 + 2];
+            vx += ww * (e[0] * ux + e[4] * uy + e[8] * uz + e[12]); vy += ww * (e[1] * ux + e[5] * uy + e[9] * uz + e[13]); vz += ww * (e[2] * ux + e[6] * uy + e[10] * uz + e[14]);
+          }
+          // its heaviest free corner (the side test below)
+          let sp = -1, sw = -1;
+          for (let k = 0; k < 4; k++) { const pi = V.part[j * 4 + k]; if (pi < 0 || w[pi] === 0) continue; if (V.w[j * 4 + k] > sw) { sw = V.w[j * 4 + k]; sp = pi; } }
+          if (sp < 0) continue;
+          let pushed = false;
+          for (let c = 0; c < C.length && m; c++) {
+            if (!(m & (1 << (c & 31)))) continue;
+            const K = C[c];
+            if (!K.on || !(K.ri0 > 0)) continue;
+            const ax = K.a[0], ay = K.a[1], az = K.a[2], dx = K.b[0] - ax, dy = K.b[1] - ay, dz = K.b[2] - az;
+            const px = vx - ax, py = vy - ay, pz = vz - az, l2 = dx * dx + dy * dy + dz * dz;
+            let t = l2 > 1e-12 ? (px * dx + py * dy + pz * dz) / l2 : 0;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            let nx = px - dx * t, ny = py - dy * t, nz = pz - dz * t;
+            let d = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            const rr = K.ri0 + (K.ri1 - K.ri0) * t + VPASS.margin + (K.kitIdx ? VPASS.quiver : 0);
+            if (d >= rr) continue;
+            // (a vertex on the far side of the axis from its own heaviest particle (a cell's corner swung 4-8 cm into her
+            //  belly by its bone's turn) goes out on the PARTICLE's side: out along its own normal threw the cell's corners
+            //  0.3 m a frame and back, every other frame)
+            { const qx = x[sp * 3] + ro[sp * 3] - ax - dx * t, qy = x[sp * 3 + 1] + ro[sp * 3 + 1] - ay - dy * t, qz = x[sp * 3 + 2] + ro[sp * 3 + 2] - az - dz * t;
+              if (d < 1e-7 || qx * nx + qy * ny + qz * nz <= 0) {
+                const ql = Math.sqrt(qx * qx + qy * qy + qz * qz); if (ql < 1e-7) continue;
+                const ux = qx / ql, uy = qy / ql, uz = qz / ql;
+                d = nx * ux + ny * uy + nz * uz; nx = ux * d; ny = uy * d; nz = uz * d;   // (d: the vertex's height on that side, may be < 0)
+                nx = ux; ny = uy; nz = uz;
+              } else { nx /= d; ny /= d; nz /= d; } }
+            // the least change: each cloth corner by w_k e / sum(w^2). The pins too, for this frame's drawing only (the
+            // solver puts them back on the belt next substep, as it lets a thigh push them, ClothPiece.pinMask): a vertex
+            // half on the pins went 4-6 cm into her belly or a thigh in a crouch and a climb with its free corners clear
+            let s2 = 0;
+            for (let k = 0; k < 4; k++) { const pi = V.part[j * 4 + k]; if (pi >= 0) s2 += V.w[j * 4 + k] ** 2; }
+            if (s2 < 1e-6) continue;
+            const e = rr - d;
+            for (let k = 0; k < 4; k++) {
+              const pi = V.part[j * 4 + k]; if (pi < 0) continue;
+              let f = e * V.w[j * 4 + k] / s2;
+              if (f > VPASS.maxStep) f = VPASS.maxStep;
+              ro[pi * 3] += nx * f; ro[pi * 3 + 1] += ny * f; ro[pi * 3 + 2] += nz * f;
+            }
+            vx += nx * e; vy += ny * e; vz += nz * e;
+            pushed = true;
+          }
+          if (pushed) { act[nn++] = j; movedAny = true; }
+        }
+        this.vpMoved = nn;
+        if (!movedAny) break;
+        woke = true;
+        this._writeBones(P);
+        na = scan();
+      }
+      // (a sleeping piece the body has come into: awake, or the ride puts it back next frame)
+      if (woke && P.asleep) S._wake(P);
     }
   }
 
@@ -893,6 +1083,9 @@ export class BreaCloth {
   _driveChains() {
     for (const A of this.adapters) {
       const { P, ch, ts } = A, L = ch.links, N = L.length;
+      // (round 5, cost: a sleeping piece's chain keeps its last turn on its parent and rides it, as the sheet does)
+      if (P.asleep && A.sleptWritten) continue;
+      A.sleptWritten = P.asleep;
       // particle places of the links and the tip, into the chain's own arrays
       for (let j = 0; j <= N; j++) {
         this._sample(P, 0.5, ts[j], _v1);
@@ -930,14 +1123,20 @@ export class BreaCloth {
   /** Read the roots and the colliders, the wind, step, write the bones and the kept chains. */
   update(dt, t, wind) {
     if (!this.ok) return;
-    const S = this.sys;
+    const S = this.sys, t0 = S.clock ? S.clock() : 0;
+    // (round 5: the ring times this whole frame, not the solve alone: the bones, the rendered sheet's pass and the kept
+    //  chains are the cloth's cost too)
+    S.ringOuter = true;
     propCaps(this.an).dt = dt;
     for (const r of S.roots) { decomp(r.bone, _pp, _pq); ClothSystem.setRoot(r, _pp[0], _pp[1], _pp[2], _pq, _vs.x, dt); }
+    this._allAsleep = this.pieces.every((P) => P.asleep);
     this._updateColliders(dt);
     S.wind.x = Number.isFinite(wind?.x) ? wind.x : 0; S.wind.z = Number.isFinite(wind?.z) ? wind.z : 0;
     S.update(dt, t);
     this._writeBones();
+    if (VPASS.on) this._vertexPass();
     this._driveChains();
+    if (S.clock) S.ringPut(S.clock() - t0);
   }
 
   /** The deterministic reset (the sim-time slate): roots and colliders read now, the settle, the bones written. */
@@ -976,5 +1175,5 @@ export class BreaCloth {
     };
   }
 }
-const _pp = new Float64Array(3), _pq = new Float64Array(4);
+const _pp = new Float64Array(3), _pq = new Float64Array(4), _vl = new Int32Array(32);
 const _q = new THREE.Quaternion(), _qw = new THREE.Quaternion();

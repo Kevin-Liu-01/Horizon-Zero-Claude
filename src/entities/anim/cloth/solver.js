@@ -106,6 +106,8 @@ export class ClothPiece {
     /** per particle, the deepest the rendered mesh lies INSIDE the grid's surface near it at bind (m: the mesh's own folds,
      *  their valleys): the colliders hold the particle that much further off, so the valley, not the grid, meets the body */
     this.pIn = new Float64Array(n); this.cells = false; this.teth = null;
+    /** (round 5) the drawing's own offset per particle (rig.js _vertexPass): the bones stand there, the particle does not */
+    this.ro = new Float64Array(n * 3);
     /** the BACKSTOP (round 4): a front panel never passes behind the plane through its root square to the root's
      *  forward, `backstop` m in front of it (scaled with the root); -1e9: off. Her legs stand between the panels and the
      *  back: with the air of her own travel pressing a front panel back, it slipped round a thigh's inside and was caught
@@ -199,6 +201,9 @@ export class ClothSystem {
     this.ring = new Float64Array(600); this.ringN = 0; this.ringI = 0;
     this.clock = null;
     this.frames = 0; this.subTotal = 0;
+    /** (round 5) the caller times the whole frame (BreaCloth.update: roots, colliders, the solve, the bones, the rendered
+     *  sheet's pass and the kept chains) and puts it in the ring itself */
+    this.ringOuter = false;
     this.lastSub = 0;
     /** constraint, attachment and collider passes a substep, and whether the colliders run in every pass (else the last) */
     this.iters = ITERS; this.collideEvery = true;
@@ -275,7 +280,12 @@ export class ClothSystem {
       else p.stillT = 0;
     }
     this.frames++; this.subTotal += n;
-    if (this.clock) { const ms = this.clock() - t0; this.ring[this.ringI] = ms; this.ringI = (this.ringI + 1) % this.ring.length; if (this.ringN < this.ring.length) this.ringN++; }
+    if (this.clock && !this.ringOuter) this.ringPut(this.clock() - t0);
+  }
+
+  /** One frame's time (ms) into the ring. */
+  ringPut(ms) {
+    this.ring[this.ringI] = ms; this.ringI = (this.ringI + 1) % this.ring.length; if (this.ringN < this.ring.length) this.ringN++;
   }
 
   /** A prop capsule moving inside a sleeping piece's reach wakes it. */
@@ -618,8 +628,10 @@ export class ClothSystem {
       //  rest at a run / sprint, 0 of 960 frames over 1.03, the Node sweep's clip frames 69 (5170040: 214); one round
       //  1.031 / 1.032; three rounds ending on the hard pass 1.033 / 1.184, 321 clip frames)
       if (hardNow) for (let hr = 0; hr < this.hardRounds; hr++) {
-        let hit = this._hard(p, C, pl, pc, KMAX);
-        if (p.cells) hit += this._cells(p, C, pl, pc, KMAX);
+        // (round 5: the cells first, then the particles: a cell's push moves its free corners by up to 4x the cell centre's
+        //  deficit, and after the particle pass it put the back panel's lower rows 4-5 cm inside a thigh through the roll)
+        let hit = p.cells ? this._cells(p, C, pl, pc, KMAX) : 0;
+        hit += this._hard(p, C, pl, pc, KMAX);
         if (!hit) break;
         if ((hr < this.hardRounds - 1 || this.endStrain) && this.strainPost > 0) this._strain(p, this.strain, this.strainPost);
       }
@@ -713,9 +725,12 @@ export class ClothSystem {
     for (let i = 0; i < N; i++) {
       if (w[i] === 0) continue;
       const o = i * KMAX, nk = pc[i];
-      let bdy = 0;
+      let bdy = 0, any = 0;
       // (the second time round only if the first pushed: round 3, cost)
-      for (let sw = 0; sw < 2 && (sw === 0 || bdy > 0); sw++) for (let a2 = 0; a2 < nk; a2++) {
+      // (round 5: up to HARD_SWEEPS times round while the last pushed: a particle in the crease of a tucked thigh and her
+      //  belly (the roll, the climb) is inside two inner surfaces, and out of one along its normal is into the other;
+      //  two sweeps left the back panel 4-5 cm inside the thigh through the roll)
+      for (let sw = 0; sw < HARD_SWEEPS && (sw === 0 || bdy > 0); sw++) { bdy = 0; for (let a2 = 0; a2 < nk; a2++) {
         const c = pl[o + a2], K = C[c];
         if (!(K.ri0 > 0)) continue;
         const B = K.box, qx = x[i * 3], qy = x[i * 3 + 1], qz = x[i * 3 + 2];
@@ -729,8 +744,8 @@ export class ClothSystem {
         const lim = (K.r0 - K.ri0 < K.r1 - K.ri1 ? K.r0 - K.ri0 : K.r1 - K.ri1) + (offC ? offC[c] : p.off) - 0.001;
         if (ho > lim) ho = lim;
         bdy += pushOut(K, x, i, ho, true);
-      }
-      if (bdy > 0) { p.contact[i] = 1; hit++; }
+      } any += bdy; }
+      if (any > 0) { p.contact[i] = 1; hit++; }
     }
     p.hardHits = hit;
     return hit;
@@ -896,7 +911,7 @@ export class ClothSystem {
     this.wind.x = 0; this.wind.z = 0;
     for (const r of this.roots) { r.pp.set(r.p); r.pq.set(r.q); r.ps = r.s; r.vFed.fill(0); r.vPrev.fill(0); r.acc = 0; r.ay = 0; r.jumped = false; }
     for (const C of this.colliders) { C.pa.set(C.a); C.pb.set(C.b); C.va.fill(0); C.vb.fill(0); C.mv = 0; C.stamp++; }
-    for (const p of this.pieces) { this._seat(p); p.contact.fill(0); p.pinch.fill(0); p.ct.fill(0); p.asleep = false; p.stillT = 0; }
+    for (const p of this.pieces) { this._seat(p); p.contact.fill(0); p.pinch.fill(0); p.ct.fill(0); p.ro.fill(0); p.asleep = false; p.stillT = 0; }
     const per = 4, frames = Math.ceil(RESET_SUBSTEPS / per);
     for (let f = 0; f < frames; f++) for (const p of this.pieces) this._stepPiece(p, per * SUB_H, t, per, SUB_H);
     for (const p of this.pieces) { p.v.fill(0); p.xp.set(p.x); p.stillT = 0; }
@@ -926,6 +941,8 @@ const _iq = new Float64Array(4), _lf = new Float64Array(5);
 /** Per-particle collider lists: at most PL_K a particle, within the collider's radius + PL_MARGIN (the most stand-off a
  *  piece uses, 0.03, the hard margin, and a little) + the frame's travel. */
 const PL_K = 16, PL_MARGIN = 0.06;
+/** The hard pass's most sweeps round a particle's colliders (round 5; was 2). */
+const HARD_SWEEPS = 6;
 /** squared distance from point p to segment a-b (Float64Array 3 each) */
 function segD2(a, b, px, py, pz) {
   const ax = a[0], ay = a[1], az = a[2], dx = b[0] - ax, dy = b[1] - ay, dz = b[2] - az;
