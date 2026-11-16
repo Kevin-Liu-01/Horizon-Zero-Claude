@@ -1185,6 +1185,8 @@ try {
     const r = await beat(page, K, s);
     const after = await page.evaluate(probe);
     const row = { stage: s.stage, type: s.type, ok: after.stage !== s.stage, seconds: +((Date.now() - b0) / 1000).toFixed(1), ...r, note: s.note, hp: after.hp };
+    // (people M1.3h, the smallest change: which of Brea's slice verbs have started so far, and the last refusal of each)
+    row.verbs = await page.evaluate(() => { const I = window.__CTX__?.player?.animator?.verbInfo?.(); return I ? { counts: { ...I.counts }, refused: { ...I.refused }, last: I.name } : null; }).catch(() => null);
     if (s.stage === 'cross' && lampsFight) row.lamps = lampsFight;
     // (no still after the topple: the 4 s it lies down are the Pry's)
     if (row.ok && s.stage !== 'topple') row.shot = await shot(page, `b-${String(report.beats.length + 2).padStart(2, '0')}-${s.stage}`);
