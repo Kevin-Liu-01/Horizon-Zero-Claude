@@ -123,7 +123,7 @@ export class ClothPiece {
     this.restScale = 1;
     // (declared here, set by the rig: one shape for every piece)
     this._act = null; this.fwd = new Float64Array([0, 0, 1]); this.lee = 0; this.stem = ''; this.kind = '';
-    this.pinMask = 0; this.hard = 0.015; this.hardC = null; this.edges = false; this.airK = 1;
+    this.pinMask = 0; this.hard = 0.015; this.hardC = null; this.edges = false; this.edgesLegs = false; this.airK = 1;
     this.boneOf = null; this.bones = null; this.f0 = null; this.verts = null;
   }
 
@@ -408,7 +408,12 @@ export class ClothSystem {
       //      panel's hem folded round the shin in a crouch). Each structural edge against its ends' inner surfaces: where
       //      the edge's closest point to the axis is inside `ri + hard / 2`, both ends go out along that normal, by their
       //      share of the deficit; the particle pass after it still has the last word on every particle
-      if (hardNow && it === IT - 1 && p.edges) this._edges(p, C, pl, pc, KMAX);
+      // (round 2: a front panel's edges against the LEGS on every substep (`edgesLegs`), the rest on the frame's last: on
+      //  the last alone, the belt row over a crouched thigh was thrown out by up to 1 / 0.15 x the deficit each frame and the
+      //  substeps between let it back, a buzz at the kick limit with her held still that never slept; every collider on
+      //  every substep put the back panel inside her torso through a slide and a panel into the quiver through the mantle,
+      //  and the back panel's leg edges on every substep put it into the right thigh through the roll)
+      if (it === IT - 1 && p.edges && (hardNow || p.edgesLegs)) this._edges(p, C, pl, pc, KMAX, !hardNow);
       // ---- colliders (every pass: the constraints and the body agree before the velocity is read): the ground first, then the body (the body wins), a pinched particle stops
       if (it === IT - 1 || this.collideEvery) for (let i = 0; i < N; i++) {
         if (w[i] === 0) continue;
@@ -464,7 +469,7 @@ export class ClothSystem {
     }
   }
 
-  _edges(p, C, pl, pc, KMAX) {
+  _edges(p, C, pl, pc, KMAX, legsOnly = false) {
     const x = p.x, w = p.w, ci = p.ci, ca = p.ca, ck = p.ck, nc = p.nc, hh = p.hard * 0.5;
     for (let e = 0; e < nc; e++) {
       if (ca[e] !== 0 || ck[e] !== 0) continue;
@@ -474,7 +479,7 @@ export class ClothSystem {
       const src = wi !== 0 ? i : j, o = src * KMAX, nk = pc[src];
       for (let a2 = 0; a2 < nk; a2++) {
         const K = C[pl[o + a2]];
-        if (!(K.ri0 > 0)) continue;
+        if (!(K.ri0 > 0) || (legsOnly && !K.leg)) continue;
         // closest points: edge P(s) = xi + s (xj - xi), axis Q(t) = ia + t (ib - ia)
         const a = i * 3, b = j * 3;
         const d1x = x[b] - x[a], d1y = x[b + 1] - x[a + 1], d1z = x[b + 2] - x[a + 2];

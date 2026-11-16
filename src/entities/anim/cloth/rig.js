@@ -262,6 +262,7 @@ export class BreaCloth {
     for (const [name, a, bb, re] of legs) {
       this.radii[name] = radiusProfile(meshes, W(a), W(bb), re, 0.90, THREE.Vector3);
       const C = add(name, a, bb, RAD[name][0], RAD[name][1]);
+      C.leg = true;
       const ri = innerLeg(M.skin, a, bb, re);
       if (ri != null) C.ri0 = C.ri1 = Math.round(ri * 1e4) / 1e4;
     }
@@ -412,6 +413,7 @@ export class BreaCloth {
     const off = 0.010;
     const P = new ClothPiece({ name, mat, C, R, X, Q0, root, pinned, cons, lraPin, mass, area, mask, off, offPerCollider: this._offFit(X, pinned, mask, off, root) });
     P.fwd = fwd; P.stem = stem; P.kind = 'panel'; P.lee = 0.17; P.edges = true;
+    P.edgesLegs = stem !== 'dyn_panelB';   // (the fronts over the thighs: their leg edges every substep, solver.js)
     P.pinMask = (bits.thighL || 0) | (bits.thighR || 0);
     // (the hard pass's margin: a cell's chord sag on the inner thigh, 0.12 m along a row over a 0.078 m radius, 0.028 m
     //  (a sit, a crouch: the columns lie across the thigh), + 2 mm; under the trousers' own surface, 0.096-0.105 m)
