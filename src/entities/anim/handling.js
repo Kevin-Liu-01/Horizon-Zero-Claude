@@ -28,7 +28,8 @@ function table(phases, ev) {
  */
 export const BOW_UNSTOW = {
   // (M1a weapons step 2: D 0.100 -> 0.083, E 0.100 -> 0.100, F 0.017 -> 0: the bow is at the carry by 0.40 s, W7)
-  ask: table([['A', 0.017], ['B', 0.117], ['C', 0.033], ['D', 0.083], ['E', 0.100], ['F', 0.001]], { grip: 'C' }),
+  // (M1a weapons fix round 1: B 0.117 -> 0.100, with carryStow's palm plan 0.055 -> 0.068 m a step: the grip 0.200 -> 0.183 s)
+  ask: table([['A', 0.017], ['B', 0.100], ['C', 0.033], ['D', 0.083], ['E', 0.100], ['F', 0.001]], { grip: 'C' }),
   timer: table([['A', 0.033], ['B', 0.133], ['C', 0.050], ['D', 0.133], ['E', 0.133], ['F', 0.033]], { grip: 'C' }),
 };
 /*

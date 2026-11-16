@@ -59,7 +59,7 @@ const _bpPH = [0, 0];
 const _gaD = new THREE.Vector3(), _gaE = new THREE.Vector3(), _gaQ = new THREE.Quaternion();
 const _gaF = new THREE.Vector3(), _gaW = new THREE.Vector3(), _gaR = new THREE.Quaternion();
 /** the palm plan's speed bound (m a step; the wrist's bar is 0.08) */
-const PALM_STEP = 0.055;
+const PALM_STEP = 0.068;   // (M1a weapons fix round 1, W7's bow unstow: 0.055 -> 0.068; the reach to the limb was 0.20 s)
 /** M1a weapons round 2: the palm's distance off the stave's centreline (mesh; sockets.js palm, square to the stave) and the
  *  palm's side at the limb's take and at the riser (mesh, unit, square to the stave) */
 const BOW_PALM_D = Math.hypot(SOCKETS.bow.palm[0], SOCKETS.bow.palm[2]);
@@ -383,7 +383,9 @@ export class CarryStow {
     // ...and the stow's release: the fist lets go once the bow is seated in its keeper
     if (B.mode === 2 && B.owner === 'handL' && B.T) {
       const tR = phaseEnd(B.T, 'D');
-      if (B.t >= tR && ((B.palmMiss ?? 9) > BOW_TAKE_TOL || (B.turnMiss || 0) > 0.012) && (B.takeWait || 0) < BOW_TAKE_WAIT) { B.takeWait = (B.takeWait || 0) + dt; B.t = tR - 1e-4; }
+      // (M1a weapons fix round 1, W2 at the release in swap 1 to 2: 0.094 m / 6.6 deg; the asked stow's turn, held to W3's
+      //  rate, was still short of the keeper's line: the release waits on the bow's own turn too)
+      if (B.t >= tR && ((B.palmMiss ?? 9) > BOW_TAKE_TOL || (B.turnMiss || 0) > 0.012 || (B.kitMiss || 0) > 0.012) && (B.takeWait || 0) < BOW_TAKE_WAIT) { B.takeWait = (B.takeWait || 0) + dt; B.t = tR - 1e-4; }
     }
     const T = B.T, ph = phaseAt(T, B.t, _bpPH), i = ph[0], k = ph[1], name = T.phases[i][0];
     B.phase = name; B.k = k;
@@ -426,7 +428,9 @@ export class CarryStow {
         _bpD.set(0, 1, 0).applyQuaternion(kitQ);
         B.qMid.setFromUnitVectors(_bpD, MID_STAVE).multiply(kitQ);
         if (B.t < tD) {
-          B.keep = KEEPER_SLIDE * _sm(kd / 0.35);
+          /* (M1a weapons fix round 1, W2 at the grip: the slide out of the keeper over 0.6 of D, was 0.35: its first step, the
+           *  grip event's own, took the bow 0.037 m down its axis, bar 0.02; the palm's goal below multiplies it again) */
+          B.keep = KEEPER_SLIDE * _sm(kd / 0.6);
           _bpQ4.copy(kitQ).slerp(B.qMid, _sm((kd - 0.35) / 0.65));
         } else {
           B.keep = KEEPER_SLIDE;
@@ -443,7 +447,7 @@ export class CarryStow {
         this._bowSockMesh(0, _bpG);
         this._bowPt(kitQ, kitO, B.kitS, _bpG.x, _bpG.y, _bpG.z, _bpT);
         _bpE.set(0, -1, 0).applyQuaternion(kitQ);
-        _bpT.addScaledVector(_bpE, B.keep * _sm(kd / 0.35));
+        _bpT.addScaledVector(_bpE, B.keep * _sm(kd / 0.6));
         this._bowPointNowPast(_bpA);
         // (the carry's palm: its wrist goal plus the palm, the hand laid along the carried stave)
         _bpD.set(0, 1, 0).applyQuaternion(_bpQ3);
@@ -484,6 +488,7 @@ export class CarryStow {
         const maxA = RATE.bowDeg * Math.PI / 180 * dt;
         const a = B.q.angleTo(_bpQ4);
         if (a > maxA) B.q.slerp(_bpQ4, maxA / a); else B.q.copy(_bpQ4);
+        B.kitMiss = B.q.angleTo(kitQ);
         // the slide: riser -> limb through the loosened fist (A, B); the keeper: 0.10 m short until D seats it
         B.s = B.t < tA ? 1 : 1 - _sm((B.t - tA) / (tB - tA));
         B.keep = B.t < tC ? KEEPER_SLIDE : KEEPER_SLIDE * (1 - _sm((B.t - tC) / (tRel - tC)));
@@ -504,7 +509,13 @@ export class CarryStow {
         rot = 1; w = 1; B.blendC = 0;
       } else {
         // E: the release; the open hand back down her side to the clip's own
+        B.relDone = B.owner === 'carry';
         if (B.owner !== 'carry') { this._bowOwner('carry'); B.from.copy(B.palm); }
+        /* M1a weapons fix round 1 (W7, the bow's asked stow inside swap 1 to 2: 0.45 s, band 0.30-0.37): in a swap the
+         * open hand does not go home, it goes for the haft. The lance layer runs after this one and has had the left arm
+         * since the release (meleeLayer: the bow is out of the hand); this phase only kept the bow's sequence open. The stow ends
+         * a step after the release: the fingers open off the seated limb */
+        if (this.ctx.combat?.melee?.stance === 'draw' && B.relDone) { B.mode = 0; B.readyAt = B.simT; B.w = 0; B.inHand = false; B.phase = ''; return 0; }
         const tE = T.total, ke = clamp((B.t - tRel) / (tE - tRel), 0, 1);
         this._charOf(b.handL.bone, _bpB);                 // the clip's wrist (before this layer)
         _bpB.add(_bpE.copy(palmOff).applyQuaternion(_bpQ));

@@ -324,7 +324,11 @@ const HAFT_D = 0.024;
 /** ...for the LEFT hand (the off hand on the haft through the swings): 0.010 m, so A101's two-handed clause (the left knuckle
  *  line's centre within 0.05 m of the haft, its seat through light-1 and light-2 read 0.051-0.073 at fd1851f with 0.024)
  *  keeps its margin; the knuckle joints stay 0.018 m off the axis, outside the haft (r 0.014-0.016) */
-const HAFT_D_L = 0.010;
+const HAFT_D_L = 0.016;
+/* (M1a weapons fix round 1: 0.010 -> 0.016. At 0.010 the left grips missed W1 by a hair (palm normal 10.2-10.6 deg against
+ *  10, fingertips 0.0166-0.0176 m against 0.015); here the palm normals pass and the take's fingertip reads 0.0152-0.0159.
+ *  A101's clause, Node probe of debugMelee().leftPalmToHaft (the page read 0.0377 at ff3afb9 where Node reads 0.0413):
+ *  light-1 0.0459, light-2 0.0369 against 0.05; 0.018 passes every W1 lance-left clause but reads 0.0474) */
 /** ...and the most the draw waits at the left fist's take for the palm on its socket (s; melee.js holds its clock) */
 const TAKE_WAIT = 0.10;
 /** ...within (m): the palm's axis point on the socket (W1's bar is 0.010) */

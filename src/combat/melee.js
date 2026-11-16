@@ -292,7 +292,10 @@ const DRAW_T = 0.30;
  * so an interrupt is never hidden in the draw's own speed): the draw the player asks for (key 2, B) takes 0.40 s, the top
  * of W7's 0.30-0.40 s; a draw that a strike asked for (a click from holstered: R5, click to the first swing frame
  * 0.25-0.35 s) keeps `DRAW_T`. Chosen as the draw starts (`drawLance`); a strike asked mid-draw does not change it. */
-const DRAW_T_ASK = 0.40;
+const DRAW_T_ASK = 0.36;
+/* M1a weapons fix round 1 (W7): 0.40 -> 0.36. At 0.40 the draw read 0.417 s to the guard (the hand-over's step past the
+ * clock: band 0.30-0.40) and swap 1 to 2 0.683 (the bow's stow releases at 0.283, its turn held to W3's 10 deg a step;
+ * band 0.45-0.65) */
 /* M1a weapons step 1 (hero-anim; Kevin Nov 15 "unsheathing them and getting them into position ... improved a lot"):
  * 0.26 -> 0.30, the top of R5's 0.26-0.30 for a click, so the haft's carry round her side turns fewer degrees a step
  * (the weapons brief W3: <= 24 deg a step asked; 35.8 at 0.26). */
@@ -1828,7 +1831,12 @@ export class Melee {
      * had not been carried in yet. The boundary step-in still fires; by then
      * `_lungeFor` re-reads the distance and returns the beat's own number. */
     if (!this._chargeHold) this._lungeIn();
-    this.combat?.noteCombatAction?.();
+    /* M1a weapons fix round 1 (hero-anim; A101, the smallest change in combat's file): a lance action (a swing, a pry, a
+     * silent strike) no longer arms the BOW's 8 s holster timer (combat `noteCombatAction`). Since the lance counts as out (combat `_updateWield`) that note
+     * had one effect left: the moment the guard stowed the lance, the bow came out into her left hand for the rest of the
+     * 8 s, unasked. Since weapons step 1 a lance draw waits for the bow's stow, so A101's click from holstered at a jog
+     * and a sprint (each run after a swing) was a swap: 0.58-0.60 s to the first swing frame at ff3afb9 (R5 0.25-0.35;
+     * its first row, idle, before any swing, 0.33 s). The bow still comes out on its own inputs and on a threat. */
     return true;
   }
 
@@ -2606,7 +2614,6 @@ export class Melee {
     } catch { res = null; }
     this._visT = 2.2;
     this.layer?.onHit?.(true);
-    this.combat?.noteCombatAction?.();
     this.combat?.impactFeedback?.({
       point: _pt, normal: _n, machine: m, damage: res?.damage ?? 0, weak: false, tear: res?.tear ?? 0,
       tornPart: res?.tornPart ?? null, kind: 'tear', maxHealth: m.maxHealth ?? 100, colors: SPARK_STEEL,
@@ -2652,7 +2659,6 @@ export class Melee {
     this._visT = 2.2;
     this.drawLance(2.4);
     this.layer?.onHit?.(true);
-    this.combat?.noteCombatAction?.();
     this.combat?.impactFeedback?.({
       point: _pt, normal: _n, machine: m, damage: res?.damage ?? dmg,
       weak: true, tear: cfg.tear, kind: 'silent',
