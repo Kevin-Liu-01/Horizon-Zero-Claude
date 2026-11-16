@@ -50,6 +50,9 @@ const first = (L, f, from = 0) => { for (let i = from; i < L.length; i++) if (f(
  */
 export function gradeCase(kind, L, meta = {}) {
   const out = { kind, steps: L.length, fails: [] };
+  // (M1a weapons fix 1: W9's mid-draw and mid-stow cases: the second key comes mid-sequence, so the draw's own path and
+  //  time bars (W4, W7) are not theirs; W1-W3, W6, W9 and W11's per-step clauses hold)
+  meta.w9mid = /^key[12]Mid/.test(meta.name || '');
   const fail = (s) => out.fails.push(s);
   const n = L.length;
   // ---- ownership events
@@ -66,9 +69,13 @@ export function gradeCase(kind, L, meta = {}) {
     if (a >= 0) {
       const b = bowRel >= 0 && bowRel > a ? bowRel : n;
       let pmax = 0, axMax = 0, flex = 0, dev = 0, sockMax = 0, sockN = 0;
+      /* (M1a weapons fix 1: W1 is the handling's grip; under the raised aim (aim weight over 0.5) combat places the bow at
+       *  the hand's origin for the draw solve (`_placeInHand`'s aimed branch), so those steps are reported, not graded) */
+      let aimPalm = 0;
       for (let i = a; i < b; i++) {
         const r = L[i];
-        if (r.bowVis !== 'held' || !r.bowLimb) continue;
+        if (r.bowVis === 'held' && r.bowLimb && (r.aimW ?? 0) > 0.5 && r.bowSock) aimPalm = Math.max(aimPalm, dist(r.palmBowL, r.bowSock));
+        if (r.bowVis !== 'held' || !r.bowLimb || (r.aimW ?? 0) > 0.5) continue;
         // the palm on the stave between the limb socket and the riser (generic: any design)
         pmax = Math.max(pmax, segDist(r.palmBowL, r.bowLimb, r.bowGrip));
         if (r.bowSock) { sockMax = Math.max(sockMax, dist(r.palmBowL, r.bowSock)); sockN++; }
@@ -76,18 +83,74 @@ export function gradeCase(kind, L, meta = {}) {
         const g = ang(r.gripAxL, r.bowAxis); axMax = Math.max(axMax, Math.min(g, 180 - g));
         flex = Math.max(flex, Math.abs(r.wristFlexL)); dev = Math.max(dev, Math.abs(r.wristDevL));
       }
-      out.W1 = { palmToStaveMaxM: r4(pmax), palmToSocketMaxM: sockN ? r4(sockMax) : null, gripAxisToStaveMaxDeg: r3(axMax), wristFlexMaxDeg: r3(flex), wristDevMaxDeg: r3(dev) };
+      out.W1 = { palmInAimMaxM: aimPalm ? r4(aimPalm) : null, palmToStaveMaxM: r4(pmax), palmToSocketMaxM: sockN ? r4(sockMax) : null, gripAxisToStaveMaxDeg: r3(axMax), wristFlexMaxDeg: r3(flex), wristDevMaxDeg: r3(dev) };
       // the close: curl from open to closed over >= 2 steps ending on the grip step
       if (bowGrip > 0 && L[bowGrip].curlL != null) {
         let k = bowGrip; while (k > 0 && L[k - 1].curlL != null && L[k - 1].curlL < L[k].curlL - 1e-4) k--;
         out.W1.closeSteps = bowGrip - k; out.W1.curlAtGrip = r3(L[bowGrip].curlL);
         if (out.W1.closeSteps < 2) fail(`W1 fingers closed over ${out.W1.closeSteps} steps (bar >= 2)`);
       } else out.W1.closeSteps = null;
+      /* M1a weapons fix 1: the palm normal against the socket frame's (sockets.js: from the palm point to the centreline),
+       * and the fingertips and joints against the stave's surface (sockets.js r), every step the fingers are closed */
+      let nMax = 0, nN = 0, tipMax = 0, inside = 0, closedN = 0;
+      for (let i = a; i < b; i++) {
+        const r = L[i];
+        if (r.bowVis !== 'held' || !r.bowLineA || r.curlL == null || r.curlL < 0.8 || (r.aimW ?? 0) > 0.5) continue;
+        closedN++;
+        if (r.palmNL && r.bowSockN) { nMax = Math.max(nMax, ang(r.palmNL, r.bowSockN)); nN++; }
+        const rad = segDist(r.palmBowL, r.bowLimbC, r.bowLimbC) < segDist(r.palmBowL, r.bowGripC, r.bowGripC) ? r.bowRLimb : r.bowRGrip;
+        for (const F of (r.fingL || []).slice(0, 4)) {
+          for (let j = 0; j < 4; j++) { const d = segDist(F[j], r.bowLineA, r.bowLineB) - rad; if (j < 3 && d < 0) inside++; if (j === 3) tipMax = Math.max(tipMax, Math.abs(d)); }
+        }
+      }
+      Object.assign(out.W1, { closedSteps: closedN, palmNormalMaxDeg: nN ? r3(nMax) : null, fingertipToSurfaceMaxM: closedN ? r4(tipMax) : null, fingerJointsInside: closedN ? inside : null });
+      if (nN && nMax > 10) fail(`W1 palm normal ${nMax.toFixed(1)} deg off the socket frame (bar 10)`);
+      if (closedN && tipMax > 0.015) fail(`W1 a fingertip ${tipMax.toFixed(4)} m off the stave's surface (bar 0.015)`);
+      if (closedN && inside) fail(`W1 ${inside} finger joint-steps inside the stave (bar 0)`);
       if ((sockN ? sockMax : pmax) > 0.010) fail(`W1 palm ${(sockN ? sockMax : pmax).toFixed(4)} m off the bow (bar 0.010)`);
       if (axMax > 10) fail(`W1 grip axis ${axMax.toFixed(1)} deg off the stave (bar 10)`);
       if (flex > 60) fail(`W1 wrist flexion ${flex.toFixed(1)} deg (bar 60)`);
       if (dev > 30) fail(`W1 wrist deviation ${dev.toFixed(1)} deg (bar 30)`);
     }
+  }
+  // ---- W1 the lance's three sockets (M1a weapons fix 1): the left palm on lance.butt from its take until the right has
+  // it; the right on lance.grip while it holds it; the left on lance.fore in the guard. Along the haft (the slide off the
+  // socket, bar 0.010) and radially (reported); the palm normal toward the centreline; fingertips and joints on the haft
+  // (sockets.js r) once the hand has held it 2 steps; the close: the drawn curl rising over >= 2 steps into the take
+  {
+    const LR = { butt: 0.0145, grip: 0.0173, fore: 0.0162 };
+    const W = {};
+    const hold = (key, side, sock, pred) => {
+      let along = 0, rad = 0, nMax = 0, tipMax = 0, inside = 0, n2 = 0, run = 0;
+      for (let i = 0; i < n; i++) {
+        const r = L[i];
+        if (r.lanceVis !== 'held' || r.swing || !pred(r)) { run = 0; continue; }
+        run++;
+        const p = r['palm' + side], s0 = r[sock], ax = nrm(sub(r.lanceTip, r.lanceButt));
+        const v = sub(p, s0), k = dot(v, ax), rv = [v[0] - ax[0] * k, v[1] - ax[1] * k, v[2] - ax[2] * k];
+        along = Math.max(along, Math.abs(k)); rad = Math.max(rad, len(rv));
+        if (run < 3) continue;
+        n2++;
+        const pn = r['palmN' + side]; if (pn && len(rv) > 1e-4) nMax = Math.max(nMax, ang(pn, [-rv[0], -rv[1], -rv[2]]));
+        const R0 = LR[sock.replace('lanceSock', '').toLowerCase()];
+        for (const F of (r['fing' + side] || []).slice(0, 4)) for (let j = 0; j < 4; j++) { const d = segDist(F[j], r.lanceButt, r.lanceTip) - R0; if (j < 3 && d < 0) inside++; if (j === 3) tipMax = Math.max(tipMax, Math.abs(d)); }
+      }
+      if (!along && !rad) return;
+      W[key] = { alongMaxM: r4(along), radialMaxM: r4(rad), palmNormalMaxDeg: n2 ? r3(nMax) : null, fingertipToSurfaceMaxM: n2 ? r4(tipMax) : null, fingerJointsInside: n2 ? inside : null };
+      if (along > 0.010) fail(`W1 lance ${key}: palm ${along.toFixed(4)} m along the haft off its socket (bar 0.010)`);
+      if (n2 && nMax > 10) fail(`W1 lance ${key}: palm normal ${nMax.toFixed(1)} deg off the socket frame (bar 10)`);
+      if (n2 && tipMax > 0.015) fail(`W1 lance ${key}: a fingertip ${tipMax.toFixed(4)} m off the haft (bar 0.015)`);
+      if (n2 && inside) fail(`W1 lance ${key}: ${inside} finger joint-steps inside the haft`);
+    };
+    hold('butt (left, the take)', 'L', 'lanceSockButt', (r) => r.lanceOwner === 'handL');
+    hold('grip (right)', 'R', 'lanceSockGrip', (r) => r.lanceOwner === 'handR' || r.lanceOwner === 'both');
+    hold('fore (left, the guard)', 'L', 'lanceSockFore', (r) => r.stance === 'ready');
+    if (lanceTake > 0 && L[lanceTake].curlGeoL != null) {
+      let k = lanceTake; while (k > 0 && L[k - 1].curlGeoL != null && L[k - 1].curlGeoL < L[k].curlGeoL - 0.05) k--;
+      W.closeStepsLeft = lanceTake - k;
+      if (W.closeStepsLeft < 2) fail(`W1 lance: the left fingers closed over ${W.closeStepsLeft} steps into the take (bar >= 2)`);
+    }
+    if (Object.keys(W).length) out.W1lance = W;
   }
   // ---- W2 ownership
   {
@@ -117,6 +180,32 @@ export function gradeCase(kind, L, meta = {}) {
       w2.lanceAcrossReleaseM = r4(dist(L[lanceRel].lanceTipSp, L[lanceRel - 1].lanceTipSp));
       if (w2.lanceAcrossReleaseM > 0.02) fail(`W2 the lance jumped ${w2.lanceAcrossReleaseM} m at the release`);
     }
+    /* M1a weapons fix 1: "0 owner changes outside a grip or release event". The bow's changes against the events the
+     * handling stamps (sim time); the lance's against its socket: the receiving hand's palm within 0.02 m along the haft
+     * and 0.06 m off its centreline the step it takes it (the left on lance.butt, the right on lance.grip) */
+    let ch = 0, outside = 0; const outAt = [];
+    for (let i = 1; i < n; i++) {
+      const a = L[i - 1], r = L[i];
+      if (a.bowOwner !== r.bowOwner) {
+        ch++;
+        const ok = r.simT != null && (Math.abs(r.simT - r.bowGripAt) < 1e-6 || Math.abs(r.simT - r.bowReleaseAt) < 1e-6);
+        if (!ok) { outside++; outAt.push(`bow ${a.bowOwner}->${r.bowOwner} t ${r3(r.t)}`); }
+      }
+      if (a.lanceOwner !== r.lanceOwner) {
+        ch++;
+        const to = r.lanceOwner, side = to === 'handL' ? 'L' : to === 'handR' || to === 'both' ? 'R' : null;
+        const sock = to === 'handL' ? 'lanceSockButt' : 'lanceSockGrip';
+        let ok = true;
+        if (side && r.lanceVis === 'held') {
+          const ax = nrm(sub(r.lanceTip, r.lanceButt)), v = sub(r['palm' + side], r[sock]), k = dot(v, ax);
+          const rv = len([v[0] - ax[0] * k, v[1] - ax[1] * k, v[2] - ax[2] * k]);
+          ok = Math.abs(k) <= 0.02 && rv <= 0.06;
+        }
+        if (!ok) { outside++; outAt.push(`lance ${a.lanceOwner}->${to} t ${r3(r.t)}`); }
+      }
+    }
+    w2.ownerChanges = ch; w2.ownerChangesOutsideEvent = outside; if (outAt.length) w2.outsideAt = outAt.slice(0, 6);
+    if (outside) fail(`W2 ${outside} owner changes outside a grip or release event (${outAt.slice(0, 3).join(', ')})`);
     // the visible prop's far end may not jump between any two steps by more than its rate (a teleport check)
     let both = 0; for (const r of L) if (r.bowOwner === 'handL' && r.lanceOwner !== 'carry') both++;
     w2.bothInHandsSteps = both;
@@ -139,7 +228,7 @@ export function gradeCase(kind, L, meta = {}) {
     if (wr > 0.08) fail(`W3 a wrist moved ${wr.toFixed(3)} m in a step (bar 0.08)`);
   }
   // ---- W4 the lance's path (draw and stow): total shaft rotation, the blade over the knee, the first 0.15 m axial
-  if (/lance|swap/.test(kind)) {
+  if (/lance|swap/.test(kind) && !meta.w9mid) {
     let tot = 0, low = 9, lowAt = null;
     const vis = L.filter((r) => r.lanceVis === 'held');
     for (let i = 1; i < vis.length; i++) tot += ang(sub(vis[i - 1].lanceTip, vis[i - 1].lanceButt), sub(vis[i].lanceTip, vis[i].lanceButt));
@@ -179,8 +268,21 @@ export function gradeCase(kind, L, meta = {}) {
   {
     let behind = 0, plane = 0, over = -9;
     for (const r of L) { behind += r.behind || 0; plane += r.plane || 0; for (const s of ['L', 'R']) over = Math.max(over, r['wrist' + s][1] - r['sh' + s][1]); }
-    out.W6 = { behindSteps: behind, planeSteps: plane, wristOverShoulderMaxM: r3(over) };
+    /* M1a weapons fix 1: "above its shoulder joint" graded: the wrist, the elbow (the forearm's upper end) and the palm (the
+     * grip socket) against the same side's shoulder joint, every step outside a swing and outside the raised aim (aim
+     * weight over 0.5: the draw hand's anchor at the cheek is Kevin's bar and A35's, above the shoulder by design); the
+     * swing's and the aim's own figures are reported beside it */
+    let overH = -9, overAt = null, overSwing = -9, overAim = -9, overN = 0;
+    for (const r of L) for (const s2 of ['L', 'R']) {
+      const sh = r['sh' + s2][1], h = Math.max(r['wrist' + s2][1], r['elbow' + s2][1], r['palm' + s2][1]) - sh;
+      if (r.swing) overSwing = Math.max(overSwing, h);
+      else if ((r.aimW ?? 0) > 0.5) overAim = Math.max(overAim, h);
+      else { if (h > overH) { overH = h; overAt = { t: r3(r.t), side: s2 }; } if (h > 0) overN++; }
+    }
+    out.W6 = { behindSteps: behind, planeSteps: plane, wristOverShoulderMaxM: r3(over), handOverShoulderMaxM: r3(overH), overShoulderSteps: overN, overAt,
+      inSwingMaxM: overSwing > -9 ? r3(overSwing) : null, inAimMaxM: overAim > -9 ? r3(overAim) : null };
     if (behind || plane) fail(`W6 ${behind} behind-head and ${plane} head-plane steps`);
+    if (overN) fail(`W6 a hand, forearm or grip ${overH.toFixed(3)} m above its shoulder joint on ${overN} side-steps (t ${overAt?.t})`);
   }
   // ---- W7 times (s): request to ready; the swaps to the other weapon ready
   {
@@ -190,22 +292,59 @@ export function gradeCase(kind, L, meta = {}) {
     if (kind === 'bowStow') { const i = first(L, (r) => r.bowHome); w7.bowStowS = i >= 0 ? r3(L[i].t) : null; w7.releaseS = out.events.bowReleaseT; }
     if (kind === 'lanceStow') { const i = first(L, (r) => r.stance === 'holstered'); w7.lanceStowS = i >= 0 ? r3(L[i].t) : null; }
     if (kind === 'click') { const i = first(L, (r) => r.swing); w7.clickToSwingS = i >= 0 ? r3(L[i].t) : null; }
+    // (M1a weapons fix 1: the bow's asked stow is swap 1 to 2's first half: key 2 to the bow home on her back)
+    if (kind === 'swap12') { const i = first(L, (r) => r.bowHome); w7.bowStowAskS = i >= 0 ? r3(L[i].t) : null; }
+    if (kind === 'swap21') { const i = first(L, (r) => r.stance === 'holstered'); w7.lanceStowAskS = i >= 0 ? r3(L[i].t) : null; }
+    if (kind === 'aim') { const i = first(L, (r) => r.loosable); w7.rmbToLoosableS = i >= 0 ? r3(L[i].t) : null; }
     out.W7 = w7;
-    const band = (v, lo, hi, what) => { if (v == null) fail(`W7 ${what}: never`); else if (v < lo || v > hi) fail(`W7 ${what} ${v} s (band ${lo}-${hi})`); };
+    const band = (v, lo, hi, what) => { if (meta.w9mid) return; if (v == null) fail(`W7 ${what}: never`); else if (v < lo || v > hi) fail(`W7 ${what} ${v} s (band ${lo}-${hi})`); };
     if (kind === 'bowUnstow') band(w7.bowReadyS, 0.30, 0.40, 'bow unstow');
     if (kind === 'lanceDraw') band(w7.lanceReadyS, 0.30, 0.40, 'lance draw');
     if (kind === 'click') band(w7.clickToSwingS, 0.25, 0.35, 'click to swing');
     if (kind === 'bowStow') band(w7.bowStowS, meta.tempo === 'timer' ? 0.43 : 0.30, meta.tempo === 'timer' ? 0.50 : 0.37, `bow stow (${meta.tempo})`);
     if (kind === 'lanceStow') band(w7.lanceStowS, meta.tempo === 'timer' ? 0.50 : 0.30, meta.tempo === 'timer' ? 0.57 : 0.37, `lance stow (${meta.tempo})`);
     if (kind === 'swap12') band(w7.lanceReadyS, 0.45, 0.65, 'swap 1 to 2');
+    if (kind === 'swap12' && !meta.w9mid) band(w7.bowStowAskS, 0.30, 0.37, 'bow asked stow (in swap 1 to 2)');
     if (kind === 'swap21') band(w7.bowReadyS, 0.45, 0.65, 'swap 2 to 1');
   }
-  // ---- W9 swap truth (at the case's end)
-  if (kind === 'swap12' || kind === 'swap21') {
-    const e = L[n - 1];
-    const ok = kind === 'swap21' ? e.bowOwner === 'handL' && e.lanceOwner === 'carry' : e.lanceOwner === 'handR' && e.bowOwner === 'carry';
-    out.W9 = { ok, end: { bow: e.bowOwner, lance: e.lanceOwner } };
-    if (!ok) fail(`W9 ${kind} ended with the bow ${e.bowOwner}, the lance ${e.lanceOwner}`);
+  // ---- W9 swap truth (at the case's end): key 1 ends with the bow at bow.grip in the left hand, key 2 with the lance at
+  // lance.grip in the right (M1a weapons fix 1: from every start state; `meta.w9` names what the last key asked for)
+  {
+    const want = meta.w9 ?? (kind === 'swap21' ? 'bow' : kind === 'swap12' ? 'lance' : null);
+    if (want) {
+      const e = L[n - 1];
+      const atGrip = want === 'bow' ? (e.bowS == null || e.bowS >= 0.999) && e.bowVis === 'held' : true;
+      const ok = want === 'bow' ? e.bowOwner === 'handL' && e.lanceOwner === 'carry' && atGrip : (e.lanceOwner === 'handR' || e.lanceOwner === 'both') && e.bowOwner === 'carry';
+      out.W9 = { want, ok, end: { bow: e.bowOwner, lance: e.lanceOwner, stance: e.stance } };
+      if (!ok) fail(`W9 asked for the ${want}: ended with the bow ${e.bowOwner}, the lance ${e.lanceOwner}`);
+    }
+  }
+  // ---- W8 no pop into the aim (RMB from stowed): from the bow's grip event to full raise (aim weight >= 0.99)
+  if (kind === 'aim') {
+    const g0 = bowGrip >= 0 ? bowGrip : 0;
+    const full = first(L, (r) => (r.aimW ?? 0) >= 0.99, g0);
+    const end = full >= 0 ? full : n - 1;
+    let bowD = 0, hand = 0;
+    for (let i = g0 + 1; i <= end; i++) {
+      const a = L[i - 1], r = L[i];
+      if (a.bowVis === 'held' && r.bowVis === 'held') bowD = Math.max(bowD, ang(a.bowAxis, r.bowAxis));
+      hand = Math.max(hand, dist(a.wristR, r.wristR));
+    }
+    // the gate's rise: steps from the first under 1 (or the aim weight's first rise) to >= 0.99 of the aim weight
+    const a0 = first(L, (r) => (r.aimW ?? 0) > 0.01);
+    const riseSteps = a0 >= 0 && full >= 0 ? full - a0 : null;
+    const gateMin = Math.min(...L.map((r) => r.aimGate ?? 1));
+    // the arrow on the string (combat's nock) before the draw hand has been at the quiver (within 0.12 m)
+    const q = first(L, (r) => r.handToQuiver != null && r.handToQuiver <= 0.12);
+    const nk = first(L, (r) => r.nockLanded);
+    const early = nk >= 0 && (q < 0 || nk < q) ? (q < 0 ? n - nk : q - nk) : 0;
+    const minQ = Math.min(...L.map((r) => r.handToQuiver ?? 9));
+    out.W8 = { gripT: bowGrip >= 0 ? r3(L[bowGrip].t) : null, fullRaiseT: full >= 0 ? r3(L[full].t) : null, bowDegStepMax: r3(bowD), drawHandMStepMax: r4(hand),
+      aimRiseSteps: riseSteps, aimGateMin: r3(gateMin), quiverReachT: q >= 0 ? r3(L[q].t) : null, handToQuiverMinM: r3(minQ), nockT: nk >= 0 ? r3(L[nk].t) : null, arrowBeforeQuiverSteps: early };
+    if (bowD > 10) fail(`W8 the bow turned ${bowD.toFixed(1)} deg a step into the raise (bar 10)`);
+    if (hand > 0.08) fail(`W8 the draw hand moved ${hand.toFixed(3)} m a step into the raise (bar 0.08)`);
+    if (riseSteps == null || riseSteps < 6) fail(`W8 the aim rose over ${riseSteps} steps (bar >= 6)`);
+    if (early) fail(`W8 the arrow on the bow ${early} steps before the draw hand reached the quiver (closest ${minQ.toFixed(3)} m)`);
   }
   // ---- W11 body: peak spine yaw from the request's; head yaw; the elbow pole's turn per step
   {
@@ -249,9 +388,45 @@ export function gradeCase(kind, L, meta = {}) {
     }
     // (the lance's guard turns her trunk by design (meleeLayer STANCE): the band is the draw's own reach additive, graded on
     //  the bow's unstow, where nothing else turns her)
-    if (kind === 'bowUnstow') { if (sp < 5 || sp > 10) fail(`W11 spine yaw peak ${sp.toFixed(1)} deg (band 5-10)`); }
+    /* M1a weapons fix 1: graded in EVERY draw (the brief: "peak spine_02 yaw 5-10 deg in each draw"), the lance's from
+     * the request to the guard (its designed trunk turn into the guard counts: the bar does not exempt it) */
+    if ((kind === 'bowUnstow' || kind === 'lanceDraw') && (sp < 5 || sp > 10)) fail(`W11 spine yaw peak ${sp.toFixed(1)} deg (band 5-10)`);
+    // the reach additive wherever the aim weight is over 0.5 (bar 0.5 deg)
+    let addAim = 0; for (const r of L) if ((r.aimW ?? 0) > 0.5) addAim = Math.max(addAim, Math.abs(r.reachYaw ?? 0));
+    out.W11.additiveUnderAimDeg = r3(addAim);
+    if (addAim > 0.5) fail(`W11 the reach additive ${addAim.toFixed(2)} deg under the aim (bar 0.5)`);
+    // the guard's stance step: the last foot step (a foot moving over 0.004 m a step) lands within 4 steps of the hand-over
+    if (kind === 'lanceDraw' && lanceTake >= 0) {
+      const ho = first(L, (r) => r.lanceOwner === 'handR' || r.lanceOwner === 'both');
+      let land = -1;
+      for (let i = 1; i < n; i++) for (const f of ['footL', 'footR']) if (L[i][f] && L[i - 1][f] && dist(L[i][f], L[i - 1][f]) > 0.004) land = i;
+      out.W11.handOverT = ho >= 0 ? r3(L[ho].t) : null; out.W11.stanceStepLandT = land >= 0 ? r3(L[land].t) : null;
+      out.W11.stanceStepFromHandOverSteps = ho >= 0 && land >= 0 ? land - ho : null;
+      if (ho >= 0 && land >= 0 && Math.abs(land - ho) > 4) fail(`W11 the stance step lands ${land - ho} steps from the hand-over (bar 4)`);
+    }
     if (hd > 3) fail(`W11 head yaw ${hd.toFixed(1)} deg (bar 3)`);
     if (pole > 25) fail(`W11 elbow pole ${pole.toFixed(1)} deg a step (bar 25)`);
   }
   return out;
+}
+
+/**
+ * W10 (M1a weapons fix 1): an interrupt injected at step `k` (the record runs on 0.6 s past the case). W2's ownership
+ * (both weapons in hands, the jumps at owner changes, an owner change outside an event) and W6's head-plane and shoulder
+ * clauses hold over the whole run; either wrist moves <= 0.06 m across the interrupt step (k to k + 1); and no blend
+ * shorter than 4 steps: either wrist moves <= 0.06 m a step over the 4 steps after it too (a cut would show as one
+ * step's jump inside them).
+ */
+export function gradeInterrupt(L, k, g) {
+  const fails = [];
+  const keep = (g.fails || []).filter((f) => /^W2 |^W6 /.test(f));
+  for (const f of keep) fails.push(f);
+  let across = 0, after = 0;
+  for (const s of ['wristL', 'wristR']) {
+    if (L[k + 1] && L[k]) across = Math.max(across, dist(L[k][s], L[k + 1][s]));
+    for (let i = k + 1; i <= k + 4 && i + 1 < L.length; i++) if (!L[i + 1].swing && !L[i].swing) after = Math.max(after, dist(L[i][s], L[i + 1][s]));
+  }
+  if (across > 0.06) fails.push(`wrist ${across.toFixed(3)} m across the interrupt step`);
+  if (after > 0.06) fails.push(`wrist ${after.toFixed(3)} m a step within 4 steps after it`);
+  return { wristAcrossM: r4(across), wristAfterM: r4(after), fails };
 }

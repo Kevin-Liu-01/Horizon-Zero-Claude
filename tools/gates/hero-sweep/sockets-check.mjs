@@ -39,7 +39,8 @@ function rings(mesh) {
   let cur = [];
   /* (the ring's centre is the middle of its extent, not its mean: a ring's seam vertex is doubled) */
   const mid = (a) => (Math.min(...a) + Math.max(...a)) / 2;
-  const flush = () => { if (cur.length >= 3) out.push({ y: cur.reduce((s, p) => s + p[1], 0) / cur.length, x: mid(cur.map((p) => p[0])), z: mid(cur.map((p) => p[2])) }); cur = []; };
+  /* (M1a weapons fix 1: the ring's mean radius about its centre too, W1's fingertip clause reads it) */
+  const flush = () => { if (cur.length >= 3) { const x = mid(cur.map((p) => p[0])), z = mid(cur.map((p) => p[2])); out.push({ y: cur.reduce((s, p) => s + p[1], 0) / cur.length, x, z, r: cur.reduce((s, p) => s + Math.hypot(p[0] - x, p[2] - z), 0) / cur.length }); } cur = []; };
   for (const p of v) { if (cur.length && p[1] - cur[cur.length - 1][1] > 0.008) flush(); cur.push(p); }
   flush();
   return out;
@@ -48,7 +49,7 @@ function centre(R, y) {
   let lo = R[0], hi = R[R.length - 1];
   for (const r of R) { if (r.y <= y && r.y >= lo.y) lo = r; if (r.y >= y && r.y <= hi.y) hi = r; }
   const k = hi.y > lo.y ? (y - lo.y) / (hi.y - lo.y) : 0;
-  return { x: lo.x + (hi.x - lo.x) * k, z: lo.z + (hi.z - lo.z) * k, lo: lo.y, hi: hi.y };
+  return { x: lo.x + (hi.x - lo.x) * k, z: lo.z + (hi.z - lo.z) * k, r: lo.r + (hi.r - lo.r) * k, lo: lo.y, hi: hi.y };
 }
 let bad = 0;
 for (const [kind, file, names] of [['bow', 'bow-sabina.glb', ['grip', 'limb']], ['lance', 'lance-shepherd.glb', ['butt', 'grip', 'fore']]]) {
@@ -57,6 +58,10 @@ for (const [kind, file, names] of [['bow', 'bow-sabina.glb', ['grip', 'limb']], 
     const s = SOCKETS[kind][n], c = centre(R, s.p[1]);
     const d = Math.hypot(s.p[0] - c.x, s.p[2] - c.z);
     const ok = d <= 0.002;
+    // (the surface radius there against sockets.js's `r`: within 1.5 mm)
+    const rOk = s.r == null || Math.abs(s.r - c.r) <= 0.0015;
+    if (!rOk) bad++;
+    console.log(`${rOk ? 'PASS' : 'FAIL'} ${kind}.${n} radius ${(c.r * 1000).toFixed(1)} mm (sockets.js ${s.r == null ? 'none' : (s.r * 1000).toFixed(1)})`);
     if (!ok) bad++;
     console.log(`${ok ? 'PASS' : 'FAIL'} ${kind}.${n} at y ${s.p[1]}: ${(d * 1000).toFixed(2)} mm off the centreline (${c.x.toFixed(4)}, ${c.z.toFixed(4)}; rings ${c.lo.toFixed(4)}..${c.hi.toFixed(4)})`);
   }
