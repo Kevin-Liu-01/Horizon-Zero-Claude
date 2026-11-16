@@ -1197,7 +1197,7 @@ export const RESTATED = [
         + '(3) neither arm is folded across her chest; '
         + '(4) the lance comes off her back continuously — it never appears in a new place between two tiles — and ends in her right hand in the low guard (blade forward-down) in the last tile of each row; '
         + '(5) she is still jogging (stride visible, torso leaning with the run). '
-        + 'FAIL on any elbow up behind the head, a forearm across the back of the head, the spear popping between tiles, or the bow in either hand. '
+        + 'FAIL on any elbow up behind the head, a forearm across the back of the head, the lance popping between tiles, or the bow in either hand. '
         + 'A107 measures the same frames numerically (elbow <= head + 0.05 m; above the shoulder, <= 0.10 m behind the head plane).',
     },
   },
