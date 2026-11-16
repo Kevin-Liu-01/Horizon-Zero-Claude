@@ -227,6 +227,9 @@ async function routineLog() {
   // (M1.5d in full) every route walked in the log, for the audit of its legs against the collision world
   const allRoutes = [], route0 = R.route;
   R.route = function (e, from, step) { const path = route0.call(this, e, from, step); allRoutes.push(this.routes[this.routes.length - 1]); return path; };
+  // (fix round 2) and every leg of Mise's and Ansel's anchor routine (index.js _tether)
+  const leg0 = R.recordLeg;
+  if (leg0) R.recordLeg = function (...a) { const rec = leg0.apply(this, a); allRoutes.push(rec); return rec; };
   try {
     // the log's clock from the start: a person adopted under the film's own hour (18:40, past the lamp's 18:30) would
     // begin at the lamp and then walk back up for the log's 18:00
@@ -346,6 +349,7 @@ async function routineLog() {
     out.error = String(e?.stack || e).slice(0, 600);
   } finally {
     R.route = route0;
+    if (leg0) R.recordLeg = leg0;
     R.hourOf = null;
     for (const e of R.list) PS.tierAt(e.person, null);
     for (const q of questSpawned) { try { PS.despawn(q); } catch (e) { /* */ } }
@@ -354,11 +358,17 @@ async function routineLog() {
 }
 
 /**
- * M1.5d: the lookout's warning, live (src/world/npc/people/lookout.js). A real Instrument (the first kind this build spawns of
- * plumb, peg, gauge) is put 130 m from the lamp keeper, held there until the lookout is armed, then walked straight at her at
- * 1-6 m/s; each step the people system runs at 1/30 s and the Instrument's position is written before it. The delay is from
- * the first step the Instrument stood at 80 m or nearer to the step the 'npc-warning' event came. Ten trials, by day (12:00)
- * and at night (19:00) in turn. Bar: within 3 s.
+ * M1.5d: the lookout's warning, live (src/world/npc/people/lookout.js), against THE REAL MACHINE LIST (fix round 2: the
+ * trials used to hand the lookout only their own Instrument, `LK.source = [m]`, which hid that a resident Gauge 37 m from
+ * her silenced her for good; she now warns of each Instrument once, so the resident stays in the scan). A real Instrument
+ * (the first kind this build spawns of plumb, peg, gauge), its own AI stopped for the trial, is held 130 m from the lamp
+ * keeper until she has forgotten it (10 s past 100 m), then brought straight at her at 1-6 m/s: its distance from where
+ * she stands NOW is set every step (r falls by speed x dt), so her own walking cannot shorten or lengthen the approach
+ * (fix round 2: at 731b21a trials 7-9 began inside 80 m: she was 65.9, 4.0 and 59.4 m from it at the warning). Each
+ * step the people system runs at 1/30 s. The delay is from the first step the Instrument stood at 80 m or nearer (as her
+ * scan measures it) to the step the 'npc-warning' for IT came. Ten trials, by day (12:00) and at night (19:00) in turn.
+ * A trial is VALID when the approach began more than 81 m out, she did not jump more than 0.5 m in one step during it, and
+ * the warning named this Instrument. Bar: every valid trial within 3 s, and 10 of 10 valid.
  */
 async function lookoutTrials(C, R, env, getH, setH) {
   const PS = C.people, M = C.machines, LK = R.lookout;
@@ -370,48 +380,63 @@ async function lookoutTrials(C, R, env, getH, setH) {
   const kp = keeper().person.group.position;
   const m = M.spawn(kinds[0], kp.x + 130, kp.z, { route: [{ x: kp.x + 130, z: kp.z }], heading: 0 });
   if (!m) return { error: `${kinds[0]} did not spawn` };
-  // every live Instrument already near her (the film's world: at c8daf8a one stood 33-38 m from her the whole log, so she warned
-  // once at the start and the trials found her never armed): reported, and the trials' lookout sees only the trial's Instrument
+  const upd0 = m.update; m.update = () => {};
+  // every live Instrument already near her: reported; they stay in her scan (the real list)
   const kp0 = keeper().person.group.position;
   const resident = M.list.filter((o) => o !== m && o.alive !== false && !o._disposed && o.position).map((o) => ({ kind: o.kind, d: +Math.hypot(o.position.x - kp0.x, o.position.z - kp0.z).toFixed(1), state: o.state ?? null })).sort((a, b) => a.d - b.d).slice(0, 5);
   const warnedBefore = LK.warnings.slice(0, 8);
-  const src0 = LK.source; LK.source = [m]; LK.armed = true; LK.inRangeAt = null;
+  const knownBefore = LK.known ?? null;
   const evs = [];
   const ev = C.events, emit0 = ev?.emit;
   if (ev) ev.emit = function (name, o) { if (name === 'npc-warning' || name === 'npc-all-clear') evs.push({ name, t: simT, ...o }); return emit0?.apply(this, arguments); };
   let simT = 0;
   const dt = 1 / 30;
   const put = (x, z) => { m.position.x = x; m.position.z = z; if (m.root) { m.root.position.x = x; m.root.position.z = z; } };
-  const step = () => { setH(getH() + env.clockRate(getH()) * dt); simT += dt; PS.update(dt, simT); };
+  const kpos = () => keeper().person.group.position;
+  let jump = 0, lx = null, lz = null;
+  const step = () => { setH(getH() + env.clockRate(getH()) * dt); simT += dt; PS.update(dt, simT); const p = kpos(); if (lx !== null) jump = Math.max(jump, Math.hypot(p.x - lx, p.z - lz)); lx = p.x; lz = p.z; };
   const rows = [];
   try {
     for (let k = 0; k < 10; k++) {
       setH(k % 2 ? 19.0 : 12.0);
-      // away, until armed (the all-clear needs 10 s past 100 m)
-      for (let i = 0; i < 30 * 12 || (!LK.armed && i < 30 * 40); i++) { const p = keeper().person.group.position, b = (k * 37 + 11) * D2R; put(p.x + Math.sin(b) * 130, p.z + Math.cos(b) * 130); step(); if (i % 120 === 0) await sleep(0); }
-      const others = () => { const p = keeper().person.group.position; let b = Infinity; for (const o of M.list) if (o !== m && o.alive !== false && !o._disposed && o.position) b = Math.min(b, Math.hypot(o.position.x - p.x, o.position.z - p.z)); return +b.toFixed(1); };
-      if (!LK.armed) { rows.push({ k, error: 'not armed', nearestOtherM: others() }); continue; }
+      const b = (k * 37 + 11) * D2R, sx = Math.sin(b), sz = Math.cos(b);
+      // away, until she has forgotten it (10 s past 100 m), 12 s at least
+      let held = 0;
+      for (let i = 0; i < 30 * 12 || (LK.seen?.has(m) && i < 30 * 40); i++) { const p = kpos(); put(p.x + sx * 130, p.z + sz * 130); step(); held++; if (i % 120 === 0) await sleep(0); }
+      const others = () => { const p = kpos(); let bb = Infinity; for (const o of M.list) if (o !== m && o.alive !== false && !o._disposed && o.position) bb = Math.min(bb, Math.hypot(o.position.x - p.x, o.position.z - p.z)); return +bb.toFixed(1); };
+      if (LK.seen?.has(m)) { rows.push({ k, error: 'still known after 40 s away', nearestOtherM: others() }); continue; }
       const speed = 1 + k * 0.55;
-      let crossed = null, fired = null, dNow = null;
+      let crossed = null, fired = null, r = 130, startM = null, firstPut = null;
+      const stuck0 = keeper().stuck || 0;
+      jump = 0; lx = null;
       const n0 = evs.filter((e) => e.name === 'npc-warning').length;
       for (let i = 0; i < 30 * 60 && fired === null; i++) {
-        const p = keeper().person.group.position, dx = p.x - m.position.x, dz = p.z - m.position.z, d = Math.hypot(dx, dz);
-        if (d > 5) put(m.position.x + dx / d * speed * dt, m.position.z + dz / d * speed * dt);
-        const p2 = keeper().person.group.position;
-        dNow = Math.hypot(m.position.x - p2.x, m.position.z - p2.z);
+        r -= speed * dt;
+        const p = kpos();
+        put(p.x + sx * r, p.z + sz * r);
+        const dNow = Math.hypot(m.position.x - p.x, m.position.z - p.z);
+        if (startM === null) { startM = +dNow.toFixed(2); firstPut = simT; }
         if (crossed === null && dNow <= 80) crossed = simT;
         step();
-        if (evs.filter((e) => e.name === 'npc-warning').length > n0) fired = simT;
+        const p2 = kpos();
+        if (crossed === null && Math.hypot(m.position.x - p2.x, m.position.z - p2.z) <= 80) crossed = simT - dt;
+        const ws = evs.filter((e) => e.name === 'npc-warning');
+        if (ws.length > n0) fired = simT;
         if (i % 120 === 0) await sleep(0);
       }
       const w = evs.filter((e) => e.name === 'npc-warning')[n0];
-      rows.push({ k, hour: k % 2 ? 19 : 12, speed: +speed.toFixed(2), crossedS: crossed, delayS: crossed !== null && fired !== null ? +(fired - crossed).toFixed(3) : null, atM: w?.d ?? null, line: w?.line?.join(' ') ?? null, nearestOtherM: others(), keeperAct: keeper().act, keeperClip: keeper().person.current?.getClip().name || null });
+      const lw = LK.warnings[LK.warnings.length - 1];
+      const named = !!(w && lw && lw.kind === m.kind && Math.abs(lw.d - (w.d ?? -1)) < 0.01);
+      const delayS = crossed !== null && fired !== null ? +(fired - crossed).toFixed(3) : null;
+      const valid = startM > 81 && jump <= 0.5 && named && crossed !== null;
+      rows.push({ k, hour: k % 2 ? 19 : 12, speed: +speed.toFixed(2), heldS: +(held * dt).toFixed(2), startM, crossedS: crossed === null ? null : +crossed.toFixed(3), approachFromS: +firstPut.toFixed(3), delayS, atM: w?.d ?? null, lookoutDelayS: lw?.delay ?? null, keeperJumpMaxM: +jump.toFixed(3), keeperStuck: (keeper().stuck || 0) - stuck0, named, valid, line: w?.line?.join(' ') ?? null, nearestOtherM: others(), knownNow: LK.known ?? null, keeperAct: keeper().act, keeperClip: keeper().person.current?.getClip().name || null });
     }
   } finally {
     if (ev) ev.emit = emit0;
-    LK.source = src0;
+    m.update = upd0;
     try { const L = M.list, i = L.indexOf(m); if (i >= 0) L.splice(i, 1); m.dispose?.(); m.root?.parent?.remove(m.root); } catch (e) { /* */ }
   }
-  const d = rows.map((r) => r.delayS).filter((x) => x != null);
-  return { resident, warnedBefore, kind: kinds[0], trials: rows.length, fired: d.length, maxDelayS: d.length ? Math.max(...d) : null, bar: 3, rows, allClears: evs.filter((e) => e.name === 'npc-all-clear').length };
+  const V = rows.filter((r) => r.valid);
+  const d = V.map((r) => r.delayS).filter((x) => x != null);
+  return { realList: true, resident, warnedBefore, knownBefore, kind: kinds[0], trials: rows.length, valid: V.length, fired: d.length, maxDelayS: d.length ? Math.max(...d) : null, bar: 3, pass: V.length === 10 && d.length === 10 && Math.max(...d) <= 3, rows, allClears: evs.filter((e) => e.name === 'npc-all-clear').length };
 }

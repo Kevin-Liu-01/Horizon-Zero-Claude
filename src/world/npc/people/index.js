@@ -56,6 +56,8 @@ export const SLICE_CAST = ['lantern-keeper', 'salt-raker', 'salt-raker-2', 'salt
 
 const _cam = new THREE.Vector3();
 const _probe = new THREE.Vector3();
+/** Clips never played as an idle beat: the lookout's warning gesture (src/world/npc/people/lookout.js plays it for a real warning). */
+const NOT_IDLE = new Set(['Idle_Rail_Call']);
 
 export class PeopleSystem {
   constructor(ctx) {
@@ -193,7 +195,11 @@ export class PeopleSystem {
 
   _nextBeat(p) {
     const clips = p.spec.clips?.stage || p.spec.clips?.idle || ['Idle_Loop'];
-    const name = clips[p.scriptI % clips.length];
+    // (M1.5d fix round 2) never the lookout's warning gesture as an idle: Mise's cycle passed through Idle_Rail_Call, a
+    // false alarm about every 27 s (the keeper's lookout plays it when an Instrument comes within 80 m)
+    let name = clips[p.scriptI % clips.length];
+    for (let k = 0; k < clips.length && NOT_IDLE.has(name); k++) name = clips[++p.scriptI % clips.length];
+    if (NOT_IDLE.has(name)) name = 'Idle_Loop';
     p.scriptI++;
     p.stopWalk();
     const dur = p.play(name, { offset: ((p.seed * 0.137) % 1), fade: 0.4 }) || 2.5;
@@ -241,7 +247,61 @@ export class PeopleSystem {
       p._beatKind = 'walk';
       return;
     }
+    // (M1.5d fix round 2) a person with no script (the quest's Mise and Ansel) keeps a short routine round where they stand
+    const T = !S && this.routines.live() ? this._tether(p) : null;
+    if (T && (T.n++ % 2) === 1) {
+      const q = T.stops[T.i++ % T.stops.length], g = p.group.position;
+      this.routines.recordLeg(p.archetype, 'tether', T.grid, [{ x: g.x, z: g.z }, { x: q.x, z: q.z }]);
+      p.showProps(this._propsFor(p, 'walk'));
+      p.walkTo(q.x, q.z, () => this._nextBeat(p));
+      p._beatKind = 'walk';
+      return;
+    }
     this._nextBeat(p);
+  }
+
+  /**
+   * (M1.5d fix round 2) THE ANCHOR'S SHORT ROUTINE for a person with no script of their own: src/game/runtime.js stands
+   * Mise and Ansel at their quest anchors and the idle beats ran them on one spot for two in-game hours (the 731b21a log:
+   * walkedM 0, 36 clip flips). Every other beat they walk 2.4-3.4 m to a spot beside the anchor, stand a beat there, and
+   * walk back; two spots on opposite sides when both are open. A spot is open when the walk grid round it holds it and the
+   * straight leg to it (`lineOpen`), or, off every walk grid, when a 0.25 m capsule marched along the leg every 0.25 m
+   * touches no static blocking collider and no water. None open: they stand at the anchor as before. Made once, on the
+   * first beat that asks, from where they stand then. Live only (`routines.live()`): in a ?shot film they stand.
+   */
+  _tether(p) {
+    if (p._tether !== undefined) return p._tether;
+    p._tether = null;
+    const R = this.routines;
+    R.grid?.();
+    const g = p.group.position, ax = g.x, az = g.z;
+    const G = this.ctx.nav?.walkGridAt?.(ax, az) || null;
+    const open = (x, z) => {
+      if (G) return G.contains(x, z, G.cell) && !G.blockedAt(ax, az) && !G.blockedAt(x, z) && G.lineOpen(ax, az, x, z);
+      const Cl = this.ctx.collision, W = this.ctx.water, T = this.ctx.terrain;
+      if (!Cl?.resolveCapsule || !T) return false;
+      const L = Math.hypot(x - ax, z - az), n = Math.max(1, Math.ceil(L / 0.25));
+      for (let k = 0; k <= n; k++) {
+        const px = ax + (x - ax) * k / n, pz = az + (z - az) * k / n;
+        _probe.set(px, T.getHeight(px, pz), pz);
+        if (Cl.resolveCapsule(_probe, 0.25, 1.6, { passes: 1, filter: (c) => c.blocking && c.kind !== 'npc' && !c.dynamic })?.hit) return false;
+        if (W?.depthAt && W.depthAt(px, pz) > 0.02) return false;
+      }
+      return true;
+    };
+    const stops = [];
+    const a0 = ((p.seed || 7) * 0.618) % (Math.PI * 2);
+    for (let side = 0; side < 2; side++) {
+      for (let k = 0; k < 8; k++) {
+        const a = a0 + side * Math.PI + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.35, r = 3.4 - (k % 3) * 0.5;
+        const x = ax + Math.sin(a) * r, z = az + Math.cos(a) * r;
+        if (open(x, z)) { stops.push({ x, z }); break; }
+      }
+    }
+    if (!stops.length) return null;
+    const home = { x: ax, z: az };
+    p._tether = { anchor: home, grid: !!G, stops: stops.length > 1 ? [stops[0], home, stops[1], home] : [stops[0], home], i: 0, n: 0 };
+    return p._tether;
   }
 
   /** Force a tier for a gate (null: back to distance). */

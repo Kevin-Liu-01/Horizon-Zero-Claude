@@ -272,6 +272,15 @@ export class Routines {
     return path;
   }
 
+  /** A leg walked outside the routines (the people system's anchor routine, index.js `_tether`), kept for the log's audit. */
+  recordLeg(id, act, grid, pts) {
+    const rec = { id, act, grid: !!grid, pts };
+    this.routes.push(rec);
+    if (this.routes.length > 64) this.routes.shift();
+    this.routeCount++;
+    return rec;
+  }
+
   _go(e) {
     const p = e.person;
     // skip waypoints already within 1.5 m (on the grid: only when the straight line on to the next one is open)
