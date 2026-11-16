@@ -82,6 +82,10 @@ const TAIL = { stem: 'dyn_wrapSash', name: 'wrapSash', C: 2, R: 8, wrung: 3, spl
  *  ahead of the forward knee's plane at a run (trade wind from behind her, the C8 staging; hem particles, one start) went
  *  from 61 / 38 % of frames (L / R) to 98-100 / 70-77 % at every compliance tried (2e-2 to 2e-4) and at u 0.5. */
 export const TETHER = { on: false, u: 0.75, slack: 0.02, alpha: 0.02 };
+/** The tongues' minimum distance, over their bind distance (round 3: 0.78, was 0.7 of a bind distance the oversized
+ *  lengths made 10 % wider: at the body's own scale 0.7 let the tongues cross in 46-48 of 1440 run and sprint frames) */
+/** The tail's stand-off off every collider and its hard margin over the grader's inner surfaces (m), and `tongueMin` */
+export const TAILC = { off: 0.028, hard: 0.052, tongueMin: 0.78 };
 /** hangPanel's cylinder centre (bind space z) */
 const PANEL_CZ = -0.02;
 
@@ -396,7 +400,7 @@ export class BreaCloth {
       G[i * 3] = Math.cos(th) * rad; G[i * 3 + 1] = y; G[i * 3 + 2] = PANEL_CZ + Math.sin(th) * rad;
     }
     // the grid on its root (root-local, from the assets only) and canonical (x the root's scale) for every length
-    const { Q0, X, Xw } = this._rootLocal(M.outfit, root, G, n);
+    const { Q0, X, Xw, sQ } = this._rootLocal(M.outfit, root, G, n);
     const pinned = new Uint8Array(n), lraPin = new Int32Array(n).fill(-1), mass = new Float64Array(n), area = new Float64Array(n);
     const I = (c, r) => c + r * C, D = (i, j) => Math.hypot(X[i * 3] - X[j * 3], X[i * 3 + 1] - X[j * 3 + 1], X[i * 3 + 2] - X[j * 3 + 2]);
     for (let c = 0; c < C; c++) pinned[I(c, 0)] = 1;
@@ -420,7 +424,7 @@ export class BreaCloth {
     // stand-off: the chord sag across a cell over the thigh, plus 4 mm, plus the particle's own 6 mm
     const off = 0.010;
     const P = new ClothPiece({ name, mat, C, R, X, Q0, root, pinned, cons, lraPin, mass, area, mask, off, offPerCollider: this._offFit(X, pinned, mask, off, root) });
-    P.fwd = fwd; P.stem = stem; P.kind = 'panel'; P.lee = 0.17; P.edges = true;
+    P.fwd = fwd; P.stem = stem; P.kind = 'panel'; P.lee = 0.17; P.edges = true; P.sQ = sQ;
     P.edgesLegs = stem !== 'dyn_panelB';   // (the fronts over the thighs: their leg edges every substep, solver.js)
     P.pinMask = (bits.thighL || 0) | (bits.thighR || 0);
     // (the hard pass's margin: a cell's chord sag on the inner thigh, 0.12 m along a row over a 0.078 m radius, 0.028 m
@@ -508,7 +512,7 @@ export class BreaCloth {
       _v1.set(G[i * 3], G[i * 3 + 1], G[i * 3 + 2]).applyMatrix4(Wm);
       Xw[i * 3] = _v1.x; Xw[i * 3 + 1] = _v1.y; Xw[i * 3 + 2] = _v1.z;
     }
-    return { Q0, X, Xw };
+    return { Q0, X, Xw, sQ };
   }
 
   /** Per collider, the stand-off a piece uses: `off`, or less where its bind grid already sits closer (the knot, the belt). */
@@ -621,7 +625,7 @@ export class BreaCloth {
     }
     // the knot row: both pinned at the chain's first point, a hair either side
     for (let c = 0; c < C; c++) { const i = c; G[i * 3] = CP[0].x + side[0].x * lMean[C + c] * 0.6; G[i * 3 + 1] = CP[0].y + side[0].y * lMean[C + c] * 0.6; G[i * 3 + 2] = CP[0].z + side[0].z * lMean[C + c] * 0.6; }
-    const { Q0, X, Xw } = this._rootLocal(wrap, root, G, n);
+    const { Q0, X, Xw, sQ } = this._rootLocal(wrap, root, G, n);
     const pinned = new Uint8Array(n), lraPin = new Int32Array(n).fill(-1), mass = new Float64Array(n), area = new Float64Array(n);
     const I = (c, r) => c + r * C, D = (i, j) => Math.hypot(X[i * 3] - X[j * 3], X[i * 3 + 1] - X[j * 3 + 1], X[i * 3 + 2] - X[j * 3 + 2]);
     for (let c = 0; c < C; c++) pinned[I(c, 0)] = 1;
@@ -642,17 +646,19 @@ export class BreaCloth {
     const mask = ['torso0', 'torso1', 'torso2', 'torso3', 'thighL', 'thighR', 'neck', 'head', 'upArmL', 'upArmR', 'foreArmR', 'handR', 'foreArmL', 'quiver', 'stowLance', 'stowBow', 'heldLance', 'heldBow'].reduce((m, k) => m | (bits[k] || 0), 0);
     // (step 2: 0.028, was 0.020: the strip turned edge-on to the back in a crouch put its edge, 0.045 m off its two
     //  particles, inside the grader's torso)
-    const off = 0.028;
+    const off = TAILC.off;
+    // (round 3: kept at 0.028. At 0.032-0.036 all round the tongues crossed in 71-270 of 1440 run and sprint frames (six
+    //  starts); at 0.028 the strip's edge meets her back by 2.6 mm in a slide that follows the Node sweep's idle hash)
     const P = new ClothPiece({ name, mat, C, R, X, Q0, root, pinned, cons, lraPin, mass, area, mask, off, offPerCollider: this._offFit(X, pinned, mask, off, root), ground: false });
     // (the tongues' minimum: a little under their bind distance, so the pair never crosses but may close)
-    for (let c = 0; c < P.nc; c++) if (P.ck[c] === 1) P.cr[c] *= 0.7;
-    P.fwd = fwd; P.stem = stem; P.kind = 'tail'; P.lee = 0;
+    for (let c = 0; c < P.nc; c++) if (P.ck[c] === 1) P.cr[c] *= TAILC.tongueMin;
+    P.fwd = fwd; P.stem = stem; P.kind = 'tail'; P.lee = 0; P.sQ = sQ;
     // (step 2: 0.65 of the air: with the heavier damping the tail stood at 59-60 deg in 5.5 m/s from her front, band 25-50)
     P.airK = 0.65;   // (the head is narrower than the tail's swing: no lee)
     // (the tail's strip is 0.09 m wide and cupped about the two particles of a row: its edges stand 0.02 m off them)
     // (step 2: 0.052, was 0.030: the strip's cupped edge, or the strip turned edge-on, still met the grader's torso by
     //  1.6-5 mm standing and in a crouch)
-    P.hard = 0.052;
+    P.hard = TAILC.hard;
     // (...but never more than the bind grid's own clearance from an inner surface, less 2 mm, collider by collider: the
     //  wrung root sits close over the nape, and a hard pass wider than that pushed it out every frame against its
     //  constraints, a buzz that never slept)

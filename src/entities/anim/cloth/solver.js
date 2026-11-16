@@ -126,6 +126,8 @@ export class ClothPiece {
     }
     this.asleep = false; this.stillT = 0; this.sleeps = 0; this.wakes = 0;
     this.restScale = 1;
+    /** the root's scale the canonical lengths were built at (0: lengths are taken as they are) */
+    this.sQ = 0;
     // (declared here, set by the rig: one shape for every piece)
     this._act = null; this.fwd = new Float64Array([0, 0, 1]); this.lee = 0; this.stem = ''; this.kind = '';
     this.pinMask = 0; this.hard = 0.015; this.hardC = null; this.edges = false; this.edgesLegs = false; this.airK = 1;
@@ -285,6 +287,12 @@ export class ClothSystem {
 
   _stepPiece(p, dt, t, n, h) {
     const r = p.root, mat = p.mat, sh = mat.share;
+    /* (round 3, the SIZE: every rest length (structural, shear, bending, the attachment, the strain limit) follows the root's
+     * scale now over the scale it was built at. The rig is built in the skin's bind pose (8b28266), where her armature's
+     * world scale is 1.069; in the game it is 0.969. The pins ride the root at its scale now, but the lengths were the bind
+     * pose's: every panel and the tail 10.3 % too long and too wide for the body they hung on (rows 8-11 % wider than the
+     * belt they hang from, the hems lower than the asset puts them) */
+    if (p.sQ > 0) p.restScale = r.s / p.sQ;
     const x = p.x, xp = p.xp, v = p.v, w = p.w, N = p.n;
     // ---- the root's motion this frame: what is carried, what is lag
     const dx = r.p[0] - r.pp[0], dy = r.p[1] - r.pp[1], dz = r.p[2] - r.pp[2];

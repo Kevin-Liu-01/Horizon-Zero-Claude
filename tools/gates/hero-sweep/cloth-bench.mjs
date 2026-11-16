@@ -135,16 +135,18 @@ function stretch(R) {
       if (P.ca[c] !== 0 || P.ck[c] !== 0) continue;
       const i = P.ci[c * 2], j = P.ci[c * 2 + 1];
       const d = Math.hypot(P.x[i * 3] - P.x[j * 3], P.x[i * 3 + 1] - P.x[j * 3 + 1], P.x[i * 3 + 2] - P.x[j * 3 + 2]);
-      edge = Math.max(edge, d / P.cr[c]);
+      // (round 3: the rest length at her scale now, `restScale`: the canonical lengths are the bind pose's)
+      const L0 = P.cr[c] * (P.restScale || 1);
+      edge = Math.max(edge, d / L0);
       // (--stretch-log: which edges pass 1.03, by piece, kind and rows)
-      if (STRETCH_LOG && d / P.cr[c] > 1.03) { const ri = Math.floor(i / P.C), rj = Math.floor(j / P.C), k = `${P.name} ${ri === rj ? 'across' : 'along'} r${ri}c${i % P.C}-r${rj}c${j % P.C}${P.contact[i] || P.contact[j] ? ' contact' : ''}`; STRETCH_LOG[k] = Math.max(STRETCH_LOG[k] || 0, +(d / P.cr[c]).toFixed(4)); }
+      if (STRETCH_LOG && d / L0 > 1.03) { const ri = Math.floor(i / P.C), rj = Math.floor(j / P.C), k = `${P.name} ${ri === rj ? 'across' : 'along'} r${ri}c${i % P.C}-r${rj}c${j % P.C}${P.contact[i] || P.contact[j] ? ' contact' : ''}`; STRETCH_LOG[k] = Math.max(STRETCH_LOG[k] || 0, +(d / L0).toFixed(4)); }
     }
     for (let col = 0; col < P.C; col++) {
       let L = 0, L0 = 0;
       for (let r = 1; r < P.R; r++) {
         const a = col + (r - 1) * P.C, b = col + r * P.C;
         L += Math.hypot(P.x[a * 3] - P.x[b * 3], P.x[a * 3 + 1] - P.x[b * 3 + 1], P.x[a * 3 + 2] - P.x[b * 3 + 2]);
-        for (let c = 0; c < P.nc; c++) if ((P.ci[c * 2] === a && P.ci[c * 2 + 1] === b) || (P.ci[c * 2] === b && P.ci[c * 2 + 1] === a)) { L0 += P.cr[c]; break; }
+        for (let c = 0; c < P.nc; c++) if ((P.ci[c * 2] === a && P.ci[c * 2 + 1] === b) || (P.ci[c * 2] === b && P.ci[c * 2 + 1] === a)) { L0 += P.cr[c] * (P.restScale || 1); break; }
       }
       if (L0 > 0) path = Math.max(path, L / L0);
     }
