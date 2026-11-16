@@ -67,21 +67,23 @@ export async function probe(frame) {
         C.scene.add(m);
         cards.push({ d, m, p, size });
       });
-      const b = read();
+      // the same pixels with and without the cards: each card's contrast against exactly what it hides
+      const withC = read().slice();
+      for (const c of cards) c.m.visible = false;
+      const noC = read();
       const rows = [];
       for (const c of cards) {
         const s = proj(c.p);
-        const pxR = (1.6 * D2R) / (cam.fov * D2R / 2) * (H / 2) * 0.55;    // inside the card
-        const cx = Math.round(s.x * sx), cy = Math.round((H - s.y) * sy);
-        const rIn = pxR * sx, rOut0 = pxR * sx * 2.4, rOut1 = pxR * sx * 3.4;
-        let ci = 0, cn = 0, bi = 0, bn = 0;
-        for (let yy = Math.floor(cy - rOut1); yy <= cy + rOut1; yy += 2) for (let xx = Math.floor(cx - rOut1); xx <= cx + rOut1; xx += 2) {
+        const pxR = (1.6 * D2R) / Math.tan(cam.fov * D2R / 2) * (H / 2) * 0.7;    // inside the card
+        const cx = Math.round(s.x * sx), cy = Math.round((H - s.y) * sy), rIn = pxR * sx;
+        let ci = 0, bi = 0, cn = 0, hid = 0;
+        for (let yy = Math.floor(cy - rIn); yy <= cy + rIn; yy += 2) for (let xx = Math.floor(cx - rIn); xx <= cx + rIn; xx += 2) {
           if (xx < 0 || yy < 0 || xx >= bw || yy >= bh) continue;
-          const r = Math.max(Math.abs(xx - cx), Math.abs(yy - cy));
-          if (r <= rIn) { ci += yLin(b, xx, yy); cn++; } else if (r >= rOut0 && r <= rOut1) { bi += yLin(b, xx, yy); bn++; }
+          const a = yLin(withC, xx, yy), z = yLin(noC, xx, yy);
+          if (Math.abs(a - z) < 1e-6) { hid++; continue; }     // something nearer than the card stands there
+          ci += a; bi += z; cn++;
         }
-        const yc = cn ? ci / cn : null, yb = bn ? bi / bn : null;
-        rows.push({ d: c.d, T: r3(T(c.d)), yCard: yc && r3(yc), yBg: yb && r3(yb), contrast: yc != null && yb ? r3((yb - yc) / yb) : null, px: [Math.round(s.x), Math.round(s.y)] });
+        rows.push({ d: c.d, T: r3(T(c.d)), yCard: cn ? r3(ci / cn) : null, yBg: cn ? r3(bi / cn) : null, contrast: cn && bi > 0 ? r3((bi - ci) / bi) : null, seen: cn, hidden: hid, px: [Math.round(s.x), Math.round(s.y)] });
       }
       for (const c of cards) { C.scene.remove(c.m); c.m.geometry.dispose(); }
       mat.dispose();

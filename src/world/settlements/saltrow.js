@@ -175,7 +175,7 @@ export class Saltrow {
       take(`b-${b.id}-body`, body, M);
       take(`b-${b.id}-flora`, body, M);
       take(`b-${b.id}-glass`, glass, M);
-      this.buildings.push({ id: b.id, kind: b.kind, x: p.x, y, z: p.z, yaw: p.yaw, w: b.w, d: b.d, h: b.h, tone: b.tone, step: b.step });
+      this.buildings.push({ id: b.id, kind: b.kind, x: p.x, y, z: p.z, yaw: p.yaw, w: b.w, d: b.d, h: b.h, tone: b.tone, step: b.step, hut: b.hut || null });
       if (b.kind === 'guild') {
         const lx = 1.55, lz = b.d / 2 + 0.42;
         this.lamps.push({ id: 'guild-lantern', kind: 'lantern', x: p.x + cy * lx + sy * lz, y: y + 2.89, z: p.z - sy * lx + cy * lz });

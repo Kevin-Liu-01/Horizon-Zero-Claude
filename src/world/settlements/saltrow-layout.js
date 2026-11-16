@@ -20,6 +20,10 @@ import { REST } from '../island/sites.js';
  *   balcony  the orchil-violet balcony on the first floor (two-storey houses only)
  *   flora    bougainvillea up the front's right corner and over the door
  *   sideBalcony  +1 / -1: a second balcony on that side's upper floor (local +x / -x)
+ *   hut      a roof hut (the stair head or water tank of a flat roof) { w, d, h, x, z }, set back toward the house's rear,
+ *            on houses with no raised block (F24 at 6fa199d: "a flat block": from behind, the town's rooflines read as
+ *            one parapet). No glass: the town's lit-window count is the kit's as before. Kept off the left front row
+ *            (l1-l4), whose roofs frame the sighting kite from the cistern (KITE)
  *   kind     'house' | 'guild' | 'brea'
  * No two neighbours along a row share a parapet height (F22's written target): `rooflineCheck()` says so.
  */
@@ -58,7 +62,7 @@ function row(side, s0, list, gap = 0) {
   });
 }
 
-export const BUILDINGS = Object.freeze([
+const BUILDINGS0 = [
   // Brea's house: one storey at the pan edge, its door toward her cistern
   B('brea', 3.0, -1, 4.6, 6.2, 6.0, H1 - 0.2, 0, { kind: 'brea', step: st(2.6, 2.6, 1.9, 1.5, -1.4) }),
   // the main street, left (NW) and right (SE) rows, terraced; heights alternate along each row
@@ -97,7 +101,20 @@ export const BUILDINGS = Object.freeze([
   // the pan edge: a house below Brea's, and the foot of the right back row
   B('w1', -5.6, -1, 4.2, 6.8, 6.4, H2 - 0.8, 1, { balcony: true }),
   B('rb0', 12.2, 1, 12.8, 7.2, 6.8, H2 - 0.1, 0),
-]);
+];
+
+/** The roof huts (see `hut` above): [id, w, d, h, side of centre (-1 left, +1 right, 0 middle)], at the rear. */
+const HUTS = [
+  ['r1', 2.4, 2.1, 2.0, -1], ['r3', 2.6, 2.2, 2.2, 1], ['r5', 2.2, 2.0, 1.9, -1], ['rb2', 2.6, 2.3, 2.1, 1],
+  ['u4', 2.4, 2.2, 2.2, -1], ['u1', 2.2, 2.0, 1.9, 1], ['lb1', 2.4, 2.1, 2.0, 1], ['lb3', 2.6, 2.2, 2.3, -1],
+  ['rb0', 2.2, 2.0, 1.9, -1], ['w1', 2.2, 2.0, 1.8, 1],
+];
+export const BUILDINGS = Object.freeze(BUILDINGS0.map((b) => {
+  const h = HUTS.find((q) => q[0] === b.id);
+  if (!h || b.step) return b;
+  const [, w, d, hh, side] = h;
+  return Object.freeze({ ...b, hut: st(w, d, hh, side * (b.w / 2 - w / 2 - 0.55), -(b.d / 2 - d / 2 - 0.5)) });
+}));
 
 /** A building's world placement: centre (engine x, z), yaw (local +z, its front, turned to the world), footprint. */
 export function placeOf(b) {
@@ -291,8 +308,9 @@ export function townColliders({ buildings, breakwater = null, ground = () => 0 }
   const out = [];
   for (const b of buildings) {
     out.push({ kind: 'landmark', shape: { type: 'box', c: [b.x, b.y + b.h / 2 - 0.4, b.z], half: [b.w / 2, b.h / 2 + 0.4, b.d / 2], yaw: -b.yaw } });
-    if (b.step) {
-      const s = b.step, sy = Math.sin(b.yaw), cy = Math.cos(b.yaw);
+    for (const s of [b.step, b.hut]) {
+      if (!s) continue;
+      const sy = Math.sin(b.yaw), cy = Math.cos(b.yaw);
       const x = b.x + cy * s.x + sy * s.z, z = b.z - sy * s.x + cy * s.z, y0 = b.y + b.h - 0.5;
       out.push({ kind: 'landmark', shape: { type: 'box', c: [x, y0 + s.h / 2, z], half: [s.w / 2, s.h / 2, s.d / 2], yaw: -b.yaw } });
     }

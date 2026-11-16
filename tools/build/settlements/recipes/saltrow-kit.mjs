@@ -100,19 +100,35 @@ function limeShade(seed, footY = 0) {
 }
 
 const basaltShade = (seed) => (p, n, k) => k * (0.86 + 0.28 * vnoise3(p.x * 4 + seed, p.y * 4, p.z * 4));
+/** A hash in [0, 1) that draws nothing from a building's R(): F24's finish (quoins, washes) must not move the R() stream that
+ * decides which windows are lit (F07 counts them). */
+const hash01 = (a, b = 0, c = 0) => { const h = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453; return h - Math.floor(h); };
+/** An sRGB hex scaled per channel (the per-house wash). */
+const toneMul = (hex, r, g, b) => {
+  const c = (v, k) => Math.max(0, Math.min(255, Math.round(v * k)));
+  return (c((hex >> 16) & 255, r) << 16) | (c((hex >> 8) & 255, g) << 8) | c(hex & 255, b);
+};
+/* M1a world debt (F24 at 6fa199d: "heavy regular quoins"; the town read as one flat block at 30-90 m): the corner stones are
+ * weathered basalt in four tones, not one near-black; one course in five is washed over with the house's lime (the lime
+ * runs over the stone), and the long and short stones vary +-0.07 m. Still one R() per course, as before */
+const QUOIN = [0x4a443f, 0x544c45, 0x3f3a36, 0x5d554d];
 
 /** Quoins up one vertical corner: courses alternate long and short across the two faces. */
-function quoins(bucket, cx, cz, sx, sz, y0, y1, R) {
+function quoins(bucket, cx, cz, sx, sz, y0, y1, R, wash = null) {
   const course = 0.34;
   let i = 0;
   for (let y = y0; y + course * 0.6 < y1; y += course, i++) {
     const hgt = Math.min(course - 0.03, y1 - y - 0.02);
-    const a = i & 1 ? 0.62 : 0.34, b = i & 1 ? 0.34 : 0.62;
-    const out = 0.035;
+    const j = hash01(cx * 3.1 + sx, cz * 2.7 + sz, i), k = hash01(i, cx * 1.3, cz * 1.9 + 5.1);
+    const a = (i & 1 ? 0.62 : 0.34) + (j - 0.5) * 0.14, b = (i & 1 ? 0.34 : 0.62) + (k - 0.5) * 0.14;
+    const out = 0.025;
+    R();                                                  // the course's old tone draw, kept so the stream is unchanged
+    const washed = wash != null && hash01(i * 1.7, cx + cz, sx * 3 + sz) < 0.2;
+    const t1 = washed ? wash : QUOIN[(j * QUOIN.length) | 0], t2 = washed ? wash : QUOIN[(k * QUOIN.length) | 0];
     box(bucket, cx - sx * (a / 2 - out), y + hgt / 2, cz - sz * (0.18 - out) + sz * 0.0, a, hgt, 0.36 + out,
-      { surf: 'bisque', tone: R() < 0.3 ? BASALT_HI : BASALT, wear: 1.2, colorFn: basaltShade(i) });
+      { surf: 'bisque', tone: t1, wear: 1.2, colorFn: basaltShade(i) });
     box(bucket, cx - sx * (0.18 - out), y + hgt / 2, cz - sz * (b / 2 - out), 0.36 + out, hgt, b,
-      { surf: 'bisque', tone: BASALT, wear: 1.2, colorFn: basaltShade(i + 7) });
+      { surf: 'bisque', tone: t2, wear: 1.2, colorFn: basaltShade(i + 7) });
   }
 }
 
@@ -321,7 +337,10 @@ function partyWall(b, sideSign) {
 function building(b, idx) {
   const R = rng(0x5a17 + idx * 977);
   const body = new Bucket(`b-${b.id}-body`), glass = new Bucket(`b-${b.id}-glass`), flora = new Bucket(`b-${b.id}-flora`);
-  const tone = TONES[b.tone];
+  // M1a world debt (F24): each house's wash is its tone renewed in its own year: value +-4 %, a little warmer or cooler
+  const hv = hash01(idx * 7.3, 1.1), hw = hash01(idx * 3.7, 2.3);
+  const tone = toneMul(TONES[b.tone], 0.96 + 0.08 * hv + 0.015 * (hw - 0.5), 0.96 + 0.08 * hv, 0.96 + 0.08 * hv - 0.03 * (hw - 0.5));
+  const wash = toneMul(tone, 0.86, 0.85, 0.83);
   const guild = b.kind === 'guild';
   const w = b.w, d = b.d, roofY = b.h - PARAPET;
   const lime = { surf: 'bisque', tone, wear: 0.4, colorFn: limeShade(idx * 13.7, PLINTH) };
@@ -337,7 +356,7 @@ function building(b, idx) {
   box(body, 0, b.h + 0.03, d / 2 - 0.11, w + 0.06, 0.06, 0.28, { surf: 'bisque', tone, wear: 0.8 });
   box(body, 0, b.h + 0.03, -d / 2 + 0.11, w + 0.06, 0.06, 0.28, { surf: 'bisque', tone, wear: 0.8 });
   // quoins at the four corners
-  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) quoins(body, sx * w / 2, sz * d / 2, sx, sz, PLINTH, b.h, R);
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) quoins(body, sx * w / 2, sz * d / 2, sx, sz, PLINTH, b.h, R, wash);
   if (guild) {
     // a basalt cornice band at the roof and at the first floor
     box(body, 0, roofY + 0.05, d / 2 + 0.05, w + 0.1, 0.16, 0.12, { surf: 'bisque', tone: BASALT_HI, wear: 1.1, colorFn: basaltShade(31) });
@@ -348,11 +367,20 @@ function building(b, idx) {
     const s = b.step, y1 = roofY + s.h;
     limeBlock(body, s.x, s.z, s.w, s.d, roofY - 0.02, y1, { ...lime, colorFn: limeShade(idx * 13.7 + 5, roofY) });
     box(body, s.x, y1 + 0.03, s.z, s.w + 0.08, 0.06, s.d + 0.08, { surf: 'bisque', tone, wear: 0.8 });
-    for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) quoins(body, s.x + sx * s.w / 2, s.z + sz * s.d / 2, sx, sz, roofY, y1, R);
+    for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) quoins(body, s.x + sx * s.w / 2, s.z + sz * s.d / 2, sx, sz, roofY, y1, R, wash);
     // a small window on its front
     const F = mat(s.x, 0, s.z + s.d / 2);
     windows.push(windowAt(body, glass, F, 0, roofY + s.h * 0.55, 0.6, 0.7, R, { lit: R() < 0.5, shutters: false }));
     // a door out onto the roof from it
+  }
+  // M1a world debt (F24): the roof hut (layout `hut`), a stair head at the house's rear: a lime block with its coping, a
+  // plank door toward the front, no glass and no R() draw (the windows' lit pattern stays the kit's)
+  if (b.hut) {
+    const s = b.hut, y1 = roofY + s.h;
+    limeBlock(body, s.x, s.z, s.w, s.d, roofY - 0.02, y1, { ...lime, colorFn: limeShade(idx * 13.7 + 9, roofY) });
+    box(body, s.x, y1 + 0.03, s.z, s.w + 0.1, 0.06, s.d + 0.1, { surf: 'bisque', tone, wear: 0.8 });
+    box(body, s.x, roofY + 0.9, s.z + s.d / 2 + 0.02, 0.78, 1.75, 0.05, { surf: 'bisque', tone: WOOD_DK, wear: 1.1 });
+    box(body, s.x, roofY + 1.82, s.z + s.d / 2 + 0.04, 0.95, 0.1, 0.08, { surf: 'bisque', tone: WOOD_DK, wear: 1 });
   }
   // chimney and a water spout or two
   if (idx % 2 === 0 || guild) {

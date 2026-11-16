@@ -2625,7 +2625,10 @@ export class Environment {
             if (cal > 0.001) {
               float cr = ang / 0.0175;               // 1.0° radius, soft edge
               float cm = 1.0 - smoothstep(0.80, 1.15, cr);
-              col = mix(col, uDisc, cm * cal * horizonDim * smoothstep(0.0, 0.5, uCalima.y));
+              // M1.1i: never dimmer than the dust round it (at 3058d33 the noon disc, solved to show #F2A27E, sat under the
+              // dust's own brightness and did not show at all): at least x1.45 the dust it sits in, warmed
+              vec3 discC = max(uDisc, col * vec3(1.45, 1.24, 1.04));
+              col = mix(col, discC, cm * cal * horizonDim * smoothstep(0.0, 0.5, uCalima.y));
             }
           }
           // IBL capture: below the horizon reads the warm ground bounce

@@ -23,7 +23,7 @@ function townWorld() {
   const nav = new Nav(ctx, collision);
   ctx.nav = nav;
   const town = {};
-  town.buildings = BUILDINGS.map((b) => { const p = placeOf(b); return { id: b.id, x: p.x, y: FLAT, z: p.z, yaw: p.yaw, w: b.w, d: b.d, h: b.h, step: b.step }; });
+  town.buildings = BUILDINGS.map((b) => { const p = placeOf(b); return { id: b.id, x: p.x, y: FLAT, z: p.z, yaw: p.yaw, w: b.w, d: b.d, h: b.h, step: b.step, hut: b.hut || null }; });
   const bw = HARBOUR.breakwater, yaw = Math.PI - bw.bearing * D2R;
   town.breakwater = { x: bw.x, y: FLAT, z: bw.z, yaw, length: bw.length, width: bw.width };
   town.colliderCount = 0;
@@ -146,7 +146,7 @@ test('the sighting kite: its line clear of the ground, against the sky from the 
       if (Math.abs(lx) > b.w / 2 || Math.abs(lz) > b.d / 2) continue;
       const fy = heightAt(p.x + s * (b.d / 2 + 0.4), p.z + c * (b.d / 2 + 0.4)) + 0.04;
       let top = fy + b.h + (b.kind === 'guild' ? 2.2 : 0);
-      if (b.step && Math.abs(lx - b.step.x) <= b.step.w / 2 && Math.abs(lz - b.step.z) <= b.step.d / 2) top = fy + b.h - 0.5 + b.step.h;
+      for (const q of [b.step, b.hut]) if (q && Math.abs(lx - q.x) <= q.w / 2 && Math.abs(lz - q.z) <= q.d / 2) top = Math.max(top, fy + b.h - 0.5 + q.h);
       roof = Math.max(roof, Math.atan2(top - (eye - 0.1), r) / D2R);
     }
   }
