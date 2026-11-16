@@ -377,7 +377,7 @@ export class SliceVerbs {
 
   /**
    * The gathered cane stands up out of the left fist (fix round 2: along the fist's axis it ran level, through her body,
-   * like a spear): its stalks turned every frame to her up, leaning a little ahead and out to her left (char space).
+   * like a pole held level): its stalks turned every frame to her up, leaning a little ahead and out to her left (char space).
    */
   _caneUp() {
     const c = this._vb?.props?.cane, hand = this.bones.hand_l;
