@@ -10,6 +10,9 @@ import { DITCH } from '../world/island/reedmask.js';
 import { SLOT } from '../core/save.js';
 import { vec3 } from '../world/settlements/brazier.js';
 
+/** Which armour each rung puts on her (armory's variant ids, src/hero/variants.js; BIBLE §8.4). */
+export const RUNG_ARMOR = Object.freeze({ starter: 'pan-1', scout: 'pan-2' });
+
 /**
  * THE SYSTEMS RUNTIME (BUILD M1.6a, M1.6c, M1.6f): the live half of the quest spine, the Braziers and save v6.
  * `installGame(ctx)` runs after `installProgression`; it publishes
@@ -191,8 +194,19 @@ export class SystemsGame {
     for (const [id, n] of r.items) inv?.add?.(id, n);
     this.rung = r.rung;
     this.braziers.unlock(r.unlockBrazier);
+    // M1.6l: the quest pays what the bible says it pays, and she wears it from Ansel's door (its perk, Shrug, with it);
+    // the Character page can put the Starter back on
+    this.wear(r.rung);
     this.ctx.events?.emit?.('rung-granted', { rung: r.rung });
     this.ctx.progression?.banner?.(this.S.systems.reward.head, words.join('  ·  '), 'quest');
+  }
+
+  /** Put a rung's armour on her through armory's loadout (a deferred row loads; resolves with the loadout's info, or null). */
+  wear(rung) {
+    const L = this.ctx.player?.hero?.loadout, id = RUNG_ARMOR[rung];
+    if (!L?.equipArmor || !id || L.armorId === id) return Promise.resolve(null);
+    this._wearing = L.equipArmor(id).catch((err) => { console.warn('[systems] wear:', err?.message || err); return null; });
+    return this._wearing;
   }
 
   /* ------------------------------------------------- world stand-ins */
@@ -347,6 +361,7 @@ export class SystemsGame {
     const ctx = this.ctx;
     ctx.environment?.setTime?.(7);
     this.rung = 'starter';
+    this.wear('starter');
     this.braziers.newGame(7);
     this.spine.start();
     if (ctx.progression) ctx.progression.tracked = QUEST_ID;

@@ -28,8 +28,16 @@ test('A-outfit-hide-fits: the Starter\'s own cover of Brea fits the shipped Brea
   assert.deepEqual({ count: h.count, tris: h.tris }, b, 'outfit-pan-1.glb was built against another brea.glb: rebuild it (tools/build/recipes/outfit-pan-1.mjs)');
 });
 
-// (pan-2, pan-3 and ash-1 were last built against a 9,153-vertex Brea; they are not in the M1a frames and fall back to their hide bit)
-for (const rel of ['public/models/armory/armor-pan-2.glb', 'public/models/armory/armor-pan-3.glb', 'public/models/armory/armor-ash-1.glb']) {
+// M1.6l: rung 2 (the Scout) is fitted over the Starter (BIBLE §8.4): its file holds only its own pieces and the runtime binds the
+// Starter's set under it (src/hero/outfit.js `r5Outfit.over`), so Brea's cover is the Starter's own, tested above
+test('A-outfit-hide-fits: armor-pan-2.glb is fitted over the Starter and carries no cover of its own', async () => {
+  const x = (await (await io()).read(path.join(ROOT, 'public/models/armory/armor-pan-2.glb'))).getRoot().getAsset().extras?.r5Outfit;
+  assert.equal(x?.over, 'heroOutfitPan1');
+  assert.equal(x?.hide, undefined);
+});
+
+// (pan-3 and ash-1 were last built against a 9,153-vertex Brea; they are not in the M1a frames and fall back to their hide bit)
+for (const rel of ['public/models/armory/armor-pan-3.glb', 'public/models/armory/armor-ash-1.glb']) {
   test(`A-outfit-hide-fits: ${path.basename(rel)}`, { todo: 'built against an older Brea (9,153 vertices); rebuild with the set' }, async () => {
     const b = await breaSkin(), h = await hideOf(rel);
     assert.deepEqual({ count: h?.count, tris: h?.tris }, b);

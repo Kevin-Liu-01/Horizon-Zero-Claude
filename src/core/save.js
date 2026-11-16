@@ -114,6 +114,7 @@ export class SaveSystem {
         weapon: combat?.activeWeapon?.id ?? null,
         activeAmmo,
         rung: sys?.rung ?? 'starter',
+        wear: ctx.player?.hero?.loadout?.armorId ?? null,
         quick: (ctx.quickslots?.slots ?? []).map((s) => (s?.earned ? s.kind : null)),
       },
       legacy: { prog: this.prog?.serialize?.() ?? null, roster: this._rosterSnapshot() },
@@ -248,6 +249,10 @@ export class SaveSystem {
       }
       if (data.loadout?.weapon) combat.setWeapon?.(data.loadout.weapon, { silent: true });
       if (ctx.systemsGame) ctx.systemsGame.rung = data.loadout?.rung ?? 'starter';
+      // the armour she had on (M1.6l): put back through armory's loadout, never one above the rung she owns
+      const L = ctx.player?.hero?.loadout, want = data.loadout?.wear ?? 'pan-1';
+      const owned = want === 'pan-1' || (want === 'pan-2' && (data.loadout?.rung ?? 'starter') !== 'starter');
+      if (L?.equipArmor && owned && L.armorId !== want) L.equipArmor(want).catch((err) => console.warn('[save] wear:', err?.message || err));
     });
 
     step('hour+weather', () => {

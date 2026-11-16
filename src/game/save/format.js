@@ -79,6 +79,7 @@ export function makeRecord(s, { kind = 'named', reason = 'manual', slot = 1, sav
       weapon: s.loadout?.weapon ?? null,
       activeAmmo: { ...(s.loadout?.activeAmmo || {}) },
       rung: String(s.loadout?.rung ?? 'starter'),
+      wear: s.loadout?.wear == null ? null : String(s.loadout.wear),
       quick: Array.isArray(s.loadout?.quick) ? s.loadout.quick.map((q) => (q == null ? null : String(q))) : [],
     },
     legacy: s.legacy ?? null,

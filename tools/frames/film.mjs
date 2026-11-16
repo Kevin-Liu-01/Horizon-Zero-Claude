@@ -76,6 +76,9 @@ const CLIP_PHASES = flag('--clip-phases') ? flag('--clip-phases').split(',').map
 // stagings that differ say which field carried over
 const REPEAT_ONLY = flag('--repeat-only') ? new Set(flag('--repeat-only').split(',').map((s) => s.trim())) : null;
 const STATE_PROBE = args.includes('--state-probe');
+// --wear <armour id> (M1b systems, M1.6l): after boot she wears this armory variant through her loadout (a deferred row
+// loads), and the rung it belongs to is hers (the Character page shows it worn); every frame of the run is filmed in it
+const WEAR = flag('--wear');
 /** Per-pixel difference of two raw RGB buffers (w x h), over the whole frame or a box [x0, y0, x1, y1]: the share of
  * pixels whose largest channel difference passes TH (8-bit), the largest difference, the mean. */
 const DIFF_TH = 10;
@@ -194,6 +197,17 @@ try {
   await page.waitForFunction('window.__READY__ === true', { timeout: 240000, polling: 500 });
   await sleep(6000);   // people and the deferred variety stream in behind the first frame
   run.bootSeconds = Math.round((Date.now() - t0) / 1000);
+  if (WEAR) {
+    run.wear = await page.evaluate(async (id) => {
+      const C = window.__CTX__, L = C?.player?.hero?.loadout;
+      if (!L?.equipArmor) return { error: 'no loadout' };
+      if (C.systemsGame && id === 'pan-2') C.systemsGame.rung = 'scout';
+      const info = await L.equipArmor(id);
+      C.player.hero.update?.(0);
+      return { armorId: L.armorId, perk: L.perk, row: info?.row ?? null, flagDuration: C.machines?.perception?.flagDuration ?? null };
+    }, WEAR).catch((e) => ({ error: String(e?.message || e).slice(0, 200) }));
+    log(`wearing ${WEAR}: ${JSON.stringify(run.wear)}`);
+  }
   run.three = await page.evaluate(() => window.__calShaderPatchAudit?.report?.().revision ?? null).catch(() => null);
   run.chrome = await browser.version();
   log(`booted in ${run.bootSeconds} s; filming ${frames.length} frames`);

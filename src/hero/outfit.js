@@ -155,22 +155,35 @@ export class HeroOutfit {
     if (this.row === row) return this.info();
     if (this.row) this.unequip();
     const meta = entry.extras?.r5Outfit || {};
+    // M1.6l: a rung "cut to be fitted over the one below it" (BIBLE §8.4; rung 2, the Scout) carries only its own pieces and names
+    // the set it is fitted over (`r5Outfit.over`): that set is bound first, as it is worn alone, and the rung's pieces over it.
+    // The set under it gives the cover of her body, the shadow proxy and the sash's hang
+    const under = meta.over ? this.ctx.assets?.models?.[meta.over] : null;
+    if (meta.over && !under) throw new Error(`[hero] outfit row "${row}" is fitted over "${meta.over}", which is not loaded`);
+    const uMeta = under ? (under.extras?.r5Outfit || {}) : null;
+    if (under) { this._prepare(under, uMeta); this._ensureSockets(under); }
     this._prepare(entry, meta);
     this._ensureSockets(entry);
     // the two hero casters (plan §4.1, <= 2 x 3 cascades): body skin + outfit
-    this.meshes = bindPart(this.player.model, entry.root, `outfit:${row}`, { castShadow: true });
+    const below = under ? bindPart(this.player.model, under.root, `outfit:${meta.over}`, { castShadow: true }) : [];
+    const own = bindPart(this.player.model, entry.root, `outfit:${row}`, { castShadow: true });
+    // (a fitted-over rung's pieces cast no shadow: its hat's two hidden copies would cast, the piece mask is not in the depth pass)
+    for (const m of own) if (under) m.userData.outfitOver = true;
+    this.meshes = [...below, ...own];
+    this.underRow = under ? meta.over : null;
     this._bindCaster();
-    this._initSwing(entry, meta);
+    this._initSwing(under || entry, uMeta || meta);
     this.set = meta.set || row;
     this.variant = meta.variant || row;
     this.row = row;
     this.hasPieces = !!meta.hasPieces;
     // the set's own cover of Brea's body when it carries one for this body (C-06: the Starter bares her arms), else its bit
-    if (this.body && meta.hide) {
-      const cache = entry.root.userData;
-      if (cache.__ownMask === undefined) cache.__ownMask = this.body.ownMask(meta.hide);
-      this.body.apply(meta.hideBit || 1, cache.__ownMask);
-    } else this.body?.apply(meta.hideBit || 0);
+    const cover = under && !meta.hide ? { meta: uMeta, root: under.root } : { meta, root: entry.root };
+    if (this.body && cover.meta.hide) {
+      const cache = cover.root.userData;
+      if (cache.__ownMask === undefined) cache.__ownMask = this.body.ownMask(cover.meta.hide);
+      this.body.apply(cover.meta.hideBit || 1, cache.__ownMask);
+    } else this.body?.apply(cover.meta.hideBit || 0);
     this.player._collectMaterials?.();
     return this.info();
   }
@@ -238,6 +251,7 @@ export class HeroOutfit {
   _bindCaster() {
     const caster = this.meshes.find((m) => m.name === 'Caster');
     this._caster = caster || null;
+    for (const m of this.meshes) if (m.userData.outfitOver) m.castShadow = false;
     if (!caster) return;
     const main = this.meshes.find((m) => m !== caster);
     if (main && caster.skeleton !== main.skeleton && caster.skeleton.bones.length === main.skeleton.bones.length) {
@@ -273,6 +287,7 @@ export class HeroOutfit {
     this.meshes = [];
     this.body?.apply(0);
     this.row = null;
+    this.underRow = null;
     this.set = null;
     this.variant = null;
     this.hasPieces = false;
@@ -307,7 +322,7 @@ export class HeroOutfit {
     if (!this.hasPieces) return;
     for (const m of this.meshes) {
       const u = m.material?.userData?.clothU || this._srcClothU(m);
-      if (u) u.uHidePiece.value = bits;
+      if (u?.uHidePiece) u.uHidePiece.value = bits;
     }
   }
 
