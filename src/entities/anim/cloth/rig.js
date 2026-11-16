@@ -27,6 +27,7 @@
  */
 import * as THREE from 'three';
 import { MATERIALS } from './materials.js';
+import { realClock } from './mode.js';
 import { ClothPiece, ClothSystem, makeRoot } from './solver.js';
 import { makeCollider, setEnds, radiusProfile } from './colliders.js';
 import { propCaps } from './propCaps.js';
@@ -170,7 +171,7 @@ export class BreaCloth {
     this.an = an; this.model = an.model;
     this.sys = new ClothSystem();
     // (the timing clock: the bench hands its own, as its performance.now is the sim clock)
-    this.sys.clock = globalThis.__clothClock || (globalThis.performance ? () => globalThis.performance.now() : null);
+    this.sys.clock = realClock();
     this.ok = false; this.err = null;
     this.pieces = []; this.bones = []; this.adapters = [];
     try { this._build(); this.ok = true; } catch (e) { this.err = String(e && e.stack || e); this.ok = false; }

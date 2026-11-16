@@ -15,3 +15,12 @@ export function clothMode() {
   return 0;
 }
 
+
+/** The timing clock for the ring buffers: the bench's own (`__clothClock`), else the browser's REAL clock, even under the
+ *  sim-time slate (which pins `performance.now` to the virtual clock, so the ring would read 0 ms). */
+export function realClock() {
+  if (globalThis.__clothClock) return globalThis.__clothClock;
+  const pn = globalThis.Performance?.prototype?.now, perf = globalThis.performance;
+  if (pn && perf) return () => pn.call(perf);
+  return perf ? () => perf.now() : null;
+}

@@ -16,6 +16,7 @@
  */
 import * as THREE from 'three';
 import { MATERIALS } from './materials.js';
+import { realClock } from './mode.js';
 import { ClothPiece, ClothSystem, makeRoot } from './solver.js';
 import { makeCollider, setEnds } from './colliders.js';
 
@@ -47,7 +48,7 @@ export class StrandCloth {
    */
   constructor(chains, bones, S = 1) {
     this.sys = new ClothSystem();
-    this.sys.clock = globalThis.performance ? () => globalThis.performance.now() : null;
+    this.sys.clock = realClock();
     this.S = S;
     this.owned = new Set();
     this.groups = [];          // { P, cols: [chain, ...] }
