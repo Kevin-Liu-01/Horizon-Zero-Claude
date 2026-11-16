@@ -836,12 +836,14 @@ const LC_P1 = [0.14, 1.18, 0.38];
 const LC_D1 = [-0.06, 0.91, 0.40];
 /**
  * ...the same four keys as offsets in spine_02's frame (char metres from the bone, in its char-space turn), read off
- * the dressed bench in her standing idle at 7204598 (`LC_SIDE` .. `LC_D1` there). A capture at run time took whatever
+ * the dressed bench in her standing idle at 7204598 (`LC_SIDE` .. `LC_D1` there), then the upright key moved 0.05 m
+ * further out and its shaft 5 deg forward (part 3: A104's holster read the haft 0.015-0.018 m off the ponytail on the
+ * page at 686dd1a against its 0.02 bar; dressed bench 0.051 -> 0.091 m on the asked stow). A capture at run time took whatever
  * pose the layer first ran in: a first draw taken crouched captured a crouched trunk and put every later standing draw
  * 15 deg off its path (dressed bench, the crouched case run first).
  */
 const LC_SP = {
-  side: [0.3667, -0.0531, -0.1422], mid: [-0.0856, 0.9885, 0.1249],
+  side: [0.42, -0.06, -0.12], mid: [0.02, 0.98, 0.18],
   p1: [0.1958, 0.0758, 0.2713], d1: [0.0280, 0.9040, 0.4266],
 };
 /** The right fist's way from the hand-over to the guard (and back on the stow): the haft still upright, the fist at

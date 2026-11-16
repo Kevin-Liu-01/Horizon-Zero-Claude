@@ -173,6 +173,8 @@ function record(t) {
   r.lanceOwner = ml?._held ? (lHold ? 'both' : 'handR') : lHold && lanceHeldVis ? 'handL' : 'carry';
   if (NEW && typeof ml?.lanceOwner === 'function') r.lanceOwner = ml.lanceOwner();
   r.stance = mel.stance; r.swing = !!mel.active;
+  // (A104's own reading of the haft against the hair, the layer's debug: the holster's bar is 0.02 m)
+  { const dm = an.debugMelee?.(); r.hairClear = dm && typeof dm.hairClear === 'number' ? dm.hairClear : null; }
   /* M1a weapons step 2: the visible haft's clearance of her axial bones (A104's list: head, neck, spine, pelvis) and of
    * her thighs (bone to segment, char m), and the bone it is nearest */
   r.lanceAxialM = null; r.lanceAxialBone = null; r.lanceThighM = null;
