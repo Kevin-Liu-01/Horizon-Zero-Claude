@@ -70,5 +70,7 @@ export const CLIPS = {
   cPeople: { sim: true, frame: 'F20', pose: 'idle', lens: null, js: `${PERSON_LENS('/matron/', 35, 2.6, 1.3, 1.0, 40)} await w(5.0); ${LENS_UNDO}` },
   cPeopleWork: { sim: true, frame: 'F21', pose: 'idle', lens: null, js: `${PERSON_LENS('/raker|porter|keeper/', 40, 2.4, 1.2, 0.9, 40)} await w(4.0); ${LENS_UNDO}` },
   cCrowd: { sim: true, frame: 'F22', pose: 'idle', lens: null, js: `${G2} ${CROWD(6.0)}` },
-  cChase: { sim: true, frame: 'F15', pose: 'idle', lens: null, js: `${G2} C.input.keys.add('KeyW'); await w(1.2); C.input.keys.add('ShiftLeft'); await w(1.5); C.input.keys.delete('ShiftLeft'); C.input.keys.add('KeyD'); await w(0.8); C.input.keys.delete('KeyD'); C.input.keys.add('KeyA'); await w(0.8); C.input.keys.clear(); await w(1.2);` },
+  // (fix round 1: the judge at 49a86ca: the lens stayed where F15's staging put it while she ran off. The game's own
+  //  camera update is put back (the frame's undo restores the staging's after the clip), behind her on her heading)
+  cChase: { sim: true, frame: 'F15', pose: 'idle', lens: null, js: `${G2} p._updateCamera = Object.getPrototypeOf(p)._updateCamera; p.camYaw = p.heading + Math.PI; p.camPitch = 0.12; await w(0.3); C.input.keys.add('KeyW'); await w(1.2); C.input.keys.add('ShiftLeft'); await w(1.5); C.input.keys.delete('ShiftLeft'); C.input.keys.add('KeyD'); await w(0.8); C.input.keys.delete('KeyD'); C.input.keys.add('KeyA'); await w(0.8); C.input.keys.clear(); await w(1.2);` },
 };
