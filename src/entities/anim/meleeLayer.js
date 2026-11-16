@@ -1955,10 +1955,16 @@ export class MeleeLayer {
     /* ...and her ARM stays out of the machine (round 6, S5): the blade may
      * go into the hull it hits, the hand and forearm holding it may not. */
     this._armHullGuard(w, st);
-    this._leftCarryHand(u);
-    this._lhRate(stance, dt);
-    this._solveLeft(w, u);
-    this._leftOnHaft(stance, w);
+    /* M1a weapons round 2 (W1/W2 in the swap 1 to 2): while the bow is still in the left hand (its stow, before the draw
+     * can take the haft) the left arm is the bow's (carryStow.js); this layer's free left goal pulled the bow's fist 18-66
+     * deg off the bow it held, and the bow, posed off the fist, swung 0.5 m at its release */
+    const bowL = an.bowInHand?.() === true;
+    if (!bowL) {
+      this._leftCarryHand(u);
+      this._lhRate(stance, dt);
+      this._solveLeft(w, u);
+      this._leftOnHaft(stance, w);
+    } else { this._lhPrevOk = false; this._lReadBack = false; this.needsTake = false; }
     /* M1a debt fix 1 (M1.3d, the crouched Undercut: the left palm 0.084 m off grip2 in the follow-through and
      * 0.131 m at the contact from the holster, bench at 88b1605). Crouched, the Undercut's sink takes her left
      * shoulder down and back further than the keys come down, and the left arm, at full reach, stops short of
@@ -2007,7 +2013,8 @@ export class MeleeLayer {
      * share of closed), the thumb over them; with no solved grip (another rig) the old curl */
     if (this.gripR) an._wrapFingers('r', this.gripR, this._curlR / 0.85, this._curlR * 0.88 * w, w);
     else an._curlFingers(an._fingerR, this._curlR * w, this._curlR * 0.88 * w);
-    if (this.gripLFore) an._wrapFingers('l', this._lc?.on && !this._held ? this.gripLButt : this.gripLFore, this._curlL / 0.85, this._curlL * 0.91 * w, w);
+    if (bowL) { /* (the bow's fingers) */ }
+    else if (this.gripLFore) an._wrapFingers('l', this._lc?.on && !this._held ? this.gripLButt : this.gripLFore, this._curlL / 0.85, this._curlL * 0.91 * w, w);
     else an._curlFingers(an._fingerL, this._curlL * w, (this._curlL * 0.91) * w);
 
     this._measure();

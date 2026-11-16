@@ -17,7 +17,12 @@ export const SOCKETS = Object.freeze({
     /** the riser, where the fist holds it carried and aimed */
     grip: Object.freeze({ p: [0, 0, 0], axis: [0, 1, 0], r: 0.0196 }),
     /** the lower limb just under the riser's wrap (0.13 m below the grip: her palm reaches it on her back at 0.025 m inside the arm's reach; at 0.185 m it was at its limit): on her back it is at waist height behind her spine */
-    limb: Object.freeze({ p: [-0.0022, -0.085, -0.0046], axis: [0, 1, 0], r: 0.0177 }),
+    limb: Object.freeze({ p: [-0.0022, -0.085, -0.0046], axis: [0, 1, 0], r: 0.0177,
+      /** M1a weapons round 2: the palm's side of the limb at the take (mesh; from the socket, square to the stave): the
+       *  side the left fist closes on the stowed bow from with the straightest wrist her reach round the hip allows
+       *  (the index toward the top limb), read off the dressed bench at the take: 49 deg round the stave from the grip's.
+       *  The fist turns round the stave from this side to the grip's as the limb runs through it (the regrip) */
+      palm: Object.freeze([-0.0124, 0.0026, -0.0392]) }),
     /** the palm centre from the socket, mesh space (combat's carry hold) */
     palm: Object.freeze([0.0218, 0.0026, -0.035]),
     /** the keeper: the stowed bow leaves it sliding DOWN its own limb (-Y) */

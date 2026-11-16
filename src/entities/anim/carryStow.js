@@ -60,6 +60,14 @@ const _gaD = new THREE.Vector3(), _gaE = new THREE.Vector3(), _gaQ = new THREE.Q
 const _gaF = new THREE.Vector3(), _gaW = new THREE.Vector3(), _gaR = new THREE.Quaternion();
 /** the palm plan's speed bound (m a step; the wrist's bar is 0.08) */
 const PALM_STEP = 0.055;
+/** M1a weapons round 2: the palm's distance off the stave's centreline (mesh; sockets.js palm, square to the stave) and the
+ *  palm's side at the limb's take and at the riser (mesh, unit, square to the stave) */
+const BOW_PALM_D = Math.hypot(SOCKETS.bow.palm[0], SOCKETS.bow.palm[2]);
+const BOW_PSIDE_G = [SOCKETS.bow.palm[0] / BOW_PALM_D, 0, SOCKETS.bow.palm[2] / BOW_PALM_D];
+const BOW_PSIDE_L = (() => { const P = SOCKETS.bow.limb.palm || SOCKETS.bow.palm, d = Math.hypot(P[0], P[2]); return [P[0] / d, 0, P[2] / d]; })();
+const _hbA = new THREE.Vector3(), _hbB = new THREE.Vector3(), _hbC = new THREE.Vector3(), _bpS2 = new THREE.Vector3();
+/** ...and the most the take waits (s of the sequence's clock) for the palm on the limb's socket, within `BOW_TAKE_TOL` m */
+const BOW_TAKE_WAIT = 0.10, BOW_TAKE_TOL = 0.006;
 /** the hand's turn bound while the sequence holds it (rad a step): with the palm's, the wrist stays under 0.08 m a step */
 const HAND_TURN = 0.45;
 const _sm = ease;
@@ -125,13 +133,17 @@ export class CarryStow {
     /* M1a weapons step 1 (W1; the W1 judges' "the grip in the fist is not legible"): the fist closed ROUND the carried
      * stave, its grip axis along it (combat places the bow off her heading, not off the hand: at 0d3feb5 the stave
      * crossed the fist 74-79 deg off its grip axis at a run), the wrist as straight as that allows */
+    /* M1a weapons round 2 (W1 in the carry: the palm faced 86-90 deg off the stave, 120-185 finger joint-steps inside
+     * it): the fingers close on the stave (`_grip`), and the carried bow is posed from this hand (`bowPathPose`) */
     if (this.melee?.gripDirLL && this.b.loArmL) {
       _gaE.set(0, 1, 0).applyQuaternion(this._bowCarryQ(_bpQ2));
       this._handOnStave(_gaE, 1, _bpQ3);
       this._liveW(b.handL.bone, _bpQ4);
       this.space.setCharQ(b.handL, _bpQ4.slerp(_bpQ3, w));
     }
-    this._curlFingers(this._fingerL, 0.85 * w, 0.55 * w);
+    const Gc = this._bowGrip ? (this._bowPathState(), this._bowGrip(1)) : null;
+    if (Gc) this._wrapFingers('l', Gc, 1, 0.55 * w, w);
+    else this._curlFingers(this._fingerL, 0.85 * w, 0.55 * w);
     // shoulder carries the mass
     this._rot(b.clavL, Z_AXIS, -0.05 * w);
     this._rot(b.spine2, Z_AXIS, -0.025 * w);
@@ -238,7 +250,63 @@ export class CarryStow {
   /** The palm socket (sockets.js: the socket's point plus the palm's offset) at slide `s` (0 limb .. 1 riser), mesh units. */
   _bowSockMesh(s, out) {
     const L = SOCKETS.bow.limb.p, G = SOCKETS.bow.grip.p, P = SOCKETS.bow.palm;
-    return out.set(L[0] + (G[0] - L[0]) * s + P[0], L[1] + (G[1] - L[1]) * s + P[1], L[2] + (G[2] - L[2]) * s + P[2]);
+    // (M1a weapons round 2: the palm's side turns round the stave from the limb's take to the grip's over the slide)
+    this._bowPside(s, _bpS2);
+    return out.set(L[0] + (G[0] - L[0]) * s + _bpS2.x * BOW_PALM_D, L[1] + (G[1] - L[1]) * s + P[1], L[2] + (G[2] - L[2]) * s + _bpS2.z * BOW_PALM_D);
+  }
+
+  /** The palm's side of the stave at slide `s` (mesh, unit, square to the stave): the limb's at 0, the grip's at 1. */
+  _bowPside(s, out) {
+    const a0 = Math.atan2(BOW_PSIDE_L[0], BOW_PSIDE_L[2]), a1 = Math.atan2(BOW_PSIDE_G[0], BOW_PSIDE_G[2]);
+    let d = a1 - a0; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
+    const a = a0 + d * clamp(s, 0, 1);
+    return out.set(Math.sin(a), 0, Math.cos(a));
+  }
+
+  /**
+   * M1a weapons round 2 (W1: the palm on the stave, its normal onto it): the left hand's turn (char) that holds a bow
+   * posed `qBow` (char, the mesh's frame) at slide `s`: its grip axis along the stave (index toward the top limb), its
+   * palm's normal (the fingers' bend side, `_grip`'s) square onto the stave from the palm's side. Into `out`.
+   */
+  _handForBow(qBow, s, out) {
+    const G = this._bowGrip(s), g = this.melee?.gripDirLL;
+    if (!G || !g) return out;
+    // the hand's own frame (local): grip axis, palm normal square to it, their cross
+    _hbA.copy(g).normalize(); _hbB.copy(G.n).addScaledVector(_hbA, -G.n.dot(_hbA)).normalize(); _hbC.crossVectors(_hbA, _hbB);
+    _bpN.makeBasis(_hbA, _hbB, _hbC);
+    // the same three in char for the bow: the stave, the palm's normal (onto the stave: minus the palm's side)
+    _hbA.set(0, 1, 0).applyQuaternion(qBow);
+    this._bowPside(s, _hbB); _hbB.applyQuaternion(qBow).negate().addScaledVector(_hbA, 0).normalize();
+    _hbC.crossVectors(_hbA, _hbB);
+    _bpM.makeBasis(_hbA, _hbB, _hbC);
+    _bpM.multiply(_bpN.transpose());
+    return out.setFromRotationMatrix(_bpM);
+  }
+
+  /** ...and the reverse: the bow's mesh turn (char) a left hand turned `qHand` (char) holds at slide `s`. Into `out`. */
+  _bowForHand(qHand, s, out) {
+    const G = this._bowGrip(s), g = this.melee?.gripDirLL;
+    if (!G || !g) return out;
+    _hbA.copy(g).normalize(); _hbB.copy(G.n).addScaledVector(_hbA, -G.n.dot(_hbA)).normalize();
+    _hbA.applyQuaternion(qHand); _hbB.applyQuaternion(qHand).negate();     // stave, palm's side (char)
+    _hbC.crossVectors(_hbA, _hbB);
+    _bpM.makeBasis(_hbA, _hbB, _hbC);
+    this._bowPside(s, _hbB); _hbA.set(0, 1, 0); _hbC.crossVectors(_hbA, _hbB);
+    _bpN.makeBasis(_hbA, _hbB, _hbC);
+    _bpM.multiply(_bpN.transpose());
+    return out.setFromRotationMatrix(_bpM);
+  }
+
+  /** The left hand's two solved bow grips (`_grip`): on the limb (s < 0.5) and on the riser. Null before the layer is up. */
+  _bowGrip(s) {
+    const B = this._bp;
+    if (!this.melee?.gripDirLL || !this._fingerL?.length) return null;
+    if (!B.gripL) {
+      const palm = this._bowPalmOff(), g = this.melee.gripDirLL;
+      B.gripL = this._grip('l', 'bowLimb', palm, g, BOW_PALM_D, SOCKETS.bow.limb.r);
+      B.gripG = this._grip('l', 'bowGrip', palm, g, BOW_PALM_D, SOCKETS.bow.grip.r);
+    }
+    return s < 0.5 ? B.gripL : B.gripG;
   }
 
   /** The left palm's offset from the wrist in the hand's frame (char units; combat's palm: 0.7 to the middle knuckle). */
@@ -305,6 +373,18 @@ export class CarryStow {
     if (B.mode === 0) { B.w = 0; B.inHand = B.owner === 'handL'; B.phase = ''; B.yaw = 0; return 0; }
     if (!B.kit) { this._bowKitInit(); if (!B.kit) { B.mode = 0; B.owner = want ? 'handL' : 'carry'; B.inHand = want; return 0; } }
     B.t += dt; B.frames++;
+    /* M1a weapons round 2 (W2 at the grip): the take is an event on the hand, not the clock: at the end of the close the
+     * sequence waits (at most BOW_TAKE_WAIT) until the palm is on the limb's socket, so the bow leaves the keeper in the
+     * fist, not beside it */
+    if (B.mode === 1 && B.owner === 'carry' && B.T) {
+      const tG = phaseEnd(B.T, 'C');
+      if (B.t >= tG && ((B.palmMiss ?? 9) > BOW_TAKE_TOL || (B.turnMiss || 0) > 0.012) && (B.takeWait || 0) < BOW_TAKE_WAIT) { B.takeWait = (B.takeWait || 0) + dt; B.t = tG - 1e-4; }
+    }
+    // ...and the stow's release: the fist lets go once the bow is seated in its keeper
+    if (B.mode === 2 && B.owner === 'handL' && B.T) {
+      const tR = phaseEnd(B.T, 'D');
+      if (B.t >= tR && ((B.palmMiss ?? 9) > BOW_TAKE_TOL || (B.turnMiss || 0) > 0.012) && (B.takeWait || 0) < BOW_TAKE_WAIT) { B.takeWait = (B.takeWait || 0) + dt; B.t = tR - 1e-4; }
+    }
     const T = B.T, ph = phaseAt(T, B.t, _bpPH), i = ph[0], k = ph[1], name = T.phases[i][0];
     B.phase = name; B.k = k;
     // the trunk's reach first (the stowed bow rides spine_02, so every goal below is read after it): spine_02 turns the
@@ -325,6 +405,8 @@ export class CarryStow {
         // A, B: reach round the hip to the limb (the plan's socket on the stowed bow), the hand opening; C: close
         this._bowSockMesh(0, _bpG);
         this._bowPt(kitQ, kitO, B.kitS, _bpG.x, _bpG.y, _bpG.z, _bpT);       // the palm's goal: on the stowed limb
+        if (!B.sockGoal) B.sockGoal = new THREE.Vector3();
+        B.sockGoal.copy(_bpT);
         const tB = phaseEnd(T, 'B');
         const u = _sm(B.t / tB);
         this._bowPointNowSide(_bpA);
@@ -411,6 +493,8 @@ export class CarryStow {
         this._bowPt(kitQ, kitO, B.kitS, _bpG.x, _bpG.y, _bpG.z, _bpT);
         _bpE.set(0, -1, 0).applyQuaternion(kitQ);
         _bpT.addScaledVector(_bpE, B.keep);
+        if (!B.sockGoal) B.sockGoal = new THREE.Vector3();
+        B.sockGoal.copy(_bpT);
         this._bowPointNowPast(_bpA);
         if (B.t < tB) _bpP.lerpVectors(B.from, _bpA, _sm((B.t - tA) / (tB - tA)) * (B.t < tA ? 0 : 1));
         else _bpP.lerpVectors(_bpA, _bpT, _sm((B.t - tB) / (tC - tB)));
@@ -448,12 +532,12 @@ export class CarryStow {
     const carryPole = (B.mode === 1 && B.owner === 'handL' && B.t >= phaseEnd(T, 'C') + 0.5 * (phaseEnd(T, 'D') - phaseEnd(T, 'C'))) || (B.mode === 2 && B.t < phaseEnd(T, 'A'));
     _bpA.fromArray(carryPole ? BOW_POLE_CARRY : BOW_POLE).normalize();
     turnToward(B.pole, _bpA, 0.2 * dt * 60);
-    // the hand closed round the planned stave, solved twice (the wrist goal depends on the hand's turn, the turn on the
-    // forearm the solve leaves)
+    /* the hand closed round the planned stave, solved twice (the wrist goal depends on the hand's turn, the turn on the
+     * forearm the solve leaves): its grip axis along the stave, turned about it to the straightest wrist. M1a weapons
+     * round 2: the bow is then posed FROM this hand (`bowPathPose`), on the palm's side of its socket, so the fist holds
+     * it as drawn (the palm's normal onto the stave, the fingers closed on its surface, `_grip`) */
     _bpD.set(0, 1, 0).applyQuaternion(B.q);
     if (!B.hqOk) { this._liveW(b.handL.bone, B.hq); B.hqOk = true; }
-    // pass 1 places the arm with last step's hand; the hand is then turned onto the stave for the forearm that solve
-    // left (bounded per step), and pass 2 places the wrist for that hand
     this._liveW(b.handL.bone, _bpQ);                // the clip's hand, for the reach's weighting
     _bpQ3.copy(_bpQ);
     for (let pass = 0; pass < 2; pass++) {
@@ -461,20 +545,48 @@ export class CarryStow {
       this._ikArm('l', _bpT, B.pole, w, null);
       if (pass === 0) {
         this._handOnStave(_bpD, B.sigma, _bpQ4);
+        /* (M1a weapons round 2, W2 at the grip and the release: at the keeper the fist holds the PLANNED bow, the one on
+         *  her back, turned as it is there (`_handForBow`): the bow posed off the fist is then the kit's own at the take
+         *  and at the seat; between, the straightest wrist) */
+        const kq = this._bowKeepTurn(T);
+        if (kq > 1e-3) { this._handForBow(B.q, B.s, _bpQ2); _bpQ4.slerp(_bpQ2, kq); }
         if (rot < 1) { _bpQ.copy(_bpQ3).slerp(_bpQ4, rot); _bpQ4.copy(_bpQ); }
         const a = B.hq.angleTo(_bpQ4), mx = HAND_TURN * dt * 60;
         if (a > mx) B.hq.slerp(_bpQ4, mx / a); else B.hq.copy(_bpQ4);
+        // (at the keeper the fist must hold the bow turned as it sits there: the take and the release wait on it too)
+        B.turnMiss = kq >= 0.999 ? B.hq.angleTo(_bpQ4) : 0;
       }
     }
     _bpQ4.copy(B.hq);
     B.tgt.copy(_bpT);
     if (rot > 1e-3 && w > 1e-3) { this._liveW(b.handL.bone, _bpQ3); this.space.setCharQ(b.handL, _bpQ3.slerp(_bpQ4, Math.min(1, w))); }
-    this._curlFingers(this._fingerL, B.curl * w, B.curl * 0.65 * w);
+    // the palm's miss on its plan (the take waits on it)
+    this._charOf(b.handL.bone, _bpA); this._liveW(b.handL.bone, _bpQ3);
+    const atKeeper = (B.mode === 1 && B.owner === 'carry') || (B.mode === 2 && B.owner === 'handL' && B.t >= phaseEnd(T, 'C'));
+    B.palmMiss = _bpA.add(_bpE.copy(palmOff).applyQuaternion(_bpQ3)).distanceTo(atKeeper && B.sockGoal ? B.sockGoal : B.palm);
+    const G = this._bowGrip(B.s);
+    if (G) this._wrapFingers('l', G, B.curl / CURL.closed, B.curl * 0.65 * w, w);
+    else this._curlFingers(this._fingerL, B.curl * w, B.curl * 0.65 * w);
     // the forearm as it ends this step (the next step's pivot reads it)
     this._charOf(b.loArmL.bone, _bpA); this._charOf(b.handL.bone, B.fa); B.fa.sub(_bpA).normalize(); B.faOk = true;
     B.inHand = B.owner === 'handL';
     B.w = w;
     return w;
+  }
+
+  /** M1a weapons round 2: how much the fist is turned to the planned bow at the keeper this step (0..1, `_bowPathLayer`). */
+  _bowKeepTurn(T) {
+    const B = this._bp, t = B.t;
+    if (B.mode === 1) {
+      const tC = phaseEnd(T, 'C'), tD = phaseEnd(T, 'D');
+      return t < tC ? 1 : 1 - _sm((t - tC) / (tD - tC));
+    }
+    if (B.mode === 2) {
+      const tB = phaseEnd(T, 'B'), tC = phaseEnd(T, 'C'), tD = phaseEnd(T, 'D');
+      if (t >= tD) return 0;
+      return _sm((t - tB) / (tC - tB));
+    }
+    return 0;
   }
 
   /** Turn `q` (a bow, char) so its stave lies 60-100 deg off the forearm `fa` (unit, char), at weight `k`. In place. */
@@ -553,7 +665,7 @@ export class CarryStow {
         B.mode = 2; B.t = 0;
       }
     }
-    B.frames = 0; B.back = 0;
+    B.frames = 0; B.back = 0; B.takeWait = 0;
   }
 
   /** An owner change, stamped on the sim clock (the grip and release events). */
@@ -608,17 +720,27 @@ export class CarryStow {
     if (!B || B.owner !== 'handL' || !group?.parent) { if (B) B.sockOk = false; return; }
     const node = group.parent, mdl = group.children[0], mesh = mdl?.children?.[0];
     if (!mdl || !mesh) return;
+    // (the raised aim places the bow on the aim rig's own line: combat's; nothing here moves it)
+    const aimed = B.mode === 0 && (!!this.ctx.player?.aiming || (this.aimWeight ?? 0) > 0.02);
     const cmb = this.ctx.combat;
-    // the planned mesh frame, char: o = palm - q (socket(s) * scale)
-    this._bowSockMesh(B.s, _bpG);
-    _bpG.multiplyScalar(B.scale).applyQuaternion(B.q);
-    _bpP.copy(B.palm).sub(_bpG);
-    if (B.mode !== 0) {
+    /* M1a weapons round 2 (W1, W2): the bow is posed FROM THE HAND that holds it, as drawn: its turn the one the fist
+     * holds it in (`_bowForHand`), its socket on the palm. Round 1 posed it on the plan beside the hand (the palm 0.03-0.19
+     * m off its socket, the fist closed through the stave) */
+    const b = this.b;
+    this._liveW(b.handL.bone, _bpQ3);
+    const sNow = B.mode ? B.s : 1;
+    this._bowForHand(_bpQ3, sNow, _bpQ4);
+    this._charOf(b.handL.bone, _bpP).add(_bpE.copy(this._bowPalmOff()).applyQuaternion(_bpQ3));
+    const scl = B.mode ? B.scale : 1;
+    this._bowSockMesh(sNow, _bpG);
+    _bpG.multiplyScalar(scl).applyQuaternion(_bpQ4);
+    _bpP.sub(_bpG);
+    if (!aimed) {
       // char -> world -> the hand node's frame, less the model's and the mesh's own offsets
       this.model.updateMatrixWorld(true);
       node.updateWorldMatrix(true, false);
       mdl.updateMatrix(); mesh.updateMatrix();
-      _bpN.compose(_bpP, B.q, _bpS.set(B.scale, B.scale, B.scale));
+      _bpN.compose(_bpP, _bpQ4, _bpS.set(scl, scl, scl));
       _bpM.multiplyMatrices(this.model.matrixWorld, _bpN);                 // the mesh's world matrix, planned
       _bpN.multiplyMatrices(mdl.matrix, mesh.matrix).invert();
       _bpM.multiply(_bpN);                                                 // the group's world matrix
@@ -626,15 +748,13 @@ export class CarryStow {
       _bpM.premultiply(_bpN);                                              // ...in the node's frame
       _bpM.decompose(_bpA, _bpQ, _bpB);
       // (the position hands over to combat's carry as the unstow ends; the turn is the plan's, which ends on combat's)
-      const a = B.blendC;
-      group.position.lerpVectors(_bpA, group.position, a);
-      group.quaternion.copy(_bpQ);
-      group.scale.lerpVectors(_bpB, group.scale, a);
+      // (M1a weapons round 2: from the hand in the carry too, so there is no hand-over to combat's carry pose to blend)
+      group.position.copy(_bpA); group.quaternion.copy(_bpQ); group.scale.copy(_bpB);
       cmb?.bow?.setDraw?.(0, false);
     }
     // the socket the palm holds, as drawn (W1): the group's pose this step
     group.updateMatrixWorld(true);
-    _bpG.set(0, 0, 0); this._bowSockMesh(B.s, _bpG);
+    _bpG.set(0, 0, 0); this._bowSockMesh(sNow, _bpG);
     _bpG.applyMatrix4(mesh.matrixWorld);
     _bpM.copy(this.model.matrixWorld).invert();
     _bpG.applyMatrix4(_bpM);
@@ -717,7 +837,8 @@ export class CarryStow {
       f.copy(e1.bone.position).normalize();
       q.copy(e1.bindQ).multiply(_q1.setFromAxisAngle(e1.curlAxis || Z_AXIS, c1 ? c1[i] : 0.6));
       d.copy(e2.bone.position).applyQuaternion(q);
-      n.add(d.addScaledVector(f, -d.dot(f)).normalize());
+      // (summed as they lie, not each normalised: the rows' palm normal, handling-bench `pn`)
+      n.add(d.addScaledVector(f, -d.dot(f)));
     }
     n.normalize();
     if (!c1) this[key] = n;

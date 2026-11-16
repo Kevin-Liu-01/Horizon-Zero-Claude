@@ -314,7 +314,9 @@ function record(t) {
     _ws.setFromMatrixScale(mesh.matrixWorld); const ms = _ws.x / (model.getWorldScale(_v).x || 1);
     r.bowRLimb = SOCKETS.bow.limb.r * ms; r.bowRGrip = SOCKETS.bow.grip.r * ms;
     // (the socket frame's normal: from the palm point toward the centreline, sockets.js's palm offset square to the axis)
-    const P = SOCKETS.bow.palm; const nm = [-P[0], 0, -P[2]];
+    // (M1a weapons round 2: each socket has its own palm side, sockets.js: the limb's at the take, the grip's on the riser;
+    //  the one nearer the slide is the frame; the slide itself is not graded for the normal, the fingers are open there)
+    const P = (H?.bow?.s ?? 1) < 0.5 && SOCKETS.bow.limb.palm ? SOCKETS.bow.limb.palm : SOCKETS.bow.palm; const nm = [-P[0], 0, -P[2]];
     const a0 = at([0, 0, 0]), a1 = at(nm); r.bowSockN = [a1[0] - a0[0], a1[1] - a0[1], a1[2] - a0[2]];
   }
   // the lance's three sockets on the visible haft (char)
