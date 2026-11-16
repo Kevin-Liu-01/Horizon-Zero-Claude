@@ -186,6 +186,24 @@ export class BreaCloth {
     const pelvis = b.pelvis.bone, head = b.head.bone;
     const armRoot = pelvis.parent;
     this.armRoot = armRoot;
+    /* (step 2) BUILT IN THE BIND POSE: the inner radii (innerTorso, innerLeg), the radius profiles, the quiver's end
+     * vertices, her forward in each root and the particles' bind frames were read off the pose the rig happened to be
+     * built in (the animator's first frame), so a rig first built at a sprint differed from one built standing (C11's
+     * reset after a history: torso inner radius 0.0914 against 0.0916, a tail 2 mm apart after the settle). The skin's
+     * skeleton is put in its bind pose for the build and given back after it; the reset then reads the live pose */
+    const bindSk = M.skin?.skeleton, saved = bindSk ? bindSk.bones.map((x) => [x, x.position.clone(), x.quaternion.clone(), x.scale.clone()]) : [];
+    if (bindSk) { bindSk.pose(); model.updateMatrixWorld(true); M.kit?.skeleton?.update(); }
+    try { this._buildPosed(M, S, pelvis, head, model); }
+    finally {
+      for (const [x, p, q, sc] of saved) { x.position.copy(p); x.quaternion.copy(q); x.scale.copy(sc); }
+      model.updateMatrixWorld(true); M.kit?.skeleton?.update();
+    }
+    // first frame: settled (the deterministic reset), every bone at its particle
+    this.ok = true;
+    this.reset(0);
+  }
+
+  _buildPosed(M, S, pelvis, head, model) {
     // ---- roots
     const rootP = this.rootP = S.addRoot(makeRoot('pelvis')), rootH = this.rootH = S.addRoot(makeRoot('head'));
     rootP.bone = pelvis; rootH.bone = head;
@@ -206,9 +224,6 @@ export class BreaCloth {
     this._rebind();
     // ---- the kept chains: driven from the centre columns
     this._buildAdapters();
-    // first frame: settled (the deterministic reset), every bone at its particle
-    this.ok = true;
-    this.reset(0);
   }
 
   /* ------------------------------------------------------------------ colliders */
@@ -430,7 +445,7 @@ export class BreaCloth {
   }
 
   /** Per collider, the stand-off a piece uses: `off`, or less where its bind grid already sits closer (the knot, the belt). */
-  _offFit(X, pinned, mask, off, root) {
+  _offFit(X, pinned, mask, off, root, inner = false) {
     /* (read in the BIND pose, on the root: every body collider's ends where the skeleton's own bind puts them in the
      *  root bone's frame, x the root's scale like the canonical grid X; so the fit is a function of the assets only,
      *  never of the pose the rig happens to be built in. The quiver and the props are not fitted) */
@@ -445,6 +460,8 @@ export class BreaCloth {
     for (let c = 0; c < cols.length; c++) {
       const K = cols[c];
       if (!(mask & K.bit) || K.prop || K.kitIdx || !K.boneA || bi(K.boneA) == null) continue;
+      if (inner && !(K.ri0 > 0)) continue;
+      const k0 = inner ? K.ri0 : K.r0, k1 = inner ? K.ri1 : K.r1;
       bindLocal(K.boneA, _v1);
       if (K.boneB) bindLocal(K.boneB, _v2); else bindLocal(K.boneA, _v2, K.headUp);
       let clr = 9;
@@ -453,7 +470,7 @@ export class BreaCloth {
         const ax = _v1.x, ay = _v1.y, az = _v1.z, dx = _v2.x - ax, dy = _v2.y - ay, dz = _v2.z - az;
         const px = X[i * 3] - ax, py = X[i * 3 + 1] - ay, pz = X[i * 3 + 2] - az, l2 = dx * dx + dy * dy + dz * dz;
         let t = l2 > 1e-12 ? (px * dx + py * dy + pz * dz) / l2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
-        const d = Math.hypot(px - dx * t, py - dy * t, pz - dz * t) - (K.r0 + (K.r1 - K.r0) * t);
+        const d = Math.hypot(px - dx * t, py - dy * t, pz - dz * t) - (k0 + (k1 - k0) * t);
         if (d < clr) clr = d;
       }
       if (clr < off + 0.002) o[c] = Math.floor((clr - 0.002) * 1000) / 1000;
@@ -562,9 +579,13 @@ export class BreaCloth {
     for (let c = 0; c < P.nc; c++) if (P.ck[c] === 1) P.cr[c] *= 0.7;
     P.fwd = fwd; P.stem = stem; P.kind = 'tail'; P.lee = 0;   // (the head is narrower than the tail's swing: no lee)
     // (the tail's strip is 0.09 m wide and cupped about the two particles of a row: its edges stand 0.02 m off them)
-    // (step 2: 0.048, was 0.030: the strip's cupped edge, or the strip turned edge-on, still met the grader's torso by
+    // (step 2: 0.052, was 0.030: the strip's cupped edge, or the strip turned edge-on, still met the grader's torso by
     //  1.6-5 mm standing and in a crouch)
-    P.hard = 0.048;
+    P.hard = 0.052;
+    // (...but never more than the bind grid's own clearance from an inner surface, less 2 mm, collider by collider: the
+    //  wrung root sits close over the nape, and a hard pass wider than that pushed it out every frame against its
+    //  constraints, a buzz that never slept)
+    P.hardC = this._offFit(X, pinned, mask, P.hard, root, true);
     P.verts = [];
     // vertex weights: rows from the vertex's u on its column's row table; across bilinear in the wrung root, its own
     // tongue below the split
@@ -823,6 +844,9 @@ export class BreaCloth {
     if (!this.ok) return;
     const S = this.sys;
     this.model.updateMatrixWorld(true);
+    // (the quiver's capsule is read off the kit's skinned vertices, i.e. its skeleton's bone matrices, which the render
+    //  brings up to date: a reset brings them up to date itself, so it reads the pose it is given, not last frame's)
+    this.meshes.kit?.skeleton?.update();
     for (const r of S.roots) { decomp(r.bone, _pp, _pq); r.primed = false; ClothSystem.setRoot(r, _pp[0], _pp[1], _pp[2], _pq, _vs.x, 1 / 60); }
     this._updateColliders(1 / 60);
     S.reset(t);

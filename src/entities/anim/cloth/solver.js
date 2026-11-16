@@ -121,7 +121,7 @@ export class ClothPiece {
     this.restScale = 1;
     // (declared here, set by the rig: one shape for every piece)
     this._act = null; this.fwd = new Float64Array([0, 0, 1]); this.lee = 0; this.stem = ''; this.kind = '';
-    this.pinMask = 0; this.hard = 0.015; this.edges = false;
+    this.pinMask = 0; this.hard = 0.015; this.hardC = null; this.edges = false;
     this.boneOf = null; this.bones = null; this.f0 = null; this.verts = null;
   }
 
@@ -356,7 +356,7 @@ export class ClothSystem {
           for (let a2 = 0; a2 < na; a2++) { const c = act[a2]; if (!(C[c].bit & p.pinMask)) continue; pushOut(C[c], x, i, 0.004, false); }
         }
       }
-      const hardNow = s === n - 1;
+      const hardNow = s === n - 1, hardC = p.hardC;
       // ---- ITERS passes of the distance constraints (XPBD; lambda starts at 0 each pass; after the first, the stiff ones
       //      only) and the long-range attachment, the colliders in the last (the stretch bar, 1.03, is not met by one
       //      Gauss-Seidel pass when a thigh pushes a row)
@@ -423,7 +423,13 @@ export class ClothSystem {
           if (!(K.ri0 > 0)) continue;
           const B = K.box, qx = x[i * 3], qy = x[i * 3 + 1], qz = x[i * 3 + 2];
           if (qx < B[0] || qx > B[3] || qy < B[1] || qy > B[4] || qz < B[2] || qz > B[5]) continue;
-          bdy += pushOut(K, x, i, p.hard, true);
+          // (never outside the soft surface: a hard pass wider than the outer pass pushed a particle out on the last
+          //  substep that the substeps between let back in, a buzz that never slept: the tail on the quiver, 0.074 m
+          //  hard against 0.058 soft)
+          let ho = hardC ? hardC[c] : p.hard;
+          const lim = (K.r0 - K.ri0 < K.r1 - K.ri1 ? K.r0 - K.ri0 : K.r1 - K.ri1) + (offC ? offC[c] : p.off) - 0.001;
+          if (ho > lim) ho = lim;
+          bdy += pushOut(K, x, i, ho, true);
         }
         p.contact[i] = g > 0 || bdy > 0 ? 1 : 0; p.pinch[i] = 0;
         // pinched between a body collider and the ground: the body wins (it went last), the particle stops

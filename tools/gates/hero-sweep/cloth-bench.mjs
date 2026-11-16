@@ -484,6 +484,9 @@ if (ROWS.includes('C11') && MODE === 2) {
     A.model.updateMatrixWorld(true); B.model.updateMatrixWorld(true);
     // (the stow kit's shaft capsule is the kit's: copy it too)
     if (A.an._stowCap && B.an._stowCap) { B.an._stowCap.a.copy(A.an._stowCap.a); B.an._stowCap.b.copy(A.an._stowCap.b); B.an._stowCap.on = A.an._stowCap.on; }
+    // (step 2: the weapons lane now writes the prop capsules (stowBow, heldBow, heldLance): the clean rig's are copied too)
+    { const { propCaps } = await import('../../../src/entities/anim/cloth/propCaps.js'); const pa = propCaps(A.an), pb = propCaps(B.an);
+      for (const sa of pa.list) { const sb = pb[sa.name]; for (const k of ['a', 'b', 'pa', 'pb', 'va', 'vb']) Object.assign(sb[k], sa[k]); sb.on = sa.on; sb.r = sa.r; sb.primed = sa.primed; sb.set = sa.set; } }
     A.an.clothReset(0); B.an.clothReset(0);
     res.resetAfterHistory = { clean: A.an.clothDigest(), afterSprint: B.an.clothDigest(), identical: A.an.clothDigest() === B.an.clothDigest() };
   }
