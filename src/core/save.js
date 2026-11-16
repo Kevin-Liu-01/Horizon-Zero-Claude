@@ -114,7 +114,8 @@ export class SaveSystem {
         weapon: combat?.activeWeapon?.id ?? null,
         activeAmmo,
         rung: sys?.rung ?? 'starter',
-        wear: ctx.player?.hero?.loadout?.armorId ?? null,
+        // (the armour being put on, while its file loads: systems' wear(), fix round 1)
+        wear: sys?.wantArmor ?? ctx.player?.hero?.loadout?.armorId ?? null,
         quick: (ctx.quickslots?.slots ?? []).map((s) => (s?.earned ? s.kind : null)),
       },
       legacy: { prog: this.prog?.serialize?.() ?? null, roster: this._rosterSnapshot() },

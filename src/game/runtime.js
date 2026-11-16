@@ -205,7 +205,13 @@ export class SystemsGame {
   wear(rung) {
     const L = this.ctx.player?.hero?.loadout, id = RUNG_ARMOR[rung];
     if (!L?.equipArmor || !id || L.armorId === id) return Promise.resolve(null);
-    this._wearing = L.equipArmor(id).catch((err) => { console.warn('[systems] wear:', err?.message || err); return null; });
+    // fix round 1: the armour being put on is what a record written meanwhile holds (src/core/save.js): equipArmor
+    // loads a file, and the quest's own checkpoints ('quest:done', 'stage:return') are written in the same frame as
+    // the reward, so at 16645ca the record after Raker's Morning held rung 'scout' and wear 'pan-1', and CONTINUE stood
+    // her up in the Starter
+    this.wantArmor = id;
+    const done = (r) => { if (this.wantArmor === id) this.wantArmor = null; return r; };
+    this._wearing = L.equipArmor(id).then(done, (err) => { console.warn('[systems] wear:', err?.message || err); return done(null); });
     return this._wearing;
   }
 
