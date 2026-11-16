@@ -53,6 +53,7 @@ export const RAKE = Object.freeze({
 const _H = new THREE.Vector3(), _R = new THREE.Vector3(), _Lg = new THREE.Vector3(), _d = new THREE.Vector3();
 const _t = new THREE.Vector3(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _pole = new THREE.Vector3();
 const _w = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _m = new THREE.Matrix4();
+const SIDES = ['r', 'l'], PROPS = ['rake', 'knife', 'stick'];
 const smooth = (x) => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
 
 /** A unit-free wood material for every prop (one material, one program). */
@@ -205,8 +206,8 @@ export class SliceVerbs {
     _Lg.copy(_H).addScaledVector(_d, RAKE.gripL);
     // both arms onto the haft: the palm (between the wrist and the middle knuckle) on its grip, twice (the hand's own
     // offset moves with the solve)
-    for (const side of ['r', 'l']) {
-      const goal = side === 'r' ? _R : _Lg;
+    for (let si = 0; si < 2; si++) {
+      const side = SIDES[si], goal = si === 0 ? _R : _Lg;
       _t.copy(goal);
       for (let it = 0; it < 3; it++) {
         _pole.fromArray(side === 'r' ? RAKE.poleR : RAKE.poleL);
@@ -238,7 +239,7 @@ export class SliceVerbs {
 
   /** The palm's centre (char space): half way from the wrist to the middle finger's first knuckle. */
   _palmOf(side, out) {
-    const hb = this.bones[`hand_${side}`], kb = this.bones[`middle_01_${side}`];
+    const r = side === 'r', hb = r ? this.bones.hand_r : this.bones.hand_l, kb = r ? this.bones.middle_01_r : this.bones.middle_01_l;
     this._charOf(hb, out);
     if (kb) { this._charOf(kb, _p2); out.lerp(_p2, 0.5); }
     return out;
@@ -297,8 +298,8 @@ export class SliceVerbs {
   _verbProps(kind) {
     const S = this._vb;
     if (!S) return;
-    for (const k of ['rake', 'knife', 'stick']) {
-      const m = k === kind ? this._verbPropMesh(k) : S.props[k];
+    for (let i = 0; i < PROPS.length; i++) {
+      const k = PROPS[i], m = k === kind ? this._verbPropMesh(k) : S.props[k];
       if (m) m.visible = k === kind;
     }
   }
