@@ -926,7 +926,7 @@ reached.
 
 ## Weapon handling and cloth (Nov 16 2026)
 
-Kevin's word of Nov 15 asked for much better weapon handling (grabbing, drawing, stowing, getting into position)
+The owner's direction of Nov 15 asked for much better weapon handling (grabbing, drawing, stowing, getting into position)
 and much better cloth. Two lanes built it: weapons (steps 1 and 2 and one fix round) and cloth (steps 1 and 2 and
 one fix round). The review measured `r5/int` at **fac4167** from a clean detached worktree on port 5270, using one
 Chrome slot. No commit landed during the review.
@@ -1006,7 +1006,7 @@ re-run there bit for bit). W0 is 0d3feb5.
   - With the crowd, the worst near person costs 0.059 ms (bar 0.02); all cloth together 0.248 ms (bar 0.30, passes).
 - **C11 repeatability passes:** three stagings are bit-identical, and a nudge settles in 1 s.
 
-**Clip review for Kevin:** one page, before and after side by side for every weapons clip (11) and every cloth clip
+**Clip review for the owner:** one page, before and after side by side for every weapons clip (11) and every cloth clip
 (13), each with its measured rows and a line for accept, closer or wrong.
 - Before is the game as at 6782b47, filmed today at 0d3feb5.
 - After is fac4167. The weapons clips come from c944133, whose weapons runtime is the same. The cloth clips are filmed
