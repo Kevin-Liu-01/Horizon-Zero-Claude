@@ -457,7 +457,7 @@ async function readyBow(page, K) {
  * and backs out when one closes inside 9 m. Every shot: RMB held, the look steered onto the part, Shift (Steady),
  * LMB drawn for 1.0 s with the look kept on the part, then loosed.
  */
-async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000, tolDeg = 0.35, reach = 70 } = {}) {
+async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000, tolDeg = 0.35, reach = 70, near = null, nearR = 0 } = {}) {
   const t0 = Date.now();
   const stage0 = (await page.evaluate(probe)).stage;
   let fired = 0, aimed = false, blocked = 0, stand0 = null, ditchScans = null;
@@ -478,7 +478,8 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       if ((Date.now() - t0) / 1000 > maxS) return { ok: !!all, why: `${kind} ${part}: not done in ${maxS} s (${fired} arrows)`, fired, ...(scans.length ? { scans } : {}) };
       if (s.busy) { await release(); await playScene(page, K); continue; }
       // the whole line (all): every live one within 220 m is walked to; one target: the nearest within 70 m
-      const T = (await page.evaluate(targetsOf, kind, part)).filter((t) => t.d < (all ? 220 : reach));
+      // `near` (M1b): only those within nearR of that point (the swarm that stands where she crosses)
+      const T = (await page.evaluate(targetsOf, kind, part)).filter((t) => t.d < (all ? 220 : reach) && (!near || Math.hypot(t.x - near.x, t.z - near.z) <= nearR));
       if (!T.length) return { ok: !!all, why: all ? null : `no live ${kind} within ${reach} m`, fired };
       const t = T[0];
       // the vial (closing round): she goes to a stand the scan finds open (scanStands), not round a fixed circle
@@ -595,8 +596,12 @@ async function beat(page, K, s) {
       if (ap) await walkTo(page, K, ap, 2.0, { maxS: 30 });
     }
     if (st === 'cross') {
-      // the Peg line: put out the lamps from 26 m before crossing (the optional count, the kill objective live)
-      const f = await fight(page, K, 'peg', 'lamp', null, { stand: 18, maxS: 120, all: true });
+      // the Peg line: put out the lamps from 18 m before crossing (the optional count, the kill objective live).
+      // M1b: the swarm that stands where she crosses (within 40 m of the line's middle), not all nine: the nine are three
+      // swarms of three 53 m apart now (game/runtime.js), and at 9cae8d6 walking the whole 178 m line to each swarm in
+      // turn killed her (22 arrows, 100 -> 0)
+      const mid = await page.evaluate(() => window.__CTX__.systemsGame.A.transect);
+      const f = await fight(page, K, 'peg', 'lamp', null, { stand: 18, maxS: 120, all: true, near: mid, nearR: 40 });
       if (f.why === 'died') return f;
       lampsFight = f;
     }
