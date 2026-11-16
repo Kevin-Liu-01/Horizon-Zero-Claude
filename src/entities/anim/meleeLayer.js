@@ -158,6 +158,7 @@ const _ahQi = new THREE.Quaternion();
 /** the left hand's late seat (fix round 1): palm goal, haft butt / tip, knuckle centre */
 const _slG = new THREE.Vector3();
 const _rohP = new THREE.Vector3(), _rohA = new THREE.Vector3(), _rohD = new THREE.Vector3();   // (`_rightOnHaft`)
+const _rohQ = new THREE.Quaternion();
 const _lohD = new THREE.Vector3(), _qRO = new THREE.Quaternion();
 const _lohP = new THREE.Vector3(), _lohA = new THREE.Vector3(), _lohQ = new THREE.Quaternion(), _lohQ2 = new THREE.Quaternion();   // (`_leftOnHaft`)
 const _slB = new THREE.Vector3();
@@ -790,6 +791,9 @@ const ELB_SETTLE_SLOPE = 5;
 /** ...and a head-plane failure (`_hpBad`) counts as this much violation. */
 const ELB_SETTLE_HP = 0.05;
 const ELB_SETTLE_N = 72;
+/** M1a regressions (A107): ...and with no elbow passing every test, an R8 violation (`_elbowViol`) weighs this much more
+ *  than the others in choosing the least bad. */
+const ELB_SETTLE_R8K = 20;
 /** M1a round 2 fix: ...and the forearm (elbow -> wrist, 11 points) keeps this far (m, along the ellipsoid's radius) off
  *  the back half of the head ellipsoid (A107 clause c gates 0.05; the head stabiliser moves the skull after this layer).
  *  A closer forearm counts as violation by the shortfall. At e935775 a sprint holster read 0.045 (bench). */
@@ -3602,6 +3606,17 @@ export class MeleeLayer {
       an._liveW(b.handR.bone, _q1);
       an.space.setCharQ(b.handR, _lohQ2.copy(_q1).slerp(_lohQ, k));
     }
+    /* M1a regressions (A107, the owner's bar "never an arm behind the head"): the re-solve above runs after the path's
+     * R8 bound and the elbow settle (`_solveRight`) and takes the elbow back to the raw pole. Early in a draw from a
+     * jog's or a sprint's back-swing that stood the right elbow up to 0.103 m behind the head plane within 0.12 m under
+     * the shoulder (Node, the page row's staging; the layer had it at 0.066). The bound again on the re-solved arm: the
+     * elbow rolled about shoulder -> wrist (the wrist does not move) and the hand's turn kept. */
+    {
+      an._liveW(b.handR.bone, _rohQ);
+      const n0 = D.elbowGuard || 0;
+      this._elbowGuard();
+      if ((D.elbowGuard || 0) !== n0) { an.space.setCharQ(b.handR, _rohQ); D.rohGuard = (D.rohGuard || 0) + 1; }
+    }
     an._charOf(b.handR.bone, _rohA); an._liveW(b.handR.bone, _q1);
     _rohA.add(_c.copy(this.haftOffL).applyQuaternion(_q1));
     D.rTakeMiss = +_rohA.distanceTo(_rohP).toFixed(4);
@@ -4068,9 +4083,15 @@ export class MeleeLayer {
       const phi = i <= ELB_SETTLE_N / 2 ? i * step : (i - ELB_SETTLE_N) * step;
       _eT.copy(_eC).addScaledVector(_eU, Math.cos(phi) * r).addScaledVector(_eV, Math.sin(phi) * r);
       if (an._segInHead(_eS, _eT) || an._segInHead(_eT, _eH)) continue;
-      const v = this._elbowViol(_eT) + this._foreBackViol(_eT, _eH) + (hp && this._hpBad(_eS, _eT, _eH, _hpC, _hpF) ? ELB_SETTLE_HP : 0)
+      const v8 = this._elbowViol(_eT);
+      const v = v8 + this._foreBackViol(_eT, _eH) + (hp && this._hpBad(_eS, _eT, _eH, _hpC, _hpF) ? ELB_SETTLE_HP : 0)
         + (sp ? this._foreSpineViol(_eT, _eH) : 0);
-      if (v < leastV) { leastV = v; least = phi; }
+      /* (M1a regressions, A107: when no elbow on the circle passes every test, the one that breaks the R8 bound least
+       *  (the owner's "never an arm behind the head") is taken, then the least of the rest: at a sprint's pull into the
+       *  guard the plain sum took an elbow 0.105 m behind the head plane at shoulder height over one that passed R8 and
+       *  failed only the head-plane test by its fixed 0.05) */
+      const vl = v8 * ELB_SETTLE_R8K + v;
+      if (vl < leastV) { leastV = vl; least = phi; }
       if (v > 0) continue;
       const dp = _eT.distanceTo(_esP), a = Math.abs(phi);
       if (dp <= lim && a < bestA) { bestA = a; best = phi; }
