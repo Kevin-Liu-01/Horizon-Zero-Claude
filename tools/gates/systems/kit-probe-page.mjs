@@ -495,12 +495,15 @@ export async function runKit(page, { sleep, log = () => {}, only = null }) {
     const aim = chest ? chest.getWorldPosition(new V()) : new V(m.position.x, m.position.y + 0.75 * (m.height ?? 3.4), m.position.z);
     const st = hfStage(m);
     await frames(40);
-    const e1 = await shoot('hunter', aim, 700);
+    // M1b round 3: aimed where the chest is NOW and led by its own motion (the Plumb walks with its brain off: at ba0c1af
+    // the point read 40 frames before the shot was empty air when the arrow came)
+    const at = () => (chest ? chest.getWorldPosition(new V()) : aim);
+    const e1 = await shoot('hunter', at(), 700, true, chest);
     const d1 = K.lastShot;
     const hit = e1.find((x) => x.n === 'machine-damaged') || e1.find((x) => x.n === 'arrow-hit');
     const tB = performance.now();
     const burst = [];
-    for (let i = 0; i < 7; i++) { calm(m); const e = await shoot('hunter', aim, 130); burst.push(e.filter((x) => x.n === 'machine-damaged' || x.n === 'arrow-hit').map((x) => x.n === 'machine-damaged' ? (x.vol || 'hull') : 'arrow-hit:' + (x.kind ?? 'world'))); }
+    for (let i = 0; i < 7; i++) { calm(m); const e = await shoot('hunter', at(), 130); burst.push(e.filter((x) => x.n === 'machine-damaged' || x.n === 'arrow-hit').map((x) => x.n === 'machine-damaged' ? (x.vol || 'hull') : 'arrow-hit:' + (x.kind ?? 'world'))); }
     await wait(800);
     st.on = false;
     await lower();
