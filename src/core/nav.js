@@ -295,6 +295,7 @@ export class Nav {
     if (this._phase === 'cost') {
       const pools = (this.ctx.environment && this.ctx.environment.water
         && this.ctx.environment.water.pools) || [];
+      const wet = this.ctx.water && typeof this.ctx.water.depthAt === 'function' ? this.ctx.water : null;
       const end = Math.min(N, this._row + rows);
       const dst = this._dst;
       for (let iz = this._row; iz < end; iz++) {
@@ -312,10 +313,18 @@ export class Nav {
           let c = 1 + slope * 26;
           const rf = riverFactor(x, z);
           if (rf > 0.55) c += 12;                                 // soft silt
-          for (let p = 0; p < pools.length; p++) {
-            const pl = pools[p];
-            const dx = (x - pl.x) / (pl.rx + 1), dz = (z - pl.z) / (pl.rz + 1);
-            if (dx * dx + dz * dz < 1) { c = 250; break; }        // standing water
+          if (wet) {
+            // M1.5d: the island's own water off the bake (water.depthAt reads the baked heights against the sea and
+            // the Glass), not the valley's pool discs: wading costs by its depth, nothing is closed (a machine in the
+            // shallows still finds its way out; the Gauge wades the Glass)
+            const d = wet.depthAt(x, z);
+            if (d > 0.05) c = Math.max(c, Math.min(250, 70 + d * 120));
+          } else {
+            for (let p = 0; p < pools.length; p++) {
+              const pl = pools[p];
+              const dx = (x - pl.x) / (pl.rx + 1), dz = (z - pl.z) / (pl.rz + 1);
+              if (dx * dx + dz * dz < 1) { c = 250; break; }        // standing water
+            }
           }
           dst[i] = Math.max(1, Math.min(250, Math.round(c)));
         }
@@ -656,4 +665,335 @@ export class Nav {
       dirty: this._dirty, cells: this.cost.length, blocked, open, ...this.stats,
     };
   }
+}
+
+/* =============================== THE WALK GRID ============================== */
+
+/**
+ * M1.5d (people; TECH: "rebuild its grid from the island bake for the Pans and Saltrow"): THE WALK GRID. The 2 m grid
+ * above is the machines': it stamps every blocker 1.2 m wide and closes Saltrow's 6.6 m street. People walk a finer grid
+ * of their own over a box (Saltrow, its pans and its harbour), built from the island bake and the collision world:
+ *   ground     the bake's heights (terrain.getHeight, bilinear off the baked grid); a cell steeper than `maxSlope` is shut
+ *   water      the bake's sea and the Glass (water.depthAt): a cell with more than `wet` m of water is shut (people do not wade)
+ *   blockers   every static blocking collider (not a person) whose body stands between `under` and `over` above the
+ *              ground under it, grown by the walker's `radius`: boxes by their yawed footprint, capsules and spheres by
+ *              their disc (a lying capsule by its segment), meshes per triangle (the triangle's own footprint)
+ *   discs      extra round blockers the caller hands in ({ x, z, r }: things with no collider, e.g. a Brazier's bowl and cistern)
+ * `path(from, to)` is A* on 8 neighbours with no corner cut, string-pulled by a march of the real segment at a quarter
+ * cell, so no leg of a path crosses a shut cell. The grid builds synchronously on its first query (~25-60 ms for
+ * Saltrow's box) and again after a blocker is added in its box or any is removed (`dirty`).
+ */
+export const WALK = Object.freeze({ cell: 0.5, radius: 0.32, under: 0.25, over: 1.9, maxSlope: 0.75, wet: 0.02 });
+
+const WDX = [1, -1, 0, 0, 1, 1, -1, -1];
+const WDZ = [0, 0, 1, -1, 1, -1, 1, -1];
+const WDC = [1, 1, 1, 1, Math.SQRT2, Math.SQRT2, Math.SQRT2, Math.SQRT2];
+
+/** Squared 2D distance from point (px, pz) to the triangle a b c (0 inside). */
+function triDist2(px, pz, ax, az, bx, bz, cx, cz) {
+  const s1 = (bx - ax) * (pz - az) - (bz - az) * (px - ax);
+  const s2 = (cx - bx) * (pz - bz) - (cz - bz) * (px - bx);
+  const s3 = (ax - cx) * (pz - cz) - (az - cz) * (px - cx);
+  if ((s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0)) return 0;
+  return Math.min(segDist2(px, pz, ax, az, bx, bz), segDist2(px, pz, bx, bz, cx, cz), segDist2(px, pz, cx, cz, ax, az));
+}
+function segDist2(px, pz, ax, az, bx, bz) {
+  const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz;
+  let t = L2 > 1e-12 ? ((px - ax) * dx + (pz - az) * dz) / L2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const ex = ax + dx * t - px, ez = az + dz * t - pz;
+  return ex * ex + ez * ez;
+}
+
+export class WalkGrid {
+  /**
+   * `box` { id, x0, z0, x1, z1 } world metres; `src` { height(x, z), depth(x, z) | null, colliders() -> array,
+   * forEachTriangle(col, fn) | null }; `opts` { cell, radius, discs: [{ x, z, r }] }.
+   */
+  constructor(box, src, opts = {}) {
+    this.id = box.id || 'walk';
+    this.cell = opts.cell ?? WALK.cell;
+    this.radius = opts.radius ?? WALK.radius;
+    this.x0 = box.x0; this.z0 = box.z0;
+    this.nx = Math.max(2, Math.ceil((box.x1 - box.x0) / this.cell) + 1);
+    this.nz = Math.max(2, Math.ceil((box.z1 - box.z0) / this.cell) + 1);
+    this.x1 = this.x0 + (this.nx - 1) * this.cell; this.z1 = this.z0 + (this.nz - 1) * this.cell;
+    this.src = src;
+    this.discs = (opts.discs || []).map((d) => ({ x: d.x, z: d.z, r: d.r }));
+    const n = this.nx * this.nz;
+    this.h = new Float32Array(n);
+    this.open = new Uint8Array(n);       // 0 shut, 1..255 the step cost (1 flat)
+    this.why = new Uint8Array(n);        // 0 open, 1 slope, 2 water, 3 collider, 4 disc, 5 edge
+    this._g = new Float32Array(n);
+    this._from = new Int32Array(n);
+    this._seen = new Int32Array(n);
+    this._closed = new Int32Array(n);
+    this._visit = 0;
+    this._heap = new Heap(n * 2);
+    this._raw = [];
+    this.dirty = true;
+    this.stats = { builds: 0, buildMs: 0, shut: { slope: 0, water: 0, collider: 0, disc: 0 }, colliders: 0, paths: 0, misses: 0 };
+  }
+
+  contains(x, z, m = 0) { return x >= this.x0 + m && x <= this.x1 - m && z >= this.z0 + m && z <= this.z1 - m; }
+  index(x, z) {
+    const ix = Math.round((x - this.x0) / this.cell), iz = Math.round((z - this.z0) / this.cell);
+    if (ix < 0 || iz < 0 || ix >= this.nx || iz >= this.nz) return -1;
+    return iz * this.nx + ix;
+  }
+  wx(i) { return this.x0 + (i % this.nx) * this.cell; }
+  wz(i) { return this.z0 + ((i / this.nx) | 0) * this.cell; }
+  blockedAt(x, z) { if (this.dirty) this.build(); const i = this.index(x, z); return i < 0 || this.open[i] === 0; }
+
+  /** Overlaps the box (a collider's AABB grown by the walker's radius)? */
+  overlaps(c) {
+    const r = this.radius;
+    return !(c.maxx < this.x0 - r || c.minx > this.x1 + r || c.maxz < this.z0 - r || c.minz > this.z1 + r);
+  }
+
+  build() {
+    const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
+    const { nx, nz, cell } = this, S = this.src, h = this.h, open = this.open, why = this.why;
+    for (let iz = 0; iz < nz; iz++) {
+      const z = this.z0 + iz * cell;
+      for (let ix = 0; ix < nx; ix++) h[iz * nx + ix] = S.height(this.x0 + ix * cell, z);
+    }
+    const sh = this.stats.shut;
+    sh.slope = sh.water = sh.collider = sh.disc = 0;
+    for (let iz = 0; iz < nz; iz++) {
+      const z = this.z0 + iz * cell;
+      for (let ix = 0; ix < nx; ix++) {
+        const i = iz * nx + ix, x = this.x0 + ix * cell;
+        if (ix === 0 || iz === 0 || ix === nx - 1 || iz === nz - 1) { open[i] = 0; why[i] = 5; continue; }
+        const gx = (h[i + 1] - h[i - 1]) / (2 * cell), gz = (h[i + nx] - h[i - nx]) / (2 * cell);
+        const slope = Math.sqrt(gx * gx + gz * gz);
+        if (slope > WALK.maxSlope) { open[i] = 0; why[i] = 1; sh.slope++; continue; }
+        if (S.depth && S.depth(x, z) > WALK.wet) { open[i] = 0; why[i] = 2; sh.water++; continue; }
+        open[i] = Math.min(255, 1 + Math.round(slope * 6)); why[i] = 0;
+      }
+    }
+    // blockers
+    const pad = this.radius, cols = S.colliders ? S.colliders() : [];
+    let nCol = 0;
+    for (let k = 0; k < cols.length; k++) {
+      const c = cols[k];
+      if (!c || c.dead || !c.blocking || c.dynamic || c.kind === 'npc' || !this.overlaps(c)) continue;
+      if (c.type === 'mesh') {
+        if (!S.forEachTriangle) continue;
+        let any = false;
+        S.forEachTriangle(c, (ax, ay, az, bx, by, bz, cx, cy, cz) => {
+          const mx = (ax + bx + cx) / 3, mz = (az + bz + cz) / 3, g = S.height(mx, mz);
+          const lo = Math.min(ay, by, cy) - g, hi = Math.max(ay, by, cy) - g;
+          if (hi < WALK.under || lo > WALK.over) return;
+          if (this._tri(ax, az, bx, bz, cx, cz, pad)) any = true;
+        });
+        if (any) nCol++;
+        continue;
+      }
+      // primitives: in the walker's height band over the ground under their centre?
+      const ccx = c.type === 'box' || c.type === 'sphere' ? c.cx : (c.ax + c.bx) * 0.5;
+      const ccz = c.type === 'box' || c.type === 'sphere' ? c.cz : (c.az + c.bz) * 0.5;
+      const g = S.height(ccx, ccz);
+      if (c.maxy - g < WALK.under || c.miny - g > WALK.over) continue;
+      if (c.type === 'box') this._box(c, pad);
+      else if (c.type === 'capsule' && !c.vertical) this._seg(c.ax, c.az, c.bx, c.bz, c.r + pad);
+      else this._disc(ccx, ccz, c.r + pad);
+      nCol++;
+    }
+    for (const d of this.discs) this._disc(d.x, d.z, d.r + pad, 4);
+    this.stats.colliders = nCol;
+    this.stats.builds++;
+    this.stats.buildMs = +((typeof performance !== 'undefined' ? performance : Date).now() - t0).toFixed(1);
+    this.dirty = false;
+    return this;
+  }
+
+  _shut(i, w) {
+    if (this.open[i] === 0) return;
+    this.open[i] = 0; this.why[i] = w;
+    if (w === 3) this.stats.shut.collider++; else if (w === 4) this.stats.shut.disc++;
+  }
+
+  _range(x0, z0, x1, z1) {
+    const c = this.cell;
+    return [Math.max(0, Math.floor((x0 - this.x0) / c)), Math.min(this.nx - 1, Math.ceil((x1 - this.x0) / c)),
+      Math.max(0, Math.floor((z0 - this.z0) / c)), Math.min(this.nz - 1, Math.ceil((z1 - this.z0) / c))];
+  }
+
+  _disc(cx, cz, r, w = 3) {
+    const [ix0, ix1, iz0, iz1] = this._range(cx - r, cz - r, cx + r, cz + r), r2 = r * r;
+    for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
+      const dx = this.x0 + ix * this.cell - cx, dz = this.z0 + iz * this.cell - cz;
+      if (dx * dx + dz * dz <= r2) this._shut(iz * this.nx + ix, w);
+    }
+  }
+
+  _seg(ax, az, bx, bz, r) {
+    const [ix0, ix1, iz0, iz1] = this._range(Math.min(ax, bx) - r, Math.min(az, bz) - r, Math.max(ax, bx) + r, Math.max(az, bz) + r), r2 = r * r;
+    for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
+      if (segDist2(this.x0 + ix * this.cell, this.z0 + iz * this.cell, ax, az, bx, bz) <= r2) this._shut(iz * this.nx + ix, 3);
+    }
+  }
+
+  /** A yaw box (collision's frame: local = world turned by -yaw) grown by `pad`. */
+  _box(c, pad) {
+    const r = Math.hypot(c.hx, c.hz) + pad;
+    const [ix0, ix1, iz0, iz1] = this._range(c.cx - r, c.cz - r, c.cx + r, c.cz + r);
+    const cs = Math.cos(-c.yaw), sn = Math.sin(-c.yaw), p2 = pad * pad;
+    for (let iz = iz0; iz <= iz1; iz++) {
+      const rz = this.z0 + iz * this.cell - c.cz;
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const rx = this.x0 + ix * this.cell - c.cx;
+        const lx = rx * cs - rz * sn, lz = rx * sn + rz * cs;
+        const ex = Math.max(0, Math.abs(lx) - c.hx), ez = Math.max(0, Math.abs(lz) - c.hz);
+        if (ex * ex + ez * ez <= p2) this._shut(iz * this.nx + ix, 3);
+      }
+    }
+  }
+
+  _tri(ax, az, bx, bz, cx, cz, pad) {
+    const [ix0, ix1, iz0, iz1] = this._range(Math.min(ax, bx, cx) - pad, Math.min(az, bz, cz) - pad, Math.max(ax, bx, cx) + pad, Math.max(az, bz, cz) + pad);
+    const p2 = pad * pad;
+    let any = false;
+    for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
+      if (triDist2(this.x0 + ix * this.cell, this.z0 + iz * this.cell, ax, az, bx, bz, cx, cz) <= p2) { this._shut(iz * this.nx + ix, 3); any = true; }
+    }
+    return any;
+  }
+
+  /** The nearest open cell to (x, z) within `ring` cells, or -1. */
+  nearestOpen(x, z, ring = 8) {
+    if (this.dirty) this.build();
+    let i = this.index(x, z);
+    if (i >= 0 && this.open[i]) return i;
+    const ix0 = Math.round((x - this.x0) / this.cell), iz0 = Math.round((z - this.z0) / this.cell);
+    let best = -1, bd = Infinity;
+    for (let r = 1; r <= ring && best < 0; r++) {
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const ix = ix0 + dx, iz = iz0 + dz;
+        if (ix < 0 || iz < 0 || ix >= this.nx || iz >= this.nz) continue;
+        i = iz * this.nx + ix;
+        if (!this.open[i]) continue;
+        const d = (this.wx(i) - x) ** 2 + (this.wz(i) - z) ** 2;
+        if (d < bd) { bd = d; best = i; }
+      }
+    }
+    return best;
+  }
+
+  /** Is the straight segment (ax, az) -> (bx, bz) on open cells all the way (marched at a quarter cell)? */
+  lineOpen(ax, az, bx, bz) {
+    if (this.dirty) this.build();
+    const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
+    const steps = Math.max(1, Math.ceil(len / (this.cell * 0.25)));
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps, i = this.index(ax + dx * t, az + dz * t);
+      if (i < 0 || this.open[i] === 0) return false;
+    }
+    return true;
+  }
+
+  /**
+   * A path of { x, z } points (the first is `from`'s cell or `from` itself, the last `to` when it is open, else the open
+   * cell nearest it), or null when there is none. A fresh array of fresh points: the caller keeps it.
+   */
+  path(from, to, opts = null) {
+    if (this.dirty) this.build();
+    const maxExp = (opts && opts.maxExpansions) || 120000;
+    const nx = this.nx;
+    const start = this.nearestOpen(from.x, from.z), goal = this.nearestOpen(to.x, to.z, 12);
+    this.stats.paths++;
+    if (start < 0 || goal < 0) { this.stats.misses++; return null; }
+    const out = [];
+    const startOpen = this.index(from.x, from.z) === start || this.lineOpen(from.x, from.z, this.wx(start), this.wz(start));
+    const P0 = startOpen ? { x: from.x, z: from.z } : { x: this.wx(start), z: this.wz(start) };
+    const goalPt = this.index(to.x, to.z) === goal || this.lineOpen(this.wx(goal), this.wz(goal), to.x, to.z) ? { x: to.x, z: to.z } : { x: this.wx(goal), z: this.wz(goal) };
+    if (this.lineOpen(P0.x, P0.z, goalPt.x, goalPt.z)) { out.push(P0, goalPt); return out; }
+    const visit = ++this._visit, g = this._g, fr = this._from, seen = this._seen, closed = this._closed, heap = this._heap;
+    heap.clear();
+    const gx = goal % nx, gz = (goal / nx) | 0;
+    const hf = (i) => { const dx = Math.abs((i % nx) - gx), dz = Math.abs(((i / nx) | 0) - gz); return dx > dz ? dx + 0.41421356 * dz : dz + 0.41421356 * dx; };
+    seen[start] = visit; g[start] = 0; fr[start] = -1; heap.push(hf(start), start);
+    let found = false, exp = 0;
+    while (heap.n > 0) {
+      const cur = heap.pop();
+      if (cur === goal) { found = true; break; }
+      if (closed[cur] === visit) continue;
+      closed[cur] = visit;
+      if (++exp > maxExp) break;
+      const cx = cur % nx, cz = (cur / nx) | 0;
+      for (let d = 0; d < 8; d++) {
+        const ax = cx + WDX[d], az = cz + WDZ[d];
+        if (ax < 0 || az < 0 || ax >= nx || az >= this.nz) continue;
+        const ni = az * nx + ax, oc = this.open[ni];
+        if (!oc) continue;
+        if (d >= 4 && (!this.open[cz * nx + ax] || !this.open[az * nx + cx])) continue;
+        const ng = g[cur] + WDC[d] * oc;
+        if (seen[ni] === visit && ng >= g[ni]) continue;
+        seen[ni] = visit; g[ni] = ng; fr[ni] = cur;
+        heap.push(ng + hf(ni) * 1.02, ni);
+      }
+    }
+    if (!found) { this.stats.misses++; return null; }
+    const raw = this._raw; raw.length = 0;
+    for (let i = goal; i !== -1; i = fr[i]) raw.push(i);
+    raw.reverse();
+    // string-pull from P0: keep the farthest raw cell the current anchor sees in a straight open line
+    out.push(P0);
+    let ax = P0.x, az = P0.z;
+    for (let i = 1; i < raw.length; i++) {
+      if (this.lineOpen(ax, az, this.wx(raw[i]), this.wz(raw[i]))) continue;
+      const q = raw[i - 1];
+      ax = this.wx(q); az = this.wz(q);
+      out.push({ x: ax, z: az });
+    }
+    if (!this.lineOpen(ax, az, goalPt.x, goalPt.z)) out.push({ x: this.wx(goal), z: this.wz(goal) });
+    else out.push(goalPt);
+    return out;
+  }
+
+  /** The grid's census for a gate's detail. */
+  audit() {
+    let open = 0;
+    for (let i = 0; i < this.open.length; i++) if (this.open[i]) open++;
+    return { id: this.id, cell: this.cell, radius: this.radius, nx: this.nx, nz: this.nz, box: [this.x0, this.z0, this.x1, this.z1], open, ...this.stats, shut: { ...this.stats.shut } };
+  }
+}
+
+/* The walk grids on `ctx.nav` (M1.5d): installed here so the class above stays the whole contract.
+ *   ctx.nav.addWalkGrid(box, opts) -> WalkGrid   (box { id, x0, z0, x1, z1 }; opts { cell, radius, discs })
+ *   ctx.nav.walkGrid(id) / walkGridAt(x, z)
+ *   ctx.nav.walk(from, to) -> [{ x, z }, ...] | null   (null when no walk grid holds both ends, or none joins them)
+ * Collision keeps them current through the hooks the machines' grid already has (onColliderAdded, markDirty). */
+Nav.prototype.addWalkGrid = function addWalkGrid(box, opts = {}) {
+  this._walk = this._walk || [];
+  const T = this.ctx.terrain, W = this.ctx.water, C = this.collision;
+  const g = new WalkGrid(box, {
+    height: (x, z) => T.getHeight(x, z),
+    depth: W && typeof W.depthAt === 'function' ? (x, z) => W.depthAt(x, z) : (x, z) => Math.max(0, -T.getHeight(x, z)),
+    colliders: () => C.colliders,
+    forEachTriangle: (c, fn) => C.forEachTriangle(c, fn),
+  }, opts);
+  const i = this._walk.findIndex((w) => w.id === g.id);
+  if (i >= 0) this._walk[i] = g; else this._walk.push(g);
+  return g;
+};
+Nav.prototype.walkGrid = function walkGrid(id) { return (this._walk || []).find((w) => w.id === id) || null; };
+Nav.prototype.walkGridAt = function walkGridAt(x, z) { return (this._walk || []).find((w) => w.contains(x, z, w.cell)) || null; };
+Nav.prototype.walk = function walk(from, to, opts = null) {
+  const g = this.walkGridAt(from.x, from.z);
+  if (!g || !g.contains(to.x, to.z, g.cell)) return null;
+  return g.path(from, to, opts);
+};
+{
+  const added = Nav.prototype.onColliderAdded, dirty = Nav.prototype.markDirty;
+  Nav.prototype.onColliderAdded = function onColliderAdded(col) {
+    if (this._walk && col && !col.dead && !col.dynamic && col.blocking) for (const w of this._walk) if (w.overlaps(col)) w.dirty = true;
+    return added.call(this, col);
+  };
+  Nav.prototype.markDirty = function markDirty() {
+    if (this._walk) for (const w of this._walk) w.dirty = true;
+    return dirty.call(this);
+  };
 }

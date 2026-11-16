@@ -223,7 +223,10 @@ async function routineLog() {
   if (!R) return { error: 'no routines' };
   const out = {};
   const questSpawned = [];
-  const { WORK_CLIPS, bareClip } = await import('/src/world/npc/people/routines.js');
+  const { WORK_CLIPS, bareClip, SALTROW_WALK } = await import('/src/world/npc/people/routines.js');
+  // (M1.5d in full) every route walked in the log, for the audit of its legs against the collision world
+  const allRoutes = [], route0 = R.route;
+  R.route = function (e, from, step) { const path = route0.call(this, e, from, step); allRoutes.push(this.routes[this.routes.length - 1]); return path; };
   try {
     // the log's clock from the start: a person adopted under the film's own hour (18:40, past the lamp's 18:30) would
     // begin at the lamp and then walk back up for the log's 18:00
@@ -312,10 +315,37 @@ async function routineLog() {
     out.log = logs.map((L) => ({ id: L.id, changes: L.changes, acts: L.acts, maxStationaryOutsideWorkS: L.maxStill, stillClip: L.stillClip, stillAt: L.stillAt || null, longestWalkS: L.maxWalk, insideAt: L.insideAt || null, noClipSamples: L.noClip, bindPoseSamples: L.tpose, putOnMark: R.list.find((e) => e.id === L.id)?.stuck || 0, quest: quest.some((t) => t.id === L.id), trace: L.trace || null,
       insideColliderSamples: L.inside, belowSeaSamples: L.wet, samples: L.samples, walkedM: +L.walked.toFixed(1), nightSamples: L.night }));
     void probeV;
+    // 0 path segments through collision: every leg of every route walked, marched at 0.1 m, a 0.25 m capsule at the ground
+    // against every static blocking collider that is not a person, the home Brazier's discs (no collider of their own) and
+    // the water (more than 0.02 m deep)
+    {
+      const W = C.water, bad = [];
+      let legs = 0, samples = 0;
+      const cap = new V();
+      for (const rec of allRoutes) {
+        for (let i = 0; i + 1 < rec.pts.length; i++) {
+          legs++;
+          const a = rec.pts[i], b = rec.pts[i + 1], L = Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(1, Math.ceil(L / 0.1));
+          for (let k = 0; k <= n; k++) {
+            const x = a.x + (b.x - a.x) * k / n, z = a.z + (b.z - a.z) * k / n;
+            samples++;
+            cap.set(x, C.terrain.getHeight(x, z), z);
+            const r = Cl?.resolveCapsule?.(cap, 0.25, 1.6, { passes: 1, filter: (c) => c.blocking && c.kind !== 'npc' && !c.dynamic });
+            let why = r?.hit ? (r.collider?.kind || 'collider') : null;
+            if (!why && SALTROW_WALK.discs.some((d) => Math.hypot(x - d.x, z - d.z) < d.r + 0.25)) why = 'brazier disc';
+            if (!why && W?.depthAt && W.depthAt(x, z) > 0.02) why = 'water';
+            if (why) { bad.push({ id: rec.id, act: rec.act, grid: rec.grid, leg: i, at: [+x.toFixed(2), +z.toFixed(2)], why }); break; }
+          }
+        }
+      }
+      out.paths = { routes: allRoutes.length, onGrid: allRoutes.filter((r) => r.grid).length, legs, samples, legsThroughCollision: bad.length, first: bad.slice(0, 6),
+        navMiss: R.list.reduce((n, e) => n + (e.navMiss || 0), 0), grid: R._grid?.audit?.() || null };
+    }
     out.lookout = await lookoutTrials(C, R, env, () => h, (v) => { h = v; });
   } catch (e) {
     out.error = String(e?.stack || e).slice(0, 600);
   } finally {
+    R.route = route0;
     R.hourOf = null;
     for (const e of R.list) PS.tierAt(e.person, null);
     for (const q of questSpawned) { try { PS.despawn(q); } catch (e) { /* */ } }

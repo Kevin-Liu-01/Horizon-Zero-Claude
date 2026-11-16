@@ -1,4 +1,5 @@
 import { streetPoint, CONES, HARBOUR, BREAKWATER_LAMP, breakwaterPoint, STREET } from '../../settlements/saltrow-layout.js';
+import { HOME_BRAZIER, HOME_CISTERN, CISTERN, SEAT, offsetOn } from '../../settlements/brazier-spots.js';
 import { siteById } from '../../island/sites.js';
 import { Lookout } from './lookout.js';
 
@@ -15,6 +16,10 @@ import { Lookout } from './lookout.js';
  *   keeper     by day at the harbour: a word with the caulkers, a rest on the beach, a call to the boats; from 18:30 to 06:00 lights the breakwater lamp from the
  *              beach at the mole's root, watches the water along the beach and calls, comes back to tend the lamp
  * A step is { act, at, face, clip, dur: [lo, hi] }; `act` is what the log counts (walking between is 'walk').
+ * THE WAY (M1.5d in full): every walk between two places is a path on the people's walk grid over Saltrow, its pans and
+ * its harbour (src/core/nav.js WalkGrid, rebuilt from the island bake and the town's colliders once the town stands:
+ * SALTROW_WALK), so no leg of it crosses a building, a cone, the mole, the sea or the Glass. A step's authored `via` is
+ * the fallback only (no nav in the world, or no path found: counted as `navMiss`).
  * Mise is the quest's (src/game/runtime.js stands her at her anchor) and is not driven here.
  *
  * In a ?shot film nothing is adopted or spawned (the crew stands as settlements staged it; no frame moves) unless
@@ -59,6 +64,20 @@ export function places() {
     toPans,
   };
 }
+
+/**
+ * The people's walk grid over Saltrow (src/core/nav.js WalkGrid): every routine place and the street with 12 m round them,
+ * and the home Brazier's bowl, cistern and seat as discs (they have no collider: src/game/brazier/braziers.js builds them).
+ */
+const BOWL_R = 0.8, SEAT_R = 0.42;
+export const SALTROW_WALK = Object.freeze({
+  box: Object.freeze({ id: 'saltrow', x0: -404, z0: 190, x1: -230, z1: 320 }),
+  discs: Object.freeze([
+    Object.freeze({ x: HOME_BRAZIER.x, z: HOME_BRAZIER.z, r: BOWL_R }),
+    Object.freeze({ x: HOME_CISTERN.x, z: HOME_CISTERN.z, r: CISTERN.r }),
+    Object.freeze((() => { const o = offsetOn(SEAT.bearing, SEAT.dist); return { x: +(HOME_BRAZIER.x + o.x).toFixed(3), z: +(HOME_BRAZIER.z + o.z).toFixed(3), r: SEAT_R }; })()),
+  ]),
+});
 
 /** The loops. Faces: a point the person turns to at the step. */
 function loops(P) {
@@ -150,6 +169,10 @@ export class Routines {
     this.list = [];           // { person, id, R: loop record, k, step, phase: 'go'|'do', t, end, path, act, seed }
     this._adopted = new Set();
     this._keeper = null;
+    this._grid = null;
+    /** the last 64 routes walked ({ id, act, grid, pts }) and how many in all (the log's audit) */
+    this.routes = [];
+    this.routeCount = 0;
     this._checkT = 0;
     /** M1.5d: the keeper's warning when an Instrument comes within 80 m (lookout.js; the people system hands it the lines) */
     this.lookout = new Lookout(this);
@@ -207,21 +230,54 @@ export class Routines {
     e.k++;
     e.step = step;
     const p = e.person;
-    // the way: the step's waypoints, then the place
-    e.path = wayOf(p.group.position, step);
+    // the way: a path on the walk grid (or, with no grid, the step's waypoints, then the place)
     e.phase = 'go';
     if (first) {
       // start on the job: put them at the place, already at it
       p.setPosition(step.at.x, step.at.z);
       e.path = [];
-    }
+    } else e.path = this.route(e, p.group.position, step);
     this._go(e);
+  }
+
+  /**
+   * The walk grid (built once the town's colliders stand; null before, or with no nav in the world). Rebuilt by nav itself
+   * when a blocker is added in its box.
+   */
+  grid() {
+    if (this._grid) return this._grid;
+    const nav = this.ctx.nav, town = this.ctx.settlements?.town;
+    if (!nav?.addWalkGrid || !this.ctx.terrain || !town?.loaded || !(town.colliderCount > 0)) return null;
+    this._grid = nav.walkGrid(SALTROW_WALK.box.id) || nav.addWalkGrid(SALTROW_WALK.box, { discs: SALTROW_WALK.discs });
+    return this._grid;
+  }
+
+  /**
+   * The way from `from` to a step's place: the walk grid's path (its first point is where the person stands), or the step's
+   * authored waypoints when there is no grid or no path (`e.navMiss` counts those). Each route is kept in `routes` (the last
+   * 64, for the log's audit of every leg against the collision world).
+   */
+  route(e, from, step) {
+    const G = this.grid();
+    let path = null;
+    if (G && G.contains(from.x, from.z, G.cell) && G.contains(step.at.x, step.at.z, G.cell)) {
+      path = G.path(from, step.at);
+      if (path) path = path.slice(1);
+    }
+    if (!path) { if (G) e.navMiss = (e.navMiss || 0) + 1; path = wayOf(from, step); e.onGrid = false; } else e.onGrid = true;
+    const rec = { id: e.id, act: step.act, grid: !!e.onGrid, pts: [{ x: from.x, z: from.z }, ...path.map((q) => ({ x: q.x, z: q.z }))] };
+    this.routes.push(rec);
+    if (this.routes.length > 64) this.routes.shift();
+    this.routeCount++;
+    return path;
   }
 
   _go(e) {
     const p = e.person;
-    // skip waypoints already within 1.5 m
-    while (e.path.length > 1 && Math.hypot(e.path[0].x - p.group.position.x, e.path[0].z - p.group.position.z) < 1.5) e.path.shift();
+    // skip waypoints already within 1.5 m (on the grid: only when the straight line on to the next one is open)
+    const G = e.onGrid ? this._grid : null;
+    while (e.path.length > 1 && Math.hypot(e.path[0].x - p.group.position.x, e.path[0].z - p.group.position.z) < 1.5
+      && (!G || G.lineOpen(p.group.position.x, p.group.position.z, e.path[1].x, e.path[1].z))) e.path.shift();
     const q = e.path.shift();
     if (!q || Math.hypot(q.x - p.group.position.x, q.z - p.group.position.z) < 0.35) { this._arrive(e); return; }
     e.act = 'walk';
@@ -271,7 +327,7 @@ export class Routines {
 
   /** The log's surface: per person what they are doing now. */
   info() {
-    return this.list.map((e) => ({ id: e.id, act: e.act, stuck: e.stuck || 0, clip: bareClip(e.person.current?.getClip().name) || null, phase: e.phase, night: !!e.night, x: +e.person.group.position.x.toFixed(2), z: +e.person.group.position.z.toFixed(2) }));
+    return this.list.map((e) => ({ id: e.id, act: e.act, stuck: e.stuck || 0, navMiss: e.navMiss || 0, clip: bareClip(e.person.current?.getClip().name) || null, phase: e.phase, night: !!e.night, x: +e.person.group.position.x.toFixed(2), z: +e.person.group.position.z.toFixed(2) }));
   }
 
   remove(person) {
