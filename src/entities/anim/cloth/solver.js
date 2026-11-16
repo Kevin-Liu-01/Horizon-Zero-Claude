@@ -27,7 +27,8 @@ import { at, collideCapsule, collideGround, pushOut } from './colliders.js';
 import { aeroForces } from './aero.js';
 
 const G = 9.81;
-/** Constraint, attachment and collider passes a substep. */
+/** Constraint, attachment and collider passes a substep (step 2: the colliders in every pass; with them only in the last,
+ *  the last distance pass undid a thigh's push and the cloth stretched 1.4-1.5 x at a run). */
 const ITERS = 2;
 const _n = new Float64Array(3);
 
@@ -120,7 +121,7 @@ export class ClothPiece {
     this.restScale = 1;
     // (declared here, set by the rig: one shape for every piece)
     this._act = null; this.fwd = new Float64Array([0, 0, 1]); this.lee = 0; this.stem = ''; this.kind = '';
-    this.pinMask = 0; this.hard = 0.015;
+    this.pinMask = 0; this.hard = 0.015; this.edges = false;
     this.boneOf = null; this.bones = null; this.f0 = null; this.verts = null;
   }
 
@@ -160,6 +161,8 @@ export class ClothSystem {
     this.clock = null;
     this.frames = 0; this.subTotal = 0;
     this.lastSub = 0;
+    /** constraint, attachment and collider passes a substep, and whether the colliders run in every pass (else the last) */
+    this.iters = ITERS; this.collideEvery = true;
   }
 
   addRoot(r) { this.roots.push(r); return r; }
@@ -292,6 +295,23 @@ export class ClothSystem {
       if (ex * ex + ey * ey + ez * ez > rr * rr) continue;
       act[na++] = c;
     }
+    // ...and per particle, the colliders it can meet this frame: within the collider's larger radius, the piece's most
+    // stand-off, its sweep and the frame's travel of both (the collider's ends and the particle) of either of its
+    // frame's segments. A particle meets 0-3 colliders, not the piece's 10-17: the substeps test only those
+    const KMAX = PL_K, pl = p.pl || (p.pl = new Int32Array(N * KMAX)), pc = p.pc || (p.pc = new Uint8Array(N));
+    for (let i = 0; i < N; i++) {
+      pc[i] = 0;
+      if (w[i] === 0) continue;
+      const q = i * 3, px = x[q], py = x[q + 1], pz = x[q + 2];
+      const pv = Math.sqrt(v[q] * v[q] + v[q + 1] * v[q + 1] + v[q + 2] * v[q + 2]) * dt + Math.sqrt(dx * dx + dy * dy + dz * dz);
+      let k = 0;
+      for (let a2 = 0; a2 < na && k < KMAX; a2++) {
+        const K = C[act[a2]];
+        const m = (K.r0 > K.r1 ? K.r0 : K.r1) + PL_MARGIN + pv + K.mv;
+        if (segD2(K.a, K.b, px, py, pz) < m * m || segD2(K.pa, K.pb, px, py, pz) < m * m) pl[i * KMAX + k++] = act[a2];
+      }
+      pc[i] = k;
+    }
     const gy = this.groundY, gOn = this.groundOn && p.ground;
     for (let s = 0; s < n; s++) {
       const f1 = (s + 1) / n;
@@ -336,6 +356,7 @@ export class ClothSystem {
           for (let a2 = 0; a2 < na; a2++) { const c = act[a2]; if (!(C[c].bit & p.pinMask)) continue; pushOut(C[c], x, i, 0.004, false); }
         }
       }
+      const hardNow = s === n - 1;
       // ---- ITERS passes of the distance constraints (XPBD; lambda starts at 0 each pass; after the first, the stiff ones
       //      only) and the long-range attachment, the colliders in the last (the stretch bar, 1.03, is not met by one
       //      Gauss-Seidel pass when a thigh pushes a row)
@@ -343,7 +364,8 @@ export class ClothSystem {
       const ci = p.ci, cr = p.cr, ca = p.ca, ck = p.ck, nc = p.nc, sc = p.restScale;
       for (let a2 = 0; a2 < na; a2++) at(C[act[a2]], f1, h);
       const mu = mat.mu;
-      for (let it = 0; it < ITERS; it++) {
+      const IT = this.iters;
+      for (let it = 0; it < IT; it++) {
       for (let c = 0; c < nc; c++) {
         // (the later passes: the stiff ones only, structural and the tongues' minimum)
         if (it > 0 && ca[c] !== 0) continue;
@@ -372,23 +394,35 @@ export class ClothSystem {
         const d = Math.sqrt(d2), f = m / d;
         x[a] = x[b] + ex * f; x[a + 1] = x[b + 1] + ey * f; x[a + 2] = x[b + 2] + ez * f;
       }
-      // ---- colliders (the last pass only): the ground first, then the body (the body wins), a pinched particle stops
-      if (it === ITERS - 1) for (let i = 0; i < N; i++) {
+      // ---- the EDGES (step 2; the frame's last substep, the last pass, before the particles' own): two particles either
+      //      side of a shin or a thigh are each outside it, but the sheet drawn between them cuts through it (a back
+      //      panel's hem folded round the shin in a crouch). Each structural edge against its ends' inner surfaces: where
+      //      the edge's closest point to the axis is inside `ri + hard / 2`, both ends go out along that normal, by their
+      //      share of the deficit; the particle pass after it still has the last word on every particle
+      if (hardNow && it === IT - 1 && p.edges) this._edges(p, C, pl, pc, KMAX);
+      // ---- colliders (every pass: the constraints and the body agree before the velocity is read): the ground first, then the body (the body wins), a pinched particle stops
+      if (it === IT - 1 || this.collideEvery) for (let i = 0; i < N; i++) {
         if (w[i] === 0) continue;
         let g = 0, bdy = 0;
         if (gOn) g = collideGround(gy, x, xp, i, p.off, mu);
         const px = x[i * 3], py = x[i * 3 + 1], pz = x[i * 3 + 2];
-        for (let a2 = 0; a2 < na; a2++) {
-          const c = act[a2], B = C[c].box;
+        const o = i * KMAX, nk = pc[i];
+        for (let a2 = 0; a2 < nk; a2++) {
+          const c = pl[o + a2], B = C[c].box;
           if (px < B[0] || px > B[3] || py < B[1] || py > B[4] || pz < B[2] || pz > B[5]) continue;
           bdy += collideCapsule(C[c], x, xp, i, offC ? offC[c] : p.off, mu, h, _n);
         }
         // the HARD pass: the body's inner surface (the grader's inner radius plus the chord sag of a cell and 4 mm,
         // `ri0`/`ri1`), twice round, no friction: where two outer surfaces overlap (a thigh tucked to the belly) the
         // outer pass cannot hold both, and the cloth must still never be inside her
-        for (let sw = 0; sw < 2; sw++) for (let a2 = 0; a2 < na; a2++) {
-          const c = act[a2], K = C[c];
+        // (the last pass only, and only inside the collider's box: the inner surface is inside the outer one)
+        // (the frame's last substep only: what is drawn is the cloth at the end of the frame; the outer pass holds the
+        //  substeps between)
+        if (hardNow && it === IT - 1) for (let sw = 0; sw < 2; sw++) for (let a2 = 0; a2 < nk; a2++) {
+          const c = pl[o + a2], K = C[c];
           if (!(K.ri0 > 0)) continue;
+          const B = K.box, qx = x[i * 3], qy = x[i * 3 + 1], qz = x[i * 3 + 2];
+          if (qx < B[0] || qx > B[3] || qy < B[1] || qy > B[4] || qz < B[2] || qz > B[5]) continue;
           bdy += pushOut(K, x, i, p.hard, true);
         }
         p.contact[i] = g > 0 || bdy > 0 ? 1 : 0; p.pinch[i] = 0;
@@ -397,14 +431,59 @@ export class ClothSystem {
       }
       }
       // ---- velocity
-      const ih = 1 / h;
+      const ih = 1 / h, vRel = mat.vRel || 0;
       for (let i = 0; i < N; i++) {
         const q = i * 3;
         if (p.pinch[i]) { v[q] = rfx; v[q + 1] = 0; v[q + 2] = rfz; continue; }
         let vx = (x[q] - xp[q]) * ih, vy = (x[q + 1] - xp[q + 1]) * ih, vz = (x[q + 2] - xp[q + 2]) * ih;
         const s2 = vx * vx + vy * vy + vz * vz;
         if (s2 > V_CAP * V_CAP) { const f = V_CAP / Math.sqrt(s2); vx *= f; vy *= f; vz *= f; }
+        // the KICK limit: a heavy sheet's speed relative to the frame it is carried in stays under `mat.vRel` (m/s), so a
+        // knee that shoves a panel moves it (the position is the collider's) without flinging it on past the leg
+        if (vRel > 0) {
+          const ex = vx - rfx, ey = vy - rfy, ez = vz - rfz, e2 = ex * ex + ey * ey + ez * ez;
+          if (e2 > vRel * vRel) { const f = vRel / Math.sqrt(e2); vx = rfx + ex * f; vy = rfy + ey * f; vz = rfz + ez * f; }
+        }
         v[q] = vx; v[q + 1] = vy; v[q + 2] = vz;
+      }
+    }
+  }
+
+  _edges(p, C, pl, pc, KMAX) {
+    const x = p.x, w = p.w, ci = p.ci, ca = p.ca, ck = p.ck, nc = p.nc, hh = p.hard * 0.5;
+    for (let e = 0; e < nc; e++) {
+      if (ca[e] !== 0 || ck[e] !== 0) continue;
+      const i = ci[e * 2], j = ci[e * 2 + 1], wi = w[i], wj = w[j];
+      if (wi + wj === 0) continue;
+      // the colliders of the free end (or either), inner surfaces only
+      const src = wi !== 0 ? i : j, o = src * KMAX, nk = pc[src];
+      for (let a2 = 0; a2 < nk; a2++) {
+        const K = C[pl[o + a2]];
+        if (!(K.ri0 > 0)) continue;
+        // closest points: edge P(s) = xi + s (xj - xi), axis Q(t) = ia + t (ib - ia)
+        const a = i * 3, b = j * 3;
+        const d1x = x[b] - x[a], d1y = x[b + 1] - x[a + 1], d1z = x[b + 2] - x[a + 2];
+        const d2x = K.ib[0] - K.ia[0], d2y = K.ib[1] - K.ia[1], d2z = K.ib[2] - K.ia[2];
+        const rx = x[a] - K.ia[0], ry = x[a + 1] - K.ia[1], rz = x[a + 2] - K.ia[2];
+        const A = d1x * d1x + d1y * d1y + d1z * d1z, E = d2x * d2x + d2y * d2y + d2z * d2z, F = d2x * rx + d2y * ry + d2z * rz;
+        if (A < 1e-12 || E < 1e-12) continue;
+        const Cc = d1x * rx + d1y * ry + d1z * rz, B = d1x * d2x + d1y * d2y + d1z * d2z, den = A * E - B * B;
+        let sP = den > 1e-12 ? (B * F - Cc * E) / den : 0;
+        sP = sP < 0 ? 0 : sP > 1 ? 1 : sP;
+        let tQ = (B * sP + F) / E;
+        if (tQ < 0) { tQ = 0; sP = -Cc / A; sP = sP < 0 ? 0 : sP > 1 ? 1 : sP; } else if (tQ > 1) { tQ = 1; sP = (B - Cc) / A; sP = sP < 0 ? 0 : sP > 1 ? 1 : sP; }
+        // only the inside of the edge: its ends are the particle pass's
+        if (sP < 0.15 || sP > 0.85) continue;
+        let nx = rx + d1x * sP - d2x * tQ, ny = ry + d1y * sP - d2y * tQ, nz = rz + d1z * sP - d2z * tQ;
+        const d = Math.sqrt(nx * nx + ny * ny + nz * nz), R = K.ri0 + (K.ri1 - K.ri0) * tQ + hh;
+        if (d >= R || d < 1e-7) continue;
+        nx /= d; ny /= d; nz /= d;
+        // move the edge's point out by the deficit: each end by its barycentric share, over the weights (Mueller's split)
+        const g0 = (1 - sP) * wi, g1 = sP * wj, den2 = (1 - sP) * g0 + sP * g1;
+        if (den2 < 1e-12) continue;
+        const lam = (R - d) / den2;
+        x[a] += nx * lam * g0; x[a + 1] += ny * lam * g0; x[a + 2] += nz * lam * g0;
+        x[b] += nx * lam * g1; x[b + 1] += ny * lam * g1; x[b + 2] += nz * lam * g1;
       }
     }
   }
@@ -417,7 +496,7 @@ export class ClothSystem {
     const wx = this.wind.x, wz = this.wind.z;
     this.wind.x = 0; this.wind.z = 0;
     for (const r of this.roots) { r.pp.set(r.p); r.pq.set(r.q); r.ps = r.s; r.vFed.fill(0); r.vPrev.fill(0); r.acc = 0; r.jumped = false; }
-    for (const C of this.colliders) { C.pa.set(C.a); C.pb.set(C.b); C.va.fill(0); C.vb.fill(0); }
+    for (const C of this.colliders) { C.pa.set(C.a); C.pb.set(C.b); C.va.fill(0); C.vb.fill(0); C.mv = 0; C.stamp++; }
     for (const p of this.pieces) { this._seat(p); p.contact.fill(0); p.pinch.fill(0); p.asleep = false; p.stillT = 0; }
     const per = 4, frames = Math.ceil(RESET_SUBSTEPS / per);
     for (let f = 0; f < frames; f++) for (const p of this.pieces) this._stepPiece(p, per * SUB_H, t, per, SUB_H);
@@ -445,3 +524,15 @@ export class ClothSystem {
   }
 }
 const _iq = new Float64Array(4);
+/** Per-particle collider lists: at most PL_K a particle, within the collider's radius + PL_MARGIN (the most stand-off a
+ *  piece uses, 0.03, the hard margin, and a little) + the frame's travel. */
+const PL_K = 16, PL_MARGIN = 0.06;
+/** squared distance from point p to segment a-b (Float64Array 3 each) */
+function segD2(a, b, px, py, pz) {
+  const ax = a[0], ay = a[1], az = a[2], dx = b[0] - ax, dy = b[1] - ay, dz = b[2] - az;
+  const qx = px - ax, qy = py - ay, qz = pz - az, l2 = dx * dx + dy * dy + dz * dz;
+  let t = l2 > 1e-12 ? (qx * dx + qy * dy + qz * dz) / l2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const ex = qx - dx * t, ey = qy - dy * t, ez = qz - dz * t;
+  return ex * ex + ey * ey + ez * ez;
+}

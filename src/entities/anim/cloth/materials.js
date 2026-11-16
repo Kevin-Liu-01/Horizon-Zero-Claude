@@ -19,28 +19,34 @@ export const MATERIALS = {
   coarseLinen: {
     // (the tail rides her head in its own wake: none of her travel past the lag share is met as air; cd 0.7 holds the
     //  brief's bands, 5.5 m/s 25-50 deg and 9 m/s 45-70 standing, 30-65 at a sprint, on the bench at this commit)
-    areal: 0.35, hem: 1.0, shear: 2e-2, bendAlong: 1.0, bendAcross: 0.5, kd: 3.0, mu: 0.45, cd: 0.7, cl: 0.3, slack: 1.03,
-    share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0,
+    // (step 2: kd 5 (was 3) and a kick limit of 1.5 m/s: at a sprint the tongues crossed in 10-35 frames of 240 and the
+    //  tail whipped to 64-81 deg; here 0 crossed, 34 deg mean, 37 at worst)
+    areal: 0.35, hem: 1.0, shear: 2e-2, bendAlong: 1.0, bendAcross: 0.5, kd: 5.0, mu: 0.45, cd: 0.7, cl: 0.3, slack: 1.03,
+    share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0, vRel: 1.5,
   },
   // Brea's sash panels: embroidered, lined linen, heavy at the hem (the couched border)
   lined: {
-    areal: 0.90, hem: 1.6, shear: 5e-3, bendAlong: 0.25, bendAcross: 0.12, kd: 4.0, mu: 0.50, cd: 1.0, cl: 0.25, slack: 1.03,
-    share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0.65,
+    // (step 2, WEIGHT: kd 6 (was 4), friction 0.3 (was 0.5: a lined panel slides off a rising thigh instead of riding it
+    //  up), and the KICK limit `vRel` 0.8 m/s: a knee that shoves the panel moves it but cannot fling it; at a sprint the
+    //  front hems' flutter fell from 0.13-0.19 m RMS to 0.06-0.09 and their forward chord from 29-31 deg to 12-20)
+    areal: 0.90, hem: 1.6, shear: 5e-3, bendAlong: 0.25, bendAcross: 0.12, kd: 6.0, mu: 0.30, cd: 1.0, cl: 0.25, slack: 1.03,
+    share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0.65, vRel: 0.8,
   },
   felt: {
-    areal: 0.80, hem: 1.2, shear: 2e-3, bendAlong: 0.07, bendAcross: 0.05, kd: 2.5, mu: 0.60, cd: 0.6, cl: 0.15, slack: 1.02,
-    share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0.65,
+    areal: 0.80, hem: 1.2, shear: 2e-3, bendAlong: 0.07, bendAcross: 0.05, kd: 5.0, mu: 0.60, cd: 0.6, cl: 0.15, slack: 1.02,
+    share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0.65, vRel: 1.0,
   },
   leather: {
-    areal: 2.0, hem: 1.0, shear: 2e-4, bendAlong: 0.012, bendAcross: 0.008, kd: 4.0, mu: 0.35, cd: 0.5, cl: 0.05, slack: 1.01,
-    share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0.65,
+    areal: 2.0, hem: 1.0, shear: 2e-4, bendAlong: 0.012, bendAcross: 0.008, kd: 6.0, mu: 0.35, cd: 0.5, cl: 0.05, slack: 1.01,
+    share: { lin: 0.35, vert: 0.8, yaw: 0.6 }, vFedMax: 1.2, air: 0.65, vRel: 0.6,
   },
 };
 
 /** Air density, kg/m3. */
 export const RHO = 1.2;
-/** The substep (s), and the most substeps a frame takes. */
-export const SUB_H = 1 / 240;
+/** The substep (s), and the most substeps a frame takes. (Step 2: 1/180 s, 3 at 60 Hz, the brief's first cut for C10;
+ *  was 1/240.) */
+export const SUB_H = 1 / 180;
 export const SUB_MAX = 8;
 /** A particle's speed cap (m/s): a guard, not a working limit. */
 export const V_CAP = 12;

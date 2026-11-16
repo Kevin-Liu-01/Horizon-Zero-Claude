@@ -30,20 +30,10 @@ import { MATERIALS } from './materials.js';
 import { ClothPiece, ClothSystem, makeRoot } from './solver.js';
 import { makeCollider, setEnds, radiusProfile } from './colliders.js';
 import { propCaps } from './propCaps.js';
+import { clothMode } from './mode.js';
 
-/** The flag: 2 = this solver drives Brea's sash panels and wrap tail: `?cloth=2` in the page's address, CALIMA_CLOTH=2 in
- *  Vite's environment (vite.config.js defines `__CALIMA_CLOTH__`), or `globalThis.__CALIMA_CLOTH = 2` (the Node benches). */
-export function clothMode() {
-  if (globalThis.__CALIMA_CLOTH != null) return Number(globalThis.__CALIMA_CLOTH) || 0;
-  // eslint-disable-next-line no-undef
-  if (typeof __CALIMA_CLOTH__ !== 'undefined' && __CALIMA_CLOTH__) return Number(__CALIMA_CLOTH__) || 0;
-  try {
-    const s = globalThis.location?.search || '';
-    const m = /[?&]cloth=(\d+)/.exec(s);
-    if (m) return Number(m[1]);
-  } catch { /* no location */ }
-  return 0;
-}
+/** The flag (cloth/mode.js): 2 = this solver drives Brea's sash panels and wrap tail, and the people's strands. */
+export { clothMode };
 
 const _rigs = new WeakMap(), _modes = new WeakMap();
 /** The animator's grid cloth: built on the first call under the flag (null with it off, or if the build failed).
@@ -400,11 +390,12 @@ export class BreaCloth {
     for (let r = 0; r < R - 2; r++) for (let c = 0; c < C; c++) cons.push([I(c, r), I(c, r + 2), mat.bendAlong, 0]);
     for (let r = 1; r < R; r++) for (let c = 0; c < C - 2; c++) cons.push([I(c, r), I(c + 2, r), mat.bendAcross, 0]);
     const S = this.sys, cols = S.colliders, bits = this.bits;
-    const mask = ['torso0', 'torso1', 'hips', 'thighL', 'thighR', 'shinL', 'shinR', 'upArmL', 'upArmR', 'foreArmR', 'foreArmL', 'handR', 'quiver', 'stowLance', 'stowBow', 'heldLance', 'heldBow'].reduce((m, k) => m | (bits[k] || 0), 0);
+    // (step 2: the upper torso too: in a roll or a climb the chest comes down onto the thighs, over the panels)
+    const mask = ['torso0', 'torso1', 'torso2', 'torso3', 'hips', 'thighL', 'thighR', 'shinL', 'shinR', 'upArmL', 'upArmR', 'foreArmR', 'foreArmL', 'handR', 'quiver', 'stowLance', 'stowBow', 'heldLance', 'heldBow'].reduce((m, k) => m | (bits[k] || 0), 0);
     // stand-off: the chord sag across a cell over the thigh, plus 4 mm, plus the particle's own 6 mm
     const off = 0.010;
     const P = new ClothPiece({ name, mat, C, R, X, Q0, root, pinned, cons, lraPin, mass, area, mask, off, offPerCollider: this._offFit(X, pinned, mask, off, root) });
-    P.fwd = fwd; P.stem = stem; P.kind = 'panel'; P.lee = 0.17;
+    P.fwd = fwd; P.stem = stem; P.kind = 'panel'; P.lee = 0.17; P.edges = true;
     P.pinMask = (bits.thighL || 0) | (bits.thighR || 0);
     // (the hard pass's margin: a cell's chord sag on the inner thigh, 0.12 m along a row over a 0.078 m radius, 0.028 m
     //  (a sit, a crouch: the columns lie across the thigh), + 2 mm; under the trousers' own surface, 0.096-0.105 m)
@@ -562,13 +553,17 @@ export class BreaCloth {
     for (let r = 0; r < R - 2; r++) for (let c = 0; c < C; c++) cons.push([I(c, r), I(c, r + 2), mat.bendAlong, 0]);
     const bits = this.bits;
     const mask = ['torso1', 'torso2', 'torso3', 'neck', 'head', 'upArmL', 'upArmR', 'foreArmR', 'handR', 'foreArmL', 'quiver', 'stowLance', 'stowBow', 'heldLance', 'heldBow'].reduce((m, k) => m | (bits[k] || 0), 0);
-    const off = 0.020;
+    // (step 2: 0.028, was 0.020: the strip turned edge-on to the back in a crouch put its edge, 0.045 m off its two
+    //  particles, inside the grader's torso)
+    const off = 0.028;
     const P = new ClothPiece({ name, mat, C, R, X, Q0, root, pinned, cons, lraPin, mass, area, mask, off, offPerCollider: this._offFit(X, pinned, mask, off, root), ground: false });
     // (the tongues' minimum: a little under their bind distance, so the pair never crosses but may close)
     for (let c = 0; c < P.nc; c++) if (P.ck[c] === 1) P.cr[c] *= 0.7;
     P.fwd = fwd; P.stem = stem; P.kind = 'tail'; P.lee = 0;   // (the head is narrower than the tail's swing: no lee)
     // (the tail's strip is 0.09 m wide and cupped about the two particles of a row: its edges stand 0.02 m off them)
-    P.hard = 0.030;
+    // (step 2: 0.048, was 0.030: the strip's cupped edge, or the strip turned edge-on, still met the grader's torso by
+    //  1.6-5 mm standing and in a crouch)
+    P.hard = 0.048;
     P.verts = [];
     // vertex weights: rows from the vertex's u on its column's row table; across bilinear in the wrung root, its own
     // tongue below the split

@@ -19,7 +19,7 @@ export function makeCollider(name, bit, r0, r1, src) {
     // the most stand-off a piece uses (`box`: min x y z, max x y z) for the particle's first test
     ia: new Float64Array(3), ib: new Float64Array(3), iva: new Float64Array(3), ivb: new Float64Array(3), sw: 0,
     box: new Float64Array(6),
-    primed: false, hits: 0,
+    primed: false, hits: 0, mv: 0, stamp: 0, atF: -1, atH: -1, atS: -1,
     // the frame's bounding sphere of the swept segment (for the per-piece cull)
     cx: 0, cy: 0, cz: 0, cr: 0,
   };
@@ -29,6 +29,7 @@ export function makeCollider(name, bit, r0, r1, src) {
 export function setEnds(C, ax, ay, az, bx, by, bz, dt) {
   if (C.primed) { C.pa[0] = C.a[0]; C.pa[1] = C.a[1]; C.pa[2] = C.a[2]; C.pb[0] = C.b[0]; C.pb[1] = C.b[1]; C.pb[2] = C.b[2]; }
   C.a[0] = ax; C.a[1] = ay; C.a[2] = az; C.b[0] = bx; C.b[1] = by; C.b[2] = bz;
+  C.stamp++;
   if (!C.primed) { C.pa.set(C.a); C.pb.set(C.b); C.primed = true; }
   const k = dt > 0 ? 1 / dt : 0;
   for (let i = 0; i < 3; i++) { C.va[i] = (C.a[i] - C.pa[i]) * k; C.vb[i] = (C.b[i] - C.pb[i]) * k; }
@@ -37,12 +38,17 @@ export function setEnds(C, ax, ay, az, bx, by, bz, dt) {
   const ends = [C.a, C.b, C.pa, C.pb];
   for (let e = 0; e < 4; e++) { const p = ends[e]; if (p[0] < mx) mx = p[0]; if (p[0] > Mx) Mx = p[0]; if (p[1] < my) my = p[1]; if (p[1] > My) My = p[1]; if (p[2] < mz) mz = p[2]; if (p[2] > Mz) Mz = p[2]; }
   C.cx = (mx + Mx) / 2; C.cy = (my + My) / 2; C.cz = (mz + Mz) / 2;
+  // the most either end moved this frame, plus the sweep allowance (for the per-particle lists)
+  C.mv = Math.sqrt(Math.max((C.a[0] - C.pa[0]) ** 2 + (C.a[1] - C.pa[1]) ** 2 + (C.a[2] - C.pa[2]) ** 2, (C.b[0] - C.pb[0]) ** 2 + (C.b[1] - C.pb[1]) ** 2 + (C.b[2] - C.pb[2]) ** 2)) * 0.5;
   const rr = Math.max(C.r0, C.r1);
   C.cr = Math.sqrt((Mx - mx) ** 2 + (My - my) ** 2 + (Mz - mz) ** 2) / 2 + rr;
 }
 
 /** The ends at fraction `f` of the frame (into ia / ib), and the sweep allowance for substep `h`. */
 export function at(C, f, h) {
+  // (memo: every piece asks for the same collider at the same substep; setEnds bumps the stamp)
+  if (C.atF === f && C.atH === h && C.atS === C.stamp) return;
+  C.atF = f; C.atH = h; C.atS = C.stamp;
   const g = 1 - f;
   for (let i = 0; i < 3; i++) {
     C.ia[i] = C.pa[i] * g + C.a[i] * f; C.ib[i] = C.pb[i] * g + C.b[i] * f;

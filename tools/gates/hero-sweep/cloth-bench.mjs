@@ -112,8 +112,9 @@ const setWindRel = (R, relDeg, speed) => {
   const h = R.player.heading + relDeg * Math.PI / 180;
   R.an.wind.x = -Math.sin(h) * speed; R.an.wind.z = -Math.cos(h) * speed;
 };
-const rig = (R) => peekClothRig(R.an);
-const clothReset = (R) => { R.model.updateMatrixWorld(true); if (MODE === 2) R.an.clothReset(R.t); };
+const SOLVER = flag('--solver') ? JSON.parse(flag('--solver')) : null;
+const rig = (R) => { const c = peekClothRig(R.an); if (c && SOLVER && !c._tuned) { Object.assign(c.sys, SOLVER); c._tuned = true; } return c; };
+const clothReset = (R) => { R.model.updateMatrixWorld(true); if (MODE === 2) { rig(R); R.an.clothReset(R.t); } };
 
 function staged(R, { crouch = false, sit = false, heading = 0, wind = [0, 0] } = {}) {
   reset(R);
@@ -169,7 +170,11 @@ function maxSpeed(R) {
 
 /* ------------------------------------------------------------------ the rows */
 const out = { mode: MODE, rows: {} };
+// (tuning: --mat '{"lined":{"kd":6}}' merges into the materials before the rig is built; --solver '{"iters":3}' into the
+//  system after it is)
+if (flag('--mat')) { const { MATERIALS } = await import('../../../src/entities/anim/cloth/materials.js'); for (const [k, v] of Object.entries(JSON.parse(flag('--mat')))) { const sh = v.share; Object.assign(MATERIALS[k], v); if (sh) MATERIALS[k].share = { ...MATERIALS[k].share, ...sh }; } }
 const R = await makeBench();
+
 const PR = clothProbe(R);
 R.an.setWind(45 * Math.PI / 180, 5.5);
 const rnd = (x, n = 3) => (x == null || !Number.isFinite(x) ? x : +x.toFixed(n));
@@ -427,9 +432,10 @@ if (ROWS.includes('C7')) {
 // C10: cost (ring-buffer timing, grid solver), 600 frames standing in the trade wind and 600 at a sprint; asleep
 if (ROWS.includes('C10') && MODE === 2) {
   const res = {};
+  staged(R, { wind: [135, 5.5] });
   const C = rig(R);
   const take = () => { C.sys.ringN = 0; C.sys.ringI = 0; };
-  staged(R, { wind: [135, 5.5] }); take();
+  take();
   for (let i = 0; i < 600; i++) step(R);
   res.standTrade = C.sys.timing(); unstage(R);
   staged(R, {}); R.player.sprinting = true; take();

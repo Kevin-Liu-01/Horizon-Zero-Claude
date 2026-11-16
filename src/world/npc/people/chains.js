@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { rotOf } from './pose.js';
+import { clothMode } from '../../../entities/anim/cloth/mode.js';
+import { StrandCloth } from '../../../entities/anim/cloth/strands.js';
 
 /**
  * CALIMA · live dyn_ chains on a near-tier person (settlements; R56; gate A-npc-fidelity). The same physics
@@ -73,6 +75,13 @@ export class PersonChains {
     this.legBones = ['thigh_l', 'calf_l', 'foot_l', 'thigh_r', 'calf_r', 'foot_r'].map((n) => bones[n] || null);
     this.legPos = new Float32Array(18);
     this.legR = 0.082 * worldScale;
+    // (cloth lane, step 2: under `?cloth=2` the tails, sash and shawl ends, aprons and cloaks are on the shared cloth
+    //  solver, cloth/strands.js; gear and hair locks stay on this spring chain. The solver writes `pos`, `_write` turns
+    //  the links as before)
+    this.strands = null;
+    if (clothMode() === 2) {
+      try { const sc = new StrandCloth(this.chains, bones, worldScale); if (sc.ok) this.strands = sc; } catch (e) { console.warn('[cloth] people strands off:', e); }
+    }
   }
 
   /**
@@ -113,7 +122,16 @@ export class PersonChains {
     while (this.acc >= SUB_DT && steps < 3) { this.acc -= SUB_DT; steps++; }
     this.t += dt;
     for (let i = 0; i < 6; i++) { const b = this.legBones[i]; if (!b) continue; const e = b.matrixWorld.elements; this.legPos[i * 3] = e[12]; this.legPos[i * 3 + 1] = e[13]; this.legPos[i * 3 + 2] = e[14]; }
+    const st = this.strands;
+    if (st) {
+      // a chain re-seated (the page's reseat, a freeze) re-seeds the solver from the links as they are now
+      let fresh = false;
+      for (const c of this.chains) if (c.strand && !c.seeded) { fresh = true; c.seeded = true; }
+      if (fresh) st.primed = false;
+      st.update(dt > 0.05 ? 0.05 : dt, this.t, this.wx, this.wz);
+    }
     for (const c of this.chains) {
+      if (st && c.strand) { this._write(c); continue; }
       this._rest(c);
       if (!c.seeded) this._seed(c);
       for (let s = 0; s < steps; s++) this._step(c, SUB_DT);
