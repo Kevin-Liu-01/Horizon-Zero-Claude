@@ -53,6 +53,7 @@ export const HULL_LOOK = Object.freeze({
   rimPow: 2.0,
   flashK: 0.35,
   flashMs: 70,
+  flashFrames: 3,   // M1.3e: the flash shows in at most this many rendered frames
   flashTint: Object.freeze([1.0, 0.788, 0.565]),   // #FFE6C2 (linear)
 });
 
@@ -150,11 +151,18 @@ export function installHull(machine) {
     mat.customProgramCacheKey = cacheKey;
     mat.needsUpdate = true;
     if (machine.lamp) machine.lamp.coreU = u.uCoreCol.value;
-    const fx = { until: 0, k: 0 };
+    const fx = { until: 0, k: 0, at: 0, frame: -1, n: 0 };
     machine._hullFlash = fx;
+    // M1.3e (combat, the smallest change here): a flash shows in at most HULL_LOOK.flashFrames rendered frames (the
+    // hit-feel bar: flash <= 3 frames; 70 ms is 4-5 frames at 60 fps). A new flash (a new `until`) starts the count;
+    // the engine's frame number keeps a second draw of the hull in one frame from counting twice
+    const eng = HOT.engine || machine.ctx?.engine;
     hull.onBeforeRender = function hullFlashTick() {
       const now = performance.now();
-      u.uFlash.value = now < fx.until ? fx.k * HULL_LOOK.flashK * (fx.until - now) / HULL_LOOK.flashMs : 0;
+      if (fx.until !== fx.at) { fx.at = fx.until; fx.n = 0; fx.frame = -1; }
+      const f = eng?.frames ?? -2;
+      if (now < fx.until && f !== fx.frame) { fx.frame = f; fx.n++; }
+      u.uFlash.value = now < fx.until && fx.n <= HULL_LOOK.flashFrames ? fx.k * HULL_LOOK.flashK * (fx.until - now) / HULL_LOOK.flashMs : 0;
     };
   }
   // the caster

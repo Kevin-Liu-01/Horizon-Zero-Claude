@@ -279,5 +279,87 @@ export async function runKit(page, { sleep, log = () => {} }) {
     return res;
   });
 
+  /* ---------------- hit-feel (M1.3e) ---------------- */
+  await run('hit-feel', () => page.evaluate(ev(`
+    // a calm Plumb 20 m out on open ground; one Reed arrow on its body, then seven more 0.13 s apart (the 1 s budget)
+    const b = base(); const m = spawn('plumb', b.x + 20, b.z); place(b.x, b.z, b.x + 20, b.z); await frames(40); await raise();
+    const E = C.engine, cam = C.camera, cb = C.combat, env = C.environment;
+    m.root.updateMatrixWorld(true);
+    const aim = new V(m.position.x, m.position.y + 1.7, m.position.z);
+    // the nodes sampled: the 10 nearest the aim point (bones and part nodes), so the struck one is among them
+    const nodes = [];
+    m.root.traverse((o) => { if (o !== m.root && (o.isBone || o.userData?.part)) nodes.push(o); });
+    const wp = new V();
+    nodes.sort((p, q) => p.getWorldPosition(wp).distanceTo(aim) - q.getWorldPosition(new V()).distanceTo(aim));
+    const pick = nodes.slice(0, 10);
+    let hull = null; m.root.traverse((o) => { if (!hull && o.isMesh && o.material?.userData?.hullU) hull = o; });
+    const inv = new C.camera.matrixWorld.constructor(), mw = new C.camera.matrixWorld.constructor();
+    const Q = C.camera.quaternion.constructor, q = new Q(), qr = new Q();
+    const S = (window.__HF = []); let on = true;
+    const tick = () => {
+      if (!on) return;
+      m.root.updateMatrixWorld(true);
+      inv.copy(m.root.matrixWorld).invert();
+      const ps = pick.map((o) => { mw.multiplyMatrices(inv, o.matrixWorld); const p = new V().setFromMatrixPosition(mw); q.setFromRotationMatrix(mw); return [p.x, p.y, p.z, q.x, q.y, q.z, q.w]; });
+      S.push({ t: performance.now(), ts: E.timeScale ?? 1, fov: cam.fov, punch: cb._fovPunchOn ?? 0, flash: hull ? hull.material.userData.hullU.uFlash.value : null, light: env?.eyeLights?.[1]?.intensity ?? null, frame: E.frames, ps });
+      calm(m);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    await frames(30);
+    /* one hit */
+    const e1 = await shoot('hunter', aim, 700);
+    const hit = e1.find((x) => x.n === 'machine-damaged') || e1.find((x) => x.n === 'arrow-hit');
+    const tHit = hit ? hit.t : null;
+    /* four more, 0.25 s apart: the freeze budget */
+    const tB = performance.now();
+    for (let i = 0; i < 7; i++) { calm(m); await shoot('hunter', aim, 130); }
+    await wait(700);
+    on = false;
+    await lower();
+    if (tHit == null) return { pass: false, error: 'the first arrow struck nothing', struck: e1.map((x) => x.n) };
+    const hp = hit.pt ? new V(...hit.pt) : aim;
+    // the struck node: the sampled node nearest the hit point at the hit
+    const i0 = S.findIndex((s) => s.t >= tHit) - 1;
+    const pre = S[Math.max(0, i0)];
+    m.root.updateMatrixWorld(true);
+    let ni = 0, nd = Infinity;
+    pick.forEach((o, i) => { const d = o.getWorldPosition(new V()).distanceTo(hp); if (d < nd) { nd = d; ni = i; } });
+    const dev = (s, r) => { const a = s.ps[ni], dx = a[0] - r[0], dy = a[1] - r[1], dz = a[2] - r[2]; const dot = Math.abs(a[3] * r[3] + a[4] * r[4] + a[5] * r[5] + a[6] * r[6]); return [Math.hypot(dx, dy, dz), 2 * Math.acos(Math.min(1, dot)) * 180 / Math.PI]; };
+    const r0 = pre.ps[ni];
+    // its own idle motion over the 0.4 s before the hit (breath, fidgets): the noise a settle is judged against
+    const idle = S.filter((s) => s.t < tHit && s.t >= tHit - 400).map((s) => dev(s, r0));
+    const noiseM = Math.max(0, ...idle.map((x) => x[0])), noiseDeg = Math.max(0, ...idle.map((x) => x[1]));
+    const in80 = S.filter((s) => s.t >= tHit && s.t <= tHit + 80).map((s) => dev(s, r0));
+    const peakM = Math.max(0, ...in80.map((x) => x[0])), peakDeg = Math.max(0, ...in80.map((x) => x[1]));
+    const after = S.filter((s) => s.t >= tHit && s.t < tB).map((s) => ({ dt: s.t - tHit, d: dev(s, r0) }));
+    // settled: the first time from which it stays within its idle noise + 1 cm and + 1 deg until the next shot
+    let settleMs = null;
+    for (let i = 0; i < after.length; i++) { if (after.slice(i).every((a) => a.d[0] <= noiseM + 0.01 && a.d[1] <= noiseDeg + 1)) { settleMs = Math.round(after[i].dt); break; } }
+    // the freezes: spans of frames under timeScale 0.5 (real ms), each run of them one freeze
+    const runs = []; let cur = null;
+    for (let i = 1; i < S.length; i++) { const fz = S[i - 1].ts < 0.5; if (fz) { if (!cur) cur = { s: S[i - 1].t, e: S[i].t }; else cur.e = S[i].t; } else if (cur) { runs.push(cur); cur = null; } }
+    if (cur) runs.push(cur);
+    const perHit = runs.map((r) => Math.round(r.e - r.s));
+    let winMax = 0;
+    for (const r of runs) { const w0 = r.s, w1 = w0 + 1000; let sum = 0; for (const x of runs) { const a = Math.max(x.s, w0), b2 = Math.min(x.e, w1); if (b2 > a) sum += b2 - a; } winMax = Math.max(winMax, sum); }
+    // the FOV punch: the lens's offset (combat._fovPunchOn) and the lens itself against its value at the hit
+    const fov0 = pre.fov;
+    const punchMax = Math.max(0, ...S.map((s) => s.punch));
+    const fovDev = Math.max(0, ...S.filter((s) => s.t >= tHit && s.t <= tHit + 400).map((s) => Math.abs(s.fov - fov0)));
+    // the hull flash: rendered frames with the flash up after the first hit (before the burst)
+    const flashFrames = new Set(S.filter((s) => s.t >= tHit && s.t < tB && s.flash > 0).map((s) => s.frame)).size;
+    const lightMax = Math.max(0, ...S.filter((s) => s.t >= tHit && s.t < tHit + 200).map((s) => s.light ?? 0));
+    const lightOffMs = (() => { const f = S.find((s) => s.t > tHit + 20 && (s.light ?? 0) === 0); return f ? Math.round(f.t - tHit) : null; })();
+    const hf = cb.hitFeel?.last ?? null;
+    const num = { struckNode: pick[ni].name || pick[ni].type, nodeFromHitM: r3(nd), vol: hit.vol ?? null, kick: hf?.kick ?? null,
+      peakM: r3(peakM), peakDeg: r3(peakDeg), settleMs, idleNoiseM: r3(noiseM), idleNoiseDeg: r3(noiseDeg),
+      freezeMs: perHit, freezeMaxMs: Math.max(0, ...perHit), freezeWindowMaxMs: Math.round(winMax), freezesGiven: (cb.hitFeel?.freezes ?? []).slice(-5).map((f) => Math.round(f.given * 1000)),
+      punchMaxDeg: r3(punchMax), fovDevDeg: r3(fovDev), flashFrames, lightMax: r3(lightMax), lightOffMs, frames: S.length };
+    const parts = { kick: (peakM >= 0.03 || peakDeg >= 4), settle: settleMs != null && settleMs <= 400, freeze: num.freezeMaxMs <= 120 && num.freezeWindowMaxMs <= 180 && perHit.length > 0,
+      punch: punchMax > 0 && punchMax <= 2 && fovDev <= 2, flash: flashFrames >= 1 && flashFrames <= 3, light: lightMax > 0 };
+    return { num, parts, pass: Object.values(parts).every(Boolean),
+      bar: 'a struck part moves >= 3 cm or turns >= 4 deg within 80 ms and settles (back within its idle motion + 1 cm / 1 deg) within 400 ms; freeze <= 120 ms per hit and <= 180 ms in any 1 s; FOV punch <= 2 deg; flash <= 3 frames; an impact light' };`)));
+
   return rows;
 }

@@ -19,6 +19,7 @@ const NO_TRAPS = Object.freeze({
   dispose() {},
 });
 import { CombatFeedback } from './feedback.js';
+import { HitFeel } from './hitfeel.js';
 
 /**
  * Weapon system v2 (spec "Weapons contract"): 4-weapon roster with distinct
@@ -472,6 +473,8 @@ export class Combat {
     this.melee = new Melee(ctx, this);          // combat-melee-missing
     this.traps = NO_TRAPS;
     this.feedback = new CombatFeedback(ctx);    // combat-hit-feedback-faint
+    this.hitFeel = new HitFeel(ctx, this);      // M1.3e: capped freeze, kick, FOV punch, flash, impact light
+    this._fovPunchOn = 0; this._fovWritten = -1;
 
     // --- craft hold (combat-wheel-canon-gaps / onboarding crafting-feedback)
     this.craft = { holding: false, progress: 0, ammo: null, ok: false };
@@ -846,11 +849,17 @@ export class Combat {
     const cam = ctx.camera;
     const aimFov = (w?.noZoom) ? FOV_HIP : (w?.aimFov ?? 44);
     const targetFov = aiming ? aimFov : FOV_HIP;
-    const fov0 = cam.fov, f = fov0 + (targetFov - fov0) * (1 - Math.exp(-9 * realDt));   // MathUtils.damp, inline
-    if (Math.abs(f - fov0) > 0.0005) {
-      cam.fov = f;
+    // M1.3e: the hit's FOV punch rides on top of the ease as an offset; the ease runs on the lens without it (when
+    // the player's own FOV wrote the lens since combat last did, the lens holds no punch to take off)
+    this.hitFeel.update(now);
+    const had = cam.fov === this._fovWritten ? this._fovPunchOn : 0;
+    const fov0 = cam.fov - had, f = fov0 + (targetFov - fov0) * (1 - Math.exp(-9 * realDt));   // MathUtils.damp, inline
+    const pk = this.hitFeel.fovPunch(now), fNew = f + pk;
+    if (Math.abs(fNew - cam.fov) > 0.0005) {
+      cam.fov = fNew;
       cam.updateProjectionMatrix();
     }
+    this._fovPunchOn = pk; this._fovWritten = cam.fov;
 
     // fix round 1 (A-alloc-rate): the aim march runs itself 800 times on her first aiming frame, so V8 optimizes it
     // before it is played (a once-a-frame function runs in Sparkplug, a heap number per double, for ~400-800 calls)
@@ -1523,12 +1532,8 @@ export class Combat {
    * can leave the world frozen (`machine-rig-19`).
    */
   _startHitstop(k = 0.2, floor = 0.026) {
-    const e = this.ctx.engine;
-    if (!e?.requestTimeScale) return;
-    const dur = Math.min(0.095, floor + Math.min(1, Math.max(0, k)) * 0.07);
-    e.requestTimeScale('hitstop', 0.03);
-    this._hsActive = true;
-    this._hsEnd = Math.max(this._hsEnd, this._lastT + dur);
+    // M1.3e: through the one capped budget (hitfeel.js: 120 ms a hit, 180 ms in any second, shared with the lance)
+    return this.hitFeel.freeze(Math.min(0.095, floor + Math.min(1, Math.max(0, k)) * 0.07));
   }
 
   /**
@@ -1649,8 +1654,16 @@ export class Combat {
           : o.weak ? 'weak' : 'body';
     this.feedback.hit(tickKind, Math.max(k, tearK * 0.8));
 
-    // hitstop on EVERY hit, length scaled by the same number
-    this._startHitstop(Math.max(k, o.weak ? 0.45 : 0.1));
+    // hitstop on EVERY hit, length scaled by the same number. M1.3e: the lance asks its own exact freeze (`o.hitstop`,
+    // melee.js P-05) and applies it itself, inside the same budget; it is not frozen twice
+    if (o.hitstop == null) this._startHitstop(Math.max(k, o.weak ? 0.45 : 0.1));
+    // M1.3e: the kick, the lens punch, the hull flash and the impact light (hitfeel.js)
+    if (machine) {
+      try {
+        this.hitFeel.hit({ machine, point: o.point, normal: o.normal ?? null, dir: o.dir ?? null, object: o.object ?? null,
+          k: Math.max(k, tearK * 0.8), share: (o.damage ?? 0) / maxHp, melee: o.hitstop != null });
+      } catch { /* feel only: a hit must never throw out of combat */ }
+    }
 
     if (player) {
       const shake = Math.min(0.5, 0.05 + 0.32 * k + (o.weak ? 0.1 : 0));
@@ -1762,7 +1775,7 @@ export class Combat {
     this._impactFx(hit, def, machine, weak);
     if (machine) {
       this.impactFeedback({
-        point: hit.point, normal: hit.normal ?? _up, machine,
+        point: hit.point, normal: hit.normal ?? _up, machine, dir: hit.dir ?? null, object: hit.object ?? null,
         damage, weak, tear: tearTotal, tornPart,
         killed: !!res?.killed,
         maxHealth: machine.maxHealth ?? 100,

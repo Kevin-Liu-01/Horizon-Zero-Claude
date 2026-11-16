@@ -35,6 +35,9 @@ const _to = vec3();
 const _cam = vec3();
 
 const lerp = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, z: a.z + (b.z - a.z) * k });
+/** M1b pacing: the three Peg swarms' centres along the transect (pans 0 -> beach 1) and each stretch's half length. */
+const SWARMS = Object.freeze([0.2, 0.5, 0.8]);
+const SWARM_HALF = 0.05;
 
 export class SystemsGame {
   constructor(ctx) {
@@ -252,12 +255,22 @@ export class SystemsGame {
     if (!M?.spawn) return;
     const has = (k) => !!M.instrumentKinds?.[k];
     if (what === 'transect' && has('peg')) {
+      // M1b pacing: Mise's nine Pegs come in as THREE SWARMS OF THREE (bible §7.4: swarms of 3-6), each hammering its
+      // own 18 m stretch of the line, the stretches 53 m apart (the line is 178 m, pans to beach), so a player meets
+      // them a swarm at a time; the crossing (25 m seaward of the middle) faces the middle swarm only. At 6fa199d the
+      // nine stood in one block (every 11 m from 0.25 to 0.73 of the line, routes overlapping, joined into swarms of
+      // six and three by peg-swarm.js) and the slice run lost 86 of 100 hp to them
       const a = this.A.transectA, b = this.A.transectB;
-      for (let i = 0; i < 9; i++) {
-        const p = lerp(a, b, 0.25 + 0.06 * i);
-        const q = lerp(a, b, 0.3 + 0.06 * i);
-        const m = M.spawn('peg', p.x, p.z, { route: [vec3(p.x, 0, p.z), vec3(q.x, 0, q.z)] });   // machines' routes are Vector3s
-        if (m) this.spawned.transect.push(m);
+      for (const c of SWARMS) {
+        const p = lerp(a, b, c - SWARM_HALF), q = lerp(a, b, c + SWARM_HALF);
+        const L = Math.hypot(q.x - p.x, q.z - p.z) || 1, nx = -(q.z - p.z) / L, nz = (q.x - p.x) / L;
+        for (const slot of [0, 1, -1]) {
+          // spawned in one tick within 3 m of the first: peg-swarm.js joins them into one swarm walking abreast on the
+          // first's line (each on its slot, 3 m apart)
+          const x = p.x + nx * slot * 3, z = p.z + nz * slot * 3;
+          const m = M.spawn('peg', x, z, { route: [vec3(p.x, 0, p.z), vec3(q.x, 0, q.z)] });   // machines' routes are Vector3s
+          if (m) this.spawned.transect.push(m);
+        }
       }
     } else if (what === 'plumb' && has('plumb')) {
       const s = this.A.station;

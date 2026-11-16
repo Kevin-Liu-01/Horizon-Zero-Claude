@@ -378,6 +378,15 @@ function sweepSegment(ctx, machines, a, dir, len, out) {
       }
     }
   }
+  groundCut(ctx, a, dir, len, out);
+  return out;
+}
+
+/**
+ * The ground half of `sweepSegment` (M1b: split out so `ArrowPool.predict` sweeps the ground with the same march):
+ * shortens `out.dist` to where the segment [a -> a + dir*len] enters the terrain and clears the machine fields there.
+ */
+function groundCut(ctx, a, dir, len, out) {
   const terr = ctx.terrain;
   let near = !!terr;
   if (terr) {
@@ -414,7 +423,6 @@ function sweepSegment(ctx, machines, a, dir, len, out) {
       }
     }
   }
-  return out;
 }
 
 const _sweep = { dist: Infinity, object: null, machine: null, normal: null };
@@ -826,6 +834,89 @@ export class ArrowPool {
     a.group.quaternion.copy(_q);
     a.group.position.copy(a.pos);
     return a;
+  }
+
+  /**
+   * M1b (the slice's topple): THE GAME'S OWN BALLISTIC SOLUTION, read ahead. The flight `fire(origin, dir, speed)`
+   * would fly, stepped as `_stepFly` steps it (gravity, then drag, then the move; the tip ARROW_LEN ahead of the tail;
+   * the first segment swept from the tail) and swept as it is swept: the hulls by `ctx.hitHulls.raycast` (exact), the
+   * ground by the same march (`groundCut`). Nothing is fired or moved. A cold path (a gate, a solver): it allocates.
+   *   opts.dt    the step (s): the frame the game will step the arrow on (default 1/60)
+   *   opts.maxT  how long to fly (s, default 2)
+   *   opts.ride  {x, y, z} m/s: the hulls are swept in the frame of a body moving at this velocity (a walking
+   *              Instrument meets the arrow where it will be, not where it stands now); the ground is the world's
+   *   opts.aim   {x, y, z}: a world point now, riding with `ride`; the flight's closest approach to it is measured
+   *              over the whole flight (as if nothing were met first)
+   * Returns { hit: 'ground' | the hull's name | null, machine, t (s to the hit), x, y, z (the hit, in the riding frame:
+   * where on the target as it stands now), d (m, the closest approach to aim), dx, dy, dz (that point - aim), tAim }.
+   */
+  predict(origin, dir, speed, opts = null) {
+    const ctx = this.ctx, dt = opts?.dt > 0 ? opts.dt : 1 / 60, maxT = opts?.maxT ?? 2;
+    const rv = opts?.ride ?? null, aim = opts?.aim ?? null;
+    const rx = rv ? rv.x || 0 : 0, ry = rv ? rv.y || 0 : 0, rz = rv ? rv.z || 0 : 0;
+    const V = THREE.Vector3;
+    const pos = new V().copy(origin), vel = new V().copy(dir).normalize().multiplyScalar(speed);
+    const d = new V(), o = new V(), n = new V(), sd = new V(), a0 = new V(), a1 = new V(), q = new V();
+    const out = { hit: null, machine: null, t: null, x: 0, y: 0, z: 0, d: Infinity, dx: 0, dy: 0, dz: 0, tAim: null };
+    const g = { dist: Infinity, object: null, machine: null, normal: null };
+    const ray = { origin: new V(), direction: new V() }, ropt = { far: 1, exact: true };
+    const hulls = ctx.hitHulls;
+    let fresh = true, t = 0, past = 0;
+    while (t < maxT) {
+      d.copy(vel).normalize();
+      o.copy(pos);
+      if (!fresh) o.addScaledVector(d, ARROW_LEN);
+      fresh = false;
+      const t0 = t;
+      vel.y -= this.gravity * dt;
+      const dk = 1 - this.drag * dt;
+      vel.multiplyScalar(dk > 0 ? dk : 0);
+      pos.addScaledVector(vel, dt);
+      t += dt;
+      d.copy(vel).normalize();
+      n.copy(pos).addScaledVector(d, ARROW_LEN);
+      sd.subVectors(n, o);
+      const L = sd.length();
+      if (L < 1e-6) continue;
+      sd.multiplyScalar(1 / L);
+      // the segment in the riding frame
+      a0.set(o.x - rx * t0, o.y - ry * t0, o.z - rz * t0);
+      a1.set(n.x - rx * t, n.y - ry * t, n.z - rz * t);
+      if (aim) {
+        ray.direction.subVectors(a1, a0);
+        const L2 = ray.direction.lengthSq();
+        const u = L2 > 1e-12 ? Math.max(0, Math.min(1, ((aim.x - a0.x) * ray.direction.x + (aim.y - a0.y) * ray.direction.y + (aim.z - a0.z) * ray.direction.z) / L2)) : 0;
+        q.copy(a0).addScaledVector(ray.direction, u);
+        const dd = Math.hypot(q.x - aim.x, q.y - aim.y, q.z - aim.z);
+        if (dd < out.d) { out.d = dd; out.dx = q.x - aim.x; out.dy = q.y - aim.y; out.dz = q.z - aim.z; out.tAim = t0 + u * dt; }
+        if (u <= 0 && dd > out.d + 2) past++;
+      }
+      if (!out.hit) {
+        let f = Infinity, name = null, mach = null;
+        if (hulls?.raycast) {
+          ray.origin.copy(a0);
+          ray.direction.subVectors(a1, a0);
+          const Lr = ray.direction.length();
+          if (Lr > 1e-6) {
+            ray.direction.multiplyScalar(1 / Lr);
+            ropt.far = Lr;
+            const h = hulls.raycast(ray, ropt);
+            if (h && h.hit) { f = h.distance / Lr; name = h.name || 'hull'; mach = h.machine || null; }
+          }
+        }
+        g.dist = f < Infinity ? f * L : Infinity; g.machine = mach; g.object = name ? 1 : null; g.normal = null;
+        groundCut(ctx, o, sd, L, g);
+        if (g.dist < Infinity) {
+          const k = g.dist / L;
+          out.t = t0 + k * dt;
+          if (g.object) { out.hit = name; out.machine = mach; q.copy(a0).lerp(a1, k); }
+          else { out.hit = 'ground'; q.copy(o).addScaledVector(sd, g.dist); }
+          out.x = q.x; out.y = q.y; out.z = q.z;
+        }
+      }
+      if (aim ? past > 0 : out.hit) break;
+    }
+    return out;
   }
 
   /**

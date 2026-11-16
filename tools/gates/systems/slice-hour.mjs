@@ -13,14 +13,14 @@
  * `player.camYaw` / `camPitch` (what the mouse writes), because a headless page has no pointer lock; an aimed shot
  * steers that look onto the target by reading the camera's own direction back each frame (aimPoint). It never writes
  * a position, never calls the spine, never skips a beat: a beat it cannot play is where the report stops ("no script
- * jumps"). A death is played as a player plays it: the death card, RELOAD THE LAST ENTRY, and on (death-rule row).
+ * jumps"). A death is played as a player plays it: the death card, RETURN TO THE LAST BRAZIER, and on (death-rule row).
  *
  * Live rows in the same session (the node --test rows are tools/gates/systems/*.test.mjs):
  *   brazier-dialog   at the cistern on New Game: the dialog's words are four of the bible's six, with a forecast
  *   brazier-refusal  STAGED on the frames page: a real Plumb spawned by the machines system, its AI state set to
  *                    suspicious (wary) and alert (hostile) at 25 m, suspicious at 80 m, patrol at 300 m; the dialog the Brazier
  *                    opens, read off the page after a real E hold, and the rules' mode (src/game/brazier)
- *   death-rule       if Brea dies in the run: the stage before, the stage after RELOAD THE LAST ENTRY, and where she
+ *   death-rule       if Brea dies in the run: the stage before, the stage after RETURN TO THE LAST BRAZIER, and where she
  *                    stands against the Brazier of her last rest
  *   save-reload      right after New Game: quit (the document unloaded), the game opened again in the same tab,
  *                    CONTINUE on the title: the same stage, satchel, place and hour as the record; the run plays on
@@ -149,24 +149,35 @@ async function aimPoint(x, y, z, tolDeg = 0.35) {
 }
 
 /**
- * in-page (round 2 fix): steer the look until the arrow THE GAME WOULD LOOSE NOW strikes the part. At eeddcb4 29 of 29
- * shots at the Plumb's vial (aim error 0.03-0.35 deg, sway 0) struck its body: the look was put on the vial plus a
- * holdover, but the game looses from the bow's nock toward the reticle's WORLD point (combat._updateAimPoint: the
- * camera ray's first hull or ground hit), and a held-over look above a 9 cm glass meets nothing for 200 m, so the arrow
- * flew parallel to the camera ray from the nock, offset by the over-the-shoulder lens. What a player corrects by
- * watching their arrows, the runner reads ahead: the game's own launch (combat._computeShot from the nock at the
- * current draw), its own flight (arrows.gravity and arrows.drag at 60 Hz, the tip ARROW_LEN ahead of the tail), and
- * its own exact sweep (hitHulls.raycast, exact) for what the tip meets first. The goal moves by the miss until the
- * flight passes within 1 cm of the aim point; if something else is met first, the next point along the glass's axis
- * is tried. Only the look moves (camYaw / camPitch, through window.__aimPoint); the shot is still loosed by the LMB.
+ * in-page: steer the look until the arrow THE GAME WOULD LOOSE NOW meets the part. The game looses from the bow's nock
+ * toward the reticle's WORLD point (combat._updateAimPoint: the camera ray's first hull or ground hit) and flies it in
+ * arrows._stepFly; what a player corrects by watching their arrows, the runner reads ahead.
+ *
+ * M1b: ON THE GAME'S OWN BALLISTIC SOLUTION. At 6fa199d the runner flew its own copy of the flight at a fixed 1/60 s
+ * against a vial standing still: 6 of 6 shots "predicted" 0.026-0.031 m off the glass and 0 hit, and the Plumb's health
+ * never moved (no hull was struck at all). Two things were wrong with the copy: the Plumb walks its survey route at
+ * 1.1 m/s (0.55 m in a 0.5 s flight at 30 m), and the game steps an arrow on the frame's sub-step (1/60 s at 60 fps,
+ * 1/90 at 45: 0.18 m of drop at 53 m between the two). Now the flight is the game's: `combat.arrows.predict` (the same
+ * step, the same hull sweep, the same ground march; checked against fired arrows to the millimetre), on the sub-step
+ * the engine is taking (engine.simTime / engine.steps over 8 frames), swept in the frame of the Plumb as it walks
+ * (its root's velocity over those frames). The goal moves by the miss until the flight passes within 1 cm of the
+ * aim point; if something else is met first, the next point along the glass's axis is tried. Only the look moves
+ * (camYaw / camPitch, through window.__aimPoint); the shot is still loosed by the LMB.
  */
 async function solveShot(mi, part, tolDeg) {
-  const C = window.__CTX__, cb = C.combat, m = C.machines.list[mi];
+  const C = window.__CTX__, cb = C.combat, m = C.machines.list[mi], E = C.engine;
   if (!m || m.alive === false) return null;
   const V = C.camera.position.constructor;
   const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
-  const ALEN = 0.78;
-  // only the vial is judged on what the flight meets first (a Peg's lamp and the bob are struck through their hulls)
+  // the target's motion and the engine's sub-step, measured (8 frames)
+  const p0 = m.position.clone(), s0 = E.simTime, dts = [];
+  let sPrev = s0;
+  for (let i = 0; i < 8; i++) { await raf(); const st = E.steps || 0; if (st > 0 && E.simTime > sPrev) dts.push((E.simTime - sPrev) / st); sPrev = E.simTime; }
+  const span = E.simTime - s0;
+  const ride = span > 0.02 ? { x: (m.position.x - p0.x) / span, y: 0, z: (m.position.z - p0.z) / span } : { x: 0, y: 0, z: 0 };
+  dts.sort((a, b) => a - b);
+  const dt = dts.length ? dts[dts.length >> 1] : 1 / 60;
+  const lat = 2 * (span > 0 ? span / 8 : 1 / 60);
   const want = part === 'vial' ? 'weak:vial' : null;
   const aims = [];
   if (part === 'vial' && m._vialWp?.obj) {
@@ -177,53 +188,35 @@ async function solveShot(mi, part, tolDeg) {
     const o = part === 'lamp' ? (m._lampWp?.obj ?? m.weakPoints?.find((w) => w.name === 'lamp')?.obj) : part === 'bob' ? (m._bob?.attached !== false ? m._bob?.mesh : null) : null;
     aims.push(o ? o.getWorldPosition(new V()) : new V(m.position.x, m.position.y + 0.9, m.position.z));
   }
-  const sp = new V(), dir = new V(), pos = new V(), vel = new V(), tip0 = new V(), tip1 = new V(), seg = new V();
-  const ray = { origin: new V(), direction: new V() };
-  /* the flight the game would loose now: closest approach to `aim` and the first thing the tip meets */
+  const sp = new V(), dir = new V();
+  // the aims were read now; each solve iteration takes two frames, so the aim is carried along by the ride
+  const t0 = E.simTime;
   const predict = (aim) => {
     cb._updateAimPoint();
     cb.bow.getNockWorld(cb.drawStrength, sp);
     const def = cb.ammoDefs[cb.activeWeapon?.activeAmmo ?? 'hunter'] ?? cb.ammoDefs.hunter;
     const speed = cb._computeShot(def, cb.drawStrength, sp, dir);
-    pos.copy(sp); vel.copy(dir).multiplyScalar(speed);
-    tip0.copy(pos).addScaledVector(dir, ALEN);
-    let best = Infinity, bestP = null, first = null, firstD = null;
-    const g = cb.arrows.gravity, dr = cb.arrows.drag, dt = 1 / 60;
-    for (let s = 0; s < 120; s++) {
-      vel.y -= g * dt; vel.multiplyScalar(1 - dr * dt); pos.addScaledVector(vel, dt);
-      tip1.copy(pos).addScaledVector(seg.copy(vel).normalize(), ALEN);
-      // closest point of this tip segment to the aim
-      seg.subVectors(tip1, tip0);
-      const L2 = seg.lengthSq(), u = L2 > 1e-12 ? Math.max(0, Math.min(1, ((aim.x - tip0.x) * seg.x + (aim.y - tip0.y) * seg.y + (aim.z - tip0.z) * seg.z) / L2)) : 0;
-      const q = tip0.clone().addScaledVector(seg, u), d = q.distanceTo(aim);
-      if (d < best) { best = d; bestP = q; }
-      if (!first && L2 > 1e-12) {
-        const L = Math.sqrt(L2);
-        ray.origin.copy(tip0); ray.direction.copy(seg).multiplyScalar(1 / L);
-        const h = C.hitHulls?.raycast?.(ray, { far: L, exact: true });
-        if (h && h.hit) { first = h.machine === m ? (h.name || h.part?.name || 'hull') : `other:${h.machine?.kind ?? '?'}`; firstD = +h.point.distanceTo(aim).toFixed(3); }
-        else {
-          const gy = C.terrain.getHeight(tip1.x, tip1.z);
-          if (tip1.y < gy) first = 'ground';
-        }
-      }
-      tip0.copy(tip1);
-      if (first && tip1.distanceTo(sp) > sp.distanceTo(aim) + 2) break;
-    }
-    return { miss: bestP ? bestP.clone().sub(aim) : new V(), d: best, first, firstD };
+    // + the release: the LMB the runner lets go after this solve reaches the game a frame or two later
+    const k = E.simTime - t0 + lat, at = { x: aim.x + ride.x * k, y: aim.y, z: aim.z + ride.z * k };
+    const r = cb.arrows.predict(sp, dir, speed, { dt, maxT: 1.6, ride, aim: at });
+    return { miss: new V(r.dx, r.dy, r.dz), d: r.d, first: r.hit ? (r.machine === m ? r.hit : r.hit === 'ground' ? 'ground' : `other:${r.machine?.kind ?? '?'}`) : null, t: r.tAim, at };
   };
   let out = null;
   for (let ai = 0; ai < aims.length; ai++) {
-    const aim = aims[ai], goal = aim.clone();
+    const aim = aims[ai];
+    // the first look: the aim point where it will be when the arrow arrives (lead), the drop held over
+    const tf0 = sp.copy(aim).distanceTo(C.camera.position) / 62;
+    const goal = new V(aim.x + ride.x * tf0, aim.y + 0.5 * 9.8 * tf0 * tf0, aim.z + ride.z * tf0);
     let r = null, err = null;
-    for (let it = 0; it < 7; it++) {
+    for (let it = 0; it < 8; it++) {
       err = (await window.__aimPoint(goal.x, goal.y, goal.z, tolDeg)).err;
       await raf();
       r = predict(aim);
       if (r.d < 0.01) break;
       goal.sub(r.miss);
     }
-    out = { aimIdx: ai, err, missM: +r.d.toFixed(3), first: r.first, firstD: r.firstD, ds: +cb.drawStrength.toFixed(2) };
+    out = { aimIdx: ai, err, missM: +r.d.toFixed(3), first: r.first, ds: +cb.drawStrength.toFixed(2), dt: +dt.toFixed(4),
+      ride: +Math.hypot(ride.x, ride.z).toFixed(2), tf: r.t != null ? +r.t.toFixed(3) : null, steady: cb.steady?.phase ?? null, sway: +(cb.sway?.deg ?? 0).toFixed(3) };
     if (!want || r.first === want) return { ...out, clear: true };
   }
   return { ...out, clear: false };
@@ -239,7 +232,7 @@ async function solveShot(mi, part, tolDeg) {
  * (hitHulls.raycast, exact, the arrow sweep). A stand counts the glass points (centre and +-45 % along the tube) the
  * flight reaches first. Ranked by that count, then by the walk from where she is. Read-only: it moves nothing.
  */
-function scanStands(mi, avoid = [], dists = [12, 15, 18, 22, 26, 30]) {
+function scanStands(mi, avoid = [], dists = [12, 15, 18, 22, 26, 30], pts = null) {
   const C = window.__CTX__, m = C.machines.list[mi], wp = m?._vialWp;
   if (!m || m.alive === false || !wp?.obj) return null;
   const V = C.camera.position.constructor, N = C.nav, T = C.terrain, HH = C.hitHulls, P = C.player.position, cb = C.combat;
@@ -252,10 +245,12 @@ function scanStands(mi, avoid = [], dists = [12, 15, 18, 22, 26, 30]) {
   const c = aims[0];
   const ray = { origin: new V(), direction: new V() }, a = new V(), b = new V(), o = new V();
   const out = [], why = {};
-  for (let deg = 0; deg < 360; deg += 15) {
-    const ang = deg * Math.PI / 180;
-    for (const d of dists) {
-      const gx = c.x + Math.sin(ang) * d, gz = c.z + Math.cos(ang) * d;
+  // M1b: `pts` (the lee ditch's own stands) are tested instead of the ring round the Plumb
+  const cand = [];
+  if (pts) for (const q of pts) cand.push({ gx: q.x, gz: q.z, deg: Math.round(Math.atan2(q.x - c.x, q.z - c.z) * 180 / Math.PI), d: +Math.hypot(q.x - c.x, q.z - c.z).toFixed(1), tag: q.tag });
+  else for (let deg = 0; deg < 360; deg += 15) for (const d of dists) { const ang = deg * Math.PI / 180; cand.push({ gx: c.x + Math.sin(ang) * d, gz: c.z + Math.cos(ang) * d, deg, d }); }
+  for (const { gx, gz, deg, d, tag } of cand) {
+    {
       if (avoid.some((q) => Math.hypot(q.x - gx, q.z - gz) < 4)) { why.tried = (why.tried || 0) + 1; continue; }
       if (N?.blockedAt?.(gx, gz)) { why.blocked = (why.blocked || 0) + 1; continue; }
       const gy = T.getHeight(gx, gz);
@@ -280,11 +275,27 @@ function scanStands(mi, avoid = [], dists = [12, 15, 18, 22, 26, 30]) {
         else if (!first) first = hit || 'nothing';
       }
       if (!clear) { why[first] = (why[first] || 0) + 1; continue; }
-      out.push({ x: +gx.toFixed(2), z: +gz.toFixed(2), deg, d, clear, of: aims.length, walk: +Math.hypot(gx - P.x, gz - P.z).toFixed(1), dy: +(c.y - gy).toFixed(2) });
+      out.push({ x: +gx.toFixed(2), z: +gz.toFixed(2), deg, d, clear, of: aims.length, walk: +Math.hypot(gx - P.x, gz - P.z).toFixed(1), dy: +(c.y - gy).toFixed(2), ...(tag != null ? { tag } : {}) });
     }
   }
   out.sort((p, q) => (q.clear - p.clear) || (p.walk - q.walk));
-  return { stands: out.slice(0, 6), open: out.length, masked: why, vial: { x: +c.x.toFixed(2), y: +c.y.toFixed(2), z: +c.z.toFixed(2) }, nockH: +nockH.toFixed(2) };
+  return { stands: out.slice(0, 6), open: out.length, of: cand.length, masked: why, vial: { x: +c.x.toFixed(2), y: +c.y.toFixed(2), z: +c.z.toFixed(2) }, nockH: +nockH.toFixed(2) };
+}
+
+/** in-page (M1b): wait up to `ms` for the machine to stand (its root under 0.12 m/s over 10 frames); what it read. */
+async function waitStill(mi, ms) {
+  const C = window.__CTX__, m = C.machines.list[mi], E = C.engine;
+  const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
+  const t0 = performance.now();
+  let v = null;
+  while (m && m.alive !== false) {
+    const p = m.position.clone(), s = E.simTime;
+    for (let i = 0; i < 10; i++) await raf();
+    const span = E.simTime - s;
+    v = span > 0.02 ? Math.hypot(m.position.x - p.x, m.position.z - p.z) / span : 0;
+    if (v < 0.12 || performance.now() - t0 > ms) break;
+  }
+  return { waitedS: +((performance.now() - t0) / 1000).toFixed(1), speed: v == null ? null : +v.toFixed(2), state: m?.state ?? null };
 }
 
 function face(x, z) {
@@ -439,7 +450,7 @@ async function readyBow(page, K) {
 async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000, tolDeg = 0.35, reach = 70 } = {}) {
   const t0 = Date.now();
   const stage0 = (await page.evaluate(probe)).stage;
-  let fired = 0, aimed = false, blocked = 0, stand0 = null;
+  let fired = 0, aimed = false, blocked = 0, stand0 = null, ditchScans = null;
   const tried = [];
   const scans = [];
   await page.mouse.move(800, 450);
@@ -453,7 +464,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
     for (;;) {
       const s = await page.evaluate(probe);
       if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) return { ok: false, why: 'died', fired };
-      if (stageDone && s.stage !== stage0) return { ok: true, fired, ...(scans.length ? { scans } : {}) };
+      if (stageDone && s.stage !== stage0) return { ok: true, fired, ...(scans.length ? { scans } : {}), ...(ditchScans ? { ditchScans } : {}) };
       if ((Date.now() - t0) / 1000 > maxS) return { ok: !!all, why: `${kind} ${part}: not done in ${maxS} s (${fired} arrows)`, fired, ...(scans.length ? { scans } : {}) };
       if (s.busy) { await release(); await playScene(page, K); continue; }
       // the whole line (all): every live one within 220 m is walked to; one target: the nearest within 70 m
@@ -463,7 +474,22 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       // the vial (closing round): she goes to a stand the scan finds open (scanStands), not round a fixed circle
       if (part === 'vial' && !stand0) {
         await release();
-        const sc = await page.evaluate(scanStands, t.i, tried);
+        // M1b: the lee ditch's own stands first (the rush line the stalk came down, every 3 m past the stage's stand
+        // toward the station): where a player who came down the ditch would stand to shoot. The ring round the Plumb
+        // (12-30 m, every 15 deg) only when none of them sees the glass
+        const ditchPts = await page.evaluate(() => {
+          const A = window.__CTX__.systemsGame.A, H = A.ditchHead, D = A.ditch;
+          if (!H || !D) return null;
+          const L = Math.hypot(D.x - H.x, D.z - H.z) || 1, ux = (D.x - H.x) / L, uz = (D.z - H.z) / L, out = [];
+          for (let s = -6; s <= L + 24; s += 3) out.push({ x: H.x + ux * s, z: H.z + uz * s, tag: +(s - L).toFixed(0) });
+          return out;
+        });
+        let sc = null;
+        if (ditchPts) {
+          const dsc = await page.evaluate(scanStands, t.i, tried, undefined, ditchPts.filter((q) => { const d = Math.hypot(q.x - t.x, q.z - t.z); return d >= 10 && d <= 34; }));
+          if (dsc) { (ditchScans ||= []).push({ of: dsc.of, open: dsc.open, masked: dsc.masked, stands: dsc.stands.slice(0, 3) }); if (dsc.stands[0] && dsc.stands[0].clear >= 2) sc = dsc; }
+        }
+        if (!sc) sc = await page.evaluate(scanStands, t.i, tried);
         scans.push(sc && { open: sc.open, masked: sc.masked, vial: sc.vial, nockH: sc.nockH, best: sc.stands[0] ?? null, from: { x: +s.p.x.toFixed(1), z: +s.p.z.toFixed(1) } });
         const best = sc?.stands?.[0];
         if (!best) return { ok: false, why: `${kind} ${part}: no open stand found round it (${JSON.stringify(sc?.masked ?? {})})`, fired, scans };
@@ -489,6 +515,10 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       const have = ammo === 'hardpoint' ? s.barbed : s.ammo;
       if ((have ?? 0) < 1) { await release(); if (ammo !== 'hunter') return { ok: false, why: `no ${ammo} arrows left`, fired }; await readyBow(page, K); if ((await page.evaluate(probe)).ammo < 1) return { ok: false, why: 'no arrows to make', fired }; continue; }
       if (!aimed) { await page.mouse.down({ button: 'right' }); await sleep(380); aimed = true; }
+      // M1b: a player looses on the Plumb while it stands for a reading (8-15 s at each survey station), not while it
+      // walks: the runner holds the aim (no draw, no Steady spent) up to 9 s for it to stop; the solve leads it if not
+      const still = part === 'vial' ? await page.evaluate(waitStill, t.i, 9000) : null;
+      const hp0 = await page.evaluate((i) => { const m = window.__CTX__.machines.list[i]; return m ? { vial: m._vialHits ?? null, hp: Math.round(m.health) } : null; }, t.i);
       // M1.6j Steady: a fresh breath for every shot (Shift let go and pressed again while aiming: 4 s of no sway)
       await K.up('ShiftLeft'); await sleep(50); await K.down('ShiftLeft'); await sleep(60);
       let a = await page.evaluate(aimPoint, t.x, t.y, t.z, tolDeg);
@@ -507,19 +537,19 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         blocked++;
         const s2 = await page.evaluate(probe);
         shots.push({ kind, part, blocked: true, d: +t.d.toFixed(1), at: { x: +s2.p.x.toFixed(1), z: +s2.p.z.toFixed(1) }, predicted: { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds }, aimErr: sol.err });
-        if (blocked > 6) return { ok: false, why: `${kind} ${part}: masked from every stand tried (${blocked})`, fired, scans };
+        if (blocked > 6) return { ok: false, why: `${kind} ${part}: masked from every stand tried (${blocked})`, fired, scans, ditchScans };
         if (part === 'vial') { stand0 = null; continue; }   // the next open stand the scan finds
         const ang = Math.atan2(s2.p.x - t.x, s2.p.z - t.z) + (blocked % 2 ? 0.35 : -0.7);
         await walkTo(page, K, { x: t.x + Math.sin(ang) * stand, z: t.z + Math.cos(ang) * stand }, 2.5, { maxS: 15, sprint: false });
         continue;
       }
-      const sw = await page.evaluate(() => { const c = window.__CTX__.combat; return { st: c.steady.phase, sway: +c.sway.deg.toFixed(3) }; });
-      const hp0 = await page.evaluate((i) => { const m = window.__CTX__.machines.list[i]; return m ? { vial: m._vialHits ?? null, hp: Math.round(m.health) } : null; }, t.i);
+      // the release follows the last solve at once (the steady phase and sway are read in the solve itself)
+      const sw = { st: sol?.steady ?? null, sway: sol?.sway ?? null };
       await up('left');
       fired++;
-      await sleep(520);
+      await sleep(Math.max(520, 1000 * (sol?.tf ?? 0) + 250));
       const hp1 = await page.evaluate((i) => { const m = window.__CTX__.machines.list[i]; return m ? { vial: m._vialHits ?? null, hp: Math.round(m.health), down: (m._toppleT ?? -1) >= 0 } : null; }, t.i);
-      shots.push({ kind, part, ammo, d: +t.d.toFixed(1), aimErr: sol?.err ?? a.err, predicted: sol && { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds }, hpBefore: t.hp, down: t.down, steady: sw.st, swayDeg: sw.sway,
+      shots.push({ kind, part, ammo, d: +t.d.toFixed(1), aimErr: sol?.err ?? a.err, predicted: sol && { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds, dt: sol.dt, ride: sol.ride, tf: sol.tf }, still, hpBefore: t.hp, down: t.down, steady: sw.st, swayDeg: sw.sway,
         vialHits: hp1 && hp0 ? [hp0.vial, hp1.down ? 'topple' : hp1.vial] : null, hpAfter: hp1?.hp ?? null });
     }
   } finally { await release(); }
@@ -909,7 +939,7 @@ try {
   while (spent() < BUDGET_S - RESERVE_S) {
     const s = await page.evaluate(probe);
     if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) {
-      // played as a player plays it: the death card, then RELOAD THE LAST ENTRY (the one death rule, M1.6f)
+      // played as a player plays it: the death card, then RETURN TO THE LAST BRAZIER (the one death rule, M1.6f; BIBLE 13's two stations, M1.6g2)
       deaths++;
       const pre = await page.evaluate(() => { const C = window.__CTX__; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), lastRest: C.braziers.lastRest, salt: C.inventory.count('metal-shards') }; });
       await page.waitForFunction(() => !!document.querySelector('.mn-death.show .mn-death-opt'), { timeout: 15000, polling: 100 }).catch(() => {});
@@ -917,7 +947,7 @@ try {
       const card = await page.evaluate(() => ({ title: document.querySelector('.mn-death-title')?.textContent ?? null, opts: [...document.querySelectorAll('.mn-death-opt b')].map((b) => b.textContent) }));
       const cardShot = await shot(page, `d${deaths}-death-card`);
       if (deaths > 2) { report.stoppedAt = s.stage; report.why = `Brea died ${deaths} times`; break; }
-      const clicked = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-death-opt')].find((x) => /RELOAD THE LAST ENTRY/.test(x.textContent)); if (!b) return false; b.click(); return true; });
+      const clicked = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-death-opt')].find((x) => /RETURN TO THE LAST BRAZIER/.test(x.textContent)); if (!b) return false; b.click(); return true; });
       await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 20000, polling: 100 }).catch(() => {});
       await sleep(1500);
       const post = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position, R = C.braziers.lastRest; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), state: C.state, hp: Math.round(C.player.health), salt: C.inventory.count('metal-shards'), fromRest: R ? +Math.hypot(P.x - R.x, P.z - R.z).toFixed(2) : null, rest: R?.id ?? null }; });
