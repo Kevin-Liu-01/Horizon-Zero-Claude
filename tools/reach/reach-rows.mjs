@@ -313,18 +313,15 @@ try {
     await sleep(1400);
     P.verbs['slot tap D-right'].effect = await C(() => window.__CTX__.quickslots?.activeSlot ?? null);
     P.verbs['slot tap D-right'].pass &&= P.verbs['slot tap D-right'].effect === 2;
-    await verb('plant A (guarding)', 0, 'KeyX', null, 150);
-    // (the guard needs the aim held with the lance in hand)
-    await C((i) => window.__pad.set(i, 1), 6); await frame(); await sleep(500);
-    await press(0);
-    P.verbs['plant A (guarding)'] = { button: 0, code: await lastCode(), want: 'KeyX', guarding: await C(() => window.__CTX__.input.hooks.guarding()), pass: (await lastCode()) === 'KeyX' };
-    await C((i) => window.__pad.set(i, 0), 6); await frame(); await sleep(500);
+    // (A plants the Windwall while guarding: the Windwall is Oro's kit, Milestone 2; until then nothing guards and A is
+    // the jump. The mapping itself is in tools/reach/input-pad.test.mjs)
     await verb('slot tap D-right back', 15, 'Digit1', null, 90);
     await sleep(1400);
     P.verbs['slot tap D-right back'].effect = await C(() => window.__CTX__.quickslots?.activeSlot ?? null);
     P.verbs['slot tap D-right back'].pass &&= P.verbs['slot tap D-right back'].effect === 1;
     // hold D-right: the slot in hand held (quick-make runs on its own 1.2 s)
-    await C(() => { window.__qm0 = window.__CTX__.quickslots?.make?.made ?? 0; window.__qmi0 = window.__CTX__.quickslots?.lastMake ?? null; });
+    // (the bow in hand: slot 1 is the slot that makes)
+    for (let i = 0; i < 3 && await C(() => (window.__CTX__.quickslots?.activeSlot ?? 1) !== 1); i++) { await press(15, 90); await sleep(1200); }
     await press(15, 1800);
     P.verbs['quick-make hold D-right'] = { button: 15, code: await lastCode(), want: 'Digit1',
       effect: await C(() => ({ made: window.__CTX__.quickslots?.make?.made ?? null, lastMake: window.__CTX__.quickslots?.lastMake ?? null })) };
@@ -354,12 +351,14 @@ try {
     await press(13); await sleep(200);
     const focus = await C(() => { const e = document.querySelector('.cal-pad-focus'); return e ? `${e.tagName.toLowerCase()}.${e.className.split(' ')[0]} ${e.textContent.trim().slice(0, 30)}` : null; });
     const fShot = await shot('pad-hub-focus');
-    await press(1); await sleep(900);
+    // B backs out one layer at a time (a lane's panel first, then the hub), as Escape does
+    let backs = 0;
+    for (; backs < 3 && await C(() => !!window.__CTX__.menus.hubOpen); backs++) { await press(1); await sleep(900); }
     const hubClosed = await C(() => !window.__CTX__.menus.hubOpen && window.__CTX__.state === 'playing');
     await press(8); await sleep(900);
     const mapTab = await C(() => ({ open: !!window.__CTX__.menus.hubOpen, tab: window.__CTX__.menus.tab }));
-    await press(1); await sleep(900);
-    P.hub = { hubOpen, tab0, tab1, focus, shot: path.basename(fShot), hubClosed, map: mapTab, closedAgain: await C(() => !window.__CTX__.menus.hubOpen),
+    for (let i = 0; i < 3 && await C(() => !!window.__CTX__.menus.hubOpen); i++) { await press(1); await sleep(900); }
+    P.hub = { hubOpen, tab0, tab1, focus, shot: path.basename(fShot), hubClosed, backs, map: mapTab, closedAgain: await C(() => !window.__CTX__.menus.hubOpen),
       pass: hubOpen && tab1 !== tab0 && !!focus && hubClosed && mapTab.open && mapTab.tab === 'map' };
     P.log = await C(() => window.__CTX__.input.padLog.slice());
     P.pass = P.connected && Object.values(P.verbs).every((v) => v.pass) && P.hub.pass;

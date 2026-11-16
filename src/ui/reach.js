@@ -4,7 +4,8 @@
  *
  *   ui()        the page has the pad, not the world: the title, a menu, the hub, a dialogue, the death card
  *   sighting()  the Alidade is up (R3 takes a bearing instead of crouching)
- *   guarding()  the lance is in hand and the guard is up (A plants the Windwall instead of jumping)
+ *   guarding()  the Windwall's guard is up (A plants it instead of jumping). The Windwall is Oro's kit (Milestone 2):
+ *               until it lands nothing guards, and A is always the jump
  *   slots()     { active, list }: the quick slot in hand and the earned ones, for D-right's tap (cycle) and hold (make)
  *   longHold()  the interaction in front of her when it is a long hold (a benchmark's 15 s re-survey), else null:
  *               a TOGGLE re-survey latches E only on one of these, and lets go when it is no longer the one in front
@@ -20,7 +21,7 @@ export function installReach(ctx) {
     installed: true,
     ui: () => ctx.state !== 'playing' || !!ctx.menus?.hubOpen || !!ctx.systemsGame?.present?.busy,
     sighting: () => !!ctx.sighting?.on,
-    guarding: () => !!ctx.combat?.melee?.lanceInHand && input.mouseDown(2),
+    guarding: () => !!ctx.combat?.windwall?.guarding,
     slots: () => {
       const q = ctx.quickslots;
       const list = (q?.slots ?? []).filter((s) => s.kind).map((s) => s.slot);
