@@ -20,6 +20,9 @@ import {
   _rbK, _rbQ, _rbQ2, _rbT, _rxV, _sg0, _sg1, _sg2, _sg3, _v1, _v2, _v3, _v4, _v5, _v6, _v7, _v8, clamp, damp,
   smoothstep,
 } from './playerCommon.js';
+/** (cloth lane, F19) the heavy's contact key (of its strike: where F19 freezes), the least flight a step may be hurried
+ *  to (s), and how long after the contact no new step starts (s) */
+const HEAVY_CONTACT_K = 0.62, HEAVY_STEP_MIN = 0.06, HEAVY_HOLD = 0.12;
 
 export class LocomotionDriver {
   /** Feet world positions + planted flags (gates: A13-no-skate). */
@@ -1264,12 +1267,25 @@ export class LocomotionDriver {
     this._tryStep(1 - lead, errs[1 - lead], vx, vz);
   }
 
+  /** (F19) Seconds to the lance heavy's contact key (HEAVY_CONTACT_K of its strike), negative after it; null outside a
+   *  heavy's strike (or a windup whose length is not yet known: a held cock). */
+  _heavyContactIn() {
+    const M = this.ctx?.combat?.melee;
+    if (!M || !M.heavy || !(M._phaseEnd > 0)) return null;
+    if (M.phase === 'strike') return HEAVY_CONTACT_K * M._phaseEnd - M._t;
+    if (M.phase === 'windup' && M._pose && !M._pose.hold && M._pose.durS > 0) return (M._phaseEnd - M._t) + HEAVY_CONTACT_K * M._pose.durS;
+    return null;
+  }
+
   /** Advance the feet in flight; a landed foot drops its lock and cools down. */
   _advanceFlights(dt) {
+    const tc = this._heavyContactIn();
     for (let s = 0; s < 2; s++) {
       this._stepCd[s] = Math.max(0, (this._stepCd[s] || 0) - dt);
       const f = this._flight[s];
       if (!f) continue;
+      // (F19: a foot already in flight as the heavy's contact nears is hurried to land by it)
+      if (tc != null && !f.loco && tc > 0 && (1 - f.t) * f.dur > tc) f.dur = Math.max(dt, tc / Math.max(1e-3, 1 - f.t));
       f.t = Math.min(1, f.t + dt / f.dur);
       if (f.t >= 1) {
         this._flight[s] = null;
@@ -1396,6 +1412,13 @@ export class LocomotionDriver {
      * the ground is a lunge and reads as one; a dragged foot does not. */
     const critical = myLock > MAX_LOCK * 0.5 || slipping;
     if (this._flight[side]) return;
+    /* (cloth lane, F19, the smallest change) THE FEET ARE DOWN AT THE HEAVY'S CONTACT. The heavy's drive and its stance
+     * re-key kept a foot re-stepping through the strike: at the contact key (0.62 of the strike, where F19 freezes) the
+     * lead foot had just lifted again and the other was still landing, both knees up, and a sash panel lay out level over
+     * the raised thigh. No step starts that could not land by the contact key, nor through HEAVY_HOLD after it, unless
+     * the planted ball is really skating (STEP_SLIP: the drift bar outranks this) */
+    const tc = this._heavyContactIn();
+    if (tc != null && !slipping && tc < HEAVY_STEP_MIN && tc > -HEAVY_HOLD) return;
     // never two feet leaving the ground in the same beat: the second may go
     // once the first is most of the way down, and no sooner
     if (busy && busy.t < 0.30 && !critical) return;
@@ -1416,6 +1439,8 @@ export class LocomotionDriver {
     // reused, never allocated: a chained combo starts ~50 of these a second
     const F = this._flightPool[side];
     F.t = 0; F.dur = STEP_DUR; F.loco = false;
+    // (F19: a step taken before the heavy's contact lands by it)
+    if (tc != null && tc > 0 && tc < STEP_DUR) F.dur = Math.max(HEAVY_STEP_MIN, tc);
     F.fx = w0.x; F.fz = w0.z;
     F.hx = home[0] + (lv > 1e-3 ? vx / lv * lead : 0);
     F.hz = home[1] + (lv > 1e-3 ? vz / lv * lead : 0);
