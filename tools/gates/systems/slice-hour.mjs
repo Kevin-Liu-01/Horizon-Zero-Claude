@@ -78,6 +78,11 @@ const KIT_ONLY = flag('--kit-only') ? new Set(flag('--kit-only').split(',').map(
 // real death path after it) and the run plays the death as a player does (the card, RETURN TO THE LAST BRAZIER) and on
 // to the end: the death-rule row on demand, mid-slice. --no-site-clock skips the site-clock row after the run
 const DEATH_AT = flag('--death-at');
+// fix round 1: --death-after: the death is staged AFTER the run has reached the reward and its site-clock row (so the
+// run itself stays a clean input-driven run), by the dyke Plumb's kind as the cause (FIX LIST 5: the card and the HUD
+// read 'STAGED' when the cause was the harness's string); --kit-repeat N runs the kit page N times
+const DEATH_AFTER = args.includes('--death-after');
+const KIT_REPEAT = Math.max(1, Number(flag('--kit-repeat', 1)) | 0);
 const SITE_CLOCK = !args.includes('--no-site-clock');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[slice-hour ${new Date().toISOString().slice(11, 19)}]`, ...a);
@@ -530,8 +535,15 @@ async function drink(page, K, to = 90, maxMs = 6000) {
 }
 
 let lampsFight = null;
-/** M1b round 3: the farthest stand the topple shoots the Plumb's vial from (m). */
-const VIAL_MAX_D = 24;
+/**
+ * M1b round 3: the farthest stand the topple shoots the Plumb's vial from (m). Fix round 1 (FIX LIST 1): 17, was 24.
+ * Across the lane's 9 slice runs at 4c5384a..f35bc3c, vial arrows loosed from 20 m or more struck it 1 time in 45 (every
+ * one predicted on it); from under 20 m 12 of 19. The kit's vial-range row measures why; until it passes, the runner
+ * stands where the shots land. VIAL_BACK_D is where it backs out to when the Plumb closes inside 9 m.
+ */
+const VIAL_MAX_D = 17;
+const VIAL_RING = [13, 15, 17];
+const VIAL_BACK_D = 15;
 const shots = [];
 
 /** Bow in hand (slot 1) and Reed arrows on the string; make arrows (hold R) when fewer than 4. */
@@ -575,7 +587,8 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       if (!T.length) return { ok: !!all, why: all ? null : `no live ${kind} within ${reach} m`, fired };
       const t = T[0];
       // M1b fix round: the pry beat's two halves (the vial until it is down; the bob while it is down)
-      if (untilDown && t.down) { await release(); return { ok: true, fired, down: true, ...(scans.length ? { scans } : {}) }; }
+      // fix round 1 (FIX LIST 8): the topple's still, the moment the run sees the Plumb down (F25's state), before she lowers the bow
+      if (untilDown && t.down) { const toppleShot = await shot(page, 'b-13-topple'); await release(); return { ok: true, fired, down: true, toppleShot, ...(scans.length ? { scans } : {}) }; }
       if (whileDown && !t.down) { await release(); return { ok: false, why: `${kind} stood up`, fired, stoodUp: true }; }
       // M1b fix round: drink between shots (never in the 4 s a Plumb is down: they are the Pry's), and on the Peg line
       // break off and cross when the gourd is dry and the staff low (the lamps are the stage's optional count)
@@ -599,7 +612,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
           const dsc = await page.evaluate(scanStands, t.i, tried, undefined, ditchPts.filter((q) => { const d = Math.hypot(q.x - t.x, q.z - t.z); return d >= 10 && d <= VIAL_MAX_D; }));
           if (dsc) { (ditchScans ||= []).push({ of: dsc.of, open: dsc.open, masked: dsc.masked, stands: dsc.stands.slice(0, 3) }); if (dsc.stands[0] && dsc.stands[0].clear >= 2) sc = dsc; }
         }
-        if (!sc) sc = await page.evaluate(scanStands, t.i, tried, [12, 15, 18, 22]);
+        if (!sc) sc = await page.evaluate(scanStands, t.i, tried, VIAL_RING);
         scans.push(sc && { open: sc.open, masked: sc.masked, vial: sc.vial, nockH: sc.nockH, best: sc.stands[0] ?? null, from: { x: +s.p.x.toFixed(1), z: +s.p.z.toFixed(1) } });
         const best = sc?.stands?.[0];
         if (!best) return { ok: false, why: `${kind} ${part}: no open stand found round it (${JSON.stringify(sc?.masked ?? {})})`, fired, scans };
@@ -624,7 +637,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
           // it closed on her (M1b round 3): from inside 9 m its head masks the vial (4c5384a: seven stands at 9-13 m, each
           // masked by rig_head when she got there). Back out to 18 m, then scan again from there
           await release();
-          const k = 18 / Math.max(1, t.d);
+          const k = VIAL_BACK_D / Math.max(1, t.d);
           await walkTo(page, K, { x: t.x + (s.p.x - t.x) * k, z: t.z + (s.p.z - t.z) * k }, 3, { maxS: 12 });
           stand0 = null; continue;
         }
@@ -664,7 +677,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         if (blocked > (part === 'vial' ? 12 : 6)) return { ok: false, why: `${kind} ${part}: masked from every stand tried (${blocked})`, fired, scans, ditchScans };
         if (part === 'vial') {
           // the next open stand the scan finds; masked at close range (its head before the vial), back out to 18 m first
-          if (t.d < 13) { const k = 18 / Math.max(1, t.d); await walkTo(page, K, { x: t.x + (s2.p.x - t.x) * k, z: t.z + (s2.p.z - t.z) * k }, 3, { maxS: 12 }); }
+          if (t.d < 13) { const k = VIAL_BACK_D / Math.max(1, t.d); await walkTo(page, K, { x: t.x + (s2.p.x - t.x) * k, z: t.z + (s2.p.z - t.z) * k }, 3, { maxS: 12 }); }
           stand0 = null; continue;
         }
         const ang = Math.atan2(s2.p.x - t.x, s2.p.z - t.z) + (blocked % 2 ? 0.35 : -0.7);
@@ -850,6 +863,17 @@ async function beat(page, K, s) {
  * frames, so the game's frame loop and the title's presentation loop never ran. A diagnosis is polled while the
  * title is awaited (animation frames counted from document start, visibility, focus, context loss).
  */
+/** fix round 1: the mean luminance (0-255) of the page's middle band (30-70 % of its height), from a screenshot. */
+async function lumBand(page) {
+  try {
+    const buf = await page.screenshot({ type: 'png' });
+    const { data, info } = await sharp(buf).greyscale().raw().toBuffer({ resolveWithObject: true });
+    let sum = 0, n = 0;
+    for (let y = Math.floor(info.height * 0.3); y < Math.floor(info.height * 0.7); y++) for (let x = 0; x < info.width; x++) { sum += data[y * info.width + x]; n++; }
+    return n ? +(sum / n).toFixed(1) : null;
+  } catch { return null; }
+}
+
 async function reloadContinue(page, tag) {
   const before = await page.evaluate(() => {
     const C = window.__CTX__, s = C.progression.saves;
@@ -913,10 +937,34 @@ async function reloadContinue(page, tag) {
   }
   const dxz = before ? +Math.hypot(before.x - after.x, before.z - after.z).toFixed(3) : null;
   const dy = before && Number.isFinite(before.y) ? +(after.y - before.y).toFixed(3) : null;
+  // fix round 1 (FIX LIST 6): the row grades the picture too. At f35bc3c the T1 continue was black under the HUD in 3 of
+  // 9 lane runs (the middle band's mean luminance 8.3/255) and passed on position. The bar: the middle band (30-70 % of
+  // the height) at >= 10/255 when the row's shot is taken (1.5 s after play resumes). If it is under, the page is read
+  // every 0.5 s for 8 s more (what the renderer, the camera and the element over the canvas are), for the cause
+  const pic = await lumBand(page);
+  row.picture = { lum: pic, bar: 10 };
+  if (pic != null && pic < 10) {
+    const t0 = Date.now(), seen = [];
+    while (Date.now() - t0 < 8000) {
+      await sleep(500);
+      const l = await lumBand(page);
+      const d = await page.evaluate(() => { const C = window.__CTX__, E = C?.engine, R = E?.renderer, cam = C?.camera, P = C?.player?.position, cv = R?.domElement, cs = cv ? getComputedStyle(cv) : null;
+        const top = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+        return { state: C?.state, frames: E?.frames ?? null, calls: R?.info?.render?.calls ?? null, tris: R?.info?.render?.triangles ?? null, lost: R?.getContext?.()?.isContextLost?.() ?? null,
+          cam: cam ? [+cam.position.x.toFixed(2), +cam.position.y.toFixed(2), +cam.position.z.toFixed(2)] : null, camGround: cam && C.terrain ? +(cam.position.y - C.terrain.getHeight(cam.position.x, cam.position.z)).toFixed(2) : null,
+          her: P ? [+P.x.toFixed(2), +P.y.toFixed(2), +P.z.toFixed(2)] : null, near: cam?.near ?? null, far: cam?.far ?? null, exposure: R?.toneMappingExposure ?? null,
+          canvas: cs ? { display: cs.display, opacity: cs.opacity, visibility: cs.visibility } : null, over: top ? `${top.tagName.toLowerCase()}.${String(top.className || '').slice(0, 60)}` : null }; }).catch((e) => ({ evalError: String(e).slice(0, 120) }));
+      seen.push({ t: +((Date.now() - t0) / 1000 + 1.5).toFixed(1), lum: l, ...d });
+      if (l != null && l >= 10 && row.picture.pictureAfterS == null) row.picture.pictureAfterS = seen.at(-1).t;
+    }
+    row.picture.seen = seen.filter((x, i) => i % 2 === 0 || i === seen.length - 1);
+    row.picture.laterShot = await shot(page, `${tag}-continued-later`);
+  }
+  row.picture.ok = pic != null && pic >= 10;
   Object.assign(row, {
     after, hadContinue, dxz, dy,
     pass: !!before && hadContinue && after.state === 'playing' && before.idx === after.idx && before.started === after.started && before.salt === after.salt
-      && Math.abs(before.hour - after.hour) < 0.05 && dxz < 1.0 && (dy == null || Math.abs(dy) < 0.5),
+      && Math.abs(before.hour - after.hour) < 0.05 && dxz < 1.0 && (dy == null || Math.abs(dy) < 0.5) && row.picture.ok,
     shot: await shot(page, `${tag}-continued`),
   });
   return row;
@@ -1070,6 +1118,9 @@ try {
       try {
         await page.evaluate(`window.__aimPoint = ${aimPoint.toString()};`);
         report.rows.kit = await runKit(page, { sleep, log, only: KIT_ONLY });
+        // fix round 1 (FIX LIST 3): --kit-repeat N runs the kit page N times in this one session (each repeat after the
+        // first without the vial-range row, which is 30 shots), so a row's stability is measured, not one green run
+        for (let r = 2; r <= KIT_REPEAT; r++) report.rows[`kit${r}`] = await runKit(page, { sleep, log: (...a) => log(`[kit ${r}]`, ...a), only: KIT_ONLY, skip: new Set(['vial-range']) });
       } catch (e) { report.rows.kit = { error: String(e?.message || e).slice(0, 300) }; }
     }
     await page.close();
@@ -1129,11 +1180,10 @@ try {
   if (!report.rows['save-reload'].pass && (await page.evaluate(() => window.__CTX__?.state)) !== 'playing') throw new Error('save-reload left the game off play: the run cannot go on');
 
   let last = null, tries = 0, deaths = 0, stagedDeath = false;
-  while (spent() < BUDGET_S - RESERVE_S) {
-    const s = await page.evaluate(probe);
-    if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) {
-      // played as a player plays it: the death card, then RETURN TO THE LAST BRAZIER (the one death rule, M1.6f; BIBLE 13's two stations, M1.6g2)
+  // a death, played as a player plays it (in the run, and once more after it with --death-after)
+  const playDeath = async (s) => {
       deaths++;
+      // played as a player plays it: the death card, then RETURN TO THE LAST BRAZIER (the one death rule, M1.6f; BIBLE 13's two stations, M1.6g2)
       // fix round (the judge at 24419e9: the row did not check the satchel): the newest record (BIBLE 13: "the world and
       // satchel as of the newest record"), read before the card is answered, is what she must stand up with
       const pre = await page.evaluate(() => { const C = window.__CTX__, S = C.progression.saves.store, n = S.continueSlot(), rec = n ? S.latest(n) : null;
@@ -1141,9 +1191,10 @@ try {
           record: rec ? { kind: rec.kind, reason: rec.reason, salt: rec.satchel?.['metal-shards'] ?? 0, satchel: rec.satchel, gourd: Math.round(rec.vitals?.gourd ?? 0), ammo: rec.ammo } : null }; });
       await page.waitForFunction(() => !!document.querySelector('.mn-death.show .mn-death-opt'), { timeout: 15000, polling: 100 }).catch(() => {});
       await sleep(600);
-      const card = await page.evaluate(() => ({ title: document.querySelector('.mn-death-title')?.textContent ?? null, opts: [...document.querySelectorAll('.mn-death-opt b')].map((b) => b.textContent) }));
+      const card = await page.evaluate(() => ({ title: document.querySelector('.mn-death-title')?.textContent ?? null, opts: [...document.querySelectorAll('.mn-death-opt b')].map((b) => b.textContent),
+        cause: (document.querySelector('.mn-death')?.innerText || '').match(/felled by[^\n]*|the island took her/i)?.[0] ?? null }));
       const cardShot = await shot(page, `d${deaths}-death-card`);
-      if (deaths > 2) { report.stoppedAt = s.stage; report.why = `Brea died ${deaths} times`; break; }
+      if (deaths > 2) { report.stoppedAt = s.stage; report.why = `Brea died ${deaths} times`; return 'stop'; }
       const clicked = PAD ? !!(await uiChoose(page, /RETURN TO THE LAST BRAZIER/, { sel: '.mn-death-opt' }))
         : await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-death-opt')].find((x) => /RETURN TO THE LAST BRAZIER/.test(x.textContent)); if (!b) return false; b.click(); return true; });
       await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 20000, polling: 100 }).catch(() => {});
@@ -1151,6 +1202,7 @@ try {
       const post = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position, R = C.braziers.lastRest; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), state: C.state, hp: Math.round(C.player.health), maxHp: Math.round(C.player.maxHealth), salt: C.inventory.count('metal-shards'), gourd: Math.round(C.player.gourd ?? 0),
         satchel: Object.fromEntries(Object.keys(C.progression.saves.store.latest(C.progression.saves.store.continueSlot())?.satchel || {}).map((k) => [k, C.inventory.count(k)])),
         fromRest: R ? +Math.hypot(P.x - R.x, P.z - R.z).toFixed(2) : null, rest: R?.id ?? null }; });
+      post.hudCause = await page.evaluate(() => (document.body.innerText || '').match(/KILLED BY [^\n]*|CHECKPOINT RESTORED/)?.[0] ?? null).catch(() => null);
       const rec = pre.record;
       const satchelKept = !!rec && Object.entries(rec.satchel || {}).every(([k, v]) => (post.satchel?.[k] ?? 0) === v) && post.salt === rec.salt;
       const gourdKept = !!rec && Math.abs(post.gourd - rec.gourd) <= 1;
@@ -1161,6 +1213,23 @@ try {
       if (row.staged) report.rows['death-staged'].played = true;
       (report.rows['death-rule'] ||= []).push(row);
       log(`death ${deaths} at ${s.stage}: stood up ${post.fromRest} m from ${post.rest}, stage ${pre.stage} -> ${post.stage}`);
+      return row;
+  };
+  // the staged death (--death-at, --death-after): her own damage path (player.takeDamage -> _die), so the card, the park and
+  // the respawn are the game's; the cause is a Plumb (the nearest live one, else the kind's own name), sent as an
+  // Instrument's blow is ('player-damage' with from), so the card and the HUD name it as they name a real death
+  const stageDeath = (at) => page.evaluate((at) => { const C = window.__CTX__, P = C.player, p = P.position;
+    let from = null, bd = Infinity;
+    for (const m of (C.machines?.list || [])) { if (m && m.kind === 'plumb' && m.alive !== false) { const d = Math.hypot(m.position.x - p.x, m.position.z - p.z); if (d < bd) { bd = d; from = m; } } }
+    if (!from) from = { kind: 'plumb', displayName: C.machines?.instrumentKinds?.plumb?.displayName ?? 'Plumb' };
+    const hp = Math.round(P.health), amount = P.health + 50;
+    C.events.emit('player-damage', { amount, from });
+    P.takeDamage(amount, from);
+    return { at, hpBefore: hp, hpAfter: Math.round(P.health), state: C.state, cause: from.displayName ?? from.kind, causeLive: bd < Infinity ? +bd.toFixed(1) : null }; }, at);
+  while (spent() < BUDGET_S - RESERVE_S) {
+    const s = await page.evaluate(probe);
+    if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) {
+      if ((await playDeath(s)) === 'stop') break;
       last = null; tries = 0;
       continue;
     }
@@ -1173,8 +1242,7 @@ try {
     if (DEATH_AT && s.stage === DEATH_AT && !stagedDeath) {
       // the staged death: her own damage path (player.takeDamage -> _die), so the card, the park and the respawn are the game's
       stagedDeath = true;
-      report.rows['death-staged'] = { at: s.stage, ...(await page.evaluate(() => { const C = window.__CTX__, P = C.player;
-        const hp = Math.round(P.health); P.takeDamage(P.health + 50, 'staged'); return { hpBefore: hp, hpAfter: Math.round(P.health), state: C.state }; })) };
+      report.rows['death-staged'] = await stageDeath(s.stage);
       log(`death staged at ${s.stage}: ${JSON.stringify(report.rows['death-staged'])}`);
       await page.waitForFunction(() => window.__CTX__.state === 'dead' || window.__CTX__.state === 'death-menu' || !!document.querySelector('.mn-death.show'), { timeout: 10000, polling: 100 }).catch(() => {});
       last = null; tries = 0;
@@ -1259,6 +1327,20 @@ try {
       return row;
     }).catch((e) => ({ error: String(e?.message || e).slice(0, 300) }));
     log(`site-clock: ${report.rows['site-clock'].pass ? 'PASS' : 'FAIL'} ${JSON.stringify(report.rows['site-clock']).slice(0, 400)}`);
+  }
+  // fix round 1 (FIX LIST 5): the death row, staged after the clean run (see --death-after)
+  if (DEATH_AFTER && (await page.evaluate(() => window.__CTX__?.state)) === 'playing') {
+    try {
+      report.rows['death-staged'] = await stageDeath('after-run');
+      log(`death staged after the run: ${JSON.stringify(report.rows['death-staged'])}`);
+      await page.waitForFunction(() => window.__CTX__.state === 'dead' || window.__CTX__.state === 'death-menu' || !!document.querySelector('.mn-death.show'), { timeout: 10000, polling: 100 }).catch(() => {});
+      const ds = report.rows['death-staged'];
+      const dr = await playDeath({ ...(await page.evaluate(probe)), stage: 'after-run' });
+      ds.played = true;
+      if (dr && dr !== 'stop') { dr.staged = true; ds.row = { pass: dr.pass, fromRest: dr.post.fromRest, rest: dr.post.rest, hp: dr.post.hp, stage: dr.post.stage, satchelKept: dr.satchelKept, gourdKept: dr.gourdKept, cardCause: dr.card.cause, hudCause: dr.post.hudCause };
+        ds.pass = !!dr.pass && !/STAGED/i.test(`${dr.card.cause} ${dr.post.hudCause}`); }
+      log(`death-after: ${ds.pass ? 'PASS' : 'FAIL'} ${JSON.stringify(ds.row ?? {})}`);
+    } catch (e) { report.rows['death-staged'] = { error: String(e?.message || e).slice(0, 300) }; }
   }
   report.stopShot = await shot(page, 'b-stop');
   if (PAD) report.pad = { ...(await padState(page)), presses: await page.evaluate(() => window.__pad?.presses ?? null), stickSteps: await page.evaluate(() => window.__pad?.stickSteps ?? 0), keyboardUsed: false };

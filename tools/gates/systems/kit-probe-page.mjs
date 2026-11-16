@@ -51,6 +51,22 @@ const PRELUDE = `
   // moving 1.09 m a second, and the kit's arrows met the ground behind them)
   const calm = (m) => { try { if (m.alive !== false && m.state !== 'downed' && !(m._toppleT >= 0)) { m.state = 'patrol'; } m.suspicion = 0; if (m.sc) { m.sc.suspicion = 0; if (m.__still) m.sc._waitT = Math.max(m.sc._waitT ?? 0, 1e6); } } catch { /* */ } };
   const wpos = (o) => o.getWorldPosition(new V());
+  /** fix round 1: Brea placed d m (horizontal) from a node of m, in front of it first (its heading, then 35, 70, 140 deg
+   *  either way, then behind), on dry ground, facing the node; with ok(), the first stand whose solved shot ok() accepts */
+  const stand = (m, o, d, ok = null) => {
+    const c = wpos(o), h = m.sc ? m.sc.heading : (m.heading ?? 0);
+    let first = null;
+    for (const da of [0, 0.6, -0.6, 1.2, -1.2, 2.4, -2.4, Math.PI]) {
+      const x = c.x + Math.sin(h + da) * d, z = c.z + Math.cos(h + da) * d;
+      if (H(x, z) <= 0.3) continue;
+      place(x, z, c.x, c.z);
+      first = first ?? { x, z, da };
+      if (!ok || ok()) return { x, z, da, ok: true };
+    }
+    if (first) place(first.x, first.z, c.x, c.z);
+    return first ? { ...first, ok: false } : null;
+  };
+  const segDist = (p, a, b) => { const ab = b.clone().sub(a), L2 = ab.lengthSq(); const t = L2 > 1e-12 ? Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / L2)) : 0; return a.clone().addScaledVector(ab, t).distanceTo(p); };
   const r3 = (v) => Math.round(v * 1000) / 1000;
   const raise = async () => { C.input.enabled = true; C.input.mouse.buttons |= 4; for (let i = 0; i < 90 && !(P.aiming && C.combat.nockLanded); i++) await raf(); await frames(8); return !!P.aiming; };
   const lower = async () => { C.input.mouse.buttons &= ~4; await frames(6); };
@@ -59,11 +75,17 @@ const PRELUDE = `
     // M1b round 3: a staged Instrument with its brain off still walks and sways (the calm Plumb's vial moved 1.09 m in
     // a second at 3e04504, a Peg's lamp 0.18 m in a 0.2 s flight): the shot LEADS the target's own node, its velocity
     // read over 6 frames on the simulation clock, by the flight time to it (twice: the time depends on the lead)
+    // fix round 1 (the judge at f35bc3c: the kit's first topple arrow passed 0.001 m from a point 0.254 m off a vial
+    // that stood still): the velocity is read over 20 frames, not 6 (a 6-frame read of a staged-still Plumb's vial gave
+    // 0.5 m/s of jitter), and a node slower than 0.3 m/s is not led at all
+    K.leadV = null;
     if (track) {
       const p0 = wpos(track), s0 = C.engine?.simTime ?? performance.now() / 1000;
-      await frames(6);
+      await frames(20);
       const p1 = wpos(track), s1 = C.engine?.simTime ?? performance.now() / 1000, dts = s1 - s0;
-      const v = dts > 1e-3 ? p1.clone().sub(p0).multiplyScalar(1 / dts) : new V();
+      let v = dts > 1e-3 ? p1.clone().sub(p0).multiplyScalar(1 / dts) : new V();
+      if (v.length() < 0.3) v = new V();
+      if (v.lengthSq() > 0) K.leadV = { x: v.x, y: v.y, z: v.z };
       const nk = new V(); C.combat.bow.getNockWorld(1, nk);
       const sp = (C.combat.ammoDefs?.[ammo] ?? C.combat.ammoDefs.hunter).speed;
       // the aimed point rides with the node (it may be a point ON the part, not its origin)
@@ -71,9 +93,11 @@ const PRELUDE = `
       let aimAt = now.clone();
       for (let i = 0; i < 2; i++) { const tf = aimAt.distanceTo(nk) / (sp * 0.97); aimAt = now.clone().addScaledVector(v, tf); }
       K.lead = { v: [r3(v.x), r3(v.y), r3(v.z)], speed: r3(v.length()), by: r3(aimAt.distanceTo(pt)) };
+      K.aimNow = now;
       pt = aimAt;
     } else K.lead = null;
     aimFor(ammo, pt, solve);
+    K.leadV = null; K.aimNow = null;
     const n0 = K.ev.length;
     const AP = C.combat.arrows, flying = new Set(AP.list.filter((x) => x.mode === 'fly'));
     C.combat._fire();
@@ -85,9 +109,27 @@ const PRELUDE = `
       near: Infinity, nearAge: null, frames: 0, ages: [], end: null } : { none: true };
     const tw = performance.now(), q = new V();
     let last = a ? a.pos.clone() : null;
+    // fix round 1 (FIX LIST 1): with K.gapWp (a capsule weak point: obj, axis, half, radius) the flight is measured
+    // against the LIVE glass: per frame, the closest the arrow's swept tip segment came to the capsule's axis in the pose
+    // the frame was drawn in and in the pose before it, less the radius (gapM < 0: the arrow went through the glass)
+    const W = K.gapWp ?? null, cap = () => { W.obj.updateWorldMatrix(true, false); return [W.axis.clone().multiplyScalar(W.half).applyMatrix4(W.obj.matrixWorld), W.axis.clone().multiplyScalar(-W.half).applyMatrix4(W.obj.matrixWorld)]; };
+    let capPrev = W ? cap() : null;
+    const tipOf = (p, v) => p.clone().addScaledVector(v.clone().normalize(), 0.78);
+    let tipLast = a ? tipOf(a.pos, a.vel) : null;
+    if (W) { fl.gapM = Infinity; fl.gapAge = null; }
     while (performance.now() - tw < waitMs) {
       await raf();
       if (!a || fl.end) continue;
+      if (W) {
+        const capNow = cap(), tipNow = a.mode === 'fly' ? tipOf(a.pos, a.vel) : a.pos.clone().addScaledVector(new V(0, 0, 1).applyQuaternion(a.group.quaternion), 0.78);
+        for (const [c0, c1] of [capNow, capPrev]) {
+          let best = Infinity;
+          for (let i = 0; i <= 24; i++) { const p = tipLast.clone().lerp(tipNow, i / 24); best = Math.min(best, segDist(p, c0, c1)); }
+          const g = best - W.radius;
+          if (g < fl.gapM) { fl.gapM = r3(g); fl.gapAge = r3(a.age); }
+        }
+        capPrev = capNow; tipLast = tipNow;
+      }
       fl.frames++;
       if (fl.ages.length < 6) fl.ages.push(r3(a.age));
       // the closest approach of the tail's step to pt
@@ -164,7 +206,9 @@ const PRELUDE = `
       const sp2 = cb._computeShot(def2, 1, nock, d2);
       K.lastDir = d2.clone();
       C.camera.getWorldDirection(cd);
-      const st = C.engine?.steps || 1, pr = cb.arrows.predict?.(nock, d2, sp2, { dt: 1 / 60 / Math.max(1, st), aim: pt });
+      // fix round 1: a led shot is predicted in the target's moving frame (ride), its aim the target's point now
+      // (at f35bc3c the led topple shot was predicted against the vial standing where it was: 'first' null)
+      const st = C.engine?.steps || 1, pr = cb.arrows.predict?.(nock, d2, sp2, { dt: 1 / 60 / Math.max(1, st), aim: K.leadV && K.aimNow ? K.aimNow : pt, ride: K.leadV });
       K.lastShot = { nock: [r3(nock.x), r3(nock.y), r3(nock.z)], fromP: r3(nock.distanceTo(P.position)), camDot: r3(d2.dot(cd)),
         first: pr?.hit ?? null, firstKind: pr?.machine?.kind ?? null, predMissM: pr ? r3(pr.d) : null, solveMissM: missM != null ? r3(missM) : null };
     }
@@ -174,10 +218,11 @@ const PRELUDE = `
 
 const ev = (code) => `(async () => { ${PRELUDE} ${code} })()`;
 
-export async function runKit(page, { sleep, log = () => {}, only = null }) {
+export async function runKit(page, { sleep, log = () => {}, only = null, skip = null }) {
   const rows = {};
   const run = async (id, fn) => {
     if (only && !only.has(id)) return;
+    if (skip && skip.has(id)) return;
     const t0 = Date.now();
     try { rows[id] = await fn(); } catch (e) { rows[id] = { pass: false, error: String(e?.message || e).slice(0, 300) }; }
     rows[id].seconds = Math.round((Date.now() - t0) / 100) / 10;
@@ -275,10 +320,14 @@ export async function runKit(page, { sleep, log = () => {}, only = null }) {
     return { num: { walkSpeedBefore: r3(v0), walkSpeedAfter: r3(m.walkSpeed), ratio: r3(k), arrows: n, rule }, pass: !!m._punctured && Math.abs(k - 0.6) < 0.005, bar: 'a ballast puncture: -40 % speed (ratio 0.60)' };`)));
 
   /* ---------------- plumb: reed-blunt, vial-topple, barbed-pry (one Plumb) ---------------- */
-  await run('plumb-arrows', () => page.evaluate(ev(`
+  const plumbArrows = (live) => page.evaluate(ev(`
+    const LIVE = ${live};
     // (eeddcb4: stood 11 m off along the lamp's axis, no arrow touched it at all: she stands where the Peg row stood, on
     // open ground, and the Plumb 24 m out)
-    const b = base(); const m = spawn('plumb', b.x + 24, b.z, true); place(b.x, b.z, b.x + 24, b.z); await frames(30); await raise();
+    // fix round 1 (FIX LIST 7): LIVE, the Plumb is not held still: it walks its patrol with its vial swinging, as the
+    // slice meets it, and she stands 15 m in front of it for each shot (stand), the shot led by the part's own motion
+    const b = base(); const m = spawn('plumb', b.x + 24, b.z, !LIVE); place(b.x, b.z, b.x + 24, b.z); await frames(30); await raise();
+    const re = async (o) => { if (LIVE) { calm(m); stand(m, o, 15); await frames(2); } };
     const out = {};
     /* Blunt: two Reed arrows on the standing bob */
     const bob = m._bob; const hp0 = bob.tearHp, h0 = m.health; let struck = [];
@@ -287,14 +336,14 @@ export async function runKit(page, { sleep, log = () => {}, only = null }) {
       const span = (L) => { let mx = 0; for (const a of L) for (const b of L) mx = Math.max(mx, a.distanceTo(b)); return r3(mx); };
       K.motion = { bobSpan: span(s0), vialSpan: span(s1), rootSpeed: r3(m.speed ?? 0), state: m.state }; }
     const diag = [];
-    for (let i = 0; i < 2; i++) { calm(m); const e = await shoot('hunter', wpos(bob.mesh), 650, true, bob.mesh); diag.push({ ...K.lastShot, hitPt: e.find((x) => x.n === 'arrow-hit')?.pt ?? null, flight: K.lastFlight }); const h = e.find((x) => x.n === 'arrow-hit'); struck.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
+    for (let i = 0; i < 2; i++) { calm(m); await re(bob.mesh); const e = await shoot('hunter', wpos(bob.mesh), 650, true, bob.mesh); diag.push({ ...K.lastShot, hitPt: e.find((x) => x.n === 'arrow-hit')?.pt ?? null, flight: K.lastFlight }); const h = e.find((x) => x.n === 'arrow-hit'); struck.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
     out.motion = K.motion; out.blunt = { bobTearTaken: r3(hp0 - bob.tearHp), bodyDamage: r3(h0 - m.health), struck, bobOn: bob.attached !== false, diag, bobAt: (() => { const q = wpos(bob.mesh); return [r3(q.x), r3(q.y), r3(q.z)]; })(), herAt: [r3(P.position.x), r3(P.position.y), r3(P.position.z)] };
     /* the vial: Reed arrows until it topples */
     m.health = m.maxHealth;
     let n = 0, tTop = null, sTop = null; const vh = [];
     const vs = [];
     const vd = [];
-    while (!(m._toppleT >= 0) && n < 8) { calm(m); const e = await shoot('hunter', wpos(m._vialWp.obj), 700, true, m._vialWp.obj); n++; vh.push(m._vialHits); vd.push({ first: K.lastShot?.first ?? null, predMissM: K.lastShot?.predMissM ?? null, flight: K.lastFlight }); const h = e.find((x) => x.n === 'arrow-hit'); vs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); const tp = e.find((x) => x.n === 'plumb-topple'); if (tp) { tTop = tp.t; sTop = tp.s; } }
+    while (!(m._toppleT >= 0) && n < 8) { calm(m); await re(m._vialWp.obj); K.gapWp = m._vialWp; const e = await shoot('hunter', wpos(m._vialWp.obj), 900, true, m._vialWp.obj); K.gapWp = null; n++; vh.push(m._vialHits); vd.push({ first: K.lastShot?.first ?? null, predMissM: K.lastShot?.predMissM ?? null, flight: K.lastFlight }); const h = e.find((x) => x.n === 'arrow-hit'); vs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); const tp = e.find((x) => x.n === 'plumb-topple'); if (tp) { tTop = tp.t; sTop = tp.s; } }
     out.topple = { arrows: n, vialHitsSeq: vh, struck: vs, toppled: m._toppleT >= 0, diag: vd };
     if (!(m._toppleT >= 0)) { await lower(); return { num: out, pass: false, error: 'never toppled' }; }
     tTop = tTop ?? performance.now();
@@ -326,7 +375,48 @@ export async function runKit(page, { sleep, log = () => {}, only = null }) {
     const downS = out.topple.downSimS ?? out.topple.downS;
     const pass = { blunt: out.blunt.bobTearTaken === 0 && out.blunt.bodyDamage > 0, topple: m._vialHits === 0 && vh.filter((x, i) => i < vh.length - 1).every((x) => x <= 1) && Math.abs(downS - 4.0) <= 0.2, barbed: out.barbed.bobOff && out.barbed.arrows === 1 && out.barbed.downWhenTorn };
     return { num: out, pass: pass.blunt && pass.topple && pass.barbed, parts: pass,
-      bar: 'Blunt: 0 tear on the bob, body damage > 0; the vial: topples on its 2nd vial hit, down 4.0 +- 0.2 s (simulation clock from the topple event); Barbed on the toppled bob: 1 arrow' };`)));
+      live: LIVE, bar: 'Blunt: 0 tear on the bob, body damage > 0; the vial: topples on its 2nd vial hit, down 4.0 +- 0.2 s (simulation clock from the topple event); Barbed on the toppled bob: 1 arrow' + (LIVE ? ' (LIVE: the Plumb on patrol, she 15 m in front of it for each shot)' : '') };`));
+  await run('plumb-arrows', () => plumbArrows(false));
+  await run('plumb-arrows-live', () => plumbArrows(true));
+
+  /* ---------------- vial-range (fix round 1, FIX LIST 1): the vial from 15, 20 and 24 m on a Plumb on patrol ---------------- */
+  /*
+   * At f35bc3c, across the lane's 9 slice runs, vial arrows loosed from 20 m or more struck the vial 1 time in 45 though
+   * the game's own flight (arrows.predict) said every one would. This row asks why, on a Plumb that is NOT held still
+   * (its patrol walk and its head's swing are live; its brain is off and it is kept calm, its health topped up, and its
+   * vial count put back to 0 before each shot so it never topples): 10 Reed arrows from each distance, she placed in
+   * front of it for each (the first stand whose solve the game's flight says meets the vial), the shot led by the
+   * vial's own motion over 20 frames and predicted in that moving frame. Per shot: the prediction, the vial hit (the
+   * Plumb's own vial count), and gapM, the closest the arrow's swept tip came to the LIVE glass capsule less its radius
+   * (< 0: through the glass). A shot with gapM < 0 and no hit is the sweep missing the drawn glass; a shot with gapM > 0
+   * the glass moving off the predicted line in flight.
+   */
+  await run('vial-range', () => page.evaluate(ev(`
+    const b = base(); const m = spawn('plumb', b.x + 20, b.z); place(b.x, b.z, b.x + 20, b.z); await frames(60); await raise();
+    const W = m._vialWp; const isVial = (n) => /vial/i.test(n || '');
+    const shots = [], by = {};
+    for (const D of [15, 20, 24]) {
+      const r = by[D] = { shots: 0, predicted: 0, hitsPredicted: 0, hits: 0, through: 0, throughNoHit: 0 };
+      for (let i = 0; i < 10; i++) {
+        calm(m); m.health = m.maxHealth; m._vialHits = 0;
+        const sd = stand(m, W.obj, D, () => { aimFor('hunter', wpos(W.obj), true); return isVial(K.lastShot?.first); });
+        await frames(2);
+        K.gapWp = W;
+        const e = await shoot('hunter', wpos(W.obj), 1100, true, W.obj);
+        K.gapWp = null;
+        const fl = K.lastFlight || {}, pr = isVial(K.lastShot?.first), hit = (m._vialHits ?? 0) > 0 || e.some((x) => x.n === 'plumb-topple');
+        const dmg = e.find((x) => x.n === 'machine-damaged');
+        r.shots++; if (pr) r.predicted++; if (hit) r.hits++; if (pr && hit) r.hitsPredicted++;
+        if (fl.gapM != null && fl.gapM <= 0) { r.through++; if (!hit) r.throughNoHit++; }
+        shots.push({ D, d: r3(Math.hypot(P.position.x - wpos(W.obj).x, P.position.z - wpos(W.obj).z)), stand: sd ? { da: r3(sd.da), ok: sd.ok } : null, first: K.lastShot?.first ?? null, predMissM: K.lastShot?.predMissM ?? null,
+          hit, struck: dmg?.vol ?? (e.find((x) => x.n === 'arrow-hit') ? 'hit' : null), gapM: fl.gapM ?? null, gapAge: fl.gapAge ?? null, end: fl.end?.mode ?? null, lead: K.lead ? K.lead.speed : null, state: m.state });
+      }
+    }
+    await lower();
+    const pass = [15, 20, 24].every((D) => by[D].predicted >= 8 && by[D].hitsPredicted >= Math.ceil(0.8 * by[D].predicted));
+    return { num: by, shots, pass, staged: 'a Plumb on patrol (brain off, kept calm, health and vial count reset per shot); she re-placed in front of it per shot',
+      bar: 'from 15, 20 and 24 m: of the shots the game predicts on the vial (>= 8 of 10), >= 80 % strike it' };`)));
+
 
   /* ---------------- lance-pry (real E) ---------------- */
   await run('lance-pry', async () => {
@@ -489,17 +579,23 @@ export async function runKit(page, { sleep, log = () => {}, only = null }) {
   await run('hit-feel', () => page.evaluate(ev(`${HF}
     // a calm Plumb 20 m out on open ground; one Reed arrow on its body, then seven more 0.13 s apart (the 1 s budget)
     const t0row = performance.now();
-    const b = base(); const m = spawn('plumb', b.x + 20, b.z); place(b.x, b.z, b.x + 20, b.z); await frames(40); await raise();
+    // fix round 1 (FIX LIST 2: at ba0c1af 'the first arrow struck nothing', the chest bone's origin led into the air
+    // between the legs, and the game's own flight said so: first null): the Plumb stands still (spawn's still, as
+    // plumb-arrows), and the shot takes a point of its body the game's own flight reaches first (pickOn over the head
+    // part's and body's meshes, weak points and the bob excluded: the row measures a body hit), held in the root's frame
+    // so every arrow of the burst is re-aimed at the same place on it
+    const b = base(); const m = spawn('plumb', b.x + 20, b.z, true); place(b.x, b.z, b.x + 20, b.z); await frames(40); await raise();
     m.root.updateMatrixWorld(true);
     const chest = m.rig?.chest ?? m.rig?.head ?? null;
-    const aim = chest ? chest.getWorldPosition(new V()) : new V(m.position.x, m.position.y + 0.75 * (m.height ?? 3.4), m.position.z);
     const st = hfStage(m);
     await frames(40);
-    // M1b round 3: aimed where the chest is NOW and led by its own motion (the Plumb walks with its brain off: at ba0c1af
-    // the point read 40 frames before the shot was empty air when the arrow came)
-    const at = () => (chest ? chest.getWorldPosition(new V()) : aim);
+    const bodyRe = { test: (n) => !!n && !/weak:|bob|vial|lamp/i.test(n) && K.lastShot?.firstKind === 'plumb' };
+    const cand = [...pointsOn(m.rig?.head ?? m.root), ...pointsOn(m.body ?? m.root)];
+    const pick = pickOn('hunter', cand, bodyRe, 48);
+    const M4 = C.camera.matrixWorld.constructor, local = pick ? pick.clone().applyMatrix4(new M4().copy(m.root.matrixWorld).invert()) : null;
+    const at = () => { m.root.updateMatrixWorld(true); return local ? local.clone().applyMatrix4(m.root.matrixWorld) : (chest ? chest.getWorldPosition(new V()) : new V(m.position.x, m.position.y + 2, m.position.z)); };
     const e1 = await shoot('hunter', at(), 700, true, chest);
-    const d1 = K.lastShot;
+    const d1 = { ...K.lastShot, picked: !!pick };
     const hit = e1.find((x) => x.n === 'machine-damaged') || e1.find((x) => x.n === 'arrow-hit');
     const tB = performance.now();
     const burst = [];
