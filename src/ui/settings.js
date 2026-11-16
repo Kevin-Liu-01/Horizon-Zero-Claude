@@ -21,26 +21,29 @@
  */
 
 import { ACTIONS, ACTION_PAD, DEFAULT_BINDS } from '../core/input.js';
+import { installReach } from './reach.js';
 
 const STORE_KEY = 'cal.settings.v5';
 
 /**
- * Okabe-Ito derived palettes, re-pointing only the semantic `--cal-c-*` colours the
- * whole UI reads: staff + margin, weak point, Pry, wary and hostile pips, gain.
+ * The accessibility palettes, re-pointing only the semantic `--cal-c-*` colours the whole UI reads: staff + margin,
+ * weak point, Pry, wary and hostile pips, gain. Okabe-Ito derived, then moved (M1.6m, tools/reach/cvd.mjs) until
+ * every two of those, the calm lamp and the selection line are at least 15 dE2000 apart as a player with that type
+ * sees them (Machado 2009, severity 1.0); calm and the selection differ in shape (an iris, a line).
  */
 export const PALETTES = {
   off: null,
   protanopia: {
-    '--cal-c-staff': '#E69F00', '--cal-c-weak': '#0072B2', '--cal-c-pry': '#56B4E9',
-    '--cal-c-wary': '#F0E442', '--cal-c-hostile': '#CC79A7', '--cal-c-good': '#6FCE8E',
+    '--cal-c-staff': '#B07100', '--cal-c-weak': '#006AB2', '--cal-c-pry': '#14A4FD',
+    '--cal-c-wary': '#F0E442', '--cal-c-hostile': '#CD7D9B', '--cal-c-good': '#5CB672',
   },
   deuteranopia: {
-    '--cal-c-staff': '#E08A00', '--cal-c-weak': '#0072B2', '--cal-c-pry': '#4FA8DD',
-    '--cal-c-wary': '#F5E35B', '--cal-c-hostile': '#C07EC0', '--cal-c-good': '#56B4E9',
+    '--cal-c-staff': '#D58300', '--cal-c-weak': '#0072B2', '--cal-c-pry': '#4DA9E0',
+    '--cal-c-wary': '#F8E65E', '--cal-c-hostile': '#CA6A98', '--cal-c-good': '#746559',
   },
   tritanopia: {
-    '--cal-c-staff': '#D55E00', '--cal-c-weak': '#1FA06A', '--cal-c-pry': '#B3201F',
-    '--cal-c-wary': '#E8654F', '--cal-c-hostile': '#D0417A', '--cal-c-good': '#6FCE8E',
+    '--cal-c-staff': '#DA640F', '--cal-c-weak': '#209760', '--cal-c-pry': '#B70018',
+    '--cal-c-wary': '#B38B7E', '--cal-c-hostile': '#A03F6C', '--cal-c-good': '#70CE8F',
   },
 };
 
@@ -77,7 +80,8 @@ export const SCHEMA = [
     { id: 'cameraShake', kind: 'slider', label: 'Camera shake', min: 0, max: 1.5, step: 0.05, dflt: 1,
       fmt: (v) => `${Math.round(v * 100)}%`,
       apply: (v, ctx, s) => { ctx.settings.cameraShake = s.get('reducedMotion') ? 0 : v; } },
-    { id: 'fovPunch', kind: 'slider', label: 'FOV punch', min: 0, max: 1.5, step: 0.05, dflt: 1, pending: true,
+    // LIVE (M1.6m): player.js scales the sprint's widening of the view by this
+    { id: 'fovPunch', kind: 'slider', label: 'FOV punch', min: 0, max: 1.5, step: 0.05, dflt: 1,
       fmt: (v) => `${Math.round(v * 100)}%`, apply: (v, ctx) => { ctx.settings.fovPunch = v; } },
     // LIVE: the output pass reads engine.look.vignette every frame; OFF holds it at 0, ON hands the look's value back
     { id: 'vignette', kind: 'toggle', label: 'Vignette', dflt: true,
@@ -107,15 +111,18 @@ export const SCHEMA = [
       fmt: (v) => v.toFixed(2), apply: (v, ctx) => { ctx.settings.padDeadzone = v; } },
     { id: 'cameraSmoothing', kind: 'slider', label: 'Camera smoothing', min: 0, max: 1.5, step: 0.05, dflt: 1,
       fmt: (v) => `${Math.round(v * 100)}%`, apply: (v, ctx) => { ctx.settings.cameraSmoothing = v; } },
-    // BIBLE 18: hold or toggle for aim, Steady and re-survey. Stored; the body still reads them as holds
-    { id: 'holdAim', kind: 'choice', label: 'Aim', dflt: 'hold', pending: true,
+    // BIBLE 18: hold or toggle for aim, Steady and re-survey. LIVE (M1.6m): src/core/input.js latches the control in
+    // TOGGLE (a press holds it, the next press lets go); Steady lets go with the aim, re-survey when its hold is done
+    { id: 'holdAim', kind: 'choice', label: 'Aim', dflt: 'hold',
       options: [['hold', 'HOLD'], ['toggle', 'TOGGLE']],
       apply: (v, ctx) => { ctx.settings.holdAim = v; } },
-    { id: 'holdSteady', kind: 'choice', label: 'Steady', dflt: 'hold', pending: true,
+    { id: 'holdSteady', kind: 'choice', label: 'Steady', dflt: 'hold',
       options: [['hold', 'HOLD'], ['toggle', 'TOGGLE']],
+      note: 'Toggle: one press while aiming steadies her until the breath runs out or the aim drops.',
       apply: (v, ctx) => { ctx.settings.holdSteady = v; } },
-    { id: 'holdResurvey', kind: 'choice', label: 'Re-survey', dflt: 'hold', pending: true,
+    { id: 'holdResurvey', kind: 'choice', label: 'Re-survey', dflt: 'hold',
       options: [['hold', 'HOLD'], ['toggle', 'TOGGLE']],
+      note: 'Toggle: one press at a benchmark holds the 15 s re-survey; a second press stops it.',
       apply: (v, ctx) => { ctx.settings.holdResurvey = v; } },
     // LIVE: `menu.js` releases the crouch on the KeyC up-edge when this reads 'hold'.
     { id: 'holdCrouch', kind: 'choice', label: 'Crouch', dflt: 'toggle',
@@ -187,6 +194,7 @@ export class SettingsStore {
     this._saveT = 0;
     this._listeners = new Set();
     this._load();
+    installReach(ctx);   // M1.6m: the input layer's pad and latches read the game through these hooks
     /**
      * The audio lane keeps its own persisted volumes; if it already restored a
      * value that this store has never been told about (first run after the
@@ -322,8 +330,15 @@ const BIND_WORD = {
   focus: 'Raise the Alidade', plant: 'Plant the Windwall', cast: 'Cast', tool: 'Hook-rip', slot1: 'Quick slot 1', slot2: 'Quick slot 2',
   slot3: 'Quick slot 3', slot4: 'Quick slot 4',
 };
-const PAD_WORD = { b5: 'RB', b12: 'UP', b13: 'DOWN', b14: 'LEFT', b15: 'RIGHT', b16: 'HOME' };
-const padWord = (pad) => String(pad).split('+').map((b) => PAD_WORD[b] ?? b.toUpperCase()).join(' + ');
+/** Pad words for input.js's ACTION_PAD (`bN`, `bN@context`, `bN~` a tap that cycles). */
+const PAD_WORD = { b0: 'A', b1: 'B', b2: 'X', b3: 'Y', b4: 'LB', b5: 'RB', b8: 'SELECT', b9: 'START', b10: 'L3', b11: 'R3',
+  b12: 'UP', b13: 'DOWN', b14: 'LEFT', b15: 'RIGHT' };
+const PAD_CTX = { guard: 'WHILE GUARDING', sight: 'WHILE SIGHTING', aim: 'WHILE AIMING' };
+const padWord = (pad) => String(pad).split('+').map((b) => {
+  const m = /^(b\d+)(~)?(?:@(\w+))?$/.exec(b);
+  if (!m) return b.toUpperCase();
+  return [PAD_WORD[m[1]] ?? m[1].toUpperCase(), m[2] ? 'TAP' : '', m[3] ? PAD_CTX[m[3]] ?? m[3].toUpperCase() : ''].filter(Boolean).join(' ');
+}).join(' + ');
 const keyCap = (code) => String(code ?? '---').replace(/^Key/, '').replace(/^Digit/, '')
   .replace(/Left$|Right$/, (m) => (/^(Shift|Control|Alt)/.test(String(code)) ? '' : m)).toUpperCase();
 

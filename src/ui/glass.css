@@ -495,3 +495,6 @@ body.cal-gs .gs-ctx.show { display: flex; }
 body.cal-gs .gs-ctx-card { width: 460px; padding: 22px 26px 20px; }
 body.cal-gs .gs-ctx-line { font-family: var(--cal-font-display); font-weight: 600; font-size: 22px; letter-spacing: 0.16em; }
 body.cal-gs .gs-ctx-sub { margin-top: 8px; font-family: var(--cal-font-mono); font-size: 13px; line-height: 1.5; color: var(--gs-text-2); }
+
+/* M1.6m reach: the control the pad's focus is on (src/core/input.js uiFocus), on the lilac selection line */
+.cal-pad-focus { outline: 1px solid var(--cal-select-line) !important; outline-offset: 2px; }

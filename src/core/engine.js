@@ -975,6 +975,14 @@ export class Engine {
     this.renderer.info.autoReset = false; // engine owns the reset (perf-tech-02)
     configureKTX2(this.renderer);   // M0.10: every shipped texture is KTX2; the page's one transcoder, before any load
     container.appendChild(this.renderer.domElement);
+    // M1.6m: WebGL context loss and restore. three rebuilds its own state on `webglcontextrestored` and re-uploads
+    // every texture, buffer and target on first use; the engine drops and re-takes its own GL handles here (the
+    // timer-query extensions and their pending queries, the held menu frame) and skips its frame while lost.
+    this.contextLost = false;
+    this.contextRestores = 0;
+    this.contextLog = [];
+    this.renderer.domElement.addEventListener('webglcontextlost', () => this._onContextLost(), false);
+    this.renderer.domElement.addEventListener('webglcontextrestored', () => this._onContextRestored(), false);
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(
@@ -2997,6 +3005,8 @@ export class Engine {
   /** perf-tech-05 — hold the frame budget by trading pixels, not systems. */
   _updateDynamicResolution(frameMs) {
     if (!this.drsEnabled) return;
+    // M1.6m: a lost context's frames and the restore's recompile are not the scene's cost
+    if (this.contextLost || this._drsSkip > 0) { if (!this.contextLost) this._drsSkip--; return; }
     this._drsAcc = this._drsAcc * 0.9 + frameMs * 0.1;
     // Each change reallocates the render targets, so rate-limit hard: at most
     // one step every 0.6 s, and never inside the 14.5-20.5 ms dead band.
@@ -3035,8 +3045,59 @@ export class Engine {
     return this._hold;
   }
 
+  /** M1.6m: the context went: nothing is drawn (three's calls are no-ops) until it is back. */
+  _onContextLost() {
+    this.contextLost = true;
+    this._ctxT0 = performance.now();
+    this._ctxLogPush({ what: 'lost' });
+  }
+
+  /**
+   * M1.6m: the context is back. The context object survives a loss; its extension objects and query objects do not,
+   * and the canvas no longer holds the frame a menu was holding. The first frame after this compiles every program
+   * again (three's caches went with the context): its cost is logged.
+   */
+  _onContextRestored() {
+    this.contextLost = false;
+    this.contextRestores++;
+    const timer = this.gpuTimerOn;
+    this.gpuTimerOn = false;
+    this._gpuExt = undefined;
+    this._gpuPending = [];
+    if (timer) this.enableGpuTimer(true);
+    if (this._attrib) { this._attrib.pending.length = 0; this._attrib.open.clear(); this._attrib.q = null; }
+    this._attribExt = undefined;
+    if (this._attrib?.on) this._attribExt = this.renderer.getContext().getExtension('EXT_disjoint_timer_query_webgl2') || null;
+    if (this._anisoHw !== undefined) {
+      const r = this.renderer;
+      this._anisoExt = r.extensions.has('EXT_texture_filter_anisotropic') ? r.extensions.get('EXT_texture_filter_anisotropic') : null;
+    }
+    this._holdFrames = 0;
+    this._ctxFirstFrame = true;
+    this._ctxLogPush({ what: 'restored', ms: Math.round(performance.now() - (this._ctxT0 ?? performance.now())) });
+  }
+
+  _ctxLogPush(row) {
+    row.t = Math.round(performance.now());
+    this.contextLog.push(row);
+    if (this.contextLog.length > 12) this.contextLog.shift();
+  }
+
   render(realDt = 0.016) {
     this.renderer.info.reset();
+    if (this.contextLost) return 0;
+    if (this._ctxFirstFrame) {
+      this._ctxFirstFrame = false;
+      const t = performance.now();
+      const ms = this._renderFrame(realDt);
+      this._ctxLogPush({ what: 'first-frame', ms: Math.round(performance.now() - t) });
+      this._drsSkip = 30;
+      return ms;
+    }
+    return this._renderFrame(realDt);
+  }
+
+  _renderFrame(realDt) {
     if (this._hold && this._holdFrames > 0 && this._holdW === this.renderer.domElement.width
       && this._holdH === this.renderer.domElement.height) { this._holdFrames++; return 0; }
     const t0 = performance.now();

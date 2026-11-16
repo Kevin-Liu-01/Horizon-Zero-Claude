@@ -788,7 +788,8 @@ body.cal-sighting .cal-objmark { opacity: 0; }
   box-shadow: inset 0 1px 0 var(--cal-glass-hi), inset 0 0 0 1px var(--cal-glass-line);
   animation: calFlash 1.9s ease-out forwards;
 }
-.cal-flash.k-good { box-shadow: inset calc(3px * var(--s)) 0 0 var(--cal-c-good), inset 0 0 0 1px var(--cal-glass-line); }
+/* M1.6m: a gain is a double rule, a warning a single one (they differ in shape, not only in colour: tools/reach/cvd.mjs) */
+.cal-flash.k-good { box-shadow: inset calc(2px * var(--s)) 0 0 var(--cal-c-good), inset calc(4px * var(--s)) 0 0 var(--cal-glass-hud), inset calc(6px * var(--s)) 0 0 var(--cal-c-good), inset 0 0 0 1px var(--cal-glass-line); }
 .cal-flash.k-warn { box-shadow: inset calc(3px * var(--s)) 0 0 var(--cal-c-staff), inset 0 0 0 1px var(--cal-glass-line); }
 @keyframes calFlash {
   0% { opacity: 0; transform: translateY(calc(6px * var(--s))); }

@@ -4983,7 +4983,8 @@ void main() {
     // sprint number for most of the run.
     const sprintK = this.sprinting
       ? THREE.MathUtils.clamp(this.moveSpeed / SPEEDS.jog, 0, 1) : 0;
-    this.fovBias = (FOV_SPRINT - FOV_BASE) * sprintK;
+    // M1.6m (engine lane, the smallest change): the settings' FOV punch scales the sprint's widening (0 = none)
+    this.fovBias = (FOV_SPRINT - FOV_BASE) * sprintK * (this.ctx.settings?.fovPunch ?? 1);
     // player.mods.zoom: a camera ZOOM factor while aiming (combat owns the aim
     // FOV itself, so the two compose instead of fighting over cam.fov)
     const zWant = this.aiming && this.mods.zoom > 0 ? this.mods.zoom : 1;
