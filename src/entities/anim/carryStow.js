@@ -843,6 +843,7 @@ export class CarryStow {
     this._charOf(b.handL.bone, _bpA); this._liveW(b.handL.bone, _bpQ3);
     const atKeeper = (B.mode === 1 && B.owner === 'carry') || (B.mode === 1 && B.pose === 'right') || (B.mode === 2 && B.owner === 'handL' && (B.pose === 'right' || B.t >= phaseEnd(T, 'D')));
     B.palmMiss = _bpA.add(_bpE.copy(palmOff).applyQuaternion(_bpQ3)).distanceTo(atKeeper && B.sockGoal ? B.sockGoal : B.palm);
+    B.atKeeper = atKeeper;
     const G = this._bowGrip(B.s);
     if (G) this._wrapFingers('l', G, B.curl / CURL.closed, B.curl * 0.65 * w, w);
     else this._curlFingers(this._fingerL, B.curl * w, B.curl * 0.65 * w);
@@ -1343,6 +1344,11 @@ export class CarryStow {
     o.s = B.mode ? B.s : null; o.gripAt = B.gripAt; o.releaseAt = B.releaseAt; o.readyAt = B.readyAt; o.requestAt = B.requestAt;
     o.sockChar = B.sockOk ? B.sockChar : null; o.yaw = B.yaw;
     o.aimK = B.aimK ?? 0;
+    /* (M1a weapons fix round 1, the judge's FIX LIST 12: the bow is posed FROM the fist, so its socket sits on the palm by
+     *  construction. What can miss is the hand: the drawn palm against the plan's socket this step (`palmMiss`; at the keeper
+     *  the KIT bow's own limb socket, read off her back, so the take and the seat are measured against a bow the hand does
+     *  not place). Null while no sequence runs) */
+    o.palmMiss = B.mode && B.palmMiss != null ? B.palmMiss : null; o.atKeeper = !!(B.mode && B.atKeeper);
     // (M1a weapons round 3: which grip holds it ('rev' the reverse take, 'regrip' the left open in the regrip, 'norm' the
     //  carry's fist), the socket's palm normal when the handling knows it (char), and the right hand on the upper limb)
     o.gripKind = B.owner === 'handL' ? (B.mode ? B.gripKind || 'norm' : 'norm') : null;

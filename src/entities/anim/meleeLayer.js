@@ -460,6 +460,14 @@ const UC_CROUCH_YAW = 0.5;
 const UC_SEAT_TOL = 0.025;
 /** ...by at most this much a pass (m). */
 const UC_SEAT_MAX = 0.12;
+/** M1a weapons fix round 1: the guard's seat on the move acts on a smaller miss than the Undercut's (m) */
+const GUARD_SEAT_TOL = 0.003;
+/** ...and the drive arm's elbow kept this far under its shoulder joint there (m; W6) */
+const GUARD_ELBOW_DROP = 0.02;
+const GUARD_ELBOW_OUT = 0.04;
+/** ...and the drive arm's pole there: down beside her ribs and out, little of the guard's "back" (char; with -0.62 back the
+ *  folded arm's elbow flipped up 0.13 m over the shoulder on a jog's step, the seat's passes not converging) */
+const GUARD_MOVE_POLE = new THREE.Vector3(-0.45, -0.89, -0.10).normalize();
 /** ...and on the drawn matrices, this many passes. */
 const UC_SEAT_LATE_N = 4;
 const _ucC = new THREE.Vector3(), _ucV = new THREE.Vector3(), _ucP = new THREE.Vector3(), _ucQ = new THREE.Quaternion();
@@ -2008,7 +2016,9 @@ export class MeleeLayer {
         this._gripChar(_grip); this._shaftChar(_a);
         _ucV.copy(this.haftOffLL).applyQuaternion(_ucQ).add(_ucC).sub(_grip).addScaledVector(_a, -this._lhOnWant);   // palm - its socket
         const miss = _ucV.length();
-        if (!(miss > UC_SEAT_TOL)) break;
+        // (M1a weapons fix round 1, FIX LIST 4: in the guard on the move the seat acts on any miss over GUARD_SEAT_TOL: with
+        //  the Undercut's 0.025 m the left palm rode up to 0.018 m along the haft off lance.fore, its fingers in the haft)
+        if (!(miss > (seatGuard ? GUARD_SEAT_TOL : UC_SEAT_TOL))) break;
         if (miss > UC_SEAT_MAX) _ucV.multiplyScalar(UC_SEAT_MAX / miss);
         // (the guard's seat never lifts the right fist past 0.06 m under its shoulder: the owner's bar, heldLanceRun)
         if (seatGuard) { an._charOf(b.upArmR.bone, _ucC); _ucV.y = Math.min(_ucV.y, Math.max(0, _ucC.y - 0.06 - _hand.y)); }
@@ -4717,6 +4727,26 @@ export class MeleeLayer {
     // (M1a weapons round 3: ...and the guard on the move, as on the pose pass)
     const guardMove = D.stance === 'ready' && !this.active && (an._moveW || 0) > 0.2;
     if ((!guardMove && (D.stance !== 'swing' || D.beat !== 'undercut')) || !(this._lhOnW > 0.5)) return;
+    /* (M1a weapons fix round 1, FIX LIST 9 (W6, heldLanceRun: the right ELBOW 0.010-0.025 m over its shoulder joint on 16
+     *  steps of the jog, the fist 0.15 m under it): in the guard on the move the drive arm's elbow is kept GUARD_ELBOW_DROP
+     *  under its shoulder. A roll about shoulder -> wrist cannot do it (the folded arm's axis stands near plumb, the elbow's
+     *  circle near level: a 28 deg roll lowered it 0.002 m), so the fist goes out along shoulder -> wrist, at most
+     *  GUARD_ELBOW_OUT a pass, three passes, the haft with it; the seat below then brings the haft to the left palm) */
+    if (guardMove && b.upArmR && b.loArmR) {
+      D.guardFistOut = 0;
+      for (let i = 0; i < 3; i++) {
+        an._charOf(b.upArmR.bone, _ucC); an._charOf(b.loArmR.bone, _ucP);
+        const over = _ucP.y - (_ucC.y - GUARD_ELBOW_DROP);
+        if (!(over > 0.002)) break;
+        an._charOf(b.handR.bone, _ahG);
+        _ucV.subVectors(_ahG, _ucC).normalize();
+        _ahG.addScaledVector(_ucV, Math.min(GUARD_ELBOW_OUT, 1.5 * over));
+        _ucP.copy(GUARD_MOVE_POLE);
+        an._ikArm('r', _ahG, _ucP, 1, null);
+        this._alignHaft(1);
+        D.guardFistOut = i + 1;
+      }
+    }
     for (let i = 0; i < UC_SEAT_LATE_N; i++) {
       this._seatLeft(this._lhOnW, this._lhArmW, this._lhOnWant, 0);
       an._charOf(b.handL.bone, _ucC);
@@ -4724,7 +4754,7 @@ export class MeleeLayer {
       this._gripChar(_grip); this._shaftChar(_a);
         _ucV.copy(this.haftOffLL).applyQuaternion(_ucQ).add(_ucC).sub(_grip).addScaledVector(_a, -this._lhOnWant);   // palm - its socket
       const miss = _ucV.length();
-      if (!(miss > UC_SEAT_TOL)) break;
+      if (!(miss > (guardMove ? GUARD_SEAT_TOL : UC_SEAT_TOL))) break;
       if (miss > UC_SEAT_MAX) _ucV.multiplyScalar(UC_SEAT_MAX / miss);
       an._charOf(b.handR.bone, _ahG);
       if (guardMove) { an._charOf(b.upArmR.bone, _ucC); _ucV.y = Math.min(_ucV.y, Math.max(0, _ucC.y - 0.06 - _ahG.y)); }
@@ -4732,6 +4762,7 @@ export class MeleeLayer {
       // (the guard's: the elbow kept down and back, the guard's own pole, not the raised strike's)
       const up = guardMove ? 0 : Math.max(0, clamp((_ahG.y - 1.02) * 2.2, -0.4, 1));
       _ucP.set(-0.36 - 0.54 * up, -0.80 + 0.28 * up, -0.62 + 0.28 * up).normalize();
+      if (guardMove) _ucP.copy(GUARD_MOVE_POLE);
       an._ikArm('r', _ahG, _ucP, 1, null);
       this._alignHaft(1);
       D.ucSeatLate = i + 1;

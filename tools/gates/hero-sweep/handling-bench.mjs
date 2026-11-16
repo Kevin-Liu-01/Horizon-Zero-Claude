@@ -302,6 +302,8 @@ function record(t) {
   r.bowGripKind = H ? (H.bow.gripKind ?? null) : null;
   r.bowSockNH = H?.bow?.sockN ? H.bow.sockN.slice() : null;
   r.rightHold = H ? !!H.bow.rightHold : false; r.rightMiss = H ? H.bow.rightMiss ?? null : null;
+  // (M1a weapons fix round 1, FIX LIST 12: the drawn palm against the plan's socket, the kit bow's at the keeper)
+  r.bowPalmMiss = H && H.bow.palmMiss != null ? +H.bow.palmMiss.toFixed(5) : null; r.bowAtKeeper = H ? !!H.bow.atKeeper : false;
   r.bowReady = NEW ? (H.bow.mode === 0 && held) : (!!an._bp && an._bp.mode === 0 && held);
   r.bowHome = NEW ? (H.bow.mode === 0 && !held) : (!!an._bp && an._bp.mode === 0 && !held);
   // the lance

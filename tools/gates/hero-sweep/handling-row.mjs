@@ -30,6 +30,8 @@
  *   behind, plane           measure.mjs's head-plane counters this step (0/1)
  */
 const D = 180 / Math.PI;
+/** W7's RMB-from-stowed-to-loosable baseline: measured at W0 (0d3feb5) with this bench's `rmbFromStowed` case (s) */
+export const W0_RMB_S = 0.867;
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const len = (a) => Math.hypot(a[0], a[1], a[2]);
 const dist = (a, b) => len(sub(a, b));
@@ -74,7 +76,9 @@ export function gradeCase(kind, L, meta = {}) {
       /* (M1a weapons round 3: ...and the steps of the bow's hand-over between the fist's carry and that placement, `bowAimK`
        *  over 0: the raise out of the carry and the lowering back into it; reported as palmInRaiseMaxM / axisInRaiseMaxDeg) */
       let aimPalm = 0, raisePalm = 0, raiseAx = 0, raiseN = 0, regripN = 0, revFlex = 0, revDev = 0, revN = 0;
-      const inAim = (r) => (r.aimW ?? 0) > 0.5 || (r.bowAimK ?? 0) > 0.01;
+      /* (M1a weapons fix round 1, the judge's FIX LIST 11: the raise-blend steps (`bowAimK` over 0, the aim weight at or
+       *  under 0.5) had no ruling for their exemption: they are GRADED now, and their own figures stay reported beside) */
+      const inAim = (r) => (r.aimW ?? 0) > 0.5;
       for (let i = a; i < b; i++) {
         const r = L[i];
         if (r.bowVis === 'held' && r.bowLimb && (r.aimW ?? 0) > 0.5 && r.bowSock) aimPalm = Math.max(aimPalm, dist(r.palmBowL, r.bowSock));
@@ -96,7 +100,24 @@ export function gradeCase(kind, L, meta = {}) {
         if (r.bowGripKind === 'rev') { revFlex = Math.max(revFlex, Math.abs(r.wristFlexL)); revDev = Math.max(revDev, Math.abs(r.wristDevL)); revN++; continue; }
         flex = Math.max(flex, Math.abs(r.wristFlexL)); dev = Math.max(dev, Math.abs(r.wristDevL));
       }
-      out.W1 = { regripOpenSteps: regripN, reverseSteps: revN, reverseWristFlexMaxDeg: revN ? r3(revFlex) : null, reverseWristDevMaxDeg: revN ? r3(revDev) : null, raiseSteps: raiseN, palmInRaiseMaxM: raiseN ? r4(raisePalm) : null, axisInRaiseMaxDeg: raiseN ? r3(raiseAx) : null, palmInAimMaxM: aimPalm ? r4(aimPalm) : null, palmToStaveMaxM: r4(pmax), palmToSocketMaxM: sockN ? r4(sockMax) : null, gripAxisToStaveMaxDeg: r3(axMax), wristFlexMaxDeg: r3(flex), wristDevMaxDeg: r3(dev) };
+      /* (M1a weapons fix round 1, FIX LIST 12: "palm-to-socket is 0 m by construction": the bow is posed from the fist,
+       *  so its socket rides the palm. The discriminating reading: the drawn palm against the plan's socket (`bowPalmMiss`,
+       *  carryStow `palmMiss`), from the step before the grip (the palm on the KIT bow's limb socket, on her back: a bow the
+       *  hand does not place) to the release (the seated bow's socket at the keeper); outside the raised aim) */
+      /*  At the keeper the handling reads the palm against the KIT bow's socket (the take) or the seated socket (the seat);
+       *  between, against the plan. Graded: the take's step (the last before the grip), the seat's (the last before the
+       *  release), and every step the fist is closed on the bow away from the keeper (not the open hand of the regrip) */
+      let planMax = 0, planN = 0, planAt = null, takeM = null, seatM = null;
+      for (let i = Math.max(0, a - 1); i < Math.min(n, b); i++) {
+        const r = L[i];
+        if (r.bowPalmMiss == null || (r.aimW ?? 0) > 0.5) continue;
+        const take = i === a - 1, seat = bowRel >= 0 && i === bowRel - 1;
+        if (take && !r.bowAtKeeper) continue;
+        if (!take && !seat && (r.bowAtKeeper || r.bowGripKind === 'regrip' || (r.curlL ?? 1) < 0.8)) continue;
+        if (take) takeM = r.bowPalmMiss; if (seat) seatM = r.bowPalmMiss;
+        planN++; if (r.bowPalmMiss > planMax) { planMax = r.bowPalmMiss; planAt = r3(r.t); }
+      }
+      out.W1 = { palmToPlanMaxM: planN ? r4(planMax) : null, palmToPlanSteps: planN, palmToPlanAt: planAt, palmToKitSocketAtTakeM: takeM == null ? null : r4(takeM), palmToSeatAtReleaseM: seatM == null ? null : r4(seatM), regripOpenSteps: regripN, reverseSteps: revN, reverseWristFlexMaxDeg: revN ? r3(revFlex) : null, reverseWristDevMaxDeg: revN ? r3(revDev) : null, raiseSteps: raiseN, palmInRaiseMaxM: raiseN ? r4(raisePalm) : null, axisInRaiseMaxDeg: raiseN ? r3(raiseAx) : null, palmInAimMaxM: aimPalm ? r4(aimPalm) : null, palmToStaveMaxM: r4(pmax), palmToSocketMaxM: sockN ? r4(sockMax) : null, gripAxisToStaveMaxDeg: r3(axMax), wristFlexMaxDeg: r3(flex), wristDevMaxDeg: r3(dev) };
       // the close: curl from open to closed over >= 2 steps ending on the grip step
       if (bowGrip > 0 && L[bowGrip].curlL != null) {
         let k = bowGrip; while (k > 0 && L[k - 1].curlL != null && L[k - 1].curlL < L[k].curlL - 1e-4) k--;
@@ -123,6 +144,7 @@ export function gradeCase(kind, L, meta = {}) {
       if (closedN && tipMax > 0.015) fail(`W1 a fingertip ${tipMax.toFixed(4)} m off the stave's surface (bar 0.015)`);
       if (closedN && inside) fail(`W1 ${inside} finger joint-steps inside the stave (bar 0)`);
       if ((sockN ? sockMax : pmax) > 0.010) fail(`W1 palm ${(sockN ? sockMax : pmax).toFixed(4)} m off the bow (bar 0.010)`);
+      if (planN && planMax > 0.010) fail(`W1 the drawn palm ${planMax.toFixed(4)} m off its planned socket (t ${planAt}; bar 0.010)`);
       if (axMax > 10) fail(`W1 grip axis ${axMax.toFixed(1)} deg off the stave (bar 10)`);
       if (flex > 60) fail(`W1 wrist flexion ${flex.toFixed(1)} deg (bar 60)`);
       if (dev > 30) fail(`W1 wrist deviation ${dev.toFixed(1)} deg (bar 30)`);
@@ -345,6 +367,11 @@ export function gradeCase(kind, L, meta = {}) {
     if (kind === 'swap12') band(w7.lanceReadyS, 0.45, 0.65, 'swap 1 to 2');
     if (kind === 'swap12' && !meta.w9mid) band(w7.bowStowAskS, 0.30, 0.37, 'bow asked stow (in swap 1 to 2)');
     if (kind === 'swap21') band(w7.bowReadyS, 0.45, 0.65, 'swap 2 to 1');
+    /* (M1a weapons fix round 1, the judge's FIX LIST 3: "RMB from stowed to loosable no later than W0's value". W0 is
+     *  0d3feb5; the RMB case did not exist there, so it was measured there with this bench's own case (its handling files
+     *  laid over that tree, no source change): 0.867 s, with the bow popping 0.63 m at the grip and the arrow on the string 26
+     *  steps before the draw hand reached the quiver) */
+    if (kind === 'aim' && !meta.w9mid) { if (w7.rmbToLoosableS == null) fail('W7 RMB to loosable: never'); else if (w7.rmbToLoosableS > W0_RMB_S + 1e-9) fail(`W7 RMB to loosable ${w7.rmbToLoosableS} s (no later than W0's ${W0_RMB_S} s)`); }
   }
   // ---- W9 swap truth (at the case's end): key 1 ends with the bow at bow.grip in the left hand, key 2 with the lance at
   // lance.grip in the right (M1a weapons fix 1: from every start state; `meta.w9` names what the last key asked for)
