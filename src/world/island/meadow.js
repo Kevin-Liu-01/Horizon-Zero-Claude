@@ -38,6 +38,24 @@ export const MEADOW_RINGS = Object.freeze([
   Object.freeze({ id: 1, name: 'meadow-clumps', kind: 'clump', rIn: 10, rOut: 30, bandIn: 2, bandOut: 4, density: 40, chunk: 4 }),
   Object.freeze({ id: 2, name: 'meadow-cards', kind: 'card', rIn: 30, rOut: 80, bandIn: 4, bandOut: 10, density: 4, chunk: 8 }),
 ]);
+/**
+ * M1.6m round 2 (engine lane, the smallest change): the tier's meadow (engine LOOK_ROWS.<tier>.meadow: r0 the blades'
+ * outer radius, r1 the clumps'). `high` and `ultra` keep MEADOW_RINGS exactly (the shipped look). `medium` and `low`
+ * hand the clumps (6 tris a blade, 40 / m2: most of the meadow's vertices) over to the cards sooner, which is the
+ * geometry cut the tier's frame needs (the frame is vertex-bound, docs/STATE.md M0.8); the cards still run to 80 m,
+ * where the ground shader carries the meadow's colour, so nothing opens a gap. Read once, at build.
+ */
+export function meadowRingsFor(quality, row) {
+  if (!row || quality === 'high' || quality === 'ultra' || quality == null) return MEADOW_RINGS;
+  const [b, c, k] = MEADOW_RINGS;
+  const r0 = Math.min(b.rOut, Math.max(4, Number(row.r0) || b.rOut));
+  const r1 = Math.min(c.rOut, Math.max(r0 + 6, Number(row.r1) || c.rOut));
+  return Object.freeze([
+    Object.freeze({ ...b, rOut: r0 }),
+    Object.freeze({ ...c, rIn: r0, rOut: r1 }),
+    Object.freeze({ ...k, rIn: r1 }),
+  ]);
+}
 const VERTS = { blade: 7, clump: 8, card: 4 };
 const TRIS = { blade: 5, clump: 6, card: 2 };
 
@@ -443,7 +461,8 @@ export class Meadow {
        * crawled. 4 px over 5-12 m */
       uSoft: { value: new THREE.Vector4(1, 4, 5, 12) },
     };
-    this.rings = MEADOW_RINGS.map((ring) => this._buildRing(ring));
+    this.ringTable = meadowRingsFor(ctx.engine?.quality, ctx.engine?.tier?.look?.meadow);
+    this.rings = this.ringTable.map((ring) => this._buildRing(ring));
     this._frustum = new THREE.Frustum();
     this._pv = new THREE.Matrix4();
     this._box = new THREE.Box3();

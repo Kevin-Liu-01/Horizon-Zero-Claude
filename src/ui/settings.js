@@ -35,11 +35,11 @@ export const PALETTES = {
   off: null,
   protanopia: {
     '--cal-c-staff': '#B07100', '--cal-c-weak': '#006AB2', '--cal-c-pry': '#14A4FD',
-    '--cal-c-wary': '#F0E442', '--cal-c-hostile': '#CD7D9B', '--cal-c-good': '#5CB672',
+    '--cal-c-wary': '#F0F040', '--cal-c-hostile': '#CD7D9B', '--cal-c-good': '#5CB672',
   },
   deuteranopia: {
     '--cal-c-staff': '#D58300', '--cal-c-weak': '#0072B2', '--cal-c-pry': '#4DA9E0',
-    '--cal-c-wary': '#F8E65E', '--cal-c-hostile': '#CA6A98', '--cal-c-good': '#746559',
+    '--cal-c-wary': '#F0F060', '--cal-c-hostile': '#CA6A98', '--cal-c-good': '#746559',
   },
   tritanopia: {
     '--cal-c-staff': '#DA640F', '--cal-c-weak': '#209760', '--cal-c-pry': '#B70018',

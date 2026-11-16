@@ -949,6 +949,7 @@ body.cal-sighting .cal-weapon.calm { opacity: 1; }
   text-shadow: none;
   background: var(--cal-c-pry);
   border: 1px solid var(--cal-ink);
+  box-shadow: inset 0 0 0 1px var(--cal-pry-frame);   /* M1.6m: Pry's shape (an inner frame), not only its colour */
 }
 
 /* ============================================================================ */

@@ -131,6 +131,7 @@
   --cal-select-fill: rgba(90, 46, 102, 0.60);  /* Orchil Deep at 60 % under the selection */
   --cal-weak-chip: #F1EEE6;                    /* WEAK: a staff-white chip... */
   --cal-weak-ink: #2C4F8A;                     /* ...with cobalt text (lifted cobalts fail the distance) */
+  --cal-pry-frame: #F1EEE6;                    /* M1.6m: Pry's chip carries a staff-white inner frame no other chip has (its shape, under every colour-vision type) */
 
   /* ---- semantic colours: the ONLY colours the accessibility palettes re-point ---- */
   --cal-c-staff: var(--cal-vermilion);         /* the levelling staff, the margin rule, full draw */
@@ -971,6 +972,9 @@ body.cal-title-live #title.overlay {
 .mn-set-binds .mn-set-row { padding: 3px 0 2px; }
 .mn-range { flex: 1 1 auto; min-width: 96px; }
 .mn-set-row.slider .mn-set-ctrl { width: min(58%, 250px); justify-self: end; }
+/* M1.6m round 2: in the title's settings modal the auto column resolved 58 % against itself and the value was cut at the
+   panel's edge (100 % read "1(", 55 deg "5"): there the control is a fixed 250 px and the value never shrinks or wraps */
+.mn-modal .mn-set-row.slider .mn-set-ctrl { width: 250px; }
 .mn-modal .mn-settings { display: block; }
 .mn-set-title {
   font-family: var(--cal-font-ui);
@@ -992,7 +996,7 @@ body.cal-title-live #title.overlay {
   border: 1px solid var(--cal-ink-40); padding: 0 4px; margin-left: 8px;
 }
 .mn-set-ctrl { display: flex; align-items: center; gap: 10px; }
-.mn-set-val { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); color: var(--cal-ink); min-width: 46px; text-align: right; }
+.mn-set-val { font-family: var(--cal-font-mono); font-size: var(--cal-type-note); color: var(--cal-ink); min-width: 46px; text-align: right; flex: none; white-space: nowrap; }
 .mn-set-hint { grid-column: 1 / -1; font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); color: var(--cal-ink-62); }
 .mn-set-note { font-family: var(--cal-font-mono); font-size: var(--cal-type-micro); color: var(--cal-ink-62); line-height: 1.55; }
 .mn-set-note code { font-family: var(--cal-font-mono); color: var(--cal-ink); }

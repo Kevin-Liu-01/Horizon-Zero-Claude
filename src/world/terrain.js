@@ -364,6 +364,9 @@ const clampByte = (v) => (v < 0 ? 0 : v > 255 ? 255 : v | 0);
 export class Terrain {
   constructor(ctx) {
     this.ctx = ctx;
+    // M1.6m round 2 (engine lane, the smallest change): after a WebGL context restore the far-field targets come back
+    // empty (they are drawn once, never uploaded); redraw them, and upload the mask array whole
+    ctx.engine?.onContextRestored?.(() => this._onContextRestored(), 'terrain:farField+masks');
     this.noise = new SimplexNoise(20770228);
     this.grassNoise = new SimplexNoise(41);
 
@@ -785,6 +788,13 @@ export class Terrain {
     this._lodM = TLOD_M;
   }
 
+  /** M1.6m round 2: the context came back. The far field is drawn again into its own targets (the far material keeps
+   *  reading them), its walls after it; the mask array is uploaded whole (a pending layer update would upload one). */
+  _onContextRestored() {
+    if (this._far) { this._far.redraw = true; this._far.walls = null; this._far.wallTries = 0; this._bakeFarField(); }
+    if (this._maskArray) { this._maskArray.clearLayerUpdates?.(); this._maskArrayLive = false; this._maskArray.needsUpdate = true; }
+  }
+
   /**
    * The far field (M1.1a, TECH §5 lever 4): once, with the renderer, the ground's colour stage is rendered
    * top-down over the world square into two 1024² targets with mips (groundShader.js FAR_*), and the far
@@ -792,10 +802,11 @@ export class Terrain {
    */
   _bakeFarField() {
     const R = this.ctx.renderer;
-    if (this._far || !R || !this._chunks) return;
+    if ((this._far && !this._far.redraw) || !R || !this._chunks) return;
     const mk = () => new THREE.WebGLRenderTarget(FAR_N, FAR_N, { type: THREE.UnsignedByteType, depthBuffer: true, generateMipmaps: true,
       minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping });
-    const rtA = mk(), rtN = mk();
+    const redraw = !!this._far?.redraw;
+    const rtA = redraw ? this._far.rtA : mk(), rtN = redraw ? this._far.rtN : mk();
     const part = { value: 0 };
     const bake = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
     bake.toneMapped = false;
@@ -815,6 +826,7 @@ export class Terrain {
       R.setRenderTarget(prev.t); R.autoClear = prev.auto; R.shadowMap.autoUpdate = prev.sm; R.setClearColor(prev.c, prev.a);
       bake.dispose();
     }
+    if (redraw) { this._far.redraw = false; this._far.redraws = (this._far.redraws || 0) + 1; this._far.redrawMs = +(performance.now() - t0).toFixed(1); return; }
     const far = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
     const U = this.groundUniforms;
     far.onBeforeCompile = (shader) => {

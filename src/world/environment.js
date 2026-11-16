@@ -806,6 +806,9 @@ export class Environment {
 
     /* -------------------------- sky IBL (L-04) -------------------------- */
     this._buildIBL();
+    // M1.6m round 2 (engine lane, the smallest change): after a WebGL context restore the IBL cube and its PMREM come
+    // back empty (they are drawn, never uploaded); bake them again before the first frame is drawn
+    engine?.onContextRestored?.(() => this._bakeIBL(), 'env:skyIBL');
     this._bakeIBL(true);
   }
 
