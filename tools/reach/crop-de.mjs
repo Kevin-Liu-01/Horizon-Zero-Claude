@@ -14,7 +14,9 @@ import { rgbToLab, deltaE2000 } from '../../src/instruments/lib/color.js';
 export const CTX_CROPS = Object.freeze({
   groundLeft: [0.0, 0.70, 0.33, 0.88],
   groundRight: [0.64, 0.73, 1.0, 0.88],
-  far: [0.30, 0.62, 0.62, 0.69],
+  // round 2, after the run at e885a00: the old far crop [0.30, 0.62, 0.62, 0.69] took in her head and bow (the idle) and,
+  // at a wall, the near-clipped wall the camera stood in; the distance right of her holds no part of her
+  far: [0.66, 0.50, 0.98, 0.62],
 });
 
 const r255 = (v) => v / 255;
