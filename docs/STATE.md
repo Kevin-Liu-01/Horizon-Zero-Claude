@@ -923,3 +923,105 @@ reached.
 - F14 and F15: re-film their anchors at the head, on simulation time, in a quiet session.
 
 **Decision (the orchestrator, PROCESS §2.7):** Tier 0 passes 10 of 10 and the kept stack is 78 of 80 with 0 failing (the best yet). The open items are F24's town block (the town is canon; its finish must reach F24 before re-anchoring), the slice run at 11 of 14 beats (the topple: aim and arrow flight disagree at the vial), Peg-line damage in the slice, and F14/F15 re-anchoring. None is a kept-row regression; main is fast-forwarded to r5/int with these carried as tracked debt. New build work pauses until the weekly budget resets.
+
+## Weapon handling and cloth (Nov 16 2026)
+
+Kevin's word of Nov 15 asked for much better weapon handling (grabbing, drawing, stowing, getting into position)
+and much better cloth. Two lanes built it: weapons (steps 1 and 2 and one fix round) and cloth (steps 1 and 2 and
+one fix round). The review measured `r5/int` at **fac4167** from a clean detached worktree on port 5270, using one
+Chrome slot. No commit landed during the review.
+
+**Verdict: NOT CLEAN.** Nothing regressed, but neither lane has met its own exit.
+- Tier 0 passes 10 of 10. The kept stack is 78 of 80 with 0 failing, the same as at 6fa199d. No accepted frame
+  changed outside weapon handling and cloth.
+- Every weapons row W1-W11 still fails in at least one case. W10 fails in 784 of 848 interrupt runs.
+- The new cloth is still behind `?cloth=2` and is off in the game. Its gate row C8 fails, and so do C2-C7, C10 and the
+  crowd cost.
+
+**Tier 0 at fac4167: PASS, 10 of 10.**
+- `vite build` OK. Name lint 0 hits (733 files). Licences: 225 files against 31 rows.
+- Asset budgets clean. Resident textures 61.42 MB of 175 MB. Shipped 51.76 MB.
+- Import graph clean. 98 Node tests pass in 21 files.
+- Boot: 3.9 s, 0 errors, 80.01 MB first load. Rendered-page name lint: 0.
+
+**Frame Set at fac4167:** all 34 frames, 202 s of Chrome, 0 console errors.
+- **No accepted frame changed outside weapon handling or cloth.** Every frame was compared with the closing run at
+  6fa199d (the same world) and with its anchor. Two staging checks:
+  - F02 was filmed once with her right forearm held out from her side.
+  - A second F02 film at fac4167, and one at the pre-weapons commit, both show her arms hanging. The pose did not
+    repeat, so it is not counted as a regression. F02 is staged on the wall clock.
+- **Cloth frames (F08-F10, F14, F15):**
+  - In the game (flag off) the cloth is unchanged, so these frames are the same as their anchors.
+  - With `?cloth=2` (the cloth lane's own film at fac4167), none is closer to the turnaround. Against the masked
+    turnaround crops:
+    - F08 is further: the outer corner of the front-left panel folds out at the hip.
+    - F09 and F10 are the same: the panels still hang as flat sheets.
+    - F02 with the flag on: the back panel blows out sideways at waist height.
+- **Weapon-handling frames (F10, F15, F16, F19):** the same as their anchors.
+  - The carry on her back is unchanged, and M1.2f (lance steep, bow beneath) still fails as a 45 degree cross.
+  - F19's guard leg now sits under the knee (the step 2 stance), with the lance level at contact.
+
+**Kept-stack rows at fac4167** (two sessions, every row reached): 80 rows. **78 pass** (70 action, 8 visual), **0
+fail**, **2 pending** (A9: the box was not quiet, 59.9 fps and 130 draws; A76: no staged kind declares a size class).
+- No row fails that passed before.
+- Key numbers:
+  - A16: knuckle to jaw 0.014 m, hook 0.008 m.
+  - A17: loose 0.090 m behind.
+  - A107: at most 0.069 m behind the band (bar 0.10).
+  - A44b: 0.054 m.
+  - A45c: 0.
+  - A90: geometries 379 -> 378.
+- V13 was filmed again at the pre-weapons commit. The pose is identical there, so V13 is unchanged.
+- **V49 needs a restatement.** Its text describes the old draw (the right hand up at the right shoulder). The new
+  draw takes the lance butt-first with the left hand, as in BIBLE §5.2. None of V49's failure clauses occurs:
+  - no elbow over or behind the head;
+  - no teleport;
+  - no second lance;
+  - the stride carries on.
+
+**Weapons rows** (Node handling bench at c944133; the weapons runtime is identical at fac4167, and four cases were
+re-run there bit for bit). W0 is 0d3feb5.
+- **Key 1:** it now takes the bow off her back (at W0 it raised nothing).
+- **Swaps:** they are stow-then-draw, with 0 steps holding both weapons.
+- **The lance draw:**
+  - It is butt-first by the left hand, stood upright at her left side, then levelled into the guard. It no longer
+    swings round over her shoulder.
+  - Total turn 146 deg (bar 140). The blade dips 0.017 m under the knee.
+- **Still failing:**
+  - The bow hand's wrist deviation is 87 deg (bar 30), with the palm normal 93 deg off the grip (bar 10).
+  - The lance hands sit 5.5-8 cm off their grips, with finger joints inside the haft.
+  - Swap 1 to 2 turns the lance 171 deg.
+  - The aim from stowed turns the bow 126 deg in one step.
+  - W10: 784 of 848 interrupt runs fail.
+
+**Cloth rows** (Node cloth bench at fac4167; today's cloth beside the new solver, `?cloth=2`):
+- **At a run:** the front hem is ahead of the knee in 32 % of frames, against 95 % today (bar 2 %). At a sprint it is
+  0 % (bar met).
+- **Run-stop:** the overshoot is 0.02-0.17 m, against 0.16-0.59 m today.
+- **Still failing:**
+  - The edges stretch to 1.38 x rest (bar 1.03).
+  - Turning, the panels lag 21-33 deg (band 8-25).
+  - Landing, the panels rise 1-13 deg (bar at least 10).
+  - Cost: hero cloth p95 0.24 ms standing and 0.37 ms at a sprint (bar 0.18). Asleep it is still 0.21 ms (bar 0.01).
+  - With the crowd, the worst near person costs 0.059 ms (bar 0.02); all cloth together 0.248 ms (bar 0.30, passes).
+- **C11 repeatability passes:** three stagings are bit-identical, and a nudge settles in 1 s.
+
+**Clip review for Kevin:** one page, before and after side by side for every weapons clip (11) and every cloth clip
+(13), each with its measured rows and a line for accept, closer or wrong.
+- Before is the game as at 6782b47, filmed today at 0d3feb5.
+- After is fac4167. The weapons clips come from c944133, whose weapons runtime is the same. The cloth clips are filmed
+  with the flag on.
+
+**Chrome used:** about 43 minutes over seven sessions. That is over the 15-minute cap, because the review asked for
+the Frame Set, two kept sessions and three clip sessions.
+
+**Open, for the next round:**
+- **Weapons:** the hands are not on the grips (W1); the lance path is over its turn bar (W4); interrupts (W10); the
+  aim pop from stowed (W3/W8).
+- **Cloth:** stretch, cost and the standing boards (C2, C3, C7, C10); C8 run; turn and landing (C5); clipping (C1, not
+  re-measured here). The flag stays off until C8 passes.
+- **Rows:** V49's written path to restate for the left-hand butt-first draw.
+
+
+**Decision (the orchestrator):** no regression and the kept stack unchanged (78/80, 0 failing); the weapon handling at the head is better than at 6782b47 by every row (key 1 readies the bow; swaps are stow-then-draw with 0 steps holding both; the lance is drawn butt-first, 146 deg of turn against about 270 before), so main is fast-forwarded. The new cloth solver stays behind ?cloth=2 until C8 (stretch) and C10 (cost) pass. The open rows above are the next round.
+
