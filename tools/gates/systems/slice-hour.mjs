@@ -192,16 +192,14 @@ async function solveShot(mi, part, tolDeg) {
   if (!m || m.alive === false) return null;
   const V = C.camera.position.constructor;
   const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
-  // the target's motion and the engine's sub-step, measured (8 frames). M1b round 3: the motion of the PART's own node,
-  // not the root's (the kit at 3e04504: a calm Plumb's vial moved 1.09 m in a second with its root speed reading 0; at
-  // 9f8bc85 the topple's 16 vial shots from 28-47 m, each read as a hit on the root's ride, all missed)
-  const node = part === 'vial' ? m._vialWp?.obj : part === 'bob' ? (m._bob?.attached !== false ? m._bob?.mesh : null) : part === 'lamp' ? (m._lampWp?.obj ?? m.weakPoints?.find((w) => w.name === 'lamp')?.obj) : null;
-  const where = () => (node ? node.getWorldPosition(new V()) : m.position.clone());
-  const p0 = where(), s0 = E.simTime, dts = [];
+  // the target's motion and the engine's sub-step, measured (8 frames): the ROOT's walk. (M1b round 3 tried the part's own
+  // node at 4c5384a and e30af7b's parent: an attacking Plumb's vial reads 3.7 m/s as it turns, a rotation the linear ride
+  // cannot carry, and the hull sweep in that riding frame then read its head across every line: 13 stands 'masked')
+  const p0 = m.position.clone(), s0 = E.simTime, dts = [];
   let sPrev = s0;
   for (let i = 0; i < 8; i++) { await raf(); const st = E.steps || 0; if (st > 0 && E.simTime > sPrev) dts.push((E.simTime - sPrev) / st); sPrev = E.simTime; }
-  const span = E.simTime - s0, p1 = where();
-  const ride = span > 0.02 ? { x: (p1.x - p0.x) / span, y: (p1.y - p0.y) / span, z: (p1.z - p0.z) / span } : { x: 0, y: 0, z: 0 };
+  const span = E.simTime - s0;
+  const ride = span > 0.02 ? { x: (m.position.x - p0.x) / span, y: 0, z: (m.position.z - p0.z) / span } : { x: 0, y: 0, z: 0 };
   dts.sort((a, b) => a - b);
   const dt = dts.length ? dts[dts.length >> 1] : 1 / 60;
   const lat = 2 * (span > 0 ? span / 8 : 1 / 60);
@@ -669,12 +667,22 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       }
       // the release follows the last solve at once (the steady phase and sway are read in the solve itself)
       const sw = { st: sol?.steady ?? null, sway: sol?.sway ?? null };
+      // M1b round 3: was an arrow loosed, and what did it meet (at 9f8bc85 sixteen vial shots read as hits left the
+      // Plumb's health at 190: not one arrow met it anywhere)
+      const loose = await page.evaluate(() => { const C = window.__CTX__;
+        if (!window.__shotHook) { window.__shotHook = true; window.__shotEv = [];
+          C.events.on('arrow-fired', () => window.__shotEv.push({ n: 'fired' }));
+          C.events.on('arrow-hit', (e) => window.__shotEv.push({ n: 'hit', kind: e?.machine?.kind ?? null, weak: !!e?.weak, dmg: Math.round(e?.damage ?? 0), pt: e?.point ? [+e.point.x.toFixed(2), +e.point.y.toFixed(2), +e.point.z.toFixed(2)] : null })); }
+        window.__shotEv.length = 0;
+        return { ready: C.player?.animator?.looseReady?.() ?? null, ds: +(C.combat?.drawStrength ?? 0).toFixed(2), ammo: C.combat?.ammo?.[C.combat?.activeWeapon?.activeAmmo ?? 'hunter'] ?? null }; });
       await up('left');
       fired++;
       await sleep(Math.max(520, 1000 * (sol?.tf ?? 0) + 250));
+      loose.events = await page.evaluate(() => (window.__shotEv || []).slice(0, 6));
+      loose.ammoAfter = await page.evaluate(() => { const C = window.__CTX__; return C.combat?.ammo?.[C.combat?.activeWeapon?.activeAmmo ?? 'hunter'] ?? null; });
       const hp1 = await page.evaluate((i) => { const m = window.__CTX__.machines.list[i]; return m ? { vial: m._vialHits ?? null, hp: Math.round(m.health), down: (m._toppleT ?? -1) >= 0 } : null; }, t.i);
       shots.push({ kind, part, ammo, d: +t.d.toFixed(1), aimErr: sol?.err ?? a.err, predicted: sol && { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds, dt: sol.dt, ride: sol.ride, tf: sol.tf }, still, hpBefore: t.hp, down: t.down, steady: sw.st, swayDeg: sw.sway,
-        vialHits: hp1 && hp0 ? [hp0.vial, hp1.down ? 'topple' : hp1.vial] : null, hpAfter: hp1?.hp ?? null });
+        vialHits: hp1 && hp0 ? [hp0.vial, hp1.down ? 'topple' : hp1.vial] : null, hpAfter: hp1?.hp ?? null, loose });
     }
   } finally { await release(); }
 }
