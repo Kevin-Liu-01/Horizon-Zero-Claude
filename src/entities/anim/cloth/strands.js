@@ -29,8 +29,11 @@ export const CLASS = (key) => {
 };
 /** the far LOD: a tick longer than LOD_DT (s; the people's 30 Hz past 8 m) is solved at SUB_FAR (s) substeps */
 const LOD_DT = 1 / 45, SUB_FAR = 1 / 60;
-/** each kind's share of the air (aero.js P.airK) */
-const AIR_K = { tail: 0.3, apron: 0.4, cloak: 0.5 };
+/** each kind's share of the air (aero.js P.airK). (Round 5, the flag on: tails 0.08, was 0.3: at 0.3 the people's
+ *  tails stood 0.17-0.36 m to the side of their knots and 0.69-0.73 of their length under them in the trade wind, and
+ *  the people lane's F20/F21 bars (tools/build/recipes/npc/wrap-tail.test.mjs) are 0.15 m and 0.8; here 0.129 and 0.974,
+ *  and bowed over work the tip stays 0.05 m under the knot) */
+const AIR_K = { tail: 0.08, apron: 0.4, cloak: 0.5 };
 /** collider radii at scale 1 (m) */
 const RAD = { thigh: [0.085, 0.07], shin: [0.06, 0.048], torso: [0.13, 0.13], head: [0.095, 0.095] };
 

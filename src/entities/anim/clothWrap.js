@@ -359,7 +359,10 @@ export class ClothWrap {
    * turns of its link can bring it. Publishes `clothWrapInfo()` (pushes this frame, vertices left inside, deepest).
    */
   _clothWrap() {
-    if (this._cwOff) return;
+    // (cloth round 5: off under the grid cloth, now the default: its drawing pass (cloth/rig.js _vertexPass) holds the
+    //  panels and the tail off the body, and the knot tail is held off her back in secondaryMotion.js; this file goes
+    //  when the old path does)
+    if (this._cwOff || peekClothRig(this)) return;
     this._cwT = (this._cwT | 0) + 1;
     if (!this._cw || this._cwT % 30 === 0) this._cwScan();
     const W = this._cw;

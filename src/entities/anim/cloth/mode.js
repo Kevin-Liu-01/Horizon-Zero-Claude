@@ -1,8 +1,10 @@
 /**
  * CLOTH: the flag, on its own (no three.js), so the people's chains can read it without loading Brea's rig.
  */
-/** The flag: 2 = the grid solver drives Brea's sash panels and wrap tail and the people's strands: `?cloth=2` in the page's address, CALIMA_CLOTH=2 in
- *  Vite's environment (vite.config.js defines `__CALIMA_CLOTH__`), or `globalThis.__CALIMA_CLOTH = 2` (the Node benches). */
+/** The flag: 2 = the grid solver drives Brea's sash panels and wrap tail and the people's strands. ON BY DEFAULT since
+ *  cloth round 5; 0 (the old chains and clothWrap.js, for the before-and-after clips while they are in the tree) by
+ *  `?cloth=0` in the page's address, CALIMA_CLOTH=0 in Vite's environment (vite.config.js defines `__CALIMA_CLOTH__`), or
+ *  `globalThis.__CALIMA_CLOTH = 0` (the Node benches). */
 export function clothMode() {
   if (globalThis.__CALIMA_CLOTH != null) return Number(globalThis.__CALIMA_CLOTH) || 0;
   // eslint-disable-next-line no-undef
@@ -12,7 +14,7 @@ export function clothMode() {
     const m = /[?&]cloth=(\d+)/.exec(s);
     if (m) return Number(m[1]);
   } catch { /* no location */ }
-  return 0;
+  return 2;
 }
 
 
