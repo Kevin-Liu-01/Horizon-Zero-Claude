@@ -173,7 +173,7 @@ const CALIMA = Object.freeze({
 const CALIMA_VIS = 150;
 const CALIMA_DENS = Math.log(20) / CALIMA_VIS;
 const CALIMA_OPACITY = 0.997;
-const CALIMA_LOBE = 0.12;
+const CALIMA_LOBE = 0.06;
 
 /**
  * Weather states (bible §2.3). Multipliers/targets applied on top of the hour key,
@@ -2483,9 +2483,10 @@ export class Environment {
               dust += calFogSun * (hg(calFogG.x, dc) * calFogG.y + hg(calFogG.z, dc) * calFogG.w) * calFogB.x;
               cg = mix(dust, cg, smoothstep(0.45, 0.95, h));
             }
-            // M1.1i: the coral aureole hugs the disc (pow 2000: half at 1.5 deg, 6 % at 3 deg, nothing by 6 deg); it
-            // was pow 10 (a tenth of the disc's colour still 45 % up at 20 deg: a glow over a third of the sky)
-            cg += uDisc * 0.22 * pow(sunD, 2000.0) * uCalima.y;
+            // M1.1i: the coral aureole hugs the disc (pow 3000: half at 1.2 deg, nothing by 4 deg); it was pow 10 (a tenth
+            // of the disc's colour still 45 % up at 20 deg: a glow over a third of the sky). At cc64d0d pow 2000 x 0.22
+            // took the 18:30 disc's half-maximum out to 1.5 deg (a 3.0 deg disc)
+            cg += uDisc * 0.12 * pow(sunD, 3000.0) * uCalima.y;
             col = mix(col, cg, cal);
           }
 

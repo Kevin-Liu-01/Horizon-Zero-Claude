@@ -5,7 +5,7 @@
  *   probe(frame) -> {
  *     weather, hour, perception: { env, sightScale, live: [{ kind, sightRange, reach }], trade, night }
  *     visibility (F06 only): { cpu: { d05, d02, t: { m: T } }, cards: [{ d, T, yCard, yBg, contrast }], d05Rendered }
- *       black unlit cards (fogged like every surface) at 1.5 deg over the level, against the dust: the displayed
+ *       black unlit cards (fogged like every surface) at 5 deg over the level, against the dust: the displayed
  *       luminance contrast of each against the ring around it; d05Rendered is where it crosses 5 % (interpolated)
  *     sun (F06 only, at the frame's hour and at 18:30): { elevDeg, profile: [{ deg, y, yNoBloom }], bg, discRadiusDeg,
  *       halo: { at6, at8, at10 }, bloomAt: { at6, at8 } }  8-bit display luminance (Rec.709 weights on the canvas'
@@ -56,9 +56,11 @@ export async function probe(frame) {
       env.registerMaterial?.(mat);
       const cards = [];
       dists.forEach((d, i) => {
-        const az = (-18 + i * 6) * D2R;      // spread across the frame, left to right
+        // across the frame's open left half, 5 deg over the level (at cc64d0d, 1.5 deg up, every card past 90 m stood
+        // behind F06's ridge)
+        const az = (-38 + i * 5) * D2R;
         const dir = f.clone().multiplyScalar(Math.cos(az)).addScaledVector(right, Math.sin(az));
-        dir.y = Math.tan(1.5 * D2R); dir.normalize();
+        dir.y = Math.tan(5 * D2R); dir.normalize();
         const p = cam.position.clone().addScaledVector(dir, d);
         const size = 2 * d * Math.tan(1.6 * D2R);           // 3.2 deg square
         const g = new THREE.PlaneGeometry(size, size);

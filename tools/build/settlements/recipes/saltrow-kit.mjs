@@ -109,9 +109,9 @@ const toneMul = (hex, r, g, b) => {
   return (c((hex >> 16) & 255, r) << 16) | (c((hex >> 8) & 255, g) << 8) | c(hex & 255, b);
 };
 /* M1a world debt (F24 at 6fa199d: "heavy regular quoins"; the town read as one flat block at 30-90 m): the corner stones are
- * weathered basalt in four tones, not one near-black; one course in five is washed over with the house's lime (the lime
+ * weathered basalt in four tones, not one near-black (sRGB 0x52-0x76 against 0x3a); one course in four is washed over with the house's lime (the lime
  * runs over the stone), and the long and short stones vary +-0.07 m. Still one R() per course, as before */
-const QUOIN = [0x4a443f, 0x544c45, 0x3f3a36, 0x5d554d];
+const QUOIN = [0x5e554d, 0x6a6057, 0x524a44, 0x766b60];
 
 /** Quoins up one vertical corner: courses alternate long and short across the two faces. */
 function quoins(bucket, cx, cz, sx, sz, y0, y1, R, wash = null) {
@@ -123,7 +123,7 @@ function quoins(bucket, cx, cz, sx, sz, y0, y1, R, wash = null) {
     const a = (i & 1 ? 0.62 : 0.34) + (j - 0.5) * 0.14, b = (i & 1 ? 0.34 : 0.62) + (k - 0.5) * 0.14;
     const out = 0.025;
     R();                                                  // the course's old tone draw, kept so the stream is unchanged
-    const washed = wash != null && hash01(i * 1.7, cx + cz, sx * 3 + sz) < 0.2;
+    const washed = wash != null && hash01(i * 1.7, cx + cz, sx * 3 + sz) < 0.25;
     const t1 = washed ? wash : QUOIN[(j * QUOIN.length) | 0], t2 = washed ? wash : QUOIN[(k * QUOIN.length) | 0];
     box(bucket, cx - sx * (a / 2 - out), y + hgt / 2, cz - sz * (0.18 - out) + sz * 0.0, a, hgt, 0.36 + out,
       { surf: 'bisque', tone: t1, wear: 1.2, colorFn: basaltShade(i) });
@@ -337,9 +337,9 @@ function partyWall(b, sideSign) {
 function building(b, idx) {
   const R = rng(0x5a17 + idx * 977);
   const body = new Bucket(`b-${b.id}-body`), glass = new Bucket(`b-${b.id}-glass`), flora = new Bucket(`b-${b.id}-flora`);
-  // M1a world debt (F24): each house's wash is its tone renewed in its own year: value +-4 %, a little warmer or cooler
+  // M1a world debt (F24): each house's wash is its tone renewed in its own year: value +-6 %, a little warmer or cooler
   const hv = hash01(idx * 7.3, 1.1), hw = hash01(idx * 3.7, 2.3);
-  const tone = toneMul(TONES[b.tone], 0.96 + 0.08 * hv + 0.015 * (hw - 0.5), 0.96 + 0.08 * hv, 0.96 + 0.08 * hv - 0.03 * (hw - 0.5));
+  const tone = toneMul(TONES[b.tone], 0.94 + 0.12 * hv + 0.02 * (hw - 0.5), 0.94 + 0.12 * hv, 0.94 + 0.12 * hv - 0.045 * (hw - 0.5));
   const wash = toneMul(tone, 0.86, 0.85, 0.83);
   const guild = b.kind === 'guild';
   const w = b.w, d = b.d, roofY = b.h - PARAPET;
