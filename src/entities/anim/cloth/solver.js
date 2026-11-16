@@ -408,10 +408,7 @@ export class ClothSystem {
       //      panel's hem folded round the shin in a crouch). Each structural edge against its ends' inner surfaces: where
       //      the edge's closest point to the axis is inside `ri + hard / 2`, both ends go out along that normal, by their
       //      share of the deficit; the particle pass after it still has the last word on every particle
-      // (round 2: every substep, not the frame's last only: pushed on the last substep alone, an edge from the belt row over
-      //  a crouched thigh threw its free end out by up to 1 / 0.15 x the deficit each frame and the substeps between let it
-      //  back: the row buzzed at the kick limit for good, 0.3 m/s with her held still in a crouch, and never slept)
-      if (it === IT - 1 && p.edges) this._edges(p, C, pl, pc, KMAX);
+      if (hardNow && it === IT - 1 && p.edges) this._edges(p, C, pl, pc, KMAX);
       // ---- colliders (every pass: the constraints and the body agree before the velocity is read): the ground first, then the body (the body wins), a pinched particle stops
       if (it === IT - 1 || this.collideEvery) for (let i = 0; i < N; i++) {
         if (w[i] === 0) continue;
@@ -449,7 +446,7 @@ export class ClothSystem {
       }
       }
       // ---- velocity
-      const ih = 1 / h, vRel = mat.vRel || 0, vBack = mat.vBack || vRel, q0 = p.q0;
+      const ih = 1 / h, vRel = mat.vRel || 0;
       for (let i = 0; i < N; i++) {
         const q = i * 3;
         if (p.pinch[i]) { v[q] = rfx; v[q + 1] = 0; v[q + 2] = rfz; continue; }
@@ -460,17 +457,7 @@ export class ClothSystem {
         // knee that shoves a panel moves it (the position is the collider's) without flinging it on past the leg
         if (vRel > 0) {
           const ex = vx - rfx, ey = vy - rfy, ez = vz - rfz, e2 = ex * ex + ey * ey + ez * ez;
-          if (e2 > vRel * vRel) {
-            // (round 2: a particle on its way BACK toward its bind place on the root is held to `vBack`, not vRel: a panel a
-            //  knee carried forward falls back as fast as gravity and the air take it; at a run the front-left hem hung
-            //  0.15-0.2 m ahead of a knee that had already gone back, returning at the kick limit)
-            let lim = vRel;
-            if (vBack !== vRel) {
-              qrot(r.iq, q0[q] * rs, q0[q + 1] * rs, q0[q + 2] * rs, _n, 0);
-              if ((x[q] - r.ip[0] - _n[0]) * ex + (x[q + 1] - r.ip[1] - _n[1]) * ey + (x[q + 2] - r.ip[2] - _n[2]) * ez < 0) lim = vBack;
-            }
-            if (e2 > lim * lim) { const f = lim / Math.sqrt(e2); vx = rfx + ex * f; vy = rfy + ey * f; vz = rfz + ez * f; }
-          }
+          if (e2 > vRel * vRel) { const f = vRel / Math.sqrt(e2); vx = rfx + ex * f; vy = rfy + ey * f; vz = rfz + ez * f; }
         }
         v[q] = vx; v[q + 1] = vy; v[q + 2] = vz;
       }
