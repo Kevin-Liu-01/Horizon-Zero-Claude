@@ -44,7 +44,7 @@ export const VERBS = Object.freeze({
 export const RAKE = Object.freeze({
   haft: 1.62, gripR: 1.54, gripL: 1.33, headX: 0.0, end: 0.08,
   // the upper grip with the head out (k = 1) and pulled in (k = 0)
-  out: Object.freeze([-0.06, 0.62, 0.44]), in: Object.freeze([-0.08, 0.72, 0.2]),
+  out: Object.freeze([-0.06, 0.64, 0.38]), in: Object.freeze([-0.08, 0.72, 0.2]),
   outK: 0.34, lift: 0.05,
   // the elbows: the pulling (right) one back along her side, the lower (left) one down
   poleR: [-0.35, -0.45, -0.85], poleL: [0.45, -0.85, -0.2],
@@ -209,7 +209,7 @@ export class SliceVerbs {
     for (let si = 0; si < 2; si++) {
       const side = SIDES[si], goal = si === 0 ? _R : _Lg;
       _t.copy(goal);
-      for (let it = 0; it < 3; it++) {
+      for (let it = 0; it < 6; it++) {
         _pole.fromArray(side === 'r' ? RAKE.poleR : RAKE.poleL);
         this._ikArm(side, _t, _pole, w, null);
         this._palmOf(side, _p);
