@@ -397,6 +397,7 @@ export class ClothSystem {
    *  next frame); one it has come more than SLEEP_PEN into wakes the piece. */
   _legsIn(p) {
     const N = p.near, C = this.colliders, x = p.x;
+    let deep = false;
     for (let k = 0; k < p.nearN; k++) {
       const i = N[k * 2], K = C[N[k * 2 + 1]];
       if (!K.on) continue;
@@ -410,11 +411,15 @@ export class ClothSystem {
       const r2 = rr - p.nearPen[k], d2 = ex * ex + ey * ey + ez * ez;
       if (d2 >= r2 * r2 || d2 < 1e-14) continue;
       const d = Math.sqrt(d2);
-      if (r2 - d > SLEEP_PEN) { p.wakeI = i; p.wakeC = N[k * 2 + 1]; return true; }
+      // (fix round 1: one it has come more than SLEEP_PEN into is put out too, positions only, before the piece wakes: woken
+      //  with the particle still inside, the first substep's push became its velocity, and the seated idle's tail tip,
+      //  its head bowing into it, flew off at 0.9-1.4 m/s (C2: 0 particles over 0.02 m/s after 1.5 s))
+      if (r2 - d > SLEEP_PEN) { p.wakeI = i; p.wakeC = N[k * 2 + 1]; deep = true; }
       const f = (r2 - d) / d;
       x[q] += ex * f; x[q + 1] += ey * f; x[q + 2] += ez * f;
       p.rode = true;
     }
+    if (deep) { p.xp.set(x); return true; }
     return false;
   }
 

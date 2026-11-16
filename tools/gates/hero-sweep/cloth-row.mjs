@@ -7,7 +7,18 @@
  * cloth mean <= 0.02 ms; all cloth (Brea + people) <= 0.30 ms; the step reported against the 16.7 ms frame (the GPU is not
  * read here: tools/perf/attrib.mjs is its own session).
  */
+import { NO_STUDIO } from '../kept-stack.mjs';
+import { GATES as BODY } from '../../gates.r5.hero-body.mjs';
+import { GATES as MELEE } from '../../gates.r5.melee.mjs';
+
+/** (fix round 1) The kept rows C12 names that read the cloth (the kept `dyn_` bones and chains), from their own lane files
+ *  as they stand (none is restated in kept-stack.mjs), with the studio out first as `--kept-stack` runs them; not edited
+ *  here, only gathered so the cloth lane's one session runs them: pick with `--extra-only`. */
+const KEPT = ['A33-hair-bounce', 'A33-rig-finite', 'A34-chains-driven', 'A-wrap-clear', 'A-tail-legible', 'A100-lance-holster'];
+const keptRows = KEPT.map((id) => [...BODY, ...MELEE].find((g) => g.id === id)).filter(Boolean).map((g) => ({ ...g, setup: `${NO_STUDIO}; ${g.setup || ''}` }));
+
 export const GATES = [
+  ...keptRows,
   {
     id: 'C-crowd-cost', kind: 'action', lane: 'cloth', timeout: 20000,
     title: 'Cloth cost with the Saltrow crowd in view (F22 staging): a near person <= 0.02 ms mean, all cloth <= 0.30 ms',

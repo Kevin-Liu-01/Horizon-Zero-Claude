@@ -209,6 +209,7 @@ if (ROWS.includes('C2')) {
       tr.push(frameRead(R, PR));
       if (C && asleepAt == null && C.pieces.every((p) => p.asleep)) asleepAt = i / 60;
       if (i > 90 && C) { const wh = {}, m = maxSpeed(R, wh); if (m > ms15) { ms15 = m; who15 = wh; } }
+      if (args.includes('--c2-log') && C && i % 6 === 0) { const wh = {}; console.log('c2', (held ? 'held_' : 'idle_') + st, i, rnd(maxSpeed(R, wh), 3), wh.piece, wh.row, wh.col, C.pieces.map((p) => (p.asleep ? 'Z' : '.')).join(''), C.pieces.map((p) => p.wakeWhy).join('')); }
     }
     const L = tr[tr.length - 1], Lp = tr[tr.length - 2];
     const r = {};
