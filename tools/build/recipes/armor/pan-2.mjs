@@ -42,14 +42,23 @@ export const OUTPUTS = ['public/models/armory/armor-pan-2.glb'];
 const RECIPE = 'tools/build/recipes/armor/pan-2.mjs';
 export const HAT_ON_HEAD = 32, HAT_ON_BACK = 64, HAT_ON_BACK_LOW = 128;
 /** The hat: brim radius, the brim plane's height over her crown, its tilt (front down), the crown's clearance over the wrap. */
-export const HAT = { brimR: 0.236, brimY: 1.722, cz: -0.046, tilt: 0.06, clear: 0.01, crownMin: 0.104, topMin: 0.14, sides: 20, knotRoom: 0.03 };
+// fix round 1 (F10 at 7b3ba6f, the judge at 24419e9: the wrap's knot came up through the brim behind her head; in the
+// bind the nearest wrap point under the brim was 4.2 cm under it, and the wrap's sash root rides the secondary motion in
+// play): the brim sits 1 cm higher and tips forward 0.15 rad (was 0.06), so its back stands 3 cm higher over the knot and
+// the sash's root; the crown gives the knot 5 cm behind her (was 3)
+export const HAT = { brimR: 0.236, brimY: 1.732, cz: -0.046, tilt: 0.15, clear: 0.01, crownMin: 0.104, topMin: 0.14, sides: 20, knotRoom: 0.05 };
 /** The vest: its offset over the top, the hem, the front opening (|x| of the edge at the neck and at the hem), and how far it stays off the top's armholes and neckline. */
 export const VEST = { off: 0.0028, hemY: 1.156, edgeNeck: 0.07, edgeHem: 0.112, rimClear: 0.016 };
 /** The shoulder guard's three lames along the left upper arm (t: share of shoulder -> elbow; ph about the arm, 0 = front, PI/2 = up in bind). */
+// fix round 1 (the judge at 24419e9: at 20 m the guard changed 3-14 px of her outline, the hat 89-145): the lames stand
+// off the arm 3-6 cm (was 1.5-2.4) and flare 3 cm at their lower edges (was 1.4-1.6), the lowest reaching half way to the
+// elbow (was 0.41), so the left shoulder's line is wider than the right's from the front and the guard's edges stand
+// out of the arm from the side. The cap over the joint stays the lowest (3 cm): at full draw her chin comes over that
+// shoulder (Kevin's bar: the bow arm clear, nothing at the face)
 export const GUARD = [
-  { t0: -0.24, t1: 0.12, off: 0.024, flare: 0.016, ph0: 0.0, ph1: Math.PI, phIn: 0.7 },
-  { t0: 0.05, t1: 0.27, off: 0.02, flare: 0.016, ph0: -0.4, ph1: Math.PI + 0.4, phIn: 0 },
-  { t0: 0.2, t1: 0.41, off: 0.015, flare: 0.014, ph0: -0.45, ph1: Math.PI + 0.45, phIn: 0 },
+  { t0: -0.24, t1: 0.13, off: 0.03, flare: 0.03, ph0: 0.0, ph1: Math.PI, phIn: 0.7 },
+  { t0: 0.05, t1: 0.31, off: 0.048, flare: 0.03, ph0: -0.4, ph1: Math.PI + 0.4, phIn: 0 },
+  { t0: 0.23, t1: 0.5, off: 0.058, flare: 0.028, ph0: -0.45, ph1: Math.PI + 0.45, phIn: 0 },
 ];
 
 /* ------------------------------------------------------------------ Brea's head wrap (the hat's fit) */
