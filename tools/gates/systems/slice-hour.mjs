@@ -42,7 +42,7 @@ import { RUNS, assertOutsideRepo } from '../../frames/paths.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../../chrome-profile.mjs';
 import { takeMachineSlot, releaseMachineSlot } from '../../chrome-slot.mjs';
 import { runKit } from './kit-probe-page.mjs';
-import { installPad, padKeys, padState, uiChoose } from '../../reach/pad-driver.mjs';
+import { installPad, padKeys, padState, uiChoose, stickFace, stickRelease } from '../../reach/pad-driver.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = process.argv.slice(2);
@@ -376,7 +376,9 @@ const keys = (page) => (PAD ? padKeys(page) : {
   mouse: (button, isDown) => (isDown ? page.mouse.down({ button }) : page.mouse.up({ button })),
 });
 
-async function walkTo(page, K, target, radius, { up = 0, maxS = 150, sprint = true } = {}) {
+// M1.6m round 2 (engine lane, the smallest change): with --pad, every 'talk' walk is steered by the RIGHT STICK
+// (stickFace sets axis 2 each step, as a player holds it); every other walk still sets the look directly
+async function walkTo(page, K, target, radius, { up = 0, maxS = 150, sprint = true, stick = false } = {}) {
   const t0 = Date.now();
   let best = Infinity, bestAt = Date.now(), hop = 0;
   await K.down('KeyW'); if (sprint) await K.down('ShiftLeft');
@@ -395,10 +397,10 @@ async function walkTo(page, K, target, radius, { up = 0, maxS = 150, sprint = tr
       if (d < best - 0.5) { best = d; bestAt = Date.now(); }
       if (Date.now() - bestAt > 4000) { await K.tap('Space', 90); hop++; bestAt = Date.now(); if (hop > 12) return { ok: false, why: `stuck ${d.toFixed(1)} m short`, d }; }
       if ((Date.now() - t0) / 1000 > maxS) return { ok: false, why: `timed out ${d.toFixed(1)} m short`, d };
-      await page.evaluate(face, target.x, target.z);
+      if (stick) await stickFace(page, target.x, target.z); else await page.evaluate(face, target.x, target.z);
       await sleep(120);
     }
-  } finally { if (sprint) await K.up('ShiftLeft'); await K.up('KeyW'); }
+  } finally { if (stick) await stickRelease(page); if (sprint) await K.up('ShiftLeft'); await K.up('KeyW'); }
 }
 
 /**
@@ -734,7 +736,7 @@ async function beat(page, K, s) {
   if (s.type === 'talk') {
     // the prompt's radius is 3.0; round 1 walked into Mise at 2.0. A long way (the return from the station) on the nav grid
     const far = s.p && s.anchor ? Math.hypot(s.p.x - s.anchor.x, s.p.z - s.anchor.z) : 0;
-    const r = far > 30 ? await walkPath(page, K, s.anchor, 2.5) : await walkTo(page, K, s.anchor, 2.5);
+    const r = far > 30 ? await walkPath(page, K, s.anchor, 2.5, { stick: PAD }) : await walkTo(page, K, s.anchor, 2.5, { stick: PAD });
     if (!r.ok) return r;
     await holdE(page, K, 500);
     await sleep(300);
@@ -1152,7 +1154,7 @@ try {
     return { armor: L?.armorId ?? null, perk: L?.perk ?? null, rung: C.systemsGame?.rung ?? null, flagDuration: C.machines?.perception?.flagDuration ?? null, rewarded: !!C.spine?.rewarded, done: !!C.spine?.done }; }).catch((e) => ({ error: String(e).slice(0, 160) }));
   report.anchors = await page.evaluate(() => window.__CTX__.systemsGame.A);
   report.stopShot = await shot(page, 'b-stop');
-  if (PAD) report.pad = { ...(await padState(page)), presses: await page.evaluate(() => window.__pad?.presses ?? null), keyboardUsed: false };
+  if (PAD) report.pad = { ...(await padState(page)), presses: await page.evaluate(() => window.__pad?.presses ?? null), stickSteps: await page.evaluate(() => window.__pad?.stickSteps ?? 0), keyboardUsed: false };
 
   // save-continue row: what the store holds, then QUIT (the document is unloaded), the same tab opened again on the
   // game, CONTINUE on the title: the same stage, satchel, place and hour

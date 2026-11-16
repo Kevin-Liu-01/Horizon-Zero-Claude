@@ -17,7 +17,13 @@
  *             the world moving again, the picture back; (b) never restored: the page reloads by itself and CONTINUE
  *             runs on the last record (where she stands against the record).
  *
- *   node tools/reach/reach-rows.mjs --port 5268 [--only tiers,settings,pad,ctx] [--label x] [--cap-s 840]
+ *   slider    (round 2) the title's SETTINGS: every slider's value whole inside its row and the panel.
+ * Round 2: tiers run INTERLEAVED (--rounds, default 5, the order turned each round), per run draws, triangles and the
+ * meadow's submitted triangles; pad drives the RIGHT STICK (axes 2 and 3) and walks a leg steered by it alone; ctx
+ * compares the restored frame with the frame before the loss (same pose, she has not moved) and the restored frame
+ * with the reloaded one (same pose: the record is taken where it was shot), by crop dE2000 (tools/reach/crop-de.mjs).
+ *
+ *   node tools/reach/reach-rows.mjs --port 5268 [--only tiers,settings,pad,ctx,slider] [--rounds 5] [--label x] [--cap-s 840]
  *
  * Writes <review>/runs/<utc>-<commit>[-dirty]-reach-<label>/rows.json and its shots.
  */
@@ -33,13 +39,20 @@ import { profileDir, disposeProfile, installProfileCleanup, guardPort } from '..
 import { RUNS } from '../frames/paths.mjs';
 import { loadFrameSet } from '../frames/frameset.mjs';
 import { stageFrame, unstageFrame } from '../frames/page.mjs';
-import { installPad } from './pad-driver.mjs';
+import { installPad, stickFace, stickRelease } from './pad-driver.mjs';
+import { cropDE, worstDE, CTX_CROPS } from './crop-de.mjs';
+
+/** Round 2 (the judge's fix list 1 and 9): the restored picture against the same pose, by crop. A crop's mean colour may
+ *  move <= 3 dE2000 (about the just-noticeable step) and its per-pixel mean <= 8 (the idle, the grass and the clouds move
+ *  between two shots); at d028675 the restored frame was 19-20 dE off the reload in both ground crops. */
+const CTX_DE_MEANS = 3, CTX_DE_PIX = 8;
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const arg = (k, d = null) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
 const PORT = guardPort(arg('--port'));
 const LABEL = arg('--label', 'engine');
 const CAP_S = Number(arg('--cap-s', 840));
+const ROUNDS = Number(arg('--rounds', 5)), NRUNS = Number(arg('--runs', 3));
 const ONLY = new Set((arg('--only', 'tiers,settings,pad,ctx')).split(',').map((s) => s.trim()).filter(Boolean));
 
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -110,13 +123,14 @@ try {
   const errsAt = (at) => res.console.filter((e) => e.at === at).length;
 
   /** A player's boot: the title, NEW GAME, BEGIN, play. */
-  const playerBoot = async (url) => {
+  const playerBoot = async (url, atMenu = null) => {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 180000 });
     await page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press', { timeout: 240000, polling: 100 });
     await sleep(800);
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 60000, polling: 50 });
     await sleep(400);
+    if (atMenu) await atMenu();
     await C(() => [...document.querySelectorAll('.mn-title-item')].find((x) => /NEW GAME/.test(x.textContent))?.click());
     await page.waitForSelector('.mn-diff', { timeout: 20000 });
     await C(() => document.querySelector('.mn-diff').click());
@@ -131,32 +145,54 @@ try {
     current = 'tiers';
     const F02 = loadFrameSet().frames.find((f) => f.id === 'F02');
     const rows = [];
-    for (const q of ['high', 'medium', 'low', 'high']) {
-      current = `tier-${q}`;
-      const tb = Date.now();
-      await page.goto(`http://127.0.0.1:${PORT}/?shot=1&q=${q}`, { waitUntil: 'domcontentloaded', timeout: 180000 });
-      await page.waitForFunction('window.__READY__ === true', { timeout: 300000, polling: 500 });
-      const bootS = (Date.now() - tb) / 1000;
-      await sleep(4000);
-      await C(stageFrame, F02, { settleMs: 2600 });
-      const m = await C(async () => {
-        const E = window.__CTX__.engine;
-        E.setDynamicResolution?.(false);
-        const M = await import('/tools/perf/attrib-page.mjs');
-        const runs = [];
-        for (let i = 0; i < 3; i++) runs.push(await M.finishFrame(E, 60));
-        E.render(0);
-        const info = E.renderer.info.render;
-        return { quality: E.quality, renderScale: E.renderScale, pixelRatio: +E.renderer.getPixelRatio().toFixed(3), runs: runs.map((r) => r.medianMs), p95: runs.map((r) => r.p95Ms),
-          submit: runs.map((r) => r.submitMs), calls: info.calls, triangles: info.triangles, systemErrors: (window.__GAME__?.systemErrors || []).map((e) => `${e.key}: ${e.message}`).slice(0, 6) };
-      });
-      const f = await shot(`tier-${q}-${rows.length}`);
-      await C(unstageFrame);
-      const row = { tier: q, bootS, ...m, medianMs: med(m.runs), consoleErrors: errsAt(current), shot: path.basename(f) };
-      rows.push(row);
-      log(`tier ${q}: ${row.medianMs} ms (${m.runs.join(', ')}), ${m.calls} calls, DPR ${m.pixelRatio}, quality ${m.quality}, ${row.consoleErrors} console errors`);
+    // round 2 (fix list 4): INTERLEAVED, ROUNDS rounds of the three tiers, the order turned each round (H M L, M L H,
+    // L H M, ...), each a fresh page; per run its draws, triangles, programs and seconds since the page was ready, so a
+    // slow run can be explained by what the page was doing
+    const ORDERS = [['high', 'medium', 'low'], ['medium', 'low', 'high'], ['low', 'high', 'medium']];
+    for (let round = 0; round < ROUNDS; round++) {
+      for (const q of ORDERS[round % 3]) {
+        current = `tier-${q}`;
+        const tb = Date.now();
+        await page.goto(`http://127.0.0.1:${PORT}/?shot=1&q=${q}`, { waitUntil: 'domcontentloaded', timeout: 180000 });
+        await page.waitForFunction('window.__READY__ === true', { timeout: 300000, polling: 500 });
+        const bootS = (Date.now() - tb) / 1000;
+        await C(() => { window.__readyAt = performance.now(); });
+        await sleep(4000);
+        await C(stageFrame, F02, { settleMs: 2600 });
+        const m = await C(async (nRuns) => {
+          const E = window.__CTX__.engine;
+          E.setDynamicResolution?.(false);
+          const M = await import('/tools/perf/attrib-page.mjs');
+          const runs = [];
+          for (let i = 0; i < nRuns; i++) {
+            const r = await M.finishFrame(E, 60);
+            E.render(0);
+            const info = E.renderer.info;
+            runs.push({ ms: r.medianMs, p95: r.p95Ms, submit: r.submitMs, calls: info.render.calls, triangles: info.render.triangles, programs: info.programs?.length ?? null,
+              geometries: info.memory.geometries, textures: info.memory.textures, atS: +((performance.now() - window.__readyAt) / 1000).toFixed(1),
+              meadowTris: (() => { try { return window.__CTX__.vegetation?.meadow?.stats?.(undefined, { drawn: false })?.submittedTris ?? null; } catch { return null; } })() });
+          }
+          const info = E.renderer.info.render;
+          const mead = window.__CTX__.vegetation?.meadow ?? null;
+          return { quality: E.quality, renderScale: E.renderScale, pixelRatio: +E.renderer.getPixelRatio().toFixed(3), runs, calls: info.calls, triangles: info.triangles,
+            meadowRings: mead?.ringTable?.map?.((r) => [r.rIn, r.rOut]) ?? null,
+            systemErrors: (window.__GAME__?.systemErrors || []).map((e) => `${e.key}: ${e.message}`).slice(0, 6) };
+        }, NRUNS);
+        const f = round === 0 || round === ROUNDS - 1 ? await shot(`tier-${q}-r${round}`) : null;
+        await C(unstageFrame);
+        const row = { tier: q, round, bootS, ...m, medianMs: med(m.runs.map((r) => r.ms)), consoleErrors: errsAt(current), shot: f && path.basename(f) };
+        rows.push(row);
+        log(`tier ${q} round ${round}: ${row.medianMs} ms (${m.runs.map((r) => `${r.ms}@${r.atS}s ${r.calls}c ${(r.triangles / 1e6).toFixed(2)}M mead ${r.meadowTris}`).join(', ')}), DPR ${m.pixelRatio}, rings ${JSON.stringify(m.meadowRings)}, ${row.consoleErrors} console errors`);
+      }
     }
-    const high = med([rows[0].medianMs, rows[3].medianMs].concat(rows[0].runs, rows[3].runs));
+    // per tier: the median and the spread of the per-page medians (each page's runs' median), and of every run
+    const stat = (a) => { const s = a.slice().sort((x, y) => x - y); return { median: med(s), min: s[0], max: s.at(-1), iqr: [s[Math.floor(s.length * 0.25)], s[Math.floor(s.length * 0.75)]], n: s.length }; };
+    const byTier = Object.fromEntries(['high', 'medium', 'low'].map((q) => {
+      const R = rows.filter((r) => r.tier === q);
+      return [q, { pages: stat(R.map((r) => r.medianMs)), runs: stat(R.flatMap((r) => r.runs.map((x) => x.ms))), triangles: stat(R.flatMap((r) => r.runs.map((x) => x.triangles))),
+        calls: stat(R.flatMap((r) => r.runs.map((x) => x.calls))), slowRuns: R.flatMap((r) => r.runs.map((x, i) => ({ round: r.round, run: i, ...x }))).filter((x) => x.ms > 16) }];
+    }));
+    const high = byTier.high.pages.median;
     const boots = {};
     for (const q of ['medium', 'low']) {
       current = `boot-${q}`;
@@ -170,18 +206,40 @@ try {
       log(`boot ${q}: ${JSON.stringify(boots[q])}`);
     }
     const tierRow = (q) => {
-      const r = rows.find((x) => x.tier === q);
-      return { ms: r.medianMs, vsHigh: +(r.medianMs - high).toFixed(3), noSlower: r.medianMs <= high, frameErrors: r.consoleErrors + r.systemErrors.length, boot: boots[q] };
+      const R = rows.filter((x) => x.tier === q), T = byTier[q];
+      // no slower: the tier's median page is at or under high's, and its upper quartile does not reach past high's
+      return { ms: T.pages.median, spread: T.pages, vsHigh: +(T.pages.median - high).toFixed(3), noSlower: T.pages.median <= high && T.pages.iqr[1] <= byTier.high.pages.iqr[1],
+        frameErrors: R.reduce((s2, r) => s2 + r.consoleErrors + r.systemErrors.length, 0), boot: boots[q] };
     };
-    res.rows.tiers = { rows, highMs: high, medium: tierRow('medium'), low: tierRow('low'),
+    res.rows.tiers = { rounds: ROUNDS, runsPerPage: NRUNS, rows, byTier, highMs: high, medium: tierRow('medium'), low: tierRow('low'),
       pass: ['medium', 'low'].every((q) => { const t = tierRow(q); return t.noSlower && t.frameErrors === 0 && t.boot?.clean; }) };
-    log(`tiers: ${res.rows.tiers.pass ? 'PASS' : 'FAIL'} high ${high} ms, medium ${res.rows.tiers.medium.ms}, low ${res.rows.tiers.low.ms}`);
+    log(`tiers: ${res.rows.tiers.pass ? 'PASS' : 'FAIL'} ${JSON.stringify(Object.fromEntries(Object.entries(byTier).map(([q, T]) => [q, { pages: T.pages, tris: T.triangles.median, slow: T.slowRuns.length }])))}`);
   }
 
   /* ------------------------------------------------- one player's game for the rest */
-  if (ONLY.has('settings') || ONLY.has('pad') || ONLY.has('ctx')) {
+  if (ONLY.has('settings') || ONLY.has('pad') || ONLY.has('ctx') || ONLY.has('slider')) {
     current = 'play';
-    await playerBoot(`http://127.0.0.1:${PORT}/`);
+    // round 2 (fix list 7): the title's SETTINGS, graphics page: every slider's value is whole inside its row and the panel
+    const slider = ONLY.has('slider') ? async () => {
+      await C(() => [...document.querySelectorAll('.mn-title-item')].find((x) => /SETTINGS/.test(x.textContent))?.click());
+      await page.waitForSelector('.mn-modal .mn-set-row.slider', { timeout: 15000 }).catch(() => null);
+      await sleep(700);
+      const S = await C(() => {
+        const panel = document.querySelector('.mn-modal .mn-modal-shell') || document.querySelector('.mn-modal');
+        const pr = panel?.getBoundingClientRect();
+        return [...document.querySelectorAll('.mn-modal .mn-set-row.slider')].filter((r) => r.offsetParent).map((r) => {
+          const v = r.querySelector('.mn-set-val'), vr = v.getBoundingClientRect(), rr = r.getBoundingClientRect();
+          return { label: r.querySelector('.mn-set-label')?.childNodes[0]?.textContent?.trim(), text: v.textContent, clipped: v.scrollWidth > v.clientWidth + 0.5,
+            outOfRow: vr.right > rr.right + 0.5, outOfPanel: pr ? vr.right > pr.right - 1 : null, valRight: Math.round(vr.right), rowRight: Math.round(rr.right), panelRight: pr ? Math.round(pr.right) : null };
+        });
+      });
+      const f = await shot('title-settings');
+      res.rows.slider = { rows: S, shot: path.basename(f), pass: S.length >= 3 && S.every((x) => !x.clipped && !x.outOfRow && x.outOfPanel === false) };
+      log(`title settings sliders: ${res.rows.slider.pass ? 'PASS' : 'FAIL'} ${JSON.stringify(S.map((x) => `${x.label}=${x.text}${x.clipped || x.outOfRow || x.outOfPanel ? ' CLIPPED' : ''}`))}`);
+      await page.keyboard.press('Escape'); await sleep(600);
+      if (await C(() => !!document.querySelector('.mn-modal .mn-set-row'))) { await page.keyboard.press('Escape'); await sleep(600); }
+    } : null;
+    await playerBoot(`http://127.0.0.1:${PORT}/`, slider);
     res.playBootErrors = errsAt('play');
   }
 
@@ -341,6 +399,44 @@ try {
     const aimOff = await C(() => !window.__CTX__.player.aiming);
     P.verbs['aim LT, arrow type, loose RT'] = { aimOn, ammo0, ammoX, ammoZ, drawing, aimOff,
       pass: aimOn && ammoX.code === 'KeyX' && ammoZ.code === 'KeyZ' && drawing && aimOff };
+    // round 2 (fix list 5): the RIGHT STICK. (a) axes 2 and 3 move the camera's yaw and pitch, and a centred stick
+    // holds them; (b) a walked leg steered by the stick alone: a point 8 m off to her right, the left stick forward,
+    // stickFace every 120 ms (the runner never writes camYaw)
+    {
+      const look = () => C(() => ({ yaw: +window.__CTX__.player.camYaw.toFixed(4), pitch: +window.__CTX__.player.camPitch.toFixed(4) }));
+      const S = { l0: await look() };
+      await C(() => window.__pad.axis(2, 0.85)); await sleep(700); await C(() => window.__pad.axis(2, 0)); await sleep(250);
+      S.l1 = await look();
+      await sleep(400);
+      S.l1b = await look();
+      await C(() => window.__pad.axis(3, 0.85)); await sleep(350); await C(() => window.__pad.axis(3, 0)); await sleep(250);
+      S.l2 = await look();
+      await C(() => window.__pad.axis(3, -0.85)); await sleep(350); await C(() => window.__pad.axis(3, 0)); await sleep(250);
+      S.l3 = await look();
+      S.dyaw = +(S.l1.yaw - S.l0.yaw).toFixed(3); S.heldYaw = +Math.abs(S.l1b.yaw - S.l1.yaw).toFixed(4);
+      S.dpitchDown = +(S.l2.pitch - S.l1b.pitch).toFixed(3); S.dpitchUp = +(S.l3.pitch - S.l2.pitch).toFixed(3);
+      S.axesPass = Math.abs(S.dyaw) > 0.3 && S.heldYaw < 0.01 && Math.abs(S.dpitchDown) > 0.05 && Math.abs(S.dpitchUp) > 0.05 && Math.sign(S.dpitchDown) !== Math.sign(S.dpitchUp);
+      // (b) the leg
+      const tgt = await C(() => { const p = window.__CTX__.player, y = p.camYaw - Math.PI / 2;   // her right
+        return { x: p.position.x - Math.sin(y) * 8, z: p.position.z - Math.cos(y) * 8, yaw0: p.camYaw }; });
+      await C(() => window.__pad.axis(1, -1));
+      const errs = [];
+      let d = null;
+      const tw = Date.now();
+      while (Date.now() - tw < 7000) {
+        errs.push(await stickFace(page, tgt.x, tgt.z));
+        await sleep(120);
+        d = await C((x, z) => Math.hypot(window.__CTX__.player.position.x - x, window.__CTX__.player.position.z - z), tgt.x, tgt.z);
+        if (d < 1.5) break;
+      }
+      await C(() => window.__pad.axis(1, 0)); await stickRelease(page); await sleep(400);
+      S.leg = { target: tgt, reachedM: +d.toFixed(2), seconds: +((Date.now() - tw) / 1000).toFixed(1), steps: errs.length, firstErr: errs[0], turnedRad: +(await C(() => window.__CTX__.player.camYaw)).toFixed(3) - tgt.yaw0,
+        lastErrs: errs.slice(-4), stickSteps: await C(() => window.__pad.stickSteps || 0) };
+      S.legPass = d < 1.5 && Math.abs(errs[0]) > 1.0 && S.leg.stickSteps >= errs.length;
+      S.pass = S.axesPass && S.legPass;
+      P.stick = S;
+      log(`pad right stick: ${S.pass ? 'PASS' : 'FAIL'} ${JSON.stringify({ dyaw: S.dyaw, held: S.heldYaw, dpitch: [S.dpitchDown, S.dpitchUp], leg: { reached: S.leg.reachedM, s: S.leg.seconds, firstErr: S.leg.firstErr } })}`);
+    }
     // the hub: Start opens it, the D-pad moves the focus, RB turns the tab, B closes it
     await press(9);
     await sleep(900);
@@ -361,7 +457,7 @@ try {
     P.hub = { hubOpen, tab0, tab1, focus, shot: path.basename(fShot), hubClosed, backs, map: mapTab, closedAgain: await C(() => !window.__CTX__.menus.hubOpen),
       pass: hubOpen && tab1 !== tab0 && !!focus && hubClosed && mapTab.open && mapTab.tab === 'map' };
     P.log = await C(() => window.__CTX__.input.padLog.slice());
-    P.pass = P.connected && Object.values(P.verbs).every((v) => v.pass) && P.hub.pass;
+    P.pass = P.connected && Object.values(P.verbs).every((v) => v.pass) && P.hub.pass && !!P.stick?.pass;
     P.errors = errsAt('pad');
     await C(() => { window.__pad.on = false; });
     await sleep(800);
@@ -374,9 +470,11 @@ try {
     current = 'ctx';
     const X = {};
     await C(() => { if (window.__CTX__.state !== 'playing') window.__CTX__.state = 'playing'; });
-    await sleep(500);
+    // she stands; the HUD is revealed (a calm HUD fades its column, which no crop reads, but the shots then pair)
+    await sleep(2500);
     const before = await shot('ctx-0-before');
     X.before = await lum(before);
+    X.poseBefore = await C(() => { const p = window.__CTX__.player; return { x: p.position.x, z: p.position.z, yaw: p.camYaw, pitch: p.camPitch }; });
     // (a) lost, restored after 1 s
     X.lost = await C(async () => {
       const gl = window.__CTX__.renderer.getContext(); const ext = gl.getExtension('WEBGL_lose_context');
@@ -397,26 +495,36 @@ try {
         if (ff && firstFrameMs == null) firstFrameMs = Math.round(ff.t - t);
         if (playingMs != null && firstFrameMs != null) break;
       }
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 2500));
       return { playingMs, firstFrameMs, firstFrameCostMs: E.contextLog.filter((l) => l.what === 'first-frame').at(-1)?.ms ?? null,
+        rebuilt: E.contextLog.filter((l) => l.what === 'rebuilt').at(-1) ?? null, farRedraws: C2.terrain?._far?.redraws ?? null,
         simAdvanced: +(E.simTime - sim0).toFixed(2), framesAdvanced: E.frames - f0, lostNow: C2.renderer.getContext().isContextLost(),
-        card: document.querySelector('.gs-ctx')?.classList.contains('show') ?? null, state: C2.state, log: E.contextLog.slice(-4), restores: E.contextRestores };
+        card: document.querySelector('.gs-ctx')?.classList.contains('show') ?? null, state: C2.state, log: E.contextLog.slice(-5), restores: E.contextRestores };
     });
+    // round 2 (fix list 9): the restored picture against the one before the loss, at the SAME pose (she has not moved)
+    const still = await shot('ctx-2a-restored-still');
+    X.poseStill = await C(() => { const p = window.__CTX__.player; return { x: p.position.x, z: p.position.z, yaw: p.camYaw, pitch: p.camPitch }; });
+    X.restore.samePose = { moved: +Math.hypot(X.poseStill.x - X.poseBefore.x, X.poseStill.z - X.poseBefore.z).toFixed(3), dyaw: +Math.abs(X.poseStill.yaw - X.poseBefore.yaw).toFixed(4) };
+    X.restore.vsBefore = await cropDE(before, still);
+    X.restore.vsBeforeWorst = { dEOfMeans: Math.max(...Object.values(X.restore.vsBefore).map((c) => c.dEOfMeans)), meanDE: worstDE(X.restore.vsBefore) };
     // she moves again
     const p0 = await C(() => ({ x: window.__CTX__.player.position.x, z: window.__CTX__.player.position.z }));
-    await page.keyboard.down('KeyW'); await sleep(1200); await page.keyboard.up('KeyW'); await sleep(300);
+    await page.keyboard.down('KeyW'); await sleep(1200); await page.keyboard.up('KeyW'); await sleep(1500);
     const p1 = await C(() => ({ x: window.__CTX__.player.position.x, z: window.__CTX__.player.position.z }));
     X.restore.moved = +Math.hypot(p1.x - p0.x, p1.z - p0.z).toFixed(2);
     const after = await shot('ctx-2-restored');
     X.after = await lum(after);
+    const picOk = (w) => w.dEOfMeans <= CTX_DE_MEANS && w.meanDE <= CTX_DE_PIX;
     X.restore.pass = X.lost.ext && X.lost.state === 'context-lost' && X.lost.card?.visible && X.restore.state === 'playing' && !X.restore.lostNow && !X.restore.card
-      && X.restore.firstFrameMs != null && X.restore.firstFrameMs <= 5000 && X.restore.moved > 0.5 && X.after.black < 0.5 && X.after.mean > X.before.mean * 0.5;
-    log(`ctx restore: ${X.restore.pass ? 'PASS' : 'FAIL'} ${JSON.stringify({ playingMs: X.restore.playingMs, firstFrameMs: X.restore.firstFrameMs, cost: X.restore.firstFrameCostMs, moved: X.restore.moved, before: X.before, after: X.after })}`);
-    // (b) lost and never restored: the page reloads by itself; CONTINUE runs on the last record
+      && X.restore.firstFrameMs != null && X.restore.firstFrameMs <= 5000 && X.restore.moved > 0.5 && X.after.black < 0.5
+      && X.restore.samePose.moved < 0.05 && picOk(X.restore.vsBeforeWorst) && !(X.restore.rebuilt?.failed?.length);
+    log(`ctx restore: ${X.restore.pass ? 'PASS' : 'FAIL'} ${JSON.stringify({ playingMs: X.restore.playingMs, firstFrameMs: X.restore.firstFrameMs, cost: X.restore.firstFrameCostMs, rebuilt: X.restore.rebuilt, moved: X.restore.moved, samePose: X.restore.samePose, vsBefore: X.restore.vsBeforeWorst })}`);
+    // (b) lost and never restored: the page reloads by itself; CONTINUE runs on the last record. The record is taken
+    // where ctx-2 was shot, so the reloaded frame is the restored frame's pose (fix list 1: the two compared)
     await C(() => window.__CTX__.progression.save('reach-probe'));
     await sleep(800);
     X.record = await C(() => { const S = window.__CTX__.progression.saves.store, n = S.continueSlot(), r = n ? S.latest(n) : null; const p = window.__CTX__.player.position;
-      return { slot: n, pos: r?.pos ?? r?.player?.position ?? null, at: { x: p.x, y: p.y, z: p.z }, stage: window.__CTX__.spine.current()?.id ?? null }; });
+      return { slot: n, pos: r?.pos ?? r?.player?.position ?? null, at: { x: p.x, y: p.y, z: p.z }, yaw: window.__CTX__.player.camYaw, stage: window.__CTX__.spine.current()?.id ?? null }; });
     const tl = Date.now();
     const nav = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).then(() => Date.now()).catch(() => null);
     await C(() => { const gl = window.__CTX__.renderer.getContext(); gl.getExtension('WEBGL_lose_context').loseContext(); });
@@ -426,16 +534,23 @@ try {
       current = 'ctx-reload';
       const ok = await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 180000, polling: 100 }).then(() => true).catch(() => false);
       X.reload.playingAfterMs = ok ? Date.now() - tl : null;
-      await sleep(1500);
-      X.reload.after = await C(() => { const p = window.__CTX__.player.position; return { state: window.__CTX__.state, at: { x: p.x, y: p.y, z: p.z }, stage: window.__CTX__.spine.current()?.id ?? null,
+      await sleep(2500);
+      X.reload.after = await C(() => { const p = window.__CTX__.player.position; return { state: window.__CTX__.state, at: { x: p.x, y: p.y, z: p.z }, yaw: window.__CTX__.player.camYaw, stage: window.__CTX__.spine.current()?.id ?? null,
         loadedFrom: window.__CTX__.progression.saves.loadedFrom ?? null }; });
       X.reload.dxz = +Math.hypot(X.reload.after.at.x - X.record.at.x, X.reload.after.at.z - X.record.at.z).toFixed(3);
-      X.reload.shot = path.basename(await shot('ctx-3-reloaded'));
+      const rf = await shot('ctx-3-reloaded');
+      X.reload.shot = path.basename(rf);
       X.reload.errors = errsAt('ctx-reload');
+      // the restored world against the reloaded world, same pose
+      X.restoredVsReload = await cropDE(after, rf);
+      X.restoredVsReloadWorst = { dEOfMeans: Math.max(...Object.values(X.restoredVsReload).map((c) => c.dEOfMeans)), meanDE: worstDE(X.restoredVsReload) };
+      X.restoredVsReloadPass = X.reload.dxz < 0.05 && picOk(X.restoredVsReloadWorst);
+      log(`ctx restored vs reloaded (same pose, dxz ${X.reload.dxz}): ${X.restoredVsReloadPass ? 'PASS' : 'FAIL'} ${JSON.stringify(X.restoredVsReloadWorst)} ${JSON.stringify(X.restoredVsReload)}`);
     }
     X.reload.pass = !!tNav && X.reload.reloadAfterMs <= 6500 && X.reload.after?.state === 'playing' && X.reload.after.stage === X.record.stage && X.reload.dxz < 1.0;
     log(`ctx reload: ${X.reload.pass ? 'PASS' : 'FAIL'} ${JSON.stringify(X.reload)}`);
-    X.pass = X.restore.pass && X.reload.pass;
+    X.bars = { dEOfMeans: CTX_DE_MEANS, meanDE: CTX_DE_PIX, crops: CTX_CROPS };
+    X.pass = X.restore.pass && X.reload.pass && !!X.restoredVsReloadPass;
     res.rows.ctx = X;
   }
   res.chromeS = (Date.now() - t0) / 1000;
