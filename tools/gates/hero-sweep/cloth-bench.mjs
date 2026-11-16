@@ -126,6 +126,7 @@ function staged(R, { crouch = false, sit = false, heading = 0, wind = [0, 0] } =
 function unstage(R) { const p = R.player; p.crouching = false; p.riding = null; p.grounded = true; R.an.setWind(45 * Math.PI / 180, 5.5); }
 
 /* ------------------------------------------------------------------ particle reads (grid solver only) */
+const STRETCH_LOG = args.includes('--stretch-log') ? {} : null;
 function stretch(R) {
   const C = rig(R); if (!C) return null;
   let edge = 0, path = 0;
@@ -135,6 +136,8 @@ function stretch(R) {
       const i = P.ci[c * 2], j = P.ci[c * 2 + 1];
       const d = Math.hypot(P.x[i * 3] - P.x[j * 3], P.x[i * 3 + 1] - P.x[j * 3 + 1], P.x[i * 3 + 2] - P.x[j * 3 + 2]);
       edge = Math.max(edge, d / P.cr[c]);
+      // (--stretch-log: which edges pass 1.03, by piece, kind and rows)
+      if (STRETCH_LOG && d / P.cr[c] > 1.03) { const ri = Math.floor(i / P.C), rj = Math.floor(j / P.C), k = `${P.name} ${ri === rj ? 'across' : 'along'} r${ri}c${i % P.C}-r${rj}c${j % P.C}${P.contact[i] || P.contact[j] ? ' contact' : ''}`; STRETCH_LOG[k] = Math.max(STRETCH_LOG[k] || 0, +(d / P.cr[c]).toFixed(4)); }
     }
     for (let col = 0; col < P.C; col++) {
       let L = 0, L0 = 0;
@@ -540,5 +543,7 @@ if (ROWS.includes('C11') && MODE === 2) {
   out.rows.C11 = res;
 }
 
+if (STRETCH_LOG) out.stretchLog = STRETCH_LOG;
 for (const [id, row] of Object.entries(out.rows)) for (const [k, v] of Object.entries(row)) console.log(id.padEnd(4), k.padEnd(18), JSON.stringify(v));
+if (STRETCH_LOG) console.log('STRETCH', JSON.stringify(Object.entries(STRETCH_LOG).sort((a, b) => b[1] - a[1]).slice(0, 20)));
 if (flag('--json')) writeFileSync(flag('--json'), JSON.stringify(out, null, 1));

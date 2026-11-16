@@ -27,21 +27,23 @@ export function aeroForces(P, wx, wz, t) {
   const cd = mat.cd, cl = mat.cl, airK = P.airK ?? 1;
   const ws = Math.sqrt(wx * wx + wz * wz);
   const lee = P.lee || 0, ux0 = ws > 1e-6 ? wx / ws : 0, uz0 = ws > 1e-6 ? wz / ws : 0, rx = P.root.p[0], rz = P.root.p[2];
+  const C = P.C || 1;
+  let tx = 0, ty = 0, tz = 0;
   for (let i = 0; i < n; i++) {
     const k = i * 3;
     f[k] = 0; f[k + 1] = 0; f[k + 2] = 0;
-    if (P.w[i] === 0) continue;
-    // coherent turbulence: two octaves, along and across the wind, and a little up
-    let ux = wx, uy = 0, uz = wz;
-    if (ws > 1e-3) {
-      const px = x[k], py = x[k + 1], pz = x[k + 2];
+    // coherent turbulence: two octaves, along and across the wind, and a little up; sampled once a ROW, at the row's
+    // middle particle (round 3, cost: its shortest wavelength is 1.2 m, a row is 0.1-0.3 m across: a sixth of the sines)
+    if (ws > 1e-3 && i % C === 0) {
+      const q = (i + (C >> 1)) * 3, px = x[q], py = x[q + 1], pz = x[q + 2];
       const g1 = Math.sin(px * 1.7 + pz * 1.3 - t * 3.1) * 0.6 + Math.sin(px * 4.3 - pz * 3.7 + py * 2.9 + t * 7.3) * 0.4;
       const g2 = Math.sin(pz * 2.1 - px * 0.9 + t * 2.3 + 1.7) * 0.6 + Math.sin(pz * 5.1 + px * 4.1 - py * 3.3 - t * 8.9) * 0.4;
-      const s = TURB * ws;
-      ux += (g1 * wx - g2 * wz * 0.6) * TURB;
-      uz += (g1 * wz + g2 * wx * 0.6) * TURB;
-      uy += Math.sin(py * 3.1 + t * 4.7 + px) * 0.3 * s;
+      tx = (g1 * wx - g2 * wz * 0.6) * TURB;
+      tz = (g1 * wz + g2 * wx * 0.6) * TURB;
+      ty = Math.sin(py * 3.1 + t * 4.7 + px) * 0.3 * TURB * ws;
     }
+    if (P.w[i] === 0) continue;
+    let ux = wx + tx, uy = ty, uz = wz + tz;
     ux -= v[k]; uy -= v[k + 1]; uz -= v[k + 2];
     const u2 = ux * ux + uy * uy + uz * uz;
     if (u2 < 1e-8) continue;

@@ -33,7 +33,7 @@ const AY_MAX = 400;
  *  the last distance pass undid a thigh's push and the cloth stretched 1.4-1.5 x at a run). */
 const ITERS = 2;
 /** The strain limit after the colliders (x rest; C3/C8's bar is 1.03) and its sweeps. */
-const STRAIN = 1.02, STRAIN_ITERS = 3, STRAIN_POST = 2, HARD_ROUNDS = 2;
+const STRAIN = 1.02, STRAIN_ITERS = 2, STRAIN_POST = 2, HARD_ROUNDS = 2;
 const _n = new Float64Array(3);
 
 /** A root frame: position, rotation (quaternion x y z w), uniform scale; last frame's and this frame's. */
@@ -607,7 +607,8 @@ export class ClothSystem {
   /** The strain limit, top down from the pins, row by row (`iters` rounds): each row's ALONG edges first, the lower end
    *  taken all the way back to `lim` x rest from the one above it (the row above is settled, so one sweep satisfies every
    *  column: a Gauss-Seidel sweep over the whole sheet left 1.035-1.06 after eight rounds), then the row's ACROSS edges
-   *  shortened symmetrically, then its along edges once more. Only shortens: a slack edge is the bending pass's. */
+   *  shortened symmetrically, twice (ending on the along edges, the front-left hem's outer across edges stood at 1.034-1.038
+   *  in 20 of 1440 sprint frames, six starts). Only shortens: a slack edge is the bending pass's. */
   _strain(p, lim, iters) {
     const x = p.x, w = p.w, cr = p.cr, sc = p.restScale * lim;
     if (!p.sAl) this._strainIndex(p);
@@ -625,7 +626,6 @@ export class ClothSystem {
             const f = L / Math.sqrt(d2);
             x[a] = x[b] + ex * f; x[a + 1] = x[b + 1] + ey * f; x[a + 2] = x[b + 2] + ez * f;
           }
-          if (pass === 1) break;
           for (let k = RS[r * 2 + 1]; k < RS[r * 2 + 3]; k += 3) {
             const e = AC[k], i = AC[k + 1], j = AC[k + 2], wi = w[i], wj = w[j], ws = wi + wj;
             if (ws === 0) continue;
@@ -680,6 +680,13 @@ export class ClothSystem {
         const rx = x[a] - K.ia[0], ry = x[a + 1] - K.ia[1], rz = x[a + 2] - K.ia[2];
         const A = d1x * d1x + d1y * d1y + d1z * d1z, E = d2x * d2x + d2y * d2y + d2z * d2z, F = d2x * rx + d2y * ry + d2z * rz;
         if (A < 1e-12 || E < 1e-12) continue;
+        // (round 3, cost: the edge's midpoint further from the axis than the reach plus half the edge cannot meet it)
+        {
+          const mx = rx + d1x * 0.5, my = ry + d1y * 0.5, mz = rz + d1z * 0.5;
+          let tm = (mx * d2x + my * d2y + mz * d2z) / E; tm = tm < 0 ? 0 : tm > 1 ? 1 : tm;
+          const ex = mx - d2x * tm, ey = my - d2y * tm, ez = mz - d2z * tm, reach = (K.ri0 > K.ri1 ? K.ri0 : K.ri1) + hh + 0.045;
+          if (ex * ex + ey * ey + ez * ez > reach * reach + A * 0.25 + reach * Math.sqrt(A)) continue;
+        }
         const Cc = d1x * rx + d1y * ry + d1z * rz, B = d1x * d2x + d1y * d2y + d1z * d2z, den = A * E - B * B;
         let sP = den > 1e-12 ? (B * F - Cc * E) / den : 0;
         sP = sP < 0 ? 0 : sP > 1 ? 1 : sP;

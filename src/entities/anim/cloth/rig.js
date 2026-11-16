@@ -282,8 +282,11 @@ export class BreaCloth {
     }
     // the arms: both upper arms; the draw (right) forearm and hand
     if (b.upArmL && b.loArmL) add('upArmL', b.upArmL.bone, b.loArmL.bone, 0.05, 0.042);
-    if (b.upArmR && b.loArmR) add('upArmR', b.upArmR.bone, b.loArmR.bone, 0.05, 0.042);
-    if (b.loArmR && b.handR) add('foreArmR', b.loArmR.bone, b.handR.bone, 0.04, 0.032);
+    // (round 3: the draw arm's soft surface 1.5 cm over the grader's inner radius all along (it was 0.042 / 0.032 at the
+    //  far ends, the inner radius itself, so the hard pass had 1 cm to hold a sheet whose folds lie 1-3 cm inside its
+    //  grid: seated, the back panel on the right forearm in 60 of 120 frames of the Node sweep)
+    if (b.upArmR && b.loArmR) add('upArmR', b.upArmR.bone, b.loArmR.bone, 0.058, 0.055);
+    if (b.loArmR && b.handR) add('foreArmR', b.loArmR.bone, b.handR.bone, 0.05, 0.047);
     // (the draw arm's inner radii are the grader's own: 0.040 upper arm, 0.032 forearm)
     { const u = this.sys.colliders.find((c) => c.name === 'upArmR'), f = this.sys.colliders.find((c) => c.name === 'foreArmR'); if (u) u.ri0 = u.ri1 = 0.040; if (f) f.ri0 = f.ri1 = 0.032; }
     if (b.handR) {
