@@ -52,7 +52,7 @@ const PRELUDE = `
   const raise = async () => { C.input.enabled = true; C.input.mouse.buttons |= 4; for (let i = 0; i < 90 && !(P.aiming && C.combat.nockLanded); i++) await raf(); await frames(8); return !!P.aiming; };
   const lower = async () => { C.input.mouse.buttons &= ~4; await frames(6); };
   /** one real arrow at world point pt (held over for the drop at full draw) */
-  const shoot = async (ammo, pt, waitMs = 650, solve = true) => {
+  const shoot = async (ammo, pt, waitMs = 650, solve = true, track = null) => {
     aimFor(ammo, pt, solve);
     const n0 = K.ev.length;
     const AP = C.combat.arrows, flying = new Set(AP.list.filter((x) => x.mode === 'fly'));
@@ -74,7 +74,7 @@ const PRELUDE = `
       const d = new V().subVectors(a.pos, last), L2 = d.lengthSq();
       const u = L2 > 1e-12 ? Math.max(0, Math.min(1, q.subVectors(pt, last).dot(d) / L2)) : 0;
       const dd = q.copy(last).addScaledVector(d, u).distanceTo(pt);
-      if (dd < fl.near) { fl.near = r3(dd); fl.nearAge = r3(a.age); }
+      if (dd < fl.near) { fl.near = r3(dd); fl.nearAge = r3(a.age); if (track) { const tp = wpos(track); fl.targetMoved = r3(tp.distanceTo(pt)); fl.tailToTarget = r3(q.copy(last).addScaledVector(d, u).distanceTo(tp)); } }
       last.copy(a.pos);
       if (a.mode !== 'fly') fl.end = { mode: a.mode, at: [r3(a.pos.x), r3(a.pos.y), r3(a.pos.z)], on: a.stuckTo?.kind ?? a.stuckTo?.machine?.kind ?? null, age: r3(a.age) };
     }
@@ -226,7 +226,7 @@ export async function runKit(page, { sleep, log = () => {}, only = null }) {
     const b = base(); const m = spawn('peg', b.x + 12, b.z); place(b.x, b.z, b.x + 12, b.z); await frames(20); await raise();
     let n = 0; const hits = [];
     const diag = [];
-    while (m.alive !== false && n < 3) { calm(m); const lp = wpos(m._lampWp.obj); const e = await shoot('hunter', lp, 650, false); n++; hits.push(e.filter((x) => x.n === 'arrow-hit').map((x) => ({ weak: x.weak, dmg: x.dmg && Math.round(x.dmg), kind: x.kind, pt: x.pt })));
+    while (m.alive !== false && n < 3) { calm(m); const lp = wpos(m._lampWp.obj); const e = await shoot('hunter', lp, 650, false, m._lampWp.obj); n++; hits.push(e.filter((x) => x.n === 'arrow-hit').map((x) => ({ weak: x.weak, dmg: x.dmg && Math.round(x.dmg), kind: x.kind, pt: x.pt })));
       diag.push({ lamp: [r3(lp.x), r3(lp.y), r3(lp.z)], shot: K.lastShot, flight: K.lastFlight }); }
     await lower();
     return { num: { arrowsToKill: m.alive === false ? n : null, hits }, diag, pass: m.alive === false && n === 1, bar: 'one Reed arrow on the lamp kills a Peg' };`)));
@@ -253,15 +253,19 @@ export async function runKit(page, { sleep, log = () => {}, only = null }) {
     const out = {};
     /* Blunt: two Reed arrows on the standing bob */
     const bob = m._bob; const hp0 = bob.tearHp, h0 = m.health; let struck = [];
+    // how far the bob and the vial move standing calm (1 s of frames): what a 0.4 s flight has to lead
+    { const s0 = [], s1 = []; for (let i = 0; i < 60; i++) { calm(m); s0.push(wpos(bob.mesh)); s1.push(wpos(m._vialWp.obj)); await raf(); }
+      const span = (L) => { let mx = 0; for (const a of L) for (const b of L) mx = Math.max(mx, a.distanceTo(b)); return r3(mx); };
+      K.motion = { bobSpan: span(s0), vialSpan: span(s1), rootSpeed: r3(m.speed ?? 0), state: m.state }; }
     const diag = [];
-    for (let i = 0; i < 2; i++) { calm(m); const e = await shoot('hunter', wpos(bob.mesh)); diag.push({ ...K.lastShot, hitPt: e.find((x) => x.n === 'arrow-hit')?.pt ?? null, flight: K.lastFlight }); const h = e.find((x) => x.n === 'arrow-hit'); struck.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
-    out.blunt = { bobTearTaken: r3(hp0 - bob.tearHp), bodyDamage: r3(h0 - m.health), struck, bobOn: bob.attached !== false, diag, bobAt: (() => { const q = wpos(bob.mesh); return [r3(q.x), r3(q.y), r3(q.z)]; })(), herAt: [r3(P.position.x), r3(P.position.y), r3(P.position.z)] };
+    for (let i = 0; i < 2; i++) { calm(m); const e = await shoot('hunter', wpos(bob.mesh), 650, true, bob.mesh); diag.push({ ...K.lastShot, hitPt: e.find((x) => x.n === 'arrow-hit')?.pt ?? null, flight: K.lastFlight }); const h = e.find((x) => x.n === 'arrow-hit'); struck.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); }
+    out.motion = K.motion; out.blunt = { bobTearTaken: r3(hp0 - bob.tearHp), bodyDamage: r3(h0 - m.health), struck, bobOn: bob.attached !== false, diag, bobAt: (() => { const q = wpos(bob.mesh); return [r3(q.x), r3(q.y), r3(q.z)]; })(), herAt: [r3(P.position.x), r3(P.position.y), r3(P.position.z)] };
     /* the vial: Reed arrows until it topples */
     m.health = m.maxHealth;
     let n = 0, tTop = null, sTop = null; const vh = [];
     const vs = [];
     const vd = [];
-    while (!(m._toppleT >= 0) && n < 8) { calm(m); const e = await shoot('hunter', wpos(m._vialWp.obj), 420); n++; vh.push(m._vialHits); vd.push({ first: K.lastShot?.first ?? null, predMissM: K.lastShot?.predMissM ?? null, flight: K.lastFlight }); const h = e.find((x) => x.n === 'arrow-hit'); vs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); const tp = e.find((x) => x.n === 'plumb-topple'); if (tp) { tTop = tp.t; sTop = tp.s; } }
+    while (!(m._toppleT >= 0) && n < 8) { calm(m); const e = await shoot('hunter', wpos(m._vialWp.obj), 700, true, m._vialWp.obj); n++; vh.push(m._vialHits); vd.push({ first: K.lastShot?.first ?? null, predMissM: K.lastShot?.predMissM ?? null, flight: K.lastFlight }); const h = e.find((x) => x.n === 'arrow-hit'); vs.push(e.find((x) => x.n === 'machine-damaged')?.vol ?? (h ? \`hit \${h.kind ?? 'world'}\` : 'no hit')); const tp = e.find((x) => x.n === 'plumb-topple'); if (tp) { tTop = tp.t; sTop = tp.s; } }
     out.topple = { arrows: n, vialHitsSeq: vh, struck: vs, toppled: m._toppleT >= 0, diag: vd };
     if (!(m._toppleT >= 0)) { await lower(); return { num: out, pass: false, error: 'never toppled' }; }
     tTop = tTop ?? performance.now();
