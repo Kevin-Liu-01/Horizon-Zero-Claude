@@ -865,7 +865,10 @@ export class Melee {
       const lay0 = this.layer;
       const takeWait = !!(lay0?.ok && lay0.needsTake) && (this._takeWait || 0) < TAKE_WAIT_MAX;
       if (takeWait) this._takeWait = (this._takeWait || 0) + stanceDt; else if (!lay0?.needsTake) this._takeWait = 0;
-      if (!bowHeld && !takeWait) this._drawT += stanceDt;
+      // (M1a weapons round 2, the brief's roll rule: "the owner keeps the weapon ... the sequence resumes at its present
+      //  phase on landing": once the left fist has the haft, the draw holds its phase through a roll)
+      const rollHold = !!p?.dodging && !!(lay0?.ok && lay0.lanceOwner && lay0.lanceOwner() !== 'carry');
+      if (!bowHeld && !takeWait && !rollHold) this._drawT += stanceDt;
       /* THE STEP-IN STARTS WITH THE DRAW (round 6, R7 on the real input
        * path). A click from holstered plays the draw first (ruling R5), and
        * where she stopped walking up to a big machine is its FULL standoff —
@@ -924,7 +927,8 @@ export class Melee {
       const lay1 = this.layer;
       const seatWait = !!(lay1?.ok && lay1.needsTake) && (this._takeWait || 0) < TAKE_WAIT_MAX;
       if (seatWait) this._takeWait = (this._takeWait || 0) + stanceDt; else if (!lay1?.needsTake) this._takeWait = 0;
-      if (!seatWait) this._drawT += stanceDt;
+      const rollHold1 = !!p?.dodging && !!(lay1?.ok && lay1.lanceOwner && lay1.lanceOwner() === 'handL');
+      if (!seatWait && !rollHold1) this._drawT += stanceDt;
       const HT = this._holsterDur || HOLSTER_T;
       if (this._drawT >= HT && this._waitForHand(stanceDt)) {
         this._drawT = HT * 0.75;

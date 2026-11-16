@@ -3636,7 +3636,10 @@ export class MeleeLayer {
     // (on the stow, while the right fist still has it, the left closes on the held haft at its socket)
     if (this._held && stance !== 'holster') { D.lTakeMiss = -1; return -1; }
     // (the hand's weight on the haft is the carry's own `hold`, not the layer's fade-in: the fist that has the haft has it)
-    const h = clamp(L.hold, 0, 1), wa = Math.max(w, h);
+    // (...except through a roll: there the layer's own weight, as the free left arm has, so the roll's tuck carries the
+    //  fist and the haft with it: held at full weight, the fist on the carried line rose over the tucked shoulder, the
+    //  sweep's blendUnstowLanceRollHalf read 3 head-plane steps at ff3afb9, 0 at 5170040)
+    const h = clamp(L.hold, 0, 1), wa = (an._dodgeW || 0) > 0.01 ? w : Math.max(w, h);
     if (this._held) { this._gripChar(_lohP); this._shaftChar(_lohD); _lohP.addScaledVector(_lohD, LC_S - GRIP_FRAC * this.length); }
     else { _lohP.copy(L.pt); _lohD.copy(L.dir); }
     _pole.set(0.72, -0.62, -0.18).normalize();
