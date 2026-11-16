@@ -54,37 +54,44 @@ export const GATES = [
       await sleep(80);
       const tick = (a.cueCounts()['ui/tick'] || 0) - c0;
 
-      // 20 lamp changes on the scene's own Instruments
+      // 20 lamp changes on the scene's own Instruments: the AI-driven kinds (the Gauge keeper's job overrides its
+      // state), the first such kind and those within 100 m of it, Brea stood 12 m off (every one inside the chirp's
+      // 120 m); each change confirmed on the lamp itself (lampStateFor), so the denominator is changes that happened
+      const { lampStateFor } = await import('/src/instruments/lamps.js');
       const P = __CTX__.player;
-      const list = (__CTX__.machines?.list || []).filter(m => m.alive && typeof m.forceState === 'function');
+      const all = (__CTX__.machines?.list || []).filter(m => m.alive && typeof m.forceState === 'function' && m.kind !== 'gauge');
       let lamp = null;
-      if (list.length) {
+      if (all.length) {
+        const m0 = all[0];
+        const ms = all.filter(m => Math.hypot(m.position.x - m0.position.x, m.position.z - m0.position.z) < 100).slice(0, 4);
         const home = { x: P.position.x, y: P.position.y, z: P.position.z };
-        const ms = list.slice(0, 4);
-        const m0 = ms[0];
         const counts0 = a.cueCounts();
         const st0 = { ...S.lamp };
         const log = [];
+        let changed = 0, asked = 0;
         try {
           P.position.x = m0.position.x + 12; P.position.z = m0.position.z;
           if (P._snapToGround) P._snapToGround();
           await sleep(300);
-          const seq = ['suspicious', 'alert', 'search', 'patrol', 'dark'];
-          let want = 0;
-          for (const s of seq) {
-            for (const m of ms) {
-              if (s === 'dark') { if (m.sc) m.sc.lampDarkT = 3; else m.lampDarkT = 3; }
-              else m.forceState(s);
-              want++;
-              await sleep(90);
-              log.push({ kind: m.kind, s, lamp: m.lampState, d: +Math.hypot(m.position.x - P.position.x, m.position.z - P.position.z).toFixed(1) });
-            }
+          const seq = ['suspicious', 'alert', 'search', 'patrol', 'dark', 'undark'];
+          for (let k = 0; changed < 20 && k < 60; k++) {
+            const m = ms[k % ms.length];
+            const s = seq[Math.floor(k / ms.length) % seq.length];
+            const before = lampStateFor(m);
+            if (s === 'dark') { if (m.sc) m.sc.lampDarkT = 30; else m.lampDarkT = 30; }
+            else if (s === 'undark') { if (m.sc) m.sc.lampDarkT = 0; else m.lampDarkT = 0; m.forceState('patrol'); }
+            else m.forceState(s);
+            asked++;
+            await sleep(120);
+            const after = lampStateFor(m);
+            if (after !== before) changed++;
+            log.push({ kind: m.kind, s, before, after, d: +Math.hypot(m.position.x - P.position.x, m.position.z - P.position.z).toFixed(1) });
           }
           await sleep(200);
           const counts1 = a.cueCounts();
           const chirps = ['calm', 'wary', 'hostile', 'dark'].reduce((n, k) => n + ((counts1['lamp/' + k] || 0) - (counts0['lamp/' + k] || 0)), 0);
-          lamp = { machines: ms.map(m => m.kind), changes: S.lamp.changes - st0.changes, chirpsVoiced: S.lamp.chirps - st0.chirps,
-            chirpCues: chirps, missed: S.lamp.missed - st0.missed, outOfRange: S.lamp.outOfRange - st0.outOfRange, want, log: log.slice(0, 20) };
+          lamp = { machines: ms.map(m => m.kind), asked, changedOnLamp: changed, changes: S.lamp.changes - st0.changes, chirpsVoiced: S.lamp.chirps - st0.chirps,
+            chirpCues: chirps, missed: S.lamp.missed - st0.missed, outOfRange: S.lamp.outOfRange - st0.outOfRange, log };
         } finally {
           for (const m of ms) { if (m.sc) m.sc.lampDarkT = 0; else m.lampDarkT = 0; try { m.forceState('patrol'); } catch (e) {} }
           P.position.x = home.x; P.position.y = home.y; P.position.z = home.z;
@@ -99,7 +106,8 @@ export const GATES = [
         sixBusTrims: trims.amb > 0 && trims.inst > 0 && trims.brea > 0,
         themeStems: ['strings', 'whistle', 'pedal', 'ratchet'].every(k => stems.includes(k)) && !!a.music?.available,
         glassTick: tick === 1,
-        lampChirps: !!lamp && lamp.want === 20 && lamp.changes >= 20 && lamp.chirpsVoiced >= 20 && lamp.chirpCues >= 20,
+        // every change the director saw is chirped (the AI may add changes of its own between the staged ones)
+        lampChirps: !!lamp && lamp.changedOnLamp >= 20 && lamp.changes >= 20 && lamp.chirpsVoiced === lamp.changes && lamp.chirpCues === lamp.changes,
       };
       const failed = Object.keys(checks).filter(k => !checks[k]);
       return { pass: lamp ? failed.length === 0 : null, detail: {
