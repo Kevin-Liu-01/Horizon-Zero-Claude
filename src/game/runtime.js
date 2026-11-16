@@ -38,6 +38,8 @@ const lerp = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, z: a.z + (b.z - a.z) * k 
 /** M1b pacing: the three Peg swarms' centres along the transect (pans 0 -> beach 1) and each stretch's half length. */
 const SWARMS = Object.freeze([0.2, 0.5, 0.8]);
 const SWARM_HALF = 0.05;
+/** M1b: the share of its health the ditch's Plumb keeps until its bob is pried (see `_keepForPry`). */
+const PRY_FLOOR = 0.12;
 
 export class SystemsGame {
   constructor(ctx) {
@@ -275,8 +277,30 @@ export class SystemsGame {
     } else if (what === 'plumb' && has('plumb')) {
       const s = this.A.station;
       const m = M.spawn('plumb', s.x, s.z, {});
-      if (m) this.spawned.plumb.push(m);
+      if (m) { this._keepForPry(m); this.spawned.plumb.push(m); }
     }
+  }
+
+  /**
+   * M1b: THE DITCH'S PLUMB LIVES UNTIL ITS BOB IS PRIED. The slice teaches "two hits on the vial, then Pry the bob
+   * while it is down", and nothing else ends the 'ditch', 'topple' and 'pry' stages: a Plumb killed before its bob
+   * comes off left the quest with no Plumb to pry (de71979: four Reed arrows round the vial took 190 hp to 10, and the
+   * Barbed arrow on the toppled bob killed it; the stage stood at 'pry' with 'no live plumb'). While one of those
+   * stages runs and the bob is on, a hit still lands in full (its damage, reactions and events) but leaves it at
+   * PRY_FLOOR of its health at least; once the bob is off, or after the quest, it dies as any Instrument does.
+   */
+  _keepForPry(m) {
+    const td = m.takeDamage.bind(m), spine = this.spine;
+    m.takeDamage = (hit) => {
+      const st = spine?.current?.()?.id;
+      const keep = (st === 'ditch' || st === 'topple' || st === 'pry') && m.alive !== false && m._bob?.attached !== false;
+      if (!keep) return td(hit);
+      const h0 = m.health, room = 1e6, floor = Math.max(1, PRY_FLOOR * (m.maxHealth || 1));
+      m.health = h0 + room;
+      try { return td(hit); } finally {
+        if (m.alive !== false) m.health = Math.max(Math.min(h0, floor), m.health - room);
+      }
+    };
   }
 
   /* ---------------------------------------------------------- events */
