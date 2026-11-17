@@ -329,6 +329,9 @@ export async function stageFrame(f, o = {}) {
           const fall = r.m.constructor?.TOPPLE?.fallS ?? 0.42;
           r.m._toppleT = 0; r.m._poseTopple((r.a.toppleAt ?? 0.85) * fall);
           r.m.root?.updateMatrixWorld?.(true);
+          // held: the machines' loop still animates a kind (its own update off or not), and the topple would run on
+          // through its 4 s and stand (c63cbe5's F25: filmed upright)
+          const pt0 = r.m._poseTopple; r.m._poseTopple = function () {}; undo.push(() => { r.m._poseTopple = pt0; });
         } catch (e) { standIns.push(`Instrument '${r.a.kind}': topple not staged (${e.message})`); }
       }
     } else if (r.q) {
