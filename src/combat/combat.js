@@ -848,7 +848,11 @@ export class Combat {
     // --- aim FOV zoom per weapon (real dt so hitstop doesn't freeze the ease)
     const cam = ctx.camera;
     const aimFov = (w?.noZoom) ? FOV_HIP : (w?.aimFov ?? 44);
-    const targetFov = aiming ? aimFov : FOV_HIP;
+    // M1.8c (engine lane, the smallest change): off the aim the lens eases to the player's own FOV (the settings' FOV
+    // and the sprint's widening, player._updateFov), not a fixed 55: the two eases fought, and the FOV slider read 77.6
+    // for 80 (reach rows at 9f8bc85)
+    const hipFov = Number.isFinite(player?.fovBase) ? player.fovBase + (player.fovBias || 0) : FOV_HIP;
+    const targetFov = aiming ? aimFov : hipFov;
     // M1.3e: the hit's FOV punch rides on top of the ease as an offset; the ease runs on the lens without it (when
     // the player's own FOV wrote the lens since combat last did, the lens holds no punch to take off)
     this.hitFeel.update(now);
