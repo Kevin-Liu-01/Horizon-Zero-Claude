@@ -219,12 +219,16 @@ async function solveShot(mi, part, tolDeg) {
   dts.sort((a, b) => a - b);
   const dt = dts.length ? dts[dts.length >> 1] : 1 / 60;
   const lat = 2 * (span > 0 ? span / 8 : 1 / 60);
-  const want = part === 'vial' ? 'weak:vial' : part === 'bob' ? 'bob' : part === 'lamp' ? 'weak:lamp' : null;
+  const want = part === 'vial' ? 'weak:vial' : part === 'bob' ? 'bob' : part === 'lamp' ? 'weak:lamp' : part === 'alert' ? 'any' : null;
   const aims = [];
   if (part === 'vial' && m._vialWp?.obj) {
     const w = m._vialWp, c = w.obj.getWorldPosition(new V());
     if (w.axis && w.half > 0) for (const u of [0, 0.45, -0.45, 0.8, -0.8]) aims.push(w.axis.clone().multiplyScalar(w.half * u).applyMatrix4(w.obj.matrixWorld));
     else aims.push(c);
+  } else if (part === 'alert') {
+    // M1b exit fix: the body (its head's sphere, then the body's middle): any hull of this machine will do
+    for (const o of [m.rig?.head, m.body]) if (o) aims.push(o.getWorldPosition(new V()));
+    if (!aims.length) aims.push(new V(m.position.x, m.position.y + 2, m.position.z));
   } else if (part === 'bob' && m._bob?.mesh && m._bob.attached !== false) {
     // M1b: the bob's own middle (its mesh's origin is the top it hangs from, inside the tail: de71979's Barbed arrow
     // met rig_tail2), then points up its upper side (a toppled Plumb's bob lies on the ground: bab1f0c's kit Barbed
@@ -301,7 +305,7 @@ async function solveShot(mi, part, tolDeg) {
       if (r.d < 0.01) break;
       goal.sub(r.miss);
     }
-    const met = want && r.first && (want === 'bob' ? /bob/i.test(r.first) : r.first === want);
+    const met = want && r.first && (want === 'bob' ? /bob/i.test(r.first) : want === 'any' ? r.first !== 'ground' && !/^other:/.test(r.first) : r.first === want);
     out = { aimIdx: ai, err, missM: +r.d.toFixed(3), first: r.first, ds: +cb.drawStrength.toFixed(2), dt: +dt.toFixed(4),
       ride: +Math.hypot(ride.x, ride.y, ride.z).toFixed(2), rideGlass: !!ride.glass, tf: r.t != null ? +r.t.toFixed(3) : null, steady: cb.steady?.phase ?? null, sway: +(cb.sway?.deg ?? 0).toFixed(3) };
     if (!want || met) return { ...out, clear: true };
@@ -624,7 +628,7 @@ async function readyBow(page, K) {
 async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000, tolDeg = 0.35, reach = 70, near = null, nearR = 0, untilDown = false, whileDown = false, breakOffHp = 0 } = {}) {
   const t0 = Date.now();
   const stage0 = (await page.evaluate(probe)).stage;
-  let fired = 0, aimed = false, blocked = 0, stand0 = null, ditchScans = null;
+  let fired = 0, aimed = false, blocked = 0, stand0 = null, ditchScans = null, unawareMiss = 0;
   const kites = [];
   const tried = [];
   const scans = [];
@@ -741,7 +745,13 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       if (!aimed) { await K.mouse('right', true); await sleep(380); aimed = true; }
       // M1b: a player looses on the Plumb while it stands for a reading (8-15 s at each survey station), not while it
       // walks: the runner holds the aim (no draw, no Steady spent) up to 9 s for it to stop; the solve leads it if not
-      const still = part === 'vial' ? await page.evaluate(waitStill, t.i, 9000) : null;
+      // M1b exit fix: AN UNAWARE PLUMB'S GLASS. At 804543d run 3 ten vial arrows at the dyke Plumb in 'patrol' (its root and
+      // glass still, the game's own predicted flight on the glass, 13-15 m) met nothing at all, and the topple ran out of time;
+      // every vial hit in the lane's and the exit's runs was on a Plumb in 'attack' (BACKLOG: why the flight and its
+      // prediction part there). After two such misses she puts one arrow in its body, and shoots the glass of the Plumb
+      // that turns on her
+      const shotPart = part === 'vial' && unawareMiss >= 2 && (t.state === 'patrol' || t.state === 'suspicious' || t.state === 'return') ? 'alert' : part;
+      const still = shotPart === 'vial' ? await page.evaluate(waitStill, t.i, 9000) : null;
       const hp0 = await page.evaluate((i) => { const m = window.__CTX__.machines.list[i]; return m ? { vial: m._vialHits ?? null, hp: Math.round(m.health) } : null; }, t.i);
       // M1.6j Steady: a fresh breath for every shot (Shift let go and pressed again while aiming: 4 s of no sway)
       await K.up('ShiftLeft'); await sleep(50); await K.down('ShiftLeft'); await sleep(60);
@@ -755,10 +765,10 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       // loose meets something else first (6fa199d: 9 of 27 Peg shots were loosed on a flight the runner itself read as
       // 'ground' or the Peg's pelvis; 6 Pegs took 27 arrows)
       while (Date.now() - tD < drawMs || (sol && sol.ds < 0.99 && Date.now() - tD < drawMs + 800) || (part === 'lamp' && sol && !sol.clear && Date.now() - tD < drawMs + 1500)) {
-        sol = await page.evaluate(solveShot, t.i, part, tolDeg);
+        sol = await page.evaluate(solveShot, t.i, shotPart, tolDeg);
         if (!sol) break;
       }
-      if (sol && !sol.clear && part !== 'bob' && part !== 'lamp') {
+      if (sol && !sol.clear && part !== 'bob' && part !== 'lamp' && shotPart !== 'alert') {
         // every point along the part is masked from here by something else: step round it (20 deg) and draw again
         await up('left'); await release();
         blocked++;
@@ -791,7 +801,9 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       loose.ammoAfter = await page.evaluate(() => { const C = window.__CTX__; return C.combat?.ammo?.[C.combat?.activeWeapon?.activeAmmo ?? 'hunter'] ?? null; });
       const hp1 = await page.evaluate((i) => { const m = window.__CTX__.machines.list[i]; return m ? { vial: m._vialHits ?? null, hp: Math.round(m.health), down: (m._toppleT ?? -1) >= 0 } : null; }, t.i);
       if (part === 'vial' && hp1 && hp0 && (hp1.down || (hp1.vial ?? 0) > (hp0.vial ?? 0))) { const sp = (await page.evaluate(probe)).p; vialGood = { x: sp.x, z: sp.z }; }
-      shots.push({ kind, part, ammo, d: +t.d.toFixed(1), aimErr: sol?.err ?? a.err, predicted: sol && { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds, dt: sol.dt, ride: sol.ride, tf: sol.tf }, still, hpBefore: t.hp, down: t.down, steady: sw.st, swayDeg: sw.sway,
+      if (shotPart === 'alert') unawareMiss = 0;
+      else if (part === 'vial' && hp1 && hp0 && !hp1.down && (hp1.vial ?? 0) <= (hp0.vial ?? 0) && (t.state === 'patrol' || t.state === 'suspicious' || t.state === 'return')) unawareMiss++;
+      shots.push({ kind, part, ...(shotPart !== part ? { shotPart } : {}), state: t.state, ammo, d: +t.d.toFixed(1), aimErr: sol?.err ?? a.err, predicted: sol && { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds, dt: sol.dt, ride: sol.ride, tf: sol.tf }, still, hpBefore: t.hp, down: t.down, steady: sw.st, swayDeg: sw.sway,
         vialHits: hp1 && hp0 ? [hp0.vial, hp1.down ? 'topple' : hp1.vial] : null, hpAfter: hp1?.hp ?? null, loose });
     }
   } finally { await release(); }
