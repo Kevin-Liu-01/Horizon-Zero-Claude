@@ -821,7 +821,10 @@ async function beat(page, K, s) {
         return best ? { x: best.x + Math.sin(best.yaw) * 8, z: best.z + Math.cos(best.yaw) * 8, cx: best.x, cz: best.z } : null;
       }, s.anchor.x, s.anchor.z);
       if (ap) {
-        const r0 = await walkTo(page, K, ap, 1.5);
+        let r0 = await walkTo(page, K, ap, 1.5);
+        // M1b exit fix: stuck on the straight line (edd1c95 run 1: 31.1 m short, after the Peg line's kiting left her
+        // elsewhere), the rest of the way on the nav grid, as a player picks a way round
+        if (!r0.ok && /stuck|timed out/.test(String(r0.why ?? ''))) r0 = { ...(await walkPath(page, K, ap, 1.5, { maxS: 90 })), retried: r0.why };
         if (!r0.ok) return { ...r0, why: `approach to the steps: ${r0.why}` };
         const r1 = await walkTo(page, K, { x: ap.cx, z: ap.cz }, 1.2, { up: s.up, maxS: 60 });
         return r1;
