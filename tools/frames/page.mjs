@@ -51,6 +51,19 @@ export async function stageFrame(f, o = {}) {
   try { if (C.combat?.melee?.lanceInHand || (C.combat?.melee?.stance && C.combat.melee.stance !== 'holstered')) C.combat.melee.holsterLance(true); } catch (e) { /* */ }
   if (C.combat) { C.combat._holsterT = 0; C.combat._drawing = false; }
   try { C.combat?.arrows?.recycleAll?.(); } catch (e) { /* */ }
+  /* (wave 7, world: F23-plumb only) F23 (Plumb) is an idle staged on the wall clock, and the idle's breaks (the head
+   *  scan, the quiver-strap adjust, the bow grip: locomotionDriver `_fidgetT`, a 6-12 s timer on real dt) caught the
+   *  strap adjust, her right arm out at the shoulder, in 1 film of 4 at 7474b9f; the anchor has her arms down. The
+   *  break in progress ends here and none starts until unstage (as the sheets' poseIdle holds it), so every film
+   *  shows the neutral idle */
+  if (f.id === 'F23-plumb') {
+    const an = p.animator;
+    if (an && an._fidgetK != null) {
+      const t0 = an._fidgetT;
+      an._fidgetK = 1; an._fidgetT = 1e9;
+      undo.push(() => { an._fidgetT = Number.isFinite(t0) && t0 < 1e8 ? t0 : 6; });
+    }
+  }
 
   /* ---- 1. where ---- */
   const GP = C.props?.gatePlaces || {};
