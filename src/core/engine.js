@@ -2336,7 +2336,9 @@ export class Engine {
       // The compile is the same synchronous call `compileAsync` makes first;
       // only the readiness WAIT is ours now. `_awaitProgramsReady` says why
       // the raced `compileAsync` had to go.
-      this.renderer.compile(scene, camera);
+      // M1.8c: compiled as the scene pass draws them (the composer's target bound): with no target bound three built
+      // every program in its on-screen variant (tone mapped, sRGB out), and the first real frame linked them all again
+      this.compileAsDrawn(scene, camera, scene);
       await this._awaitProgramsReady(timeoutMs);
     } catch (err) {
       console.warn('[CAL] shader warm-up skipped:', err?.message || err);

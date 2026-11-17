@@ -244,6 +244,10 @@ try {
         await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
         const nSys = await boot();
         const titleS = (Date.now() - t0) / 1000;
+        // the boot sheet: held over the title until the deferred warm-up and warm frames (src/ui/title.js)
+        await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('hidden'), { timeout: 30000, polling: 20 }).catch(() => {});
+        const bootSheetS = (Date.now() - t0) / 1000;
+        log(`title ${titleS} s, boot sheet closed ${bootSheetS} s`);
         await sleep(500);
         await page.keyboard.press('Enter');
         await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 60000, polling: 50 });
@@ -255,7 +259,7 @@ try {
         await page.waitForFunction(() => window.__CTX__?.state === 'playing' && window.__CTX__?.spine?.started, { timeout: 60000, polling: 50 });
         await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('hidden'), { timeout: 30000, polling: 20 }).catch(() => {});
         await sleep(PLAY_S * 1000);
-        run.boot = { titleS, systemsTimed: nSys, load1: load1(), rungWarm: await E(() => window.__CTX__.engine.bootRungWarm ?? null), programsAtTitle: await E(() => window.__CTX__.engine.renderer.info.programs?.length ?? null), ...(await E(longFrames, { since: tClick, over: 33.4 })) };
+        run.boot = { titleS, bootSheetS, firstFrame: await E(() => ({ warmUpMs: window.__CTX__.engine.warmUpMs, programs: window.__CTX__.engine.warmUpPrograms })), systemsTimed: nSys, load1: load1(), rungWarm: await E(() => window.__CTX__.engine.bootRungWarm ?? null), programsAtTitle: await E(() => window.__CTX__.engine.renderer.info.programs?.length ?? null), ...(await E(longFrames, { since: tClick, over: 33.4 })) };
         log(`boot rung warm-up: ${JSON.stringify(run.boot.rungWarm)}`);
         run.boot.playFrames = await E((s) => { const f = window.__hp.frames.filter((x) => x.t >= s && x.state === 'playing' && !x.sheet); return { n: f.length, over33: f.filter((x) => x.d > 33.4).length, over50: f.filter((x) => x.d > 50).length, max: Math.max(0, ...f.map((x) => x.d)) }; }, tClick);
         log(`boot: title ${titleS} s; after the sheet: ${JSON.stringify(run.boot.playFrames)}; long frames since NEW GAME ${run.boot.long.length}`);
