@@ -230,7 +230,7 @@ export async function stageFrame(f, o = {}) {
         try { m.dispose?.(); } catch (e) { /* */ }
         m.root?.parent?.remove(m.root);
       });
-      if (a.state === 'topple') standIns.push(`Instrument '${a.kind}': no topple state yet, filmed standing`);
+      if (a.state === 'topple' && typeof m._topple !== 'function') standIns.push(`Instrument '${a.kind}': no topple state yet, filmed standing`);
       if (a.standInFor) standIns.push(`a ${a.kind} stands in for ${a.standInFor}`);
     }
   }
@@ -319,6 +319,18 @@ export async function stageFrame(f, o = {}) {
       // her through the settle and was filmed hostile (F23-peg at 8d18c28); the meadow had hidden her
       if (r.a.calm) { try { r.m.suspicion = 0; if (r.m.sc) r.m.sc.suspicion = 0; r.m._unseenT = 99; if (r.m.state !== 'patrol') r.m.setState?.('patrol'); if (r.m.state !== 'patrol') r.m.state = 'patrol'; } catch (e) { standIns.push(`Instrument '${r.a.kind}': not calmed (${e.message})`); } }
       const u0 = r.m.update; r.m.update = function () {}; undo.push(() => { r.m.update = u0; });
+      // (systems, M1b exit fix, the smallest change) `state: 'topple'`: the Plumb's own topple (plumb.js _topple, felled
+      // away from her as a hit from her side fells it) posed at TOPPLE_AT of its fall and held there (its update is off
+      // above), without its event (the quest and the audio do not hear a staged topple)
+      if (r.a.state === 'topple' && typeof r.m._topple === 'function' && typeof r.m._poseTopple === 'function') {
+        try {
+          const em = r.m.emit; r.m.emit = () => {};
+          try { r.m._topple({ x: bx, y: 0, z: bz }); } finally { r.m.emit = em; }
+          const fall = r.m.constructor?.TOPPLE?.fallS ?? 0.42;
+          r.m._toppleT = 0; r.m._poseTopple((r.a.toppleAt ?? 0.85) * fall);
+          r.m.root?.updateMatrixWorld?.(true);
+        } catch (e) { standIns.push(`Instrument '${r.a.kind}': topple not staged (${e.message})`); }
+      }
     } else if (r.q) {
       const tx = r.a.face === 'camera' ? lens.pos.x : bx, tz = r.a.face === 'camera' ? lens.pos.z : bz;
       const want = Math.atan2(tx - r.x, tz - r.z);

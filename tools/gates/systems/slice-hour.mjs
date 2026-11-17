@@ -202,10 +202,20 @@ async function solveShot(mi, part, tolDeg) {
   // node at 4c5384a and e30af7b's parent: an attacking Plumb's vial reads 3.7 m/s as it turns, a rotation the linear ride
   // cannot carry, and the hull sweep in that riding frame then read its head across every line: 13 stands 'masked')
   const p0 = m.position.clone(), s0 = E.simTime, dts = [];
+  const gv0 = part === 'vial' && m._vialWp?.obj ? m._vialWp.obj.getWorldPosition(new V()) : null;
   let sPrev = s0;
   for (let i = 0; i < 8; i++) { await raf(); const st = E.steps || 0; if (st > 0 && E.simTime > sPrev) dts.push((E.simTime - sPrev) / st); sPrev = E.simTime; }
   const span = E.simTime - s0;
-  const ride = span > 0.02 ? { x: (m.position.x - p0.x) / span, y: 0, z: (m.position.z - p0.z) / span } : { x: 0, y: 0, z: 0 };
+  let ride = span > 0.02 ? { x: (m.position.x - p0.x) / span, y: 0, z: (m.position.z - p0.z) / span } : { x: 0, y: 0, z: 0 };
+  // M1b exit fix: a standing Plumb that has not turned on her (patrol, suspicious) sweeps its head through its reading:
+  // the root ride is 0 while the glass moves. Then the glass's own motion over the same frames is the ride (capped at
+  // 0.6 m/s; an attacking Plumb turns its whole body on her, a rotation the linear ride cannot carry, round 3 above)
+  if (part === 'vial' && gv0 && span > 0.02 && Math.hypot(ride.x, ride.z) < 0.12 && (m.state === 'patrol' || m.state === 'suspicious')) {
+    const g1 = m._vialWp.obj.getWorldPosition(new V());
+    const gr = { x: (g1.x - gv0.x) / span, y: (g1.y - gv0.y) / span, z: (g1.z - gv0.z) / span }, gs = Math.hypot(gr.x, gr.y, gr.z);
+    if (gs > 0.6) { gr.x *= 0.6 / gs; gr.y *= 0.6 / gs; gr.z *= 0.6 / gs; }
+    ride = gr; ride.glass = true;
+  }
   dts.sort((a, b) => a - b);
   const dt = dts.length ? dts[dts.length >> 1] : 1 / 60;
   const lat = 2 * (span > 0 ? span / 8 : 1 / 60);
@@ -293,7 +303,7 @@ async function solveShot(mi, part, tolDeg) {
     }
     const met = want && r.first && (want === 'bob' ? /bob/i.test(r.first) : r.first === want);
     out = { aimIdx: ai, err, missM: +r.d.toFixed(3), first: r.first, ds: +cb.drawStrength.toFixed(2), dt: +dt.toFixed(4),
-      ride: +Math.hypot(ride.x, ride.y, ride.z).toFixed(2), tf: r.t != null ? +r.t.toFixed(3) : null, steady: cb.steady?.phase ?? null, sway: +(cb.sway?.deg ?? 0).toFixed(3) };
+      ride: +Math.hypot(ride.x, ride.y, ride.z).toFixed(2), rideGlass: !!ride.glass, tf: r.t != null ? +r.t.toFixed(3) : null, steady: cb.steady?.phase ?? null, sway: +(cb.sway?.deg ?? 0).toFixed(3) };
     if (!want || met) return { ...out, clear: true };
   }
   return { ...out, clear: false };
@@ -359,22 +369,33 @@ function scanStands(mi, avoid = [], dists = [12, 15, 18, 22, 26, 30], pts = null
   return { stands: out.slice(0, 6), open: out.length, of: cand.length, masked: why, vial: { x: +c.x.toFixed(2), y: +c.y.toFixed(2), z: +c.z.toFixed(2) }, nockH: +nockH.toFixed(2) };
 }
 
-/** in-page (M1b): wait up to `ms` for the machine to stand (its root under 0.12 m/s over 10 frames); what it read. */
+/**
+ * in-page (M1b): wait up to `ms` for the machine to stand (its root under 0.12 m/s over 10 frames); what it read.
+ * M1b exit fix: and its GLASS still (the vial's own world point under 0.08 m/s over those frames). A Plumb standing for a
+ * reading sweeps its head (perception scanSweep): at 701b366 run 1 loosed six arrows from 19.6-19.8 m at a Plumb whose
+ * root stood still (speed 0, 'patrol') and every one met nothing; across the exit's runs and the lane's, not one vial
+ * shot at a patrolling or suspicious Plumb struck, while the glass of an alerted one (its head held on her) was hit
+ * from 9-17 m. A player waits for the glass to stop before loosing.
+ */
 async function waitStill(mi, ms) {
   const C = window.__CTX__, m = C.machines.list[mi], E = C.engine;
   const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
   const t0 = performance.now();
-  let v = null;
+  const V = C.camera.position.constructor, g0 = new V(), g1 = new V();
+  const glass = m?._vialWp?.obj ?? null;
+  let v = null, vg = null;
   while (m && m.alive !== false) {
     const p = m.position.clone(), s = E.simTime;
+    if (glass) glass.getWorldPosition(g0);
     for (let i = 0; i < 10; i++) await raf();
     const span = E.simTime - s;
     v = span > 0.02 ? Math.hypot(m.position.x - p.x, m.position.z - p.z) / span : 0;
+    vg = glass && span > 0.02 ? glass.getWorldPosition(g1).distanceTo(g0) / span : 0;
     // M1b round 3: and not while it staggers from the last hit (4c5384a: a shot loosed into the stagger after the first vial
     // hit, read as a hit on the vial, met nothing)
-    if ((v < 0.12 && m.state !== 'stagger') || performance.now() - t0 > ms) break;
+    if ((v < 0.12 && vg < 0.08 && m.state !== 'stagger') || performance.now() - t0 > ms) break;
   }
-  return { waitedS: +((performance.now() - t0) / 1000).toFixed(1), speed: v == null ? null : +v.toFixed(2), state: m?.state ?? null };
+  return { waitedS: +((performance.now() - t0) / 1000).toFixed(1), speed: v == null ? null : +v.toFixed(2), glass: vg == null ? null : +vg.toFixed(2), state: m?.state ?? null };
 }
 
 function face(x, z) {
@@ -542,10 +563,48 @@ let lampsFight = null;
  * one predicted on it); from under 20 m 12 of 19. The kit's vial-range row measures why; until it passes, the runner
  * stands where the shots land. VIAL_BACK_D is where it backs out to when the Plumb closes inside 9 m.
  */
-const VIAL_MAX_D = 17;
-const VIAL_RING = [13, 15, 17];
-const VIAL_BACK_D = 15;
+// M1b exit fix: 15 (was 17), and no slack past it: at 701b366 run 1 the stand was taken at 17 m and the Plumb's walk had
+// put it at 19.6-19.8 m by the shots (the loop allowed VIAL_MAX_D + 3); every vial hit in the exit's three runs and the
+// lane's six before them left from 9-16.7 m
+const VIAL_MAX_D = 15;
+const VIAL_RING = [12, 13.5, 15];
+const VIAL_BACK_D = 14;
+/** M1b exit fix: where Brea stood when a vial arrow last struck the glass (the stand the run knows hits). */
+let vialGood = null;
 const shots = [];
+
+/** M1b exit fix: the Peg line's distances (m): she sprints off when one is inside PEG_CLOSE, to PEG_OPEN from them
+ * (past a Peg shot's 14 m), and drinks only with none inside PEG_DRINK. */
+const PEG_CLOSE = 6.5;
+const PEG_OPEN = 18;
+const PEG_DRINK = 12;
+const kites = [];
+
+/**
+ * M1b exit fix: sprint away from the Pegs that close on her (their middle), to PEG_OPEN m from it, on open ground (the nav
+ * grid's blocked cells and the water turned round, 30 deg at a time), as a player opens the distance before turning to
+ * shoot again. The look is the walk's (walkTo faces the way she runs).
+ */
+async function kiteFrom(page, K, near) {
+  const s = await page.evaluate(probe);
+  if (!near.length) return { ok: true, why: null };
+  const cx = near.reduce((a, q) => a + q.x, 0) / near.length, cz = near.reduce((a, q) => a + q.z, 0) / near.length;
+  const pt = await page.evaluate((px, pz, cx, cz, R) => {
+    const C = window.__CTX__, N = C.nav, T = C.terrain;
+    const a0 = Math.atan2(px - cx, pz - cz);
+    for (const da of [0, 0.52, -0.52, 1.05, -1.05, 1.57, -1.57]) {
+      const a = a0 + da, x = cx + Math.sin(a) * R, z = cz + Math.cos(a) * R;
+      let ok = true;
+      for (let k = 0.25; k <= 1 && ok; k += 0.25) { const qx = px + (x - px) * k, qz = pz + (z - pz) * k; if (N?.blockedAt?.(qx, qz) || (T?.getHeight?.(qx, qz) ?? 1) < 0.2) ok = false; }
+      if (ok) return { x, z, turned: +(da * 180 / Math.PI).toFixed(0) };
+    }
+    return null;
+  }, s.p.x, s.p.z, cx, cz, PEG_OPEN + 2);
+  if (!pt) return { ok: false, why: 'no open ground to back off to' };
+  const r = await walkTo(page, K, pt, 2.5, { maxS: 6, sprint: true });
+  const s2 = await page.evaluate(probe);
+  return { ok: r.ok, why: r.why ?? null, turned: pt.turned, hp: s2.hp };
+}
 
 /** Bow in hand (slot 1) and Reed arrows on the string; make arrows (hold R) when fewer than 4. */
 async function readyBow(page, K) {
@@ -566,6 +625,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
   const t0 = Date.now();
   const stage0 = (await page.evaluate(probe)).stage;
   let fired = 0, aimed = false, blocked = 0, stand0 = null, ditchScans = null;
+  const kites = [];
   const tried = [];
   const scans = [];
   await page.mouse.move(800, 450);
@@ -587,7 +647,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       // the whole line (all): every live one within 220 m is walked to; one target: the nearest within 70 m
       // `near` (M1b): only those within nearR of that point (the swarm that stands where she crosses)
       const T = (await page.evaluate(targetsOf, kind, part)).filter((t) => t.d < (all ? 220 : reach) && (!near || Math.hypot(t.x - near.x, t.z - near.z) <= nearR));
-      if (!T.length) return { ok: !!all, why: all ? null : `no live ${kind} within ${reach} m`, fired };
+      if (!T.length) return { ok: !!all, why: all ? null : `no live ${kind} within ${reach} m`, fired, ...(kites.length ? { kites } : {}) };
       const t = T[0];
       // M1b fix round: the pry beat's two halves (the vial until it is down; the bob while it is down)
       // fix round 1 (FIX LIST 8): the topple's still, the moment the run sees the Plumb down (F25's state), before she lowers the bow
@@ -595,8 +655,25 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       if (whileDown && !t.down) { await release(); return { ok: false, why: `${kind} stood up`, fired, stoodUp: true }; }
       // M1b fix round: drink between shots (never in the 4 s a Plumb is down: they are the Pry's), and on the Peg line
       // break off and cross when the gourd is dry and the staff low (the lamps are the stage's optional count)
+      // M1b exit fix (THE PEG LINE, CAREFULLY): at 701b366 run 3 she stood her ground as the swarm closed (shots loosed at
+      // 3.9, 2.6, 2.0 and 1.5 m), drank among them, lost 92 hp and left the line on 8 hp; she died on the climb's
+      // approach. A careful player keeps her distance: a Peg inside PEG_CLOSE m and she sprints off (6.8 m/s against
+      // its 5.2) to PEG_OPEN m from the swarm before she turns to shoot again; she drinks only with none within
+      // PEG_DRINK m; and she breaks off for the crossing while the staff can still carry her (under breakOffHp with
+      // less than a drink's worth in the gourd)
+      if (kind === 'peg') {
+        const near = (await page.evaluate(targetsOf, 'peg', 'lamp')).filter((q) => q.d < PEG_OPEN);
+        const closest = near[0]?.d ?? Infinity;
+        if (closest < PEG_CLOSE || (s.hp != null && s.hp < 55 && (s.gourd ?? 0) >= 1 && closest < PEG_DRINK)) {
+          await release();
+          const r = await kiteFrom(page, K, near);
+          kites.push({ from: +closest.toFixed(1), n: near.length, hp: s.hp, ...r });
+          if (r.why === 'died') return { ok: false, why: 'died', fired };
+          continue;
+        }
+      }
       if (!whileDown && s.hp != null && s.hp < 55 && (s.gourd ?? 0) >= 1) { await release(); await drink(page, K, 92); continue; }
-      if (breakOffHp && s.hp != null && s.hp < breakOffHp && (s.gourd ?? 0) < 1) { await release(); return { ok: true, fired, brokeOff: s.hp, ...(scans.length ? { scans } : {}) }; }
+      if (breakOffHp && s.hp != null && s.hp < breakOffHp && (s.gourd ?? 0) < 25) { await release(); return { ok: true, fired, brokeOff: s.hp, kites: kites.length, ...(scans.length ? { scans } : {}) }; }
       // the vial (closing round): she goes to a stand the scan finds open (scanStands), not round a fixed circle
       if (part === 'vial' && !stand0) {
         await release();
@@ -611,16 +688,25 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
           return out;
         });
         let sc = null;
-        if (ditchPts) {
+        // M1b exit fix: THE STAND IT KNOWS HITS first: where a vial arrow last struck from, while the Plumb is still 10 m
+        // to VIAL_MAX_D from it and the flight from there still reaches the glass (a player goes back to where it worked)
+        if (vialGood) {
+          const dk = Math.hypot(vialGood.x - t.x, vialGood.z - t.z);
+          if (dk >= 10 && dk <= VIAL_MAX_D) {
+            const ksc = await page.evaluate(scanStands, t.i, [], undefined, [vialGood]);
+            if (ksc?.stands?.[0] && ksc.stands[0].clear >= 2) { sc = ksc; sc.known = true; }
+          }
+        }
+        if (!sc && ditchPts) {
           const dsc = await page.evaluate(scanStands, t.i, tried, undefined, ditchPts.filter((q) => { const d = Math.hypot(q.x - t.x, q.z - t.z); return d >= 10 && d <= VIAL_MAX_D; }));
           if (dsc) { (ditchScans ||= []).push({ of: dsc.of, open: dsc.open, masked: dsc.masked, stands: dsc.stands.slice(0, 3) }); if (dsc.stands[0] && dsc.stands[0].clear >= 2) sc = dsc; }
         }
         if (!sc) sc = await page.evaluate(scanStands, t.i, tried, VIAL_RING);
-        scans.push(sc && { open: sc.open, masked: sc.masked, vial: sc.vial, nockH: sc.nockH, best: sc.stands[0] ?? null, from: { x: +s.p.x.toFixed(1), z: +s.p.z.toFixed(1) } });
+        scans.push(sc && { open: sc.open, masked: sc.masked, vial: sc.vial, nockH: sc.nockH, best: sc.stands[0] ?? null, from: { x: +s.p.x.toFixed(1), z: +s.p.z.toFixed(1) }, ...(sc.known ? { known: true } : {}) });
         const best = sc?.stands?.[0];
         if (!best) return { ok: false, why: `${kind} ${part}: no open stand found round it (${JSON.stringify(sc?.masked ?? {})})`, fired, scans };
         stand0 = best;
-        tried.push({ x: best.x, z: best.z });
+        if (!sc.known) tried.push({ x: best.x, z: best.z });
         const w = best.walk > 30 ? await walkPath(page, K, best, 1.5, { maxS: 60, sprint: true }) : await walkTo(page, K, best, 1.5, { maxS: 30, sprint: best.walk > 8 });
         if (w.why === 'died') return { ok: false, why: 'died', fired, scans };
         continue;
@@ -628,7 +714,8 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       // M1b round 3: the vial is shot from VIAL_MAX_D at most. At a8c0b83 fifteen vial shots from 33-57 m (flights of
       // 0.6-0.93 s, the solve itself 3-8 cm off a glass 4.5 cm in radius) were loosed and met nothing at all; every shot
       // from 11-22 m in the same build's runs struck the vial. When the Plumb's walk has taken it past that, scan again
-      if (part === 'vial' && stand0 && t.d > VIAL_MAX_D + 3) { await release(); stand0 = null; continue; }
+      // (M1b exit fix: + 1, was + 3: the six misses of 701b366's run 1 left from 19.6-19.8 m off a 17 m stand)
+      if (part === 'vial' && stand0 && t.d > VIAL_MAX_D + 1) { await release(); stand0 = null; continue; }
       if (part !== 'vial' && t.d > stand + 6) {
         await release();
         const k = (t.d - stand) / t.d;
@@ -703,6 +790,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       loose.events = await page.evaluate(() => (window.__shotEv || []).slice(0, 6));
       loose.ammoAfter = await page.evaluate(() => { const C = window.__CTX__; return C.combat?.ammo?.[C.combat?.activeWeapon?.activeAmmo ?? 'hunter'] ?? null; });
       const hp1 = await page.evaluate((i) => { const m = window.__CTX__.machines.list[i]; return m ? { vial: m._vialHits ?? null, hp: Math.round(m.health), down: (m._toppleT ?? -1) >= 0 } : null; }, t.i);
+      if (part === 'vial' && hp1 && hp0 && (hp1.down || (hp1.vial ?? 0) > (hp0.vial ?? 0))) { const sp = (await page.evaluate(probe)).p; vialGood = { x: sp.x, z: sp.z }; }
       shots.push({ kind, part, ammo, d: +t.d.toFixed(1), aimErr: sol?.err ?? a.err, predicted: sol && { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds, dt: sol.dt, ride: sol.ride, tf: sol.tf }, still, hpBefore: t.hp, down: t.down, steady: sw.st, swayDeg: sw.sway,
         vialHits: hp1 && hp0 ? [hp0.vial, hp1.down ? 'topple' : hp1.vial] : null, hpAfter: hp1?.hp ?? null, loose });
     }
@@ -746,7 +834,8 @@ async function beat(page, K, s) {
       const mid = await page.evaluate(() => window.__CTX__.systemsGame.A.transect);
       // fix round: she drinks under 55 hp between shots, and breaks off to cross under 30 hp with the gourd dry
       await drink(page, K, 95);
-      const f = await fight(page, K, 'peg', 'lamp', null, { stand: 18, maxS: 120, all: true, near: mid, nearR: 40, breakOffHp: 30 });
+      // (M1b exit fix: she breaks off under 45 hp with less than a drink in the gourd, was under 30 with it dry)
+      const f = await fight(page, K, 'peg', 'lamp', null, { stand: 18, maxS: 120, all: true, near: mid, nearR: 40, breakOffHp: 45 });
       if (f.why === 'died') return f;
       lampsFight = f;
     }
@@ -789,6 +878,16 @@ async function beat(page, K, s) {
     const r = await walkTo(page, K, s.anchor, Math.max(1.5, s.radius - 1), { up: s.up });
     await sleep(300);
     await playScene(page, K);
+    // M1b exit fix: over the line, she drinks before the climb (none of the swarm within PEG_DRINK m: sprint on first)
+    if (st === 'cross' && r.ok) {
+      for (let i = 0; i < 3; i++) {
+        const near = (await page.evaluate(targetsOf, 'peg', 'lamp')).filter((q) => q.d < PEG_DRINK);
+        if (!near.length) break;
+        const k = await kiteFrom(page, K, near); kites.push({ after: 'cross', ...k });
+        if (k.why === 'died') return { ok: false, why: 'died' };
+      }
+      await drink(page, K, 95);
+    }
     return r;
   }
   if (s.type === 'talk') {
@@ -1291,7 +1390,10 @@ try {
       log(`save-t1: ${report.rows['save-t1'].pass ? 'PASS' : 'FAIL'} ${JSON.stringify({ dxz: report.rows['save-t1'].dxz, dy: report.rows['save-t1'].dy })}`);
       if ((await page.evaluate(() => window.__CTX__?.state)) !== 'playing') { report.stoppedAt = 'ditch'; report.why = 'the continue on T1 left the game off play'; break; }
     }
-    if (r.why === 'died') continue;
+    // M1b exit fix: A DEATH ANYWHERE is played (the loop's top plays the card and the stand-up at the Brazier, the death
+    // rule): at 701b366 run 3 she died 14 s into the climb's approach, the beat read 'approach to the steps: died', and
+    // the run stopped there instead
+    if (r.why === 'died' || /\bdied\b/.test(String(r.why ?? '')) || after.state === 'dead' || after.state === 'death-menu' || after.deathCard) { row.died = true; last = null; tries = 0; continue; }
     if (!row.ok && r.ok === false) { report.stoppedAt = s.stage; report.why = r.why; break; }
   }
   if (!report.stoppedAt) { report.stoppedAt = (await page.evaluate(probe)).stage; report.why = 'Chrome budget'; }
@@ -1302,6 +1404,7 @@ try {
   report.spine = fin.report;
   report.shots = shots;
   report.drinks = drinks;
+  report.kites = kites;
   // fix round: the reward, live (M1.6l: the Scout is the reward of Raker's Morning): what she wears when the run ends
   report.reward = await page.evaluate(() => { const C = window.__CTX__, L = C.player?.hero?.loadout;
     return { armor: L?.armorId ?? null, perk: L?.perk ?? null, rung: C.systemsGame?.rung ?? null, flagDuration: C.machines?.perception?.flagDuration ?? null, rewarded: !!C.spine?.rewarded, done: !!C.spine?.done }; }).catch((e) => ({ error: String(e).slice(0, 160) }));
