@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BEDS, REED_KIND, REED_MASK } from './reedmask.js';
+import { authored } from './recipe.js';
 
 /**
  * THE REEDS, DRAWN FROM THE MASK (BUILD M1.6e). Every cane stands where `mask.cover(x, z)` (the base cover less the
@@ -12,10 +13,18 @@ import { BEDS, REED_KIND, REED_MASK } from './reedmask.js';
  *   junco    a tuft of 14 dark rush stems, 0.7-1.15 m, one tapered sliver each: 14 triangles, on a 0.7 m grid (the
  *            lee hollows by the Glass and the lee ditch on the salt field's outer dyke).
  *
- *   foot     (M1b exit fix, F31) under the carrizo, on a 0.42 m grid where the canes stand: a tuft of 28 pale stems,
- *            0.7-1.45 m, each a tapered quad (56 triangles), shrunk only inside 0.35-0.7 m of the lens (the canes: 1-2 m). A carrizo bed is a thicket of stems at a crouch's height
- *            under its canes; at fabb8b8..701b366 F31's lens saw 98.4 % of her crouched in it (bar: a third), the
- *            canes alone standing 1.3 m apart with nothing between them below their leaves.
+ *   foot     (M1b exit fix, F31) under the carrizo, on a 0.42 m grid where the canes stand: a tuft of 32 pale stems,
+ *            0.85-1.6 m, each a tapered quad drawn to a point (64 triangles). A carrizo bed is a thicket of stems at a
+ *            crouch's height under its canes; at fabb8b8..701b366 F31's lens saw 98.4 % of her crouched in it (bar: a
+ *            third), the canes alone standing 1.3 m apart with nothing between them below their leaves.
+ *            (wave 7, F31 at 7474b9f: the stems near the lens read as wide flat pale cards with square 8 mm tips, and
+ *            the layer hid the water.) Each stem is lit across its width like a round stem (its two edges' normals lean
+ *            out to either side), ends in a point, and is shrunk to its root inside 1-1.5 m of the lens (`FOOT.near`;
+ *            it was 0.35-0.7 m). On the bed's water side (`FOOT.shore`, the plan distance from the Glass) the layer
+ *            thins and stands lower, so the lens sees the water over it. The stems stand taller (0.85-1.6 m, were
+ *            0.7-1.45), a little wider at the foot and 4 more a tuft: the stems between the lens and her, 1.5-2.6 m out
+ *            in F31, keep her violet under a third without the near ones (an exploration at 21afc80 + this file:
+ *            0.52 with the near fade and the water side alone, 0.26-0.31 with these).
  *
  * TILES (M1b round 2). One InstancedMesh per bed and 64 m tile of the mask, each shown only while the lens is within
  * 66 m of the tile's footprint (the canes are shrunk to their roots from 48 to 64 m): at 2d55d7c the nine bed meshes
@@ -33,8 +42,18 @@ import { BEDS, REED_KIND, REED_MASK } from './reedmask.js';
  * texture); casts no shadow (no plant does: A56). Allocation-free per frame.
  */
 const CARRIZO_PITCH = 1.3;
-// M1b exit fix (F31): the carrizo's FOOT, a dense tuft of old and young stems under the canes on a 0.6 m grid
+// M1b exit fix (F31): the carrizo's FOOT, a dense tuft of old and young stems under the canes on a 0.42 m grid
 const FOOT_PITCH = 0.42;
+/**
+ * The foot's look near the lens and at the water (wave 7, F31):
+ *   stems, h, w     a tuft's stems, their heights [m, m] and half-widths at the foot and at the tip [m, m]
+ *   near    [m, m]  shrunk to its root inside near[0] of the lens, its full height from near[1] (plan distance)
+ *   shore   [g, g]  the plan distance from the Glass (recipe `authored.glass`: 1 on the shore line, under 1 toward
+ *                   the water) over which the layer comes to its full density and height; at shore[0] and nearer the
+ *                   water a tuft is kept at keep x its density and stands at height x its height
+ *   keep, height    the water side's density and height (shares)
+ */
+export const FOOT = { stems: 32, h: [0.85, 1.6], w: [0.018, 0.003], near: [1.0, 1.5], shore: [0.985, 1.02], keep: 0.25, height: 0.4 };
 const TILE = 64;
 const SHOW_M = 66;
 const JUNCO_PITCH = 0.7;
@@ -149,24 +168,29 @@ export function carrizoGeo(seed = 0xca77) {
 }
 
 /**
- * The carrizo's foot (M1b exit fix, F31): 28 stems in a tuft 0.5 m across, 0.7-1.45 m, leaning out a little; each a
- * tapered quad 0.032 m at the foot to 0.008 m at the tip (2 triangles; 56 a tuft): sage at the root to pale straw, a few older
- * stems greyer. Never gold or rust (F31's written target).
+ * The carrizo's foot (M1b exit fix, F31): FOOT.stems (32) stems in a tuft 0.5 m across, FOOT.h (0.85-1.6 m), leaning
+ * out a little; each a tapered quad 0.036 m at the foot drawn to a point (0.006 m) at the tip (2 triangles; 64 a tuft):
+ * sage at the root to pale straw, a few older stems greyer. Never gold or rust (F31's written target).
+ * (wave 7) The two edges' normals lean out to either side (as the canes' `round`), so a stem is lit across its width,
+ * one edge toward the light and the other away, not as one flat card; the tip is a point, not a flat 8 mm end.
  */
-export function carrizoFootGeo(seed = 0xf007) {
+export function carrizoFootGeo(seed = 0xf007, o = FOOT) {
   const R = rand(seed), P = [], C = [], N = [], I = [];
   const s0 = new THREE.Color('#7f8262'), s1 = new THREE.Color('#d2cab0'), old1 = new THREE.Color('#aaa48e');
   const c0 = new THREE.Color(), c1 = new THREE.Color();
-  for (let k = 0; k < 28; k++) {
+  const [h0, h1] = o.h, [w0, w1] = o.w;
+  for (let k = 0; k < o.stems; k++) {
     const a = R() * Math.PI * 2, r0 = Math.sqrt(R()) * 0.25, ox = Math.cos(a) * r0, oz = Math.sin(a) * r0;
-    const H = 0.7 + R() * 0.75, tilt = 0.04 + R() * 0.16;
-    const sa = R() * Math.PI, sx = Math.cos(sa), sz = Math.sin(sa), w0 = 0.016, w1 = 0.004;
+    const H = h0 + R() * (h1 - h0), tilt = 0.04 + R() * 0.16;
+    const sa = R() * Math.PI, sx = Math.cos(sa), sz = Math.sin(sa);
     const tx = ox + Math.cos(a) * tilt * H, tz = oz + Math.sin(a) * tilt * H;
     c0.copy(s0).multiplyScalar(0.85 + R() * 0.25); c1.copy(R() < 0.25 ? old1 : s1).multiplyScalar(0.88 + R() * 0.16);
     const b = P.length / 3;
     P.push(ox - sx * w0, 0, oz - sz * w0, ox + sx * w0, 0, oz + sz * w0, tx + sx * w1, H, tz + sz * w1, tx - sx * w1, H, tz - sz * w1);
     C.push(c0.r, c0.g, c0.b, c0.r, c0.g, c0.b, c1.r, c1.g, c1.b, c1.r, c1.g, c1.b);
-    for (let q = 0; q < 4; q++) N.push(Math.cos(a) * 0.3, 0.9, Math.sin(a) * 0.3);
+    // round across the width: each edge's normal leans out along the width (0.62) over a little of the stem's lean
+    const lx = Math.cos(a) * 0.12, lz = Math.sin(a) * 0.12;
+    for (const e of [-1, 1, 1, -1]) N.push(sx * 0.62 * e + lx, 0.66, sz * 0.62 * e + lz);
     I.push(b, b + 1, b + 2, b, b + 2, b + 3);
   }
   return geoOf({ P, C, N, I });
@@ -279,7 +303,7 @@ export class ReedDraw {
     this.uLean = { value: lean };
     this.uHeightC = { value: 2.9 };
     this.uHeightJ = { value: 0.95 };
-    this.uHeightF = { value: 1.1 };
+    this.uHeightF = { value: 1.2 };   // (wave 7: the foot's mean height, 1.1 -> 1.2 with the taller stems)
     this._own = { geo: [], mat: [] };
     this.meshes = [];
     this.version = -1;
@@ -287,10 +311,11 @@ export class ReedDraw {
     this._own.geo.push(geoC, geoJ, geoF);
     this.matC = this._material(this.uHeightC, 'cal-reeds-c');
     this.matJ = this._material(this.uHeightJ, 'cal-reeds-j');
-    // (the foot stands under a lens's height: shrunk only inside 0.35-0.7 m of it, so it stands between her and the lens)
-    this.matF = this._material(this.uHeightF, 'cal-reeds-f', [0.35, 0.7]);
-    // the plantings, once: [x, z, yaw, scale, bed, keep-hash] per kind, then kept or dropped by the cover
-    this.sites = { c: this._sites(REED_KIND.CARRIZO, CARRIZO_PITCH, 11), j: this._sites(REED_KIND.JUNCO, JUNCO_PITCH, 23), f: this._sites(REED_KIND.CARRIZO, FOOT_PITCH, 37) };
+    // (wave 7: shrunk to its root inside FOOT.near of the lens; at 7474b9f, 0.35-0.7 m, the near stems read as cards)
+    this.matF = this._material(this.uHeightF, 'cal-reeds-f', FOOT.near);
+    // the plantings, once: [x, z, yaw, scale, bed, keep-hash] per kind, then kept or dropped by the cover; the foot's
+    // carry a seventh, their plan distance from the Glass (read against FOOT.shore at planting)
+    this.sites = { c: this._sites(REED_KIND.CARRIZO, CARRIZO_PITCH, 11), j: this._sites(REED_KIND.JUNCO, JUNCO_PITCH, 23), f: this._sites(REED_KIND.CARRIZO, FOOT_PITCH, 37, true) };
     // one mesh per bed and 64 m tile (see TILES)
     for (const [kind, list, geo, mat] of [['carrizo', this.sites.c, geoC, this.matC], ['junco', this.sites.j, geoJ, this.matJ], ['foot', this.sites.f, geoF, this.matF]]) {
       const by = new Map();
@@ -309,6 +334,7 @@ export class ReedDraw {
   _material(uHeight, key, near = [1.0, 2.0]) {
     const uNear = { value: new THREE.Vector2(near[0], near[1]) };
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0, side: THREE.DoubleSide });
+    mat.userData.uNear = uNear;
     const V = this.ctx.vegetation;
     const uTime = V?._uTime || { value: 0 }, uWind = V?._uWind || { value: new THREE.Vector2(-0.7071, 0.7071) };
     const uActors = V?._uActors || { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) };
@@ -340,8 +366,9 @@ export class ReedDraw {
     return mat;
   }
 
-  /** Every grid site of a kind with any base cover: [x, z, yaw, scale, bed, hash]. */
-  _sites(kind, pitch, salt) {
+  /** Every grid site of a kind with any base cover: [x, z, yaw, scale, bed, hash] (and, with `shore`, its plan
+   * distance from the Glass, read against FOOT.shore at planting). */
+  _sites(kind, pitch, salt, shore = false) {
     const M = this.mask, out = [];
     const n = Math.floor(REED_MASK.size / pitch);
     for (let j = 0; j < n; j++) {
@@ -352,7 +379,9 @@ export class ReedDraw {
         if (b < 0.06) continue;
         const bed = M.bedAt(x, z);
         if (!bed || bed.kind !== kind) continue;
-        out.push([x, z, hash2(i, j, salt + 2) * Math.PI * 2, 0.8 + hash2(i, j, salt + 3) * 0.3, bed.id, hash2(i, j, salt + 4)]);
+        const st = [x, z, hash2(i, j, salt + 2) * Math.PI * 2, 0.8 + hash2(i, j, salt + 3) * 0.3, bed.id, hash2(i, j, salt + 4)];
+        if (shore) st.push(authored.glass(x, z));
+        out.push(st);
       }
     }
     return out;
@@ -389,12 +418,18 @@ export class ReedDraw {
       for (const st of sites) {
         if (!pick(st)) continue;
         const c = M.cover(st[0], st[1]);
+        // the foot on the bed's water side (wave 7): thinner and lower toward the water (FOOT.shore)
+        let sk = 1, sh = 1;
+        if (st.length > 6) {
+          const [g0, g1] = FOOT.shore, u = Math.min(1, Math.max(0, (st[6] - g0) / (g1 - g0))), w = u * u * (3 - 2 * u);
+          sk = FOOT.keep + (1 - FOOT.keep) * w; sh = FOOT.height + (1 - FOOT.height) * w;
+        }
         // kept where the hash is under the cover: thin at a bed's edge, none in a cut lane
-        if (c < 0.08 || st[5] > Math.min(1, c * 1.25)) continue;
+        if (c < 0.08 || st[5] > Math.min(1, c * 1.25) * sk) continue;
         const h = T ? T.getHeight(st[0], st[1]) : 0;
         p.set(st[0], h - 0.04, st[1]);
         q.setFromAxisAngle(up, st[2]);
-        const k = st[3] * (0.82 + 0.18 * Math.min(1, c * 1.3));
+        const k = st[3] * (0.82 + 0.18 * Math.min(1, c * 1.3)) * sh;
         s.set(k, k, k);
         m4.compose(p, q, s);
         mesh.setMatrixAt(n, m4);
