@@ -52,6 +52,10 @@ const BUILT = args.includes('--built');
 const PLAY_S = Number(flag('--play-s', 15));
 const FRAMES = flag('--frames', 'F02,F23-gauge,F25').split(',').map((s) => s.trim()).filter(Boolean);
 const PAIRS = Number(flag('--pairs', 6));
+// --gpu-groups a,b: only the groups whose id holds one of these (the passes always); --split a,b: those groups also
+// broken down (their shadow casting alone, and their 8 heaviest meshes by triangles)
+const GROUPS = (flag('--gpu-groups', '') || '').split(',').map((s) => s.trim()).filter(Boolean);
+const SPLIT = (flag('--split', '') || '').split(',').map((s) => s.trim()).filter(Boolean);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const utc = () => new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 const log = (...a) => console.log(`[hitch-probe ${new Date().toISOString().slice(11, 19)}]`, ...a);
@@ -296,7 +300,7 @@ try {
           await page.evaluate(stageFrame, f, { settleMs: 2600 });
           await page.screenshot({ path: path.join(OUT, `${id}-gpu.png`) });
           const l0 = load1();
-          const rec = await page.evaluate(async (pairs) => {
+          const rec = await page.evaluate(async (pairs, only, split) => {
             const M = await import('/tools/perf/attrib-page.mjs');
             const C = window.__CTX__, E = C.engine, scene = C.scene, sm = E.renderer.shadowMap;
             const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -321,7 +325,17 @@ try {
               { id: 'pass:bloom', down: () => { const k = E.bloom.enabled; E.bloom.enabled = false; return () => { E.bloom.enabled = k; }; } },
               { id: 'pass:smaa', down: () => { const k = E.smaa.enabled; E.smaa.enabled = false; return () => { E.smaa.enabled = k; }; } },
             ];
-            for (const g of groups) g.down = () => { const prev = g.objs.map((o) => o.visible); g.objs.forEach((o) => { o.visible = false; }); return () => { g.objs.forEach((o, i) => { o.visible = prev[i]; }); }; };
+            const tris = (o) => { const g = o.geometry; if (!g) return 0; const n = g.index ? g.index.count : (g.attributes.position?.count || 0); return (n / 3) * (o.isInstancedMesh ? o.count : 1); };
+            if (only.length) groups.splice(0, groups.length, ...groups.filter((g) => only.some((x) => g.id.includes(x))));
+            for (const g of groups.slice()) {
+              if (!split.some((x) => g.id.includes(x))) continue;
+              const meshes = []; g.objs.forEach((o) => o.traverseVisible((x) => { if (x.isMesh) meshes.push(x); }));
+              groups.push({ id: `${g.id}/shadow`, n: meshes.filter((x) => x.castShadow).length, shadowOnly: meshes });
+              meshes.slice().sort((a, b) => tris(b) - tris(a)).slice(0, 8).forEach((x) => groups.push({ id: `${g.id}/${x.name || x.type}${x.isInstancedMesh ? `[x${x.count}]` : ''} ${Math.round(tris(x) / 1000)}k`, n: 1, objs: [x] }));
+            }
+            for (const g of groups) g.down = g.shadowOnly
+              ? () => { const prev = g.shadowOnly.map((o) => o.castShadow); g.shadowOnly.forEach((o) => { o.castShadow = false; }); return () => { g.shadowOnly.forEach((o, i) => { o.castShadow = prev[i]; }); }; }
+              : () => { const prev = g.objs.map((o) => o.visible); g.objs.forEach((o) => { o.visible = false; }); return () => { g.objs.forEach((o, i) => { o.visible = prev[i]; }); }; };
             const rows = [];
             for (const g of [...groups, ...passes]) {
               const d = [];
@@ -332,7 +346,7 @@ try {
             rows.sort((a, b) => b.ms - a.ms);
             return { medianMs: base[base.length >> 1], reps: base, calls: info.calls, triangles: info.triangles, rows,
               transparentObjects: [...cls.materials.transparent].map(([k, v]) => `${v} x ${k}`).slice(0, 30), alphaObjects: [...cls.materials.alpha].map(([k, v]) => `${v} x ${k}`).slice(0, 30) };
-          }, PAIRS);
+          }, PAIRS, GROUPS, SPLIT);
           await page.evaluate(unstageFrame);
           run.gpu.push({ id, ...rec, load1Before: l0, load1After: load1() });
           log(`gpu ${id}: median ${rec.medianMs} ms (${rec.reps.join(', ')}), ${rec.calls} draws; skip-one: ${rec.rows.slice(0, 12).map((r) => `${r.id}(${r.objects ?? '-'}) ${r.ms}`).join('; ')}`);

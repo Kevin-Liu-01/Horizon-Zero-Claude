@@ -18,7 +18,7 @@ import { GameAudio } from './audio/audio.js';
 import { Studio } from './studio/studio.js';
 import { installProgression } from './core/progression.js';
 import { installMenus } from './ui/menu.js';
-import { installGame } from './game/runtime.js';
+import { installGame, RUNG_ARMOR } from './game/runtime.js';
 import { webglSupport, showUnsupported } from './ui/unsupported.js';
 
 const params = new URLSearchParams(location.search);
@@ -155,6 +155,8 @@ class Game {
     }
     setLoad(0.93, 'shaders');
     const warm = await engine.warmUp(ctx.scene, ctx.camera);
+    // M1.8c: the armour a rung puts on her in play (the quest's reward) links its programs here, behind the sheet
+    if (!params.has('shot')) { setLoad(0.97, 'armour'); engine.bootRungWarm = await this._warmRungs(); }
     setLoad(1, `ready:${warm.programs} programs in ${warm.ms} ms`);
 
     // Automation harness: always available, so F3/console debugging works in
@@ -201,6 +203,43 @@ class Game {
         clearInterval(poll);
       }
     }, 500);
+  }
+
+  /**
+   * M1.8c: the Scout given at the quest's end drew two frames of 75 and 58 ms at 8203ee6 (tools/perf/hitch-probe.mjs):
+   * its set's materials linked four programs on their first draws (two as first drawn, two after the world's material
+   * scan registered them). Behind the boot sheet each rung's armour she is not wearing is put on through the loadout,
+   * its programs are kept (engine.keepPrograms, both variants) and linked, and what she wore is put back, which
+   * unloads the deferred row again (its memory as before). Bounded at 6 s; any failure leaves her as she was.
+   * Not under ?shot (the Frame Set and the gates stage a booted world that must not have changed clothes).
+   */
+  async _warmRungs() {
+    const ctx = this.ctx, engine = ctx.engine, L = ctx.player?.hero?.loadout, t0 = performance.now();
+    const out = { ms: 0, rows: [], programs: 0, keepers: 0 };
+    if (!L?.equipArmor) return out;
+    const was = L.armorId;
+    const register = (o) => { const m = o.material; for (const x of Array.isArray(m) ? m : [m]) ctx.environment?.registerMaterial?.(x); };
+    try {
+      // what she wears now, first: putting another set on disposes these materials, and their programs with them
+      { const k = engine.keepPrograms(ctx.player.hero.outfit?.meshes?.slice() || [], { register }); out.rows.push({ id: was, worn: true, ...k }); out.programs += k.programs; out.keepers += k.keepers; }
+      for (const id of new Set(Object.values(RUNG_ARMOR))) {
+        if (!id || id === was || performance.now() - t0 > 6000) continue;
+        await L.equipArmor(id);
+        const meshes = ctx.player.hero.outfit?.meshes?.slice() || [];
+        const k = engine.keepPrograms(meshes, { register });
+        out.rows.push({ id, meshes: meshes.length, ...k });
+        out.programs += k.programs; out.keepers += k.keepers;
+      }
+      await engine._awaitProgramsReady(Math.max(500, 6000 - (performance.now() - t0)));
+    } catch (err) {
+      console.warn('[CAL] rung warm-up skipped:', err?.message || err);
+      out.error = String(err?.message || err);
+    } finally {
+      engine.releaseKeeperHooks();
+      try { if (was && L.armorId !== was) await L.equipArmor(was); } catch (err) { console.warn('[CAL] rung warm-up: could not put her armour back:', err?.message || err); }
+    }
+    out.ms = Math.round(performance.now() - t0);
+    return out;
   }
 
   _add(system) {

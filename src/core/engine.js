@@ -2455,6 +2455,75 @@ export class Engine {
     });
   }
 
+  /**
+   * M1.8c: compile `root`'s programs as the scene pass draws them. The scene pass draws into the composer's target,
+   * so three builds those programs without tone mapping and with a linear output (three.module.js getParameters:
+   * `currentRenderTarget === null` picks the renderer's tone mapping); compiled with no target bound, the program is
+   * the screen's variant and the first real draw links another one. The scene target is bound for the compile.
+   */
+  compileAsDrawn(root, camera = this.camera, scene = this.scene) {
+    const r = this.renderer, prev = r.getRenderTarget();
+    try { r.setRenderTarget(this.sceneTarget || null); return r.compile(root, camera, scene); } finally { r.setRenderTarget(prev); }
+  }
+
+  /**
+   * M1.8c (the reward's 75 + 58 ms frames at 8203ee6): KEEP the programs of meshes that will be drawn later and are
+   * not drawn now, so their first draw links nothing. A program lives while a material holds it (three releases it at
+   * the last holder's dispose), so each material gets a KEEPER: a clone that is never drawn and never disposed, with
+   * the material's own program hooks (`onBeforeCompile`, `customProgramCacheKey`) and defines, compiled as the scene
+   * pass draws it (`compileAsDrawn`). The meshes themselves may then be released: a later material with the same
+   * program key (the same set loaded again) finds the program linked. `register(mesh)` (optional) is what the world
+   * does to a material some frames after it appears (environment.registerMaterial: fog uniforms and the cascades,
+   * which change its program), so both variants are kept: the one drawn first and the one drawn after the scan.
+   * After the compile a keeper lets go of its textures and hooks (it is never drawn, so they are never read again).
+   * Returns { keepers, programs } (programs = new programs linked).
+   */
+  keepPrograms(meshes, { register = null, camera = this.camera, scene = this.scene } = {}) {
+    const r = this.renderer;
+    const keep = this._keepers || (this._keepers = []);
+    const p0 = r.info.programs?.length ?? 0, made = [];
+    const keeperOf = (m) => {
+      const ud = m.userData;
+      m.userData = {};   // Material.copy deep-copies userData through JSON: never for a keeper
+      let k;
+      try { k = m.clone(); } finally { m.userData = ud; }
+      k.userData = ud;
+      if (m.defines) k.defines = { ...m.defines };   // MeshStandardMaterial.copy resets defines to STANDARD only
+      for (const key of Object.keys(m)) { const v = m[key]; if (typeof v === 'function' && k[key] !== v) k[key] = v; }
+      k.name = `keeper:${m.name || m.type}`;
+      return k;
+    };
+    const pass = () => {
+      for (const o of meshes) {
+        if (!o?.material || !(o.isMesh || o.isPoints || o.isLine || o.isSprite)) continue;
+        const was = o.material;
+        const ks = Array.isArray(was) ? was.map((m) => (m ? keeperOf(m) : m)) : keeperOf(was);
+        o.material = ks;
+        try { this.compileAsDrawn(o, camera, scene); } catch (err) { console.warn('[CAL] keepPrograms:', err?.message || err); } finally { o.material = was; }
+        for (const k of Array.isArray(ks) ? ks : [ks]) if (k) made.push(k);
+      }
+    };
+    pass();
+    if (register) { for (const o of meshes) { try { register(o); } catch (err) { /* a mesh the world does not register */ } } pass(); }
+    for (const k of made) {
+      for (const key of Object.keys(k)) { const v = k[key]; if (v && v.isTexture) k[key] = null; }
+      k.userData = {};
+      keep.push(k);
+    }
+    // the hooks are let go once every program is linked (`releaseKeeperHooks`, after the readiness wait)
+    this._keepersPending = (this._keepersPending || []).concat(made);
+    return { keepers: made.length, programs: (r.info.programs?.length ?? 0) - p0 };
+  }
+
+  /** After the readiness wait: keepers stop holding their hooks' closures (and what those captured). */
+  releaseKeeperHooks() {
+    const noop = function () {};
+    for (const k of this._keepersPending || []) {
+      for (const key of Object.keys(k)) if (typeof k[key] === 'function') k[key] = noop;
+    }
+    this._keepersPending = [];
+  }
+
   /** Stop a readiness poll that is still running. Safe to call at any time. */
   cancelWarmUp() {
     if (this._warmUpPoll) clearTimeout(this._warmUpPoll);

@@ -1246,8 +1246,12 @@ try {
   await page.evaluateOnNewDocument(() => {
     const H = (window.__hitch = { n: 0, ms: 0, max: 0, over33: [], over50: 0, tool: 0, toolOver33: 0, pause: 0, skip: false, last: 0, was: false });
     window.__hitchMark = (on) => { if (on) H.pause++; else { H.pause = Math.max(0, H.pause - 1); H.skip = true; } };
+    // M1.8c (engine lane, the smallest change): TECH 9.1 counts frames AFTER the Loading sheet closes; frames drawn while
+    // BEGIN's or CONTINUE's sheet stands (src/ui/title.js underSheet) are counted apart as 'sheet', with their worst
     const tick = (t) => {
-      const C = window.__CTX__, playing = C?.state === 'playing';
+      const C = window.__CTX__, L = document.getElementById('loading'), sheet = !!L && !L.classList.contains('hidden');
+      if (sheet && C?.state === 'playing' && H.last) { H.sheet = (H.sheet || 0) + 1; H.sheetMax = Math.max(H.sheetMax || 0, t - H.last); }
+      const playing = C?.state === 'playing' && !sheet;
       if (H.last && playing && H.was) {
         const d = t - H.last;
         if (H.pause || H.skip) { H.tool++; if (d > 33.4) H.toolOver33++; if (!H.pause) H.skip = false; }
@@ -1259,7 +1263,7 @@ try {
     requestAnimationFrame(tick);
   });
   const hitchSegs = (report.hitch = { note: 'presented-frame intervals in play (state playing), one segment per document; tool = inside or right after a runner screenshot', segments: [] });
-  const takeHitch = async (tag) => { const h = await page.evaluate(() => { const H = window.__hitch; return H ? { n: H.n, s: +(H.ms / 1000).toFixed(1), maxMs: +H.max.toFixed(1), over33: H.over33.length, over50: H.over50, list: H.over33, tool: H.tool, toolOver33: H.toolOver33 } : null; }).catch(() => null); if (h) hitchSegs.segments.push({ tag, ...h }); };
+  const takeHitch = async (tag) => { const h = await page.evaluate(() => { const H = window.__hitch; return H ? { n: H.n, s: +(H.ms / 1000).toFixed(1), maxMs: +H.max.toFixed(1), over33: H.over33.length, over50: H.over50, list: H.over33, tool: H.tool, toolOver33: H.toolOver33, sheet: H.sheet || 0, sheetMaxMs: +(H.sheetMax || 0).toFixed(1) } : null; }).catch(() => null); if (h) hitchSegs.segments.push({ tag, ...h }); };
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   // M1b: at bab1f0c the run's page sat 240 s short of the title's 'press' with no console error (the frames page had
   // booted in the same session): what it was doing is recorded, and the page is loaded once more before giving up
