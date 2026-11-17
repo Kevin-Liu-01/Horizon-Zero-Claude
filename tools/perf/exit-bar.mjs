@@ -74,6 +74,9 @@ async function waitHttp(url, ms = 120000) {
 }
 let server = null;
 async function serve(kind) {
+  // the previous phase's server was just sent SIGTERM: give it up to 15 s to let the port go (at 5ee48a7 the dev server
+  // of the live phase found the preview server still on the port and the run stopped after the load phase)
+  for (let i = 0; i < 30 && !(await portFree(PORT)); i++) await sleep(500);
   if (!(await portFree(PORT))) throw new Error(`port ${PORT} is taken: this tool runs its own server`);
   const a = kind === 'preview' ? ['vite', 'preview'] : ['vite'];
   server = spawn('nice', ['-n', '10', 'npx', ...a, '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: REPO, stdio: 'ignore', detached: true });
