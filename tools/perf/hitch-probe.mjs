@@ -223,7 +223,8 @@ try {
         await page.waitForFunction(() => window.__CTX__?.state === 'playing' && window.__CTX__?.spine?.started, { timeout: 60000, polling: 50 });
         await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('hidden'), { timeout: 30000, polling: 20 }).catch(() => {});
         await sleep(PLAY_S * 1000);
-        run.boot = { titleS, systemsTimed: nSys, load1: load1(), ...(await E(longFrames, { since: tClick, over: 33.4 })) };
+        run.boot = { titleS, systemsTimed: nSys, load1: load1(), rungWarm: await E(() => window.__CTX__.engine.bootRungWarm ?? null), programsAtTitle: await E(() => window.__CTX__.engine.renderer.info.programs?.length ?? null), ...(await E(longFrames, { since: tClick, over: 33.4 })) };
+        log(`boot rung warm-up: ${JSON.stringify(run.boot.rungWarm)}`);
         run.boot.playFrames = await E((s) => { const f = window.__hp.frames.filter((x) => x.t >= s && x.state === 'playing' && !x.sheet); return { n: f.length, over33: f.filter((x) => x.d > 33.4).length, over50: f.filter((x) => x.d > 50).length, max: Math.max(0, ...f.map((x) => x.d)) }; }, tClick);
         log(`boot: title ${titleS} s; after the sheet: ${JSON.stringify(run.boot.playFrames)}; long frames since NEW GAME ${run.boot.long.length}`);
         for (const f of run.boot.long) log(`  ${f.t} ${f.d} ms ${f.state}${f.sheet ? ' (sheet)' : ''} ${f.stage ?? ''} lf ${JSON.stringify(f.lf)} gl ${JSON.stringify(f.gl)} info ${JSON.stringify(f.info)} heapD ${f.heapD} sys ${JSON.stringify(f.sys ?? [])} loaf ${JSON.stringify(f.loaf.map((l) => ({ d: l.d, s: l.scripts.map((s) => `${s.type}:${s.inv}:${s.fn}@${s.url}:${s.d}`) })))}`);
