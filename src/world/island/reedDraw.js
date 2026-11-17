@@ -12,8 +12,8 @@ import { BEDS, REED_KIND, REED_MASK } from './reedmask.js';
  *   junco    a tuft of 14 dark rush stems, 0.7-1.15 m, one tapered sliver each: 14 triangles, on a 0.7 m grid (the
  *            lee hollows by the Glass and the lee ditch on the salt field's outer dyke).
  *
- *   foot     (M1b exit fix, F31) under the carrizo, on a 0.6 m grid where the canes stand: a tuft of 24 pale stems,
- *            0.6-1.25 m, each a tapered quad (48 triangles). A carrizo bed is a thicket of stems at a crouch's height
+ *   foot     (M1b exit fix, F31) under the carrizo, on a 0.5 m grid where the canes stand: a tuft of 28 pale stems,
+ *            0.6-1.25 m, each a tapered quad (56 triangles), shrunk only inside 0.35-0.7 m of the lens (the canes: 1-2 m). A carrizo bed is a thicket of stems at a crouch's height
  *            under its canes; at fabb8b8..701b366 F31's lens saw 98.4 % of her crouched in it (bar: a third), the
  *            canes alone standing 1.3 m apart with nothing between them below their leaves.
  *
@@ -34,7 +34,7 @@ import { BEDS, REED_KIND, REED_MASK } from './reedmask.js';
  */
 const CARRIZO_PITCH = 1.3;
 // M1b exit fix (F31): the carrizo's FOOT, a dense tuft of old and young stems under the canes on a 0.6 m grid
-const FOOT_PITCH = 0.6;
+const FOOT_PITCH = 0.5;
 const TILE = 64;
 const SHOW_M = 66;
 const JUNCO_PITCH = 0.7;
@@ -149,15 +149,15 @@ export function carrizoGeo(seed = 0xca77) {
 }
 
 /**
- * The carrizo's foot (M1b exit fix, F31): 24 stems in a tuft 0.5 m across, 0.6-1.25 m, leaning out a little; each a
- * tapered quad 0.032 m at the foot to 0.008 m at the tip (2 triangles): sage at the root to pale straw, a few older
+ * The carrizo's foot (M1b exit fix, F31): 28 stems in a tuft 0.5 m across, 0.6-1.25 m, leaning out a little; each a
+ * tapered quad 0.032 m at the foot to 0.008 m at the tip (2 triangles; 56 a tuft): sage at the root to pale straw, a few older
  * stems greyer. Never gold or rust (F31's written target).
  */
 export function carrizoFootGeo(seed = 0xf007) {
   const R = rand(seed), P = [], C = [], N = [], I = [];
   const s0 = new THREE.Color('#7f8262'), s1 = new THREE.Color('#d2cab0'), old1 = new THREE.Color('#aaa48e');
   const c0 = new THREE.Color(), c1 = new THREE.Color();
-  for (let k = 0; k < 24; k++) {
+  for (let k = 0; k < 28; k++) {
     const a = R() * Math.PI * 2, r0 = Math.sqrt(R()) * 0.25, ox = Math.cos(a) * r0, oz = Math.sin(a) * r0;
     const H = 0.6 + R() * 0.65, tilt = 0.04 + R() * 0.16;
     const sa = R() * Math.PI, sx = Math.cos(sa), sz = Math.sin(sa), w0 = 0.016, w1 = 0.004;
@@ -204,6 +204,7 @@ uniform float uTime;
 uniform vec2 uWind;
 uniform vec4 uActors[4];
 uniform float uHeight;
+uniform vec2 uNear;
 varying vec2 vFloraXZ;
 `;
 const REED_PROJECT = /* glsl */ `
@@ -212,7 +213,7 @@ vec4 iw = instanceMatrix * vec4(transformed, 1.0);
   vec3 o = instanceMatrix[3].xyz;
   // drawn to 64 m: shrunk to its root between 48 and 64 m from the lens (the belt is not a vista element; the accepted
   // salt-cell frames F14-F19 stand 65 m from the nearest reed, F05 and F20 further)
-  float fade = (1.0 - smoothstep(48.0, 64.0, distance(o, cameraPosition))) * smoothstep(1.0, 2.0, distance(o.xz, cameraPosition.xz));
+  float fade = (1.0 - smoothstep(48.0, 64.0, distance(o, cameraPosition))) * smoothstep(uNear.x, uNear.y, distance(o.xz, cameraPosition.xz));
   iw.xyz = o + (iw.xyz - o) * fade;
   float sy = length(instanceMatrix[1].xyz);
   float yl = max(iw.y - o.y, 0.0);
@@ -286,7 +287,8 @@ export class ReedDraw {
     this._own.geo.push(geoC, geoJ, geoF);
     this.matC = this._material(this.uHeightC, 'cal-reeds-c');
     this.matJ = this._material(this.uHeightJ, 'cal-reeds-j');
-    this.matF = this._material(this.uHeightF, 'cal-reeds-f');
+    // (the foot stands under a lens's height: shrunk only inside 0.35-0.7 m of it, so it stands between her and the lens)
+    this.matF = this._material(this.uHeightF, 'cal-reeds-f', [0.35, 0.7]);
     // the plantings, once: [x, z, yaw, scale, bed, keep-hash] per kind, then kept or dropped by the cover
     this.sites = { c: this._sites(REED_KIND.CARRIZO, CARRIZO_PITCH, 11), j: this._sites(REED_KIND.JUNCO, JUNCO_PITCH, 23), f: this._sites(REED_KIND.CARRIZO, FOOT_PITCH, 37) };
     // one mesh per bed and 64 m tile (see TILES)
@@ -304,7 +306,8 @@ export class ReedDraw {
     this.plant();
   }
 
-  _material(uHeight, key) {
+  _material(uHeight, key, near = [1.0, 2.0]) {
+    const uNear = { value: new THREE.Vector2(near[0], near[1]) };
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0, side: THREE.DoubleSide });
     const V = this.ctx.vegetation;
     const uTime = V?._uTime || { value: 0 }, uWind = V?._uWind || { value: new THREE.Vector2(-0.7071, 0.7071) };
@@ -315,6 +318,7 @@ export class ReedDraw {
       shader.uniforms.uWind = uWind;
       shader.uniforms.uActors = uActors;
       shader.uniforms.uHeight = uHeight;
+      shader.uniforms.uNear = uNear;
       const U = this.ctx.terrain?.groundUniforms;
       const lit = !!(U && U.tField);
       if (lit) {
