@@ -12,8 +12,8 @@ import { BEDS, REED_KIND, REED_MASK } from './reedmask.js';
  *   junco    a tuft of 14 dark rush stems, 0.7-1.15 m, one tapered sliver each: 14 triangles, on a 0.7 m grid (the
  *            lee hollows by the Glass and the lee ditch on the salt field's outer dyke).
  *
- *   foot     (M1b exit fix, F31) under the carrizo, on a 0.5 m grid where the canes stand: a tuft of 28 pale stems,
- *            0.6-1.25 m, each a tapered quad (56 triangles), shrunk only inside 0.35-0.7 m of the lens (the canes: 1-2 m). A carrizo bed is a thicket of stems at a crouch's height
+ *   foot     (M1b exit fix, F31) under the carrizo, on a 0.42 m grid where the canes stand: a tuft of 28 pale stems,
+ *            0.7-1.45 m, each a tapered quad (56 triangles), shrunk only inside 0.35-0.7 m of the lens (the canes: 1-2 m). A carrizo bed is a thicket of stems at a crouch's height
  *            under its canes; at fabb8b8..701b366 F31's lens saw 98.4 % of her crouched in it (bar: a third), the
  *            canes alone standing 1.3 m apart with nothing between them below their leaves.
  *
@@ -34,7 +34,7 @@ import { BEDS, REED_KIND, REED_MASK } from './reedmask.js';
  */
 const CARRIZO_PITCH = 1.3;
 // M1b exit fix (F31): the carrizo's FOOT, a dense tuft of old and young stems under the canes on a 0.6 m grid
-const FOOT_PITCH = 0.5;
+const FOOT_PITCH = 0.42;
 const TILE = 64;
 const SHOW_M = 66;
 const JUNCO_PITCH = 0.7;
@@ -149,7 +149,7 @@ export function carrizoGeo(seed = 0xca77) {
 }
 
 /**
- * The carrizo's foot (M1b exit fix, F31): 28 stems in a tuft 0.5 m across, 0.6-1.25 m, leaning out a little; each a
+ * The carrizo's foot (M1b exit fix, F31): 28 stems in a tuft 0.5 m across, 0.7-1.45 m, leaning out a little; each a
  * tapered quad 0.032 m at the foot to 0.008 m at the tip (2 triangles; 56 a tuft): sage at the root to pale straw, a few older
  * stems greyer. Never gold or rust (F31's written target).
  */
@@ -159,7 +159,7 @@ export function carrizoFootGeo(seed = 0xf007) {
   const c0 = new THREE.Color(), c1 = new THREE.Color();
   for (let k = 0; k < 28; k++) {
     const a = R() * Math.PI * 2, r0 = Math.sqrt(R()) * 0.25, ox = Math.cos(a) * r0, oz = Math.sin(a) * r0;
-    const H = 0.6 + R() * 0.65, tilt = 0.04 + R() * 0.16;
+    const H = 0.7 + R() * 0.75, tilt = 0.04 + R() * 0.16;
     const sa = R() * Math.PI, sx = Math.cos(sa), sz = Math.sin(sa), w0 = 0.016, w1 = 0.004;
     const tx = ox + Math.cos(a) * tilt * H, tz = oz + Math.sin(a) * tilt * H;
     c0.copy(s0).multiplyScalar(0.85 + R() * 0.25); c1.copy(R() < 0.25 ? old1 : s1).multiplyScalar(0.88 + R() * 0.16);
@@ -279,7 +279,7 @@ export class ReedDraw {
     this.uLean = { value: lean };
     this.uHeightC = { value: 2.9 };
     this.uHeightJ = { value: 0.95 };
-    this.uHeightF = { value: 0.95 };
+    this.uHeightF = { value: 1.1 };
     this._own = { geo: [], mat: [] };
     this.meshes = [];
     this.version = -1;
