@@ -1495,3 +1495,89 @@ written counts, M1.6b's line rows, the kit rows (the game at ae86348, where the 
 ---
 
 **Decision (the orchestrator):** no accepted frame regressed and the kept stack is 79/80 with 0 failing; r5/int is merged into main. Milestone 1b does not exit until the owner plays the slice and answers the open pages; the failing items (hit-feel settle, the post-loading hitch, the lost-context reload, the FOV slider, F25 and F31 targets, slice reliability 2 of 3) lead the next wave.
+
+## Wave 6: the M1b exit fixes and their check (Nov 17 2026)
+
+Wave 6 had two fix lanes in one tree on `r5/int`, each working on the failing items of the M1b exit run:
+- Systems: slice reliability (the driver plays a death anywhere; vial arrows only on a still glass from 12-15 m;
+  careful play at the Peg line; a body shot to turn an unaware Plumb; the climb's approach falls back to the nav grid),
+  M1.3e's settle (hit feel owns the gait's flinch envelope on the real clock), F25's staged topple (held at the end of
+  its fall) and F31's carrizo foot (a dense layer of pale stems under the canes, its own violet probe).
+- Engine and UI: the FOV slider holds (combat's hip ease targets the player's own FOV); the Scout's programs are
+  linked and each armour set drawn once behind the boot sheet; `engine.warmUp` compiles the variant the scene pass
+  draws; the ground's chunks draw after the other solids (renderOrder 0.1); the slice recorder counts frames under the
+  Loading sheet apart and names the scripts behind each frame over 33 ms; `tools/perf/hitch-probe.mjs`.
+
+Then the check lane measured `r5/int` at **7474b9f** from clean detached worktrees on port 5270, one Chrome at a
+time. It changed no repo file.
+
+**Verdict: CLEAN.** Every kept row run passes, no accepted frame is further, the slice played 14/14 twice.
+
+**Tier 0 at 7474b9f: PASS, 10 of 10.**
+- `vite build` OK (3.96 MB of code). Name lint 0 hits in 784 files.
+- Licences 231 files against 31 rows. Asset budgets clean. Import graph 204 modules, 0 broken.
+- Resident textures 61.42 MB of 175 MB. Shipped 53.18 MB (`public/` 49.22 MB + code 3.96 MB; cap 110 MB).
+- 157 Node tests pass in 30 files. Boot 3.8 s, 0 errors. Rendered-page name lint 0.
+
+**Kept-stack rows at 7474b9f** (one session, 28 rows, plus A9 again on a quiet box): **28 pass, 0 fail.**
+- Rows: A1, A5, A6, A9, A16, A20, A20b, A22, A22b, A25c, A45, A45b, A45c, A46, A50, A56, A59b, A59c, A60, A65, A70c,
+  A72, A72b, A78-loop-reclaim, A90-memory-stability, A90-rig-reclaim, A90b, A107 (the rows that exercise the boot,
+  the warm-up, the FOV, settings, the machines' gait, the ground draw order, the reed cover and memory).
+- A9: PENDING in the session (1-minute load 3.99), then PASS alone on a quiet box (load 1.95): 59.9 fps median,
+  130 draw calls, scene GPU 18.07 ms (21.44 at 701b366).
+- A16: knuckle to the jaw anchor 0.014 m and hook to nock 0.008 m in all 20 cells.
+- A107: behind the head band at a jog 0.057 m, at a sprint 0.016 m (bar 0.10; at 701b366 -0.049 and -0.006).
+- A90: geometries 399 -> 398, heap -4.8 %. A65 passed after one runner retry. A22b every FOV composited.
+- The runner reports three gate files that fail to load in a detached worktree (`gates.r5.brand`, `gates.r5.gates-perf`,
+  `gates.r5.shell-ui`: they read planning docs that are no longer in the tree). This was the same at 701b366; none of
+  the rows above comes from them.
+
+**The frame bar (TECH §9.1)** at 1600 x 900 CSS px, DPR 1.25, quality `high`, headless Chrome on ANGLE Metal.
+Tool: `tools/perf/exit-bar.mjs`, phases load, live and GPU. The 1-minute load average was 1.7-2.9.
+
+| line | F02 | F23 Gauge | F25 | bar | result |
+|---|---|---|---|---|---|
+| median GPU, back-to-back readback (7 x 60 frames) | 10.3 (13.0) | 13.2 (14.2) | 13.4 (15.0) | <= 14 ms | **PASS in all three** |
+| frames over 33 / 50 ms in 30 s live | 0 / 0 | 0 / 0 | 0 / 0 | 0 | PASS |
+| p95 presented interval (headless) | 17.0 | 17.1 | 17.2 | <= 16.7 ms headed | not measurable headless (an empty page reads 17.9) |
+| main-thread JS per frame, p95 | 3.7 | 3.7 | 4.0 | <= 8.0 ms | PASS |
+| draws; triangles | 101; 1.62 M | 148; 1.59 M | 132; 1.36 M | <= 350; <= 6.5 M | PASS |
+
+(In brackets: 701b366.)
+- Load (the built game): title interactive 4.15 s cold, 4.02 and 3.92 s warm (bar 5 s). New Game to control 0.355 s
+  cold, 0.198 and 0.181 s warm. First load 50.23 MB in 228 requests (bar 60 MB).
+- The 30 s after New Game: 3601 frames presented, worst 10.4 ms, 0 over 33 or 50 ms.
+
+**The slice at 7474b9f, two runs (`--run-only`):**
+
+| | run 1 | run 2 |
+|---|---|---|
+| beats | 14 of 14 | 14 of 14 |
+| Peg cross | 48.7 s, hp 100 -> 63 (one kite) | 44.2 s, hp 100 -> 85 (one kite) |
+| ditch | hidden 63 % of 4483 frames | hidden 56 % of 3879 frames |
+| topple | 77.6 s, 5 vial arrows loosed (6 shots held: the line was blocked) | 18.5 s, 3 vial arrows |
+| lowest hp | 49 (in the topple; she drank) | 78 |
+| reward | the Scout with Shrug | the Scout with Shrug |
+| save rows, site clock | reload, T1, continue, site clock: PASS | PASS |
+| frames over 33 / 50 ms in play | 0 / 0 (worst 32.4 ms) | 0 / 0 (worst 25.1 ms) |
+
+- No death in either run. Under the Loading sheets, 10 frames each, counted apart (worst 158-167 ms at New Game).
+
+**Frames at 7474b9f** (F02, F05, F14, F23 Plumb, F25, F31; 0 console errors):
+- F02, F05, F14: the same as their anchors and as 701b366, within the cloth, the wind and the clouds. The camera FOV is
+  unchanged in every frame (the FOV fix does not touch the stagings).
+- F23 (Plumb): the first film caught the idle's quiver-strap break (her right arm out at the shoulder, the
+  wall-clock staging); three repeats at 7474b9f and three at 965f449 all match the anchor (arms down). Same.
+- F25: the Plumb is now down at the end of its fall, legs splayed and its lamp hostile, foreshortened away from the
+  lens; four Pegs in frame; Brea at full draw in the foreground. Closer to its written target than 701b366 (upright);
+  the vermilion line on the dyke is still absent (the dyke does not exist yet).
+- F31: her violet shows through 0.318 of the stems (bar 0.333): PASS. The written target's water in the lower third is
+  now hidden behind the stems, and the stems near the lens read as flat pale cards (one wide blade crosses her back).
+  Closer on the violet clause, further on the water and on the look of the stems; not accepted.
+
+**Chrome used:** about 33 minutes over 9 launches (cap 15): Tier 0's boot 0.2, the kept rows 15.3, the exit bar 4.6,
+two slice runs 10.4, the frames 0.7, the F23 repeats 1.4, A9 alone 0.5.
+
+---
+
+**Decision (the orchestrator):** the check is CLEAN at 7474b9f; main is fast-forwarded to r5/int. Milestone 1b now waits only on the owner (playing the slice on 5173 and answering the pages) and the look items in the backlog (F31's near stems and hidden water, F25's dyke line).

@@ -402,3 +402,19 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 | closed | The Organ's near gain in F14 and F23 (Plumb); F05 | 25b1603, filmed at 701b366 | world |
 | closed | Tier 0 name lint (a comment in `sliceVerbs.js`) | 701b366 | people |
 | closed | A9 graded on a quiet box | PASS (701b366) | - |
+
+## Wave 6 additions (Nov 17 2026)
+
+- **F23 (Plumb) is filmed on the wall clock and can catch an idle break** (the quiver-strap adjust, right arm out at
+  the shoulder): 1 film in 4 at 7474b9f. Stage it like F15-F19 (simulation time, the idle's life from its constructor
+  values) or hold `_fidgetK` at 1 for the shot. note.
+- **F31's stems** meet the violet bar but hide the water the written target asks for in the lower third, and the
+  nearest stems read as flat pale cards. major (look), for the owner's page.
+- **F25** still has no dyke and no vermilion line; the topple reads as a crouch from this lens. note.
+- **A107's elbow band moved toward its bar** with no kept-stack source changed: a jog 0.057 m and a sprint 0.016 m
+  behind the head plane (bar 0.10; -0.049 and -0.006 at 701b366), band frames 12 and 9 (6 and 5). Watch it at the
+  next run. note.
+- **The slice's lowest hp** reached 49 in run 1's topple (6 vial shots held for a blocked line, 77.6 s). The topple
+  still varies 18-78 s run to run. note.
+- **Three gate files do not load in a detached worktree** (they read planning docs that left the tree). note.
+- The F23 (Gauge) and F25 GPU margin is 0.6-0.8 ms under the 14 ms bar on this machine.
