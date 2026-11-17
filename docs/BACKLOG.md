@@ -382,3 +382,23 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
 | major | rulings | F05 and town re-anchors; the crawl's reference; F07's wall-spill measure; chosen audio ranges |
 | note | A9 | pending twice on a shared box |
 | note | A-tail-legible, A-wrap-clear | not run at 9f8bc85 |
+
+## M1b exit run additions (Nov 17 2026)
+
+| sev | item | number (commit) | owner |
+|---|---|---|---|
+| blocker | The opening shot: a salt porter with a basket stands in the camera at the cistern at New Game and on CONTINUE | every slice run (701b366); also 9f8bc85 | people, engine |
+| major | A 92-100 ms frame about 2 s after the loading sheet closes (bar: none over 50 ms) | three of three runs (701b366) | engine, ui |
+| major | An 85-92 ms frame as the quest's reward (rung 2) is given | two of two runs that reached it (701b366) | systems, armory |
+| major | 42-66 ms frames in the Peg fight | 9 in one cross (701b366) | combat, instruments |
+| major | GPU over 14 ms: F23 Gauge 14.2 (147 draws), F25 15.0 | 701b366 | engine, instruments |
+| major | The slice 2 of 3: a run lost 92 hp at the Peg cross and died on the climb; the driver stops on a death in the climb's approach | 701b366 | systems, instruments |
+| major | Title interactive 4.2 s cold (2.6-3.0 s at the M1a exit) | 701b366 | engine, ui |
+| major | M1.3e: the arrow hit does not settle within 400 ms; the lance settles in 433 ms | ae86348 (the same game) | combat |
+| note | The rake's stills at three moments look nearly the same (about 5 cm of head travel) | 701b366 | hero-anim |
+| note | The topple's still (b-13) is not written | 701b366 | systems |
+| note | `exit-bar.mjs` starts the dev server before the preview server has let go of the port | 701b366 | engine |
+| note | The hitch window counts the playing state only (6.1 min in three runs, not 10) | cddc56f | orchestrator |
+| closed | The Organ's near gain in F14 and F23 (Plumb); F05 | 25b1603, filmed at 701b366 | world |
+| closed | Tier 0 name lint (a comment in `sliceVerbs.js`) | 701b366 | people |
+| closed | A9 graded on a quiet box | PASS (701b366) | - |

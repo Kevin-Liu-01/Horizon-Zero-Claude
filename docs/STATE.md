@@ -1390,3 +1390,108 @@ A9 retry.
 - Robustness: the black world after the never-restored reload; the FOV slider.
 
 **After the review (the orchestrator):** the Organ's near gain (3058d33) turned the columns pale in F14 and rust in F23-plumb, accepted frames outside the weather's scope; it is off at 25b1603 (ORGAN_LIGHT.w 0), and F05 keeps the earlier albedo gain. main is moved to the reviewed commit 9f8bc85 plus that change (b422167 on main); the kept stack at 9f8bc85 is 78/80 with 0 failing. Open: the slice reached the reward in 1 of 2 runs (the topple took 19 arrows in one), the weapons times regressed (aim from stowed 1.40 s), cloth cost and settle rows, A-sweep-wind needs restating for the new cloth, the FOV slider row.
+
+## Wave 5 and the M1b exit run (Nov 16-17 2026)
+
+Wave 5 had two build lanes in one tree on `r5/int`, each with a builder, a judge and fix rounds:
+- People and verbs: M1.5d (a 0.5 m walk grid for people built from the island bake, routines that walk it, the
+  lookout's warning once per Instrument, short routines for the quest givers) and M1.3h (the salt rake, the cane cut
+  and the kindle on Brea, with a Node bench and a row each).
+- Systems: M1.6n the site clock (`src/game/sites/clock.js`, `refill.js`), the kit's shots that lead the target's own
+  motion, the vial-range row, and the slice run three times.
+A planning lane wrote the Milestone 2 briefs (outside the repo).
+
+Then the exit run (M1.8b) measured `r5/int` at **701b366** from one clean detached worktree on port 5270, one Chrome
+at a time. Its two commits change no game code: `cddc56f` adds a presented-frame recorder to the slice run
+(`tools/gates/systems/slice-hour.mjs`) and `701b366` rewords a comment in `src/entities/anim/sliceVerbs.js` that held a
+listed word (Tier 0 failed on it at cddc56f).
+
+**Verdict: M1b does not exit yet.**
+
+| # | exit condition | result at 701b366 |
+|---|---|---|
+| 1 | the slice run plays every beat in order, input-driven, no listed word | passes as written, **not steady**: 14/14, 14/14, 8/14 in three runs |
+| 2 | the M1b frames accepted; the M1a frames not regressed | awaiting the owner; **F25 and F31 fail their written targets**; no M1a frame regressed |
+| 3 | the frame bar, crash family, texture, load and audio budgets | **fails**: GPU over 14 ms in F23 (Gauge) and F25; hitches over 50 ms in the slice |
+| 4 | the owner plays it on 5173 | awaiting the owner |
+
+**Tier 0 at 701b366: PASS, 10 of 10.**
+- `vite build` OK (3.96 MB of code). Name lint 0 hits in 782 files.
+- Licences 231 files against 31 rows. Asset budgets clean. Import graph 204 modules, 0 broken.
+- Resident textures 61.42 MB of 175 MB. Shipped 53.17 MB (`public/` 49.22 MB + code 3.96 MB; cap 110 MB).
+- 156 Node tests pass in 30 files. Boot 3.7 s, 0 errors. Rendered-page name lint 0.
+
+**The frame bar (TECH §9.1)** at 1600 x 900 CSS px, DPR 1.25, quality `high`, headless Chrome 151 on ANGLE Metal.
+Tool: `tools/perf/exit-bar.mjs`. The 1-minute load average was 2.0-2.9.
+
+| line | F02 | F23 Plumb | F23 Peg | F23 Gauge | F25 | bar | result |
+|---|---|---|---|---|---|---|---|
+| median GPU, back-to-back readback (7 x 60 frames) | 13.0 | 13.1 | 12.8 | **14.2** | **15.0** | <= 14 ms | FAIL in two |
+| frames presented in 30 s; over 33 ms | 1801; 0 | 1801; 0 | 1800; 0 | 1800; 0 | 1799; 0 | >= 1782; 0 | PASS |
+| p95 presented interval (headless) | 16.9 | 17.0 | 17.0 | 17.0 | 17.0 | <= 16.7 ms headed | not measurable headless (an empty page reads 17.6) |
+| main-thread JS per frame, p95 | 3.7 | 3.6 | 3.7 | 3.7 | 4.1 | <= 8.0 ms | PASS |
+| draws; triangles | 101; 1.62 M | 99; 1.30 M | 102; 1.31 M | 147; 1.48 M | 132; 1.36 M | <= 350; <= 6.5 M | PASS |
+
+- Load (the built game): title interactive 4.22 s cold, 4.12 and 3.99 s warm (bar 5 s; 2.6-3.0 s at the M1a exit).
+  New Game to control 0.42 s cold, 0.24 and 0.23 s warm. First load 50.15 MB in 227 requests (bar 60 MB).
+- **Hitches in the slice run** (the new recorder: every presented interval while the game is playing, the runner's own
+  screenshots counted apart): 364 s of play over three runs; frames over 50 ms 2, 2 and 4 (bar 0); over 33 ms 4, 5
+  and 13; worst 100 ms. Every run has a 92-100 ms frame about 2 s after the loading sheet closes; runs 1 and 2 have
+  an 85-92 ms frame as the quest's reward is given; run 3 has nine 42-66 ms frames in the Peg fight. The window
+  reached 6.1 minutes of play, not the bar's 10.
+
+**Frame Set at 701b366:** all 34 frames, 200 s of Chrome, 0 console errors. The simulation-time stagings froze at the
+same frame counts as before (F15 194, F16 217, F17 217, F18 314, F19 187, F24 217, F25 217).
+- **No accepted frame changed for the worse.** The wave 4 regression is gone: with the Organ's near gain off
+  (25b1603) the basalt columns in F14 and F23 (Plumb) are dark again, as their anchors; F05 is back to its anchor.
+- The salt cone that 951aa5c moved off the home Brazier has left the backgrounds of F01, F15, F16, F18, F19 and F29,
+  and the right edge of F30 (closer on finish).
+- Every other frame matches the 9f8bc85 film within the cloth, the idle and the wind.
+
+**Kept-stack rows at 701b366** (two sessions, every row reached): 80 rows, **79 pass** (71 action, 8 visual judged against their 9f8bc85 shots: the same poses), **0 fail**, **1 pending** (A76: no staged kind declares a size class).
+- A9-perf-budget passes on a quiet box (load 2.25): 59.9 fps median, 130 draw calls, scene GPU 21.44 ms.
+- A16 every cell within its bars; A17 loose 0.090 m behind, hand to quiver 0.132 m; A107 at a sprint -0.006 m behind the band, at a jog -0.049 m (bar 0.10); A90 geometries 383 -> 382, heap -5 %; A65 every check (after one runner retry: a screenshot timeout); A45c 2.649 m/s (bar 3); A44b 0.054 m. V49: both elbows under the top of her head in all 12 tiles, no forearm behind the head, the low guard last.
+
+**The slice at 701b366, three runs (`--run-only`):**
+
+| | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| beats | 14 of 14 | 14 of 14 | 8 of 14: died 14 s into the climb |
+| cross | 49.6 s, hp 100 -> 68 | 69.7 s, hp -> 58 (one drink) | 60.3 s, hp -> 8 (two drinks) |
+| ditch | hidden 69 % of 5674 frames | hidden 63 % of 7343 frames | - |
+| topple | 33.9 s, 12 arrows | 29.7 s, 6 arrows | - |
+| reward | the Scout with Shrug | the Scout with Shrug | - |
+| save rows | reload, T1, continue: PASS | PASS | reload, continue: PASS |
+
+- In run 3 the driver did not play the death on the climb's approach: it stopped there. In run 1 the first six vial
+  shots left from 19.6-19.8 m and all missed; the hits came from 13.4 m in.
+- The site-clock row passes in runs 1 and 2 (the dyke Plumb does not return; the control Plumb does after 13 h).
+
+**Wave 5 rows at 701b366:**
+- M1.3h, Node bench: rake, Alidade, sit, kindle and cane cut each 0 behind-head and 0 head-plane steps; both palms within
+  0.0139 m of the rake's haft; the Alidade wrist 0.102 m in front of the face; the seated gear 0.142 m over the ground
+  and 1.55 m from the cistern lip. Stills re-filmed at 701b366.
+- M1.5d, routine log (two in-game hours): each person changes activity 4 to 28 times; the longest stand outside work
+  32.75 s; 0 path legs through collision in 86; 0 bind-pose samples; the lookout warns within 0.27 s at 80 m in 10 of
+  10 trials.
+- M1.6n: the site-clock Node tests pass; the live row as above.
+
+**Not measured in this run:** the weapons and cloth benches and clips (no weapons or cloth source changed since
+9f8bc85), the audio rows and the reach rows (no audio, UI or input source changed since 9f8bc85), F22's and F07's
+written counts, M1.6b's line rows, the kit rows (the game at ae86348, where the systems lane ran them, equals 701b366).
+
+**Chrome used:** about 50 minutes over 10 launches (cap 15): Tier 0's boots 0.3 min, the exit bar 6.3, the Frame Set
+3.3, the verbs and F22 probe 0.7, three slice runs 13.9, two kept sessions 9.7 and 15.3.
+
+**Open, for the owner's play and the fix list (M1.8c):**
+- The opening shot: a townsperson stands in the camera at New Game at the cistern (since before wave 5).
+- The hitches after the loading sheet, at the reward and in the Peg fight.
+- GPU in F23 (Gauge) and F25.
+- The slice's steadiness at the Peg cross; the driver's death on the climb.
+- M1.3e's settle (arrow and lance); M1.6m's never-restored reload and FOV slider.
+- F25's topple state; F31's violet through the stems.
+- Carried: weapons times and interrupts, cloth settle, rest and cost.
+
+---
+
+**Decision (the orchestrator):** no accepted frame regressed and the kept stack is 79/80 with 0 failing; r5/int is merged into main. Milestone 1b does not exit until the owner plays the slice and answers the open pages; the failing items (hit-feel settle, the post-loading hitch, the lost-context reload, the FOV slider, F25 and F31 targets, slice reliability 2 of 3) lead the next wave.
