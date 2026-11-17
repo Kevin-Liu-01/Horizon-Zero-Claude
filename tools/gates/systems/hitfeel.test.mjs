@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { HitFeel, KICK, HS } from '../../../src/combat/hitfeel.js';
+import { HitFeel, KICK, HS, FLINCH, flinchEnvelope } from '../../../src/combat/hitfeel.js';
 
 function rig({ height = 3.4, heading = 0 } = {}) {
   const root = new THREE.Group(), body = new THREE.Group(), rigRoot = new THREE.Group(), head = new THREE.Bone();
@@ -73,4 +73,26 @@ test('a dead machine is not rocked, and the freeze cap holds (one hit <= HS.cap,
   for (const [a0] of spans) { let sum = 0; for (const [s0, e0] of spans) { const a = Math.max(s0, a0), b = Math.min(e0, a0 + 1); if (b > a) sum += b - a; } worst = Math.max(worst, sum); }
   assert.ok(worst <= HS.window + 1e-9, `frozen ${worst.toFixed(3)} s in a 1 s window`);
   assert.ok(given.filter((g) => g > 0).length >= 2, `the burst gets more than one freeze: ${given.map((g) => g.toFixed(3))}`);
+});
+
+test('the flinch (M1b exit fix): the gait\'s channel is held at the kick through the freeze and under 1 % of it by 400 ms (real clock)', () => {
+  const m = rig();
+  m.gait._hit = 0;
+  // a stand-in gait: reads the impulse, decays on GAME time (6.5/s), and the freeze holds game time (dt ~ 0)
+  const gaitStep = (dtGame) => { const p = m.gait.pose; if (p.hit > 0) { m.gait._hit = Math.max(m.gait._hit, p.hit); p.hit = 0; } m.gait._hit *= Math.exp(-6.5 * dtGame); };
+  const hf = new HitFeel({ engine: null, environment: null, player: { position: new THREE.Vector3(0, 0, 20) } }, { melee: null });
+  hf.hit({ machine: m, point: new THREE.Vector3(0, 2.6, 0.3), dir: new THREE.Vector3(0, 0, -1), k: 0.5, share: 0.2 });
+  const t0 = hf.last.t, kick = hf.last.kick;
+  assert.ok(kick > 0);
+  let at50 = null, at400 = null;
+  for (let ms = 0; ms <= 420; ms += 1000 / 60) {
+    const frozen = ms < 100;   // a 100 ms freeze: game time at 0.03
+    gaitStep((1 / 60) * (frozen ? 0.03 : 1));
+    hf.update(t0 + ms / 1000);
+    if (at50 === null && ms >= 50) at50 = m.gait._hit;
+    if (at400 === null && ms >= 400) at400 = m.gait._hit;
+  }
+  assert.ok(at50 >= 0.95 * kick, `held through the freeze: ${at50} of ${kick}`);
+  assert.ok(at400 <= 0.01 * kick, `settled by 400 ms: ${at400} of ${kick}`);
+  assert.ok(flinchEnvelope(FLINCH.hold) === 1 && flinchEnvelope(0.4) < 0.01);
 });

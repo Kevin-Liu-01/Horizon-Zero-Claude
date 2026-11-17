@@ -8,7 +8,8 @@
  *            arrow's freeze is cut to what the last second left and written into the same ring, so the lance's own
  *            `_hitstopFor` sees it. The freeze itself is `engine.requestTimeScale('hitstop', 0.03)`, released by
  *            combat's real-clock deadline (`_hsEnd`), as before.
- *   KICK     the struck body jolts AWAY from the blow: the gait's flinch channel (gait.js `pose.hit` / `pose.hitDir`:
+ *   KICK     (the gait's flinch is held under FLINCH's real-clock envelope: see FLINCH below)
+ *            the struck body jolts AWAY from the blow: the gait's flinch channel (gait.js `pose.hit` / `pose.hitDir`:
  *            pitch and roll over the spine chain, decaying at 6.5/s), on every hit and not only above 4 % of its
  *            health (machine-ai's flinch threshold, whose event nothing consumed). The amount is KICK.min (a plink)
  *            up to 1 with the share of health the hit took; the direction is the blow's own (the arrow's flight, the
@@ -38,6 +39,20 @@ export const HS = Object.freeze({ cap: 0.100, window: 0.180, min: 0.020, late: 0
 export const KICK = Object.freeze({ min: 0.3, perShare: 2.2, tiltDeg: 3, refH: 2.5, rise: 0.03, decay: 10, life: 0.7 });
 export const FOV = Object.freeze({ max: 1.6, base: 0.6, perK: 1.4, rise: 0.035, fall: 0.2 });
 export const LIGHT = Object.freeze({ ms: 110, base: 14, perK: 26, off: 0.35, color: '#FFB070', distance: 6 });
+/**
+ * FLINCH (M1b exit fix): the gait's flinch channel (gait.js `_hit`) decays at 6.5/s on GAME time, so a hit that kicked
+ * the struck part 14.7-27.5 deg was still 2.1-3.0 deg off at 360-400 ms (the kit's hit-feel row at ae86348: no settle;
+ * the lance's 433 ms). Hit feel now owns the channel's ENVELOPE on the real clock, as it owns the rock: the kick is held
+ * at full through the freeze (`hold`), then falls at `decay`/s, so it is under 1 % of its peak by 400 ms. It only ever
+ * lowers the gait's value (min), so a harder hit from another source is never cut below its own envelope.
+ */
+export const FLINCH = Object.freeze({ hold: 0.06, decay: 14 });
+
+/** The flinch envelope's share of the kick at `t` s after the hit (1 through the hold, then exponential). */
+export function flinchEnvelope(t) {
+  if (t <= FLINCH.hold) return 1;
+  return Math.exp(-(t - FLINCH.hold) * FLINCH.decay);
+}
 
 const _d = new THREE.Vector3();
 const _ax = new THREE.Vector3();
@@ -72,10 +87,11 @@ export class HitFeel {
     const amp = THREE.MathUtils.degToRad(KICK.tiltDeg) * kick * Math.max(1, KICK.refH / h);
     let r = null;
     for (const x of this._rocks) if (x.m === m) { r = x; break; }
-    if (!r) { r = { m, node, base: node.quaternion.clone(), axis: new THREE.Vector3(), amp: 0, t0: 0 }; this._rocks.push(r); }
+    if (!r) { r = { m, node, base: node.quaternion.clone(), axis: new THREE.Vector3(), amp: 0, t0: 0, kick: 0 }; this._rocks.push(r); }
     r.axis.copy(_ax);
     r.amp = amp;
     r.t0 = now;
+    r.kick = kick;
   }
 
   _updateRocks(now) {
@@ -90,6 +106,12 @@ export class HitFeel {
       const a = t < KICK.rise ? Math.sin((t / KICK.rise) * Math.PI / 2) : Math.exp(-(t - KICK.rise) * KICK.decay);
       _q.setFromAxisAngle(r.axis, r.amp * a);
       r.node.quaternion.copy(r.base).premultiply(_q);
+      // FLINCH: the gait's channel held under this hit's envelope (real clock); the impulse not yet read is left alone
+      const g = r.m.gait;
+      if (g && typeof g._hit === 'number') {
+        const cap = r.kick * flinchEnvelope(t);
+        if (g._hit > cap) g._hit = cap;
+      }
     }
   }
 
