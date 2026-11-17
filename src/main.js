@@ -221,14 +221,24 @@ class Game {
     const register = (o) => { const m = o.material; for (const x of Array.isArray(m) ? m : [m]) ctx.environment?.registerMaterial?.(x); };
     try {
       // what she wears now, first: putting another set on disposes these materials, and their programs with them
-      { const k = engine.keepPrograms(ctx.player.hero.outfit?.meshes?.slice() || [], { register }); out.rows.push({ id: was, worn: true, ...k }); out.programs += k.programs; out.keepers += k.keepers; }
+      // Each set is also DRAWN once in each state (a whole frame, under the sheet): a kept program that was never drawn
+      // still paid 136 ms on its first draw at 079b004 (the GPU process builds its pipelines on the first draw that
+      // uses them; the first synchronous GL call of that frame waited for it)
+      const warmSet = (id, worn) => {
+        const meshes = ctx.player.hero.outfit?.meshes?.slice() || [];
+        const a = engine.keepPrograms(meshes);
+        const ra = engine.render(0);
+        for (const o of meshes) register(o);
+        const b = engine.keepPrograms(meshes);
+        const rb = engine.render(0);
+        out.rows.push({ id, worn, meshes: meshes.length, keepers: a.keepers + b.keepers, programs: a.programs + b.programs, drawMs: [Math.round(ra), Math.round(rb)] });
+        out.programs += a.programs + b.programs; out.keepers += a.keepers + b.keepers;
+      };
+      warmSet(was, true);
       for (const id of new Set(Object.values(RUNG_ARMOR))) {
         if (!id || id === was || performance.now() - t0 > 6000) continue;
         await L.equipArmor(id);
-        const meshes = ctx.player.hero.outfit?.meshes?.slice() || [];
-        const k = engine.keepPrograms(meshes, { register });
-        out.rows.push({ id, meshes: meshes.length, ...k });
-        out.programs += k.programs; out.keepers += k.keepers;
+        warmSet(id, false);
       }
       await engine._awaitProgramsReady(Math.max(500, 6000 - (performance.now() - t0)));
     } catch (err) {

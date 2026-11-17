@@ -172,6 +172,38 @@ const longFrames = ({ since, over }) => {
     events: R.events.filter((e) => e.t >= since - 20000), sheetClosedAt: (() => { const fs = R.frames; for (let i = 1; i < fs.length; i++) if (fs[i - 1].sheet && !fs[i].sheet && fs[i].t >= since) return fs[i].t; return null; })() };
 };
 
+/**
+ * In the page, a staged frame: does the opaque draw ORDER cost GPU time (picture-identical changes, z ties aside)?
+ * Paired A/B against the frame as drawn: 'alpha-late' every alpha-tested object (a fragment that may discard) after
+ * the solid ones; 'terrain-late' the ground's chunks after the other solids; 'both'. ms = as drawn minus the variant
+ * (positive: the variant is cheaper).
+ */
+const orderAB = async (pairs) => {
+  const M = await import('/tools/perf/attrib-page.mjs');
+  const C = window.__CTX__, E = C.engine, scene = C.scene;
+  const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
+  const wait = async (n) => { for (let i = 0; i < n; i++) await raf(); };
+  const T = async () => (await M.finishFrame(E, 40)).medianMs;
+  const cls = M.classify(E, scene);
+  const ground = []; (C.terrain?.mesh || C.terrain?.group)?.traverse?.((o) => { if (o.isMesh && o.renderOrder === 0) ground.push(o); });
+  const setOrder = (objs, v) => { const prev = objs.map((o) => o.renderOrder); objs.forEach((o) => { if (o.renderOrder === 0) o.renderOrder = v; }); return () => objs.forEach((o, i) => { o.renderOrder = prev[i]; }); };
+  const V = [
+    { id: 'alpha-late', n: cls.alpha.length, on: () => setOrder(cls.alpha, 0.2) },
+    { id: 'terrain-late', n: ground.length, on: () => setOrder(ground, 0.1) },
+    { id: 'both', n: cls.alpha.length + ground.length, on: () => { const a = setOrder(ground, 0.1), b = setOrder(cls.alpha, 0.2); return () => { b(); a(); }; } },
+  ];
+  const base = []; for (let i = 0; i < 3; i++) { await wait(6); base.push(await T()); }
+  const rows = [];
+  for (const v of V) {
+    const d = [];
+    for (let i = 0; i < pairs; i++) { await wait(3); const a = await T(); const off = v.on(); await wait(3); const b = await T(); off(); d.push(a - b); }
+    d.sort((x, y) => x - y);
+    rows.push({ id: v.id, objects: v.n, ms: Math.round(d[d.length >> 1] * 100) / 100, iqr: [Math.round(d[Math.floor(d.length * 0.25)] * 100) / 100, Math.round(d[Math.floor(d.length * 0.75)] * 100) / 100] });
+  }
+  base.sort((a, b) => a - b);
+  return { baseMs: base[1], rows };
+};
+
 async function launch(extra, tag) {
   const profile = profileDir(PORT);
   const browser = await puppeteer.launch({ headless: 'new', userDataDir: profile, protocolTimeout: 600000, args: [...BASE_ARGS, ...extra] });
@@ -283,7 +315,7 @@ try {
       }
     } finally { await C.close(); }
   }
-  if (PHASES.has('gpu')) {
+  if (PHASES.has('gpu') || PHASES.has('order')) {
     const set = loadFrameSet();
     const C = await launch(['--disable-gpu-vsync', '--disable-frame-rate-limit'], 'gpu');
     try {
@@ -300,6 +332,14 @@ try {
         try {
           await page.evaluate(stageFrame, f, { settleMs: 2600 });
           await page.screenshot({ path: path.join(OUT, `${id}-gpu.png`) });
+          if (PHASES.has('order')) {
+            const o = await page.evaluate(orderAB, PAIRS);
+            run.order = run.order || [];
+            run.order.push({ id, ...o });
+            log(`order ${id}: base ${o.baseMs} ms; ${o.rows.map((r) => `${r.id} ${r.ms} [${r.iqr.join(', ')}] (${r.objects})`).join('; ')}`);
+            save();
+            if (!PHASES.has('gpu')) { await page.evaluate(unstageFrame); continue; }
+          }
           const l0 = load1();
           const rec = await page.evaluate(async (pairs, only, split) => {
             const M = await import('/tools/perf/attrib-page.mjs');
