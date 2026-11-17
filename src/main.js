@@ -56,6 +56,8 @@ const MAX_FRAME = 0.05;
 /** Snap near-vsync deltas so a 60 Hz display never beats against the step. */
 const SNAP = [1 / 120, 1 / 60, 1 / 30];
 const SNAP_EPS = 0.0016;
+/** M1.8c: the ground chunks' draw order among the solids (after every renderOrder-0 solid, before 0.5). */
+const GROUND_ORDER = 0.1;
 
 class Game {
   constructor() {
@@ -138,6 +140,13 @@ class Game {
     ctx.hud = this._add(new HUD(ctx));
     installMenus(ctx); // pause hub, map, settings, title flow, death (registers its own systems)
     ctx.studio = this._add(new Studio(ctx)); // last: its camera write wins the frame
+
+    // M1.8c (TECH 9.1, F23 Gauge and F25 over 14 ms at 701b366): the ground draws after the other solids. Its shader is
+    // the heaviest in the frame and it lies under nearly everything; drawn after them its covered pixels fail the depth
+    // test before they are shaded. Paired A/B at 80bab35 (tools/perf/hitch-probe.mjs order): -2.5 ms F02, -1.5 ms F23
+    // Gauge, -1.3 ms F25. The picture is the same (the depth test decides it either way); it stays before the sister
+    // isles (0.5), the decals that lie on it (1) and the dome (1000).
+    ctx.terrain?.mesh?.traverse?.((o) => { if (o.isMesh && o.renderOrder === 0) o.renderOrder = GROUND_ORDER; });
 
     // perf-tech-10 — compile every program behind the loading bar so the first
     // arrow, the first Focus pulse and the first Colossus do not stall.
