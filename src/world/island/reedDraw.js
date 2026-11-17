@@ -12,6 +12,11 @@ import { BEDS, REED_KIND, REED_MASK } from './reedmask.js';
  *   junco    a tuft of 14 dark rush stems, 0.7-1.15 m, one tapered sliver each: 14 triangles, on a 0.7 m grid (the
  *            lee hollows by the Glass and the lee ditch on the salt field's outer dyke).
  *
+ *   foot     (M1b exit fix, F31) under the carrizo, on a 0.6 m grid where the canes stand: a tuft of 24 pale stems,
+ *            0.6-1.25 m, each a tapered quad (48 triangles). A carrizo bed is a thicket of stems at a crouch's height
+ *            under its canes; at fabb8b8..701b366 F31's lens saw 98.4 % of her crouched in it (bar: a third), the
+ *            canes alone standing 1.3 m apart with nothing between them below their leaves.
+ *
  * TILES (M1b round 2). One InstancedMesh per bed and 64 m tile of the mask, each shown only while the lens is within
  * 66 m of the tile's footprint (the canes are shrunk to their roots from 48 to 64 m): at 2d55d7c the nine bed meshes
  * and all 122,646 triangles were sent whenever the lens stood within 150 m of the Glass, though nothing past 64 m was
@@ -28,6 +33,8 @@ import { BEDS, REED_KIND, REED_MASK } from './reedmask.js';
  * texture); casts no shadow (no plant does: A56). Allocation-free per frame.
  */
 const CARRIZO_PITCH = 1.3;
+// M1b exit fix (F31): the carrizo's FOOT, a dense tuft of old and young stems under the canes on a 0.6 m grid
+const FOOT_PITCH = 0.6;
 const TILE = 64;
 const SHOW_M = 66;
 const JUNCO_PITCH = 0.7;
@@ -141,6 +148,30 @@ export function carrizoGeo(seed = 0xca77) {
   return geoOf(G);
 }
 
+/**
+ * The carrizo's foot (M1b exit fix, F31): 24 stems in a tuft 0.5 m across, 0.6-1.25 m, leaning out a little; each a
+ * tapered quad 0.032 m at the foot to 0.008 m at the tip (2 triangles): sage at the root to pale straw, a few older
+ * stems greyer. Never gold or rust (F31's written target).
+ */
+export function carrizoFootGeo(seed = 0xf007) {
+  const R = rand(seed), P = [], C = [], N = [], I = [];
+  const s0 = new THREE.Color('#7f8262'), s1 = new THREE.Color('#d2cab0'), old1 = new THREE.Color('#aaa48e');
+  const c0 = new THREE.Color(), c1 = new THREE.Color();
+  for (let k = 0; k < 24; k++) {
+    const a = R() * Math.PI * 2, r0 = Math.sqrt(R()) * 0.25, ox = Math.cos(a) * r0, oz = Math.sin(a) * r0;
+    const H = 0.6 + R() * 0.65, tilt = 0.04 + R() * 0.16;
+    const sa = R() * Math.PI, sx = Math.cos(sa), sz = Math.sin(sa), w0 = 0.016, w1 = 0.004;
+    const tx = ox + Math.cos(a) * tilt * H, tz = oz + Math.sin(a) * tilt * H;
+    c0.copy(s0).multiplyScalar(0.85 + R() * 0.25); c1.copy(R() < 0.25 ? old1 : s1).multiplyScalar(0.88 + R() * 0.16);
+    const b = P.length / 3;
+    P.push(ox - sx * w0, 0, oz - sz * w0, ox + sx * w0, 0, oz + sz * w0, tx + sx * w1, H, tz + sz * w1, tx - sx * w1, H, tz - sz * w1);
+    C.push(c0.r, c0.g, c0.b, c0.r, c0.g, c0.b, c1.r, c1.g, c1.b, c1.r, c1.g, c1.b);
+    for (let q = 0; q < 4; q++) N.push(Math.cos(a) * 0.3, 0.9, Math.sin(a) * 0.3);
+    I.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  }
+  return geoOf({ P, C, N, I });
+}
+
 /** Junco: 14 rush stems, one tapered sliver each (14 triangles): dark green to an olive-brown tip. */
 export function juncoGeo(seed = 0x7c0) {
   const R = rand(seed), P = [], C = [], N = [];
@@ -247,17 +278,19 @@ export class ReedDraw {
     this.uLean = { value: lean };
     this.uHeightC = { value: 2.9 };
     this.uHeightJ = { value: 0.95 };
+    this.uHeightF = { value: 0.95 };
     this._own = { geo: [], mat: [] };
     this.meshes = [];
     this.version = -1;
-    const geoC = carrizoGeo(), geoJ = juncoGeo();
-    this._own.geo.push(geoC, geoJ);
+    const geoC = carrizoGeo(), geoJ = juncoGeo(), geoF = carrizoFootGeo();
+    this._own.geo.push(geoC, geoJ, geoF);
     this.matC = this._material(this.uHeightC, 'cal-reeds-c');
     this.matJ = this._material(this.uHeightJ, 'cal-reeds-j');
+    this.matF = this._material(this.uHeightF, 'cal-reeds-f');
     // the plantings, once: [x, z, yaw, scale, bed, keep-hash] per kind, then kept or dropped by the cover
-    this.sites = { c: this._sites(REED_KIND.CARRIZO, CARRIZO_PITCH, 11), j: this._sites(REED_KIND.JUNCO, JUNCO_PITCH, 23) };
+    this.sites = { c: this._sites(REED_KIND.CARRIZO, CARRIZO_PITCH, 11), j: this._sites(REED_KIND.JUNCO, JUNCO_PITCH, 23), f: this._sites(REED_KIND.CARRIZO, FOOT_PITCH, 37) };
     // one mesh per bed and 64 m tile (see TILES)
-    for (const [kind, list, geo, mat] of [['carrizo', this.sites.c, geoC, this.matC], ['junco', this.sites.j, geoJ, this.matJ]]) {
+    for (const [kind, list, geo, mat] of [['carrizo', this.sites.c, geoC, this.matC], ['junco', this.sites.j, geoJ, this.matJ], ['foot', this.sites.f, geoF, this.matF]]) {
       const by = new Map();
       for (const st of list) {
         const key = `${st[4]}-${Math.floor((st[0] - mask.x0) / TILE)}-${Math.floor((st[1] - mask.z0) / TILE)}`;
