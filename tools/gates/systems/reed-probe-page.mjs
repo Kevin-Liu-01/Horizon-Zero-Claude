@@ -40,6 +40,43 @@ async function reedPixels(C) {
   return { reedPx: n, reedShareOfFrame: Math.round((n / (W * H)) * 1e5) / 1e5, shown: R.draw.stats().shown };
 }
 
+/**
+ * F31's "her violet visible through no more than a third of the stems" (round 2: the judge had it by eye). The frozen
+ * frame rendered three times by the game's renderer into one 960 x 540 target (no post): all; the reeds hidden; the
+ * reeds and Brea hidden. Her pixels are where the last two differ; of those, the ones the reeds change are behind stems
+ * or leaves. `visibleShare` is what of her still shows (bar <= 0.333). (M1b exit fix: a function of its own, so
+ * violet-probe-page.mjs measures it alone.)
+ */
+export async function violetShare(C) {
+  const E = C.engine, p = C.player, R = C.reeds;
+  const r3 = (v) => (v == null || !Number.isFinite(v) ? null : Math.round(v * 1000) / 1000);
+  const THREE = await import('three');
+  const rd = E.renderer, cam = C.camera, scene = C.scene, W = 960, H = 540;
+  const rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.UnsignedByteType, samples: 0 });
+  const prevRT = rd.getRenderTarget();
+  const grab = () => { rd.setRenderTarget(rt); rd.clear(); rd.render(scene, cam); const b = new Uint8Array(W * H * 4); rd.readRenderTargetPixels(rt, 0, 0, W, H, b); return b; };
+  const reedsOn = R.draw.group.visible, breaOn = p.model.visible;
+  let A, B, Cc;
+  try {
+    A = grab();
+    R.draw.group.visible = false; B = grab();
+    p.model.visible = false; Cc = grab();
+  } finally { R.draw.group.visible = reedsOn; p.model.visible = breaOn; rd.setRenderTarget(prevRT); rt.dispose(); }
+  const diff = (X, Y, i) => Math.abs(X[i] - Y[i]) + Math.abs(X[i + 1] - Y[i + 1]) + Math.abs(X[i + 2] - Y[i + 2]);
+  let her = 0, hid = 0, x0 = W, x1 = 0, y0 = H, y1 = 0, reedPx = 0;
+  for (let i = 0; i < W * H * 4; i += 4) {
+    if (diff(A, B, i) > 24) reedPx++;
+    if (diff(B, Cc, i) <= 24) continue;
+    her++;
+    const px = (i / 4) % W, py = Math.floor(i / 4 / W);
+    x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+    if (diff(A, B, i) > 24) hid++;
+  }
+  const vs = her ? (her - hid) / her : null;
+  return { herPx: her, hiddenPx: hid, visibleShare: r3(vs), bar: 'visibleShare <= 0.333', pass: vs != null && vs <= 1 / 3 + 1e-9,
+    box: her ? { x: [x0, x1], yFromTop: [H - 1 - y1, H - 1 - y0] } : null, reedShareOfFrame: r3(reedPx / (W * H)) };
+}
+
 export async function probe(frame) {
   const C = window.__CTX__, E = C.engine, M = C.machines, p = C.player, T = C.terrain, R = C.reeds;
   if (!R) return { error: 'no ctx.reeds: the reed system is not installed' };
@@ -86,33 +123,7 @@ export async function probe(frame) {
        * The frozen F31 frame rendered three times by the game's renderer into one 960 x 540 target (no post): all; the
        * reeds hidden; the reeds and Brea hidden. Her pixels are where the last two differ; of those, the ones the reeds
        * change are behind stems or leaves. `visibleShare` is what of her still shows (bar <= 0.333). */
-      await guard('violet', async () => {
-        const THREE = await import('three');
-        const rd = E.renderer, cam = C.camera, scene = C.scene, W = 960, H = 540;
-        const rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.UnsignedByteType, samples: 0 });
-        const prevRT = rd.getRenderTarget();
-        const grab = () => { rd.setRenderTarget(rt); rd.clear(); rd.render(scene, cam); const b = new Uint8Array(W * H * 4); rd.readRenderTargetPixels(rt, 0, 0, W, H, b); return b; };
-        const reedsOn = R.draw.group.visible, breaOn = p.model.visible;
-        let A, B, Cc;
-        try {
-          A = grab();
-          R.draw.group.visible = false; B = grab();
-          p.model.visible = false; Cc = grab();
-        } finally { R.draw.group.visible = reedsOn; p.model.visible = breaOn; rd.setRenderTarget(prevRT); rt.dispose(); }
-        const diff = (X, Y, i) => Math.abs(X[i] - Y[i]) + Math.abs(X[i + 1] - Y[i + 1]) + Math.abs(X[i + 2] - Y[i + 2]);
-        let her = 0, hid = 0, x0 = W, x1 = 0, y0 = H, y1 = 0, reedPx = 0;
-        for (let i = 0; i < W * H * 4; i += 4) {
-          if (diff(A, B, i) > 24) reedPx++;
-          if (diff(B, Cc, i) <= 24) continue;
-          her++;
-          const px = (i / 4) % W, py = Math.floor(i / 4 / W);
-          x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
-          if (diff(A, B, i) > 24) hid++;
-        }
-        const vs = her ? (her - hid) / her : null;
-        return { herPx: her, hiddenPx: hid, visibleShare: r3(vs), bar: 'visibleShare <= 0.333', pass: vs != null && vs <= 1 / 3 + 1e-9,
-          box: her ? { x: [x0, x1], yFromTop: [H - 1 - y1, H - 1 - y0] } : null, reedShareOfFrame: r3(reedPx / (W * H)) };
-      });
+      await guard('violet', () => violetShare(C));
 
       /* ---- the path through dense carrizo and the Plumb's stand ---- */
       const dense = (x, z) => { const b = R.mask.bedAt(x, z); return b && b.kind === RM.REED_KIND.CARRIZO ? R.mask.cover(x, z) : 0; };
