@@ -2492,9 +2492,10 @@ export class Progression {
       if (!res.ok && p) {
         // no checkpoint yet: still no free refill
         p.gourd = Math.min(p.maxGourd, this._deathPouch * Math.max(0.25, this.mult('deathPouchKeep')));
-      } else if (p) {
-        p.gourd = Math.min(p.maxGourd, Math.max(p.gourd * 0.5, this._deathPouch * this.mult('deathPouchKeep')));
       }
+      // M1b fix round 1 (systems, the smallest change): with a record loaded, the Gourd is the newest record's (BIBLE
+      // 13/17: the world and satchel as of the newest record; nothing is taken). The old halving here drained it 57 -> 28
+      // at the stand-up (the f35bc3c death row)
       this.banner('YOU FELL', this.lastKiller ? `KILLED BY ${String(this.lastKiller).toUpperCase()}` : 'CHECKPOINT RESTORED', 'death');
     });
 

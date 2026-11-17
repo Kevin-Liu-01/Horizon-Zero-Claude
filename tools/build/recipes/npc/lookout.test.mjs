@@ -113,3 +113,46 @@ test('no warning at 85 m; one warning per approach; the all-clear past 100 m for
   assert.equal(W.subs.length, 2, 'both said to the subtitle (no player: heard)');
   assert.equal(W.subs[0].w, 'LANTERN-KEEPER');
 });
+
+test('a resident Instrument 37 m off is warned of once and does not silence her for the next (fix round 2)', async () => {
+  // the live world keeps a Gauge 33-38 m from the keeper: at 731b21a she warned of it at t = 0.27 s and never again
+  const W = await world(12.0);
+  const kp = () => W.keeper().person.group.position;
+  const gauge = { kind: 'gauge', alive: true, position: { x: kp().x + 37, z: kp().z } };
+  W.machines.push(gauge);
+  for (let i = 0; i < 60 * 5; i++) W.step(1 / 60);
+  assert.equal(W.events.filter((e) => e.ev === 'npc-warning').length, 1, 'the resident Gauge, once');
+  assert.equal(W.R.lookout.known, 1);
+  const rows = [];
+  for (let k = 0; k < 4; k++) {
+    // a new Instrument walked in from 130 m, a different bearing and speed each time; the Gauge stays
+    const brg = (k * 71 + 23) * Math.PI / 180, speed = 1.2 + k * 1.4;
+    const m = { kind: 'plumb', alive: true, position: { x: kp().x + Math.sin(brg) * 130, z: kp().z + Math.cos(brg) * 130 } };
+    W.machines.push(m);
+    const n0 = W.events.filter((e) => e.ev === 'npc-warning').length;
+    let crossed = null, fired = null, t = 0, r = 130;
+    for (let i = 0; i < 60 * 120 && fired === null; i++) {
+      r -= speed / 60;
+      m.position.x = kp().x + Math.sin(brg) * r; m.position.z = kp().z + Math.cos(brg) * r;
+      if (crossed === null && Math.hypot(m.position.x - kp().x, m.position.z - kp().z) <= LOOKOUT.range) crossed = t;
+      W.step(1 / 60); t += 1 / 60;
+      // (the keeper moved in the step: the scan read the distance after it)
+      if (crossed === null && Math.hypot(m.position.x - kp().x, m.position.z - kp().z) <= LOOKOUT.range) crossed = t - 1 / 60;
+      if (W.events.filter((e) => e.ev === 'npc-warning').length > n0) fired = t;
+    }
+    assert.ok(crossed !== null && fired !== null, `approach ${k}: no warning with the Gauge standing`);
+    rows.push(+(fired - crossed).toFixed(3));
+    // it leaves: forgotten after 10 s past 100 m (the Gauge is still known, so no all-clear)
+    for (let i = 0; i < 60 * 12; i++) { m.position.x = kp().x + Math.sin(brg) * 140; m.position.z = kp().z + Math.cos(brg) * 140; W.step(1 / 60); }
+    W.machines.splice(W.machines.indexOf(m), 1);
+    for (let i = 0; i < 60; i++) W.step(1 / 60);
+  }
+  console.log(JSON.stringify({ residentDelaysS: rows }));
+  assert.ok(rows.every((d) => d >= 0 && d <= 3), `delays ${rows}`);
+  assert.equal(W.events.filter((e) => e.ev === 'npc-all-clear').length, 0, 'no all-clear while the Gauge stands');
+  assert.equal(W.R.lookout.known, 1, 'only the Gauge is still known');
+  // the Gauge goes too: the all-clear once
+  for (let i = 0; i < 60 * 12; i++) { gauge.position.x = kp().x + 150; gauge.position.z = kp().z; W.step(1 / 60); }
+  assert.equal(W.events.filter((e) => e.ev === 'npc-all-clear').length, 1);
+  assert.ok(W.R.lookout.armed);
+});

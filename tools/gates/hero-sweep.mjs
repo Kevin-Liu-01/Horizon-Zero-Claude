@@ -71,9 +71,16 @@ const CLIPS = {
   crouch: { cloth: true, js: `p.setCrouch(true); await simWait(0.6); S.on = true; await simWait(1.5); keys.add('KeyW'); await simWait(1.5); keys.delete('KeyW'); p.setCrouch(false);` },
   roll: { cloth: true, js: `keys.add('KeyW'); await simWait(0.6); S.on = true; p.dodge(); await simWait(1.2);` },
   /* (M1a debt fix round 1, M1.3h "stowed gear clears the ground ... by >= 2 cm when seated": `gear`, the lowest stowed-gear
-   *  vertex over the terrain under it on every graded step of the seat; the cistern lip is the real Brazier's and is not
-   *  staged here) */
-  sit: { cloth: true, gear: true, js: `const q = p.position; const h = p.ride([{ x: q.x, y: q.y + 0.45, z: q.z }, { x: q.x + 0.001, y: q.y + 0.45, z: q.z }], { speed: 0.0001 }); await simWait(0.8); S.on = true; await simWait(2.0); S.on = false; h.cancel();` },
+   *  vertex over the terrain under it on every graded step of the seat) */
+  /* (M1.3h people fix round 2: the seat is THE HOME BRAZIER'S, so the cistern lip is graded too: she is stood 1.7 m off
+   *  the seat and seated by the Braziers' own `seatHere`, and `cisMin` is every stowed-gear vertex's clearance of the
+   *  cistern as a solid (its outer radius `obj.cistern.r`, from the ground to the wall mesh's top). No home Brazier, or
+   *  the seat refused: seated on open ground as before, and the cistern is UNMEASURED, a FAIL) */
+  sit: { cloth: true, gear: true, js: `const B = C.braziers?.byId?.('cistern'); let h = null;
+    if (B?.obj?.seat && B.obj.cistern) { const s = B.obj.seat; p.position.set(s.x + 1.2, 0, s.z + 1.2); p.velocity.set(0, 0, 0); p._snapToGround(); await simWait(0.4); S.seated = !!C.braziers.seatHere?.(); }
+    if (S.seated) { let top = -Infinity; B.obj.group.traverse((o) => { if (o.name === 'brazier-cistern' && o.geometry) { o.geometry.computeBoundingBox(); o.updateWorldMatrix(true, false); const bb = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld); top = Math.max(top, bb.max.y); } }); if (Number.isFinite(top)) { S.cis = B.obj.cistern; S.cisTop = top; } }
+    else { const q = p.position; h = p.ride([{ x: q.x, y: q.y + 0.45, z: q.z }, { x: q.x + 0.001, y: q.y + 0.45, z: q.z }], { speed: 0.0001 }); }
+    await simWait(0.8); S.on = true; await simWait(2.0); S.on = false; if (h) h.cancel(); else C.braziers.stand?.();` },
   unstowLance: { js: `S.on = true; cmb.melee.drawLance(30); await simWait(1.3);` },
   stowLance: { js: `cmb.melee.drawLance(30); await simWait(1.4); S.on = true; cmb.melee.holsterLance(); await simWait(1.3);` },
   unstowLanceJog: { js: `keys.add('KeyW'); await simWait(0.8); S.on = true; cmb.melee.drawLance(30); await simWait(1.3);` },
@@ -112,9 +119,16 @@ const CLIPS = {
    * overlay): 0 behind and 0 plane steps, and the right wrist in front of the head's frontal plane on every step of
    * the hold (`aliFrontMin`, the raise's weight over 0.9). Sit is the sit row above. */
   alidade: { ali: true, js: `C.sighting?.toggle?.(true); S.on = true; await simWait(2.2); C.sighting?.toggle?.(false); await simWait(0.5);` },
+  /* M1.3h: the slice's verbs (src/entities/anim/sliceVerbs.js, the animator's `playVerb`), each from standing to standing:
+   * the salt rake (three strokes; `rake`: BOTH HANDS ON THE RAKE, each palm's centre within 0.03 m of the haft's axis on
+   * every step at full weight, and the head within 0.05 m of the ground through the pull), the cane cut, the kindle. The
+   * clips are the people's pack's: the row waits for it */
+  saltRake: { rake: true, js: `await C.people?.bank?.loadClips?.(); S.on = true; const n = an.playVerb?.('rake') || 0; if (!n) { S.skip = 'the rake did not start'; return; } await simWait(n + 0.8);` },
+  kindle: { cloth: true, js: `await C.people?.bank?.loadClips?.(); S.on = true; const n = an.playVerb?.('kindle') || 0; if (!n) { S.skip = 'the kindle did not start'; return; } await simWait(n + 0.6);` },
+  caneCut: { cloth: true, js: `await C.people?.bank?.loadClips?.(); S.on = true; const n = an.playVerb?.('caneCut') || 0; if (!n) { S.skip = 'the cane cut did not start'; return; } await simWait(n + 0.6);` },
 };
-/** M1.3h: the slice's verbs with no clip in the tree yet: a row each that SKIPs, by name, until the clip lands. */
-const VERB_STUBS = { saltRake: 'the salt rake (both hands on the rake)', kindle: 'kindle at the Brazier', caneCut: 'the cane cut' };
+/** M1.3h: the slice's verbs with no clip in the tree yet (none since the verbs landed: sliceVerbs.js). */
+const VERB_STUBS = {};
 
 const row = (name) => {
   const c = CLIPS[name];
@@ -131,14 +145,16 @@ const row = (name) => {
       let T0 = null;
       ${c.gear ? `const gearMeshes = []; { const roots = []; p.model.traverse((o) => { if (/stowkit/.test(o.userData?.heroPart || '')) roots.push(o); }); if (cmb.bow?.group) roots.push(cmb.bow.group); if (an.melee?.lance) roots.push(an.melee.lance); for (const r of roots) r.traverse((o) => { if (o.isMesh && o.visible !== false && !gearMeshes.includes(o)) gearMeshes.push(o); }); }
       const gv = new THREE.Vector3();
-      const gearClear = () => { let m = 9; for (const o of gearMeshes) { const P = o.geometry?.attributes?.position; if (!P) continue; o.updateWorldMatrix(true, false); const st = Math.max(1, Math.floor(P.count / 400)); for (let i = 0; i < P.count; i += st) { if (o.isSkinnedMesh) o.getVertexPosition(i, gv); else gv.fromBufferAttribute(P, i); gv.applyMatrix4(o.matrixWorld); const h = gv.y - TR.getHeight(gv.x, gv.z); if (h < m) m = h; } } return m; };` : ''}
+      const gearClear = () => { let m = 9; for (const o of gearMeshes) { const P = o.geometry?.attributes?.position; if (!P) continue; o.updateWorldMatrix(true, false); const st = Math.max(1, Math.floor(P.count / 400)); for (let i = 0; i < P.count; i += st) { if (o.isSkinnedMesh) o.getVertexPosition(i, gv); else gv.fromBufferAttribute(P, i); gv.applyMatrix4(o.matrixWorld); const h = gv.y - TR.getHeight(gv.x, gv.z); if (h < m) m = h;
+        if (S.cis) { const rd = Math.hypot(gv.x - S.cis.x, gv.z - S.cis.z) - S.cis.r, yd = gv.y - S.cisTop; const d = rd > 0 && yd > 0 ? Math.hypot(rd, yd) : rd > 0 ? rd : yd > 0 ? yd : -Math.min(-rd, -yd); if (!(S.cisMin <= d)) S.cisMin = d; } } } return m; };` : ''}
       M.begin(${JSON.stringify(name)});
       const updC = cmb.update.bind(cmb);
       cmb.update = function (dt, ...rest) {
         const r = updC(dt, ...rest);
         if (S.on && dt > 0) { if (T0 == null) T0 = E.simTime; p.model.updateMatrixWorld(true); M.sample({ T: +(E.simTime - T0).toFixed(3), cloth: ${!!c.cloth}, run: ${!!c.run}, aiming: !!p.aiming });
           ${c.gear ? `S.gearMin = Math.min(S.gearMin ?? 9, gearClear());` : ''}
-          ${c.ali ? `if ((an._ali?.w ?? 0) > 0.9) { const h = M.hangCheck(); S.aliN = (S.aliN || 0) + 1; S.aliMin = Math.min(S.aliMin ?? 9, h.r.front); }` : ''} }
+          ${c.ali ? `if ((an._ali?.w ?? 0) > 0.9) { const h = M.hangCheck(); S.aliN = (S.aliN || 0) + 1; S.aliMin = Math.min(S.aliMin ?? 9, h.r.front); }` : ''}
+          ${c.rake ? `{ const I = an.verbInfo?.(); if (I?.rake && I.w >= 0.999) { const r = I.rake, A = r.head, B = r.gripR, L = Math.hypot(B[0] - A[0], B[1] - A[1], B[2] - A[2]) || 1; const off = (P) => { const px = P[0] - A[0], py = P[1] - A[1], pz = P[2] - A[2], t = (px * (B[0] - A[0]) + py * (B[1] - A[1]) + pz * (B[2] - A[2])) / L; return Math.hypot(px - (B[0] - A[0]) / L * t, py - (B[1] - A[1]) / L * t, pz - (B[2] - A[2]) / L * t); }; S.rakeN = (S.rakeN || 0) + 1; S.palmMax = Math.max(S.palmMax || 0, off(r.palmR), off(r.palmL)); if ((an._vb?.u ?? 0) > 0.36) S.headMax = Math.max(S.headMax || 0, A[1] - r.ground); } }` : ''} }
         return r;
       };
       try { ${c.js} } finally { S.on = false; cmb.update = updC; release(); p.setCrouch?.(false); for (const id of made.splice(0)) K.unregister(id); if (cmb.melee && cmb.melee.stance !== 'holstered') cmb.melee.holsterLance?.(); }
@@ -154,9 +170,10 @@ const row = (name) => {
       ${c.cloth ? `if (r.clipFrames) fails.push(r.clipFrames + ' clipping frames');` : ''}
       ${c.run ? `if (r.wristMid == null || r.wristMid < 0.10) fails.push('wrist ' + r.wristMid + ' m off the midline'); if (r.foreCase == null || r.foreCase <= 0) fails.push('forearm ' + r.foreCase + ' m off the survey case');` : ''}
       ${c.ali ? `if (!(S.aliN >= 20)) fails.push('the alidade was raised for only ' + (S.aliN || 0) + ' steps'); else if (!(S.aliMin > 0)) fails.push('the right wrist ' + S.aliMin + ' m behind the head plane during the hold');` : ''}
-      ${c.gear ? `if (!(S.gearMin >= 0.02)) fails.push('stowed gear ' + (S.gearMin == null ? 'unmeasured' : S.gearMin.toFixed(3) + ' m') + ' over the ground while seated (bar 0.02)');` : ''}
+      ${c.rake ? `if (!(S.rakeN >= 60)) fails.push('the rake was in both hands for only ' + (S.rakeN || 0) + ' steps'); if (!(S.palmMax <= 0.03)) fails.push('a palm ' + S.palmMax + ' m off the haft (bar 0.03)'); if (!(S.headMax <= 0.05)) fails.push('the rake head ' + S.headMax + ' m over the ground in the pull (bar 0.05)');` : ''}
+      ${c.gear ? `if (!(S.gearMin >= 0.02)) fails.push('stowed gear ' + (S.gearMin == null ? 'unmeasured' : S.gearMin.toFixed(3) + ' m') + ' over the ground while seated (bar 0.02)'); if (!(S.cisMin >= 0.02)) fails.push('stowed gear ' + (S.cisMin == null ? 'unmeasured (not seated at the home Brazier)' : S.cisMin.toFixed(3) + ' m') + ' from the cistern while seated (bar 0.02)');` : ''}
       ${c.hang ? `const H = S.hang; if (!H || !(H.l.front > 0 && H.r.front > 0 && H.l.belowHeadBoneM >= 0 && H.r.belowHeadBoneM >= 0)) fails.push('hang: ' + JSON.stringify(H));` : ''}
-      return { pass: fails.length === 0, detail: { fails, ...r, hang: S.hang, bar: S.bar, aliFrontMin: S.aliMin ?? null, aliSteps: S.aliN ?? null, gearMinAboveGroundM: S.gearMin == null ? null : +S.gearMin.toFixed(4), counts: M.counts, caps: M.caps, wrap: an.clothWrapInfo?.() || null } };
+      return { pass: fails.length === 0, detail: { fails, ...r, hang: S.hang, bar: S.bar, aliFrontMin: S.aliMin ?? null, aliSteps: S.aliN ?? null, rakeSteps: S.rakeN ?? null, palmOffHaftMaxM: S.palmMax ?? null, rakeHeadOverGroundM: S.headMax ?? null, verb: an.verbInfo?.() || null, gearMinAboveGroundM: S.gearMin == null ? null : +S.gearMin.toFixed(4), gearMinFromCisternM: S.cisMin == null ? null : +S.cisMin.toFixed(4), seatedAtHomeBrazier: S.seated ?? null, cistern: S.cis ? { x: +S.cis.x.toFixed(2), z: +S.cis.z.toFixed(2), r: S.cis.r, top: +S.cisTop.toFixed(3) } : null, counts: M.counts, caps: M.caps, wrap: an.clothWrapInfo?.() || null } };
     })()`),
   };
 };

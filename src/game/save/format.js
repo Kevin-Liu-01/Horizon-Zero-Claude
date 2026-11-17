@@ -4,7 +4,8 @@
  *
  * A record carries its version number (`v: 6`) and everything the slice needs to stand back up:
  *   quest stages (the spine's serialize), satchel, ammo, position, revealed triangles, lit Braziers and the last
- *   rest, Tolerance, loadout; plus the hour and weather, vitals, and the legacy systems' own blob (`legacy`).
+ *   rest, Tolerance, loadout; plus the hour and weather, vitals, the site clock (`sites`, M1.6n) and the legacy
+ *   systems' own blob (`legacy`).
  *
  * Three slots. Each has two records: the NAMED save (written by a rest at a Brazier) and the silent CHECKPOINT
  * (a completed quest stage, a closed triangle, a re-surveyed benchmark). Keys:
@@ -82,6 +83,9 @@ export function makeRecord(s, { kind = 'named', reason = 'manual', slot = 1, sav
       wear: s.loadout?.wear == null ? null : String(s.loadout.wear),
       quick: Array.isArray(s.loadout?.quick) ? s.loadout.quick.map((q) => (q == null ? null : String(q))) : [],
     },
+    // the site clock (M1.6n, src/game/sites/clock.js serialize): its hours and the cleared sites; optional, so a v6
+    // record written before it reads as a fresh clock
+    sites: s.sites ? JSON.parse(JSON.stringify(s.sites)) : null,
     legacy: s.legacy ?? null,
   };
 }

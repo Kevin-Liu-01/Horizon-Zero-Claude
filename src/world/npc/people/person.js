@@ -4,6 +4,7 @@ import { PersonChains } from './chains.js';
 import { FADE_LEVELS } from './bank.js';
 import { PosePlayer, rotOf } from './pose.js';
 import { Face } from './face.js';
+import { walkToward } from './walk.js';
 
 /**
  * CALIMA · one person on the street (settlements; R56; bible §6.2). A clone of an archetype's GLB: ONE
@@ -17,6 +18,7 @@ import { Face } from './face.js';
  */
 const FADE_T = 0.32;
 const TAU = Math.PI * 2;
+const _ws = { yaw: 0, x: 0, z: 0, arrived: false };
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
 const _v = new THREE.Vector3(), _sc = new THREE.Vector3();
 const _mq = new THREE.Quaternion();
@@ -262,20 +264,13 @@ export class Person {
       this.speed = step > 0 ? d / step : 0;
       const T = this.walkTarget;
       if (T) {
-        const dx = T.x - this.group.position.x, dz = T.z - this.group.position.z;
-        const want = Math.atan2(dx, dz);
-        let turn = want - this.yaw;
-        while (turn > Math.PI) turn -= TAU;
-        while (turn < -Math.PI) turn += TAU;
-        // M1.5d: within 1.5 m of the mark a person turns faster and slows while the mark is off to the side, so a walk that
-        // starts facing away ends at the mark (at 1.5 rad/s and a stride of 1.2 m/s the turning circle is 1.6 m across and
-        // the routine log caught people circling a mark they never reached)
-        const close = dx * dx + dz * dz < 2.25 && Math.abs(turn) > 0.6;
-        const maxTurn = (close ? 5 : 1.5) * step;
-        this.yaw += Math.max(-maxTurn, Math.min(maxTurn, turn));
+        // M1.5d: the step is ./walk.js walkToward (shared with the routine log's Node bench): a turn toward the mark at
+        // 1.5 rad/s, or at 5 rad/s with the step cut by the turn's cosine within 1.5 m of the mark or on a corner
+        _ws.yaw = this.yaw; _ws.x = this.group.position.x; _ws.z = this.group.position.z;
+        d = walkToward(_ws, T, d, step);
+        this.yaw = _ws.yaw;
         this.group.rotation.y = this.yaw;
-        if (close) d *= Math.max(0.15, Math.cos(turn));
-        const px = this.group.position.x + Math.sin(this.yaw) * d, pz = this.group.position.z + Math.cos(this.yaw) * d;
+        const px = _ws.x, pz = _ws.z;
         this.group.position.x = px; this.group.position.z = pz;
         this.travelled += d;
         const Tn = this.sys.ctx.terrain;
@@ -286,7 +281,7 @@ export class Person {
           cc.ax = px; cc.az = pz; cc.ay = gy + 0.25; cc.bx = px; cc.bz = pz; cc.by = gy + 1.45 * (this.spec.height / 1.75);
           this.sys.ctx.collision._bounds(cc);
         }
-        if (dx * dx + dz * dz < 0.09) {
+        if (_ws.arrived) {
           const then = T.then;
           this.stopWalk();
           if (then) then(this);

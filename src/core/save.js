@@ -118,6 +118,7 @@ export class SaveSystem {
         wear: sys?.wantArmor ?? ctx.player?.hero?.loadout?.armorId ?? null,
         quick: (ctx.quickslots?.slots ?? []).map((s) => (s?.earned ? s.kind : null)),
       },
+      sites: ctx.siteClock?.serialize?.() ?? null,
       legacy: { prog: this.prog?.serialize?.() ?? null, roster: this._rosterSnapshot() },
     };
   }
@@ -264,6 +265,8 @@ export class SaveSystem {
     });
 
     if (opts.world !== false) step('roster', () => this._applyRoster(data.legacy?.roster));
+    // the site clock (M1.6n) is the world's: a death keeps the live one (world:false), as it keeps the live roster
+    if (opts.world !== false) step('sites', () => ctx.siteClock?.restore?.(data.sites));
 
     step('progression', () => {
       if (data.legacy?.prog) this.prog?.deserialize?.(data.legacy.prog);

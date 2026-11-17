@@ -295,6 +295,24 @@ export function restClearance() {
 }
 
 /**
+ * The town seated on a ground (M1.5d: the people's walk grid and its Node checks build the town's colliders the way
+ * ./saltrow.js does, from this one function): each building's record seated on the street (the ground just in front of
+ * its door, + 0.04 m), and the breakwater on the ground at its root (not below the sea). `ground(x, z)` the terrain.
+ * Returns { buildings: [{ id, kind, x, y, z, yaw, w, d, h, tone, step, hut }], breakwater: { x, y, z, yaw, length, width } }.
+ */
+export function seatTown(ground) {
+  const buildings = BUILDINGS.map((b) => {
+    const p = placeOf(b);
+    const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
+    const y = ground(p.x + sy * (b.d / 2 + 0.4), p.z + cy * (b.d / 2 + 0.4)) + 0.04;
+    return { id: b.id, kind: b.kind, x: p.x, y, z: p.z, yaw: p.yaw, w: b.w, d: b.d, h: b.h, tone: b.tone, step: b.step, hut: b.hut || null };
+  });
+  const bw = HARBOUR.breakwater;
+  const breakwater = { x: bw.x, y: Math.max(0, ground(bw.x, bw.z)), z: bw.z, yaw: Math.PI - bw.bearing * D2R, length: bw.length, width: bw.width };
+  return { buildings, breakwater };
+}
+
+/**
  * The town's colliders as plain collision descriptors (src/core/collision.js register()): a box per building block
  * and per raised roof block (kind 'landmark': the roofs are floors), a capsule per salt cone, a box for the mole.
  * `buildings` are the seated records ({ x, y, z, yaw, w, d, h, step }, yaw as three's rotation.y: local +z the

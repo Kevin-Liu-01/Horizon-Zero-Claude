@@ -26,6 +26,12 @@
  *                    CONTINUE on the title: the same stage, satchel, place and hour as the record; the run plays on
  *   save-continue    the same after the run, on the run's newest record. A diagnosis is polled while the title is
  *                    awaited (see reloadContinue: a new tab got no animation frames and the title sat in 'idle')
+ *   death-staged     with --death-at <stage>: the death is staged there (her own takeDamage), then played as above;
+ *                    the death-rule row records the stand-up at the Brazier (full health, the stage kept, the satchel
+ *                    and Gourd of the newest record, within 3 m of the Brazier of her last rest)
+ *   site-clock       after the run (M1.6n): the dyke Plumb (the quest's own) killed if it still stands, its wreck aged
+ *                    out, 13 hours put on the site clock (STAGED), the clock swept: the dyke Plumb must not return; a
+ *                    control Plumb spawned 150 m behind the camera and cleared the same way must
  *
  * Output: a run dir under ~/.calima-r5/review/runs/ (never the repo): report.json, the frames, step shots.
  */
@@ -68,6 +74,16 @@ const WEAR = flag('--wear');
 const WEAR_AT = flag('--wear-at');
 const NO_REFUSAL = args.includes('--no-refusal');
 const KIT_ONLY = flag('--kit-only') ? new Set(flag('--kit-only').split(',').map((x) => x.trim())) : null;
+// M1b round 3: --death-at <stage>: when the run reaches that stage, Brea is killed (STAGED: her own takeDamage, the
+// real death path after it) and the run plays the death as a player does (the card, RETURN TO THE LAST BRAZIER) and on
+// to the end: the death-rule row on demand, mid-slice. --no-site-clock skips the site-clock row after the run
+const DEATH_AT = flag('--death-at');
+// fix round 1: --death-after: the death is staged AFTER the run has reached the reward and its site-clock row (so the
+// run itself stays a clean input-driven run), by the dyke Plumb's kind as the cause (FIX LIST 5: the card and the HUD
+// read 'STAGED' when the cause was the harness's string); --kit-repeat N runs the kit page N times
+const DEATH_AFTER = args.includes('--death-after');
+const KIT_REPEAT = Math.max(1, Number(flag('--kit-repeat', 1)) | 0);
+const SITE_CLOCK = !args.includes('--no-site-clock');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[slice-hour ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -85,7 +101,8 @@ const spent = () => (Date.now() - T0) / 1000;
 
 async function shot(page, name) {
   try {
-    const buf = await page.screenshot({ type: 'png' });
+    await page.evaluate(() => window.__hitchMark?.(1)).catch(() => {});
+    const buf = await page.screenshot({ type: 'png' }).finally(() => page.evaluate(() => window.__hitchMark?.(0)).catch(() => {}));
     await sharp(buf).resize(1600, 900, { fit: 'fill' }).jpeg({ quality: 82 }).toFile(path.join(runDir, `${name}.jpg`));
     return `${name}.jpg`;
   } catch (e) { return null; }
@@ -181,7 +198,9 @@ async function solveShot(mi, part, tolDeg) {
   if (!m || m.alive === false) return null;
   const V = C.camera.position.constructor;
   const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
-  // the target's motion and the engine's sub-step, measured (8 frames)
+  // the target's motion and the engine's sub-step, measured (8 frames): the ROOT's walk. (M1b round 3 tried the part's own
+  // node at 4c5384a and e30af7b's parent: an attacking Plumb's vial reads 3.7 m/s as it turns, a rotation the linear ride
+  // cannot carry, and the hull sweep in that riding frame then read its head across every line: 13 stands 'masked')
   const p0 = m.position.clone(), s0 = E.simTime, dts = [];
   let sPrev = s0;
   for (let i = 0; i < 8; i++) { await raf(); const st = E.steps || 0; if (st > 0 && E.simTime > sPrev) dts.push((E.simTime - sPrev) / st); sPrev = E.simTime; }
@@ -254,7 +273,7 @@ async function solveShot(mi, part, tolDeg) {
     const def = cb.ammoDefs[cb.activeWeapon?.activeAmmo ?? 'hunter'] ?? cb.ammoDefs.hunter;
     const speed = cb._computeShot(def, cb.drawStrength, sp, dir);
     // + the release: the LMB the runner lets go after this solve reaches the game a frame or two later
-    const k = E.simTime - t0 + lat, at = { x: aim.x + ride.x * k, y: aim.y, z: aim.z + ride.z * k };
+    const k = E.simTime - t0 + lat, at = { x: aim.x + ride.x * k, y: aim.y + ride.y * k, z: aim.z + ride.z * k };
     const r = cb.arrows.predict(sp, dir, speed, { dt, maxT: 1.6, ride, aim: at });
     return { miss: new V(r.dx, r.dy, r.dz), d: r.d, first: r.hit ? (r.machine === m ? r.hit : r.hit === 'ground' ? 'ground' : `other:${r.machine?.kind ?? '?'}`) : null, t: r.tAim, at };
   };
@@ -263,7 +282,7 @@ async function solveShot(mi, part, tolDeg) {
     const aim = aims[ai];
     // the first look: the aim point where it will be when the arrow arrives (lead), the drop held over
     const tf0 = sp.copy(aim).distanceTo(C.camera.position) / 62;
-    const goal = new V(aim.x + ride.x * tf0, aim.y + 0.5 * 9.8 * tf0 * tf0, aim.z + ride.z * tf0);
+    const goal = new V(aim.x + ride.x * tf0, aim.y + ride.y * tf0 + 0.5 * 9.8 * tf0 * tf0, aim.z + ride.z * tf0);
     let r = null, err = null;
     for (let it = 0; it < 8; it++) {
       err = (await window.__aimPoint(goal.x, goal.y, goal.z, tolDeg)).err;
@@ -274,7 +293,7 @@ async function solveShot(mi, part, tolDeg) {
     }
     const met = want && r.first && (want === 'bob' ? /bob/i.test(r.first) : r.first === want);
     out = { aimIdx: ai, err, missM: +r.d.toFixed(3), first: r.first, ds: +cb.drawStrength.toFixed(2), dt: +dt.toFixed(4),
-      ride: +Math.hypot(ride.x, ride.z).toFixed(2), tf: r.t != null ? +r.t.toFixed(3) : null, steady: cb.steady?.phase ?? null, sway: +(cb.sway?.deg ?? 0).toFixed(3) };
+      ride: +Math.hypot(ride.x, ride.y, ride.z).toFixed(2), tf: r.t != null ? +r.t.toFixed(3) : null, steady: cb.steady?.phase ?? null, sway: +(cb.sway?.deg ?? 0).toFixed(3) };
     if (!want || met) return { ...out, clear: true };
   }
   return { ...out, clear: false };
@@ -351,7 +370,9 @@ async function waitStill(mi, ms) {
     for (let i = 0; i < 10; i++) await raf();
     const span = E.simTime - s;
     v = span > 0.02 ? Math.hypot(m.position.x - p.x, m.position.z - p.z) / span : 0;
-    if (v < 0.12 || performance.now() - t0 > ms) break;
+    // M1b round 3: and not while it staggers from the last hit (4c5384a: a shot loosed into the stagger after the first vial
+    // hit, read as a hit on the vial, met nothing)
+    if ((v < 0.12 && m.state !== 'stagger') || performance.now() - t0 > ms) break;
   }
   return { waitedS: +((performance.now() - t0) / 1000).toFixed(1), speed: v == null ? null : +v.toFixed(2), state: m?.state ?? null };
 }
@@ -515,6 +536,15 @@ async function drink(page, K, to = 90, maxMs = 6000) {
 }
 
 let lampsFight = null;
+/**
+ * M1b round 3: the farthest stand the topple shoots the Plumb's vial from (m). Fix round 1 (FIX LIST 1): 17, was 24.
+ * Across the lane's 9 slice runs at 4c5384a..f35bc3c, vial arrows loosed from 20 m or more struck it 1 time in 45 (every
+ * one predicted on it); from under 20 m 12 of 19. The kit's vial-range row measures why; until it passes, the runner
+ * stands where the shots land. VIAL_BACK_D is where it backs out to when the Plumb closes inside 9 m.
+ */
+const VIAL_MAX_D = 17;
+const VIAL_RING = [13, 15, 17];
+const VIAL_BACK_D = 15;
 const shots = [];
 
 /** Bow in hand (slot 1) and Reed arrows on the string; make arrows (hold R) when fewer than 4. */
@@ -549,7 +579,9 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
     for (;;) {
       const s = await page.evaluate(probe);
       if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) return { ok: false, why: 'died', fired };
-      if (stageDone && s.stage !== stage0) return { ok: true, fired, ...(scans.length ? { scans } : {}), ...(ditchScans ? { ditchScans } : {}) };
+      // (fix round 1: at ae86348 the topple stage closed on the topple before the loop read the Plumb down, so b-13 was
+      // never filmed: the still is taken here too, when the stage that closed is the vial's)
+      if (stageDone && s.stage !== stage0) { const toppleShot = untilDown ? await shot(page, 'b-13-topple') : undefined; return { ok: true, fired, ...(toppleShot ? { toppleShot } : {}), ...(scans.length ? { scans } : {}), ...(ditchScans ? { ditchScans } : {}) }; }
       if ((Date.now() - t0) / 1000 > maxS) return { ok: !!all, why: `${kind} ${part}: not done in ${maxS} s (${fired} arrows)`, fired, ...(scans.length ? { scans } : {}) };
       if (s.busy) { await release(); await playScene(page, K); continue; }
       // the whole line (all): every live one within 220 m is walked to; one target: the nearest within 70 m
@@ -558,7 +590,8 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
       if (!T.length) return { ok: !!all, why: all ? null : `no live ${kind} within ${reach} m`, fired };
       const t = T[0];
       // M1b fix round: the pry beat's two halves (the vial until it is down; the bob while it is down)
-      if (untilDown && t.down) { await release(); return { ok: true, fired, down: true, ...(scans.length ? { scans } : {}) }; }
+      // fix round 1 (FIX LIST 8): the topple's still, the moment the run sees the Plumb down (F25's state), before she lowers the bow
+      if (untilDown && t.down) { const toppleShot = await shot(page, 'b-13-topple'); await release(); return { ok: true, fired, down: true, toppleShot, ...(scans.length ? { scans } : {}) }; }
       if (whileDown && !t.down) { await release(); return { ok: false, why: `${kind} stood up`, fired, stoodUp: true }; }
       // M1b fix round: drink between shots (never in the 4 s a Plumb is down: they are the Pry's), and on the Peg line
       // break off and cross when the gourd is dry and the staff low (the lamps are the stage's optional count)
@@ -579,10 +612,10 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         });
         let sc = null;
         if (ditchPts) {
-          const dsc = await page.evaluate(scanStands, t.i, tried, undefined, ditchPts.filter((q) => { const d = Math.hypot(q.x - t.x, q.z - t.z); return d >= 10 && d <= 34; }));
+          const dsc = await page.evaluate(scanStands, t.i, tried, undefined, ditchPts.filter((q) => { const d = Math.hypot(q.x - t.x, q.z - t.z); return d >= 10 && d <= VIAL_MAX_D; }));
           if (dsc) { (ditchScans ||= []).push({ of: dsc.of, open: dsc.open, masked: dsc.masked, stands: dsc.stands.slice(0, 3) }); if (dsc.stands[0] && dsc.stands[0].clear >= 2) sc = dsc; }
         }
-        if (!sc) sc = await page.evaluate(scanStands, t.i, tried);
+        if (!sc) sc = await page.evaluate(scanStands, t.i, tried, VIAL_RING);
         scans.push(sc && { open: sc.open, masked: sc.masked, vial: sc.vial, nockH: sc.nockH, best: sc.stands[0] ?? null, from: { x: +s.p.x.toFixed(1), z: +s.p.z.toFixed(1) } });
         const best = sc?.stands?.[0];
         if (!best) return { ok: false, why: `${kind} ${part}: no open stand found round it (${JSON.stringify(sc?.masked ?? {})})`, fired, scans };
@@ -592,6 +625,10 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         if (w.why === 'died') return { ok: false, why: 'died', fired, scans };
         continue;
       }
+      // M1b round 3: the vial is shot from VIAL_MAX_D at most. At a8c0b83 fifteen vial shots from 33-57 m (flights of
+      // 0.6-0.93 s, the solve itself 3-8 cm off a glass 4.5 cm in radius) were loosed and met nothing at all; every shot
+      // from 11-22 m in the same build's runs struck the vial. When the Plumb's walk has taken it past that, scan again
+      if (part === 'vial' && stand0 && t.d > VIAL_MAX_D + 3) { await release(); stand0 = null; continue; }
       if (part !== 'vial' && t.d > stand + 6) {
         await release();
         const k = (t.d - stand) / t.d;
@@ -599,7 +636,14 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         continue;
       }
       if (backOut && t.d < 9 && kind !== 'peg') {
-        if (part === 'vial') { stand0 = null; continue; }   // it closed on her: scan again from here
+        if (part === 'vial') {
+          // it closed on her (M1b round 3): from inside 9 m its head masks the vial (4c5384a: seven stands at 9-13 m, each
+          // masked by rig_head when she got there). Back out to 18 m, then scan again from there
+          await release();
+          const k = VIAL_BACK_D / Math.max(1, t.d);
+          await walkTo(page, K, { x: t.x + (s.p.x - t.x) * k, z: t.z + (s.p.z - t.z) * k }, 3, { maxS: 12 });
+          stand0 = null; continue;
+        }
         await release();
         const k = stand / Math.max(1, t.d);
         await walkTo(page, K, { x: t.x + (s.p.x - t.x) * k, z: t.z + (s.p.z - t.z) * k }, 3, { maxS: 12 });
@@ -633,20 +677,34 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         blocked++;
         const s2 = await page.evaluate(probe);
         shots.push({ kind, part, blocked: true, d: +t.d.toFixed(1), at: { x: +s2.p.x.toFixed(1), z: +s2.p.z.toFixed(1) }, predicted: { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds }, aimErr: sol.err });
-        if (blocked > 6) return { ok: false, why: `${kind} ${part}: masked from every stand tried (${blocked})`, fired, scans, ditchScans };
-        if (part === 'vial') { stand0 = null; continue; }   // the next open stand the scan finds
+        if (blocked > (part === 'vial' ? 12 : 6)) return { ok: false, why: `${kind} ${part}: masked from every stand tried (${blocked})`, fired, scans, ditchScans };
+        if (part === 'vial') {
+          // the next open stand the scan finds; masked at close range (its head before the vial), back out to 18 m first
+          if (t.d < 13) { const k = VIAL_BACK_D / Math.max(1, t.d); await walkTo(page, K, { x: t.x + (s2.p.x - t.x) * k, z: t.z + (s2.p.z - t.z) * k }, 3, { maxS: 12 }); }
+          stand0 = null; continue;
+        }
         const ang = Math.atan2(s2.p.x - t.x, s2.p.z - t.z) + (blocked % 2 ? 0.35 : -0.7);
         await walkTo(page, K, { x: t.x + Math.sin(ang) * stand, z: t.z + Math.cos(ang) * stand }, 2.5, { maxS: 15, sprint: false });
         continue;
       }
       // the release follows the last solve at once (the steady phase and sway are read in the solve itself)
       const sw = { st: sol?.steady ?? null, sway: sol?.sway ?? null };
+      // M1b round 3: was an arrow loosed, and what did it meet (at 9f8bc85 sixteen vial shots read as hits left the
+      // Plumb's health at 190: not one arrow met it anywhere)
+      const loose = await page.evaluate(() => { const C = window.__CTX__;
+        if (!window.__shotHook) { window.__shotHook = true; window.__shotEv = [];
+          C.events.on('arrow-fired', () => window.__shotEv.push({ n: 'fired' }));
+          C.events.on('arrow-hit', (e) => window.__shotEv.push({ n: 'hit', kind: e?.machine?.kind ?? null, weak: !!e?.weak, dmg: Math.round(e?.damage ?? 0), pt: e?.point ? [+e.point.x.toFixed(2), +e.point.y.toFixed(2), +e.point.z.toFixed(2)] : null })); }
+        window.__shotEv.length = 0;
+        return { ready: C.player?.animator?.looseReady?.() ?? null, ds: +(C.combat?.drawStrength ?? 0).toFixed(2), ammo: C.combat?.ammo?.[C.combat?.activeWeapon?.activeAmmo ?? 'hunter'] ?? null }; });
       await up('left');
       fired++;
       await sleep(Math.max(520, 1000 * (sol?.tf ?? 0) + 250));
+      loose.events = await page.evaluate(() => (window.__shotEv || []).slice(0, 6));
+      loose.ammoAfter = await page.evaluate(() => { const C = window.__CTX__; return C.combat?.ammo?.[C.combat?.activeWeapon?.activeAmmo ?? 'hunter'] ?? null; });
       const hp1 = await page.evaluate((i) => { const m = window.__CTX__.machines.list[i]; return m ? { vial: m._vialHits ?? null, hp: Math.round(m.health), down: (m._toppleT ?? -1) >= 0 } : null; }, t.i);
       shots.push({ kind, part, ammo, d: +t.d.toFixed(1), aimErr: sol?.err ?? a.err, predicted: sol && { first: sol.first, missM: sol.missM, aimIdx: sol.aimIdx, ds: sol.ds, dt: sol.dt, ride: sol.ride, tf: sol.tf }, still, hpBefore: t.hp, down: t.down, steady: sw.st, swayDeg: sw.sway,
-        vialHits: hp1 && hp0 ? [hp0.vial, hp1.down ? 'topple' : hp1.vial] : null, hpAfter: hp1?.hp ?? null });
+        vialHits: hp1 && hp0 ? [hp0.vial, hp1.down ? 'topple' : hp1.vial] : null, hpAfter: hp1?.hp ?? null, loose });
     }
   } finally { await release(); }
 }
@@ -808,6 +866,18 @@ async function beat(page, K, s) {
  * frames, so the game's frame loop and the title's presentation loop never ran. A diagnosis is polled while the
  * title is awaited (animation frames counted from document start, visibility, focus, context loss).
  */
+/** fix round 1: the mean luminance (0-255) of the page's middle band (30-70 % of its height), from a screenshot. */
+async function lumBand(page) {
+  try {
+    await page.evaluate(() => window.__hitchMark?.(1)).catch(() => {});
+    const buf = await page.screenshot({ type: 'png' }).finally(() => page.evaluate(() => window.__hitchMark?.(0)).catch(() => {}));
+    const { data, info } = await sharp(buf).greyscale().raw().toBuffer({ resolveWithObject: true });
+    let sum = 0, n = 0;
+    for (let y = Math.floor(info.height * 0.3); y < Math.floor(info.height * 0.7); y++) for (let x = 0; x < info.width; x++) { sum += data[y * info.width + x]; n++; }
+    return n ? +(sum / n).toFixed(1) : null;
+  } catch { return null; }
+}
+
 async function reloadContinue(page, tag) {
   const before = await page.evaluate(() => {
     const C = window.__CTX__, s = C.progression.saves;
@@ -871,10 +941,34 @@ async function reloadContinue(page, tag) {
   }
   const dxz = before ? +Math.hypot(before.x - after.x, before.z - after.z).toFixed(3) : null;
   const dy = before && Number.isFinite(before.y) ? +(after.y - before.y).toFixed(3) : null;
+  // fix round 1 (FIX LIST 6): the row grades the picture too. At f35bc3c the T1 continue was black under the HUD in 3 of
+  // 9 lane runs (the middle band's mean luminance 8.3/255) and passed on position. The bar: the middle band (30-70 % of
+  // the height) at >= 10/255 when the row's shot is taken (1.5 s after play resumes). If it is under, the page is read
+  // every 0.5 s for 8 s more (what the renderer, the camera and the element over the canvas are), for the cause
+  const pic = await lumBand(page);
+  row.picture = { lum: pic, bar: 10 };
+  if (pic != null && pic < 10) {
+    const t0 = Date.now(), seen = [];
+    while (Date.now() - t0 < 8000) {
+      await sleep(500);
+      const l = await lumBand(page);
+      const d = await page.evaluate(() => { const C = window.__CTX__, E = C?.engine, R = E?.renderer, cam = C?.camera, P = C?.player?.position, cv = R?.domElement, cs = cv ? getComputedStyle(cv) : null;
+        const top = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+        return { state: C?.state, frames: E?.frames ?? null, calls: R?.info?.render?.calls ?? null, tris: R?.info?.render?.triangles ?? null, lost: R?.getContext?.()?.isContextLost?.() ?? null,
+          cam: cam ? [+cam.position.x.toFixed(2), +cam.position.y.toFixed(2), +cam.position.z.toFixed(2)] : null, camGround: cam && C.terrain ? +(cam.position.y - C.terrain.getHeight(cam.position.x, cam.position.z)).toFixed(2) : null,
+          her: P ? [+P.x.toFixed(2), +P.y.toFixed(2), +P.z.toFixed(2)] : null, near: cam?.near ?? null, far: cam?.far ?? null, exposure: R?.toneMappingExposure ?? null,
+          canvas: cs ? { display: cs.display, opacity: cs.opacity, visibility: cs.visibility } : null, over: top ? `${top.tagName.toLowerCase()}.${String(top.className || '').slice(0, 60)}` : null }; }).catch((e) => ({ evalError: String(e).slice(0, 120) }));
+      seen.push({ t: +((Date.now() - t0) / 1000 + 1.5).toFixed(1), lum: l, ...d });
+      if (l != null && l >= 10 && row.picture.pictureAfterS == null) row.picture.pictureAfterS = seen.at(-1).t;
+    }
+    row.picture.seen = seen.filter((x, i) => i % 2 === 0 || i === seen.length - 1);
+    row.picture.laterShot = await shot(page, `${tag}-continued-later`);
+  }
+  row.picture.ok = pic != null && pic >= 10;
   Object.assign(row, {
     after, hadContinue, dxz, dy,
     pass: !!before && hadContinue && after.state === 'playing' && before.idx === after.idx && before.started === after.started && before.salt === after.salt
-      && Math.abs(before.hour - after.hour) < 0.05 && dxz < 1.0 && (dy == null || Math.abs(dy) < 0.5),
+      && Math.abs(before.hour - after.hour) < 0.05 && dxz < 1.0 && (dy == null || Math.abs(dy) < 0.5) && row.picture.ok,
     shot: await shot(page, `${tag}-continued`),
   });
   return row;
@@ -1028,6 +1122,9 @@ try {
       try {
         await page.evaluate(`window.__aimPoint = ${aimPoint.toString()};`);
         report.rows.kit = await runKit(page, { sleep, log, only: KIT_ONLY });
+        // fix round 1 (FIX LIST 3): --kit-repeat N runs the kit page N times in this one session (each repeat after the
+        // first without the vial-range row, which is 30 shots), so a row's stability is measured, not one green run
+        for (let r = 2; r <= KIT_REPEAT; r++) report.rows[`kit${r}`] = await runKit(page, { sleep, log: (...a) => log(`[kit ${r}]`, ...a), only: KIT_ONLY, skip: new Set(['vial-range']) });
       } catch (e) { report.rows.kit = { error: String(e?.message || e).slice(0, 300) }; }
     }
     await page.close();
@@ -1044,6 +1141,26 @@ try {
   if (PAD) { await page.evaluateOnNewDocument(installPad); report.input = 'pad'; }
   await page.evaluateOnNewDocument(`window.__aimPoint = ${aimPoint.toString()};`);
   await page.evaluateOnNewDocument(() => { window.__raf = 0; const tick = () => { window.__raf++; requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
+  // M1.8b (the exit run): TECH 9.1's hitch budget in the slice run. Every presented-frame interval while the game is in
+  // 'playing' (the loading sheet closed), per document; intervals that end inside one of this runner's own screenshots
+  // (shot, lumBand: a compositor readback the player never causes) or on the frame after it are counted apart as 'tool'
+  await page.evaluateOnNewDocument(() => {
+    const H = (window.__hitch = { n: 0, ms: 0, max: 0, over33: [], over50: 0, tool: 0, toolOver33: 0, pause: 0, skip: false, last: 0, was: false });
+    window.__hitchMark = (on) => { if (on) H.pause++; else { H.pause = Math.max(0, H.pause - 1); H.skip = true; } };
+    const tick = (t) => {
+      const C = window.__CTX__, playing = C?.state === 'playing';
+      if (H.last && playing && H.was) {
+        const d = t - H.last;
+        if (H.pause || H.skip) { H.tool++; if (d > 33.4) H.toolOver33++; if (!H.pause) H.skip = false; }
+        else { H.n++; H.ms += d; if (d > H.max) H.max = d; if (d > 50) H.over50++;
+          if (d > 33.4 && H.over33.length < 200) H.over33.push({ t: +(t / 1000).toFixed(2), ms: +d.toFixed(1), stage: C.spine?.current?.()?.id ?? null }); }
+      }
+      H.was = playing; H.last = t; requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const hitchSegs = (report.hitch = { note: 'presented-frame intervals in play (state playing), one segment per document; tool = inside or right after a runner screenshot', segments: [] });
+  const takeHitch = async (tag) => { const h = await page.evaluate(() => { const H = window.__hitch; return H ? { n: H.n, s: +(H.ms / 1000).toFixed(1), maxMs: +H.max.toFixed(1), over33: H.over33.length, over50: H.over50, list: H.over33, tool: H.tool, toolOver33: H.toolOver33 } : null; }).catch(() => null); if (h) hitchSegs.segments.push({ tag, ...h }); };
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   // M1b: at bab1f0c the run's page sat 240 s short of the title's 'press' with no console error (the frames page had
   // booted in the same session): what it was doing is recorded, and the page is loaded once more before giving up
@@ -1082,16 +1199,16 @@ try {
 
   // save-reload row, early (so the row is reached whatever the run does later): the New Game's named save, quit,
   // reopen in the same tab, CONTINUE; the run then plays on from the continued game
+  await takeHitch('new-game');
   report.rows['save-reload'] = await reloadContinue(page, 'b02-reload');
   log(`save-reload: ${report.rows['save-reload'].pass ? 'PASS' : 'FAIL'} (${report.rows['save-reload'].why ?? `boot ${report.rows['save-reload'].bootS} s`})`);
   if (!report.rows['save-reload'].pass && (await page.evaluate(() => window.__CTX__?.state)) !== 'playing') throw new Error('save-reload left the game off play: the run cannot go on');
 
-  let last = null, tries = 0, deaths = 0;
-  while (spent() < BUDGET_S - RESERVE_S) {
-    const s = await page.evaluate(probe);
-    if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) {
-      // played as a player plays it: the death card, then RETURN TO THE LAST BRAZIER (the one death rule, M1.6f; BIBLE 13's two stations, M1.6g2)
+  let last = null, tries = 0, deaths = 0, stagedDeath = false;
+  // a death, played as a player plays it (in the run, and once more after it with --death-after)
+  const playDeath = async (s) => {
       deaths++;
+      // played as a player plays it: the death card, then RETURN TO THE LAST BRAZIER (the one death rule, M1.6f; BIBLE 13's two stations, M1.6g2)
       // fix round (the judge at 24419e9: the row did not check the satchel): the newest record (BIBLE 13: "the world and
       // satchel as of the newest record"), read before the card is answered, is what she must stand up with
       const pre = await page.evaluate(() => { const C = window.__CTX__, S = C.progression.saves.store, n = S.continueSlot(), rec = n ? S.latest(n) : null;
@@ -1099,23 +1216,45 @@ try {
           record: rec ? { kind: rec.kind, reason: rec.reason, salt: rec.satchel?.['metal-shards'] ?? 0, satchel: rec.satchel, gourd: Math.round(rec.vitals?.gourd ?? 0), ammo: rec.ammo } : null }; });
       await page.waitForFunction(() => !!document.querySelector('.mn-death.show .mn-death-opt'), { timeout: 15000, polling: 100 }).catch(() => {});
       await sleep(600);
-      const card = await page.evaluate(() => ({ title: document.querySelector('.mn-death-title')?.textContent ?? null, opts: [...document.querySelectorAll('.mn-death-opt b')].map((b) => b.textContent) }));
+      const card = await page.evaluate(() => ({ title: document.querySelector('.mn-death-title')?.textContent ?? null, opts: [...document.querySelectorAll('.mn-death-opt b')].map((b) => b.textContent),
+        cause: (document.querySelector('.mn-death')?.innerText || '').match(/felled by[^\n]*|the island took her/i)?.[0] ?? null }));
       const cardShot = await shot(page, `d${deaths}-death-card`);
-      if (deaths > 2) { report.stoppedAt = s.stage; report.why = `Brea died ${deaths} times`; break; }
+      if (deaths > 2) { report.stoppedAt = s.stage; report.why = `Brea died ${deaths} times`; return 'stop'; }
       const clicked = PAD ? !!(await uiChoose(page, /RETURN TO THE LAST BRAZIER/, { sel: '.mn-death-opt' }))
         : await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-death-opt')].find((x) => /RETURN TO THE LAST BRAZIER/.test(x.textContent)); if (!b) return false; b.click(); return true; });
       await page.waitForFunction(() => window.__CTX__?.state === 'playing', { timeout: 20000, polling: 100 }).catch(() => {});
       await sleep(1500);
-      const post = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position, R = C.braziers.lastRest; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), state: C.state, hp: Math.round(C.player.health), salt: C.inventory.count('metal-shards'), gourd: Math.round(C.player.gourd ?? 0),
+      const post = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position, R = C.braziers.lastRest; return { stage: C.spine.current()?.id ?? null, idx: C.spine.idx, reached: C.spine.order.map((o) => o.id), state: C.state, hp: Math.round(C.player.health), maxHp: Math.round(C.player.maxHealth), salt: C.inventory.count('metal-shards'), gourd: Math.round(C.player.gourd ?? 0),
         satchel: Object.fromEntries(Object.keys(C.progression.saves.store.latest(C.progression.saves.store.continueSlot())?.satchel || {}).map((k) => [k, C.inventory.count(k)])),
         fromRest: R ? +Math.hypot(P.x - R.x, P.z - R.z).toFixed(2) : null, rest: R?.id ?? null }; });
+      post.hudCause = await page.evaluate(() => (document.body.innerText || '').match(/KILLED BY [^\n]*|CHECKPOINT RESTORED/)?.[0] ?? null).catch(() => null);
       const rec = pre.record;
       const satchelKept = !!rec && Object.entries(rec.satchel || {}).every(([k, v]) => (post.satchel?.[k] ?? 0) === v) && post.salt === rec.salt;
       const gourdKept = !!rec && Math.abs(post.gourd - rec.gourd) <= 1;
-      const row = { death: deaths, at: s.stage, card, clicked, pre, post, satchelKept, gourdKept, cardShot, shot: await shot(page, `d${deaths}-stood-up`),
-        pass: clicked && post.state === 'playing' && post.idx === pre.idx && post.fromRest != null && post.fromRest < 3 && satchelKept && gourdKept };
+      const row = { death: deaths, at: s.stage, staged: report.rows['death-staged']?.at === s.stage && !report.rows['death-staged'].played, card, clicked, pre, post, satchelKept, gourdKept, cardShot, shot: await shot(page, `d${deaths}-stood-up`),
+        // she stands up at the Brazier of her last rest at full health (format.js deathRecord), on the stage she died on
+        hpFull: post.hp >= post.maxHp - 0.5,
+        pass: clicked && post.state === 'playing' && post.idx === pre.idx && post.fromRest != null && post.fromRest < 3 && satchelKept && gourdKept && post.hp >= post.maxHp - 0.5 };
+      if (row.staged) report.rows['death-staged'].played = true;
       (report.rows['death-rule'] ||= []).push(row);
       log(`death ${deaths} at ${s.stage}: stood up ${post.fromRest} m from ${post.rest}, stage ${pre.stage} -> ${post.stage}`);
+      return row;
+  };
+  // the staged death (--death-at, --death-after): her own damage path (player.takeDamage -> _die), so the card, the park and
+  // the respawn are the game's; the cause is a Plumb (the nearest live one, else the kind's own name), sent as an
+  // Instrument's blow is ('player-damage' with from), so the card and the HUD name it as they name a real death
+  const stageDeath = (at) => page.evaluate((at) => { const C = window.__CTX__, P = C.player, p = P.position;
+    let from = null, bd = Infinity;
+    for (const m of (C.machines?.list || [])) { if (m && m.kind === 'plumb' && m.alive !== false) { const d = Math.hypot(m.position.x - p.x, m.position.z - p.z); if (d < bd) { bd = d; from = m; } } }
+    if (!from) from = { kind: 'plumb', displayName: C.machines?.instrumentKinds?.plumb?.displayName ?? 'Plumb' };
+    const hp = Math.round(P.health), amount = P.health + 50;
+    C.events.emit('player-damage', { amount, from });
+    P.takeDamage(amount, from);
+    return { at, hpBefore: hp, hpAfter: Math.round(P.health), state: C.state, cause: from.displayName ?? from.kind, causeLive: bd < Infinity ? +bd.toFixed(1) : null }; }, at);
+  while (spent() < BUDGET_S - RESERVE_S) {
+    const s = await page.evaluate(probe);
+    if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) {
+      if ((await playDeath(s)) === 'stop') break;
       last = null; tries = 0;
       continue;
     }
@@ -1125,11 +1264,22 @@ try {
     if (s.stage === last) tries++; else tries = 0;
     if (tries > 1) { report.stoppedAt = s.stage; report.why = report.beats.at(-1)?.why || 'no progress'; break; }
     last = s.stage;
+    if (DEATH_AT && s.stage === DEATH_AT && !stagedDeath) {
+      // the staged death: her own damage path (player.takeDamage -> _die), so the card, the park and the respawn are the game's
+      stagedDeath = true;
+      report.rows['death-staged'] = await stageDeath(s.stage);
+      log(`death staged at ${s.stage}: ${JSON.stringify(report.rows['death-staged'])}`);
+      await page.waitForFunction(() => window.__CTX__.state === 'dead' || window.__CTX__.state === 'death-menu' || !!document.querySelector('.mn-death.show'), { timeout: 10000, polling: 100 }).catch(() => {});
+      last = null; tries = 0;
+      continue;
+    }
     const b0 = Date.now();
     log(`beat ${s.stage} (${s.type})`);
     const r = await beat(page, K, s);
     const after = await page.evaluate(probe);
     const row = { stage: s.stage, type: s.type, ok: after.stage !== s.stage, seconds: +((Date.now() - b0) / 1000).toFixed(1), ...r, note: s.note, hp: after.hp };
+    // (people M1.3h, the smallest change: which of Brea's slice verbs have started so far, and the last refusal of each)
+    row.verbs = await page.evaluate(() => { const I = window.__CTX__?.player?.animator?.verbInfo?.(); return I ? { counts: { ...I.counts }, refused: { ...I.refused }, last: I.name } : null; }).catch(() => null);
     if (s.stage === 'cross' && lampsFight) row.lamps = lampsFight;
     // (no still after the topple: the 4 s it lies down are the Pry's)
     if (row.ok && s.stage !== 'topple') row.shot = await shot(page, `b-${String(report.beats.length + 2).padStart(2, '0')}-${s.stage}`);
@@ -1145,6 +1295,9 @@ try {
     if (!row.ok && r.ok === false) { report.stoppedAt = s.stage; report.why = r.why; break; }
   }
   if (!report.stoppedAt) { report.stoppedAt = (await page.evaluate(probe)).stage; report.why = 'Chrome budget'; }
+  // M1.8b: the run's segment ends with the run, before the staged rows after it (site clock, death-after)
+  await takeHitch('run');
+  { const S = hitchSegs.segments; hitchSegs.total = { s: +S.reduce((a, x) => a + x.s, 0).toFixed(1), frames: S.reduce((a, x) => a + x.n, 0), over33: S.reduce((a, x) => a + x.over33, 0), over50: S.reduce((a, x) => a + x.over50, 0), maxMs: Math.max(0, ...S.map((x) => x.maxMs)), tool: S.reduce((a, x) => a + x.tool, 0) }; }
   const fin = await page.evaluate(probe);
   report.spine = fin.report;
   report.shots = shots;
@@ -1153,6 +1306,70 @@ try {
   report.reward = await page.evaluate(() => { const C = window.__CTX__, L = C.player?.hero?.loadout;
     return { armor: L?.armorId ?? null, perk: L?.perk ?? null, rung: C.systemsGame?.rung ?? null, flagDuration: C.machines?.perception?.flagDuration ?? null, rewarded: !!C.spine?.rewarded, done: !!C.spine?.done }; }).catch((e) => ({ error: String(e).slice(0, 160) }));
   report.anchors = await page.evaluate(() => window.__CTX__.systemsGame.A);
+  if (DEATH_AT && report.rows['death-staged']) {
+    const ds = report.rows['death-staged'], dr = (report.rows['death-rule'] || []).find((r) => r.staged);
+    ds.row = dr ? { pass: dr.pass, fromRest: dr.post.fromRest, rest: dr.post.rest, hp: dr.post.hp, stage: dr.post.stage, satchelKept: dr.satchelKept, gourdKept: dr.gourdKept } : null;
+    ds.pass = !!dr?.pass && report.stoppedAt === 'reward';
+  }
+  if (SITE_CLOCK) {
+    report.rows['site-clock'] = await page.evaluate(async () => {
+      const C = window.__CTX__, R = C.siteRefill, K = C.siteClock, A = C.systemsGame?.A, M = C.machines;
+      if (!R || !K || !A || !M?.sites) return { error: 'no site clock in this build' };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const st = A.station, V = C.player.position.constructor;
+      const kill = (m) => { try { m.takeDamage({ impact: 1e7, tear: 0, point: null, object: null, dir: { x: 0, y: 0, z: 1 }, seen: true }); } catch { /* */ } };
+      const dykeSites = () => M.sites.sites.filter((s) => s && s.kind === 'plumb' && s.questOwned && Math.hypot(s.x - st.x, s.z - st.z) < 3);
+      const row = { questDone: !!C.spine?.done, hours0: +K.hours.toFixed(3) };
+      row.dykeBefore = dykeSites().map((s) => ({ id: s.id, pending: s.pending, alive: !!s.machine && s.machine.alive !== false }));
+      // STAGED: the dyke Plumb killed if it still stands (the run walks away from it), a control Plumb spawned 150 m behind
+      // the camera and killed, and both wrecks aged out by the machines' own debug hook (SiteManager.advance)
+      for (const s of dykeSites()) if (s.machine && s.machine.alive !== false) kill(s.machine);
+      const cd = new V(); C.camera.getWorldDirection(cd); cd.y = 0; cd.normalize();
+      // on dry ground: straight behind, then turned up to 40 deg either way, 150 m then 120 m off
+      const P = C.player.position;
+      let cx = null, cz = null;
+      for (const d of [150, 120]) for (const a of [0, 20, -20, 40, -40]) {
+        if (cx != null) break;
+        const r = a * Math.PI / 180, bx = -(cd.x * Math.cos(r) - cd.z * Math.sin(r)), bz = -(cd.x * Math.sin(r) + cd.z * Math.cos(r));
+        const x = P.x + bx * d, z = P.z + bz * d;
+        if ((C.terrain?.getHeight?.(x, z) ?? -1) > 0.5) { cx = x; cz = z; }
+      }
+      row.control = cx != null ? { x: +cx.toFixed(1), z: +cz.toFixed(1), fromHer: +Math.hypot(cx - P.x, cz - P.z).toFixed(1) } : { error: 'no dry ground behind her' };
+      const ctl = cx != null ? M.spawn('plumb', cx, cz, {}) : null;
+      if (ctl?.ai) ctl.ai.tick = () => {};
+      await sleep(300);
+      if (ctl) kill(ctl);
+      await sleep(300);
+      M.sites.advance(100, 1);
+      const ids = () => ({ dyke: dykeSites().map((s) => s.id), ctl: ctl?._site?.id ?? null });
+      const at = (id) => { const s = M.sites.sites.find((x) => x.id === id); return s ? { id, pending: s.pending, back: !!s.machine && s.machine.alive !== false, respawnAt: Number.isFinite(s.respawnAt) ? +s.respawnAt.toFixed(1) : String(s.respawnAt), verdict: K.verdict(id, R.world) } : null; };
+      const I = ids();
+      row.beforeClock = { dyke: I.dyke.map(at), ctl: at(I.ctl) };
+      K.advance(13);   // STAGED: 13 hours on the site clock
+      row.swept = R.sweep();
+      row.afterClock = { hours: +K.hours.toFixed(3), dyke: I.dyke.map(at), ctl: at(I.ctl) };
+      row.log = R.log.slice(-4);
+      row.pass = row.questDone && I.dyke.length >= 1 && row.afterClock.dyke.every((d) => d && d.pending && !d.back && d.verdict.why === 'quest')
+        && !!row.afterClock.ctl && row.afterClock.ctl.back && !row.beforeClock.ctl?.back;
+      row.bar = 'after the quest and 13 h on the site clock: the dyke Plumb is not back (the quest\'s own); a cleared site Plumb 150 m behind her is';
+      return row;
+    }).catch((e) => ({ error: String(e?.message || e).slice(0, 300) }));
+    log(`site-clock: ${report.rows['site-clock'].pass ? 'PASS' : 'FAIL'} ${JSON.stringify(report.rows['site-clock']).slice(0, 400)}`);
+  }
+  // fix round 1 (FIX LIST 5): the death row, staged after the clean run (see --death-after)
+  if (DEATH_AFTER && (await page.evaluate(() => window.__CTX__?.state)) === 'playing') {
+    try {
+      report.rows['death-staged'] = await stageDeath('after-run');
+      log(`death staged after the run: ${JSON.stringify(report.rows['death-staged'])}`);
+      await page.waitForFunction(() => window.__CTX__.state === 'dead' || window.__CTX__.state === 'death-menu' || !!document.querySelector('.mn-death.show'), { timeout: 10000, polling: 100 }).catch(() => {});
+      const ds = report.rows['death-staged'];
+      const dr = await playDeath({ ...(await page.evaluate(probe)), stage: 'after-run' });
+      ds.played = true;
+      if (dr && dr !== 'stop') { dr.staged = true; ds.row = { pass: dr.pass, fromRest: dr.post.fromRest, rest: dr.post.rest, hp: dr.post.hp, stage: dr.post.stage, satchelKept: dr.satchelKept, gourdKept: dr.gourdKept, cardCause: dr.card.cause, hudCause: dr.post.hudCause };
+        ds.pass = !!dr.pass && !/STAGED/i.test(`${dr.card.cause} ${dr.post.hudCause}`); }
+      log(`death-after: ${ds.pass ? 'PASS' : 'FAIL'} ${JSON.stringify(ds.row ?? {})}`);
+    } catch (e) { report.rows['death-staged'] = { error: String(e?.message || e).slice(0, 300) }; }
+  }
   report.stopShot = await shot(page, 'b-stop');
   if (PAD) report.pad = { ...(await padState(page)), presses: await page.evaluate(() => window.__pad?.presses ?? null), stickSteps: await page.evaluate(() => window.__pad?.stickSteps ?? 0), keyboardUsed: false };
 

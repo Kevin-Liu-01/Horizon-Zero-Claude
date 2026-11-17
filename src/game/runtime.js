@@ -5,10 +5,13 @@ import { QUEST_ID } from './quest/plan.js';
 import { Presenter } from './present.js';
 import { Braziers } from './brazier/braziers.js';
 import { installReeds } from './reeds/index.js';
+import { SiteClock } from './sites/clock.js';
+import { SiteRefill, HourMeter } from './sites/refill.js';
 import { REST, TRIG, TRIG_TOP, siteById } from '../world/island/sites.js';
 import { DITCH } from '../world/island/reedmask.js';
 import { SLOT } from '../core/save.js';
 import { vec3 } from '../world/settlements/brazier.js';
+import { streetPoint } from '../world/settlements/saltrow-layout.js';
 
 /** Which armour each rung puts on her (armory's variant ids, src/hero/variants.js; BIBLE §8.4). */
 export const RUNG_ARMOR = Object.freeze({ starter: 'pan-1', scout: 'pan-2' });
@@ -19,6 +22,8 @@ export const RUNG_ARMOR = Object.freeze({ starter: 'pan-1', scout: 'pan-2' });
  *   ctx.spine          the QuestSpine (src/game/quest/spine.js)
  *   ctx.braziers       the Braziers (src/game/brazier/braziers.js)
  *   ctx.reeds          reed cover, its gust clocks and the stealth rule (src/game/reeds, M1.6e; installed first)
+ *   ctx.siteClock      the site clock (src/game/sites/clock.js, M1.6n): hours played plus slept, the cleared sites
+ *   ctx.siteRefill     its live half (src/game/sites/refill.js): every MachineSite returns on the clock, not on a timer
  *   ctx.systemsGame    this runtime: anchors, rung, report(), newGame(), restoreQuest()
  * and adds itself as a system (update at the sim rate; the presenter's subtitles at real time).
  *
@@ -59,6 +64,7 @@ export class SystemsGame {
     ctx.spine = this.spine;
     this.braziers = new Braziers(ctx, { strings: this.S, present: this.present, save: (reason) => this._writeNamed(reason) });
     ctx.braziers = this.braziers;
+    this._siteClock();
     this._entries();
     this._listen();
     this._hookProgression();
@@ -103,7 +109,10 @@ export class SystemsGame {
       // that end. Round 1 stood the anchor on open salt cells 17.6 m from the station (0 of 1963 stalk frames in cover)
       ditch: DITCH ? this._ditchPoint(22) : lerp(station, t1, 0.12),
       ditchHead: DITCH ? this._ditchPoint(null, 8) : lerp(station, t1, 0.4),
-      'ansel-home': { x: saltrow.x + 3, z: saltrow.z - 2 },
+      // the quest's end: Ansel waits in the guild house's little square, 4.5 m down the street from its step (the
+      // datum stud, the travel node, is left clear). It stood at Saltrow's centre + (3, -2), 1.9 m inside house r3 since
+      // the town was built round it, and at 9f8bc85 the slice run's walk to her stopped 5.7 m short, against its wall
+      'ansel-home': streetPoint(41.5, 1.4),
     };
     // aim targets: the Gauge's drum and the pillar tops
     const H = (p) => ctx.terrain?.getHeight?.(p.x, p.z) ?? 0;
@@ -139,7 +148,9 @@ export class SystemsGame {
         const x = c.x + dx * d, z = c.z + dz * d;
         const h = H(x, z);
         if (h < 0) break;                                   // the sea: this bearing's shore was the last dry step
-        if (h > 1.2 || H(x + dx * 3, z + dz * 3) >= 0) continue;
+        // (people M1.5d fix round 2, the smallest change: at 3 m from the sea the spot stood in 0.11 m of water, 20fe91e film;
+        // the most landward step within 6 m of the sea that stands dry)
+        if (h > 1.2 || H(x + dx * 6, z + dz * 6) >= 0 || (this.ctx.water?.depthAt?.(x, z) ?? 0) > 0.02) continue;
         if (!best || d < best.d) best = { x: +x.toFixed(2), z: +z.toFixed(2), d };
         break;
       }
@@ -152,6 +163,32 @@ export class SystemsGame {
     if (!p) return '';
     const lr = this.braziers?.lastRest;
     return lr ? (this.S.systems.brazier.names[lr.id] ?? '') : '';
+  }
+
+  /* ------------------------------------------------------- site clock */
+
+  /** M1.6n: the site clock (BIBLE §17 "Sites refill on a clock"), wired to the live world. */
+  _siteClock() {
+    const ctx = this.ctx;
+    this.siteClock = new SiteClock();
+    this.hours = new HourMeter(this.siteClock);
+    const v = vec3();
+    this.siteRefill = new SiteRefill({
+      machines: () => ctx.machines ?? null,
+      player: () => { const p = ctx.player?.position; return p ? { x: p.x, z: p.z } : null; },
+      camera: () => {
+        const c = ctx.camera;
+        if (!c?.getWorldDirection) return null;
+        c.getWorldDirection(v);
+        return { x: c.position.x, y: c.position.y, z: c.position.z, dx: v.x, dy: v.y, dz: v.z, fov: c.fov, aspect: c.aspect, far: c.far };
+      },
+      groundAt: (x, z) => ctx.terrain?.getHeight?.(x, z) ?? 0,
+      datum: () => ctx.datum ?? null,
+      questStages: () => (this.spine?.activeStages?.() ?? []).map((st) => ({ quest: QUEST_ID, id: st.id, type: st.type, kind: st.kind ?? null })),
+      emit: (n, e) => ctx.events?.emit?.(n, e),
+    }, this.siteClock);
+    ctx.siteClock = this.siteClock;
+    ctx.siteRefill = this.siteRefill;
   }
 
   /* ------------------------------------------------------------ hooks */
@@ -291,13 +328,13 @@ export class SystemsGame {
           // first's line (each on its slot, 3 m apart)
           const x = p.x + nx * slot * 3, z = p.z + nz * slot * 3;
           const m = M.spawn('peg', x, z, { route: [vec3(p.x, 0, p.z), vec3(q.x, 0, q.z)] });   // machines' routes are Vector3s
-          if (m) this.spawned.transect.push(m);
+          if (m) { this.siteRefill?.own(m, QUEST_ID); this.spawned.transect.push(m); }
         }
       }
     } else if (what === 'plumb' && has('plumb')) {
       const s = this.A.station;
       const m = M.spawn('plumb', s.x, s.z, {});
-      if (m) { this._keepForPry(m); this.spawned.plumb.push(m); }
+      if (m) { this.siteRefill?.own(m, QUEST_ID); this._keepForPry(m); this.spawned.plumb.push(m); }
     }
   }
 
@@ -337,7 +374,12 @@ export class SystemsGame {
       this.spine.arm();
       if (this.ctx.progression) this.ctx.progression.tracked = QUEST_ID;
     });
-    on('machine-killed', (e) => this.spine.notify('machine-killed', { kind: e.machine?.kind }));
+    // the site clock is told before the spine, so a kill that ends a stage is judged by the stage that asked for it
+    on('machine-killed', (e) => { this.siteRefill.killed(e.machine); this.spine.notify('machine-killed', { kind: e.machine?.kind }); });
+    on('machine-disposed', (e) => this.siteRefill.disposed(e.site));
+    on('brazier-rest-start', (e) => this.hours.restStart(this.ctx.environment?.time ?? e.toHour, e.toHour));
+    on('brazier-rest', () => this.hours.restEnd(this.ctx.environment?.time));
+    on('save-loaded', () => this.hours.resync(this.ctx.environment?.time));
     on('plumb-topple', (e) => this.spine.notify('plumb-topple', { kind: e.machine?.kind ?? 'plumb' }));
     on('part-torn', (e) => this.spine.notify('part-torn', { kind: e.machine?.kind, part: e.part?.name ?? e.part?.id }));
     // nothing in the build emits 'part-torn' (audio listens for it; machines report a torn tool on machine-damaged):
@@ -366,6 +408,8 @@ export class SystemsGame {
   newGame() {
     const ctx = this.ctx;
     ctx.environment?.setTime?.(7);
+    this.siteClock.restore(null);
+    this.hours.resync(7);
     this.rung = 'starter';
     this.wear('starter');
     this.braziers.newGame(7);
@@ -477,6 +521,9 @@ export class SystemsGame {
     // and holds the bible-table cards it raises by itself (tips.js), which ran alongside them in round 1
     if (this.ctx.hud) this.ctx.hud.questCards = !!this.spine.started;
     this.braziers.update(dt, t);
+    // the site clock: the hour's forward steps are hours played (a rest counts its hours slept when it begins)
+    this.hours.read(this.ctx.environment?.time);
+    if (this.ctx.state === 'playing') this.siteRefill.update(dt);
     const now = performance.now();
     const real = this._lastReal ? Math.min(0.1, (now - this._lastReal) / 1000) : 0;
     this._lastReal = now;
