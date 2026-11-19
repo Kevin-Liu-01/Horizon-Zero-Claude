@@ -32,7 +32,7 @@ const PAL = {
   stone: C(0xffffff), dust: C(0xd9c9b3), lime: C(0xd8d1c2), limeDirty: C(0xb9b0a1), line: C(0xc8401e),
   wood: C(0x6b5138), woodDark: C(0x4a3728), void: C(0x0d0b0a), clay: C(0x9a5e3f), clayDark: C(0x7a4630), straw: C(0xb49a62),
   bark: C(0x8f877b), barkDark: C(0x6c665d), leaf: C(0x5f7d57), leafPale: C(0x7d9368), leafDry: C(0x8a7455), water: C(0x1f2a26),
-  iron: C(0x34302d), bronze: C(0x8c6a3a), salt: C(0xe9e5da), paper: C(0xd9cfb6), carmine: C(0x8e2a35), rock: C(0xffffff), ember: C(0x3a1a0c),
+  iron: C(0x34302d), bronze: C(0x8c6a3a), salt: C(0xe9e5da), paper: C(0xd9cfb6), carmine: C(0x8e2a35), rock: C(0xffffff), coal: C(0x3a1a0c),
 };
 export const KIT_PALETTE = PAL;
 const hash = (a, b = 0, c = 0) => { const h = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453; return h - Math.floor(h); };
@@ -426,7 +426,7 @@ function tubeMouth(S, ground) {
   // the forge's hearth just inside the mouth, its coals a dull red-brown (no glow: daylight), the bellows' leather
   const hc = W(-hw * 0.45, 0.35, 1.2);
   S.lathe(hc[0], g - 0.05, hc[2], [[0.75, 0], [0.78, 0.5], [0.62, 0.62], [0.0, 0.6]], 10, { col: PAL.stone, kind: 0 }, { jitter: 0.12, seed: 9 });
-  S.lathe(hc[0], g + 0.58, hc[2], [[0.55, 0], [0.0, 0.08]], 10, { col: PAL.ember, kind: 3 });
+  S.lathe(hc[0], g + 0.58, hc[2], [[0.55, 0], [0.0, 0.08]], 10, { col: PAL.coal, kind: 3 });
   // the anvil on its log, and the trough
   const an = W(hw * 0.2, 0, -2.2);
   S.lathe(an[0], g - 0.05, an[2], [[0.32, 0], [0.3, 0.62], [0.0, 0.64]], 9, { col: PAL.woodDark, kind: 4 });
