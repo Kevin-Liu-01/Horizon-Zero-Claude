@@ -52,7 +52,7 @@ async function one(kind, file, formId) {
   for (const f of L.feet) {
     const sx = Math.sign(f.x) || 1;
     const hip = V(sx * L.hipX, L.hipY, f.z + (L.rakedBack ? 0.35 : 0));
-    const knee = V(sx * (L.hipX + (Math.abs(f.x) - L.hipX) * 0.6), L.hipY + (L.rakedBack ? 0.25 : 0.12), f.z + (L.rakedBack ? 0.05 : 0));
+    const knee = V(sx * L.knee[0], L.knee[1], f.z + (L.rakedBack ? 0.05 : 0));
     const foot = V(f.x, 0.08, f.z);
     const r = kind === 'screed' ? 0.16 : kind === 'sickle' ? 0.06 : 0.07;
     strut(hull, hip, knee, r, r * 0.9, { surf: 'graphite', tone: JOINT, sides: 10 });

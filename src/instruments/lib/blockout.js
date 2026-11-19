@@ -116,17 +116,17 @@ export const FORMS = Object.freeze({
     /** IN0's choice for the default form (tools/instruments/in0-geometry.mjs; for the owner at blockout, Q1) */
     chosen: 'skirt',
     kit: TILLER_KIT,
-    legs: { feet: LEGS6(0.75, -1.35, 1.35), hipY: 1.45, hipX: 0.55, thigh: 0.85, shin: 1.15 },
+    legs: { feet: LEGS6(0.75, -1.35, 1.35), hipY: 1.45, hipX: 0.55, knee: [0.86, 2.05], thigh: 0.85, shin: 1.15 },   // high knees (the stilt walker's)
     L: ROSTER.tiller.L, W: ROSTER.tiller.W, H: ROSTER.tiller.H,
   },
   sickle: {
     parts: SICKLE_PARTS,
-    legs: { feet: LEGS4(0.55, -1.75, 0.45), hipY: 0.85, hipX: 0.40, thigh: 0.55, shin: 0.75, rakedBack: true },
+    legs: { feet: LEGS4(0.55, -1.75, 0.45), hipY: 0.85, hipX: 0.40, knee: [0.58, 1.15], thigh: 0.55, shin: 0.75, rakedBack: true },
     L: ROSTER.sickle.L, W: ROSTER.sickle.W, H: ROSTER.sickle.H,
   },
   screed: {
     parts: SCREED_PARTS,
-    legs: { feet: LEGS6(1.55, -2.4, 1.0), hipY: 1.0, hipX: 1.2, thigh: 0.55, shin: 0.65 },
+    legs: { feet: LEGS6(1.55, -2.4, 1.0), hipY: 1.0, hipX: 1.2, knee: [1.62, 1.05], thigh: 0.55, shin: 0.65 },
     L: ROSTER.screed.L, W: ROSTER.screed.W, H: ROSTER.screed.H,
   },
 });
@@ -171,6 +171,10 @@ export function boundsOf(kind, formId) {
     else if (p.axis === 'x') { hx = p.h / 2; hy = p.r; hz = p.r; } else if (p.axis === 'z') { hx = p.r; hy = p.r; hz = p.h / 2; } else { hx = p.r; hy = p.h / 2; hz = p.r; }
     grow(p.c[0] - hx, p.c[1] - hy, p.c[2] - hz); grow(p.c[0] + hx, p.c[1] + hy, p.c[2] + hz);
   }
-  for (const f of FORMS[kind].legs.feet) { grow(f.x - 0.15, 0, f.z - 0.15); grow(f.x + 0.15, 0, f.z + 0.15); }
+  const Lg = FORMS[kind].legs;
+  for (const f of Lg.feet) {
+    grow(f.x - 0.15, 0, f.z - 0.15); grow(f.x + 0.15, 0, f.z + 0.15);
+    if (Lg.knee) { const kx = Math.sign(f.x) * Lg.knee[0]; grow(kx, Lg.knee[1], f.z); }
+  }
   return { min: mn, max: mx, size: [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]] };
 }

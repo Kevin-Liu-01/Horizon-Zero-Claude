@@ -96,17 +96,17 @@ async function screedTable() {
     needs: { ringSpacingForStandM: +(FORMS.screed.W + 0.6).toFixed(2), straightRunM: +(M.chargeLen + FORMS.screed.L).toFixed(2),
       note: 'to stand between two walls broadside the ring spacing must pass the hull width plus both walls\' half thickness; a 25 m straight charge needs a chord of 25 m + the hull length inside one ring band, or crossing the walls (a charge INTO a wall is the stall)' } };
   const mod = await import(pathToFileURL(p).href);
-  const walls = mod.WALLS || mod.walls || mod.default?.walls || null;
-  if (!Array.isArray(walls)) return { ...circle, walls: null, note: 'ninewalls-layout.js exports no wall list (WALLS)' };
+  const walls = mod.WALLS || null;
+  if (!Array.isArray(walls) || !walls.length) return { ...circle, walls: 0, note: 'ninewalls-layout.js has no walls at this tree (area B seam, WALLS empty): the wall-spacing clause is not measured' };
   // the outer three rings: the chord a straight 25 m charge needs (hull length + 25 m) inside each ring band
   const rings = [...walls].sort((a, b) => b.r - a.r);
   const out = [];
   for (let i = 0; i < Math.min(3, rings.length - 1); i++) {
     const outer = rings[i], inner = rings[i + 1];
-    const band = outer.r - inner.r - ((outer.thick || 0.6) + (inner.thick || 0.6)) / 2;
+    const band = outer.r - inner.r - ((outer.t ?? 0.6) + (inner.t ?? 0.6)) / 2;
     const mid = (outer.r + inner.r) / 2;
     // the longest straight chord inside the band (tangent to the inner ring's outer face): 2 sqrt(Ro^2 - Ri^2)
-    const ro = outer.r - (outer.thick || 0.6) / 2 - FORMS.screed.W / 2, ri = inner.r + (inner.thick || 0.6) / 2 + FORMS.screed.W / 2;
+    const ro = outer.r - (outer.t ?? 0.6) / 2 - FORMS.screed.W / 2, ri = inner.r + (inner.t ?? 0.6) / 2 + FORMS.screed.W / 2;
     const chord = ro > ri ? 2 * Math.sqrt(ro * ro - ri * ri) : 0;
     out.push({ between: [outer.id, inner.id], bandM: +band.toFixed(2), midR: +mid.toFixed(1), standsBroadside: band >= FORMS.screed.W, straightChordM: +chord.toFixed(1), charge25Fits: chord >= M.chargeLen + FORMS.screed.L });
   }
