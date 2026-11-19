@@ -180,11 +180,14 @@ function holdsLoops(P) {
  * F36's street at work (tools/frames/stagings/settlements.mjs F36): five of the cast at work along the cistern's lane, each
  * held in its work clip at the clip's working point (time scale 0, so the settle and the freeze do not walk it back upright).
  * The lens stands on the cistern's pad 3.3 m south-south-east of its centre at eye height, looking up the lane on bearing 20
- * (the tube mouth upper right, 29 m off). From left to right: a youth with the seed bag at d3's door (12 m), a picker lifting
- * a jar at the cistern's north kerb (6 m), a farmer watering the tree's foot and a picker gathering under it (10-12 m, either
- * side of the trunk), a farmer kneeling to draw water at the east kerb (4 m). On the game's ground (read by
+ * (the tube mouth upper right, 29 m off). From left to right: a youth with the seed bag at d3's door (12 m), a picker reaching
+ * over the cistern's north kerb (6 m), a farmer watering the tree's foot and a picker gathering under it (10-12 m, either
+ * side of the trunk), and past the cistern frame's post a farmer kneeling to draw water at the east kerb (3 m). Each clip is
+ * held where the at-work probe's sweep finds its hands lowest (Fixing_Kneeling kneels from 0.17 to 0.85 of it, Farm_PlantSeed
+ * bends from 0.25 to 0.65, Chest_Open reaches to 0.65 m at 0.4; PickUp_Table never takes the hands under 0.85 m, so it reads
+ * as standing). On the game's ground (read by
  * tools/build/settlements/at-work-probe-page.mjs) and the village's colliders each is whole in the frame, clear of the
- * others and of the tube mouth, 130-390 px tall at 1600 x 900.
+ * others and of the tube mouth, 130-485 px tall at 1600 x 900.
  * (wave 3 to the M2 exit: from a lens 4 m further down the slope on bearing 20 the farmer at the cistern and the picker at
  * the tree stood on one line of sight, d5's door was behind the trunk, and the clips ran on through the settle, so who was
  * bent at the staging stood upright at the freeze: about three read. The first restage, from the cistern's south-west on
@@ -194,13 +197,13 @@ function holdsLoops(P) {
 const ROUND = (c, b, d) => ({ x: c.x + Math.sin(b * Math.PI / 180) * d, z: c.z - Math.cos(b * Math.PI / 180) * d });
 export const AT_WORK_PLACES = Object.freeze({
   cisternN: ROUND(PLACES.cistern, 30, PLACES.cistern.r + 0.75),
-  cisternE: ROUND(PLACES.cistern, 90, PLACES.cistern.r + 0.75),
+  cisternE: ROUND(PLACES.cistern, 105, PLACES.cistern.r + 0.75),
   treeNW: ROUND(PLACES.tree, 300, 1.8),
   treeSSW: ROUND(PLACES.tree, 200, 1.8),
 });
 export const AT_WORK = Object.freeze([
   { id: 'tiller-follower-2', place: 'door:d3', face: 'house:d3', clip: 'Farm_PlantSeed', offset: 0.5 },
-  { id: 'cochineal-picker-2', place: AT_WORK_PLACES.cisternN, face: 'cistern', clip: 'PickUp_Table', offset: 0.5 },
+  { id: 'cochineal-picker-2', place: AT_WORK_PLACES.cisternN, face: 'cistern', clip: 'Chest_Open', offset: 0.4 },
   { id: 'pit-farmer', place: AT_WORK_PLACES.treeNW, face: PLACES.tree, clip: 'Farm_Watering', offset: 0.45 },
   { id: 'cochineal-picker', place: AT_WORK_PLACES.treeSSW, face: 'cistern', clip: 'Farm_PlantSeed', offset: 0.35 },
   { id: 'pit-farmer-3', place: AT_WORK_PLACES.cisternE, face: 'cistern', clip: 'Fixing_Kneeling', offset: 0.55 },

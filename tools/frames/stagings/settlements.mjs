@@ -98,7 +98,7 @@ export const STAGINGS = {
   },
   F36: {
     // five of the Holds cast at work, held in their work clips (src/world/npc/people/holds.js AT_WORK: a youth with the seed
-    // bag at d3's door, a picker lifting a jar at the cistern, a farmer watering the tree's foot, a picker gathering under it,
+    // bag at d3's door, a picker reaching over the cistern's kerb, a farmer watering the tree's foot, a picker gathering under it,
     // a farmer kneeling to draw water)
     async world(f, api) {
       if (!api.C.settlements?.ninewalls) api.standIn('no Ninewalls in this build');
