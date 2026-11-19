@@ -108,6 +108,29 @@ const row = (id, pass, numbers, note = '') => { rows.push({ id, pass, numbers, n
     out[name] = { meanOld: r3(mo), meanTexture: r3(mn), fullOld: r3(fo), fullTexture: r3(fn) };
     if (Math.abs(mo - mn) > 0.02) ok = false;
   }
+  // the accepted frames' lenses at their hours (resolved at 1130696, run 20261119T174402Z-1130696-areaAF-w4-accepted):
+  // the shadow on the ground 4-130 m ahead across +-45 deg, at the field's phase (every anchor was filmed in sun)
+  const LENSES = [['F02', 18.25, -228, 338, 258], ['F03', 16.5, -168, 208, 6], ['F05', 19.6, -193, 353, 283], ['F14', 13, -316.9, 264.9, 315], ['F15', 13, -309.9, 271.9, 315], ['F16', 17.75, -316.9, 264.9, 315], ['F18', 17.75, -316.9, 264.9, 315], ['F19', 17.75, -316.9, 264.9, 315], ['F20', 17.5, -283.4, 246.3, 200], ['F23-plumb', 16.5, -164, 260, 180], ['F24', 17.5, -214, 230, 240]];
+  const texAt = (u, v) => {
+    const x = ((u % 1) + 1) % 1 * N - 0.5, y = ((v % 1) + 1) % 1 * N - 0.5, x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
+    const g = (i, j) => tex[(((j % N) + N) % N) * N + (((i % N) + N) % N)];
+    return (g(x0, y0) * (1 - fx) + g(x0 + 1, y0) * fx) * (1 - fy) + (g(x0, y0 + 1) * (1 - fx) + g(x0 + 1, y0 + 1) * fx) * fy;
+  };
+  const thrT = SKY_MODEL.CLOUD_MAP_A + SKY_MODEL.CLOUD_MAP_B * (0.58 - 0.30 * 0.20), swT = SKY_MODEL.CLOUD_MAP_B * 0.30;
+  const lens = {};
+  let worst = 0;
+  for (const [id, h, x0, z0, b0] of LENSES) {
+    const cs = h * SKY_MODEL.CLOUD_SPEED_MPH / SKY_MODEL.CLOUD_TILE_M;
+    const ou = SKY_MODEL.CLOUD_PHASE[0] + Math.SQRT1_2 * cs, ov = SKY_MODEL.CLOUD_PHASE[1] - Math.SQRT1_2 * cs;   // -wind * cs, wind (-0.707, 0.707)
+    let m = 0, n = 0;
+    for (let r = 4; r <= 130; r += 6) for (let a = -45; a <= 45; a += 6) {
+      const b = (b0 + a) * Math.PI / 180, x = x0 + Math.sin(b) * r, z = z0 - Math.cos(b) * r;
+      m += ss(thrT, thrT + swT, texAt(x / SKY_MODEL.CLOUD_TILE_M + ou, z / SKY_MODEL.CLOUD_TILE_M + ov)); n++;
+    }
+    lens[id] = r3(m / n); worst = Math.max(worst, m / n);
+  }
+  out.acceptedLenses = { shadowShare: lens, worst: r3(worst), bar: 0.05 };
+  if (worst > 0.05) ok = false;
   row('EN5-cover', ok, { tileM: SKY_MODEL.CLOUD_TILE_M, metresPerGameHour: SKY_MODEL.CLOUD_SPEED_MPH, ...out },
     'cover before strength (trade 0.26, calima 0): the shadow a pixel takes is mean x strength');
 }

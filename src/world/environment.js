@@ -215,9 +215,16 @@ const CLOUD_TILE_M = 1520;
 const CLOUD_MAP_A = 0.0793;
 const CLOUD_MAP_B = 0.7717;
 const CLOUD_SPEED_MPH = 375;
+/**
+ * The field's phase (uv). At phase 0 the shadows lay over the lenses of five accepted frames at their hours (F16, F18,
+ * F19 41 %, F20 70 %, F24 87 % of the ground 4-130 m ahead, from their filmed lenses at 1130696; their mean luminance
+ * fell 1.5-5 levels) where every anchor was filmed in sun; at this phase every accepted frame's ground is under 1.3 %
+ * shadow and the rest of the island keeps its cover (a search over 64 x 64 phases of the same texture and wind).
+ */
+const CLOUD_PHASE = Object.freeze([0.765625, 0.171875]);
 /** The sky's numbers the Node rows read (tools/world/calima-rows.mjs); the shader and _applyFull use the same constants. */
 export const SKY_MODEL = Object.freeze({
-  CALIMA_VIS, CALIMA_DENS, CALIMA_OPACITY, CALIMA_FALLOFF, CLOUD_TILE_M, CLOUD_MAP_A, CLOUD_MAP_B, CLOUD_SPEED_MPH,
+  CALIMA_VIS, CALIMA_DENS, CALIMA_OPACITY, CALIMA_FALLOFF, CLOUD_TILE_M, CLOUD_MAP_A, CLOUD_MAP_B, CLOUD_SPEED_MPH, CLOUD_PHASE,
   get FOG_HEIGHT_FALLOFF() { return FOG_HEIGHT_FALLOFF; }, get FOG_HEIGHT_REF() { return FOG_HEIGHT_REF; },
   get EXT_CALIMA() { return EXT_CALIMA; },
 });
@@ -384,12 +391,16 @@ function patchShaderChunks() {
     return mix( mix( calHash21( i ), calHash21( i + vec2( 1.0, 0.0 ) ), f.x ),
                 mix( calHash21( i + vec2( 0.0, 1.0 ) ), calHash21( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
   }
+  // EN5: one fetch of the scrolling coverage texture (calCloudA.x = 1 / CLOUD_TILE_M), once per fragment: the cascades'
+  // directional lights each pass through getDirectionalLightInfo, so the first call keeps the value for the rest
+  float calCloudShadowV = -1.0;
   float calCloudShadow() {
     if ( calCloudA.z <= 0.001 ) return 1.0;
-    // EN5: one fetch of the scrolling coverage texture (calCloudA.x = 1 / CLOUD_TILE_M)
-    float n = texture2D( calCloudTex, vFogWorldPos.xz * calCloudA.x + calCloudOff ).r;
-    float m = smoothstep( calCloudA.y, calCloudA.y + calCloudA.w, n );
-    return 1.0 - m * calCloudA.z;
+    if ( calCloudShadowV < 0.0 ) {
+      float n = texture2D( calCloudTex, vFogWorldPos.xz * calCloudA.x + calCloudOff ).r;
+      calCloudShadowV = 1.0 - smoothstep( calCloudA.y, calCloudA.y + calCloudA.w, n ) * calCloudA.z;
+    }
+    return calCloudShadowV;
   }
   // closed-form mean of exp( -(y - ref) k ) along a ray from the camera to the fragment
   float calHeightAvg( float k, float ref, float dy ) {
@@ -1323,7 +1334,7 @@ export class Environment {
     /* ---- cloud + mist drift (downwind) ---- */
     // EN5: the cloud shadows scroll downwind with the clock, every frame (the hour wraps at midnight, when they are off)
     const cs = this._time * CLOUD_SPEED_MPH / CLOUD_TILE_M;
-    this.u.calCloudOff.value.set(-this.wind.x * cs, -this.wind.z * cs);
+    this.u.calCloudOff.value.set(CLOUD_PHASE[0] - this.wind.x * cs, CLOUD_PHASE[1] - this.wind.z * cs);
     const cd = this.u.calCloudDrift.value;
     cd.x -= dt * this.wind.x * this.wind.strength * 0.0016;
     cd.y -= dt * this.wind.z * this.wind.strength * 0.0016;
@@ -2753,7 +2764,9 @@ export class Environment {
               float cm = 1.0 - smoothstep(0.80, 1.15, cr);
               // M1.1i: never dimmer than the dust round it (at 3058d33 the noon disc, solved to show #F2A27E, sat under the
               // dust's own brightness and did not show at all): at least x1.45 the dust it sits in, warmed
-              vec3 discC = max(uDisc, col * vec3(1.45, 1.24, 1.04));
+              // M2 wave 4 (EN3, noon over the Holds): x1.45 / 1.24 read 168 against the dust's 165 at F45 (the noon dust is
+              // brighter than the Pans' at 12:30, and ACES flattens the step there): a pale coral disc a fifth over it
+              vec3 discC = max(uDisc, col * vec3(1.95, 1.70, 1.45));
               col = mix(col, discC, cm * cal * horizonDim * smoothstep(0.0, 0.5, uCalima.y));
             }
           }

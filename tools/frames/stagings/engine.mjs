@@ -19,7 +19,7 @@
 export const lane = 'engine';
 
 const EDGE = { en: [133.2, -83.2] };
-const LENS = { mode: 'chase', pitch: 6, fov: 55 };
+const LENS = { mode: 'chase', pitch: 16, fov: 55 };   // up the slope to the rim's skyline, 40 m over her
 const STATE = { pose: 'idle', hud: false, actors: [{ type: 'instrument', kind: 'plumb', dist: 30, side: 180, face: 'brea' }] };
 
 /** @type {object[]} frameset.json-shaped frame definitions, `in: 'M2'` */

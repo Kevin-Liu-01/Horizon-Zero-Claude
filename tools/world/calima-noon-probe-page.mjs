@@ -6,9 +6,10 @@
  *              radial profile with the lens turned onto it), plus:
  *                sun    { altitudeDeg }                                   EN4
  *                plumb  { sightRange, scale, reach, envScale }            EN3: a live Plumb's sight in the dust
- *                hg5    { material: [...], night: { hour, skyP50, skyMax, groundMax, groundOverSky, groundPx } }
- *                       the ground's materials (emissive colour, maps, intensity) and the lens at 00:30 with only the
- *                       ground and the sky drawn: ground pixels brighter than the sky's median (bar 0)
+ *                hg5    { material: [...], unlit: { pixels, groundPixelsOverFloor, maxOver } }
+ *                       the ground's materials (emissive colour, maps, intensity), and the lens with every light, the
+ *                       sky's light and the air off and only the ground drawn: ground pixels that still show (bar 0)
+ *              its visibility cards are laid with the lens turned to bearing 112 at the same place (open lowland)
  *   F45-trade  sun, the cloud shadows' uniforms (EN5: strength, tile, offset) and their share of the ground in the frame
  *   any other  sun and the cloud shadows' uniforms only
  */
@@ -19,9 +20,19 @@ export async function probe(frame) {
   out.cloudShadow = ca ? { strength: +ca.z.toFixed(3), tileM: Math.round(1 / ca.x), threshold: +ca.y.toFixed(3), soft: +ca.w.toFixed(3), offset: co ? [+co.x.toFixed(4), +co.y.toFixed(4)] : null, texture: env.u.calCloudTex?.value?.name ?? null } : null;
 
   if (frame?.id === 'F45') {
+    /* ---- EN3: the M1.1i probe read as F06's, its cards laid across the open lowland on the left of the lens's own
+     * position (bearing VIS_BEARING, level: toward the beat's rim the ground climbs 42 m in 100 m and hides every card) ---- */
+    const VIS_BEARING = 112;
     try {
+      const q0 = cam.quaternion.clone(), pos0 = cam.position.clone();
+      const D2R = Math.PI / 180;
+      cam.lookAt(pos0.x + Math.sin(VIS_BEARING * D2R) * 100, pos0.y, pos0.z - Math.cos(VIS_BEARING * D2R) * 100);
+      cam.updateMatrixWorld(true);
       const base = await import('/tools/look/calima-probe-page.mjs');
       out.m11i = await base.probe({ ...frame, id: 'F06' });
+      out.m11i.visBearing = VIS_BEARING;
+      cam.position.copy(pos0); cam.quaternion.copy(q0); cam.updateMatrixWorld(true);
+      E.render(0);
     } catch (e) { out.m11i = { error: String(e?.message || e).slice(0, 300) }; }
 
     /* ---- the sight multiplier on a live Plumb ---- */
@@ -32,7 +43,9 @@ export async function probe(frame) {
       out.plumb = pl ? { sightRange: pl.sightRange ?? null, scale: P?.sightScale ?? null, reach: pl.sightRange != null && P?.sightScale != null ? Math.round(pl.sightRange * P.sightScale * 100) / 100 : null, envScale: env.perceptionScale, at: [Math.round(pl.position.x), Math.round(pl.position.z)] } : { error: 'no live Plumb' };
     } catch (e) { out.plumb = { error: String(e?.message || e) }; }
 
-    /* ---- HG5: no emissive ground (the material, then a night read with only the ground and the sky drawn) ---- */
+    /* ---- HG5: no emissive ground. The ground's materials, then the lens drawn with every light, the sky's light and
+     * the air off and only the ground shown: a ground pixel over the post chain's own floor (the same draw with the
+     * ground hidden too) is light the ground made itself ---- */
     try {
       const mats = new Map();
       C.terrain?.group?.traverse?.((o) => {
@@ -44,38 +57,33 @@ export async function probe(frame) {
       };
       const gl = R.getContext();
       const bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
-      const buf = new Uint8Array(bw * bh * 4);
-      const h0 = env.time, w0 = env.weather;
-      const hidden = [];
-      const keep = new Set(['terrain', 'sky']);
-      const hasLight = (o) => { let l = false; o.traverse((q) => { if (q.isLight) l = true; }); return l; };
-      for (const ch of C.scene.children) if (ch.visible && !keep.has(ch.name) && !hasLight(ch)) { ch.visible = false; hidden.push(ch); }
-      env.setWeather('trade', 0);
-      env.setTime(0.5);
-      E.render(0); E.render(0);
-      // sky pixels by the sky's own pass: draw once with the ground hidden too, so what is left is the dome
-      gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-      const withGround = buf.slice();
+      const A = new Uint8Array(bw * bh * 4), B = new Uint8Array(bw * bh * 4);
+      const undo = [];
+      const set = (o, k, v) => { const was = o[k]; o[k] = v; undo.push(() => { o[k] = was; }); };
+      for (const ch of C.scene.children) if (ch.visible && ch.name !== 'terrain') set(ch, 'visible', false);
+      C.scene.traverse((o) => { if (o.isLight) set(o, 'intensity', 0); });
+      set(C.scene, 'environmentIntensity', 0);
+      const U = env.u, keepU = ['calFogA', 'calFogC', 'calFogD'].map((k) => [k, U[k].value.clone()]);
+      undo.push(() => { for (const [k, v] of keepU) U[k].value.copy(v); });
+      const freeze = () => { U.calFogA.value.x = 1e-9; U.calFogC.value.x = 0; U.calFogD.value.x = 0; for (const l of (E.csm?.lights || [])) l.intensity = 0; };
+      freeze(); E.render(0); freeze(); E.render(0);
+      gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, A);
       const tg = C.scene.children.filter((c) => c.name === 'terrain');
       tg.forEach((c) => { c.visible = false; });
-      E.render(0); E.render(0);
-      gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      freeze(); E.render(0);
+      gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, B);
       tg.forEach((c) => { c.visible = true; });
-      const Y = (b, i) => 0.2126 * b[i] + 0.7152 * b[i + 1] + 0.0722 * b[i + 2];
-      const sky = [], ground = [];
-      for (let i = 0; i < bw * bh * 4; i += 16) {
-        const a = Y(withGround, i), z = Y(buf, i);
-        if (Math.abs(a - z) < 0.5 && withGround[i] === buf[i] && withGround[i + 1] === buf[i + 1]) sky.push(a); else ground.push(a);
+      let lit = 0, n = 0, mx = 0;
+      for (let i = 0; i < A.length; i += 4) {
+        n++;
+        const d = Math.max(A[i] - B[i], A[i + 1] - B[i + 1], A[i + 2] - B[i + 2]);
+        if (d > mx) mx = d;
+        if (d > 2) lit++;
       }
-      sky.sort((x, y) => x - y);
-      const p50 = sky.length ? sky[sky.length >> 1] : null, skyMax = sky.length ? sky[sky.length - 1] : null;
-      let over = 0, gMax = 0;
-      for (const g of ground) { if (g > gMax) gMax = g; if (p50 != null && g > p50) over++; }
-      out.hg5.night = { hour: 0.5, skyP50: p50, skyMax, groundMax: Math.round(gMax * 10) / 10, groundOverSky: over, groundPx: ground.length, skyPx: sky.length, sampled: 'every 4th pixel' };
-      for (const ch of hidden) ch.visible = true;
-      env.setTime(h0);
-      env.setWeather(w0, 0);
+      while (undo.length) undo.pop()();
+      env._lightDirty = true; env._applyTime?.(0, true);
       E.render(0);
+      out.hg5.unlit = { pixels: n, groundPixelsOverFloor: lit, maxOver: mx, method: 'lights, sky light and air off, only the ground drawn, against the same draw with the ground hidden (> 2/255)' };
     } catch (e) { out.hg5 = { ...(out.hg5 || {}), error: String(e?.message || e).slice(0, 300) }; }
   }
 

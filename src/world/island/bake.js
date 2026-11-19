@@ -65,6 +65,37 @@ const TINT = [
 /** The tuff ring's beds, bottom to top, repeating (bible: Rust Red #8E3B23 and its kin). */
 const CRATER_BEDS = [hex(0x8e3b23), hex(0x5e2a1c), hex(0xa8562e), hex(0x3a2622), hex(0x96452a), hex(0x6e3a26), hex(0xb0703e), hex(0x4a2c22)];
 const CRATER_TALUS = hex(0xa98f70), CRATER_CAP = hex(0x2a2220);
+/**
+ * M2 wave 4 (area A, HG5: the Malpais edge as it is seen from the Holds). The Malpais' ground is two cold lavas, never
+ * one tint: aa (rough clinker, brown-black, oxidised on its broken tops) and pahoehoe (smooth sheets in lobes 50-150 m
+ * across, blue-black), cinder bands along the contours on the aa, and lichen crust in grey-green flecks on its tops.
+ * No lava, nothing that glows: every tone is a dark rock's (bible §3: zero emissive terrain).
+ */
+const MALPAIS = Object.freeze({
+  aa: hex(0x2e2925), aaOx: hex(0x3d3229), pah: hex(0x1b1c20), pahSkin: hex(0x2a2a2e), cinder: hex(0x4b2f24), lichen: hex(0x5f6356),
+});
+/** The share of pahoehoe at an engine point (0 aa .. 1 pahoehoe): lobes from a 3-octave field at about 80 m. */
+export function malpaisSheet(x, z) { return ss(0.50, 0.58, fbm(x * 0.012 + 3.1, z * 0.012 - 8.3, 3)); }
+const _mal = [0, 0, 0];
+/** The Malpais' ground tone (sRGB bytes) at an engine point of height h, into `out`. */
+export function malpaisTone(x, z, h, out = [0, 0, 0]) {
+  const pah = malpaisSheet(x, z);
+  const br = fbm(x * 0.09 - 4, z * 0.09 + 2, 2);                   // the clinker's broken tops, about 11 m
+  const sk = fbm(x * 0.05 + 6, z * 0.05 - 1, 2);                   // the sheets' skins
+  const band = h / 7 + (fbm(x * 0.03, z * 0.03 + 4, 2) - 0.5) * 1.6;
+  const cinder = ss(0.80, 0.92, band - Math.floor(band)) * (1 - pah) * 0.6;
+  const lichen = ss(0.66, 0.78, fbm(x * 0.21 + 5, z * 0.21, 2)) * (1 - pah) * 0.5;
+  const M = MALPAIS;
+  for (let c = 0; c < 3; c++) {
+    const aa = M.aa[c] + (M.aaOx[c] - M.aa[c]) * br;
+    const ph = M.pah[c] + (M.pahSkin[c] - M.pah[c]) * sk * 0.6;
+    let v = aa + (ph - aa) * pah;
+    v += (M.cinder[c] - v) * cinder;
+    v += (M.lichen[c] - v) * lichen;
+    out[c] = v;
+  }
+  return out;
+}
 /** The Scar's floor at blockout (M2 wave 1): graded lapilli, paler and greyer than the ground it was cut from. */
 const SCAR_TINT = hex(0x5a5550);
 
@@ -98,6 +129,12 @@ export function bakeShade(H, r0, r1) {
       const m = fbm(x * 0.02 + 7, z * 0.02 - 3, 2);
       let r = 0, g = 0, b = 0;
       for (let k = 0; k < 6; k++) {
+        if (k === 2 && _w[2] > 0.004) {
+          // (M2 wave 4, HG5) the Malpais: aa and pahoehoe, cinder bands, lichen crust
+          malpaisTone(x, z, H[i], _mal);
+          r += _w[2] * _mal[0]; g += _w[2] * _mal[1]; b += _w[2] * _mal[2];
+          continue;
+        }
         const A = TINT[k][0], B = TINT[k][1];
         r += _w[k] * (A[0] + (B[0] - A[0]) * m);
         g += _w[k] * (A[1] + (B[1] - A[1]) * m);

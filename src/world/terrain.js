@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { AERIAL, AERIAL_B, AERIAL_DOME, AERIAL_PARS, patchAerial, patchDeck } from './island/aerial.js';
 import { WORLD_SIZE, WORLD_HALF, PLAY_RADIUS, MESH_SPAN, MESH_SEGS } from './island/extent.js';
-import { REST_SITE, TUBES, SALT_FIELD } from './island/sites.js';
+import { REST_SITE, TUBES, SALT_FIELD, siteById } from './island/sites.js';
+import { buildKilnYards } from './island/kilnyards.js';
 import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './island/recipe.js';
 import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, SKYLINE_N, bakeShade, maskTexel } from './island/bake.js';
 import { bakeIsland } from './island/pool.js';
@@ -389,6 +390,8 @@ export class Terrain {
     this._buildMesh();
     this._buildSkirt();
     ctx.scene.add(this.group);
+    // (M2 wave 4, area A, HG6) the Kiln Yards' far form on the Malpais: its own top-level child (two draws), not the ground
+    { const ky = siteById('kiln-yards'); this.kilnYards = buildKilnYards({ x: ky.x, z: ky.z, ground: (x, z) => this.getHeight(x, z) }); ctx.scene.add(this.kilnYards.group); for (const m of this.kilnYards.materials) ctx.environment?.registerMaterial?.(m); }
 
     /* The sea and the Glass live here so `ctx.terrain` is whole on its own. world-sky's
      * environment.js reaches them through the RiverWater alias or ctx.water (water.js). */
@@ -1458,6 +1461,7 @@ export class Terrain {
     this.water?.dispose?.();
     this.water = null;
     if (this.ctx.water) this.ctx.water = null;
+    this.kilnYards?.dispose(); this.kilnYards = null;
     const seen = new Set();
     this.group.traverse((o) => {
       if (!o.isMesh) return;
