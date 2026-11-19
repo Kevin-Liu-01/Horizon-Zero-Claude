@@ -313,6 +313,23 @@
       "attribution": null
     },
     {
+      "id": "instrument-blockouts",
+      "paths": [
+        "public/models/instruments/screed.glb",
+        "public/models/instruments/sickle.glb",
+        "public/models/instruments/tiller-blockout.glb"
+      ],
+      "title": "Screed, Sickle and the Tiller's default form as grey blockouts (M2 wave 1, generated from src/instruments/lib/blockout.js)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/instruments/gen-blockout.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
       "id": "instrument-gauge",
       "paths": [
         "public/models/instruments/gauge.glb"
@@ -373,15 +390,13 @@
       "attribution": null
     },
     {
-      "id": "instrument-blockouts",
+      "id": "instrument-transit-far",
       "paths": [
-        "public/models/instruments/screed.glb",
-        "public/models/instruments/sickle.glb",
-        "public/models/instruments/tiller-blockout.glb"
+        "public/models/instruments/transit-far.glb"
       ],
-      "title": "Screed, Sickle and the Tiller's default form as grey blockouts (M2 wave 1, generated from src/instruments/lib/blockout.js)",
+      "title": "The Transit's far form (three graduated staff legs, the tripod head with hung Plumbs, the drum and its telescope; M2 wave 4, M1.4a hull kit, generated)",
       "author": "CALIMA project",
-      "source_url": "tools/build/instruments/gen-blockout.mjs",
+      "source_url": "tools/build/instruments/gen-transit.mjs",
       "licence": "project-original",
       "licence_text": null,
       "archive_sha256": null,
@@ -397,21 +412,6 @@
       "title": "The Pans landmarks (world-props W1): Sounding Ring, wind pump, trig pillar + benchmark, sea stacks + arch + Roque plug, static Gauge",
       "author": "CALIMA project",
       "source_url": "tools/build/landmarks/recipes/",
-      "licence": "project-original",
-      "licence_text": null,
-      "archive_sha256": null,
-      "retrieved": null,
-      "modified": null,
-      "attribution": null
-    },
-    {
-      "id": "slice-audio",
-      "paths": [
-        "public/audio/**"
-      ],
-      "title": "The slice's audio bank (BUILD M1.6k): synthesized by src/audio/slice/recipes.js, rendered by tools/gates/audio/build-bank.mjs; Brea's breath and effort set kept from M0.3",
-      "author": "CALIMA project",
-      "source_url": "src/audio/slice/recipes.js",
       "licence": "project-original",
       "licence_text": null,
       "archive_sha256": null,
@@ -537,6 +537,21 @@
       "title": "Saltrow town kit (settlements M1.5a): Pan Houses buildings, guild house and bell, salt cones, boat ramp, breakwater lamp",
       "author": "CALIMA project",
       "source_url": "tools/build/settlements/recipes/",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
+      "id": "slice-audio",
+      "paths": [
+        "public/audio/**"
+      ],
+      "title": "The slice's audio bank (BUILD M1.6k): synthesized by src/audio/slice/recipes.js, rendered by tools/gates/audio/build-bank.mjs; Brea's breath and effort set kept from M0.3",
+      "author": "CALIMA project",
+      "source_url": "src/audio/slice/recipes.js",
       "licence": "project-original",
       "licence_text": null,
       "archive_sha256": null,

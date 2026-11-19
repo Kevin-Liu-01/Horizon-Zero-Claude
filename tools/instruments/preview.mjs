@@ -4,14 +4,14 @@
  * as a calm disc at the lamp anchor), three views side by side, with a 1.70 m figure-height bar for scale. It is a
  * check of form, proportion and part placement before any Chrome is used; it is not the game's look.
  *
- *   node tools/instruments/preview.mjs <tiller|sickle|screed> <out.png>
+ *   node tools/instruments/preview.mjs <tiller|sickle|screed|transit> <out.png>
  */
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const GEN = { tiller: 'gen-tiller.mjs', sickle: 'gen-sickle.mjs', screed: 'gen-screed.mjs' };
+const GEN = { tiller: 'gen-tiller.mjs', sickle: 'gen-sickle.mjs', screed: 'gen-screed.mjs', transit: 'gen-transit.mjs' };
 
 function render(tris, { W, H, yaw, pitch, lamps, dist, target, fov = 32 }) {
   const img = new Float32Array(W * H * 3), zb = new Float32Array(W * H).fill(Infinity);
@@ -73,7 +73,7 @@ function trisOf(b, emit = null) {
 }
 
 const kind = process.argv[2], OUT = process.argv[3];
-if (!GEN[kind] || !OUT) { console.error('usage: node tools/instruments/preview.mjs <tiller|sickle|screed> <out.png>'); process.exit(2); }
+if (!GEN[kind] || !OUT) { console.error('usage: node tools/instruments/preview.mjs <tiller|sickle|screed|transit> <out.png>'); process.exit(2); }
 const mod = await import(pathToFileURL(path.join(ROOT, 'tools/build/instruments', GEN[kind])).href);
 const r = await mod.build({ out: path.dirname(path.resolve(OUT)), file: path.resolve(OUT + '.glb'), preview: true });
 const B = r._buckets;

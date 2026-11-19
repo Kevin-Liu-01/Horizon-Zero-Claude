@@ -4,6 +4,7 @@ import { registerRig } from '../entities/machines/autorig.js';
 import { loadKindModels } from '../entities/machines/variety-assets.js';
 import { ROLE_IDS, buildRoles } from './roles.js';
 import { CLASS_CAPS, ENCOUNTER, buildSizeClasses, encounterVerdict, encounterAllows } from './lib/sizeclass.js';
+import { TransitFar } from './far/transit.js';
 
 /**
  * INSTRUMENT KIND AUTO-REGISTRATION (instruments-core, Round 5; contract
@@ -43,6 +44,8 @@ import { CLASS_CAPS, ENCOUNTER, buildSizeClasses, encounterVerdict, encounterAll
  *   machines.isLegacyKind(kind) -> boolean   (true for every kind NOT here)
  *   machines.sizeClassOf(kind) / sizeClasses / classCaps / encounterRule / encounterAudit() / encounterAllows(kind, x, z)
  *                              (lib/sizeclass.js)
+ *
+ *   ctx.transitFar                       the Transit's far form (./far/transit.js; scenery, not a kind)
  *
  *   installInstruments(machines) -> { kinds, roles, ready: Promise<{ loaded, failed }> }
  */
@@ -110,6 +113,12 @@ export function installInstruments(machines) {
   machines.encounterAllows = (kind, x, z) => encounterAllows(members(), kind, x, z, machines.sizeClassOf, machines.roleOf);
   /** P-03 (instruments-a W1): an Instrument kind's height (m, scale 1), or null; a live machine's own is `m.height`. */
   machines.heightOf = (kind) => (kinds[kind] && Number.isFinite(kinds[kind].height) ? kinds[kind].height : null);
+  /**
+   * M2 wave 4: the Transit's FAR FORM (`./far/transit.js`): scenery, not a kind (one mesh, no behaviour), published as
+   * `ctx.transitFar` for the first hour's last beat (src/game/hour.js reads `head` and calls `show(on)`). Its GLB is
+   * fetched on the first `show(true)` inside its window, never at boot.
+   */
+  if (machines.ctx && !machines.ctx.transitFar) machines.ctx.transitFar = new TransitFar(machines.ctx);
 
   const rows = {};
   for (const d of descriptors) rows[d.id] = { spec: d.spec, style: d.style, bake: false };
