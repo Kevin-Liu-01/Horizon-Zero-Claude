@@ -14,13 +14,19 @@ import { CLASS_CAPS } from '../../src/instruments/lib/sizeclass.js';
 import { inspectGlb } from '../tier0/lib/glb.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const GLB = { screed: 'screed.glb', sickle: 'sickle.glb', tiller: 'tiller-blockout.glb' };
+/** M2 wave 2: the Screed's and the Sickle's GLBs are their art (graded in ./art.test.mjs); only the grey Tiller is a blockout GLB. */
+const GLB = { screed: null, sickle: null, tiller: 'tiller-blockout.glb' };
 const DRAWS = { large: 36, medium: 36 };
 
 test('IN4: the blockouts stand at the roster sizes (+-0.1 m), in their classes, inside the caps and the Holds budget', () => {
   const out = {};
   for (const kind of Object.keys(GLB)) {
     const R = ROSTER[kind], b = boundsOf(kind, kind === 'tiller' ? FORMS.tiller.chosen : null);
+    if (!GLB[kind]) {
+      for (const [got, want, what] of [[b.size[0], R.W, 'W'], [b.size[1], R.H, 'H'], [b.size[2], R.L, 'L']]) assert.ok(Math.abs(got - want) <= 0.1 + 1e-9, `${kind} ${what} ${got} vs ${want}`);
+      out[kind] = { cls: R.cls, parts: b.size };
+      continue;
+    }
     const buf = fs.readFileSync(path.join(ROOT, 'public/models/instruments', GLB[kind]));
     const g = inspectGlb(buf);
     const len = buf.readUInt32LE(12), j = JSON.parse(buf.slice(20, 20 + len).toString());

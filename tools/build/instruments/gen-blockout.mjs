@@ -4,9 +4,11 @@
  * asset is read.
  *
  *   node tools/build/instruments/gen-blockout.mjs [--out <dir>]
- *     -> public/models/instruments/screed.glb           the Screed, large (bible §7.4 #9: 6.5 x 3.6 x 3.8 m)
- *     -> public/models/instruments/sickle.glb           the Sickle, medium (#5: 3.6 x 1.4 x 1.7 m)
  *     -> public/models/instruments/tiller-blockout.glb  the Tiller's default form (#3: 4.5 x 1.8 x 2.7 m, IN0's skirt)
+ *
+ * M2 wave 2: the Screed's and the Sickle's GLBs are their art now (gen-screed.mjs, gen-sickle.mjs); this recipe
+ * builds only the grey Tiller kept for the line-up's record. `--grey <dir>` still writes the grey Screed and Sickle
+ * there (never into public/), for a side-by-side with the wave 1 silhouettes.
  *
  * Every part is read from src/instruments/lib/blockout.js (one source with IN0 and the sight occluders): a box is a
  * bevelled box, a cylinder a 16-sided strut, a leg a strut from its hip on the hull to its foot pad. One grey for the
@@ -22,7 +24,7 @@ import { FORMS, partsOf, boundsOf } from '../../../src/instruments/lib/blockout.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 export const LANE = 'instruments';
 export const RECIPE = 'tools/build/instruments/gen-blockout.mjs';
-export const OUTPUTS = ['public/models/instruments/screed.glb', 'public/models/instruments/sickle.glb', 'public/models/instruments/tiller-blockout.glb'];
+export const OUTPUTS = ['public/models/instruments/tiller-blockout.glb'];
 
 const GREY = 0xa9a7a2, JOINT = 0x6d6c69, GLASS = 0xd6f0ee, LAMP_FACE = 0x3a3936;
 
@@ -78,15 +80,16 @@ async function one(kind, file, formId) {
   return { kind, file: path.relative(ROOT, file), bytes: stats.bytes, tris: stats.tris, size: b.size.map((v) => +v.toFixed(3)) };
 }
 
-export async function build({ out = ROOT } = {}) {
-  return [
-    await one('screed', path.join(out, OUTPUTS[0])),
-    await one('sickle', path.join(out, OUTPUTS[1])),
-    await one('tiller', path.join(out, OUTPUTS[2]), FORMS.tiller.chosen),
-  ];
+export async function build({ out = ROOT, grey = null } = {}) {
+  const r = [await one('tiller', path.join(out, OUTPUTS[0]), FORMS.tiller.chosen)];
+  if (grey) {
+    if (path.resolve(grey).startsWith(path.join(ROOT, 'public'))) throw new Error('--grey writes outside public/');
+    r.push(await one('screed', path.join(grey, 'screed-grey.glb')), await one('sickle', path.join(grey, 'sickle-grey.glb')));
+  }
+  return r;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const i = process.argv.indexOf('--out');
-  console.log(JSON.stringify(await build({ out: i >= 0 ? path.resolve(process.argv[i + 1]) : ROOT })));
+  const i = process.argv.indexOf('--out'), g = process.argv.indexOf('--grey');
+  console.log(JSON.stringify(await build({ out: i >= 0 ? path.resolve(process.argv[i + 1]) : ROOT, grey: g >= 0 ? path.resolve(process.argv[g + 1]) : null })));
 }
