@@ -35,6 +35,17 @@
       "modified": "re-cut, re-packed and re-painted by tools/build/recipes/armor/**"
     },
     {
+      "id": "armory-orokit-m2",
+      "paths": [
+        "public/models/armory/gaff-*.glb",
+        "public/models/armory/kit-oro.glb"
+      ],
+      "title": "Armory: Oro's kit (the Boat Gaff held, and every piece of the kit as she carries it), on the shared weapon atlas (all procedural)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/recipes/weapons/gaff-boat.mjs,tools/build/recipes/weapons/kit-oro.mjs",
+      "licence": "project-original"
+    },
+    {
       "id": "armory-weapons-w1",
       "paths": [
         "public/models/armory/bow-*.glb",
