@@ -191,7 +191,8 @@ export class ScreedBrain {
  * is, decides when the fight starts and when to charge, and reports what happened as events; the kind file only writes
  * the brain's position back onto the machine and emits the events. So the page's fight and its Node twin
  * (tools/instruments/screed-fight.test.mjs) are the same code.
- *   wait   stands (calm) until she is within `engageM` of it or it is struck
+ *   wait   stands (calm) until she is within `engageM` of it or it is struck; only inside its arena (`arena` { x, z, r }:
+ *          Ninewalls, so a Screed stood up anywhere else, the line-up's F23-screed on the Pans, never starts a fight)
  *   come   walks on `centre` (the village), cutting walls (IN7); charges her when she is `chargeM` ahead within
  *          `chargeCone` of its heading and `chargeCd` has run since its last charge ended; the blade strikes her once a
  *          charge if she is inside `bladeBox` in front of it. After a stall it backs off the wall (`backS` at
@@ -210,8 +211,8 @@ export const FIGHT = Object.freeze({
 });
 
 export class ScreedFight {
-  constructor(brain, { centre, away }) {
-    this.b = brain; this.centre = centre; this.away = Array.isArray(away) ? away : [away]; this.awayI = 0;
+  constructor(brain, { centre, away, arena = null }) {
+    this.b = brain; this.centre = centre; this.arena = arena; this.away = Array.isArray(away) ? away : [away]; this.awayI = 0;
     this.mode = 'wait'; this.cd = 0; this.struck = false; this.bladeHit = false;
     this.lastPhase = brain.phase; this.nStalls = 0; this.nCuts = 0; this.backT = 0;
     this.events = [];
@@ -225,7 +226,8 @@ export class ScreedFight {
     this.events.length = 0;
     const has = px != null && pz != null;
     const dx = has ? px - b.x : 1e9, dz = has ? pz - b.z : 1e9, d = Math.hypot(dx, dz);
-    if (this.mode === 'wait' && (d < F.engageM || this.struck)) {
+    const inArena = !this.arena || Math.hypot(b.x - this.arena.x, b.z - this.arena.z) <= this.arena.r;
+    if (this.mode === 'wait' && inArena && (d < F.engageM || this.struck)) {
       this.mode = 'come'; b.target = { x: this.centre.x, z: this.centre.z }; this._ev('screed-engage');
     }
     if (this.mode === 'come' && (b.failSoft || bladeDropped(b.parts))) {

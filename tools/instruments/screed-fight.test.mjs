@@ -28,7 +28,7 @@ function stoodUp() {
   const r = NW.OUTER_R + 14, b = 45 * D2R;
   const at = { x: C.x + Math.sin(b) * r, z: C.z - Math.cos(b) * r };
   const brain = new ScreedBrain({ x: at.x, z: at.z, heading: Math.atan2(C.x - at.x, C.z - at.z), walls: NW });
-  const fight = new ScreedFight(brain, { centre: { x: C.x, z: C.z }, away: [{ x: at.x, z: at.z }, { x: SCAR.b.x, z: SCAR.b.z }] });
+  const fight = new ScreedFight(brain, { centre: { x: C.x, z: C.z }, arena: { x: C.x, z: C.z, r: 160 }, away: [{ x: at.x, z: at.z }, { x: SCAR.b.x, z: SCAR.b.z }] });
   return { brain, fight, at, b };
 }
 
@@ -126,6 +126,16 @@ test('fail-soft: struck once and left alone it cuts three walls, the fight ends 
   assert.ok(Math.hypot(F.brain.x - F.at.x, F.brain.z - F.at.z) < 30 || F.fight.awayI === 1, 'walking back out');
   for (const id of ['wall-1', 'wall-2', 'wall-3']) assert.equal(NW.wallState(id).state, 'cut');
   assert.equal(NW.wallState('wall-4').state, 'whole');
+});
+
+test('outside its arena (the line-up on the Pans) it never starts a fight, even with her 6 m in front', () => {
+  NW.resetWalls();
+  const brain = new ScreedBrain({ x: -300, z: 260, heading: 0, walls: NW });
+  const fight = new ScreedFight(brain, { centre: { x: C.x, z: C.z }, arena: { x: C.x, z: C.z, r: 160 }, away: [{ x: -300, z: 260 }] });
+  fight.struck = true;
+  for (let i = 0; i < 300; i++) fight.step(DT, -300, 266);
+  assert.equal(fight.mode, 'wait');
+  assert.ok(Math.hypot(brain.x + 300, brain.z - 260) < 1e-9, 'it never moved');
 });
 
 test('Brine seizes a seal; one Pry or one hook-rip takes it off', () => {

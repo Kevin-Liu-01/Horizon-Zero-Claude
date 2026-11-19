@@ -61,7 +61,7 @@ class Screed extends base.Cls {
     this.walkSpeed = SCREED_RULES.walk; this.runSpeed = SCREED_RULES.chargeSpeed;
     this.brain = new ScreedBrain({ x: this.position.x, z: this.position.z, heading: opts.heading ?? this.heading, walls: WALLS, obstacles: opts.obstacles || [] });
     // the fight (screed-rules.js ScreedFight): on the village, then back out the way it came and down the Scar
-    this.fightRules = new ScreedFight(this.brain, { centre: { x: NW_CENTRE.x, z: NW_CENTRE.z },
+    this.fightRules = new ScreedFight(this.brain, { centre: { x: NW_CENTRE.x, z: NW_CENTRE.z }, arena: { x: NW_CENTRE.x, z: NW_CENTRE.z, r: 160 },
       away: [{ x: this.position.x, z: this.position.z }, { x: SCAR.b.x, z: SCAR.b.z }] });
     this._sealW = this.weakPoints.filter((w) => w.name === 'sealR' || w.name === 'sealL');
     this._headLift = 0;
