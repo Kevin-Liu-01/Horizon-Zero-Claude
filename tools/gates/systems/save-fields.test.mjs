@@ -20,6 +20,9 @@ function areas() {
     benchmarks: { 'bm-01': { surveyed: true, hour: 11.25 } },
     kit: { gaff: true, windwall: true, pots: { brine: 2, cinder: 1 } },
     regions: { holds: { true: true, hour: 11.25 } },
+    // wave 4: the certifications (Ballast I and Bearing I at the re-survey) and the Ninewalls counter (open, two cords taken)
+    certs: { v: 1, c: { transect: [0, 0], bearing: [2, 1], ballast: [2, 1] }, log: [], granted: [{ cert: 'ballast', rank: 1 }, { cert: 'bearing', rank: 1 }], crossCounted: true },
+    counter: { open: true, taken: ['pumice'], qty: { wire: 4 } },
   };
   const F = new SaveFields();
   const got = {};
@@ -60,7 +63,7 @@ test('a slice record (no areas) is still readable and carries forward with every
   assert.equal(classify(JSON.stringify(old)), 'ok');
   const { F, got } = areas();
   F.apply(parse(JSON.stringify(old)).areas);
-  assert.deepEqual(got, { walls: null, benchmarks: null, kit: null, regions: null });
+  assert.deepEqual(got, { walls: null, benchmarks: null, kit: null, regions: null, certs: null, counter: null });
 });
 
 test('a getter or setter that throws never breaks a save', () => {
