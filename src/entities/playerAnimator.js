@@ -1483,6 +1483,18 @@ export class PlayerAnimator {
       K[1] = bp && bp.rOn ? 0 : Math.min(1, K[1] + dt / 0.2);
       if (rw > 0.01) this._runArmClamp(rw);
     }
+    /* M2 polish (W1, the bow wrist after the regrip): the fist that holds the bow the carry's way (the carry, the unstow's
+     * E and F after the regrip; not the stow, whose regrip turns the fist over) inside the wrist's bound, last of the left arm's passes
+     * (carryStow.js `_bowWristBound`); out over the aim's raise, whose rig places the bow */
+    /*  (its weight comes in and goes out over WB_STEPS steps: engaged in one step, at E's start out of the regrip's open
+     *  fist or at a stow's start out of the carry, the bow posed from the fist turned 14-120 deg in a step) */
+    {
+      const B = this._bp;
+      const on = !!B && B.owner === 'handL' && !dead && B.mode === 1 && B.gripKind === 'norm' && B.pose === 'hand';
+      this._wbK = clamp((this._wbK || 0) + (on ? 1 : -1) * dt * 60 / 3, 0, 1);
+      const kw = this._wbK * (1 - smoothstep(aimW, 0.45, 0.65)) * (1 - dodgeW);
+      if (kw > 1e-3 && B?.owner === 'handL') this._bowWristBound(kw);
+    }
 
     /* ============ OVERLAY 4b: the lance — carry, draw, swing ============= */
     // `melee.js` owns the state machine and publishes it; this layer owns the

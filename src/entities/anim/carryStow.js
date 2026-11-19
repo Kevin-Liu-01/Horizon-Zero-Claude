@@ -162,7 +162,44 @@ function turnToward(cur, want, max) {
   if (_ttA.lengthSq() < 1e-12) return cur;
   return cur.applyQuaternion(_ttQ.setFromAxisAngle(_ttA.normalize(), max)).normalize();
 }
+/* M2 polish (hero-anim, W1 "the bow wrist after the regrip"): the left wrist's bound while the fist holds the bow the
+ * carry's way. The carry's stave axis turns toward its band at a bound (`CARRY_AX_STEP`) and the regrip's E and F hold the
+ * planned bow, so with the forearm swinging at a jog, or folded in a crouch, the fist's turn off the forearm ran past the
+ * wrist: deviation -33.6 to -42 deg in the jog's carry, 51.7 deg with 67 deg of flexion at the crouched unstow's E
+ * (dressed bench at aba90a3; W1's bars 30 and 60). The fist is turned back inside the bound about the wrist (the bow is
+ * posed from the fist: it turns with it), after the running arms' clamp has moved the forearm (playerAnimator.js), measured
+ * as the rows measure it: the forearm (elbow -> wrist), the hand's line
+ * (wrist -> middle knuckle) and its grip axis (pinky -> index) */
+const WRIST_DEV_MAX = 27 * Math.PI / 180, WRIST_FLEX_MAX = 55 * Math.PI / 180;
+const _wbF = new THREE.Vector3(), _wbH = new THREE.Vector3(), _wbG = new THREE.Vector3(), _wbN = new THREE.Vector3();
+const _wbG2 = new THREE.Vector3(), _wbE = new THREE.Vector3(), _wbQ = new THREE.Quaternion(), _wbR = new THREE.Quaternion();
 export class CarryStow {
+  /** The left wrist inside WRIST_DEV_MAX / WRIST_FLEX_MAX (see above), by weight `w`. Returns the turn applied (rad). */
+  _bowWristBound(w = 1) {
+    const b = this.b, g0 = this.melee?.gripDirLL;
+    if (!g0 || !b.loArmL || !b.handL || w <= 1e-3) return 0;
+    const mid = this._wbMid !== undefined ? this._wbMid : (this._wbMid = b.handL.bone.children.find((c) => /^middle_01/.test(c.name)) || null);
+    if (!mid) return 0;
+    this._charOf(b.loArmL.bone, _wbE); this._charOf(b.handL.bone, _wbF); this._charOf(mid, _wbH);
+    _wbH.sub(_wbF).normalize(); _wbF.sub(_wbE).normalize();
+    this._liveW(b.handL.bone, _wbQ);
+    _wbG.copy(g0).applyQuaternion(_wbQ);
+    _wbN.crossVectors(_wbH, _wbG).normalize();
+    _wbN.addScaledVector(_wbF, -_wbN.dot(_wbF));
+    if (_wbN.lengthSq() < 1e-8) return 0;
+    _wbN.normalize(); _wbG2.crossVectors(_wbF, _wbN);
+    const hf = _wbH.dot(_wbF), flex = Math.atan2(_wbH.dot(_wbN), hf), dev = Math.atan2(_wbH.dot(_wbG2), hf);
+    // (a positive turn about n2 takes the hand's line from the forearm's toward -g2: deviation down; about g2, toward n2:
+    //  flexion up)
+    const dD = dev - clamp(dev, -WRIST_DEV_MAX, WRIST_DEV_MAX), dF = flex - clamp(flex, -WRIST_FLEX_MAX, WRIST_FLEX_MAX);
+    if (!dD && !dF) return 0;
+    _wbR.setFromAxisAngle(_wbN, dD * w);
+    if (dF) _wbR.premultiply(_wbQ.setFromAxisAngle(_wbG2, -dF * w));
+    this._liveW(b.handL.bone, _wbQ);
+    this.space.setCharQ(b.handL, _wbQ.premultiply(_wbR));
+    return Math.abs(dD) + Math.abs(dF);
+  }
+
   handAttach(side) {
     const s = String(side || 'r').toLowerCase()[0];
     return s === 'l' ? this.bones[this.KEY.handL] : this.bones[this.KEY.handR];
