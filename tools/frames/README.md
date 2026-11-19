@@ -65,6 +65,10 @@ in the accepted wall-clock anchor; `--clip-phases a,b,...` films repeat k at pha
 The F16 and F18 anchors were re-filmed at fb6d5f0 the same way (F17 is not accepted; its anchor is still the 2026-11-14
 refilm). A filmed person is turned to its mark before the settle, with its chains re-seated on the turned rest.
 
+**M2 wave 0 (D10):** F14 (the idle) is staged on simulation time too: the slate, then its 1.5 s of idle from the
+animator's constructor clocks (the fidget timer starts at 6 s, so no break begins), frozen there. Every other idle
+frame is still staged on the wall clock (`page.mjs` `SIM_IDLE`).
+
 ## Frame set versions
 
 `frameset.json` carries a `version`. Each change, and why:
