@@ -14,6 +14,10 @@
  *               brief's bar is "over 60 deg"; the built sky's noon is its daily maximum, SUN_MAX_ELEV.
  *   EN5-cover   the cloud shadows' mean cover and fully-shadowed share per weather, the M1 term (two octaves of sin-hash
  *               value noise) against the coverage texture through CLOUD_MAP_A/B. Bar: mean within 0.02.
+ *   EN1-cross   the regions seam along the hour's walks (src/core/regions.js RegionTracker, every 0.5 m): Saltrow to
+ *               Ninewalls by the herd's slope (leg 2), Ninewalls to the beat's place 22 m inside the Malpais (leg 3), and
+ *               a 9 m dither (inside the 20 m band) across the Pans/Holds line at the slope's foot after the crossing:
+ *               each crossing fires one leave and one enter, the dither nothing (a 15 m stray is counted, not graded).
  *   ask         environment.askWeather's window on a bare instance (no scene): in force inside [from, to), the sky given
  *               back after, a window across midnight, clearAsk.
  */
@@ -24,7 +28,9 @@ import { Environment, SKY_MODEL, skyNoiseData } from '../../src/world/environmen
 import { ensureMacro, heightAt } from '../../src/world/island/recipe.js';
 import { siteById, TRIG } from '../../src/world/island/sites.js';
 import { BENCHMARKS } from '../../src/world/sites/layout.js';
-import { RegionMap } from '../../src/core/regions.js';
+import { RegionMap, RegionTracker } from '../../src/core/regions.js';
+import { ISLAND_SCALE as S } from '../../src/world/island/extent.js';
+import { HERD_SLOPE } from '../../src/world/holds/blockout.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
@@ -133,6 +139,43 @@ const row = (id, pass, numbers, note = '') => { rows.push({ id, pass, numbers, n
   if (worst > 0.05) ok = false;
   row('EN5-cover', ok, { tileM: SKY_MODEL.CLOUD_TILE_M, metresPerGameHour: SKY_MODEL.CLOUD_SPEED_MPH, ...out },
     'cover before strength (trade 0.26, calima 0): the shadow a pixel takes is mean x strength');
+}
+
+/* -------------------------------------------------------------- EN1-cross */
+{
+  const map = new RegionMap().build();
+  const E = (p) => ({ x: p.e * S, z: -p.n * S });
+  const saltrow = siteById('saltrow'), nw = siteById('ninewalls');
+  const lo = E(HERD_SLOPE[0]), hi = E(HERD_SLOPE[1]);
+  const walk = (pts, tr = new RegionTracker(map)) => {
+    const ev = [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1], L = Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(1, Math.ceil(L / 0.5));
+      for (let k = i === 0 ? 0 : 1; k <= n; k++) for (const e of tr.update(a.x + (b.x - a.x) * k / n, a.z + (b.z - a.z) * k / n)) if (e.type === 'enter' || e.type === 'leave') ev.push(`${e.type} ${e.region} (${e.x}, ${e.z})`);
+    }
+    return { ev, tr };
+  };
+  const leg2 = walk([saltrow, lo, hi, nw]);
+  const leg3 = walk([nw, { x: 133.2, z: 83.2 }]);
+  // the dither: from the slope's foot (the line), 15 m either way along the slope's axis, five times, after the crossing
+  const ax = (hi.x - lo.x), az = (hi.z - lo.z), al = Math.hypot(ax, az), ux = ax / al, uz = az / al;
+  let foot = null;
+  for (let t = 0; t <= 1; t += 0.002) { const x = lo.x + ax * t, z = lo.z + az * t; if (map.regionAt(x, z) === 'holds') { foot = { x, z }; break; } }
+  const pre = walk([saltrow, { x: foot.x - ux * 40, z: foot.z - uz * 40 }, { x: foot.x + ux * 40, z: foot.z + uz * 40 }]);
+  const before = pre.ev.length;
+  const dith = (m, tr) => {
+    const pts = [];
+    for (let i = 0; i < 5; i++) { pts.push({ x: foot.x + ux * m, z: foot.z + uz * m }, { x: foot.x - ux * m, z: foot.z - uz * m }); }
+    return walk([{ x: foot.x + ux * 40, z: foot.z + uz * 40 }, ...pts], tr);
+  };
+  const dither = dith(9, pre.tr);
+  // for the herd beat: she may stray 15 m down the slope, past the band's half (10 m): each such stray is a crossing
+  const stray = dith(15, walk([saltrow, { x: foot.x - ux * 40, z: foot.z - uz * 40 }, { x: foot.x + ux * 40, z: foot.z + uz * 40 }]).tr);
+  const want2 = ['enter pans', 'leave pans', 'enter holds'], want3 = ['enter holds', 'leave holds', 'enter malpais'];
+  const kinds = (ev) => ev.map((e) => e.replace(/ \(.*/, ''));
+  const ok = JSON.stringify(kinds(leg2.ev)) === JSON.stringify(want2) && JSON.stringify(kinds(leg3.ev)) === JSON.stringify(want3) && dither.ev.length === 0;
+  row('EN1-cross', ok, { leg2: leg2.ev, leg3: leg3.ev, ditherAt: { x: r1(foot.x), z: r1(foot.z) }, ditherEvents9m: dither.ev, crossingBefore: before, stray15mEvents: stray.ev.length },
+    'the seam in Node; the frames over 33/50 ms on the walk are the first-hour run\'s (systems)');
 }
 
 /* -------------------------------------------------------------------- ask */
