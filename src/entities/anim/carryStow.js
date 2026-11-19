@@ -76,6 +76,8 @@ const _sm = ease;
 /** M1a weapons round 3 (W3/W8): the bow's hand-over between the fist's carry and combat's placement (the raised aim, a
  *  roll): at most this long either way, and the drawn bow turns at most RAISE_STEP (rad) a step while it runs */
 const RAISE_S = 0.30, RAISE_STEP = 9.5 * Math.PI / 180;
+/** M2 wave 0: the share of the raise (the aim weight) through which the bow stays posed from the fist */
+const RAISE_HOLD = 0.5;
 /*
  * M1a weapons round 3: THE UNSTOW'S TABLE, with the regrip (the wave 3 ruling). A anticipate, B reach round the hip, C
  * close on the limb (the GRIP event at its end), D out of the keeper and round the hip in the reverse fist, R the two-hand
@@ -115,6 +117,12 @@ const REGRIP_SHIFT = [-0.15, 0.08, 0.06];
 /** ...as a point off spine_02 (char m; standing, spine_02 at [-0.008, 1.103, 0.070]): it rides a crouch and a lean (the
  *  crouch drops spine_02 0.56 m, the carry's own goal only 0.30) */
 const REGRIP_OFF = [0.133, -0.135, 0.165];
+/** M2 wave 0, the quick draw (RMB from stowed): the right fingers' pinch on the arrow at the quiver, and how many steps the
+ *  palm stays on the quiver's point before it goes on to the bow */
+const QUICK_PINCH = 0.55, QUICK_PULL = 2;
+/** ...and its palm's bound on the way (m a step: W3's 0.08 on the wrist, the hand's turn added: 0.075 read 0.0801, 0.073 0.0781; at 0.071 the right came to the bow a step late and the left's palm left its plan 0.039 m while R waited on it) */
+const QUICK_STEP = 0.073;
+const _qpP = new THREE.Vector3();
 /** the right hand's take on the upper limb (mesh units up the stave from the riser's centre) */
 const BOW_UPPER_Y = 0.12;
 /** the right arm's pole as it reaches across her to the bow in front of her left hip (char, unit after normalise) */
@@ -897,7 +905,10 @@ export class CarryStow {
     if (B.rOn === 2 && B.mode === 2 && regrip && B.t < tR && !B.revOk && !B.stowD0) { B.rOn = 1; B.rHeld = false; B.rBack = 0; B.rw = 1; }
     if (B.rOn === 0) {
       // (the regrip starts the right hand: only from the reverse take, not from a stow turned back in the carry's fist)
-      const go = stow ? regrip && B.t < tR && !B.revOk && !B.stowD0 : regrip && B.t >= tGrip - 0.117 && B.t < phaseEnd(T, 'D') && B.gripKind !== 'norm';
+      // (M2 wave 0: the quick draw's right hand goes at the request, to the quiver first)
+      if (B.quick && !this.ctx.player?.aiming && !B.qDone) B.quick = false;
+      const go = stow ? regrip && B.t < tR && !B.revOk && !B.stowD0
+        : regrip && B.t < phaseEnd(T, 'D') && B.gripKind !== 'norm' && (B.t >= tGrip - 0.117 || (B.quick && !B.qDone));
       if (!go) { B.rw = 0; B.rHold = false; return; }
       // (from the hand as it was drawn last step: later layers, a run's arm clamp, move the clip's)
       if (this._bpHandR) _rhB.copy(this._bpHandR).add(_rhA.copy(mel.palmOffL).applyQuaternion(_rhQ2));
@@ -921,6 +932,15 @@ export class CarryStow {
       _rhA.copy(B.relRP).applyQuaternion(_rhQ);
       want = _rvU.copy(B.org).sub(_rhA).add(_rvC.copy(mel.palmOffL).applyQuaternion(_rhQ));
       B.rcT = CURL.closed;
+    } else if (B.rOn === 1 && B.quick && !B.qDone && !stow) {
+      /* (M2 wave 0, the quick draw: the arrow first. The palm to the quiver (the aim's own point, `_quiverPt`), the fingers
+       *  pinch as it gets there, QUICK_PULL steps on it, then on to the bow's upper limb (below) with the arrow) */
+      want = this._quiverPt(_rvU);
+      _rhQ.copy(_rhQ2);
+      B.rcT = (B.rMiss ?? 9) < 0.04 ? QUICK_PINCH : CURL.open;
+      if ((B.rMiss ?? 9) < 0.03) B.qN = (B.qN || 0) + 1;
+      if (B.qN >= QUICK_PULL || (B.t >= tGrip + 0.05 && (B.rMiss ?? 9) < 0.06)) { B.qDone = true; B.qAt = B.simT; }
+      if (!this.ctx.player?.aiming) { B.quick = false; B.qDone = false; }
     } else if (B.rOn === 1) {
       // (where the regrip will be, on the carry's line: the hand waits there until the bow comes round to it)
       this._bowCarryAxis(_rhA, _caF.fromArray(CARRY_FA).normalize());
@@ -947,7 +967,8 @@ export class CarryStow {
       want = B.rRel < 0.034 ? _rvU.copy(B.rp) : _rvU.copy(_rhB);
     }
     // (the way back to her swing at a little under the palm's bound: the fist turns back as it goes, W3's wrist)
-    stepToward(B.rp, want, (B.rOn === 2 ? PALM_STEP_E : PALM_STEP) * dt * 60);
+    // (M2 wave 0: the quick draw's right hand goes a little faster, QUICK_STEP, to the quiver and on to the bow)
+    stepToward(B.rp, want, (B.rOn === 2 ? PALM_STEP_E : B.quick && !B.rHeld ? QUICK_STEP : PALM_STEP) * dt * 60);
     const a = B.rq.angleTo(_rhQ), mx = HAND_TURN * dt * 60;
     if (a > mx) B.rq.slerp(_rhQ, mx / a); else B.rq.copy(_rhQ);
     const cr = CURL.rate * dt;
@@ -1091,7 +1112,15 @@ export class CarryStow {
       else { B.hqRevOk = false; B.gripKind = null; }
       B.rHeld = false; B.rWait = 0; B.lWait = 0; B.orgROk = false; B.revPalmOk = false; B.qDrawnR = null; B.orgDrawnR = null; B.slid = inHand;
       if (!inHand) B.curl = Math.min(B.curl, CURL.open + 0.2);
+      /* M2 wave 0 (D2, W7 "RMB from stowed to loosable no later than W0's" and W8): an unstow the AIM asked for (RMB with
+       * the bow on her back) is the QUICK draw: the right hand takes an arrow from the quiver first, while the left reaches
+       * for the bow, and goes on to the regrip with it; the nock's clock runs from the request (`bowNockHold`), and the
+       * aim's own quiver beat is not run again once the bow is up (`bowQuickNocked`). At 1d2de89 the beat and the nock
+       * waited for the whole unstow and the regrip: RMB to loosable 1.40 s against W0's 0.867 */
+      B.quick = !inHand && !!this.ctx.player?.aiming && !this.ctx.combat?.activeWeapon?.heavy;
+      B.qDone = inHand; B.qN = 0; B.qAt = -1;
     } else {
+      B.quick = false;
       // the lance asked for (key 2) is the player's request; the 8 s timer is the game's
       const asked = !!mel && (mel.stance === 'draw' || mel.stance === 'ready' || mel.stance === 'swing');
       B.tempo = asked ? 'ask' : 'timer';
@@ -1181,10 +1210,35 @@ export class CarryStow {
    * its way back from the quiver: the string hook 0.071 m off the nock at draw 0.07, A32 at 53e8186).
    */
   bowNockHold(nockTime = 0.42) {
+    // (M2 wave 0: the quick draw's nock runs from the request: the right hand is at the quiver long before it lands)
+    const QB = this._bp;
+    if (QB?.quick && this.ctx.player?.aiming) return false;
     if (this.bowAimGate() < 1) return true;
     if (!this._gateRaise) return false;
     const qT = this.T?.armFlow?.quiverT ?? 0.34;
     return (this._quiverT ?? 1) < 1 - nockTime / qT;
+  }
+
+  /** M2 wave 0: did the quick draw's right hand already take the arrow (the aim's quiver beat is not run again)? */
+  bowQuickNocked() {
+    const B = this._bp;
+    return !!B && !!B.quick && !!B.qDone;
+  }
+
+  /** M2 wave 0: the quiver's point (char), as the aim rig reads it (`aimRig` `_quivT`: the standing point, riding the
+   *  pelvis by `armFlow.bodyRef`), into `out` and into `_quivT` (the rows' and the beat's). No allocation. */
+  _quiverPt(out) {
+    const T = this.T, b = this.b;
+    out.copy(T.quiverHip);
+    const BR = T.armFlow?.bodyRef;
+    const cbW = T.armFlow?.crouchBody ? (BR ? 1 : (this._crouchW || 0)) : 0;
+    if (cbW > 1e-3 && b.pelvis?.bindChar) {
+      this._charOf(b.pelvis.bone, _qpP).sub(b.pelvis.bindChar);
+      if (BR) { _qpP.x -= BR.pelvis[0]; _qpP.y -= BR.pelvis[1]; _qpP.z -= BR.pelvis[2]; }
+      out.addScaledVector(_qpP, cbW);
+    }
+    if (this._quivT) this._quivT.copy(out);
+    return out;
   }
 
   /** Is the bow in her hand this step (combat shows its own bow on the hand node while true)? Null: no sequence yet. */
@@ -1270,11 +1324,18 @@ export class CarryStow {
       // (M1a weapons round 2: from the hand in the carry too, so there is no hand-over to combat's carry pose to blend)
       if (blendOn) {
         // (M1a weapons round 3: combat's placement this step is on the group already; the fist's is blended into it)
-        const k = _sm(B.aimK);
+        /* (M2 wave 0, D2 W1 in the raise: the bow stays as the fist holds it while the aim is under half up (the palm on
+         *  its socket, the grip axis on the stave: the blend from the start of the raise slid it 0.021 m off the palm and
+         *  turned it 39 deg in the fist at 1d2de89), and goes over to combat's placement as the aim comes the rest of the way) */
+        const k = _sm((B.aimK - RAISE_HOLD) / (1 - RAISE_HOLD));
         group.position.lerpVectors(_bpA, group.position, k);
         group.quaternion.copy(_bpQ.slerp(group.quaternion, k));
         group.scale.lerpVectors(_bpB, group.scale, k);
         this._bowLimitTurn(group, node, B);
+        // (...and the fist stays closed round the stave it holds while it does: the aim's own curl went on top of the
+        //  carry's fading wrap, 13 finger joint-steps inside the stave and the palm normal 12.5 deg off at 1d2de89)
+        const Gc = this._bowGrip(1);
+        if (Gc && k < 1) this._wrapFingers('l', Gc, 1, 0.55 * (1 - k), 1 - k);
       } else {
         group.position.copy(_bpA); group.quaternion.copy(_bpQ); group.scale.copy(_bpB);
         cmb?.bow?.setDraw?.(0, false);

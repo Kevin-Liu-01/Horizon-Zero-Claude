@@ -356,7 +356,10 @@ export class HeroStowKit {
     if (!this._warmed && an?.skull && this.attached) this._warm(an);
     if (this.attached && this.quiverSocket) this._solveQuiver(dt);
     if (!this.carry || !this.attached || !an?.skull) return;
-    if (this.hidden & PIECE.lance) { if (this.carry.out.active) this.carry.reset(); return; }
+    /* (M2 wave 0, D2 W2: not while the lance layer's carried line reads the carry (a draw's reach, a stow's seat:
+     *  meleeLayer `_liveSocket`): the reset dropped the eased pose the kit's lance had been drawn at, and the fresh search
+     *  stood the haft 0.10-0.21 m off it at a jog (the draw's first step, and the take, lanceDrawJog at 1d2de89)) */
+    if (this.hidden & PIECE.lance) { if (this.carry.out.active && !an.melee?._lc?.on) this.carry.reset(); return; }
     const aimW = an.aimWeight ?? 0;
     // (the camera off the root ctx once: see carry.js on loads through it)
     if (!this._cam) this._cam = this.player.ctx?.camera || null;

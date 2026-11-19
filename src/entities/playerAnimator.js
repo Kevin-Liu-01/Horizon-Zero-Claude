@@ -883,7 +883,8 @@ export class PlayerAnimator {
     // (M1a weapons round 3: ...and only once the bow is in her hand, `_bowGate`: the beat is the raise's)
     const aimUp = p.aiming && !dead && (this._bowGate ?? 1) >= 1;
     if (aimUp && !this._prevAiming) {
-      this._quiverT = 0;                 // bow comes up -> pull an arrow
+      // (M2 wave 0: ...unless the quick draw's right hand took it on the way, carryStow `bowQuickNocked`)
+      this._quiverT = this.bowQuickNocked?.() ? 1 : 0;   // bow comes up -> pull an arrow
       this._reNock = false;
       this._rnL = false; this._rnHold = false;
     } else if (this._reNock && aimUp && this._looseT >= 0.8) {   // (M1a r3, A17: 0.4 -> 0.8, the kick out first)
