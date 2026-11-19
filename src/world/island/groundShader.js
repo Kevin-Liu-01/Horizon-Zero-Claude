@@ -214,8 +214,9 @@ const HOLDS_TERM = /* glsl */ `
     }
     vec3 hc = pow(la.rgb, vec3(2.2));
     // black: the shingle's pale and rusty stones pulled down toward the cinder (a 1 + 6 L compression), a little warm
-    /* (F33 at 2253f73: the Rise's crown in sun read L* 22-31 against HG4's 12-22) about 0.017 linear */
-    hc *= vec3(0.74, 0.68, 0.63) / (1.0 + 6.0 * dot(hc, vec3(0.2126, 0.7152, 0.0722)));
+    /* (F33 at 2253f73: the Rise's crown in sun read L* 22-31 against HG4's 12-22; at e9e1142 holds-look.mjs read the lower
+     * third's Holds pixels at mean L* 23.9) about 0.013 linear */
+    hc *= vec3(0.56, 0.51, 0.47) / (1.0 + 6.0 * dot(hc, vec3(0.2126, 0.7152, 0.0722)));
     // a steep cinder face is coarser and shadowed in its own scree
     hc *= 1.0 - 0.25 * smoothstep(0.7, 1.4, slope);
     // broad fields: some cinder oxidised red-brown, some ashen
@@ -230,7 +231,7 @@ const HOLDS_TERM = /* glsl */ `
     float lee = clamp(dot(wn.xz, vec2(-0.7071, 0.7071)) * 3.0, -0.6, 1.0);
     vec4 nD = gNoiseT(xz * 0.0213 + 0.31);
     float drift = smoothstep(0.66, 0.9, nD.r * 0.55 + gNoiseT(xz * 0.0071 + 0.67).b * 0.45 + 0.08 * lee) * (1.0 - smoothstep(0.3, 0.6, slope));
-    vec3 dustC = vec3(0.072, 0.06, 0.045) * (0.86 + 0.28 * nD.g);
+    vec3 dustC = vec3(0.06, 0.05, 0.038) * (0.86 + 0.28 * nD.g);
     hc = mix(hc, dustC, drift * 0.5);
     hp *= 1.0 - 0.35 * drift;
     hR = mix(hR, 0.97, drift);
