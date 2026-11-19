@@ -42,7 +42,7 @@ export const frames = [
   },
   {
     id: 'F40-open', subject: 'the Pine Windwall open (its fan alone, standing beside her), flat light', in: 'M2', ...STUDIO,
-    camera: { mode: 'orbit', yawRel: 45, dist: 2.6, height: 0.9, target: 'body', fov: 40 },
+    camera: { mode: 'orbit', yawRel: 30, dist: 3.1, height: 0.9, target: { fwd: 0.15, side: 0.35, up: 0.85 }, fov: 40 },
     state: { pose: 'idle', hud: false },
     ref: { written: 'a crescent fan of nine pine slats on a brass rivet, a woven palm leaf between them, two lacings; 0.9 m across its chord; it reads as a made thing of the Holds, not a round shield' },
     note: 'M2 wave 2 look (area D): the held Windwall\'s fan (src/combat/windwall.js, one uniform) shown standing on its rivet beside her, open; on her arm in the guard is wave 3 (F40).',
@@ -78,7 +78,7 @@ export const stagings = {
       ww.setOpen(1);
       const T = mod.WINDWALL_FAN, mid = (T.spreadDeg / 2) * Math.PI / 180;
       // char space: the middle slat up (the fan's local +Y turned by `mid` about +Z lies at 90 + mid deg), its face
-      // toward the lens at her front-left, standing 0.55 m to her left and 0.85 m in front; then her heading
+      // toward the lens at her front-left, standing on its rivet 0.78 m to her left, a little in front
       // (a child of her model, in her own frame: the studio stage shows her hierarchy alone)
       const g = ww.group, m = p.model;
       m.updateMatrixWorld(true);
@@ -86,7 +86,7 @@ export const stagings = {
       g.rotation.set(0, 0, 0);
       g.rotateY(Math.PI / 4);
       g.rotateZ(-mid);
-      g.position.set(0.55 / sc, 0.04 / sc, 0.85 / sc);
+      g.position.set(0.78 / sc, 0.03 / sc, 0.25 / sc);
       g.scale.setScalar(1 / sc);
       g.visible = true;
       m.add(g);
