@@ -64,9 +64,15 @@ export function holdsScar(e, n) { return scarWeight(e, n) - bermFoot(e, n); }
 /**
  * Pack (hold, cult, scar) into one Int16 (5 bits each: hold, cult 0..31; scar 0..30 about 15). The shader unpacks it
  * from the normalised attribute (w * 32767, rounded) in the vertex stage, so the three interpolate apart.
+ *
+ * M2 wave 3: off the Holds (hold rounds to 0, so no worked ground) a node on the red crater (`crater`, authored.crater,
+ * 0..1) stores -(1 + crater * 32766) instead: the negative half carries the crater's weight to the ground shader's
+ * bedding term, which bands the crater alone (groundShader.js STRATA_TERM, vGround.w). The crater and the Holds and
+ * the Scar never share a node (checked over the bake's grid).
  */
-export function packGround(hold, cult, scar) {
+export function packGround(hold, cult, scar, crater = 0) {
   const q = (v) => Math.max(0, Math.min(31, Math.round(v * 31)));
+  if (crater > 0.004 && q(hold) === 0) return -(1 + Math.round(Math.min(1, crater) * 32766));
   const s = Math.max(0, Math.min(30, Math.round(15 + 15 * scar)));
   return q(hold) * 1024 + q(cult) * 32 + s;
 }

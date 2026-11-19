@@ -16,6 +16,13 @@
  * M2 wave 2 (area A): the Holds' ground (HOLDS_TERM): black lapilli from the shingle layer read at a cinder's scale,
  * sand drifts in the lee, the pit-cups (a vine in a hollow behind its crescent wall) on worked ground, and the Screed
  * Scar's planed floor and spoil. Its inputs are unpacked per vertex from the normal's fourth channel (holds/ground.js).
+ *
+ * M2 wave 3 (engine, the fight frame): HOLDS_TERM is compiled only where `CAL_G_HOLDS` is defined: terrain.js draws a
+ * chunk that holds any Holds ground with its own program (groundHoldsMaterial) and every other chunk without the term.
+ * At 69544b6 the term sat in every ground draw, the Pans' too, and F25's per-pixel work read 8.8 ms against 7.8 at
+ * 001e349 (the Pans paid for the larger program, not for the branch, which they never take). The same channel's
+ * negative values carry the red crater's weight (vGround.w), and the crater's bedding (STRATA_TERM) is drawn on the
+ * crater alone: at 69544b6 it banded every tinted steep face, the caldera's flank above the Holds in F33 among them.
  */
 import { SCAR } from './sites.js';
 const _sl = Math.hypot(SCAR.b.x - SCAR.a.x, SCAR.b.z - SCAR.a.z);
@@ -28,7 +35,7 @@ attribute vec4 aGround;
 varying vec3 vWPos;
 varying vec3 vWNorm;
 varying vec4 vTint;
-varying vec3 vGround;
+varying vec4 vGround;
 `;
 export const GROUND_VERT_WORLD = /* glsl */ `
 #include <worldpos_vertex>
@@ -39,7 +46,9 @@ vTint = vec4(pow(aTint.rgb, vec3(2.2)), aTint.a);
   /* the Holds' ground (holds/ground.js packGround): hold, worked ground, the Scar (+ floor, - spoil), unpacked here so
    * the three interpolate apart */
   float gq = floor(aGround.w * 32767.0 + 0.5);
-  vGround = vec3(floor(gq / 1024.0) / 31.0, mod(floor(gq / 32.0), 32.0) / 31.0, (mod(gq, 32.0) - 15.0) / 15.0);
+  /* (M2 wave 3) a negative value is the red crater's weight (holds/ground.js packGround; never on the Holds) */
+  vGround = gq < 0.0 ? vec4(0.0, 0.0, 0.0, (-gq - 1.0) / 32766.0)
+                     : vec4(floor(gq / 1024.0) / 31.0, mod(floor(gq / 32.0), 32.0) / 31.0, (mod(gq, 32.0) - 15.0) / 15.0, 0.0);
 }
 `;
 
@@ -115,7 +124,7 @@ vec4 gNm(int i, vec2 uv, vec2 gx, vec2 gy) {
 export const TERRAIN_FRAG_PARS = /* glsl */ `
 ${GROUND_FRAG_PARS}
 varying vec4 vTint;
-varying vec3 vGround;
+varying vec4 vGround;
 /* M1.1a: the four world masks in one array (one sampler unit): 0 mask A, 1 mask B, 2 shore, 3 the pan */
 uniform highp sampler2DArray tMask;
 #define gPanT(uv) texture(tMask, vec3((uv), 3.0))
@@ -156,12 +165,14 @@ vec3 gVoro(vec2 x) {
 }
 `;
 
-/** The crater's bedding, shared by the layered ground and the far field (needs col, pert, slope, wn, xz, vTint). */
+/** The crater's bedding, shared by the layered ground and the far field (needs col, pert, slope, wn, xz, tk0, vGround). */
 export const STRATA_TERM = /* glsl */ `
   /* -- strata (W-03 b): the red tuff ring's beds, 0.8-2.5 m, on its steep faces: a palette row
    *    per bed, a lit lip and a shaded undercut at each bed's top, dark varnish streaks below.
-   *    terrain.beddingAt() is this term's JS mirror (A63) --------------------------------- */
-  float strK = smoothstep(0.55, 0.95, slope) * smoothstep(0.02, 0.25, tk0) * uStrata;
+   *    terrain.beddingAt() is this term's JS mirror (A63). M2 wave 3: on the crater alone (vGround.w, its weight as the
+   *    bake's crater tint ramps it, ss(0.02, 0.5)); every other tinted steep face (the caldera's flank above the Holds
+   *    in F33) took the crater's beds ---------------------------------------------------------------------------- */
+  float strK = smoothstep(0.55, 0.95, slope) * smoothstep(0.02, 0.25, tk0) * smoothstep(0.02, 0.5, vGround.w) * uStrata;
   if (strK > 0.01) {
     float bz = vWPos.y + 4.0 * (gNoiseT(xz * 0.0111).r - 0.5) * 2.0;
     float T = 1.7;
@@ -216,7 +227,8 @@ const HOLDS_TERM = /* glsl */ `
     // black: the shingle's pale and rusty stones pulled down toward the cinder (a 1 + 6 L compression), a little warm
     /* (F33 at 2253f73: the Rise's crown in sun read L* 22-31 against HG4's 12-22; at e9e1142 holds-look.mjs read the lower
      * third's Holds pixels at mean L* 23.9) about 0.013 linear */
-    hc *= vec3(0.56, 0.51, 0.47) / (1.0 + 6.0 * dot(hc, vec3(0.2126, 0.7152, 0.0722)));
+    /* (M2 wave 3: x 0.85, HG4 at 69544b6 mean L* 22.6, the lapilli alone 18.7) */
+    hc *= vec3(0.476, 0.4335, 0.3995) / (1.0 + 6.0 * dot(hc, vec3(0.2126, 0.7152, 0.0722)));
     // a steep cinder face is coarser and shadowed in its own scree
     hc *= 1.0 - 0.25 * smoothstep(0.7, 1.4, slope);
     // broad fields: some cinder oxidised red-brown, some ashen
@@ -238,6 +250,9 @@ const HOLDS_TERM = /* glsl */ `
 
     /* -- the pit-cups ------------------------------------------------------------- */
     float pitK = vGround.y * (1.0 - smoothstep(0.42, 0.6, slope));
+    #ifdef CAL_P_NOHPITS
+    pitK = 0.0;   // (M2 wave 3) the lapilli without the pit grid: HG4's tiling capture (tools/perf/world-r2.mjs --holds)
+    #endif
     if (pitK > 0.01) {
       mat2 PM = mat2(0.9397, 0.342, -0.342, 0.9397);
       vec2 pq = PM * xz * 0.125;
@@ -322,9 +337,12 @@ const HOLDS_TERM = /* glsl */ `
         hR = mix(hR, 0.9, scS);
         hAO = mix(hAO, 0.88, scS);
       } else {
-        // spoil: clods of the pale subsoil in the black cinder, about a third of it
-        float clod = smoothstep(0.5, 0.62, gNoiseT(xz * 0.37 + 0.13).a * 0.6 + gNoiseT(xz * 0.11 + 0.71).b * 0.4);
-        hc = mix(hc, mix(hc * 1.25, sub * 0.9, clod), -scS);
+        // spoil: the black cinder the blade pushed up, with clods of the pale subsoil in it. (M2 wave 3, HG4: at 69544b6
+        // a third of it was clods at 0.9 of the floor's tone over cinder lifted 1.25 x, and the berms that fill F33's
+        // lower third read L* 24.3, the lapilli beside them 18.7: speckled grey.) About an eighth now, a darker turned
+        // subsoil, and the cinder its own tone
+        float clod = smoothstep(0.6, 0.7, gNoiseT(xz * 0.37 + 0.13).a * 0.6 + gNoiseT(xz * 0.11 + 0.71).b * 0.4);
+        hc = mix(hc, mix(hc * 1.05, sub * 0.62, clod), -scS);
         hp *= 1.0 + 0.6 * clod * -scS;
       }
     }
@@ -386,9 +404,15 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   /* M2 wave 2: the Holds. On their gentle ground the layer stack is skipped (HOLDS_TERM draws all of it); their steep
    * faces (over 52 deg) keep the rock layer and blend into the lapilli over slope 1.3-1.9 (its banded triplanar basalt,
    * untinted, drew wood grain over the Rise in F33 at 2253f73) */
+  /* (M2 wave 3) only a chunk with Holds ground compiles the Holds (CAL_G_HOLDS, terrain.js groundHoldsMaterial) */
+  #ifdef CAL_G_HOLDS
   float hold = vGround.x;
   float hk = hold * (1.0 - smoothstep(1.3, 1.9, slope));
   bool hSkip = hk > 0.985;
+  #else
+  const float hold = 0.0, hk = 0.0;
+  const bool hSkip = false;
+  #endif
 
   /* -- the five weights, then the three that survive ----------------------- */
   /* The cell's own crust and brine, un-premultiplied, cut by the iso-line of its interior: the
@@ -640,7 +664,9 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     aoSum += (keepN[k].a * 2.0 - 1.0) * b;
   }
   pert *= mix(0.32, 1.0, nearK);
+  #ifdef CAL_G_HOLDS
   ${HOLDS_TERM}
+  #endif
   /* M1a fix round (M1.1e: the swatch's crust is granular, crystals and clods 2-20 cm with dark gaps between them; F04 read a
    * glaze): within 12 m the crust takes a grain, crystal grit at about 3 cm and clods at about 15 cm, each darkening its
    * gaps and tilting the lit faces. Past 12 m it is under a pixel and the texture's own grit carries it */
@@ -943,7 +969,7 @@ export const FAR_BAKE_D = 200.0;
 export const FAR_FRAG_PARS = /* glsl */ `
 ${GROUND_FRAG_PARS}
 varying vec4 vTint;
-varying vec3 vGround;
+varying vec4 vGround;
 uniform sampler2D tFarA;
 uniform sampler2D tFarN;
 uniform float uFarInv;     // 1 / the baked square's side

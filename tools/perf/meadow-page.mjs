@@ -221,7 +221,7 @@ export async function walk(E, C, { speed = 1, frames = 60, fov = null, bearing =
 }
 
 /** Orthographic top-down render of the ground (terrain group only) `span` m across at (x, z), RGBA bottom-up. */
-export async function topDown(E, C, x, z, { span = 40, px = 1024, layer = null } = {}) {
+export async function topDown(E, C, x, z, { span = 40, px = 1024, layer = null, defines = null } = {}) {
   const R = E.renderer, S = C.scene, cam0 = E.camera;
   const y = C.terrain.getHeight(x, z);
   // the lens 2.5 m over the highest ground in the square: the ground's distance fades read a walker's 1-28 m, not 150 m
@@ -238,7 +238,9 @@ export async function topDown(E, C, x, z, { span = 40, px = 1024, layer = null }
   const capMats = new Set();
   C.terrain.group.traverse((o) => { if (o.isMesh && o.material && !o.material.defines?.CAL_CAPTURE) capMats.add(o.material); });
   // M1a round 2: `layer` (0 sand, 1 salt, 2 basalt, 3 silt, 4 shingle) captures that ground layer alone (CAL_CAPTURE_LAYER)
-  for (const m of capMats) { m.defines = { ...(m.defines || {}), CAL_CAPTURE: 1, ...(layer != null ? { CAL_CAPTURE_LAYER: layer } : {}) }; m.needsUpdate = true; }
+  // M2 wave 3: `defines` (e.g. { CAL_P_NOHPITS: 1 }) compiles a ground term out for the capture too
+  const extra = defines ? Object.keys(defines) : [];
+  for (const m of capMats) { m.defines = { ...(m.defines || {}), CAL_CAPTURE: 1, ...(layer != null ? { CAL_CAPTURE_LAYER: layer } : {}), ...(defines || {}) }; m.needsUpdate = true; }
   const water = C.terrain.water;
   /* fix round 1: the capture was 8-bit LINEAR (a render target gets no output transform), so black sand at
    * 0.02-0.05 linear sat in 5-13 codes and the salt clipped: dark, banded, blurred-looking. It is read as float
@@ -262,7 +264,7 @@ export async function topDown(E, C, x, z, { span = 40, px = 1024, layer = null }
     const enc = (v) => { v = Math.max(0, v * k); v = v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055; return Math.min(255, Math.round(v * 255)); };
     for (let i = 0; i < px * px; i++) { buf[i * 4] = enc(fbuf[i * 4]); buf[i * 4 + 1] = enc(fbuf[i * 4 + 1]); buf[i * 4 + 2] = enc(fbuf[i * 4 + 2]); buf[i * 4 + 3] = 255; }
   } finally {
-    for (const m of capMats) { delete m.defines.CAL_CAPTURE; delete m.defines.CAL_CAPTURE_LAYER; m.needsUpdate = true; }
+    for (const m of capMats) { delete m.defines.CAL_CAPTURE; delete m.defines.CAL_CAPTURE_LAYER; for (const k of extra) delete m.defines[k]; m.needsUpdate = true; }
     undo(); rt.dispose();
     cam0.position.copy(p0); cam0.quaternion.copy(q0); cam0.updateMatrixWorld(); C.terrain.updateLod?.(cam0);
   }

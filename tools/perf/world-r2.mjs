@@ -12,6 +12,9 @@
  *   F04   still (the salt crust's L* is read from it in Node)
  *   F05   still; the blue share
  *   --topdown   40 m top-down captures at the four M1.1e sites and their autocorrelation (tools/perf/autocorr.mjs)
+ *   --holds     (M2 wave 3, HG4's walk) 40 m top-down captures of the Holds' lapilli on worked ground at (210, 360): as
+ *               the ground draws it (the pit-cups on their 8 m staggered grid) and with the pit-cups compiled out
+ *               (CAL_P_NOHPITS: the lapilli, drifts and fields alone), and their autocorrelation peak (bar <= 0.35*)
  *
  *   node tools/perf/world-r2.mjs --port 5271 --out <dir outside the repo> [--ab ids|all|none] [--stab "x,y,z,w;..."]
  *        [--shade "0,1"] [--gap "0,1"] [--set k=v,...] [--frames F02,F03,F04,F05] [--topdown] [--budget 600]
@@ -430,6 +433,31 @@ try {
     }
     await page.evaluate(unstageFrame);
     log(`${id} filmed`);
+  }
+
+  if (has('--holds') && spent() < BUDGET_S) {
+    current = 'holds-topdown';
+    const f04 = set.frames.find((x) => x.id === 'F04');
+    await page.evaluate(stageFrame, f04, { settleMs: 1500 });
+    const sites = [
+      { id: 'holds-worked', x: 210, z: 360 },
+      { id: 'holds-lapilli', x: 210, z: 360, defines: { CAL_P_NOHPITS: 1 } },
+      { id: 'holds-lapilli-20m', x: 210, z: 360, span: 20, defines: { CAL_P_NOHPITS: 1 } },
+    ];
+    run.holdsTopdown = [];
+    for (const s of sites) {
+      const r = await page.evaluate(async (s) => {
+        const M = await import('/tools/perf/meadow-page.mjs'); const C = window.__CTX__, E = C.engine;
+        const t = await M.topDown(E, C, s.x, s.z, { span: s.span ?? 40, px: 1024, defines: s.defines ?? null });
+        let bin = ''; const b = t.rgba; for (let i = 0; i < b.length; i += 32768) bin += String.fromCharCode.apply(null, b.subarray(i, i + 32768));
+        return { ...s, px: t.px, span: t.span, b64: btoa(bin) };
+      }, s);
+      const img = await savePng(path.join(OUT, `topdown-${s.id}.png`), r.b64, r.px, r.px);
+      const ac = autocorr(img, r.px, r.px / r.span, { hpM: 2, minM: 1, maxM: Math.min(20, r.span / 2) });
+      run.holdsTopdown.push({ id: s.id, x: s.x, z: s.z, span: r.span, px: r.px, defines: s.defines ?? null, ...ac });
+      log(`holds topdown ${s.id}: autocorrelation peak ${ac.peak} at ${JSON.stringify(ac.atM)} m`);
+    }
+    await page.evaluate(unstageFrame);
   }
 
   if (has('--topdown') && spent() < BUDGET_S) {

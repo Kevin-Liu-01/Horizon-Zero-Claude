@@ -37,7 +37,7 @@ const kt = (v) => (v == null ? '-' : (v / 1e3).toFixed(0) + ' k');
 
 const out = { source: FILE, commit: run.commit, dirty: run.dirty, chrome: run.chrome, load1: run.load1, frames: {}, fight: null };
 const lines = [];
-lines.push(`# D1 at ${run.commit}${run.dirty?.length ? ' (DIRTY)' : ''}: ${run.chrome}, ${run.viewport?.width}x${run.viewport?.height} DPR ${run.viewport?.dpr}`, '');
+lines.push(`# D1 at ${run.commit}${run.dirty?.length ? ' (DIRTY)' : ''}: ${run.chrome}, ${run.viewport?.width}x${run.viewport?.height} DPR ${run.viewport?.dpr}; ${run.pairs ?? 3} pairs a toggle`, '');
 
 for (const f of run.frames) {
   if (f.error || f.probe !== 'd1') { lines.push(`${f.id}: ${f.error ? 'ERROR ' + f.error.slice(0, 160) : 'not a d1 probe'}`, ''); continue; }
@@ -64,6 +64,10 @@ for (const f of run.frames) {
   lines.push('owner | GPU ms (IQR) | draws | tris | of them shadow draws / tris');
   for (const r of own.rows) lines.push(`${r.name} | ${fmt(r.ms)} (${fmt(r.iqr?.[0])}..${fmt(r.iqr?.[1])}) | ${fmt(r.draws, 0)} | ${kt(r.tris)} | ${fmt(r.shadowDraws, 0)} / ${kt(r.shadowTris)}`);
   lines.push(`everything hidden: ${fmt(own.everything.ms)} ms (sum of rows ${fmt(own.sumRowsMs)}); floor (nothing drawn) ${fmt(floorOwners)}`);
+  if (f.toggles) {
+    row.toggles = f.toggles.rows;
+    lines.push(`switches, on - off (${f.pairs ?? 3} pairs): ${f.toggles.rows.map((r) => `${r.id} ${r.error ? 'ERROR ' + r.error : `${fmt(r.ms)} (${fmt(r.iqr?.[0])}..${fmt(r.iqr?.[1])}), on ${fmt(r.onMs)}`}`).join('; ')}`);
+  }
   const c = f.cpu;
   lines.push(`main thread live: JS ${fmt(c.live?.medianJsMs)} / p95 ${fmt(c.live?.p95JsMs)} ms (sim ${fmt(c.live?.medianSimMs)}, submit ${fmt(c.live?.medianSubmitMs)}); Brea's cloth ${fmt(c.cloth?.timing?.mean, 3)} ms mean, p95 ${fmt(c.cloth?.timing?.p95, 3)} (n ${c.cloth?.timing?.n}); people ${c.people?.total} (${c.people?.visible} visible, ${c.people?.nearMax} near), strands ${fmt(c.people?.strandsMeanSumMs, 3)} ms`);
   lines.push('');

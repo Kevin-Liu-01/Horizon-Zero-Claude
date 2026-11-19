@@ -5,12 +5,15 @@
  * half-resolution probe and the CPU frame. Writes one JSON per run and a screenshot per frame.
  *
  *   node tools/perf/attrib.mjs --port 5270 --out <dir outside the repo> [--frames F02,F23-plumb,F32] [--vsync on]
- *        [--probe m08|d1] [--standins F25] [--serve] [--slot-wait 1800]
+ *        [--probe m08|d1] [--standins F25] [--pairs 3] [--toggles ground-holds-gate,...] [--serve] [--slot-wait 1800]
  *
  * --probe d1 (M2 wave 0, D1) runs attrib-page.mjs attributeD1 instead of M0.8's attributeFrame: the census of draws and
  * triangles per scene child and per cascade, the GPU ms of the costliest children, of each cascade, of the post chain,
  * the 1/64-pixel frame (vertex, per-draw and fixed cost), the main thread with Brea's cloth and the people live, and on
  * the --standins frames the Holds' fight load as stand-in geometry. tools/perf/holds-budget.mjs reads its JSON.
+ * M2 wave 3: --pairs sets every paired toggle's pair count (owners, cascades, post, stand-ins; default 3, the wave 0
+ * runs; 8 on a quiet box for a number to write a budget from), and --toggles names the world's runtime switches
+ * (terrain.perfSwitches, vegetation.perfSwitches) to pair on every frame (attrib-page switchToggles: on - off).
  *
  * The tool takes the machine guard and Chrome slot 1 itself (tools/chrome-slot.mjs; CALIMA_SLOT_HELD=1 if the caller
  * holds it). With --serve it runs its own Vite dev server on --port (127.0.0.1, nice -n 10) and stops it at the end;
@@ -43,6 +46,8 @@ const FRAMES = (flag('--frames', 'F02,F23-plumb,F32')).split(',').map((s) => s.t
 const VSYNC = flag('--vsync', 'off');
 const PROBE = flag('--probe', 'm08');
 const STANDINS = new Set((flag('--standins', '') || '').split(',').map((x) => x.trim()).filter(Boolean));
+const PAIRS = Math.max(1, Math.round(Number(flag('--pairs', 3)) || 3));
+const TOGGLES = (flag('--toggles', '') || '').split(',').map((x) => x.trim()).filter(Boolean);
 const SERVE = args.includes('--serve');
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 assertOutsideRepo(OUT, REPO);
@@ -54,7 +59,7 @@ const LANES = await loadLanes();
 if (LANES.errors.length) { for (const e of LANES.errors) console.error('stagings:', e); process.exit(1); }
 
 const run = { tool: 'tools/perf/attrib.mjs', commit: git('rev-parse', '--short', 'HEAD'), dirty: (git('status', '--porcelain', '--untracked-files=no') || '').split('\n').filter(Boolean),
-  tree: REPO, port: PORT, vsync: VSYNC, probe: PROBE, standIns: [...STANDINS], load1: { start: load1() }, viewport: { width: 1600, height: 900, dpr: 1.25 }, startedAt: new Date().toISOString(), frames: [], console: [] };
+  tree: REPO, port: PORT, vsync: VSYNC, probe: PROBE, standIns: [...STANDINS], pairs: PAIRS, toggles: TOGGLES, load1: { start: load1() }, viewport: { width: 1600, height: 900, dpr: 1.25 }, startedAt: new Date().toISOString(), frames: [], console: [] };
 installProfileCleanup();
 let server = null;
 const stopServer = () => { if (!server) return; try { process.kill(-server.pid, 'SIGTERM'); } catch { /* */ } server = null; };
@@ -142,14 +147,14 @@ try {
       await page.screenshot({ path: path.join(OUT, `${id}.png`) });
       if (PROBE === 'd1') {
         const l0 = load1();
-        const a = await page.evaluate(async (standIn) => {
+        const a = await page.evaluate(async (standIn, pairs, toggles) => {
           const M = await import('/tools/perf/attrib-page.mjs');
-          return M.attributeD1(window.__CTX__.engine, window.__CTX__.scene, window.__CTX__, { standIn });
-        }, STANDINS.has(id));
+          return M.attributeD1(window.__CTX__.engine, window.__CTX__.scene, window.__CTX__, { standIn, pairs, toggles });
+        }, STANDINS.has(id), PAIRS, TOGGLES);
         await page.evaluate(unstageFrame);
         run.frames.push({ id, staged: { measured: staged.measured, standIns: staged.standIns, sim: staged.sim ? { frames: staged.sim.frames } : null }, load1: [l0, load1()], memory: machineMemory(), ...a, wallSeconds: Math.round((Date.now() - t0) / 1000) });
         writeFileSync(path.join(OUT, 'attrib.json'), JSON.stringify(run, null, 1));
-        console.log(`[attrib d1] ${id}: finish ${a.finish.medianMs} ms (submit ${a.finish.submitMs}), end ${a.finishEnd.medianMs}; draws ${a.census.frame.draws}, tris ${a.census.frame.tris}; shadows ${a.cascades.all.ms}, post ${a.post.ms}; tiny ${JSON.stringify(a.tiny.derived)}; owners ${a.owners.rows.map((r) => `${r.name} ${r.ms}`).join(', ')}; ${a.seconds} s`);
+        console.log(`[attrib d1] ${id}: finish ${a.finish.medianMs} ms (submit ${a.finish.submitMs}), end ${a.finishEnd.medianMs}; draws ${a.census.frame.draws}, tris ${a.census.frame.tris}; shadows ${a.cascades.all.ms}, post ${a.post.ms}; tiny ${JSON.stringify(a.tiny.derived)}; owners ${a.owners.rows.map((r) => `${r.name} ${r.ms}`).join(', ')}${a.toggles ? `; toggles ${a.toggles.rows.map((r) => `${r.id} ${r.ms ?? r.error}`).join(', ')}` : ''}; ${a.seconds} s`);
       } else {
         const a = await page.evaluate(async () => {
           const M = await import('/tools/perf/attrib-page.mjs');

@@ -724,6 +724,21 @@ export class Terrain {
     mat.onBeforeCompile = (shader) => this._groundCompile(shader, null);
     mat.customProgramCacheKey = () => 'cal-ground-terrain';
     this.groundMaterial = mat;
+    /* (M2 wave 3, engine: the smallest change) the Holds' ground term in its own program (groundShader.js CAL_G_HOLDS),
+     * drawn only by a chunk with Holds ground under it (C.holds): at 69544b6 the term was in every ground draw and the
+     * Pans' fight frame paid for it (F25 per-pixel 8.8 ms against 7.8 at 001e349) */
+    const hmat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
+    hmat.defines = { CAL_G_HOLDS: 1 };
+    hmat.onBeforeCompile = (shader) => this._groundCompile(shader, null);
+    hmat.customProgramCacheKey = () => 'cal-ground-terrain-holds';
+    this.groundHoldsMaterial = hmat;
+    this._holdsGate = true;
+    for (const C of chunks) {
+      C.holds = false;
+      for (let iz = C.z0; iz <= C.z1 && !C.holds; iz++) for (let ix = C.x0; ix <= C.x1; ix++) {
+        if (nrm[(iz * side + ix) * 4 + 3] >= 1024) { C.holds = true; break; }   // packGround: hold's 5 bits over 0
+      }
+    }
     this._buildChunks(chunks);
   }
 
@@ -746,7 +761,7 @@ export class Terrain {
         const D = 'float dCam = length(vWPos - cameraPosition);';
         if (!color.includes(D)) throw new Error('terrain far bake: the dCam anchor moved');
         color = color.replace(D, `float dCam = ${FAR_BAKE_D.toFixed(1)};`);
-        pars += '\n#define CAL_FAR_BAKE\nuniform float uFarPart;';
+        pars += '\n#define CAL_FAR_BAKE\n#define CAL_G_HOLDS\nuniform float uFarPart;';
         shader.uniforms.uFarPart = bake;
       }
       shader.fragmentShader = shader.fragmentShader
@@ -773,13 +788,16 @@ export class Terrain {
       C.sphere = box.getBoundingSphere(new THREE.Sphere());
       const g0 = this._chunkGeo(C, 0);
       tris += g0.userData.tris;
-      const m = new THREE.Mesh(g0, mat);
+      const m = new THREE.Mesh(g0, C.holds ? this.groundHoldsMaterial : mat);
       m.name = `terrain-chunk-${C.cx}-${C.cz}`;
       m.receiveShadow = true;
       C.mesh = m; C.lod = 0;
       root.add(m);
     }
     this._chunks = chunks.filter((C) => C.land);
+    /* the Holds' program is linked behind the loading sheet even when no Holds chunk is near at boot (engine.warmUp) */
+    const hc = this._chunks.find((C) => C.holds);
+    if (hc) this.ctx.engine?.addWarmExtra?.(new THREE.Mesh(hc.mesh.geometry, this.groundHoldsMaterial));
     this.group.add(root);
     this.mesh = root;
     this.indexedTriangles = tris;
@@ -969,7 +987,7 @@ export class Terrain {
       }
       hist[k]++;
       if (k !== C.lod) { C.mesh.geometry = this._chunkGeo(C, k); C.lod = k; }
-      const m = far ? F.material : this.groundMaterial;
+      const m = far ? F.material : (C.holds || !this._holdsGate) ? this.groundHoldsMaterial : this.groundMaterial;
       if (C.mesh.material !== m) C.mesh.material = m;
     }
   }
@@ -992,6 +1010,8 @@ export class Terrain {
     return [
       { id: 'terrain-lod', on: () => { this._lodOn = true; this.updateLod(cam()); }, off: () => { this._lodOn = false; this.updateLod(cam()); } },
       { id: 'terrain-far', on: () => { if (this._far) this._far.on = true; this.updateLod(cam()); }, off: () => { if (this._far) this._far.on = false; this.updateLod(cam()); } },
+      // (M2 wave 3) off = every near chunk draws the Holds' program, as at 69544b6: on - off is what the gate saves
+      { id: 'ground-holds-gate', on: () => { this._holdsGate = true; this.updateLod(cam()); }, off: () => { this._holdsGate = false; this.updateLod(cam()); } },
       ...this.groundTermSwitches(),
     ];
   }
@@ -1002,8 +1022,8 @@ export class Terrain {
    * 'ground-flat' off draws the whole colour stage as one constant: the stage's whole cost.
    */
   groundTermSwitches() {
-    const mat = this.groundMaterial;
-    const def = (k, on) => { const d = { ...(mat.defines || {}) }; if (on) delete d[k]; else d[k] = 1; mat.defines = d; mat.needsUpdate = true; };
+    const mats = [this.groundMaterial, this.groundHoldsMaterial].filter(Boolean);
+    const def = (k, on) => { for (const mat of mats) { const d = { ...(mat.defines || {}) }; if (on) delete d[k]; else d[k] = 1; mat.defines = d; mat.needsUpdate = true; } };
     const T = [['ground-pebbles', 'CAL_P_NOPEB'], ['ground-crust-detail', 'CAL_P_NOCRUST'], ['ground-pits', 'CAL_P_NOPITS'],
       ['ground-salt-2nd', 'CAL_P_NOSALT2'], ['ground-layer-2nd', 'CAL_P_NOL2'], ['ground-pan-cubic', 'CAL_P_NOCUBIC'],
       ['ground-field-range', 'CAL_P_NOFIELD'], ['ground-meadow-tone', 'CAL_P_NOMTONE'], ['ground-rills', 'CAL_P_NORILL'],
@@ -1426,6 +1446,7 @@ export class Terrain {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) if (m && !seen.has(m)) { seen.add(m); m.dispose(); }
     });
+    for (const m of [this.groundMaterial, this.groundHoldsMaterial]) if (m && !seen.has(m)) m.dispose();
     for (const t of [...Object.values(this._maskTextures || {}), ...Object.values(this._layerTextures || {})]) t.dispose();
     this._maskTextures = null;
     this._layerTextures = null;

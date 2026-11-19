@@ -1046,6 +1046,8 @@ export class Engine {
     this._casterDist = [];
 
     this.onAfterRender = [];
+    /* M2 wave 3: meshes outside the scene whose programs warmUp links too (addWarmExtra) */
+    this._warmExtras = [];
 
     // ---- perf ring buffer ----
     /**
@@ -2380,6 +2382,11 @@ export class Engine {
       // M1.8c: compiled as the scene pass draws them (the composer's target bound): with no target bound three built
       // every program in its on-screen variant (tone mapped, sRGB out), and the first real frame linked them all again
       this.compileAsDrawn(scene, camera, scene);
+      if (this._warmExtras.length && scene === this.scene) {
+        const g = new THREE.Group();
+        for (const m of this._warmExtras) g.add(m);
+        try { this.compileAsDrawn(g, camera, scene); } finally { g.clear(); }
+      }
       await this._awaitProgramsReady(timeoutMs);
     } catch (err) {
       console.warn('[CAL] shader warm-up skipped:', err?.message || err);
@@ -2507,6 +2514,17 @@ export class Engine {
   compileAsDrawn(root, camera = this.camera, scene = this.scene) {
     const r = this.renderer, prev = r.getRenderTarget();
     try { r.setRenderTarget(this.sceneTarget || null); return r.compile(root, camera, scene); } finally { r.setRenderTarget(prev); }
+  }
+
+  /**
+   * M2 wave 3: a mesh (never added to the scene) whose material the world will draw later, perhaps after the boot's
+   * warm-up: a program kept apart for part of the world (terrain.js groundHoldsMaterial, drawn only by chunks with Holds
+   * ground). warmUp compiles it as the scene pass draws it, with the scene's lights. Returns an unregister function.
+   */
+  addWarmExtra(mesh) {
+    if (!mesh?.isMesh) return () => {};
+    this._warmExtras.push(mesh);
+    return () => { const i = this._warmExtras.indexOf(mesh); if (i >= 0) this._warmExtras.splice(i, 1); };
   }
 
   /**

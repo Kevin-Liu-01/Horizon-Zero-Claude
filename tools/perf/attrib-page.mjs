@@ -639,7 +639,26 @@ export async function standIns(E, scene, ctx, spec = {}, { n = 16, pairs = 3 } =
   return res;
 }
 
-export async function attributeD1(E, scene, ctx, { standIn = false, spec = {} } = {}) {
+/**
+ * M2 wave 3: the world's runtime switches (terrain.perfSwitches, vegetation.perfSwitches) by id, each a paired toggle
+ * (ABBA, `pairs` pairs): `ms` = on - off. Each switch is flipped off and on once, with two frames drawn, before its
+ * pairs, so a switch that compiles a program (a define) links it outside the timing.
+ */
+export async function switchToggles(E, ctx, ids, { n = 16, pairs = 3 } = {}) {
+  const all = [...(ctx.terrain?.perfSwitches?.() || []), ...(ctx.vegetation?.perfSwitches?.() || [])];
+  const rows = [];
+  for (const id of ids) {
+    const sw = all.find((x) => x.id === id);
+    if (!sw) { rows.push({ id, error: 'no such switch' }); continue; }
+    try {
+      sw.off(); E.render(0); E.render(0); await wait(2); sw.on(); E.render(0); E.render(0); await wait(2);
+      rows.push({ id, ...(await pairedToggle(E, sw.off, sw.on, { n, pairs })) });
+    } catch (e) { rows.push({ id, error: String(e?.message || e).slice(0, 200) }); try { sw.on(); } catch { /* */ } }
+  }
+  return { method: `paired toggle (ABBA) of each switch, ${pairs} pairs of ${n} back-to-back frames: on - off`, rows };
+}
+
+export async function attributeD1(E, scene, ctx, { standIn = false, spec = {}, pairs = 3, toggles = [] } = {}) {
   E.enableGpuTimer(false);
   E.setDynamicResolution?.(false);
   await wait(30);
@@ -652,19 +671,21 @@ export async function attributeD1(E, scene, ctx, { standIn = false, spec = {} } 
   step('census');
   const cen = await census(E, scene);
   step('owners');
-  const own = await owners(E, scene, cen);
+  const own = await owners(E, scene, cen, { pairs });
   step('cascades');
-  const cas = await cascades(E);
+  const cas = await cascades(E, { pairs });
   step('post');
-  const post = await postToggle(E);
+  const post = await postToggle(E, { pairs });
   step('tiny');
   const tn = await tiny(E);
   const finishB = await finishFrame(E, 60);
   step('standIns');
-  const si = standIn ? await standIns(E, scene, ctx, spec) : null;
+  const si = standIn ? await standIns(E, scene, ctx, spec, { pairs }) : null;
+  step('toggles');
+  const sw = toggles.length ? await switchToggles(E, ctx, toggles, { pairs }) : null;
   step('cpu');
   const c = await cpuD1(E, ctx);
   step('done');
-  return { probe: 'd1', info, finish: finishA, finishEnd: finishB, census: cen, owners: own, cascades: cas, post, tiny: tn, standIns: si, cpu: c,
+  return { probe: 'd1', pairs, info, finish: finishA, finishEnd: finishB, census: cen, owners: own, cascades: cas, post, tiny: tn, standIns: si, toggles: sw, cpu: c,
     seconds: Math.round((performance.now() - t0) / 1000) };
 }

@@ -92,7 +92,9 @@ export function bakeShade(H, r0, r1) {
       normals[o + 2] = Math.round(-gz * il * 32767);
       biomesAt(x, z, _w);
       // (M2 wave 2, area A) the normal's spare channel: the Holds' weight, worked ground and the Scar (holds/ground.js)
-      normals[o + 3] = packGround(_w[1], holdsCult(x / S, -z / S, _w[1]), holdsScar(x / S, -z / S));
+      // (M2 wave 3, engine: the smallest change) and off the Holds the red crater's weight, for its bedding alone
+      const cr = authored.crater(x, z);
+      normals[o + 3] = packGround(_w[1], holdsCult(x / S, -z / S, _w[1]), holdsScar(x / S, -z / S), cr);
       const m = fbm(x * 0.02 + 7, z * 0.02 - 3, 2);
       let r = 0, g = 0, b = 0;
       for (let k = 0; k < 6; k++) {
@@ -103,7 +105,6 @@ export function bakeShade(H, r0, r1) {
       }
       // full blockout tint outside the Pans, none on them, except the red crater
       let k = 1 - _w[0];
-      const cr = authored.crater(x, z);
       if (cr > 0.01) {
         const hv = H[i], nz1 = fbm(x * 0.05, z * 0.05 + 9, 3);
         const band = (hv + x * 0.06 + (nz1 - 0.5) * 4.5) / 4.1;
