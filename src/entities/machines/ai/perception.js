@@ -191,6 +191,7 @@ export class Perception {
 
   /** A stimulus reached this machine (footstep, impact, lure, alarm). */
   hear(x, z, strength, kind) {
+    if (this.m._ignoreHer === 1) return;   // a herd member off her bearing hears nothing of her (machine.js _ignoreHer)
     if (strength <= this._hearStrength && this._hearKind !== 'lure') return;
     // grounded here, when the stimulus arrives (it was grounded in `_beliefTick`, with the same getHeight(x, z)):
     // the per-tick belief no longer calls the terrain on its hearing branch only (fix round 3)
@@ -376,7 +377,9 @@ export class Perception {
     const w0 = inSee ? wEng : W0;
     const omniHi = omniW > w0;
     const w1 = omniHi && !blind ? omniW : w0;
-    const w = present && (inSee || omniPos) ? w1 : W0;
+    // M2 wave 4 IN2: a Tiller herd member off her bearing does not see her (machine.js `_ignoreHer`, kinds/tiller.js)
+    const ign = m._ignoreHer === 1;
+    const w = present && !ign && (inSee || omniPos) ? w1 : W0;
 
     // ---- line of sight, then the fill: f(1/d^2) * cone * pose * motion
     const wPos = w > 0;
@@ -572,7 +575,7 @@ export class PerceptionHooks {
     const list = this.machines.list;
     for (let i = 0; i < list.length; i++) {
       const m = list[i];
-      if (!m.alive || m._disposed || m.docile) continue;
+      if (!m.alive || m._disposed || m.docile || m._ignoreHer === 1) continue;
       const dx = m.position.x - cx, dz = m.position.z - cz;
       if (dx * dx + dz * dz > r2) { if (m.flagMark === f) m.flagMark = null; continue; }
       m.flagMark = f;

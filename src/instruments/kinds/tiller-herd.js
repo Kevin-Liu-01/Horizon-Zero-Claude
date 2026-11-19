@@ -202,3 +202,46 @@ export function rippleTick(m) {
   m._rippleAt = -1;
   m.manager?.lamps?.telegraph(m, FILE.flashS, null);
 }
+
+/**
+ * IN2, THE HERD HOLDS ITS BEARING (M2 wave 4; bible 7.4 #3: "a herd does not react to Brea unless she stands on its
+ * bearing"). Her place against the herd's line: the leader's heading through the leader, LAT m either side of it (the
+ * hull's swept half-width, the Tiller's bodyRadius 1.15 and a 0.1 m margin), from AHEAD m in front of the leader (its
+ * sight range) back to the tail's stern. Inside that strip she stands on its bearing (in the coring line: the file
+ * would walk into her) and the herd sees, hears, is Flagged and is alarmed as any machine is; anywhere else every calm
+ * member IGNORES HER (machine.js `_ignoreHer`: perception.js gives it no sight fill and no hearing, the Flag and the
+ * squad alarm pass it by). A hit still reaches it: a struck member leaves patrol and reacts. The lee walk beside a hull
+ * (moving cover, IN3) is beside the bearing: 1.5-2.4 m off a hull's centreline.
+ *
+ * Asked once per simulation step per herd (cached on the herd by sim time); allocation-free.
+ */
+export const BEARING = Object.freeze({ lat: 1.25, ahead: 34 });
+const CALM = Object.freeze({ patrol: 1, return: 1, idle: 1 });
+
+/** Is (px, pz) on the herd's bearing? (`f.order` must be fresh: fileStep and the leader's update refresh it.) */
+export function onHerdBearing(f, px, pz) {
+  const L = f.leader;
+  if (!L) return false;
+  const hd = L.sc ? L.sc.heading : L.heading;
+  const ux = Math.sin(hd), uz = Math.cos(hd);
+  const dx = px - L.position.x, dz = pz - L.position.z;
+  const along = dx * ux + dz * uz;
+  const lat = dx * uz - dz * ux;
+  const back = (f.order.length > 1 ? (f.order.length - 1) * f.gap : 0) + FILE.hullL / 2 + 0.5;
+  return (lat < 0 ? -lat : lat) <= BEARING.lat && along >= -back && along <= BEARING.ahead;
+}
+
+/**
+ * The member's `_ignoreHer` for this step: 1 when it is a calm member of a herd in file and she is not on the herd's
+ * bearing (or not present), else 0. `px`/`pz` her position (`ok` false: she is not in play: ignored too).
+ */
+export function herdIgnores(m, ok, px, pz, now) {
+  const h = m.herd, f = h ? h.file : null;
+  if (f === null || f === undefined || !m.alive || CALM[m.state] !== 1) return 0;
+  if (h._bearT !== now) {
+    f.refresh();
+    h._bearT = now;
+    h._onBearing = ok && onHerdBearing(f, px, pz) ? 1 : 0;
+  }
+  return h._onBearing === 1 ? 0 : 1;
+}

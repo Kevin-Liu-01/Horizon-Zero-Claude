@@ -8,7 +8,7 @@ import { ExpansionMachine } from '../../entities/machines/rig/expansion-base.js'
 import { liftExtras, seedAuthoredWeights, weightAudit } from '../lib/generated.js';
 import { prepareEntry, installHull } from '../lib/hull.js';
 import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup, levelGlass, levelGlassTick } from '../lib/kindkit.js';
-import { installHerdRipple, fileStep, fileHold, rippleTick } from './tiller-herd.js';
+import { installHerdRipple, fileStep, fileHold, rippleTick, herdIgnores } from './tiller-herd.js';
 import { hullShapes, hullShapesInto } from '../lib/blockout.js';
 import { setOccluder, clearOccluders, sightBlocked } from '../lib/sight.js';
 import { HOT } from '../lib/hot.js';
@@ -143,6 +143,8 @@ export class Tiller extends ExpansionMachine {
 
   /** The herd file (`./tiller-herd.js`): the leader lays the crumbs; a pending chime ripple ticks. */
   update(dt, t) {
+    // IN2 (M2 wave 4): a calm herd member off her bearing ignores her this step (perception, the Flag, the squad alarm)
+    this._ignoreHer = herdIgnores(this, HOT.pOk === 1, HOT.ppos.x, HOT.ppos.z, HOT.simTime);
     const r = super.update(dt, t);
     const h = this.herd, f = h ? h.file : null;
     if (f !== null && f !== undefined && f.leader === this && this.alive) { f.record(this.position.x, this.position.z); this._leeTick(h, dt); }

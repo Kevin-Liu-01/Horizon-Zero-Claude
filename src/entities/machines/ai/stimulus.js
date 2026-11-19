@@ -86,7 +86,7 @@ export class StimulusBus {
     const r2 = r * r;
     let n = 0;
     for (const m of this.machines.list) {
-      if (m === caller || !m.alive || m._disposed) continue;
+      if (m === caller || !m.alive || m._disposed || m._ignoreHer === 1) continue;   // a herd off her bearing (IN2)
       if (m.state === 'attack' || m.state === 'alert'
         || m.state === 'downed' || m.state === 'dead') continue;
       if (m.position.distanceToSquared(caller.position) > r2) continue;

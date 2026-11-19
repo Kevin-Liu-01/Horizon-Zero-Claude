@@ -1018,6 +1018,12 @@ export class Machine {
     this.scanOffset = 0;        // sensor sweep offset applied to the cone
     this.hearScale = opts.hearScale ?? 1;
     this._alarmCd = 0;
+    /**
+     * 1 while this machine IGNORES HER: no sight fill, no hearing, no Flag and no squad alarm reach it (perception.js,
+     * stimulus.js). Only a Tiller herd member writes it (kinds/tiller.js, M2 wave 4 IN2, bible 7.4 #3: "a herd does not
+     * react to Brea unless she stands on its bearing"); a hit still reaches it. A Smi on every machine from birth.
+     */
+    this._ignoreHer = 0;
     this.elemThreshold = elemThreshold(this.kind);
     this.perceptCfg = perceptionCfg(this.kind);
     this.engageCfg = engageCfg(this.kind);
