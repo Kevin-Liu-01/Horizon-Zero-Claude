@@ -1003,7 +1003,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     // what each piece is dyed for this person (spec.dyes), and a seed of its own, for the painters
     const dmap = Object.fromEntries(Object.entries(spec.dyes || {}).map(([a, b]) => [a.toUpperCase(), b]));
     pieces.forEach((p, k) => { p.dyeHex = typeof p.dye === 'string' ? dmap[p.dye.toUpperCase()] || p.dye : null; p.seed = (spec.rngN ?? spec.n) * 17 + k; });
-    sheet = await paintSheet(pieces, { painters: OUT.sheet.painters, density: OUT.sheet.density, srcBase, srcNormal, log });
+    sheet = await paintSheet(pieces, { painters: OUT.sheet.painters, density: OUT.sheet.density, maps: OUT.sheet.maps, srcBase, srcNormal, log });
     // what the sheet is painted in, by dye and bind area (the vertex colours no longer carry it: the cast's violet-accent row reads it)
     const area = {};
     for (const p of pieces) {

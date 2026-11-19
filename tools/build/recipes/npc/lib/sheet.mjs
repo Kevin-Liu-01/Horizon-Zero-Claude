@@ -234,7 +234,7 @@ function sample(src, u, v, out) {
  * t.src, the source sheet's sRGB colour under the texel); `painters.default` takes any slot without one.
  * Rewrites each piece's geo (its uv on the sheet). Returns { tex, D, detailRep, trimV, slots, stats }.
  */
-export async function paintSheet(pieces, { painters, density = {}, W = 1024, H = 1024, srcBase = null, srcNormal = null, detailTile = 0.026, log = () => {}, curv = { crease: 1, ridge: 0.7 }, salt = [205, 200, 190], q = { base: 95, normal: 88, orm: 84 } } = {}) {
+export async function paintSheet(pieces, { painters, density = {}, maps = 512, W = 1024, H = 1024, srcBase = null, srcNormal = null, detailTile = 0.026, log = () => {}, curv = { crease: 1, ridge: 0.7 }, salt = [205, 200, 190], q = { base: 95, normal: 88, orm: 84 } } = {}) {
   const parts = [];
   const tot = { islands: 0, affine: 0, pca: 0, cut: 0 };
   pieces.forEach((pc, k) => {
@@ -294,6 +294,14 @@ export async function paintSheet(pieces, { painters, density = {}, W = 1024, H =
   }
   // an MCO part's own normal map, under the island's turn (paintAtlas reads part.srcUV: the source uv)
   const tex = await paintAtlas(parts, layout, { painters: wrapped, srcNormal, salt, curv, q });
+  // (`maps`: the normal and ORM at another size than paintAtlas's 512², re-encoded from its full-size raw maps: the Holds cast's
+  // at 256², a quarter of the resident bytes, where the base colour carries the look; Oro's at 512²)
+  if (maps !== 512) {
+    const { default: sharp } = await import('sharp');
+    const enc = (raw, quality) => sharp(raw, { raw: { width: W, height: H, channels: 3 } }).resize(maps, maps, { kernel: 'lanczos3' }).webp({ quality, effort: 6, smartSubsample: true }).toBuffer();
+    tex.normal = await enc(tex.raw.normal, q.normal ?? 88);
+    tex.orm = await enc(tex.raw.orm, q.orm ?? 84);
+  }
   for (const part of parts) {
     if (part.isCutPart) continue;
     const uv = part.uvNew;

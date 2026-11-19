@@ -352,7 +352,7 @@ export const OUTFITS = {
   /* 6 — Pit Farmer: ash wool, a leather belt with pouches, the back basket */
   farmer: {
     // (M2 polish: on a sheet of each person's own, painted by what each piece is dyed: lib/kit-sheet.mjs)
-    sheet: { family: 'Ranger', painters: KIT_PAINTERS, density: { Male_Ranger_Feet_Boots: 0.7 } },
+    sheet: { family: 'Ranger', painters: KIT_PAINTERS, maps: 256, density: { Male_Ranger_Feet_Boots: 0.7 } },
     parts: [
       { part: 'Male_Ranger_Body', dye: HOLDS.rust, target: 2900, collar: { y0: 1.44, push: 0.014 } },
       { part: 'Male_Ranger_Body_Belt', from: 'Male_Ranger_Body', meshes: /Belt/, dye: HOLDS.leather, target: 600 },
@@ -381,7 +381,7 @@ export const OUTFITS = {
 
   /* 7 — Tiller-Follower: a long loose wool tunic over trousers, light wraps, the seed bag on its strap */
   follower: {
-    sheet: { family: 'Ranger', painters: KIT_PAINTERS, density: { Male_Ranger_Feet_Boots: 0.7 } },
+    sheet: { family: 'Ranger', painters: KIT_PAINTERS, maps: 256, density: { Male_Ranger_Feet_Boots: 0.7 } },
     parts: [
       { part: 'Male_Ranger_Arms', dye: HOLDS.wool, target: 1500, dropMat: /Regular/, cutX: 0.665, cuff: HOLDS.wool },
       { part: 'Male_Ranger_Legs', dye: HOLDS.woolDark, target: 900 },
@@ -404,7 +404,7 @@ export const OUTFITS = {
 
   /* 8 — Cochineal Picker: a wool top, a stained apron, a skirt over trousers, carmine to the elbow */
   picker: {
-    sheet: { family: 'Ranger', painters: KIT_PAINTERS, density: { Female_Ranger_Feet: 0.75 } },
+    sheet: { family: 'Ranger', painters: KIT_PAINTERS, maps: 256, density: { Female_Ranger_Feet: 0.75 } },
     parts: [
       { part: 'Female_Ranger_Body', dye: HOLDS.wool, target: 1600 },
       { part: 'Female_Ranger_Body_Belt', from: 'Female_Ranger_Body', meshes: /Belt/, dye: HOLDS.leatherDark, target: 500 },
