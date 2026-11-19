@@ -11,6 +11,8 @@
  *   violetPx   of areaPx, the pixels that read violet (HSV hue 255-335 deg, saturation >= 0.22, value >= 0.12)
  *   clip       the clip it stands in, its time and time scale (a held work clip: ts 0) and whether that clip is a work clip
  *   ground     the game's terrain under its feet against where its feet are (m)
+ *   heights    (F36 only) the game's terrain.getHeight over the village on a 1 m grid (x0, z0, n, values in cm) for the lens
+ *              planning in Node: the island bake in Node reads up to a metre off it round the cistern
  * `atWork` counts the people in a work clip with areaPx >= MIN_PX (a figure a viewer can read at 1600 x 900; a person at
  * 20 m covers about 1,000 px standing). Bar (NW5): 5. Nothing is changed that is not put back.
  */
@@ -87,7 +89,14 @@ export async function probe(frame) {
   const atWork = people.filter((r) => r.work && r.areaPx >= MIN_PX).length;
   const brea = rows.find((r) => r.id === 'brea') || null;
   const maxOther = people.reduce((m, r) => Math.max(m, r.violetPx), 0);
+  let heights = null;
+  if (frame.id === 'F36' && C.terrain?.getHeight) {
+    const x0 = -51, z0 = 173, n = 81, v = new Array(n * n);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) v[j * n + i] = Math.round(C.terrain.getHeight(x0 + i, z0 + j) * 100);
+    heights = { x0, z0, n, step: 1, cm: v };
+  }
   return {
+    heights,
     frame: { W, H: Hh, css: [cw, ch] }, minPx: MIN_PX, staged: staged.length, atWork, bar: 5, rows,
     held: people.every((r) => r.clipTs === 0),
     violet: brea ? { brea: brea.violetPx, maxOther, ratio: r2(brea.violetPx / Math.max(1, maxOther)), bar: 5 } : null,
