@@ -1121,6 +1121,9 @@ export class CarryStow {
       const lanceOut = (this.melee?.lanceOwner && this.melee.lanceOwner() !== 'carry') || (this.ctx.combat?.melee?.stance ?? 'holstered') !== 'holstered';
       B.quick = !inHand && !lanceOut && !!this.ctx.player?.aiming && !this.ctx.combat?.activeWeapon?.heavy;
       B.qDone = inHand; B.qN = 0; B.qAt = -1;
+      // (the quick draw's reach for the arrow IS the raise's quiver beat: its clock starts with it, so the beat's frames
+      //  run and are counted (A17: the string hand at the quiver, >= 8 sim frames of the beat, no draw during it))
+      if (B.quick) { this._quiverT = 0; this._reNock = false; this._rnL = false; this._rnHold = false; }
     } else {
       B.quick = false;
       // the lance asked for (key 2) is the player's request; the 8 s timer is the game's
