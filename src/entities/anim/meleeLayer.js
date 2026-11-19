@@ -317,6 +317,8 @@ const LEFT_FORE_CLEAR = 0.13;
 const HEAD_LEAD = 0.06;   // (M2 fix wave, W11's head yaw <= 3 deg: 0.14 -> 0.06, and the 0.08 the neck and skull did not take out is
                           //  taken out: the click's swing turned her head 11.3 deg off her line)
 const HEAD_LEVEL = 0.92;
+/** the stow's head share (the old HEAD_LEAD, see the head below) */
+const HOLSTER_HEAD_LEAD = 0.14;
 const _hyQ = new THREE.Quaternion(), _hyV = new THREE.Vector3();
 /** The wrap and knot tails: the two simulated chains near the haft (A104). */
 const TAIL_RE = /^dyn_(wrapSash|sashEnd|hairKnotTail)/;
@@ -1953,8 +1955,12 @@ export class MeleeLayer {
      *  leads by `HEAD_LEAD` of it) */
     {
       const swing = stance === 'swing';
-      const ty = (yaw + (this._pelvisYawNow || 0) * w) * (swing ? 1 - HEAD_LEAD : 1);
-      const tk = 1 / 0.92;
+      /* (...but not through the stow: the braid hangs off the skull, and with her head kept on her line while the trunk
+       *  turned back the carried haft passed 0.015-0.020 m from it on the page, against A104's 0.02 at 2723593's pass;
+       *  the stow keeps the head's old share, HOLSTER_HEAD_LEAD, and no measured trim) */
+      const holster = stance === 'holster';
+      const ty = (yaw + (this._pelvisYawNow || 0) * w) * (swing ? 1 - HEAD_LEAD : holster ? 1 - HOLSTER_HEAD_LEAD : 1);
+      const tk = holster ? 1 : 1 / 0.92;
       const tp = pitch;
       an._rot(b.neck1, Y_AXIS, -ty * 0.42 * tk);
       an._rot(b.head, Y_AXIS, -ty * 0.50 * tk);
@@ -1963,7 +1969,7 @@ export class MeleeLayer {
        * her line (plus the swing's lead; at the layer's weight, from where the clip had it) is taken out here, the neck
        * and the skull sharing it, after the arms are solved (the neck carries no arm) and the trunk's last trim (M2 fix
        * wave: the click's swing read 5.7 deg after the line above) */
-      this._headWant = b.head && w > 1e-3 ? headY0 * (1 - w) + (swing ? HEAD_LEAD * (yaw + (this._pelvisYawNow || 0) * w) : 0) : null;
+      this._headWant = b.head && w > 1e-3 && !holster ? headY0 * (1 - w) + (swing ? HEAD_LEAD * (yaw + (this._pelvisYawNow || 0) * w) : 0) : null;
       an._rot(b.neck1, X_AXIS, -tp * HEAD_LEVEL * 0.45);
       an._rot(b.head, X_AXIS, -tp * HEAD_LEVEL * 0.55);
     }
