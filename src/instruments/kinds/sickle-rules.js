@@ -100,3 +100,82 @@ export class SickleBrain {
     }
   }
 }
+
+/**
+ * THE PACK'S FIGHT (M2 wave 3, area C; the live Sickle in `./sickle.js` runs exactly this; Node twin
+ * tools/instruments/sickle-fight.test.mjs). Each member has a SickleBrain and a SickleFight; the members of a pack share
+ * one SicklePack, which lets ONE member attack at a time (`attackCd` between attacks, round robin).
+ *   wait   stands (calm) until she is within `engageM` of any member of its pack, or one is struck; only inside its
+ *          arena (`arena` { x, z, r }, so the line-up's F23-sickle on the Pans never starts a fight)
+ *   ring   circles her on its own ring (circlePos: 9-14 m, feints 3 m in), at most `run` m/s, facing her
+ *   attack the pack's turn: within `clearcutM` it winds up Clearcut (0.6 s, the hub bearing exposed: `hubExposed()`)
+ *          and spins; at `lungeM` it winds up the Scissor Lunge (0.45 s) on its heading at her and dashes 8 m
+ * The blades strike her once a move: Clearcut if she is within `clearcutHitM` when it spins, the lunge if its dash
+ * passes within `lungeHitM` of her. Events: 'sickle-engage', 'sickle-clearcut', 'sickle-lunge', 'blade-hit' {move}.
+ */
+export const PACK = Object.freeze({
+  engageM: 22, run: SICKLE_RULES.run, attackCd: 2.4,
+  clearcutM: 4.0, lungeM: Object.freeze([6, 11]), clearcutHitM: 2.8, lungeHitM: 1.3,
+  clearcutDmg: 14, lungeDmg: 18,
+});
+
+export class SicklePack {
+  constructor() { this.members = []; this.turn = 0; this.cd = 1.5; this.attacker = null; this.engaged = false; }
+  join(f) { if (!this.members.includes(f)) this.members.push(f); return this; }
+  live() { return this.members.filter((f) => f.alive()); }
+  step(dt) {
+    if (this.attacker && !this.attacker.b.move) { this.attacker = null; this.cd = PACK.attackCd; }
+    if (!this.attacker && this.cd > 0) this.cd -= dt;
+  }
+  /** Is it `f`'s turn to attack now? */
+  mayAttack(f) {
+    if (this.attacker || this.cd > 0) return false;
+    const L = this.live();
+    if (!L.length) return false;
+    return L[this.turn % L.length] === f;
+  }
+  took(f) { this.attacker = f; this.turn++; }
+}
+
+export class SickleFight {
+  constructor(brain, pack, { arena = null, alive = () => true } = {}) {
+    this.b = brain; this.pack = pack.join(this); this.arena = arena; this.alive = alive;
+    this.mode = 'wait'; this.t = 0; this.struck = false; this.hit = false; this.lastMove = null;
+    this.events = [];
+  }
+
+  _ev(type, payload) { this.events.push(payload ? { type, ...payload } : { type }); }
+
+  /** One step: she is at (px, pz) or null. Events of this step in `this.events`. The pack steps once per frame (its owner). */
+  step(dt, px, pz) {
+    const b = this.b, P = this.pack;
+    this.events.length = 0;
+    this.t += dt;
+    const has = px != null && pz != null;
+    const dx = has ? px - b.x : 1e9, dz = has ? pz - b.z : 1e9, d = Math.hypot(dx, dz);
+    const inArena = !this.arena || Math.hypot(b.x - this.arena.x, b.z - this.arena.z) <= this.arena.r;
+    if (this.mode === 'wait' && inArena && (P.engaged || this.struck || d < PACK.engageM)) {
+      this.mode = 'ring'; P.engaged = true; this._ev('sickle-engage');
+    }
+    if (this.mode === 'wait' || !has) { b.step(dt); return this.events; }
+    const L = P.live(), n = Math.max(1, L.length), i = Math.max(0, L.indexOf(this));
+    if (!b.move && P.mayAttack(this)) {
+      if (d <= PACK.clearcutM) { b.heading = Math.atan2(dx, dz); b.clearcut(); P.took(this); this.hit = false; this._ev('sickle-clearcut'); }
+      else if (d >= PACK.lungeM[0] && d <= PACK.lungeM[1]) { b.lunge(Math.atan2(dx, dz)); P.took(this); this.hit = false; this._ev('sickle-lunge'); }
+    }
+    if (!b.move) {
+      // the ring: toward its circling point at most `run`, facing her
+      const q = circlePos(i, n, this.t, px, pz);
+      const ex = q.x - b.x, ez = q.z - b.z, e = Math.hypot(ex, ez), stepM = Math.min(e, PACK.run * dt);
+      if (e > 1e-6) { b.x += (ex / e) * stepM; b.z += (ez / e) * stepM; }
+      b.heading = Math.atan2(px - b.x, pz - b.z);
+      this.ringSpeed = stepM / dt;
+    } else this.ringSpeed = 0;
+    const wasMove = b.move, wasPhase = b.phase;
+    b.step(dt);
+    // the blades' blows
+    if (!this.hit && wasMove === 'clearcut' && wasPhase === 'strike' && d <= PACK.clearcutHitM) { this.hit = true; this._ev('blade-hit', { move: 'clearcut' }); }
+    if (!this.hit && wasMove === 'lunge' && wasPhase === 'strike' && Math.hypot(px - b.x, pz - b.z) <= PACK.lungeHitM) { this.hit = true; this._ev('blade-hit', { move: 'lunge' }); }
+    return this.events;
+  }
+}
