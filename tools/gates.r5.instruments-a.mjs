@@ -1011,15 +1011,26 @@ const A_MOVING_COVER = `(async () => {
   const leeEvents = [];
   const offLee = ev.on?.('herd-lee', (e) => leeEvents.push({ inShadow: !!e?.inShadow, t: +simNow().toFixed(2) }));
   const mid = ms[1];
+  const SIGHT = await import('/src/instruments/lib/sight.js');
   const walks = [];
   const one = async (along, off, label) => {
     pl.suspicion = 0; if (pl.sc) pl.sc.suspicion = 0; pl._unseenT = 99; if (pl.state !== 'patrol') pl.setState('patrol');
     const per = pl.ai?.perception;
-    let ticks = 0, seen = 0, firstSeen = null, maxSus = 0;
+    let ticks = 0, seen = 0, firstSeen = null, maxSus = 0, drift = 0, seenAt = null;
     const t0 = simNow();
-    let lastAcc = per ? per.acc : 0;
+    let lastAcc = per ? per.acc : 0, lastSet = null;
     await simSleep(6, (t) => {
       heal();
+      // M2 wave 4: what the Plumb's tick saw (her place against where the row set her, both rays, the hull's height)
+      if (lastSet) drift = Math.max(drift, Math.hypot(p.position.x - lastSet.x, p.position.z - lastSet.z));
+      if (per && per.acc < lastAcc && per.visible && seenAt === null) {
+        const P = p.position, ey = pl.position.y + pl.eyeHeight, cr = p.crouching ?? p._crouch ?? null;
+        seenAt = { t: +t.toFixed(2), her: [+P.x.toFixed(2), +P.y.toFixed(2), +P.z.toFixed(2)], set: lastSet ? [+lastSet.x.toFixed(2), +lastSet.z.toFixed(2)] : null,
+          plumbEye: +ey.toFixed(2), plumbGround: +hy(pl.position.x, pl.position.z).toFixed(2), tillerY: +mid.position.y.toFixed(2), tillerGround: +hy(mid.position.x, mid.position.z).toFixed(2),
+          chest: SIGHT.sightBlocked(pl.position.x, ey, pl.position.z, P.x, P.y + 0.75, P.z, pl._occSlot), hip: SIGHT.sightBlocked(pl.position.x, ey, pl.position.z, P.x, P.y + 0.5, P.z, pl._occSlot),
+          chestStand: SIGHT.sightBlocked(pl.position.x, ey, pl.position.z, P.x, P.y + 1.2, P.z, pl._occSlot), crouchFlag: cr, hotCrouch: null,
+          tillers: ms.map((q) => q.state), ignoreHer: ms.map((q) => q._ignoreHer) };
+      }
       // on the Plumb's sightline through the middle hull (tools/instruments/moving-cover.mjs place(), inlined): off > 0
       // is m beyond the hull's far edge (the lee); off < 0 is -off m short of its near edge (out of the shadow)
       const h = mid.heading, cx = mid.position.x + Math.sin(h) * along, cz = mid.position.z + Math.cos(h) * along;
@@ -1029,11 +1040,13 @@ const A_MOVING_COVER = `(async () => {
       const k = off >= 0 ? edge + off : -(edge - off);
       const x = cx + ux * k, z = cz + uz * k;
       p.position.set(x, hy(x, z), z); if (p.velocity?.set) p.velocity.set(0, 0, 0);
+      lastSet = { x, z };
       if (per && per.acc < lastAcc) { ticks++; if (per.visible) { seen++; if (firstSeen === null) firstSeen = +t.toFixed(2); } }
       if (per) lastAcc = per.acc;
       maxSus = Math.max(maxSus, pl.sc ? pl.sc.suspicion : pl.suspicion || 0);
     });
-    walks.push({ label, along, off, ticks, seen, firstSeen, maxSuspicion: +maxSus.toFixed(3), plumbDist: +Math.hypot(pl.position.x - p.position.x, pl.position.z - p.position.z).toFixed(1) });
+    walks.push({ label, along, off, ticks, seen, firstSeen, maxSuspicion: +maxSus.toFixed(3), plumbDist: +Math.hypot(pl.position.x - p.position.x, pl.position.z - p.position.z).toFixed(1),
+      driftM: +drift.toFixed(3), seenAt, tillers: ms.map((q) => q.state) });
   };
   for (const [along, s] of [[-0.6, 0.6], [0, 0.8], [0.6, 1.0], [0.3, 0.7]]) await one(along, s, 'lee');
   for (const along of [-0.6, 0, 0.6, 0.3]) await one(along, -3, 'open');
